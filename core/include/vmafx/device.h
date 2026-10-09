@@ -51,7 +51,7 @@ struct VmafxDeviceDesc {
     /** Size of this struct as the caller compiled it; set by the _INIT macro. */
     uint32_t struct_size;
     /**
-     * Backend of the device: CPU in every build, CUDA in a build with the CUDA backend; another
+     * Backend of the device: CPU in every build, CUDA or HIP in a build with that backend; another
      * backend is VMAFX_E_NOTSUP naming it. Values: VmafxBackend.
      */
     uint32_t backend;
@@ -64,8 +64,9 @@ struct VmafxDeviceDesc {
     uint32_t flags;
     /**
      * The caller's runtime objects, which stay the caller's and must outlive the device: CUDA
-     * context and stream, SYCL queue and 0, HIP device and stream, Metal device and command queue.
-     * 0: the library creates its own. The CPU takes none. Added in ABI 0.1.2.
+     * context and stream, SYCL queue and 0, HIP stream and 0 (the device is the stream's), Metal
+     * device and command queue. 0: the library creates its own. The CPU takes none. Added in ABI
+     * 0.1.2.
      */
     uintptr_t external[2];
 };

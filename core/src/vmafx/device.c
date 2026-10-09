@@ -24,8 +24,12 @@
 #include "internal.h"
 #include "ref.h"
 #include "vmafx/vmafx.h"
+#include "config.h"
 #ifdef HAVE_CUDA
 #include "cuda/vmafx_cuda.h"
+#endif
+#ifdef HAVE_HIP
+#include "hip/vmafx_hip.h"
 #endif
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
@@ -56,8 +60,8 @@ static bool is_backend(uint32_t backend)
     return backend <= VMAFX_BACKEND_HIP;
 }
 
-/* A backend this build creates devices for: the CPU, and CUDA in a build
- * with the CUDA backend. */
+/* A backend this build creates devices for: the CPU, and CUDA / HIP in a
+ * build with that backend. */
 static bool built_backend(uint32_t backend)
 {
 #ifdef HAVE_CUDA
@@ -65,14 +69,25 @@ static bool built_backend(uint32_t backend)
         return true;
     }
 #endif
+#ifdef HAVE_HIP
+    if (backend == VMAFX_BACKEND_HIP) {
+        return true;
+    }
+#endif
     return backend == VMAFX_BACKEND_CPU;
 }
 
 #ifdef HAVE_CUDA
-#define VMAFX_BUILT_BACKENDS "CPU and CUDA devices"
+#define VMAFX_BUILT_CUDA ", CUDA"
 #else
-#define VMAFX_BUILT_BACKENDS "CPU devices only"
+#define VMAFX_BUILT_CUDA ""
 #endif
+#ifdef HAVE_HIP
+#define VMAFX_BUILT_HIP ", HIP"
+#else
+#define VMAFX_BUILT_HIP ""
+#endif
+#define VMAFX_BUILT_BACKENDS "devices of these backends: CPU" VMAFX_BUILT_CUDA VMAFX_BUILT_HIP
 
 /* `backend` is one this build creates devices for. */
 static VmafxStatus check_backend(const VmafxReport *report, uint32_t backend, const char *subject)
@@ -130,9 +145,13 @@ static VmafxStatus open_lane(const VmafxReport *report, const VmafxDeviceDesc *d
     if (d->backend == VMAFX_BACKEND_CUDA) {
         return vmafx_cuda_device_open(report, d, device);
     }
-#else
-    (void)report;
 #endif
+#ifdef HAVE_HIP
+    if (d->backend == VMAFX_BACKEND_HIP) {
+        return vmafx_hip_device_open(report, d, device);
+    }
+#endif
+    (void)report;
     assert(d->backend == VMAFX_BACKEND_CPU);
     device->index = 0;
     return VMAFX_OK;
@@ -144,6 +163,11 @@ static void close_lane(VmafxDevice *device)
 #ifdef HAVE_CUDA
     if (device->backend == VMAFX_BACKEND_CUDA) {
         vmafx_cuda_device_close(device);
+    }
+#endif
+#ifdef HAVE_HIP
+    if (device->backend == VMAFX_BACKEND_HIP) {
+        vmafx_hip_device_close(device);
     }
 #endif
     device->lane = NULL;
@@ -231,6 +255,13 @@ VmafxStatus vmafx_device_count(uint32_t backend, uint32_t *count, VmafxError **e
         return vmafx_cuda_device_count(&report, count);
     }
 #endif
+#ifdef HAVE_HIP
+    if (status == VMAFX_OK && backend == VMAFX_BACKEND_HIP) {
+        return vmafx_hip_device_count(&report, count);
+    }
+#endif
+    /* Every other backend this build has was answered by its lane above. */
+    assert(status != VMAFX_OK || backend == VMAFX_BACKEND_CPU);
     if (status == VMAFX_OK) {
         *count = 1u;
     }
@@ -251,6 +282,28 @@ static VmafxDeviceInfo cpu_info(uint32_t flags)
     return info;
 }
 
+/* What device `index` of a backend lane this build has is
+ * (check_backend() accepted `backend`). */
+static VmafxStatus lane_info(const VmafxReport *report, uint32_t backend, int32_t index,
+                             VmafxDeviceInfo *info)
+{
+#ifdef HAVE_CUDA
+    if (backend == VMAFX_BACKEND_CUDA) {
+        return vmafx_cuda_device_info(report, index, info);
+    }
+#endif
+#ifdef HAVE_HIP
+    if (backend == VMAFX_BACKEND_HIP) {
+        return vmafx_hip_device_info(report, index, info);
+    }
+#endif
+    (void)index;
+    (void)info;
+    return VMAFX_FAIL(report, VMAFX_E_NOTSUP, 0, VMAFX_SUBJECT_BACKEND, "backend",
+                      "backend %s: this build creates " VMAFX_BUILT_BACKENDS,
+                      vmafx_backend_name(backend));
+}
+
 VmafxStatus vmafx_device_info(uint32_t backend, int32_t index, VmafxDeviceInfo *out,
                               VmafxError **error)
 {
@@ -263,15 +316,13 @@ VmafxStatus vmafx_device_info(uint32_t backend, int32_t index, VmafxDeviceInfo *
     if (status != VMAFX_OK) {
         return status;
     }
-#ifdef HAVE_CUDA
-    if (backend == VMAFX_BACKEND_CUDA) {
+    if (backend != VMAFX_BACKEND_CPU) {
         VmafxDeviceInfo info = VMAFX_DEVICE_INFO_INIT;
-        status = vmafx_cuda_device_info(&report, index, &info);
+        status = lane_info(&report, backend, index, &info);
         return status == VMAFX_OK ?
                    vmafx_write_sized(&report, out, &info, (uint32_t)sizeof(info), "out") :
                    status;
     }
-#endif
     if (index != 0) {
         return VMAFX_FAIL(&report, VMAFX_E_NOTFOUND, 0, VMAFX_SUBJECT_DEVICE, "index",
                           "the CPU has device 0 only, not %d", (int)index);
@@ -292,6 +343,11 @@ VmafxStatus vmafx_device_describe(const VmafxDevice *device, VmafxDeviceInfo *ou
 #ifdef HAVE_CUDA
     if (device->backend == VMAFX_BACKEND_CUDA) {
         vmafx_cuda_device_describe(device, &info);
+    }
+#endif
+#ifdef HAVE_HIP
+    if (device->backend == VMAFX_BACKEND_HIP) {
+        vmafx_hip_device_describe(device, &info);
     }
 #endif
     assert(info.backend == device->backend);

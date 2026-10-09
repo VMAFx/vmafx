@@ -291,6 +291,12 @@ core/src/framesync.c
 core/src/gpu_dispatch_env.cpp
 core/src/gpu_picture_pool.cpp
 core/src/hip/common.c
+core/src/hip/import_convert.hip
+core/src/hip/import_device.c
+core/src/hip/import_dmabuf.c
+core/src/hip/import_fence.c
+core/src/hip/import_frame.c
+core/src/hip/import_gl.c
 core/src/hip/kernel_template.c
 core/src/hip/picture_hip.c
 core/src/hip/shared_frame.c
@@ -352,6 +358,7 @@ core/src/vmafx/frame_import.c
 core/src/vmafx/frame_import_admit.c
 core/src/vmafx/frame_import_hooks.c
 core/src/vmafx/frame_pool.c
+core/src/vmafx/gl_sync.c
 core/src/vmafx/mcp_server.c
 core/src/vmafx/model.c
 core/src/vmafx/options.c
@@ -360,6 +367,7 @@ core/src/vmafx/provenance_build.c
 core/src/vmafx/provenance_json.c
 core/src/vmafx/provenance_render.c
 core/src/vmafx/register.c
+core/src/vmafx/release_events.c
 core/src/vmafx/report.c
 core/src/vmafx/report_verify.c
 core/src/vmafx/score.c
@@ -367,6 +375,7 @@ core/src/vmafx/sha256.c
 core/src/vmafx/sized.c
 core/src/vmafx/status_gen.c
 core/src/vmafx/submit.c
+core/src/vmafx/sync_file.c
 core/src/vmafx/tiny_model.c
 core/src/vmafx/window.c
 core/src/vmafx/window_clock.c
@@ -812,6 +821,7 @@ core/test/test_vmafx_api_slice.c
 core/test/test_vmafx_bitexact.c
 core/test/test_vmafx_context.c
 core/test/test_vmafx_exactness.c
+core/test/test_vmafx_fence_kinds.c
 core/test/test_vmafx_frame.c
 core/test/test_vmafx_frame_input.c
 core/test/test_vmafx_host_fence_wait.c
@@ -822,6 +832,10 @@ core/test/test_vmafx_import_cuda_bitexact.c
 core/test/test_vmafx_import_cuda_fence.c
 core/test/test_vmafx_import_cuda_gl.c
 core/test/test_vmafx_import_fence.c
+core/test/test_vmafx_import_hip.c
+core/test/test_vmafx_import_hip_bitexact.c
+core/test/test_vmafx_import_hip_fence.c
+core/test/test_vmafx_import_hip_gl.c
 core/test/test_vmafx_lifetime.c
 core/test/test_vmafx_live_pacing.c
 core/test/test_vmafx_log_routing.c

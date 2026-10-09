@@ -77,6 +77,13 @@ Rules:
   `core/test/test_hip_shared_frame.c` checks shared-frame contract
   without device.
 
+Device pictures (VMAFx imports, ADR-2092): the same calls copy device to
+device on the picture's library stream, no host wait; the twin's stream and
+the null stream wait on an event. A twin that stages on the host
+(`integer_psnr_hvs_hip`, `ssimulacra2_hip`, `integer_ms_ssim_hip` level 0)
+must branch on `vmaf_hip_picture_device_stream()` and copy / convert on the
+device; `core/test/test_vmafx_import_hip_contract.py` holds the branch order.
+
 Wait costs host time, normally once per frame instead of once per twin since
 ADR-1408.
 Numbers: `docs/backends/hip/overview.md` "Picture uploads". Pinned planes

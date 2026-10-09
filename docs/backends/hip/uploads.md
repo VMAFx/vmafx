@@ -10,20 +10,23 @@ process; the `vmaf` tool creates one.
 
 ## Zero-copy import
 
-The CUDA backend has no zero-copy import either: a decoded CUDA frame is
-copied device to device into libvmaf's own pool
-([ADR-1685](../../adr/1685-post-1-0-embedding-zero-copy-milestone.md)); no source
-file calls `cuImportExternalMemory`. Only the SYCL backend imports a DMA-BUF or
-VA surface without a copy, and then luma only
-([zero-copy guide](../sycl/zero-copy.md)). The HIP backend does not provide any
-picture buffer import (`VMAF_PICTURE_BUFFER_TYPE_HIP_DEVICE`).
+The VMAFx API imports frames a producer holds on a HIP device: device
+pointers, dma-bufs (as external memory, `hipImportExternalMemory()`), HIP
+arrays and OpenGL textures, with HIP event, sync_file and GL sync acquire
+fences ([HIP devices](../../api/vmafx/index.md#hip-devices),
+[ADR-2092](../../adr/2092-vmafx-hip-device-frames.md)). An imported frame is
+a `VMAF_PICTURE_BUFFER_TYPE_HIP_DEVICE` picture that carries the device's
+library stream. Where a twin uploads a host picture, it copies a device
+picture on that stream instead, device to device, and its own stream and the
+null stream wait for the copy (`vmaf_hip_picture_upload()`,
+`vmaf_hip_stream_wait_library()` in `core/src/hip/picture_hip.c`); the shared
+planes below are filled the same way. No plane of an imported frame is copied
+to or from the host.
 
-Incoming frames arrive with `VMAF_PICTURE_BUFFER_TYPE_HOST` in system memory.
-The planes the extractors of a run read are copied to the device once per
-frame; see [Picture uploads](#picture-uploads).
-Supporting direct DMA-BUF external memory import on AMD ROCm requires ROCm
-`hipImportExternalMemory` plumbing and device picture pool support (T7-10c),
-which is tracked as a deferred enhancement.
+Frames given to `libvmaf.h` (`vmaf_read_pictures()`) still arrive with
+`VMAF_PICTURE_BUFFER_TYPE_HOST` in system memory, and the planes the
+extractors of a run read are copied to the device once per frame; see
+[Picture uploads](#picture-uploads).
 
 ## Picture uploads
 

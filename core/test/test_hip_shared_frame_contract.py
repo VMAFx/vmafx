@@ -37,6 +37,9 @@ HIP_FEATURE = SRC / "feature" / "hip"
 SHARED = "hip/shared_frame.c"
 LIBVMAF = "libvmaf.c"
 FEX = "feature/feature_extractor.cpp"
+# frame_upload() waits for the copies on both paths: when an earlier twin
+# already copied the planes, and after its own copy or upload (ADR-2092).
+FRAME_FOLLOW_CALLS = 2
 
 # Twins that read whole picture planes and share them. A twin that packs or
 # converts on the host (ms_ssim, cambi, SpEED) or that an open change still
@@ -152,6 +155,14 @@ def _shared_frame_failures(src: dict[str, str]) -> list[str]:
         failures.append(f"{SHARED}: a slot is written before it was fenced")
     if "batch_add_expected(f, &batch)" not in upload:
         failures.append(f"{SHARED}: an upload leaves the planes of the frame before to later waits")
+    if (
+        "batch_copy_on_device(f, &batch)" not in upload
+        or upload.count("frame_follow(f, stream)") < FRAME_FOLLOW_CALLS
+        or "hipStreamWaitEvent(" not in _function_body(text, "frame_follow")
+    ):
+        failures.append(
+            f"{SHARED}: a twin reads a device picture's slot without waiting for its copies"
+        )
     fence = _function_body(text, "frame_fence")
     if not _in_order(fence, "f->readers[f->slot] == 0u", "hipDeviceSynchronize()"):
         failures.append(f"{SHARED}: a held slot is overwritten without waiting for the device")
@@ -275,8 +286,8 @@ class HipSharedFrameContractTest(unittest.TestCase):
         src = _replace(
             _sources(),
             SHARED,
-            "    err = vmaf_hip_picture_upload(batch.todo, batch.count, stream);",
-            "    err = (hipMemcpy2DAsync(batch.todo[0].dst, batch.todo[0].dst_pitch,\n"
+            "vmaf_hip_picture_upload(batch.todo, batch.count, stream);",
+            "(hipMemcpy2DAsync(batch.todo[0].dst, batch.todo[0].dst_pitch,\n"
             "                            batch.todo[0].pic->data[0],\n"
             "                            (size_t)batch.todo[0].pic->stride[0],\n"
             "                            batch.todo[0].row_bytes, batch.todo[0].rows,\n"
@@ -285,6 +296,17 @@ class HipSharedFrameContractTest(unittest.TestCase):
             "              : -EIO;",
         )
         self.assert_detected(src, "without the waiting upload")
+
+    def test_device_slot_read_without_the_wait_is_detected(self) -> None:
+        # ADR-2092: a twin that finds a device picture's planes copied by an
+        # earlier twin must still wait for the copies on its stream.
+        src = _replace(
+            _sources(),
+            SHARED,
+            "        return (err != 0) ? err : frame_follow(f, stream);",
+            "        return err;",
+        )
+        self.assert_detected(src, "without waiting for its copies")
 
     def test_unfenced_slot_is_detected(self) -> None:
         src = _replace(

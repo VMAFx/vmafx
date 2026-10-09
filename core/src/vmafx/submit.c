@@ -31,8 +31,12 @@
 #include "error_internal.h"
 #include "frame_import_hooks.h"
 #include "internal.h"
+#include "config.h"
 #ifdef HAVE_CUDA
 #include "cuda/vmafx_cuda.h"
+#endif
+#ifdef HAVE_HIP
+#include "hip/vmafx_hip.h"
 #endif
 #include "ref.h"
 #include "status_gen.h"
@@ -170,6 +174,11 @@ static void signal_release_early(VmafxFrame *reference, VmafxFrame *distorted)
 #ifdef HAVE_CUDA
         if (frames[i]->residency == VMAFX_BACKEND_CUDA) {
             vmafx_cuda_release_early(frames[i]); /* its CUDA_EVENT release fences */
+        }
+#endif
+#ifdef HAVE_HIP
+        if (frames[i]->residency == VMAFX_BACKEND_HIP) {
+            vmafx_hip_release_early(frames[i]); /* its HIP_EVENT release fences */
         }
 #endif
     }

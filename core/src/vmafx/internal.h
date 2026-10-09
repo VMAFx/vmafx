@@ -21,6 +21,7 @@
 #ifndef VMAFX_INTERNAL_H
 #define VMAFX_INTERNAL_H
 
+#include <pthread.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -308,6 +309,61 @@ void vmafx_host_fence_signal_unref(VmafxHostFence *fence);
  * one (a runtime failure). The backend lanes wait on their fences with it. */
 int vmafx_fence_poll(int (*done)(const void *arg), const void *arg, uint64_t timeout_ns);
 
+/* ---- Release events of the device lanes (release_events.c) --------------- */
+
+/* Release events handed out and not yet both recorded and destroyed by
+ * every holder: frames with a pending device-event release fence, per
+ * backend (HISS-02 bound; a decoder pool holds a few dozen). */
+#define VMAFX_RELEASE_EVENTS 4096u
+
+typedef struct VmafxReleaseEvent {
+    uintptr_t event; /* the runtime's event; 0: a free slot */
+    uint32_t refs;   /* the frame's until it records it, one per fence handed out */
+    bool recorded;
+} VmafxReleaseEvent;
+
+/* One backend's table (a static object of the lane, ADR-2023 item 3). */
+typedef struct VmafxReleaseEvents {
+    pthread_mutex_t lock;
+    uint32_t high; /* slots below it were used at least once */
+    void (*destroy)(uintptr_t event);
+    VmafxReleaseEvent slot[VMAFX_RELEASE_EVENTS];
+} VmafxReleaseEvents;
+
+/* A frame's release event with one more reference for the caller: `fresh`
+ * (an unrecorded event the lane just created, holding the frame's reference
+ * too) when `*slot1` is 0, else the event of slot `*slot1 - 1`. 0, or -EBUSY
+ * when the table is full (`fresh` is then not taken). */
+int vmafx_release_events_take(VmafxReleaseEvents *t, uint32_t *slot1, uintptr_t fresh,
+                              uintptr_t *event);
+/* Record the frame's release event with `record(event, arg)` (under the
+ * table's lock, so a wait never sees it half recorded), mark it recorded and
+ * drop the frame's reference; `*slot1` becomes 0. Nothing for slot 0. */
+int vmafx_release_events_record(VmafxReleaseEvents *t, uint32_t *slot1,
+                                int (*record)(uintptr_t event, void *arg), void *arg);
+/* `event` is a release event handed out and not recorded yet. */
+bool vmafx_release_events_unrecorded(VmafxReleaseEvents *t, uintptr_t event);
+/* Drop a fence's reference of `event`: false when it is not in the table. */
+bool vmafx_release_events_drop(VmafxReleaseEvents *t, uintptr_t event);
+
+/* ---- Producer fences checked on the host (gl_sync.c, sync_file.c) -------- */
+
+/* Host check of a GL sync object of the GL context current on the calling
+ * thread (or one sharing with it): 1 signalled, 0 not within `timeout_ns`,
+ * negative on a GL error or without GL (entry points resolved at run time). */
+int vmafx_gl_sync_wait(uintptr_t sync, uint64_t timeout_ns);
+/* An acquire fence of kind GL_SYNC: VMAFX_OK when signalled (or planted as
+ * skipped), VMAFX_E_BUSY when not yet, VMAFX_E_INVALID without GL; any other
+ * kind is VMAFX_OK. `backend` names the device's backend in messages. */
+VmafxStatus vmafx_gl_sync_acquire(const VmafxReport *report, const VmafxFence *acquire,
+                                  const char *backend);
+/* Host check of a Linux sync_file: 1 signalled, 0 not within `timeout_ns`, a
+ * negative errno for a descriptor that is not one (-ENOSYS off Linux). */
+int vmafx_sync_file_wait(int fd, uint64_t timeout_ns);
+/* An acquire fence of kind SYNC_FILE, as vmafx_gl_sync_acquire(). */
+VmafxStatus vmafx_sync_file_acquire(const VmafxReport *report, const VmafxFence *acquire,
+                                    const char *backend);
+
 /* ---- Imports (frame_import.c) -------------------------------------------- */
 
 /* How a producer lays out one pixel format vmafx_frame_import() takes. */
@@ -333,7 +389,8 @@ void vmafx_import_plane_extent(const VmafxImportLayout *layout, uint32_t bpc, ui
 VmafxStatus vmafx_import_check_linear_plane(const VmafxReport *report, const VmafxImportPlane *p,
                                             uint32_t i, uint64_t row, uint64_t rows,
                                             const char *memory);
-/* Subject names of the fields of plane `i` (handle, pitch, modifier, size). */
+/* Subject names of the fields of plane `i` (handle, pitch, modifier, size,
+ * offset, fd, plane_index). */
 const char *vmafx_import_plane_field(uint32_t i, const char *field);
 
 /* Wait until `fence` is signalled or `timeout_ns` passed (UINT64_MAX: no

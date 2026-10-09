@@ -231,12 +231,13 @@ enhancement-gain-enabled VIF. Fixed per
 
 - **By model or `--backend`.** For `vif`, `--backend sycl|cuda|hip` with
   `--feature vif` runs the twin.
-- **HIP `float_vif`.** In a default build `--backend hip --feature float_vif`
-  prints
-  `the hip backend has no twin of this extractor; computing it on the CPU` and
-  runs the CPU extractor. Name the extractor
-  (`--backend hip --feature float_vif_hip`), or build with the
-  `enable_float_vif_hip_autodispatch` option (off by default).
+- **HIP `float_vif`.** `--backend hip --feature float_vif` runs
+  `float_vif_hip`, and so does a VMAFx context on a HIP device
+  ([ADR-2092](../adr/2092-vmafx-hip-device-frames.md)). A build with
+  `-Denable_float_vif_hip_autodispatch=false` (on by default) prints
+  `the hip backend has no twin of this extractor; computing it on the CPU`
+  instead and runs the CPU extractor; the twin then runs only when named
+  (`--feature float_vif_hip`).
 
 ### Integer twin notes
 

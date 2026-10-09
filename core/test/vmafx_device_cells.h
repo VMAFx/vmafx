@@ -6,21 +6,25 @@
  */
 
 /*
- * The CUDA twins declared exact (scripts/ci/exact_twins.d/<cell>.cuda,
- * ADR-1428), each as the CPU extractor and options a VMAFx context on a CUDA
- * device registers for it (the aliases of scripts/ci/cross_backend_parity_gate.py
- * FEATURE_ALIASES), and the sessions the CUDA import tests compare: one
- * context per cell on the CUDA device, fed host frames (uploaded by the
- * engine) or imported device frames. core/test/test_vmafx_import_cuda_cells_contract.py
- * holds the table equal to the fragment files.
+ * The device twins declared exact (scripts/ci/exact_twins.d/<cell>.<backend>,
+ * ADR-1428) that the import tests compare, each as the CPU extractor and
+ * options a VMAFx context on a device registers for it (the aliases of
+ * scripts/ci/cross_backend_parity_gate.py FEATURE_ALIASES), and the sessions
+ * the import tests compare: one context per cell on the device, fed host
+ * frames (uploaded by the engine) or imported device frames. The CUDA
+ * (ADR-2023) and HIP (ADR-2092) lanes declare the same cells;
+ * core/test/test_vmafx_import_cuda_cells_contract.py holds the table equal to
+ * the .cuda and the .hip fragment files.
  */
 
-#ifndef VMAFX_CUDA_CELLS_H
-#define VMAFX_CUDA_CELLS_H
+#ifndef VMAFX_DEVICE_CELLS_H
+#define VMAFX_DEVICE_CELLS_H
 
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "feature/feature_collector.h"
@@ -132,7 +136,13 @@ static inline bool vc_compare(VmafxContext *a, VmafxContext *b, unsigned n, unsi
             const VmafxStatus ra = vmafx_feature_score(a, name, i, &sa, NULL);
             const VmafxStatus rb = vmafx_feature_score(b, name, i, &sb, NULL);
             *compared += 1u;
-            *differing += ra != rb || (ra == VMAFX_OK && !vt_same_bits(sa.value, sb.value));
+            const bool differs = ra != rb || (ra == VMAFX_OK && !vt_same_bits(sa.value, sb.value));
+            *differing += differs;
+            /* NOLINTNEXTLINE(concurrency-mt-unsafe): single-thread test reporting (ADR-0141 / ADR-0278). */
+            if (differs && getenv("VMAFX_TEST_VERBOSE")) {
+                (void)fprintf(stderr, "\n    %s[%u]: %.17g (%d) vs %.17g (%d)", name, i, sa.value,
+                              (int)ra, sb.value, (int)rb);
+            }
         }
     }
     return true;
@@ -140,4 +150,4 @@ static inline bool vc_compare(VmafxContext *a, VmafxContext *b, unsigned n, unsi
 
 /* NOLINTEND(modernize-use-nullptr) */
 
-#endif /* VMAFX_CUDA_CELLS_H */
+#endif /* VMAFX_DEVICE_CELLS_H */

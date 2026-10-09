@@ -29,10 +29,10 @@ Which device to create. Initialise with VMAFX_DEVICE_DESC_INIT. Size 32 bytes, a
 | Field | C declaration | Offset | Since | Description |
 | --- | --- | --- | --- | --- |
 | `struct_size` | `uint32_t struct_size` | 0 | 0.1 | Size of this struct as the caller compiled it; set by the _INIT macro. |
-| `backend` | `uint32_t backend` | 4 | 0.1 | Backend of the device: CPU in every build, CUDA in a build with the CUDA backend; another backend is VMAFX_E_NOTSUP naming it. Values: `VmafxBackend`. |
+| `backend` | `uint32_t backend` | 4 | 0.1 | Backend of the device: CPU in every build, CUDA or HIP in a build with that backend; another backend is VMAFX_E_NOTSUP naming it. Values: `VmafxBackend`. |
 | `index` | `int32_t index` | 8 | 0.1 | Device index within the backend (see vmafx_device_count()); -1: any device of the backend. Ignored when `external[0]` is set. |
 | `flags` | `uint32_t flags` | 12 | 0.1 | How to create the device. Added in ABI 0.1.2. Bits: `VmafxDeviceFlags`. |
-| `external` | `uintptr_t external[2]` | 16 | 0.1 | The caller's runtime objects, which stay the caller's and must outlive the device: CUDA context and stream, SYCL queue and 0, HIP device and stream, Metal device and command queue. 0: the library creates its own. The CPU takes none. Added in ABI 0.1.2. |
+| `external` | `uintptr_t external[2]` | 16 | 0.1 | The caller's runtime objects, which stay the caller's and must outlive the device: CUDA context and stream, SYCL queue and 0, HIP stream and 0 (the device is the stream's), Metal device and command queue. 0: the library creates its own. The CPU takes none. Added in ABI 0.1.2. |
 
 Initialise with `VMAFX_DEVICE_DESC_INIT`.
 

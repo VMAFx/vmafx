@@ -4,7 +4,7 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "cc_version": "gcc-15 (Ubuntu 15.2.0-16ubuntu1) 15.2.0",
-  "tus": 486,
+  "tus": 497,
   "measured_sources": [
     "core/src/compat/path_utf8.c",
     "core/src/cpu.cpp",
@@ -193,6 +193,16 @@
     "core/src/sycl/dispatch_strategy.cpp",
     "core/src/thread_locale.cpp",
     "core/src/thread_pool.c",
+    "core/src/vmafx/device.c",
+    "core/src/vmafx/device_context.c",
+    "core/src/vmafx/fence.c",
+    "core/src/vmafx/frame_import.c",
+    "core/src/vmafx/frame_import_admit.c",
+    "core/src/vmafx/frame_pool.c",
+    "core/src/vmafx/gl_sync.c",
+    "core/src/vmafx/release_events.c",
+    "core/src/vmafx/submit.c",
+    "core/src/vmafx/sync_file.c",
     "core/src/x86/cpu.c",
     "core/test/barten_csf_cxx.cpp",
     "core/test/dnn/test_dnn_session_api.c",
@@ -471,6 +481,7 @@
     "core/test/test_vif_skip_scale0.c",
     "core/test/test_vmaf_roi.c",
     "core/test/test_vmaf_roi_bounds.c",
+    "core/test/test_vmafx_fence_kinds.c",
     "core/test/test_vmafx_import_cuda.c",
     "core/test/test_vmafx_import_cuda_bitexact.c",
     "core/test/test_vmafx_import_cuda_fence.c",
@@ -563,6 +574,48 @@
         }
       },
       "previous_baseline_sha256": "4a6754f69c3017a1eb105cece909bdb2e8791844292cb09f308fde31360888bf"
+    },
+    {
+      "sources": [
+        "core/src/cuda/import_convert.cu",
+        "core/src/cuda/import_fence.c",
+        "core/src/cuda/import_gl.c",
+        "core/src/libvmaf.c",
+        "core/src/vmafx/device.c",
+        "core/src/vmafx/device_context.c",
+        "core/src/vmafx/fence.c",
+        "core/src/vmafx/frame_import.c",
+        "core/src/vmafx/frame_import_admit.c",
+        "core/src/vmafx/frame_pool.c",
+        "core/src/vmafx/gl_sync.c",
+        "core/src/vmafx/release_events.c",
+        "core/src/vmafx/submit.c",
+        "core/src/vmafx/sync_file.c",
+        "core/test/test_vmafx_fence_kinds.c",
+        "core/test/test_vmafx_import_cuda.c",
+        "core/test/test_vmafx_import_cuda_bitexact.c",
+        "core/test/test_vmafx_import_cuda_fence.c",
+        "core/test/test_vmafx_import_cuda_gl.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/src/vmafx/device.c",
+            "core/src/vmafx/device_context.c",
+            "core/src/vmafx/fence.c",
+            "core/src/vmafx/frame_import.c",
+            "core/src/vmafx/frame_import_admit.c",
+            "core/src/vmafx/frame_pool.c",
+            "core/src/vmafx/gl_sync.c",
+            "core/src/vmafx/release_events.c",
+            "core/src/vmafx/submit.c",
+            "core/src/vmafx/sync_file.c",
+            "core/test/test_vmafx_fence_kinds.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "9d3866c997963e5822a147e8c0d21b38f3d824a4acb07d48a33ae3027af3b8e2"
     }
   ]
 }

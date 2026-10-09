@@ -4,7 +4,7 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "cc_version": "gcc-15 (Ubuntu 15.2.0-16ubuntu1) 15.2.0",
-  "tus": 521,
+  "tus": 523,
   "measured_sources": [
     "compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_stat.c",
     "compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_std.c",
@@ -199,6 +199,7 @@
     "core/src/vmafx/provenance_json.c",
     "core/src/vmafx/provenance_render.c",
     "core/src/vmafx/register.c",
+    "core/src/vmafx/release_events.c",
     "core/src/vmafx/report.c",
     "core/src/vmafx/report_verify.c",
     "core/src/vmafx/score.c",
@@ -482,6 +483,7 @@
     "core/test/test_vmafx_bitexact.c",
     "core/test/test_vmafx_context.c",
     "core/test/test_vmafx_exactness.c",
+    "core/test/test_vmafx_fence_kinds.c",
     "core/test/test_vmafx_frame.c",
     "core/test/test_vmafx_frame_input.c",
     "core/test/test_vmafx_host_fence_wait.c",
@@ -1287,6 +1289,30 @@
         }
       },
       "previous_baseline_sha256": "b955a21e86b4fd69cb2c89f49fc541de03528c434324e9c772da15dd722c99ca"
+    },
+    {
+      "sources": [
+        "core/src/libvmaf.c",
+        "core/src/vmafx/device.c",
+        "core/src/vmafx/device_context.c",
+        "core/src/vmafx/fence.c",
+        "core/src/vmafx/frame_import.c",
+        "core/src/vmafx/frame_import_admit.c",
+        "core/src/vmafx/frame_pool.c",
+        "core/src/vmafx/release_events.c",
+        "core/src/vmafx/submit.c",
+        "core/test/test_vmafx_fence_kinds.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/src/vmafx/release_events.c",
+            "core/test/test_vmafx_fence_kinds.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "22a4cfe2d46641b2fa618221f88fd50f2abf8e859f23908443fb8164bafdc492"
     }
   ]
 }

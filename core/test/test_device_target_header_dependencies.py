@@ -25,9 +25,8 @@ CORE_SRC = ROOT / "core" / "src"
 MESON_BUILD = CORE_SRC / "meson.build"
 BUILD_DIR = Path(os.environ.get("VMAFX_DEVICE_DEP_BUILD_DIR", ROOT / "build")).resolve()
 
-# 22 since the WP3 CUDA lane (ADR-2023) added import_convert.
-EXPECTED_CUDA_TARGET_COUNT = 22
-EXPECTED_HIP_TARGET_COUNT = 20
+EXPECTED_CUDA_TARGET_COUNT = 22  # + import_convert (RC4 WP3 CUDA lane, ADR-2023)
+EXPECTED_HIP_TARGET_COUNT = 21  # + import_convert (RC4 WP3 HIP lane, ADR-2092)
 # The SYCL custom targets that compile a translation unit, by name prefix.
 SYCL_TU_TARGETS = ("sycl_common_", "sycl_feature_")
 # A header only SYCL kernels include, and a feature TU that includes it.
@@ -90,8 +89,16 @@ def meson_kernel_sources(content: str, variable: str, suffix: str) -> list[Path]
     match = re.search(rf"{variable} = \{{(.*?)^    \}}", content, re.DOTALL | re.MULTILINE)
     if match is None:
         return []
-    roots = {"feature_src_dir": CORE_SRC / "feature", "cuda_dir": CORE_SRC / "cuda"}
-    paths = re.findall(rf"(feature_src_dir|cuda_dir) \+ '([^']+\.{suffix})'", match.group(1))
+    # Feature kernels sit under feature_src_dir; the VMAFx import conversion
+    # kernels (ADR-2023, ADR-2092) under cuda_dir and src_dir.
+    roots = {
+        "feature_src_dir": CORE_SRC / "feature",
+        "cuda_dir": CORE_SRC / "cuda",
+        "src_dir": CORE_SRC,
+    }
+    paths = re.findall(
+        rf"\b(feature_src_dir|cuda_dir|src_dir) \+ '([^']+\.{suffix})'", match.group(1)
+    )
     return [(roots[root] / rel_path).resolve() for root, rel_path in paths]
 
 
