@@ -35,6 +35,7 @@
 
 #include "libvmaf/libvmaf.h"
 #include "mu_table.h"
+#include "sanitizer_build.h"
 #include "test.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
@@ -43,8 +44,17 @@
  * required Windows builds compile this TU with cl.exe (C2065). ADR-1138. */
 
 /* Large enough that one frame's extraction outlasts the read that follows its
- * submission; past the collector's initial vector capacity of eight. */
-enum { W = 1920, H = 1080, N_FRAMES = 12, N_THREADS = 2 };
+ * submission; past the collector's initial vector capacity of eight. A
+ * sanitizer build extracts many times slower, so 320x180 (float_ssim at scale
+ * 1) still outlasts the read there and keeps the test well inside its 30 s;
+ * 1080p took 10 s to over 30 s under ASan + UBSan on a shared runner
+ * (T-FED-FRAME-TEST-SANITIZER-TIMEOUT-2026-10-09). */
+enum {
+    W = VMAF_TEST_SANITIZER_BUILD ? 320 : 1920,
+    H = VMAF_TEST_SANITIZER_BUILD ? 180 : 1080,
+    N_FRAMES = 12,
+    N_THREADS = 2
+};
 
 static int fill_picture(VmafPicture *pic, unsigned seed)
 {
