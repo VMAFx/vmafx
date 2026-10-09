@@ -145,7 +145,7 @@
   HIP twins) and imports frames without a copy through the host
   (`vmafx_frame_import`): HIP device pointers at any offset and pitch,
   dma-bufs (`VMAFX_MEMORY_DMABUF`, imported as external memory), HIP arrays
-  and OpenGL textures from a GLX context on the device's GPU; NV12, P010 and
+  and OpenGL textures from an EGL context on the device's GPU; NV12, P010 and
   P016 are planarised on the device. Acquire fences of kind
   `VMAFX_FENCE_HIP_EVENT` are waited on by the device's stream;
   `VMAFX_FENCE_SYNC_FILE` (for example a dma-buf's exported sync_file) and
@@ -156,9 +156,7 @@
   waits on `VMAFX_FENCE_SYNC_FILE` and `VMAFX_FENCE_GL_SYNC` fences in every
   build. Imported frames score bit for bit as the same frames uploaded from
   the host. A HIP device has no frame pools, and a `VMAFX_FENCE_SYNC_FILE`
-  release fence is refused (the ROCm runtime cannot signal one). With ROCm
-  10.1, whose runtime maps a GL texture but cannot read it, GL imports are
-  refused with `VMAFX_E_NOTSUP` naming the runtime. See
+  release fence is refused (the ROCm runtime cannot signal one). See
   [HIP devices](docs/api/vmafx/index.md#hip-devices).
 
 
@@ -430,6 +428,15 @@
   [the dashboard tour](docs/observability/dashboards.md#slo-report).
 
 
+- **`vmaf_picture_wrap()`: score frames you already hold, without a copy
+  (Netflix/vmaf `700124a4c`).** A `VmafPicture` can now sit on planes the
+  caller owns, such as a decoder's frame; a callback reports when libvmaf no
+  longer reads them. Same struct and signature as upstream; the fork rounds
+  odd chroma planes up, as `vmaf_picture_alloc()` does, and refuses a size of
+  0, a NULL plane or a stride shorter than a row with `-EINVAL`
+  ([Wrap your own planes](docs/api/pictures.md#wrap-your-own-planes-vmaf_picture_wrap)).
+
+
 - **Rust integer ADM extractor (`adm_rust`)**: builds configured with
   `-Denable_rust_features=true` contain a Rust port of the fixed-point `adm`
   extractor. It takes every option of `adm` and returns its `adm2`, `aim`,
@@ -689,6 +696,15 @@
   `docs/usage/env-vars.md`.
 
 
+- **The Go services build on golusoris v0.14.0** (from v0.13.1; core stays
+  v0.10.1). The release adds paged object listings (`storage.Walk`,
+  `ListOptions.StartAfter`) and in-process image signing and verification
+  (`container/registry/sign`), which the object-storage and artifact work of
+  the cloud-native platform (#2431) will use. Nothing VMAFx runs today changes:
+  of the golusoris packages VMAFx imports, only `db/migrate` changed, in its
+  file-path source, and VMAFx migrates from an embedded file system.
+
+
 - **The chart no longer sets `VMAFX_BACKEND` on the scoring server.** The
   server's Deployment, StatefulSet and Job carried it, but `vmafx-server`
   never read it: it takes its backend from each request's `backend` score
@@ -723,6 +739,16 @@
   carries the Apache-2.0 Kubernetes type schemas, and ships
   `THIRD-PARTY-NOTICES.txt` with their attribution and the Apache-2.0 text
   ([ADR-2673](docs/adr/2673-chart-licence-kubernetes-schemas.md)).
+
+
+- **HIP imports OpenGL textures through EGL dma-buf export**
+  ([ADR-2132](docs/adr/2132-hip-gl-textures-through-egl-dmabuf.md)): GL
+  texture imports on a HIP device now work on the project's ROCm 10.1 (the
+  runtime's GL interop could not read a mapped texture) and need an EGL
+  context, not GLX. A texture exported in the driver's own tiling is copied
+  on the GPU into a linear dma-buf and needs `VMAFX_IMPORT_ALLOW_COPY`;
+  `libgbm.so.1` is needed for that copy. See
+  [HIP devices](docs/api/vmafx/index.md#hip-devices).
 
 
 - **`psnr_hvs_hip`, `ssimulacra2_hip` and `float_ms_ssim_hip` read device
@@ -1368,6 +1394,16 @@
   on Windows, which the project-wide argument did not reach: icpx compiles
   them in custom targets. Both SYCL argument lists now carry the define, and
   `test_sycl_math_constants_contract.py` keeps every icpx compile line on it.
+
+
+- **Tests: the `timing` suite exists only in a plain optimised build.**
+  Coverage counters, a sanitizer or a build without optimisation slow the
+  code down, so the live window harness's 33 ms budget there measured the
+  instrumentation and failed the coverage job. Such a build now compiles
+  the harness with the budget off and registers no `timing` test; the
+  release builds still hold the budget, and `test_timing_suite_plain_builds`
+  checks the rule for every build
+  ([test suites](docs/development/test-suites.md)).
 
 
 - **A cross-device parity run that compared nothing passed** (`T-TINY-AI-CROSS-DEVICE-PARITY-UNGATED-2026-09-25`).

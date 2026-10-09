@@ -8,6 +8,49 @@ search:
 # Rebase notes
 
 <!-- rebase-notes:fragments:begin (rendered from docs/rebase-notes.d/; do not edit) -->
+## `vmaf_picture_wrap` port, Netflix/vmaf 700124a4c, ADR-2949 (2026-10-09)
+
+- `core/include/libvmaf/picture.h`: `VmafPictureWrapped` and
+  `vmaf_picture_wrap()` as upstream declares them, with `VMAF_DEPRECATED` /
+  `VMAF_EXPORT` and one member per line (`w`, `h`). Upstream's declaration in
+  `src/picture.h` is not taken: the public header is the one declaration.
+- `core/src/picture.c`: upstream's `vmaf_picture_wrap()` split into
+  `vmaf_picture_wrap_bind()` (construction, no checks, `*pic` untouched on
+  failure, declared in `src/picture.h`) and the checked public body. **On
+  sync**: keep `vmaf_picture_plane_extents()` (chroma rounded up, ADR-1483),
+  the plane checks and the absence of `goto`; upstream's floor shifts and its
+  `free_priv` label must not come back.
+- `core/src/vmafx/frame_host.c`: `vmafx_frame_bind()` calls
+  `vmaf_picture_wrap_bind()`; fork-only.
+- `core/src/compat/libvmaf/picture.c`: the compat body on
+  `vmafx_frame_wrap_host()` (`WrapRelease` thunk); fork-only.
+- Generated: `core/api/vmafx.toml` `[[compat]]` entry, then
+  `scripts/codegen/vmafx-api.py --write` (symbol list, engine names,
+  conformance tables, compat reference).
+- Tests: `test_picture_wrap_integration.c` is upstream's test, adapted to the
+  public link (no private header) and to free the model; the fork's contract
+  is `test_picture_wrap_api.c` and the `picture_wraps()` part of
+  `test_compat_conformance_api.c`.
+
+## HIP GL textures through EGL dma-bufs (RC4 WP3 HIP follow-up)
+
+`rc4/api-wp3-hip-gl-dmabuf`, [ADR-2132](adr/2132-hip-gl-textures-through-egl-dmabuf.md).
+
+- `core/src/hip/import_gl.c` no longer calls `hipGraphics*`;
+  `core/src/vmafx/egl_export.c` (shared, `internal.h` declarations) exports
+  the textures and `import_gl()` in `core/src/hip/import_frame.c` imports them
+  as a DMABUF frame. `vmafx_hip_gl_map()` / `vmafx_hip_gl_release()`,
+  `VmafxHipGl` and `fill_failed()`'s GL branch are gone; a rebase that
+  brings them back from ADR-2092 takes this side.
+  `test_vmafx_import_hip_contract.py` holds the order (GL sync, GPU check,
+  export, copy only with `VMAFX_IMPORT_ALLOW_COPY`, writers waited).
+- `core/test/test_vmafx_import_hip_gl.c` is EGL, not GLX, and uses the new
+  `core/test/vmafx_egl_test_util.h`, which the SYCL GL test can adopt.
+- The SYCL lane (`rc4/api-wp3-sycl`) has its own EGL export in
+  `core/src/sycl/import_gl.c`: when the lanes merge, fold it onto
+  `egl_export.c` (one implementation, HISS-19).
+- No `libvmaf.h`, ABI, golden-data or FFmpeg patch impact.
+
 ## ADM second viewing distance on Metal (2026-10-09)
 
 - `core/src/feature/metal/integer_adm_metal_host.{c,h}`: new

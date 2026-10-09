@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1349), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1351), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5276,6 +5276,10 @@ Every ADR, one heading each (1349), so the site search finds an ADR by its title
 
 [2126-scorecard-single-maintainer-exceptions](2126-scorecard-single-maintainer-exceptions.md)
 
+## ADR-2132: HIP imports GL textures through EGL dma-buf export; the runtime's GL interop is not used
+
+[2132-hip-gl-textures-through-egl-dmabuf](2132-hip-gl-textures-through-egl-dmabuf.md)
+
 ## ADR-2134: `adm_cm_aim_line_kernel_4` gets its own register budget of 209 for the exact scale-0 angle flag
 
 [2134-cuda-adm-cm-aim-register-budget-angle-flag](2134-cuda-adm-cm-aim-register-budget-angle-flag.md)
@@ -5407,3 +5411,7 @@ Every ADR, one heading each (1349), so the site search finds an ADR by its title
 ## ADR-2795: Integer ADM evaluates two viewing distances in one context
 
 [2795-adm-shared-viewing-distances](2795-adm-shared-viewing-distances.md)
+
+## ADR-2949: `vmaf_picture_wrap` ships with upstream's signature, on `vmafx_frame_wrap_host`, with the fork's plane rules
+
+[2949-picture-wrap-compat-port](2949-picture-wrap-compat-port.md)
