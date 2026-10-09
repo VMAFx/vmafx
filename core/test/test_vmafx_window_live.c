@@ -74,18 +74,14 @@ enum { MAX_WINDOWS = 96, MAX_RING = 32, MAX_FRAMES = 64, MAX_FEATURES = 8 };
 #define MODEL "vmaf_v0.6.1"
 #define AHEAD 12u /* frames of a window submitted ahead */
 
-/* A sanitizer build runs the harness for its races, not its timing: the
- * latency budget is held on builds without one. */
-#if defined(__SANITIZE_THREAD__) || defined(__SANITIZE_ADDRESS__)
-#define TIMED_BUILD 0
-#elif defined(__has_feature)
-#if __has_feature(thread_sanitizer) || __has_feature(address_sanitizer)
-#define TIMED_BUILD 0
+/* The latency budget is held only in a plain optimised build: Meson passes
+ * VMAFX_TIMING_BUILD=0 to a build with coverage counters, a sanitizer or no
+ * optimisation, which runs the harness for everything but its timing
+ * (vmafx_timing_build in core/test/meson.build). */
+#ifndef VMAFX_TIMING_BUILD
+#error "VMAFX_TIMING_BUILD comes from core/test/meson.build"
 #endif
-#endif
-#ifndef TIMED_BUILD
-#define TIMED_BUILD 1
-#endif
+#define TIMED_BUILD VMAFX_TIMING_BUILD
 
 /* How a window of the harness was submitted. */
 enum { SPAN_CLOCK, SPAN_AHEAD, SPAN_AT_FLUSH };

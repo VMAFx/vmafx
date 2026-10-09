@@ -1724,18 +1724,30 @@ test('test_vmafx_live_pacing', test_vmafx_live_pacing, suite : ['fast'])
 # VMAFX_TEST_TIMING=0 (every other check, the budget not held); the
 # `timing` suite runs it with the budget held, alone (`make test-timing`,
 # docs/development/test-suites.md; maintainer decision Q-325).
+#
+# A budget measures the code only in a plain optimised build: coverage
+# counters, a sanitizer or -O0 make it measure the instrumentation (the
+# Coverage Gate failed it on 88fcae5b0). Such a build compiles the harness
+# with the budget off and registers no `timing` test; its `fast` run keeps
+# every other check. test_timing_suite_plain_builds holds this per build.
+vmafx_timing_build = not get_option('b_coverage') \
+    and get_option('b_sanitize') == 'none' \
+    and get_option('optimization') not in ['0', 'g']
 if host_machine.system() == 'linux'
     test_vmafx_window_live = executable('test_vmafx_window_live',
         ['test.c', 'test_vmafx_window_live.c'],
         include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
         link_with : vmafx_static_link,
-        c_args : vmaf_cflags_common + vmafx_test_dirs,
+        c_args : vmaf_cflags_common + vmafx_test_dirs
+                 + ['-DVMAFX_TIMING_BUILD=@0@'.format(vmafx_timing_build ? 1 : 0)],
         dependencies : [math_lib, pthread_dependency, thread_lib, gpu_all_deps],
     )
     test('test_vmafx_window_live', test_vmafx_window_live, suite : ['fast'], timeout : 120,
          is_parallel : false, env : ['VMAFX_TEST_TIMING=0'])
-    test('test_vmafx_window_live_timing', test_vmafx_window_live, suite : ['timing'],
-         timeout : 120, is_parallel : false, env : ['VMAFX_TEST_TIMING=1'])
+    if vmafx_timing_build
+        test('test_vmafx_window_live_timing', test_vmafx_window_live, suite : ['timing'],
+             timeout : 120, is_parallel : false, env : ['VMAFX_TEST_TIMING=1'])
+    endif
     # The harness's windows against the vmaf CLI's per-frame scores of the
     # same pair, pooled with the engine's arithmetic (#2238 acceptance). The
     # values are the subject here; the budget is the `timing` suite's.
@@ -1749,6 +1761,17 @@ if host_machine.system() == 'linux'
         env : ['VMAFX_TEST_TIMING=0'],
     )
 endif
+
+# The `timing` suite exists only in plain optimised builds, and in every
+# plain optimised Linux build (vmafx_timing_build above); read from this
+# build's introspection, with planted cases it must refuse.
+test('test_timing_suite_plain_builds',
+    import('python').find_installation(),
+    args : [files('test_timing_suite_plain_builds.py'), meson.project_build_root(),
+            host_machine.system()],
+    suite : ['fast'],
+    timeout : 30,
+)
 
 foreach vmafx_public_test : ['test_vmafx_model', 'test_vmafx_frame', 'test_vmafx_score',
                              'test_vmafx_provenance', 'test_vmafx_report']

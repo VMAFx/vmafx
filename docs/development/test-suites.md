@@ -124,6 +124,20 @@ two frame periods (33 ms at 60 fps) of the submit of its last frame
   beside them on the job's runner. A merge train or a local gate runs the
   `timing` suite as its own step after the build and the `fast` suite,
   never next to a build or another gate.
+- **`timing` exists only in a plain optimised build.** Coverage counters
+  (`-Db_coverage=true`), a sanitizer (`-Db_sanitize=...`) or a build
+  without optimisation (`--buildtype=debug`, `-Doptimization=0` or `g`)
+  slow the code down, so a budget there measures the instrumentation, not
+  the code. Such a build compiles the harness with the budget off and
+  registers no `timing` test; its `fast` run keeps every other check. The
+  coverage and sanitizer jobs therefore run the harness without the
+  budget, and the release-built CPU legs, the merge train and
+  `make test-timing` on a default (release) build hold it.
+  `test_timing_suite_plain_builds` (`fast`) reads each build's Meson
+  introspection and fails if an instrumented build registers a `timing`
+  test or a plain optimised Linux build lacks
+  `test_vmafx_window_live_timing`. The condition is `vmafx_timing_build` in
+  `core/test/meson.build`.
 
 Nothing is loosened: the budget is the same 33 ms, held in the `timing`
 suite; the `fast` suite drops only the one assertion that depends on the
