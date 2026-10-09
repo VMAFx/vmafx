@@ -24,6 +24,7 @@ import (
 	"github.com/golusoris/golusoris/k8s/health"
 	"github.com/golusoris/golusoris/observability/statuspage"
 
+	"github.com/VMAFx/vmafx/internal/execstub"
 	"github.com/VMAFx/vmafx/internal/oteltest"
 	"github.com/VMAFx/vmafx/pkg/libvmaf"
 	"github.com/VMAFx/vmafx/pkg/observability"
@@ -33,9 +34,7 @@ func TestCheckScorerHost(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	good := filepath.Join(dir, "vmaf")
-	if err := os.WriteFile(good, []byte("#!/bin/sh\n"), 0o755); err != nil { //nolint:gosec // test stub must be executable
-		t.Fatal(err)
-	}
+	execstub.Write(t, good, []byte("#!/bin/sh\n"))
 	plain := filepath.Join(dir, "plain")
 	if err := os.WriteFile(plain, []byte("x"), 0o600); err != nil {
 		t.Fatal(err)

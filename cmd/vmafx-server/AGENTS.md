@@ -147,4 +147,12 @@ Go gRPC + HTTP scoring service. See
     it; stream aggregate gets it from `StreamScorer.Provenance()`
     (`harvestStream`). Contract: `score_contract_test.go`, run by meson
     `test_vmafx_score_contract` (env set by `core/test/run_score_contract.py`;
-    skip without env). Test stubs must print a `provenance` object.
+    skip without env). Test stubs print a `provenance` object (required).
+
+16. **Test stubs via `internal/execstub.Write`** (`*_test.go`): executable
+    stub (fake `vmaf`) written with `execstub.Write`, never
+    `os.WriteFile`. Parallel tests fork during stub write -> child holds
+    stub's write descriptor until child exec -> run fails `text file busy`
+    (ETXTBSY, go.dev/issue/22315). `Write` holds `syscall.ForkLock` for
+    reading across open/write/close. Temp file + rename = no fix (same
+    inode). Guard: `internal/execstub` stress test.

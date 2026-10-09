@@ -19,7 +19,6 @@ package main
 import (
 	"context"
 	"net"
-	"os"
 	"testing"
 	"time"
 
@@ -30,6 +29,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	vmafxv1 "github.com/VMAFx/vmafx/gen/go"
+	"github.com/VMAFx/vmafx/internal/execstub"
 	"github.com/VMAFx/vmafx/internal/oteltest"
 	"github.com/VMAFx/vmafx/pkg/libvmaf"
 	"github.com/VMAFx/vmafx/pkg/observability"
@@ -375,9 +375,7 @@ func TestGRPCScore_ScorerError(t *testing.T) {
 	dir := t.TempDir()
 	stub := dir + "/vmaf"
 	const failScript = "#!/bin/sh\necho 'stub: deliberate scorer failure' >&2\nexit 1\n"
-	if err := os.WriteFile(stub, []byte(failScript), 0o700); err != nil {
-		t.Fatalf("write stub: %v", err)
-	}
+	execstub.Write(t, stub, []byte(failScript))
 	modelDir := writeModelFile(t)
 	scorer, err := libvmaf.New(stub, modelDir)
 	if err != nil {

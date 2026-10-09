@@ -30,6 +30,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/VMAFx/vmafx/internal/execstub"
 	"github.com/VMAFx/vmafx/internal/oteltest"
 	"github.com/VMAFx/vmafx/pkg/libvmaf"
 	"github.com/VMAFx/vmafx/pkg/observability"
@@ -80,9 +81,7 @@ sleep 30
 exit 0
 `
 	scriptPath = filepath.Join(dir, "vmaf")
-	if err := os.WriteFile(scriptPath, []byte(script), 0o700); err != nil {
-		t.Fatalf("writeSleepingVmafStubServer: %v", err)
-	}
+	execstub.Write(t, scriptPath, []byte(script))
 	return scriptPath, pidFile
 }
 

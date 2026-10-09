@@ -32,6 +32,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/VMAFx/vmafx/internal/execstub"
 	"github.com/VMAFx/vmafx/internal/oteltest"
 	"github.com/VMAFx/vmafx/pkg/libvmaf"
 	"github.com/VMAFx/vmafx/pkg/observability"
@@ -148,9 +149,7 @@ func TestScoreInternalServerError(t *testing.T) {
 echo "stub: deliberate failure" >&2
 exit 1
 `
-	if err := os.WriteFile(stub, []byte(script), 0o700); err != nil {
-		t.Fatalf("write stub: %v", err)
-	}
+	execstub.Write(t, stub, []byte(script))
 
 	modelDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(modelDir, "m.json"), []byte("{}"), 0o600); err != nil {

@@ -97,6 +97,19 @@ neither present the test fails and says how to build it. A `vmaf` on `PATH` or
 under `/usr/local/bin` is not consulted, so a stale host binary cannot make a
 test pass or fail for the wrong reason.
 
+A Go test that runs a stub in place of a real tool (a fake `vmaf` that prints a
+canned report, for example) writes it with `execstub.Write` from
+`internal/execstub`, not with `os.WriteFile`. When parallel tests start
+processes while a stub is being written, the forked child holds the stub's
+write descriptor until it reaches its own exec, and Linux refuses to run a
+file that is open for writing: the test fails with `text file busy`
+([go.dev/issue/22315](https://go.dev/issue/22315)). `execstub.Write` holds
+`syscall.ForkLock` while it writes the file, so no process starts in that
+window. Writing to a temporary name and renaming does not help, because the
+child's descriptor refers to the same file. `go test ./internal/execstub/`
+runs 400 write-and-run cycles under concurrent forks and fails on any
+`text file busy`.
+
 `make go-fix` applies the pinned toolchain's source rewrites. Re-run it when
 the tool asks for another pass, then use `make go-fix-check`; CI runs the same
 non-mutating `go fix -diff ./...` check and rejects any remaining patch. The

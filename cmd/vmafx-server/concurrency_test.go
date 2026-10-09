@@ -35,6 +35,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	vmafxv1 "github.com/VMAFx/vmafx/gen/go"
+	"github.com/VMAFx/vmafx/internal/execstub"
 	"github.com/VMAFx/vmafx/internal/oteltest"
 	"github.com/VMAFx/vmafx/pkg/libvmaf"
 	"github.com/VMAFx/vmafx/pkg/observability"
@@ -173,9 +174,7 @@ exit 0
 `, signalDir, signalDir)
 
 	p := filepath.Join(dir, "vmaf")
-	if err := os.WriteFile(p, []byte(script), 0o700); err != nil {
-		t.Fatalf("writeBlockingVmafStub: %v", err)
-	}
+	execstub.Write(t, p, []byte(script))
 	return p
 }
 
