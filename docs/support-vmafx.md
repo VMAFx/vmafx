@@ -24,7 +24,7 @@ The first goal is **$250 a month** for CI and cloud GPU time.
 | --- | --- | --- |
 | [GitHub Sponsors](https://github.com/sponsors/lusoris) | USD (GitHub takes dollars only) | Live |
 | [Ko-fi](https://ko-fi.com/lusoris) | EUR | Live |
-| Patreon | EUR, the same four tiers at 5, 25, 100 and 500 euros | Coming; not live yet |
+| [Patreon](https://www.patreon.com/Lusoris) | EUR, the same four tiers at 5, 25, 100 and 500 euros | Live |
 
 The GitHub profile belongs to the maintainer's personal account (`lusoris`)
 and covers VMAFx and the maintainer's related open-source work. GitHub

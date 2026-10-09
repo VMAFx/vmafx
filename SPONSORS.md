@@ -16,21 +16,20 @@ buys.
   profile belongs to the maintainer's personal account and covers VMAFx and
   the maintainer's related open-source work. GitHub accepts US dollars only.
 - **Ko-fi (EUR):** <https://ko-fi.com/lusoris>.
-- **Patreon (EUR):** a euro Patreon page with the same four tiers (5, 25, 100
-  and 500 euros a month) is coming. It is not live yet; this file is updated
-  when it is.
+- **Patreon (EUR):** <https://www.patreon.com/Lusoris>. The same four tiers
+  in euros; GitHub Sponsors also shows them ("pay through Patreon").
 
 Custom amounts are allowed on GitHub Sponsors.
 
 ## Tiers
 
 <!-- --8<-- [start:tiers] -->
-| Tier | Monthly (USD) | Recognition |
-| --- | --- | --- |
-| Supporter | $5 | Your name or handle in `SPONSORS.md` |
-| Sustainer | $25 | Your name and a link in `SPONSORS.md` and on the documentation site |
-| Company sponsor | $100 | Your logo in the README and on the documentation site |
-| Lead sponsor | $500 | The top-placed logo in the README and on the documentation site, and thanks in every release note |
+| Tier | Monthly (USD) | Monthly (EUR, Patreon) | Recognition |
+| --- | --- | --- | --- |
+| Supporter | $5 | €5 | Your name or handle in `SPONSORS.md` |
+| Sustainer | $25 | €25 | Your name and a link in `SPONSORS.md` and on the documentation site |
+| Company sponsor | $100 | €100 | Your logo in the README and on the documentation site |
+| Lead sponsor | $500 | €500 | The top-placed logo in the README and on the documentation site, and thanks in every release note |
 
 One-time sponsorships of $10 or $50 are thanked in this file for that month.
 <!-- --8<-- [end:tiers] -->

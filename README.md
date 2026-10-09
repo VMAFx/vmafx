@@ -138,8 +138,9 @@ cover coding and numerical-correctness standards; the
 
 VMAFx is free and stays open source. Sponsor it on
 [GitHub Sponsors](https://github.com/sponsors/lusoris) (USD) or
-[Ko-fi](https://ko-fi.com/lusoris) (EUR) to pay for CI and cloud GPU test
-time; a euro Patreon option is coming. Sponsors are thanked by tier in
+[Ko-fi](https://ko-fi.com/lusoris) or
+[Patreon](https://www.patreon.com/Lusoris) (EUR) to pay for CI and cloud GPU
+test time. Sponsors are thanked by tier in
 [SPONSORS.md](SPONSORS.md); [Support VMAFx](docs/support-vmafx.md) explains
 what it pays for.
 
