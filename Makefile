@@ -146,7 +146,7 @@ cythonize-deps: $(VENV_PIP)
 	python-locks-check python-locks-write \
 	preflight \
 	format format-check sec sbom \
-        test-netflix-golden test-netflix-golden-arm64 test-sanitizers test-fast install-hooks hooks-install help \
+        test-netflix-golden test-netflix-golden-arm64 test-sanitizers test-fast test-timing install-hooks hooks-install help \
         upstream-parity upstream-parity-full \
         coverage coverage-html coverage-check assertion-density pr-check ffmpeg-input-contract \
         silent-revert-check
@@ -684,9 +684,16 @@ test-sanitizers:
 	ninja -C build-san
 	$(PYTHON_INTERPRETER) scripts/ci/run_meson_test.py -- -C build-san --print-errorlogs
 
-test-fast: build
+# test-fast: the pre-push gate. test-timing: the wall-clock budgets (the live
+# window harness's two frame periods), one test at a time, alone on an idle
+# host, after the other suites (docs/development/test-suites.md, maintainer
+# decision Q-325). One runner call serves both.
+MESON_SUITE_ARGS_test-fast := --suite=fast
+MESON_SUITE_ARGS_test-timing := --suite=timing --num-processes 1 --print-errorlogs
+
+test-fast test-timing: build
 	PATH="$(VIRTUAL_ENV_ABS):$$PATH" "$(VENV_PYTHON)" scripts/ci/run_meson_test.py \
-	    --meson-executable "$(MESON_EXEC)" -- -C $(BUILD_DIR) --suite=fast
+	    --meson-executable "$(MESON_EXEC)" -- -C $(BUILD_DIR) $(MESON_SUITE_ARGS_$@)
 
 # ============================================================================
 # Coverage gate (docs/principles.md §3 — ≥70% overall, ≥85% security-critical)
@@ -943,6 +950,7 @@ help:
 	@echo "  make upstream-parity-full — the same over every fixture, option variant and model"
 	@echo "  make test-sanitizers  — ASan + UBSan build + run"
 	@echo "  make test-fast        — meson --suite=fast (pre-push gate)"
+	@echo "  make test-timing      — meson --suite=timing, one test at a time (run alone on an idle host)"
 	@echo "  make coverage         — gcov/gcovr line coverage report"
 	@echo "  make coverage-html    — render HTML coverage report"
 	@echo "  make coverage-check   — enforce the local floors (37% overall / 85% critical)"

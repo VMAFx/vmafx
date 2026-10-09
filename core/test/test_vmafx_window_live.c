@@ -24,13 +24,16 @@
  *
  * Holds: every window equals an offline session on the same frames bit for
  * bit; a window whose frames are final per frame completes within two frame
- * periods of its last frame's submit; the textures the library holds never
- * exceed vmafx_context_max_in_flight(), also when the producer is not paced
- * (backpressure); no frame is copied through the host. Run with 0 and 2
- * worker threads. Windows over motion2 / motion3 (and models that read them)
- * complete at the flush: the integer motion extractors derive those for
- * every frame there (motion_window.h, ADR-1478; docs/state.md
- * T-VMAFX-WINDOW-MOTION-AT-FLUSH-2026-10-06).
+ * periods of its last frame's submit (a wall-clock check: held unless
+ * VMAFX_TEST_TIMING is 0; the `timing` suite holds it and runs alone, the
+ * `fast` suite sets 0, and test_vmafx_live_pacing.c checks the pacing and
+ * budget arithmetic of vmafx_live_pacing.h exactly); the textures the
+ * library holds never exceed vmafx_context_max_in_flight(), also when the
+ * producer is not paced (backpressure); no frame is copied through the
+ * host. Run with 0 and 2 worker threads. Windows over motion2 / motion3
+ * (and models that read them) complete at the flush: the integer motion
+ * extractors derive those for every frame there (motion_window.h, ADR-1478;
+ * docs/state.md T-VMAFX-WINDOW-MOTION-AT-FLUSH-2026-10-06).
  *
  * POSIX threads and clocks, the host-copy counter of the static library:
  * Linux only (core/test/meson.build). Fixtures: the Netflix 576x324 pair
@@ -53,6 +56,7 @@
 #include "vmafx/vmafx.h"
 #include "vmafx_fixture_util.h"
 #include "vmafx_import_test_util.h"
+#include "vmafx_live_pacing.h"
 #include "vmafx_test_util.h"
 #include "vmafx_window_test_util.h"
 
@@ -63,8 +67,6 @@
 
 enum { MAX_WINDOWS = 96, MAX_RING = 32, MAX_FRAMES = 64, MAX_FEATURES = 8 };
 
-#define PERIOD_NS 16666667ull       /* 60 frames per second */
-#define BUDGET_NS (2u * PERIOD_NS)  /* a window's latency budget */
 #define WINDOW_S 0.2                /* n_stats: 12 frames at 60 fps */
 #define FENCE_WAIT_NS 1000000000ull /* a texture's release, at most */
 #define POLL_SLEEP_NS 200000u
@@ -75,14 +77,14 @@ enum { MAX_WINDOWS = 96, MAX_RING = 32, MAX_FRAMES = 64, MAX_FEATURES = 8 };
 /* A sanitizer build runs the harness for its races, not its timing: the
  * latency budget is held on builds without one. */
 #if defined(__SANITIZE_THREAD__) || defined(__SANITIZE_ADDRESS__)
-#define TIMED 0
+#define TIMED_BUILD 0
 #elif defined(__has_feature)
 #if __has_feature(thread_sanitizer) || __has_feature(address_sanitizer)
-#define TIMED 0
+#define TIMED_BUILD 0
 #endif
 #endif
-#ifndef TIMED
-#define TIMED 1
+#ifndef TIMED_BUILD
+#define TIMED_BUILD 1
 #endif
 
 /* How a window of the harness was submitted. */
@@ -134,11 +136,32 @@ static uint64_t now_ns(void)
     return (uint64_t)t.tv_sec * 1000000000u + (uint64_t)t.tv_nsec;
 }
 
-static void sleep_until(uint64_t deadline_ns)
+static uint64_t monotonic_now(void *self)
 {
+    (void)self;
+    return now_ns();
+}
+
+static void monotonic_sleep_until(void *self, uint64_t deadline_ns)
+{
+    (void)self;
     const struct timespec t = {.tv_sec = (time_t)(deadline_ns / 1000000000u),
                                .tv_nsec = (long)(deadline_ns % 1000000000u)};
     (void)clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &t, NULL);
+}
+
+/* The harness paces on the monotonic clock; test_vmafx_live_pacing.c runs
+ * the same arithmetic (vmafx_live_pacing.h) on a virtual one. */
+static const VlClock monotonic_clock = {monotonic_now, monotonic_sleep_until, NULL};
+
+/* The wall-clock budget is held in the `timing` suite, which runs alone
+ * (VMAFX_TEST_TIMING=1, the default); the `fast` suite sets
+ * VMAFX_TEST_TIMING=0 and checks everything else (maintainer decision
+ * Q-325). Read through the once-only environment snapshot (ADR-0488). */
+static bool timed(void)
+{
+    const char *const v = vmaf_gpu_dispatch_env_get("VMAFX_TEST_TIMING");
+    return TIMED_BUILD && !(v && v[0] == '0' && v[1] == '\0');
 }
 
 /* ---- Set-up ---------------------------------------------------------------------------- */
@@ -299,7 +322,7 @@ static bool produce_frame(Live *live, unsigned i)
 {
     Slot *const slot = &live->ring[i % live->n_ring];
     if (live->paced) {
-        sleep_until(live->start_ns + i * PERIOD_NS);
+        (void)vl_pace(&monotonic_clock, live->start_ns, i);
     }
     if (!reuse_slot(slot)) {
         return false; /* the library held more textures than the ring */
@@ -416,14 +439,13 @@ static bool final_per_frame(const LiveWindow *w)
  * frame to the poller seeing it complete. */
 static uint64_t latency_of(const Live *live, const LiveWindow *lw)
 {
-    const uint64_t began = live->submitted_ns[lw->last];
-    return lw->done_ns > began ? lw->done_ns - began : 0u;
+    return vl_latency(live->submitted_ns[lw->last], lw->done_ns);
 }
 
 static char *check_windows(const Live *live, VmafxContext *offline)
 {
-    unsigned in_budget = 0;
-    uint64_t worst[2] = {0, 0}; /* clock windows, windows submitted ahead */
+    VlLedger ledger = {{0, 0}, 0, 0}; /* clock windows, windows submitted ahead */
+    const bool budget = timed();
     for (unsigned w = 0; w < live->n_windows; w++) {
         const LiveWindow *const lw = &live->windows[w];
         mu_assert("every window completes", lw->done_ns != 0 && lw->result.status == VMAFX_OK);
@@ -431,19 +453,19 @@ static char *check_windows(const Live *live, VmafxContext *offline)
                   vw_same_as_sync(offline, lw->target, &lw->result));
         if (!lw->at_flush && final_per_frame(lw)) {
             const uint64_t latency = latency_of(live, lw);
-            worst[lw->ahead] = latency > worst[lw->ahead] ? latency : worst[lw->ahead];
+            vl_record(&ledger, lw->ahead, latency);
             mu_assert("within two frame periods of the submit of its last frame",
-                      !TIMED || latency <= BUDGET_NS);
-            in_budget++;
+                      !budget || vl_within_budget(latency));
         }
     }
-    mu_assert("live windows were measured", in_budget >= 8u);
+    mu_assert("live windows were measured", ledger.measured >= 8u);
     (void)fprintf(stderr,
                   "  %u threads %s: %u windows, %u live; worst latency %.2f ms submitted ahead, "
-                  "%.2f ms cut by the clock (one frame later by rule); textures held at most %u of "
-                  "%u\n",
-                  live->n_threads, live->paced ? "paced" : "unpaced", live->n_windows, in_budget,
-                  (double)worst[1] / 1e6, (double)worst[0] / 1e6, live->worst_in_flight,
+                  "%.2f ms cut by the clock (one frame later by rule; budget %s); textures held "
+                  "at most %u of %u\n",
+                  live->n_threads, live->paced ? "paced" : "unpaced", live->n_windows,
+                  ledger.measured, (double)ledger.worst[1] / 1e6, (double)ledger.worst[0] / 1e6,
+                  budget ? "held" : "not held: timing suite", live->worst_in_flight,
                   live->max_in_flight);
     return NULL;
 }
@@ -737,7 +759,7 @@ static char *stall_one(VmafxContext *context, unsigned i, unsigned *pending_at_r
     *pending_at_return += !vw_done(window, &r);
     /* The feeder stalls: no submit, flush or import until the window is in. */
     const bool done =
-        vmafx_window_wait(window, TIMED ? BUDGET_NS : VW_WAIT_NS, &r, NULL) == VMAFX_OK;
+        vmafx_window_wait(window, timed() ? VL_BUDGET_NS : VW_WAIT_NS, &r, NULL) == VMAFX_OK;
     const uint64_t latency = now_ns() - began;
     *worst = latency > *worst ? latency : *worst;
     vmafx_window_release(window);

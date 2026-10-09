@@ -90,6 +90,48 @@ The tooling suite's shell tests expect `git`, `bash`, `cc`, `readelf`,
 Docker is optional: the container-source test runs its Docker-backed cases
 only when `docker info` succeeds.
 
+## Meson suites of the core: `fast` and `timing`
+
+The `core` suite's Meson tests carry Meson suite labels of their own.
+`fast` is the pre-push gate (`make test-fast`) and the merge train's C gate.
+`timing` holds the checks of a wall-clock budget, which hold only when
+nothing else runs on the host. Today that is the live window harness's
+latency budget: a window whose frames are final per frame completes within
+two frame periods (33 ms at 60 fps) of the submit of its last frame
+(`test_vmafx_window_live_timing`).
+
+- **`fast` stays exact on any host load.** It runs the same harness with
+  `VMAFX_TEST_TIMING=0`: every window still equals an offline session bit
+  for bit, the textures the library holds stay within the in-flight bound
+  and no frame is copied through the host, but the wall-clock budget is
+  not asserted. `test_vmafx_live_pacing` checks the pacing and budget
+  arithmetic the harness uses (`core/test/vmafx_live_pacing.h`) on a
+  virtual clock: frames are due on an absolute schedule that an overrun
+  never shifts, a latency runs from the submit of the window's last frame,
+  and two frame periods are within the budget while one nanosecond more is
+  not. It refuses two planted pacing bugs (a pacer that waits one period
+  from now, and a latency taken from a window's first frame).
+- **`timing` runs alone.** Run it after the other suites, one test at a
+  time, on a host that does nothing else:
+
+  ```bash
+  make test-timing
+  python3 scripts/ci/run_meson_test.py -- -C build --suite=timing --num-processes 1
+  ```
+
+  The tests are `is_parallel: false`, so a full `meson test` run (the
+  `Ubuntu gcc` and `Linux Intel LLVM` legs) runs them with no other test
+  beside them on the job's runner. A merge train or a local gate runs the
+  `timing` suite as its own step after the build and the `fast` suite,
+  never next to a build or another gate.
+
+Nothing is loosened: the budget is the same 33 ms, held in the `timing`
+suite; the `fast` suite drops only the one assertion that depends on the
+host being idle (maintainer decision Q-325,
+`T-WINDOW-LIVE-LATENCY-UNDER-LOAD-2026-10-09`). A new check of a wall-clock
+bound goes to `timing` the same way, with its arithmetic tested on a virtual
+clock in `fast`.
+
 ## How a test finds the `vmaf` binary
 
 A Python test that runs the `vmaf` CLI runs the build under test. It takes the

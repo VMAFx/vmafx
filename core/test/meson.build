@@ -1667,10 +1667,25 @@ foreach vmafx_window_test : ['test_vmafx_window', 'test_vmafx_window_clock']
     test(vmafx_window_test, vmafx_window_exe, suite : ['fast'], timeout : 120)
 endforeach
 
+# The pacing and latency arithmetic of the live-plugin harness
+# (vmafx_live_pacing.h) on a virtual clock: exact on any host load, with two
+# planted pacing bugs it must refuse (maintainer decision Q-325).
+test_vmafx_live_pacing = executable('test_vmafx_live_pacing',
+    ['test.c', 'test_vmafx_live_pacing.c'],
+    include_directories : [libvmaf_inc, test_inc],
+)
+test('test_vmafx_live_pacing', test_vmafx_live_pacing, suite : ['fast'])
+
 # RC4 WP4 (#2238): the live-plugin harness: textures imported per frame at
 # 60 fps, windows polled from another thread, latency budget, backpressure,
 # no host copy (the counter of the static library). POSIX clocks and
 # threads: Linux only; the 576x324 fixture pair or exit 77.
+#
+# The latency budget (two frame periods, 33 ms) is a wall-clock check: it
+# holds only on an idle host. The `fast` suite runs the harness with
+# VMAFX_TEST_TIMING=0 (every other check, the budget not held); the
+# `timing` suite runs it with the budget held, alone (`make test-timing`,
+# docs/development/test-suites.md; maintainer decision Q-325).
 if host_machine.system() == 'linux'
     test_vmafx_window_live = executable('test_vmafx_window_live',
         ['test.c', 'test_vmafx_window_live.c'],
@@ -1679,11 +1694,13 @@ if host_machine.system() == 'linux'
         c_args : vmaf_cflags_common + vmafx_test_dirs,
         dependencies : [math_lib, pthread_dependency, thread_lib, gpu_all_deps],
     )
-    # Timed: run alone, not beside other tests (is_parallel).
     test('test_vmafx_window_live', test_vmafx_window_live, suite : ['fast'], timeout : 120,
-         is_parallel : false)
+         is_parallel : false, env : ['VMAFX_TEST_TIMING=0'])
+    test('test_vmafx_window_live_timing', test_vmafx_window_live, suite : ['timing'],
+         timeout : 120, is_parallel : false, env : ['VMAFX_TEST_TIMING=1'])
     # The harness's windows against the vmaf CLI's per-frame scores of the
-    # same pair, pooled with the engine's arithmetic (#2238 acceptance).
+    # same pair, pooled with the engine's arithmetic (#2238 acceptance). The
+    # values are the subject here; the budget is the `timing` suite's.
     test('test_vmafx_window_cli',
         import('python').find_installation(),
         args : [files('test_vmafx_window_cli.py'), test_vmafx_window_live, vmaf,
@@ -1691,6 +1708,7 @@ if host_machine.system() == 'linux'
         suite : ['fast'],
         timeout : 300,
         is_parallel : false,
+        env : ['VMAFX_TEST_TIMING=0'],
     )
 endif
 

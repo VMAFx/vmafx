@@ -823,6 +823,7 @@ core/test/test_vmafx_import_cuda_fence.c
 core/test/test_vmafx_import_cuda_gl.c
 core/test/test_vmafx_import_fence.c
 core/test/test_vmafx_lifetime.c
+core/test/test_vmafx_live_pacing.c
 core/test/test_vmafx_log_routing.c
 core/test/test_vmafx_mcp_absent.c
 core/test/test_vmafx_model.c

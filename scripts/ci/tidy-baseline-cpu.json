@@ -4,7 +4,7 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "cc_version": "gcc-15 (Ubuntu 15.2.0-16ubuntu1) 15.2.0",
-  "tus": 520,
+  "tus": 521,
   "measured_sources": [
     "compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_stat.c",
     "compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_std.c",
@@ -489,6 +489,7 @@
     "core/test/test_vmafx_import_bitexact.c",
     "core/test/test_vmafx_import_fence.c",
     "core/test/test_vmafx_lifetime.c",
+    "core/test/test_vmafx_live_pacing.c",
     "core/test/test_vmafx_log_routing.c",
     "core/test/test_vmafx_mcp_absent.c",
     "core/test/test_vmafx_model.c",
@@ -1267,6 +1268,21 @@
         "measured_sources": {
           "added": [
             "core/test/test_motion_window_incremental.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "b955a21e86b4fd69cb2c89f49fc541de03528c434324e9c772da15dd722c99ca"
+    },
+    {
+      "sources": [
+        "core/test/test_vmafx_live_pacing.c",
+        "core/test/test_vmafx_window_live.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/test/test_vmafx_live_pacing.c"
           ]
         }
       },
