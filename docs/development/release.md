@@ -786,6 +786,30 @@ cosign verify ghcr.io/vmafx/vmafx-node@sha256:DIGEST \
 for every subject before the bundle can reach the release, so a release whose
 provenance does not verify is never published.
 
+#### The signer's owner, not only its name
+
+Every identity above names the organisation by its login, `VMAFx`. GitHub frees
+a login when an organisation is renamed, and whoever takes it next could get a
+certificate with the same name. The signing certificate also records the
+organisation's numeric ID, which a later owner of the name cannot have:
+`288567244`, in Fulcio extension `1.3.6.1.4.1.57264.1.17` (Source Repository
+Owner Identifier). cosign 3.1.3 has no option for that extension;
+`gh attestation verify` reports it, so add this check to any of the
+attestation recipes above:
+
+```bash
+gh attestation verify vmaf --repo VMAFx/vmafx --format json \
+  | jq -e 'all(.[]; .verificationResult.signature.certificate.sourceRepositoryOwnerIdentifier == "288567244")'
+```
+
+`jq -e` exits non-zero when verification fails (no output) or when any
+attestation names another owner. libvmaf's `--tiny-model-verify` checks the same
+ID itself before it runs cosign
+([ADR-2985](../adr/2985-signer-owner-id-binding.md)). Every
+`--certificate-identity-regexp` in these guides is anchored with `^` and `$`:
+cosign searches the identity for the expression, so an unanchored one also
+accepts an identity with text before or after it.
+
 v1.0.0-rc.1 and v1.0.0-rc.2 predate ADR-1356. They carry
 `slsa-github-generator` provenance as `vmafx-build-provenance.intoto.jsonl` and
 `vmaf-mcp-provenance.intoto.jsonl` instead of the `.sigstore.json` bundles and

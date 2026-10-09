@@ -42,6 +42,7 @@ dnn_sources = files(
   'onnx_scan.c',
   'op_allowlist.c',
   'ort_backend.c',
+  'signer_identity.c',
   'tensor_io.c',
   '../compat/path_utf8.c',
 )

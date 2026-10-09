@@ -428,7 +428,10 @@ VMAF_EXPORT const char *vmaf_dnn_session_attached_ep(VmafDnnSession *sess);
  * (T6-9 / ADR-0211). Looks up @p onnx_path's basename in
  * `model/tiny/registry.json` (alongside @p onnx_path unless
  * @p registry_path is non-NULL), reads the entry's `sigstore_bundle`
- * field, and shells out to `cosign verify-blob` via `posix_spawnp(3p)`.
+ * field, checks the bundle's signing certificate (VMAFx's supply-chain
+ * workflow, VMAFx's GitHub owner ID; ADR-2985) and shells out to
+ * `cosign verify-blob` via `posix_spawnp(3p)` on a private copy of the
+ * checked bundle (written under `TMPDIR`, else `/tmp`, and removed).
  *
  * Designed to fail closed: any error short-circuits model load. Wired
  * through the CLI by `--tiny-model-verify`.
@@ -439,7 +442,10 @@ VMAF_EXPORT const char *vmaf_dnn_session_attached_ep(VmafDnnSession *sess);
  *
  * @return 0 on successful verification, -ENOENT on missing registry /
  *         missing bundle / no matching entry, -EACCES when `cosign` is
- *         not on PATH, -EPROTO when cosign exits non-zero, -ENOSYS on
+ *         not on PATH, -EPROTO when the bundle's certificate names another
+ *         identity or owner or cosign exits non-zero, -EFBIG / -EIO /
+ *         -ENOMEM when the bundle cannot be read, another negative errno
+ *         when its private copy cannot be written, -ENOSYS on
  *         Windows (the supply-chain workflow runs on Linux/macOS only),
  *         -EINVAL on a NULL @p onnx_path.
  *

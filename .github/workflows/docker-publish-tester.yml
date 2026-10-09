@@ -550,7 +550,7 @@ jobs:
       - name: Verify what was just signed
         run: |
           cosign verify \
-            --certificate-identity-regexp '^https://github.com/VMAFx/vmafx/\.github/workflows/docker-publish-tester\.yml@refs/(heads/master|tags/v.*)$' \
+            --certificate-identity-regexp '^https://github\.com/VMAFx/vmafx/\.github/workflows/docker-publish-tester\.yml@refs/(heads/master|tags/v[0-9][0-9A-Za-z.+-]*)$' \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.index.outputs.digest }}"
           {
@@ -948,7 +948,7 @@ jobs:
           VENDOR: ${{ matrix.vendor }}
         run: |
           cosign verify \
-            --certificate-identity-regexp '^https://github.com/VMAFx/vmafx/\.github/workflows/docker-publish-tester\.yml@refs/(heads/master|tags/v.*)$' \
+            --certificate-identity-regexp '^https://github\.com/VMAFx/vmafx/\.github/workflows/docker-publish-tester\.yml@refs/(heads/master|tags/v[0-9][0-9A-Za-z.+-]*)$' \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             "${IMAGE}@${DIGEST}"
           {

@@ -4,7 +4,7 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "cc_version": "gcc-15 (Ubuntu 15.2.0-16ubuntu1) 15.2.0",
-  "tus": 524,
+  "tus": 526,
   "measured_sources": [
     "compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_stat.c",
     "compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_std.c",
@@ -40,6 +40,7 @@
     "core/src/dnn/onnx_scan.c",
     "core/src/dnn/op_allowlist.c",
     "core/src/dnn/ort_backend.c",
+    "core/src/dnn/signer_identity.c",
     "core/src/dnn/tensor_io.c",
     "core/src/feature/adm.c",
     "core/src/feature/adm_tools.c",
@@ -220,6 +221,7 @@
     "core/test/dnn/test_onnx_scan.c",
     "core/test/dnn/test_op_allowlist.c",
     "core/test/dnn/test_ort_internals.c",
+    "core/test/dnn/test_signer_identity.c",
     "core/test/dnn/test_tensor_io.c",
     "core/test/dnn/test_tiny_model_verify.c",
     "core/test/dnn/test_transnet_v2_run.c",
@@ -1329,6 +1331,24 @@
         }
       },
       "previous_baseline_sha256": "047ef1ff1424e30ec63c3c56dc2886abd264561c1a8b2d3437aa4463ae4f5d6e"
+    },
+    {
+      "sources": [
+        "core/src/dnn/model_loader.c",
+        "core/src/dnn/signer_identity.c",
+        "core/test/dnn/test_signer_identity.c",
+        "core/test/dnn/test_tiny_model_verify.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/src/dnn/signer_identity.c",
+            "core/test/dnn/test_signer_identity.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "573951d81d80cf2dcc2a1a411e1bb80f8a85f6e4f466ced4b156f13665acb77f"
     }
   ]
 }

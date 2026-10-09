@@ -42,6 +42,7 @@ core/src/dnn/model_loader.c
 core/src/dnn/onnx_scan.c
 core/src/dnn/op_allowlist.c
 core/src/dnn/ort_backend.c
+core/src/dnn/signer_identity.c
 core/src/dnn/tensor_io.c
 core/src/feature/adm.c
 core/src/feature/adm_tools.c
@@ -390,6 +391,7 @@ core/test/dnn/test_onnx_scan.c
 core/test/dnn/test_op_allowlist.c
 core/test/dnn/test_ort_error_injection.c
 core/test/dnn/test_ort_internals.c
+core/test/dnn/test_signer_identity.c
 core/test/dnn/test_tensor_io.c
 core/test/dnn/test_tiny_model_verify.c
 core/test/dnn/test_transnet_v2_run.c

@@ -123,7 +123,7 @@ fails verification:
 ```bash
 cosign verify-blob \
   --bundle u2netp_mirror_v1.onnx.bundle \
-  --certificate-identity-regexp '^https://github\.com/VMAFx/vmafx' \
+  --certificate-identity-regexp '^https://github\.com/VMAFx/vmafx/\.github/workflows/supply-chain\.yml@refs/(heads/master|tags/v[0-9][0-9A-Za-z.+-]*)$' \
   --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
   u2netp_mirror_v1.onnx
 ```

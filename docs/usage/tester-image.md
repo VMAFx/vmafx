@@ -103,6 +103,9 @@ cd .. && rm -rf vmafx-tester-macos-arm64-<VERSION> vmafx-tester-macos-arm64-<VER
 The checksum in step 2 comes from the same place as the archive, so it detects a broken
 download, not a forged one. Two independent checks tie the archive to the repository's
 hosted build. Either needs a tool you may not have; neither is needed to run the bundle.
+To also tie it to VMAFx's GitHub account and not only its name, add the owner-ID
+check from [the signer's owner](../development/release.md#the-signers-owner-not-only-its-name)
+to the `gh attestation verify` line.
 
 ```sh
 # GitHub build provenance (needs the GitHub CLI, `gh`):
@@ -110,7 +113,7 @@ gh attestation verify vmafx-tester-macos-arm64-<VERSION>.tar.xz -R VMAFx/vmafx
 
 # Sigstore keyless signature (needs `cosign`; the .sigstore.json file is next to the archive):
 cosign verify-blob --bundle vmafx-tester-macos-arm64-<VERSION>.tar.xz.sigstore.json \
-  --certificate-identity-regexp '^https://github.com/VMAFx/vmafx/\.github/workflows/macos-tester-bundle\.yml@refs/heads/master$' \
+  --certificate-identity-regexp '^https://github\.com/VMAFx/vmafx/\.github/workflows/macos-tester-bundle\.yml@refs/heads/master$' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   vmafx-tester-macos-arm64-<VERSION>.tar.xz
 
@@ -148,7 +151,7 @@ It cannot reach Metal and SVE2 is not exposed by Apple cores; the report says so
 ```sh
 # 1. Check the signature of the image (needs `cosign`; skip if you do not have it).
 cosign verify \
-  --certificate-identity-regexp '^https://github.com/VMAFx/vmafx/\.github/workflows/docker-publish-tester\.yml@refs/(heads/master|tags/v.*)$' \
+  --certificate-identity-regexp '^https://github\.com/VMAFx/vmafx/\.github/workflows/docker-publish-tester\.yml@refs/(heads/master|tags/v[0-9][0-9A-Za-z.+-]*)$' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   ghcr.io/vmafx/vmafx:<VERSION>-tester
 
@@ -697,6 +700,9 @@ before you run anything from it.
 The checksum in step 2 comes from the same place as the zip, so it detects a broken
 download, not a forged one. Two independent checks tie the zip to the repository's
 hosted build. Either needs a tool you may not have; neither is needed to run the zip.
+To also tie it to VMAFx's GitHub account and not only its name, add the owner-ID
+check from [the signer's owner](../development/release.md#the-signers-owner-not-only-its-name)
+to the `gh attestation verify` line.
 
 ```powershell
 # GitHub build provenance (needs the GitHub CLI, gh):
@@ -704,7 +710,7 @@ gh attestation verify vmafx-tester-windows-<ARCH>-<VERSION>.zip -R VMAFx/vmafx
 
 # Sigstore keyless signature (needs cosign; the .sigstore.json file is next to the zip):
 cosign verify-blob --bundle vmafx-tester-windows-<ARCH>-<VERSION>.zip.sigstore.json `
-  --certificate-identity-regexp '^https://github.com/VMAFx/vmafx/\.github/workflows/windows-tester-bundle\.yml@refs/heads/master$' `
+  --certificate-identity-regexp '^https://github\.com/VMAFx/vmafx/\.github/workflows/windows-tester-bundle\.yml@refs/heads/master$' `
   --certificate-oidc-issuer https://token.actions.githubusercontent.com `
   vmafx-tester-windows-<ARCH>-<VERSION>.zip
 

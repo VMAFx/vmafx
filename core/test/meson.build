@@ -63,6 +63,16 @@ test('test_setup_scripts_configure_hint',
     timeout : 30,
 )
 
+# ADR-2985: every Sigstore identity expression libvmaf passes to cosign or the
+# guides document is anchored, and the library's refuses prefixed, suffixed and
+# look-alike identities.
+test('test_signer_identity_regexp_contract',
+    import('python').find_installation(),
+    args : files('test_signer_identity_regexp_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # Execute the compiler-ID policy that selects strict floating-point flags in
 # src/meson.build. The fixture catches GCC-style flags leaking into MSVC-style
 # drivers without requiring a Windows SDK or Intel compiler on this host.

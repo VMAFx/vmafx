@@ -29,6 +29,7 @@
 #include "test.h"
 
 #include "dnn/model_loader.h"
+#include "signer_fixtures.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
@@ -260,10 +261,10 @@ static char *test_verify_registry_no_slash_in_path(void)
     return NULL;
 }
 
-/* Build a fake `cosign` shell script under <dir>/cosign that exits
- * `exit_code`. Used to exercise the posix_spawnp + waitpid paths
- * without requiring the real Sigstore toolchain. Mode 0700 (owner
- * read/write/exec; CodeQL-clean). */
+/* Build a fake `cosign` shell script under <dir>/cosign that writes its
+ * arguments, one per line, to <dir>/argv.txt and exits `exit_code`. Used to
+ * exercise the posix_spawnp + waitpid paths without requiring the real
+ * Sigstore toolchain. Mode 0700 (owner read/write/exec; CodeQL-clean). */
 static int write_fake_cosign(const char *dir, int exit_code)
 {
     char path[512];
@@ -283,9 +284,9 @@ static int write_fake_cosign(const char *dir, int exit_code)
         (void)close(fd);
         return -1;
     }
-    /* Minimal shebang stub. The fork's verify-blob argv gets ignored
-     * — only the exit code matters for branch coverage. */
-    if (fprintf(f, "#!/bin/sh\nexit %d\n", exit_code) < 0) {
+    /* Minimal shebang stub: record argv for the identity checks, then exit. */
+    if (fprintf(f, "#!/bin/sh\nprintf '%%s\\n' \"$@\" > '%s/argv.txt'\nexit %d\n", dir, exit_code) <
+        0) {
         (void)fclose(f);
         return -1;
     }
@@ -298,25 +299,44 @@ static int write_fake_cosign(const char *dir, int exit_code)
  * run_with_fake_cosign. Extracted so the caller's branch count stays inside
  * the readability-function-size budget: a helper `if (msg) return msg;` is
  * one branch versus the two each mu_assert contributes at the call site. */
-static char *setup_fake_cosign_fixture(char *dir, size_t dir_sz, int exit_code)
+static char *setup_fake_cosign_fixture(char *dir, size_t dir_sz, int exit_code, const char *bundle)
 {
     mu_assert("setup scratch dir",
               setup_scratch_dir(dir, dir_sz, exit_code == 0 ? "cosign_ok" : "cosign_fail") == 0);
-    /* Registry + bundle + onnx all under <dir>. The bundle must be a
-     * regular file (any contents — the fake cosign ignores them). */
+    /* Registry + bundle + onnx all under <dir>. The bundle's signing
+     * certificate is checked before cosign runs (ADR-2985); the fake cosign
+     * ignores the file. */
     const char *reg_body = "{\"models\":[{\"id\":\"k\",\"onnx\":\"k.onnx\",\"sha256\":\"00\","
                            "\"sigstore_bundle\":\"k.onnx.sigstore.json\"}]}";
     mu_assert("write registry", write_in_dir(dir, "registry.json", reg_body) == 0);
-    mu_assert("write bundle", write_in_dir(dir, "k.onnx.sigstore.json", "{}") == 0);
+    mu_assert("write bundle", write_in_dir(dir, "k.onnx.sigstore.json", bundle) == 0);
     mu_assert("write onnx", write_in_dir(dir, "k.onnx", "fake") == 0);
     mu_assert("write fake cosign", write_fake_cosign(dir, exit_code) == 0);
     return NULL;
 }
 
-static char *run_with_fake_cosign(int exit_code, int expected_err)
+/* Read <dir>/argv.txt, the arguments the fake cosign received, into @p out
+ * (empty when cosign never ran). */
+static void read_recorded_argv(const char *dir, char *out, size_t out_sz)
+{
+    char path[512];
+    out[0] = '\0';
+    const int n = snprintf(path, sizeof(path), "%s/argv.txt", dir);
+    if (n < 0 || (size_t)n >= sizeof(path))
+        return;
+    FILE *f = fopen(path, "rb");
+    if (!f)
+        return;
+    const size_t r = fread(out, 1u, out_sz - 1u, f);
+    out[r] = '\0';
+    (void)fclose(f);
+}
+
+static char *run_with_fake_cosign(const char *bundle, int exit_code, int expected_err,
+                                  char *argv_out, size_t argv_sz)
 {
     char dir[256];
-    char *setup_msg = setup_fake_cosign_fixture(dir, sizeof(dir), exit_code);
+    char *setup_msg = setup_fake_cosign_fixture(dir, sizeof(dir), exit_code, bundle);
     if (setup_msg)
         return setup_msg;
 
@@ -338,10 +358,13 @@ static char *run_with_fake_cosign(int exit_code, int expected_err)
 
     /* Restore PATH before assertion so a fail doesn't leak state. */
     (void)setenv("PATH", path_save, 1);
+    if (argv_out)
+        read_recorded_argv(dir, argv_out, argv_sz);
     cleanup_in_dir(dir, "registry.json");
     cleanup_in_dir(dir, "k.onnx.sigstore.json");
     cleanup_in_dir(dir, "k.onnx");
     cleanup_in_dir(dir, "cosign");
+    cleanup_in_dir(dir, "argv.txt");
     (void)rmdir(dir);
 
     mu_assert("verify_signature returned expected status", err == expected_err);
@@ -354,7 +377,7 @@ static char *test_verify_cosign_success(void)
      * locate_cosign() success (lines 513-534), posix_spawnp() success
      * (line 648), waitpid() (line 653), and the WIFEXITED+0 success
      * tail (lines 657-659). */
-    return run_with_fake_cosign(0, 0);
+    return run_with_fake_cosign(k_bundle_release, 0, 0, NULL, 0u);
 }
 
 static char *test_verify_cosign_nonzero_exit(void)
@@ -362,7 +385,51 @@ static char *test_verify_cosign_nonzero_exit(void)
     /* Fake cosign exits 1 -> verify_signature() returns -EPROTO.
      * Exercises the same locate/spawn/wait path plus the failure tail
      * at line 657. */
-    return run_with_fake_cosign(1, -EPROTO);
+    return run_with_fake_cosign(k_bundle_release, 1, -EPROTO, NULL, 0u);
+}
+
+/* ADR-2985: the bundle's certificate must carry VMAFx's owner ID and name
+ * its supply-chain workflow exactly. A cosign that accepts everything (the
+ * stub exits 0) must not make these pass. */
+static char *test_verify_wrong_owner_rejected(void)
+{
+    return run_with_fake_cosign(k_bundle_wrong_owner, 0, -EPROTO, NULL, 0u);
+}
+
+static char *test_verify_prefix_identity_rejected(void)
+{
+    return run_with_fake_cosign(k_bundle_prefix, 0, -EPROTO, NULL, 0u);
+}
+
+static char *test_verify_suffix_identity_rejected(void)
+{
+    return run_with_fake_cosign(k_bundle_suffix, 0, -EPROTO, NULL, 0u);
+}
+
+/* cosign gets the anchored identity regexp and a private copy of the bundle
+ * that was checked, which is gone once verification returns. */
+static char *test_verify_cosign_gets_anchored_identity(void)
+{
+    char argv_seen[4096];
+    char *msg = run_with_fake_cosign(k_bundle_release, 0, 0, argv_seen, sizeof(argv_seen));
+    if (msg)
+        return msg;
+    mu_assert("anchored identity regexp",
+              strstr(argv_seen, "\n^https://github\\.com/VMAFx/vmafx/\\.github/workflows/"
+                                "supply-chain\\.yml@refs/(heads/master|tags/"
+                                "v[0-9][0-9A-Za-z.+-]*)$\n") != NULL);
+    const char *bundle_arg = strstr(argv_seen, "--bundle=");
+    mu_assert("cosign got --bundle", bundle_arg != NULL);
+    const char *copy = bundle_arg + strlen("--bundle=");
+    const char *eol = strchr(copy, '\n');
+    mu_assert("bundle argument ends", eol != NULL);
+    char copy_path[512];
+    const int n = snprintf(copy_path, sizeof(copy_path), "%.*s", (int)(eol - copy), copy);
+    mu_assert("snprintf copy path", n > 0 && (size_t)n < sizeof(copy_path));
+    mu_assert("private copy, not the registry's bundle", strstr(copy_path, "vmafx-bundle-"));
+    struct stat st;
+    mu_assert("private copy removed", stat(copy_path, &st) != 0);
+    return NULL;
 }
 
 /* Scratch-dir + registry + bundle + onnx setup shared by
@@ -591,6 +658,10 @@ char *run_tests(void)
         MU_TEST(test_verify_cosign_not_on_path),
         MU_TEST(test_verify_cosign_success),
         MU_TEST(test_verify_cosign_nonzero_exit),
+        MU_TEST(test_verify_wrong_owner_rejected),
+        MU_TEST(test_verify_prefix_identity_rejected),
+        MU_TEST(test_verify_suffix_identity_rejected),
+        MU_TEST(test_verify_cosign_gets_anchored_identity),
 #else
         MU_TEST(test_verify_windows_returns_enosys),
 #endif

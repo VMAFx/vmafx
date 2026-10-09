@@ -146,17 +146,35 @@ To verify a model by hand before loading it:
 
 ```bash
 cosign verify-blob \
-    --certificate-identity-regexp "https://github.com/VMAFx/vmafx/.github/workflows/supply-chain.yml@.*" \
+    --certificate-identity-regexp '^https://github\.com/VMAFx/vmafx/\.github/workflows/supply-chain\.yml@refs/(heads/master|tags/v[0-9][0-9A-Za-z.+-]*)$' \
     --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
     --bundle model/tiny/vmaf_tiny_v2.onnx.sigstore.json \
     model/tiny/vmaf_tiny_v2.onnx
 ```
 
-The `--tiny-model-verify` flag does the same at load time
-(T6-9, [ADR-0211](../adr/0211-model-registry-sigstore.md)):
+The expression is anchored at both ends (`^` and `$`): cosign searches the
+certificate's identity for it, so an unanchored pattern also accepts an
+identity with anything before or after it.
 
-- It invokes `cosign verify-blob` through `posix_spawnp(3p)` and fails closed
-  when the signature is missing or bad.
+The identity is a name: the organisation's login, `VMAFx`, which GitHub frees
+when an organisation is renamed. The signing certificate also carries the
+organisation's numeric ID, `288567244` (Fulcio extension
+`1.3.6.1.4.1.57264.1.17`), which a later owner of the name cannot have.
+cosign 3.1.3 has no option for it; see
+[the signer's owner](../development/release.md#the-signers-owner-not-only-its-name)
+for the check by hand.
+
+The `--tiny-model-verify` flag does all of this at load time
+(T6-9, [ADR-0211](../adr/0211-model-registry-sigstore.md);
+[ADR-2985](../adr/2985-signer-owner-id-binding.md)):
+
+- It reads the bundle once and refuses it unless it holds exactly one
+  certificate, whose identity matches the expression above and whose owner ID
+  is `288567244`. It then invokes `cosign verify-blob` through
+  `posix_spawnp(3p)` on a private copy of the bytes it checked, with the same
+  anchored expression, and fails closed when the signature is missing or bad.
+  A certificate of any other identity or owner is refused like a bad
+  signature (`-EPROTO`).
 - It is off by default for dev-friendliness and strongly recommended in
   production.
 - It drives `vmaf_dnn_verify_signature()` in

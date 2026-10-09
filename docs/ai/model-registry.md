@@ -121,11 +121,16 @@ The loader runs these steps:
 1. Look up the model's basename in `model/tiny/registry.json` (alongside the
    `.onnx` by default).
 2. Read the entry's `sigstore_bundle` path.
-3. Spawn `cosign verify-blob --bundle=<path> --certificate-identity-regexp …
-   --certificate-oidc-issuer https://token.actions.githubusercontent.com <onnx>`
-   with `posix_spawnp(3p)` and an explicit argv array, no shell.
-4. Refuse to load on a non-zero exit, a missing `cosign`, a missing bundle or a
-   missing registry entry.
+3. Read the bundle and check its one signing certificate: the identity must be
+   the supply-chain workflow on a release tag (or `master`) and the owner ID
+   VMAFx's `288567244` ([security.md](security.md#layer-4-signature-verification-opt-in)).
+4. Spawn `cosign verify-blob` with `--bundle=<private copy>`,
+   `--certificate-identity-regexp …`,
+   `--certificate-oidc-issuer https://token.actions.githubusercontent.com` and
+   the `.onnx` path, through `posix_spawnp(3p)` with an explicit argv array, no
+   shell. The expression is anchored at both ends.
+5. Refuse to load on a non-zero exit, a missing `cosign`, a missing bundle, a
+   missing registry entry, or a certificate of another identity or owner.
 
 The flag is off by default for dev-friendliness; production deployments should
 set it. `cosign` must be on `$PATH`; install a prebuilt binary from the
