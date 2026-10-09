@@ -46,11 +46,15 @@ REPO = Path(__file__).resolve().parents[2]
 SKIP = 77
 TOOL_TIMEOUT_S = 900
 # Package patterns by import path, never as filesystem roots ("./x/..."):
-# controller-tools (v0.22.0, pkg/loader/loader.go) turns a filesystem root into
-# ".<os.PathSeparator>...", and on Windows `go list` reads ".\..." as the one
-# package in that directory. The operator's role then lost every marker of
-# cmd/vmafx-operator/internal/controller and test_crd_generated_current failed
-# on the Windows ARM64 MSVC leg (T-CRD-GENERATE-WINDOWS-RELATIVE-PATTERN-2026-10-09).
+# controller-tools (v0.22.0, LoadRootsWithConfig in pkg/loader/loader.go) makes
+# a relative root absolute with filepath.Abs before it looks for the trailing
+# "...". On Windows filepath.Abs (syscall.FullPath, GetFullPathNameW) drops
+# trailing dots, so "x\..." became "x" and go/packages was asked for ".\." in
+# that directory: only its own package loaded. The operator's role then lost
+# every marker of cmd/vmafx-operator/internal/controller and
+# test_crd_generated_current failed on the Windows ARM64 MSVC leg
+# (T-CRD-GENERATE-WINDOWS-RELATIVE-PATTERN-2026-10-09; upstream
+# kubernetes-sigs/controller-tools#1484, fix proposed in #1485).
 TYPES_PACKAGES = "api/vmafx/v1/..."
 OPERATOR_PACKAGES = "cmd/vmafx-operator/..."
 DEEPCOPY = Path("api/vmafx/v1")

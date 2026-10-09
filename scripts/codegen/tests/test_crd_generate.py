@@ -268,9 +268,10 @@ class CrdGenerateTest(unittest.TestCase):
 
 
 class PackagePatternTest(unittest.TestCase):
-    """controller-gen gets import path patterns: controller-tools turns a
-    filesystem root ("./x/...") into ".<separator>...", which `go list` on
-    Windows reads as one package, and the role lost the controllers' markers."""
+    """controller-gen gets import path patterns. controller-tools makes a
+    filesystem root ("./x/...") absolute with filepath.Abs, which on Windows
+    drops the trailing "...", so only the root directory's package loaded and
+    the role lost the controllers' markers (controller-tools#1484)."""
 
     def test_generate_passes_import_path_patterns(self) -> None:
         calls: list[tuple[str, ...]] = []
