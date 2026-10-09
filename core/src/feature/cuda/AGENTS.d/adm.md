@@ -162,3 +162,13 @@ invariant: Integer ADM options, CPU bits, negative rounding terms, tiny frame sh
   RC7 row wins register back. `test_adm_decouple_recip_cuda` holds flag to CPU's at every int16
   corner and expects 0 mismatches. It also holds `decouple_r_s123()`, `get_best15_from32()` and scale 1-3 flag to CPU's,
   so no function of header is unused in host build (CodeQL `cpp/unused-static-function`).
+- **Two viewing distances (ADR-2795).** `adm_scale0_transform()` /
+  `adm_scale123_transform()` = DWT once per scale; `adm_scale0_weigh()` /
+  `adm_scale123_weigh()` = denominator, CSF, CM, AIM per distance, through
+  `adm_view_buffer()` (second distance's result slots `adm_*_x`, second
+  `RES_BUFFER_SIZE` block of `tmp_res` / `results_host`). Per-distance
+  kernels write only `csf_f` / `i4_csf_f` and result slots; never write
+  DWT band from weigh stage. Host conclusion takes distance as argument
+  (`adm_cm_scale_result()`, `adm_csf_den_scale_result()`), never
+  `s->adm_norm_view_dist`. Merge + names = shared `adm_view_dist.c`.
+  `test_adm_two_views_exact`, `test_adm_merged_registrations_exact` (`==`).

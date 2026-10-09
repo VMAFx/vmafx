@@ -22,7 +22,6 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -30,6 +29,7 @@
 #include "adm_cm_accumulator.h"
 #include "adm_csf_fixed_point.h"
 #include "adm_score.h"
+#include "adm_view_dist.h"
 #include "barten_csf_tools.h"
 #include "compat_builtin.h"
 #include "cpu.h"
@@ -41,7 +41,6 @@
 #include "integer_adm_kernels.h"
 #include "log.h"
 #include "nonfinite_score.h"
-#include "thread_locale.h"
 
 #if ARCH_X86
 #include "x86/adm_avx2.h"
@@ -60,11 +59,6 @@
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
-/* Dictionary-key suffix of the second viewing distance's scores (ADR-2795).
- * The Rust twin (core/src/rust/feature/adm/src/score.rs) files its scores
- * under the same keys; adm_extend_name_dict() maps them to feature names. */
-#define VMAF_ADM_EXTRA_VIEW_KEY_SUFFIX ":nvde"
-
 typedef struct AdmState {
     size_t integer_stride;
     AdmBuffer buf;
@@ -78,7 +72,7 @@ typedef struct AdmState {
     double adm_norm_view_dist;
     /* A second viewing distance evaluated on the same DWT and decouple
      * (Netflix/vmaf cffd5b77d, ADR-2795); 0 = none. Set by the
-     * `adm_norm_view_dist_extra` option or by adm_merge_view_dist(). */
+     * `adm_norm_view_dist_extra` option or by vmaf_adm_merge_view_dist(). */
     double adm_norm_view_dist_extra;
     double adm_noise_weight;
     double adm_min_val;
@@ -1173,85 +1167,6 @@ static int init_buffers(AdmState *s, unsigned w, unsigned h)
     return 0;
 }
 
-/* The scores filed per viewing distance (the debug scores are the primary
- * distance's only), and the dictionary keys of the second distance's. */
-#define ADM_VIEW_SCORE_COUNT 7u
-static const char *const adm_view_names[ADM_VIEW_SCORE_COUNT] = {
-    "VMAF_integer_feature_adm2_score",
-    "VMAF_integer_feature_aim_score",
-    "VMAF_integer_feature_adm3_score",
-    "integer_adm_scale0",
-    "integer_adm_scale1",
-    "integer_adm_scale2",
-    "integer_adm_scale3",
-};
-static const char *const adm_extra_view_keys[ADM_VIEW_SCORE_COUNT] = {
-    "VMAF_integer_feature_adm2_score" VMAF_ADM_EXTRA_VIEW_KEY_SUFFIX,
-    "VMAF_integer_feature_aim_score" VMAF_ADM_EXTRA_VIEW_KEY_SUFFIX,
-    "VMAF_integer_feature_adm3_score" VMAF_ADM_EXTRA_VIEW_KEY_SUFFIX,
-    "integer_adm_scale0" VMAF_ADM_EXTRA_VIEW_KEY_SUFFIX,
-    "integer_adm_scale1" VMAF_ADM_EXTRA_VIEW_KEY_SUFFIX,
-    "integer_adm_scale2" VMAF_ADM_EXTRA_VIEW_KEY_SUFFIX,
-    "integer_adm_scale3" VMAF_ADM_EXTRA_VIEW_KEY_SUFFIX,
-};
-
-/* -EINVAL when the second distance's names are the first's (an equal
- * distance, or one `%g` prints the same): the collector would refuse its
- * scores at the first frame. */
-static int adm_views_named_apart(const VmafFeatureExtractor *fex, const AdmState *primary,
-                                 const AdmState *second)
-{
-    char *a = vmaf_feature_name_from_options(adm_view_names[0], fex->options, primary);
-    char *b = vmaf_feature_name_from_options(adm_view_names[0], fex->options, second);
-    const int err = (a && b) ? (strcmp(a, b) == 0 ? -EINVAL : 0) : -ENOMEM;
-    free(a);
-    free(b);
-    if (err == -EINVAL) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR,
-                 "integer_adm: adm_norm_view_dist_extra (%.17g) gives the feature names of "
-                 "adm_norm_view_dist (%.17g)\n",
-                 second->adm_norm_view_dist, primary->adm_norm_view_dist);
-    }
-    return err;
-}
-
-/**
- * `VmafFeatureExtractor::extend_name_dict` (ADR-2795): with a second viewing
- * distance, map each key of adm_extra_view_keys to the name the feature
- * would have with `adm_norm_view_dist` set to that distance, the name a model
- * trained at it reads. The C extractor and its Rust twin both call this, on
- * their own `priv`, whose head is the option layout of AdmState, so both
- * refuse a second distance named like the first.
- */
-static int adm_extend_name_dict(const VmafFeatureExtractor *fex, VmafDictionary **dict)
-{
-    if (!fex || !fex->priv || !dict) {
-        return -EINVAL;
-    }
-    const AdmState *s = fex->priv;
-    if (adm_view_count(s) < 2u) {
-        return 0;
-    }
-    AdmState view = *s;
-    view.adm_norm_view_dist = s->adm_norm_view_dist_extra;
-    const int apart = adm_views_named_apart(fex, s, &view);
-    if (apart) {
-        return apart;
-    }
-    for (size_t i = 0u; i < ADM_VIEW_SCORE_COUNT; ++i) {
-        char *name = vmaf_feature_name_from_options(adm_view_names[i], fex->options, &view);
-        if (!name) {
-            return -ENOMEM;
-        }
-        const int err = vmaf_dictionary_set(dict, adm_extra_view_keys[i], name, 0);
-        free(name);
-        if (err) {
-            return err;
-        }
-    }
-    return 0;
-}
-
 /**
  * `VmafFeatureExtractor::init` for the integer-ADM feature: bind the stage
  * dispatch (scalar, then SIMD upgrades), allocate the working buffers,
@@ -1288,7 +1203,8 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
         div_lookup_generator();
         s->feature_name_dict =
             vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-        err = s->feature_name_dict ? adm_extend_name_dict(fex, &s->feature_name_dict) : -ENOMEM;
+        err =
+            s->feature_name_dict ? vmaf_adm_extend_name_dict(fex, &s->feature_name_dict) : -ENOMEM;
     }
     if (err) {
         free_buffers(s);
@@ -1299,20 +1215,20 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
 
 /* View 0 files the primary distance's scores (and, with `debug`, the
  * numerators and denominators); view 1 the second distance's, under
- * adm_extra_view_keys. */
+ * vmaf_adm_extra_view_keys. */
 static int emit_adm_scores(const AdmState *s, VmafFeatureCollector *feature_collector,
                            const AdmResult *result, double score_adm3, const double scale_scores[4],
                            unsigned view, unsigned index)
 {
-    const char *const *names = view ? adm_extra_view_keys : adm_view_names;
-    const double view_values[ADM_VIEW_SCORE_COUNT] = {
+    const char *const *names = view ? vmaf_adm_extra_view_keys : vmaf_adm_view_names;
+    const double view_values[VMAF_ADM_VIEW_SCORE_COUNT] = {
         result->score,   result->score_aim, score_adm3,      scale_scores[0],
         scale_scores[1], scale_scores[2],   scale_scores[3],
     };
     VmafNamedScore values[18];
-    for (size_t i = 0u; i < ADM_VIEW_SCORE_COUNT; ++i)
+    for (size_t i = 0u; i < VMAF_ADM_VIEW_SCORE_COUNT; ++i)
         values[i] = (VmafNamedScore){names[i], view_values[i]};
-    size_t value_count = ADM_VIEW_SCORE_COUNT;
+    size_t value_count = VMAF_ADM_VIEW_SCORE_COUNT;
     if (s->debug && view == 0u) {
         static const char *const debug_names[8] = {
             "integer_adm_num_scale0", "integer_adm_den_scale0", "integer_adm_num_scale1",
@@ -1434,76 +1350,6 @@ static const char *provided_features[] = {"VMAF_integer_feature_adm2_score",
                                           "integer_adm_den_scale3",
                                           NULL};
 
-/* Whether two `adm` instances have the same options apart from
- * `adm_norm_view_dist`: their feature names, rendered with the viewing
- * distance set to the default, are equal. The names carry every feature
- * parameter, the basis the registry deduplicates on. Returns 1, 0, or
- * -ENOMEM. */
-static int adm_same_except_view(const VmafFeatureExtractor *a, const VmafFeatureExtractor *b)
-{
-    AdmState va = *(const AdmState *)a->priv;
-    AdmState vb = *(const AdmState *)b->priv;
-    va.adm_norm_view_dist = DEFAULT_ADM_NORM_VIEW_DIST;
-    vb.adm_norm_view_dist = DEFAULT_ADM_NORM_VIEW_DIST;
-    char *name_a = vmaf_feature_name_from_options(a->name, a->options, &va);
-    char *name_b = vmaf_feature_name_from_options(b->name, b->options, &vb);
-    const int same = (name_a && name_b) ? (strcmp(name_a, name_b) == 0) : -ENOMEM;
-    free(name_a);
-    free(name_b);
-    return same;
-}
-
-/* Record the absorbed distance in the context's options, which the worker
- * pool builds its instances from; `%.17g` in the C locale reads back exactly. */
-static int adm_record_extra_view(VmafFeatureExtractorContext *existing, double nvd)
-{
-    char text[32];
-    VmafThreadLocaleState *const locale = vmaf_thread_locale_push_c();
-    const int len = snprintf(text, sizeof(text), "%.17g", nvd);
-    vmaf_thread_locale_pop(locale);
-    if (len < 0 || (size_t)len >= sizeof(text)) {
-        return -EINVAL;
-    }
-    return vmaf_dictionary_set(&existing->opts_dict, "adm_norm_view_dist_extra", text, 0);
-}
-
-/**
- * `VmafFeatureExtractor::merge` (Netflix/vmaf cffd5b77d, ADR-2795): fold an
- * `adm` context that differs from `existing` only in `adm_norm_view_dist`
- * into it as its second viewing distance, so both distances share one DWT
- * and decouple. Declines (0) when `incoming` sets `debug` (its unsuffixed
- * debug scores would be lost) or a second distance of its own, when
- * `adm_skip_aim` (not a feature parameter) differs, or when `existing`
- * already has another second distance. An `incoming` at the distance
- * `existing` already evaluates as its second is absorbed without a change.
- */
-static int adm_merge_view_dist(VmafFeatureExtractorContext *existing,
-                               VmafFeatureExtractorContext *incoming)
-{
-    if (!existing || !incoming || !existing->fex->priv || !incoming->fex->priv) {
-        return 0;
-    }
-    AdmState *e = existing->fex->priv;
-    const AdmState *n = incoming->fex->priv;
-    if (n->debug || adm_view_count(n) > 1u || e->adm_skip_aim != n->adm_skip_aim ||
-        n->adm_norm_view_dist == e->adm_norm_view_dist) {
-        return 0;
-    }
-    const int same = adm_same_except_view(existing->fex, incoming->fex);
-    if (same <= 0) {
-        return same;
-    }
-    if (adm_view_count(e) > 1u) {
-        return n->adm_norm_view_dist == e->adm_norm_view_dist_extra;
-    }
-    const int err = adm_record_extra_view(existing, n->adm_norm_view_dist);
-    if (err) {
-        return err;
-    }
-    e->adm_norm_view_dist_extra = n->adm_norm_view_dist;
-    return 1;
-}
-
 // Registration struct consumed by core/src/feature/feature_extractor.cpp
 // (via the fex-registry table); must retain external linkage.
 // NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
@@ -1515,8 +1361,8 @@ VmafFeatureExtractor vmaf_fex_integer_adm = {
     .close = close_fex,
     .priv_size = sizeof(AdmState),
     .provided_features = provided_features,
-    .merge = adm_merge_view_dist,
-    .extend_name_dict = adm_extend_name_dict,
+    .merge = vmaf_adm_merge_view_dist,
+    .extend_name_dict = vmaf_adm_extend_name_dict,
     /* 16 dispatches per frame (4 scales × 4 stages: DWT + decouple + CSF
      * + reductions). Highest dispatch density of the shipped GPU
      * features — but empirical bench at 576×324 shows DIRECT still beats

@@ -2406,6 +2406,7 @@ libvmaf_feature_sources = [
     feature_src_dir + 'feature_name.cpp',
     feature_src_dir + 'alias.c',
     feature_src_dir + 'integer_adm.c',
+    feature_src_dir + 'adm_view_dist.c',
     feature_src_dir + 'feature_collector.cpp',
     feature_src_dir + 'integer_motion.c',
     feature_src_dir + 'integer_motion_v2.c',

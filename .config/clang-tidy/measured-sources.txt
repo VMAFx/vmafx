@@ -45,6 +45,7 @@ core/src/dnn/ort_backend.c
 core/src/dnn/tensor_io.c
 core/src/feature/adm.c
 core/src/feature/adm_tools.c
+core/src/feature/adm_view_dist.c
 core/src/feature/alias.c
 core/src/feature/arm64/adm_neon.c
 core/src/feature/arm64/cambi_neon.c

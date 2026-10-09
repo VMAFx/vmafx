@@ -1,6 +1,9 @@
 ---
 paths:
+  - core/src/feature/adm_view_dist.c
+  - core/src/feature/adm_view_dist.h
   - core/src/feature/integer_adm.c
+  - core/src/feature/cuda/integer_adm_cuda.c
   - core/src/feature/feature_extractor.h
   - core/src/fex_ctx_vector.cpp
   - core/src/rust/shim/rust_twins.cpp
@@ -19,14 +22,21 @@ invariant: Second ADM distance = one context; transform once per scale, weigh pe
   8/10-bit, scalar + SIMD) catches.
 - **Sums per distance in single-distance order.** `sums[v]` adds scale
   results in scale order, as one extractor alone; never fold distances.
+- **One helper set, option table driven.** `adm_view_dist.c` reads
+  `adm_norm_view_dist`, `adm_norm_view_dist_extra`, `debug`,
+  `adm_skip_aim` by name at each descriptor's own offsets; every ADM
+  descriptor (CPU, Rust twin, `adm_cuda`, later SYCL / HIP / Metal) sets
+  `.merge = vmaf_adm_merge_view_dist`, `.extend_name_dict =
+  vmaf_adm_extend_name_dict`. Never per-extractor copy of merge or name
+  rules.
 - **One dictionary.** Second distance's scores use keys `<base>:nvde`
-  (`VMAF_ADM_EXTRA_VIEW_KEY_SUFFIX`, `adm_extra_view_keys`). Only
-  `adm_extend_name_dict()` maps keys, through `extend_name_dict` hook; C
-  `init()` and Rust twin shim (`twin_init()`) both call hook. Rust
+  (`VMAF_ADM_EXTRA_VIEW_KEY_SUFFIX`, `vmaf_adm_extra_view_keys`). Only
+  `vmaf_adm_extend_name_dict()` maps keys, through `extend_name_dict` hook; C
+  `init()`, twin `init()` and Rust twin shim (`twin_init()`) call hook. Rust
   `score.rs::EXTRA_VIEW_NAMES` repeats keys;
   `test_adm_view_dist_contract.py` pins both. Hook refuses second distance
   whose names equal first's.
-- **Merge rules (`adm_merge_view_dist()`).** Compare feature names with
+- **Merge rules (`vmaf_adm_merge_view_dist()`).** Compare feature names with
   distance neutralised, plus `adm_skip_aim`; decline incoming `debug`
   (unsuffixed debug scores vanish on merge; upstream loses those) or incoming
   second distance; absorb incoming at existing's second distance (upstream
@@ -36,6 +46,9 @@ invariant: Second ADM distance = one context; transform once per scale, weigh pe
 - **Registry (`offer_merge()`).** After dedup only; same extractor name and
   callback; never into initialized context. `adm` and `adm_rust` share
   callback (`add_twin()` copies descriptor); name check keeps both apart.
-- **Twins.** CUDA, SYCL, HIP, Metal `adm` twins lack option until own PR
-  (Q-298 stack); mirror tests record gap that fails once closed. Remove gap
-  in same PR that adds option.
+- **Twins.** `adm_cuda` evaluates both distances (transform once,
+  per-distance kernels into second result block, host conclusion per
+  distance). SYCL, HIP, Metal twins lack option until own PR (Q-298
+  stack); mirror tests record gap that fails once closed. Remove gap in same
+  PR that adds option; add twin's table to `MERGING_TABLES` of
+  `test_adm_view_dist_contract.py`.

@@ -4,7 +4,7 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "cc_version": "gcc-15 (Ubuntu 15.2.0-16ubuntu1) 15.2.0",
-  "tus": 518,
+  "tus": 519,
   "measured_sources": [
     "compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_stat.c",
     "compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_std.c",
@@ -43,6 +43,7 @@
     "core/src/dnn/tensor_io.c",
     "core/src/feature/adm.c",
     "core/src/feature/adm_tools.c",
+    "core/src/feature/adm_view_dist.c",
     "core/src/feature/alias.c",
     "core/src/feature/brisque.c",
     "core/src/feature/cambi.c",
@@ -1231,6 +1232,22 @@
         }
       },
       "previous_baseline_sha256": "90bfcfa1914249dc5bb87d831926d1c81212663f7b974afa060770405fefdcfd"
+    },
+    {
+      "sources": [
+        "core/src/feature/adm_view_dist.c",
+        "core/src/feature/integer_adm.c",
+        "core/test/test_adm_view_merge.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/src/feature/adm_view_dist.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "b955a21e86b4fd69cb2c89f49fc541de03528c434324e9c772da15dd722c99ca"
     }
   ]
 }

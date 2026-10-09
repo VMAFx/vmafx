@@ -51,9 +51,11 @@ CPU_RESULTS = (
     "adm_csf_den_result(&c, accum, s->adm_noise_weight)",
     "i4_adm_csf_den_result(&c, accum, s->adm_noise_weight)",
 )
+# The viewing distance is an argument since the twin evaluates one or two
+# distances per frame (ADR-2795): the launch and the result take the same one.
 CPU_DEN_CONTEXTS = (
-    "adm_csf_den_ctx_init(&c, w, h, s->adm_norm_view_dist",
-    "i4_adm_csf_den_ctx_init(&c, scale, w, h, s->adm_norm_view_dist",
+    "adm_csf_den_ctx_init(&c, w, h, nvd",
+    "i4_adm_csf_den_ctx_init(&c, scale, w, h, nvd",
 )
 SKIP_SCALE0_SEED = "float den_scale = (float)1e-10;"
 DEVICE_LOG2 = re.compile(r"__log2f\s*\(|\blog2f?\s*\(")

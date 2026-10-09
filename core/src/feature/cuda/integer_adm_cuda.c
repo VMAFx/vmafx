@@ -36,6 +36,7 @@
  * feature/integer_adm.h. No separate adm_options.h include is needed here. */
 #include "feature/adm_csf_fixed_point.h"
 #include "feature/adm_score.h"
+#include "feature/adm_view_dist.h"
 #include "feature/barten_csf_tools.h"
 /* The CPU extractor's contexts and result routines: the CSF weights, the
  * border, every rounding shift and the float conclusion of a scale come from
@@ -53,9 +54,12 @@
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
-/* Layout: [adm_cm(12)] [adm_csf_den(12)] [adm_aim_cm(12)] — ADR-0746 */
+/* Layout of one viewing distance: [adm_cm(12)] [adm_csf_den(12)]
+ * [adm_aim_cm(12)] — ADR-0746. tmp_res and results_host hold one such block
+ * per distance (ADR-2795). */
 #define RES_SLOTS_PER_TERM ((size_t)4 * 3) /* 4 scales x 3 bands */
 #define RES_BUFFER_SIZE (RES_SLOTS_PER_TERM * 3)
+#define ADM_VIEWS 2u
 
 typedef struct WarpShift {
     uint32_t shift_cub[3];
@@ -70,6 +74,9 @@ typedef struct AdmStateCuda {
     bool debug;
     double adm_enhn_gain_limit;
     double adm_norm_view_dist;
+    /* A second viewing distance evaluated on the same DWT (Netflix/vmaf
+     * cffd5b77d, ADR-2795); 0 = none. */
+    double adm_norm_view_dist_extra;
     int adm_ref_display_height;
     int adm_csf_mode;
     double adm_csf_scale;
@@ -89,6 +96,11 @@ typedef struct AdmStateCuda {
     /* Engine-scope fence batching opt-in flag (T-GPU-OPT-1, ADR-0242). */
     bool drained;
     VmafDictionary *feature_name_dict;
+    /* Result slots of the second viewing distance: the second RES_BUFFER_SIZE
+     * block of tmp_res. */
+    int64_t *adm_cm_x[4];
+    uint64_t *adm_csf_den_x[4];
+    int64_t *adm_aim_cm_x[4];
 
     // adm_dwt kernels
     CUfunction func_dwt_s123_combined_vert_kernel_0_0_int32_t,
@@ -138,31 +150,44 @@ static inline void *adm_device_ptr(CUdeviceptr dptr)
 }
 
 /**
- * Validate a CSF configuration before claiming device resources. Mirrors
- * `adm_csf_config_check()` in core/src/feature/integer_adm.c so the CPU and
- * this twin reject the same invalid table output. Finite over-range weights
- * are assigned the shared per-scale normalisation exponent later.
+ * Validate a CSF configuration at viewing distance `nvd` before claiming
+ * device resources; init_fex_cuda() checks every distance the instance
+ * evaluates. Mirrors `adm_csf_config_check()` in core/src/feature/integer_adm.c
+ * so the CPU and this twin reject the same invalid table output. Finite
+ * over-range weights are assigned the shared per-scale normalisation exponent
+ * later.
  */
-static int adm_csf_config_check(const AdmStateCuda *s)
+static int adm_csf_config_check(const AdmStateCuda *s, double nvd)
 {
-    const int geom_err =
-        adm_viewing_geometry_check("adm_cuda", s->adm_norm_view_dist, s->adm_ref_display_height);
+    const int geom_err = adm_viewing_geometry_check("adm_cuda", nvd, s->adm_ref_display_height);
     if (geom_err) {
         return geom_err;
     }
 
     for (int scale = 0; scale < 4; ++scale) {
         const AdmCsfFactors f =
-            adm_csf_factors(scale, s->adm_norm_view_dist, s->adm_ref_display_height,
-                            s->adm_csf_mode, s->adm_csf_scale, s->adm_csf_diag_scale);
+            adm_csf_factors(scale, nvd, s->adm_ref_display_height, s->adm_csf_mode,
+                            s->adm_csf_scale, s->adm_csf_diag_scale);
         const float rfactor1[3] = {f.factor1, f.factor1, f.factor2};
-        const int err = adm_csf_check_scale(scale, rfactor1, s->adm_norm_view_dist,
-                                            s->adm_ref_display_height, s->adm_csf_mode);
+        const int err =
+            adm_csf_check_scale(scale, rfactor1, nvd, s->adm_ref_display_height, s->adm_csf_mode);
         if (err) {
             return err;
         }
     }
     return 0;
+}
+
+/* Viewing distances one frame is evaluated at (ADR-2795). */
+static unsigned adm_cuda_views(const AdmStateCuda *s)
+{
+    return (s->adm_norm_view_dist_extra > 0.0) ? 2u : 1u;
+}
+
+/* The viewing distance of `view`: 0 = adm_norm_view_dist, 1 = the extra. */
+static double adm_cuda_view_dist(const AdmStateCuda *s, unsigned view)
+{
+    return view ? s->adm_norm_view_dist_extra : s->adm_norm_view_dist;
 }
 
 static int dwt2_8_device(AdmStateCuda *s, const uint8_t *d_picture, cuda_adm_dwt_band_t *d_dst,
@@ -375,13 +400,14 @@ static int i4_adm_csf_device(AdmStateCuda *s, AdmBufferCuda *buf, int scale, int
 #define ADM_CSF_DEN_THREADS 128
 
 static int adm_csf_den_s123_device(AdmStateCuda *s, AdmBufferCuda *buf, int scale, int w, int h,
-                                   int src_stride, CudaFunctions *cu_f, CUstream c_stream)
+                                   int src_stride, double nvd, CudaFunctions *cu_f,
+                                   CUstream c_stream)
 {
     /* The CPU's context: the border and every rounding shift of
      * adm_csf_den_s123(). */
     I4AdmDenCtx c;
-    i4_adm_csf_den_ctx_init(&c, scale, w, h, s->adm_norm_view_dist, s->adm_ref_display_height,
-                            s->adm_csf_mode, s->adm_csf_scale, s->adm_csf_diag_scale);
+    i4_adm_csf_den_ctx_init(&c, scale, w, h, nvd, s->adm_ref_display_height, s->adm_csf_mode,
+                            s->adm_csf_scale, s->adm_csf_diag_scale);
     const int rows = c.b.bottom - c.b.top;
     if (rows <= 0 || c.b.right <= c.b.left)
         return 0;
@@ -396,13 +422,14 @@ static int adm_csf_den_s123_device(AdmStateCuda *s, AdmBufferCuda *buf, int scal
 }
 
 static int adm_csf_den_scale_device(AdmStateCuda *s, AdmBufferCuda *buf, int w, int h,
-                                    int src_stride, CudaFunctions *cu_f, CUstream c_stream)
+                                    int src_stride, double nvd, CudaFunctions *cu_f,
+                                    CUstream c_stream)
 {
     /* The CPU's context: the border and the rounding shift of
      * adm_csf_den_scale(). */
     AdmDenCtx c;
-    adm_csf_den_ctx_init(&c, w, h, s->adm_norm_view_dist, s->adm_ref_display_height,
-                         s->adm_csf_mode, s->adm_csf_scale, s->adm_csf_diag_scale);
+    adm_csf_den_ctx_init(&c, w, h, nvd, s->adm_ref_display_height, s->adm_csf_mode,
+                         s->adm_csf_scale, s->adm_csf_diag_scale);
     const int rows = c.b.bottom - c.b.top;
     if (rows <= 0 || c.b.right <= c.b.left)
         return 0;
@@ -683,42 +710,40 @@ static int adm_cm_aim_device(AdmStateCuda *s, AdmBufferCuda *buf, int w, int h, 
  * adm_cm_result() / i4_adm_cm_result() on the CPU's own context. The context
  * initialisers only take addresses inside the buffer they are given, so an
  * empty one stands in for the host planes this twin does not have. */
-static float adm_cm_scale_result(const AdmStateCuda *s, const int64_t accum[3], int w, int h,
-                                 int scale, double noise_weight)
+static float adm_cm_scale_result(const AdmStateCuda *s, double nvd, const int64_t accum[3], int w,
+                                 int h, int scale, double noise_weight)
 {
     AdmBuffer no_planes;
     memset(&no_planes, 0, sizeof(no_planes));
     const AdmCmBounds bd = adm_cm_bounds(w, h);
     if (scale == 0) {
         AdmCmCtx c;
-        adm_cm_ctx_init(&c, &no_planes, w, h, 0, 0, s->adm_norm_view_dist,
-                        s->adm_ref_display_height, s->adm_csf_mode, s->adm_csf_scale,
-                        s->adm_csf_diag_scale, false);
+        adm_cm_ctx_init(&c, &no_planes, w, h, 0, 0, nvd, s->adm_ref_display_height, s->adm_csf_mode,
+                        s->adm_csf_scale, s->adm_csf_diag_scale, false);
         /* The device sums modulo 2^64 into int64 storage; the scale-0 sum is
          * unsigned (adm_cm_round_row_total_s0()). */
         const uint64_t s0_accum[3] = {(uint64_t)accum[0], (uint64_t)accum[1], (uint64_t)accum[2]};
         return adm_cm_result(&c, &bd, s0_accum, noise_weight, s->adm_p_norm);
     }
     I4AdmCmCtx c;
-    i4_adm_cm_ctx_init(&c, &no_planes, w, h, 0, 0, scale, s->adm_norm_view_dist,
-                       s->adm_ref_display_height, s->adm_csf_mode, s->adm_csf_scale,
-                       s->adm_csf_diag_scale, false);
+    i4_adm_cm_ctx_init(&c, &no_planes, w, h, 0, 0, scale, nvd, s->adm_ref_display_height,
+                       s->adm_csf_mode, s->adm_csf_scale, s->adm_csf_diag_scale, false);
     return i4_adm_cm_result(&c, &bd, accum, noise_weight, s->adm_p_norm);
 }
 
 /* The denominator of one scale: adm_csf_den_result() / i4_adm_csf_den_result(). */
-static float adm_csf_den_scale_result(const AdmStateCuda *s, const uint64_t accum[3], int w, int h,
-                                      int scale)
+static float adm_csf_den_scale_result(const AdmStateCuda *s, double nvd, const uint64_t accum[3],
+                                      int w, int h, int scale)
 {
     if (scale == 0) {
         AdmDenCtx c;
-        adm_csf_den_ctx_init(&c, w, h, s->adm_norm_view_dist, s->adm_ref_display_height,
-                             s->adm_csf_mode, s->adm_csf_scale, s->adm_csf_diag_scale);
+        adm_csf_den_ctx_init(&c, w, h, nvd, s->adm_ref_display_height, s->adm_csf_mode,
+                             s->adm_csf_scale, s->adm_csf_diag_scale);
         return adm_csf_den_result(&c, accum, s->adm_noise_weight);
     }
     I4AdmDenCtx c;
-    i4_adm_csf_den_ctx_init(&c, scale, w, h, s->adm_norm_view_dist, s->adm_ref_display_height,
-                            s->adm_csf_mode, s->adm_csf_scale, s->adm_csf_diag_scale);
+    i4_adm_csf_den_ctx_init(&c, scale, w, h, nvd, s->adm_ref_display_height, s->adm_csf_mode,
+                            s->adm_csf_scale, s->adm_csf_diag_scale);
     return i4_adm_csf_den_result(&c, accum, s->adm_noise_weight);
 }
 
@@ -785,6 +810,20 @@ static const VmafOption options_cuda[] = {
         .min = 0.75,
         .max = 24.0,
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+    },
+    {
+        /* Not a feature parameter: the scores of this distance are filed
+         * under the names its own `adm_norm_view_dist` would give them. */
+        .name = "adm_norm_view_dist_extra",
+        .alias = "nvde",
+        .help = "second normalized viewing distance; when > 0, ADM is also evaluated at it "
+                "from the same DWT and decouple, and its scores carry that distance's nvd "
+                "suffix",
+        .offset = offsetof(AdmStateCuda, adm_norm_view_dist_extra),
+        .type = VMAF_OPT_TYPE_DOUBLE,
+        .default_val.d = 0.0,
+        .min = 0.0,
+        .max = 24.0,
     },
     {
         .name = "adm_ref_display_height",
@@ -863,7 +902,14 @@ typedef struct write_score_parameters_adm {
     VmafFeatureCollector *feature_collector;
     AdmStateCuda *s;
     unsigned index, h, w;
+    unsigned view; /* 0: adm_norm_view_dist, 1: adm_norm_view_dist_extra */
 } write_score_parameters_adm;
+
+/* The read-back result block of `view`. */
+static const int64_t *adm_view_results(const AdmStateCuda *s, unsigned view)
+{
+    return &((const int64_t *)s->buf.results_host)[(size_t)view * RES_BUFFER_SIZE];
+}
 
 /* Per-scale DLM numerator / denominator ([2 * scale] / [2 * scale + 1]) and
  * their sums over the scales that count towards the score. */
@@ -873,11 +919,14 @@ typedef struct AdmDlmTerms {
     double den;
 } AdmDlmTerms;
 
-static void adm_dlm_terms(const AdmStateCuda *s, unsigned w, unsigned h, AdmDlmTerms *t)
+static void adm_dlm_terms(const AdmStateCuda *s, unsigned view, unsigned w, unsigned h,
+                          AdmDlmTerms *t)
 {
-    const int64_t *adm_cm = (const int64_t *)s->buf.results_host;
-    /* adm_csf_den starts at slot 12 (4 scales × 3 bands). */
-    const uint64_t *adm_csf = &((const uint64_t *)s->buf.results_host)[RES_SLOTS_PER_TERM];
+    const int64_t *adm_cm = adm_view_results(s, view);
+    /* adm_csf_den starts at slot 12 (4 scales × 3 bands); the device sums it
+     * as uint64. */
+    const uint64_t *adm_csf = (const uint64_t *)&adm_cm[RES_SLOTS_PER_TERM];
+    const double nvd = adm_cuda_view_dist(s, view);
 
     t->num = 0;
     t->den = 0;
@@ -894,9 +943,10 @@ static void adm_dlm_terms(const AdmStateCuda *s, unsigned w, unsigned h, AdmDlmT
         float num_scale = 0.0f;
         float den_scale = (float)1e-10;
         if (scale != 0u || !s->adm_skip_scale0) {
-            num_scale = adm_cm_scale_result(s, &adm_cm[slot], (int)w, (int)h, (int)scale,
+            num_scale = adm_cm_scale_result(s, nvd, &adm_cm[slot], (int)w, (int)h, (int)scale,
                                             s->adm_noise_weight);
-            den_scale = adm_csf_den_scale_result(s, &adm_csf[slot], (int)w, (int)h, (int)scale);
+            den_scale =
+                adm_csf_den_scale_result(s, nvd, &adm_csf[slot], (int)w, (int)h, (int)scale);
         }
 
         t->num += num_scale;
@@ -909,18 +959,19 @@ static void adm_dlm_terms(const AdmStateCuda *s, unsigned w, unsigned h, AdmDlmT
 
 /* AIM numerator over the scales that count towards the score (ADR-0746),
  * from the full-frame size `w` x `h`. AIM uses noise_weight = 0. */
-static double adm_aim_num(const AdmStateCuda *s, unsigned w, unsigned h)
+static double adm_aim_num(const AdmStateCuda *s, unsigned view, unsigned w, unsigned h)
 {
     /* adm_aim_cm starts at slot 24. */
-    const int64_t *adm_aim_cm = &((const int64_t *)s->buf.results_host)[RES_SLOTS_PER_TERM * 2];
+    const int64_t *adm_aim_cm = &adm_view_results(s, view)[RES_SLOTS_PER_TERM * 2];
+    const double nvd = adm_cuda_view_dist(s, view);
 
     double aim_num = 0.0;
     for (unsigned scale = 0; scale < 4; ++scale) {
         w = (w + 1) / 2;
         h = (h + 1) / 2;
         /* noise_weight = 0 for AIM, as integer_adm.c passes it. */
-        const float aim_num_scale =
-            adm_cm_scale_result(s, &adm_aim_cm[(size_t)scale * 3], (int)w, (int)h, (int)scale, 0.0);
+        const float aim_num_scale = adm_cm_scale_result(s, nvd, &adm_aim_cm[(size_t)scale * 3],
+                                                        (int)w, (int)h, (int)scale, 0.0);
         if (scale == 0u && s->adm_skip_scale0) {
             continue;
         }
@@ -934,17 +985,19 @@ static int emit_adm_scores(const write_score_parameters_adm *params, const AdmDl
                            const double scale_scores[4])
 {
     const AdmStateCuda *s = params->s;
-    VmafNamedScore values[18] = {
-        {"VMAF_integer_feature_adm2_score", score},
-        {"VMAF_integer_feature_aim_score", score_aim},
-        {"VMAF_integer_feature_adm3_score", score_adm3},
-        {"integer_adm_scale0", scale_scores[0]},
-        {"integer_adm_scale1", scale_scores[1]},
-        {"integer_adm_scale2", scale_scores[2]},
-        {"integer_adm_scale3", scale_scores[3]},
+    /* View 1 files the second distance's seven scores under the keys the
+     * dictionary maps to that distance's names (ADR-2795); the debug scores
+     * are the first distance's only, as on the CPU. */
+    const char *const *names = params->view ? vmaf_adm_extra_view_keys : vmaf_adm_view_names;
+    const double view_values[VMAF_ADM_VIEW_SCORE_COUNT] = {
+        score,           score_aim,       score_adm3,      scale_scores[0],
+        scale_scores[1], scale_scores[2], scale_scores[3],
     };
-    size_t value_count = 7u;
-    if (s->debug) {
+    VmafNamedScore values[18];
+    for (size_t i = 0u; i < VMAF_ADM_VIEW_SCORE_COUNT; ++i)
+        values[i] = (VmafNamedScore){names[i], view_values[i]};
+    size_t value_count = VMAF_ADM_VIEW_SCORE_COUNT;
+    if (s->debug && params->view == 0u) {
         static const char *const debug_names[8] = {
             "integer_adm_num_scale0", "integer_adm_den_scale0", "integer_adm_num_scale1",
             "integer_adm_den_scale1", "integer_adm_num_scale2", "integer_adm_den_scale2",
@@ -960,12 +1013,12 @@ static int emit_adm_scores(const write_score_parameters_adm *params, const AdmDl
                                            "integer_adm_cuda", values, value_count, params->index);
 }
 
-static int write_scores(write_score_parameters_adm *params)
+static int write_view_scores(write_score_parameters_adm *params)
 {
     const AdmStateCuda *s = params->s;
 
     AdmDlmTerms t;
-    adm_dlm_terms(s, params->w, params->h, &t);
+    adm_dlm_terms(s, params->view, params->w, params->h, &t);
 
     /* CPU parity (integer_adm.c::integer_compute_adm): the precision floor
      * scales with the FULL-FRAME area, not the scale-3 area the per-scale
@@ -986,7 +1039,7 @@ static int write_scores(write_score_parameters_adm *params)
     /* AIM score (ADR-0746): compute aim_num over 4 scales, normalize by den. */
     double aim_num = 0.0;
     if (!s->adm_skip_aim) {
-        aim_num = adm_aim_num(s, params->w, params->h);
+        aim_num = adm_aim_num(s, params->view, params->w, params->h);
     }
     const double aggregate_pairs[4] = {t.num, t.den, aim_num, t.den};
     double aggregate_ratios[2];
@@ -1013,6 +1066,18 @@ static int write_scores(write_score_parameters_adm *params)
         return err;
 
     return emit_adm_scores(params, &t, score, score_aim, score_adm3, scale_scores);
+}
+
+/* Every viewing distance's scores, the first distance's first, as the CPU
+ * files them. */
+static int write_scores(write_score_parameters_adm *params)
+{
+    int err = 0;
+    for (unsigned v = 0; v < adm_cuda_views(params->s) && !err; ++v) {
+        params->view = v;
+        err = write_view_scores(params);
+    }
+    return err;
 }
 
 /* Fixed-point kernel parameters of one frame. The CSF weights are the CPU's
@@ -1120,44 +1185,63 @@ static int adm_wait_for_pictures(VmafFeatureExtractor *fex, AdmStateCuda *s, Vma
     return 0;
 }
 
-/* Scale 0 (int16 pipeline) of a `w` x `h` frame: DWT on the picture
- * streams, then CSF denominator, CSF, DLM CM and AIM CM on the fex stream. */
-static int adm_scale0_device(VmafFeatureExtractor *fex, AdmStateCuda *s, VmafPicture *ref_pic,
-                             VmafPicture *dis_pic, AdmBufferCuda *buf, AdmFixedParametersCuda *p,
-                             int w, int h, size_t ref_stride, size_t dis_stride, size_t buf_stride)
+/* The DWT does not depend on the viewing distance; the denominator, CSF and
+ * contrast-masking kernels do (they decouple inline from the DWT bands). A
+ * frame runs the DWT once per scale and the rest once per distance, each
+ * distance into its own result block (Netflix/vmaf cffd5b77d, ADR-2795). The
+ * kernels of one distance write only csf_f and their result slots, so the
+ * next distance reads the DWT bands the transform left. */
+
+/* `buf` with the result slots of `view`. */
+static AdmBufferCuda adm_view_buffer(const AdmStateCuda *s, unsigned view)
 {
-    CudaFunctions *cu_f = fex->cu_state->f;
+    AdmBufferCuda vb = s->buf;
+    for (unsigned scale = 0; view && scale < 4u; ++scale) {
+        vb.adm_cm[scale] = s->adm_cm_x[scale];
+        vb.adm_csf_den[scale] = s->adm_csf_den_x[scale];
+        vb.adm_aim_cm[scale] = s->adm_aim_cm_x[scale];
+    }
+    return vb;
+}
 
-    int err = adm_dwt2_scale0(s, buf, ref_pic, dis_pic, p, w, h, ref_stride, dis_stride, buf_stride,
-                              cu_f);
+/* Scale 0 (int16 pipeline) of a `w` x `h` frame, distance-independent half:
+ * the DWT on the picture streams, then the fex stream waits for it. */
+static int adm_scale0_transform(VmafFeatureExtractor *fex, AdmStateCuda *s, VmafPicture *ref_pic,
+                                VmafPicture *dis_pic, AdmFixedParametersCuda *p, int w, int h,
+                                size_t ref_stride, size_t dis_stride, size_t buf_stride)
+{
+    const int err = adm_dwt2_scale0(s, &s->buf, ref_pic, dis_pic, p, w, h, ref_stride, dis_stride,
+                                    buf_stride, fex->cu_state->f);
     if (err) {
         return err;
     }
-    err = adm_wait_for_pictures(fex, s, ref_pic, dis_pic);
-    if (err) {
-        return err;
-    }
+    return adm_wait_for_pictures(fex, s, ref_pic, dis_pic);
+}
 
-    w = (w + 1) / 2;
-    h = (h + 1) / 2;
-
+/* Scale 0 at one viewing distance on the fex stream, from the scale's
+ * `w2` x `h2` bands: CSF denominator, CSF, DLM CM and AIM CM into `vb`'s
+ * result slots. */
+static int adm_scale0_weigh(AdmStateCuda *s, AdmBufferCuda *vb, AdmFixedParametersCuda *p, int w2,
+                            int h2, size_t buf_stride, CudaFunctions *cu_f)
+{
     // consumes buf->ref_dwt2
     // produces buf->adm_csf_den[0]
-    err = adm_csf_den_scale_device(s, buf, w, h, (int)buf_stride, cu_f, s->str);
+    int err = adm_csf_den_scale_device(s, vb, w2, h2, (int)buf_stride, p->adm_norm_view_dist, cu_f,
+                                       s->str);
     if (err) {
         return err;
     }
 
     // consumes buf->ref_dwt2 , buf->dis_dwt2 (inline decouple)
     // produces buf->csf_f
-    err = adm_csf_device(s, buf, w, h, (int)buf_stride, p, cu_f, s->str);
+    err = adm_csf_device(s, vb, w2, h2, (int)buf_stride, p, cu_f, s->str);
     if (err) {
         return err;
     }
 
     // consumes buf->ref_dwt2, buf->dis_dwt2, buf->csf_f (inline decouple + csf_a)
     // produces buf->adm_cm[0]
-    err = adm_cm_device(s, buf, w, h, (int)buf_stride, (int)buf_stride, p, cu_f, s->str);
+    err = adm_cm_device(s, vb, w2, h2, (int)buf_stride, (int)buf_stride, p, cu_f, s->str);
     if (err) {
         return err;
     }
@@ -1165,52 +1249,54 @@ static int adm_scale0_device(VmafFeatureExtractor *fex, AdmStateCuda *s, VmafPic
     // AIM CM scale 0: consumes ref_dwt2, dis_dwt2 (inline decouple, no csf_f)
     // produces buf->adm_aim_cm[0]
     if (!s->adm_skip_aim) {
-        err = adm_cm_aim_device(s, buf, w, h, (int)buf_stride, (int)buf_stride, p, cu_f, s->str);
+        err = adm_cm_aim_device(s, vb, w2, h2, (int)buf_stride, (int)buf_stride, p, cu_f, s->str);
     }
     return err;
 }
 
-/* Scale 1, 2 or 3 (int32 pipeline) on the fex stream, from the previous
- * scale's `w` x `h` LL band. */
-static int adm_scale123_device(AdmStateCuda *s, AdmBufferCuda *buf, AdmFixedParametersCuda *p,
-                               int scale, int w, int h, size_t buf_stride, CudaFunctions *cu_f)
+/* Scale 1, 2 or 3 (int32 pipeline) on the fex stream, distance-independent
+ * half: the DWT of the previous scale's `w` x `h` LL band. */
+static int adm_scale123_transform(AdmStateCuda *s, AdmFixedParametersCuda *p, int scale, int w,
+                                  int h, size_t buf_stride, CudaFunctions *cu_f)
 {
+    AdmBufferCuda *buf = &s->buf;
     // consumes buf->i4_ref_dwt2.band_a , buf->i4_dis_dwt2.band_a
     // produces buf->i4_ref_dwt2.band_[ahvd] , buf->i4_dis_dwt2.band_[ahvd]
     // uses buf->tmp_ref
-    int err = adm_dwt2_s123_combined_device(
+    const int err = adm_dwt2_s123_combined_device(
         s, buf->i4_ref_dwt2.band_a, adm_device_ptr(buf->tmp_ref->data), buf->i4_ref_dwt2, w, h,
         (int)buf_stride, (int)buf_stride, scale, p, cu_f, s->str);
     if (err) {
         return err;
     }
-    err = adm_dwt2_s123_combined_device(s, buf->i4_dis_dwt2.band_a,
-                                        adm_device_ptr(buf->tmp_dis->data), buf->i4_dis_dwt2, w, h,
-                                        (int)buf_stride, (int)buf_stride, scale, p, cu_f, s->str);
-    if (err) {
-        return err;
-    }
+    return adm_dwt2_s123_combined_device(s, buf->i4_dis_dwt2.band_a,
+                                         adm_device_ptr(buf->tmp_dis->data), buf->i4_dis_dwt2, w, h,
+                                         (int)buf_stride, (int)buf_stride, scale, p, cu_f, s->str);
+}
 
-    w = (w + 1) / 2;
-    h = (h + 1) / 2;
-
+/* Scale 1, 2 or 3 at one viewing distance, from the scale's `w2` x `h2`
+ * bands, into `vb`'s result slots. */
+static int adm_scale123_weigh(AdmStateCuda *s, AdmBufferCuda *vb, AdmFixedParametersCuda *p,
+                              int scale, int w2, int h2, size_t buf_stride, CudaFunctions *cu_f)
+{
     // consumes buf->i4_ref_dwt2
     // produces buf->adm_csf_den[1,2,3]
-    err = adm_csf_den_s123_device(s, buf, scale, w, h, (int)buf_stride, cu_f, s->str);
+    int err = adm_csf_den_s123_device(s, vb, scale, w2, h2, (int)buf_stride, p->adm_norm_view_dist,
+                                      cu_f, s->str);
     if (err) {
         return err;
     }
 
     // consumes buf->i4_ref_dwt2 , buf->i4_dis_dwt2 (inline decouple)
     // produces buf->i4_csf_f
-    err = i4_adm_csf_device(s, buf, scale, w, h, (int)buf_stride, p, cu_f, s->str);
+    err = i4_adm_csf_device(s, vb, scale, w2, h2, (int)buf_stride, p, cu_f, s->str);
     if (err) {
         return err;
     }
 
     // consumes buf->i4_ref_dwt2, buf->i4_dis_dwt2, buf->i4_csf_f (inline decouple + csf_a)
     // produces buf->adm_cm[1,2,3]
-    err = i4_adm_cm_device(s, buf, w, h, (int)buf_stride, (int)buf_stride, scale, p, cu_f, s->str);
+    err = i4_adm_cm_device(s, vb, w2, h2, (int)buf_stride, (int)buf_stride, scale, p, cu_f, s->str);
     if (err) {
         return err;
     }
@@ -1218,57 +1304,73 @@ static int adm_scale123_device(AdmStateCuda *s, AdmBufferCuda *buf, AdmFixedPara
     // AIM CM scales 1-3: consumes i4_ref_dwt2, i4_dis_dwt2 (fully inline)
     // produces buf->adm_aim_cm[1,2,3]
     if (!s->adm_skip_aim) {
-        err = i4_adm_cm_aim_device(s, buf, w, h, (int)buf_stride, (int)buf_stride, scale, p, cu_f,
+        err = i4_adm_cm_aim_device(s, vb, w2, h2, (int)buf_stride, (int)buf_stride, scale, p, cu_f,
                                    s->str);
     }
     return err;
 }
 
+/* The distance-dependent half of `scale` for every viewing distance. */
+static int adm_weigh_views(AdmStateCuda *s, AdmFixedParametersCuda p[ADM_VIEWS], int scale, int w2,
+                           int h2, size_t buf_stride, CudaFunctions *cu_f)
+{
+    int err = 0;
+    for (unsigned v = 0; v < adm_cuda_views(s) && !err; ++v) {
+        AdmBufferCuda vb = adm_view_buffer(s, v);
+        err = scale == 0 ? adm_scale0_weigh(s, &vb, &p[v], w2, h2, buf_stride, cu_f) :
+                           adm_scale123_weigh(s, &vb, &p[v], scale, w2, h2, buf_stride, cu_f);
+    }
+    return err;
+}
+
+/* Source-plane strides of the pictures in elements. */
+static void adm_picture_strides(const VmafPicture *ref_pic, const VmafPicture *dis_pic,
+                                size_t *ref_stride, size_t *dis_stride)
+{
+    const unsigned shift = (ref_pic->bpc == 8) ? 0u : 1u;
+    *ref_stride = ref_pic->stride[0] >> shift;
+    *dis_stride = dis_pic->stride[0] >> shift;
+}
+
 static int integer_compute_adm_cuda(VmafFeatureExtractor *fex, AdmStateCuda *s,
-                                    VmafPicture *ref_pic, VmafPicture *dis_pic, AdmBufferCuda *buf,
-                                    double adm_enhn_gain_limit, double adm_norm_view_dist,
-                                    int adm_ref_display_height)
+                                    VmafPicture *ref_pic, VmafPicture *dis_pic)
 {
     CudaFunctions *cu_f = fex->cu_state->f;
     int w = ref_pic->w[0];
     int h = ref_pic->h[0];
+    const unsigned views = adm_cuda_views(s);
 
-    AdmFixedParametersCuda p = adm_fixed_parameters(s, w, h, adm_enhn_gain_limit,
-                                                    adm_norm_view_dist, adm_ref_display_height);
-    CHECK_CUDA_RETURN(
-        cu_f, cuMemsetD8Async(buf->tmp_res->data, 0, sizeof(int64_t) * RES_BUFFER_SIZE, s->str));
+    AdmFixedParametersCuda p[ADM_VIEWS];
+    for (unsigned v = 0; v < views; ++v) {
+        p[v] = adm_fixed_parameters(s, w, h, s->adm_enhn_gain_limit, adm_cuda_view_dist(s, v),
+                                    s->adm_ref_display_height);
+    }
+    CHECK_CUDA_RETURN(cu_f, cuMemsetD8Async(s->buf.tmp_res->data, 0,
+                                            sizeof(int64_t) * RES_BUFFER_SIZE * views, s->str));
 
     size_t curr_ref_stride;
     size_t curr_dis_stride;
-    const size_t buf_stride = buf->ind_size_x >> 2;
+    adm_picture_strides(ref_pic, dis_pic, &curr_ref_stride, &curr_dis_stride);
+    const size_t buf_stride = s->buf.ind_size_x >> 2;
 
-    if (ref_pic->bpc == 8) {
-        curr_ref_stride = ref_pic->stride[0];
-        curr_dis_stride = dis_pic->stride[0];
-    } else {
-        curr_ref_stride = ref_pic->stride[0] >> 1;
-        curr_dis_stride = dis_pic->stride[0] >> 1;
-    }
-
-    int err = adm_scale0_device(fex, s, ref_pic, dis_pic, buf, &p, w, h, curr_ref_stride,
-                                curr_dis_stride, buf_stride);
-    if (err) {
-        return err;
-    }
-    w = (w + 1) / 2;
-    h = (h + 1) / 2;
-
-    for (int scale = 1; scale < 4; ++scale) {
-        err = adm_scale123_device(s, buf, &p, scale, w, h, buf_stride, cu_f);
-        if (err) {
-            return err;
+    int err = adm_scale0_transform(fex, s, ref_pic, dis_pic, &p[0], w, h, curr_ref_stride,
+                                   curr_dis_stride, buf_stride);
+    for (int scale = 0; scale < 4 && !err; ++scale) {
+        if (scale > 0) {
+            err = adm_scale123_transform(s, &p[0], scale, w, h, buf_stride, cu_f);
         }
         w = (w + 1) / 2;
         h = (h + 1) / 2;
+        if (!err) {
+            err = adm_weigh_views(s, p, scale, w, h, buf_stride, cu_f);
+        }
+    }
+    if (err) {
+        return err;
     }
 
-    CHECK_CUDA_RETURN(cu_f, cuMemcpyDtoHAsync(buf->results_host, buf->tmp_res->data,
-                                              sizeof(int64_t) * RES_BUFFER_SIZE, s->str));
+    CHECK_CUDA_RETURN(cu_f, cuMemcpyDtoHAsync(s->buf.results_host, s->buf.tmp_res->data,
+                                              sizeof(int64_t) * RES_BUFFER_SIZE * views, s->str));
     CHECK_CUDA_RETURN(cu_f, cuEventRecord(s->finished, s->str));
     /* Engine-scope fence batching opt-in (T-GPU-OPT-1, ADR-0242).
      * Best-effort: registration failure (overflow / no batch open)
@@ -1631,12 +1733,14 @@ static int adm_cuda_alloc_buffers(VmafCudaState *cu_state, AdmStateCuda *s, unsi
     if (ret) {
         return ret;
     }
-    ret = vmaf_cuda_buffer_alloc(cu_state, &s->buf.tmp_res, sizeof(uint64_t) * RES_BUFFER_SIZE);
+    /* One result block per viewing distance (ADR-2795). */
+    ret = vmaf_cuda_buffer_alloc(cu_state, &s->buf.tmp_res,
+                                 sizeof(uint64_t) * RES_BUFFER_SIZE * ADM_VIEWS);
     if (ret) {
         return ret;
     }
     return vmaf_cuda_buffer_host_alloc(cu_state, &s->buf.results_host,
-                                       sizeof(uint64_t) * RES_BUFFER_SIZE);
+                                       sizeof(uint64_t) * RES_BUFFER_SIZE * ADM_VIEWS);
 }
 
 /* Point the result slots and every DWT / CSF band at their share of the
@@ -1651,7 +1755,10 @@ static int adm_cuda_carve_buffers(VmafCudaState *cu_state, AdmStateCuda *s, size
 
     cu_res_top = init_res_cm_cuda(cu_state, s->buf.adm_cm, cu_res_top);
     cu_res_top = init_res_csf_cuda(cu_state, s->buf.adm_csf_den, cu_res_top);
-    (void)init_res_aim_cm_cuda(cu_state, s->buf.adm_aim_cm, cu_res_top);
+    cu_res_top = init_res_aim_cm_cuda(cu_state, s->buf.adm_aim_cm, cu_res_top);
+    cu_res_top = init_res_cm_cuda(cu_state, s->adm_cm_x, cu_res_top);
+    cu_res_top = init_res_csf_cuda(cu_state, s->adm_csf_den_x, cu_res_top);
+    (void)init_res_aim_cm_cuda(cu_state, s->adm_aim_cm_x, cu_res_top);
 
     CUdeviceptr cu_data_top;
     ret = vmaf_cuda_buffer_get_dptr(s->buf.data_buf, &cu_data_top);
@@ -1686,7 +1793,8 @@ static int adm_cuda_init_buffers(VmafFeatureExtractor *fex, AdmStateCuda *s, uns
         s->feature_name_dict =
             vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
         if (s->feature_name_dict) {
-            return 0;
+            /* The second viewing distance's names (ADR-2795). */
+            return vmaf_adm_extend_name_dict(fex, &s->feature_name_dict);
         }
     }
 
@@ -1711,9 +1819,11 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     /* Reject invalid CSF table output before any device resource is claimed.
      * Finite over-range weights are normalised with the CPU's shared
      * per-scale exponent in adm_fixed_parameters(). */
-    const int csf_err = adm_csf_config_check(s);
-    if (csf_err) {
-        return csf_err;
+    for (unsigned v = 0; v < adm_cuda_views(s); ++v) {
+        const int csf_err = adm_csf_config_check(s, adm_cuda_view_dist(s, v));
+        if (csf_err) {
+            return csf_err;
+        }
     }
 
     const int dev_err = adm_cuda_init_device(fex, s);
@@ -1739,8 +1849,7 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     s->submit_w = ref_pic->w[0];
     s->submit_h = ref_pic->h[0];
 
-    return integer_compute_adm_cuda(fex, s, ref_pic, dist_pic, &s->buf, s->adm_enhn_gain_limit,
-                                    s->adm_norm_view_dist, s->adm_ref_display_height);
+    return integer_compute_adm_cuda(fex, s, ref_pic, dist_pic);
 }
 
 static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
@@ -1821,6 +1930,8 @@ VmafFeatureExtractor vmaf_fex_integer_adm_cuda = {.name = "adm_cuda",
                                                   .close = close_fex_cuda,
                                                   .priv_size = sizeof(AdmStateCuda),
                                                   .provided_features = provided_features,
+                                                  .merge = vmaf_adm_merge_view_dist,
+                                                  .extend_name_dict = vmaf_adm_extend_name_dict,
                                                   .flags = VMAF_FEATURE_EXTRACTOR_CUDA};
 
 /* NOLINTEND(modernize-use-nullptr) */

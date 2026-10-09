@@ -56,7 +56,7 @@
 #define FIXTURE_H 144u
 #endif
 
-#define MAX_KEYS 18u
+#define MAX_KEYS 32u
 
 /* One frame geometry of a case. */
 typedef struct Fixture {
@@ -212,19 +212,29 @@ static char *adm_run_init(AdmRun *run, int *skipped)
     return NULL;
 }
 
-/* Open the run with `opts` (NULL for defaults), which it always takes over:
- * vmaf_use_feature() consumes it, and it is freed here when the run never gets
- * that far. */
-static char *adm_run_open(AdmRun *run, VmafFeatureDictionary *opts, int *skipped)
+/* Open the run with `opts` (NULL for defaults) and, when `opts2` is set, a
+ * second registration of the same extractor with it. The run always takes
+ * both over: vmaf_use_feature() consumes them, and they are freed here when
+ * the run never gets that far. */
+static char *adm_run_open(AdmRun *run, VmafFeatureDictionary *opts, VmafFeatureDictionary *opts2,
+                          int *skipped)
 {
     *skipped = 0;
     char *msg = adm_run_init(run, skipped);
     if (msg || *skipped) {
         (void)vmaf_feature_dictionary_free(&opts);
+        (void)vmaf_feature_dictionary_free(&opts2);
         return msg;
     }
-    mu_assert("vmaf_use_feature failed",
-              !vmaf_use_feature(run->vmaf, run->use_cuda ? "adm_cuda" : "adm", opts));
+    const char *name = run->use_cuda ? "adm_cuda" : "adm";
+    const int err = vmaf_use_feature(run->vmaf, name, opts);
+    if (err) {
+        (void)vmaf_feature_dictionary_free(&opts2);
+    }
+    mu_assert("vmaf_use_feature failed", !err);
+    if (opts2) {
+        mu_assert("second vmaf_use_feature failed", !vmaf_use_feature(run->vmaf, name, opts2));
+    }
     return NULL;
 }
 
@@ -257,35 +267,35 @@ static char *adm_run_close(AdmRun *run)
 
 /* Score one frame on the CPU or CUDA twin and read `keys` into `out`. Without a
  * CUDA device the CUDA leg is skipped and `out` stays NaN. */
-static char *run_adm(bool use_cuda, const Fixture *fx, VmafFeatureDictionary *opts,
-                     const char *const *keys, size_t count, double *out)
+static char *run_adm2(bool use_cuda, const Fixture *fx, VmafFeatureDictionary *opts,
+                      VmafFeatureDictionary *opts2, const char *const *keys, size_t count,
+                      double *out)
 {
     for (size_t k = 0; k < count; k++)
         out[k] = NAN;
     AdmRun run = {.use_cuda = use_cuda};
     int skipped = 0;
-    char *msg = adm_run_open(&run, opts, &skipped);
+    char *msg = adm_run_open(&run, opts, opts2, &skipped);
     if (!msg && !skipped)
         msg = adm_run_score(&run, fx, keys, count, out);
     char *close_msg = adm_run_close(&run);
     return msg ? msg : close_msg;
 }
 
+static char *run_adm(bool use_cuda, const Fixture *fx, VmafFeatureDictionary *opts,
+                     const char *const *keys, size_t count, double *out)
+{
+    return run_adm2(use_cuda, fx, opts, NULL, keys, count, out);
+}
+
 /* Every key of the case equal on the CPU and the CUDA twin, bit for bit; a
  * skipped CUDA leg passes. */
-static char *check_exact(const char *what, const Fixture *fx,
-                         VmafFeatureDictionary *(*make_opts)(void), const char *const *keys,
-                         size_t count)
+/* `cpu` and `gpu` equal key by key; a NaN first CUDA value means skipped. */
+static char *compare_runs(const char *what, const Fixture *fx, const char *const *keys,
+                          size_t count, const double *cpu, const double *gpu)
 {
-    double cpu[MAX_KEYS];
-    double gpu[MAX_KEYS];
-    mu_assert("check_exact: too many keys", count <= MAX_KEYS);
-    char *msg = run_adm(false, fx, make_opts ? make_opts() : NULL, keys, count, cpu);
-    if (msg)
-        return msg;
-    msg = run_adm(true, fx, make_opts ? make_opts() : NULL, keys, count, gpu);
-    if (msg || isnan(gpu[0]))
-        return msg;
+    if (isnan(gpu[0]))
+        return NULL;
     unsigned mismatches = 0u;
     for (size_t k = 0; k < count; k++) {
         mu_assert("CPU adm output is non-finite", isfinite(cpu[k]));
@@ -297,6 +307,19 @@ static char *check_exact(const char *what, const Fixture *fx,
     }
     mu_assert("adm_cuda differs from the CPU extractor", mismatches == 0u);
     return NULL;
+}
+
+static char *check_exact(const char *what, const Fixture *fx,
+                         VmafFeatureDictionary *(*make_opts)(void), const char *const *keys,
+                         size_t count)
+{
+    double cpu[MAX_KEYS];
+    double gpu[MAX_KEYS];
+    mu_assert("check_exact: too many keys", count <= MAX_KEYS);
+    char *msg = run_adm(false, fx, make_opts ? make_opts() : NULL, keys, count, cpu);
+    if (!msg)
+        msg = run_adm(true, fx, make_opts ? make_opts() : NULL, keys, count, gpu);
+    return msg ? msg : compare_runs(what, fx, keys, count, cpu, gpu);
 }
 
 static VmafFeatureDictionary *opts_from(const char *const pairs[][2], size_t count)
@@ -361,6 +384,49 @@ static VmafFeatureDictionary *model_opts(void)
 static const char *const MODEL_KEYS[] = {ADM_SCORE_KEYS(MODEL_SUFFIX)};
 #define NUM_MODEL_KEYS (sizeof(MODEL_KEYS) / sizeof(MODEL_KEYS[0]))
 
+/* ADR-2795: one context at two viewing distances. The first distance keeps
+ * its names and, with `debug`, the debug scores; the second files its seven
+ * under the names `adm_norm_view_dist=5` gives them. */
+static VmafFeatureDictionary *two_view_opts(void)
+{
+    static const char *const pairs[][2] = {{"debug", "true"}, {"adm_norm_view_dist_extra", "5"}};
+    return opts_from(pairs, 2u);
+}
+
+static const char *const TWO_VIEW_KEYS[] = {
+    "VMAF_integer_feature_adm2_score",
+    "VMAF_integer_feature_aim_score",
+    "VMAF_integer_feature_adm3_score",
+    "integer_adm_scale0",
+    "integer_adm_scale1",
+    "integer_adm_scale2",
+    "integer_adm_scale3",
+    ADM_DEBUG_KEYS(""),
+    ADM_SCORE_KEYS("_nvd_5"),
+};
+#define NUM_TWO_VIEW_KEYS (sizeof(TWO_VIEW_KEYS) / sizeof(TWO_VIEW_KEYS[0]))
+
+/* The model options at 3H, then at 5H: the vmaf_v1.0.16_3d0h / _5d0h pair. */
+static VmafFeatureDictionary *model_opts_at(const char *nvd_key, const char *nvd)
+{
+    VmafFeatureDictionary *d = model_opts();
+    if (d && vmaf_feature_dictionary_set(&d, nvd_key, nvd)) {
+        (void)vmaf_feature_dictionary_free(&d);
+    }
+    return d;
+}
+
+static VmafFeatureDictionary *two_view_model_opts(void)
+{
+    return model_opts_at("adm_norm_view_dist_extra", "5");
+}
+
+static const char *const TWO_VIEW_MODEL_KEYS[] = {
+    ADM_SCORE_KEYS(MODEL_SUFFIX),
+    ADM_SCORE_KEYS("_csf_2_dlmw_0.7_egl_1_min_0.5_nw_0.02_nvd_5_apn_2"),
+};
+#define NUM_TWO_VIEW_MODEL_KEYS (sizeof(TWO_VIEW_MODEL_KEYS) / sizeof(TWO_VIEW_MODEL_KEYS[0]))
+
 static VmafFeatureDictionary *barten_opts(void)
 {
     static const char *const pairs[][2] = {{"adm_csf_mode", "1"}};
@@ -414,14 +480,6 @@ static char *test_adm_cuda_option_table_mirrors_cpu(void)
     mu_assert("adm_cuda must declare options", gpu->options != NULL);
 
     for (unsigned i = 0; cpu->options[i].name; i++) {
-        /* ADR-2795: the second viewing distance reaches adm_cuda in its own
-         * pull request of the stack. Once the twin declares the option this
-         * fails, and that pull request deletes the gap. */
-        if (!strcmp(cpu->options[i].name, "adm_norm_view_dist_extra")) {
-            mu_assert("adm_cuda declares adm_norm_view_dist_extra: delete the recorded gap",
-                      find_option(gpu->options, cpu->options[i].name) == NULL);
-            continue;
-        }
         const VmafOption *b = find_option(gpu->options, cpu->options[i].name);
         if (!b || !option_mirrors(&cpu->options[i], b)) {
             (void)fprintf(stderr, "\nadm_cuda does not mirror CPU option \"%s\"\n",
@@ -525,6 +583,39 @@ static char *test_adm_skip_scale0_exact(void)
                        NUM_SKIP_SCALE0_KEYS);
 }
 
+/* ADR-2795: a second viewing distance on the CUDA twin returns the CPU's
+ * scores for both distances, at 8 and 10 bits. */
+static char *test_adm_two_views_exact(void)
+{
+    const Fixture fx8 = {FIXTURE_W, FIXTURE_H, 8u, false, false};
+    const Fixture fx10 = {FIXTURE_W, FIXTURE_H, 10u, false, false};
+    mu_assert_msg(
+        check_exact("adm two views", &fx8, two_view_opts, TWO_VIEW_KEYS, NUM_TWO_VIEW_KEYS));
+    mu_assert_msg(check_exact("adm two views 10-bit", &fx10, two_view_opts, TWO_VIEW_KEYS,
+                              NUM_TWO_VIEW_KEYS));
+    return check_exact("adm two views model options", &fx8, two_view_model_opts,
+                       TWO_VIEW_MODEL_KEYS, NUM_TWO_VIEW_MODEL_KEYS);
+}
+
+/* ADR-2795: the CUDA twin registered at 3H and at 5H (the registry folds the
+ * second into the first, as two models do) scores as one CPU context with
+ * both distances. */
+static char *test_adm_merged_registrations_exact(void)
+{
+    const Fixture fx = {FIXTURE_W, FIXTURE_H, 8u, false, false};
+    double cpu[MAX_KEYS];
+    double gpu[MAX_KEYS];
+    char *msg = run_adm(false, &fx, two_view_model_opts(), TWO_VIEW_MODEL_KEYS,
+                        NUM_TWO_VIEW_MODEL_KEYS, cpu);
+    if (!msg) {
+        msg = run_adm2(true, &fx, model_opts(), model_opts_at("adm_norm_view_dist", "5"),
+                       TWO_VIEW_MODEL_KEYS, NUM_TWO_VIEW_MODEL_KEYS, gpu);
+    }
+    return msg ? msg :
+                 compare_runs("adm merged registrations", &fx, TWO_VIEW_MODEL_KEYS,
+                              NUM_TWO_VIEW_MODEL_KEYS, cpu, gpu);
+}
+
 /* The exact cases with default options, one per cause of ADR-1416. */
 static char *run_exact_default_cases(void)
 {
@@ -543,6 +634,8 @@ static char *run_exact_option_cases(void)
     mu_run_test(test_adm_model_options_exact);
     mu_run_test(test_adm_barten_mode_exact);
     mu_run_test(test_adm_skip_scale0_exact);
+    mu_run_test(test_adm_two_views_exact);
+    mu_run_test(test_adm_merged_registrations_exact);
     return NULL;
 }
 

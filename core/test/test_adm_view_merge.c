@@ -18,12 +18,14 @@
  */
 
 #include <errno.h>
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "dict.h"
+#include "feature/adm_view_dist.h"
 #include "feature/feature_extractor.h"
 #include "fex_ctx_vector.h"
 #include "test.h"
@@ -262,6 +264,45 @@ static char *test_registry_keeps_twins_apart(void)
     return NULL;
 }
 
+/* Every ADM descriptor this build registers (the device twins only with
+ * their backend) merges through the shared helpers on its own option
+ * layout: the second distance lands in its options and its view count. */
+typedef struct {
+    const char *name;
+    bool merges; /* ADR-2795 stack: a twin's pull request sets it */
+} AdmDescriptor;
+
+static char *test_every_adm_descriptor_merges(void)
+{
+    static const AdmDescriptor DESCRIPTORS[] = {
+        {"adm", true},      {"adm_cuda", true},           {"adm_sycl", false},
+        {"adm_hip", false}, {"integer_adm_metal", false},
+    };
+    for (size_t i = 0; i < sizeof(DESCRIPTORS) / sizeof(DESCRIPTORS[0]); i++) {
+        const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name(DESCRIPTORS[i].name);
+        if (!fex)
+            continue; /* not built into this configuration */
+        mu_assert("a registered ADM descriptor merges exactly when its row says so",
+                  (fex->merge != NULL) == DESCRIPTORS[i].merges);
+        if (!fex->merge)
+            continue;
+        mu_assert("descriptor merges through the shared helper",
+                  fex->merge == vmaf_adm_merge_view_dist &&
+                      fex->extend_name_dict == vmaf_adm_extend_name_dict);
+        VmafFeatureExtractorContext *a = NULL;
+        VmafFeatureExtractorContext *b = NULL;
+        mu_assert("contexts nvd 3 and 5",
+                  !adm_context(fex, &a, "3", NULL, NULL) && !adm_context(fex, &b, "5", NULL, NULL));
+        const int merged = a->fex->merge(a, b);
+        const unsigned views = vmaf_adm_view_count(a->fex);
+        const double extra = vmaf_adm_view_dist(a->fex, 1u);
+        (void)vmaf_feature_extractor_context_destroy(a);
+        (void)vmaf_feature_extractor_context_destroy(b);
+        mu_assert("nvd 5 merges", merged == 1 && views == 2u && extra == 5.0);
+    }
+    return NULL;
+}
+
 /* extend_name_dict(): the second distance's keys name that distance's
  * features. */
 static char *test_name_dictionary(void)
@@ -318,6 +359,7 @@ static char *run_registry_tests(void)
     mu_run_test(test_registry_keeps_twins_apart);
     mu_run_test(test_name_dictionary);
     mu_run_test(test_name_dictionary_without_second_distance);
+    mu_run_test(test_every_adm_descriptor_merges);
     return NULL;
 }
 
