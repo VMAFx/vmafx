@@ -160,6 +160,18 @@
   [HIP devices](docs/api/vmafx/index.md#hip-devices).
 
 
+- **4:2:2 and 4:4:4 frames import on a device (RC4, ADR-2133, ABI 0.1.9).**
+  `vmafx_frame_import()` takes semi-planar `VMAFX_PIXEL_FORMAT_NV16`, `P210`,
+  `P216`, `NV24`, `P410`, `P416`, the packed layouts `Y210`, `Y212`,
+  `YUYV422`, `Y410` (Intel XV30), `XV36`, `VUYX`, and `YUV444P_MSB` (NVDEC's
+  10- and 12-bit 4:4:4 words with the sample in the top bits), next to NV12 /
+  P010 / P016. A CUDA, HIP or CPU device converts them to planar by a gather,
+  a shift and a mask and nothing else, so an imported frame scores bit for bit
+  as the same frame created on the host. See
+  [Importing a frame](docs/api/vmafx/index.md#importing-a-frame) for the table
+  of layouts and what NVDEC and the Intel and AMD VAAPI decoders emit.
+
+
 - **libvmaf is a compat library on the VMAFx API (RC4 WP6).** The engine and
   the VMAFx API ship as `libvmafx.so.1` (pkg-config `libvmafx`), which exports
   `vmafx_*` symbols only; `libvmaf.so.3` keeps the libvmaf API and is written
@@ -1355,6 +1367,12 @@
   [Release download](docs/getting-started/index.md#release-download).
 
 
+- **A pull request body copied from the template can opt out of the `docs/state.md` gate.** The
+  template's example `no state delta: REASON` sits inside its HTML comment now, and the gate accepts
+  a real opt-out even when the placeholder appears elsewhere in the body; before, the placeholder in
+  the template's checkbox made every such body fail.
+
+
 - **The RC3 home GPU retest kit survives a failing `nvidia-smi`.** `scripts/dev/rc3-home-gpu-retest.sh`
   wrote nvidia-smi's GPU list into `host.txt` as the last command of an `&&` list under `set -e`, so a
   failing nvidia-smi (exit 18 after a driver update that leaves the kernel module and the library at
@@ -1390,6 +1408,12 @@
   directory, instead of staying 200 for as long as the process holds a scorer
   object. The same check is a readiness check (`vmaf-binary`) on the golusoris
   status registry (#1251).
+
+
+- **A stale private-state lock no longer stops every commit hook.** `scripts/githooks/state-sync.sh`
+  records its owner (process id and boot id) in its lock. A lock whose owner ran in an earlier boot or
+  no longer runs, or an ownerless lock older than two minutes, is taken over with a log line; before,
+  a lock left by an interrupted sync failed every post-commit state sync until it was removed by hand.
 
 
 - **The SYCL dma-buf import no longer closes the caller's descriptor.**
