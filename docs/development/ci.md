@@ -590,6 +590,34 @@ The open scope restrictions of the lint configuration (which paths
 `Tidy Changed` excludes, and what blocks each) are in the
 [carve-out table of the tidy ratchet page](tidy-ratchet.md#carve-outs-still-open-after-adr-1142).
 
+### Changed-files tidy jobs and the lanes they defer to (Q-341, Q-342)
+
+`Tidy Changed` lints the changed C and C++ files that its CPU build can compile.
+`scripts/ci/tidy_changed_route.py changed` decides what happens to each changed
+file:
+
+| Changed file | What the job does |
+| --- | --- |
+| Has a compile command in the CPU build | Lints it. |
+| Has no compile command, and a lane's `measured_sources` (`scripts/ci/tidy-baseline-<lane>.json`) lists it | Skips it and prints `tidy-changed: skip <file>: measured by the <lane> lane(s)`. |
+| Has no compile command and a live entry in `.config/lint-exceptions.d/clang-tidy-coverage.toml` | Skips it and names the entry's expiry. |
+| Has no compile command, no lane measures it, and it has no live exception | **Fails**, naming the file. |
+| Header that a unit with a CPU compile command includes (directly or through other headers), or that nothing includes | Lints it on its own, as before. |
+| Header that only units without a CPU compile command include | Follows those units through the same deferral, for example the device cell headers of `core/test/`. |
+
+`Tidy SYCL` lints the changed SYCL sources with the SYCL build's compile
+database. Its selection includes the C sources of the SYCL device-frame lane
+(`core/src/sycl/*.c`) and the import tests (`core/test/test_vmafx_import_sycl*.c`).
+The wrapper parses every file as C++20, so a header that no C++ source includes
+(`core/src/sycl/vmafx_sycl_internal.h`, which uses C11 atomics) is linted through
+the C units of the SYCL build that include it, never on its own
+(`tidy_changed_route.py sycl`).
+
+The routing's planted cases (`scripts/ci/tests/test_tidy_changed_route.py`: a
+file no lane measures fails, a file a lane measures is skipped with its lane
+named) run in the `Tooling Tests` job and in the `test-tidy-changed-route`
+hook.
+
 ### Source ADR citations (ADR-1311, ADR-2200)
 
 `scripts/ci/check-source-adr-citations.py` binds each plain `ADR-NNNN` in

@@ -409,11 +409,22 @@ jobs:
               | tr '\n' ' ')
           fi
           [ -z "$files" ] && { echo "no C/C++ changes"; exit 0; }
+          # Q-341: a changed file this CPU build has no compile command for is
+          # deferred to the clang-tidy lane whose measured_sources
+          # (scripts/ci/tidy-baseline-<lane>.json) lists it, and the lane is
+          # named; with no such lane the job fails and names the file. A
+          # header is deferred the same way when none of the units that
+          # include it has a command here (scripts/ci/tidy_changed_route.py,
+          # planted cases in scripts/ci/tests/test_tidy_changed_route.py).
           # Drop empty lines — the `tr '\n' ' ' | tr ' ' '\n'` round-trip
           # leaves a trailing blank that parallel would pass to clang-tidy
           # as an empty filename, which clang resolves to the workspace
           # directory and reports as a clang-diagnostic-error.
-          echo "$files" | tr ' ' '\n' | grep -v '^$' \
+          routed=$(echo "$files" | tr ' ' '\n' | grep -v '^$' \
+            | python3 scripts/ci/tidy_changed_route.py changed --db build/compile_commands.json) \
+            || exit 1
+          [ -z "$routed" ] && { echo "no changed C/C++ file is linted by this job"; exit 0; }
+          echo "$routed" \
             | parallel -j"$(nproc)" "/usr/bin/clang-tidy-22 -p build --quiet {} || touch /tmp/tidy.fail"
           [ -f /tmp/tidy.fail ] && exit 1 || exit 0
   clang-tidy-ratchet:
@@ -622,6 +633,7 @@ jobs:
                  'core/src/feature/sycl/*.hpp' 'core/src/feature/sycl/*.h' \
                  'core/test/test_sycl*.c' 'core/test/test_sycl*.cpp' \
                  'core/test/test_integer_cambi_sycl.c' \
+                 'core/src/sycl/*.c' 'core/test/test_vmafx_import_sycl*.c' \
               | tr '\n' ' ')
           elif [ "$GH_EVENT_NAME" = "push" ]; then
             before="$GH_EVENT_BEFORE"
@@ -634,6 +646,7 @@ jobs:
                      'core/src/feature/sycl/*.hpp' 'core/src/feature/sycl/*.h' \
                      'core/test/test_sycl*.c' 'core/test/test_sycl*.cpp' \
                      'core/test/test_integer_cambi_sycl.c' \
+                     'core/src/sycl/*.c' 'core/test/test_vmafx_import_sycl*.c' \
                   | tr '\n' ' ')
               else
                 files=""
@@ -645,6 +658,7 @@ jobs:
                    'core/src/feature/sycl/*.hpp' 'core/src/feature/sycl/*.h' \
                    'core/test/test_sycl*.c' 'core/test/test_sycl*.cpp' \
                    'core/test/test_integer_cambi_sycl.c' \
+                   'core/src/sycl/*.c' 'core/test/test_vmafx_import_sycl*.c' \
                 | tr '\n' ' ')
             fi
           else
@@ -654,6 +668,7 @@ jobs:
               'core/src/feature/sycl/*.hpp' 'core/src/feature/sycl/*.h' \
               'core/test/test_sycl*.c' 'core/test/test_sycl*.cpp' \
               'core/test/test_integer_cambi_sycl.c' \
+              'core/src/sycl/*.c' 'core/test/test_vmafx_import_sycl*.c' \
               | tr '\n' ' ')
           fi
           echo "files=$files" >> "$GITHUB_OUTPUT"
@@ -754,7 +769,14 @@ jobs:
           oneapi_setvars=/opt/intel/oneapi/setvars.sh
           builtin source "$oneapi_setvars" --force
           set -u
-          echo "$SYCL_FILES" | tr ' ' '\n' | grep -v '^$' \
+          # Q-342: the wrapper parses every file as C++20. A header no C++
+          # source includes (core/src/sycl/vmafx_sycl_internal.h, C11
+          # atomics) is linted through the C units of build-sycl that include
+          # it instead (scripts/ci/tidy_changed_route.py sycl).
+          routed=$(echo "$SYCL_FILES" | tr ' ' '\n' | grep -v '^$' \
+            | python3 scripts/ci/tidy_changed_route.py sycl --db build-sycl/compile_commands.json) \
+            || exit 1
+          echo "$routed" | grep -v '^$' \
             | parallel -j"$(nproc)" \
                 "CLANG_TIDY_BIN=/usr/bin/clang-tidy-22 scripts/ci/clang-tidy-sycl.sh -p build-sycl --quiet {} \
                   || touch /tmp/tidy-sycl.fail"

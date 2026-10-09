@@ -532,6 +532,16 @@ repos:
         files: '(\.(c|cc|cpp|cxx|cu|hip|mm|metal)|scripts/ci/(tidy-baseline-[a-z0-9]+\.json|check-tidy-coverage\.py)|\.config/lint-exceptions\.d/clang-tidy-coverage\.toml)$'
         pass_filenames: false
 
+      - id: test-tidy-changed-route
+        # Q-341 / Q-342: the routing of the Tidy Changed and Tidy SYCL jobs. A file
+        # no lane measures fails and is named; a file a lane measures is skipped with
+        # the lane named; a C-only SYCL header is linted through its C includers.
+        name: The changed-files tidy routing refuses a file no lane measures
+        entry: python3 -m unittest discover -s scripts/ci/tests -p test_tidy_changed_route.py
+        language: system
+        files: '^(scripts/ci/(tidy_changed_route\.py|lint_exceptions\.py|tests/test_tidy_changed_route\.py)|\.github/workflows/lint-and-format\.yml|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+
       - id: test-tidy-coverage
         name: The tidy coverage check refuses a unit no lane reads
         entry: python3 -m unittest discover -s scripts/ci/tests -p test_check_tidy_coverage.py
