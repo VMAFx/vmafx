@@ -327,11 +327,12 @@ per sample of the frame the import makes):
 | `VUYX` | One plane of the bytes V Cb Y X per pixel | `YUV444P` | 8 |
 | `YUV444P_MSB` | Three planes of 16-bit words whose `bpc` most significant bits hold the sample (NVDEC's 10- and 12-bit 4:4:4 surfaces) | `YUV444P` | 9 to 16 |
 
-A CUDA or HIP device converts every layout above on the device; a packed
+A CUDA, HIP or SYCL device converts every layout above on the device; a packed
 layout or `YUV444P_MSB` in a device array or GL texture is refused naming
-`desc.memory`. The CPU device (host memory) converts them all. The unused
-element of the packed 4:4:4 layouts and the unused bits of `Y410` are never
-read.
+`desc.memory`, and on SYCL a packed or MSB layout in an Intel-tiled dma-buf
+is refused naming the plane's `modifier`. The CPU device (host memory)
+converts them all. The unused element of the packed 4:4:4 layouts and the
+unused bits of `Y410` are never read.
 
 What hardware decoders hand over, measured with FFmpeg 9 (libavcodec 63.1)
 decoding 640x360 H.264 and HEVC streams of each chroma layout and bit depth
@@ -684,7 +685,7 @@ What a SYCL device imports:
 
 | `memory` | Planes | Bound or converted |
 | --- | --- | --- |
-| `VMAFX_MEMORY_DEVICE_POINTER` | `handle` + `offset`: device, shared or host USM of the device's SYCL context; `pitch` in bytes | Planar planes are bound where they are, at any address and pitch; NV12 / P010 / P016 are planarised on the device. A pointer that is no USM of the context is refused naming the plane's `handle` |
+| `VMAFX_MEMORY_DEVICE_POINTER` | `handle` + `offset`: device, shared or host USM of the device's SYCL context; `pitch` in bytes | Planar planes are bound where they are, at any address and pitch; the semi-planar and packed layouts and `YUV444P_MSB` are converted on the device. A pointer that is no USM of the context is refused naming the plane's `handle` |
 | `VMAFX_MEMORY_DMABUF` (Linux) | `fd` + `size` of the dma-buf, `offset`, `pitch` and `modifier` | Linear (modifier 0) planes are bound; Intel Y-tiled and Tile4 planes are de-tiled on the device; another modifier is refused naming the plane. Planes may share one dma-buf |
 | `VMAFX_MEMORY_GL_TEXTURE` (Linux) | `handle`: a `GL_TEXTURE_2D` name of the EGL context current on the calling thread (NV12: an `GL_R8` luma and a `GL_RG8` chroma texture) | Each texture is exported as a dma-buf (`EGL_MESA_image_dma_buf_export`) and imported as above |
 

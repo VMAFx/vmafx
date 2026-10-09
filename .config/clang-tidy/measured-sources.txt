@@ -852,6 +852,7 @@ core/test/test_vmafx_import_hip_gl.c
 core/test/test_vmafx_import_sycl.c
 core/test/test_vmafx_import_sycl_bitexact.c
 core/test/test_vmafx_import_sycl_fence.c
+core/test/test_vmafx_import_sycl_formats.c
 core/test/test_vmafx_import_sycl_gl.c
 core/test/test_vmafx_lifetime.c
 core/test/test_vmafx_live_pacing.c

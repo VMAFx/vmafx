@@ -146,6 +146,16 @@ sycl/
 
 ## VMAFx device frames on SYCL (RC4 WP3, ADR-2091)
 
+- 4:2:2 / 4:4:4 layouts (ADR-2133): packed (Y210, Y212, YUYV422, Y410 / XV30,
+  XV36, VUYX) and MSB planar words = one `vmafx_sycl_rt_frame_gather()` per
+  output plane (`launch_gather()` in `vmafx_sycl_rt.cpp`: plan of
+  `vmafx_import_plane_read()` / `vmafx_import_read_plane()`,
+  `core/src/vmafx/import_convert.h`; change both together; scratch-free,
+  `test_sycl_kernel_scratch`). Semi-planar NV16 .. P416 use existing
+  de-interleave and shift kernels (they take chroma plane's own size).
+  Packed / MSB in GL texture or Intel-tiled dma-buf: refused naming
+  `desc.memory` / plane's `modifier`. `test_vmafx_import_sycl_formats`
+  (`VfOps` of `core/test/vmafx_format_cells.h`) holds all of it on A380.
 - Files: `vmafx_sycl.h` (what `core/src/vmafx/` calls),
   `vmafx_sycl_internal.h`, `import_device.c` (Level Zero GPUs, devices,
   engine attach), `import_frame.c` (checks, plan, conversions, picture

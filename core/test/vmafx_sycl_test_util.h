@@ -75,26 +75,17 @@ typedef struct VsPlanes {
 } VsPlanes;
 
 /* Bytes of the rows of each producer plane of `d` laid out as `pix_fmt`
- * (YUV420P planar, NV12 / P010 / P016 semi-planar), with `pad` bytes after
+ * (planar, semi-planar or packed: vt_device_layout()), with `pad` bytes after
  * each row and each plane starting `skew` bytes after a 64-byte boundary:
  * the SYCL device reads any address and pitch (its readers copy rows). */
 static inline void vs_layout(const VmafxFrameDesc *d, uint32_t pix_fmt, size_t pad, size_t skew,
                              VsPlanes *p, size_t rows[3], size_t row_bytes[3])
 {
-    unsigned w[3];
-    unsigned h[3];
-    size_t row[3];
-    vt_plane_geometry(d, w, h, row);
-    const bool semi = pix_fmt != VMAFX_PIXEL_FORMAT_YUV420P;
-    p->n = semi ? 2u : 3u;
-    uint64_t at = 64u;
-    for (uint32_t i = 0; i < 3u; i++) {
-        row_bytes[i] = i < p->n ? row[i] * (semi && i == 1u ? 2u : 1u) : 0u;
-        rows[i] = i < p->n ? h[i] : 0u;
-        p->pitch[i] = row_bytes[i] ? row_bytes[i] + pad : 0u;
-        p->offset[i] = at + skew;
-        at = (p->offset[i] + p->pitch[i] * rows[i] + 64u) & ~(uint64_t)63u;
-    }
+    VtDeviceLayout layout;
+    (void)vt_device_layout(d, pix_fmt, pad, skew, &layout, rows, row_bytes);
+    memcpy(p->offset, layout.offset, sizeof(p->offset));
+    memcpy(p->pitch, layout.pitch, sizeof(p->pitch));
+    p->n = layout.n;
 }
 
 /* Bytes the planes of `p` (laid out by vs_layout()) span, plus a margin. */
@@ -109,14 +100,9 @@ static inline bool vs_write(const VsGpu *g, const VmafxFrameDesc *d, const uint8
                             uint32_t pix_fmt, unsigned shift, const VsPlanes *p,
                             const size_t rows[3], const size_t row_bytes[3])
 {
-    uint8_t *const staged =
-        pix_fmt == VMAFX_PIXEL_FORMAT_YUV420P ? NULL : malloc(vt_frame_bytes(d));
-    const uint8_t *src = planar;
-    if (staged) {
-        vt_to_semiplanar(d, planar, shift, staged);
-        src = staged;
-    }
-    bool ok = pix_fmt == VMAFX_PIXEL_FORMAT_YUV420P || staged != NULL;
+    uint8_t *staged = NULL;
+    const uint8_t *src = vt_producer_bytes(d, planar, pix_fmt, shift, &staged);
+    bool ok = src != NULL;
     for (uint32_t i = 0; i < p->n && i < 3u && ok; i++) {
         ok = vs_copy_2d(g->producer, p->base + p->offset[i], (size_t)p->pitch[i], src, row_bytes[i],
                         row_bytes[i], rows[i]) == 0;
@@ -135,7 +121,7 @@ static inline bool vs_upload(const VsGpu *g, const VmafxFrameDesc *d, const uint
     size_t rows[3];
     size_t row_bytes[3];
     vs_layout(d, pix_fmt, pad, skew, p, rows, row_bytes);
-    assert(p->n >= 2u && p->n <= 3u && vt_frame_bytes(d) > 0u);
+    assert(p->n >= 1u && p->n <= 3u && vt_frame_bytes(d) > 0u);
     p->base = vs_alloc(g->producer, vs_span(p, rows));
     return p->base && vs_write(g, d, planar, pix_fmt, shift, p, rows, row_bytes);
 }

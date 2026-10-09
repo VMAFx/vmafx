@@ -4,7 +4,7 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "cc_version": "Intel(R) oneAPI DPC++/C++ Compiler 2026.1.1 (2026.1.1.20260724)",
-  "tus": 485,
+  "tus": 486,
   "measured_sources": [
     "core/src/compat/path_utf8.c",
     "core/src/cpu.cpp",
@@ -470,6 +470,7 @@
     "core/test/test_vmafx_import_sycl.c",
     "core/test/test_vmafx_import_sycl_bitexact.c",
     "core/test/test_vmafx_import_sycl_fence.c",
+    "core/test/test_vmafx_import_sycl_formats.c",
     "core/test/test_vmafx_import_sycl_gl.c",
     "core/test/test_y4m_411_oob.c",
     "core/test/test_y4m_alloc_failure.c",
@@ -609,6 +610,22 @@
         }
       },
       "previous_baseline_sha256": "b3156494de2d3d3d30fdabe124ab6ee9d1f1aa18da76e851545e0f10542a6433"
+    },
+    {
+      "sources": [
+        "core/src/sycl/import_frame.c",
+        "core/src/sycl/vmafx_sycl_rt.cpp",
+        "core/test/test_vmafx_import_sycl_formats.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/test/test_vmafx_import_sycl_formats.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "3a33cc13746b86f8503617b34ea79cc993dc5b04cbd3995595fd285ac6775230"
     }
   ]
 }
