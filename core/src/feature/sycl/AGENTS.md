@@ -75,7 +75,7 @@ source review.
 | `integer_*.cpp`, `float_*.cpp` | [kernel-identities](AGENTS.d/kernel-identities.md) | Kernel identities and output captures have explicit boundary. |
 | `sycl_compat.h`, `integer_ssim_sycl.cpp` | [local-accessor](AGENTS.d/local-accessor.md) | Stencil/convolution SYCL kernels MUST use local_accessor for tap access. |
 | `integer_motion_sycl.cpp`, `/core/test/test_sycl_motion_add_uv_parity.c` | [motion-add-uv](AGENTS.d/motion-add-uv.md) | integer_motion_sycl.cpp::motion_add_uv GPU contract; queue-sync invariant, no host wait in submit. |
-| `integer_motion_sycl.cpp`, `integer_motion_v2_sycl.cpp`, `/core/test/test_sycl_motion_five_frame_window.c` | [motion-five-frame-window](AGENTS.d/motion-five-frame-window.md) | SYCL motion twins keep frame n-2 outside recorded graph and flush with CPU window function; no new kernel. |
+| `integer_motion_sycl.cpp`, `integer_motion_v2_sycl.cpp`, `/core/test/test_sycl_motion_five_frame_window.c` | [motion-five-frame-window](AGENTS.d/motion-five-frame-window.md) | SYCL motion twins keep n-2 outside graph; CPU window function per frame (advance) and at flush; no new kernel. |
 | `integer_motion_pipeline_sycl.*`, `/core/test/test_sycl_motion*` | [motion-sad-pipeline](AGENTS.d/motion-sad-pipeline.md) | Motion SAD = one shared kernel, difference first; sum \|blur(prev - cur)\|. |
 | `integer_motion_v2_sycl.cpp`, `/core/test/test_sycl_motion_v2_parity.c` | [motion-v2](AGENTS.d/motion-v2.md) | integer_motion_v2_sycl.cpp reads shared frame; flush derives motion2_v2 / motion3_v2 via CPU window function. |
 | `integer_motion_sycl.cpp`, `/core/test/test_sycl_motion*` | [motion](AGENTS.d/motion.md) | motion_sycl output set = CPU motion, and motion_force_zero lives in submit / collect. |

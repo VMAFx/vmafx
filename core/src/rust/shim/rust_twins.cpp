@@ -379,6 +379,23 @@ int twin_flush(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collecto
     return map_status(rc, inst, message);
 }
 
+/* ADR-2090 / lane request MI-1: the Rust twin's own advance, never the C
+ * extractor's, which would derive from the Rust scores into the C-layout priv
+ * and leave the Rust flush to append every frame a second time. With worker
+ * threads the engine initialises the registered context before its first
+ * advance (libvmaf.c, init_shared_rust_twin()), so the instance exists here. */
+int twin_advance(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector)
+{
+    Instance *inst = load_instance(fex);
+    if (!inst || !feature_collector)
+        return -EINVAL;
+    inst->fc = feature_collector;
+    const VmafxRsHost host = make_host(inst);
+    const char *message = nullptr;
+    const int32_t rc = inst->twin->advance(inst->state, &host, &message);
+    return rc == VMAFX_RS_OK ? 0 : map_status(rc, inst, message);
+}
+
 int twin_close(VmafFeatureExtractor *fex)
 {
     Instance *inst = load_instance(fex);
@@ -397,7 +414,7 @@ bool twin_is_usable(const VmafxRsTwin *twin)
         return false;
     }
     return twin->c_name && twin->rust_name && twin->init && twin->extract && twin->flush &&
-           twin->close;
+           twin->close && twin->advance;
 }
 
 /* The descriptor of a twin: the C extractor's, with the shim's callbacks. */
@@ -409,6 +426,7 @@ void add_twin(const VmafxRsTwin *twin, const VmafFeatureExtractor *c_fex)
     slot.fex.init = twin_init;
     slot.fex.extract = twin_extract;
     slot.fex.flush = c_fex->flush ? twin_flush : nullptr;
+    slot.fex.advance = c_fex->advance ? twin_advance : nullptr;
     slot.fex.close = twin_close;
     slot.fex.submit = nullptr;
     slot.fex.collect = nullptr;

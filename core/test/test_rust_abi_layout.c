@@ -58,6 +58,7 @@ static const size_t c_layout[] = {
     offsetof(VmafxRsTwin, init),
     offsetof(VmafxRsTwin, flush),
     offsetof(VmafxRsTwin, close),
+    offsetof(VmafxRsTwin, advance),
 };
 
 #define C_LAYOUT_LEN (sizeof(c_layout) / sizeof(c_layout[0]))
@@ -100,7 +101,8 @@ static char *test_registry_entries_are_complete(void)
             return NULL;
         mu_assert("twin with another ABI version", t->abi_version == VMAFX_RS_ABI_VERSION);
         mu_assert("twin without names", t->c_name && t->rust_name);
-        mu_assert("twin without entry points", t->init && t->extract && t->flush && t->close);
+        mu_assert("twin without entry points",
+                  t->init && t->extract && t->flush && t->close && t->advance);
     }
     return "the registry does not end within 64 entries";
 }

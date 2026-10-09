@@ -2906,6 +2906,65 @@ static bool batch_extractor_skip(const VmafFeatureExtractorContext *shared_ctx, 
     return fex_subsample_skip(shared_ctx->fex->flags, index, n_subsample);
 }
 
+/* ADR-1713 (lane request M-1): a Rust twin's flush runs on the state its init
+ * creates, but the shared context of a threaded run is never initialised; only
+ * the per-thread copies are. A C extractor's flush needs no init state, so the
+ * C path never noticed. Initialise the shared context of a Rust twin before
+ * its flush, with the run's picture parameters. ADR-2090 (lane request MI-1):
+ * the same before its first advance, which runs on that context too. */
+static int init_shared_rust_twin(VmafContext *vmaf, VmafFeatureExtractorContext *fex_ctx)
+{
+    if (!(fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_RUST) || fex_ctx->is_initialized)
+        return 0;
+    return vmaf_feature_extractor_context_init(fex_ctx, vmaf->pic_params.pix_fmt,
+                                               vmaf->pic_params.bpc, vmaf->pic_params.w,
+                                               vmaf->pic_params.h);
+}
+
+/* advance() of one registered context. A pooled context never extracts and
+ * is marked initialised, as the threaded flush marks it, so close() frees
+ * what advance() built; a pooled Rust twin is initialised first, so the twin
+ * has its instance (MI-1). */
+static int advance_one_extractor(VmafContext *vmaf, VmafFeatureExtractorContext *fex_ctx,
+                                 bool pooled)
+{
+    const int init_err = pooled ? init_shared_rust_twin(vmaf, fex_ctx) : 0;
+    if (init_err)
+        return init_err;
+    fex_ctx->is_initialized = true;
+    /* RC4 WP5: the scores advance() writes are this extractor's. */
+    const VmafFeatureProducer previous = vmaf_feature_producer_swap((VmafFeatureProducer){
+        VMAF_FEATURE_SOURCE_EXTRACTOR, fex_ctx->fex->name, fex_ctx->opts_dict});
+    const int err = fex_ctx->fex->advance(fex_ctx->fex, vmaf->feature_collector);
+    (void)vmaf_feature_producer_swap(previous);
+    return err;
+}
+
+/* ADR-2090: let every registered extractor with an advance() callback append
+ * the scores its collector entries now make final (motion2 / motion3 of the
+ * frames whose window is complete), so they need not wait for the flush. Runs
+ * on the thread that feeds frames, after a frame is accepted and after a read
+ * fence. An extractor the worker pool runs is advanced on its registered
+ * context, which never extracts (advance_one_extractor()). Any other context
+ * is advanced once it has been initialised by its first frame. */
+static int advance_extractors(VmafContext *vmaf)
+{
+    if (vmaf->flushed)
+        return 0;
+    int err = 0;
+    const RegisteredFeatureExtractors rfe = vmaf->registered_feature_extractors;
+    for (unsigned i = 0; i < rfe.cnt && !err; i++) {
+        VmafFeatureExtractorContext *fex_ctx = rfe.fex_ctx[i];
+        if (!fex_ctx->fex->advance || fex_ctx->is_closed)
+            continue;
+        const bool pooled = vmaf->thread_pool && !fex_ctx_runs_on_caller_thread(fex_ctx);
+        if (!pooled && !fex_ctx->is_initialized)
+            continue;
+        err = advance_one_extractor(vmaf, fex_ctx, pooled);
+    }
+    return err;
+}
+
 /* Create (once) this worker's private context for extractor i.
  * vmaf_feature_extractor_context_create deep-copies the shared extractor into
  * a new VmafFeatureExtractor owned by td->fex_ctx[i]; from then on
@@ -3123,20 +3182,6 @@ static int validate_pic_params(VmafContext *vmaf, const VmafPicture *ref, const 
  * flush_context_threaded() to keep that function inside the ADR-0141
  * function-size budget after the GPU-ownership fix (ADR-1197) added its
  * skip condition. */
-/* ADR-1713 (lane request M-1): a Rust twin's flush runs on the state its init
- * creates, but the shared context of a threaded run is never initialised; only
- * the per-thread copies are. A C extractor's flush needs no init state, so the
- * C path never noticed. Initialise the shared context of a Rust twin before
- * its flush, with the run's picture parameters. */
-static int init_shared_rust_twin(VmafContext *vmaf, VmafFeatureExtractorContext *fex_ctx)
-{
-    if (!(fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_RUST) || fex_ctx->is_initialized)
-        return 0;
-    return vmaf_feature_extractor_context_init(fex_ctx, vmaf->pic_params.pix_fmt,
-                                               vmaf->pic_params.bpc, vmaf->pic_params.w,
-                                               vmaf->pic_params.h);
-}
-
 static int flush_non_temporal_cpu_extractors(VmafContext *vmaf)
 {
     int err = 0;
@@ -4264,7 +4309,8 @@ int vmaf_engine_read_pictures(VmafContext *vmaf, VmafPicture *ref, VmafPicture *
      * compat library does the same, ADR-2094). */
     memset(ref, 0, sizeof(*ref));
     memset(dist, 0, sizeof(*dist));
-    return err;
+    /* ADR-2090: the scores this frame completes, before the call returns. */
+    return err ? err : advance_extractors(vmaf);
 }
 
 #ifdef HAVE_SYCL
@@ -4386,7 +4432,9 @@ int vmaf_read_pictures_sycl(VmafContext *vmaf, unsigned index)
     /* GPU buffers are already populated (for example through VPL Level Zero
      * interop), so the extractor pass only collects prior work and submits the
      * current frame without an upload. */
-    return read_pictures_sycl_extractors(vmaf, index);
+    const int extract_err = read_pictures_sycl_extractors(vmaf, index);
+    /* ADR-2090: the scores this frame completes, before the call returns. */
+    return extract_err ? extract_err : advance_extractors(vmaf);
 }
 
 int vmaf_flush_sycl(VmafContext *vmaf)
@@ -4490,7 +4538,9 @@ static int fence_for_read(VmafContext *vmaf, unsigned index)
     (void)index;
 #endif
 
-    return 0;
+    /* ADR-2090: what the fenced writes complete (motion2 / motion3 of the
+     * frames whose window the worker threads or the collects just filled). */
+    return advance_extractors(vmaf);
 }
 
 int vmaf_engine_feature_score_at_index(VmafContext *vmaf, const char *feature_name, double *score,
@@ -4557,6 +4607,14 @@ static int engine_score_at_index(VmafContext *vmaf, VmafModel *model, double *sc
                     vmaf_predict_inputs_written(model, vmaf->feature_collector, index);
         if (fence_err)
             return fence_err;
+        /* ADR-2090: a fed frame whose motion2 / motion3 is not derived yet
+         * (the frame after it is not scored) is not ready, also when an input
+         * vector has not grown to `index` (the collector reads that as
+         * -EINVAL). T-RC4-SCORE-FRAME-INVALID-AT-VECTOR-END-2026-10-06. */
+        const bool fed = vmaf->have_last_index && index <= vmaf->last_index;
+        if (fence && fed &&
+            vmaf_predict_inputs_written(model, vmaf->feature_collector, index) == -EAGAIN)
+            return -EAGAIN;
         err = vmaf_predict_score_at_index(model, vmaf->feature_collector, index, score, true, false,
                                           0);
     }
@@ -4982,6 +5040,13 @@ void vmaf_engine_set_api_owner(VmafContext *vmaf, struct VmafxContext *owner)
 {
     if (vmaf)
         vmaf->api_owner = owner;
+}
+
+int vmaf_engine_advance(VmafContext *vmaf)
+{
+    if (!vmaf)
+        return -EINVAL;
+    return advance_extractors(vmaf);
 }
 
 void vmaf_engine_set_frame_listener(VmafContext *vmaf, void (*listener)(void *user), void *user)

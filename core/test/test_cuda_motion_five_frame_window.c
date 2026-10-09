@@ -60,6 +60,12 @@ static const MftBackend backend = {
     .open = cuda_open,
     .import = cuda_import,
     .close = cuda_close,
+    /* ADR-2090: `motion_cuda` reads its SADs back in batches of eight
+     * (ADR-0845): frame 7 waits for the SAD of frame 8, read back by frame
+     * 15's collect in read 16. motion_v2_cuda collects every frame one read
+     * later. */
+    .lag_motion = 9u,
+    .lag_motion_v2 = 2u,
 };
 
 static unsigned failed_cases_at(unsigned bpc)

@@ -4,7 +4,7 @@ paths:
   - core/src/feature/cuda/integer_motion_v2_cuda.c
   - core/test/test_cuda_motion_five_frame_window.c
   - core/test/motion_five_frame_twin_parity.h
-invariant: motion_five_frame_window on CUDA twins = ring of three raw planes + CPU window function at flush; bit-identical.
+invariant: CUDA five-frame window = ring of three raw planes + CPU window function per frame and at flush; bit-identical.
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # `motion_five_frame_window` on `motion_cuda` / `motion_v2_cuda` (ADR-1491)
@@ -24,11 +24,16 @@ invariant: motion_five_frame_window on CUDA twins = ring of three raw planes + C
   below it was never zeroed or written.
 - Host, `motion_cuda`, option on: `collect()` stores SAD (+ debug `motion`)
   only (`emit_batch_scores()` skips motion2 / motion3,
-  `motion_collect_no_sad()` writes no motion2); `flush()` ->
-  `motion_flush_window()`. Three-frame path untouched: frame-by-frame
-  emission, `motion_flush_trailing()`.
-- Host, `motion_v2_cuda`: `flush()` = `vmaf_motion_window_flush()` for both
-  windows. No local copy of CPU flush; do not add one back.
+  `motion_collect_no_sad()` writes no motion2); `advance_fex_cuda()`
+  (`.advance`) = `vmaf_motion_window_advance()` as SADs land (batch
+  boundary, ADR-0845: frames final in batches, lag <= 9,
+  `T-CUDA-MOTION-BATCH-LIVE-LATENCY-2026-10-06`), `flush()` ->
+  `motion_flush_window()` for rest, on `s->window_state` (ADR-2090).
+  Three-frame path untouched: frame-by-frame emission,
+  `motion_flush_trailing()`; force-zero init clears `advance` with `flush`.
+- Host, `motion_v2_cuda`: `.advance` = `vmaf_motion_window_advance()`,
+  `flush()` = `vmaf_motion_window_flush()`, both windows. No local copy of
+  CPU derivation; do not add one back.
 - Option rows = CPU's (name, alias `mffw`, bool, default false,
   `VMAF_OPT_FLAG_FEATURE_PARAM`), no `VMAF_OPT_FLAG_DEFAULT_ONLY`
   (`test_gpu_option_value_capability_contract.py`,
@@ -37,5 +42,6 @@ invariant: motion_five_frame_window on CUDA twins = ring of three raw planes + C
   window comes through shared function; `ring` / `has_prev` here in same
   PR.
 - Guards: `test_cuda_motion_five_frame_window` (`==`, six option sets, 11 / 1
-  / 2 / 3 frames, 8 / 10 bit; 11 frames cross 8-frame batch), gate cells
-  `motion_mffw`, `motion_v2_mffw` (exact, `scripts/ci/exact_twins.d/`).
+  / 2 / 3 frames, 8 / 10 bit; 11 frames cross 8-frame batch; frame-by-frame
+  finality, `lag_motion` 9, `lag_motion_v2` 2), `test_motion_window_advance_contract.py`,
+  gate cells `motion_mffw`, `motion_v2_mffw` (exact, `scripts/ci/exact_twins.d/`).

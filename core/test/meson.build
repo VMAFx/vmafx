@@ -3261,6 +3261,18 @@ test('test_metal_motion_v2_exact_contract',
     timeout : 30,
 )
 
+# ADR-2090: every extractor that derives motion2 / motion3 through
+# vmaf_motion_window_flush() (CPU, CUDA, SYCL, HIP, Metal) also derives them
+# frame by frame with vmaf_motion_window_advance() from a registered
+# `.advance` callback on its own VmafMotionWindowState, and the engine calls
+# advance() after a frame and after a read fence. Device-free; planted cases.
+test('test_motion_window_advance_contract',
+    import('python').find_installation(),
+    args : files('test_motion_window_advance_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # T-GPU-INTEGER-VIF-MIN-DIM-TWINS-2026-09-29 (ADR-1498, the HIP guard of
 # ADR-1381): the border fold of the integer VIF Metal kernels
 # (feature/metal/metal_integer_vif_math.h) against integer_vif.c's single
@@ -6072,6 +6084,21 @@ test_motion_five_frame_window = executable('test_motion_five_frame_window',
     dependencies: [pthread_dependency, thread_lib],
 )
 test('test_motion_five_frame_window', test_motion_five_frame_window,
+    suite : ['fast'])
+
+# ADR-2090 — motion2 / motion3 of the integer motion extractors derived frame by
+# frame: vmaf_motion_window_advance() + _flush() equal upstream's flush() over
+# the whole stream bit for bit (both windows, moving average, blend, cap, SADs
+# in and out of order), and on a context frame i is final once frame i + 1 is
+# read, serial and with worker threads, before the flush.
+test_motion_window_incremental = executable('test_motion_window_incremental',
+    ['test.c', 'test_motion_window_incremental.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    c_args : vmaf_cflags_common,
+    link_with : vmaf_test_link,
+    dependencies: [pthread_dependency, thread_lib],
+)
+test('test_motion_window_incremental', test_motion_window_incremental,
     suite : ['fast'])
 
 # Regression: validate_pic_params bpc check used && instead of || — ref/dist
@@ -9304,6 +9331,19 @@ if is_rust_enabled
         dependencies : [pthread_dependency, rust_core_dep],
     )
     test('test_rust_twin_registry', test_rust_twin_registry, suite : ['rust', 'fast'])
+
+    # ADR-2090 / MI-1: motion_rust derives motion2 / motion3 frame by frame
+    # through Extractor::advance (shim trampoline), serial and with workers,
+    # equal to the C motion extractor bit for bit.
+    test_rust_motion_window_incremental = executable('test_rust_motion_window_incremental',
+        ['test.c', 'test_rust_motion_window_incremental.c'],
+        include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
+        link_with : vmaf_test_link,
+        c_args : vmaf_cflags_common,
+        dependencies : [pthread_dependency, thread_lib, rust_core_dep],
+    )
+    test('test_rust_motion_window_incremental', test_rust_motion_window_incremental,
+        suite : ['rust', 'fast'])
 
     test('test_rust_twin_harness_netflix',
         import('python').find_installation(),

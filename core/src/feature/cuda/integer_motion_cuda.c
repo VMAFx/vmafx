@@ -100,7 +100,7 @@ typedef struct MotionStateCuda {
     double prev_motion3_blended;
     bool debug;
     bool motion_force_zero;
-    bool motion_five_frame_window; /* SAD against frame n-2, window in flush() */
+    bool motion_five_frame_window; /* SAD against frame n-2, window by advance / flush */
     bool motion_moving_average;
     bool motion_add_uv; /* rejected with -ENOTSUP — see init(); ADR-0989 */
     double motion_blend_factor;
@@ -111,6 +111,9 @@ typedef struct MotionStateCuda {
      * close so the PTX backing store does not leak per vmaf_close(). */
     MotionSadCuda sad_pipeline;
     VmafDictionary *feature_name_dict;
+    /* motion2 / motion3 of the five-frame window, derived as the SAD scores
+     * come in (ADR-2090). */
+    VmafMotionWindowState window_state;
 } MotionStateCuda;
 
 /* Options table — mirrors libvmaf/src/feature/integer_motion.c.
@@ -440,6 +443,7 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
         fex->submit = NULL;
         fex->collect = NULL;
         fex->flush = NULL;
+        fex->advance = NULL;
         /* Keep close callback so the dict is freed at teardown. */
         return 0;
     }
@@ -588,17 +592,9 @@ static int motion_flush_trailing(MotionStateCuda *s, VmafFeatureCollector *featu
     return (ret < 0) ? ret : !ret;
 }
 
-/* motion_flush_window - motion2 and motion3 of every frame with the
- * five-frame window.
- *
- * The three-frame twin emits motion2 / motion3 as the frames come in
- * (emit_batch_scores(), motion_flush_trailing()). With the five-frame window
- * collect() stores the SAD scores only and this derives both from them at
- * the end, with the CPU extractor's own function
- * (integer_motion.c::vmaf_motion_window_flush(), ADR-1478), so the scores
- * are the CPU's whenever the SADs are (ADR-1491).
- */
-static int motion_flush_window(MotionStateCuda *s, VmafFeatureCollector *feature_collector)
+/* The five-frame window of this twin's options, on its state: the CPU
+ * extractor's (integer_motion.c, motion_window.h). */
+static VmafMotionWindow motion_window_of(MotionStateCuda *s)
 {
     const VmafMotionWindow window = {
         .sad_feature = "VMAF_integer_feature_motion_sad_score",
@@ -609,9 +605,40 @@ static int motion_flush_window(MotionStateCuda *s, VmafFeatureCollector *feature
         .motion_max_val = s->motion_max_val,
         .motion_five_frame_window = true,
         .motion_moving_average = s->motion_moving_average,
+        .state = &s->window_state,
     };
+    return window;
+}
+
+/* motion_flush_window - motion2 and motion3 of the frames no advance
+ * derived, with the five-frame window.
+ *
+ * The three-frame twin emits motion2 / motion3 as the frames come in
+ * (emit_batch_scores(), motion_flush_trailing()). With the five-frame window
+ * collect() stores the SAD scores only; advance_fex_cuda() derives each
+ * frame once its window is complete (ADR-2090) and this the rest at the end,
+ * with the CPU extractor's own functions
+ * (integer_motion.c::vmaf_motion_window_advance() / _flush(), ADR-1478), so
+ * the scores are the CPU's whenever the SADs are (ADR-1491).
+ */
+static int motion_flush_window(MotionStateCuda *s, VmafFeatureCollector *feature_collector)
+{
+    const VmafMotionWindow window = motion_window_of(s);
     const int err = vmaf_motion_window_flush(feature_collector, s->feature_name_dict, &window);
     return err ? err : 1;
+}
+
+/* ADR-2090: motion2 / motion3 of the frames whose five-frame window the SAD
+ * scores read back so far complete. The SADs land at the batch-boundary
+ * collect (ADR-0845), so frames complete in batches. The three-frame path
+ * emits its own scores in collect(). */
+static int advance_fex_cuda(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector)
+{
+    MotionStateCuda *s = fex->priv;
+    if (!s->motion_five_frame_window)
+        return 0;
+    const VmafMotionWindow window = motion_window_of(s);
+    return vmaf_motion_window_advance(feature_collector, s->feature_name_dict, &window);
 }
 
 static int flush_fex_cuda(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector)
@@ -734,8 +761,8 @@ static int emit_batch_scores(MotionStateCuda *s, VmafFeatureCollector *fc, unsig
                 fc, s->feature_name_dict, "VMAF_integer_feature_motion_score", sad_score, i);
         }
 
-        /* Five-frame window: flush() derives motion2 / motion3 of every
-         * frame from the SAD scores (motion_flush_window()). */
+        /* Five-frame window: advance_fex_cuda() and flush() derive motion2 /
+         * motion3 from the SAD scores (ADR-2090). */
         if (s->motion_five_frame_window)
             continue;
 
@@ -768,8 +795,8 @@ static int emit_batch_scores(MotionStateCuda *s, VmafFeatureCollector *fc, unsig
  * (the CPU's `index < min_idx`, integer_motion.c::extract).
  *
  * HISS-04: lifted out of collect_fex_cuda. The three-frame twin writes
- * motion2 of frame 0 here; with the five-frame window flush() writes motion2
- * of every frame (motion_flush_window()).
+ * motion2 of frame 0 here; with the five-frame window advance_fex_cuda() and
+ * flush() write motion2 of every frame (motion_flush_window(), ADR-2090).
  */
 static int motion_collect_no_sad(MotionStateCuda *s, VmafFeatureCollector *feature_collector,
                                  unsigned index)
@@ -893,6 +920,7 @@ VmafFeatureExtractor vmaf_fex_integer_motion_cuda = {
     .submit = submit_fex_cuda,
     .collect = collect_fex_cuda,
     .flush = flush_fex_cuda,
+    .advance = advance_fex_cuda,
     .close = close_fex_cuda,
     .options = options,
     .priv_size = sizeof(MotionStateCuda),

@@ -61,12 +61,19 @@ context calls again.
   is submitted (the engine double-buffers device extractors), one submit
   later.
 - **Features that read the next frame.** `motion2` and `motion3` of a frame
-  need the motion of the frame after it, and the integer motion extractors
-  derive them for every frame at the flush
-  ([ADR-1478](../../adr/1478-motion-five-frame-window-port.md)). A window over
-  them, or over a VMAF model (every model reads `motion2`), completes at the
-  flush in this release. Windows over the model's other features (ADM, VIF)
-  complete as their frames arrive.
+  need the motion of the frame after it (and, with
+  `motion_five_frame_window`, frames 0 and 1 need frame 2). The engine
+  derives them as soon as that frame is scored
+  ([ADR-2090](../../adr/2090-motion-window-incremental.md)), so a window over
+  them, or over a VMAF model (every model reads `motion2`), completes one
+  frame after its `last`: without worker threads right after the submit of
+  frame `last + 1`; with worker threads when the worker finishes frame
+  `last + 1` (the completion thread lets the engine derive them before it
+  looks), also while the producer makes no further call; on a device backend
+  one submit later, and with `motion_cuda` at its readback batch of eight
+  frames. The last frame of the stream has no frame after it: its `motion2`
+  and `motion3` become final at the flush, which completes the windows that
+  end there.
 - **At the flush** every open window completes over the frames the stream
   had. A window whose `last` lies past the stream's last frame is flagged
   `VMAFX_WINDOW_PARTIAL` and pools `n_frames` frames from `first`; one that no

@@ -19,8 +19,9 @@
  *      window) and under motion_force_zero, otherwise
  *      MIN(sad / 256 / (w * h) * motion_fps_weight, motion_max_val); with
  *      `debug` the same value as VMAF_integer_feature_motion_score;
- *    - flush() derives motion2 and motion3 of every frame from those with the
- *      CPU's own function, vmaf_motion_window_flush() (motion_window.h,
+ *    - advance() and flush() derive motion2 and motion3 of every frame from
+ *      those, each once its window is complete (ADR-2090), with the CPU's own
+ *      functions, vmaf_motion_window_advance() / _flush() (motion_window.h,
  *      ADR-1478), for both windows.
  *  The option table is the CPU's, so a model or request that sets one of its
  *  options keeps the twin (ADR-1183).
@@ -91,6 +92,8 @@ using IntegerMotionStateMetal = struct IntegerMotionStateMetal {
     bool debug;
 
     VmafDictionary *feature_name_dict;
+    /* motion2 / motion3, derived as the SAD scores come in (ADR-2090). */
+    VmafMotionWindowState window_state;
 };
 } // namespace
 
@@ -376,13 +379,10 @@ int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
                                                    index);
 }
 
-/* motion2 and motion3 of every frame from the SAD scores, with the CPU's
- * flush() (integer_motion.c, motion_window.h, ADR-1478). Once. */
-int flush_fex_metal(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector)
+/* The window of this twin's options, on its state: the CPU extractor's
+ * (integer_motion.c, motion_window.h, ADR-1478), for both windows. */
+VmafMotionWindow motion_window_of(IntegerMotionStateMetal *s)
 {
-    IntegerMotionStateMetal *s = (IntegerMotionStateMetal *)fex->priv;
-    if (s->flushed || s->feature_name_dict == nullptr) { return 1; }
-
     const VmafMotionWindow window = {
         .sad_feature = "VMAF_integer_feature_motion_sad_score",
         .motion2_feature = "VMAF_integer_feature_motion2_score",
@@ -392,7 +392,29 @@ int flush_fex_metal(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_col
         .motion_max_val = s->motion_max_val,
         .motion_five_frame_window = s->motion_five_frame_window,
         .motion_moving_average = s->motion_moving_average,
+        .state = &s->window_state,
     };
+    return window;
+}
+
+/* ADR-2090: motion2 and motion3 of the frames whose window the SAD scores
+ * collected so far complete, with the CPU's vmaf_motion_window_advance(). */
+int advance_fex_metal(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector)
+{
+    IntegerMotionStateMetal *s = (IntegerMotionStateMetal *)fex->priv;
+    if (s->flushed || s->feature_name_dict == nullptr) { return 0; }
+    const VmafMotionWindow window = motion_window_of(s);
+    return vmaf_motion_window_advance(feature_collector, s->feature_name_dict, &window);
+}
+
+/* motion2 and motion3 of the frames no advance derived, from the SAD scores,
+ * with the CPU's flush() (integer_motion.c, motion_window.h, ADR-1478). Once. */
+int flush_fex_metal(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector)
+{
+    IntegerMotionStateMetal *s = (IntegerMotionStateMetal *)fex->priv;
+    if (s->flushed || s->feature_name_dict == nullptr) { return 1; }
+
+    const VmafMotionWindow window = motion_window_of(s);
     const int err = vmaf_motion_window_flush(feature_collector, s->feature_name_dict, &window);
     if (err != 0) { return err; }
     s->flushed = true;
@@ -430,6 +452,7 @@ VmafFeatureExtractor vmaf_fex_integer_motion_metal = {
     .name              = "integer_motion_metal",
     .init              = init_fex_metal,
     .flush             = flush_fex_metal,
+    .advance           = advance_fex_metal,
     .close             = close_fex_metal,
     .submit            = submit_fex_metal,
     .collect           = collect_fex_metal,

@@ -2,7 +2,7 @@
 // Copyright 2026 Lusoris
 // SPDX-License-Identifier: BSD-2-Clause-Patent
 //
-// Ported from `init`, `extract` and `flush` of
+// Ported from `init`, `extract`, `advance` and `flush` of
 // core/src/feature/integer_motion.c.
 
 //! The `motion` extractor state and its `Extractor` implementation.
@@ -14,18 +14,20 @@ use vmafx_fex::{
 
 use crate::options::MotionOptions;
 use crate::sad::{self, MIN_DIM};
-use crate::window::{self, Window, c_min};
+use crate::window::{self, State, Window, c_min};
 
 const SAD_SCORE: &core::ffi::CStr = window::SAD;
 const MOTION_SCORE: &core::ffi::CStr = c"VMAF_integer_feature_motion_score";
 
-/// State of one context: options, geometry and the vertical-pass row.
+/// State of one context: options, geometry, the vertical-pass row and where
+/// the motion2 / motion3 derivation stands (C `MotionState.window_state`).
 pub struct Motion {
     opts: MotionOptions,
     w: u32,
     h: u32,
     bpc: u32,
     y_row: Vec<i32>,
+    window_state: State,
 }
 
 impl Motion {
@@ -107,6 +109,7 @@ impl Extractor for Motion {
             h: geom.h,
             bpc: geom.bpc,
             y_row,
+            window_state: State::default(),
         })
     }
 
@@ -119,8 +122,17 @@ impl Extractor for Motion {
         Ok(())
     }
 
+    /// ADR-2090: motion2 / motion3 of the frames whose window the SAD scores
+    /// in the collector complete (C `advance()`).
+    fn advance(&mut self, host: &mut Host<'_>) -> Result<(), Error> {
+        let win = self.window();
+        window::advance(host, &win, &mut self.window_state)
+    }
+
+    /// The frames no advance derived (C `flush()`).
     fn flush(&mut self, host: &mut Host<'_>) -> Result<Flush, Error> {
-        window::flush(host, &self.window())?;
+        let win = self.window();
+        window::flush(host, &win, &mut self.window_state)?;
         Ok(Flush::Done)
     }
 }

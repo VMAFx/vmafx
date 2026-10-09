@@ -675,6 +675,7 @@ core/test/test_motion_min_dim.c
 core/test/test_motion_neon.c
 core/test/test_motion_pipeline_neon.c
 core/test/test_motion_v2_simd.c
+core/test/test_motion_window_incremental.c
 core/test/test_ms_ssim_decimate.c
 core/test/test_ms_ssim_decimate_coverage.c
 core/test/test_niqe.c

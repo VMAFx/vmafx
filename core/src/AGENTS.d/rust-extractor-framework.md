@@ -6,52 +6,58 @@ paths:
   - core/src/feature/tad_rust.c
   - core/src/libvmaf.c
   - core/src/meson.build
-invariant: One Rust archive in libvmaf only; registry reaches Rust via the shim accessor; twins inherit C descriptor.
+invariant: One Rust archive, engine library only; registry reaches Rust via shim accessor; twins inherit C descriptor.
 ---
 <!-- markdownlint-disable MD013 -->
 # Rust extractor framework (ADR-1713)
 
-- **Separate, dependency-free workspace.** `core/src/rust/Cargo.toml` is its
-  own workspace (the root one `exclude`s it and the TAD crate, which names it
-  with `package.workspace`). Its `Cargo.lock` holds no external crate; adding
-  one breaks Meson's `cargo build --offline --locked` and the empty-CARGO_HOME
-  step of `rust-ci.yml`, on purpose. Never move these crates back into the
-  root workspace: cargo resolves the whole workspace and the bindings need
-  `bindgen` from the registry.
-- **One archive, libvmaf only.** `core/src/meson.build` builds
-  `vmafx-core-rs` (`core/src/rust/staticlib`) with
-  `core/src/rust/build_staticlib.py` (offline, `--locked`, depfile) and
-  links it, the shim `core/src/rust/shim/rust_twins.cpp` and
-  `core/src/feature/tad_rust.c` into the `libvmaf` library target only. Never
-  add a Rust symbol to `libvmaf_feature_static_lib`, `predict_c_lib` or
-  `model.c`: test binaries extract those objects without the archive. A
-  second Rust staticlib in the same link duplicates the Rust std symbols.
-- **Registry through an accessor.** `vmaf_init()` calls
-  `vmaf_rust_twins_install()`, which installs `rust_extractor_at` with
+- **Separate, dependency-free workspace.** `core/src/rust/Cargo.toml` = own
+  workspace (root workspace `exclude`s it and TAD crate, which names it via
+  `package.workspace`). Its `Cargo.lock` holds no external crate; adding one
+  breaks Meson's `cargo build --offline --locked` and empty-CARGO_HOME step of
+  `rust-ci.yml`, on purpose. Never move these crates back into root workspace:
+  cargo resolves whole workspace, bindings need `bindgen` from registry.
+- **One archive, engine library only.** `core/src/meson.build` builds
+  `vmafx-core-rs` (`core/src/rust/staticlib`) via
+  `core/src/rust/build_staticlib.py` (offline, `--locked`, depfile) and links
+  it, shim `core/src/rust/shim/rust_twins.cpp` and
+  `core/src/feature/tad_rust.c` into engine library target only (`libvmafx`
+  since WP6 split, ADR-2094). Never add Rust symbol to
+  `libvmaf_feature_static_lib`, `predict_c_lib` or `model.c`: test binaries
+  extract those objects without archive. Second Rust staticlib in same link
+  duplicates Rust std symbols.
+- **Registry through accessor.** `vmaf_init()` calls
+  `vmaf_rust_twins_install()`, which installs `rust_extractor_at` via
   `vmaf_feature_extractor_install_rust_registry()`. Every registry walk in
-  `feature_extractor.cpp` goes through `registry_at()`; a new walk over
-  `feature_extractor_list[]` directly misses the Rust extractors and their
+  `feature_extractor.cpp` goes through `registry_at()`; new walk over
+  `feature_extractor_list[]` directly misses Rust extractors and their
   duplicate-name audit.
-- **Twins inherit the C descriptor.** `add_twin()` copies the C extractor and
-  replaces only the name, callbacks, `priv_size` (C size rounded up plus one
-  instance pointer at the tail) and adds `VMAF_FEATURE_EXTRACTOR_RUST`. The
-  option table, provided features and `reads_prev_prev_ref` are the C
-  extractor's, which the option parser and the feature-name dictionary rely
-  on. Do not give a twin options of its own. Copy includes `merge` and
-  `extend_name_dict` (ADR-2795): `twin_init()` calls `extend_name_dict` after
-  building the dictionary; the registry keeps the C extractor and the twin
-  apart by name, never by callback.
+- **Twins inherit C descriptor.** `add_twin()` copies C extractor, replaces
+  only name, callbacks, `priv_size` (C size rounded up plus one instance
+  pointer at tail), adds `VMAF_FEATURE_EXTRACTOR_RUST`. Option table, provided
+  features, `reads_prev_prev_ref` = C extractor's; option parser and
+  feature-name dictionary rely on them. No twin-own options. Copy includes
+  `merge` and `extend_name_dict` (ADR-2795): `twin_init()` calls
+  `extend_name_dict` after building dictionary; registry keeps C extractor and
+  twin apart by name, never by callback.
+- **Twin advance = shim trampoline (ADR-2090, MI-1).** `add_twin()` sets
+  `advance` to `twin_advance` iff C extractor defines one, else NULL; never
+  inherited C callback (C advance derives from Rust SADs into C priv, Rust
+  flush appends again, `-EINVAL`). `advance_one_extractor()`
+  (`core/src/libvmaf.c`) runs `init_shared_rust_twin()` before pooled twin's
+  first advance; keep both. Guard: `test_rust_motion_window_incremental`.
 - **C stays default.** `first_pass_eligible()` skips Rust twins when no flag
-  is asked for; only `vmaf_feature_extractor_impl_select()` (env
-  `VMAF_FEATURE_IMPL=rust`, read once through `vmaf_gpu_dispatch_env_get()`)
+  asks; only `vmaf_feature_extractor_impl_select()` (env
+  `VMAF_FEATURE_IMPL=rust`, read once via `vmaf_gpu_dispatch_env_get()`)
   swaps one in. Keep that call on every registration path
   (`vmaf_use_feature`, `vmaf_use_features_from_model`,
   `create_context_fallback`).
-- **ABI header is generated.** `core/src/rust/include/vmafx_rs.h` comes from
-  `scripts/dev/rust-abi-header.sh` (cbindgen 0.29.4); on a conflict take
-  either side and regenerate. `test_rust_abi_layout` compares every size and
-  offset with Rust's table, `test_rust_twin_registry` the registration,
-  `scripts/ci/rust_twin_diff.py` the scores (bit identity, no tolerance).
-- Symbols of the archive stay out of `libvmaf.so` via
-  `-Wl,--exclude-libs,libvmafx_core_rs.a`; `nm -D build/src/libvmaf.so | grep _RN`
-  must print nothing.
+- **ABI header generated.** `core/src/rust/include/vmafx_rs.h` comes from
+  `scripts/dev/rust-abi-header.sh` (cbindgen 0.29.4); on conflict take either
+  side, regenerate. `VMAFX_RS_ABI_VERSION` stays 1 until release ships ABI.
+  `test_rust_abi_layout` compares every size and offset with Rust's table,
+  `test_rust_twin_registry` registration, `scripts/ci/rust_twin_diff.py`
+  scores (bit identity, no tolerance).
+- Archive symbols stay out of engine shared library via
+  `-Wl,--exclude-libs,libvmafx_core_rs.a`;
+  `nm -D build/src/libvmafx.so | grep _RN` must print nothing.

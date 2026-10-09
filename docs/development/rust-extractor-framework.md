@@ -91,7 +91,9 @@ carry the Rust standard library), so every crate is an rlib reached from
 `vmaf_init()` calls `vmaf_rust_twins_install()`. For each entry of the Rust
 registry, the shim finds the C extractor by name, copies its descriptor and
 replaces the name (`<name>_rust`), the callbacks and the flags (adding
-`VMAF_FEATURE_EXTRACTOR_RUST`). The twin therefore shares the C extractor's
+`VMAF_FEATURE_EXTRACTOR_RUST`). `advance` is the twin's own (the trampoline to
+`Extractor::advance`) whenever the C extractor has one, never the inherited C
+callback, which would derive from the twin's scores a second time. The twin therefore shares the C extractor's
 option table, `priv_size`, provided features, flags and
 `reads_prev_prev_ref`. The C option parser fills the C-layout priv blob as
 usual; the shim reads every option back by name and type and hands the list to
@@ -117,7 +119,12 @@ Copy `core/src/rust/feature/psnr` and follow its shape:
    `Error::Unsupported(c"<name>: <option>")`.
 2. A state struct implementing `Extractor`: `init` allocates every buffer
    (`vmafx_fex::try_filled_vec`), `extract` runs one frame, `flush` and
-   `close` mirror the C ones when it has them.
+   `close` mirror the C ones when it has them. `advance` mirrors the C
+   `advance()` ([ADR-2090](../adr/2090-motion-window-incremental.md)) when the
+   C extractor has one: libvmaf calls it on the thread that feeds frames after
+   each accepted frame, and it appends the scores the collector's contents now
+   make final; `flush` appends the rest. Without an `advance` of its own a twin
+   appends nothing there and its `flush` appends every score, as before.
 3. Emit exactly what the C extractor emits, through the same collector call:
    `Host::emit` for `vmaf_feature_collector_append_with_dict`,
    `Host::emit_raw` for `vmaf_feature_collector_append`, `Host::get` for a
@@ -165,8 +172,9 @@ value is the same IEEE double (NaN equals NaN), and the JSON receipt names the C
 extractor in the first run and the twin in the second. It prints the first ten
 differences with both values and their distance in ulp. Every cell runs once
 per `--threads` value (default `0,1,4`): with a thread pool, the flush of a
-non-temporal extractor runs on the shared context, which libvmaf initialises
-for a Rust twin first (`init_shared_rust_twin()` in `core/src/libvmaf.c`). A
+non-temporal extractor, and every `advance` of a twin the pool runs, run on
+the shared context, which libvmaf initialises for a Rust twin first
+(`init_shared_rust_twin()` in `core/src/libvmaf.c`). A
 cell where both sides refuse the input with the same exit status (for example
 `speed_chroma` at prescale 0.5 on 480x270) is reported as `REFUSED` and
 passes; one side refusing alone is an error. Exit 0 equal, 1 mismatch, 2 run

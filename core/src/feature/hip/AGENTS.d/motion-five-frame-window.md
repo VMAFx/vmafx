@@ -3,7 +3,7 @@ paths:
   - core/src/feature/hip/integer_motion_hip.c
   - core/src/feature/hip/integer_motion_v2_hip.c
   - core/test/test_hip_motion_five_frame_window.c
-invariant: motion_five_frame_window on HIP twins = two kept planes + CPU's window function at flush; bit-identical.
+invariant: HIP five-frame window = two kept planes + CPU window function per frame (advance) and at flush; bit-identical.
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # `motion_five_frame_window` on `motion_hip` / `motion_v2_hip` (ADR-1491)
@@ -18,12 +18,17 @@ invariant: motion_five_frame_window on HIP twins = two kept planes + CPU's windo
   no read-back without it.
 - Host, `motion_hip`, option on: `collect()` stores SAD (+ debug `motion`)
   only (`msh_emit_no_sad()` for frames < depth, no `msh_emit_prev_frame()`);
-  `flush()` -> `msh_flush_window()`. Three-frame path untouched.
-- Host, `motion_v2_hip`: `flush()` = `vmaf_motion_window_flush()` for both
-  windows. No local copy of CPU flush; do not add one back.
+  `advance_fex_hip()` (`.advance`) = `vmaf_motion_window_advance()` per frame,
+  `flush()` -> `msh_flush_window()` for rest, on `s->window_state`
+  (ADR-2090). Three-frame path untouched (advance returns 0);
+  `msh_init_force_zero()` clears `advance` with `flush`.
+- Host, `motion_v2_hip`: `.advance` = `vmaf_motion_window_advance()`,
+  `flush()` = `vmaf_motion_window_flush()`, both windows. No local copy of
+  CPU derivation; do not add one back.
 - Option rows = CPU's, no `VMAF_OPT_FLAG_DEFAULT_ONLY`
   (`test_gpu_option_value_capability_contract.py`,
   `test_hip_twin_option_parity`).
 - Guards: `test_hip_motion_five_frame_window` (`==`, six option sets, 11 / 1
-  / 2 / 3 frames, 8 / 10 bit; fixture `core/test/motion_five_frame_twin_parity.h`),
+  / 2 / 3 frames, 8 / 10 bit; fixture `core/test/motion_five_frame_twin_parity.h`;
+  frame-by-frame finality, `lag_motion*` = 2), `test_motion_window_advance_contract.py`,
   gate cells `motion_mffw`, `motion_v2_mffw` (exact).

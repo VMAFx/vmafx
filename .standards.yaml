@@ -228,6 +228,10 @@ exceptions:
     reason: "Built only with -Denable_rust_features=true, which needs cargo; the dev image has no Rust toolchain yet (ADR-1713 follow-up: a pinned toolchain in dev/Containerfile), so no lane configures it. Needs a Rust-enabled lane."
     expires: "2026-12-31"
   - rule: clang-tidy-coverage
+    path: "core/test/test_rust_motion_window_incremental.c"
+    reason: "Built only with -Denable_rust_features=true, which needs cargo; the dev image has no Rust toolchain yet (ADR-1713 follow-up: a pinned toolchain in dev/Containerfile), so no lane configures it. Needs a Rust-enabled lane."
+    expires: "2026-12-31"
+  - rule: clang-tidy-coverage
     path: "core/test/test_rust_predict.c"
     reason: "Built only with -Denable_rust_features=true, which needs cargo; the dev image has no Rust toolchain yet (ADR-1713 follow-up: a pinned toolchain in dev/Containerfile), so no lane configures it. Needs a Rust-enabled lane."
     expires: "2026-12-31"

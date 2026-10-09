@@ -39,8 +39,9 @@
  * two back, as on the CPU (integer_motion.c, Netflix a2b59b77): d_raw_y[0]
  * holds frame n-2 and d_raw_y[1] frame n-1, advanced by two device copies
  * after each frame's kernel. collect() then stores the SAD scores only, and
- * flush() derives motion2 / motion3 of every frame from them with the CPU's
- * own function, vmaf_motion_window_flush() (motion_window.h, ADR-1478).
+ * advance() and flush() derive motion2 / motion3 of every frame from them,
+ * each once its window is complete (ADR-2090), with the CPU's own functions,
+ * vmaf_motion_window_advance() / _flush() (motion_window.h, ADR-1478).
  *
  * Pattern: init -> submit (non-blocking) -> collect (wait + scores)
  * TEMPORAL flag: frames must be processed in sequential order.
@@ -102,6 +103,9 @@ struct MotionStateSycl {
     double motion_max_val;
 
     VmafDictionary *feature_name_dict;
+    /* motion2 / motion3 of the five-frame window, derived as the SAD scores
+     * come in (ADR-2090). */
+    VmafMotionWindowState window_state;
 
     // Frame tracking
     unsigned frame_index;
@@ -462,9 +466,9 @@ static int motion_append_sad_score(const MotionStateSycl *s, double sad_score, u
 
 /* One frame under motion_force_zero. The CPU appends a SAD score of 0 on
  * every frame (and repeats it as the motion score under debug), and its
- * flush() derives motion2 = motion3 = 0 from those zeros for every frame
- * (integer_motion.c). All of a frame's outputs are known here, so flush() has
- * nothing to add. */
+ * advance() and flush() derive motion2 = motion3 = 0 from those zeros for
+ * every frame (integer_motion.c). All of a frame's outputs are known here, so
+ * advance_fex_sycl() and flush() have nothing to add. */
 static int motion_append_forced_zero(MotionStateSycl *s, unsigned index,
                                      VmafFeatureCollector *feature_collector)
 {
@@ -791,8 +795,8 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
     double const motion_score = motion_score_from_sad(s);
     int err;
     if (s->motion_five_frame_window) {
-        // The SAD score only (0 for frames 0 and 1); flush() derives motion2
-        // and motion3 of every frame from the stored scores.
+        // The SAD score only (0 for frames 0 and 1); advance_fex_sycl() and
+        // flush() derive motion2 and motion3 from the stored scores.
         err =
             motion_append_sad_score(s, MIN(motion_score * s->motion_fps_weight, s->motion_max_val),
                                     index, feature_collector);
@@ -826,11 +830,9 @@ static int extract_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     return collect_fex_sycl(fex, index, feature_collector);
 }
 
-/* motion2 and motion3 of every frame with the five-frame window, derived
- * from the stored SAD scores by the CPU extractor's own function
- * (integer_motion.c::vmaf_motion_window_flush(), ADR-1478): the scores are
- * the CPU's whenever the SADs are (ADR-1491). */
-static int motion_flush_window(MotionStateSycl *s, VmafFeatureCollector *feature_collector)
+/* The five-frame window of this twin's options, on its state: the CPU
+ * extractor's (integer_motion.c, motion_window.h). */
+static VmafMotionWindow motion_window_of(MotionStateSycl *s)
 {
     const VmafMotionWindow window = {
         .sad_feature = "VMAF_integer_feature_motion_sad_score",
@@ -841,9 +843,32 @@ static int motion_flush_window(MotionStateSycl *s, VmafFeatureCollector *feature
         .motion_max_val = s->motion_max_val,
         .motion_five_frame_window = true,
         .motion_moving_average = s->motion_moving_average,
+        .state = &s->window_state,
     };
+    return window;
+}
+
+/* motion2 and motion3 of the frames no advance derived, with the five-frame
+ * window, from the stored SAD scores by the CPU extractor's own function
+ * (integer_motion.c::vmaf_motion_window_flush(), ADR-1478): the scores are
+ * the CPU's whenever the SADs are (ADR-1491). */
+static int motion_flush_window(MotionStateSycl *s, VmafFeatureCollector *feature_collector)
+{
+    const VmafMotionWindow window = motion_window_of(s);
     int const err = vmaf_motion_window_flush(feature_collector, s->feature_name_dict, &window);
     return err ? err : 1;
+}
+
+/* ADR-2090: motion2 / motion3 of the frames whose five-frame window the SAD
+ * scores collected so far complete (vmaf_motion_window_advance()). The
+ * three-frame path and motion_force_zero emit their own scores in collect(). */
+static int advance_fex_sycl(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector)
+{
+    auto *s = static_cast<MotionStateSycl *>(fex->priv);
+    if (!s->motion_five_frame_window || s->motion_force_zero || s->feature_name_dict == nullptr)
+        return 0;
+    const VmafMotionWindow window = motion_window_of(s);
+    return vmaf_motion_window_advance(feature_collector, s->feature_name_dict, &window);
 }
 
 static int flush_fex_sycl(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector)
@@ -985,6 +1010,7 @@ extern "C" VmafFeatureExtractor vmaf_fex_integer_motion_sycl = {
     .init = init_fex_sycl,
     .extract = extract_fex_sycl,
     .flush = flush_fex_sycl,
+    .advance = advance_fex_sycl,
     .close = close_fex_sycl,
     .submit = submit_fex_sycl,
     .collect = collect_fex_sycl,

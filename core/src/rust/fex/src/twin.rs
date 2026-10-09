@@ -105,6 +105,20 @@ pub trait Extractor: Sized + Send {
         Ok(Flush::Done)
     }
 
+    /// Mirrors the C `advance` (ADR-2090): append every score the
+    /// collector's contents now make final, never one a later frame could
+    /// still change; `flush` appends the rest. Called on the thread that
+    /// feeds frames, never next to `extract` or `flush` of this state, and
+    /// only when the C extractor has an `advance`. Default: nothing, so
+    /// `flush` appends every score as before.
+    ///
+    /// # Errors
+    ///
+    /// What the C `advance` refuses, or a host error.
+    fn advance(&mut self, _host: &mut Host<'_>) -> Result<(), Error> {
+        Ok(())
+    }
+
     /// Mirrors what the C `close` reports (log lines) before the state is
     /// dropped. The host is log-only: emitting fails.
     fn close(&mut self, _host: &Host<'_>) {}
@@ -232,6 +246,31 @@ unsafe extern "C" fn flush_tramp<E: Extractor>(
 
 /// # Safety
 ///
+/// `state` came from `init_tramp::<E>`; `host` valid for the call; `message`
+/// NULL or writable.
+unsafe extern "C" fn advance_tramp<E: Extractor>(
+    state: *mut c_void,
+    host: *const VmafxRsHost,
+    message: *mut *const c_char,
+) -> i32 {
+    // SAFETY: shim contract: valid or NULL pointers for this call.
+    let (Some(e), Some(h)) = (unsafe { state.cast::<E>().as_mut() }, unsafe {
+        host.as_ref()
+    }) else {
+        // SAFETY: forwarded caller contract on `message`.
+        return unsafe { report(Error::InvalidArgument(c"advance: NULL argument"), message) };
+    };
+    // SAFETY: shim contract on the host callbacks.
+    let result = unsafe { Host::from_abi(h) }.and_then(|mut host| e.advance(&mut host));
+    match result {
+        Ok(()) => VMAFX_RS_OK,
+        // SAFETY: forwarded caller contract on `message`.
+        Err(err) => unsafe { report(err, message) },
+    }
+}
+
+/// # Safety
+///
 /// `state` is NULL or came from `init_tramp::<E>` and is not used afterwards;
 /// `host` is NULL or valid for the call.
 unsafe extern "C" fn close_tramp<E: Extractor>(state: *mut c_void, host: *const VmafxRsHost) {
@@ -262,5 +301,6 @@ pub const fn twin<E: Extractor>(c_name: &'static CStr, rust_name: &'static CStr)
         extract: Some(extract_tramp::<E>),
         flush: Some(flush_tramp::<E>),
         close: Some(close_tramp::<E>),
+        advance: Some(advance_tramp::<E>),
     }
 }

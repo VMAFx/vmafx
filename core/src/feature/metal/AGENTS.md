@@ -49,7 +49,7 @@ when conversion happens.
 | `integer_adm_metal_host.c`, `integer_adm_metal_host.h`, `metal_integer_adm_uniforms.h`, `integer_adm_metal.mm` | [integer-adm-host](AGENTS.d/integer-adm-host.md) | integer_adm_metal: host logic, slots and scale-1 parent (ADR-1806). |
 | `*.mm`, `*.metal` | [kernel-files](AGENTS.d/kernel-files.md) | table of every Metal kernel file, its status and features it emits. |
 | `float_motion_metal.mm`, `integer_motion_metal.mm` | [motion-fps-weight](AGENTS.d/motion-fps-weight.md) | motion_fps_weight is CPU value, per frame (ADR-1498). |
-| `float_motion_metal.mm`, `integer_motion_metal.mm` | [motion3-v2](AGENTS.d/motion3-v2.md) | motion3_v2 cross-twin invariant (ADR-1108). |
+| `float_motion_metal.mm`, `integer_motion_metal.mm`, `integer_motion_v2_metal.mm` | [motion3-v2](AGENTS.d/motion3-v2.md) | motion3_v2 cross-twin invariant (ADR-1108). |
 | `integer_motion_v2_metal.mm`, `integer_motion_v2.metal` | [mv2-mirror](AGENTS.d/mv2-mirror.md) | mv2_mirror is reflect-101, identical across backends (ADR-1176). |
 | `*.mm`, `float_ms_ssim_option_semantics.h` | [option-table-sync](AGENTS.d/option-table-sync.md) | A Metal twin mirrors CPU option table and emits CPU outputs; names before option slots. |
 | `*.mm` | [registration-coverage](AGENTS.d/registration-coverage.md) | Every Metal extractor is registered and covered by registration contract test. |
