@@ -491,7 +491,10 @@ static void vif_filter1d_vertical_dispatch_s(const float *f, int fwidth, const f
                                              int src_px_stride, int w, int h, int i, float *tmp)
 {
 #if ARCH_X86
-    if (vif_use_avx2_convolution(fwidth)) {
+    /* fwidth >= 1: the row table below is filled for every tap the AVX2
+     * pass reads (convolution_f32_avx_rows_s() reads rows[0..fwidth)), so it
+     * is never handed over empty. Every SpEED and VIF filter has a tap. */
+    if (fwidth >= 1 && vif_use_avx2_convolution(fwidth)) {
         const float *rows[MAX_FWIDTH_AVX_CONV];
         for (int fi = 0; fi < fwidth; ++fi) {
             const int ii = vif_mirror_index(i - fwidth / 2 + fi, h);

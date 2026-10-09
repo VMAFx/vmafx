@@ -361,7 +361,9 @@ static char *test_avx_rows(void)
         }
     }
     for (size_t f = 0; f < SF_LEN(fwidths); f++) {
-        for (int k = 0; k < fwidths[f]; k++) {
+        /* Every tap is drawn, the first fwidths[f] are used: the table is
+         * whole before it is passed, whatever the width. */
+        for (int k = 0; k < MAX_FWIDTH_AVX_CONV; k++) {
             state = state * 1664525u + 1013904223u;
             taps[k] = (float)(state >> 8) / (float)(1 << 24);
         }
