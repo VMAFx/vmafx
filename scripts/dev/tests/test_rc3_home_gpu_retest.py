@@ -335,7 +335,24 @@ class FakeDeviceRunTests(unittest.TestCase):
         ):
             (fixtures / name).touch()
         self.log = self.dir / "vmaf.log"
-        self.env = dict(os.environ, FAKE_VMAF_LOG=str(self.log))
+        # The host's nvidia-smi must not decide these runs (a driver/library version
+        # mismatch made every test exit 18): a stub on PATH stands in for it.
+        self.bin = self.dir / "bin"
+        self.bin.mkdir()
+        self.fake_nvidia_smi(0)
+        self.env = dict(
+            os.environ,
+            FAKE_VMAF_LOG=str(self.log),
+            PATH=f"{self.bin}{os.pathsep}{os.environ.get('PATH', '')}",
+        )
+
+    def fake_nvidia_smi(self, exit_code: int) -> None:
+        stub = self.bin / "nvidia-smi"
+        stub.write_text(
+            f"#!/bin/sh\necho '7, NVIDIA GeForce RTX 4090, 1 MiB, 24564 MiB, 0 %'\nexit {exit_code}\n",
+            encoding="utf-8",
+        )
+        stub.chmod(0o755)
 
     def tearDown(self) -> None:
         self.tmp.cleanup()
@@ -406,6 +423,13 @@ class FakeDeviceRunTests(unittest.TestCase):
         self.assertIn(
             f"{self.ROW}/cuda/nf-cuda.json vs baseline: max 0.0001", self.summary("after")[3]
         )
+
+    def test_failing_nvidia_smi_is_recorded_not_fatal(self) -> None:
+        self.fake_nvidia_smi(18)
+        result = self.kit("run")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        host = (self.dir / "run" / "host.txt").read_text(encoding="utf-8")
+        self.assertIn("nvidia-smi failed (exit 18)", host)
 
     def test_missing_fixture_is_an_error(self) -> None:
         (self.dir / "fixtures/ref_3840x2160_200f.yuv").unlink()
