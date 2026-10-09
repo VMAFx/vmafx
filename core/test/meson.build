@@ -8903,6 +8903,14 @@ test('test_win32_pthread_shim_contract',
     suite : ['fast'],
     timeout : 30,
 )
+# A format(printf) attribute is checked against the MSVCRT archetype on MinGW,
+# which has no %zu or %td; __MINGW_PRINTF_FORMAT names the right one.
+test('test_mingw_printf_archetype_contract',
+    import('python').find_installation(),
+    args : files('test_mingw_printf_archetype_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
 # An internal C function named after a C library function becomes the same
 # assembler symbol as the macOS header's labelled declaration in a full-LTO
 # link, and every call of the library function branches to it
