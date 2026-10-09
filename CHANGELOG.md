@@ -14,6 +14,14 @@
   ([Two viewing distances share one `adm`](docs/metrics/adm.md#two-viewing-distances-share-one-adm)).
 
 
+- **`adm_hip` evaluates two viewing distances in one instance (ADR-2795).**
+  With `adm_norm_view_dist_extra`, or when two models such as
+  `vmaf_v1.0.16_3d0h` and `_5d0h` run on `--backend hip`, the HIP twin runs the
+  wavelet transform once per scale and the other kernels per distance, and
+  returns the CPU's scores for both distances bit for bit
+  ([Two viewing distances share one `adm`](docs/metrics/adm.md#two-viewing-distances-share-one-adm)).
+
+
 - **Two ADM viewing distances share one extractor (Netflix/vmaf `33e5f0aca`,
   `cffd5b77d`).** When two models need `adm` with options that differ only in
   `adm_norm_view_dist` (for example `vmaf_v1.0.16_3d0h` and `_5d0h`), libvmaf
@@ -1228,6 +1236,14 @@
 
 
 - **The Windows icx-cl (SYCL) build no longer reports the C runtime's deprecated calls.** The tiny-AI model-path lookup and the model loader read the environment through `vmaf_getenv_portable()`, the tiny-model sidecar copies a feature name with `VMAF_STRDUP`, and the tests open files through `vmaf_fopen_utf8()` and temporary files through the new `vmaf_tmpfile_portable()` (`tmpfile_s()` under MSVC and icx-cl). A model path read from `VMAF_*_MODEL_PATH` is now copied into a buffer the extractor owns, so the loader's own environment read cannot overwrite it on Windows; a path longer than 4095 bytes is refused with a log line. No score changes. The Windows SYCL leg no longer passes `/experimental:c11atomics` to icx-cl, which ignored it, and `UNUSED_FUNCTION` marks the function for clang-cl and icx-cl too.
+
+
+- **`vif` reads only the samples of each row (Netflix/vmaf `9f4bd165f`).**
+  The integer VIF extractor copied a whole picture stride per luma row into
+  its buffer. A picture whose stride is wider than its rows and whose last row
+  ends before a full stride, such as a wrapped decoder frame or a crop, was
+  read past its end. Pictures from `vmaf_picture_alloc()` were not affected;
+  no score changes.
 
 
 - **Container images build again.** Every image that builds libvmaf stopped
