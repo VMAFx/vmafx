@@ -1,10 +1,10 @@
 site_name: "VMAFx"
-site_url: https://vmafx.github.io/vmafx/
+site_url: https://vmafx.dev/
 site_description: Perceptual video quality assessment with GPU/SIMD acceleration.
 repo_url: https://github.com/VMAFx/vmafx
 repo_name: VMAFx/vmafx
 edit_uri: edit/master/docs/
-copyright: 'Fork-authored files EUPL-1.2, files inherited from Netflix BSD-2-Clause-Patent: each file''s SPDX header decides (ADR-1250). <a href="https://vmafx.github.io/vmafx/licensing/">Licensing</a> · <a href="https://github.com/VMAFx/vmafx/blob/master/LICENSE">LICENSE</a> (EUPL-1.2) · <a href="https://github.com/VMAFx/vmafx/blob/master/NOTICE">NOTICE</a> · <a href="https://github.com/VMAFx/vmafx/tree/master/LICENSES">LICENSES/</a>'
+copyright: 'Fork-authored files EUPL-1.2, files inherited from Netflix BSD-2-Clause-Patent: each file''s SPDX header decides (ADR-1250). <a href="https://vmafx.dev/licensing/">Licensing</a> · <a href="https://github.com/VMAFx/vmafx/blob/master/LICENSE">LICENSE</a> (EUPL-1.2) · <a href="https://github.com/VMAFx/vmafx/blob/master/NOTICE">NOTICE</a> · <a href="https://github.com/VMAFx/vmafx/tree/master/LICENSES">LICENSES/</a>'
 
 docs_dir: docs
 site_dir: build-docs/site

@@ -35,7 +35,7 @@ edition = "2024"
 license = "EUPL-1.2"
 repository = "https://github.com/VMAFx/vmafx"
 homepage = "https://github.com/VMAFx/vmafx"
-documentation = "https://vmafx.github.io/vmafx/"
+documentation = "https://vmafx.dev/"
 readme = "README.md"
 
 [profile.release]

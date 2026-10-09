@@ -71,7 +71,7 @@ vmafx-mcp = "vmaf_mcp.console_alias:deprecated_vmafx_mcp_alias"
 [project.urls]
 Homepage = "https://github.com/VMAFx/vmafx"
 Repository = "https://github.com/VMAFx/vmafx"
-Documentation = "https://vmafx.github.io/vmafx/mcp/"
+Documentation = "https://vmafx.dev/mcp/"
 Issues = "https://github.com/VMAFx/vmafx/issues"
 Changelog = "https://github.com/VMAFx/vmafx/blob/master/CHANGELOG.md"
 

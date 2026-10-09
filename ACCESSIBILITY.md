@@ -24,7 +24,7 @@ automated check and a manual pass say so and the result is recorded here.
 
 This statement covers:
 
-- the documentation site (<https://vmafx.github.io/vmafx/>) and the Markdown
+- the documentation site (<https://vmafx.dev/>) and the Markdown
   files in this repository, including `README.md`;
 - the command-line tools (`vmaf` / `vmafx`) and their output;
 - the Grafana dashboards generated from `pkg/observability/obsgen`

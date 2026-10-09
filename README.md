@@ -42,7 +42,7 @@
   [![License](https://img.shields.io/badge/License-EUPL--1.2_·_BSD--2--Clause--Patent-blue.svg?style=for-the-badge)](docs/adr/1250-eupl-fork-relicense.md)
   [![Ko-fi](https://img.shields.io/badge/Support-Ko--fi-FF5E5B?style=for-the-badge&logo=kofi&logoColor=white)](https://ko-fi.com/lusoris)
 
-  **[📖 Full documentation](https://vmafx.github.io/vmafx/)** · [Documentation source](docs/index.md)
+  **[📖 Full documentation](https://vmafx.dev/)** · [Documentation source](docs/index.md)
 
 </div>
 
