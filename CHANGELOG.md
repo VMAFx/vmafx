@@ -6,6 +6,14 @@
 ## [Unreleased]
 ### Added
 
+- **`adm_cuda` evaluates two viewing distances in one instance (ADR-2795).**
+  With `adm_norm_view_dist_extra`, or when two models such as
+  `vmaf_v1.0.16_3d0h` and `_5d0h` run on `--backend cuda`, the CUDA twin runs
+  the wavelet transform once per scale and the other kernels per distance, and
+  returns the CPU's scores for both distances bit for bit
+  ([Two viewing distances share one `adm`](docs/metrics/adm.md#two-viewing-distances-share-one-adm)).
+
+
 - **Two ADM viewing distances share one extractor (Netflix/vmaf `33e5f0aca`,
   `cffd5b77d`).** When two models need `adm` with options that differ only in
   `adm_norm_view_dist` (for example `vmaf_v1.0.16_3d0h` and `_5d0h`), libvmaf
@@ -179,7 +187,7 @@
   into windows of `n_stats` seconds or `n_stats_frames` frames (#2138), and
   `vmafx_context_max_in_flight` reports the most frames a context holds after
   a submit (#2238). Windows over `motion2` / `motion3`, and so over VMAF
-  models, complete at the flush in this release. ABI 0.1.8. See
+  models, complete one frame after their last frame (ADR-2090). ABI 0.1.8. See
   [window scores](docs/api/vmafx/windows.md).
 
 
@@ -637,6 +645,20 @@
   tests) are gone. Scores are unchanged: the copies held the same double.
 
 
+- **`motion2` / `motion3` are final one frame after their frame, not at the
+  flush (RC4, ADR-2090).** The integer motion extractors (`motion`,
+  `motion_v2`) and every GPU twin that derived `motion2` / `motion3` at the
+  end of the stream now write a frame's scores as soon as the frame after it
+  is scored (frame 2 for frames 0 and 1 with `motion_five_frame_window`); the
+  last frame's scores still come with the flush. The values are unchanged,
+  bit for bit: the derivation runs the same statements in the same order and
+  carries the moving average from frame to frame. A per-frame model score, a
+  metadata callback for a model, `vmaf_score_pooled()` over the frames read
+  so far, and a VMAFx window over a VMAF model are therefore available while
+  the stream runs; on CUDA, `motion_cuda` completes frames per readback
+  batch of eight. See [motion](docs/metrics/motion.md#when-motion2-and-motion3-are-final).
+
+
 - `test_dnn_session_api.c` spells its invalid session pointer as the literal `0xdeadbeefULL`, which MSVC accepts without C4312 and clang-tidy accepts without `performance-no-int-to-ptr`; the value is unchanged.
 
 
@@ -698,6 +720,9 @@
 
 
 - **Packaging**: ADR-2383 lets the macOS and Windows package channels (Homebrew, winget and the others in the distribution manifest) take their artifacts from the attested native release pipelines, as a bounded exception to the container-only rule; Linux artifacts stay container-built.
+
+
+- **Patreon is live.** The euro tiers (€5, €25, €100, €500) are on <https://www.patreon.com/Lusoris>; `.github/FUNDING.yml`, `SPONSORS.md`, `README.md`, `GOVERNANCE.md` and "Support VMAFx" link it instead of saying it is coming (ADR-2689).
 
 
 - **The vendored Pelorus conformance fixture reads its files back with `_fsopen(..., _SH_DENYNO)` on Windows.** `scripts/sync-pelorus-interop.sh` pins `11e183ec0aed` (VMAFx/pelorus #91, fixing #90): `fixture_equals()` and `fixture_path_exists()` of `core/test/test_pelorus_interop.c` no longer call the deprecated `fopen()` there, which icx-cl reported. No behaviour or ABI change (ABI 1.3).
@@ -838,6 +863,16 @@
 
 
 - **Rust replaces the host-side C and C++ by 3.0 ([ADR-2478](docs/adr/2478-rust-core-migration.md)).** The public C ABI stays and is exported from Rust; the C implementation of each layer is the differential oracle until it is deleted; native GPU device sources and C-only host glue stay on an exception list. The C++23 core item of the 2.0 plan is superseded. Phases, milestones 2.1 to 2.5 and 3.0, and the epic [#2567](https://github.com/VMAFx/vmafx/issues/2567) are in the [roadmap](docs/roadmap.md). No code path changes.
+
+
+- **`motion_rust` writes `motion2` / `motion3` frame by frame, as the C `motion`
+  does (ADR-2090).** With the Rust twin, a frame's `motion2` and `motion3`
+  arrive as soon as the frame after it is scored instead of at the flush, so a
+  window over a VMAF model completes during the stream with
+  `VMAF_FEATURE_IMPL=rust` too; the values are unchanged, bit for bit. A Rust
+  twin now gets its own `advance` callback where its C extractor has one,
+  instead of inheriting the C callback, which made `motion_rust` fail at the
+  flush. See [Motion](docs/metrics/motion.md#rust-implementation).
 
 
 - The MCP scoring tools (`vmaf_score`, `vmaf_score_encoded`,
@@ -1027,6 +1062,15 @@
   lines missed by the ADR-0861 sweep. Those lines are removed while preserving Lusoris
   copyright and SPDX licence identifiers, and `scripts/dev/relicense_fork_files.py --check`
   now fails if a header copyright notice names a prohibited vendor or tool.
+
+
+- **A score read of a frame still on a worker thread answered "invalid"
+  (RC4, ADR-2090).** `vmaf_feature_score_at_index()` waited for the worker
+  threads only when the frame's slot existed but was unwritten; for a fed
+  frame whose feature had no slot yet (its first score, or a frame past the
+  first eight) it returned `-EINVAL` at once. It now waits for the frames in
+  flight before it answers, as the documentation of `-EAGAIN` describes; a
+  feature name no extractor writes still returns `-EINVAL`.
 
 
 - **Float extractors report their errors through the log (ADR-1906).** The
