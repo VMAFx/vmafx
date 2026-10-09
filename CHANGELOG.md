@@ -22,6 +22,15 @@
   ([Two viewing distances share one `adm`](docs/metrics/adm.md#two-viewing-distances-share-one-adm)).
 
 
+- **`integer_adm_metal` evaluates two viewing distances in one instance
+  (ADR-2795).** With `adm_norm_view_dist_extra`, or when two models such as
+  `vmaf_v1.0.16_3d0h` and `_5d0h` run on `--backend metal`, the Metal twin
+  runs the wavelet transform once per scale and the other stages per
+  distance. Its host replay returns the CPU's scores for both distances bit
+  for bit; the Apple-device run comes from the macOS tester bundle
+  ([Two viewing distances share one `adm`](docs/metrics/adm.md#two-viewing-distances-share-one-adm)).
+
+
 - **Two ADM viewing distances share one extractor (Netflix/vmaf `33e5f0aca`,
   `cffd5b77d`).** When two models need `adm` with options that differ only in
   `adm_norm_view_dist` (for example `vmaf_v1.0.16_3d0h` and `_5d0h`), libvmaf
@@ -588,6 +597,15 @@
   enhancement gain limit of 1) have NEON kernels. They return the scalar
   kernels' bits: scores are byte-identical at every `--cpumask` setting
   ([Arm backend](docs/backends/arm/overview.md)).
+
+
+- **The ADM viewing-distance merge compares configured values for identity
+  through one helper.** `adm_view_dist.c` decides whether two `adm`
+  registrations can share one extractor by comparing their configured
+  distances; it now does so through `same_view_dist()`, which compares the
+  values' bits. Option parsing refuses NaN and the distances are positive, so
+  this is the same rule as before and no registration merges differently. The
+  change clears two CodeQL `cpp/equality-on-floats` alerts.
 
 
 - **ADR-2167 is Accepted.** The `-qpfile` handling of libx264 (offsets applied through `quant_offsets`)
@@ -1273,6 +1291,9 @@
 - Build: the Windows MinGW UCRT64 build compiles again. The VMAFx API's printf-format
   attribute now names MinGW's own archetype (`__MINGW_PRINTF_FORMAT`), so GCC accepts `%zu`
   under UCRT instead of failing with `-Werror=format`.
+
+
+- Build: the Windows MinGW-w64 (UCRT64) build links again with link-time optimisation. `VMAFX_EXPORT` no longer expands to an ELF visibility attribute under MinGW GCC, which ignores it and warned at every LTO use; it is empty there, as `VMAF_EXPORT` already was. Exported symbols are unchanged.
 
 
 - The last MSVC warnings of the first Windows run after the zero-warning series
