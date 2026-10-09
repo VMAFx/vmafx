@@ -24,6 +24,11 @@ from .model import (
 EXPORT_DEFINITION = """#ifndef {macro}
 #if defined(_MSC_VER)
 #define {macro} __declspec(dllexport)
+#elif defined(__MINGW32__) && !defined(__clang__)
+/* GCC's PE targets have no ELF visibility: the attribute is ignored, and under LTO a use can
+ * draw "visibility attribute not supported in this configuration" (-Wattributes). Empty, as
+ * VMAF_EXPORT in libvmaf/macros.h is: the symbols are exported as before. */
+#define {macro}
 #elif defined(__GNUC__) || defined(__clang__)
 #define {macro} __attribute__((visibility("default")))
 #else

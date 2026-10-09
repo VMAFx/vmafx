@@ -25,6 +25,11 @@ extern "C" {
 #ifndef VMAFX_EXPORT
 #if defined(_MSC_VER)
 #define VMAFX_EXPORT __declspec(dllexport)
+#elif defined(__MINGW32__) && !defined(__clang__)
+/* GCC's PE targets have no ELF visibility: the attribute is ignored, and under LTO a use can
+ * draw "visibility attribute not supported in this configuration" (-Wattributes). Empty, as
+ * VMAF_EXPORT in libvmaf/macros.h is: the symbols are exported as before. */
+#define VMAFX_EXPORT
 #elif defined(__GNUC__) || defined(__clang__)
 #define VMAFX_EXPORT __attribute__((visibility("default")))
 #else

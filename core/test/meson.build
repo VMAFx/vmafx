@@ -9027,6 +9027,16 @@ test('test_mingw_printf_archetype_contract',
     suite : ['fast'],
     timeout : 30,
 )
+# VMAFX_EXPORT (generated) expands as VMAF_EXPORT does on every compiler family;
+# MinGW GCC has no ELF visibility, and the UCRT64 LTO link failed on it.
+test('test_export_macros_agree',
+    import('python').find_installation(),
+    args : [files('test_export_macros_agree.py')] + vmaf_test_cc_args + [
+            '--cc-syntax=' + cc.get_argument_syntax(),
+            meson.project_source_root() / 'include'],
+    suite : ['fast'],
+    timeout : 60,
+)
 # An internal C function named after a C library function becomes the same
 # assembler symbol as the macOS header's labelled declaration in a full-LTO
 # link, and every call of the library function branches to it
