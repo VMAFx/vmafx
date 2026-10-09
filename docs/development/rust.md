@@ -227,6 +227,21 @@ these two gates, the build, the tests, the golden smoke example and `cargo-deny`
 on every PR touching `bindings/rust/` or the Rust workspace. The required
 contexts are `vmafx-sys CI` and `cargo-deny`.
 
+The job builds libvmaf twice, so it stays inside its 30-minute limit only
+because both builds are trimmed:
+
+- **First build.** This is the CPU build that `vmafx-sys` links. It is
+  configured with `-Denable_tests=false` and installs only the library, the
+  headers and the tools.
+- **Second build.** This is `build-rust`, with `-Denable_rust_features=true`.
+  It builds only `tools/vmaf`, which the twin harness runs. `meson test --suite
+  rust` then builds just the rust suite's test targets.
+
+Building every target compiled the whole C test suite twice: 19 minutes for the
+first build alone on the hosted runner (run 37989639764). Locally, do the same:
+`ninja -C build-rust tools/vmaf`, then
+`python3 scripts/ci/run_meson_test.py -- -C build-rust --suite rust`.
+
 ## Environment variables reference
 
 | Variable | Default | Description |

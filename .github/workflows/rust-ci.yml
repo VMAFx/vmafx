@@ -94,11 +94,16 @@ jobs:
           # single-arch path so the `.so` lands where the linker looks.
           # ADR-2170: this build prints no warnings, so they are errors.
           # shellcheck disable=SC2046  # the helper prints one option per line, split on purpose
+          # -Denable_tests=false: this build only installs the library, headers
+          # and tools that vmafx-sys links and the score example runs. With the
+          # tests it compiled ~2300 commands and some 300 LTO links (19 min on
+          # the hosted runner, run 37989639764), without them ~300 and 12.
           meson setup build-ci core \
             -Denable_cuda=false \
             -Denable_sycl=false \
             -Denable_hip=false \
             -Denable_avx512=false \
+            -Denable_tests=false \
             --prefix /usr/local \
             --libdir lib \
             -Dwerror=true \
@@ -182,7 +187,12 @@ jobs:
             -Denable_hip=false \
             -Denable_avx512=false \
             -Dwerror=true $(scripts/ci/werror-args.sh true)
-          ninja -C build-rust
+          # Only what the next steps run: the vmaf CLI (with the library and the
+          # Rust static library Meson's cargo call builds). `meson test --suite
+          # rust` below builds the rust suite's own test targets (Meson's
+          # rebuild_deps); building every target here compiled the whole C test
+          # suite a second time and ran the job into its 30-minute timeout.
+          ninja -C build-rust tools/vmaf
 
       - name: Fetch the Netflix and checkerboard fixtures
         run: bash scripts/test/fetch-test-yuvs.sh
