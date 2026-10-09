@@ -1182,6 +1182,7 @@ def scan_install_commands(
         if not stripped or stripped.startswith("#"):
             continue
         for tokens in _pip_install_tokens(command):
+            findings.extend(_system_install_findings(path, line, tokens))
             if _is_secure_install(tokens, valid_lock_outputs, root=search_root, consumer_path=path):
                 continue
             findings.append(
@@ -1190,6 +1191,25 @@ def scan_install_commands(
                 "or install a local editable/source tree with both --no-deps and --no-build-isolation"
             )
     return findings
+
+
+def _system_install_findings(path: Path, line: int, tokens: list[str]) -> list[str]:
+    """Require --ignore-installed on an install into the system interpreter.
+
+    pip cannot uninstall a distribution-installed package (no RECORD file), so
+    a lock that pins a newer version of one, as build.txt pins PyYAML over
+    Ubuntu's python3-yaml, fails the whole install unless pip installs over it.
+    A --user install never uninstalls outside the user site and is exempt.
+    """
+    lowered = [token.lower() for token in tokens]
+    if "--break-system-packages" not in lowered:
+        return []
+    if "--ignore-installed" in lowered or "--user" in lowered:
+        return []
+    return [
+        f"{path}:{line}: pip install with --break-system-packages must also pass "
+        "--ignore-installed: pip cannot uninstall a package the distribution installed"
+    ]
 
 
 def _is_repo_local_target(target: str, root: Path | None = None) -> bool:

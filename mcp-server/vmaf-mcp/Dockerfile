@@ -27,7 +27,7 @@ WORKDIR /src/libvmaf
 RUN meson setup ../build -Denable_cuda=false -Denable_sycl=false --buildtype=release \
     && ninja -C ../build
 WORKDIR /src
-RUN python3 -m pip install --no-cache-dir --break-system-packages --require-hashes \
+RUN python3 -m pip install --no-cache-dir --break-system-packages --ignore-installed --require-hashes \
         -r requirements/locks/package-build.txt \
     && python3 -m build --no-isolation --wheel --outdir /wheels mcp-server/vmaf-mcp
 
@@ -49,9 +49,9 @@ COPY --from=build /src/mcp-server/vmaf-mcp/requirements-runtime-lock.txt /tmp/
 COPY --from=build /src/model /opt/vmaf/model
 COPY --from=build /src/testdata /opt/vmaf/testdata
 
-RUN pip install --no-cache-dir --break-system-packages --require-hashes \
+RUN pip install --no-cache-dir --break-system-packages --ignore-installed --require-hashes \
         -r /tmp/requirements-runtime-lock.txt \
-    && pip install --no-cache-dir --break-system-packages --no-deps \
+    && pip install --no-cache-dir --break-system-packages --ignore-installed --no-deps \
         /tmp/vmaf_mcp-*.whl
 
 WORKDIR /opt/vmaf

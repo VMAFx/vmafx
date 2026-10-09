@@ -55,6 +55,33 @@ class InstallCommandTests(unittest.TestCase):
         text = "run: python -m pip install --require-hashes -r requirements/locks/build.txt\n"
         self.assertEqual(self.findings(text), [])
 
+    def test_system_install_without_ignore_installed_is_rejected(self) -> None:
+        text = (
+            "run: sudo pip3 install --break-system-packages --require-hashes "
+            "-r requirements/locks/build.txt\n"
+        )
+        findings = self.findings(text)
+        self.assertEqual(len(findings), 1)
+        self.assertIn("--ignore-installed", findings[0])
+
+    def test_system_install_with_ignore_installed_is_accepted(self) -> None:
+        text = (
+            "run: sudo pip3 install --break-system-packages --ignore-installed "
+            "--require-hashes -r requirements/locks/build.txt\n"
+        )
+        self.assertEqual(self.findings(text), [])
+
+    def test_user_install_with_break_system_packages_is_exempt(self) -> None:
+        text = (
+            "run: python3 -m pip install --user --break-system-packages --require-hashes "
+            "-r requirements/locks/build.txt\n"
+        )
+        self.assertEqual(self.findings(text), [])
+
+    def test_unhashed_system_install_reports_both_rules(self) -> None:
+        findings = self.findings("run: sudo pip3 install --break-system-packages meson\n")
+        self.assertEqual(len(findings), 2)
+
     def test_unhashed_install_is_rejected(self) -> None:
         findings = self.findings("run: sudo pip3 install --quiet meson\n")
         self.assertEqual(len(findings), 1)
@@ -341,8 +368,8 @@ class InstallCommandTests(unittest.TestCase):
         text = "run: pip install --require-hashes -r /tmp/requirements-runtime-lock.txt\n"
         self.assertEqual(len(self.findings(text, ".github/workflows/example.yml")), 1)
         text_docker = (
-            "RUN pip install --no-cache-dir --break-system-packages --require-hashes "
-            "-r /tmp/requirements-runtime-lock.txt\n"
+            "RUN pip install --no-cache-dir --break-system-packages --ignore-installed "
+            "--require-hashes -r /tmp/requirements-runtime-lock.txt\n"
         )
         self.assertEqual(self.findings(text_docker, "mcp-server/vmaf-mcp/Dockerfile"), [])
 
