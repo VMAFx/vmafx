@@ -9,6 +9,7 @@
 #include <errno.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -149,6 +150,20 @@ static int record_extra_view(VmafFeatureExtractorContext *existing, double nvd)
     return vmaf_dictionary_set(&existing->opts_dict, NVD_EXTRA, text, 0);
 }
 
+/* Whether two configured viewing distances are the same option value. The
+ * merge rule asks whether two contexts were configured alike, so it compares
+ * the values for identity, as the registry compares rendered names, not for
+ * closeness. Option parsing refuses NaN and both distances are positive, so
+ * comparing the bits gives exactly what `a == b` gives. */
+static bool same_view_dist(double a, double b)
+{
+    uint64_t bits_a = 0;
+    uint64_t bits_b = 0;
+    memcpy(&bits_a, &a, sizeof(bits_a));
+    memcpy(&bits_b, &b, sizeof(bits_b));
+    return bits_a == bits_b;
+}
+
 /* The merge rules that need no name rendering: 1 to go on, 0 to decline. */
 static int mergeable(const VmafFeatureExtractor *e, const VmafFeatureExtractor *n)
 {
@@ -159,7 +174,7 @@ static int mergeable(const VmafFeatureExtractor *e, const VmafFeatureExtractor *
     if (read_flag(n, "debug") || read_flag(e, "adm_skip_aim") != read_flag(n, "adm_skip_aim")) {
         return 0;
     }
-    return vmaf_adm_view_dist(n, 0u) != vmaf_adm_view_dist(e, 0u);
+    return !same_view_dist(vmaf_adm_view_dist(n, 0u), vmaf_adm_view_dist(e, 0u));
 }
 
 int vmaf_adm_merge_view_dist(VmafFeatureExtractorContext *existing,
@@ -174,7 +189,7 @@ int vmaf_adm_merge_view_dist(VmafFeatureExtractorContext *existing,
     }
     const double nvd = vmaf_adm_view_dist(incoming->fex, 0u);
     if (vmaf_adm_view_count(existing->fex) > 1u) {
-        return nvd == vmaf_adm_view_dist(existing->fex, 1u);
+        return same_view_dist(nvd, vmaf_adm_view_dist(existing->fex, 1u));
     }
     const int err = record_extra_view(existing, nvd);
     if (err) {
