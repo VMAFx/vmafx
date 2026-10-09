@@ -180,7 +180,9 @@ runs can be compared honestly. For publishable numbers use
 
 `--out` holds:
 
-- `host.txt`: time, commit, load, the build and device of each backend.
+- `host.txt`: time, commit, load, the build and device of each backend, and
+  nvidia-smi's GPU list; when nvidia-smi fails, the line
+  `nvidia-smi failed: exit N, no GPU inventory` instead, and the run goes on.
 - `summary.md` and `summary.tsv`: one line per entry with its result
   (`PASS`, `FAIL`, `ERROR`, `SKIP` or `DRY-RUN`) and its key numbers.
 - `<ROW>/<backend>/log.txt`: every command with its output, and the JSON of

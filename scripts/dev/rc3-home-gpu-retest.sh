@@ -865,8 +865,13 @@ done
     device_env "$b"
     echo "$b: build $(build_dir_for "$b"), ${DEV_ENV[*]:-no device}"
   done
-  command -v nvidia-smi >/dev/null 2>&1 &&
-    nvidia-smi --query-gpu=index,name,memory.used,memory.total,utilization.gpu --format=csv,noheader
+  # The inventory is a note: a failing nvidia-smi (a driver and library version
+  # mismatch after an update exits 18) is recorded, it does not end the run.
+  if command -v nvidia-smi >/dev/null 2>&1; then
+    timeout "$PROBE_TIMEOUT" nvidia-smi \
+      --query-gpu=index,name,memory.used,memory.total,utilization.gpu --format=csv,noheader ||
+      echo "nvidia-smi failed: exit $?, no GPU inventory"
+  fi
   echo "baseline: ${BASELINE:-none}; reps $REPS; threads $THREADS; timing $TIMING"
 } >"$OUT/host.txt" 2>&1
 cat "$OUT/host.txt"
