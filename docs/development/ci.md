@@ -478,6 +478,17 @@ is a blocking failure; CI never mutates the checkout. Run `make go-fix`, repeat
 if the Go tool reports cascading fixes, and finish with `make go-fix-check`
 locally.
 
+The store tests start PostgreSQL in a container through testcontainers
+(`cmd/vmafx-controller/store/storetest`, images pinned by digest). Before
+`go test`, the job runs `scripts/ci/docker-hub-mirror.sh`. The script adds
+`https://mirror.gcr.io` to the runner Docker daemon's `registry-mirrors` and
+restarts the daemon. It fails if `docker info` does not show the mirror. The
+change applies to every `docker.io` pull of the job, and Docker Hub's anonymous
+pull limit no longer fails the tests. The pinned digests stay valid, because
+the mirror serves the same content addresses. `DOCKER_HUB_MIRROR` overrides the
+mirror. `scripts/ci/tests/test_docker_hub_mirror.py` checks the `daemon.json`
+merge offline (`--print`). Golusoris uses the same pattern.
+
 ### Hardware-dependent lanes
 
 Two checks depend on self-hosted hardware. Both fail closed when their lane is

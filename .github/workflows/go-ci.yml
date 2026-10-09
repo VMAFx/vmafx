@@ -230,6 +230,16 @@ jobs:
           ASSETS="$(scripts/ci/setup-envtest.sh install)"
           echo "KUBEBUILDER_ASSETS=${ASSETS}" >> "${GITHUB_ENV}"
 
+      # The store tests start PostgreSQL through testcontainers
+      # (cmd/vmafx-controller/store/storetest), and anonymous pulls from Docker
+      # Hub hit its rate limit on the hosted runners (run 37989639814: "You have
+      # reached your unauthenticated pull rate limit"). The daemon now pulls
+      # docker.io images through the mirror.gcr.io pull-through mirror, as in
+      # golusoris #741; the digest-pinned images are unchanged.
+      - name: Pull Docker Hub images through mirror.gcr.io
+        if: steps.impact.outputs.go_checks == 'true'
+        run: bash scripts/ci/docker-hub-mirror.sh
+
       - name: go test
         if: steps.impact.outputs.go_checks == 'true'
         run: go test ./...
