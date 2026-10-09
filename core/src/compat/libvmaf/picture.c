@@ -11,13 +11,15 @@
  * its references (vmafx_frame_to_picture()), released by vmaf_picture_unref()
  * or consumed by vmaf_read_pictures(). VmafPicture2 (ADR-0928) carries the
  * same view plus the backend tag. Conversions (#2140) run on frame
- * converters.
+ * converters. A wrapped picture (vmaf_picture_wrap(), ADR-2949) is a view of
+ * a frame on the caller's planes (vmafx_frame_wrap_host()).
  */
 
 #include <assert.h>
 #include <errno.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "compat_errno.h"
@@ -82,6 +84,78 @@ int vmaf_picture_unref(VmafPicture *pic)
         return -EINVAL;
     }
     return unref_picture(pic);
+}
+
+/* ---- Wrapped pictures (Netflix/vmaf 700124a4c, ADR-2949) ----------------------- */
+
+/* The caller's release of a wrapped picture, run by the frame's release once
+ * the last reference is gone. `release_picture` is set only after the picture
+ * exists, so a wrap that fails calls nothing. */
+typedef struct WrapRelease {
+    int (*release_picture)(VmafPicture *pic, void *cookie);
+    void *cookie;
+    VmafPicture view; /* the wrapped geometry, data and strides; ref and priv cleared */
+} WrapRelease;
+
+static void wrap_released(void *user)
+{
+    WrapRelease *const r = user;
+    if (r->release_picture) {
+        (void)r->release_picture(&r->view, r->cookie);
+    }
+    free(r);
+}
+
+/* The frame description and the borrowed planes of `w`. A negative stride
+ * becomes one above PTRDIFF_MAX, which the library refuses. */
+static void wrap_frame_args(const VmafPictureWrapped *w, VmafxFrameDesc *desc,
+                            VmafxHostPlanes *planes)
+{
+    desc->pix_fmt = (uint32_t)w->pix_fmt;
+    desc->bpc = w->bpc;
+    desc->w = w->w;
+    desc->h = w->h;
+    for (unsigned i = 0; i < 3; i++) {
+        planes->data[i] = w->data[i];
+        planes->stride[i] = (uint64_t)w->stride[i];
+    }
+}
+
+int vmaf_picture_wrap(VmafPicture *pic, VmafPictureWrapped pic_wrapped)
+{
+    if (!pic) {
+        return -EINVAL;
+    }
+    WrapRelease *release = NULL;
+    if (pic_wrapped.release_picture) {
+        release = calloc(1, sizeof(*release));
+        if (!release) {
+            return -ENOMEM;
+        }
+    }
+    VmafxFrameDesc desc = VMAFX_FRAME_DESC_INIT;
+    VmafxHostPlanes planes = VMAFX_HOST_PLANES_INIT;
+    wrap_frame_args(&pic_wrapped, &desc, &planes);
+    planes.release = release ? wrap_released : NULL;
+    planes.user = release;
+    VmafxFrame *frame = NULL;
+    VmafxError *error = NULL;
+    VmafxStatus status = vmafx_frame_wrap_host(NULL, &desc, &planes, &frame, &error);
+    if (status != VMAFX_OK) {
+        free(release); /* not called on failure (vmafx_frame_wrap_host) */
+        return compat_errno(status, error);
+    }
+    assert(frame != NULL); /* a successful wrap hands back a frame */
+    status = vmafx_frame_to_picture(frame, pic, &error);
+    if (status == VMAFX_OK && release) {
+        release->view = *pic;
+        release->view.ref = NULL;
+        release->view.priv = NULL;
+        release->cookie = pic_wrapped.cookie;
+        release->release_picture = pic_wrapped.release_picture;
+    }
+    vmafx_frame_unref(frame);
+    return status == VMAFX_OK ? 0 : compat_errno(status, error);
 }
 
 /* The v1 fields of a v2 picture (same prefix). */

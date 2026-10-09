@@ -703,6 +703,8 @@ core/test/test_picture.c
 core/test/test_picture_convert_api.c
 core/test/test_picture_pool_error_paths.c
 core/test/test_picture_v2.c
+core/test/test_picture_wrap_api.c
+core/test/test_picture_wrap_integration.c
 core/test/test_pixel_format_edge_coverage.c
 core/test/test_pool_percentile.c
 core/test/test_predict.c

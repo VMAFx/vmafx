@@ -162,6 +162,7 @@
 #define vmaf_set_perceptual_sidedata vmaf_engine_set_perceptual_sidedata
 #define vmaf_picture_alloc vmaf_engine_picture_alloc
 #define vmaf_picture_unref vmaf_engine_picture_unref
+#define vmaf_picture_wrap vmaf_engine_picture_wrap
 #define vmaf_picture_convert_context_init_with_color                                               \
     vmaf_engine_picture_convert_context_init_with_color
 #define vmaf_picture_convert vmaf_engine_picture_convert

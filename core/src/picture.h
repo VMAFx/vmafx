@@ -104,6 +104,14 @@ int vmaf_picture_priv_init(VmafPicture *pic);
 void vmaf_picture_plane_extents(enum VmafPixelFormat pix_fmt, unsigned w, unsigned h,
                                 unsigned plane_w[3], unsigned plane_h[3]);
 
+/* A picture over the caller's planes in `*pic` (Netflix/vmaf 700124a4c):
+ * vmaf_picture_plane_extents() of the wrapped size, the planes the format
+ * has, a reference count of 1 and `release_picture` (NULL: nothing to
+ * release) as its release. Checks nothing: vmaf_picture_wrap() checks the
+ * caller's arguments, vmafx_frame_bind() binds checked VMAFx frames.
+ * 0, or -ENOMEM with `*pic` untouched. */
+int vmaf_picture_wrap_bind(VmafPicture *pic, const VmafPictureWrapped *wrapped);
+
 int vmaf_picture_ref(VmafPicture *dst, VmafPicture *src);
 
 /* Drain all picture-buffer pool entries, freeing each via aligned_free().

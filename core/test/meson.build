@@ -1310,6 +1310,20 @@ test_public_api_score = executable('test_public_api_score',
     dependencies : [pthread_dependency, thread_lib, gpu_all_deps],
 )
 
+# Netflix/vmaf 700124a4c (ADR-2949): vmaf_picture_wrap through the public
+# libvmaf. test_picture_wrap_integration is upstream's test; test_picture_wrap_api
+# holds the fork's contract (scores equal to allocated pictures bit for bit,
+# release timing and view, refusals, boundaries).
+foreach wrap_test : ['test_picture_wrap_integration', 'test_picture_wrap_api']
+    test(wrap_test, executable(wrap_test,
+        ['test.c', wrap_test + '.c'],
+        include_directories : [libvmaf_inc, test_inc],
+        c_args : vmaf_public_name_args,
+        link_with : libvmaf_public_link,
+        dependencies : [pthread_dependency, thread_lib, gpu_all_deps],
+    ), suite : ['fast'])
+endforeach
+
 # ADR-1852: VMAFx API prototype slice. test_vmafx_abi_layout is generated from
 # core/api/vmafx.toml (struct sizes, offsets and constants as _Static_assert);
 # test_vmafx_api_slice exercises the hand-written core and the generated

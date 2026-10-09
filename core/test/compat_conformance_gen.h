@@ -105,6 +105,7 @@ enum VmafCompatIndex {
     VMAF_COMPAT_SET_PERCEPTUAL_SIDEDATA,
     VMAF_COMPAT_PICTURE_ALLOC,
     VMAF_COMPAT_PICTURE_UNREF,
+    VMAF_COMPAT_PICTURE_WRAP,
     VMAF_COMPAT_PICTURE_CONVERT_CONTEXT_INIT_WITH_COLOR,
     VMAF_COMPAT_PICTURE_CONVERT,
     VMAF_COMPAT_PICTURE_CONVERT_CONTEXT_CLOSE,
@@ -269,6 +270,7 @@ typedef struct VmafCompatApi {
     int (*picture_alloc)(VmafPicture *pic, enum VmafPixelFormat pix_fmt, unsigned bpc, unsigned w,
                          unsigned h);
     int (*picture_unref)(VmafPicture *pic);
+    int (*picture_wrap)(VmafPicture *pic, VmafPictureWrapped pic_wrapped);
     int (*picture_convert_context_init_with_color)(VmafPictureConvertContext **ctx,
                                                    const VmafPicture *src,
                                                    const VmafColor *src_color,
@@ -391,6 +393,7 @@ const VmafCompatEntry vmaf_compat_entries[VMAF_COMPAT_COUNT + 1] = {
     VMAF_COMPAT_ENTRY("vmaf_set_perceptual_sidedata", 1),
     VMAF_COMPAT_ENTRY("vmaf_picture_alloc", 1),
     VMAF_COMPAT_ENTRY("vmaf_picture_unref", 1),
+    VMAF_COMPAT_ENTRY("vmaf_picture_wrap", 1),
     VMAF_COMPAT_ENTRY("vmaf_picture_convert_context_init_with_color", 1),
     VMAF_COMPAT_ENTRY("vmaf_picture_convert", 1),
     VMAF_COMPAT_ENTRY("vmaf_picture_convert_context_close", 1),

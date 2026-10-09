@@ -7,8 +7,9 @@
 
 /*
  * Conformance scenarios of the libvmaf compat library (RC4 WP6) that need no
- * frames: contexts, dictionaries, models and collections, pictures and their
- * v2 form, conversion, perceptual weighting, tiny AI, the HIP / Metal
+ * YUV files: contexts, dictionaries, models and collections, pictures, their
+ * v2 form and wrapped pictures (with one short psnr run), conversion,
+ * perceptual weighting, tiny AI, the HIP / Metal
  * functions of a build without them, and the MCP server. Each call's result
  * and outputs go to the trace; test_compat_conformance.c compares the trace
  * of the old libvmaf with the compat library's.
@@ -250,10 +251,181 @@ static void picture_v2(const VmafCompatApi *api, Trace *t)
     }
 }
 
+/* ---- Wrapped pictures (Netflix/vmaf 700124a4c, ADR-2949) ---------------------- */
+
+#define WRAP_W 65u /* odd: the chroma extents are rounded up (ADR-1483) */
+#define WRAP_H 37u
+#define WRAP_BYTES (WRAP_W * WRAP_H * 2u * 3u) /* three full 16-bit planes */
+
+/* What the release callback of a wrapped picture saw. */
+typedef struct WrapRecord {
+    unsigned calls;
+    VmafPicture seen;
+} WrapRecord;
+
+static int wrap_record(VmafPicture *pic, void *cookie)
+{
+    WrapRecord *const r = cookie;
+    r->calls++;
+    r->seen = *pic;
+    return -1; /* ignored by both sides */
+}
+
+/* Tight planes of a WRAP_W x WRAP_H picture in `buf`; no chroma for YUV400P. */
+static VmafPictureWrapped wrap_planes(uint8_t *buf, enum VmafPixelFormat fmt, unsigned bpc,
+                                      WrapRecord *record)
+{
+    VmafPictureWrapped w;
+    memset(&w, 0, sizeof(w));
+    w.pix_fmt = fmt;
+    w.bpc = bpc;
+    w.w = WRAP_W;
+    w.h = WRAP_H;
+    const unsigned bytes = bpc > 8u ? 2u : 1u;
+    const unsigned cw = fmt == VMAF_PIX_FMT_YUV444P ? WRAP_W : (WRAP_W + 1u) / 2u;
+    const unsigned ch = fmt == VMAF_PIX_FMT_YUV420P ? (WRAP_H + 1u) / 2u : WRAP_H;
+    w.data[0] = buf;
+    w.stride[0] = (ptrdiff_t)WRAP_W * (ptrdiff_t)bytes;
+    if (fmt != VMAF_PIX_FMT_YUV400P) {
+        w.data[1] = buf + ((size_t)WRAP_W * bytes * WRAP_H);
+        w.stride[1] = w.stride[2] = (ptrdiff_t)cw * (ptrdiff_t)bytes;
+        w.data[2] = (uint8_t *)w.data[1] + ((size_t)cw * bytes * ch);
+    }
+    w.cookie = record;
+    w.release_picture = record ? wrap_record : NULL;
+    return w;
+}
+
+/* Byte offset of a plane in `buf`, -1 for none. */
+static long plane_offset(const void *plane, const uint8_t *buf)
+{
+    return plane ? (long)((const uint8_t *)plane - buf) : -1L;
+}
+
+static void trace_wrapped(Trace *t, const char *what, const VmafPicture *pic, const uint8_t *buf)
+{
+    trace(t, "%s fmt %d bpc %u w %u/%u/%u h %u/%u/%u stride %td/%td/%td at %ld/%ld/%ld", what,
+          (int)pic->pix_fmt, pic->bpc, pic->w[0], pic->w[1], pic->w[2], pic->h[0], pic->h[1],
+          pic->h[2], pic->stride[0], pic->stride[1], pic->stride[2],
+          plane_offset(pic->data[0], buf), plane_offset(pic->data[1], buf),
+          plane_offset(pic->data[2], buf));
+}
+
+/* One refused wrap: its error, whether `pic` stayed as it was, no release. */
+static void wrap_refused(const VmafCompatApi *api, Trace *t, const char *what, VmafPictureWrapped w)
+{
+    VmafPicture pic;
+    VmafPicture before;
+    memset(&pic, 0x5a, sizeof(pic));
+    memcpy(&before, &pic, sizeof(before));
+    WrapRecord *const record = w.cookie;
+    const int err = api->picture_wrap(&pic, w);
+    trace(t, "wrap %s %d untouched %d released %u", what, err,
+          memcmp(&pic, &before, sizeof(pic)) == 0, record ? record->calls : 0u);
+}
+
+static void wrap_refusals(const VmafCompatApi *api, Trace *t, uint8_t *buf)
+{
+    WrapRecord record = {0};
+    const VmafPictureWrapped good = wrap_planes(buf, VMAF_PIX_FMT_YUV420P, 8, &record);
+    trace(t, "wrap NULL %d", api->picture_wrap(NULL, good));
+    VmafPictureWrapped w = good;
+    w.pix_fmt = VMAF_PIX_FMT_UNKNOWN;
+    wrap_refused(api, t, "no format", w);
+    /* A value past the enum on purpose: both sides must refuse it alike. */
+    /* NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange) -- ADR-1080 */
+    w.pix_fmt = (enum VmafPixelFormat)(VMAF_PIX_FMT_YUV400P + 1);
+    wrap_refused(api, t, "format past the enum", w);
+    static const unsigned depths[] = {7u, 17u};
+    for (unsigned i = 0; i < 2u; i++) {
+        w = good;
+        w.bpc = depths[i];
+        wrap_refused(api, t, i ? "17 bit" : "7 bit", w);
+    }
+    w = good;
+    w.w = 0;
+    wrap_refused(api, t, "0 wide", w);
+    w = good;
+    w.h = 0;
+    wrap_refused(api, t, "0 tall", w);
+    w = good;
+    w.data[1] = NULL;
+    wrap_refused(api, t, "no chroma", w);
+    w = good;
+    w.stride[0] = -w.stride[0];
+    wrap_refused(api, t, "negative stride", w);
+    w = good;
+    w.stride[1] = (ptrdiff_t)(WRAP_W / 2u); /* upstream's rounded-down chroma row */
+    wrap_refused(api, t, "short chroma stride", w);
+}
+
+/* Every format, 8 to 16 bits: the picture, then what its release saw. */
+static void wrap_formats(const VmafCompatApi *api, Trace *t, uint8_t *buf)
+{
+    static const enum VmafPixelFormat formats[] = {VMAF_PIX_FMT_YUV420P, VMAF_PIX_FMT_YUV422P,
+                                                   VMAF_PIX_FMT_YUV444P, VMAF_PIX_FMT_YUV400P};
+    for (unsigned i = 0; i < 5u; i++) {
+        WrapRecord record = {0};
+        const unsigned bpc = i < 4u ? 8u + (2u * i) : 16u;
+        VmafPicture pic;
+        memset(&pic, 0, sizeof(pic));
+        trace(t, "wrap %d",
+              api->picture_wrap(&pic, wrap_planes(buf, formats[i % 4u], bpc, &record)));
+        trace_wrapped(t, "wrapped", &pic, buf);
+        trace(t, "released before unref %u", record.calls);
+        trace(t, "unref %d released %u", api->picture_unref(&pic), record.calls);
+        trace_wrapped(t, "release saw", &record.seen, buf);
+    }
+    VmafPicture pic;
+    memset(&pic, 0, sizeof(pic));
+    trace(t, "wrap without release %d",
+          api->picture_wrap(&pic, wrap_planes(buf, VMAF_PIX_FMT_YUV420P, 8, NULL)));
+    trace(t, "unref %d", api->picture_unref(&pic));
+}
+
+/* Two wrapped pairs through a context: psnr of each, every release by close. */
+static void wrap_scored(const VmafCompatApi *api, Trace *t, uint8_t *ref, uint8_t *dist)
+{
+    for (unsigned i = 0; i < WRAP_BYTES; i++) {
+        ref[i] = (uint8_t)((i * 7u) & 0xffu);
+        dist[i] = (uint8_t)(((i * 7u) + (i % 5u)) & 0xffu);
+    }
+    VmafContext *vmaf = NULL;
+    trace(t, "init %d", api->init(&vmaf, quiet_config()));
+    trace(t, "use psnr %d", api->use_feature(vmaf, "psnr", NULL));
+    WrapRecord record = {0};
+    for (unsigned i = 0; i < 2u; i++) {
+        VmafPicture r;
+        VmafPicture d;
+        const int a = api->picture_wrap(&r, wrap_planes(ref, VMAF_PIX_FMT_YUV420P, 8, &record));
+        const int b =
+            api->picture_wrap(&d, wrap_planes(dist + i, VMAF_PIX_FMT_YUV420P, 8, &record));
+        trace(t, "wrap pair %u %d %d read %d", i, a, b, api->read_pictures(vmaf, &r, &d, i));
+    }
+    trace(t, "flush %d", api->read_pictures(vmaf, NULL, NULL, 0));
+    for (unsigned i = 0; i < 2u; i++) {
+        double score = 0.0;
+        const int err = api->feature_score_at_index(vmaf, "psnr_y", &score, i);
+        trace(t, "psnr_y %u %d %a", i, err, score);
+    }
+    trace(t, "close %d released %u", api->close(vmaf), record.calls);
+}
+
+static void picture_wraps(const VmafCompatApi *api, Trace *t)
+{
+    /* The planes of one picture, and of a pair with one byte to spare. */
+    static uint8_t buf[WRAP_BYTES];
+    static uint8_t dist[WRAP_BYTES + 1u];
+    wrap_refusals(api, t, buf);
+    wrap_formats(api, t, buf);
+    wrap_scored(api, t, buf, dist);
+}
+
 void scenario_pictures(const VmafCompatApi *api, Trace *t)
 {
     picture_allocs(api, t);
     picture_v2(api, t);
+    picture_wraps(api, t);
 }
 
 /* ---- Conversion (#2140) -------------------------------------------------------- */

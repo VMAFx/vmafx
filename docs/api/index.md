@@ -192,6 +192,7 @@ documents it.
 | `vmaf_write_output[_with_format]` | [Write a report](lifecycle.md#write-a-report) |
 | `vmaf_context_get_backend`, `vmaf_feature_backend_twin`, `vmaf_registered_feature_extractor` | [Backend introspection](lifecycle.md#backend-introspection), [device twins](lifecycle.md#device-twins-and-the-extractors-that-ran) |
 | `VmafPicture`, `vmaf_picture_alloc`, `vmaf_picture_unref`, `VmafPicture2` | [Pictures](pictures.md) |
+| `vmaf_picture_wrap`, `VmafPictureWrapped` | [Wrap your own planes](pictures.md#wrap-your-own-planes-vmaf_picture_wrap) |
 | `VmafModel`, `vmaf_model_load*`, `vmaf_default_model_version`, `VmafModelKind` | [Models](models-and-features.md) |
 | `VmafFeatureDictionary` | [Feature options](models-and-features.md#feature-options-vmaffeaturedictionary) |
 

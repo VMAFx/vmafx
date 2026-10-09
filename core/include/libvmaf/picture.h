@@ -163,6 +163,60 @@ VMAF_DEPRECATED("use vmafx_frame_unref")
 VMAF_EXPORT int vmaf_picture_unref(VmafPicture *pic);
 
 /**
+ * @struct VmafPictureWrapped
+ * @brief Planes the caller owns, for `vmaf_picture_wrap()` (Netflix/vmaf 700124a4c).
+ *
+ * Same type as upstream. Set `data` and `stride` for the planes the format
+ * has: the luma plane for `VMAF_PIX_FMT_YUV400P`, all three otherwise. A
+ * subsampled chroma plane is `ceil(w / 2)` samples wide and, for 4:2:0,
+ * `ceil(h / 2)` rows tall, the extents `vmaf_picture_alloc()` gives it.
+ */
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no `using`. ADR-1138. */
+typedef struct VmafPictureWrapped {
+    enum VmafPixelFormat pix_fmt; /**< planar pixel format, not `VMAF_PIX_FMT_UNKNOWN`. */
+    unsigned bpc;                 /**< bits per component, 8 to 16. */
+    unsigned w;                   /**< luma width in samples, at least 1. */
+    unsigned h;                   /**< luma height in samples, at least 1. */
+    void *data[3];                /**< per-plane samples; uint16_t (little-endian) when bpc > 8. */
+    ptrdiff_t stride[3]; /**< per-plane row stride in bytes, at least one row of samples. */
+    void *cookie;        /**< passed to `release_picture`. */
+    /** Called once when the last reference is gone, or NULL. */
+    int (*release_picture)(VmafPicture *pic, void *cookie);
+} VmafPictureWrapped;
+/* NOLINTEND(modernize-use-using) */
+
+/**
+ * @brief A picture on the caller's planes, without a copy (Netflix/vmaf 700124a4c).
+ *
+ * The picture holds one reference, released with @ref vmaf_picture_unref or
+ * consumed by @ref vmaf_read_pictures, like a picture from
+ * @ref vmaf_picture_alloc. The planes must stay valid and unchanged until
+ * `release_picture` is called: once, on the thread that drops the last
+ * reference (the caller's or a context's), at the latest in
+ * @ref vmaf_close. It receives `cookie` and a picture with the wrapped format,
+ * size, data and strides whose internal fields are cleared; its return value
+ * is ignored. With `release_picture` NULL nothing is called, and the planes
+ * must stay valid until every context that read the picture is closed.
+ *
+ * Differs from upstream (ADR-2949): chroma planes of an odd size are rounded
+ * up (ADR-1483), where upstream rounds down; a size of 0, a NULL plane, or a
+ * stride that is negative or shorter than a row is refused with `-EINVAL`,
+ * where upstream accepts it; on failure @p pic is left untouched and
+ * `release_picture` is not called.
+ *
+ * @param pic         Out: the picture. Must not be NULL.
+ * @param pic_wrapped The planes, their format and the release callback.
+ *
+ * @return 0 on success, `-EINVAL` on a bad argument, `-ENOMEM` when out of memory.
+ *
+ * @note Thread safety: Not thread-safe. Use one VmafContext (and its pictures) per thread.
+ *
+ * @since libvmaf 3.0.0 (fork addition; same signature as upstream).
+ */
+VMAF_DEPRECATED("use vmafx_frame_wrap_host")
+VMAF_EXPORT int vmaf_picture_wrap(VmafPicture *pic, VmafPictureWrapped pic_wrapped);
+
+/**
  * @enum  VmafColorRange
  * @brief Sample range of a picture's code values (Netflix/vmaf 0497a0f29).
  *

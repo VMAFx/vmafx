@@ -566,52 +566,58 @@ static int VMAF_COMPAT_THUNK(75)(VmafPicture *pic)
     return vmaf_picture_unref(pic);
 }
 
-static int VMAF_COMPAT_THUNK(76)(VmafPictureConvertContext **ctx, const VmafPicture *src,
+static int VMAF_COMPAT_THUNK(76)(VmafPicture *pic, VmafPictureWrapped pic_wrapped)
+{
+    VMAF_COMPAT_CALLS[VMAF_COMPAT_PICTURE_WRAP]++;
+    return vmaf_picture_wrap(pic, pic_wrapped);
+}
+
+static int VMAF_COMPAT_THUNK(77)(VmafPictureConvertContext **ctx, const VmafPicture *src,
                                  const VmafColor *src_color, const VmafPictureConvertTarget *target)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_PICTURE_CONVERT_CONTEXT_INIT_WITH_COLOR]++;
     return vmaf_picture_convert_context_init_with_color(ctx, src, src_color, target);
 }
 
-static int VMAF_COMPAT_THUNK(77)(VmafPictureConvertContext *ctx, VmafPicture *dst,
+static int VMAF_COMPAT_THUNK(78)(VmafPictureConvertContext *ctx, VmafPicture *dst,
                                  const VmafPicture *src)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_PICTURE_CONVERT]++;
     return vmaf_picture_convert(ctx, dst, src);
 }
 
-static int VMAF_COMPAT_THUNK(78)(VmafPictureConvertContext *ctx)
+static int VMAF_COMPAT_THUNK(79)(VmafPictureConvertContext *ctx)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_PICTURE_CONVERT_CONTEXT_CLOSE]++;
     return vmaf_picture_convert_context_close(ctx);
 }
 
-static int VMAF_COMPAT_THUNK(79)(VmafPicture2 *pic, enum VmafPixelFormat pix_fmt, unsigned bpc,
+static int VMAF_COMPAT_THUNK(80)(VmafPicture2 *pic, enum VmafPixelFormat pix_fmt, unsigned bpc,
                                  unsigned w, unsigned h)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_PICTURE2_ALLOC]++;
     return vmaf_picture2_alloc(pic, pix_fmt, bpc, w, h);
 }
 
-static int VMAF_COMPAT_THUNK(80)(VmafPicture2 *pic)
+static int VMAF_COMPAT_THUNK(81)(VmafPicture2 *pic)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_PICTURE2_UNREF]++;
     return vmaf_picture2_unref(pic);
 }
 
-static int VMAF_COMPAT_THUNK(81)(const VmafPicture *src, VmafPicture2 *dst)
+static int VMAF_COMPAT_THUNK(82)(const VmafPicture *src, VmafPicture2 *dst)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_PICTURE_V1_TO_V2]++;
     return vmaf_picture_v1_to_v2(src, dst);
 }
 
-static int VMAF_COMPAT_THUNK(82)(const VmafPicture2 *src, VmafPicture *dst)
+static int VMAF_COMPAT_THUNK(83)(const VmafPicture2 *src, VmafPicture *dst)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_PICTURE_V2_TO_V1]++;
     return vmaf_picture_v2_to_v1(src, dst);
 }
 
-static const char *VMAF_COMPAT_THUNK(83)(VmafBackendHandle backend)
+static const char *VMAF_COMPAT_THUNK(84)(VmafBackendHandle backend)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_BACKEND_HANDLE_NAME]++;
     return vmaf_backend_handle_name(backend);
@@ -739,14 +745,15 @@ const VmafCompatApi VMAF_COMPAT_TABLE = {
     .set_perceptual_sidedata = VMAF_COMPAT_THUNK(73),
     .picture_alloc = VMAF_COMPAT_THUNK(74),
     .picture_unref = VMAF_COMPAT_THUNK(75),
-    .picture_convert_context_init_with_color = VMAF_COMPAT_THUNK(76),
-    .picture_convert = VMAF_COMPAT_THUNK(77),
-    .picture_convert_context_close = VMAF_COMPAT_THUNK(78),
-    .picture2_alloc = VMAF_COMPAT_THUNK(79),
-    .picture2_unref = VMAF_COMPAT_THUNK(80),
-    .picture_v1_to_v2 = VMAF_COMPAT_THUNK(81),
-    .picture_v2_to_v1 = VMAF_COMPAT_THUNK(82),
-    .backend_handle_name = VMAF_COMPAT_THUNK(83),
+    .picture_wrap = VMAF_COMPAT_THUNK(76),
+    .picture_convert_context_init_with_color = VMAF_COMPAT_THUNK(77),
+    .picture_convert = VMAF_COMPAT_THUNK(78),
+    .picture_convert_context_close = VMAF_COMPAT_THUNK(79),
+    .picture2_alloc = VMAF_COMPAT_THUNK(80),
+    .picture2_unref = VMAF_COMPAT_THUNK(81),
+    .picture_v1_to_v2 = VMAF_COMPAT_THUNK(82),
+    .picture_v2_to_v1 = VMAF_COMPAT_THUNK(83),
+    .backend_handle_name = VMAF_COMPAT_THUNK(84),
 };
 
 /* NOLINTEND(modernize-use-nullptr) */

@@ -76,6 +76,7 @@ vmaf_picture_convert_context_init_with_color compat
 vmaf_picture_unref compat
 vmaf_picture_v1_to_v2 compat
 vmaf_picture_v2_to_v1 compat
+vmaf_picture_wrap compat
 vmaf_preallocate_pictures compat
 vmaf_read_pictures compat
 vmaf_read_pictures_sycl engine:sycl

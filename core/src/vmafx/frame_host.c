@@ -226,27 +226,21 @@ static VmafxStatus check_host_planes(const VmafxReport *report, const VmafxFrame
 int vmafx_frame_bind(VmafxFrame *frame, const VmafxFrameDesc *d, void *const data[3],
                      const ptrdiff_t stride[3])
 {
-    VmafPicture *const pic = &frame->pic;
     frame->color = d->color;
-    pic->pix_fmt = vmafx_engine_pixel_format(d->pix_fmt);
-    pic->bpc = d->bpc;
-    vmaf_picture_plane_extents(pic->pix_fmt, d->w, d->h, pic->w, pic->h);
-    for (uint32_t i = 0; i < plane_count(d->pix_fmt); i++) {
-        pic->data[i] = data[i];
-        pic->stride[i] = stride[i];
+    /* The engine's picture over borrowed planes (vmaf_picture_wrap's). */
+    VmafPictureWrapped wrapped;
+    memset(&wrapped, 0, sizeof(wrapped));
+    wrapped.pix_fmt = vmafx_engine_pixel_format(d->pix_fmt);
+    wrapped.bpc = d->bpc;
+    wrapped.w = d->w;
+    wrapped.h = d->h;
+    for (uint32_t i = 0; i < 3u; i++) {
+        wrapped.data[i] = data[i];
+        wrapped.stride[i] = stride[i];
     }
-    int err = vmaf_picture_priv_init(pic);
-    if (!err) {
-        err = vmaf_picture_set_release_callback(pic, frame, vmafx_frame_release);
-    }
-    if (!err) {
-        err = vmaf_ref_init(&pic->ref);
-    }
-    if (err) {
-        free(pic->priv);
-        pic->priv = NULL;
-    }
-    return err;
+    wrapped.cookie = frame;
+    wrapped.release_picture = vmafx_frame_release;
+    return vmaf_picture_wrap_bind(&frame->pic, &wrapped);
 }
 
 /* The engine picture over borrowed planes (no allocation of pixels). */

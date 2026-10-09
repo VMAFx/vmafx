@@ -4311,6 +4311,20 @@ file = "core/src/compat/libvmaf/picture.c"
 calls = ["vmafx_frame_from_picture", "vmafx_frame_unref"]
 
 [[compat]]
+name = "vmaf_picture_wrap"
+header = "libvmaf/picture.h"
+kind = "manual"
+target = "vmafx_frame_wrap_host"
+returns = "int"
+params = [
+  { name = "pic", c = "VmafPicture *" },
+  { name = "pic_wrapped", c = "VmafPictureWrapped" },
+]
+file = "core/src/compat/libvmaf/picture.c"
+calls = ["vmafx_frame_wrap_host", "vmafx_frame_to_picture", "vmafx_frame_unref"]
+note = "A view of a host frame on the caller's planes; release_picture runs from the frame's release (ADR-2949)"
+
+[[compat]]
 name = "vmaf_picture_convert_context_init_with_color"
 header = "libvmaf/picture.h"
 kind = "manual"

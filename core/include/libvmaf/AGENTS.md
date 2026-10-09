@@ -119,6 +119,14 @@ only currently-extracted shared internal helper.
   `vmaf_picture_convert_context_init_with_color()`. sync of Netflix's
   `0497a0f29` hunk of `picture.h` must not insert `VmafColor color` before
   `ref`. `core/test/test_picture_convert_api.c` guards layout.
+- **`vmaf_picture_wrap()` keeps fork plane rules ([ADR-2949](../../../docs/adr/2949-picture-wrap-compat-port.md))**:
+  struct + signature = upstream `700124a4c`. Chroma extent rounded up
+  (`vmaf_picture_plane_extents()`), size 0 / NULL plane / short or negative
+  stride = `-EINVAL`, `*pic` untouched on failure. Sync of upstream hunks of
+  `picture.h` / `src/picture.c`: no floor shifts, no unchecked planes. Compat
+  body on `vmafx_frame_wrap_host()`; engine body and
+  `vmafx_frame_bind()` share `vmaf_picture_wrap_bind()`. Guards:
+  `test_picture_wrap_api`, `test_compat_conformance` (`picture_wraps()`).
 - **`vmaf_set_input_colorimetry()` replaces `VmafPicture::color`
   ([ADR-2093](../../../docs/adr/2093-upstream-hdr-groundwork-input-colorimetry.md))**:
   source colour of reference and distorted inputs is declared once on

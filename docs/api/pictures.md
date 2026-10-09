@@ -88,6 +88,95 @@ if (err < 0)
 
 A complete program is on the [overview page](index.md#minimal-program).
 
+## Wrap your own planes (`vmaf_picture_wrap`)
+
+When the samples already sit in planar memory you own (a decoder's frame,
+a file you mapped), `vmaf_picture_wrap()` makes a picture on that memory
+instead of copying it into a `vmaf_picture_alloc()` buffer. It is
+Netflix/vmaf `700124a4c`, with the differences listed below
+([ADR-2949](../adr/2949-picture-wrap-compat-port.md)).
+
+```c
+typedef struct VmafPictureWrapped {
+    enum VmafPixelFormat pix_fmt;
+    unsigned bpc;
+    unsigned w, h;               /* luma size in samples */
+    void *data[3];
+    ptrdiff_t stride[3];         /* bytes */
+    void *cookie;
+    int (*release_picture)(VmafPicture *pic, void *cookie);
+} VmafPictureWrapped;
+
+int vmaf_picture_wrap(VmafPicture *pic, VmafPictureWrapped pic_wrapped);
+```
+
+| | `vmaf_picture_wrap` |
+| --- | --- |
+| Does | Fills `*pic` with a picture on `data` / `stride`, without a copy. Refcount starts at 1, as for `vmaf_picture_alloc()`. |
+| Inputs | `pic` non-NULL; `pix_fmt` one of the four formats; `bpc` 8 to 16; `w`, `h` greater than 0; for each plane the format has (one for `YUV400P`, else three) a non-NULL `data[i]` and a `stride[i]` that is not negative and holds one row of that plane. |
+| Plane sizes | Luma `w` x `h`. A subsampled chroma plane is `ceil(w / 2)` samples wide and, for 4:2:0, `ceil(h / 2)` rows tall, the same as `vmaf_picture_alloc()` (so a 1919-wide 4:2:0 frame has 960-sample chroma rows, as FFmpeg lays them out). |
+| Errors | `-EINVAL` for any input above, `-ENOMEM`. On an error `*pic` is not written and `release_picture` is not called. |
+| Ownership | Same as an allocated picture: release it with `vmaf_picture_unref()` or hand it to `vmaf_read_pictures()`, which takes it whatever it returns. |
+| Release | `release_picture(view, cookie)` runs once, on the thread that drops the last reference: in your `vmaf_picture_unref()`, or inside the context once it no longer needs the frame, at the latest in `vmaf_close()`. Until then keep the planes valid and unchanged. `view` has the wrapped format, size, data and strides; its `ref` and `priv` are NULL. The return value is ignored. |
+| No callback | With `release_picture` NULL nothing is called; keep the planes valid until every context that read the picture is closed. |
+| Thread-safety | Not thread-safe; one context and its pictures per thread. The callback itself may run on a context's worker thread. |
+| ABI | Additive, `libvmaf.so.3`. Deprecated in favour of `vmafx_frame_wrap_host()` like the rest of `picture.h` (the warning is opt-in). |
+
+The planes are read in place, so they keep your strides: rows need not be
+padded to 64 samples, and a stride wider than the row is fine. Which frames
+the context still reads is described under
+[what the context keeps alive](#what-the-context-keeps-alive); the release
+callback is the signal that a frame's memory is free again.
+
+### Example: score decoder frames without a copy
+
+```c
+static int frame_done(VmafPicture *pic, void *cookie)
+{
+    (void)pic;
+    my_decoder_release_frame(cookie);   /* hand the buffer back */
+    return 0;
+}
+
+VmafPicture ref, dist;
+VmafPictureWrapped w = {
+    .pix_fmt = VMAF_PIX_FMT_YUV420P, .bpc = 8, .w = 1920, .h = 1080,
+    .data = { f->y, f->u, f->v },
+    .stride = { f->y_stride, f->uv_stride, f->uv_stride },
+    .cookie = f, .release_picture = frame_done,
+};
+int err = vmaf_picture_wrap(&ref, w);
+/* ... the same for dist ... */
+if (err == 0)
+    err = vmaf_read_pictures(vmaf, &ref, &dist, index);  /* takes both */
+```
+
+The repository's tests show the whole loop:
+[`test_picture_wrap_integration.c`](../../core/test/test_picture_wrap_integration.c)
+(upstream's) and
+[`test_picture_wrap_api.c`](../../core/test/test_picture_wrap_api.c), which
+also checks that wrapped pictures score bit for bit what the same samples
+score through `vmaf_picture_alloc()`.
+
+### Difference from upstream
+
+The signature and the struct are upstream's. The behaviour differs where
+upstream leaves a caller's mistake unchecked:
+
+- Chroma planes of an odd-size frame are rounded up, as everywhere in the
+  fork ([ADR-1483](../adr/1483-odd-size-chroma-planes-round-up.md));
+  upstream rounds down, so it reads one column (and row) fewer than the
+  plane has.
+- A size of 0, a NULL plane, or a stride that is negative or shorter than a
+  row returns `-EINVAL`; upstream accepts them.
+- On an error `*pic` is left as it was; upstream has already cleared it.
+- The release callback's `pic` carries NULL `ref` and `priv`; upstream passes
+  its internal picture.
+
+In the [VMAFx API](vmafx/index.md) the same operation is
+`vmafx_frame_wrap_host()` (see [frames](vmafx/frame.md)), which
+`vmaf_picture_wrap()` calls.
+
 ## Sample range
 
 Every sample of a picture of bit depth `bpc` must be at most
