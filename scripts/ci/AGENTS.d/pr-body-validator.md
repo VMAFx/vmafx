@@ -6,7 +6,7 @@ paths:
   - scripts/git-hooks/pre-push
   - scripts/git-hooks/pre-push-pr-body-lint.sh
   - scripts/git-hooks/test-pre-push-pr-body-lint.py
-invariant: `deliverables-check.sh` is only parser; validator shims `git diff --name-only` and nothing else.
+invariant: `deliverables-check.sh` is only parser; validator shims `git diff --name-only` and sentinel merge base, nothing else.
 area: gates
 ---
 <!-- markdownlint-disable MD013 MD060 -->
@@ -17,7 +17,9 @@ area: gates
 `.github/workflows/rule-enforcement.yml` deep-dive-checklist gate
 (ADR-0108). Re-use `scripts/ci/deliverables-check.sh` verbatim as
 parser; validator only injects diff via `PATH`-shim that
-intercepts `git diff --name-only`.
+intercepts `git diff --name-only`, plus `git merge-base
+validator-base validator-head` (answers `validator-base`), since
+the gate diffs from the merge base (`pr-diff-base.sh`).
 
 `pre-push-pr-body-lint.sh` = standalone entry point referenced by
 `.pre-commit-config.yaml` `validate-pr-body` hook (`stages:
@@ -62,7 +64,7 @@ parser's actual behaviour.
 
 **Invariant — shim scope**: `git` shim built inside
 `validate-pr-body.sh` intercepts only `diff --name-only` call
-shape. Every other `git` invocation falls through to real
+shape and `merge-base` of its own sentinel pair. Every other `git` invocation falls through to real
 binary. Future change to `deliverables-check.sh` using
 different git subcommand to compute diff must update shim.
 Else `validate-pr-body.sh` silently uses real

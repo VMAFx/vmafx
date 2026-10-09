@@ -21,7 +21,10 @@ resolving it from its own `${BASH_SOURCE[0]}` directory rather than from
 is standalone any more. Consequences to preserve:
 
 - Copying, vendoring or relocating one of those scripts **must** carry
-  `pr-body-input.sh` with it, into same directory. copy that loses
+  `pr-body-input.sh` with it, into same directory; for
+  `deliverables-check.sh`, `ffmpeg-patches-surface-check.sh` and
+  `state-md-touch-check.sh` also `pr-diff-base.sh`
+  ([pr-diff-base](pr-diff-base.md)). copy that loses
   sibling does not degrade — it dies at `.` line before it reads anything.
 - `pr-body-input.sh` is sourced, never executed, and defines only
   `pr_body_*` functions and `PR_BODY_STDIN_KIND` / `PR_BODY_STDIN_FD`

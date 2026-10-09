@@ -34,6 +34,8 @@
 
 set -euo pipefail
 
+_classify_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+
 usage() {
   cat >&2 <<USAGE_EOF
 Usage: $0 [options]
@@ -206,9 +208,11 @@ else
     # moved failed the documentation gates for that reason alone.
     #
     # `git merge-base` gives the real fork point, which is what three-dot diff
-    # syntax means. The fallback branch below already did this correctly; only
-    # this explicit-SHA path was wrong.
-    diff_base="$(git merge-base "${base_sha}" "${head_sha}" 2>/dev/null || printf '%s' "${base_sha}")"
+    # syntax means. Without a merge base the classification is an environment
+    # error (exit 2), never a diff from base_sha itself (pr-diff-base.sh).
+    # shellcheck source=scripts/ci/pr-diff-base.sh
+    . "${_classify_dir}/pr-diff-base.sh"
+    diff_base="$(pr_diff_base "${base_sha}" "${head_sha}" classify-dependency-pr)" || exit 2
     diff_head="${head_sha}"
   else
     if ! git rev-parse --verify origin/master >/dev/null 2>&1; then

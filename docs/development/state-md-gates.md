@@ -225,7 +225,9 @@ Any of these:
 
 Either:
 
-1. The diff against `BASE_SHA..HEAD_SHA` includes
+1. The pull request's own diff, from the merge base of `BASE_SHA` and
+   `HEAD_SHA` to `HEAD_SHA` (what master changed since the branch forked
+   does not count), includes
    [`docs/state.md`](../state.md) (the row landed in the appropriate section:
    Open, Recently closed, Confirmed not-affected or Deferred) and none of the
    inserted lines carry a placeholder PR or commit reference

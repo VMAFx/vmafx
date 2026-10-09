@@ -199,6 +199,12 @@ if [ "\${1:-}" = "diff" ] && [ "\${2:-}" = "--name-only" ]; then
   cat -- "${tmpdir}/diff.txt"
   exit 0
 fi
+# The sentinel pair below has no merge base of its own; the gate diffs from
+# the merge base (pr-diff-base.sh), which the shim answers with the base.
+if [ "\${1:-}" = "merge-base" ] && [ "\${2:-}" = "validator-base" ] && [ "\${3:-}" = "validator-head" ]; then
+  echo validator-base
+  exit 0
+fi
 exec "${real_git}" "\$@"
 SHIM
 chmod +x "${shim_dir}/git"

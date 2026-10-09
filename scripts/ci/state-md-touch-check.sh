@@ -52,6 +52,8 @@ fi
 _state_md_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/ci/pr-body-input.sh
 . "${_state_md_dir}/pr-body-input.sh"
+# shellcheck source=scripts/ci/pr-diff-base.sh
+. "${_state_md_dir}/pr-diff-base.sh"
 
 if [ -n "${PR_BODY:-}" ]; then
   body_src="env"
@@ -93,9 +95,10 @@ printf '%s' "${PR_BODY}" |
 # ---------- 2. Locate diff base ----------
 
 if [ -n "${BASE_SHA:-}" ] && [ -n "${HEAD_SHA:-}" ]; then
-  diff_base="${BASE_SHA}"
+  # From the merge base, never from BASE_SHA itself: see pr-diff-base.sh.
+  diff_base="$(pr_diff_base "${BASE_SHA}" "${HEAD_SHA}" state-md-touch-check)" || exit 2
   diff_head="${HEAD_SHA}"
-  diff_src="env (BASE_SHA..HEAD_SHA)"
+  diff_src="env (merge base of BASE_SHA and HEAD_SHA..HEAD_SHA)"
 else
   if ! git rev-parse --verify origin/master >/dev/null 2>&1; then
     echo "state-md-touch-check: origin/master not found; run 'git fetch origin master' first." >&2
