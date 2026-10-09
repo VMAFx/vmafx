@@ -76,7 +76,9 @@ func renderRules(values []string, out string) error {
 		_, err = os.Stdout.Write(rules)
 		return err
 	}
-	return os.WriteFile(out, rules, 0o644) // #nosec G306 -- a rule file Prometheus reads
+	// The operator names the output with -out, anywhere on the host (a
+	// Prometheus rules directory, a scratch file): not a path to confine.
+	return os.WriteFile(out, rules, 0o644) // #nosec G306 G703 -- a rule file Prometheus reads, at the path the operator named
 }
 
 func run(write, check bool) error {
@@ -90,9 +92,18 @@ func run(write, check bool) error {
 	if err != nil {
 		return err
 	}
+	repo, err := os.OpenRoot(".")
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if cerr := repo.Close(); cerr != nil {
+			fmt.Fprintln(os.Stderr, "obsgen: close repository root:", cerr)
+		}
+	}()
 	var stale []string
 	for _, f := range files {
-		changed, err := apply(f, write)
+		changed, err := apply(repo, f, write)
 		if err != nil {
 			return err
 		}
@@ -106,11 +117,13 @@ func run(write, check bool) error {
 	return nil
 }
 
-// apply compares f with the file on disk, writes it when write is set, and
-// reports whether the two differed.
-func apply(f obsgen.File, write bool) (bool, error) {
+// apply compares f with the file under repo, writes it when write is set, and
+// reports whether the two differed. Every generated path is relative to the
+// repository root; repo refuses one that leaves it (".." or a symbolic link
+// pointing outside).
+func apply(repo *os.Root, f obsgen.File, write bool) (bool, error) {
 	path := filepath.FromSlash(f.Path)
-	old, err := os.ReadFile(path) // #nosec G304 -- a path obsgen generates, under the repository root
+	old, err := repo.ReadFile(path)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return false, err
 	}
@@ -127,8 +140,8 @@ func apply(f obsgen.File, write bool) (bool, error) {
 	// World-readable, as a checkout writes them: the Compose example mounts
 	// the generated dashboards and provisioning into containers that run as
 	// another user.
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { // #nosec G301 -- repository directory, read by containers
+	if err := repo.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return false, err
 	}
-	return true, os.WriteFile(path, content, 0o644) // #nosec G306 -- repository file, read by containers
+	return true, repo.WriteFile(path, content, 0o644)
 }

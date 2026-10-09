@@ -4,6 +4,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -63,5 +64,37 @@ func TestRenderRulesRefusesBadValues(t *testing.T) {
 	}
 	if err := renderRules([]string{filepath.Join(dir, "missing.yaml")}, ""); err == nil {
 		t.Error("a missing values file was accepted")
+	}
+}
+
+// TestApplyStaysUnderTheRoot: apply writes a generated path under the root it
+// is given and refuses one that leaves it, writing nothing outside.
+func TestApplyStaysUnderTheRoot(t *testing.T) {
+	parent := t.TempDir()
+	dir := filepath.Join(parent, "repo")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	repo, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := repo.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	changed, err := apply(repo, obsgen.File{Path: "deploy/rules.yaml", Content: []byte("groups: []\n")}, true)
+	if err != nil || !changed {
+		t.Fatalf("apply inside the root = %v, %v", changed, err)
+	}
+	if got, err := os.ReadFile(filepath.Join(dir, "deploy", "rules.yaml")); err != nil || string(got) != "groups: []\n" {
+		t.Errorf("written file = %q, %v", got, err)
+	}
+	if _, err := apply(repo, obsgen.File{Path: "../escape.yaml", Content: []byte("x\n")}, true); err == nil {
+		t.Error("apply wrote a path outside the root")
+	}
+	if _, err := os.Stat(filepath.Join(parent, "escape.yaml")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("a file appeared outside the root: %v", err)
 	}
 }

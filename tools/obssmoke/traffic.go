@@ -194,7 +194,13 @@ func readFrames(cfg config) ([][]byte, [][]byte, error) {
 
 type scoreStreamClient = grpc.BidiStreamingClient[vmafxv1.ScoreStreamRequest, vmafxv1.ScoreStreamResponse]
 
+// sendFrames sends the configuration, then one pair per reference frame. The
+// two lists must have the same length; uneven lists are refused before
+// anything is sent.
 func sendFrames(stream scoreStreamClient, ref, dis [][]byte) error {
+	if len(dis) != len(ref) {
+		return fmt.Errorf("ScoreStream: %d reference frames, %d distorted frames", len(ref), len(dis))
+	}
 	cfg := &vmafxv1.ScoreStreamRequest{Payload: &vmafxv1.ScoreStreamRequest_Config{Config: &vmafxv1.StreamConfig{
 		Width: frameWidth, Height: frameHeight, PixelFormat: vmafxv1.PixelFormat_PIXEL_FORMAT_YUV420P, FrameCountHint: streamFrames,
 	}}}
@@ -203,7 +209,7 @@ func sendFrames(stream scoreStreamClient, ref, dis [][]byte) error {
 	}
 	for i := range ref {
 		pair := &vmafxv1.ScoreStreamRequest{Payload: &vmafxv1.ScoreStreamRequest_FramePair{FramePair: &vmafxv1.FramePair{
-			FrameIndex: uint32(i), RawReference: ref[i], RawDistorted: dis[i], // #nosec G115 -- i < streamFrames
+			FrameIndex: uint32(i), RawReference: ref[i], RawDistorted: dis[i], // #nosec G115 G602 -- i < streamFrames; len(dis) == len(ref), checked on entry
 		}}}
 		if err := stream.Send(pair); err != nil {
 			return fmt.Errorf("ScoreStream frame %d: %w", i, err)

@@ -7,6 +7,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	vmafxv1 "github.com/VMAFx/vmafx/gen/go"
 )
 
 func TestInstantiateSetsEveryVariable(t *testing.T) {
@@ -77,5 +79,37 @@ func TestRuleProblems(t *testing.T) {
 	g.Data.Groups[1].Rules[0].Health = "err"
 	if err := ruleProblems(g); err == nil {
 		t.Error("an unhealthy rule passed")
+	}
+}
+
+// recordingStream is a scoreStreamClient that counts the messages sent; the
+// embedded interface is nil, so any other method panics.
+type recordingStream struct {
+	scoreStreamClient
+	sent int
+}
+
+func (r *recordingStream) Send(*vmafxv1.ScoreStreamRequest) error { r.sent++; return nil }
+func (r *recordingStream) CloseSend() error                       { return nil }
+
+// TestSendFramesRefusesUnevenFrameLists: sendFrames pairs ref[i] with dis[i]
+// for every reference frame. A distorted list shorter than the reference list
+// is an error before anything is sent, where the loop indexed past its end.
+func TestSendFramesRefusesUnevenFrameLists(t *testing.T) {
+	t.Parallel()
+	stream := &recordingStream{}
+	err := sendFrames(stream, [][]byte{{1}, {2}}, [][]byte{{1}})
+	if err == nil || !strings.Contains(err.Error(), "2 reference frames, 1 distorted frames") {
+		t.Errorf("sendFrames with uneven lists = %v", err)
+	}
+	if stream.sent != 0 {
+		t.Errorf("sendFrames sent %d messages before refusing uneven lists", stream.sent)
+	}
+	even := &recordingStream{}
+	if err := sendFrames(even, [][]byte{{1}, {2}}, [][]byte{{3}, {4}}); err != nil {
+		t.Fatalf("sendFrames with even lists = %v", err)
+	}
+	if even.sent != 3 {
+		t.Errorf("sendFrames sent %d messages, want the configuration and 2 pairs", even.sent)
 	}
 }
