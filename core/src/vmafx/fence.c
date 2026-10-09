@@ -175,9 +175,17 @@ void vmafx_host_fence_unref(VmafxHostFence *fence)
     free(fence);
 }
 
+/* The NULL checks after the asserts below keep a NULL fence away from the
+ * atomics in a build with assertions: current mingw-w64 headers declare
+ * _assert() without noreturn (the MSVC runtime's can return), so GCC follows
+ * the path past a failed assert and reported the atomic load at address zero
+ * under LTO (-Werror=stringop-overflow, the Windows UCRT64 leg). */
 void vmafx_host_fence_signal(VmafxHostFence *fence)
 {
     assert(fence && fence->magic == VMAFX_HOST_FENCE_MAGIC);
+    if (!fence) {
+        return;
+    }
     (void)pthread_mutex_lock(&fence->lock);
     atomic_store_explicit(&fence->signalled, 1, memory_order_release);
     (void)pthread_cond_broadcast(&fence->cond);
@@ -187,7 +195,7 @@ void vmafx_host_fence_signal(VmafxHostFence *fence)
 bool vmafx_host_fence_signalled(const VmafxHostFence *fence)
 {
     assert(fence && fence->magic == VMAFX_HOST_FENCE_MAGIC);
-    return atomic_load_explicit(&fence->signalled, memory_order_acquire) != 0;
+    return fence && atomic_load_explicit(&fence->signalled, memory_order_acquire) != 0;
 }
 
 void vmafx_host_fence_signal_unref(VmafxHostFence *fence)
@@ -375,6 +383,9 @@ static bool host_fence_cond_wait(VmafxHostFence *fence, uint64_t timeout_ns)
 
 bool vmafx_host_fence_wait(VmafxHostFence *fence, uint64_t timeout_ns)
 {
+    if (!fence) {
+        return false;
+    }
     if (timeout_ns == 0u || vmafx_test_clock_is_virtual()) {
         return vmafx_fence_poll(host_fence_done, fence, timeout_ns) == 1;
     }

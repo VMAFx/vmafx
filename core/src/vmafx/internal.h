@@ -294,6 +294,7 @@ bool vmafx_frame_pool_release_is(int (*release)(VmafPicture *pic, void *cookie))
 VmafxHostFence *vmafx_host_fence_new(void);
 VmafxHostFence *vmafx_host_fence_ref(VmafxHostFence *fence);
 void vmafx_host_fence_unref(VmafxHostFence *fence);
+/* Signal / query `fence`; a NULL fence is never signalled (signal: no-op). */
 void vmafx_host_fence_signal(VmafxHostFence *fence);
 bool vmafx_host_fence_signalled(const VmafxHostFence *fence);
 /* The host fence a VMAFX_FENCE_HOST VmafxFence names (borrowed), or
@@ -429,8 +430,8 @@ VmafxStatus vmafx_import_check_linear_plane(const VmafxReport *report, const Vma
 const char *vmafx_import_plane_field(uint32_t i, const char *field);
 
 /* Wait until `fence` is signalled or `timeout_ns` passed (UINT64_MAX: no
- * limit): true when signalled. Waits on the fence's condition variable
- * against a monotonic deadline (fence.c). */
+ * limit): true when signalled; false at once for a NULL fence. Waits on the
+ * fence's condition variable against a monotonic deadline (fence.c). */
 bool vmafx_host_fence_wait(VmafxHostFence *fence, uint64_t timeout_ns);
 
 /* ---- Pooling and windows (score.c, window.c; RC4 WP4, ADR-2074) ---------- */

@@ -1,0 +1,1 @@
+- Build: the Windows MinGW-w64 (UCRT64) build no longer fails at the link-time-optimised link of `test_vmafx_host_fence_wait` with `-Werror=stringop-overflow`. The host-fence functions return early for a NULL fence after their assertion, because current mingw-w64 headers let a failed `assert()` return.
