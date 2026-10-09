@@ -27,6 +27,7 @@ MERGING_TABLES = {
     "adm": (C_SRC, "options"),
     "adm_cuda": (ROOT / "core/src/feature/cuda/integer_adm_cuda.c", "options_cuda"),
     "adm_sycl": (ROOT / "core/src/feature/sycl/integer_adm_sycl.cpp", "options"),
+    "adm_hip": (ROOT / "core/src/feature/hip/integer_adm_hip.c", "options_hip"),
 }
 VIEW_SRC = ROOT / "core/src/feature/adm_view_dist.c"
 VIEW_HDR = ROOT / "core/src/feature/adm_view_dist.h"

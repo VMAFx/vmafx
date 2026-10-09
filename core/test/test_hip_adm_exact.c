@@ -49,7 +49,7 @@
 #define FIXTURE_W 256u
 #define FIXTURE_H 144u
 
-#define MAX_KEYS 24u
+#define MAX_KEYS 32u
 /* Frames per run: the second one shows that a frame starts from cleared
  * accumulators. */
 #define NUM_FRAMES 2u
@@ -193,21 +193,31 @@ static int feed_frame(VmafContext *vmaf, const Fixture *fx, unsigned frame)
     return vmaf_read_pictures(vmaf, &ref, &dist, frame);
 }
 
-/* A context with the CPU `adm` extractor, or with `adm_hip` on `hip_state`.
- * `opts` is consumed. */
-static int adm_context(VmafContext **vmaf, VmafHipState *hip_state, VmafFeatureDictionary *opts)
+/* A context with the CPU `adm` extractor, or with `adm_hip` on `hip_state`,
+ * registered with `opts` and, when `opts2` is set, a second time with it (the
+ * registry folds the second into the first, ADR-2795). Both are consumed. */
+static int adm_context(VmafContext **vmaf, VmafHipState *hip_state, VmafFeatureDictionary *opts,
+                       VmafFeatureDictionary *opts2)
 {
     const VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    const char *name = hip_state ? "adm_hip" : "adm";
     int err = vmaf_init(vmaf, cfg);
     if (!err && hip_state) {
         err = vmaf_hip_import_state(*vmaf, hip_state);
     }
     if (!err) {
-        err = vmaf_use_feature(*vmaf, hip_state ? "adm_hip" : "adm", opts);
+        err = vmaf_use_feature(*vmaf, name, opts);
         opts = err ? opts : NULL; /* taken on success */
+    }
+    if (!err && opts2) {
+        err = vmaf_use_feature(*vmaf, name, opts2);
+        opts2 = err ? opts2 : NULL;
     }
     if (opts) {
         (void)vmaf_feature_dictionary_free(&opts);
+    }
+    if (opts2) {
+        (void)vmaf_feature_dictionary_free(&opts2);
     }
     return err;
 }
@@ -216,10 +226,11 @@ static int adm_context(VmafContext **vmaf, VmafHipState *hip_state, VmafFeatureD
  * frame read into `out` (frame-major). Returns the first error; -ENOSYS is
  * the scaffold build. */
 static int adm_scores(VmafHipState *hip_state, const Fixture *fx, VmafFeatureDictionary *opts,
-                      const char *const *keys, size_t count, double *out)
+                      VmafFeatureDictionary *opts2, const char *const *keys, size_t count,
+                      double *out)
 {
     VmafContext *vmaf = NULL;
-    int err = adm_context(&vmaf, hip_state, opts);
+    int err = adm_context(&vmaf, hip_state, opts, opts2);
     for (unsigned frame = 0; frame < NUM_FRAMES && !err; frame++) {
         err = feed_frame(vmaf, fx, frame);
     }
@@ -250,31 +261,18 @@ static VmafHipState *hip_device(void)
     return hip_state;
 }
 
-/* The keys of the case whose HIP value is not the CPU's, each one reported;
- * UINT32_MAX when a run failed. A skipped HIP leg counts as 0. */
-static unsigned exact_mismatches(const char *what, const Fixture *fx,
-                                 VmafFeatureDictionary *(*make_opts)(void), const char *const *keys,
-                                 size_t count)
+/* The HIP leg's options: the case's own, or, for the merged registrations
+ * (ADR-2795), two registrations against the CPU's one. */
+typedef struct AdmCaseOpts {
+    VmafFeatureDictionary *(*cpu)(void);
+    VmafFeatureDictionary *(*hip)(void);
+    VmafFeatureDictionary *(*hip2)(void); /* NULL: one registration */
+} AdmCaseOpts;
+
+/* The keys of the case whose HIP value is not the CPU's, each one reported. */
+static unsigned count_mismatches(const char *what, const Fixture *fx, const char *const *keys,
+                                 size_t count, const double *cpu, const double *gpu)
 {
-    double cpu[MAX_KEYS * NUM_FRAMES] = {0.0};
-    double gpu[MAX_KEYS * NUM_FRAMES] = {0.0};
-    VmafHipState *hip_state = hip_device();
-    if (!hip_state) {
-        return 0u;
-    }
-    const int gpu_err = adm_scores(hip_state, fx, make_opts(), keys, count, gpu);
-    vmaf_hip_state_free(&hip_state);
-    if (gpu_err == -ENOSYS) {
-        (void)fprintf(stderr, "[skip: HIP kernels not built (enable_hipcc=false)] ");
-        mu_skipped = 1;
-        return 0u;
-    }
-    const int cpu_err = gpu_err ? 0 : adm_scores(NULL, fx, make_opts(), keys, count, cpu);
-    if (gpu_err || cpu_err) {
-        (void)fprintf(stderr, "\n%s %ux%u: run failed (hip %d, cpu %d)\n", what, fx->w, fx->h,
-                      gpu_err, cpu_err);
-        return UINT32_MAX;
-    }
     unsigned mismatches = 0u;
     for (size_t i = 0; i < count * NUM_FRAMES; i++) {
         if (isfinite(cpu[i]) && cpu[i] == gpu[i]) {
@@ -286,6 +284,47 @@ static unsigned exact_mismatches(const char *what, const Fixture *fx,
                       gpu[i], fabs(cpu[i] - gpu[i]));
     }
     return mismatches;
+}
+
+/* The mismatching keys of a case with the HIP and CPU options of `o`;
+ * UINT32_MAX when a run failed. A skipped HIP leg counts as 0. */
+static unsigned case_mismatches(const char *what, const Fixture *fx, const AdmCaseOpts *o,
+                                const char *const *keys, size_t count)
+{
+    double cpu[MAX_KEYS * NUM_FRAMES] = {0.0};
+    double gpu[MAX_KEYS * NUM_FRAMES] = {0.0};
+    if (count > MAX_KEYS) {
+        return UINT32_MAX;
+    }
+    VmafHipState *hip_state = hip_device();
+    if (!hip_state) {
+        return 0u;
+    }
+    const int gpu_err =
+        adm_scores(hip_state, fx, o->hip(), o->hip2 ? o->hip2() : NULL, keys, count, gpu);
+    vmaf_hip_state_free(&hip_state);
+    if (gpu_err == -ENOSYS) {
+        (void)fprintf(stderr, "[skip: HIP kernels not built (enable_hipcc=false)] ");
+        mu_skipped = 1;
+        return 0u;
+    }
+    const int cpu_err = gpu_err ? 0 : adm_scores(NULL, fx, o->cpu(), NULL, keys, count, cpu);
+    if (gpu_err || cpu_err) {
+        (void)fprintf(stderr, "\n%s %ux%u: run failed (hip %d, cpu %d)\n", what, fx->w, fx->h,
+                      gpu_err, cpu_err);
+        return UINT32_MAX;
+    }
+    return count_mismatches(what, fx, keys, count, cpu, gpu);
+}
+
+/* The keys of the case whose HIP value is not the CPU's with `make_opts()`
+ * on both twins. */
+static unsigned exact_mismatches(const char *what, const Fixture *fx,
+                                 VmafFeatureDictionary *(*make_opts)(void), const char *const *keys,
+                                 size_t count)
+{
+    const AdmCaseOpts o = {.cpu = make_opts, .hip = make_opts, .hip2 = NULL};
+    return case_mismatches(what, fx, &o, keys, count);
 }
 
 static VmafFeatureDictionary *opts_from(const char *const pairs[][2], size_t count)
@@ -375,6 +414,54 @@ static VmafFeatureDictionary *skip_aim_opts(void)
     static const char *const pairs[][2] = {{"adm_skip_aim", "true"}, {"debug", "true"}};
     return opts_from(pairs, 2u);
 }
+
+/* ADR-2795: one context at two viewing distances. The first distance keeps
+ * its names and, with `debug`, the debug scores; the second files its seven
+ * under the names `adm_norm_view_dist=5` gives them. */
+static VmafFeatureDictionary *two_view_opts(void)
+{
+    static const char *const pairs[][2] = {{"debug", "true"}, {"adm_norm_view_dist_extra", "5"}};
+    return opts_from(pairs, 2u);
+}
+
+static const char *const TWO_VIEW_KEYS[] = {
+    "VMAF_integer_feature_adm2_score",
+    "VMAF_integer_feature_aim_score",
+    "VMAF_integer_feature_adm3_score",
+    "integer_adm_scale0",
+    "integer_adm_scale1",
+    "integer_adm_scale2",
+    "integer_adm_scale3",
+    ADM_DEBUG_KEYS(""),
+    ADM_SCORE_KEYS("_nvd_5"),
+};
+#define NUM_TWO_VIEW_KEYS (sizeof(TWO_VIEW_KEYS) / sizeof(TWO_VIEW_KEYS[0]))
+
+/* The model options at 3H, then at 5H: the vmaf_v1.0.16_3d0h / _5d0h pair. */
+static VmafFeatureDictionary *model_opts_at(const char *nvd_key, const char *nvd)
+{
+    VmafFeatureDictionary *d = model_opts();
+    if (d && vmaf_feature_dictionary_set(&d, nvd_key, nvd)) {
+        (void)vmaf_feature_dictionary_free(&d);
+    }
+    return d;
+}
+
+static VmafFeatureDictionary *two_view_model_opts(void)
+{
+    return model_opts_at("adm_norm_view_dist_extra", "5");
+}
+
+static VmafFeatureDictionary *model_opts_5h(void)
+{
+    return model_opts_at("adm_norm_view_dist", "5");
+}
+
+static const char *const TWO_VIEW_MODEL_KEYS[] = {
+    ADM_SCORE_KEYS(MODEL_SUFFIX),
+    ADM_SCORE_KEYS("_csf_2_dlmw_0.7_egl_1_min_0.5_nw_0.02_nvd_5_apn_2"),
+};
+#define NUM_TWO_VIEW_MODEL_KEYS (sizeof(TWO_VIEW_MODEL_KEYS) / sizeof(TWO_VIEW_MODEL_KEYS[0]))
 
 /* Default options, every output including the per-scale sums. */
 static char *test_adm_default_exact(void)
@@ -504,12 +591,45 @@ static char *run_exact_default_cases(void)
     return NULL;
 }
 
+/* ADR-2795: a second viewing distance on the HIP twin returns the CPU's
+ * scores for both distances, at 8 and 10 bits and under the model options. */
+static char *test_adm_two_views_exact(void)
+{
+    const Fixture fx8 = {FIXTURE_W, FIXTURE_H, 8u, false, false};
+    const Fixture fx10 = {FIXTURE_W, FIXTURE_H, 10u, false, false};
+    mu_assert("adm_hip differs from the CPU at two viewing distances",
+              exact_mismatches("adm two views", &fx8, two_view_opts, TWO_VIEW_KEYS,
+                               NUM_TWO_VIEW_KEYS) == 0u);
+    mu_assert("adm_hip differs from the CPU at two viewing distances, 10-bit",
+              exact_mismatches("adm two views 10-bit", &fx10, two_view_opts, TWO_VIEW_KEYS,
+                               NUM_TWO_VIEW_KEYS) == 0u);
+    mu_assert("adm_hip differs from the CPU at two viewing distances with the model options",
+              exact_mismatches("adm two views model options", &fx8, two_view_model_opts,
+                               TWO_VIEW_MODEL_KEYS, NUM_TWO_VIEW_MODEL_KEYS) == 0u);
+    return NULL;
+}
+
+/* ADR-2795: the HIP twin registered at 3H and at 5H (the registry folds the
+ * second into the first, as two models do) scores as one CPU context with
+ * both distances. */
+static char *test_adm_merged_registrations_exact(void)
+{
+    const Fixture fx = {FIXTURE_W, FIXTURE_H, 8u, false, false};
+    const AdmCaseOpts o = {.cpu = two_view_model_opts, .hip = model_opts, .hip2 = model_opts_5h};
+    mu_assert("adm_hip registered at 3H and 5H differs from one CPU context at both",
+              case_mismatches("adm merged registrations", &fx, &o, TWO_VIEW_MODEL_KEYS,
+                              NUM_TWO_VIEW_MODEL_KEYS) == 0u);
+    return NULL;
+}
+
 static char *run_exact_option_cases(void)
 {
     mu_run_test(test_adm_model_options_exact);
     mu_run_test(test_adm_barten_mode_exact);
     mu_run_test(test_adm_skip_scale0_exact);
     mu_run_test(test_adm_skip_aim_exact);
+    mu_run_test(test_adm_two_views_exact);
+    mu_run_test(test_adm_merged_registrations_exact);
     return NULL;
 }
 

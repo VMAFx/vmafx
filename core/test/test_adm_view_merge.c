@@ -275,8 +275,8 @@ typedef struct {
 static char *test_every_adm_descriptor_merges(void)
 {
     static const AdmDescriptor DESCRIPTORS[] = {
-        {"adm", true},      {"adm_cuda", true},           {"adm_sycl", true},
-        {"adm_hip", false}, {"integer_adm_metal", false},
+        {"adm", true},     {"adm_cuda", true},           {"adm_sycl", true},
+        {"adm_hip", true}, {"integer_adm_metal", false},
     };
     for (size_t i = 0; i < sizeof(DESCRIPTORS) / sizeof(DESCRIPTORS[0]); i++) {
         const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name(DESCRIPTORS[i].name);

@@ -304,9 +304,12 @@ def _validate_lifecycle(host: str, failures: list[str]) -> None:
     )
 
     init_fex = _function(host, "init_fex_hip")
+    # The name dictionary, the second viewing distance's names included
+    # (ADR-2795), comes from adm_hip_init_names(); its failure releases every
+    # device resource.
     dictionary_failure = _block_after(
         init_fex,
-        r"if\s*\(\s*s\s*->\s*feature_name_dict\s*==\s*NULL\s*\)\s*\{",
+        r"if\s*\(\s*name_err\s*\)\s*\{",
     )
     _require_order(
         failures,
@@ -318,7 +321,7 @@ def _validate_lifecycle(host: str, failures: list[str]) -> None:
             "adm_hip_free_buffers(s);",
             "adm_hip_unload_modules(s);",
             "adm_hip_destroy_stream(s);",
-            "return -ENOMEM;",
+            "return name_err;",
         ),
     )
 

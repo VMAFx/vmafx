@@ -315,15 +315,6 @@ static char *test_integer_adm_cpu_hip_parity(void)
     return NULL;
 }
 
-static int twin_declares(const VmafOption *gpu_options, const char *name)
-{
-    for (unsigned j = 0; gpu_options[j].name; j++) {
-        if (!strcmp(gpu_options[j].name, name))
-            return 1;
-    }
-    return 0;
-}
-
 static char *check_adm_option_match(const VmafOption *a, const VmafOption *gpu_options)
 {
     const VmafOption *b = NULL;
@@ -366,14 +357,6 @@ static char *test_integer_adm_hip_option_table_mirrors_cpu(void)
     mu_assert("adm_hip must declare options", gpu->options != NULL);
 
     for (unsigned i = 0; cpu->options[i].name; i++) {
-        /* ADR-2795: the second viewing distance reaches adm_hip in its own
-         * pull request of the stack. Once the twin declares the option this
-         * fails, and that pull request deletes the gap. */
-        if (!strcmp(cpu->options[i].name, "adm_norm_view_dist_extra")) {
-            mu_assert("adm_hip declares adm_norm_view_dist_extra: delete the recorded gap",
-                      !twin_declares(gpu->options, cpu->options[i].name));
-            continue;
-        }
         mu_assert_msg(check_adm_option_match(&cpu->options[i], gpu->options));
     }
     return NULL;

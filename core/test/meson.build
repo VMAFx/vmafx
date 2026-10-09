@@ -7982,8 +7982,9 @@ test('test_hip_adm_parity', test_hip_adm_parity,
 #
 # integer_adm_hip.c is compiled straight into this target rather than linked
 # from libvmaf, and test_hip_adm_init_unwind.c defines every symbol the TU
-# references: the ~17 hip* entry points, the four HSACO blobs, and seven
-# libvmaf helpers (the shared-frame plane source of ADR-1408 among them). `vmaf_feature_name_dict_from_provided_features` is the
+# references: the ~17 hip* entry points, the four HSACO blobs, and eleven
+# libvmaf helpers (the shared-frame plane source of ADR-1408 and the second
+# viewing distance's helpers of ADR-2795 among them). `vmaf_feature_name_dict_from_provided_features` is the
 # injection point and returns NULL, which drives the one init path that used
 # to release every resource and then report success (hipSuccess through the
 # unwind ladder's terminal hip_rc()), leaking the two luma stagers on the way

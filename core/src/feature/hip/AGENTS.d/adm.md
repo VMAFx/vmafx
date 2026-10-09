@@ -151,3 +151,17 @@ tests for it. Float ADM (`float_adm_hip.c`) has its own staging.
   RC7 row wins register back. `test_adm_decouple_recip_hip` holds flag to CPU's at every int16
   corner and expects 0 mismatches. It also holds `decouple_r_s123()`, `get_best15_from32()` and scale 1-3 flag to CPU's,
   so no function of header is unused in host build (CodeQL `cpp/unused-static-function`).
+
+- **Two viewing distances (ADR-2795).** `adm_hip_scale0_transform()` /
+  `adm_hip_scale123_transform()` = DWT once per scale; `adm_hip_scale0_weigh()` /
+  `adm_hip_scale123_weigh()` = denominator, CSF, CM, AIM per distance, through
+  `adm_hip_view_buffer()` (second distance's result slots `adm_*_x`, second
+  `RES_BUFFER_SIZE` block of `tmp_res` / `results_host`). Kernels read band
+  pointers from `buf_dev`, result slots as launch arguments; per-distance
+  kernels write only `csf_f` / `i4_csf_f`, `tmp_accum` and result slots,
+  never DWT band. `AdmFixedParametersHip` built per distance
+  (`adm_hip_fixed_params(s, view, ...)`: `rfactor[view]`, `i_rfactor[view]`,
+  distance); context initialisers + host conclusion take `nvd`, never
+  `s->adm_norm_view_dist`. One clear + one readback of `res_bytes` covers every
+  distance. Merge + names = shared `adm_view_dist.c`. `test_hip_adm_exact`:
+  `test_adm_two_views_exact`, `test_adm_merged_registrations_exact` (`==`).

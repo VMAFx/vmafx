@@ -64,10 +64,11 @@ CPU_RESULTS = (
     "adm_csf_den_result(&c, accum, s->adm_noise_weight)",
     "i4_adm_csf_den_result(&c, accum, s->adm_noise_weight)",
 )
-# Each context initialiser feeds the launch and the result.
+# Each context initialiser feeds the launch and the result, at the viewing
+# distance being evaluated (`nvd`, ADR-2795).
 CPU_DEN_CONTEXTS = (
-    "adm_csf_den_ctx_init(&c, w, h, s->adm_norm_view_dist",
-    "i4_adm_csf_den_ctx_init(&c, scale, w, h, s->adm_norm_view_dist",
+    "adm_csf_den_ctx_init(&c, w, h, nvd",
+    "i4_adm_csf_den_ctx_init(&c, scale, w, h, nvd",
 )
 CONTEXT_USES = 2
 SKIP_SCALE0_SEED = "float den_scale = (float)1e-10;"
@@ -82,8 +83,10 @@ ROW_LAUNCHES = (
 )
 # A frame: upload, clear, kernels.
 FRAME_UPLOAD = "adm_hip_stage_luma(s, frame, ref_pic, dis_pic)"
-ACCUMULATOR_CLEAR = "hipMemsetAsync(buf->tmp_res, 0, sizeof(int64_t) * RES_BUFFER_SIZE, s->str)"
-FIRST_KERNELS = "adm_hip_scale0(s, buf, ref_pic, dis_pic,"
+# One clear covers every viewing distance's block (ADR-2795).
+ACCUMULATOR_BYTES = "const size_t res_bytes = sizeof(int64_t) * RES_BUFFER_SIZE * views;"
+ACCUMULATOR_CLEAR = "hipMemsetAsync(buf->tmp_res, 0, res_bytes, s->str)"
+FIRST_KERNELS = "adm_hip_scale0_transform(s, buf, ref_pic, dis_pic,"
 
 
 def _code(source: str) -> str:
@@ -136,7 +139,7 @@ def _host_failures(sources: dict[str, str]) -> list[str]:
 
 def _clear_failures(flat: str) -> list[str]:
     """The frame's accumulator clear lies between its upload and its kernels."""
-    if _calls(flat, ACCUMULATOR_CLEAR) != 1:
+    if _calls(flat, ACCUMULATOR_CLEAR) != 1 or ACCUMULATOR_BYTES not in flat:
         return [f"{HOST}: a frame no longer clears the result accumulators once"]
     clear = flat.find(ACCUMULATOR_CLEAR)
     upload = flat.rfind(FRAME_UPLOAD, 0, clear)
@@ -172,8 +175,8 @@ def _kernel_failures(sources: dict[str, str]) -> list[str]:
 
 AIM_CONCLUSION = "(int)scale, 0.0);"
 AIM_CONTEXTS = (
-    "adm_cm_ctx_init(&c, &no_planes, w, h, 0, 0, s->adm_norm_view_dist",
-    "i4_adm_cm_ctx_init(&c, &no_planes, w, h, 0, 0, scale, s->adm_norm_view_dist",
+    "adm_cm_ctx_init(&c, &no_planes, w, h, 0, 0, nvd",
+    "i4_adm_cm_ctx_init(&c, &no_planes, w, h, 0, 0, scale, nvd",
 )
 # The scale-0 context feeds the result and the shared DLM / AIM launch; the
 # scales 1-3 context the result and the AIM launch.
