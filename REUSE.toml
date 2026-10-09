@@ -325,12 +325,6 @@ SPDX-FileCopyrightText = "2005-2020 x264 project"
 SPDX-License-Identifier = "ISC"
 
 [[annotations]]
-path = ["core/src/interop/pelorus*"]
-precedence = "closest"
-SPDX-FileCopyrightText = "2026 Lusoris"
-SPDX-License-Identifier = "BSD-2-Clause-Patent"
-
-[[annotations]]
 path = ["model/tiny/**"]
 precedence = "closest"
 SPDX-FileCopyrightText = "2026 Lusoris"

@@ -26,3 +26,13 @@ then run script's default mode. Never replace object with branch/tag
 or restore its working-tree fallback; green check must bind every complete
 rendered mirror and exact tracked lint-exemption set to reviewed source
 bytes.
+
+Licence (ADR-2817): `PELORUS_MIRROR_LICENSE` in sync script names one SPDX
+identifier (`EUPL-1.2`). Every pinned source header and Pelorus fixture must
+carry exactly that one `SPDX-License-Identifier` line; both modes refuse
+otherwise. `--update` renders all ten files to temp dir, moves only after all
+rendered, so refusal leaves mirror bytes unchanged. Changing identifier =
+same PR updates `REUSE.toml` and `pelorus` entry of `docs/credits.yaml`.
+Mirror paths get no `REUSE.toml` annotation and no
+`.config/lint-exceptions.d/spdx.toml` entry. Keep SPDX tag split in script and
+test strings, else REUSE reads it as file's own licence.

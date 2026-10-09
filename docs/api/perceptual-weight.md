@@ -137,7 +137,12 @@ on that path, so the result is byte-identical, not merely numerically close.
 The reader is robust to an evolving Pelorus producer:
 
 - **R4** — each section is read for `min(known_size, dir.size)` bytes; a newer
-  producer's appended fields are ignored.
+  producer's appended fields are ignored, and the fields an older producer did
+  not write read as zero (a banding section without its map pointer falls back
+  to the frame-level scalars). `test_newer_larger_section_reads_known_prefix`
+  and `test_older_shorter_section_zero_fills` in
+  [`core/test/test_perceptual_weight.c`](../../core/test/test_perceptual_weight.c)
+  hold both cases.
 - **R3** — unknown section bits are ignored.
 - Absent sections, or a blob with `grid == 0`, degrade to a frame-level scalar
   (or to "no salience", weight `1.0`) — never a crash.

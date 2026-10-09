@@ -5,56 +5,6 @@
 # scripts/ci/lint_exceptions.py. One file per entry; an entry stops holding on `expires`.
 
 [[exception]]
-path = "core/include/libvmaf/pelorus/deband.h"
-reason = "Read-only mirror of VMAFx/pelorus at the pinned commit (ADR-1113): byte-identical except the banner and the include path that scripts/sync-pelorus-interop.sh renders, so a local SPDX line is drift. Fix: add the line in pelorus and re-vendor at the next pin move; the licence text itself is in the file header."
-expires = 2026-12-31
-
-[[exception]]
-path = "core/include/libvmaf/pelorus/denoise.h"
-reason = "Read-only mirror of VMAFx/pelorus at the pinned commit (ADR-1113): byte-identical except the banner and the include path that scripts/sync-pelorus-interop.sh renders, so a local SPDX line is drift. Fix: add the line in pelorus and re-vendor at the next pin move; the licence text itself is in the file header."
-expires = 2026-12-31
-
-[[exception]]
-path = "core/include/libvmaf/pelorus/interop.h"
-reason = "Read-only mirror of VMAFx/pelorus at the pinned commit (ADR-1113): byte-identical except the banner and the include path that scripts/sync-pelorus-interop.sh renders, so a local SPDX line is drift. Fix: add the line in pelorus and re-vendor at the next pin move; the licence text itself is in the file header."
-expires = 2026-12-31
-
-[[exception]]
-path = "core/include/libvmaf/pelorus/pelorus.h"
-reason = "Read-only mirror of VMAFx/pelorus at the pinned commit (ADR-1113): byte-identical except the banner and the include path that scripts/sync-pelorus-interop.sh renders, so a local SPDX line is drift. Fix: add the line in pelorus and re-vendor at the next pin move; the licence text itself is in the file header."
-expires = 2026-12-31
-
-[[exception]]
-path = "core/src/interop/pelorus_deband_params.c"
-reason = "Read-only mirror of VMAFx/pelorus at the pinned commit (ADR-1113): byte-identical except the banner and the include path that scripts/sync-pelorus-interop.sh renders, so a local SPDX line is drift. Fix: add the line in pelorus and re-vendor at the next pin move; the licence text itself is in the file header."
-expires = 2026-12-31
-
-[[exception]]
-path = "core/src/interop/pelorus_denoise_params.c"
-reason = "Read-only mirror of VMAFx/pelorus at the pinned commit (ADR-1113): byte-identical except the banner and the include path that scripts/sync-pelorus-interop.sh renders, so a local SPDX line is drift. Fix: add the line in pelorus and re-vendor at the next pin move; the licence text itself is in the file header."
-expires = 2026-12-31
-
-[[exception]]
-path = "core/src/interop/pelorus_interop.c"
-reason = "Read-only mirror of VMAFx/pelorus at the pinned commit (ADR-1113): byte-identical except the banner and the include path that scripts/sync-pelorus-interop.sh renders, so a local SPDX line is drift. Fix: add the line in pelorus and re-vendor at the next pin move; the licence text itself is in the file header."
-expires = 2026-12-31
-
-[[exception]]
-path = "core/src/interop/pelorus_qp_report_csv.c"
-reason = "Read-only mirror of VMAFx/pelorus at the pinned commit (ADR-1113): byte-identical except the banner and the include path that scripts/sync-pelorus-interop.sh renders, so a local SPDX line is drift. Fix: add the line in pelorus and re-vendor at the next pin move; the licence text itself is in the file header."
-expires = 2026-12-31
-
-[[exception]]
-path = "core/src/interop/pelorus_version.c"
-reason = "Read-only mirror of VMAFx/pelorus at the pinned commit (ADR-1113): byte-identical except the banner and the include path that scripts/sync-pelorus-interop.sh renders, so a local SPDX line is drift. Fix: add the line in pelorus and re-vendor at the next pin move; the licence text itself is in the file header."
-expires = 2026-12-31
-
-[[exception]]
-path = "core/test/test_pelorus_interop.c"
-reason = "Read-only mirror of VMAFx/pelorus at the pinned commit (ADR-1113): byte-identical except the banner and the include path that scripts/sync-pelorus-interop.sh renders, so a local SPDX line is drift. Fix: add the line in pelorus and re-vendor at the next pin move; the licence text itself is in the file header."
-expires = 2026-12-31
-
-[[exception]]
 path = ".config/agent/hooks/block_evasion.py"
 reason = "Praetor-managed file: `praetorctl audit` compares it with praetor's own bytes, so it cannot take a header (ADR-1351); REUSE.toml labels it. Fix: praetor ships the line in its managed copy."
 expires = 2026-12-31

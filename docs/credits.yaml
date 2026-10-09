@@ -1151,12 +1151,15 @@ entries:
   url: https://github.com/VMAFx/pelorus
   kind: code
   relation: vendored
-  license: BSD-2-Clause-Patent
+  license: EUPL-1.2
   paths:
+  - core/include/libvmaf/pelorus/
   - core/src/interop/
+  - core/test/test_pelorus_interop.c
   evidence:
-  - REUSE.toml
-  note: Interop headers vendored from the VMAFx/pelorus repository.
+  - scripts/ci/pelorus-mirror-paths.txt
+  - scripts/sync-pelorus-interop.sh
+  note: Interop ABI headers, parser and conformance fixture vendored from the VMAFx/pelorus repository.
 - id: go-goptuna
   name: goptuna (Go)
   url: https://github.com/c-bata/goptuna

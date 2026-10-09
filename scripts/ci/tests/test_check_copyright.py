@@ -10,9 +10,36 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import tomllib
+
 ROOT = Path(__file__).resolve().parents[3]
 CHECK_SCRIPT = ROOT / "scripts/ci/check-copyright.sh"
 SPDX_TAG = "SPDX-License" + "-Identifier:"
+# The suffixes check-copyright.sh reads for the SPDX rule.
+SPDX_SUFFIXES = frozenset(
+    {
+        ".c", ".h", ".cpp", ".cxx", ".cc", ".hpp", ".hxx", ".cu", ".cuh", ".hip", ".mm", ".metal",
+        ".go", ".py", ".pyx", ".rs", ".sh",
+    }
+)  # fmt: skip
+
+
+def live_spdx_exception() -> str:
+    """A tracked file the repository's SPDX exception list holds and that has no SPDX line.
+
+    Read from the list rather than named here: a fixed name stops testing anything the day
+    its entry is retired (the ten Pelorus mirror entries went with ADR-2817).
+    """
+    listed = tomllib.loads(
+        (ROOT / ".config/lint-exceptions.d/spdx.toml").read_text(encoding="utf-8")
+    ).get("exception", [])
+    for entry in listed:
+        rel = str(entry["path"])
+        path = ROOT / rel
+        head = "".join(path.read_text(encoding="utf-8").splitlines(keepends=True)[:40])
+        if path.suffix in SPDX_SUFFIXES and SPDX_TAG not in head:
+            return rel
+    raise AssertionError("spdx.toml lists no checked file without an SPDX line to test against")
 
 
 class CheckCopyrightTests(unittest.TestCase):
@@ -182,7 +209,7 @@ class CheckCopyrightTests(unittest.TestCase):
                 self.assertEqual(res.returncode, 1, res.stderr)
 
     def test_declared_exception_holds_until_it_expires(self) -> None:
-        spdx_exception = "core/src/interop/pelorus_version.c"
+        spdx_exception = live_spdx_exception()
         self.assertEqual(self.run_check(spdx_exception, cwd=ROOT).returncode, 0)
         late = self.run_check(spdx_exception, cwd=ROOT, today="2099-01-01")
         self.assertEqual(late.returncode, 1)

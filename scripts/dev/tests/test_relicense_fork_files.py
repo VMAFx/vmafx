@@ -171,9 +171,21 @@ class GrantOutsideTheHeader(unittest.TestCase):
         self.assertEqual(len(REL.header_prose_blocks(lines)), 1)
 
     def test_the_shipped_sync_script_is_not_rewritten(self) -> None:
+        """The Pelorus sync script writes the fixture's header below its own.
+
+        Until ADR-2817 that template carried Pelorus's BSD+Patent grant, which
+        test_a_header_template_further_down_is_left_alone now pins with a
+        constructed file; since Pelorus v0.3.0 it carries the EUPL-1.2 tag.
+        Either way the rewrite leaves it alone.
+        """
         path = ROOT / "sync-pelorus-interop.sh"
         text = path.read_text(encoding="utf-8")
-        self.assertIn("BSD+Patent", text, "the mirrored header template is gone")
+        lines = text.splitlines()
+        templates = [i for i, line in enumerate(lines) if "Copyright 2026 Lusoris" in line]
+        self.assertTrue(
+            [i for i in templates if i >= REL.HEADER_SCAN],
+            "the mirrored header template is gone",
+        )
         self.assertEqual(rewrite(text, "scripts/sync-pelorus-interop.sh"), text)
 
 

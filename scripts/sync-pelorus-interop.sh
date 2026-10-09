@@ -20,6 +20,11 @@
 #   2. intra-pelorus includes rewritten from "pelorus/<x>.h" to
 #      "libvmaf/pelorus/<x>.h" so they resolve under core/include/.
 #
+# Every pinned source must carry exactly the SPDX line PELORUS_MIRROR_LICENSE
+# names in its license header. A Pelorus licence change therefore fails both
+# modes until a reviewed VMAFx change updates this value together with
+# REUSE.toml and docs/credits.yaml.
+#
 # This script re-renders those two known deltas from a pelorus checkout pinned
 # at PELORUS_VENDOR_SHA and compares the resulting file bytes through EOF. Any
 # other difference is DRIFT and fails the run (exit 1) — the vendored mirror
@@ -40,11 +45,13 @@
 set -euo pipefail
 
 # --- Pinned source of truth ------------------------------------------------
-# The exact released Pelorus commit this mirror was vendored from. Re-pin for a
-# reviewed interop ABI addition or a parser correctness/security fix, even when
-# ABI major/minor stay unchanged. Keep this in lock step with every vendored
-# banner and docs/api/pelorus-interop.md.
-PELORUS_VENDOR_SHA="11e183ec0aedf6b3e6447fda64acbb6072a1ae60"
+# The exact released Pelorus commit this mirror was vendored from (tag v0.3.0).
+# Re-pin for a reviewed interop ABI addition or a parser correctness/security
+# fix, even when ABI major/minor stay unchanged. Keep this in lock step with
+# every vendored banner and docs/api/pelorus-interop.md.
+PELORUS_VENDOR_SHA="e2e4040311a443210927549c3a336f909c6473f3"
+# The licence every pinned source declares (Pelorus ADR-0171, VMAFx ADR-1250).
+PELORUS_MIRROR_LICENSE="EUPL-1.2"
 
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 mirror_policy="$repo_root/scripts/ci/pelorus_mirror.py"
@@ -141,20 +148,28 @@ test_dst="$repo_root/$test_rel"
 # --- Helpers ---------------------------------------------------------------
 
 # Render one canonical vendored file from the pinned Pelorus source:
-# license header (lines 1-17) + DO-NOT-EDIT banner + body, with the intra-
-# pelorus include rewritten. Python operates on bytes so a missing or extra EOF
-# newline cannot be erased by shell command substitution or a line printer.
+# license header (the leading comment block, which must name
+# PELORUS_MIRROR_LICENSE in its one SPDX line) + DO-NOT-EDIT banner + body, with
+# the intra-pelorus include rewritten. Python operates on bytes so a missing or
+# extra EOF newline cannot be erased by shell command substitution or a line
+# printer.
 render_vendor() {
   local rel_src="$1" inc_from="$2" inc_to="$3"
   read_src "$rel_src" | python3 -c '
 import sys
 
-sha, include_from, include_to = sys.argv[1:]
+sha, include_from, include_to, license_id = sys.argv[1:]
+# Split so REUSE does not take the joined tag for the licence of this script.
+tag = ("SPDX-" + "License-Identifier:").encode()
 source = sys.stdin.buffer.read()
 lines = source.splitlines(keepends=True)
-if len(lines) < 19 or lines[17] != b"\n":
+end = lines.index(b" */\n") if b" */\n" in lines else -1
+if end < 1 or lines[0] != b"/**\n" or end + 1 >= len(lines) or lines[end + 1] != b"\n":
     raise SystemExit("unexpected Pelorus license-header layout")
-body = b"".join(lines[18:])
+spdx = [line for line in lines[:end] if tag in line]
+if spdx != [b" * " + tag + f" {license_id}\n".encode()]:
+    raise SystemExit(f"Pelorus license header does not declare exactly {license_id}: {spdx}")
+body = b"".join(lines[end + 2:])
 local_edit = ""
 if include_from:
     old = f"#include \"{include_from}\"".encode()
@@ -177,11 +192,18 @@ banner = (
     f"{local_edit}"
     " */\n\n"
 ).encode()
-sys.stdout.buffer.write(b"".join(lines[:17]) + banner + body)
-' "$PELORUS_VENDOR_SHA" "$inc_from" "$inc_to"
+sys.stdout.buffer.write(b"".join(lines[:end + 1]) + banner + body)
+' "$PELORUS_VENDOR_SHA" "$inc_from" "$inc_to" "$PELORUS_MIRROR_LICENSE"
 }
 
 drift=0
+
+# --update renders every file here first and moves them into the tree only when
+# all of them rendered, so a refused source (wrong licence, unexpected layout)
+# leaves the mirror as it was.
+staged_path() {
+  printf '%s/%s.staged' "$sync_tmp" "$(printf '%s' "$1" | tr '/' '_')"
+}
 
 # The lint carve-out is valid only for files the shared path manifest owns.
 # First prove this script's render destinations match that manifest, then
@@ -259,9 +281,7 @@ for row in "${manifest[@]}"; do
   dst="$repo_root/$rel_dst"
 
   if [ "$mode" = "update" ]; then
-    render_vendor "$rel_src" "$inc_from" "$inc_to" >"$dst.tmp"
-    mv "$dst.tmp" "$dst"
-    printf 're-vendored: %s\n' "$rel_dst"
+    render_vendor "$rel_src" "$inc_from" "$inc_to" >"$(staged_path "$rel_dst")"
     continue
   fi
 
@@ -303,7 +323,9 @@ import re
 import sys
 from pathlib import Path
 
-sha, interop_path, fixture_path = sys.argv[1:]
+sha, interop_path, fixture_path, license_id = sys.argv[1:]
+# Split so REUSE does not take the joined tag for the licence of this script.
+tag = "SPDX-" + "License-Identifier:"
 source = Path(fixture_path).read_bytes()
 interop = Path(interop_path).read_bytes()
 
@@ -319,6 +341,9 @@ def abi_component(name):
 match = re.search(rb"(?m)^#include \"pelorus/", source)
 if match is None:
     raise SystemExit("Pelorus fixture has no vendored include")
+spdx = re.findall(rb"(?m)^.*" + tag.encode() + rb".*$", source[: match.start()])
+if spdx != [f" * {tag} {license_id}".encode()]:
+    raise SystemExit(f"Pelorus fixture does not declare exactly {license_id}: {spdx}")
 body = source[match.start():].replace(
     b"#include \"pelorus/", b"#include \"libvmaf/pelorus/"
 )
@@ -328,18 +353,7 @@ prefix = f"""/**
  *
  *  Copyright 2026 Lusoris
  *
- *     Licensed under the BSD+Patent License (the "License");
- *     you may not use this file except in compliance with the License.
- *     You may obtain a copy of the License at
- *
- *         https://opensource.org/licenses/BSDplusPatent
- *
- *     Unless required by applicable law or agreed to in writing, software
- *     distributed under the License is distributed on an "AS IS" BASIS,
- *     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *     See the License for the specific language governing permissions and
- *     limitations under the License.
- *
+ * {tag} {license_id}
  */
 
 /*
@@ -370,12 +384,18 @@ render_fixture() {
   local pinned_fixture="$sync_tmp/pinned-interop-test.c"
   read_src "include/pelorus/interop.h" >"$pinned_interop"
   read_src "test/interop_test.c" >"$pinned_fixture"
-  python3 -c "$_RENDER_FIXTURE_PY" "$PELORUS_VENDOR_SHA" "$pinned_interop" "$pinned_fixture"
+  python3 -c "$_RENDER_FIXTURE_PY" "$PELORUS_VENDOR_SHA" "$pinned_interop" "$pinned_fixture" \
+    "$PELORUS_MIRROR_LICENSE"
 }
 
 if [ "$mode" = "update" ]; then
-  render_fixture >"$test_dst.tmp"
-  mv "$test_dst.tmp" "$test_dst"
+  render_fixture >"$(staged_path "$test_rel")"
+  for row in "${manifest[@]}"; do
+    IFS='|' read -r rel_src rel_dst inc_from inc_to <<<"$row"
+    mv "$(staged_path "$rel_dst")" "$repo_root/$rel_dst"
+    printf 're-vendored: %s\n' "$rel_dst"
+  done
+  mv "$(staged_path "$test_rel")" "$test_dst"
   printf 're-vendored: %s (full file)\n' "$test_rel"
 fi
 

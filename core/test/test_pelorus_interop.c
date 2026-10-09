@@ -2,23 +2,12 @@
  *
  *  Copyright 2026 Lusoris
  *
- *     Licensed under the BSD+Patent License (the "License");
- *     you may not use this file except in compliance with the License.
- *     You may obtain a copy of the License at
- *
- *         https://opensource.org/licenses/BSDplusPatent
- *
- *     Unless required by applicable law or agreed to in writing, software
- *     distributed under the License is distributed on an "AS IS" BASIS,
- *     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *     See the License for the specific language governing permissions and
- *     limitations under the License.
- *
+ * SPDX-License-Identifier: EUPL-1.2
  */
 
 /*
  * test_pelorus_interop.c — vmafx side of the SHARED Pelorus interop ABI
- * conformance fixture (VMAFx/pelorus@11e183ec0aedf6b3e6447fda64acbb6072a1ae60
+ * conformance fixture (VMAFx/pelorus@e2e4040311a443210927549c3a336f909c6473f3
  * test/interop_test.c, ABI 1.3).
  *
  * Both repos run byte-for-byte the same checks against their own copy of
@@ -43,6 +32,7 @@
  * The NULL macro stays. Same decision as vmafx ADR-1138
  * (docs/adr/1138-c-translation-units-keep-null.md in VMAFx/vmafx). */
 
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -54,6 +44,7 @@
 #include <windows.h>
 /* windows.h first: sddl.h relies on its types. */
 #include <sddl.h>
+#include <aclapi.h>
 #include <share.h>
 #ifdef _MSC_VER
 /* The fixture's Win32 security calls live in advapi32. */
@@ -89,25 +80,113 @@ static int g_fail;
  */
 #define FIXTURE_MAX_BYTES 4096u
 
+/* Upper bound on EINTR / zero-progress retries of one fixture write; the loop
+ * is otherwise bounded by the byte count (each successful write moves >= 1). */
+#define FIXTURE_WRITE_RETRIES 16u
+
 typedef enum {
-    FIXTURE_CREATED,  /* created and fully written */
-    FIXTURE_REFUSED,  /* nothing created: the path exists or creation failed */
-    FIXTURE_ABANDONED /* created, then a write or close failed */
+    FIXTURE_CREATED,      /* created, fully written, descriptor proven owner-only */
+    FIXTURE_REFUSED,      /* nothing created: the path exists or creation failed */
+    FIXTURE_TOO_LARGE,    /* nothing created: contents exceed FIXTURE_MAX_BYTES */
+    FIXTURE_NOT_PRIVATE,  /* created, but the open descriptor is not
+                           owner-only/regular */
+    FIXTURE_WRITE_FAILED, /* created, then the write did not complete */
+    FIXTURE_CLOSE_FAILED  /* created and written, then close failed */
 } fixture_status;
+
+/* 1 when this status left a file behind that the caller created (and must
+ * remove). */
+static int fixture_status_owns_file(fixture_status status)
+{
+    return status == FIXTURE_NOT_PRIVATE || status == FIXTURE_WRITE_FAILED ||
+           status == FIXTURE_CLOSE_FAILED;
+}
+
+static const char *fixture_status_text(fixture_status status)
+{
+    switch (status) {
+    case FIXTURE_CREATED:
+        return "created";
+    case FIXTURE_REFUSED:
+        return "exclusive create refused (path exists, is a link, or directory not "
+               "writable; "
+               "a stale file from an aborted run is one possible cause)";
+    case FIXTURE_TOO_LARGE:
+        return "contents exceed the fixture size limit";
+    case FIXTURE_NOT_PRIVATE:
+        return "created file is not owner-only or not a regular file (checked on "
+               "the open handle)";
+    case FIXTURE_WRITE_FAILED:
+        return "write did not complete";
+    case FIXTURE_CLOSE_FAILED:
+        return "close failed after writing";
+    default:
+        return "unknown fixture status";
+    }
+}
 
 #ifdef _WIN32
 /* Protected DACL, one ACE: full access for the file's owner (OWNER RIGHTS).
  * Nothing is inherited from the directory, the 0600 analogue. */
 #define FIXTURE_OWNER_ONLY_SDDL "D:P(A;;FA;;;OW)"
 
+/* Write all len bytes; WriteFile may report a partial count. 0 on success. */
+static int fixture_write_all(HANDLE file, const char *contents, size_t len)
+{
+    size_t done = 0;
+    unsigned attempts = 0;
+
+    while (done < len) {
+        DWORD written = 0;
+
+        if (attempts++ > (unsigned)len + FIXTURE_WRITE_RETRIES ||
+            !WriteFile(file, contents + done, (DWORD)(len - done), &written, NULL) ||
+            written == 0) {
+            return -1;
+        }
+        done += (size_t)written;
+    }
+    return 0;
+}
+
+/* The open handle is a regular file (not a link or directory) whose DACL is
+ * protected and holds exactly one allow ACE, for OWNER RIGHTS: no inherited,
+ * group, or world entry. Checked on the handle, so no path can be swapped in.
+ */
+static int fixture_handle_is_owner_only(HANDLE file)
+{
+    BY_HANDLE_FILE_INFORMATION info;
+    SECURITY_DESCRIPTOR_CONTROL control = 0;
+    PSECURITY_DESCRIPTOR sd = NULL;
+    PACL dacl = NULL;
+    DWORD revision = 0;
+    void *ace = NULL;
+    int owner_only = 0;
+
+    if (!GetFileInformationByHandle(file, &info) ||
+        (info.dwFileAttributes & (FILE_ATTRIBUTE_REPARSE_POINT | FILE_ATTRIBUTE_DIRECTORY)) != 0) {
+        return 0;
+    }
+    if (GetSecurityInfo(file, SE_FILE_OBJECT, DACL_SECURITY_INFORMATION, NULL, NULL, &dacl, NULL,
+                        &sd) != ERROR_SUCCESS) {
+        return 0;
+    }
+    if (dacl != NULL && GetSecurityDescriptorControl(sd, &control, &revision) &&
+        (control & SE_DACL_PROTECTED) != 0 && dacl->AceCount == 1 && GetAce(dacl, 0, &ace)) {
+        owner_only =
+            ((const ACE_HEADER *)ace)->AceType == ACCESS_ALLOWED_ACE_TYPE &&
+            IsWellKnownSid(&((ACCESS_ALLOWED_ACE *)ace)->SidStart, WinCreatorOwnerRightsSid);
+    }
+    (void)LocalFree(sd);
+    return owner_only;
+}
+
 static fixture_status fixture_write_new(const char *path, const char *contents, size_t len)
 {
     SECURITY_ATTRIBUTES sa;
     PSECURITY_DESCRIPTOR sd = NULL;
     HANDLE file;
-    DWORD written = 0;
-    BOOL wrote;
-    BOOL closed;
+    fixture_status status = FIXTURE_CREATED;
 
     if (!ConvertStringSecurityDescriptorToSecurityDescriptorA(FIXTURE_OWNER_ONLY_SDDL,
                                                               SDDL_REVISION_1, &sd, NULL)) {
@@ -117,61 +196,23 @@ static fixture_status fixture_write_new(const char *path, const char *contents, 
     sa.lpSecurityDescriptor = sd;
     sa.bInheritHandle = FALSE;
     /* CREATE_NEW alone follows a dangling link and creates its target;
-     * FILE_FLAG_OPEN_REPARSE_POINT makes any existing link name fail. */
-    file = CreateFileA(path, GENERIC_WRITE, 0, &sa, CREATE_NEW,
+   * FILE_FLAG_OPEN_REPARSE_POINT makes any existing link name fail.
+   * READ_CONTROL lets the descriptor check below read the DACL. */
+    file = CreateFileA(path, GENERIC_WRITE | READ_CONTROL, 0, &sa, CREATE_NEW,
                        FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
     (void)LocalFree(sd);
     if (file == INVALID_HANDLE_VALUE) {
         return FIXTURE_REFUSED;
     }
-    wrote = WriteFile(file, contents, (DWORD)len, &written, NULL);
-    closed = CloseHandle(file);
-    if (!wrote || !closed || written != (DWORD)len) {
-        return FIXTURE_ABANDONED;
+    if (!fixture_handle_is_owner_only(file)) {
+        status = FIXTURE_NOT_PRIVATE;
+    } else if (fixture_write_all(file, contents, len) != 0) {
+        status = FIXTURE_WRITE_FAILED;
     }
-    return FIXTURE_CREATED;
-}
-
-typedef union {
-    SECURITY_DESCRIPTOR absolute; /* alignment for the self-relative copy */
-    unsigned char bytes[1024];
-} fixture_security_buf;
-
-/* 1 when path is a regular file (not a link) with a present, non-NULL DACL,
- * read into buf; *control receives the descriptor's control flags. */
-static int fixture_read_dacl(const char *path, fixture_security_buf *buf,
-                             SECURITY_DESCRIPTOR_CONTROL *control, PACL *dacl)
-{
-    const DWORD attributes = GetFileAttributesA(path);
-    DWORD need = 0;
-    DWORD revision = 0;
-    BOOL present = FALSE;
-    BOOL defaulted = FALSE;
-
-    if (attributes == INVALID_FILE_ATTRIBUTES || (attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0 ||
-        !GetFileSecurityA(path, DACL_SECURITY_INFORMATION, buf, (DWORD)sizeof(*buf), &need) ||
-        !GetSecurityDescriptorControl(buf, control, &revision) ||
-        !GetSecurityDescriptorDacl(buf, &present, dacl, &defaulted)) {
-        return 0;
+    if (!CloseHandle(file) && status == FIXTURE_CREATED) {
+        status = FIXTURE_CLOSE_FAILED;
     }
-    return present && *dacl != NULL;
-}
-
-/* A regular file (not a link) whose DACL is protected and holds exactly one
- * allow ACE, for OWNER RIGHTS: no inherited, group, or world entry. */
-static int fixture_is_owner_only(const char *path)
-{
-    fixture_security_buf buf;
-    SECURITY_DESCRIPTOR_CONTROL control = 0;
-    PACL dacl = NULL;
-    void *ace = NULL;
-
-    if (!fixture_read_dacl(path, &buf, &control, &dacl) || (control & SE_DACL_PROTECTED) == 0 ||
-        dacl->AceCount != 1 || !GetAce(dacl, 0, &ace)) {
-        return 0;
-    }
-    return ((const ACE_HEADER *)ace)->AceType == ACCESS_ALLOWED_ACE_TYPE &&
-           IsWellKnownSid(&((ACCESS_ALLOWED_ACE *)ace)->SidStart, WinCreatorOwnerRightsSid);
+    return status;
 }
 
 /* 0 created, 1 this account may not create links (skip), -1 error. Windows
@@ -187,36 +228,64 @@ static int fixture_symlink(const char *target, const char *link_path)
     return (error == ERROR_PRIVILEGE_NOT_HELD || error == ERROR_INVALID_PARAMETER) ? 1 : -1;
 }
 #else
-static fixture_status fixture_write_new(const char *path, const char *contents, size_t len)
+/* Write all len bytes, looping over short writes and EINTR. The loop ends
+ * after at most len + FIXTURE_WRITE_RETRIES iterations. 0 on success. */
+static int fixture_write_all(int fd, const char *contents, size_t len)
 {
-    /* O_EXCL fails on any existing name, links included (POSIX open());
-     * O_NOFOLLOW states the same intent for the final component. */
-    const int fd =
-        open(path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, S_IRUSR | S_IWUSR);
-    ssize_t written;
-    int closed;
+    size_t done = 0;
+    size_t attempts = 0;
 
-    if (fd < 0) {
-        return FIXTURE_REFUSED;
+    while (done < len) {
+        ssize_t n;
+
+        if (attempts++ > len + FIXTURE_WRITE_RETRIES) {
+            return -1;
+        }
+        n = write(fd, contents + done, len - done);
+        if (n < 0 && errno == EINTR) {
+            continue;
+        }
+        if (n <= 0) {
+            return -1;
+        }
+        done += (size_t)n;
     }
-    written = write(fd, contents, len);
-    closed = close(fd);
-    if (written < 0 || (size_t)written != len || closed != 0) {
-        return FIXTURE_ABANDONED;
-    }
-    return FIXTURE_CREATED;
+    return 0;
 }
 
-/* A regular file (not a link) with exactly mode 0600. */
-static int fixture_is_owner_only(const char *path)
+/* The open descriptor is a regular file with exactly mode 0600. Checked on the
+ * descriptor, so no path can be swapped in between create and check. */
+static int fixture_fd_is_owner_only(int fd)
 {
     struct stat st;
 
-    if (lstat(path, &st) != 0) {
+    if (fstat(fd, &st) != 0) {
         return 0;
     }
     return S_ISREG(st.st_mode) &&
            (st.st_mode & (S_IRWXU | S_IRWXG | S_IRWXO)) == (S_IRUSR | S_IWUSR);
+}
+
+static fixture_status fixture_write_new(const char *path, const char *contents, size_t len)
+{
+    /* O_EXCL fails on any existing name, links included (POSIX open());
+   * O_NOFOLLOW states the same intent for the final component. */
+    const int fd =
+        open(path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, S_IRUSR | S_IWUSR);
+    fixture_status status = FIXTURE_CREATED;
+
+    if (fd < 0) {
+        return FIXTURE_REFUSED;
+    }
+    if (!fixture_fd_is_owner_only(fd)) {
+        status = FIXTURE_NOT_PRIVATE;
+    } else if (fixture_write_all(fd, contents, len) != 0) {
+        status = FIXTURE_WRITE_FAILED;
+    }
+    if (close(fd) != 0 && status == FIXTURE_CREATED) {
+        status = FIXTURE_CLOSE_FAILED;
+    }
+    return status;
 }
 
 /* 0 created, -1 error: every supported POSIX host can create links. */
@@ -226,45 +295,45 @@ static int fixture_symlink(const char *target, const char *link_path)
 }
 #endif
 
-/* Create path exclusively and write contents. 0 on success. */
-static int write_private_fixture(const char *path, const char *contents)
+/* Create path exclusively, prove the open handle owner-only, write contents.
+ * A file this call created is removed again on every failure after creation. */
+static fixture_status write_private_fixture_status(const char *path, const char *contents)
 {
     const size_t len = strlen(contents);
     fixture_status status;
 
     if (len > FIXTURE_MAX_BYTES) {
-        return -1;
+        return FIXTURE_TOO_LARGE;
     }
     status = fixture_write_new(path, contents, len);
-    if (status == FIXTURE_ABANDONED) {
+    if (fixture_status_owns_file(status)) {
         CHECK(remove(path) == 0); /* ours: never leave a partial fixture behind */
     }
-    return status == FIXTURE_CREATED ? 0 : -1;
+    return status;
+}
+
+/* Create path exclusively and write contents. 0 on success. */
+static int write_private_fixture(const char *path, const char *contents)
+{
+    return write_private_fixture_status(path, contents) == FIXTURE_CREATED ? 0 : -1;
 }
 
 /* Create a fixture under the most permissive umask, so only the requested
- * mode can keep it private, then prove it is owner-only. 0 on success; on
- * failure nothing this call created remains. */
+ * mode can keep it private; fixture_write_new proves it owner-only on the open
+ * descriptor. 0 on success; on failure nothing this call created remains. */
 static int create_checked_fixture(const char *path, const char *contents)
 {
-    int rc;
+    fixture_status status;
 #ifndef _WIN32
     const mode_t old_umask = umask(0);
 #endif
 
-    rc = write_private_fixture(path, contents);
+    status = write_private_fixture_status(path, contents);
 #ifndef _WIN32
     (void)umask(old_umask);
 #endif
-    if (rc != 0) {
-        (void)fprintf(stderr,
-                      "fixture %s: exclusive create refused (stale file from an aborted run?)\n",
-                      path);
-        return -1;
-    }
-    if (!fixture_is_owner_only(path)) {
-        (void)fprintf(stderr, "fixture %s: group/world access or not a regular file\n", path);
-        CHECK(remove(path) == 0);
+    if (status != FIXTURE_CREATED) {
+        (void)fprintf(stderr, "fixture %s: %s\n", path, fixture_status_text(status));
         return -1;
     }
     return 0;
@@ -358,6 +427,33 @@ static void check_fixture_refuses_dangling_link(void)
     CHECK(remove(dangling) == 0);
 }
 
+#ifndef _WIN32
+/* Issue #65: the privacy check reads the open descriptor, and a failing write
+ * ends the bounded loop instead of spinning. (The Windows handle check is
+ * exercised by every fixture creation on that host.) */
+static void test_fixture_descriptor_checks(void)
+{
+    const char *probe = "pelorus_fixture_probe.tmp";
+    const mode_t old_umask = umask(0);
+    const int fd =
+        open(probe, O_RDWR | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, S_IRUSR | S_IWUSR);
+
+    (void)umask(old_umask);
+    CHECK(fd >= 0);
+    if (fd < 0) {
+        return;
+    }
+    CHECK(fixture_fd_is_owner_only(fd) == 1);
+    CHECK(fchmod(fd, S_IRUSR | S_IWUSR | S_IRGRP) == 0);
+    CHECK(fixture_fd_is_owner_only(fd) == 0); /* group-readable is refused */
+    CHECK(fchmod(fd, S_IRUSR | S_IWUSR) == 0);
+    CHECK(fixture_write_all(fd, "abc", 3) == 0);
+    CHECK(close(fd) == 0);
+    CHECK(fixture_write_all(fd, "abc", 3) != 0); /* EBADF: fails, never loops */
+    CHECK(remove(probe) == 0);
+}
+#endif
+
 /* Pelorus issues #60 and #62: fixture creation never grants group/world
  * access and never follows, truncates, or replaces an existing path. */
 static void test_fixture_file_safety(void)
@@ -377,6 +473,9 @@ static void test_fixture_file_safety(void)
         check_fixture_refuses_dangling_link();
     }
     CHECK(remove(plant) == 0);
+#ifndef _WIN32
+    test_fixture_descriptor_checks();
+#endif
 }
 
 static void fill_meta(PelorusSideData *m)

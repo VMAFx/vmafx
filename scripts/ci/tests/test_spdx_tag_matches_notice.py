@@ -30,15 +30,15 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 
-# Files that quote licence texts as data (the relicensing tool and its tests,
-# the sync script that greps for a notice) or are licence texts themselves.
+# Files that quote licence texts as data (the relicensing tool and its tests)
+# or are licence texts themselves. The Pelorus sync script left this list with
+# ADR-2817: since Pelorus v0.3.0 it writes an EUPL-1.2 tag, not a grant.
 NOT_SCANNED_PREFIXES = ("LICENSES/", "subprojects/", "docs/", "changelog.d/", ".workingdir")
 QUOTES_LICENCE_TEXT = frozenset(
     {
         "scripts/ci/tests/test_spdx_tag_matches_notice.py",
         "scripts/dev/relicense_fork_files.py",
         "scripts/dev/tests/test_relicense_fork_files.py",
-        "scripts/sync-pelorus-interop.sh",
     }
 )
 HEAD_BYTES = 20_000

@@ -12,13 +12,16 @@ This ABI is **single-sourced in Pelorus** (Pelorus ADR-0103). vmafx carries a
 **verbatim, pinned, read-only mirror** of it so the two repos can build, test,
 and evolve independently without a submodule or a shared package. The vendoring
 decision is recorded in
-[ADR-1113](../adr/1113-vendor-pelorus-interop-abi.md); the current safety
-re-pin and exact-mirror guard rails are recorded in
-[ADR-1276](../adr/1276-pelorus-v022-parser-safety-repin.md).
+[ADR-1113](../adr/1113-vendor-pelorus-interop-abi.md); the exact-mirror guard
+rails are recorded in
+[ADR-1276](../adr/1276-pelorus-v022-parser-safety-repin.md), and the current
+pin, Pelorus v0.3.0 with its EUPL-1.2 headers, in
+[ADR-2817](../adr/2817-pelorus-v030-eupl-repin.md).
 
 !!! warning "The mirror is read-only"
     Do not edit the vendored files. They are byte-identical to their Pelorus
-    origin (pinned at `VMAFx/pelorus@11e183ec0aedf6b3e6447fda64acbb6072a1ae60`)
+    origin (pinned at `VMAFx/pelorus@e2e4040311a443210927549c3a336f909c6473f3`,
+    the `v0.3.0` tag)
     except for a `VENDORED FROM ... DO NOT EDIT` banner and the include-path
     rewrite described below. Fix any defect upstream in Pelorus, then
     [re-sync](#re-syncing-the-mirror).
@@ -50,7 +53,7 @@ Pelorus's. (`qp_report_csv.c` is required to link: the ABI-1.3 fixture exercises
 ### The only local edits
 
 1. A `VENDORED FROM
-   VMAFx/pelorus@11e183ec0aedf6b3e6447fda64acbb6072a1ae60 — DO NOT EDIT`
+   VMAFx/pelorus@e2e4040311a443210927549c3a336f909c6473f3 — DO NOT EDIT`
    banner inserted after the (unchanged) Pelorus license header.
 2. Intra-Pelorus `#include "pelorus/<x>.h"` rewritten to
    `#include "libvmaf/pelorus/<x>.h"` so the headers resolve under
@@ -63,6 +66,22 @@ include rewrite. The sync script renders that prefix canonically from the pin
 and ABI version, then appends the transformed body. VMAFx format and tidy
 scopes exclude only the manifest-owned fixture path; lint-policy changes belong
 in VMAFx tooling, never in the fixture.
+
+### Licence
+
+Since Pelorus v0.3.0 every mirrored file is EUPL-1.2, the licence of the rest of
+VMAFx ([ADR-1250](../adr/1250-eupl-fork-relicense.md)), and its Pelorus header
+says so in one `SPDX-License-Identifier` line naming `EUPL-1.2`. The mirror therefore
+needs no entry in `REUSE.toml` and no exception in
+`.config/lint-exceptions.d/spdx.toml`; the fixture's VMAFx prefix carries the
+same line.
+
+`PELORUS_MIRROR_LICENSE` in the sync script names that identifier. Both modes
+of the script stop with an error when a pinned source declares any other one,
+or more than one, so a licence change in Pelorus cannot reach VMAFx through a
+re-pin alone. Changing the value is a reviewed VMAFx change that also updates
+`REUSE.toml` and the `pelorus` entry of `docs/credits.yaml`
+(`make docs-fragments-write` renders [the credits page](../credits.md)).
 
 ## The blob, in brief
 
@@ -111,7 +130,7 @@ silent corruption.
 | `pel_blob_is_present(blob, len)` | Cheap pre-check: is this a valid Pelorus blob (UUID + magic + ABI major)? |
 | `pel_blob_find_section(blob, len, sec, known_size, &ptr, &size)` | Locate a section; returns a pointer into the blob plus `min(producer, consumer)` readable bytes. |
 
-Pelorus v0.2.2 accepts a blob at **any caller-buffer base alignment**. The
+Since v0.2.2, Pelorus accepts a blob at **any caller-buffer base alignment**. The
 parser and packer move wire headers and directory entries through aligned local
 objects with `memcpy`; they never cast an untrusted byte address to a
 structured pointer.
@@ -150,12 +169,17 @@ The ABI is normative; both repos depend on these rules (verbatim from
   forbid for additive evolution) — in practice it never bumps.
   `PELORUS_ABI_MINOR` bumps when a new section bit or appended field lands.
 
-The current library release is **0.2.2** and the ABI remains **1.3**
+The current library release is **0.3.0** and the ABI remains **1.3**
 (`PELORUS_ABI_MAJOR=1`, `PELORUS_ABI_MINOR=3`).
 Minor 1.1 added `PEL_SEC_QPREPORT`, 1.2 added `PEL_SEC_MOTION_CONF`, 1.3 added
 `PEL_SEC_COMPLEXITY` — all append-only, so the major stayed at 1 and the mirror
 re-pin (ADR-1120) was non-breaking. The 0.2.2 re-pin changes parser safety
-semantics only; it does not add or alter an ABI field or section.
+semantics only; it does not add or alter an ABI field or section. The 0.3.0
+re-pin does not either: it brings the EUPL-1.2 headers, comments that state the
+units of `PelorusMotionSection` and the coded-value ranges of three
+`PelorusFilmGrainSection` arrays, and a fixture that checks the privacy of the
+files it creates on the open descriptor and writes them in a bounded loop. The
+parser source is unchanged apart from its header.
 
 ## Conformance fixture — the byte-compat proof
 
@@ -200,7 +224,7 @@ python3 scripts/ci/run_meson_test.py -- \
 The pin and the drift guard live in
 [`scripts/sync-pelorus-interop.sh`](../../scripts/sync-pelorus-interop.sh). It
 reads the vendored sources from the **pinned commit's git tree object**
-(`git show 11e183ec0aedf6b3e6447fda64acbb6072a1ae60:libpelorus/…`), so it
+(`git show e2e4040311a443210927549c3a336f909c6473f3:libpelorus/…`), so it
 stays accurate even when the local Pelorus checkout's `HEAD` has moved past the
 pin. A directory that is not a Git checkout, or a checkout that lacks the exact
 object, fails closed.
@@ -215,14 +239,18 @@ scripts/sync-pelorus-interop.sh /path/to/pelorus
 ```
 
 The output is
-`OK   - mirror matches pelorus@11e183ec0aedf6b3e6447fda64acbb6072a1ae60`,
-or `FAIL - mirror has drifted` with a diff and exit code 1.
+`OK: vendored Pelorus interop ABI matches pelorus@e2e4040311a443210927549c3a336f909c6473f3 (ABI 1.3, minor=3).`,
+or a `DRIFT:` line with a diff per differing file, then
+`FAIL: vendored Pelorus interop ABI has drifted from pelorus@…` and exit
+code 1.
 
 To re-vendor after a reviewed Pelorus ABI addition or a released parser
 correctness or security fix (an ABI-minor bump is not required):
 
-1. Bump `PELORUS_VENDOR_SHA` in the script, in this page and in the ADR. The
-   banners are rewritten automatically by `--update`.
+1. Bump `PELORUS_VENDOR_SHA` in the script, in this page and in the
+   `core/src/meson.build` comment, and record the re-pin in an ADR. Pin a
+   Pelorus release tag's commit. The banners are rewritten automatically by
+   `--update`.
 2. Add any new Pelorus source or header to the script's render manifest and to
    `scripts/ci/pelorus-mirror-paths.txt`, plus `core/src/meson.build` and the
    test target if it must compile or link. The guard requires both path sets
@@ -263,4 +291,5 @@ appended field bumps `PELORUS_ABI_MINOR`); ADR-1120 records the 1.0 → 1.3 re-p
 as a follow-up to [ADR-1113](../adr/1113-vendor-pelorus-interop-abi.md). A
 released parser-only correctness/security fix keeps the ABI number intact and
 is recorded in a new follow-up decision plus research evidence; ADR-1276
-records the v0.2.2 safety re-pin while preserving ADR-1113's immutable body.
+records the v0.2.2 safety re-pin while preserving ADR-1113's immutable body,
+and ADR-2817 the v0.3.0 licence re-pin.

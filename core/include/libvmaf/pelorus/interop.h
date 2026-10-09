@@ -2,22 +2,11 @@
  *
  *  Copyright 2026 Lusoris
  *
- *     Licensed under the BSD+Patent License (the "License");
- *     you may not use this file except in compliance with the License.
- *     You may obtain a copy of the License at
- *
- *         https://opensource.org/licenses/BSDplusPatent
- *
- *     Unless required by applicable law or agreed to in writing, software
- *     distributed under the License is distributed on an "AS IS" BASIS,
- *     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *     See the License for the specific language governing permissions and
- *     limitations under the License.
- *
+ * SPDX-License-Identifier: EUPL-1.2
  */
 
 /*
- * VENDORED FROM VMAFx/pelorus@11e183ec0aedf6b3e6447fda64acbb6072a1ae60 — DO NOT EDIT.
+ * VENDORED FROM VMAFx/pelorus@e2e4040311a443210927549c3a336f909c6473f3 — DO NOT EDIT.
  * Append-only ABI; single
  * source of truth is pelorus. Re-sync via scripts/sync-pelorus-interop.sh.
  * See docs/adr/1113-vendor-pelorus-interop-abi.md.
@@ -241,9 +230,9 @@ typedef struct PelorusFilmGrainSection {
     int32_t ar_coeff_lag;             /* AV1: coeff count = 2*lag*(lag+1)      */
     int32_t ar_coeff_shift;           /* AV1 [6,9]                            */
     int32_t grain_scale_shift;        /* AV1                                   */
-    int32_t uv_mult[2];               /* AV1                                   */
-    int32_t uv_mult_luma[2];          /* AV1                                   */
-    int32_t uv_offset[2];             /* AV1 9-bit [-256,255]                  */
+    int32_t uv_mult[2];               /* AV1 [-128,127] (coded value - 128)    */
+    int32_t uv_mult_luma[2];          /* AV1 [-128,127] (coded value - 128)    */
+    int32_t uv_offset[2];             /* AV1 [-256,255] (coded value - 256)    */
     uint8_t apply;                    /* 1 => producer recommends grain synth   */
     uint8_t chroma_scaling_from_luma; /* AV1                                  */
     uint8_t overlap_flag;             /* AV1                                   */
@@ -262,16 +251,16 @@ typedef struct PelorusFilmGrainSection {
 
 /* (e) Optical-flow motion-vector hint summary — written by vf_pelorus_mc. */
 typedef struct PelorusMotionSection {
-    float global_motion_x; /* mean MV, pixels                           */
-    float global_motion_y;
-    float motion_magnitude_mean;
-    float motion_magnitude_p95; /* 95th pct — scene-cut / pan detector        */
-    float motion_entropy;       /* MV-field complexity                       */
-    uint32_t mv_field_offset;   /* blob-relative; int16 (dx,dy) per cell,
-                                 * QUARTER-PEL (Q2 = round(pel*4)) luma units  */
-    uint32_t mv_field_size;     /* grid_cols*grid_rows*2*sizeof(int16)        */
-    uint8_t has_scene_cut;      /* producer's scene-cut flag                 */
-    uint8_t _pad[3];            /* reserved, zero                            */
+    float global_motion_x;       /* mean MV x, luma pixels (not Q2)           */
+    float global_motion_y;       /* mean MV y, luma pixels (not Q2)           */
+    float motion_magnitude_mean; /* mean |MV|, luma pixels                    */
+    float motion_magnitude_p95;  /* 95th pct |MV|, luma pixels — pan/cut cue  */
+    float motion_entropy;        /* MV-field complexity, unitless             */
+    uint32_t mv_field_offset;    /* blob-relative; int16 (dx,dy) per cell,
+                                  * QUARTER-PEL (Q2 = round(pel*4)) luma units */
+    uint32_t mv_field_size;      /* grid_cols*grid_rows*2*sizeof(int16)        */
+    uint8_t has_scene_cut;       /* producer's scene-cut flag                 */
+    uint8_t _pad[3];             /* reserved, zero                            */
     /* --- APPEND-ONLY below this line --- */
 } PelorusMotionSection;
 
