@@ -21,7 +21,7 @@ tests:
               severity: critical
             exp_annotations:
               description: Prometheus has not scraped n1:9090 (vmafx-node) for 5 minutes; it served vmafx_build_info within the last hour.
-              runbook_url: https://vmafx.github.io/vmafx/observability/runbooks/vmafx-component-down/
+              runbook_url: https://vmafx.dev/observability/runbooks/vmafx-component-down/
               summary: VMAFx target n1:9090 of vmafx-node is down.
   - name: VMAFxComponentDown case 2
     interval: 1m
@@ -47,7 +47,7 @@ tests:
               severity: critical
             exp_annotations:
               description: The controller has pending jobs and no live node for 10 minutes; nothing can run them.
-              runbook_url: https://vmafx.github.io/vmafx/observability/runbooks/vmafx-no-live-nodes/
+              runbook_url: https://vmafx.dev/observability/runbooks/vmafx-no-live-nodes/
               summary: Jobs are waiting and no vmafx-node is registered with the controller.
   - name: VMAFxNoLiveNodes case 2
     interval: 1m
@@ -74,7 +74,7 @@ tests:
               tenant: a
             exp_annotations:
               description: 'The oldest pending job of tenant a has waited more than 1800 seconds for 15 minutes: no node takes its work.'
-              runbook_url: https://vmafx.github.io/vmafx/observability/runbooks/vmafx-queue-aging/
+              runbook_url: https://vmafx.dev/observability/runbooks/vmafx-queue-aging/
               summary: Jobs of tenant a wait longer than 1800 seconds.
   - name: VMAFxQueueAging case 2
     interval: 1m
@@ -100,13 +100,13 @@ tests:
               severity: critical
             exp_annotations:
               description: Over the last 1h and 5m the controller job failure ratio exceeded 14.4 times the error budget of the objective 0.99.
-              runbook_url: https://vmafx.github.io/vmafx/observability/runbooks/vmafx-job-error-budget-burn/
+              runbook_url: https://vmafx.dev/observability/runbooks/vmafx-job-error-budget-burn/
               summary: Controller job failure is spending the error budget 14.4 times faster than the SLO allows.
           - exp_labels:
               severity: warning
             exp_annotations:
               description: Over the last 6h and 30m the controller job failure ratio exceeded 6 times the error budget of the objective 0.99.
-              runbook_url: https://vmafx.github.io/vmafx/observability/runbooks/vmafx-job-error-budget-burn/
+              runbook_url: https://vmafx.dev/observability/runbooks/vmafx-job-error-budget-burn/
               summary: Controller job failure is spending the error budget 6 times faster than the SLO allows.
   - name: VMAFxJobErrorBudgetBurn case 2
     interval: 1m
@@ -134,13 +134,13 @@ tests:
               severity: critical
             exp_annotations:
               description: Over the last 1h and 5m the score request error ratio exceeded 14.4 times the error budget of the objective 0.99.
-              runbook_url: https://vmafx.github.io/vmafx/observability/runbooks/vmafx-score-error-budget-burn/
+              runbook_url: https://vmafx.dev/observability/runbooks/vmafx-score-error-budget-burn/
               summary: Score request error is spending the error budget 14.4 times faster than the SLO allows.
           - exp_labels:
               severity: warning
             exp_annotations:
               description: Over the last 6h and 30m the score request error ratio exceeded 6 times the error budget of the objective 0.99.
-              runbook_url: https://vmafx.github.io/vmafx/observability/runbooks/vmafx-score-error-budget-burn/
+              runbook_url: https://vmafx.dev/observability/runbooks/vmafx-score-error-budget-burn/
               summary: Score request error is spending the error budget 6 times faster than the SLO allows.
   - name: VMAFxScoreErrorBudgetBurn case 2
     interval: 1m
@@ -168,13 +168,13 @@ tests:
               severity: critical
             exp_annotations:
               description: Over the last 1h and 5m the slow score request ratio exceeded 14.4 times the error budget of the objective 0.99.
-              runbook_url: https://vmafx.github.io/vmafx/observability/runbooks/vmafx-score-latency-budget-burn/
+              runbook_url: https://vmafx.dev/observability/runbooks/vmafx-score-latency-budget-burn/
               summary: Slow Score request is spending the error budget 14.4 times faster than the SLO allows.
           - exp_labels:
               severity: warning
             exp_annotations:
               description: Over the last 6h and 30m the slow score request ratio exceeded 6 times the error budget of the objective 0.99.
-              runbook_url: https://vmafx.github.io/vmafx/observability/runbooks/vmafx-score-latency-budget-burn/
+              runbook_url: https://vmafx.dev/observability/runbooks/vmafx-score-latency-budget-burn/
               summary: Slow Score request is spending the error budget 6 times faster than the SLO allows.
   - name: VMAFxScoreLatencyBudgetBurn case 2
     interval: 1m
@@ -212,7 +212,7 @@ tests:
               tenant: a
             exp_annotations:
               description: For an hour the median pooled score of tenant a on model model-a has been more than 5 points below the median of the previous day's hourly medians.
-              runbook_url: https://vmafx.github.io/vmafx/observability/runbooks/vmafx-score-regression/
+              runbook_url: https://vmafx.dev/observability/runbooks/vmafx-score-regression/
               summary: Median score of model-a for tenant a dropped.
   - name: VMAFxScoreRegression case 2
     interval: 10m
@@ -249,7 +249,7 @@ tests:
               source: device_memory
             exp_annotations:
               description: Every scrape of n1:9090 (vmafx-node) for 15 minutes failed to read device_memory; those series are missing from its /metrics page.
-              runbook_url: https://vmafx.github.io/vmafx/observability/runbooks/vmafx-metrics-read-errors/
+              runbook_url: https://vmafx.dev/observability/runbooks/vmafx-metrics-read-errors/
               summary: n1:9090 cannot read its device_memory metrics.
   - name: VMAFxMetricsReadErrors case 2
     interval: 1m

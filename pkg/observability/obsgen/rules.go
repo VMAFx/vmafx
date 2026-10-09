@@ -22,7 +22,7 @@ const (
 // RunbookBase is where the runbook pages are published: an alert's
 // runbook_url is RunbookBase + its runbook slug + "/". The pages are
 // docs/observability/runbooks/<slug>.md.
-const RunbookBase = "https://vmafx.github.io/vmafx/observability/runbooks/"
+const RunbookBase = "https://vmafx.dev/observability/runbooks/"
 
 // params renders the tunable parts of the rules: the values of a Settings
 // for a rule file (plainParams), Helm expressions over .Values.monitoring for

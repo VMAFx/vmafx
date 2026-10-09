@@ -1,6 +1,6 @@
 # VMAFx hash lock; regenerate with: make python-locks-write
 # vmafx-uv-version: 0.12.18
-# vmafx-input-sha256: 02c7a4adc1a3f65d5271840893c79f49cb0e1e4914850b5ff423e90f6d649055
+# vmafx-input-sha256: f5e702894c69e111a4fa84867d3af1299d285a0c8f6b2be0cc66ce44f0f98ffe
 # vmafx-inputs: tools/ensemble-training-kit/pyproject.toml, requirements/locks/package-build.in, requirements/locks/ensemble-kit-dev.in
 build==1.6.1 \
     --hash=sha256:51cc11666391ab6f092070437ac747002ff46f3e4113a3622177ee6b488bfc53 \

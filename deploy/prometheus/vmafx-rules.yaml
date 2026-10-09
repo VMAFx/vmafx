@@ -84,7 +84,7 @@ groups:
           severity: critical
         annotations:
           description: Prometheus has not scraped {{ $labels.instance }} ({{ $labels.job }}) for 5 minutes; it served vmafx_build_info within the last hour.
-          runbook_url: https://vmafx.github.io/vmafx/observability/runbooks/vmafx-component-down/
+          runbook_url: https://vmafx.dev/observability/runbooks/vmafx-component-down/
           summary: VMAFx target {{ $labels.instance }} of {{ $labels.job }} is down.
       - alert: VMAFxNoLiveNodes
         expr: max(vmafx_controller_nodes_live) == 0 and on () sum(vmafx_controller_jobs_pending) > 0
@@ -93,7 +93,7 @@ groups:
           severity: critical
         annotations:
           description: The controller has pending jobs and no live node for 10 minutes; nothing can run them.
-          runbook_url: https://vmafx.github.io/vmafx/observability/runbooks/vmafx-no-live-nodes/
+          runbook_url: https://vmafx.dev/observability/runbooks/vmafx-no-live-nodes/
           summary: Jobs are waiting and no vmafx-node is registered with the controller.
       - alert: VMAFxQueueAging
         expr: max by (tenant) (vmafx_controller_queue_oldest_job_age_seconds) > 1800
@@ -102,7 +102,7 @@ groups:
           severity: warning
         annotations:
           description: 'The oldest pending job of tenant {{ $labels.tenant }} has waited more than 1800 seconds for 15 minutes: no node takes its work.'
-          runbook_url: https://vmafx.github.io/vmafx/observability/runbooks/vmafx-queue-aging/
+          runbook_url: https://vmafx.dev/observability/runbooks/vmafx-queue-aging/
           summary: Jobs of tenant {{ $labels.tenant }} wait longer than 1800 seconds.
       - alert: VMAFxJobErrorBudgetBurn
         expr: vmafx:job_failure_ratio:rate1h > (14.4 * (1 - 0.99)) and vmafx:job_failure_ratio:rate5m > (14.4 * (1 - 0.99))
@@ -111,7 +111,7 @@ groups:
           severity: critical
         annotations:
           description: Over the last 1h and 5m the controller job failure ratio exceeded 14.4 times the error budget of the objective 0.99.
-          runbook_url: https://vmafx.github.io/vmafx/observability/runbooks/vmafx-job-error-budget-burn/
+          runbook_url: https://vmafx.dev/observability/runbooks/vmafx-job-error-budget-burn/
           summary: Controller job failure is spending the error budget 14.4 times faster than the SLO allows.
       - alert: VMAFxJobErrorBudgetBurn
         expr: vmafx:job_failure_ratio:rate6h > (6 * (1 - 0.99)) and vmafx:job_failure_ratio:rate30m > (6 * (1 - 0.99))
@@ -120,7 +120,7 @@ groups:
           severity: warning
         annotations:
           description: Over the last 6h and 30m the controller job failure ratio exceeded 6 times the error budget of the objective 0.99.
-          runbook_url: https://vmafx.github.io/vmafx/observability/runbooks/vmafx-job-error-budget-burn/
+          runbook_url: https://vmafx.dev/observability/runbooks/vmafx-job-error-budget-burn/
           summary: Controller job failure is spending the error budget 6 times faster than the SLO allows.
       - alert: VMAFxScoreErrorBudgetBurn
         expr: vmafx:score_error_ratio:rate1h > (14.4 * (1 - 0.99)) and vmafx:score_error_ratio:rate5m > (14.4 * (1 - 0.99))
@@ -129,7 +129,7 @@ groups:
           severity: critical
         annotations:
           description: Over the last 1h and 5m the score request error ratio exceeded 14.4 times the error budget of the objective 0.99.
-          runbook_url: https://vmafx.github.io/vmafx/observability/runbooks/vmafx-score-error-budget-burn/
+          runbook_url: https://vmafx.dev/observability/runbooks/vmafx-score-error-budget-burn/
           summary: Score request error is spending the error budget 14.4 times faster than the SLO allows.
       - alert: VMAFxScoreErrorBudgetBurn
         expr: vmafx:score_error_ratio:rate6h > (6 * (1 - 0.99)) and vmafx:score_error_ratio:rate30m > (6 * (1 - 0.99))
@@ -138,7 +138,7 @@ groups:
           severity: warning
         annotations:
           description: Over the last 6h and 30m the score request error ratio exceeded 6 times the error budget of the objective 0.99.
-          runbook_url: https://vmafx.github.io/vmafx/observability/runbooks/vmafx-score-error-budget-burn/
+          runbook_url: https://vmafx.dev/observability/runbooks/vmafx-score-error-budget-burn/
           summary: Score request error is spending the error budget 6 times faster than the SLO allows.
       - alert: VMAFxScoreLatencyBudgetBurn
         expr: vmafx:score_slow_ratio:rate1h > (14.4 * (1 - 0.99)) and vmafx:score_slow_ratio:rate5m > (14.4 * (1 - 0.99))
@@ -147,7 +147,7 @@ groups:
           severity: critical
         annotations:
           description: Over the last 1h and 5m the slow score request ratio exceeded 14.4 times the error budget of the objective 0.99.
-          runbook_url: https://vmafx.github.io/vmafx/observability/runbooks/vmafx-score-latency-budget-burn/
+          runbook_url: https://vmafx.dev/observability/runbooks/vmafx-score-latency-budget-burn/
           summary: Slow Score request is spending the error budget 14.4 times faster than the SLO allows.
       - alert: VMAFxScoreLatencyBudgetBurn
         expr: vmafx:score_slow_ratio:rate6h > (6 * (1 - 0.99)) and vmafx:score_slow_ratio:rate30m > (6 * (1 - 0.99))
@@ -156,7 +156,7 @@ groups:
           severity: warning
         annotations:
           description: Over the last 6h and 30m the slow score request ratio exceeded 6 times the error budget of the objective 0.99.
-          runbook_url: https://vmafx.github.io/vmafx/observability/runbooks/vmafx-score-latency-budget-burn/
+          runbook_url: https://vmafx.dev/observability/runbooks/vmafx-score-latency-budget-burn/
           summary: Slow Score request is spending the error budget 6 times faster than the SLO allows.
       - alert: VMAFxScoreRegression
         expr: vmafx:quality_score:p50_1h < quantile_over_time(0.5, vmafx:quality_score:p50_1h[1d] offset 1h) - 5 and vmafx:quality_score:count_1h >= 20
@@ -165,7 +165,7 @@ groups:
           severity: warning
         annotations:
           description: For an hour the median pooled score of tenant {{ $labels.tenant }} on model {{ $labels.model }} has been more than 5 points below the median of the previous day's hourly medians.
-          runbook_url: https://vmafx.github.io/vmafx/observability/runbooks/vmafx-score-regression/
+          runbook_url: https://vmafx.dev/observability/runbooks/vmafx-score-regression/
           summary: Median score of {{ $labels.model }} for tenant {{ $labels.tenant }} dropped.
       - alert: VMAFxMetricsReadErrors
         expr: sum by (job, instance, source) (rate(vmafx_metrics_read_errors_total[10m])) > 0
@@ -174,5 +174,5 @@ groups:
           severity: warning
         annotations:
           description: Every scrape of {{ $labels.instance }} ({{ $labels.job }}) for 15 minutes failed to read {{ $labels.source }}; those series are missing from its /metrics page.
-          runbook_url: https://vmafx.github.io/vmafx/observability/runbooks/vmafx-metrics-read-errors/
+          runbook_url: https://vmafx.dev/observability/runbooks/vmafx-metrics-read-errors/
           summary: '{{ $labels.instance }} cannot read its {{ $labels.source }} metrics.'
