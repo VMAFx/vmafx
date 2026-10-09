@@ -26,6 +26,14 @@
   ([Two viewing distances share one `adm`](docs/metrics/adm.md#two-viewing-distances-share-one-adm)).
 
 
+- **`adm_sycl` evaluates two viewing distances in one instance (ADR-2795).**
+  With `adm_norm_view_dist_extra`, or when two models such as
+  `vmaf_v1.0.16_3d0h` and `_5d0h` run on `--backend sycl`, the SYCL twin runs
+  the wavelet transform once per scale and the other kernels per distance, and
+  returns the CPU's scores for both distances bit for bit
+  ([Two viewing distances share one `adm`](docs/metrics/adm.md#two-viewing-distances-share-one-adm)).
+
+
 - **VMAFx core API: contexts, models, host frames and scores (RC4, ADR-1852,
   ADR-1906).** A program can now score videos through `vmafx/*.h` alone:
   contexts with their own log callback (`VmafxContextConfig.log_callback`),
@@ -612,6 +620,15 @@
   `--use-saliency` and `--saliency-aware` on it before the Python `vmaf-tune` is deleted.
 
 
+- **The Go services build on golusoris v0.13.1 and its core v0.10.1**
+  (from v0.12.0 and v0.9.2). `VMAFX_HTTP_LIMITS_BODY=0` no longer removes the
+  request-body cap of `vmafx-server`, `vmafx-controller` and `vmafx-node`: `0`
+  now keeps the 10 MiB default, and the new `VMAFX_HTTP_LIMITS_UNLIMITED=true`
+  removes the cap. The controller now reports a failed registration of its
+  lease-sweep job at start instead of panicking. The variables are listed in
+  `docs/usage/env-vars.md`.
+
+
 - **The chart no longer sets `VMAFX_BACKEND` on the scoring server.** The
   server's Deployment, StatefulSet and Job carried it, but `vmafx-server`
   never read it: it takes its backend from each request's `backend` score
@@ -963,6 +980,18 @@
   `pthread_cond_timedwait()`, so `test_thread_pool_backpressure` now builds and
   runs on the MSVC lanes too
   ([Threads on MSVC](docs/getting-started/building-on-windows.md#threads-on-msvc)).
+
+
+- **Tests: the live window harness's 33 ms latency budget runs in its own
+  Meson suite, `timing`.** The budget (a window over per-frame features
+  completes within two frame periods of its last frame's submit) is a
+  wall-clock check that failed under host load. `test_vmafx_window_live_timing`
+  in the `timing` suite asserts it, one test at a time on an idle host
+  (`make test-timing`). The `fast` suite runs the same harness with every
+  other check, and the new `test_vmafx_live_pacing` checks the harness's
+  pacing and budget arithmetic exactly on a virtual clock, refusing two
+  planted pacing bugs. The budget is unchanged
+  ([test suites](docs/development/test-suites.md)).
 
 
 - **A Windows SYCL zip regression is seen before it merges, and a cut needs every tester leg green.**
