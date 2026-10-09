@@ -37,6 +37,7 @@
 #include <string.h>
 #include <sys/resource.h>
 
+#include "sanitizer_build.h"
 #include "test.h"
 #include "vidinput.h"
 
@@ -59,17 +60,6 @@ static const char kY4mAbsurdHeader[] = "YUV4MPEG2 W65535 H65535 F30:1 Ip C444p12
  * regression this test guards (dst_buf-NULL bug) is C-level, not sanitizer-
  * surfaceable, so a clean skip under sanitizers preserves coverage on the
  * non-sanitised legs without false positives on the ASan leg. */
-#if defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__)
-#define VMAF_TEST_SANITIZER_BUILD 1
-#elif defined(__has_feature)
-#if __has_feature(address_sanitizer) || __has_feature(thread_sanitizer) ||                         \
-    __has_feature(memory_sanitizer)
-#define VMAF_TEST_SANITIZER_BUILD 1
-#endif
-#endif
-#ifndef VMAF_TEST_SANITIZER_BUILD
-#define VMAF_TEST_SANITIZER_BUILD 0
-#endif
 
 static char *test_y4m_open_returns_error_on_oom(void)
 {

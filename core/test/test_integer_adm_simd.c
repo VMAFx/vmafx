@@ -85,6 +85,7 @@
 
 #include "config.h"
 #include "mu_table.h"
+#include "sanitizer_build.h"
 #include "test.h"
 /* clang-format off — test.h has no header guard; must precede harness. */
 #include "simd_bitexact_test.h"
@@ -677,8 +678,28 @@ static char *cm_check(CmFixture *f, const CmKernels *k, const char *fill, int id
     return NULL;
 }
 
+/* The event sweeps of tests 4 and 4b visit every position in a plain build,
+ * which is what proves every vector lane bit for bit. A sanitizer build (the
+ * ASan + UBSan and TSan legs, debug) runs the kernels some 17 times slower:
+ * test 4b's full sweep alone took 31 s there, over the 30 s test budget
+ * (T-ADM-SIMD-SANITIZER-SWEEP-TIMEOUT-2026-10-09). What such a build adds is
+ * memory and arithmetic checking. The kernels' addresses do not depend on the
+ * data (the dense fills reach all of them), and the arithmetic an event drives
+ * depends on its distance to a border (mirroring, the scalar edge columns),
+ * not on its lane; so it visits the first three, the middle and the last three
+ * rows, crossed with the same columns. */
+static bool event_coordinate_swept(int v, int n)
+{
+    return !VMAF_TEST_SANITIZER_BUILD || v < 3 || v >= n - 3 || v == n / 2;
+}
+
+static bool event_position_swept(int row, int col, int w, int h)
+{
+    return event_coordinate_swept(row, h) && event_coordinate_swept(col, w);
+}
+
 /* Dense fills over eight seeds, half of them with filtered bands of either
- * sign, then one event at every position. */
+ * sign, then one event at every position (event_position_swept()). */
 static char *cm_check_geometry(CmFixture *f, const CmKernels *k)
 {
     for (int seed = 1; seed <= 8; ++seed) {
@@ -689,6 +710,9 @@ static char *cm_check_geometry(CmFixture *f, const CmKernels *k)
         }
     }
     for (int pos = 0; pos < f->w * f->h; ++pos) {
+        if (!event_position_swept(pos / f->w, pos % f->w, f->w, f->h)) {
+            continue;
+        }
         cm_fill_event(f, pos / f->w, pos % f->w, 0x85EBCA6Bu + (uint32_t)pos);
         char *msg = cm_check(f, k, "event", pos);
         if (msg) {
@@ -956,6 +980,9 @@ static char *i4_cm_check_geometry(int w, int h, const I4CmKernels *k)
         msg = i4_cm_check(&f, k, (seed & 1) ? "dense" : "dense, non-negative", seed);
     }
     for (int pos = 0; pos < w * h && !msg; ++pos) {
+        if (!event_position_swept(pos / w, pos % w, w, h)) {
+            continue;
+        }
         i4_cm_fill_event(&f, pos / w, pos % w, 0x27D4EB2Fu + (uint32_t)pos);
         msg = i4_cm_check(&f, k, "event", pos);
     }
