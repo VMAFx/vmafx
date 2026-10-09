@@ -335,7 +335,19 @@ class FakeDeviceRunTests(unittest.TestCase):
         ):
             (fixtures / name).touch()
         self.log = self.dir / "vmaf.log"
-        self.env = dict(os.environ, FAKE_VMAF_LOG=str(self.log))
+        # A stand-in nvidia-smi first on PATH: the host's driver state (an
+        # nvidia-smi that exits 18 with no driver loaded) is not the subject.
+        fake_bin = self.dir / "bin"
+        fake_bin.mkdir()
+        smi = fake_bin / "nvidia-smi"
+        smi.write_text(
+            '#!/bin/sh\n[ -z "$FAKE_SMI_EXIT" ] || exit "$FAKE_SMI_EXIT"\n'
+            'echo "7, NVIDIA GeForce RTX 4090, 0 MiB, 24564 MiB, 0 %"\n',
+            encoding="utf-8",
+        )
+        smi.chmod(0o755)
+        path = f"{fake_bin}{os.pathsep}{os.environ.get('PATH', '')}"
+        self.env = dict(os.environ, FAKE_VMAF_LOG=str(self.log), PATH=path)
 
     def tearDown(self) -> None:
         self.tmp.cleanup()
@@ -384,6 +396,13 @@ class FakeDeviceRunTests(unittest.TestCase):
         self.assertEqual(runs.count("backend=cuda cuda=7"), 6)
         with (self.dir / "locks/cuda-4090.lock").open("a") as handle:
             fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+    def test_failing_nvidia_smi_does_not_stop_the_run(self) -> None:
+        # Exit 18 is what nvidia-smi returns while the driver is not loaded.
+        result = self.kit("run", "--no-timing", FAKE_SMI_EXIT="18")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.summary("run")[2], "PASS")
+        self.assertIn("nvidia-smi failed (exit 18)", (self.dir / "run/host.txt").read_text())
 
     def test_twin_beyond_the_rows_bound_fails(self) -> None:
         result = self.kit("run", "--no-timing", FAKE_GPU_VALUE="30.001")

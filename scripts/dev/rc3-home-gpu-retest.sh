@@ -865,8 +865,13 @@ done
     device_env "$b"
     echo "$b: build $(build_dir_for "$b"), ${DEV_ENV[*]:-no device}"
   done
-  command -v nvidia-smi >/dev/null 2>&1 &&
-    nvidia-smi --query-gpu=index,name,memory.used,memory.total,utilization.gpu --format=csv,noheader
+  # A host note, not a check: an nvidia-smi that fails (no driver loaded,
+  # exit 18) is recorded and the run goes on; under set -e the bare call ended
+  # the kit with nvidia-smi's status.
+  if command -v nvidia-smi >/dev/null 2>&1; then
+    timeout "$PROBE_TIMEOUT" nvidia-smi --query-gpu=index,name,memory.used,memory.total,utilization.gpu \
+      --format=csv,noheader || echo "nvidia-smi failed (exit $?)"
+  fi
   echo "baseline: ${BASELINE:-none}; reps $REPS; threads $THREADS; timing $TIMING"
 } >"$OUT/host.txt" 2>&1
 cat "$OUT/host.txt"
