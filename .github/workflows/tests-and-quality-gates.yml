@@ -109,8 +109,10 @@ jobs:
         # external vmaf binary is configured via vmaf_path() / vmafexec_path().
         working-directory: core
         run: |
+          # shellcheck disable=SC2046  # the helper prints one option per line, split on purpose
           meson setup build -Denable_cuda=false -Denable_sycl=false \
-            -Denable_float=true -Denable_avx512=true --buildtype=release
+            -Denable_float=true -Denable_avx512=true --buildtype=release \
+            -Dwerror=true $(../scripts/ci/werror-args.sh true)
           meson compile -C build
 
       - name: Restore Netflix vmaf_resource fixtures
@@ -281,9 +283,11 @@ jobs:
           else
             EXTRA_ARGS=()
           fi
+          # shellcheck disable=SC2046  # the helper prints one option per line, split on purpose
           meson setup build -Db_sanitize=${{ matrix.sanitizer }} \
             -Denable_cuda=false -Denable_sycl=false --buildtype=debug \
-            -Db_lto=false -Db_lundef=false "${EXTRA_ARGS[@]}"
+            -Db_lto=false -Db_lundef=false "${EXTRA_ARGS[@]}" \
+            -Dwerror=true $(../scripts/ci/werror-args.sh true)
           meson compile -C build
       - name: Run unit tests under sanitizer
         if: steps.impact.outputs.c_core == 'true'
@@ -453,8 +457,10 @@ jobs:
         if: steps.impact.outputs.tiny_ai == 'true'
         working-directory: core
         run: |
+          # shellcheck disable=SC2046  # the helper prints one option per line, split on purpose
           meson setup build -Denable_cuda=false -Denable_sycl=false \
-            -Denable_dnn=enabled --buildtype=release
+            -Denable_dnn=enabled --buildtype=release \
+            -Dwerror=true $(../scripts/ci/werror-args.sh true)
           meson compile -C build
       - name: Run meson dnn suite
         if: steps.impact.outputs.tiny_ai == 'true'
@@ -848,11 +854,13 @@ jobs:
         # ubuntu-hosted-runner-only — no GPU toolchain required.
         working-directory: core
         run: |
+          # shellcheck disable=SC2046  # the helper prints one option per line, split on purpose
           meson setup build-mcp \
             -Denable_cuda=false -Denable_sycl=false \
             -Denable_mcp=true -Denable_mcp_sse=enabled \
             -Denable_mcp_uds=true -Denable_mcp_stdio=true \
-            --buildtype=release
+            --buildtype=release \
+            -Dwerror=true $(../scripts/ci/werror-args.sh true)
           meson compile -C build-mcp
 
       - name: Pack the vmaf CLI for the vmaf-tune suite
@@ -1092,12 +1100,14 @@ jobs:
           # concurrently merge their counters into the same .gcda files for
           # the shared libvmaf.so. atomic is per-thread, not per-process —
           # the two fixes are complementary.
+          # shellcheck disable=SC2046  # the helper prints one option per line, split on purpose
           meson setup build-coverage --buildtype=debug \
             -Db_coverage=true -Denable_cuda=false -Denable_sycl=false \
             -Denable_float=true -Denable_avx512=true \
             -Denable_dnn=enabled \
             -Dc_args=-fprofile-update=atomic \
-            -Dcpp_args=-fprofile-update=atomic
+            -Dcpp_args=-fprofile-update=atomic \
+            -Dwerror=true $(../scripts/ci/werror-args.sh true)
           ninja -C build-coverage
       - name: Run meson unit suite (with gcov counters)
         if: steps.impact.outputs.golden_harness == 'true'
@@ -1379,7 +1389,8 @@ jobs:
               -Dsycl_icpx_aot_targets= \
               -Denable_float=true -Denable_avx512=true \
               -Dc_args=-fprofile-update=atomic \
-              -Dcpp_args=-fprofile-update=atomic
+              -Dcpp_args=-fprofile-update=atomic \
+              -Dwerror=true $(../scripts/ci/werror-args.sh true)
             ninja -C build-coverage-gpu
           '
       - name: Run meson unit suite

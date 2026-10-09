@@ -307,6 +307,34 @@
       ],
       "evidence": "(?:initialized in vmaf_read_json_model\\(\\)\\. \\*/|Round-5 race fix \\(finding #3\\): destroy the predict-cache mutex|pthread_mutex_destroy\\(&model->predict_cache_lock\\);)",
       "reason": "ADR-1755 moves vmaf_model_destroy() unchanged, with the predict-cache mutex teardown the cited commit added, from core/src/model.c to core/src/model_lifetime.c so every binary that links the feature collector resolves it. The three lines are in the new file; nothing is dropped."
+    },
+    {
+      "adr": "ADR-2828",
+      "kind": "reverse-hunk",
+      "undoes": "860900145ee959de9e56132d888234019d41220f",
+      "paths": [
+        ".standards.yaml"
+      ],
+      "evidence": "(?:- rule: HISS-10|path: \"\\.github/workflows/|reason: \".*T-CI-|expires: \"2027-01-04\")",
+      "reason": "ADR-2828 (Accepted, 2026-10-09) spells warnings as errors literally on every build lane where praetor's HISS-10 gate reads it and gates the 36 previously ungated lanes, superseding the temporary HISS-10 exceptions introduced in commit 860900145 (ADR-2784). Removing the 16 HISS-10 exception blocks from .standards.yaml implements ADR-2828 without leaving any lane ungated."
+    },
+    {
+      "adr": "ADR-2828",
+      "kind": "rewind",
+      "paths": [
+        ".standards.yaml"
+      ],
+      "evidence": "^merged blob 83bccedf9 == blob at 7a3a7d0e9$",
+      "reason": "The same removal of temporary HISS-10 exceptions seen by the rewind detector. Removing the 16 exception entries added by 860900145 leaves .standards.yaml byte-identical to its blob at 7a3a7d0e9 before 860900145 introduced them. No other content of .standards.yaml is rewound."
+    },
+    {
+      "adr": "ADR-2828",
+      "kind": "rewind",
+      "paths": [
+        "scripts/ci/AGENTS-tidy.md"
+      ],
+      "evidence": "^merged blob 4984a8d97 == blob at 7408ba6cd$",
+      "reason": "ADR-2828 removes .config/lint-exceptions.d/HISS-10.toml as all build lanes are gated directly. In the generated scripts/ci/AGENTS-tidy.md index, removing HISS-10.toml from the tidy-ratchet row leaves the generated table byte-identical to its blob at 7408ba6cd before 860900145 added HISS-10.toml."
     }
   ]
 }

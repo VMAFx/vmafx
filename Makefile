@@ -384,7 +384,7 @@ TIDY_RATCHET_COMPILERS_arm64 :=
 # two lines and passes the --select list of the Metal host sources.
 TIDY_RATCHET_COMPILERS_metal := CC=clang CXX=clang++
 TIDY_RATCHET_SETUP_metal := -Denable_metal=enabled -Denable_cuda=false -Denable_sycl=false \
-	-Denable_dnn=disabled -Db_lto=false
+	-Denable_dnn=disabled -Db_lto=false -Dwerror=true
 TIDY_RATCHET_SETUP_cpu := -Denable_cuda=false -Denable_sycl=false \
 	-Denable_dnn=disabled -Denable_mcp=true -Denable_mcp_sse=enabled \
 	-Denable_mcp_uds=true -Denable_mcp_stdio=true -Db_lto=false

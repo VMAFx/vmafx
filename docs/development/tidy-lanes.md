@@ -235,8 +235,9 @@ Praetor reads that one `exceptions` key for its other rules too. Since the pin `
 entries for the rules in `PRAETOR_RULES` into the block, with the same expiry cap: `HISS-11`
 (`.config/lint-exceptions.d/HISS-11.toml`, a declared supply-chain gap) and, since the pin
 `3a766f2d56ad` ([ADR-2784](../adr/2784-praetor-pin-3a766f2d.md)), `HISS-10`
-(`.config/lint-exceptions.d/HISS-10.toml`, the workflows whose lanes praetor's build-warnings gate
-reads as compiling without warnings as errors).
+(`.config/lint-exceptions.d/HISS-10.toml`, a workflow whose lanes praetor's build-warnings gate
+reads as compiling without warnings as errors; empty since
+[ADR-2828](../adr/2828-ci-werror-every-lane.md), when every lane spelled its switch).
 
 | Group | Read by | Why the rest is excepted |
 | --- | --- | --- |

@@ -7,6 +7,13 @@ Meson 1.12 no longer materialises ``compile_commands.json`` during setup or
 compile.  Ask Ninja for the two native compiler rules explicitly; an
 unfiltered ``ninja -t compdb`` also emits custom, link and phony commands that
 are not compilation-database entries.
+
+The database is read by analysers (clang-tidy, cppcheck), never to compile. A
+build that turns warnings into errors (``-Dwerror=true``, ADR-2170, ADR-2828)
+puts ``-Werror`` on every command, and clang-tidy would then report clang's
+own diagnostics on gcc's flags as errors and stop. The build itself already
+failed on a warning, so the exported commands drop ``-Werror``; the analysis
+reads the same flags it read before the build was gated.
 """
 
 from __future__ import annotations
@@ -15,6 +22,7 @@ import argparse
 import asyncio
 import json
 import os
+import re
 import shlex
 import shutil
 import sys
@@ -27,6 +35,9 @@ COMPILER_RULES = ("c_COMPILER", "cpp_COMPILER")
 # (the Metal build on macOS). Without them every .m / .mm unit is missing from the database.
 OPTIONAL_COMPILER_RULES = ("objc_COMPILER", "objcpp_COMPILER")
 SOURCE_SUFFIXES = {".c", ".cc", ".cpp", ".cxx", ".cu", ".hip", ".m", ".mm"}
+# Build-only switches an analyser must not see (module docstring).
+BUILD_ONLY_FLAGS = frozenset({"-Werror"})
+BUILD_ONLY_IN_COMMAND = re.compile(r"\s+-Werror(?=\s|$)")
 
 
 def resolved_tool(name: str) -> str:
@@ -140,6 +151,16 @@ def as_arguments(entry: dict[str, Any], index: int) -> dict[str, Any]:
     return converted
 
 
+def without_build_only_flags(entry: dict[str, Any]) -> dict[str, Any]:
+    """Drop the switches of BUILD_ONLY_FLAGS from one entry, in either form."""
+    stripped = dict(entry)
+    if "arguments" in stripped:
+        stripped["arguments"] = [a for a in stripped["arguments"] if a not in BUILD_ONLY_FLAGS]
+    if "command" in stripped:
+        stripped["command"] = BUILD_ONLY_IN_COMMAND.sub("", stripped["command"])
+    return stripped
+
+
 def atomic_write(path: Path, entries: list[dict[str, Any]]) -> None:
     temporary: Path | None = None
     try:
@@ -186,6 +207,7 @@ def main(argv: list[str]) -> int:
         ninja = resolved_tool(args.ninja)
         rules = compiler_rules(ninja, build)
         entries = parse_database(run_ninja(ninja, build, "-t", "compdb", *rules))
+        entries = [without_build_only_flags(entry) for entry in entries]
         if args.arguments:
             entries = [as_arguments(entry, index) for index, entry in enumerate(entries)]
         destination = build / "compile_commands.json"

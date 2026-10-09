@@ -470,7 +470,8 @@ jobs:
           set -a; . ./build-config.env; set +a
           git clone --depth=1 --branch "v${LEVEL_ZERO_VERSION}" \
             https://github.com/oneapi-src/level-zero.git /tmp/level-zero
-          cmake -S /tmp/level-zero -B /tmp/level-zero/build -DCMAKE_INSTALL_PREFIX=/usr
+          cmake -S /tmp/level-zero -B /tmp/level-zero/build -DCMAKE_INSTALL_PREFIX=/usr \
+            -DCMAKE_COMPILE_WARNING_AS_ERROR=ON
           cmake --build /tmp/level-zero/build -j"$(nproc)"
           sudo cmake --install /tmp/level-zero/build
           rm -rf /tmp/level-zero
@@ -586,6 +587,7 @@ jobs:
             --prefix "$PWD/install" \
             -Denable_float=true \
             ${{ matrix.meson_extra }} \
+            -Dwerror=true \
             $(scripts/ci/werror-args.sh "${{ matrix.werror }}")
 
       - name: Build libvmaf
@@ -608,7 +610,17 @@ jobs:
       # Verify pkgconfig for static linking
       - name: Verify static pkgconfig
         if: ${{ (contains(matrix.meson_extra, 'static')) && steps.impact.outputs.c_core == 'true' }}
+        env:
+          # ADR-2828: both static rows build with this compiler. Naming it here
+          # lets the build-warnings gate read the smoke compile; the first
+          # command fails when a row's compiler stops agreeing.
+          CC: ccache gcc-14
+          ROW_CC: ${{ matrix.CC }}
         run: |
+          if [ "$ROW_CC" != "$CC" ]; then
+            echo "::error::static row builds with '$ROW_CC'; update CC of this step to match"
+            exit 1
+          fi
           export PKG_CONFIG_PATH=$PWD/install/lib/pkgconfig:$PWD/install/lib/x86_64-linux-gnu/pkgconfig
           echo "=== libvmaf.pc ==="
           cat "$PWD/install/lib/pkgconfig/libvmaf.pc" || cat "$PWD/install/lib/x86_64-linux-gnu/pkgconfig/libvmaf.pc"
@@ -648,7 +660,7 @@ jobs:
           # rather than relying on unquoted word splitting.
           read -ra pc_cflags <<< "$(pkg-config --cflags libvmaf)"
           read -ra pc_libs <<< "$(pkg-config --static --libs libvmaf)"
-          ${CC:-cc} /tmp/pc_static_smoke.c "${pc_cflags[@]}" "${pc_libs[@]}" \
+          $CC -Wall -Wextra -Werror /tmp/pc_static_smoke.c "${pc_cflags[@]}" "${pc_libs[@]}" \
              -o /tmp/pc_static_smoke
           echo "static link OK"
 
@@ -876,6 +888,7 @@ jobs:
           meson setup core core/build --buildtype release \
             --default-library static --prefix "$MINGW_PREFIX" \
             -Denable_cuda=false -Denable_sycl=false -Denable_float=true \
+            -Dwerror=true \
             $(bash scripts/ci/werror-args.sh true)
 
       - name: Build vmaf
@@ -975,6 +988,7 @@ jobs:
           # required-aggregator
           - backend: sycl
             meson_extra: --default-library=static -Denable_cuda=false -Denable_sycl=true
+            werror: msvc
             name: Windows MSVC+SYCL
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -1084,7 +1098,7 @@ jobs:
           CFLAGS: /experimental:c11atomics
           CXXFLAGS: /experimental:c11atomics
         run: |
-          meson setup core core\build --buildtype release ^
+          meson setup core core\build -Dwerror=true --buildtype release ^
             --prefix %CD%\install ^
             -Dc_std=none ^
             -Denable_float=true ^
@@ -1110,7 +1124,7 @@ jobs:
           REM and checked against the config by
           REM scripts/ci/check-base-image-single-source.sh (ADR-1231).
           git clone --depth=1 --branch v1.34.0 https://github.com/oneapi-src/level-zero level-zero-src
-          cmake -S level-zero-src -B level-zero-src\build -DCMAKE_INSTALL_PREFIX=%CD%\level-zero-prefix -DCMAKE_BUILD_TYPE=Release
+          cmake -S level-zero-src -B level-zero-src\build -DCMAKE_INSTALL_PREFIX=%CD%\level-zero-prefix -DCMAKE_BUILD_TYPE=Release -DCMAKE_COMPILE_WARNING_AS_ERROR=ON
           cmake --build level-zero-src\build --config Release --target install
           echo INCLUDE=%CD%\level-zero-prefix\include;%INCLUDE%>>%GITHUB_ENV%
           echo LIB=%CD%\level-zero-prefix\lib;%LIB%>>%GITHUB_ENV%
@@ -1127,7 +1141,7 @@ jobs:
           call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat"
           set CC=icx-cl
           set CXX=icx-cl
-          meson setup core core\build --buildtype release ^
+          meson setup core core\build -Dwerror=true --buildtype release ^
             --prefix %CD%\install ^
             -Denable_float=true ^
             -Dcpp_std=c++latest ^
@@ -1151,7 +1165,7 @@ jobs:
       # pkg-config files that name them.
       - name: Check installed library names (MSVC)
         shell: cmd
-        run: python scripts\ci\check_msvc_library_names.py --prefix install
+        run: python scripts\ci\check_msvc_library_names.py --prefix install --meson-log core\build\meson-logs\meson-log.txt
 
       # windows-2025 has no GPU, so no kernel runs here. Whether the linked
       # programs registered their SYCL device images needs none:
@@ -1267,7 +1281,7 @@ jobs:
           CFLAGS: /experimental:c11atomics
           CXXFLAGS: /experimental:c11atomics
         run: |
-          meson setup core core\build --buildtype release ^
+          meson setup core core\build -Dwerror=true --buildtype release ^
             --prefix %CD%\install ^
             --default-library=static ^
             -Dc_std=none ^
@@ -1280,7 +1294,7 @@ jobs:
 
       - name: Check installed library names (MSVC)
         shell: cmd
-        run: python scripts\ci\check_msvc_library_names.py --prefix install
+        run: python scripts\ci\check_msvc_library_names.py --prefix install --meson-log core\build\meson-logs\meson-log.txt
 
       # The PE header's Machine field must read 0xAA64 (ARM64). An x64
       # binary would still run here under emulation and pass the tests,

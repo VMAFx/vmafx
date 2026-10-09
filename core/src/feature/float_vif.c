@@ -387,9 +387,12 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     picture_copy(s->ref, s->float_stride, ref_pic, -128, ref_pic->bpc, 0);
     picture_copy(s->dist, s->float_stride, dist_pic, -128, dist_pic->bpc, 0);
 
-    // The scaling method has been checked for validity in the init callback
+    // The scaling method has been checked for validity in the init callback;
+    // the result is still checked, so scaling_method is never read unset.
     enum vif_scaling_method scaling_method;
-    vif_get_scaling_method(s->vif_prescale_method, &scaling_method);
+    if (vif_get_scaling_method(s->vif_prescale_method, &scaling_method)) {
+        return -EINVAL;
+    }
 
     vif_scale_frame_s(scaling_method, s->ref, s->ref_scaled, ref_pic->w[0], ref_pic->h[0],
                       (int)(s->float_stride / sizeof(float)), (int)s->scaled_w, (int)s->scaled_h,

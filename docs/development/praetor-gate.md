@@ -190,16 +190,17 @@ changes four things here:
 - **Build-warnings gate (HISS-10).** Audit fails a CI lane that compiles C,
   C++, Rust or Go without its toolchain's warnings-as-errors form. It reads
   the form only as a literal on the command (`--werror` or `-Dwerror=true` on
-  `meson setup`, `-Werror` in `CGO_CFLAGS`, `RUSTFLAGS: -D warnings`), so the
-  legs [CI](ci.md#warnings-are-errors-adr-2170) gates through
-  `$(scripts/ci/werror-args.sh ...)`, a step output or a matrix value read as
-  ungated, next to the legs that are not gated yet. Each of the 16 workflows
-  with such a lane is declared in `.config/lint-exceptions.d/HISS-10.toml`,
-  one file, one reason and expiry 2027-01-04 each, and
-  `scripts/ci/praetor_tidy_coverage.py` copies the entries into
-  `.standards.yaml` ([tidy lanes](tidy-lanes.md#praetors-copy-of-the-same-facts)).
-  An entry goes when its workflow's lanes pass (RC4,
-  `T-CI-PRAETOR-HISS10-LANES-2026-10-08`).
+  `meson setup`, `-Werror` in `CGO_CFLAGS`, `RUSTFLAGS: -D warnings`), and
+  not what `$(scripts/ci/werror-args.sh ...)`, a step output or a matrix value
+  prints. Since [ADR-2828](../adr/2828-ci-werror-every-lane.md) every one of
+  the 50 lanes it reads spells its switch that way and builds warning-free
+  ([CI](ci.md#warnings-are-errors-adr-2170-adr-2828)); the 16 workflow entries
+  ADR-2784 declared in `.config/lint-exceptions.d/HISS-10.toml` are gone. A
+  lane that cannot be gated yet would take an entry there, which
+  `scripts/ci/praetor_tidy_coverage.py` copies into `.standards.yaml`
+  ([tidy lanes](tidy-lanes.md#praetors-copy-of-the-same-facts)). Praetor is
+  asked to read a declared wrapper script
+  ([cordanaLLM/praetor#924](https://github.com/cordanaLLM/praetor/issues/924)).
 - **Workflow trigger report (HISS-18).** Audit warns, without failing, about
   136 jobs in 28 workflows that skip a draft at job level or wait on a job
   that does. It recommends a failing first step instead, while this

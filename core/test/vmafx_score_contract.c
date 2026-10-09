@@ -29,6 +29,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "test_fopen.h"
 #include "vmafx/vmafx.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
@@ -132,8 +133,8 @@ static bool report_failure(const char *what, VmafxError *error)
 /* Submit every frame pair of the two files; `*n` counts them. */
 static bool submit_all(VmafxContext *context, const Request *req, unsigned *n)
 {
-    FILE *ref = fopen(req->ref, "rb");
-    FILE *dist = fopen(req->dist, "rb");
+    FILE *ref = vmaf_test_fopen(req->ref, "rb");
+    FILE *dist = vmaf_test_fopen(req->dist, "rb");
     uint8_t *ref_buf = malloc(frame_bytes(req));
     uint8_t *dist_buf = malloc(frame_bytes(req));
     bool ok = ref && dist && ref_buf && dist_buf;

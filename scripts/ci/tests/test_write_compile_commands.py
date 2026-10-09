@@ -147,6 +147,31 @@ class CompileCommandsExportTest(unittest.TestCase):
         self.assertEqual(written[0]["command"], "cc -c ../source.c -o source.c.o")
         self.assertNotIn("arguments", written[0])
 
+    def test_werror_is_dropped_from_every_entry_and_nothing_else(self) -> None:
+        # A gated build (ADR-2828) compiles with -Werror; the analysers read the database without
+        # it. -Werror=<warning> and every other flag stay, in both entry forms and on --arguments.
+        self.entries[0]["command"] = (  # type: ignore[index]
+            "cc -Werror -Wall -Werror=format -c ../source.c -o source.c.o -Werror"
+        )
+        self.entries[1]["arguments"] = [  # type: ignore[index]
+            "c++",
+            "-Werror",
+            "-c",
+            "../source.cpp",
+            "-o",
+            "source.cpp.o",
+        ]
+        self.write_ninja()
+        for extra in ((), ("--arguments",)):
+            with self.subTest(extra=extra):
+                self.assertEqual(self.run_export(*extra).returncode, 0)
+                written = json.loads((self.build / "compile_commands.json").read_text())
+                first = written[0].get("command") or " ".join(written[0]["arguments"])
+                self.assertEqual(first, "cc -Wall -Werror=format -c ../source.c -o source.c.o")
+                self.assertEqual(
+                    written[1]["arguments"], ["c++", "-c", "../source.cpp", "-o", "source.cpp.o"]
+                )
+
     def test_unsplittable_command_preserves_existing_database(self) -> None:
         self.entries[0]["command"] = "cc '-DDIR=unterminated -c ../source.c"  # type: ignore[index]
         self.write_ninja()

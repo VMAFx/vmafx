@@ -59,6 +59,10 @@ jobs:
     name: vmafx-sys CI work
     runs-on: ubuntu-26.04
     timeout-minutes: 30
+    env:
+      # ADR-2828: a rustc warning fails every cargo step of the job (build, test,
+      # example, the offline build and Meson's cargo call), not only clippy.
+      RUSTFLAGS: -D warnings
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -97,6 +101,7 @@ jobs:
             -Denable_avx512=false \
             --prefix /usr/local \
             --libdir lib \
+            -Dwerror=true \
             $(scripts/ci/werror-args.sh true)
           ninja -C build-ci
           sudo ninja -C build-ci install
@@ -169,12 +174,14 @@ jobs:
 
       - name: Build libvmaf with the Rust extractors (ADR-1713)
         run: |
+          # shellcheck disable=SC2046  # the helper prints one option per line, split on purpose
           meson setup build-rust core \
             -Denable_rust_features=true \
             -Denable_cuda=false \
             -Denable_sycl=false \
             -Denable_hip=false \
-            -Denable_avx512=false
+            -Denable_avx512=false \
+            -Dwerror=true $(scripts/ci/werror-args.sh true)
           ninja -C build-rust
 
       - name: Fetch the Netflix and checkerboard fixtures

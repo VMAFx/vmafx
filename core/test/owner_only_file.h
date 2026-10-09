@@ -20,6 +20,7 @@
 #ifdef _WIN32
 #include <fcntl.h>
 #include <io.h>
+#include <share.h>
 #include <sys/stat.h>
 #else
 #include <fcntl.h>
@@ -34,8 +35,17 @@
 static inline FILE *vmaf_test_open_owner_only(const char *path)
 {
 #ifdef _WIN32
-    const int fd = _open(path, _O_WRONLY | _O_CREAT | _O_TRUNC | _O_BINARY, _S_IREAD | _S_IWRITE);
-    return fd < 0 ? NULL : _fdopen(fd, "wb");
+    /* _sopen_s with _SH_DENYNO is the CRT's non-deprecated spelling of _open(), with the
+     * same sharing (core/src/svm.cpp); clang-cl and icx-cl report _open() as deprecated. */
+    int fd = -1;
+    if (_sopen_s(&fd, path, _O_WRONLY | _O_CREAT | _O_TRUNC | _O_BINARY, _SH_DENYNO,
+                 _S_IREAD | _S_IWRITE) != 0 ||
+        fd < 0)
+        return NULL;
+    FILE *out = _fdopen(fd, "wb");
+    if (!out)
+        (void)_close(fd);
+    return out;
 #else
     const int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
     if (fd < 0)

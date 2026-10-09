@@ -91,9 +91,11 @@ jobs:
       - name: Build and install libvmaf (this commit)
         run: |
           set -euo pipefail
+          # shellcheck disable=SC2046  # the helper prints one option per line, split on purpose
           meson setup build core --buildtype release --prefix "$RUNNER_TEMP/prefix" \
             -Denable_dnn=disabled -Db_lto=false -Denable_cuda=false \
-            -Denable_sycl=false -Denable_hip=false -Denable_metal=disabled
+            -Denable_sycl=false -Denable_hip=false -Denable_metal=disabled \
+            -Dwerror=true $(scripts/ci/werror-args.sh true)
           ninja -C build -j"$(nproc)"
           ninja -C build install
 
@@ -106,10 +108,12 @@ jobs:
         run: |
           set -euo pipefail
           git worktree add --detach "$RUNNER_TEMP/base-src" "$BASE_SHA"
+          # shellcheck disable=SC2046  # the helper prints one option per line, split on purpose
           meson setup "$RUNNER_TEMP/base-build" "$RUNNER_TEMP/base-src/core" --buildtype release \
             --prefix "$RUNNER_TEMP/prefix-base" \
             -Denable_dnn=disabled -Db_lto=false -Denable_cuda=false \
-            -Denable_sycl=false -Denable_hip=false -Denable_metal=disabled
+            -Denable_sycl=false -Denable_hip=false -Denable_metal=disabled \
+            -Dwerror=true $(scripts/ci/werror-args.sh true)
           ninja -C "$RUNNER_TEMP/base-build" -j"$(nproc)"
           ninja -C "$RUNNER_TEMP/base-build" install
 

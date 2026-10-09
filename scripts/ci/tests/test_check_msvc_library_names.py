@@ -78,6 +78,25 @@ class CheckMsvcLibraryNames(unittest.TestCase):
             self.assertEqual(MOD.main(["--prefix", str(good)]), 0)
             self.assertEqual(MOD.main(["--prefix", str(bad)]), 1)
 
+    def test_the_configure_log_must_hold_no_name_warning(self) -> None:
+        # The warning Meson's pkg-config module printed for vmaf.lib / vmafx.lib on the FFmpeg
+        # Windows MSVC job (run 37902467527) before the names reached it as flags (ADR-2828).
+        warning = (
+            "WARNING: Library target 'vmafx' has 'name_suffix' set. Compilers may not find it "
+            "from its '-lvmafx' linker flag in the 'libvmafx.pc' pkg-config file.\n"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            good = make_prefix(Path(tmp) / "good", ("vmaf.lib", "vmafx.lib"), GOOD_PC)
+            clean = Path(tmp) / "clean.txt"
+            clean.write_text("Build targets in project: 300\n", encoding="utf-8")
+            noisy = Path(tmp) / "noisy.txt"
+            noisy.write_text(warning, encoding="utf-8")
+            self.assertEqual(MOD.main(["--prefix", str(good), "--meson-log", str(clean)]), 0)
+            self.assertEqual(MOD.main(["--prefix", str(good), "--meson-log", str(noisy)]), 1)
+            self.assertEqual(len(MOD.log_problems(noisy)), 1)
+            missing = Path(tmp) / "absent.txt"
+            self.assertEqual(MOD.main(["--prefix", str(good), "--meson-log", str(missing)]), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

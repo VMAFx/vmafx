@@ -22,6 +22,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "test_fopen.h"
 #include "vmafx/vmafx.h"
 #include "vmafx_test_util.h"
 
@@ -62,7 +63,7 @@ static inline uint8_t *vt_read_fixture(const char *name, size_t *size)
 {
     char path[4096];
     const int n = snprintf(path, sizeof(path), "%s/%s", VMAFX_TEST_YUV_DIR, name);
-    FILE *file = n > 0 && (size_t)n < sizeof(path) ? fopen(path, "rb") : NULL;
+    FILE *file = n > 0 && (size_t)n < sizeof(path) ? vmaf_test_fopen(path, "rb") : NULL;
     if (!file) {
         return NULL;
     }

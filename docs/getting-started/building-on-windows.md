@@ -160,14 +160,16 @@ linker gives `-lvmaf` and `-lvmafx`:
 | --- | --- |
 | `lib\vmaf.lib` | the libvmaf API (`vmaf_*`), on top of libvmafx |
 | `lib\vmafx.lib` | the engine and the VMAFx API (`vmafx_*`) |
-| `lib\pkgconfig\libvmaf.pc`, `libvmafx.pc` | `Libs: -lvmaf` with `Requires: libvmafx`, and `Libs: -lvmafx` |
+| `lib\pkgconfig\libvmaf.pc`, `libvmafx.pc` | `Libs: -L${vmafx_libdir} -lvmaf` with `Requires: libvmafx`, and `Libs: -L${vmafx_libdir} -lvmafx`; `vmafx_libdir` is `${libdir}` |
 
 A consumer links both: `vmaf.lib vmafx.lib`, or what
 `pkg-config --libs --static libvmaf` prints. FFmpeg's MSVC toolchain
 (`--toolchain=msvc`) turns `-lvmaf` into `vmaf.lib` and finds the files without
-renaming. MinGW builds keep GCC's names (`libvmaf.a`, `libvmafx.a`), and so does
-an MSVC build with `--default-library=both`, where `vmaf.lib` is the import
-library of `vmaf.dll`.
+renaming. The `-uninstalled.pc` files of the build directory point
+`vmafx_libdir` at its `src` directory instead. MinGW builds keep GCC's names
+(`libvmaf.a`, `libvmafx.a`), and so does an MSVC build with
+`--default-library=both`, where `vmaf.lib` is the import library of
+`vmaf.dll`.
 
 ## FFmpeg with MSVC
 

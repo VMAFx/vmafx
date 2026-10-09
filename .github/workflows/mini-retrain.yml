@@ -36,7 +36,9 @@ jobs:
 
       - name: Build the vmaf CLI (CPU, no DNN)
         run: |
-          meson setup build core -Denable_cuda=false -Denable_sycl=false --buildtype=release
+          # shellcheck disable=SC2046  # the helper prints one option per line, split on purpose
+          meson setup build core -Denable_cuda=false -Denable_sycl=false --buildtype=release \
+            -Dwerror=true $(scripts/ci/werror-args.sh true)
           ninja -C build tools/vmaf
 
       - name: Install the training stack (hash-locked)

@@ -28,6 +28,7 @@
 #include "mu_table.h"
 #include "owner_only_file.h"
 #include "test.h"
+#include "test_fopen.h"
 #include "vmafx/vmafx.h"
 #include "vmafx_test_util.h"
 
@@ -83,7 +84,7 @@ static bool write_scored(const char *path, uint32_t format, uint32_t flags, cons
 
 static char *read_text(const char *path)
 {
-    FILE *const file = fopen(path, "rb");
+    FILE *const file = vmaf_test_fopen(path, "rb");
     if (!file) {
         return NULL;
     }
@@ -136,7 +137,7 @@ static bool plant(const char *path, const char *out, const char *from, const cha
 
 static bool exists(const char *path)
 {
-    FILE *const file = fopen(path, "rb");
+    FILE *const file = vmaf_test_fopen(path, "rb");
     if (file) {
         (void)fclose(file);
     }

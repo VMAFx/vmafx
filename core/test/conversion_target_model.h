@@ -21,6 +21,8 @@
 #include <stdbool.h>
 #include <stdio.h>
 
+#include "test_fopen.h"
+
 #define CONVERSION_TARGET_MODEL_JSON                                                               \
     "{\"model_dict\": {"                                                                           \
     "\"conversion_target\": {\"colorspace\": {\"range\": \"limited\", \"primaries\": "             \
@@ -35,7 +37,7 @@
 /* Write the model to `path`: 0, or -EIO. */
 static inline int conversion_target_model_write(const char *path)
 {
-    FILE *const out = fopen(path, "wb");
+    FILE *const out = vmaf_test_fopen(path, "wb");
     if (!out) {
         return -EIO;
     }

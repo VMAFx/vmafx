@@ -43,8 +43,18 @@ esac
 
 # WERROR_ARGS_OS exists for the script's own test; a workflow never sets it.
 os="${WERROR_ARGS_OS:-$(uname -s)}"
+cpp_extra=""
 case "${os}" in
-  Darwin) fatal="-Wl,-fatal_warnings" ;;
+  Darwin)
+    fatal="-Wl,-fatal_warnings"
+    # Meson 1.12 detects the C++ standard library of an Objective-C++ project (the Metal
+    # build) by linking a probe with -lc++, which the clang++ driver adds again; ld64 warns
+    # about the duplicate, -fatal_warnings fails the probe and meson setup stops ("Could not
+    # detect either libc++ or libstdc++"). core/src/metal/meson.build already tells ld64 the
+    # duplicate is expected for the project's own links (ADR-2170); the probe reads only the
+    # user's cpp_link_args, so the same switch goes there (ADR-2828).
+    cpp_extra=",-no_warn_duplicate_libraries"
+    ;;
   Linux | MINGW* | MSYS* | CYGWIN*) fatal="-Wl,--fatal-warnings" ;;
   *)
     echo "werror-args.sh: no fatal-warnings linker switch known for '${os}'" >&2
@@ -52,4 +62,4 @@ case "${os}" in
     ;;
 esac
 
-printf '%s\n' "-Dwerror=true" "-Dc_link_args=${fatal}" "-Dcpp_link_args=${fatal}"
+printf '%s\n' "-Dwerror=true" "-Dc_link_args=${fatal}" "-Dcpp_link_args=${fatal}${cpp_extra}"

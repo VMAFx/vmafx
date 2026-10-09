@@ -145,6 +145,7 @@ jobs:
             -Denable_cuda=false -Denable_sycl=false \
             --buildtype=debug \
             -Db_lto=false -Db_lundef=false \
+            -Dwerror=true \
             $(../scripts/ci/werror-args.sh true)
           meson compile -C build
       - name: Report ccache statistics
@@ -269,6 +270,7 @@ jobs:
             -Denable_cuda=false -Denable_sycl=false \
             --buildtype=debug \
             -Db_lto=false -Db_lundef=false \
+            -Dwerror=true \
             $(../scripts/ci/werror-args.sh true)
           meson compile -C build
       - name: Report ccache statistics
@@ -356,6 +358,7 @@ jobs:
           # b_lto=false is required: ASan + LTO together cause the linker
           # to discard asan.module_dtor sections, producing a link error
           # (same issue documented in fuzz.yml under ADR-0882).
+          # shellcheck disable=SC2046  # the helper prints one option per line, split on purpose
           meson setup build-fuzz core \
             --buildtype=debug \
             -Db_sanitize=address \
@@ -364,6 +367,8 @@ jobs:
             -Dfuzz=true \
             -Denable_cuda=false \
             -Denable_sycl=false \
+            -Dwerror=true \
+            $(scripts/ci/werror-args.sh true)
       - name: Build harness
         run: ninja -C build-fuzz test/fuzz/${{ matrix.target }}
       - name: Run fuzzer (${{ env.MAX_TOTAL_TIME }}s)

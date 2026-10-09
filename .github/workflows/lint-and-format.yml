@@ -203,8 +203,10 @@ jobs:
           # and the generated headers, so LTO buys nothing here. The SYCL tidy
           # lane below already configures with -Db_lto=false for its own
           # toolchain reason.
+          # shellcheck disable=SC2046  # the helper prints one option per line, split on purpose
           CC=gcc-15 CXX=g++-15 meson setup build core \
-            -Denable_cuda=false -Denable_sycl=false -Db_lto=false
+            -Denable_cuda=false -Denable_sycl=false -Db_lto=false \
+            -Dwerror=true $(scripts/ci/werror-args.sh true)
           # Build first so codegen outputs (vcs_version.h, model JSONs → .c)
           # exist on disk before clang-tidy parses the translation units.
           meson compile -C build
@@ -308,6 +310,11 @@ jobs:
           #     command of their own, clang-tidy reads them with the command of
           #     a neighbouring C file and stops at `'cstddef' file not found`.
           #     The lanes that compile their includers read them.
+          #   - core/test/vmafx_fixture_util.h — a test helper that stops at
+          #     `#error` unless core/test/meson.build defines VMAFX_TEST_YUV_DIR.
+          #     With no compile command of its own it is parsed with a
+          #     neighbouring file's command and fails by construction; the cpu
+          #     lane of the Tidy Ratchet reads it through the tests that include it.
           #   - core/test/test_adm_small_border.c +
           #     core/test/test_adm_wide_rounding.c — backend-neutral source
           #     names, but meson builds them only as test_cuda_adm_* and
@@ -349,6 +356,7 @@ jobs:
               -e '^core/test/test_adm_small_border\.c$' \
               -e '^core/test/test_adm_wide_rounding\.c$' \
               -e '^core/test/tiny_ai_test_template\.h$' \
+              -e '^core/test/vmafx_fixture_util\.h$' \
               -e '^core/src/sycl/' \
               -e '^core/src/feature/sycl/' \
               -e '^core/test/test_sycl' \
@@ -651,9 +659,11 @@ jobs:
           # gen-sycl-compile-commands.py strips the AOT flags for clang-tidy,
           # so the job does not need the ocloc that AOT configure requires
           # (ADR-1360).
+          # shellcheck disable=SC2046  # the helper prints one option per line, split on purpose
           CC=icx CXX=icpx meson setup build-sycl core \
             -Denable_sycl=true -Denable_cuda=false -Db_lto=false \
-            -Dsycl_icpx_aot_targets=
+            -Dsycl_icpx_aot_targets= \
+            -Dwerror=true $(scripts/ci/werror-args.sh true)
           # Build only the generated version header so include/vcs_version.h
           # exists on disk before clang-tidy parses TUs, without compiling
           # untouched files across the whole tree.
@@ -731,7 +741,9 @@ jobs:
       - name: Generate compile_commands
         if: steps.impact.outputs.c_core == 'true'
         run: |
-          meson setup build core -Denable_cuda=false -Denable_sycl=false
+          # shellcheck disable=SC2046  # the helper prints one option per line, split on purpose
+          meson setup build core -Denable_cuda=false -Denable_sycl=false \
+            -Dwerror=true $(scripts/ci/werror-args.sh true)
           # Build first so codegen outputs (model JSONs → .c) exist on disk.
           # cppcheck parses compile_commands.json literally and errors on
           # any missing translation-unit file.

@@ -24,6 +24,7 @@
 
 #include "compat_conformance_trace.h"
 #include "conversion_target_model.h"
+#include "test_fopen.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
@@ -228,7 +229,7 @@ static int additive(const char *line)
  * spreads the record over an element; JSON keeps it on one line. */
 static void trace_report(Trace *t, const char *format)
 {
-    FILE *const file = fopen(report_path(), "r");
+    FILE *const file = vmaf_test_fopen(report_path(), "r");
     if (!file) {
         trace(t, "report %s missing", format);
         return;

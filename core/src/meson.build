@@ -3339,9 +3339,27 @@ endif
 # build failed with "Package 'libvmaf' has version '1.0.0-rc.1', required
 # version is '>= 2.0.0'". Bump this only alongside `vmaf_soname_version`, i.e.
 # when the C API changes. See ADR-1235 (amends ADR-1151).
+# A library target with name_prefix / name_suffix makes the pkg-config module
+# warn on every configure that `-lvmafx` may not find it, although the MSVC
+# names above exist for that flag (ADR-2752). So the static MSVC names reach
+# the .pc files as flags, with their directory in a variable each variant
+# sets: the install libdir, or this build directory for the -uninstalled.pc
+# (ADR-2828). Every other build hands the targets to the module as before.
+if vmaf_msvc_static_names
+    vmafx_pc_libraries = ['-L${vmafx_libdir}', '-lvmafx']
+    vmaf_pc_libraries = ['-L${vmafx_libdir}', '-lvmaf']
+    vmaf_pc_dir_kwargs = {
+        'variables' : {'vmafx_libdir' : '${libdir}'},
+        'uninstalled_variables' : {'vmafx_libdir' : meson.current_build_dir()},
+    }
+else
+    vmafx_pc_libraries = vmaf_default_library == 'static' ? libvmafx_static_lib : libvmafx_shared_lib
+    vmaf_pc_libraries = libvmaf
+    vmaf_pc_dir_kwargs = {}
+endif
 # libvmafx.pc (ADR-1852 decision D2): the engine's private dependencies are
 # its own; WP12 owns the rest of the packaging.
-pkg_mod.generate(libraries: vmaf_default_library == 'static' ? libvmafx_static_lib : libvmafx_shared_lib,
+pkg_mod.generate(libraries: vmafx_pc_libraries,
     version: vmafx_soname_version,
     name: 'libvmafx',
     filebase: 'libvmafx',
@@ -3349,17 +3367,19 @@ pkg_mod.generate(libraries: vmaf_default_library == 'static' ? libvmafx_static_l
     subdirs: ['.'],
     requires_private: libvmaf_private_reqs,
     libraries_private: libvmaf_private_libs,
+    kwargs: vmaf_pc_dir_kwargs,
 )
 # libvmaf.pc: the compat library on libvmafx (decision D3). `Requires:` (not
 # private) so that a shared and a static consumer both link -lvmafx after
 # -lvmaf; `Version:` keeps the libvmaf interface line (ADR-1235).
-pkg_mod.generate(libraries: libvmaf,
+pkg_mod.generate(libraries: vmaf_pc_libraries,
     version: vmaf_soname_version,
     name: 'libvmaf',
     filebase: 'libvmaf',
     description: 'VMAF, Video Multimethod Assessment Fusion (libvmaf API on libvmafx)',
     subdirs: [ '.', 'libvmaf'],
     requires: ['libvmafx'],
+    kwargs: vmaf_pc_dir_kwargs,
 )
 
 libvmafx_dep = declare_dependency(

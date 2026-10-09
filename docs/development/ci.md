@@ -603,65 +603,75 @@ A `fix:` PR, a `bug` title or a close keyword must touch `docs/state.md` (rule
 `no state delta: REASON` in the body. See
 [state.md gates](state-md-gates.md#bug-status-hygiene-gate-adr-0165-adr-0334).
 
-## Warnings are errors (ADR-2170)
+## Warnings are errors (ADR-2170, ADR-2828)
 
-HISS-10 asks for zero warnings. A leg that prints none turns warnings into
-errors, so the pull request that adds one fails that leg. The switch is one
-script, [`scripts/ci/werror-args.sh`](../../scripts/ci/werror-args.sh), called
-from the leg's `meson setup` line (`$(scripts/ci/werror-args.sh "${{
-matrix.werror }}")` in the build matrix, `werror: true` on the matrix row).
-With `true` it prints `-Dwerror=true`, which is `-Werror` on every C and C++
-compile, and the linker's own switch in `-Dc_link_args` / `-Dcpp_link_args`
-(`-Wl,--fatal-warnings` for GNU ld, lld and MinGW; `-Wl,-fatal_warnings` for
-Apple's ld64). With `msvc` (a leg that builds with `cl.exe` and `link.exe`)
-it prints `-Dwerror=true` alone: Meson turns it into `/WX` on every `cl.exe`
-compile and `-WX` on every `link.exe` link (Meson 1.12 adds the linker's
-fatal-warnings switch itself whenever `werror` is set), and
-`core/src/meson.build` adds `--Werror all-warnings` to every nvcc fatbin. The
-MSVC legs run their steps under `cmd`, so a `shell: bash` step named
-`Warnings-as-errors arguments` (`id: werror`) calls the script and the
-configure step appends `${{ steps.werror.outputs.args }}`. `lib.exe`, which
-archives the static libraries of those legs, has no fatal-warnings switch in
-Meson; its warnings (none so far) show in the leg's log. Any other value prints
-nothing, except a typo, which exits 2.
-Rust has its own gate (`cargo clippy -- -D warnings`). Release and container
-image builds do not use the script: a compiler newer than the one a leg pins
-must not stop a release over a new diagnostic.
+HISS-10 asks for zero warnings, so every CI lane that compiles C, C++, Rust or
+Go turns warnings into errors: the pull request that adds a warning fails the
+lane that prints it. Each lane spells its switch on the build command itself,
+where praetor's build-warnings gate (`praetorctl audit`,
+[Praetor gate](praetor-gate.md#the-current-pin)) reads it:
 
-Praetor's build-warnings gate (HISS-10, `praetorctl audit`) reads the same
-requirement from the workflow files, but only as a literal on the build
-command: it cannot see what `werror-args.sh` prints, so it reads the gated legs
-as ungated too. Each workflow with a lane it reads that way is declared in
-`.config/lint-exceptions.d/HISS-10.toml` with a reason and an expiry
-([Praetor gate](praetor-gate.md#the-current-pin)); spelling the switch where
-the gate reads it and gating the legs below remove those entries.
+| Toolchain | Switch on the lane | Linker half |
+| --- | --- | --- |
+| Meson (gcc, clang, icx/icpx, MinGW, cl.exe, icx-cl, nvcc, hipcc) | `-Dwerror=true` on `meson setup` (`-Werror`, `/WX`; `core/src/meson.build` adds `--Werror all-warnings` for nvcc and `-Werror` for hipcc) | `$(scripts/ci/werror-args.sh true)` beside it |
+| CMake (the Level Zero loader the SYCL legs build) | `-DCMAKE_COMPILE_WARNING_AS_ERROR=ON` on the configure | none |
+| A direct compile (the static pkg-config link smoke) | `-Wall -Wextra -Werror`, compiler named in the step's `env` | none |
+| Cargo (`rust-ci.yml`) | `RUSTFLAGS: -D warnings` on the job, beside `cargo clippy -- -D warnings` | none |
+| Go with cgo (`go-ci.yml`) | `CGO_CFLAGS: -O2 -g -Wall -Werror` on the job, beside `go vet` | none |
+
+[`scripts/ci/werror-args.sh`](../../scripts/ci/werror-args.sh) stays the one
+place that knows each linker's fatal-warnings switch. With `true` it prints
+`-Dwerror=true` again and `-Dc_link_args` / `-Dcpp_link_args` with
+`-Wl,--fatal-warnings` (GNU ld, lld, MinGW) or `-Wl,-fatal_warnings` (Apple
+ld64). On macOS the C++ link arguments also carry
+`-no_warn_duplicate_libraries`: Meson 1.12 detects the C++ standard library of
+the Objective-C++ (Metal) build by linking a probe with `-lc++`, which the
+clang++ driver adds again, and ld64's duplicate-library warning would fail
+`meson setup` ("Could not detect either libc++ or libstdc++");
+`core/src/metal/meson.build` gives the project's own links the same switch.
+With `msvc` it prints `-Dwerror=true` alone: Meson adds `-WX` to every
+`link.exe` link itself. The MSVC legs run their steps under `cmd`, so a
+`shell: bash` step named `Warnings-as-errors arguments` (`id: werror`) calls
+the script and the configure step appends `${{ steps.werror.outputs.args }}`;
+their literal sits on the first line of the `meson setup` command, because the
+gate does not read a `cmd` line continuation. `lib.exe` has no fatal-warnings
+switch in Meson. Release and container image builds do not use any of this: a
+compiler newer than the one a leg pins must not stop a release over a new
+diagnostic. The tidy and cppcheck lanes compile with the switch, and
+[`scripts/ci/write-compile-commands.py`](../../scripts/ci/write-compile-commands.py)
+drops `-Werror` from the database those analysers read, so clang-tidy sees the
+flags it saw before.
 
 A fix for a warning changes no computed value and suppresses nothing: no
 `-Wno-*`, no `#pragma ... ignored`, no flag removed to hide a class. A
 diagnostic that is a defect of the tool needs a declared exception (one file,
-one rule, a reason, an expiry).
+one rule, a reason, an expiry). The `HISS-10` exception list is empty
+([ADR-2828](../adr/2828-ci-werror-every-lane.md)).
 
-### Legs that are gated
+### Lanes that are gated
 
-| Workflow | Legs | Toolchain family |
+Every lane `praetorctl audit` reads: 50 in 16 workflows (Meson 35, Cargo 7,
+CMake 5, Go 2, one direct compile).
+
+| Workflow | Lanes | Toolchain family |
 | --- | --- | --- |
-| `libvmaf-build-matrix.yml` | Ubuntu gcc, gcc static, gcc+DNN, CUDA, CUDA static, HIP | gcc 14, nvcc |
-| `libvmaf-build-matrix.yml` | Ubuntu clang, clang+DNN, ARM clang, macOS clang, macOS clang+DNN, macOS Metal | clang 22, Apple clang |
-| `libvmaf-build-matrix.yml` | Ubuntu SYCL, SYCL+CUDA | icx / icpx |
-| `libvmaf-build-matrix.yml` | Windows UCRT64 | MinGW gcc |
-| `libvmaf-build-matrix.yml` | Windows MSVC+CUDA, Windows ARM64 MSVC | MSVC `cl.exe` / `link.exe` (x64 and ARM64), nvcc |
-| `build.yml` | Windows MSVC+CUDA (full) | MSVC `cl.exe` / `link.exe`, nvcc |
-| `sanitizers.yml` | ASan+UBSan, TSan | clang 22, lld |
-| `go-ci.yml`, `rust-ci.yml` | the libvmaf build the Go and Rust jobs link | gcc |
-| `ffmpeg-integration.yml` | the libvmaf build of the Ubuntu gcc, macOS clang and SYCL legs | gcc, clang, icpx |
+| `libvmaf-build-matrix.yml` | every Linux and macOS row, Windows UCRT64, Windows MSVC+CUDA, Windows MSVC+SYCL, Windows ARM64 MSVC, the Level Zero builds and the static link smoke | gcc 14, clang 22, Apple clang, icx / icpx, MinGW gcc, MSVC `cl.exe`, icx-cl, nvcc, hipcc |
+| `build.yml` | Linux Intel LLVM, macOS Clang+Metal, Windows MSVC+CUDA (full), the Level Zero build | icx / icpx, Apple clang, MSVC, nvcc |
+| `sanitizers.yml`, `tests-and-quality-gates.yml` (sanitizer matrix) | ASan+UBSan, TSan, address, undefined, thread, nightly libFuzzer | clang 22, lld |
+| `tests-and-quality-gates.yml` | Netflix CPU golden, DNN, MCP smoke, coverage (gcov), coverage GPU | gcc, icx / icpx with nvcc |
+| `lint-and-format.yml`, `tidy-metal.yml`, `security-scans.yml` | the builds behind Tidy Changed, Tidy SYCL, Cppcheck, Tidy Metal and CodeQL C/C++ | gcc 15, icx, Apple clang, gcc |
+| `nightly.yml`, `fuzz.yml`, `mini-retrain.yml`, `sycl-parity.yml` | TSan, Netflix benchmark, libFuzzer, retrain CLI, Arc A380 parity | gcc, clang 22, icx |
+| `upstream-consumers.yml` | libvmaf at this commit and at the base commit | gcc |
+| `go-ci.yml`, `rust-ci.yml` | the libvmaf build, the cgo package, every cargo step and the Rust-extractor build | gcc, rustc, Go |
+| `ffmpeg-integration.yml` | the libvmaf builds (Ubuntu, macOS, SYCL, Windows MSVC) and the Level Zero build | gcc, clang, icpx, MSVC |
+| `windows-tester-bundle.yml` | the Level Zero build | MSVC |
 
-### Legs that are not gated yet
+### Builds outside the gate
 
-| Leg | Warnings (master `70d6dd0a5` unless stated) | What is left |
+| Build | Warnings | Why |
 | --- | --- | --- |
-| Windows MSVC+SYCL (icx-cl) | 4,361 on the gate commit (2026-10-07, job 112842753545) | `-Woverriding-option` of the strict FP line (2,268: `/fp:precise /Qfma-`, and the SYCL `-fp-model=precise -ffp-contract=off` of the Windows icpx), `/experimental:c11atomics` unused by icx-cl (1,957), the C runtime's deprecated calls (131 at 52 sites: `getenv`, `fopen`, `tmpfile`, `strdup`), 3 unused functions, 2 ignored `-ffp-contract=off` |
-| Dev Container Build | 204 | third-party sources built in the image (vpl-gpu-rt `-Wstringop-overflow`, FFmpeg) and gcc's LTO "serial compilation" note |
-| Docker Image Build, Tidy Ratchet, Cppcheck, CodeQL, Coverage Gate and the other jobs that compile libvmaf for analysis | 1 to 12 | the same sites as the gated legs; they gate once the train has landed and a master run shows 0 |
+| Dev Container Build | 204 on master `70d6dd0a5` | third-party sources built in the image (vpl-gpu-rt `-Wstringop-overflow`, FFmpeg) and gcc's LTO "serial compilation" note; the image is a container build, not a lane the gate reads (`T-CI-WARNINGS-NON-MSVC-LEGS-2026-10-07`) |
+| Release and tester images, release binaries | none measured | kept off warnings-as-errors by ADR-2170 (above) |
 
 ### What has been proven
 
@@ -698,17 +708,58 @@ register spill of the SYCL self-test kernel is compiled through
 `core/src/sycl/run_captured.py`, which prints the device compiler's output
 only when the compile fails.
 
+The lanes ADR-2828 gated (2026-10-09), proven on this host: gcc 15 in the
+dev image built the golden configuration (release, LTO, float, AVX-512) and
+the coverage configuration (gcov, DNN) clean with the gate's arguments, and
+failed both on a planted unused variable in `core/src/libvmaf.c`; gcc 16 built
+the Rust-extractor configuration (`RUSTFLAGS: -D warnings`) and the Level Zero
+loader 1.34.0 (`-DCMAKE_COMPILE_WARNING_AS_ERROR=ON`, which CMake turns into
+`-Werror`) clean; the cgo package failed a planted `-Wunused-variable` under
+`CGO_CFLAGS=-O2 -g -Wall -Werror` and both cargo workspaces a planted unused
+variable under `RUSTFLAGS=-D warnings`; the static link smoke compiles clean
+with `-Wall -Wextra -Werror` under gcc 13, 15 and 16.
+
+On CI, a throwaway branch carrying
+`int vmafx_planted_warning(void) { int unused; float narrowed = 0.1; ... }`
+in `core/src/libvmaf.c` (2026-10-09) failed on the plant in every leg that
+compiled it: every Linux and macOS row of the build matrix, Windows UCRT64,
+Windows MSVC+CUDA and Windows ARM64 MSVC (C4101 and C4305 as C2220) and
+Windows MSVC+SYCL (icx-cl, `-Wunused-variable` as an error) in run
+37856727687; Linux Intel LLVM and Windows MSVC+CUDA (full) in run
+37856730893; Tidy Metal (Apple clang) in run 37856734080; the DNN and MCP
+smoke builds in run 37856740709. The same run stopped the macOS Clang+Metal
+leg at `meson setup`, which the ld64 switch above fixes; the static link smoke
+under `-Wall -Wextra -Werror` reported three `-Wmaybe-uninitialized` sites of
+the LTO archive (`float_vif.c`, `speed.c`, `iqa/convolve.c` through `ssim.c`),
+fixed at the source and reproduced and cleared with gcc 15 here.
+
+The same plant on the rebased branch (2026-10-09, commit `43f1fe0b4`) failed
+the remaining lanes once their own blockers were gone: macOS Clang+Metal,
+Linux Intel LLVM and Windows MSVC+CUDA (full) in run 37914112985; CodeQL C/C++
+in run 37914119958; the Netflix golden, coverage, DNN, MCP smoke and the three
+sanitizer-matrix builds in run 37914123154; the FFmpeg Windows MSVC, Ubuntu,
+macOS and SYCL builds in run 37914126479; and every leg of the build matrix,
+macOS Metal included, in run 37914116846. The pull request's own run of the
+FFmpeg Windows MSVC job (job 113771388651) configured with `werror : true`,
+printed none of the pkg-config name warnings, and passed
+`check_msvc_library_names.py --meson-log`. The Arc A380 runner was offline, so
+SYCL parity and coverage GPU are proven by the SYCL and CUDA legs above until
+their next run.
+
 ### Adding a leg
 
 1. Build the leg's configuration on a clean tree and count the warnings by
    unique (file, line, flag), not by lines of log (a header diagnostic repeats
    once per translation unit that includes it).
 2. Fix every site; run the Netflix golden gate and the fast suite.
-3. Put `werror: true` on its matrix row (or add `$(scripts/ci/werror-args.sh
-   true)` to its `meson setup`; `werror: msvc` and the `id: werror` bash step
-   for an MSVC leg), move its row from the second table to the first, and run
-   `python3 -m unittest scripts/ci/tests/test_werror_args.py`. The test fails
-   a build-matrix row or an MSVC leg that is neither gated nor listed above.
+3. Spell the switch on its build command as the first table above says
+   (`-Dwerror=true $(scripts/ci/werror-args.sh true)` on a `meson setup`;
+   `werror: true` on a build-matrix row; `werror: msvc`, the `id: werror` bash
+   step and `-Dwerror=true` on the first `meson setup` line for an MSVC leg),
+   add it to the gated table, and run `praetorctl audit` and
+   `python3 -m unittest scripts/ci/tests/test_werror_args.py`. The audit fails
+   a lane it reads without the switch; the test fails a build-matrix row or an
+   MSVC leg that is not gated.
 4. Prove the gate once: plant `int planted(void) { int unused; return 0; }`
    (for MSVC, `float planted = 0.1;`, C4305) in a throwaway branch and see the
    leg fail; record the run in the pull request.

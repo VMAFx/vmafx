@@ -296,7 +296,8 @@ jobs:
           sudo -E apt-get -yq install "${ONEAPI_APT_PACKAGE}"
           git clone --depth=1 --branch "v${LEVEL_ZERO_VERSION}" \
             https://github.com/oneapi-src/level-zero.git /tmp/level-zero
-          cmake -S /tmp/level-zero -B /tmp/level-zero/build -DCMAKE_INSTALL_PREFIX=/usr
+          cmake -S /tmp/level-zero -B /tmp/level-zero/build -DCMAKE_INSTALL_PREFIX=/usr \
+            -DCMAKE_COMPILE_WARNING_AS_ERROR=ON
           cmake --build /tmp/level-zero/build -j"$(nproc)"
           sudo cmake --install /tmp/level-zero/build
           rm -rf /tmp/level-zero
@@ -410,9 +411,14 @@ jobs:
           if [ "${{ matrix.sycl }}" = "true" ]; then
             source /opt/intel/oneapi/setvars.sh
           fi
+          # ADR-2170 / ADR-2828: warnings are errors; the literal is what praetor's
+          # build-warnings gate reads, the helper adds the linker's switch.
+          # shellcheck disable=SC2046  # the helper prints one option per line, split on purpose
           meson setup core core/build --buildtype release \
             --prefix "$PWD/install" \
-            ${{ matrix.meson_extra }}
+            ${{ matrix.meson_extra }} \
+            -Dwerror=true \
+            $(scripts/ci/werror-args.sh true)
 
       - name: Configure libvmaf (macOS)
         if: matrix.os == 'macos-latest'
@@ -420,9 +426,14 @@ jobs:
           CC: ${{ matrix.CC }}
           CXX: ${{ matrix.CXX }}
         run: |
+          # ADR-2170 / ADR-2828: warnings are errors; the literal is what praetor's
+          # build-warnings gate reads, the helper adds the linker's switch.
+          # shellcheck disable=SC2046  # the helper prints one option per line, split on purpose
           meson setup core core/build --buildtype release \
             --prefix "$PWD/install" \
-            ${{ matrix.meson_extra }}
+            ${{ matrix.meson_extra }} \
+            -Dwerror=true \
+            $(scripts/ci/werror-args.sh true)
 
       # ADR-2170: the Windows steps run under cmd, so the one helper that
       # turns warnings into errors runs here and hands its arguments over.
@@ -442,7 +453,7 @@ jobs:
           CFLAGS: /experimental:c11atomics
           CXXFLAGS: /experimental:c11atomics
         run: |
-          meson setup core core\build --buildtype release ^
+          meson setup core core\build -Dwerror=true --buildtype release ^
             --prefix %CD%\install ^
             ${{ matrix.meson_extra }} ${{ steps.werror.outputs.args }}
 

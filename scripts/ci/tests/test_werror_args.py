@@ -30,7 +30,7 @@ MSVC_LEGS = {
     "Windows ARM64 MSVC",
     "Windows MSVC+CUDA (full)",
 }
-UNGATED_MSVC_LEGS = {"Windows MSVC+SYCL"}
+UNGATED_MSVC_LEGS: set[str] = set()
 ARGS_OUTPUT = "${{ steps.werror.outputs.args }}"
 
 
@@ -141,17 +141,19 @@ def contract_failures(matrix: str, doc: str) -> list[str]:
 
 class WerrorArgsScriptTests(unittest.TestCase):
     def test_true_prints_werror_and_the_linker_switch_per_os(self) -> None:
-        for os_name, fatal in (
-            ("Linux", "-Wl,--fatal-warnings"),
-            ("MINGW64_NT-10.0", "-Wl,--fatal-warnings"),
-            ("Darwin", "-Wl,-fatal_warnings"),
+        # ld64's C++ links also accept the duplicate -lc++ that Meson's stdlib probe of an
+        # Objective-C++ project adds (ADR-2828); the C links and the other linkers do not need it.
+        for os_name, fatal, cpp_fatal in (
+            ("Linux", "-Wl,--fatal-warnings", "-Wl,--fatal-warnings"),
+            ("MINGW64_NT-10.0", "-Wl,--fatal-warnings", "-Wl,--fatal-warnings"),
+            ("Darwin", "-Wl,-fatal_warnings", "-Wl,-fatal_warnings,-no_warn_duplicate_libraries"),
         ):
             with self.subTest(os=os_name):
                 result = run_script("true", os_name=os_name)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(
                     result.stdout.split(),
-                    ["-Dwerror=true", f"-Dc_link_args={fatal}", f"-Dcpp_link_args={fatal}"],
+                    ["-Dwerror=true", f"-Dc_link_args={fatal}", f"-Dcpp_link_args={cpp_fatal}"],
                 )
 
     def test_msvc_prints_werror_alone_on_every_os(self) -> None:

@@ -1201,9 +1201,11 @@ static void speed_prescale_frame(const SpeedDimensions *dim, const SpeedOptions 
                                   dim->scaled_width, dim->scaled_height))
         return;
 
-    // The scaling method has been checked for validity in the init callback
+    // The scaling method has been checked for validity in the init callback;
+    // the result is still checked, so scaling_method is never read unset.
     enum vif_scaling_method scaling_method;
-    vif_get_scaling_method(opt->speed_prescale_method, &scaling_method);
+    if (vif_get_scaling_method(opt->speed_prescale_method, &scaling_method))
+        return;
 
     memcpy(tmpbuf, frame_buffer, stride_px * dim->alloc_height * sizeof(float));
     if (scaling_method == vif_scale_bilinear && bufs->bilinear_x1a) {

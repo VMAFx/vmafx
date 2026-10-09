@@ -172,7 +172,9 @@ jobs:
           # meson-private/.../testfile.c) from being extracted into the CodeQL DB;
           # placing the build-root outside $GITHUB_WORKSPACE ensures generated
           # build artifacts are not classified as project source (ADR-1222, Alert 1279 / historical 1278).
-          meson setup "${{ runner.temp }}/build" core -Denable_cuda=false -Denable_sycl=false
+          # shellcheck disable=SC2046  # the helper prints one option per line, split on purpose
+          meson setup "${{ runner.temp }}/build" core -Denable_cuda=false -Denable_sycl=false \
+            -Dwerror=true $(scripts/ci/werror-args.sh true)
       - uses: github/codeql-action/init@24c54180a607b1449ed407dd24f251e4e9147c8d  # v4.38.3
         if: steps.impact.outputs.c_core == 'true'
         with:
