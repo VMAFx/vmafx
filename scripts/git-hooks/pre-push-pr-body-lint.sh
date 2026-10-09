@@ -18,9 +18,10 @@
 #   - No-op if HEAD has no open PR with this branch as head.
 #   - No-op if the PR is a draft (CI's deep-dive-checklist skips drafts).
 #   - No-op if scripts/ci/release-pr-exempt.sh (ADR-1151) classifies the PR as
-#     the machine-generated release PR, exactly as CI's deep-dive-checklist
-#     does. Only `gh` metadata carries the author identity the predicate
-#     needs; the public-page fallback never exempts.
+#     the machine-generated release PR, or scripts/ci/classify-dependency-pr.sh
+#     (ADR-1152) classifies it as a strictly dependency-only bot PR, exactly as
+#     CI's deep-dive-checklist does. Only `gh` metadata carries the author
+#     identity both need; the public-page fallback never exempts.
 #   - Otherwise: fetches the PR body via `gh pr view`, computes the diff
 #     via `git diff --name-only origin/master..HEAD`, and runs
 #     scripts/ci/validate-pr-body.sh. Non-zero exit blocks the push.
@@ -192,8 +193,8 @@ PY
 # Author.MarshalJSON), while the event payload names the same App
 # `<login>[bot]` with type `Bot`. Anything that does not match one of those two
 # shapes (a deleted author, missing metadata) yields empty identity fields,
-# which the predicate never exempts.
-release_pr_identity() {
+# which neither exemption accepts.
+pr_identity() {
   local input_path="$1"
   python3 - "${input_path}" <<'PY'
 import json
@@ -229,7 +230,7 @@ release_pr_exempt() {
   local identity=()
   local verdict
 
-  mapfile -t identity < <(release_pr_identity "${input_path}" 2>/dev/null ||
+  mapfile -t identity < <(pr_identity "${input_path}" 2>/dev/null ||
     echo "pre-push-pr-body-lint: could not read the PR identity" >&2)
   verdict="$(HEAD_REF="${identity[0]:-}" PR_AUTHOR="${identity[1]:-}" \
     PR_AUTHOR_TYPE="${identity[2]:-}" DIFF_FILE="${diff_file}" GITHUB_OUTPUT="" bash "${predicate}")" || return 1
@@ -245,6 +246,32 @@ release_pr_exempt() {
       "'${identity[0]:-}'" "'${local_branch}'" >&2
     return 1
   fi
+}
+
+# Ask the shared ADR-1152 classifier whether CI would exempt this PR as a
+# strictly dependency-only bot PR, with the inputs CI's deep-dive-checklist gives
+# it: the author login as the pull_request event names it (`<login>[bot]` for an
+# App), the head ref and the PR's changed paths. The classifier's report goes to
+# stderr; succeeds only when it exempts the PR.
+dependency_pr_exempt() {
+  local input_path="$1"
+  local classifier="$2"
+  local local_branch="$3"
+  local diff_file="$4"
+  local identity=()
+
+  mapfile -t identity < <(pr_identity "${input_path}" 2>/dev/null ||
+    echo "pre-push-pr-body-lint: could not read the PR identity" >&2)
+  # gh resolves a numeric branch name to that PR number (see release_pr_exempt).
+  if [ -z "${identity[0]:-}" ] || [ "${identity[0]}" != "${local_branch}" ]; then
+    printf 'pre-push-pr-body-lint: PR head ref %s is not the local branch %s; dependency-PR exemption not applied\n' \
+      "'${identity[0]:-}'" "'${local_branch}'" >&2
+    return 1
+  fi
+  # GITHUB_ACTOR and PR_BRANCH are the classifier's fallbacks for an empty
+  # author or head ref; clear them so only the PR's own identity counts.
+  PR_AUTHOR="${identity[1]:-}" HEAD_REF="${identity[0]}" DIFF_FILE="${diff_file}" \
+    GITHUB_ACTOR="" PR_BRANCH="" GITHUB_OUTPUT="" bash "${classifier}" >&2
 }
 
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" || repo_root=""
@@ -340,17 +367,30 @@ fi
 # (ADR-1151, ADR-1388) and skips the deliverables check for the release-please PR, whose
 # body is a rendered changelog (or a link to one) with no ADR-0108 checklist.
 # Consult the same predicate so the release-branch changelog cut can be pushed.
+# Dependency-only bot PR: the same job asks scripts/ci/classify-dependency-pr.sh
+# (ADR-1152) and skips the deliverables check for a bot PR (Renovate, Dependabot)
+# that changes only dependency manifests, lockfiles and image pins; its body is
+# the bot's update table. The merge train pushes such PRs through this hook too.
 # The public-page fallback has no author identity, so it cannot prove the bot
-# half of the predicate and never exempts. A branch without the predicate
-# (pre-ADR-1151) validates as before.
+# half of either predicate and never exempts. A branch without a predicate
+# (pre-ADR-1151, pre-ADR-1152) validates as before.
 exemption_predicate="${repo_root}/scripts/ci/release-pr-exempt.sh"
+dependency_classifier="${repo_root}/scripts/ci/classify-dependency-pr.sh"
 if [ "${metadata_source}" != "gh" ]; then
-  echo "pre-push-pr-body-lint: public PR pages carry no author identity; the release-PR exemption (ADR-1151) does not apply." >&2
-elif [ ! -f "${exemption_predicate}" ]; then
-  echo "pre-push-pr-body-lint: scripts/ci/release-pr-exempt.sh not found (branch predates ADR-1151); the release-PR exemption does not apply." >&2
-elif release_pr_exempt "${pr_path}" "${exemption_predicate}" "${branch}" "${tmp_diff}"; then
-  echo "pre-push-pr-body-lint: machine-generated release PR — skipping (CI's deliverables checklist exempts it too)." >&2
-  exit 0
+  echo "pre-push-pr-body-lint: public PR pages carry no author identity; neither the release-PR exemption (ADR-1151) nor the dependency-PR exemption (ADR-1152) applies." >&2
+else
+  if [ ! -f "${exemption_predicate}" ]; then
+    echo "pre-push-pr-body-lint: scripts/ci/release-pr-exempt.sh not found (branch predates ADR-1151); the release-PR exemption does not apply." >&2
+  elif release_pr_exempt "${pr_path}" "${exemption_predicate}" "${branch}" "${tmp_diff}"; then
+    echo "pre-push-pr-body-lint: machine-generated release PR — skipping (CI's deliverables checklist exempts it too)." >&2
+    exit 0
+  fi
+  if [ ! -f "${dependency_classifier}" ]; then
+    echo "pre-push-pr-body-lint: scripts/ci/classify-dependency-pr.sh not found (branch predates ADR-1152); the dependency-PR exemption does not apply." >&2
+  elif dependency_pr_exempt "${pr_path}" "${dependency_classifier}" "${branch}" "${tmp_diff}"; then
+    echo "pre-push-pr-body-lint: dependency-only bot PR — skipping (CI's deliverables checklist exempts it too, ADR-1152)." >&2
+    exit 0
+  fi
 fi
 
 body="$(printf '%s' "${pr_json}" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("body",""))' 2>/dev/null)" || body=""

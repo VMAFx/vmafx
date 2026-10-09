@@ -130,8 +130,12 @@ The dispatcher forwards Git's arguments and pushed-ref input to
 from `.pre-commit-config.yaml`. Push checks include assertion density,
 twin drift, mypy, bounded-process regressions, FFmpeg patch replay, PR
 deliverables, and MkDocs strict validation. The PR-body check may skip a first
-push or draft PR;
-that does not skip the other checks. Existing framework `.legacy` hooks
+push or draft PR. It also skips the PRs whose deliverables CI's checklist
+skips: the machine-generated release PR (ADR-1151) and a strictly
+dependency-only bot PR (ADR-1152). For those it asks the same scripts CI asks,
+with the PR's author, head ref and changed files
+([PR body validator](pr-body-validator.md)). That does not skip the other
+checks. Existing framework `.legacy` hooks
 continue to run in framework stages.
 
 A selected documentation push requires MkDocs. Missing `mkdocs` blocks the

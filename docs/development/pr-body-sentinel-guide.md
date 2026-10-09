@@ -42,6 +42,21 @@ pushed. A human PR on a `release-please--` branch is still validated, and
 a PR found only through the public-page fallback, which carries no author
 identity, is never exempted.
 
+The hook also skips a strictly dependency-only bot PR, as the CI gate does
+(ADR-1152). It asks `scripts/ci/classify-dependency-pr.sh` with the inputs CI
+gives it:
+
+- the author as the pull-request event names it, for example `renovate[bot]`
+  for the Renovate app;
+- the PR's head ref, which must also be the branch being pushed;
+- the files the branch changes against `origin/master`.
+
+The PR is exempt only when the author or branch is Renovate's or Dependabot's
+**and** every changed file is a dependency manifest, lockfile or image pin
+(for example `go.mod` and `go.sum`). A human PR on an ordinary branch with the
+same files, or a bot PR that also changes source, is still validated. The
+public-page fallback never exempts here either.
+
 ## The six deliverables and their opt-out forms
 
 Every fork-local PR body must address each of the six deliverables

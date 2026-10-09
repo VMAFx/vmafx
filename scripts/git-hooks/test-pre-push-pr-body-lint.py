@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
-"""Exercise the PR-body hook's metadata lookup and release-PR exemption.
+"""Exercise the PR-body hook's metadata lookup and its two exemptions.
 
-The lookup must stay bounded and fail closed. The release-PR exemption
-(ADR-1151) must accept exactly what CI's Deliverables Checklist accepts: a
-``release-please--`` head ref authored by a bot, as judged by the shared
-``scripts/ci/release-pr-exempt.sh`` predicate.
+The lookup must stay bounded and fail closed. Both exemptions must accept
+exactly what CI's Deliverables Checklist accepts. The release-PR exemption
+(ADR-1151) takes a ``release-please--`` head ref authored by a bot, as judged
+by the shared ``scripts/ci/release-pr-exempt.sh`` predicate. The dependency-PR
+exemption (ADR-1152) takes a bot PR that changes only dependency manifests,
+lockfiles and image pins, as judged by ``scripts/ci/classify-dependency-pr.sh``.
 """
 
 from __future__ import annotations
@@ -23,6 +25,7 @@ from pathlib import Path
 
 SCRIPT = Path(__file__).with_name("pre-push-pr-body-lint.sh").resolve()
 EXEMPTION = SCRIPT.parents[2] / "scripts/ci/release-pr-exempt.sh"
+DEPENDENCY_CLASSIFIER = SCRIPT.parents[2] / "scripts/ci/classify-dependency-pr.sh"
 GIT = Path(shutil.which("git") or "/usr/bin/git")
 
 RELEASE_REF = "release-please--branches--master--components--vmafx"
@@ -38,6 +41,11 @@ RELEASE_BODY = (
 # {"is_bot": false, "login", "id", "name"} (cli/cli api/queries_issue.go).
 GITHUB_ACTIONS = {"is_bot": True, "login": "app/github-actions"}
 HUMAN = {"is_bot": False, "login": "lusoris", "id": "U_kgDOAAAAAQ", "name": "Lusoris"}
+RENOVATE = {"is_bot": True, "login": "app/renovate"}
+DEPENDENCY_REF = "renovate/go-deps-(minor-+-patch)"
+# Renovate's PR body carries a dependency table and none of the ADR-0108
+# deliverables.
+DEPENDENCY_BODY = "This PR contains the following updates:\n\n| Package | Change |\n"
 VALIDATOR_MARKER = "validator-ran"
 ABSENT = object()
 
@@ -196,8 +204,8 @@ class MasterFastForward(HookFixture):
         self.assertIn("cannot determine PR state", result.stderr)
 
 
-class ReleasePullRequestExemption(HookFixture):
-    """The hook skips validation only where CI's deliverables gate does."""
+class ExemptionFixture(HookFixture):
+    """An open PR served by a `gh` stub, and a validator that always blocks."""
 
     def setUp(self) -> None:
         super().setUp()
@@ -256,6 +264,10 @@ class ReleasePullRequestExemption(HookFixture):
         self.assertIn("BLOCKED", result.stderr)
         self.assertNotIn("exempt=true", result.stderr)
         self.assertIn(reason, result.stderr)
+
+
+class ReleasePullRequestExemption(ExemptionFixture):
+    """The hook skips validation only where CI's deliverables gate does."""
 
     def test_bot_release_pr_is_exempt(self) -> None:
         self.open_pull(RELEASE_REF)
@@ -379,6 +391,75 @@ class ReleasePullRequestExemption(HookFixture):
         self.git("switch", "-qc", RELEASE_REF)
         self.write_tool("gh", "exit 1\n")
         self.write_public_page_stub(draft=False, body=RELEASE_BODY)
+
+        self.assert_validated(self.run_hook(), "public PR pages carry no author identity")
+
+
+class DependencyPullRequestExemption(ExemptionFixture):
+    """A strictly dependency-only bot PR is exempt only where CI exempts it (ADR-1152)."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        shutil.copy2(DEPENDENCY_CLASSIFIER, self.root / "scripts/ci/classify-dependency-pr.sh")
+
+    def commit_paths(self, *paths: str) -> None:
+        for path in paths:
+            target = self.root / path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(f"{path}\n")
+            self.git("add", path)
+        self.git("commit", "-qm", "chore(deps): update")
+
+    def assert_dependency_exempt(self, result: CommandResult) -> None:
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn(VALIDATOR_MARKER, result.stderr)
+        self.assertIn("EXEMPT — PR is strictly dependency-only", result.stderr)
+        self.assertIn("dependency-only bot PR — skipping", result.stderr)
+
+    def test_bot_dependency_only_pr_is_exempt(self) -> None:
+        # The Renovate PR the merge train could not push (#2697): go.mod and
+        # go.sum only, authored by the Renovate app.
+        self.open_pull(DEPENDENCY_REF, author=RENOVATE, body=DEPENDENCY_BODY)
+        self.commit_paths("go.mod", "go.sum")
+
+        self.assert_dependency_exempt(self.run_hook())
+
+    def test_human_pr_with_dependency_paths_is_validated(self) -> None:
+        self.open_pull("deps/go-modules", author=HUMAN, body=DEPENDENCY_BODY)
+        self.commit_paths("go.mod", "go.sum")
+
+        self.assert_validated(self.run_hook(), "do not match bot patterns")
+
+    def test_bot_pr_touching_source_is_validated(self) -> None:
+        self.open_pull(DEPENDENCY_REF, author=RENOVATE, body=DEPENDENCY_BODY)
+        self.commit_paths("go.mod", "go.sum", "pkg/libvmaf/run.go")
+
+        self.assert_validated(self.run_hook(), "pkg/libvmaf/run.go")
+
+    def test_bot_pr_without_changed_paths_is_validated(self) -> None:
+        self.open_pull(DEPENDENCY_REF, author=RENOVATE, body=DEPENDENCY_BODY)
+
+        self.assert_validated(self.run_hook(), "no changed paths detected")
+
+    def test_numeric_branch_resolving_to_a_dependency_pr_is_validated(self) -> None:
+        self.git("switch", "-qc", "2697")
+        self.serve_pull("2697", headRefName=DEPENDENCY_REF, author=RENOVATE, body=DEPENDENCY_BODY)
+        self.commit_paths("go.mod", "go.sum")
+
+        self.assert_validated(self.run_hook(), "dependency-PR exemption not applied")
+
+    def test_missing_classifier_fails_closed(self) -> None:
+        (self.root / "scripts/ci/classify-dependency-pr.sh").unlink()
+        self.open_pull(DEPENDENCY_REF, author=RENOVATE, body=DEPENDENCY_BODY)
+        self.commit_paths("go.mod", "go.sum")
+
+        self.assert_validated(self.run_hook(), "classify-dependency-pr.sh not found")
+
+    def test_public_page_fallback_is_never_dependency_exempt(self) -> None:
+        self.git("switch", "-qc", DEPENDENCY_REF)
+        self.commit_paths("go.mod", "go.sum")
+        self.write_tool("gh", "exit 1\n")
+        self.write_public_page_stub(draft=False, body=DEPENDENCY_BODY)
 
         self.assert_validated(self.run_hook(), "public PR pages carry no author identity")
 

@@ -40,6 +40,18 @@ exempt; branch without predicate validates as before.
 `test-pr-body-lookup` hook re-runs on predicate edits and covers bot,
 human-same-ref, non-bot-lookalike and fallback cases.
 
+hook skips strictly dependency-only bot PR only by calling
+`classify-dependency-pr.sh` (ADR-1152), same classifier CI's Deliverables
+Checklist and Doc-Substance Gate call; never re-implement allowlist in hook.
+Inputs = CI's: `PR_AUTHOR` from same author mapping (`app/renovate` ->
+`renovate[bot]`), `HEAD_REF` = PR's `headRefName` (must equal local branch;
+numeric branch names resolve to other PRs), `DIFF_FILE` = branch's diff
+against `origin/master`. Hook clears `GITHUB_ACTOR` and `PR_BRANCH`, classifier's
+fallbacks, so ambient CI variables never stand in for PR identity. Public-page
+fallback never exempts; branch without classifier validates as before. Merge
+train pushes Renovate PRs through this hook: without exemption, every
+dependency-only bot PR push fails with six missing deliverables (#2697).
+
 **Invariant — single parser source of truth**: do not fork or
 re-implement deliverables-check parsing logic in any other
 language. If gate's regex shape ever changes, change lands
