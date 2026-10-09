@@ -56,7 +56,7 @@ ARG VMAFX_VERSION=dev
 # these lines, then run that script with --write.
 ARG RELEASE_GO_BASE="golang:1.27-trixie@sha256:2f84bc93ecfb2689f782b153fdcd368b5a7ab96c1386c65cdaccf35e726d6a44"
 ARG RELEASE_RUNTIME_STATIC="gcr.io/distroless/static-debian13:nonroot@sha256:e2e927ec666bae08560abb3c55d0659eceabb657f56b6782ab500a9fc7f555e3"
-ARG RELEASE_PYTHON_BASE="python:3.14-slim@sha256:f85c5697265c178cc6887276c55fe16cf3d14ca35c3df6a5eab3b360534a55d2"
+ARG RELEASE_PYTHON_BASE="python:3.14-slim@sha256:a2b82f3c48559aa0a8446d9af49826b6e2b2016f4cd2afabfe6013ec53729170"
 
 FROM ${RELEASE_GO_BASE} AS go-builder
 
