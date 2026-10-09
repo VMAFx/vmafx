@@ -69,6 +69,10 @@ endif
 # own and cl does not print D9025 ("overriding /std:c17 with /std:clatest") for
 # every C translation unit. The Windows CI legs do.
 test_args = []
+# The math-constant define of the host (Windows only, below). Project
+# arguments do not reach the SYCL translation units, which icpx compiles in
+# custom targets: core/src/meson.build adds this list to their command lines.
+vmaf_math_constant_args = []
 if cc.get_argument_syntax() == 'msvc'
     add_project_arguments('/std:clatest', language: 'c')
     test_args += '/std:clatest'
@@ -86,8 +90,9 @@ elif host_machine.system() == 'windows'
     # defined. On the command line it precedes every <math.h> include, so no
     # translation unit keeps a copy of the constants. Linux takes them from
     # _GNU_SOURCE, macOS from _DARWIN_C_SOURCE.
-    test_args += '-D_USE_MATH_DEFINES'
-    add_project_arguments('-D_USE_MATH_DEFINES', language: ['c', 'cpp'])
+    vmaf_math_constant_args = ['-D_USE_MATH_DEFINES']
+    test_args += vmaf_math_constant_args
+    add_project_arguments(vmaf_math_constant_args, language: ['c', 'cpp'])
 endif
 
 # Header checks

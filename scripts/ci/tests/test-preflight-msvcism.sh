@@ -84,10 +84,13 @@ rm meson.build posix_tool.c
 echo "ok   a meson.build gate off Windows exempts a source, an ungated target does not"
 
 # M_PI needs _USE_MATH_DEFINES on Windows. Without the project-wide define in
-# core/meson.build an unguarded use fails; with it the use passes; the define
-# only in test_args, or commented out, is not project-wide and still fails.
+# core/meson.build an unguarded use fails; with it, and with the same list on
+# both SYCL argument lists of core/src/meson.build (icpx runs in custom
+# targets, which project arguments never reach), the use passes. The define
+# only in test_args, commented out, C++ only, as a literal outside the list, or
+# missing from either SYCL list is not project-wide and still fails.
 printf '#include <math.h>\ndouble half_turn(void) { return M_PI; }\n' >uses_pi.c
-mkdir -p core
+mkdir -p core/src
 rc=0
 out="$(run_stage)" || rc=$?
 [ "$rc" -eq 1 ] || fail "M_PI without any define: expected rc=1, got $rc: $out"
@@ -95,27 +98,47 @@ case "$out" in *"M_* math macro without a _USE_MATH_DEFINES define"*"uses_pi.c:2
 *) fail "M_PI finding not printed: $out" ;; esac
 echo "ok   an unguarded M_PI without the project-wide define fails the stage"
 
-cat >core/meson.build <<'EOF_MESON'
-if host_machine.system() == 'windows'
-    test_args += '-D_USE_MATH_DEFINES'
-    add_project_arguments('-D_USE_MATH_DEFINES', language: ['c', 'cpp'])
-endif
-EOF_MESON
+write_math_meson() { # $1: the windows branch of core/meson.build
+  printf "vmaf_math_constant_args = []\nif host_machine.system() == 'windows'\n%s\nendif\n" "$1" \
+    >core/meson.build
+}
+write_sycl_meson() { # $1, $2: the tails of sycl_common_args and sycl_feature_tail_args
+  printf "    sycl_common_args = vmaf_cflags_common + ['-c'] \\\\\n        %s\n" "$1" >core/src/meson.build
+  printf "    sycl_feature_tail_args = ['-std=c++20'] \\\\\n        %s\n" "$2" >>core/src/meson.build
+}
+good_branch="    vmaf_math_constant_args = ['-D_USE_MATH_DEFINES']
+    test_args += vmaf_math_constant_args
+    add_project_arguments(vmaf_math_constant_args, language: ['c', 'cpp'])"
+write_math_meson "$good_branch"
+write_sycl_meson "+ vmaf_math_constant_args" "+ vmaf_math_constant_args"
 rc=0
 out="$(run_stage)" || rc=$?
 [ "$rc" -eq 0 ] || fail "M_PI with the project-wide define: expected rc=0, got $rc: $out"
-echo "ok   M_PI passes while core/meson.build defines _USE_MATH_DEFINES project-wide"
+echo "ok   M_PI passes while the define is project-wide and on both SYCL lists"
 
-for planted in "    test_args += '-D_USE_MATH_DEFINES'" \
-  "    # add_project_arguments('-D_USE_MATH_DEFINES', language: ['c', 'cpp'])" \
-  "    add_project_arguments('-D_USE_MATH_DEFINES', language: ['cpp'])"; do
-  printf "if host_machine.system() == 'windows'\n%s\nendif\n" "$planted" >core/meson.build
+for planted in "    vmaf_math_constant_args = ['-D_USE_MATH_DEFINES']
+    test_args += vmaf_math_constant_args" \
+  "    vmaf_math_constant_args = ['-D_USE_MATH_DEFINES']
+    # add_project_arguments(vmaf_math_constant_args, language: ['c', 'cpp'])" \
+  "    vmaf_math_constant_args = ['-D_USE_MATH_DEFINES']
+    add_project_arguments(vmaf_math_constant_args, language: ['cpp'])" \
+  "    add_project_arguments('-D_USE_MATH_DEFINES', language: ['c', 'cpp'])"; do
+  write_math_meson "$planted"
   rc=0
   out="$(run_stage)" || rc=$?
   [ "$rc" -eq 1 ] || fail "planted '$planted': expected rc=1, got $rc: $out"
 done
+echo "ok   a define in test_args only, commented out, C++ only or outside the list does not count"
+
+write_math_meson "$good_branch"
+for lists in "+ []|+ vmaf_math_constant_args" "+ vmaf_math_constant_args|+ []"; do
+  write_sycl_meson "${lists%%|*}" "${lists#*|}"
+  rc=0
+  out="$(run_stage)" || rc=$?
+  [ "$rc" -eq 1 ] || fail "SYCL lists '$lists': expected rc=1, got $rc: $out"
+done
 rm -r core uses_pi.c
-echo "ok   a define in test_args only, commented out or C++ only does not count"
+echo "ok   a SYCL argument list without the define does not count"
 
 # Many findings: a probe trimmed with `head` closed the pipe while the scan
 # still wrote, the scan died of SIGPIPE, and under pipefail the `|| x=""`

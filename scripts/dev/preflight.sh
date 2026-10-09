@@ -137,6 +137,20 @@ changed_metal() {
   } | sort -u
 }
 
+# meson_assignment_has FILE VAR NEEDLE: the assignment `VAR = ...` of a meson
+# file, with its backslash continuation lines, names NEEDLE. awk reads the
+# whole file, so no reader closes the pipe early.
+meson_assignment_has() {
+  [ -f "$1" ] || return 1
+  awk -v var="$2" -v needle="$3" '
+    index($0, var " = ") && $0 ~ "^[[:space:]]*" var " = " { open = 1 }
+    open {
+      if (index($0, needle)) found = 1
+      if ($0 !~ /\\[[:space:]]*$/) open = 0
+    }
+    END { exit found ? 0 : 1 }' "$1"
+}
+
 if [ "$MODE" = list ]; then
   cat <<'EOF'
 stage          mirrors CI context            catches
@@ -316,14 +330,22 @@ if want msvcism; then
   # __STRICT_ANSI__ unless it is defined. Since Netflix/vmaf 4e150067b (Q-301)
   # core/meson.build passes -D_USE_MATH_DEFINES as a project argument on
   # Windows hosts, and no translation unit keeps a guard or a copy of the
-  # constants. The macros are accepted while that project argument is in the
-  # build file; without it, a file needs the old per-file guard
-  # (_USE_MATH_DEFINES before <math.h>, or an `#ifndef M_PI` fallback, in the
-  # file or in an in-tree header it includes).
+  # constants. icpx compiles the SYCL translation units in custom targets,
+  # which project arguments never reach, so the define is project-wide only
+  # when core/src/meson.build adds the same list to both SYCL argument lists
+  # (sycl_common_args, sycl_feature_tail_args): without that the Windows SYCL
+  # build failed on M_PI (T-SYCL-WINDOWS-M-PI-UNDECLARED-2026-10-09). The macros
+  # are accepted while all three are in the build files; without them, a file
+  # needs the old per-file guard (_USE_MATH_DEFINES before <math.h>, or an
+  # `#ifndef M_PI` fallback, in the file or in an in-tree header it includes).
   m_macros='\bM_(PI|E|SQRT2|LN2|LN10|PI_2|PI_4|1_PI|2_PI|SQRT1_2|LOG2E|LOG10E)\b'
-  math_project_define="^[[:space:]]*add_project_arguments\('-D_USE_MATH_DEFINES',[^)]*language: *\[[^]]*'c'"
+  math_list_define="^[[:space:]]*vmaf_math_constant_args = \['-D_USE_MATH_DEFINES'\]"
+  math_project_define="^[[:space:]]*add_project_arguments\(vmaf_math_constant_args,[^)]*language: *\[[^]]*'c'"
   math_defines_project_wide=0
-  if [ -f core/meson.build ] && grep -qE "$math_project_define" core/meson.build; then
+  if [ -f core/meson.build ] && grep -qE "$math_list_define" core/meson.build &&
+    grep -qE "$math_project_define" core/meson.build &&
+    meson_assignment_has core/src/meson.build sycl_common_args vmaf_math_constant_args &&
+    meson_assignment_has core/src/meson.build sycl_feature_tail_args vmaf_math_constant_args; then
     math_defines_project_wide=1
   fi
   c_math=""

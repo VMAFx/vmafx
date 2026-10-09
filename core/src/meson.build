@@ -2141,7 +2141,10 @@ if is_sycl_enabled
         message('SYCL device images: explicit device link (MSVC link.exe), ADR-1364')
     endif
 
-    sycl_common_args = vmaf_cflags_common + ['-c'] + sycl_toolchain_args + ['-std=c++20'] + sycl_pic_arg
+    # vmaf_math_constant_args: M_PI and M_E on Windows (core/meson.build). icpx
+    # runs in custom targets, which project arguments never reach.
+    sycl_common_args = vmaf_cflags_common + ['-c'] + sycl_toolchain_args + ['-std=c++20'] + sycl_pic_arg \
+        + vmaf_math_constant_args
     if sycl_msvc_device_link
         # common.cpp pulls the device-link object out of vmaf.lib (/include).
         sycl_common_args += ['-DVMAF_SYCL_MSVC_DEVICE_LINK=1']
@@ -2569,7 +2572,8 @@ if is_sycl_enabled
 
     # sycl_strict_fp_args: the SYCL strict FP policy above (ADR-1367), the same
     # for every feature TU.
-    sycl_feature_tail_args = ['-std=c++20'] + sycl_strict_fp_args + sycl_pic_arg + ['-fpermissive']
+    sycl_feature_tail_args = ['-std=c++20'] + sycl_strict_fp_args + sycl_pic_arg + ['-fpermissive'] \
+        + vmaf_math_constant_args
     sycl_feature_inc = sycl_inc_flags + [
         '-I' + meson.current_source_dir() / 'cuda',
         '-I' + meson.current_source_dir() / 'feature' / 'sycl',

@@ -784,6 +784,17 @@ test('test_adm_viewing_geometry_contract',
     timeout : 30,
 )
 
+# T-SYCL-WINDOWS-M-PI-UNDECLARED-2026-10-09: icpx compiles the SYCL TUs in
+# custom targets, which project arguments never reach; every icpx compile line
+# must take the Windows math-constant list (vmaf_math_constant_args) through
+# one of the two SYCL argument lists. Device-free, every host.
+test('test_sycl_math_constants_contract',
+    import('python').find_installation(),
+    args : files('test_sycl_math_constants_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # BUG-048 / ADR-0453: PSNR options parity across CPU, CUDA, SYCL, HIP, and Metal.
 test('test_gpu_psnr_option_parity_contract',
     import('python').find_installation(),
