@@ -47,7 +47,7 @@
 #endif
 #include "internal.h"
 #include "mem.h"
-#include "metal/iosurface_layout.h"
+#include "vmafx/import_convert.h"
 #include "picture.h"
 #include "vmafx/vmafx.h"
 
@@ -65,13 +65,226 @@
 typedef VmafxImportLayout ImportLayout;
 
 static const ImportLayout import_layouts[] = {
-    {VMAFX_PIXEL_FORMAT_YUV420P, VMAFX_PIXEL_FORMAT_YUV420P, 3u, 8u, 16u, 0u, false, "yuv420p"},
-    {VMAFX_PIXEL_FORMAT_YUV422P, VMAFX_PIXEL_FORMAT_YUV422P, 3u, 8u, 16u, 0u, false, "yuv422p"},
-    {VMAFX_PIXEL_FORMAT_YUV444P, VMAFX_PIXEL_FORMAT_YUV444P, 3u, 8u, 16u, 0u, false, "yuv444p"},
-    {VMAFX_PIXEL_FORMAT_YUV400P, VMAFX_PIXEL_FORMAT_YUV400P, 1u, 8u, 16u, 0u, false, "gray"},
-    {VMAFX_PIXEL_FORMAT_NV12, VMAFX_PIXEL_FORMAT_YUV420P, 2u, 8u, 8u, 0u, true, "nv12"},
-    {VMAFX_PIXEL_FORMAT_P010, VMAFX_PIXEL_FORMAT_YUV420P, 2u, 10u, 10u, 6u, true, "p010"},
-    {VMAFX_PIXEL_FORMAT_P016, VMAFX_PIXEL_FORMAT_YUV420P, 2u, 16u, 16u, 0u, true, "p016"},
+    {VMAFX_PIXEL_FORMAT_YUV420P,
+     VMAFX_PIXEL_FORMAT_YUV420P,
+     3u,
+     8u,
+     16u,
+     0u,
+     false,
+     "yuv420p",
+     VMAFX_IMPORT_PACKED_NONE,
+     {0u, 0u, 0u},
+     false},
+    {VMAFX_PIXEL_FORMAT_YUV422P,
+     VMAFX_PIXEL_FORMAT_YUV422P,
+     3u,
+     8u,
+     16u,
+     0u,
+     false,
+     "yuv422p",
+     VMAFX_IMPORT_PACKED_NONE,
+     {0u, 0u, 0u},
+     false},
+    {VMAFX_PIXEL_FORMAT_YUV444P,
+     VMAFX_PIXEL_FORMAT_YUV444P,
+     3u,
+     8u,
+     16u,
+     0u,
+     false,
+     "yuv444p",
+     VMAFX_IMPORT_PACKED_NONE,
+     {0u, 0u, 0u},
+     false},
+    {VMAFX_PIXEL_FORMAT_YUV400P,
+     VMAFX_PIXEL_FORMAT_YUV400P,
+     1u,
+     8u,
+     16u,
+     0u,
+     false,
+     "gray",
+     VMAFX_IMPORT_PACKED_NONE,
+     {0u, 0u, 0u},
+     false},
+    {VMAFX_PIXEL_FORMAT_NV12,
+     VMAFX_PIXEL_FORMAT_YUV420P,
+     2u,
+     8u,
+     8u,
+     0u,
+     true,
+     "nv12",
+     VMAFX_IMPORT_PACKED_NONE,
+     {0u, 0u, 0u},
+     false},
+    {VMAFX_PIXEL_FORMAT_P010,
+     VMAFX_PIXEL_FORMAT_YUV420P,
+     2u,
+     10u,
+     10u,
+     6u,
+     true,
+     "p010",
+     VMAFX_IMPORT_PACKED_NONE,
+     {0u, 0u, 0u},
+     false},
+    {VMAFX_PIXEL_FORMAT_P016,
+     VMAFX_PIXEL_FORMAT_YUV420P,
+     2u,
+     16u,
+     16u,
+     0u,
+     true,
+     "p016",
+     VMAFX_IMPORT_PACKED_NONE,
+     {0u, 0u, 0u},
+     false},
+    {VMAFX_PIXEL_FORMAT_NV16,
+     VMAFX_PIXEL_FORMAT_YUV422P,
+     2u,
+     8u,
+     8u,
+     0u,
+     true,
+     "nv16",
+     VMAFX_IMPORT_PACKED_NONE,
+     {0u, 0u, 0u},
+     false},
+    {VMAFX_PIXEL_FORMAT_P210,
+     VMAFX_PIXEL_FORMAT_YUV422P,
+     2u,
+     10u,
+     10u,
+     6u,
+     true,
+     "p210",
+     VMAFX_IMPORT_PACKED_NONE,
+     {0u, 0u, 0u},
+     false},
+    {VMAFX_PIXEL_FORMAT_P216,
+     VMAFX_PIXEL_FORMAT_YUV422P,
+     2u,
+     16u,
+     16u,
+     0u,
+     true,
+     "p216",
+     VMAFX_IMPORT_PACKED_NONE,
+     {0u, 0u, 0u},
+     false},
+    {VMAFX_PIXEL_FORMAT_NV24,
+     VMAFX_PIXEL_FORMAT_YUV444P,
+     2u,
+     8u,
+     8u,
+     0u,
+     true,
+     "nv24",
+     VMAFX_IMPORT_PACKED_NONE,
+     {0u, 0u, 0u},
+     false},
+    {VMAFX_PIXEL_FORMAT_P410,
+     VMAFX_PIXEL_FORMAT_YUV444P,
+     2u,
+     10u,
+     10u,
+     6u,
+     true,
+     "p410",
+     VMAFX_IMPORT_PACKED_NONE,
+     {0u, 0u, 0u},
+     false},
+    {VMAFX_PIXEL_FORMAT_P416,
+     VMAFX_PIXEL_FORMAT_YUV444P,
+     2u,
+     16u,
+     16u,
+     0u,
+     true,
+     "p416",
+     VMAFX_IMPORT_PACKED_NONE,
+     {0u, 0u, 0u},
+     false},
+    {VMAFX_PIXEL_FORMAT_Y210,
+     VMAFX_PIXEL_FORMAT_YUV422P,
+     1u,
+     10u,
+     10u,
+     6u,
+     false,
+     "y210",
+     VMAFX_IMPORT_PACKED_YUYV,
+     {0u, 1u, 3u},
+     false},
+    {VMAFX_PIXEL_FORMAT_Y212,
+     VMAFX_PIXEL_FORMAT_YUV422P,
+     1u,
+     12u,
+     12u,
+     4u,
+     false,
+     "y212",
+     VMAFX_IMPORT_PACKED_YUYV,
+     {0u, 1u, 3u},
+     false},
+    {VMAFX_PIXEL_FORMAT_YUYV422,
+     VMAFX_PIXEL_FORMAT_YUV422P,
+     1u,
+     8u,
+     8u,
+     0u,
+     false,
+     "yuyv422",
+     VMAFX_IMPORT_PACKED_YUYV,
+     {0u, 1u, 3u},
+     false},
+    {VMAFX_PIXEL_FORMAT_Y410,
+     VMAFX_PIXEL_FORMAT_YUV444P,
+     1u,
+     10u,
+     10u,
+     0u,
+     false,
+     "xv30",
+     VMAFX_IMPORT_PACKED_XVYU2101010,
+     {0u, 0u, 0u},
+     false},
+    {VMAFX_PIXEL_FORMAT_XV36,
+     VMAFX_PIXEL_FORMAT_YUV444P,
+     1u,
+     12u,
+     12u,
+     4u,
+     false,
+     "xv36",
+     VMAFX_IMPORT_PACKED_UYV4,
+     {1u, 0u, 2u},
+     false},
+    {VMAFX_PIXEL_FORMAT_VUYX,
+     VMAFX_PIXEL_FORMAT_YUV444P,
+     1u,
+     8u,
+     8u,
+     0u,
+     false,
+     "vuyx",
+     VMAFX_IMPORT_PACKED_UYV4,
+     {2u, 1u, 0u},
+     false},
+    {VMAFX_PIXEL_FORMAT_YUV444P_MSB,
+     VMAFX_PIXEL_FORMAT_YUV444P,
+     3u,
+     9u,
+     16u,
+     0u,
+     false,
+     "yuv444p16msb",
+     VMAFX_IMPORT_PACKED_NONE,
+     {0u, 0u, 0u},
+     true},
 };
 
 #define N_IMPORT_LAYOUTS (sizeof(import_layouts) / sizeof(import_layouts[0]))
@@ -209,9 +422,51 @@ void vmafx_import_plane_extent(const ImportLayout *layout, uint32_t bpc, uint32_
                                uint64_t *rows)
 {
     const uint64_t bytes = bpc > 8u ? 2u : 1u;
+    if (layout->packed != VMAFX_IMPORT_PACKED_NONE) {
+        /* YUYV: four elements per chroma column; UYV4: four per pixel;
+         * XV30: a 32-bit word per pixel. */
+        const uint64_t elements =
+            layout->packed == VMAFX_IMPORT_PACKED_YUYV ?
+                4u * pw[1] :
+                (layout->packed == VMAFX_IMPORT_PACKED_UYV4 ? 4u * pw[0] : 0u);
+        *row = layout->packed == VMAFX_IMPORT_PACKED_XVYU2101010 ? 4u * (uint64_t)pw[0] :
+                                                                   elements * bytes;
+        *rows = ph[0];
+        return;
+    }
     const uint64_t pair = layout->interleaved && i == 1u ? 2u : 1u;
     *row = (uint64_t)pw[i] * bytes * pair;
     *rows = ph[i];
+}
+
+void vmafx_import_plane_read(const VmafxImportLayout *layout, uint32_t bpc, uint32_t i,
+                             VmafxImportRead *out)
+{
+    VmafxImportRead rd = {.src_plane = i,
+                          .step = 1u,
+                          .offset = 0u,
+                          .in_bytes = bpc > 8u ? 2u : 1u,
+                          .shift = vmafx_import_shift(layout, bpc),
+                          .mask = 0u};
+    if (layout->packed != VMAFX_IMPORT_PACKED_NONE) {
+        rd.src_plane = 0u;
+    }
+    if (layout->packed == VMAFX_IMPORT_PACKED_YUYV) {
+        rd.step = i == 0u ? 2u : 4u;
+        rd.offset = layout->elem[i];
+    } else if (layout->packed == VMAFX_IMPORT_PACKED_UYV4) {
+        rd.step = 4u;
+        rd.offset = layout->elem[i];
+    } else if (layout->packed == VMAFX_IMPORT_PACKED_XVYU2101010) {
+        rd.in_bytes = 4u;
+        rd.mask = 0x3ffu;
+        rd.shift = i == 0u ? 10u : (i == 1u ? 0u : 20u);
+    } else if (layout->interleaved && i > 0u) {
+        rd.src_plane = 1u;
+        rd.step = 2u;
+        rd.offset = i - 1u;
+    }
+    *out = rd;
 }
 
 /* The rows of a plane (`rows` >= 1 of `row` bytes, pitch >= row > 0) lie
@@ -331,7 +586,9 @@ static void plan_planes(const VmafxFrameImport *d, const ImportLayout *layout, b
     const uint32_t n_out = layout->planar_fmt == VMAFX_PIXEL_FORMAT_YUV400P ? 1u : 3u;
     *total = 0;
     for (uint32_t i = 0; i < 3u; i++) {
-        const bool converted = copy_all || layout->shift != 0u || (i > 0u && layout->interleaved);
+        const bool converted = copy_all || layout->shift != 0u || layout->msb ||
+                               layout->packed != VMAFX_IMPORT_PACKED_NONE ||
+                               (i > 0u && layout->interleaved);
         offsets[i] = i < n_out && converted ? *total : SIZE_MAX;
         *total += offsets[i] == SIZE_MAX ? 0u : owned_stride(pw[i], d->bpc) * ph[i];
     }
@@ -343,22 +600,18 @@ static void fill_plane(const VmafxFrameImport *d, const ImportLayout *layout, ui
                        const unsigned pw[3], const unsigned ph[3], uint8_t *dst, void *data[3],
                        ptrdiff_t stride[3])
 {
-    const bool pair = layout->interleaved && i > 0u;
-    const VmafxImportPlane *const p = &d->plane[pair ? 1u : i];
+    VmafxImportRead rd;
+    vmafx_import_plane_read(layout, d->bpc, i, &rd);
+    const VmafxImportPlane *const p = &d->plane[rd.src_plane];
     if (!dst) {
         data[i] = plane_address(p);
         stride[i] = (ptrdiff_t)p->pitch;
         return;
     }
-    const VmafMetalPlaneRead rd = {.src_plane = pair ? 1u : i,
-                                   .step = pair ? 2u : 1u,
-                                   .offset = pair ? i - 1u : 0u,
-                                   .bytes = d->bpc > 8u ? 2u : 1u,
-                                   .shift = layout->shift};
     data[i] = dst;
     stride[i] = (ptrdiff_t)owned_stride(pw[i], d->bpc);
-    vmaf_metal_read_plane(dst, (size_t)stride[i], plane_address(p), (size_t)p->pitch, pw[i], ph[i],
-                          &rd);
+    vmafx_import_read_plane(dst, (size_t)stride[i], d->bpc > 8u ? 2u : 1u, plane_address(p),
+                            (size_t)p->pitch, pw[i], ph[i], &rd);
 }
 
 /* Fill data / stride for every plane of the frame, converting into one

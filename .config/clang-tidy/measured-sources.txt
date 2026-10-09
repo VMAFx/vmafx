@@ -831,14 +831,17 @@ core/test/test_vmafx_frame_input.c
 core/test/test_vmafx_host_fence_wait.c
 core/test/test_vmafx_import_api.c
 core/test/test_vmafx_import_bitexact.c
+core/test/test_vmafx_import_convert.c
 core/test/test_vmafx_import_cuda.c
 core/test/test_vmafx_import_cuda_bitexact.c
 core/test/test_vmafx_import_cuda_fence.c
+core/test/test_vmafx_import_cuda_formats.c
 core/test/test_vmafx_import_cuda_gl.c
 core/test/test_vmafx_import_fence.c
 core/test/test_vmafx_import_hip.c
 core/test/test_vmafx_import_hip_bitexact.c
 core/test/test_vmafx_import_hip_fence.c
+core/test/test_vmafx_import_hip_formats.c
 core/test/test_vmafx_import_hip_gl.c
 core/test/test_vmafx_lifetime.c
 core/test/test_vmafx_live_pacing.c

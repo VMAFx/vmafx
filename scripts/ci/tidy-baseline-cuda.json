@@ -4,7 +4,7 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "cc_version": "gcc-15 (Ubuntu 15.2.0-16ubuntu1) 15.2.0",
-  "tus": 497,
+  "tus": 501,
   "measured_sources": [
     "core/src/compat/path_utf8.c",
     "core/src/cpu.cpp",
@@ -481,10 +481,14 @@
     "core/test/test_vif_skip_scale0.c",
     "core/test/test_vmaf_roi.c",
     "core/test/test_vmaf_roi_bounds.c",
+    "core/test/test_vmafx_abi_layout.c",
     "core/test/test_vmafx_fence_kinds.c",
+    "core/test/test_vmafx_import_bitexact.c",
+    "core/test/test_vmafx_import_convert.c",
     "core/test/test_vmafx_import_cuda.c",
     "core/test/test_vmafx_import_cuda_bitexact.c",
     "core/test/test_vmafx_import_cuda_fence.c",
+    "core/test/test_vmafx_import_cuda_formats.c",
     "core/test/test_vmafx_import_cuda_gl.c",
     "core/test/test_y4m_411_oob.c",
     "core/test/test_y4m_alloc_failure.c",
@@ -616,6 +620,30 @@
         }
       },
       "previous_baseline_sha256": "9d3866c997963e5822a147e8c0d21b38f3d824a4acb07d48a33ae3027af3b8e2"
+    },
+    {
+      "sources": [
+        "core/src/cuda/import_convert.cu",
+        "core/src/cuda/import_device.c",
+        "core/src/cuda/import_frame.c",
+        "core/src/vmafx/frame_import.c",
+        "core/test/test_vmafx_abi_layout.c",
+        "core/test/test_vmafx_import_bitexact.c",
+        "core/test/test_vmafx_import_convert.c",
+        "core/test/test_vmafx_import_cuda_formats.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/test/test_vmafx_abi_layout.c",
+            "core/test/test_vmafx_import_bitexact.c",
+            "core/test/test_vmafx_import_convert.c",
+            "core/test/test_vmafx_import_cuda_formats.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "850119bbaf9b0edc42951941eff34ff9a56b4b8f571626472f2efe41ea0cde2c"
     }
   ]
 }

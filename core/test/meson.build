@@ -1652,6 +1652,17 @@ test_vmafx_import_api = executable('test_vmafx_import_api',
 )
 test('test_vmafx_import_api', test_vmafx_import_api, suite : ['fast'])
 
+# ADR-2133: the CPU reference of the import conversions (semi-planar 4:2:2 /
+# 4:4:4, packed Y210 and Y410 / XV30) on hand-computed bytes.
+test_vmafx_import_convert = executable('test_vmafx_import_convert',
+    ['test.c', 'test_vmafx_import_convert.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
+    link_with : vmafx_static_link,
+    c_args : vmaf_cflags_common + vmafx_test_dirs,
+    dependencies : [math_lib, pthread_dependency, thread_lib, gpu_all_deps],
+)
+test('test_vmafx_import_convert', test_vmafx_import_convert, suite : ['fast'])
+
 test_vmafx_import_bitexact = executable('test_vmafx_import_bitexact',
     ['test.c', 'test_vmafx_import_bitexact.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
@@ -5152,6 +5163,7 @@ vmafx_cuda_test_args = vmaf_cflags_common + vmafx_test_dirs + [
 vmafx_cuda_tests = host_machine.system() != 'linux' ? [] : [
     ['test_vmafx_import_cuda', 300],
     ['test_vmafx_import_cuda_bitexact', 900],
+    ['test_vmafx_import_cuda_formats', 1800],
     ['test_vmafx_import_cuda_fence', 300],
     ['test_vmafx_import_cuda_gl', 120],
 ]
@@ -8080,6 +8092,7 @@ vmafx_hip_test_args = vmaf_cflags_common + vmafx_test_dirs + ['-DHAVE_HIP=1',
 vmafx_hip_tests = host_machine.system() != 'linux' ? [] : [
     ['test_vmafx_import_hip', 300],
     ['test_vmafx_import_hip_bitexact', 1800],
+    ['test_vmafx_import_hip_formats', 1800],
     ['test_vmafx_import_hip_fence', 300],
 ]
 foreach vmafx_hip_test : vmafx_hip_tests

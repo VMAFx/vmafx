@@ -28,6 +28,8 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "../vmafx/import_convert.h"
+
 #ifndef ENOTSUP
 #define ENOTSUP EOPNOTSUPP
 #endif
@@ -128,45 +130,19 @@ static inline int vmaf_metal_plane_read_plan(const VmafMetalSurfaceFormat *fmt, 
     return 0;
 }
 
-/* One row of 16-bit samples: every `step`-th sample from `offset`, shifted. */
-static inline void vmaf_metal_read_row16(uint8_t *dst, const uint8_t *src, unsigned w,
-                                         const VmafMetalPlaneRead *rd)
-{
-    for (unsigned x = 0u; x < w; x++) {
-        uint16_t v = 0u;
-        memcpy(&v, src + (((size_t)x * rd->step) + rd->offset) * 2u, sizeof(v));
-        v = (uint16_t)(v >> rd->shift);
-        memcpy(dst + (size_t)x * 2u, &v, sizeof(v));
-    }
-}
-
-/* One row of 8-bit samples: every `step`-th byte from `offset`. */
-static inline void vmaf_metal_read_row8(uint8_t *dst, const uint8_t *src, unsigned w,
-                                        const VmafMetalPlaneRead *rd)
-{
-    if (rd->step == 1u) {
-        memcpy(dst, src, (size_t)w);
-        return;
-    }
-    for (unsigned x = 0u; x < w; x++) {
-        dst[x] = src[((size_t)x * rd->step) + rd->offset];
-    }
-}
-
-/** Copy w x h samples of a planned read from `src` into a planar plane. */
+/** Copy w x h samples of a planned read from `src` into a planar plane: the
+ *  VMAFx import conversions' one CPU reference (ADR-2133). */
 static inline void vmaf_metal_read_plane(uint8_t *dst, size_t dst_stride, const uint8_t *src,
                                          size_t src_stride, unsigned w, unsigned h,
                                          const VmafMetalPlaneRead *rd)
 {
-    for (unsigned y = 0u; y < h; y++) {
-        uint8_t *d = dst + (size_t)y * dst_stride;
-        const uint8_t *s = src + (size_t)y * src_stride;
-        if (rd->bytes == 1u) {
-            vmaf_metal_read_row8(d, s, w, rd);
-        } else {
-            vmaf_metal_read_row16(d, s, w, rd);
-        }
-    }
+    const VmafxImportRead read = {.src_plane = rd->src_plane,
+                                  .step = rd->step,
+                                  .offset = rd->offset,
+                                  .in_bytes = rd->bytes,
+                                  .shift = rd->shift,
+                                  .mask = 0u};
+    vmafx_import_read_plane(dst, dst_stride, rd->bytes, src, src_stride, w, h, &read);
 }
 
 /* NOLINTEND(modernize-use-nullptr) */

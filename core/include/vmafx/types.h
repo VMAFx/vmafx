@@ -154,6 +154,82 @@ typedef enum VmafxPixelFormat {
      * YUV420P at 16 bits. Added in ABI 0.1.2.
      */
     VMAFX_PIXEL_FORMAT_P016 = 18,
+    /**
+     * 4:2:2, a luma plane and one plane of interleaved Cb/Cr bytes (a pair per chroma column, full-
+     * height rows); vmafx_frame_import() only, the frame it makes is YUV422P at 8 bits. Added in
+     * ABI 0.1.9.
+     */
+    VMAFX_PIXEL_FORMAT_NV16 = 19,
+    /**
+     * NV16 with 16-bit little-endian samples whose 10 bits are the most significant;
+     * vmafx_frame_import() only, the frame it makes is YUV422P at 10 bits (each sample shifted down
+     * by 6). Added in ABI 0.1.9.
+     */
+    VMAFX_PIXEL_FORMAT_P210 = 20,
+    /**
+     * NV16 with 16-bit little-endian samples; vmafx_frame_import() only, the frame it makes is
+     * YUV422P at 16 bits. Added in ABI 0.1.9.
+     */
+    VMAFX_PIXEL_FORMAT_P216 = 21,
+    /**
+     * 4:4:4, a luma plane and one plane of interleaved Cb/Cr bytes (a pair per pixel);
+     * vmafx_frame_import() only, the frame it makes is YUV444P at 8 bits. Added in ABI 0.1.9.
+     */
+    VMAFX_PIXEL_FORMAT_NV24 = 22,
+    /**
+     * NV24 with 16-bit little-endian samples whose 10 bits are the most significant;
+     * vmafx_frame_import() only, the frame it makes is YUV444P at 10 bits (each sample shifted down
+     * by 6). Added in ABI 0.1.9.
+     */
+    VMAFX_PIXEL_FORMAT_P410 = 23,
+    /**
+     * NV24 with 16-bit little-endian samples; vmafx_frame_import() only, the frame it makes is
+     * YUV444P at 16 bits. Added in ABI 0.1.9.
+     */
+    VMAFX_PIXEL_FORMAT_P416 = 24,
+    /**
+     * Packed 4:2:2 in one plane: 16-bit little-endian words Y0 Cb Y1 Cr (8 bytes per two pixels)
+     * whose 10 bits are the most significant (Intel Y210, FFmpeg y210le); vmafx_frame_import()
+     * only, the frame it makes is YUV422P at 10 bits. Added in ABI 0.1.9.
+     */
+    VMAFX_PIXEL_FORMAT_Y210 = 25,
+    /**
+     * Packed 4:4:4 in one plane: one 32-bit little-endian word per pixel, Cb in bits 0 to 9, Y in
+     * 10 to 19, Cr in 20 to 29, the top two bits alpha or unused (Intel Y410 and XV30, FFmpeg
+     * xv30le); vmafx_frame_import() only, the frame it makes is YUV444P at 10 bits. Added in ABI
+     * 0.1.9.
+     */
+    VMAFX_PIXEL_FORMAT_Y410 = 26,
+    /**
+     * Packed 4:2:2 in one plane: the bytes Y0 Cb Y1 Cr per two pixels (YUY2, FFmpeg yuyv422);
+     * vmafx_frame_import() only, the frame it makes is YUV422P at 8 bits. Added in ABI 0.1.9.
+     */
+    VMAFX_PIXEL_FORMAT_YUYV422 = 27,
+    /**
+     * Y210 with 12 significant bits (16-bit words, the 12 bits most significant; Intel Y212, FFmpeg
+     * y212le); vmafx_frame_import() only, the frame it makes is YUV422P at 12 bits. Added in ABI
+     * 0.1.9.
+     */
+    VMAFX_PIXEL_FORMAT_Y212 = 28,
+    /**
+     * Packed 4:4:4 in one plane: the bytes V Cb Y X per pixel (FFmpeg vuyx; the unused byte is not
+     * read); vmafx_frame_import() only, the frame it makes is YUV444P at 8 bits. Added in ABI
+     * 0.1.9.
+     */
+    VMAFX_PIXEL_FORMAT_VUYX = 29,
+    /**
+     * Packed 4:4:4 in one plane: four 16-bit little-endian words Cb Y Cr X per pixel, the 12 bits
+     * most significant (Intel Y416 / XV36, FFmpeg xv36le); vmafx_frame_import() only, the frame it
+     * makes is YUV444P at 12 bits. Added in ABI 0.1.9.
+     */
+    VMAFX_PIXEL_FORMAT_XV36 = 30,
+    /**
+     * Planar 4:4:4 in 16-bit little-endian words whose `bpc` most significant bits hold the sample
+     * (NVDEC's 10- and 12-bit 4:4:4 surfaces, FFmpeg yuv444p10msble and yuv444p12msble); bpc 9 to
+     * 16; vmafx_frame_import() only, the frame it makes is YUV444P at `bpc` bits (each sample
+     * shifted down by 16 - bpc). Added in ABI 0.1.9.
+     */
+    VMAFX_PIXEL_FORMAT_YUV444P_MSB = 31,
 } VmafxPixelFormat;
 
 /**
