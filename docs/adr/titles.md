@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1348), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1349), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5259,6 +5259,10 @@ Every ADR, one heading each (1348), so the site search finds an ADR by its title
 ## ADR-2090: Derive `motion2` / `motion3` frame by frame: final once the frame after is scored, the same statements as the flush
 
 [2090-motion-window-incremental](2090-motion-window-incremental.md)
+
+## ADR-2092: VMAFx device frames on HIP: one library stream per device copies every frame for the twins, dma-bufs as external memory, sync\_file checked on the host
+
+[2092-vmafx-hip-device-frames](2092-vmafx-hip-device-frames.md)
 
 ## ADR-2093: HDR-VMAF groundwork from upstream, with the input colorimetry on the context
 

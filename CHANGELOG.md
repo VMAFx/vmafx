@@ -121,6 +121,30 @@
   [ADR-2094](docs/adr/2094-libvmaf-compat-library-split.md)).
 
 
+- **VMAFx device frames on HIP (RC4, ADR-2092).** In a build with the HIP
+  backend the VMAFx API creates HIP devices by index or from your stream
+  (`vmafx_device_create` with `VMAFX_BACKEND_HIP`), scores a context on one
+  (`vmafx_context_use_device`; features registered afterwards run on their
+  HIP twins) and imports frames without a copy through the host
+  (`vmafx_frame_import`): HIP device pointers at any offset and pitch,
+  dma-bufs (`VMAFX_MEMORY_DMABUF`, imported as external memory), HIP arrays
+  and OpenGL textures from a GLX context on the device's GPU; NV12, P010 and
+  P016 are planarised on the device. Acquire fences of kind
+  `VMAFX_FENCE_HIP_EVENT` are waited on by the device's stream;
+  `VMAFX_FENCE_SYNC_FILE` (for example a dma-buf's exported sync_file) and
+  `VMAFX_FENCE_GL_SYNC` are checked on the host and waited for by
+  `vmafx_context_import_frame`. Release fences (`VMAFX_FENCE_HOST`,
+  `VMAFX_FENCE_HIP_EVENT`) are signalled after the last reader in every
+  context, and the release callback runs after them. `vmafx_fence_wait`
+  waits on `VMAFX_FENCE_SYNC_FILE` and `VMAFX_FENCE_GL_SYNC` fences in every
+  build. Imported frames score bit for bit as the same frames uploaded from
+  the host. A HIP device has no frame pools, and a `VMAFX_FENCE_SYNC_FILE`
+  release fence is refused (the ROCm runtime cannot signal one). With ROCm
+  10.1, whose runtime maps a GL texture but cannot read it, GL imports are
+  refused with `VMAFX_E_NOTSUP` naming the runtime. See
+  [HIP devices](docs/api/vmafx/index.md#hip-devices).
+
+
 - **libvmaf is a compat library on the VMAFx API (RC4 WP6).** The engine and
   the VMAFx API ship as `libvmafx.so.1` (pkg-config `libvmafx`), which exports
   `vmafx_*` symbols only; `libvmaf.so.3` keeps the libvmaf API and is written
@@ -614,6 +638,16 @@
   See [Writing math](docs/development/docs-site-design.md#writing-math).
 
 
+- **`float_vif_hip` runs for `float_vif` under `--backend hip` by default
+  (ADR-2092).** The build option `enable_float_vif_hip_autodispatch` now
+  defaults to `true`, so `--backend hip --feature float_vif`, models that
+  read `float_vif` and a VMAFx context on a HIP device run the HIP twin, which
+  returns the CPU's scores bit for bit (ADR-1444), instead of the CPU
+  extractor. Build with `-Denable_float_vif_hip_autodispatch=false` for the
+  old behaviour, where the twin runs only as `--feature float_vif_hip`. See
+  [`enable_float_vif_hip_autodispatch`](docs/development/build-flags.md#enable_float_vif_hip_autodispatch).
+
+
 - **The route for Go saliency inference is decided.** [ADR-2377](docs/adr/2377-go-saliency-through-mobilesal-binding.md)
   records that `vmafx-tune` runs the saliency model through the core's MobileSal extractor and the
   generated Go binding, with no second ONNX Runtime integration. No code changes yet; RC5 implements
@@ -663,6 +697,13 @@
   carries the Apache-2.0 Kubernetes type schemas, and ships
   `THIRD-PARTY-NOTICES.txt` with their attribution and the Apache-2.0 text
   ([ADR-2673](docs/adr/2673-chart-licence-kubernetes-schemas.md)).
+
+
+- **`psnr_hvs_hip`, `ssimulacra2_hip` and `float_ms_ssim_hip` read device
+  frames on the device (ADR-2092).** Given a frame in HIP device memory, the
+  three twins that staged planes on the host copy or convert them on the
+  device (`float_ms_ssim_hip` builds level 0 with a kernel of the same
+  arithmetic as `picture_copy()`); host frames are read as before.
 
 
 - **The Windows icx-cl and icpx builds no longer print an override warning on every compile.** The strict floating-point line of `intel-llvm-cl` is `/fp:precise /clang:-fno-fast-math /clang:-fcomplex-arithmetic=full /clang:-ffp-contract=off` instead of `/fp:precise /Qfma-`, and the SYCL compiles and device link of the MSVC build take the `-fno-fast-math -fcomplex-arithmetic=full` reset the Linux icpx already has. Same arithmetic: equal compiler front-end arguments apart from the complex-arithmetic token, equal predefined macros, byte-identical objects and device bitcode ([Research-2170](docs/research/2170-windows-strict-fp-spelling-2026-10-07.md), [ADR-2170](docs/adr/2170-warnings-are-errors-per-leg.md)).
