@@ -169,9 +169,24 @@ engine has the flag. CI and `make verify-all` keep the forge read.
 
 ### The current pin
 
-The pin is `3a766f2d56ad`
+The pin is `d141862c430b`
+([ADR-3061](../adr/3061-praetor-pin-d141862c.md)). Against `3a766f2d56ad` it
+changes one file here, `tools/apicompat/gate/main.go`. The API gate no longer
+installs go-apidiff as `module@version`. It writes a small build module that
+requires go-apidiff at the same commit and `golang.org/x/tools` v0.51.0
+exactly, and builds the checker there. Go 1.27.2 writes export data version 5.
+The x/tools v0.49.0 that go-apidiff requires reads up to version 4, so the
+checker read every package as empty, and the gate's canary failed the
+`Go API Compatibility` check on every pull request once setup-go's `stable`
+resolved to 1.27.2 ([cordanaLLM/praetor#1051](https://github.com/cordanaLLM/praetor/pull/1051)).
+`praetor-api.yml` still installs Go as `stable`, which is praetor's template
+text ([cordanaLLM/praetor#1037](https://github.com/cordanaLLM/praetor/issues/1037)).
+The engine's audit adds one advisory warning, about the missing cache-band
+markers in `AGENTS.md`.
+
+The pin before was `3a766f2d56ad`
 ([ADR-2784](../adr/2784-praetor-pin-3a766f2d.md)). Against `7458a220e1c9` it
-changes four things here:
+changed four things here:
 
 - **REUSE gates.** Because the root carries `REUSE.toml` and `LICENSES/`,
   `adopt` writes `.github/workflows/reuse.yml`, and audit checks that no
