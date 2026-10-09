@@ -1210,7 +1210,10 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
-          fetch-depth: 1
+          # Full history: test_vmafx_api_abi_append_only and test_crd_compat of
+          # the fast suite compare with the merge base of HEAD and origin/master
+          # and skip (77) without it (scripts/ci/tests/test_meson_suite_checkout_history.py).
+          fetch-depth: 0
 
       # actions/python-versions publishes win32/arm64 builds of 3.14.7
       # (versions-manifest.json, checked 2026-09-19): same pin as the

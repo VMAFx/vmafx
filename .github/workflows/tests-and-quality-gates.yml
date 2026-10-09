@@ -1353,6 +1353,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           submodules: recursive
+          # Full history for the merge-base tests of the suite
+          # (scripts/ci/tests/test_meson_suite_checkout_history.py).
+          fetch-depth: 0
       - name: Build with gcov + CUDA + SYCL + AVX-512
         working-directory: core
         env:
