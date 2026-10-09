@@ -398,8 +398,9 @@ def test_vmaf_explicit_backend_failure_errors() -> None:
     default).
 
     The CLI is ``core/tools/vmaf.cpp`` (it was ``vmaf.c``); the
-    device-backend predicate and the ``backend_used`` receipt writer
-    moved to ``core/tools/cli_feature_backend.cpp`` (ADR-1359). Pinning
+    device-backend predicate moved to ``core/tools/cli_feature_backend.cpp``
+    (ADR-1359); the ``backend_used`` receipt is pinned by
+    ``test_vmaf_backend_receipt_written_by_library``. Pinning
     the source carries the same regression-prevention value as a live
     integration test for the dispatch policy; the test passes on CI
     hosts without CUDA / SYCL / HIP. ADR-0726 dropped the Vulkan
@@ -425,15 +426,35 @@ def test_vmaf_explicit_backend_failure_errors() -> None:
     assert (
         'strcmp(c->backend, "vulkan")' not in src
     ), "ADR-0726 regression: Vulkan strcmp resurfaced in vmaf.cpp"
-    # The receipt writer exists, is called, and writes ``backend_used``.
-    assert "void amend_json_with_backend_receipt(" in src
-    assert "amend_json_with_backend_receipt(state->c.output_path" in src
-    # C string literal in the source: "\"backend_used\": "
-    assert r"\"backend_used\": " in backend_src
     # The not-compiled-in guard fires before any per-backend stanza so
     # an unknown ``--backend NAME`` on a CPU-only build also errors out.
     assert "libvmaf was built" in src
     assert "backend_compiled_in(" in src
+
+
+def test_vmaf_backend_receipt_written_by_library() -> None:
+    """The report of a ``vmaf`` run carries the ``backend_used`` receipt.
+
+    The CLI no longer splices the receipt into the report
+    (``amend_json_with_backend_receipt`` is gone, RC4 WP5, ADR-2073): it hands
+    the output path to ``cli_write_report()``, the library's JSON writer
+    (``core/src/output.cpp``) appends the members of
+    ``vmafx_report_json_members()``, and that function in
+    ``core/src/vmafx/provenance_render.c`` writes the receipt. Each link is
+    pinned, so a report that loses the receipt fails here without a binary.
+    """
+    from _vmaf_cli import repo_source
+
+    src = repo_source("core/tools/vmaf.cpp")
+    assert "cli_write_report(state->vmaf, state->c.output_path" in src
+    assert "amend_json_with_backend_receipt" not in src, "the CLI splices the report again"
+    output_src = repo_source("core/src/output.cpp")
+    assert "vmafx_report_json_members(vmaf)" in output_src, "the JSON report lost its members"
+    render_src = repo_source("core/src/vmafx/provenance_render.c")
+    members = render_src[render_src.index("char *vmafx_report_json_members(") :]
+    assert "engine_receipt(&text, vmaf);" in members[: members.index("\n}\n")]
+    # C string literal in the source: "\"backend_used\": "
+    assert r"\"backend_used\": " in render_src
 
 
 # ---------------------------------------------------------------------------
