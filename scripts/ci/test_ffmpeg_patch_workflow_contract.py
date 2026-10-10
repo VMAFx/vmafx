@@ -14,6 +14,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import ModuleType
+from typing import ClassVar
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
@@ -126,10 +127,8 @@ class FFmpegWorkflowContract(unittest.TestCase):
                 self.assertIn('"${fate_targets[@]}"', source)
                 self.assertIn(warning_pattern, source)
 
-        self.assertIn(
-            "git apply ../ffmpeg-patches/0019-ffmpeg-eliminate-gcc-14-build-diagnostics.patch",
-            ordinary,
-        )
+        # The diagnostics patch is the shared fix series' (ADR-3143).
+        self.assertIn("../scripts/ci/ffmpeg-shared-series.sh apply --method am .", ordinary)
         self.assertNotIn("patch -p1", integration)
         self.assertIn("FATAL: ffmpeg-patches/$line did not apply", sycl)
 
@@ -278,6 +277,7 @@ class FFmpegWorkflowContract(unittest.TestCase):
         cases = {
             "ffmpeg-patches/series.txt": True,
             "scripts/ci/ffmpeg_patch_stack.py": True,
+            "scripts/ci/ffmpeg-shared-series.sh": True,
             "build-config.env": True,
             "core/include/libvmaf/libvmaf.h": True,
             "core/meson_options.txt": True,
@@ -327,6 +327,125 @@ class FFmpegWorkflowContract(unittest.TestCase):
                     "injected replay conflict",
                     (directory / output / "workflow-command.log").read_text(encoding="utf-8"),
                 )
+
+
+class SharedFixSeriesContract(unittest.TestCase):
+    """Every FFmpeg build applies the pinned shared fix series before ours (ADR-3143)."""
+
+    SCRIPT = "ffmpeg-shared-series.sh"
+    # Where each build applies ffmpeg-patches/: the text that marks the place.
+    SITES: ClassVar[dict[str, str]] = {
+        "Dockerfile": "done < /tmp/ffmpeg-patches/series.txt",
+        "Dockerfile.ffmpeg": "done < /tmp/ffmpeg-patches/series.txt",
+        "dev/Containerfile": "done < /build/vmaf/ffmpeg-patches/series.txt",
+        "docker/Dockerfile.node": "done < /src/ffmpeg-patches/series.txt",
+        "ffmpeg-patches/test/build-and-run.sh": 'done <"$PATCHES_DIR/series.txt"',
+        "scripts/ci/ffmpeg_patch_stack.py": 'replay.git("am", "--3way", str(repo / "ffmpeg-patches" / name))',
+    }
+
+    def test_pins_are_complete_and_well_formed(self) -> None:
+        config = (ROOT / "build-config.env").read_text()
+        self.assertRegex(
+            config, r'(?m)^FFMPEG_FIX_SERIES_REPO="https://github\.com/[\w.-]+/[\w.-]+"$'
+        )
+        self.assertRegex(config, r'(?m)^FFMPEG_FIX_SERIES_TAG="v[0-9][\w.-]*"$')
+        self.assertRegex(config, r'(?m)^FFMPEG_FIX_SERIES_SHA256="[0-9a-f]{64}"$')
+        # Only the tests point the script at another tarball.
+        self.assertNotIn("FFMPEG_FIX_SERIES_URL=", config)
+
+    def test_every_build_applies_the_series_before_ours(self) -> None:
+        for name, ours in self.SITES.items():
+            with self.subTest(site=name):
+                text = (ROOT / name).read_text()
+                self.assertIn(ours, text)
+                self.assertIn(self.SCRIPT, text)
+                self.assertLess(text.index(self.SCRIPT), text.index(ours))
+        integration = INTEGRATION_WORKFLOW.read_text()
+        sycl = _job(integration, "ffmpeg-sycl-work")
+        self.assertLess(sycl.index(self.SCRIPT), sycl.index("done < ../ffmpeg-patches/series.txt"))
+        # The stock-FFmpeg matrix takes the fix series and none of ours.
+        stock = _job(integration, "ffmpeg-work")
+        self.assertIn(f"{self.SCRIPT} apply --method am .", stock)
+        self.assertNotIn("ffmpeg-patches/0", stock)
+
+    def test_no_other_file_applies_ours_without_the_series(self) -> None:
+        git = shutil.which("git")
+        if git is None:
+            self.skipTest("git is not installed")
+        listed = run_command(
+            [
+                git,
+                "-C",
+                str(ROOT),
+                "ls-files",
+                "-z",
+                "--",
+                "*.sh",
+                "*.py",
+                "*.yml",
+                "*Dockerfile*",
+                "*Containerfile*",
+            ],
+            allowed_executables=(git,),
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout_seconds=60,
+        )
+        assert isinstance(listed.stdout, str)
+        known = set(self.SITES) | {".github/workflows/ffmpeg-integration.yml"}
+        for name in filter(None, listed.stdout.split("\0")):
+            if name in known or "/test" in name or name.startswith(("docs/", "scripts/ci/test")):
+                continue
+            text = (ROOT / name).read_text(errors="replace")
+            if re.search(r"git (?:am|apply)[^\n]*ffmpeg-patches/", text):
+                self.assertIn(
+                    self.SCRIPT, text, f"{name} applies ffmpeg-patches/ without the shared series"
+                )
+
+    def test_the_diagnostics_patch_is_the_series_not_ours(self) -> None:
+        series = (ROOT / "ffmpeg-patches/series.txt").read_text()
+        self.assertNotIn("diagnostics", series)
+        self.assertEqual(list((ROOT / "ffmpeg-patches").glob("*diagnostics*.patch")), [])
+
+    def test_the_required_gate_checks_the_release_signature(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        for job in ("check", "refresh"):
+            with self.subTest(job=job):
+                text = _job(workflow, job)
+                self.assertIn("sigstore/cosign-installer@", text)
+                self.assertIn("FFMPEG_FIX_SERIES_VERIFY: cosign", text)
+                self.assertLess(
+                    text.index("sigstore/cosign-installer@"), text.index("ffmpeg_patch_stack.py")
+                )
+
+    def test_script_refuses_missing_pins_and_unknown_modes(self) -> None:
+        script = ROOT / "scripts/ci" / self.SCRIPT
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / "build-config.env"
+            config.write_text('FFMPEG_TAG="n9.0.2"\nFFMPEG_COMMIT="' + "0" * 40 + '"\n')
+            environment = {
+                key: value
+                for key, value in os.environ.items()
+                if not key.startswith("FFMPEG_FIX_SERIES_")
+            }
+            environment["BUILD_CONFIG"] = str(config)
+            for argv, needle in (
+                (["apply", directory], "FFMPEG_FIX_SERIES_REPO is not set"),
+                (["frobnicate"], "unknown command"),
+                (["apply", "--method", "rebase", directory], "--method must be am or apply"),
+            ):
+                with self.subTest(argv=argv):
+                    result = run_command(
+                        [BASH, str(script), *argv],
+                        allowed_executables=(BASH,),
+                        env=environment,
+                        capture_output=True,
+                        text=True,
+                        timeout_seconds=60,
+                    )
+                    self.assertEqual(result.returncode, 2, result.stderr)
+                    self.assertIn(needle, str(result.stderr))
 
 
 if __name__ == "__main__":

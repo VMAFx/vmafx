@@ -184,7 +184,8 @@ These details matter when you change the Dockerfile.
   - Coverage: the root CUDA image, `Dockerfile.ffmpeg`, the dev container,
     the node image, the hosted FFmpeg integration matrix and the patch
     smoke harness.
-  - The ordinary hosted matrix applies only patch 0019, which keeps its
+  - The ordinary hosted matrix applies only the shared FFmpeg fix series
+    ([ADR-3143](../adr/3143-ffmpeg-shared-fix-series.md)), which keeps its
     stock-surface compatibility purpose without compiling the
     known-warning source.
   - A stable-tag or toolchain update must fix a new warning at its root; it

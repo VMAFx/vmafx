@@ -371,8 +371,8 @@ entries:
   evidence:
   - REUSE.toml
   - docs/licensing.md
-  note: The patch series adds libvmaf filters; patch 0019 also touches GPL units. Upstream states most
-    files LGPL v2.1 or later and some GPL.
+  note: The patch series adds libvmaf filters. The shared fix series applied before it (VMAFx/ffmpeg-patches,
+    fetched at build time) also touches GPL units. Upstream states most files LGPL v2.1 or later and some GPL.
 - id: lime-local-explainer
   name: LIME local explainer
   url: https://github.com/marcotcr/lime

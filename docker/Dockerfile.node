@@ -218,6 +218,7 @@ RUN apt-get update \
         make \
         cmake \
         git \
+        curl \
         nasm \
         yasm \
         pkg-config \
@@ -278,13 +279,17 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 COPY ffmpeg-patches/ /src/ffmpeg-patches/
 COPY scripts/ci/checkout-annotated-tag.sh /usr/local/bin/checkout-annotated-tag
+COPY build-config.env scripts/ci/ffmpeg-shared-series.sh /src/ffmpeg-shared/
 
 RUN checkout-annotated-tag "${FFMPEG_REMOTE}" "${FFMPEG_TAG}" /src/ffmpeg
 
 WORKDIR /src/ffmpeg
 
-# Apply the fork's patch series in order.
+# The shared FFmpeg fix series first (ADR-3143; verified against
+# build-config.env by the script), then the fork's patch series in order.
 # See ffmpeg-patches/README.md for the apply invariants.
+RUN FFMPEG_FIX_SERIES_CACHE=none \
+    bash /src/ffmpeg-shared/ffmpeg-shared-series.sh apply --method am /src/ffmpeg
 RUN git config user.email "vmafx-node-builder@localhost" \
     && git config user.name "vmafx-node builder" \
     && while IFS= read -r patch_name; do \

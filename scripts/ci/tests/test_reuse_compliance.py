@@ -128,10 +128,6 @@ class ReuseComplianceTests(unittest.TestCase):
                 {"LGPL-2.1-or-later"},
                 {"the FFmpeg developers", "Lawrence Curtis", "Lusoris"},
             ),
-            "ffmpeg-patches/0019-ffmpeg-eliminate-gcc-14-build-diagnostics.patch": (
-                {"LGPL-2.1-or-later AND GPL-2.0-or-later"},
-                {"the FFmpeg developers", "Lusoris"},
-            ),
             # A vendored Helm dependency keeps its upstream chart's licence (ADR-1699).
             "deploy/helm/vmafx/charts/prometheus-pushgateway-3.9.0.tgz": (
                 {"Apache-2.0"},

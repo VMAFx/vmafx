@@ -32,6 +32,16 @@ COMMIT = re.compile(r"[0-9a-f]{40}\Z")
 CACHE_LOCK_SECONDS = 600
 CACHE_FETCH_SECONDS = 180
 MIRRORS = ("Dockerfile", "Dockerfile.ffmpeg", "dev/Containerfile", "docker/Dockerfile.node")
+# The shared FFmpeg fix series every build applies before ffmpeg-patches/
+# (ADR-3143): three pins in build-config.env, one script that fetches,
+# verifies and applies it.
+SHARED_SERIES_KEYS = (
+    "FFMPEG_FIX_SERIES_REPO",
+    "FFMPEG_FIX_SERIES_TAG",
+    "FFMPEG_FIX_SERIES_SHA256",
+)
+SHARED_SERIES_SCRIPT = Path(__file__).with_name("ffmpeg-shared-series.sh")
+SHARED_SERIES_SECONDS = 600
 
 
 def stable_version(tag: str) -> tuple[int, int, int]:
@@ -66,6 +76,25 @@ def configuration(repo: Path) -> tuple[str, str, str]:
     if not COMMIT.fullmatch(commit):
         raise ValueError(f"FFMPEG_COMMIT is not a full lowercase commit id: {commit}")
     return remote, tag, commit
+
+
+def shared_series_tag(repo: Path) -> str | None:
+    """The pinned shared fix series, or None when build-config.env pins none.
+
+    A partial pin is an error: the series is applied with all three keys or
+    not at all.
+    """
+    text = (repo / "build-config.env").read_text()
+    present = [key for key in SHARED_SERIES_KEYS if re.search(rf"(?m)^{key}=", text)]
+    if not present:
+        return None
+    if len(present) != len(SHARED_SERIES_KEYS):
+        missing = sorted(set(SHARED_SERIES_KEYS) - set(present))
+        raise ValueError(f"build-config.env pins the shared FFmpeg series without {missing}")
+    match = re.search(r'(?m)^FFMPEG_FIX_SERIES_TAG="?([^"\s#]+)"?', text)
+    if match is None:
+        raise ValueError("FFMPEG_FIX_SERIES_TAG has no value")
+    return match.group(1)
 
 
 def series(repo: Path) -> list[str]:
@@ -160,6 +189,27 @@ class Replay:
     def fetch(self, url: str, ref: str) -> str:
         self.git("fetch", "--no-tags", "--depth=1", "--end-of-options", url, ref)
         return self.git("rev-parse", "FETCH_HEAD^{commit}").strip()
+
+    def apply_shared_series(self, repo: Path) -> None:
+        """Apply the pinned shared fix series to the checkout, as every build does."""
+        bash = shutil.which("bash")
+        if bash is None:
+            raise RuntimeError("bash is required to apply the shared FFmpeg fix series")
+        result = run_command(
+            [bash, str(SHARED_SERIES_SCRIPT), "apply", "--method", "am", str(self.checkout)],
+            allowed_executables=(bash,),
+            env={**self.environment, "BUILD_CONFIG": str(repo / "build-config.env")},
+            text=True,
+            capture_output=True,
+            timeout_seconds=SHARED_SERIES_SECONDS,
+            max_output_bytes=16 * 1_048_576,
+        )
+        with (self.output / "replay.log").open("a") as log:
+            log.write(f"$ {SHARED_SERIES_SCRIPT.name} apply\n{result.stdout}{result.stderr}")
+        if result.returncode:
+            raise RuntimeError(
+                f"shared FFmpeg fix series failed: {result.stderr.strip() or result.stdout.strip()}"
+            )
 
 
 def cache_root() -> Path:
@@ -383,6 +433,8 @@ def replace_files(updates: dict[Path, bytes]) -> None:
 
 
 class Receipt(TypedDict, total=False):
+    shared_series: str
+    shared_patch_count: int
     remote: str
     configured_tag: str
     patch_count: int
@@ -438,6 +490,34 @@ def pinned_config(text: str, tag: str, commit: str) -> str:
     return re.sub(r"(?m)^FFMPEG_COMMIT=.*$", f'FFMPEG_COMMIT="{commit}"', text)
 
 
+def apply_stack(
+    repo: Path, replay: Replay, base: str, names: list[str], receipt: Receipt
+) -> tuple[str | None, int]:
+    """Apply the shared fix series, then ours, at *base*; return its tag and patch count."""
+    replay.git("switch", "--quiet", "--detach", base)
+    shared = shared_series_tag(repo)
+    if shared is not None:
+        receipt["applying"] = f"shared fix series {shared}"
+        replay.apply_shared_series(repo)
+    shared_count = len(replay.git("rev-list", f"{base}..HEAD").splitlines())
+    receipt.update({"shared_series": shared or "none", "shared_patch_count": shared_count})
+    for name in names:
+        receipt["applying"] = name
+        replay.git("am", "--3way", str(repo / "ffmpeg-patches" / name))
+    return shared, shared_count
+
+
+def unpinned_release(shared: str, target_tag: str, current_tag: str, output: Path) -> str:
+    """Why a newer FFmpeg release cannot be taken while the series targets the old one."""
+    return (
+        f"FFmpeg {target_tag} is released, but the pinned shared fix series {shared} "
+        f"targets {current_tag}; the rebased candidates are in {output / 'patches'}. "
+        f"Pin a series release for {target_tag} (FFMPEG_FIX_SERIES_TAG and "
+        "FFMPEG_FIX_SERIES_SHA256) together with FFMPEG_TAG and FFMPEG_COMMIT, "
+        "then run --refresh"
+    )
+
+
 def maintain(
     repo: Path, output: Path, refresh: bool, latest: bool, cache_dir: Path | None = None
 ) -> Receipt:
@@ -456,10 +536,7 @@ def maintain(
             cache = SourceCache(replay, cache_dir or cache_root(), remote)
             receipt["cache"] = str(cache.repo)
             base, receipt["source"] = cache.fetch(current_tag, pinned)
-            replay.git("switch", "--quiet", "--detach", base)
-            for name in names:
-                receipt["applying"] = name
-                replay.git("am", "--3way", str(repo / "ffmpeg-patches" / name))
+            shared, shared_count = apply_stack(repo, replay, base, names, receipt)
             target = base
             if target_tag != current_tag:
                 target, receipt["target_source"] = cache.fetch(target_tag, None)
@@ -472,11 +549,14 @@ def maintain(
                 }
             )
             commits = replay.git("rev-list", "--reverse", f"{target}..HEAD").splitlines()
-            if len(commits) != len(names):
+            if len(commits) != shared_count + len(names):
                 raise ValueError(
                     "refresh changed the number of patches; review upstreamed/empty patches"
                 )
-            updates = format_patch_updates(repo, output, replay, names, commits)
+            # The shared series' commits come first and are not ours to render.
+            updates = format_patch_updates(repo, output, replay, names, commits[shared_count:])
+            if shared is not None and target_tag != current_tag:
+                raise ValueError(unpinned_release(shared, target_tag, current_tag, output))
             updates.update(mirrors(repo, remote, target_tag))
             config = repo / "build-config.env"
             updates[config] = pinned_config(config.read_text(), target_tag, target).encode()
@@ -538,7 +618,8 @@ def main() -> int:
         return 1
     print(
         f"FFmpeg {result['tag']} ({result['upstream_commit']}): {result['patch_count']} patches "
-        f"{result['status']}; source: {result['source']}"
+        f"{result['status']} on shared fix series {result['shared_series']} "
+        f"({result['shared_patch_count']} patches); source: {result['source']}"
         + (f", {result['target_source']}" if "target_source" in result else "")
         + f" [{result['cache']}]"
     )

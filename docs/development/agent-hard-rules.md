@@ -114,8 +114,11 @@ line budget. Changing a rule here changes it for every agent.
     numbered patch file in **the same PR** when integration behavior changes.
     The root `build-config.env` owns `FFMPEG_TAG` and `FFMPEG_REMOTE`.
     Run `python3 scripts/ci/ffmpeg_patch_stack.py --refresh` and then `--check`:
-    these replay every entry in `ffmpeg-patches/series.txt` cumulatively in
-    disposable storage. Per-patch `git apply --check` is not a series gate.
+    these apply the shared FFmpeg fix series pinned in `build-config.env`
+    (`FFMPEG_FIX_SERIES_*`, [ADR-3143](../adr/3143-ffmpeg-shared-fix-series.md))
+    and then replay every entry in `ffmpeg-patches/series.txt` cumulatively in
+    disposable storage. A fix to FFmpeg itself goes to VMAFx/ffmpeg-patches,
+    not into `ffmpeg-patches/`. Per-patch `git apply --check` is not a series gate.
     Local hooks refresh the configured release; daily CI discovers the latest
     stable released tag, excluding development and prerelease refs. See
     [FFmpeg patch automation](ffmpeg-patch-automation.md)

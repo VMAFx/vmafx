@@ -4,6 +4,15 @@
 Local patches against FFmpeg **n9.0.2** for integrating this VMAF fork into
 `libavfilter/vf_libvmaf*` plus a new `vf_vmaf_pre` filter.
 
+Every build applies the **shared FFmpeg fix series** first: fixes to FFmpeg
+itself, maintained for all consumers in
+[VMAFx/ffmpeg-patches](https://github.com/VMAFx/ffmpeg-patches) and pinned in
+`build-config.env` (`FFMPEG_FIX_SERIES_*`). `scripts/ci/ffmpeg-shared-series.sh`
+downloads the pinned release, verifies it and applies it; the patches in this
+directory then add the VMAFx integration on top. See
+[FFmpeg patch automation](../docs/development/ffmpeg-patch-automation.md) and
+[ADR-3143](../docs/adr/3143-ffmpeg-shared-fix-series.md).
+
 ## Contents
 
 - **`0001-libvmaf-add-tiny-model-option.patch`** — adds `tiny_model` /
@@ -87,14 +96,9 @@ Local patches against FFmpeg **n9.0.2** for integrating this VMAF fork into
   `VMAF_HAVE_PERCENTILE_POOLING` and documents the pool options. Keep its
   context relative to all 17 preceding patches; adding the same mapper
   entries twice breaks the cumulative replay.
-- **`0019-ffmpeg-eliminate-gcc-14-build-diagnostics.patch`** — fixes all 126
-  diagnostics exposed by the GCC 14 release/FATE builds and independent GCC
-  16 production/full-target builds without disabling codecs or suppressing
-  warnings. Large VVC, median, FFV1, checkasm, APV, CABAC, swresample, snow,
-  and MPEG-TS scratch state moves off the stack; bounded parser, path,
-  AAC-window, and table invariants become explicit; disabled HVQM decoders no
-  longer leave dead helpers; and DASH, SmoothStreaming, RTSP, and ismindex
-  propagate the failures exposed while hardening those paths.
+- Number 0019 is retired. The compiler-diagnostics hardening it carried is
+  patch 0002 of the shared FFmpeg fix series (same changes, byte for byte),
+  applied before this series.
 - **`0020-libvmaf-honor-retryable-close-ownership.patch`** — makes every
   FFmpeg `vmaf_close()` owner honor libvmaf's retryable teardown contract.
   Each owner makes at most one immediate retry, treats only an exact zero as
@@ -127,8 +131,9 @@ Local patches against FFmpeg **n9.0.2** for integrating this VMAF fork into
 Every libvmaf integration patch is guarded by `check_pkg_config` so it degrades
 gracefully when libvmaf was built without the relevant feature
 (`-Denable_dnn`, `-Denable_sycl`, `-Denable_vulkan`, `-Denable_cuda`,
-`-Denable_hip`). Patch 0019 hardens the pinned FFmpeg baseline itself. Patch
-0020 hardens the teardown ownership boundary shared by those filters.
+`-Denable_hip`). The shared fix series hardens the pinned FFmpeg baseline
+itself. Patch 0020 hardens the teardown ownership boundary shared by those
+filters.
 
 ## What works without a patch
 
@@ -157,13 +162,16 @@ back to CPU SIMD — AVX-512 / AVX2 / NEON per ADR-0161 / 0162 / 0163).
 Patches 0001–0018 cover fork-added surfaces that do not fit the generic
 `feature=` plumbing: the DNN session API (`tiny_model`), the learned
 pre-processing filter (`vmaf_pre`), backend selectors on the `libvmaf` filter,
-and dedicated filters for zero-copy hardware-frame import. Patch 0019 is the
-warning-clean compiler-hardening delta for the pinned FFmpeg release.
+and dedicated filters for zero-copy hardware-frame import. The warning-clean
+compiler hardening of the pinned FFmpeg release comes from the shared fix
+series.
 
 ## How to apply
 
 ```bash
 cd /path/to/ffmpeg    # must be at tag n9.0.2
+# The shared FFmpeg fix series first (verified against build-config.env):
+/path/to/vmaf/scripts/ci/ffmpeg-shared-series.sh apply --method am .
 while IFS= read -r patch; do
     case "$patch" in ""|\#*) continue ;; esac
     git am --3way "/path/to/vmaf/ffmpeg-patches/$patch" || exit 1
@@ -182,13 +190,11 @@ Or via the helper skill: `/ffmpeg-apply-patches /path/to/ffmpeg`.
 > `n9.0.2` checkout (cumulative `git am --3way`), NOT a per-patch
 > `git apply --check`. The latter rejects `0002+` because they
 > reference cumulative-state hunks that don't exist in pristine
-> `n9.0.2`. All 20 patches replay cumulatively on upstream commit
-> `946fcce07b6dcd0331c8cc609192aeff5e1924f8`; patches 0001–0018 remain
-> byte-identical to the n9.0.1 series, while 0019 carries the warning-clean
-> compiler hardening and 0020 carries the retryable teardown contract. The
-> resulting tree is `18f1772438491879abc28028d10bda7ae32cc796`.
-> The same 20-patch series also replays on n9.0.1, producing tree
-> `0918464997239e1ed03a47f334fdae2b1221c71e`. The refresh evidence and
+> `n9.0.2`. The 4 patches of the shared fix series `v0.1.0-rc.1` and the 21
+> patches here replay cumulatively on upstream commit
+> `946fcce07b6dcd0331c8cc609192aeff5e1924f8`; the resulting tree is
+> `1b49fde499b00689be5eb13da0cb159052ddb3e3`
+> (`python3 scripts/ci/ffmpeg_patch_stack.py --check`). The refresh evidence and
 > earlier replay history live in
 > [`docs/rebase-notes.md`](../docs/rebase-notes.md).
 
@@ -198,7 +204,7 @@ warning output. Hosted integration and the full-series smoke harness compile
 all test programs and run every generated, sample-independent FATE target
 under the same log gate, so diagnostics from test translation units fail the
 build. The ordinary hosted GCC/Clang compatibility matrix applies
-patch 0019 alone, without the libvmaf integration series, so it still tests
+the shared fix series alone, without the libvmaf integration series, so it still tests
 stock FFmpeg surfaces against the fork library on warning-clean pinned source.
 Patch replay is exact and fail-closed; no path falls back to fuzzy `patch -p1`.
 All release consumers resolve annotated tags to their peeled commit through

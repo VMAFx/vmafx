@@ -109,13 +109,10 @@ jobs:
           scripts/ci/checkout-annotated-tag.sh "$FFMPEG_REMOTE" "$FFMPEG_TAG" ffmpeg
           cd ffmpeg
           # This matrix intentionally avoids the fork integration series so it
-          # continues to prove compatibility with stock FFmpeg surfaces. Apply
-          # only the source-level warning hardening needed to make diagnostics
-          # fatal on the pinned release.
-          if ! git apply ../ffmpeg-patches/0019-ffmpeg-eliminate-gcc-14-build-diagnostics.patch; then
-            echo "FATAL: FFmpeg warning-hardening patch did not apply" >&2
-            exit 1
-          fi
+          # continues to prove compatibility with stock FFmpeg surfaces. It
+          # applies only the shared FFmpeg fix series (ADR-3143), whose
+          # diagnostics patch makes warnings fatal on the pinned release.
+          ../scripts/ci/ffmpeg-shared-series.sh apply --method am .
           # --disable-filter=coreimage AND coreimagesrc: both filters live in
           # libavfilter/vf_coreimage.m, so disabling only the first still built the
           # file and kept all 14 of its warnings. Measured: the run still logged
@@ -250,9 +247,10 @@ jobs:
         run: |
           scripts/ci/checkout-annotated-tag.sh "$FFMPEG_REMOTE" "$FFMPEG_TAG" ffmpeg
           cd ffmpeg
-          # Apply the patch series in series.txt order. Patch 0003 (SYCL)
-          # depends on fields added by 0001 (tiny-AI), so applying out of
-          # order breaks the build.
+          # The shared FFmpeg fix series first (ADR-3143), then the patch
+          # series in series.txt order. Patch 0003 (SYCL) depends on fields
+          # added by 0001 (tiny-AI), so applying out of order breaks the build.
+          ../scripts/ci/ffmpeg-shared-series.sh apply --method am .
           while IFS= read -r line; do
             case "$line" in ''|\#*) continue ;; esac
             echo "Applying ffmpeg-patches/$line"
