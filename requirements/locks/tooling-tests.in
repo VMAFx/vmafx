@@ -11,4 +11,4 @@ pre-commit==4.6.2
 pytest-timeout==2.4.0
 pyyaml==6.0.3
 reuse==6.2.0
-semgrep==1.179.0
+semgrep==1.180.0

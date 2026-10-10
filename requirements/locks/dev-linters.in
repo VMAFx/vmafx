@@ -1,4 +1,4 @@
 pre-commit==4.6.2
-ruff==0.16.10
+ruff==0.17.0
 black==26.10.0
 mypy==2.4.0
