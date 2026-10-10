@@ -85,6 +85,7 @@ VMAFX_0.1 {
         vmafx_frame_pool_destroy;
         vmafx_frame_ref;
         vmafx_frame_release_fence;
+        vmafx_frame_signal_on_release;
         vmafx_frame_to_picture;
         vmafx_frame_unref;
         vmafx_frame_wrap_host;

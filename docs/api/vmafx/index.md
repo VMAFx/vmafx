@@ -278,8 +278,10 @@ devices ([CUDA devices](#cuda-devices) below), a build with the SYCL backend
 imports USM, Linux dma-bufs and OpenGL textures on SYCL devices
 ([SYCL devices](#sycl-devices)), and a build with the HIP backend imports HIP
 device memory, dma-bufs, HIP arrays and OpenGL textures (through EGL dma-bufs)
-on HIP devices ([HIP devices](#hip-devices)). The Metal imports arrive behind
-the same calls and types.
+on HIP devices ([HIP devices](#hip-devices)). Each of these three backends
+also imports frames a Vulkan producer exported
+([Vulkan frames](#vulkan-frames)). The Metal imports arrive behind the same
+calls and types.
 
 ### Devices
 
@@ -400,19 +402,22 @@ yours right after. Fences the library returns are yours to release once with
 
 A build with the CUDA backend implements `VMAFX_FENCE_CUDA_EVENT` and
 `VMAFX_FENCE_GL_SYNC` for CUDA devices ([CUDA devices](#cuda-devices)); a
-build with the SYCL backend implements `VMAFX_FENCE_SYCL_EVENT` for SYCL
-devices ([SYCL devices](#sycl-devices)), and a build with the HIP backend
-`VMAFX_FENCE_HIP_EVENT`, `VMAFX_FENCE_GL_SYNC` and, as an acquire fence,
-`VMAFX_FENCE_SYNC_FILE` for HIP devices ([HIP devices](#hip-devices)); SYCL
-devices take `VMAFX_FENCE_SYNC_FILE` and `VMAFX_FENCE_GL_SYNC` acquire fences
-on Linux too. In every build `vmafx_fence_wait()` waits on a
-`VMAFX_FENCE_GL_SYNC` (`glClientWaitSync()`, which needs a GL context of the
-sync's share group current on the calling thread) and, on Linux, on a
-`VMAFX_FENCE_SYNC_FILE` descriptor (`poll()`); `vmafx_fence_destroy()` closes
-a `SYNC_FILE` descriptor and refuses a GL sync with `VMAFX_E_NOTSUP` (delete it
-with `glDeleteSync()`). The Metal shared events and Windows shared fences are
-declared kinds; until their backends land they are answered with
-`VMAFX_E_NOTSUP` naming the kind.
+build with the SYCL backend implements `VMAFX_FENCE_SYCL_EVENT`, and on Linux
+`VMAFX_FENCE_SYNC_FILE` and `VMAFX_FENCE_GL_SYNC` acquire fences, for SYCL
+devices ([SYCL devices](#sycl-devices)); a build with the HIP backend
+implements `VMAFX_FENCE_HIP_EVENT`, `VMAFX_FENCE_GL_SYNC` and, as an acquire
+fence, `VMAFX_FENCE_SYNC_FILE` for HIP devices ([HIP devices](#hip-devices)).
+In every build `vmafx_fence_wait()` waits on a `VMAFX_FENCE_GL_SYNC`
+(`glClientWaitSync()`, which needs a GL context of the sync's share group
+current on the calling thread) and, on Linux, on a `VMAFX_FENCE_SYNC_FILE`
+descriptor (`poll()`); `vmafx_fence_destroy()` closes a `SYNC_FILE`
+descriptor and refuses a GL sync with `VMAFX_E_NOTSUP` (delete it with
+`glDeleteSync()`). A `VMAFX_FENCE_VULKAN_SEMAPHORE` is waited on and
+signalled by CUDA devices only ([Vulkan frames](#vulkan-frames)); the library
+never returns one, and `vmafx_fence_wait()` and `vmafx_fence_destroy()`
+refuse it (wait with `vkWaitSemaphores()`). The Metal shared events and Windows
+shared fences are declared kinds; until their backends land they are answered
+with `VMAFX_E_NOTSUP` naming the kind.
 
 ### Admission and the import rule
 
@@ -761,6 +766,138 @@ scored with `vmaf_v1.0.16_3d0h` on an Arc A380, DPC++ 2026.1.1) the host sent
 262148 bytes), the device sent 194 copies of 94920 bytes back (feature
 results, the largest 1584 bytes), and all 793 kernel pointer arguments were
 device memory: no pixel crossed to or from the host.
+
+### Vulkan frames
+
+In a build with the CUDA, SYCL or HIP backend
+([ADR-2152](../../adr/2152-vmafx-vulkan-frame-import.md)), a frame a Vulkan
+producer wrote (FFmpeg's Vulkan decode or filters, libplacebo, a GStreamer
+Vulkan element) is imported as `VMAFX_MEMORY_VULKAN` without a host copy.
+The library never creates a Vulkan object and links no Vulkan loader: your
+producer exports its memory and semaphores, and the device imports them.
+
+What the producer does:
+
+1. Allocate the frame's memory exportable (`VkExportMemoryAllocateInfo`;
+   `OPAQUE_FD`, or `DMA_BUF` for a DRM-modifier image) with one image or
+   buffer per plane. A frame whose planes are planes of one multi-plane image
+   is refused naming `desc.plane[1].plane_index`; in FFmpeg, create the frames
+   context with `AV_VK_FRAME_FLAG_DISABLE_MULTIPLANE`.
+2. Use the GPU of the scoring device: its `VmafxDeviceInfo.pci` is the PCI
+   domain, bus, device and function `VK_EXT_pci_bus_info` reports for the
+   same GPU. Memory of another GPU is refused naming `desc.vulkan_pci`; the
+   library never reads across devices.
+3. After the last write, move each image to `VK_IMAGE_LAYOUT_GENERAL` and
+   release it to `VK_QUEUE_FAMILY_EXTERNAL` (one barrier per image),
+   signalled by the fence you hand over as the acquire fence.
+4. Export each plane's memory with `vkGetMemoryFdKHR()`. The library
+   duplicates the descriptors it keeps: close yours after the import.
+
+The descriptor:
+
+| Field | Value |
+| --- | --- |
+| `memory` | `VMAFX_MEMORY_VULKAN` |
+| `vulkan_handle_type` | `VMAFX_VULKAN_HANDLE_OPAQUE_FD` or `VMAFX_VULKAN_HANDLE_DMA_BUF` (the `VkExternalMemoryHandleTypeFlagBits` value). The Windows handle types are declared and refused until a Windows device runs the tests |
+| `vulkan_tiling` | The images' `VkImageTiling`: `OPTIMAL`, `LINEAR` (also for buffers) or `DRM_FORMAT_MODIFIER` |
+| `vulkan_flags` | `VMAFX_VULKAN_DEDICATED` when each memory object is a dedicated allocation of its image |
+| `vulkan_pci` | The producer's `VkPhysicalDevicePCIBusInfoPropertiesEXT` (domain, bus, device, function) |
+| `plane[i].fd` | The plane's exported memory |
+| `plane[i].size` | The allocation's size (required) |
+| `plane[i].offset` | The plane's first byte in the memory: the image's bind offset, plus the subresource offset for LINEAR images |
+| `plane[i].pitch` | LINEAR and DRM-modifier images: the row pitch from `vkGetImageSubresourceLayout()`; OPTIMAL: 0 |
+| `plane[i].modifier` | DRM-modifier images: the modifier; otherwise 0 |
+| `acquire`, `acquire_more[0..1]` | The fences of the planes' writes (below); `NONE` entries are ignored |
+
+What each backend reads:
+
+| Backend | Memory | Tiling | Acquire fence | Release to the producer |
+| --- | --- | --- | --- | --- |
+| CUDA | `OPAQUE_FD` | `OPTIMAL` (read as CUDA arrays: NV12 / P010 / P016 are planarised on the device, a planar frame needs `VMAFX_IMPORT_ALLOW_COPY`), `LINEAR` (device pointers) | `VMAFX_FENCE_VULKAN_SEMAPHORE` in `acquire` and `acquire_more`, waited on the library stream; or any CUDA acquire kind | `vmafx_frame_signal_on_release()` signals your timeline on the device behind the last reader; or any CUDA release fence |
+| SYCL | `OPAQUE_FD` or `DMA_BUF` memory that is a dma-buf (it is on the Mesa driver) | `LINEAR`; `DRM_FORMAT_MODIFIER` with the modifiers the SYCL device reads (linear, Tile4, Y-tiled) | `VMAFX_FENCE_SYNC_FILE` of the write (export a binary semaphore signalled with it as `SYNC_FD`) or `HOST` | `VMAFX_FENCE_HOST` release fence or the release callback; then signal your timeline from the host (`vkSignalSemaphore()`) |
+| HIP | As SYCL (the RADV descriptors are dma-bufs) | `LINEAR`; `DRM_FORMAT_MODIFIER` linear | As SYCL | As SYCL |
+
+Refused, each naming its field: `OPTIMAL` tiling on SYCL and HIP
+(`desc.vulkan_tiling`), `DMA_BUF` memory and `DRM_FORMAT_MODIFIER` tiling on
+CUDA (the CUDA driver imports dma-bufs on Tegra only), a modifier the device
+does not read (`desc.plane[i].modifier`), a Vulkan semaphore acquire or
+further acquire fences on SYCL and HIP (`desc.acquire.kind`,
+`desc.acquire_more[i]`: ROCm 10.1 imports no Vulkan semaphore, and the SYCL
+lane does not wait on one yet), a `VULKAN_SEMAPHORE` given to
+`vmafx_frame_signal_on_release()` on SYCL and HIP (`signal.kind`). On SYCL
+and HIP an unsignalled sync_file makes the import `VMAFX_E_BUSY`;
+`vmafx_context_import_frame()` waits for it and retries once.
+
+An `AVVkFrame` on a CUDA device, from a frames context created with
+`AV_VK_FRAME_FLAG_DISABLE_MULTIPLANE` (one OPTIMAL image per plane, each with
+its timeline semaphore `sem[i]` at `sem_value[i]`):
+
+```c
+AVVkFrame *f = (AVVkFrame *)frame->data[0];
+vkfc->lock_frame(hwfc, f);
+/* ... record the barrier of step 3 behind sem[i] at sem_value[i], signal
+ * sem_value[i] + 1, store the new layout, queue family and value in f ... */
+
+VmafxFrameImport imp = VMAFX_FRAME_IMPORT_INIT;
+imp.memory = VMAFX_MEMORY_VULKAN;
+imp.pix_fmt = VMAFX_PIXEL_FORMAT_NV12;
+imp.bpc = 8;
+imp.w = frame->width;
+imp.h = frame->height;
+imp.n_planes = 2;
+imp.vulkan_handle_type = VMAFX_VULKAN_HANDLE_OPAQUE_FD;
+imp.vulkan_tiling = VMAFX_VULKAN_TILING_OPTIMAL;
+memcpy(imp.vulkan_pci, device_info.pci, sizeof(imp.vulkan_pci));
+VmafxFence *acquire[2] = {&imp.acquire, &imp.acquire_more[0]};
+for (int i = 0; i < 2; i++) {
+    VkMemoryGetFdInfoKHR mem = {.sType = VK_STRUCTURE_TYPE_MEMORY_GET_FD_INFO_KHR,
+                                .memory = f->mem[i],
+                                .handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT};
+    vkGetMemoryFdKHR(vk_device, &mem, &imp.plane[i].fd);
+    imp.plane[i].size = f->size[i];
+    imp.plane[i].offset = f->offset[i];
+    VkSemaphoreGetFdInfoKHR sem = {.sType = VK_STRUCTURE_TYPE_SEMAPHORE_GET_FD_INFO_KHR,
+                                   .semaphore = f->sem[i],
+                                   .handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT};
+    acquire[i]->kind = VMAFX_FENCE_VULKAN_SEMAPHORE;
+    vkGetSemaphoreFdKHR(vk_device, &sem, &acquire[i]->fd);
+    acquire[i]->value = f->sem_value[i];
+}
+
+VmafxFrame *vf = NULL;
+status = vmafx_context_import_frame(context, cuda_device, &imp, "main", &vf, &error);
+for (int i = 0; status == VMAFX_OK && i < 2; i++) {
+    VmafxFence release = *acquire[i];
+    release.value = ++f->sem_value[i];   /* FFmpeg's next use of the frame waits for it */
+    status = vmafx_frame_signal_on_release(vf, &release, &error);
+}
+vkfc->unlock_frame(hwfc, f);
+/* close the plane and semaphore descriptors; submit vf */
+```
+
+Call `vmafx_frame_signal_on_release()` before the frame is submitted; up to
+3 fences per frame. The device signals them behind the frame's last reader
+in every context it was submitted to, before the release callback runs. Keep
+your reference to the producer's frame (the `AVFrame`) until the release
+callback ran or a `HOST` release fence is signalled: a write submitted
+earlier that waits on the release value stalls the producer's queue, and
+later submissions on it wait too.
+
+FFmpeg's Vulkan decoder outputs NV12 as one image with two planes (refused
+naming `plane_index`), and on the Mesa drivers its memory cannot be
+exported. Copy the decoded frame on the GPU (`vkCmdCopyImage()` per plane
+aspect) into a frame of a frames context with
+`AV_VK_FRAME_FLAG_DISABLE_MULTIPLANE` (OPTIMAL for CUDA, LINEAR for SYCL and
+HIP), then import that. GStreamer 1.28's Vulkan image allocator allocates
+memory that cannot be exported; allocate exportable images yourself, wrap
+them (`gst_vulkan_image_memory_wrapped()`), and take the timeline from
+`GstVulkanImageMemory.barrier.parent.semaphore` / `semaphore_value`.
+
+To check that an import makes no host copy, trace an import with the
+vendor's tool as for the backend's own memory kinds (Nsight Systems on CUDA,
+`sycl-trace --ur.call` on SYCL, `rocprofv3 --memory-copy-trace` on HIP). On
+every backend the library's stream or queue makes no host-to-device or
+device-to-host copy of an imported Vulkan frame.
 
 ## Scores
 

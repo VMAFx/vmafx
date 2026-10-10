@@ -309,6 +309,9 @@ static VmafxDeviceInfo cpu_info(uint32_t flags)
     info.fence_kinds = (1u << VMAFX_FENCE_NONE) | (1u << VMAFX_FENCE_HOST);
     info.total_memory = 0u;
     info.name = "cpu";
+    for (uint32_t i = 0; i < 4u; i++) {
+        info.pci[i] = UINT32_MAX; /* the CPU has no PCI location */
+    }
     return info;
 }
 

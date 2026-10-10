@@ -4,7 +4,7 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "cc_version": "gcc-15 (Ubuntu 15.2.0-16ubuntu1) 15.2.0",
-  "tus": 501,
+  "tus": 508,
   "measured_sources": [
     "core/src/compat/path_utf8.c",
     "core/src/cpu.cpp",
@@ -17,6 +17,7 @@
     "core/src/cuda/import_frame.c",
     "core/src/cuda/import_gl.c",
     "core/src/cuda/import_pool.c",
+    "core/src/cuda/import_vulkan.c",
     "core/src/cuda/picture_cuda.c",
     "core/src/dict.cpp",
     "core/src/dnn/dnn_api.c",
@@ -199,6 +200,7 @@
     "core/src/vmafx/fence.c",
     "core/src/vmafx/frame_import.c",
     "core/src/vmafx/frame_import_admit.c",
+    "core/src/vmafx/frame_import_vulkan.c",
     "core/src/vmafx/frame_pool.c",
     "core/src/vmafx/release_events.c",
     "core/src/vmafx/submit.c",
@@ -490,9 +492,14 @@
     "core/test/test_vmafx_import_cuda_fence.c",
     "core/test/test_vmafx_import_cuda_formats.c",
     "core/test/test_vmafx_import_cuda_gl.c",
+    "core/test/test_vmafx_import_vulkan.c",
+    "core/test/test_vmafx_import_vulkan_bitexact.c",
+    "core/test/test_vmafx_import_vulkan_fence.c",
+    "core/test/test_vmafx_import_vulkan_ffmpeg.c",
     "core/test/test_y4m_411_oob.c",
     "core/test/test_y4m_alloc_failure.c",
     "core/test/test_y_funque_plus.c",
+    "core/test/vmafx_vulkan_producer.c",
     "core/tools/cli_feature_backend.cpp",
     "core/tools/cli_parse.cpp",
     "core/tools/test/test_cli_feature_backend.c",
@@ -675,6 +682,41 @@
         }
       },
       "previous_baseline_sha256": "cb15d17724c15ce8fbe90257155dd1d72e78085dac2164aa03182fd43fd3cd55"
+    },
+    {
+      "sources": [
+        "core/src/cuda/import_device.c",
+        "core/src/cuda/import_fence.c",
+        "core/src/cuda/import_frame.c",
+        "core/src/cuda/import_vulkan.c",
+        "core/src/vmafx/device.c",
+        "core/src/vmafx/fence.c",
+        "core/src/vmafx/frame_import.c",
+        "core/src/vmafx/frame_import_vulkan.c",
+        "core/src/vmafx/sync_object.c",
+        "core/test/test_vmafx_import_cuda.c",
+        "core/test/test_vmafx_import_cuda_bitexact.c",
+        "core/test/test_vmafx_import_vulkan.c",
+        "core/test/test_vmafx_import_vulkan_bitexact.c",
+        "core/test/test_vmafx_import_vulkan_fence.c",
+        "core/test/test_vmafx_import_vulkan_ffmpeg.c",
+        "core/test/vmafx_vulkan_producer.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/src/cuda/import_vulkan.c",
+            "core/src/vmafx/frame_import_vulkan.c",
+            "core/test/test_vmafx_import_vulkan.c",
+            "core/test/test_vmafx_import_vulkan_bitexact.c",
+            "core/test/test_vmafx_import_vulkan_fence.c",
+            "core/test/test_vmafx_import_vulkan_ffmpeg.c",
+            "core/test/vmafx_vulkan_producer.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "89792010f5e997b768a3726eb4a64865644bf7d3ddd1637b3eeb77a1826b12ff"
     }
   ]
 }

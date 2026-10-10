@@ -15,7 +15,9 @@
 #include <assert.h>
 #include <errno.h>
 #include <pthread.h>
+#include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 
 #ifdef _WIN32
@@ -91,6 +93,22 @@ int vmafx_dmabuf_import_read_fence(int fd, int sync_file)
     return ioctl(fd, DMA_BUF_IOCTL_IMPORT_SYNC_FILE, &arg) == 0 ? 0 : -errno;
 }
 
+bool vmafx_fd_is_dmabuf(int fd)
+{
+    char path[48];
+    char link[64];
+    if (fd < 0 || snprintf(path, sizeof(path), "/proc/self/fd/%d", fd) <= 0) {
+        return false;
+    }
+    const ssize_t n = readlink(path, link, sizeof(link) - 1u);
+    if (n <= 0) {
+        return false;
+    }
+    link[n] = '\0';
+    /* "/dmabuf:<name>" since Linux 5.x; "anon_inode:dmabuf" before. */
+    return strncmp(link, "/dmabuf:", 8) == 0 || strcmp(link, "anon_inode:dmabuf") == 0;
+}
+
 void vmafx_dmabuf_wait_writers(const VmafxFrameImport *d, uint64_t timeout_ns)
 {
     const uint32_t n = d->n_planes < 3u ? d->n_planes : 3u;
@@ -105,6 +123,12 @@ void vmafx_dmabuf_wait_writers(const VmafxFrameImport *d, uint64_t timeout_ns)
 }
 
 #else /* !__linux__ */
+
+bool vmafx_fd_is_dmabuf(int fd)
+{
+    (void)fd;
+    return false;
+}
 
 void vmafx_dmabuf_wait_writers(const VmafxFrameImport *d, uint64_t timeout_ns)
 {

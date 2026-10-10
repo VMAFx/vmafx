@@ -14,6 +14,7 @@
  *
  *   VMAF_STRDUP(s)        strdup(); _strdup() on Windows
  *   VMAF_CLOSE(fd)        close(); _close() on Windows
+ *   VMAF_DUP(fd)          dup(); _dup() on Windows
  *   VMAF_FDOPEN(fd, m)    fdopen(); _fdopen() on Windows
  *   VMAF_SSCANF(...)      sscanf(); sscanf_s() under MSVC. Only for formats
  *                         without %s, %c or %[ (sscanf_s takes a size for those).
@@ -36,11 +37,13 @@
 #include <io.h>
 #define VMAF_STRDUP _strdup
 #define VMAF_CLOSE _close
+#define VMAF_DUP _dup
 #define VMAF_FDOPEN _fdopen
 #else
 #include <unistd.h>
 #define VMAF_STRDUP strdup
 #define VMAF_CLOSE close
+#define VMAF_DUP dup
 #define VMAF_FDOPEN fdopen
 #endif
 

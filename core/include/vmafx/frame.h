@@ -60,6 +60,19 @@ typedef enum VmafxMemoryKind {
      * of each texture, Linux). Added in ABI 0.1.7.
      */
     VMAFX_MEMORY_GL_TEXTURE = 8,
+    /**
+     * Vulkan device memory a Vulkan producer exported, one VkDeviceMemory per plane or shared by
+     * several (an AVVkFrame, a GStreamer Vulkan image memory): `fd` is the plane's memory exported
+     * as VmafxFrameImport.vulkan_handle_type says (Linux; the library duplicates it, yours stays
+     * open and yours), `handle` the exported Windows handle; `size` the allocation's size
+     * (required), `offset` the plane's first byte in it (the image's bind offset plus its plane's
+     * offset), `pitch` its row pitch (LINEAR and DRM_FORMAT_MODIFIER tiling, from
+     * vkGetImageSubresourceLayout(); 0 for OPTIMAL), `modifier` its DRM format modifier
+     * (DRM_FORMAT_MODIFIER tiling), `plane_index` the plane of a multi-plane image (0 for an image
+     * or buffer per plane). The images are in VK_IMAGE_LAYOUT_GENERAL and released to
+     * VK_QUEUE_FAMILY_EXTERNAL. Added in ABI 0.1.10.
+     */
+    VMAFX_MEMORY_VULKAN = 9,
 } VmafxMemoryKind;
 
 /**
@@ -95,7 +108,54 @@ typedef enum VmafxFenceKind {
      * Added in ABI 0.1.7.
      */
     VMAFX_FENCE_GL_SYNC = 8,
+    /**
+     * A Vulkan timeline semaphore exported as VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT
+     * (`fd`, borrowed: the library duplicates it) or OPAQUE_WIN32 (`handle`), and a value of it
+     * (`value`). As an acquire fence the device waits, on the device, for the semaphore to reach
+     * `value`; given to vmafx_frame_signal_on_release() the device signals it to `value` behind the
+     * frame's last reader. A device that cannot import it refuses it naming the kind; the library
+     * never returns one. Added in ABI 0.1.10.
+     */
+    VMAFX_FENCE_VULKAN_SEMAPHORE = 9,
 } VmafxFenceKind;
+
+/**
+ * How the memory of a VMAFX_MEMORY_VULKAN import was exported (values equal
+ * VkExternalMemoryHandleTypeFlagBits). Added in ABI 0.1.10.
+ * @since 0.1
+ */
+typedef enum VmafxVulkanHandleType {
+    /** Not set; refused for VULKAN memory. */
+    VMAFX_VULKAN_HANDLE_NONE = 0,
+    /**
+     * VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT: a descriptor only the producer's driver
+     * interprets (`fd`).
+     */
+    VMAFX_VULKAN_HANDLE_OPAQUE_FD = 1,
+    /** VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_BIT: an NT handle (`handle`). */
+    VMAFX_VULKAN_HANDLE_OPAQUE_WIN32 = 2,
+    /** VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_KMT_BIT: a global share handle (`handle`). */
+    VMAFX_VULKAN_HANDLE_OPAQUE_WIN32_KMT = 4,
+    /** VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT: a Linux dma-buf (`fd`). */
+    VMAFX_VULKAN_HANDLE_DMA_BUF = 512,
+} VmafxVulkanHandleType;
+
+/**
+ * Tiling of the images of a VMAFX_MEMORY_VULKAN import (values equal VkImageTiling). Added in ABI
+ * 0.1.10.
+ * @since 0.1
+ */
+typedef enum VmafxVulkanTiling {
+    /**
+     * VK_IMAGE_TILING_OPTIMAL: a layout only the producer's driver knows; readable by a device that
+     * imports images of that driver (CUDA).
+     */
+    VMAFX_VULKAN_TILING_OPTIMAL = 0,
+    /** VK_IMAGE_TILING_LINEAR, or a VkBuffer: rows at `pitch`. */
+    VMAFX_VULKAN_TILING_LINEAR = 1,
+    /** VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT: the layout `modifier` names. */
+    VMAFX_VULKAN_TILING_DRM_FORMAT_MODIFIER = 1000158000,
+} VmafxVulkanTiling;
 
 /**
  * Code-value range of a frame (values equal enum VmafColorRange). Added in ABI 0.1.6.
@@ -179,6 +239,14 @@ typedef enum VmafxResampleFilter {
  * Never a host copy of device memory.
  */
 #define VMAFX_IMPORT_ALLOW_COPY (UINT32_C(1) << 0U)
+
+/*
+ * VmafxVulkanFlags: Properties of the memory of a VMAFX_MEMORY_VULKAN import. Added in ABI 0.1.10.
+ * Bits of a u32 field.
+ * @since 0.1
+ */
+/** Each memory object is a dedicated allocation of its image (VkMemoryDedicatedAllocateInfo). */
+#define VMAFX_VULKAN_DEDICATED (UINT32_C(1) << 0U)
 
 /**
  * Pixels of one picture on a device. Refcounted; one frame may be submitted to several contexts.
@@ -325,13 +393,41 @@ struct VmafxFrameImport {
     VmafxFrameReleaseCallback release;
     /** Passed to `release`. Added in ABI 0.1.7. */
     void *user;
+    /**
+     * Further acquire fences, waited on as `acquire` is, for a producer whose planes are written
+     * under several fences (the timeline semaphore of each image of a Vulkan frame with one image
+     * per plane). NONE entries are ignored; a device that waits on the device for none of their
+     * kinds refuses them naming the entry. Added in ABI 0.1.10.
+     */
+    VmafxFence acquire_more[2];
+    /**
+     * VULKAN memory: how each plane's memory was exported. Ignored for other kinds. Added in ABI
+     * 0.1.10. Values: VmafxVulkanHandleType.
+     */
+    uint32_t vulkan_handle_type;
+    /**
+     * VULKAN memory: the tiling of the images (LINEAR for buffers). Added in ABI 0.1.10. Values:
+     * VmafxVulkanTiling.
+     */
+    uint32_t vulkan_tiling;
+    /**
+     * VULKAN memory: properties of the memory objects. Added in ABI 0.1.10. Bits: VmafxVulkanFlags.
+     */
+    uint32_t vulkan_flags;
+    /**
+     * VULKAN memory: PCI domain, bus, device and function of the producer's VkPhysicalDevice
+     * (VK_EXT_pci_bus_info). Memory of another GPU than the device's is refused naming
+     * `desc.vulkan_pci`, never read across devices. Added in ABI 0.1.10.
+     */
+    uint32_t vulkan_pci[4];
 };
 
 /** Initialiser that sets `struct_size`; every other field is zero. */
 /* clang-format off */
 #define VMAFX_FRAME_IMPORT_INIT                                                                    \
     {.struct_size = sizeof(VmafxFrameImport),                                                      \
-     .acquire = VMAFX_FENCE_INIT}
+     .acquire = VMAFX_FENCE_INIT,                                                                  \
+     .acquire_more = {VMAFX_FENCE_INIT, VMAFX_FENCE_INIT}}
 /* clang-format on */
 
 /**
@@ -528,6 +624,20 @@ VMAFX_EXPORT VmafxStatus vmafx_frame_import(VmafxDevice *device, const VmafxFram
  */
 VMAFX_EXPORT VmafxStatus vmafx_frame_release_fence(VmafxFrame *frame, uint32_t kind,
                                                    VmafxFence *out, VmafxError **error);
+
+/**
+ * Signal a fence of the producer's once the last reference of the frame is gone, in every context
+ * it was submitted to: the device signals `signal` behind the frame's last reader, before the
+ * frame's release callback runs, so the producer reuses its memory after a wait on its own fence.
+ * VULKAN_SEMAPHORE: the semaphore is signalled to `value` on the device (a CUDA device; the
+ * producer submits its next write waiting for that value). Call it while holding a reference,
+ * before the frame is submitted; up to 3 fences per frame. The fence is borrowed (the library
+ * duplicates its descriptor). A kind the frame's device cannot signal is VMAFX_E_NOTSUP naming it.
+ * Added in ABI 0.1.10.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_frame_signal_on_release(VmafxFrame *frame, const VmafxFence *signal,
+                                                       VmafxError **error);
 
 /**
  * A new, unsignalled fence of `kind` on `device` (NULL: the CPU) for a producer to signal, for

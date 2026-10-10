@@ -292,9 +292,9 @@ static const ImportLayout import_layouts[] = {
 
 #define N_IMPORT_LAYOUTS (sizeof(import_layouts) / sizeof(import_layouts[0]))
 
-static const char *const memory_names[] = {"NONE",          "HOST",         "DEVICE_POINTER",
-                                           "DEVICE_ARRAY",  "DMABUF",       "METAL_SURFACE",
-                                           "METAL_TEXTURE", "WIN32_SHARED", "GL_TEXTURE"};
+static const char *const memory_names[] = {
+    "NONE",          "HOST",          "DEVICE_POINTER", "DEVICE_ARRAY", "DMABUF",
+    "METAL_SURFACE", "METAL_TEXTURE", "WIN32_SHARED",   "GL_TEXTURE",   "VULKAN"};
 
 const char *vmafx_memory_kind_name(uint32_t memory)
 {
@@ -400,7 +400,7 @@ static VmafxStatus check_geometry(const VmafxReport *report, const VmafxFrameImp
 /* A value of VmafxMemoryKind other than NONE. */
 static VmafxStatus check_memory_kind(const VmafxReport *report, const VmafxFrameImport *d)
 {
-    if (d->memory == VMAFX_MEMORY_NONE || d->memory > VMAFX_MEMORY_GL_TEXTURE) {
+    if (d->memory == VMAFX_MEMORY_NONE || d->memory > VMAFX_MEMORY_KIND_LAST) {
         return VMAFX_FAIL(report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_PARAMETER, "desc.memory",
                           "memory kind %u is not a VmafxMemoryKind", (unsigned)d->memory);
     }
@@ -700,11 +700,28 @@ static VmafxStatus import_on_cpu(const VmafxReport *report, VmafxDevice *device,
     return status == VMAFX_OK ? bind_frame(report, device, d, layout, out) : status;
 }
 
+/* The checks of an import every device shares: the further acquire fences,
+ * and a VULKAN descriptor's fields (RC4 WP3 Vulkan lane). */
+static VmafxStatus check_shared(const VmafxReport *report, const VmafxDevice *device,
+                                const VmafxFrameImport *d, const ImportLayout *layout)
+{
+    const VmafxStatus status = vmafx_import_check_acquire_more(report, d, device->backend);
+    if (status != VMAFX_OK || d->memory != VMAFX_MEMORY_VULKAN) {
+        return status;
+    }
+    return device->backend == VMAFX_BACKEND_CPU ? VMAFX_OK :
+                                                  vmafx_import_check_vulkan(report, d, layout);
+}
+
 /* The import on the lane of the device's backend. */
 static VmafxStatus import_on_device(const VmafxReport *report, VmafxDevice *device,
                                     const VmafxFrameImport *d, const ImportLayout *layout,
                                     VmafxFrame **out)
 {
+    const VmafxStatus shared = check_shared(report, device, d, layout);
+    if (shared != VMAFX_OK) {
+        return shared;
+    }
     switch (device->backend) {
     case VMAFX_BACKEND_CPU:
         return import_on_cpu(report, device, d, layout, out);
@@ -828,6 +845,56 @@ VmafxStatus vmafx_frame_release_fence(VmafxFrame *frame, uint32_t kind, VmafxFen
         vmafx_host_fence_unref(fence);
     }
     return status;
+}
+
+/* ---- Producer fences signalled at release (RC4 WP3 Vulkan lane) ---------------------- */
+
+/* The fence a producer asks to be signalled: a kind the API declares, one the
+ * library signals for producers (VULKAN_SEMAPHORE). */
+static VmafxStatus check_signal(const VmafxReport *report, const VmafxFence *f)
+{
+    if (f->kind == VMAFX_FENCE_NONE || f->kind > VMAFX_FENCE_KIND_LAST) {
+        return VMAFX_FAIL(report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_FENCE, "signal.kind",
+                          f->kind == VMAFX_FENCE_NONE ? "a NONE fence has nothing to signal" :
+                                                        "kind %u is not a VmafxFenceKind",
+                          (unsigned)f->kind);
+    }
+    if (f->kind != VMAFX_FENCE_VULKAN_SEMAPHORE) {
+        return VMAFX_FAIL(report, VMAFX_E_NOTSUP, 0, VMAFX_SUBJECT_FENCE, "signal.kind",
+                          "a producer fence of kind %u; the library signals VULKAN_SEMAPHORE "
+                          "fences of producers (its own fences come from "
+                          "vmafx_frame_release_fence())",
+                          (unsigned)f->kind);
+    }
+    return VMAFX_OK;
+}
+
+VmafxStatus vmafx_frame_signal_on_release(VmafxFrame *frame, const VmafxFence *signal,
+                                          VmafxError **error)
+{
+    const VmafxReport report = VMAFX_REPORT(NULL, error);
+    if (!frame || !signal) {
+        return VMAFX_FAIL(&report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_PARAMETER,
+                          !frame ? "frame" : "signal", "NULL argument");
+    }
+    VmafxFence f = VMAFX_FENCE_INIT;
+    VmafxStatus status =
+        vmafx_read_sized(&report, &f, (uint32_t)sizeof(f), signal, VMAFX_MIN_FENCE, "signal");
+    if (status == VMAFX_OK) {
+        status = check_signal(&report, &f);
+    }
+    if (status != VMAFX_OK) {
+        return status;
+    }
+#ifdef HAVE_CUDA
+    if (frame->lane && frame->device->backend == VMAFX_BACKEND_CUDA) {
+        return vmafx_cuda_signal_on_release(&report, frame, &f);
+    }
+#endif
+    return VMAFX_FAIL(&report, VMAFX_E_NOTSUP, 0, VMAFX_SUBJECT_FENCE, "signal.kind",
+                      "backend %s: this device cannot signal a Vulkan semaphore (a CUDA device "
+                      "can); signal it from the frame's release callback with vkSignalSemaphore()",
+                      vmafx_backend_name(frame->device->backend));
 }
 
 /* NOLINTEND(modernize-use-nullptr) */

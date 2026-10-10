@@ -34,6 +34,7 @@ core/src/cuda/import_fence.c
 core/src/cuda/import_frame.c
 core/src/cuda/import_gl.c
 core/src/cuda/import_pool.c
+core/src/cuda/import_vulkan.c
 core/src/cuda/picture_cuda.c
 core/src/dict.cpp
 core/src/dnn/dnn_api.c
@@ -365,6 +366,7 @@ core/src/vmafx/frame_host.c
 core/src/vmafx/frame_import.c
 core/src/vmafx/frame_import_admit.c
 core/src/vmafx/frame_import_hooks.c
+core/src/vmafx/frame_import_vulkan.c
 core/src/vmafx/frame_pool.c
 core/src/vmafx/mcp_server.c
 core/src/vmafx/model.c
@@ -854,6 +856,11 @@ core/test/test_vmafx_import_sycl_bitexact.c
 core/test/test_vmafx_import_sycl_fence.c
 core/test/test_vmafx_import_sycl_formats.c
 core/test/test_vmafx_import_sycl_gl.c
+core/test/test_vmafx_import_vulkan.c
+core/test/test_vmafx_import_vulkan_api.c
+core/test/test_vmafx_import_vulkan_bitexact.c
+core/test/test_vmafx_import_vulkan_fence.c
+core/test/test_vmafx_import_vulkan_ffmpeg.c
 core/test/test_vmafx_lifetime.c
 core/test/test_vmafx_live_pacing.c
 core/test/test_vmafx_log_routing.c
@@ -875,6 +882,7 @@ core/test/test_y4m_alloc_failure.c
 core/test/test_y_funque_plus.c
 core/test/vmafx_score_contract.c
 core/test/vmafx_sycl_producer.cpp
+core/test/vmafx_vulkan_producer.c
 core/tools/cli_backends.cpp
 core/tools/cli_feature_backend.cpp
 core/tools/cli_parse.cpp

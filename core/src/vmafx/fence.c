@@ -433,7 +433,7 @@ static VmafxStatus read_fence(const VmafxReport *report, const VmafxFence *fence
 /* A kind this build declares but cannot handle here. */
 static VmafxStatus unsupported_kind(const VmafxReport *report, uint32_t kind, const char *what)
 {
-    if (kind > VMAFX_FENCE_GL_SYNC) {
+    if (kind > VMAFX_FENCE_KIND_LAST) {
         return VMAFX_FAIL(report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_FENCE, "fence.kind",
                           "kind %u is not a VmafxFenceKind", (unsigned)kind);
     }
@@ -602,6 +602,10 @@ static VmafxStatus other_kind_wait(const VmafxReport *report, const VmafxFence *
     case VMAFX_FENCE_GL_SYNC:
     case VMAFX_FENCE_SYNC_FILE:
         return producer_fence_wait(report, f, timeout_ns);
+    case VMAFX_FENCE_VULKAN_SEMAPHORE:
+        return VMAFX_FAIL(report, VMAFX_E_NOTSUP, 0, VMAFX_SUBJECT_FENCE, "fence.kind",
+                          "the library has no Vulkan device to wait on a Vulkan semaphore; wait "
+                          "with vkWaitSemaphores() (import only, Q-011)");
 #ifdef HAVE_CUDA
     case VMAFX_FENCE_CUDA_EVENT:
         return vmafx_cuda_fence_wait(report, f, timeout_ns);
@@ -662,7 +666,8 @@ static VmafxStatus close_sync_file(const VmafxReport *report, const VmafxFence *
 }
 
 /* The destroy of a kind other than NONE and HOST: a backend lane's event, a
- * sync_file's descriptor; the library returns no GL sync. */
+ * sync_file's descriptor; the library returns no GL sync and no Vulkan
+ * semaphore. */
 static VmafxStatus other_kind_destroy(const VmafxReport *report, const VmafxFence *f)
 {
     switch (f->kind) {
@@ -671,6 +676,9 @@ static VmafxStatus other_kind_destroy(const VmafxReport *report, const VmafxFenc
                           "the library returns no GL sync; delete it with glDeleteSync()");
     case VMAFX_FENCE_SYNC_FILE:
         return close_sync_file(report, f);
+    case VMAFX_FENCE_VULKAN_SEMAPHORE:
+        return VMAFX_FAIL(report, VMAFX_E_NOTSUP, 0, VMAFX_SUBJECT_FENCE, "fence.kind",
+                          "the library returns no Vulkan semaphore; close the descriptor");
 #ifdef HAVE_CUDA
     case VMAFX_FENCE_CUDA_EVENT:
         return vmafx_cuda_fence_destroy(report, f);

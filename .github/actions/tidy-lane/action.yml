@@ -15,7 +15,7 @@ inputs:
       nightly sweep) name the image: bump it in the pull request that re-measures the
       baselines after a dev/Containerfile change.
     required: false
-    default: ghcr.io/vmafx/vmafx-dev-mcp@sha256:31a48dad7525e05323e26914db2009f837a92e83ae55408a514024230e2b2e17
+    default: ghcr.io/vmafx/vmafx-dev-mcp@sha256:29b13030cacce60cec4209f645c6772feda5b2d936fa511fc807eddccf12722c
   token:
     description: Token with read access to the private package
     required: true

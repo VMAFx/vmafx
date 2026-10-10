@@ -4,7 +4,7 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "cc_version": "gcc-15 (Ubuntu 15.2.0-16ubuntu1) 15.2.0",
-  "tus": 529,
+  "tus": 531,
   "measured_sources": [
     "compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_stat.c",
     "compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_std.c",
@@ -191,6 +191,7 @@
     "core/src/vmafx/frame_import.c",
     "core/src/vmafx/frame_import_admit.c",
     "core/src/vmafx/frame_import_hooks.c",
+    "core/src/vmafx/frame_import_vulkan.c",
     "core/src/vmafx/frame_pool.c",
     "core/src/vmafx/mcp_server.c",
     "core/src/vmafx/model.c",
@@ -496,6 +497,7 @@
     "core/test/test_vmafx_import_bitexact.c",
     "core/test/test_vmafx_import_convert.c",
     "core/test/test_vmafx_import_fence.c",
+    "core/test/test_vmafx_import_vulkan_api.c",
     "core/test/test_vmafx_lifetime.c",
     "core/test/test_vmafx_live_pacing.c",
     "core/test/test_vmafx_log_routing.c",
@@ -1410,6 +1412,28 @@
         }
       },
       "previous_baseline_sha256": "2df1df109d54f770ed8d6d7ae4f2e5d5091fefa723d79078123116410e6aed58"
+    },
+    {
+      "sources": [
+        "core/src/vmafx/device.c",
+        "core/src/vmafx/fence.c",
+        "core/src/vmafx/frame_import.c",
+        "core/src/vmafx/frame_import_vulkan.c",
+        "core/src/vmafx/sync_object.c",
+        "core/test/test_vmafx_abi_layout.c",
+        "core/test/test_vmafx_fence_kinds.c",
+        "core/test/test_vmafx_import_vulkan_api.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/src/vmafx/frame_import_vulkan.c",
+            "core/test/test_vmafx_import_vulkan_api.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "f8886702794f8bbeaf5afbd7a7714891ecd91f5eb4f72f9d34626686b3e164da"
     }
   ]
 }

@@ -17,6 +17,7 @@
 #ifndef VMAFX_SYNC_OBJECT_H
 #define VMAFX_SYNC_OBJECT_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "internal.h"
@@ -42,6 +43,10 @@ int vmafx_dmabuf_import_read_fence(int fd, int sync_file);
  * the D8 helper's wait before its retry when an import was VMAFX_E_BUSY on
  * an implicit fence. A no-op off Linux. */
 void vmafx_dmabuf_wait_writers(const VmafxFrameImport *d, uint64_t timeout_ns);
+
+/* Whether `fd` is a Linux dma-buf (its /proc/self/fd link names a dmabuf
+ * inode). False off Linux and for any other descriptor. */
+bool vmafx_fd_is_dmabuf(int fd);
 
 /* Whether GL sync object `sync` of the GL context current on this thread is
  * signalled: 1 yes, 0 not within `timeout_ns`, -1 on a GL error, without a
