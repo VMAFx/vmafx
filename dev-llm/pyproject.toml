@@ -3,7 +3,7 @@
 
 [project]
 name = "vmaf-dev-llm"
-version = "1.0.0-rc.3" # x-release-please-version
+version = "1.0.0-rc.4" # x-release-please-version
 description = "Local LLM dev helpers for the VMAFx fork (Ollama-first)."
 readme = "README.md"
 requires-python = ">=3.11"
