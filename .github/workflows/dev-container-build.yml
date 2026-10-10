@@ -89,6 +89,16 @@ jobs:
         with:
           persist-credentials: false
 
+      # The container build pulls its Docker Hub bases (ubuntu:26.04,
+      # debian:13-slim, golang, the docker/dockerfile frontend) anonymously and
+      # hit the pull limit (run 37989639889). The daemon, and BuildKit through
+      # the daemon's registry-mirrors, now pull them through mirror.gcr.io by
+      # the same digests (rocm/dev-ubuntu-26.04 included: its pinned manifest
+      # and all eight blobs answer 200 there). An image the mirror lacks falls
+      # back to Docker Hub.
+      - name: Pull Docker Hub images through mirror.gcr.io
+        run: bash scripts/ci/docker-hub-mirror.sh
+
       # Regression guard for PR #707 / ADR-0529: assert that every /dev/dri
       # bind-mount in docker-compose.yml is writable (read_only: false).
       # The NVIDIA Container Toolkit OCI hook writes symlinks into

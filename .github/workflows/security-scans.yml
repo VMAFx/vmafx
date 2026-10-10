@@ -55,7 +55,12 @@ jobs:
       # cannot load current `p/cwe-top-25` / `p/cert-c-strict` rulesets, which
       # uploads an empty SARIF and lights up a "Semgrep OSS is reporting errors"
       # banner on the repo Security tab.
-      image: semgrep/semgrep:latest@sha256:93963d9295a366f59e4850127b1550400ee7b388f04fe144e4a1f6325d96e01b
+      # Pulled at job setup, before any step could point the daemon at a
+      # mirror, so the reference names mirror.gcr.io (Docker Hub's anonymous
+      # pull limit failed this job, run 37989639868). Same digest as on
+      # Docker Hub; scripts/ci/tests/test_docker_hub_mirror.py refuses a
+      # job container, service or docker:// step on Docker Hub.
+      image: mirror.gcr.io/semgrep/semgrep:latest@sha256:93963d9295a366f59e4850127b1550400ee7b388f04fe144e4a1f6325d96e01b
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Run semgrep (local rules — gate on ERRORs)

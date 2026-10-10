@@ -40,6 +40,14 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
+      # fsfe/reuse-action builds `FROM fsfe/reuse:6` while the job is set up,
+      # an anonymous Docker Hub pull that failed this job (auth.docker.io 504,
+      # pull limit). The same image runs here from mirror.gcr.io, pinned by
+      # the digest tag 6 has on Docker Hub, with the action's own wrapper
+      # (mark the workspace safe for git, then `reuse lint`).
       - name: reuse lint
         if: github.event.pull_request.draft != true
-        uses: fsfe/reuse-action@676e2d560c9a403aa252096d99fcab3e1132b0f5  # v6.0.0
+        uses: docker://mirror.gcr.io/fsfe/reuse:6@sha256:85462a75c0f8efda09ddd190b92816b70e7662577c8427429e11e1b9f25a992e
+        with:
+          entrypoint: /bin/sh
+          args: -c "git config --global --add safe.directory $GITHUB_WORKSPACE && reuse lint"

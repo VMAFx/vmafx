@@ -489,6 +489,21 @@ the mirror serves the same content addresses. `DOCKER_HUB_MIRROR` overrides the
 mirror. `scripts/ci/tests/test_docker_hub_mirror.py` checks the `daemon.json`
 merge offline (`--print`). Golusoris uses the same pattern.
 
+`Docker Image Build` (`docker-image.yml`) and `Dev Container Build`
+(`dev-container-build.yml`) run the same script before they build, so the
+base images of their Dockerfiles (`ubuntu:26.04`, `rocm/dev-ubuntu-26.04`)
+come through the mirror too, with Docker Hub as the fallback. A job
+`container`, a `services` image and a `uses: docker://` step are pulled while
+the job is set up, before any step runs, so the daemon setting cannot reach
+them. Those references name the mirror directly with the same digest: the
+Semgrep job runs `mirror.gcr.io/semgrep/semgrep`, and the REUSE job runs
+`reuse lint` from `mirror.gcr.io/fsfe/reuse`. The `WorkflowImages` test in
+`scripts/ci/tests/test_docker_hub_mirror.py` fails when a workflow adds a
+Docker Hub reference in one of those three places; an image written as a
+`${{ }}` expression is not checked. Actions that build their own Dockerfile
+at job setup, such as `cargo-deny-action`, still pull their base image from
+Docker Hub.
+
 ### Hardware-dependent lanes
 
 Two checks depend on self-hosted hardware. Both fail closed when their lane is

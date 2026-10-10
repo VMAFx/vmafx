@@ -110,6 +110,28 @@ def stub(path: Path, body: str) -> None:
     path.chmod(path.stat().st_mode | stat.S_IEXEC)
 
 
+# `shasum -c -` reads its list from a pipe (`echo "$SHA  $file" | shasum -a 256 -c -` in the
+# build script). A stub that exits without reading lets the writer meet a closed pipe when it
+# runs late: SIGPIPE, the pipeline exits 141 under pipefail and `set -e` ends the script with
+# nothing on stderr. That was the flake of test_build_script_runs_to_the_end_under_bash32 on
+# a loaded host (stdout stopped at the licence-texts step, stderr empty). The stub drains its
+# input as the real tool does.
+SHASUM_STUB = 'case "$*" in *" -") cat >/dev/null ;; esac\nexit 0\n'
+
+
+def test_shasum_stub_reads_its_input_like_shasum(tmp_path: Path) -> None:
+    """A writer that runs after the stub started still finds an open pipe."""
+    stub(tmp_path / "shasum", SHASUM_STUB)
+    late_writer = (
+        f"set -euo pipefail; (sleep 0.3; echo \"0123  /w/x\") | {tmp_path / 'shasum'} -a 256 -c -; "
+        "echo reached"
+    )
+    result = subprocess.run(
+        ["bash", "-c", late_writer], capture_output=True, text=True, check=False, timeout=60
+    )
+    assert result.returncode == 0 and "reached" in result.stdout, (result.returncode, result.stderr)
+
+
 def docker_bash32(mount: Path, command: str) -> subprocess.CompletedProcess:
     return subprocess.run(
         ["docker", "run", "--rm", "--network", "none", "--user", f"{os.getuid()}:{os.getgid()}", "-v", f"{mount}:/w", "-v",
@@ -137,8 +159,9 @@ def test_build_script_runs_to_the_end_under_bash32(tmp_path: Path) -> None:
     """The whole build script under bash 3.2 with stub tools: it must reach `pack`."""
     stubs = tmp_path / "stubs"
     stubs.mkdir()
-    for name in ("meson", "codesign", "shasum", "brew", "zstd"):
+    for name in ("meson", "codesign", "brew", "zstd"):
         stub(stubs / name, "exit 0\n")
+    stub(stubs / "shasum", SHASUM_STUB)
     stub(
         stubs / "ninja",
         "mkdir -p /tmp/repo-copy/build-tester-macos/tools; : > /tmp/repo-copy/build-tester-macos/tools/vmaf\n",
