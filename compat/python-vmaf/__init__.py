@@ -5,7 +5,7 @@ import subprocess
 
 __copyright__ = "Copyright 2016-2020, Netflix, Inc."
 __license__ = "BSD+Patent"
-__version__ = "1.0.0-rc.3"  # x-release-please-version
+__version__ = "1.0.0-rc.4"  # x-release-please-version
 
 logging.basicConfig()
 logger = logging.getLogger(os.path.splitext(os.path.basename(__file__))[0])
