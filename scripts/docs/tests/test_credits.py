@@ -14,6 +14,7 @@ from __future__ import annotations
 import datetime
 import importlib.util
 import io
+import os
 import shutil
 import sys
 import tempfile
@@ -88,6 +89,8 @@ class Fixture(unittest.TestCase):
         run_command(
             (git, "init", "-q", str(self.root)),
             allowed_executables=(git,),
+            # Without the hook's GIT_DIR: the fixture, not the caller's repository.
+            env={key: value for key, value in os.environ.items() if not key.startswith("GIT_")},
             capture_output=True,
             check=True,
             timeout_seconds=60,

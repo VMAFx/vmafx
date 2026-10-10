@@ -11,10 +11,8 @@
 # the system and user configuration, and supplies the fixture identity through
 # the environment, so no fixture has to run `git config user.*` at all.
 
-while IFS= read -r clean_git_variable; do
-  unset "$clean_git_variable"
-done < <(compgen -A variable GIT_)
-unset clean_git_variable
+# shellcheck source=scripts/lib/drop-git-env.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/drop-git-env.sh"
 
 export GIT_CONFIG_GLOBAL=/dev/null
 export GIT_CONFIG_NOSYSTEM=1

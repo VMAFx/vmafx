@@ -6,6 +6,18 @@
 Also guards the fixture identity: no test script may write ``user.email`` or
 ``user.name`` into a git config, and every script that builds a scratch
 repository must leave a hook-exported ``GIT_DIR`` repository untouched.
+
+Three nets, because each one misses what another catches:
+
+* the identity rule: no tracked script persists ``user.*``;
+* the isolation rule: a tracked script that creates a repository (``git init``,
+  ``git clone``) or persists any git config key (``core.bare``,
+  ``uploadpack.*``, ...) must drop the caller's ``GIT_*`` variables in the
+  same file, or be a declared exception. This is the net for a pytest-only
+  test and for a script that is not a test, which the third net cannot run;
+* the sentinel run: every scratch-repository test script that runs on its
+  own is executed the way a hook runs it, and must leave the hook's
+  repository byte-identical.
 """
 
 from __future__ import annotations
@@ -71,6 +83,63 @@ IDENTITY_EXCEPTION_FILES = (
     "scripts/git-hooks/test-pre-push-pr-body-lint.py",
     "scripts/githooks/tests/test_install.py",
 )
+
+
+# The isolation rule. A script that runs one of these acts on the CALLER's repository when a
+# hook's GIT_DIR / GIT_INDEX_FILE are still set, whatever its working directory is.
+SHELL_SUFFIXES = (".sh", ".mk", "Makefile")
+_GIT_OPTIONS = r"(?:\s+-[cC]\s*\S+|\s+--[\w-]+(?:=\S+)?)*"
+_READ_ONLY = r"(?:get|get-all|get-regexp|get-urlmatch|list|show-origin|show-scope|name-only)"
+SHELL_GIT_WRITE = re.compile(
+    r"(?m)^(?!\s*#)[^\n#]*?\bgit\b" + _GIT_OPTIONS + r"\s+(?:(?:init|clone)\b"
+    r"|config\s+(?!--" + _READ_ONLY + r"\b)"
+    r"(?:--(?:local|global|worktree|system|add|replace-all|file\s+\S+)\s+)*[\w.-]+\.[\w.-]+[ \t]+\S)"
+)
+CODE_GIT_WRITE = re.compile(
+    r"""(?im)^(?!\s*(?:#|//))[^\n]*\bgit\w*[^\n]{0,80}?["'](?:init|clone)["']\s*[,)\]]"""
+    r"""|["']config["']\s*,\s*(?:["']--(?:local|global|worktree|system|add|replace-all)["']\s*,\s*)*"""
+    r"""["'][\w.-]+\.[\w.-]+["']\s*,\s*\S"""
+)
+# What counts as dropping the caller's variables: the two shell helpers (or their loop), and a
+# filter on the GIT_ prefix in Python, Node and Go.
+ISOLATION_MARKER = re.compile(
+    r"""(?:clean|drop)-git-env\.sh|compgen -A variable GIT_"""
+    r"""|startswith\(\s*\(?\s*["']GIT_|startsWith\(\s*["']GIT_|HasPrefix\([^)\n]*"GIT_"""
+    r"""|clean_git_environment\(|\bgit_environment\("""
+)
+# One file, one reason, one expiry: a file whose git runs isolated in a way the marker cannot
+# see, with the place that does it. The sentinel run covers every test script among them.
+ISOLATION_EXCEPTION_EXPIRY = "2026-12-31"
+ISOLATION_EXCEPTIONS = {
+    ".config/lefthook/scripts/common.py": "clean_env() removes the repository variables by name",
+    "scripts/ci/tests/test_research_digest_ids.py": (
+        "git runs through check-research-digest-ids._git, which drops GIT_*"
+    ),
+    "scripts/dev/tests/test_install_merge_train_guard.py": (
+        "git runs through install_merge_train_guard.git, which drops GIT_*"
+    ),
+    "scripts/dev/tests/test_merge_train_guard.py": (
+        "git runs through merge_train_guard.environment(), which drops GIT_*"
+    ),
+    "scripts/docs/tests/test_render_at_landing.py": (
+        "every git call gets a fixed environment (ENV) that holds no caller variable"
+    ),
+    "tools/apicompat/gate/main.go": "main() unsets gitRepositoryVariables before any git call",
+    # NOT isolated: the fixtures of its --self-test mode inherit the environment. The file is the
+    # governance engine's template and no hook or workflow of this repository runs that mode.
+    "tools/markdownlint/verify.mjs": (
+        "engine template; --self-test fixtures inherit GIT_*; that mode is not run here"
+    ),
+}
+
+
+def unisolated_git(name: str, text: str) -> str:
+    """The first repository-creating or config-writing git call of an unisolated script, or ""."""
+    shell = name.endswith(SHELL_SUFFIXES)
+    found = (SHELL_GIT_WRITE if shell else CODE_GIT_WRITE).search(text)
+    if found is None or ISOLATION_MARKER.search(text):
+        return ""
+    return found.group(0).strip()[:100]
 
 
 def tracked_files() -> list[str]:
@@ -370,17 +439,140 @@ class GitFixtureIsolation(unittest.TestCase):
                 self.assertFalse(identity_writes(allowed))
 
     def test_planted_leaking_script_damages_the_sentinel(self) -> None:
-        # Runtime negative control: the old test-preflight-msvcism.sh pattern, run the way a
-        # hook runs it, must change the sentinel; the gate below must be able to see that.
-        with tempfile.TemporaryDirectory(prefix="git-identity-planted-") as directory:
+        # Runtime negative controls, each run the way a hook runs it: the old
+        # test-preflight-msvcism.sh pattern (identity), the two other keys that reached the
+        # shared config (core.bare, uploadpack.*), and a clone. Each must change the sentinel;
+        # the gate below must be able to see that.
+        head = '#!/usr/bin/env bash\nset -euo pipefail\ntmp=$(mktemp -d)\ncd "$tmp"\ngit init -q\n'
+        planted = {
+            "identity": (
+                head + "git config user.email t@t\ngit config user.name t\n",
+                ".git/config",
+            ),
+            "core.bare": (head + "git config core.bare true\n", ".git/config"),
+            "uploadpack": (
+                head + "git config uploadpack.allowAnySHA1InWant true\n",
+                ".git/config",
+            ),
+            "clone": (
+                head + "git -c user.name=t -c user.email=t@example.invalid commit -q --allow-empty"
+                ' -m x\ngit clone -q "$tmp" "$tmp/copy"\n',
+                "",
+            ),
+        }
+        for label, (body, expected) in planted.items():
+            with (
+                self.subTest(leak=label),
+                tempfile.TemporaryDirectory(prefix="git-identity-planted-") as directory,
+            ):
+                root = Path(directory)
+                leak = root / "test-planted-leak.sh"
+                leak.write_text(body)
+                changed = sentinel_damage(str(leak), root)
+                self.assertNotEqual(changed, [], f"{label}: the sentinel saw nothing")
+                if expected:
+                    self.assertIn(expected, changed)
+
+    def test_the_isolated_form_of_each_planted_script_leaves_the_sentinel_alone(self) -> None:
+        # The same commands after scripts/lib/clean-git-env.sh: the controls above fail for
+        # the missing isolation, not for the commands.
+        helper = ROOT / "scripts/lib/clean-git-env.sh"
+        body = (
+            f'#!/usr/bin/env bash\nset -euo pipefail\n. "{helper}"\ntmp=$(mktemp -d)\ncd "$tmp"\n'
+            "git init -q\ngit config core.bare false\n"
+            "git config uploadpack.allowAnySHA1InWant true\n"
+            'git commit -q --allow-empty -m x\ngit clone -q "$tmp" "$tmp/copy"\n'
+        )
+        with tempfile.TemporaryDirectory(prefix="git-identity-isolated-") as directory:
             root = Path(directory)
-            leak = root / "test-planted-leak.sh"
-            leak.write_text(
-                '#!/usr/bin/env bash\nset -euo pipefail\ntmp=$(mktemp -d)\ncd "$tmp"\n'
-                "git init -q\ngit config user.email t@t\ngit config user.name t\n"
-            )
-            changed = sentinel_damage(str(leak), root)
-            self.assertIn(".git/config", changed)
+            script = root / "test-planted-isolated.sh"
+            script.write_text(body)
+            self.assertEqual(sentinel_damage(str(script), root), [])
+
+    def test_no_script_creates_or_configures_a_repository_unisolated(self) -> None:
+        today = datetime.date.today().isoformat()
+        offenders = []
+        for name in tracked_files():
+            if not name.endswith(SUFFIXES) or name == "scripts/ci/test_git_fixture_isolation.py":
+                continue
+            path = ROOT / name
+            if not path.is_file():
+                continue
+            sample = unisolated_git(name, path.read_text(encoding="utf-8", errors="replace"))
+            if sample and (name not in ISOLATION_EXCEPTIONS or today > ISOLATION_EXCEPTION_EXPIRY):
+                offenders.append(f"{name}: {sample}")
+        self.assertEqual(
+            offenders,
+            [],
+            "git creates or configures a repository with the caller's GIT_* still set; source "
+            "scripts/lib/clean-git-env.sh (or drop-git-env.sh), or build the environment "
+            'without keys that start with "GIT_":\n' + "\n".join(offenders),
+        )
+
+    def test_isolation_exceptions_are_live_and_needed(self) -> None:
+        self.assertGreaterEqual(
+            ISOLATION_EXCEPTION_EXPIRY, datetime.date.today().isoformat(), "exceptions expired"
+        )
+        for name, reason in ISOLATION_EXCEPTIONS.items():
+            with self.subTest(name=name):
+                self.assertTrue(reason)
+                text = (ROOT / name).read_text(encoding="utf-8", errors="replace")
+                self.assertTrue(unisolated_git(name, text), "no longer needed: remove it")
+
+    def test_isolation_rule_refuses_planted_unisolated_fixtures(self) -> None:
+        planted = {
+            "t.sh": (
+                'cd "$tmp"\ngit init -q\n',
+                'git -C "$dst" config core.bare true\n',
+                "git config --local uploadpack.allowAnySHA1InWant true\n",
+                'timeout 600 git -c advice.detachedHead=false clone --quiet "$url" "$dir"\n',
+            ),
+            "t.py": (
+                'subprocess.run(["git", "init", "-q", str(repo)], check=True)\n',
+                '        self.git("init", "-q", "-b", "master")\n',
+                '    git("config", "uploadpack.allowAnySHA1InWant", "true")\n',
+                '    run_git(root, "config", "core.bare", "true")\n',
+                '    run((git, "clone", "--bare", str(src), str(dst)))\n',
+            ),
+            "t.mjs": ('  command("git", ["init", "--quiet"], { cwd: fixture });\n',),
+            "t.go": ('\trunTool(ctx, repo, "git", "init", "--quiet")\n',),
+        }
+        for name, texts in planted.items():
+            for text in texts:
+                with self.subTest(name=name, text=text):
+                    self.assertTrue(unisolated_git(name, text))
+        isolated = {
+            "t.sh": '. "$ROOT/scripts/lib/clean-git-env.sh"\ngit init -q\ngit config core.bare true\n',
+            "u.sh": '. "$ROOT/scripts/lib/drop-git-env.sh"\ngit clone -q "$url" "$dir"\n',
+            "t.py": (
+                'env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}\n'
+                'subprocess.run(["git", "init"], env=env)\n'
+            ),
+            "u.py": (
+                'env = {k: v for k, v in os.environ.items() if not k.startswith(("GIT_", "GH_"))}\n'
+                'self.git("config", "core.bare", "true")\n'
+            ),
+        }
+        for name, text in isolated.items():
+            with self.subTest(name=name):
+                self.assertEqual(unisolated_git(name, text), "")
+        harmless = {
+            "t.sh": (
+                "# git init would be wrong here\n",
+                "git config --get user.email\n",
+                "git config --list\n",
+                'git -C "$repo" log --oneline\n',
+            ),
+            "t.py": (
+                'value = git("config", "--get", "user.email")\n',
+                'state = registration.get("init", "")\n',
+                '# self.git("init") is what the fixture used to do\n',
+            ),
+        }
+        for name, texts in harmless.items():
+            for text in texts:
+                with self.subTest(name=name, text=text):
+                    self.assertEqual(unisolated_git(name, text), "")
 
     def test_scratch_repository_scripts_leave_a_hook_git_dir_alone(self) -> None:
         scripts = scratch_scripts()

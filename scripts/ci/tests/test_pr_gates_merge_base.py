@@ -26,6 +26,9 @@ ROOT = Path(__file__).resolve().parents[3]
 CI = ROOT / "scripts" / "ci"
 GIT = shutil.which("git") or "/usr/bin/git"
 BASH = shutil.which("bash") or "/bin/bash"
+# A git hook exports GIT_DIR and GIT_INDEX_FILE; with them the fixture's init, commits and
+# checkouts, and the gates under test, would act on the caller's repository.
+CLEAN = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
 IDENT = {
     "GIT_AUTHOR_NAME": "Ada",
     "GIT_AUTHOR_EMAIL": "ada@example.org",
@@ -73,7 +76,7 @@ class BehindBase(unittest.TestCase):
         self.fork = self.rev("HEAD")
 
     def git(self, *args: str) -> str:
-        env = {**os.environ, **IDENT}
+        env = {**CLEAN, **IDENT}
         done = subprocess.run(  # noqa: S603 -- fixed argv, no shell, fixture repo
             [GIT, *args], cwd=self.repo, env=env, capture_output=True, text=True, check=True
         )
@@ -106,7 +109,7 @@ class BehindBase(unittest.TestCase):
     def run_gate(
         self, script: str, base: str, head: str, **env: str
     ) -> subprocess.CompletedProcess[str]:
-        clean = {k: v for k, v in os.environ.items() if k not in ("PR_BODY", "PR_TITLE")}
+        clean = {k: v for k, v in CLEAN.items() if k not in ("PR_BODY", "PR_TITLE")}
         clean.update(BASE_SHA=base, HEAD_SHA=head, **env)
         return subprocess.run(  # noqa: S603 -- fixed argv, no shell, gate under test
             [BASH, str(CI / script)],

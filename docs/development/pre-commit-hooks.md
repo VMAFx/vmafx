@@ -538,20 +538,39 @@ A git hook runs with `GIT_DIR` and `GIT_INDEX_FILE` exported. A test that runs
 acts on the repository that is running the hook: the identity lands in the shared
 `.git/config` (every linked worktree reads it), and commits and index entries land
 in the caller's history. On 2026-10-08 four commits on `master` were created with the
-committer `t@t` this way; history on `master` is not rewritten. Rules for a test
-script that builds a scratch repository:
+committer `t@t` this way; history on `master` is not rewritten. The same path put
+`core.bare = true` into the shared config on 2026-10-10, which made the main checkout
+refuse every work-tree command. Rules for a script that runs git on a repository
+other than the caller's (a scratch repository, a clone into a temporary directory):
 
 - Shell: `source` `scripts/lib/clean-git-env.sh` after `set -euo pipefail`. It drops every `GIT_*`
   variable, ignores global and system configuration and sets `GIT_AUTHOR_*` /
   `GIT_COMMITTER_*`. Python and Node fixtures build the same environment (no `GIT_*`
   from the caller, `GIT_CONFIG_GLOBAL=/dev/null`).
+- A script that is not a fixture but clones or initialises a repository elsewhere
+  sources `scripts/lib/drop-git-env.sh`: it unsets every `GIT_*` variable and changes
+  nothing else, so the user's proxy and credential configuration still apply.
 - Never write an identity into a config (`git config user.email`). Use the environment
   variables above, or `git -c user.name=... -c user.email=... commit` per command.
-- `python3 scripts/ci/test_git_fixture_isolation.py` enforces both: it rejects a
-  `git config user.*` write in any tracked script (a named, expiring exception list
-  covers Python helpers that already scrub the environment) and runs every
-  scratch-repository test script under a sentinel `GIT_DIR`, failing when the
-  sentinel's config, index, refs or objects change. It takes about three minutes.
+- `python3 scripts/ci/test_git_fixture_isolation.py` enforces this with three checks,
+  because each one misses what another catches:
+  - **Identity rule.** It rejects a `git config user.*` write in any tracked script. A
+    named, expiring exception list covers Python helpers that already scrub the
+    environment.
+  - **Isolation rule.** A tracked script (`.sh`, `.py`, `.mjs`, `.go`, `.rs`, `.mk`,
+    `Makefile`) that runs `git init` or `git clone`, or that writes any config key
+    (`core.bare`, `uploadpack.*`, ...), must drop the caller's variables in the same
+    file: one of the two shell helpers, or an environment built without keys that
+    start with `GIT_`. This is the check for a pytest-only test and for a script that
+    is not a test. A file isolated in a way the check cannot see is named in
+    `ISOLATION_EXCEPTIONS` with its reason; the list expires.
+  - **Sentinel run.** Every scratch-repository test script that runs on its own is
+    executed under a sentinel `GIT_DIR` and fails when the sentinel's config, index,
+    refs or objects change. Planted scripts that write an identity, `core.bare` or
+    `uploadpack.*`, or that clone, prove the sentinel sees each of them.
+
+  The whole gate takes about three minutes. The hook `git-fixture-isolation-static`
+  runs the two static rules alone, in under a second, on every changed script.
 
 Only temporary caller paths are injected. The local pre-commit/pre-push hook
 runs when its inputs change. Required `Pre-Commit` CI also runs the regression.
