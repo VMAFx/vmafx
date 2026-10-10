@@ -20,9 +20,9 @@
 # the MSYS2 shell of the Windows leg.
 #
 # Usage:
-#   ffmpeg-shared-series.sh fetch
-#       Download (or reuse the cached) tarball, verify it, unpack it and
-#       print the directory that holds series.txt and patches/.
+#   ffmpeg-shared-series.sh fetch DEST
+#       Download (or reuse the cached) tarball, verify it and unpack it into
+#       the new directory DEST, which then holds series.txt and patches/.
 #   ffmpeg-shared-series.sh apply [--method am|apply] TREE
 #       fetch, then apply the series to the FFmpeg tree TREE in series.txt
 #       order. `am` (default) commits each patch with `git am --3way` and
@@ -43,9 +43,12 @@
 #                             script, then the repository root)
 #   FFMPEG_FIX_SERIES_URL     tarball location instead of the GitHub release
 #                             (a file:// URL in the tests)
-#   FFMPEG_FIX_SERIES_CACHE   download directory (default: the user cache);
-#                             `none` uses a temporary one that `apply` removes
-#                             when it is done, for an image build
+#   FFMPEG_FIX_SERIES_CACHE   where the verified tarball is kept (default:
+#                             the user cache); `none` keeps nothing, for an
+#                             image build. The series is unpacked afresh from
+#                             the verified tarball on every run, into a
+#                             directory of that run, so concurrent runs share
+#                             the download and nothing else.
 #
 # Exit: 0 success; 1 a verification failed or a patch did not apply; 2 usage,
 # a missing tool or missing configuration.
@@ -227,9 +230,7 @@ fetch_series() {
   if [ "$base_tag" != "$FFMPEG_TAG" ] || [ "$base_commit" != "$FFMPEG_COMMIT" ]; then
     die 1 "shared series ${FFMPEG_FIX_SERIES_TAG} targets ${base_tag} (${base_commit}), build-config.env pins ${FFMPEG_TAG} (${FFMPEG_COMMIT}); pin a series release for that FFmpeg"
   fi
-  rm -rf -- "$cache/tree"
-  mv -- "$work/tree" "$cache/tree"
-  series_dir="$cache/tree"
+  series_dir="$work/tree"
   note "${FFMPEG_FIX_SERIES_REPO} ${FFMPEG_FIX_SERIES_TAG} (${source_note}): sha256 matches the pin; base ${base_tag}; signature ${signature_status}"
 }
 
@@ -276,16 +277,16 @@ apply_series() { # apply_series METHOD TREE
 
 main() {
   local command="${1:-}" method=am
-  [ -n "$command" ] || die 2 "usage: $0 fetch | apply [--method am|apply] TREE"
+  [ -n "$command" ] || die 2 "usage: $0 fetch DEST | apply [--method am|apply] TREE"
   shift
   case "$command" in
     fetch)
-      [ "$#" -eq 0 ] || die 2 "fetch takes no argument"
-      [ "${FFMPEG_FIX_SERIES_CACHE:-}" != none ] ||
-        die 2 "fetch with FFMPEG_FIX_SERIES_CACHE=none would print a directory it removes"
+      [ "$#" -eq 1 ] || die 2 "fetch takes the directory to unpack into"
+      [ ! -e "$1" ] || die 2 "fetch needs a new directory, this exists: $1"
       load_config
       fetch_series
-      printf '%s\n' "$series_dir"
+      mv -- "$series_dir" "$1" || die 1 "cannot create $1"
+      note "unpacked into $1"
       ;;
     apply)
       if [ "${1:-}" = "--method" ]; then

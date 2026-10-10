@@ -36,8 +36,8 @@ hosted FFmpeg jobs and the four container builds all call it:
 scripts/ci/ffmpeg-shared-series.sh apply /path/to/ffmpeg
 # Apply to an unpacked release archive that is not a Git checkout:
 scripts/ci/ffmpeg-shared-series.sh apply --method apply /path/to/FFmpeg-n9.0.2
-# Only download, verify and unpack; prints the directory:
-scripts/ci/ffmpeg-shared-series.sh fetch
+# Only download, verify and unpack into a new directory:
+scripts/ci/ffmpeg-shared-series.sh fetch /tmp/ffmpeg-fix-series
 ```
 
 The script stops, without applying anything, when:
@@ -51,9 +51,9 @@ The script stops, without applying anything, when:
 
 With the default `FFMPEG_FIX_SERIES_VERIFY=auto` the signature is checked when
 cosign is installed; the script's one-line summary says whether it was. The
-`FFmpeg Patch Stack` gate installs cosign and requires it. Downloads are cached
-under `<cache root>/vmafx/ffmpeg-fix-series/`; the container builds use a
-temporary directory (`FFMPEG_FIX_SERIES_CACHE=none`).
+`FFmpeg Patch Stack` gate installs cosign and requires it. The verified tarball
+is cached under `<cache root>/vmafx/ffmpeg-fix-series/` and unpacked afresh on
+every run; the container builds cache nothing (`FFMPEG_FIX_SERIES_CACHE=none`).
 
 Series `v0.1.0-rc.1` holds four patches. Three change FFmpeg's behaviour in
 every VMAFx build:
