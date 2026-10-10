@@ -168,7 +168,35 @@ Run a single smoke probe outside the cron cycle:
 
 This executes `smoke-probe-loop.sh --once` inside the running container and
 writes `probe-<timestamp>.json` to `.workingdir/dev-mcp-probes/`. If `jq` is
-installed on the host the result is pretty-printed to stdout.
+installed on the host the result is pretty-printed to stdout. The command
+exits 1 when a sub-check failed; the record is written and shown either way.
+
+### Probe status and container health
+
+- `smoke-probe-loop.sh --once` exits 0 only when every probed backend and
+  both MCP checks passed. On a failure it prints
+  `FAILED sub-checks: <names>` and exits 1.
+- `PROBE_BACKENDS` names the backends the host has (default
+  `cpu cuda sycl hip`). Every backend named there must score. On a host
+  without one of the devices, leave it out:
+
+  ```bash
+  PROBE_BACKENDS="cpu cuda" ./dev/scripts/dev-mcp-up.sh
+  ```
+
+  A backend that is left out is not run, and its entry in the record says
+  `"probed": false`.
+- `vmaf-smoke-probe-cron` is healthy (`docker ps`) only while the newest
+  record is younger than two probe intervals plus five minutes and holds no
+  error. `smoke-probe-loop.sh --healthy` prints the reason otherwise: no
+  record, a stale record, or the failed sub-checks.
+- The MCP `vmaf_score` check reads the golden pair from
+  `VMAF_TESTDATA_PATH`. The server allows that directory only because the
+  probe names it in `VMAF_MCP_ALLOW` for the server process it starts. A
+  server you start yourself keeps the
+  [default allowlist](../mcp/backends.md#default-allowlist): in the
+  container that is `/workspace/python/test/resource` plus whatever
+  `VMAF_MCP_ALLOW` you set.
 
 ## How to stop
 
@@ -189,10 +217,10 @@ Each probe file follows this schema:
   "ts": "2026-05-15T14:30:00Z",
   "host_id": "myhostname:abc123def456",
   "backend_results": {
-    "cpu":  { "score": 94.32301, "duration_ms": 3200, "error": null },
-    "cuda": { "score": 94.32301, "duration_ms":  820, "error": null },
-    "sycl":   { "score": null,  "duration_ms":    0, "error": "ENOSYS: no SYCL device" },
-    "hip":    { "score": null,  "duration_ms":    0, "error": "ENOSYS: no HIP device" }
+    "cpu":  { "probed": true,  "score": 94.32301, "duration_ms": 3200, "error": null },
+    "cuda": { "probed": true,  "score": 94.32301, "duration_ms":  820, "error": null },
+    "sycl": { "probed": true,  "score": null, "duration_ms": 0, "error": "ENOSYS: no SYCL device" },
+    "hip":  { "probed": false, "score": null, "duration_ms": 0, "error": null }
   },
   "mcp_results": {
     "list_features": { "feature_count": 14, "duration_ms": 45, "error": null },
@@ -205,7 +233,8 @@ Each probe file follows this schema:
 | --- | --- |
 | `score` | Pooled VMAF score (model `vmaf_v0.6.1`) for the 48-frame 576x324 pair `testdata/ref_576x324_48f.yuv` / `dis_576x324_48f.yuv`. `null` = backend failed. |
 | `duration_ms` | Wall-clock time for the full scoring run. |
-| `error` | Error message string, or `null` for success. |
+| `error` | Error message string, or `null` for success. For an MCP check the server's own refusal text follows `invalid vmaf_score response:`. |
+| `probed` | `false` for a backend that `PROBE_BACKENDS` leaves out; it was not run. |
 | `feature_count` | Number of extractors returned by the Go MCP `list_extractors` tool. |
 
 The `list_features` and `compute_vmaf` names in the probe JSON are stable
@@ -231,15 +260,17 @@ asynchronous response.
   gate (for example `ciede` at `1e-9`); see
   [cross-backend-gate.md](cross-backend-gate.md) and
   [ADR-0214](../adr/0214-gpu-parity-ci-gate.md).
-- SYCL: `ENOSYS` on hosts without Intel GPU or oneAPI runtime; normal.
-- HIP: error on NVIDIA-only hosts; normal.
+- SYCL: `ENOSYS` on hosts without Intel GPU or oneAPI runtime. Leave `sycl`
+  out of `PROBE_BACKENDS` there; while it is named, the error fails the probe.
+- HIP: error on NVIDIA-only hosts. Leave `hip` out of `PROBE_BACKENDS` there.
 
 ### Common error patterns
 
 | Error | Cause | Action |
 | --- | --- | --- |
 | `ENOSYS: no CUDA device` | No NVIDIA GPU or Container Toolkit not installed | Install Container Toolkit and set `NVIDIA_VISIBLE_DEVICES=all` |
-| `ENOSYS: no SYCL device` | No Intel GPU / oneAPI runtime | Expected on non-Intel hosts; not a regression |
+| `ENOSYS: no SYCL device` | No Intel GPU / oneAPI runtime | On a non-Intel host, leave `sycl` out of `PROBE_BACKENDS`; on an Intel host it is a regression |
+| `invalid vmaf_score response: ... is not under an allowlisted root` | The MCP server refused the golden pair's path | The probe declares `VMAF_TESTDATA_PATH` to its server; check that variable and that the pair exists there |
 | `mcp stdio returned empty response` | `vmafx-mcp` missing/failed, or a custom client closed stdin before the response | Rebuild and check `docker compose logs dev-mcp`; custom clients must keep stdin open through the matching response. The binary comes from `cmd/vmafx-mcp` via the `go-build` stage, not from the venv. |
 | Score drift >0.1 from baseline | Code regression or model change | Run `/validate-scores` skill; check recent commits |
 
