@@ -290,7 +290,9 @@ docker exec vmaf-dev-mcp bash -c '
 
 The container pins the ROCm variables at compose-up time and carries the
 oneAPI runtime libraries needed for SYCL discovery. The VMAFx Vulkan backend
-was removed by ADR-0726 and is not part of this contract.
+was removed by ADR-0726 and is not part of this contract; the Vulkan loader the
+image carries for the frame-import tests needs no variable (see
+[Vulkan loader and lavapipe](#vulkan-loader-and-lavapipe)).
 
 | Env var | Contract | Rationale |
 | --- | --- | --- |
@@ -608,6 +610,31 @@ Where to find current versions:
 
 Do not consult `https://repo.radeon.com/rocm/apt/` for the current version;
 that channel has been frozen at 7.2.4 since AMD moved to TheRock.
+
+### Vulkan loader and lavapipe
+
+The image carries the Vulkan loader (`libvulkan1`), its headers
+(`libvulkan-dev`), Mesa's Vulkan drivers (`mesa-vulkan-drivers`, which include
+lavapipe, the CPU Vulkan driver) and `vulkaninfo` (`vulkan-tools`), all from
+the Ubuntu 26.04 archive of the digest-pinned `DEV_BASE`
+([ADR-3137](../adr/3137-dev-image-vulkan-lavapipe.md)). This is not a Vulkan
+backend (that was removed by ADR-0726): it lets meson find
+`dependency('vulkan')` in every lane that builds in this image, so the VMAFx
+Vulkan frame-import tests build there and the hosted clang-tidy lanes measure
+them, and it gives every lane a Vulkan device without a GPU.
+
+Check it in a running container; no GPU has to be passed in:
+
+```bash
+docker exec vmaf-dev-mcp vulkaninfo --summary
+```
+
+The device list includes `llvmpipe` (driver `llvmpipe`, type
+`PHYSICAL_DEVICE_TYPE_CPU`). The image build runs the same check and fails
+when the loader does not enumerate lavapipe. On a host that passes a GPU in,
+the GPU's Vulkan device is listed beside it; tests that need a GPU's Vulkan
+memory pick the GPU and ignore lavapipe. Real-GPU Vulkan runs remain a
+separate signal from the CPU runs.
 
 ## History
 

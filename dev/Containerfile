@@ -6,7 +6,8 @@
 #
 # Multi-stage build:
 #   Stage 1 (build-deps)  — base tools: meson, ninja, nasm, gcc-13, clang-19,
-#                           python3.14, pkg-config, git, curl, ca-certificates
+#                           python3.14, pkg-config, git, curl, ca-certificates,
+#                           the Vulkan loader and lavapipe (ADR-3137)
 #   release-build         — separate root on the Debian 13 release track
 #                           (RELEASE_BUILDER_BASE): the native release
 #                           bundle's compiler, nothing else (ADR-1354)
@@ -216,6 +217,16 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     # backends; only the package name changed. ADR-0603.
     intel-media-va-driver-non-free \
     mesa-libgallium \
+    # Vulkan loader, headers and Mesa's CPU Vulkan driver lavapipe (ADR-3137,
+    # operator decision ci-config-19): every lane that builds in this image
+    # configures meson with dependency('vulkan') found, so the VMAFx Vulkan
+    # frame-import tests build and the tidy lanes measure them; their Vulkan
+    # side runs on lavapipe with no GPU. vulkan-tools carries vulkaninfo for
+    # the check below. Real-GPU Vulkan runs stay a separate signal.
+    libvulkan1 \
+    libvulkan-dev \
+    mesa-vulkan-drivers \
+    vulkan-tools \
     xxd \
     # Misc
     jq
@@ -223,7 +234,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # Verify critical GPU/VA-API packages were actually installed.
 # A misconfigured repo or network failure during apt-get produces a silently
 # broken image; this check surfaces the gap at build time instead of run time.
-RUN for pkg in intel-media-va-driver-non-free mesa-libgallium libvpl-dev; do \
+RUN for pkg in intel-media-va-driver-non-free mesa-libgallium libvpl-dev \
+        libvulkan1 libvulkan-dev mesa-vulkan-drivers vulkan-tools; do \
         # Use `dpkg -l` (installed-package DB), not `apt-mark showmanual`: the
         # BuildKit cache mount at /var/lib/apt is shared across builds, so a
         # package auto-installed in an earlier cached layer stays flagged
@@ -231,6 +243,13 @@ RUN for pkg in intel-media-va-driver-non-free mesa-libgallium libvpl-dev; do \
         dpkg -l "${pkg}" 2>/dev/null | grep -q "^ii" \
             || (echo "FATAL: ${pkg} was not installed" && exit 1); \
     done
+
+# The Vulkan loader must find lavapipe with no GPU in sight (ADR-3137): the
+# build host exposes no /dev/dri, so this is the CPU-only case every hosted
+# lane runs in. Fails the build when the ICD is missing or the loader does not
+# enumerate it.
+RUN vulkaninfo --summary 2>/dev/null | grep -E 'deviceName[[:space:]]*=[[:space:]]*llvmpipe' \
+    || (echo "FATAL: the Vulkan loader does not enumerate lavapipe" && vulkaninfo --summary; exit 1)
 
 # Ensure gcc-13 / clang-19 are the default compilers.
 # gcc-ar, gcc-nm and gcc-ranlib follow gcc. This stage installs no default

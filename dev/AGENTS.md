@@ -38,3 +38,4 @@ for diagnosis establishing these.
 | `Containerfile`, `/.dockerignore` | [source-tree-paths](AGENTS.d/source-tree-paths.md) | Library source path is core/, Python harness is compat/python-vmaf/; verify renames with targeted grep. |
 | `Containerfile`, `scripts/dev-mcp-entrypoint.sh`, `scripts/fetch-intel-neo.py`, `/build-config.env` | [uapi-version-pins](AGENTS.d/uapi-version-pins.md) | NEO and ROCm match host kernel ABI; build-config.env owns pins; entrypoint probe runs argv without shell. |
 | `Containerfile` | [user-ordering](AGENTS.d/user-ordering.md) | WORKDIR creates directories as root; precede non-root directory creations with explicit chown. |
+| `Containerfile`, `/.github/actions/tidy-lane/action.yml` | [vulkan-loader](AGENTS.d/vulkan-loader.md) | Vulkan loader, headers, lavapipe in build-deps of the one dev image; build fails if vulkaninfo lacks llvmpipe. |

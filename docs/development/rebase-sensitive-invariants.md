@@ -270,6 +270,14 @@ backend within it.
   `tools/rc1-tester/image/hip-runtime.json` and the ROCm source pins of
   `tools/rc1-tester/image/licensing.json`, and re-running the HIP device suite
   (ROCm 10.1.0 moved the compiler from LLVM 23 to LLVM 24).
+  The `build-deps` stage installs the Vulkan loader, its headers, Mesa's
+  Vulkan drivers (lavapipe) and `vulkan-tools` from the archive of the
+  digest-pinned `DEV_BASE`, and fails its build when `vulkaninfo` does not list
+  lavapipe ([ADR-3137](../adr/3137-dev-image-vulkan-lavapipe.md), operator
+  decision ci-config-19): the Vulkan frame-import tests build in every lane of
+  the one image and the hosted tidy lanes measure them. Do not move these
+  packages into a second image or drop the lavapipe check; a pinned-image bump
+  re-measures the lanes' baselines.
   `dev/scripts/smoke-probe-loop.sh` assumes the golden pair lives at
   `${VMAF_TESTDATA_PATH}/ref_576x324_48f.yuv` / `dis_576x324_48f.yuv`
   — do not rename these files. The probe JSON schema fields (`ts`,
