@@ -483,6 +483,28 @@ the NEO metadata-fetch instruction and is not recorded in image layers,
 metadata, or provenance. See
 [ADR-1271](../adr/1271-neo-buildkit-github-token-secret.md).
 
+### Build stages
+
+libvmaf and FFmpeg are compiled in stages that no image is made of, and the
+image stages copy only what each build installs:
+
+| Stage | Contents |
+| --- | --- |
+| `libvmaf-deps` | `gpu-sdks` plus the copied sources, ONNX Runtime and nv-codec-headers |
+| `libvmaf-compile` | `meson setup core/build core` and `ninja`, installed into `/stage/libvmaf` |
+| `codec-deps` | `libvmaf-deps` plus the installed libvmaf, the backend probe and the encoder libraries |
+| `ffmpeg-compile` | The patched FFmpeg, installed into `/stage/ffmpeg` |
+| `libvmaf-build` | `codec-deps` plus the installed FFmpeg and the encoder probe; `go-build` and `dev-mcp` derive from it |
+
+A build directory that a later `RUN` deletes stays in the layer that created
+it. Before this split the Meson tree took 8.25 GB of every image and the
+FFmpeg tree another 1.1 GB, although neither existed in the running
+container. Measured on the `dev-mcp` image, the layers add up to 39.4 GB
+instead of 48.7 GB (`docker history`), and `docker image ls` reports 55.7 GB
+instead of 69.7 GB. Nothing at run time reads `core/build` or `/build/ffmpeg`; the
+sources under `/build/vmaf` stay, because the editable Python installs, the
+entrypoint, the healthcheck, the models and the test data use them.
+
 ### CI stage builds
 
 CI builds stage images through one script,

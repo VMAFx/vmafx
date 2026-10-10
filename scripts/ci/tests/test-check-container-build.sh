@@ -8,8 +8,9 @@
 #   * it PASSES on a container build, and on an artifact tree stamped by one.
 #
 # dev/Containerfile has two roots that write the marker. `build-deps` writes
-# it and every later dev stage (`libvmaf-build`, the local `vmaf-dev-mcp`)
-# inherits it. `release-build`, the Debian 13 release-track stage the native
+# it and every later dev stage (the compile stages, `libvmaf-build`, the local
+# `vmaf-dev-mcp`) inherits it through its FROM chain. `release-build`, the
+# Debian 13 release-track stage the native
 # release compiles in (ADR-1354), writes the same bytes. The gate therefore
 # accepts exactly one identity (`vmaf-dev-mcp`) and rejects the retired
 # self-hosted runner title (`vmaf-sycl-arc-runner`, ADR-1178) plus near-miss
@@ -82,10 +83,44 @@ next_from_after() {
     END { if (!found) print NR + 1 }' "$CONTAINERFILE"
 }
 
+# stage_root <containerfile> <stage> — the stage at the top of <stage>'s FROM
+# chain: the one built FROM an image that is not a stage of the file. Empty
+# when <stage> does not exist. A stage inherits /etc/vmafx-dev-container only
+# along this chain; `COPY --from` brings no marker.
+stage_root() {
+  awk -v want="$2" '
+    /^FROM / { if (toupper($3) == "AS") parent[$4] = $2 }
+    END {
+      stage = want
+      for (hops = 0; hops < 64 && (stage in parent); hops++) {
+        if (!(parent[stage] in parent)) { print stage; exit }
+        stage = parent[stage]
+      }
+    }' "$1"
+}
+
+# marker_inheritance_faults <containerfile> — one line per stage that would
+# build or publish without the build-deps marker: libvmaf-build (the CI gate
+# and the published image) must root at build-deps, and so must every other
+# stage that is built FROM another stage. A root is exempt: release-build
+# writes its own marker, and rocm-src and go-toolchain are only copied from.
+marker_inheritance_faults() {
+  local file="$1" stage root
+  root="$(stage_root "$file" libvmaf-build)"
+  [ "$root" = "build-deps" ] ||
+    echo "libvmaf-build roots at '${root:-no stage}', not build-deps"
+  while read -r stage; do
+    root="$(stage_root "$file" "$stage")"
+    [ "$root" = "build-deps" ] || [ "$root" = "$stage" ] ||
+      echo "${stage} roots at '${root}', not build-deps"
+  done < <(awk '/^FROM / && toupper($3) == "AS" && $4 != "libvmaf-build" { print $4 }' "$file")
+}
+
 # Exactly two stages write the marker, once each: build-deps (libvmaf-build
-# inherits it through gpu-sdks) and release-build, the Debian 13 release-track
-# root the native release compiles in (ADR-1354). release-build must root at
-# RELEASE_BUILDER_BASE and write the same bytes as build-deps.
+# and the compile stages inherit it through gpu-sdks) and release-build, the
+# Debian 13 release-track root the native release compiles in (ADR-1354).
+# release-build must root at RELEASE_BUILDER_BASE and write the same bytes as
+# build-deps.
 if [ -f "$CONTAINERFILE" ]; then
   writes="$(grep -c '> /etc/vmafx-dev-container' "$CONTAINERFILE" || [ "$?" -eq 1 ])"
   mapfile -t marker_lines < <(grep -n '> /etc/vmafx-dev-container' "$CONTAINERFILE" | cut -d: -f1)
@@ -109,15 +144,71 @@ if [ -f "$CONTAINERFILE" ]; then
   }
   deps_marker="$(marker_in_stage "$deps_line")"
   release_marker="$(marker_in_stage "$release_line")"
+  inheritance_faults="$(marker_inheritance_faults "$CONTAINERFILE")"
   if [ "$writes" = "2" ] && [ -n "$deps_marker" ] && [ -n "$sdks_line" ] &&
-    [ "$deps_marker" -lt "$sdks_line" ] &&
-    grep -qx 'FROM gpu-sdks AS libvmaf-build' "$CONTAINERFILE"; then
+    [ "$deps_marker" -lt "$sdks_line" ] && [ -z "$inheritance_faults" ]; then
     PASS=$((PASS + 1))
     echo "ok   build-deps writes the marker once and libvmaf-build inherits it"
   else
     FAIL=$((FAIL + 1))
     echo "FAIL marker is not written once in build-deps and inherited by libvmaf-build"
+    [ -z "$inheritance_faults" ] || printf '%s\n' "$inheritance_faults" | sed 's/^/       | /'
   fi
+
+  # The chain walk itself, against planted stage graphs: the two shapes the
+  # file has had pass, and a stage that would publish without the marker fails.
+  chain_case() {
+    local label="$1" want="$2" graph="${WORKDIR}/chain-case" got
+    cat >"$graph"
+    got="$(marker_inheritance_faults "$graph")"
+    if [ "$got" = "$want" ]; then
+      PASS=$((PASS + 1))
+      echo "ok   stage chain: ${label}"
+    else
+      FAIL=$((FAIL + 1))
+      echo "FAIL stage chain: ${label}"
+      printf 'want: %s\ngot:  %s\n' "$want" "$got" | sed 's/^/       | /'
+    fi
+  }
+  chain_case "libvmaf-build directly on gpu-sdks" "" <<'GRAPH'
+FROM ${DEV_BASE} AS build-deps
+FROM ${RELEASE_BUILDER_BASE} AS release-build
+FROM build-deps AS gpu-sdks
+FROM gpu-sdks AS libvmaf-build
+FROM ${DEV_GO_BASE} AS go-toolchain
+FROM libvmaf-build AS dev-mcp
+GRAPH
+  chain_case "compile stages between gpu-sdks and libvmaf-build" "" <<'GRAPH'
+FROM ${DEV_BASE} AS build-deps
+FROM build-deps AS gpu-sdks
+FROM gpu-sdks AS libvmaf-deps
+FROM libvmaf-deps AS libvmaf-compile
+FROM libvmaf-deps AS codec-deps
+FROM codec-deps AS ffmpeg-compile
+FROM codec-deps AS libvmaf-build
+FROM libvmaf-build AS dev-mcp
+GRAPH
+  chain_case "libvmaf-build on a foreign base is refused" \
+    "libvmaf-build roots at 'libvmaf-build', not build-deps" <<'GRAPH'
+FROM ${DEV_BASE} AS build-deps
+FROM build-deps AS gpu-sdks
+FROM ubuntu:26.04 AS libvmaf-build
+GRAPH
+  chain_case "a compile stage outside the build-deps chain is refused" \
+    "libvmaf-compile roots at 'go-toolchain', not build-deps
+dev-mcp roots at 'go-toolchain', not build-deps" <<'GRAPH'
+FROM ${DEV_BASE} AS build-deps
+FROM build-deps AS gpu-sdks
+FROM ${DEV_GO_BASE} AS go-toolchain
+FROM go-toolchain AS libvmaf-compile
+FROM gpu-sdks AS libvmaf-build
+FROM libvmaf-compile AS dev-mcp
+GRAPH
+  chain_case "a missing libvmaf-build is refused" \
+    "libvmaf-build roots at 'no stage', not build-deps" <<'GRAPH'
+FROM ${DEV_BASE} AS build-deps
+FROM build-deps AS gpu-sdks
+GRAPH
 
   RELEASE_EXTRACTED="${WORKDIR}/extracted-release-marker"
   if [ -n "$release_marker" ]; then

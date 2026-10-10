@@ -23,6 +23,7 @@ for diagnosis establishing these.
 | Touching | Read first | Invariant |
 | --- | --- | --- |
 | `Containerfile`, `/build-config.env`, `/docs/development/base-images.md` | [base-images](AGENTS.d/base-images.md) | All base images default from build-config.env; no `COPY --from=<external image>`; declare named stages. |
+| `Containerfile`, `/scripts/ci/tests/test_dev_image_build_stages.py` | [build-stages](AGENTS.d/build-stages.md) | libvmaf, FFmpeg build trees only in libvmaf-compile, ffmpeg-compile; image stages COPY their DESTDIR staging roots. |
 | `Containerfile` | [cache-mounts](AGENTS.d/cache-mounts.md) | Apt cache mounts without cleanup; ccache mount with CCACHE_DIR; dockerfile:1.7 syntax; vmaf user uid/gid 2000. |
 | `docker-compose.yml`, `scripts/dev-mcp-healthcheck.sh`, `scripts/test-dev-mcp-healthcheck.sh` | [compose-healthcheck](AGENTS.d/compose-healthcheck.md) | Healthcheck matches stdio transport via vmaf --version; 45s start period for CUDA; no socket check. |
 | `docker-compose.yml`, `/scripts/ci/tests/test_dev_compose_corpus_mount.py` | [corpus-mount](AGENTS.d/corpus-mount.md) | dev-mcp and smoke-probe-cron each bind ${VMAFX_CORPUS_DIR:-./.corpus} read-only at /workspace/.corpus. |

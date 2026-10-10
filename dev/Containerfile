@@ -615,7 +615,19 @@ RUN echo "=== sycl-ls (SYCL device visibility) ===" \
 # ---------------------------------------------------------------------------
 # Stage 3 — libvmaf source build
 # ---------------------------------------------------------------------------
-FROM gpu-sdks AS libvmaf-build
+# The libvmaf and FFmpeg builds run in stages of their own (libvmaf-compile,
+# ffmpeg-compile), and the stages the image is made of copy only what each one
+# installs, from a staging root (DESTDIR). A build tree removed in a later RUN
+# stays in the layer that made it: the Meson tree alone was 8.25 GB of the
+# image, the FFmpeg checkout and objects another 1.1 GB (ADR-0790 removed both
+# that way). The chain:
+#   libvmaf-deps     sources, ONNX Runtime, nv-codec-headers
+#   libvmaf-compile  meson setup + ninja, installs into /stage/libvmaf (discarded)
+#   codec-deps       installed libvmaf, the backend probe, encoder libraries
+#   ffmpeg-compile   patched FFmpeg, installs into /stage/ffmpeg (discarded)
+#   libvmaf-build    installed FFmpeg and the encoder probe; go-build and dev-mcp
+#                    derive from it, and CI builds it as its gate (ADR-0819)
+FROM gpu-sdks AS libvmaf-deps
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 WORKDIR /build/vmaf
@@ -747,6 +759,13 @@ RUN { curl -fsSL --retry 1 --retry-delay 2 --connect-timeout 10 --max-time 60 \
 
 USER vmaf
 
+# ---------------------------------------------------------------------------
+# libvmaf-compile: the Meson build tree exists only in this stage.
+# ---------------------------------------------------------------------------
+FROM libvmaf-deps AS libvmaf-compile
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+WORKDIR /build/vmaf
+USER vmaf
 
 # SYCL is built with AOT compilation by default (ADR-0567).
 # The default sycl_icpx_aot_targets list covers Arc dGPU (dg2-g10/g11,
@@ -788,13 +807,20 @@ RUN --mount=type=cache,target=/home/vmaf/.cache/ccache,sharing=locked,uid=2000,g
     && ninja -C core/build
 
 USER root
-# Install and remove the Meson build dir (CUDA PTX/SASS, SYCL AOT fat
-# binaries, HIP .co objects, C object files). Installed libvmaf.so and
-# headers live under /usr/local/; the build dir is not needed at runtime
-# (~1-3 GB with all GPU backends). ADR-0790.
-RUN ninja -C core/build install \
-    && ldconfig \
-    && find /build/vmaf/core/build -maxdepth 0 -exec rm -rf {} +
+# Install into a staging root. codec-deps copies only that root, so the build
+# dir (CUDA PTX/SASS, SYCL AOT fat binaries, HIP .co objects, C object files)
+# reaches no layer of the image.
+RUN DESTDIR=/stage/libvmaf ninja -C core/build install
+
+# ---------------------------------------------------------------------------
+# codec-deps: installed libvmaf, the backend probe, the encoder libraries.
+# ---------------------------------------------------------------------------
+FROM libvmaf-deps AS codec-deps
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+WORKDIR /build/vmaf
+USER root
+COPY --from=libvmaf-compile /stage/libvmaf/ /
+RUN ldconfig
 
 # ---------- Build-time backend smoke probe ---------------------------------
 # Walk every GPU backend the meson configure step claims to have enabled and
@@ -809,9 +835,10 @@ RUN ninja -C core/build install \
 # build log will surface the regression on every rebuild.
 #
 # LD_LIBRARY_PATH must include `/usr/local/lib` for this RUN because libvmaf.so.3
-# is installed there by `ninja install` above and the prior gpu-sdks ENV layers
-# pinned LD_LIBRARY_PATH to CUDA/oneAPI/ROCm directories only — `ldconfig` runs
-# during install (root) but the dlopen()er here is the vmaf process, and bash
+# is installed there (libvmaf-compile's staging root, copied above) and the
+# prior gpu-sdks ENV layers pinned LD_LIBRARY_PATH to CUDA/oneAPI/ROCm
+# directories only — `ldconfig` runs after the copy (root) but the dlopen()er
+# here is the vmaf process, and bash
 # `LD_LIBRARY_PATH=…` makes the dependency explicit.
 #
 # After a working run-time `docker compose up -d` with GPU passthrough,
@@ -1025,6 +1052,14 @@ RUN /build/vmaf/scripts/ci/checkout-annotated-tag.sh \
 
 USER vmaf
 
+# ---------------------------------------------------------------------------
+# ffmpeg-compile: the FFmpeg checkout and objects exist only in this stage.
+# ---------------------------------------------------------------------------
+FROM codec-deps AS ffmpeg-compile
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+WORKDIR /build/vmaf
+USER vmaf
+
 ARG FFMPEG_TAG=n9.0.2
 ARG FFMPEG_REMOTE=https://github.com/FFmpeg/FFmpeg.git
 RUN /build/vmaf/scripts/ci/checkout-annotated-tag.sh \
@@ -1170,13 +1205,20 @@ RUN --mount=type=cache,target=/home/vmaf/.cache/ccache,sharing=locked,uid=2000,g
     && rm /tmp/ffmpeg-build.log /tmp/ffmpeg-patched-files.txt
 
 USER root
-# Install and then remove the FFmpeg source tree (sources + build objects).
-# Installed binaries/libs live under /usr/local/; the source tree at
-# /build/ffmpeg is not needed at runtime (~2-5 GB). ADR-0790.
+# Install into a staging root; libvmaf-build copies only that root.
 WORKDIR /build/vmaf
-RUN make -C /build/ffmpeg install \
-    && /usr/local/bin/ffmpeg -version | head -3 \
-    && find /build/ffmpeg -maxdepth 0 -exec rm -rf {} +
+RUN make -C /build/ffmpeg install DESTDIR=/stage/ffmpeg
+
+# ---------------------------------------------------------------------------
+# libvmaf-build: codec-deps plus the installed FFmpeg.
+# ---------------------------------------------------------------------------
+FROM codec-deps AS libvmaf-build
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+WORKDIR /build/vmaf
+USER root
+COPY --from=ffmpeg-compile /stage/ffmpeg/ /
+RUN ldconfig \
+    && /usr/local/bin/ffmpeg -version | head -3
 
 # ---- Build-time encoder probe (ADR-0541) ----------------------------------
 # Walk every encoder this stage promises and grep the actual `ffmpeg
