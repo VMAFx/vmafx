@@ -10,13 +10,13 @@ require (
 	github.com/getkin/kin-openapi v0.149.0
 	github.com/go-chi/chi/v5 v5.3.2
 	github.com/go-logr/logr v1.4.4
-	github.com/golusoris/golusoris v0.16.0
+	github.com/golusoris/golusoris v0.16.1
 	github.com/golusoris/golusoris/core v0.10.1
 	github.com/google/uuid v1.6.0
 	github.com/grafana/grafana-foundation-sdk/go v0.0.20
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/modelcontextprotocol/go-sdk v1.8.0
-	github.com/onsi/ginkgo/v2 v2.33.0
+	github.com/onsi/ginkgo/v2 v2.33.1
 	github.com/onsi/gomega v1.44.0
 	github.com/parquet-go/parquet-go v0.32.0
 	github.com/prometheus/client_golang v1.25.0
