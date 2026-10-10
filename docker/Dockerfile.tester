@@ -432,15 +432,15 @@ ENTRYPOINT ["/usr/bin/python3", "/opt/vmafx/tester/vmaf-tester-report"]
 
 # ---------------------------------------------------------------------------
 # cuda-build: Debian 13, nvcc and cudart from NVIDIA's debian13 repository at
-# build-config.env's exact versions (scripts/ci/install-cuda-toolkit.sh), the
-# nv-codec-headers commit core/src/meson.build requires. The default gencode
+# build-config.env's exact versions (scripts/ci/install-cuda-toolkit.sh), and
+# nv-codec-headers at build-config.env's NV_CODEC_HEADERS_COMMIT. The default gencode
 # list of core/src/meson.build: cubins for sm_80, sm_86, sm_89, sm_90, sm_100
 # and sm_120, PTX for compute_80 and compute_120. The compilers stay here.
 # ---------------------------------------------------------------------------
 FROM ${RELEASE_BUILDER_BASE} AS cuda-build
 ARG DEBIAN_FRONTEND=noninteractive
 ARG VMAF_BUILD_JOBS=4
-ARG NV_CODEC_HEADERS_COMMIT=876af32a202d0de83bd1d36fe74ee0f7fcf86b0d
+ARG NV_CODEC_HEADERS_COMMIT=0a6fba9a2820628b8103464f4c8753ee05838baa
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # hadolint ignore=DL3008
 RUN apt-get update \

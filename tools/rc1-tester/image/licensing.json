@@ -40,13 +40,13 @@
   {
    "pattern": "src/*.fatbin.c",
    "suffix": ".fatbin.c",
-   "compiled_from": "core/src/feature/cuda/**/{name}.cu",
+   "compiled_from": "core/src/**/{name}.cu",
    "why": "bin2c of the nvcc fatbin of a CUDA kernel (core/src/meson.build cuda_cu_sources); its device code also holds NVIDIA's CUDA header code and libdevice functions (component nvidia-cuda-device-code of the CUDA image)"
   },
   {
    "pattern": "src/*_hsaco.c",
    "suffix": "_hsaco.c",
-   "compiled_from": "core/src/feature/hip/**/{name}.hip",
+   "compiled_from": "core/src/**/{name}.hip",
    "why": "xxd -i of the hipcc code object of a HIP kernel (core/src/meson.build hip_kernel_sources)"
   },
   {
@@ -992,7 +992,7 @@
      "copyright": [
       "Copyright (c) 2016 (as the headers state it)"
      ],
-     "source": "https://code.ffmpeg.org/FFmpeg/nv-codec-headers at commit 876af32a202d0de83bd1d36fe74ee0f7fcf86b0d (NV_CODEC_HEADERS_COMMIT of docker/Dockerfile.tester, the minimum core/src/meson.build requires)",
+     "source": "https://code.ffmpeg.org/FFmpeg/nv-codec-headers at commit 0a6fba9a2820628b8103464f4c8753ee05838baa, tag n13.1.15.0 (NV_CODEC_HEADERS_COMMIT of build-config.env, which docker/Dockerfile.tester and docker/Dockerfile.production-gpu fetch)",
      "texts": [
       {
        "artifact": "licenses/nv-codec-headers/NOTICE.txt",
@@ -1966,7 +1966,7 @@
      "copyright": [
       "Copyright (c) 2016 (as the headers state it)"
      ],
-     "source": "https://code.ffmpeg.org/FFmpeg/nv-codec-headers at commit 876af32a202d0de83bd1d36fe74ee0f7fcf86b0d (NV_CODEC_HEADERS_COMMIT of docker/Dockerfile.tester, the minimum core/src/meson.build requires)",
+     "source": "https://code.ffmpeg.org/FFmpeg/nv-codec-headers at commit 0a6fba9a2820628b8103464f4c8753ee05838baa, tag n13.1.15.0 (NV_CODEC_HEADERS_COMMIT of build-config.env, which docker/Dockerfile.tester and docker/Dockerfile.production-gpu fetch)",
      "texts": [
       {
        "artifact": "opt/vmafx/licenses/nv-codec-headers/NOTICE.txt",

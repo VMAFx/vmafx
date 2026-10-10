@@ -478,3 +478,8 @@ either path means adding stage to helper, not second exit. `CHECK_CUDA_GOTO` lab
   with ADR-1138 / ADR-1470 wording, like `core/include/libvmaf/model.h`.
 - Refactor proof: sm_89 SASS before / after (`cuobjdump -sass`) identical, or the diff explained
   (commutative operand swap, register names).
+- Loader member (`dev->state.f->cu*`) new to host code: present in nv-codec-headers
+  `NV_CODEC_HEADERS_TAG` (`build-config.env`), else raise tag + commit + licence record in
+  same PR and point `cc.has_member` check of `core/src/meson.build` at new member. Hosted CUDA
+  legs clone default branch of headers: green there proves nothing for pinned images
+  (`T-NV-CODEC-HEADERS-CI-LEGS-UNPINNED-2026-10-10`).

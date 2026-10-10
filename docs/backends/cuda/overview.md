@@ -32,6 +32,23 @@ pin is CUDA 13.4.2 (`CUDA_VERSION` in `build-config.env`; apt package
 `cuda-toolkit-13-4`). The build uses the driver API only, through `ffnvcodec`
 dynlink wrappers.
 
+Those wrappers come from FFmpeg's
+[nv-codec-headers](https://code.ffmpeg.org/FFmpeg/nv-codec-headers), release
+`n13.1.15.0` or newer (`NV_CODEC_HEADERS_TAG` in `build-config.env`). Older
+releases do not declare `cuArray3DGetDescriptor`, which the device-frame
+import calls. `meson setup` checks for it and stops with this message when
+the installed headers are older:
+
+```text
+ffnvcodec/dynlink_loader.h has no CudaFunctions.cuArray3DGetDescriptor: the
+installed nv-codec-headers are too old. Please install nv-codec-headers
+n13.1.15.0 (commit 0a6fba9a2820628b8103464f4c8753ee05838baa) or newer from
+https://code.ffmpeg.org/FFmpeg/nv-codec-headers.
+```
+
+Install them with `make install` in a checkout of that release (the headers
+land under `include/ffnvcodec/` of the prefix).
+
 ### GPU architecture coverage
 
 **Minimum compute capability: 8.0 (Ampere).** The fork ships cubins for

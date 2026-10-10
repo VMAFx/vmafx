@@ -367,6 +367,50 @@ def test_every_meson_generated_header_has_a_licensing_rule() -> None:
         lic.generated_rule(rules, rel)
 
 
+# Each device kernel Meson compiles is embedded as a generated C file, and its
+# rule must lead to the one source file Meson names. A kernel outside the
+# directory a rule globbed stopped the GPU image builds at their licence scan
+# (import_convert under core/src/cuda and core/src/hip).
+KERNEL_SOURCE = re.compile(
+    r"""^\s*'(\w+)'\s*:\s*\[?\s*(\w+)\s*\+\s*'([\w/]+\.(?:cu|hip))'""", re.MULTILINE
+)
+KERNEL_DIRS = {
+    "src_dir": "core/src/",
+    "feature_src_dir": "core/src/feature/",
+    "cuda_dir": "core/src/cuda/",
+}
+KERNEL_OBJECT_SUFFIX = {".cu": ".fatbin.c", ".hip": "_hsaco.c"}
+
+
+def meson_kernel_objects() -> list[tuple[str, str]]:
+    """(generated build input, repository source) of every CUDA and HIP kernel."""
+    text = (REPO / "core" / "src" / "meson.build").read_text(encoding="utf-8")
+    found = []
+    for name, directory, rel in KERNEL_SOURCE.findall(text):
+        found.append(
+            (f"src/{name}{KERNEL_OBJECT_SUFFIX[Path(rel).suffix]}", KERNEL_DIRS[directory] + rel)
+        )
+    return sorted(found)
+
+
+def test_every_meson_kernel_object_resolves_to_the_source_meson_names() -> None:
+    kernels = meson_kernel_objects()
+    assert {
+        "src/psnr_score.fatbin.c",
+        "src/import_convert.fatbin.c",
+        "src/import_convert_hsaco.c",
+    } <= {rel for rel, _ in kernels}
+    rules = json.loads(lic.MANIFEST.read_text(encoding="utf-8"))["generated_build_files"]
+    for rel, source in kernels:
+        assert lic.compiled_source(lic.generated_rule(rules, rel), rel, REPO) == source, rel
+
+
+def test_a_kernel_outside_the_feature_tree_is_refused_by_a_feature_only_rule() -> None:
+    narrow = {"suffix": "_hsaco.c", "compiled_from": "core/src/feature/hip/**/{name}.hip"}
+    with pytest.raises(lic.LicensingError, match="identifies 0 files, not 1"):
+        lic.compiled_source(narrow, "src/import_convert_hsaco.c", REPO)
+
+
 # The libraries core/src/meson.build installs, each with its pkg-config file.
 PKG_CONFIG_FILEBASE = re.compile(r"""filebase\s*:\s*'([\w.-]+)'""")
 
@@ -435,7 +479,7 @@ def test_generated_source_is_identified_by_its_bytes(tmp_path: Path) -> None:
 
 
 FATBIN_RULE = {"pattern": "src/*.fatbin.c", "suffix": ".fatbin.c",
-               "compiled_from": "core/src/feature/cuda/**/{name}.cu"}  # fmt: skip
+               "compiled_from": "core/src/**/{name}.cu"}  # fmt: skip
 
 
 def test_a_kernel_object_takes_the_licence_of_the_source_it_was_compiled_from(
