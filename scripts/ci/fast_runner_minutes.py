@@ -1,17 +1,27 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
-"""Sum this month's Depot runner base minutes from the GitHub Actions API.
+"""Sum this month's paid fast-runner units from the GitHub Actions API.
 
-Read-only. A job counts when one of its labels starts with ``depot-``; its
-base minutes are its elapsed seconds times the label's minutes multiplier
-(ADR-2168). The month total is rounded up to whole minutes, as Depot bills.
+Read-only (ADR-2168). A job counts when one of its labels starts with a
+provider prefix of ``PROVIDERS``; its units are elapsed seconds times the
+provider's per-minute rate for that label, rounded up to whole units:
 
-    python3 scripts/ci/depot_minutes.py [--month YYYY-MM] [--limit 10000]
-                                        [--threshold 0.9] [--repo OWNER/REPO]
+* Depot (``depot-``): base minutes. Linux and Arm labels weigh vCPUs / 2
+  (``depot-ubuntu-24.04`` is 1, ``-8`` is 4); Windows labels weigh their vCPU
+  count (``depot-windows-2025`` is 2). Source: depot.dev runner-types page.
+* Namespace (``namespace-``): unit minutes = vCPUs x minutes x platform factor
+  (Linux 1, Windows 2, macOS 10), per the maintainer's brief (not checked
+  against namespace.so). A ``namespace-profile-<name>`` label does not carry
+  its shape, so each profile is declared with ``--namespace-profile
+  NAME=VCPUS[:linux|windows|macos]``; an undeclared profile is an error.
+
+    python3 scripts/ci/fast_runner_minutes.py --limit 10000 [--month YYYY-MM]
+        [--threshold 0.9] [--repo OWNER/REPO] [--namespace-profile NAME=4]
 
 Prints ``used / limit`` and exits 0 below ``limit * threshold``, 1 at or above
-it, 2 when the API cannot be read (a failed read is never "under the limit").
+it, 2 when the API cannot be read or a label has no rule (a failed read is
+never "under the limit").
 """
 
 from __future__ import annotations
@@ -29,9 +39,8 @@ from datetime import date, datetime
 from typing import Any
 
 DEFAULT_REPO = "VMAFx/vmafx"
-DEFAULT_LIMIT = 10_000
 DEFAULT_THRESHOLD = 0.9
-# Workflows holding a job that can run on Depot (ADR-2168).
+# Workflows holding a job that can run on a fast runner (ADR-2168).
 WORKFLOWS = (
     "tests-and-quality-gates.yml",
     "dev-container-build.yml",
@@ -45,10 +54,17 @@ WORKERS = 16
 
 _LINUX = re.compile(r"^depot-ubuntu-\d+\.\d+(?:-arm)?(?:-(\d+))?$")
 _WINDOWS = re.compile(r"^depot-windows-\d+(?:-(\d+))?$")
+_NS_PROFILE = re.compile(
+    r"^(?P<name>[A-Za-z0-9_.-]+?)=(?P<vcpus>\d+)(?::(?P<os>linux|windows|macos))?$"
+)
+_NS_FACTOR = {"linux": 1, "windows": 2, "macos": 10}
+_NS_PREFIX = "namespace-profile-"
+
+Profiles = dict[str, tuple[int, str]]
 
 
-def multiplier(label: str) -> int:
-    """Minutes multiplier of a Depot label (docs: depot.dev runner-types).
+def depot_rate(label: str, _profiles: Profiles) -> float:
+    """Base minutes per elapsed minute of a Depot label.
 
     Linux and Arm: vCPUs / 2 (2 vCPU = 1x). Windows: the vCPU count (2 = 2x).
     Anything else (macOS is priced per minute, not by multiplier) raises.
@@ -62,6 +78,43 @@ def multiplier(label: str) -> int:
     raise ValueError(f"no known minutes multiplier for Depot label {label!r}")
 
 
+def namespace_rate(label: str, profiles: Profiles) -> float:
+    """Unit minutes per elapsed minute: vCPUs x platform factor of the profile."""
+    name = label.removeprefix(_NS_PREFIX) if label.startswith(_NS_PREFIX) else ""
+    if name not in profiles:
+        raise ValueError(f"Namespace label {label!r} has no declared --namespace-profile")
+    vcpus, platform = profiles[name]
+    return vcpus * _NS_FACTOR[platform]
+
+
+def parse_profiles(specs: Iterable[str]) -> Profiles:
+    """``NAME=VCPUS[:linux|windows|macos]`` entries of ``--namespace-profile``."""
+    profiles: Profiles = {}
+    for spec in specs:
+        match = _NS_PROFILE.match(spec)
+        if match is None:
+            raise ValueError(
+                f"bad --namespace-profile {spec!r}, want NAME=VCPUS[:linux|windows|macos]"
+            )
+        profiles[match["name"]] = (int(match["vcpus"]), match["os"] or "linux")
+    return profiles
+
+
+# Provider table: label prefix -> rate rule (ADR-2168).
+PROVIDERS: tuple[tuple[str, Callable[[str, Profiles], float]], ...] = (
+    ("depot-", depot_rate),
+    ("namespace-", namespace_rate),
+)
+
+
+def label_rate(label: str, profiles: Profiles) -> float | None:
+    """Units per minute of a label, None when no provider owns it."""
+    for prefix, rule in PROVIDERS:
+        if label.startswith(prefix):
+            return rule(label, profiles)
+    return None
+
+
 def job_seconds(job: dict[str, Any]) -> float:
     """Elapsed seconds of a finished job, 0 for one that never started."""
     started, completed = job.get("started_at"), job.get("completed_at")
@@ -72,13 +125,15 @@ def job_seconds(job: dict[str, Any]) -> float:
     return max(delta.total_seconds(), 0.0)
 
 
-def base_minutes(jobs: Iterable[dict[str, Any]]) -> int:
-    """Whole base minutes (rounded up) of every Depot job in ``jobs``."""
+def used_units(jobs: Iterable[dict[str, Any]], profiles: Profiles | None = None) -> int:
+    """Whole units (rounded up) of every fast-runner job in ``jobs``."""
     total = 0.0
     for job in jobs:
-        depot = [x for x in job.get("labels", []) if x.startswith("depot-")]
-        if depot:
-            total += job_seconds(job) * multiplier(depot[0])
+        for label in job.get("labels", []):
+            rate = label_rate(label, profiles or {})
+            if rate is not None:
+                total += job_seconds(job) * rate
+                break
     return math.ceil(total / 60)
 
 
@@ -143,15 +198,21 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--month", default=date.today().strftime("%Y-%m"))
     parser.add_argument("--repo", default=DEFAULT_REPO)
-    parser.add_argument("--limit", type=int, default=DEFAULT_LIMIT)
+    parser.add_argument(
+        "--limit", type=int, required=True, help="the provider's monthly unit limit"
+    )
     parser.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD)
+    parser.add_argument(
+        "--namespace-profile", action="append", default=[], metavar="NAME=VCPUS[:OS]"
+    )
     ns = parser.parse_args(argv)
     try:
-        used = base_minutes(fetch_jobs(ns.repo, ns.month))
+        profiles = parse_profiles(ns.namespace_profile)
+        used = used_units(fetch_jobs(ns.repo, ns.month), profiles)
     except (RuntimeError, ValueError, OSError, subprocess.TimeoutExpired) as exc:
-        print(f"depot_minutes: cannot read usage: {exc}", file=sys.stderr)
+        print(f"fast_runner_minutes: cannot read usage: {exc}", file=sys.stderr)
         return 2
-    print(f"{used} / {ns.limit} base minutes ({ns.month}, {ns.repo})")
+    print(f"{used} / {ns.limit} units ({ns.month}, {ns.repo})")
     return 1 if used >= ns.limit * ns.threshold else 0
 
 

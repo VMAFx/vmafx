@@ -913,8 +913,8 @@ jobs:
     # required-aggregator
     name: Coverage Gate
     # Depot switch (ADR-2168): master push / dispatch only, repository variable
-    # VMAFX_DEPOT_LINUX_RUNNER (unset = GitHub-hosted). docs/development/ci.md#depot-runners
-    runs-on: ${{ (github.event_name != 'pull_request' && github.ref == 'refs/heads/master' && vars.VMAFX_DEPOT_LINUX_RUNNER) || 'ubuntu-latest' }}
+    # VMAFX_FAST_LINUX_RUNNER (unset = GitHub-hosted). docs/development/ci.md#depot-runners
+    runs-on: ${{ (github.event_name != 'pull_request' && github.ref == 'refs/heads/master' && vars.VMAFX_FAST_LINUX_RUNNER) || 'ubuntu-latest' }}
     # 75, not 30: the Python suite step below is budgeted 55 min and the rest
     # of the job (apt + pip, the gcov build, the meson unit suite, gcovr) has
     # measured at ~5.5 min. See that step for where 55 comes from.

@@ -1,5 +1,5 @@
 <!-- markdownlint-disable MD013 MD041 MD060 -->
-# ADR-2168: Four long Linux jobs of master pushes run on Depot runners, behind a repository variable
+# ADR-2168: Four long Linux jobs of master pushes run on a paid fast-runner provider (Depot today), behind a repository variable
 
 - **Status**: Accepted
 - **Date**: 2026-10-07
@@ -27,23 +27,29 @@ Depot organisation carries a 10,000-minute limit that caps spending.
 ## Decision
 
 We will select the runner of those four jobs with the repository variable
-`VMAFX_DEPOT_LINUX_RUNNER`:
+`VMAFX_FAST_LINUX_RUNNER`:
 
 ```yaml
-runs-on: ${{ (github.event_name != 'pull_request' && github.ref == 'refs/heads/master' && vars.VMAFX_DEPOT_LINUX_RUNNER) || 'ubuntu-latest' }}
+runs-on: ${{ (github.event_name != 'pull_request' && github.ref == 'refs/heads/master' && vars.VMAFX_FAST_LINUX_RUNNER) || 'ubuntu-latest' }}
 ```
 
-The variable holds a Depot label (for example `depot-ubuntu-24.04-8`), so the
-size is chosen by the variable and not by a commit. Unset or empty means
+The variable holds a runner label of the provider in use (Depot today, for
+example `depot-ubuntu-24.04-8`; Namespace labels such as
+`namespace-profile-<name>` fit the same switch), so provider and size are
+chosen by the variable and not by a commit. Switch off with
+`gh variable delete VMAFX_FAST_LINUX_RUNNER`. Unset or empty means
 GitHub-hosted. Pull requests, fork pull requests, other branches and every
 other job stay on GitHub-hosted runners.
 
-`scripts/ci/depot_minutes.py` sums the month's base minutes (jobs whose labels
-start with `depot-`, elapsed seconds times the label multiplier, rounded up)
-from the Actions API, read-only, and exits 1 at 90 % of the 10,000-minute
-limit. The maintainer's local merge train calls it and clears the variable.
-No workflow in the repository writes the variable, and no new credential is
-added.
+`scripts/ci/fast_runner_minutes.py` sums the month's units from the Actions
+API, read-only, through a table of label prefix to unit rule: Depot (`depot-`)
+base minutes are elapsed seconds times the size multiplier (vCPUs / 2 on
+Linux); Namespace (`namespace-`) unit minutes are vCPUs times minutes times a
+platform factor (Linux 1, Windows 2, macOS 10), with each profile's vCPUs
+declared on the command line because the label does not carry them. The
+caller passes `--limit`; the script exits 1 at 90 % of it. The maintainer's
+local merge train calls it and clears the variable. No workflow in the
+repository writes the variable, and no new credential is added.
 
 ## Alternatives considered
 
@@ -57,13 +63,13 @@ added.
 ## Consequences
 
 - **Positive**: the four jobs leave the saturated hosted queue on master
-  pushes; switching off is `gh variable delete VMAFX_DEPOT_LINUX_RUNNER`.
+  pushes; switching off is `gh variable delete VMAFX_FAST_LINUX_RUNNER`.
 - **Negative**: Depot images are Ubuntu 24.04 and 22.04 only; the four jobs
   ask for `ubuntu-latest`, so a job that depends on a tool of the hosted image
   can differ (compared once, see `docs/development/ci.md`). A third party runs
   the jobs. The repository must be connected to the Depot organisation by the
   maintainer.
-- **Neutral / follow-ups**: temporary; remove the variable and the four
+- **Neutral / follow-ups**: temporary; the Namespace rule is the maintainer's, not checked against namespace.so; remove the variable and the four
   expressions when the other CI provider is chosen.
 
 ## References

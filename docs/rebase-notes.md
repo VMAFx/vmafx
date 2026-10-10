@@ -62560,7 +62560,7 @@ and checks that `psnr_hvs` still scores 9 and 11 bits. No score at 8, 10, 12 or
 ## ci/depot-runners (ADR-2168)
 
 The `runs-on` of `Coverage Gate`, `Dev Container Build work`, `Docker Image Build work` and
-`FFmpeg SYCL work` is the `vars.VMAFX_DEPOT_LINUX_RUNNER` expression of ADR-2168 in
+`FFmpeg SYCL work` is the `vars.VMAFX_FAST_LINUX_RUNNER` expression of ADR-2168 in
 `tests-and-quality-gates.yml`, `dev-container-build.yml`, `docker-image.yml` and
 `ffmpeg-integration.yml`. An upstream sync keeps the fork's line. Temporary: removed when
 another CI provider is chosen.
