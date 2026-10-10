@@ -23,6 +23,10 @@
 #include "libvmaf/feature.h"
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/model.h"
+/* Declares the vmaf_*_perceptual_weight_* functions this header redeclares under their engine
+ * names. It must come first: MSVC rejects a plain declaration followed by the VMAF_EXPORT one
+ * (C2375), and engine_names_gen.h renames both to the same identifier. */
+#include "libvmaf/perceptual_weight.h"
 
 /* Bound of the provided-feature walk in vmaf_engine_feature_producer()
  * (HISS-02); no extractor declares more than a few dozen. */

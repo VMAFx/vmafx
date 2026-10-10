@@ -16,10 +16,17 @@
 #define VMAF_COMPAT_CONFORMANCE_TRACE_H
 
 #include <stddef.h>
+#include <stdio.h>
 
 #include "compat_conformance_gen.h"
 
-#if defined(__GNUC__) || defined(__clang__)
+/* trace() formats with the C runtime's vsnprintf(). On MinGW GCC's `printf` archetype is the
+ * MSVCRT one, which rejects %zu and %td (the Windows UCRT64 build failed on
+ * test_compat_conformance_api.c with -Werror=format); <stdio.h> names the archetype the runtime's
+ * own declarations use in __MINGW_PRINTF_FORMAT, as VMAFX_PRINTF_FORMAT does. */
+#if defined(__MINGW_PRINTF_FORMAT)
+#define TRACE_FORMAT(fmt, args) __attribute__((format(__MINGW_PRINTF_FORMAT, fmt, args)))
+#elif defined(__GNUC__) || defined(__clang__)
 #define TRACE_FORMAT(fmt, args) __attribute__((format(printf, fmt, args)))
 #else
 #define TRACE_FORMAT(fmt, args)
