@@ -388,9 +388,10 @@ behaves:
   NVENC would write truncated and undecodable (payloads dominated by zero
   bytes); the first one is a warning.
 
-Its diagnostics patch (number 0019 of this repository's series until
-ADR-3143) makes failures exposed by the warning-clean `n9.0.2` build
-observable instead of truncating data or continuing after an error:
+Its diagnostics patch (patch 0019 of this repository's series before the
+switch to the shared series) makes failures exposed by the warning-clean
+`n9.0.2` build observable instead of truncating data or continuing after an
+error:
 
 - Malformed AAC SBR, RV60 block geometry, and WMA channel metadata return
   an invalid-data error. A file that previously reached undefined or
