@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1357), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1358), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5439,3 +5439,7 @@ Every ADR, one heading each (1357), so the site search finds an ADR by its title
 ## ADR-3061: Move the praetor pin to d141862c430b so the Go API gate builds its checker against golang.org/x/tools v0.51.0
 
 [3061-praetor-pin-d141862c](3061-praetor-pin-d141862c.md)
+
+## ADR-3137: The one dev image carries the Vulkan loader and lavapipe, so Vulkan-dependent tests build and run on CPU in every lane
+
+[3137-dev-image-vulkan-lavapipe](3137-dev-image-vulkan-lavapipe.md)

@@ -8,6 +8,15 @@ search:
 # Rebase notes
 
 <!-- rebase-notes:fragments:begin (rendered from docs/rebase-notes.d/; do not edit) -->
+## Dev image: Vulkan loader and lavapipe (2026-10-10)
+
+- `dev/Containerfile`, stage `build-deps`, installs `libvulkan1`,
+  `libvulkan-dev`, `mesa-vulkan-drivers` (lavapipe) and `vulkan-tools`, and a
+  build step fails when `vulkaninfo --summary` lists no `llvmpipe`
+  (ADR-3137, operator decision ci-config-19). Fork-only: upstream Netflix/vmaf
+  has no dev image. **On sync**: keep the four packages, the package check and
+  the lavapipe step; do not move them into a second image.
+
 ## 4:2:2 and 4:4:4 import on SYCL (RC4 WP3 formats lane, 2026-10-07)
 
 `rc4/api-wp3-formats-422-444-sycl` (on `rc4/api-wp3-sycl`),
