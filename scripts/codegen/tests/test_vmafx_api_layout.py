@@ -23,7 +23,7 @@ from types import ModuleType
 from unittest import mock
 
 import support
-from support import ROOT, fixture, pinned_clang_format, render_into, run, tool
+from support import ROOT, fixture, pinned_clang_format, remove_program, render_into, run, tool
 from vmafx_api import emit_layout_test
 from vmafx_api.layout import DATA_MODELS, layouts, models_agree
 from vmafx_api.loader import parse
@@ -38,6 +38,8 @@ def compile_layout(compiler: str, root: Path) -> tuple[int, str]:
     if done.returncode != 0:
         return done.returncode, done.stderr
     ran = run([str(binary)])
+    # Windows can hold the program for a moment after it ran (WinError 5).
+    remove_program(binary)
     return ran.returncode, ran.stdout
 
 
@@ -80,10 +82,7 @@ class ComputedLayoutTest(unittest.TestCase):
 @unittest.skipIf(tool("cc") is None, "no C compiler (cc) on PATH")
 class CompiledLayoutTest(unittest.TestCase):
     def test_fixture_compiles_and_passes(self) -> None:
-        # Windows keeps a program it has just run open for a moment (Access is
-        # denied on unlink, Windows ARM64 MSVC leg); the leftover scratch
-        # directory is not the subject of this test.
-        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+        with tempfile.TemporaryDirectory() as tmp:
             render_into(Path(tmp), parse(fixture()))
             status, output = compile_layout("cc", Path(tmp))
         self.assertEqual(status, 0, output)
@@ -96,7 +95,7 @@ class CompiledLayoutTest(unittest.TestCase):
         ):
             with (
                 self.subTest(defect=new),
-                tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp,
+                tempfile.TemporaryDirectory() as tmp,
             ):
                 render_into(Path(tmp), parse(fixture()))
                 header = Path(tmp) / "core/include/vmafx/frame.h"

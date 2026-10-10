@@ -19,7 +19,7 @@ import unittest
 from pathlib import Path
 from typing import Any
 
-from support import ROOT, document, entry, fixture, run, tool
+from support import ROOT, document, entry, fixture, remove_program, run, tool
 from vmafx_api import (
     emit_cli,
     emit_ffmpeg_options,
@@ -76,6 +76,8 @@ def build_and_run(test: unittest.TestCase, header: str, program: str) -> None:
         )
         test.assertEqual(build.returncode, 0, build.stderr)
         result = run([exe])
+        # Windows can hold the program for a moment after it ran (WinError 5).
+        remove_program(Path(exe))
     test.assertEqual(result.returncode, 0, f"option check {result.returncode} failed")
 
 

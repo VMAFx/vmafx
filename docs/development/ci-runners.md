@@ -96,6 +96,14 @@ What the job pins, and why:
 | Configure | As the x64 legs: `/experimental:c11atomics`, `--default-library=static`, `-Denable_float=true`, no CUDA or SYCL | One MSVC configuration across lanes. |
 | Output check | PowerShell check that `install\bin\vmaf.exe` has PE machine `0xAA64` | An accidental x64 build cannot pass under emulation. |
 
+Microsoft Defender's real-time protection stays on in this image (the image
+readme: Tamper Protection keeps the image build from turning it off), unlike
+the x64 Windows images. Deleting a program that a test has just built and run
+can fail for a moment with `PermissionError` (WinError 5). A test that runs a
+program from a temporary directory removes it with
+`scripts/lib/scratch_program.py` (`remove_program()`), which retries only that
+file, a bounded number of times, before the directory is cleaned up.
+
 CUDA is off in this lane. CUDA 13.3.1 shipped no `windows-arm64` packages and
 13.4.1 was the first release that does; the repository pin is now the CUDA
 release in `build-config.env`, and a CUDA-on-WoA leg is not part of this lane

@@ -18,11 +18,15 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT))
+
+from scripts.lib.scratch_program import remove_program  # noqa: E402 -- path set above
 
 
 def read(relative: str) -> str:
@@ -119,6 +123,8 @@ class SyclNoGraphDeprecation(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls) -> None:
+        # Windows can hold the harness for a moment after it ran (WinError 5).
+        remove_program(cls.binary)
         cls.tmp.cleanup()
 
     def run_harness(self, **env: str) -> tuple[list[str], list[str]]:

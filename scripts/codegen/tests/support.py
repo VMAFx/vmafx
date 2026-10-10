@@ -19,11 +19,14 @@ import tomllib
 
 ROOT = Path(__file__).resolve().parents[3]
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
+sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts" / "codegen"))
 
 from vmafx_api import cli  # noqa: E402 -- path set above
 from vmafx_api.loader import parse  # noqa: E402
 from vmafx_api.model import Api  # noqa: E402
+
+from scripts.lib.scratch_program import remove_program  # noqa: E402,F401 -- path set above
 
 DEFINITION = ROOT / "core" / "api" / "vmafx.toml"
 TOOL_TIMEOUT = 120  # seconds for a compiler or linker run
