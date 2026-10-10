@@ -5,12 +5,17 @@
 # dev/scripts/smoke-probe-loop.sh — periodic smoke probe loop
 #
 # Runs every ${PROBE_INTERVAL_SECONDS:-900} seconds (default: 15 min).
-# Can also be invoked with --once to run a single probe and exit.
+# Can also be invoked with --once to run a single probe and exit: status 0
+# when every sub-check passed, 1 when one failed (the record is written
+# either way). --healthy reads the newest record instead of probing: status 0
+# while it is recent and holds no error; the compose healthcheck calls it.
 #
 # For each probe iteration:
 #   1. Runs the golden pair (ref_576x324_48f.yuv / dis_576x324_48f.yuv)
-#      through the 3 active backends (cpu, cuda, sycl) and hip.
-#      (ADR-0726: Vulkan backend removed.)
+#      through the backends this host declares in PROBE_BACKENDS (default:
+#      cpu cuda sycl hip; ADR-0726: Vulkan backend removed). A declared
+#      backend that fails fails the probe; a backend left out is not run and
+#      its entry says "probed": false.
 #   2. Sends an MCP list_extractors request via stdio.
 #   3. Sends an MCP vmaf_score request for the same 8-bit pair via stdio.
 #   4. Writes a JSON probe record to ${PROBE_OUTPUT_DIR}/probe-${ts}.json
@@ -20,10 +25,10 @@
 #     "ts": "ISO-8601",
 #     "host_id": "hostname:container-id",
 #     "backend_results": {
-#       "cpu":  { "score": float, "duration_ms": int, "error": str|null },
-#       "cuda": { "score": float, "duration_ms": int, "error": str|null },
-#       "sycl": { "score": float, "duration_ms": int, "error": str|null },
-#       "hip":  { "score": float, "duration_ms": int, "error": str|null }
+#       "cpu":  { "probed": bool, "score": float, "duration_ms": int, "error": str|null },
+#       "cuda": { "probed": bool, "score": float, "duration_ms": int, "error": str|null },
+#       "sycl": { "probed": bool, "score": float, "duration_ms": int, "error": str|null },
+#       "hip":  { "probed": bool, "score": float, "duration_ms": int, "error": str|null }
 #     },
 #     "mcp_results": {
 #       "list_features": { "feature_count": int, "duration_ms": int, "error": str|null },
@@ -56,6 +61,9 @@ PROBE_INTERVAL="${PROBE_INTERVAL_SECONDS:-900}"
 # interval, so a container never reaches it, but the loop has a bound.
 PROBE_MAX_CYCLES="${PROBE_MAX_CYCLES:-1000000000}"
 PROBE_OUTPUT_DIR="${PROBE_OUTPUT_DIR:-/probes}"
+# The backends this host has. Every one named here must score; leave out the
+# ones whose device the host lacks instead of reading their errors as normal.
+PROBE_BACKENDS="${PROBE_BACKENDS:-cpu cuda sycl hip}"
 TESTDATA="${VMAF_TESTDATA_PATH:-/workspace/testdata}"
 MODEL_PATH="${VMAF_MODEL_PATH:-/workspace/model}"
 
@@ -98,6 +106,23 @@ json_num() {
   else
     printf 'null'
   fi
+}
+
+# True when PROBE_BACKENDS names the backend. An unknown name is a usage error.
+backend_declared() {
+  local wanted="$1" name names
+  IFS=' ,' read -r -a names <<<"${PROBE_BACKENDS}"
+  for name in "${names[@]}"; do
+    case "${name}" in
+      cpu | cuda | sycl | hip) ;;
+      *)
+        echo "[smoke-probe] PROBE_BACKENDS names an unknown backend: ${name}" >&2
+        exit 2
+        ;;
+    esac
+    [ "${name}" != "${wanted}" ] || return 0
+  done
+  return 1
 }
 
 probe_failed_record() {
@@ -291,11 +316,58 @@ probe_backend() {
 # Run one MCP tool call over the production Go stdio server. MCP requires an
 # initialize handshake before tools/call; a bare tools/call was rejected by the
 # Go SDK even when the tool name happened to exist in the retired Python server.
+#
+# The server refuses a path outside its allowlist (pkg/libvmaf/paths.go). The
+# repository roots are allowed only when the server starts inside a checkout,
+# and in the container it starts in /build/vmaf, so the golden pair under
+# ${TESTDATA} was refused and every vmaf_score probe failed. The probe declares
+# that one directory for the server process it starts; the allowlist of a
+# server anyone else starts is unchanged.
 _mcp_call() {
   local tool_name="$1" arguments_json="$2"
 
-  python3 -c "${_MCP_CALL_PY}" "${tool_name}" "${arguments_json}"
+  VMAF_MCP_ALLOW="${TESTDATA}${VMAF_MCP_ALLOW:+:${VMAF_MCP_ALLOW}}" \
+    python3 -c "${_MCP_CALL_PY}" "${tool_name}" "${arguments_json}"
 }
+
+# Reads one tools/call response on stdin and prints the value named by
+# argv[1] (extractors | score). On a refusal or a malformed payload it prints
+# the reason instead (the server's own text for isError) and exits 1.
+_MCP_RESULT_PY="$(
+  cat <<'PY'
+import json
+import math
+import sys
+
+MAX_REASON = 300
+
+
+def value(kind: str, result: dict) -> object:
+    content = result.get("content", [])
+    text = next((c.get("text", "") for c in content if c.get("type") == "text"), "")
+    if result.get("isError"):
+        raise ValueError(text[:MAX_REASON] or "isError without a message")
+    payload = json.loads(text)
+    if kind == "extractors":
+        extractors = payload.get("extractors")
+        if not isinstance(extractors, list):
+            raise ValueError("response lacks an extractors array")
+        return len(extractors)
+    score = payload["pooled_metrics"]["vmaf"]["mean"]
+    if isinstance(score, bool) or not isinstance(score, (int, float)) or not math.isfinite(score):
+        raise ValueError("non-finite score")
+    if payload.get("backend_used") != "cpu":
+        raise ValueError("response does not confirm the CPU backend")
+    return score
+
+
+try:
+    print(value(sys.argv[1], json.load(sys.stdin).get("result", {})))
+except (ValueError, KeyError, TypeError, AttributeError) as exc:
+    print(f"{type(exc).__name__}: {exc}")
+    sys.exit(1)
+PY
+)"
 
 # ---------------------------------------------------------------------------
 # MCP stdio probe — list_extractors (stable output key: list_features)
@@ -314,24 +386,11 @@ probe_mcp_list_features() {
     feature_count="null"
     err='"mcp stdio returned empty response"'
   elif echo "${response}" | python3 -c "import sys,json; d=json.load(sys.stdin); exit(0 if 'result' in d else 1)" 2>/dev/null; then
-    if feature_count="$(echo "${response}" | python3 -c "
-import sys, json
-d = json.load(sys.stdin)
-result = d.get('result', {})
-if result.get('isError'):
-    raise ValueError('list_extractors returned isError')
-content = result.get('content', [])
-text = next((c.get('text', '') for c in content if c.get('type') == 'text'), '')
-payload = json.loads(text)
-extractors = payload.get('extractors')
-if not isinstance(extractors, list):
-    raise ValueError('list_extractors response lacks an extractors array')
-print(len(extractors))
-" 2>/dev/null)"; then
+    if feature_count="$(echo "${response}" | python3 -c "${_MCP_RESULT_PY}" extractors 2>/dev/null)"; then
       err="null"
     else
+      err="$(json_str "invalid list_extractors response: ${feature_count}")"
       feature_count="null"
-      err='"invalid list_extractors response"'
     fi
   else
     feature_count="null"
@@ -376,26 +435,11 @@ print(json.dumps({
     score="null"
     err='"mcp stdio returned empty response"'
   elif echo "${response}" | python3 -c "import sys,json; d=json.load(sys.stdin); exit(0 if 'result' in d else 1)" 2>/dev/null; then
-    if score="$(echo "${response}" | python3 -c "
-import sys, json, math
-d = json.load(sys.stdin)
-result = d.get('result', {})
-if result.get('isError'):
-    raise ValueError('vmaf_score returned isError')
-content = result.get('content', [])
-text = next((c.get('text', '') for c in content if c.get('type') == 'text'), '')
-payload = json.loads(text)
-score = payload['pooled_metrics']['vmaf']['mean']
-if isinstance(score, bool) or not isinstance(score, (int, float)) or not math.isfinite(score):
-    raise ValueError('vmaf_score returned a non-finite score')
-if payload.get('backend_used') != 'cpu':
-    raise ValueError('vmaf_score did not confirm the CPU backend')
-print(score)
-" 2>/dev/null)"; then
+    if score="$(echo "${response}" | python3 -c "${_MCP_RESULT_PY}" score 2>/dev/null)"; then
       err="null"
     else
+      err="$(json_str "invalid vmaf_score response: ${score}")"
       score="null"
-      err='"invalid vmaf_score response"'
     fi
   else
     score="null"
@@ -409,18 +453,20 @@ print(score)
 # ---------------------------------------------------------------------------
 # Run one probe, write JSON output
 # ---------------------------------------------------------------------------
-run_probe() {
-  local output_file="${1}"
-  local ts host_id
+# Results of the probe in progress; one probe runs at a time.
+declare -A scores durations errors probed
 
-  ts="$(ts_now)"
-  host_id="$(hostname):$(cat /proc/self/cgroup 2>/dev/null | grep -oP '(?<=docker-)[a-f0-9]{12}' | head -1 || echo 'unknown')"
-
-  echo "[smoke-probe] Running probe at ${ts}…" >&2
-
-  # Backend probes
-  declare -A scores durations errors
+# Fill the result tables for the four backends.
+probe_backends() {
+  local backend score dur err
   for backend in cpu cuda sycl hip; do
+    if ! backend_declared "${backend}"; then
+      echo "[smoke-probe]   backend=${backend}: not in PROBE_BACKENDS, not probed" >&2
+      scores[${backend}]="null" durations[${backend}]=0 errors[${backend}]="null"
+      probed[${backend}]=false
+      continue
+    fi
+    probed[${backend}]=true
     echo "[smoke-probe]   backend=${backend}…" >&2
     IFS="${RESULT_SEP}" read -r score dur err <<<"$(
       probe_backend "${backend}" 2>/dev/null ||
@@ -430,8 +476,10 @@ run_probe() {
     durations[${backend}]="${dur:-0}"
     errors[${backend}]="${err:-null}"
   done
+}
 
-  # MCP probes
+# Run both MCP checks into mcp_fc_* and mcp_cv_*.
+probe_mcp() {
   echo "[smoke-probe]   mcp list_extractors…" >&2
   IFS="${RESULT_SEP}" read -r mcp_fc_count mcp_fc_dur mcp_fc_err <<<"$(
     probe_mcp_list_features 2>/dev/null ||
@@ -442,18 +490,21 @@ run_probe() {
     probe_mcp_compute_vmaf 2>/dev/null ||
       probe_failed_record
   )"
+}
 
-  # Write JSON
+write_record() {
+  local output_file="$1" ts="$2" host_id="$3"
+
   mkdir -p "$(dirname "${output_file}")"
   cat >"${output_file}" <<JSONEOF
 {
   "ts": $(json_str "${ts}"),
   "host_id": $(json_str "${host_id}"),
   "backend_results": {
-    "cpu":  { "score": ${scores[cpu]},  "duration_ms": ${durations[cpu]},  "error": ${errors[cpu]} },
-    "cuda": { "score": ${scores[cuda]}, "duration_ms": ${durations[cuda]}, "error": ${errors[cuda]} },
-    "sycl": { "score": ${scores[sycl]}, "duration_ms": ${durations[sycl]}, "error": ${errors[sycl]} },
-    "hip":  { "score": ${scores[hip]},  "duration_ms": ${durations[hip]},  "error": ${errors[hip]} }
+    "cpu":  { "probed": ${probed[cpu]},  "score": ${scores[cpu]},  "duration_ms": ${durations[cpu]},  "error": ${errors[cpu]} },
+    "cuda": { "probed": ${probed[cuda]}, "score": ${scores[cuda]}, "duration_ms": ${durations[cuda]}, "error": ${errors[cuda]} },
+    "sycl": { "probed": ${probed[sycl]}, "score": ${scores[sycl]}, "duration_ms": ${durations[sycl]}, "error": ${errors[sycl]} },
+    "hip":  { "probed": ${probed[hip]},  "score": ${scores[hip]},  "duration_ms": ${durations[hip]},  "error": ${errors[hip]} }
   },
   "mcp_results": {
     "list_features": { "feature_count": ${mcp_fc_count:-null}, "duration_ms": ${mcp_fc_dur:-0}, "error": ${mcp_fc_err:-null} },
@@ -465,6 +516,72 @@ JSONEOF
   echo "[smoke-probe] Written: ${output_file}" >&2
 }
 
+# A failed sub-check fails the probe. The record used to be the only place a
+# failure showed, and nothing read it: --once exited 0 and the loop went on
+# without a word.
+report_failures() {
+  local output_file="$1" backend failed=()
+
+  for backend in cpu cuda sycl hip; do
+    [ "${errors[${backend}]}" = "null" ] || failed+=("backend ${backend}")
+  done
+  [ "${mcp_fc_err:-null}" = "null" ] || failed+=("mcp list_extractors")
+  [ "${mcp_cv_err:-null}" = "null" ] || failed+=("mcp vmaf_score")
+  if [ "${#failed[@]}" -gt 0 ]; then
+    local IFS=','
+    echo "[smoke-probe] FAILED sub-checks: ${failed[*]} (see ${output_file})" >&2
+    return 1
+  fi
+}
+
+run_probe() {
+  local output_file="${1}"
+  local ts host_id
+
+  ts="$(ts_now)"
+  host_id="$(hostname):$(cat /proc/self/cgroup 2>/dev/null | grep -oP '(?<=docker-)[a-f0-9]{12}' | head -1 || echo 'unknown')"
+
+  echo "[smoke-probe] Running probe at ${ts}…" >&2
+  probe_backends
+  probe_mcp
+  write_record "${output_file}" "${ts}" "${host_id}"
+  report_failures "${output_file}"
+}
+
+# ---------------------------------------------------------------------------
+# Health: the newest record is recent and holds no error
+# ---------------------------------------------------------------------------
+_HEALTH_PY="$(
+  cat <<'PY'
+import json
+import pathlib
+import sys
+import time
+
+directory, max_age = pathlib.Path(sys.argv[1]), float(sys.argv[2])
+records = sorted(directory.glob("probe-*.json"), key=lambda path: path.stat().st_mtime)
+if not records:
+    sys.exit(f"unhealthy: no probe record in {directory}")
+latest = records[-1]
+age = time.time() - latest.stat().st_mtime
+if age > max_age:
+    sys.exit(f"unhealthy: newest record {latest.name} is {age:.0f} s old (limit {max_age:.0f} s)")
+try:
+    record = json.loads(latest.read_text(encoding="utf-8"))
+    groups = [record["backend_results"], record["mcp_results"]]
+    failed = [name for group in groups for name, result in group.items() if result["error"]]
+except (ValueError, KeyError, TypeError) as exc:
+    sys.exit(f"unhealthy: {latest.name} is not a probe record ({exc})")
+if failed:
+    sys.exit(f"unhealthy: {latest.name} failed {', '.join(failed)}")
+print(f"healthy: {latest.name}")
+PY
+)"
+
+probe_health() {
+  python3 -c "${_HEALTH_PY}" "${PROBE_OUTPUT_DIR}" "$((PROBE_INTERVAL * 2 + 300))"
+}
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
@@ -473,12 +590,17 @@ if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
 fi
 
 ONCE=false
+HEALTHY=false
 OUTPUT_OVERRIDE=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --once)
       ONCE=true
+      shift
+      ;;
+    --healthy)
+      HEALTHY=true
       shift
       ;;
     --output)
@@ -492,11 +614,18 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+if "${HEALTHY}"; then
+  probe_health
+  exit
+fi
+
 if "${ONCE}"; then
   ts_tag="$(date +%Y%m%dT%H%M%S)"
   out="${OUTPUT_OVERRIDE:-${PROBE_OUTPUT_DIR}/probe-${ts_tag}.json}"
-  run_probe "${out}"
-  exit 0
+  if run_probe "${out}"; then
+    exit 0
+  fi
+  exit 1
 fi
 
 # Continuous loop
