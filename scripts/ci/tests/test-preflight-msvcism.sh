@@ -12,6 +12,10 @@
 # fails the stage. Run with `set -e`, a probe that finds nothing must
 # not end the script, and a probe that finds something must still be reported.
 set -euo pipefail
+
+# Drop the git hook environment and the fixture identity (see the helper).
+# shellcheck source=/dev/null
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/../../lib/clean-git-env.sh"
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 preflight="$here/../../dev/preflight.sh"
 tmp="$(mktemp -d)"
@@ -24,8 +28,6 @@ fail() {
 
 cd "$tmp"
 git init -q
-git config user.email t@t
-git config user.name t
 printf 'int main(void) { return 0; }\n' >ok.c
 git add ok.c
 git commit -qm init

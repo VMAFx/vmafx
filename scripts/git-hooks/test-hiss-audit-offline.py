@@ -46,10 +46,13 @@ def run_wrapper(usage: str) -> str:
         engine.chmod(engine.stat().st_mode | stat.S_IXUSR)
         log = root / "args.log"
         repo = root / "repo"
+        # A git hook exports GIT_DIR and GIT_INDEX_FILE; with them `git init` and the
+        # script under test would act on the caller's repository, not on `repo`.
+        env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
         subprocess.run(  # noqa: S603 -- resolved git path, fixed arguments, no shell
-            [str(GIT), "init", "-q", str(repo)], check=True, timeout=TIMEOUT_S
+            [str(GIT), "init", "-q", str(repo)], check=True, timeout=TIMEOUT_S, env=env
         )
-        env = dict(os.environ, PATH=f"{root}:{os.environ['PATH']}")
+        env["PATH"] = f"{root}:{os.environ['PATH']}"
         env.update(FAKE_USAGE=usage, FAKE_LOG=str(log))
         done = subprocess.run(  # noqa: S603 -- resolved bash path and the repository's own script, no shell
             [str(BASH), str(SCRIPT)],

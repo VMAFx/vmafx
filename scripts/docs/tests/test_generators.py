@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: EUPL-1.2
 """Check source-driven ADR generation without modifying the caller's repo."""
 
+import os
 import shutil
 import sys
 import tempfile
@@ -29,6 +30,8 @@ def git_init(root: Path) -> None:
     run_command(
         (git, "init", "-q", str(root)),
         allowed_executables=(git,),
+        # Without the hook's GIT_DIR: the fixture, not the caller's repository.
+        env={key: value for key, value in os.environ.items() if not key.startswith("GIT_")},
         capture_output=True,
         check=True,
         timeout_seconds=60,

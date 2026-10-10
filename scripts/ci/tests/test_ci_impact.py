@@ -440,7 +440,7 @@ class GitIntegration(unittest.TestCase):
     def _repo(self) -> tuple[str, GitCommand]:
         tmp = tempfile.mkdtemp()
         env = {
-            **os.environ,
+            **{k: v for k, v in os.environ.items() if not k.startswith("GIT_")},
             "GIT_AUTHOR_NAME": "t",
             "GIT_AUTHOR_EMAIL": "t@t",
             "GIT_COMMITTER_NAME": "t",

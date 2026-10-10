@@ -6,11 +6,8 @@
 set -euo pipefail
 
 # A caller's hook environment overrides git -C; scrub before any fixture Git.
-while IFS= read -r fixture_git_variable; do
-  unset "$fixture_git_variable"
-done < <(compgen -A variable GIT_)
-unset fixture_git_variable
-export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null
+# shellcheck source=/dev/null
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/../lib/clean-git-env.sh"
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 SCRIPT="$SCRIPT_DIR/cleanup-agent-state.sh"
@@ -21,8 +18,6 @@ trap 'exit 143' TERM
 REPO="$WORK/main"
 mkdir -p "$REPO"
 git -C "$REPO" init -q -b master
-git -C "$REPO" config user.name 'Cleanup Test'
-git -C "$REPO" config user.email 'cleanup-test@example.invalid'
 git -C "$REPO" config core.hooksPath /dev/null
 printf 'base\n' >"$REPO/tracked"
 printf 'cache/\n' >"$REPO/.gitignore"

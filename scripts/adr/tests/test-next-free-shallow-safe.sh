@@ -10,6 +10,10 @@
 # every rebase in the repository and all of its worktrees reports the whole tree
 # as conflicting. CI checkouts are already shallow and keep the smaller fetch.
 set -euo pipefail
+
+# Drop the git hook environment and the fixture identity (see the helper).
+# shellcheck source=/dev/null
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/../../lib/clean-git-env.sh"
 export LC_ALL=C GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t
 SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/adr/next-free.sh"
 fail=0
