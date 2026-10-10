@@ -3536,7 +3536,7 @@ test_odd_depths_float_psnr_ciede = executable('test_odd_depths_float_psnr_ciede'
     ['test.c', 'test_odd_depths_float_psnr_ciede.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     c_args : vmaf_cflags_common,
-    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    link_with : vmaf_test_link,
     dependencies : [math_lib, pthread_dependency, gpu_all_deps],
 )
 test('test_odd_depths_float_psnr_ciede', test_odd_depths_float_psnr_ciede, suite : ['fast'])
