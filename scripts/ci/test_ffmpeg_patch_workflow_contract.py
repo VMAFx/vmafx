@@ -368,6 +368,34 @@ class SharedFixSeriesContract(unittest.TestCase):
         self.assertIn(f"{self.SCRIPT} apply --method am .", stock)
         self.assertNotIn("ffmpeg-patches/0", stock)
 
+    def test_container_builds_give_the_script_its_configuration(self) -> None:
+        """The script reads build-config.env beside itself, two levels up, or BUILD_CONFIG."""
+        root = (ROOT / "Dockerfile").read_text()
+        self.assertIn("COPY . /vmaf\n", root)
+        self.assertIn("bash /vmaf/scripts/ci/ffmpeg-shared-series.sh apply", root)
+        # These two copy the file and the script into one directory and run it there.
+        for name in ("Dockerfile.ffmpeg", "docker/Dockerfile.node"):
+            with self.subTest(site=name):
+                text = (ROOT / name).read_text()
+                copied = re.search(
+                    rf"(?m)^COPY build-config\.env scripts/ci/{re.escape(self.SCRIPT)} (\S+)/$",
+                    text,
+                )
+                assert copied is not None, f"{name} does not copy the pin file beside the script"
+                self.assertIn(f"bash {copied.group(1)}/{self.SCRIPT} apply", text)
+        # The dev image: the repository tree of the stage has no build-config.env,
+        # an ancestor stage copied it to /opt/vmafx, and the step names that copy.
+        dev = (ROOT / "dev/Containerfile").read_text()
+        stage = dev.split("FROM codec-deps AS ffmpeg-compile\n", 1)[1].split("\nFROM ", 1)[0]
+        self.assertIn("BUILD_CONFIG=/opt/vmafx/build-config.env", stage)
+        self.assertLess(
+            stage.index(f"{self.SCRIPT} apply --method am /build/ffmpeg"),
+            stage.index("done < /build/vmaf/ffmpeg-patches/series.txt"),
+        )
+        before = dev.split("FROM codec-deps AS ffmpeg-compile\n", 1)[0]
+        self.assertIn("COPY build-config.env /opt/vmafx/build-config.env\n", before)
+        self.assertNotRegex(before, r"COPY [^\n]*build-config\.env[^\n]* /build/vmaf/?\n")
+
     def test_no_other_file_applies_ours_without_the_series(self) -> None:
         git = shutil.which("git")
         if git is None:
