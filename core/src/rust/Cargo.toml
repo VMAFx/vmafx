@@ -34,7 +34,7 @@ edition = "2024"
 license = "EUPL-1.2 AND BSD-2-Clause-Patent"
 repository = "https://github.com/VMAFx/vmafx"
 homepage = "https://github.com/VMAFx/vmafx"
-documentation = "https://vmafx.github.io/vmafx/"
+documentation = "https://vmafx.dev/"
 readme = "../../../README.md"
 
 # Every crate opts in with `[lints] workspace = true`. HISS-07 (no unwrap /
