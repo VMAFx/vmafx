@@ -119,7 +119,7 @@ $(NINJA): $(VENV_PIP)
 # kept identical to .pre-commit-config.yaml so the local gate and the CI hooks
 # cannot disagree about what counts as a violation.
 RUFF_VERSION  := 0.17.0
-BLACK_VERSION := 26.10.0
+BLACK_VERSION := 26.10.1
 
 .PHONY: mini-retrain mini-retrain-test
 .PHONY: lint-tools

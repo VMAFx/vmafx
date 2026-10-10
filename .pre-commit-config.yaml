@@ -104,7 +104,7 @@ repos:
         exclude: '^scripts/ci/exact_twins\.d/'
 
   - repo: https://github.com/psf/black
-    rev: 26.10.0
+    rev: 26.10.1
     hooks:
       - id: black
         # Every Python file in the tree (pre-commit's default `types_or`: python, pyi).
