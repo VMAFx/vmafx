@@ -73,7 +73,7 @@ index d81718dff5f73cc95a751554cab421a5bc5267a7..d93959b9c9774a47bb521b73c276a2da
 @@ -116,12 +116,15 @@ static void render_charset(AVCodecContext *avctx, uint8_t *charset,
      int i;
      int distance;
- 
+
 +    av_assert0(c->mc_pal_size >= 4 &&
 +               c->mc_pal_size <= FF_ARRAY_ELEMS(c->mc_luma_vals));
 +
@@ -94,7 +94,7 @@ index d81718dff5f73cc95a751554cab421a5bc5267a7..d93959b9c9774a47bb521b73c276a2da
 -        index1[a] = i;
 -        index2[a] = FFMIN(i + 1, c->mc_pal_size - 1);
      }
- 
+
 +    /* index1 and index2 are constant on each palette interval. Filling them
 +     * per interval, rather than one byte per luma value in the loop above,
 +     * keeps GCC's aarch64 vectoriser from emitting 16-byte stores that it
@@ -136,16 +136,16 @@ index c10f5f312d03dc8e171709ee3023d36c6f0cd8b4..66e583fba8b5c8bc50cb00a7a0176dc1
 @@ -683,9 +683,9 @@ static int read_sbr_grid(AACDecContext *ac, SpectralBandReplication *sbr,
          ch_data->t_env[0]                   = 0;
          ch_data->t_env[ch_data->bs_num_env] = abs_bord_trail;
- 
+
 -        for (i = 0; i < num_rel_trail; i++)
 -            ch_data->t_env[ch_data->bs_num_env - 1 - i] =
 -                ch_data->t_env[ch_data->bs_num_env - i] - 2 * get_bits(gb, 2) - 2;
 +        for (i = ch_data->bs_num_env - 1;
 +             i >= ch_data->bs_num_env - num_rel_trail; i--)
 +            ch_data->t_env[i] = ch_data->t_env[i + 1] - 2 * get_bits(gb, 2) - 2;
- 
+
          bs_pointer = get_bits(gb, ceil_log2[ch_data->bs_num_env]);
- 
+
 @@ -718,15 +718,16 @@ static int read_sbr_grid(AACDecContext *ac, SpectralBandReplication *sbr,
                     bs_num_env);
              return -1;
@@ -153,9 +153,9 @@ index c10f5f312d03dc8e171709ee3023d36c6f0cd8b4..66e583fba8b5c8bc50cb00a7a0176dc1
 +        if (bs_num_env < 1 || num_rel_trail < 0 || num_rel_trail >= bs_num_env)
 +            return AVERROR_INVALIDDATA;
          ch_data->bs_num_env = bs_num_env;
- 
+
          ch_data->t_env[ch_data->bs_num_env] = abs_bord_trail;
- 
+
          for (i = 0; i < num_rel_lead; i++)
              ch_data->t_env[i + 1] = ch_data->t_env[i] + 2 * get_bits(gb, 2) + 2;
 -        for (i = 0; i < num_rel_trail; i++)
@@ -163,9 +163,9 @@ index c10f5f312d03dc8e171709ee3023d36c6f0cd8b4..66e583fba8b5c8bc50cb00a7a0176dc1
 -                ch_data->t_env[ch_data->bs_num_env - i] - 2 * get_bits(gb, 2) - 2;
 +        for (i = bs_num_env - 1; i >= bs_num_env - num_rel_trail; i--)
 +            ch_data->t_env[i] = ch_data->t_env[i + 1] - 2 * get_bits(gb, 2) - 2;
- 
+
          bs_pointer = get_bits(gb, ceil_log2[ch_data->bs_num_env]);
- 
+
 diff --git a/libavcodec/adpcm.c b/libavcodec/adpcm.c
 index 74af2cb4d34424ea877203ae07d2a75867620da6..714ffca5916e76f51bb91f74de52647a8b7fc377 100644
 --- a/libavcodec/adpcm.c
@@ -173,23 +173,23 @@ index 74af2cb4d34424ea877203ae07d2a75867620da6..714ffca5916e76f51bb91f74de52647a
 @@ -421,6 +421,7 @@ static inline int16_t adpcm_agm_expand_nibble(ADPCMChannelStatus *c, int8_t nibb
      return pred;
  }
- 
+
 +#if CONFIG_ADPCM_IMA_ESCAPE_DECODER
  static inline int16_t adpcm_ima_escape_expand_nibble(ADPCMChannelStatus *c, int8_t nibble)
  {
      int step_index;
 @@ -443,6 +444,7 @@ static inline int16_t adpcm_ima_escape_expand_nibble(ADPCMChannelStatus *c, int8
- 
+
      return (int16_t)c->predictor;
  }
 +#endif
- 
+
  static inline int16_t adpcm_ima_expand_nibble(ADPCMChannelStatus *c, int8_t nibble, int shift)
  {
 @@ -580,8 +582,10 @@ int16_t ff_adpcm_ima_qt_expand_nibble(ADPCMChannelStatus *c, int nibble)
      return c->predictor;
  }
- 
+
 -static void decode_adpcm_ima_hvqm2(AVCodecContext *avctx, int16_t *outbuf, int samples_to_do,
 -                                   int frame_format, GetByteContext *gb)
 +#if CONFIG_ADPCM_IMA_HVQM2_DECODER
@@ -200,11 +200,11 @@ index 74af2cb4d34424ea877203ae07d2a75867620da6..714ffca5916e76f51bb91f74de52647a
      ADPCMDecodeContext *c = avctx->priv_data;
      int st = avctx->ch_layout.nb_channels == 2;
 @@ -616,9 +620,12 @@ static void decode_adpcm_ima_hvqm2(AVCodecContext *avctx, int16_t *outbuf, int s
- 
+
      bytestream2_seek(gb, 0, SEEK_END);
  }
 +#endif
- 
+
 -static void decode_adpcm_ima_hvqm4(AVCodecContext *avctx, int16_t *outbuf, int samples_to_do,
 -                                   int frame_format, GetByteContext *gb)
 +#if CONFIG_ADPCM_IMA_HVQM4_DECODER
@@ -215,27 +215,27 @@ index 74af2cb4d34424ea877203ae07d2a75867620da6..714ffca5916e76f51bb91f74de52647a
      ADPCMDecodeContext *c = avctx->priv_data;
      int st = avctx->ch_layout.nb_channels == 2;
 @@ -659,6 +666,7 @@ static void decode_adpcm_ima_hvqm4(AVCodecContext *avctx, int16_t *outbuf, int s
- 
+
      bytestream2_seek(gb, 0, SEEK_END);
  }
 +#endif
- 
+
  static inline int16_t adpcm_ms_expand_nibble(ADPCMChannelStatus *c, int nibble)
  {
 @@ -764,6 +772,7 @@ static inline int16_t adpcm_mtaf_expand_nibble(ADPCMChannelStatus *c, uint8_t ni
      return c->predictor;
  }
- 
+
 +#if CONFIG_ADPCM_CIRCUS_DECODER
  static inline int16_t adpcm_circus_expand_nibble(ADPCMChannelStatus *c, uint8_t nibble)
  {
      int32_t sample = c->predictor;
 @@ -784,6 +793,7 @@ static inline int16_t adpcm_circus_expand_nibble(ADPCMChannelStatus *c, uint8_t
- 
+
      return sample;
  }
 +#endif
- 
+
  static inline int16_t adpcm_zork_expand_nibble(ADPCMChannelStatus *c, uint8_t nibble)
  {
 diff --git a/libavcodec/ffv1.h b/libavcodec/ffv1.h
@@ -245,7 +245,7 @@ index 012b92ec212ec943ff90d83fc73a168dab5e0c2c..614a00a1c3869b615bb8301f6805f627
 @@ -68,6 +68,12 @@ typedef struct PlaneContext {
      VlcState *vlc_state;
  } PlaneContext;
- 
+
 +typedef struct FFV1FloatRemapState {
 +    /* Large encoder scratch reused by every frame of a slice. */
 +    int mul[11][1025];
@@ -253,7 +253,7 @@ index 012b92ec212ec943ff90d83fc73a168dab5e0c2c..614a00a1c3869b615bb8301f6805f627
 +} FFV1FloatRemapState;
 +
  #define MAX_SLICES 1024
- 
+
  typedef struct FFV1SliceContext {
 @@ -104,6 +110,7 @@ typedef struct FFV1SliceContext {
          struct {
@@ -285,31 +285,31 @@ index e6b7506557b40cdc2607876392348838536725ff..64ad076683d2d8e191386aca1d77e45b
      const int magic_log2          = ((int[]){  1,  1,  1,  1,  0,   0})[f->remap_optimizer];
 +    int (*const mul_all)[1025] = sc->float_remap_state->mul;
 +    float (*const score_tab_all)[23] = sc->float_remap_state->score;
- 
+
      for (int p= 0; p < 1 + 2*f->chroma_planes + f->transparency; p++) {
          int best_log2_mul_count = 0;
          float score_sum[11] = {0};
 -        int mul_all[11][1025];
- 
+
          for (int log2_mul_count= 0; log2_mul_count <= max_log2_mul_count; log2_mul_count += log2_mul_count_step) {
 -            float score_tab_all[1025][23] = {0};
              int64_t last_val = -1;
              int *mul_tab = mul_all[log2_mul_count];
              int last_mul_index = -1;
              int mul_count = 1 << log2_mul_count;
- 
+
 +            memset(score_tab_all, 0, 1025 * sizeof(*score_tab_all));
 +
              score_sum[log2_mul_count] = 2 * log2_mul_count;
              if (magic_log2)
                  score_sum[log2_mul_count] = av_float2int((float)mul_count * mul_count);
 @@ -1590,6 +1597,7 @@ static void encode_float32_remap(FFV1Context *f, FFV1SliceContext *sc,
- 
+
          encode_float32_remap_segment(sc, p, 1<<best_log2_mul_count, mul_all[best_log2_mul_count], 1, 1);
      }
 +
  }
- 
+
  static int encode_float32_rgb_frame(FFV1Context *f, FFV1SliceContext *sc,
 @@ -2036,6 +2044,7 @@ static av_cold int encode_close(AVCodecContext *avctx)
              av_freep(&sc->unit[p]);
@@ -317,19 +317,19 @@ index e6b7506557b40cdc2607876392348838536725ff..64ad076683d2d8e191386aca1d77e45b
          }
 +        av_freep(&sc->float_remap_state);
      }
- 
+
      av_freep(&avctx->stats_out);
 diff --git a/libavcodec/lcevc_parser.c b/libavcodec/lcevc_parser.c
 index ce1635edb97aa220ff3f0739bb3f225ba4757a8c..d3d6c38bd3c01e12a166978acc1c822065dda662 100644
 --- a/libavcodec/lcevc_parser.c
 +++ b/libavcodec/lcevc_parser.c
 @@ -18,6 +18,7 @@
- 
+
  #include <stdint.h>
- 
+
 +#include "libavutil/attributes.h"
  #include "libavutil/mem.h"
- 
+
  #include "avcodec.h"
 @@ -188,7 +189,7 @@ static int parse_nal_units(AVCodecParserContext *s, const uint8_t *buf,
          switch (nal->type) {
@@ -347,7 +347,7 @@ index 2a7c5c114709fd0319a6647102a0adadf37c2010..555e1b8081cf6d4e9e78de5b38c377af
 @@ -662,6 +662,9 @@ static int pred_angle(const IntraPredContext * p, uint8_t * dst, int stride, int
  {
      uint8_t filtered1[96], filtered2[96];
- 
+
 +    if (size < 4 || size > 64 || (size & (size - 1)))
 +        return AVERROR_INVALIDDATA;
 +
@@ -393,7 +393,7 @@ index 4855bed188c2318a2153c9213be3ec64b9ba85c4..85c5acb356d117083d5f7a518102cede
 +++ b/libavcodec/svq1enc.c
 @@ -131,20 +131,27 @@ static void svq1_write_header(SVQ1EncContext *s, PutBitContext *pb, int frame_ty
  #define THRESHOLD_MULTIPLIER 0.6
- 
+
  static int encode_block(SVQ1EncContext *s, uint8_t *src, uint8_t *ref,
 -                        uint8_t *decoded, int stride, unsigned level,
 +                        uint8_t *decoded, int stride, int level,
@@ -413,7 +413,7 @@ index 4855bed188c2318a2153c9213be3ec64b9ba85c4..85c5acb356d117083d5f7a518102cede
      const int8_t *codebook_sum, *codebook;
      const uint16_t(*mean_vlc)[2];
      const uint8_t(*multistage_vlc)[2];
- 
+
 +    av_assert0(level >= 0 && level < FF_ARRAY_ELEMS(s->reorder_pb));
 +
 +    w = 2 << (level + 2 >> 1);
@@ -430,20 +430,20 @@ index 365a395af1e71bac2658b6ee64e2757e85bfc8b3..ca739c66c0900887b045d94ebd2dfae4
 +++ b/libavcodec/tests/apv.c
 @@ -17,6 +17,7 @@
   */
- 
+
  #include "libavutil/lfg.h"
 +#include "libavutil/mem.h"
  #include "libavutil/random_seed.h"
- 
+
  #include "libavcodec/apv_decode.h"
 @@ -216,10 +217,15 @@ static void binary(char *buf, uint32_t value, int bits)
- 
+
  static int test_apv_read_vlc(void)
  {
 -    APVVLCLUT lut;
 +    APVVLCLUT *lut = av_malloc(sizeof(*lut));
      int err = 0;
- 
+
 -    ff_apv_entropy_build_decode_lut(&lut);
 +    if (!lut) {
 +        av_log(NULL, AV_LOG_ERROR, "Unable to allocate APV VLC lookup table.\n");
@@ -451,17 +451,17 @@ index 365a395af1e71bac2658b6ee64e2757e85bfc8b3..ca739c66c0900887b045d94ebd2dfae4
 +    }
 +
 +    ff_apv_entropy_build_decode_lut(lut);
- 
+
      // Generate all possible 20 bit sequences (padded with zeroes), then
      // verify that spec and improved parsing functions get the same result
 @@ -241,7 +247,7 @@ static int test_apv_read_vlc(void)
              init_get_bits8(&gbc_test, buf, 8);
              init_get_bits8(&gbc_spec, buf, 8);
- 
+
 -            res_test = apv_read_vlc     (&gbc_test, k, &lut);
 +            res_test = apv_read_vlc     (&gbc_test, k, lut);
              res_spec = apv_read_vlc_spec(&gbc_spec, k);
- 
+
              con_test = get_bits_count(&gbc_test);
 @@ -261,11 +267,13 @@ static int test_apv_read_vlc(void)
                         res_spec, con_spec);
@@ -472,16 +472,16 @@ index 365a395af1e71bac2658b6ee64e2757e85bfc8b3..ca739c66c0900887b045d94ebd2dfae4
              }
          }
      }
- 
+
 +end:
 +    av_free(lut);
      return err;
  }
- 
+
 @@ -300,14 +308,21 @@ static int test_apv_entropy_decode_block(void)
      // Generate random entropy blocks, code them, then ensure they
      // decode to the same block with both implementations.
- 
+
 -    APVVLCLUT decode_lut;
 +    APVVLCLUT *decode_lut = av_malloc(sizeof(*decode_lut));
      AVLFG lfg;
@@ -494,16 +494,16 @@ index 365a395af1e71bac2658b6ee64e2757e85bfc8b3..ca739c66c0900887b045d94ebd2dfae4
 +    }
 +
      av_lfg_init(&lfg, seed);
- 
+
      av_log(NULL, AV_LOG_INFO, "seed = %u\n", seed);
- 
+
 -    ff_apv_entropy_build_decode_lut(&decode_lut);
 +    ff_apv_entropy_build_decode_lut(decode_lut);
- 
+
      for (int t = 0; t < 100; t++) {
          APVEntropyState state, save_state;
 @@ -327,7 +342,7 @@ static int test_apv_entropy_decode_block(void)
- 
+
          // Randomly-constructed state.
          memset(&state, 0, sizeof(state));
 -        state.decode_lut   = &decode_lut;
@@ -576,13 +576,13 @@ index 365a395af1e71bac2658b6ee64e2757e85bfc8b3..ca739c66c0900887b045d94ebd2dfae4
 +            goto end;
          }
      }
- 
+
 -    return 0;
 +end:
 +    av_free(decode_lut);
 +    return result;
  }
- 
+
  int main(void)
 diff --git a/libavcodec/tests/cabac.c b/libavcodec/tests/cabac.c
 index d9f98c68e08bc21947547d2636c599437213dc30..7ff2e119ae6e73e0f505345bd5b676dd0460f0c5 100644
@@ -590,14 +590,14 @@ index d9f98c68e08bc21947547d2636c599437213dc30..7ff2e119ae6e73e0f505345bd5b676dd
 +++ b/libavcodec/tests/cabac.c
 @@ -24,6 +24,7 @@
  #define SIZE 10240
- 
+
  #include "libavutil/lfg.h"
 +#include "libavutil/mem.h"
  #include "libavcodec/put_bits.h"
- 
+
  typedef struct CABACTestContext {
 @@ -138,12 +139,19 @@ static void init_cabac_encoder(CABACTestContext *c, uint8_t *buf, int buf_size)
- 
+
  int main(void){
      CABACTestContext c;
 -    uint8_t b[9*SIZE];
@@ -607,7 +607,7 @@ index d9f98c68e08bc21947547d2636c599437213dc30..7ff2e119ae6e73e0f505345bd5b676dd
      int i, ret = 0;
      uint8_t state[10]= {0};
      AVLFG prng;
- 
+
 +    if (!b || !r) {
 +        av_log(NULL, AV_LOG_ERROR, "Unable to allocate CABAC test buffers.\n");
 +        av_free(b);
@@ -617,11 +617,11 @@ index d9f98c68e08bc21947547d2636c599437213dc30..7ff2e119ae6e73e0f505345bd5b676dd
 +
      av_lfg_init(&prng, 1);
      init_cabac_encoder(&c, b, SIZE);
- 
+
 @@ -186,5 +194,7 @@ int main(void){
          ret = 1;
      }
- 
+
 +    av_free(b);
 +    av_free(r);
      return ret;
@@ -644,7 +644,7 @@ index 35feedba06e583c769c58c05d4040815f8d7cfdc..7dd6caf438d9faf5d96b4398d807c88c
 @@ -39,7 +39,7 @@ int main(void){
      s.temp_dwt_buffer  = av_calloc(width, sizeof(*s.temp_dwt_buffer));
      s.temp_idwt_buffer = av_calloc(width, sizeof(*s.temp_idwt_buffer));
- 
+
 -    if (!s.temp_dwt_buffer || !s.temp_idwt_buffer) {
 +    if (!buffer || !obuffer || !s.temp_dwt_buffer || !s.temp_idwt_buffer) {
          fprintf(stderr, "Failed to allocate memory\n");
@@ -652,7 +652,7 @@ index 35feedba06e583c769c58c05d4040815f8d7cfdc..7dd6caf438d9faf5d96b4398d807c88c
          goto end;
 @@ -144,6 +144,8 @@ int main(void){
      }
- 
+
  end:
 +    av_free(buffer);
 +    av_free(obuffer);
@@ -689,7 +689,7 @@ index 93d88714f22d5a64f6bf7ddd65158a9905137d89..ed610a1df94686e1f7dbd387bc1df843
 +                av_assert0((unsigned)curlevel < FF_ARRAY_ELEMS(info.val8));
 +                info.val8[curlevel] = sym & 0xFF;
 +            }
- 
+
              if (curlevel) { // let's not add single entries
                  uint32_t val = code >> (32 - numbits);
 diff --git a/libavcodec/vvc/ctu.h b/libavcodec/vvc/ctu.h
@@ -710,42 +710,42 @@ index 29cdd7e8f496736edb894b4622eca82ee045a290..239ac9f510482639f288b1226b7cd3c6
 +++ b/libavcodec/vvc/dsp.h
 @@ -58,15 +58,17 @@ typedef struct VVCInterDSPContext {
          int denom, int wx, int ox, const int8_t *hf, const int8_t *vf, int width);
- 
+
      void (*put_scaled[2 /* luma, chroma */][7 /* log2(width) - 1 */])(
 -        int16_t *dst, const uint8_t *src, ptrdiff_t src_stride, int src_height,
 +        int16_t *tmp, int16_t *dst, const uint8_t *src, ptrdiff_t src_stride, int src_height,
          int x, int y, int dx, int dy, int height, const int8_t *hf, const int8_t *vf, int width);
- 
+
      void (*put_uni_scaled[2 /* luma, chroma */][7 /* log2(width) - 1 */])(
 -        uint8_t *dst, const ptrdiff_t dst_stride, const uint8_t *src, ptrdiff_t src_stride, int src_height,
 +        int16_t *tmp, uint8_t *dst, const ptrdiff_t dst_stride, const uint8_t *src,
 +        ptrdiff_t src_stride, int src_height,
          int x, int y, int dx, int dy, int height, const int8_t *hf, const int8_t *vf, int width);
- 
+
      void (*put_uni_w_scaled[2 /* luma, chroma */][7 /* log2(width) - 1 */])(
 -        uint8_t *dst, const ptrdiff_t dst_stride, const uint8_t *src, ptrdiff_t src_stride, int src_height,
 +        int16_t *tmp, uint8_t *dst, const ptrdiff_t dst_stride, const uint8_t *src,
 +        ptrdiff_t src_stride, int src_height,
          int x, int y, int dx, int dy, int height, int denom, int wx, int ox, const int8_t *hf, const int8_t *vf,
          int width);
- 
+
 diff --git a/libavcodec/vvc/inter.c b/libavcodec/vvc/inter.c
 index fe7ce722e5f1369c5e7df3a2710f044f37a24405..f75cff470aa85eeba0247e26f4f37cfdf9a020ab 100644
 --- a/libavcodec/vvc/inter.c
 +++ b/libavcodec/vvc/inter.c
 @@ -434,7 +434,8 @@ static void mc_scaled(VVCLocalContext *lc, int16_t *dst, const VVCRefPic *refp,
- 
+
      scaled_ref_pos_and_step(lc, refp, mv, x_off, y_off, c_idx, &x, &y, &dx, &dy);
      emulated_edge_scaled(lc, &src, &src_stride, &src_height, refp->ref, x, y, dx, dy, block_w, block_h, is_chroma);
 -    fc->vvcdsp.inter.put_scaled[is_chroma][idx](dst, src, src_stride, src_height, x, y, dx, dy, block_h, hf, vf, block_w);
 +    fc->vvcdsp.inter.put_scaled[is_chroma][idx](lc->pred.scaled_tmp, dst, src, src_stride,
 +        src_height, x, y, dx, dy, block_h, hf, vf, block_w);
  }
- 
+
  static void mc_uni_scaled(VVCLocalContext *lc, uint8_t *dst, const ptrdiff_t dst_stride, const VVCRefPic *refp,
 @@ -457,11 +458,11 @@ static void mc_uni_scaled(VVCLocalContext *lc, uint8_t *dst, const ptrdiff_t dst
      emulated_edge_scaled(lc, &src, &src_stride, &src_height, refp->ref, x, y, dx, dy, block_w, block_h, is_chroma);
- 
+
      if (derive_weight_uni(&denom, &wx, &ox, lc, mvf, c_idx)) {
 -        fc->vvcdsp.inter.put_uni_w_scaled[is_chroma][idx](dst, dst_stride, src, src_stride, src_height,
 -            x, y, dx, dy, block_h, denom, wx, ox, hf, vf, block_w);
@@ -758,14 +758,14 @@ index fe7ce722e5f1369c5e7df3a2710f044f37a24405..f75cff470aa85eeba0247e26f4f37cfd
 +            src, src_stride, src_height, x, y, dx, dy, block_h, hf, vf, block_w);
      }
  }
- 
+
 diff --git a/libavcodec/vvc/inter_template.c b/libavcodec/vvc/inter_template.c
 index efa432d1fde9f583588f09d588db4c24a21076a5..0287e6c2dac374b2ad8c051730d338d3d084e0a5 100644
 --- a/libavcodec/vvc/inter_template.c
 +++ b/libavcodec/vvc/inter_template.c
 @@ -24,12 +24,12 @@
  #include "libavutil/imgutils.h"
- 
+
  #define TMP_STRIDE EDGE_EMU_BUFFER_STRIDE
 -static void av_always_inline FUNC(put_scaled)(uint8_t *_dst, const ptrdiff_t _dst_stride,
 +static void av_always_inline FUNC(put_scaled)(int16_t *tmp_array,
@@ -781,7 +781,7 @@ index efa432d1fde9f583588f09d588db4c24a21076a5..0287e6c2dac374b2ad8c051730d338d3
 @@ -81,44 +81,44 @@ static void av_always_inline FUNC(put_scaled)(uint8_t *_dst, const ptrdiff_t _ds
      }
  }
- 
+
 -static void FUNC(put_luma_scaled)(int16_t *_dst,
 +static void FUNC(put_luma_scaled)(int16_t *tmp, int16_t *_dst,
      const uint8_t *_src, ptrdiff_t _src_stride, const int src_height,
@@ -791,7 +791,7 @@ index efa432d1fde9f583588f09d588db4c24a21076a5..0287e6c2dac374b2ad8c051730d338d3
 -    FUNC(put_scaled)((uint8_t *)_dst, MAX_PB_SIZE * sizeof(pixel), _src, _src_stride, src_height, x, y, dx, dy, height, hf, vf, width, 0, 0);
 +    FUNC(put_scaled)(tmp, (uint8_t *)_dst, MAX_PB_SIZE * sizeof(pixel), _src, _src_stride, src_height, x, y, dx, dy, height, hf, vf, width, 0, 0);
  }
- 
+
 -static void FUNC(put_chroma_scaled)(int16_t *_dst,
 +static void FUNC(put_chroma_scaled)(int16_t *tmp, int16_t *_dst,
      const uint8_t *_src, ptrdiff_t _src_stride, const int src_height,
@@ -801,7 +801,7 @@ index efa432d1fde9f583588f09d588db4c24a21076a5..0287e6c2dac374b2ad8c051730d338d3
 -    FUNC(put_scaled)((uint8_t *)_dst, MAX_PB_SIZE * sizeof(pixel), _src, _src_stride, src_height, x, y, dx, dy, height, hf, vf, width, 0, 1);
 +    FUNC(put_scaled)(tmp, (uint8_t *)_dst, MAX_PB_SIZE * sizeof(pixel), _src, _src_stride, src_height, x, y, dx, dy, height, hf, vf, width, 0, 1);
  }
- 
+
 -static void FUNC(put_uni_luma_scaled)(uint8_t *_dst, const ptrdiff_t _dst_stride,
 +static void FUNC(put_uni_luma_scaled)(int16_t *tmp, uint8_t *_dst, const ptrdiff_t _dst_stride,
      const uint8_t *_src, ptrdiff_t _src_stride, const int src_height,
@@ -811,7 +811,7 @@ index efa432d1fde9f583588f09d588db4c24a21076a5..0287e6c2dac374b2ad8c051730d338d3
 -    FUNC(put_scaled)(_dst, _dst_stride, _src, _src_stride, src_height, x, y, dx, dy, height, hf, vf, width, 1, 0);
 +    FUNC(put_scaled)(tmp, _dst, _dst_stride, _src, _src_stride, src_height, x, y, dx, dy, height, hf, vf, width, 1, 0);
  }
- 
+
 -static void FUNC(put_uni_chroma_scaled)(uint8_t *_dst, const ptrdiff_t _dst_stride,
 +static void FUNC(put_uni_chroma_scaled)(int16_t *tmp, uint8_t *_dst, const ptrdiff_t _dst_stride,
      const uint8_t *_src, ptrdiff_t _src_stride, const int src_height,
@@ -821,7 +821,7 @@ index efa432d1fde9f583588f09d588db4c24a21076a5..0287e6c2dac374b2ad8c051730d338d3
 -    FUNC(put_scaled)(_dst, _dst_stride, _src, _src_stride, src_height, x, y, dx, dy, height, hf, vf, width, 1, 1);
 +    FUNC(put_scaled)(tmp, _dst, _dst_stride, _src, _src_stride, src_height, x, y, dx, dy, height, hf, vf, width, 1, 1);
  }
- 
+
 -static void av_always_inline FUNC(put_uni_w_scaled)(uint8_t *_dst, const ptrdiff_t _dst_stride,
 +static void av_always_inline FUNC(put_uni_w_scaled)(int16_t *tmp_array,
 +    uint8_t *_dst, const ptrdiff_t _dst_stride,
@@ -836,7 +836,7 @@ index efa432d1fde9f583588f09d588db4c24a21076a5..0287e6c2dac374b2ad8c051730d338d3
 @@ -164,20 +164,20 @@ static void av_always_inline FUNC(put_uni_w_scaled)(uint8_t *_dst, const ptrdiff
      }
  }
- 
+
 -static void FUNC(put_uni_luma_w_scaled)(uint8_t *_dst, const ptrdiff_t _dst_stride,
 +static void FUNC(put_uni_luma_w_scaled)(int16_t *tmp, uint8_t *_dst, const ptrdiff_t _dst_stride,
      const uint8_t *_src, ptrdiff_t _src_stride, const int src_height,
@@ -846,7 +846,7 @@ index efa432d1fde9f583588f09d588db4c24a21076a5..0287e6c2dac374b2ad8c051730d338d3
 -    FUNC(put_uni_w_scaled)(_dst, _dst_stride, _src, _src_stride, src_height, x, y, dx, dy, denom, wx, ox, height, hf, vf, width, 0);
 +    FUNC(put_uni_w_scaled)(tmp, _dst, _dst_stride, _src, _src_stride, src_height, x, y, dx, dy, denom, wx, ox, height, hf, vf, width, 0);
  }
- 
+
 -static void FUNC(put_uni_chroma_w_scaled)(uint8_t *_dst, const ptrdiff_t _dst_stride,
 +static void FUNC(put_uni_chroma_w_scaled)(int16_t *tmp, uint8_t *_dst, const ptrdiff_t _dst_stride,
      const uint8_t *_src, ptrdiff_t _src_stride, const int src_height,
@@ -856,7 +856,7 @@ index efa432d1fde9f583588f09d588db4c24a21076a5..0287e6c2dac374b2ad8c051730d338d3
 -    FUNC(put_uni_w_scaled)(_dst, _dst_stride, _src, _src_stride, src_height, x, y, dx, dy,  denom, wx, ox, height, hf, vf, width, 1);
 +    FUNC(put_uni_w_scaled)(tmp, _dst, _dst_stride, _src, _src_stride, src_height, x, y, dx, dy,  denom, wx, ox, height, hf, vf, width, 1);
  }
- 
+
  #undef TMP_STRIDE
 diff --git a/libavcodec/wmadec.c b/libavcodec/wmadec.c
 index 65bd3845fd0c259d4da482162cb8b060783f7683..0969620d70a29e07a7e38d1162f2cd75d814ba60 100644
@@ -865,13 +865,13 @@ index 65bd3845fd0c259d4da482162cb8b060783f7683..0969620d70a29e07a7e38d1162f2cd75
 @@ -457,7 +457,10 @@ static int wma_decode_block(WMACodecContext *s)
      AVTXContext *mdct;
      av_tx_fn mdct_fn;
- 
+
 -    av_assert2(channels <= MAX_CHANNELS);
 +    if (channels < 1 || channels > MAX_CHANNELS) {
 +        av_log(s->avctx, AV_LOG_ERROR, "Invalid channel count %d\n", channels);
 +        return AVERROR_INVALIDDATA;
 +    }
- 
+
  #ifdef TRACE
      ff_tlog(s->avctx, "***decode_block: %d:%d\n",
 diff --git a/libavfilter/af_afftfilt.c b/libavfilter/af_afftfilt.c
@@ -881,11 +881,11 @@ index 926ce96e0542adff6362054fc9df8f0fe21101a6..469c2ee92f3fdc7abd742bc0cff6bf93
 @@ -258,6 +258,8 @@ static int filter_channel(AVFilterContext *ctx, void *arg, int jobnr, int nb_job
      const int end = ff_slice_pos(channels, jobnr + 1, nb_jobs);
      double values[VAR_VARS_NB];
- 
+
 +    av_assert0(window_size > 0 && s->hop_size > 0 && s->hop_size <= window_size);
 +
      memcpy(values, arg, sizeof(values));
- 
+
      for (int ch = start; ch < end; ch++) {
 diff --git a/libavfilter/af_firequalizer.c b/libavfilter/af_firequalizer.c
 index 63ac308365b0ad6399cca2116fc8016f4b33d68a..b4f19800ffcb78733a4e1b850eea49b805249a12 100644
@@ -894,7 +894,7 @@ index 63ac308365b0ad6399cca2116fc8016f4b33d68a..b4f19800ffcb78733a4e1b850eea49b8
 @@ -542,6 +542,8 @@ static void generate_min_phase_kernel(FIREqualizerContext *s, float *rdft_buf)
      double norm = 2.0 / cepstrum_len;
      double minval = 1e-7 / rdft_len;
- 
+
 +    av_assert0(cepstrum_len >= 2);
 +
      memset(s->cepstrum_buf, 0, cepstrum_len * sizeof(*s->cepstrum_buf));
@@ -906,7 +906,7 @@ index 672607caa8383664e6ac621ab14b05095d634a19..8c928a8f902932e120280e3ebe6ce116
 +++ b/libavfilter/median.h
 @@ -40,6 +40,7 @@ typedef struct MedianContext {
      int nb_threads;
- 
+
      uint16_t **coarse, **fine;
 +    uint16_t **coarse_tmp, **fine_tmp, **luc_tmp;
      int coarse_size, fine_size;
@@ -928,7 +928,7 @@ index 6f719df57f3e7d52f53e0b303a56b6b76a779b03..8d679b3447e079b300bc8942f72be5b8
      const int t = s->t;
 @@ -88,9 +91,9 @@ static void fn(filter_plane)(AVFilterContext *ctx, const uint8_t *ssrc, int src_
      srcp = src;
- 
+
      for (int i = slice_h_start; i < slice_h_end; i++) {
 -        htype coarse[BINS] = { 0 };
 -        htype fine[BINS][BINS] = { { 0 } };
@@ -936,7 +936,7 @@ index 6f719df57f3e7d52f53e0b303a56b6b76a779b03..8d679b3447e079b300bc8942f72be5b8
 +        memset(coarse, 0, BINS * sizeof(*coarse));
 +        memset(fine, 0, BINS * BINS * sizeof(*fine));
 +        memset(luc, 0, BINS * sizeof(*luc));
- 
+
          p = srcp + src_linesize * FFMAX(0, i - radiusV - 1);
          for (int j = 0; j < width; j++) {
 @@ -108,7 +111,7 @@ static void fn(filter_plane)(AVFilterContext *ctx, const uint8_t *ssrc, int src_
@@ -945,12 +945,12 @@ index 6f719df57f3e7d52f53e0b303a56b6b76a779b03..8d679b3447e079b300bc8942f72be5b8
          for (int k = 0; k < BINS; k++)
 -            s->hmuladd(&fine[k][0], &cfine[BINS * width * k], 2 * radius + 1, BINS);
 +            s->hmuladd(&fine[BINS * k], &cfine[BINS * width * k], 2 * radius + 1, BINS);
- 
+
          for (int j = 0; j < width; j++) {
              int sum = 0, k, b;
 @@ -126,23 +129,23 @@ static void fn(filter_plane)(AVFilterContext *ctx, const uint8_t *ssrc, int src_
              av_assert0(k < BINS);
- 
+
              if (luc[k] <= j - radius) {
 -                memset(&fine[k], 0, BINS * sizeof(htype));
 +                memset(&fine[BINS * k], 0, BINS * sizeof(htype));
@@ -970,9 +970,9 @@ index 6f719df57f3e7d52f53e0b303a56b6b76a779b03..8d679b3447e079b300bc8942f72be5b8
 +                    s->hadd(&fine[BINS * k], &cfine[BINS * (width * k + FFMIN(luc[k], width - 1))], BINS);
                  }
              }
- 
+
              s->hsub(coarse, &ccoarse[BINS * FFMAX(j - radius, 0)], BINS);
- 
+
 -            segment = fine[k];
 +            segment = &fine[BINS * k];
              for (b = 0; b < BINS; b++) {
@@ -985,15 +985,15 @@ index 88dfecbe222859aaf65307a1be8b715723a3f3bf..98e251e64bdc9a975d5c148fcdcdaf61
 @@ -22,6 +22,7 @@
   * @todo switch to dualinput
   */
- 
+
 +#include "libavutil/avassert.h"
  #include "libavutil/opt.h"
- 
+
  #include "filters.h"
 @@ -153,6 +154,8 @@ static float search(FOCContext *foc, int pass, int maxpass, int xmin, int xmax,
  {
      int x, y;
- 
+
 +    av_assert0((unsigned)pass < MAX_MIPMAPS);
 +
      if (pass + 1 <= maxpass) {
@@ -1006,7 +1006,7 @@ index f87f441861a787b927837f411f5e1cb8d9228647..0e5e63fc71d96a9fb88c186a5214d906
 @@ -49,6 +49,7 @@
   * and almost certainly can be improved...
   */
- 
+
 +#include "libavutil/attributes.h"
  #include "libavutil/opt.h"
  #include "libavcodec/avcodec.h"
@@ -1051,11 +1051,11 @@ index 3b11adbcad1b8b6dffdbbe9fdb3ef12e62bbf52b..c6ef65e52cad209103f71592b26beec5
 +            !s->fine_tmp[i] || !s->luc_tmp[i])
              return AVERROR(ENOMEM);
      }
- 
+
 @@ -235,13 +242,24 @@ static av_cold void uninit(AVFilterContext *ctx)
  {
      MedianContext *s = ctx->priv;
- 
+
 -    for (int i = 0; i < s->nb_threads && s->coarse && s->fine; i++) {
 -        av_freep(&s->coarse[i]);
 -        av_freep(&s->fine[i]);
@@ -1071,14 +1071,14 @@ index 3b11adbcad1b8b6dffdbbe9fdb3ef12e62bbf52b..c6ef65e52cad209103f71592b26beec5
 +        if (s->luc_tmp)
 +            av_freep(&s->luc_tmp[i]);
      }
- 
+
      av_freep(&s->coarse);
      av_freep(&s->fine);
 +    av_freep(&s->coarse_tmp);
 +    av_freep(&s->fine_tmp);
 +    av_freep(&s->luc_tmp);
  }
- 
+
  static int process_command(AVFilterContext *ctx, const char *cmd, const char *args,
 diff --git a/libavformat/dashenc.c b/libavformat/dashenc.c
 index c7aea0ce1c3df0ef6d8ab2e27c8dd67c3a678808..6d2ca1fdf73ae3182769fe8c12987cfd460b512c 100644
@@ -1091,7 +1091,7 @@ index c7aea0ce1c3df0ef6d8ab2e27c8dd67c3a678808..6d2ca1fdf73ae3182769fe8c12987cfd
 +#define DASH_COMPONENT_MAX 2048
 +#define DASH_PATH_MAX      4096
 +#define DASH_SEGMENT_NAME_MAX 1024
- 
+
  typedef struct Segment {
 -    char file[1024];
 +    char file[DASH_SEGMENT_NAME_MAX];
@@ -1108,7 +1108,7 @@ index c7aea0ce1c3df0ef6d8ab2e27c8dd67c3a678808..6d2ca1fdf73ae3182769fe8c12987cfd
      int init_range_length;
      int nb_segments, segments_size, segment_index;
 @@ -130,9 +133,9 @@ typedef struct OutputStream {
- 
+
      char codec_str[100];
      int written_len;
 -    char filename[1024];
@@ -1123,7 +1123,7 @@ index c7aea0ce1c3df0ef6d8ab2e27c8dd67c3a678808..6d2ca1fdf73ae3182769fe8c12987cfd
 @@ -375,13 +378,13 @@ static void get_start_index_number(OutputStream *os, DASHContext *c,
      }
  }
- 
+
 -static void write_hls_media_playlist(OutputStream *os, AVFormatContext *s,
 -                                     int representation_id, int final,
 -                                     char *prefetch_url) {
@@ -1140,12 +1140,12 @@ index c7aea0ce1c3df0ef6d8ab2e27c8dd67c3a678808..6d2ca1fdf73ae3182769fe8c12987cfd
      int target_duration = 0;
      int ret = 0;
 @@ -394,7 +397,7 @@ static void write_hls_media_playlist(OutputStream *os, AVFormatContext *s,
- 
+
      if (!c->hls_playlist || start_index >= os->nb_segments ||
          os->segment_type != SEGMENT_TYPE_MP4)
 -        return;
 +        return 0;
- 
+
      get_hls_playlist_name(filename_hls, sizeof(filename_hls),
                            c->dirname, representation_id);
 @@ -405,8 +408,7 @@ static void write_hls_media_playlist(OutputStream *os, AVFormatContext *s,
@@ -1168,11 +1168,11 @@ index c7aea0ce1c3df0ef6d8ab2e27c8dd67c3a678808..6d2ca1fdf73ae3182769fe8c12987cfd
 +            return ret;
          }
      }
- 
+
 @@ -450,8 +454,11 @@ static void write_hls_media_playlist(OutputStream *os, AVFormatContext *s,
- 
+
      dashenc_io_close(s, &c->m3u8_out, temp_filename_hls);
- 
+
 -    if (use_rename)
 -        ff_rename(temp_filename_hls, filename_hls, os->ctx);
 +    if (use_rename &&
@@ -1181,10 +1181,10 @@ index c7aea0ce1c3df0ef6d8ab2e27c8dd67c3a678808..6d2ca1fdf73ae3182769fe8c12987cfd
 +
 +    return 0;
  }
- 
+
  static int flush_init_segment(AVFormatContext *s, OutputStream *os)
 @@ -465,7 +472,7 @@ static int flush_init_segment(AVFormatContext *s, OutputStream *os)
- 
+
      os->pos = os->init_range_length = range_length;
      if (!c->single_file) {
 -        char filename[1024];
@@ -1195,7 +1195,7 @@ index c7aea0ce1c3df0ef6d8ab2e27c8dd67c3a678808..6d2ca1fdf73ae3182769fe8c12987cfd
 @@ -514,8 +521,8 @@ static void dash_free(AVFormatContext *s)
      ff_format_io_close(s, &c->http_delete);
  }
- 
+
 -static void output_segment_list(OutputStream *os, AVIOContext *out, AVFormatContext *s,
 -                                int representation_id, int final)
 +static int output_segment_list(OutputStream *os, AVIOContext *out, AVFormatContext *s,
@@ -1212,10 +1212,10 @@ index c7aea0ce1c3df0ef6d8ab2e27c8dd67c3a678808..6d2ca1fdf73ae3182769fe8c12987cfd
 +        if (ret < 0)
 +            return ret;
      }
- 
+
 +    return 0;
  }
- 
+
  static char *xmlescape(const char *str) {
 @@ -669,7 +679,7 @@ static int write_adaptation_set(AVFormatContext *s, AVIOContext *out, int as_ind
      DASHContext *c = s->priv_data;
@@ -1223,7 +1223,7 @@ index c7aea0ce1c3df0ef6d8ab2e27c8dd67c3a678808..6d2ca1fdf73ae3182769fe8c12987cfd
      AVDictionaryEntry *lang, *role;
 -    int i;
 +    int i, ret;
- 
+
      avio_printf(out, "\t\t<AdaptationSet id=\"%d\" contentType=\"%s\" startWithSAP=\"1\" segmentAlignment=\"true\" bitstreamSwitching=\"true\"",
                  as->id, as->media_type == AVMEDIA_TYPE_VIDEO ? "video" : "audio");
 @@ -744,7 +754,8 @@ static int write_adaptation_set(AVFormatContext *s, AVIOContext *out, int as_ind
@@ -1247,11 +1247,11 @@ index c7aea0ce1c3df0ef6d8ab2e27c8dd67c3a678808..6d2ca1fdf73ae3182769fe8c12987cfd
      int use_rename = proto && !strcmp(proto, "file");
 @@ -1126,7 +1137,7 @@ static int write_manifest(AVFormatContext *s, int final)
      }
- 
+
      if (c->hls_playlist) {
 -        char filename_hls[1024];
 +        char filename_hls[DASH_PATH_MAX];
- 
+
          // Publish master playlist only the configured rate
          if (c->master_playlist_created && (!c->master_publish_rate ||
 @@ -1370,7 +1381,7 @@ static int dash_init(AVFormatContext *s)
@@ -1261,7 +1261,7 @@ index c7aea0ce1c3df0ef6d8ab2e27c8dd67c3a678808..6d2ca1fdf73ae3182769fe8c12987cfd
 -        char filename[1024];
 +        char filename[DASH_PATH_MAX];
          AVBPrint buffer;
- 
+
          os->bit_rate = s->streams[i]->codecpar->bit_rate;
 @@ -1649,7 +1660,10 @@ static int add_segment(OutputStream *os, const char *file,
      seg = av_mallocz(sizeof(*seg));
@@ -1286,7 +1286,7 @@ index c7aea0ce1c3df0ef6d8ab2e27c8dd67c3a678808..6d2ca1fdf73ae3182769fe8c12987cfd
 +        if (ret < 0)
 +            break;
          av_log(s, AV_LOG_VERBOSE, "Representation %d media segment %d written to: %s\n", i, os->segment_index, os->full_path);
- 
+
          os->pos += range_length;
 @@ -1890,7 +1908,9 @@ static int dash_flush(AVFormatContext *s, int final, int stream)
              OutputStream *os = &c->streams[i];
@@ -1302,13 +1302,13 @@ index c7aea0ce1c3df0ef6d8ab2e27c8dd67c3a678808..6d2ca1fdf73ae3182769fe8c12987cfd
 @@ -2125,8 +2145,9 @@ static int dash_write_packet(AVFormatContext *s, AVPacket *pkt)
      os->total_pkt_duration += pkt->duration;
      os->last_flags = pkt->flags;
- 
+
 -    if (!os->init_range_length)
 -        flush_init_segment(s, os);
 +    if (!os->init_range_length &&
 +        (ret = flush_init_segment(s, os)) < 0)
 +        return ret;
- 
+
      //open the output context when the first frame of a segment is ready
      if (!c->single_file && os->packets_written == 1) {
 @@ -2154,12 +2175,15 @@ static int dash_write_packet(AVFormatContext *s, AVPacket *pkt)
@@ -1319,7 +1319,7 @@ index c7aea0ce1c3df0ef6d8ab2e27c8dd67c3a678808..6d2ca1fdf73ae3182769fe8c12987cfd
 +            if ((ret = write_manifest(s, 0)) < 0)
 +                return ret;
          }
- 
+
          if (c->lhls) {
              char *prefetch_url = use_rename ? NULL : os->filename;
 -            write_hls_media_playlist(os, s, pkt->stream_index, 0, prefetch_url);
@@ -1328,14 +1328,14 @@ index c7aea0ce1c3df0ef6d8ab2e27c8dd67c3a678808..6d2ca1fdf73ae3182769fe8c12987cfd
 +                return ret;
          }
      }
- 
+
 @@ -2182,7 +2206,7 @@ static int dash_write_packet(AVFormatContext *s, AVPacket *pkt)
  static int dash_write_trailer(AVFormatContext *s)
  {
      DASHContext *c = s->priv_data;
 -    int i;
 +    int i, ret;
- 
+
      if (s->nb_streams > 0) {
          OutputStream *os = &c->streams[0];
 @@ -2196,7 +2220,9 @@ static int dash_write_trailer(AVFormatContext *s)
@@ -1346,7 +1346,7 @@ index c7aea0ce1c3df0ef6d8ab2e27c8dd67c3a678808..6d2ca1fdf73ae3182769fe8c12987cfd
 +    ret = dash_flush(s, 1, -1);
 +    if (ret < 0)
 +        return ret;
- 
+
      if (c->remove_at_exit) {
          for (i = 0; i < s->nb_streams; ++i) {
 @@ -2204,7 +2230,7 @@ static int dash_write_trailer(AVFormatContext *s)
@@ -1360,7 +1360,7 @@ index c7aea0ce1c3df0ef6d8ab2e27c8dd67c3a678808..6d2ca1fdf73ae3182769fe8c12987cfd
              }
 @@ -2212,7 +2238,7 @@ static int dash_write_trailer(AVFormatContext *s)
          dashenc_delete_file(s, s->url);
- 
+
          if (c->hls_playlist && c->master_playlist_created) {
 -            char filename[1024];
 +            char filename[DASH_PATH_MAX];
@@ -1374,7 +1374,7 @@ index 4f4566f64b8b09f1d012f4001c57615f557aca1f..456a8c52e95564042edc7744c2404b57
 @@ -25,6 +25,7 @@
   * @author Peter Ross <pross@xvid.org>
   */
- 
+
 +#include "libavutil/attributes.h"
  #include "libavutil/channel_layout.h"
  #include "libavutil/intreadwrite.h"
@@ -1400,16 +1400,16 @@ index f278271e247b6a11039705be1768a85affed3265..fabd396149bb9ff998e658e318576eb9
 --- a/libavformat/matroskaenc.c
 +++ b/libavformat/matroskaenc.c
 @@ -3458,23 +3458,38 @@ after_cues:
- 
+
              if (track->duration_offset > 0) {
                  double duration_sec = track->duration * av_q2d(st->time_base);
 -                char duration_string[DURATION_STRING_LENGTH + 1] = "";
 +                char *duration_string;
                  ebml_master simpletag;
- 
+
                  av_log(s, AV_LOG_DEBUG, "stream %d end duration = %" PRIu64 "\n", i,
                         track->duration);
- 
+
 +                if (!isfinite(duration_sec) || duration_sec < 0 ||
 +                    duration_sec >= 100 * 3600) {
 +                    av_log(s, AV_LOG_ERROR,
@@ -1451,7 +1451,7 @@ index cde8f46c5b7d9f394a758406c4ad1a542860aa1f..3df64e52c35e64ebccf77c382748a9e7
 @@ -142,6 +142,11 @@ struct Program {
      int pmt_found;
  };
- 
+
 +struct ProgramSnapshot {
 +    unsigned int nb_streams;
 +    struct Stream streams[MAX_STREAMS_PER_PROGRAM];
@@ -1463,7 +1463,7 @@ index cde8f46c5b7d9f394a758406c4ad1a542860aa1f..3df64e52c35e64ebccf77c382748a9e7
 @@ -332,6 +337,20 @@ static void clear_program(struct Program *p)
      p->pmt_found = 0;
  }
- 
+
 +static void swap_programs(struct Program *a, struct Program *b)
 +{
 +    uint8_t tmp[256];
@@ -1483,7 +1483,7 @@ index cde8f46c5b7d9f394a758406c4ad1a542860aa1f..3df64e52c35e64ebccf77c382748a9e7
      av_freep(&ts->prg);
 @@ -2545,7 +2564,8 @@ int ff_parse_mpeg2_descriptor(AVFormatContext *fc, AVStream *st, int stream_type
  }
- 
+
  static AVStream *find_matching_stream(MpegTSContext *ts, int pid, unsigned int programid,
 -                                      int stream_identifier, int pmt_stream_idx, struct Program *p)
 +                                      int stream_identifier, int pmt_stream_idx,
@@ -1502,7 +1502,7 @@ index cde8f46c5b7d9f394a758406c4ad1a542860aa1f..3df64e52c35e64ebccf77c382748a9e7
      AVStream *st;
 @@ -2777,15 +2797,15 @@ static void pmt_cb(MpegTSFilter *filter, const uint8_t *section, int section_len
          return;
- 
+
      prg = get_program(ts, h->id);
 -    if (prg)
 -        old_program = *prg;
@@ -1537,7 +1537,7 @@ index bb605426f667e810a14b9249815063fac6180462..fe83059967149c14f9725b988b953ddc
 @@ -19,6 +19,7 @@
   * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
   */
- 
+
 +#include "libavutil/attributes.h"
  #include "libavutil/avstring.h"
  #include "libavutil/intreadwrite.h"
@@ -1573,16 +1573,16 @@ index f3c76e8e4d9089906af0b6530c712ec790f1a874..d2aef2bfea5297eb92349b200a341f13
 -    char cmd[MAX_URL_SIZE];
 +    char cmd[2 * MAX_URL_SIZE];
      const char *trans_pref;
- 
+
      memset(&reply1, 0, sizeof(reply1));
 @@ -1629,6 +1629,9 @@ int ff_rtsp_make_setup_request(AVFormatContext *s, const char *host, int port,
- 
+
      for (j = rt->rtp_port_min + port_off, i = 0; i < rt->nb_rtsp_streams; ++i) {
          char transport[MAX_URL_SIZE];
 +        AVBPrint transport_bp;
 +
 +        av_bprint_init_for_buffer(&transport_bp, transport, sizeof(transport));
- 
+
          /*
           * WMS serves all UDP data over a single connection, the RTX, which
 @@ -1686,17 +1689,14 @@ int ff_rtsp_make_setup_request(AVFormatContext *s, const char *host, int port,
@@ -1606,7 +1606,7 @@ index f3c76e8e4d9089906af0b6530c712ec790f1a874..d2aef2bfea5297eb92349b200a341f13
 -                av_strlcatf(transport, sizeof(transport), "-%d", port + 1);
 +                av_bprintf(&transport_bp, "-%d", port + 1);
          }
- 
+
          /* RTP/TCP */
 @@ -1709,44 +1709,55 @@ int ff_rtsp_make_setup_request(AVFormatContext *s, const char *host, int port,
                   s->streams[rtsp_st->stream_index]->codecpar->codec_type ==
@@ -1625,7 +1625,7 @@ index f3c76e8e4d9089906af0b6530c712ec790f1a874..d2aef2bfea5297eb92349b200a341f13
 +                       interleave, interleave + 1);
              interleave += 2;
          }
- 
+
          else if (lower_transport == RTSP_LOWER_TRANSPORT_UDP_MULTICAST) {
 -            snprintf(transport, sizeof(transport) - 1,
 -                     "%s/UDP;multicast", trans_pref);
@@ -1634,7 +1634,7 @@ index f3c76e8e4d9089906af0b6530c712ec790f1a874..d2aef2bfea5297eb92349b200a341f13
              err = AVERROR(EINVAL);
              goto fail; // transport would be uninitialized
          }
- 
+
          if (s->oformat) {
 -            av_strlcat(transport, ";mode=record", sizeof(transport));
 +            av_bprintf(&transport_bp, ";mode=record");
@@ -1690,7 +1690,7 @@ index 3a4c1e0413ec4ed63698b8bc7d4d8173797b88f3..7a9755a42d960905afb088e5640ece0c
 @@ -38,6 +38,8 @@
  #include "libavutil/mathematics.h"
  #include "libavutil/uuid.h"
- 
+
 +#define ISM_PATH_MAX 2048
 +
  typedef struct Fragment {
@@ -1711,7 +1711,7 @@ index 3a4c1e0413ec4ed63698b8bc7d4d8173797b88f3..7a9755a42d960905afb088e5640ece0c
      frag->duration = duration;
      frag->start_pos = start_pos;
 @@ -500,7 +505,8 @@ static int ism_flush(AVFormatContext *s, int final)
- 
+
      for (i = 0; i < s->nb_streams; i++) {
          OutputStream *os = &c->streams[i];
 -        char filename[1024], target_filename[1024], header_filename[1024], curr_dirname[1024];
@@ -1732,7 +1732,7 @@ index 3a4c1e0413ec4ed63698b8bc7d4d8173797b88f3..7a9755a42d960905afb088e5640ece0c
          os->packets_written = 0;
          if (!os->out || os->tail_out)
 @@ -543,12 +551,16 @@ static int ism_flush(AVFormatContext *s, int final)
- 
+
          snprintf(header_filename, sizeof(header_filename), "%s/FragmentInfo(%s=%"PRIu64")", os->dirname, os->stream_type_tag, start_ts);
          snprintf(target_filename, sizeof(target_filename), "%s/Fragments(%s=%"PRIu64")", os->dirname, os->stream_type_tag, start_ts);
 -        copy_moof(s, filename, header_filename, moof_size);
@@ -1749,7 +1749,7 @@ index 3a4c1e0413ec4ed63698b8bc7d4d8173797b88f3..7a9755a42d960905afb088e5640ece0c
 +        if (ret < 0)
 +            break;
      }
- 
+
      if (c->window_size || (final && c->remove_at_exit)) {
 @@ -606,7 +618,10 @@ static int ism_write_packet(AVFormatContext *s, AVPacket *pkt)
  static int ism_write_trailer(AVFormatContext *s)
@@ -1760,7 +1760,7 @@ index 3a4c1e0413ec4ed63698b8bc7d4d8173797b88f3..7a9755a42d960905afb088e5640ece0c
 +
 +    if (ret < 0)
 +        return ret;
- 
+
      if (c->remove_at_exit) {
          char filename[1024];
 diff --git a/libswresample/tests/swresample.c b/libswresample/tests/swresample.c
@@ -1773,7 +1773,7 @@ index 2a5f9d59c4719f8b3dfc351d7ead000c193db482..6427684c80285bf8e4bfd6511052cb98
  #include "libavutil/common.h"
 +#include "libavutil/mem.h"
  #include "libavutil/opt.h"
- 
+
  #include "libswresample/swresample.h"
 @@ -224,9 +225,9 @@ int main(int argc, char **argv){
      int in_sample_rate, out_sample_rate, ch ,i, flush_count;
@@ -1801,13 +1801,13 @@ index 2a5f9d59c4719f8b3dfc351d7ead000c193db482..6427684c80285bf8e4bfd6511052cb98
      int test;
      int specific_test= -1;
 +    int ret = 0;
- 
+
      struct SwrContext * forw_ctx= NULL;
      struct SwrContext *backw_ctx= NULL;
 @@ -261,6 +265,16 @@ int main(int argc, char **argv){
          }
      }
- 
+
 +    array_in = av_malloc(SAMPLES * 8 * 8);
 +    array_mid = av_malloc(SAMPLES * 8 * 8 * 3);
 +    array_out = av_malloc(SAMPLES * 8 * 8 + 100);
@@ -1820,7 +1820,7 @@ index 2a5f9d59c4719f8b3dfc351d7ead000c193db482..6427684c80285bf8e4bfd6511052cb98
 +
      for(i=0; i<max_tests; i++)
          remaining_tests[i] = i;
- 
+
 @@ -303,13 +317,15 @@ int main(int argc, char **argv){
                                             &in_ch_layout,   in_sample_fmt,  in_sample_rate,
                                             0, 0) < 0) {
@@ -1837,12 +1837,12 @@ index 2a5f9d59c4719f8b3dfc351d7ead000c193db482..6427684c80285bf8e4bfd6511052cb98
 +            ret = 1;
 +            goto end;
          }
- 
+
          if(swr_init( forw_ctx) < 0)
 @@ -402,5 +418,14 @@ int main(int argc, char **argv){
          fprintf(stderr, "\n");
      }
- 
+
 -    return 0;
 +end:
 +    swr_free(&forw_ctx);
@@ -1861,16 +1861,16 @@ index 359b1e9a00ccd6304cd7f786f069894685671f4b..e879548bbf18463775a0a3c3da1d2420
 +++ b/tests/checkasm/aacpsdsp.c
 @@ -17,7 +17,9 @@
   */
- 
+
  #include "libavcodec/aacpsdsp.h"
 +#include "libavutil/avassert.h"
  #include "libavutil/intfloat.h"
 +#include "libavutil/mem.h"
  #include "libavutil/mem_internal.h"
- 
+
  #include "checkasm.h"
 @@ -185,50 +187,58 @@ static void test_hybrid_synthesis_deint(void)
- 
+
  static void test_stereo_interpolate(PSDSPContext *psdsp)
  {
 +    struct StereoInterpolateBuffers {
@@ -1892,17 +1892,17 @@ index 359b1e9a00ccd6304cd7f786f069894685671f4b..e879548bbf18463775a0a3c3da1d2420
 -    LOCAL_ALIGNED_16(INTFLOAT, r1, [BUF_SIZE], [2]);
 -    LOCAL_ALIGNED_16(INTFLOAT, h, [2], [4]);
 -    LOCAL_ALIGNED_16(INTFLOAT, h_step, [2], [4]);
- 
+
      declare_func(void, INTFLOAT (*l)[2], INTFLOAT (*r)[2],
                         INTFLOAT h[2][4], INTFLOAT h_step[2][4], int len);
- 
+
 -    randomize((INTFLOAT *)l, BUF_SIZE * 2);
 -    randomize((INTFLOAT *)r, BUF_SIZE * 2);
 +    av_assert0(buffers);
 +
 +    randomize((INTFLOAT *)buffers->l, BUF_SIZE * 2);
 +    randomize((INTFLOAT *)buffers->r, BUF_SIZE * 2);
- 
+
      for (i = 0; i < 2; i++) {
          if (check_func(psdsp->stereo_interpolate[i], "ps_stereo_interpolate%s", i ? "_ipdopd" : "")) {
 -            memcpy(l0, l, BUF_SIZE * 2 * sizeof(INTFLOAT));
@@ -1913,7 +1913,7 @@ index 359b1e9a00ccd6304cd7f786f069894685671f4b..e879548bbf18463775a0a3c3da1d2420
 +            memcpy(buffers->l1, buffers->l, BUF_SIZE * 2 * sizeof(INTFLOAT));
 +            memcpy(buffers->r0, buffers->r, BUF_SIZE * 2 * sizeof(INTFLOAT));
 +            memcpy(buffers->r1, buffers->r, BUF_SIZE * 2 * sizeof(INTFLOAT));
- 
+
 -            randomize((INTFLOAT *)h, 2 * 4);
 -            randomize((INTFLOAT *)h_step, 2 * 4);
 +            randomize((INTFLOAT *)buffers->h, 2 * 4);
@@ -1939,7 +1939,7 @@ index 359b1e9a00ccd6304cd7f786f069894685671f4b..e879548bbf18463775a0a3c3da1d2420
 +                !float_near_abs_eps_array((float *)buffers->r0, (float *)buffers->r1,
 +                                          EPS, BUF_SIZE * 2))
                  fail();
- 
+
 -            memcpy(l1, l, BUF_SIZE * 2 * sizeof(INTFLOAT));
 -            memcpy(r1, r, BUF_SIZE * 2 * sizeof(INTFLOAT));
 -            bench_new(l1, r1, h, h_step, BUF_SIZE);
@@ -1951,7 +1951,7 @@ index 359b1e9a00ccd6304cd7f786f069894685671f4b..e879548bbf18463775a0a3c3da1d2420
 +
 +    av_free(buffers);
  }
- 
+
  void checkasm_check_aacpsdsp(void)
 diff --git a/tests/checkasm/mpegvideoencdsp.c b/tests/checkasm/mpegvideoencdsp.c
 index 5fad1d4bb4b4d17ac7548927bb220a32910aabd6..c4456bf70a8dcd9d4b120f7900230948d8d8f59d 100644
@@ -1960,13 +1960,13 @@ index 5fad1d4bb4b4d17ac7548927bb220a32910aabd6..c4456bf70a8dcd9d4b120f7900230948
 @@ -16,8 +16,10 @@
   * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
   */
- 
+
 +#include "libavutil/avassert.h"
  #include "libavutil/common.h"
  #include "libavutil/intreadwrite.h"
 +#include "libavutil/mem.h"
  #include "libavutil/mem_internal.h"
- 
+
  #include "libavcodec/mathops.h"
 @@ -144,12 +146,16 @@ static void check_pix_norm1(MpegvideoEncDSPContext *c)
  static void check_draw_edges(MpegvideoEncDSPContext *c)
@@ -1978,10 +1978,10 @@ index 5fad1d4bb4b4d17ac7548927bb220a32910aabd6..c4456bf70a8dcd9d4b120f7900230948
 +        uint8_t buf0[BUFSIZE];
 +        uint8_t buf1[BUFSIZE];
 +    } *buffers = av_malloc(sizeof(*buffers));
- 
+
      declare_func(void, uint8_t *buf, ptrdiff_t wrap, int width, int height,
                         int w, int h, int sides);
- 
+
 +    av_assert0(buffers);
 +
      for (int isi = 0; isi < FF_ARRAY_ELEMS(input_sizes); isi++) {
@@ -1995,7 +1995,7 @@ index 5fad1d4bb4b4d17ac7548927bb220a32910aabd6..c4456bf70a8dcd9d4b120f7900230948
 -        uint8_t *dst1 = buf1 + EDGE_WIDTH * linesize + EDGE_WIDTH;
 +        uint8_t *dst0 = buffers->buf0 + EDGE_WIDTH * linesize + EDGE_WIDTH;
 +        uint8_t *dst1 = buffers->buf1 + EDGE_WIDTH * linesize + EDGE_WIDTH;
- 
+
          if (negstride) {
              dst0 += (height - 1) * linesize;
 @@ -170,16 +176,18 @@ static void check_draw_edges(MpegvideoEncDSPContext *c)
@@ -2018,25 +2018,25 @@ index 5fad1d4bb4b4d17ac7548927bb220a32910aabd6..c4456bf70a8dcd9d4b120f7900230948
 +
 +    av_free(buffers);
  }
- 
+
  #undef NUM_LINES
 diff --git a/tests/checkasm/scene_sad.c b/tests/checkasm/scene_sad.c
 index bc33c428c6333472709a0631ebee90aad97527c9..93505de3820e80ce3e3f0cecb6ad4ee047965344 100644
 --- a/tests/checkasm/scene_sad.c
 +++ b/tests/checkasm/scene_sad.c
 @@ -18,6 +18,8 @@
- 
+
  #include "checkasm.h"
  #include "libavfilter/scene_sad.h"
 +#include "libavutil/avassert.h"
 +#include "libavutil/mem.h"
  #include "libavutil/mem_internal.h"
- 
+
  #define WIDTH  256
 @@ -32,10 +34,8 @@
              tmp_buf[j] = rnd() & mask;            \
      } while (0)
- 
+
 -static void check_scene_sad(int depth)
 +static void check_scene_sad(int depth, uint8_t *src1, uint8_t *src2)
  {
@@ -2069,16 +2069,16 @@ index 4fcb87cd5f226a8fa5636bd713ee773afcae7228..2b5748a52a0ec26c6b06b7204be2c033
 --- a/tests/checkasm/sw_gbrp.c
 +++ b/tests/checkasm/sw_gbrp.c
 @@ -19,8 +19,10 @@
- 
+
  #include <string.h>
- 
+
 +#include "libavutil/avassert.h"
  #include "libavutil/common.h"
  #include "libavutil/intreadwrite.h"
 +#include "libavutil/mem.h"
  #include "libavutil/mem_internal.h"
  #include "libavutil/pixdesc.h"
- 
+
 @@ -75,6 +77,23 @@ static void check_output_yuv2gbrp(void)
      static const int input_sizes[] = {8, 24, 128, 144, 256, 512};
      uint8_t *dst0[4];
@@ -2100,13 +2100,13 @@ index 4fcb87cd5f226a8fa5636bd713ee773afcae7228..2b5748a52a0ec26c6b06b7204be2c033
 +        uint8_t dst1_b[LARGEST_INPUT_SIZE * sizeof(int32_t)];
 +        uint8_t dst1_a[LARGEST_INPUT_SIZE * sizeof(int32_t)];
 +    } *buffers = av_malloc(sizeof(*buffers));
- 
+
      declare_func(void, SwsInternal *c, const int16_t *lumFilter,
                         const int16_t **lumSrcx, int lumFilterSize,
 @@ -91,20 +110,19 @@ static void check_output_yuv2gbrp(void)
      LOCAL_ALIGNED_8(int16_t, luma_filter, [LARGEST_FILTER]);
      LOCAL_ALIGNED_8(int16_t, chr_filter, [LARGEST_FILTER]);
- 
+
 -    LOCAL_ALIGNED_8(int32_t, src_y, [LARGEST_FILTER * LARGEST_INPUT_SIZE]);
 -    LOCAL_ALIGNED_8(int32_t, src_u, [LARGEST_FILTER * LARGEST_INPUT_SIZE]);
 -    LOCAL_ALIGNED_8(int32_t, src_v, [LARGEST_FILTER * LARGEST_INPUT_SIZE]);
@@ -2134,7 +2134,7 @@ index 4fcb87cd5f226a8fa5636bd713ee773afcae7228..2b5748a52a0ec26c6b06b7204be2c033
 +    dst1_g = buffers->dst1_g;
 +    dst1_b = buffers->dst1_b;
 +    dst1_a = buffers->dst1_a;
- 
+
      randomize_buffers((uint8_t*)src_y, LARGEST_FILTER * LARGEST_INPUT_SIZE * sizeof(int32_t));
      randomize_buffers((uint8_t*)src_u, LARGEST_FILTER * LARGEST_INPUT_SIZE * sizeof(int32_t));
 @@ -183,6 +201,7 @@ static void check_output_yuv2gbrp(void)
@@ -2143,25 +2143,25 @@ index 4fcb87cd5f226a8fa5636bd713ee773afcae7228..2b5748a52a0ec26c6b06b7204be2c033
      sws_freeContext(sws);
 +    av_free(buffers);
  }
- 
+
  #undef LARGEST_INPUT_SIZE
 diff --git a/tests/checkasm/sw_rgb.c b/tests/checkasm/sw_rgb.c
 index a38e1d68f59f1bbe119f8229402cb5e198d3e823..59f48ae271730c2216909a5471b5b06b85e1325c 100644
 --- a/tests/checkasm/sw_rgb.c
 +++ b/tests/checkasm/sw_rgb.c
 @@ -19,8 +19,10 @@
- 
+
  #include <string.h>
- 
+
 +#include "libavutil/avassert.h"
  #include "libavutil/common.h"
  #include "libavutil/intreadwrite.h"
 +#include "libavutil/mem.h"
  #include "libavutil/mem_internal.h"
  #include "libavutil/pixdesc.h"
- 
+
 @@ -73,21 +75,36 @@ static void check_shuffle_bytes(void * func, const char * report)
- 
+
  static void check_uyvy_to_422p(void)
  {
 +    struct UyvyTo422pBuffers {
@@ -2179,7 +2179,7 @@ index a38e1d68f59f1bbe119f8229402cb5e198d3e823..59f48ae271730c2216909a5471b5b06b
 +    uint8_t *dst_u_0, *dst_u_1;
 +    uint8_t *dst_v_0, *dst_v_1;
      int i;
- 
+
 -    LOCAL_ALIGNED_32(uint8_t, src0, [MAX_STRIDE * MAX_HEIGHT * 2]);
 -    LOCAL_ALIGNED_32(uint8_t, src1, [MAX_STRIDE * MAX_HEIGHT * 2]);
 -    LOCAL_ALIGNED_32(uint8_t, dst_y_0, [MAX_STRIDE * MAX_HEIGHT]);
@@ -2192,7 +2192,7 @@ index a38e1d68f59f1bbe119f8229402cb5e198d3e823..59f48ae271730c2216909a5471b5b06b
      declare_func(void, uint8_t *ydst, uint8_t *udst, uint8_t *vdst,
                   const uint8_t *src, int width, int height,
                   int lumStride, int chromStride, int srcStride);
- 
+
 +    av_assert0(buffers);
 +    src0 = buffers->src0;
 +    src1 = buffers->src1;
@@ -2205,7 +2205,7 @@ index a38e1d68f59f1bbe119f8229402cb5e198d3e823..59f48ae271730c2216909a5471b5b06b
 +
      randomize_buffers(src0, MAX_STRIDE * MAX_HEIGHT * 2);
      memcpy(src1, src0, MAX_STRIDE * MAX_HEIGHT * 2);
- 
+
 @@ -112,6 +129,8 @@ static void check_uyvy_to_422p(void)
          bench_new(dst_y_1, dst_u_1, dst_v_1, src1, planes[5].w, planes[5].h,
                    MAX_STRIDE, MAX_STRIDE / 2, planes[5].s);
@@ -2213,7 +2213,7 @@ index a38e1d68f59f1bbe119f8229402cb5e198d3e823..59f48ae271730c2216909a5471b5b06b
 +
 +    av_free(buffers);
  }
- 
+
  #define NUM_LINES 5
 @@ -712,17 +731,27 @@ static void check_yuv2packedX(void)
      const int16_t *chru[LARGEST_FILTER];
@@ -2229,10 +2229,10 @@ index a38e1d68f59f1bbe119f8229402cb5e198d3e823..59f48ae271730c2216909a5471b5b06b
 +        uint8_t dst0[INPUT_SIZE * sizeof(int32_t[4])];
 +        uint8_t dst1[INPUT_SIZE * sizeof(int32_t[4])];
 +    } *buffers = av_malloc(sizeof(*buffers));
- 
+
      LOCAL_ALIGNED_8(int16_t, luma_filter, [LARGEST_FILTER]);
      LOCAL_ALIGNED_8(int16_t, chr_filter, [LARGEST_FILTER]);
- 
+
 -    LOCAL_ALIGNED_8(int32_t, src_y, [LARGEST_FILTER * INPUT_SIZE]);
 -    LOCAL_ALIGNED_8(int32_t, src_u, [LARGEST_FILTER * INPUT_SIZE]);
 -    LOCAL_ALIGNED_8(int32_t, src_v, [LARGEST_FILTER * INPUT_SIZE]);
@@ -2247,17 +2247,17 @@ index a38e1d68f59f1bbe119f8229402cb5e198d3e823..59f48ae271730c2216909a5471b5b06b
 +    src_a = buffers->src_a;
 +    dst0 = buffers->dst0;
 +    dst1 = buffers->dst1;
- 
+
      randomize_buffers((uint8_t*)src_y, LARGEST_FILTER * INPUT_SIZE * sizeof(int32_t));
      randomize_buffers((uint8_t*)src_u, LARGEST_FILTER * INPUT_SIZE * sizeof(int32_t));
 @@ -796,6 +825,8 @@ static void check_yuv2packedX(void)
- 
+
          sws_freeContext(sws);
      }
 +
 +    av_free(buffers);
  }
- 
+
  #undef INPUT_SIZE
 @@ -804,6 +835,18 @@ static void check_yuv2packedX(void)
  void checkasm_check_sw_rgb(void)
@@ -2275,9 +2275,9 @@ index a38e1d68f59f1bbe119f8229402cb5e198d3e823..59f48ae271730c2216909a5471b5b06b
 +    conversion_src1 = conversion_src0 + RGB_CONVERSION_BUF_SIZE;
 +    conversion_dst0 = conversion_src1 + RGB_CONVERSION_BUF_SIZE;
 +    conversion_dst1 = conversion_dst0 + RGB_CONVERSION_BUF_SIZE;
- 
+
      ff_sws_rgb2rgb_init();
- 
+
 @@ -840,10 +883,10 @@ void checkasm_check_sw_rgb(void)
          static const int rgb24_width[] = {3, 12, 24, 36, 48, 126, 1920 * 3};
          int i;
@@ -2290,9 +2290,9 @@ index a38e1d68f59f1bbe119f8229402cb5e198d3e823..59f48ae271730c2216909a5471b5b06b
 +        uint8_t *src1 = conversion_src1;
 +        uint8_t *dst0 = conversion_dst0;
 +        uint8_t *dst1 = conversion_dst1;
- 
+
          declare_func(void, const uint8_t *src, uint8_t *dst, int src_size);
- 
+
 @@ -882,10 +925,10 @@ void checkasm_check_sw_rgb(void)
          static const int rgb32_widths[] = {4, 16, 32, 48, 64, 68, 100, 128, 1920 * 4};
  #define RGB32_BENCH_WIDTH (1920 * 4)
@@ -2305,9 +2305,9 @@ index a38e1d68f59f1bbe119f8229402cb5e198d3e823..59f48ae271730c2216909a5471b5b06b
 +        uint8_t *src1 = conversion_src1;
 +        uint8_t *dst0 = conversion_dst0;
 +        uint8_t *dst1 = conversion_dst1;
- 
+
          declare_func(void, const uint8_t *src, uint8_t *dst, int src_size);
- 
+
 @@ -927,10 +970,10 @@ void checkasm_check_sw_rgb(void)
          static const int rgb24to32_widths[] = {3, 12, 24, 36, 48, 51, 126, 1920 * 3};
  #define RGB24TO32_BENCH_WIDTH (1920 * 3)
@@ -2320,11 +2320,11 @@ index a38e1d68f59f1bbe119f8229402cb5e198d3e823..59f48ae271730c2216909a5471b5b06b
 +        uint8_t *src1 = conversion_src1;
 +        uint8_t *dst0 = conversion_dst0;
 +        uint8_t *dst1 = conversion_dst1;
- 
+
          declare_func(void, const uint8_t *src, uint8_t *dst, int src_size);
- 
+
 @@ -993,4 +1036,7 @@ void checkasm_check_sw_rgb(void)
- 
+
      check_yuv2packedX();
      report("yuv2packedX");
 +
@@ -2336,9 +2336,9 @@ index 17c5fcce7b4b4d8f8588cb2f074e646974164933..f939a62d9906220ab1c3098dbee28264
 --- a/tests/checkasm/sw_xyz2rgb.c
 +++ b/tests/checkasm/sw_xyz2rgb.c
 @@ -20,7 +20,9 @@
- 
+
  #include <string.h>
- 
+
 +#include "libavutil/avassert.h"
  #include "libavutil/intreadwrite.h"
 +#include "libavutil/mem.h"
@@ -2346,7 +2346,7 @@ index 17c5fcce7b4b4d8f8588cb2f074e646974164933..f939a62d9906220ab1c3098dbee28264
  #include "libavutil/pixdesc.h"
  #include "libavutil/pixfmt.h"
 @@ -53,21 +55,23 @@ static void check_xyz12Torgb48le(void)
- 
+
      const AVPixFmtDescriptor *src_desc = av_pix_fmt_desc_get(src_pix_fmt);
      const AVPixFmtDescriptor *dst_desc = av_pix_fmt_desc_get(dst_pix_fmt);
 -
@@ -2358,24 +2358,24 @@ index 17c5fcce7b4b4d8f8588cb2f074e646974164933..f939a62d9906220ab1c3098dbee28264
 +        uint16_t dst_ref[3 * MAX_LINE_SIZE * NUM_LINES];
 +        uint16_t dst_new[3 * MAX_LINE_SIZE * NUM_LINES];
 +    } *buffers = av_malloc(sizeof(*buffers));
- 
+
      declare_func(void, const SwsInternal *, uint8_t *, int, const uint8_t *,
                   int, int, int);
- 
+
      SwsInternal c;
 +    av_assert0(buffers);
      memset(&c, 0, sizeof(c));
      c.opts.src_format = src_pix_fmt;
      ff_sws_init_xyzdsp(&c);
      ff_sws_fill_xyztables(&c);
- 
+
 -    randomize_buffers(src, 3 * MAX_LINE_SIZE * NUM_LINES);
 +    randomize_buffers(buffers->src, 3 * MAX_LINE_SIZE * NUM_LINES);
- 
+
      for (int height = 1; height <= NUM_LINES; height++) {
          for (int isi = 0; isi < FF_ARRAY_ELEMS(input_sizes); isi++) {
 @@ -75,27 +79,30 @@ static void check_xyz12Torgb48le(void)
- 
+
              if (check_func(c.xyz12Torgb48, "%s_%s_%dx%d", src_desc->name,
                             dst_desc->name, width, height)) {
 -                memset(dst_ref, 0xFE,
@@ -2384,7 +2384,7 @@ index 17c5fcce7b4b4d8f8588cb2f074e646974164933..f939a62d9906220ab1c3098dbee28264
 -                memset(dst_new, 0xFE,
 +                memset(buffers->dst_new, 0xFE,
                         3 * sizeof(uint16_t) * MAX_LINE_SIZE * NUM_LINES);
- 
+
 -                call_ref(&c, (uint8_t *)dst_ref, dst_stride,
 -                         (const uint8_t *)src, src_stride, width, height);
 -                call_new(&c, (uint8_t *)dst_new, dst_stride,
@@ -2393,12 +2393,12 @@ index 17c5fcce7b4b4d8f8588cb2f074e646974164933..f939a62d9906220ab1c3098dbee28264
 +                         (const uint8_t *)buffers->src, src_stride, width, height);
 +                call_new(&c, (uint8_t *)buffers->dst_new, dst_stride,
 +                         (const uint8_t *)buffers->src, src_stride, width, height);
- 
+
 -                checkasm_check(uint16_t, dst_ref, dst_stride, dst_new,
 +                checkasm_check(uint16_t, buffers->dst_ref, dst_stride,
 +                               buffers->dst_new,
                                 dst_stride, width, height, "dst_rgb");
- 
+
                  if (!(width & 3) && height == NUM_LINES) {
 -                    bench_new(&c, (uint8_t *)dst_new,
 -                              dst_stride, (const uint8_t *)src, src_stride,
@@ -2412,16 +2412,16 @@ index 17c5fcce7b4b4d8f8588cb2f074e646974164933..f939a62d9906220ab1c3098dbee28264
 +
 +    av_free(buffers);
  }
- 
+
  #undef NUM_LINES
 diff --git a/tests/checkasm/sw_yuv2rgb.c b/tests/checkasm/sw_yuv2rgb.c
 index 0f59d09c80ef615cb7ce21224d09f0ca341f4020..7c1b9b18c8e4cd098a592c9d32729c9c8443108a 100644
 --- a/tests/checkasm/sw_yuv2rgb.c
 +++ b/tests/checkasm/sw_yuv2rgb.c
 @@ -18,9 +18,11 @@
- 
+
  #include <string.h>
- 
+
 +#include "libavutil/avassert.h"
  #include "libavutil/common.h"
  #include "libavutil/imgutils.h"
@@ -2429,7 +2429,7 @@ index 0f59d09c80ef615cb7ce21224d09f0ca341f4020..7c1b9b18c8e4cd098a592c9d32729c9c
 +#include "libavutil/mem.h"
  #include "libavutil/mem_internal.h"
  #include "libavutil/pixdesc.h"
- 
+
 @@ -116,22 +118,48 @@ static void check_yuv2rgb(int src_pix_fmt)
      declare_func(int, SwsInternal *c, const uint8_t *const src[],
                        const int srcStride[], int srcSliceY, int srcSliceH,
@@ -2452,7 +2452,7 @@ index 0f59d09c80ef615cb7ce21224d09f0ca341f4020..7c1b9b18c8e4cd098a592c9d32729c9c
 +    const uint8_t *src[4];
 +    uint8_t *dst0[4];
 +    uint8_t *dst1[4];
- 
+
 -    LOCAL_ALIGNED_8(uint8_t, src_y, [(MAX_LINE_SIZE + SRC_STRIDE_PAD) * NUM_LINES]);
 -    LOCAL_ALIGNED_8(uint8_t, src_u, [(MAX_LINE_SIZE + SRC_STRIDE_PAD) * NUM_LINES]);
 -    LOCAL_ALIGNED_8(uint8_t, src_v, [(MAX_LINE_SIZE + SRC_STRIDE_PAD) * NUM_LINES]);
@@ -2491,7 +2491,7 @@ index 0f59d09c80ef615cb7ce21224d09f0ca341f4020..7c1b9b18c8e4cd098a592c9d32729c9c
 +    dst1[1] = dst1_1;
 +    dst1[2] = dst1_2;
 +    dst1[3] = NULL;
- 
+
      randomize_buffers(src_y, (MAX_LINE_SIZE + SRC_STRIDE_PAD) * NUM_LINES);
      randomize_buffers(src_u, (MAX_LINE_SIZE + SRC_STRIDE_PAD) * NUM_LINES);
 @@ -242,6 +270,8 @@ static void check_yuv2rgb(int src_pix_fmt)
@@ -2501,26 +2501,26 @@ index 0f59d09c80ef615cb7ce21224d09f0ca341f4020..7c1b9b18c8e4cd098a592c9d32729c9c
 +
 +    av_free(buffers);
  }
- 
+
  #undef NUM_LINES
 diff --git a/tests/checkasm/utvideodsp.c b/tests/checkasm/utvideodsp.c
 index 2463c96603c1f191eb9e5d6c01314cfa7c680ea2..8a0d157c22fda667ad8250ed98a62f5a87af9d68 100644
 --- a/tests/checkasm/utvideodsp.c
 +++ b/tests/checkasm/utvideodsp.c
 @@ -22,7 +22,9 @@
- 
+
  #include "checkasm.h"
  #include "libavcodec/utvideodsp.h"
 +#include "libavutil/avassert.h"
  #include "libavutil/intreadwrite.h"
 +#include "libavutil/mem.h"
  #include "libavutil/mem_internal.h"
- 
+
  #define WIDTH 240
 @@ -53,31 +55,44 @@
      } while (0)
- 
- 
+
+
 -#define CHECK_RESTORE(type)\
 -LOCAL_ALIGNED_32(type, src_r0, [BUFFER_SIZE]);  \
 -LOCAL_ALIGNED_32(type, src_g0, [BUFFER_SIZE]);  \
@@ -2584,7 +2584,7 @@ index 2463c96603c1f191eb9e5d6c01314cfa7c680ea2..8a0d157c22fda667ad8250ed98a62f5a
 +              WIDTH_PADDED, WIDTH, HEIGHT);                                     \
 +    av_free(buffers);                                                           \
 +} while (0)
- 
+
  static void check_restore_rgb_planes(void) {
      CHECK_RESTORE(uint8_t);
 diff --git a/tests/checkasm/vc1dsp.c b/tests/checkasm/vc1dsp.c
@@ -2592,9 +2592,9 @@ index dda6d362572f9a205b38d396ef5dbc3ac0718209..5978bf376570edd241d3807cac0ffb4f
 --- a/tests/checkasm/vc1dsp.c
 +++ b/tests/checkasm/vc1dsp.c
 @@ -24,6 +24,7 @@
- 
+
  #include "libavcodec/vc1dsp.h"
- 
+
 +#include "libavutil/avassert.h"
  #include "libavutil/common.h"
  #include "libavutil/internal.h"
@@ -2611,13 +2611,13 @@ index dda6d362572f9a205b38d396ef5dbc3ac0718209..5978bf376570edd241d3807cac0ffb4f
 +    uint8_t *escaped1   = av_malloc(UNESCAPE_BUF_SIZE);
 +    uint8_t *unescaped0 = av_malloc(UNESCAPE_BUF_SIZE);
 +    uint8_t *unescaped1 = av_malloc(UNESCAPE_BUF_SIZE);
- 
+
      VC1DSPContext h;
- 
+
 +    av_assert0(escaped0 && escaped1 && unescaped0 && unescaped1);
 +
      ff_vc1dsp_init(&h);
- 
+
      if (check_func(h.vc1_unescape_buffer, "vc1dsp.vc1_unescape_buffer")) {
 @@ -437,6 +440,11 @@ static void check_unescape(void)
          /* Benchmark the no-escape-sequences case */
@@ -2629,7 +2629,7 @@ index dda6d362572f9a205b38d396ef5dbc3ac0718209..5978bf376570edd241d3807cac0ffb4f
 +    av_free(unescaped0);
 +    av_free(unescaped1);
  }
- 
+
  static void check_mspel_pixels(void)
 diff --git a/tests/checkasm/vf_convolution.c b/tests/checkasm/vf_convolution.c
 index 007865863e5be2b73efec0e568dd4ec74b131047..3c3e9686727b6adf6f36af9a0daf838b18cb85c5 100644
@@ -2643,10 +2643,10 @@ index 007865863e5be2b73efec0e568dd4ec74b131047..3c3e9686727b6adf6f36af9a0daf838b
  #include "libavutil/intreadwrite.h"
 +#include "libavutil/mem.h"
  #include "libavutil/mem_internal.h"
- 
+
  #define WIDTH 512
 @@ -38,9 +40,10 @@
- 
+
  static void check_sobel(const char * report_name)
  {
 -    LOCAL_ALIGNED_32(uint8_t, src,     [PIXELS]);
@@ -2662,7 +2662,7 @@ index 007865863e5be2b73efec0e568dd4ec74b131047..3c3e9686727b6adf6f36af9a0daf838b
 @@ -62,6 +65,8 @@ static void check_sobel(const char * report_name)
      declare_func(void, uint8_t *dst, int width, float scale, float delta, const int *const matrix,
                   const uint8_t *c[], int peak, int radius, int dstride, int stride, int size);
- 
+
 +    av_assert0(src && dst_ref && dst_new);
 +
      s.scale = scale;
@@ -2671,12 +2671,12 @@ index 007865863e5be2b73efec0e568dd4ec74b131047..3c3e9686727b6adf6f36af9a0daf838b
 @@ -95,6 +100,9 @@ static void check_sobel(const char * report_name)
          }
      }
- 
+
 +    av_free(src);
 +    av_free(dst_ref_base);
 +    av_free(dst_new);
  }
- 
+
  void checkasm_check_vf_sobel(void)
 diff --git a/tests/checkasm/vf_eq.c b/tests/checkasm/vf_eq.c
 index 1315b08f0ecd321290d066dd064ba00bd1b2e5d0..b98edde45fa4001753fad54fe5851cc81d2f7746 100644
@@ -2690,10 +2690,10 @@ index 1315b08f0ecd321290d066dd064ba00bd1b2e5d0..b98edde45fa4001753fad54fe5851cc8
  #include "libavutil/intreadwrite.h"
 +#include "libavutil/mem.h"
  #include "libavutil/mem_internal.h"
- 
+
  #define WIDTH 256
 @@ -40,9 +42,9 @@
- 
+
  static void check_eq(void)
  {
 -    LOCAL_ALIGNED_32(uint8_t, src,     [PIXELS]);
@@ -2708,7 +2708,7 @@ index 1315b08f0ecd321290d066dd064ba00bd1b2e5d0..b98edde45fa4001753fad54fe5851cc8
 @@ -52,6 +54,8 @@ static void check_eq(void)
      declare_func(void, EQParameters *param, uint8_t *dst, int dst_stride,
                   const uint8_t *src, int src_stride, int w, int h);
- 
+
 +    av_assert0(src && dst_ref && dst_new);
 +
      double rand_contrast = (int)(rnd() % (RANDOM_RANGE * 2) - RANDOM_RANGE) /
@@ -2723,7 +2723,7 @@ index 1315b08f0ecd321290d066dd064ba00bd1b2e5d0..b98edde45fa4001753fad54fe5851cc8
 +    av_free(dst_ref);
 +    av_free(dst_new);
  }
- 
+
  void checkasm_check_vf_eq(void)
 diff --git a/tests/checkasm/vvc_alf.c b/tests/checkasm/vvc_alf.c
 index fcb9ca0bc0d4ba3ddd4767e80b98bc34cbb8b109..dd637cede945b3a6b77a13994a1ea732d55484cb 100644
@@ -2732,16 +2732,16 @@ index fcb9ca0bc0d4ba3ddd4767e80b98bc34cbb8b109..dd637cede945b3a6b77a13994a1ea732
 @@ -26,8 +26,10 @@
  #include "libavcodec/vvc/data.h"
  #include "libavcodec/vvc/dsp.h"
- 
+
 +#include "libavutil/avassert.h"
  #include "libavutil/common.h"
  #include "libavutil/intreadwrite.h"
 +#include "libavutil/mem.h"
  #include "libavutil/mem_internal.h"
- 
+
  static const uint32_t pixel_mask[3] = { 0xffffffff, 0x03ff03ff, 0x0fff0fff };
 @@ -76,10 +78,10 @@ static int get_alf_vb_pos(const int h, const int vb_pos_above)
- 
+
  static void check_alf_filter(VVCDSPContext *c, const int bit_depth)
  {
 -    LOCAL_ALIGNED_32(uint8_t, dst0, [DST_BUF_SIZE]);
@@ -2754,11 +2754,11 @@ index fcb9ca0bc0d4ba3ddd4767e80b98bc34cbb8b109..dd637cede945b3a6b77a13994a1ea732
 +    uint8_t *src1 = av_malloc(SRC_BUF_SIZE);
      int16_t filter[LUMA_PARAMS_SIZE];
      int16_t clip[LUMA_PARAMS_SIZE];
- 
+
 @@ -94,6 +96,8 @@ static void check_alf_filter(VVCDSPContext *c, const int bit_depth)
      declare_func(void, uint8_t *dst, ptrdiff_t dst_stride, const uint8_t *src, ptrdiff_t src_stride,
          int width, int height, const int16_t *filter, const int16_t *clip, const int vb_pos);
- 
+
 +    av_assert0(dst0 && dst1 && src0 && src1);
 +
      randomize_buffers(src0, src1, SRC_BUF_SIZE);
@@ -2774,7 +2774,7 @@ index fcb9ca0bc0d4ba3ddd4767e80b98bc34cbb8b109..dd637cede945b3a6b77a13994a1ea732
 +    av_free(src0);
 +    av_free(src1);
  }
- 
+
  static void check_alf_classify(VVCDSPContext *c, const int bit_depth)
  {
 -    LOCAL_ALIGNED_32(int, class_idx0, [SRC_BUF_SIZE]);
@@ -2792,18 +2792,18 @@ index fcb9ca0bc0d4ba3ddd4767e80b98bc34cbb8b109..dd637cede945b3a6b77a13994a1ea732
 +    uint8_t *src1       = av_malloc(SRC_BUF_SIZE);
 +    int32_t *alf_gradient_tmp = av_malloc_array(ALF_GRADIENT_SIZE * ALF_GRADIENT_SIZE * ALF_NUM_DIR,
 +                                                 sizeof(*alf_gradient_tmp));
- 
+
      ptrdiff_t stride = SRC_PIXEL_STRIDE * SIZEOF_PIXEL;
      int offset = (3 * SRC_PIXEL_STRIDE + 3) * SIZEOF_PIXEL;
 @@ -147,6 +157,9 @@ static void check_alf_classify(VVCDSPContext *c, const int bit_depth)
      declare_func(void, int *class_idx, int *transpose_idx,
          const uint8_t *src, ptrdiff_t src_stride, int width, int height, int vb_pos, int *gradient_tmp);
- 
+
 +    av_assert0(class_idx0 && transpose_idx0 && class_idx1 && transpose_idx1 &&
 +               src0 && src1 && alf_gradient_tmp);
 +
      randomize_buffers(src0, src1, SRC_BUF_SIZE);
- 
+
      //Both picture size and virtual boundaries are 8-aligned. Classify is luma only, we only need to check 8-aligned sizes.
 @@ -173,6 +186,14 @@ static void check_alf_classify(VVCDSPContext *c, const int bit_depth)
              }
@@ -2818,7 +2818,7 @@ index fcb9ca0bc0d4ba3ddd4767e80b98bc34cbb8b109..dd637cede945b3a6b77a13994a1ea732
 +    av_free(src1);
 +    av_free(alf_gradient_tmp);
  }
- 
+
  void checkasm_check_vvc_alf(void)
 diff --git a/tests/checkasm/vvc_mc.c b/tests/checkasm/vvc_mc.c
 index d712cb811000d6385a2ae52a81862e6aa476fcf1..4ff5ec244b55633afcedd4ab844be25a0b590b71 100644
@@ -2827,16 +2827,16 @@ index d712cb811000d6385a2ae52a81862e6aa476fcf1..4ff5ec244b55633afcedd4ab844be25a
 @@ -26,8 +26,10 @@
  #include "libavcodec/vvc/data.h"
  #include "libavcodec/vvc/dsp.h"
- 
+
 +#include "libavutil/avassert.h"
  #include "libavutil/common.h"
  #include "libavutil/intreadwrite.h"
 +#include "libavutil/mem.h"
  #include "libavutil/mem_internal.h"
- 
+
  static const uint32_t pixel_mask[] = { 0xffffffff, 0x03ff03ff, 0x0fff0fff, 0x3fff3fff, 0xffffffff };
 @@ -74,15 +76,17 @@ static const int sizes[] = { 2, 4, 8, 16, 32, 64, 128 };
- 
+
  static av_noinline void check_put_vvc_luma(void)
  {
 -    LOCAL_ALIGNED_32(int16_t, dst0, [DST_BUF_SIZE / 2]);
@@ -2848,10 +2848,10 @@ index d712cb811000d6385a2ae52a81862e6aa476fcf1..4ff5ec244b55633afcedd4ab844be25a
 +    uint8_t *src0 = av_malloc(SRC_BUF_SIZE);
 +    uint8_t *src1 = av_malloc(SRC_BUF_SIZE);
      VVCDSPContext c;
- 
+
      declare_func(void, int16_t *dst, const uint8_t *src, const ptrdiff_t src_stride,
          const int height, const int8_t *hf, const int8_t *vf, const int width);
- 
+
 +    av_assert0(dst0 && dst1 && src0 && src1);
 +
      for (int bit_depth = 8; bit_depth <= 12; bit_depth += 2) {
@@ -2867,7 +2867,7 @@ index d712cb811000d6385a2ae52a81862e6aa476fcf1..4ff5ec244b55633afcedd4ab844be25a
 +    av_free(src0);
 +    av_free(src1);
  }
- 
+
  static av_noinline void check_put_vvc_luma_uni(void)
  {
 -    LOCAL_ALIGNED_32(uint8_t, dst0, [DST_BUF_SIZE]);
@@ -2878,12 +2878,12 @@ index d712cb811000d6385a2ae52a81862e6aa476fcf1..4ff5ec244b55633afcedd4ab844be25a
 +    uint8_t *dst1 = av_malloc(DST_BUF_SIZE);
 +    uint8_t *src0 = av_malloc(SRC_BUF_SIZE);
 +    uint8_t *src1 = av_malloc(SRC_BUF_SIZE);
- 
+
      VVCDSPContext c;
      declare_func(void, uint8_t *dst, ptrdiff_t dststride,
          const uint8_t *src, ptrdiff_t srcstride,  int height,
          const int8_t *hf, const int8_t *vf, int width);
- 
+
 +    av_assert0(dst0 && dst1 && src0 && src1);
 +
      for (int bit_depth = 8; bit_depth <= 12; bit_depth += 2) {
@@ -2899,7 +2899,7 @@ index d712cb811000d6385a2ae52a81862e6aa476fcf1..4ff5ec244b55633afcedd4ab844be25a
 +    av_free(src0);
 +    av_free(src1);
  }
- 
+
  static av_noinline void check_put_vvc_chroma(void)
  {
 -    LOCAL_ALIGNED_32(int16_t, dst0, [DST_BUF_SIZE / 2]);
@@ -2911,10 +2911,10 @@ index d712cb811000d6385a2ae52a81862e6aa476fcf1..4ff5ec244b55633afcedd4ab844be25a
 +    uint8_t *src0 = av_malloc(SRC_BUF_SIZE);
 +    uint8_t *src1 = av_malloc(SRC_BUF_SIZE);
      VVCDSPContext c;
- 
+
      declare_func(void, int16_t *dst, const uint8_t *src, const ptrdiff_t src_stride,
          const int height, const int8_t *hf, const int8_t *vf, const int width);
- 
+
 +    av_assert0(dst0 && dst1 && src0 && src1);
 +
      for (int bit_depth = 8; bit_depth <= 12; bit_depth += 2) {
@@ -2930,7 +2930,7 @@ index d712cb811000d6385a2ae52a81862e6aa476fcf1..4ff5ec244b55633afcedd4ab844be25a
 +    av_free(src0);
 +    av_free(src1);
  }
- 
+
  static av_noinline void check_put_vvc_chroma_uni(void)
  {
 -    LOCAL_ALIGNED_32(uint8_t, dst0, [DST_BUF_SIZE]);
@@ -2941,12 +2941,12 @@ index d712cb811000d6385a2ae52a81862e6aa476fcf1..4ff5ec244b55633afcedd4ab844be25a
 +    uint8_t *dst1 = av_malloc(DST_BUF_SIZE);
 +    uint8_t *src0 = av_malloc(SRC_BUF_SIZE);
 +    uint8_t *src1 = av_malloc(SRC_BUF_SIZE);
- 
+
      VVCDSPContext c;
      declare_func(void, uint8_t *dst, ptrdiff_t dststride,
          const uint8_t *src, ptrdiff_t srcstride, int height,
          const int8_t *hf, const int8_t *vf, int width);
- 
+
 +    av_assert0(dst0 && dst1 && src0 && src1);
 +
      for (int bit_depth = 8; bit_depth <= 12; bit_depth += 2) {
@@ -2962,10 +2962,10 @@ index d712cb811000d6385a2ae52a81862e6aa476fcf1..4ff5ec244b55633afcedd4ab844be25a
 +    av_free(src0);
 +    av_free(src1);
  }
- 
+
  #define AVG_SRC_BUF_SIZE (MAX_CTU_SIZE * MAX_CTU_SIZE)
 @@ -275,14 +305,16 @@ static av_noinline void check_put_vvc_chroma_uni(void)
- 
+
  static av_noinline void check_avg(void)
  {
 -    LOCAL_ALIGNED_32(int16_t, src00, [AVG_SRC_BUF_SIZE]);
@@ -2981,7 +2981,7 @@ index d712cb811000d6385a2ae52a81862e6aa476fcf1..4ff5ec244b55633afcedd4ab844be25a
 +    uint8_t *dst0  = av_malloc(AVG_DST_BUF_SIZE);
 +    uint8_t *dst1  = av_malloc(AVG_DST_BUF_SIZE);
      VVCDSPContext c;
- 
+
 +    av_assert0(src00 && src01 && src10 && src11 && dst0 && dst1);
 +
      for (int bit_depth = 8; bit_depth <= 12; bit_depth += 2) {
@@ -2999,7 +2999,7 @@ index d712cb811000d6385a2ae52a81862e6aa476fcf1..4ff5ec244b55633afcedd4ab844be25a
 +    av_free(dst0);
 +    av_free(dst1);
  }
- 
+
  #define SR_RANGE 2
  static av_noinline void check_dmvr(void)
  {
@@ -3012,11 +3012,11 @@ index d712cb811000d6385a2ae52a81862e6aa476fcf1..4ff5ec244b55633afcedd4ab844be25a
 +    uint8_t *src0  = av_malloc(SRC_BUF_SIZE);
 +    uint8_t *src1  = av_malloc(SRC_BUF_SIZE);
      const int dst_stride = MAX_PB_SIZE * sizeof(int16_t);
- 
+
      VVCDSPContext c;
      declare_func(void, int16_t *dst, const uint8_t *src, ptrdiff_t src_stride, int height,
          intptr_t mx, intptr_t my, int width);
- 
+
 +    av_assert0(dst0 && dst1 && src0 && src1);
 +
      for (int bit_depth = 8; bit_depth <= 12; bit_depth += 2) {
@@ -3032,7 +3032,7 @@ index d712cb811000d6385a2ae52a81862e6aa476fcf1..4ff5ec244b55633afcedd4ab844be25a
 +    av_free(src0);
 +    av_free(src1);
  }
- 
+
  #define BDOF_BLOCK_SIZE 16
 @@ -435,10 +481,12 @@ static av_noinline void check_vvc_sad(void)
  {
@@ -3043,7 +3043,7 @@ index d712cb811000d6385a2ae52a81862e6aa476fcf1..4ff5ec244b55633afcedd4ab844be25a
 +    uint16_t *src0 = av_malloc_array(MAX_CTU_SIZE * MAX_CTU_SIZE * 4, sizeof(*src0));
 +    uint16_t *src1 = av_malloc_array(MAX_CTU_SIZE * MAX_CTU_SIZE * 4, sizeof(*src1));
      declare_func(int, const int16_t *src0, const int16_t *src1, int dx, int dy, int block_w, int block_h);
- 
+
 +    av_assert0(src0 && src1);
 +
      ff_vvc_dsp_init(&c, bit_depth);
@@ -3051,13 +3051,13 @@ index d712cb811000d6385a2ae52a81862e6aa476fcf1..4ff5ec244b55633afcedd4ab844be25a
      for (int h = 8; h <= 16; h *= 2) {
 @@ -466,6 +514,9 @@ static av_noinline void check_vvc_sad(void)
      }
- 
+
      report("sad");
 +
 +    av_free(src0);
 +    av_free(src1);
  }
- 
+
  void checkasm_check_vvc_mc(void)
 diff --git a/tests/checkasm/vvc_sao.c b/tests/checkasm/vvc_sao.c
 index 4ad40684fafd656911f783575162eeb3bf42ffae..1cc75c8bf84ceb9d3f73c696a217a2bf6a105874 100644
@@ -3065,13 +3065,13 @@ index 4ad40684fafd656911f783575162eeb3bf42ffae..1cc75c8bf84ceb9d3f73c696a217a2bf
 +++ b/tests/checkasm/vvc_sao.c
 @@ -21,7 +21,9 @@
  #include <string.h>
- 
+
  #include "checkasm.h"
 +#include "libavutil/avassert.h"
  #include "libavutil/intreadwrite.h"
 +#include "libavutil/mem.h"
  #include "libavutil/mem_internal.h"
- 
+
  #include "libavcodec/vvc/dsp.h"
 @@ -33,6 +35,10 @@ static const uint32_t sao_size[] = {8, 16, 32, 48, 64, 80, 96, 112, 128};
  #define SIZEOF_PIXEL ((bit_depth + 7) / 8)
@@ -3083,9 +3083,9 @@ index 4ad40684fafd656911f783575162eeb3bf42ffae..1cc75c8bf84ceb9d3f73c696a217a2bf
 +#define DST_RECT_OFFSET (DST_BUF_W * 16 + 64)
  #define OFFSET_THRESH (1 << (bit_depth - 5))
  #define OFFSET_LENGTH 5
- 
+
 @@ -66,14 +72,19 @@ static const uint32_t sao_size[] = {8, 16, 32, 48, 64, 80, 96, 112, 128};
- 
+
  static void check_sao_band(VVCDSPContext *h, int bit_depth)
  {
 -    PIXEL_RECT(dst0, MAX_CTU_SIZE, MAX_CTU_SIZE);
@@ -3102,7 +3102,7 @@ index 4ad40684fafd656911f783575162eeb3bf42ffae..1cc75c8bf84ceb9d3f73c696a217a2bf
      int16_t offset_val[OFFSET_LENGTH];
      const int left_class = rnd()%32;
      const int walign = 16;
- 
+
 +    av_assert0(dst0 && dst1 && src0 && src1);
 +
      for (int i = 0; i < FF_ARRAY_ELEMS(sao_size); i++) {
@@ -3116,7 +3116,7 @@ index 4ad40684fafd656911f783575162eeb3bf42ffae..1cc75c8bf84ceb9d3f73c696a217a2bf
 -                CLEAR_PIXEL_RECT(dst1);
 +                checkasm_clear(dst0_buf, DST_RECT_BUF_SIZE * sizeof(*dst0_buf));
 +                checkasm_clear(dst1_buf, DST_RECT_BUF_SIZE * sizeof(*dst1_buf));
- 
+
 -                call_ref(dst0, src0, dst0_stride, stride, offset_val, left_class, w, block_size);
 -                call_new(dst1, src1, dst1_stride, stride, offset_val, left_class, w, block_size);
 -                checkasm_check_pixel_padded_align(dst0, dst0_stride, dst1, dst1_stride, w, block_size, "dst", walign, 1);
@@ -3134,7 +3134,7 @@ index 4ad40684fafd656911f783575162eeb3bf42ffae..1cc75c8bf84ceb9d3f73c696a217a2bf
 +    av_free(src0);
 +    av_free(src1);
  }
- 
+
  static void check_sao_edge(VVCDSPContext *h, int bit_depth)
  {
 -    PIXEL_RECT(dst0, MAX_CTU_SIZE, MAX_CTU_SIZE);
@@ -3151,7 +3151,7 @@ index 4ad40684fafd656911f783575162eeb3bf42ffae..1cc75c8bf84ceb9d3f73c696a217a2bf
      int16_t offset_val[OFFSET_LENGTH];
      const int eo = rnd()%4;
      const int walign = 16;
- 
+
 +    av_assert0(dst0 && dst1 && src0 && src1);
 +
      for (int i = 0; i < FF_ARRAY_ELEMS(sao_size); i++) {
@@ -3165,7 +3165,7 @@ index 4ad40684fafd656911f783575162eeb3bf42ffae..1cc75c8bf84ceb9d3f73c696a217a2bf
 -                CLEAR_PIXEL_RECT(dst1);
 +                checkasm_clear(dst0_buf, DST_RECT_BUF_SIZE * sizeof(*dst0_buf));
 +                checkasm_clear(dst1_buf, DST_RECT_BUF_SIZE * sizeof(*dst1_buf));
- 
+
 -                call_ref(dst0, src0 + offset, dst0_stride, offset_val, eo, w, block_size);
 -                call_new(dst1, src1 + offset, dst1_stride, offset_val, eo, w, block_size);
 -                checkasm_check_pixel_padded_align(dst0, dst0_stride, dst1, dst1_stride, w, block_size, "dst", walign, 1);
@@ -3183,7 +3183,7 @@ index 4ad40684fafd656911f783575162eeb3bf42ffae..1cc75c8bf84ceb9d3f73c696a217a2bf
 +    av_free(src0);
 +    av_free(src1);
  }
- 
+
  void checkasm_check_vvc_sao(void)
 diff --git a/tools/ismindex.c b/tools/ismindex.c
 index b110420bf098811138cd8c84294cc84586a1b600..a7dd997daf649cca2bd278e542c2fd32d3756266 100644
@@ -3205,7 +3205,7 @@ index b110420bf098811138cd8c84294cc84586a1b600..a7dd997daf649cca2bd278e542c2fd32
 +    char *dirname = NULL, *filename = NULL, *idxname = NULL;
      int i, j, ret = 0, fragment_ret;
      FILE* out = NULL;
- 
+
      if (ismf) {
 -        snprintf(idxname, sizeof(idxname), "%s%s.ismf", output_prefix, basename);
 +        idxname = av_asprintf("%s%s.ismf", output_prefix, basename);
@@ -3256,11 +3256,11 @@ index b110420bf098811138cd8c84294cc84586a1b600..a7dd997daf649cca2bd278e542c2fd32
 +    av_free(idxname);
      return ret;
  }
- 
+
 @@ -611,20 +630,26 @@ fail:
      return err;
  }
- 
+
 -static void output_server_manifest(struct Tracks *tracks, const char *basename,
 -                                   const char *output_prefix,
 -                                   const char *path_prefix,
@@ -3275,7 +3275,7 @@ index b110420bf098811138cd8c84294cc84586a1b600..a7dd997daf649cca2bd278e542c2fd32
      FILE *out;
 -    int i;
 +    int i, ret = 0;
- 
+
 -    snprintf(filename, sizeof(filename), "%s%s.ism", output_prefix, basename);
 +    filename = av_asprintf("%s%s.ism", output_prefix, basename);
 +    if (!filename) {
@@ -3306,12 +3306,12 @@ index b110420bf098811138cd8c84294cc84586a1b600..a7dd997daf649cca2bd278e542c2fd32
 +    av_free(filename);
 +    return ret;
  }
- 
+
  static void print_track_chunks(FILE *out, struct Tracks *tracks, int main,
 @@ -684,21 +716,27 @@ static void print_track_chunks(FILE *out, struct Tracks *tracks, int main,
      }
  }
- 
+
 -static void output_client_manifest(struct Tracks *tracks, const char *basename,
 -                                   const char *output_prefix, int split)
 +static int output_client_manifest(struct Tracks *tracks, const char *basename,
@@ -3322,7 +3322,7 @@ index b110420bf098811138cd8c84294cc84586a1b600..a7dd997daf649cca2bd278e542c2fd32
      FILE *out;
 -    int i, j;
 +    int i, j, ret = 0;
- 
+
      if (split)
 -        snprintf(filename, sizeof(filename), "%sManifest", output_prefix);
 +        filename = av_asprintf("%sManifest", output_prefix);
@@ -3357,7 +3357,7 @@ index b110420bf098811138cd8c84294cc84586a1b600..a7dd997daf649cca2bd278e542c2fd32
 +    av_free(filename);
 +    return ret;
  }
- 
+
  static void clean_tracks(struct Tracks *tracks)
 @@ -784,8 +829,8 @@ int main(int argc, char **argv)
      const char *basename = NULL;
@@ -3368,7 +3368,7 @@ index b110420bf098811138cd8c84294cc84586a1b600..a7dd997daf649cca2bd278e542c2fd32
 +    char *output_prefix_buf = NULL;
 +    int split = 0, ismf = 0, i, ret = 0;
      struct Tracks tracks = { 0, .video_track = -1, .audio_track = -1 };
- 
+
      for (i = 1; i < argc; i++) {
 @@ -799,11 +844,19 @@ int main(int argc, char **argv)
              ismc_prefix = argv[i + 1];
@@ -3418,7 +3418,7 @@ index b110420bf098811138cd8c84294cc84586a1b600..a7dd997daf649cca2bd278e542c2fd32
 +        ret = usage(argv[0], 1);
 +        goto end;
 +    }
- 
+
 -    if (!split)
 -        output_server_manifest(&tracks, basename, output_prefix,
 -                               path_prefix, ismc_prefix);
@@ -3432,11 +3432,11 @@ index b110420bf098811138cd8c84294cc84586a1b600..a7dd997daf649cca2bd278e542c2fd32
 +        ret = 1;
 +        goto end;
 +    }
- 
+
 +end:
      clean_tracks(&tracks);
 +    av_free(output_prefix_buf);
- 
+
 -    return 0;
 +    return ret;
  }
@@ -3446,15 +3446,15 @@ index 9280421741de84a2c67ffa93c9be1737175ed755..a1a177c9571e5cb4a9810def52f1e122
 +++ b/tools/seek_print.c
 @@ -24,13 +24,14 @@
  #endif
- 
+
  #include "libavformat/avformat.h"
 +#include "libavutil/attributes.h"
  #include "libavutil/timestamp.h"
- 
+
  #if !HAVE_GETOPT
  #include "compat/getopt.c"
  #endif
- 
+
 -static void usage(int ret)
 +static av_noreturn void usage(int ret)
  {
