@@ -1516,6 +1516,9 @@
   `nvidia-smi failed: exit N, no GPU inventory` into `host.txt` and goes on.
 
 
+- Build: the production CUDA and ROCm images build again. The CUDA image compiled against nv-codec-headers one release behind the dev image, without the `cuArray3DGetDescriptor` the device-frame import calls; it now uses `n13.1.15.0`, pinned once in `build-config.env` (`NV_CODEC_HEADERS_TAG`, `NV_CODEC_HEADERS_COMMIT`). `meson setup` with CUDA enabled stops with a message when the installed headers are older. The image licence scan now finds the `import_convert` kernels under `core/src/cuda` and `core/src/hip`.
+
+
 - **The roadmap rows of 1.1 and 1.3 list the issues that are in those milestones.**
   The no-reference model (#2166) is a 1.1 item because the live no-reference mode
   (#2413) needs it; the 1.3 row now names the artefact detectors (#2272), ST-GREED
