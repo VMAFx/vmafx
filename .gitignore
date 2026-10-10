@@ -254,6 +254,12 @@ vmafx-controller.db
 vmafx-controller.db-shm
 vmafx-controller.db-wal
 
+# Core dumps a crashing test child writes into its working directory on a host
+# whose core_pattern is a plain name with core_uses_pid set (core.<pid>). Tests
+# that kill a child with a core signal set `ulimit -c 0` for it; this catches a
+# leak. No bare `core` rule: it would match the core/ source tree.
+core.[0-9]*
+
 # BEGIN praetor private artifacts (praetorctl adopt)
 /.workingdir/
 /.workingdir2/
