@@ -130,6 +130,30 @@ Inside the container the full environment is initialised:
 - GPU SDKs - `nvcc`, `icpx`, `hipcc` in `PATH`
 - testdata - `/workspace/testdata/` (read-only bind mount from host repo)
 - models - `/workspace/model/` (read-only)
+- corpus - `/workspace/.corpus/` (read-only, its own bind mount; see below)
+
+### Corpus mount
+
+Both services mount the corpus separately from the repository. The source is
+`VMAFX_CORPUS_DIR`, or `./.corpus` in the repository root when it is unset:
+
+```bash
+VMAFX_CORPUS_DIR=/srv/corpus/vmafx ./dev/scripts/dev-mcp-up.sh
+```
+
+- `.corpus` may be a symlink to a dataset elsewhere on the host. The
+  repository bind alone shows the container a link to a path it does not have,
+  so `ls /workspace/.corpus` fails. Docker resolves the separate bind's source
+  on the host, and the link inside the container then leads to the mounted
+  corpus.
+- On a host without a corpus, Compose creates an empty `.corpus` directory
+  (owned by root) and the services start.
+- The image runs as `vmaf` (uid 2000). That user must be able to enter the
+  repository root and read the corpus. A repository root with mode `0700`
+  makes all of `/workspace` unreadable inside the container, the corpus
+  included.
+- The build context still excludes the corpus (`.dockerignore`); the mount
+  exists only at run time.
 
 To list the registered feature extractors, call the MCP tool
 `list_extractors` (the manual probe below does this for you).

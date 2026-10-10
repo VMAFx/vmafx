@@ -124,6 +124,17 @@ services:
         source: .
         target: /workspace
         read_only: true
+      # Corpus — its own read-only bind. `.corpus` may be a symlink to a
+      # dataset outside the repository (an absolute path the container cannot
+      # see through the /workspace bind), so the host resolves the source and
+      # the corpus is mounted at /workspace/.corpus. VMAFX_CORPUS_DIR names
+      # another directory; a host without a corpus gets an empty one.
+      - type: bind
+        source: ${VMAFX_CORPUS_DIR:-./.corpus}
+        target: /workspace/.corpus
+        read_only: true
+        bind:
+          create_host_path: true
       # UDS socket directory — shared with smoke-probe-cron
       - type: volume
         source: vmaf-sockets
@@ -251,6 +262,13 @@ services:
         source: .
         target: /workspace
         read_only: true
+      # Corpus — see dev-mcp service above.
+      - type: bind
+        source: ${VMAFX_CORPUS_DIR:-./.corpus}
+        target: /workspace/.corpus
+        read_only: true
+        bind:
+          create_host_path: true
       - type: volume
         source: vmaf-sockets
         target: /sockets

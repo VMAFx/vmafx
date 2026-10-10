@@ -25,6 +25,7 @@ for diagnosis establishing these.
 | `Containerfile`, `/build-config.env`, `/docs/development/base-images.md` | [base-images](AGENTS.d/base-images.md) | All base images default from build-config.env; no `COPY --from=<external image>`; declare named stages. |
 | `Containerfile` | [cache-mounts](AGENTS.d/cache-mounts.md) | Apt cache mounts without cleanup; ccache mount with CCACHE_DIR; dockerfile:1.7 syntax; vmaf user uid/gid 2000. |
 | `docker-compose.yml`, `scripts/dev-mcp-healthcheck.sh`, `scripts/test-dev-mcp-healthcheck.sh` | [compose-healthcheck](AGENTS.d/compose-healthcheck.md) | Healthcheck matches stdio transport via vmaf --version; 45s start period for CUDA; no socket check. |
+| `docker-compose.yml`, `/scripts/ci/tests/test_dev_compose_corpus_mount.py` | [corpus-mount](AGENTS.d/corpus-mount.md) | dev-mcp and smoke-probe-cron each bind ${VMAFX_CORPUS_DIR:-./.corpus} read-only at /workspace/.corpus. |
 | `scripts/dev-mcp-entrypoint.sh`, `Containerfile` | [entrypoint-unprivileged](AGENTS.d/entrypoint-unprivileged.md) | Entrypoint runs as `vmaf`; it changes path's mode or owner only if path is its own and change is needed. |
 | `Containerfile`, `/ffmpeg-patches/series.txt` | [ffmpeg-encoders](AGENTS.d/ffmpeg-encoders.md) | Source-built SVT-AV1 and libvvenc; vendored AMF; QSV dual runtime; hardware encoder flags in FFmpeg configure. |
 | `Containerfile`, `docker-compose.yml` | [gpu-backend-exposure](AGENTS.d/gpu-backend-exposure.md) | LD_LIBRARY_PATH includes tcm; no image ICD pins; /dev/dri directory bind-mounted; stage 3 backend probe. |
