@@ -1066,7 +1066,12 @@ RUN /build/vmaf/scripts/ci/checkout-annotated-tag.sh \
         "${FFMPEG_REMOTE}" "${FFMPEG_TAG}" /build/ffmpeg
 WORKDIR /build/ffmpeg
 
-# Apply every patch from ffmpeg-patches/series.txt in order.
+# The shared FFmpeg fix series first (ADR-3143; verified against
+# build-config.env by the script), then ffmpeg-patches/series.txt in order.
+# /build/vmaf holds no build-config.env in this stage; the gpu-sdks stage
+# copied the file to /opt/vmafx.
+RUN FFMPEG_FIX_SERIES_CACHE=none BUILD_CONFIG=/opt/vmafx/build-config.env \
+    bash /build/vmaf/scripts/ci/ffmpeg-shared-series.sh apply --method am /build/ffmpeg
 RUN git config user.email "vmaf-dev-mcp@localhost" && git config user.name "vmaf dev-mcp" && while IFS= read -r patch_name; do \
         case "${patch_name}" in \
             ""|"#"*) continue ;; \

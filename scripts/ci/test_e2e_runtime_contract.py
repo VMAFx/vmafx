@@ -383,8 +383,15 @@ class E2ERuntimeContractTest(unittest.TestCase):
                 self.assertIn("FATAL: patch", source)
                 self.assertNotIn("patch -p1 <", source)
 
-        series = FFMPEG_SERIES.read_text(encoding="utf-8").splitlines()
-        self.assertIn("0019-ffmpeg-eliminate-gcc-14-build-diagnostics.patch", series)
+    def test_ffmpeg_images_take_the_diagnostics_fix_from_the_shared_series(self) -> None:
+        """ADR-3143: both images apply the shared fix series before the fork series."""
+        self.assertNotIn("diagnostics", FFMPEG_SERIES.read_text(encoding="utf-8"))
+        for dockerfile in (ROOT_DOCKERFILE, FFMPEG_DOCKERFILE):
+            with self.subTest(shared_series=dockerfile.name):
+                source = dockerfile.read_text(encoding="utf-8")
+                self.assertLess(
+                    source.index("ffmpeg-shared-series.sh apply"), source.index("series.txt")
+                )
 
     def test_language_standards_use_warning_clean_meson_options(self) -> None:
         """Language standards come from Meson's built-in preference lists.

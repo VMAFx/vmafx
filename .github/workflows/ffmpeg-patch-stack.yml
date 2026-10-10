@@ -53,10 +53,19 @@ jobs:
           python3 scripts/ci/plan-ci-impact.py --event "$EVENT_NAME" \
             --base "$BASE_SHA" --head "$HEAD_SHA" --github-output "$GITHUB_OUTPUT"
 
+      # The replay applies the shared FFmpeg fix series first (ADR-3143). This
+      # gate is where its release signature is checked on every change: with
+      # cosign installed, FFMPEG_FIX_SERIES_VERIFY=cosign fails closed.
+      - name: Install cosign
+        if: steps.impact.outputs.mode == 'full' || steps.impact.outputs.c_core == 'true' || steps.impact.outputs.actions == 'true'
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
+
       - name: Check configured FFmpeg release
         id: replay
         if: steps.impact.outputs.mode == 'full' || steps.impact.outputs.c_core == 'true' || steps.impact.outputs.actions == 'true'
         shell: bash
+        env:
+          FFMPEG_FIX_SERIES_VERIFY: cosign
         run: |
           set -euo pipefail
           output_dir="$RUNNER_TEMP/ffmpeg-patch-check"
@@ -93,9 +102,14 @@ jobs:
       - name: Enforce FFmpeg input contract
         run: make ffmpeg-input-contract
 
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
+
       - name: Refresh to the latest stable release
         id: refresh
         shell: bash
+        env:
+          FFMPEG_FIX_SERIES_VERIFY: cosign
         run: |
           set -euo pipefail
           output_dir="$RUNNER_TEMP/ffmpeg-patch-refresh"

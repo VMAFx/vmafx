@@ -63,11 +63,14 @@ make install
 ```
 
 The fork-added options, filters and GPU selectors on this page need FFmpeg
-patched with the fork's series, `ffmpeg-patches/0001` to `0020` listed in
-`ffmpeg-patches/series.txt`, applied in order to a clean `n9.0.2` checkout:
+patched with the fork's series, the patches listed in
+`ffmpeg-patches/series.txt`, applied in order to a clean `n9.0.2` checkout
+after the shared FFmpeg fix series
+([what it changes](../development/ffmpeg-patch-automation.md#shared-ffmpeg-fix-series)):
 
 ```bash
 cd /path/to/ffmpeg && git checkout n9.0.2
+/path/to/vmaf/scripts/ci/ffmpeg-shared-series.sh apply .
 while IFS= read -r patch; do
     case "$patch" in ""|\#*) continue ;; esac
     git am --3way "/path/to/vmaf/ffmpeg-patches/$patch" || exit 1

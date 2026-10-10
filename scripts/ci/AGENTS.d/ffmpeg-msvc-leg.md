@@ -36,7 +36,8 @@ warning gate, option probes, score check.
   `file(line[,col]): warning C*` whose path (`\`->`/`, `.\` dropped, suffix
   match on `/`) and line lie on `+` side of `git diff -U0 $series_base HEAD`.
   FFmpeg's own ~400 cl warnings + D9024 stay out, also in files series edits
-  (0019 -> `libavcodec/vlc.c`, C4334 on untouched lines). Other toolchains:
+  (shared fix series 0002 -> `libavcodec/vlc.c`, C4334 on untouched lines;
+  `series_base` is taken before shared series, so its lines are gated too). Other toolchains:
   every warning fails. Never widen back to blanket grep or file scope under
   msvc, never narrow to allowlist of codes or files.
 - MSYS2 `git` package required: Git for Windows gets `/dev/null` and POSIX

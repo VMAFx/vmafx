@@ -21,7 +21,9 @@ bash ffmpeg-patches/test/build-and-run.sh
 ```
 
 - Helper uses `FFMPEG_REMOTE` and `FFMPEG_TAG` from `build-config.env`.
-- Applies every patch in `series.txt`, in listed order.
+- Applies shared FFmpeg fix series first (`scripts/ci/ffmpeg-shared-series.sh`,
+  pinned in `build-config.env`, ADR-3143), then every patch in `series.txt`,
+  in listed order.
 - Builds ffmpeg against installed libvmaf.
 - Checks `libvmaf` tiny-model option and `vmaf_pre` filter.
 - Set `VMAF_PREFIX` for nonstandard libvmaf installation.

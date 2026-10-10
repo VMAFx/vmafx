@@ -34,10 +34,11 @@ precedence = "override"
 SPDX-FileCopyrightText = "2020 Netflix, Inc."
 SPDX-License-Identifier = "BSD-2-Clause-Patent"
 
-# FFmpeg patch files are derivative source contributions.  Patches 0001-0018
-# touch LGPL-2.1-or-later translation units; 0006 also carries Lawrence
-# Curtis's no-CLA contribution.  Patch 0019 spans both LGPL and GPL units, so
-# both terms apply to that file instead of the fork-local EUPL default.
+# FFmpeg patch files are derivative source contributions.  They touch
+# LGPL-2.1-or-later translation units; 0006 also carries Lawrence Curtis's
+# no-CLA contribution.  The diagnostics patch that spanned LGPL and GPL units
+# (0019) is now part of the shared fix series, which is not in this tree
+# (ADR-3143).
 [[annotations]]
 path = [
     "ffmpeg-patches/0001-libvmaf-add-tiny-model-option.patch",
@@ -71,12 +72,6 @@ SPDX-FileCopyrightText = [
     "2026 Lusoris",
 ]
 SPDX-License-Identifier = "LGPL-2.1-or-later"
-
-[[annotations]]
-path = ["ffmpeg-patches/0019-ffmpeg-eliminate-gcc-14-build-diagnostics.patch"]
-precedence = "override"
-SPDX-FileCopyrightText = ["2000-2026 the FFmpeg developers", "2026 Lusoris"]
-SPDX-License-Identifier = "LGPL-2.1-or-later AND GPL-2.0-or-later"
 
 # The repository has no CLA or DCO.  These files were created or touched by
 # outside contributors while the fork was BSD-2-Clause-Patent; ADR-1250 says
