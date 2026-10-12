@@ -37,7 +37,7 @@
   [![Metal](https://img.shields.io/badge/Metal-Apple_Silicon-000000?style=for-the-badge&logo=apple&logoColor=white)](docs/backends/metal/index.md)
   [![SIMD](https://img.shields.io/badge/SIMD-AVX2_·_AVX--512_·_NEON_·_SVE2-8B5CF6?style=for-the-badge)](docs/backends/index.md)
 
-  [![Release](https://img.shields.io/github/v/release/VMAFx/vmafx?include_prereleases&sort=semver&style=for-the-badge&label=release&color=3b82f6)](https://github.com/VMAFx/vmafx/releases)
+  [![Release](https://img.shields.io/github/v/release/VMAFx/vmafx?sort=semver&style=for-the-badge&label=release&color=3b82f6)](https://github.com/VMAFx/vmafx/releases)
   [![FFmpeg](https://img.shields.io/badge/FFmpeg-n9.0.2-007808?style=for-the-badge&logo=ffmpeg&logoColor=white)](docs/usage/ffmpeg.md)
   [![License](https://img.shields.io/badge/License-EUPL--1.2_·_BSD--2--Clause--Patent-blue.svg?style=for-the-badge)](docs/adr/1250-eupl-fork-relicense.md)
   [![Ko-fi](https://img.shields.io/badge/Support-Ko--fi-FF5E5B?style=for-the-badge&logo=kofi&logoColor=white)](https://ko-fi.com/lusoris)

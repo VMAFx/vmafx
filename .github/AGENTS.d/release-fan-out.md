@@ -23,9 +23,11 @@ tag regex = exact shape `scripts/release/verify-release-version.sh` accepts;
 narrower hides waiting draft, re-runs `release-please` against untagged
 release. `scripts/release/tests/test-release-please-draft-gate.sh` extracts
 step from workflow, proves parity. First cut (1.0.0-rc.1, ADR-1151 /
-ADR-1201) is selected by one-time `release-as` config field; release-PR
-rollover removes that field and `bootstrap-sha` before release PR merges, so
-neither override can affect later releases. Later RCs: `Release-As:` footer.
+ADR-1201) and 0.1.0 restart (ADR-3292) each selected by one-time
+`release-as` config field; release-PR rollover removes that field and
+`bootstrap-sha` before release PR merges, so neither override can affect
+later releases; `scripts/release/check-one-shot-fields.sh` refuses survivors.
+Later forced versions: `Release-As:` footer.
 
 Every job publishing to GHCR, uploading GitHub Release assets, or minting
 release-artifact Sigstore identity is bound to protected

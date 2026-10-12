@@ -11,31 +11,36 @@ map of where that plan lives and how the releases are sequenced.
 
 ## Releases
 
-| Milestone | Theme |
-| --- | --- |
-| [1.0.0](https://github.com/VMAFx/vmafx/milestone/1) | First release: RC1 correctness and tester reports, RC2 stabilisation, RC3 twin exactness, RC4 first full Rust metric, zero-copy import, the VMAFx API, the FFmpeg and GStreamer integrations and the cloud-native platform, RC5 deduplication, tool consolidation and new metrics, RC6 GPU capability table, RC7 CPU capability table, RC8 benchmarking and tuning, RC9 real model retraining, then final |
-| [1.1](https://github.com/VMAFx/vmafx/milestone/2) | Integrations and live quality: the OBS Studio plugin ([#2239](https://github.com/VMAFx/vmafx/issues/2239)), [#2148](https://github.com/VMAFx/vmafx/issues/2148), [#2147](https://github.com/VMAFx/vmafx/issues/2147), [#2144](https://github.com/VMAFx/vmafx/issues/2144), [#2146](https://github.com/VMAFx/vmafx/issues/2146), [#2159](https://github.com/VMAFx/vmafx/issues/2159); no-reference mode in the plugins ([#2413](https://github.com/VMAFx/vmafx/issues/2413)) with its first model ([#2166](https://github.com/VMAFx/vmafx/issues/2166)), the live P.1204 monitor ([#2417](https://github.com/VMAFx/vmafx/issues/2417)), AI-generated video scoring ([#2418](https://github.com/VMAFx/vmafx/issues/2418)), WebRTC, streaming outputs, libVLC and cookbook recipes, and the rest of the milestone |
-| [1.2](https://github.com/VMAFx/vmafx/milestone/3) | Encoder feedback, embedding and platforms: the rest of the embedding epic ([#2067](https://github.com/VMAFx/vmafx/issues/2067)), [#2164](https://github.com/VMAFx/vmafx/issues/2164), [#2156](https://github.com/VMAFx/vmafx/issues/2156); encoder-side predictors ([#2416](https://github.com/VMAFx/vmafx/issues/2416)), the VLC plugin ([#2358](https://github.com/VMAFx/vmafx/issues/2358)), the mobile and WebAssembly targets |
-| [1.3](https://github.com/VMAFx/vmafx/milestone/4) | New metrics with exact twins: [#2165](https://github.com/VMAFx/vmafx/issues/2165), [#2167](https://github.com/VMAFx/vmafx/issues/2167) (a decision after the external runner), the artefact detectors ([#2272](https://github.com/VMAFx/vmafx/issues/2272)), ST-GREED ([#2394](https://github.com/VMAFx/vmafx/issues/2394)), picks from [#2168](https://github.com/VMAFx/vmafx/issues/2168); our own no-reference models ([#2415](https://github.com/VMAFx/vmafx/issues/2415)) and foveated scoring ([#2419](https://github.com/VMAFx/vmafx/issues/2419)) |
-| [1.4](https://github.com/VMAFx/vmafx/milestone/8) | Metric A/B comparison, the best current mix and more training data: [#2240](https://github.com/VMAFx/vmafx/issues/2240), [#2241](https://github.com/VMAFx/vmafx/issues/2241) |
-| [1.5](https://github.com/VMAFx/vmafx/milestone/9) | The next model generation: [#2242](https://github.com/VMAFx/vmafx/issues/2242) |
-| [2.0](https://github.com/VMAFx/vmafx/milestone/5) | Breaking changes only: the `libvmaf.h` compatibility library removed ([ADR-1852](adr/1852-vmafx-api-redesign.md)), the rest of [#1254](https://github.com/VMAFx/vmafx/issues/1254) |
-| [2.1](https://github.com/VMAFx/vmafx/milestone/10) | Rust P1a: the default-model extractors Rust-default with SIMD ([#2573](https://github.com/VMAFx/vmafx/issues/2573)) |
-| [2.2](https://github.com/VMAFx/vmafx/milestone/11) | Rust P1b: the remaining CPU extractors and SIMD ([#2574](https://github.com/VMAFx/vmafx/issues/2574)) |
-| [2.3](https://github.com/VMAFx/vmafx/milestone/12) | Rust P2: engine, model loading, predict and pooling, generated ABI shells ([#2575](https://github.com/VMAFx/vmafx/issues/2575)) |
-| [2.4](https://github.com/VMAFx/vmafx/milestone/13) | Rust P3: CLI, tools, MCP server, ONNX Runtime host, host glue ([#2576](https://github.com/VMAFx/vmafx/issues/2576), [#2581](https://github.com/VMAFx/vmafx/issues/2581)) |
-| [2.5](https://github.com/VMAFx/vmafx/milestone/14) | Rust P4 and P5: GPU host runtimes and the kernel verdict per backend ([#2577](https://github.com/VMAFx/vmafx/issues/2577), [#2578](https://github.com/VMAFx/vmafx/issues/2578)) |
-| [3.0](https://github.com/VMAFx/vmafx/milestone/15) | Host C and C++ removed outside the exception list ([#2579](https://github.com/VMAFx/vmafx/issues/2579)) |
+The release line restarts at `0.1.0`
+([ADR-3292](adr/3292-release-line-restart-0x.md), 2026-10-12). The candidates
+`v1.0.0-rc.1` to `v1.0.0-rc.3` are withdrawn; `1.0.0` is the first stable
+release. The work the candidate stages RC4 to RC9 planned keeps its stage name
+and its tracking issue, and moves into the release that now ships it.
 
-[ADR-2001](adr/2001-release-scope-1-0-and-roadmap-to-2-0.md) set this layout on
-2026-10-06 and declared it the last change of the milestone map until 2.0,
-apart from bugs and findings. The cloud-native work (scoring API contract,
-server mode, observability, the cloud-native platform, containers, Helm,
-operator, GPU pool arbiter) is part of 1.0.0.
-Every release after 1.0.0 runs its own candidate cycle: features first, then
-deduplication, tests and bug fixing, then capability tables with benchmarks and
-tuning, then training if models change, then the release; the same phase rules
-as for 1.0.0 apply inside each cycle.
+| Version | Milestone | Theme |
+| --- | --- | --- |
+| 0.1.0 | [0.1.0](https://github.com/VMAFx/vmafx/milestone/1) | First release: the RC4 package (first full Rust metric, zero-copy device-frame import, the VMAFx API and its bindings, the FFmpeg and GStreamer integrations, provenance, input formats, the scoring API contract) and packaging |
+| 0.2.0 | [0.2.0](https://github.com/VMAFx/vmafx/milestone/17) | Foundations, capability tables and benchmarks: the RC5 deduplication and tool consolidation, the RC6 GPU and RC7 CPU capability tables, RC8 benchmarking, tuning and training readiness, observability, the RC3 carry-over |
+| 0.3.0 | [0.3.0](https://github.com/VMAFx/vmafx/milestone/10) | Rust P1a: the default-model extractors Rust-default with SIMD ([#2573](https://github.com/VMAFx/vmafx/issues/2573)), with P0b to P0e |
+| 0.4.0 | [0.4.0](https://github.com/VMAFx/vmafx/milestone/3) | Encoder feedback, embedding and platforms: the rest of the embedding epic ([#2067](https://github.com/VMAFx/vmafx/issues/2067)), [#2164](https://github.com/VMAFx/vmafx/issues/2164), [#2156](https://github.com/VMAFx/vmafx/issues/2156); encoder-side predictors ([#2416](https://github.com/VMAFx/vmafx/issues/2416)), the VLC plugin ([#2358](https://github.com/VMAFx/vmafx/issues/2358)), the mobile and WebAssembly targets |
+| 0.5.0 | [0.5.0](https://github.com/VMAFx/vmafx/milestone/11) | Rust P1b: the remaining CPU extractors and SIMD ([#2574](https://github.com/VMAFx/vmafx/issues/2574)) |
+| 0.6.0 | [0.6.0](https://github.com/VMAFx/vmafx/milestone/12) | Rust P2: engine, model loading, predict and pooling, generated ABI shells ([#2575](https://github.com/VMAFx/vmafx/issues/2575)) |
+| 0.7.0 | [0.7.0](https://github.com/VMAFx/vmafx/milestone/4) | New metrics with exact twins: the RC5 metric package ([#2496](https://github.com/VMAFx/vmafx/issues/2496)), [#2165](https://github.com/VMAFx/vmafx/issues/2165), [#2167](https://github.com/VMAFx/vmafx/issues/2167), the artefact detectors ([#2272](https://github.com/VMAFx/vmafx/issues/2272)), ST-GREED ([#2394](https://github.com/VMAFx/vmafx/issues/2394)), picks from [#2168](https://github.com/VMAFx/vmafx/issues/2168); our own no-reference models ([#2415](https://github.com/VMAFx/vmafx/issues/2415)) and foveated scoring ([#2419](https://github.com/VMAFx/vmafx/issues/2419)) |
+| 0.8.0 | [0.8.0](https://github.com/VMAFx/vmafx/milestone/8) | Metric A/B comparison, the best current mix and more training data: [#2240](https://github.com/VMAFx/vmafx/issues/2240), [#2241](https://github.com/VMAFx/vmafx/issues/2241) |
+| 0.9.0 | [0.9.0](https://github.com/VMAFx/vmafx/milestone/9) | The next model generation: the RC9 retraining ([#1246](https://github.com/VMAFx/vmafx/issues/1246)) and [#2242](https://github.com/VMAFx/vmafx/issues/2242) |
+| 1.0.0 | [1.0.0](https://github.com/VMAFx/vmafx/milestone/13) | First stable: Rust P3, CLI, tools, MCP server, ONNX Runtime host and host glue ([#2576](https://github.com/VMAFx/vmafx/issues/2576), [#2581](https://github.com/VMAFx/vmafx/issues/2581)), and a frozen interface; candidates from `v1.0.0-rc.4` |
+| 1.1 | [1.1](https://github.com/VMAFx/vmafx/milestone/2) | Integrations, live quality and cloud-native: the OBS Studio plugin ([#2239](https://github.com/VMAFx/vmafx/issues/2239)), no-reference mode in the plugins ([#2413](https://github.com/VMAFx/vmafx/issues/2413)), the live P.1204 monitor ([#2417](https://github.com/VMAFx/vmafx/issues/2417)), AI-generated video scoring ([#2418](https://github.com/VMAFx/vmafx/issues/2418)), the cloud-native platform ([#2431](https://github.com/VMAFx/vmafx/issues/2431)) with containers, Helm and operator ([#2497](https://github.com/VMAFx/vmafx/issues/2497)), and the rest of the milestone |
+| 1.2 | [1.2](https://github.com/VMAFx/vmafx/milestone/14) | Rust P4 and P5: GPU host runtimes and the kernel verdict per backend ([#2577](https://github.com/VMAFx/vmafx/issues/2577), [#2578](https://github.com/VMAFx/vmafx/issues/2578)) |
+| 1.3 | [1.3](https://github.com/VMAFx/vmafx/milestone/16) | Open subjective studies |
+| 2.0 | [2.0](https://github.com/VMAFx/vmafx/milestone/5) | Breaking changes only: the `libvmaf.h` compatibility library removed ([ADR-1852](adr/1852-vmafx-api-redesign.md)), the rest of [#1254](https://github.com/VMAFx/vmafx/issues/1254) |
+| 3.0 | [3.0](https://github.com/VMAFx/vmafx/milestone/15) | Host C and C++ removed outside the exception list ([#2579](https://github.com/VMAFx/vmafx/issues/2579)) |
+
+After `0.1.0` every `0.x` release is a plain minor release; only `1.0.0` runs
+release candidates, starting at `v1.0.0-rc.4` so that no published tag is
+reused. Before `1.0.0` a breaking change raises the minor version, not the
+major one. [ADR-3292](adr/3292-release-line-restart-0x.md) supersedes the
+candidate maps of ADR-1341, ADR-1421, ADR-1490, ADR-1868, ADR-1880, ADR-2001
+and ADR-2342; the stage content and the ordering rules below are theirs.
 
 Two milestones are deliberately **rolling** rather than tied to a release:
 
@@ -45,65 +50,47 @@ Two milestones are deliberately **rolling** rather than tied to a release:
   the
   fork adds and changes a lot, so slimming it is recurring work, not a one-off.
 
-## How 1.0.0 is gated
+## How the stages are ordered
 
-The fork's first release candidate, `v1.0.0-rc.1`, was published on 2026-09-27;
+The fork published three release candidates: `v1.0.0-rc.1` (2026-09-27),
+`v1.0.0-rc.2` (2026-09-28) and `v1.0.0-rc.3` (2026-10-07). They are withdrawn;
 older tags are inherited upstream history.
-[ADR-1341](adr/1341-rc-correctness-benchmark-retrain-sequence.md) gives each
-first-release candidate one responsibility.
-[ADR-1421](adr/1421-rc3-rc8-candidate-map.md) maps the stages to tags, so that
-each stage number matches its `v1.0.0-rc.N` tag (it supersedes the mapping of
-[ADR-1352](adr/1352-rc-phase-shift-plus-one.md)), and
-[ADR-1490](adr/1490-rc3-rc9-candidate-map-cpu-capability.md) inserts the CPU
-capability stage as RC7, which moves benchmarking to RC8 and retraining to RC9.
-[ADR-1868](adr/1868-candidate-map-2026-10-05.md) folds the work that joined
-1.0.0 on 2026-10-05 into those candidates without new numbers: the new API and
-provenance into RC4, tool consolidation, new metrics and the Metal SpEED twins
-into RC5, training readiness into RC8.
-[ADR-1880](adr/1880-format-envelope-device-targets.md) adds the format envelope:
-an overflow audit at 8K and 16K and 8K exactness in RC3, the supported
-resolutions, bit depths and layouts per backend and device in the RC6 and RC7
-tables, throughput per resolution in RC8; and device-targeted scoring (one
-decode scored for several displays) in RC5.
-[ADR-2001](adr/2001-release-scope-1-0-and-roadmap-to-2-0.md) moves the
-cloud-native work into 1.0.0 without new numbers: the versioned scoring API
-contract, server mode and observability in RC4, containers, Helm chart, operator
-and GPU pool arbiter in RC5, distributed throughput in RC8; a native GStreamer
-element, an API ready for OBS Studio and real-time FFmpeg GPU scoring in RC4.
-The OBS Studio plugin follows in 1.1.
-[ADR-2342](adr/2342-rc-map-amendment-2026-10.md) records the scope decisions of
-2026-10-06 and 2026-10-07, again without new numbers: RC4 also holds the
-FFmpeg series redesign, the input-format work, the engineering principles per
-language, the FFmpeg audit, the observability package and the cloud-native
-platform; RC5 also holds live alignment, interlaced video, region masks,
-container input, bits per pixel and BD-rate, HandBrake support, the minimal
-run-result timeline and the reusable provenance workflow.
+[ADR-1341](adr/1341-rc-correctness-benchmark-retrain-sequence.md) gave each
+stage one responsibility, and ADR-1421, ADR-1490, ADR-1868,
+[ADR-1880](adr/1880-format-envelope-device-targets.md),
+[ADR-2001](adr/2001-release-scope-1-0-and-roadmap-to-2-0.md) and
+[ADR-2342](adr/2342-rc-map-amendment-2026-10.md) filled the stages. That
+content and order still hold: correctness and exactness before deduplication,
+capability tables before benchmarks, benchmarks before real training. What
+changed is which release ships each stage.
 
 ### What this means for you
 
-- **Use the newest candidate.** Each candidate keeps the Netflix golden scores;
-  later candidates make GPU and SIMD results match the CPU and remove
-  duplicated code.
-- **No performance claims before RC8.** Candidates up to RC7 are about
-  correctness; speed numbers are measured and tuned in RC8.
-- **Model retraining comes last**, in RC9.
+- **Use the newest release.** The withdrawn candidates are not a supported
+  line; from `0.1.0` on, each release keeps the Netflix golden scores.
+- **No performance claims before the RC8 package of 0.2.0.** Speed numbers are
+  measured and tuned after the capability tables.
+- **Model retraining comes in 0.9.0**, after the RC8 evidence.
 - **Help test.** Results from hardware the project does not own count as
   evidence: run the [tester image](usage/tester-image.md).
 
 ### The stages
 
-| Stage | Theme | Tracking issue |
-| --- | --- | --- |
-| **RC1** | correctness and tester readiness | — |
-| **RC2** | stabilisation and repair | — |
-| **RC3** | twin exactness, overflow audit at 8K and 16K | [#1721](https://github.com/VMAFx/vmafx/issues/1721) |
-| **RC4** | first full Rust metric, zero-copy device-frame import, new VMAFx API and its bindings, FFmpeg filters and series redesign, GStreamer element, provenance, input formats, scoring API contract, server mode, observability, cloud-native platform, engineering principles, OBS-ready API | [#1723](https://github.com/VMAFx/vmafx/issues/1723) |
-| **RC5** | deduplication, tool consolidation (live alignment, interlaced video, region masks, container input, bits per pixel and BD-rate, HandBrake, run-result timeline), new metrics with exact twins, Metal SpEED twins, device-targeted scoring, containers, Helm, operator, GPU pool arbiter | [#1724](https://github.com/VMAFx/vmafx/issues/1724) |
-| **RC6** | GPU capability source of truth, GPU format envelope, legacy GPU build variants | [#1725](https://github.com/VMAFx/vmafx/issues/1725) |
-| **RC7** | CPU capability source of truth, CPU format envelope, full SIMD ladder on five architectures | [#1885](https://github.com/VMAFx/vmafx/issues/1885) |
-| **RC8** | benchmark and tune, throughput per resolution, distributed throughput, training readiness | [#1245](https://github.com/VMAFx/vmafx/issues/1245) |
-| **RC9** | real retraining | [#1246](https://github.com/VMAFx/vmafx/issues/1246), [#1242](https://github.com/VMAFx/vmafx/issues/1242) |
-| **Final `v1.0.0`** | — | — |
+| Stage | Release | Theme | Tracking issue |
+| --- | --- | --- | --- |
+| **RC1** | withdrawn `v1.0.0-rc.1` | correctness and tester readiness | — |
+| **RC2** | withdrawn `v1.0.0-rc.2` | stabilisation and repair | — |
+| **RC3** | withdrawn `v1.0.0-rc.3`; carry-over in 0.2.0 | twin exactness, overflow audit at 8K and 16K | [#1721](https://github.com/VMAFx/vmafx/issues/1721) |
+| **RC4** | 0.1.0 | first full Rust metric, zero-copy device-frame import, new VMAFx API and its bindings, FFmpeg filters and series redesign, GStreamer element, provenance, input formats, scoring API contract, engineering principles, OBS-ready API | [#1723](https://github.com/VMAFx/vmafx/issues/1723) |
+| **RC5** | 0.2.0 (metrics: 0.7.0; deployment: 1.1) | deduplication, tool consolidation, device-targeted scoring; the new metrics and the cloud-native deployment moved out | [#1724](https://github.com/VMAFx/vmafx/issues/1724) |
+| **RC6** | 0.2.0 | GPU capability source of truth, GPU format envelope, legacy GPU build variants | [#1725](https://github.com/VMAFx/vmafx/issues/1725) |
+| **RC7** | 0.2.0 | CPU capability source of truth, CPU format envelope | [#1885](https://github.com/VMAFx/vmafx/issues/1885) |
+| **RC8** | 0.2.0 | benchmark and tune, throughput per resolution, training readiness | [#1245](https://github.com/VMAFx/vmafx/issues/1245) |
+| **RC9** | 0.9.0 | real retraining | [#1246](https://github.com/VMAFx/vmafx/issues/1246) |
+| **First stable `v1.0.0`** | 1.0.0 | Rust P3 and a frozen interface | [#2576](https://github.com/VMAFx/vmafx/issues/2576), [#2581](https://github.com/VMAFx/vmafx/issues/2581) |
+
+The sections below keep each stage's scope as its ADRs set it; where the
+milestone moves above put part of a stage in another release, the table wins.
 
 #### RC1 — correctness and tester readiness
 
@@ -310,30 +297,31 @@ Also in RC4 since 2026-10-05 (ADR-1868): provenance on every score
 - **Exit boundary:** Model-quality gates, model cards, registry/signing
   metadata, and unchanged Netflix golden assertions pass
 
-#### Final `v1.0.0`
+#### First stable `v1.0.0`
 
-- **In scope:** Accepted RC9 output plus any required repair candidate
-- **Exit boundary:** Publication preflight passes on the immutable final tag
+- **In scope:** Rust P3 ([#2576](https://github.com/VMAFx/vmafx/issues/2576),
+  [#2581](https://github.com/VMAFx/vmafx/issues/2581)) and a review that freezes
+  the public interface; release candidates from `v1.0.0-rc.4`
+- **Exit boundary:** The freeze review is accepted, and publication preflight
+  passes on the immutable final tag
 
 “Done fixing” is deliberately bounded rather than a promise that no future bug
-will be found. RC1 and RC2 are ready when there are no confirmed, actionable
-release blockers and no untriaged rows. Performance-only findings belong to
-RC8, real training belongs to RC9, and externally blocked work stays explicitly
+will be found. A release is ready when there are no confirmed, actionable
+release blockers and no untriaged rows. Performance-only findings belong to the
+RC8 package, real training to RC9, and externally blocked work stays explicitly
 deferred with its trigger and evidence.
 
-If any later candidate exposes a correctness regression, fix it and rerun the
+If any later stage exposes a correctness regression, fix it and rerun the
 affected stage evidence before proceeding. Do not pull general benchmarking
-into RC1 to RC7, or real training before RC8 evidence is accepted. Speed that
-RC3 gives up for exactness is recorded as a tuning row and recovered in RC8; it
-is not traded back for a tolerance. The RC1 and RC2 report envelope may run a
-short correctness and device-engagement smoke; it does not make a performance
-claim.
+ahead of the capability tables, or real training before RC8 evidence is
+accepted. Speed that RC3 gives up for exactness is recorded as a tuning row and
+recovered in RC8; it is not traded back for a tolerance.
 
 Ordinary Renovate and other version PRs remain mergeable throughout the
 sequence when normal required checks, review, pinning, and component-specific
 validation pass. Security updates are prioritised rather than being the only
 allowed updates. Because evidence is exact-head, any later merge requires the
-affected candidate checks or measurements to be rerun.
+affected checks or measurements to be rerun.
 
 ## Rust core
 
@@ -341,7 +329,9 @@ affected candidate checks or measurements to be rerun.
 host-side C and C++ by 3.0 behind the unchanged C ABI, exported from Rust and
 generated from the API definition. The epic is
 [#2567](https://github.com/VMAFx/vmafx/issues/2567); the phases and their
-milestones are in the ADR's phase table and the research digest is
+releases are in the table above
+([ADR-3292](adr/3292-release-line-restart-0x.md) moved them from the ADR's
+phase table) and the research digest is
 [Research-2479](research/2479-rust-core-migration.md). Native GPU device sources
 and C-only host glue stay on a named exception list with re-evaluation
 triggers. The C implementation of a layer is the differential oracle until it is
@@ -358,7 +348,7 @@ library ([ADR-2001](adr/2001-release-scope-1-0-and-roadmap-to-2-0.md),
   ground truth; if scores drift, the code is wrong.
 - The **`libvmaf.so` ABI** and the FFmpeg `libvmaf` filter name stay stable,
   even
-  as the internals move to C++23 and parts of the tooling move to Go and Rust.
+  as the internals move to Rust.
 - The public **C API** under `core/include/libvmaf/` stays source-compatible.
 - Release artifacts are **built in the container**, never from a host build.
 

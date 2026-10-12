@@ -21,8 +21,18 @@ Releases follow ordinary SemVer tags, `vX.Y.Z`:
 - `Y` changes for backward-compatible features.
 - `Z` changes for backward-compatible fixes.
 
-The fork's first release is `v1.0.0`. It is preceded by release
-candidates `v1.0.0-rc.N`; `v1.0.0-rc.1` and `v1.0.0-rc.2` are published.
+While the version is `0.x`, the public surfaces are not yet frozen: a breaking
+change raises the minor version, and a feature raises the minor version too
+(release-please's `bump-minor-pre-major`). `1.0.0` is the first stable release,
+the point from which the rules above hold in full.
+
+The fork's first release is `v0.1.0`
+([ADR-3292](../adr/3292-release-line-restart-0x.md)). The candidates
+`v1.0.0-rc.1` to `v1.0.0-rc.3` were published before the release line was
+restarted; their tags stay, and their releases are marked withdrawn. The
+first stable release, `v1.0.0`, will again be preceded by candidates, starting
+at `v1.0.0-rc.4`; the `0.x` minor releases have none.
+
 Netflix's tags (`v1.0.2` to `v3.2.1`) are not tags of this repository: the 26
 that had been copied into it were deleted on 2026-10-05 ([the record](inherited-tags.md),
 [ADR-1805](../adr/1805-delete-inherited-netflix-tags.md)). A `vX.Y.Z` tag you
@@ -31,86 +41,77 @@ tags. The 3.2.x baseline that used
 to be in the manifest was a source-version alignment with Netflix's
 SONAME, not a fork release.
 
-release-please runs in prerelease mode (`versioning: prerelease`,
-`prerelease-type: rc`, `release-please-config.json`), and
-`.release-please-manifest.json` holds the current candidate
-(`1.0.0-rc.2`). The final cut flips `prerelease` to `false` once the
-candidate sequence passes (see
-[Cutting a release from fragments](#cutting-a-release-from-fragments)).
-[ADR-1151](../adr/1151-vmafx-first-release-1-0-0.md) governs the first
-release and supersedes
-[ADR-1127](../adr/1127-single-semver-release-stream.md)'s "start at
-v3.2.1"; [ADR-1201](../adr/1201-release-candidates-before-1-0-0.md) adds
-the candidate channel.
+release-please uses `versioning: default` with `prerelease: false`,
+`bump-minor-pre-major: true` and `bump-patch-for-minor-pre-major: false`
+(`release-please-config.json`). `.release-please-manifest.json` still holds
+the last candidate, `1.0.0-rc.3`; the one-shot `release-as: "0.1.0"` moves the
+next release off the candidate line in one step, and the cut of `0.1.0`
+removes it (see [Cutting a release from fragments](#cutting-a-release-from-fragments)).
+[ADR-3292](../adr/3292-release-line-restart-0x.md) amends
+[ADR-1151](../adr/1151-vmafx-first-release-1-0-0.md) (first release),
+[ADR-1201](../adr/1201-release-candidates-before-1-0-0.md) and
+[ADR-1348](../adr/1348-release-candidate-prerelease-versioning.md)
+(candidates); [ADR-1127](../adr/1127-single-semver-release-stream.md) keeps
+the single SemVer stream.
 
 Example progression:
 
 ```text
-v1.0.0  # first VMAFx release
-v1.0.1  # patch release
-v1.1.0  # backward-compatible feature release
-v2.0.0  # incompatible public-surface release
+v0.1.0        # first VMAFx release
+v0.1.1        # fix release
+v0.2.0        # feature or breaking release while 0.x
+v1.0.0-rc.4   # first candidate of the first stable release
+v1.0.0        # first stable release
+v1.1.0        # backward-compatible feature release
+v2.0.0        # incompatible public-surface release
 ```
 
-## First-release candidate responsibilities
+## Release map
 
-[ADR-1341](../adr/1341-rc-correctness-benchmark-retrain-sequence.md)
-separates the first release into ordered evidence stages. The stage-to-tag
-map has been revised twice:
+[ADR-3292](../adr/3292-release-line-restart-0x.md) replaces the candidate map
+of [ADR-1341](../adr/1341-rc-correctness-benchmark-retrain-sequence.md),
+[ADR-1421](../adr/1421-rc3-rc8-candidate-map.md),
+[ADR-1490](../adr/1490-rc3-rc9-candidate-map-cpu-capability.md),
+[ADR-1868](../adr/1868-candidate-map-2026-10-05.md),
+[ADR-1880](../adr/1880-format-envelope-device-targets.md),
+[ADR-2001](../adr/2001-release-scope-1-0-and-roadmap-to-2-0.md) and
+[ADR-2342](../adr/2342-rc-map-amendment-2026-10.md) with plain `0.x` minor
+releases. The work those records assigned to each candidate keeps its order and
+its rules; only the version that ships it changed. Each version is a forge
+milestone, and the user-facing version of this map is
+[the roadmap](../roadmap.md).
 
-- [ADR-1421](../adr/1421-rc3-rc8-candidate-map.md) maps the stages to tags
-  and supersedes the candidate mapping of
-  [ADR-1352](../adr/1352-rc-phase-shift-plus-one.md), which had added the
-  stabilisation candidate after rc.1.
-- [ADR-1490](../adr/1490-rc3-rc9-candidate-map-cpu-capability.md) inserts
-  RC7 and moves the later candidates up by one, so each phase number
-  matches its tag.
-
-- [ADR-2001](../adr/2001-release-scope-1-0-and-roadmap-to-2-0.md)
-  folds the cloud-native work, a GStreamer element, an OBS-ready API and real-
-  time FFmpeg GPU scoring into RC4, RC5 and RC8, the full CPU SIMD ladder into
-  RC7 and legacy GPU build variants into RC6, all without new numbers, and
-  replaces the post-1.0 milestones with the themed releases 1.1 to 1.5
-  (below). It is the last change of the map until 2.0, apart from bugs and
-  findings.
-- [ADR-2342](../adr/2342-rc-map-amendment-2026-10.md) records the scope
-  decisions of 2026-10-06 and 2026-10-07 without new numbers: more RC4 work
-  packages, more RC5 tool-consolidation work and the post-1.0 placement of the
-  issues filed since.
-
-The user-facing version of this map is [the roadmap](../roadmap.md).
-
-### Candidate map
-
-| Candidate | Proves | Must not be used to claim |
+| Version | Content | Former label |
 | --- | --- | --- |
-| `v1.0.0-rc.1` (RC1) | Release-blocking correctness is closed or explicitly deferred, required checks pass on the exact head, and outside testers can run the bounded hardware-validation/report path | Final performance or production-trained model quality |
-| `v1.0.0-rc.2` (RC2) | The dependency and fix train since rc.1 meets the RC1 bar: no confirmed release blocker or untriaged `docs/state.md` row, required checks pass on the exact head, and the tester report path still works | Final performance or production-trained model quality |
-| `v1.0.0-rc.3` (RC3) | Twin exactness: every GPU and SIMD twin returns the CPU extractor's scores bit for bit or carries a measured tolerance recorded in an ADR, 8K cells included; no SYCL kernel uses scratch memory; no extractor or twin overflows at 8K or 16K with 16-bit samples (ADR-1880). Rows that only a device the project does not own can close (unreached CUDA and HIP architectures, Xe-LP, the Windows GPU builds) are carried past rc.3 with a stated reason ([ADR-1707](../adr/1707-rc3-exit-without-outside-hardware.md)) | Performance, production-trained model quality, or exactness on a device the release notes list as not yet verified |
-| `v1.0.0-rc.4` (RC4) | The whole `vmaf_v1.0.16_3d0h` path (cambi, speed_chroma, integer adm3, integer motion3, model prediction) runs in Rust, bit-identical to C, with the C ABI unchanged; a device-resident frame is scored through the import API with fences and no host copy of pixel data ([ADR-1829](../adr/1829-rc4-zero-copy-import.md)); the new VMAFx API and its generated surfaces, the VMAFx-named FFmpeg filters and provenance on every score pass with the golden-data gate run through the compatibility library ([ADR-1868](../adr/1868-candidate-map-2026-10-05.md)); the versioned scoring API contract and server mode with observability are generated from the same definition; the native `vmafx` GStreamer element and the conformance run of upstream's gst-plugins-bad `vmaf` element on the compatibility `libvmaf.so.3` pass; the API is ready for OBS Studio (texture import including OpenGL interop, asynchronous window scores, bounded queues); real-time FFmpeg GPU scoring with `n_stats` works ([ADR-2001](../adr/2001-release-scope-1-0-and-roadmap-to-2-0.md)); the language bindings are generated from the definition; the FFmpeg patch series is redesigned from `0001` after an audit of everything VMAFx uses in FFmpeg, and builds without warnings on every measured compiler; host input of every semi-planar and packed layout, RGB with a stated matrix and every bit depth from 8 to 16 is bit-exact with the planar path; `motion2` and `motion3` are incremental so live windows complete before the flush; Vulkan frames import on CUDA, SYCL and HIP; `docs/principles.md` is per language with each missing gate proven by a planted defect; the observability package the Linux arm64 and older-glibc binaries and the package-manager channels, and the cloud-native platform (state out of the processes, scaling on queue depth, CRDs, proto, OpenAPI and the Helm schema generated from the definition) pass their end-to-end tests ([ADR-2342](../adr/2342-rc-map-amendment-2026-10.md)) | Performance, or production-trained model quality |
-| `v1.0.0-rc.5` (RC5) | One implementation per behaviour across GPU twins, host code and tools, with `libgpudispatch` extracted (it folds in the per-backend import code RC4 wrote); the new metrics (ΔE-ITP, PU21, NIQE, BRISQUE, Y-FUNQUE+, HDR-SSIM, HDR-MS-SSIM, XPSNR) and the Metal SpEED twins are written once on it, each twin exact or within a measured libm bound; device-targeted scoring (device profiles mapped onto `nvd` / `rdh`, one decode scored for many targets, ADR-1880); containers, Helm chart and a kind plus kuttl test setup, the operator, the controller / node split and the GPU pool arbiter in `libgpudispatch` ([ADR-2001](../adr/2001-release-scope-1-0-and-roadmap-to-2-0.md)); the Go tools replace the Python MCP server and `vmaf-tune`; live alignment of two feeds with timecode, interlaced video, region masks, container input through FFmpeg libraries, bits per pixel and BD-rate, HandBrake support, the minimal run-result timeline and one reusable build-and-provenance workflow for every image pass their tests, and the Vulkan compute experiment has a written verdict ([ADR-2342](../adr/2342-rc-map-amendment-2026-10.md)) | Performance, or production-trained model quality |
-| `v1.0.0-rc.6` (RC6) | The checked-in GPU capability table matches the vendor toolchains (CI drift check), dispatch and kernel parameters read it, and every kernel, the RC5 twins included, passes the static audit for every target; the table lists the legacy build variants (CUDA 12.x for sm_50 to sm_72, the Intel legacy compute runtime for Gen9 to Gen11, every AMD target the pinned ROCm compiler emits), each bit-exact, and declares each backend's and device's format envelope (up to 16K with measured memory limits, 8 to 16 bits, chroma layouts, odd and portrait sizes), every row test-backed (ADR-1880) | Measured performance on any device |
-| `v1.0.0-rc.7` (RC7) | The checked-in CPU capability table matches the compile flags and runtime gates (CI drift check), no SIMD kernel contains an instruction outside the feature set its gate guarantees, and every dispatch level is bit-exact against scalar under emulation (details below the table); every extractor has a bit-exact kernel at every useful ISA level of x86-64, AArch64, RISC-V RVV 1.0, POWER VSX and LoongArch LSX/LASX, with qemu-user CI and the golden gate where no hardware exists (ADR-2001); the CPU format envelope is declared and test-backed in the same table (ADR-1880); every extractor with an original implementation is proven against it in a reference conformance column, the default is reference-exact and Netflix's behaviour is a named compatibility mode that the golden gate runs in ([ADR-2343](../adr/2343-reference-exact-default-compat-mode.md)) | Measured performance on any processor |
-| `v1.0.0-rc.8` (RC8) | Benchmarks, profiles, and tuning results are comparable, reproducible, and still numerically correct on the tested hardware, throughput per resolution up to 16K included and distributed throughput across nodes ([ADR-2001](../adr/2001-release-scope-1-0-and-roadmap-to-2-0.md)); the training tooling is ready (data hygiene, evaluation tooling, HDR conversion checks) and the mini retrain passes every stage | Completion of the real retraining programme |
-| `v1.0.0-rc.9` (RC9) | The one-shot real retrain, started only when every precondition of #1246 holds, trained on reference-exact features (the shipped v1 models read compatibility-mode features until then), and its quality, provenance, registry, signing, and golden-data gates pass on the tuned tree | That no later repair candidate can be needed |
+| `0.1.0` | First release: the new VMAFx C API with its generated surfaces and the `libvmaf` compatibility library, device-frame import with fences, the VMAFx-named FFmpeg filters, provenance on every score, host input formats, the outside-hardware tester path, packaging and documentation | RC4 (#1723) |
+| `0.2.0` | Foundations, capability tables and benchmarks: deduplication and `libgpudispatch`, the GPU and CPU capability tables with their drift checks and format envelopes, benchmarks, profiling and tuning, training readiness, observability, the remaining twin-exactness rows | RC5-A, RC5-B, RC6, RC7, RC8, RC3 carry-over |
+| `0.3.0` | Rust core P1a | new |
+| `0.4.0` | Encoder feedback, embedding and platforms | 1.2 |
+| `0.5.0` | Rust core P1b | new |
+| `0.6.0` | Rust core P2 | new |
+| `0.7.0` | New metrics with exact twins | 1.3, RC5-C |
+| `0.8.0` | Metric A/B comparison, the best current mix and more training data | 1.4 |
+| `0.9.0` | The next model generation, the one-shot real retrain | 1.5, RC9 (#1246) |
+| `1.0.0` | First stable release: Rust core P3 and a frozen public interface; candidates from `v1.0.0-rc.4` | new |
+
+The candidates `v1.0.0-rc.1` (release-blocking correctness and the tester
+report path), `v1.0.0-rc.2` (stabilisation) and `v1.0.0-rc.3` (twin
+exactness) were published under the earlier map and are withdrawn; what they
+proved stays recorded in their release notes and in the records above.
 
 ### After 1.0.0
 
-Every minor release runs its own candidate cycle in the order of the rules
-below: features first, then deduplication, tests and bug fixing, then the
-capability tables with benchmarks and tuning, then training where models
-change, then the release ([ADR-2001](../adr/2001-release-scope-1-0-and-roadmap-to-2-0.md)).
-
 | Release | Theme |
 | --- | --- |
-| 1.1 | Integrations and live quality: the OBS Studio plugin (#2239), #2148, #2147, #2144, #2146, #2159, no-reference mode in the plugins (#2413), the live P.1204 monitor (#2417), AI-generated video scoring (#2418), WebRTC, streaming outputs, libVLC and cookbook recipes |
-| 1.2 | Encoder feedback, embedding and platforms: the rest of #2067, #2164, #2156, encoder-side predictors (#2416), the VLC plugin (#2358), mobile and WebAssembly targets |
-| 1.3 | New metrics with exact twins: #2165, #2167, #2166, picks from #2168, our own no-reference models (#2415), foveated scoring (#2419) |
-| 1.4 | Metric A/B comparison, the best current mix and more training data: #2240, #2241 |
-| 1.5 | The next model generation: #2242 |
-| 2.0 | Breaking changes only: the `libvmaf.h` compatibility library removed (ADR-1852 D7), the C++23 core, the rest of #1254 |
+| 1.1 | Integrations, live quality and the cloud-native platform: the OBS Studio plugin (#2239), #2148, #2147, #2144, #2146, #2159, no-reference mode in the plugins (#2413), the live P.1204 monitor (#2417), AI-generated video scoring (#2418), WebRTC, streaming outputs, libVLC and cookbook recipes; the cloud-native platform (#2431) and the work of RC5-D |
+| 1.2 | Rust core P4 and P5 |
+| 1.3 | Open subjective studies |
+| 2.0 | Breaking changes only: the `libvmaf.h` compatibility library removed (ADR-1852 D7), the rest of #1254 |
+| 3.0 | The host C and C++ code removed |
 
-### RC7 evidence in detail
+### CPU capability evidence in detail
+
+The CPU capability table of `0.2.0` (formerly RC7) is held to this evidence:
 
 - The instruction audit is per function, for x86 and aarch64.
 - Emulation covers Intel SDE CPU models and qemu for aarch64 NEON and
@@ -118,15 +119,16 @@ change, then the release ([ADR-2001](../adr/2001-release-scope-1-0-and-roadmap-t
 - Reports from real Xeon or Apple Silicon machines are extra evidence, not
   a requirement.
 
-### Rules for candidates
+### Rules for releases and candidates
 
-Candidate tags are immutable. RC1 to RC9 name the planned candidate for each
-responsibility; if a stage finds a correctness defect, land the fix and rerun
-the affected evidence before advancing. A later repair candidate may be cut
-without moving benchmark work into RC1 to RC7 or real training before RC8
-evidence is accepted. Speed that RC3 gives up for exactness is recorded as a
-tuning row and recovered in RC8, never traded back for a tolerance. The final
-`v1.0.0` follows accepted RC9 evidence.
+Tags are immutable, candidates included. If a release finds a correctness
+defect, land the fix and rerun the affected evidence before the next release.
+Benchmark and tuning claims start with `0.2.0`, and real training starts only
+in `0.9.0`, after the `0.2.0` training-readiness evidence is accepted. Speed
+given up for exactness is recorded as a tuning row and recovered in `0.2.0`
+(GPU) or in the Rust SIMD phases (CPU), never traded back for a tolerance.
+Candidates exist only for `1.0.0`; the final `v1.0.0` follows accepted
+evidence of its last candidate.
 
 Every report and acceptance record identifies:
 
@@ -135,9 +137,9 @@ Every report and acceptance record identifies:
 - commands, exit codes and raw logs.
 
 A green check or benchmark from a different head is not evidence for the
-candidate being evaluated.
+release being evaluated.
 
-Ordinary Renovate and version-update PRs are not frozen between candidates.
+Ordinary Renovate and version-update PRs are not frozen between releases.
 They merge under the same required checks, review, digest/pin policy and
 component-specific validation as any other change. Coordinated major SDK,
 toolchain and base-image updates keep their specialised validation. If one
@@ -154,10 +156,10 @@ These are two different numbers and only the first one moves at release time.
 
 | Number | Owner | Value today | Moves when |
 | --- | --- | --- | --- |
-| **Product version** | release-please | `1.0.0-rc.2` (the manifest value); `1.0.0` at final | Every release. Covers the `vX.Y.Z` tag, `core/meson.build`'s `project(version:)`, `compat/python-vmaf`, the three fork-local Python distributions (`ai/`, `dev-llm/`, `mcp-server/vmaf-mcp/`), and the Helm chart's `appVersion`. It does **not** reach `libvmaf.pc` — see ADR-1235. |
-| **ABI SONAME / interface version** | hand-maintained | `vmaf_soname_version = '3.0.0'` at `core/meson.build:38`, shipping `libvmaf.so.3` **and advertised as `libvmaf.pc`'s `Version:`** | Only on a C API change. **The 1.0.0 cut does not reset it.** |
+| **Product version** | release-please | `1.0.0-rc.3` (the manifest value); `0.1.0` at the first release | Every release. Covers the `vX.Y.Z` tag, `core/meson.build`'s `project(version:)`, `compat/python-vmaf`, the three fork-local Python distributions (`ai/`, `dev-llm/`, `mcp-server/vmaf-mcp/`), and the Helm chart's `appVersion`. It does **not** reach `libvmaf.pc` — see ADR-1235. |
+| **ABI SONAME / interface version** | hand-maintained | `vmaf_soname_version = '3.0.0'` at `core/meson.build:38`, shipping `libvmaf.so.3` **and advertised as `libvmaf.pc`'s `Version:`** | Only on a C API change. **No product release resets it.** |
 
-`libvmaf.so` keeps its 3.x SONAME while the product goes to 1.0.0, and
+`libvmaf.so` keeps its 3.x SONAME while the product is at 0.x, and
 `libvmaf.pc` advertises that same 3.x interface version rather than the
 product version. The coupling is deliberate and load-bearing:
 
@@ -165,7 +167,8 @@ product version. The coupling is deliberate and load-bearing:
 - the fork's own `ffmpeg-patches/` require `libvmaf >= 3.0.0` for the SYCL
   and DNN entry points.
 
-A `.pc` advertising `1.0.0` satisfies neither. That is how the first
+A `.pc` advertising the product version (`0.1.0`, or `1.0.0` later)
+satisfies neither. That is how the first
 release candidate failed the three FFmpeg lanes and `Docker Image Build`:
 
 ```text
@@ -418,7 +421,7 @@ stay together:
 
 ```bash
 mkdir vmafx-linux && cd vmafx-linux
-gh release download v1.0.0 --repo VMAFx/vmafx \
+gh release download v0.1.0 --repo VMAFx/vmafx \
   --pattern vmaf --pattern 'libvmaf.so*' --pattern 'libvmafx.so*'
 chmod +x vmaf
 ./vmaf --version
@@ -735,7 +738,7 @@ and MCP wheel come from `supply-chain.yml`; the container images come from
 ```bash
 # The release tag to verify. v1.0.0-rc.1 and v1.0.0-rc.2 use the
 # slsa-verifier recipe further down.
-tag=v1.0.0
+tag=v0.1.0
 
 # Release blob. Every vmaf/libvmaf.so*/libvmafx.so* asset has a matching FILE.bundle.
 cosign verify-blob --bundle vmaf.bundle vmaf \
@@ -764,7 +767,7 @@ gh attestation verify vmaf --repo VMAFx/vmafx \
 # provenance; pypi-attestations binds it to the expected source repository.
 pypi-attestations verify pypi \
   --repository https://github.com/VMAFx/vmafx \
-  pypi:vmaf_mcp-1.0.0-py3-none-any.whl
+  pypi:vmaf_mcp-0.1.0-py3-none-any.whl
 
 # Container image, cosign route. Replace DIGEST with the actual sha256 digest.
 cosign verify ghcr.io/vmafx/vmafx@sha256:DIGEST \
@@ -909,7 +912,7 @@ the final manifest and version-marker updates.
 
     ```bash
     make docs-render
-    git commit -am 'docs(release): render final 1.0.0 notes'  # skip if nothing changed
+    git commit -am 'docs(release): render final 0.1.0 notes'  # skip if nothing changed
     ```
 
 3. Roll the fragments over into the versioned section. Replace the example
@@ -917,9 +920,9 @@ the final manifest and version-marker updates.
 
     ```bash
     scripts/release/rollover-changelog-fragments.sh \
-      --version 1.0.0 --date YYYY-MM-DD
+      --version 0.1.0 --date YYYY-MM-DD
     git add CHANGELOG.md changelog.d release-please-config.json docs/changelog-archive
-    git commit -m 'chore(release): cut 1.0.0 changelog'
+    git commit -m 'chore(release): cut 0.1.0 changelog'
     ```
 
 4. Push both commits, merge the release PR and publish the draft release.
@@ -975,33 +978,63 @@ cannot merge on an unseen or red leg
 ([ADR-2198](../adr/2198-windows-sycl-leg-and-cut-check.md)). When `master` moves
 after the dispatch, dispatch again at the new head.
 
-#### Cutting a release candidate
+#### The one-shot `release-as` of 0.1.0
 
-A release candidate is cut the same way, with its full version, for example
-`--version 1.0.0-rc.3`. The script accepts exactly the shapes the tag-time
-verifier accepts, `X.Y.Z` and `X.Y.Z-rc.N`. Each candidate gets its own
-`## [1.0.0-rc.3] - YYYY-MM-DD` section and
-`changelog.d/releases/1.0.0-rc.3.json` receipt.
+`release-please-config.json` carries `"release-as": "0.1.0"` on the root
+package for the first release only
+([ADR-3292](../adr/3292-release-line-restart-0x.md)). release-please applies
+it before it reads the commits, so it moves the manifest's `1.0.0-rc.3` to
+`0.1.0` in one step; without it, the default strategy would propose
+`1.1.0-rc.3`. The rollover of the `0.1.0` cut checks that `release-as`
+equals `--version` and deletes it, together with any `bootstrap-sha`, in the
+cut commit. That removal is required: left in place, `release-as` proposes
+`0.1.0` again on every later release and swallows every bump.
 
-The one-shot `release-as` and `bootstrap-sha` fields are no longer in
-`release-please-config.json`. The rollover still deletes them if present,
-because the tag-time verifier refuses them at every tag, candidates
-included.
+Two checks hold it:
 
-#### Numbering later candidates
+- `scripts/release/check-one-shot-fields.sh`, run by the `Release Script
+  Contract` job of `rule-enforcement.yml`, refuses either field once the
+  manifest holds a final version, `0.x` included. It accepts a candidate
+  manifest only with `versioning: prerelease`
+  ([ADR-1348](../adr/1348-release-candidate-prerelease-versioning.md)) or,
+  for the restart, with `release-as` set.
+  `scripts/release/tests/test-check-one-shot-fields.sh` holds its verdicts.
+- `scripts/release/verify-release-version.sh` refuses both fields at every
+  tag, candidates included.
 
-Later candidates are numbered automatically. The root package uses
+To force a later version, use a `Release-As: X.Y.Z` commit footer; it applies
+to one release by itself.
+
+#### Numbering 0.x releases
+
+After `0.1.0` the root package uses `versioning: default` with
+`bump-minor-pre-major: true` and `bump-patch-for-minor-pre-major: false`: a
+fix on `0.1.0` gives `0.1.1`, and a feature or a breaking change gives `0.2.0`.
+The release PR stays open as a proposal; merge it when the release is due,
+and check its title before cutting it.
+
+#### Cutting the candidates of 1.0.0
+
+Only `1.0.0` has candidates, starting at `v1.0.0-rc.4` so that no tag of the
+withdrawn `rc.1` to `rc.3` is reused. Before the first of them, a pull request
+sets the root package back to `"versioning": "prerelease"` with
+`"prerelease": true` and `"release-as": "1.0.0-rc.4"`; the rollover deletes
+the `release-as` again in that cut. Later candidates are then numbered by
 release-please's `prerelease` versioning
 ([ADR-1348](../adr/1348-release-candidate-prerelease-versioning.md)): a fix,
-feature or breaking change on `1.0.0-rc.1` gives `1.0.0-rc.2`, and so on. The
-release PR stays open as a proposal; merge it only when the next candidate is
-due, and check its title before cutting it. For the final release, set
-`"prerelease": false`: the same strategy then proposes `1.0.0`.
+feature or breaking change on `1.0.0-rc.4` gives `1.0.0-rc.5`. For the final
+release, set `"prerelease": false`: the same strategy then proposes `1.0.0`.
+
+A candidate is cut the same way as a release, with its full version, for
+example `--version 1.0.0-rc.4`. The script accepts exactly the shapes the
+tag-time verifier accepts, `X.Y.Z` and `X.Y.Z-rc.N`. Each candidate gets its
+own `## [1.0.0-rc.4] - YYYY-MM-DD` section and
+`changelog.d/releases/1.0.0-rc.4.json` receipt.
 
 !!! note
-    With the earlier `versioning: default`, a fix on `1.0.0-rc.1` gave
-    `1.0.1-rc.1`. The Release Script Contract job now rejects that setting
-    while the manifest is a release candidate.
+    With `versioning: default` on a candidate manifest, a fix on `1.0.0-rc.1`
+    gave `1.0.1-rc.1`. `check-one-shot-fields.sh` rejects that setting on a
+    candidate manifest unless the one-shot `release-as` is set.
 
 How a candidate moves through the rest of the pipeline:
 
@@ -1011,7 +1044,7 @@ How a candidate moves through the rest of the pipeline:
   stops the job for operator cleanup.
 - **Version strings.** A release build checked out at its tag reports the
   `git describe` form from `vmaf --version`, for example
-  `v1.0.0-rc.1-0-gd0f0e7e` or `v1.0.0-0-g8820048`.
+  `v1.0.0-rc.1-0-gd0f0e7e` or `v0.1.0-0-g8820048`.
   `scripts/release/verify-native-release-artifacts.sh` accepts exactly that
   form (distance 0) or the bare version, never a later commit.
 - **Python distributions.** Python tools name distributions by the PEP 440
@@ -1277,18 +1310,40 @@ Until 2026-10-05 the repository carried Netflix's tags, and
   and it offers no purge. Its `@v/<version>.zip` stays served for every cached
   version by explicit request.
 
-Until the proxy's `@latest` shows a fork version, pin an explicit version:
+The release line restarts at `v0.1.0`
+([ADR-3292](../adr/3292-release-line-restart-0x.md)), and its `go.mod`
+retracts every release candidate, each entry with its own reason:
 
-```bash
-go get github.com/VMAFx/vmafx@v1.0.0-rc.2
-go install github.com/VMAFx/vmafx/cmd/<tool>@v1.0.0-rc.2
+```text
+retract (
+    [v1.0.0-rc.1, v1.0.0-rc.2] // contained a stale root LICENSE-MIT; ...
+    v1.0.0-rc.3 // withdrawn: the release line restarts at v0.1.0 (...)
+)
 ```
 
-or bypass the proxy cache: `GOPROXY=direct go list -m -versions github.com/VMAFx/vmafx`.
-After `v1.0.0` exists, `go list -m -retracted -versions github.com/VMAFx/vmafx`
-shows retracted releases too; keep the `retract` directive for the release
-candidates in every later `go.mod`, because only the latest version's `go.mod`
-is read.
+Measured on 2026-10-12 with Go 1.27.1 against a scratch module proxy, the
+retraction holds only where Netflix's versions are absent:
+
+- Against a proxy that holds only the fork's versions (what
+  `GOPROXY=direct` sees since the tags were deleted, see above),
+  `go list -m -versions` prints `v0.1.0`, `@latest` resolves to
+  `v0.1.0`, `go list -m -retracted -versions` adds the three candidates, and
+  `go get` of a candidate prints the reason of its entry.
+- Through `proxy.golang.org`, which still serves the cached
+  `v3.0.0+incompatible`, the Go command reads retractions from that version's
+  `go.mod` (it has none): `@latest` stays `v3.0.0+incompatible`, the candidates
+  stay listed, and a candidate is fetched without a warning.
+
+Pin the release explicitly when you go through the public proxy:
+
+```bash
+go get github.com/VMAFx/vmafx@v0.1.0
+go install github.com/VMAFx/vmafx/cmd/<tool>@v0.1.0
+```
+
+or bypass the proxy cache: `GOPROXY=direct go get github.com/VMAFx/vmafx@latest`.
+Keep the `retract` block in every later `go.mod`: only the highest version's
+`go.mod` is read, so a release that drops it brings the candidates back.
 
 ## Release notes and the changelog archive (ADR-1233)
 
@@ -1320,16 +1375,19 @@ prefix is mandatory, so the label should always be derivable.
 index linking to it:
 
 ```markdown
-## [1.0.0] - 2026-09-07
+## [1.0.0-rc.1] - 2026-09-27
 
-This release collects 2345 changelog entries.
+This release collects 2790 changelog entries.
 They are recorded in full, unedited, in
-[`docs/changelog-archive/1.0.0.md`](docs/changelog-archive/1.0.0.md) — too long to read inline here.
+[`docs/changelog-archive/1.0.0-rc.1.md`](docs/changelog-archive/1.0.0-rc.1.md) — too long to read inline here.
 
 | Section | Entries |
 | --- | --- |
-| Fixed | 1227 |
-| Changed | 559 |
+| Changed | 625 |
+| Added | 510 |
+| Removed | 14 |
+| Fixed | 1585 |
+| Security | 56 |
 ```
 
 Nothing is discarded: the archive is tracked, and the rollover receipt still

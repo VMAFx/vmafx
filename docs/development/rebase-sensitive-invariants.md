@@ -92,7 +92,8 @@ backend within it.
   `NOTICE`; no sync brings back `LICENSE-MIT` or another
   root licence file. Package licence fields name the licences of the files the
   package ships, and fork `.toml` files carry an EUPL-1.2 header. The root
-  `go.mod` keeps its `retract [v1.0.0-rc.1, v1.0.0-rc.2]`.
+  `go.mod` keeps its `retract` block: `[v1.0.0-rc.1, v1.0.0-rc.2]` (licence)
+  and `v1.0.0-rc.3` (withdrawn by the 0.x restart, [ADR-3292](../adr/3292-release-line-restart-0x.md)).
   `scripts/ci/check_licence_metadata.py` (required
   `Licence Provenance` job and a pre-commit hook) refuses each breach. See
   [scripts/ci/AGENTS.md](../../scripts/ci/AGENTS.md).

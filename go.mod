@@ -2,7 +2,10 @@ module github.com/VMAFx/vmafx
 
 go 1.27.2
 
-retract [v1.0.0-rc.1, v1.0.0-rc.2] // contained a stale root LICENSE-MIT; licensing is per-file SPDX (EUPL-1.2 fork code, BSD-2-Clause-Patent Netflix code), see docs/licensing.md
+retract (
+	[v1.0.0-rc.1, v1.0.0-rc.2] // contained a stale root LICENSE-MIT; licensing is per-file SPDX (EUPL-1.2 fork code, BSD-2-Clause-Patent Netflix code), see docs/licensing.md
+	v1.0.0-rc.3 // withdrawn: the release line restarts at v0.1.0 (docs/adr/3292-release-line-restart-0x.md)
+)
 
 require (
 	github.com/c-bata/goptuna v0.9.0
