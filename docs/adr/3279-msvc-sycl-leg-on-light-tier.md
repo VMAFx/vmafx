@@ -70,9 +70,10 @@ the reference, not observed.
    start when the job starts. The first step reads the row's `tier` key and the tier
    decision and writes `run`. The checkout after it is unconditional and shallow, because
    the checkout-ordering gate counts no checkout that carries an `if`; every step after
-   the checkout is gated on `run`. On a selected light-tier
-   pull request the SYCL row builds and tests, and the CUDA row prints the ADR-2169
-   notice and ends without a build. Its check then shows success: read the notice, not
+   the checkout is gated on `run`. On a selected light-tier pull request the SYCL row
+   builds, checks the installed library names and runs the two SYCL registration tests
+   (`test_sycl_kernel_registration`, `test_sycl_coff_anchor`); the CUDA row prints the
+   ADR-2169 notice and ends without a build. Its check then shows success: read the notice, not
    the colour, to know whether MSVC+CUDA compiled.
 5. **The escalation survives a refused request.** `scripts/ci/ci_escalate.py` treats 409
    on the cancel as "already completed" and awaits and re-runs the run as before. A run

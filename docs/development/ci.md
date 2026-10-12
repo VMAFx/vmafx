@@ -197,7 +197,8 @@ What a contributor sees:
   rows of `windows-gpu-build` have the same shape
   ([ADR-3279](../adr/3279-msvc-sycl-leg-on-light-tier.md)): the job starts on a
   light-tier pull request only when the diff selects `windows_msvc_sycl` (or the
-  planner job failed), the `Windows MSVC+SYCL` row then builds and tests, and the
+  planner job failed), the `Windows MSVC+SYCL` row then builds, checks the
+  installed library names and runs the two SYCL registration tests, and the
   `Windows MSVC+CUDA` row ends with the notice. That row's check is green without
   a build: the notice says whether MSVC+CUDA compiled.
 - Adding the label `ci: full` (or `autorelease: cut` to the release pull request)
@@ -449,8 +450,9 @@ must report `success`; a missing or skipped one fails the aggregator.
 
 `Windows MSVC+SYCL` of `libvmaf-build-matrix.yml` is the second own-input lane
 ([ADR-3279](../adr/3279-msvc-sycl-leg-on-light-tier.md)): a light-tier pull
-request that changes C, C++ or Meson files under `core/` builds and tests that
-one MSVC leg (selector `windows_msvc_sycl`); `Windows MSVC+CUDA` and
+request that changes C, C++ or Meson files under `core/` builds that one MSVC
+leg, checks its installed library names and runs its two SYCL registration tests
+(selector `windows_msvc_sycl`); `Windows MSVC+CUDA` and
 `Windows ARM64 MSVC` stay full-tier.
 
 These are full-tier contexts, with one declared exception
