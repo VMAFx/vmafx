@@ -201,9 +201,26 @@ the launcher the hook ends with status 127 and no engine runs.
 
 ### The current pin
 
-The pin is `9bf502ec6ce5`
+The pin is `6622361940dc`
+([ADR-3285](../adr/3285-praetor-pin-66223619.md)), four praetor commits after
+`9bf502ec6ce5`. Against `9bf502ec6ce5` it changes this here:
+
+- **Register skills.** `adhd-format`, `caveman` and `social-text` under
+  `.agents/skills/` and `.claude/skills/` are praetor's text at the pin,
+  wrapped so they pass markdownlint's default rules; what they say is
+  unchanged.
+- **Not in effect here yet.** Praetor's commit-message and pull-request checks
+  now refuse a closing keyword that would close someone else's pull request.
+  No gate of this repository runs those checks.
+- **Not adopted.** As at the pin before, the pre-tool hook entries `adopt`
+  writes into the agent settings, and `.config/lefthook/python.sh`, which this
+  repository's `lefthook.yml` does not call.
+
+Audit's warnings are the same 143 with both engines.
+
+The pin before was `9bf502ec6ce5`
 ([ADR-3272](../adr/3272-praetor-pin-9bf502ec-engine-launcher.md)), three
-praetor commits after `4ae6247c57d2`. Against `4ae6247c57d2` it changes this
+praetor commits after `4ae6247c57d2`. Against `4ae6247c57d2` it changed this
 here:
 
 - **Hook launcher.** `.config/lefthook/engine.sh` and
