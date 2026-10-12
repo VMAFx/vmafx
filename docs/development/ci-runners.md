@@ -12,12 +12,20 @@ Jobs choose their pool with a ternary `runs-on` expression keyed on the
 repository variable `ARC_RUNNERS_ENABLED`:
 
 ```yaml
-runs-on: ${{ vars.ARC_RUNNERS_ENABLED == 'true' && 'arc-runners' || 'ubuntu-26.04' }}
+runs-on: ${{ vars.ARC_RUNNERS_ENABLED == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'arc-runners' || 'ubuntu-26.04' }}
 ```
 
 When `ARC_RUNNERS_ENABLED` is `true`, the job is dispatched to an ARC pod with
 the `arc-runners` label. When `false` (or unset), the job stays on its hosted
 fallback label, which differs per job (see [Pilot status](#pilot-status)).
+
+A pull request from a fork always runs on the hosted fallback, whatever the
+variable says: the middle condition sends only pushes, dispatches, schedules
+and pull requests from a branch of this repository to the pool
+([ADR-3286](../adr/3286-arc-runners-fork-guard.md)). Approving a fork's
+workflow runs does not change where they run. A job moved to the pool copies
+the whole expression; `Tooling Tests` refuses a selector that names
+`arc-runners` in any other form.
 
 ## Operator: flipping the variable
 

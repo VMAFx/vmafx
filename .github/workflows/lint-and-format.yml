@@ -790,8 +790,9 @@ jobs:
     # ADR-0359 — pilot job for the ARC self-hosted runner pool.
     # Variable `ARC_RUNNERS_ENABLED=true` flips this job to the in-cluster
     # `arc-runners` scale set; default `false` keeps GitHub-hosted. If the
-    # ARC pool is degraded, flip the var off and re-trigger CI.
-    runs-on: ${{ vars.ARC_RUNNERS_ENABLED == 'true' && 'arc-runners' || 'ubuntu-26.04' }}
+    # ARC pool is degraded, flip the var off and re-trigger CI. A pull
+    # request from a fork never reaches the pool (ADR-3286).
+    runs-on: ${{ vars.ARC_RUNNERS_ENABLED == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'arc-runners' || 'ubuntu-26.04' }}
     # Bumped 15→30 min on 2026-05-09: GitHub-hosted runner queue
     # saturation pushed Cppcheck past 15 min on ~all PRs and master.
     # Last green run on master took 5 min; the new ceiling absorbs

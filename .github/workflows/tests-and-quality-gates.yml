@@ -209,8 +209,9 @@ jobs:
     # lint-and-format.yml). Variable `ARC_RUNNERS_ENABLED=true` routes this
     # job to the in-cluster `arc-runners` scale set; default `false` keeps
     # GitHub-hosted ubuntu-26.04. If the ARC pool is degraded, set the
-    # variable to false and re-trigger CI to fall back instantly.
-    runs-on: ${{ vars.ARC_RUNNERS_ENABLED == 'true' && 'arc-runners' || 'ubuntu-26.04' }}
+    # variable to false and re-trigger CI to fall back instantly. A pull
+    # request from a fork never reaches the pool (ADR-3286).
+    runs-on: ${{ vars.ARC_RUNNERS_ENABLED == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'arc-runners' || 'ubuntu-26.04' }}
     timeout-minutes: 25
     strategy:
       fail-fast: false

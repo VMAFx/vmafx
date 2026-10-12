@@ -19,6 +19,20 @@ WORKFLOWS = ROOT / ".github" / "workflows"
 TESTS_WORKFLOW = WORKFLOWS / "tests-and-quality-gates.yml"
 SYCL_WORKFLOW = WORKFLOWS / "sycl-parity.yml"
 AGGREGATOR_WORKFLOW = WORKFLOWS / "required-aggregator.yml"
+ARC_LABEL = "arc-runners"
+# The one admitted form of a runs-on line that can reach the ARC pool: the
+# switch, then the head-repository guard, then the label (ADR-3286). An
+# allow-list, so a reordered or loosened expression is refused, not parsed.
+ARC_SELECTOR = re.compile(
+    r"^runs-on: \$\{\{ vars\.ARC_RUNNERS_ENABLED == 'true' && "
+    r"\(github\.event_name != 'pull_request' \|\| "
+    r"github\.event\.pull_request\.head\.repo\.full_name == github\.repository\) && "
+    r"'arc-runners' \|\| '(?P<fallback>ubuntu-26\.04(?:-arm)?)' \}\}$"
+)
+ARC_JOBS = (
+    ("tests-and-quality-gates.yml", "sanitizers"),
+    ("lint-and-format.yml", "cppcheck"),
+)
 HARDWARE_LANES = (
     ("Coverage GPU", "GPU_COVERAGE_ENABLED"),
     ("SYCL Parity (Arc A380)", "SYCL_ARC_RUNNER_ENABLED"),
@@ -33,6 +47,75 @@ def _job_block(workflow: str, job_id: str) -> str:
     if match is None:
         raise AssertionError(f"workflow must define job {job_id!r}")
     return match.group(1)
+
+
+def arc_selector_violations(workflow: str) -> list[str]:
+    """Lines naming the ARC pool that a fork pull request could reach."""
+    violations = []
+    for number, line in enumerate(workflow.splitlines(), start=1):
+        if ARC_LABEL not in line and "ARC_RUNNERS_ENABLED" not in line:
+            continue
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            continue
+        if ARC_SELECTOR.fullmatch(stripped) is None:
+            violations.append(f"{number}: {stripped}")
+    return violations
+
+
+class ArcForkGuardContract(unittest.TestCase):
+    def test_every_workflow_guards_the_arc_pool_against_forks(self) -> None:
+        for workflow in sorted(WORKFLOWS.glob("*.yml")):
+            with self.subTest(workflow=workflow.name):
+                text = workflow.read_text(encoding="utf-8")
+                self.assertEqual(arc_selector_violations(text), [])
+
+    def test_known_arc_jobs_carry_the_guarded_selector(self) -> None:
+        for name, job_id in ARC_JOBS:
+            with self.subTest(job=job_id):
+                block = _job_block((WORKFLOWS / name).read_text(encoding="utf-8"), job_id)
+                lines = [line.strip() for line in block.splitlines()]
+                selectors = [line for line in lines if line.startswith("runs-on:")]
+                self.assertEqual(len(selectors), 1)
+                self.assertIsNotNone(ARC_SELECTOR.fullmatch(selectors[0]))
+
+    def test_unguarded_and_misordered_selectors_are_refused(self) -> None:
+        planted = (
+            # The form before ADR-3286: a fork pull request reaches the pool.
+            "    runs-on: ${{ vars.ARC_RUNNERS_ENABLED == 'true' && 'arc-runners' || 'ubuntu-26.04' }}",
+            # The guard joined with || admits every pull request.
+            "    runs-on: ${{ vars.ARC_RUNNERS_ENABLED == 'true' && "
+            "(github.event_name != 'pull_request' || "
+            "github.event.pull_request.head.repo.full_name == github.repository) || "
+            "'arc-runners' || 'ubuntu-26.04' }}",
+            # The guard after the label never applies.
+            "    runs-on: ${{ vars.ARC_RUNNERS_ENABLED == 'true' && 'arc-runners' && "
+            "(github.event_name != 'pull_request' || "
+            "github.event.pull_request.head.repo.full_name == github.repository) || 'ubuntu-26.04' }}",
+            # The head repository compared with a constant, not this repository.
+            "    runs-on: ${{ vars.ARC_RUNNERS_ENABLED == 'true' && "
+            "(github.event_name != 'pull_request' || "
+            "github.event.pull_request.head.repo.full_name != '') && "
+            "'arc-runners' || 'ubuntu-26.04' }}",
+            # The pool named directly.
+            "    runs-on: arc-runners",
+            "    runs-on: [arc-runners]",
+        )
+        for line in planted:
+            with self.subTest(line=line):
+                self.assertEqual(len(arc_selector_violations(line)), 1)
+
+    def test_guarded_selector_and_comments_are_admitted(self) -> None:
+        admitted = (
+            "    # routes this job to the `arc-runners` scale set",
+            "    runs-on: ${{ vars.ARC_RUNNERS_ENABLED == 'true' && "
+            "(github.event_name != 'pull_request' || "
+            "github.event.pull_request.head.repo.full_name == github.repository) && "
+            "'arc-runners' || 'ubuntu-26.04' }}",
+        )
+        for line in admitted:
+            with self.subTest(line=line):
+                self.assertEqual(arc_selector_violations(line), [])
 
 
 class SelfHostedRunnerWorkflowContract(unittest.TestCase):
