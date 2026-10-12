@@ -43,6 +43,35 @@ jobs:
       pull-requests: read
     uses: ./.github/workflows/ci-tier.yml
 
+  # ADR-3279: plans whether a light-tier pull request owes the Windows MSVC+SYCL
+  # leg of `windows-gpu-build` (selector `windows_msvc_sycl` of
+  # .github/ci-impact.json: C, C++ and Meson files under core/, and the leg's
+  # own inputs).
+  impact:
+    needs: tier
+    if: needs.tier.outputs.light == 'true'
+    name: Plan MSVC leg impact
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      msvc-sycl: ${{ steps.impact.outputs.windows_msvc_sycl }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Plan CI impact (ADR-1140)
+        id: impact
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python3 scripts/ci/plan-ci-impact.py --event "$EVENT_NAME" \
+            --base "$BASE_SHA" --head "$HEAD_SHA" --github-output "$GITHUB_OUTPUT"
+
   # ===== Linux / macOS / ARM builds =====
   libvmaf-build:
     needs: tier
@@ -977,8 +1006,11 @@ jobs:
   # The two job names are pinned to required status checks on master
   # immediately after merge (see ADR-0121 §Consequences).
   windows-gpu-build:
-    needs: tier
-    if: needs.tier.outputs.full == 'true'
+    needs: [tier, impact]
+    # ADR-3279: the full tier runs both rows. On the light tier the job starts when
+    # the planner selects the SYCL row, and also when the planner itself failed
+    # (fail closed); the CUDA row then stops at its first step.
+    if: ${{ !cancelled() && (needs.tier.outputs.full == 'true' || needs.impact.result == 'failure' || (needs.impact.result == 'success' && needs.impact.outputs.msvc-sycl == 'true')) }}
     name: ${{ matrix.name }}
     runs-on: windows-2025
     timeout-minutes: 60
@@ -998,24 +1030,43 @@ jobs:
           # required-aggregator
           - backend: cuda
             meson_extra: --default-library=static -Denable_cuda=true -Denable_nvcc=true -Denable_sycl=false
+            tier: full
             werror: msvc
             name: Windows MSVC+CUDA
           # required-aggregator
           - backend: sycl
             meson_extra: --default-library=static -Denable_cuda=false -Denable_sycl=true
+            tier: light
             werror: msvc
             name: Windows MSVC+SYCL
     steps:
+      - name: Decide whether this leg runs in the tier (ADR-2169, ADR-3279)
+        id: leg
+        shell: bash
+        env:
+          LEG_TIER: ${{ matrix.tier }}
+          TIER_FULL: ${{ needs.tier.outputs.full }}
+        run: |
+          if [ "$LEG_TIER" = light ] || [ "$TIER_FULL" = true ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::full-tier leg not run on this pull request (ADR-2169): it runs on the master push; add the label 'ci: full' to run it here"
+          fi
+      # Unconditional: the checkout-ordering gate accepts no checkout behind an
+      # `if`. A row the tier does not owe stops after this shallow checkout.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 1
 
       - name: Setup python
+        if: steps.leg.outputs.run == 'true'
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: '3.14.8'
 
       - name: Install meson and ninja
+        if: steps.leg.outputs.run == 'true'
         run: python -m pip install --require-hashes -r requirements/locks/build.txt
 
       # ---------- MSVC dev environment ----------
@@ -1027,6 +1078,7 @@ jobs:
       # (Node.js 24) per ADR-0635. Same vcvarsall.bat semantics;
       # no inputs required — defaults to amd64.
       - name: Setup MSVC dev environment
+        if: steps.leg.outputs.run == 'true'
         uses: TheMrMilchmann/setup-msvc-dev@368ef7d1ee4d1171b31d4a7f67f4d954f903f5a9  # v4.1.0
         with:
           arch: x64
@@ -1039,12 +1091,12 @@ jobs:
       # is gone. Bumped 13.0.0 -> 13.2.0 per ADR-0603, 13.2.0 -> 13.3.1 per
       # ADR-1223; build-config.env has moved on since (Renovate-driven).
       - name: Install CUDA toolkit (windows)
-        if: matrix.backend == 'cuda'
+        if: steps.leg.outputs.run == 'true' && matrix.backend == 'cuda'
         shell: pwsh
         run: pwsh -File scripts/ci/install-cuda-toolkit.ps1
 
       - name: Install Intel oneAPI (windows)
-        if: matrix.backend == 'sycl'
+        if: steps.leg.outputs.run == 'true' && matrix.backend == 'sycl'
         shell: cmd
         env:
           WINDOWS_BASEKIT_URL: https://registrationcenter-download.intel.com/akdlm/IRC_NAS/1f18901e-877d-469d-a41a-a10f11b39336/intel-oneapi-base-toolkit-2025.3.0.372_offline.exe
@@ -1067,7 +1119,7 @@ jobs:
       # tree into a known prefix, and append that prefix to the
       # `INCLUDE` env so `cl.exe` picks it up.
       - name: Install nv-codec-headers (windows)
-        if: matrix.backend == 'cuda'
+        if: steps.leg.outputs.run == 'true' && matrix.backend == 'cuda'
         shell: cmd
         run: |
           git clone --depth=1 https://code.ffmpeg.org/FFmpeg/nv-codec-headers nv-codec-headers
@@ -1084,7 +1136,7 @@ jobs:
       # meson's wrap decision). Rename the binary so meson can't
       # find it.
       - name: Disable ccache wrap (windows)
-        if: runner.os == 'Windows'
+        if: steps.leg.outputs.run == 'true' && runner.os == 'Windows'
         shell: pwsh
         run: |
           $p = 'C:\Strawberry\c\bin\ccache.exe'
@@ -1094,6 +1146,7 @@ jobs:
       # ADR-2170: the configure steps run under cmd, so the one helper that turns warnings
       # into errors runs here and hands its arguments over. A row without `werror` gets none.
       - name: Warnings-as-errors arguments
+        if: steps.leg.outputs.run == 'true'
         id: werror
         shell: bash
         run: |
@@ -1107,7 +1160,7 @@ jobs:
       # support is not enabled" (libvmaf uses C11 atomics; meson's
       # compiler check rejects the toolchain otherwise).
       - name: Configure libvmaf (CUDA)
-        if: matrix.backend == 'cuda'
+        if: steps.leg.outputs.run == 'true' && matrix.backend == 'cuda'
         shell: cmd
         env:
           CFLAGS: /experimental:c11atomics
@@ -1131,7 +1184,7 @@ jobs:
       # quick-build recipe; pin to v1.18.5 to match the version the
       # Linux Ubuntu 26.04 runners install via apt.
       - name: Install Level Zero loader (windows)
-        if: matrix.backend == 'sycl'
+        if: steps.leg.outputs.run == 'true' && matrix.backend == 'sycl'
         shell: cmd
         run: |
           REM Level Zero pin. This leg runs under cmd and cannot source
@@ -1150,7 +1203,7 @@ jobs:
       # `/experimental:c11atomics` here: icx-cl compiles C11 atomics with its
       # own <stdatomic.h> and reported the option as unused on every compile.
       - name: Configure libvmaf (SYCL)
-        if: matrix.backend == 'sycl'
+        if: steps.leg.outputs.run == 'true' && matrix.backend == 'sycl'
         shell: cmd
         run: |
           call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat"
@@ -1163,13 +1216,13 @@ jobs:
             ${{ matrix.meson_extra }} ${{ steps.werror.outputs.args }}
 
       - name: Build libvmaf (CUDA)
-        if: matrix.backend == 'cuda'
+        if: steps.leg.outputs.run == 'true' && matrix.backend == 'cuda'
         shell: cmd
         run: |
           ninja -v -C core\build install
 
       - name: Build libvmaf (SYCL)
-        if: matrix.backend == 'sycl'
+        if: steps.leg.outputs.run == 'true' && matrix.backend == 'sycl'
         shell: cmd
         run: |
           call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat"
@@ -1179,6 +1232,7 @@ jobs:
       # and vmafx.lib, the files link.exe opens for -lvmaf / -lvmafx, and the
       # pkg-config files that name them.
       - name: Check installed library names (MSVC)
+        if: steps.leg.outputs.run == 'true'
         shell: cmd
         run: python scripts\ci\check_msvc_library_names.py --prefix install --meson-log core\build\meson-logs\meson-log.txt
 
@@ -1190,7 +1244,7 @@ jobs:
       # this build-only leg stayed green. ze_loader.dll comes from the
       # Level Zero prefix built above.
       - name: Check SYCL device-image registration (SYCL leg only)
-        if: matrix.backend == 'sycl'
+        if: steps.leg.outputs.run == 'true' && matrix.backend == 'sycl'
         shell: cmd
         run: |
           call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat"

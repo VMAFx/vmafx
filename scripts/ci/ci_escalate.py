@@ -14,7 +14,11 @@ from the live labels (``ci_tier.py``), so the jobs the light tier skipped now
 run, and the Required Checks Aggregator re-reads the new tier.
 
 A run that is still in progress is cancelled first (GitHub refuses to re-run
-a running workflow) and awaited, within a bound.
+a running workflow) and awaited, within a bound. A run that completes between
+the listing and the cancel answers the cancel with 409 Conflict: that is no
+error, the run is awaited and re-run like any other. A run that cannot be
+re-run is reported with its reason, the runs after it are still started, and
+the step then fails.
 """
 
 from __future__ import annotations
@@ -33,6 +37,7 @@ from scripts.ci import ci_tier
 API_TIMEOUT_S = 30
 CANCEL_WAIT_S = 180
 CANCEL_POLL_S = 5
+HTTP_CONFLICT = 409
 SKIPPED_WORKFLOWS = ("ci-escalate.yml",)
 
 Api = Callable[..., object]
@@ -82,6 +87,16 @@ def wait_until_completed(
     return False
 
 
+def cancel(call: Api, repository: str, run_id: int) -> None:
+    """Ask for a run to be cancelled; a run that already completed is no error."""
+    try:
+        call("POST", f"/repos/{repository}/actions/runs/{run_id}/cancel")
+    except urllib.error.HTTPError as exc:
+        exc.close()
+        if exc.code != HTTP_CONFLICT:
+            raise
+
+
 def rerun(
     call: Api,
     repository: str,
@@ -93,11 +108,32 @@ def rerun(
     run_id = int(run["id"])  # type: ignore[call-overload]
     name = str(run.get("name", run_id))
     if run.get("status") != "completed":
-        call("POST", f"/repos/{repository}/actions/runs/{run_id}/cancel")
+        cancel(call, repository, run_id)
         if not wait_until_completed(call, repository, run_id, sleep=sleep):
             return f"{name}: still running after {CANCEL_WAIT_S}s, not re-run"
     call("POST", f"/repos/{repository}/actions/runs/{run_id}/rerun")
     return f"{name}: re-run"
+
+
+def rerun_all(
+    call: Api,
+    repository: str,
+    runs: Sequence[Mapping[str, object]],
+    *,
+    sleep: Callable[[float], None] = time.sleep,
+) -> int:
+    """Re-run every run and return how many were not: one failure stops no other run."""
+    failed = 0
+    for run in runs:
+        try:
+            message = rerun(call, repository, run, sleep=sleep)
+        except (urllib.error.URLError, OSError, KeyError, ValueError) as exc:
+            if isinstance(exc, urllib.error.HTTPError):
+                exc.close()
+            message = f"{run.get('name', run.get('id'))}: {exc}, not re-run"
+        failed += message.endswith("not re-run")
+        print(f"ci-escalate: {message}")
+    return failed
 
 
 def owes_full_suite(env: Mapping[str, str], fetch: ci_tier.Fetcher, config_path: Path) -> bool:
@@ -127,10 +163,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         runs = latest_runs(
             call, env["GITHUB_REPOSITORY"], env["HEAD_SHA"], env.get("GITHUB_RUN_ID", "")
         )
-        for run in runs:
-            print(f"ci-escalate: {rerun(call, env['GITHUB_REPOSITORY'], run)}")
+        failed = rerun_all(call, env["GITHUB_REPOSITORY"], runs)
     except (urllib.error.URLError, OSError, KeyError, ValueError) as exc:
         print(f"ci-escalate: {exc}", file=sys.stderr)
+        return 1
+    if failed:
+        print(f"ci-escalate: {failed} of {len(runs)} runs were not re-run", file=sys.stderr)
         return 1
     return 0
 

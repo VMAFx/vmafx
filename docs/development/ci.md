@@ -53,7 +53,7 @@ required and which ADR owns it, see
 | --- | --- |
 | [`required-aggregator.yml`](../../.github/workflows/required-aggregator.yml) | Single required-check aggregator (ADR-0313). |
 | [`ci-tier.yml`](../../.github/workflows/ci-tier.yml) | Reusable workflow every pull-request workflow calls first: decides the tier ([ADR-2169](../adr/2169-ci-fewer-runs.md)); no trigger of its own. |
-| [`ci-escalate.yml`](../../.github/workflows/ci-escalate.yml) | Re-runs the suite at the full tier when `ci: full` or `autorelease: cut` is applied. |
+| [`ci-escalate.yml`](../../.github/workflows/ci-escalate.yml) | Re-runs the suite at the full tier when `ci: full` or `autorelease: cut` is applied; names every run it could not re-run and then fails ([ADR-3279](../adr/3279-msvc-sycl-leg-on-light-tier.md)). |
 | [`lint-and-format.yml`](../../.github/workflows/lint-and-format.yml) | Pre-commit, clang-tidy (changed files plus the whole-tree ratchet, ADR-1142), cppcheck, mypy, registry validate, twin-drift gate (ADR-1135). |
 | [`standards-gate.yml`](../../.github/workflows/standards-gate.yml) | Required HISS and context verification and the fail-closed duplicate-implementation scan. |
 | [`rule-enforcement.yml`](../../.github/workflows/rule-enforcement.yml) | ADR-0100, 0106, 0108 and 0165 process gates. |
@@ -193,12 +193,22 @@ What a contributor sees:
   or absent context the tier does not owe, and still fails one that ran and
   failed. The matrix legs of `libvmaf-build-matrix.yml` are the one place a job
   starts and stops: a matrix cannot be filtered per leg, so a full-tier leg on a
-  light-tier pull request ends after a shallow checkout with a notice.
+  light-tier pull request ends after a shallow checkout with a notice. The two
+  rows of `windows-gpu-build` have the same shape
+  ([ADR-3279](../adr/3279-msvc-sycl-leg-on-light-tier.md)): the job starts on a
+  light-tier pull request only when the diff selects `windows_msvc_sycl` (or the
+  planner job failed), the `Windows MSVC+SYCL` row then builds and tests, and the
+  `Windows MSVC+CUDA` row ends with the notice. That row's check is green without
+  a build: the notice says whether MSVC+CUDA compiled.
 - Adding the label `ci: full` (or `autorelease: cut` to the release pull request)
   starts `ci-escalate.yml`, which re-runs the latest run of each workflow on the
   head commit. Every re-run decides its tier again from the live labels, so the
   skipped jobs now run and the aggregator waits for them. Removing the label does
-  not cancel anything; the next push is light again.
+  not cancel anything; the next push is light again. A run that is still in
+  progress is cancelled and awaited first; a run that completed in the meantime
+  answers the cancel with 409, which is no error. A run that cannot be re-run is
+  printed with its reason, the runs after it are still started, and the step then
+  fails with the count: read the step's log for the workflows to re-run by hand.
 - The release pull request is refreshed on every merge to master. Without the
   cut label it runs `Release Script Contract` only, which is the check that proves
   the cut ran. The maintainer applies `autorelease: cut` when the release is
@@ -297,7 +307,7 @@ python3 scripts/ci/plan-ci-impact.py --event pull_request \
 
 The planner diffs the event's exact revisions (the merge-base of head and base
 for a PR, the exact `before..head` for a push) and maps the changed paths onto
-the selectors declared in `.github/ci-impact.json`. There are 25 selectors:
+the selectors declared in `.github/ci-impact.json`. There are 27 selectors:
 
 | Selector | Owns | Gates |
 | --- | --- | --- |
@@ -317,6 +327,8 @@ the selectors declared in `.github/ci-impact.json`. There are 25 selectors:
 | `helm` | `deploy/helm/` | Helm chart |
 | `tester_image` | `docker/Dockerfile.tester`, `tools/rc1-tester/`, the toolkit install scripts, `build-config.env`, the licence inputs; own paths only ([ADR-1700](../adr/1700-tester-selectors-own-paths-only.md)) | `Tester Image` ([ADR-1687](../adr/1687-required-release-dry-run-legs.md)) |
 | `windows_tester_zip` | The Windows zip build scripts, its lock file and the Windows inputs under `tools/rc1-tester/image/`; own paths only ([ADR-1700](../adr/1700-tester-selectors-own-paths-only.md)) | `Windows Tester Zip` ([ADR-1687](../adr/1687-required-release-dry-run-legs.md)) |
+| `windows_tester_zip_sycl` | Everything `windows_tester_zip` owns, plus `sycl-rows.json`, `prepare_build.py`, `build-config.env` and the SYCL scratch ratchet list; own paths only ([ADR-1700](../adr/1700-tester-selectors-own-paths-only.md)) | The x64 SYCL zip of `Windows Tester Zip` ([ADR-2198](../adr/2198-windows-sycl-leg-and-cut-check.md)) |
+| `windows_msvc_sycl` | C, C++ and header files under `core/` (`*.c`, `*.h`, `*.cpp`, `*.inc`, `*.h.in`), the Meson files under `core/`, `libvmaf-build-matrix.yml`, `werror-args.sh`, `check_msvc_library_names.py`, `run_meson_test.py` and the build lock file; own paths only ([ADR-1700](../adr/1700-tester-selectors-own-paths-only.md)) | `Windows MSVC+SYCL` on a light-tier pull request ([ADR-3279](../adr/3279-msvc-sycl-leg-on-light-tier.md)) |
 | `tidy_cuda` | `core/src/cuda/`, `core/src/feature/cuda/`, the CUDA and GPU tests, `core/src/dnn/` and the ratchet, lane baseline and lane scripts; own paths only ([ADR-2796](../adr/2796-hosted-tidy-all-lanes.md)) | `Tidy Lane (cuda)` |
 | `tidy_hip` | `core/src/hip/`, `core/src/feature/hip/`, the HIP and GPU tests, the same lane infrastructure; own paths only | `Tidy Lane (hip)` |
 | `tidy_sycl` | `core/src/sycl/`, `core/src/feature/sycl/`, the SYCL and GPU tests, `core/tools/vmaf_vpl*`, the same lane infrastructure; own paths only | `Tidy Lane (sycl)` |
@@ -434,6 +446,12 @@ must report `success`; a missing or skipped one fails the aggregator.
 | `Tester Image` | `docker-publish-tester.yml` | the planner selects `tester_image` | pull requests and master pushes |
 | `Windows Tester Zip` | `windows-tester-bundle.yml` | the planner selects `windows_tester_zip` | pull requests and master pushes |
 | `Release Dry Run` | `release-dry-run.yml` | always; `scripts/ci/release-dry-run-plan.sh` picks the groups | pull requests only (the workflow has no push trigger; the aggregator list `pullRequestOnly` drops it from other runs) |
+
+`Windows MSVC+SYCL` of `libvmaf-build-matrix.yml` is the second own-input lane
+([ADR-3279](../adr/3279-msvc-sycl-leg-on-light-tier.md)): a light-tier pull
+request that changes C, C++ or Meson files under `core/` builds and tests that
+one MSVC leg (selector `windows_msvc_sycl`); `Windows MSVC+CUDA` and
+`Windows ARM64 MSVC` stay full-tier.
 
 These are full-tier contexts, with one declared exception
 ([ADR-2198](../adr/2198-windows-sycl-leg-and-cut-check.md)): `Windows Tester

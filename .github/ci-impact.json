@@ -416,6 +416,23 @@
         "core/src/sycl/scratch_ratchet.txt"
       ]
     },
+    "windows_msvc_sycl": {
+      "own_paths_only": true,
+      "patterns": [
+        "core/*.c",
+        "core/*.h",
+        "core/*.cpp",
+        "core/*.inc",
+        "core/*.h.in",
+        "core/*meson.build",
+        "core/meson_options.txt",
+        ".github/workflows/libvmaf-build-matrix.yml",
+        "scripts/ci/werror-args.sh",
+        "scripts/ci/check_msvc_library_names.py",
+        "scripts/ci/run_meson_test.py",
+        "requirements/locks/build.txt"
+      ]
+    },
     "golden_harness": {
       "inherits": [
         "c_core",

@@ -62,6 +62,14 @@
         "windows_tester_zip_sycl"
       ],
       "reason": "A full-only context whose lane also runs on a light-tier pull request, but only when the diff touches an input the lane reads (selectors of .github/ci-impact.json, ADR-2198): the Windows zip legs failed on master for two days because a pull request that changed their inputs never built them (ADR-1595 built the x64 zip only, ADR-2169 built nothing)."
+    },
+    {
+      "workflow": "libvmaf-build-matrix.yml",
+      "context": "Windows MSVC+SYCL",
+      "selectors": [
+        "windows_msvc_sycl"
+      ],
+      "reason": "A full-only context whose leg also runs on a light-tier pull request, but only when the diff touches a C or C++ source, a header or a Meson file under core/ or an input of the leg itself (selector of .github/ci-impact.json, ADR-3279): a pull request that changed core C++ ran no MSVC build, and both MSVC legs of the master push that followed failed to compile. The CUDA and ARM64 MSVC legs stay on the full tier."
     }
   ],
   "untiered_jobs": [

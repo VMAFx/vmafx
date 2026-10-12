@@ -139,11 +139,10 @@ planner = _load_planner()
 # ADR-1700: the selectors that the full-mode fallback does not set by itself.
 TIDY_LANES = ("cuda", "hip", "sycl", "arm64", "clang", "metal")
 TIDY_SELECTORS = {f"tidy_{lane}" for lane in TIDY_LANES}
-OWN_PATHS_ONLY = {
-    "tester_image",
-    "windows_tester_zip",
-    "windows_tester_zip_sycl",
-} | TIDY_SELECTORS
+TESTER_SELECTORS = {"tester_image", "windows_tester_zip", "windows_tester_zip_sycl"}
+# ADR-3279: the MSVC leg a light-tier pull request owes when it touches core C or C++.
+MSVC_LEG_SELECTORS = {"windows_msvc_sycl"}
+OWN_PATHS_ONLY = TESTER_SELECTORS | MSVC_LEG_SELECTORS | TIDY_SELECTORS
 
 
 def _plan_for(paths: list[str], statuses: list[str] | None = None) -> ImpactPlan:
@@ -340,7 +339,9 @@ class RoutingContract(unittest.TestCase):
         self.assertTrue(
             all(on for name, on in plan.selectors.items() if name not in OWN_PATHS_ONLY)
         )
-        self.assertFalse(any(plan.selectors[name] for name in OWN_PATHS_ONLY - TIDY_SELECTORS))
+        self.assertFalse(
+            any(plan.selectors[name] for name in TESTER_SELECTORS | MSVC_LEG_SELECTORS)
+        )
         # The workflow hosts the lanes, so it is one of their own paths (not Metal's).
         self.assertEqual(
             {name for name in TIDY_SELECTORS if plan.selectors[name]},
@@ -613,6 +614,84 @@ class TidyLaneRouting(unittest.TestCase):
                 self.assertEqual(unmatched, [], f"{lane}: files only this lane measures")
 
 
+class MsvcLegRouting(unittest.TestCase):
+    """ADR-3279: `windows_msvc_sycl` follows what the MSVC+SYCL leg compiles."""
+
+    SELECTOR = "windows_msvc_sycl"
+
+    def test_core_c_cpp_header_and_meson_files_select_the_leg(self) -> None:
+        for path in (
+            "core/src/libvmaf.c",
+            "core/src/fex_ctx_vector_internal.h",
+            "core/tools/vmaf.cpp",
+            "core/test/test_feature_extractor.c",
+            "core/include/libvmaf/version.h.in",
+            "core/meson.build",
+            "core/src/meson.build",
+            "core/meson_options.txt",
+        ):
+            with self.subTest(path=path):
+                plan = _plan_for([path])
+                self.assertEqual(plan.mode, "impact")
+                self.assertTrue(plan.selectors[self.SELECTOR])
+
+    def test_the_legs_own_inputs_select_it(self) -> None:
+        for path in (
+            "scripts/ci/werror-args.sh",
+            "scripts/ci/check_msvc_library_names.py",
+            "scripts/ci/run_meson_test.py",
+            ".github/workflows/libvmaf-build-matrix.yml",
+        ):
+            with self.subTest(path=path):
+                plan = _plan_for([path])
+                self.assertEqual(plan.mode, "full")
+                self.assertTrue(plan.selectors[self.SELECTOR])
+        lock = _plan_for(["requirements/locks/build.txt"])
+        self.assertTrue(lock.selectors[self.SELECTOR])
+
+    def test_files_the_leg_does_not_compile_leave_it_off(self) -> None:
+        for path in (
+            "docs/index.md",
+            "core/src/AGENTS.md",
+            "core/src/feature/cuda/integer_adm/adm_csf_den.cu",
+            "core/src/feature/hip/float_vif/float_vif_score.hip",
+            "core/api/vmafx.toml",
+            "python/vmaf/__init__.py",
+            "go.mod",
+        ):
+            with self.subTest(path=path):
+                self.assertFalse(_plan_for([path]).selectors[self.SELECTOR])
+
+    def test_a_ci_authority_change_alone_leaves_it_off(self) -> None:
+        for path in ("scripts/ci/plan-ci-impact.py", ".github/workflows/lint-and-format.yml"):
+            with self.subTest(path=path):
+                plan = _plan_for([path])
+                self.assertEqual(plan.mode, "full")
+                self.assertFalse(plan.selectors[self.SELECTOR])
+
+    def test_a_full_plan_with_known_paths_follows_the_core_paths(self) -> None:
+        mixed = _plan_for(["core/src/libvmaf.c", "Makefile"])
+        deleted = _plan_for(["core/src/libvmaf.c"], ["D"])
+        for plan in (mixed, deleted):
+            with self.subTest(reason=plan.reason):
+                self.assertEqual(plan.mode, "full")
+                self.assertTrue(plan.selectors[self.SELECTOR])
+
+    def test_an_unknown_change_set_selects_it_and_an_empty_diff_does_not(self) -> None:
+        config = planner.load_config(CONFIG)
+        unknown = planner.build_plan(config, None, "event-not-routed:schedule", "b" * 40, "h" * 40)
+        empty = planner.build_plan(config, (), None, "b" * 40, "h" * 40)
+        self.assertTrue(cast(ImpactPlan, unknown).selectors[self.SELECTOR])
+        self.assertFalse(cast(ImpactPlan, empty).selectors[self.SELECTOR])
+
+    def test_planted_pattern_without_a_suffix_is_seen_by_the_negative_cases(self) -> None:
+        config = copy.deepcopy(planner.load_config(CONFIG))
+        config["selectors"][self.SELECTOR]["patterns"].append("core/*")
+        changes = (planner.Change(status="M", paths=("core/src/AGENTS.md",)),)
+        plan = cast(ImpactPlan, planner.build_plan(config, changes, None, "b" * 40, "h" * 40))
+        self.assertTrue(plan.selectors[self.SELECTOR])
+
+
 class OwnPathsOnlyContract(unittest.TestCase):
     """ADR-1700: `own_paths_only` selectors follow their own paths in full mode."""
 
@@ -625,7 +704,7 @@ class OwnPathsOnlyContract(unittest.TestCase):
     def _changes(*records: tuple[str, tuple[str, ...]]) -> tuple[object, ...]:
         return tuple(planner.Change(status=status, paths=paths) for status, paths in records)
 
-    def test_the_exception_is_declared_for_exactly_the_tester_and_tidy_lane_selectors(self) -> None:
+    def test_the_exception_is_declared_for_exactly_the_tester_msvc_and_tidy_selectors(self) -> None:
         selectors = planner.load_config(CONFIG)["selectors"]
         declared = {name for name, sel in selectors.items() if sel.get("own_paths_only")}
         self.assertEqual(declared, OWN_PATHS_ONLY)
@@ -654,8 +733,7 @@ class OwnPathsOnlyContract(unittest.TestCase):
             with self.subTest(path=path):
                 plan = _plan_for([path, "Makefile"])
                 self.assertEqual(plan.mode, "full")
-                testers = OWN_PATHS_ONLY - TIDY_SELECTORS
-                self.assertEqual({n for n in testers if plan.selectors[n]}, selected)
+                self.assertEqual({n for n in TESTER_SELECTORS if plan.selectors[n]}, selected)
 
     def test_other_fallbacks_with_known_paths_follow_own_paths(self) -> None:
         config = planner.load_config(CONFIG)

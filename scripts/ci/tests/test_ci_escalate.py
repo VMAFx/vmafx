@@ -5,8 +5,12 @@
 
 from __future__ import annotations
 
+import contextlib
+import io
 import sys
 import unittest
+import urllib.error
+from email.message import Message
 from pathlib import Path
 from typing import ClassVar
 
@@ -21,14 +25,26 @@ SHA = "a" * 40
 class FakeApi:
     """A recording stand-in for the Actions API."""
 
-    def __init__(self, runs: list[dict[str, object]], completes_after: int = 1) -> None:
+    def __init__(
+        self,
+        runs: list[dict[str, object]],
+        completes_after: int = 1,
+        refuses: dict[str, int] | None = None,
+    ) -> None:
         self.runs = runs
         self.calls: list[tuple[str, str]] = []
         self.polls = 0
         self.completes_after = completes_after
+        # POST path suffix -> HTTP status the API answers that request with.
+        self.refuses = refuses or {}
 
     def __call__(self, method: str, path: str) -> object:
         self.calls.append((method, path))
+        for suffix, status in self.refuses.items():
+            if method == "POST" and path.endswith(suffix):
+                error = urllib.error.HTTPError(path, status, "refused", Message(), None)
+                error.close()  # the status stays readable; nothing is left open
+                raise error
         if path.startswith(f"/repos/{REPO}/actions/runs?"):
             return {"workflow_runs": self.runs}
         if method == "GET" and "/actions/runs/" in path:
@@ -97,6 +113,66 @@ class Rerun(unittest.TestCase):
         self.assertIn("not re-run", message)
         self.assertFalse(any(c[1].endswith("/rerun") for c in api.calls))
         self.assertEqual(api.polls, ci_escalate.CANCEL_WAIT_S // ci_escalate.CANCEL_POLL_S)
+
+    def test_a_run_that_finished_before_the_cancel_is_awaited_then_re_run(self) -> None:
+        """The API answers 409 to the cancel of a run that completed after the listing."""
+        api = FakeApi([], refuses={"/runs/4/cancel": 409})
+        message = ci_escalate.rerun(
+            api, REPO, run(4, 1, status="in_progress"), sleep=lambda _s: None
+        )
+        self.assertEqual(message, "wf1: re-run")
+        verbs = [(c[0], c[1].rsplit("/", 1)[1]) for c in api.calls]
+        self.assertEqual(verbs, [("POST", "cancel"), ("GET", "4"), ("POST", "rerun")])
+
+    def test_a_refused_cancel_of_a_run_that_never_stops_is_not_re_run(self) -> None:
+        api = FakeApi([], completes_after=10**6, refuses={"/runs/4/cancel": 409})
+        message = ci_escalate.rerun(
+            api, REPO, run(4, 1, status="in_progress"), sleep=lambda _s: None
+        )
+        self.assertIn("not re-run", message)
+        self.assertFalse(any(c[1].endswith("/rerun") for c in api.calls))
+
+    def test_a_cancel_refused_for_another_reason_is_an_error(self) -> None:
+        for status in (403, 404, 500):
+            with self.subTest(status=status):
+                api = FakeApi([], refuses={"/runs/4/cancel": status})
+                with self.assertRaises(urllib.error.HTTPError) as raised:
+                    ci_escalate.rerun(
+                        api, REPO, run(4, 1, status="in_progress"), sleep=lambda _s: None
+                    )
+                self.assertEqual(raised.exception.code, status)
+                self.assertFalse(any(c[1].endswith("/rerun") for c in api.calls))
+
+
+class RerunAll(unittest.TestCase):
+    def rerun_all(self, api: FakeApi, runs: list[dict[str, object]]) -> tuple[int, str]:
+        printed = io.StringIO()
+        with contextlib.redirect_stdout(printed):
+            failed = ci_escalate.rerun_all(api, REPO, runs, sleep=lambda _s: None)
+        return failed, printed.getvalue()
+
+    def test_every_run_is_re_run(self) -> None:
+        api = FakeApi([])
+        failed, printed = self.rerun_all(api, [run(4, 1), run(5, 2)])
+        self.assertEqual(failed, 0)
+        self.assertEqual(printed.count(": re-run\n"), 2)
+
+    def test_no_run_is_no_failure(self) -> None:
+        self.assertEqual(self.rerun_all(FakeApi([]), []), (0, ""))
+
+    def test_a_run_the_api_refuses_does_not_stop_the_runs_after_it(self) -> None:
+        api = FakeApi([], refuses={"/runs/4/rerun": 403})
+        failed, printed = self.rerun_all(api, [run(4, 1), run(5, 2), run(6, 3)])
+        self.assertEqual(failed, 1)
+        self.assertIn("wf1: HTTP Error 403: refused, not re-run", printed)
+        reruns = [c[1].rsplit("/", 2)[1] for c in api.calls if c[1].endswith("/rerun")]
+        self.assertEqual(reruns, ["4", "5", "6"])
+
+    def test_a_run_that_never_stops_counts_as_not_re_run(self) -> None:
+        api = FakeApi([], completes_after=10**6)
+        failed, printed = self.rerun_all(api, [run(4, 1, status="in_progress"), run(5, 2)])
+        self.assertEqual(failed, 1)
+        self.assertIn("wf2: re-run", printed)
 
 
 class OwesFullSuite(unittest.TestCase):
