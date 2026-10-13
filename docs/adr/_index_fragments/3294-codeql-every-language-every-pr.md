@@ -1,0 +1,1 @@
+| [ADR-3294](3294-codeql-every-language-every-pr.md) | CodeQL C/C++, Python and Actions analyse on every event; the impact planner no longer skips a CodeQL leg, so GitHub's `CodeQL` check never turns neutral on a missing category; `python_lint` selector removed; supersedes ADR-1140 in part, extends ADR-1389 | Accepted | ci, security |

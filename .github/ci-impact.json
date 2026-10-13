@@ -448,13 +448,6 @@
       ],
       "patterns": []
     },
-    "python_lint": {
-      "inherits": [
-        "python",
-        "ai"
-      ],
-      "patterns": []
-    },
     "go_checks": {
       "inherits": [
         "go",

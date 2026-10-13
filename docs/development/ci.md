@@ -308,20 +308,19 @@ python3 scripts/ci/plan-ci-impact.py --event pull_request \
 
 The planner diffs the event's exact revisions (the merge-base of head and base
 for a PR, the exact `before..head` for a push) and maps the changed paths onto
-the selectors declared in `.github/ci-impact.json`. There are 27 selectors:
+the selectors declared in `.github/ci-impact.json`. There are 26 selectors:
 
 | Selector | Owns | Gates |
 | --- | --- | --- |
-| `c_core` | `core/`, `ffmpeg-patches/`, `model/`, `testdata/`, golden fixtures | Build legs, sanitizers, cppcheck, CodeQL C/C++, assertion density, Tidy Ratchet |
+| `c_core` | `core/`, `ffmpeg-patches/`, `model/`, `testdata/`, golden fixtures | Build legs, sanitizers, cppcheck, assertion density, Tidy Ratchet |
 | `python` | `python/`, `compat/`, `mcp-server/`, `tools/`, `dev-llm/`, `scripts/**/*.py`, `requirements/` | Inherited by the composite selectors below |
-| `ai` | `ai/`, `model/` | Inherited by `tiny_ai` and `python_lint` |
+| `ai` | `ai/`, `model/` | Inherited by `tiny_ai` |
 | `go` | `cmd/`, `pkg/`, `internal/`, `api/`, `proto/`, `gen/`, `*.go`, `go.mod` | Inherited by `go_checks` |
 | `golden_harness` | `c_core` plus `python` | Netflix golden tests, coverage gate |
 | `tiny_ai` | `c_core` plus `ai` plus `python` | Tiny AI (DNN suite and `ai/` pytests) |
-| `python_lint` | `python` plus `ai` | CodeQL Python |
 | `go_checks` | `go` plus `c_core` | Go vet, security scan, native and ORT smoke, and Go tests |
 | `docs` | `docs/`, `mkdocs.yml`, `*.md`, `changelog.d/` | Docs build |
-| `actions` | `.github/` | CodeQL Actions, FFmpeg patch stack |
+| `actions` | `.github/` | FFmpeg patch stack |
 | `docker_image` | `c_core` plus the `Dockerfile` and Python requirements | Docker image build |
 | `dev_container` | `c_core`, `python`, `ai`, `go`, `shell` plus `dev/` | Dev container build |
 | `doxygen` | `core/include/libvmaf/`, the public-API Doxyfile | Doxygen public API |
@@ -343,6 +342,11 @@ the selectors declared in `.github/ci-impact.json`. There are 27 selectors:
 Steps gated on a selector that is not impacted are skipped and the job emits
 `::notice::<selector> not impacted (mode=... reason=...)` before reporting
 `success`, so the aggregator always sees a real conclusion with a real reason.
+
+No selector gates CodeQL. The C/C++, Python and Actions analyses run on every
+event, because GitHub's `CodeQL` check turns neutral when a category the base
+branch has is missing from the head
+([ADR-3294](../adr/3294-codeql-every-language-every-pr.md)).
 
 The planner fails closed. Each of these produces `mode=full`, which sets every
 selector true (the behaviour before ADR-1140):

@@ -133,6 +133,10 @@ jobs:
   # security-and-quality is a superset of security-extended, so specifying
   # both duplicates queries and trips the CodeQL setup UI's "ambiguous
   # configuration" detector. Pick one suite per job.
+  # ADR-3294: every CodeQL language runs on every pull request and push, with
+  # no ADR-1140 impact plan. GitHub's `CodeQL` check turns neutral
+  # ("configuration not found") when a category master uploads is missing from
+  # the head, and the aggregator fails a neutral owed check (ADR-3293).
   codeql-cpp:
     needs: tier
     if: needs.tier.outputs.light == 'true'
@@ -147,23 +151,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
-      - name: Plan CI impact (ADR-1140)
-        id: impact
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: |
-          python3 scripts/ci/plan-ci-impact.py --event "$EVENT_NAME" \
-            --base "$BASE_SHA" --head "$HEAD_SHA" --github-output "$GITHUB_OUTPUT"
-      - name: Not impacted — CodeQL (C/C++) skipped by plan
-        if: steps.impact.outputs.c_core != 'true'
-        env:
-          MODE: ${{ steps.impact.outputs.mode }}
-          REASON: ${{ steps.impact.outputs.reason }}
-        run: echo "::notice::c_core not impacted (mode=$MODE reason=$REASON) — CodeQL (C/C++) satisfied without running (ADR-1140)"
       - name: Configure C/C++ build (outside extraction)
-        if: steps.impact.outputs.c_core == 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build nasm
@@ -181,17 +169,14 @@ jobs:
           meson setup "${{ runner.temp }}/build" core -Denable_cuda=false -Denable_sycl=false \
             -Dwerror=true $(scripts/ci/werror-args.sh true)
       - uses: github/codeql-action/init@24c54180a607b1449ed407dd24f251e4e9147c8d  # v4.38.3
-        if: steps.impact.outputs.c_core == 'true'
         with:
           languages: cpp
           queries: security-and-quality
           config-file: ./.github/codeql-config.yml
       - name: Build
-        if: steps.impact.outputs.c_core == 'true'
         run: |
           meson compile -C "${{ runner.temp }}/build"
       - uses: github/codeql-action/analyze@24c54180a607b1449ed407dd24f251e4e9147c8d  # v4.38.3
-        if: steps.impact.outputs.c_core == 'true'
         with:
           category: "/language:cpp"
 
@@ -209,29 +194,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
-      - name: Plan CI impact (ADR-1140)
-        id: impact
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: |
-          python3 scripts/ci/plan-ci-impact.py --event "$EVENT_NAME" \
-            --base "$BASE_SHA" --head "$HEAD_SHA" --github-output "$GITHUB_OUTPUT"
-      - name: Not impacted — CodeQL (Python) skipped by plan
-        if: steps.impact.outputs.python_lint != 'true'
-        env:
-          MODE: ${{ steps.impact.outputs.mode }}
-          REASON: ${{ steps.impact.outputs.reason }}
-        run: echo "::notice::python_lint not impacted (mode=$MODE reason=$REASON) — CodeQL (Python) satisfied without running (ADR-1140)"
       - uses: github/codeql-action/init@24c54180a607b1449ed407dd24f251e4e9147c8d  # v4.38.3
-        if: steps.impact.outputs.python_lint == 'true'
         with:
           languages: python
           queries: security-and-quality
           config-file: ./.github/codeql-config.yml
       - uses: github/codeql-action/analyze@24c54180a607b1449ed407dd24f251e4e9147c8d  # v4.38.3
-        if: steps.impact.outputs.python_lint == 'true'
         with:
           category: "/language:python"
 
