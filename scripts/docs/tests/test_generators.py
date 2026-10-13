@@ -186,7 +186,8 @@ class GeneratorTests(unittest.TestCase):
         docs = lint.split("  docs-lint:\n", 1)[1].split("  check-conflict-markers:\n", 1)[0]
         self.assertIn("# required-aggregator", docs)
         self.assertIn("run: make docs-fragments-check", docs)
-        self.assertIn("run: make docs-render-check", docs)
+        # The master push judges the render through ADR-3295's bounded check.
+        self.assertIn("run: python3 scripts/ci/check_render_on_master.py", docs)
         self.assertIn("if: github.event_name == 'push'", docs)
         # A test runs once in CI (ADR-1568): Tooling Tests runs this file.
         from scripts.ci.suite_registry import suite_members  # noqa: PLC0415
