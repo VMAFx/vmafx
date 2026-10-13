@@ -74,8 +74,11 @@ local repo state.
 **Invariant — rendered files (ADR-2197)**: `deliverables-check.sh` refuses
 PR diff touching `CHANGELOG.md`, `docs/adr/README.md`, `docs/adr/titles.md`,
 `docs/research/titles.md`, `docs/adr/by-tag/*`, `_order.txt`,
-`docs/rebase-notes.md`. Those = `make docs-render` output, written by merge
-train per batch and by release cut. PR adds fragments only
+`docs/rebase-notes.md`. Those = `make docs-render` output, written by
+render-only PR per batch and by release cut. Exception (ADR-3295): diff of
+rendered paths only (not `_order.txt`) passes, no other deliverables, when
+`make docs-render-check` passes on head in detached worktree; else refused.
+Tests: `scripts/ci/tests/test_deliverables_render_only.py`. PR adds fragments only
 (`changelog.d/`, `docs/adr/_index_fragments/`, `docs/rebase-notes.d/`).
 Ticked CHANGELOG item needs `changelog.d/<section>/*.md`; ticked rebase-note
 item needs `docs/rebase-notes.d/<slug>.md`. Render set lives in `Makefile`

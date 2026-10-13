@@ -105,7 +105,9 @@ fi
 # leading backslash survives into the body, breaking the regex
 # with spurious backslash-space separators between tokens.
 tmp_body="$(mktemp)"
-trap 'rm -f "$tmp_body" "${tmp_diff:-}"' EXIT
+# render_wt is the detached worktree of a render-only pull request (2a').
+render_wt=""
+trap 'rm -f "$tmp_body" "${tmp_diff:-}"; if [ -n "$render_wt" ]; then git worktree remove --force "$render_wt" >/dev/null 2>&1; rm -rf "$render_wt"; git worktree prune >/dev/null 2>&1; fi' EXIT
 # shellcheck disable=SC1003  # the trailing \\ is a tr-recognised escape for a literal backslash
 printf '%s' "${PR_BODY}" | tr -d '`*_\\' >"$tmp_body"
 
@@ -136,11 +138,40 @@ echo ""
 #
 # CHANGELOG.md, the ADR index and its tag and title pages, and the fragment
 # block of docs/rebase-notes.md are rendered from fragment files when the pull
-# requests land (`make docs-render`), by the merge train per batch and at the
-# release cut. A pull request that edits one of them adds the shared line two
-# pull requests collide on, which is what the fragments exist to avoid. The
+# requests land (`make docs-render`), in one render-only pull request per batch
+# (2a', ADR-3295) and at the release cut. Any other pull request that edits one
+# of them adds the shared line two pull requests collide on, which is what the
+# fragments exist to avoid. The
 # release pull request (a bot) is exempt: its workflow does not run this gate.
 rendered_paths='^(CHANGELOG\.md|docs/adr/README\.md|docs/adr/titles\.md|docs/research/titles\.md|docs/adr/by-tag/.*|docs/adr/_index_fragments/_order\.txt|docs/rebase-notes\.md)$'
+order_path='^docs/adr/_index_fragments/_order\.txt$'
+
+# ---------- 2a'. Render-only pull request (ADR-3295) ----------
+#
+# The render itself lands as a pull request: master takes no direct push
+# (ADR-3295 amends ADR-2197). A diff that touches rendered paths and nothing
+# else is accepted when its head passes `make docs-render-check`, run in a
+# detached worktree of the head commit so the job's working tree cannot stand
+# in for it. Such a pull request owes no other deliverable. _order.txt is
+# frozen and never rendered, so it is refused below even alone; a rendered
+# file next to any other file is refused below too.
+if [ -s "$tmp_diff" ] && ! grep -qE "${order_path}" "$tmp_diff" &&
+  ! grep -qvE "${rendered_paths}" "$tmp_diff"; then
+  render_wt="$(mktemp -d)"
+  rmdir "$render_wt"
+  if ! git worktree add --detach "$render_wt" "$diff_head" >/dev/null 2>&1; then
+    echo "::error title=ADR-3295 render-only pull request::cannot check out ${diff_head} to run make docs-render-check."
+    exit 2
+  fi
+  if ! make -s -C "$render_wt" docs-render-check; then
+    echo "::error title=ADR-3295 render-only pull request::the head does not pass make docs-render-check: a render-only pull request carries exactly what 'make docs-render' writes from the fragments on its base, nothing edited by hand."
+    echo "  Rebase on origin/master, run 'make docs-render', commit the result and nothing else."
+    exit 1
+  fi
+  echo "deliverables-check: render-only pull request (ADR-3295); make docs-render-check passed on ${diff_head}"
+  exit 0
+fi
+
 if grep -nE "${rendered_paths}" "$tmp_diff" >/dev/null; then
   while IFS= read -r path; do
     echo "::error file=${path},title=ADR-2197 rendered file::${path} is rendered when pull requests land; a pull request adds fragments (changelog.d/<section>/*.md, docs/adr/_index_fragments/<slug>.md, docs/rebase-notes.d/<slug>.md) and leaves it alone."

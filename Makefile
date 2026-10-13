@@ -238,10 +238,12 @@ lint-actions:
 # rendered from them when the pull requests land:
 #   CHANGELOG.md, docs/adr/README.md, docs/adr/by-tag/, docs/adr/titles.md,
 #   docs/research/titles.md and the fragment block of docs/rebase-notes.md.
-# `make docs-render` writes them. The merge train runs it once per landing batch
-# and commits the result as "chore(docs): render generated changelog and ADR
-# index"; the release cut runs it too (docs/development/release.md).
-# `make docs-render-check` fails when a render is stale: the master push runs it.
+# `make docs-render` writes them. Once per landing batch the result lands as a
+# render-only pull request, "chore(docs): render generated changelog and ADR
+# index" (ADR-3295); the release cut runs it too (docs/development/release.md).
+# `make docs-render-check` fails when a render is stale: deliverables-check.sh
+# runs it on a render-only pull request's head, and the master push runs it
+# through scripts/ci/check_render_on_master.py (owed render bounded at 24 h).
 docs-render:
 	@bash scripts/release/concat-changelog-fragments.sh --write
 	@bash scripts/docs/concat-adr-index.sh --write

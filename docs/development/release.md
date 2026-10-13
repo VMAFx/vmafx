@@ -598,19 +598,32 @@ A pull request does **not** carry `CHANGELOG.md`, `docs/adr/README.md`,
 fragment block of `docs/rebase-notes.md`
 ([ADR-2197](../adr/2197-render-generated-docs-at-landing.md)).
 `scripts/ci/deliverables-check.sh` refuses a pull request that edits one of
-them. The outputs are written by one command, `make docs-render`:
+them next to any other file. The outputs are written by one command,
+`make docs-render`:
 
-- **per landing batch:** the merge train runs it at the batch tip and commits
-  the result as `chore(docs): render generated changelog and ADR index`, in the
-  same push as the batch, so every master tip is rendered;
+- **per landing batch:** after a batch lands, its render goes to master as its
+  own render-only pull request, `chore(docs): render generated changelog and
+  ADR index`
+  ([ADR-3295](../adr/3295-render-only-pull-request.md)).
+  The deliverables gate accepts a pull request whose diff touches only the
+  rendered files when `make docs-render-check` passes on its head commit; it
+  needs none of the other deliverables. When
+  master moves under it, rebase the branch and run `make docs-render` again;
+  never resolve a conflict in a rendered file by hand. It merges when the
+  forge reports it CLEAN, like every other pull request;
 - **at the release cut:** see
   [Cutting a release from fragments](#cutting-a-release-from-fragments);
 - **by hand:** to see what the render will write, run it in a scratch
   worktree; it is safe to run at any time and writes nothing else.
 
-`make docs-render-check` fails when a render is stale. The master push runs it
-(the `Docs` job), so a push that skipped the render turns master red instead of
-passing silently. A pull request does not run it: `make docs-fragments-check`
+`make docs-render-check` fails when a render is stale. The master push (the
+`Docs` job) runs `scripts/ci/check_render_on_master.py`
+([ADR-3295](../adr/3295-render-only-pull-request.md)):
+a current render passes; otherwise the last commit that touched a rendered
+file must pass `make docs-render-check` on its own tree (a hand edit or a
+stale render is red at any age), and the render owed since the first landing
+after it warns for up to 24 hours and turns master red after
+that. An ordinary pull request does not run it: `make docs-fragments-check`
 checks the fragments themselves (changelog sections, ADR index rows, rebase-note
 headings) and the outputs that stay in the pull request (exact-twin table,
 AGENTS indexes, charts, vendored assets).
@@ -871,15 +884,19 @@ fragments so existing release-train history is preserved.
 
 ### When to regenerate (`--write`)
 
-`make docs-render` writes the changelog with the other rendered outputs: the
-merge train runs it once per landing batch and the release cut runs it. You
-need it by hand only to preview a render, or to reconcile a skew:
+`make docs-render` writes the changelog with the other rendered outputs: it
+runs once per landing batch for the render-only pull request
+([ADR-3295](../adr/3295-render-only-pull-request.md))
+and at the release cut. You need it by hand only to preview a render, or to
+reconcile a skew:
 
-- `make docs-render-check` (the master push) fails on a stale render.
+- `make docs-render-check` fails on a stale render; the master push runs it
+  through `scripts/ci/check_render_on_master.py`, which allows an owed render
+  for up to 24 hours.
 - Pre-existing skew (see
   [the 2026-05-08 sweep](#changelog-drift-sweep-historical-context)) is
-  reconciled by rendering on master, not by a feature branch: a pull request
-  that carries a render is refused.
+  reconciled by a render-only pull request, not by a feature branch: a pull
+  request that carries a render next to any other file is refused.
 
 Never edit the rendered "Unreleased" block by hand to add new entries — those
 inline edits will be silently overwritten by the next regen.

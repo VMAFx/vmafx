@@ -30,7 +30,9 @@ Review documentation for VMAFx fork. Scope: `docs/` (mkdocs site),
 5. **ADR fragment / index discipline (ADR-0221, ADR-2197)** — a PR never
    edits `docs/adr/README.md`, `by-tag/`, `titles.md` or `_order.txt`. New
    ADRs ship fragment under `docs/adr/_index_fragments/NNNN-slug.md` only;
-   `make docs-render` writes the index at landing.
+   `make docs-render` writes the index at landing. Exception (ADR-3295):
+   render-only PR, diff of rendered files only, head passes
+   `make docs-render-check`.
 6. **Stale "TODO / coming soon" claims** — every doc page must reflect
    shipped state. Flag pages that say `Phase X not yet
    shipped` when the corresponding code is on master; flag `Status:

@@ -47,11 +47,13 @@ line budget. Changing a rule here changes it for every agent.
    `docs/adr/_index_fragments/<NNNN-slug>.md` (one fragment file per ADR; the
    frozen `_order.txt` is not edited: fragments follow it in landing order).
    `docs/adr/README.md` (with `docs/adr/by-tag/` and `docs/adr/titles.md`) is
-   rendered when pull requests land (`make docs-render`, run by the merge train
-   per batch and at the release cut), a pull request must not carry it, and
-   `scripts/ci/deliverables-check.sh` refuses one that does — see
-   [ADR-0221](../adr/0221-changelog-adr-fragment-pattern.md) and
-   [ADR-2197](../adr/2197-render-generated-docs-at-landing.md).
+   rendered when pull requests land (`make docs-render`, one render-only pull
+   request per batch and at the release cut), a pull request must not carry it,
+   and `scripts/ci/deliverables-check.sh` refuses one that does, except the
+   render-only pull request — see
+   [ADR-0221](../adr/0221-changelog-adr-fragment-pattern.md),
+   [ADR-2197](../adr/2197-render-generated-docs-at-landing.md) and
+   [ADR-3295](../adr/3295-render-only-pull-request.md).
    Non-trivial = another engineer could reasonably have chosen differently.
    Bug fixes and implementation details do not need an ADR. Cite `req`
    (direct user quote) or `Q<round>.<q>` (popup answer) in the ADR's

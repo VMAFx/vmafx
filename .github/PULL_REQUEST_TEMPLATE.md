@@ -31,7 +31,7 @@
 - [ ] If I touched a feature extractor with SIMD/GPU twins, I either updated every twin or listed the gap under "Known follow-ups" below.
 - [ ] If I added a new `.c` / `.cpp` / `.cu` / `.h` / `.hpp`, it has the appropriate license header (see `CONTRIBUTING.md`).
 - [ ] If this is a breaking change, the commit message uses `!` or `BREAKING CHANGE:` and the migration path is documented below.
-- [ ] If this PR adds an ADR, the ADR row lives in `docs/adr/_index_fragments/<NNNN-slug>.md` and nothing else is touched for the index: **do not edit `docs/adr/README.md`, `docs/adr/by-tag/`, `docs/adr/titles.md` or `_order.txt`** (rendered when pull requests land by `make docs-render`; see [ADR-2197](../docs/adr/2197-render-generated-docs-at-landing.md)).
+- [ ] If this PR adds an ADR, the ADR row lives in `docs/adr/_index_fragments/<NNNN-slug>.md` and nothing else is touched for the index: **do not edit `docs/adr/README.md`, `docs/adr/by-tag/`, `docs/adr/titles.md` or `_order.txt`** (rendered when pull requests land by `make docs-render`; see [ADR-2197](../docs/adr/2197-render-generated-docs-at-landing.md); the render-only pull request of [ADR-3295](../docs/adr/3295-render-only-pull-request.md) is the one exception).
 
 ## Bug-status hygiene ([ADR-0165](../docs/adr/0165-state-md-bug-tracking.md))
 
