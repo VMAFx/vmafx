@@ -1140,6 +1140,16 @@
   conflicting after master moves.
 
 
+- **The render lands as its own pull request
+  ([ADR-3295](docs/adr/3295-render-only-pull-request.md)).** The rendered
+  changelog, ADR index and rebase notes land after each landing batch through a
+  render-only pull request instead of a direct push to `master`. The
+  deliverables gate accepts a pull request that touches only rendered files
+  when its head passes `make docs-render-check`, and the master push runs
+  `scripts/ci/check_render_on_master.py`, which allows an owed render for up to
+  24 hours.
+
+
 - The backend receipt of the JSON report (`backend_used`, `feature_backends`)
   is written by the library's report writer instead of being spliced into the
   file by the `vmaf` CLI, so reports written through the API carry it too;
@@ -1369,6 +1379,13 @@
   `py/unused-global-variable` (1518, 1519): the MCP server drops two value sets that nothing read since the generated option checks replaced them.
   The three definitions that must have the signature of libvmaf's `vmaf_picture_wrap()` (1545, 1546, 1547) are declared exceptions with an expiry (`.config/lint-exceptions.d/codeql-large-parameter.toml`).
   Found on the way: the tiny-AI scenario of `test_compat_conformance` passed planes of 16 samples to a 7x7 run of `vmaf_dnn_session_run_luma8()`, a read past its stack buffer that an ASan build with ONNX Runtime reported; the planes hold 49 samples now.
+
+
+- CI: CodeQL C/C++ and Python now analyse on every pull request and push, as
+  CodeQL Actions already did. A pull request that skipped one of them got a
+  neutral `CodeQL` check ("configuration not found"), which the required-checks
+  aggregator blocks since ADR-3293
+  ([ADR-3294](docs/adr/3294-codeql-every-language-every-pr.md)).
 
 
 - **Eighteen test files compare exact results with `core/test/float_bits.h`, and four CodeQL findings in tests are fixed in code (no alert dismissed).**
@@ -1716,6 +1733,14 @@
   records its owner (process id and boot id) in its lock. A lock whose owner ran in an earlier boot or
   no longer runs, or an ownerless lock older than two minutes, is taken over with a log line; before,
   a lock left by an interrupted sync failed every post-commit state sync until it was removed by hand.
+
+
+- CI: `test_strict_fp_compiler_args` no longer times out on `Windows ARM64 MSVC`.
+  Its throwaway Meson fixtures declared a language, so each of its Meson setups
+  detected a C compiler; on master the test took 41 to 90.7 s against its 90 s
+  limit and failed twice. The fixtures now declare no language (the policy
+  blocks they execute need none), and `_meson_setup()` refuses a fixture that
+  declares one.
 
 
 - **The SYCL dma-buf import no longer closes the caller's descriptor.**

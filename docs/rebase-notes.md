@@ -8,6 +8,38 @@ search:
 # Rebase notes
 
 <!-- rebase-notes:fragments:begin (rendered from docs/rebase-notes.d/; do not edit) -->
+## Render-only pull request replaces the direct render push (2026-10-13)
+
+- `scripts/ci/deliverables-check.sh` accepts a diff of rendered paths only when
+  `make docs-render-check` passes on its head (ADR-3295); keep the detached
+  worktree check and the refusal of a rendered file next to any other file.
+- The master push step of the Docs job in
+  `.github/workflows/lint-and-format.yml` runs
+  `scripts/ci/check_render_on_master.py`, not `make docs-render-check`.
+- Tests: `scripts/ci/tests/test_deliverables_render_only.py`,
+  `scripts/ci/tests/test_check_render_on_master.py`.
+
+## Strict-FP policy fixtures declare no language (2026-10-13)
+
+- `core/test/test_strict_fp_compiler_args.py`: the five fixture `project()`
+  calls name no language, and `_meson_setup()` fails a fixture whose
+  `project()` does (`PROJECT_WITH_LANGUAGE`). Meson then skips compiler
+  detection in each throwaway setup.
+- **On sync**: fork-only test; no upstream counterpart. A new fixture that needs
+  a compiler object (`meson.get_compiler()`) cannot use `_meson_setup()`; give
+  it its own setup and keep the test under its 90 s limit on Windows ARM64.
+
+## CodeQL analyses every language on every event (2026-10-13)
+
+- `codeql-cpp`, `codeql-python` and `codeql-actions` in
+  `.github/workflows/security-scans.yml` run `init` and `analyze` without a
+  step-level `if:` and without the impact planner (ADR-3294).
+- The `python_lint` selector is gone from `.github/ci-impact.json`.
+- **On sync**: fork-only files; no upstream counterpart. Do not bring back an
+  impact gate on a CodeQL job: a skipped category makes GitHub's `CodeQL` check
+  neutral, which the aggregator blocks (ADR-3293).
+  `scripts/ci/test_security_workflow_contract.py` fails on such a gate.
+
 ## Scratch repositories start no git maintenance (2026-10-13)
 
 `scripts/lib/clean-git-env.sh` sets `maintenance.auto=false` and `gc.auto=0`
