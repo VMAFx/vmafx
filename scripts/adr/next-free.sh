@@ -83,8 +83,11 @@ adr_depth_args() {
 # ── constants ────────────────────────────────────────────────────────────────
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
-# Use the common .git dir (resolves correctly even inside a worktree).
-GIT_COMMON_DIR="$(git rev-parse --git-common-dir)"
+# Use the common .git dir (resolves correctly even inside a worktree), made
+# absolute: `git rev-parse --git-common-dir` prints `.git` at the root, `../.git`
+# from docs/ and an absolute path in a linked worktree, and the lock key below
+# must not depend on the caller's working directory.
+GIT_COMMON_DIR="$(cd "$(git rev-parse --git-common-dir)" && pwd -P)"
 ADR_DIR="${REPO_ROOT}/docs/adr"
 # Cross-worktree claim signals live in the common .git dir so all worktrees
 # sharing this repo see them regardless of which branch they have checked out.
@@ -95,6 +98,11 @@ ADR_CLAIMS_DIR="${GIT_COMMON_DIR}/adr-claims"
 # host do not.
 _git_key="$(printf '%s' "${GIT_COMMON_DIR}" | tr '/' '_')"
 LOCK_DIR="/tmp/vmaf_adr_claim_lock_${_git_key}"
+# Identifies this process's hold on the lock; release removes only its own.
+LOCK_TOKEN="$$-${RANDOM}${RANDOM}-$(date +%s%N)"
+# Upper bound on numbers tried past the first free one when a claim file of
+# the same number already exists.
+CLAIM_RETRIES=100
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -119,6 +127,7 @@ _acquire_lock() {
     fi
     sleep 0.1
   done
+  printf '%s %s\n' "${LOCK_TOKEN}" "${REPO_ROOT}" >"${LOCK_DIR}/owner"
   # Register a trap to release the lock on exit (including errors).
   trap '_release_lock' EXIT INT TERM
 }
@@ -129,8 +138,14 @@ _no_match_ok() {
   [ "$1" -le 1 ] || return "$1"
 }
 
+# Remove the lock only while this process owns it; another holder's lock stays.
 _release_lock() {
-  if [ -d "${LOCK_DIR}" ]; then
+  local owner=""
+  if [ -f "${LOCK_DIR}/owner" ]; then
+    owner="$(cut -d' ' -f1 "${LOCK_DIR}/owner" 2>/dev/null)" || owner=""
+  fi
+  if [ "${owner}" = "${LOCK_TOKEN}" ]; then
+    rm -f "${LOCK_DIR}/owner"
     rmdir "${LOCK_DIR}" 2>/dev/null || printf 'WARNING: could not remove ADR allocator lock %s\n' "${LOCK_DIR}" >&2
   fi
   trap - EXIT INT TERM
@@ -289,17 +304,20 @@ _write_stub() {
   } >"${stub_path}"
 }
 
-# Write the .git/adr-claims/<NUMBER> side-pointer.
-# This file is visible to ALL worktrees sharing this .git/ directory,
-# including sibling agents in separate worktrees.
+# Create the .git/adr-claims/<NUMBER> side-pointer exclusively (O_CREAT|O_EXCL
+# through noclobber); fails when the number is already claimed. This file is
+# visible to ALL worktrees sharing this .git/ directory, and its exclusive
+# creation decides a number even if two callers ever hold the lock at once.
 _write_claim_sidepointer() {
   local number="$1" slug="$2"
   local ts branch
   ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   branch="$(git symbolic-ref --short HEAD 2>/dev/null || printf 'detached')"
   mkdir -p "${ADR_CLAIMS_DIR}"
-  printf '%s %s %s\n' "${slug}" "${ts}" "${branch}" \
-    >"${ADR_CLAIMS_DIR}/${number}"
+  (
+    set -o noclobber
+    printf '%s %s %s\n' "${slug}" "${ts}" "${branch}" >"${ADR_CLAIMS_DIR}/${number}"
+  ) 2>/dev/null
 }
 
 # Remove the .git/adr-claims/<NUMBER> side-pointer (called by --release).
@@ -436,13 +454,24 @@ number="$(
   } | LC_ALL=C sort -u | _next_free_from_taken
 )"
 
+# Take the number by creating its claim file exclusively; a number whose claim
+# file exists already belongs to another caller, so move to the next one.
+tries=0
+while ! _write_claim_sidepointer "${number}" "${SLUG}"; do
+  tries=$((tries + 1))
+  if [ "${tries}" -ge "${CLAIM_RETRIES}" ]; then
+    printf 'ERROR: no free ADR number within %s of the first candidate (claims in %s).\n' \
+      "${CLAIM_RETRIES}" "${ADR_CLAIMS_DIR}" >&2
+    exit 1
+  fi
+  number="$(printf '%04d' $((10#${number} + 1)))"
+done
+
 stub_path="${ADR_DIR}/${number}-${SLUG}.md.stub"
 
+# The claim file is written BEFORE the lock is released, so a sibling agent
+# that acquires the lock immediately after sees the claim.
 _write_stub "${stub_path}" "${number}" "${SLUG}"
-
-# Write the cross-worktree side-pointer BEFORE releasing the lock so a sibling
-# agent that acquires the lock immediately after sees the claim.
-_write_claim_sidepointer "${number}" "${SLUG}"
 
 # Release the lock early to minimise critical-section duration.
 _release_lock
