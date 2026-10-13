@@ -1,0 +1,7 @@
+# ShellCheck configuration for scripts/lib/: the same setting as
+# scripts/ci/.shellcheckrc. The pre-commit hook checks staged files one at a
+# time, so a helper that sources a sibling (clean-git-env.sh sources
+# drop-git-env.sh) gets SC1091 "not specified as input" unless ShellCheck
+# follows the `# shellcheck source=` directive the helper already carries.
+# This analyses the sibling; it suppresses nothing.
+external-sources=true

@@ -571,6 +571,32 @@ class GitFixtureIsolation(unittest.TestCase):
             # Two snapshots with nothing in between are equal: no lock file comes or goes.
             self.assertEqual(snapshot(sentinel), snapshot(sentinel))
 
+    def test_the_fixture_helper_starts_no_background_maintenance(self) -> None:
+        # A detached repack deleted the loose objects of a scratch repository while
+        # test-default-model-single-source.sh copied it (`cp: cannot stat .git/objects/..`).
+        # A commit after scripts/lib/clean-git-env.sh must start neither maintenance nor gc;
+        # the same commit after drop-git-env.sh alone is the control that does.
+        script = (
+            'set -euo pipefail\n. "$1"\ntmp=$(mktemp -d)\ncd "$tmp"\ngit init -q\n'
+            "GIT_TRACE=1 git -c user.name=F -c user.email=f@example.invalid "
+            'commit -q --allow-empty -m x 2>&1\nrm -rf "$tmp"\n'
+        )
+
+        def trace(helper: str) -> str:
+            done = run_command(
+                [BASH, "-c", script, "trace", str(ROOT / "scripts/lib" / helper)],
+                allowed_executables=(BASH,),
+                env=clean_git_environment(),
+                text=True,
+                capture_output=True,
+                check=True,
+                timeout_seconds=60,
+            )
+            return str(done.stdout)
+
+        self.assertRegex(trace("drop-git-env.sh"), BACKGROUND_WORK)
+        self.assertNotRegex(trace("clean-git-env.sh"), BACKGROUND_WORK)
+
     def test_the_isolated_form_of_each_planted_script_leaves_the_sentinel_alone(self) -> None:
         # The same commands after scripts/lib/clean-git-env.sh: the controls above fail for
         # the missing isolation, not for the commands.
