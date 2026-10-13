@@ -527,8 +527,8 @@ jobs:
       - name: Install nv-codec-headers
         if: ${{ (matrix.cuda) && steps.impact.outputs.c_core == 'true' }}
         run: |
-          git clone --depth=1 https://code.ffmpeg.org/FFmpeg/nv-codec-headers
-          cd nv-codec-headers && sudo make install && cd .. && rm -rf nv-codec-headers
+          bash scripts/ci/fetch-nv-codec-headers.sh "$RUNNER_TEMP/nv-codec-headers"
+          sudo make -C "$RUNNER_TEMP/nv-codec-headers" install
 
       - name: Install base deps for CUDA-only builds
         if: ${{ (matrix.cuda && !matrix.sycl) && steps.impact.outputs.c_core == 'true' }}
@@ -1106,20 +1106,20 @@ jobs:
 
       # ---------- nv-codec-headers (CUDA leg only) ----------
       # libvmaf's CUDA path includes `<ffnvcodec/dynlink_cuda.h>`
-      # (see core/src/meson.build §324). The Linux CUDA leg
-      # installs this via `git clone … && make install`. On
-      # Windows there's no `make install` story, but the package
-      # is header-only — clone, copy the `include/ffnvcodec/`
-      # tree into a known prefix, and append that prefix to the
-      # `INCLUDE` env so `cl.exe` picks it up.
+      # (see core/src/meson.build §324). Both legs fetch the commit
+      # build-config.env pins with scripts/ci/fetch-nv-codec-headers.sh.
+      # The Linux leg runs `make install`; on Windows the package is
+      # header-only, so copy `include/ffnvcodec/` into a known prefix
+      # and append that prefix to `INCLUDE` so `cl.exe` picks it up.
       - name: Install nv-codec-headers (windows)
         if: steps.leg.outputs.run == 'true' && matrix.backend == 'cuda'
-        shell: cmd
+        shell: bash
         run: |
-          git clone --depth=1 https://code.ffmpeg.org/FFmpeg/nv-codec-headers nv-codec-headers
-          mkdir nvcodec-prefix\include\ffnvcodec
-          copy nv-codec-headers\include\ffnvcodec\*.h nvcodec-prefix\include\ffnvcodec\
-          echo INCLUDE=%CD%\nvcodec-prefix\include;%INCLUDE%>>%GITHUB_ENV%
+          headers="$(cygpath -u "$RUNNER_TEMP")/nv-codec-headers"
+          bash scripts/ci/fetch-nv-codec-headers.sh "$headers"
+          mkdir -p nvcodec-prefix/include
+          cp -r "$headers/include/ffnvcodec" nvcodec-prefix/include/
+          echo "INCLUDE=$(cygpath -w "$PWD/nvcodec-prefix/include");${INCLUDE-}" >> "$GITHUB_ENV"
 
       # ---------- Strip ccache from PATH (Windows) ----------
       # `windows-2025` ships `C:\Strawberry\c\bin\ccache.exe` on
