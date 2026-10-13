@@ -294,6 +294,7 @@ nav:
       - Pelorus interop ABI (vendored): api/pelorus-interop.md
       - Perceptual pooling weighting: api/perceptual-weight.md
       - Sample range: api/sample-range.md
+      - Stream metadata field list: api/stream-metadata-fields.md
       - vmaftune.ladder: api/ladder.md
       - vmaftune.predictor: api/predictor.md
       - VMAFx API (preview): api/vmafx/index.md
