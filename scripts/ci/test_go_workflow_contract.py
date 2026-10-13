@@ -128,8 +128,11 @@ class GoWorkflowContract(unittest.TestCase):
     def test_successful_go_checks_pass(self) -> None:
         self.assertEqual(run_required_aggregator(GO_CHECK, "success"), [])
 
-    def test_unreported_check_keeps_existing_absence_semantics(self) -> None:
-        self.assertEqual(run_required_aggregator(GO_CHECK, None), [])
+    def test_unreported_go_check_fails(self) -> None:
+        """An owed context that never reports blocks the merge (ADR-3293)."""
+        failures = run_required_aggregator(GO_CHECK, None)
+        self.assertEqual(len(failures), 1)
+        self.assertIn("never reported", failures[0])
 
 
 if __name__ == "__main__":

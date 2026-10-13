@@ -10,16 +10,10 @@ on:
     # ADR-0331 — `ready_for_review` lets the per-job draft gate fire
     # CI when a draft PR is promoted to ready-for-review.
     types: [opened, synchronize, reopened, ready_for_review]
-    # ADR-0341 / Research-0089 §3.2: skip the full 18-cell build matrix
-    # when only documentation paths change. The Required Checks
-    # Aggregator (ADR-0313) treats "workflow not reported" as
-    # path-filter-skipped/acceptable, so paths-ignore at the trigger
-    # level does NOT break branch protection. Mirrors the path-filter
-    # structure introduced in ADR-0317 on docker-image.yml and
-    # ffmpeg-integration.yml. Conservative deny-list — anything not
-    # listed here (core/, meson.build, meson_options.txt,
-    # subprojects/, python/, ai/, mcp-server/, model/, testdata/,
-    # .github/workflows/, ...) still fires the matrix.
+    # No trigger-level paths-ignore: every required job of this workflow
+    # must report on every pull request (ADR-3293), and each job selects
+    # its own work through the CI tier and the impact planner (ADR-2169,
+    # ADR-1140). ADR-0341's docs-only paths-ignore no longer exists.
   workflow_dispatch:
 
 permissions:

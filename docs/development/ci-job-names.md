@@ -56,13 +56,18 @@ means re-pointing every badge.
 
 Branch protection targets a single context: `Required Checks Aggregator` in
 [`.github/workflows/required-aggregator.yml`](../../.github/workflows/required-aggregator.yml).
-The aggregator's `required` array holds 89 check names. It declares both
-Scorecard event gates, then removes the non-applicable one, so a pull-request
-run evaluates 88 names, with only `Scorecard PR Gate` among the two. A run on a
-push also removes `Release Dry Run` (list `pullRequestOnly`, ADR-1687: its
-workflow has no push trigger) and evaluates 87. A name that no run reported is
-accepted unless it is in a must-report list of the aggregator (ADR-0313,
-ADR-1297).
+The aggregator's `required` array holds 98 check names. It declares both
+Scorecard event gates, then removes the non-applicable one, so every run
+evaluates 97 names. Every evaluated name must report success
+([ADR-3293](../adr/3293-aggregator-owed-contexts-must-succeed.md)): a name that
+no run reported, or that was skipped or neutral, fails the aggregator. Three
+exemptions are named in the script. Each lets a name stay absent or skipped,
+and none of them accepts a failure:
+
+- the names the run's CI tier does not owe (ADR-2169);
+- the 13 names of `pullRequestOnly` on a push or dispatch event, whose
+  workflows report only on a pull request (ADR-1687);
+- a hardware lane whose operator switch is off (ADR-1177, ADR-1319).
 
 A required name must be reported by exactly one job, because the aggregator
 keeps one check run per name, so two jobs sharing a name can mask each other's

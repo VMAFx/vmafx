@@ -58,6 +58,9 @@ sit on master head, and their cancelled push runs were read as master's
 to workflow_dispatch on own branch or to suites no workflow run owns (code
 scanning).
 `scripts/ci/tests/test_aggregator_event_scope.py` runs embedded script.
+Every owed name must succeed; absent or skipped fails except three named
+exemptions (tier not owed, `pullRequestOnly` on push, hardware switch off)
+(ADR-3293, `scripts/ci/tests/test_aggregator_absent_fails.py`).
 
 ## CI job display names and aggregator parity
 

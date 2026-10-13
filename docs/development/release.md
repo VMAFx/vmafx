@@ -232,18 +232,16 @@ merge-release-flow
 ### What actually gates a release PR
 
 A release PR's diff is `.release-please-manifest.json` plus the coordinated
-version markers. Under the Required Checks Aggregator's absent-means-pass rule
-([ADR-0313](../adr/0313-ci-required-checks-aggregator.md)) that would let every
-path-routed build and test gate select nothing and still resolve green — correct
-for a doc-only PR, wrong for the one PR whose merge creates a release. Two
-things now prevent that:
+version markers. Such a PR runs in the `release-light` CI tier
+([ADR-2169](../adr/2169-ci-fewer-runs.md)), which owes only the tier's `always`
+names. Every owed name must report success on the head SHA
+([ADR-3293](../adr/3293-aggregator-owed-contexts-must-succeed.md)): a check that
+never reported, or that was skipped, fails the aggregator. The names the tier
+does not owe may be absent or skipped, and fail if they ran and failed.
 
-- `.release-please-manifest.json` and `release-please-config.json` are members
-  of the `c_core` selector in `.github/ci-impact.json`, so a release PR really
-  does select the C build and the Netflix golden gate.
-- The aggregator keeps a `mustReport` list — `Release Script Contract`,
-  `Netflix CPU Golden`, `Ubuntu gcc+DNN` — that fails instead of passing when a
-  check is *absent* on a `release-please--` head ref.
+`.release-please-manifest.json` and `release-please-config.json` are also
+members of the `c_core` selector in `.github/ci-impact.json`, so a release PR
+selects the C build and the Netflix golden gate.
 
 ### Release-bot identity
 

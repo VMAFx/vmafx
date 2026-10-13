@@ -436,6 +436,15 @@ code scanning, always count. A pull-request aggregator reads every check run on
 its head as before. `scripts/ci/tests/test_aggregator_event_scope.py` runs the
 embedded script on both events.
 
+Every name the aggregator evaluates must report `success` on the head SHA
+([ADR-3293](../adr/3293-aggregator-owed-contexts-must-succeed.md)). A name no
+run reported, or one that was skipped, neutral or cancelled, fails the
+aggregator. Three exemptions are named in the script, and each lets a name stay
+absent or skipped, never failed: the names the run's CI tier does not owe, the
+`pullRequestOnly` names on a push or dispatch event, and a hardware lane whose
+operator switch is off. `scripts/ci/tests/test_aggregator_absent_fails.py`
+runs the embedded script against both rules.
+
 ### Release legs
 
 Three contexts gate what the release and tester workflows build on a pull
@@ -446,7 +455,7 @@ must report `success`; a missing or skipped one fails the aggregator.
 | --- | --- | --- | --- |
 | `Tester Image` | `docker-publish-tester.yml` | the planner selects `tester_image` | pull requests and master pushes |
 | `Windows Tester Zip` | `windows-tester-bundle.yml` | the planner selects `windows_tester_zip` | pull requests and master pushes |
-| `Release Dry Run` | `release-dry-run.yml` | always; `scripts/ci/release-dry-run-plan.sh` picks the groups | pull requests only (the workflow has no push trigger; the aggregator list `pullRequestOnly` drops it from other runs) |
+| `Release Dry Run` | `release-dry-run.yml` | always; `scripts/ci/release-dry-run-plan.sh` picks the groups | pull requests only (the workflow has no push trigger; on other runs the aggregator list `pullRequestOnly` lets it be absent or skipped) |
 
 `Windows MSVC+SYCL` of `libvmaf-build-matrix.yml` is the second own-input lane
 ([ADR-3279](../adr/3279-msvc-sycl-leg-on-light-tier.md)): a light-tier pull
