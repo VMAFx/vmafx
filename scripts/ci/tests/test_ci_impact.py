@@ -36,7 +36,7 @@ BASH = shutil.which("bash") or "/bin/bash"
 
 REQUIRED_CONSUMER_CONTRACTS = {
     "build.yml": (
-        "c_core",
+        "build_work",
         ("build-work",),
         (
             ("linux-intel-llvm-gate", "Linux Intel LLVM", "build-work"),
@@ -690,6 +690,91 @@ class MsvcLegRouting(unittest.TestCase):
         changes = (planner.Change(status="M", paths=("core/src/AGENTS.md",)),)
         plan = cast(ImpactPlan, planner.build_plan(config, changes, None, "b" * 40, "h" * 40))
         self.assertTrue(plan.selectors[self.SELECTOR])
+
+
+class BuildWorkRouting(unittest.TestCase):
+    """`build_work` runs build.yml's legs for every file their Python steps read.
+
+    The work job runs `compat/vmaf/tests/test_decorator_extended.py` on every
+    leg (the Windows leg is the only Windows run of it) and `tox -c python` on
+    macOS, so a change under `python/` or `compat/` must start the legs.
+    """
+
+    SELECTOR = "build_work"
+    PYTHON_STEP_INPUTS = (
+        "compat/python-vmaf/tools/decorator.py",
+        "compat/python-vmaf/config.py",
+        "compat/python-vmaf/core/result.py",
+        "compat/python-vmaf/tests/test_decorator_extended.py",
+        "compat/vmaf",
+        "python/vmaf/__init__.py",
+        "python/test/result_test.py",
+        "python/tox.ini",
+        "python/requirements-test-lock.txt",
+        "requirements/locks/build.txt",
+        "requirements/locks/pytest-timeout.txt",
+        "requirements/locks/tox.txt",
+        "scripts/ci/prune-corrupt-fixtures.sh",
+    )
+
+    def test_the_python_steps_inputs_select_it(self) -> None:
+        for path in self.PYTHON_STEP_INPUTS:
+            with self.subTest(path=path):
+                plan = _plan_for([path])
+                self.assertTrue(plan.selectors[self.SELECTOR])
+                if plan.mode == "impact":  # a scripts/ci/ change plans the full matrix
+                    self.assertFalse(plan.selectors["c_core"])
+
+    def test_core_changes_still_select_it(self) -> None:
+        self.assertTrue(_plan_for(["core/src/libvmaf.c"]).selectors[self.SELECTOR])
+
+    def test_files_build_yml_does_not_read_leave_it_off(self) -> None:
+        for path in (
+            "docs/index.md",
+            "go.mod",
+            "mcp-server/vmaf-mcp/pyproject.toml",
+            "tools/vmaf-tune/pyproject.toml",
+            "requirements/locks/docs-check.txt",
+        ):
+            with self.subTest(path=path):
+                self.assertFalse(_plan_for([path]).selectors[self.SELECTOR])
+
+    def test_every_pytest_target_of_build_yml_selects_it(self) -> None:
+        text = (CONFIG.parent / "workflows" / "build.yml").read_text(encoding="utf-8")
+        targets = re.findall(r"python -m pytest (\S+\.py)", text)
+        self.assertNotEqual(targets, [], "build.yml must run a pytest target")
+        for target in targets:
+            # compat/vmaf is a symlink; git reports the file under its target.
+            tracked = (REPO_ROOT / target).resolve().relative_to(REPO_ROOT).as_posix()
+            with self.subTest(target=tracked):
+                self.assertTrue(_plan_for([tracked]).selectors[self.SELECTOR])
+
+    def test_every_tox_config_build_yml_runs_selects_it(self) -> None:
+        text = (CONFIG.parent / "workflows" / "build.yml").read_text(encoding="utf-8")
+        configs = re.findall(r"tox -c (\S+)", text)
+        self.assertNotEqual(configs, [], "build.yml must run tox")
+        for directory in configs:
+            with self.subTest(config=directory):
+                self.assertTrue(_plan_for([f"{directory}/tox.ini"]).selectors[self.SELECTOR])
+
+    def test_every_lock_build_yml_installs_selects_it(self) -> None:
+        text = (CONFIG.parent / "workflows" / "build.yml").read_text(encoding="utf-8")
+        locks = sorted(set(re.findall(r"-r (requirements/\S+\.txt)", text)))
+        self.assertNotEqual(locks, [], "build.yml must install from a lock")
+        for lock in locks:
+            with self.subTest(lock=lock):
+                self.assertTrue(_plan_for([lock]).selectors[self.SELECTOR])
+
+    def test_planted_c_core_only_selector_misses_python_changes(self) -> None:
+        config = copy.deepcopy(planner.load_config(CONFIG))
+        config["selectors"][self.SELECTOR]["patterns"] = []
+        for path in ("compat/python-vmaf/tools/decorator.py", "python/test/result_test.py"):
+            with self.subTest(path=path):
+                changes = (planner.Change(status="M", paths=(path,)),)
+                plan = cast(
+                    ImpactPlan, planner.build_plan(config, changes, None, "b" * 40, "h" * 40)
+                )
+                self.assertFalse(plan.selectors[self.SELECTOR])
 
 
 class OwnPathsOnlyContract(unittest.TestCase):

@@ -100,6 +100,14 @@ area: gates
   helpers, `vmafx.toml`, symbol lists, Rust, `.cu`. `test_ci_routing_contract.py` plants
   ten defects; `test_ci_impact.py` (`MsvcLegRouting`) pins selector. Never mark SYCL row
   `full`, CUDA row `light`, or drop `needs.impact.result == 'failure'`.
+- **`build_work` = `c_core` + `python/**`, `compat/**`, build / pytest-timeout / tox
+  locks, prune script.** `build.yml` work job (`Linux Intel LLVM`, `macOS Clang+Metal`,
+  `Windows MSVC+CUDA (full)`) runs `compat/vmaf/tests/test_decorator_extended.py`
+  (Windows leg = only Windows run of it); macOS leg runs `tox -c python`. Not whole
+  `python` selector: tools, mcp-server, scripts would start heavy legs. New `-r` lock,
+  `tox -c` config or `python -m pytest` target in `build.yml` -> add path;
+  `BuildWorkRouting` tests fail otherwise. Never point `build.yml` back at `c_core`:
+  compat-only diff then skips its own test.
 - **Cut check (ADR-2198).** `scripts/release/candidate-legs.json` lists tester legs
   cut needs green on exact commit. Leg added to Windows matrix, tester image or macOS bundle
   goes in list (`test_check_candidate_legs.py` pins names). Three tester workflows keep

@@ -308,7 +308,7 @@ python3 scripts/ci/plan-ci-impact.py --event pull_request \
 
 The planner diffs the event's exact revisions (the merge-base of head and base
 for a PR, the exact `before..head` for a push) and maps the changed paths onto
-the selectors declared in `.github/ci-impact.json`. There are 26 selectors:
+the selectors declared in `.github/ci-impact.json`. There are 27 selectors:
 
 | Selector | Owns | Gates |
 | --- | --- | --- |
@@ -317,6 +317,7 @@ the selectors declared in `.github/ci-impact.json`. There are 26 selectors:
 | `ai` | `ai/`, `model/` | Inherited by `tiny_ai` |
 | `go` | `cmd/`, `pkg/`, `internal/`, `api/`, `proto/`, `gen/`, `*.go`, `go.mod` | Inherited by `go_checks` |
 | `golden_harness` | `c_core` plus `python` | Netflix golden tests, coverage gate |
+| `build_work` | `c_core` plus everything under `python/` and `compat/`, the build, pytest-timeout and tox lock files, and `scripts/ci/prune-corrupt-fixtures.sh` | `Linux Intel LLVM`, `macOS Clang+Metal` and `Windows MSVC+CUDA (full)` in `build.yml`; the Windows leg is the only place that runs the decorator tests on Windows, and the macOS leg runs `tox -c python` |
 | `tiny_ai` | `c_core` plus `ai` plus `python` | Tiny AI (DNN suite and `ai/` pytests) |
 | `go_checks` | `go` plus `c_core` | Go vet, security scan, native and ORT smoke, and Go tests |
 | `docs` | `docs/`, `mkdocs.yml`, `*.md`, `changelog.d/` | Docs build |

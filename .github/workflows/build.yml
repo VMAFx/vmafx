@@ -54,7 +54,7 @@ jobs:
     name: Plan build impact
     runs-on: ubuntu-26.04
     outputs:
-      selected: ${{ steps.impact.outputs.c_core }}
+      selected: ${{ steps.impact.outputs.build_work }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
