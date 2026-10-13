@@ -440,6 +440,21 @@
       ],
       "patterns": []
     },
+    "build_work": {
+      "inherits": [
+        "c_core"
+      ],
+      "patterns": [
+        "python/*",
+        "python/**",
+        "compat/*",
+        "compat/**",
+        "requirements/locks/build.txt",
+        "requirements/locks/pytest-timeout.txt",
+        "requirements/locks/tox.txt",
+        "scripts/ci/prune-corrupt-fixtures.sh"
+      ]
+    },
     "tiny_ai": {
       "inherits": [
         "c_core",
