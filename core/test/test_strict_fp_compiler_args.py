@@ -351,8 +351,30 @@ def _cuda_device_policy_failures(source: str) -> list[str]:
     return failures
 
 
+FIXTURE_PROJECT = re.compile(r"^\s*project\(\s*'[^']*'\s*(?P<rest>[^)]*)\)", re.MULTILINE)
+
+
+def _fixture_project_failure(fixture: str) -> str | None:
+    """Refuse a fixture project that declares a language.
+
+    The fixtures only evaluate Meson code and call no compiler. A language in
+    project() makes Meson detect and sanity-check that compiler on every
+    setup, which took MSVC on the Windows ARM64 runner past the test's
+    timeout.
+    """
+    match = FIXTURE_PROJECT.search(fixture)
+    if match is None:
+        return "fixture has no project('<name>') call"
+    if match.group("rest").strip():
+        return f"fixture project() declares more than a name: {match.group(0).strip()}"
+    return None
+
+
 def _meson_setup(case: unittest.TestCase, name: str, fixture: str) -> None:
     """Configure a throwaway Meson project; its assert() calls are the checks."""
+    failure = _fixture_project_failure(fixture)
+    if failure is not None:
+        case.fail(f"{name}: {failure}")
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         (root / "meson.build").write_text(fixture, encoding="utf-8")
@@ -396,7 +418,7 @@ class StrictFpCompilerArgsTest(unittest.TestCase):
         ) in COMPILER_MATRIX.items():
             with self.subTest(compiler_id=compiler_id):
                 fixture = textwrap.dedent(f"""\
-                    project('strict-fp-args-{compiler_id}', 'c')
+                    project('strict-fp-args-{compiler_id}')
                     strict_fp_fixture_compiler_id = '{compiler_id}'
                     strict_fp_fixture_system = '{system}'
 
@@ -410,6 +432,17 @@ class StrictFpCompilerArgsTest(unittest.TestCase):
                            'wrong CUDA host FP arguments for {compiler_id}')
                     """)
                 _meson_setup(self, compiler_id, fixture)
+
+    def test_fixture_project_with_a_language_is_refused(self) -> None:
+        self.assertIsNone(_fixture_project_failure("project('strict-fp-args-gcc')\n"))
+        for planted in (
+            "project('strict-fp-args-gcc', 'c')\n",
+            "project('host-libm-gcc-gcc', 'c', 'cpp')\n",
+            "project('sycl-strict-fp-icpx', languages : ['c'])\n",
+            "x = 1\n",
+        ):
+            with self.subTest(planted=planted):
+                self.assertIsNotNone(_fixture_project_failure(planted))
 
     def test_all_strict_consumers_use_shared_policy(self) -> None:
         source = SOURCE_MESON.read_text(encoding="utf-8")
@@ -535,7 +568,7 @@ class StrictFpCompilerArgsTest(unittest.TestCase):
             with self.subTest(c_id=c_id, cpp_id=cpp_id):
                 fixture = "\n".join(
                     (
-                        f"project('host-libm-{c_id}-{cpp_id}', 'c')",
+                        f"project('host-libm-{c_id}-{cpp_id}')",
                         f"libm_fixture_c_id = '{c_id}'",
                         f"libm_fixture_cpp_id = '{cpp_id}'",
                         policy,
@@ -577,7 +610,7 @@ class StrictFpCompilerArgsTest(unittest.TestCase):
             with self.subTest(compiler=compiler):
                 fixture = "\n".join(
                     (
-                        f"project('cuda-device-strict-fp-{compiler}', 'c')",
+                        f"project('cuda-device-strict-fp-{compiler}')",
                         f"cuda_fixture_enable_nvcc = {'true' if enable_nvcc else 'false'}",
                         f"vmaf_cuda_host_strict_fp_args = {_meson_list(host_args)}",
                         policy,
@@ -641,7 +674,7 @@ class StrictFpCompilerArgsTest(unittest.TestCase):
             with self.subTest(toolchain=toolchain):
                 fixture = "\n".join(
                     (
-                        f"project('sycl-strict-fp-{toolchain}', 'c')",
+                        f"project('sycl-strict-fp-{toolchain}')",
                         f"is_sycl_acpp = {'true' if is_acpp else 'false'}",
                         "sycl_msvc_device_link = false",
                         policy,
@@ -657,7 +690,7 @@ class StrictFpCompilerArgsTest(unittest.TestCase):
             with self.subTest(toolchain=toolchain):
                 fixture = "\n".join(
                     (
-                        f"project('sycl-strict-fp-{toolchain}', 'c')",
+                        f"project('sycl-strict-fp-{toolchain}')",
                         "is_sycl_acpp = false",
                         "sycl_msvc_device_link = true",
                         policy,
