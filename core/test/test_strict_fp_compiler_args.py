@@ -351,19 +351,30 @@ def _cuda_device_policy_failures(source: str) -> list[str]:
     return failures
 
 
-PROJECT_WITH_LANGUAGE = re.compile(r"\bproject\(\s*'[^']*'\s*,")
+FIXTURE_PROJECT = re.compile(r"^\s*project\(\s*'[^']*'\s*(?P<rest>[^)]*)\)", re.MULTILINE)
+
+
+def _fixture_project_failure(fixture: str) -> str | None:
+    """Refuse a fixture project that declares a language.
+
+    The fixtures only evaluate Meson code and call no compiler. A language in
+    project() makes Meson detect and sanity-check that compiler on every
+    setup, which took MSVC on the Windows ARM64 runner past the test's
+    timeout.
+    """
+    match = FIXTURE_PROJECT.search(fixture)
+    if match is None:
+        return "fixture has no project('<name>') call"
+    if match.group("rest").strip():
+        return f"fixture project() declares more than a name: {match.group(0).strip()}"
+    return None
 
 
 def _meson_setup(case: unittest.TestCase, name: str, fixture: str) -> None:
-    """Configure a throwaway Meson project; its assert() calls are the checks.
-
-    The fixture's project() names no language: each declared language makes
-    Meson detect a compiler, which took Windows ARM64 past this test's timeout.
-    """
-    case.assertIsNone(
-        PROJECT_WITH_LANGUAGE.search(fixture),
-        msg=f"{name}: fixture project() declares a language",
-    )
+    """Configure a throwaway Meson project; its assert() calls are the checks."""
+    failure = _fixture_project_failure(fixture)
+    if failure is not None:
+        case.fail(f"{name}: {failure}")
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         (root / "meson.build").write_text(fixture, encoding="utf-8")
@@ -421,6 +432,17 @@ class StrictFpCompilerArgsTest(unittest.TestCase):
                            'wrong CUDA host FP arguments for {compiler_id}')
                     """)
                 _meson_setup(self, compiler_id, fixture)
+
+    def test_fixture_project_with_a_language_is_refused(self) -> None:
+        self.assertIsNone(_fixture_project_failure("project('strict-fp-args-gcc')\n"))
+        for planted in (
+            "project('strict-fp-args-gcc', 'c')\n",
+            "project('host-libm-gcc-gcc', 'c', 'cpp')\n",
+            "project('sycl-strict-fp-icpx', languages : ['c'])\n",
+            "x = 1\n",
+        ):
+            with self.subTest(planted=planted):
+                self.assertIsNotNone(_fixture_project_failure(planted))
 
     def test_all_strict_consumers_use_shared_policy(self) -> None:
         source = SOURCE_MESON.read_text(encoding="utf-8")
