@@ -1021,9 +1021,14 @@ jobs:
           # get_shared_lib() branch.
           # ADR-2170: this leg prints no warnings, so cl.exe, link.exe and nvcc make them
           # errors. The SYCL row (icx-cl) is not at zero yet: docs/development/ci.md.
+          # -Db_lto=false: with the project default b_lto=true every one of the
+          # about 360 test programs links with /LTCG against the /GL objects of
+          # the static libraries, 32 to 52 minutes of a 60-minute job. The
+          # Windows bundles build without LTO (build-windows-tester-bundle.py)
+          # and ADR-1172 leaves the override to CI.
           # required-aggregator
           - backend: cuda
-            meson_extra: --default-library=static -Denable_cuda=true -Denable_nvcc=true -Denable_sycl=false
+            meson_extra: --default-library=static -Denable_cuda=true -Denable_nvcc=true -Denable_sycl=false -Db_lto=false
             tier: full
             werror: msvc
             name: Windows MSVC+CUDA

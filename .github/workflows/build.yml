@@ -127,11 +127,15 @@ jobs:
             cuda: true
             windows: true
             werror: msvc
+            # -Db_lto=false: as the Windows MSVC+CUDA row of
+            # libvmaf-build-matrix.yml; /LTCG links of the test programs
+            # took most of this job's 75 minutes.
             meson_extra: >-
               --default-library=static -Dc_std=none
               -Denable_cuda=true -Denable_nvcc=true
               -Denable_sycl=false
               -Denable_float=true
+              -Db_lto=false
 
     name: ${{ matrix.check_name }} work
     runs-on: ${{ matrix.os }}
