@@ -28,3 +28,11 @@ On upstream sync:
 
 Note: pin updates to `codeql-action/upload-sarif` now arrive via Renovate
 (grouped with other GitHub Actions minor+patch bumps), not Dependabot.
+
+## CI Python interpreter group (ADR-3312)
+
+`setup-python` `python-version:` pins: not `github-actions` manager's;
+package rule disables dep `python` there. Owner: `custom.regex` manager,
+together with `PYTHON_CI_VERSION`, group "CI Python interpreter", `<3.15.0` until
+1.0.0. Fixture: `PythonCiVersionGroup` in
+`scripts/ci/tests/test_renovate_file_patterns.py`.

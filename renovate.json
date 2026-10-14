@@ -396,6 +396,35 @@
       ],
       "matchCurrentValue": "/^16\\./",
       "allowedVersions": "/^16\\./"
+    },
+    {
+      "description": "ADR-3312: the github-actions manager does not update setup-python's python-version input; the CI Python interpreter custom manager owns those pins together with PYTHON_CI_VERSION, so the workflows and build-config.env never land in separate pull requests.",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchDepNames": [
+        "python"
+      ],
+      "matchDepTypes": [
+        "uses-with"
+      ],
+      "enabled": false
+    },
+    {
+      "description": "ADR-3312: one pull request for the CI Python interpreter (build-config.env plus every workflow pin). Patch updates auto-merge. Python 3.15 is deferred past the 1.0.0 scope freeze, so updates stay below 3.15.0 until that decision is revisited.",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchDepNames": [
+        "python"
+      ],
+      "matchPackageNames": [
+        "actions/python-versions"
+      ],
+      "allowedVersions": "<3.15.0",
+      "groupName": "CI Python interpreter",
+      "automerge": true,
+      "draftPR": false
     }
   ],
   "customManagers": [
@@ -596,6 +625,23 @@
       "packageNameTemplate": "https://gitlab.freedesktop.org/gstreamer/gstreamer.git",
       "depNameTemplate": "gstreamer/gstreamer",
       "versioningTemplate": "regex:^(?<major>[0-9]+)\\.(?<minor>[0-9]*[02468])\\.(?<patch>[0-9]+)$"
+    },
+    {
+      "customType": "regex",
+      "description": "CI Python interpreter (ADR-3312): build-config.env's PYTHON_CI_VERSION and every setup-python `python-version:` pin under .github/workflows/ are one dependency. This manager owns both, so Renovate moves them in one pull request; the github-actions manager's copy of the workflow pins is disabled below, and scripts/ci/check-workflow-versions.py refuses a workflow pin that differs from build-config.env. The datasource, versioning and extractVersion are the ones the github-actions manager uses for actions/setup-python.",
+      "managerFilePatterns": [
+        "/^build-config\\.env$/",
+        "/^\\.github/workflows/[^/]+\\.ya?ml$/"
+      ],
+      "matchStrings": [
+        "(?:^|\\n)PYTHON_CI_VERSION=\"(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)\"",
+        "python-version:[ \\t]*['\"]?(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)['\"]?"
+      ],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "python",
+      "packageNameTemplate": "actions/python-versions",
+      "versioningTemplate": "npm",
+      "extractVersionTemplate": "^(?<version>\\d+\\.\\d+\\.\\d+)(-\\d+)?$"
     }
   ],
   "vulnerabilityAlerts": {

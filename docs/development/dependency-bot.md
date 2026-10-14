@@ -98,6 +98,42 @@ Renovate run has opened an update PR. The
 [research note](../research/renovate-file-pattern-delimiters.md) records the
 installed Renovate matcher used to reproduce the defect.
 
+### CI Python interpreter
+
+The CI interpreter is one version written in two kinds of places:
+`PYTHON_CI_VERSION` in `build-config.env` and the `python-version:` input of
+every `actions/setup-python` step in `.github/workflows/`.
+`scripts/ci/check-workflow-versions.py` fails a pull request in which the two
+disagree. Renovate's built-in `github-actions` manager reads only the
+workflows, so its pull requests raised the workflow pins without
+`build-config.env` and failed that check.
+
+One custom manager (`depNameTemplate: python`, `packageNameTemplate:
+actions/python-versions`) now reads both kinds of places, and a package rule
+turns the `github-actions` manager off for the `python` input. A second rule
+groups the interpreter as "CI Python interpreter", so one pull request raises
+every pin together. That rule also holds the interpreter below 3.15.0
+(`allowedVersions: "<3.15.0"`) until 1.0.0 is released. To move to 3.15 after
+that, raise the bound in the same pull request as `PYTHON_VERSION` and
+`requires-python`. The decision is
+[ADR-3312](../adr/3312-renovate-python-ci-version-group.md).
+
+`PythonCiVersionGroup` in `scripts/ci/tests/test_renovate_file_patterns.py`
+reads `build-config.env` and the workflows with the same pattern as the
+version check. It fails in any of these cases:
+
+- a workflow pin the check reads is not read by the manager;
+- the manager reads a value the check does not;
+- the `github-actions` rule is turned back on;
+- the version bound or the group is removed.
+
+The test runs from the same pre-commit hook as the other file-selection
+fixtures:
+
+```bash
+python3 -m pytest scripts/ci/tests/test_renovate_file_patterns.py -k PythonCiVersionGroup
+```
+
 ### Images pinned in Go source
 
 The controller store tests start PostgreSQL from two Go constants in
