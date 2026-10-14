@@ -48,7 +48,7 @@ RELEASE_REF = "release-please--branches--master--components--vmafx"
 # ADR-1319); the simulation reads their probe as an unprovisioned host.
 HARDWARE_LANES = frozenset({"SYCL Parity (Arc A380)", "Coverage GPU"})
 # A job of a push-triggered workflow whose own condition keeps it to pull requests.
-PULL_REQUEST_ONLY_ON_PUSH = frozenset({"Dependency Review"})
+PULL_REQUEST_ONLY_ON_PUSH = frozenset({"Dependency Review", "Scorecard PR Gate"})
 
 OWN = wr.SyntheticEvent(
     "pull_request",

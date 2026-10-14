@@ -157,7 +157,7 @@ column mirrors that array.
 | `tests-and-quality-gates.yml` | `Coverage Gate — GPU Backends (Advisory)` | `Coverage GPU` | 12 | Yes |
 | `tests-and-quality-gates.yml` | `MCP Smoke (Embedded C + Python Server)` | `MCP Smoke` | 9 | Yes |
 | `go-ci.yml` | unchanged | `go vet + go test` | 16 | Yes |
-| `scorecard-policy.yml` | added after #1286 | `Scorecard PR Gate` | 17 | Yes |
+| `security-scans.yml` | added after #1286 (was `scorecard-policy.yml`) | `Scorecard PR Gate` | 17 | Yes |
 | `scorecard.yml` | added after #1286 | `Scorecard Master Gate` | 21 | Yes |
 | `sycl-parity.yml` | added after #1286 | `SYCL Parity (Arc A380)` | 22 | Yes |
 | `ffmpeg-patch-stack.yml` | added after #1286 | `FFmpeg Patch Stack` | 18 | Yes |

@@ -16,7 +16,7 @@ summary.
 
 | Event | Workflow and check | Evidence and scope |
 | --- | --- | --- |
-| Ready PR targeting master | `scorecard-policy.yml` / **Scorecard PR Gate** | All 11 local file-based checks on the exact PR head, plus offline policy contracts. The local-only weighted score must be at least 8.5; this is not the full repository score. |
+| Ready PR targeting master | `security-scans.yml` / **Scorecard PR Gate** | All 11 local file-based checks on the exact PR head, plus offline policy contracts. The local-only weighted score must be at least 8.5; this is not the full repository score. |
 | Master push, weekly Monday 04:19 UTC, classic branch-protection event | `scorecard.yml` / **Scorecard analysis**, then **Scorecard Master Gate** | Full 18-check report from the pinned publisher, with matching repository, exact event commit, reviewed tool identity and aggregate at least 8.5. |
 
 Both applicable gates must actually succeed in Required Checks Aggregator;

@@ -896,7 +896,7 @@ repos:
         name: Scorecard exact-head policy and workflow contracts
         entry: python3 -B -m unittest discover -s scripts/ci/tests -p test_scorecard_*.py
         language: system
-        files: '^(scripts/ci/(scorecard_gate\.py|tests/test_scorecard_.*\.py)|\.github/workflows/(scorecard(-policy)?|required-aggregator)\.yml|\.pre-commit-config\.yaml)$'
+        files: '^(scripts/ci/(scorecard_gate\.py|tests/test_scorecard_.*\.py)|\.github/workflows/(scorecard|security-scans|required-aggregator)\.yml|\.pre-commit-config\.yaml)$'
         pass_filenames: false
         stages: [pre-commit, pre-push]
 

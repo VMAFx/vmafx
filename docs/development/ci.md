@@ -58,7 +58,7 @@ required and which ADR owns it, see
 | [`standards-gate.yml`](../../.github/workflows/standards-gate.yml) | Required HISS and context verification and the fail-closed duplicate-implementation scan. |
 | [`rule-enforcement.yml`](../../.github/workflows/rule-enforcement.yml) | ADR-0100, 0106, 0108 and 0165 process gates. |
 | [`tests-and-quality-gates.yml`](../../.github/workflows/tests-and-quality-gates.yml) | Netflix golden, sanitizers, tiny-AI, MCP, coverage, assertion density, the test-suite registry and tooling suite (`Tooling Tests`) and the Python package suites (`Python Package Tests (<suite>)`); which job runs which test suite: [test suites](test-suites.md). |
-| [`security-scans.yml`](../../.github/workflows/security-scans.yml) | Semgrep, CodeQL, Gitleaks, Dependency Review. |
+| [`security-scans.yml`](../../.github/workflows/security-scans.yml) | Semgrep, CodeQL, Gitleaks, Dependency Review and the OpenSSF Scorecard PR policy (`Scorecard PR Gate`, ADR-1247). |
 | [`libvmaf-build-matrix.yml`](../../.github/workflows/libvmaf-build-matrix.yml) | Cross-platform, cross-backend libvmaf build matrix: 17 lanes, six of them required. |
 | [`build.yml`](../../.github/workflows/build.yml) | One all-backend build per OS (`Linux Intel LLVM`, `macOS Clang+Metal`, `Windows MSVC+CUDA (full)`), alongside the matrix; required since ADR-1297. |
 | [`go-ci.yml`](../../.github/workflows/go-ci.yml) | Required Go modernization, vet, security scan, runner smoke and tests (ADRs 1238 and 1338). |
@@ -66,8 +66,7 @@ required and which ADR owns it, see
 | [`ffmpeg-patch-stack.yml`](../../.github/workflows/ffmpeg-patch-stack.yml) | Replays the cumulative FFmpeg patch series (see [FFmpeg patch automation](ffmpeg-patch-automation.md)). |
 | [`upstream-consumers.yml`](../../.github/workflows/upstream-consumers.yml) | Unpatched upstream FFmpeg and GStreamer against the installed compat `libvmaf.so.3`, scores compared with the CLI and the base commit (full tier; see [upstream consumers](upstream-consumers.md)). |
 | [`sycl-parity.yml`](../../.github/workflows/sycl-parity.yml) | SYCL parity on the self-hosted Intel Arc A380 runner (ADR-1177; see the [runbook](ci-self-hosted-sycl.md)). |
-| [`docs.yml`](../../.github/workflows/docs.yml) | Docs build. |
-| [`doxygen-public-api.yml`](../../.github/workflows/doxygen-public-api.yml) | Doxygen build of the public C API; required since ADR-1297. |
+| [`docs.yml`](../../.github/workflows/docs.yml) | Docs build, and the Doxygen build of the public C API (required since ADR-1297). |
 | [`docker-image.yml`](../../.github/workflows/docker-image.yml) | Docker image build. |
 | [`release-dry-run.yml`](../../.github/workflows/release-dry-run.yml) | Builds the release images and the `vmaf-mcp` distribution and SBOM without publishing (ADR-1595); required context `Release Dry Run` on pull requests ([ADR-1687](../adr/1687-required-release-dry-run-legs.md)). |
 | [`windows-tester-bundle.yml`](../../.github/workflows/windows-tester-bundle.yml) | The Windows tester zips: the x64 zip on a pull request, all four on a push, published on dispatch; required context `Windows Tester Zip` (ADR-1687). |
@@ -78,7 +77,6 @@ required and which ADR owns it, see
 | [`praetor-docs.yml`](../../.github/workflows/praetor-docs.yml) | Praetor's Documentation Governance gate for the `docs:seo-portal` facet; praetor-managed, not required. See [Praetor gate](praetor-gate.md). |
 | [`praetor-api.yml`](../../.github/workflows/praetor-api.yml) | Praetor's `Go API Compatibility` gate (`go-apidiff` over every Go module; no path filter). Praetor-managed; required through the aggregator (ADR-1506), its marker sits in `standards-gate.yml`. |
 | [`reuse.yml`](../../.github/workflows/reuse.yml) | Praetor's `REUSE lint` gate (`reuse lint` over the whole tree; no path filter), the one CI run of `reuse lint`. Written by praetor, its actions pinned to commits here; required through the aggregator (ADR-2784), its marker sits in `standards-gate.yml`. See [Praetor gate](praetor-gate.md#the-current-pin). |
-| [`scorecard-policy.yml`](../../.github/workflows/scorecard-policy.yml) | OpenSSF Scorecard PR policy (ADR-1247). |
 | [`pr-type-label.yml`](../../.github/workflows/pr-type-label.yml) | Derives a `type:*` label from the Conventional-Commit prefix of the PR. |
 
 ### Scheduled, release and watcher workflows
