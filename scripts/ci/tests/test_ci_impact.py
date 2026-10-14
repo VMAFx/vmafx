@@ -142,7 +142,10 @@ TIDY_SELECTORS = {f"tidy_{lane}" for lane in TIDY_LANES}
 TESTER_SELECTORS = {"tester_image", "windows_tester_zip", "windows_tester_zip_sycl"}
 # ADR-3279: the MSVC leg a light-tier pull request owes when it touches core C or C++.
 MSVC_LEG_SELECTORS = {"windows_msvc_sycl"}
-OWN_PATHS_ONLY = TESTER_SELECTORS | MSVC_LEG_SELECTORS | TIDY_SELECTORS
+# The upstream consumer job folded into ffmpeg-integration.yml keeps the path
+# filter its own workflow had (SAST check-suite budget).
+CONSUMER_SELECTORS = {"upstream_consumers"}
+OWN_PATHS_ONLY = TESTER_SELECTORS | MSVC_LEG_SELECTORS | TIDY_SELECTORS | CONSUMER_SELECTORS
 
 
 def _plan_for(paths: list[str], statuses: list[str] | None = None) -> ImpactPlan:

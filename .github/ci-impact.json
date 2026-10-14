@@ -602,6 +602,17 @@
         "scripts/ci/tidy-baseline-metal.json",
         ".github/workflows/tidy-metal.yml"
       ]
+    },
+    "upstream_consumers": {
+      "own_paths_only": true,
+      "patterns": [
+        "core/*",
+        "core/**",
+        "build-config.env",
+        "scripts/ci/upstream-*.sh",
+        "scripts/ci/upstream_consumer_scores.py",
+        ".github/workflows/ffmpeg-integration.yml"
+      ]
     }
   }
 }

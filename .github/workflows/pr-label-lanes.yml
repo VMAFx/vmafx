@@ -1,0 +1,63 @@
+# SPDX-License-Identifier: EUPL-1.2
+# Copyright 2026 Lusoris
+#
+# .github/workflows/pr-label-lanes.yml
+#
+# The one pull-request workflow behind the label-gated lanes (ADR-2169):
+#   - `ci: full` / `autorelease: cut` re-runs the suite at the full tier
+#     (ci-escalate.yml);
+#   - `run-observability-smoke` starts the Compose observability smoke
+#     (observability-compose.yml);
+#   - `run-e2e-k8s` starts the kind + kuttl cluster test (e2e-k8s.yml).
+#
+# Each lane is a reusable workflow called from here, so a pull request event
+# starts one run (one check suite) instead of three. OpenSSF Scorecard's SAST
+# check reads only the first 30 check suites of a commit; every PR-triggered
+# workflow above that budget can push CodeQL out of the window
+# (scripts/ci/pr_workflow_budget.py holds the count). The job conditions here
+# mirror the callees' own gates, which stay in place: a caller job whose
+# condition is false starts nothing, so an unrelated label or a draft starts
+# no runner. The callees keep their schedule and workflow_dispatch triggers.
+# No top-level concurrency: each callee keeps its own group, and the same
+# group at both levels would deadlock.
+
+name: PR label lanes
+
+on:
+  pull_request:
+    branches: [master]
+    types: [opened, synchronize, reopened, labeled, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  escalate:
+    if: >-
+      github.event.action == 'labeled' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.draft == false &&
+      (github.event.label.name == 'ci: full' || github.event.label.name == 'autorelease: cut')
+    permissions:
+      actions: write
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/ci-escalate.yml
+
+  observability:
+    if: >-
+      github.event.pull_request.draft == false &&
+      contains(github.event.pull_request.labels.*.name, 'run-observability-smoke') &&
+      (github.event.action != 'labeled' || github.event.label.name == 'run-observability-smoke')
+    permissions:
+      contents: read
+    uses: ./.github/workflows/observability-compose.yml
+
+  e2e:
+    if: >-
+      github.event.pull_request.draft == false &&
+      contains(github.event.pull_request.labels.*.name, 'run-e2e-k8s') &&
+      (github.event.action != 'labeled' || github.event.label.name == 'run-e2e-k8s')
+    permissions:
+      contents: read
+    uses: ./.github/workflows/e2e-k8s.yml

@@ -12,6 +12,7 @@
 # Trigger policy (ADR-0783):
 #   - PRs:    SKIPPED by default (job requires label "run-e2e-k8s" OR manual dispatch).
 #             This keeps normal PR CI fast; the heavy cluster tests run nightly.
+#             Called from pr-label-lanes.yml, which holds the label condition.
 #   - Nightly (03:47 UTC): always runs.
 #   - Manual: workflow_dispatch with optional inputs.
 #
@@ -28,14 +29,25 @@ on:
     # runner contention; see nightly.yml which runs at 03:17).
     - cron: "47 3 * * *"
 
-  pull_request:
-    branches: [master]
-    types: [opened, synchronize, reopened, labeled, ready_for_review]
-    # Only run on PRs that explicitly opt in — keeps normal CI fast.
-    # The required-aggregator treats "not reported due to label gate" as skipped/OK.
-    # ADR-2169: the gate job starts only for a ready pull request that carries
-    # the opt-in label (and, on a `labeled` event, only for that label), so a
-    # draft or an unrelated label starts no job.
+  # Pull requests reach this workflow through pr-label-lanes.yml (one check
+  # suite for every label lane, Scorecard's SAST window). Only a PR that opts
+  # in runs — keeps normal CI fast. The required-aggregator treats "not
+  # reported due to label gate" as skipped/OK. ADR-2169: the gate job starts
+  # only for a ready pull request that carries the opt-in label (and, on a
+  # `labeled` event, only for that label), so a draft or an unrelated label
+  # starts no job. The inputs mirror workflow_dispatch's with their defaults.
+  workflow_call:
+    inputs:
+      cluster_name:
+        description: "kind cluster name"
+        required: false
+        default: "vmafx-e2e"
+        type: string
+      keep_cluster:
+        description: "Keep the kind cluster after the run (debug)"
+        required: false
+        default: "false"
+        type: string
 
   workflow_dispatch:
     inputs:

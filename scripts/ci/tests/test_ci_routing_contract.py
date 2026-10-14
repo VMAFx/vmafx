@@ -263,7 +263,7 @@ def expect_no_jobs(contract: Contract, event: wr.SyntheticEvent) -> None:
 
 def expect_escalation_only(contract: Contract, event: wr.SyntheticEvent) -> None:
     _, runs = contract.run(event)
-    if wr.ran_jobs(runs) != {("ci-escalate.yml", "escalate")}:
+    if wr.ran_jobs(runs) != {("pr-label-lanes.yml", "escalate")}:
         raise AssertionError(f"label {event.label!r} ran {sorted(wr.ran_jobs(runs))}")
 
 
@@ -475,7 +475,7 @@ class RoutingContract(unittest.TestCase):
         expect_no_jobs(self.contract, with_(FORK, action="labeled", label="ci: full"))
 
     def test_every_pull_request_workflow_listens_for_ready_for_review(self) -> None:
-        exempt = {"ci-escalate.yml", "pr-type-label.yml"}
+        exempt = {"pr-type-label.yml"}
         for name, workflow in self.contract.workflows.items():
             filters = wr.triggers_of(workflow).get("pull_request")
             if filters is None or name in exempt:

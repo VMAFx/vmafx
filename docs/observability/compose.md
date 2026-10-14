@@ -129,7 +129,8 @@ make observability-compose-smoke                    # the same with images alrea
 In CI the workflow _Observability Smoke_
 (`.github/workflows/observability-compose.yml`) runs it with `--build`
 nightly, on manual dispatch, and on a ready pull request that carries the
-label `run-observability-smoke`. It is not a required check: add the label
+label `run-observability-smoke` (called from
+`.github/workflows/pr-label-lanes.yml`). It is not a required check: add the label
 to a pull request that changes the metrics, the dashboards, the rules or the
 Compose files.
 
