@@ -34,6 +34,11 @@ Root `Makefile` allowance = exact root-path match too: Renovate
 `custom.regex` bumps `RUFF_VERSION` / `BLACK_VERSION` there with
 pre-commit revs (#1588). Nested Makefiles, `*.mk` stay gated.
 
+CI Python interpreter = one group PR across `build-config.env` +
+`.github/workflows/*` (ADR-3312); both paths already allowlisted, group PR
+stays exempt. Never re-enable `github-actions` manager for dep `python`:
+workflow-only bump fails `check-workflow-versions.py`.
+
 Two invariants test suite pins deliberately — do not "simplify" them away:
 
 - Widening allowlist must never drop conjunction with condition (a).

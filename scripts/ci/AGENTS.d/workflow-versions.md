@@ -44,3 +44,12 @@ Raise all three in one commit. Fixture:
 `tests/test_mypy_python_version_single_source.py`; add its path and any new
 trigger file to `test-base-image-single-source` hook's `files:` regex, which
 is what decides when `test_*single_source.py` discovery runs.
+
+Renovate side of `PYTHON_CI_VERSION` (ADR-3312): one `custom.regex` manager
+(`depNameTemplate: python`, `packageNameTemplate: actions/python-versions`)
+reads `build-config.env` + every workflow `python-version:`; `github-actions`
+manager disabled for dep `python` / depType `uses-with`; group rule "CI Python
+interpreter", `allowedVersions: "<3.15.0"` until 1.0.0. Manager matchStrings
+read exactly what `PYTHON_RE` here reads. New pin form (matrix list etc.) ->
+widen both + `PythonCiVersionGroup` fixture in
+`tests/test_renovate_file_patterns.py`, same commit.
