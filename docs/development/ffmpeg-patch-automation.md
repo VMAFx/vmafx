@@ -55,8 +55,8 @@ cosign is installed; the script's one-line summary says whether it was. The
 is cached under `<cache root>/vmafx/ffmpeg-fix-series/` and unpacked afresh on
 every run; the container builds cache nothing (`FFMPEG_FIX_SERIES_CACHE=none`).
 
-Series `v0.1.0` holds four patches. Three change FFmpeg's behaviour in
-every VMAFx build:
+Series `v0.2.0` holds eight patches. All but 0002 change FFmpeg's behaviour
+in every VMAFx build:
 
 | Patch | File | Behaviour |
 | --- | --- | --- |
@@ -64,6 +64,10 @@ every VMAFx build:
 | 0002 | 50 files | The GCC 14/16 diagnostics hardening that was `ffmpeg-patches/0019`; no change for VMAFx builds. |
 | 0003 | `libavcodec/nvenc.c`, `nvenc.h` | `hevc_nvenc` with `udu_sei=1` drops a user data unregistered SEI that exceeds NVENC's 1024-byte limit for non-VCL NAL units, with a warning, instead of failing the encode. |
 | 0004 | `libavcodec/nvenc.c`, `nvenc.h` | `h264_nvenc` and `hevc_nvenc` do not write a user data unregistered SEI that NVENC would write truncated; the first one is a warning. |
+| 0005 | `libavutil/hwcontext_vaapi.c` | A 10- or 12-bit (P010, P012) Vulkan frame maps to VAAPI: the DRM import accepts the `GR1616` chroma plane Vulkan exports. |
+| 0006 | `libavutil/hwcontext_vulkan.c` | The external-memory query of a frames context with DRM format modifier tiling carries the image format list the images are created with. |
+| 0007 | `libavutil/hwcontext_vulkan.c` | On RADV, mapping a Vulkan frame to DRM waits on the CPU for the frame's work, because the importer does not honour the attached sync file. |
+| 0008 | `libavutil/vulkan.c`, `libavcodec/ffv1enc_vulkan.c` | Command pools start their queue rotation at different queues of a family, and video pools stay on one queue, so decode and encode can run on separate engines. |
 
 A fix to FFmpeg belongs in that repository, not in `ffmpeg-patches/`. To take
 a new series release, change the three keys together and run the refresh and
@@ -183,7 +187,7 @@ it. Development, RC and snapshot refs are excluded.
 
 The pinned shared fix series targets one FFmpeg release. When a newer release
 exists, the refresh therefore stops with `FFmpeg n9.1 is released, but the
-pinned shared fix series v0.1.0 targets n9.0.2` (with the tags of the day),
+pinned shared fix series v0.2.0 targets n9.0.2` (with the tags of the day),
 writes nothing to the tree, and
 keeps the rebased candidate patches under `<output-dir>/patches`. Move
 `FFMPEG_FIX_SERIES_TAG` and `FFMPEG_FIX_SERIES_SHA256` to a series release for
