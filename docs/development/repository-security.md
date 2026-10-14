@@ -35,28 +35,24 @@ nobody who could satisfy it and nothing merged for a week
 !!! note
     Remove the bypass as soon as a second maintainer can review.
 
-#### Bypass mode: a dated exception
+#### Bypass mode: pull request only
 
 The standard for a single-maintainer repository is bypass mode `pull_request`:
 the maintainer merges a pull request without an approval and cannot push to
-`master` outside one. The policy file declares mode `always`, because the
-[merge train](merge-train.md) lands by direct push and adds a render commit
-that no pull request owns
-([ADR-3273](../adr/3273-solo-bypass-mode-dated-exception.md)).
+`master` outside one. The policy file declares that mode, and the ruleset asks
+for no approval, so a pull request lands at a clean merge state once its
+required checks pass
+([ADR-3313](../adr/3313-solo-ruleset-zero-reviews.md), superseding
+[ADR-3273](../adr/3273-solo-bypass-mode-dated-exception.md)). Generated files
+(changelog, ADR index, rebase notes) land through a render pull request, not by
+a direct push
+([ADR-3295](../adr/3295-render-only-pull-request.md)).
 
-That deviation is one entry of the exception list:
-
-| Fact | Value |
-| --- | --- |
-| Entry | `.config/lint-exceptions.d/solo-repository-bypass-mode.toml` |
-| File it covers | `.github/repository-security-policy.json` |
-| Expiry | 2027-01-09 |
-| Ends when | the train merges through the forge API and the policy declares `pull_request` |
-
-The security checker holds the two files together. It fails when the policy
-declares a mode other than `pull_request` and the list has no unexpired entry
-for it, and it fails when the entry is still there after the mode became
-`pull_request`. This part needs no network:
+The exception list holds no entry for the bypass mode. The security checker
+fails when the policy declares any other mode and the list has no unexpired
+entry of rule `solo-repository-bypass-mode` for the policy file, and it fails
+when such an entry is still listed while every mode is `pull_request`. This
+part needs no network:
 
 ```bash
 python3 -B scripts/dev/tests/test_repository_security.py
@@ -69,8 +65,9 @@ The [policy file](../../.github/repository-security-policy.json) is the only
 declaration of the ruleset, and the drift checker compares it with the live one.
 It declares:
 
-- one approving review, with no code-owner review;
-- last-push approval;
+- no required approval and no code-owner review
+  ([ADR-3313](../adr/3313-solo-ruleset-zero-reviews.md));
+- no last-push approval;
 - the `Required Checks Aggregator` check;
 - no required signatures;
 - the single declared bypass actor.

@@ -55,10 +55,11 @@ class RepositorySecurityTests(unittest.TestCase):
         self.assertFalse((ROOT / ".github/rulesets/main.json").exists())
 
     def test_declared_review_requirements_are_the_live_ones(self) -> None:
-        """One approval, no code-owner review, no required signatures (ADR-1252)."""
+        """No approval, no last-push approval, no code-owner review, no signatures (ADR-3313)."""
         rules = self.policy["ruleset"]["rules"]
         review = next(r for r in rules if r["type"] == "pull_request")["parameters"]
-        self.assertEqual(review["required_approving_review_count"], 1)
+        self.assertEqual(review["required_approving_review_count"], 0)
+        self.assertIs(review["require_last_push_approval"], False)
         self.assertIs(review["require_code_owner_review"], False)
         self.assertNotIn("required_signatures", {r["type"] for r in rules})
 
@@ -147,8 +148,8 @@ class RepositorySecurityTests(unittest.TestCase):
 
     def test_review_freshness_or_check_origin_changes_are_detected(self) -> None:
         for rule_type, key, value in [
-            ("pull_request", "required_approving_review_count", 0),
-            ("pull_request", "require_last_push_approval", False),
+            ("pull_request", "required_approving_review_count", 1),
+            ("pull_request", "require_last_push_approval", True),
             ("pull_request", "dismiss_stale_reviews_on_push", False),
             ("required_status_checks", "strict_required_status_checks_policy", False),
             (
@@ -217,28 +218,28 @@ class BypassModeExceptionTests(unittest.TestCase):
         self.assertEqual(malformed, [])
         return [entry for entry in entries if entry.rule == CHECK.BYPASS_MODE_RULE]
 
-    def test_the_tracked_policy_holds_under_the_tracked_exception(self) -> None:
+    def test_the_tracked_policy_is_pull_request_mode_without_an_entry(self) -> None:
+        """ADR-3313: the bypass is at pull-request mode and the list holds no entry."""
+        modes = {actor["bypass_mode"] for actor in self.policy["ruleset"]["bypass_actors"]}
+        self.assertEqual(modes, {"pull_request"})
         own = self.tracked()
-        self.assertEqual([entry.path for entry in own], [self.PATH])
+        self.assertEqual(own, [])
         self.assertEqual(self.findings(own, CHECK.lint_exceptions.today()), [])
 
-    def test_the_tracked_exception_ends_on_its_expiry_date(self) -> None:
-        own = self.tracked()
-        last = own[0].expires
-        self.assertEqual(self.findings(own, last), [])
-        self.assertIn("bypass_mode always", " ".join(self.findings(own, last + dt.timedelta(1))))
-
     def test_a_mode_other_than_pull_request_without_an_entry_is_a_finding(self) -> None:
+        self.set_mode("always")
         found = " ".join(self.findings([]))
         self.assertIn("bypass_mode always", found)
         self.assertIn("solo-repository-bypass-mode.toml", found)
 
     def test_an_expired_entry_does_not_hold(self) -> None:
+        self.set_mode("always")
         yesterday = self.DAY - dt.timedelta(1)
         self.assertIn("unexpired", " ".join(self.findings([self.entry(yesterday)])))
         self.assertEqual(self.findings([self.entry(self.DAY)]), [])
 
     def test_an_entry_of_another_rule_or_file_does_not_hold(self) -> None:
+        self.set_mode("always")
         later = self.DAY + dt.timedelta(30)
         for other in (
             self.entry(later, rule="scorecard-branch-protection"),
@@ -253,13 +254,14 @@ class BypassModeExceptionTests(unittest.TestCase):
         stale = self.findings([self.entry(self.DAY + dt.timedelta(30))])
         self.assertIn("stale entry", " ".join(stale))
 
-    def test_the_checker_fails_without_the_exception(self) -> None:
+    def test_the_checker_fails_on_a_stale_entry(self) -> None:
+        stale = self.entry(self.DAY + dt.timedelta(days=30))
         with (
             patch.object(CHECK, "inspect", return_value=([], {})),
             patch.object(CHECK.sys, "argv", ["check_repository_security.py"]),
         ):
             self.assertEqual(CHECK.main(), 0)
-            with patch.object(CHECK.lint_exceptions, "load", return_value=([], [])):
+            with patch.object(CHECK.lint_exceptions, "load", return_value=([stale], [])):
                 self.assertEqual(CHECK.main(), 1)
 
 
