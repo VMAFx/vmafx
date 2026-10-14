@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD041 MD060 -->
 # ADR-3273: Bypass mode `always` is a dated exception to the solo-repository standard
 
-- **Status**: Accepted
+- **Status**: Superseded by [ADR-3313](3313-solo-ruleset-zero-reviews.md)
 - **Date**: 2026-10-12
 - **Deciders**: lusoris
 - **Tags**: security, governance, ci
