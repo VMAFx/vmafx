@@ -10,8 +10,8 @@ retract (
 require (
 	github.com/c-bata/goptuna v0.9.0
 	github.com/cilium/ebpf v0.22.0
-	github.com/getkin/kin-openapi v0.149.0
-	github.com/go-chi/chi/v5 v5.3.2
+	github.com/getkin/kin-openapi v0.150.0
+	github.com/go-chi/chi/v5 v5.4.0
 	github.com/go-logr/logr v1.4.4
 	github.com/golusoris/golusoris v0.16.5
 	github.com/golusoris/golusoris/core v0.10.2
