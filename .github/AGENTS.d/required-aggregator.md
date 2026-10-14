@@ -54,7 +54,10 @@ counting them failed every master push
 on another branch than aggregator's own (`foreignRun()`, `context.ref`) are
 left out too: release-please's release-notes branch and verification branches
 sit on master head, and their cancelled push runs were read as master's
-(`T-CI-AGGREGATOR-READS-OTHER-BRANCH-RUNS-2026-10-06`). Do not widen filter
+(`T-CI-AGGREGATOR-READS-OTHER-BRANCH-RUNS-2026-10-06`). Suites of `schedule`
+workflow runs left out too: scheduled run lands on master head mid-poll, gate
+job skips on schedule, newer skipped check run replaced push result
+(`T-CI-AGGREGATOR-READS-SCHEDULE-RUNS-2026-10-15`). Do not widen filter
 to workflow_dispatch on own branch or to suites no workflow run owns (code
 scanning).
 `scripts/ci/tests/test_aggregator_event_scope.py` runs embedded script.

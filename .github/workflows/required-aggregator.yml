@@ -606,6 +606,13 @@ jobs:
             // T-CI-AGGREGATOR-READS-OTHER-BRANCH-RUNS-2026-10-06). Outside a
             // pull request, suites of workflow runs on another branch are
             // left out as well.
+            // A scheduled run judges the clock, not the commit: GitHub starts
+            // it on whatever the master head is, and its gate jobs may skip on
+            // schedule. The 10:33 run of `FFmpeg Patch Stack` on fdf711ba6
+            // came while the push aggregator polled, and its skipped check run
+            // was read as master's verdict
+            // (T-CI-AGGREGATOR-READS-SCHEDULE-RUNS-2026-10-15). Outside a pull
+            // request, suites of scheduled workflow runs are left out too.
             const pullRequestEvents = new Set(['pull_request', 'pull_request_target']);
             const ownBranch = (context.ref || '').startsWith('refs/heads/')
               ? context.ref.slice('refs/heads/'.length)
@@ -613,6 +620,7 @@ jobs:
 
             function foreignRun(run) {
               if (pullRequestEvents.has(run.event)) return true;
+              if (run.event === 'schedule') return true;
               return ownBranch !== '' && run.head_branch !== ownBranch;
             }
 
