@@ -516,6 +516,8 @@ jobs:
           staged=provenance/vmafx-build-provenance.sigstore.json
           mkdir -p provenance
           cp -- "$BUNDLE" "$staged"
+          jq --compact-output . "$staged" > provenance/vmafx-build-provenance.intoto.jsonl
+          test "$(wc -l < provenance/vmafx-build-provenance.intoto.jsonl)" -eq 1
           for f in artifacts/*; do
             gh attestation verify "$f" \
               --bundle "$staged" \
@@ -528,7 +530,9 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: vmafx-build-provenance
-          path: provenance/vmafx-build-provenance.sigstore.json
+          path: |
+            provenance/vmafx-build-provenance.sigstore.json
+            provenance/vmafx-build-provenance.intoto.jsonl
           if-no-files-found: error
 
   # ===== MCP server (vmaf-mcp Python package) =====
@@ -669,6 +673,8 @@ jobs:
           staged=provenance/vmaf-mcp-provenance.sigstore.json
           mkdir -p provenance
           cp -- "$BUNDLE" "$staged"
+          jq --compact-output . "$staged" > provenance/vmaf-mcp-provenance.intoto.jsonl
+          test "$(wc -l < provenance/vmaf-mcp-provenance.intoto.jsonl)" -eq 1
           for f in mcp-dist/*; do
             gh attestation verify "$f" \
               --bundle "$staged" \
@@ -681,7 +687,9 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: vmaf-mcp-provenance
-          path: provenance/vmaf-mcp-provenance.sigstore.json
+          path: |
+            provenance/vmaf-mcp-provenance.sigstore.json
+            provenance/vmaf-mcp-provenance.intoto.jsonl
           if-no-files-found: error
 
   mcp-publish-pypi:
@@ -882,7 +890,9 @@ jobs:
             dist/sbom/vmaf-mcp.spdx.json
             dist/sbom/vmaf-mcp.cdx.json
             dist/vmafx-build-provenance/vmafx-build-provenance.sigstore.json
+            dist/vmafx-build-provenance/vmafx-build-provenance.intoto.jsonl
             dist/vmaf-mcp-provenance/vmaf-mcp-provenance.sigstore.json
+            dist/vmaf-mcp-provenance/vmaf-mcp-provenance.intoto.jsonl
           )
           wheels=(dist/mcp-dist/vmaf_mcp-*.whl)
           sdists=(dist/mcp-dist/vmaf_mcp-*.tar.gz)
@@ -924,4 +934,6 @@ jobs:
             dist/mcp-dist/*
             dist/mcp-signatures/*
             dist/vmafx-build-provenance/vmafx-build-provenance.sigstore.json
+            dist/vmafx-build-provenance/vmafx-build-provenance.intoto.jsonl
             dist/vmaf-mcp-provenance/vmaf-mcp-provenance.sigstore.json
+            dist/vmaf-mcp-provenance/vmaf-mcp-provenance.intoto.jsonl

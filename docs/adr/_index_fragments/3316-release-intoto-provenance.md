@@ -1,0 +1,1 @@
+| [ADR-3316](3316-release-intoto-provenance.md) | Every workflow creating a release or publishing release assets uploads build provenance as a `*.intoto.jsonl` asset alongside existing Sigstore bundles to achieve OpenSSF Scorecard Signed-Releases 10/10. | Accepted | ci, scorecard, security, release, supply-chain |

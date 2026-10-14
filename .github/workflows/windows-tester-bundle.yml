@@ -602,9 +602,26 @@ jobs:
             echo "sbom_$key=assets/$(basename "${sboms[0]}")" >> "$GITHUB_OUTPUT"
           done
       - name: Attest build provenance (GitHub native)
+        id: provenance
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
         with:
           subject-path: assets/*.zip
+      - name: Stage the build-provenance bundle and verify with consumer recipe
+        env:
+          BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          jq --compact-output . "$BUNDLE" > assets/vmafx-tester-windows-provenance.intoto.jsonl
+          test "$(wc -l < assets/vmafx-tester-windows-provenance.intoto.jsonl)" -eq 1
+          for f in assets/*.zip; do
+            gh attestation verify "$f" \
+              --bundle assets/vmafx-tester-windows-provenance.intoto.jsonl \
+              --repo "$GITHUB_REPOSITORY" \
+              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/windows-tester-bundle.yml" \
+              --deny-self-hosted-runners >/dev/null
+            echo "OK (provenance): $f"
+          done
       - name: Attest the x64 SBOM (ADR-1503)
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6  # v4.2.2
         with:

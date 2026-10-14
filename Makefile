@@ -221,7 +221,9 @@ lint-go:
 # composite action, so scripts/ci/check_composite_actions.py checks those;
 # scripts/ci/check_hosted_runner_labels.py checks which hosted Ubuntu image
 # every job names (ADR-3251); scripts/ci/pr_workflow_budget.py holds the
-# number of pull-request workflows inside the Scorecard check-suite window.
+# number of pull-request workflows inside the Scorecard check-suite window;
+# scripts/ci/check_release_provenance_assets.py checks that release workflows
+# upload build provenance (.intoto.jsonl) assets.
 lint-actions:
 	$(call require-tool,actionlint,go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12)
 	@echo "--- actionlint (.github/workflows) ---"
@@ -232,6 +234,8 @@ lint-actions:
 	@python3 scripts/ci/check_hosted_runner_labels.py
 	@echo "--- pull-request workflow budget (.github/workflows): Scorecard check-suite window ---"
 	@python3 scripts/ci/pr_workflow_budget.py
+	@echo "--- release provenance assets (.github/workflows): OpenSSF Scorecard 10 ---"
+	@python3 scripts/ci/check_release_provenance_assets.py
 
 .PHONY: docs-render docs-render-check
 

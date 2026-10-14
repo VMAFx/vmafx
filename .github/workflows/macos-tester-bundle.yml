@@ -239,9 +239,26 @@ jobs:
           name: macos-tester-bundle
           path: bundle
       - name: Attest build provenance (GitHub native)
+        id: provenance
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
         with:
           subject-path: bundle/*.tar.xz
+      - name: Stage the build-provenance bundle and verify with consumer recipe
+        env:
+          BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          jq --compact-output . "$BUNDLE" > bundle/vmafx-tester-macos-provenance.intoto.jsonl
+          test "$(wc -l < bundle/vmafx-tester-macos-provenance.intoto.jsonl)" -eq 1
+          for f in bundle/*.tar.xz; do
+            gh attestation verify "$f" \
+              --bundle bundle/vmafx-tester-macos-provenance.intoto.jsonl \
+              --repo "$GITHUB_REPOSITORY" \
+              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/macos-tester-bundle.yml" \
+              --deny-self-hosted-runners >/dev/null
+            echo "OK (provenance): $f"
+          done
       - name: Find the SBOM
         id: sbom
         run: |

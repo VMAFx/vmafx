@@ -758,6 +758,20 @@ repos:
         files: '^(\.github/workflows/|scripts/ci/(pr_workflow_budget\.py|tests/test_pr_workflow_budget\.py)|\.pre-commit-config\.yaml$)'
         pass_filenames: false
 
+      - id: check-release-provenance-assets
+        name: Release workflows upload build-provenance assets (.intoto.jsonl)
+        entry: python3 scripts/ci/check_release_provenance_assets.py
+        language: system
+        files: '^(\.github/workflows/|scripts/ci/check_release_provenance_assets\.py$)'
+        pass_filenames: false
+
+      - id: test-check-release-provenance-assets
+        name: Release provenance asset check keeps positive, negative and boundary cases
+        entry: python3 scripts/ci/tests/test_check_release_provenance_assets.py
+        language: system
+        files: '^(\.github/workflows/|scripts/ci/(check_release_provenance_assets\.py|tests/test_check_release_provenance_assets\.py)|\.pre-commit-config\.yaml$)'
+        pass_filenames: false
+
       - id: test-check-copyright
         name: Copyright and SPDX header check keeps positive, negative and boundary cases
         entry: python3 scripts/ci/tests/test_check_copyright.py

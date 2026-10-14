@@ -800,6 +800,56 @@ cosign verify ghcr.io/vmafx/vmafx-node@sha256:DIGEST \
 for every subject before the bundle can reach the release, so a release whose
 provenance does not verify is never published.
 
+### Build provenance on release assets
+
+Every workflow that creates a GitHub release or publishes release assets
+attaches build-provenance bundles as `*.intoto.jsonl` files (ADR-3316). This
+satisfies the OpenSSF Scorecard Signed-Releases check requirement (scorecard
+v5.6.0), which scores a release 10 when a release asset name ends in
+`.intoto.jsonl` (compared to 8 for cryptographic signature bundles alone).
+
+The `.intoto.jsonl` asset contains the normalized single-line in-toto SLSA
+build-provenance attestation statement (`jq --compact-output . "$BUNDLE" > *.intoto.jsonl`).
+
+The following releases carry `.intoto.jsonl` provenance assets:
+
+- **Product releases** (`.github/workflows/supply-chain.yml`):
+  - `vmafx-build-provenance.intoto.jsonl` for native binaries (`vmaf`,
+    `libvmaf.so`, `libvmafx.so`), model archives, container provenance
+    statement, and licence archives.
+  - `vmaf-mcp-provenance.intoto.jsonl` for the MCP server Python wheel and
+    source distribution.
+- **macOS tester prereleases** (`.github/workflows/macos-tester-bundle.yml`):
+  - `vmafx-tester-macos-provenance.intoto.jsonl` for the macOS Apple silicon
+    tester tarballs.
+- **Windows tester prereleases** (`.github/workflows/windows-tester-bundle.yml`):
+  - `vmafx-tester-windows-provenance.intoto.jsonl` for the Windows x64 and
+    Arm64 zip bundles.
+
+Existing Sigstore bundles (`*.sigstore.json`) remain attached to every release
+and continue to be verified by the consumer recipes. The `.intoto.jsonl` assets
+supplement the Sigstore bundles rather than replacing them.
+
+#### Consumer verification of `.intoto.jsonl` provenance
+
+Consumers verify any downloaded release asset against its `.intoto.jsonl`
+bundle using the GitHub CLI (`gh`):
+
+```bash
+gh attestation verify <asset> \
+  --bundle <provenance>.intoto.jsonl \
+  --repo VMAFx/vmafx
+```
+
+For example, to verify the `vmaf` release binary against
+`vmafx-build-provenance.intoto.jsonl`:
+
+```bash
+gh attestation verify vmaf \
+  --bundle vmafx-build-provenance.intoto.jsonl \
+  --repo VMAFx/vmafx
+```
+
 v1.0.0-rc.1 and v1.0.0-rc.2 predate ADR-1356. They carry
 `slsa-github-generator` provenance as `vmafx-build-provenance.intoto.jsonl` and
 `vmaf-mcp-provenance.intoto.jsonl` instead of the `.sigstore.json` bundles and
