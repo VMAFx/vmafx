@@ -54,7 +54,7 @@ jobs:
     name: Plan build impact
     runs-on: ubuntu-26.04
     outputs:
-      selected: ${{ steps.impact.outputs.c_core }}
+      selected: ${{ steps.impact.outputs.build_work }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -127,11 +127,15 @@ jobs:
             cuda: true
             windows: true
             werror: msvc
+            # -Db_lto=false: as the Windows MSVC+CUDA row of
+            # libvmaf-build-matrix.yml; /LTCG links of the test programs
+            # took most of this job's 75 minutes.
             meson_extra: >-
               --default-library=static -Dc_std=none
               -Denable_cuda=true -Denable_nvcc=true
               -Denable_sycl=false
               -Denable_float=true
+              -Db_lto=false
 
     name: ${{ matrix.check_name }} work
     runs-on: ${{ matrix.os }}
@@ -313,8 +317,8 @@ jobs:
       - name: Install nv-codec-headers (Linux)
         if: matrix.cuda && !matrix.windows
         run: |
-          git clone --depth=1 https://code.ffmpeg.org/FFmpeg/nv-codec-headers
-          cd nv-codec-headers && sudo make install && cd .. && rm -rf nv-codec-headers
+          bash scripts/ci/fetch-nv-codec-headers.sh "$RUNNER_TEMP/nv-codec-headers"
+          sudo make -C "$RUNNER_TEMP/nv-codec-headers" install
 
       - name: Install base deps for CUDA leg (Linux)
         if: matrix.cuda && !matrix.sycl && startsWith(matrix.os, 'ubuntu')
@@ -378,12 +382,13 @@ jobs:
 
       - name: Install nv-codec-headers (Windows)
         if: matrix.windows && matrix.cuda
-        shell: cmd
+        shell: bash
         run: |
-          git clone --depth=1 https://code.ffmpeg.org/FFmpeg/nv-codec-headers nv-codec-headers
-          mkdir nvcodec-prefix\include\ffnvcodec
-          copy nv-codec-headers\include\ffnvcodec\*.h nvcodec-prefix\include\ffnvcodec\
-          echo INCLUDE=%CD%\nvcodec-prefix\include;%INCLUDE%>>%GITHUB_ENV%
+          headers="$(cygpath -u "$RUNNER_TEMP")/nv-codec-headers"
+          bash scripts/ci/fetch-nv-codec-headers.sh "$headers"
+          mkdir -p nvcodec-prefix/include
+          cp -r "$headers/include/ffnvcodec" nvcodec-prefix/include/
+          echo "INCLUDE=$(cygpath -w "$PWD/nvcodec-prefix/include");${INCLUDE-}" >> "$GITHUB_ENV"
 
       - name: Disable ccache wrap (Windows)
         if: matrix.windows

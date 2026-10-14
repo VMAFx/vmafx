@@ -14,28 +14,38 @@ below repeat one of the two values, and this test holds them to it:
 * ``core/src/meson.build`` names the release in its configure errors;
 * ``tools/rc1-tester/image/licensing.json`` records the source of the builds made
   from now on. The records of the published release candidates keep the commit
-  those images were built against.
+  those images were built against;
+* the hosted CUDA legs of ``build.yml`` and ``libvmaf-build-matrix.yml`` fetch
+  the commit through ``scripts/ci/fetch-nv-codec-headers.sh``, which reads it
+  from ``build-config.env``, tries each remote three times and refuses any other
+  commit. No workflow clones the headers' default branch.
 
 A production image pinned one release behind the dev image stopped the CUDA
 release build in ``core/src/cuda/import_frame.c``, which calls a loader member
 the older header does not declare.
-
-Known gap: the hosted CUDA build legs (``build.yml``, ``libvmaf-build-matrix.yml``)
-clone the default branch of nv-codec-headers and name no release, so this test
-has no literal to compare there (docs/state.md,
-T-NV-CODEC-HEADERS-CI-LEGS-UNPINNED-2026-10-10).
 """
 
 from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import re
+import shutil
+import sys
+import tempfile
 import unittest
 from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(ROOT))
+
+from scripts.lib.safe_subprocess import TextCommandResult  # noqa: E402
+from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
+
+GIT = shutil.which("git") or "/usr/bin/git"
+BASH = shutil.which("bash") or "/bin/bash"
 SPEC = importlib.util.spec_from_file_location(
     "workflow_versions", ROOT / "scripts/ci/check-workflow-versions.py"
 )
@@ -55,6 +65,11 @@ SITES = {
 MESON = "core/src/meson.build"
 LICENSING = "tools/rc1-tester/image/licensing.json"
 BUNDLE_WORKFLOW = ".github/workflows/windows-tester-bundle.yml"
+FETCH_SCRIPT = "scripts/ci/fetch-nv-codec-headers.sh"
+# Workflows whose hosted CUDA legs install the headers.
+CI_WORKFLOWS = (".github/workflows/build.yml", ".github/workflows/libvmaf-build-matrix.yml")
+# Each install step of each workflow: Linux and Windows.
+CI_STEPS_PER_WORKFLOW = 2
 # Artifacts whose record describes an image that is already published.
 PUBLISHED = "published-rc-"
 # Artifacts that carry their own record of the header source; the production
@@ -114,6 +129,120 @@ def record_findings(manifest: dict[str, Any], config: dict[str, str]) -> list[st
     return findings
 
 
+def workflow_findings(name: str, text: str) -> list[str]:
+    """Workflow lines that fetch nv-codec-headers other than through the script."""
+    findings = []
+    for number, line in enumerate(text.splitlines(), start=1):
+        if "nv-codec-headers" in line and re.search(r"\bgit\s+clone\b", line):
+            findings.append(f"{name}:{number}: clones nv-codec-headers: {line.strip()}")
+    calls = text.count(f"bash {FETCH_SCRIPT} ")
+    if calls != CI_STEPS_PER_WORKFLOW:
+        findings.append(f"{name}: {calls} calls of {FETCH_SCRIPT}, not {CI_STEPS_PER_WORKFLOW}")
+    return findings
+
+
+class NvCodecHeadersFetchScript(unittest.TestCase):
+    """The script against a local remote: the pin, the fallback, the refusals."""
+
+    def setUp(self) -> None:
+        if shutil.which("git") is None or shutil.which("bash") is None:
+            self.skipTest("git and bash are needed to run the fetch script")
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        # The caller's GIT_* (a hook's GIT_DIR above all) must not reach the fixture's git.
+        self.env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+        self.env.update(
+            GIT_CONFIG_GLOBAL=os.devnull,
+            GIT_CONFIG_NOSYSTEM="1",
+            GIT_TERMINAL_PROMPT="0",
+            GIT_AUTHOR_NAME="Fixture",
+            GIT_AUTHOR_EMAIL="fixture@example.invalid",
+            GIT_COMMITTER_NAME="Fixture",
+            GIT_COMMITTER_EMAIL="fixture@example.invalid",
+        )
+        self.remote = self.tmp / "remote"
+        self.pin = self.commit(self.remote, with_loader=True)
+
+    def git(self, *args: str, cwd: Path) -> str:
+        result = run_command(
+            [GIT, *args],
+            allowed_executables=(GIT,),
+            cwd=cwd,
+            env=self.env,
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout_seconds=60,
+        )
+        return result.stdout.strip()
+
+    def commit(self, repo: Path, *, with_loader: bool) -> str:
+        if not repo.exists():
+            repo.mkdir()
+            self.git("init", "-q", cwd=repo)
+            self.git("config", "uploadpack.allowAnySHA1InWant", "true", cwd=repo)
+        header = repo / "include/ffnvcodec"
+        header.mkdir(parents=True, exist_ok=True)
+        loader = header / "dynlink_loader.h"
+        if with_loader:
+            loader.write_text("/* loader */\n", encoding="utf-8")
+        elif loader.exists():
+            loader.unlink()
+        (repo / "stamp").write_text(str(len(list(repo.iterdir()))), encoding="utf-8")
+        self.git("add", "-A", cwd=repo)
+        self.git("commit", "-q", "--allow-empty", "-m", "c", cwd=repo)
+        return self.git("rev-parse", "HEAD", cwd=repo)
+
+    def run_script(self, commit: str, remotes: str) -> TextCommandResult:
+        config = self.tmp / "build-config.env"
+        config.write_text(f'NV_CODEC_HEADERS_COMMIT="{commit}"\n', encoding="utf-8")
+        dest = self.tmp / "dest"
+        shutil.rmtree(dest, ignore_errors=True)
+        env = {
+            **self.env,
+            "NV_CODEC_HEADERS_REMOTES": remotes,
+            "NV_CODEC_HEADERS_RETRY_DELAY": "0",
+        }
+        return run_command(
+            [BASH, str(ROOT / FETCH_SCRIPT), "--config", str(config), str(dest)],
+            allowed_executables=(BASH,),
+            cwd=ROOT,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout_seconds=120,
+        )
+
+    def test_the_pinned_commit_is_fetched(self) -> None:
+        result = self.run_script(self.pin, f"file://{self.remote}")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(self.pin, result.stdout)
+        self.assertTrue((self.tmp / "dest/include/ffnvcodec/dynlink_loader.h").is_file())
+
+    def test_a_failing_remote_falls_back_to_the_next(self) -> None:
+        missing = f"file://{self.tmp / 'no-such-remote'}"
+        result = self.run_script(self.pin, f"{missing} file://{self.remote}")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stderr.count("failed"), 3)
+        self.assertIn(f"from file://{self.remote}", result.stdout)
+
+    def test_a_commit_no_remote_serves_is_refused(self) -> None:
+        result = self.run_script("1" * 40, f"file://{self.remote}")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("no remote served commit", result.stderr)
+
+    def test_a_tree_without_the_loader_is_refused(self) -> None:
+        bare = self.commit(self.remote, with_loader=False)
+        result = self.run_script(bare, f"file://{self.remote}")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("dynlink_loader.h", result.stderr)
+
+    def test_a_config_without_a_full_commit_is_refused(self) -> None:
+        result = self.run_script(self.pin[:12], f"file://{self.remote}")
+        self.assertEqual(result.returncode, 2)
+
+
 class NvCodecHeadersSingleSource(unittest.TestCase):
     def setUp(self) -> None:
         self.config = MODULE.load_config(ROOT)
@@ -167,6 +296,26 @@ class NvCodecHeadersSingleSource(unittest.TestCase):
         text = self.read(BUNDLE_WORKFLOW)
         self.assertIn("-Path docker/Dockerfile.tester", text)
         self.assertIn(r"'^ARG NV_CODEC_HEADERS_COMMIT=([0-9a-f]{40})$'", text)
+
+    def test_the_ci_legs_fetch_through_the_script(self) -> None:
+        for name in CI_WORKFLOWS:
+            with self.subTest(workflow=name):
+                self.assertEqual(workflow_findings(name, self.read(name)), [])
+
+    def test_a_ci_leg_cloning_the_default_branch_is_reported(self) -> None:
+        name = CI_WORKFLOWS[0]
+        text = self.read(name).replace(
+            f'bash {FETCH_SCRIPT} "$RUNNER_TEMP/nv-codec-headers"',
+            "git clone https://github.com/FFmpeg/nv-codec-headers.git",
+            1,
+        )
+        self.assertEqual(len(workflow_findings(name, text)), 2)
+
+    def test_the_fetch_script_names_no_release(self) -> None:
+        text = self.read(FETCH_SCRIPT)
+        self.assertEqual(RELEASE_TAG.findall(text), [])
+        self.assertEqual(COMMIT_ID.findall(text), [])
+        self.assertIn("NV_CODEC_HEADERS_COMMIT", text)
 
     def test_the_licence_record_names_the_pinned_source(self) -> None:
         manifest = json.loads(self.read(LICENSING))

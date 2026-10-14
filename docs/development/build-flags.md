@@ -389,7 +389,7 @@ emitted artifact.
 | `default_library` | `both` | `shared` / `static` / `both`; `both` builds `libvmaf.so` and `libvmaf.a` and is what the test suite layout uses. |
 | `b_ndebug` | `false` | `true` disables C `assert()`; set with `-Db_ndebug=true`. |
 | `b_sanitize` | `none` | `address`, `undefined`, `address,undefined`, `thread`, `memory`. |
-| `b_lto` | `true` | LTO is on by default; measurable speedup on the scalar and AVX2 paths. Use `-Db_lto=false` for sanitizer and fuzzing builds. |
+| `b_lto` | `true` | LTO is on by default; measurable speedup on the scalar and AVX2 paths. Use `-Db_lto=false` for sanitizer and fuzzing builds. A static MSVC build with `-Denable_tests=true` links every test program with `/LTCG`; the Windows bundles and the Windows MSVC+CUDA CI legs set `-Db_lto=false`. |
 | `b_lto_threads` | `4` | Per-link LTO partition parallelism (`-flto=4` on GCC, `-flto-jobs=4` on Clang). GCC's plain `-flto` uses every core per link and `ninja -j N` multiplies that by N ([ADR-1172](../adr/1172-bound-lto-link-parallelism.md)); `-Db_lto_threads=0` restores the compiler default on a dedicated build box. |
 | `c_args` | empty | Extra C flags. |
 | `prefix` | `/usr/local` | Install prefix for `ninja install`. |
