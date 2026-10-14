@@ -900,13 +900,9 @@ def _is_secure_install(  # noqa: PLR0911
     if not package_tokens or not no_deps:
         return False
 
-    is_whl = all(
+    return all(
         t.lower().endswith(".whl") and _is_local_source(t, root=root, consumer_path=consumer_path)
         for t in package_tokens
-    )
-    return is_whl or (
-        no_build_isolation
-        and all(_is_local_source(t, root=root, consumer_path=consumer_path) for t in package_tokens)
     )
 
 
@@ -1188,7 +1184,7 @@ def scan_install_commands(
             findings.append(
                 f"{path}:{line}: pip install must use --require-hashes with a lock file, "
                 "or install a local wheel with --no-deps, "
-                "or install a local editable/source tree with both --no-deps and --no-build-isolation"
+                "or install a local editable tree with both --no-deps and --no-build-isolation"
             )
     return findings
 

@@ -111,13 +111,21 @@ class InstallCommandTests(unittest.TestCase):
         targeted = "RUN pip install --no-deps --target /root /wheels/pkg.whl\n"
         self.assertEqual(self.findings(targeted), [])
         self.assertEqual(len(self.findings("RUN pip install /wheels/*.whl\n")), 1)
+        wheel_build_and_install = (
+            "run: |\n"
+            "  pip wheel --no-deps --no-build-isolation --wheel-dir dist/rc1-wheel ./tools/rc1-tester\n"
+            "  pip install --no-deps dist/rc1-wheel/*.whl\n"
+        )
+        self.assertEqual(self.findings(wheel_build_and_install), [])
 
-    def test_local_source_tree_requires_no_deps_and_no_build_isolation(self) -> None:
+    def test_non_editable_local_source_tree_is_refused(self) -> None:
         self.assertEqual(
-            self.findings(
-                "RUN pip install --no-deps --no-build-isolation /opt/vmaf-mcp\n", "Dockerfile"
+            len(
+                self.findings(
+                    "RUN pip install --no-deps --no-build-isolation /opt/vmaf-mcp\n", "Dockerfile"
+                )
             ),
-            [],
+            1,
         )
         self.assertEqual(
             len(self.findings("RUN pip install --no-deps /opt/vmaf-mcp\n", "Dockerfile")), 1
@@ -129,6 +137,15 @@ class InstallCommandTests(unittest.TestCase):
             1,
         )
         self.assertEqual(len(self.findings("RUN pip install /opt/vmaf-mcp\n", "Dockerfile")), 1)
+        self.assertEqual(
+            len(
+                self.findings(
+                    "RUN pip install --no-deps --no-build-isolation /tmp/pkg.tar.gz\n",
+                    "Dockerfile",
+                )
+            ),
+            1,
+        )
 
     def test_documentation_echo_is_not_an_install(self) -> None:
         text = 'echo "Install with: pip install -r docs/requirements.txt" >&2\n'

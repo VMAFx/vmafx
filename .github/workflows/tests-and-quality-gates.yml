@@ -549,8 +549,9 @@ jobs:
         run: |
           python -m pip install --require-hashes \
             -r tools/rc1-tester/requirements-dev-lock.txt
-          python -m pip install --no-deps --no-build-isolation \
-            ./tools/rc1-tester
+          python -m pip wheel --no-deps --no-build-isolation \
+            --wheel-dir dist/rc1-wheel ./tools/rc1-tester
+          python -m pip install --no-deps dist/rc1-wheel/*.whl
       - name: Run RC1 tester regressions
         run: python -m pytest tools/rc1-tester/tests/ -q
       - name: Smoke installed tester launcher

@@ -19,7 +19,7 @@ from pathlib import Path, PurePath
 VARIABLE = re.compile(r"\$(?:\{([A-Z][A-Z0-9_]*)\}|([A-Z][A-Z0-9_]*))\Z")
 # These two consumers extend images built by this repository. A tag alone is
 # never evidence that an arbitrary image is local (ADR-1231).
-LOCAL_FROM = {("Dockerfile.ffmpeg", "vmaf:latest")}
+LOCAL_FROM = {("Dockerfile.ffmpeg", "vmaf@sha256:${VMAF_IMAGE_DIGEST}")}
 LOCAL_ARGUMENT = {("dev/Containerfile.runner", "BASE_IMAGE", "vmaf-dev-mcp:local")}
 
 

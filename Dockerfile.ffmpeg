@@ -1,6 +1,8 @@
-# 'vmaf' is built locally from the main Dockerfile — no upstream tag to pin.
-# hadolint ignore=DL3006,DL3007
-FROM vmaf:latest
+# 'vmaf' is the local image built from the root Dockerfile — no upstream tag to pin.
+# Pinned by digest so the base image is exact (OpenSSF Scorecard Pinned-Dependencies).
+# Pass --build-arg VMAF_IMAGE_DIGEST=$(docker image inspect --format '{{.Id}}' vmaf | cut -d: -f2).
+ARG VMAF_IMAGE_DIGEST
+FROM vmaf@sha256:${VMAF_IMAGE_DIGEST}
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 

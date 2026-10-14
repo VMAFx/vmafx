@@ -56,11 +56,25 @@ class LocalImageExceptionPathSpelling(unittest.TestCase):
                     REFERENCES.check_from(runner, "${BASE_IMAGE}", set(), set(), external),
                 )
                 ffmpeg = flavour("Dockerfile.ffmpeg")
-                self.assertIsNone(REFERENCES.check_from(ffmpeg, "vmaf:latest", set(), set(), {}))
+                self.assertIsNone(
+                    REFERENCES.check_from(
+                        ffmpeg, "vmaf@sha256:${VMAF_IMAGE_DIGEST}", set(), set(), {}
+                    )
+                )
+                self.assertIn(
+                    "hardcodes a base image",
+                    REFERENCES.check_from(ffmpeg, "vmaf:latest", set(), set(), {}),
+                )
+                self.assertIn(
+                    "hardcodes a base image",
+                    REFERENCES.check_from(ffmpeg, "vmaf@sha256:${OTHER}", set(), set(), {}),
+                )
                 nested = flavour("docker", "Dockerfile.ffmpeg")
                 self.assertIn(
                     "hardcodes a base image",
-                    REFERENCES.check_from(nested, "vmaf:latest", set(), set(), {}),
+                    REFERENCES.check_from(
+                        nested, "vmaf@sha256:${VMAF_IMAGE_DIGEST}", set(), set(), {}
+                    ),
                 )
 
 
@@ -167,10 +181,11 @@ class BaseImageGate(unittest.TestCase):
                 self.check(instruction, 1)
 
     def test_local_image_exceptions_are_bound_to_exact_consumer_and_value(self) -> None:
-        self.check("FROM vmaf:latest\n", 0, "Dockerfile.ffmpeg")
+        self.check("FROM vmaf@sha256:${VMAF_IMAGE_DIGEST}\n", 0, "Dockerfile.ffmpeg")
         self.check("FROM alpine:latest\n", 1, "Dockerfile.ffmpeg")
-        self.check("FROM vmaf:latest\n", 0, "Dockerfile.ffmpeg")
-        self.check("FROM vmaf:latest\n", 1)
+        self.check("FROM vmaf:latest\n", 1, "Dockerfile.ffmpeg")
+        self.check("FROM vmaf@sha256:${OTHER}\n", 1, "Dockerfile.ffmpeg")
+        self.check("FROM vmaf@sha256:${VMAF_IMAGE_DIGEST}\n", 1)
 
     def test_local_runner_argument_cannot_be_replaced_by_an_external_image(self) -> None:
         name = "dev/Containerfile.runner"
