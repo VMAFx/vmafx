@@ -132,7 +132,6 @@
     ".gemini/**",
     ".github/ci-impact.json",
     ".github/workflows/required-aggregator.yml",
-    ".github/workflows/scorecard-policy.yml",
     ".github/workflows/go-ci.yml",
     ".github/workflows/lint-and-format.yml",
     ".github/workflows/security-scans.yml",
@@ -143,7 +142,6 @@
     ".github/workflows/build.yml",
     ".github/workflows/dev-container-build.yml",
     ".github/workflows/docker-image.yml",
-    ".github/workflows/doxygen-public-api.yml",
     ".github/workflows/ffmpeg-integration.yml",
     ".github/workflows/helm-chart.yml",
     ".github/workflows/rust-ci.yml",
@@ -603,6 +601,17 @@
         "Makefile",
         "scripts/ci/tidy-baseline-metal.json",
         ".github/workflows/tidy-metal.yml"
+      ]
+    },
+    "upstream_consumers": {
+      "own_paths_only": true,
+      "patterns": [
+        "core/*",
+        "core/**",
+        "build-config.env",
+        "scripts/ci/upstream-*.sh",
+        "scripts/ci/upstream_consumer_scores.py",
+        ".github/workflows/ffmpeg-integration.yml"
       ]
     }
   }

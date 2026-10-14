@@ -73,7 +73,7 @@ class LatestRuns(unittest.TestCase):
 
     def test_leaves_out_this_run_and_the_escalation_workflow(self) -> None:
         api = FakeApi(
-            [run(7, 10), run(8, 11, path=".github/workflows/ci-escalate.yml"), run(2, 12)]
+            [run(7, 10), run(8, 11, path=".github/workflows/pr-label-lanes.yml"), run(2, 12)]
         )
         picked = ci_escalate.latest_runs(api, REPO, SHA, "7")
         self.assertEqual([r["id"] for r in picked], [2])

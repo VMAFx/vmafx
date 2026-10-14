@@ -92,21 +92,21 @@
       "expires": "2027-12-31"
     },
     {
-      "workflow": "ci-escalate.yml",
+      "workflow": "pr-label-lanes.yml",
       "job": "escalate",
       "reason": "Starts the full suite when `ci: full` or `autorelease: cut` is applied; skipped for every other label.",
       "expires": "2027-12-31"
     },
     {
-      "workflow": "e2e-k8s.yml",
-      "job": "gate",
-      "reason": "Opt-in lane: the gate job starts only for a ready pull request that carries the label `run-e2e-k8s` (ADR-0783); every other job of the workflow follows it.",
+      "workflow": "pr-label-lanes.yml",
+      "job": "e2e",
+      "reason": "Opt-in lane, calls e2e-k8s.yml: the job starts only for a ready pull request that carries the label `run-e2e-k8s` (ADR-0783); every other job of the workflow follows it.",
       "expires": "2027-12-31"
     },
     {
-      "workflow": "observability-compose.yml",
-      "job": "gate",
-      "reason": "Opt-in lane, not required (Q-194): the gate job starts only for a ready pull request that carries the label `run-observability-smoke`; the smoke job follows it. Nightly and dispatch runs are the full tier.",
+      "workflow": "pr-label-lanes.yml",
+      "job": "observability",
+      "reason": "Opt-in lane, not required (Q-194), calls observability-compose.yml: the job starts only for a ready pull request that carries the label `run-observability-smoke`; the smoke job follows it. Nightly and dispatch runs are the full tier.",
       "expires": "2027-12-31"
     },
     {

@@ -61,7 +61,7 @@ REQUIRED_CONSUMER_CONTRACTS = {
         ("validate",),
         (("tester-image", "Tester Image", "build"),),
     ),
-    "doxygen-public-api.yml": (
+    "docs.yml": (
         "doxygen",
         ("doxygen-work",),
         (("doxygen", "Doxygen Public API", "doxygen-work"),),
@@ -142,7 +142,10 @@ TIDY_SELECTORS = {f"tidy_{lane}" for lane in TIDY_LANES}
 TESTER_SELECTORS = {"tester_image", "windows_tester_zip", "windows_tester_zip_sycl"}
 # ADR-3279: the MSVC leg a light-tier pull request owes when it touches core C or C++.
 MSVC_LEG_SELECTORS = {"windows_msvc_sycl"}
-OWN_PATHS_ONLY = TESTER_SELECTORS | MSVC_LEG_SELECTORS | TIDY_SELECTORS
+# The upstream consumer job folded into ffmpeg-integration.yml keeps the path
+# filter its own workflow had (SAST check-suite budget).
+CONSUMER_SELECTORS = {"upstream_consumers"}
+OWN_PATHS_ONLY = TESTER_SELECTORS | MSVC_LEG_SELECTORS | TIDY_SELECTORS | CONSUMER_SELECTORS
 
 
 def _plan_for(paths: list[str], statuses: list[str] | None = None) -> ImpactPlan:
@@ -200,12 +203,11 @@ class ConfigContract(unittest.TestCase):
             ".github/workflows/dev-container-build.yml",
             ".github/workflows/docker-image.yml",
             ".github/workflows/docker-publish-tester.yml",
-            ".github/workflows/doxygen-public-api.yml",
+            ".github/workflows/docs.yml",
             ".github/workflows/ffmpeg-integration.yml",
             ".github/workflows/helm-chart.yml",
             ".github/workflows/required-aggregator.yml",
             ".github/workflows/rust-ci.yml",
-            ".github/workflows/scorecard-policy.yml",
             ".github/workflows/windows-tester-bundle.yml",
             ".pre-commit-config.yaml",
             ".gosec.json",
@@ -278,7 +280,7 @@ class RoutingContract(unittest.TestCase):
             ".github/workflows/build.yml",
             ".github/workflows/dev-container-build.yml",
             ".github/workflows/docker-image.yml",
-            ".github/workflows/doxygen-public-api.yml",
+            ".github/workflows/docs.yml",
             ".github/workflows/ffmpeg-integration.yml",
             ".github/workflows/helm-chart.yml",
             ".github/workflows/rust-ci.yml",

@@ -2109,7 +2109,7 @@ entries:
   - .github/ci-impact.json
   - .github/codeql-config.yml
   - .github/copilot-instructions.md
-  - .github/workflows/doxygen-public-api.yml
+  - .github/workflows/docs.yml
   - .github/workflows/required-aggregator.yml
   - .pre-commit-config.yaml
 - id: hadolint
@@ -2462,7 +2462,7 @@ entries:
   - .github/workflows/docker-publish-operator-node.yml
   - .github/workflows/docker-publish-production.yml
   - .github/workflows/docker-publish-tester.yml
-  - .github/workflows/doxygen-public-api.yml
+  - .github/workflows/docs.yml
   - .github/workflows/e2e-k8s.yml
   - .github/workflows/ffmpeg-patch-stack.yml
 - id: action-actions-download-artifact
@@ -2663,8 +2663,8 @@ entries:
   relation: used-by-CI
   license: Apache-2.0
   paths:
-  - .github/workflows/scorecard-policy.yml
   - .github/workflows/scorecard.yml
+  - .github/workflows/security-scans.yml
 - id: action-mxschmitt-action-tmate
   name: mxschmitt/action-tmate
   url: https://github.com/mxschmitt/action-tmate

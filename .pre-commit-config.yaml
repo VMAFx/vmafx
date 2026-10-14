@@ -744,6 +744,20 @@ repos:
         files: '^(\.github/workflows/|scripts/ci/(check_hosted_runner_labels\.py|lint_exceptions\.py|tests/test_hosted_runner_labels\.py)|\.pre-commit-config\.yaml$)'
         pass_filenames: false
 
+      - id: check-pr-workflow-budget
+        name: Pull-request workflows stay inside the Scorecard check-suite window
+        entry: python3 scripts/ci/pr_workflow_budget.py
+        language: system
+        files: '^(\.github/workflows/|scripts/ci/pr_workflow_budget\.py$)'
+        pass_filenames: false
+
+      - id: test-check-pr-workflow-budget
+        name: Pull-request workflow budget keeps positive, negative and boundary cases
+        entry: python3 scripts/ci/tests/test_pr_workflow_budget.py
+        language: system
+        files: '^(\.github/workflows/|scripts/ci/(pr_workflow_budget\.py|tests/test_pr_workflow_budget\.py)|\.pre-commit-config\.yaml$)'
+        pass_filenames: false
+
       - id: test-check-copyright
         name: Copyright and SPDX header check keeps positive, negative and boundary cases
         entry: python3 scripts/ci/tests/test_check_copyright.py
@@ -896,7 +910,7 @@ repos:
         name: Scorecard exact-head policy and workflow contracts
         entry: python3 -B -m unittest discover -s scripts/ci/tests -p test_scorecard_*.py
         language: system
-        files: '^(scripts/ci/(scorecard_gate\.py|tests/test_scorecard_.*\.py)|\.github/workflows/(scorecard(-policy)?|required-aggregator)\.yml|\.pre-commit-config\.yaml)$'
+        files: '^(scripts/ci/(scorecard_gate\.py|tests/test_scorecard_.*\.py)|\.github/workflows/(scorecard|security-scans|required-aggregator)\.yml|\.pre-commit-config\.yaml)$'
         pass_filenames: false
         stages: [pre-commit, pre-push]
 

@@ -34,6 +34,12 @@ WORKFLOWS = ROOT / ".github/workflows"
 GATE_SCRIPT = ROOT / "scripts/ci/scorecard_gate.py"
 
 
+def scorecard_pr_gate_job(workflow: str) -> str:
+    """The text of the `scorecard-pr-gate` job, up to the next job or the end."""
+    job = workflow.split("\n  scorecard-pr-gate:\n", 1)[1]
+    return re.split(r"(?m)^  [a-z0-9_-]+:\n", job, maxsplit=1)[0]
+
+
 class ScorecardWorkflowTests(unittest.TestCase):
     def test_publisher_preserves_upstream_authenticity_restrictions(self) -> None:
         workflow = (WORKFLOWS / "scorecard.yml").read_text()
@@ -94,11 +100,14 @@ class ScorecardWorkflowTests(unittest.TestCase):
         self.assertNotIn("continue-on-error", gate)
 
     def test_pr_runs_unprivileged_actual_head_without_waiting_for_master(self) -> None:
-        workflow = (WORKFLOWS / "scorecard-policy.yml").read_text()
-        self.assertIn("types: [opened, synchronize, reopened, ready_for_review]", workflow)
-        self.assertIn("branches: [master]", workflow)
-        self.assertNotRegex(workflow, r"(?m)^\s+paths(?:-ignore)?:")
-        self.assertNotIn("pull_request_target", workflow)
+        # The PR gate is a job of the Security workflow since the suite cut: the
+        # triggers are the workflow's, the rest is the job's own text.
+        host = (WORKFLOWS / "security-scans.yml").read_text()
+        self.assertIn("types: [opened, synchronize, reopened, ready_for_review]", host)
+        self.assertIn("branches: [master]", host)
+        self.assertNotRegex(host, r"(?m)^\s+paths(?:-ignore)?:")
+        self.assertNotIn("pull_request_target", host)
+        workflow = scorecard_pr_gate_job(host)
         self.assertNotIn(": write", workflow)
         self.assertNotIn("secrets.", workflow)
         # ADR-2169: the only dependency is the tier decision, never the master aggregate.
@@ -141,7 +150,7 @@ class ScorecardWorkflowTests(unittest.TestCase):
 
     def test_repository_protection_controls_are_mandatory_and_separate(self) -> None:
         publisher, gate = (WORKFLOWS / "scorecard.yml").read_text().split("\n  gate:", 1)
-        pr = (WORKFLOWS / "scorecard-policy.yml").read_text()
+        pr = scorecard_pr_gate_job((WORKFLOWS / "security-scans.yml").read_text())
         # The policy's tests run once in CI, in Tooling Tests (ADR-1568), on
         # every pull request and push, not inside either Scorecard job.
         from scripts.ci.suite_registry import suite_members  # noqa: PLC0415

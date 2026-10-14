@@ -48,7 +48,7 @@ RELEASE_REF = "release-please--branches--master--components--vmafx"
 # ADR-1319); the simulation reads their probe as an unprovisioned host.
 HARDWARE_LANES = frozenset({"SYCL Parity (Arc A380)", "Coverage GPU"})
 # A job of a push-triggered workflow whose own condition keeps it to pull requests.
-PULL_REQUEST_ONLY_ON_PUSH = frozenset({"Dependency Review"})
+PULL_REQUEST_ONLY_ON_PUSH = frozenset({"Dependency Review", "Scorecard PR Gate"})
 
 OWN = wr.SyntheticEvent(
     "pull_request",
@@ -263,7 +263,7 @@ def expect_no_jobs(contract: Contract, event: wr.SyntheticEvent) -> None:
 
 def expect_escalation_only(contract: Contract, event: wr.SyntheticEvent) -> None:
     _, runs = contract.run(event)
-    if wr.ran_jobs(runs) != {("ci-escalate.yml", "escalate")}:
+    if wr.ran_jobs(runs) != {("pr-label-lanes.yml", "escalate")}:
         raise AssertionError(f"label {event.label!r} ran {sorted(wr.ran_jobs(runs))}")
 
 
@@ -475,7 +475,7 @@ class RoutingContract(unittest.TestCase):
         expect_no_jobs(self.contract, with_(FORK, action="labeled", label="ci: full"))
 
     def test_every_pull_request_workflow_listens_for_ready_for_review(self) -> None:
-        exempt = {"ci-escalate.yml", "pr-type-label.yml"}
+        exempt = {"pr-type-label.yml"}
         for name, workflow in self.contract.workflows.items():
             filters = wr.triggers_of(workflow).get("pull_request")
             if filters is None or name in exempt:

@@ -53,21 +53,20 @@ required and which ADR owns it, see
 | --- | --- |
 | [`required-aggregator.yml`](../../.github/workflows/required-aggregator.yml) | Single required-check aggregator (ADR-0313). |
 | [`ci-tier.yml`](../../.github/workflows/ci-tier.yml) | Reusable workflow every pull-request workflow calls first: decides the tier ([ADR-2169](../adr/2169-ci-fewer-runs.md)); no trigger of its own. |
-| [`ci-escalate.yml`](../../.github/workflows/ci-escalate.yml) | Re-runs the suite at the full tier when `ci: full` or `autorelease: cut` is applied; names every run it could not re-run and then fails ([ADR-3279](../adr/3279-msvc-sycl-leg-on-light-tier.md)). |
+| [`ci-escalate.yml`](../../.github/workflows/ci-escalate.yml) | Re-runs the suite at the full tier when `ci: full` or `autorelease: cut` is applied (called from `pr-label-lanes.yml`); names every run it could not re-run and then fails ([ADR-3279](../adr/3279-msvc-sycl-leg-on-light-tier.md)). |
 | [`lint-and-format.yml`](../../.github/workflows/lint-and-format.yml) | Pre-commit, clang-tidy (changed files plus the whole-tree ratchet, ADR-1142), cppcheck, mypy, registry validate, twin-drift gate (ADR-1135). |
 | [`standards-gate.yml`](../../.github/workflows/standards-gate.yml) | Required HISS and context verification and the fail-closed duplicate-implementation scan. |
 | [`rule-enforcement.yml`](../../.github/workflows/rule-enforcement.yml) | ADR-0100, 0106, 0108 and 0165 process gates. |
 | [`tests-and-quality-gates.yml`](../../.github/workflows/tests-and-quality-gates.yml) | Netflix golden, sanitizers, tiny-AI, MCP, coverage, assertion density, the test-suite registry and tooling suite (`Tooling Tests`) and the Python package suites (`Python Package Tests (<suite>)`); which job runs which test suite: [test suites](test-suites.md). |
-| [`security-scans.yml`](../../.github/workflows/security-scans.yml) | Semgrep, CodeQL, Gitleaks, Dependency Review. |
+| [`security-scans.yml`](../../.github/workflows/security-scans.yml) | Semgrep, CodeQL, Gitleaks, Dependency Review and the OpenSSF Scorecard PR policy (`Scorecard PR Gate`, ADR-1247). |
 | [`libvmaf-build-matrix.yml`](../../.github/workflows/libvmaf-build-matrix.yml) | Cross-platform, cross-backend libvmaf build matrix: 17 lanes, six of them required. |
 | [`build.yml`](../../.github/workflows/build.yml) | One all-backend build per OS (`Linux Intel LLVM`, `macOS Clang+Metal`, `Windows MSVC+CUDA (full)`), alongside the matrix; required since ADR-1297. |
 | [`go-ci.yml`](../../.github/workflows/go-ci.yml) | Required Go modernization, vet, security scan, runner smoke and tests (ADRs 1238 and 1338). |
 | [`ffmpeg-integration.yml`](../../.github/workflows/ffmpeg-integration.yml) | FFmpeg plus libvmaf build (Linux GCC, macOS Clang, SYCL). |
 | [`ffmpeg-patch-stack.yml`](../../.github/workflows/ffmpeg-patch-stack.yml) | Replays the cumulative FFmpeg patch series (see [FFmpeg patch automation](ffmpeg-patch-automation.md)). |
-| [`upstream-consumers.yml`](../../.github/workflows/upstream-consumers.yml) | Unpatched upstream FFmpeg and GStreamer against the installed compat `libvmaf.so.3`, scores compared with the CLI and the base commit (full tier; see [upstream consumers](upstream-consumers.md)). |
+| [`ffmpeg-integration.yml`](../../.github/workflows/ffmpeg-integration.yml) job `consumers` | Unpatched upstream FFmpeg and GStreamer against the installed compat `libvmaf.so.3`, scores compared with the CLI and the base commit (full tier; see [upstream consumers](upstream-consumers.md)). |
 | [`sycl-parity.yml`](../../.github/workflows/sycl-parity.yml) | SYCL parity on the self-hosted Intel Arc A380 runner (ADR-1177; see the [runbook](ci-self-hosted-sycl.md)). |
-| [`docs.yml`](../../.github/workflows/docs.yml) | Docs build. |
-| [`doxygen-public-api.yml`](../../.github/workflows/doxygen-public-api.yml) | Doxygen build of the public C API; required since ADR-1297. |
+| [`docs.yml`](../../.github/workflows/docs.yml) | Docs build, and the Doxygen build of the public C API (required since ADR-1297). |
 | [`docker-image.yml`](../../.github/workflows/docker-image.yml) | Docker image build. |
 | [`release-dry-run.yml`](../../.github/workflows/release-dry-run.yml) | Builds the release images and the `vmaf-mcp` distribution and SBOM without publishing (ADR-1595); required context `Release Dry Run` on pull requests ([ADR-1687](../adr/1687-required-release-dry-run-legs.md)). |
 | [`windows-tester-bundle.yml`](../../.github/workflows/windows-tester-bundle.yml) | The Windows tester zips: the x64 zip on a pull request, all four on a push, published on dispatch; required context `Windows Tester Zip` (ADR-1687). |
@@ -78,7 +77,6 @@ required and which ADR owns it, see
 | [`praetor-docs.yml`](../../.github/workflows/praetor-docs.yml) | Praetor's Documentation Governance gate for the `docs:seo-portal` facet; praetor-managed, not required. See [Praetor gate](praetor-gate.md). |
 | [`praetor-api.yml`](../../.github/workflows/praetor-api.yml) | Praetor's `Go API Compatibility` gate (`go-apidiff` over every Go module; no path filter). Praetor-managed; required through the aggregator (ADR-1506), its marker sits in `standards-gate.yml`. |
 | [`reuse.yml`](../../.github/workflows/reuse.yml) | Praetor's `REUSE lint` gate (`reuse lint` over the whole tree; no path filter), the one CI run of `reuse lint`. Written by praetor, its actions pinned to commits here; required through the aggregator (ADR-2784), its marker sits in `standards-gate.yml`. See [Praetor gate](praetor-gate.md#the-current-pin). |
-| [`scorecard-policy.yml`](../../.github/workflows/scorecard-policy.yml) | OpenSSF Scorecard PR policy (ADR-1247). |
 | [`pr-type-label.yml`](../../.github/workflows/pr-type-label.yml) | Derives a `type:*` label from the Conventional-Commit prefix of the PR. |
 
 ### Scheduled, release and watcher workflows
@@ -89,7 +87,7 @@ required and which ADR owns it, see
 | [`nightly-bisect.yml`](../../.github/workflows/nightly-bisect.yml) | Nightly bisect-model-quality smoke against a committed fixture timeline. |
 | [`fuzz.yml`](../../.github/workflows/fuzz.yml) | Nightly libFuzzer smoke over every harness under `core/test/fuzz/`. |
 | [`scorecard.yml`](../../.github/workflows/scorecard.yml) | Weekly OpenSSF Scorecard scan. |
-| [`e2e-k8s.yml`](../../.github/workflows/e2e-k8s.yml) | Kubernetes integration harness for the VMAFx runtime; label- and schedule-gated. |
+| [`e2e-k8s.yml`](../../.github/workflows/e2e-k8s.yml) | Kubernetes integration harness for the VMAFx runtime; schedule-gated, and called from `pr-label-lanes.yml` on a labelled pull request. |
 | [`release-please.yml`](../../.github/workflows/release-please.yml) | On each push to `master`: opens or updates the release PR, or creates the draft release (ADR-1127, ADR-1128). |
 | [`supply-chain.yml`](../../.github/workflows/supply-chain.yml) | Build provenance, Sigstore signing and SBOM when a release draft is published. |
 | [`dev-container-publish.yml`](../../.github/workflows/dev-container-publish.yml) | Builds, pushes and signs the canonical dev container image to GHCR, only into a private package ([ADR-1564](../adr/1564-dev-image-private-guard.md)). |
@@ -202,10 +200,11 @@ What a contributor sees:
   `Windows MSVC+CUDA` row ends with the notice. That row's check is green without
   a build: the notice says whether MSVC+CUDA compiled.
 - Adding the label `ci: full` (or `autorelease: cut` to the release pull request)
-  starts `ci-escalate.yml`, which re-runs the latest run of each workflow on the
-  head commit. Every re-run decides its tier again from the live labels, so the
-  skipped jobs now run and the aggregator waits for them. Removing the label does
-  not cancel anything; the next push is light again. A run that is still in
+  makes `pr-label-lanes.yml` call `ci-escalate.yml`, which re-runs the latest
+  run of each workflow on the head commit. Every re-run decides its tier again
+  from the live labels, so the skipped jobs now run and the aggregator waits for
+  them. Removing the label does not cancel anything; the next push is light
+  again. A run that is still in
   progress is cancelled and awaited first; a run that completed in the meantime
   answers the cancel with 409, which is no error. A run that cannot be re-run is
   printed with its reason, the runs after it are still started, and the step then
@@ -764,9 +763,8 @@ CMake 5, Go 2, one direct compile).
 | `tests-and-quality-gates.yml` | Netflix CPU golden, DNN, MCP smoke, coverage (gcov), coverage GPU | gcc, icx / icpx with nvcc |
 | `lint-and-format.yml`, `tidy-metal.yml`, `security-scans.yml` | the builds behind Tidy Changed, Tidy SYCL, Cppcheck, Tidy Metal and CodeQL C/C++ | gcc 15, icx, Apple clang, gcc |
 | `nightly.yml`, `fuzz.yml`, `mini-retrain.yml`, `sycl-parity.yml` | TSan, Netflix benchmark, libFuzzer, retrain CLI, Arc A380 parity | gcc, clang 22, icx |
-| `upstream-consumers.yml` | libvmaf at this commit and at the base commit | gcc |
 | `go-ci.yml`, `rust-ci.yml` | the libvmaf build, the cgo package, every cargo step and the Rust-extractor build | gcc, rustc, Go |
-| `ffmpeg-integration.yml` | the libvmaf builds (Ubuntu, macOS, SYCL, Windows MSVC) and the Level Zero build | gcc, clang, icpx, MSVC |
+| `ffmpeg-integration.yml` | the libvmaf builds (Ubuntu, macOS, SYCL, Windows MSVC), the Level Zero build and the upstream consumers' libvmaf at this commit and at the base commit | gcc, clang, icpx, MSVC |
 | `windows-tester-bundle.yml` | the Level Zero build | MSVC |
 
 ### Builds outside the gate

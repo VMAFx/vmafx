@@ -13,7 +13,9 @@
 #   - Nightly (04:53 UTC): always runs.
 #   - Manual: workflow_dispatch.
 #   - Pull requests: only a ready pull request labelled
-#     `run-observability-smoke` (ADR-2169: the gate job starts for nothing else).
+#     `run-observability-smoke` (ADR-2169: the gate job starts for nothing else),
+#     called from pr-label-lanes.yml, which holds the same condition so an
+#     unlabelled pull request starts no run here at all.
 # docs/observability/compose.md#smoke-test documents it.
 
 name: Observability Smoke
@@ -21,9 +23,7 @@ name: Observability Smoke
 on:
   schedule:
     - cron: "53 4 * * *"
-  pull_request:
-    branches: [master]
-    types: [opened, synchronize, reopened, labeled, ready_for_review]
+  workflow_call:
   workflow_dispatch:
 
 permissions:

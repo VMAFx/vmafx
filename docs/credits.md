@@ -302,7 +302,7 @@ the repository page that cites it.
 | [NVIDIA CUDA Toolkit](https://developer.nvidia.com/cuda-toolkit) | integrated | `proprietary` | `Dockerfile`, `build-config.env`, `dev/AGENTS.d/ffmpeg-encoders.md`, `dev/AGENTS.d/package-names.md`, and 4 more | Compiler and headers; the CUDA kernels contain NVIDIA code from the toolkit headers and libdevice (docs/licensing.md). |
 | [oneAPI Level Zero](https://github.com/oneapi-src/level-zero) | integrated | `MIT` | `Dockerfile`, `dev/AGENTS.d/gpu-backend-exposure.md`, `dev/AGENTS.d/uapi-version-pins.md`, `dev/Containerfile`, and 4 more | Device runtime of the SYCL backend. |
 | [ONNX Runtime (C library)](https://github.com/microsoft/onnxruntime) | integrated | `MIT` | `docker/Dockerfile.production`, `docs/ai/inference.md` | Inference engine of the tiny-AI surface. |
-| [ossf/scorecard-action](https://github.com/ossf/scorecard-action) | used-by-CI | `Apache-2.0` | `.github/workflows/scorecard-policy.yml`, `.github/workflows/scorecard.yml` |  |
+| [ossf/scorecard-action](https://github.com/ossf/scorecard-action) | used-by-CI | `Apache-2.0` | `.github/workflows/scorecard.yml`, `.github/workflows/security-scans.yml` |  |
 | [OSV-Scanner](https://github.com/google/osv-scanner) | used-by-CI | `Apache-2.0` | `.github/ci-impact.json`, `scripts/ci/tests/test_ci_impact.py` |  |
 | [praetor](https://github.com/cordanaLLM/praetor) | used-by-CI | `EUPL-1.2` | `.standards.yaml`, `.github/workflows/standards-gate.yml` | Standards engine, hooks and skills; installed by praetorctl adopt. |
 | [pre-commit](https://github.com/pre-commit/pre-commit) | used-by-CI | `MIT` | `.github/AGENTS.d/pelorus-mirror.md`, `.github/AGENTS.md`, `.github/ci-impact.json`, `.github/copilot-instructions.md`, and 4 more |  |

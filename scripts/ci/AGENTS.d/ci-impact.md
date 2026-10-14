@@ -61,7 +61,8 @@ area: gates
   Failed `Decide the CI tier` check = aggregator failure; queued or running one = aggregator
   keeps waiting (jobs behind `needs: tier`: no check run before tier completes). Never add `labeled` to aggregator
   types: skipped aggregator run on same SHA reads as pass.
-- Only `ci-escalate.yml` listens for `labeled` (job `if` = two labels). Flow: cancel, await
+- Only `pr-label-lanes.yml` listens for `labeled`; its `escalate` job (`if` = two labels) calls
+  `ci-escalate.yml` (`workflow_call`, ADR-3314). Flow: cancel, await
   (bounded), re-run each latest PR run. Re-run reads live labels (`GH_TOKEN`, API): payload
   labels of re-run stale. Never put `labeled` in another workflow. Cancel answering 409 =
   run already completed = no error (ADR-3279). Run not re-run: printed with reason, later

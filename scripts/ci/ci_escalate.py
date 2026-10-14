@@ -8,8 +8,10 @@ Applying ``ci: full`` to a pull request from this repository, or
 the pull request owes from light to full. No workflow listens for ``labeled``
 itself: that would start one run per workflow for every label anybody
 applies, and a skipped aggregator run on the same commit would read as a pass.
-This one workflow listens instead and re-runs the latest run of every
-pull-request workflow on the head commit; each re-run decides its tier again
+One workflow, ``pr-label-lanes.yml``, listens instead and calls
+``ci-escalate.yml``, which re-runs the latest run of every other
+pull-request workflow on the head commit (the label-lanes run itself is
+skipped: it is the run doing the escalation); each re-run decides its tier again
 from the live labels (``ci_tier.py``), so the jobs the light tier skipped now
 run, and the Required Checks Aggregator re-reads the new tier.
 
@@ -38,7 +40,7 @@ API_TIMEOUT_S = 30
 CANCEL_WAIT_S = 180
 CANCEL_POLL_S = 5
 HTTP_CONFLICT = 409
-SKIPPED_WORKFLOWS = ("ci-escalate.yml",)
+SKIPPED_WORKFLOWS = ("pr-label-lanes.yml",)
 
 Api = Callable[..., object]
 

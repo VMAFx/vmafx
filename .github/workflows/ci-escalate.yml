@@ -2,14 +2,14 @@ name: CI escalate
 
 # ADR-2169 — applying `ci: full` (any pull request from this repository) or
 # `autorelease: cut` (the generated release pull request) re-runs the suite at
-# the full tier. This is the only workflow that listens for `labeled`: a
-# listener in every workflow would start one run per workflow for each label
-# anybody applies, and a skipped Required Checks Aggregator run on the same
-# commit would read as a pass. Every other label starts nothing here.
+# the full tier. It is called from pr-label-lanes.yml, the only workflow that
+# listens for `labeled`: a listener in every workflow would start one run per
+# workflow for each label anybody applies, and a skipped Required Checks
+# Aggregator run on the same commit would read as a pass. Every other label
+# starts nothing here. The caller passes its pull_request event through, so
+# the conditions below read the same payload they read as a direct trigger.
 on:
-  pull_request:
-    branches: [master]
-    types: [labeled]
+  workflow_call:
 
 # Read-only at the top: OpenSSF Scorecard's Token-Permissions check scores any
 # top-level write permission 0, which drops the master Scorecard gate below 8.5

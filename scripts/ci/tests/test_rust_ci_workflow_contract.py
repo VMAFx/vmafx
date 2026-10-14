@@ -36,7 +36,7 @@ GIT = shutil.which("git") or "/usr/bin/git"
 
 AFFECTED_REQUIRED_WORKFLOWS = (
     "rust-ci.yml",
-    "doxygen-public-api.yml",
+    "docs.yml",
     "helm-chart.yml",
 )
 
