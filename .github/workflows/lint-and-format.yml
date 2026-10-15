@@ -1240,3 +1240,44 @@ jobs:
           # local package.json is needed.
           # shellcheck disable=SC2086
           echo "$MD_FILES" | xargs -r npx --yes markdownlint-cli2
+
+  trivy:
+    needs: tier
+    if: needs.tier.outputs.light == 'true'
+    # Scan repository Dockerfiles / IaC configs and filesystem dependencies
+    # for CVEs and secrets (ADR-3330). Trivy is the release build-config.env
+    # pins as TRIVY_VERSION, downloaded and verified against TRIVY_SHA256.
+    name: Trivy Config + FS
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    steps:
+      # yamllint disable-line rule:line-length
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install the pinned trivy
+        shell: bash
+        run: |
+          version="$(sed -n 's/^TRIVY_VERSION="\([0-9.]*\)"$/\1/p' build-config.env)"
+          expected_sha="$(sed -n 's/^TRIVY_SHA256="\([0-9a-f]*\)"$/\1/p' build-config.env)"
+          if [[ -z "${version}" || -z "${expected_sha}" ]]; then
+            echo "::error::build-config.env must define TRIVY_VERSION and TRIVY_SHA256."
+            exit 1
+          fi
+          mkdir -p "${RUNNER_TEMP}/trivy-bin"
+          tarball="trivy_${version}_Linux-64bit.tar.gz"
+          url="https://github.com/aquasecurity/trivy/releases/download/v${version}/${tarball}"
+          curl -fsSL --retry 3 --max-time 300 -o "${RUNNER_TEMP}/${tarball}" "${url}"
+          echo "${expected_sha}  ${RUNNER_TEMP}/${tarball}" | sha256sum -c -
+          tar -xzf "${RUNNER_TEMP}/${tarball}" -C "${RUNNER_TEMP}/trivy-bin" trivy
+          echo "${RUNNER_TEMP}/trivy-bin" >> "${GITHUB_PATH}"
+      - name: trivy config
+        run: |
+          trivy config --exit-code 1 --ignorefile .trivyignore.yaml \
+            --severity HIGH,CRITICAL --skip-dirs .corpus,.workingdir,build .
+      - name: trivy fs
+        if: ${{ !cancelled() }}
+        run: |
+          trivy fs --scanners vuln,secret --exit-code 1 --ignorefile .trivyignore.yaml \
+            --severity HIGH,CRITICAL --skip-dirs .corpus,.workingdir,build .
