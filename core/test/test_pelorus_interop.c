@@ -69,6 +69,13 @@ static int g_fail;
         }                                                                                          \
     } while (0)
 
+/* Record an unconditional failure with a message (no string literal as a condition). */
+#define FAIL(msg)                                                                                  \
+    do {                                                                                           \
+        (void)fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, (msg));                      \
+        g_fail++;                                                                                  \
+    } while (0)
+
 /*
  * Fixture files (Pelorus issues #60 and #62, Pelorus ADR-0148). The fixture
  * writes files into the working directory, so it must never widen access or
@@ -1462,7 +1469,7 @@ static size_t pack_enc_telemetry(FixtureBlob *fx, PelorusEncTelemetrySection *t)
     sec.size = (uint32_t)sizeof(*t);
     memset(fx->bytes, 0, sizeof(fx->bytes));
     if (pel_blob_pack_into(&meta, &sec, 1, fx->bytes, sizeof(fx->bytes), &len) != PEL_OK) {
-        CHECK(!"pel_blob_pack_into refused the telemetry section");
+        FAIL("pel_blob_pack_into refused the telemetry section");
         return 0; /* every later parse of a 0-byte blob fails its own CHECK */
     }
     end = (uint32_t)(len - PELORUS_SIDEDATA_UUID_LEN);
@@ -1623,7 +1630,7 @@ static size_t pack_encode_record(FixtureBlob *fx, PelorusEncodeRecordSection *re
     sec.size = (uint32_t)sizeof(*rec);
     memset(fx->bytes, 0, sizeof(fx->bytes));
     if (pel_blob_pack_into(&meta, &sec, 1, fx->bytes, sizeof(fx->bytes), &len) != PEL_OK) {
-        CHECK(!"pel_blob_pack_into refused the encode-record section");
+        FAIL("pel_blob_pack_into refused the encode-record section");
         return 0;
     }
     end = (uint32_t)(len - PELORUS_SIDEDATA_UUID_LEN);
@@ -1733,7 +1740,7 @@ static size_t pack_analysis_maps(FixtureBlob *fx, const uint8_t *band, const flo
     memset(fx->bytes, 0, sizeof(fx->bytes));
     if (pel_blob_pack_into(&meta, secs, 3, fx->bytes, sizeof(fx->bytes), &len) != PEL_OK ||
         len != (size_t)PELORUS_SIDEDATA_UUID_LEN + end) {
-        CHECK(!"the analysis sections did not pack to the documented size");
+        FAIL("the analysis sections did not pack to the documented size");
         return 0;
     }
     CHECK(fixture_append(fx, &end, band, 6u) == b.cell_data_offset);
