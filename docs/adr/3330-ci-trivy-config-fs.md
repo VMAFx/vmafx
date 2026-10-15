@@ -38,6 +38,8 @@ Non-runtime Dockerfile exceptions are maintained in `.trivyignore.yaml` with man
 
 A planted defect (temporary `Dockerfile` containing `FROM ubuntu:latest` without a `USER` directive) failed `trivy config` with exit code 1 (`DS-0002`), and was verified clean (exit code 0) upon removal.
 
+In CI, the planted-defect commit `eeddb1759` turned the `Trivy Config + FS` job red ([run 38802257680](https://github.com/VMAFx/vmafx/actions/runs/38802257680/job/116656535063)): `trivy config` reported `DS-0002` (HIGH) on `planted-trivy/Dockerfile` and `trivy fs` reported CVE-2018-18074 (HIGH) on `requests==2.19.0` in `planted-trivy/requirements.txt`, each with exit code 1. The revert that follows it removes both.
+
 ## References
 
 - Operator decision `vmafx-engine-pin-declared-linters` (2026-10-15, paraphrased): one small pull request per declared linter, each seen failing on a planted defect, before the engine pin.
