@@ -160,10 +160,19 @@ allowed by the pinned upstream publisher. Keep arbitrary validation scripts in
 the separate gate jobs. The PR workflow has read-only permissions, never uses
 `pull_request_target`, and never publishes its local result.
 
-The action source is SHA-pinned; its upstream metadata currently launches a
-tagged Docker image. Verifying the reported Scorecard 5.5.0/c395761d identity
-does
-not make that image digest-pinned. Repository rulesets can be read by the
+The action source is SHA-pinned (v2.5.0, `fa7117db`); its upstream metadata
+launches the tagged image `ghcr.io/ossf/scorecard-action:v2.5.0`. Verifying the
+reported Scorecard 5.6.0/61e84743 identity does not make that image
+digest-pinned.
+
+To move to a new Scorecard release, change `VERSION`, `TOOL_COMMIT` and
+`ACTION_COMMIT` in `scripts/ci/scorecard_gate.py` and the
+`uses: ossf/scorecard-action@` lines of `scorecard.yml` and
+`security-scans.yml` in one pull request: a report from the previous tool is
+refused, and `scripts/ci/tests/test_scorecard_workflow.py` fails when an
+action pin differs from `ACTION_COMMIT`. Compare
+`docs/checks/internal/checks.yaml` at both tool commits before keeping
+`WEIGHTS`, and list the release's check changes in the pull request. Repository rulesets can be read by the
 default
 token; classic branch-protection visibility errors must not be mistaken for
 proof
@@ -214,7 +223,7 @@ action in the release workflows.
   correction](../research/0053-ossf-scorecard-investigation.md#2026-09-08-correction-and-measured-gate-design)
   — dated evidence, limitations and superseded claims.
 - [Exact action publishing
-  restrictions](https://github.com/ossf/scorecard-action/blob/2d1146689b8cda280b9bc96326124645441f03bc/README.md#workflow-restrictions).
-- [Scorecard 5.5.0
-  checks](https://github.com/ossf/scorecard/blob/c395761df6afe1a69e476bc60a013a94bcbc153f/docs/checks.md).
+  restrictions](https://github.com/ossf/scorecard-action/blob/fa7117db83c52d787ae5a89f350999701505d78e/README.md#workflow-restrictions).
+- [Scorecard 5.6.0
+  checks](https://github.com/ossf/scorecard/blob/61e84743356275f6ffca23b1b2f2cb945e19eb96/docs/checks.md).
 - [Release guide](release.md) — release artifacts and verification.

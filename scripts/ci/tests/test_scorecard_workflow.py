@@ -134,6 +134,24 @@ class ScorecardWorkflowTests(unittest.TestCase):
         self.assertLess(snapshot, scan)
         self.assertLess(scan, validate)
 
+    def test_every_scan_uses_the_action_the_gate_reviewed(self) -> None:
+        # The gate trusts one tool identity; an action pin that moves without
+        # it fails every Scorecard gate in CI, so the two must move together.
+        spec = importlib.util.spec_from_file_location("scorecard_gate_pins", GATE_SCRIPT)
+        assert spec and spec.loader
+        pins = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = pins
+        spec.loader.exec_module(pins)
+        uses = re.compile(r"uses: ossf/scorecard-action@([0-9a-f]{40})\b")
+        found = {
+            path.name: uses.findall(path.read_text()) for path in sorted(WORKFLOWS.glob("*.yml"))
+        }
+        found = {name: commits for name, commits in found.items() if commits}
+        self.assertIn("scorecard.yml", found)
+        for name, commits in found.items():
+            for commit in commits:
+                self.assertEqual(commit, pins.ACTION_COMMIT, name)
+
     def test_contracts_are_wired_into_local_and_remote_gates(self) -> None:
         hooks = (ROOT / ".pre-commit-config.yaml").read_text()
         hook = hooks.split("- id: scorecard-policy-contract", 1)[1].split("\n      - id:", 1)[0]
