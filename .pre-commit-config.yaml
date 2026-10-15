@@ -115,7 +115,7 @@ repos:
         exclude: '^\.config/hiss/testdata/HISS-02/python/positive/spaced-while-true\.py$'
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.17.0
+    rev: v0.17.1
     hooks:
       - id: ruff-check
         # Same scope rule as black above; list: .config/lint-exceptions.d/ruff.toml.
@@ -1014,7 +1014,7 @@ repos:
         # hook would fail with `Executable 'semgrep' not found` on
         # every CI run.
         language: python
-        additional_dependencies: ["semgrep>=1.180.0,<2.0"]
+        additional_dependencies: ["semgrep>=1.181.0,<2.0"]
         require_serial: true
         types_or: [c, c++, cuda, python]
         # Paths this hook skips: (a) upstream vendored subprojects,
@@ -1052,7 +1052,7 @@ repos:
         # Same isolated semgrep environment and serial execution as above.
         entry: python3 -m unittest discover -s scripts/ci/tests -p test_semgrep_vendored_scope.py
         language: python
-        additional_dependencies: ["semgrep>=1.180.0,<2.0"]
+        additional_dependencies: ["semgrep>=1.181.0,<2.0"]
         require_serial: true
         files: '^(\.semgrep\.yml|\.semgrepignore|\.pre-commit-config\.yaml|scripts/ci/tests/test_semgrep_vendored_scope\.py|core/src/pdjson\.(c|h)|core/src/mcp/3rdparty/.*)$'
         pass_filenames: false
