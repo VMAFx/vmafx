@@ -1121,6 +1121,55 @@ jobs:
           fi
           exit "${status}"
 
+  buf:
+    needs: tier
+    if: needs.tier.outputs.light == 'true'
+    # The protobuf contract under proto/ (ADR-2350) is linted with buf.yaml's
+    # STANDARD rules and compared with the base branch for wire and JSON
+    # breaking changes (WIRE_JSON). buf is the release build-config.env pins
+    # as BUF_VERSION, installed with `go install`, which the Go checksum
+    # database verifies. Full history: `buf breaking` reads the base branch
+    # from the local clone. On a master push the comparison is against the
+    # previous master commit.
+    name: Buf Lint + Breaking
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    steps:
+      # yamllint disable-line rule:line-length
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      # yamllint disable-line rule:line-length
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Install the pinned buf
+        shell: bash
+        run: |
+          version="$(sed -n 's/^BUF_VERSION="\([0-9.]*\)"$/\1/p' build-config.env)"
+          if [[ -z "${version}" ]]; then
+            echo "::error::build-config.env has no BUF_VERSION=\"X.Y.Z\" line."
+            exit 1
+          fi
+          GOBIN="${RUNNER_TEMP}/buf-bin" go install "github.com/bufbuild/buf/cmd/buf@v${version}"
+          echo "${RUNNER_TEMP}/buf-bin" >> "${GITHUB_PATH}"
+      - name: buf lint
+        run: buf lint
+      # Runs after a failed lint too, so one run reports both kinds of finding.
+      # A manual dispatch has no base commit and compares with master.
+      - name: buf breaking against the base
+        if: ${{ !cancelled() }}
+        shell: bash
+        env:
+          BASE_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [[ -z "${BASE_REF}" || "${BASE_REF}" =~ ^0+$ ]]; then
+            BASE_REF="refs/remotes/origin/master"
+          fi
+          buf breaking --against ".git#ref=${BASE_REF}"
+
   shellcheck:
     needs: [tier, pre-commit]
     if: needs.tier.outputs.light == 'true'
