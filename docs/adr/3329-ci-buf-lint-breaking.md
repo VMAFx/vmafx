@@ -31,7 +31,7 @@ We will run buf in CI as the job `Buf Lint + Breaking` of `lint-and-format.yml`.
 
 ## Verification
 
-A planted lint defect (`string plantedBadName = 99;` in `proto/vmafx/v1/vmafx.proto`) fails `buf lint` with `FIELD_LOWER_SNAKE_CASE`, and a planted type change of field 2 of `ScoreRequest` fails `buf breaking`; both were seen red in CI on this pull request's throwaway commit and then removed.
+A planted lint defect (`string plantedBadName = 99;` in `proto/vmafx/v1/vmafx.proto`) fails `buf lint` with `FIELD_LOWER_SNAKE_CASE`, and a planted type change of field 2 of `ScoreRequest` fails `buf breaking`; both were seen red in CI on this pull request's throwaway commit ([run 38799060402](https://github.com/VMAFx/vmafx/actions/runs/38799060402), job 116643162025: `buf lint` reported `Field name "plantedBadName" should be lower_snake_case`, `buf breaking` reported field 2 of `ScoreRequest` changed type from `string` to `int64`, each step exit 100) and then removed.
 
 ## References
 
