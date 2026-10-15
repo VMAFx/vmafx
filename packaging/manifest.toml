@@ -1,0 +1,249 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+#
+# The distribution manifest: every artifact VMAFx ships, described once, and
+# every channel that carries them. scripts/release/distribution.py writes each
+# channel's recipe or metadata from this file (`generate`) and fails when a
+# channel, an artifact or a package manifest disagrees with it (`check`).
+# Guide: docs/development/distribution.md.
+#
+# Artifact keys:
+#   kind            native | tester-bundle | python-wheel | python-sdist | crate | source
+#   platform        <os>-<arch>, or "any" for a platform-independent file
+#   abi             the binary interface a consumer links against, or "none"
+#   backends        scoring backends built in: cpu, cuda, sycl, hip, metal
+#   licence         SPDX AND expression of the licences the artifact carries
+#   licence_record  the record of tools/rc1-tester/image/licensing.json whose
+#                   build and repo components list those licences, or
+#   package         the package manifest whose licence field must say the same
+#   files           published file names; {version} is the release version,
+#                   {pep440} its PEP 440 spelling
+#   signing         "sigstore" (a .sigstore.json bundle per file) or "none"
+#   sbom            the SBOM file published with it, or "none"
+#   producer        the workflow file and job name that build it, or
+#                   { forge = "tag-archive" } for the forge's source archive
+#   tracking        for an artifact no pipeline builds yet: the issue that adds it
+#
+# Channel keys:
+#   state      published (the release pipeline writes it) | planned
+#   tracking   for a planned channel: the issue that publishes it
+#   artifacts  artifact keys the channel carries; each must be built
+#   metadata   what the channel publishes beside the files
+
+schema_version = 1
+
+[project]
+name = "vmafx"
+summary = "Perceptual video quality assessment (VMAF) with GPU backends"
+homepage = "https://vmafx.dev/"
+repository = "https://github.com/VMAFx/vmafx"
+publisher = "VMAFx"
+command = "vmaf"
+
+[artifacts.source]
+kind = "source"
+platform = "any"
+abi = "none"
+backends = ["cpu"]
+licence = "EUPL-1.2 AND BSD-2-Clause-Patent AND BSD-3-Clause AND BSD-2-Clause AND ISC AND MIT AND Unlicense AND LicenseRef-LIVE-BRISQUE"
+licence_record = "release-native"
+files = ["v{version}.tar.gz"]
+signing = "none"
+sbom = "none"
+producer = { forge = "tag-archive" }
+
+[artifacts.native-linux-x86_64]
+kind = "native"
+platform = "linux-x86_64"
+abi = "libvmaf.so.3"
+backends = ["cpu"]
+licence = "EUPL-1.2 AND BSD-2-Clause-Patent AND BSD-3-Clause AND BSD-2-Clause AND ISC AND MIT AND Unlicense AND LicenseRef-LIVE-BRISQUE"
+licence_record = "release-native"
+files = ["vmaf", "libvmaf.so", "libvmaf.so.3", "libvmaf.so.3.0.0"]
+signing = "sigstore"
+sbom = "vmafx.spdx.json"
+producer = { workflow = "supply-chain.yml", job = "Build Linux artifacts" }
+
+[artifacts.models]
+kind = "native"
+platform = "any"
+abi = "none"
+backends = []
+licence = "BSD-2-Clause-Patent AND BSD-3-Clause AND BSD-2-Clause AND MIT AND LicenseRef-LIVE-BRISQUE"
+licence_record = "release-models"
+files = ["models.tar.gz"]
+signing = "sigstore"
+sbom = "vmafx.spdx.json"
+producer = { workflow = "supply-chain.yml", job = "Build Linux artifacts" }
+
+[artifacts.vmaf-mcp-wheel]
+kind = "python-wheel"
+platform = "any"
+abi = "none"
+backends = []
+licence = "EUPL-1.2 AND BSD-2-Clause-Patent"
+package = "mcp-server/vmaf-mcp/pyproject.toml"
+files = ["vmaf_mcp-{pep440}-py3-none-any.whl"]
+signing = "sigstore"
+sbom = "vmaf-mcp.spdx.json"
+producer = { workflow = "supply-chain.yml", job = "Build vmaf-mcp wheel + sdist" }
+
+[artifacts.vmaf-mcp-sdist]
+kind = "python-sdist"
+platform = "any"
+abi = "none"
+backends = []
+licence = "EUPL-1.2 AND BSD-2-Clause-Patent"
+package = "mcp-server/vmaf-mcp/pyproject.toml"
+files = ["vmaf_mcp-{pep440}.tar.gz"]
+signing = "sigstore"
+sbom = "vmaf-mcp.spdx.json"
+producer = { workflow = "supply-chain.yml", job = "Build vmaf-mcp wheel + sdist" }
+
+[artifacts.tester-windows-x64]
+kind = "tester-bundle"
+platform = "windows-x64"
+abi = "none"
+backends = ["cpu"]
+licence = "EUPL-1.2 AND BSD-2-Clause-Patent AND BSD-3-Clause AND BSD-2-Clause AND ISC AND MIT AND Unlicense AND LicenseRef-LIVE-BRISQUE"
+licence_record = "windows-zip"
+files = ["vmafx-tester-windows-x64-v{version}.zip"]
+signing = "sigstore"
+sbom = "vmafx-tester-windows-x64-v{version}.zip.spdx.json"
+producer = { workflow = "windows-tester-bundle.yml", job = "Build and test the zip (Windows x64)" }
+
+[artifacts.tester-windows-arm64]
+kind = "tester-bundle"
+platform = "windows-arm64"
+abi = "none"
+backends = ["cpu"]
+licence = "EUPL-1.2 AND BSD-2-Clause-Patent AND BSD-3-Clause AND BSD-2-Clause AND ISC AND MIT AND Unlicense AND LicenseRef-LIVE-BRISQUE"
+licence_record = "windows-zip"
+files = ["vmafx-tester-windows-arm64-v{version}.zip"]
+signing = "sigstore"
+sbom = "vmafx-tester-windows-arm64-v{version}.zip.spdx.json"
+producer = { workflow = "windows-tester-bundle.yml", job = "Build and test the zip (Windows arm64)" }
+
+[artifacts.tester-windows-x64-cuda]
+kind = "tester-bundle"
+platform = "windows-x64"
+abi = "none"
+backends = ["cpu", "cuda"]
+licence = "EUPL-1.2 AND BSD-2-Clause-Patent AND BSD-3-Clause AND BSD-2-Clause AND ISC AND MIT AND Unlicense AND LicenseRef-LIVE-BRISQUE"
+licence_record = "windows-cuda-zip"
+files = ["vmafx-tester-windows-x64-cuda-v{version}.zip"]
+signing = "sigstore"
+sbom = "vmafx-tester-windows-x64-cuda-v{version}.zip.spdx.json"
+producer = { workflow = "windows-tester-bundle.yml", job = "Build and test the zip (Windows x64-cuda)" }
+
+[artifacts.tester-windows-x64-sycl]
+kind = "tester-bundle"
+platform = "windows-x64"
+abi = "none"
+backends = ["cpu", "sycl"]
+licence = "EUPL-1.2 AND BSD-2-Clause-Patent AND BSD-3-Clause AND BSD-2-Clause AND ISC AND MIT AND Unlicense AND LicenseRef-LIVE-BRISQUE"
+licence_record = "windows-sycl-zip"
+files = ["vmafx-tester-windows-x64-sycl-v{version}.zip"]
+signing = "sigstore"
+sbom = "vmafx-tester-windows-x64-sycl-v{version}.zip.spdx.json"
+producer = { workflow = "windows-tester-bundle.yml", job = "Build and test the zip (Windows x64-sycl)" }
+
+[artifacts.tester-macos-arm64]
+kind = "tester-bundle"
+platform = "macos-arm64"
+abi = "none"
+backends = ["cpu", "metal"]
+licence = "EUPL-1.2 AND BSD-2-Clause-Patent AND BSD-3-Clause AND BSD-2-Clause AND ISC AND MIT AND Unlicense AND LicenseRef-LIVE-BRISQUE"
+licence_record = "macos"
+files = ["vmafx-tester-macos-arm64-v{version}.tar.xz"]
+signing = "sigstore"
+sbom = "vmafx-tester-macos-arm64-v{version}.tar.xz.spdx.json"
+producer = { workflow = "macos-tester-bundle.yml", job = "Build and test the bundle (macOS arm64)" }
+
+[artifacts.crate-vmafx-sys]
+kind = "crate"
+platform = "any"
+abi = "libvmaf.so.3"
+backends = []
+licence = "EUPL-1.2"
+package = "bindings/rust/vmafx-sys/Cargo.toml"
+files = ["vmafx-sys-{version}.crate"]
+signing = "none"
+sbom = "none"
+tracking = "#2320"
+
+[artifacts.crate-vmafx]
+kind = "crate"
+platform = "any"
+abi = "libvmaf.so.3"
+backends = []
+licence = "EUPL-1.2"
+package = "bindings/rust/vmafx/Cargo.toml"
+files = ["vmafx-{version}.crate"]
+signing = "none"
+sbom = "none"
+tracking = "#2320"
+
+[channels.github-release]
+state = "published"
+artifacts = [
+  "native-linux-x86_64",
+  "models",
+  "vmaf-mcp-wheel",
+  "vmaf-mcp-sdist",
+  "tester-windows-x64",
+  "tester-windows-arm64",
+  "tester-windows-x64-cuda",
+  "tester-windows-x64-sycl",
+  "tester-macos-arm64",
+]
+metadata = ["sha256", "sigstore", "spdx"]
+
+[channels.pypi]
+state = "published"
+artifacts = ["vmaf-mcp-wheel", "vmaf-mcp-sdist"]
+metadata = ["wheel-metadata", "sigstore"]
+
+[channels.homebrew]
+state = "planned"
+tracking = "#2319"
+artifacts = ["source"]
+metadata = ["formula"]
+
+[channels.conda-forge]
+state = "planned"
+tracking = "#2319"
+artifacts = ["source"]
+metadata = ["recipe"]
+
+[channels.winget]
+state = "planned"
+tracking = "#2319"
+artifacts = ["tester-windows-x64"]
+metadata = ["winget-manifests"]
+
+[channels.crates-io]
+state = "planned"
+tracking = "#2320"
+artifacts = []
+metadata = ["cargo-metadata"]
+
+[channels.npm]
+state = "planned"
+tracking = "#2248"
+artifacts = []
+metadata = ["package-json"]
+
+[channels.integrator-pack]
+state = "planned"
+tracking = "#2146"
+artifacts = [
+  "native-linux-x86_64",
+  "models",
+  "tester-windows-x64",
+  "tester-windows-arm64",
+  "tester-windows-x64-cuda",
+  "tester-windows-x64-sycl",
+  "tester-macos-arm64",
+]
+metadata = ["index"]

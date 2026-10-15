@@ -290,6 +290,14 @@ repos:
         files: '^(scripts/release/(delete-inherited-upstream-tags\.py|inherited-upstream-tags\.json|tests/test_inherited_tags\.py)|scripts/git-hooks/check-push-tags\.py|lefthook\.yml)$'
         pass_filenames: false
 
+      - id: distribution-manifest
+        name: Distribution manifest agrees with the tree and its generators keep their contract (#2314)
+        entry: bash -c 'python3 -B scripts/release/distribution.py check && python3 -B -m unittest scripts/release/tests/test_distribution.py'
+        language: system
+        files: '^(packaging/|scripts/release/(distribution\.py|lint-distribution-recipes\.sh|tests/test_distribution\.py)|scripts/ci/check_licence_metadata\.py|tools/rc1-tester/image/licensing\.json|REUSE\.toml|mcp-server/vmaf-mcp/pyproject\.toml|bindings/rust/vmafx(-sys)?/Cargo\.toml|\.github/workflows/(supply-chain|windows-tester-bundle|macos-tester-bundle)\.yml|\.pre-commit-config\.yaml)'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
+
       - id: merge-train-guard-contract
         name: Merge-train ownership and validation regressions
         entry: python3 -m unittest discover -s scripts/dev/tests -p test_*merge_train_guard.py
@@ -1167,14 +1175,14 @@ repos:
         entry: make docs-fragments-check
         language: system
         stages: [pre-commit]
-        files: '^(docs/adr/|docs/research/|docs/assets/|docs/charts/|docs/javascripts/vendor/|docs/index\.md$|docs/backends/index\.md$|docs/development/(upstream-parity|netflix-benchmark-baselines)\.md$|testdata/scores_(cpu|sycl_[a-z0-9]+)_576\.json$|changelog\.d/|scripts/docs/|scripts/release/concat-changelog-fragments\.sh$|scripts/ci/exact_twins\.d/|scripts/ci/cross_backend_calibration\.py$|docs/development/cross-backend-exact-twins\.md$|scripts/ci/upstream_parity\.d/|scripts/ci/upstream_parity_allowlist\.py$|docs/development/upstream-parity-allowlist\.md$|(.*/)?AGENTS\.d/|(.*/)?AGENTS\.md$|mkdocs\.yml$|CHANGELOG\.md$|Makefile$)'
+        files: '^(docs/adr/|docs/research/|docs/assets/|docs/charts/|docs/javascripts/vendor/|packaging/schemas/|docs/index\.md$|docs/backends/index\.md$|docs/development/(upstream-parity|netflix-benchmark-baselines)\.md$|testdata/scores_(cpu|sycl_[a-z0-9]+)_576\.json$|changelog\.d/|scripts/docs/|scripts/release/concat-changelog-fragments\.sh$|scripts/ci/exact_twins\.d/|scripts/ci/cross_backend_calibration\.py$|docs/development/cross-backend-exact-twins\.md$|scripts/ci/upstream_parity\.d/|scripts/ci/upstream_parity_allowlist\.py$|docs/development/upstream-parity-allowlist\.md$|(.*/)?AGENTS\.d/|(.*/)?AGENTS\.md$|mkdocs\.yml$|CHANGELOG\.md$|Makefile$)'
         pass_filenames: false
 
       - id: test-docs-vendored-assets
         name: Vendored docs assets check keeps its contract
         entry: python3 -B scripts/docs/tests/test_vendored_assets.py
         language: system
-        files: '^(scripts/docs/(check_vendored_assets|vendor_fonts|tests/test_vendored_assets)\.py|\.pre-commit-config\.yaml)$'
+        files: '^(scripts/docs/(check_vendored_assets|vendor_fonts|tests/test_vendored_assets)\.py|packaging/schemas/.*|\.pre-commit-config\.yaml)$'
         pass_filenames: false
         stages: [pre-commit, pre-push]
 

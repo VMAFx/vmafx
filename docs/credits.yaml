@@ -502,6 +502,15 @@ entries:
   paths:
   - docs/javascripts/vendor/katex/
   note: Formula renderer of the documentation site (ADR-2705); also compiles every formula in the docs build check.
+- id: winget-manifest-schemas
+  name: winget manifest schemas
+  url: https://github.com/microsoft/winget-cli
+  kind: standard
+  relation: vendored
+  license: MIT
+  paths:
+  - packaging/schemas/winget-1.12.0/
+  note: JSON schemas of winget manifest 1.12.0; the distribution tests validate the generated winget manifests against them (ADR-3317).
 - id: d3
   name: D3
   url: https://github.com/d3/d3

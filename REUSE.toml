@@ -492,3 +492,13 @@ path = ["deploy/helm/vmafx/charts/prometheus-pushgateway-*.tgz"]
 precedence = "override"
 SPDX-FileCopyrightText = "the prometheus-community/helm-charts contributors"
 SPDX-License-Identifier = "Apache-2.0"
+
+# The winget manifest schemas the distribution drift check validates the
+# generated winget manifests against (ADR-3317): three files of
+# microsoft/winget-cli at a pinned commit, unchanged, with its licence text.
+# vendor.json there is fork-authored.
+[[annotations]]
+path = ["packaging/schemas/winget-1.12.0/manifest.*.json", "packaging/schemas/winget-1.12.0/LICENSE"]
+precedence = "override"
+SPDX-FileCopyrightText = "Microsoft Corporation"
+SPDX-License-Identifier = "MIT"

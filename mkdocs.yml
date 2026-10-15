@@ -531,6 +531,7 @@ nav:
       - CI job names: development/ci-job-names.md
       - Self-hosted SYCL runner (Arc): development/ci-self-hosted-sycl.md
       - Publishing artifacts: development/publishing.md
+      - Distribution manifest: development/distribution.md
       - Release workflow verification: development/release-workflow-verification.md
       - AGENTS.md index and topic pages: development/agents-index.md
       - cargo-deny: development/cargo-deny.md

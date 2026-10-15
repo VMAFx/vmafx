@@ -811,7 +811,9 @@ jobs:
     # required-aggregator
     name: Release Script Contract
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    # The channel linters below pull two images when the distribution
+    # manifest or its generator changes; every other run takes about a minute.
+    timeout-minutes: 25
     permissions:
       contents: read
       pull-requests: write
@@ -907,3 +909,36 @@ jobs:
       - name: One-shot release-please fields must not outlive the first release
         # ADR-1151, ADR-1348, ADR-3292; the rules are in the script's header.
         run: bash scripts/release/check-one-shot-fields.sh
+
+      - name: Distribution manifest agrees with the tree (#2314)
+        # packaging/manifest.toml names every artifact and channel once; the
+        # check fails on a channel that names an artifact no pipeline builds,
+        # a licence that differs from the licensing record or the package
+        # manifest, and a producer job that does not exist. Its tests run in
+        # Tooling Tests (ADR-1568).
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/dist"
+          "$RUNNER_TEMP/dist/bin/pip" install --quiet --require-hashes \
+            -r requirements/locks/build.txt
+          "$RUNNER_TEMP/dist/bin/python" -B scripts/release/distribution.py check
+
+      - name: Channel linters accept the generated recipes (#2314)
+        # brew style + brew audit --strict and conda-smithy recipe-lint run in
+        # digest-pinned images. They run when the manifest, its generator or
+        # the linter script changes, and on every master push; any other pull
+        # request is covered by the check above, and the step says so.
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == pull_request ]] && ! git diff --name-only "$BASE_SHA" HEAD -- \
+              packaging scripts/release/distribution.py \
+              scripts/release/lint-distribution-recipes.sh \
+              tools/rc1-tester/image/licensing.json REUSE.toml | grep -q .; then
+            echo "skipped: no change to the distribution manifest, its generator or its inputs;"
+            echo "the manifest check above covers this pull request."
+            exit 0
+          fi
+          PYTHON="$RUNNER_TEMP/dist/bin/python" scripts/release/lint-distribution-recipes.sh
