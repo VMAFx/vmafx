@@ -36,7 +36,7 @@ for attempt in 1 2 3 4; do
   trimmed="${out#"${out%%[![:space:]]*}"}"
   trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
 
-  if [ "$exit_code" -eq 0 ] && true; then
+  if [ "$exit_code" -eq 0 ] && [[ "$trimmed" =~ ^[0-9]+$ ]]; then
     printf '%s\n' "$trimmed"
     exit 0
   fi
