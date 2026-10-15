@@ -76,6 +76,7 @@
     ".standards-baseline.json",
     ".standards.lock",
     ".standards.yaml",
+    ".trivyignore.yaml",
     ".windsurfrules",
     "ACCESSIBILITY.md",
     "AGENTS.md",
