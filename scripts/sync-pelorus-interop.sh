@@ -49,7 +49,7 @@ set -euo pipefail
 # Re-pin for a reviewed interop ABI addition or a parser correctness/security
 # fix, even when ABI major/minor stay unchanged. Keep this in lock step with
 # every vendored banner and docs/api/pelorus-interop.md.
-PELORUS_VENDOR_SHA="e2e4040311a443210927549c3a336f909c6473f3"
+PELORUS_VENDOR_SHA="1ad9a32c2f0e057c1604a7a0d63c13cb84cc538b"
 # The licence every pinned source declares (Pelorus ADR-0171, VMAFx ADR-1250).
 PELORUS_MIRROR_LICENSE="EUPL-1.2"
 
