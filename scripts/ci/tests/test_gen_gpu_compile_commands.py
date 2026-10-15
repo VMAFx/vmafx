@@ -15,6 +15,7 @@ import unittest
 from collections.abc import Callable
 from pathlib import Path
 from types import ModuleType
+from unittest import mock
 
 HERE = Path(__file__).resolve().parent
 SCRIPT = HERE.parent / "gen-gpu-compile-commands.py"
@@ -168,14 +169,12 @@ class RuleLayouts(unittest.TestCase):
             build.mkdir()
             (build / "build.ninja").write_text(NINJA, encoding="utf-8")
             (build / "compile_commands.json").write_text("[]", encoding="utf-8")
-            old_root = gen.REPO_ROOT
-            gen.REPO_ROOT = Path(tmp).resolve()
-            try:
-                printed = io.StringIO()
-                with contextlib.redirect_stderr(printed):
-                    code = gen.main(["gen", str(build)])
-            finally:
-                gen.REPO_ROOT = old_root
+            printed = io.StringIO()
+            with (
+                mock.patch.object(gen, "REPO_ROOT", Path(tmp).resolve()),
+                contextlib.redirect_stderr(printed),
+            ):
+                code = gen.main(["gen", str(build)])
             self.assertEqual(code, 1)
             self.assertIn("missing HIP dispatch drop probe source", printed.getvalue())
 
