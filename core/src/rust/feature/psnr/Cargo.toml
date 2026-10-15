@@ -7,6 +7,7 @@ name = "vmafx-fex-psnr"
 version = "0.1.0"
 description = "Rust twin of the integer `psnr` feature extractor: the reference twin of the RC4 framework (ADR-1713)"
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true

@@ -484,6 +484,28 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     && apt-get install -y --no-install-recommends /tmp/libze1.deb /tmp/libze-dev.deb \
     && find /tmp -maxdepth 1 -name 'libze*.deb' -delete
 
+# ---------- Rust toolchain (ADR-3318) ---------------------------------------
+# The version is build-config.env's RUST_VERSION, the one rust-toolchain.toml,
+# every crate's rust-version and the Rust workflow name; check-workflow-versions.py
+# refuses a literal here. rustup-init is a pinned release with its published
+# SHA-256, so the download is checked before it runs. The toolchain lives
+# under /opt/rust, readable by the vmaf user, so libvmaf-compile can build the
+# Rust extractors (-Denable_rust_features=true).
+ARG RUSTUP_INIT_VERSION=1.29.1
+ARG RUSTUP_INIT_SHA256=dda7234360b7f578ca8b0ddcb80145646fa61a67c1720a5abc7051b35c9fcb71
+ENV RUSTUP_HOME=/opt/rust/rustup \
+    CARGO_HOME=/opt/rust/cargo
+RUN . /opt/vmafx/build-config.env \
+    && curl -fsSL "https://static.rust-lang.org/rustup/archive/${RUSTUP_INIT_VERSION}/x86_64-unknown-linux-gnu/rustup-init" -o /tmp/rustup-init \
+    && echo "${RUSTUP_INIT_SHA256}  /tmp/rustup-init" | sha256sum -c - \
+    && chmod +x /tmp/rustup-init \
+    && /tmp/rustup-init -y --no-modify-path --profile minimal \
+        --default-toolchain "${RUST_VERSION}" --component rustfmt,clippy \
+    && rm -f /tmp/rustup-init \
+    && chmod -R a+rX /opt/rust \
+    && test "$(/opt/rust/cargo/bin/rustc --version | cut -d' ' -f2)" = "${RUST_VERSION}"
+ENV PATH=/opt/rust/cargo/bin:${PATH}
+
 # ---------- Intel oneVPL GPU runtime (QSV encode dispatch) -----------------
 # `libvpl-dev` installs the dispatcher (`libvpl.so.2`) but not the Gen GPU
 # implementation (`libmfx-gen.so`). FFmpeg can compile `--enable-libvpl`
@@ -789,7 +811,7 @@ USER vmaf
 # enabled by -march=native, causing SpEED and CPU extractor scores to drift from
 # default builds.
 RUN --mount=type=cache,target=/home/vmaf/.cache/ccache,sharing=locked,uid=2000,gid=2000,id=ccache-dev-mcp-vmaf \
-    export CCACHE_DIR=/home/vmaf/.cache/ccache \
+    export CCACHE_DIR=/home/vmaf/.cache/ccache CARGO_HOME=/home/vmaf/.cargo \
     && CC=icx CXX=icpx meson setup core/build core \
         -Denable_cuda=true \
         -Denable_sycl=true \
@@ -801,10 +823,12 @@ RUN --mount=type=cache,target=/home/vmaf/.cache/ccache,sharing=locked,uid=2000,g
         -Denable_mcp_stdio=true \
         -Denable_mcp_uds=true \
         -Denable_mcp_sse=auto \
+        -Denable_rust_features=true \
         --buildtype=release \
         -Db_lto=false \
         --prefix=/usr/local \
-    && ninja -C core/build
+    && ninja -C core/build \
+    && test -s core/build/src/libvmafx_core_rs.a
 
 USER root
 # Install into a staging root. codec-deps copies only that root, so the build

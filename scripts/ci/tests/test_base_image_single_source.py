@@ -90,6 +90,9 @@ class BaseImageGate(unittest.TestCase):
             "scripts/ci/check-workflow-versions.py",
             "scripts/ci/check-container-image-references.py",
             "scripts/lib/safe_subprocess.py",
+            "rust-toolchain.toml",
+            "Cargo.toml",
+            "core/src/rust/Cargo.toml",
         ):
             source = ROOT / name
             if source.exists():

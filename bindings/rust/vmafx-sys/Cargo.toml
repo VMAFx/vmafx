@@ -13,6 +13,7 @@ description = "Raw FFI bindings to libvmaf (VMAFX fork)"
 # license / authors / edition / readme aligned with the [workspace.package]
 # block in the root Cargo.toml. See ADR-0702 (vmafx-sys FFI crate).
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true

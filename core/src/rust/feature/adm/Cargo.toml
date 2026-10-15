@@ -7,6 +7,7 @@ name = "vmafx-fex-adm"
 version = "0.1.0"
 description = "Rust twin of the integer `adm` feature extractor: adm2, aim, adm3 and the scale scores (RC4, ADR-1713)"
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true

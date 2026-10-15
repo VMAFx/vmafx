@@ -954,15 +954,15 @@ endif
 # ---------------------------------------------------------------------------
 # ADR-1713: Rust extractor framework. Decided before config.h so every
 # translation unit sees HAVE_RUST_FEATURES; the targets come further below.
-# Without cargo the option degrades with a warning that names the result (the
-# C extractors run, VMAF_FEATURE_IMPL=rust logs a fallback per extractor).
+# A requested Rust build without cargo fails configure (ADR-3318): a build that
+# quietly dropped the Rust extractors would report the C path as the Rust one.
+# The toolchain version is rust-toolchain.toml's, pinned from build-config.env.
 # ---------------------------------------------------------------------------
 is_rust_enabled = get_option('enable_rust_features')
 if is_rust_enabled
     cargo_exe = find_program('cargo', required: false)
     if not cargo_exe.found()
-        warning('enable_rust_features=true but cargo was not found: no Rust extractor is built and the C extractors run')
-        is_rust_enabled = false
+        error('enable_rust_features=true but cargo was not found: install the toolchain pinned in rust-toolchain.toml (RUST_VERSION in build-config.env) or configure with -Denable_rust_features=false')
     endif
 endif
 cdata.set10('HAVE_RUST_FEATURES', is_rust_enabled)

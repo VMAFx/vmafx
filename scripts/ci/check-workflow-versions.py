@@ -39,6 +39,12 @@ by 2026-09 the hook ran ruff 0.16.8 while `make lint-tools` installed 0.16.5
 and a hint still said 0.15.17. `check_formatter_pins` compares the two files
 and rejects a literal `ruff==` / `black==` in the Makefile.
 
+The Rust toolchain was unpinned outright: the `Rust` workflow installed
+`stable`, hosts used rustup's default and the dev container had none
+(ADR-3318). `check_rust_pins` compares `rust-toolchain.toml`, both workspaces'
+`rust-version`, the workflow's `toolchain:` input and the container's rustup
+install with `RUST_VERSION`.
+
 The Makefile's project-venv tools must also resolve to absolute paths. Meson
 records the Ninja executable during setup and later invokes it from the build
 directory; a relative `.venv/bin/ninja` therefore prevents Meson from writing
@@ -375,6 +381,97 @@ def check_mypy_python_version(root: Path, py_ci: str | None = None) -> list[str]
     return [problem] if problem is not None else []
 
 
+RUST_TOOLCHAIN_RE = re.compile(r"(?m)^\s*toolchain:\s*['\"]?([^'\"\s#]+)")
+RUST_LITERAL_RE = re.compile(r"(?:--default-toolchain|\+)\s*([0-9]+\.[0-9]+\.[0-9]+)\b")
+RUST_MANIFESTS = ("Cargo.toml", "core/src/rust/Cargo.toml")
+
+
+def _rust_toolchain_file_problems(root: Path, rust_want: str) -> list[str]:
+    toolchain = root / "rust-toolchain.toml"
+    try:
+        channel = tomllib.loads(toolchain.read_text(encoding="utf-8"))["toolchain"]["channel"]
+    except (OSError, tomllib.TOMLDecodeError, KeyError, TypeError) as exc:
+        return [f"rust-toolchain.toml: no [toolchain] channel ({exc})"]
+    if channel != rust_want:
+        return [
+            f"rust-toolchain.toml pins channel '{channel}'; "
+            f"build-config.env says RUST_VERSION '{rust_want}'"
+        ]
+    return []
+
+
+def _rust_manifest_problems(root: Path, rust_want: str) -> list[str]:
+    problems: list[str] = []
+    for rel in RUST_MANIFESTS:
+        try:
+            data = tomllib.loads((root / rel).read_text(encoding="utf-8"))
+        except (OSError, tomllib.TOMLDecodeError) as exc:
+            problems.append(f"{rel}: cannot be read as TOML ({exc})")
+            continue
+        found = data.get("workspace", {}).get("package", {}).get("rust-version")
+        if found != rust_want:
+            problems.append(
+                f"{rel}: [workspace.package] rust-version is '{found}'; "
+                f"build-config.env says RUST_VERSION '{rust_want}'"
+            )
+    return problems
+
+
+def _rust_workflow_problems(root: Path, rust_want: str) -> list[str]:
+    workflows = root / ".github" / "workflows"
+    if not workflows.is_dir():
+        return []
+    problems: list[str] = []
+    for path in sorted(workflows.glob("*.y*ml")):
+        text = path.read_text(encoding="utf-8")
+        if "dtolnay/rust-toolchain" not in text:
+            continue
+        problems.extend(
+            f"{path.relative_to(root)}: toolchain '{value}'; "
+            f"build-config.env says RUST_VERSION '{rust_want}'"
+            for value in RUST_TOOLCHAIN_RE.findall(text)
+            if value != rust_want
+        )
+    return problems
+
+
+def _rust_container_problems(root: Path) -> list[str]:
+    containerfile = root / "dev" / "Containerfile"
+    if not containerfile.is_file():
+        return []
+    text = containerfile.read_text(encoding="utf-8")
+    problems: list[str] = []
+    if '--default-toolchain "${RUST_VERSION}"' not in text:
+        problems.append(
+            "dev/Containerfile must install the toolchain with "
+            '--default-toolchain "${RUST_VERSION}" from the copied build-config.env'
+        )
+    problems.extend(
+        f"dev/Containerfile names Rust {literal} literally; use RUST_VERSION"
+        for literal in RUST_LITERAL_RE.findall(text)
+    )
+    return problems
+
+
+def check_rust_pins(root: Path, rust_want: str | None) -> list[str]:
+    """Every Rust toolchain pin is build-config.env's RUST_VERSION (ADR-3318).
+
+    The toolchain sat at "stable" in the workflow, unpinned on developer hosts
+    and absent from the dev container, so three places built with three
+    compilers. The copies that cannot source the config are compared here:
+    rust-toolchain.toml, each workspace's `rust-version`, the workflow's
+    `toolchain:` input and the container's rustup install.
+    """
+    if not rust_want:
+        return ["build-config.env defines no RUST_VERSION (ADR-3318)"]
+    return [
+        *_rust_toolchain_file_problems(root, rust_want),
+        *_rust_manifest_problems(root, rust_want),
+        *_rust_workflow_problems(root, rust_want),
+        *_rust_container_problems(root),
+    ]
+
+
 def main() -> int:
     root = Path(
         run_command(
@@ -390,6 +487,7 @@ def main() -> int:
     lz_want = cfg.get("LEVEL_ZERO_VERSION")
     py_want = cfg.get("PYTHON_CI_VERSION")
     ver_want = cfg.get("VMAFX_VERSION")
+    rust_want = cfg.get("RUST_VERSION")
 
     problems: list[str] = []
     problems.extend(check_level_zero_container(root))
@@ -398,6 +496,7 @@ def main() -> int:
     problems.extend(check_formatter_pins(root))
     problems.extend(check_makefile_venv_paths(root))
     problems.extend(check_mypy_python_version(root, py_want))
+    problems.extend(check_rust_pins(root, rust_want))
 
     for problem in problems:
         print(f"::error title=version drift::{problem}", file=sys.stderr)
@@ -408,7 +507,8 @@ def main() -> int:
         )
         return 1
     print(
-        f"check-workflow-versions: OK (Level Zero {lz_want}, Python CI {py_want}, VMAFx {ver_want})"
+        f"check-workflow-versions: OK (Level Zero {lz_want}, Python CI {py_want}, "
+        f"Rust {rust_want}, VMAFx {ver_want})"
     )
     return 0
 

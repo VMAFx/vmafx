@@ -53,9 +53,14 @@ def run_cargo(args: argparse.Namespace) -> int:
     # Plain subprocess, not scripts/lib/safe_subprocess: that helper resolves
     # symlinks before exec, and a rustup install's `cargo` is a symlink to
     # rustup, which picks the tool from argv[0]. The argv is fixed above; the
-    # executable is the one Meson found.
+    # executable is the one Meson found. It runs in the manifest's directory:
+    # rustup reads rust-toolchain.toml from the working directory upwards, and
+    # in Meson's build directory it would pick its default toolchain instead of
+    # the pinned one (ADR-3318).
     try:
-        proc = subprocess.run(cmd, check=False, timeout=CARGO_TIMEOUT_SECONDS)  # noqa: S603
+        proc = subprocess.run(  # noqa: S603
+            cmd, check=False, timeout=CARGO_TIMEOUT_SECONDS, cwd=args.manifest.resolve().parent
+        )
     except subprocess.TimeoutExpired:
         print(
             f"build_staticlib: cargo did not finish in {CARGO_TIMEOUT_SECONDS} s", file=sys.stderr

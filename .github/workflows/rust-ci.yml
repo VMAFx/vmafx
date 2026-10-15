@@ -112,13 +112,15 @@ jobs:
           sudo ninja -C build-ci install
           sudo ldconfig
 
-      - name: Set up stable Rust
+      - name: Set up the pinned Rust toolchain
         uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249  # stable
         with:
           # Pinned by commit SHA, so the action cannot infer the toolchain from
           # its git ref — `toolchain` must be given explicitly or setup fails
-          # with "'toolchain' is a required input".
-          toolchain: stable
+          # with "'toolchain' is a required input". The value is RUST_VERSION
+          # of build-config.env (ADR-3318); check-workflow-versions.py refuses
+          # another, and Renovate moves both in one pull request.
+          toolchain: 1.99.0
           components: rustfmt, clippy
 
       - name: Cache Rust artifacts

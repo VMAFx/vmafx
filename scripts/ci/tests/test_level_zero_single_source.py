@@ -70,7 +70,14 @@ class LevelZeroSingleSource(unittest.TestCase):
             check=True,
             env=self.env,
         )
-        (self.repo / "build-config.env").write_text((ROOT / "build-config.env").read_text())
+        for name in (
+            "build-config.env",
+            "rust-toolchain.toml",
+            "Cargo.toml",
+            "core/src/rust/Cargo.toml",
+        ):
+            (self.repo / name).parent.mkdir(parents=True, exist_ok=True)
+            (self.repo / name).write_text((ROOT / name).read_text())
         for text, status in (
             (self.text, 0),
             (self.text.replace(f". {GATE.LEVEL_ZERO_CONFIG}", "true"), 1),

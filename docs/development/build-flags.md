@@ -359,8 +359,10 @@ the Rust twins of C extractors, selected at run time with
 ([ADR-0707](../adr/0707-vmafx-rust-pilot-feature.md)). It needs `cargo` on
 `PATH` (no network, no cbindgen); the build runs an offline `cargo build -p
 vmafx-core-rs` and links the one archive into `libvmaf`. Without `cargo`,
-configure warns and builds only the C extractors. Off by default; the `Rust`
-workflow builds it. See
+configure stops with an error ([ADR-3318](../adr/3318-rust-toolchain-pin.md)).
+The toolchain is the one `rust-toolchain.toml` pins (`RUST_VERSION` in
+`build-config.env`); rustup installs it on the first `cargo` call in the
+checkout. Off by default; the `Rust` workflow and the dev container build it. See
 [Rust extractor framework](rust-extractor-framework.md).
 
 ## Flag interactions

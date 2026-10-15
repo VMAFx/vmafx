@@ -16,6 +16,7 @@ description = "Temporal Absolute Difference (TAD) feature extractor for VMAFX â€
 # REUSE.toml) next to its EUPL-1.2 sources and this manifest
 # (scripts/ci/check_licence_metadata.py, ADR-1699).
 edition.workspace = true
+rust-version.workspace = true
 license = "EUPL-1.2 AND BSD-2-Clause-Patent"
 authors.workspace = true
 repository.workspace = true

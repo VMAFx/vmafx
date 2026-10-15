@@ -425,6 +425,24 @@
       "groupName": "CI Python interpreter",
       "automerge": true,
       "draftPR": false
+    },
+    {
+      "description": "ADR-3318: the built-in rust-toolchain manager would move rust-toolchain.toml alone; the Rust toolchain custom manager owns that channel together with RUST_VERSION, both workspaces' rust-version and the Rust workflow's toolchain input.",
+      "matchManagers": [
+        "rust-toolchain"
+      ],
+      "enabled": false
+    },
+    {
+      "description": "ADR-3318: one pull request for the Rust toolchain (build-config.env, rust-toolchain.toml, both Cargo workspaces and the Rust workflow). A new stable release brings new clippy lints, so it is reviewed, not auto-merged.",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchDepNames": [
+        "rust"
+      ],
+      "groupName": "Rust toolchain",
+      "automerge": false
     }
   ],
   "customManagers": [
@@ -642,6 +660,26 @@
       "packageNameTemplate": "actions/python-versions",
       "versioningTemplate": "npm",
       "extractVersionTemplate": "^(?<version>\\d+\\.\\d+\\.\\d+)(-\\d+)?$"
+    },
+    {
+      "customType": "regex",
+      "description": "Rust toolchain (ADR-3318): build-config.env's RUST_VERSION, rust-toolchain.toml's channel, the rust-version of both Cargo workspaces and the Rust workflow's toolchain input are one dependency. This manager owns all of them, so Renovate moves them in one pull request; the built-in rust-toolchain manager is disabled below, and scripts/ci/check-workflow-versions.py refuses a copy that differs from build-config.env.",
+      "managerFilePatterns": [
+        "/^build-config\\.env$/",
+        "/^rust-toolchain\\.toml$/",
+        "/^Cargo\\.toml$/",
+        "/^core/src/rust/Cargo\\.toml$/",
+        "/^\\.github/workflows/rust-ci\\.yml$/"
+      ],
+      "matchStrings": [
+        "(?:^|\\n)RUST_VERSION=\"(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)\"",
+        "(?:^|\\n)channel = \"(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)\"",
+        "(?:^|\\n)rust-version = \"(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)\"",
+        "\\n[ \\t]+toolchain:[ \\t]*['\"]?(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)['\"]?"
+      ],
+      "datasourceTemplate": "rust-version",
+      "depNameTemplate": "rust",
+      "versioningTemplate": "rust-release-channel"
     }
   ],
   "vulnerabilityAlerts": {

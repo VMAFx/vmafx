@@ -385,5 +385,143 @@ class PythonCiVersionGroup(unittest.TestCase):
         )
 
 
+RUST_PINS = {
+    CONFIG: re.compile(r'^RUST_VERSION="([^"]*)"', re.MULTILINE),
+    "rust-toolchain.toml": re.compile(r'^channel = "([^"]*)"', re.MULTILINE),
+    "Cargo.toml": re.compile(r'^rust-version = "([^"]*)"', re.MULTILINE),
+    "core/src/rust/Cargo.toml": re.compile(r'^rust-version = "([^"]*)"', re.MULTILINE),
+    ".github/workflows/rust-ci.yml": re.compile(r"^[ \t]+toolchain:[ \t]*(\S+)", re.MULTILINE),
+}
+
+
+def rust_manager(config: dict[str, Any]) -> dict[str, Any] | None:
+    managers = [
+        m
+        for m in config.get("customManagers", [])
+        if m.get("depNameTemplate") == "rust" and m.get("datasourceTemplate") == "rust-version"
+    ]
+    return managers[0] if len(managers) == 1 else None
+
+
+def rust_findings(config: dict[str, Any], read: Callable[[str], str]) -> list[str]:
+    """Every way the config fails to own the Rust toolchain pins as one group (ADR-3318)."""
+    manager = rust_manager(config)
+    if manager is None:
+        return ["no single custom manager for rust / rust-version"]
+    selectors = [re.compile(p[1:-1]) for p in manager.get("managerFilePatterns", [])]
+    patterns = [re.compile(to_python(m)) for m in manager.get("matchStrings", [])]
+    errors: list[str] = []
+    for path, pin in RUST_PINS.items():
+        text = read(path)
+        want = pin.findall(text)
+        if not want:
+            errors.append(f"{path}: no Rust pin")
+            continue
+        if not any(s.search(path) for s in selectors):
+            errors.append(f"{path} is not selected by the manager")
+            continue
+        got = [m["currentValue"] for p in patterns for m in p.finditer(text)]
+        if sorted(got) != sorted(want):
+            errors.append(f"{path}: manager reads {sorted(got)}, the pin is {sorted(want)}")
+    rules = config.get("packageRules", [])
+    if not any(
+        r.get("matchManagers") == ["rust-toolchain"] and r.get("enabled") is False for r in rules
+    ):
+        errors.append("the rust-toolchain manager still updates rust-toolchain.toml")
+    if not any(
+        r.get("matchManagers") == ["custom.regex"]
+        and r.get("matchDepNames") == ["rust"]
+        and r.get("groupName") == "Rust toolchain"
+        for r in rules
+    ):
+        errors.append("no Rust toolchain group rule")
+    return errors
+
+
+class RustToolchainGroup(unittest.TestCase):
+    """Positive: the checked-in config owns every Rust pin. Negative: a manager that
+    misses a file, a dropped match string, the built-in manager left on and a
+    missing group each fail. Boundary: other keys and other workflows' inputs are
+    not read."""
+
+    config: ClassVar[dict[str, Any]]
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        RenovateFilePatterns.setUpClass()
+        cls.config = RenovateFilePatterns.config
+
+    def findings(self, change: Callable[[dict[str, Any]], None] | None = None) -> list[str]:
+        config = json.loads(json.dumps(self.config))
+        if change is not None:
+            change(config)
+        return rust_findings(config, lambda path: (ROOT / path).read_text(encoding="utf-8"))
+
+    def manager(self, config: dict[str, Any]) -> dict[str, Any]:
+        manager = rust_manager(config)
+        assert manager is not None
+        return manager
+
+    def test_checked_in_config_owns_every_pin(self) -> None:
+        self.assertEqual(self.findings(), [])
+
+    def test_other_lines_are_not_read(self) -> None:
+        patterns = [re.compile(to_python(m)) for m in self.manager(self.config)["matchStrings"]]
+        for line in (
+            'RUST_TOOLCHAIN="1.99.0"\n',
+            'PYTHON_CI_VERSION="3.14.8"\n',
+            "toolchain: 12.4\n",
+            'version = "1.99.0"\n',
+        ):
+            with self.subTest(line=line):
+                self.assertFalse(any(p.search(line) for p in patterns))
+
+    def test_manager_without_the_workflow_fails(self) -> None:
+        def drop(config: dict[str, Any]) -> None:
+            manager = self.manager(config)
+            manager["managerFilePatterns"] = [
+                p for p in manager["managerFilePatterns"] if "rust-ci" not in p
+            ]
+
+        self.assertIn(
+            ".github/workflows/rust-ci.yml is not selected by the manager", self.findings(drop)
+        )
+
+    def test_manager_without_the_toolchain_string_fails(self) -> None:
+        def drop(config: dict[str, Any]) -> None:
+            manager = self.manager(config)
+            manager["matchStrings"] = [s for s in manager["matchStrings"] if "channel" not in s]
+
+        self.assertTrue(any(e.startswith("rust-toolchain.toml:") for e in self.findings(drop)))
+
+    def test_builtin_manager_left_enabled_fails(self) -> None:
+        def enable(config: dict[str, Any]) -> None:
+            for rule in config["packageRules"]:
+                if rule.get("matchManagers") == ["rust-toolchain"]:
+                    rule["enabled"] = True
+
+        self.assertIn(
+            "the rust-toolchain manager still updates rust-toolchain.toml", self.findings(enable)
+        )
+
+    def test_missing_group_fails(self) -> None:
+        def ungroup(config: dict[str, Any]) -> None:
+            for rule in config["packageRules"]:
+                if rule.get("groupName") == "Rust toolchain":
+                    rule.pop("groupName")
+
+        self.assertIn("no Rust toolchain group rule", self.findings(ungroup))
+
+    def test_missing_manager_fails(self) -> None:
+        def remove(config: dict[str, Any]) -> None:
+            config["customManagers"] = [
+                m for m in config["customManagers"] if m.get("depNameTemplate") != "rust"
+            ]
+
+        self.assertEqual(
+            self.findings(remove), ["no single custom manager for rust / rust-version"]
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
