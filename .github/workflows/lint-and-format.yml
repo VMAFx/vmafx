@@ -1157,14 +1157,16 @@ jobs:
           echo "${RUNNER_TEMP}/buf-bin" >> "${GITHUB_PATH}"
       - name: buf lint
         run: buf lint
+      # Runs after a failed lint too, so one run reports both kinds of finding.
+      # A manual dispatch has no base commit and compares with master.
       - name: buf breaking against the base
+        if: ${{ !cancelled() }}
         shell: bash
         env:
           BASE_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
         run: |
           if [[ -z "${BASE_REF}" || "${BASE_REF}" =~ ^0+$ ]]; then
-            echo "::error::No base commit to compare the protobuf files with."
-            exit 1
+            BASE_REF="refs/remotes/origin/master"
           fi
           buf breaking --against ".git#ref=${BASE_REF}"
 
