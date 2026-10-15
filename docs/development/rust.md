@@ -105,6 +105,25 @@ dynamic loader at run time; `build.rs` does not read it. If you also use
 `pkg-config` to inspect the install, add
 `PKG_CONFIG_PATH=$LIBVMAF_PREFIX/lib/pkgconfig`.
 
+#### An older install under the prefix
+
+`build.rs` checks the bindings it generates for every libvmaf name that
+`vmafx-sys` and `vmafx` use. A header from an older install (for example a
+`/usr/local` left from an earlier build) stops the build with the header path
+and the names it lacks:
+
+```text
+Error: "libvmaf header /usr/local/include/libvmaf/libvmaf.h is older than vmafx-sys: it lacks VmafPoolingMethod_VMAF_POOL_METHOD_MEDIAN, ..."
+```
+
+Install the libvmaf of this tree (`meson install` of `core/`) and point
+`LIBVMAF_PREFIX` at that prefix. The API version in `libvmaf/version.h` does
+not tell such installs apart (both report 3.0.0), which is why the check reads
+the names. The list is `REQUIRED_SYMBOLS` in
+`bindings/rust/vmafx-sys/build_support/header_check.rs`;
+`cargo test -p vmafx-sys --test header_check` fails when a crate starts using a
+libvmaf name that the list does not hold.
+
 ## Using `vmafx-sys` as a dependency
 
 Add to your crate's `Cargo.toml`:

@@ -27,6 +27,12 @@ Parent: [../../../AGENTS.md](../../../AGENTS.md). Established by
 - **`links = "vmaf"`**: `links` field in `Cargo.toml` tells Cargo crate provides
   native `vmaf` library. Only one crate in build graph may set
   `links = "vmaf"`. Do not add second crate with same links key.
+- **Stale-header check (#2786)**: `build.rs` refuses bindings that lack a
+  name of `REQUIRED_SYMBOLS` (`build_support/header_check.rs`), naming the
+  header path and the missing names. A new libvmaf name used by `safe.rs` or
+  `bindings/rust/vmafx/src` goes on that list in the same PR;
+  `tests/header_check.rs` fails otherwise. Do not replace it with a
+  `VMAF_API_VERSION_*` check: stale and current installs both report 3.0.0.
 - **No `pkg-config` dependency**: `build.rs` locates libvmaf via
   `LIBVMAF_PREFIX` only. `pkg-config` not universally available (cross-compile
   targets, minimal CI containers). Do not add `pkg-config` dep without ADR.

@@ -8,9 +8,16 @@
 //                    The build script expects:
 //                      ${LIBVMAF_PREFIX}/include/libvmaf/libvmaf.h
 //                      ${LIBVMAF_PREFIX}/lib/libvmaf.so  (or .a)
+//
+// A header that lacks a libvmaf name the crates use (an older install under
+// the prefix) stops the build here with the header path and the missing names
+// (issue #2786), instead of failing later in the `vmafx` crate.
 
 use std::env;
 use std::path::PathBuf;
+
+#[path = "build_support/header_check.rs"]
+mod header_check;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let prefix = env::var("LIBVMAF_PREFIX").unwrap_or_else(|_| "/usr/local".to_string());
@@ -25,6 +32,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let header = format!("{include_dir}/libvmaf/libvmaf.h");
     println!("cargo:rerun-if-changed={header}");
     println!("cargo:rerun-if-env-changed=LIBVMAF_PREFIX");
+    println!("cargo:rerun-if-changed=build_support/header_check.rs");
 
     let bindings = bindgen::Builder::default()
         .header(&header)
@@ -37,6 +45,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .allowlist_var("VMAF_.*")
         .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
         .generate()?;
+
+    let missing = header_check::missing_symbols(&bindings.to_string());
+    if !missing.is_empty() {
+        return Err(header_check::stale_header_message(&header, &missing).into());
+    }
 
     let out_path = PathBuf::from(env::var("OUT_DIR")?);
     bindings.write_to_file(out_path.join("bindings.rs"))?;
