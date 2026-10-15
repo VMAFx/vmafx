@@ -125,7 +125,16 @@ reserving it. That caused about ten renumbers and rebases in a single session
    (`/tmp/vmaf_adr_claim_lock_<path>`) is built from the absolute, resolved path
    of the repository's common git directory, so a caller in `docs/`, one in the
    repository root and one in a linked worktree take the same lock. The lock
-   records an owner token, and a caller only removes a lock it holds.
+   is held by the caller that creates its owner file (exclusively, `O_EXCL`);
+   the file records an owner token, and a caller only removes a lock it holds.
+   A lock directory without an owner file is free.
+   A caller waits up to 60 s for the lock (`VMAF_ADR_LOCK_WAIT_S` changes the
+   bound) and then fails with the holder's owner line and process id. An
+   owner file whose process is no longer running was left by a killed claim:
+   the next caller takes a second lock that serialises takeovers, checks the
+   process again, checks that the owner line is still the one it read, removes
+   the file and prints a `WARNING: took over a stale ADR allocator lock` line.
+   A lock whose holder still runs is never taken over.
 2. It scans remote branches via `git ls-remote --heads` and `git ls-tree` to
    also skip numbers already claimed by in-flight branches on origin.
 3. It creates the claim file `.git/adr-claims/NNNN` exclusively (`O_EXCL`, the

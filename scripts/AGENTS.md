@@ -405,7 +405,14 @@ sources with `--explicit-package-bases`.
   taken -> N+1, max 100 tries.
 - Test cleanups (`adr/test-next-free.sh`,
   `adr/tests/test-next-free-remote-aware.sh`) compute same name.
-- Guard: `adr/tests/test-next-free-concurrent.sh`.
+- Lock = owner file, created `noclobber` (O_EXCL) in lock dir; dir without
+  owner file = free. Owner pid dead -> under `<lock>.takeover` mutex: pid
+  re-checked, owner line re-compared, file removed with WARNING. Live holder
+  never taken over. No grace takeover (raced fresh mkdir, soak 2). Exit trap
+  set before mkdir. Wait = `VMAF_ADR_LOCK_WAIT_S`
+  (default 60, was fixed 10) (#2784).
+- Guards: `adr/tests/test-next-free-concurrent.sh`,
+  `adr/tests/test-next-free-stale-lock.sh`.
 
 ### `run_unittests.sh` is upstream-mirror
 

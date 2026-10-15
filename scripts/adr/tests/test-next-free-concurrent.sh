@@ -73,11 +73,14 @@ while [ "${round}" -le "${ROUNDS}" ]; do
     pids+=("$!")
     i=$((i + 1))
   done
+  i=1
   for p in "${pids[@]}"; do
     wait "${p}" || {
-      printf 'FAIL: a claim exited non-zero in round %s\n' "${round}" >&2
+      printf 'FAIL: claim %s exited non-zero in round %s; its stderr:\n' "${i}" "${round}" >&2
+      sed 's/^/  | /' "${out_dir}/${i}.err" >&2
       FAIL=1
     }
+    i=$((i + 1))
   done
   got="$(cat "${out_dir}"/[0-9]* | awk '/^[0-9][0-9][0-9][0-9]$/ { n++ } END { print n + 0 }')"
   uniq="$(cat "${out_dir}"/[0-9]* | grep -E '^[0-9]{4}$' | LC_ALL=C sort -u | wc -l)"
