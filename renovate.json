@@ -2,11 +2,9 @@
   "forkProcessing": "enabled",
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
+    "github>plurano/horistes",
     "config:best-practices",
-    "helpers:pinGitHubActionDigests",
-    ":dependencyDashboard",
     ":semanticCommits",
-    ":gitSignOff",
     "helpers:disableTypesNodeMajor"
   ],
   "schedule": [
@@ -26,7 +24,6 @@
   "osvVulnerabilityAlerts": true,
   "dependencyDashboardOSVVulnerabilitySummary": "all",
   "prCreation": "immediate",
-  "minimumReleaseAge": "3 days",
   "ignorePaths": [
     "python/requirements.txt",
     "requirements/locks/*.txt",

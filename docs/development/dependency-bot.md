@@ -42,15 +42,30 @@ validation pass.
 ## Configuration
 
 All configuration lives in [`renovate.json`](../../renovate.json). The
-App reads it on every webhook. Top-level knobs:
+App reads it on every webhook. It extends the fleet's shared preset
+`github>plurano/horistes` (Greek *horistes*, the boundary commissioner who
+fixes limits, pronounced ho-RIS-tees; repository
+<https://github.com/plurano/horistes>), which sets `config:recommended`,
+`:gitSignOff`, `minimumReleaseAge: 3 days`, `automerge: false` and turns off
+updates of GitHub-hosted runner labels. `renovate.json` keeps only what is
+specific to this repository; the per-rule `automerge` values below override
+the preset's default. Top-level knobs:
 
 | Setting | Value |
 |---------|-------|
-| `schedule` | `before 6am every weekday` (`Europe/Vienna`) |
+| `extends` | `github>plurano/horistes`, `config:best-practices`, `:semanticCommits`, `helpers:disableTypesNodeMajor` |
+| `schedule` | `before 6am on Monday` (`Europe/Vienna`) |
 | `prHourlyLimit` | `0` (unlimited) |
 | `prConcurrentLimit` | `3` |
 | `prCreation` | `immediate` |
-| `minimumReleaseAge` | `3 days` |
+| `minimumReleaseAge` | `3 days` (from the preset) |
+
+Check a change with the validator in strict mode, for example:
+
+```bash
+npx --yes --package renovate@44.161.2 -- \
+  renovate-config-validator --no-global --strict renovate.json
+```
 
 ## Disable / rollback to Dependabot
 
