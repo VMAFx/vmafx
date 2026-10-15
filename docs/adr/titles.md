@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1371), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1377), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5495,3 +5495,27 @@ Every ADR, one heading each (1371), so the site search finds an ADR by its title
 ## ADR-3295: The render lands as its own render-only pull request
 
 [3295-render-only-pull-request](3295-render-only-pull-request.md)
+
+## ADR-3311: Stream metadata field list seeded from the Pelorus registry
+
+[3311-stream-metadata-field-list](3311-stream-metadata-field-list.md)
+
+## ADR-3312: One Renovate manager owns the CI Python interpreter
+
+[3312-renovate-python-ci-version-group](3312-renovate-python-ci-version-group.md)
+
+## ADR-3313: The solo master ruleset asks for no approval and bypasses at pull-request mode
+
+[3313-solo-ruleset-zero-reviews](3313-solo-ruleset-zero-reviews.md)
+
+## ADR-3314: Pull-request workflows stay inside the Scorecard check-suite window
+
+[3314-pr-workflow-budget-scorecard-window](3314-pr-workflow-budget-scorecard-window.md)
+
+## ADR-3315: Local images and local packages are installed pinned
+
+[3315-scorecard-pinned-local-installs](3315-scorecard-pinned-local-installs.md)
+
+## ADR-3316: Release assets carry their build provenance
+
+[3316-release-intoto-provenance](3316-release-intoto-provenance.md)

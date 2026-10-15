@@ -8,6 +8,128 @@ search:
 # Rebase notes
 
 <!-- rebase-notes:fragments:begin (rendered from docs/rebase-notes.d/; do not edit) -->
+## Release provenance assets (2026-10-14)
+
+- `.github/workflows/supply-chain.yml` normalizes and uploads `vmafx-build-provenance.intoto.jsonl`
+  and `vmaf-mcp-provenance.intoto.jsonl` as release assets alongside existing `.sigstore.json` bundles.
+- `.github/workflows/macos-tester-bundle.yml` normalizes and attaches `vmafx-tester-macos-provenance.intoto.jsonl`.
+- `.github/workflows/windows-tester-bundle.yml` normalizes and attaches `vmafx-tester-windows-provenance.intoto.jsonl`.
+- `scripts/ci/check_release_provenance_assets.py` statically validates that every workflow that
+  invokes `action-gh-release` or runs `gh release create`/`upload` writes and uploads an `.intoto.jsonl` asset.
+- **On sync**: upstream Netflix does not attach GitHub-native build-provenance bundles or in-toto
+  provenance assets to its release pipeline. When merging upstream release or packaging workflows,
+  preserve the `actions/attest-build-provenance` steps, `.intoto.jsonl` staging commands, and
+  release asset upload lists (ADR-3316).
+
+## The push aggregator leaves out scheduled runs (2026-10-15)
+
+- `foreignRun()` in `.github/workflows/required-aggregator.yml` also returns true for a
+  `schedule` workflow run. Keep the line when rebasing the aggregator; a sync that drops it
+  lets a scheduled run's skipped check run fail a master push again.
+- `scripts/ci/tests/test_aggregator_event_scope.py` guards it.
+
+## FFmpeg shared fix series v0.2.0 (2026-10-15)
+
+- `build-config.env`: `FFMPEG_FIX_SERIES_TAG` and `FFMPEG_FIX_SERIES_SHA256`
+  move to `VMAFx/ffmpeg-patches` `v0.2.0` (commit `d958384a`). The release's
+  `base.env` still names FFmpeg `n9.0.2` / `946fcce0`, so `FFMPEG_TAG` and
+  `FFMPEG_COMMIT` stay. On a conflict take the newer series pin of the two
+  and run `python3 scripts/ci/ffmpeg_patch_stack.py --refresh`, then `--check`.
+- `docs/development/ffmpeg-patch-automation.md`: patch table lists 0005-0008.
+  Fork-only, nothing upstream to merge.
+
+## Pinned local image and local package installs (2026-10-14)
+
+- `Dockerfile.ffmpeg` replaces `FROM vmaf:latest` with `ARG VMAF_IMAGE_DIGEST`
+  and `FROM vmaf@sha256:${VMAF_IMAGE_DIGEST}` to satisfy OpenSSF Scorecard
+  dependency pinning. The base image validation gate in
+  `scripts/ci/check-container-image-references.py` binds this digest-based FROM.
+- `.github/workflows/tests-and-quality-gates.yml` RC1 Tester Report step replaces
+  `pip install ./tools/rc1-tester` with `pip wheel` into `dist/rc1-wheel` followed
+  by `pip install --no-deps dist/rc1-wheel/*.whl` (ADR-3315).
+- `scripts/ci/check_python_dependency_locks.py` refuses non-editable plain-directory
+  and sdist installs, requiring `.whl` files with `--no-deps`.
+- **On sync**: upstream Netflix has neither `Dockerfile.ffmpeg` nor
+  `check-container-image-references.py`. Any new local package installations in
+  CI or Docker recipes must build and install `.whl` archives with `--no-deps`
+  or use `-e` with both `--no-deps` and `--no-build-isolation`.
+
+## Pull-request workflow budget and label lanes (2026-10-14)
+
+- `pr-label-lanes.yml` is the only workflow that listens for `labeled`; it
+  calls `ci-escalate.yml`, `observability-compose.yml` and `e2e-k8s.yml`
+  through `workflow_call`. **On sync**: an upstream or fork workflow that adds
+  a `pull_request` trigger goes into an existing workflow as a job, or into
+  `pr-label-lanes.yml` as a call when a label starts it.
+- `doxygen-public-api.yml`, `scorecard-policy.yml` and
+  `upstream-consumers.yml` are gone; their jobs live in `docs.yml`,
+  `security-scans.yml` and `ffmpeg-integration.yml` with the same check names.
+  **On sync**: do not bring the files back.
+- `scripts/ci/pr_workflow_budget.py` holds the count at 27 (ADR-3314).
+
+## Solo ruleset: zero reviews, pull-request bypass (2026-10-14)
+
+- `.github/repository-security-policy.json` declares ruleset 22587111 as the forge reports it: review count 0,
+  no last-push approval, bypass mode `pull_request` (ADR-3313). A rebase keeps these values; the security
+  checker compares them with the live ruleset.
+- `.config/lint-exceptions.d/solo-repository-bypass-mode.toml` is deleted. A branch that still carries it fails
+  the checker as a stale entry; drop it when rebasing.
+- No upstream file is touched.
+
+## Renovate: one manager owns the CI Python interpreter (2026-10-14)
+
+- `renovate.json` gains a regex custom manager for `PYTHON_CI_VERSION` in
+  `build-config.env` and every workflow `python-version:` pin, a package rule
+  that disables the github-actions manager's `python` (`uses-with`)
+  dependency, and a `CI Python interpreter` group rule with
+  `allowedVersions: "<3.15.0"` (ADR-3312). Fork-local file; upstream Netflix has
+  no Renovate configuration.
+- **On sync**: nothing to merge from upstream. When adding a workflow that
+  installs Python, spell the pin as `python-version: "X.Y.Z"` so the manager
+  and `check-workflow-versions.py` both read it;
+  `scripts/ci/tests/test_renovate_file_patterns.py` fails when they disagree.
+
+## Windows MSVC+CUDA CI legs build without LTO (2026-10-13)
+
+The `Windows MSVC+CUDA` row of `.github/workflows/libvmaf-build-matrix.yml` and
+the `Windows MSVC+CUDA (full)` row of `.github/workflows/build.yml` pass
+`-Db_lto=false`. Keep it when either file is rebased: with LTO each test program
+links with `/LTCG` and the job runs into its time limit. No upstream file is
+involved.
+
+## `build.yml` plans on `build_work`, not `c_core` (2026-10-13)
+
+- `.github/ci-impact.json` gains the selector `build_work`: `c_core` plus
+  `python/**`, `compat/**`, the build, pytest-timeout and tox lock files and
+  `scripts/ci/prune-corrupt-fixtures.sh`. `.github/workflows/build.yml` reads it
+  in the `impact` job.
+- **On sync**: fork-only files; no upstream counterpart. A new `-r` lock,
+  `tox -c` config or `python -m pytest` target in `build.yml` adds its path;
+  `BuildWorkRouting` in `scripts/ci/tests/test_ci_impact.py` fails otherwise.
+  Against master's config (`build.yml` on `c_core`) the test file fails 26 tests.
+
+## nv-codec-headers pinned in the hosted CUDA legs (2026-10-13)
+
+- The four `Install nv-codec-headers` steps of `.github/workflows/build.yml`
+  and `.github/workflows/libvmaf-build-matrix.yml` call
+  `scripts/ci/fetch-nv-codec-headers.sh`; none clones the repository.
+- `scripts/ci/tests/test_nv_codec_headers_single_source.py` fails on a clone of
+  `nv-codec-headers` in either workflow and on any count of script calls other
+  than two per workflow. A workflow change that adds a CUDA leg updates
+  `CI_STEPS_PER_WORKFLOW` with it.
+
+## ADR claim lock independent of the working directory (2026-10-13)
+
+`scripts/adr/next-free.sh` builds its lock name from the resolved absolute
+path of the common git directory, records an owner token in the lock and
+decides each number with an exclusive claim file under `.git/adr-claims/`.
+A sync or cleanup must not bring back a lock name from the relative output of
+`git rev-parse --git-common-dir`, a release that removes a lock it does not
+own, or a claim file written without `noclobber`. The tests that clean up the
+lock (`scripts/adr/test-next-free.sh`,
+`scripts/adr/tests/test-next-free-remote-aware.sh`) compute the same name.
+`scripts/adr/tests/test-next-free-concurrent.sh` guards it.
+
 ## Render-only pull request replaces the direct render push (2026-10-13)
 
 - `scripts/ci/deliverables-check.sh` accepts a diff of rendered paths only when

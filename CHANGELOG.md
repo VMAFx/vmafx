@@ -614,6 +614,16 @@
 - **GitHub Sponsors is live (ADR-2689).** `SPONSORS.md` lists the four monthly tiers ($5, $25, $100, $500), the one-time amounts and the sponsors by tier, and the new documentation page "Support VMAFx" explains what sponsorship pays for (CI time, cloud GPU test time, an AI workstation). Sponsorship buys recognition only; there is no paid support or paywall. Euro routes: Ko-fi now, Patreon coming.
 
 
+- **Stream metadata field list (ADR-3311).** `api/stream-metadata-fields.json`
+  names the per-frame stream metadata fields VMAFx will report next to a score
+  (coded size, average quantiser and its scale, picture type, key frame, codec,
+  coded bit depth, display and decode index), spelled, typed and measured as
+  the Pelorus telemetry field registry has them, and lists the registry's
+  shared fields VMAFx does not report. The list is append-only and checked by
+  a new tooling test; no output carries the fields yet
+  ([Stream metadata field list](docs/api/stream-metadata-fields.md)).
+
+
 - **Preview of the VMAFx C API, generated from one definition (RC4,
   ADR-1852).** New headers `vmafx/vmafx.h` and `vmafx/libvmaf_bridge.h` with
   `vmafx_context_create` / `vmafx_context_destroy`, version, provenance,
@@ -759,6 +769,14 @@
   development pages that wrote formulas as code text now use TeX, and
   `scripts/docs/check_math.py` fails the docs build on a formula KaTeX rejects.
   See [Writing math](docs/development/docs-site-design.md#writing-math).
+
+
+- **FFmpeg builds apply shared fix series `v0.2.0`.** `build-config.env` pins
+  `VMAFx/ffmpeg-patches` release `v0.2.0` (commit `d958384a`, still on FFmpeg
+  `n9.0.2`), which adds four fixes to the four of `v0.1.0`: VAAPI import of
+  10- and 12-bit Vulkan frames, the Vulkan export query's format list, a CPU
+  wait before mapping RADV frames to DRM, and Vulkan queue de-phasing. See
+  [FFmpeg patch automation](docs/development/ffmpeg-patch-automation.md).
 
 
 - **FFmpeg builds take FFmpeg's own fixes from the shared fix series.** Every VMAFx FFmpeg build
@@ -1051,6 +1069,18 @@
   (`vmafx/v1/vmafx.proto`, `vmafx/controller/v1/controller.proto`).
 
 
+- **Fewer pull-request workflows, held under a budget (ADR-3314).**
+  OpenSSF Scorecard reads only the first 30 check suites of a commit, and 31
+  pull-request workflows pushed CodeQL out of that window, so the SAST check
+  scored 7. `doxygen-public-api.yml`, `scorecard-policy.yml` and
+  `upstream-consumers.yml` are now jobs of `docs.yml`, `security-scans.yml` and
+  `ffmpeg-integration.yml` under their old check names; `ci-escalate.yml`,
+  `observability-compose.yml` and `e2e-k8s.yml` are called from the new
+  `pr-label-lanes.yml` on their labels. `scripts/ci/pr_workflow_budget.py`
+  (pre-commit and `make lint-actions`) fails when more than 27 workflows start
+  on `pull_request`.
+
+
 - **The praetor governance engine moves from `7458a220e1c9` to `3a766f2d56ad`
   ([ADR-2784](docs/adr/2784-praetor-pin-3a766f2d.md)).** `reuse lint` now runs in CI as the
   required `REUSE lint` job of praetor's `.github/workflows/reuse.yml` (actions pinned to commits),
@@ -1118,6 +1148,16 @@
   runbook say so. No extractor or score changes yet.
 
 
+- **Release workflows publish build-provenance assets as `*.intoto.jsonl`.**
+  Every workflow that creates a release or uploads release assets (`supply-chain.yml`,
+  `macos-tester-bundle.yml`, `windows-tester-bundle.yml`) normalizes its GitHub-native
+  attestation bundle with `jq -c .` into a single-line `*.intoto.jsonl` file and attaches
+  it as a release asset. This satisfies OpenSSF Scorecard Signed-Releases criteria for a
+  score of 10 while keeping all existing `.sigstore.json` signature assets intact.
+  `scripts/ci/check_release_provenance_assets.py` gates that releaser workflows write and
+  upload matching `.intoto.jsonl` provenance assets (ADR-3316).
+
+
 - **Release line restarts at `0.1.0`** ([ADR-3292](docs/adr/3292-release-line-restart-0x.md)):
   the next release is `v0.1.0`, followed by plain 0.x minor releases without
   candidates; 1.0.0 becomes the first stable release (Rust core phase P3 plus
@@ -1150,6 +1190,14 @@
   24 hours.
 
 
+- **Renovate raises the CI Python interpreter in one pull request.** A custom
+  manager now owns `PYTHON_CI_VERSION` in `build-config.env` together with every
+  `python-version:` pin under `.github/workflows/`, and the github-actions
+  manager no longer raises those pins on its own, so an interpreter update no
+  longer lands as a workflow-only pull request that the single-source check
+  refuses. Updates stay below Python 3.15 during the 1.0.0 freeze (ADR-3312).
+
+
 - The backend receipt of the JSON report (`backend_used`, `feature_backends`)
   is written by the library's report writer instead of being spliced into the
   file by the `vmaf` CLI, so reports written through the API carry it too;
@@ -1174,6 +1222,16 @@
   twin now gets its own `advance` callback where its C extractor has one,
   instead of inheriting the C callback, which made `motion_rust` fail at the
   flush. See [Motion](docs/metrics/motion.md#rust-implementation).
+
+
+- **Local images and local packages are installed pinned for Scorecard.**
+  `Dockerfile.ffmpeg` now accepts `ARG VMAF_IMAGE_DIGEST` and pins the local
+  `vmaf` base image by digest, satisfying OpenSSF Scorecard Pinned-Dependencies
+  rules while keeping the base image exact. The RC1 Tester Report CI step builds
+  a local wheel with `--no-deps --no-build-isolation` into a staging directory
+  and installs it via `--no-deps`, replacing an unpinned directory install.
+  `check_python_dependency_locks.py` now strictly enforces that non-editable
+  local installs require `.whl` files (ADR-3315).
 
 
 - The MCP scoring tools (`vmaf_score`, `vmaf_score_encoded`,
@@ -1319,6 +1377,19 @@
 
 ### Fixed
 
+- ADR tooling: `scripts/adr/next-free.sh --claim` no longer hands two parallel
+  callers the same number when one runs from `docs/` and the other from the
+  repository root. The lock name now uses the absolute path of the common git
+  directory, a caller only releases a lock it holds, and an exclusive claim file
+  per number (`.git/adr-claims/NNNN`) decides the number
+  ([adr-workflow](docs/development/adr-workflow.md#why-use-claim)).
+
+
+- CI: the required-checks aggregator of a master push no longer reads the check runs of a scheduled
+  workflow run on the same commit. A skipped scheduled `FFmpeg Patch Stack` run had failed master
+  `fdf711ba6` although the push's own run succeeded (`T-CI-AGGREGATOR-READS-SCHEDULE-RUNS-2026-10-15`).
+
+
 - CI: the required-checks aggregator (`.github/workflows/required-aggregator.yml`)
   no longer passes a required context that never reported, was skipped, was neutral
   or was cancelled. Every owed context must report success; the exemptions are the
@@ -1334,6 +1405,15 @@
   now uses only the pinned major (`VMAFX_CLANG_FORMAT` names one explicitly)
   and skips, naming the version it found, otherwise; the Tooling Tests job
   installs the pinned release.
+
+
+- CI: the `build.yml` legs (`Linux Intel LLVM`, `macOS Clang+Metal`,
+  `Windows MSVC+CUDA (full)`) now run when a pull request changes files under
+  `python/` or `compat/`, their lock files or the fixture prune script. They
+  followed the `c_core` selector, so such a pull request passed these checks
+  without running `test_decorator_extended.py` (whose only Windows run is there)
+  or the macOS `tox -c python`. The new impact selector `build_work` in
+  `.github/ci-impact.json` covers these inputs.
 
 
 - CI: the `Docker Image Build work` job may run for 90 minutes instead of 45. The uncached
@@ -1578,6 +1658,13 @@
 - Build: the Windows MinGW-w64 (UCRT64) build links again with link-time optimisation. `VMAFX_EXPORT` no longer expands to an ELF visibility attribute under MinGW GCC, which ignores it and warned at every LTO use; it is empty there, as `VMAF_EXPORT` already was. Exported symbols are unchanged.
 
 
+- CI: the `Windows MSVC+CUDA` legs of `libvmaf-build-matrix.yml` and `build.yml`
+  build with `-Db_lto=false`. With the project default `b_lto=true` every test
+  program linked with `/LTCG` against the static libraries, and the link phase
+  alone took 32 to 52 minutes of the 60-minute job, which timed out on master.
+  The Windows bundles already built without LTO; the project default is unchanged.
+
+
 - **The Windows MSVC builds compile again.** `vmaf_next_fex_capacity()`
   (`core/src/fex_ctx_vector_internal.h`, #2724) called `std::min()` in a
   translation unit that had read `<windows.h>`, which defines `min` as a
@@ -1595,6 +1682,13 @@
   shift in 64 bits (C4334; the operand never exceeds 30 bits), and three
   conversions in `get_noise_constant()`, the scaled frame size passed to
   `vif_scale_frame_s()` and the second `--feature` option copy are written out.
+
+
+- CI: the hosted CUDA legs of `build.yml` and `libvmaf-build-matrix.yml` install
+  nv-codec-headers at the commit `build-config.env` pins, through
+  `scripts/ci/fetch-nv-codec-headers.sh`, instead of cloning the default branch
+  from one host. The script retries, falls back to GitHub's mirror, and fails
+  when the fetched commit is not the pin or lacks the loader header.
 
 
 - **Traces, metrics and logs leave the services when an OTLP endpoint is
@@ -1853,6 +1947,13 @@
   deviation until 2027-01-09 (ADR-3273). `scripts/dev/check_repository_security.py` fails when the
   policy file declares another mode than `pull_request` without an unexpired entry, and when the
   entry outlives the mode. No ruleset or protection setting changes.
+
+
+- **The master ruleset policy file matches the live ruleset again.** `.github/repository-security-policy.json`
+  declares no required approval, no last-push approval and the maintainer's bypass at mode `pull_request`,
+  with every pull-request parameter the forge reports (ADR-3313, superseding ADR-3273). The bypass-mode
+  exception entry is removed; `scripts/dev/check_repository_security.py` still fails on another mode without
+  an unexpired entry and on a stale entry. The Scorecard Master Gate no longer fails on policy drift.
 
 ## [1.0.0-rc.3] - 2026-10-07
 
