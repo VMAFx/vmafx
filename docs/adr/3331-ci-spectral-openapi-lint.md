@@ -34,6 +34,8 @@ We will run Spectral in CI as the job `Spectral OpenAPI Lint` of `lint-and-forma
 
 A planted defect (an operation under `/v1/planted_defect` without `operationId` or `description`) fails `spectral lint --fail-severity=warn` with non-zero exit code 1 (`operation-description`, `operation-operationId`, `operation-tags`). The valid spec exits 0 with 0 warnings/errors.
 
+In CI, the `Spectral OpenAPI Lint` job of run 38802603401 (job 116666041222) failed on the planted commit `3c2f8dbe4` with the same three warnings at `paths./v1/planted-defect.get` and exit code 1; the defect was then reverted.
+
 ## References
 
 - Operator decision `vmafx-engine-pin-declared-linters` (2026-10-15, paraphrased): one small pull request per declared linter, each seen failing on a planted defect, before the engine pin.

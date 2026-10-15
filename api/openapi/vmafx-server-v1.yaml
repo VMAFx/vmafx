@@ -31,11 +31,6 @@ tags:
     description: Liveness and readiness probes
 
 paths:
-  /v1/planted-defect:
-    get:
-      responses:
-        "200":
-          description: planted
   /v1/score:
     post:
       operationId: scoreVideoPair
