@@ -110,6 +110,9 @@ ignore = [
 # made to agree (per-member trailing comments and alias ordering), which
 # deadlocked `pre-commit run --all-files`. aiutils lives in ai/src/ (#908).
 known-first-party = ["vmaf", "ai", "vmaf_train", "corpus", "aiutils"]
+# packaging/ at the root holds the distribution manifest (ADR-3317), not a
+# Python package; without this, ruff reads `packaging` (PyPA) as first-party.
+known-third-party = ["packaging"]
 
 [tool.ruff.lint.per-file-ignores]
 # Upstream Netflix Python is not our style canon. Keep F821 (undefined
