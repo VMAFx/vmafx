@@ -73,11 +73,12 @@ message ScoreRequest {
   string reference = 1;
 
   // Absolute path to the distorted YUV / Y4M / video file.
-  string distorted = 2;
+  int64 distorted = 2;
 
   // Optional VMAF model name (e.g. "vmaf_v0.6.1"). Defaults to vmaf_v1.0.16_3d0h, the library
   // default (VMAF_DEFAULT_MODEL_VERSION in libvmaf/model.h).
   string model = 3;
+  string plantedBadName = 99;
 
   // Optional scoring options (raw .yuv geometry, backend, device, threads, subsample,
   // precision, features, tiny model, ...), generated from the option groups of
