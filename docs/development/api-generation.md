@@ -299,6 +299,15 @@ in `buf.yaml` and stay as they are.
     package is not a break; a removed or renumbered field, a changed type or a
     renamed enum value is.
 
+    CI runs `buf lint` and `buf breaking` on every ready pull request and
+    every `master` push: the `Buf Lint + Breaking` job of
+    [`lint-and-format.yml`](../../.github/workflows/lint-and-format.yml)
+    installs the same pinned `BUF_VERSION` and compares the protobuf files with
+    the pull request's base commit (on a push, the previous `master` commit).
+    A red job names the file, line and rule; fix the proto definition in
+    `api/vmafx-platform.toml` or `core/api/vmafx.toml` and regenerate, rather
+    than editing `proto/` by hand.
+
 ### Kubernetes resources
 
 The same file declares the custom resources of the `vmafx.dev/v1` API group:

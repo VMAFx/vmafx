@@ -1,0 +1,1 @@
+| [ADR-3329](3329-ci-buf-lint-breaking.md) | Run `buf lint` and `buf breaking` (base commit, `WIRE_JSON`) on `proto/` as the `Buf Lint + Breaking` job of `lint-and-format.yml`, with the pinned `BUF_VERSION` installed by `go install`; satisfies the engine's declared-linter gate for buf. | Accepted | ci, api, governance, standards |
