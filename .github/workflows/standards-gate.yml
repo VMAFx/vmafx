@@ -207,6 +207,10 @@ jobs:
           cp .venv/Scripts/python.exe .venv/Scripts/python3.exe
           .venv/Scripts/python -m pip install --require-hashes -r requirements/locks/pre-commit.txt
           lefthook install
+          # Install the pinned engine once before the parallel hooks start. On a cold
+          # cache every hook ran install_pinned, and one hook's rename replaced the
+          # binary another hook was executing (exit 126 busy / 127 missing).
+          sh .config/lefthook/engine.sh --print-path
           touch test_scratch.txt
           git add test_scratch.txt
           lefthook run pre-commit --no-auto-install
