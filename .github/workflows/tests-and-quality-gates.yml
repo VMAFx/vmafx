@@ -430,6 +430,7 @@ jobs:
           # 1.23.x or 1.24.x is a separate decision since the dnn loader
           # is version-sensitive.
           ORT_VERSION: "1.22.0"
+          ORT_SHA256: "8344d55f93d5bc5021ce342db50f62079daf39aaafb5d311a451846228be49b3"
         run: |
           set -euo pipefail
           ort_name="onnxruntime-linux-x64-${ORT_VERSION}.tgz"
@@ -438,6 +439,8 @@ jobs:
           curl -fSL --retry 5 --retry-delay 5 --retry-all-errors --remove-on-error \
             --max-time 600 --output "${ort_archive}" \
             "${ort_url}"
+          printf '%s  %s\n' "${ORT_SHA256}" "${ort_archive}" \
+            | sha256sum --check --strict
           sudo tar -xzf "${ort_archive}" -C /opt/
           sudo ln -sfn "/opt/onnxruntime-linux-x64-${ORT_VERSION}" /opt/onnxruntime
           # Install a pkg-config file since the tarball ships none.
@@ -1056,7 +1059,9 @@ jobs:
         # success arm and the new fallback path both execute.
         env:
           ORT_VERSION: "1.22.0"
+          ORT_SHA256: "2a19dbfa403672ec27378c3d40a68f793ac7a6327712cd0e8240a86be2b10c55"
         run: |
+          set -euo pipefail
           # CUDA 12.x runtime — user-space libs only, no driver. Lets ORT
           # dlopen libonnxruntime_providers_cuda.so → libcudart.so.12.
           sudo apt-get install -y libcudart12 || sudo apt-get install -y nvidia-cuda-toolkit
@@ -1067,6 +1072,10 @@ jobs:
           if [ ! -f "$tarball" ]; then
             curl -fsSL --retry 3 --retry-delay 5 --max-time 600 -o "$tarball" \
               "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-gpu-${ORT_VERSION}.tgz"
+          fi
+          if ! printf '%s  %s\n' "${ORT_SHA256}" "$tarball" | sha256sum --check --strict; then
+            rm -f "$tarball"
+            exit 1
           fi
           sudo tar -xzf "$tarball" -C /opt/
           sudo ln -sfn "/opt/onnxruntime-linux-x64-gpu-${ORT_VERSION}" /opt/onnxruntime
