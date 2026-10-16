@@ -73,6 +73,7 @@
     ".release-please-manifest.json",
     ".semgrep.yml",
     ".semgrepignore",
+    ".spectral.yaml",
     ".standards-baseline.json",
     ".standards.lock",
     ".standards.yaml",

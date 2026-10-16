@@ -1170,6 +1170,40 @@ jobs:
           fi
           buf breaking --against ".git#ref=${BASE_REF}"
 
+  spectral:
+    needs: tier
+    if: needs.tier.outputs.light == 'true'
+    # Lints api/openapi/vmafx-server-v1.yaml with Spectral's spectral:oas
+    # ruleset (.spectral.yaml, ADR-3331). The standalone release binary is
+    # downloaded at SPECTRAL_VERSION and checked against SPECTRAL_SHA256, both
+    # from build-config.env; no npm dependency tree is installed.
+    name: Spectral OpenAPI Lint
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    steps:
+      # yamllint disable-line rule:line-length
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install pinned Spectral
+        shell: bash
+        run: |
+          version="$(sed -n 's/^SPECTRAL_VERSION="\([0-9.]*\)"$/\1/p' build-config.env)"
+          sha="$(sed -n 's/^SPECTRAL_SHA256="\([0-9a-f]\{64\}\)"$/\1/p' build-config.env)"
+          if [[ -z "${version}" || -z "${sha}" ]]; then
+            echo "::error::build-config.env needs SPECTRAL_VERSION and SPECTRAL_SHA256."
+            exit 1
+          fi
+          url="https://github.com/stoplightio/spectral/releases/download/v${version}/spectral-linux-x64"
+          mkdir -p "${RUNNER_TEMP}/spectral"
+          curl -fsSL --retry 3 --max-time 300 -o "${RUNNER_TEMP}/spectral/spectral" "${url}"
+          echo "${sha}  ${RUNNER_TEMP}/spectral/spectral" | sha256sum -c -
+          chmod +x "${RUNNER_TEMP}/spectral/spectral"
+          echo "${RUNNER_TEMP}/spectral" >> "${GITHUB_PATH}"
+      - name: Spectral OpenAPI lint
+        shell: bash
+        run: spectral lint --fail-severity=warn api/openapi/vmafx-server-v1.yaml
+
   shellcheck:
     needs: [tier, pre-commit]
     if: needs.tier.outputs.light == 'true'
