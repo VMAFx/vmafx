@@ -658,6 +658,89 @@ the GPU's Vulkan device is listed beside it; tests that need a GPU's Vulkan
 memory pick the GPU and ignore lavapipe. Real-GPU Vulkan runs remain a
 separate signal from the CPU runs.
 
+## Reverse debugging and build-time analysis
+
+The dev container carries two pinned diagnostic tools in its `build-deps` stage
+([ADR-3336](../adr/3336-dev-image-rr-clangbuildanalyzer.md)): the `rr` reverse
+debugger and `ClangBuildAnalyzer`.
+
+### Reverse debugging with `rr`
+
+`rr` records non-deterministic execution and replays it deterministically under
+GDB, enabling bidirectional execution control (`reverse-continue`,
+`reverse-step`, reverse watchpoints) to debug race conditions, memory corruption,
+and intermittent test regressions.
+
+Prerequisites and execution inside the container:
+
+- **Host kernel configuration**: `rr` uses hardware performance monitoring
+  counters (PMU). On the host, set:
+
+  ```bash
+  sudo sysctl kernel.perf_event_paranoid=1
+  ```
+
+  (or `<= 1`).
+- **Container permissions**: `rr` calls `perf_event_open`, which Docker's
+  default seccomp profile blocks. `dev/docker-compose.yml` already sets
+  `security_opt: [seccomp=unconfined]` on the `dev-mcp` service; it does not add
+  `SYS_PTRACE`. The rr project's container notes ask for both, so a container
+  started by hand takes
+  `docker run --cap-add=SYS_PTRACE --security-opt seccomp=unconfined ...`, and
+  a compose user who sees a ptrace permission error adds
+  `cap_add: [SYS_PTRACE]` in a local override file.
+- **Recording and replay**:
+
+  ```bash
+  # Inside the dev container:
+  rr record vmaf --reference ref.yuv --distorted dis.yuv ...
+  rr replay
+  ```
+
+- **Fallback for virtualized environments**: In virtual machines without
+  virtualized hardware PMU counters where `rr` cannot record, fall back to GDB's
+  built-in software execution recording:
+
+  ```text
+  (gdb) record full
+  (gdb) continue
+  (gdb) reverse-continue
+  ```
+
+### Build-time analysis with `ClangBuildAnalyzer`
+
+`ClangBuildAnalyzer` analyzes Clang compilation timing traces generated with
+`-ftime-trace` to identify build-time bottlenecks across header inclusions,
+template instantiations, and code generation.
+
+Usage with a Meson build in the container:
+
+```bash
+# 1. Configure a separate Clang build directory with -ftime-trace
+#    (GCC does not know the flag):
+CC=clang CXX=clang++ meson setup build-trace core \
+    -Dc_args=-ftime-trace -Dcpp_args=-ftime-trace
+
+# 2. Build the targets:
+ninja -C build-trace -j2
+
+# 3. Aggregate all JSON time-trace outputs into an analysis archive:
+ClangBuildAnalyzer --all build-trace cba.bin
+
+# 4. Print the analysis report:
+ClangBuildAnalyzer --analyze cba.bin
+```
+
+### Upstream credits and licenses
+
+- **rr**: [https://github.com/rr-debugger/rr](https://github.com/rr-debugger/rr)
+  — MIT licence (upstream `LICENSE` at tag `5.9.0`; bundled third-party parts
+  carry their own notices there). Pinned Ubuntu archive package (`5.9.0-5`).
+- **ClangBuildAnalyzer**:
+  [https://github.com/aras-p/ClangBuildAnalyzer](https://github.com/aras-p/ClangBuildAnalyzer)
+  by Aras Pranckevičius — Unlicense. Pinned tarball release v1.6.0 with verified
+  SHA-256.
+
 ## History
 
 - **2026-09-06, stale checkout.** The container was rebuilt specifically to

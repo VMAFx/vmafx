@@ -282,6 +282,11 @@ backend within it.
   the one image and the hosted tidy lanes measure them. Do not move these
   packages into a second image or drop the lavapipe check; a pinned-image bump
   re-measures the lanes' baselines.
+  The `build-deps` stage installs the diagnostic tools `rr` and `ClangBuildAnalyzer`
+  ([ADR-3336](../adr/3336-dev-image-rr-clangbuildanalyzer.md)); their pins live
+  as single-source `dev/Containerfile` ARGs (`RR_APT_VERSION`, `CLANGBUILDANALYZER_VERSION`,
+  `CLANGBUILDANALYZER_SHA256`) and `scripts/ci/check_ort_tarball_pins.py` guards
+  the ClangBuildAnalyzer download against unpinned installs, checksum omissions, and extraction order bugs.
   `dev/scripts/smoke-probe-loop.sh` assumes the golden pair lives at
   `${VMAF_TESTDATA_PATH}/ref_576x324_48f.yuv` / `dis_576x324_48f.yuv`
   — do not rename these files. The probe JSON schema fields (`ts`,

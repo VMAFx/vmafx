@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
-"""Unit tests for ONNX Runtime tarball SHA-256 pin verification (ADR-3334)."""
+"""Unit tests for tracked release tarball SHA-256 pin verification (ADR-3334, ADR-3336)."""
 
 from __future__ import annotations
 
@@ -212,6 +212,78 @@ class OrtTarballSingleSourceTest(unittest.TestCase):
                 0,
                 f"Expected exit 0 for CPU+GPU of same version, got {proc.returncode}.\nStdout:\n{proc.stdout}\nStderr:\n{proc.stderr}",
             )
+
+    def test_cba_live_containerfile_passes(self) -> None:
+        """Case 8: Positive: live dev/Containerfile CBA block passes."""
+        proc = self.run_check(ROOT / "dev/Containerfile")
+        self.assertEqual(proc.returncode, 0, f"Expected 0, got {proc.returncode}: {proc.stderr}")
+        self.assertEqual(proc.stdout.strip(), "")
+
+    def test_cba_negative_sha_removed(self) -> None:
+        """Case 9: Negative: CBA with missing CLANGBUILDANALYZER_SHA256 fails exit 1 naming ClangBuildAnalyzer."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cfile = Path(tmpdir) / "Containerfile"
+            text = (ROOT / "dev/Containerfile").read_text(encoding="utf-8")
+            self.assertIn("ARG CLANGBUILDANALYZER_SHA256=", text)
+            mutated = "\n".join(
+                line
+                for line in text.splitlines()
+                if not line.startswith("ARG CLANGBUILDANALYZER_SHA256=")
+            )
+            cfile.write_text(mutated + "\n", encoding="utf-8")
+            proc = self.run_check(cfile)
+            self.assertEqual(proc.returncode, 1)
+            self.assertIn("ClangBuildAnalyzer", proc.stdout)
+            self.assertIn("missing CLANGBUILDANALYZER_SHA256", proc.stdout)
+
+    def test_cba_boundary_63_hex(self) -> None:
+        """Case 10: Boundary: CBA with 63-hex SHA-256 digest fails exit 1 naming ClangBuildAnalyzer."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cfile = Path(tmpdir) / "Containerfile"
+            text = (ROOT / "dev/Containerfile").read_text(encoding="utf-8")
+            target = "ARG CLANGBUILDANALYZER_SHA256=868a8d34ecb9b65da4e5874342062a12c081ce4385c7ddd6ce7d557a0c5c292d"
+            self.assertIn(target, text)
+            cfile.write_text(
+                text.replace(target, f"ARG CLANGBUILDANALYZER_SHA256={'a' * 63}"),
+                encoding="utf-8",
+            )
+            proc = self.run_check(cfile)
+            self.assertEqual(proc.returncode, 1)
+            self.assertIn("ClangBuildAnalyzer", proc.stdout)
+            self.assertIn("malformed CLANGBUILDANALYZER_SHA256", proc.stdout)
+
+    def test_cba_negative_dropped_sha256sum(self) -> None:
+        """Case 11: Negative: CBA with dropped sha256sum line fails exit 1 naming ClangBuildAnalyzer."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cfile = Path(tmpdir) / "Containerfile"
+            text = (ROOT / "dev/Containerfile").read_text(encoding="utf-8")
+            target = (
+                '    && echo "${CLANGBUILDANALYZER_SHA256}  /tmp/cba.tar.gz" | sha256sum -c - \\\n'
+            )
+            self.assertIn(target, text)
+            cfile.write_text(text.replace(target, ""), encoding="utf-8")
+            proc = self.run_check(cfile)
+            self.assertEqual(proc.returncode, 1)
+            self.assertIn("ClangBuildAnalyzer", proc.stdout)
+            self.assertIn("missing sha256sum --check in block", proc.stdout)
+
+    def test_cba_negative_tar_before_check(self) -> None:
+        """Case 12: Negative: CBA with tar extraction before sha256sum fails exit 1 naming ClangBuildAnalyzer."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cfile = Path(tmpdir) / "Containerfile"
+            text = (ROOT / "dev/Containerfile").read_text(encoding="utf-8")
+            sha_line = (
+                '    && echo "${CLANGBUILDANALYZER_SHA256}  /tmp/cba.tar.gz" | sha256sum -c - \\\n'
+            )
+            tar_line = "    && tar -xzf /tmp/cba.tar.gz -C /tmp \\\n"
+            self.assertIn(sha_line + tar_line, text)
+            cfile.write_text(
+                text.replace(sha_line + tar_line, tar_line + sha_line), encoding="utf-8"
+            )
+            proc = self.run_check(cfile)
+            self.assertEqual(proc.returncode, 1)
+            self.assertIn("ClangBuildAnalyzer", proc.stdout)
+            self.assertIn("tar extraction occurs before sha256sum --check", proc.stdout)
 
 
 if __name__ == "__main__":
