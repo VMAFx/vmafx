@@ -1,0 +1,1 @@
+- **The hosted tidy lanes retry the dev container pull.** `scripts/ci/pull-dev-image.sh` gives the login and the pull of the digest-pinned image four bounded attempts before the lane fails with an error naming the image, so a single DNS timeout on `ghcr.io` no longer fails a nightly lane (#2792).
