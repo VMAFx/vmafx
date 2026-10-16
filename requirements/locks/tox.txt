@@ -1,6 +1,6 @@
 # VMAFx hash lock; regenerate with: make python-locks-write
 # vmafx-uv-version: 0.12.18
-# vmafx-input-sha256: e792d0b5bc17a357642753adae2ce4e0385a2b36083295670524ab57490a2cf3
+# vmafx-input-sha256: c7c9e1c8e91d954dd298a540d080925f0e29e72d97816512e0b9b79bc6c0f2ab
 # vmafx-inputs: requirements/locks/tox.in
 cachetools==7.2.1 \
     --hash=sha256:63aa53dfe7473c10cccdd5a01dedf76ef2c4b73a58840d9396e7d0752cbdac3b \
@@ -52,9 +52,9 @@ tomli-w==1.2.0 \
     --hash=sha256:188306098d013b691fcadc011abd66727d3c414c571bb01b1a174ba8c983cf90 \
     --hash=sha256:2dd14fac5a47c27be9cd4c976af5a12d87fb1f0b4512f81d69cce3b35ae25021
     # via tox
-tox==4.64.10 \
-    --hash=sha256:7482b96fefe1e4b49e406a9a62b25b415690bec2cebe9cc0cd59e38af88ce671 \
-    --hash=sha256:9f0bd51c4fe770b682d0c9540842efc07bd98c302cc327986201169e319de669
+tox==4.65.4 \
+    --hash=sha256:1c4f29c5886ad46228da8a023f8f82167db2ff3da7a6da060f9d4fc3dc2e2dd0 \
+    --hash=sha256:e416fcfef86874001ba90787c282f4c6ecae6e2e167dbe65e7b8b53f9d43c931
     # via -r requirements/locks/tox.in
 virtualenv==21.14.6 \
     --hash=sha256:c6b74616e64bffa9532cfa9dfd54ffbab0dc9b999df2bb8ec0d75e559b983661 \

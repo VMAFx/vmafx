@@ -1,0 +1,1 @@
+| [ADR-3331](3331-ci-spectral-openapi-lint.md) | Run Spectral on `api/openapi/vmafx-server-v1.yaml` as the `Spectral OpenAPI Lint` job of `lint-and-format.yml`, with pinned `SPECTRAL_VERSION` from `build-config.env`; satisfies the engine's declared-linter gate for spectral. | Accepted | ci, api, governance, standards |

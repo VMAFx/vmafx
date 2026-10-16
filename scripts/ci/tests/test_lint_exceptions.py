@@ -127,6 +127,98 @@ class LintExceptionsTests(unittest.TestCase):
         self.assertEqual(le.still_read("spdx", [], self.root, TODAY), [])
 
 
+class OsvScannerTests(unittest.TestCase):
+    """Validate root osv-scanner.toml against a throw-away root."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+
+    def write_osv(self, text: str) -> None:
+        (self.root / le.OSV_FILE).write_text(textwrap.dedent(text), encoding="utf-8")
+
+    def test_absent_file_gives_no_findings(self) -> None:
+        self.assertEqual(le.osv_findings(self.root, TODAY), [])
+
+    def test_live_entry_is_clean(self) -> None:
+        self.write_osv("""\
+            [[IgnoredVulns]]
+            id = "GO-2026-5932"
+            reason = "unreachable"
+            ignoreUntil = 2026-12-31
+        """)
+        self.assertEqual(le.osv_findings(self.root, TODAY), [])
+
+    def test_expired_entry_is_reported(self) -> None:
+        yesterday = TODAY - dt.timedelta(days=1)
+        self.write_osv(f"""\
+            [[IgnoredVulns]]
+            id = "GO-2026-5932"
+            reason = "unreachable"
+            ignoreUntil = {yesterday}
+        """)
+        findings = le.osv_findings(self.root, TODAY)
+        self.assertEqual(len(findings), 1)
+        self.assertIn(f"osv-scanner.toml GO-2026-5932: expired on {yesterday}", findings[0])
+
+    def test_boundary_today_is_clean(self) -> None:
+        self.write_osv(f"""\
+            [[IgnoredVulns]]
+            id = "GO-2026-5932"
+            reason = "unreachable"
+            ignoreUntil = {TODAY}
+        """)
+        self.assertEqual(le.osv_findings(self.root, TODAY), [])
+
+    def test_missing_ignore_until_gives_needs_finding(self) -> None:
+        self.write_osv("""\
+            [[IgnoredVulns]]
+            id = "GO-2026-5932"
+            reason = "unreachable"
+        """)
+        findings = le.osv_findings(self.root, TODAY)
+        self.assertEqual(len(findings), 1)
+        self.assertIn("needs id, reason, ignoreUntil (a TOML date)", findings[0])
+
+    def test_quoted_string_date_gives_needs_finding(self) -> None:
+        self.write_osv("""\
+            [[IgnoredVulns]]
+            id = "GO-2026-5932"
+            reason = "unreachable"
+            ignoreUntil = "2026-12-31"
+        """)
+        findings = le.osv_findings(self.root, TODAY)
+        self.assertEqual(len(findings), 1)
+        self.assertIn("needs id, reason, ignoreUntil (a TOML date)", findings[0])
+
+    def test_duplicate_id_is_refused(self) -> None:
+        self.write_osv("""\
+            [[IgnoredVulns]]
+            id = "GO-2026-5932"
+            reason = "unreachable"
+            ignoreUntil = 2026-12-31
+
+            [[IgnoredVulns]]
+            id = "GO-2026-5932"
+            reason = "duplicate"
+            ignoreUntil = 2026-12-31
+        """)
+        findings = le.osv_findings(self.root, TODAY)
+        self.assertIn("osv-scanner.toml GO-2026-5932: declared twice", findings)
+
+    def test_expiry_beyond_cap_is_refused(self) -> None:
+        self.write_osv("""\
+            [[IgnoredVulns]]
+            id = "GO-2026-5932"
+            reason = "unreachable"
+            ignoreUntil = 2030-01-01
+        """)
+        findings = le.osv_findings(self.root, TODAY)
+        self.assertEqual(len(findings), 1)
+        self.assertIn("more than 400 days out", findings[0])
+
+
 class RepositoryListTests(unittest.TestCase):
     """The tracked list passes, and a stale or expired entry fails the CLI."""
 
