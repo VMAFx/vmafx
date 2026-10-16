@@ -32,4 +32,5 @@ invariant: LD_LIBRARY_PATH includes tbb; NEO/ROCm pinned to kernel UAPI; ORT_VER
    (matching container's ROCm 10.1.0 + CUDA 13.x stack —
    ADR-0541/ADR-0542, ROCm bumped by ADR-1225). Bumping ORT_VERSION
    -> verify new version's tarball exists at GitHub releases URL
-   before updating ARG, update this note.
+   before updating ARG, update this note; ORT_SHA256 moves with ORT_VERSION
+   in locked pairs, verifying tarball before extraction (ADR-3334).

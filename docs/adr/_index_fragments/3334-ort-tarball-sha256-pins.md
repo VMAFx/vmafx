@@ -1,0 +1,1 @@
+| [ADR-3334](3334-ort-tarball-sha256-pins.md) | Pin and verify SHA-256 digests for all ONNX Runtime C/C++ tarball downloads across workflows and container builds; checked by `check_ort_tarball_pins.py` and Renovate | Accepted | ci, security, supply-chain |

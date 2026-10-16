@@ -472,7 +472,7 @@ repos:
         name: Base image and toolchain single-source tests
         entry: python3 -m unittest discover -s scripts/ci/tests -p 'test_*single_source.py'
         language: system
-        files: '^(Makefile|\.pre-commit-config\.yaml|build-config\.env|pyproject\.toml|rust-toolchain\.toml|Cargo\.toml|core/src/rust/Cargo\.toml|dev/Containerfile|renovate\.json|Dockerfile|docker/Dockerfile\.[a-z-]+|\.github/workflows/(build|libvmaf-build-matrix|rust-ci)\.yml|scripts/ci/(check-base-image-single-source\.sh|check-container-image-references\.py|check-cuda-pin-lockstep\.py|check-workflow-versions\.py|tests/test_(base_image|cuda_pin|level_zero|formatter_pins|mypy_python_version|rust_toolchain)_single_source\.py))$'
+        files: '^(Makefile|\.pre-commit-config\.yaml|build-config\.env|pyproject\.toml|rust-toolchain\.toml|Cargo\.toml|core/src/rust/Cargo\.toml|dev/Containerfile|renovate\.json|Dockerfile|docker/Dockerfile\.[a-z-]+|\.github/workflows/(build|go-ci|libvmaf-build-matrix|rust-ci|tests-and-quality-gates)\.yml|scripts/ci/(check-base-image-single-source\.sh|check-container-image-references\.py|check-cuda-pin-lockstep\.py|check-workflow-versions\.py|check_ort_tarball_pins\.py|tests/test_(base_image|cuda_pin|level_zero|formatter_pins|mypy_python_version|ort_tarball|rust_toolchain)_single_source\.py))$'
         pass_filenames: false
 
       - id: test-install-cuda-toolkit
