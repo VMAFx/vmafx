@@ -12,22 +12,22 @@
       "adr": 781,
       "file": "docs/adr/0781-sidecar-sgd-ema-online-trainer.md",
       "rule": "proposed-with-implementing-commit",
-      "reason": "The trainer building blocks shipped in PR #178; the end-to-end producer, deployment and checkpoint-consumption path is not implemented, as the ADR itself states.",
-      "expires": "2027-01-05"
+      "reason": "The trainer building blocks shipped in PR #178; the end-to-end producer, deployment and checkpoint-consumption path is not implemented, as the ADR itself states. Re-reviewed 2026-10-15: still missing; scheduled for 1.1 by issue #2467. Category D (120 days).",
+      "expires": "2027-02-12"
     },
     {
       "adr": 783,
       "file": "docs/adr/0783-k8s-e2e-integration-test-harness.md",
       "rule": "proposed-with-implementing-commit",
-      "reason": "PR #152 added the kind and kuttl harness, but test/e2e/kuttl-tests holds one of the five decided cases; the operator, heartbeat, rclone and sidecar-trainer cases are missing.",
-      "expires": "2027-01-05"
+      "reason": "PR #152 added the kind and kuttl harness; re-reviewed 2026-10-15, test/e2e/kuttl-tests holds two of the five decided cases (01-chart-cpu-score, 02-controller-ha); the heartbeat, rclone and sidecar-trainer cases are missing, scheduled for 1.1 by issue #2467. Category D (120 days).",
+      "expires": "2027-02-12"
     },
     {
       "adr": 907,
       "file": "docs/adr/0907-perf-regression-gate-wall-clock.md",
       "rule": "proposed-with-implementing-commit",
-      "reason": "scripts/perf/check-regression.py and its baseline exist, but no workflow on master invokes the gate, so the decided CI wiring is missing.",
-      "expires": "2027-01-05"
+      "reason": "scripts/perf/check-regression.py and its baseline exist, but no workflow on master invokes the gate (re-reviewed 2026-10-15). Benchmark gates belong to RC8 (issue #1245), never RC3-RC7, so the CI wiring waits for it. Category D (120 days).",
+      "expires": "2027-02-12"
     }
   ]
 }
