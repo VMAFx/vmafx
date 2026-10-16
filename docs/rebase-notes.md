@@ -8,6 +8,123 @@ search:
 # Rebase notes
 
 <!-- rebase-notes:fragments:begin (rendered from docs/rebase-notes.d/; do not edit) -->
+## Spectral OpenAPI lint in CI (2026-10-15)
+
+`ci/spectral-lint`, [ADR-3331](adr/3331-ci-spectral-openapi-lint.md). The `spectral` job of
+`.github/workflows/lint-and-format.yml` runs the checksum-verified Spectral release binary directly
+(`spectral lint`); keep it a direct step, because `praetorctl audit`
+counts a declared linter only when a workflow step runs it. `SPECTRAL_VERSION` and `SPECTRAL_SHA256` in
+`build-config.env` stay the one spectral pin; move both together.
+
+## VmafPicture keeps no colour member after upstream 0b9462873 (2026-10-15)
+
+Netflix/vmaf `0b9462873` moves `VmafColor color` to the end of upstream's
+`VmafPicture`. A sync keeps the fork's struct without the member
+(ADR-1822, status update 2026-10-15) and does not port
+`vmaf_picture_convert_context_init()`; `test_picture_no_color_member` fails
+when a `color` member returns to `core/include/libvmaf/picture.h`.
+
+## buf lint and breaking in CI (2026-10-15)
+
+`ci/buf-lint-breaking`, [ADR-3329](adr/3329-ci-buf-lint-breaking.md). The `buf` job of
+`.github/workflows/lint-and-format.yml` runs the `buf` program directly (`buf lint`,
+`buf breaking`); keep it a direct step, because `praetorctl audit` counts a declared linter only
+when a workflow step runs it, not through `scripts/codegen/proto_generate.py`. `BUF_VERSION` in
+`build-config.env` stays the one buf pin.
+
+## SYCL SpEED covariance is the reference's sequential fp64 sum (2026-10-08)
+
+`fix/sycl-speed-covariance-exact`,
+[ADR-2690](adr/2690-sycl-speed-covariance-fast-exact.md). SYCL kernel, one new
+header, tests, docs.
+
+- `speed_sycl_pipeline.cpp` loses the pair-sum covariance kernel
+  (`centred_product`, `accumulate`, `covariance_partial`, `covariance_group`,
+  `kGroup`). `launch_covariance()` runs the helpers of
+  `sycl_speed_cov_math.h` in three launches: differences, products (both
+  stored as fp64 bit patterns in the new `cov_diff` / `cov_terms` buffers,
+  `cov_sums` carries the running sum between row slices) and one sequential
+  add chain per (channel, entry); `covariance_entry()` is the same operations
+  in one function, kept for the device probe. Upstream Netflix
+  has no SYCL twin, so a sync never conflicts here; a rebase onto a branch
+  that still has the old kernel keeps this side. `speed.c` is untouched.
+- The covariance quotient is `signed_div()` by the exact `uint64_t` count,
+  which keeps the exact-count division of #2188; `count_ff()` and
+  `ff_div_to_float()` stay in `sycl_exact_fp.h` but no longer store a
+  covariance. `test_speed_cov_count_contract.py` holds SYCL to the soft-fp64
+  quotient and refuses a pair store in the pipeline.
+- `core/test/test_sycl_speed_cov_math`, `test_sycl_speed_cov_chain`
+  (device-free, with `speed_cov_cases.h` and the synthetic plane
+  `speed_cov_synthetic_plane.h`, written by
+  `scripts/dev/gen_speed_cov_synthetic_plane.py`) and `test_sycl_speed_cov_exact_contract.py`
+  are new. No rebase impact outside
+  `core/src/feature/sycl/` and `core/test/`.
+
+## Scorecard gate trusts v5.6.0 (2026-10-15)
+
+- `scripts/ci/scorecard_gate.py`: `VERSION`, `TOOL_COMMIT` and
+  `ACTION_COMMIT` name Scorecard v5.6.0 and `ossf/scorecard-action` v2.5.0.
+  Fork-only, nothing upstream to merge.
+- **On sync or a later bump**: the `uses: ossf/scorecard-action@` lines of
+  `scorecard.yml` and `security-scans.yml` move in the same pull request as
+  `ACTION_COMMIT`; `test_every_scan_uses_the_action_the_gate_reviewed` fails
+  otherwise. Compare `docs/checks/internal/checks.yaml` of both tool commits
+  before keeping `WEIGHTS`.
+
+## vmafx-sys refuses a stale libvmaf header (#2786) (2026-10-15)
+
+- `bindings/rust/vmafx-sys/build.rs` checks the generated bindings against
+  `REQUIRED_SYMBOLS` in `bindings/rust/vmafx-sys/build_support/header_check.rs`
+  and fails with the header path and the missing names. Fork-only code; no
+  upstream file is involved. **On sync**: a new libvmaf name used by
+  `vmafx-sys/src/safe.rs` or `bindings/rust/vmafx/src` goes on the list;
+  `cargo test -p vmafx-sys --test header_check` fails otherwise.
+
+## ADR claim lock: stale-lock takeover and longer wait (2026-10-15)
+
+In `scripts/adr/next-free.sh` the lock is the owner file, created with
+`O_EXCL` (`noclobber`) inside the lock directory; the directory alone holds
+nothing, so a claim killed between `mkdir` and the owner write leaves a free
+lock. An owner file whose process is gone is removed with a warning, under a
+second directory (`<lock>.takeover`) that serialises takeovers, after the
+process and the owner line are checked again; a running holder's file is never
+removed. The exit trap is set before the lock is taken, and the wait bound is
+`VMAF_ADR_LOCK_WAIT_S` (default 60). A sync or cleanup must not bring back
+`mkdir`-only ownership, a grace-period takeover of a directory without an owner
+file (it raced a claim that had just created the directory), the fixed 10 s
+wait, a takeover outside the takeover lock or without the re-checks, or a
+takeover of a lock whose holder still runs.
+`scripts/adr/tests/test-next-free-stale-lock.sh` and
+`scripts/adr/tests/test-next-free-concurrent.sh` guard it.
+
+## One pinned Rust toolchain (2026-10-15)
+
+- `build-config.env` `RUST_VERSION`, `rust-toolchain.toml`, the
+  `rust-version` of `Cargo.toml` and `core/src/rust/Cargo.toml`,
+  `.github/workflows/rust-ci.yml` and the rustup install of `dev/Containerfile`
+  name one version (ADR-3318); `check-workflow-versions.py` compares them.
+  Fork-only, nothing upstream to merge.
+- `core/src/meson.build`: a missing cargo with `enable_rust_features=true` is
+  an `error()`; `core/src/rust/build_staticlib.py` runs cargo in the manifest's
+  directory. **On sync**: keep both; a new crate takes
+  `rust-version.workspace = true`, and a new place that installs Rust reads
+  `RUST_VERSION` and gets a selector in the Renovate `Rust toolchain` manager.
+
+## Distribution manifest and channel generators (2026-10-15)
+
+- `packaging/manifest.toml` is the one description of shipped artifacts and
+  channels (ADR-3317). A pull request that renames a producer job in
+  `supply-chain.yml`, `windows-tester-bundle.yml` or
+  `macos-tester-bundle.yml`, changes a licensing record in
+  `tools/rc1-tester/image/licensing.json` or a package licence field changes
+  the manifest in the same pull request; `distribution.py check` (pre-commit
+  hook `distribution-manifest`, required job `Release Script Contract`) fails
+  otherwise.
+- `packaging/schemas/winget-1.12.0/` is vendored and hash-checked by
+  `scripts/docs/check_vendored_assets.py`, which now scans `docs/` and
+  `packaging/`. Replace the files with `vendor.json` updated, never edit them.
+- No upstream Netflix file is touched.
+
 ## Release provenance assets (2026-10-14)
 
 - `.github/workflows/supply-chain.yml` normalizes and uploads `vmafx-build-provenance.intoto.jsonl`

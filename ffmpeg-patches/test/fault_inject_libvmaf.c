@@ -42,7 +42,7 @@ typedef int (*read_fn)(VmafContext *vmaf, VmafPicture *ref, VmafPicture *dist, u
 
 static long env_long(const char *name)
 {
-    /* NOLINTNEXTLINE(concurrency-mt-unsafe) — test shim; FFmpeg's filter thread is the only caller. */
+    /* NOLINTNEXTLINE(concurrency-mt-unsafe) — ADR-0488: test shim, one caller thread. */
     const char *v = getenv(name);
     if (v == NULL || *v == '\0') {
         return 0;

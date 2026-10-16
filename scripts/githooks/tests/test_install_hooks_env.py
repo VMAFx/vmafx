@@ -11,6 +11,13 @@ checkout writes the hook repository's tree into the worktree's index. The
 ``pre-commit install-hooks`` with the commit's git variables unset before
 ``run`` / ``hook-impl``.
 
+pre-commit 4.7.0 strips the git variables from its own ``npm install`` (its
+pull request 3774), so the block is now the second barrier. A pre-commit that
+runs npm with the commit's environment, as every release before 4.7.0 did, is
+modelled by a ``pre-commit`` wrapper first on PATH: on its first call it runs
+``npm install -g git+file://<hook repo>`` with the environment it was given,
+then hands over to the real framework.
+
 These tests take the real ``run`` scripts from ``lefthook.yml`` and execute them
 as a genuine ``pre-commit`` hook of a linked worktree, so git itself exports the
 variable. The negative case removes the ``install-hooks`` line (a mutation of
@@ -87,6 +94,7 @@ class InstallHooksEnvTests(unittest.TestCase):
         )
         self.git("add", ".", cwd=self.hook_repo)
         self.commit("test: hook", cwd=self.hook_repo)
+        self.install_leaky_framework()
         revision = self.git("rev-parse", "HEAD", cwd=self.hook_repo).stdout.strip()
         self.main = self.base / "main"
         self.main.mkdir()
@@ -101,6 +109,30 @@ class InstallHooksEnvTests(unittest.TestCase):
         self.commit("test: fixture", cwd=self.main)
         self.worktree = self.base / "worktree"
         self.git("worktree", "add", "-b", "feature", str(self.worktree), cwd=self.main)
+
+    def install_leaky_framework(self) -> None:
+        """Put a pre-commit first on PATH that installs node hooks with the caller's git env."""
+        real = shutil.which("pre-commit", path=self.env.get("PATH"))
+        self.assertIsNotNone(real)
+        stub_dir = self.base / "stub-bin"
+        stub_dir.mkdir()
+        stub = stub_dir / "pre-commit"
+        stub.write_text(
+            "#!/bin/sh\n"
+            'marker="$LEAKY_NPM_PREFIX/.installed"\n'
+            'if [ ! -e "$marker" ]; then\n'
+            '  npm install --allow-git=root --install-links -g --prefix "$LEAKY_NPM_PREFIX" "$LEAKY_HOOK_URL" >/dev/null 2>&1 || exit 1\n'
+            '  : > "$marker"\n'
+            "fi\n"
+            f'exec "{real}" "$@"\n'
+        )
+        stub.chmod(0o755)
+        (self.base / "npm-prefix").mkdir()
+        self.env.update(
+            PATH=f"{stub_dir}{os.pathsep}{self.env.get('PATH', '')}",
+            LEAKY_NPM_PREFIX=str(self.base / "npm-prefix"),
+            LEAKY_HOOK_URL="git+" + self.hook_repo.as_uri(),
+        )
 
     def git(self, *args: str, cwd: Path, check: bool = True) -> TextCommandResult:
         return self.sh("git", "-C", str(cwd), *args, check=check)

@@ -2,7 +2,7 @@
 #
 # Sandboxed vmaf-mcp server — MCP over stdio + pre-built libvmaf binary.
 #
-# Build from the repo root so the build context has libvmaf and mcp-server/:
+# Build from the repo root so the build context has core/ and mcp-server/:
 #   docker build -f mcp-server/vmaf-mcp/Dockerfile -t vmaf-mcp .
 #
 # Run (mount your YUV corpus read-only, keep stdio open for MCP):
@@ -10,6 +10,8 @@
 #       -v /path/to/yuv-corpus:/data:ro \
 #       -e VMAF_MCP_ALLOW=/data \
 #       vmaf-mcp
+#
+# The server runs as UID/GID 65532; mount the corpus readable by that user.
 
 FROM ubuntu:26.04@sha256:88a381d5b5eeb2b35d3ad70925a362c37ce569daf43ede89ff818ec20e4d3794 AS build
 
@@ -23,7 +25,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /src
 COPY . /src
-WORKDIR /src/libvmaf
+WORKDIR /src/core
 RUN meson setup ../build -Denable_cuda=false -Denable_sycl=false --buildtype=release \
     && ninja -C ../build
 WORKDIR /src
@@ -54,5 +56,7 @@ RUN pip install --no-cache-dir --break-system-packages --ignore-installed --requ
     && pip install --no-cache-dir --break-system-packages --ignore-installed --no-deps \
         /tmp/vmaf_mcp-*.whl
 
+# The server runs unprivileged; it writes only to the system temp directory.
+USER 65532:65532
 WORKDIR /opt/vmaf
 ENTRYPOINT ["vmaf-mcp"]
