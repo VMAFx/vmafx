@@ -40,7 +40,7 @@ dependencies = [
   # together with an onnxruntime that reads the newer IR.
   "onnx>=1.22.0,<1.23",
   # Python runtime floor; the native libvmaf ORT library is installed separately.
-  "onnxruntime>=1.30.0,<2.0",
+  "onnxruntime>=1.31.0,<2.0",
   "onnxscript>=0.7.2",
   "numpy>=2.5.3,<3.0",
   "pandas>=3.0.6,<3.1",
@@ -48,9 +48,9 @@ dependencies = [
   "Pillow>=12.3.0,<14.0",
   "scipy>=1.18.1",
   "scikit-learn>=1.9.1",
-  "pydantic>=2.13.5",
+  "pydantic>=2.14.1",
   "pyyaml>=6.0.3",
-  "typer>=0.27.2",
+  "typer>=0.27.3",
   "rich>=15.0.0",
   "tqdm>=4.70.1",
   # PyTorch deprecated `torch.ao.quantization` wholesale in 2.14 and removes it
@@ -67,7 +67,7 @@ viz  = ["matplotlib>=3.11.2", "seaborn>=0.13.2"]
 dev  = [
   "pytest>=9.1.1",
   "pytest-timeout>=2.4.0",
-  "ruff>=0.16.10",
+  "ruff>=0.17.0",
   "mypy>=2.4.0",
   "types-PyYAML>=6.0.12.20260906",
   "pandas-stubs>=3.0.5.260914",

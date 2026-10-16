@@ -271,7 +271,7 @@ RUN mkdir -p /dist/lib /dist/bin /dist/model /licence-inputs \
 # ===========================================================================
 FROM ${RELEASE_BUILDER_BASE} AS cuda13-assembled
 LABEL org.opencontainers.image.title="vmafx"
-LABEL org.opencontainers.image.description="VMAFX production CUDA 13.4.2 runtime (the host driver provides libcuda). Licences: /usr/local/share/vmafx/licenses/THIRD_PARTY_NOTICES.txt"
+LABEL org.opencontainers.image.description="VMAFX production CUDA 13.4.3 runtime (the host driver provides libcuda). Licences: /usr/local/share/vmafx/licenses/THIRD_PARTY_NOTICES.txt"
 LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
 LABEL org.opencontainers.image.licenses="EUPL-1.2 AND BSD-2-Clause-Patent AND BSD-3-Clause AND BSD-2-Clause AND ISC AND MIT AND Unlicense AND LicenseRef-LIVE-BRISQUE"
 LABEL org.opencontainers.image.vendor="Lusoris"
