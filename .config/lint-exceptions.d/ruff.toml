@@ -25,5 +25,5 @@ expires = 2027-03-31
 
 [[exception]]
 path = "tools/figures/mkdocs_hook.py"
-reason = "Praetor-managed file: `praetorctl audit` compares it with praetor's own bytes (ADR-1351). Since the pin 3a766f2d56ad praetor ships it ruff-formatted, but its two imports inside functions (kept so the hook loads without MkDocs in tests) fail this repository's PLC0415 (ADR-2784). Fix: praetor moves the imports to the top."
-expires = 2026-12-31
+reason = "Praetor-managed file: `praetorctl audit` compares it with praetor's own bytes (ADR-1351). Re-reviewed 2026-10-15 against the engine pin 3bbde07: the two function-local imports (lines 194 and 241, kept so the hook loads without MkDocs in tests) still fail this repository's PLC0415 (ADR-2784); the fix is praetor's (cordanaLLM/praetor issue 1204, open). Category D (120 days)."
+expires = 2027-02-12
