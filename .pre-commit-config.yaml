@@ -236,7 +236,7 @@ repos:
         # zopfli: the Windows zip builder's encoder its tests exercise (ADR-1594);
         # keep equal to requirements/locks/windows-tester-zip.in.
         additional_dependencies: [pytest==9.1.1, zopfli==0.4.3]
-        files: '^tools/rc1-tester/(src/|tests/|vmaf-rc1-report|pyproject\.toml|README\.md|AGENTS\.md)'
+        files: '^(tools/rc1-tester/(src/|tests/|vmaf-rc1-report|pyproject\.toml|README\.md|AGENTS\.md)|scripts/lib/safe_subprocess\.py$)'
         pass_filenames: false
 
       - id: no-conflict-markers
