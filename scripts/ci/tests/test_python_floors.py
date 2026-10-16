@@ -37,13 +37,13 @@ class TestParseFloor(unittest.TestCase):
         floor, err = check_python_floors.parse_floor("==3.12")
         self.assertIsNone(floor)
         self.assertIsNotNone(err)
-        self.assertIn("does not declare a '>=' floor", err)
+        self.assertIn("does not declare a '>=' floor", err or "")
 
     def test_missing_spec_refused(self) -> None:
         floor, err = check_python_floors.parse_floor(None)
         self.assertIsNone(floor)
         self.assertIsNotNone(err)
-        self.assertIn("missing requires-python", err)
+        self.assertIn("missing requires-python", err or "")
 
 
 class TestCheckPythonFloors(unittest.TestCase):
