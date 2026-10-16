@@ -1,0 +1,5 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+#
+# Spectral OpenAPI linting ruleset (ADR-3331).
+extends: ["spectral:oas"]
