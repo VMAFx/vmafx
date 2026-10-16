@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # Research digest titles
 
-Every research digest, one heading each (801), so the site search finds a digest by its title; digest bodies are not in the search index ([ADR-1512](../adr/1512-docs-search-user-pages-only.md)).
+Every research digest, one heading each (802), so the site search finds a digest by its title; digest bodies are not in the search index ([ADR-1512](../adr/1512-docs-search-user-pages-only.md)).
 
 ## Research-0001: Cache shape for `bisect-model-quality` nightly
 
@@ -2695,6 +2695,10 @@ Every research digest, one heading each (801), so the site search finds a digest
 ## Research-2479: what replacing the C and C++ host code with Rust takes
 
 [2479-rust-core-migration](2479-rust-core-migration.md)
+
+## Research-2480: Stale-lock recovery for the ADR number allocator
+
+[2480-adr-allocator-stale-lock](2480-adr-allocator-stale-lock.md)
 
 ## ADR-0108 Six-Deliverables Compliance Audit — 2026-05-29
 

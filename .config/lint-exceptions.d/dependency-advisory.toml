@@ -1,0 +1,13 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
+# Declared exceptions to open dependency advisories (Dependabot alerts) that no version of the
+# dependency in reach fixes. Format and rules: scripts/ci/lint_exceptions.py. The path is the
+# lock file the alert names; an entry stops holding on `expires`, and the alert itself stays
+# open (a dismissal carries no expiry). The governance engine has no rule for this list yet:
+# its HISS-11 entries name workflow files only.
+
+[[exception]]
+path = "requirements/locks/tooling-tests.txt"
+reason = "Dependabot alerts 8 and 9 (GHSA-84m7-p3x7-pcfv, medium): mcp 1.29.0 comes in only through semgrep, whose releases pin mcp==1.29.0 exactly (1.179.0, 1.180.0 and 1.181.0, checked 2026-10-16). The flaw is unbounded session state in the Streamable HTTP server mode; the tooling suite runs the semgrep CLI and serves no MCP HTTP endpoint, so the path is unreachable. No uv override: it would break semgrep's exact pin. Exception category C (10 days). Fix: Renovate bumps semgrep once its release allows mcp>=1.30.0, which closes both alerts; then delete this entry."
+expires = 2026-10-25

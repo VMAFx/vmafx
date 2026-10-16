@@ -910,6 +910,9 @@ jobs:
         # ADR-1151, ADR-1348, ADR-3292; the rules are in the script's header.
         run: bash scripts/release/check-one-shot-fields.sh
 
+      - name: ONNX Runtime C tarballs have verified sha256 pins (ADR-3334)
+        run: python3 scripts/ci/check_ort_tarball_pins.py
+
       - name: Distribution manifest agrees with the tree (#2314)
         # packaging/manifest.toml names every artifact and channel once; the
         # check fails on a channel that names an artifact no pipeline builds,

@@ -73,9 +73,11 @@
     ".release-please-manifest.json",
     ".semgrep.yml",
     ".semgrepignore",
+    ".spectral.yaml",
     ".standards-baseline.json",
     ".standards.lock",
     ".standards.yaml",
+    ".trivyignore.yaml",
     ".windsurfrules",
     "ACCESSIBILITY.md",
     "AGENTS.md",
@@ -525,6 +527,7 @@
         "scripts/ci/tidy-baseline-hip.json",
         "scripts/ci/tidy-ratchet.py",
         "scripts/ci/write-compile-commands.py",
+        "scripts/dev/hip_dispatch_drop_probe.hip",
         "scripts/dev/tidy-lane.sh"
       ]
     },

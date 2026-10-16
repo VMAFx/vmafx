@@ -22,7 +22,7 @@ vmaf-rc1-report = "vmaf_rc1_tester.cli:main"
 [project.optional-dependencies]
 # zopfli: the Windows zip builder's Deflate encoder, tested in tests/ (ADR-1594);
 # keep equal to requirements/locks/windows-tester-zip.in.
-dev = ["pytest>=9.1.1", "ruff>=0.16.10", "black==26.10.0", "zopfli==0.4.3", "jsonschema==4.26.0"]
+dev = ["pytest>=9.1.1", "ruff>=0.17.0", "black==26.10.1", "zopfli==0.4.3", "jsonschema==4.26.0"]
 
 [build-system]
 requires = ["hatchling"]

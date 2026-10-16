@@ -6,15 +6,15 @@
 
 [[exception]]
 path = ".config/agent/hooks/block_evasion.py"
-reason = "Praetor's agent hook script, written by `praetorctl adopt`. Adoption refreshes it only while it is one of praetor's own texts; a copy with an added header is kept as the repository's file and stops following the engine pin (ADR-3272); REUSE.toml labels it. Fix: praetor ships the line in its own copy (cordanaLLM/praetor issue 1281)."
-expires = 2026-12-31
+reason = "Praetor's agent hook script, written by `praetorctl adopt`. Adoption refreshes it only while it is one of praetor's own texts; a copy with an added header is kept as the repository's file and stops following the engine pin (ADR-3272); REUSE.toml labels it. Re-reviewed 2026-10-15: praetor's copy at engine pin 3bbde07 still has no SPDX line (cordanaLLM/praetor issue 1281, open). Category D (120 days)."
+expires = 2027-02-12
 
 [[exception]]
 path = "tools/figures/mkdocs_hook.py"
-reason = "Praetor-managed file: `praetorctl audit` compares it with praetor's own bytes, so it cannot take a header (ADR-1351); REUSE.toml labels it. Fix: praetor ships the line in its managed copy."
-expires = 2026-12-31
+reason = "Praetor-managed file: `praetorctl audit` compares it with praetor's own bytes, so it cannot take a header (ADR-1351); REUSE.toml labels it. Re-reviewed 2026-10-15: praetor's copy at engine pin 3bbde07 still has no SPDX line (cordanaLLM/praetor issue 1281, open). Category D (120 days)."
+expires = 2027-02-12
 
 [[exception]]
 path = ".config/lefthook/engine.sh"
-reason = "Praetor's hook launcher, written by `praetorctl adopt`. Adoption refreshes it only while it is one of praetor's own texts; a copy with an added header is kept as the repository's file and stops following the engine pin (ADR-3272); REUSE.toml labels it. Fix: praetor ships the line in its own copy (cordanaLLM/praetor issue 1281); remove the entry with the engine pin that carries it."
-expires = 2026-12-31
+reason = "Praetor's hook launcher, written by `praetorctl adopt`. Adoption refreshes it only while it is one of praetor's own texts; a copy with an added header is kept as the repository's file and stops following the engine pin (ADR-3272); REUSE.toml labels it. Re-reviewed 2026-10-15: the launcher at engine pin 3bbde07 still has no SPDX line (cordanaLLM/praetor issue 1281, open); remove the entry with the engine pin that carries the fix. Category D (120 days)."
+expires = 2027-02-12

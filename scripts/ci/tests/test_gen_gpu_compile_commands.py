@@ -15,6 +15,7 @@ import unittest
 from collections.abc import Callable
 from pathlib import Path
 from types import ModuleType
+from unittest import mock
 
 HERE = Path(__file__).resolve().parent
 SCRIPT = HERE.parent / "gen-gpu-compile-commands.py"
@@ -72,7 +73,9 @@ class KernelEntries(unittest.TestCase):
 
     def test_cuda_and_hip_rules_become_clang_entries(self) -> None:
         entries = {e["file"]: shlex.split(e["command"]) for e in self._run()}
-        self.assertEqual(sorted(entries), ["adm_cm.cu", "adm_cm.hip"])  # the icpx rule is not ours
+        self.assertEqual(
+            sorted(entries), ["adm_cm.cu", "adm_cm.hip", "hip_dispatch_drop_probe.hip"]
+        )  # the icpx rule is not ours
         cuda = entries["adm_cm.cu"]
         self.assertEqual(cuda[0], "clang++")
         self.assertIn("--cuda-path=/opt/cuda", cuda)
@@ -87,6 +90,10 @@ class KernelEntries(unittest.TestCase):
         # flags stay out of the analysis command.
         self.assertFalse(any("dependency-file" in arg or arg == "-MT" for arg in hip))
         self.assertFalse(any(arg.startswith("--cuda-path") for arg in hip))
+        probe = entries["hip_dispatch_drop_probe.hip"]
+        self.assertEqual(probe[0], "clang++")
+        self.assertIn("-I/opt/rocm/include", probe)
+        self.assertFalse(any(arg.startswith("--cuda-path") for arg in probe))
 
     def test_existing_entries_are_kept_and_kernels_replaced(self) -> None:
         def existing(root: Path) -> list[dict[str, str]]:
@@ -145,13 +152,31 @@ class RuleLayouts(unittest.TestCase):
         code, entries, printed = _generate(NINJA_WITH_HEADER_DEPS)
         self.assertEqual(code, 0)
         commands = {Path(e["file"]).name: shlex.split(e["command"]) for e in entries}
-        self.assertEqual(sorted(commands), ["adm_dwt2.cu", "psnr_score.hip"])
-        self.assertIn("2 CUDA/HIP kernel entries", printed)
+        self.assertEqual(
+            sorted(commands), ["adm_dwt2.cu", "hip_dispatch_drop_probe.hip", "psnr_score.hip"]
+        )
+        self.assertIn("3 CUDA/HIP kernel entries", printed)
         # The compiler is read from the command, not from the dependency list,
         # where a header now comes first.
         self.assertIn("--cuda-path=/usr/local/cuda", commands["adm_dwt2.cu"])
         self.assertIn("-std=c++20", commands["adm_dwt2.cu"])
         self.assertIn("-I/opt/rocm/include", commands["psnr_score.hip"])
+        self.assertIn("-I/opt/rocm/include", commands["hip_dispatch_drop_probe.hip"])
+
+    def test_missing_probe_source_fails_hip_lane(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            build = Path(tmp).resolve() / "build"
+            build.mkdir()
+            (build / "build.ninja").write_text(NINJA, encoding="utf-8")
+            (build / "compile_commands.json").write_text("[]", encoding="utf-8")
+            printed = io.StringIO()
+            with (
+                mock.patch.object(gen, "REPO_ROOT", Path(tmp).resolve()),
+                contextlib.redirect_stderr(printed),
+            ):
+                code = gen.main(["gen", str(build)])
+            self.assertEqual(code, 1)
+            self.assertIn("missing HIP dispatch drop probe source", printed.getvalue())
 
     def test_a_build_without_kernels_adds_nothing(self) -> None:
         ninja = "build src/a.o: c_COMPILER ../core/src/a.c\n ARGS = -I.\n"

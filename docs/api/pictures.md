@@ -349,6 +349,20 @@ unchanged, the source colour is the `src_color` argument, and a converted
 types, enumerators and the other two functions are upstream's. When upstream
 releases the function the ADR describes the migration.
 
+Upstream's master has since moved `color` to the end of the struct
+(Netflix/vmaf `0b9462873`), which keeps the offsets of the other members but
+still makes upstream's `VmafPicture` larger than the fork's. What that means
+for a caller:
+
+| Caller | Result |
+| --- | --- |
+| Source that sets `pic.color` (or `.color = ...`) against the fork's header | does not compile: there is no `color` member |
+| A binary built against upstream's header that sets `color` | the colour is not applied: the library reads no member after `priv` and cannot tell that the caller used the larger layout |
+| Colour given through `vmaf_set_input_colorimetry()` or the `src_color` argument | applied |
+
+Give the colour through one of the two functions in the last row; never rely
+on a `color` member.
+
 ## Converting to a model's conversion target
 
 A model can declare a [`conversion_target`](../models/v1.md#model-declared-conversion-target).

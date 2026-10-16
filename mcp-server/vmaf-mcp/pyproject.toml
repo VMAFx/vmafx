@@ -14,7 +14,7 @@ authors = [
 ]
 dependencies = [
   "mcp>=2.3.0",
-  "pydantic>=2.13.5",
+  "pydantic>=2.14.1",
   "anyio>=4.15.1",
 ]
 
@@ -24,7 +24,7 @@ dev = [
   "pytest-asyncio>=1.4.0",
   "pytest-aiohttp>=1.1.1",
   "prometheus-client>=0.26.0",
-  "ruff>=0.16.10",
+  "ruff>=0.17.0",
   "mypy>=2.4.0",
   # The `eval` extra below: without it 16 tests skip (eval_model_on_split,
   # compare_models), so the dev environment carries it.
@@ -40,7 +40,7 @@ dev = [
 # Optional HTTP operator surface (--transport http). Kept separate so stdio
 # clients do not need aiohttp or Prometheus at runtime (ADR-0701).
 http = [
-  "aiohttp>=3.14.4",
+  "aiohttp>=3.14.5",
   "prometheus-client>=0.26.0",
 ]
 # Optional: enables `eval_model_on_split` + `compare_models`. Pulls in the
@@ -50,7 +50,7 @@ eval = [
   "numpy>=2.5.3",
   "pandas>=3.0.6",
   "pyarrow>=25.0.1",
-  "onnxruntime>=1.30.0",
+  "onnxruntime>=1.31.0",
   "scipy>=1.18.1",
 ]
 # Optional: `describe_worst_frames` descriptions from a local vision-language
