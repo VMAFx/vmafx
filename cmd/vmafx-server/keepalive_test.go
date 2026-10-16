@@ -15,12 +15,10 @@ import (
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxtest"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/keepalive"
-	"google.golang.org/grpc/status"
 )
 
 // TestScoringKeepaliveOutlastsFrameworkGrace: an app keepalive option placed
@@ -67,17 +65,23 @@ func watchFor(t *testing.T, hold time.Duration, opts ...grpc.ServerOption) error
 		t.Fatalf("dial: %v", err)
 	}
 	defer func() { _ = conn.Close() }()
-	ctx, cancel := context.WithTimeout(context.Background(), hold)
+	// No deadline goes to the server: a deadline travels as grpc-timeout, and
+	// the server's health Watch then ends the stream itself (Canceled) at the
+	// same instant, which can reach the client before its own timer sets
+	// ctx.Err(). The client cancels on a local timer instead, so the only end
+	// the server can cause is a cut.
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	timer := time.AfterFunc(hold, cancel)
+	defer timer.Stop()
 	stream, err := healthpb.NewHealthClient(conn).Watch(ctx, &healthpb.HealthCheckRequest{})
 	if err != nil {
 		return err
 	}
 	for range maxWatchMessages {
 		if _, err := stream.Recv(); err != nil {
-			// The client's own deadline ending the stream means it was held for
-			// the whole period; grpc's timer may fire before ctx.Err() is set.
-			if ctx.Err() != nil || status.Code(err) == codes.DeadlineExceeded {
+			// cancel() sets ctx.Err() before the stream sees the cancellation.
+			if ctx.Err() != nil {
 				return nil
 			}
 			return err

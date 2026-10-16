@@ -1121,6 +1121,89 @@ jobs:
           fi
           exit "${status}"
 
+  buf:
+    needs: tier
+    if: needs.tier.outputs.light == 'true'
+    # The protobuf contract under proto/ (ADR-2350) is linted with buf.yaml's
+    # STANDARD rules and compared with the base branch for wire and JSON
+    # breaking changes (WIRE_JSON). buf is the release build-config.env pins
+    # as BUF_VERSION, installed with `go install`, which the Go checksum
+    # database verifies. Full history: `buf breaking` reads the base branch
+    # from the local clone. On a master push the comparison is against the
+    # previous master commit.
+    name: Buf Lint + Breaking
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    steps:
+      # yamllint disable-line rule:line-length
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      # yamllint disable-line rule:line-length
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Install the pinned buf
+        shell: bash
+        run: |
+          version="$(sed -n 's/^BUF_VERSION="\([0-9.]*\)"$/\1/p' build-config.env)"
+          if [[ -z "${version}" ]]; then
+            echo "::error::build-config.env has no BUF_VERSION=\"X.Y.Z\" line."
+            exit 1
+          fi
+          GOBIN="${RUNNER_TEMP}/buf-bin" go install "github.com/bufbuild/buf/cmd/buf@v${version}"
+          echo "${RUNNER_TEMP}/buf-bin" >> "${GITHUB_PATH}"
+      - name: buf lint
+        run: buf lint
+      # Runs after a failed lint too, so one run reports both kinds of finding.
+      # A manual dispatch has no base commit and compares with master.
+      - name: buf breaking against the base
+        if: ${{ !cancelled() }}
+        shell: bash
+        env:
+          BASE_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [[ -z "${BASE_REF}" || "${BASE_REF}" =~ ^0+$ ]]; then
+            BASE_REF="refs/remotes/origin/master"
+          fi
+          buf breaking --against ".git#ref=${BASE_REF}"
+
+  spectral:
+    needs: tier
+    if: needs.tier.outputs.light == 'true'
+    # Lints api/openapi/vmafx-server-v1.yaml with Spectral's spectral:oas
+    # ruleset (.spectral.yaml, ADR-3331). The standalone release binary is
+    # downloaded at SPECTRAL_VERSION and checked against SPECTRAL_SHA256, both
+    # from build-config.env; no npm dependency tree is installed.
+    name: Spectral OpenAPI Lint
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    steps:
+      # yamllint disable-line rule:line-length
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install pinned Spectral
+        shell: bash
+        run: |
+          version="$(sed -n 's/^SPECTRAL_VERSION="\([0-9.]*\)"$/\1/p' build-config.env)"
+          sha="$(sed -n 's/^SPECTRAL_SHA256="\([0-9a-f]\{64\}\)"$/\1/p' build-config.env)"
+          if [[ -z "${version}" || -z "${sha}" ]]; then
+            echo "::error::build-config.env needs SPECTRAL_VERSION and SPECTRAL_SHA256."
+            exit 1
+          fi
+          url="https://github.com/stoplightio/spectral/releases/download/v${version}/spectral-linux-x64"
+          mkdir -p "${RUNNER_TEMP}/spectral"
+          curl -fsSL --retry 3 --max-time 300 -o "${RUNNER_TEMP}/spectral/spectral" "${url}"
+          echo "${sha}  ${RUNNER_TEMP}/spectral/spectral" | sha256sum -c -
+          chmod +x "${RUNNER_TEMP}/spectral/spectral"
+          echo "${RUNNER_TEMP}/spectral" >> "${GITHUB_PATH}"
+      - name: Spectral OpenAPI lint
+        shell: bash
+        run: spectral lint --fail-severity=warn api/openapi/vmafx-server-v1.yaml
+
   shellcheck:
     needs: [tier, pre-commit]
     if: needs.tier.outputs.light == 'true'
@@ -1240,3 +1323,44 @@ jobs:
           # local package.json is needed.
           # shellcheck disable=SC2086
           echo "$MD_FILES" | xargs -r npx --yes markdownlint-cli2
+
+  trivy:
+    needs: tier
+    if: needs.tier.outputs.light == 'true'
+    # Scan repository Dockerfiles / IaC configs and filesystem dependencies
+    # for CVEs and secrets (ADR-3330). Trivy is the release build-config.env
+    # pins as TRIVY_VERSION, downloaded and verified against TRIVY_SHA256.
+    name: Trivy Config + FS
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    steps:
+      # yamllint disable-line rule:line-length
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install the pinned trivy
+        shell: bash
+        run: |
+          version="$(sed -n 's/^TRIVY_VERSION="\([0-9.]*\)"$/\1/p' build-config.env)"
+          expected_sha="$(sed -n 's/^TRIVY_SHA256="\([0-9a-f]*\)"$/\1/p' build-config.env)"
+          if [[ -z "${version}" || -z "${expected_sha}" ]]; then
+            echo "::error::build-config.env must define TRIVY_VERSION and TRIVY_SHA256."
+            exit 1
+          fi
+          mkdir -p "${RUNNER_TEMP}/trivy-bin"
+          tarball="trivy_${version}_Linux-64bit.tar.gz"
+          url="https://github.com/aquasecurity/trivy/releases/download/v${version}/${tarball}"
+          curl -fsSL --retry 3 --max-time 300 -o "${RUNNER_TEMP}/${tarball}" "${url}"
+          echo "${expected_sha}  ${RUNNER_TEMP}/${tarball}" | sha256sum -c -
+          tar -xzf "${RUNNER_TEMP}/${tarball}" -C "${RUNNER_TEMP}/trivy-bin" trivy
+          echo "${RUNNER_TEMP}/trivy-bin" >> "${GITHUB_PATH}"
+      - name: trivy config
+        run: |
+          trivy config --exit-code 1 --ignorefile .trivyignore.yaml \
+            --severity HIGH,CRITICAL --skip-dirs .corpus,.workingdir,build .
+      - name: trivy fs
+        if: ${{ !cancelled() }}
+        run: |
+          trivy fs --scanners vuln,secret --exit-code 1 --ignorefile .trivyignore.yaml \
+            --severity HIGH,CRITICAL --skip-dirs .corpus,.workingdir,build .

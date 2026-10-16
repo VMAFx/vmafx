@@ -1,6 +1,7 @@
 ---
 name: repo-gatekeeper
 description: "Autonomous subagent for dependency verification, SCA security scans, and worktree gating."
+model: haiku
 mainAgent: true
 subagent: true
 commandExecutionPolicy: auto

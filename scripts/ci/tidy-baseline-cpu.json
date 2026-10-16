@@ -4,7 +4,7 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "cc_version": "gcc-15 (Ubuntu 15.2.0-16ubuntu1) 15.2.0",
-  "tus": 531,
+  "tus": 533,
   "measured_sources": [
     "compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_stat.c",
     "compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_std.c",
@@ -536,7 +536,9 @@
     "core/tools/vmaf_roi.c",
     "core/tools/vmaf_vpl_core.c",
     "core/tools/y4m_input.c",
-    "core/tools/yuv_input.c"
+    "core/tools/yuv_input.c",
+    "ffmpeg-patches/test/fault_inject_libvmaf.c",
+    "scripts/dev/upstream_parity_harness.c"
   ],
   "compile_failures": [],
   "total_warnings": 13,
@@ -1434,6 +1436,22 @@
         }
       },
       "previous_baseline_sha256": "f8886702794f8bbeaf5afbd7a7714891ecd91f5eb4f72f9d34626686b3e164da"
+    },
+    {
+      "sources": [
+        "ffmpeg-patches/test/fault_inject_libvmaf.c",
+        "scripts/dev/upstream_parity_harness.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "ffmpeg-patches/test/fault_inject_libvmaf.c",
+            "scripts/dev/upstream_parity_harness.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "495152f5813fcfccfcaca022c625631f05e0526e2642cd7d0c98314d3eafc744"
     }
   ]
 }
