@@ -83,6 +83,25 @@ An explicit `--backend` that the image does not provide fails with exit code
     never on a host
     ([ADR-1102](../adr/1102-phase4b9-container-only-publishing.md)).
 
+## Image security and scanning
+
+Published container images and repository Dockerfiles are validated for security
+hygiene, supply-chain provenance, and vulnerability posture:
+
+- **Non-root execution:** Published production runtime images run as unprivileged
+  UID/GID 65532 ([ADR-0878](../adr/0878-trivy-container-scan-baseline.md)).
+- **IaC configuration linting:** The CI `Trivy Config + FS` job runs `trivy config`
+  on every pull request to enforce Dockerfile best practices and CIS benchmarks.
+  Known non-runtime exceptions (such as developer sandboxes and intermediate build
+  stages) are tracked with category and expiry in `.trivyignore.yaml`
+  ([ADR-3330](../adr/3330-ci-trivy-config-fs.md)).
+- **Vulnerability and secret scanning:** CI runs `trivy fs` over the repository
+  filesystem with vulnerability and secret scanners (`--scanners vuln,secret`)
+  to guard against known CVEs and credential leaks.
+- **Signing and SBOM:** Published images are signed with keyless Sigstore cosign
+  and carry CycloneDX and SPDX SBOM attestations
+  ([verifying image provenance](../development/docker-production.md#verifying-image-provenance)).
+
 ## Dockerfiles in the repository
 
 | File | Produces | Entry point |

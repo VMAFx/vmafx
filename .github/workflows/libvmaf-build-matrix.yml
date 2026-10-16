@@ -411,6 +411,7 @@ jobs:
         if: ${{ (matrix.dnn && startsWith(matrix.os, 'ubuntu')) && steps.impact.outputs.c_core == 'true' }}
         env:
           ORT_VERSION: "1.22.0"
+          ORT_SHA256: "8344d55f93d5bc5021ce342db50f62079daf39aaafb5d311a451846228be49b3"
         run: |
           set -euo pipefail
           ort_name="onnxruntime-linux-x64-${ORT_VERSION}.tgz"
@@ -419,6 +420,8 @@ jobs:
           curl -fSL --retry 5 --retry-delay 5 --retry-all-errors --remove-on-error \
             --output "${ort_archive}" \
             "${ort_url}"
+          printf '%s  %s\n' "${ORT_SHA256}" "${ort_archive}" \
+            | sha256sum --check --strict
           sudo tar -xzf "${ort_archive}" -C /opt/
           sudo ln -sfn "/opt/onnxruntime-linux-x64-${ORT_VERSION}" /opt/onnxruntime
           sudo install -d /usr/local/lib/pkgconfig

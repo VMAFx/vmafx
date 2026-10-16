@@ -11,7 +11,7 @@ require (
 	github.com/c-bata/goptuna v0.9.0
 	github.com/cilium/ebpf v0.22.0
 	github.com/getkin/kin-openapi v0.150.0
-	github.com/go-chi/chi/v5 v5.4.0
+	github.com/go-chi/chi/v5 v5.5.0
 	github.com/go-logr/logr v1.4.4
 	github.com/golusoris/golusoris v0.16.5
 	github.com/golusoris/golusoris/core v0.10.2
@@ -217,7 +217,7 @@ require (
 	modernc.org/libc v1.77.1 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
-	sigs.k8s.io/controller-tools v0.22.0 // indirect
+	sigs.k8s.io/controller-tools v0.23.0 // indirect
 	sigs.k8s.io/json v0.0.0-20260909141634-11ed52e25bc5 // indirect
 	sigs.k8s.io/randfill v1.0.0 // indirect
 	sigs.k8s.io/structured-merge-diff/v6 v6.4.2 // indirect

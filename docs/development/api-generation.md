@@ -299,6 +299,23 @@ in `buf.yaml` and stay as they are.
     package is not a break; a removed or renumbered field, a changed type or a
     renamed enum value is.
 
+    CI runs `buf lint` and `buf breaking` on every ready pull request and
+    every `master` push: the `Buf Lint + Breaking` job of
+    [`lint-and-format.yml`](../../.github/workflows/lint-and-format.yml)
+    installs the same pinned `BUF_VERSION` and compares the protobuf files with
+    the pull request's base commit (on a push, the previous `master` commit).
+    A red job names the file, line and rule; fix the proto definition in
+    `api/vmafx-platform.toml` or `core/api/vmafx.toml` and regenerate, rather
+    than editing `proto/` by hand.
+
+    CI also runs Spectral on the OpenAPI 3.0 specification: the
+    `Spectral OpenAPI Lint` job of
+    [`lint-and-format.yml`](../../.github/workflows/lint-and-format.yml)
+    runs the Spectral release binary pinned by `SPECTRAL_VERSION` and
+    `SPECTRAL_SHA256` in `build-config.env` using the `.spectral.yaml` ruleset (`spectral:oas`)
+    against `api/openapi/vmafx-server-v1.yaml`. When a rule fails, fix the
+    hand-written specification or its generator source under `scripts/codegen/`.
+
 ### Kubernetes resources
 
 The same file declares the custom resources of the `vmafx.dev/v1` API group:

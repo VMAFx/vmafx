@@ -1170,6 +1170,18 @@ test_picture_convert_api = executable('test_picture_convert_api',
 )
 test('test_picture_convert_api', test_picture_convert_api, suite : ['fast'])
 
+# ADR-1822 status 2026-10-15 (Netflix/vmaf 0b94628): upstream's VmafPicture
+# ends in `VmafColor color`; ours has no colour member, so a caller that sets
+# one does not compile (a binary built on upstream's header cannot be detected).
+test('test_picture_no_color_member',
+    import('python').find_installation(),
+    args : [files('test_picture_no_color_member.py')] + vmaf_test_cc_args + [
+            '--cc-syntax=' + cc.get_argument_syntax(), '--cc-id=' + cc.get_id(),
+            meson.project_source_root() / 'include'],
+    suite : ['fast'],
+    timeout : 120,
+)
+
 if is_zimg_enabled
     test_colorspace = executable('test_colorspace',
         ['test.c', 'test_colorspace.c'],

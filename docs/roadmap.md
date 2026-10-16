@@ -334,8 +334,11 @@ releases are in the table above
 phase table) and the research digest is
 [Research-2479](research/2479-rust-core-migration.md). Native GPU device sources
 and C-only host glue stay on a named exception list with re-evaluation
-triggers. The C implementation of a layer is the differential oracle until it is
-deleted; the `libvmaf.h` compatibility removal stays in 2.0.
+triggers, kept in `.config/lint-exceptions.d/host-c-cpp.toml`; its first
+entries are the ten byte-identical pelorus interop mirror files, which stay C
+until pelorus ships the surface as a Rust crate. The C implementation of a
+layer is the differential oracle until it is deleted; the `libvmaf.h`
+compatibility removal stays in 2.0.
 
 ## Things that do not change
 

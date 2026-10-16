@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1377), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1382), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5400,6 +5400,10 @@ Every ADR, one heading each (1377), so the site search finds an ADR by its title
 
 [2689-sponsorship-tiers-recognition-only](2689-sponsorship-tiers-recognition-only.md)
 
+## ADR-2690: The SYCL SpEED covariance replays the CPU's sequential fp64 sum, with its terms formed in parallel
+
+[2690-sycl-speed-covariance-fast-exact](2690-sycl-speed-covariance-fast-exact.md)
+
 ## ADR-2705: formulas are TeX rendered by self-hosted KaTeX, checked at build time
 
 [2705-docs-math-katex](2705-docs-math-katex.md)
@@ -5519,3 +5523,19 @@ Every ADR, one heading each (1377), so the site search finds an ADR by its title
 ## ADR-3316: Release assets carry their build provenance
 
 [3316-release-intoto-provenance](3316-release-intoto-provenance.md)
+
+## ADR-3317: One distribution manifest describes every artifact and channel
+
+[3317-distribution-manifest](3317-distribution-manifest.md)
+
+## ADR-3318: One pinned Rust toolchain for every Rust build
+
+[3318-rust-toolchain-pin](3318-rust-toolchain-pin.md)
+
+## ADR-3329: Run buf lint and buf breaking in CI
+
+[3329-ci-buf-lint-breaking](3329-ci-buf-lint-breaking.md)
+
+## ADR-3331: Run Spectral OpenAPI lint in CI
+
+[3331-ci-spectral-openapi-lint](3331-ci-spectral-openapi-lint.md)

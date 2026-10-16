@@ -38,12 +38,13 @@
 // gate passes saying so.
 //
 // Compatibility policy and execution policy are separate. -policy=auto rejects incompatible
-// changes once the newest root release tag merged into HEAD is v1 or later and reports them as
-// warnings before that; warn and reject fix the policy. A comparison that did not run fails the
-// gate whatever the policy: a git or discovery error, a malformed go.mod, a compared module
-// whose packages do not build at HEAD, a checker that cannot be installed, that misses the
-// removed function of a canary module (verifyChecker), that exits with any status but 0 or 1,
-// or that prints an error.
+// changes once the newest root release tag merged into HEAD is v1 or later. Before v1, it passes
+// incompatible changes only when the commit range carries a breaking marker (! in the Conventional
+// Commits subject) with a Migration: footer, and rejects them otherwise; warn and reject fix the
+// policy. A comparison that did not run fails the gate whatever the policy: a git or discovery
+// error, a malformed go.mod, a compared module whose packages do not build at HEAD, a checker
+// that cannot be installed, that misses the removed function of a canary module (verifyChecker),
+// that exits with any status but 0 or 1, or that prints an error.
 //
 // A module whose packages cannot be built even with the system packages the manifest declares
 // (api.system_packages, installed by the workflow before this program runs) takes an exception
@@ -55,10 +56,10 @@
 // build failure fails the gate as before. A module that builds is compared whatever the list
 // says. The program never sets CGO_ENABLED.
 //
-// Exit status: 0 compatible, or incompatible under the warn policy; 1 incompatible under the
-// reject policy; 2 the comparison did not run. The checker checks each revision out in the
-// working tree, restores HEAD afterwards and refuses a dirty tree, so run the gate in a clean
-// checkout.
+// Exit status: 0 compatible, incompatible under the warn policy, or pre-v1 auto with a breaking
+// marker and Migration footer; 1 incompatible under the reject policy or pre-v1 auto without
+// marker; 2 the comparison did not run. The checker checks each revision out in the working
+// tree, restores HEAD afterwards and refuses a dirty tree, so run the gate in a clean checkout.
 //
 // praetorctl adopt writes this file and praetorctl audit locks it: change it in Praetor's
 // tools/apicompat, never in an adopted repository.
@@ -103,15 +104,17 @@ const (
 	checkerPackage = "github.com/joelanford/go-apidiff"
 	checkerBinary  = "go-apidiff"
 
-	maxTreeEntries   = 1 << 21
-	maxModules       = 512
-	maxTags          = 1 << 16
-	maxRecordBytes   = 1 << 16
-	maxGoModBytes    = 1 << 20
-	maxGoModLines    = 1 << 16
-	maxPathElements  = 256
-	maxDiagnostics   = 1 << 20
-	maxRevisionBytes = 4096
+	maxTreeEntries     = 1 << 21
+	maxModules         = 512
+	maxTags            = 1 << 16
+	maxRecordBytes     = 1 << 16
+	maxGoModBytes      = 1 << 20
+	maxGoModLines      = 1 << 16
+	maxPathElements    = 256
+	maxDiagnostics     = 1 << 20
+	maxRevisionBytes   = 4096
+	maxAnalyzedCommits = 1000
+	maxCommitLogBytes  = 8 << 20
 
 	// exceptionsEnv carries the manifest's api-compatibility exceptions, as the workflow renders
 	// them (tools/apicompat/render.go).
@@ -314,7 +317,15 @@ gopkg.in/yaml.v3 v3.0.1/go.mod h1:K4uyk7z7BCEPqu6E+C64Yfv1cQ7kz7rIZviUmN+EgEM=
 // releaseTagPattern matches a root release tag. A nested module's tags carry the module's
 // directory as a prefix (Go modules reference, "Mapping versions to commits"), and a
 // pre-release or build suffix does not publish a release, so neither matches.
-var releaseTagPattern = regexp.MustCompile(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
+var (
+	releaseTagPattern = regexp.MustCompile(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
+	// The breaking marker and the Migration footer are read with the patterns of the engine's commit
+	// policy (internal/forge/pr.go), copied because this file runs stdlib-only in adopted repositories;
+	// TestGatePatternsMatchCommitPolicy keeps the copies equal (#1317).
+	breakingHeaderRegex = regexp.MustCompile(`(?i)^[a-z]+(\([^\)]+\))?!:\s*.+`)
+	breakingFooterRegex = regexp.MustCompile(`(?m)^BREAKING[ -]CHANGE:`)
+	migrationRegex      = regexp.MustCompile(`(?i)(?:\r?\n|^)Migration:\s*([\s\S]+)`)
+)
 
 // The canary module verifyChecker compares: its second commit removes the exported function
 // its first declares.
@@ -508,7 +519,7 @@ func gate(ctx context.Context, opts options, stdout, stderr *printer) (int, erro
 	if err != nil {
 		return exitNotRun, err
 	}
-	return verdict(repo, plan, results, stdout, stderr), nil
+	return verdict(ctx, repo, plan, results, stdout, stderr), nil
 }
 
 // repository is what one gate run compares: the root, the two commits and the policy.
@@ -525,8 +536,9 @@ type repository struct {
 
 // policy is the compatibility policy: whether an incompatible change fails the gate, and why.
 type policy struct {
-	reject bool
-	reason string
+	reject    bool
+	autoPreV1 bool
+	reason    string
 }
 
 // releaseTag is the newest root release tag merged into HEAD.
@@ -617,11 +629,11 @@ func resolvePolicy(flagValue string, newest releaseTag) policy {
 	case flagValue == "reject":
 		return policy{reject: true, reason: "-policy=reject"}
 	case !newest.found:
-		return policy{reason: "auto: no root release tag, so the API is pre-v1"}
+		return policy{autoPreV1: true, reason: "auto: no root release tag, so the API is pre-v1"}
 	case newest.version[0] >= 1:
 		return policy{reject: true, reason: "auto: newest root release tag " + newest.name + " is v1 or later"}
 	default:
-		return policy{reason: "auto: newest root release tag " + newest.name + " is pre-v1"}
+		return policy{autoPreV1: true, reason: "auto: newest root release tag " + newest.name + " is pre-v1"}
 	}
 }
 
@@ -1217,7 +1229,7 @@ func reportedError(diagnostics string) bool {
 }
 
 // verdict prints every module's outcome and the policy, and returns the exit status.
-func verdict(repo repository, plan modulePlan, results []result, stdout, stderr *printer) int {
+func verdict(ctx context.Context, repo repository, plan modulePlan, results []result, stdout, stderr *printer) int {
 	if plan.empty() {
 		stdout.printf("No Go module is tracked at %s or HEAD %s: nothing to compare.\n", repo.baseName, short(repo.head))
 		return exitCompatible
@@ -1247,13 +1259,76 @@ func verdict(repo repository, plan modulePlan, results []result, stdout, stderr 
 		stdout.printf("Every compared module is compatible (policy %s).\n", repo.policy.reason)
 		return exitCompatible
 	}
+	return incompatibleVerdict(ctx, repo, incompatible, stdout, stderr)
+}
+
+// incompatibleVerdict decides whether incompatible changes fail the gate or pass as a warning.
+func incompatibleVerdict(ctx context.Context, repo repository, incompatible int, stdout, stderr *printer) int {
 	message := fmt.Sprintf("%d incompatible module change(s) from %s to HEAD %s", incompatible, repo.baseName, short(repo.head))
 	if repo.policy.reject {
 		stderr.annotate("error", message+" rejected ("+repo.policy.reason+")")
 		return exitRejected
 	}
-	stdout.annotate("warning", message+" reported, not rejected ("+repo.policy.reason+")")
+	if !repo.policy.autoPreV1 {
+		stdout.annotate("warning", message+" reported, not rejected ("+repo.policy.reason+")")
+		return exitCompatible
+	}
+	breakingCommit, err := findBreakingCommit(ctx, repo)
+	if err != nil {
+		stderr.annotate("error", fmt.Sprintf("failed reading commits %s..%s: %v", repo.baseName, short(repo.head), err))
+		return exitNotRun
+	}
+	if breakingCommit == "" {
+		stderr.annotate("error", message+" rejected ("+repo.policy.reason+": missing breaking marker (! in subject) with Migration: footer)")
+		return exitRejected
+	}
+	stdout.annotate("warning", message+" reported, not rejected ("+repo.policy.reason+"): breaking commit "+short(breakingCommit))
 	return exitCompatible
+}
+
+// findBreakingCommit returns the SHA of the first commit in base..head carrying a breaking
+// marker (! in subject) and a non-empty Migration: footer, or "" if none carries it.
+func findBreakingCommit(ctx context.Context, repo repository) (string, error) {
+	limit := fmt.Sprintf("--max-count=%d", maxAnalyzedCommits+1)
+	format := "--format=%H%x1f%B%x00"
+	out, err := gitCapture(ctx, repo.root, maxCommitLogBytes, "log", limit, format, repo.base+".."+repo.head, "--")
+	if err != nil {
+		return "", fmt.Errorf("git log %s..%s: %w", short(repo.base), short(repo.head), err)
+	}
+	records := strings.Split(string(out), "\x00")
+	if len(records) > maxAnalyzedCommits+1 {
+		return "", fmt.Errorf("commit range %s..%s exceeds %d commits", short(repo.base), short(repo.head), maxAnalyzedCommits)
+	}
+	for index := 0; index < len(records) && index < maxAnalyzedCommits; index++ {
+		record := strings.TrimSpace(records[index])
+		if record == "" {
+			continue
+		}
+		sha, message, ok := strings.Cut(record, "\x1f")
+		if !ok {
+			continue
+		}
+		if isBreakingCommit(message) {
+			return sha, nil
+		}
+	}
+	return "", nil
+}
+
+// isBreakingCommit reports whether message is a breaking commit as the engine's commit policy reads
+// it (a ! subject or a BREAKING CHANGE footer) with a non-empty Migration: footer.
+func isBreakingCommit(message string) bool {
+	trimmed := strings.TrimSpace(message)
+	if trimmed == "" {
+		return false
+	}
+	header, _, _ := strings.Cut(trimmed, "\n")
+	header = strings.TrimSuffix(header, "\r")
+	if !breakingHeaderRegex.MatchString(header) && !breakingFooterRegex.MatchString(trimmed) {
+		return false
+	}
+	m := migrationRegex.FindStringSubmatch(trimmed)
+	return len(m) > 1 && strings.TrimSpace(m[1]) != ""
 }
 
 func printModules(stdout *printer, state string, modules []module, note string) {

@@ -154,21 +154,27 @@ One definition, in the `Makefile`: `TIDY_RATCHET_COMPILERS_<lane>` and
 - `cpu` disables the DNN runtime because the hosted runner has no ONNX Runtime
   and the two must measure the same translation units. The GPU lanes enable
   it, so the DNN bodies are measured there.
-- `cpu` also measures the twelve MATLAB MEX sources of `compat/python-vmaf/matlab/`. meson
+- `cpu` also measures the twelve MATLAB MEX sources of `compat/python-vmaf/matlab/`,
+  the LD_PRELOAD fault injector (`ffmpeg-patches/test/fault_inject_libvmaf.c`),
+  and the upstream parity harness (`scripts/dev/upstream_parity_harness.c`). meson
   never builds them and the MATLAB SDK is on no runner, so
-  `scripts/ci/gen-mex-compile-commands.py` appends compile-database entries whose include
-  path starts with the self-authored stub headers of `scripts/ci/lint-stubs/matlab/`
-  ([ADR-2062](../adr/2062-matlab-mex-lint-stubs.md)). The stubs are for clang-tidy only:
-  nothing builds or links against them.
+  `scripts/ci/gen-mex-compile-commands.py` appends compile-database entries for each,
+  using the self-authored stub headers of `scripts/ci/lint-stubs/matlab/`
+  ([ADR-2062](../adr/2062-matlab-mex-lint-stubs.md)) for the MEX files and the
+  real build include paths and definitions for the shims. The stubs are for
+  clang-tidy only: nothing builds or links against them.
 - `sycl` compiles SPIR-V only. The ahead-of-time device list changes backend
   arguments that `scripts/ci/gen-sycl-compile-commands.py` removes from the
   lint database anyway.
-- **Kernels.** meson compiles `.cu`, `.hip` and the SYCL sources through
+- **Kernels and GPU probes.** meson compiles `.cu`, `.hip` and the SYCL sources through
   custom commands, which `compile_commands.json` does not list.
   `scripts/ci/gen-gpu-compile-commands.py` (cuda, hip) and
-  `scripts/ci/gen-sycl-compile-commands.py` (sycl) add them; both stop the
-  lane when a kernel rule exists that they could not read, so a lane never
-  reports a clean measurement of a database without its kernels.
+  `scripts/ci/gen-sycl-compile-commands.py` (sycl) add them; in the `hip` lane,
+  `gen-gpu-compile-commands.py` also appends an entry for the standalone probe
+  `scripts/dev/hip_dispatch_drop_probe.hip` mirroring device-kernel flags. The
+  generators stop the lane when a kernel rule exists that they could not read
+  or when a listed source is missing, so a lane never reports a clean measurement
+  of a database without its kernels.
 - **`.hip` kernels and ROCm's clang-tidy.** ROCm 10's device headers call
   `__builtin_amdgcn_is_invocable`, a builtin of the LLVM that ROCm ships.
   Stock clang-tidy 22 stops there ("builtin functions must be directly
@@ -295,7 +301,7 @@ measures the `cpu` lane on every change to the C core and fails when a file
 differs from `scripts/ci/tidy-baseline-cpu.json`. It runs the same two targets
 as the container, `make tidy-ratchet-build LANE=cpu` and
 `make tidy-ratchet LANE=cpu`, so it configures, builds and extends the compile
-database (the MATLAB MEX sources) exactly as the lane's `Makefile` variables
+database (the MATLAB MEX sources and extra shims) exactly as the lane's `Makefile` variables
 say; so does the nightly full scan. `scripts/ci/tests/test_tidy_lane_container.py`
 pins both jobs to those targets and to the clang-tidy major. A translation unit
 the baseline measured and the job did not is reported by name as not measured

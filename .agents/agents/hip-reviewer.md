@@ -1,7 +1,7 @@
 ---
 name: hip-reviewer
 description: Reviews HIP / ROCm code under core/src/hip/ (runtime, dispatch, picture) and core/src/feature/hip/ (kernels) for correctness, scaffold-vs-real status, and parity with the CUDA twin. Use when reviewing .hip / .c host code, hipcc kernel launches, or new HIP feature consumers.
-model: sonnet
+model: pro
 tools: Read, Grep, Glob, Bash
 ---
 <!-- markdownlint-disable MD041 -->
