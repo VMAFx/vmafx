@@ -1,7 +1,7 @@
 ---
 name: doc-reviewer
 description: Reviews any change under docs/ (mkdocs site, ADRs, research digests, model cards) for accuracy, freshness, link health, mkdocs strict-build conformance, and per-surface ADR-0100 doc-substance bars. Use when reviewing docs-only PRs or the doc parts of mixed PRs.
-model: sonnet
+model: pro
 tools: Read, Grep, Glob, Bash
 ---
 <!-- markdownlint-disable MD041 -->

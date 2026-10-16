@@ -86,6 +86,50 @@ class GenerateEntries(unittest.TestCase):
         self.assertEqual(status, 1)
         self.assertIn("missing", err)
 
+    def test_extra_sources_emitted_with_expected_flags(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            build = Path(tmp)
+            (build / "compile_commands.json").write_text("[]", encoding="utf-8")
+            status, _ = _run(build)
+            entries = json.loads((build / "compile_commands.json").read_text(encoding="utf-8"))
+        self.assertEqual(status, 0)
+        by_file = {e["file"]: shlex.split(e["command"]) for e in entries}
+
+        fault_path = str(REPO / gen.FAULT_INJECT_SOURCE)
+        self.assertIn(fault_path, by_file)
+        fault_cmd = by_file[fault_path]
+        self.assertIn("-D_GNU_SOURCE", fault_cmd)
+        self.assertIn(f"-I{build / 'include'}", fault_cmd)
+        self.assertIn(f"-I{REPO / 'core/include'}", fault_cmd)
+
+        harness_path = str(REPO / gen.HARNESS_SOURCE)
+        self.assertIn(harness_path, by_file)
+        harness_cmd = by_file[harness_path]
+        self.assertIn("-O1", harness_cmd)
+        self.assertIn("-DPARITY_COLLECTOR_ACCESSOR", harness_cmd)
+        self.assertIn(f"-I{REPO / 'core/include'}", harness_cmd)
+        self.assertIn(f"-I{build / 'include'}", harness_cmd)
+        self.assertIn(f"-I{REPO / 'core/src'}", harness_cmd)
+        self.assertIn(f"-I{build / 'src'}", harness_cmd)
+        self.assertIn(f"-I{build}", harness_cmd)
+
+    def test_missing_standalone_source_is_an_error(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / gen.STUB_DIR).mkdir(parents=True)
+            for h in gen.STUB_HEADERS:
+                (root / gen.STUB_DIR / h).write_text("/* stub */\n", encoding="utf-8")
+            (root / "compat/python-vmaf/matlab").mkdir(parents=True)
+            (root / "compat/python-vmaf/matlab/a.c").write_text("int a;\n", encoding="utf-8")
+            old, gen.REPO_ROOT = gen.REPO_ROOT, root
+            try:
+                (root / "compile_commands.json").write_text("[]", encoding="utf-8")
+                status, err = _run(root)
+            finally:
+                gen.REPO_ROOT = old
+        self.assertEqual(status, 1)
+        self.assertIn("missing standalone sources", err)
+
     def test_merge_boundary_empty_existing(self) -> None:
         added = [{"file": "/a.c", "command": "cc", "directory": "/b"}]
         self.assertEqual(gen.merge([], added), added)
@@ -95,6 +139,13 @@ class GenerateEntries(unittest.TestCase):
 class StubsAreSufficient(unittest.TestCase):
     def test_every_mex_source_parses_against_the_stubs(self) -> None:
         for src in gen.mex_sources(REPO):
+            entry = gen.entry_for(src, REPO, REPO)
+            argv = [*shlex.split(entry["command"])[:-2], "-fsyntax-only"]
+            done = subprocess.run(argv, capture_output=True, text=True, check=False)  # noqa: S603
+            self.assertEqual(done.returncode, 0, f"{src}: {done.stderr[-400:]}")
+
+    def test_standalone_sources_parse(self) -> None:
+        for src in (gen.FAULT_INJECT_SOURCE, gen.HARNESS_SOURCE):
             entry = gen.entry_for(src, REPO, REPO)
             argv = [*shlex.split(entry["command"])[:-2], "-fsyntax-only"]
             done = subprocess.run(argv, capture_output=True, text=True, check=False)  # noqa: S603
