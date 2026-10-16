@@ -1,7 +1,6 @@
 ---
 name: meson-reviewer
 description: Reviews meson.build / meson_options.txt changes for the libvmaf build system. Checks dependency declarations, subproject use, feature flags, install targets, test registration. Use when reviewing build-system PRs.
-model: sonnet
 tools: Read, Grep, Glob, Bash
 ---
 

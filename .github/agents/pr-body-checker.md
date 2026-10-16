@@ -1,7 +1,6 @@
 ---
 name: pr-body-checker
 description: Validates a PR body against the ADR-0108 deep-dive deliverables checklist locally before push. Catches the dominant CI-waste failure mode (prose-bullet deliverables instead of `- [x] **Item**` checkboxes) in under 5 seconds. Use when reviewing a draft PR description before opening or after editing.
-model: sonnet
 tools: Read, Bash
 ---
 <!-- markdownlint-disable MD041 MD060 -->
