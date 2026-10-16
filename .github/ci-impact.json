@@ -527,6 +527,7 @@
         "scripts/ci/tidy-baseline-hip.json",
         "scripts/ci/tidy-ratchet.py",
         "scripts/ci/write-compile-commands.py",
+        "scripts/dev/hip_dispatch_drop_probe.hip",
         "scripts/dev/tidy-lane.sh"
       ]
     },

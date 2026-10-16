@@ -66,7 +66,7 @@ void check_hip(hipError_t rc, const char *what)
 {
     if (rc != hipSuccess) {
         (void)std::fprintf(stderr, "%s: %s\n", what, hipGetErrorString(rc));
-        std::exit(3);
+        std::_Exit(3); /* stderr is unbuffered; nothing else to flush */
     }
 }
 
@@ -85,7 +85,7 @@ namespace
 {
 
 /* Parse FRAMES, PER and PIPELINE; false on a value out of range. */
-bool parse_args(Probe *p, int argc, char **argv)
+bool parse_args(Probe *p, int argc, char *const *argv)
 {
     p->frames = (argc > 1) ? std::strtol(argv[1], nullptr, 10) : 10000;
     p->per = (argc > 2) ? std::strtol(argv[2], nullptr, 10) : 12;
@@ -111,7 +111,7 @@ void setup(Probe *p)
  * same stream, readback, event. */
 void submit(Probe *p, long f)
 {
-    Frame &x = p->fr[f & 1];
+    Frame &x = p->fr[f % 2];
     x.first = p->next_val;
     check_hip(hipMemsetAsync(x.dev, 0, p->bytes, p->str), "hipMemsetAsync");
     for (long k = 0; k < p->per; k++) {
@@ -128,7 +128,7 @@ void submit(Probe *p, long f)
  * print the first ten bad frames slot by slot. */
 void check(Probe *p, long f)
 {
-    Frame &x = p->fr[f & 1];
+    const Frame &x = p->fr[f % 2];
     check_hip(hipEventSynchronize(x.done), "hipEventSynchronize");
     long bad = 0;
     for (long k = 0; k < p->per; k++)
@@ -147,7 +147,7 @@ void check(Probe *p, long f)
 
 } // namespace
 
-int main(int argc, char **argv)
+int main(int argc, char *const *argv)
 {
     Probe p;
     if (!parse_args(&p, argc, argv)) {
@@ -158,10 +158,11 @@ int main(int argc, char **argv)
     setup(&p);
     for (long f = 0; f < p.frames; f++) {
         submit(&p, f);
-        if (p.pipeline == 0)
+        if (p.pipeline == 0) {
             check(&p, f);
-        else if (f > 0)
+        } else if (f > 0) {
             check(&p, f - 1);
+        }
     }
     if (p.pipeline != 0)
         check(&p, p.frames - 1);
