@@ -1,0 +1,45 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+#
+# Trivy misconfiguration exceptions for `trivy config` (Docker IaC checks).
+# Read by the pinned scan in .github/workflows/lint-and-format.yml with
+# `--ignorefile .trivyignore.yaml` (trivy's YAML ignore format, v0.76.0).
+# One entry per rule and file, each with its reason and an expiry: an expired
+# entry stops suppressing and the scan fails again. Category D (120 days).
+misconfigurations:
+  # DS-0017: `apt-get update` without `apt-get install` in the same RUN. In
+  # each `*-source-fetch` stage the update feeds `apt-get source` in
+  # tools/rc1-tester/image/licensing.py; only /sources leaves the stage, so
+  # no stale package list reaches a published image (ADR-1503 rule 5).
+  - id: DS-0017
+    paths:
+      - "Dockerfile.go-server"
+      - "docker/Dockerfile.controller"
+      - "docker/Dockerfile.node"
+      - "docker/Dockerfile.operator"
+      - "docker/Dockerfile.production"
+      - "docker/Dockerfile.production-gpu"
+      - "docker/Dockerfile.tester"
+    statement: >-
+      Category D. Source-fetch stages: the update serves apt-get source and
+      only /sources is exported; never part of a published image.
+    expired_at: 2027-02-10
+  # DS-0002: no non-root USER. These images are never published as a service:
+  # CI smoke and FFmpeg build images, the source-archive image (FROM scratch,
+  # COPY only) and the developer images, which install packages at run time.
+  # Every published runtime image runs non-root (ADR-0878).
+  - id: DS-0002
+    paths:
+      - "Dockerfile"
+      - "Dockerfile.ffmpeg"
+      - "docker/Dockerfile.published-source"
+      - "docker/dev/alpine-3.20.Dockerfile"
+      - "docker/dev/arch.Dockerfile"
+      - "docker/dev/fedora-40.Dockerfile"
+      - "docker/dev/ubuntu-26.04-cuda.Dockerfile"
+      - "docker/dev/ubuntu-26.04-sycl.Dockerfile"
+      - "docker/dev/ubuntu-26.04.Dockerfile"
+    statement: >-
+      Category D. Build, smoke, source-archive and developer images; not a
+      runtime service image. Published runtime images run non-root (ADR-0878).
+    expired_at: 2027-02-10
