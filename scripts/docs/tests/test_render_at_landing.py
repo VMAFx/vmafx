@@ -36,6 +36,14 @@ ENV = {
     "GIT_CONFIG_SYSTEM": "/dev/null",
     "PATH": "/usr/bin:/bin:/usr/local/bin",
     "HOME": "/nonexistent",
+    # `git commit` starts a detached `git maintenance run --auto`; it can still
+    # write into `.git` while the fixture's TemporaryDirectory removes it
+    # (CI: "OSError: [Errno 39] Directory not empty: '.../.git'").
+    "GIT_CONFIG_COUNT": "2",
+    "GIT_CONFIG_KEY_0": "maintenance.auto",
+    "GIT_CONFIG_VALUE_0": "false",
+    "GIT_CONFIG_KEY_1": "gc.auto",
+    "GIT_CONFIG_VALUE_1": "0",
 }
 SCRIPTS = (
     "fragment-order.py",
