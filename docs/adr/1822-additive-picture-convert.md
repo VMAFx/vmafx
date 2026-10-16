@@ -117,3 +117,37 @@ option in `core/meson_options.txt` (default off),
 `core/test/test_picture_convert_api.c`. `VmafPicture` keeps its layout.
 
 The body above is unchanged.
+
+## Status update 2026-10-15: upstream moves the colour to the end
+
+Netflix/vmaf `0b9462873` (2026-10-12, upstream master head on that day)
+moves `VmafColor color` from before `ref` to after `priv`, so upstream's
+`VmafPicture` keeps the offsets of the released members. It is still the
+size change the second alternative above describes: a stack-allocated picture
+or an array of pictures built by a caller on one header and read by a
+library built on the other disagrees on `sizeof(VmafPicture)`. The function
+is still unreleased upstream (latest release `v3.2.1`, 2026-09-14; the compare
+`v3.2.1...0497a0f29` reports it 36 commits ahead).
+
+Checked against upstream's new `picture.h`: every function of that header
+except `vmaf_picture_convert_context_init()` is in
+`core/src/libvmaf_symbols.txt` and exported by the compat `libvmaf.so.3`; that
+one is absent by this decision, and the fork's
+`vmaf_picture_convert_context_init_with_color()` stays the form to call.
+
+What a caller-set colour does on the fork:
+
+- **Source against the fork's header**: `VmafPicture` has no `color`
+  member, so a caller that writes `pic.color` or `.color = ...` does not
+  compile. `core/test/test_picture_no_color_member.py` compiles both forms and
+  requires the error to name `color`; its control cases compile.
+- **A binary built against upstream's header**: the library never reads past
+  `priv`, and nothing in the struct lets it see that a caller allocated the
+  larger upstream layout, so such a colour is not applied. This case is
+  documented in the converter section of [the pictures guide](../api/pictures.md),
+  which names the two ways to give the colour: `vmaf_set_input_colorimetry()`
+  and the `src_color` argument.
+
+No path is chosen now. When Netflix releases `vmaf_picture_convert`, the
+choice between the ADR-0928 major version and `_with_color` plus a wrapper
+goes to the maintainer as a decision.

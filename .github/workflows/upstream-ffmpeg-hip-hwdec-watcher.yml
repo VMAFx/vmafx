@@ -30,6 +30,11 @@ jobs:
     runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
+      - name: Checkout fork
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
       - name: Search FFmpeg for HIP / ROCm hwcontext additions
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -41,13 +46,13 @@ jobs:
           # (2) AV_HWDEVICE_TYPE_HIP enum variant appears in libavutil/hwcontext.h.
           # Use the GitHub code-search API on the FFmpeg/FFmpeg mirror.
 
-          FILES_HIT=$(gh api -X GET search/code \
+          FILES_HIT=$(scripts/ci/upstream_watch_count.sh -X GET search/code \
             -f q='filename:hwcontext_hip.h repo:FFmpeg/FFmpeg' \
-            --jq '.total_count' 2>/dev/null || echo 0)
+            --jq '.total_count')
 
-          ENUM_HIT=$(gh api -X GET search/code \
+          ENUM_HIT=$(scripts/ci/upstream_watch_count.sh -X GET search/code \
             -f q='AV_HWDEVICE_TYPE_HIP repo:FFmpeg/FFmpeg path:libavutil/hwcontext.h' \
-            --jq '.total_count' 2>/dev/null || echo 0)
+            --jq '.total_count')
 
           echo "FFmpeg HIP hwdec signals: hwcontext_hip files=${FILES_HIT} enum_hits=${ENUM_HIT}"
 
@@ -55,6 +60,11 @@ jobs:
             echo "No HIP-hwdec signal upstream this week."
             exit 0
           fi
+
+          gh label create upstream-merged \
+            --color 0E8A16 \
+            --description "Upstream change landed that a fork deferral waits on (ADR-0448)" \
+            --force
 
           EXISTING=$(gh issue list \
             --repo "${GITHUB_REPOSITORY}" \
