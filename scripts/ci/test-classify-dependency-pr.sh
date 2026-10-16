@@ -414,6 +414,30 @@ DIFF
 expect_exit "human author editing the root Makefile is NOT exempt" 1 "developer" \
   "feat/make-target" "${work}/case35_human_makefile.diff"
 
+# ADR-3318 pins the Rust toolchain in the root rust-toolchain.toml and
+# Renovate bumps it with the workflows and Cargo manifests (PR #2795).
+cat >"${work}/case36_pr2795_rust_toolchain.diff" <<'DIFF'
+.github/workflows/rust-ci.yml
+Cargo.toml
+build-config.env
+core/src/rust/Cargo.toml
+rust-toolchain.toml
+DIFF
+expect_exit "PR #2795 fixture (root rust-toolchain.toml pin) is exempt" 0 "app/renovate" \
+  "renovate/rust-toolchain" "${work}/case36_pr2795_rust_toolchain.diff"
+
+cat >"${work}/case37_nested_rust_toolchain.diff" <<'DIFF'
+core/src/rust/rust-toolchain.toml
+DIFF
+expect_exit "nested rust-toolchain.toml is NOT exempt" 1 "renovate[bot]" \
+  "renovate/lookalike-toolchain" "${work}/case37_nested_rust_toolchain.diff"
+
+cat >"${work}/case38_human_rust_toolchain.diff" <<'DIFF'
+rust-toolchain.toml
+DIFF
+expect_exit "human author editing rust-toolchain.toml is NOT exempt" 1 "developer" \
+  "feat/toolchain" "${work}/case38_human_rust_toolchain.diff"
+
 echo ""
 echo "test-classify-dependency-pr: ${pass_count} passed, ${fail_count} failed"
 
