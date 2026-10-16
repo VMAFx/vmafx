@@ -294,6 +294,19 @@
   [window scores](docs/api/vmafx/windows.md).
 
 
+- **CI lints the protobuf contract and refuses wire breaks
+  ([ADR-3329](docs/adr/3329-ci-buf-lint-breaking.md)).** The new `Buf Lint + Breaking` job of
+  `lint-and-format.yml` runs `buf lint` and `buf breaking` (`WIRE_JSON`) on `proto/` against the
+  pull request's base commit, with the `BUF_VERSION` that `build-config.env` pins.
+
+
+- **CI lints OpenAPI specification with Spectral
+  ([ADR-3331](docs/adr/3331-ci-spectral-openapi-lint.md)).** The new
+  `Spectral OpenAPI Lint` job of `lint-and-format.yml` runs
+  the checksum-verified Spectral release binary against `api/openapi/vmafx-server-v1.yaml` pinned by
+  `SPECTRAL_VERSION` and `SPECTRAL_SHA256` in `build-config.env`.
+
+
 - Added `ACCESSIBILITY.md` (commitment, scope, known limitations, how to report
   a barrier), an accessibility issue form and the `accessibility` label, a
   "Your first contribution" and "What to expect" section in `CONTRIBUTING.md`,
@@ -335,6 +348,16 @@
   before the cutoff in `scripts/ci/dco-cutoff.txt` are grandfathered. Run it locally with
   `python3 scripts/ci/check-dco.py --base origin/master --head HEAD`. See
   `docs/development/dco.md` and ADR-2462.
+
+
+- **One distribution manifest for every artifact and channel (ADR-3317, #2314).**
+  `packaging/manifest.toml` lists each shipped artifact once (files, platform,
+  ABI, backends, licence, signing, SBOM, producing job) and each channel by the
+  artifacts it carries. `scripts/release/distribution.py generate` writes the
+  Homebrew formula, the conda-forge recipe, the winget manifests and a JSON
+  index per channel; `distribution.py check` fails CI when a channel names an
+  artifact no pipeline builds or a licence differs from the licensing record
+  ([Distribution manifest](docs/development/distribution.md)).
 
 
 - **The patched FFmpeg is built with MSVC against `vmaf.lib` on every change
@@ -1023,6 +1046,15 @@
 - **The vendored Pelorus interop mirror moves to Pelorus v0.3.0 and is EUPL-1.2 ([ADR-2817](docs/adr/2817-pelorus-v030-eupl-repin.md)).** `scripts/sync-pelorus-interop.sh` pins the v0.3.0 tag's commit `e2e4040311a4`; the ten mirrored files (`core/include/libvmaf/pelorus/`, `core/src/interop/pelorus_*.c`, `core/test/test_pelorus_interop.c`) now name `EUPL-1.2` in their `SPDX-License-Identifier` line, so `REUSE.toml` drops their BSD-2-Clause-Patent annotation, the ten per-file SPDX exceptions are gone and the credits page lists EUPL-1.2. The sync script now stops when a pinned source declares any other licence. The interop ABI stays 1.3: the parser is unchanged, `interop.h` only gains unit and range comments, and the conformance fixture checks the privacy of the files it creates on the open descriptor. `test_perceptual_weight` gains two R4 cases, a newer producer's longer banding section and an older producer's shorter one.
 
 
+- **The pictures guide states what a caller-set colour does now that upstream
+  moved `VmafPicture.color` to the end of the struct
+  ([ADR-1822](docs/adr/1822-additive-picture-convert.md)).** Source that sets
+  `pic.color` does not compile against VMAFx's header, a binary built on
+  upstream's header has its colour ignored, and the colour is given through
+  `vmaf_set_input_colorimetry()` or the `src_color` argument;
+  `test_picture_no_color_member` holds the compile-time refusal.
+
+
 - **The Go binaries' environment, its documentation and the chart's
   `VMAFX_*` entries are generated from one definition
   ([ADR-2350](docs/adr/2350-cloud-native-platform.md)).** The `[[config]]`
@@ -1190,6 +1222,9 @@
   24 hours.
 
 
+- Renovate now extends the fleet's shared `github>plurano/horistes` preset; `renovate.json` drops the sign-off preset and the release-age setting the preset already sets and keeps only this repository's own rules ([dependency bot](docs/development/dependency-bot.md)).
+
+
 - **Renovate raises the CI Python interpreter in one pull request.** A custom
   manager now owns `PYTHON_CI_VERSION` in `build-config.env` together with every
   `python-version:` pin under `.github/workflows/`, and the github-actions
@@ -1222,6 +1257,14 @@
   twin now gets its own `advance` callback where its C extractor has one,
   instead of inheriting the C callback, which made `motion_rust` fail at the
   flush. See [Motion](docs/metrics/motion.md#rust-implementation).
+
+
+- **Every Rust build uses one pinned toolchain, Rust 1.99.0.** `RUST_VERSION`
+  in `build-config.env` sets it for `rust-toolchain.toml`, both Cargo
+  workspaces' `rust-version`, the `Rust` workflow and the dev container, which
+  now installs Rust and builds libvmaf with the Rust extractors.
+  `-Denable_rust_features=true` without cargo now stops configure with an error
+  instead of building the C extractors only (ADR-3318).
 
 
 - **Local images and local packages are installed pinned for Scorecard.**
@@ -1279,6 +1322,17 @@
   by another route or is not affected, with the file, test or ADR that shows it,
   and notes that #1634 (clip the integer AIM score) was closed because the fork
   keeps integer AIM unclipped. Documentation only.
+
+
+- **SYCL: the exact SpEED covariance runs as a split chain
+  ([ADR-2690](docs/adr/2690-sycl-speed-covariance-fast-exact.md)).** The
+  differences and products are formed in parallel and stored as fp64 bit
+  patterns, and one sequential add chain per entry replays `speed.c`'s order,
+  so `speed_chroma` and `speed_temporal` keep the CPU's bits. On an Arc A380
+  with `vmaf_v1.0.16_3d0h` at 3840x1600 the filter takes 23.06 ms of GPU time
+  per frame against 28.53 ms for the per-entry exact kernel (56 to 59 % of its
+  cost recovered) and 18.83 ms for the old inexact kernel; the remaining
+  +4.2 ms is `T-SYCL-SPEED-COV-EXACT-SEQUENTIAL-COST-2026-10-06` (RC8).
 
 
 - **The changed-files clang-tidy jobs defer to the lane that measures a file instead of failing
@@ -1382,6 +1436,16 @@
   repository root. The lock name now uses the absolute path of the common git
   directory, a caller only releases a lock it holds, and an exclusive claim file
   per number (`.git/adr-claims/NNNN`) decides the number
+  ([adr-workflow](docs/development/adr-workflow.md#why-use-claim)).
+
+
+- ADR tooling: `scripts/adr/next-free.sh --claim` no longer fails every later
+  claim for good when a claim is killed while it holds the allocator lock. A
+  lock whose holder process is gone is taken over with a warning, and a lock
+  directory without an owner file counts as free; a running holder's lock is
+  still respected. The
+  wait for the lock is 60 s instead of 10 s (`VMAF_ADR_LOCK_WAIT_S`), and the
+  timeout message names the holder
   ([adr-workflow](docs/development/adr-workflow.md#why-use-claim)).
 
 
@@ -1582,6 +1646,13 @@
   Tables extracted before this change carry an all-NaN `motion` column and the `verify_features` stage of
   the mini retrain refuses them. `extract_full_features.py` also gains `--assume-dims WxH` for corpora
   that are not 1920x1080.
+
+
+- Go tests: `TestScoringKeepaliveOutlastsFrameworkGrace` no longer fails at
+  random on a loaded runner. Its stream helper sent the hold deadline to the
+  server, whose health watch could end the stream first and look like a cut;
+  the helper now cancels on a local timer
+  ([state](docs/state.md#recently-closed)).
 
 
 - **Helm: a node without a models volume scores with the image's models.**
@@ -1847,6 +1918,21 @@
   open on every driver.
 
 
+- **SYCL: `speed_chroma` and `speed_temporal` no longer differ from the CPU by
+  one fp32 step on a cancelling covariance entry
+  ([ADR-2690](docs/adr/2690-sycl-speed-covariance-fast-exact.md)).** The
+  device summed each covariance term `(x - mean_x) * (y - mean_y)`
+  near-exactly in parallel and rounded once; `speed.c` adds the fp64 terms one
+  after the other and rounds every add, so on an entry whose terms cancel the
+  two stored neighbouring fp32 values. On a real 3840x1600 10-bit frame
+  scored with `vmaf_v1.0.16_3d0h` that moved
+  `speed_chroma_u_mxv_45_nnf_0.1_snn_0.19_wvm_5` by 2.384e-07 (host upload and
+  QSV zero-copy alike). The twin now performs the reference's fp64 operations
+  in the reference's order, and the 200-frame segment scores identical to the
+  CPU (`T-SPEED-CHROMA-SYCL-COV-1ULP-2026-10-06`). The CUDA and HIP twins
+  share the old design and are not verified.
+
+
 - **The Windows SYCL build compiles again.** Since the math constants come
   from `<math.h>` (#2638), the SYCL feature sources need `_USE_MATH_DEFINES`
   on Windows, which the project-wide argument did not reach: icpx compiles
@@ -1906,6 +1992,20 @@
   path; subjects now keep 1023 bytes and messages 1023.
 
 
+- Rust bindings: `vmafx-sys`'s build script now refuses a libvmaf header that
+  lacks a libvmaf name the `vmafx-sys` and `vmafx` crates use (for example an
+  older install left under `/usr/local`). It names the header path and the
+  missing names, instead of the build failing later inside `vmafx` with
+  unresolved imports
+  ([Rust guide](docs/development/rust.md#an-older-install-under-the-prefix), #2786).
+
+
+- **ci**: the Windows Lefthook Pre-Commit job installs the pinned praetor
+  engine once before the hooks run in parallel; parallel first-use installs
+  replaced the binary another hook was running and failed the job at random
+  (exit 126 or 127).
+
+
 - **Model hashes are the same on Windows.** The repository checked the model
   JSON files out with CRLF line endings on Windows, so a Windows build's
   built-in models and any model file loaded there reported a different
@@ -1939,6 +2039,21 @@
   `mime/multipart`). `go.mod` declares `go 1.27.2`, and the release and development images build on
   the `golang:1.27-trixie` digest that carries Go 1.27.2. `govulncheck ./...` reached the vulnerable
   symbols from the controller, the tune executor, `pkg/libvmaf` and `tools/obssmoke`; it now reports none.
+
+
+- **Advisory exceptions in `osv-scanner.toml` expire**: every `[[IgnoredVulns]]` entry
+  now needs an `ignoreUntil` date, and `scripts/ci/lint_exceptions.py check` (pre-commit
+  hook `check-lint-exceptions`) fails on a missing or expired date. GHSA-84m7-p3x7-pcfv
+  (`mcp` 1.29.0, reached only through `semgrep` in the tooling-test lock) is declared until
+  2026-10-26; GO-2026-5932 until 2027-02-13.
+
+
+- **The OpenSSF Scorecard gate now trusts Scorecard v5.6.0 (`61e84743`) run by
+  `ossf/scorecard-action` v2.5.0 (`fa7117db`)**, which pulls its image from
+  `ghcr.io`; the earlier action pulled from the retired `gcr.io` registry.
+  Reports from the previously reviewed v5.5.0 (`c395761d`) are refused, and a
+  new test fails when a workflow's action pin and the gate's pin differ. The
+  check weights and risk levels are unchanged between the two versions.
 
 
 - **The maintainer's ruleset bypass at mode `always` is now a declared exception with an end date.**
