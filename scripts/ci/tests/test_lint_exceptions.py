@@ -245,6 +245,20 @@ class RepositoryListTests(unittest.TestCase):
         self.assertEqual(res.returncode, 1)
         self.assertIn("expired on", res.stderr)
 
+    def test_host_c_list_names_every_pelorus_mirror_file(self) -> None:
+        mirror = [
+            line
+            for line in (ROOT / "scripts/ci/pelorus-mirror-paths.txt").read_text().splitlines()
+            if line and not line.startswith("#")
+        ]
+        self.assertEqual(len(mirror), 10)
+        entries, bad = le.load(ROOT)
+        self.assertEqual(bad, [])
+        listed = {e.path for e in entries if e.rule == "host-c-cpp"}
+        self.assertTrue(set(mirror) <= listed)
+        planted = "core/src/interop/planted_unlisted.c"
+        self.assertEqual(le.still_read("host-c-cpp", [*mirror, planted]), [planted])
+
     def test_unknown_command_is_a_usage_error(self) -> None:
         self.assertEqual(self.run_cli("bogus").returncode, 2)
 
