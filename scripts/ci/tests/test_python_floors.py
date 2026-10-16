@@ -6,11 +6,14 @@
 from __future__ import annotations
 
 import io
+import json
 import os
+import re
 import stat
 import sys
 import tempfile
 import unittest
+import unittest.mock
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
@@ -165,10 +168,45 @@ dependencies = ["numpy>=2.5.3"]
         self.assertEqual(code, 1)
         self.assertIn("floor 3.10 does not resolve", out.getvalue())
 
+    def test_default_uv_is_the_lock_writer_lookup(self) -> None:
+        """Without --uv-binary the floors check takes the lock writer's uv."""
+        fake = str(self.fake_uv_ok)
+        with unittest.mock.patch.object(
+            check_python_floors, "find_default_uv", return_value=fake
+        ) as lookup:
+            code = check_python_floors.main(["--root", str(self.tmp_path)])
+        lookup.assert_called_once_with(self.tmp_path.resolve())
+        self.assertEqual(code, 0)
+
     def test_the_tree_passes(self) -> None:
         """The actual repository packages pass floor check."""
         code = check_python_floors.main(["--root", str(ROOT)])
         self.assertEqual(code, 0)
+
+
+def tooling_uv_pin(text: str) -> str | None:
+    """Return the uv version pinned in a tooling-tests lock input."""
+    match = re.search(r"^uv==(\S+)$", text, re.MULTILINE)
+    return match.group(1) if match else None
+
+
+class TestToolingUvPin(unittest.TestCase):
+    """The tooling suite installs the uv the lock manifest names."""
+
+    def manifest_uv(self) -> str:
+        manifest = ROOT / "requirements/locks/manifest.json"
+        return str(json.loads(manifest.read_text(encoding="utf-8"))["uv_version"])
+
+    def test_pin_equals_manifest(self) -> None:
+        text = (ROOT / "requirements/locks/tooling-tests.in").read_text(encoding="utf-8")
+        self.assertEqual(tooling_uv_pin(text), self.manifest_uv())
+
+    def test_planted_other_version_is_refused(self) -> None:
+        planted = "pyyaml==6.0.3\nuv==0.0.1\n"
+        self.assertNotEqual(tooling_uv_pin(planted), self.manifest_uv())
+
+    def test_missing_pin_is_refused(self) -> None:
+        self.assertIsNone(tooling_uv_pin("pyyaml==6.0.3\nuvicorn==1.0\n"))
 
 
 if __name__ == "__main__":

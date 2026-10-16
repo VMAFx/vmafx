@@ -22,6 +22,10 @@ from pathlib import Path
 
 import tomllib
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from check_python_dependency_locks import find_default_uv
+
 EXCLUDED_PYPROJECTS = frozenset(
     {
         "pyproject.toml",
@@ -227,8 +231,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--uv-binary",
-        default=shutil.which("uv") or "uv",
-        help="Path or name of uv executable",
+        default=None,
+        help="Path or name of uv executable (default: the lock writer's uv lookup)",
     )
     parser.add_argument(
         "--timeout",
@@ -267,7 +271,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
     root = args.root.resolve()
-    uv_bin = args.uv_binary
+    uv_bin = args.uv_binary or find_default_uv(root)
     if not shutil.which(uv_bin) and not Path(uv_bin).is_file():
         print(f"check_python_floors: error: uv binary not found: {uv_bin}", file=sys.stderr)
         return 2
