@@ -125,7 +125,7 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         if: steps.impact.outputs.docs == 'true'
         with:
-          node-version: "24.21.0"
+          node-version: "24.22.0"
       - name: Check every formula compiles with KaTeX (ADR-2705)
         if: steps.impact.outputs.docs == 'true'
         run: python3 scripts/docs/check_math.py --site build-docs/site
