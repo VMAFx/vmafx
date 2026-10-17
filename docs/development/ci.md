@@ -53,7 +53,7 @@ required and which ADR owns it, see
 | --- | --- |
 | [`required-aggregator.yml`](../../.github/workflows/required-aggregator.yml) | Single required-check aggregator (ADR-0313). |
 | [`ci-tier.yml`](../../.github/workflows/ci-tier.yml) | Reusable workflow every pull-request workflow calls first: decides the tier ([ADR-2169](../adr/2169-ci-fewer-runs.md)); no trigger of its own. |
-| [`ci-escalate.yml`](../../.github/workflows/ci-escalate.yml) | Re-runs the suite at the full tier when `ci: full` or `autorelease: cut` is applied (called from `pr-label-lanes.yml`); names every run it could not re-run and then fails ([ADR-3279](../adr/3279-msvc-sycl-leg-on-light-tier.md)). |
+| [`ci-escalate.yml`](../../.github/workflows/ci-escalate.yml) | Re-runs the suite at the full tier when `ci: full` or `autorelease: cut` is applied (called from `pr-label-lanes.yml`); cancels every running run first and awaits them together within one 180-second bound, then re-runs them; names every run it could not re-run and then fails ([ADR-3279](../adr/3279-msvc-sycl-leg-on-light-tier.md)). |
 | [`lint-and-format.yml`](../../.github/workflows/lint-and-format.yml) `Trivy` | Trivy config + fs scans ([ADR-3330](../adr/3330-ci-trivy-config-fs.md)). |
 | [`lint-and-format.yml`](../../.github/workflows/lint-and-format.yml) | Pre-commit, clang-tidy (changed files plus the whole-tree ratchet, ADR-1142), cppcheck, mypy, registry validate, twin-drift gate (ADR-1135), `buf lint` + `buf breaking` on `proto/` ([API generation](api-generation.md)). |
 | [`lint-and-format.yml`](../../.github/workflows/lint-and-format.yml) `Spectral OpenAPI Lint` | Spectral (`spectral:oas`) on `api/openapi/` ([API generation](api-generation.md), [ADR-3331](../adr/3331-ci-spectral-openapi-lint.md)). |
