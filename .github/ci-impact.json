@@ -347,6 +347,22 @@
         "scripts/release/build-native-release-artifacts.sh"
       ]
     },
+    "dev_container_inputs": {
+      "own_paths_only": true,
+      "patterns": [
+        ".dockerignore",
+        ".github/workflows/dev-container-build.yml",
+        "build-config.env",
+        "dev/*",
+        "dev/**",
+        "scripts/ci/build-dev-container-stage.sh",
+        "scripts/ci/check-compose-dri-writable.sh",
+        "scripts/ci/check-container-build.sh",
+        "scripts/ci/check-dev-container-build-secret.py",
+        "scripts/ci/docker-hub-mirror.sh",
+        "scripts/ci/install-cuda-toolkit.sh"
+      ]
+    },
     "doxygen": {
       "patterns": [
         "core/include/libvmaf/*",

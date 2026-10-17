@@ -474,6 +474,21 @@ leg, checks its installed library names and runs its two SYCL registration tests
 (selector `windows_msvc_sycl`); `Windows MSVC+CUDA` and
 `Windows ARM64 MSVC` stay full-tier.
 
+`Dev Container Build` of `dev-container-build.yml` is the third own-input lane
+([ADR-3338](../adr/3338-dev-container-own-input-lane.md)). On a light-tier pull
+request its planner reads the narrow selector `dev_container_inputs`: `dev/**`,
+`.dockerignore`, `build-config.env`, the workflow and the scripts its build job
+runs (`build-dev-container-stage.sh`, `check-compose-dri-writable.sh`,
+`check-container-build.sh`, `check-dev-container-build-secret.py`,
+`docker-hub-mirror.sh`) and `install-cuda-toolkit.sh`, which the Containerfile
+copies. A pull request that changes one of them builds the image, smoke-tests
+it and runs the release rehearsal; any other light pull request passes the
+check with a notice naming the reason. The full tier and the master push keep
+the broad selector `dev_container`, which also builds the image for the core,
+Python, AI, MCP and Go sources the image copies, `supply-chain.yml` and
+`build-native-release-artifacts.sh`. Add the label `ci: full` when a pull
+request changes one of those and needs the image built before it lands.
+
 These are full-tier contexts, with one declared exception
 ([ADR-2198](../adr/2198-windows-sycl-leg-and-cut-check.md)): `Windows Tester
 Zip` is an **own-input lane** (`own_input_lanes` of `.github/ci-tier.json`), so

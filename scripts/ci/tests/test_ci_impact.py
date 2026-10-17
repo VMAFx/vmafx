@@ -145,7 +145,16 @@ MSVC_LEG_SELECTORS = {"windows_msvc_sycl"}
 # The upstream consumer job folded into ffmpeg-integration.yml keeps the path
 # filter its own workflow had (SAST check-suite budget).
 CONSUMER_SELECTORS = {"upstream_consumers"}
-OWN_PATHS_ONLY = TESTER_SELECTORS | MSVC_LEG_SELECTORS | TIDY_SELECTORS | CONSUMER_SELECTORS
+# ADR-3338: the dev-container build a light-tier pull request owes when it
+# touches the image's own inputs.
+DEV_CONTAINER_LANE_SELECTORS = {"dev_container_inputs"}
+OWN_PATHS_ONLY = (
+    TESTER_SELECTORS
+    | MSVC_LEG_SELECTORS
+    | TIDY_SELECTORS
+    | CONSUMER_SELECTORS
+    | DEV_CONTAINER_LANE_SELECTORS
+)
 
 
 def _plan_for(paths: list[str], statuses: list[str] | None = None) -> ImpactPlan:
@@ -261,7 +270,7 @@ class RoutingContract(unittest.TestCase):
         cases = {
             "Dockerfile": {"docker_image"},
             "python/requirements.txt": {"docker_image", "dev_container"},
-            "dev/Containerfile": {"dev_container"},
+            "dev/Containerfile": {"dev_container", "dev_container_inputs"},
             "core/doc/Doxyfile.public-api": {"doxygen"},
             "deploy/helm/vmafx/Chart.yaml": {"helm"},
             "docker/Dockerfile.tester": {"tester_image"},
@@ -694,6 +703,63 @@ class MsvcLegRouting(unittest.TestCase):
         self.assertTrue(plan.selectors[self.SELECTOR])
 
 
+class DevContainerLaneRouting(unittest.TestCase):
+    """ADR-3338: `dev_container_inputs` follows the dev image's own inputs."""
+
+    SELECTOR = "dev_container_inputs"
+
+    def test_the_images_own_inputs_select_it(self) -> None:
+        for path in ("dev/Containerfile", "dev/scripts/fetch-intel-neo.py", ".dockerignore"):
+            with self.subTest(path=path):
+                plan = _plan_for([path])
+                self.assertEqual(plan.mode, "impact")
+                self.assertTrue(plan.selectors[self.SELECTOR])
+                self.assertTrue(plan.selectors["dev_container"])
+
+    def test_inputs_that_force_a_full_plan_still_select_it(self) -> None:
+        for path in (
+            "build-config.env",
+            ".github/workflows/dev-container-build.yml",
+            "scripts/ci/build-dev-container-stage.sh",
+            "scripts/ci/install-cuda-toolkit.sh",
+        ):
+            with self.subTest(path=path):
+                self.assertTrue(_plan_for([path]).selectors[self.SELECTOR])
+
+    def test_sources_left_to_the_full_tier_leave_it_off(self) -> None:
+        for path in (
+            "docs/index.md",
+            "core/src/libvmaf.c",
+            "python/vmaf/__init__.py",
+            "ai/README.md",
+            "go.mod",
+            ".github/workflows/supply-chain.yml",
+            "scripts/release/build-native-release-artifacts.sh",
+        ):
+            with self.subTest(path=path):
+                self.assertFalse(_plan_for([path]).selectors[self.SELECTOR])
+
+    def test_a_ci_authority_change_alone_leaves_it_off(self) -> None:
+        plan = _plan_for(["scripts/ci/plan-ci-impact.py"])
+        self.assertEqual(plan.mode, "full")
+        self.assertFalse(plan.selectors[self.SELECTOR])
+        self.assertTrue(plan.selectors["dev_container"])
+
+    def test_an_unknown_change_set_selects_it_and_an_empty_diff_does_not(self) -> None:
+        config = planner.load_config(CONFIG)
+        unknown = planner.build_plan(config, None, "event-not-routed:schedule", "b" * 40, "h" * 40)
+        empty = planner.build_plan(config, (), None, "b" * 40, "h" * 40)
+        self.assertTrue(cast(ImpactPlan, unknown).selectors[self.SELECTOR])
+        self.assertFalse(cast(ImpactPlan, empty).selectors[self.SELECTOR])
+
+    def test_planted_pattern_without_a_suffix_is_seen_by_the_negative_cases(self) -> None:
+        config = copy.deepcopy(planner.load_config(CONFIG))
+        config["selectors"][self.SELECTOR]["patterns"].append("docs/*")
+        changes = (planner.Change(status="M", paths=("docs/index.md",)),)
+        plan = cast(ImpactPlan, planner.build_plan(config, changes, None, "b" * 40, "h" * 40))
+        self.assertTrue(plan.selectors[self.SELECTOR])
+
+
 class BuildWorkRouting(unittest.TestCase):
     """`build_work` runs build.yml's legs for every file their Python steps read.
 
@@ -951,7 +1017,13 @@ class WorkflowContract(unittest.TestCase):
         with self.subTest(workflow=filename, job="impact"):
             self.assertRegex(trigger, r"(?m)^  push:\s*$")
             self.assertRegex(trigger, r"(?m)^  pull_request:\s*$")
-            self.assertIn(f"selected: ${{{{ steps.impact.outputs.{selector} }}}}", impact)
+            # ADR-3338: an own-input lane picks its tier's selector in a `pick`
+            # step; the planner's selector must still feed it.
+            self.assertIn(f"${{{{ steps.impact.outputs.{selector} }}}}", impact)
+            self.assertTrue(
+                f"selected: ${{{{ steps.impact.outputs.{selector} }}}}" in impact
+                or "selected: ${{ steps.pick.outputs.selected }}" in impact
+            )
             self.assertIn("fetch-depth: 0", impact)
             self.assertIn("scripts/ci/plan-ci-impact.py", impact)
         for work_job in work_jobs:

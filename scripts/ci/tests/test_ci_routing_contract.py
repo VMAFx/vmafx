@@ -342,6 +342,64 @@ def expect_gpu_leg_decision(contract: Contract) -> None:
             raise AssertionError(f"row tier {leg_tier}, full={tier_full}: wrote {written!r}")
 
 
+DEV_CONTAINER_WORKFLOW = "dev-container-build.yml"
+
+
+def _dev_container_pick(contract: Contract) -> dict[str, Any]:
+    steps = contract.workflows[DEV_CONTAINER_WORKFLOW]["jobs"]["impact"]["steps"]
+    picks = [step for step in steps if step.get("id") == "pick"]
+    if len(picks) != 1:
+        raise AssertionError(f"the dev-container planner has {len(picks)} pick steps, not one")
+    pick: dict[str, Any] = picks[0]
+    return pick
+
+
+def dev_container_pick(contract: Contract, full: str, broad: str, narrow: str) -> tuple[int, str]:
+    """Run the pick step's own script; return its exit status and what it writes."""
+    bash = shutil.which("bash")
+    if bash is None:
+        raise unittest.SkipTest("no bash on this host; the hosted runner runs the step")
+    with tempfile.TemporaryDirectory(prefix="dev-container-pick-") as directory:
+        output = Path(directory) / "github_output"
+        output.touch()
+        env = {"FULL": full, "BROAD": broad, "NARROW": narrow, "GITHUB_OUTPUT": str(output)}
+        done = subprocess.run(  # noqa: S603 -- resolved bash, the workflow's own step script
+            [bash, "-c", str(_dev_container_pick(contract)["run"])],
+            env=env,
+            check=False,
+            capture_output=True,
+            timeout=SHELL_TIMEOUT_S,
+        )
+        return done.returncode, output.read_text(encoding="utf-8")
+
+
+def expect_dev_container_pick(contract: Contract) -> None:
+    """The full tier reads the broad selector, a light PR the own-input one (ADR-3338)."""
+    env = _dev_container_pick(contract).get("env", {})
+    wired = {
+        "FULL": "${{ needs.tier.outputs.full }}",
+        "BROAD": "${{ steps.impact.outputs.dev_container }}",
+        "NARROW": "${{ steps.impact.outputs.dev_container_inputs }}",
+    }
+    if env != wired:
+        raise AssertionError(f"the pick step reads {env}, not {wired}")
+    for full in ("true", "false"):
+        for broad in ("true", "false"):
+            for narrow in ("true", "false"):
+                status, written = dev_container_pick(contract, full, broad, narrow)
+                expected = broad if full == "true" else narrow
+                if status != 0 or f"selected={expected}\n" not in written:
+                    raise AssertionError(
+                        f"full={full} broad={broad} narrow={narrow}: rc {status}, {written!r}"
+                    )
+                if "reason=" not in written:
+                    raise AssertionError(f"full={full}: no reason written: {written!r}")
+    for full, broad, narrow in (("true", "", "true"), ("false", "true", "maybe")):
+        status, _ = dev_container_pick(contract, full, broad, narrow)
+        if status == 0:
+            raise AssertionError(f"full={full} broad={broad!r} narrow={narrow!r} was accepted")
+
+
 def gpu_job_starts(
     contract: Contract, *, full: bool, planner: str, selected: bool, cancelled: bool = False
 ) -> bool:
@@ -507,6 +565,9 @@ class RoutingContract(unittest.TestCase):
 
     def test_msvc_gpu_job_starts_on_selection_and_on_a_failed_planner(self) -> None:
         expect_gpu_job_condition(self.contract)
+
+    def test_dev_container_lane_picks_the_selector_of_its_tier(self) -> None:
+        expect_dev_container_pick(self.contract)
 
     def test_exceptions_are_unexpired(self) -> None:
         today = datetime.date.today()
@@ -685,6 +746,33 @@ class PlantedDefects(unittest.TestCase):
         )
         with self.assertRaises(AssertionError):
             expect_gpu_job_condition(contract)
+
+    def test_a_dev_container_pick_that_reads_the_own_inputs_on_full_is_caught(self) -> None:
+        contract = self.mutated(
+            DEV_CONTAINER_WORKFLOW,
+            '            selected="$BROAD" selector=dev_container\n',
+            '            selected="$NARROW" selector=dev_container\n',
+        )
+        with self.assertRaises(AssertionError):
+            expect_dev_container_pick(contract)
+
+    def test_a_dev_container_gate_back_on_the_full_tier_is_caught(self) -> None:
+        contract = self.mutated(
+            DEV_CONTAINER_WORKFLOW,
+            "    if: always() && needs.tier.outputs.light == 'true'\n",
+            "    if: always() && needs.tier.outputs.full == 'true'\n",
+        )
+        with self.assertRaises(AssertionError):
+            expect_own_input_lanes(contract, OWN)
+
+    def test_a_dev_container_planner_back_on_the_full_tier_is_caught(self) -> None:
+        contract = self.mutated(
+            DEV_CONTAINER_WORKFLOW,
+            "    if: needs.tier.outputs.light == 'true'\n",
+            "    if: needs.tier.outputs.full == 'true'\n",
+        )
+        with self.assertRaises(AssertionError):
+            expect_own_input_lanes(contract, OWN)
 
     def test_an_msvc_job_that_starts_in_a_cancelled_run_is_caught(self) -> None:
         contract = self.mutated(GPU_WORKFLOW, "    if: ${{ !cancelled() && (", "    if: ${{ (")
