@@ -1040,3 +1040,4 @@ later step of the job was skipped, and the four Python coverage shards reported
 first earlier step that did not succeed (`shard 1/4 outcome was skipped: step
 Meson-unit-suite outcome was failure`), and `scripts/ci/test_fail_closed_ci.py`
 runs that step's script against planted outcomes.
+<!-- probe: docs-only skip of Dev Container lane (ADR-3338), not for merge -->
