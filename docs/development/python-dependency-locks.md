@@ -100,6 +100,29 @@ CI Workflows & Dockerfiles                Local Workstation (make lint-tools, cy
    make python-locks-check
    ```
 
+4. **Verify package Python floors**:
+
+   Declared `requires-python` floors in tracked `pyproject.toml` files must
+   honestly reflect the minimum Python version required by the package's
+   direct dependencies and all optional extra groups
+   ([ADR-3335](../adr/3335-python-floors-match-dependencies.md)).
+
+   ```bash
+   make python-floors-check
+   ```
+
+   The verification script `scripts/ci/check_python_floors.py` verifies this
+   property by compiling each tracked package's requirements in an isolated
+   directory with all extras at its declared floor. The check is kept separate
+   from `make lint` because dependency resolution requires network access.
+
+   > [!NOTE]
+   > **Resolve-proven vs run-proven gap**: While the check guarantees that the
+   > dependency tree resolves without conflict at the declared floor,
+   > repository CI executes test suites under Python 3.14. The declared
+   > floors are resolve-proven rather than run-proven across older
+   > interpreters.
+
 ## Sdist packages and PEP 517 build isolation
 
 When pip installs a pure source distribution (`.tar.gz` sdist) under

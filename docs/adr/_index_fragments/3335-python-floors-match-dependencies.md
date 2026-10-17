@@ -1,0 +1,1 @@
+| [ADR-3335](3335-python-floors-match-dependencies.md) | Align per-package requires-python floors to lowest version where core and all extras resolve, tracked by tool targets and verified by scripts/ci/check_python_floors.py. | Accepted | python, build, packaging |

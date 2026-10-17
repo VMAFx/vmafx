@@ -6,7 +6,7 @@ name = "vmaf-dev-llm"
 version = "1.0.0-rc.3" # x-release-please-version
 description = "Local LLM dev helpers for the VMAFx fork (Ollama-first)."
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 license = "EUPL-1.2 AND BSD-2-Clause-Patent"
 license-files = ["LICENSES/*"]
 authors = [
@@ -58,7 +58,7 @@ packages = ["src/vmaf_dev_llm"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py312"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

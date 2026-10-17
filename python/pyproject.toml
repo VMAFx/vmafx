@@ -46,7 +46,7 @@ readme = "README.rst"
 authors = [{ name = "Zhi Li", email = "zli@netflix.com" }]
 license = "BSD-2-Clause-Patent AND BSD-2-Clause AND BSD-3-Clause-Clear AND EUPL-1.2"
 license-files = ["LICENSES/*"]
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 dependencies = [
     "numpy>=2.5.3",
     "scipy>=1.18.1",
