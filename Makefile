@@ -693,9 +693,10 @@ upstream-parity-full:
 	    --heap-check --jobs $(UPSTREAM_PARITY_JOBS) $(UPSTREAM_PARITY_ARGS)
 
 # Sanitizer build (ASan + UBSan) — used by CI and `/build-vmaf --sanitizers`.
-# The suite's timeouts are sized for an uninstrumented build; a sanitizer run
-# multiplies them (docs/development/ci.md, "Sanitizer legs"), as the CI legs do.
-SANITIZER_TEST_TIMEOUT_MULTIPLIER := 3
+# The suite's timeouts are sized for an uninstrumented build; a sanitizer or
+# gcov run multiplies them (docs/development/ci.md, "Sanitizer legs"), as the
+# CI legs do.
+INSTRUMENTED_TEST_TIMEOUT_MULTIPLIER := 3
 test-sanitizers:
 	@mkdir -p build-san
 	meson setup build-san $(LIBVMAF_DIR) --buildtype=debug \
@@ -707,7 +708,7 @@ test-sanitizers:
 	    -Denable_cuda=false -Denable_sycl=false
 	ninja -C build-san
 	$(PYTHON_INTERPRETER) scripts/ci/run_meson_test.py -- -C build-san --print-errorlogs \
-	    --timeout-multiplier $(SANITIZER_TEST_TIMEOUT_MULTIPLIER)
+	    --timeout-multiplier $(INSTRUMENTED_TEST_TIMEOUT_MULTIPLIER)
 
 # test-fast: the pre-push gate. test-timing: the wall-clock budgets (the live
 # window harness's two frame periods), one test at a time, alone on an idle
@@ -749,7 +750,8 @@ coverage:
 	    -Dc_args=-fprofile-update=atomic -Dcpp_args=-fprofile-update=atomic
 	ninja -C $(COVERAGE_DIR)
 	$(PYTHON_INTERPRETER) scripts/ci/run_meson_test.py -- \
-	    -C $(COVERAGE_DIR) --print-errorlogs --num-processes 1
+	    -C $(COVERAGE_DIR) --print-errorlogs --num-processes 1 \
+	    --timeout-multiplier $(INSTRUMENTED_TEST_TIMEOUT_MULTIPLIER)
 	@echo "--- gathering coverage ---"
 	gcovr --root . \
 	    --filter 'core/src/.*' \

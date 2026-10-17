@@ -993,6 +993,7 @@ jobs:
           REASON: ${{ steps.impact.outputs.reason }}
         run: echo "::notice::golden_harness not impacted (mode=$MODE reason=$REASON) — Coverage Gate satisfied without running (ADR-1140)"
       - name: Install deps
+        id: coverage_install_deps
         if: steps.impact.outputs.golden_harness == 'true'
         run: |
           # The hosted runner ships pre-provisioned Microsoft/Azure apt
@@ -1046,6 +1047,7 @@ jobs:
           path: ${{ runner.temp }}/ort-cache
           key: ort-tarball-linux-x64-gpu-1.22.0
       - name: Install ONNX Runtime (GPU build, CPU + CUDA EPs)
+        id: coverage_install_ort
         if: steps.impact.outputs.golden_harness == 'true'
         # The GPU .tgz bundles CPU + CUDA + TensorRT execution providers in
         # one package. We install it (instead of the smaller CPU-only build)
@@ -1097,6 +1099,7 @@ jobs:
           echo "/opt/onnxruntime/lib" | sudo tee /etc/ld.so.conf.d/onnxruntime.conf
           sudo ldconfig
       - name: Build with gcov instrumentation
+        id: coverage_build
         if: steps.impact.outputs.golden_harness == 'true'
         # Build inside core/ so python/vmaf/__init__.py finds the CLI at
         # core/build-coverage/tools/vmaf (it hardcodes that relative path).
@@ -1126,18 +1129,23 @@ jobs:
             -Dwerror=true $(../scripts/ci/werror-args.sh true)
           ninja -C build-coverage
       - name: Prefetch Go modules for the suite
+        id: coverage_prefetch_go
         if: steps.impact.outputs.golden_harness == 'true'
         # The suite's Go-running tests find their modules in the cache: the
         # download happens here, retried, and fails here when it cannot succeed
         # (scripts/ci/prefetch_go_modules.py, as the user the suite runs as).
         run: python3 scripts/ci/prefetch_go_modules.py
+      # --timeout-multiplier 3: the suite's timeouts are sized for an
+      # uninstrumented build (docs/development/ci.md, "Sanitizer legs").
       - name: Run meson unit suite (with gcov counters)
+        id: coverage_meson_suite
         if: steps.impact.outputs.golden_harness == 'true'
         working-directory: core
         run: >-
           python3 ../scripts/ci/run_meson_test.py -- -C build-coverage
-          --print-errorlogs --num-processes 1
+          --print-errorlogs --num-processes 1 --timeout-multiplier 3
       - name: Prepare the Python test suite (instrumented libvmaf.so + vmaf CLI)
+        id: coverage_prepare_python
         if: steps.impact.outputs.golden_harness == 'true'
         run: |
           # python/vmaf/__init__.py hardcodes core/build/tools/vmaf as the
@@ -1169,7 +1177,7 @@ jobs:
         if: steps.impact.outputs.golden_harness == 'true'
         continue-on-error: true
         env:
-          PYTHO1PATH: ${{ github.workspace }}/python
+          PYTHONPATH: ${{ github.workspace }}/python
           LD_LIBRARY_PATH: ${{ github.workspace }}/core/build-coverage/src
         run: |
           timeout --kill-after=30s 30m python3 scripts/ci/run_pytest_shard.py --shard 1/4 -- \
@@ -1182,7 +1190,7 @@ jobs:
         if: steps.impact.outputs.golden_harness == 'true'
         continue-on-error: true
         env:
-          PYTHO2PATH: ${{ github.workspace }}/python
+          PYTHONPATH: ${{ github.workspace }}/python
           LD_LIBRARY_PATH: ${{ github.workspace }}/core/build-coverage/src
         run: |
           timeout --kill-after=30s 30m python3 scripts/ci/run_pytest_shard.py --shard 2/4 -- \
@@ -1195,7 +1203,7 @@ jobs:
         if: steps.impact.outputs.golden_harness == 'true'
         continue-on-error: true
         env:
-          PYTHO3PATH: ${{ github.workspace }}/python
+          PYTHONPATH: ${{ github.workspace }}/python
           LD_LIBRARY_PATH: ${{ github.workspace }}/core/build-coverage/src
         run: |
           timeout --kill-after=30s 30m python3 scripts/ci/run_pytest_shard.py --shard 3/4 -- \
@@ -1208,7 +1216,7 @@ jobs:
         if: steps.impact.outputs.golden_harness == 'true'
         continue-on-error: true
         env:
-          PYTHO4PATH: ${{ github.workspace }}/python
+          PYTHONPATH: ${{ github.workspace }}/python
           LD_LIBRARY_PATH: ${{ github.workspace }}/core/build-coverage/src
         run: |
           timeout --kill-after=30s 30m python3 scripts/ci/run_pytest_shard.py --shard 4/4 -- \
@@ -1283,15 +1291,36 @@ jobs:
             ${{ steps.python_coverage_shard_2.outcome }}
             ${{ steps.python_coverage_shard_3.outcome }}
             ${{ steps.python_coverage_shard_4.outcome }}
+          # A shard is skipped when a step before it failed; the error names
+          # that step (run 39006126494: the meson suite timed out and the
+          # shards only reported "skipped").
+          EARLIER_OUTCOMES: >-
+            Install-deps=${{ steps.coverage_install_deps.outcome }}
+            Install-ONNX-Runtime=${{ steps.coverage_install_ort.outcome }}
+            Build-with-gcov=${{ steps.coverage_build.outcome }}
+            Prefetch-Go-modules=${{ steps.coverage_prefetch_go.outcome }}
+            Meson-unit-suite=${{ steps.coverage_meson_suite.outcome }}
+            Prepare-Python-suite=${{ steps.coverage_prepare_python.outcome }}
         run: |
           read -r -a outcomes <<< "$SHARD_OUTCOMES"
           if [[ "${#outcomes[@]}" -ne 4 ]]; then
             echo "::error::expected 4 shard outcomes, got '$SHARD_OUTCOMES'" >&2
             exit 1
           fi
+          read -r -a earlier <<< "$EARLIER_OUTCOMES"
+          cause="no earlier step failed"
+          for entry in "${earlier[@]}"; do
+            if [[ "${entry#*=}" != "success" ]]; then
+              cause="step ${entry%%=*} outcome was ${entry#*=}"
+              break
+            fi
+          done
           failed=0
           for index in "${!outcomes[@]}"; do
-            if [[ "${outcomes[index]}" != "success" ]]; then
+            if [[ "${outcomes[index]}" == "skipped" ]]; then
+              echo "::error::Python coverage shard $((index + 1))/4 outcome was skipped: $cause" >&2
+              failed=1
+            elif [[ "${outcomes[index]}" != "success" ]]; then
               echo "::error::Python coverage shard $((index + 1))/4 outcome was ${outcomes[index]}" >&2
               failed=1
             fi
@@ -1386,10 +1415,12 @@ jobs:
       - name: Run meson unit suite
         working-directory: core
         # See CPU coverage job for --num-processes 1 rationale: serialise
-        # to keep multi-process .gcda merges race-free.
+        # to keep multi-process .gcda merges race-free. --timeout-multiplier 3:
+        # the suite's timeouts are sized for an uninstrumented build
+        # (docs/development/ci.md, "Sanitizer legs").
         run: >-
           python3 ../scripts/ci/run_meson_test.py -- -C build-coverage-gpu
-          --print-errorlogs --num-processes 1
+          --print-errorlogs --num-processes 1 --timeout-multiplier 3
       - name: Run Python suite on CUDA + SYCL backends
         env:
           PYTHONPATH: ${{ github.workspace }}/python

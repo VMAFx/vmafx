@@ -978,14 +978,16 @@ being listed there.
 
 A test of `core/test/meson.build` has 30 seconds unless it sets its own
 timeout. Those values are sized for an uninstrumented build. Every Meson test
-run of a sanitizer build passes `--timeout-multiplier 3`:
+run of a sanitizer build or a gcov (`-Db_coverage=true`) build passes
+`--timeout-multiplier 3`:
 
 | Job | Workflow |
 | --- | --- |
 | `Sanitizers (address)`, `Sanitizers (undefined)`, `Sanitizers (thread)` | `tests-and-quality-gates.yml` |
 | `Sanitizers ASan+UBSan`, `Sanitizers TSan` | `sanitizers.yml` |
 | `ThreadSanitizer` | `nightly.yml` (had the multiplier before) |
-| `make test-sanitizers` | `Makefile` (`SANITIZER_TEST_TIMEOUT_MULTIPLIER`) |
+| `Coverage Gate`, `Coverage (GPU)` | `tests-and-quality-gates.yml` (gcov, since 2026-10-17) |
+| `make test-sanitizers`, `make coverage` | `Makefile` (`INSTRUMENTED_TEST_TIMEOUT_MULTIPLIER`) |
 
 The value comes from the durations of all tests in 15 job logs of 2026-10-10:
 the three matrix legs in three runs (11 logs with two re-run attempts, one of
@@ -1012,4 +1014,14 @@ the slowdown comes from the instrumentation, not from those tests, and the
 next slow test would need the same edit after it has failed once. The job's
 own `timeout-minutes` still ends a run that hangs.
 `scripts/ci/tests/test_sanitizer_suite_timeouts.py` refuses a test run in a
-job with a `-Db_sanitize=` build that passes no multiplier or another value.
+job with a `-Db_sanitize=` or `-Db_coverage=true` build that passes no
+multiplier or another value.
+
+The coverage jobs joined on 2026-10-17. In the green coverage runs before,
+`test_integer_adm_simd` took 19.6 s to 19.8 s of its 30 s; on master run
+39006126494 it reached 30 s and was killed. The Meson step then failed, every
+later step of the job was skipped, and the four Python coverage shards reported
+`skipped`. The step `Assert every Python coverage shard passed` now names the
+first earlier step that did not succeed (`shard 1/4 outcome was skipped: step
+Meson-unit-suite outcome was failure`), and `scripts/ci/test_fail_closed_ci.py`
+runs that step's script against planted outcomes.
