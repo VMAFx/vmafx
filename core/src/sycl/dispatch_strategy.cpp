@@ -40,7 +40,9 @@ static const char *const k_sycl_strategy_names[] = {
  * replacement for force-direct. Removal is scheduled for v4.0. An atomic bool,
  * not an atomic_flag: CodeQL does not count test_and_set() as a read (alert
  * 1551). */
-static void warn_no_graph_deprecated(void)
+namespace
+{
+void warn_no_graph_deprecated()
 {
     static std::atomic<bool> warned{false};
     if (!warned.exchange(true)) {
@@ -50,6 +52,7 @@ static void warn_no_graph_deprecated(void)
                                          "Will be removed in v4.0.\n");
     }
 }
+} // namespace
 
 VmafSyclDispatchStrategy vmaf_sycl_select_strategy(const char *feature_name,
                                                    const VmafFeatureCharacteristics *chars,
