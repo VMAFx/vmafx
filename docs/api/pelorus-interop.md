@@ -16,13 +16,13 @@ decision is recorded in
 rails are recorded in
 [ADR-1276](../adr/1276-pelorus-v022-parser-safety-repin.md), the v0.3.0
 licence re-pin in [ADR-2817](../adr/2817-pelorus-v030-eupl-repin.md), and
-the current pin, Pelorus v0.4.0 (interop ABI 1.5), in
+the current pin, Pelorus v0.4.1 (interop ABI 1.5), in
 [ADR-3332](../adr/3332-pelorus-v040-abi15-repin.md).
 
 !!! warning "The mirror is read-only"
     Do not edit the vendored files. They are byte-identical to their Pelorus
-    origin (pinned at `VMAFx/pelorus@1ad9a32c2f0e057c1604a7a0d63c13cb84cc538b`,
-    the `v0.4.0` tag)
+    origin (pinned at `VMAFx/pelorus@33b4a625cad64a7e9ca14f6db06eb91ba8f56663`,
+    the `v0.4.1` tag)
     except for a `VENDORED FROM ... DO NOT EDIT` banner and the include-path
     rewrite described below. Fix any defect upstream in Pelorus, then
     [re-sync](#re-syncing-the-mirror).
@@ -54,7 +54,7 @@ Pelorus's. (`qp_report_csv.c` is required to link: the conformance fixture exerc
 ### The only local edits
 
 1. A `VENDORED FROM
-   VMAFx/pelorus@1ad9a32c2f0e057c1604a7a0d63c13cb84cc538b — DO NOT EDIT`
+   VMAFx/pelorus@33b4a625cad64a7e9ca14f6db06eb91ba8f56663 — DO NOT EDIT`
    banner inserted after the (unchanged) Pelorus license header.
 2. Intra-Pelorus `#include "pelorus/<x>.h"` rewritten to
    `#include "libvmaf/pelorus/<x>.h"` so the headers resolve under
@@ -178,7 +178,7 @@ The ABI is normative; both repos depend on these rules (verbatim from
   forbid for additive evolution) — in practice it never bumps.
   `PELORUS_ABI_MINOR` bumps when a new section bit or appended field lands.
 
-The current library release is **0.4.0** and the ABI is **1.5**
+The current library release is **0.4.1** and the ABI is **1.5**
 (`PELORUS_ABI_MAJOR=1`, `PELORUS_ABI_MINOR=5`).
 Minor 1.1 added `PEL_SEC_QPREPORT`, 1.2 added `PEL_SEC_MOTION_CONF`, 1.3 added
 `PEL_SEC_COMPLEXITY`, 1.4 added `PEL_SEC_ENC_TELEMETRY`, `PEL_SEC_ENCODE_RECORD`,
@@ -190,12 +190,12 @@ it did not add or alter an ABI field or section. The 0.3.0 re-pin brought
 the EUPL-1.2 headers, comments that state the units of `PelorusMotionSection` and
 the coded-value ranges of three `PelorusFilmGrainSection` arrays, and a fixture
 that checks the privacy of the files it creates on the open descriptor and writes
-them in a bounded loop. The 0.4.0 re-pin advances the mirror to ABI 1.5
+them in a bounded loop. The 0.4.1 re-pin advances the mirror to ABI 1.5
 (issue #2667).
 
 ## What ABI 1.4 and 1.5 bring to callers
 
-Pelorus v0.4.0 evolves the wire ABI additively (R1/R6, append-only):
+Pelorus v0.4.1 evolves the wire ABI additively (R1/R6, append-only):
 
 ### ABI 1.4 additions
 
@@ -274,7 +274,7 @@ python3 scripts/ci/run_meson_test.py -- \
 The pin and the drift guard live in
 [`scripts/sync-pelorus-interop.sh`](../../scripts/sync-pelorus-interop.sh). It
 reads the vendored sources from the **pinned commit's git tree object**
-(`git show 1ad9a32c2f0e057c1604a7a0d63c13cb84cc538b:libpelorus/…`), so it
+(`git show 33b4a625cad64a7e9ca14f6db06eb91ba8f56663:libpelorus/…`), so it
 stays accurate even when the local Pelorus checkout's `HEAD` has moved past the
 pin. A directory that is not a Git checkout, or a checkout that lacks the exact
 object, fails closed.
@@ -289,7 +289,7 @@ scripts/sync-pelorus-interop.sh /path/to/pelorus
 ```
 
 The output is
-`OK: vendored Pelorus interop ABI matches pelorus@1ad9a32c2f0e057c1604a7a0d63c13cb84cc538b (ABI 1.5, minor=5).`,
+`OK: vendored Pelorus interop ABI matches pelorus@33b4a625cad64a7e9ca14f6db06eb91ba8f56663 (ABI 1.5, minor=5).`,
 or a `DRIFT:` line with a diff per differing file, then
 `FAIL: vendored Pelorus interop ABI has drifted from pelorus@…` and exit
 code 1.
@@ -342,4 +342,4 @@ as a follow-up to [ADR-1113](../adr/1113-vendor-pelorus-interop-abi.md). A
 released parser-only correctness/security fix keeps the ABI number intact and
 is recorded in a new follow-up decision plus research evidence; ADR-1276
 records the v0.2.2 safety re-pin while preserving ADR-1113's immutable body,
-ADR-2817 the v0.3.0 licence re-pin, and issue #2667 the v0.4.0 re-pin to ABI 1.5.
+ADR-2817 the v0.3.0 licence re-pin, and issue #2667 the v0.4.1 re-pin to ABI 1.5.

@@ -7,7 +7,7 @@
  */
 
 /*
- * VENDORED FROM VMAFx/pelorus@1ad9a32c2f0e057c1604a7a0d63c13cb84cc538b — DO NOT EDIT.
+ * VENDORED FROM VMAFx/pelorus@33b4a625cad64a7e9ca14f6db06eb91ba8f56663 — DO NOT EDIT.
  * Append-only ABI; single
  * source of truth is pelorus. Re-sync via scripts/sync-pelorus-interop.sh.
  * See docs/adr/1113-vendor-pelorus-interop-abi.md.
@@ -37,8 +37,8 @@ extern "C" {
 /* ---- Library version (SemVer; tracks git tags v<MAJOR>.<MINOR>.<PATCH>) --- */
 #define PELORUS_VERSION_MAJOR 0
 #define PELORUS_VERSION_MINOR 4
-#define PELORUS_VERSION_PATCH 0
-#define PELORUS_VERSION_STR "0.4.0"
+#define PELORUS_VERSION_PATCH 1
+#define PELORUS_VERSION_STR "0.4.1"
 
 /* Packed integer version for runtime comparisons: (major<<16)|(minor<<8)|patch. */
 #define PELORUS_VERSION_INT                                                                        \
