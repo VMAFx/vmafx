@@ -6,9 +6,29 @@ repository:
   forge: github
   default_branch: master
   visibility: public
-  description: ""
-  homepage: ""
-  topics: []
+  description: "VMAFx: perceptual video quality assessment (VMAF), GPU-accelerated and SIMD-tuned. CUDA, SYCL, HIP and Metal backends checked against the CPU scores, AVX2/AVX-512/NEON, tiny-AI models, an MCP server, Kubernetes/Helm deployment. Fork of Netflix/vmaf; fork code EUPL-1.2, Netflix code BSD-2-Clause-Patent."
+  homepage: "https://vmafx.dev/"
+  topics:
+    - cloud-native
+    - cuda
+    - ffmpeg
+    - mcp
+    - onnx
+    - sycl
+    - video-encoding
+    - video-quality
+    - vmaf
+    - c
+    - gpu
+    - helm
+    - hip
+    - kubernetes
+    - metal
+    - oneapi
+    - perceptual-quality
+    - rocm
+    - simd
+    - video-quality-assessment
 adoption:
   decline:
     - branch-ruleset

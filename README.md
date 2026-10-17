@@ -11,6 +11,37 @@
 
   *A fork of [Netflix/vmaf](https://github.com/Netflix/vmaf) that keeps the reference scores byte-for-byte*
 
+  VMAFx is a perceptual video quality assessment (VMAF) library and `vmaf`
+  command-line tool. It adds CUDA, SYCL, HIP and Metal backends and AVX2,
+  AVX-512, NEON and SVE2 SIMD paths, each checked against the CPU scores, and
+  keeps Netflix's reference scores as a required CI gate. It also ships ONNX
+  tiny models, an MCP server and FFmpeg filters.
+
+  **[📖 Full documentation](https://vmafx.dev/)** · [Documentation source](docs/index.md)
+
+</div>
+
+---
+
+## 🎯 Why VMAFx
+
+VMAFx keeps upstream's numbers and adds the parts a production pipeline needs. The
+three Netflix reference pairs are a required CI gate, so every change below is
+measured against scores that never move.
+
+| | Upstream `libvmaf` | VMAFx |
+| --- | --- | --- |
+| **GPU backends** | CUDA | CUDA · SYCL · HIP · Metal, selected at runtime |
+| **SIMD** | AVX2, AVX-512 | AVX2 · AVX-512 · NEON · SVE2, held to feature-specific parity tolerances |
+| **Output precision** | `%.6f` | `%.6f` by default, `--precision=max` for IEEE-754 round-trip |
+| **Model surface** | `.json` / `.pkl` | plus ONNX tiny models with a signed registry |
+| **Integrations** | FFmpeg filter | FFmpeg, an MCP server, a Kubernetes operator, Go and Rust bindings |
+| **Numerical contract** | — | cross-backend parity is a gate, not a promise |
+
+## 📊 Project status
+
+<div align="center">
+
   [![Tests](https://img.shields.io/github/actions/workflow/status/VMAFx/vmafx/tests-and-quality-gates.yml?branch=master&event=push&style=for-the-badge&label=Tests&logo=githubactions&logoColor=white)](https://github.com/VMAFx/vmafx/actions/workflows/tests-and-quality-gates.yml)
   [![Builds](https://img.shields.io/github/actions/workflow/status/VMAFx/vmafx/libvmaf-build-matrix.yml?branch=master&event=push&style=for-the-badge&label=Builds&logo=githubactions&logoColor=white)](https://github.com/VMAFx/vmafx/actions/workflows/libvmaf-build-matrix.yml)
   [![Lint](https://img.shields.io/github/actions/workflow/status/VMAFx/vmafx/lint-and-format.yml?branch=master&event=push&style=for-the-badge&label=Lint&logo=githubactions&logoColor=white)](https://github.com/VMAFx/vmafx/actions/workflows/lint-and-format.yml)
@@ -42,33 +73,30 @@
   [![License](https://img.shields.io/badge/License-EUPL--1.2_·_BSD--2--Clause--Patent-blue.svg?style=for-the-badge)](docs/adr/1250-eupl-fork-relicense.md)
   [![Ko-fi](https://img.shields.io/badge/Support-Ko--fi-FF5E5B?style=for-the-badge&logo=kofi&logoColor=white)](https://ko-fi.com/lusoris)
 
-  **[📖 Full documentation](https://vmafx.dev/)** · [Documentation source](docs/index.md)
-
 </div>
-
----
-
-## 🎯 Why VMAFx
-
-VMAFx keeps upstream's numbers and adds the parts a production pipeline needs. The
-three Netflix reference pairs are a required CI gate, so every change below is
-measured against scores that never move.
-
-| | Upstream `libvmaf` | VMAFx |
-| --- | --- | --- |
-| **GPU backends** | CUDA | CUDA · SYCL · HIP · Metal, selected at runtime |
-| **SIMD** | AVX2, AVX-512 | AVX2 · AVX-512 · NEON · SVE2, held to feature-specific parity tolerances |
-| **Output precision** | `%.6f` | `%.6f` by default, `--precision=max` for IEEE-754 round-trip |
-| **Model surface** | `.json` / `.pkl` | plus ONNX tiny models with a signed registry |
-| **Integrations** | FFmpeg filter | FFmpeg, an MCP server, a Kubernetes operator, Go and Rust bindings |
-| **Numerical contract** | — | cross-backend parity is a gate, not a promise |
 
 ## 🚀 Get started
 
 Follow the [installation and source-build guide](docs/getting-started/index.md)
 for your platform. For a container workflow, see [Docker](docs/usage/docker.md).
 
-After installation, compare a matching reference and distorted Y4M pair:
+From a clone of the repository, score the tracked 576x324 clip pair:
+
+```sh
+vmaf --reference testdata/ref_576x324_48f.yuv \
+     --distorted testdata/dis_576x324_48f.yuv \
+     --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
+     --backend cpu --json --output scores.json
+```
+
+The terminal ends with the pooled score of the default model, and `scores.json`
+holds all 48 frames:
+
+```text
+vmaf_v1.0.16_3d0h: 95.938229
+```
+
+For your own files, compare a matching reference and distorted Y4M pair:
 
 ```sh
 vmaf --reference reference.y4m --distorted distorted.y4m --json --output scores.json
@@ -103,6 +131,8 @@ matrix below distinguishes those extractors from CPU-only metrics.
 See [GPU and SIMD backends](docs/backends/index.md) for feature coverage per
 backend and the tolerances the gate enforces.
 
+![Backend dispatch: a requested feature runs on the device twin of the chosen backend when one fits, else on the CPU with its best SIMD path](docs/assets/figures/backend-dispatch.static.svg)
+
 ## 📚 Guides and reference
 
 | Task | Documentation |
@@ -127,6 +157,10 @@ cover coding and numerical-correctness standards; the
 [repository guide](docs/architecture/index.md) explains the source layout.
 
 - [Report a bug or request a feature](https://github.com/VMAFx/vmafx/issues)
+- [Good first issues](https://github.com/VMAFx/vmafx/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
+  for a first contribution
+- [Help wanted](https://github.com/VMAFx/vmafx/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22)
+  for issues open to anyone
 - [Ask a question](https://github.com/VMAFx/vmafx/discussions) or read
   [how to get support](SUPPORT.md)
 - [Code of conduct](CODE_OF_CONDUCT.md)
