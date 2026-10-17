@@ -20,8 +20,12 @@ then hands over to the real framework.
 
 These tests take the real ``run`` scripts from ``lefthook.yml`` and execute them
 as a genuine ``pre-commit`` hook of a linked worktree, so git itself exports the
-variable. The negative case removes the ``install-hooks`` line (a mutation of
-the shipped block) and must pollute the index; the positive case must not.
+variable. pre-commit 4.7.0 runs that ``npm install`` without the git variables
+itself (pre-commit/pre-commit#3774), so a framework of that version no longer
+shows the defect. The negative case therefore plants the install step of
+pre-commit 4.6 directly: run with the commit's git variables it must pollute the
+index, and behind the shipped block's ``env -u`` prefix it must not. The
+positive cases run the shipped block and must leave the index alone.
 """
 
 from __future__ import annotations
@@ -179,19 +183,30 @@ class InstallHooksEnvTests(unittest.TestCase):
         log = Path(self.env["HOOK_TEST_LOG"])
         return log.is_file() and "ran" in log.read_text()
 
-    def test_negative_without_install_hooks_the_index_is_polluted(self) -> None:
-        mutated = re.sub(
-            rf"^.*{re.escape(UNSET)}.*install-hooks.*\n",
-            "",
-            framework_block("pre-commit"),
-            flags=re.M,
+    def npm_install_block(self, prefix: str) -> str:
+        """Return the ``npm install`` of a node hook as pre-commit 4.6 ran it."""
+        log = self.base / "npm.log"
+        return (
+            f'cd "{self.hook_repo}" && {prefix}env NPM_CONFIG_PREFIX="{self.base / "npm-env"}" '
+            f'npm install --allow-git=root --install-links -g --cache "{self.base / "npm-cache"}" '
+            f'"git+{self.hook_repo.as_uri()}" > "{log}" 2>&1 || {{ cat "{log}" >&2; exit 1; }}'
         )
-        self.assertNotIn(" install-hooks ||", mutated)
-        _, tracked = self.commit_with_block((mutated), self.worktree)
+
+    def test_negative_npm_install_with_the_commits_git_env_pollutes_the_index(self) -> None:
+        returncode, tracked = self.commit_with_block(self.npm_install_block(""), self.worktree)
+        self.assertNotEqual(returncode, 0)
         self.assertNotEqual(
             sorted(tracked), EXPECTED,
-            "the mutated block must reproduce the defect, else this test proves nothing",
+            "the planted install must reproduce the defect, else this test proves nothing",
         )  # fmt: skip
+
+    def test_positive_npm_install_behind_the_shipped_prefix_keeps_the_index(self) -> None:
+        self.assertIn(f'{UNSET} "$fw" install-hooks', framework_block("pre-commit"))
+        returncode, tracked = self.commit_with_block(
+            self.npm_install_block(UNSET + " "), self.worktree
+        )
+        self.assertEqual(returncode, 0)
+        self.assertEqual(sorted(tracked), EXPECTED)
 
     def test_positive_shipped_block_leaves_the_index_alone(self) -> None:
         returncode, tracked = self.commit_with_block((framework_block("pre-commit")), self.worktree)
