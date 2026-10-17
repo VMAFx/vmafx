@@ -441,8 +441,6 @@ static int unwrap_payload(VmafPerceptualWeightStore *store, const uint8_t *blob,
     case PEL_ERR_ABI:
     case PEL_ERR_TRUNCATED:
         return -EPROTO;
-    case PEL_ERR_INVALID:
-        return -EINVAL;
     default:
         return -EINVAL;
     }

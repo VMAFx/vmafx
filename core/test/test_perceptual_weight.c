@@ -712,21 +712,12 @@ static char *test_carrier_positive_matches_blob(void)
     mu_assert("blob alloc", blob != NULL);
 
     double mean_blob = pool_with_blob(blob, blob_len);
-
     size_t carrier_len = 0;
-    pel_result rc = pel_blob_carrier_encode(blob, blob_len, NULL, 0, &carrier_len);
-    mu_assert("carrier size query", rc == PEL_ERR_RANGE && carrier_len > 0);
-
-    uint8_t *carrier = malloc(carrier_len);
-    mu_assert("carrier alloc", carrier != NULL);
-
-    size_t out_len = 0;
-    rc = pel_blob_carrier_encode(blob, blob_len, carrier, carrier_len, &out_len);
-    mu_assert("carrier encode", rc == PEL_OK && out_len == carrier_len);
+    uint8_t *carrier = encode_carrier(blob, blob_len, &carrier_len);
+    free(blob);
+    mu_assert("carrier encode", carrier != NULL);
 
     double mean_carrier = pool_with_blob(carrier, carrier_len);
-
-    free(blob);
     free(carrier);
 
     mu_assert("carrier weight must match blob weight", mean_carrier == mean_blob);
@@ -790,8 +781,8 @@ static char *test_carrier_negative_short_decoded_image(void)
     return NULL;
 }
 
-/* Boundary: carrier UUID only -> nonzero error; growth path with larger second carrier. */
-static char *test_carrier_boundary_empty_and_growth(void)
+/* Boundary: carrier UUID only (empty body) -> nonzero error, frame stays unweighted. */
+static char *test_carrier_boundary_empty(void)
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
     VmafContext *vmaf = NULL;
@@ -799,7 +790,6 @@ static char *test_carrier_boundary_empty_and_growth(void)
     mu_assert("enable failed", vmaf_set_perceptual_weight_enabled(vmaf, 1) == 0);
     mu_assert("inject failed", inject_scores(vmaf, 60.0, 80.0, 100.0) == 0);
 
-    /* Boundary 1: Carrier UUID only (len == 16, empty body) -> nonzero error. */
     uint8_t carrier_empty[PELORUS_SIDEDATA_UUID_LEN];
     memcpy(carrier_empty, pelorus_carrier_uuid, sizeof(carrier_empty));
     int rc = vmaf_set_perceptual_sidedata(vmaf, carrier_empty, sizeof(carrier_empty), 2);
@@ -811,31 +801,45 @@ static char *test_carrier_boundary_empty_and_growth(void)
     double unweighted = (60.0 + 80.0 + 100.0) / 3.0;
     mu_assert("frame 2 unweighted when empty carrier rejected", bit_exact(mean, unweighted));
 
-    /* Boundary 2: Two ingests where second carrier is larger than first (growth). */
-    size_t len1 = 0;
-    uint8_t *blob1 = build_banding_blob(2, 2, 255, 1.0f, &len1);
-    mu_assert("blob1 alloc", blob1 != NULL);
+    vmaf_close(vmaf);
+    return NULL;
+}
+
+/* Helper: build a w x h banding blob and return it in carrier form. */
+static uint8_t *banding_carrier(uint16_t w, uint16_t h, size_t *out_len)
+{
+    size_t blob_len = 0;
+    uint8_t *blob = build_banding_blob(w, h, 255, 1.0f, &blob_len);
+    if (blob == NULL) {
+        return NULL;
+    }
+    uint8_t *carrier = encode_carrier(blob, blob_len, out_len);
+    free(blob);
+    return carrier;
+}
+
+/* Boundary: a second carrier larger than the first grows the scratch buffer. */
+static char *test_carrier_boundary_growth(void)
+{
+    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    VmafContext *vmaf = NULL;
+    mu_assert("vmaf_init failed", vmaf_init(&vmaf, cfg) == 0);
+    mu_assert("enable failed", vmaf_set_perceptual_weight_enabled(vmaf, 1) == 0);
+    mu_assert("inject failed", inject_scores(vmaf, 60.0, 80.0, 100.0) == 0);
+
     size_t c_len1 = 0;
-    uint8_t *carrier1 = encode_carrier(blob1, len1, &c_len1);
-    free(blob1);
+    uint8_t *carrier1 = banding_carrier(2, 2, &c_len1);
     mu_assert("carrier1 encode", carrier1 != NULL);
-
-    size_t len2 = 0;
-    uint8_t *blob2 = build_banding_blob(8, 8, 255, 1.0f, &len2);
-    mu_assert("blob2 alloc", blob2 != NULL);
-    size_t c_len2 = 0;
-    uint8_t *carrier2 = encode_carrier(blob2, len2, &c_len2);
-    free(blob2);
-    mu_assert("carrier2 encode", carrier2 != NULL);
-    mu_assert("second carrier larger than first", c_len2 > c_len1);
-
     int rc1 = vmaf_set_perceptual_sidedata(vmaf, carrier1, c_len1, 0);
     free(carrier1);
     mu_assert("first carrier ingest ok", rc1 == 0);
 
+    size_t c_len2 = 0;
+    uint8_t *carrier2 = banding_carrier(8, 8, &c_len2);
+    mu_assert("carrier2 encode", carrier2 != NULL);
     int rc2 = vmaf_set_perceptual_sidedata(vmaf, carrier2, c_len2, 1);
     free(carrier2);
-    mu_assert("second larger carrier ingest ok (scratch growth)", rc2 == 0);
+    mu_assert("second larger carrier ingest ok (scratch growth)", c_len2 > c_len1 && rc2 == 0);
 
     vmaf_close(vmaf);
     return NULL;
@@ -858,7 +862,8 @@ char *run_tests(void)
         MU_TEST(test_carrier_positive_matches_blob),
         MU_TEST(test_carrier_negative_zero_byte),
         MU_TEST(test_carrier_negative_short_decoded_image),
-        MU_TEST(test_carrier_boundary_empty_and_growth),
+        MU_TEST(test_carrier_boundary_empty),
+        MU_TEST(test_carrier_boundary_growth),
     };
     return mu_run_table(tests, MU_TABLE_LEN(tests));
 }
