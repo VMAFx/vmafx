@@ -25,3 +25,7 @@ invariant: libvmaf, FFmpeg build trees only in libvmaf-compile, ffmpeg-compile; 
   (`test_dev_container_reference_build_flags.py`).
 - `test_dev_image_build_stages.py` walks FROM chain of `dev-mcp`,
   `libvmaf-build`; refuses compile step there.
+- `build-deps` installs `ninja-build`, no make program: every CMake
+  configure there names `-G Ninja` (ClangBuildAnalyzer, ADR-3336; master
+  2c0db0b99 failed without it). Same test refuses configure without `-G`
+  in that stage.

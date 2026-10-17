@@ -278,7 +278,7 @@ RUN curl -fsSL \
         -o /tmp/cba.tar.gz \
     && echo "${CLANGBUILDANALYZER_SHA256}  /tmp/cba.tar.gz" | sha256sum -c - \
     && tar -xzf /tmp/cba.tar.gz -C /tmp \
-    && cmake -S "/tmp/ClangBuildAnalyzer-${CLANGBUILDANALYZER_VERSION}" -B /tmp/cba-build \
+    && cmake -G Ninja -S "/tmp/ClangBuildAnalyzer-${CLANGBUILDANALYZER_VERSION}" -B /tmp/cba-build \
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_INSTALL_PREFIX=/usr/local \
     && cmake --build /tmp/cba-build -j2 \
