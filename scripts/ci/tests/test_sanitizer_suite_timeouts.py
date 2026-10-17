@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
-"""A sanitizer build runs the Meson tests with their timeouts multiplied.
+"""An instrumented build runs the Meson tests with their timeouts multiplied.
 
 The timeouts of core/test/meson.build (30 s unless a test sets its own) are
 sized for an uninstrumented build. In a sanitizer build the slowest tests ran
@@ -10,10 +10,15 @@ test_vmafx_score hit its 30 s on the thread leg, after 10.27 s to 20.48 s in
 four other runs of that leg (T-CI-SANITIZER-LEGS-DEFAULT-TEST-TIMEOUT-2026-10-10;
 the measurement is in docs/development/ci.md, "Sanitizer legs").
 
+A gcov build is slowed the same way: on 2026-10-17 test_integer_adm_simd,
+19.6 s to 19.8 s in three green Coverage Gate runs, hit its 30 s in run
+39006126494 (T-COVERAGE-GCOV-DEFAULT-TEST-TIMEOUT-2026-10-17).
+
 The contract: in every workflow job that configures a build with
-`-Db_sanitize=<sanitizer>`, every scripts/ci/run_meson_test.py command passes
-`--timeout-multiplier MULTIPLIER`, and so does the Makefile's test-sanitizers.
-One value everywhere: a leg with a smaller one is the leg that flakes.
+`-Db_sanitize=<sanitizer>` or `-Db_coverage=true`, every
+scripts/ci/run_meson_test.py command passes `--timeout-multiplier MULTIPLIER`,
+and so do the Makefile's test-sanitizers and coverage. One value everywhere: a
+leg with a smaller one is the leg that flakes.
 """
 
 from __future__ import annotations
@@ -30,9 +35,10 @@ import yaml  # type: ignore[import-untyped]
 ROOT = Path(__file__).resolve().parents[3]
 WORKFLOWS = ROOT / ".github" / "workflows"
 MULTIPLIER = "3"
-SANITIZED_BUILD = re.compile(r"-Db_sanitize=(?!none\b)\S")
+SANITIZED_BUILD = re.compile(r"-Db_sanitize=(?!none\b)\S|-Db_coverage=true\b")
 TIMEOUT_MULTIPLIER = re.compile(r"(?:--timeout-multiplier|(?<![\w-])-t)[= ]+(\S+)")
-MAKE_VARIABLE = "SANITIZER_TEST_TIMEOUT_MULTIPLIER"
+MAKE_VARIABLE = "INSTRUMENTED_TEST_TIMEOUT_MULTIPLIER"
+MAKE_TARGETS = ("test-sanitizers", "coverage")
 
 
 def load(path: Path, name: str) -> ModuleType:
@@ -81,20 +87,22 @@ def workflow(name: str) -> dict[str, Any]:
 
 
 def makefile_problems(text: str) -> list[str]:
-    """What test-sanitizers lacks: the variable at MULTIPLIER, and its use."""
+    """What the instrumented targets lack: the variable at MULTIPLIER, and its use."""
     problems = []
     if not re.search(rf"(?m)^{MAKE_VARIABLE} := {MULTIPLIER}$", text):
         problems.append(f"Makefile: {MAKE_VARIABLE} is not {MULTIPLIER}")
-    recipe = re.search(r"(?m)^test-sanitizers:\n(?P<body>(?:\t.*\n)+)", text)
-    if recipe is None:
-        return [*problems, "Makefile: no test-sanitizers recipe"]
-    commands = SUITE.suite_commands(recipe.group("body"))
-    if len(commands) != 1:
-        problems.append("Makefile: test-sanitizers must run the tests once")
-    for arguments in commands:
-        found = problem(arguments, f"$({MAKE_VARIABLE})")
-        if found:
-            problems.append(f"Makefile: test-sanitizers: {found}")
+    for target in MAKE_TARGETS:
+        recipe = re.search(rf"(?m)^{re.escape(target)}:\n(?P<body>(?:\t.*\n)+)", text)
+        if recipe is None:
+            problems.append(f"Makefile: no {target} recipe")
+            continue
+        commands = SUITE.suite_commands(recipe.group("body"))
+        if len(commands) != 1:
+            problems.append(f"Makefile: {target} must run the tests once")
+        for arguments in commands:
+            found = problem(arguments, f"$({MAKE_VARIABLE})")
+            if found:
+                problems.append(f"Makefile: {target}: {found}")
     return problems
 
 
@@ -119,7 +127,27 @@ class SanitizerSuiteTimeouts(unittest.TestCase):
                 "sanitizers.yml:asan-ubsan",
                 "sanitizers.yml:tsan",
                 "nightly.yml:tsan",
+                "tests-and-quality-gates.yml:coverage",
+                "tests-and-quality-gates.yml:coverage-gpu",
             },
+        )
+
+    def test_planted_gcov_run_without_the_multiplier_is_refused(self) -> None:
+        build = {"run": "meson setup build-coverage --buildtype=debug -Db_coverage=true"}
+        runner = "python3 ../scripts/ci/run_meson_test.py -- -C build-coverage"
+        planted = {
+            "jobs": {
+                "coverage": {"steps": [build, {"run": f"{runner} --num-processes 1"}]},
+                "uninstrumented": {
+                    "steps": [
+                        {"run": "meson setup build -Db_coverage=false"},
+                        {"run": f"{runner} --num-processes 1"},
+                    ]
+                },
+            }
+        }
+        self.assertEqual(
+            offenders(planted, "p.yml"), ["p.yml: job coverage: no --timeout-multiplier"]
         )
 
     def test_planted_sanitizer_runs_without_the_multiplier_are_refused(self) -> None:
@@ -159,14 +187,14 @@ class SanitizerSuiteTimeouts(unittest.TestCase):
             ],
         )
 
-    def test_the_makefile_sanitizer_target_multiplies_the_timeouts(self) -> None:
+    def test_the_makefile_instrumented_targets_multiply_the_timeouts(self) -> None:
         text = (ROOT / "Makefile").read_text(encoding="utf-8")
         self.assertEqual(makefile_problems(text), [])
         use = f" \\\n\t    --timeout-multiplier $({MAKE_VARIABLE})\n"
-        self.assertIn(use, text)
+        self.assertEqual(text.count(use), len(MAKE_TARGETS))
         self.assertEqual(
             makefile_problems(text.replace(use, "\n")),
-            ["Makefile: test-sanitizers: no --timeout-multiplier"],
+            [f"Makefile: {target}: no --timeout-multiplier" for target in MAKE_TARGETS],
         )
         self.assertEqual(
             makefile_problems(text.replace(f"{MAKE_VARIABLE} := 3", f"{MAKE_VARIABLE} := 1")),

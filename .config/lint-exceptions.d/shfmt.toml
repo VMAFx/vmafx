@@ -9,5 +9,5 @@
 
 [[exception]]
 path = ".config/lefthook/engine.sh"
-reason = "Praetor's hook launcher, written by `praetorctl adopt`. Adoption refreshes it only while it is one of praetor's own texts; a formatted copy is kept as the repository's file and stops following the engine pin (ADR-3272). Fix: praetor ships the file as shfmt writes it (cordanaLLM/praetor issue 1282); remove the entry with the engine pin that carries it."
-expires = 2026-12-31
+reason = "Praetor's hook launcher, written by `praetorctl adopt`. Adoption refreshes it only while it is one of praetor's own texts; a formatted copy is kept as the repository's file and stops following the engine pin (ADR-3272). Re-reviewed 2026-10-15: the launcher at engine pin 3bbde07 is still not shfmt-clean (cordanaLLM/praetor issue 1282, open); remove the entry with the engine pin that carries the fix. Category D (120 days)."
+expires = 2027-02-12

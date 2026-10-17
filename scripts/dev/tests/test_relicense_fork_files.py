@@ -195,7 +195,7 @@ class Candidates(unittest.TestCase):
             "scripts/ci/exact_twins.d/adm.hip",
             "scripts/ci/exact_twins.d/float_ssim.sycl",
             "tools/figures/mkdocs_hook.py",
-            "tools/figures/dist/player.js",
+            "tools/figures/player/player.js",
             ".config/agent/hooks/block_evasion.py",
             ".config/lefthook/engine.sh",
             ".codex/agents/c-reviewer.toml",

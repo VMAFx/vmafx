@@ -13,12 +13,12 @@ inside a longer fence is left alone here exactly as the `site` check expects. A 
 figure without docs/assets/figures/<slug>.json is logged as a warning, which fails
 `mkdocs build --strict`.
 
-figures.css and the committed player files under dist/ (loader.js, player.js and their
+figures.css and the committed player files under player/ (loader.js, player.js and their
 THIRD-PARTY-LICENSES.txt, written by tools/figures/bundle.mjs) sit beside this file, outside
 docs_dir, so the hook publishes them: `on_files` adds each to the site as a generated file, the CSS
-at CSS_URI and the player files under DIST_URI, and `on_config` links the stylesheet and the loader,
-as a module script, from every page. A site needs no `extra_css` or `extra_javascript` entry for
-them and no bundling step: the loader reads each figure's props from its SVG
+at CSS_URI and the player files under PLAYER_URI, and `on_config` links the stylesheet and the
+loader, as a module script, from every page. A site needs no `extra_css` or `extra_javascript`
+entry for them and no bundling step: the loader reads each figure's props from its SVG
 (docs/adr/0016-figures-for-adopters.md, section 3).
 """
 
@@ -34,11 +34,11 @@ log = logging.getLogger("mkdocs.plugins.praetor_figures")
 
 CSS_FILE = Path(__file__).with_name("figures.css")
 CSS_URI = "assets/stylesheets/figures.css"
-DIST_DIR = Path(__file__).with_name("dist")
-DIST_URI = "assets/javascripts/figures"
-LOADER_URI = f"{DIST_URI}/loader.js"
-# dist/ holds three files (DIST_FILES in bundle.mjs); the bound only keeps the listing finite.
-MAX_DIST_FILES = 16
+PLAYER_DIR = Path(__file__).with_name("player")
+PLAYER_URI = "assets/javascripts/figures"
+LOADER_URI = f"{PLAYER_URI}/loader.js"
+# player/ holds three files (DIST_FILES in bundle.mjs); the bound only keeps the listing finite.
+MAX_PLAYER_FILES = 16
 REBUILD = "node tools/figures/build.mjs build"
 
 # Bounded so a pathological page cannot make the hook unbounded (HISS-02).
@@ -200,20 +200,20 @@ def on_config(config):
 
 
 def published_files() -> list[tuple[str, Path]]:
-    """Each file the hook publishes, as (site URI, source path): figures.css, then dist/'s files.
+    """Each file the hook publishes: figures.css, then player/'s files, as (site URI, path).
 
-    A missing dist/ is not an error here: the site then shows every figure as its SVG, and the
+    A missing player/ is not an error here: the site then shows every figure as its SVG, and the
     `site` check (`node tools/figures/build.mjs site`) reports the loader it cannot find.
     """
     names = (
-        sorted(path.name for path in DIST_DIR.iterdir() if path.is_file())
-        if DIST_DIR.is_dir()
+        sorted(path.name for path in PLAYER_DIR.iterdir() if path.is_file())
+        if PLAYER_DIR.is_dir()
         else []
     )
-    if len(names) > MAX_DIST_FILES:
-        where = DIST_DIR.as_posix()
-        raise CheckError(f"{where} holds more than {MAX_DIST_FILES} files")
-    served = [(f"{DIST_URI}/{name}", DIST_DIR / name) for name in names]
+    if len(names) > MAX_PLAYER_FILES:
+        where = PLAYER_DIR.as_posix()
+        raise CheckError(f"{where} holds more than {MAX_PLAYER_FILES} files")
+    served = [(f"{PLAYER_URI}/{name}", PLAYER_DIR / name) for name in names]
     return [(CSS_URI, CSS_FILE), *served]
 
 

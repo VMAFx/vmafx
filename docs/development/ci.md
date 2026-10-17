@@ -53,8 +53,10 @@ required and which ADR owns it, see
 | --- | --- |
 | [`required-aggregator.yml`](../../.github/workflows/required-aggregator.yml) | Single required-check aggregator (ADR-0313). |
 | [`ci-tier.yml`](../../.github/workflows/ci-tier.yml) | Reusable workflow every pull-request workflow calls first: decides the tier ([ADR-2169](../adr/2169-ci-fewer-runs.md)); no trigger of its own. |
-| [`ci-escalate.yml`](../../.github/workflows/ci-escalate.yml) | Re-runs the suite at the full tier when `ci: full` or `autorelease: cut` is applied (called from `pr-label-lanes.yml`); names every run it could not re-run and then fails ([ADR-3279](../adr/3279-msvc-sycl-leg-on-light-tier.md)). |
+| [`ci-escalate.yml`](../../.github/workflows/ci-escalate.yml) | Re-runs the suite at the full tier when `ci: full` or `autorelease: cut` is applied (called from `pr-label-lanes.yml`); cancels every running run first and awaits them together within one 180-second bound, then re-runs them; names every run it could not re-run and then fails ([ADR-3279](../adr/3279-msvc-sycl-leg-on-light-tier.md)). |
+| [`lint-and-format.yml`](../../.github/workflows/lint-and-format.yml) `Trivy` | Trivy config + fs scans ([ADR-3330](../adr/3330-ci-trivy-config-fs.md)). |
 | [`lint-and-format.yml`](../../.github/workflows/lint-and-format.yml) | Pre-commit, clang-tidy (changed files plus the whole-tree ratchet, ADR-1142), cppcheck, mypy, registry validate, twin-drift gate (ADR-1135), `buf lint` + `buf breaking` on `proto/` ([API generation](api-generation.md)). |
+| [`lint-and-format.yml`](../../.github/workflows/lint-and-format.yml) `Spectral OpenAPI Lint` | Spectral (`spectral:oas`) on `api/openapi/` ([API generation](api-generation.md), [ADR-3331](../adr/3331-ci-spectral-openapi-lint.md)). |
 | [`standards-gate.yml`](../../.github/workflows/standards-gate.yml) | Required HISS and context verification and the fail-closed duplicate-implementation scan. |
 | [`rule-enforcement.yml`](../../.github/workflows/rule-enforcement.yml) | ADR-0100, 0106, 0108 and 0165 process gates. |
 | [`tests-and-quality-gates.yml`](../../.github/workflows/tests-and-quality-gates.yml) | Netflix golden, sanitizers, tiny-AI, MCP, coverage, assertion density, the test-suite registry and tooling suite (`Tooling Tests`) and the Python package suites (`Python Package Tests (<suite>)`); which job runs which test suite: [test suites](test-suites.md). |
@@ -976,14 +978,16 @@ being listed there.
 
 A test of `core/test/meson.build` has 30 seconds unless it sets its own
 timeout. Those values are sized for an uninstrumented build. Every Meson test
-run of a sanitizer build passes `--timeout-multiplier 3`:
+run of a sanitizer build or a gcov (`-Db_coverage=true`) build passes
+`--timeout-multiplier 3`:
 
 | Job | Workflow |
 | --- | --- |
 | `Sanitizers (address)`, `Sanitizers (undefined)`, `Sanitizers (thread)` | `tests-and-quality-gates.yml` |
 | `Sanitizers ASan+UBSan`, `Sanitizers TSan` | `sanitizers.yml` |
 | `ThreadSanitizer` | `nightly.yml` (had the multiplier before) |
-| `make test-sanitizers` | `Makefile` (`SANITIZER_TEST_TIMEOUT_MULTIPLIER`) |
+| `Coverage Gate`, `Coverage (GPU)` | `tests-and-quality-gates.yml` (gcov, since 2026-10-17) |
+| `make test-sanitizers`, `make coverage` | `Makefile` (`INSTRUMENTED_TEST_TIMEOUT_MULTIPLIER`) |
 
 The value comes from the durations of all tests in 15 job logs of 2026-10-10:
 the three matrix legs in three runs (11 logs with two re-run attempts, one of
@@ -1010,4 +1014,14 @@ the slowdown comes from the instrumentation, not from those tests, and the
 next slow test would need the same edit after it has failed once. The job's
 own `timeout-minutes` still ends a run that hangs.
 `scripts/ci/tests/test_sanitizer_suite_timeouts.py` refuses a test run in a
-job with a `-Db_sanitize=` build that passes no multiplier or another value.
+job with a `-Db_sanitize=` or `-Db_coverage=true` build that passes no
+multiplier or another value.
+
+The coverage jobs joined on 2026-10-17. In the green coverage runs before,
+`test_integer_adm_simd` took 19.6 s to 19.8 s of its 30 s; on master run
+39006126494 it reached 30 s and was killed. The Meson step then failed, every
+later step of the job was skipped, and the four Python coverage shards reported
+`skipped`. The step `Assert every Python coverage shard passed` now names the
+first earlier step that did not succeed (`shard 1/4 outcome was skipped: step
+Meson-unit-suite outcome was failure`), and `scripts/ci/test_fail_closed_ci.py`
+runs that step's script against planted outcomes.

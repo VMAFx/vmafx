@@ -32,7 +32,7 @@ resolver = "2"
 authors = ["Lusoris <lusoris@pm.me>"]
 edition = "2024"
 # build-config.env RUST_VERSION (ADR-3318); check-workflow-versions.py holds it there.
-rust-version = "1.99.0"
+rust-version = "1.99.1"
 license = "EUPL-1.2 AND BSD-2-Clause-Patent"
 repository = "https://github.com/VMAFx/vmafx"
 homepage = "https://github.com/VMAFx/vmafx"

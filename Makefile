@@ -118,7 +118,7 @@ $(NINJA): $(VENV_PIP)
 # Provision the lint / format toolchain into the project venv. Versions are
 # kept identical to .pre-commit-config.yaml so the local gate and the CI hooks
 # cannot disagree about what counts as a violation.
-RUFF_VERSION  := 0.17.0
+RUFF_VERSION  := 0.17.1
 BLACK_VERSION := 26.10.1
 
 .PHONY: mini-retrain mini-retrain-test
@@ -143,7 +143,7 @@ cythonize-deps: $(VENV_PIP)
 .PHONY: govulncheck lint lint-c lint-py lint-sh lint-md lint-go lint-actions tidy-ratchet tidy-ratchet-write \
 	tidy-ratchet-build tidy-lane tidy-lane-write \
 	base-images-sync cuda-pin-sync python-deps-sync \
-	python-locks-check python-locks-write \
+	python-locks-check python-locks-write python-floors-check \
 	preflight \
 	format format-check sec sbom \
         test-netflix-golden test-netflix-golden-arm64 test-sanitizers test-fast test-timing install-hooks hooks-install help \
@@ -171,6 +171,9 @@ python-locks-check:
 
 python-locks-write:
 	@python3 scripts/ci/check_python_dependency_locks.py write
+
+python-floors-check:
+	@python3 scripts/ci/check_python_floors.py
 
 # Symbol-level Go vulnerability scan with the OpenVEX statements of
 # security/vex/go.openvex.json (docs/development/dependency-advisories.md).
@@ -690,9 +693,10 @@ upstream-parity-full:
 	    --heap-check --jobs $(UPSTREAM_PARITY_JOBS) $(UPSTREAM_PARITY_ARGS)
 
 # Sanitizer build (ASan + UBSan) — used by CI and `/build-vmaf --sanitizers`.
-# The suite's timeouts are sized for an uninstrumented build; a sanitizer run
-# multiplies them (docs/development/ci.md, "Sanitizer legs"), as the CI legs do.
-SANITIZER_TEST_TIMEOUT_MULTIPLIER := 3
+# The suite's timeouts are sized for an uninstrumented build; a sanitizer or
+# gcov run multiplies them (docs/development/ci.md, "Sanitizer legs"), as the
+# CI legs do.
+INSTRUMENTED_TEST_TIMEOUT_MULTIPLIER := 3
 test-sanitizers:
 	@mkdir -p build-san
 	meson setup build-san $(LIBVMAF_DIR) --buildtype=debug \
@@ -704,7 +708,7 @@ test-sanitizers:
 	    -Denable_cuda=false -Denable_sycl=false
 	ninja -C build-san
 	$(PYTHON_INTERPRETER) scripts/ci/run_meson_test.py -- -C build-san --print-errorlogs \
-	    --timeout-multiplier $(SANITIZER_TEST_TIMEOUT_MULTIPLIER)
+	    --timeout-multiplier $(INSTRUMENTED_TEST_TIMEOUT_MULTIPLIER)
 
 # test-fast: the pre-push gate. test-timing: the wall-clock budgets (the live
 # window harness's two frame periods), one test at a time, alone on an idle
@@ -746,7 +750,8 @@ coverage:
 	    -Dc_args=-fprofile-update=atomic -Dcpp_args=-fprofile-update=atomic
 	ninja -C $(COVERAGE_DIR)
 	$(PYTHON_INTERPRETER) scripts/ci/run_meson_test.py -- \
-	    -C $(COVERAGE_DIR) --print-errorlogs --num-processes 1
+	    -C $(COVERAGE_DIR) --print-errorlogs --num-processes 1 \
+	    --timeout-multiplier $(INSTRUMENTED_TEST_TIMEOUT_MULTIPLIER)
 	@echo "--- gathering coverage ---"
 	gcovr --root . \
 	    --filter 'core/src/.*' \

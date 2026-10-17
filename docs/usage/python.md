@@ -11,7 +11,7 @@ format tools, and the core classes for extending the library.
 
 ## Requirements
 
-Make sure you have `python3` (Python 3.10 or higher for the harness package; the
+Make sure you have `python3` (Python 3.12 or higher for the harness package; the
 repository's own tooling asks for 3.14). Check the version with
 `python3 --version`.
 

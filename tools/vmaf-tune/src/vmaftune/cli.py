@@ -27,6 +27,8 @@ from typing import TYPE_CHECKING, Any, TextIO
 if TYPE_CHECKING:
     from .report import CodecRow, CodecSweepPoint
 
+from datetime import UTC
+
 from . import __version__
 from .bisect import bisect_target_vmaf
 from .codec_adapters import get_adapter, known_codecs
@@ -3935,7 +3937,7 @@ def _build_compare_report_data(
     sweep_report: Any | None,
 ) -> Any:
     """Convert comparison results into profile-renderer data."""
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     from .report import ReportData
 
@@ -3966,7 +3968,7 @@ def _build_compare_report_data(
         codec_rows=codec_rows,
         sweep_points=sweep_points,
         sweep_targets=sweep_targets,
-        generated_at_iso=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        generated_at_iso=datetime.now(UTC).isoformat(timespec="seconds"),
         encoder_preset=str(getattr(args, "preset", "") or ""),
         pix_fmt=str(getattr(args, "pix_fmt", "") or ""),
         score_backend=str(getattr(args, "score_backend", "") or ""),
@@ -5699,7 +5701,7 @@ def _build_profile_report_data(
     shots: tuple[Any, ...],
 ) -> Any:
     """Assemble renderer inputs with stable run metadata."""
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     from .report import ReportData
 
@@ -5712,7 +5714,7 @@ def _build_profile_report_data(
         ladder_samples=ladder_samples,
         ladder_rungs=ladder_rungs,
         shots=shots,
-        generated_at_iso=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        generated_at_iso=datetime.now(UTC).isoformat(timespec="seconds"),
         encoder_preset=str(getattr(args, "preset", "") or ""),
         pix_fmt=str(getattr(args, "pix_fmt", "") or ""),
         score_backend=str(getattr(args, "score_backend", "") or ""),

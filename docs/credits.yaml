@@ -447,8 +447,8 @@ entries:
   relation: shipped
   license: MIT
   paths:
-  - tools/figures/dist/
-  note: Bundled in the figure player; texts in dist/THIRD-PARTY-LICENSES.txt.
+  - tools/figures/player/
+  note: Bundled in the figure player; texts in player/THIRD-PARTY-LICENSES.txt.
 - id: prometheus-pushgateway-chart
   name: Prometheus Pushgateway Helm chart
   url: https://github.com/prometheus-community/helm-charts

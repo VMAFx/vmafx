@@ -6,6 +6,6 @@
 # a different value here, in a crate's rust-version or in a workflow, and
 # Renovate moves every copy in one pull request.
 [toolchain]
-channel = "1.99.0"
+channel = "1.99.1"
 components = ["rustfmt", "clippy"]
 profile = "minimal"

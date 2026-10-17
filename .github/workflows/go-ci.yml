@@ -115,6 +115,7 @@ jobs:
         if: steps.impact.outputs.go_checks == 'true'
         env:
           ORT_VERSION: "1.30.0"
+          ORT_SHA256: "a5ed5a3cac51fbb2e90da632ae43d19212faaa20e76484e62bcb7c23ddb3b3fd"
         run: |
           set -euo pipefail
           ort_name="onnxruntime-linux-x64-${ORT_VERSION}.tgz"
@@ -124,6 +125,8 @@ jobs:
             --max-time 300 \
             --output "${ort_archive}" \
             "${ort_url}"
+          printf '%s  %s\n' "${ORT_SHA256}" "${ort_archive}" \
+            | sha256sum --check --strict
           sudo tar -xzf "${ort_archive}" -C /opt/
           sudo ln -sfn "/opt/onnxruntime-linux-x64-${ORT_VERSION}" /opt/onnxruntime
           # The tarball ships no pkg-config file; meson's enable_dnn needs one.
