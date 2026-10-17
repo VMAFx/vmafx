@@ -92,6 +92,8 @@ milestone, and the user-facing version of this map is
 | `0.7.0` | New metrics with exact twins | 1.3, RC5-C |
 | `0.8.0` | Metric A/B comparison, the best current mix and more training data | 1.4 |
 | `0.9.0` | The next model generation, the one-shot real retrain | 1.5, RC9 (#1246) |
+| `0.10.0` | Integrations, live quality and the cloud-native platform: the OBS Studio plugin (#2239), #2148, #2147, #2144, #2146, #2159, no-reference mode in the plugins (#2413), the live P.1204 monitor (#2417), AI-generated video scoring (#2418), WebRTC, streaming outputs, libVLC and cookbook recipes; the cloud-native platform (#2431) and the work of RC5-D | 1.1, RC5-D |
+| `0.11.0` | Breaking changes only: the `libvmaf.h` compatibility library removed (ADR-1852 D7), the rest of #1254 | 2.0 |
 | `1.0.0` | First stable release: Rust core P3 and a frozen public interface; candidates from `v1.0.0-rc.4` | new |
 
 The candidates `v1.0.0-rc.1` (release-blocking correctness and the tester
@@ -101,13 +103,11 @@ proved stays recorded in their release notes and in the records above.
 
 ### After 1.0.0
 
-| Release | Theme |
-| --- | --- |
-| 1.1 | Integrations, live quality and the cloud-native platform: the OBS Studio plugin (#2239), #2148, #2147, #2144, #2146, #2159, no-reference mode in the plugins (#2413), the live P.1204 monitor (#2417), AI-generated video scoring (#2418), WebRTC, streaming outputs, libVLC and cookbook recipes; the cloud-native platform (#2431) and the work of RC5-D |
-| 1.2 | Rust core P4 and P5 |
-| 1.3 | Open subjective studies |
-| 2.0 | Breaking changes only: the `libvmaf.h` compatibility library removed (ADR-1852 D7), the rest of #1254 |
-| 3.0 | The host C and C++ code removed |
+| Version | Content | Former label |
+| --- | --- | --- |
+| `1.1.0` | Rust core P4 and P5 | 1.2 |
+| `1.2.0` | The host C and C++ code removed | 3.0 |
+| `1.3.0` | Open subjective studies | 1.3 |
 
 ### CPU capability evidence in detail
 
