@@ -1476,3 +1476,4 @@ USER vmaf
 
 ENTRYPOINT ["/build/vmaf/dev/scripts/dev-mcp-entrypoint.sh"]
 CMD []
+# probe: light-tier Dev Container lane run (ADR-3338), not for merge
