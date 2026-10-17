@@ -44,9 +44,10 @@ Three master flakes of 2026-10-10, one page (`docs/development/ci.md`,
 
 ## Sanitizer test runs
 
-- Job configuring `-Db_sanitize=<x>`: every `run_meson_test.py` command passes
-  `--timeout-multiplier 3`; `make test-sanitizers` uses
-  `SANITIZER_TEST_TIMEOUT_MULTIPLIER`. One value everywhere
+- Job configuring `-Db_sanitize=<x>` or `-Db_coverage=true`: every
+  `run_meson_test.py` command passes `--timeout-multiplier 3`;
+  `make test-sanitizers` and `make coverage` use
+  `INSTRUMENTED_TEST_TIMEOUT_MULTIPLIER`. One value everywhere
   (`test_sanitizer_suite_timeouts.py::MULTIPLIER`, stated in `ci.md`).
 - Changing value: re-measure durations from job logs of all sanitizer legs
   (slowest finished run of every test below third of its timeout), update
