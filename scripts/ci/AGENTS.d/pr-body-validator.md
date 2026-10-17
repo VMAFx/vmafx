@@ -6,7 +6,7 @@ paths:
   - scripts/git-hooks/pre-push
   - scripts/git-hooks/pre-push-pr-body-lint.sh
   - scripts/git-hooks/test-pre-push-pr-body-lint.py
-invariant: `deliverables-check.sh` is only parser; validator shims `git diff --name-only` and sentinel merge base, nothing else.
+invariant: `deliverables-check.sh` only parser; validator shims diff, sentinel merge base, sentinel-head checkout only.
 area: gates
 ---
 <!-- markdownlint-disable MD013 MD060 -->
@@ -19,7 +19,10 @@ area: gates
 parser; validator only injects diff via `PATH`-shim that
 intercepts `git diff --name-only`, plus `git merge-base
 validator-base validator-head` (answers `validator-base`), since
-the gate diffs from the merge base (`pr-diff-base.sh`).
+the gate diffs from the merge base (`pr-diff-base.sh`), plus `git worktree
+add --detach <dir> validator-head` (checks out `HEAD`), since the ADR-3295
+render-only path runs `make docs-render-check` on a detached head worktree and
+the sentinel names no commit. Case 12 of `test-validate-pr-body.sh` guards it.
 
 `pre-push-pr-body-lint.sh` = standalone entry point referenced by
 `.pre-commit-config.yaml` `validate-pr-body` hook (`stages:
