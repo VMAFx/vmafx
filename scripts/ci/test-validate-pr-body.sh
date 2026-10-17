@@ -260,6 +260,29 @@ else
   fail_count=$((fail_count + 1))
 fi
 
+# ---------- Case 12: a render-only diff reaches make docs-render-check ----------
+# ADR-3295: a diff of rendered paths only is judged by running
+# make docs-render-check on a detached worktree of the head. The validator
+# passes a sentinel as the head, which names no commit; the checkout must
+# still get the commit the validator runs on, never stop at "cannot check out".
+# Match the error line itself: the rendered-diff output can quote the words.
+printf '%s\n' "CHANGELOG.md" "docs/adr/README.md" >"${work}/case12.diff"
+canonical_body >"${work}/case12.body"
+exit12=0
+out12="$("${validator}" --body "${work}/case12.body" --diff "${work}/case12.diff" 2>&1)" || exit12=$?
+if printf '%s\n' "${out12}" | grep -q '^::error title=ADR-3295 render-only pull request::cannot check out'; then
+  echo "FAIL: render-only diff stopped at the checkout (exit=${exit12})"
+  printf '%s\n' "${out12}"
+  fail_count=$((fail_count + 1))
+elif printf '%s\n' "${out12}" | grep -qE 'make docs-render-check passed|does not pass make docs-render-check'; then
+  echo "PASS: render-only diff ran make docs-render-check on the head (exit=${exit12})"
+  pass_count=$((pass_count + 1))
+else
+  echo "FAIL: render-only diff did not reach make docs-render-check (exit=${exit12})"
+  printf '%s\n' "${out12}"
+  fail_count=$((fail_count + 1))
+fi
+
 # ---------- Summary ----------
 echo ""
 echo "test-validate-pr-body: ${pass_count} passed, ${fail_count} failed"
