@@ -110,16 +110,16 @@ class FailClosedCIContract(unittest.TestCase):
     def test_cpu_coverage_records_and_reasserts_pytest_failure(self) -> None:
         workflow = (WORKFLOWS / "tests-and-quality-gates.yml").read_text(encoding="utf-8")
         self.assertNotRegex(workflow, r"(?m)^    if: false\s*$")
-        pytest_step = workflow_step(
-            workflow, "Run full Python test suite (instrumented libvmaf.so + vmaf CLI)"
-        )
-        self.assertIn("id: python_coverage_tests", pytest_step)
-        self.assertIn("continue-on-error: true", pytest_step)
-        self.assertNotIn("|| true", executable_body(pytest_step))
-
-        assertion = workflow_step(workflow, "Assert Python coverage suite passed")
-        self.assertIn("steps.python_coverage_tests.outcome", assertion)
-        self.assertIn('[[ "$PYTEST_OUTCOME" == "success" ]]', assertion)
+        assertion = workflow_step(workflow, "Assert every Python coverage shard passed")
+        self.assertIn('!= "success"', assertion)
+        for index in range(1, 5):
+            with self.subTest(shard=index):
+                pytest_step = workflow_step(workflow, f"Run Python test suite, shard {index}/4")
+                self.assertIn(f"id: python_coverage_shard_{index}", pytest_step)
+                self.assertIn(f"--shard {index}/4", pytest_step)
+                self.assertIn("continue-on-error: true", pytest_step)
+                self.assertNotIn("|| true", executable_body(pytest_step))
+                self.assertIn(f"steps.python_coverage_shard_{index}.outcome", assertion)
 
         gpu_coverage = workflow_job(workflow, "coverage-gpu")
         self.assertIn("name: Coverage GPU", gpu_coverage)

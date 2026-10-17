@@ -5,7 +5,7 @@ name = "vmaf-roi-score"
 version = "0.0.1"
 description = "Region-of-interest VMAF score (Option C): saliency-weighted full-frame VMAF combo."
 readme = "README.md"
-requires-python = ">=3.10,<3.15"
+requires-python = ">=3.12,<3.15"
 license = "EUPL-1.2 AND BSD-2-Clause-Patent"
 license-files = ["LICENSES/*"]
 authors = [

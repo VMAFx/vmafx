@@ -11,10 +11,10 @@ binary when one is on ``PATH``; ``vmaf-mcp`` is the Python server's own name.
 from __future__ import annotations
 
 import stat
+import tomllib
 from pathlib import Path
 
 import pytest
-import tomllib
 
 from vmaf_mcp import console_alias, server
 

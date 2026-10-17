@@ -143,7 +143,7 @@ cythonize-deps: $(VENV_PIP)
 .PHONY: govulncheck lint lint-c lint-py lint-sh lint-md lint-go lint-actions tidy-ratchet tidy-ratchet-write \
 	tidy-ratchet-build tidy-lane tidy-lane-write \
 	base-images-sync cuda-pin-sync python-deps-sync \
-	python-locks-check python-locks-write \
+	python-locks-check python-locks-write python-floors-check \
 	preflight \
 	format format-check sec sbom \
         test-netflix-golden test-netflix-golden-arm64 test-sanitizers test-fast test-timing install-hooks hooks-install help \
@@ -171,6 +171,9 @@ python-locks-check:
 
 python-locks-write:
 	@python3 scripts/ci/check_python_dependency_locks.py write
+
+python-floors-check:
+	@python3 scripts/ci/check_python_floors.py
 
 # Symbol-level Go vulnerability scan with the OpenVEX statements of
 # security/vex/go.openvex.json (docs/development/dependency-advisories.md).

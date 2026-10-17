@@ -90,7 +90,11 @@ lane reads ([ADR-2796](../adr/2796-hosted-tidy-all-lanes.md)):
 - **The pinned container.** The device and cross lanes need `nvcc`, `hipcc`,
   `icpx` and the aarch64 cross compiler, which only the dev container has.
   `.github/actions/tidy-lane/action.yml` names the image by digest and
-  `scripts/dev/tidy-lane.sh` measures the lane in it, as a developer does. After
+  `scripts/dev/tidy-lane.sh` measures the lane in it, as a developer does. The
+  pull goes through `scripts/ci/pull-dev-image.sh`, which refuses an image that
+  is not pinned by digest and retries login and pull up to four times (waits of
+  15, 30 and 60 seconds) before the step fails with an error naming the image,
+  so one DNS timeout on `ghcr.io` no longer fails a lane. After
   a `dev/Containerfile` change publishes a new image, bump the digest in the same
   pull request that re-measures the baselines. The package is private; the job
   reads it with the repository token (`packages: read`).

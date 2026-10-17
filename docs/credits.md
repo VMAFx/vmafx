@@ -137,7 +137,7 @@ full notices ([Licensing](licensing.md)).
 | [pytorch-lightning (Python)](https://github.com/Lightning-AI/pytorch-lightning) | integrated | `Apache-2.0` | `ai/pyproject.toml` |  |
 | [PyWavelets (Python)](https://github.com/PyWavelets/pywt) | integrated | `MIT AND BSD-3-Clause` | `python/pyproject.toml` |  |
 | [pyyaml (Python)](https://github.com/yaml/pyyaml) | integrated | `MIT` | `ai/pyproject.toml`, `dev-llm/pyproject.toml`, `tools/ensemble-training-kit/pyproject.toml` |  |
-| [React, react-dom and scheduler (Meta)](https://github.com/facebook/react) | shipped | `MIT` | `tools/figures/dist/` | Bundled in the figure player; texts in dist/THIRD-PARTY-LICENSES.txt. |
+| [React, react-dom and scheduler (Meta)](https://github.com/facebook/react) | shipped | `MIT` | `tools/figures/player/` | Bundled in the figure player; texts in player/THIRD-PARTY-LICENSES.txt. |
 | [rich (Python)](https://github.com/Textualize/rich) | integrated | `MIT` | `ai/pyproject.toml`, `dev-llm/pyproject.toml` |  |
 | [scikit-image (Python)](https://github.com/scikit-image/scikit-image) | integrated | `BSD-3-Clause` | `python/pyproject.toml` |  |
 | [scikit-learn (Python)](https://github.com/scikit-learn/scikit-learn) | integrated | `BSD-3-Clause` | `ai/pyproject.toml`, `python/pyproject.toml`, `tools/ensemble-training-kit/pyproject.toml` |  |

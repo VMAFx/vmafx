@@ -2,6 +2,8 @@
 paths:
   - scripts/ci/check_python_dependency_locks.py
   - scripts/ci/tests/test_python_dependency_locks.py
+  - scripts/ci/check_python_floors.py
+  - scripts/ci/tests/test_python_floors.py
   - requirements/locks/*
 invariant: Every lock registered in `manifest.json`; installs hash-pinned, exact-path bound; scanners fail closed.
 area: release
@@ -25,3 +27,4 @@ install policy across repository:
 - Non-editable local install = `.whl` only with `--no-deps`; plain directory and sdist (`.tar.gz`/`.zip`) refused (Scorecard Pinned-Dependencies: plain directory install unpinned without `-e` or wheel).
 - `write` is only network-accessing path; `check` is offline and run in pre-commit and `make lint`.
 - Regressions are pinned in `scripts/ci/tests/test_python_dependency_locks.py`.
+- Declared `requires-python` floors in tracked `pyproject.toml` files move only with `scripts/ci/check_python_floors.py` green (`make python-floors-check`; ADR-3335).

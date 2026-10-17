@@ -6,7 +6,7 @@ name = "vmaf-mcp"
 version = "1.0.0-rc.3" # x-release-please-version
 description = "MCP server exposing VMAF scoring, model listing, and benchmark runs via JSON-RPC."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 license = "EUPL-1.2 AND BSD-2-Clause-Patent"
 license-files = ["LICENSES/*"]
 authors = [
@@ -96,7 +96,7 @@ markers = [
 
 [tool.ruff]
 line-length = 100
-target-version = "py310"
+target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "SIM", "RUF"]

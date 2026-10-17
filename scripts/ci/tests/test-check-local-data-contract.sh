@@ -164,4 +164,36 @@ new_case
 track tools/markdownlint-extra/rules.mjs "const root = \"$retired_root\";"
 expect 'a path beside the praetor gate still rejects the retired path' 1
 
+# Praetor 320b058d writes the block's rules unanchored.
+praetor_block_unanchored() {
+  printf '%s\n' \
+    '# BEGIN praetor private artifacts (praetorctl adopt)' \
+    "$state_root/" "$retired_root/" '/.standards/worktrees/' \
+    '# END praetor private artifacts'
+}
+
+new_case
+praetor_block_unanchored >>"$case_dir/.gitignore"
+git -C "$case_dir" add .gitignore
+expect "praetor's unanchored managed ignore rule is tolerated" 0
+
+new_case
+printf '%s/\n' "$retired_root" >>"$case_dir/.gitignore"
+git -C "$case_dir" add .gitignore
+expect 'the unanchored rule outside the praetor block fails' 1
+
+new_case
+praetor_block_unanchored >>"$case_dir/.gitignore"
+git -C "$case_dir" add .gitignore
+mkdir -p "$case_dir/$retired_root"
+expect 'a retired directory still fails under the unanchored praetor rule' 1
+
+new_case
+{
+  praetor_block_unanchored
+  printf '%s*/\n' "$retired_root"
+} >>"$case_dir/.gitignore"
+git -C "$case_dir" add .gitignore
+expect 'a retired-root wildcard after the unanchored block still fails' 1
+
 printf 'all local-data contract cases passed\n'

@@ -113,7 +113,7 @@ exclude_docs: |
 ```
 
 The hook replaces each `figure` fence with the figure markup and publishes
-`figures.css` and the player files in `dist/`, so the site needs no `extra_css`
+`figures.css` and the player files in `player/`, so the site needs no `extra_css`
 or `extra_javascript` entry. A fence that names a figure without a JSON file
 logs a warning, which fails `mkdocs build --strict`.
 
@@ -202,7 +202,7 @@ byte for byte.
 - `types.ts`: the spec type a `docs/figures/<slug>.ts` file checks against.
 - `third_party/interfig/`: the vendored interfig render source, byte-identical
   to its pin in `vendor.json`, with its upstream `LICENSE`.
-- `dist/`: the player. `loader.js` runs on every page and loads `player.js` when
+- `player/`: the player. `loader.js` runs on every page and loads `player.js` when
   a figure nears the viewport; `THIRD-PARTY-LICENSES.txt` holds the license
   texts of the code both files bundle.
 - `figures.css`: the figure stylesheet, following the site's light and dark
@@ -219,7 +219,7 @@ recorded in every figure's JSON, so after an update that changes them, run
 The engine is interfig by Vectorize AI, Inc., under the MIT License
 (`third_party/interfig/upstream/LICENSE`). The player bundles interfig with
 React, react-dom and scheduler, whose license texts are in
-`dist/THIRD-PARTY-LICENSES.txt`. Every exported SVG and both player scripts
+`player/THIRD-PARTY-LICENSES.txt`. Every exported SVG and both player scripts
 carry the interfig credit; keep these notices in every copy. A repository that
 declares its licensing in `REUSE.toml` labels
 `tools/figures/third_party/interfig/upstream/**` MIT in an override annotation
