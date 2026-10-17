@@ -1,5 +1,5 @@
 {
-  "uv_version": "0.12.18",
+  "uv_version": "0.13.1",
   "locks": [
     {
       "output": "requirements/locks/build.txt",

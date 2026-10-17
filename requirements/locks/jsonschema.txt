@@ -1,5 +1,5 @@
 # VMAFx hash lock; regenerate with: make python-locks-write
-# vmafx-uv-version: 0.12.18
+# vmafx-uv-version: 0.13.1
 # vmafx-input-sha256: 191141d3844fd55cf80e189e32b9ac2e42259649e6a0b8156e2ec27feaf19c00
 # vmafx-inputs: requirements/locks/jsonschema.in
 attrs==26.1.0 \
