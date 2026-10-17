@@ -320,7 +320,9 @@ that rule. Until ADR-1354 it was built on the `DEV_*` track and needed glibc
 
 **Rehearsal on every container-affecting pull request.** The Dev Container PR
 gate (`dev-container-build.yml`) builds `release-build` with the same script
-and runs the same `docker run` invocation. A pull request checkout reaches no tag,
+and runs the same `docker run` invocation. On a light-tier pull request it builds when the
+image's own inputs change; the full tier and the master push build it for every
+input the image copies ([CI tiers](ci.md), ADR-3338). A pull request checkout reaches no tag,
 so the gate first creates a local lightweight tag named after
 `.release-please-manifest.json`'s version on `HEAD`; `vmaf --version` then
 reports the `v<version>-0-g<commit>` form a release reports, and the verifier

@@ -101,6 +101,14 @@ area: gates
   helpers, `vmafx.toml`, symbol lists, Rust, `.cu`. `test_ci_routing_contract.py` plants
   ten defects; `test_ci_impact.py` (`MsvcLegRouting`) pins selector. Never mark SYCL row
   `full`, CUDA row `light`, or drop `needs.impact.result == 'failure'`.
+- **Third own-input lane: `Dev Container Build` (ADR-3338).** `dev-container-build.yml`
+  `impact` + gate on `outputs.light`. Step `pick` (shell, `'false'` truthy in expressions):
+  `FULL=true` -> broad `dev_container`, else narrow `dev_container_inputs` (`own_paths_only`);
+  other value = exit 1 -> gate fails. Job outputs `selected` + `reason`; gate notices reason
+  on skip. Narrow selector = dev/**, .dockerignore, build-config.env, workflow, scripts the
+  work job calls, install-cuda-toolkit.sh. Broad selector stays full tier + master push =
+  second barrier. Never fold narrow into broad, never move `impact`/gate/pick back to
+  `outputs.full`; `test_ci_routing_contract.py` plants all three.
 - **`build_work` = `c_core` + `python/**`, `compat/**`, build / pytest-timeout / tox
   locks, prune script.** `build.yml` work job (`Linux Intel LLVM`, `macOS Clang+Metal`,
   `Windows MSVC+CUDA (full)`) runs `compat/vmaf/tests/test_decorator_extended.py`

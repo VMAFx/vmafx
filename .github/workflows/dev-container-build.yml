@@ -14,6 +14,13 @@
 # the Debian 13 `release-build` stage and runs the release compile in it
 # exactly as supply-chain.yml's `build-artifacts` does.
 #
+# Own-input lane (ADR-3338): on the full tier (master push, `ci: full`) the
+# broad `dev_container` selector picks the work; on a light-tier pull request
+# the narrow `dev_container_inputs` selector does, so a change to dev/,
+# .dockerignore, build-config.env or a script the build job calls builds the
+# image before it lands. The core, Python, AI, Go and shell sources the image
+# also copies are left to the full tier and the master push.
+#
 # No image is pushed — this is a pure build-verification gate.
 
 name: Dev Container
@@ -44,11 +51,12 @@ jobs:
 
   impact:
     needs: tier
-    if: needs.tier.outputs.full == 'true'
+    if: needs.tier.outputs.light == 'true'
     name: Plan dev-container impact
     runs-on: ubuntu-26.04
     outputs:
-      selected: ${{ steps.impact.outputs.dev_container }}
+      selected: ${{ steps.pick.outputs.selected }}
+      reason: ${{ steps.pick.outputs.reason }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -63,6 +71,27 @@ jobs:
         run: |
           python3 scripts/ci/plan-ci-impact.py --event "$EVENT_NAME" \
             --base "$BASE_SHA" --head "$HEAD_SHA" --github-output "$GITHUB_OUTPUT"
+      # ADR-3338: the full tier owes the broad selector, the light tier only the
+      # image's own inputs. Picked in shell: an expression treats 'false' as true.
+      - name: Pick the selector of this tier
+        id: pick
+        env:
+          FULL: ${{ needs.tier.outputs.full }}
+          BROAD: ${{ steps.impact.outputs.dev_container }}
+          NARROW: ${{ steps.impact.outputs.dev_container_inputs }}
+        run: |
+          if [ "$FULL" = true ]; then
+            selected="$BROAD" selector=dev_container
+          else
+            selected="$NARROW" selector=dev_container_inputs
+          fi
+          case "$selected" in
+            true) reason="selected by $selector" ;;
+            false) reason="not selected: $selector matched no changed path; the full selector runs on the master push" ;;
+            *) echo "::error::planner gave $selector='$selected'"; exit 1 ;;
+          esac
+          echo "$reason"
+          { echo "selected=$selected"; echo "reason=$reason"; } >> "$GITHUB_OUTPUT"
 
   dev-container-build-work:
     needs: impact
@@ -255,7 +284,7 @@ jobs:
 
   dev-container-build:
     needs: [tier, impact, dev-container-build-work]
-    if: always() && needs.tier.outputs.full == 'true'
+    if: always() && needs.tier.outputs.light == 'true'
     # required-aggregator
     name: Dev Container Build
     runs-on: ubuntu-26.04
@@ -264,6 +293,7 @@ jobs:
         env:
           PLAN_RESULT: ${{ needs.impact.result }}
           SELECTED: ${{ needs.impact.outputs.selected }}
+          REASON: ${{ needs.impact.outputs.reason }}
           WORK_RESULT: ${{ needs.dev-container-build-work.result }}
         run: |
           if [ "$PLAN_RESULT" != success ]; then
@@ -274,3 +304,6 @@ jobs:
             true:success|false:skipped) ;;
             *) echo "::error::invalid dev-container gate state selected=$SELECTED work=$WORK_RESULT"; exit 1 ;;
           esac
+          if [ "$SELECTED" = false ]; then
+            echo "::notice::Dev Container Build skipped, ${REASON:-no reason given}"
+          fi
