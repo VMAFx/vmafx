@@ -59,7 +59,7 @@ eval = [
 # metadata. torch must not appear in any group of this package
 # (scripts/ci/check-torch-scope.py).
 vlm = [
-  "onnxruntime-genai>=0.17.1",
+  "onnxruntime-genai>=0.18.0",
 ]
 
 [project.scripts]
