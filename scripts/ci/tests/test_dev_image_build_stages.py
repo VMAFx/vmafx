@@ -26,6 +26,11 @@ COMPILE_STEPS = {
     "the FFmpeg build": re.compile(r"\./configure\b[^\n]*(?:\\\n[^\n]*)*--enable-libvmaf"),
 }
 FROM = re.compile(r"(?im)^FROM\s+(?P<parent>\S+)(?:\s+AS\s+(?P<name>\S+))?\s*$")
+# build-deps installs ninja-build but no make program, so a CMake configure
+# there must name its generator: CMake's default "Unix Makefiles" fails with
+# "CMAKE_MAKE_PROGRAM is not set" (master 2c0db0b99, ClangBuildAnalyzer).
+NO_MAKE_STAGES = ("build-deps",)
+CMAKE_CONFIGURE = re.compile(r"\bcmake\b(?![^\n]*--(?:build|install)\b)[^\n]*(?:\\\n[^\n]*)*")
 
 
 def stages(text: str) -> dict[str, tuple[str, str]]:
@@ -68,6 +73,25 @@ def compile_steps_in_image(text: str) -> list[str]:
     return problems
 
 
+def configures_without_generator(text: str) -> list[str]:
+    found = stages(text)
+    problems: list[str] = []
+    for name in NO_MAKE_STAGES:
+        if name not in found:
+            problems.append(f"{name}: no such stage")
+            continue
+        body = "\n".join(
+            line for line in found[name][1].splitlines() if not line.lstrip().startswith("#")
+        )
+        for match in CMAKE_CONFIGURE.finditer(body):
+            step = match.group(0)
+            if " -S " in step and not re.search(r"\s-G\s*\S", step):
+                problems.append(
+                    f"{name}: cmake configure without -G: {step.splitlines()[0].strip()}"
+                )
+    return problems
+
+
 class BuildStages(unittest.TestCase):
     def test_no_image_stage_compiles(self) -> None:
         text = CONTAINERFILE.read_text(encoding="utf-8")
@@ -106,6 +130,27 @@ RUN true
                 "libvmaf-build: stage libvmaf-build runs the FFmpeg build",
             ],
         )
+
+    def test_cmake_in_a_stage_without_make_names_a_generator(self) -> None:
+        text = CONTAINERFILE.read_text(encoding="utf-8")
+        self.assertEqual(configures_without_generator(text), [])
+
+    def test_a_cmake_configure_without_generator_is_refused(self) -> None:
+        planted = (
+            "FROM base AS build-deps\n"
+            'RUN cmake -S "/tmp/src" -B /tmp/build \\\n'
+            "        -DCMAKE_BUILD_TYPE=Release \\\n"
+            "    && cmake --build /tmp/build -j2 \\\n"
+            "    && cmake --install /tmp/build\n"
+            "FROM build-deps AS gpu-sdks\n"
+            "RUN cmake -S . -B build\n"
+        )
+        self.assertEqual(
+            configures_without_generator(planted),
+            ['build-deps: cmake configure without -G: cmake -S "/tmp/src" -B /tmp/build \\'],
+        )
+        fixed = planted.replace("RUN cmake -S", "RUN cmake -G Ninja -S", 1)
+        self.assertEqual(configures_without_generator(fixed), [])
 
     def test_a_copied_from_stage_is_not_in_the_chain(self) -> None:
         split = """
