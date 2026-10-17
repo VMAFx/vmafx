@@ -3323,6 +3323,16 @@ test('test_ffmpeg_libvmaf_stop_contract',
     timeout : 30,
 )
 
+# Issue #2708 / FFmpeg patch 0017: the libvmaf filter offers every
+# SEI-unregistered side-data entry to vmaf_set_perceptual_sidedata(), newest
+# first, and stops at the first one accepted. Device-free: reads the series.
+test('test_ffmpeg_libvmaf_pelorus_scan_contract',
+    import('python').find_installation(),
+    args : files('test_ffmpeg_libvmaf_pelorus_scan_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # ADR-2093 / FFmpeg patch 0022: the libvmaf filters declare the AVFrame colour to
 # libvmaf. Device-free: reads the series; the FFmpeg run is
 # ffmpeg-patches/test/check-libvmaf-input-colorimetry.sh.

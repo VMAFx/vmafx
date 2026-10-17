@@ -22,7 +22,7 @@ filters follow the same rule (VMAFx ADR-1761).
  1 file changed, 62 insertions(+), 30 deletions(-)
 
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
-index c4351af2199c31e1daa07bed7f39a358b0231a1c..2120296a19e5f686d71e0dbdca3c0b8e160e952e 100644
+index fc4c9a4ae3c659c33c5214b0e3612560a7a4df4b..a74f4122c29dd2e761d4d1371070199d98b328ae 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
 @@ -313,6 +313,21 @@ static int copy_picture_data(LIBVMAFContext *s, AVFrame *src, VmafPicture *dst,
@@ -80,7 +80,7 @@ index c4351af2199c31e1daa07bed7f39a358b0231a1c..2120296a19e5f686d71e0dbdca3c0b8e
      }
  
      /* Pelorus perceptual weighting (libvmaf ADR-1118): when the operator
-@@ -383,11 +401,10 @@ static int do_vmaf(FFFrameSync *fs)
+@@ -394,11 +412,10 @@ static int do_vmaf(FFFrameSync *fs)
          }
      }
  
@@ -96,7 +96,7 @@ index c4351af2199c31e1daa07bed7f39a358b0231a1c..2120296a19e5f686d71e0dbdca3c0b8e
  
      return ff_filter_frame(ctx->outputs[0], dist);
  }
-@@ -1009,20 +1026,34 @@ static av_cold void uninit(AVFilterContext *ctx)
+@@ -1020,20 +1037,34 @@ static av_cold void uninit(AVFilterContext *ctx)
  
      if (!s->frame_cnt)
          goto clean_up;
@@ -137,7 +137,7 @@ index c4351af2199c31e1daa07bed7f39a358b0231a1c..2120296a19e5f686d71e0dbdca3c0b8e
          }
  
          av_log(ctx, AV_LOG_INFO, "VMAF score: %f\n", vmaf_score);
-@@ -1272,26 +1303,27 @@ static int do_vmaf_cuda(FFFrameSync* fs)
+@@ -1283,26 +1314,27 @@ static int do_vmaf_cuda(FFFrameSync* fs)
          return err;
      if (ctx->is_disabled || !ref)
          return ff_filter_frame(ctx->outputs[0], dist);

@@ -73,20 +73,24 @@ int vmaf_set_perceptual_sidedata(VmafContext *vmaf, const uint8_t *blob,
                                  size_t len, unsigned pic_index);
 ```
 
-Registers a Pelorus side-data blob for a picture index. The blob is the full
-`AV_FRAME_DATA_SEI_UNREGISTERED` payload (16-byte UUID prefix + flat
-`PelorusSideData` image). The parser extracts the banding/variance summaries
-plus
-per-cell maps and stores a derived per-frame salience keyed by `pic_index`. The
-blob is **not retained** — only the derived summary is copied — so the caller
-may
-free `blob` immediately after the call.
+Registers a Pelorus side-data payload for a picture index. The function accepts
+both forms of side data: the raw blob form (blob UUID
+`e1d7c4a2-6b93-4f08-9a55-0f3c2db17e64`) and the zero-free carrier form
+(carrier UUID `3f9b37b8-fd9a-4621-920e-9b78b55cf9b5`). Hardware encoders
+such as `h264_nvenc` and `hevc_nvenc` emit the carrier form from Pelorus ABI
+1.5, because NVENC cuts a user-data SEI short at a zero byte and the carrier
+holds none. The parser unwraps carrier
+payloads transparently into a reusable decode buffer, extracts the
+banding/variance summaries and per-cell maps, and stores a derived per-frame
+salience keyed by `pic_index`. The payload is **not retained** — only the
+derived summary is copied — so the caller may free `blob` immediately after the
+call.
 
 | Return | Meaning |
 | --- | --- |
 | `0` | Summary stored. |
-| `-ENOENT` | `blob` is not a Pelorus blob (wrong UUID/magic). Cleanly ignored — the frame stays unweighted. |
-| `-EPROTO` | ABI-major mismatch. Cleanly ignored and logged — the frame stays unweighted (interop rule R6). |
+| `-ENOENT` | Payload is foreign (neither Pelorus UUID, or length under 16 bytes). Cleanly ignored — the frame stays unweighted. |
+| `-EPROTO` | Corrupt carrier (malformed COBS or embedded zero bytes), truncated header, or ABI-major mismatch. Cleanly ignored and logged — the frame stays unweighted, never misread (interop rule R6). |
 | `-EINVAL` | `vmaf` or `blob` is `NULL`. |
 | `-ENOMEM` | Allocation failure. |
 
@@ -136,6 +140,13 @@ on that path, so the result is byte-identical, not merely numerically close.
 
 The reader is robust to an evolving Pelorus producer:
 
+- **Carrier and blob forms (ABI 1.5)** — both the canonical blob form (UUID
+  `e1d7c4a2-6b93-4f08-9a55-0f3c2db17e64`) and the zero-free carrier form (UUID
+  `3f9b37b8-fd9a-4621-920e-9b78b55cf9b5`) are accepted. Hardware encoders
+  (`h264_nvenc`, `hevc_nvenc` from Pelorus ABI 1.5) write the carrier form.
+  Foreign payloads return `-ENOENT` and are cleanly ignored, while a corrupt
+  carrier or bad ABI major returns `-EPROTO` so the frame is scored unweighted
+  and a warning is logged, ensuring malformed payloads are never misread.
 - **R4** — each section is read for `min(known_size, dir.size)` bytes; a newer
   producer's appended fields are ignored, and the fields an older producer did
   not write read as zero (a banding section without its map pointer falls back
