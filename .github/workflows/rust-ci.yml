@@ -120,7 +120,7 @@ jobs:
           # with "'toolchain' is a required input". The value is RUST_VERSION
           # of build-config.env (ADR-3318); check-workflow-versions.py refuses
           # another, and Renovate moves both in one pull request.
-          toolchain: 1.99.0
+          toolchain: 1.99.1
           components: rustfmt, clippy
 
       - name: Cache Rust artifacts

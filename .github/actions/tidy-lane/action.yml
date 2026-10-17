@@ -34,14 +34,9 @@ runs:
       env:
         IMAGE: ${{ inputs.image }}
         REGISTRY_TOKEN: ${{ inputs.token }}
-      run: |
-        set -euo pipefail
-        case "$IMAGE" in
-          *@sha256:*) ;;
-          *) echo "::error::the dev container must be pinned by digest, got '$IMAGE'"; exit 1 ;;
-        esac
-        printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-        docker pull --quiet "$IMAGE"
+      # Digest check, bounded retries and the final error live in the script
+      # (issue #2792: one DNS timeout on ghcr.io failed a nightly lane).
+      run: bash scripts/ci/pull-dev-image.sh "$IMAGE"
     - name: Measure the lane
       shell: bash
       env:

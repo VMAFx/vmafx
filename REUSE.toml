@@ -412,7 +412,7 @@ SPDX-FileCopyrightText = "2025 Vectorize AI, Inc."
 SPDX-License-Identifier = "MIT"
 
 [[annotations]]
-path = ["tools/figures/dist/**"]
+path = ["tools/figures/player/**"]
 precedence = "override"
 SPDX-FileCopyrightText = [
     "2026 Lusoris <lusoris@proton.me>",
