@@ -134,10 +134,13 @@ is_allowed_dependency_path() {
   # pre-commit-hooks PR (#1588) failed the deliverables gate, and Renovate
   # rewrites the PR body on each rebase, so an opt-out block does not stick.
   # Exact root path only: nested Makefiles and *.mk stay gated.
+  # rust-toolchain.toml is the one Rust toolchain pin (ADR-3318); Renovate
+  # moves it together with the workflows and crate manifests (PR #2795).
   case "$path" in
     renovate.json | \
       build-config.env | \
       Makefile | \
+      rust-toolchain.toml | \
       .github/renovate.json* | \
       .pre-commit-config.yaml | \
       dev/Containerfile | \
@@ -151,8 +154,12 @@ is_allowed_dependency_path() {
       ;;
   esac
 
-  # Basename matches for manifests and lockfiles across the tree
-  case "$base" in
+  is_dependency_manifest_name "$base"
+}
+
+# Basename matches for manifests and lockfiles across the tree.
+is_dependency_manifest_name() {
+  case "$1" in
     renovate.json | \
       package.json | package-lock.json | pnpm-lock.yaml | yarn.lock | \
       go.mod | go.sum | \

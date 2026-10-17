@@ -358,12 +358,16 @@ class RegressorMixin(object):
         scatter plot draws the line and never reads the covariance, so the line is
         fitted directly and no covariance is requested. Fewer than two distinct
         abscissae determine no line at all, and such a group gets no fit line.
+        ``convert()`` trims trailing zero coefficients, so a line with a slope of
+        exactly zero (all ordinates zero, for example) comes back as one
+        coefficient; it is padded back to two.
         """
         xs = np.asarray(xs, dtype=float)
         ys = np.asarray(ys, dtype=float)
         if np.unique(xs).size < 2:
             return None
-        intercept, slope = np.polynomial.Polynomial.fit(xs, ys, 1).convert().coef
+        coef = np.polynomial.Polynomial.fit(xs, ys, 1).convert().coef
+        intercept, slope = np.pad(coef, (0, 2 - coef.size))
         return slope, intercept
 
     @staticmethod
