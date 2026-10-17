@@ -704,6 +704,16 @@ static uint8_t *encode_carrier(const uint8_t *blob, size_t blob_len, size_t *out
     return out;
 }
 
+/* Bit-for-bit equality of two doubles (no floating-point equality test). */
+static int same_bits(double a, double b)
+{
+    uint64_t x = 0;
+    uint64_t y = 0;
+    memcpy(&x, &a, sizeof(x));
+    memcpy(&y, &b, sizeof(y));
+    return x == y;
+}
+
 /* Positive: valid carrier yields the same weight/summary as the blob form. */
 static char *test_carrier_positive_matches_blob(void)
 {
@@ -720,7 +730,7 @@ static char *test_carrier_positive_matches_blob(void)
     double mean_carrier = pool_with_blob(carrier, carrier_len);
     free(carrier);
 
-    mu_assert("carrier weight must match blob weight", mean_carrier == mean_blob);
+    mu_assert("carrier weight must match blob weight", same_bits(mean_carrier, mean_blob));
     return NULL;
 }
 
