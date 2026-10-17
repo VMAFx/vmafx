@@ -14,14 +14,15 @@ and evolve independently without a submodule or a shared package. The vendoring
 decision is recorded in
 [ADR-1113](../adr/1113-vendor-pelorus-interop-abi.md); the exact-mirror guard
 rails are recorded in
-[ADR-1276](../adr/1276-pelorus-v022-parser-safety-repin.md), and the current
-pin, Pelorus v0.3.0 with its EUPL-1.2 headers, in
-[ADR-2817](../adr/2817-pelorus-v030-eupl-repin.md).
+[ADR-1276](../adr/1276-pelorus-v022-parser-safety-repin.md), the v0.3.0
+licence re-pin in [ADR-2817](../adr/2817-pelorus-v030-eupl-repin.md), and
+the current pin, Pelorus v0.4.1 (interop ABI 1.5), in
+[ADR-3332](../adr/3332-pelorus-v040-abi15-repin.md).
 
 !!! warning "The mirror is read-only"
     Do not edit the vendored files. They are byte-identical to their Pelorus
-    origin (pinned at `VMAFx/pelorus@e2e4040311a443210927549c3a336f909c6473f3`,
-    the `v0.3.0` tag)
+    origin (pinned at `VMAFx/pelorus@33b4a625cad64a7e9ca14f6db06eb91ba8f56663`,
+    the `v0.4.1` tag)
     except for a `VENDORED FROM ... DO NOT EDIT` banner and the include-path
     rewrite described below. Fix any defect upstream in Pelorus, then
     [re-sync](#re-syncing-the-mirror).
@@ -47,13 +48,13 @@ registered in `core/src/meson.build`). `deband_params.c`,
 `interop.c` because the shared conformance fixture links the deband / denoise
 parameter contracts, the x265 CSV QP-report reader, and the version /
 result-string accessors — vendoring them keeps the fixture byte-identical to
-Pelorus's. (`qp_report_csv.c` is required to link: the ABI-1.3 fixture exercises
+Pelorus's. (`qp_report_csv.c` is required to link: the conformance fixture exercises
 `pel_x265_csv_parse`.)
 
 ### The only local edits
 
 1. A `VENDORED FROM
-   VMAFx/pelorus@e2e4040311a443210927549c3a336f909c6473f3 — DO NOT EDIT`
+   VMAFx/pelorus@33b4a625cad64a7e9ca14f6db06eb91ba8f56663 — DO NOT EDIT`
    banner inserted after the (unchanged) Pelorus license header.
 2. Intra-Pelorus `#include "pelorus/<x>.h"` rewritten to
    `#include "libvmaf/pelorus/<x>.h"` so the headers resolve under
@@ -94,10 +95,11 @@ A blob is a flat, pointer-free, little-endian byte image:
 - **Magic / identity**: 8-byte `"PELOR1\0\0"` magic, a fixed 16-byte routing
   UUID (`e1d7c4a2-6b93-4f08-9a55-0f3c2db17e64`), and an ABI major/minor.
 - **Sections** (append-only bits, never reused): `BANDING`, `VARIANCE`,
-  `DENOISE`, `FILMGRAIN`, `MOTION`, and (ABI ≥ 1.3) `QPREPORT` (1.1, encoder
-  QP / bit readback), `MOTION_CONF` (1.2, per-block MV confidence), and
-  `COMPLEXITY` (1.3, per-frame complexity scalar — consumed by perceptual
-  weighting, see [perceptual-weight.md](perceptual-weight.md)). Each is
+  `DENOISE`, `FILMGRAIN`, `MOTION`, `QPREPORT` (1.1, encoder QP / bit readback),
+  `MOTION_CONF` (1.2, per-block MV confidence), `COMPLEXITY` (1.3, per-frame
+  complexity scalar — consumed by perceptual weighting, see
+  [perceptual-weight.md](perceptual-weight.md)), `ENC_TELEMETRY` (1.4, per-frame
+  encoder telemetry), and `ENCODE_RECORD` (1.4, encode-record digest). Each is
   independently optional and gated by `section_mask`.
 - **Directory**: one `PelorusSectionDir{section_id, offset, size, struct_minor}`
   per present section, so an older consumer can locate and tail-skip a newer
@@ -116,19 +118,26 @@ silent corruption.
 | `PelorusVarianceSection` | 28 |
 | `PelorusDenoiseSection` | 28 |
 | `PelorusFilmGrainSection` | 216 |
-| `PelorusMotionSection` | 32 |
+| `PelorusMotionSection` | 36 |
 | `PelorusMotionConfSection` | 16 |
 | `PelorusComplexitySection` | 16 |
 | `PelorusQpReportSection` | 64 |
+| `PelorusEncTelemetrySection` | 104 |
+| `PelorusEncodeRecordSection` | 48 |
 
 ### Pack / parse API (`interop.h`)
 
 | Function | Purpose |
 | --- | --- |
 | `pel_blob_pack(meta, sections, nb, &blob, &len)` | Allocate a UUID-prefixed blob from header fields + a set of sections. |
+| `pel_blob_pack_into(meta, sections, nb, out, cap, &out_len)` | Pack into caller-owned buffer without heap allocation (ABI 1.4). |
 | `pel_blob_free(blob)` | Free a blob returned by `pel_blob_pack`. |
 | `pel_blob_is_present(blob, len)` | Cheap pre-check: is this a valid Pelorus blob (UUID + magic + ABI major)? |
 | `pel_blob_find_section(blob, len, sec, known_size, &ptr, &size)` | Locate a section; returns a pointer into the blob plus `min(producer, consumer)` readable bytes. |
+| `pel_blob_map(blob, len, offset, size, elem_count, elem_size, &out_ptr)` | Bounds-checked map of trailing variable-length arrays (ABI 1.4). |
+| `pel_blob_carrier_encode(blob, len, out, cap, &out_len)` | Write zero-free COBS carrier form with `pelorus_carrier_uuid` for zero-intolerant sinks (ABI 1.5). |
+| `pel_blob_unwrap(data, len, scratch, cap, &out_blob, &out_len)` | Accept unregistered SEI payload in standard or carrier form, returning the unwrapped blob (ABI 1.5). |
+| `pel_encode_record_digest_text(s, got, out, cap)` | Format an encode-record digest as 71-char `sha256:<hex>` text (ABI 1.4). |
 
 Since v0.2.2, Pelorus accepts a blob at **any caller-buffer base alignment**. The
 parser and packer move wire headers and directory entries through aligned local
@@ -169,23 +178,64 @@ The ABI is normative; both repos depend on these rules (verbatim from
   forbid for additive evolution) — in practice it never bumps.
   `PELORUS_ABI_MINOR` bumps when a new section bit or appended field lands.
 
-The current library release is **0.3.0** and the ABI remains **1.3**
-(`PELORUS_ABI_MAJOR=1`, `PELORUS_ABI_MINOR=3`).
+The current library release is **0.4.1** and the ABI is **1.5**
+(`PELORUS_ABI_MAJOR=1`, `PELORUS_ABI_MINOR=5`).
 Minor 1.1 added `PEL_SEC_QPREPORT`, 1.2 added `PEL_SEC_MOTION_CONF`, 1.3 added
-`PEL_SEC_COMPLEXITY` — all append-only, so the major stayed at 1 and the mirror
-re-pin (ADR-1120) was non-breaking. The 0.2.2 re-pin changes parser safety
-semantics only; it does not add or alter an ABI field or section. The 0.3.0
-re-pin does not either: it brings the EUPL-1.2 headers, comments that state the
-units of `PelorusMotionSection` and the coded-value ranges of three
-`PelorusFilmGrainSection` arrays, and a fixture that checks the privacy of the
-files it creates on the open descriptor and writes them in a bounded loop. The
-parser source is unchanged apart from its header.
+`PEL_SEC_COMPLEXITY`, 1.4 added `PEL_SEC_ENC_TELEMETRY`, `PEL_SEC_ENCODE_RECORD`,
+and `PelorusMotionSection.block_size_log2`, and 1.5 added the zero-free carrier
+form (`pelorus_carrier_uuid`, COBS encoding) with `pel_blob_carrier_encode()`
+and `pel_blob_unwrap()` — all append-only, so the major stays at 1 and the mirror
+re-pins are non-breaking. The 0.2.2 re-pin changed parser safety semantics only;
+it did not add or alter an ABI field or section. The 0.3.0 re-pin brought
+the EUPL-1.2 headers, comments that state the units of `PelorusMotionSection` and
+the coded-value ranges of three `PelorusFilmGrainSection` arrays, and a fixture
+that checks the privacy of the files it creates on the open descriptor and writes
+them in a bounded loop. The 0.4.1 re-pin advances the mirror to ABI 1.5
+(issue #2667).
+
+## What ABI 1.4 and 1.5 bring to callers
+
+Pelorus v0.4.1 evolves the wire ABI additively (R1/R6, append-only):
+
+### ABI 1.4 additions
+
+- **Encoder telemetry (`PEL_SEC_ENC_TELEMETRY`, bit 8, 104 B)**:
+  `PelorusEncTelemetrySection` records per-frame encoder statistics normalised
+  across codecs and encoders, including bit allocations, average QP, PSNR/SSIM,
+  slice composition, and trailing map offsets.
+- **Encode-record digest (`PEL_SEC_ENCODE_RECORD`, bit 9, 48 B)**:
+  `PelorusEncodeRecordSection` binds the coded frame to an immutable
+  encoder-invocation receipt. Callers use `pel_encode_record_digest_text()` to
+  render the digest as a canonical `sha256:<hex>` string (71 bytes).
+- **Motion block edge size**: `PelorusMotionSection.block_size_log2` appends
+  the motion-vector grid cell edge (extending the struct from 32 to 36 bytes).
+  An older 32-byte section reads as field absent (`0`).
+- **Non-allocating packer**: `pel_blob_pack_into()` formats blobs directly into
+  caller-owned storage without dynamic heap allocation.
+- **Safe array mapping**: `pel_blob_map()` provides bounds-checked, R5-aligned
+  pointer access to trailing variable-length maps and arrays within the blob.
+- **Mismatch error code**: `PEL_ERR_MISMATCH` (`-8`) indicates a verified
+  digest differs from the expected value.
+
+### ABI 1.5 additions
+
+- **Zero-free carrier form (Pelorus ADR-0183)**: NVENC truncates unregistered
+  SEI payloads containing runs of zero bytes. ABI 1.5 defines a zero-free
+  carrier using COBS encoding prefixed by `pelorus_carrier_uuid`
+  (`3f9b37b8-fd9a-4621-920e-9b78b55cf9b5`).
+- **Carrier sizing and encoding**: `PEL_CARRIER_MAX_LEN(n)` bounds the required
+  carrier buffer size for an `n`-byte blob; `pel_blob_carrier_encode()` encodes
+  the carrier.
+- **Transparent unwrapping**: `pel_blob_unwrap()` parses either the standard
+  blob (`pelorus_sidedata_uuid`) or zero-free carrier form
+  (`pelorus_carrier_uuid`), returning a direct pointer to the decoded blob.
 
 ## Conformance fixture — the byte-compat proof
 
 `core/test/test_pelorus_interop.c` is the **same fixture both repos run**. It
 exercises the following vectors against the vendored parser (the ABI-1.3 fixture
-grew the original seven to sixteen):
+grew the original seven to sixteen, and ABI 1.4/1.5 extended coverage across
+telemetry, encode records, maps, and carriers):
 
 | # | Vector | What it proves |
 | --- | --- | --- |
@@ -224,7 +274,7 @@ python3 scripts/ci/run_meson_test.py -- \
 The pin and the drift guard live in
 [`scripts/sync-pelorus-interop.sh`](../../scripts/sync-pelorus-interop.sh). It
 reads the vendored sources from the **pinned commit's git tree object**
-(`git show e2e4040311a443210927549c3a336f909c6473f3:libpelorus/…`), so it
+(`git show 33b4a625cad64a7e9ca14f6db06eb91ba8f56663:libpelorus/…`), so it
 stays accurate even when the local Pelorus checkout's `HEAD` has moved past the
 pin. A directory that is not a Git checkout, or a checkout that lacks the exact
 object, fails closed.
@@ -239,7 +289,7 @@ scripts/sync-pelorus-interop.sh /path/to/pelorus
 ```
 
 The output is
-`OK: vendored Pelorus interop ABI matches pelorus@e2e4040311a443210927549c3a336f909c6473f3 (ABI 1.3, minor=3).`,
+`OK: vendored Pelorus interop ABI matches pelorus@33b4a625cad64a7e9ca14f6db06eb91ba8f56663 (ABI 1.5, minor=5).`,
 or a `DRIFT:` line with a diff per differing file, then
 `FAIL: vendored Pelorus interop ABI has drifted from pelorus@…` and exit
 code 1.
@@ -292,4 +342,4 @@ as a follow-up to [ADR-1113](../adr/1113-vendor-pelorus-interop-abi.md). A
 released parser-only correctness/security fix keeps the ABI number intact and
 is recorded in a new follow-up decision plus research evidence; ADR-1276
 records the v0.2.2 safety re-pin while preserving ADR-1113's immutable body,
-and ADR-2817 the v0.3.0 licence re-pin.
+ADR-2817 the v0.3.0 licence re-pin, and issue #2667 the v0.4.1 re-pin to ABI 1.5.

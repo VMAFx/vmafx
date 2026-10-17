@@ -70,6 +70,14 @@
         "windows_msvc_sycl"
       ],
       "reason": "A full-only context whose leg also runs on a light-tier pull request, but only when the diff touches a C or C++ source, a header or a Meson file under core/ or an input of the leg itself (selector of .github/ci-impact.json, ADR-3279): a pull request that changed core C++ ran no MSVC build, and both MSVC legs of the master push that followed failed to compile. The CUDA and ARM64 MSVC legs stay on the full tier."
+    },
+    {
+      "workflow": "dev-container-build.yml",
+      "context": "Dev Container Build",
+      "selectors": [
+        "dev_container_inputs"
+      ],
+      "reason": "A full-only context whose build also runs on a light-tier pull request, but only when the diff touches dev/, .dockerignore, build-config.env or a script the build job calls (selector of .github/ci-impact.json, ADR-3338): #2821 changed dev/Containerfile on the light tier, built no image, and the master push 2c0db0b99 that followed failed in the stage it added. The broad dev_container selector (core, Python, AI, Go and shell sources the image copies) still runs on the full tier and the master push."
     }
   ],
   "untiered_jobs": [
