@@ -66,7 +66,7 @@ export const MAX_LINES = 100_000;
 const MAX_FIGURES = 256;
 const MAX_ENTRIES = 131_072;
 
-/** Where the figures hook and the Astro integration publish tools/figures/dist/loader.js; the loader imports PLAYER beside it. */
+/** Where the figures hook and the Astro integration publish tools/figures/player/loader.js; the loader imports PLAYER beside it. */
 const LOADER = `${PLAYER_URI}/loader.js`;
 const PLAYER = 'player.js';
 /** A hooks entry ending in these two path parts enables figures: tools/figures/mkdocs_hook.py from any directory. */
@@ -903,7 +903,7 @@ function specErrors(page, output, built, figures) {
 /** Why the page cannot mount its figures: no loader script that resolves, or no player.js beside it. */
 function loaderErrors(page, output, built, scripts) {
   const loader = scripts.find((src) => src.endsWith(LOADER) && resolves(output, built, src));
-  if (!loader) return [`${page}: holds figures but loads no ${LOADER} (${built.flavor.publisher} publishes it from tools/figures/dist/)`];
+  if (!loader) return [`${page}: holds figures but loads no ${LOADER} (${built.flavor.publisher} publishes it from tools/figures/player/)`];
   if (isFile(join(dirname(urlTarget(output, built, loader)), PLAYER))) return [];
   return [`${page}: loads ${loader}, but no ${PLAYER} sits beside it for the loader to import`];
 }

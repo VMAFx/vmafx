@@ -53,8 +53,9 @@ Consequences worth knowing:
 
 - The workflow keeps praetor's name, which is two characters over the
   30-character budget in [CI job display names](ci-job-names.md).
-- `.gitignore` re-includes `tools/figures/dist/`, which the repository-wide
-  `dist/` rule would otherwise hide from a checkout that audit then fails on.
+- Praetor ships its figure player bundle under `tools/figures/player/`, which
+  audit hashes; the repository-wide `dist/` ignore rule no longer covers it, so
+  `.gitignore` carries no re-include for it.
 - The repository's own black, ruff and markdownlint pre-commit hooks skip
   `tools/figures/`, since a rewrite there fails the audit
   ([cordanaLLM/praetor#578](https://github.com/cordanaLLM/praetor/issues/578)).

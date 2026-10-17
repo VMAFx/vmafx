@@ -1,0 +1,14 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
+# Declared workflow timeouts above praetor's 30-minute test bound (forge.AuditTestTimeouts,
+# cordanaLLM/praetor#1381). Format and rules: scripts/ci/lint_exceptions.py.
+# scripts/ci/praetor_tidy_coverage.py copies each entry into the `exceptions:` block of
+# .standards.yaml, where praetor reads it. The path is the workflow the audit's failure line names.
+# Category B (3 days): the Coverage Gate pytest is split into steps of at most 30 minutes before
+# the expiry, and this file goes with that change.
+
+[[exception]]
+path = ".github/workflows/tests-and-quality-gates.yml"
+reason = "Category B, expires 3 days after 2026-10-17. Lines 1230 (55m), 1258 (70m) and 1262 (55m) only: the Coverage Gate runs the whole instrumented pytest suite in one step, measured at 37 to 51 minutes, above the 30-minute bound of cordanaLLM/praetor#1381. The next unit splits that step into steps of at most 30 minutes and removes this entry."
+expires = 2026-10-20

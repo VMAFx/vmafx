@@ -63,6 +63,10 @@ exceptions:
     path: ".github/workflows/docker-publish-operator-node.yml"
     reason: "SLSA Build Level 2 measured against the Level 3 the native-gpu-systems profile and security:high facet declare: the publish job signs provenance over image digests that build jobs uploaded, not inside a reusable workflow that builds and attests. Level 3 needs that restructuring (T-SLSA-RELEASE-PROVENANCE-LEVEL-2-2026-10-07)."
     expires: "2027-01-04"
+  - rule: test-timeout
+    path: ".github/workflows/tests-and-quality-gates.yml"
+    reason: "Category B, expires 3 days after 2026-10-17. Lines 1230 (55m), 1258 (70m) and 1262 (55m) only: the Coverage Gate runs the whole instrumented pytest suite in one step, measured at 37 to 51 minutes, above the 30-minute bound of cordanaLLM/praetor#1381. The next unit splits that step into steps of at most 30 minutes and removes this entry."
+    expires: "2026-10-20"
   - rule: clang-tidy-coverage
     path: ".config/hiss/testdata/HISS-01/c/gap/direct-recursion.c"
     reason: "HISS rule-engine fixture: the planted defect is the fixture (a gets() call, a 76-line function, a goto); a clean file would stop proving the rule. Replayed by the standards gate, never built."

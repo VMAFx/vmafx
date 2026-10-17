@@ -67,11 +67,16 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"go/ast"
+	"go/format"
+	"go/parser"
+	"go/token"
 	"io"
 	"os"
 	"os/exec"
@@ -115,6 +120,13 @@ const (
 	maxRevisionBytes   = 4096
 	maxAnalyzedCommits = 1000
 	maxCommitLogBytes  = 8 << 20
+	maxGoFiles         = 2048
+	maxAliases         = 512
+	maxDeclBytes       = 2 << 20
+	maxImports         = 256
+	maxOutputLines     = 4096
+	maxDecls           = 1024
+	maxSpecs           = 512
 
 	// exceptionsEnv carries the manifest's api-compatibility exceptions, as the workflow renders
 	// them (tools/apicompat/render.go).
@@ -889,7 +901,7 @@ func compareEach(
 			results = append(results, result{module: target, notCompared: note})
 			continue
 		}
-		incompatible, err := compareModule(ctx, checker, sites.of(target.dir), target.dir, stdout.w, stderr.w)
+		incompatible, err := compareModule(ctx, checker, sites.of(target.dir), target, stdout.w, stderr.w)
 		if err != nil {
 			return nil, fmt.Errorf("module %s (%s): %w", target.dir, target.path, err)
 		}
@@ -932,12 +944,36 @@ func excuseBuildFailure(repo repository, target module, buildErr error, stderr *
 // compareModule runs the checker on the module's directory in site, after buildModule built the
 // module. A vendor-free clone has no checkout, so the module's directory is created there for the
 // checker to start in.
-func compareModule(ctx context.Context, checker string, site checkerSite, dir string, stdout, stderr io.Writer) (bool, error) {
-	checkerDir := filepath.Join(site.root, filepath.FromSlash(dir))
+func compareModule(ctx context.Context, checker string, site checkerSite, target module, stdout, stderr io.Writer) (bool, error) {
+	checkerDir := filepath.Join(site.root, filepath.FromSlash(target.dir))
 	if err := os.MkdirAll(checkerDir, 0o700); err != nil {
 		return false, fmt.Errorf("create the checker's directory: %w", err)
 	}
-	return runChecker(ctx, checker, site.root, checkerDir, site.base, site.head, stdout, stderr)
+	var buf bytes.Buffer
+	incompatible, err := runChecker(ctx, checker, site.root, checkerDir, site.base, site.head, &buf, stderr)
+	if err != nil {
+		if _, writeErr := stdout.Write(buf.Bytes()); writeErr != nil {
+			return false, writeErr
+		}
+		return false, err
+	}
+	if !incompatible {
+		if _, writeErr := stdout.Write(buf.Bytes()); writeErr != nil {
+			return false, writeErr
+		}
+		return false, nil
+	}
+	stillIncompatible, filteredOutput, filterErr := filterModuleOutput(ctx, site.root, site.base, site.head, target, buf.String())
+	if filterErr != nil {
+		if _, writeErr := stdout.Write(buf.Bytes()); writeErr != nil {
+			return false, writeErr
+		}
+		return true, filterErr
+	}
+	if _, writeErr := io.WriteString(stdout, filteredOutput); writeErr != nil {
+		return false, writeErr
+	}
+	return stillIncompatible, nil
 }
 
 // checkerSite is where the checker compares a module: a repository root and the two commits.
@@ -1462,4 +1498,482 @@ func (b *boundedBuffer) Write(p []byte) (int, error) {
 
 func (b *boundedBuffer) String() string {
 	return string(b.data)
+}
+
+const maxTypeStringBytes = 1 << 16
+
+type typeAlias struct {
+	pkgPath    string
+	aliasName  string
+	targetPkg  string
+	targetName string
+}
+
+type replacementKind int
+
+const (
+	kindFull replacementKind = iota
+	kindShort
+	kindBare
+)
+
+type aliasReplacement struct {
+	pattern string
+	target  string
+	kind    replacementKind
+}
+
+func isWordChar(b byte) bool {
+	return b == '_' || (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9')
+}
+
+// isGoSourceFile reports whether a tracked path is a Go source file outside directories skipped
+// by the go command.
+func isGoSourceFile(name string) bool {
+	if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+		return false
+	}
+	elements := strings.Split(path.Dir(name), "/")
+	if len(elements) > maxPathElements {
+		return false
+	}
+	return !slices.ContainsFunc(elements, skippedDirectory)
+}
+
+func matchLeftBoundary(s string, start int, kind replacementKind) bool {
+	if start == 0 {
+		return true
+	}
+	prev := s[start-1]
+	switch kind {
+	case kindBare:
+		return !isWordChar(prev) && prev != '/' && prev != '.'
+	case kindShort:
+		return !isWordChar(prev) && prev != '/'
+	default:
+		return !isWordChar(prev)
+	}
+}
+
+func replaceAliasPattern(s string, r aliasReplacement) (string, bool) {
+	var sb strings.Builder
+	idx := 0
+	pLen := len(r.pattern)
+	changed := false
+	for loop := 0; idx < len(s) && loop < maxTypeStringBytes; loop++ {
+		match := strings.Index(s[idx:], r.pattern)
+		if match < 0 {
+			sb.WriteString(s[idx:])
+			break
+		}
+		start := idx + match
+		end := start + pLen
+		leftOK := matchLeftBoundary(s, start, r.kind)
+		rightOK := (end == len(s) || !isWordChar(s[end]))
+		if leftOK && rightOK {
+			sb.WriteString(s[idx:start])
+			sb.WriteString(r.target)
+			idx = end
+			changed = true
+		} else {
+			sb.WriteString(s[idx : start+1])
+			idx = start + 1
+		}
+	}
+	return sb.String(), changed
+}
+
+func buildAliasReplacements(aliases []typeAlias, currentPkg string) []aliasReplacement {
+	replacements := make([]aliasReplacement, 0, len(aliases)*3)
+	for index := 0; index < len(aliases) && index < maxAliases; index++ {
+		a := aliases[index]
+		target := a.targetPkg + "." + a.targetName
+		replacements = append(replacements,
+			aliasReplacement{pattern: a.pkgPath + "." + a.aliasName, target: target, kind: kindFull},
+			aliasReplacement{pattern: path.Base(a.pkgPath) + "." + a.aliasName, target: target, kind: kindShort},
+		)
+		if currentPkg == a.pkgPath {
+			replacements = append(replacements, aliasReplacement{pattern: a.aliasName, target: target, kind: kindBare})
+		}
+	}
+	slices.SortFunc(replacements, func(a, b aliasReplacement) int {
+		return len(b.pattern) - len(a.pattern)
+	})
+	return replacements
+}
+
+func replaceTypeAliases(typeStr, currentPkg string, aliases []typeAlias) (string, bool) {
+	replacements := buildAliasReplacements(aliases, currentPkg)
+	res := typeStr
+	anyChanged := false
+	for index := 0; index < len(replacements) && index < maxAliases*3; index++ {
+		newRes, changed := replaceAliasPattern(res, replacements[index])
+		if changed {
+			anyChanged = true
+			res = newRes
+		}
+	}
+	return res, anyChanged
+}
+
+func collectFileImports(importSpecs []*ast.ImportSpec) map[string]string {
+	imports := make(map[string]string, len(importSpecs))
+	for index := 0; index < len(importSpecs) && index < maxImports; index++ {
+		imp := importSpecs[index]
+		val, err := strconv.Unquote(imp.Path.Value)
+		if err != nil {
+			continue
+		}
+		name := path.Base(val)
+		if imp.Name != nil && imp.Name.Name != "" {
+			name = imp.Name.Name
+		}
+		if name != "_" && name != "." {
+			imports[name] = val
+		}
+	}
+	return imports
+}
+
+func formatTypeDecl(ts *ast.TypeSpec, fileImports []*ast.ImportSpec) string {
+	imports := collectFileImports(fileImports)
+	ast.Inspect(ts, func(n ast.Node) bool {
+		switch node := n.(type) {
+		case *ast.Field:
+			node.Doc = nil
+			node.Comment = nil
+		case *ast.SelectorExpr:
+			if ident, ok := node.X.(*ast.Ident); ok {
+				if canonical, found := imports[ident.Name]; found {
+					ident.Name = path.Base(canonical)
+				}
+			}
+		}
+		return true
+	})
+
+	var buf bytes.Buffer
+	fset := token.NewFileSet()
+	if ts.TypeParams != nil {
+		if err := format.Node(&buf, fset, ts.TypeParams); err != nil {
+			return ""
+		}
+		buf.WriteByte(' ')
+	}
+	if err := format.Node(&buf, fset, ts.Type); err != nil {
+		return ""
+	}
+	return buf.String()
+}
+
+func checkCompatibleAlias(line, currentPkg string, identical, nonIdentical []typeAlias) (bool, string) {
+	if !strings.HasPrefix(line, "  - ") {
+		return false, ""
+	}
+	stripped := line[4:]
+	colonIdx := strings.Index(stripped, ": changed from ")
+	if colonIdx < 0 {
+		return false, ""
+	}
+	target := stripped[:colonIdx]
+	rem := stripped[colonIdx+len(": changed from "):]
+	toIdx := strings.Index(rem, " to ")
+	if toIdx < 0 {
+		return false, ""
+	}
+	oldType := rem[:toIdx]
+	newType := rem[toIdx+len(" to "):]
+
+	if _, bad := replaceTypeAliases(oldType, currentPkg, nonIdentical); bad {
+		return false, ""
+	}
+	if _, bad := replaceTypeAliases(newType, currentPkg, nonIdentical); bad {
+		return false, ""
+	}
+
+	ro, co := replaceTypeAliases(oldType, currentPkg, identical)
+	rn, cn := replaceTypeAliases(newType, currentPkg, identical)
+	if ro == rn && (co || cn) {
+		accepted := fmt.Sprintf("  - %s: changed from %s to %s (compatible: alias of identical type)",
+			target, oldType, newType)
+		return true, accepted
+	}
+	return false, ""
+}
+
+func listModuleGoFiles(ctx context.Context, root, rev string, target module) ([]string, error) {
+	args := []string{"ls-tree", "-r", "-z", "--full-tree", "--name-only", rev}
+	if target.dir != "." && target.dir != "" {
+		args = append(args, "--", target.dir)
+	}
+	records, err := gitRecords(ctx, root, 0, maxTreeEntries, isGoSourceFile, args...)
+	if err != nil {
+		return nil, err
+	}
+	files := make([]string, 0, min(len(records), maxTreeEntries))
+	for index := 0; index < len(records) && index < maxTreeEntries; index++ {
+		files = append(files, records[index])
+	}
+	return files, nil
+}
+
+func filePackagePath(modulePath, moduleDir, filePath string) string {
+	rel := filePath
+	if moduleDir != "." && moduleDir != "" {
+		rel = strings.TrimPrefix(strings.TrimPrefix(filePath, moduleDir), "/")
+	}
+	dir := path.Dir(rel)
+	if dir == "." || dir == "" {
+		return modulePath
+	}
+	return modulePath + "/" + path.Clean(dir)
+}
+
+func resolveAliasTarget(ts *ast.TypeSpec, imports map[string]string, pkgPath string) (typeAlias, bool) {
+	switch expr := ts.Type.(type) {
+	case *ast.SelectorExpr:
+		ident, ok := expr.X.(*ast.Ident)
+		if !ok {
+			return typeAlias{}, false
+		}
+		targetPkg, found := imports[ident.Name]
+		if !found {
+			return typeAlias{}, false
+		}
+		return typeAlias{
+			pkgPath:    pkgPath,
+			aliasName:  ts.Name.Name,
+			targetPkg:  targetPkg,
+			targetName: expr.Sel.Name,
+		}, true
+	case *ast.Ident:
+		return typeAlias{
+			pkgPath:    pkgPath,
+			aliasName:  ts.Name.Name,
+			targetPkg:  pkgPath,
+			targetName: expr.Name,
+		}, true
+	default:
+		return typeAlias{}, false
+	}
+}
+
+func appendAliases(aliases []typeAlias, f *ast.File, pkgPath string) []typeAlias {
+	imports := collectFileImports(f.Imports)
+	for dIdx := 0; dIdx < len(f.Decls) && dIdx < maxDecls && len(aliases) < maxAliases; dIdx++ {
+		gen, ok := f.Decls[dIdx].(*ast.GenDecl)
+		if !ok || gen.Tok != token.TYPE {
+			continue
+		}
+		aliases = appendTypeSpecs(aliases, gen.Specs, imports, pkgPath)
+	}
+	return aliases
+}
+
+func appendTypeSpecs(aliases []typeAlias, specs []ast.Spec, imports map[string]string, pkgPath string) []typeAlias {
+	for sIdx := 0; sIdx < len(specs) && sIdx < maxSpecs && len(aliases) < maxAliases; sIdx++ {
+		ts, ok := specs[sIdx].(*ast.TypeSpec)
+		if !ok || !ts.Assign.IsValid() || !ast.IsExported(ts.Name.Name) {
+			continue
+		}
+		if alias, found := resolveAliasTarget(ts, imports, pkgPath); found {
+			aliases = append(aliases, alias)
+		}
+	}
+	return aliases
+}
+
+func collectAliasesAtHead(ctx context.Context, root, head string, target module) ([]typeAlias, error) {
+	files, err := listModuleGoFiles(ctx, root, head, target)
+	if err != nil {
+		return nil, err
+	}
+	fset := token.NewFileSet()
+	aliases := make([]typeAlias, 0, maxAliases)
+	for index := 0; index < len(files) && index < maxGoFiles && len(aliases) < maxAliases; index++ {
+		filePath := files[index]
+		data, err := gitCapture(ctx, root, maxDeclBytes, "cat-file", "blob", head+":"+filePath)
+		if err != nil {
+			return nil, err
+		}
+		f, err := parser.ParseFile(fset, filePath, data, parser.SkipObjectResolution)
+		if err != nil {
+			continue
+		}
+		pkgPath := filePackagePath(target.path, target.dir, filePath)
+		aliases = appendAliases(aliases, f, pkgPath)
+	}
+	return aliases, nil
+}
+
+func matchTypeDeclInFile(fset *token.FileSet, filePath string, data []byte, typeName string) (string, bool) {
+	f, err := parser.ParseFile(fset, filePath, data, parser.SkipObjectResolution)
+	if err != nil {
+		return "", false
+	}
+	for dIdx := 0; dIdx < len(f.Decls) && dIdx < maxDecls; dIdx++ {
+		gen, ok := f.Decls[dIdx].(*ast.GenDecl)
+		if !ok || gen.Tok != token.TYPE {
+			continue
+		}
+		for sIdx := 0; sIdx < len(gen.Specs) && sIdx < maxSpecs; sIdx++ {
+			ts, ok := gen.Specs[sIdx].(*ast.TypeSpec)
+			if !ok || ts.Assign.IsValid() || ts.Name.Name != typeName {
+				continue
+			}
+			return formatTypeDecl(ts, f.Imports), true
+		}
+	}
+	return "", false
+}
+
+func findTypeDecl(ctx context.Context, root, rev string, target module, pkgPath, typeName string) (string, error) {
+	files, err := listModuleGoFiles(ctx, root, rev, target)
+	if err != nil {
+		return "", err
+	}
+	fset := token.NewFileSet()
+	for index := 0; index < len(files) && index < maxGoFiles; index++ {
+		filePath := files[index]
+		if filePackagePath(target.path, target.dir, filePath) != pkgPath {
+			continue
+		}
+		data, err := gitCapture(ctx, root, maxDeclBytes, "cat-file", "blob", rev+":"+filePath)
+		if err != nil {
+			return "", err
+		}
+		decl, found := matchTypeDeclInFile(fset, filePath, data, typeName)
+		if found {
+			return decl, nil
+		}
+	}
+	return "", nil
+}
+
+func verifyIdenticalAliases(ctx context.Context, root, base, head string, target module, aliases []typeAlias) ([]typeAlias, []typeAlias) {
+	var identical, nonIdentical []typeAlias
+	for index := 0; index < len(aliases) && index < maxAliases; index++ {
+		a := aliases[index]
+		bDecl, errB := findTypeDecl(ctx, root, base, target, a.pkgPath, a.aliasName)
+		hDecl, errH := findTypeDecl(ctx, root, head, target, a.targetPkg, a.targetName)
+		if errB == nil && errH == nil && bDecl != "" && bDecl == hDecl {
+			identical = append(identical, a)
+		} else {
+			nonIdentical = append(nonIdentical, a)
+		}
+	}
+	return identical, nonIdentical
+}
+
+func writeFilteredSection(sb *strings.Builder, pkg string, incomp, comp []string) {
+	if len(incomp) == 0 && len(comp) == 0 {
+		return
+	}
+	sb.WriteString("\n" + pkg + "\n")
+	if len(incomp) > 0 {
+		sb.WriteString("  Incompatible changes:\n")
+		for index := 0; index < len(incomp) && index < maxOutputLines; index++ {
+			sb.WriteString(incomp[index] + "\n")
+		}
+	}
+	if len(comp) > 0 {
+		sb.WriteString("  Compatible changes:\n")
+		for index := 0; index < len(comp) && index < maxOutputLines; index++ {
+			sb.WriteString(comp[index] + "\n")
+		}
+	}
+}
+
+type lineKind int
+
+const (
+	lineIgnored lineKind = iota
+	linePackage
+	lineIncompatibleHeader
+	lineCompatibleHeader
+	lineChange
+)
+
+func classifyLine(line string) (lineKind, string) {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" {
+		return lineIgnored, ""
+	}
+	if !strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "\t") {
+		return linePackage, trimmed
+	}
+	if strings.HasPrefix(trimmed, "Incompatible changes:") {
+		return lineIncompatibleHeader, ""
+	}
+	if strings.HasPrefix(trimmed, "Compatible changes:") {
+		return lineCompatibleHeader, ""
+	}
+	if strings.HasPrefix(line, "  - ") {
+		return lineChange, line
+	}
+	return lineIgnored, ""
+}
+
+func routeChangeLine(line, pkg string, inIncomp, inComp bool, id, nonId []typeAlias, incomp, comp []string) ([]string, []string) {
+	if inIncomp {
+		if ok, acc := checkCompatibleAlias(line, pkg, id, nonId); ok {
+			return incomp, append(comp, acc)
+		}
+		return append(incomp, line), comp
+	}
+	if inComp {
+		return incomp, append(comp, line)
+	}
+	return incomp, comp
+}
+
+func filterOutput(output string, identical, nonIdentical []typeAlias) (bool, string) {
+	lines := strings.Split(output, "\n")
+	var res strings.Builder
+	currentPkg := ""
+	inIncompatible, inCompatible := false, false
+	var incompLines, compLines []string
+	hasIncompatible := false
+
+	flush := func() {
+		if currentPkg != "" {
+			if len(incompLines) > 0 {
+				hasIncompatible = true
+			}
+			writeFilteredSection(&res, currentPkg, incompLines, compLines)
+			currentPkg = ""
+			incompLines, compLines = nil, nil
+		}
+	}
+
+	for lIdx := 0; lIdx < len(lines) && lIdx < maxOutputLines; lIdx++ {
+		kind, text := classifyLine(lines[lIdx])
+		switch kind {
+		case linePackage:
+			flush()
+			currentPkg = text
+			inIncompatible, inCompatible = false, false
+		case lineIncompatibleHeader:
+			inIncompatible, inCompatible = true, false
+		case lineCompatibleHeader:
+			inIncompatible, inCompatible = false, true
+		case lineChange:
+			incompLines, compLines = routeChangeLine(text, currentPkg, inIncompatible, inCompatible, identical, nonIdentical, incompLines, compLines)
+		}
+	}
+	flush()
+	return hasIncompatible, res.String()
+}
+
+func filterModuleOutput(ctx context.Context, root, base, head string, target module, rawOutput string) (bool, string, error) {
+	aliases, err := collectAliasesAtHead(ctx, root, head, target)
+	if err != nil {
+		return true, rawOutput, err
+	}
+	if len(aliases) == 0 {
+		return true, rawOutput, nil
+	}
+	identical, nonIdentical := verifyIdenticalAliases(ctx, root, base, head, target, aliases)
+	hasIncompatible, filtered := filterOutput(rawOutput, identical, nonIdentical)
+	return hasIncompatible, filtered, nil
 }

@@ -38,7 +38,9 @@ report_paths() {
 # which `praetorctl audit` verifies byte for byte, ignores it, and its locked
 # documentation gate under tools/markdownlint/ names it. Only those
 # praetor-owned lines are tolerated; the local-existence check below still
-# rejects a stale retired directory.
+# rejects a stale retired directory. Praetor 320b058d writes the rule
+# unanchored, earlier releases with a leading slash; both forms count only
+# inside the block.
 praetor_ignore_begin='# BEGIN praetor private artifacts (praetorctl adopt)'
 praetor_ignore_end='# END praetor private artifacts'
 
@@ -59,8 +61,11 @@ praetor_owns_retired_ignore() {
   line=${verdict%%:*}
   pattern=${verdict#*:}
   pattern=${pattern%%$'\t'*}
-  [ "$rule_file" = .gitignore ] && [ "$pattern" = "/$retired_root/" ] &&
-    praetor_block_has_line "$line"
+  [ "$rule_file" = .gitignore ] || return 1
+  case $pattern in
+    "/$retired_root/" | "$retired_root/") praetor_block_has_line "$line" ;;
+    *) return 1 ;;
+  esac
 }
 
 for local_root in "$state_root" "$corpus_root"; do
@@ -103,10 +108,11 @@ done
 retired_refs=$(git grep -n -I -F "$retired_root" -- "${active_paths[@]}" \
   ':(exclude)tools/markdownlint' 2>/dev/null || [ "$?" -eq 1 ])
 praetor_rule_refs=$(printf '%s\n' "$retired_refs" |
-  sed -n "s|^\.gitignore:\([0-9]*\):/$retired_root/\$|\1|p")
-for line in $praetor_rule_refs; do
+  sed -n "s|^\.gitignore:\([0-9]*\):\(/\{0,1\}$retired_root/\)\$|\1:\2|p")
+for ref in $praetor_rule_refs; do
+  line=${ref%%:*}
   if praetor_block_has_line "$line"; then
-    retired_refs=$(printf '%s\n' "$retired_refs" | grep -vFx -- ".gitignore:$line:/$retired_root/" || [ "$?" -eq 1 ])
+    retired_refs=$(printf '%s\n' "$retired_refs" | grep -vFx -- ".gitignore:$ref" || [ "$?" -eq 1 ])
   fi
 done
 if [ -n "$retired_refs" ]; then

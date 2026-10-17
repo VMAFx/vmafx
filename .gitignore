@@ -26,9 +26,6 @@ build-golden/
 core/build-golden/
 core/build-golden-arm64-*/
 dist/
-# praetor commits its figure player bundle under tools/figures/dist/ (praetorctl
-# adopt, docs:seo-portal) and audit hashes it, so that one dist/ stays tracked.
-!/tools/figures/dist/
 vmaf_output.xml
 compile_commands.json
 
@@ -89,7 +86,6 @@ compat/python-vmaf/core/adm_dwt2_cy.cpp
 .corpus/
 
 # Working/scratch directories
-.workingdir/
 # Also match it as a symlink. A trailing slash only matches a real
 # directory, so an agent worktree that symlinks this shared state dir
 # in (the praetor flavor audit wants them present) leaves an untracked
@@ -261,9 +257,11 @@ vmafx-controller.db-wal
 core.[0-9]*
 
 # BEGIN praetor private artifacts (praetorctl adopt)
-/.workingdir/
-/.workingdir2/
+.workingdir/
+.workingdir2/
 /.standards/worktrees/
 /.agents/mcp_config.json
 /.standards/cache/
+/.claude/settings.local.json
+/.standards-receipt.json
 # END praetor private artifacts
