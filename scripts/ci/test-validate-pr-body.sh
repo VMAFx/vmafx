@@ -265,11 +265,12 @@ fi
 # make docs-render-check on a detached worktree of the head. The validator
 # passes a sentinel as the head, which names no commit; the checkout must
 # still get the commit the validator runs on, never stop at "cannot check out".
+# Match the error line itself: the rendered-diff output can quote the words.
 printf '%s\n' "CHANGELOG.md" "docs/adr/README.md" >"${work}/case12.diff"
 canonical_body >"${work}/case12.body"
 exit12=0
 out12="$("${validator}" --body "${work}/case12.body" --diff "${work}/case12.diff" 2>&1)" || exit12=$?
-if printf '%s\n' "${out12}" | grep -q 'cannot check out'; then
+if printf '%s\n' "${out12}" | grep -q '^::error title=ADR-3295 render-only pull request::cannot check out'; then
   echo "FAIL: render-only diff stopped at the checkout (exit=${exit12})"
   printf '%s\n' "${out12}"
   fail_count=$((fail_count + 1))
