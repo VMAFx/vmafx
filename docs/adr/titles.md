@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1388), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1390), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5544,6 +5544,10 @@ Every ADR, one heading each (1388), so the site search finds an ADR by its title
 
 [3331-ci-spectral-openapi-lint](3331-ci-spectral-openapi-lint.md)
 
+## ADR-3332: Re-pin the Pelorus mirror to v0.4.1 (interop ABI 1.5)
+
+[3332-pelorus-v040-abi15-repin](3332-pelorus-v040-abi15-repin.md)
+
 ## ADR-3333: Move the praetor pin to 2d23b29 and give every agent persona a model tier
 
 [3333-praetor-pin-2d23b29-persona-tiers](3333-praetor-pin-2d23b29-persona-tiers.md)
@@ -5563,3 +5567,7 @@ Every ADR, one heading each (1388), so the site search finds an ADR by its title
 ## ADR-3337: Move the praetor pin to 320b058d and excuse the Coverage Gate timeouts for three days
 
 [3337-praetor-pin-320b058d-test-timeout](3337-praetor-pin-320b058d-test-timeout.md)
+
+## ADR-3338: Dev Container Build runs on light-tier pull requests that change the image's own inputs
+
+[3338-dev-container-own-input-lane](3338-dev-container-own-input-lane.md)

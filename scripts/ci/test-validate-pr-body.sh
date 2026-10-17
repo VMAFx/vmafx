@@ -283,6 +283,47 @@ else
   fail_count=$((fail_count + 1))
 fi
 
+# ---------- Case 13: the render check ignores a hook's GIT_DIR ----------
+# A pre-push hook exports GIT_DIR for the checkout it runs in. Inherited by
+# the render check, it moved git's work-tree root for
+# scripts/docs/fragment-order.py and the ADR index rendered in another
+# landing order, so a correctly rendered head was refused. The fixture is a
+# commit of `make docs-render` on HEAD (plumbing only, no hooks run); the
+# validator must accept it with and without GIT_DIR.
+render_fixture="${work}/render-fixture"
+git worktree add --quiet --detach "${render_fixture}" HEAD
+trap 'git worktree remove --force "${render_fixture}" >/dev/null 2>&1 || true; rm -rf "${work}"' EXIT
+# The validator runs the deliverables check of the checkout it is called in:
+# give the fixture the scripts under test, not the ones HEAD committed.
+cp "${repo_root}/scripts/ci/validate-pr-body.sh" "${repo_root}/scripts/ci/deliverables-check.sh" \
+  "${render_fixture}/scripts/ci/"
+make -s -C "${render_fixture}" docs-render >/dev/null
+git -C "${render_fixture}" add -A
+fixture_tree="$(git -C "${render_fixture}" write-tree)"
+fixture_commit="$(GIT_AUTHOR_NAME=fixture GIT_AUTHOR_EMAIL=fixture@invalid \
+  GIT_COMMITTER_NAME=fixture GIT_COMMITTER_EMAIL=fixture@invalid \
+  git -C "${render_fixture}" commit-tree "${fixture_tree}" -p HEAD -m 'fixture: render')"
+git -C "${render_fixture}" checkout --quiet --detach "${fixture_commit}"
+fixture_git_dir="$(git -C "${render_fixture}" rev-parse --absolute-git-dir)"
+for git_dir_mode in unset hook; do
+  exit13=0
+  if [ "${git_dir_mode}" = hook ]; then
+    out13="$(cd "${render_fixture}" && GIT_DIR="${fixture_git_dir}" \
+      "${validator}" --body "${work}/case12.body" --diff "${work}/case12.diff" 2>&1)" || exit13=$?
+  else
+    out13="$(cd "${render_fixture}" &&
+      "${validator}" --body "${work}/case12.body" --diff "${work}/case12.diff" 2>&1)" || exit13=$?
+  fi
+  if [ "${exit13}" -eq 0 ] && printf '%s\n' "${out13}" | grep -q 'make docs-render-check passed'; then
+    echo "PASS: rendered head accepted with GIT_DIR ${git_dir_mode}"
+    pass_count=$((pass_count + 1))
+  else
+    echo "FAIL: rendered head refused with GIT_DIR ${git_dir_mode} (exit=${exit13})"
+    printf '%s\n' "${out13}" | tail -20
+    fail_count=$((fail_count + 1))
+  fi
+done
+
 # ---------- Summary ----------
 echo ""
 echo "test-validate-pr-body: ${pass_count} passed, ${fail_count} failed"

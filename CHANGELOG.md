@@ -799,6 +799,9 @@
   [ADR-3337](docs/adr/3337-praetor-pin-320b058d-test-timeout.md) is removed.
 
 
+- `Dev Container Build` runs on light-tier pull requests that change the image's own inputs (`dev/**`, `.dockerignore`, `build-config.env`, the workflow and its build scripts); other light pull requests pass it with a notice naming the reason, and the full tier and the master push keep building the image for every input it copies (ADR-3338).
+
+
 - **Dev container: the Vulkan loader and lavapipe are in the image.** The
   dev image installs the Vulkan loader, its headers, Mesa's Vulkan drivers
   (with lavapipe, the CPU Vulkan driver) and `vulkaninfo`, and its build fails
@@ -1065,6 +1068,9 @@
 
 
 - **Patreon is live.** The euro tiers (€5, €25, €100, €500) are on <https://www.patreon.com/Lusoris>; `.github/FUNDING.yml`, `SPONSORS.md`, `README.md`, `GOVERNANCE.md` and "Support VMAFx" link it instead of saying it is coming (ADR-2689).
+
+
+- **The vendored Pelorus interop mirror is re-pinned to Pelorus v0.4.1 (interop ABI 1.5, #2667, ADR-3332).** `scripts/sync-pelorus-interop.sh` pins commit `33b4a625cad6`; ABI 1.4 adds encoder telemetry (`PEL_SEC_ENC_TELEMETRY`), encode-record digests (`PEL_SEC_ENCODE_RECORD`), motion block edge size (`PelorusMotionSection.block_size_log2`), non-allocating packing (`pel_blob_pack_into`), map bounds checking (`pel_blob_map`), and `PEL_ERR_MISMATCH`; ABI 1.5 adds the zero-free COBS carrier form (`pelorus_carrier_uuid`, `PEL_CARRIER_MAX_LEN`, `pel_blob_carrier_encode`, `pel_blob_unwrap`) for zero-intolerant SEI sinks; all additions are append-only.
 
 
 - **The vendored Pelorus conformance fixture reads its files back with `_fsopen(..., _SH_DENYNO)` on Windows.** `scripts/sync-pelorus-interop.sh` pins `11e183ec0aed` (VMAFx/pelorus #91, fixing #90): `fixture_equals()` and `fixture_path_exists()` of `core/test/test_pelorus_interop.c` no longer call the deprecated `fopen()` there, which icx-cl reported. No behaviour or ABI change (ABI 1.3).
@@ -1962,6 +1968,14 @@
 - Build: the production CUDA and ROCm images build again. The CUDA image compiled against nv-codec-headers one release behind the dev image, without the `cuArray3DGetDescriptor` the device-frame import calls; it now uses `n13.1.15.0`, pinned once in `build-config.env` (`NV_CODEC_HEADERS_TAG`, `NV_CODEC_HEADERS_COMMIT`). `meson setup` with CUDA enabled stops with a message when the installed headers are older. The image licence scan now finds the `import_convert` kernels under `core/src/cuda` and `core/src/hip`.
 
 
+- **The pre-push hook accepts a correctly rendered render-only pull request.** A git hook exports
+  `GIT_DIR` and the other repository-local variables of the checkout it runs in; the ADR-3295
+  render-only check inherited them in its detached worktree, `scripts/docs/fragment-order.py` read
+  another checkout's history and returned another landing order, and the ADR index of a head that
+  `make docs-render-check` accepts on its own was refused. The check now runs with those variables
+  unset.
+
+
 - **The roadmap rows of 1.1 and 1.3 list the issues that are in those milestones.**
   The no-reference model (#2166) is a 1.1 item because the live no-reference mode
   (#2413) needs it; the 1.3 row now names the artefact detectors (#2272), ST-GREED
@@ -2109,6 +2123,13 @@
   call `scripts/ci/upstream_watch_count.sh` with exponential backoff (15s, 30s, 60s) and fail closed
   on non-integer output, and workflows ensure the `upstream-merged` label exists before issue operations
   (`T-UPSTREAM-WATCHERS-RATE-LIMIT-2026-10-15`).
+
+
+- **The local PR-body validator checks render-only pull requests again.** `scripts/ci/validate-pr-body.sh`
+  hands `deliverables-check.sh` the sentinel `validator-head` as the head, and the render-only path of
+  ADR-3295 checks the head out to run `make docs-render-check`; the checkout of a name that is no commit
+  failed, so the pre-push hook refused every render-only pull request with "cannot check out
+  validator-head". The validator's git shim now checks out the commit it runs on.
 
 
 - **A VMAFx error names a long path in full.** `VmafxError` kept 95 bytes of

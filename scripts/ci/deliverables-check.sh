@@ -163,7 +163,15 @@ if [ -s "$tmp_diff" ] && ! grep -qE "${order_path}" "$tmp_diff" &&
     echo "::error title=ADR-3295 render-only pull request::cannot check out ${diff_head} to run make docs-render-check."
     exit 2
   fi
-  if ! make -s -C "$render_wt" docs-render-check; then
+  # A git hook (pre-push) exports GIT_DIR, GIT_INDEX_FILE and the other
+  # repository-local variables of the checkout it runs in; inherited, they
+  # point the worktree's git commands at that checkout's index, and
+  # scripts/docs/fragment-order.py returns another landing order.
+  git_env_unset=()
+  while IFS= read -r git_var; do
+    git_env_unset+=(-u "$git_var")
+  done < <(git rev-parse --local-env-vars)
+  if ! env "${git_env_unset[@]}" make -s -C "$render_wt" docs-render-check; then
     echo "::error title=ADR-3295 render-only pull request::the head does not pass make docs-render-check: a render-only pull request carries exactly what 'make docs-render' writes from the fragments on its base, nothing edited by hand."
     echo "  Rebase on origin/master, run 'make docs-render', commit the result and nothing else."
     exit 1

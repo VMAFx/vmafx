@@ -23,6 +23,10 @@ the gate diffs from the merge base (`pr-diff-base.sh`), plus `git worktree
 add --detach <dir> validator-head` (checks out `HEAD`), since the ADR-3295
 render-only path runs `make docs-render-check` on a detached head worktree and
 the sentinel names no commit. Case 12 of `test-validate-pr-body.sh` guards it.
+That `make` runs with every variable of `git rev-parse --local-env-vars`
+unset: a pre-push hook exports `GIT_DIR` for its checkout, and inherited it
+gave `scripts/docs/fragment-order.py` another landing order, so a correctly
+rendered head was refused. Case 13 guards it.
 
 `pre-push-pr-body-lint.sh` = standalone entry point referenced by
 `.pre-commit-config.yaml` `validate-pr-body` hook (`stages:
