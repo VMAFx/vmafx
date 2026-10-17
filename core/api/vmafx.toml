@@ -4448,7 +4448,7 @@ params = [
 ]
 file = "core/src/compat/libvmaf/picture.c"
 calls = ["vmafx_frame_create_host", "vmafx_frame_to_picture", "vmafx_frame_unref"]
-note = "v2 struct kept until 2.0 with v1"
+note = "v2 struct kept until 0.11.0 with v1"
 
 [[compat]]
 name = "vmaf_picture2_unref"

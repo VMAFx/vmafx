@@ -50,7 +50,7 @@
  * (ADR-1852 decision D7, docs/api/vmafx/compat.md). In this release the
  * warning is opt-in: define VMAF_ENABLE_DEPRECATION_WARNINGS before including
  * a libvmaf header to have the compiler name the vmafx_ replacement of every
- * call. It becomes the default in 1.1, and the functions go in 2.0. The
+ * call. It becomes the default in 0.10.0, and the functions go in 0.11.0. The
  * library's own translation units (VMAF_BUILDING_LIBVMAF) never warn.
  */
 #if defined(VMAF_ENABLE_DEPRECATION_WARNINGS) && !defined(VMAF_BUILDING_LIBVMAF)

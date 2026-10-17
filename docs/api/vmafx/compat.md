@@ -117,7 +117,7 @@ deprecation warnings and the few deliberate differences.
 | `vmaf_picture_convert_context_init_with_color` | `libvmaf/picture.h` | `vmafx_frame_converter_create` | hand-written | libvmaf.so.3. VmafColor + VmafPictureConvertTarget -> VmafxConvertDesc (#2140). |
 | `vmaf_picture_convert` | `libvmaf/picture.h` | `vmafx_frame_from_picture`, `vmafx_frame_wrap_host`, `vmafx_frame_convert`, `vmafx_frame_to_picture`, `vmafx_frame_unref` | hand-written | libvmaf.so.3. |
 | `vmaf_picture_convert_context_close` | `libvmaf/picture.h` | `vmafx_frame_converter_destroy` | hand-written | libvmaf.so.3. |
-| `vmaf_picture2_alloc` | `libvmaf/picture_v2.h` | `vmafx_frame_create_host`, `vmafx_frame_to_picture`, `vmafx_frame_unref` | hand-written | libvmaf.so.3. v2 struct kept until 2.0 with v1. |
+| `vmaf_picture2_alloc` | `libvmaf/picture_v2.h` | `vmafx_frame_create_host`, `vmafx_frame_to_picture`, `vmafx_frame_unref` | hand-written | libvmaf.so.3. v2 struct kept until 0.11.0 with v1. |
 | `vmaf_picture2_unref` | `libvmaf/picture_v2.h` | `vmafx_frame_from_picture`, `vmafx_frame_unref` | hand-written | libvmaf.so.3. |
 | `vmaf_picture_v1_to_v2` | `libvmaf/picture_v2.h` | `vmafx_frame_from_picture`, `vmafx_frame_to_picture`, `vmafx_frame_unref` | hand-written | libvmaf.so.3. one more reference, as libvmaf takes. |
 | `vmaf_picture_v2_to_v1` | `libvmaf/picture_v2.h` | `vmafx_frame_from_picture`, `vmafx_frame_to_picture`, `vmafx_frame_unref` | hand-written | libvmaf.so.3. |

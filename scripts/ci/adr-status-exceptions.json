@@ -5,7 +5,7 @@
       "adr": 613,
       "file": "docs/adr/0613-dynamic-optimizer.md",
       "rule": "proposed-with-implementing-commit",
-      "reason": "Scheduled for 1.4 (tracking issue #2261); only the roadmap plan landed and tools/vmaf-tune/src/vmaftune/dynamic_optimizer.py does not exist. The commits that cite the number are unrelated closeouts.",
+      "reason": "Scheduled for 0.8.0 (tracking issue #2261); only the roadmap plan landed and tools/vmaf-tune/src/vmaftune/dynamic_optimizer.py does not exist. The commits that cite the number are unrelated closeouts.",
       "expires": "2027-04-06"
     },
     {

@@ -28,12 +28,12 @@ and its tracking issue, and moves into the release that now ships it.
 | 0.7.0 | [0.7.0](https://github.com/VMAFx/vmafx/milestone/4) | New metrics with exact twins: the RC5 metric package ([#2496](https://github.com/VMAFx/vmafx/issues/2496)), [#2165](https://github.com/VMAFx/vmafx/issues/2165), [#2167](https://github.com/VMAFx/vmafx/issues/2167), the artefact detectors ([#2272](https://github.com/VMAFx/vmafx/issues/2272)), ST-GREED ([#2394](https://github.com/VMAFx/vmafx/issues/2394)), picks from [#2168](https://github.com/VMAFx/vmafx/issues/2168); our own no-reference models ([#2415](https://github.com/VMAFx/vmafx/issues/2415)) and foveated scoring ([#2419](https://github.com/VMAFx/vmafx/issues/2419)) |
 | 0.8.0 | [0.8.0](https://github.com/VMAFx/vmafx/milestone/8) | Metric A/B comparison, the best current mix and more training data: [#2240](https://github.com/VMAFx/vmafx/issues/2240), [#2241](https://github.com/VMAFx/vmafx/issues/2241) |
 | 0.9.0 | [0.9.0](https://github.com/VMAFx/vmafx/milestone/9) | The next model generation: the RC9 retraining ([#1246](https://github.com/VMAFx/vmafx/issues/1246)) and [#2242](https://github.com/VMAFx/vmafx/issues/2242) |
+| 0.10.0 | [0.10.0](https://github.com/VMAFx/vmafx/milestone/2) | Integrations, live quality and cloud-native: the OBS Studio plugin ([#2239](https://github.com/VMAFx/vmafx/issues/2239)), no-reference mode in the plugins ([#2413](https://github.com/VMAFx/vmafx/issues/2413)), the live P.1204 monitor ([#2417](https://github.com/VMAFx/vmafx/issues/2417)), AI-generated video scoring ([#2418](https://github.com/VMAFx/vmafx/issues/2418)), the cloud-native platform ([#2431](https://github.com/VMAFx/vmafx/issues/2431)) with containers, Helm and operator ([#2497](https://github.com/VMAFx/vmafx/issues/2497)), and the rest of the milestone |
+| 0.11.0 | [0.11.0](https://github.com/VMAFx/vmafx/milestone/5) | Breaking changes only: the `libvmaf.h` compatibility library removed ([ADR-1852](adr/1852-vmafx-api-redesign.md)), the rest of [#1254](https://github.com/VMAFx/vmafx/issues/1254) |
 | 1.0.0 | [1.0.0](https://github.com/VMAFx/vmafx/milestone/13) | First stable: Rust P3, CLI, tools, MCP server, ONNX Runtime host and host glue ([#2576](https://github.com/VMAFx/vmafx/issues/2576), [#2581](https://github.com/VMAFx/vmafx/issues/2581)), and a frozen interface; candidates from `v1.0.0-rc.4` |
-| 1.1 | [1.1](https://github.com/VMAFx/vmafx/milestone/2) | Integrations, live quality and cloud-native: the OBS Studio plugin ([#2239](https://github.com/VMAFx/vmafx/issues/2239)), no-reference mode in the plugins ([#2413](https://github.com/VMAFx/vmafx/issues/2413)), the live P.1204 monitor ([#2417](https://github.com/VMAFx/vmafx/issues/2417)), AI-generated video scoring ([#2418](https://github.com/VMAFx/vmafx/issues/2418)), the cloud-native platform ([#2431](https://github.com/VMAFx/vmafx/issues/2431)) with containers, Helm and operator ([#2497](https://github.com/VMAFx/vmafx/issues/2497)), and the rest of the milestone |
-| 1.2 | [1.2](https://github.com/VMAFx/vmafx/milestone/14) | Rust P4 and P5: GPU host runtimes and the kernel verdict per backend ([#2577](https://github.com/VMAFx/vmafx/issues/2577), [#2578](https://github.com/VMAFx/vmafx/issues/2578)) |
-| 1.3 | [1.3](https://github.com/VMAFx/vmafx/milestone/16) | Open subjective studies |
-| 2.0 | [2.0](https://github.com/VMAFx/vmafx/milestone/5) | Breaking changes only: the `libvmaf.h` compatibility library removed ([ADR-1852](adr/1852-vmafx-api-redesign.md)), the rest of [#1254](https://github.com/VMAFx/vmafx/issues/1254) |
-| 3.0 | [3.0](https://github.com/VMAFx/vmafx/milestone/15) | Host C and C++ removed outside the exception list ([#2579](https://github.com/VMAFx/vmafx/issues/2579)) |
+| 1.1.0 | [1.1.0](https://github.com/VMAFx/vmafx/milestone/14) | Rust P4 and P5: GPU host runtimes and the kernel verdict per backend ([#2577](https://github.com/VMAFx/vmafx/issues/2577), [#2578](https://github.com/VMAFx/vmafx/issues/2578)) |
+| 1.2.0 | [1.2.0](https://github.com/VMAFx/vmafx/milestone/15) | Host C and C++ removed outside the exception list ([#2579](https://github.com/VMAFx/vmafx/issues/2579)) |
+| 1.3.0 | [1.3.0](https://github.com/VMAFx/vmafx/milestone/16) | Open subjective studies |
 
 After `0.1.0` every `0.x` release is a plain minor release; only `1.0.0` runs
 release candidates, starting at `v1.0.0-rc.4` so that no published tag is
@@ -82,7 +82,7 @@ changed is which release ships each stage.
 | **RC2** | withdrawn `v1.0.0-rc.2` | stabilisation and repair | — |
 | **RC3** | withdrawn `v1.0.0-rc.3`; carry-over in 0.2.0 | twin exactness, overflow audit at 8K and 16K | [#1721](https://github.com/VMAFx/vmafx/issues/1721) |
 | **RC4** | 0.1.0 | first full Rust metric, zero-copy device-frame import, new VMAFx API and its bindings, FFmpeg filters and series redesign, GStreamer element, provenance, input formats, scoring API contract, engineering principles, OBS-ready API | [#1723](https://github.com/VMAFx/vmafx/issues/1723) |
-| **RC5** | 0.2.0 (metrics: 0.7.0; deployment: 1.1) | deduplication, tool consolidation, device-targeted scoring; the new metrics and the cloud-native deployment moved out | [#1724](https://github.com/VMAFx/vmafx/issues/1724) |
+| **RC5** | 0.2.0 (metrics: 0.7.0; deployment: 0.10.0) | deduplication, tool consolidation, device-targeted scoring; the new metrics and the cloud-native deployment moved out | [#1724](https://github.com/VMAFx/vmafx/issues/1724) |
 | **RC6** | 0.2.0 | GPU capability source of truth, GPU format envelope, legacy GPU build variants | [#1725](https://github.com/VMAFx/vmafx/issues/1725) |
 | **RC7** | 0.2.0 | CPU capability source of truth, CPU format envelope | [#1885](https://github.com/VMAFx/vmafx/issues/1885) |
 | **RC8** | 0.2.0 | benchmark and tune, throughput per resolution, training readiness | [#1245](https://github.com/VMAFx/vmafx/issues/1245) |
@@ -326,7 +326,7 @@ affected checks or measurements to be rerun.
 ## Rust core
 
 [ADR-2478](adr/2478-rust-core-migration.md) decides that Rust replaces all
-host-side C and C++ by 3.0 behind the unchanged C ABI, exported from Rust and
+host-side C and C++ by 1.2.0 behind the unchanged C ABI, exported from Rust and
 generated from the API definition. The epic is
 [#2567](https://github.com/VMAFx/vmafx/issues/2567); the phases and their
 releases are in the table above
@@ -338,12 +338,12 @@ triggers, kept in `.config/lint-exceptions.d/host-c-cpp.toml`; its first
 entries are the ten byte-identical pelorus interop mirror files, which stay C
 until pelorus ships the surface as a Rust crate. The C implementation of a
 layer is the differential oracle until it is deleted; the `libvmaf.h`
-compatibility removal stays in 2.0.
+compatibility removal stays in 0.11.0.
 
 ## Things that do not change
 
 Some guarantees are load-bearing for downstream users and hold across every
-milestone above, with one exception: 2.0 removes the `libvmaf.h` compatibility
+milestone above, with one exception: 0.11.0 removes the `libvmaf.h` compatibility
 library ([ADR-2001](adr/2001-release-scope-1-0-and-roadmap-to-2-0.md),
 [ADR-1852](adr/1852-vmafx-api-redesign.md)). Until then:
 

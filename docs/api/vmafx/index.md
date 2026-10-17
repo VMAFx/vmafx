@@ -993,7 +993,7 @@ and `vmafx_model_set_from_libvmaf()` for models and collections, and
 takes a new reference, so the caller keeps its own).
 
 To find the calls to replace, compile with the deprecation warnings on. They
-are opt-in in this release, on by default in 1.1, and the functions go in 2.0
+are opt-in in this release, on by default in 0.10.0, and the functions go in 0.11.0
 ([ADR-1852](../../adr/1852-vmafx-api-redesign.md) decision D7):
 
 ```bash
