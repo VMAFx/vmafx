@@ -20,7 +20,7 @@ requires-python = ">=3.14"
 [project.urls]
 Homepage = "https://github.com/VMAFx/vmafx"
 Repository = "https://github.com/VMAFx/vmafx"
-Documentation = "https://vmafx.github.io/vmafx/"
+Documentation = "https://vmafx.dev/"
 Issues = "https://github.com/VMAFx/vmafx/issues"
 Changelog = "https://github.com/VMAFx/vmafx/blob/master/CHANGELOG.md"
 
@@ -52,7 +52,6 @@ extend-exclude = [
   ".config/hiss/testdata/HISS-04/python/negative/loc-at-cap-60.py",
   ".config/hiss/testdata/HISS-04/python/positive/loc-def-over-cap.py",
   ".config/hiss/testdata/HISS-08/python/positive/eval-call.py",
-  ".config/agent/hooks/block_evasion.py",
   "tools/figures/mkdocs_hook.py",
 ]
 
@@ -111,6 +110,9 @@ ignore = [
 # made to agree (per-member trailing comments and alias ordering), which
 # deadlocked `pre-commit run --all-files`. aiutils lives in ai/src/ (#908).
 known-first-party = ["vmaf", "ai", "vmaf_train", "corpus", "aiutils"]
+# packaging/ at the root holds the distribution manifest (ADR-3317), not a
+# Python package; without this, ruff reads `packaging` (PyPA) as first-party.
+known-third-party = ["packaging"]
 
 [tool.ruff.lint.per-file-ignores]
 # Upstream Netflix Python is not our style canon. Keep F821 (undefined

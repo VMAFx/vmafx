@@ -108,7 +108,7 @@ def render(template: Any, ctx: dict[str, str]) -> Any:
     """Expand `${{ ... }}` in a string; a bare boolean passes through."""
     if isinstance(template, bool):
         return template
-    whole = re.fullmatch(r"\s*\$\{\{(.*)\}\}\s*", str(template), re.S)
+    whole = re.fullmatch(r"\s*\$\{\{((?:(?!\}\}).)*)\}\}\s*", str(template), re.S)
     if whole:
         return evaluate(whole.group(1), ctx)
     return re.sub(
@@ -122,6 +122,7 @@ def master_push(sha: str) -> dict[str, str]:
         "github.sha": sha,
         "github.event_name": "push",
         "github.workflow": "W",
+        "github.run_id": f"run-{sha}",
     }
 
 
@@ -132,6 +133,8 @@ def pr_push(sha: str) -> dict[str, str]:
         "github.event_name": "pull_request",
         "github.workflow": "W",
         "github.event.pull_request.number": "7",
+        "github.event.number": "7",
+        "github.run_id": f"run-{sha}",
     }
 
 
@@ -340,6 +343,22 @@ class Contract(unittest.TestCase):
         self.assertEqual(evaluate("b && 'x' || 'y'", ctx), "y")
         self.assertEqual(evaluate("a && 'x' || 'y'", ctx), "x")
         self.assertIs(evaluate("a != 'z'", ctx), True)
+
+    def test_render_keeps_two_expressions_apart(self) -> None:
+        group = "${{ github.workflow }}-${{ github.event.number || github.run_id }}"
+        self.assertEqual(render(group, pr_push("a" * 40)), "W-7")
+        self.assertEqual(render(group, master_push("a" * 40)), f"W-run-{'a' * 40}")
+
+    def test_positive_run_id_group_is_per_run_on_master(self) -> None:
+        flow = wf(
+            {"push": {"branches": ["master"]}, "pull_request": None},
+            {
+                "group": "${{ github.workflow }}-${{ github.event.number || github.run_id }}",
+                "cancel-in-progress": "${{ github.event_name == 'pull_request' }}",
+            },
+        )
+        self.assertEqual(master_findings({"x.yml": flow}, {}), [])
+        self.assertEqual(pull_request_findings({"x.yml": flow}, {}), [])
 
 
 if __name__ == "__main__":

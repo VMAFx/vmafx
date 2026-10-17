@@ -9,6 +9,10 @@
 # actually caught. Every case runs against a scratch clone so the working tree
 # is never modified.
 set -euo pipefail
+
+# Drop the git hook environment and the fixture identity (see the helper).
+# shellcheck source=/dev/null
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/../../lib/clean-git-env.sh"
 export LC_ALL=C
 
 repo_root=$(git rev-parse --show-toplevel)
@@ -19,8 +23,10 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 
 # A scratch git repo containing the tracked tree, so `git grep` sees the files.
-clone() {
-  local dst="$work/$1"
+# It is built once: archiving, adding and committing the tree for each of the 33
+# cases took 396 s on a hosted runner. Every case gets its own copy of it.
+build_base() {
+  local dst="$work/.base"
   rm -rf "$dst"
   mkdir -p "$dst"
   git -C "$repo_root" archive --format=tar HEAD 2>/dev/null | tar -x -C "$dst" ||
@@ -32,14 +38,19 @@ clone() {
   git -C "$repo_root" diff HEAD --binary >"$work/wip.patch" 2>/dev/null ||
     echo "note: could not capture uncommitted work; testing HEAD only" >&2
   git -C "$dst" init -q 2>/dev/null
-  git -C "$dst" config user.email t@t
-  git -C "$dst" config user.name t
   if [ -s "$work/wip.patch" ]; then
     git -C "$dst" apply "$work/wip.patch" 2>/dev/null ||
       echo "note: uncommitted work did not apply to the scratch clone" >&2
   fi
   git -C "$dst" add -A -f >/dev/null 2>&1
   git -C "$dst" commit -qm scratch >/dev/null 2>&1
+}
+build_base
+
+clone() {
+  local dst="$work/$1"
+  rm -rf "$dst"
+  cp -a "$work/.base" "$dst"
   printf '%s\n' "$dst"
 }
 

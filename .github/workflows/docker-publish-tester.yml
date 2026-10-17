@@ -140,7 +140,7 @@ jobs:
     name: Validate tester image source
     needs: impact
     if: needs.impact.outputs.selected == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
       contents: read
@@ -216,7 +216,7 @@ jobs:
           fi
           # The platforms the build job covers: both on a push or a dispatch, amd64 only
           # on a pull request (ADR-1595) and on the nightly schedule (ADR-1701).
-          matrix='{"include":[{"arch":"amd64","platform":"linux/amd64","runner":"ubuntu-latest"},{"arch":"arm64","platform":"linux/arm64","runner":"ubuntu-26.04-arm"}]}'
+          matrix='{"include":[{"arch":"amd64","platform":"linux/amd64","runner":"ubuntu-26.04"},{"arch":"arm64","platform":"linux/arm64","runner":"ubuntu-26.04-arm"}]}'
           if [[ "$GITHUB_EVENT_NAME" == pull_request || "$GITHUB_EVENT_NAME" == schedule ]]; then
             matrix="$(jq -c '{include: [.include[] | select(.arch == "amd64")]}' <<<"$matrix")"
           fi
@@ -232,7 +232,7 @@ jobs:
   refs-x86:
     name: x86_64 reference scores
     needs: validate
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -490,7 +490,7 @@ jobs:
     name: Publish tester image
     needs: [validate, build]
     if: needs.validate.outputs.publish == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     environment: tester-publish
     permissions:
@@ -672,7 +672,7 @@ jobs:
     # Dockerfile stage contract test checks the stages meanwhile. Not on the nightly
     # schedule either (ADR-1701): it builds the amd64 CPU image only.
     if: github.event_name != 'pull_request' && github.event_name != 'schedule'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 120
     strategy:
       fail-fast: false
@@ -840,7 +840,7 @@ jobs:
     name: Publish the ${{ matrix.vendor }} GPU image
     needs: [validate, build-gpu]
     if: needs.validate.outputs.publish == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     environment: tester-publish
     strategy:

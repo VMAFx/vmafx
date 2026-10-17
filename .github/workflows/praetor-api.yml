@@ -6,6 +6,10 @@ name: Praetor API Compatibility
     types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: ['master']
+  merge_group:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -34,6 +38,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
       - name: Setup Go
         if: github.event.pull_request.draft != true
         # yamllint disable-line rule:line-length
@@ -64,4 +69,5 @@ jobs:
         if: github.event.pull_request.draft != true
         env:
           BASE: ${{ github.event.pull_request.base.sha }}
+          GOTOOLCHAIN: auto
         run: go run tools/apicompat/gate/main.go -base="$BASE"

@@ -277,7 +277,12 @@ in `buf.yaml` and stay as they are.
     `buf.yaml` and `buf.gen.yaml`. buf is the release `BUF_VERSION` in
     `build-config.env`, run through `go run` so the Go module checksum database
     verifies it; the `protoc-gen-go` and `protoc-gen-go-grpc` plugins are the
-    versions `go.mod` pins as tools. It then adds the `// SAFETY:` proofs
+    versions `go.mod` pins as tools. `go run` of a versioned package asks the
+    module proxy on every run, so a CI job installs that release once with
+    `go install` (`scripts/ci/prefetch_go_modules.py`, into
+    `~/.cache/vmafx-tools/buf-<version>/`) and `proto_generate.py` runs the
+    installed copy when it reports the pinned version. It then adds the
+    `// SAFETY:` proofs
     (`scripts/proto/postprocess_gen_go.py`) and writes every `*.pb.go` under
     `gen/go`, removing stale ones. The `module=` option puts each binding
     under the path of its `go_package`: `gen/go` for `vmafx.v1`,
@@ -293,6 +298,23 @@ in `buf.yaml` and stay as they are.
     receive in binary and JSON form must stay readable. Moving a file or its Go
     package is not a break; a removed or renumbered field, a changed type or a
     renamed enum value is.
+
+    CI runs `buf lint` and `buf breaking` on every ready pull request and
+    every `master` push: the `Buf Lint + Breaking` job of
+    [`lint-and-format.yml`](../../.github/workflows/lint-and-format.yml)
+    installs the same pinned `BUF_VERSION` and compares the protobuf files with
+    the pull request's base commit (on a push, the previous `master` commit).
+    A red job names the file, line and rule; fix the proto definition in
+    `api/vmafx-platform.toml` or `core/api/vmafx.toml` and regenerate, rather
+    than editing `proto/` by hand.
+
+    CI also runs Spectral on the OpenAPI 3.0 specification: the
+    `Spectral OpenAPI Lint` job of
+    [`lint-and-format.yml`](../../.github/workflows/lint-and-format.yml)
+    runs the Spectral release binary pinned by `SPECTRAL_VERSION` and
+    `SPECTRAL_SHA256` in `build-config.env` using the `.spectral.yaml` ruleset (`spectral:oas`)
+    against `api/openapi/vmafx-server-v1.yaml`. When a rule fails, fix the
+    hand-written specification or its generator source under `scripts/codegen/`.
 
 ### Kubernetes resources
 

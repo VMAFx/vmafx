@@ -369,11 +369,29 @@ the meantime `vmaf-tune recommend-saliency --encoder libsvtav1
 --saliency-aware` drives SVT-AV1 through its own
 `-svtav1-params qp-file=...` option instead.
 
-## Other changes in the series: strict failure behaviour (patch 0019)
+## Other changes in the build: the shared FFmpeg fix series
 
-Patch 0019 is unrelated to vmaf-tune. It makes failures exposed by the
-warning-clean `n9.0.2` build observable instead of truncating data or
-continuing after an error:
+Every VMAFx FFmpeg build applies the shared FFmpeg fix series before the
+patches of this repository
+([FFmpeg patch automation](../development/ffmpeg-patch-automation.md#shared-ffmpeg-fix-series)).
+It is unrelated to vmaf-tune, and three of its patches change how FFmpeg
+behaves:
+
+- On a Vulkan device with a single queue family, a hardware frame is no longer
+  released to `VK_QUEUE_FAMILY_IGNORED` by a filter or codec barrier
+  (`libavutil/vulkan.c`); the frame stays owned by its queue family.
+- `hevc_nvenc` with `udu_sei=1` no longer stops the encode with "Failed locking
+  bitstream buffer: out of memory" when a picture's user data unregistered SEI
+  is large: a payload that does not fit NVENC's 1024-byte limit for non-VCL
+  NAL units is not written, with a warning.
+- `h264_nvenc` and `hevc_nvenc` do not write a user data unregistered SEI that
+  NVENC would write truncated and undecodable (payloads dominated by zero
+  bytes); the first one is a warning.
+
+Its diagnostics patch (patch 0019 of this repository's series before the
+switch to the shared series) makes failures exposed by the warning-clean
+`n9.0.2` build observable instead of truncating data or continuing after an
+error:
 
 - Malformed AAC SBR, RV60 block geometry, and WMA channel metadata return
   an invalid-data error. A file that previously reached undefined or

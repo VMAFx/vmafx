@@ -33,6 +33,13 @@ error API data must fail. Checker only reads; CI must never gain
 administration credentials or automatic apply path. Run its offline
 adversarial controls after every change.
 
+Policy bypass mode = `pull_request`, review count 0, no last-push approval
+(ADR-3313, supersedes ADR-3273); no exception entry. `bypass_mode_findings()`
+fails on another mode without unexpired entry of rule
+`solo-repository-bypass-mode` for policy file in `.config/lint-exceptions.d/`,
+and on stale entry while every mode is `pull_request`. Never drop the call
+from `main()`, never widen the rule to a second file.
+
 `hw_encoder_corpus.py` is long-running, append-only corpus producer. It may
 retain rows from successful quality points for diagnosis, but any encode,
 decode, score, or canonical-row failure must make process return non-zero.
@@ -97,3 +104,15 @@ stage; never swallow its exit status. Exceptions only in
 Keep mcp / fuzz / `vmaf_vpl` Meson gates; Windows request for mcp or fuzz
 errors at configure, never silent skip. Planted cases:
 `scripts/ci/tests/test-preflight-msvcism.sh`.
+
+`preflight.sh --stage msvcism` runs `find-windows-minmax.py`: `::min(` /
+`::max(` call behind `<windows.h>` without `NOMINMAX`, in C++ translation unit
+Windows build compiles, fails stage (MSVC C2589). Scanner walks includes in
+Windows preprocessor order with explicit frame stack, bounds `MAX_UNITS` /
+`MAX_STEPS` / `MAX_DEPTH`; hitting bound = error, never pass. Reuses
+`git_lines()` + `windows_builds_source()` of `find-posix-only-headers.py`;
+no second copy of Meson gate reader. Fix spelling: `(std::min)(a, b)`.
+`core/src/compat/win32/pthread.h` includes `<windows.h>` without `NOMINMAX`;
+every C++ unit taking `<pthread.h>` on Windows: both macros defined. Not
+followed: system / SDK headers, CUDA device code, C sources, macro bodies,
+command-line `NOMINMAX`. Planted cases + failed-scan case: same test file.

@@ -1,6 +1,6 @@
 # ADR-0802: CI Runner Image Standardization — Pin ubuntu-latest to ubuntu-24.04
 
-- **Status**: Accepted
+- **Status**: Superseded by [ADR-3251](3251-hosted-runner-label-explicit.md)
 - **Date**: 2026-05-29
 - **Deciders**: lusoris
 - **Tags**: `ci`, `build`

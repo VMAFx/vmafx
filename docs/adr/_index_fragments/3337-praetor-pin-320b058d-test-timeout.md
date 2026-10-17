@@ -1,0 +1,1 @@
+| [ADR-3337](3337-praetor-pin-320b058d-test-timeout.md) | Move the praetor pin to `320b058d`: `adopt` refreshes the gate workflows, the evasion hook, the API compatibility gate and the figure player path; the Coverage Gate's three timeouts above 30m carry a category B exception until 2026-10-20. | Accepted | ci, governance, standards |

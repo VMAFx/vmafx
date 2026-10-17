@@ -205,9 +205,9 @@ class WerrorLegContractTests(unittest.TestCase):
     def test_a_new_row_without_a_decision_is_detected(self) -> None:
         matrix = MATRIX.read_text(encoding="utf-8")
         planted = matrix.replace(
-            "          - os: ubuntu-latest\n            CC: icx\n",
-            "          - os: ubuntu-latest\n            CC: gcc\n            name: Ubuntu planted\n"
-            "          - os: ubuntu-latest\n            CC: icx\n",
+            "          - os: ubuntu-26.04\n            CC: icx\n",
+            "          - os: ubuntu-26.04\n            CC: gcc\n            name: Ubuntu planted\n"
+            "          - os: ubuntu-26.04\n            CC: icx\n",
             1,
         )
         self.assertNotEqual(planted, matrix)

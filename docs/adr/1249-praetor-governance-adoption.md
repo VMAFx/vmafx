@@ -136,3 +136,32 @@ Verification command:
 ```bash
 ls lefthook.yml .standards.yaml .agents/agents docs/development/agent-hard-rules.md
 ```
+
+### Status update 2026-10-12: the invariants page is linked, not imported
+
+The decision above has the three heaviest rule sets "referenced by import lines
+so agents that expand imports still receive the full text". Two pages carried an
+import line; the worktree-discipline page was a link from the start. From this
+date the hard-rules page keeps its import line and
+`docs/development/rebase-sensitive-invariants.md` is a link only.
+
+Reason, measured on 2026-10-12: the invariants page had grown to 97,501 bytes,
+against 26,902 bytes for `AGENTS.md` and 12,536 bytes for the hard-rules page.
+A client that expands imports loaded it into every turn of every session,
+whatever the task. In one long session the instruction files came to 182.5 kB,
+and the first request after each context compaction already held 177,712 input
+tokens of a 200,000-token window, so the session compacted again at once and
+stopped making progress.
+
+The page stays binding. `AGENTS.md` section 12 tells an agent to read the
+section for the files it touches before a rebase, an upstream sync, a conflict
+resolution or an edit of a file the page cites.
+
+Source: operator decision `vmafx-context-floor`, 2026-10-12 (paraphrased).
+
+Verification command:
+
+```bash
+grep -c '^@docs/' AGENTS.md CLAUDE.md   # 1 each: the hard-rules page
+wc -c docs/development/rebase-sensitive-invariants.md
+```

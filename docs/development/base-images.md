@@ -284,7 +284,7 @@ six months later is the whole point. The gate rejects any entry without
 
 ## Deliberate exceptions
 
-- **Local image consumers**: `Dockerfile.ffmpeg` extends `vmaf:latest`, built
+- **Local image consumers**: `Dockerfile.ffmpeg` extends `vmaf@sha256:${VMAF_IMAGE_DIGEST}`, built
   from the root Dockerfile. `dev/Containerfile.runner` uses
   `ARG BASE_IMAGE=vmaf-dev-mcp:local`, built from `dev/Containerfile`. These
   exceptions bind the exact file, argument (where applicable) and value.

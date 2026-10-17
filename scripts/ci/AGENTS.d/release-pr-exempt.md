@@ -14,9 +14,8 @@ area: release
   `release-please--anything`.
 - Always exits 0, communicates through `exempt=true|false`. Gate
   consuming it must use step-level `if:` so job still **reports**.
-  Skipping whole job makes check *absent*, which aggregator's
-  absent-means-pass rule (ADR-0313) cannot tell apart from path-filter skip.
-  That ambiguity is exactly what `mustReport` list exists to close.
+  Skipping whole job makes check *absent*; since ADR-3293 absent owed
+  check fails aggregator.
 - Only four authoring-discipline gates may consult it: Deliverables
   Checklist, Doc-Substance Gate, `docs/state.md` Gate, FFmpeg-Patches Surface
   Sync. local pre-push mirror of Deliverables Checklist

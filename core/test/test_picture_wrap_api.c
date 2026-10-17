@@ -274,14 +274,14 @@ static char *test_wrapped_scores_equal_allocated(void)
 }
 
 /* A refused wrap: -EINVAL, `pic` untouched, no release. */
-static int refused(VmafPictureWrapped w)
+static int refused(const VmafPictureWrapped *w)
 {
     VmafPicture pic;
     VmafPicture before;
     memset(&pic, 0x5a, sizeof(pic));
     memcpy(&before, &pic, sizeof(before));
-    const Release *const release = w.cookie;
-    const int err = vmaf_picture_wrap(&pic, w);
+    const Release *const release = w->cookie;
+    const int err = vmaf_picture_wrap(&pic, *w);
     return err == -EINVAL && memcmp(&pic, &before, sizeof(pic)) == 0 && release->calls == 0u;
 }
 
@@ -294,16 +294,16 @@ static char *test_plane_refusals(void)
     mu_assert("NULL picture", vmaf_picture_wrap(NULL, good) == -EINVAL);
     VmafPictureWrapped w = good;
     w.stride[1] = (ptrdiff_t)(PIC_W / 2u) * (ptrdiff_t)sizeof(uint16_t);
-    mu_assert("upstream's rounded-down chroma stride", refused(w));
+    mu_assert("upstream's rounded-down chroma stride", refused(&w));
     w = good;
     w.data[2] = NULL;
-    mu_assert("NULL chroma plane", refused(w));
+    mu_assert("NULL chroma plane", refused(&w));
     w = good;
     w.data[0] = NULL;
-    mu_assert("NULL luma plane", refused(w));
+    mu_assert("NULL luma plane", refused(&w));
     w = good;
     w.stride[0] = -w.stride[0];
-    mu_assert("negative stride", refused(w));
+    mu_assert("negative stride", refused(&w));
     return NULL;
 }
 
@@ -315,28 +315,28 @@ static char *test_format_refusals(void)
     const VmafPictureWrapped good = wrap_of(&f, &release);
     VmafPictureWrapped w = good;
     w.w = 0;
-    mu_assert("width 0", refused(w));
+    mu_assert("width 0", refused(&w));
     w = good;
     w.h = 0;
-    mu_assert("height 0", refused(w));
+    mu_assert("height 0", refused(&w));
     w = good;
     w.pix_fmt = VMAF_PIX_FMT_UNKNOWN;
-    mu_assert("unknown format", refused(w));
+    mu_assert("unknown format", refused(&w));
     w = good;
     w.bpc = 7u;
-    mu_assert("7 bits", refused(w));
+    mu_assert("7 bits", refused(&w));
     w = good;
     w.bpc = 17u;
-    mu_assert("17 bits", refused(w));
+    mu_assert("17 bits", refused(&w));
     return NULL;
 }
 
 /* Wrap `w`, check the luma extent and unref: the release runs once. */
-static int wraps_once(VmafPictureWrapped w, unsigned luma_w)
+static int wraps_once(const VmafPictureWrapped *w, unsigned luma_w)
 {
-    Release *const release = w.cookie;
+    Release *const release = w->cookie;
     VmafPicture pic;
-    if (vmaf_picture_wrap(&pic, w) != 0) {
+    if (vmaf_picture_wrap(&pic, *w) != 0) {
         return 0;
     }
     const int shape = pic.w[0] == luma_w && pic.ref != NULL && release->calls == 0u;
@@ -359,16 +359,16 @@ static char *test_boundaries(void)
     w.stride[0] = w.stride[1] = w.stride[2] = 1;
     w.cookie = &r8;
     w.release_picture = record_release;
-    mu_assert("1x1, 8 bits", wraps_once(w, 1u));
+    mu_assert("1x1, 8 bits", wraps_once(&w, 1u));
     w.bpc = 16u;
     w.stride[0] = w.stride[1] = w.stride[2] = 2;
     w.cookie = &r16;
-    mu_assert("1x1, 16 bits", wraps_once(w, 1u));
+    mu_assert("1x1, 16 bits", wraps_once(&w, 1u));
     w.pix_fmt = VMAF_PIX_FMT_YUV400P;
     w.data[1] = w.data[2] = NULL;
     w.stride[1] = w.stride[2] = 0;
     w.cookie = &r400;
-    mu_assert("YUV400P without chroma planes", wraps_once(w, 1u));
+    mu_assert("YUV400P without chroma planes", wraps_once(&w, 1u));
     w.release_picture = NULL;
     w.cookie = NULL;
     VmafPicture pic;

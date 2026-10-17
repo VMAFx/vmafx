@@ -87,7 +87,7 @@ source review.
 | `integer_psnr_hvs_sycl.cpp`, `/core/test/test_sycl_psnr_hvs_parity.c` | [psnr-hvs](AGENTS.d/psnr-hvs.md) | psnr_hvs_sycl = CPU scores bit for bit; integer_psnr_hvs_sycl.cpp DCT lives in local memory. |
 | `integer_*.cpp`, `float_*.cpp` | [queue-sync](AGENTS.d/queue-sync.md) | Per-step q.wait() in feature extractors forbidden — use in-order queues, barriers, or graph wait. |
 | `sycl_compat.h`, `integer_adm_sycl.cpp`, `integer_vif_sycl.cpp`, `integer_ssim_sycl.cpp`, `integer_motion_pipeline_sycl.cpp`, `ssimulacra2_sycl.cpp` | [scratch-memory](AGENTS.d/scratch-memory.md) | No scratch memory in kernels; zero private_mem_size and spill_memory_size on xe. |
-| `speed_*_sycl.cpp`, `speed_sycl_*`, `/core/test/test_sycl_speed_*` | [speed](AGENTS.d/speed.md) | SpEED pipeline arithmetic contract and singular-covariance contract; device-resident twins. |
+| `speed_*_sycl.cpp`, `speed_sycl_*`, `/core/test/test_sycl_speed_*`, `sycl_speed_cov_math.h` | [speed](AGENTS.d/speed.md) | SpEED pipeline arithmetic contract and singular-covariance contract; device-resident twins. |
 | `ssimulacra2_sycl.cpp`, `sycl_ssimulacra2_math.h`, `/core/test/test_sycl_ssimulacra2_parity.c` | [ssimulacra2](AGENTS.d/ssimulacra2.md) | ssimulacra2_sycl = CPU ssimulacra2, bit for bit; device-resident; IIR recurrence has no running accumulator. |
 | `sycl_exact_fp.h`, `/core/src/meson.build` | [strict-fp](AGENTS.d/strict-fp.md) | Every TU is strict-clean; SYCL strict FP line load-bearing, one line for every TU. |
 | `sycl_compat.h`, `float_motion_sycl.cpp`, `float_adm_sycl.cpp` | [sub-group-size](AGENTS.d/sub-group-size.md) | Kernel sub-group size: 16 or 32 only (ADR-1468); Xe2 AOT targets reject 8. |

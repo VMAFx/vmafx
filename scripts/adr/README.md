@@ -48,6 +48,12 @@ When `--claim` succeeds it writes:
 The POSIX `mkdir`-based lock is keyed on the common `.git/` directory path,
 so parallel agents in different worktrees of the same repo contend on the
 same lock.
+The lock is held by whoever creates its owner file (`O_EXCL`); a lock
+directory without an owner file is free. A claim waits up to
+`VMAF_ADR_LOCK_WAIT_S` seconds (default 60) for it. The owner file of a claim
+whose process is gone is removed with a warning, one takeover at a time; a
+running holder's lock is respected
+(`scripts/adr/tests/test-next-free-stale-lock.sh`).
 
 ### Remote-branch scan
 

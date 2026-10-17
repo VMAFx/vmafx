@@ -151,7 +151,8 @@ class ArchiveCompression(unittest.TestCase):
         workflow = (WORKFLOWS / "macos-tester-bundle.yml").read_text(encoding="utf-8")
         self.assertNotIn("out/*.tar.gz", workflow)
         self.assertNotIn("bundle/*.tar.gz", workflow)
-        self.assertEqual(workflow.count("bundle/*.tar.xz"), 3)
+        # Provenance subject, its consumer-recipe check (ADR-3316), SBOM subject, signing.
+        self.assertEqual(workflow.count("bundle/*.tar.xz"), 4)
 
     def test_the_git_archive_source_tarballs_are_gzip_at_level_9(self) -> None:
         node = (ROOT / "docker/Dockerfile.node").read_text(encoding="utf-8")

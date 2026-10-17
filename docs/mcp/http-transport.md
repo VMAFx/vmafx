@@ -283,10 +283,10 @@ pip install vmaf-mcp 'aiohttp>=3.14.3' 'prometheus-client>=0.26.0'
 
 `aiohttp>=3.14.3` is a security floor: 3.14.3 is the first release that
 fixes [CVE-2026-69244](https://github.com/advisories/GHSA-cq5v-8q36-5273).
-The floor does not narrow the MCP server's supported Python range because both
-packages require Python 3.10 or newer. The transport registers only its dynamic
-API, health, readiness, and metrics routes; it does not configure aiohttp static
-resources or enable `follow_symlinks`.
+The floor does not narrow the MCP server's supported Python range (Python 3.12
+or newer) because aiohttp requires Python 3.10 or newer. The transport registers
+only its dynamic API, health, readiness, and metrics routes; it does not
+configure aiohttp static resources or enable `follow_symlinks`.
 
 If `aiohttp` or `prometheus-client` is absent and `--transport http` is
 requested, the server raises an `ImportError` with an installation hint.

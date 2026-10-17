@@ -130,6 +130,9 @@ echo "Cloning FFmpeg into $FFMPEG_SRC …"
 echo "Applying patches from $PATCHES_DIR …"
 # The MSVC warning gate below reads the files the series adds or changes.
 series_base="$(ffmpeg_git -C "$FFMPEG_SRC" rev-parse HEAD)"
+# The shared FFmpeg fix series comes first, as in every other build (ADR-3143);
+# the script verifies the pinned tarball and refuses another base commit.
+bash "${PATCHES_DIR}/../scripts/ci/ffmpeg-shared-series.sh" apply --method am "$FFMPEG_SRC"
 while IFS= read -r line; do
   line="${line%%#*}"
   line="${line// /}"

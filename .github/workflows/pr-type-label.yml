@@ -24,7 +24,7 @@ concurrency:
 jobs:
   label:
     name: Label PR by commit type
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - name: Apply type label
         env:

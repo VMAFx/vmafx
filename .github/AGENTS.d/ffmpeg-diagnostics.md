@@ -15,7 +15,8 @@ objects. Capture `make -s fate-list` first and select only `fate-*` lines:
 pristine tree may also emit generated-makefile status line. Release checkouts
 must use `scripts/ci/checkout-annotated-tag.sh`; direct shallow clones warn on
 annotated FFmpeg tag. ordinary GCC/macOS matrix deliberately
-avoids patches 0001-0018 so it tests stock FFmpeg surfaces against libvmaf, but
-applies patch 0019 alone to harden pinned upstream source. SYCL lane
-replays complete series. Both paths require exact `git apply`; never
+avoids fork series so it tests stock FFmpeg surfaces against libvmaf, but
+applies shared FFmpeg fix series alone (`scripts/ci/ffmpeg-shared-series.sh`,
+ADR-3143) to harden pinned upstream source. SYCL lane applies shared series,
+then replays complete fork series. Both paths require exact `git apply`; never
 restore fuzz-capable `patch -p1` fallback or quiet compiler output.

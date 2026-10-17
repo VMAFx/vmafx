@@ -1,0 +1,29 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
+# Dated fallbacks of the hosted runner label rule (ADR-3251): jobs that name an older
+# versioned Ubuntu image. Format and rules: scripts/ci/check_hosted_runner_labels.py and
+# scripts/ci/lint_exceptions.py. One entry per job of a workflow file; an entry stops holding
+# on `expires` and is removed when its job names ubuntu-26.04 again. Remove the file with
+# its last entry.
+
+[[exception]]
+path = ".github/workflows/dev-container-build.yml"
+job = "dev-container-build-work"
+label = "ubuntu-24.04"
+reason = "On ubuntu-26.04 the image build ends with `No space left on device` before its build step finishes (master run 38153818052, job 114512668126); the job needs a disk clean-up step first. docs/state.md row T-CI-DEV-CONTAINER-DISK-UBUNTU-2604-2026-10-11."
+expires = 2026-10-25
+
+[[exception]]
+path = ".github/workflows/ffmpeg-integration.yml"
+job = "ffmpeg-work"
+label = "ubuntu-24.04"
+reason = "With the gcc of ubuntu-26.04 the FFmpeg build prints warnings in FFmpeg's own sources (-Wstringop-overflow in libavcodec/vvc/intra_template.c, redefined av_popcount in libavutil/x86/intmath.h) and the zero-warning gate stops it (master run 38153817985, job 114512707088); the fixes belong to the shared FFmpeg fix series. docs/state.md row T-CI-FFMPEG-WARNINGS-UBUNTU-2604-2026-10-11."
+expires = 2026-10-25
+
+[[exception]]
+path = ".github/workflows/ffmpeg-integration.yml"
+job = "ffmpeg-sycl-work"
+label = "ubuntu-24.04"
+reason = "Same FFmpeg source warnings as ffmpeg-work on ubuntu-26.04 (master run 38153817985, job 114512707033). docs/state.md row T-CI-FFMPEG-WARNINGS-UBUNTU-2604-2026-10-11."
+expires = 2026-10-25

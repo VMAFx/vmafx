@@ -220,8 +220,8 @@ class BuildSecretContract(unittest.TestCase):
 
     def test_job_level_token_fails(self) -> None:
         text = self.release.replace(
-            "    runs-on: ubuntu-latest\n    timeout-minutes: 60\n",
-            "    runs-on: ubuntu-latest\n    timeout-minutes: 60\n"
+            "    runs-on: ubuntu-26.04\n    timeout-minutes: 60\n",
+            "    runs-on: ubuntu-26.04\n    timeout-minutes: 60\n"
             "    env:\n      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}\n",
             1,
         )

@@ -60,13 +60,15 @@ pkg/benchmark/testdata/*.csv -text
 # below: the archetype sources whose sha256 .standards.lock pins, the policy
 # files the effective-policy digest reads, and the agent context that
 # `praetorctl compile-context --verify` checks (AGENTS.md, its six compiled
-# targets, the persona sources under .agents/ and their four projections).
+# targets, its read-only projection, the persona sources under .agents/ and
+# their four projections).
 # `* text=auto` checks a text file out with core.eol, which defaults to the
 # platform's ending, so a Windows checkout gets CRLF here even with
 # core.autocrlf=false and both checks fail on files nobody edited
 # (T-WINDOWS-CRLF-PRAETOR-HASHED-FILES-2026-10-06).
 # scripts/ci/tests/test_praetor_hashed_files_lf.py keeps every such file LF.
 AGENTS.md text eol=lf
+AGENTS.readonly.md text eol=lf
 CLAUDE.md text eol=lf
 .windsurfrules text eol=lf
 .cursor/rules/*.mdc text eol=lf

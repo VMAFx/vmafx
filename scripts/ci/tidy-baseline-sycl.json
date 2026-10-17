@@ -4,7 +4,7 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "cc_version": "Intel(R) oneAPI DPC++/C++ Compiler 2026.1.1 (2026.1.1.20260724)",
-  "tus": 492,
+  "tus": 496,
   "measured_sources": [
     "core/src/compat/path_utf8.c",
     "core/src/cpu.cpp",
@@ -445,6 +445,10 @@
     "core/test/test_sycl_shared_frame_sticky_geometry.c",
     "core/test/test_sycl_shared_planes.c",
     "core/test/test_sycl_speed_chroma_parity.c",
+    "core/test/test_sycl_speed_cov_chain.c",
+    "core/test/test_sycl_speed_cov_chain_probe.cpp",
+    "core/test/test_sycl_speed_cov_math.c",
+    "core/test/test_sycl_speed_cov_math_probe.cpp",
     "core/test/test_sycl_speed_singular_parity.c",
     "core/test/test_sycl_speed_temporal_parity.c",
     "core/test/test_sycl_ssim_parity.c",
@@ -665,6 +669,27 @@
         }
       },
       "previous_baseline_sha256": "97dc4a36058485986043630f3375b655525aa2193f2089ec3e601a81bffd2ffe"
+    },
+    {
+      "sources": [
+        "core/src/feature/sycl/speed_sycl_pipeline.cpp",
+        "core/test/test_sycl_speed_cov_chain.c",
+        "core/test/test_sycl_speed_cov_chain_probe.cpp",
+        "core/test/test_sycl_speed_cov_math.c",
+        "core/test/test_sycl_speed_cov_math_probe.cpp"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/test/test_sycl_speed_cov_chain.c",
+            "core/test/test_sycl_speed_cov_chain_probe.cpp",
+            "core/test/test_sycl_speed_cov_math.c",
+            "core/test/test_sycl_speed_cov_math_probe.cpp"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "47d3679b2fff4c6cd77fec8c626c1d250516f216fe8366e37277f65ecd46fb44"
     }
   ]
 }

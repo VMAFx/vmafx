@@ -1,5 +1,8 @@
 # Lefthook Configuration (Go 1.27+ & HISS-21 Governance)
-# Governance commands fail closed: a failing or missing praetorctl blocks the commit or push.
+# Governance commands run the engine the repository pins (PRAETOR_REF in
+# .github/workflows/standards-gate.yml) through .config/lefthook/engine.sh, never the
+# praetorctl on PATH, and fail closed: a failing engine, a pin that cannot be read or
+# installed, or two different pins block the commit or push.
 agent-checkpoint-tool:
   commands:
     checkpoint:
@@ -27,7 +30,7 @@ pre-commit:
       # Windows execution and quote-free invocation: ADR-2012.
       run: bash scripts/git-hooks/framework-hooks.sh pre-commit
     context-check:
-      run: if command -v praetorctl >/dev/null 2>&1; then praetorctl compile-context --verify; elif [ -d ./cmd/standardsctl ]; then go run ./cmd/standardsctl compile-context --verify; else echo HISS-21 governance hook cannot run because praetorctl is not installed >&2; exit 1; fi
+      run: sh .config/lefthook/engine.sh compile-context --verify
     hiss-audit:
       # ADR-1298 — scripts/git-hooks/hiss-audit.sh, not a bare `praetorctl
       # audit`. praetorctl derives its touched-file set from `git diff
@@ -37,16 +40,16 @@ pre-commit:
       # commit.
       run: bash scripts/git-hooks/hiss-audit.sh
     hiss-evidence:
-      run: if command -v praetorctl >/dev/null 2>&1; then praetorctl hiss coverage --verify; elif [ -d ./cmd/standardsctl ]; then go run ./cmd/standardsctl hiss coverage --verify; else echo HISS-21 governance hook cannot run because praetorctl is not installed >&2; exit 1; fi
+      run: sh .config/lefthook/engine.sh hiss coverage --verify
     dedupe-scan:
-      run: if command -v praetorctl >/dev/null 2>&1; then praetorctl dedupe scan .; elif [ -d ./cmd/standardsctl ]; then go run ./cmd/standardsctl dedupe scan .; else echo HISS-21 governance hook cannot run because praetorctl is not installed >&2; exit 1; fi
+      run: sh .config/lefthook/engine.sh dedupe scan .
 
 post-commit:
   commands:
     state-sync:
       run: scripts/githooks/state-sync.sh
     dedupe-cadence:
-      run: if command -v praetorctl >/dev/null 2>&1; then praetorctl dedupe cadence --threshold=20 --record .; elif [ -d ./cmd/standardsctl ]; then go run ./cmd/standardsctl dedupe cadence --threshold=20 --record .; else echo HISS-21 governance hook cannot run because praetorctl is not installed >&2; exit 1; fi
+      run: sh .config/lefthook/engine.sh dedupe cadence --threshold=20 --record .
 
 pre-push:
   parallel: false
@@ -69,15 +72,15 @@ pre-push:
     security:
       run: if command -v govulncheck >/dev/null 2>&1; then govulncheck ./...; else echo govulncheck is not installed, skipping >&2; fi
     flavor-audit:
-      run: if command -v praetorctl >/dev/null 2>&1; then praetorctl flavor audit .; elif [ -d ./cmd/standardsctl ]; then go run ./cmd/standardsctl flavor audit .; else echo HISS-21 governance hook cannot run because praetorctl is not installed >&2; exit 1; fi
+      run: sh .config/lefthook/engine.sh flavor audit .
     audit:
       # The same wrapper as pre-commit: one audit invocation, offline where the
       # engine supports it (scripts/git-hooks/hiss-audit.sh).
       run: bash scripts/git-hooks/hiss-audit.sh
     hiss-evidence:
-      run: if command -v praetorctl >/dev/null 2>&1; then praetorctl hiss coverage --verify; elif [ -d ./cmd/standardsctl ]; then go run ./cmd/standardsctl hiss coverage --verify; else echo HISS-21 governance hook cannot run because praetorctl is not installed >&2; exit 1; fi
+      run: sh .config/lefthook/engine.sh hiss coverage --verify
     dedupe-scan:
-      run: if command -v praetorctl >/dev/null 2>&1; then praetorctl dedupe scan .; elif [ -d ./cmd/standardsctl ]; then go run ./cmd/standardsctl dedupe scan .; else echo HISS-21 governance hook cannot run because praetorctl is not installed >&2; exit 1; fi
+      run: sh .config/lefthook/engine.sh dedupe scan .
     # The praetor gating pipeline is deliberately NOT run pre-push here. Its
     # race-detector stage runs `go test -race ./...` in a bare isolated worktree,
     # and every Go package in this repository is cgo over libvmaf

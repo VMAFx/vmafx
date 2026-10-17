@@ -53,21 +53,22 @@ required and which ADR owns it, see
 | --- | --- |
 | [`required-aggregator.yml`](../../.github/workflows/required-aggregator.yml) | Single required-check aggregator (ADR-0313). |
 | [`ci-tier.yml`](../../.github/workflows/ci-tier.yml) | Reusable workflow every pull-request workflow calls first: decides the tier ([ADR-2169](../adr/2169-ci-fewer-runs.md)); no trigger of its own. |
-| [`ci-escalate.yml`](../../.github/workflows/ci-escalate.yml) | Re-runs the suite at the full tier when `ci: full` or `autorelease: cut` is applied. |
-| [`lint-and-format.yml`](../../.github/workflows/lint-and-format.yml) | Pre-commit, clang-tidy (changed files plus the whole-tree ratchet, ADR-1142), cppcheck, mypy, registry validate, twin-drift gate (ADR-1135). |
+| [`ci-escalate.yml`](../../.github/workflows/ci-escalate.yml) | Re-runs the suite at the full tier when `ci: full` or `autorelease: cut` is applied (called from `pr-label-lanes.yml`); cancels every running run first and awaits them together within one 180-second bound, then re-runs them; names every run it could not re-run and then fails ([ADR-3279](../adr/3279-msvc-sycl-leg-on-light-tier.md)). |
+| [`lint-and-format.yml`](../../.github/workflows/lint-and-format.yml) `Trivy` | Trivy config + fs scans ([ADR-3330](../adr/3330-ci-trivy-config-fs.md)). |
+| [`lint-and-format.yml`](../../.github/workflows/lint-and-format.yml) | Pre-commit, clang-tidy (changed files plus the whole-tree ratchet, ADR-1142), cppcheck, mypy, registry validate, twin-drift gate (ADR-1135), `buf lint` + `buf breaking` on `proto/` ([API generation](api-generation.md)). |
+| [`lint-and-format.yml`](../../.github/workflows/lint-and-format.yml) `Spectral OpenAPI Lint` | Spectral (`spectral:oas`) on `api/openapi/` ([API generation](api-generation.md), [ADR-3331](../adr/3331-ci-spectral-openapi-lint.md)). |
 | [`standards-gate.yml`](../../.github/workflows/standards-gate.yml) | Required HISS and context verification and the fail-closed duplicate-implementation scan. |
 | [`rule-enforcement.yml`](../../.github/workflows/rule-enforcement.yml) | ADR-0100, 0106, 0108 and 0165 process gates. |
 | [`tests-and-quality-gates.yml`](../../.github/workflows/tests-and-quality-gates.yml) | Netflix golden, sanitizers, tiny-AI, MCP, coverage, assertion density, the test-suite registry and tooling suite (`Tooling Tests`) and the Python package suites (`Python Package Tests (<suite>)`); which job runs which test suite: [test suites](test-suites.md). |
-| [`security-scans.yml`](../../.github/workflows/security-scans.yml) | Semgrep, CodeQL, Gitleaks, Dependency Review. |
+| [`security-scans.yml`](../../.github/workflows/security-scans.yml) | Semgrep, CodeQL, Gitleaks, Dependency Review and the OpenSSF Scorecard PR policy (`Scorecard PR Gate`, ADR-1247). |
 | [`libvmaf-build-matrix.yml`](../../.github/workflows/libvmaf-build-matrix.yml) | Cross-platform, cross-backend libvmaf build matrix: 17 lanes, six of them required. |
 | [`build.yml`](../../.github/workflows/build.yml) | One all-backend build per OS (`Linux Intel LLVM`, `macOS Clang+Metal`, `Windows MSVC+CUDA (full)`), alongside the matrix; required since ADR-1297. |
 | [`go-ci.yml`](../../.github/workflows/go-ci.yml) | Required Go modernization, vet, security scan, runner smoke and tests (ADRs 1238 and 1338). |
 | [`ffmpeg-integration.yml`](../../.github/workflows/ffmpeg-integration.yml) | FFmpeg plus libvmaf build (Linux GCC, macOS Clang, SYCL). |
 | [`ffmpeg-patch-stack.yml`](../../.github/workflows/ffmpeg-patch-stack.yml) | Replays the cumulative FFmpeg patch series (see [FFmpeg patch automation](ffmpeg-patch-automation.md)). |
-| [`upstream-consumers.yml`](../../.github/workflows/upstream-consumers.yml) | Unpatched upstream FFmpeg and GStreamer against the installed compat `libvmaf.so.3`, scores compared with the CLI and the base commit (full tier; see [upstream consumers](upstream-consumers.md)). |
+| [`ffmpeg-integration.yml`](../../.github/workflows/ffmpeg-integration.yml) job `consumers` | Unpatched upstream FFmpeg and GStreamer against the installed compat `libvmaf.so.3`, scores compared with the CLI and the base commit (full tier; see [upstream consumers](upstream-consumers.md)). |
 | [`sycl-parity.yml`](../../.github/workflows/sycl-parity.yml) | SYCL parity on the self-hosted Intel Arc A380 runner (ADR-1177; see the [runbook](ci-self-hosted-sycl.md)). |
-| [`docs.yml`](../../.github/workflows/docs.yml) | Docs build. |
-| [`doxygen-public-api.yml`](../../.github/workflows/doxygen-public-api.yml) | Doxygen build of the public C API; required since ADR-1297. |
+| [`docs.yml`](../../.github/workflows/docs.yml) | Docs build, and the Doxygen build of the public C API (required since ADR-1297). |
 | [`docker-image.yml`](../../.github/workflows/docker-image.yml) | Docker image build. |
 | [`release-dry-run.yml`](../../.github/workflows/release-dry-run.yml) | Builds the release images and the `vmaf-mcp` distribution and SBOM without publishing (ADR-1595); required context `Release Dry Run` on pull requests ([ADR-1687](../adr/1687-required-release-dry-run-legs.md)). |
 | [`windows-tester-bundle.yml`](../../.github/workflows/windows-tester-bundle.yml) | The Windows tester zips: the x64 zip on a pull request, all four on a push, published on dispatch; required context `Windows Tester Zip` (ADR-1687). |
@@ -78,7 +79,6 @@ required and which ADR owns it, see
 | [`praetor-docs.yml`](../../.github/workflows/praetor-docs.yml) | Praetor's Documentation Governance gate for the `docs:seo-portal` facet; praetor-managed, not required. See [Praetor gate](praetor-gate.md). |
 | [`praetor-api.yml`](../../.github/workflows/praetor-api.yml) | Praetor's `Go API Compatibility` gate (`go-apidiff` over every Go module; no path filter). Praetor-managed; required through the aggregator (ADR-1506), its marker sits in `standards-gate.yml`. |
 | [`reuse.yml`](../../.github/workflows/reuse.yml) | Praetor's `REUSE lint` gate (`reuse lint` over the whole tree; no path filter), the one CI run of `reuse lint`. Written by praetor, its actions pinned to commits here; required through the aggregator (ADR-2784), its marker sits in `standards-gate.yml`. See [Praetor gate](praetor-gate.md#the-current-pin). |
-| [`scorecard-policy.yml`](../../.github/workflows/scorecard-policy.yml) | OpenSSF Scorecard PR policy (ADR-1247). |
 | [`pr-type-label.yml`](../../.github/workflows/pr-type-label.yml) | Derives a `type:*` label from the Conventional-Commit prefix of the PR. |
 
 ### Scheduled, release and watcher workflows
@@ -89,7 +89,7 @@ required and which ADR owns it, see
 | [`nightly-bisect.yml`](../../.github/workflows/nightly-bisect.yml) | Nightly bisect-model-quality smoke against a committed fixture timeline. |
 | [`fuzz.yml`](../../.github/workflows/fuzz.yml) | Nightly libFuzzer smoke over every harness under `core/test/fuzz/`. |
 | [`scorecard.yml`](../../.github/workflows/scorecard.yml) | Weekly OpenSSF Scorecard scan. |
-| [`e2e-k8s.yml`](../../.github/workflows/e2e-k8s.yml) | Kubernetes integration harness for the VMAFx runtime; label- and schedule-gated. |
+| [`e2e-k8s.yml`](../../.github/workflows/e2e-k8s.yml) | Kubernetes integration harness for the VMAFx runtime; schedule-gated, and called from `pr-label-lanes.yml` on a labelled pull request. |
 | [`release-please.yml`](../../.github/workflows/release-please.yml) | On each push to `master`: opens or updates the release PR, or creates the draft release (ADR-1127, ADR-1128). |
 | [`supply-chain.yml`](../../.github/workflows/supply-chain.yml) | Build provenance, Sigstore signing and SBOM when a release draft is published. |
 | [`dev-container-publish.yml`](../../.github/workflows/dev-container-publish.yml) | Builds, pushes and signs the canonical dev container image to GHCR, only into a private package ([ADR-1564](../adr/1564-dev-image-private-guard.md)). |
@@ -193,12 +193,24 @@ What a contributor sees:
   or absent context the tier does not owe, and still fails one that ran and
   failed. The matrix legs of `libvmaf-build-matrix.yml` are the one place a job
   starts and stops: a matrix cannot be filtered per leg, so a full-tier leg on a
-  light-tier pull request ends after a shallow checkout with a notice.
+  light-tier pull request ends after a shallow checkout with a notice. The two
+  rows of `windows-gpu-build` have the same shape
+  ([ADR-3279](../adr/3279-msvc-sycl-leg-on-light-tier.md)): the job starts on a
+  light-tier pull request only when the diff selects `windows_msvc_sycl` (or the
+  planner job failed), the `Windows MSVC+SYCL` row then builds, checks the
+  installed library names and runs the two SYCL registration tests, and the
+  `Windows MSVC+CUDA` row ends with the notice. That row's check is green without
+  a build: the notice says whether MSVC+CUDA compiled.
 - Adding the label `ci: full` (or `autorelease: cut` to the release pull request)
-  starts `ci-escalate.yml`, which re-runs the latest run of each workflow on the
-  head commit. Every re-run decides its tier again from the live labels, so the
-  skipped jobs now run and the aggregator waits for them. Removing the label does
-  not cancel anything; the next push is light again.
+  makes `pr-label-lanes.yml` call `ci-escalate.yml`, which re-runs the latest
+  run of each workflow on the head commit. Every re-run decides its tier again
+  from the live labels, so the skipped jobs now run and the aggregator waits for
+  them. Removing the label does not cancel anything; the next push is light
+  again. A run that is still in
+  progress is cancelled and awaited first; a run that completed in the meantime
+  answers the cancel with 409, which is no error. A run that cannot be re-run is
+  printed with its reason, the runs after it are still started, and the step then
+  fails with the count: read the step's log for the workflows to re-run by hand.
 - The release pull request is refreshed on every merge to master. Without the
   cut label it runs `Release Script Contract` only, which is the check that proves
   the cut ran. The maintainer applies `autorelease: cut` when the release is
@@ -297,26 +309,28 @@ python3 scripts/ci/plan-ci-impact.py --event pull_request \
 
 The planner diffs the event's exact revisions (the merge-base of head and base
 for a PR, the exact `before..head` for a push) and maps the changed paths onto
-the selectors declared in `.github/ci-impact.json`. There are 25 selectors:
+the selectors declared in `.github/ci-impact.json`. There are 27 selectors:
 
 | Selector | Owns | Gates |
 | --- | --- | --- |
-| `c_core` | `core/`, `ffmpeg-patches/`, `model/`, `testdata/`, golden fixtures | Build legs, sanitizers, cppcheck, CodeQL C/C++, assertion density, Tidy Ratchet |
+| `c_core` | `core/`, `ffmpeg-patches/`, `model/`, `testdata/`, golden fixtures | Build legs, sanitizers, cppcheck, assertion density, Tidy Ratchet |
 | `python` | `python/`, `compat/`, `mcp-server/`, `tools/`, `dev-llm/`, `scripts/**/*.py`, `requirements/` | Inherited by the composite selectors below |
-| `ai` | `ai/`, `model/` | Inherited by `tiny_ai` and `python_lint` |
+| `ai` | `ai/`, `model/` | Inherited by `tiny_ai` |
 | `go` | `cmd/`, `pkg/`, `internal/`, `api/`, `proto/`, `gen/`, `*.go`, `go.mod` | Inherited by `go_checks` |
 | `golden_harness` | `c_core` plus `python` | Netflix golden tests, coverage gate |
+| `build_work` | `c_core` plus everything under `python/` and `compat/`, the build, pytest-timeout and tox lock files, and `scripts/ci/prune-corrupt-fixtures.sh` | `Linux Intel LLVM`, `macOS Clang+Metal` and `Windows MSVC+CUDA (full)` in `build.yml`; the Windows leg is the only place that runs the decorator tests on Windows, and the macOS leg runs `tox -c python` |
 | `tiny_ai` | `c_core` plus `ai` plus `python` | Tiny AI (DNN suite and `ai/` pytests) |
-| `python_lint` | `python` plus `ai` | CodeQL Python |
 | `go_checks` | `go` plus `c_core` | Go vet, security scan, native and ORT smoke, and Go tests |
 | `docs` | `docs/`, `mkdocs.yml`, `*.md`, `changelog.d/` | Docs build |
-| `actions` | `.github/` | CodeQL Actions, FFmpeg patch stack |
+| `actions` | `.github/` | FFmpeg patch stack |
 | `docker_image` | `c_core` plus the `Dockerfile` and Python requirements | Docker image build |
 | `dev_container` | `c_core`, `python`, `ai`, `go`, `shell` plus `dev/` | Dev container build |
 | `doxygen` | `core/include/libvmaf/`, the public-API Doxyfile | Doxygen public API |
 | `helm` | `deploy/helm/` | Helm chart |
 | `tester_image` | `docker/Dockerfile.tester`, `tools/rc1-tester/`, the toolkit install scripts, `build-config.env`, the licence inputs; own paths only ([ADR-1700](../adr/1700-tester-selectors-own-paths-only.md)) | `Tester Image` ([ADR-1687](../adr/1687-required-release-dry-run-legs.md)) |
 | `windows_tester_zip` | The Windows zip build scripts, its lock file and the Windows inputs under `tools/rc1-tester/image/`; own paths only ([ADR-1700](../adr/1700-tester-selectors-own-paths-only.md)) | `Windows Tester Zip` ([ADR-1687](../adr/1687-required-release-dry-run-legs.md)) |
+| `windows_tester_zip_sycl` | Everything `windows_tester_zip` owns, plus `sycl-rows.json`, `prepare_build.py`, `build-config.env` and the SYCL scratch ratchet list; own paths only ([ADR-1700](../adr/1700-tester-selectors-own-paths-only.md)) | The x64 SYCL zip of `Windows Tester Zip` ([ADR-2198](../adr/2198-windows-sycl-leg-and-cut-check.md)) |
+| `windows_msvc_sycl` | C, C++ and header files under `core/` (`*.c`, `*.h`, `*.cpp`, `*.inc`, `*.h.in`), the Meson files under `core/`, `libvmaf-build-matrix.yml`, `werror-args.sh`, `check_msvc_library_names.py`, `run_meson_test.py` and the build lock file; own paths only ([ADR-1700](../adr/1700-tester-selectors-own-paths-only.md)) | `Windows MSVC+SYCL` on a light-tier pull request ([ADR-3279](../adr/3279-msvc-sycl-leg-on-light-tier.md)) |
 | `tidy_cuda` | `core/src/cuda/`, `core/src/feature/cuda/`, the CUDA and GPU tests, `core/src/dnn/` and the ratchet, lane baseline and lane scripts; own paths only ([ADR-2796](../adr/2796-hosted-tidy-all-lanes.md)) | `Tidy Lane (cuda)` |
 | `tidy_hip` | `core/src/hip/`, `core/src/feature/hip/`, the HIP and GPU tests, the same lane infrastructure; own paths only | `Tidy Lane (hip)` |
 | `tidy_sycl` | `core/src/sycl/`, `core/src/feature/sycl/`, the SYCL and GPU tests, `core/tools/vmaf_vpl*`, the same lane infrastructure; own paths only | `Tidy Lane (sycl)` |
@@ -330,6 +344,11 @@ the selectors declared in `.github/ci-impact.json`. There are 25 selectors:
 Steps gated on a selector that is not impacted are skipped and the job emits
 `::notice::<selector> not impacted (mode=... reason=...)` before reporting
 `success`, so the aggregator always sees a real conclusion with a real reason.
+
+No selector gates CodeQL. The C/C++, Python and Actions analyses run on every
+event, because GitHub's `CodeQL` check turns neutral when a category the base
+branch has is missing from the head
+([ADR-3294](../adr/3294-codeql-every-language-every-pr.md)).
 
 The planner fails closed. Each of these produces `mode=full`, which sets every
 selector true (the behaviour before ADR-1140):
@@ -418,10 +437,23 @@ gates (`Deliverables Checklist`, `docs/state.md Gate`, `Silent-Revert Guard`
 and others) read as failures of every master push. A check run of a workflow
 run on another branch is left out too: release-please opens its release-notes
 branch at the master head, and the push runs there of the workflows without a
-branch filter are cancelled as superseded. Check runs of other apps, such as
+branch filter are cancelled as superseded. A check run of a scheduled workflow
+run is left out as well: the daily `FFmpeg Patch Stack` run starts on whatever
+the master head is, and its gate job skips on `schedule`, so its newer skipped
+check run had replaced the push's own result. Check runs of other apps, such
+as
 code scanning, always count. A pull-request aggregator reads every check run on
 its head as before. `scripts/ci/tests/test_aggregator_event_scope.py` runs the
 embedded script on both events.
+
+Every name the aggregator evaluates must report `success` on the head SHA
+([ADR-3293](../adr/3293-aggregator-owed-contexts-must-succeed.md)). A name no
+run reported, or one that was skipped, neutral or cancelled, fails the
+aggregator. Three exemptions are named in the script, and each lets a name stay
+absent or skipped, never failed: the names the run's CI tier does not owe, the
+`pullRequestOnly` names on a push or dispatch event, and a hardware lane whose
+operator switch is off. `scripts/ci/tests/test_aggregator_absent_fails.py`
+runs the embedded script against both rules.
 
 ### Release legs
 
@@ -433,7 +465,29 @@ must report `success`; a missing or skipped one fails the aggregator.
 | --- | --- | --- | --- |
 | `Tester Image` | `docker-publish-tester.yml` | the planner selects `tester_image` | pull requests and master pushes |
 | `Windows Tester Zip` | `windows-tester-bundle.yml` | the planner selects `windows_tester_zip` | pull requests and master pushes |
-| `Release Dry Run` | `release-dry-run.yml` | always; `scripts/ci/release-dry-run-plan.sh` picks the groups | pull requests only (the workflow has no push trigger; the aggregator list `pullRequestOnly` drops it from other runs) |
+| `Release Dry Run` | `release-dry-run.yml` | always; `scripts/ci/release-dry-run-plan.sh` picks the groups | pull requests only (the workflow has no push trigger; on other runs the aggregator list `pullRequestOnly` lets it be absent or skipped) |
+
+`Windows MSVC+SYCL` of `libvmaf-build-matrix.yml` is the second own-input lane
+([ADR-3279](../adr/3279-msvc-sycl-leg-on-light-tier.md)): a light-tier pull
+request that changes C, C++ or Meson files under `core/` builds that one MSVC
+leg, checks its installed library names and runs its two SYCL registration tests
+(selector `windows_msvc_sycl`); `Windows MSVC+CUDA` and
+`Windows ARM64 MSVC` stay full-tier.
+
+`Dev Container Build` of `dev-container-build.yml` is the third own-input lane
+([ADR-3338](../adr/3338-dev-container-own-input-lane.md)). On a light-tier pull
+request its planner reads the narrow selector `dev_container_inputs`: `dev/**`,
+`.dockerignore`, `build-config.env`, the workflow and the scripts its build job
+runs (`build-dev-container-stage.sh`, `check-compose-dri-writable.sh`,
+`check-container-build.sh`, `check-dev-container-build-secret.py`,
+`docker-hub-mirror.sh`) and `install-cuda-toolkit.sh`, which the Containerfile
+copies. A pull request that changes one of them builds the image, smoke-tests
+it and runs the release rehearsal; any other light pull request passes the
+check with a notice naming the reason. The full tier and the master push keep
+the broad selector `dev_container`, which also builds the image for the core,
+Python, AI, MCP and Go sources the image copies, `supply-chain.yml` and
+`build-native-release-artifacts.sh`. Add the label `ci: full` when a pull
+request changes one of those and needs the image built before it lands.
 
 These are full-tier contexts, with one declared exception
 ([ADR-2198](../adr/2198-windows-sycl-leg-and-cut-check.md)): `Windows Tester
@@ -730,9 +784,8 @@ CMake 5, Go 2, one direct compile).
 | `tests-and-quality-gates.yml` | Netflix CPU golden, DNN, MCP smoke, coverage (gcov), coverage GPU | gcc, icx / icpx with nvcc |
 | `lint-and-format.yml`, `tidy-metal.yml`, `security-scans.yml` | the builds behind Tidy Changed, Tidy SYCL, Cppcheck, Tidy Metal and CodeQL C/C++ | gcc 15, icx, Apple clang, gcc |
 | `nightly.yml`, `fuzz.yml`, `mini-retrain.yml`, `sycl-parity.yml` | TSan, Netflix benchmark, libFuzzer, retrain CLI, Arc A380 parity | gcc, clang 22, icx |
-| `upstream-consumers.yml` | libvmaf at this commit and at the base commit | gcc |
 | `go-ci.yml`, `rust-ci.yml` | the libvmaf build, the cgo package, every cargo step and the Rust-extractor build | gcc, rustc, Go |
-| `ffmpeg-integration.yml` | the libvmaf builds (Ubuntu, macOS, SYCL, Windows MSVC) and the Level Zero build | gcc, clang, icpx, MSVC |
+| `ffmpeg-integration.yml` | the libvmaf builds (Ubuntu, macOS, SYCL, Windows MSVC), the Level Zero build and the upstream consumers' libvmaf at this commit and at the base commit | gcc, clang, icpx, MSVC |
 | `windows-tester-bundle.yml` | the Level Zero build | MSVC |
 
 ### Builds outside the gate
@@ -882,3 +935,108 @@ timeout during `test_uds_roundtrip`.
 The last 40 and 100 master runs across all workflows showed no other flaky test
 or build failure; the only other master failure was the `release-please` token
 permissions, tracked in #1289.
+
+## Downloads and timeouts in test jobs (2026-10-10)
+
+Three failures on `master` on 2026-10-10 had one shape: a required job failed
+on something no change had caused, and its re-run passed. Each is fixed where
+it started; the sections below say what a job must do so it stays fixed.
+
+| Failure | Run | Cause | Fix |
+| --- | --- | --- | --- |
+| `test_crd_compat` failed on `Sanitizers (undefined)` | 38069385197, attempt 1, commit `7c107bcec` | The test downloaded Go modules into a cold cache; the module proxy dropped one stream (`INTERNAL_ERROR`) and nothing retried | [Go modules before the suite](#go-modules-before-the-suite) |
+| `test_vmafx_score` timed out after 30 s on `Sanitizers (thread)` | 38075165924, attempt 1, commit `95132391c` | The sanitizer legs ran every test with the timeout of an uninstrumented build | [Sanitizer legs](#sanitizer-legs) |
+| `Dev Container Build` and `Coverage Gate` could not download a fixture | 38055869167 and 38055869346 | The fixture host answered HTTP 504 for some minutes; one download retried for ten seconds, the other not at all | [Fixture downloads](test-fixtures.md#download-retries) |
+
+### Go modules before the suite
+
+Four tests of the Meson suite run Go tooling: `test_crd_generated_current` and
+`test_crd_compat` (`go tool controller-gen`), `test_proto_generated_current`
+(buf and `go tool protoc-gen-go*`) and `test_vmafx_score_contract`
+(`go test ./cmd/vmafx-server/`). On a hosted runner the module cache is empty
+at the start of every job.
+
+A job that runs the fast suite or the whole suite therefore has this step
+before the test step:
+
+```yaml
+- name: Prefetch Go modules for the suite
+  run: python3 scripts/ci/prefetch_go_modules.py
+```
+
+`scripts/ci/prefetch_go_modules.py` runs `go mod download` (every module
+`go.mod` requires, the tools' included, and the Go toolchain `go.mod` names
+when the installed one is older) and installs the pinned buf into the tool
+cache (`go install`, `~/.cache/vmafx-tools/buf-<version>/`), where
+`scripts/codegen/proto_generate.py` finds it. Each download gets five attempts
+with waits of 10, 30, 60 and 120 seconds; a retry keeps what the attempts
+before it stored. When a download fails on every attempt the step fails and
+prints which download and the last error, so the job is red at the download
+and not inside a unit test. Without Go on `PATH` the step prints that and
+passes: the four tests then skip themselves (exit 77).
+
+After the step the four tests need no network. That was measured with an empty
+module cache and `GOPROXY=off` after the prefetch (1.8 GB of modules, 64 s on
+a workstation). buf is installed, not run through `go run`, because `go run
+<package>@<version>` asks the module proxy for the module's versions on every
+run, also with a full cache.
+
+Write the step the way the test step runs the suite: the same `if:`, the same
+`shell:`, and the same `sudo` form (`sudo`, `sudo -E PATH="$PATH"` or none).
+The module cache and the tool cache belong to a user; a prefetch as the runner
+user fills nothing the suite reads when the suite runs under `sudo`.
+`scripts/ci/tests/test_meson_suite_go_prefetch.py` refuses a suite step without
+such a step before it, and a script of the suite's tests that starts Go without
+being listed there.
+
+### Sanitizer legs
+
+A test of `core/test/meson.build` has 30 seconds unless it sets its own
+timeout. Those values are sized for an uninstrumented build. Every Meson test
+run of a sanitizer build or a gcov (`-Db_coverage=true`) build passes
+`--timeout-multiplier 3`:
+
+| Job | Workflow |
+| --- | --- |
+| `Sanitizers (address)`, `Sanitizers (undefined)`, `Sanitizers (thread)` | `tests-and-quality-gates.yml` |
+| `Sanitizers ASan+UBSan`, `Sanitizers TSan` | `sanitizers.yml` |
+| `ThreadSanitizer` | `nightly.yml` (had the multiplier before) |
+| `Coverage Gate`, `Coverage (GPU)` | `tests-and-quality-gates.yml` (gcov, since 2026-10-17) |
+| `make test-sanitizers`, `make coverage` | `Makefile` (`INSTRUMENTED_TEST_TIMEOUT_MULTIPLIER`) |
+
+The value comes from the durations of all tests in 15 job logs of 2026-10-10:
+the three matrix legs in three runs (11 logs with two re-run attempts, one of
+them the run that timed out) and the two jobs of `sanitizers.yml` in two runs.
+Without a multiplier these tests ran above half of their timeout:
+
+| Test | Timeout | Slowest run | Share of the timeout | With the multiplier |
+| --- | --- | --- | --- | --- |
+| `test_vmafx_score` | 30 s | killed at 30.01 s (thread); 27.99 s finished (ASan+UBSan) | 1.00; 0.93 | 0.33; 0.31 |
+| `test_metal_psnr_hvs_math` | 120 s | 107.88 s (ASan+UBSan) | 0.90 | 0.30 |
+| `test_cambi_stage_simd` | 30 s | 18.88 s (thread) | 0.63 | 0.21 |
+| `test_feature_score_fed_frame` | 30 s | 16.04 s (undefined) | 0.53 | 0.18 |
+| `test_model_collection_api` | 30 s | 15.23 s (thread) | 0.51 | 0.17 |
+
+The same test takes very different times on the same leg: `test_vmafx_score`
+ran 10.27 s, 20.25 s and 20.48 s on the thread leg before the run that killed
+it at 30 s, and `test_vmafx_api_generator` 8.00 s and 27.60 s. A timeout that
+the slowest finished run fills to 0.93 leaves no room for that spread. With
+the multiplier the slowest finished run of every test stays below a third of
+its timeout.
+
+A multiplier for the leg was chosen over longer timeouts on the five tests:
+the slowdown comes from the instrumentation, not from those tests, and the
+next slow test would need the same edit after it has failed once. The job's
+own `timeout-minutes` still ends a run that hangs.
+`scripts/ci/tests/test_sanitizer_suite_timeouts.py` refuses a test run in a
+job with a `-Db_sanitize=` or `-Db_coverage=true` build that passes no
+multiplier or another value.
+
+The coverage jobs joined on 2026-10-17. In the green coverage runs before,
+`test_integer_adm_simd` took 19.6 s to 19.8 s of its 30 s; on master run
+39006126494 it reached 30 s and was killed. The Meson step then failed, every
+later step of the job was skipped, and the four Python coverage shards reported
+`skipped`. The step `Assert every Python coverage shard passed` now names the
+first earlier step that did not succeed (`shard 1/4 outcome was skipped: step
+Meson-unit-suite outcome was failure`), and `scripts/ci/test_fail_closed_ci.py`
+runs that step's script against planted outcomes.

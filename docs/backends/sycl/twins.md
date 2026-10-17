@@ -226,6 +226,12 @@ one result block per frame. The host forms the entropies and the score with
 the parity check are on [the SpEED
 page](../../metrics/speed_qa.md#sycl-device-resident-and-bit-identical-to-the-cpu).
 
+Each covariance entry is the CPU's sequential fp64 sum: the differences and
+products are formed in parallel, then one work-item per entry adds them in
+raster order, so the stored covariance matches `speed.c` bit for bit on every
+frame, 4K and larger included
+([ADR-2690](../../adr/2690-sycl-speed-covariance-fast-exact.md)).
+
 `speed_chroma_sycl` reports a singular covariance separately from a device
 failure: a failure fails the frame instead of emitting `0.0`, and a channel
 with exactly one singular side scores 0 as on the CPU

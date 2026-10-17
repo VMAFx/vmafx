@@ -371,8 +371,8 @@ entries:
   evidence:
   - REUSE.toml
   - docs/licensing.md
-  note: The patch series adds libvmaf filters; patch 0019 also touches GPL units. Upstream states most
-    files LGPL v2.1 or later and some GPL.
+  note: The patch series adds libvmaf filters. The shared fix series applied before it (VMAFx/ffmpeg-patches,
+    fetched at build time) also touches GPL units. Upstream states most files LGPL v2.1 or later and some GPL.
 - id: lime-local-explainer
   name: LIME local explainer
   url: https://github.com/marcotcr/lime
@@ -447,8 +447,8 @@ entries:
   relation: shipped
   license: MIT
   paths:
-  - tools/figures/dist/
-  note: Bundled in the figure player; texts in dist/THIRD-PARTY-LICENSES.txt.
+  - tools/figures/player/
+  note: Bundled in the figure player; texts in player/THIRD-PARTY-LICENSES.txt.
 - id: prometheus-pushgateway-chart
   name: Prometheus Pushgateway Helm chart
   url: https://github.com/prometheus-community/helm-charts
@@ -502,6 +502,15 @@ entries:
   paths:
   - docs/javascripts/vendor/katex/
   note: Formula renderer of the documentation site (ADR-2705); also compiles every formula in the docs build check.
+- id: winget-manifest-schemas
+  name: winget manifest schemas
+  url: https://github.com/microsoft/winget-cli
+  kind: standard
+  relation: vendored
+  license: MIT
+  paths:
+  - packaging/schemas/winget-1.12.0/
+  note: JSON schemas of winget manifest 1.12.0; the distribution tests validate the generated winget manifests against them (ADR-3317).
 - id: d3
   name: D3
   url: https://github.com/d3/d3
@@ -1015,18 +1024,28 @@ entries:
   relation: adapted
   license: MIT
   license_note: terms at adaptation; upstream relicensed to Apache-2.0 on 2026-09-24
-  paths: []
+  paths:
+  - .agents/skills/caveman/LICENSE
+  - .claude/skills/caveman/LICENSE
   evidence:
   - AGENTS.md
-  note: Julius Brussee and contributors; the internal text register skill is adapted from it.
+  - .agents/skills/caveman/SKILL.md
+  note: Julius Brussee and contributors; the internal text register skill is adapted from it. The LICENSE file next to the skill holds the MIT text as praetor ships it with the skill.
 - id: i-have-adhd
   name: i-have-adhd
   url: https://github.com/ayghri/i-have-adhd
   kind: text
   relation: adapted
   license: MIT
-  paths: []
-  note: Source of the adhd-format and social-text skills.
+  paths:
+  - .agents/skills/adhd-format/LICENSE
+  - .agents/skills/social-text/LICENSE
+  - .claude/skills/adhd-format/LICENSE
+  - .claude/skills/social-text/LICENSE
+  evidence:
+  - .agents/skills/adhd-format/SKILL.md
+  - .agents/skills/social-text/SKILL.md
+  note: Ayoub Ghriss and contributors; source of the adhd-format and social-text skills. The LICENSE file next to each skill holds the MIT text as praetor ships it with the skill.
 - id: contributor-covenant
   name: Contributor Covenant 2.1
   url: https://www.contributor-covenant.org/version/2/1/code_of_conduct/
@@ -2099,7 +2118,7 @@ entries:
   - .github/ci-impact.json
   - .github/codeql-config.yml
   - .github/copilot-instructions.md
-  - .github/workflows/doxygen-public-api.yml
+  - .github/workflows/docs.yml
   - .github/workflows/required-aggregator.yml
   - .pre-commit-config.yaml
 - id: hadolint
@@ -2452,7 +2471,7 @@ entries:
   - .github/workflows/docker-publish-operator-node.yml
   - .github/workflows/docker-publish-production.yml
   - .github/workflows/docker-publish-tester.yml
-  - .github/workflows/doxygen-public-api.yml
+  - .github/workflows/docs.yml
   - .github/workflows/e2e-k8s.yml
   - .github/workflows/ffmpeg-patch-stack.yml
 - id: action-actions-download-artifact
@@ -2653,8 +2672,8 @@ entries:
   relation: used-by-CI
   license: Apache-2.0
   paths:
-  - .github/workflows/scorecard-policy.yml
   - .github/workflows/scorecard.yml
+  - .github/workflows/security-scans.yml
 - id: action-mxschmitt-action-tmate
   name: mxschmitt/action-tmate
   url: https://github.com/mxschmitt/action-tmate

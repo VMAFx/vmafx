@@ -424,6 +424,30 @@ EOF_INC
     msvc_fail=1
   fi
 
+  # <windows.h> defines min and max as function-like macros unless NOMINMAX is
+  # defined first, and the Windows builds read it through
+  # core/src/compat/win32/pthread.h wherever a source includes <pthread.h>. A
+  # C++ translation unit that then calls std::min(a, b) compiles on every Linux
+  # and macOS lane and fails under MSVC with C2589 (2026-10-11:
+  # fex_ctx_vector_internal.h, every MSVC build of master). The scanner reads
+  # each C++ translation unit in include order and reports the calls a changed
+  # file puts behind the header. A scan that cannot run fails the stage.
+  minmax_files=$(changed_sources)
+  minmax_hits=""
+  if [ -n "$minmax_files" ]; then
+    if ! minmax_hits=$(printf '%s\n' "$minmax_files" |
+      python3 "$PREFLIGHT_DIR/find-windows-minmax.py" -); then
+      printf '     %s\n' 'Windows min/max macro scan did not run (scripts/dev/find-windows-minmax.py)'
+      msvc_fail=1
+    fi
+  fi
+  if [ -n "$minmax_hits" ]; then
+    printf '     %s\n' 'min( / max( call behind <windows.h> without NOMINMAX in a C++ translation unit the Windows build compiles — MSVC C2589'
+    printf '     %s\n' '  (write (std::min)(a, b) or a conditional expression; <pthread.h> is compat/win32/pthread.h on Windows)'
+    printf '%s\n' "$minmax_hits" | awk 'NR <= 20' | sed 's/^/       /'
+    msvc_fail=1
+  fi
+
   if [ "$msvc_fail" -eq 0 ]; then
     ok msvcism
   else

@@ -80,7 +80,7 @@ class ReleaseLightTier(unittest.TestCase):
                 self.assertEqual(run(name, None, "release-light", head_ref=RELEASE_REF), [])
         failures = run(RELEASE_CONTRACT, None, "release-light", head_ref=RELEASE_REF)
         self.assertEqual(len(failures), 1)
-        self.assertIn("never reported on a release branch", failures[0])
+        self.assertIn("never reported on SHA", failures[0])
 
     def test_a_context_that_ran_and_failed_still_blocks(self) -> None:
         failures = run(LIGHT_PLAIN, "failure", "release-light", head_ref=RELEASE_REF)

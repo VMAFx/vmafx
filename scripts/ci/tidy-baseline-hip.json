@@ -4,7 +4,7 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "cc_version": "gcc-15 (Ubuntu 15.2.0-16ubuntu1) 15.2.0",
-  "tus": 507,
+  "tus": 508,
   "measured_sources": [
     "core/src/compat/path_utf8.c",
     "core/src/cpu.cpp",
@@ -512,7 +512,8 @@
     "core/tools/vmaf_per_shot_input.c",
     "core/tools/vmaf_roi.c",
     "core/tools/y4m_input.c",
-    "core/tools/yuv_input.c"
+    "core/tools/yuv_input.c",
+    "scripts/dev/hip_dispatch_drop_probe.hip"
   ],
   "compile_failures": [],
   "total_warnings": 0,
@@ -704,6 +705,20 @@
         }
       },
       "previous_baseline_sha256": "0d654eb6dadf3056cd6a4999a477d4dc9c23930b9952fa589ee62269b0632128"
+    },
+    {
+      "sources": [
+        "scripts/dev/hip_dispatch_drop_probe.hip"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "scripts/dev/hip_dispatch_drop_probe.hip"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "9741f4f0a62ba8399b60780cbcac38b15544fc4fdbd33c2781712729ed0df66d"
     }
   ]
 }

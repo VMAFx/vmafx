@@ -1,0 +1,1 @@
+| [ADR-3317](3317-distribution-manifest.md) | One distribution manifest (`packaging/manifest.toml`) describes every artifact and channel; `scripts/release/distribution.py` generates the Homebrew, conda-forge, winget and index metadata and fails CI on drift from the licensing record, package manifests and producer jobs. | Accepted | release, packaging, licence, ci, supply-chain |

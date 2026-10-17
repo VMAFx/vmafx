@@ -16,6 +16,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from scripts.ci import ffmpeg_shared_series_fixture as shared_series
 from scripts.lib.safe_subprocess import run as run_command
 
 SPEC = importlib.util.spec_from_file_location(
@@ -407,6 +408,103 @@ class RealReplay(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             STACK.maintain(self.repo, self.output, True, False)
         self.assertEqual(self.contents(), before)
+
+
+class SharedSeriesReplay(RealReplay):
+    """The shared FFmpeg fix series is verified and applied before ours (ADR-3143)."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.git(self.upstream, "switch", "-q", "--detach", "n9.0.1")
+        (self.upstream / "shared-fix").write_text("fixed upstream of the series\n")
+        self.git(self.upstream, "add", "shared-fix")
+        self.git(self.upstream, "commit", "-qm", "shared fix")
+        self.shared_patch = self.git(self.upstream, "format-patch", "-1", "--stdout")
+        self.git(self.upstream, "switch", "-q", "--detach", self.head)
+        self.base_config = (self.repo / "build-config.env").read_text()
+        self.pin_series("n9.0.1", self.pin)
+
+    def pin_series(self, tag: str, commit: str, **members: bytes) -> None:
+        archive, digest = shared_series.tarball(
+            self.root / "shared-series",
+            tag,
+            commit,
+            {shared_series.PATCH_NAME: self.shared_patch},
+            extra_members=members,
+        )
+        (self.repo / "build-config.env").write_text(
+            self.base_config + shared_series.pins(archive, digest)
+        )
+
+    def assert_refused(self, error: type[Exception], needle: str) -> None:
+        before = self.contents()
+        with self.assertRaisesRegex(error, needle):
+            STACK.maintain(self.repo, self.output, True, False)
+        self.assertEqual(self.contents(), before)
+        self.assertEqual(json.loads((self.output / "receipt.json").read_text())["status"], "failed")
+
+    def test_series_is_applied_first_and_ours_are_rendered_alone(self) -> None:
+        result = STACK.maintain(self.repo, self.output, True, False)
+        self.assertEqual(result["shared_series"], shared_series.TAG)
+        self.assertEqual(result["shared_patch_count"], 1)
+        self.assertEqual(result["patch_count"], 1)
+        log = (self.output / "replay.log").read_text()
+        self.assertLess(log.index(shared_series.PATCH_NAME), log.index("0001-integration.patch"))
+        rendered = self.patch.read_text()
+        self.assertIn("add integration", rendered)
+        self.assertNotIn("shared fix", rendered)
+        self.assertEqual(STACK.maintain(self.repo, self.output, False, False)["changed"], [])
+
+    def test_another_sha256_is_refused(self) -> None:
+        config = self.repo / "build-config.env"
+        text = config.read_text()
+        digest = text.split('FFMPEG_FIX_SERIES_SHA256="', 1)[1][:64]
+        config.write_text(text.replace(digest, "0" * 64))
+        self.assert_refused(RuntimeError, "build-config.env pins")
+
+    def test_series_for_another_ffmpeg_is_refused(self) -> None:
+        self.pin_series("n9.9.9", self.pin)
+        self.assert_refused(RuntimeError, "targets n9.9.9")
+        self.pin_series("n9.0.1", "0" * 40)
+        self.assert_refused(RuntimeError, "targets n9.0.1")
+
+    def test_member_outside_the_archive_is_refused(self) -> None:
+        self.pin_series("n9.0.1", self.pin, **{"../escaped": b"x"})
+        self.assert_refused(RuntimeError, "leaves the archive root")
+        self.assertFalse((self.root / "escaped").exists())
+
+    def test_partial_pin_is_refused(self) -> None:
+        config = self.repo / "build-config.env"
+        lines = [
+            line
+            for line in config.read_text().splitlines()
+            if not line.startswith("FFMPEG_FIX_SERIES_SHA256")
+        ]
+        config.write_text("\n".join(lines) + "\n")
+        self.assert_refused(ValueError, "without")
+
+    def test_required_signature_cannot_be_skipped(self) -> None:
+        with patch.dict(os.environ, {"FFMPEG_FIX_SERIES_VERIFY": "cosign"}):
+            self.assert_refused(RuntimeError, "cosign|signature cannot be checked")
+
+    # With a series pinned, the inherited release move is refused instead.
+    test_latest_release_rebases_and_updates_all_mirrors = None  # type: ignore[assignment]
+
+    def test_new_ffmpeg_release_waits_for_a_series_release(self) -> None:
+        self.git(self.upstream, "switch", "-q", "--detach", "n9.0.1")
+        (self.upstream / "other").write_text("new release\n")
+        self.git(self.upstream, "add", "other")
+        self.git(self.upstream, "commit", "-qm", "release")
+        self.git(self.upstream, "tag", "n9.1")
+        before = self.contents()
+        with self.assertRaisesRegex(
+            ValueError, "n9.1 is released, but the pinned shared fix series"
+        ):
+            STACK.maintain(self.repo, self.output, True, True)
+        self.assertEqual(self.contents(), before)
+        self.assertIn(
+            "add integration", (self.output / "patches/0001-integration.patch").read_text()
+        )
 
 
 if __name__ == "__main__":

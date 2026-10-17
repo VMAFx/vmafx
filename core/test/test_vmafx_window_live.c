@@ -466,29 +466,29 @@ static char *check_windows(const Live *live, VmafxContext *offline)
     return NULL;
 }
 
-/* With VMAFX_WINDOW_JSON set, write the windows there, one JSON object per
- * line with every value at 17 digits, for test_vmafx_window_cli.py to hold
- * against the CLI's per-frame scores. */
+/* With VMAFX_WINDOW_JSON set (to any value), write the windows to stdout, one
+ * JSON object per line with every value at 17 digits, for
+ * test_vmafx_window_cli.py to hold against the CLI's per-frame scores. The
+ * variable is a switch: the harness opens no file it names, and nothing else
+ * of this program writes to stdout (test.c reports on stderr). */
 static bool dump_windows(const Live *live)
 {
     /* The once-only environment snapshot (ADR-0488), not getenv(). */
-    const char *const path = vmaf_gpu_dispatch_env_get("VMAFX_WINDOW_JSON");
-    FILE *const file = path ? fopen(path, "w") : NULL;
-    if (!path) {
+    if (!vmaf_gpu_dispatch_env_get("VMAFX_WINDOW_JSON")) {
         return true;
     }
-    bool ok = file != NULL;
+    bool ok = true;
     for (unsigned w = 0; w < live->n_windows && ok; w++) {
         const LiveWindow *const lw = &live->windows[w];
         const VmafxWindowResult *const r = &lw->result;
-        ok = fprintf(file, "{\"target\": \"%s\", \"first\": %llu, \"n_frames\": %llu, \"value\": [",
-                     r->name, (unsigned long long)r->first, (unsigned long long)r->n_frames) > 0;
+        ok = printf("{\"target\": \"%s\", \"first\": %llu, \"n_frames\": %llu, \"value\": [",
+                    r->name, (unsigned long long)r->first, (unsigned long long)r->n_frames) > 0;
         for (unsigned p = 0; p < 9u && ok; p++) {
-            ok = fprintf(file, p ? ", %.17g" : "%.17g", r->value[p]) > 0;
+            ok = printf(p ? ", %.17g" : "%.17g", r->value[p]) > 0;
         }
-        ok = ok && fprintf(file, "]}\n") > 0;
+        ok = ok && printf("]}\n") > 0;
     }
-    return file && fclose(file) == 0 && ok;
+    return fflush(stdout) == 0 && ok;
 }
 
 /* Stream the clip with the poller running; the contexts stay open. */

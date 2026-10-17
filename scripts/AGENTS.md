@@ -394,6 +394,26 @@ too late because mypy rejects duplicate module discovery before diagnostics are
 filtered. dedicated `ai/src` run remains responsible for checking those
 sources with `--explicit-package-bases`.
 
+### `adr/next-free.sh --claim` lock + claim file independent of cwd
+
+- Lock name = resolved absolute common git dir
+  (`cd "$(git rev-parse --git-common-dir)" && pwd -P`). Relative `.git`
+  vs `../.git` gave root and `docs/` callers different locks -> duplicate
+  numbers (#2769 CI).
+- Lock holds owner token; release only own lock.
+- Exclusive claim file `.git/adr-claims/NNNN` (`noclobber`) decides number;
+  taken -> N+1, max 100 tries.
+- Test cleanups (`adr/test-next-free.sh`,
+  `adr/tests/test-next-free-remote-aware.sh`) compute same name.
+- Lock = owner file, created `noclobber` (O_EXCL) in lock dir; dir without
+  owner file = free. Owner pid dead -> under `<lock>.takeover` mutex: pid
+  re-checked, owner line re-compared, file removed with WARNING. Live holder
+  never taken over. No grace takeover (raced fresh mkdir, soak 2). Exit trap
+  set before mkdir. Wait = `VMAF_ADR_LOCK_WAIT_S`
+  (default 60, was fixed 10) (#2784).
+- Guards: `adr/tests/test-next-free-concurrent.sh`,
+  `adr/tests/test-next-free-stale-lock.sh`.
+
 ### `run_unittests.sh` is upstream-mirror
 
 Script = part of original Netflix Python test harness

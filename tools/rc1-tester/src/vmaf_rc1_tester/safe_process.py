@@ -1,22 +1,32 @@
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
-"""Self-contained bounded subprocess execution for the external tester."""
+"""Bounded subprocess execution for the external tester.
+
+The tester ships as a stand-alone wheel, so it carries a byte copy of the
+repository's runner, ``scripts/lib/safe_subprocess.py``, as
+``_safe_subprocess.py`` (``tests/test_safe_subprocess_copy.py`` fails when the
+two differ). This module keeps the tester's own public contract on top of it:
+the names, exceptions and messages below are unchanged since the wheel was
+first published.
+"""
 
 from __future__ import annotations
 
 import asyncio
+import errno
 import os
 import shutil
-import signal
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-MAX_ARG_COUNT = 4096
-MAX_ARG_BYTES = 65_536
-MAX_ARGV_BYTES = 1_048_576
-READ_CHUNK_BYTES = 65_536
-TERMINATION_GRACE_SECONDS = 2.0
+from vmaf_rc1_tester import _safe_subprocess as shared
+
+MAX_ARG_COUNT = shared.MAX_ARG_COUNT
+MAX_ARG_BYTES = shared.MAX_ARG_BYTES
+MAX_ARGV_BYTES = shared.MAX_ARGV_BYTES
+READ_CHUNK_BYTES = shared.READ_CHUNK_BYTES
+TERMINATION_GRACE_SECONDS = shared.TERMINATION_GRACE_SECONDS
 WINDOWS_CREATE_NEW_PROCESS_GROUP = 0x00000200
 
 
@@ -42,30 +52,11 @@ class CommandOutputLimitExceeded(RuntimeError):
         super().__init__(f"command exceeded {max_output_bytes} captured bytes")
 
 
-class _CaptureOverflow(RuntimeError):
-    pass
-
-
 @dataclass(frozen=True)
 class CommandResult:
     returncode: int
     stdout: str
     stderr: str
-
-
-@dataclass
-class _CaptureBudget:
-    limit: int
-    used: int = 0
-
-    def retain(self, chunk: bytes, destination: bytearray) -> None:
-        remaining = self.limit - self.used
-        if remaining > 0:
-            kept = chunk[:remaining]
-            destination.extend(kept)
-            self.used += len(kept)
-        if len(chunk) > remaining:
-            raise _CaptureOverflow
 
 
 def _validated_argv(argv: Sequence[str]) -> tuple[str, ...]:
@@ -115,129 +106,12 @@ def _validated_environment(environment: Mapping[str, str] | None) -> dict[str, s
     return result
 
 
-async def _read_bounded(
-    reader: asyncio.StreamReader,
-    destination: bytearray,
-    budget: _CaptureBudget,
-) -> None:
-    while chunk := await reader.read(READ_CHUNK_BYTES):
-        budget.retain(chunk, destination)
-
-
-def _signal_group(process_id: int, selected_signal: signal.Signals) -> bool:
-    try:
-        os.killpg(process_id, selected_signal)
-    except ProcessLookupError:
-        return False
-    return True
-
-
-def _process_group_exists(process_id: int) -> bool:
-    try:
-        os.killpg(process_id, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
-
-
-async def _terminate_process_group(process: asyncio.subprocess.Process) -> None:
-    if os.name == "posix":
-        if not _signal_group(process.pid, signal.SIGTERM):
-            return
-        loop = asyncio.get_running_loop()
-        deadline = loop.time() + TERMINATION_GRACE_SECONDS
-        while _process_group_exists(process.pid) and loop.time() < deadline:
-            await asyncio.sleep(min(0.05, max(0.0, deadline - loop.time())))
-        if _process_group_exists(process.pid):
-            _signal_group(process.pid, signal.SIGKILL)
-        if process.returncode is None:
-            await asyncio.wait_for(process.wait(), timeout=TERMINATION_GRACE_SECONDS)
+def _check_working_directory(cwd: str | None) -> None:
+    """Raise the OSError process creation raised for a missing directory."""
+    if cwd is None or os.path.isdir(cwd):
         return
-    if process.returncode is not None:
-        return
-    try:
-        process.terminate()
-    except ProcessLookupError:
-        return
-    try:
-        await asyncio.wait_for(process.wait(), timeout=TERMINATION_GRACE_SECONDS)
-    except TimeoutError:
-        try:
-            process.kill()
-        except ProcessLookupError:
-            return
-        await asyncio.wait_for(process.wait(), timeout=TERMINATION_GRACE_SECONDS)
-
-
-async def _capture(
-    process: asyncio.subprocess.Process,
-    timeout_seconds: float,
-    max_output_bytes: int,
-) -> tuple[bytes, bytes, bool, bool]:
-    assert process.stdout is not None
-    assert process.stderr is not None
-    stdout = bytearray()
-    stderr = bytearray()
-    budget = _CaptureBudget(max_output_bytes)
-    tasks = [
-        asyncio.create_task(process.wait()),
-        asyncio.create_task(_read_bounded(process.stdout, stdout, budget)),
-        asyncio.create_task(_read_bounded(process.stderr, stderr, budget)),
-    ]
-    timed_out = False
-    overflowed = False
-    cancellation: asyncio.CancelledError | None = None
-    try:
-        await asyncio.wait_for(asyncio.gather(*tasks), timeout=timeout_seconds)
-    except TimeoutError:
-        timed_out = True
-    except _CaptureOverflow:
-        overflowed = True
-    except asyncio.CancelledError as exc:
-        cancellation = exc
-    finally:
-        if timed_out or overflowed or cancellation is not None:
-            for task in tasks:
-                task.cancel()
-            await asyncio.gather(*tasks, return_exceptions=True)
-            await _terminate_process_group(process)
-    if cancellation is not None:
-        raise cancellation
-    return bytes(stdout), bytes(stderr), timed_out, overflowed
-
-
-async def _run_async(
-    argv: tuple[str, ...],
-    environment: dict[str, str],
-    timeout_seconds: float,
-    max_output_bytes: int,
-    cwd: str | None = None,
-) -> CommandResult:
-    process_options: dict[str, object] = {
-        "stdin": asyncio.subprocess.DEVNULL,
-        "stdout": asyncio.subprocess.PIPE,
-        "stderr": asyncio.subprocess.PIPE,
-        "env": environment,
-        "cwd": cwd,
-    }
-    if os.name == "posix":
-        process_options["start_new_session"] = True
-    elif os.name == "nt":
-        process_options["creationflags"] = WINDOWS_CREATE_NEW_PROCESS_GROUP
-    process = await asyncio.create_subprocess_exec(*argv, **process_options)
-    stdout, stderr, timed_out, overflowed = await _capture(
-        process, timeout_seconds, max_output_bytes
-    )
-    decoded_stdout = stdout.decode("utf-8", "replace")
-    decoded_stderr = stderr.decode("utf-8", "replace")
-    if timed_out:
-        raise CommandTimedOut(timeout_seconds, decoded_stdout, decoded_stderr)
-    if overflowed:
-        raise CommandOutputLimitExceeded(max_output_bytes, decoded_stdout, decoded_stderr)
-    assert process.returncode is not None
-    return CommandResult(process.returncode, decoded_stdout, decoded_stderr)
+    code = errno.ENOTDIR if os.path.exists(cwd) else errno.ENOENT
+    raise OSError(code, os.strerror(code), cwd)
 
 
 def run_bounded(
@@ -259,6 +133,18 @@ def run_bounded(
         raise RuntimeError("run_bounded cannot block an active event loop")
     command = _validated_argv(argv)
     selected_environment = _validated_environment(environment)
-    return asyncio.run(
-        _run_async(command, selected_environment, timeout_seconds, max_output_bytes, cwd)
-    )
+    _check_working_directory(cwd)
+    try:
+        result = shared.run(command, allowed_executables=[command[0]], cwd=cwd,
+                            env=selected_environment, capture_output=True, text=True,
+                            encoding="utf-8", errors="replace", timeout_seconds=timeout_seconds,
+                            max_output_bytes=max_output_bytes)  # fmt: skip
+    except shared.CommandValidationError as exc:
+        raise CommandValidationError(str(exc)) from None
+    except shared.CommandTimedOut as exc:
+        raise CommandTimedOut(timeout_seconds, exc.stdout or "", exc.stderr or "") from None
+    except shared.CommandOutputLimitExceeded as exc:
+        raise CommandOutputLimitExceeded(
+            max_output_bytes, exc.stdout or "", exc.stderr or ""
+        ) from None
+    return CommandResult(result.returncode, result.stdout, result.stderr)

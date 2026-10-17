@@ -44,7 +44,8 @@ void trace(Trace *t, const char *fmt, ...) TRACE_FORMAT(2, 3);
 /* A string or "(null)". */
 const char *trace_str(const char *s);
 void trace_free(Trace *t);
-/* The planted defect of this run (VMAF_COMPAT_PLANT), "" for none. The three
+/* The planted defect of this run (VMAF_COMPAT_PLANT): "score", "uncovered" or
+ * "" for none, in the test's own spelling, never the environment's bytes. The
  * meson tests run at once, so each names its scratch files after it. */
 const char *conformance_plant(void);
 

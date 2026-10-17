@@ -56,7 +56,7 @@ jobs:
     needs: tier
     if: needs.tier.outputs.full == 'true'
     name: Plan release dry run
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
       contents: read
@@ -92,7 +92,7 @@ jobs:
     name: Image dry run (${{ matrix.name }})
     needs: plan
     if: needs.plan.outputs.images == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 90
     permissions:
       contents: read
@@ -164,7 +164,7 @@ jobs:
     name: GPU image dry run (${{ matrix.name }})
     needs: plan
     if: needs.plan.outputs.gpu == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 120
     permissions:
       contents: read
@@ -207,7 +207,7 @@ jobs:
     name: vmaf-mcp dist and SBOM dry run
     needs: plan
     if: needs.plan.outputs.mcp == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     permissions:
       contents: read
@@ -315,7 +315,7 @@ jobs:
     if: always() && needs.tier.outputs.full == 'true'
     # required-aggregator
     name: Release Dry Run
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions:
       contents: read

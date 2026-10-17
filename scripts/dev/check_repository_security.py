@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import http.client
 import json
 import os
@@ -18,12 +19,18 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from scripts.ci import lint_exceptions
 from scripts.lib.safe_subprocess import CommandFailed, CommandTimedOut
 from scripts.lib.safe_subprocess import run as run_command
 
 ROOT = Path(__file__).resolve().parents[2]
 POLICY = ROOT / ".github/repository-security-policy.json"
 API_HOST = "api.github.com"
+# The solo-repository standard gives the maintainer's bypass at pull-request mode. Any other
+# declared mode holds only while the exception list carries a dated entry of this rule for
+# the policy file (.config/lint-exceptions.d/<rule>.toml, scripts/ci/lint_exceptions.py).
+SOLO_BYPASS_MODE = "pull_request"
+BYPASS_MODE_RULE = "solo-repository-bypass-mode"
 PAGE_SIZE = 100
 # Upper bound on the comparison steps of one policy document.
 DIFFERENCES_NODE_LIMIT = 1_000_000
@@ -35,6 +42,26 @@ BYPASS_QUERY = """query {
     }
   }
 }"""
+
+
+def bypass_mode_findings(
+    policy: dict[str, Any], entries: list[lint_exceptions.Entry], today: dt.date
+) -> list[str]:
+    """Hold a declared bypass mode other than pull-request mode to an unexpired exception."""
+    path = POLICY.relative_to(ROOT).as_posix()
+    where = f"{lint_exceptions.LIST_DIR.as_posix()}/{BYPASS_MODE_RULE}.toml"
+    declared = {str(actor.get("bypass_mode")) for actor in policy["ruleset"]["bypass_actors"]}
+    modes = sorted(declared - {SOLO_BYPASS_MODE})
+    own = [entry for entry in entries if entry.rule == BYPASS_MODE_RULE and entry.path == path]
+    if not modes:
+        # An exception never outlives its reason.
+        return [f"{where}: stale entry, every bypass mode is {SOLO_BYPASS_MODE}"] if own else []
+    if any(entry.expires >= today for entry in own):
+        return []
+    return [
+        f"ruleset.bypass_actors: bypass_mode {', '.join(modes)} needs an unexpired entry "
+        f"for {path} in {where}"
+    ]
 
 
 def get_json(route: str) -> Any:
@@ -220,7 +247,10 @@ def main() -> int:
     try:
         with POLICY.open(encoding="utf-8") as stream:
             policy = json.load(stream)
+        declared, _ = lint_exceptions.load(ROOT)
+        local = bypass_mode_findings(policy, declared, lint_exceptions.today())
         errors, evidence = inspect(policy)
+        errors = [*local, *errors]
         if args.report:
             with args.report.open("x", encoding="utf-8") as stream:
                 json.dump(

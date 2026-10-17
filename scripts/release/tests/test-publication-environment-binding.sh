@@ -176,7 +176,10 @@ def validate_provenance_job(relative_path: str, job: str, block: str) -> None:
         '--source-ref "refs/tags/$RELEASE_TAG"',
         f"staged={bundle}\n",
         f"          name: {artifact}\n",
-        f"          path: {bundle}\n",
+        # Both forms upload: the Sigstore bundle and its .intoto.jsonl twin (ADR-3316).
+        "          path: |\n"
+        f"            {bundle}\n"
+        f"            {bundle.replace('.sigstore.json', '.intoto.jsonl')}\n",
     )
     for fragment in required_fragments:
         if fragment not in block:
@@ -275,8 +278,10 @@ def validate_attachment(block: str) -> None:
     required = {line.strip() for line in required_match.group("body").splitlines()}
     files = {line.strip() for line in files_match.group("body").splitlines()}
     provenance_paths = [
-        f"dist/{artifact}/{artifact}.sigstore.json"
+        f"dist/{artifact}/{artifact}.{suffix}"
         for _, artifact in PROVENANCE_JOBS.values()
+        # The Sigstore bundle and its .intoto.jsonl form (ADR-3316).
+        for suffix in ("sigstore.json", "intoto.jsonl")
     ]
     expected_files = {
         "dist/release-artifacts/*",
@@ -610,10 +615,10 @@ if replacements != 1:
 expect_rejected("tag-pinned attest action", tag_pinned)
 
 restored_generator = mutate_native_provenance(
-    "    runs-on: ubuntu-latest\n",
+    "    runs-on: ubuntu-26.04\n",
     "    uses: slsa-framework/slsa-github-generator/.github/workflows/"
     "generator_generic_slsa3.yml@0123456789abcdef0123456789abcdef01234567\n"
-    "    runs-on: ubuntu-latest\n",
+    "    runs-on: ubuntu-26.04\n",
 )
 expect_rejected("restored slsa-github-generator", restored_generator)
 

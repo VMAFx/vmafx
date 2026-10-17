@@ -7,6 +7,12 @@ praetor 6c772713a133 reads the live Actions permissions and workflow runs
 during ``audit`` unless it gets ``--offline``. The wrapper must pass the flag
 to an engine that has it and leave an engine without it (the pre-bump pin)
 alone.
+
+The wrapper reaches the engine through ``.config/lefthook/engine.sh``, the
+launcher that runs the engine the repository pins. The fixture repository
+declares no pin, so the launcher runs the stand-in from ``PATH``; a fixture
+that declares pins the launcher cannot use must end the hook without running
+any engine.
 """
 
 from __future__ import annotations
@@ -20,6 +26,7 @@ import unittest
 from pathlib import Path
 
 SCRIPT = Path(__file__).with_name("hiss-audit.sh").resolve()
+LAUNCHER = Path(__file__).resolve().parents[2] / ".config/lefthook/engine.sh"
 BASH = Path(shutil.which("bash") or "/bin/bash")
 GIT = Path(shutil.which("git") or "/usr/bin/git")
 TIMEOUT_S = 30
@@ -37,8 +44,11 @@ USAGE_WITH_OFFLINE = "Usage of audit:\n  -offline\n    \tRead nothing from the f
 USAGE_WITHOUT_OFFLINE = "Usage of audit:\n  -touched string\n    \tTouched files\n"
 
 
-def run_wrapper(usage: str) -> str:
-    """Run the wrapper against a fake engine and return the audit arguments it passed."""
+def run_hook(usage: str, workflows: dict[str, str]) -> tuple[int, str, str]:
+    """Run the wrapper in a fixture repository; return its exit code, stderr and the engine's log.
+
+    ``workflows`` maps a file name under ``.github/workflows`` to its text.
+    """
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         engine = root / "praetorctl"
@@ -46,10 +56,20 @@ def run_wrapper(usage: str) -> str:
         engine.chmod(engine.stat().st_mode | stat.S_IXUSR)
         log = root / "args.log"
         repo = root / "repo"
+        # A git hook exports GIT_DIR and GIT_INDEX_FILE; with them `git init` and the
+        # script under test would act on the caller's repository, not on `repo`.
+        env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
         subprocess.run(  # noqa: S603 -- resolved git path, fixed arguments, no shell
-            [str(GIT), "init", "-q", str(repo)], check=True, timeout=TIMEOUT_S
+            [str(GIT), "init", "-q", str(repo)], check=True, timeout=TIMEOUT_S, env=env
         )
-        env = dict(os.environ, PATH=f"{root}:{os.environ['PATH']}")
+        launcher = repo / ".config/lefthook/engine.sh"
+        launcher.parent.mkdir(parents=True)
+        shutil.copy2(LAUNCHER, launcher)
+        for name, body in workflows.items():
+            workflow = repo / ".github/workflows" / name
+            workflow.parent.mkdir(parents=True, exist_ok=True)
+            workflow.write_text(body, encoding="utf-8")
+        env["PATH"] = f"{root}:{os.environ['PATH']}"
         env.update(FAKE_USAGE=usage, FAKE_LOG=str(log))
         done = subprocess.run(  # noqa: S603 -- resolved bash path and the repository's own script, no shell
             [str(BASH), str(SCRIPT)],
@@ -60,9 +80,16 @@ def run_wrapper(usage: str) -> str:
             timeout=TIMEOUT_S,
             check=False,
         )
-        if done.returncode != 0:
-            raise AssertionError(done.stderr)
-        return log.read_text(encoding="utf-8").strip()
+        logged = log.read_text(encoding="utf-8").strip() if log.exists() else ""
+        return done.returncode, done.stderr, logged
+
+
+def run_wrapper(usage: str) -> str:
+    """Run the wrapper against a fake engine and return the audit arguments it passed."""
+    returncode, stderr, logged = run_hook(usage, {})
+    if returncode != 0:
+        raise AssertionError(stderr)
+    return logged
 
 
 class HissAuditOfflineTest(unittest.TestCase):
@@ -74,6 +101,27 @@ class HissAuditOfflineTest(unittest.TestCase):
 
     def test_boundary_empty_usage_is_run_as_before(self) -> None:
         self.assertEqual(run_wrapper(""), "audit")
+
+    def test_negative_two_different_pins_end_the_hook_without_an_engine(self) -> None:
+        returncode, stderr, logged = run_hook(
+            USAGE_WITH_OFFLINE,
+            {
+                "one.yml": "env:\n  PRAETOR_REF: 1111111111111111111111111111111111111111\n",
+                "two.yml": "env:\n  PRAETOR_REF: 2222222222222222222222222222222222222222\n",
+            },
+        )
+        self.assertNotEqual(returncode, 0)
+        self.assertIn("praetor hooks: the repository declares several PRAETOR_REF values", stderr)
+        self.assertEqual(logged, "", "the engine on PATH ran although the pins conflict")
+
+    def test_negative_an_unusable_pin_ends_the_hook_without_an_engine(self) -> None:
+        returncode, stderr, logged = run_hook(
+            USAGE_WITH_OFFLINE, {"gate.yml": "env:\n  PRAETOR_REF: main\n"}
+        )
+        self.assertNotEqual(returncode, 0)
+        self.assertIn("praetor hooks: PRAETOR_REF='main'", stderr)
+        self.assertIn("is no usable pin", stderr)
+        self.assertEqual(logged, "", "the engine on PATH ran although the pin is unusable")
 
 
 if __name__ == "__main__":

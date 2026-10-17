@@ -35,7 +35,7 @@ grep -Fq $'dedupe-check:\n\t@standardsctl dedupe scan .' "$repo_root/Makefile" |
 grep -Fq $'\t@$(MAKE) --no-print-directory dedupe-check' "$repo_root/Makefile" ||
   report_failure "make verify-all does not invoke dedupe-check"
 
-lefthook_count="$(grep -Fc 'praetorctl dedupe scan .' "$repo_root/lefthook.yml")"
+lefthook_count="$(grep -Fc 'sh .config/lefthook/engine.sh dedupe scan .' "$repo_root/lefthook.yml")"
 if [[ "$lefthook_count" -ne 2 ]]; then
   report_failure "expected clone scan in pre-commit and pre-push, found $lefthook_count"
 fi

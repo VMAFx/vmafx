@@ -70,7 +70,7 @@ stage that cries wolf is a stage people learn to ignore.
 ## What it does not cover
 
 `Windows UCRT64`, the Windows MSVC lanes proper, and `Ubuntu HIP` have no
-local equivalent here. `msvcism` is a set of pattern matches plus two small
+local equivalent here. `msvcism` is a set of pattern matches plus three small
 scanners over known rejection classes, not a compiler — `Windows MSVC+*`
 remains the authority. `scripts/dev/find-nonconst-static-init.py` finds a
 `static` aggregate initialised from a `const` object (MSVC C2099).
@@ -81,7 +81,18 @@ conditional in a source the Windows build compiles (MSVC C1083); it reads the
 (`host_machine.system() != 'windows'`), and a scan that cannot run fails the
 stage. A file that is POSIX-only by design and built by no `meson.build` is a
 named exception in `.config/lint-exceptions.d/msvcism-posix-headers.toml`
-([ADR-2646](../adr/2646-posix-only-build-options.md)). For HIP and
+([ADR-2646](../adr/2646-posix-only-build-options.md)).
+`scripts/dev/find-windows-minmax.py` finds a `std::min(`, `std::max(` or
+`std::numeric_limits<T>::max(` call that a C++ translation unit of the Windows
+build reaches after `<windows.h>` without `NOMINMAX` (MSVC C2589: the header
+defines `min` and `max` as function-like macros). It reads each translation
+unit in the order a Windows preprocessor would, through the tree's own headers
+and the `core/src/compat/win32/` shims (`<pthread.h>` includes `<windows.h>`
+there), and reports a unit only when the scan of it read a changed file; a
+scan that cannot run fails the stage. `(std::min)(a, b)` and `std::min<T>(a, b)`
+are no macro invocations and pass. It does not follow system or SDK headers,
+does not scan CUDA device code or C sources, does not expand macro bodies and
+does not see a `NOMINMAX` given on the compiler command line. For HIP and
 the other GPU backends use the dev container
 ([dev-mcp.md](dev-mcp.md), ADR-0451).
 

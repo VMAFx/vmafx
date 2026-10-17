@@ -4,8 +4,8 @@
 """Window scores of the live harness equal the offline CLI (RC4 WP4, #2238).
 
 Runs ``test_vmafx_window_live`` (textures imported at 60 fps, windows of
-0.2 s polled from another thread) with ``VMAFX_WINDOW_JSON`` set, runs the
-``vmaf`` CLI on the same Netflix 576x324 pair at ``--precision max``, and
+0.2 s polled from another thread) with ``VMAFX_WINDOW_JSON`` set, which makes
+it write its windows to stdout, runs the ``vmaf`` CLI on the same Netflix 576x324 pair at ``--precision max``, and
 pools the CLI's per-frame scores over each window with the engine's
 arithmetic (``pool_accumulate`` / ``pool_reduce`` / ``vmaf_percentile`` in
 ``core/src/libvmaf.c`` and ``core/src/percentile.h``: running sums in frame
@@ -64,13 +64,15 @@ def pooled(scores: list[float]) -> list[float]:
     return values
 
 
-def run(cmd: list[str], env: dict[str, str]) -> None:
+def run(cmd: list[str], env: dict[str, str]) -> str:
+    """Run ``cmd``; its standard output, or exit with its output when it fails."""
     result = subprocess.run(  # noqa: S603 -- the test's own build outputs, argument list, no shell
         cmd, env=env, capture_output=True, text=True, timeout=600, check=False
     )
     if result.returncode != 0:
         sys.stderr.write(result.stdout + result.stderr)
         raise SystemExit(f"{cmd[0]} exited {result.returncode}")
+    return result.stdout
 
 
 def main(argv: list[str]) -> int:
@@ -78,11 +80,11 @@ def main(argv: list[str]) -> int:
     if not (yuv / REF).is_file() or not (yuv / DIST).is_file():
         print(f"skip: fixtures {REF}, {DIST} not in {yuv}")
         return SKIP
+    # The variable is a switch: the harness writes its windows to stdout, one
+    # JSON object per line, and opens no file of its own.
+    lines = run([harness], dict(os.environ, VMAFX_WINDOW_JSON="1")).splitlines()
     with tempfile.TemporaryDirectory() as tmp:
-        windows_path = Path(tmp) / "windows.jsonl"
         cli_path = Path(tmp) / "cli.json"
-        env = dict(os.environ, VMAFX_WINDOW_JSON=str(windows_path))
-        run([harness], env)
         run(
             [
                 cli,
@@ -109,9 +111,8 @@ def main(argv: list[str]) -> int:
             ],
             dict(os.environ),
         )
-        lines = windows_path.read_text(encoding="utf-8").splitlines()
         frames = json.loads(cli_path.read_text(encoding="utf-8"))["frames"]
-    windows = [json.loads(line) for line in lines]
+    windows = [json.loads(line) for line in lines if line.startswith("{")]
     checked = 0
     for window in windows:
         first, n = window["first"], window["n_frames"]

@@ -11,6 +11,10 @@ set -euo pipefail
 
 # shellcheck source=scripts/ci/upstream-consumer-lib.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/upstream-consumer-lib.sh"
+# The upstream clone goes into a temporary directory. Run from a git hook, it would write
+# into the caller's repository through the hook's GIT_DIR.
+# shellcheck source=scripts/lib/drop-git-env.sh
+. "$UC_REPO/scripts/lib/drop-git-env.sh"
 
 uc_defaults
 uc_parse_common "$@"

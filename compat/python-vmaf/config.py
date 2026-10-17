@@ -6,6 +6,8 @@ import tempfile
 import urllib.error
 import urllib.request
 
+from vmaf.tools.retrying_download import retrieve
+
 __copyright__ = "Copyright 2016-2020, Netflix, Inc."
 __license__ = "BSD+Patent"
 
@@ -60,7 +62,11 @@ def download_reactively(local_path, remote_path):
             )
             os.close(fd)
             try:
-                urllib.request.urlretrieve(remote_path, tmp_path)
+                # Fork change: a transient failure (HTTP 5xx, a dropped
+                # connection) is retried for minutes instead of failing the
+                # test that asked for the fixture; one policy with
+                # scripts/test/fetch-test-yuvs.sh (vmaf/tools/retrying_download.py).
+                retrieve(remote_path, tmp_path)
                 os.replace(tmp_path, local_path)
             except Exception:
                 try:

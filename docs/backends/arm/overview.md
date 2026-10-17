@@ -158,7 +158,7 @@ not change.
 
 | Job | Runner | What it checks |
 |-----|--------|----------------|
-| `Ubuntu ARM clang` ([`libvmaf-build-matrix.yml`][libvmaf-build-matrix]) | `ubuntu-24.04-arm`, clang | the full unit-test and tox suite on real aarch64 hardware, not qemu |
+| `Ubuntu ARM clang` ([`libvmaf-build-matrix.yml`][libvmaf-build-matrix]) | `ubuntu-26.04-arm`, clang | the full unit-test and tox suite on real aarch64 hardware, not qemu |
 | `Windows ARM64 MSVC` (same workflow) | `windows-11-vs2026-arm` | NEON tree built natively with the ARM64-hosted MSVC toolset, meson `fast` suite ([ADR-1260](../../adr/1260-windows-arm64-cpu-lane.md)); advisory |
 
 [libvmaf-build-matrix]: ../../../.github/workflows/libvmaf-build-matrix.yml

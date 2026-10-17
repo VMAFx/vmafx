@@ -40,7 +40,7 @@ def git(repo: Path, *args: str) -> None:
         check=True,
         capture_output=True,
         timeout=TIMEOUT_S,
-        env={**os.environ, **IDENTITY},
+        env={**{k: v for k, v in os.environ.items() if not k.startswith("GIT_")}, **IDENTITY},
     )
 
 

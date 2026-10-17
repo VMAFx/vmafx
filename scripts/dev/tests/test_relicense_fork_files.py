@@ -195,8 +195,9 @@ class Candidates(unittest.TestCase):
             "scripts/ci/exact_twins.d/adm.hip",
             "scripts/ci/exact_twins.d/float_ssim.sycl",
             "tools/figures/mkdocs_hook.py",
-            "tools/figures/dist/player.js",
+            "tools/figures/player/player.js",
             ".config/agent/hooks/block_evasion.py",
+            ".config/lefthook/engine.sh",
             ".codex/agents/c-reviewer.toml",
         ):
             with self.subTest(path=path):
@@ -207,6 +208,7 @@ class Candidates(unittest.TestCase):
             "scripts/ci/cross_backend_calibration.py",
             "core/src/feature/hip/integer_adm_hip.c",
             ".config/agent/hooks/other_hook.py",
+            ".config/lefthook/other.sh",
             "tools/vmaf-tune/src/vmaftune/cli.py",
             ".codex/config.toml",
             "core/src/feature/rust/tad/Cargo.toml",

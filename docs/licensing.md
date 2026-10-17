@@ -314,10 +314,12 @@ Copies of it remain where those trees were published
 - GitHub's source archives of `v1.0.0-rc.1`, `v1.0.0-rc.2` and the other tags
   made between 2026-05-28 and 2026-10-05. The tags stay.
 - The Go module proxy's zips of `github.com/VMAFx/vmafx@v1.0.0-rc.1` and
-  `@v1.0.0-rc.2`. The root `go.mod` retracts both versions:
+  `@v1.0.0-rc.2`. The root `go.mod` retracts both versions (its `retract`
+  block also withdraws `v1.0.0-rc.3`, see
+  [ADR-3292](adr/3292-release-line-restart-0x.md)):
 
   ```text
-  retract [v1.0.0-rc.1, v1.0.0-rc.2] // contained a stale root LICENSE-MIT; licensing is per-file SPDX (EUPL-1.2 fork code, BSD-2-Clause-Patent Netflix code), see docs/licensing.md
+  [v1.0.0-rc.1, v1.0.0-rc.2] // contained a stale root LICENSE-MIT; licensing is per-file SPDX (EUPL-1.2 fork code, BSD-2-Clause-Patent Netflix code), see docs/licensing.md
   ```
 
   The go command reads retractions from the `go.mod` of a module's latest

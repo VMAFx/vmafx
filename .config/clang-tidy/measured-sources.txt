@@ -802,6 +802,10 @@ core/test/test_sycl_psnr_parity.c
 core/test/test_sycl_shared_frame_sticky_geometry.c
 core/test/test_sycl_shared_planes.c
 core/test/test_sycl_speed_chroma_parity.c
+core/test/test_sycl_speed_cov_chain.c
+core/test/test_sycl_speed_cov_chain_probe.cpp
+core/test/test_sycl_speed_cov_math.c
+core/test/test_sycl_speed_cov_math_probe.cpp
 core/test/test_sycl_speed_singular_parity.c
 core/test/test_sycl_speed_temporal_parity.c
 core/test/test_sycl_ssim_parity.c
@@ -903,3 +907,6 @@ core/tools/vmaf_vpl.c
 core/tools/vmaf_vpl_core.c
 core/tools/y4m_input.c
 core/tools/yuv_input.c
+ffmpeg-patches/test/fault_inject_libvmaf.c
+scripts/dev/hip_dispatch_drop_probe.hip
+scripts/dev/upstream_parity_harness.c

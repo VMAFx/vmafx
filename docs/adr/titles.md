@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1359), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1390), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5400,6 +5400,10 @@ Every ADR, one heading each (1359), so the site search finds an ADR by its title
 
 [2689-sponsorship-tiers-recognition-only](2689-sponsorship-tiers-recognition-only.md)
 
+## ADR-2690: The SYCL SpEED covariance replays the CPU's sequential fp64 sum, with its terms formed in parallel
+
+[2690-sycl-speed-covariance-fast-exact](2690-sycl-speed-covariance-fast-exact.md)
+
 ## ADR-2705: formulas are TeX rendered by self-hosted KaTeX, checked at build time
 
 [2705-docs-math-katex](2705-docs-math-katex.md)
@@ -5447,3 +5451,123 @@ Every ADR, one heading each (1359), so the site search finds an ADR by its title
 ## ADR-3137: The one dev image carries the Vulkan loader and lavapipe, so Vulkan-dependent tests build and run on CPU in every lane
 
 [3137-dev-image-vulkan-lavapipe](3137-dev-image-vulkan-lavapipe.md)
+
+## ADR-3143: VMAFx consumes the shared FFmpeg fix series
+
+[3143-ffmpeg-shared-fix-series](3143-ffmpeg-shared-fix-series.md)
+
+## ADR-3240: Move the praetor pin to 4ae6247c57d2, the engine the workstation hooks already run
+
+[3240-praetor-pin-4ae6247c](3240-praetor-pin-4ae6247c.md)
+
+## ADR-3251: Every hosted Linux job names its image by version; the floating label is refused
+
+[3251-hosted-runner-label-explicit](3251-hosted-runner-label-explicit.md)
+
+## ADR-3272: Move the praetor pin to 9bf502ec6ce5 and run the hooks through its engine launcher
+
+[3272-praetor-pin-9bf502ec-engine-launcher](3272-praetor-pin-9bf502ec-engine-launcher.md)
+
+## ADR-3273: Bypass mode `always` is a dated exception to the solo-repository standard
+
+[3273-solo-bypass-mode-dated-exception](3273-solo-bypass-mode-dated-exception.md)
+
+## ADR-3279: One MSVC build leg runs on light-tier pull requests that change core C or C++
+
+[3279-msvc-sycl-leg-on-light-tier](3279-msvc-sycl-leg-on-light-tier.md)
+
+## ADR-3285: Move the praetor pin to 6622361940dc and refresh the register skills
+
+[3285-praetor-pin-66223619](3285-praetor-pin-66223619.md)
+
+## ADR-3286: Pull requests from forks never reach the ARC runner pool
+
+[3286-arc-runners-fork-guard](3286-arc-runners-fork-guard.md)
+
+## ADR-3292: Restart the release line at 0.1.0; 1.0.0 becomes the first stable release
+
+[3292-release-line-restart-0x](3292-release-line-restart-0x.md)
+
+## ADR-3293: Every owed required context must succeed; absent, skipped and neutral fail
+
+[3293-aggregator-owed-contexts-must-succeed](3293-aggregator-owed-contexts-must-succeed.md)
+
+## ADR-3294: Every CodeQL language is analysed on every event
+
+[3294-codeql-every-language-every-pr](3294-codeql-every-language-every-pr.md)
+
+## ADR-3295: The render lands as its own render-only pull request
+
+[3295-render-only-pull-request](3295-render-only-pull-request.md)
+
+## ADR-3311: Stream metadata field list seeded from the Pelorus registry
+
+[3311-stream-metadata-field-list](3311-stream-metadata-field-list.md)
+
+## ADR-3312: One Renovate manager owns the CI Python interpreter
+
+[3312-renovate-python-ci-version-group](3312-renovate-python-ci-version-group.md)
+
+## ADR-3313: The solo master ruleset asks for no approval and bypasses at pull-request mode
+
+[3313-solo-ruleset-zero-reviews](3313-solo-ruleset-zero-reviews.md)
+
+## ADR-3314: Pull-request workflows stay inside the Scorecard check-suite window
+
+[3314-pr-workflow-budget-scorecard-window](3314-pr-workflow-budget-scorecard-window.md)
+
+## ADR-3315: Local images and local packages are installed pinned
+
+[3315-scorecard-pinned-local-installs](3315-scorecard-pinned-local-installs.md)
+
+## ADR-3316: Release assets carry their build provenance
+
+[3316-release-intoto-provenance](3316-release-intoto-provenance.md)
+
+## ADR-3317: One distribution manifest describes every artifact and channel
+
+[3317-distribution-manifest](3317-distribution-manifest.md)
+
+## ADR-3318: One pinned Rust toolchain for every Rust build
+
+[3318-rust-toolchain-pin](3318-rust-toolchain-pin.md)
+
+## ADR-3329: Run buf lint and buf breaking in CI
+
+[3329-ci-buf-lint-breaking](3329-ci-buf-lint-breaking.md)
+
+## ADR-3330: Run Trivy config and filesystem scans in CI
+
+[3330-ci-trivy-config-fs](3330-ci-trivy-config-fs.md)
+
+## ADR-3331: Run Spectral OpenAPI lint in CI
+
+[3331-ci-spectral-openapi-lint](3331-ci-spectral-openapi-lint.md)
+
+## ADR-3332: Re-pin the Pelorus mirror to v0.4.1 (interop ABI 1.5)
+
+[3332-pelorus-v040-abi15-repin](3332-pelorus-v040-abi15-repin.md)
+
+## ADR-3333: Move the praetor pin to 2d23b29 and give every agent persona a model tier
+
+[3333-praetor-pin-2d23b29-persona-tiers](3333-praetor-pin-2d23b29-persona-tiers.md)
+
+## ADR-3334: ONNX Runtime C Tarball SHA-256 Pinning and Verification
+
+[3334-ort-tarball-sha256-pins](3334-ort-tarball-sha256-pins.md)
+
+## ADR-3335: Python package floors match dependency resolutions
+
+[3335-python-floors-match-dependencies](3335-python-floors-match-dependencies.md)
+
+## ADR-3336: Dev Image Reverse Debugger (rr) and Build-Time Analyzer (ClangBuildAnalyzer)
+
+[3336-dev-image-rr-clangbuildanalyzer](3336-dev-image-rr-clangbuildanalyzer.md)
+
+## ADR-3337: Move the praetor pin to 320b058d and excuse the Coverage Gate timeouts for three days
+
+[3337-praetor-pin-320b058d-test-timeout](3337-praetor-pin-320b058d-test-timeout.md)
+
+## ADR-3338: Dev Container Build runs on light-tier pull requests that change the image's own inputs
+
+[3338-dev-container-own-input-lane](3338-dev-container-own-input-lane.md)

@@ -83,8 +83,11 @@ adr_depth_args() {
 # ── constants ────────────────────────────────────────────────────────────────
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
-# Use the common .git dir (resolves correctly even inside a worktree).
-GIT_COMMON_DIR="$(git rev-parse --git-common-dir)"
+# Use the common .git dir (resolves correctly even inside a worktree), made
+# absolute: `git rev-parse --git-common-dir` prints `.git` at the root, `../.git`
+# from docs/ and an absolute path in a linked worktree, and the lock key below
+# must not depend on the caller's working directory.
+GIT_COMMON_DIR="$(cd "$(git rev-parse --git-common-dir)" && pwd -P)"
 ADR_DIR="${REPO_ROOT}/docs/adr"
 # Cross-worktree claim signals live in the common .git dir so all worktrees
 # sharing this repo see them regardless of which branch they have checked out.
@@ -95,6 +98,11 @@ ADR_CLAIMS_DIR="${GIT_COMMON_DIR}/adr-claims"
 # host do not.
 _git_key="$(printf '%s' "${GIT_COMMON_DIR}" | tr '/' '_')"
 LOCK_DIR="/tmp/vmaf_adr_claim_lock_${_git_key}"
+# Identifies this process's hold on the lock; release removes only its own.
+LOCK_TOKEN="$$-${RANDOM}${RANDOM}-$(date +%s%N)"
+# Upper bound on numbers tried past the first free one when a claim file of
+# the same number already exists.
+CLAIM_RETRIES=100
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -106,21 +114,94 @@ usage() {
   exit 1
 }
 
-# Acquire the per-repo lock using an atomic mkdir.
-# Retries for up to 10 seconds, then fails loudly.
+# Seconds a claim waits for the lock (VMAF_ADR_LOCK_WAIT_S, default 60).
+LOCK_WAIT_S="${VMAF_ADR_LOCK_WAIT_S:-60}"
+
+# The lock is held by whoever creates ${LOCK_DIR}/owner (O_EXCL through
+# noclobber); the directory only holds that file. A directory without an owner
+# file, as a claim killed between mkdir and the owner write leaves it, is
+# therefore free: the next caller creates the owner file in it (issue #2784).
+
+# Print the process id of the lock's holder, or nothing when there is none.
+_lock_owner_pid() {
+  local token=""
+  if [ -f "${LOCK_DIR}/owner" ]; then
+    token="$(cut -d' ' -f1 "${LOCK_DIR}/owner" 2>/dev/null)" || token=""
+  fi
+  printf '%s' "${token%%-*}"
+}
+
+# Succeed when process $1 is running (any user; `kill -0` fails on another
+# user's process).
+_pid_alive() {
+  ps -p "$1" >/dev/null 2>&1
+}
+
+# Create the owner file; succeed only for the caller that created it.
+_try_lock() {
+  mkdir "${LOCK_DIR}" 2>/dev/null || [ -d "${LOCK_DIR}" ] || return 1
+  (
+    set -o noclobber
+    printf '%s %s\n' "${LOCK_TOKEN}" "${REPO_ROOT}" >"${LOCK_DIR}/owner"
+  ) 2>/dev/null
+}
+
+# Remove the owner file of a holder whose process is gone. Takeovers are
+# serialised by a second directory; a takeover directory older than a minute
+# was left by a killed takeover.
+_take_over_stale_lock() {
+  local mutex="${LOCK_DIR}.takeover" owner="" pid
+  if ! mkdir "${mutex}" 2>/dev/null; then
+    if [ -n "$(find "${mutex}" -prune -mmin +1 2>/dev/null)" ]; then
+      rmdir "${mutex}" 2>/dev/null || printf 'note: takeover lock %s already gone\n' "${mutex}" >&2
+    fi
+    return 0
+  fi
+  owner="$(cat "${LOCK_DIR}/owner" 2>/dev/null)" || owner=""
+  pid="${owner%% *}"
+  pid="${pid%%-*}"
+  # A holder may release and exit between the read and the check, and a new
+  # holder write its own file: remove the file only if, read after the check,
+  # it still holds the dead holder's token. Tokens are unique and a dead
+  # process removes nothing, so that file is the dead holder's.
+  if [ -n "${pid}" ] && ! _pid_alive "${pid}" &&
+    [ "$(cat "${LOCK_DIR}/owner" 2>/dev/null)" = "${owner}" ]; then
+    rm -f "${LOCK_DIR}/owner"
+    printf 'WARNING: took over a stale ADR allocator lock (%s).\n' "${owner}" >&2
+  fi
+  rmdir "${mutex}" 2>/dev/null || printf 'note: takeover lock %s already gone\n' "${mutex}" >&2
+}
+
+# Acquire the per-repo lock. The owner file of a holder whose process is gone
+# is taken over; otherwise the claim fails after LOCK_WAIT_S seconds.
 _acquire_lock() {
-  local deadline
-  deadline=$(($(date +%s) + 10))
-  while ! mkdir "${LOCK_DIR}" 2>/dev/null; do
+  local deadline pid owner
+  case "${LOCK_WAIT_S}" in
+    '' | *[!0-9]*)
+      printf 'ERROR: VMAF_ADR_LOCK_WAIT_S must be a whole number of seconds, got %s\n' "${LOCK_WAIT_S}" >&2
+      exit 1
+      ;;
+  esac
+  deadline=$(($(date +%s) + LOCK_WAIT_S))
+  # The trap removes only a lock holding this process's token.
+  trap '_release_lock' EXIT INT TERM
+  while ! _try_lock; do
+    pid="$(_lock_owner_pid)"
+    owner=""
+    if [ -f "${LOCK_DIR}/owner" ]; then
+      owner="$(cat "${LOCK_DIR}/owner" 2>/dev/null)" || owner=""
+    fi
+    if [ -n "${pid}" ] && ! _pid_alive "${pid}"; then
+      _take_over_stale_lock
+    fi
     if [ "$(date +%s)" -ge "${deadline}" ]; then
-      printf 'ERROR: could not acquire ADR allocator lock (%s) within 10 s.\n' "${LOCK_DIR}" >&2
-      printf '       Another process may be holding it.  Remove manually if stale.\n' >&2
+      printf 'ERROR: could not acquire ADR allocator lock (%s) within %s s.\n' "${LOCK_DIR}" "${LOCK_WAIT_S}" >&2
+      printf '       Holder: %s (process %s).\n' "${owner:-no owner file}" "${pid:-unknown}" >&2
+      printf '       Raise VMAF_ADR_LOCK_WAIT_S if the holder is a slow claim.\n' >&2
       exit 1
     fi
     sleep 0.1
   done
-  # Register a trap to release the lock on exit (including errors).
-  trap '_release_lock' EXIT INT TERM
 }
 
 # Succeed for grep's "no match" status (1); return any other failure status.
@@ -129,9 +210,18 @@ _no_match_ok() {
   [ "$1" -le 1 ] || return "$1"
 }
 
+# Remove the lock only while this process owns it; another holder's lock stays.
+# The directory goes only when empty: a waiter may already have created its
+# owner file in it.
 _release_lock() {
-  if [ -d "${LOCK_DIR}" ]; then
-    rmdir "${LOCK_DIR}" 2>/dev/null || printf 'WARNING: could not remove ADR allocator lock %s\n' "${LOCK_DIR}" >&2
+  local owner=""
+  if [ -f "${LOCK_DIR}/owner" ]; then
+    owner="$(cut -d' ' -f1 "${LOCK_DIR}/owner" 2>/dev/null)" || owner=""
+  fi
+  if [ "${owner}" = "${LOCK_TOKEN}" ]; then
+    rm -f "${LOCK_DIR}/owner"
+    rmdir "${LOCK_DIR}" 2>/dev/null || [ -d "${LOCK_DIR}" ] ||
+      printf 'WARNING: could not remove ADR allocator lock %s\n' "${LOCK_DIR}" >&2
   fi
   trap - EXIT INT TERM
 }
@@ -289,17 +379,20 @@ _write_stub() {
   } >"${stub_path}"
 }
 
-# Write the .git/adr-claims/<NUMBER> side-pointer.
-# This file is visible to ALL worktrees sharing this .git/ directory,
-# including sibling agents in separate worktrees.
+# Create the .git/adr-claims/<NUMBER> side-pointer exclusively (O_CREAT|O_EXCL
+# through noclobber); fails when the number is already claimed. This file is
+# visible to ALL worktrees sharing this .git/ directory, and its exclusive
+# creation decides a number even if two callers ever hold the lock at once.
 _write_claim_sidepointer() {
   local number="$1" slug="$2"
   local ts branch
   ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   branch="$(git symbolic-ref --short HEAD 2>/dev/null || printf 'detached')"
   mkdir -p "${ADR_CLAIMS_DIR}"
-  printf '%s %s %s\n' "${slug}" "${ts}" "${branch}" \
-    >"${ADR_CLAIMS_DIR}/${number}"
+  (
+    set -o noclobber
+    printf '%s %s %s\n' "${slug}" "${ts}" "${branch}" >"${ADR_CLAIMS_DIR}/${number}"
+  ) 2>/dev/null
 }
 
 # Remove the .git/adr-claims/<NUMBER> side-pointer (called by --release).
@@ -436,13 +529,24 @@ number="$(
   } | LC_ALL=C sort -u | _next_free_from_taken
 )"
 
+# Take the number by creating its claim file exclusively; a number whose claim
+# file exists already belongs to another caller, so move to the next one.
+tries=0
+while ! _write_claim_sidepointer "${number}" "${SLUG}"; do
+  tries=$((tries + 1))
+  if [ "${tries}" -ge "${CLAIM_RETRIES}" ]; then
+    printf 'ERROR: no free ADR number within %s of the first candidate (claims in %s).\n' \
+      "${CLAIM_RETRIES}" "${ADR_CLAIMS_DIR}" >&2
+    exit 1
+  fi
+  number="$(printf '%04d' $((10#${number} + 1)))"
+done
+
 stub_path="${ADR_DIR}/${number}-${SLUG}.md.stub"
 
+# The claim file is written BEFORE the lock is released, so a sibling agent
+# that acquires the lock immediately after sees the claim.
 _write_stub "${stub_path}" "${number}" "${SLUG}"
-
-# Write the cross-worktree side-pointer BEFORE releasing the lock so a sibling
-# agent that acquires the lock immediately after sees the claim.
-_write_claim_sidepointer "${number}" "${SLUG}"
 
 # Release the lock early to minimise critical-section duration.
 _release_lock

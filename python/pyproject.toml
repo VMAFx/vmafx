@@ -46,7 +46,7 @@ readme = "README.rst"
 authors = [{ name = "Zhi Li", email = "zli@netflix.com" }]
 license = "BSD-2-Clause-Patent AND BSD-2-Clause AND BSD-3-Clause-Clear AND EUPL-1.2"
 license-files = ["LICENSES/*"]
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 dependencies = [
     "numpy>=2.5.3",
     "scipy>=1.18.1",
@@ -59,7 +59,7 @@ dependencies = [
     "sureal>=0.9.0",
     "dill>=0.4.1",
     "PyWavelets>=1.10.0",
-    "python-slugify>=9.1.2",
+    "python-slugify>=9.1.3",
     "libsvm-official>=3.37",
     "defusedxml>=0.7.1",
 ]

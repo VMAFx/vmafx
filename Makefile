@@ -118,8 +118,8 @@ $(NINJA): $(VENV_PIP)
 # Provision the lint / format toolchain into the project venv. Versions are
 # kept identical to .pre-commit-config.yaml so the local gate and the CI hooks
 # cannot disagree about what counts as a violation.
-RUFF_VERSION  := 0.17.0
-BLACK_VERSION := 26.10.0
+RUFF_VERSION  := 0.17.1
+BLACK_VERSION := 26.10.1
 
 .PHONY: mini-retrain mini-retrain-test
 .PHONY: lint-tools
@@ -143,7 +143,7 @@ cythonize-deps: $(VENV_PIP)
 .PHONY: govulncheck lint lint-c lint-py lint-sh lint-md lint-go lint-actions tidy-ratchet tidy-ratchet-write \
 	tidy-ratchet-build tidy-lane tidy-lane-write \
 	base-images-sync cuda-pin-sync python-deps-sync \
-	python-locks-check python-locks-write \
+	python-locks-check python-locks-write python-floors-check \
 	preflight \
 	format format-check sec sbom \
         test-netflix-golden test-netflix-golden-arm64 test-sanitizers test-fast test-timing install-hooks hooks-install help \
@@ -171,6 +171,9 @@ python-locks-check:
 
 python-locks-write:
 	@python3 scripts/ci/check_python_dependency_locks.py write
+
+python-floors-check:
+	@python3 scripts/ci/check_python_floors.py
 
 # Symbol-level Go vulnerability scan with the OpenVEX statements of
 # security/vex/go.openvex.json (docs/development/dependency-advisories.md).
@@ -218,13 +221,24 @@ lint-go:
 
 # GitHub Actions lint. actionlint validates every workflow under
 # .github/workflows/ against .github/actionlint.yaml; actionlint cannot read a
-# composite action, so scripts/ci/check_composite_actions.py checks those.
+# composite action, so scripts/ci/check_composite_actions.py checks those;
+# scripts/ci/check_hosted_runner_labels.py checks which hosted Ubuntu image
+# every job names (ADR-3251); scripts/ci/pr_workflow_budget.py holds the
+# number of pull-request workflows inside the Scorecard check-suite window;
+# scripts/ci/check_release_provenance_assets.py checks that release workflows
+# upload build provenance (.intoto.jsonl) assets.
 lint-actions:
 	$(call require-tool,actionlint,go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12)
 	@echo "--- actionlint (.github/workflows) ---"
 	@python3 scripts/ci/run_actionlint.py
 	@echo "--- composite actions (.github/actions): structure + shellcheck ---"
 	@python3 scripts/ci/check_composite_actions.py
+	@echo "--- hosted runner labels (.github/workflows): explicit image, dated fallbacks ---"
+	@python3 scripts/ci/check_hosted_runner_labels.py
+	@echo "--- pull-request workflow budget (.github/workflows): Scorecard check-suite window ---"
+	@python3 scripts/ci/pr_workflow_budget.py
+	@echo "--- release provenance assets (.github/workflows): OpenSSF Scorecard 10 ---"
+	@python3 scripts/ci/check_release_provenance_assets.py
 
 .PHONY: docs-render docs-render-check
 
@@ -234,10 +248,12 @@ lint-actions:
 # rendered from them when the pull requests land:
 #   CHANGELOG.md, docs/adr/README.md, docs/adr/by-tag/, docs/adr/titles.md,
 #   docs/research/titles.md and the fragment block of docs/rebase-notes.md.
-# `make docs-render` writes them. The merge train runs it once per landing batch
-# and commits the result as "chore(docs): render generated changelog and ADR
-# index"; the release cut runs it too (docs/development/release.md).
-# `make docs-render-check` fails when a render is stale: the master push runs it.
+# `make docs-render` writes them. Once per landing batch the result lands as a
+# render-only pull request, "chore(docs): render generated changelog and ADR
+# index" (ADR-3295); the release cut runs it too (docs/development/release.md).
+# `make docs-render-check` fails when a render is stale: deliverables-check.sh
+# runs it on a render-only pull request's head, and the master push runs it
+# through scripts/ci/check_render_on_master.py (owed render bounded at 24 h).
 docs-render:
 	@bash scripts/release/concat-changelog-fragments.sh --write
 	@bash scripts/docs/concat-adr-index.sh --write
@@ -560,13 +576,18 @@ CLANG_FORMAT_FILES = git ls-files '*.c' '*.h' '*.cpp' '*.hpp' '*.cu' '*.cuh' '*.
 	| grep -v '^core/src/rust/include/' \
 	| python3 scripts/ci/pelorus_mirror.py filter
 
+# Shell files `make format` and `make format-check` hand to shfmt: every tracked `.sh`
+# but the declared exceptions (.config/lint-exceptions.d/shfmt.toml), as the shfmt hook
+# of .pre-commit-config.yaml reads them.
+SHFMT_FILES = python3 scripts/ci/lint_exceptions.py filter shfmt -- $$(git ls-files '*.sh')
+
 # Formatters — writes changes.
 format:
 	@command -v clang-format >/dev/null && \
 	 clang-format -i $$($(CLANG_FORMAT_FILES)) || true
 	@command -v black >/dev/null && black . 2>/dev/null || true
 	@command -v ruff >/dev/null && ruff check --fix-only --quiet . || true
-	@command -v shfmt >/dev/null && shfmt -w -i 2 -ci $$(git ls-files '*.sh') || true
+	@command -v shfmt >/dev/null && shfmt -w -i 2 -ci $$($(SHFMT_FILES)) || true
 
 # Formatters — check-only (CI gate, no writes).
 format-check:
@@ -577,7 +598,7 @@ format-check:
 	$(call require-tool,ruff,make lint-tools)
 	ruff check --select I .
 	$(call require-tool,shfmt,go install mvdan.cc/sh/v3/cmd/shfmt@latest)
-	shfmt -d -i 2 -ci $$(git ls-files '*.sh')
+	shfmt -d -i 2 -ci $$($(SHFMT_FILES))
 
 # Security scan (semgrep custom + CERT-C + CWE Top 25).
 sec:
@@ -672,6 +693,10 @@ upstream-parity-full:
 	    --heap-check --jobs $(UPSTREAM_PARITY_JOBS) $(UPSTREAM_PARITY_ARGS)
 
 # Sanitizer build (ASan + UBSan) — used by CI and `/build-vmaf --sanitizers`.
+# The suite's timeouts are sized for an uninstrumented build; a sanitizer or
+# gcov run multiplies them (docs/development/ci.md, "Sanitizer legs"), as the
+# CI legs do.
+INSTRUMENTED_TEST_TIMEOUT_MULTIPLIER := 3
 test-sanitizers:
 	@mkdir -p build-san
 	meson setup build-san $(LIBVMAF_DIR) --buildtype=debug \
@@ -682,7 +707,8 @@ test-sanitizers:
 	    -Db_sanitize=address,undefined \
 	    -Denable_cuda=false -Denable_sycl=false
 	ninja -C build-san
-	$(PYTHON_INTERPRETER) scripts/ci/run_meson_test.py -- -C build-san --print-errorlogs
+	$(PYTHON_INTERPRETER) scripts/ci/run_meson_test.py -- -C build-san --print-errorlogs \
+	    --timeout-multiplier $(INSTRUMENTED_TEST_TIMEOUT_MULTIPLIER)
 
 # test-fast: the pre-push gate. test-timing: the wall-clock budgets (the live
 # window harness's two frame periods), one test at a time, alone on an idle
@@ -724,7 +750,8 @@ coverage:
 	    -Dc_args=-fprofile-update=atomic -Dcpp_args=-fprofile-update=atomic
 	ninja -C $(COVERAGE_DIR)
 	$(PYTHON_INTERPRETER) scripts/ci/run_meson_test.py -- \
-	    -C $(COVERAGE_DIR) --print-errorlogs --num-processes 1
+	    -C $(COVERAGE_DIR) --print-errorlogs --num-processes 1 \
+	    --timeout-multiplier $(INSTRUMENTED_TEST_TIMEOUT_MULTIPLIER)
 	@echo "--- gathering coverage ---"
 	gcovr --root . \
 	    --filter 'core/src/.*' \
@@ -937,7 +964,7 @@ help:
 	@echo "  make lint             — configured C/C++ + Python, shell, Markdown, Go and docs checks"
 	@echo "  make lint-c           — tracked native sources in BUILD_DIR (LINT_JOBS=4; receipts under build)"
 	@echo "  make lint-md          — markdownlint-cli2 on changed *.md (MDLINT_SCOPE=all for full tree, ADR-0866)"
-	@echo "  make lint-actions     — actionlint on .github/workflows/ against .github/actionlint.yaml"
+	@echo "  make lint-actions     — actionlint on .github/workflows/, composite actions, hosted runner labels"
 	@echo "  make format           — clang-format + black + ruff + shfmt (writes)"
 	@echo "  make format-check     — same, no writes (CI gate)"
 	@echo "  make sec              — semgrep (CERT-C + CWE + fork rules)"

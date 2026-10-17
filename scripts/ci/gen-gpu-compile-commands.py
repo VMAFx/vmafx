@@ -18,6 +18,8 @@ Usage: gen-gpu-compile-commands.py <build-dir>
 
 Existing entries are kept. An entry for a kernel file that is already present
 is replaced, so rerunning after a reconfigure picks up changed flags.
+The `hip` lane also appends an entry for the standalone probe
+``scripts/dev/hip_dispatch_drop_probe.hip``, mirroring the flags of the device kernels.
 """
 
 from __future__ import annotations
@@ -27,6 +29,9 @@ import re
 import shlex
 import sys
 from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+PROBE_REL = Path("scripts/dev/hip_dispatch_drop_probe.hip")
 
 # One ninja build statement of a meson custom target, with its variable block.
 # meson names the rule CUSTOM_COMMAND_DEP when the target has a depfile.
@@ -151,6 +156,22 @@ def main(argv: list[str]) -> int:
             file=sys.stderr,
         )
         return 1
+
+    hip_entries = [e for e in added if e["file"].endswith(".hip")]
+    if hip_entries:
+        probe_source = (REPO_ROOT / PROBE_REL).resolve()
+        if not probe_source.is_file():
+            print(f"error: {probe_source}: missing HIP dispatch drop probe source", file=sys.stderr)
+            return 1
+        first_hip_argv = shlex.split(hip_entries[0]["command"])
+        hip_flags = first_hip_argv[1:-2]
+        probe_entry = {
+            "directory": str(build_dir),
+            "command": shlex.join(["clang++", *hip_flags, "-c", str(probe_source)]),
+            "file": str(probe_source),
+        }
+        added.append(probe_entry)
+
     replaced = {entry["file"] for entry in added}
     existing = json.loads(compdb_path.read_text(encoding="utf-8"))
     merged = [entry for entry in existing if entry.get("file") not in replaced] + added

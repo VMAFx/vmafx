@@ -6,9 +6,11 @@
 speed.c (compute_covariance_row()) divides its double sum by the exact
 size_t count sub_w * sub_h. The CUDA, HIP and SYCL twins carry the sum as an
 fp32 pair; they divided it by `(float)(sub_w * sub_h)`, which is the count
-only up to 2^24 (above that an odd count has no fp32 value). Each twin now
-passes the count as an exact fp32 pair (count_ff / speed_hd_count_ff) to a
-division that takes a pair divisor.
+only up to 2^24 (above that an odd count has no fp32 value). The CUDA and HIP
+twins now pass the count as an exact fp32 pair (count_ff / speed_hd_count_ff)
+to a division that takes a pair divisor. The SYCL twin replays the reference's
+fp64 sum and quotient in 64-bit integers (ADR-2690): it divides the soft-fp64
+sum by the uint64 count widened exactly (signed_div / signed_from_exact).
 
 test_speed_cov_count_division.c checks the arithmetic of the HIP header on the
 host; this device-free test holds all three sources to the same form, and
@@ -29,11 +31,14 @@ TWINS = {
     "cuda": (("cuda/speed/speed_score.cu",), "ff_div_to_float", "count_ff"),
     "hip": (("hip/speed/speed_hip_device.h",), "speed_hd_ff_div_to_float", "speed_hd_count_ff"),
     "sycl": (
-        ("sycl/sycl_exact_fp.h", "sycl/speed_sycl_pipeline.cpp"),
-        "ff_div_to_float",
-        "count_ff",
+        ("sycl/sycl_soft_signed.h", "sycl/sycl_speed_cov_math.h"),
+        "signed_div",
+        "signed_from_exact",
     ),
 }
+# The SYCL covariance store before ADR-2690: the pair sum's quotient.
+SYCL_PIPELINE = "sycl/speed_sycl_pipeline.cpp"
+SYCL_PAIR_STORE = re.compile(r"\bff_div_to_float\s*\(")
 COMMENT = re.compile(r"/\*.*?\*/|//[^\n]*", re.S)
 # The count rounded to one fp32 value, in any of the three spellings.
 FLOAT_COUNT = re.compile(
@@ -75,6 +80,13 @@ def problems(backend: str, text: str) -> list[str]:
     return found
 
 
+def sycl_pipeline_problems(text: str) -> list[str]:
+    """Why the SYCL pipeline `text` does not store the soft-fp64 quotient."""
+    if SYCL_PAIR_STORE.search(code(text)):
+        return ["sycl: the covariance store divides an fp32 pair (ff_div_to_float)"]
+    return []
+
+
 def source(backend: str) -> str:
     files, _, _ = TWINS[backend]
     return "\n".join((FEATURE / name).read_text(encoding="utf-8") for name in files)
@@ -114,14 +126,27 @@ class LiveSources(unittest.TestCase):
             with self.subTest(backend=backend):
                 self.assertEqual(problems(backend, source(backend)), [])
 
+    def test_the_sycl_pipeline_has_no_pair_store(self) -> None:
+        text = (FEATURE / SYCL_PIPELINE).read_text(encoding="utf-8")
+        self.assertEqual(sycl_pipeline_problems(text), [])
+
 
 class PlantedRegressions(unittest.TestCase):
     def test_the_master_forms_are_reported(self) -> None:
-        for backend, old in (("cuda", OLD_CUDA), ("hip", OLD_HIP), ("sycl", OLD_SYCL)):
+        for backend, old in (("cuda", OLD_CUDA), ("hip", OLD_HIP)):
             with self.subTest(backend=backend):
                 found = problems(backend, old)
                 self.assertTrue(any("one-float divisor" in p for p in found), found)
                 self.assertTrue(any("fp32-rounded count" in p for p in found), found)
+
+    def test_the_sycl_pair_forms_are_reported(self) -> None:
+        self.assertIn(
+            "sycl: the covariance store does not pass signed_from_exact()",
+            problems("sycl", OLD_SYCL),
+        )
+        self.assertTrue(sycl_pipeline_problems(OLD_SYCL))
+        pair_count = OLD_SYCL.replace("count);", "count_ff(a.sub_w * a.sub_h));")
+        self.assertTrue(sycl_pipeline_problems(pair_count))
 
     def test_a_rounded_count_next_to_the_pair_is_reported(self) -> None:
         mixed = source("cuda").replace(

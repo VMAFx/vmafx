@@ -90,13 +90,15 @@ meson setup build core -Denable_rust_features=true
 meson setup build core
 ```
 
-Two cases leave the extractor out of the build:
+With the option off (the default) the `tad` extractor is not registered, and
+`--feature tad` fails with `problem loading feature extractor: tad`.
 
-- **Option off (the default).** The `tad` extractor is not registered, and
-  `--feature tad` fails with `problem loading feature extractor: tad`.
-- **Option on, `cargo` missing.** Meson prints a warning
-  (`enable_rust_features=true but cargo was not found: no Rust extractor is
-  built and the C extractors run`) and configures the build without TAD.
+With the option on and no `cargo` in `PATH`, configure stops with
+`enable_rust_features=true but cargo was not found: install the toolchain
+pinned in rust-toolchain.toml (RUST_VERSION in build-config.env) or configure
+with -Denable_rust_features=false`. The pinned version is the one in
+[`rust-toolchain.toml`](https://github.com/VMAFx/vmafx/blob/master/rust-toolchain.toml);
+rustup installs it on the first `cargo` call in the checkout.
 
 ---
 

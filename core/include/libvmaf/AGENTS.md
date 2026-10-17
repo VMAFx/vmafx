@@ -140,7 +140,7 @@ only currently-extracted shared internal helper.
   every header in directory must produce **zero warnings** via
   `doxygen core/doc/Doxyfile.public-api`. Build fails closed with
   `WARN_AS_ERROR = YES` and CI workflow
-  `.github/workflows/doxygen-public-api.yml` enforces
+  `.github/workflows/docs.yml` (job `Doxygen Public API`) enforces
   `DOXYGEN_WARNING_CEILING: "0"`.
   Vendored Pelorus interop mirror (`core/include/libvmaf/pelorus/`,
   ADR-1113) is excluded from public C API Doxygen scope because it is

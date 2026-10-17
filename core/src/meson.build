@@ -954,15 +954,15 @@ endif
 # ---------------------------------------------------------------------------
 # ADR-1713: Rust extractor framework. Decided before config.h so every
 # translation unit sees HAVE_RUST_FEATURES; the targets come further below.
-# Without cargo the option degrades with a warning that names the result (the
-# C extractors run, VMAF_FEATURE_IMPL=rust logs a fallback per extractor).
+# A requested Rust build without cargo fails configure (ADR-3318): a build that
+# quietly dropped the Rust extractors would report the C path as the Rust one.
+# The toolchain version is rust-toolchain.toml's, pinned from build-config.env.
 # ---------------------------------------------------------------------------
 is_rust_enabled = get_option('enable_rust_features')
 if is_rust_enabled
     cargo_exe = find_program('cargo', required: false)
     if not cargo_exe.found()
-        warning('enable_rust_features=true but cargo was not found: no Rust extractor is built and the C extractors run')
-        is_rust_enabled = false
+        error('enable_rust_features=true but cargo was not found: install the toolchain pinned in rust-toolchain.toml (RUST_VERSION in build-config.env) or configure with -Denable_rust_features=false')
     endif
 endif
 cdata.set10('HAVE_RUST_FEATURES', is_rust_enabled)
@@ -1426,12 +1426,23 @@ endif
 vmaf_cppflags_common = cxx.get_supported_arguments(vmaf_cflags_common + (cxx.get_argument_syntax() == 'msvc' ? [] : ['-fvisibility-inlines-hidden']))
 
 if is_cuda_enabled
-    # Check for required CUDA headers
+    # Check for required CUDA headers. The release named here is
+    # build-config.env's NV_CODEC_HEADERS_TAG and NV_CODEC_HEADERS_COMMIT
+    # (scripts/ci/tests/test_nv_codec_headers_single_source.py compares them).
+    nv_codec_headers_need = 'nv-codec-headers n13.1.15.0 (commit 0a6fba9a2820628b8103464f4c8753ee05838baa) or newer from https://code.ffmpeg.org/FFmpeg/nv-codec-headers'
     if not cc.has_header('ffnvcodec/dynlink_cuda.h', args : test_args)
-        error('ffnvcodec/dynlink_cuda.h not found. Please install nv-codec-headers from https://code.ffmpeg.org/FFmpeg/nv-codec-headers (commit 876af32a202d0de83bd1d36fe74ee0f7fcf86b0d or greater required).')
+        error('ffnvcodec/dynlink_cuda.h not found. Please install ' + nv_codec_headers_need + '.')
     endif
     if not cc.has_header('ffnvcodec/dynlink_loader.h', args : test_args)
-        error('ffnvcodec/dynlink_loader.h not found. Please install nv-codec-headers from https://code.ffmpeg.org/FFmpeg/nv-codec-headers (commit 876af32a202d0de83bd1d36fe74ee0f7fcf86b0d or greater required).')
+        error('ffnvcodec/dynlink_loader.h not found. Please install ' + nv_codec_headers_need + '.')
+    endif
+    # cuda/import_frame.c reads a CUarray's descriptor through the loader
+    # (ADR-2023). Headers before n13.1.15.0 have no such member, and the build
+    # stopped in that file with "no member named". Stop here and say what
+    # is needed. Of the loader members core/ calls, this is the newest one.
+    if not cc.has_member('CudaFunctions', 'cuArray3DGetDescriptor',
+                         prefix : '#include <ffnvcodec/dynlink_loader.h>', args : test_args)
+        error('ffnvcodec/dynlink_loader.h has no CudaFunctions.cuArray3DGetDescriptor: the installed nv-codec-headers are too old. Please install ' + nv_codec_headers_need + '.')
     endif
 
     cuda_cu_sources = {

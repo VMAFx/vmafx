@@ -101,7 +101,7 @@ class PublicHeaderDoxygenContractTest(unittest.TestCase):
         self.repo_root = Path(__file__).resolve().parents[2]
         self.headers = [p for p in INCLUDE_DIR.glob("*.h") if "pelorus" not in p.parts]
         self.doxyfile = self.repo_root / "core" / "doc" / "Doxyfile.public-api"
-        self.workflow = self.repo_root / ".github" / "workflows" / "doxygen-public-api.yml"
+        self.workflow = self.repo_root / ".github" / "workflows" / "docs.yml"
 
     def test_no_field_tags_in_public_headers(self) -> None:
         """ADR-0953 / ADR-1315: @field is not a Doxygen command; use /**< ... */."""
@@ -143,7 +143,7 @@ class PublicHeaderDoxygenContractTest(unittest.TestCase):
         self.assertRegex(content, re.compile(r"EXCLUDE_PATTERNS\s*=.*?\*/pelorus/\*", re.DOTALL))
 
     def test_workflow_ceiling_zero(self) -> None:
-        """ADR-1315: doxygen-public-api.yml warning ceiling must be 0."""
+        """ADR-1315: the docs.yml Doxygen job's warning ceiling must be 0."""
         content = self.workflow.read_text(encoding="utf-8")
         self.assertIn('DOXYGEN_WARNING_CEILING: "0"', content)
 

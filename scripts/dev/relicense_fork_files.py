@@ -137,11 +137,13 @@ EXCLUDED_PREFIXES = (
     # <feature>.<backend>. A `.hip` fragment is not HIP source, and the fragment
     # reader rejects any line that is not `key: value`, a comment header included.
     "scripts/ci/exact_twins.d/",
-    # praetor's managed files: `praetorctl audit` compares them with praetor's
-    # own bytes, so they cannot take a header. REUSE.toml labels them and the
-    # check-copyright hook leaves them alone for the same reason (ADR-1351).
+    # praetor's files: `praetorctl audit` compares `tools/figures/` with praetor's
+    # own bytes, and `praetorctl adopt` refreshes the two scripts only while they
+    # are praetor's own text, so none can take a header. REUSE.toml labels them
+    # and the check-copyright hook leaves them alone (ADR-1351, ADR-3272).
     "tools/figures/",
     ".config/agent/hooks/block_evasion.py",
+    ".config/lefthook/engine.sh",
     # praetor's Codex projections of `.agents/agents/*.md`, written by the engine
     # (`praetorctl compile-context`, ADR-1249) and regenerated from their source;
     # a header added here would not survive the next compile. REUSE.toml's

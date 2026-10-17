@@ -67,7 +67,7 @@ jobs:
     # Release events also fire for tester prereleases (tester-*, tester-windows-*);
     # only version tags (v*) belong to this workflow. Dependent jobs skip with it.
     if: github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions:
       contents: read
@@ -174,7 +174,7 @@ jobs:
         include:
           - arch: amd64
             platform: linux/amd64
-            runner: ubuntu-latest
+            runner: ubuntu-26.04
           - arch: arm64
             platform: linux/arm64
             runner: ubuntu-26.04-arm
@@ -291,7 +291,7 @@ jobs:
     needs:
       - validate-release
       - build-operator
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     environment: release-publish
     permissions:
@@ -450,7 +450,7 @@ jobs:
         include:
           - arch: amd64
             platform: linux/amd64
-            runner: ubuntu-latest
+            runner: ubuntu-26.04
           - arch: arm64
             platform: linux/arm64
             runner: ubuntu-26.04-arm
@@ -569,7 +569,7 @@ jobs:
     needs:
       - validate-release
       - build-server
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     environment: release-publish
     permissions:
@@ -731,7 +731,7 @@ jobs:
         include:
           - arch: amd64
             platform: linux/amd64
-            runner: ubuntu-latest
+            runner: ubuntu-26.04
           - arch: arm64
             platform: linux/arm64
             runner: ubuntu-26.04-arm
@@ -850,7 +850,7 @@ jobs:
     needs:
       - validate-release
       - build-controller
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     environment: release-publish
     permissions:
@@ -1010,7 +1010,7 @@ jobs:
         include:
           - arch: amd64
             platform: linux/amd64
-            runner: ubuntu-latest
+            runner: ubuntu-26.04
           - arch: arm64
             platform: linux/arm64
             runner: ubuntu-26.04-arm
@@ -1129,7 +1129,7 @@ jobs:
     needs:
       - validate-release
       - build-node
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     environment: release-publish
     permissions:
@@ -1279,7 +1279,7 @@ jobs:
       - publish-server
       - publish-controller
       - publish-node
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     permissions:
       contents: read
@@ -1503,7 +1503,7 @@ jobs:
       - build-node
       - publish-node
       - smoke-test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - name: Check results
         run: |

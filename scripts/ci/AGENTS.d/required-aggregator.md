@@ -5,6 +5,7 @@ paths:
   - scripts/ci/required_aggregator_harness.py
   - scripts/ci/test_go_workflow_contract.py
   - scripts/ci/tests/test_required_release_legs.py
+  - scripts/ci/tests/test_aggregator_absent_fails.py
 invariant: `required` list = `# required-aggregator` markers; one reporter per required name; contract suites share one harness.
 area: gates
 ---
@@ -30,13 +31,28 @@ area: gates
 | `required_aggregator_harness.py` | Shared by `test_go_workflow_contract.py` and `test_sycl_tidy_workflow_contract.py` | Owns one Node.js driver for executing embedded aggregator against synthetic check results. Keep both contract suites on this harness so polling-time simulation and result decoding cannot drift. |
 | `test_go_workflow_contract.py` | `rule-enforcement.yml` — `Verify Go required-check contract` | Uses shared aggregator harness for Go pass/fail outcomes; guards ready-event coverage and step-level `go_checks` routing; pins early, non-mutating `go fix -diff ./...` gate and matching Make targets. Keep it before authoring exemptions (ADRs 1238 and 1338). |
 
+## Owed contexts must succeed (ADR-3293)
+
+- Every evaluated required name must report `success` on head SHA. Absent,
+  skipped, neutral or cancelled = failure (`never reported on SHA ...` /
+  `owed context must succeed`).
+- Exactly three named exemptions, each absent-or-skipped only, failure never
+  exempt: tier `notOwed` (ADR-2169, tier decision = in-run change detector),
+  `pullRequestOnly` on push/dispatch, hardware lane with switch off.
+- No other exemption. Do not bring back head-ref `mustReport` list or
+  absent-means-pass fallthrough.
+- `tests/test_aggregator_absent_fails.py` runs embedded script;
+  `AGGREGATOR_UNDER_TEST=<copy>` runs same cases against another copy
+  (planted proof: pre-ADR-3293 aggregator fails 9 subtests).
+
 ## Release legs (ADR-1687)
 
 - `Tester Image`, `Windows Tester Zip` and `Release Dry Run` sit in `required`,
   `strictMustReport` and `delayedStrictDependencies` together; each gate needs
   last pull-request job of its chain (`build`, `verify`, dry-run plan plus
-  its three groups). `Release Dry Run` is also in `pullRequestOnly`, which drops
-  it from non-pull-request run because `release-dry-run.yml` has no push trigger.
+  its three groups). `Release Dry Run` is also in `pullRequestOnly` (13 names): on
+  non-pull-request run it may be absent or skipped, never failed, because
+  `release-dry-run.yml` has no push trigger.
   A dependency name aggregator waits on must stay unique across workflows:
   that is why two tester `validate` jobs are not called `Validate source`.
   `tests/test_required_release_legs.py` plants each removal and executes

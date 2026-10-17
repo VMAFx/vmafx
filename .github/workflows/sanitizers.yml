@@ -151,6 +151,12 @@ jobs:
       - name: Report ccache statistics
         if: ${{ (always()) && steps.impact.outputs.c_core == 'true' }}
         run: ccache -s
+      - name: Prefetch Go modules for the suite
+        if: steps.impact.outputs.c_core == 'true'
+        # The suite's Go-running tests find their modules in the cache: the
+        # download happens here, retried, and fails here when it cannot succeed
+        # (scripts/ci/prefetch_go_modules.py, as the user the suite runs as).
+        run: python3 scripts/ci/prefetch_go_modules.py
       - name: Run tests (ASan + UBSan)
         if: steps.impact.outputs.c_core == 'true'
         working-directory: core
@@ -188,8 +194,11 @@ jobs:
             echo "::error::Test enumeration produced empty list" >&2
             exit 1
           fi
+          # --timeout-multiplier 3: the suite's timeouts are sized for an
+          # uninstrumented build (docs/development/ci.md, "Sanitizer legs").
           # shellcheck disable=SC2086
-          python3 ../scripts/ci/run_meson_test.py -- -C build --print-errorlogs $TESTS
+          python3 ../scripts/ci/run_meson_test.py -- -C build --print-errorlogs \
+            --timeout-multiplier 3 $TESTS
 
   # ── TSan (master push only) ───────────────────────────────────────────
   # Thread-Sanitizer is expensive (~5–10× overhead) and catches
@@ -276,6 +285,12 @@ jobs:
       - name: Report ccache statistics
         if: ${{ (always()) && steps.impact.outputs.c_core == 'true' }}
         run: ccache -s
+      - name: Prefetch Go modules for the suite
+        if: steps.impact.outputs.c_core == 'true'
+        # The suite's Go-running tests find their modules in the cache: the
+        # download happens here, retried, and fails here when it cannot succeed
+        # (scripts/ci/prefetch_go_modules.py, as the user the suite runs as).
+        run: python3 scripts/ci/prefetch_go_modules.py
       - name: Run tests (TSan)
         if: steps.impact.outputs.c_core == 'true'
         working-directory: core
@@ -303,8 +318,11 @@ jobs:
             echo "::error::Test enumeration produced empty list" >&2
             exit 1
           fi
+          # --timeout-multiplier 3: the suite's timeouts are sized for an
+          # uninstrumented build (docs/development/ci.md, "Sanitizer legs").
           # shellcheck disable=SC2086
-          python3 ../scripts/ci/run_meson_test.py -- -C build --print-errorlogs $TESTS
+          python3 ../scripts/ci/run_meson_test.py -- -C build --print-errorlogs \
+            --timeout-multiplier 3 $TESTS
 
   # ── libFuzzer + ASan nightly ──────────────────────────────────────────
   # Runs the persistent fuzz corpus against all harnesses under

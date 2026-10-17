@@ -16,7 +16,9 @@ still external: never restore old `*@sha256:*`-only detection. Keep
 instruction case, flags and continuations covered by fixture tests.
 Shared FROM arguments need global, single-line default named by
 `build-config.env`; shell gate owns default drift/repair. Local image
-exceptions bind exact consumer and value, never broad unpinned-tag rule.
+exceptions bind exact consumer and value, never broad unpinned-tag rule;
+`Dockerfile.ffmpeg` requires digest-bound FROM arg
+`vmaf@sha256:${VMAF_IMAGE_DIGEST}` (Scorecard Pinned-Dependencies).
 sole `docker/dev/` file in this ownership set is
 `docker/dev/ubuntu-26.04-cuda.Dockerfile`; its CUDA builder mirror is generated
 from `build-config.env`, while Alpine, Arch, and Fedora matrix files remain

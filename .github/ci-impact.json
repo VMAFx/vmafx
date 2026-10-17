@@ -40,6 +40,7 @@
     "lua/",
     "mcp-server/",
     "model/",
+    "packaging/",
     "pkg/",
     "proto/",
     "python/",
@@ -72,12 +73,15 @@
     ".release-please-manifest.json",
     ".semgrep.yml",
     ".semgrepignore",
+    ".spectral.yaml",
     ".standards-baseline.json",
     ".standards.lock",
     ".standards.yaml",
+    ".trivyignore.yaml",
     ".windsurfrules",
     "ACCESSIBILITY.md",
     "AGENTS.md",
+    "AGENTS.readonly.md",
     "CHANGELOG.md",
     "CLAUDE.md",
     "CODE_OF_CONDUCT.md",
@@ -112,6 +116,7 @@
     "pyproject.toml",
     "release-please-config.json",
     "renovate.json",
+    "rust-toolchain.toml",
     "build-config.env",
     "standards.sublime-project"
   ],
@@ -131,7 +136,6 @@
     ".gemini/**",
     ".github/ci-impact.json",
     ".github/workflows/required-aggregator.yml",
-    ".github/workflows/scorecard-policy.yml",
     ".github/workflows/go-ci.yml",
     ".github/workflows/lint-and-format.yml",
     ".github/workflows/security-scans.yml",
@@ -142,7 +146,6 @@
     ".github/workflows/build.yml",
     ".github/workflows/dev-container-build.yml",
     ".github/workflows/docker-image.yml",
-    ".github/workflows/doxygen-public-api.yml",
     ".github/workflows/ffmpeg-integration.yml",
     ".github/workflows/helm-chart.yml",
     ".github/workflows/rust-ci.yml",
@@ -207,6 +210,8 @@
         "tools/**",
         "dev-llm/*",
         "dev-llm/**",
+        "packaging/*",
+        "packaging/**",
         "scripts/*.py",
         "scripts/**/*.py",
         "security/**",
@@ -259,6 +264,7 @@
         "core/src/feature/rust/**",
         "Cargo.toml",
         "Cargo.lock",
+        "rust-toolchain.toml",
         "deny.toml",
         "core/src/rust/*",
         "core/src/rust/**",
@@ -341,6 +347,22 @@
         "scripts/release/build-native-release-artifacts.sh"
       ]
     },
+    "dev_container_inputs": {
+      "own_paths_only": true,
+      "patterns": [
+        ".dockerignore",
+        ".github/workflows/dev-container-build.yml",
+        "build-config.env",
+        "dev/*",
+        "dev/**",
+        "scripts/ci/build-dev-container-stage.sh",
+        "scripts/ci/check-compose-dri-writable.sh",
+        "scripts/ci/check-container-build.sh",
+        "scripts/ci/check-dev-container-build-secret.py",
+        "scripts/ci/docker-hub-mirror.sh",
+        "scripts/ci/install-cuda-toolkit.sh"
+      ]
+    },
     "doxygen": {
       "patterns": [
         "core/include/libvmaf/*",
@@ -415,6 +437,23 @@
         "core/src/sycl/scratch_ratchet.txt"
       ]
     },
+    "windows_msvc_sycl": {
+      "own_paths_only": true,
+      "patterns": [
+        "core/*.c",
+        "core/*.h",
+        "core/*.cpp",
+        "core/*.inc",
+        "core/*.h.in",
+        "core/*meson.build",
+        "core/meson_options.txt",
+        ".github/workflows/libvmaf-build-matrix.yml",
+        "scripts/ci/werror-args.sh",
+        "scripts/ci/check_msvc_library_names.py",
+        "scripts/ci/run_meson_test.py",
+        "requirements/locks/build.txt"
+      ]
+    },
     "golden_harness": {
       "inherits": [
         "c_core",
@@ -422,18 +461,26 @@
       ],
       "patterns": []
     },
+    "build_work": {
+      "inherits": [
+        "c_core"
+      ],
+      "patterns": [
+        "python/*",
+        "python/**",
+        "compat/*",
+        "compat/**",
+        "requirements/locks/build.txt",
+        "requirements/locks/pytest-timeout.txt",
+        "requirements/locks/tox.txt",
+        "scripts/ci/prune-corrupt-fixtures.sh"
+      ]
+    },
     "tiny_ai": {
       "inherits": [
         "c_core",
         "ai",
         "python"
-      ],
-      "patterns": []
-    },
-    "python_lint": {
-      "inherits": [
-        "python",
-        "ai"
       ],
       "patterns": []
     },
@@ -496,6 +543,7 @@
         "scripts/ci/tidy-baseline-hip.json",
         "scripts/ci/tidy-ratchet.py",
         "scripts/ci/write-compile-commands.py",
+        "scripts/dev/hip_dispatch_drop_probe.hip",
         "scripts/dev/tidy-lane.sh"
       ]
     },
@@ -577,6 +625,17 @@
         "Makefile",
         "scripts/ci/tidy-baseline-metal.json",
         ".github/workflows/tidy-metal.yml"
+      ]
+    },
+    "upstream_consumers": {
+      "own_paths_only": true,
+      "patterns": [
+        "core/*",
+        "core/**",
+        "build-config.env",
+        "scripts/ci/upstream-*.sh",
+        "scripts/ci/upstream_consumer_scores.py",
+        ".github/workflows/ffmpeg-integration.yml"
       ]
     }
   }

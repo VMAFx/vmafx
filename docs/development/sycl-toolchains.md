@@ -159,9 +159,9 @@ can run SYCL code in two ways:
 2. Intel's CPU OpenCL runtime under icpx, which emulates a GPU on the CPU.
 
 AdaptiveCpp's `--acpp-targets=omp` would add a third: plain OpenMP on the CPU,
-which runs anywhere LLVM does, including stock `ubuntu-latest`. ADR-0407 lists
-`.github/workflows/sycl-acpp.yml` as a follow-up: a non-required check first,
-promoted to `required-aggregator.yml` later.
+which runs anywhere LLVM does, including a stock hosted Ubuntu runner.
+ADR-0407 lists `.github/workflows/sycl-acpp.yml` as a follow-up: a non-required
+check first, promoted to `required-aggregator.yml` later.
 
 ## Troubleshooting
 

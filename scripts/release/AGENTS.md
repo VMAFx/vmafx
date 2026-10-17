@@ -89,32 +89,43 @@ verifier against RC cut).
 
 ## Release-line invariants (ADR-1151)
 
-**Fork's first release = `v1.0.0`, on number line starting at fork.**
-VMAFx never released; every `vX.Y.Z` tag reachable from this checkout
+**Fork's first release = `v0.1.0` (ADR-3292), on number line starting at fork.**
+VMAFx never released a final; `v1.0.0-rc.1`..`rc.3` = withdrawn
+candidates. Every other `vX.Y.Z` tag reachable from this checkout
 belongs to Netflix upstream history, none is ancestor of `master`.
-Never "restore" 3.x product version.
+Never "restore" 3.x product version. `1.0.0` = first stable (Rust P3 +
+frozen interface); candidates only for it, from `rc.4`.
 
 **`release-as` and `bootstrap-sha` = ONE-SHOT.** Both live in
-`release-please-config.json` only for first cut. `release-as` =
-deprecated, *persistent* override applied after commit analysis: left
-in place, pins every subsequent release to same version, swallows
-feat/BREAKING bumps. `rollover-changelog-fragments.sh` deletes both in
-same PR that merges release; `Release Script Contract (ADR-1128)` job
-in `.github/workflows/rule-enforcement.yml` fails if either survives
-once root manifest reaches 1.0.0. To force later version: use
-`Release-As: X.Y.Z` commit footer — inherently one-shot, cannot rot.
-Later RCs need no footer (ADR-1348): `versioning: prerelease` bumps
-`1.0.0-rc.N` + fix/feat/breaking -> `1.0.0-rc.N+1`; `prerelease: false`
--> `1.0.0`. `versioning: default` gave `1.0.1-rc.1` (release PR #1575).
-Release Script Contract fails on non-`prerelease` versioning while
-manifest = rc.
+`release-please-config.json` only for one cut (rc.1 then; `0.1.0`
+restart now). `release-as` = deprecated, *persistent* override: version
+taken from it, not from commits; left in place, pins every subsequent
+release to same version, swallows feat/BREAKING bumps (scratch proof:
+manifest `0.1.0` + fix -> `0.1.0` again). `rollover-changelog-fragments.sh`
+checks `release-as` = `--version`, deletes both in same PR that merges
+release. `scripts/release/check-one-shot-fields.sh`, run by
+`Release Script Contract (ADR-1128)` job in
+`.github/workflows/rule-enforcement.yml`, fails if either survives once
+root manifest is final (`0.x` included); test
+`scripts/release/tests/test-check-one-shot-fields.sh`. To force later
+version: `Release-As: X.Y.Z` commit footer — inherently one-shot, cannot
+rot.
+
+**0.x numbering:** `versioning: default`, `bump-minor-pre-major: true`,
+`bump-patch-for-minor-pre-major: false`: fix -> patch, feat / feat! ->
+minor. Candidate manifest (`1.0.0-rc.3`) + `versioning: default` allowed
+only while `release-as` set (restart); otherwise gate fails.
+1.0.0 candidates (ADR-1348): PR sets `versioning: prerelease`,
+`prerelease: true`, `release-as: 1.0.0-rc.4`; then `1.0.0-rc.N` +
+fix/feat/breaking -> `1.0.0-rc.N+1`; `prerelease: false` -> `1.0.0`.
+`versioning: default` on rc gave `1.0.1-rc.1` (release PR #1575).
 
 **Product version and ABI SONAME = independent.** `release-please`
 owns product version (tag, `core/meson.build` `project(version:)`,
 therefore `libvmaf.pc`, three Python distributions, Helm `appVersion`).
 SONAME = separate `vmaf_soname_version = '3.0.0'` at
-`core/meson.build:19`, producing `libvmaf.so.3`, hand-bumped only on
-ABI break. 1.0.0 cut does not touch it. Never align them.
+`core/meson.build:38`, producing `libvmaf.so.3`, hand-bumped only on
+ABI break. No product cut (0.1.0, 1.0.0) touches it. Never align them.
 
 **`extra-files` = single marker list.** `verify-release-version.sh`
 and `rollover-changelog-fragments.sh` both derive check list from that
@@ -325,3 +336,17 @@ Never add `GITHUB_TOKEN` fallback to workflow to "fix" idle run. Test
 coverage:
 `scripts/release/tests/test-check-release-bot-secrets.sh` (stubbed
 `gh`).
+
+## distribution.py + lint-distribution-recipes.sh (ADR-3317, #2314)
+
+`packaging/manifest.toml` = one source for artifacts + channels. `check`:
+licence = licensing-record union / package licence field (reader shared with
+`scripts/ci/check_licence_metadata.py`), text in `LICENSES/`, producer job
+exists in its workflow, channel names only built artifacts, planned channel
+has tracking issue. Producer job renamed in `supply-chain.yml` /
+`windows-tester-bundle.yml` / `macos-tester-bundle.yml` -> manifest changes
+same PR. `generate` writes Homebrew, conda-forge (rattler v1), winget 1.12.0,
+per-channel index. Never hand-write a channel recipe beside it. Linter script
+images digest-pinned; brew runs `--network=none`. Test coverage:
+`scripts/release/tests/test_distribution.py` (vendored winget schemas,
+no-GPU + all-backend boundaries).

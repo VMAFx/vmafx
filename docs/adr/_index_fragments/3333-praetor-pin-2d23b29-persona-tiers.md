@@ -1,0 +1,1 @@
+| [ADR-3333](3333-praetor-pin-2d23b29-persona-tiers.md) | Move the praetor pin to `2d23b29`: every agent persona carries a model tier (`flash` or `pro`) that `compile-context` projects per client; `adopt` refreshes the API compatibility gate and the evasion hook, which now refuses admin merges. | Accepted | ci, governance, standards |

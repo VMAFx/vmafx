@@ -1170,6 +1170,18 @@ test_picture_convert_api = executable('test_picture_convert_api',
 )
 test('test_picture_convert_api', test_picture_convert_api, suite : ['fast'])
 
+# ADR-1822 status 2026-10-15 (Netflix/vmaf 0b94628): upstream's VmafPicture
+# ends in `VmafColor color`; ours has no colour member, so a caller that sets
+# one does not compile (a binary built on upstream's header cannot be detected).
+test('test_picture_no_color_member',
+    import('python').find_installation(),
+    args : [files('test_picture_no_color_member.py')] + vmaf_test_cc_args + [
+            '--cc-syntax=' + cc.get_argument_syntax(), '--cc-id=' + cc.get_id(),
+            meson.project_source_root() / 'include'],
+    suite : ['fast'],
+    timeout : 120,
+)
+
 if is_zimg_enabled
     test_colorspace = executable('test_colorspace',
         ['test.c', 'test_colorspace.c'],
@@ -1540,6 +1552,13 @@ if vmaf_default_library != 'shared'
         env : ['VMAF_COMPAT_PLANT=score'], should_fail : true, suite : ['fast'], timeout : 300)
     test('test_compat_conformance_planted_uncovered', test_compat_conformance,
         env : ['VMAF_COMPAT_PLANT=uncovered'], should_fail : true, suite : ['fast'],
+        timeout : 300)
+    # A value that names no plant is refused before a scenario starts: a run's
+    # scratch files are named after its plant, and only the two names above
+    # (and none) may reach a file name. Such a value used to run as a plain,
+    # passing run with the value in its file names.
+    test('test_compat_conformance_unknown_plant', test_compat_conformance,
+        env : ['VMAF_COMPAT_PLANT=unknown'], should_fail : true, suite : ['fast'],
         timeout : 300)
 endif
 test_vmafx_sha256 = executable('test_vmafx_sha256',
@@ -7061,6 +7080,117 @@ if not is_sycl_acpp
         suite : ['fast', 'gpu', 'sycl'],
         is_parallel : false)
 endif
+
+# T-SPEED-CHROMA-SYCL-COV-1ULP-2026-10-06: the covariance entry the SpEED SYCL
+# twins compute (src/feature/sycl/sycl_speed_cov_math.h) against speed.c's own
+# compute_cov_kernel_scalar(), bit for bit, on the host and in a kernel on the
+# default GPU. The probe TU is compiled with the extractors' own arguments, and
+# the C side links the CPU reference from the static libraries like
+# test_speed_simd. The reference is fp64 arithmetic the test compiles itself,
+# so it needs the strict FP flags; the near-exact comparison sum is x86-64
+# long double.
+if not is_sycl_acpp and float_enabled and host_machine.cpu_family() == 'x86_64'
+    sycl_speed_cov_math_probe = custom_target('sycl_speed_cov_math_probe',
+        output : 'sycl_speed_cov_math_probe.o',
+        input : 'test_sycl_speed_cov_math_probe.cpp',
+        depend_files : files('../src/feature/sycl/sycl_soft_double.h',
+                             '../src/feature/sycl/sycl_soft_signed.h',
+                             '../src/feature/sycl/sycl_speed_cov_math.h',
+                             '../src/feature/sycl/sycl_compat.h'),
+        command : [icpx] + vmaf_cflags_common + ['-c'] + sycl_toolchain_args
+                  + sycl_feature_tail_args + ['@INPUT@', '-o', '@OUTPUT@'],
+    )
+    sycl_speed_cov_math_probe_objects = [sycl_speed_cov_math_probe]
+    if sycl_msvc_device_link
+        sycl_speed_cov_math_probe_objects += custom_target(
+            'sycl_speed_cov_math_probe_device_link',
+            input : sycl_speed_cov_math_probe,
+            output : 'sycl_speed_cov_math_probe_device_link.obj',
+            command : [icpx] + sycl_device_link_args + sycl_strict_fp_args
+                      + ['@INPUT@', '-o', '@OUTPUT@'],
+        )
+    endif
+    test_sycl_speed_cov_math = executable('test_sycl_speed_cov_math',
+        ['test.c', 'test_sycl_speed_cov_math.c'] + sycl_speed_cov_math_probe_objects
+        + ['../src/mem.cpp', '../src/picture.c', '../src/ref.cpp', '../src/dict.cpp',
+           '../src/metadata_handler.cpp', '../src/thread_locale.cpp',
+           '../src/gpu_picture_pool.cpp'] + dnn_sources,
+        include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
+        c_args : vmaf_cflags_common + dnn_defines + vmaf_strict_fp_args,
+        dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
+                        predict_test_dependencies, dnn_deps, sycl_dependency],
+        objects : [
+            common_cuda_objects,
+            platform_specific_cpu_objects,
+            libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+            log_cpp23_test_objects,
+            libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+            libsvm_static_lib.extract_all_objects(recursive: true),
+        ] + wave8_opt_only_objects,
+        link_language : 'cpp',
+    )
+    test('test_sycl_speed_cov_math', test_sycl_speed_cov_math,
+        suite : ['fast', 'gpu', 'sycl'],
+        is_parallel : false)
+
+    # ADR-2690: the split covariance the pipeline runs (differences and terms
+    # stored as fp64 bit patterns, a sequential add chain in row slices)
+    # against compute_cov_kernel_scalar(), bit for bit, device-free: the
+    # chain's add against the native fp64 add, the blocks of
+    # speed_cov_cases.h, all 325 entries of the synthetic plane and a seeded
+    # sweep. The probe TU is built with the extractors' own arguments and
+    # launches no kernel. The cases need the same x86-64 long double as
+    # test_sycl_speed_cov_math.
+    sycl_speed_cov_chain_probe = custom_target('sycl_speed_cov_chain_probe',
+        output : 'sycl_speed_cov_chain_probe.o',
+        input : 'test_sycl_speed_cov_chain_probe.cpp',
+        depend_files : files('../src/feature/sycl/sycl_soft_double.h',
+                             '../src/feature/sycl/sycl_soft_signed.h',
+                             '../src/feature/sycl/sycl_speed_cov_math.h',
+                             '../src/feature/sycl/sycl_compat.h'),
+        command : [icpx] + vmaf_cflags_common + ['-c'] + sycl_toolchain_args
+                  + sycl_feature_tail_args + ['@INPUT@', '-o', '@OUTPUT@'],
+    )
+    sycl_speed_cov_chain_probe_objects = [sycl_speed_cov_chain_probe]
+    if sycl_msvc_device_link
+        sycl_speed_cov_chain_probe_objects += custom_target(
+            'sycl_speed_cov_chain_probe_device_link',
+            input : sycl_speed_cov_chain_probe,
+            output : 'sycl_speed_cov_chain_probe_device_link.obj',
+            command : [icpx] + sycl_device_link_args + sycl_strict_fp_args
+                      + ['@INPUT@', '-o', '@OUTPUT@'],
+        )
+    endif
+    test_sycl_speed_cov_chain = executable('test_sycl_speed_cov_chain',
+        ['test.c', 'test_sycl_speed_cov_chain.c'] + sycl_speed_cov_chain_probe_objects
+        + ['../src/mem.cpp', '../src/picture.c', '../src/ref.cpp', '../src/dict.cpp',
+           '../src/metadata_handler.cpp', '../src/thread_locale.cpp',
+           '../src/gpu_picture_pool.cpp'] + dnn_sources,
+        include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
+        c_args : vmaf_cflags_common + dnn_defines + vmaf_strict_fp_args,
+        dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
+                        predict_test_dependencies, dnn_deps, sycl_dependency],
+        objects : [
+            common_cuda_objects,
+            platform_specific_cpu_objects,
+            libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+            log_cpp23_test_objects,
+            libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+            libsvm_static_lib.extract_all_objects(recursive: true),
+        ] + wave8_opt_only_objects,
+        link_language : 'cpp',
+    )
+    test('test_sycl_speed_cov_chain', test_sycl_speed_cov_chain,
+        suite : ['fast'],
+        timeout : 120)
+endif
+
+test('test_sycl_speed_cov_exact_contract',
+    import('python').find_installation(),
+    args : files('test_sycl_speed_cov_exact_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
 
 # ADR-1434: what float_adm_sycl's kernels run per work-item
 # (src/feature/sycl/sycl_float_adm_math.h) against adm_tools.c's own routines,

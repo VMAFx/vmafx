@@ -1,0 +1,1 @@
+| [ADR-3311](3311-stream-metadata-field-list.md) | `api/stream-metadata-fields.json` (schema `vmafx/stream-metadata-fields/1`) names the per-frame stream metadata fields ahead of #2271, seeded from the pinned Pelorus telemetry registry, with the registry's shared keys VMAFx does not report listed as `not_carried`; append-only | Accepted | api, pelorus, interop, schema |

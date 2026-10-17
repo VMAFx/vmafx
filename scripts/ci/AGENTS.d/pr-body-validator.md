@@ -6,7 +6,7 @@ paths:
   - scripts/git-hooks/pre-push
   - scripts/git-hooks/pre-push-pr-body-lint.sh
   - scripts/git-hooks/test-pre-push-pr-body-lint.py
-invariant: `deliverables-check.sh` is only parser; validator shims `git diff --name-only` and sentinel merge base, nothing else.
+invariant: `deliverables-check.sh` only parser; validator shims diff, sentinel merge base, sentinel-head checkout only.
 area: gates
 ---
 <!-- markdownlint-disable MD013 MD060 -->
@@ -19,7 +19,14 @@ area: gates
 parser; validator only injects diff via `PATH`-shim that
 intercepts `git diff --name-only`, plus `git merge-base
 validator-base validator-head` (answers `validator-base`), since
-the gate diffs from the merge base (`pr-diff-base.sh`).
+the gate diffs from the merge base (`pr-diff-base.sh`), plus `git worktree
+add --detach <dir> validator-head` (checks out `HEAD`), since the ADR-3295
+render-only path runs `make docs-render-check` on a detached head worktree and
+the sentinel names no commit. Case 12 of `test-validate-pr-body.sh` guards it.
+That `make` runs with every variable of `git rev-parse --local-env-vars`
+unset: a pre-push hook exports `GIT_DIR` for its checkout, and inherited it
+gave `scripts/docs/fragment-order.py` another landing order, so a correctly
+rendered head was refused. Case 13 guards it.
 
 `pre-push-pr-body-lint.sh` = standalone entry point referenced by
 `.pre-commit-config.yaml` `validate-pr-body` hook (`stages:
@@ -74,8 +81,11 @@ local repo state.
 **Invariant — rendered files (ADR-2197)**: `deliverables-check.sh` refuses
 PR diff touching `CHANGELOG.md`, `docs/adr/README.md`, `docs/adr/titles.md`,
 `docs/research/titles.md`, `docs/adr/by-tag/*`, `_order.txt`,
-`docs/rebase-notes.md`. Those = `make docs-render` output, written by merge
-train per batch and by release cut. PR adds fragments only
+`docs/rebase-notes.md`. Those = `make docs-render` output, written by
+render-only PR per batch and by release cut. Exception (ADR-3295): diff of
+rendered paths only (not `_order.txt`) passes, no other deliverables, when
+`make docs-render-check` passes on head in detached worktree; else refused.
+Tests: `scripts/ci/tests/test_deliverables_render_only.py`. PR adds fragments only
 (`changelog.d/`, `docs/adr/_index_fragments/`, `docs/rebase-notes.d/`).
 Ticked CHANGELOG item needs `changelog.d/<section>/*.md`; ticked rebase-note
 item needs `docs/rebase-notes.d/<slug>.md`. Render set lives in `Makefile`

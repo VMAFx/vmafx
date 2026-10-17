@@ -7,6 +7,7 @@ name = "vmafx-fex"
 version = "0.1.0"
 description = "Rust extractor framework of VMAFX: the C ABI of the Rust feature-extractor twins and the API they implement (ADR-1713)"
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true

@@ -597,12 +597,12 @@ static char *test_max_in_flight(void)
 
 /* ---- Refusals ------------------------------------------------------------------------------- */
 
-static bool refused(VmafxContext *context, VmafxWindowRequest r, VmafxStatus status,
+static bool refused(VmafxContext *context, const VmafxWindowRequest *r, VmafxStatus status,
                     const char *subject, uint32_t kind)
 {
     VmafxWindow *window = NULL;
     VmafxError *error = NULL;
-    return vmafx_window_submit(context, &r, &window, &error) == status && !window &&
+    return vmafx_window_submit(context, r, &window, &error) == status && !window &&
            vt_failed(&error, status, subject, kind);
 }
 
@@ -618,7 +618,7 @@ static char *check_argument_refusals(VmafxContext *context)
                               vt_failed(&error, VMAFX_E_INVALID, "out", VMAFX_SUBJECT_PARAMETER));
     r.struct_size = 8u;
     mu_assert("struct below its first size",
-              refused(context, r, VMAFX_E_ABI, "request", VMAFX_SUBJECT_PARAMETER));
+              refused(context, &r, VMAFX_E_ABI, "request", VMAFX_SUBJECT_PARAMETER));
     VmafxWindowResult out = VMAFX_WINDOW_RESULT_INIT;
     mu_assert("poll NULL",
               vmafx_window_poll(NULL, &out, &error) == VMAFX_E_INVALID &&
@@ -633,19 +633,22 @@ static char *check_request_refusals(VmafxContext *context)
     VmafxWindowRequest r = vw_request(f, 0, 1, VW_ALL_POOLS);
     r.target = 9;
     mu_assert("target",
-              refused(context, r, VMAFX_E_INVALID, "request.target", VMAFX_SUBJECT_PARAMETER));
-    mu_assert("no model", refused(context, vw_request(vw_model(NULL), 0, 1, VW_ALL_POOLS),
-                                  VMAFX_E_INVALID, "request.model", VMAFX_SUBJECT_PARAMETER));
+              refused(context, &r, VMAFX_E_INVALID, "request.target", VMAFX_SUBJECT_PARAMETER));
+    r = vw_request(vw_model(NULL), 0, 1, VW_ALL_POOLS);
+    mu_assert("no model",
+              refused(context, &r, VMAFX_E_INVALID, "request.model", VMAFX_SUBJECT_PARAMETER));
     static const uint32_t bad_masks[] = {0u, 1u, 1u << 9u, VW_ALL_POOLS | 1u};
     for (unsigned i = 0; i < 4u; i++) {
-        mu_assert("pool mask", refused(context, vw_request(f, 0, 1, bad_masks[i]), VMAFX_E_INVALID,
-                                       "request.pool_mask", VMAFX_SUBJECT_PARAMETER));
+        r = vw_request(f, 0, 1, bad_masks[i]);
+        mu_assert("pool mask", refused(context, &r, VMAFX_E_INVALID, "request.pool_mask",
+                                       VMAFX_SUBJECT_PARAMETER));
     }
-    mu_assert("first after last", refused(context, vw_request(f, 2, 1, VW_ALL_POOLS),
-                                          VMAFX_E_INVALID, "request.first", VMAFX_SUBJECT_FRAME));
+    r = vw_request(f, 2, 1, VW_ALL_POOLS);
+    mu_assert("first after last",
+              refused(context, &r, VMAFX_E_INVALID, "request.first", VMAFX_SUBJECT_FRAME));
+    r = vw_request(f, 0, (uint64_t)UINT_MAX + 1u, VW_ALL_POOLS);
     mu_assert("past the engine's index",
-              refused(context, vw_request(f, 0, (uint64_t)UINT_MAX + 1u, VW_ALL_POOLS),
-                      VMAFX_E_RANGE, "request.last", VMAFX_SUBJECT_FRAME));
+              refused(context, &r, VMAFX_E_RANGE, "request.last", VMAFX_SUBJECT_FRAME));
     return NULL;
 }
 

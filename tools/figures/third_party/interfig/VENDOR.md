@@ -30,9 +30,9 @@ repository-root `LICENSE` at the pinned commit, copied verbatim.
 - `REUSE.toml` labels `tools/figures/third_party/interfig/upstream/**` as MIT
   with an override annotation placed after the repository-wide `**` table. This
   file, `vendor.json` and everything outside `upstream/` stay EUPL-1.2.
-- The committed player in `tools/figures/dist/` carries an
+- The committed player in `tools/figures/player/` carries an
   `interfig (c) 2025 Vectorize AI, Inc. MIT` banner, because the upstream
-  source has no header of its own, and `dist/THIRD-PARTY-LICENSES.txt` carries
+  source has no header of its own, and `player/THIRD-PARTY-LICENSES.txt` carries
   the full license text (`tools/figures/bundle.mjs`).
 - Every exported SVG carries a credit comment, and the site footer credits
   Vectorize (`copyright` in `mkdocs.yml`).
@@ -120,19 +120,19 @@ command when upstream has moved. To update the pin:
    `npm --prefix tools/figures run build`, the locked
    `npm ci --prefix tools/figures --ignore-scripts` and
    `npm --prefix tools/figures run bundle`, which rewrites the committed player
-   in `tools/figures/dist/`. If any of them fails, revert the update.
+   in `tools/figures/player/`. If any of them fails, revert the update.
    `git clean` removes the new upstream files and figure outputs that
    `git checkout` leaves behind:
 
    ```bash
-   git checkout -- tools/figures/third_party/interfig docs/assets/figures tools/figures/dist
+   git checkout -- tools/figures/third_party/interfig docs/assets/figures tools/figures/player
    git clean -fd -- tools/figures/third_party/interfig/upstream docs/assets/figures
    ```
 
 2. Add a new upstream file to the include or exclude list in `vendor.json`
    first, when step 1 stops on one.
 3. Commit the rewritten `upstream/`, `vendor.json`, the regenerated
-   `docs/assets/figures/` and the rebuilt `tools/figures/dist/`. The command
+   `docs/assets/figures/` and the rebuilt `tools/figures/player/`. The command
    prints the upstream commits under `hindsight-interfig/` since the old pin and
    the compare URL for the pull-request body. The list is best effort: when
    GitHub rate-limits or fails the request, the update still succeeds and

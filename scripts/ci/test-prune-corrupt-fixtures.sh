@@ -12,6 +12,10 @@
 #
 #   bash scripts/ci/test-prune-corrupt-fixtures.sh
 set -euo pipefail
+
+# Drop the git hook environment and the fixture identity (see the helper).
+# shellcheck source=/dev/null
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/../lib/clean-git-env.sh"
 export LC_ALL=C
 
 repo_root=$(git rev-parse --show-toplevel)

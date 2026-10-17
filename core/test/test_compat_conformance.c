@@ -16,7 +16,8 @@
  *
  * Planted defects (meson tests registered should_fail): VMAF_COMPAT_PLANT=
  * score moves one score of the compat side by one ulp; =uncovered skips a
- * scenario, leaving functions without a case.
+ * scenario, leaving functions without a case. Any other value fails the run
+ * before a scenario starts.
  */
 
 #include <math.h>
@@ -97,11 +98,30 @@ static int planted_score_at_index(VmafContext *vmaf, VmafModel *model, double *s
     return err;
 }
 
-const char *conformance_plant(void)
+/* The plants this test knows; "" is the plain run. A run's scratch files are
+ * named after its plant (scratch_path()), so that name is this table's own
+ * spelling and never the bytes of the environment. */
+static const char *const known_plants[] = {"", "score", "uncovered"};
+
+#define N_PLANTS (sizeof(known_plants) / sizeof(known_plants[0]))
+
+/* VMAF_COMPAT_PLANT as the table spells it; NULL for a value it does not list. */
+static const char *requested_plant(void)
 {
     /* The once-only environment snapshot (ADR-0488), not a getenv of this thread. */
     const char *const value = vmaf_gpu_dispatch_env_get("VMAF_COMPAT_PLANT");
-    return value ? value : "";
+    for (size_t i = 0; i < N_PLANTS; i++) {
+        if (strcmp(value ? value : "", known_plants[i]) == 0) {
+            return known_plants[i];
+        }
+    }
+    return NULL;
+}
+
+const char *conformance_plant(void)
+{
+    const char *const plant = requested_plant();
+    return plant ? plant : "";
 }
 
 /* ---- Running and comparing --------------------------------------------------- */
@@ -192,6 +212,9 @@ static mu_message_t check_coverage(void)
 
 static mu_message_t test_conformance(void)
 {
+    if (!requested_plant()) {
+        return "VMAF_COMPAT_PLANT names no planted defect: it is unset, score or uncovered";
+    }
     VmafCompatApi new_api = vmaf_compat_new;
     if (strcmp(conformance_plant(), "score") == 0) {
         real_score_at_index = new_api.score_at_index;

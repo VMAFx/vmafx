@@ -3,8 +3,8 @@
 # SPDX-License-Identifier: EUPL-1.2
 """Hold vendored documentation assets to the hashes in their vendor.json.
 
-Every directory under ``docs/`` that holds a ``vendor.json`` is a vendored
-third-party asset (a font, a script). The manifest names the upstream release,
+Every directory under ``docs/`` or ``packaging/`` that holds a ``vendor.json``
+is a vendored third-party asset (a font, a script, a packaging schema). The manifest names the upstream release,
 its licence file and the SHA-256 of every file copied from it (HISS-11). This
 check fails when a listed file is missing or differs from its hash, when the
 directory holds a file the manifest does not list, or when the licence file is
@@ -25,6 +25,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 MANIFEST = "vendor.json"
+SCANNED_DIRS = ("docs", "packaging")
 REQUIRED_KEYS = ("name", "version", "source", "source_sha256", "license", "license_file", "files")
 
 
@@ -82,7 +83,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--root", type=Path, default=ROOT, help="repository root")
     args = parser.parse_args(argv)
-    manifests = sorted((args.root / "docs").rglob(MANIFEST))
+    manifests = sorted(path for top in SCANNED_DIRS for path in (args.root / top).rglob(MANIFEST))
     findings: list[str] = []
     try:
         for manifest in manifests:

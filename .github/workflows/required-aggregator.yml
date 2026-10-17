@@ -1,15 +1,17 @@
 name: CI
 
 # ADR-1140 / BUG-098 — converted required consumer workflows always start and
-# route work through scripts/ci/plan-ci-impact.py. Their exact-name gates are
-# strictMustReport; absent-means-pass remains for contexts not yet under that contract.
+# route work through scripts/ci/plan-ci-impact.py, so a leg the diff does not
+# touch still reports success from its in-job planner.
 # ADR-0313 — Permanent fix for the doc/Python-only-PR vs C-build-required-checks
 # structural deadlock. This single workflow runs on every PR (no path filter)
-# and verifies that each named required check on the head SHA reported an
-# accepted result (with stricter success-only handling for strictMustReport). It becomes the
-# single required-status-check that branch protection enforces. Required-context
-# workflows route expensive work in-job; only non-required/advisory workflows may
-# retain trigger path filters.
+# and is the single required-status-check that branch protection enforces.
+# ADR-3293 — every named required check on the head SHA must report success.
+# A context that is absent, skipped or neutral fails, except where this run
+# decided it is not affected: the contexts the CI tier of this event does not
+# owe (ADR-2169), the named event-scoped list (pullRequestOnly) and a disabled
+# hardware lane. Required-context workflows route expensive work in-job; only
+# non-required/advisory workflows may retain trigger path filters.
 
 on:
   pull_request:
@@ -92,14 +94,14 @@ jobs:
         with:
           retries: 3
           script: |
-            // Ordered by historical reliability. The note that used to sit
-            // here said no Build matrix entries belonged in this list because
-            // they path-filter-skip on doc/Python-only diffs. That was never a
-            // reason to leave them out: ADR-0313 already makes "not reported"
-            // an accepted outcome for every name below, so a path-filtered leg
-            // costs nothing when it does not run and gates when it does.
-            // ADR-1297 added them, along with every other check that was
-            // reporting on the pull request and blocking nothing.
+            // Ordered by historical reliability. ADR-1297 added the Build
+            // matrix entries, along with every other check that was reporting
+            // on the pull request and blocking nothing. Every name below must
+            // report success (ADR-3293): a path-routed leg reports success
+            // through its in-job planner when the diff does not touch it, and
+            // a leg that is absent fails. Only the tier (notOwed), the
+            // event-scoped list (pullRequestOnly) and a disabled hardware lane
+            // exempt a name, each decided in this run.
             const required = [
               'Ubuntu gcc+DNN',
               'Ubuntu clang+DNN',
@@ -413,8 +415,8 @@ jobs:
               // ADR-1687 — the tester image and Windows zip workflows now start
               // on every pull request and master push (planner, work, gate, as
               // BUG-098). Release Dry Run starts on every pull request and has
-              // no push trigger, so pullRequestOnly below drops it from a run
-              // that is not a pull request.
+              // no push trigger, so pullRequestOnly below lets it be absent in a
+              // run that is not a pull request.
               'Tester Image',
               'Windows Tester Zip',
               'Release Dry Run',
@@ -503,43 +505,55 @@ jobs:
               ]
             };
 
-            // ADR-1151 — absent-means-pass (below) is correct ADR-0313
-            // semantics for a doc-only PR and wrong for the one PR whose merge
-            // creates a release: a release PR's diff is
-            // `.release-please-manifest.json` plus the coordinated version
-            // markers, so every path-routed gate can legitimately select
-            // nothing and the whole required set resolves absent-or-skipped.
-            // On a `release-please--` head ref these three must actually
-            // report. `.release-please-manifest.json` and
-            // `release-please-config.json` are in the `c_core` selector of
-            // .github/ci-impact.json so the two build/test entries do real
-            // work rather than reporting a no-op success.
-            const releaseMustReport = [
-              'Release Script Contract',
-              'Netflix CPU Golden',
-              'Ubuntu gcc+DNN',
-            ];
+            // ADR-1151 kept three release contexts from passing absent on a
+            // release-please branch. Since ADR-3293 no owed context passes
+            // absent on any branch, so that list is gone; the release-light
+            // tier (ADR-2169) still owes the release contract.
             // ADR-1247: these scopes never wait for each other's future event.
             const scorecardGate = context.eventName === 'pull_request'
               ? 'Scorecard PR Gate' : 'Scorecard Master Gate';
             required.splice(required.indexOf(context.eventName === 'pull_request'
               ? 'Scorecard Master Gate' : 'Scorecard PR Gate'), 1);
-            // ADR-1687: release-dry-run.yml runs on pull requests and weekly, never
-            // on a push to master (ADR-1595). Its gate is required, and must
-            // report, on a pull request; any other run leaves it out, as it
-            // leaves out the Scorecard gate of the other event above.
-            const pullRequestOnly = ['Release Dry Run'];
+            // ADR-1687, ADR-3293: contexts that exist only on a pull request.
+            // Each is required, and must report success, on a pull request.
+            // In any other run each may be absent or skipped, and is named in
+            // the log when it is; one that reports anything but success still
+            // fails. Measured on master pushes of 2026-10-12: these and no
+            // other required names are absent.
+            const pullRequestOnly = [
+              // release-dry-run.yml runs on pull requests and weekly, never on
+              // a push to master (ADR-1595).
+              'Release Dry Run',
+              // Workflows with only a pull_request trigger: they check the
+              // diff or the pull request text.
+              'ADR Collision Guard',
+              'DCO Sign-off',
+              'Deliverables Checklist',
+              'docs/state.md Gate',
+              'Doc-Substance Gate',
+              'FFmpeg-Patches Surface Sync',
+              'Silent-Revert Guard',
+              'Release Script Contract',
+              // The job condition requires a pull_request event (it compares
+              // the dependency diff of the pull request).
+              'Dependency Review',
+              // Code-scanning results the scanning app reports as checks on a
+              // pull request only; on a push they land as alerts.
+              'CodeQL',
+              'Semgrep OSS',
+              'gitleaks',
+            ];
+            const eventExempt = new Set();
             if (context.eventName !== 'pull_request') {
-              for (const name of pullRequestOnly) {
-                const index = required.indexOf(name);
-                if (index !== -1) required.splice(index, 1);
-              }
+              for (const name of pullRequestOnly) eventExempt.add(name);
             }
             // ADR-2169 — contexts the tier of this event does not owe. A tier
             // that is not named (a push, a fork pull request, a labelled own
             // pull request) owes the whole list, which is the behaviour before
-            // the tiers existed. A context that did not run is accepted; one
-            // that ran must still pass.
+            // the tiers existed. The tier decision of this run is the one
+            // change detector whose verdict lets an owed name stay absent
+            // (ADR-3293): a name it does not owe may be absent or skipped,
+            // and one that ran must still pass.
             const tier = (process.env.CI_TIER || 'full').trim();
             const tierAlways = JSON.parse(process.env.CI_TIER_ALWAYS || '[]');
             const tierFullOnly = JSON.parse(process.env.CI_TIER_FULL_ONLY || '[]');
@@ -550,14 +564,6 @@ jobs:
               notOwed = new Set(required.filter(name => !tierAlways.includes(name)));
             }
             core.info(`CI tier ${tier}: ${notOwed.size} required contexts not owed`);
-            const headRef = context.eventName === 'pull_request'
-              ? context.payload.pull_request.head.ref
-              : '';
-            const enforceMustReport = headRef.startsWith('release-please--');
-            if (enforceMustReport) {
-              core.info(`Release branch ${headRef}: absence is not acceptable for ` +
-                        `${releaseMustReport.join(', ')}`);
-            }
             const sha = context.eventName === 'pull_request'
               ? context.payload.pull_request.head.sha
               : context.sha;
@@ -600,6 +606,13 @@ jobs:
             // T-CI-AGGREGATOR-READS-OTHER-BRANCH-RUNS-2026-10-06). Outside a
             // pull request, suites of workflow runs on another branch are
             // left out as well.
+            // A scheduled run judges the clock, not the commit: GitHub starts
+            // it on whatever the master head is, and its gate jobs may skip on
+            // schedule. The 10:33 run of `FFmpeg Patch Stack` on fdf711ba6
+            // came while the push aggregator polled, and its skipped check run
+            // was read as master's verdict
+            // (T-CI-AGGREGATOR-READS-SCHEDULE-RUNS-2026-10-15). Outside a pull
+            // request, suites of scheduled workflow runs are left out too.
             const pullRequestEvents = new Set(['pull_request', 'pull_request_target']);
             const ownBranch = (context.ref || '').startsWith('refs/heads/')
               ? context.ref.slice('refs/heads/'.length)
@@ -607,6 +620,7 @@ jobs:
 
             function foreignRun(run) {
               if (pullRequestEvents.has(run.event)) return true;
+              if (run.event === 'schedule') return true;
               return ownBranch !== '' && run.head_branch !== ownBranch;
             }
 
@@ -720,7 +734,7 @@ jobs:
             while (Date.now() < deadline) {
               const check_runs = await listAllCheckRuns();
               byName = newestByName(check_runs, await pullRequestSuites());
-              const missing = required.filter(n => !byName[n] && !notOwed.has(n));
+              const missing = required.filter(n => !byName[n] && !notOwed.has(n) && !eventExempt.has(n));
               const stillRunning = required.filter(n => {
                 const run = byName[n];
                 return run && activeStatuses.has(run.status);
@@ -779,6 +793,10 @@ jobs:
                 }
                 continue;
               }
+              if (eventExempt.has(name) && (!run || run.conclusion === 'skipped')) {
+                core.info(`OK (pull-request-only context, ${context.eventName} event): ${name}`);
+                continue;
+              }
               if (strictMustReport.includes(name)) {
                 if (!run) {
                   failed.push(`${name}: never reported (strict required context)`);
@@ -820,18 +838,17 @@ jobs:
                   continue;
                 }
               }
+              // ADR-3293 — an owed context must succeed. Absent, skipped and
+              // neutral fail like a failure: nothing in this run decided that
+              // the context is not affected.
               if (!run) {
-                if (enforceMustReport && releaseMustReport.includes(name)) {
-                  failed.push(`${name}: never reported on a release branch`);
-                  continue;
-                }
-                core.info(`OK (not reported, treated as path-filter-skip): ${name}`);
+                failed.push(`${name}: never reported on SHA ${sha} (owed context, ADR-3293)`);
                 continue;
               }
-              if (!accepted.includes(run.conclusion)) {
-                failed.push(`${name}: ${run.conclusion ?? run.status}`);
+              if (run.conclusion !== 'success') {
+                failed.push(`${name}: ${run.conclusion ?? run.status} (owed context must succeed, ADR-3293)`);
               } else {
-                core.info(`OK (${run.conclusion}): ${name}`);
+                core.info(`OK (success): ${name}`);
               }
             }
 
@@ -847,5 +864,5 @@ jobs:
             if (failed.length > 0) {
               core.setFailed(`Required checks did not pass:\n  - ${failed.join('\n  - ')}`);
             } else {
-              core.info('All required checks reported success/skipped/neutral.');
+              core.info('All owed required checks reported success; tier, event and disabled-lane exemptions are listed above.');
             }

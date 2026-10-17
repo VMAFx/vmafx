@@ -4,6 +4,7 @@
 # SPDX-License-Identifier: EUPL-1.2
 
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -12,12 +13,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from scripts.ci import ffmpeg_shared_series_fixture as shared_series
 from scripts.lib.safe_subprocess import TextCommandResult
 from scripts.lib.safe_subprocess import run as run_command
 
 ROOT = Path(__file__).resolve().parents[2]
 SMOKE = ROOT / "ffmpeg-patches/test/build-and-run.sh"
 TAG_CHECKOUT = ROOT / "scripts/ci/checkout-annotated-tag.sh"
+SHARED_SERIES = ROOT / "scripts/ci/ffmpeg-shared-series.sh"
 CONSUMER_LIB = ROOT / "scripts/ci/upstream-consumer-lib.sh"
 CONSUMER_SCORES = ROOT / "scripts/ci/upstream_consumer_scores.py"
 SCORE = (
@@ -87,6 +90,13 @@ class SmokeSafety(unittest.TestCase):
         self.git(self.upstream, "add", "configure")
         self.git(self.upstream, "commit", "-qm", "fake native configure")
         self.git(self.upstream, "tag", "-a", "n9.0.1", "-m", "annotated fixture release")
+        # The shared fix series (ADR-3143): one patch on the release, applied
+        # before the integration patch and independent of it.
+        (self.upstream / "shared-fix").write_text("fixed upstream of the series\n")
+        self.git(self.upstream, "add", "shared-fix")
+        self.git(self.upstream, "commit", "-qm", "shared fix")
+        self.shared_patch = self.git(self.upstream, "format-patch", "-1", "--stdout")
+        self.git(self.upstream, "reset", "-q", "--hard", "n9.0.1")
         (self.upstream / "sample").write_text("patched\n")
         self.git(self.upstream, "commit", "-qam", "integration patch")
         return self.git(self.upstream, "format-patch", "-1", "--stdout")
@@ -99,7 +109,7 @@ class SmokeSafety(unittest.TestCase):
         shutil.copy2(SMOKE, self.script)
         helper_dir = self.project / "scripts/ci"
         helper_dir.mkdir(parents=True)
-        for helper in (TAG_CHECKOUT, CONSUMER_LIB, CONSUMER_SCORES):
+        for helper in (TAG_CHECKOUT, CONSUMER_LIB, CONSUMER_SCORES, SHARED_SERIES):
             shutil.copy2(helper, helper_dir / helper.name)
         testdata = self.project / "testdata"
         testdata.mkdir()
@@ -107,8 +117,16 @@ class SmokeSafety(unittest.TestCase):
             (testdata / name).write_bytes(bytes(576 * 324 * 3 // 2))
         (patches / "0001-fixture.patch").write_text(patch)
         (patches / "series.txt").write_text("0001-fixture.patch\n")
+        base = self.git(self.upstream, "rev-parse", "n9.0.1^{commit}").strip()
+        archive, digest = shared_series.tarball(
+            self.root / "shared-series",
+            "n9.0.1",
+            base,
+            {shared_series.PATCH_NAME: self.shared_patch},
+        )
         (self.project / "build-config.env").write_text(
-            f'FFMPEG_REMOTE="{self.upstream}"\nFFMPEG_TAG="n9.0.1"\n'
+            f'FFMPEG_REMOTE="{self.upstream}"\nFFMPEG_TAG="n9.0.1"\nFFMPEG_COMMIT="{base}"\n'
+            + shared_series.pins(archive, digest)
         )
 
     def create_fake_tools(self) -> None:
@@ -143,6 +161,8 @@ class SmokeSafety(unittest.TestCase):
                 "PATH": str(self.bin) + os.pathsep + os.environ["PATH"],
                 "FFMPEG_SRC": str(self.checkout),
                 "KEEP_BUILD": "1",
+                # Off the user's cache: the stand-in series is this fixture's.
+                "FFMPEG_FIX_SERIES_CACHE": str(self.root / "fix-series-cache"),
             }
         )
 
@@ -178,6 +198,27 @@ class SmokeSafety(unittest.TestCase):
             assert isinstance(result.stdout, str) and isinstance(result.stderr, str)
             self.assertNotRegex(result.stdout + result.stderr, r"(?i)warning:|error:")
         return result
+
+    def test_shared_fix_series_is_applied_before_the_integration_series(self) -> None:
+        result = self.run_smoke()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(
+            (self.checkout / "shared-fix").read_text(), "fixed upstream of the series\n"
+        )
+        subjects = self.git(self.checkout, "log", "--reverse", "--format=%s", "n9.0.1..HEAD")
+        self.assertEqual(subjects.splitlines(), ["shared fix", "integration patch"])
+
+    def test_tampered_shared_series_stops_the_smoke_run(self) -> None:
+        config = self.project / "build-config.env"
+        text = config.read_text()
+        digest = re.search(r'FFMPEG_FIX_SERIES_SHA256="([0-9a-f]{64})"', text)
+        assert digest is not None
+        config.write_text(text.replace(digest.group(1), "0" * 64))
+        result = self.run_smoke()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("build-config.env pins", result.stderr)
+        # Nothing of the integration series was applied either.
+        self.assertEqual((self.checkout / "sample").read_text(), "before\n")
 
     def run_with_build_output(self, toolchain: str, output: str) -> TextCommandResult:
         """One smoke run, in a fresh checkout, whose build step prints `output`."""

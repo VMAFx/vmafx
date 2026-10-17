@@ -60,12 +60,52 @@ stale   src01_hrc00_576x324.yuv (md5 4226fb7e…, want b16f67d3…) — refetchi
     content mismatch. See
     [ADR-0493](../adr/0493-test-yuv-fixture-md5-verification.md).
 
+To provision some of the files only, name them:
+
+```bash
+scripts/test/fetch-test-yuvs.sh src01_hrc00_576x324.yuv src01_hrc01_576x324.yuv
+```
+
+A name that is not in the script's `FIXTURES` list is refused (exit 2).
+
+## Download retries
+
+The fixture host sometimes fails for minutes: on 2026-10-10 it answered HTTP
+504 from 14:15 to at least 14:18 UTC and two required CI jobs failed on it.
+Both ways a fixture is downloaded now share one retry policy,
+`compat/python-vmaf/tools/retrying_download.py`:
+
+- `scripts/test/fetch-test-yuvs.sh` runs that file for every download;
+- `download_reactively()` in `compat/python-vmaf/config.py`, which fetches a
+  fixture the first time a Python test asks for it, calls its `retrieve()`.
+
+A download gets seven attempts, with waits of 5, 10, 20, 40, 80 and 120
+seconds between them (275 seconds in all). The waits stay below the 600 second
+per-test timeout of the Coverage Gate's pytest run.
+
+| Failure | What happens |
+| --- | --- |
+| HTTP 408, 425, 429, 500, 502, 503, 504, 522 or 524 | Retried |
+| Refused, reset or timed-out connection, failed name lookup, short body | Retried |
+| HTTP 404 and every other status | Fails at once |
+| A certificate that does not verify, a full disk | Fails at once |
+
+When the script cannot download a file after the last attempt it stops and
+does not try the files after it, which come from the same host. Each retry
+prints one line on standard error:
+
+```text
+download of https://…/src01_hrc00_576x324.yuv: attempt 1 of 7 failed (HTTP Error 504: Gateway Timeout), next in 5 s
+```
+
 ## CI parity
 
-GitHub Actions runs an equivalent inline `curl` block in
-[`.github/workflows/tests-and-quality-gates.yml`](../../.github/workflows/tests-and-quality-gates.yml).
-If the canonical content in `Netflix/vmaf_resource` changes, update both
-the CI workflow and the script's expected-md5 list in the same change.
+CI jobs that need the clips run the same script, and the Python tests of the
+Coverage Gate download further fixtures through `download_reactively()`. A
+workflow does not download from `Netflix/vmaf_resource` on its own
+(`scripts/ci/tests/test_fetch_test_yuvs.py` refuses that). If the canonical
+content in `Netflix/vmaf_resource` changes, update the script's expected-md5
+list.
 
 ## Fixtures not covered by the script
 

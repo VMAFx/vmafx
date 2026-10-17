@@ -209,8 +209,8 @@ def aggregator_mutations(aggregator: str) -> dict[str, str]:
         mutations[f"{context} dropped from delayedStrictDependencies"] = aggregator.replace(
             f'"{context}": [', f'"{context} (gone)": [', 1
         )
-    mutations["Release Dry Run dropped from pullRequestOnly"] = aggregator.replace(
-        "const pullRequestOnly = ['Release Dry Run'];", "const pullRequestOnly = [];", 1
+    mutations["Release Dry Run dropped from pullRequestOnly"] = _required_block_replace(
+        aggregator, "pullRequestOnly", "'Release Dry Run',", ""
     )
     mutations["pullRequestOnly never applied"] = aggregator.replace(
         "if (context.eventName !== 'pull_request')", "if (false)", 1

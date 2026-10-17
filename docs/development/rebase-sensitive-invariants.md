@@ -2,7 +2,10 @@
 # Rebase-sensitive invariants
 
 Cross-package invariants that any upstream-sync or rebase agent must preserve.
-Referenced from the canonical [`AGENTS.md`](../../AGENTS.md) harness. Per-subtree
+The canonical [`AGENTS.md`](../../AGENTS.md) harness links this page and does
+not import it: at its size an import would load it into every turn of every
+agent session. Read the section for the files you touch before a rebase, an
+upstream sync, a conflict resolution or an edit of a file cited here. Per-subtree
 detail (the load-bearing reasons and mechanics) lives in the `AGENTS.md` under
 each subtree; this page is the index. When a rebase touches a cited translation
 unit, read that subtree harness before resolving conflicts. A subtree
@@ -89,7 +92,8 @@ backend within it.
   `NOTICE`; no sync brings back `LICENSE-MIT` or another
   root licence file. Package licence fields name the licences of the files the
   package ships, and fork `.toml` files carry an EUPL-1.2 header. The root
-  `go.mod` keeps its `retract [v1.0.0-rc.1, v1.0.0-rc.2]`.
+  `go.mod` keeps its `retract` block: `[v1.0.0-rc.1, v1.0.0-rc.2]` (licence)
+  and `v1.0.0-rc.3` (withdrawn by the 0.x restart, [ADR-3292](../adr/3292-release-line-restart-0x.md)).
   `scripts/ci/check_licence_metadata.py` (required
   `Licence Provenance` job and a pre-commit hook) refuses each breach. See
   [scripts/ci/AGENTS.md](../../scripts/ci/AGENTS.md).
@@ -278,6 +282,11 @@ backend within it.
   the one image and the hosted tidy lanes measure them. Do not move these
   packages into a second image or drop the lavapipe check; a pinned-image bump
   re-measures the lanes' baselines.
+  The `build-deps` stage installs the diagnostic tools `rr` and `ClangBuildAnalyzer`
+  ([ADR-3336](../adr/3336-dev-image-rr-clangbuildanalyzer.md)); their pins live
+  as single-source `dev/Containerfile` ARGs (`RR_APT_VERSION`, `CLANGBUILDANALYZER_VERSION`,
+  `CLANGBUILDANALYZER_SHA256`) and `scripts/ci/check_ort_tarball_pins.py` guards
+  the ClangBuildAnalyzer download against unpinned installs, checksum omissions, and extraction order bugs.
   `dev/scripts/smoke-probe-loop.sh` assumes the golden pair lives at
   `${VMAF_TESTDATA_PATH}/ref_576x324_48f.yuv` / `dis_576x324_48f.yuv`
   — do not rename these files. The probe JSON schema fields (`ts`,
@@ -762,6 +771,25 @@ backend within it.
   on glibc only, the CPU against Netflix's values, without a device (its
   `_foreign_libm` variant runs the other libcs' path); the three source contract tests and
   `test_{cuda,hip,sycl}_speed_*_parity` (`==`) guard the twins.
+
+- **SYCL SpEED covariance is the reference's sequential fp64 sum ([ADR-2690](../adr/2690-sycl-speed-covariance-fast-exact.md))**:
+  `core/src/feature/sycl/sycl_speed_cov_math.h::covariance_entry()` adds
+  `(x - mean_x) * (y - mean_y)` in `speed.c::compute_cov_kernel_scalar()`'s
+  order, rounding as each fp64 add rounds (64-bit integers,
+  `sycl_soft_signed.h`). `launch_covariance()` runs the same helpers split
+  across launches: differences and products in parallel, stored as fp64 bit
+  patterns, then one sequential add chain per entry over the stored terms in
+  raster order. A sync must not bring back the parallel fp32-pair sum rounded
+  once:
+  on a cancelling entry it stores the neighbouring fp32 value, 1 ulp of
+  `speed_chroma_u` on a real 3840x1600 10-bit frame. A change to
+  `compute_cov_kernel_scalar()` or the store in `compute_covariance_row()`
+  changes the header in the same PR. `test_sycl_speed_cov_math` (`==`, host
+  and device), `test_sycl_speed_cov_chain` and
+  `test_sycl_speed_cov_exact_contract.py` (device-free) guard it. The CUDA and HIP twins still sum in pairs and are unverified
+  (`T-CUDA-SPEED-COV-PAIR-SUM-SUSPECTED-2026-10-06`,
+  `T-HIP-SPEED-COV-PAIR-SUM-SUSPECTED-2026-10-06`). See
+  [core/src/feature/sycl/AGENTS.md](../../core/src/feature/sycl/AGENTS.md).
 
 - **SYCL SpEED device-resident pipeline ([ADR-1358](../adr/1358-sycl-speed-device-resident-linalg.md))**:
   every SpEED kernel lives in `core/src/feature/sycl/speed_sycl_pipeline.cpp`

@@ -120,8 +120,12 @@ and in `strictMustReport`, so a run in which it never reported fails too.
 - `scripts/ci/exact_twins.d/` (data fragments whose suffix names a backend).
 - `.codex/agents/*.toml` (praetor's Codex projections of `.agents/agents/`,
   written by the engine; [ADR-1699](../adr/1699-root-licence-files-eupl.md)).
-- `tools/figures/` and `.config/agent/hooks/block_evasion.py` (byte-locked
-  files of the governance engine).
+- `tools/figures/` (files of the governance engine that `praetorctl audit`
+  compares with praetor's own bytes).
+- `.config/agent/hooks/block_evasion.py` and `.config/lefthook/engine.sh`
+  (praetor's scripts, which `praetorctl adopt` refreshes only while they are
+  praetor's own text; dated exceptions in
+  `.config/lint-exceptions.d/spdx.toml`).
 - Verbatim mirrors of another repository (`[mirrors]`, the Pelorus files).
 - A licence grant below a file's own header (the first 60 lines), for example
   the header template a sync script embeds as a string.

@@ -37,6 +37,13 @@ python/vmaf/
 
 ## Rebase invariants
 
+- **`download_reactively()` retries through `tools/retrying_download.py`.**
+  Fork file; `config.py` keeps Netflix's tempfile + `os.replace` shape (32780bd9b)
+  and calls `retrieve(remote_path, tmp_path)` where upstream calls
+  `urllib.request.urlretrieve`. On sync keep `retrieve()` call and import; never
+  restore bare `urlretrieve`. Module stays stdlib-only: `scripts/test/fetch-test-yuvs.sh`
+  runs it as script (`python3 -I`). Policy numbers: one place, `RETRY_DELAYS_S`.
+  Tests: `tests/test_retrying_download.py`, `scripts/ci/tests/test_fetch_test_yuvs.py`.
 - **Feature discovery is Netflix's multi-nickname form (d327ed67b).**
   `VmafexecFeatureExtractorMixin` and `FeatureDiscoveryMixin` keep one
   `defaultdict(list)` per atom feature (nickname -> scores) and nickname

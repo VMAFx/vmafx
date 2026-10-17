@@ -44,10 +44,12 @@ MODEL_DIR = "model/"
 # (cordanaLLM/praetor at the standards-gate.yml PRAETOR_REF):
 # internal/config/lockdigest.go hashes .config/archetypes; the effective policy
 # digest reads .standards.yaml and .standards.lock; internal/agentcontext/render.go
-# lists the compiled targets and their persona directories, and
+# lists the compiled targets and their persona directories,
+# internal/agentcontext/readonly.go names the read-only projection, and
 # internal/compiler/agent_projection.go the persona sources under .agents/.
 EXACT = (
     "AGENTS.md",
+    "AGENTS.readonly.md",
     "CLAUDE.md",
     ".windsurfrules",
     ".github/copilot-instructions.md",

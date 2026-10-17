@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: EUPL-1.2
 """The tester workflows sign with a suffix OpenSSF Scorecard counts as a signature.
 
-Scorecard's Signed-Releases check (v5.5.0, probes/releasesAreSigned) treats a
+Scorecard's Signed-Releases check (v5.6.0, probes/releasesAreSigned) treats a
 release asset as a signature only when its name ends in one of
 SCORECARD_SIGNATURE_SUFFIXES. The tester prereleases are releases to that
 check; a `.bundle` suffix left every one of them "not signed" and moved the
@@ -19,7 +19,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 WORKFLOWS = ROOT / ".github/workflows"
 
-# probes/releasesAreSigned/impl.go, signatureExtensions, Scorecard v5.5.0.
+# probes/releasesAreSigned/impl.go, signatureExtensions, Scorecard v5.6.0.
 SCORECARD_SIGNATURE_SUFFIXES = (".asc", ".minisig", ".sig", ".sign", ".sigstore", ".sigstore.json")
 TESTER_WORKFLOWS = ("macos-tester-bundle.yml", "windows-tester-bundle.yml")
 SIGN_BLOB = re.compile(r'cosign sign-blob[^\n]*--bundle "\$f(?P<suffix>[^"]*)"')

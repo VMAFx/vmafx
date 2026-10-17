@@ -73,18 +73,48 @@ RULES = [
     (r">\s*[\x22\x27]?[^ \t\n\x22\x27]*(?i:\.git[/\\]hooks)", HISS_REFUSAL),
     (r"\blefthook\s+uninstall\b", HISS_REFUSAL),
     (
+        r"(?m)^(?:(?:[^\Wg]\w*|g(?:[^\Wh]\w*|h\w+)?)?[^\w\n])*(gh)\b[^\n]*(?:\bpr\s+me"
+        r"rge\b[^\n]*(?:\s|[\x22\x27])--admin(?:\s|$|[;&|\x22\x27]|=true\b)|(?:\s|[\x2"
+        r"2\x27])--admin(?:\s|$|[;&|\x22\x27]|=true\b)[^\n]*\bpr\s+merge\b|\bpr\s+--ad"
+        r"min(?:\s|$|[;&|\x22\x27]|=true\b)[^\n]*\bmerge\b)",
+        HISS_REFUSAL,
+    ),
+    (
+        r"(?m)^(?:(?:[^\Wg]\w*|g(?:[^\Wh]\w*|h\w+)?)?[^\w\n])*(gh)\b[^\n]*\bapi\b[^\n]"
+        r"*\bpulls/[0-9]+/merge/?(?:\?|\s|$|[;&|\x22\x27])",
+        HISS_REFUSAL,
+    ),
+    (
+        r"(?m)^(?:(?:[^\Wg]\w*|g(?:[^\Wh]\w*|h\w+)?)?[^\w\n])*(gh)\b[^\n]*\bapi\s+grap"
+        r"hql\b[^\n]*\bmergePullRequest\b",
+        HISS_REFUSAL,
+    ),
+    (
+        r"(?m)^(?:(?:[^\Wcw]\w*|c(?:[^\Wu]\w*|u(?:[^\Wr]\w*|r(?:[^\Wl]\w*|l\w+)?)?)?|w"
+        r"(?:[^\Wg]\w*|g(?:[^\We]\w*|e(?:[^\Wt]\w*|t\w+)?)?)?)?[^\w\n])*(curl|wget)\b["
+        r"^\n]*\bapi\.github\.com/[^\n]*\bpulls/[0-9]+/merge/?(?:\?|\s|$|[;&|\x22\x27]"
+        r")",
+        HISS_REFUSAL,
+    ),
+    (
         r"(?i)(standardsctl|praetorctl)\s+(adopt|conform|bootstrap|needs\s+(scan|repor"
-        r"t|migrate|epic))\b.*\bdev/?(\s|$)",
+        r"t|migrate|epic))\b.*\bdev[/\\]?(\s|$)",
         DEV_01_REFUSAL,
     ),
 ]
 
-# The RULES judged without the words of read-only commands chained after a commit.
+# The RULES judged without the words of read-only commands chained after a commit. Each
+# pattern has a name of its own: wrapped inside the list, it would read as two items with
+# the comma between them forgotten.
+READ_ONLY_EXEMPT_1 = (
+    r"\bgit([ \t]+-[Cc][ \t]+(\x22[^\x22]*\x22|\x27[^\x27]*\x27|[^ \t\n\x22\x27][^ \t\n"
+    r"]*)|[ \t]+(--[A-Za-z][-A-Za-z]*|-[ABD-Zabd-z][-A-Za-z]*|-[Cc][A-Za-z]+)(=[^ \t\n]"
+    r"+)?)*\s+(commit\b[^\n]*\s-[aeiopqsvz]*|am\b[^\n]*\s-[3cikmqsu]*)n"
+)
+READ_ONLY_EXEMPT_2 = r"SKIP=.*git"
 READ_ONLY_EXEMPT = [
-    r"\bgit([ \t]+-[Cc][ \t]+(\x22[^\x22]*\x22|\x27[^\x27]*\x27|[^ \t\n\x22\x27][^ \t"
-    r"\n]*)|[ \t]+(--[A-Za-z][-A-Za-z]*|-[ABD-Zabd-z][-A-Za-z]*|-[Cc][A-Za-z]+)(=[^ \t"
-    r"\n]+)?)*\s+(commit\b[^\n]*\s-[aeiopqsvz]*|am\b[^\n]*\s-[3cikmqsu]*)n",
-    r"SKIP=.*git",
+    READ_ONLY_EXEMPT_1,
+    READ_ONLY_EXEMPT_2,
 ]
 READ_ONLY_WORDS = (
     r"((?:;|&&|\|\|?)[ \t]*(?:git[ \t]+(?:--no-pager[ \t]+)?(?:log|show|status|diff|rev"
@@ -92,9 +122,9 @@ READ_ONLY_WORDS = (
     r"\t]*sed)[ \t]+-n\b(?:[ \t]+[-A-Za-z0-9_./:=@,+~*?]+)*"
 )
 READ_ONLY_VETO = (
-    r"[^\t\x20-\x7e]|[\\\x60$(){}<>^!]|--%|%[;&|]|(?i:(?:^|[^-A-Za-z0-9_])(?:export|dec"
-    r"lare|typeset|set|setenv|alias|function|sal|nal|set-alias|new-alias|doskey|hash)(?"
-    r":[^-A-Za-z0-9_]|$))"
+    r"[^\t\x20-\x7e]|[\\\x60$(){}<>^!]|--%|%[;&|]|(?i:(?:\A|[^-A-Za-z0-9_])(?:export|de"
+    r"clare|typeset|set|setenv|alias|function|sal|nal|set-alias|new-alias|doskey|hash)("
+    r"?:[^-A-Za-z0-9_]|$))"
 )
 
 LEFTHOOK_DISABLED = [
@@ -135,7 +165,7 @@ def pending_command():
     try:
         return read_payload_command(sys.stdin.buffer)
     except (ValueError, OSError, RecursionError) as error:
-        raise Blocked(INVALID_INPUT_REFUSAL + str(error))
+        raise Blocked(INVALID_INPUT_REFUSAL + str(error)) from error
 
 
 def check_environment(environ):
@@ -157,7 +187,48 @@ def without_read_only_words(command):
     return re.sub(READ_ONLY_WORDS, r"\1\2", command)
 
 
+def join_line_continuations(command):
+    # A backslash followed by a newline (LF or CRLF) joins lines without regex backtracking.
+    return re.sub(r"\\\r?\n", " ", command)
+
+
+# The git rule with an option run (the short skip flag rule) is searched once per run (#1283).
+# re retries a rule at every git it finds, and a git inside an option token (-git, --x=git,
+# -C dir/git) starts at a boundary of the run an earlier git already walked: each retry walked
+# the rest of that run again, quadratic in the line. A start at a walked boundary reaches the
+# same end, and only a run's end can be followed by the rest of the rule (every option starts
+# with a blank and a dash), so skipping it keeps re.search's answer. The adopter interceptor
+# carries this code byte for byte (TestEmittedInterceptorSearchesLikeTheEngineGuard).
+GIT_OPTION_RUN_HEAD = r"\bgit("
+GIT_OPTION_RUN_JOIN = r")*\s+("
+
+
+def search(pattern, text):
+    """re.search(pattern, text) is not None, with the git option-run rule in linear time."""
+    head, join, tail = pattern.partition(GIT_OPTION_RUN_JOIN)
+    if not join or not head.startswith(GIT_OPTION_RUN_HEAD):
+        return re.search(pattern, text) is not None
+    first = len(GIT_OPTION_RUN_HEAD)
+    option = re.compile(head[first:])
+    rest = re.compile(r"\s+(" + tail)
+    walked = set()
+    for found in re.finditer(r"\bgit", text):
+        position = found.end()
+        if position in walked:
+            continue
+        while position not in walked:
+            walked.add(position)
+            step = option.match(text, position)
+            if step is None or step.end() == position:
+                break
+            position = step.end()
+        if rest.match(text, position):
+            return True
+    return False
+
+
 def check_command(command):
+    command = join_line_continuations(command)
     # re backtracks, so a longer command or line could stall this script past the harness's
     # hook timeout. Such a command is refused, never truncated.
     if len(command) > MAX_SCAN_CHARS:
@@ -167,7 +238,7 @@ def check_command(command):
     judged = without_read_only_words(command)
     for pattern, refusal in RULES:
         text = judged if pattern in READ_ONLY_EXEMPT else command
-        if re.search(pattern, text):
+        if search(pattern, text):
             raise Blocked(refusal + pattern)
 
 

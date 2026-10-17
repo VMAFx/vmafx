@@ -27,6 +27,18 @@ The script defaults are 70 % overall and 90 % critical. The workflow passes its 
 
 The CPU job's 37 % overall floor tracks the measured value after the 2026-05-19 merge burst of new scaffold code, as the comment above the step records (ADR-0637). The per-file values in `PER_FILE_MIN` apply in both jobs.
 
+## The Python suite runs in four shards
+
+Before gcovr collects coverage, the `Coverage Gate` job runs the Python suite under `python/test/` against the instrumented `libvmaf.so` and `vmaf` CLI. The suite takes about 33 minutes on a hosted runner, and praetor's test-timeout audit refuses a test step above 30 minutes, so it runs as four steps, `Run Python test suite, shard 1/4` to `4/4`, each under `timeout 30m`.
+
+[`scripts/ci/run_pytest_shard.py`](../../scripts/ci/run_pytest_shard.py) selects a shard: it runs pytest in its own process with one more plugin that, after `-m`, `-k`, `--deselect` and `--ignore` have filtered the collection, keeps every fourth item starting at item I and reports the others as deselected. The four shards together run every selected test once. gcov counters add up across processes, so the shards need no coverage merge. Each shard step continues on error; the step `Assert every Python coverage shard passed` then fails the job and names each shard whose outcome was not `success`. To run one shard locally:
+
+```text
+python3 scripts/ci/run_pytest_shard.py --shard 2/4 -- python/test/ -v --timeout=600
+```
+
+An empty shard exits 5 and a bad `--shard` exits 2, so a shard count larger than the suite fails instead of passing on nothing.
+
 The `coverage` job skips itself in-job when `scripts/ci/plan-ci-impact.py` ([ADR-1140](../adr/1140-ci-impact-planner.md)) reports no impacted source, so the check always reports and `skipped` is never its outcome.
 
 ### Per-file overrides

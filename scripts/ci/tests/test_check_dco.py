@@ -313,8 +313,11 @@ class DcoWiringTest(unittest.TestCase):
         self.assertIn("'DCO Sign-off'", text)
 
     def test_renovate_signs_off_its_commits(self) -> None:
+        # Sign-off comes from ":gitSignOff" directly or through the shared
+        # plurano/horistes preset, whose default.json extends it.
         cfg = json.loads(self.read("renovate.json"))
-        self.assertIn(":gitSignOff", cfg["extends"])
+        signing = {":gitSignOff", "github>plurano/horistes"}
+        self.assertTrue(signing & set(cfg["extends"]), cfg["extends"])
 
     def test_script_and_listed_bots_are_documented(self) -> None:
         doc = self.read("docs/development/dco.md")

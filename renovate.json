@@ -2,11 +2,9 @@
   "forkProcessing": "enabled",
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
+    "github>plurano/horistes",
     "config:best-practices",
-    "helpers:pinGitHubActionDigests",
-    ":dependencyDashboard",
     ":semanticCommits",
-    ":gitSignOff",
     "helpers:disableTypesNodeMajor"
   ],
   "schedule": [
@@ -26,7 +24,6 @@
   "osvVulnerabilityAlerts": true,
   "dependencyDashboardOSVVulnerabilitySummary": "all",
   "prCreation": "immediate",
-  "minimumReleaseAge": "3 days",
   "ignorePaths": [
     "python/requirements.txt",
     "requirements/locks/*.txt",
@@ -370,9 +367,9 @@
         "tools/figures/third_party/interfig/upstream/src/svg.ts",
         "tools/figures/third_party/interfig/upstream/src/geometry.ts",
         "tools/figures/third_party/interfig/upstream/src/model.ts",
-        "tools/figures/dist/loader.js",
-        "tools/figures/dist/player.js",
-        "tools/figures/dist/THIRD-PARTY-LICENSES.txt",
+        "tools/figures/player/loader.js",
+        "tools/figures/player/player.js",
+        "tools/figures/player/THIRD-PARTY-LICENSES.txt",
         "tools/figures/figures.css",
         "tools/figures/mkdocs_hook.py",
         "tools/figures/astro.mjs",
@@ -396,6 +393,53 @@
       ],
       "matchCurrentValue": "/^16\\./",
       "allowedVersions": "/^16\\./"
+    },
+    {
+      "description": "ADR-3312: the github-actions manager does not update setup-python's python-version input; the CI Python interpreter custom manager owns those pins together with PYTHON_CI_VERSION, so the workflows and build-config.env never land in separate pull requests.",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchDepNames": [
+        "python"
+      ],
+      "matchDepTypes": [
+        "uses-with"
+      ],
+      "enabled": false
+    },
+    {
+      "description": "ADR-3312: one pull request for the CI Python interpreter (build-config.env plus every workflow pin). Patch updates auto-merge. Python 3.15 is deferred past the 1.0.0 scope freeze, so updates stay below 3.15.0 until that decision is revisited.",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchDepNames": [
+        "python"
+      ],
+      "matchPackageNames": [
+        "actions/python-versions"
+      ],
+      "allowedVersions": "<3.15.0",
+      "groupName": "CI Python interpreter",
+      "automerge": true,
+      "draftPR": false
+    },
+    {
+      "description": "ADR-3318: the built-in rust-toolchain manager would move rust-toolchain.toml alone; the Rust toolchain custom manager owns that channel together with RUST_VERSION, both workspaces' rust-version and the Rust workflow's toolchain input.",
+      "matchManagers": [
+        "rust-toolchain"
+      ],
+      "enabled": false
+    },
+    {
+      "description": "ADR-3318: one pull request for the Rust toolchain (build-config.env, rust-toolchain.toml, both Cargo workspaces and the Rust workflow). A new stable release brings new clippy lints, so it is reviewed, not auto-merged.",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchDepNames": [
+        "rust"
+      ],
+      "groupName": "Rust toolchain",
+      "automerge": false
     }
   ],
   "customManagers": [
@@ -477,17 +521,16 @@
       "description": "ONNX Runtime C++ library version in dev/Containerfile and the Go CI job (ADR-1134). Installed via tarball from GitHub releases (not apt). Tracks github.com/microsoft/onnxruntime releases. See ADR-0605.",
       "managerFilePatterns": [
         "/^dev/Containerfile$/",
-        "/^docker/Dockerfile\\.node$/",
-        "/^Dockerfile$/",
-        "/^Dockerfile\\.ffmpeg$/",
+        "/^\\.github/workflows/build\\.yml$/",
         "/^\\.github/workflows/go-ci\\.yml$/"
       ],
       "matchStrings": [
-        "ARG ORT_VERSION=(?<currentValue>[0-9.]+)",
-        "ORT_VERSION: \"(?<currentValue>[0-9.]+)\""
+        "ARG ORT_VERSION=(?<currentValue>[0-9.]+)\\nARG ORT_SHA256=(?<currentDigest>[a-f0-9]{64})",
+        "ORT_VERSION: \"(?<currentValue>[0-9.]+)\"\\n\\s*ORT_SHA256: \"(?<currentDigest>[a-f0-9]{64})\""
       ],
-      "datasourceTemplate": "github-releases",
-      "depNameTemplate": "microsoft/onnxruntime"
+      "datasourceTemplate": "github-release-attachments",
+      "depNameTemplate": "microsoft/onnxruntime",
+      "versioningTemplate": "semver"
     },
     {
       "customType": "regex",
@@ -596,6 +639,43 @@
       "packageNameTemplate": "https://gitlab.freedesktop.org/gstreamer/gstreamer.git",
       "depNameTemplate": "gstreamer/gstreamer",
       "versioningTemplate": "regex:^(?<major>[0-9]+)\\.(?<minor>[0-9]*[02468])\\.(?<patch>[0-9]+)$"
+    },
+    {
+      "customType": "regex",
+      "description": "CI Python interpreter (ADR-3312): build-config.env's PYTHON_CI_VERSION and every setup-python `python-version:` pin under .github/workflows/ are one dependency. This manager owns both, so Renovate moves them in one pull request; the github-actions manager's copy of the workflow pins is disabled below, and scripts/ci/check-workflow-versions.py refuses a workflow pin that differs from build-config.env. The datasource, versioning and extractVersion are the ones the github-actions manager uses for actions/setup-python.",
+      "managerFilePatterns": [
+        "/^build-config\\.env$/",
+        "/^\\.github/workflows/[^/]+\\.ya?ml$/"
+      ],
+      "matchStrings": [
+        "(?:^|\\n)PYTHON_CI_VERSION=\"(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)\"",
+        "python-version:[ \\t]*['\"]?(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)['\"]?"
+      ],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "python",
+      "packageNameTemplate": "actions/python-versions",
+      "versioningTemplate": "npm",
+      "extractVersionTemplate": "^(?<version>\\d+\\.\\d+\\.\\d+)(-\\d+)?$"
+    },
+    {
+      "customType": "regex",
+      "description": "Rust toolchain (ADR-3318): build-config.env's RUST_VERSION, rust-toolchain.toml's channel, the rust-version of both Cargo workspaces and the Rust workflow's toolchain input are one dependency. This manager owns all of them, so Renovate moves them in one pull request; the built-in rust-toolchain manager is disabled below, and scripts/ci/check-workflow-versions.py refuses a copy that differs from build-config.env.",
+      "managerFilePatterns": [
+        "/^build-config\\.env$/",
+        "/^rust-toolchain\\.toml$/",
+        "/^Cargo\\.toml$/",
+        "/^core/src/rust/Cargo\\.toml$/",
+        "/^\\.github/workflows/rust-ci\\.yml$/"
+      ],
+      "matchStrings": [
+        "(?:^|\\n)RUST_VERSION=\"(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)\"",
+        "(?:^|\\n)channel = \"(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)\"",
+        "(?:^|\\n)rust-version = \"(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)\"",
+        "\\n[ \\t]+toolchain:[ \\t]*['\"]?(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)['\"]?"
+      ],
+      "datasourceTemplate": "rust-version",
+      "depNameTemplate": "rust",
+      "versioningTemplate": "rust-release-channel"
     }
   ],
   "vulnerabilityAlerts": {

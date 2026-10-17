@@ -5,7 +5,7 @@ name = "vmaf-tune"
 version = "0.0.2"
 description = "Quality-aware encode automation harness for libvmaf (Phase A: x264 grid corpus)."
 readme = "README.md"
-requires-python = ">=3.10,<3.15"
+requires-python = ">=3.11,<3.15"
 license = "EUPL-1.2 AND BSD-2-Clause-Patent"
 license-files = ["LICENSES/*"]
 authors = [
@@ -18,7 +18,7 @@ dependencies = []
 # tests/ with no failure and no skip for a missing package.
 dev = [
   "pytest>=9.1.1",
-  "ruff>=0.16.10",
+  "ruff>=0.17.0",
   "optuna>=5.0.0",
   "matplotlib>=3.10.9",
   "onnxruntime>=1.23",
@@ -32,7 +32,7 @@ fast = ["optuna>=5.0.0"]
 report = ["matplotlib>=3.11.2"]
 # ONNX inference: the fast-path proxy, the predictor and the saliency
 # models (vmaftune.proxy / predictor / saliency).
-onnx = ["onnxruntime>=1.30.0"]
+onnx = ["onnxruntime>=1.31.0"]
 # Predictor training moved to the ai/ training package
 # (vmaf_train.predictor_train, ADR-1886): no dependency group of this runtime
 # package may name torch (scripts/ci/check-torch-scope.py).
@@ -44,7 +44,7 @@ vmafx-tune = "vmaftune.cli:main"
 [project.urls]
 Homepage = "https://github.com/VMAFx/vmafx"
 Repository = "https://github.com/VMAFx/vmafx"
-Documentation = "https://vmafx.github.io/vmafx/"
+Documentation = "https://vmafx.dev/"
 Issues = "https://github.com/VMAFx/vmafx/issues"
 Changelog = "https://github.com/VMAFx/vmafx/blob/master/CHANGELOG.md"
 

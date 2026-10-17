@@ -153,7 +153,7 @@
         "tools/external-bench/tests/"
       ],
       "checks": ["Tooling Tests"],
-      "source_paths": ["requirements/locks/", ".github/test-suites.json", "LICENSE", "NOTICE", "LICENSES/", "REUSE.toml"],
+      "source_paths": ["requirements/locks/", "packaging/", ".github/test-suites.json", "LICENSE", "NOTICE", "LICENSES/", "REUSE.toml"],
       "install": {"python": "3.14", "locks": ["requirements/locks/package-build.txt", "requirements/locks/tooling-tests.txt"]},
       "pytest": {"timeout": 300, "method": "signal"},
       "runs": "scripts/ci/suite_registry.py run tooling: one pytest run over every Python test file, then every shell test file with bash"

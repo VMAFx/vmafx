@@ -2,10 +2,13 @@
 
 ## Supported versions
 
-VMAFx is preparing its first `1.0` release candidate. As of 2026-09-08,
-[the active repository has no published releases](https://github.com/VMAFx/vmafx/releases).
-There are no supported stable VMAFx release lines yet. Version strings inherited
-from libvmaf or Netflix tags do not identify a released VMAFx support line.
+VMAFx has no supported release line yet. The candidates `v1.0.0-rc.1`,
+`v1.0.0-rc.2` and `v1.0.0-rc.3` were published as pre-releases on 2026-09-27,
+2026-09-28 and 2026-10-07 and are withdrawn: the release line restarts at
+`v0.1.0`, the first VMAFx release
+([ADR-3292](docs/adr/3292-release-line-restart-0x.md),
+[release guide](docs/development/release.md)). Version strings inherited from
+libvmaf or Netflix tags do not identify a VMAFx support line either.
 
 Report problems against the current `master` commit and include its full SHA.
 Development fixes are made on the current code; this is not a promise of

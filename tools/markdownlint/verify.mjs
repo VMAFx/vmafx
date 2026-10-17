@@ -107,6 +107,7 @@ const TOOL_FILES = [
 const STYLE_EXCLUDED_FILES = new Set([
   ".github/copilot-instructions.md",
   "AGENTS.md",
+  "AGENTS.readonly.md",
   "CHANGELOG.md",
   "CLAUDE.md",
 ]);
@@ -279,17 +280,32 @@ function isMapping(value) {
 
 function readManifestText(root) {
   const full = path.join(root, MANIFEST_FILE);
-  const stat = fs.lstatSync(full, { throwIfNoEntry: false });
-  if (stat === undefined) {
-    return null;
-  }
-  if (stat.isSymbolicLink() || !stat.isFile()) {
+  let descriptor;
+  try {
+    descriptor = fs.openSync(full, "r");
+  } catch (error) {
+    // A dangling symbolic link also opens as ENOENT; only a path with no entry at all is absent.
+    if (error.code === "ENOENT" && fs.lstatSync(full, { throwIfNoEntry: false }) === undefined) {
+      return null;
+    }
     fail(`refusing non-regular manifest ${MANIFEST_FILE}`);
   }
-  if (stat.size > MAX_MANIFEST_BYTES) {
-    fail(`${MANIFEST_FILE} is ${stat.size} bytes; maximum is ${MAX_MANIFEST_BYTES}`);
+  try {
+    const lstat = fs.lstatSync(full);
+    if (lstat.isSymbolicLink()) {
+      fail(`refusing non-regular manifest ${MANIFEST_FILE}`);
+    }
+    const stat = fs.fstatSync(descriptor);
+    if (!stat.isFile()) {
+      fail(`refusing non-regular manifest ${MANIFEST_FILE}`);
+    }
+    if (stat.size > MAX_MANIFEST_BYTES) {
+      fail(`${MANIFEST_FILE} is ${stat.size} bytes; maximum is ${MAX_MANIFEST_BYTES}`);
+    }
+    return fs.readFileSync(descriptor, "utf8");
+  } finally {
+    fs.closeSync(descriptor);
   }
-  return fs.readFileSync(full, "utf8");
 }
 
 function documentationBlock(yaml, text) {
@@ -385,7 +401,7 @@ function styleExclusionProblem(pattern) {
 // `a$`. styleExclusionGrammarSelfTest pins each shape against the answers micromatch gave.
 const GLOB_PUNCTUATION = "._-/*?[]^{},!#$%&'+:;<=>@`~";
 const GLOB_UNSUPPORTED_CHARACTER = new RegExp(
-  `[^\\p{L}\\p{M}\\p{N} ${GLOB_PUNCTUATION.replace(/[\\\]\[^/-]/gu, "\\$&")}]`, "u");
+  `[^\\p{L}\\p{M}\\p{N} ${GLOB_PUNCTUATION.replace(/[\\\][^/-]/gu, "\\$&")}]`, "u");
 const GROUP_PROBLEM = "extglobs and regex groups are not supported";
 const CHARACTER_PROBLEMS = new Map([
   ["\"", "micromatch reads it as a quote around literal text"],
@@ -1084,7 +1100,7 @@ function npmInvocation(platform, execPath, args) {
 }
 
 function install(toolDir, temporary) {
-  for (let index = 0; index < TOOL_FILES.length && index < TOOL_FILES.length; index += 1) {
+  for (let index = 0; index < TOOL_FILES.length; index += 1) {
     fs.copyFileSync(path.join(toolDir, TOOL_FILES[index]), path.join(temporary, TOOL_FILES[index]));
   }
   const npm = npmInvocation(process.platform, process.execPath, NPM_CI_ARGS);
@@ -1352,6 +1368,9 @@ function manifestFileSelfTest(temporary, yaml) {
   fs.writeFileSync(target, "documentation:\n  max_files: 8192\n");
   try {
     fs.symlinkSync(target, manifest);
+    assert.throws(() => repositorySettings(root, yaml), /refusing non-regular manifest \.standards\.yaml/u);
+    fs.unlinkSync(manifest);
+    fs.symlinkSync(path.join(root, "missing-target.yaml"), manifest);
     assert.throws(() => repositorySettings(root, yaml), /refusing non-regular manifest \.standards\.yaml/u);
     fs.unlinkSync(manifest);
   } catch (error) {
@@ -1733,7 +1752,7 @@ const REFUSED_STYLE_EXCLUSIONS = Object.freeze([
   ["c++.md", RUN_REFUSAL],
   ["a$$*.md", RUN_REFUSAL],
   ["^^a*.md", RUN_REFUSAL],
-  ["docs/a[ -~]b.md", /has the range  -~ in a \[ \] class, which spans \/ and so lets micromatch match a path/u],
+  ["docs/a[ -~]b.md", /has the range {2}-~ in a \[ \] class, which spans \/ and so lets micromatch match a path/u],
   ["docs/[--z].md", /has the range --z in a \[ \] class, which spans \//u],
   ["docs/x/**/{*,draft}", /has a brace alternative of \* alone, which micromatch lets match nothing/u],
   ["docs/*{,a}", /has a brace alternative of \* alone/u],
@@ -1809,9 +1828,10 @@ function raisedBoundSelfTest(temporary) {
   const fixture = path.join(temporary, "raised-bound-fixture");
   const raised = DEFAULT_MAX_FILE_BYTES + 4_096;
   const heading = "# Large document\n\n";
-  writeFixtureFiles(fixture, { "docs/large.md": `${heading}${"a".repeat(raised - heading.length - 1)}\n` });
+  const largeContent = `${heading}${"a".repeat(raised - heading.length - 1)}\n`;
+  writeFixtureFiles(fixture, { "docs/large.md": largeContent });
   const large = path.join(fixture, "docs", "large.md");
-  assert.equal(fs.statSync(large).size, raised);
+  assert.equal(Buffer.byteLength(largeContent), raised);
   command("git", ["init", "--quiet"], { cwd: fixture });
   const real = fs.realpathSync(fixture);
   assert.throws(() => inventory(real), new RegExp("docs/large\\.md is 1052672 bytes; per-file maximum is 1048576; " +
@@ -2100,14 +2120,28 @@ function compareFindings(left, right) {
 }
 
 function readLintSource(relative) {
-  const stat = fs.lstatSync(relative, { throwIfNoEntry: false });
-  if (stat === undefined || stat.isSymbolicLink() || !stat.isFile()) {
+  let descriptor;
+  try {
+    descriptor = fs.openSync(relative, "r");
+  } catch {
     fail(`refusing to lint non-file Markdown source ${relative}`);
   }
-  if (stat.size > MAX_FILE_BYTES_CEILING) {
-    fail(`${relative} is ${stat.size} bytes; per-file ceiling is ${MAX_FILE_BYTES_CEILING}`);
+  try {
+    const lstat = fs.lstatSync(relative);
+    if (lstat.isSymbolicLink()) {
+      fail(`refusing to lint non-file Markdown source ${relative}`);
+    }
+    const stat = fs.fstatSync(descriptor);
+    if (!stat.isFile()) {
+      fail(`refusing to lint non-file Markdown source ${relative}`);
+    }
+    if (stat.size > MAX_FILE_BYTES_CEILING) {
+      fail(`${relative} is ${stat.size} bytes; per-file ceiling is ${MAX_FILE_BYTES_CEILING}`);
+    }
+    return fs.readFileSync(descriptor, "utf8");
+  } finally {
+    fs.closeSync(descriptor);
   }
-  return fs.readFileSync(relative, "utf8");
 }
 
 // lintChild is the child-process side of runMarkdownlint, started from the repository root. It

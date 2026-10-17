@@ -469,8 +469,7 @@ class ScoreRequest:
 
 
 # The allowed values come from the generated options (core/api/vmafx.toml).
-_VALID_PIXFMTS: set[str] = score_options.allowed("pixel_format")
-_VALID_BITDEPTHS: set[int] = score_options.allowed("bitdepth")
+# pixfmt and bitdepth need no set here: score_options.from_mcp() checks them.
 _VALID_BACKENDS: set[str] = score_options.allowed("backend")
 _VALID_BACKEND_RECEIPTS: set[str] = _VALID_BACKENDS - {"auto"}
 _VALID_OUTPUT_FMTS: set[str] = score_options.allowed("output_format")

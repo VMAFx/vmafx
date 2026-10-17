@@ -1439,8 +1439,8 @@ function selfTestBounds(findings) {
   assert.equal(findPrivateScratchLinks("docs/limit.md", excessFindingMarkdown).length, MAX_FINDINGS + 1);
   const exactSrcset = new Array(MAX_SRCSET_CANDIDATES).fill("../public.png 1x").join(", ");
   const excessSrcset = `${exactSrcset}, ../public.png 1x`;
-  assert.deepEqual(findPrivateScratchLinks("docs/srcset.md", `<img srcset=\"${exactSrcset}\">`), []);
-  assert.throws(() => findPrivateScratchLinks("docs/srcset.md", `<source srcset=\"${excessSrcset}\">`),
+  assert.deepEqual(findPrivateScratchLinks("docs/srcset.md", `<img srcset="${exactSrcset}">`), []);
+  assert.throws(() => findPrivateScratchLinks("docs/srcset.md", `<source srcset="${excessSrcset}">`),
     /srcset exceeds 4096 candidates/u);
 }
 
@@ -1484,7 +1484,7 @@ function selfTestHTMLBounds() {
   assert.equal(htmlDestinations("<a ping='one two'>", 1, 2).length, 2);
   assert.throws(() => htmlDestinations("<a ping='one two'>", 1, 1),
     /embedded HTML destinations exceed 1/u);
-  const quoteSrcdoc = (html) => `<iframe srcdoc=\"${html.replaceAll("&", "&amp;").replaceAll("\"", "&quot;")}\"></iframe>`;
+  const quoteSrcdoc = (html) => `<iframe srcdoc="${html.replaceAll("&", "&amp;").replaceAll("\"", "&quot;")}"></iframe>`;
   const oneSrcdoc = quoteSrcdoc("<a href='../public.md'>public</a>");
   assert.equal(htmlDestinations(oneSrcdoc, 1, MAX_EVENTS, { maxHTMLDepth: 1 }).length, 1);
   assert.throws(() => htmlDestinations(quoteSrcdoc(oneSrcdoc), 1, MAX_EVENTS, { maxHTMLDepth: 1 }),
@@ -1535,11 +1535,16 @@ function validateFileList(files) {
 // reading it, and reply with its findings or the error that stopped the scan.
 function readBoundedSource(root, source) {
   const full = path.join(root, source);
-  const size = fs.statSync(full).size;
-  if (size > MAX_FILE_BYTES) {
-    throw new Error(`${source} is ${size} bytes; per-file maximum is ${MAX_FILE_BYTES}`);
+  const descriptor = fs.openSync(full, "r");
+  try {
+    const size = fs.fstatSync(descriptor).size;
+    if (size > MAX_FILE_BYTES) {
+      throw new Error(`${source} is ${size} bytes; per-file maximum is ${MAX_FILE_BYTES}`);
+    }
+    return fs.readFileSync(descriptor, "utf8");
+  } finally {
+    fs.closeSync(descriptor);
   }
-  return fs.readFileSync(full, "utf8");
 }
 
 function serveScans(root) {

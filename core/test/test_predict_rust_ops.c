@@ -18,6 +18,7 @@
 #include <string.h>
 
 #include "feature/feature_collector.h"
+#include "float_bits.h"
 #include "model.h"
 #include "predict.h"
 #include "test.h"
@@ -157,7 +158,8 @@ static char *test_no_table_runs_the_c_predictor(void)
 /* What the table was handed for frame 1. */
 static char *check_routed_arguments(const Fixture *fx)
 {
-    mu_assert("the table gets the raw score", fake.first_raw == raw_score(0, 1));
+    mu_assert("the table gets the raw score",
+              vmaf_test_identical_f64(fake.first_raw, raw_score(0, 1)));
     mu_assert("the table gets the frame index", fake.index == 1);
     mu_assert("the table gets the flags", fake.flags == VMAF_MODEL_FLAG_DISABLE_CLIP);
     mu_assert("the table gets the node scratch", fake.nodes == fx->model->predict_nodes);
@@ -210,7 +212,8 @@ static char *test_unsupported_model_runs_the_c_predictor(void)
     fixture_close(&fx);
     vmaf_predict_install_rust_ops(NULL);
     mu_assert("an unsupported model scores", err == 0 && again == 0);
-    mu_assert("an unsupported model runs the C predictor", state == 2 && score == expected);
+    mu_assert("an unsupported model runs the C predictor",
+              state == 2 && vmaf_test_identical_f64(score, expected));
     mu_assert("the decision is made once", fake.creates == 1 && fake.predicts == 0);
     mu_assert("no handle to free", fake.destroys == 0);
     return NULL;

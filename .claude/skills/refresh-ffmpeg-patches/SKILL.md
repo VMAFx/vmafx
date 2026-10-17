@@ -18,7 +18,10 @@ python3 scripts/ci/ffmpeg_patch_stack.py --check
 - Daily CI performs discovery -> retains proposed diff.
 - Ordinary commits and PRs replay reviewed release only.
 - Helper fetches into disposable storage.
-- Applies each `series.txt` entry in order.
+- Applies shared FFmpeg fix series (`FFMPEG_FIX_SERIES_*` in
+  `build-config.env`, ADR-3143), then each `series.txt` entry in order.
+- `--latest` with newer FFmpeg release: stops until shared series pin moves
+  to release for that FFmpeg; candidates kept in output dir.
 - Writes canonical patches/configuration mirrors only after complete replay and
   rebase succeed.
 - Do not reset or clean existing checkouts.

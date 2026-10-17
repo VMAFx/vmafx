@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: EUPL-1.2
 """Check source-driven ADR generation without modifying the caller's repo."""
 
+import os
 import shutil
 import sys
 import tempfile
@@ -29,6 +30,8 @@ def git_init(root: Path) -> None:
     run_command(
         (git, "init", "-q", str(root)),
         allowed_executables=(git,),
+        # Without the hook's GIT_DIR: the fixture, not the caller's repository.
+        env={key: value for key, value in os.environ.items() if not key.startswith("GIT_")},
         capture_output=True,
         check=True,
         timeout_seconds=60,
@@ -183,7 +186,8 @@ class GeneratorTests(unittest.TestCase):
         docs = lint.split("  docs-lint:\n", 1)[1].split("  check-conflict-markers:\n", 1)[0]
         self.assertIn("# required-aggregator", docs)
         self.assertIn("run: make docs-fragments-check", docs)
-        self.assertIn("run: make docs-render-check", docs)
+        # The master push judges the render through ADR-3295's bounded check.
+        self.assertIn("run: python3 scripts/ci/check_render_on_master.py", docs)
         self.assertIn("if: github.event_name == 'push'", docs)
         # A test runs once in CI (ADR-1568): Tooling Tests runs this file.
         from scripts.ci.suite_registry import suite_members  # noqa: PLC0415

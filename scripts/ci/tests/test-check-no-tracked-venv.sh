@@ -5,6 +5,10 @@
 # Tests for scripts/ci/check-no-tracked-venv.sh: a throwaway repo with tracked
 # paths; the gate must flag real virtualenv paths and pass look-alike names.
 set -euo pipefail
+
+# Drop the git hook environment and the fixture identity (see the helper).
+# shellcheck source=/dev/null
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/../../lib/clean-git-env.sh"
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 script="$here/../check-no-tracked-venv.sh"
 tmp="$(mktemp -d)"

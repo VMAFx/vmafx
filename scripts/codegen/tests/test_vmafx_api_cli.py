@@ -14,11 +14,13 @@ from __future__ import annotations
 
 import copy
 import io
+import os
 import shutil
 import tempfile
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
+from unittest import mock
 
 from support import DEFINITION, bumped, document, entry, run, tool
 from vmafx_api import changelog, cli
@@ -57,11 +59,24 @@ class ChangelogTest(unittest.TestCase):
 @unittest.skipIf(tool("git") is None, "git is not on PATH")
 class MergeBaseGateTest(unittest.TestCase):
     def setUp(self) -> None:
+        # A git hook exports GIT_DIR / GIT_INDEX_FILE; without this the fixture's
+        # init and commits would act on the caller's repository. The identity
+        # comes from the environment so nothing is written to a git config.
+        clean = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+        clean.update(
+            GIT_CONFIG_GLOBAL=os.devnull,
+            GIT_CONFIG_NOSYSTEM="1",
+            GIT_AUTHOR_NAME="test",
+            GIT_AUTHOR_EMAIL="test@example.invalid",
+            GIT_COMMITTER_NAME="test",
+            GIT_COMMITTER_EMAIL="test@example.invalid",
+        )
+        patcher = mock.patch.dict(os.environ, clean, clear=True)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
         self.git("init", "-q", "-b", "main")
-        self.git("config", "user.email", "test@example.invalid")
-        self.git("config", "user.name", "test")
         (self.root / "README").write_text("before the definition\n")
         self.git("add", ".")
         self.git("commit", "-q", "-m", "root")

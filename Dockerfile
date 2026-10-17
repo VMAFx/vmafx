@@ -132,6 +132,10 @@ RUN wget -q "${FFMPEG_REMOTE%.git}/archive/${FFMPEG_TAG}.zip" && \
 
 COPY ffmpeg-patches /tmp/ffmpeg-patches
 WORKDIR /vmaf/FFmpeg-${FFMPEG_TAG}
+# The shared FFmpeg fix series first (ADR-3143): the script verifies the
+# tarball pinned in build-config.env; the release archive is not a checkout.
+RUN FFMPEG_FIX_SERIES_CACHE=none \
+    bash /vmaf/scripts/ci/ffmpeg-shared-series.sh apply --method apply .
 # Apply the patch series in series.txt order. Patch 0003 depends on
 # fields added by 0001, so applying out of order breaks the build.
 RUN set -e; \

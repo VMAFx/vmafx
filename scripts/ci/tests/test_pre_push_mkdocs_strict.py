@@ -43,7 +43,8 @@ validation:
 
 
 def _run(cmd: list[str], cwd: Path, timeout: int) -> subprocess.CompletedProcess[str]:
-    env = dict(os.environ)
+    # No GIT_DIR / GIT_INDEX_FILE from a hook: they would point git at the caller's repository.
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
     env.pop("SKIP", None)
     env.pop("PRE_COMMIT_REMOTE_NAME", None)
     return subprocess.run(  # noqa: S603 -- fixed argv, no shell, disposable fixture repo

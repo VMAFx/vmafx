@@ -312,14 +312,15 @@ static void trace_wrapped(Trace *t, const char *what, const VmafPicture *pic, co
 }
 
 /* One refused wrap: its error, whether `pic` stayed as it was, no release. */
-static void wrap_refused(const VmafCompatApi *api, Trace *t, const char *what, VmafPictureWrapped w)
+static void wrap_refused(const VmafCompatApi *api, Trace *t, const char *what,
+                         const VmafPictureWrapped *w)
 {
     VmafPicture pic;
     VmafPicture before;
     memset(&pic, 0x5a, sizeof(pic));
     memcpy(&before, &pic, sizeof(before));
-    WrapRecord *const record = w.cookie;
-    const int err = api->picture_wrap(&pic, w);
+    WrapRecord *const record = w->cookie;
+    const int err = api->picture_wrap(&pic, *w);
     trace(t, "wrap %s %d untouched %d released %u", what, err,
           memcmp(&pic, &before, sizeof(pic)) == 0, record ? record->calls : 0u);
 }
@@ -331,32 +332,32 @@ static void wrap_refusals(const VmafCompatApi *api, Trace *t, uint8_t *buf)
     trace(t, "wrap NULL %d", api->picture_wrap(NULL, good));
     VmafPictureWrapped w = good;
     w.pix_fmt = VMAF_PIX_FMT_UNKNOWN;
-    wrap_refused(api, t, "no format", w);
+    wrap_refused(api, t, "no format", &w);
     /* A value past the enum on purpose: both sides must refuse it alike. */
     /* NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange) -- ADR-1080 */
     w.pix_fmt = (enum VmafPixelFormat)(VMAF_PIX_FMT_YUV400P + 1);
-    wrap_refused(api, t, "format past the enum", w);
+    wrap_refused(api, t, "format past the enum", &w);
     static const unsigned depths[] = {7u, 17u};
     for (unsigned i = 0; i < 2u; i++) {
         w = good;
         w.bpc = depths[i];
-        wrap_refused(api, t, i ? "17 bit" : "7 bit", w);
+        wrap_refused(api, t, i ? "17 bit" : "7 bit", &w);
     }
     w = good;
     w.w = 0;
-    wrap_refused(api, t, "0 wide", w);
+    wrap_refused(api, t, "0 wide", &w);
     w = good;
     w.h = 0;
-    wrap_refused(api, t, "0 tall", w);
+    wrap_refused(api, t, "0 tall", &w);
     w = good;
     w.data[1] = NULL;
-    wrap_refused(api, t, "no chroma", w);
+    wrap_refused(api, t, "no chroma", &w);
     w = good;
     w.stride[0] = -w.stride[0];
-    wrap_refused(api, t, "negative stride", w);
+    wrap_refused(api, t, "negative stride", &w);
     w = good;
     w.stride[1] = (ptrdiff_t)(WRAP_W / 2u); /* upstream's rounded-down chroma row */
-    wrap_refused(api, t, "short chroma stride", w);
+    wrap_refused(api, t, "short chroma stride", &w);
 }
 
 /* Every format, 8 to 16 bits: the picture, then what its release saw. */
@@ -478,19 +479,25 @@ void scenario_perceptual(const VmafCompatApi *api, Trace *t)
 
 /* ---- Tiny AI ------------------------------------------------------------------------ */
 
+#define TINY_LUMA8_SAMPLES 49u /* 7x7, the largest 8-bit plane tiny_runs() names */
+
 /* A session on the 4x4 smoke model (model/tiny/smoke_v0.onnx, NCHW
  * [1,1,4,4]): every run form, outputs as %a. Without tiny-AI support every
  * call is -ENOSYS on both sides. */
 static void tiny_runs(const VmafCompatApi *api, Trace *t, VmafDnnSession *sess)
 {
-    uint8_t in8[16];
-    uint8_t out8[16] = {0};
+    /* The 8-bit planes hold the largest run below, 7x7: the library reads the
+     * plane it is told about, and may write one of the same size. */
+    uint8_t in8[TINY_LUMA8_SAMPLES];
+    uint8_t out8[TINY_LUMA8_SAMPLES] = {0};
     uint16_t in16[16];
     uint16_t out16[16] = {0};
     float in_f[16];
     float out_f[16] = {0};
-    for (unsigned i = 0; i < 16u; i++) {
+    for (unsigned i = 0; i < TINY_LUMA8_SAMPLES; i++) {
         in8[i] = (uint8_t)(i * 13u);
+    }
+    for (unsigned i = 0; i < 16u; i++) {
         in16[i] = (uint16_t)(i * 61u);
         in_f[i] = (float)i / 16.0f;
     }

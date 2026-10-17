@@ -514,6 +514,28 @@ the NEO metadata-fetch instruction and is not recorded in image layers,
 metadata, or provenance. See
 [ADR-1271](../adr/1271-neo-buildkit-github-token-secret.md).
 
+### Build stages
+
+libvmaf and FFmpeg are compiled in stages that no image is made of, and the
+image stages copy only what each build installs:
+
+| Stage | Contents |
+| --- | --- |
+| `libvmaf-deps` | `gpu-sdks` plus the copied sources, ONNX Runtime and nv-codec-headers |
+| `libvmaf-compile` | `meson setup core/build core` and `ninja`, installed into `/stage/libvmaf` |
+| `codec-deps` | `libvmaf-deps` plus the installed libvmaf, the backend probe and the encoder libraries |
+| `ffmpeg-compile` | The patched FFmpeg, installed into `/stage/ffmpeg` |
+| `libvmaf-build` | `codec-deps` plus the installed FFmpeg and the encoder probe; `go-build` and `dev-mcp` derive from it |
+
+A build directory that a later `RUN` deletes stays in the layer that created
+it. Before this split the Meson tree took 8.25 GB of every image and the
+FFmpeg tree another 1.1 GB, although neither existed in the running
+container. Measured on the `dev-mcp` image, the layers add up to 39.4 GB
+instead of 48.7 GB (`docker history`), and `docker image ls` reports 55.7 GB
+instead of 69.7 GB. Nothing at run time reads `core/build` or `/build/ffmpeg`; the
+sources under `/build/vmaf` stay, because the editable Python installs, the
+entrypoint, the healthcheck, the models and the test data use them.
+
 ### CI stage builds
 
 CI builds stage images through one script,
@@ -666,6 +688,89 @@ when the loader does not enumerate lavapipe. On a host that passes a GPU in,
 the GPU's Vulkan device is listed beside it; tests that need a GPU's Vulkan
 memory pick the GPU and ignore lavapipe. Real-GPU Vulkan runs remain a
 separate signal from the CPU runs.
+
+## Reverse debugging and build-time analysis
+
+The dev container carries two pinned diagnostic tools in its `build-deps` stage
+([ADR-3336](../adr/3336-dev-image-rr-clangbuildanalyzer.md)): the `rr` reverse
+debugger and `ClangBuildAnalyzer`.
+
+### Reverse debugging with `rr`
+
+`rr` records non-deterministic execution and replays it deterministically under
+GDB, enabling bidirectional execution control (`reverse-continue`,
+`reverse-step`, reverse watchpoints) to debug race conditions, memory corruption,
+and intermittent test regressions.
+
+Prerequisites and execution inside the container:
+
+- **Host kernel configuration**: `rr` uses hardware performance monitoring
+  counters (PMU). On the host, set:
+
+  ```bash
+  sudo sysctl kernel.perf_event_paranoid=1
+  ```
+
+  (or `<= 1`).
+- **Container permissions**: `rr` calls `perf_event_open`, which Docker's
+  default seccomp profile blocks. `dev/docker-compose.yml` already sets
+  `security_opt: [seccomp=unconfined]` on the `dev-mcp` service; it does not add
+  `SYS_PTRACE`. The rr project's container notes ask for both, so a container
+  started by hand takes
+  `docker run --cap-add=SYS_PTRACE --security-opt seccomp=unconfined ...`, and
+  a compose user who sees a ptrace permission error adds
+  `cap_add: [SYS_PTRACE]` in a local override file.
+- **Recording and replay**:
+
+  ```bash
+  # Inside the dev container:
+  rr record vmaf --reference ref.yuv --distorted dis.yuv ...
+  rr replay
+  ```
+
+- **Fallback for virtualized environments**: In virtual machines without
+  virtualized hardware PMU counters where `rr` cannot record, fall back to GDB's
+  built-in software execution recording:
+
+  ```text
+  (gdb) record full
+  (gdb) continue
+  (gdb) reverse-continue
+  ```
+
+### Build-time analysis with `ClangBuildAnalyzer`
+
+`ClangBuildAnalyzer` analyzes Clang compilation timing traces generated with
+`-ftime-trace` to identify build-time bottlenecks across header inclusions,
+template instantiations, and code generation.
+
+Usage with a Meson build in the container:
+
+```bash
+# 1. Configure a separate Clang build directory with -ftime-trace
+#    (GCC does not know the flag):
+CC=clang CXX=clang++ meson setup build-trace core \
+    -Dc_args=-ftime-trace -Dcpp_args=-ftime-trace
+
+# 2. Build the targets:
+ninja -C build-trace -j2
+
+# 3. Aggregate all JSON time-trace outputs into an analysis archive:
+ClangBuildAnalyzer --all build-trace cba.bin
+
+# 4. Print the analysis report:
+ClangBuildAnalyzer --analyze cba.bin
+```
+
+### Upstream credits and licenses
+
+- **rr**: [https://github.com/rr-debugger/rr](https://github.com/rr-debugger/rr)
+  — MIT licence (upstream `LICENSE` at tag `5.9.0`; bundled third-party parts
+  carry their own notices there). Pinned Ubuntu archive package (`5.9.0-5`).
+- **ClangBuildAnalyzer**:
+  [https://github.com/aras-p/ClangBuildAnalyzer](https://github.com/aras-p/ClangBuildAnalyzer)
+  by Aras Pranckevičius — Unlicense. Pinned tarball release v1.6.0 with verified
+  SHA-256.
 
 ## History
 

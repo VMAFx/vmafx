@@ -52,7 +52,7 @@ env:
 jobs:
   publish:
     name: Build, push, and sign dev container (libvmaf-build stage)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     # The uncached stage build takes 28-35 min on a hosted runner (the
     # Dev Container PR gate); pushing ~29.5 GB adds several more.
     timeout-minutes: 90

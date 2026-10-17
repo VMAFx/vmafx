@@ -14,6 +14,10 @@ The contract: every job with a step that runs scripts/ci/run_meson_test.py over
 the fast suite or the whole suite (no `--suite` other than fast, not a list of
 named tests) checks out with `fetch-depth: 0`, or with an expression that gives
 0 whenever the job does work.
+
+`suite_commands()` and `runs_suite()` are the one definition of "this step runs
+the suite"; test_meson_suite_go_prefetch.py and test_sanitizer_suite_timeouts.py
+load them from this file.
 """
 
 from __future__ import annotations
@@ -31,14 +35,38 @@ SUITE = re.compile(r"--suite[= ](\S+)")
 NAMED_TEST = re.compile(r"(?<![\w$])test_[a-z0-9_]+")
 
 
+RUNNER = "run_meson_test.py"
+CONTINUATION = re.compile(r"[ \t]*[\\^]\r?\n[ \t]*")
+
+
+def suite_commands(run: str) -> list[str]:
+    """The arguments of every run_meson_test.py command of a step's script.
+
+    A command is one logical line (shell and batch continuations joined)
+    that is not a comment; its arguments are what follows the runner's name.
+    """
+    lines = CONTINUATION.sub(" ", run).splitlines()
+    return [
+        line.split(RUNNER, 1)[1]
+        for line in lines
+        if RUNNER in line and not line.lstrip().startswith("#")
+    ]
+
+
 def runs_suite(run: str) -> bool:
-    """Whether a step's script runs the fast suite or the whole suite."""
-    if "run_meson_test.py" not in run:
-        return False
-    suites = SUITE.findall(run)
-    if suites and "fast" not in suites:
-        return False
-    return bool(suites) or not NAMED_TEST.search(run)
+    """Whether a step's script runs the fast suite or the whole suite.
+
+    Judged on the runner's own arguments: a script that names a test anywhere
+    else (a deselect pattern such as EXCLUDE='test_model$', a comment) and then
+    passes the enumerated list in a variable still runs the suite.
+    """
+    for arguments in suite_commands(run):
+        suites = SUITE.findall(arguments)
+        if suites and "fast" not in suites:
+            continue
+        if suites or not NAMED_TEST.search(arguments):
+            return True
+    return False
 
 
 def full_history(depth: Any) -> bool:
@@ -85,6 +113,37 @@ class MesonSuiteCheckoutHistory(unittest.TestCase):
         ]
         self.assertIn("windows-arm64", suite_jobs)
         self.assertIn("libvmaf-build", suite_jobs)
+
+    def test_a_deselect_pattern_does_not_hide_a_suite_step(self) -> None:
+        # The sanitizer legs enumerate the suite into $TESTS after naming the
+        # one deselected test; the step still runs the suite.
+        sanitizer = (
+            "EXCLUDE='test_model$'\n"
+            "# test_cambi was removed from this list\n"
+            'TESTS=$(meson introspect build --tests | filter "$EXCLUDE")\n'
+            "python3 ../scripts/ci/run_meson_test.py -- -C build --print-errorlogs \\\n"
+            "  --timeout-multiplier 3 $TESTS\n"
+        )
+        self.assertTrue(runs_suite(sanitizer))
+        self.assertEqual(
+            suite_commands(sanitizer),
+            [" -- -C build --print-errorlogs --timeout-multiplier 3 $TESTS"],
+        )
+        workflow = yaml.safe_load((WORKFLOWS / "tests-and-quality-gates.yml").read_text())
+        steps = workflow["jobs"]["sanitizers"]["steps"]
+        self.assertTrue(any(runs_suite(str(s.get("run", ""))) for s in steps))
+        checkout = {"uses": "actions/checkout@0000000000000000000000000000000000000000"}
+        planted = {"jobs": {"shallow-sanitizer": {"steps": [checkout, {"run": sanitizer}]}}}
+        self.assertEqual(offenders(planted, "planted.yml"), ["planted.yml: job shallow-sanitizer"])
+
+    def test_a_commented_or_named_command_is_not_a_suite_step(self) -> None:
+        self.assertFalse(runs_suite("# python3 scripts/ci/run_meson_test.py -- -C build\n"))
+        self.assertFalse(
+            runs_suite("python scripts\\ci\\run_meson_test.py -- -C core\\build ^\n  test_a test_b")
+        )
+        self.assertTrue(
+            runs_suite("python scripts\\ci\\run_meson_test.py -- ^\n  -C core\\build --suite fast")
+        )
 
     def test_planted_shallow_suite_job_is_refused(self) -> None:
         checkout = {"uses": "actions/checkout@0000000000000000000000000000000000000000"}

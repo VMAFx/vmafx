@@ -722,28 +722,31 @@ static VmafxStatus import_on_device(const VmafxReport *report, VmafxDevice *devi
     if (shared != VMAFX_OK) {
         return shared;
     }
-    switch (device->backend) {
-    case VMAFX_BACKEND_CPU:
+    /* One test per backend this build has: a CPU-only build would leave a
+     * `switch` with a single case. */
+    if (device->backend == VMAFX_BACKEND_CPU) {
         return import_on_cpu(report, device, d, layout, out);
+    }
 #ifdef HAVE_CUDA
-    case VMAFX_BACKEND_CUDA:
+    if (device->backend == VMAFX_BACKEND_CUDA) {
         return vmafx_cuda_frame_import(report, device, d, layout, out);
+    }
 #endif
 #ifdef HAVE_SYCL
-    case VMAFX_BACKEND_SYCL:
+    if (device->backend == VMAFX_BACKEND_SYCL) {
         return vmafx_sycl_frame_import(report, device, d, layout, out);
+    }
 #endif
 #ifdef HAVE_HIP
-    case VMAFX_BACKEND_HIP:
+    if (device->backend == VMAFX_BACKEND_HIP) {
         return vmafx_hip_frame_import(report, device, d, layout, out);
-#endif
-    default:
-        return VMAFX_FAIL(report, VMAFX_E_NOTSUP, 0, VMAFX_SUBJECT_BACKEND, "device",
-                          "backend %s, memory %s, pixel format %s: this build imports on the "
-                          "devices of the backends it was built with",
-                          vmafx_backend_name(device->backend), vmafx_memory_kind_name(d->memory),
-                          layout->name);
     }
+#endif
+    return VMAFX_FAIL(report, VMAFX_E_NOTSUP, 0, VMAFX_SUBJECT_BACKEND, "device",
+                      "backend %s, memory %s, pixel format %s: this build imports on the "
+                      "devices of the backends it was built with",
+                      vmafx_backend_name(device->backend), vmafx_memory_kind_name(d->memory),
+                      layout->name);
 }
 
 VmafxStatus vmafx_frame_import(VmafxDevice *device, const VmafxFrameImport *desc, VmafxFrame **out,

@@ -39,6 +39,11 @@ jobs:
             -Dwerror=true $(../scripts/ci/werror-args.sh true)
       - name: Build
         run: ninja -C build-tsan
+      - name: Prefetch Go modules for the suite
+        # The suite's Go-running tests find their modules in the cache: the
+        # download happens here, retried, and fails here when it cannot succeed
+        # (scripts/ci/prefetch_go_modules.py, as the user the suite runs as).
+        run: python3 scripts/ci/prefetch_go_modules.py
       - name: Run tests
         # test_gpu_picture_pool_uaf intentionally forces a ~192 GB allocation
         # failure; without allocator_may_return_null the TSan/ASan runtime

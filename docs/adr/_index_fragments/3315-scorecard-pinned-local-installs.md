@@ -1,0 +1,1 @@
+| [ADR-3315](3315-scorecard-pinned-local-installs.md) | Local images and packages are installed pinned for OpenSSF Scorecard: `Dockerfile.ffmpeg` base image is pinned by digest with `VMAF_IMAGE_DIGEST` build argument, and non-editable local package installs require `.whl` with `--no-deps`. | Accepted | ci, scorecard, security, docker, python |

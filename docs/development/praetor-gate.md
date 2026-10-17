@@ -33,12 +33,29 @@ The locked files are:
 - the `# BEGIN praetor documentation gate` block in the `Makefile`;
 - the `# BEGIN praetor managed attributes` block in `.gitattributes`.
 
+Three more files are praetor's text without being locked:
+`.config/lefthook/engine.sh`, `.config/praetor/engine.mk` and
+`.config/agent/hooks/block_evasion.py`. `praetorctl adopt` writes them and
+`audit` does not read them. At a pin move `adopt` refreshes each one only
+while it is still one of praetor's own texts. An edited copy is kept as the
+repository's file and stops following the pin. So none of them is edited,
+formatted or given a licence header here:
+
+- shfmt skips the launcher through a dated exception in
+  `.config/lint-exceptions.d/shfmt.toml`
+  ([cordanaLLM/praetor#1282](https://github.com/cordanaLLM/praetor/issues/1282));
+- the launcher and `block_evasion.py` have dated exceptions in
+  `.config/lint-exceptions.d/spdx.toml`, and the default annotation of
+  `REUSE.toml` labels them
+  ([cordanaLLM/praetor#1281](https://github.com/cordanaLLM/praetor/issues/1281)).
+
 Consequences worth knowing:
 
 - The workflow keeps praetor's name, which is two characters over the
   30-character budget in [CI job display names](ci-job-names.md).
-- `.gitignore` re-includes `tools/figures/dist/`, which the repository-wide
-  `dist/` rule would otherwise hide from a checkout that audit then fails on.
+- Praetor ships its figure player bundle under `tools/figures/player/`, which
+  audit hashes; the repository-wide `dist/` ignore rule no longer covers it, so
+  `.gitignore` carries no re-include for it.
 - The repository's own black, ruff and markdownlint pre-commit hooks skip
   `tools/figures/`, since a rewrite there fails the audit
   ([cordanaLLM/praetor#578](https://github.com/cordanaLLM/praetor/issues/578)).
@@ -83,9 +100,21 @@ defaults under praetor's configuration, tables included.
 
 `PRAETOR_REF` in
 [`standards-gate.yml`](../../.github/workflows/standards-gate.yml)
-names the praetor commit that CI installs with `go install`. The same engine has
-to run in your hooks: lefthook calls whatever `praetorctl` is first on `PATH`,
-not the pin. Check yours before you commit or push:
+names the praetor commit that CI installs with `go install`. The hooks run the
+same engine. The governance jobs of `lefthook.yml`,
+`scripts/git-hooks/hiss-audit.sh` and `scripts/githooks/state-sync.sh` call
+praetor's launcher, `sh .config/lefthook/engine.sh <arguments>`. It reads the
+pin from the workflow and runs the engine installed for that pin under
+`${XDG_CACHE_HOME:-$HOME/.cache}/praetor/engine/<pin>`.
+
+The first hook after a pin move installs the engine with `go install`. That
+needs the Go toolchain and the network, and is bounded by
+`PRAETOR_ENGINE_INSTALL_TIMEOUT` seconds (default 300). An unreadable pin, two
+different pins or a failed install end the hook: the launcher does not fall
+back to an engine on `PATH`.
+
+`make verify-all` and a `praetorctl` command you type still run the engine on
+`PATH`. Check that one before you rely on its result:
 
 ```bash
 praetorctl version   # prints the first 12 hex digits of PRAETOR_REF
@@ -146,10 +175,11 @@ Three rules hold the move together:
 - **Update the README governance block by hand if audit says it is stale.** The
   line `<n> recorded infractions; audit forbids growth.` must equal
   `total_infractions` in `.standards-baseline.json`.
-- **Move every hook engine at the same time, and rebase.** The two engines do
-  not read each other's trees. A branch moves by rebasing onto the merged pin
-  and switching `PATH` to the new engine. Measured on the move to
-  `6c772713a133`:
+- **Bring every branch to the merged pin.** The two engines do not read each
+  other's trees. The hooks follow the pin of the tree they run in through the
+  launcher, so a branch moves by taking the merged pin from `master`. An
+  engine on `PATH` that you call yourself has to move with it. Measured on
+  the move to `6c772713a133`:
   - the new engine fails `compile-context --verify`, `audit` and
     `hiss coverage --verify` on a branch at the old pin (register block, 244
     entries the old baseline does not record, a renamed HISS-01 catalog
@@ -167,11 +197,94 @@ permissions and the last workflow runs from GitHub, which takes about 40
 seconds here against 2 seconds offline, so the hooks pass `--offline` when the
 engine has the flag. CI and `make verify-all` keep the forge read.
 
+The script calls the launcher, so the audit is the pinned engine's. Without
+the launcher the hook ends with status 127 and no engine runs.
+
 ### The current pin
 
-The pin is `d141862c430b`
+The pin is `6622361940dc`
+([ADR-3285](../adr/3285-praetor-pin-66223619.md)), four praetor commits after
+`9bf502ec6ce5`. Against `9bf502ec6ce5` it changes this here:
+
+- **Register skills.** `adhd-format`, `caveman` and `social-text` under
+  `.agents/skills/` and `.claude/skills/` are praetor's text at the pin,
+  wrapped so they pass markdownlint's default rules; what they say is
+  unchanged.
+- **Not in effect here yet.** Praetor's commit-message and pull-request checks
+  now refuse a closing keyword that would close someone else's pull request.
+  No gate of this repository runs those checks.
+- **Not adopted.** As at the pin before, the pre-tool hook entries `adopt`
+  writes into the agent settings, and `.config/lefthook/python.sh`, which this
+  repository's `lefthook.yml` does not call.
+
+Audit's warnings are the same 143 with both engines.
+
+The pin before was `9bf502ec6ce5`
+([ADR-3272](../adr/3272-praetor-pin-9bf502ec-engine-launcher.md)), three
+praetor commits after `4ae6247c57d2`. Against `4ae6247c57d2` it changed this
+here:
+
+- **Hook launcher.** `.config/lefthook/engine.sh` and
+  `.config/praetor/engine.mk` are new, written by `praetorctl adopt`. The
+  seven governance jobs of `lefthook.yml`, `scripts/git-hooks/hiss-audit.sh`
+  and `scripts/githooks/state-sync.sh` call the launcher. They no longer look
+  for an engine on `PATH` or build one with `go run`, so a newer workstation
+  engine cannot refuse commits at an older pin again
+  (`T-HOOKS-ENGINE-FROM-PATH-2026-10-11` in [state](../state.md)).
+- **Refreshed praetor files.** `tools/figures/checks.mjs`,
+  `tools/markdownlint/verify.mjs`,
+  `tools/markdownlint/no-private-scratch-links.mjs` and
+  `.config/agent/hooks/block_evasion.py` are praetor's text at the pin.
+- **Two dated exceptions.** The launcher is not as shfmt writes it, and
+  neither it nor `block_evasion.py` carries a licence line (see
+  [Files praetor owns](#files-praetor-owns)). Both exceptions expire on
+  2026-12-31. `block_evasion.py` passes ruff as praetor ships it, so its ruff
+  exception is removed.
+- **Not adopted.** `adopt` also writes pre-tool hook entries into
+  `.claude/settings.json`, `.codex/hooks.json` and `.gemini/settings.json`.
+  They land in a change of their own after this one.
+- **Not wired.** The root `Makefile` does not include `engine.mk`, and its
+  governance targets call `standardsctl` from `PATH`
+  ([cordanaLLM/praetor#1231](https://github.com/cordanaLLM/praetor/issues/1231)).
+
+Audit's warnings are the same 143 with both engines.
+
+The pin before was `4ae6247c57d2`
+([ADR-3240](../adr/3240-praetor-pin-4ae6247c.md)), 28 praetor commits after
+`d141862c430b`. It was the engine the workstation's hooks already ran, and it
+refused every commit at the old pin. Against `d141862c430b` it changed this
+here:
+
+- **Read-only context.** `praetorctl compile-context` writes a seventh file
+  from `AGENTS.md`, `AGENTS.readonly.md`, for agents that run without write
+  access: steps that change files, state or history are dropped, prohibitions
+  are kept. `--verify` compares it like the other compiled files, so it is LF
+  in every checkout (`.gitattributes`,
+  `scripts/ci/tests/test_praetor_hashed_files_lf.py`), and
+  `tools/markdownlint/verify.mjs` leaves it out as it leaves out the others.
+- **Gate assets.** `tools/markdownlint/package.json` and its lock file carry
+  js-yaml 5.4.3, `praetor-docs.yml` a newer setup-node, and `praetor-api.yml`
+  sets `GOTOOLCHAIN: auto`. Both workflows also start on `merge_group`; this
+  repository has no merge queue, so that trigger does not fire.
+- **Register skills.** `adhd-format`, `caveman` and `social-text` under
+  `.agents/skills/` and `.claude/skills/` name the work they are adapted from
+  and each carries that work's `LICENSE`; `social-text` gains rules for line
+  breaks and lists.
+- **Agent hook script.** `.config/agent/hooks/block_evasion.py` is praetor's
+  text with four CodeQL findings fixed.
+- **Not adopted.** `adopt` also writes a `PreToolUse` entry into
+  `.claude/settings.json` and `.codex/hooks.json` that calls
+  `praetorctl hook <client> pre-tool` before every tool call. Agent settings
+  change on the operator's decision only, which was open at that pin.
+
+Audit's warnings were the same 143 with both engines. The hooks still ran the
+engine on `PATH` at that pin: praetor's launcher was not yet written for a
+repository that keeps its own `lefthook.yml`
+([cordanaLLM/praetor#1172](https://github.com/cordanaLLM/praetor/issues/1172)).
+
+The pin before that was `d141862c430b`
 ([ADR-3061](../adr/3061-praetor-pin-d141862c.md)). Against `3a766f2d56ad` it
-changes one file here, `tools/apicompat/gate/main.go`. The API gate no longer
+changed one file here, `tools/apicompat/gate/main.go`. The API gate no longer
 installs go-apidiff as `module@version`. It writes a small build module that
 requires go-apidiff at the same commit and `golang.org/x/tools` v0.51.0
 exactly, and builds the checker there. Go 1.27.2 writes export data version 5.
@@ -181,10 +294,10 @@ checker read every package as empty, and the gate's canary failed the
 resolved to 1.27.2 ([cordanaLLM/praetor#1051](https://github.com/cordanaLLM/praetor/pull/1051)).
 `praetor-api.yml` still installs Go as `stable`, which is praetor's template
 text ([cordanaLLM/praetor#1037](https://github.com/cordanaLLM/praetor/issues/1037)).
-The engine's audit adds one advisory warning, about the missing cache-band
+The engine's audit added one advisory warning, about the missing cache-band
 markers in `AGENTS.md`.
 
-The pin before was `3a766f2d56ad`
+The pin before that was `3a766f2d56ad`
 ([ADR-2784](../adr/2784-praetor-pin-3a766f2d.md)). Against `7458a220e1c9` it
 changed four things here:
 
@@ -304,7 +417,7 @@ only what it can read as a file:
 
 | Text | Checked by | Gate |
 | --- | --- | --- |
-| Root `AGENTS.md` and the compiled vendor files | `praetorctl compile-context --verify`, `praetorctl audit` | blocks |
+| Root `AGENTS.md`, the compiled vendor files and `AGENTS.readonly.md` | `praetorctl compile-context --verify`, `praetorctl audit` | blocks |
 | Every tracked nested `AGENTS.md` (72 files) | the same commands | blocks |
 | Canonical personas under `.agents/agents/` | the same commands | blocks |
 | `.paperclip/harness.json` strings (`register.sources`) and `.paperclip/rules.md` | `praetorctl audit` | blocks |

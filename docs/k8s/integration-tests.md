@@ -190,7 +190,8 @@ test promise.
 ## CI integration
 
 `.github/workflows/e2e-k8s.yml` runs nightly, on manual dispatch, and on pull
-requests carrying the `run-e2e-k8s` label. Its image job builds and transfers:
+requests carrying the `run-e2e-k8s` label, which
+`.github/workflows/pr-label-lanes.yml` calls it for. Its image job builds and transfers:
 
 - `ghcr.io/vmafx/vmafx-operator:e2e-test`;
 - `ghcr.io/vmafx/vmafx-node:e2e-test` from the explicit `node-cpu` target;

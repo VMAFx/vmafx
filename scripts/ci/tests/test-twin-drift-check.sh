@@ -14,6 +14,10 @@
 
 set -euo pipefail
 
+# Drop the git hook environment and the fixture identity (see the helper).
+# shellcheck source=/dev/null
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/../../lib/clean-git-env.sh"
+
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 GATE="$SCRIPT_DIR/../twin-drift-check.sh"
 
@@ -33,8 +37,6 @@ repo=""
 new_repo() {
   repo="$(mktemp -d -p "$TMPDIR_TESTS")"
   git -C "$repo" init -q
-  git -C "$repo" config user.email "test@example.com"
-  git -C "$repo" config user.name "Test"
 }
 
 # add_file <relpath> <content>

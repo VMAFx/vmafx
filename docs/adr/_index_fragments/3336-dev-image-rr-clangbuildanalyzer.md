@@ -1,0 +1,1 @@
+| [ADR-3336](3336-dev-image-rr-clangbuildanalyzer.md) | Pin and install reverse debugger (`rr`) and build analyzer (`ClangBuildAnalyzer`) in dev container; guarded by `check_ort_tarball_pins.py` | Accepted | dev, tooling, debug, profiling |

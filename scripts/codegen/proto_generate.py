@@ -20,6 +20,12 @@ gen/go. The protoc plugins are the versions go.mod pins as tools.
 --breaking-against REF also runs `buf breaking` (WIRE_JSON) against the
 protobuf files of REF.
 
+`go run <package>@<version>` asks the module proxy for the module's versions on
+every run, also with every module in the cache. A CI job therefore installs the
+same release once, before the suite (scripts/ci/prefetch_go_modules.py: `go
+install` into the tool cache, retried); this script runs that copy when it is
+there and reports the pinned version, and `go run` otherwise.
+
 When Go or the module proxy is unavailable, --check exits 77 and says why, so
 a gate that did not run is never reported as passing.
 """
@@ -27,6 +33,7 @@ a gate that did not run is never reported as passing.
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import subprocess
 import sys
@@ -44,17 +51,63 @@ BUF_MODULE = "github.com/bufbuild/buf/cmd/buf"
 POSTPROCESS = Path("scripts/proto/postprocess_gen_go.py")
 GENERATED = Path("gen/go")
 TOOL_TIMEOUT_S = 900
+VERSION_TIMEOUT_S = 60
 
 
 class Unavailable(Exception):
     """Go or the pinned buf cannot run here; the check is skipped."""
 
 
-def buf_command(root: Path) -> list[str]:
-    """`go run` of the buf release build-config.env pins."""
-    version = build_config(root / "build-config.env").get("BUF_VERSION", "")
+def buf_version(root: Path) -> str:
+    """The buf release build-config.env pins."""
+    version: str = build_config(root / "build-config.env").get("BUF_VERSION", "")
     if not re.fullmatch(r"\d+\.\d+\.\d+", version):
         raise SystemExit("proto_generate: build-config.env needs BUF_VERSION as X.Y.Z")
+    return version
+
+
+def buf_binary(version: str) -> Path:
+    """Where `go install` of that release puts buf: the tool cache
+    (${XDG_CACHE_HOME:-~/.cache}/vmafx-tools/buf-<version>/), as for sqlc."""
+    cache = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
+    name = "buf.exe" if os.name == "nt" else "buf"
+    return cache / "vmafx-tools" / f"buf-{version}" / name
+
+
+def buf_install(root: Path) -> tuple[list[str], dict[str, str]]:
+    """(`go install` of the pinned buf, the environment entry that sends it to
+    the tool cache). scripts/ci/prefetch_go_modules.py runs it, retried."""
+    version = buf_version(root)
+    return (
+        ["go", "install", f"{BUF_MODULE}@v{version}"],
+        {"GOBIN": str(buf_binary(version).parent)},
+    )
+
+
+def buf_installed(root: Path) -> bool:
+    """Whether the tool cache holds a buf that reports the pinned version."""
+    version = buf_version(root)
+    binary = buf_binary(version)
+    if not binary.is_file():
+        return False
+    try:
+        out = subprocess.run(  # noqa: S603 (the tool cache's buf, fixed argv)
+            [str(binary), "--version"],
+            capture_output=True,
+            text=True,
+            timeout=VERSION_TIMEOUT_S,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return out.returncode == 0 and out.stdout.strip() == version
+
+
+def buf_command(root: Path) -> list[str]:
+    """The pinned buf: the installed copy of the tool cache, else `go run`."""
+    version = buf_version(root)
+    if buf_installed(root):
+        return [str(buf_binary(version))]
     return ["go", "run", f"{BUF_MODULE}@v{version}"]
 
 

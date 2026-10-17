@@ -3,6 +3,7 @@ paths:
   - core/src/feature/sycl/speed_*_sycl.cpp
   - core/src/feature/sycl/speed_sycl_*
   - core/test/test_sycl_speed_*
+  - core/src/feature/sycl/sycl_speed_cov_math.h
 invariant: SpEED pipeline arithmetic contract and singular-covariance contract; device-resident twins.
 ---
 <!-- markdownlint-disable MD013 MD060 -->
@@ -56,6 +57,41 @@ invariant: SpEED pipeline arithmetic contract and singular-covariance contract; 
   before it is written. host tail applies one-sided rule and
   copies flags into `FrameResult.singular`. ADR-1218, ADR-1477.
 
+- **SpEED covariance entry is the reference's sequential fp64 sum
+  (ADR-2690, `T-SPEED-CHROMA-SYCL-COV-1ULP-2026-10-06`).**
+  `speed.c::compute_cov_kernel_scalar()` adds `(x - mean_x) * (y - mean_y)`
+  into one fp64 running sum in raster order, rounding every add, and
+  `compute_covariance_row()` stores `(float)(sum / (w * h))`. A parallel or
+  compensated sum rounded once is not that value: on a cancelling
+  off-diagonal entry it stores the neighbouring fp32 value (a real 3840x1600
+  10-bit frame, `speed_chroma_u`, 1 ulp). `sycl_speed_cov_math.h`
+  holds the reference's operations in 64-bit integers (`sycl_soft_signed.h`):
+  `covariance_difference()`, `covariance_term()`, `covariance_chain()` and
+  `covariance_store()` (the fp64 quotient by the exact count and the fp32
+  conversion); `covariance_entry()` is the whole entry in one function and
+  calls the same helpers. `launch_covariance()` runs them split across
+  launches (ADR-2690): the differences (25 per pixel) and the products in
+  parallel, stored as fp64 bit patterns, term-major, then one sequential
+  chain per (channel, entry) over the stored terms in raster order, in slices
+  of submatrix rows with the running sum kept as bits. Only work that does
+  not depend on the running sum leaves the chain; the operations and their
+  order stay the reference's. `test_sycl_speed_cov_chain` (device-free) and
+  the split device half of `test_sycl_speed_cov_math` check it with `==`. On
+  rebase: never bring back a pair accumulator, a group reduction or an `ff_*`
+  quotient for this sum, and never give the entry a tolerance. An optimised
+  kernel is allowed only if `test_sycl_speed_cov_math`
+  (`==` against `compute_cov_kernel_scalar()`, fixture blocks a near-exact sum
+  stores differently) still passes on a device
+  (`T-SYCL-SPEED-COV-EXACT-SEQUENTIAL-COST-2026-10-06`).
+  `test_sycl_speed_cov_exact_contract.py` pins the source shape, and
+  `test_sycl_speed_chroma_parity`, `test_sycl_speed_temporal_parity` and
+  `test_sycl_speed_singular_parity` compare every output with `==`. Measured
+  cost on the A380 (`vmaf_v1.0.16_3d0h`, 3840x1600): 18.83 ms per frame before
+  the fix, 28.53 ms with the one-work-item entry, 23.06 ms with the split
+  chain; the chain is the remaining 4.2 ms. The CUDA and HIP twins have the
+  old design (`T-CUDA-SPEED-COV-PAIR-SUM-SUSPECTED-2026-10-06`,
+  `T-HIP-SPEED-COV-PAIR-SUM-SUSPECTED-2026-10-06`).
+
 | SYCL TU | CPU TU | Parity test | ADR |
 |---|---|---|---|
 | `speed_chroma_sycl.cpp` + `speed_sycl_pipeline.cpp` | `speed.c` | `test_sycl_speed_chroma_parity.c`, `test_sycl_speed_singular_parity.c` | ADR-0957 (round 4), ADR-1358 |
@@ -67,10 +103,13 @@ invariant: SpEED pipeline arithmetic contract and singular-covariance contract; 
 > are live gates; twins match CPU bit for bit (see
 > `docs/metrics/speed_qa.md`).
 
-- Covariance divisor = exact element count `sub_w * sub_h` as fp32 pair
-  (`count_ff()`, `sycl_exact_fp.h`) into pair-divisor `ff_div_to_float()`. Never
-  `(float)(sub_w * sub_h)`: above 2^24 (prescale > 2 past 16K) odd count
-  has no fp32 value; speed.c divides by exact `size_t`. With `lo == 0`
-  division = old one-float form bit for bit. Means divisor stays fp32
-  (speed.c rounds it too). Guards: `test_speed_cov_count_division` (HIP
-  header on host), `test_speed_cov_count_contract.py` (CUDA, HIP, SYCL).
+- Covariance divisor = exact element count `sub_w * sub_h`. SYCL since
+  ADR-2690: `covariance_entry()` divides the soft-fp64 sum by the `uint64_t`
+  count widened exactly (`signed_div()`, `signed_from_exact()`), the
+  reference's fp64 quotient; `count_ff()` / `ff_div_to_float()` no longer
+  store a covariance. Never `(float)(sub_w * sub_h)`: above 2^24 (prescale
+  > 2 past 16K) odd count has no fp32 value; speed.c divides by exact
+  `size_t`. Means divisor stays fp32 (speed.c rounds it too). Guards:
+  `test_speed_cov_count_division` (HIP header on host),
+  `test_speed_cov_count_contract.py` (CUDA, HIP pair form; SYCL soft-fp64
+  quotient, no pair store in the pipeline).

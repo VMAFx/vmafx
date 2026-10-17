@@ -140,14 +140,9 @@ done
 
 run_state_sync() {
   local target=$1
-  if command -v praetorctl >/dev/null 2>&1; then
-    (cd "$target" && praetorctl state sync "$target")
-  elif [ -d "$repo_root/cmd/standardsctl" ]; then
-    (cd "$repo_root" && go run ./cmd/standardsctl state sync "$target")
-  else
-    echo "state-sync: praetorctl is unavailable and cmd/standardsctl is absent" >&2
-    return 1
-  fi
+  # The pinned engine, through the launcher; it runs from the repository root and
+  # fails closed (no PATH engine, no `go run` of a local source tree).
+  (cd "$target" && sh .config/lefthook/engine.sh state sync "$target")
 }
 
 if [ "$repo_root" = "$canonical_root" ]; then

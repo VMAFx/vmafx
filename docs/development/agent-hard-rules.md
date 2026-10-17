@@ -47,11 +47,13 @@ line budget. Changing a rule here changes it for every agent.
    `docs/adr/_index_fragments/<NNNN-slug>.md` (one fragment file per ADR; the
    frozen `_order.txt` is not edited: fragments follow it in landing order).
    `docs/adr/README.md` (with `docs/adr/by-tag/` and `docs/adr/titles.md`) is
-   rendered when pull requests land (`make docs-render`, run by the merge train
-   per batch and at the release cut), a pull request must not carry it, and
-   `scripts/ci/deliverables-check.sh` refuses one that does — see
-   [ADR-0221](../adr/0221-changelog-adr-fragment-pattern.md) and
-   [ADR-2197](../adr/2197-render-generated-docs-at-landing.md).
+   rendered when pull requests land (`make docs-render`, one render-only pull
+   request per batch and at the release cut), a pull request must not carry it,
+   and `scripts/ci/deliverables-check.sh` refuses one that does, except the
+   render-only pull request — see
+   [ADR-0221](../adr/0221-changelog-adr-fragment-pattern.md),
+   [ADR-2197](../adr/2197-render-generated-docs-at-landing.md) and
+   [ADR-3295](../adr/3295-render-only-pull-request.md).
    Non-trivial = another engineer could reasonably have chosen differently.
    Bug fixes and implementation details do not need an ADR. Cite `req`
    (direct user quote) or `Q<round>.<q>` (popup answer) in the ADR's
@@ -114,8 +116,11 @@ line budget. Changing a rule here changes it for every agent.
     numbered patch file in **the same PR** when integration behavior changes.
     The root `build-config.env` owns `FFMPEG_TAG` and `FFMPEG_REMOTE`.
     Run `python3 scripts/ci/ffmpeg_patch_stack.py --refresh` and then `--check`:
-    these replay every entry in `ffmpeg-patches/series.txt` cumulatively in
-    disposable storage. Per-patch `git apply --check` is not a series gate.
+    these apply the shared FFmpeg fix series pinned in `build-config.env`
+    (`FFMPEG_FIX_SERIES_*`, [ADR-3143](../adr/3143-ffmpeg-shared-fix-series.md))
+    and then replay every entry in `ffmpeg-patches/series.txt` cumulatively in
+    disposable storage. A fix to FFmpeg itself goes to VMAFx/ffmpeg-patches,
+    not into `ffmpeg-patches/`. Per-patch `git apply --check` is not a series gate.
     Local hooks refresh the configured release; daily CI discovers the latest
     stable released tag, excluding development and prerelease refs. See
     [FFmpeg patch automation](ffmpeg-patch-automation.md)

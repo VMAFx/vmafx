@@ -44,7 +44,7 @@ jobs:
     if: needs.tier.outputs.light == 'true'
     # required-aggregator
     name: Semgrep
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     permissions:
       contents: read
@@ -60,7 +60,7 @@ jobs:
       # pull limit failed this job, run 37989639868). Same digest as on
       # Docker Hub; scripts/ci/tests/test_docker_hub_mirror.py refuses a
       # job container, service or docker:// step on Docker Hub.
-      image: mirror.gcr.io/semgrep/semgrep:latest@sha256:93963d9295a366f59e4850127b1550400ee7b388f04fe144e4a1f6325d96e01b
+      image: mirror.gcr.io/semgrep/semgrep:latest@sha256:529ee8a277ec8adc5b534d7c74eea0a47e9de21d62852b6ba7ac6ba9566845c3
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Run semgrep (local rules — gate on ERRORs)
@@ -133,12 +133,16 @@ jobs:
   # security-and-quality is a superset of security-extended, so specifying
   # both duplicates queries and trips the CodeQL setup UI's "ambiguous
   # configuration" detector. Pick one suite per job.
+  # ADR-3294: every CodeQL language runs on every pull request and push, with
+  # no ADR-1140 impact plan. GitHub's `CodeQL` check turns neutral
+  # ("configuration not found") when a category master uploads is missing from
+  # the head, and the aggregator fails a neutral owed check (ADR-3293).
   codeql-cpp:
     needs: tier
     if: needs.tier.outputs.light == 'true'
     # required-aggregator
     name: CodeQL (C/C++)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 35
     permissions:
       contents: read
@@ -147,23 +151,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
-      - name: Plan CI impact (ADR-1140)
-        id: impact
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: |
-          python3 scripts/ci/plan-ci-impact.py --event "$EVENT_NAME" \
-            --base "$BASE_SHA" --head "$HEAD_SHA" --github-output "$GITHUB_OUTPUT"
-      - name: Not impacted — CodeQL (C/C++) skipped by plan
-        if: steps.impact.outputs.c_core != 'true'
-        env:
-          MODE: ${{ steps.impact.outputs.mode }}
-          REASON: ${{ steps.impact.outputs.reason }}
-        run: echo "::notice::c_core not impacted (mode=$MODE reason=$REASON) — CodeQL (C/C++) satisfied without running (ADR-1140)"
       - name: Configure C/C++ build (outside extraction)
-        if: steps.impact.outputs.c_core == 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build nasm
@@ -181,17 +169,14 @@ jobs:
           meson setup "${{ runner.temp }}/build" core -Denable_cuda=false -Denable_sycl=false \
             -Dwerror=true $(scripts/ci/werror-args.sh true)
       - uses: github/codeql-action/init@24c54180a607b1449ed407dd24f251e4e9147c8d  # v4.38.3
-        if: steps.impact.outputs.c_core == 'true'
         with:
           languages: cpp
           queries: security-and-quality
           config-file: ./.github/codeql-config.yml
       - name: Build
-        if: steps.impact.outputs.c_core == 'true'
         run: |
           meson compile -C "${{ runner.temp }}/build"
       - uses: github/codeql-action/analyze@24c54180a607b1449ed407dd24f251e4e9147c8d  # v4.38.3
-        if: steps.impact.outputs.c_core == 'true'
         with:
           category: "/language:cpp"
 
@@ -200,7 +185,7 @@ jobs:
     if: needs.tier.outputs.light == 'true'
     # required-aggregator
     name: CodeQL (Python)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     permissions:
       contents: read
@@ -209,29 +194,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
-      - name: Plan CI impact (ADR-1140)
-        id: impact
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: |
-          python3 scripts/ci/plan-ci-impact.py --event "$EVENT_NAME" \
-            --base "$BASE_SHA" --head "$HEAD_SHA" --github-output "$GITHUB_OUTPUT"
-      - name: Not impacted — CodeQL (Python) skipped by plan
-        if: steps.impact.outputs.python_lint != 'true'
-        env:
-          MODE: ${{ steps.impact.outputs.mode }}
-          REASON: ${{ steps.impact.outputs.reason }}
-        run: echo "::notice::python_lint not impacted (mode=$MODE reason=$REASON) — CodeQL (Python) satisfied without running (ADR-1140)"
       - uses: github/codeql-action/init@24c54180a607b1449ed407dd24f251e4e9147c8d  # v4.38.3
-        if: steps.impact.outputs.python_lint == 'true'
         with:
           languages: python
           queries: security-and-quality
           config-file: ./.github/codeql-config.yml
       - uses: github/codeql-action/analyze@24c54180a607b1449ed407dd24f251e4e9147c8d  # v4.38.3
-        if: steps.impact.outputs.python_lint == 'true'
         with:
           category: "/language:python"
 
@@ -247,7 +215,7 @@ jobs:
     if: needs.tier.outputs.light == 'true'
     # required-aggregator
     name: CodeQL (Actions)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
       contents: read
@@ -270,7 +238,7 @@ jobs:
     if: needs.tier.outputs.light == 'true'
     # required-aggregator
     name: Gitleaks
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions:
       contents: read
@@ -318,7 +286,7 @@ jobs:
     if: needs.tier.outputs.light == 'true' && github.event_name == 'pull_request'
     # required-aggregator
     name: Dependency Review
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -337,3 +305,69 @@ jobs:
           # VMAFx artifact. ADR-1305 section 10 requires reviewed exceptions to
           # use exact package-wide PURLs, matching the text-unidecode precedent.
           allow-dependencies-licenses: pkg:pypi/text-unidecode, pkg:pypi/python-debian
+
+  # ADR-1247: PR source checks cannot supply the full default-branch aggregate.
+  # Folded in from scorecard-policy.yml: one workflow less creates one check
+  # suite less per pull-request commit, and Scorecard's SAST probe reads only
+  # the first 30 suites of a commit.
+  scorecard-pr-gate:
+    needs: tier
+    if: github.event_name == 'pull_request' && needs.tier.outputs.light == 'true'
+    # required-aggregator
+    name: Scorecard PR Gate
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Require ready review
+        env:
+          IS_DRAFT: ${{ github.event.pull_request.draft }}
+        run: test "$IS_DRAFT" = false
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - name: Bind clean local inputs before analysis
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+          EXPECTED_REPOSITORY: ${{ github.repository }}
+        run: |
+          python3 -B scripts/ci/scorecard_gate.py snapshot \
+            --sha "$EXPECTED_SHA" \
+            --repository "$EXPECTED_REPOSITORY" \
+            --receipt "$RUNNER_TEMP/scorecard-source.json"
+
+      - name: Scan PR files (partial scope; never published)
+        uses: ossf/scorecard-action@fa7117db83c52d787ae5a89f350999701505d78e  # v2.5.0
+        with:
+          results_file: scorecard-local.json
+          results_format: json
+          publish_results: false
+
+      - name: Enforce bound local policy
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+          EXPECTED_REPOSITORY: ${{ github.repository }}
+        run: |
+          python3 -B scripts/ci/scorecard_gate.py local \
+            --sha "$EXPECTED_SHA" \
+            --repository "$EXPECTED_REPOSITORY" \
+            --report scorecard-local.json \
+            --snapshot "$RUNNER_TEMP/scorecard-source.json" \
+            --receipt "$RUNNER_TEMP/scorecard-local-gate.json" \
+            --summary "$GITHUB_STEP_SUMMARY"
+
+      - name: Preserve local findings and source receipt
+        if: ${{ always() && github.event.pull_request.draft == false }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: scorecard-local-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            scorecard-local.json
+            ${{ runner.temp }}/scorecard-source.json
+            ${{ runner.temp }}/scorecard-local-gate.json
+          if-no-files-found: error
+          retention-days: 14

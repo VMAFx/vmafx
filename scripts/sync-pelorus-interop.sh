@@ -45,11 +45,11 @@
 set -euo pipefail
 
 # --- Pinned source of truth ------------------------------------------------
-# The exact released Pelorus commit this mirror was vendored from (tag v0.3.0).
+# The exact released Pelorus commit this mirror was vendored from (tag v0.4.1).
 # Re-pin for a reviewed interop ABI addition or a parser correctness/security
 # fix, even when ABI major/minor stay unchanged. Keep this in lock step with
 # every vendored banner and docs/api/pelorus-interop.md.
-PELORUS_VENDOR_SHA="e2e4040311a443210927549c3a336f909c6473f3"
+PELORUS_VENDOR_SHA="33b4a625cad64a7e9ca14f6db06eb91ba8f56663"
 # The licence every pinned source declares (Pelorus ADR-0171, VMAFx ADR-1250).
 PELORUS_MIRROR_LICENSE="EUPL-1.2"
 

@@ -106,8 +106,10 @@ the last printed digit (or a trailing zero) is a mismatch. Tests:
 
 ### CI
 
-`.github/workflows/upstream-consumers.yml` runs on changes under `core/`, to
-`build-config.env`, to the scripts and to the workflow, at the full CI tier
+The `consumers` job of `.github/workflows/ffmpeg-integration.yml` (the
+`Upstream Consumers` check) runs on changes under `core/`, to
+`build-config.env`, to the scripts and to that workflow (the
+`upstream_consumers` selector of `.github/ci-impact.json`), at the full CI tier
 ([ADR-2169](../adr/2169-ci-fewer-runs.md)): master pushes, dispatches, pull
 requests from forks and pull requests labelled `ci: full`; an own pull request
 at the light tier skips it. It builds the CPU

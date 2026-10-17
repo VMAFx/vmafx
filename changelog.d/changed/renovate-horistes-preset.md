@@ -1,0 +1,1 @@
+- Renovate now extends the fleet's shared `github>plurano/horistes` preset; `renovate.json` drops the sign-off preset and the release-age setting the preset already sets and keeps only this repository's own rules ([dependency bot](docs/development/dependency-bot.md)).

@@ -9,9 +9,18 @@
 # M_PI without the project-wide _USE_MATH_DEFINES of core/meson.build) makes
 # the stage fail with the finding printed; a guarded include and a source a
 # meson.build keeps off Windows pass, and a POSIX-header scan that cannot run
-# fails the stage. Run with `set -e`, a probe that finds nothing must
-# not end the script, and a probe that finds something must still be reported.
+# fails the stage. A `std::min()` call that a C++ translation unit reads behind
+# `<windows.h>` (through the tree's own `<pthread.h>` shim, or directly under
+# `#ifdef _WIN32`) fails the stage; the parenthesised spelling, a `NOMINMAX`
+# before the header, an include Windows never reads, a call above the include
+# and a translation unit a meson.build keeps off Windows pass. Run with
+# `set -e`, a probe that finds nothing must not end the script, and a probe
+# that finds something must still be reported.
 set -euo pipefail
+
+# Drop the git hook environment and the fixture identity (see the helper).
+# shellcheck source=/dev/null
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/../../lib/clean-git-env.sh"
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 preflight="$here/../../dev/preflight.sh"
 tmp="$(mktemp -d)"
@@ -24,8 +33,6 @@ fail() {
 
 cd "$tmp"
 git init -q
-git config user.email t@t
-git config user.name t
 printf 'int main(void) { return 0; }\n' >ok.c
 git add ok.c
 git commit -qm init
@@ -140,6 +147,69 @@ done
 rm -r core uses_pi.c
 echo "ok   a SYCL argument list without the define does not count"
 
+# <windows.h> defines min and max as function-like macros unless NOMINMAX comes
+# first, and <pthread.h> is core/src/compat/win32/pthread.h on Windows, which
+# includes it. A std::min() call a C++ translation unit reads after that fails
+# under MSVC (C2589) and nowhere else.
+mkdir -p core/src/compat/win32
+printf '#include <windows.h>\n' >core/src/compat/win32/pthread.h
+write_minmax_unit() { # $1: the lines of unit.cpp above the header that calls std::min
+  printf '%b#include "cap.h"\nint main() { return cap(1, 2); }\n' "$1" >unit.cpp
+}
+write_cap_header() { # $1: the call
+  printf '#include <algorithm>\ninline int cap(int a, int b) { return %s; }\n' "$1" >cap.h
+}
+expect_minmax() { # $1: expected rc, $2: what the case plants
+  rc=0
+  out="$(run_stage)" || rc=$?
+  [ "$rc" -eq "$1" ] || fail "$2: expected rc=$1, got $rc: $out"
+  if [ "$1" -eq 1 ]; then
+    case "$out" in *"call behind <windows.h> without NOMINMAX"*"cap.h:2: ::min( behind <windows.h> (reached from unit.cpp)"*) ;;
+    *) fail "$2: min/max finding not printed: $out" ;; esac
+  else
+    case "$out" in *"behind <windows.h>"*) fail "$2: reported a finding: $out" ;; *) ;; esac
+  fi
+}
+
+write_cap_header 'std::min(a, b)'
+write_minmax_unit '#include <pthread.h>\n'
+expect_minmax 1 "std::min() behind the <pthread.h> shim"
+echo "ok   a std::min() call behind the <pthread.h> shim fails the stage and is reported"
+
+write_minmax_unit '#ifdef _WIN32\n#include <windows.h>\n#endif\n'
+expect_minmax 1 "std::min() behind <windows.h> under #ifdef _WIN32"
+echo "ok   a std::min() call behind <windows.h> under #ifdef _WIN32 fails the stage"
+
+write_cap_header '(std::min)(a, b)'
+write_minmax_unit '#include <pthread.h>\n'
+expect_minmax 0 "(std::min)(a, b) behind the shim"
+write_cap_header 'std::min<int>(a, b)'
+expect_minmax 0 "std::min<int>(a, b) behind the shim"
+echo "ok   (std::min)(a, b) and std::min<int>(a, b) behind the header pass"
+
+write_cap_header 'std::min(a, b)'
+write_minmax_unit '#define NOMINMAX\n#include <pthread.h>\n'
+expect_minmax 0 "NOMINMAX before the header"
+echo "ok   a NOMINMAX defined before the header passes"
+
+write_minmax_unit '#ifndef _WIN32\n#include <pthread.h>\n#endif\n'
+expect_minmax 0 "<pthread.h> under #ifndef _WIN32"
+write_minmax_unit '#include <vector>\n'
+expect_minmax 0 "no Windows header"
+echo "ok   an include Windows never reads and a unit without the header pass"
+
+printf '#include "cap.h"\n#include <pthread.h>\nint main() { return cap(1, 2); }\n' >unit.cpp
+expect_minmax 0 "the call above the include"
+echo "ok   a call read before the header passes"
+
+write_minmax_unit '#include <pthread.h>\n'
+printf "if host_machine.system() != 'windows'\n  executable('unit', 'unit.cpp')\nendif\n" >meson.build
+expect_minmax 0 "translation unit kept off Windows"
+printf "executable('unit', 'unit.cpp')\n" >meson.build
+expect_minmax 1 "translation unit built on Windows"
+rm -r core meson.build unit.cpp cap.h
+echo "ok   a meson.build gate off Windows exempts a translation unit, an ungated target does not"
+
 # Many findings: a probe trimmed with `head` closed the pipe while the scan
 # still wrote, the scan died of SIGPIPE, and under pipefail the `|| x=""`
 # fallback threw the findings away. They must fail the stage.
@@ -162,5 +232,6 @@ rc=0
 out="$(PATH="$tmp/fakebin:$PATH" run_stage)" || rc=$?
 [ "$rc" -eq 1 ] || fail "failing scanner: expected rc=1, got $rc: $out"
 case "$out" in *"POSIX-only header scan did not run"*) ;; *) fail "scanner failure not reported: $out" ;; esac
+case "$out" in *"Windows min/max macro scan did not run"*) ;; *) fail "min/max scanner failure not reported: $out" ;; esac
 rm -r fakebin
-echo "ok   a POSIX-header scan that cannot run fails the stage"
+echo "ok   a POSIX-header scan and a min/max scan that cannot run fail the stage"

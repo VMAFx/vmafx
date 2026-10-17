@@ -380,7 +380,8 @@ make observability-compose-smoke                    # images already built
 
 CI runs it in the non-required workflow _Observability Smoke_
 (`.github/workflows/observability-compose.yml`): nightly, on dispatch, and on
-a ready pull request labelled `run-observability-smoke`.
+a ready pull request labelled `run-observability-smoke`, through the
+`observability` job of `.github/workflows/pr-label-lanes.yml`.
 
 The smoke test (`tools/obssmoke`) runs in the Compose network. It reads every
 dashboard through `obsgen.DashboardQueries`, the parser the dashboard check

@@ -36,7 +36,7 @@ GIT = shutil.which("git") or "/usr/bin/git"
 
 AFFECTED_REQUIRED_WORKFLOWS = (
     "rust-ci.yml",
-    "doxygen-public-api.yml",
+    "docs.yml",
     "helm-chart.yml",
 )
 
@@ -248,7 +248,7 @@ class RustCIWorkflowContractTest(unittest.TestCase):
         """Validate merge-base aware impact planning for stacked/non-master PRs."""
         with tempfile.TemporaryDirectory() as repo_dir, tempfile.TemporaryDirectory() as out_dir:
             env = {
-                **os.environ,
+                **{k: v for k, v in os.environ.items() if not k.startswith("GIT_")},
                 "GIT_AUTHOR_NAME": "t",
                 "GIT_AUTHOR_EMAIL": "t@t",
                 "GIT_COMMITTER_NAME": "t",

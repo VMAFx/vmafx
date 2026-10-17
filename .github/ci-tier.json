@@ -62,6 +62,22 @@
         "windows_tester_zip_sycl"
       ],
       "reason": "A full-only context whose lane also runs on a light-tier pull request, but only when the diff touches an input the lane reads (selectors of .github/ci-impact.json, ADR-2198): the Windows zip legs failed on master for two days because a pull request that changed their inputs never built them (ADR-1595 built the x64 zip only, ADR-2169 built nothing)."
+    },
+    {
+      "workflow": "libvmaf-build-matrix.yml",
+      "context": "Windows MSVC+SYCL",
+      "selectors": [
+        "windows_msvc_sycl"
+      ],
+      "reason": "A full-only context whose leg also runs on a light-tier pull request, but only when the diff touches a C or C++ source, a header or a Meson file under core/ or an input of the leg itself (selector of .github/ci-impact.json, ADR-3279): a pull request that changed core C++ ran no MSVC build, and both MSVC legs of the master push that followed failed to compile. The CUDA and ARM64 MSVC legs stay on the full tier."
+    },
+    {
+      "workflow": "dev-container-build.yml",
+      "context": "Dev Container Build",
+      "selectors": [
+        "dev_container_inputs"
+      ],
+      "reason": "A full-only context whose build also runs on a light-tier pull request, but only when the diff touches dev/, .dockerignore, build-config.env or a script the build job calls (selector of .github/ci-impact.json, ADR-3338): #2821 changed dev/Containerfile on the light tier, built no image, and the master push 2c0db0b99 that followed failed in the stage it added. The broad dev_container selector (core, Python, AI, Go and shell sources the image copies) still runs on the full tier and the master push."
     }
   ],
   "untiered_jobs": [
@@ -84,21 +100,21 @@
       "expires": "2027-12-31"
     },
     {
-      "workflow": "ci-escalate.yml",
+      "workflow": "pr-label-lanes.yml",
       "job": "escalate",
       "reason": "Starts the full suite when `ci: full` or `autorelease: cut` is applied; skipped for every other label.",
       "expires": "2027-12-31"
     },
     {
-      "workflow": "e2e-k8s.yml",
-      "job": "gate",
-      "reason": "Opt-in lane: the gate job starts only for a ready pull request that carries the label `run-e2e-k8s` (ADR-0783); every other job of the workflow follows it.",
+      "workflow": "pr-label-lanes.yml",
+      "job": "e2e",
+      "reason": "Opt-in lane, calls e2e-k8s.yml: the job starts only for a ready pull request that carries the label `run-e2e-k8s` (ADR-0783); every other job of the workflow follows it.",
       "expires": "2027-12-31"
     },
     {
-      "workflow": "observability-compose.yml",
-      "job": "gate",
-      "reason": "Opt-in lane, not required (Q-194): the gate job starts only for a ready pull request that carries the label `run-observability-smoke`; the smoke job follows it. Nightly and dispatch runs are the full tier.",
+      "workflow": "pr-label-lanes.yml",
+      "job": "observability",
+      "reason": "Opt-in lane, not required (Q-194), calls observability-compose.yml: the job starts only for a ready pull request that carries the label `run-observability-smoke`; the smoke job follows it. Nightly and dispatch runs are the full tier.",
       "expires": "2027-12-31"
     },
     {

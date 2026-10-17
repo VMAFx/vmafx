@@ -317,6 +317,8 @@ from = ["netflix-speed"]
 from = ["netflix-speed"]  # create_givens()'s `1.0 / sqrt(1 + t * t)` of speed.c, in fp32 operations
 [ports."core/src/feature/speed_cov.h"]
 from = ["netflix-speed"]  # declares compute_cov_kernel_scalar of speed.c and its contract
+[ports."core/src/feature/sycl/sycl_speed_cov_math.h"]
+from = ["netflix-speed"]  # compute_cov_kernel_scalar()'s fp64 sum of speed.c, replayed in integers
 [ports."core/src/feature/speed_internal.c"]
 from = ["netflix-speed"]  # "a self-contained port of the static helpers in speed.c"
 [ports."core/src/feature/speed_internal.h"]

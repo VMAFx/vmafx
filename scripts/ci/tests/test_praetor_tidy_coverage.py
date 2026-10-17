@@ -106,8 +106,13 @@ class PraetorTidyCoverageTests(unittest.TestCase):
         workflow = self.repo.root / ".github/workflows/publish.yml"
         workflow.parent.mkdir(parents=True)
         workflow.write_text("on: push\n")
-        # HISS-11: a supply-chain gap; HISS-10: lanes the build-warnings gate reads as ungated.
-        for rule, reason in (("HISS-11", "provenance at Level 2"), ("HISS-10", "werror unread")):
+        # HISS-11: a supply-chain gap; HISS-10: lanes the build-warnings gate reads as ungated;
+        # test-timeout: a workflow timeout above the 30m bound (praetor forge.AuditTestTimeouts).
+        for rule, reason in (
+            ("HISS-11", "provenance at Level 2"),
+            ("HISS-10", "werror unread"),
+            ("test-timeout", "suite above 30m"),
+        ):
             with self.subTest(rule=rule):
                 (self.repo.root / f".config/lint-exceptions.d/{rule}.toml").write_text(
                     '[[exception]]\npath = ".github/workflows/publish.yml"\n'

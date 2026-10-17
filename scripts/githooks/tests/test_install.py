@@ -132,11 +132,7 @@ class HookInstallTests(unittest.TestCase):
         self.run_git("init", "-b", "master")
         self.run_git("config", "user.name", "Hook Test")
         self.run_git("config", "user.email", "hook-test@example.invalid")
-        for directory in ("githooks", "git-hooks"):
-            shutil.copytree(ROOT / "scripts" / directory, self.repo / "scripts" / directory)
-        helper = self.repo / "scripts/lib/safe_subprocess.py"
-        helper.parent.mkdir(parents=True)
-        shutil.copy2(ROOT / "scripts/lib/safe_subprocess.py", helper)
+        self.copy_hook_sources()
         self.write(".pre-commit-config.yaml", CONFIG)
         self.write("probe.py", PROBE)
         self.write("docs/index.md", "# Docs\n")
@@ -163,6 +159,20 @@ class HookInstallTests(unittest.TestCase):
             "mkdocs",
             '#!/bin/sh\nprintf \'["mkdocs"]\\n\' >> "$HOOK_TEST_LOG"\nexit "${HOOK_TEST_MKDOCS_EXIT:-0}"\n',
         )
+
+    def copy_hook_sources(self) -> None:
+        """Copy the hook scripts, their Python helper and the engine launcher into the fixture."""
+        for directory in ("githooks", "git-hooks"):
+            shutil.copytree(ROOT / "scripts" / directory, self.repo / "scripts" / directory)
+        helper = self.repo / "scripts/lib/safe_subprocess.py"
+        helper.parent.mkdir(parents=True)
+        shutil.copy2(ROOT / "scripts/lib/safe_subprocess.py", helper)
+        # state-sync.sh reaches the engine through the launcher, which runs the engine
+        # the repository pins. The fixture declares no pin, so the launcher runs the
+        # stand-in from PATH; it is committed so a linked worktree holds it too.
+        launcher = self.repo / ".config/lefthook/engine.sh"
+        launcher.parent.mkdir(parents=True)
+        shutil.copy2(ROOT / ".config/lefthook/engine.sh", launcher)
 
     def write(self, path: str, text: str, *, executable: bool = False) -> None:
         target = self.repo / path
@@ -407,6 +417,24 @@ class HookInstallTests(unittest.TestCase):
         self.assertEqual(
             (canonical_state / "STATE.md").read_text(),
             "canonical:STATE.md\nsynced:state-sync-fixture\n",
+        )
+
+    def test_state_sync_runs_no_engine_when_the_pin_is_unusable(self) -> None:
+        canonical_state, worktree = self.state_sync_worktree()
+        workflow = worktree / ".github/workflows/gate.yml"
+        workflow.parent.mkdir(parents=True)
+        workflow.write_text("env:\n  PRAETOR_REF: main\n", encoding="utf-8")
+
+        result = self.run_command(
+            "bash", "scripts/githooks/state-sync.sh", cwd=worktree, check=False
+        )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("praetor hooks: PRAETOR_REF='main'", result.stderr)
+        self.assertEqual(
+            (canonical_state / "STATE.md").read_text(),
+            "canonical:STATE.md\n",
+            "the engine on PATH ran although the pin is unusable",
         )
 
     def test_state_sync_takes_over_a_stale_lock_and_refuses_a_live_one(self) -> None:

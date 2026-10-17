@@ -5126,10 +5126,12 @@ unsigned vmaf_engine_extractor_count(const VmafContext *vmaf)
     return vmaf ? vmaf->registered_feature_extractors.cnt : 0;
 }
 
-/* True when the NULL-terminated `features` list names `feature`. */
+/* True when the NULL-terminated `features` list names `feature` among its
+ * first VMAF_ENGINE_MAX_PROVIDED_FEATURES entries. The bound is tested before
+ * the entry is read, so a list of exactly that many names needs no terminator. */
 static bool fex_declares_feature(const char **features, const char *feature)
 {
-    for (unsigned i = 0; features && features[i] && i < VMAF_ENGINE_MAX_PROVIDED_FEATURES; i++) {
+    for (unsigned i = 0; features && i < VMAF_ENGINE_MAX_PROVIDED_FEATURES && features[i]; i++) {
         if (!strcmp(features[i], feature))
             return true;
     }
