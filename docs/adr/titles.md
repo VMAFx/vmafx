@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1382), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1388), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5536,6 +5536,30 @@ Every ADR, one heading each (1382), so the site search finds an ADR by its title
 
 [3329-ci-buf-lint-breaking](3329-ci-buf-lint-breaking.md)
 
+## ADR-3330: Run Trivy config and filesystem scans in CI
+
+[3330-ci-trivy-config-fs](3330-ci-trivy-config-fs.md)
+
 ## ADR-3331: Run Spectral OpenAPI lint in CI
 
 [3331-ci-spectral-openapi-lint](3331-ci-spectral-openapi-lint.md)
+
+## ADR-3333: Move the praetor pin to 2d23b29 and give every agent persona a model tier
+
+[3333-praetor-pin-2d23b29-persona-tiers](3333-praetor-pin-2d23b29-persona-tiers.md)
+
+## ADR-3334: ONNX Runtime C Tarball SHA-256 Pinning and Verification
+
+[3334-ort-tarball-sha256-pins](3334-ort-tarball-sha256-pins.md)
+
+## ADR-3335: Python package floors match dependency resolutions
+
+[3335-python-floors-match-dependencies](3335-python-floors-match-dependencies.md)
+
+## ADR-3336: Dev Image Reverse Debugger (rr) and Build-Time Analyzer (ClangBuildAnalyzer)
+
+[3336-dev-image-rr-clangbuildanalyzer](3336-dev-image-rr-clangbuildanalyzer.md)
+
+## ADR-3337: Move the praetor pin to 320b058d and excuse the Coverage Gate timeouts for three days
+
+[3337-praetor-pin-320b058d-test-timeout](3337-praetor-pin-320b058d-test-timeout.md)

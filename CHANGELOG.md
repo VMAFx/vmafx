@@ -307,6 +307,13 @@
   `SPECTRAL_VERSION` and `SPECTRAL_SHA256` in `build-config.env`.
 
 
+- **CI scans Dockerfiles and filesystem dependencies with Trivy
+  ([ADR-3330](docs/adr/3330-ci-trivy-config-fs.md)).** The new `Trivy Config + FS` job of
+  `lint-and-format.yml` runs `trivy config` (IaC Dockerfile checks, `.trivyignore.yaml`) and
+  `trivy fs` (vulnerability and secret scanning) using the `TRIVY_VERSION` release binary
+  pinned in `build-config.env`.
+
+
 - Added `ACCESSIBILITY.md` (commitment, scope, known limitations, how to report
   a barrier), an accessibility issue form and the `accessibility` label, a
   "Your first contribution" and "What to expect" section in `CONTRIBUTING.md`,
@@ -350,6 +357,9 @@
   `docs/development/dco.md` and ADR-2462.
 
 
+- **Dev container ships pinned `rr` and `ClangBuildAnalyzer` diagnostic tools (ADR-3336).** `rr` (Ubuntu 26.04 package `5.9.0-5`) enables deterministic reverse debugging (`rr record` / `rr replay`), and `ClangBuildAnalyzer` (v1.6.0) analyzes `-ftime-trace` build profiles to identify compilation bottlenecks. Both versions are pinned in `dev/Containerfile`; `scripts/ci/check_ort_tarball_pins.py` checks that the ClangBuildAnalyzer download is SHA-256 verified before extraction (ADR-3334, ADR-3336). See the dev-container guide for usage.
+
+
 - **One distribution manifest for every artifact and channel (ADR-3317, #2314).**
   `packaging/manifest.toml` lists each shipped artifact once (files, platform,
   ABI, backends, licence, signing, SBOM, producing job) and each channel by the
@@ -387,6 +397,12 @@
   kind and checks that every job is completed exactly once
   ([integration tests](docs/k8s/integration-tests.md#controller-failover-case),
   [job store and replicas](docs/development/k8s-deployment.md#controller-store)).
+
+
+- **The ADR-2478 host C exception list exists
+  ([ADR-2478](docs/adr/2478-rust-core-migration.md)).** `.config/lint-exceptions.d/host-c-cpp.toml`
+  names the host C files that stay C on the way to 3.0, each with owner, re-evaluation
+  trigger and category; its first entries are the ten pelorus interop mirror files.
 
 
 - **Mini retrain and a resumable stage runner for the retrain tooling** (ADR-1898, issue #1246).
@@ -776,6 +792,13 @@
   never incremented.
 
 
+- **The Coverage Gate runs its Python suite in four shard steps of at most
+  30 minutes each.** `scripts/ci/run_pytest_shard.py` keeps every fourth test
+  of pytest's filtered collection, and one assertion step fails the job when
+  any shard fails. The three-day test-timeout exception of
+  [ADR-3337](docs/adr/3337-praetor-pin-320b058d-test-timeout.md) is removed.
+
+
 - **Dev container: the Vulkan loader and lavapipe are in the image.** The
   dev image installs the Vulkan loader, its headers, Mesa's Vulkan drivers
   (with lavapipe, the CPU Vulkan driver) and `vulkaninfo`, and its build fails
@@ -792,6 +815,13 @@
   development pages that wrote formulas as code text now use TeX, and
   `scripts/docs/check_math.py` fails the docs build on a formula KaTeX rejects.
   See [Writing math](docs/development/docs-site-design.md#writing-math).
+
+
+- **Extra compilation-database entries bring three hand-built sources into clang-tidy coverage.**
+  `scripts/ci/gen-mex-compile-commands.py` now provides entries for the LD_PRELOAD fault injector
+  and the upstream parity harness, and `scripts/ci/gen-gpu-compile-commands.py` adds the
+  standalone HIP dropped-dispatch probe for the HIP lane, retiring their clang-tidy coverage
+  exceptions.
 
 
 - **FFmpeg builds apply shared fix series `v0.2.0`.** `build-config.env` pins
@@ -1113,6 +1143,20 @@
   on `pull_request`.
 
 
+- **The praetor pin moves to `2d23b2924174`
+  ([ADR-3333](docs/adr/3333-praetor-pin-2d23b29-persona-tiers.md)).** Every agent persona under
+  `.agents/agents/` names a model tier, `flash` or `pro`, which `praetorctl compile-context`
+  projects into each client's model name. The evasion hook also refuses admin merges through `gh`
+  and the merge endpoints, and the API compatibility gate takes praetor's current text.
+
+
+- **The praetor pin moves to `320b058d8cca`
+  ([ADR-3337](docs/adr/3337-praetor-pin-320b058d-test-timeout.md)).** The praetor gate workflows
+  use a concurrency group and check out without persisted credentials, the figure player lives
+  under `tools/figures/player/`, and the Coverage Gate's timeouts above 30 minutes carry a
+  three-day exception until its pytest step is split.
+
+
 - **The praetor governance engine moves from `7458a220e1c9` to `3a766f2d56ad`
   ([ADR-2784](docs/adr/2784-praetor-pin-3a766f2d.md)).** `reuse lint` now runs in CI as the
   required `REUSE lint` job of praetor's `.github/workflows/reuse.yml` (actions pinned to commits),
@@ -1163,6 +1207,25 @@
   vendor context files name them again. No code changes.
 
 
+- **pre-commit 4.7.0 in every lock; the hook-environment test models the old
+  npm leak.** pre-commit 4.7.0 installs `language: node` hooks without the
+  commit's git variables, so `scripts/githooks/tests/test_install_hooks_env.py`
+  now reproduces the leak with a `pre-commit` wrapper that runs npm with the
+  caller's environment. The `env -u` line of
+  `scripts/git-hooks/framework-hooks.sh` stays as the second barrier. The same
+  update brings ruff 0.17.0, semgrep 1.180.0, tox 4.65.4 and onnxruntime 1.31.0.
+
+
+- **Python package floors match dependency resolutions ([ADR-3335](docs/adr/3335-python-floors-match-dependencies.md)).**
+  Declared `requires-python` floors are raised to the lowest version where core
+  and all optional extras successfully resolve (`python/`, `ai/`, `dev-llm/`,
+  `mcp-server/vmaf-mcp/`, and `tools/vmaf-roi-score/` to `>=3.12`; `tools/vmaf-tune/` to
+  `>=3.11`), matching requirements such as `numpy>=2.5.3` and `matplotlib>=3.11.2`.
+  Tool targets (`[tool.ruff] target-version`) follow the package floors. The
+  automated check `scripts/ci/check_python_floors.py` (`make python-floors-check`)
+  verifies each package at its floor.
+
+
 - **The roadmap and release pages list the full RC4 and RC5 scope.**
   [ADR-2342](docs/adr/2342-rc-map-amendment-2026-10.md) records the scope decisions of 2026-10-06 and
   2026-10-07 (RC4 work packages for bindings, the FFmpeg series redesign, input formats, engineering
@@ -1170,6 +1233,14 @@
   interlaced video, region masks, container input, bits per pixel, HandBrake and the run-result
   timeline; the 1.1 to 1.3 placement of the newer issues), and `docs/roadmap.md` and
   `docs/development/release.md` follow it. No candidate number or milestone changes.
+
+
+- **The RC1 tester runs its commands through the repository's bounded runner.**
+  `vmaf_rc1_tester.safe_process.run_bounded()` keeps its signature, exceptions
+  and messages, and now calls a byte copy of `scripts/lib/safe_subprocess.py`
+  shipped in the wheel instead of its own second implementation;
+  `tools/rc1-tester/tests/test_safe_subprocess_copy.py` fails when the copy
+  and the source differ.
 
 
 - **The plan for reference-exact extractors is written down.**
@@ -1344,6 +1415,9 @@
   Details: [CI](docs/development/ci.md).
 
 
+- **The hosted tidy lanes retry the dev container pull.** `scripts/ci/pull-dev-image.sh` gives the login and the pull of the digest-pinned image four bounded attempts before the lane fails with an error naming the image, so a single DNS timeout on `ghcr.io` no longer fails a nightly lane (#2792).
+
+
 - **The macOS Metal leg is gated, and the SYCL spill probe no longer fills the build log.** Meson
   1.12 names `-lc++` twice on every link that carries an Objective-C++ object (224 ld64
   warnings per run); the Metal links now tell ld64 duplicate libraries are expected
@@ -1497,6 +1571,13 @@
   names to fetch only those.
 
 
+- CI: `ci-escalate.yml` cancels every running workflow run of the pull request
+  first and then awaits them together within one 180-second bound, instead of
+  cancelling and awaiting each run in turn. With several running workflows the
+  serial wait passed the job's 15-minute limit, and the job was cancelled before
+  it re-ran anything (`scripts/ci/ci_escalate.py`).
+
+
 - CI: the required gates that share a matrix (`Linux Intel LLVM`, `macOS Clang+Metal`,
   `Windows MSVC+CUDA (full)`, `FFmpeg Ubuntu gcc`, `FFmpeg macOS clang`) judge their own
   leg's job instead of the matrix aggregate, so one failing leg no longer turns the other
@@ -1510,6 +1591,13 @@
   `docker/Dockerfile.production-gpu` and `mcp-server/vmaf-mcp/Dockerfile` passes
   `--ignore-installed`, and `scripts/ci/check_python_dependency_locks.py` refuses an install that
   breaks system packages without it (`--user` installs are exempt).
+
+
+- **Renovate's Rust toolchain bump passes the deliverables gate again.**
+  `scripts/ci/classify-dependency-pr.sh` treats the root `rust-toolchain.toml`
+  (ADR-3318) as a dependency pin, so a bot pull request that only moves the
+  toolchain no longer needs the deep-dive checklist. A nested
+  `rust-toolchain.toml` and a human author stay gated.
 
 
 - **Fifteen code-scanning findings are fixed in code; the provided-feature lookup no longer reads past a full list.**
@@ -1560,11 +1648,17 @@
   other binaries' ([ADR-2350](docs/adr/2350-cloud-native-platform.md)).
 
 
+- **The coverage jobs give gcov builds the sanitizer legs' test timeout multiplier, and a skipped coverage shard names its cause.** `Coverage Gate`, `Coverage (GPU)` and `make coverage` run the Meson suite with `--timeout-multiplier 3`, as the sanitizer legs do, after `test_integer_adm_simd` reached its 30 s under gcov on master. The step `Assert every Python coverage shard passed` names the earlier step whose failure skipped the shards, and the shard steps set `PYTHONPATH` again (they carried a misspelt key).
+
+
 - **The CUDA VIF twin reads each picture with its own row pitch.** `vif_cuda`
   read both input pictures with the pitch of the engine's own device
   pictures, so a CUDA picture with another pitch (a frame imported where its
   producer holds it) scored wrong VIF values; it now uses each picture's
   stride.
+
+
+- **The dev container builds again: ClangBuildAnalyzer is configured with the Ninja generator.** The `build-deps` stage of `dev/Containerfile` installs `ninja-build` but no make program, so CMake's default "Unix Makefiles" generator stopped the ClangBuildAnalyzer build of ADR-3336 and every dev image build failed. The configure now passes `-G Ninja`, and `scripts/ci/tests/test_dev_image_build_stages.py` refuses a CMake configure without a generator in that stage.
 
 
 - **The dev container runs the command it is given and exits.** `dev/scripts/dev-mcp-entrypoint.sh`
@@ -1655,6 +1749,14 @@
   ([state](docs/state.md#recently-closed)).
 
 
+- **CRD generation builds again after the controller-tools v0.23.0 bump.**
+  `go.sum` lacked the module hash of `sigs.k8s.io/controller-tools` v0.23.0, so
+  `scripts/codegen/crd_generate.py` could not build `controller-gen` and the
+  `test_crd_generated_current` and `test_crd_compat` tests failed. The hash is
+  added and the four CRDs under `deploy/helm/vmafx/crds/` carry the new
+  generator version.
+
+
 - **Helm: a node without a models volume scores with the image's models.**
   The node Deployment pointed `VMAFX_MODEL_DIR` at `persistence.models.mountPath`
   even when no models volume was mounted (the default), so every job failed
@@ -1692,6 +1794,14 @@
   ends before a full stride, such as a wrapped decoder frame or a crop, was
   read past its end. Pictures from `vmaf_picture_alloc()` were not affected;
   no score changes.
+
+
+- Python harness: the per-content fit lines of the subjective-dataset scatter plots
+  (`RegressorMixin._least_squares_line()`) no longer raise
+  `ValueError: not enough values to unpack` when a group's least-squares line has a
+  slope of exactly zero. NumPy's `Polynomial.convert()` trims a trailing zero
+  coefficient, so such a line came back as one coefficient; it is now padded back to
+  intercept and slope.
 
 
 - **Container images build again.** Every image that builds libvmaf stopped
@@ -1858,6 +1968,12 @@
   (#2394) and the decision issue (#2167) instead.
 
 
+- **ROCm container layer downloads retry the entire pipeline.** Mid-stream network
+  resets during layer extraction previously failed with curl exit 23 because
+  curl's in-pipe `--retry` restarted into a broken pipe; the installer now drops
+  curl's in-pipe retry and retries the full download-decompression-tar pipeline.
+
+
 - **CI: three jobs that fail on the `ubuntu-26.04` image run on `ubuntu-24.04` again until
   2026-10-25 (ADR-3251).** Since every hosted Linux job names `ubuntu-26.04`, the dev
   container build ran out of disk space and the FFmpeg gcc and SYCL builds stopped at the
@@ -1987,6 +2103,14 @@
   accepts `yuv420p` and `yuv444p16` only).
 
 
+- CI: upstream watcher workflows fail closed on GitHub search API rate limits. In run 38142503890,
+  `gh api search/code` rate-limit errors were swallowed by `|| echo 0`, printing JSON that broke
+  comparison logic and nearly created a false upstream-merged tracking issue. All count queries now
+  call `scripts/ci/upstream_watch_count.sh` with exponential backoff (15s, 30s, 60s) and fail closed
+  on non-integer output, and workflows ensure the `upstream-merged` label exists before issue operations
+  (`T-UPSTREAM-WATCHERS-RATE-LIMIT-2026-10-15`).
+
+
 - **A VMAFx error names a long path in full.** `VmafxError` kept 95 bytes of
   its subject, so a model file whose path was longer was named by a cut-off
   path; subjects now keep 1023 bytes and messages 1023.
@@ -2039,6 +2163,16 @@
   `mime/multipart`). `go.mod` declares `go 1.27.2`, and the release and development images build on
   the `golang:1.27-trixie` digest that carries Go 1.27.2. `govulncheck ./...` reached the vulnerable
   symbols from the controller, the tune executor, `pkg/libvmaf` and `tools/obssmoke`; it now reports none.
+
+
+- **Open advisory GHSA-84m7-p3x7-pcfv (`mcp` 1.29.0) is declared, not dismissed.** `mcp` reaches
+  the tooling-tests lock only through `semgrep`, which pins it exactly; the affected Streamable HTTP
+  server mode is never run. A new `dependency-advisory` rule of the declared exception list
+  records the reason with a 10-day expiry, the Dependabot alerts stay open, and the entry goes when
+  a `semgrep` release allows `mcp` 1.30.0.
+
+
+- **Every ONNX Runtime C/C++ release tarball download now verifies a pinned SHA-256 digest before extraction (ADR-3334)** across `dev/Containerfile`, Go CI, build matrix, and test gates. Cached archives are re-verified on every run and purged on mismatch; `scripts/ci/check_ort_tarball_pins.py` statically enforces checksum pinning, extraction order, and cross-site digest parity; Renovate updates `ORT_VERSION` and `ORT_SHA256` in locked pairs.
 
 
 - **Advisory exceptions in `osv-scanner.toml` expire**: every `[[IgnoredVulns]]` entry

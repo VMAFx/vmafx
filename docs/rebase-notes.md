@@ -8,6 +8,151 @@ search:
 # Rebase notes
 
 <!-- rebase-notes:fragments:begin (rendered from docs/rebase-notes.d/; do not edit) -->
+## Coverage jobs: gcov timeout multiplier and named shard skips (2026-10-17)
+
+- Every `run_meson_test.py` command of a job with a `-Db_coverage=true` build passes `--timeout-multiplier 3`; the Makefile variable is `INSTRUMENTED_TEST_TIMEOUT_MULTIPLIER` (was `SANITIZER_TEST_TIMEOUT_MULTIPLIER`) and covers `test-sanitizers` and `coverage`. `scripts/ci/tests/test_sanitizer_suite_timeouts.py` refuses a run without it.
+- The coverage job's steps before the shards carry ids that the shard assertion reads through `EARLIER_OUTCOMES`; a rebase that renames or adds such a step updates that list. `scripts/ci/test_fail_closed_ci.py` checks that each id exists and that the shard steps set `PYTHONPATH`.
+
+## dev image: ClangBuildAnalyzer built with Ninja (2026-10-17)
+
+- The `build-deps` stage of `dev/Containerfile` installs `ninja-build` and no make program, so the ClangBuildAnalyzer configure passes `-G Ninja`. A rebase that moves or rewrites that step keeps the generator, or adds a make program to the stage's package list.
+- `scripts/ci/tests/test_dev_image_build_stages.py` (`test_cmake_in_a_stage_without_make_names_a_generator`) refuses a CMake configure without `-G` in `build-deps`.
+
+## dev image: rr and ClangBuildAnalyzer (2026-10-16)
+
+- `dev/Containerfile` installs `rr` (Ubuntu 26.04 package `5.9.0-5`) in the `build-deps` stage via `rr=${RR_APT_VERSION}` for reverse debugging and deterministic execution recording (ADR-3336).
+- `dev/Containerfile` compiles and installs `ClangBuildAnalyzer` v1.6.0 (Unlicense) in the `build-deps` stage after verifying its release tarball against `CLANGBUILDANALYZER_SHA256`.
+- `dev/Containerfile` owns `RR_APT_VERSION`, `CLANGBUILDANALYZER_VERSION`, and `CLANGBUILDANALYZER_SHA256` as single-source `ARG`s.
+- `scripts/ci/check_ort_tarball_pins.py` statically enforces presence of pins in `dev/Containerfile`, 64 lowercase hex digest validity, and `sha256sum` verification prior to building ClangBuildAnalyzer (ADR-3336, generalizing ADR-3334 per HISS-19).
+
+## Coverage Gate: Python suite in four shards (2026-10-17)
+
+- The single 55-minute pytest step of the `coverage` job in
+  `.github/workflows/tests-and-quality-gates.yml` is now a preparation step and
+  four steps `Run Python test suite, shard N/4` (ids
+  `python_coverage_shard_N`), each under `timeout --kill-after=30s 30m`
+  through `scripts/ci/run_pytest_shard.py`. The step
+  `Assert every Python coverage shard passed` reads all four outcomes.
+- A rebase that touches the job keeps every step at 30 minutes or less (the
+  praetor test-timeout audit flags any `<n>m` above 30 on a line, comments
+  included) and does not bring back `.config/lint-exceptions.d/test-timeout.toml`.
+  `scripts/ci/test_fail_closed_ci.py` and
+  `scripts/ci/tests/test_run_pytest_shard.py` guard the layout and the shard
+  selection.
+
+## Praetor pin 320b058d8cca (2026-10-17)
+
+`chore/praetor-adopt-320b058d`, [ADR-3337](adr/3337-praetor-pin-320b058d-test-timeout.md). A
+rebase or sync keeps `PRAETOR_REF` at `320b058d8cca...` in `.github/workflows/standards-gate.yml`.
+`praetor-api.yml`, `praetor-docs.yml`, `.config/agent/hooks/block_evasion.py`,
+`tools/apicompat/gate/main.go` and `tools/figures/` are praetor's text at the pin: take either side
+and re-run `praetorctl adopt` (no `--force`). The figure player is under `tools/figures/player/`;
+`tools/figures/dist/` and its `.gitignore` re-include do not come back. The `test-timeout` entry
+of `.config/lint-exceptions.d/test-timeout.toml` expires on 2026-10-20 and leaves with the
+Coverage Gate split; `.standards.yaml`'s block is regenerated with
+`python3 scripts/ci/praetor_tidy_coverage.py --write`, never merged by hand.
+
+## Tidy lane dev container pull retries (2026-10-16)
+
+- `.github/actions/tidy-lane/action.yml` pulls the dev container through
+  `scripts/ci/pull-dev-image.sh` (digest check, four bounded attempts, error
+  naming the image). Fork-only CI; no upstream counterpart. Keep the action on
+  the script rather than an inline `docker pull`.
+  `scripts/ci/tests/test_pull_dev_image.py` guards it.
+
+## Python floors follow numpy (2026-10-16)
+
+- `python/pyproject.toml`, `ai/pyproject.toml`, `dev-llm/pyproject.toml`,
+  `mcp-server/vmaf-mcp/pyproject.toml`, `tools/vmaf-roi-score/pyproject.toml`:
+  floors raised to `>=3.12` to match `numpy>=2.5.3`. `tools/vmaf-tune/pyproject.toml`
+  raised to `>=3.11` to match `matplotlib>=3.11.2`. `tools/rc1-tester` stays
+  at `>=3.10`.
+- Tool targets (`[tool.ruff] target-version`) in `ai`, `dev-llm`, and
+  `mcp-server/vmaf-mcp` updated to `py312`.
+- `scripts/ci/check_python_floors.py`: new automated check verifying that all
+  tracked packages resolve at their declared floors with `--all-extras` via
+  `uv pip compile` (`make python-floors-check`; [ADR-3335](../adr/3335-python-floors-match-dependencies.md)).
+- Documentation updated in `docs/usage/python.md`, `docs/mcp/http-transport.md`,
+  and `docs/development/python-dependency-locks.md`.
+
+## Python harness: the scatter-plot fit line keeps a zero slope (2026-10-16)
+
+- `RegressorMixin._least_squares_line()` in
+  `compat/python-vmaf/core/train_test_model.py` is fork code; upstream's
+  `train_test_model.py` still calls `tools.misc.linear_fit()` there. It pads
+  the coefficients of `Polynomial.fit(...).convert()` to two, because
+  `convert()` trims a trailing zero slope. An upstream sync that touches the
+  plotting code keeps the fork's helper and the padding;
+  `python/test/least_squares_line_test.py` fails without it.
+
+## ONNX Runtime tarballs verified by sha256 (2026-10-16)
+
+- Every site fetching the ONNX Runtime C/C++ native release archive (`dev/Containerfile`,
+  `.github/workflows/go-ci.yml`, `build.yml`, `libvmaf-build-matrix.yml`, and
+  `tests-and-quality-gates.yml`) pairs `ORT_VERSION` with a pinned `ORT_SHA256`
+  and verifies the digest via `sha256sum --check --strict` before extraction
+  (ADR-3334).
+- Cached archives in `tests-and-quality-gates.yml` re-verify checksum on every
+  run, removing the cache entry and failing immediately on mismatch.
+- `scripts/ci/check_ort_tarball_pins.py` statically enforces presence of
+  `ORT_SHA256`, verification ordering before `tar -x`, and cross-site digest
+  consistency. `renovate.json` updates version and digest in locked pairs via
+  `github-release-attachments`. **On sync**: new ORT tarball download sites must
+  declare `ORT_SHA256` and verify with `sha256sum --check --strict`.
+
+## Praetor pin 2d23b2924174 (2026-10-15)
+
+`chore/persona-model-tier`, [ADR-3333](adr/3333-praetor-pin-2d23b29-persona-tiers.md). A rebase or
+sync keeps `PRAETOR_REF` at `2d23b2924174...` in `.github/workflows/standards-gate.yml`. Every
+persona under `.agents/agents/` keeps a `model:` of `flash` or `pro`; the client copies are
+generated by `praetorctl compile-context` and never merged by hand: take either side and
+regenerate. `tools/apicompat/gate/main.go` and `.config/agent/hooks/block_evasion.py` are praetor's
+text at the pin.
+
+## Dependency-advisory exception rule (2026-10-15)
+
+`.config/lint-exceptions.d/dependency-advisory.toml` is fork-only: it names lock files of open
+Dependabot alerts that no reachable version fixes. No upstream file is touched; an upstream sync
+has nothing to merge here. Delete the `mcp` entry once Renovate moves `semgrep` to a release that
+allows `mcp` 1.30.0.
+
+## Host C exception list for the pelorus mirror (2026-10-16, ADR-2478)
+
+`.config/lint-exceptions.d/host-c-cpp.toml` lists the ten files of `scripts/ci/pelorus-mirror-paths.txt`. A pelorus re-pin that adds or renames a mirror file updates both lists in the same PR; `test_host_c_list_names_every_pelorus_mirror_file` fails otherwise. no upstream file.
+
+## Upstream watchers fail closed on API errors (2026-10-15)
+
+- Upstream watcher workflows (`.github/workflows/upstream-ffmpeg-hip-hwdec-watcher.yml`,
+  `.github/workflows/upstream-netflix-645-hdr-model-watcher.yml`, and
+  `.github/workflows/upstream-netflix-955-watcher.yml`) fail closed on API errors and search rate
+  limits via `scripts/ci/upstream_watch_count.sh`, avoiding false positive issue creation when `gh api`
+  outputs rate-limit JSON.
+- Workflows idempotently ensure label `upstream-merged` exists before issue list and create calls.
+- No rebase impact beyond these files and the `scripts/ci/` test and helper scripts.
+
+## Clang-tidy compilation-database entries for hand-built sources (2026-10-15)
+
+- `scripts/ci/gen-mex-compile-commands.py`: extended to be table-driven, generating
+  compile-database entries for `ffmpeg-patches/test/fault_inject_libvmaf.c` and
+  `scripts/dev/upstream_parity_harness.c` alongside the MATLAB MEX sources, with
+  refusal on missing sources.
+- `scripts/ci/gen-gpu-compile-commands.py`: appends an entry for the standalone probe
+  `scripts/dev/hip_dispatch_drop_probe.hip` in the HIP lane, mirroring device-kernel flags.
+- `.config/lint-exceptions.d/clang-tidy-coverage.toml`: deleted exceptions for the three
+  sources; re-reviewed `core/test/test_colorspace.c` and
+  `core/test/test_sycl_cuda_serial_upload_lifetime.c` with verified facts and Category D
+  (120 days) expiry (2027-02-12).
+- **On sync**: fork-only tooling and lint infrastructure; no upstream counterpart.
+
+## Trivy config and filesystem scans in CI (2026-10-15)
+
+`ci/trivy-lint`, [ADR-3330](adr/3330-ci-trivy-config-fs.md). The `trivy` job of
+`.github/workflows/lint-and-format.yml` runs the `trivy` program directly (`trivy config`,
+`trivy fs`); keep it a direct step, because `praetorctl audit` counts a declared linter only
+when a workflow step runs it directly or uses an action with `trivy` in its repository name.
+`TRIVY_VERSION` and `TRIVY_SHA256` in `build-config.env` pin the release binary. Dockerfile
+exceptions are maintained with category and expiry in `.trivyignore.yaml`.
+
 ## Spectral OpenAPI lint in CI (2026-10-15)
 
 `ci/spectral-lint`, [ADR-3331](adr/3331-ci-spectral-openapi-lint.md). The `spectral` job of
