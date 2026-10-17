@@ -350,7 +350,8 @@ def _dev_container_pick(contract: Contract) -> dict[str, Any]:
     picks = [step for step in steps if step.get("id") == "pick"]
     if len(picks) != 1:
         raise AssertionError(f"the dev-container planner has {len(picks)} pick steps, not one")
-    return picks[0]
+    pick: dict[str, Any] = picks[0]
+    return pick
 
 
 def dev_container_pick(contract: Contract, full: str, broad: str, narrow: str) -> tuple[int, str]:
