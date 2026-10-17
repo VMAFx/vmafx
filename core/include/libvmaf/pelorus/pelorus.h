@@ -2,11 +2,12 @@
  *
  *  Copyright 2026 Lusoris
  *
+ * SPDX-FileCopyrightText: 2026 Lusoris
  * SPDX-License-Identifier: EUPL-1.2
  */
 
 /*
- * VENDORED FROM VMAFx/pelorus@e2e4040311a443210927549c3a336f909c6473f3 — DO NOT EDIT.
+ * VENDORED FROM VMAFx/pelorus@33b4a625cad64a7e9ca14f6db06eb91ba8f56663 — DO NOT EDIT.
  * Append-only ABI; single
  * source of truth is pelorus. Re-sync via scripts/sync-pelorus-interop.sh.
  * See docs/adr/1113-vendor-pelorus-interop-abi.md.
@@ -35,9 +36,9 @@ extern "C" {
 
 /* ---- Library version (SemVer; tracks git tags v<MAJOR>.<MINOR>.<PATCH>) --- */
 #define PELORUS_VERSION_MAJOR 0
-#define PELORUS_VERSION_MINOR 3
-#define PELORUS_VERSION_PATCH 0
-#define PELORUS_VERSION_STR "0.3.0"
+#define PELORUS_VERSION_MINOR 4
+#define PELORUS_VERSION_PATCH 1
+#define PELORUS_VERSION_STR "0.4.1"
 
 /* Packed integer version for runtime comparisons: (major<<16)|(minor<<8)|patch. */
 #define PELORUS_VERSION_INT                                                                        \
@@ -54,14 +55,16 @@ const char *pelorus_version_string(void);
  * values are errors; PEL_OK is success. No bare -1 crosses an API boundary.
  */
 typedef enum pel_result {
-    PEL_OK = 0,              /* success                                        */
-    PEL_ERR_INVALID = -1,    /* invalid argument / NULL where non-NULL needed  */
-    PEL_ERR_NOMEM = -2,      /* allocation failed                              */
-    PEL_ERR_RANGE = -3,      /* value outside the documented valid range       */
-    PEL_ERR_ABI = -4,        /* blob ABI major mismatch / corrupt framing      */
-    PEL_ERR_ABSENT = -5,     /* requested section / data not present           */
-    PEL_ERR_TRUNCATED = -6,  /* buffer shorter than its self-described size    */
-    PEL_ERR_UNSUPPORTED = -7 /* feature not compiled in / not available       */
+    PEL_OK = 0,               /* success                                        */
+    PEL_ERR_INVALID = -1,     /* invalid argument / NULL where non-NULL needed  */
+    PEL_ERR_NOMEM = -2,       /* allocation failed                              */
+    PEL_ERR_RANGE = -3,       /* value outside the documented valid range       */
+    PEL_ERR_ABI = -4,         /* blob ABI major mismatch / corrupt framing      */
+    PEL_ERR_ABSENT = -5,      /* requested section / data not present           */
+    PEL_ERR_TRUNCATED = -6,   /* buffer shorter than its self-described size    */
+    PEL_ERR_UNSUPPORTED = -7, /* feature not compiled in / not available       */
+    PEL_ERR_MISMATCH = -8     /* verified digest differs from the expected one  */
+    /* Append-only: a value is never reused or renumbered (ADR-0175). */
 } pel_result;
 
 /* Human-readable, static string for a pel_result. Never NULL. */

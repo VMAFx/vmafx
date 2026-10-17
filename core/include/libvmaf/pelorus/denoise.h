@@ -2,11 +2,12 @@
  *
  *  Copyright 2026 Lusoris
  *
+ * SPDX-FileCopyrightText: 2026 Lusoris
  * SPDX-License-Identifier: EUPL-1.2
  */
 
 /*
- * VENDORED FROM VMAFx/pelorus@e2e4040311a443210927549c3a336f909c6473f3 — DO NOT EDIT.
+ * VENDORED FROM VMAFx/pelorus@33b4a625cad64a7e9ca14f6db06eb91ba8f56663 — DO NOT EDIT.
  * Append-only ABI; single
  * source of truth is pelorus. Re-sync via scripts/sync-pelorus-interop.sh.
  * See docs/adr/1113-vendor-pelorus-interop-abi.md.
