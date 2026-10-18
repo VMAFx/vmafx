@@ -33,7 +33,11 @@ class GitleaksScanScopeTests(unittest.TestCase):
         self.command = scan_command(self.workflow)
 
     def test_scans_checked_out_history_only(self) -> None:
-        self.assertIn('--log-opts="--full-history HEAD"', self.command)
+        self.assertIn('--log-opts="-m --full-history HEAD"', self.command)
+
+    def test_reads_the_diff_of_merge_commits(self) -> None:
+        """The engine's audit refuses a history scan without -m: git log then omits merge diffs."""
+        self.assertRegex(self.command, r'--log-opts="(?:\S+ )*-m(?: \S+)*"')
 
     def test_never_scans_all_refs(self) -> None:
         self.assertNotRegex(self.command, r"--all\b")
