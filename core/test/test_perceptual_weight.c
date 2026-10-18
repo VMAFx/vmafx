@@ -855,6 +855,94 @@ static char *test_carrier_boundary_growth(void)
     return NULL;
 }
 
+/* Prepend a 16-byte outer UUID to a payload, as libx265 does to every user data
+ * unregistered SEI it writes (ADR-3340). */
+static uint8_t *prefix_uuid(const uint8_t outer[16], const uint8_t *payload, size_t len,
+                            size_t *out_len)
+{
+    uint8_t *out = malloc(len + 16u);
+    if (out == NULL) {
+        return NULL;
+    }
+    memcpy(out, outer, 16u);
+    memcpy(out + 16, payload, len);
+    *out_len = len + 16u;
+    return out;
+}
+
+static const uint8_t x265_uuid[16] = {0x2c, 0xa2, 0xde, 0x09, 0xb5, 0x17, 0x47, 0xdb,
+                                      0xbb, 0x55, 0xa4, 0xfe, 0x7f, 0xc2, 0xfc, 0x4e};
+
+/* Pool a payload after prefixing it with outer; -1.0 on any failure. */
+static double pool_prefixed(const uint8_t outer[16], const uint8_t *payload, size_t len)
+{
+    size_t wrapped_len = 0;
+    uint8_t *wrapped = prefix_uuid(outer, payload, len, &wrapped_len);
+    double mean;
+    if (wrapped == NULL) {
+        return -1.0;
+    }
+    mean = pool_with_blob(wrapped, wrapped_len);
+    free(wrapped);
+    return mean;
+}
+
+/* Positive: a blob and a carrier behind the x265 UUID weigh as the direct form. */
+static char *test_x265_wrapped_matches_direct(void)
+{
+    size_t blob_len = 0;
+    size_t carrier_len = 0;
+    uint8_t *blob = build_banding_blob(4, 4, 255, 1.0f, &blob_len);
+    mu_assert("blob alloc", blob != NULL);
+    uint8_t *carrier = encode_carrier(blob, blob_len, &carrier_len);
+
+    double mean_direct = pool_with_blob(blob, blob_len);
+    double mean_blob = pool_prefixed(x265_uuid, blob, blob_len);
+    double mean_carrier = carrier != NULL ? pool_prefixed(x265_uuid, carrier, carrier_len) : -1.0;
+    free(blob);
+    free(carrier);
+
+    mu_assert("direct blob must weigh", mean_direct >= 0.0);
+    mu_assert("x265-wrapped blob must match direct", same_bits(mean_blob, mean_direct));
+    mu_assert("x265-wrapped carrier must match direct", same_bits(mean_carrier, mean_direct));
+    return NULL;
+}
+
+/* Negative: an unknown outer UUID stays foreign even with a valid blob behind
+ * it, and so does a second x265 UUID in front of the blob. */
+static char *test_unknown_outer_and_double_wrap_refused(void)
+{
+    static const uint8_t unknown[16] = {0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11,
+                                        0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11};
+    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    VmafContext *vmaf = NULL;
+    size_t blob_len = 0;
+    size_t once_len = 0;
+    size_t twice_len = 0;
+    size_t foreign_len = 0;
+    uint8_t *blob = build_banding_blob(4, 4, 255, 1.0f, &blob_len);
+    mu_assert("blob alloc", blob != NULL);
+    uint8_t *foreign = prefix_uuid(unknown, blob, blob_len, &foreign_len);
+    uint8_t *once = prefix_uuid(x265_uuid, blob, blob_len, &once_len);
+    uint8_t *twice = once != NULL ? prefix_uuid(x265_uuid, once, once_len, &twice_len) : NULL;
+    free(blob);
+    free(once);
+
+    int rc_foreign = -1;
+    int rc_twice = -1;
+    if (foreign != NULL && twice != NULL && vmaf_init(&vmaf, cfg) == 0) {
+        rc_foreign = vmaf_set_perceptual_sidedata(vmaf, foreign, foreign_len, 0);
+        rc_twice = vmaf_set_perceptual_sidedata(vmaf, twice, twice_len, 1);
+        vmaf_close(vmaf);
+    }
+    free(foreign);
+    free(twice);
+
+    mu_assert("unknown outer UUID must be foreign", rc_foreign == -ENOENT);
+    mu_assert("double x265 wrap must be foreign", rc_twice == -ENOENT);
+    return NULL;
+}
+
 char *run_tests(void)
 {
     static const MuTest tests[] = {
@@ -874,6 +962,8 @@ char *run_tests(void)
         MU_TEST(test_carrier_negative_short_decoded_image),
         MU_TEST(test_carrier_boundary_empty),
         MU_TEST(test_carrier_boundary_growth),
+        MU_TEST(test_x265_wrapped_matches_direct),
+        MU_TEST(test_unknown_outer_and_double_wrap_refused),
     };
     return mu_run_table(tests, MU_TABLE_LEN(tests));
 }

@@ -705,6 +705,7 @@ core/test/test_output_open_eintr.c
 core/test/test_path_utf8.c
 core/test/test_pdjson.c
 core/test/test_pdjson_stack_increment.c
+core/test/test_pelorus_udu_wrap.c
 core/test/test_perceptual_weight.c
 core/test/test_pic_preallocation.c
 core/test/test_picture.c

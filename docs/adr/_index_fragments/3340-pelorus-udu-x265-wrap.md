@@ -1,0 +1,1 @@
+| [ADR-3340](3340-pelorus-udu-x265-wrap.md) | `vmaf_set_perceptual_sidedata()` also reads a Pelorus blob or carrier behind the libx265 UUID, through an allow-list (`core/src/feature/pelorus_udu_wrap.h`) that keeps every other outer UUID foreign; Pelorus' vector file is replayed by `test_pelorus_udu_wrap`. | Accepted | pelorus, ffmpeg, api, interop |

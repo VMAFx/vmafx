@@ -79,7 +79,11 @@ both forms of side data: the raw blob form (blob UUID
 (carrier UUID `3f9b37b8-fd9a-4621-920e-9b78b55cf9b5`). Hardware encoders
 such as `h264_nvenc` and `hevc_nvenc` emit the carrier form from Pelorus ABI
 1.5, because NVENC cuts a user-data SEI short at a zero byte and the carrier
-holds none. The parser unwraps carrier
+holds none. libx265 writes its own UUID
+(`2ca2de09-b517-47db-bb55-a4fe7fc2fc4e`) in front of every user-data SEI, so a
+payload that starts with that UUID followed by the blob or carrier UUID is read
+as the inner form ([ADR-3340](../adr/3340-pelorus-udu-x265-wrap.md)); no other
+outer UUID is accepted. The parser unwraps carrier
 payloads transparently into a reusable decode buffer, extracts the
 banding/variance summaries and per-cell maps, and stores a derived per-frame
 salience keyed by `pic_index`. The payload is **not retained** — only the
@@ -89,7 +93,7 @@ call.
 | Return | Meaning |
 | --- | --- |
 | `0` | Summary stored. |
-| `-ENOENT` | Payload is foreign (neither Pelorus UUID, or length under 16 bytes). Cleanly ignored — the frame stays unweighted. |
+| `-ENOENT` | Payload is foreign (neither Pelorus UUID at the start nor behind the x265 UUID, any other outer UUID, a second x265 UUID, or length under 16 bytes). Cleanly ignored — the frame stays unweighted. |
 | `-EPROTO` | Corrupt carrier (malformed COBS or embedded zero bytes), truncated header, or ABI-major mismatch. Cleanly ignored and logged — the frame stays unweighted, never misread (interop rule R6). |
 | `-EINVAL` | `vmaf` or `blob` is `NULL`. |
 | `-ENOMEM` | Allocation failure. |
@@ -144,6 +148,10 @@ The reader is robust to an evolving Pelorus producer:
   `e1d7c4a2-6b93-4f08-9a55-0f3c2db17e64`) and the zero-free carrier form (UUID
   `3f9b37b8-fd9a-4621-920e-9b78b55cf9b5`) are accepted. Hardware encoders
   (`h264_nvenc`, `hevc_nvenc` from Pelorus ABI 1.5) write the carrier form.
+  Either form behind the libx265 UUID is accepted too; the x265 UUID is the
+  only outer wrapper read (ADR-3340, Pelorus ADR-0210), and
+  `test_pelorus_udu_wrap` replays Pelorus' vector file
+  ([`testdata/pelorus/udu-wrap-vectors.txt`](../../testdata/pelorus/udu-wrap-vectors.txt)).
   Foreign payloads return `-ENOENT` and are cleanly ignored, while a corrupt
   carrier or bad ABI major returns `-EPROTO` so the frame is scored unweighted
   and a warning is logged, ensuring malformed payloads are never misread.

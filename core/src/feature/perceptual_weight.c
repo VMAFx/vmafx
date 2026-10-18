@@ -49,6 +49,8 @@
 #include "libvmaf/pelorus/interop.h"
 #include "libvmaf/pelorus/pelorus.h"
 
+#include "feature/pelorus_udu_wrap.h"
+
 /* Default per-frame weight strength when the caller never set one explicitly.
  * weight = 1 + strength * salience; strength 1.0 doubles the contribution of a
  * maximally-salient (salience == 1) frame relative to a flat one. */
@@ -411,8 +413,9 @@ void vmaf_perceptual_weight_store_destroy(VmafPerceptualWeightStore *store)
 /*
  * Unwrap a Pelorus side-data payload into its canonical blob form. Handles both
  * the raw blob form (pelorus_sidedata_uuid) and the ABI 1.5 zero-free carrier form
- * (pelorus_carrier_uuid, COBS decoded into store->scratch). Grows store->scratch
- * on demand to the largest payload seen (HISS-03).
+ * (pelorus_carrier_uuid, COBS decoded into store->scratch), each either direct or
+ * behind the UUID libx265 prepends (ADR-3340; an unknown outer UUID stays
+ * foreign). Grows store->scratch on demand to the largest payload seen (HISS-03).
  */
 static int unwrap_payload(VmafPerceptualWeightStore *store, const uint8_t *blob, size_t len,
                           const uint8_t **out_blob, size_t *out_len)
@@ -422,6 +425,10 @@ static int unwrap_payload(VmafPerceptualWeightStore *store, const uint8_t *blob,
     assert(store != NULL && blob != NULL);
     assert(out_blob != NULL && out_len != NULL);
 
+    if (vmaf_pelorus_udu_classify(blob, len) == VMAF_PELORUS_UDU_X265_WRAPPED) {
+        blob += PELORUS_SIDEDATA_UUID_LEN;
+        len -= PELORUS_SIDEDATA_UUID_LEN;
+    }
     rc = pel_blob_unwrap(blob, len, store->scratch, store->scratch_cap, out_blob, out_len);
     if (rc == PEL_ERR_RANGE) {
         uint8_t *grown = realloc(store->scratch, len);
