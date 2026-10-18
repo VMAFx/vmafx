@@ -198,6 +198,7 @@ class Candidates(unittest.TestCase):
             "tools/figures/player/player.js",
             ".config/agent/hooks/block_evasion.py",
             ".config/lefthook/engine.sh",
+            ".config/lefthook/python.sh",
             ".codex/agents/c-reviewer.toml",
         ):
             with self.subTest(path=path):
