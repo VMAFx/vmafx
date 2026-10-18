@@ -18,7 +18,7 @@ gate use for the cell?
   scoring steps).
 - CUDA: `core/src/feature/cuda/speed/speed_score.cu::speed_log2()`
   (correctly rounded, `feature/speed_log2_hard_cases.h`), unchanged here.
-- Host `zeus`: RTX 4090, CUDA 13.4, gcc 16.2.1, glibc 2.44. `meson setup
+- Reference workstation: RTX 4090, CUDA 13.4, gcc 16.2.1, glibc 2.44. `meson setup
   build-cuda core -Denable_cuda=true -Denable_sycl=false --buildtype=release
   -Db_lto=false`, master `c2af74494`.
 - Fixtures: the Netflix 576x324 pair at 8 bits (48 frames) and at 10, 12 and

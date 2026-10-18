@@ -23,15 +23,15 @@ signal, and where must the import refuse by name?
   the import code read every plane back through the scoring runtime and
   compared it with the bytes written.
 - CUDA: the host's CUDA 13.4 (driver API 13040), NVIDIA driver 615.71.09,
-  RTX 4090 at PCI 0000:06:00.0; Vulkan 1.4.351 on the device, loader 1.4.363.
+  RTX 4090 at PCI `<nvidia-bdf>`; Vulkan 1.4.351 on the device, loader 1.4.363.
 - SYCL / Level Zero: oneAPI 2026.1.1 (DPC++ 2026.1.1.20260724) in a throwaway
   container of `vmaf-dev-mcp:local` with the Vulkan loader and headers added
   (headers 1.4.341); Level Zero GPU driver 26.35.39758.10, loader 1.34.0; ANV
   from Mesa 26.0.8 (the image's Mesa, not the host's 26.2.4), Vulkan 1.4.335;
-  Arc A380 at PCI 0000:03:00.0 on the xe driver.
+  Arc A380 at PCI `<arc-bdf>` on the xe driver.
 - HIP: ROCm 10.1.0 (HIP runtime 71626385) in `vmafx-hip-lane:rocm10.1.0`
   with the Vulkan loader and headers added; RADV from Mesa 26.0.8, Vulkan
-  1.4.335, loader 1.4.341; the gfx1036 iGPU at PCI 0000:7d:00.0.
+  1.4.335, loader 1.4.341; the gfx1036 iGPU at PCI `<amd-bdf>`.
 - FFmpeg n9.0.2 (libavutil 61.1.102): the host's build for the CUDA lane, and
   a build of the same tag inside the ROCm image for the SYCL and HIP lanes;
   Ubuntu's FFmpeg 8.0 packages were tried first.

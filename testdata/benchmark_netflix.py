@@ -51,7 +51,7 @@ YUVDIR = os.environ.get(
 )
 
 # VA-API render node the SYCL/QSV import path uploads through. Node numbering
-# is not stable across hosts or across PCI re-enumeration: on the ryzen-4090-arc
+# is not stable across hosts or across PCI re-enumeration: on the reference workstation
 # bench host the Arc A380 moved from renderD130 to renderD129 and renderD130 is
 # now the AMD iGPU, which fails with "unsupported drm device by media driver:
 # amdg". Pick the node whose `vainfo --display drm --device <node>` reports the

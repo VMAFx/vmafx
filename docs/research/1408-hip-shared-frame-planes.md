@@ -14,7 +14,7 @@ Every HIP twin copied the planes it reads to the device itself and waited for th
 - `core/src/hip/shared_frame.{c,h}`, `core/src/hip/picture_hip.{c,h}`, the thirteen adopted twins under `core/src/feature/hip/`.
 - [ADR-1369](../adr/1369-sycl-shared-planes-light-twins.md), the SYCL precedent; [ADR-1377](../adr/1377-hip-motion-diff-first.md), the staged upload.
 - `/opt/rocm/include/hip/hip_runtime_api.h` (ROCm 7.2.4): `hipHostMalloc` "allocates pinned host memory which is mapped into the address space of all GPUs in the system, the memory can be accessed directly by the GPU device".
-- Host: `ryzen-4090-arc`, AMD gfx1036 iGPU, ROCm 7.2.4, Linux 7.2.8. Other jobs ran on the host during every measurement (load average 6 to 35).
+- Host: a reference workstation, AMD gfx1036 iGPU, ROCm 7.2.4, Linux 7.2.8. Other jobs ran on the host during every measurement (load average 6 to 35).
 - Builds: `meson setup build-hip core -Denable_hip=true -Denable_hipcc=true -Dhip_gfx_targets=gfx1036 -Denable_cuda=false -Denable_sycl=false --buildtype=release -Db_lto=false`, once at `origin/master` 7dc45265f ("before") and once with the change on top ("after").
 
 ## Findings

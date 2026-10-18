@@ -24,7 +24,7 @@ at a time as a test or a lane failed, and the two general libraries
 `-fp-model=precise`, which implies `-ffp-contract=on`. Every SYCL build is an
 icx build.
 
-Measured on `ryzen-4090-arc` (9950X3D, AVX-512, icx 2026.0 against GCC,
+Measured on a reference workstation (9950X3D, AVX-512, icx 2026.0 against GCC,
 2026-10-01):
 
 - `ssim_avx512.c` had no carve-out (its AVX2 sibling has one). The icx object

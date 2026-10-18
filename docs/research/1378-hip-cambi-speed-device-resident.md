@@ -32,9 +32,9 @@ Both twins keep every per-work-item routine in one header compiled for the devic
 
 Planted regressions, each applied alone and rebuilt, all fail their replay: CAMBI mode filter, level-band edge, anti-dither rounding, c-value by division instead of the table, a tie short in the top-K sum, mask edge handling, the speed-up mask shift and the window pad in the plan; SpEED covariance low parts and double rounding, variance by reciprocal, the Wilkinson shift, the mean subtraction, the 10-bit sample conversion, the regularity epsilon, a truncated log2 series, the anti-alias width in the parameter block and the `speed_use_ref_diff` binding. Three planted changes survived earlier fixtures and were equivalences, not gaps: negating the centred values (SpEED is sign-invariant), `/ 4` versus `* 0.25` (exact for power-of-two scales) and a one-lane covariance group (the pair sum is order-independent); they were replaced by non-equivalent ones.
 
-### On-device verification and timings (`ryzen-4090-arc`, gfx1036)
+### On-device verification and timings (a reference workstation, gfx1036)
 
-Kernel launch geometry, barriers, atomics and occupancy were verified on `ryzen-4090-arc` (gfx1036 iGPU, ROCm 7.2.4):
+Kernel launch geometry, barriers, atomics and occupancy were verified on a reference workstation (gfx1036 iGPU, ROCm 7.2.4):
 
 - **Contract and parity tests**: `test_hip_cambi_parity`, `test_hip_cambi_parity_large`, `test_hip_speed_chroma_parity`, `test_hip_speed_temporal_parity`, `test_hip_speed_singular_parity`, `test_hip_speed_chroma_parity_large`, `test_hip_speed_temporal_parity_large` and `test_hip_device_resident_contract` all pass on the device with no skip markers.
 - **CAMBI parity**:

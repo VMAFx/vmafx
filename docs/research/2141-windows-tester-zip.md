@@ -111,7 +111,7 @@ Xeon Phi parts). The processor's name, vendor and family come from
 
 ## What was run here, without Windows
 
-- The report path under Wine 11.19 on `ryzen-4090-arc`: a MinGW-w64 (GCC 16.2) cross
+- The report path under Wine 11.19 on a reference workstation: a MinGW-w64 (GCC 16.2) cross
   build of `vmaf.exe` and the 51 tests of the Windows list it has, staged as the zip
   is (relative test paths), with the pruned x64 interpreter above. Under Wine,
   `hw_winfacts` read the processor from the registry and the features from

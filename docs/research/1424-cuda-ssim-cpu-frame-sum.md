@@ -19,7 +19,7 @@ and is there an exact form that keeps the sum on the device?
 - CUDA: `core/src/feature/cuda/ssim_cuda.c` and
   `integer_ssim/integer_ssim_score.cu` at master `5c8b9e9c7` (before; the
   same files at `855af3c7a`) and on `fix/cuda-ssim-cpu-arithmetic` (after).
-- Host `zeus`: RTX 4090, CUDA 13.4, gcc 16.2.1, Ryzen 9 9950X3D. `meson setup
+- Reference workstation: RTX 4090, CUDA 13.4, gcc 16.2.1, Ryzen 9 9950X3D. `meson setup
   build-cuda core -Denable_cuda=true -Denable_sycl=false --buildtype=release
   -Db_lto=false`.
 - Fixtures, 4:2:0, `--precision max`: the Netflix pair at 8 bits (48 frames)

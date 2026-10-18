@@ -48,8 +48,8 @@ The local merge-train runtime migration was independently verified and closed on
   `receipt.json`, hash `94720ca125fc500e3d844ae927ed25e06532ee6c36608895d7172a40f121ac5b`)
   and the initial `migration-6wtg48lv`.
 - Legacy unrestricted VMAFx actors are absent. Any active process with a
-  matching name (`PID 3790561 /usr/bin/bash ./train.sh`) belongs to its actual
-  external working directory (`/home/kilian/dev/scratch/k8s-worktrees/.mergetrain`).
+  matching name (`./train.sh`) belongs to its actual
+  external working directory (another repository's merge train).
 - Held PRs, non-master bases, and worktree ownership fail closed across all actions;
   release PR #1213 is excluded; and required checks and exact-head validation
   receipts fail closed.

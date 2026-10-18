@@ -13,7 +13,7 @@ hipcc contracts `a * b + c` into a fused multiply-add for device code by default
 
 - `core/src/meson.build` (`hip_kernel_sources`, the former `hip_cu_extra_flags`, `hip_strict_fp_args`).
 - [ADR-1367](../adr/1367-sycl-strict-fp-every-feature-tu.md) and [Research-1367](1367-sycl-strict-fp-every-feature-tu.md), the SYCL precedent.
-- Host: `ryzen-4090-arc`, AMD gfx1036 iGPU, ROCm 7.2.4 (`hipcc` HIP 7.2.53211, AMD clang 22.0.0git), Linux 7.2.8.
+- Host: a reference workstation, AMD gfx1036 iGPU, ROCm 7.2.4 (`hipcc` HIP 7.2.53211, AMD clang 22.0.0git), Linux 7.2.8.
 - Builds: `meson setup build-hip core -Denable_hip=true -Denable_hipcc=true -Dhip_gfx_targets=gfx1036 -Denable_cuda=false -Denable_sycl=false --buildtype=release -Db_lto=false`, once at `origin/master` 0e4368cdb ("before") and once with the list ("after").
 
 ## Findings

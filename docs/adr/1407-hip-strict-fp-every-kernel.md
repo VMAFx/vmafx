@@ -34,7 +34,7 @@ Two tests pin it. `test_hip_strict_fp_policy.py` reads the build files without a
 
 ## Consequences
 
-Measured on `ryzen-4090-arc` (gfx1036, ROCm 7.2.4, hipcc 7.2.53211, AMD clang 22.0.0git), `origin/master` 0e4368cdb against the same tree with the list.
+Measured on a reference workstation (gfx1036, ROCm 7.2.4, hipcc 7.2.53211, AMD clang 22.0.0git), `origin/master` 0e4368cdb against the same tree with the list.
 
 - **The device test separates the three builds.** With the list: 0 mismatches. With hipcc's defaults: 126 577 of 1 048 576 multiply-adds differ. With `-ffp-contract=off -fno-hip-fp32-correctly-rounded-divide-sqrt`: 303 181 divisions and 158 765 square roots differ.
 - **Per-twin max abs diff against `--backend cpu` at `--precision max`**, before -> after (576x324: Netflix pair, 48 frames; 4K: BBB 3840x2160, 22 frames; mean in brackets):

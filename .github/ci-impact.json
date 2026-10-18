@@ -121,7 +121,9 @@
     "build-config.env",
     "standards.sublime-project",
     ".mcp.json",
-    "opencode.json"
+    ".mcp.json.license",
+    "opencode.json",
+    "opencode.json.license"
   ],
   "full_patterns": [
     ".agents/*",
@@ -131,7 +133,9 @@
     ".continue/*",
     ".continue/**",
     ".mcp.json",
+    ".mcp.json.license",
     "opencode.json",
+    "opencode.json.license",
     ".config/*",
     ".config/**",
     ".cursor/*",
