@@ -149,6 +149,7 @@ void vmafx_sycl_release_early(VmafxFrame *frame)
 {
     /* The planted defect: the release event opened when the submit returns
      * (not behind the readers), and the release callback run then. */
+    assert(frame != NULL);
     VmafxSyclFrame *const sf = frame->lane;
     if (!sf) {
         return;
@@ -163,6 +164,7 @@ void vmafx_sycl_release_early(VmafxFrame *frame)
     memset(sf->signals, 0, sizeof(sf->signals)); /* signalled here, not at release */
     sf->n_signal = 0;
     (void)pthread_mutex_unlock(&sf->lock);
+    assert(n_signal <= 3u);
     if (slot) {
         vmafx_sycl_rt_slot_open(slot);
     }
