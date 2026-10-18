@@ -325,6 +325,14 @@
   pull requests.
 
 
+- **Unmodified upstream consumer ABI drop-in parity verification (ADR-3339).**
+  `scripts/dev/compat_abi_consumer.c` compiles against Netflix public headers and
+  dynamically links `libvmaf.so.3` to prove that swapping the library at runtime
+  produces identical scores. The guard includes an LD_PRELOAD plant shim
+  (`scripts/dev/compat_abi_plant.c`) that perturbs pooled scores by 1 ULP to verify
+  regression detection.
+
+
 - **vmafx-controller can keep its jobs in PostgreSQL and run as several
   replicas ([ADR-2350](docs/adr/2350-cloud-native-platform.md)).**
   `VMAFX_STORE_BACKEND=postgres` with `VMAFX_DB_DSN` stores jobs, attempts and
@@ -663,6 +671,17 @@
   ([Stream metadata field list](docs/api/stream-metadata-fields.md)).
 
 
+- **SYCL devices wait on and signal Vulkan timeline semaphores on the GPU
+  (ADR-3352).** On Linux, `vmafx_frame_import()` of a Vulkan frame on a SYCL
+  device takes `VMAFX_FENCE_VULKAN_SEMAPHORE` timelines in `acquire` and
+  `acquire_more` and waits on them on the library queue, and
+  `vmafx_frame_signal_on_release()` signals the producer's timeline behind the
+  frame's last reader, as CUDA devices do. Before, a SYCL device refused
+  Vulkan semaphores and the producer had to hand over a `sync_file` and wait
+  for a host release fence. See
+  [Vulkan frames](docs/api/vmafx/index.md#vulkan-frames).
+
+
 - **Preview of the VMAFx C API, generated from one definition (RC4,
   ADR-1852).** New headers `vmafx/vmafx.h` and `vmafx/libvmaf_bridge.h` with
   `vmafx_context_create` / `vmafx_context_destroy`, version, provenance,
@@ -781,6 +800,14 @@
   transitional. Nothing in a running installation changes.
 
 
+- Code scanning: `core/src/cpu.cpp` writes `constinit` after the type of its
+  two CPU-flag atomics and the deprecated `VMAF_SYCL_NO_GRAPH` warning in
+  `core/src/sycl/dispatch_strategy.cpp` uses an atomic bool, so CodeQL's
+  `cpp/unused-static-variable` no longer reports the three variables it misread
+  (alerts 1551 to 1553). Behaviour and the constant-initialisation check are
+  unchanged.
+
+
 - **Controller job metrics are per tenant (RC4, ADR-2349).**
   `vmafx_controller_jobs_submitted_total`, `_completed_total`,
   `_failed_total`, `vmafx_controller_jobs_pending` and `_jobs_running` carry
@@ -797,6 +824,14 @@
   of pytest's filtered collection, and one assertion step fails the job when
   any shard fails. The three-day test-timeout exception of
   [ADR-3337](docs/adr/3337-praetor-pin-320b058d-test-timeout.md) is removed.
+
+
+- **Imported CUDA frames are measured to be scored in place.** On an RTX
+  4090, frames handed to `vmafx_frame_import()` score bit for bit as host
+  uploads on every exact CUDA twin, a skipped or early fence fails the fence
+  test, and Nsight Systems shows no memory copy on the import path. The
+  device-to-device luma copies six CUDA twins make for every frame, imported
+  or uploaded, are tracked in `docs/state.md` for the tuning phase.
 
 
 - `Dev Container Build` runs on light-tier pull requests that change the image's own inputs (`dev/**`, `.dockerignore`, `build-config.env`, the workflow and its build scripts); other light pull requests pass it with a notice naming the reason, and the full tier and the master push keep building the image for every input it copies (ADR-3338).
@@ -1207,6 +1242,11 @@
   no longer names skills the repository does not carry. The HISS baseline stays at 0.
 
 
+- **The praetor pin moves to `32a35c8fb947`.** The hook bundle refuses to signal a process group
+  of 1 or less, `praetorctl adopt` adds the Python launcher `.config/lefthook/python.sh` and
+  praetor's Codex pre-tool hook, and the adopted `.gemini/` and `opencode.json` files are tracked.
+
+
 - **Praetor's text-register skills are installed and tracked.** `social-text`, `caveman` and
   `adhd-format` live under `.agents/skills/` (no longer ignored) with their projections in
   `.claude/skills/`, byte-identical to the praetor pin; the register block of `AGENTS.md` and the
@@ -1249,6 +1289,12 @@
   and the source differ.
 
 
+- README opens with a one-paragraph statement, badges moved to a Project status
+  section, quick start scores the tracked 576x324 pair with its expected output,
+  Contribute links good-first-issue and help-wanted lists; `.standards.yaml`
+  records the repository description, https homepage and topics (#2751).
+
+
 - **The plan for reference-exact extractors is written down.**
   [ADR-2343](docs/adr/2343-reference-exact-default-compat-mode.md) records that RC7 proves every
   extractor against its original implementation, that the default becomes reference-exact with
@@ -1274,6 +1320,17 @@
   `v1.0.0-rc.1` to `rc.3` stay published and are marked withdrawn. The Go
   module retracts them; through the public module proxy, pin `@v0.1.0`
   explicitly (see [the release guide](docs/development/release.md)).
+
+
+- **Release numbers in the roadmap, the exception lists and the compat API
+  notes follow the restarted release line
+  ([ADR-3292](docs/adr/3292-release-line-restart-0x.md)).** The roadmap table
+  lists its milestones in version order under their current names (0.10.0,
+  0.11.0, 1.1.0, 1.2.0, 1.3.0). The ten pelorus mirror entries of
+  `.config/lint-exceptions.d/host-c-cpp.toml` name vmafx 1.2.0 (host C/C++
+  removed) as their interval and pelorus 0.13.0 (the Rust interop crate) as
+  their trigger. The `libvmaf.h` deprecation warnings become the default in
+  0.10.0 and the functions go in 0.11.0. No expiry date changed.
 
 
 - **A pull request no longer carries the rendered changelog, ADR index or rebase
@@ -1422,6 +1479,13 @@
 
 
 - **The hosted tidy lanes retry the dev container pull.** `scripts/ci/pull-dev-image.sh` gives the login and the pull of the digest-pinned image four bounded attempts before the lane fails with an error naming the image, so a single DNS timeout on `ghcr.io` no longer fails a nightly lane (#2792).
+
+
+- **Window scores are checked on imported device frames.** The CUDA, SYCL and
+  HIP import bit-exactness tests open windows on the imported context before
+  any frame is submitted and require each completed window to equal the
+  synchronous pooled values of the device and host contexts bit for bit, on
+  every exact-twin cell (#2471, ADR-2074).
 
 
 - **The macOS Metal leg is gated, and the SYCL spill probe no longer fills the build log.** Meson
@@ -1794,6 +1858,13 @@
 - **The Windows icx-cl (SYCL) build no longer reports the C runtime's deprecated calls.** The tiny-AI model-path lookup and the model loader read the environment through `vmaf_getenv_portable()`, the tiny-model sidecar copies a feature name with `VMAF_STRDUP`, and the tests open files through `vmaf_fopen_utf8()` and temporary files through the new `vmaf_tmpfile_portable()` (`tmpfile_s()` under MSVC and icx-cl). A model path read from `VMAF_*_MODEL_PATH` is now copied into a buffer the extractor owns, so the loader's own environment read cannot overwrite it on Windows; a path longer than 4095 bytes is refused with a log line. No score changes. The Windows SYCL leg no longer passes `/experimental:c11atomics` to icx-cl, which ignored it, and `UNUSED_FUNCTION` marks the function for clang-cl and icx-cl too.
 
 
+- The negative case of the hook-environment test
+  (`scripts/githooks/tests/test_install_hooks_env.py`) plants the node-hook
+  `npm install` of pre-commit 4.6 itself. pre-commit 4.7.0 runs that install
+  without the commit's git variables, so a mutated hook block no longer showed
+  the index pollution and the test failed on the framework update.
+
+
 - **`vif` reads only the samples of each row (Netflix/vmaf `9f4bd165f`).**
   The integer VIF extractor copied a whole picture stride per luma row into
   its buffer. A picture whose stride is wider than its rows and whose last row
@@ -1871,6 +1942,16 @@
   `vif_scale_frame_s()` and the second `--feature` option copy are written out.
 
 
+- CI: `core/test/test_pelorus_udu_wrap.c` uses `NULL` again, so the
+  `Windows ARM64 MSVC` and `Windows MSVC+CUDA` builds compile it (C2065 on
+  `nullptr`, ADR-1138). The `msvcism` stage of `scripts/dev/preflight.sh` no
+  longer drops its findings when the last file it scans is clean, finds its
+  static-aggregate scanner outside this repository too, and runs in the
+  required `Pre-Commit` job on every pull request
+  ([ADR-3351](docs/adr/3351-msvcism-scan-on-light-tier.md),
+  [preflight](docs/development/preflight.md)).
+
+
 - CI: the hosted CUDA legs of `build.yml` and `libvmaf-build-matrix.yml` install
   nv-codec-headers at the commit `build-config.env` pins, through
   `scripts/ci/fetch-nv-codec-headers.sh`, instead of cloning the default branch
@@ -1896,6 +1977,16 @@
   checks refused the result, or the CLI could not start. The release download
   now has six library files; see
   [Release download](docs/getting-started/index.md#release-download).
+
+
+- Perceptual weighting: Pelorus side data that libx265 wrote behind its own
+  SEI UUID is read again instead of being ignored as foreign. Only the x265
+  UUID is accepted as an outer wrapper; any other outer UUID still leaves the
+  frame unweighted ([perceptual weighting API](docs/api/perceptual-weight.md),
+  ADR-3340).
+
+
+- **NVENC-encoded Pelorus side data is now weighted.** Perceptual weighting now accepts side data in the ABI 1.5 zero-free carrier form emitted by NVENC encoders (h264_nvenc, hevc_nvenc), which was previously ignored as foreign (-ENOENT).
 
 
 - Python harness: `persist_to_file` reads its JSON cache only while it holds the
@@ -1956,6 +2047,15 @@
   exported function as compatible". Go 1.27.2 writes export data that the checker's
   `golang.org/x/tools` v0.49.0 cannot read. The praetor pin moves from `3a766f2d56ad` to
   `d141862c430b`, whose API gate builds go-apidiff in a pinned build module with x/tools v0.51.0.
+
+
+- Process control: every place that signals a child's process group now goes
+  through `signal_process_group()` in `scripts/lib/safe_subprocess.py`, which
+  refuses a target that is not an `int` above 1 or that is the caller's own
+  group before any signal is sent. `os.killpg(1, sig)` is `kill(-1, sig)` and
+  reaches every process the user owns, and a test double's pid indexes to 1.
+  The actionlint wrapper, the `rc1-tester` copy of the module and two tests use
+  the guard (#2847).
 
 
 - **The RC3 home GPU retest kit survives a failing `nvidia-smi`.** `scripts/dev/rc3-home-gpu-retest.sh`
