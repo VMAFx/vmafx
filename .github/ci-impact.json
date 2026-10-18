@@ -9,6 +9,7 @@
     ".claude/",
     ".codex/",
     ".config/",
+    ".continue/",
     ".cursor/",
     ".devcontainer/",
     ".fleet/",
@@ -118,13 +119,19 @@
     "renovate.json",
     "rust-toolchain.toml",
     "build-config.env",
-    "standards.sublime-project"
+    "standards.sublime-project",
+    ".mcp.json",
+    "opencode.json"
   ],
   "full_patterns": [
     ".agents/*",
     ".agents/**",
     ".codex/*",
     ".codex/**",
+    ".continue/*",
+    ".continue/**",
+    ".mcp.json",
+    "opencode.json",
     ".config/*",
     ".config/**",
     ".cursor/*",

@@ -31,9 +31,9 @@
             "type": "command"
           },
           {
-            "type": "command",
             "command": "praetorctl hook codex pre-tool",
-            "timeout": 15
+            "timeout": 15,
+            "type": "command"
           }
         ],
         "matcher": "Bash"
