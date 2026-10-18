@@ -14,6 +14,8 @@ blog](https://medium.com/netflix-techblog/vmaf-the-journey-continues-44b51ee9ed1
 Test videos are in
 [vmaf_resource](https://github.com/Netflix/vmaf_resource/tree/master/python/test/resource).
 
+> The pixel formats the library reads, and the lists the FFmpeg filter and the GStreamer element take, are generated from one table: see [Input pixel formats](pixel-formats.md).
+
 ## Input ordering (read this first) {#input-ordering}
 
 !!! warning "FFmpeg takes the distorted video first and the reference second"

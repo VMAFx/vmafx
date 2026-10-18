@@ -24,6 +24,10 @@
 extern "C" {
 #endif
 
+/* NOLINTBEGIN(modernize-use-using,performance-enum-size): public C header included by C
+ * and C++ translation units; C has no `using`, and C has no fixed enum underlying type
+ * across the required toolchains (ADR-1470). ADR-1138. */
+
 /*
  * VmafxDeviceFlags: How a device is created. Bits of a u32 field.
  * @since 0.1
@@ -169,6 +173,8 @@ VMAFX_EXPORT VmafxStatus vmafx_device_describe(const VmafxDevice *device, VmafxD
  */
 VMAFX_EXPORT VmafxStatus vmafx_device_profile(VmafxDevice *device, const char **out,
                                               VmafxError **error);
+
+/* NOLINTEND(modernize-use-using,performance-enum-size) */
 
 #ifdef __cplusplus
 }

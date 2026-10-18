@@ -23,19 +23,39 @@ components:
         pixel_format:
           type: "string"
           enum:
+            - "400"
             - "420"
             - "422"
             - "444"
-          description: "Chroma subsampling of raw .yuv input. One of: 420, 422, 444."
+            - "nv12"
+            - "nv16"
+            - "nv24"
+            - "p010"
+            - "p016"
+            - "p210"
+            - "p216"
+            - "p410"
+            - "p416"
+            - "yuyv422"
+            - "uyvy422"
+            - "v210"
+            - "y210"
+            - "y212"
+            - "xv30"
+            - "xv36"
+            - "vuyx"
+            - "ayuv"
+            - "yuv444p16msb"
+            - "rgb"
+            - "rgba"
+            - "bgra"
+          description: "Layout of raw .yuv input: 400 (luma only), 420, 422 or 444 planar, or a layout of the input format table (semi-planar, packed, or RGB converted to Y'CbCr with the rgb_* statement, ADR-2145, ADR-2146). One of: 400, 420, 422, 444, nv12, nv16, nv24, p010, p016, p210, p216, p410, p416, yuyv422, uyvy422, v210, y210, y212, xv30, xv36, vuyx, ayuv, yuv444p16msb, rgb, rgba, bgra."
         bitdepth:
           type: "integer"
-          enum:
-            - 8
-            - 10
-            - 12
-            - 16
+          minimum: 8
+          maximum: 16
           format: "int32"
-          description: "Bits per sample of raw .yuv input. One of: 8, 10, 12, 16."
+          description: "Bits per sample of raw .yuv input, 8 to 16 (implied by a layout that fixes it)."
         disable_clip:
           type: "boolean"
           description: "Do not clip the model score to [0, 100] (the model's disable_clip). Unset: false."

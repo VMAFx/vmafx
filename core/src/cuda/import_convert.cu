@@ -38,10 +38,18 @@ __global__ void vmafx_import_shift_16(const uint8_t *src, size_t src_pitch, uint
 __global__ void vmafx_import_gather(const uint8_t *src, size_t src_pitch, uint8_t *dst,
                                     size_t dst_pitch, unsigned w, unsigned h, unsigned step,
                                     unsigned offset, unsigned in_bytes, unsigned shift,
-                                    unsigned mask, unsigned out_bytes)
+                                    unsigned mask, unsigned out_bytes, unsigned period,
+                                    unsigned group_elems, unsigned pattern)
 {
     vmafx_import_gather_body(src, src_pitch, dst, dst_pitch, w, h, step, offset, in_bytes, shift,
-                             mask, out_bytes);
+                             mask, out_bytes, period, group_elems, pattern);
+}
+
+__global__ void vmafx_import_rgb(const uint8_t *src, size_t src_pitch, uint8_t *dst,
+                                 size_t dst_pitch, unsigned w, unsigned h, unsigned plane,
+                                 VmafxRgbPlan rgb)
+{
+    vmafx_import_rgb_body(src, src_pitch, dst, dst_pitch, w, h, plane, rgb);
 }
 
 } /* extern "C" */

@@ -27,6 +27,12 @@ NULLPTR_BEGIN = (
     " * required Windows builds compile this TU with cl.exe (C2065). ADR-1138. */"
 )
 NULLPTR_END = "/* NOLINTEND(modernize-use-nullptr) */"
+C_HEADER_BEGIN = (
+    "/* NOLINTBEGIN(modernize-use-using,performance-enum-size): public C header included by C\n"
+    " * and C++ translation units; C has no `using`, and C has no fixed enum underlying type\n"
+    " * across the required toolchains (ADR-1470). ADR-1138. */"
+)
+C_HEADER_END = "/* NOLINTEND(modernize-use-using,performance-enum-size) */"
 
 
 def licence_block() -> str:

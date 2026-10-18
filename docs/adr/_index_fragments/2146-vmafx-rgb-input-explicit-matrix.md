@@ -1,0 +1,1 @@
+| [ADR-2146](2146-vmafx-rgb-input-explicit-matrix.md) | RGB / RGBA / BGRA input (8 to 16 bits) is converted to Y'CbCr in Q30 integers with a matrix, range and transfer the caller states (BT.601, BT.709, BT.2020 NCL); refused by name without them; one reference, CUDA and HIP twins bit-exact; `--rgb_*` CLI flags; ABI 0.1.11 |

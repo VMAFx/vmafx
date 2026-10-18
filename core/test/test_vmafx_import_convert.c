@@ -22,6 +22,7 @@
 #include "mu_table.h"
 #include "test.h"
 #include "vmafx/import_convert.h"
+#include "vmafx/import_layouts_gen.h"
 #include "vmafx/internal.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
@@ -51,94 +52,30 @@ static void read_plane(const VmafxImportLayout *layout, uint32_t bpc, uint32_t i
                             w, h, &rd);
 }
 
-static const VmafxImportLayout nv16 = {VMAFX_PIXEL_FORMAT_NV16,
-                                       VMAFX_PIXEL_FORMAT_YUV422P,
-                                       2u,
-                                       8u,
-                                       8u,
-                                       0u,
-                                       true,
-                                       "nv16",
-                                       VMAFX_IMPORT_PACKED_NONE,
-                                       {0u, 0u, 0u},
-                                       false};
-static const VmafxImportLayout p416 = {VMAFX_PIXEL_FORMAT_P416,
-                                       VMAFX_PIXEL_FORMAT_YUV444P,
-                                       2u,
-                                       16u,
-                                       16u,
-                                       0u,
-                                       true,
-                                       "p416",
-                                       VMAFX_IMPORT_PACKED_NONE,
-                                       {0u, 0u, 0u},
-                                       false};
-static const VmafxImportLayout y210 = {VMAFX_PIXEL_FORMAT_Y210,
-                                       VMAFX_PIXEL_FORMAT_YUV422P,
-                                       1u,
-                                       10u,
-                                       10u,
-                                       6u,
-                                       false,
-                                       "y210",
-                                       VMAFX_IMPORT_PACKED_YUYV,
-                                       {0u, 1u, 3u},
-                                       false};
-static const VmafxImportLayout yuy2 = {VMAFX_PIXEL_FORMAT_YUYV422,
-                                       VMAFX_PIXEL_FORMAT_YUV422P,
-                                       1u,
-                                       8u,
-                                       8u,
-                                       0u,
-                                       false,
-                                       "yuyv422",
-                                       VMAFX_IMPORT_PACKED_YUYV,
-                                       {0u, 1u, 3u},
-                                       false};
-static const VmafxImportLayout xv30 = {VMAFX_PIXEL_FORMAT_Y410,
-                                       VMAFX_PIXEL_FORMAT_YUV444P,
-                                       1u,
-                                       10u,
-                                       10u,
-                                       0u,
-                                       false,
-                                       "xv30",
-                                       VMAFX_IMPORT_PACKED_XVYU2101010,
-                                       {0u, 0u, 0u},
-                                       false};
-static const VmafxImportLayout xv36 = {VMAFX_PIXEL_FORMAT_XV36,
-                                       VMAFX_PIXEL_FORMAT_YUV444P,
-                                       1u,
-                                       12u,
-                                       12u,
-                                       4u,
-                                       false,
-                                       "xv36",
-                                       VMAFX_IMPORT_PACKED_UYV4,
-                                       {1u, 0u, 2u},
-                                       false};
-static const VmafxImportLayout vuyx = {VMAFX_PIXEL_FORMAT_VUYX,
-                                       VMAFX_PIXEL_FORMAT_YUV444P,
-                                       1u,
-                                       8u,
-                                       8u,
-                                       0u,
-                                       false,
-                                       "vuyx",
-                                       VMAFX_IMPORT_PACKED_UYV4,
-                                       {2u, 1u, 0u},
-                                       false};
-static const VmafxImportLayout msb = {VMAFX_PIXEL_FORMAT_YUV444P_MSB,
-                                      VMAFX_PIXEL_FORMAT_YUV444P,
-                                      3u,
-                                      9u,
-                                      16u,
-                                      0u,
-                                      false,
-                                      "yuv444p16msb",
-                                      VMAFX_IMPORT_PACKED_NONE,
-                                      {0u, 0u, 0u},
-                                      true};
+/* The rows of the generated layout table (core/api/vmafx.toml, ADR-2145); where
+ * each plane's samples live is pinned by the hand-computed bytes below and by
+ * the FFmpeg oracle (test_vmafx_import_ffmpeg_oracle). */
+static const VmafxImportLayout *layout_of(uint32_t pix_fmt)
+{
+    for (size_t i = 0; i < VMAFX_N_IMPORT_LAYOUTS; i++) {
+        if (vmafx_import_layouts[i].pix_fmt == pix_fmt) {
+            return &vmafx_import_layouts[i];
+        }
+    }
+    return NULL;
+}
+
+#define nv16 (*layout_of(VMAFX_PIXEL_FORMAT_NV16))
+#define p416 (*layout_of(VMAFX_PIXEL_FORMAT_P416))
+#define y210 (*layout_of(VMAFX_PIXEL_FORMAT_Y210))
+#define yuy2 (*layout_of(VMAFX_PIXEL_FORMAT_YUYV422))
+#define xv30 (*layout_of(VMAFX_PIXEL_FORMAT_Y410))
+#define xv36 (*layout_of(VMAFX_PIXEL_FORMAT_XV36))
+#define vuyx (*layout_of(VMAFX_PIXEL_FORMAT_VUYX))
+#define msb (*layout_of(VMAFX_PIXEL_FORMAT_YUV444P_MSB))
+#define uyvy (*layout_of(VMAFX_PIXEL_FORMAT_UYVY422))
+#define ayuv (*layout_of(VMAFX_PIXEL_FORMAT_AYUV))
+#define v210 (*layout_of(VMAFX_PIXEL_FORMAT_V210))
 
 /* NV16: chroma rows are full height and hold one Cb Cr pair per column. */
 static char *test_nv16_pairs(void)
@@ -283,12 +220,89 @@ static char *test_other_packed_layouts(void)
     return NULL;
 }
 
+/* UYVY: Cb Y0 Cr Y1 bytes; the layout differs from YUY2 by element order only. */
+static char *test_uyvy_order(void)
+{
+    const uint8_t row[8] = {10, 20, 30, 40, 50, 60, 70, 80}; /* Cb Y0 Cr Y1 Cb Y0 Cr Y1 */
+    uint8_t y[4];
+    uint8_t cb[2];
+    uint8_t cr[2];
+    read_plane(&uyvy, 8u, 0u, row, 8u, 4u, 1u, y);
+    read_plane(&uyvy, 8u, 1u, row, 8u, 2u, 1u, cb);
+    read_plane(&uyvy, 8u, 2u, row, 8u, 2u, 1u, cr);
+    mu_assert("uyvy y", y[0] == 20u && y[1] == 40u && y[2] == 60u && y[3] == 80u);
+    mu_assert("uyvy c", cb[0] == 10u && cb[1] == 50u && cr[0] == 30u && cr[1] == 70u);
+    return NULL;
+}
+
+/* AYUV: A Y Cb Cr bytes; the alpha byte never reaches a plane. */
+static char *test_ayuv_alpha_unread(void)
+{
+    const uint8_t row[8] = {0xee, 1, 2, 3, 0xee, 4, 5, 6};
+    uint8_t y[2];
+    uint8_t cb[2];
+    uint8_t cr[2];
+    read_plane(&ayuv, 8u, 0u, row, 8u, 2u, 1u, y);
+    read_plane(&ayuv, 8u, 1u, row, 8u, 2u, 1u, cb);
+    read_plane(&ayuv, 8u, 2u, row, 8u, 2u, 1u, cr);
+    mu_assert("ayuv",
+              y[0] == 1u && y[1] == 4u && cb[0] == 2u && cb[1] == 5u && cr[0] == 3u && cr[1] == 6u);
+    return NULL;
+}
+
+/* V210: the words Cb0 Y0 Cr0 / Y1 Cb1 Y2 / Cr1 Y3 Cb2 / Y4 Cr2 Y5, ten bits at
+ * 0, 10 and 20; the two top bits of a word are not read; a width that ends a
+ * group early reads only its pixels. The words are built from the format's
+ * definition, sample value = 100 + position. */
+static char *test_v210_words(void)
+{
+    uint32_t w[4];
+    w[0] = 200u | (100u << 10u) | (400u << 20u) | (3u << 30u);
+    w[1] = 101u | (201u << 10u) | (102u << 20u) | (3u << 30u);
+    w[2] = 401u | (103u << 10u) | (202u << 20u) | (3u << 30u);
+    w[3] = 104u | (402u << 10u) | (105u << 20u) | (3u << 30u);
+    uint8_t row[16];
+    memcpy(row, w, sizeof(row));
+    uint8_t y[12];
+    uint8_t cb[6];
+    uint8_t cr[6];
+    read_plane(&v210, 10u, 0u, row, 16u, 6u, 1u, y);
+    read_plane(&v210, 10u, 1u, row, 16u, 3u, 1u, cb);
+    read_plane(&v210, 10u, 2u, row, 16u, 3u, 1u, cr);
+    for (unsigned k = 0; k < 6u; k++) {
+        mu_assert("v210 luma in raster order", get16(y, k) == 100u + k);
+    }
+    mu_assert("v210 cb", get16(cb, 0) == 200u && get16(cb, 1) == 201u && get16(cb, 2) == 202u);
+    mu_assert("v210 cr", get16(cr, 0) == 400u && get16(cr, 1) == 401u && get16(cr, 2) == 402u);
+    /* Eight pixels: the second group holds pixels 6 and 7 only. */
+    uint8_t two[32];
+    memset(two, 0xff, sizeof(two));
+    memcpy(two, w, 16);
+    uint32_t w2[4] = {7u | (8u << 10u), 9u | (11u << 10u), 0x3ffu, 0x3ffu};
+    memcpy(two + 16, w2, 16);
+    uint8_t y8[16];
+    read_plane(&v210, 10u, 0u, two, 32u, 8u, 1u, y8);
+    mu_assert("v210 second group", get16(y8, 6) == 8u && get16(y8, 7) == 9u);
+    unsigned pw[3] = {8u, 4u, 4u};
+    unsigned ph[3] = {3u, 3u, 3u};
+    uint64_t rowb = 0;
+    uint64_t rows = 0;
+    vmafx_import_plane_extent(&v210, 10u, 0u, pw, ph, &rowb, &rows);
+    mu_assert("v210 row: two groups for 8 pixels", rowb == 32u && rows == 3u);
+    pw[0] = 6u;
+    vmafx_import_plane_extent(&v210, 10u, 0u, pw, ph, &rowb, &rows);
+    mu_assert("v210 row: one group for 6 pixels", rowb == 16u && rows == 3u);
+    return NULL;
+}
+
 char *run_tests(void)
 {
     static const MuTest tests[] = {
         MU_TEST(test_other_packed_layouts), MU_TEST(test_nv16_pairs),
         MU_TEST(test_p416_extremes),        MU_TEST(test_y210_groups),
         MU_TEST(test_xv30_fields),          MU_TEST(test_extents_and_table),
+        MU_TEST(test_uyvy_order),           MU_TEST(test_ayuv_alpha_unread),
+        MU_TEST(test_v210_words),
     };
     return mu_run_table(tests, MU_TABLE_LEN(tests));
 }

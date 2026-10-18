@@ -1,0 +1,1 @@
+| [ADR-2145](2145-vmafx-input-format-table.md) | One input format table (`[[pixel_formats]]`) generates the import layout table, the FFmpeg and GStreamer format lists and the CLI layout names; AYUV, UYVY422 and V210 join the layouts (V210 as a grouped read plan); CLI raw 400, bit depths 9 to 16 and y4m p9 / p14 / p16 tags; ABI 0.1.11 |
