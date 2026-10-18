@@ -696,9 +696,11 @@ compat-abi-parity:
 	python3 scripts/dev/upstream_parity.py --container $(UPSTREAM_PARITY_IMAGE) --mode probe \
 	    --abi --jobs $(UPSTREAM_PARITY_JOBS) $(UPSTREAM_PARITY_ARGS)
 
+# The plant must fail with exit 1 (a difference); exit 2 (cannot run) is no proof.
 compat-abi-parity-plant:
-	! python3 scripts/dev/upstream_parity.py --container $(UPSTREAM_PARITY_IMAGE) --mode probe \
-	    --abi --plant --jobs $(UPSTREAM_PARITY_JOBS) $(UPSTREAM_PARITY_ARGS)
+	python3 scripts/dev/upstream_parity.py --container $(UPSTREAM_PARITY_IMAGE) --mode probe \
+	    --abi --plant --jobs $(UPSTREAM_PARITY_JOBS) $(UPSTREAM_PARITY_ARGS); \
+	    status=$$?; test "$$status" -eq 1 || { echo "plant: expected exit 1, got $$status" >&2; exit 1; }
 
 # Sanitizer build (ASan + UBSan) — used by CI and `/build-vmaf --sanitizers`.
 # The suite's timeouts are sized for an uninstrumented build; a sanitizer or

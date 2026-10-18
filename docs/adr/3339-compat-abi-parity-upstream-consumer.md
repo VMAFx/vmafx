@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-10-18
-- **Deciders**: Kilian, Lusoris maintainers
+- **Deciders**: lusoris
 - **Tags**: compat, abi, testing, ci
 
 ## Context
@@ -35,3 +35,9 @@ In CI, the gate runs in `.github/workflows/tests-and-quality-gates.yml` on `ubun
 - **Positive**: Verifiable proof of drop-in dynamic ABI compatibility between Netflix `libvmaf.so.3` and fork `libvmaf.so.3`. Defect plant reliably trips the gate on 1 ULP pooled score perturbation.
 - **Negative**: Ephemeral JSON write and parse in the consumer adds marginal execution overhead (~10ms per run).
 - **Neutral / follow-ups**: Make targets `compat-abi-parity` and `compat-abi-parity-plant` added. CI workflow in `tests-and-quality-gates.yml` executes probe and plant under `ubuntu-26.04`.
+
+## References
+
+- Issue #2473: identical scores to Netflix's `libvmaf.so.3` through an unmodified upstream consumer, and a planted compat defect that fails the job.
+- Operator order `vmafx-next-20261017-2359` (2026-10-17, paraphrased): take the next milestone 0.1.0 issue to a mergeable pull request.
+- [ADR-1852](1852-vmafx-api-redesign.md), [upstream parity guide](../development/upstream-parity.md).

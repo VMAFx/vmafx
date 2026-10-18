@@ -251,8 +251,11 @@ jobs:
 
       - name: Run Compat ABI Planted Defect (Assert Failure)
         if: steps.impact.outputs.golden_harness == 'true'
+        # Exit 1 (a difference) is the proof; exit 2 (cannot run) fails the step.
         run: |
-          ! python3 scripts/dev/upstream_parity.py --unpinned --abi --plant --mode probe --jobs 2
+          status=0
+          python3 scripts/dev/upstream_parity.py --unpinned --abi --plant --mode probe --jobs 2 || status=$?
+          test "$status" -eq 1 || { echo "::error::plant: expected exit 1, got $status"; exit 1; }
 
   # ===== Sanitizer build =====
   # required-aggregator: Sanitizers (address)
