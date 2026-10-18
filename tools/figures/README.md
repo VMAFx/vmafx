@@ -151,6 +151,20 @@ its content, so keep `make docs-figures` in the gate.
   to the interactive figure. `--wiki` takes the URL from `site_url` in
   `mkdocs.yml` instead.
 
+## ESLint
+
+When an adopter's flat config lints JavaScript files with type checking enabled
+(`parserOptions: { project: true }`) without a root `tsconfig.json` covering
+`tools/figures/`, import the emitted figure lint configuration:
+
+```js
+import figures from './tools/figures/eslint.figures.mjs';
+```
+
+And add `figures(ts)` to your ESLint configuration array. It sets
+`parserOptions: { project: false }` and disables type-checked rules for
+`tools/figures/**`, leaving every syntactic rule in place.
+
 ## Checks
 
 Each command fails when:
@@ -209,6 +223,7 @@ byte for byte.
   palette.
 - `mkdocs_hook.py`, `astro.mjs`, `serve.mjs`: the MkDocs hook, the Astro
   integration and the file server it uses.
+- `eslint.figures.mjs`: flat-config entry for type-checked ESLint setups.
 
 An edit to `core.mjs` or to the vendored render files changes the engine hash
 recorded in every figure's JSON, so after an update that changes them, run
