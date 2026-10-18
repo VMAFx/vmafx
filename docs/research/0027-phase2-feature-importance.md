@@ -21,7 +21,7 @@ Full-feature parquet extracted over the Netflix Public 9-source × 70
 distortion corpus (per `ai/scripts/extract_full_features.py` from
 PR #186) — **11 040 frame rows × 21 feature columns + `vmaf` target**.
 0 NaN rows after extraction (all 21 metrics emit cleanly through the
-fork's libvmaf CLI). Wall time on `ryzen-4090-arc` was ~118 minutes
+fork's libvmaf CLI). Wall time on a reference workstation was ~118 minutes
 on CPU, dominated by `cambi` and `ssimulacra2` (~70 % of per-frame
 extraction cost).
 
@@ -259,7 +259,7 @@ the Netflix corpus + (eventually) KoNViD parquet.
 ## Reproducer
 
 ```bash
-# 1. Full-feature extraction (~118 min wall on ryzen-4090-arc CPU):
+# 1. Full-feature extraction (~118 min wall on a reference workstation CPU):
 python3 ai/scripts/extract_full_features.py \
   --out runs/full_features_netflix.parquet
 

@@ -33,7 +33,7 @@ This investigation resolves the row by:
 
 ## 2. Hardware environment and idle verification
 
-Physical hardware verification was performed on the local development workstation (zeus):
+Physical hardware verification was performed on the local development workstation:
 
 ### 2.1 Hardware and driver topology
 

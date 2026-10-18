@@ -318,7 +318,7 @@ its verdict there is marked advisory; run in the dev image it is the guard's.
     `make upstream-parity-full`.
 
 Full matrix: measured on 2026-10-03 in the rebuilt dev image
-(`sha256:14db4c43070a`, GCC 15.2.0, glibc 2.43) on `ryzen-4090-arc` (Ryzen 9
+(`sha256:14db4c43070a`, GCC 15.2.0, glibc 2.43) on a reference workstation (Ryzen 9
 9950X3D): master `f65dc6969` against Netflix `9e48141b`, after every revert
 and port landed. The allowlist holds 37 fragments, all deliberate deviations;
 none is pending. Every bound measured in the previous image

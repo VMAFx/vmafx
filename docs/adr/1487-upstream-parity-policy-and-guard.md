@@ -146,7 +146,7 @@ workstation). A hosted nightly job is proposed, not wired:
 ## Consequences
 
 - **Measured on master** `96af5b34e` with this guard (2026-10-03, dev
-  image `sha256:43ef1e32cb32`, GCC 15.2.0, glibc 2.43, `ryzen-4090-arc`,
+  image `sha256:43ef1e32cb32`, GCC 15.2.0, glibc 2.43, a reference workstation,
   against Netflix `9e48141b`), full matrix with the heap check: 5,349 runs
   per tree, 886,002 values, 780,741 identical, 83,516 differences, each
   covered by one of 42 fragments (37 deliberate, 5 pending); none uncovered,

@@ -18,7 +18,7 @@ Same setup as [Research-0029 §"Method"](0029-phase3b-standardscaler-results.md)
 **StandardScaler** per fold. Only difference: 5 seeds (0–4) instead of 1.
 
 Driver: `ai/scripts/phase3_subset_sweep.py --seeds 0,1,2,3,4 --standardize`.
-Wall: ~22 min on `ryzen-4090-arc` CPU for canonical6 + Subset B
+Wall: ~22 min on a reference workstation CPU for canonical6 + Subset B
 (2 subsets × 5 seeds × 9 folds = 90 fold-trainings).
 
 Subsets A and C were not re-run — they failed the +0.005 threshold

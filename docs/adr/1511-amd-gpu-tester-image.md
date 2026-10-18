@@ -10,7 +10,7 @@
 
 Every HIP twin is declared exact (`scripts/ci/exact_twins.d/*.hip`) on the strength
 of measurements on one GPU, the `gfx1036` graphics of the Ryzen 9 9950X3D in
-`ryzen-4090-arc` (RDNA2, two compute units, wave32). CDNA GPUs run wave64, RDNA3 and
+a reference workstation (RDNA2, two compute units, wave32). CDNA GPUs run wave64, RDNA3 and
 RDNA4 have other instruction sets, and none of their code objects has run. The
 maintainer asked for tester kits for hardware the project lacks, on the condition that
 no licence is broken (ADR-1503); the Intel and NVIDIA kits (ADR-1505, ADR-1509) fill

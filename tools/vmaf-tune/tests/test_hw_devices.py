@@ -33,8 +33,8 @@ def test_discover_intel_vaapi_device_prefers_by_path(tmp_path):
     nvidia = dri / "renderD128"
     intel.touch()
     nvidia.touch()
-    (dri / "by-path" / "pci-0000:06:00.0-render").symlink_to("../renderD128")
-    (dri / "by-path" / "pci-0000:03:00.0-render").symlink_to("../renderD129")
+    (dri / "by-path" / "pci-0000:0a:00.0-render").symlink_to("../renderD128")
+    (dri / "by-path" / "pci-0000:0b:00.0-render").symlink_to("../renderD129")
     _write_vendor(sys_class, "renderD128", "0x10de")
     _write_vendor(sys_class, "renderD129", "0x8086")
 

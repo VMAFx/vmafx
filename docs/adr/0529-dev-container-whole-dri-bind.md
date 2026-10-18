@@ -24,9 +24,8 @@ if the directory content has changed or the directory is momentarily empty (race
 window during udev settle), the OCI hook fails to create the mount and the
 container exits before the entrypoint runs.
 
-The immediate trigger was a BBB 4K v10 report regeneration run: the host had
-been rebooted between the last container start and the new run, and the by-path
-symlinks had changed.
+The immediate trigger was a BBB 4K v10 report regeneration run: the by-path
+symlinks had changed between the last container start and the new run.
 
 ## Decision
 

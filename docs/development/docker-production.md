@@ -149,7 +149,7 @@ Add the host's `render` and `video` groups by numeric ID:
 
 ```bash
 # The GPU's PCI address; list them with: ls -l /dev/dri/by-path/
-render=$(readlink -f /dev/dri/by-path/pci-0000:7d:00.0-render)
+render=$(readlink -f /dev/dri/by-path/pci-<amd-bdf>-render)
 docker run --rm \
   --device /dev/kfd \
   --device "$render" \
@@ -196,7 +196,7 @@ ROCm:
 
 ```bash
 # The GPU's PCI address; list them with: ls -l /dev/dri/by-path/
-render=$(readlink -f /dev/dri/by-path/pci-0000:03:00.0-render)
+render=$(readlink -f /dev/dri/by-path/pci-<arc-bdf>-render)
 docker run --rm \
   --device "$render" \
   --group-add "$(getent group render | cut -d: -f3)" \

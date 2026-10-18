@@ -3,7 +3,7 @@
 
 Companion to [ADR-1185](../adr/1185-backend-perf-baseline-methodology.md).
 Records what was measured, on what, and the two defects the measurement
-exposed. Every figure below came from a command run on the `ryzen-4090-arc`
+exposed. Every figure below came from a command run on the reference workstation
 host on 2026-09-06; none is copied from a previous run or another document.
 
 ## 1. Why the old table could not simply be re-run
@@ -42,7 +42,7 @@ plus a 200-frame 4K BBB pair generated from
 title card, libx264 CRF 35 distortion). Models: `model/vmaf_v0.6.1.json` and
 the resolved default `vmaf_v1.0.16_3d0h`.
 
-Numbers are in [`docs/benchmarks.md`](../benchmarks.md#refreshed-per-backend-baselines-2026-09-06-ryzen-4090-arc).
+Numbers are in [`docs/benchmarks.md`](../benchmarks.md#refreshed-per-backend-baselines-2026-09-06-reference-workstation).
 
 **Measurement conditions were not clean.** The host ran a container rebuild
 throughout. The 1-minute load average sat at 6.0–11.5 for most cells and

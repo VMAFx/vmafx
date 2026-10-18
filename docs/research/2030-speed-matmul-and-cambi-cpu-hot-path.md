@@ -11,7 +11,7 @@
 
 | Item | Value |
 | --- | --- |
-| Host | `ryzen-4090-arc`, 32 logical cores, AVX-512 present |
+| Host | a reference workstation, 32 logical cores, AVX-512 present |
 | Branch point | `cd52f2670` (`origin/master` at the time the worktree was cut; `ce7ff4f6f` adds only docs + a shell gate, no C) |
 | Build | `meson setup core --buildtype release -Db_ndebug=true -Dc_args='-g -fno-omit-frame-pointer'`, CUDA/SYCL/HIP off |
 | Profiler | `perf` 7.2.3-1, `perf record -F 4999 -g --call-graph=fp` |
