@@ -44,9 +44,11 @@ typedef struct VmafPerceptualWeightStore {
     double strength;                       /* per-frame weight = 1 + strength*s  */
     VmafPerceptualFrameSummary *summaries; /* indexed by picture index           */
     size_t capacity;                       /* number of allocated slots          */
+    uint8_t *scratch;   /* carrier decode buffer, grown to largest payload seen */
+    size_t scratch_cap; /* HISS-03 no per-frame alloc in steady state           */
 } VmafPerceptualWeightStore;
 
-/* Release the summary array. Safe on a zero-initialised store (no-op). */
+/* Release the summary array and scratch buffer. Safe on a zero-initialised store (no-op). */
 void vmaf_perceptual_weight_store_destroy(VmafPerceptualWeightStore *store);
 
 /*

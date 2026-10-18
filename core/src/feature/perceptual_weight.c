@@ -403,11 +403,54 @@ void vmaf_perceptual_weight_store_destroy(VmafPerceptualWeightStore *store)
     free(store->summaries);
     store->summaries = NULL;
     store->capacity = 0;
+    free(store->scratch);
+    store->scratch = NULL;
+    store->scratch_cap = 0;
+}
+
+/*
+ * Unwrap a Pelorus side-data payload into its canonical blob form. Handles both
+ * the raw blob form (pelorus_sidedata_uuid) and the ABI 1.5 zero-free carrier form
+ * (pelorus_carrier_uuid, COBS decoded into store->scratch). Grows store->scratch
+ * on demand to the largest payload seen (HISS-03).
+ */
+static int unwrap_payload(VmafPerceptualWeightStore *store, const uint8_t *blob, size_t len,
+                          const uint8_t **out_blob, size_t *out_len)
+{
+    pel_result rc;
+
+    assert(store != NULL && blob != NULL);
+    assert(out_blob != NULL && out_len != NULL);
+
+    rc = pel_blob_unwrap(blob, len, store->scratch, store->scratch_cap, out_blob, out_len);
+    if (rc == PEL_ERR_RANGE) {
+        uint8_t *grown = realloc(store->scratch, len);
+        if (grown == NULL) {
+            return -ENOMEM;
+        }
+        store->scratch = grown;
+        store->scratch_cap = len;
+        rc = pel_blob_unwrap(blob, len, store->scratch, store->scratch_cap, out_blob, out_len);
+    }
+
+    switch (rc) {
+    case PEL_OK:
+        return 0;
+    case PEL_ERR_ABSENT:
+        return -ENOENT;
+    case PEL_ERR_ABI:
+    case PEL_ERR_TRUNCATED:
+        return -EPROTO;
+    default:
+        return -EINVAL;
+    }
 }
 
 int vmaf_perceptual_weight_ingest(VmafPerceptualWeightStore *store, const uint8_t *blob, size_t len,
                                   unsigned pic_index)
 {
+    const uint8_t *unwrapped = NULL;
+    size_t unwrapped_len = 0;
     const uint8_t *image = NULL;
     size_t image_len = 0;
     double salience;
@@ -417,12 +460,17 @@ int vmaf_perceptual_weight_ingest(VmafPerceptualWeightStore *store, const uint8_
         return -EINVAL;
     }
 
-    err = locate_image(blob, len, &image, &image_len);
+    err = unwrap_payload(store, blob, len, &unwrapped, &unwrapped_len);
+    if (err != 0) {
+        return err;
+    }
+
+    err = locate_image(unwrapped, unwrapped_len, &image, &image_len);
     if (err != 0) {
         return err; /* -ENOENT (foreign) or -EPROTO (ABI) — frame stays unweighted */
     }
 
-    salience = derive_salience(blob, len, image, image_len);
+    salience = derive_salience(unwrapped, unwrapped_len, image, image_len);
 
     err = ensure_capacity(store, pic_index);
     if (err != 0) {
