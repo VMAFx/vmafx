@@ -908,5 +908,7 @@ core/tools/vmaf_vpl_core.c
 core/tools/y4m_input.c
 core/tools/yuv_input.c
 ffmpeg-patches/test/fault_inject_libvmaf.c
+scripts/dev/compat_abi_consumer.c
+scripts/dev/compat_abi_plant.c
 scripts/dev/hip_dispatch_drop_probe.hip
 scripts/dev/upstream_parity_harness.c

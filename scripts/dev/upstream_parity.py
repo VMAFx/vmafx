@@ -791,6 +791,7 @@ def build_compat_plant(
         "-shared",
         "-fPIC",
         "-O2",
+        "-D_GNU_SOURCE",
         "-o",
         output,
         PLANT_SOURCE,

@@ -4,9 +4,9 @@
  *
  *  LD_PRELOAD plant shim for compat ABI parity verification (ADR-3339).
  *  Intercepts vmaf_feature_score_pooled() and moves the score by one ULP.
+ *  RTLD_NEXT needs _GNU_SOURCE, which the build passes as -D_GNU_SOURCE.
  */
 
-#define _GNU_SOURCE
 #include <dlfcn.h>
 #include <math.h>
 #include <stdint.h>

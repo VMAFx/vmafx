@@ -4,7 +4,7 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "cc_version": "gcc-15 (Ubuntu 15.2.0-16ubuntu1) 15.2.0",
-  "tus": 533,
+  "tus": 535,
   "measured_sources": [
     "compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_stat.c",
     "compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_std.c",
@@ -538,6 +538,8 @@
     "core/tools/y4m_input.c",
     "core/tools/yuv_input.c",
     "ffmpeg-patches/test/fault_inject_libvmaf.c",
+    "scripts/dev/compat_abi_consumer.c",
+    "scripts/dev/compat_abi_plant.c",
     "scripts/dev/upstream_parity_harness.c"
   ],
   "compile_failures": [],
@@ -1452,6 +1454,22 @@
         }
       },
       "previous_baseline_sha256": "495152f5813fcfccfcaca022c625631f05e0526e2642cd7d0c98314d3eafc744"
+    },
+    {
+      "sources": [
+        "scripts/dev/compat_abi_consumer.c",
+        "scripts/dev/compat_abi_plant.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "scripts/dev/compat_abi_consumer.c",
+            "scripts/dev/compat_abi_plant.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "f87e433402db68378ffe08216676ec1efae52f1859cdc3f4d855e0018d39d049"
     }
   ]
 }

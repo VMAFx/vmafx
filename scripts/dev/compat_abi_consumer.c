@@ -464,6 +464,25 @@ static void print_pooled(const ParityRun *run)
     }
 }
 
+static void print_aggregate_line(const char *line)
+{
+    char name[PARITY_NAME_LEN];
+    char val_str[PARITY_NAME_LEN];
+    if (!match_aggregate_entry(line, name, sizeof(name), val_str, sizeof(val_str))) {
+        return;
+    }
+    if (!strcmp(val_str, "null")) {
+        emit(printf("agg %s -inf\n", name));
+        return;
+    }
+    char *endptr = NULL;
+    errno = 0;
+    const double val = strtod(val_str, &endptr);
+    if (endptr != val_str && errno == 0) {
+        emit(printf("agg %s %.17g\n", name, val));
+    }
+}
+
 static int print_aggregates(const char *json_path)
 {
     FILE *f = fopen(json_path, "r");
@@ -483,20 +502,7 @@ static int print_aggregates(const char *json_path)
         if (*k == '}') {
             break;
         }
-        char name[PARITY_NAME_LEN];
-        char val_str[PARITY_NAME_LEN];
-        if (match_aggregate_entry(line, name, sizeof(name), val_str, sizeof(val_str))) {
-            if (!strcmp(val_str, "null")) {
-                emit(printf("agg %s -inf\n", name));
-            } else {
-                char *endptr = NULL;
-                errno = 0;
-                const double val = strtod(val_str, &endptr);
-                if (endptr != val_str && errno == 0) {
-                    emit(printf("agg %s %.17g\n", name, val));
-                }
-            }
-        }
+        print_aggregate_line(line);
     }
     if (fclose(f)) {
         return -1;
