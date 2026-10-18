@@ -217,9 +217,30 @@ fi
 if want msvcism; then
   say "MSVC-hostile constructs" "mirrors: Windows MSVC+CUDA / MSVC+SYCL (static approximation)"
   msvc_fail=0
+  # Each scan below runs one grep pipeline per file. grep exits 1 when it
+  # matches nothing, which is a clean file; under pipefail that status used to
+  # end the loop, and a `|| hits=""` fallback then threw away every finding
+  # whenever the LAST file scanned was clean (#2852: five `nullptr` in a C test
+  # passed this stage because a clean file followed). A per-file status of 1
+  # now counts as clean (`|| [ $? -eq 1 ] || exit 2`); any other status ends
+  # the scan, and a scan that does not finish fails the stage, never passes it.
+  # The file filters work the same way: grep's status 1 (no line matched) is
+  # an empty list, any other failure stays a failure of the scan.
+  only_lines() {
+    grep "$@" || [ $? -eq 1 ]
+  }
+  scan_failed() {
+    printf '     %s\n' "$1 scan did not run (scripts/dev/preflight.sh)"
+    msvc_fail=1
+  }
   check_pattern() {
     local pat="$1" why="$2" hits
-    hits=$(changed_sources | xargs -r grep -nE "$pat" 2>/dev/null | awk 'NR <= 5') || hits="" # grep / xargs exit non-zero when nothing matches
+    if ! hits=$(changed_sources | while read -r f; do
+      grep -HnE "$pat" "$f" 2>/dev/null || [ $? -eq 1 ] || exit 2
+    done | awk 'NR <= 5'); then
+      scan_failed "$why:"
+      return
+    fi
     if [ -n "$hits" ]; then
       printf '     %s\n' "$why"
       printf '%s\n' "$hits" | sed 's/^/       /'
@@ -241,8 +262,8 @@ if want msvcism; then
   # a trailing comment instead.
   cu_designated=$(changed_cuda | while read -r f; do
     grep -nE '(\{|,)[[:space:]]*\.[A-Za-z_][A-Za-z0-9_]*[[:space:]]*=|^[[:space:]]*\.[A-Za-z_][A-Za-z0-9_]*[[:space:]]*=.*(,|\{)[[:space:]]*$' "$f" 2>/dev/null |
-      grep -vE '^[0-9]+:[[:space:]]*(\*|/\*|//)' | sed "s|^|$f:|"
-  done | awk 'NR <= 5') || cu_designated=""
+      grep -vE '^[0-9]+:[[:space:]]*(\*|/\*|//)' | sed "s|^|$f:|" || [ $? -eq 1 ] || exit 2
+  done | awk 'NR <= 5') || scan_failed 'CUDA designated initializer'
   if [ -n "$cu_designated" ]; then
     printf '     %s\n' 'designated initializer in CUDA device code — nvcc/MSVC "expected an expression"'
     printf '%s\n' "$cu_designated" | sed 's/^/       /'
@@ -254,10 +275,10 @@ if want msvcism; then
   # lane compiles core/ with cl.exe. gcc accepts it and clang accepts it under
   # -std=c23, so nothing local objects. Comment lines are skipped because the
   # ADR-1138 NOLINT bracket names the keyword in prose.
-  c_nullptr=$(changed_sources | grep -E '\.c$' | while read -r f; do
+  c_nullptr=$(changed_sources | only_lines -E '\.c$' | while read -r f; do
     grep -nE '\bnullptr\b' "$f" 2>/dev/null |
-      grep -vE '^[0-9]+:[[:space:]]*(\*|/\*|//)' | sed "s|^|$f:|"
-  done | awk 'NR <= 60') || c_nullptr=""
+      grep -vE '^[0-9]+:[[:space:]]*(\*|/\*|//)' | sed "s|^|$f:|" || [ $? -eq 1 ] || exit 2
+  done | awk 'NR <= 60') || scan_failed 'C nullptr'
   if [ -n "$c_nullptr" ]; then
     printf '     %s\n' 'nullptr in a C translation unit — MSVC C2065; ADR-1138 keeps C on NULL'
     printf '%s\n' "$c_nullptr" | sed 's/^/       /'
@@ -270,11 +291,11 @@ if want msvcism; then
   # invocation" on the Windows MSVC+SYCL lane only (2026-10-02,
   # sycl_exact_fp.h). The parenthesised form `(std::numeric_limits<T>::max)()`
   # compiles everywhere.
-  sycl_minmax=$(changed_sources | grep -E '^core/src/(feature/)?sycl/' | while read -r f; do
+  sycl_minmax=$(changed_sources | only_lines -E '^core/src/(feature/)?sycl/' | while read -r f; do
     grep -nE 'numeric_limits<[^>]+>::(max|min)\(\)' "$f" 2>/dev/null |
       grep -vE '\(std::numeric_limits<[^>]+>::(max|min)\)\(\)' |
-      grep -vE '^[0-9]+:[[:space:]]*(\*|/\*|//)' | sed "s|^|$f:|"
-  done | awk 'NR <= 60') || sycl_minmax=""
+      grep -vE '^[0-9]+:[[:space:]]*(\*|/\*|//)' | sed "s|^|$f:|" || [ $? -eq 1 ] || exit 2
+  done | awk 'NR <= 60') || scan_failed 'SYCL numeric_limits'
   if [ -n "$sycl_minmax" ]; then
     printf '     %s\n' 'numeric_limits<T>::max() / min() in a SYCL source — <windows.h> macro clash; write (std::numeric_limits<T>::max)()'
     printf '%s\n' "$sycl_minmax" | sed 's/^/       /'
@@ -295,9 +316,9 @@ if want msvcism; then
       git ls-files --others --exclude-standard -- 'core/test/*.py'
     } | sort -u)
   fi
-  py_keys=$(printf '%s\n' "$py_tests" | grep -v '^$' | while read -r f; do
-    grep -nE '\[str\([A-Za-z_]+\.relative_to\([^]]*\)\)\][[:space:]]*=|^[[:space:]]*str\([A-Za-z_]+\.relative_to\([^)]*\)\):' "$f" 2>/dev/null | sed "s|^|$f:|"
-  done | awk 'NR <= 60') || py_keys=""
+  py_keys=$(printf '%s\n' "$py_tests" | only_lines -v '^$' | while read -r f; do
+    grep -nE '\[str\([A-Za-z_]+\.relative_to\([^]]*\)\)\][[:space:]]*=|^[[:space:]]*str\([A-Za-z_]+\.relative_to\([^)]*\)\):' "$f" 2>/dev/null | sed "s|^|$f:|" || [ $? -eq 1 ] || exit 2
+  done | awk 'NR <= 60') || scan_failed 'Python relative_to key'
   if [ -n "$py_keys" ]; then
     printf '     %s\n' 'dictionary keyed by str(path.relative_to(...)) in a core/test Python test — backslashes on Windows; use .as_posix()'
     printf '%s\n' "$py_keys" | sed 's/^/       /'
@@ -314,8 +335,8 @@ if want msvcism; then
   msl_reserved='(half|float2|float3|float4|int2|int3|int4|uint2|uint3|uint4|bool2|bool3|bool4|sampler)'
   msl_hits=$(changed_metal | while read -r f; do
     grep -nE "\b(ulong|uint|int|float|bool|long|short|auto|char) +$msl_reserved\b" "$f" 2>/dev/null |
-      awk 'NR <= 2' | sed "s|^|$f:|"
-  done | awk 'NR <= 5') || msl_hits=""
+      awk 'NR <= 2' | sed "s|^|$f:|" || [ $? -eq 1 ] || exit 2
+  done | awk 'NR <= 5') || scan_failed 'MSL reserved name'
   if [ -n "$msl_hits" ]; then
     printf '     %s\n' 'MSL reserved type name used as a variable — macOS Metal redeclaration error'
     printf '%s\n' "$msl_hits" | sed 's/^/       /'
@@ -386,8 +407,9 @@ EOF_INC
   # wrong members). gcc and clang accept it as an extension and emit no
   # diagnostic at all, not even under -std=c23 -pedantic-errors -Weverything,
   # so this is grepped rather than compiled.
-  c_static_init=$(changed_sources | grep -E '\.c$' |
-    xargs -r python3 "$REPO_ROOT/scripts/dev/find-nonconst-static-init.py" 2>/dev/null | awk 'NR <= 5') || c_static_init=""
+  c_static_init=$(changed_sources | only_lines -E '\.c$' |
+    xargs -r python3 "$PREFLIGHT_DIR/find-nonconst-static-init.py" 2>/dev/null | awk 'NR <= 5') ||
+    scan_failed 'static aggregate initialiser'
   if [ -n "$c_static_init" ]; then
     printf '     %s\n' 'non-constant initialiser in a static aggregate — MSVC C2099; use #define'
     printf '%s\n' "$c_static_init" | sed 's/^/       /'

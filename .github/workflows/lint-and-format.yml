@@ -67,6 +67,27 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: "3.14.8"
+      - name: MSVC-hostile constructs in the changed files
+        # No cl.exe leg builds on a light-tier pull request (ADR-2169, ADR-3279),
+        # so the static msvcism scan of scripts/dev/preflight.sh is the
+        # required check that sees a C23-only keyword such as `nullptr` in a C
+        # translation unit before master does (#2852). Changed files only: the
+        # whole-tree mode reports files kept off Windows by their meson.build.
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.base_ref }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          case "${EVENT}" in
+            pull_request) base="origin/${PR_BASE}" ;;
+            push) base="${PUSH_BEFORE}" ;;
+            *) base="HEAD~1" ;;
+          esac
+          if ! git rev-parse --verify --quiet "${base}^{commit}" >/dev/null; then
+            base="HEAD~1"
+          fi
+          PREFLIGHT_BASE="${base}" bash scripts/dev/preflight.sh --stage msvcism
       # pre-commit/action@v3.0.1 is the latest release (Feb 2024) and still
       # pins actions/cache@v4, which trips the Node.js 20 deprecation
       # warning (Node 20 removed from runners 2026-09-16). Inline the

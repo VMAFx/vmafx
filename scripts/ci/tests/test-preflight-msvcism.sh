@@ -55,6 +55,37 @@ case "$out" in *"nullptr in a C translation unit"*) ;; *) fail "nullptr finding 
 rm bad_nullptr.c
 echo "ok   a nullptr in a C file fails the stage and is reported"
 
+# A clean file scanned after the bad one must not hide its findings: a grep that
+# matches nothing exits 1, and under pipefail that once reset every finding of
+# the scan to empty (#2852 passed with five `nullptr` in one C test). The same
+# holds for the parenthesised-attribute scan, which used xargs grep.
+printf 'void *p = nullptr;\n' >a_bad_nullptr.c
+printf 'int clean(void) { return 0; }\n' >z_clean.c
+rc=0
+out="$(run_stage)" || rc=$?
+[ "$rc" -eq 1 ] || fail "nullptr followed by a clean C file: expected rc=1, got $rc: $out"
+case "$out" in *"a_bad_nullptr.c:1:"*) ;; *) fail "nullptr finding lost behind a clean file: $out" ;; esac
+rm a_bad_nullptr.c
+printf '__attribute__(packed) int x;\n' >a_bad_attr.c
+rc=0
+out="$(run_stage)" || rc=$?
+[ "$rc" -eq 1 ] || fail "__attribute__(x) followed by a clean file: expected rc=1, got $rc: $out"
+case "$out" in *"a_bad_attr.c:1:"*) ;; *) fail "attribute finding lost behind a clean file: $out" ;; esac
+rm a_bad_attr.c z_clean.c
+echo "ok   a finding is still reported when a clean file is scanned after it"
+
+# The static-aggregate scan runs from the preflight script's own directory, not
+# from the scanned repository's root, so it runs here too (it once looked the
+# scanner up under the scanned root and passed without running).
+printf 'static const double k = 2.0;\nstatic const double t[] = { k };\n' >bad_static.c
+rc=0
+out="$(run_stage)" || rc=$?
+[ "$rc" -eq 1 ] || fail "static aggregate from a const: expected rc=1, got $rc: $out"
+case "$out" in *"non-constant initialiser in a static aggregate"*"bad_static.c:2: k"*) ;;
+*) fail "static aggregate finding not printed: $out" ;; esac
+rm bad_static.c
+echo "ok   a static aggregate initialised from a const variable fails the stage"
+
 printf '__attribute__(packed) int x;\n' >bad_attr.c
 rc=0
 out="$(run_stage)" || rc=$?

@@ -25,6 +25,11 @@
 
 #include "feature/pelorus_udu_wrap.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 #define VEC_MAX_LINES 256
 #define VEC_MAX_BYTES 128
 #define VEC_LINE_CAP 512
@@ -149,7 +154,7 @@ static int replay_file(FILE *f, int seen[3], int *count)
     int failed = 0;
     int n;
 
-    for (n = 0; n < VEC_MAX_LINES && fgets(line, (int)sizeof(line), f) != nullptr; n++) {
+    for (n = 0; n < VEC_MAX_LINES && fgets(line, (int)sizeof(line), f) != NULL; n++) {
         int cls;
         if (line[0] == '#' || line[0] == '\n') {
             continue;
@@ -175,14 +180,14 @@ static char *test_replay_vectors(void)
     int failed;
     FILE *f = vmaf_test_fopen(PELORUS_UDU_VECTORS_PATH, "r");
 
-    mu_assert("vector file missing", f != nullptr);
+    mu_assert("vector file missing", f != NULL);
     failed = replay_file(f, seen, &count);
     mu_assert("a vector failed", failed == 0);
     mu_assert("fewer vectors than the copy holds", count >= VEC_MIN_COUNT);
     mu_assert("no direct vector", seen[VMAF_PELORUS_UDU_DIRECT] > 0);
     mu_assert("no x265_wrapped vector", seen[VMAF_PELORUS_UDU_X265_WRAPPED] > 0);
     mu_assert("no none vector", seen[VMAF_PELORUS_UDU_NONE] > 0);
-    return nullptr;
+    return NULL;
 }
 
 /* Boundary: NULL and payloads shorter than one UUID are never Pelorus. */
@@ -191,12 +196,12 @@ static char *test_short_and_null_payloads(void)
     uint8_t buf[PELORUS_SIDEDATA_UUID_LEN];
 
     memcpy(buf, pelorus_sidedata_uuid, sizeof(buf));
-    mu_assert("NULL payload", vmaf_pelorus_udu_classify(nullptr, 32) == VMAF_PELORUS_UDU_NONE);
+    mu_assert("NULL payload", vmaf_pelorus_udu_classify(NULL, 32) == VMAF_PELORUS_UDU_NONE);
     mu_assert("15-byte payload",
               vmaf_pelorus_udu_classify(buf, sizeof(buf) - 1u) == VMAF_PELORUS_UDU_NONE);
     mu_assert("bare blob UUID",
               vmaf_pelorus_udu_classify(buf, sizeof(buf)) == VMAF_PELORUS_UDU_DIRECT);
-    return nullptr;
+    return NULL;
 }
 
 char *run_tests(void)
@@ -207,3 +212,5 @@ char *run_tests(void)
     };
     return mu_run_table(tests, MU_TABLE_LEN(tests));
 }
+
+/* NOLINTEND(modernize-use-nullptr) */
