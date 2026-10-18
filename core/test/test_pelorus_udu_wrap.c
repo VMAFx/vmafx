@@ -20,6 +20,7 @@
 #include <string.h>
 
 #include "test.h"
+#include "test_fopen.h"
 #include "mu_table.h"
 
 #include "feature/pelorus_udu_wrap.h"
@@ -81,6 +82,29 @@ static int expected_class(const char *word)
     return -1;
 }
 
+/* Copy the next whitespace-separated token of *cursor into out (cap bytes with
+ * the terminator) and advance *cursor. Returns 0, or -1 when there is no token
+ * or it does not fit. Replaces sscanf(), which the Windows C runtime declares
+ * deprecated (ADR-2828). */
+static int next_token(const char **cursor, char *out, size_t cap)
+{
+    const char *p = *cursor;
+    size_t n = 0;
+
+    while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') {
+        p++;
+    }
+    while (*p != '\0' && *p != ' ' && *p != '\t' && *p != '\r' && *p != '\n') {
+        if (n + 1u >= cap) {
+            return -1;
+        }
+        out[n++] = *p++;
+    }
+    out[n] = '\0';
+    *cursor = p;
+    return n > 0u ? 0 : -1;
+}
+
 /* Replay one vector line. Returns the class it asserted, or -1 on a parse error
  * or a mismatch (reported on stderr). */
 static int replay_line(const char *line)
@@ -94,8 +118,12 @@ static int replay_line(const char *line)
     int data_len;
     int want;
     int got;
+    const char *cursor = line;
 
-    if (sscanf(line, "%63s %63s %257s %31s", name, outer_hex, data_hex, want_word) != 4) {
+    if (next_token(&cursor, name, sizeof(name)) != 0 ||
+        next_token(&cursor, outer_hex, sizeof(outer_hex)) != 0 ||
+        next_token(&cursor, data_hex, sizeof(data_hex)) != 0 ||
+        next_token(&cursor, want_word, sizeof(want_word)) != 0) {
         return -1;
     }
     outer_len = parse_hex(outer_hex, payload, PELORUS_SIDEDATA_UUID_LEN);
@@ -145,7 +173,7 @@ static char *test_replay_vectors(void)
     int seen[3] = {0, 0, 0};
     int count = 0;
     int failed;
-    FILE *f = fopen(PELORUS_UDU_VECTORS_PATH, "r");
+    FILE *f = vmaf_test_fopen(PELORUS_UDU_VECTORS_PATH, "r");
 
     mu_assert("vector file missing", f != nullptr);
     failed = replay_file(f, seen, &count);
