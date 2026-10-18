@@ -4,7 +4,7 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "cc_version": "gcc-15 (Ubuntu 15.2.0-16ubuntu1) 15.2.0",
-  "tus": 535,
+  "tus": 536,
   "measured_sources": [
     "compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_stat.c",
     "compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_std.c",
@@ -417,6 +417,7 @@
     "core/test/test_path_utf8.c",
     "core/test/test_pdjson.c",
     "core/test/test_pdjson_stack_increment.c",
+    "core/test/test_pelorus_udu_wrap.c",
     "core/test/test_perceptual_weight.c",
     "core/test/test_pic_preallocation.c",
     "core/test/test_picture.c",
@@ -1470,6 +1471,22 @@
         }
       },
       "previous_baseline_sha256": "f87e433402db68378ffe08216676ec1efae52f1859cdc3f4d855e0018d39d049"
+    },
+    {
+      "sources": [
+        "core/src/feature/perceptual_weight.c",
+        "core/test/test_pelorus_udu_wrap.c",
+        "core/test/test_perceptual_weight.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/test/test_pelorus_udu_wrap.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "d5ed04eb593aac57b5789d15037c67d14c2488f1f642bf700ce5dc68814d4a37"
     }
   ]
 }
