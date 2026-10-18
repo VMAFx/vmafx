@@ -649,7 +649,8 @@ extern "C" int vmafx_sycl_rt_semaphore_import(VmafxSyclRt *rt, int fd, void **se
     *sem = nullptr;
     try {
         const syclex::external_semaphore_descriptor<syclex::resource_fd> desc{
-            syclex::resource_fd{fd}, syclex::external_semaphore_handle_type::timeline_fd};
+            .external_resource = syclex::resource_fd{.file_descriptor = fd},
+            .handle_type = syclex::external_semaphore_handle_type::timeline_fd};
         *sem = new syclex::external_semaphore(syclex::import_external_semaphore(desc, rt->lib));
         return 0;
     } catch (const std::exception &e) {

@@ -27,7 +27,6 @@
 #include <errno.h>
 #include <pthread.h>
 #include <stdint.h>
-#include <string.h>
 
 #include "compat/crt_portable.h"
 #include "vmafx/error_internal.h"
@@ -159,9 +158,11 @@ void vmafx_sycl_release_early(VmafxFrame *frame)
     (void)pthread_mutex_lock(&sf->lock);
     const uint32_t slot = sf->release_slot;
     const uint32_t n_signal = sf->n_signal;
-    memcpy(signals, sf->signals, sizeof(signals));
-    memcpy(values, sf->signal_values, sizeof(values));
-    memset(sf->signals, 0, sizeof(sf->signals)); /* signalled here, not at release */
+    for (uint32_t i = 0; i < 3u; i++) {
+        signals[i] = sf->signals[i];
+        values[i] = sf->signal_values[i];
+        sf->signals[i] = NULL; /* signalled here, not at release */
+    }
     sf->n_signal = 0;
     (void)pthread_mutex_unlock(&sf->lock);
     assert(n_signal <= 3u);
