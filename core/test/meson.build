@@ -3323,6 +3323,16 @@ test('test_ffmpeg_libvmaf_stop_contract',
     timeout : 30,
 )
 
+# Issue #2708 / FFmpeg patch 0017: the libvmaf filter offers every
+# SEI-unregistered side-data entry to vmaf_set_perceptual_sidedata(), newest
+# first, and stops at the first one accepted. Device-free: reads the series.
+test('test_ffmpeg_libvmaf_pelorus_scan_contract',
+    import('python').find_installation(),
+    args : files('test_ffmpeg_libvmaf_pelorus_scan_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # ADR-2093 / FFmpeg patch 0022: the libvmaf filters declare the AVFrame colour to
 # libvmaf. Device-free: reads the series; the FFmpeg run is
 # ffmpeg-patches/test/check-libvmaf-input-colorimetry.sh.
@@ -9305,6 +9315,17 @@ test('test_ciede', test_ciede, suite : ['fast'])
 test('test_delta_e_itp', test_delta_e_itp, suite : ['fast'])
 test('test_pu21', test_pu21, suite : ['fast'])
 test('test_pelorus_interop', test_pelorus_interop, suite : ['fast'])
+
+# ADR-3340: replays Pelorus' user data unregistered SEI classification vectors
+# (testdata/pelorus/udu-wrap-vectors.txt, copied from Pelorus ADR-0210) against
+# the reader's classifier, core/src/feature/pelorus_udu_wrap.h.
+test_pelorus_udu_wrap = executable('test_pelorus_udu_wrap',
+    ['test.c', 'test_pelorus_udu_wrap.c', '../src/interop/pelorus_interop.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    c_args : ['-DPELORUS_UDU_VECTORS_PATH="' +
+              join_paths(meson.project_source_root(), '../testdata/pelorus/udu-wrap-vectors.txt') + '"'],
+)
+test('test_pelorus_udu_wrap', test_pelorus_udu_wrap, suite : ['fast'])
 test('test_lpips', test_lpips, suite : ['fast'])
 test('test_dists', test_dists, suite : ['fast'])
 test('test_fastdvdnet_pre', test_fastdvdnet_pre, suite : ['fast'])

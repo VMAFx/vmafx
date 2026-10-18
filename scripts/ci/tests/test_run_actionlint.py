@@ -13,6 +13,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
@@ -239,6 +240,21 @@ class Wiring(unittest.TestCase):
         target = makefile.split("\nlint-actions:\n", 1)[1].split("\n\n", 1)[0]
         self.assertIn("python3 scripts/ci/run_actionlint.py", target)
         self.assertNotIn("\t@actionlint\n", target)
+
+
+class StopHungRefusesDoubles(unittest.TestCase):
+    """A test double's pid is never a signal target; ``os.killpg`` only records here."""
+
+    def test_mock_process_is_refused_before_any_group_signal(self) -> None:
+        process = mock.MagicMock()
+        with (
+            mock.patch("os.killpg") as killpg,
+            mock.patch.object(run_actionlint, "_drain", return_value=("", "")),
+            self.assertRaises(ValueError),
+        ):
+            run_actionlint.stop_hung(process)
+        killpg.assert_not_called()
+        process.kill.assert_not_called()
 
 
 if __name__ == "__main__":

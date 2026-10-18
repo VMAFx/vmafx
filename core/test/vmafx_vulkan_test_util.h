@@ -64,8 +64,8 @@
  * here reads it. */
 #define VK_MOD_AMD_UNREAD 0x0200000000000001ull
 
-/* The lane waits on and signals Vulkan semaphores on the device (CUDA). */
-#define VK_DEVICE_SEMAPHORES (VMAFX_VK_LANE == 1)
+/* The lane waits on and signals Vulkan semaphores on the device (CUDA, SYCL). */
+#define VK_DEVICE_SEMAPHORES (VMAFX_VK_LANE == 1 || VMAFX_VK_LANE == 2)
 
 typedef struct VkLayoutCase {
     uint32_t layout; /* enum VkpLayout */

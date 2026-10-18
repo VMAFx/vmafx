@@ -1,5 +1,5 @@
 # VMAFx hash lock; regenerate with: make python-locks-write
-# vmafx-uv-version: 0.12.18
+# vmafx-uv-version: 0.13.1
 # vmafx-input-sha256: a30c8473a18756ed729e7d26b066c4c1a3ce05756b6fc0d190a7d8224dacc0f1
 # vmafx-inputs: requirements/locks/gcovr.in
 colorlog==6.12.0 \

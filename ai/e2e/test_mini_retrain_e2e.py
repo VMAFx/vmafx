@@ -28,6 +28,7 @@ from typing import Any, TypeVar, cast
 
 import pytest
 from scripts.lib import vmaftest
+from scripts.lib.safe_subprocess import signal_process_group
 
 REPO = Path(__file__).resolve().parents[2]
 DRIVER = REPO / "ai" / "scripts" / "mini_retrain.py"
@@ -180,7 +181,7 @@ def test_a_killed_run_resumes_from_its_manifests(tmp_path: Path) -> None:
     while time.monotonic() < deadline and not target.exists():
         time.sleep(0.05)
     assert target.exists(), "driver never reached train_tiny_v2"
-    os.killpg(proc.pid, signal.SIGKILL)  # driver and the stage it is running
+    signal_process_group(proc.pid, signal.SIGKILL)  # driver and the stage it is running
     proc.wait()
     extract_done = _manifest(run_dir, "extract")["finished"]
     done = _run_driver(run_dir)

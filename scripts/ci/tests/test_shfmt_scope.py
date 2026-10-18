@@ -118,9 +118,9 @@ class ShfmtScopeTests(unittest.TestCase):
         exclude = re.compile(hook().get("exclude", r"\A(?!)"))
         for path in (
             "scripts/githooks/pre-commit.sh",
-            ".config/lefthook/engine.sh.bak",
-            "x/.config/lefthook/engine.sh",
-            "scripts/config/lefthook/engineXsh",
+            ".config/lefthook/python.sh.bak",
+            "x/.config/lefthook/python.sh",
+            "scripts/config/lefthook/pythonXsh",
         ):
             self.assertIsNone(exclude.search(path), path)
 

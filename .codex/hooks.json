@@ -29,6 +29,11 @@
           {
             "command": "\"$(env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_COMMON_DIR -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES git rev-parse --show-toplevel)/.codex/hooks/block-unsafe-bash.sh\"",
             "type": "command"
+          },
+          {
+            "command": "praetorctl hook codex pre-tool",
+            "timeout": 15,
+            "type": "command"
           }
         ],
         "matcher": "Bash"

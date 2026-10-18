@@ -90,10 +90,13 @@ devices](../../api/vmafx/index.md#sycl-devices).
 Vulkan frames on the same GPU (`VMAFX_MEMORY_VULKAN`,
 [ADR-2152](../../adr/2152-vmafx-vulkan-frame-import.md)) take the dma-buf
 path: the Mesa driver exports a buffer's or a LINEAR or Tile4 image's memory
-as a dma-buf, and the SYCL device imports it as above. The acquire fence is a
-`sync_file` of the producer's write, and the producer reuses the memory after
-a host release fence; OPTIMAL images and Vulkan semaphores are refused by
-name. See [Vulkan frames](../../api/vmafx/index.md#vulkan-frames).
+as a dma-buf, and the SYCL device imports it as above. The producer's timeline
+semaphores (up to three per frame, exported as `OPAQUE_FD`) are imported with
+the oneAPI external-semaphore extension and waited on the library queue before
+the first read, and `vmafx_frame_signal_on_release()` signals a timeline on the
+queue behind the frame's last reader, so neither side waits on the host. A
+`sync_file` of the write and a host release fence still work. OPTIMAL images
+are refused by name. See [Vulkan frames](../../api/vmafx/index.md#vulkan-frames).
 
 What is not imported yet: Windows shared textures (`VMAFX_MEMORY_WIN32_SHARED`
 is refused, the D3D11 staging path above remains), and a `sync_file` release

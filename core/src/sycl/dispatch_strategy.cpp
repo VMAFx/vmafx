@@ -32,6 +32,28 @@ static const char *const k_sycl_strategy_names[] = {
     nullptr,
 };
 
+/* ADR-0841: VMAF_SYCL_NO_GRAPH is deprecated. Keep reading it for one release
+ * so operators have time to migrate, and print the warning once per process
+ * (vmaf_sycl_select_strategy() runs once per feature). The replacement is the
+ * per-feature VMAF_SYCL_DISPATCH=<feature>:direct; VMAF_SYCL_USE_GRAPH only
+ * ever forces graph replay (a value other than "1" is ignored), so it is no
+ * replacement for force-direct. Removal is scheduled for v4.0. An atomic bool,
+ * not an atomic_flag: CodeQL does not count test_and_set() as a read (alert
+ * 1551). */
+namespace
+{
+void warn_no_graph_deprecated()
+{
+    static std::atomic<bool> warned{false};
+    if (!warned.exchange(true)) {
+        vmaf_log(VMAF_LOG_LEVEL_WARNING, "libvmaf: VMAF_SYCL_NO_GRAPH deprecated; "
+                                         "use VMAF_SYCL_DISPATCH=<feature>:direct "
+                                         "(per feature, for example float_vif:direct). "
+                                         "Will be removed in v4.0.\n");
+    }
+}
+} // namespace
+
 VmafSyclDispatchStrategy vmaf_sycl_select_strategy(const char *feature_name,
                                                    const VmafFeatureCharacteristics *chars,
                                                    unsigned frame_w, unsigned frame_h,
@@ -50,20 +72,7 @@ VmafSyclDispatchStrategy vmaf_sycl_select_strategy(const char *feature_name,
     if (env_use_graph && env_use_graph[0] == '1')
         return VMAF_SYCL_DISPATCH_GRAPH_REPLAY;
     if (env_no_graph) {
-        /* ADR-0841: VMAF_SYCL_NO_GRAPH is deprecated. Keep reading it for one
-         * release so operators have time to migrate, and print the warning
-         * once per process (this function runs once per feature). The
-         * replacement is the per-feature VMAF_SYCL_DISPATCH=<feature>:direct;
-         * VMAF_SYCL_USE_GRAPH only ever forces graph replay (a value other
-         * than "1" is ignored), so it is no replacement for force-direct.
-         * Removal is scheduled for v4.0. */
-        static std::atomic_flag warned = ATOMIC_FLAG_INIT;
-        if (!warned.test_and_set()) {
-            vmaf_log(VMAF_LOG_LEVEL_WARNING, "libvmaf: VMAF_SYCL_NO_GRAPH deprecated; "
-                                             "use VMAF_SYCL_DISPATCH=<feature>:direct "
-                                             "(per feature, for example float_vif:direct). "
-                                             "Will be removed in v4.0.\n");
-        }
+        warn_no_graph_deprecated();
         if (env_no_graph[0] == '1')
             return VMAF_SYCL_DISPATCH_DIRECT;
     }

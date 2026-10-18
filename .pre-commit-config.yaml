@@ -136,7 +136,7 @@ repos:
         # Every tracked shell file but the declared exceptions, which no formatter
         # may rewrite (reason per entry). List: .config/lint-exceptions.d/shfmt.toml
         # (scripts/ci/tests/test_shfmt_scope.py keeps this pattern in step with it).
-        exclude: '^\.config/lefthook/engine\.sh$'
+        exclude: '^\.config/lefthook/python\.sh$'
         args: ["-w", "-i", "2", "-ci"]
 
   - repo: https://github.com/shellcheck-py/shellcheck-py

@@ -39,7 +39,12 @@ typedef struct VmafxSyclFrame {
     void *imports[3];      /* Level Zero imports of the planes' dma-bufs */
     int fds[3];            /* the dma-bufs (duplicated), -1: none */
     uint32_t release_slot; /* 1 + the slot of its SYCL_EVENT release fence; 0: none */
-    pthread_mutex_t lock;  /* release-fence calls on several threads */
+    void *waits[3];        /* imported Vulkan acquire semaphores (RC4 WP3), NULL: none */
+    uint32_t n_wait;
+    void *signals[3]; /* Vulkan semaphores signalled at release, NULL: none */
+    uint64_t signal_values[3];
+    uint32_t n_signal;
+    pthread_mutex_t lock; /* release-fence calls on several threads */
 } VmafxSyclFrame;
 
 /* What a pool frame keeps for its life (VmafxFrame.lane_persistent). */
@@ -92,6 +97,12 @@ VmafxStatus vmafx_sycl_dmabuf_planes(const VmafxReport *report, VmafxSyclFrame *
  * `exported` (-1: none) for the caller to close once imported. */
 VmafxStatus vmafx_sycl_gl_export(const VmafxReport *report, VmafxSyclFrame *sf, VmafxFrameImport *d,
                                  int exported[3]);
+
+/* Vulkan timeline semaphores (import_fence.c, RC4 WP3): import the
+ * VULKAN_SEMAPHORE fence `fence` (a duplicate of its descriptor, which the
+ * driver owns) into `*sem`; failures name `subject`. */
+VmafxStatus vmafx_sycl_semaphore_import(const VmafxReport *report, const VmafxSyclDevice *dev,
+                                        const VmafxFence *fence, const char *subject, void **sem);
 
 /* NOLINTEND(modernize-use-nullptr) */
 

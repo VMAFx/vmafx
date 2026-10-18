@@ -56,13 +56,13 @@ echo "ok   a changed file is re-staged, an unchanged one is left alone"
 # A declared shfmt exception (.config/lint-exceptions.d/shfmt.toml) is a file
 # no formatter may rewrite: the hook must not hand it to shfmt.
 mkdir -p .config/lefthook
-printf 'needs-format\n' >.config/lefthook/engine.sh
+printf 'needs-format\n' >.config/lefthook/python.sh
 printf 'needs-format\n' >d.sh
-git add .config/lefthook/engine.sh d.sh
+git add .config/lefthook/python.sh d.sh
 out="$(run_hook)" || fail "hook failed: $out"
-[ "$(git show :.config/lefthook/engine.sh)" = "needs-format" ] ||
-  fail "the declared shfmt exception was formatted: $(git show :.config/lefthook/engine.sh)"
-[ "$(cat .config/lefthook/engine.sh)" = "needs-format" ] ||
+[ "$(git show :.config/lefthook/python.sh)" = "needs-format" ] ||
+  fail "the declared shfmt exception was formatted: $(git show :.config/lefthook/python.sh)"
+[ "$(cat .config/lefthook/python.sh)" = "needs-format" ] ||
   fail "the declared shfmt exception was rewritten in the working tree"
 [ "$(git show :d.sh)" = "formatted" ] || fail "d.sh was not re-staged formatted"
 case "$out" in *"re-staged 1 file"*) ;; *) fail "summary lacks 're-staged 1 file': $out" ;; esac

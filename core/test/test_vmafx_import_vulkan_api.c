@@ -19,7 +19,7 @@
  *   VmafxDeviceInfo has no PCI location.
  * - VULKAN_SEMAPHORE fences: the library neither waits on nor destroys one,
  *   and vmafx_frame_signal_on_release() refuses every kind but
- *   VULKAN_SEMAPHORE and every device but CUDA, naming the kind.
+ *   VULKAN_SEMAPHORE and every device but CUDA and SYCL, naming the kind.
  * - A descriptor of the 0.1.4 size is read with the new fields defaulted.
  */
 

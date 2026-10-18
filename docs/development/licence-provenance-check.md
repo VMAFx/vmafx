@@ -122,7 +122,7 @@ and in `strictMustReport`, so a run in which it never reported fails too.
   written by the engine; [ADR-1699](../adr/1699-root-licence-files-eupl.md)).
 - `tools/figures/` (files of the governance engine that `praetorctl audit`
   compares with praetor's own bytes).
-- `.config/agent/hooks/block_evasion.py` and `.config/lefthook/engine.sh`
+- `.config/agent/hooks/block_evasion.py` and `.config/lefthook/python.sh`
   (praetor's scripts, which `praetorctl adopt` refreshes only while they are
   praetor's own text; dated exceptions in
   `.config/lint-exceptions.d/spdx.toml`).

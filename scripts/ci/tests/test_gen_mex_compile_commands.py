@@ -113,6 +113,12 @@ class GenerateEntries(unittest.TestCase):
         self.assertIn(f"-I{build / 'src'}", harness_cmd)
         self.assertIn(f"-I{build}", harness_cmd)
 
+        for src in (gen.ABI_CONSUMER_SOURCE, gen.ABI_PLANT_SOURCE):
+            cmd = by_file[str(REPO / src)]
+            self.assertIn(f"-I{REPO / 'core/include'}", cmd)
+            self.assertNotIn(f"-I{REPO / 'core/src'}", cmd)
+        self.assertIn("-D_GNU_SOURCE", by_file[str(REPO / gen.ABI_PLANT_SOURCE)])
+
     def test_missing_standalone_source_is_an_error(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -145,7 +151,7 @@ class StubsAreSufficient(unittest.TestCase):
             self.assertEqual(done.returncode, 0, f"{src}: {done.stderr[-400:]}")
 
     def test_standalone_sources_parse(self) -> None:
-        for src in (gen.FAULT_INJECT_SOURCE, gen.HARNESS_SOURCE):
+        for src in gen.STANDALONE_SOURCES:
             entry = gen.entry_for(src, REPO, REPO)
             argv = [*shlex.split(entry["command"])[:-2], "-fsyntax-only"]
             done = subprocess.run(argv, capture_output=True, text=True, check=False)  # noqa: S603

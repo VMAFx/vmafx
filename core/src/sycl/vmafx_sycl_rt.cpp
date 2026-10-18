@@ -56,6 +56,8 @@
  * holder (HISS-02 bound; a decoder pool holds a few dozen frames). */
 #define VMAFX_SYCL_RELEASE_SLOTS 4096u
 
+namespace syclex = sycl::ext::oneapi::experimental;
+
 namespace
 {
 /* Memory a release frees once its join completed. */
@@ -63,6 +65,7 @@ struct VmafxSyclDeferred {
     sycl::event done;
     void *owned;
     std::array<void *, 3> imports;
+    std::array<void *, 6> sems; /* the frame's acquire and release semaphores */
 };
 } // namespace
 
@@ -367,18 +370,29 @@ sycl::event release_barrier(VmafxSyclFrameRt *f)
     return join(f->rt->lib, wait);
 }
 
+/* The semaphores a release frees: its signals, then its waits. */
+std::array<void *, 6> sems_of(const VmafxSyclRelease *r)
+{
+    return {r->signals[0], r->signals[1], r->signals[2], r->waits[0], r->waits[1], r->waits[2]};
+}
+
 void defer_free(VmafxSyclRt *rt, const sycl::event &done, const VmafxSyclRelease *r)
 {
-    if (!r->owned && !r->imports[0] && !r->imports[1] && !r->imports[2]) {
+    const std::array<void *, 6> sems = sems_of(r);
+    const bool any_sem = std::ranges::any_of(sems, [](const void *p) { return p != nullptr; });
+    if (!r->owned && !r->imports[0] && !r->imports[1] && !r->imports[2] && !any_sem) {
         return;
     }
-    const VmafxSyclDeferred d = {
-        .done = done, .owned = r->owned, .imports = {r->imports[0], r->imports[1], r->imports[2]}};
+    const VmafxSyclDeferred d = {.done = done,
+                                 .owned = r->owned,
+                                 .imports = {r->imports[0], r->imports[1], r->imports[2]},
+                                 .sems = sems};
     const std::scoped_lock hold(rt->lock);
     rt->deferred.push_back(d);
 }
 
-void free_now(VmafxSyclRt *rt, void *owned, const std::array<void *, 3> &imports)
+void free_now(VmafxSyclRt *rt, void *owned, const std::array<void *, 3> &imports,
+              const std::array<void *, 6> &sems)
 {
     if (owned) {
         vmafx_sycl_rt_free(rt, owned);
@@ -388,6 +402,27 @@ void free_now(VmafxSyclRt *rt, void *owned, const std::array<void *, 3> &imports
             vmaf_sycl_dmabuf_free_queue(&rt->lib, p);
         }
     }
+    for (void *const p : sems) {
+        if (p) {
+            vmafx_sycl_rt_semaphore_free(rt, p);
+        }
+    }
+}
+
+/* Signal the release's semaphores on `q` behind `dep` (none when NULL); the
+ * last signal's event, or `dep`'s. */
+sycl::event signal_semaphores(sycl::queue &q, const VmafxSyclRelease *r, const sycl::event *dep)
+{
+    sycl::event last = dep ? *dep : sycl::event();
+    for (uint32_t i = 0; i < 3u; i++) {
+        if (!r->signals[i]) {
+            continue;
+        }
+        const auto *const sem = static_cast<const syclex::external_semaphore *>(r->signals[i]);
+        last = dep ? q.ext_oneapi_signal_external_semaphore(*sem, r->signal_values[i], *dep) :
+                     q.ext_oneapi_signal_external_semaphore(*sem, r->signal_values[i]);
+    }
+    return last;
 }
 
 bool completed(const sycl::event &e)
@@ -498,7 +533,7 @@ extern "C" void vmafx_sycl_rt_close(VmafxSyclRt *rt)
         left.swap(rt->deferred);
     }
     for (const VmafxSyclDeferred &d : left) {
-        free_now(rt, d.owned, d.imports);
+        free_now(rt, d.owned, d.imports, d.sems);
     }
     delete rt;
 }
@@ -605,7 +640,54 @@ extern "C" void vmafx_sycl_rt_collect(VmafxSyclRt *rt)
         (void)runtime_failed("deferred free", e);
     }
     for (const VmafxSyclDeferred &d : done) {
-        free_now(rt, d.owned, d.imports);
+        free_now(rt, d.owned, d.imports, d.sems);
+    }
+}
+
+extern "C" int vmafx_sycl_rt_semaphore_import(VmafxSyclRt *rt, int fd, void **sem)
+{
+    *sem = nullptr;
+    try {
+        const syclex::external_semaphore_descriptor<syclex::resource_fd> desc{
+            .external_resource = syclex::resource_fd{.file_descriptor = fd},
+            .handle_type = syclex::external_semaphore_handle_type::timeline_fd};
+        *sem = new syclex::external_semaphore(syclex::import_external_semaphore(desc, rt->lib));
+        return 0;
+    } catch (const std::exception &e) {
+        return runtime_failed("Vulkan timeline semaphore import", e);
+    }
+}
+
+extern "C" void vmafx_sycl_rt_semaphore_free(VmafxSyclRt *rt, void *sem)
+{
+    auto *const s = static_cast<syclex::external_semaphore *>(sem);
+    if (!s) {
+        return;
+    }
+    try {
+        syclex::release_external_semaphore(*s, rt->lib);
+    } catch (const std::exception &e) {
+        (void)runtime_failed("Vulkan timeline semaphore release", e);
+    }
+    delete s;
+}
+
+extern "C" void vmafx_sycl_rt_semaphore_signal_now(VmafxSyclRt *rt, void *const *sems,
+                                                   const uint64_t *values, uint32_t n)
+{
+    VmafxSyclRelease r = {};
+    for (uint32_t i = 0; i < n && i < 3u; i++) {
+        r.signals[i] = sems[i];
+        r.signal_values[i] = values[i];
+    }
+    try {
+        /* A queue of its own: the library queue is in-order and would put the
+         * signals behind the frame's readers. */
+        sycl::queue early(rt->lib.get_context(), rt->lib.get_device());
+        (void)signal_semaphores(early, &r, nullptr);
+        early.wait_and_throw();
+    } catch (const std::exception &e) {
+        (void)runtime_failed("planted early signal", e);
     }
 }
 
@@ -630,6 +712,17 @@ extern "C" int vmafx_sycl_rt_frame_after_event(VmafxSyclFrameRt *f, uintptr_t ev
         return 0;
     } catch (const std::exception &e) {
         return runtime_failed("acquire join", e);
+    }
+}
+
+extern "C" int vmafx_sycl_rt_frame_wait_semaphore(VmafxSyclFrameRt *f, void *sem, uint64_t value)
+{
+    try {
+        const auto *const s = static_cast<const syclex::external_semaphore *>(sem);
+        note_last(f, f->rt->lib.ext_oneapi_wait_external_semaphore(*s, value));
+        return 0;
+    } catch (const std::exception &e) {
+        return runtime_failed("Vulkan timeline wait", e);
     }
 }
 
@@ -731,7 +824,10 @@ extern "C" int vmafx_sycl_rt_frame_release(VmafxSyclFrameRt *f, const VmafxSyclR
 {
     VmafxSyclRt *const rt = f->rt;
     try {
-        const sycl::event done = release_barrier(f);
+        const sycl::event barrier = release_barrier(f);
+        /* The producer's Vulkan semaphores behind the barrier; the frees
+         * behind the last signal. */
+        const sycl::event done = signal_semaphores(rt->lib, r, &barrier);
         if (r->signal) {
             submit_signal(rt, r);
         }
@@ -764,7 +860,14 @@ extern "C" void vmafx_sycl_rt_frame_discard(VmafxSyclFrameRt *f, const VmafxSycl
         (void)runtime_failed("discard drain", e);
     }
     if (r) {
-        free_now(rt, r->owned, {r->imports[0], r->imports[1], r->imports[2]});
+        try {
+            /* The queue drained: nothing reads the frame any more. */
+            (void)signal_semaphores(rt->lib, r, nullptr);
+            rt->lib.wait_and_throw();
+        } catch (const std::exception &e) {
+            (void)runtime_failed("discard signal", e);
+        }
+        free_now(rt, r->owned, {r->imports[0], r->imports[1], r->imports[2]}, sems_of(r));
         if (r->signal) {
             r->signal(r->arg);
         }

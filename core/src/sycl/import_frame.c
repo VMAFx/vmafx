@@ -150,7 +150,12 @@ static VmafxSyclRelease release_of(const VmafxSyclFrame *sf, VmafxHostFence *fen
                           .arg = fence,
                           .slot = sf->release_slot,
                           .owned = sf->owned,
-                          .imports = {sf->imports[0], sf->imports[1], sf->imports[2]}};
+                          .imports = {sf->imports[0], sf->imports[1], sf->imports[2]},
+                          .waits = {sf->waits[0], sf->waits[1], sf->waits[2]}};
+    for (uint32_t i = 0; i < sf->n_signal && i < 3u; i++) {
+        r.signals[i] = sf->signals[i];
+        r.signal_values[i] = sf->signal_values[i];
+    }
     return r;
 }
 
@@ -308,9 +313,49 @@ static VmafxStatus host_acquire(const VmafxReport *report, const VmafxFence *acq
                       "waits and retries once)");
 }
 
-/* The acquire fence is one the SYCL device honours: a SYCL event (a barrier
- * on the library queue), a host fence, sync_file or GL sync already
- * signalled, or none. */
+/* A VULKAN_SEMAPHORE acquire fence: an exported timeline semaphore's
+ * descriptor (Linux). */
+static VmafxStatus check_semaphore(const VmafxReport *report, const VmafxFence *f,
+                                   const char *subject)
+{
+    if (f->fd >= 0) {
+        return VMAFX_OK;
+    }
+    return VMAFX_FAIL(report, f->handle ? VMAFX_E_NOTSUP : VMAFX_E_INVALID, 0, VMAFX_SUBJECT_FENCE,
+                      subject,
+                      f->handle ? "backend sycl: a Windows handle of a Vulkan semaphore; Windows "
+                                  "handles are not imported until a Windows device runs their "
+                                  "tests" :
+                                  "a Vulkan semaphore without its descriptor");
+}
+
+/* A further acquire fence (VmafxFrameImport.acquire_more) is one the device
+ * waits on, on the device: a Vulkan timeline semaphore. */
+static VmafxStatus check_more_acquires(const VmafxReport *report, const VmafxFrameImport *d)
+{
+    for (uint32_t i = 0; i < 2u; i++) {
+        const VmafxFence *const f = &d->acquire_more[i];
+        if (f->kind == VMAFX_FENCE_NONE) {
+            continue;
+        }
+        if (f->kind != VMAFX_FENCE_VULKAN_SEMAPHORE) {
+            return VMAFX_FAIL(report, VMAFX_E_NOTSUP, 0, VMAFX_SUBJECT_FENCE,
+                              vmafx_import_acquire_name(i + 1u),
+                              "backend sycl: a further acquire fence of kind %u; the SYCL device "
+                              "waits on further VULKAN_SEMAPHORE fences",
+                              (unsigned)f->kind);
+        }
+        const VmafxStatus status = check_semaphore(report, f, vmafx_import_acquire_name(i + 1u));
+        if (status != VMAFX_OK) {
+            return status;
+        }
+    }
+    return VMAFX_OK;
+}
+
+/* The acquire fence is one the SYCL device honours: a SYCL event or a Vulkan
+ * timeline semaphore (a wait on the library queue), a host fence, sync_file
+ * or GL sync already signalled, or none. */
 static VmafxStatus check_sycl_acquire(const VmafxReport *report, const VmafxFrameImport *d)
 {
     const VmafxFence *const acquire = &d->acquire;
@@ -333,10 +378,13 @@ static VmafxStatus check_sycl_acquire(const VmafxReport *report, const VmafxFram
                               "backend sycl: a GL sync orders GL_TEXTURE imports only");
         }
         return vmafx_gl_sync_acquire(report, acquire, "sycl");
+    case VMAFX_FENCE_VULKAN_SEMAPHORE:
+        return check_semaphore(report, acquire, "desc.acquire");
     default:
         return VMAFX_FAIL(report, VMAFX_E_NOTSUP, 0, VMAFX_SUBJECT_FENCE, "desc.acquire.kind",
                           "backend sycl: an acquire fence of kind %u; the SYCL device waits on "
-                          "NONE, HOST, SYCL_EVENT, SYNC_FILE and GL_SYNC fences",
+                          "NONE, HOST, SYCL_EVENT, SYNC_FILE, GL_SYNC and VULKAN_SEMAPHORE "
+                          "fences",
                           (unsigned)acquire->kind);
     }
 }
@@ -578,11 +626,56 @@ static void pointer_sources(const VmafxFrameImport *d, VmafxSyclSource src[3])
     }
 }
 
+/* Import one Vulkan timeline semaphore into the frame (freed at its
+ * release, waited on or not) and wait on it on the library queue, unless
+ * the planted defect skips the wait. */
+static VmafxStatus wait_semaphore(const VmafxReport *report, VmafxSyclFrame *sf,
+                                  const VmafxFence *fence, const char *subject)
+{
+    assert(sf->n_wait < 3u);
+    void *sem = NULL;
+    const VmafxStatus status = vmafx_sycl_semaphore_import(report, sf->dev, fence, subject, &sem);
+    if (status != VMAFX_OK) {
+        return status;
+    }
+    sf->waits[sf->n_wait++] = sem;
+    if (vmafx_test_switch(VMAFX_TEST_SKIP_ACQUIRE_WAIT)) {
+        return VMAFX_OK; /* the planted defect */
+    }
+    const int werr = vmafx_sycl_rt_frame_wait_semaphore(sf->rt, sem, fence->value);
+    return werr ?
+               VMAFX_FAIL(report, VMAFX_E_INVALID, werr, VMAFX_SUBJECT_FENCE, subject,
+                          "backend sycl: cannot wait on the Vulkan timeline semaphore (%d)", werr) :
+               VMAFX_OK;
+}
+
+/* Every VULKAN_SEMAPHORE acquire fence of the import, in order. */
+static VmafxStatus wait_semaphores(const VmafxReport *report, VmafxSyclFrame *sf,
+                                   const VmafxFrameImport *d)
+{
+    const VmafxFence *const fences[3] = {&d->acquire, &d->acquire_more[0], &d->acquire_more[1]};
+    for (uint32_t i = 0; i < 3u; i++) {
+        if (fences[i]->kind != VMAFX_FENCE_VULKAN_SEMAPHORE) {
+            continue;
+        }
+        const VmafxStatus status =
+            wait_semaphore(report, sf, fences[i], vmafx_import_acquire_name(i));
+        if (status != VMAFX_OK) {
+            return status;
+        }
+    }
+    return VMAFX_OK;
+}
+
 /* The acquire barrier (none under the planted defect) and the planes. */
 static VmafxStatus enqueue_import(const VmafxReport *report, VmafxSyclFrame *sf,
                                   const VmafxFrameImport *d, const VmafxImportLayout *layout,
                                   const VmafxSyclSource src[3], void *data[3], ptrdiff_t stride[3])
 {
+    const VmafxStatus waited = wait_semaphores(report, sf, d);
+    if (waited != VMAFX_OK) {
+        return waited;
+    }
     if (d->acquire.kind == VMAFX_FENCE_SYCL_EVENT &&
         !vmafx_test_switch(VMAFX_TEST_SKIP_ACQUIRE_WAIT)) {
         const int err = vmafx_sycl_rt_frame_after_event(sf->rt, d->acquire.handle);
@@ -725,6 +818,9 @@ VmafxStatus vmafx_sycl_frame_import(const VmafxReport *report, VmafxDevice *devi
     }
     if (status == VMAFX_OK) {
         status = check_sycl_acquire(report, desc);
+    }
+    if (status == VMAFX_OK) {
+        status = check_more_acquires(report, desc);
     }
     return status == VMAFX_OK ? bind_sycl_frame(report, device, desc, layout, out) : status;
 }

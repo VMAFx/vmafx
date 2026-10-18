@@ -67,6 +67,23 @@ the link. The repo's own `fuzz.yml` pairs the same two options. Without it the
 stage fails on every branch, including ones that change no code at all — and a
 stage that cries wolf is a stage people learn to ignore.
 
+## In CI
+
+The required `Pre-Commit` job runs the `msvcism` stage on every pull request
+and push, against the files changed since the base
+([ADR-3351](../adr/3351-msvcism-scan-on-light-tier.md)). A light-tier pull
+request builds no `cl.exe` leg (`Windows MSVC+SYCL` compiles with `icx-cl`,
+which accepts `nullptr` in C), so this scan is what stops a C23-only keyword
+before master. Reproduce the CI step locally with:
+
+```bash
+PREFLIGHT_BASE=origin/master bash scripts/dev/preflight.sh --stage msvcism
+```
+
+Every scan of the stage fails when it cannot finish, rather than reporting
+nothing; `scripts/ci/tests/test-preflight-msvcism.sh` (run by `make lint-sh`)
+holds that to a failing result.
+
 ## What it does not cover
 
 `Windows UCRT64`, the Windows MSVC lanes proper, and `Ubuntu HIP` have no

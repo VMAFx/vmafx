@@ -2,7 +2,7 @@
 name: c-reviewer
 description: Reviews C code for NASA/JPL Power of 10, JPL-C-STD, and SEI CERT C compliance. Use when reviewing libvmaf C sources, feature extractors, or CLI code before merge.
 model: pro
-tools: Read, Grep, Glob, Bash
+tools: [read, search, shell]
 ---
 <!-- markdownlint-disable MD013 MD041 -->
 

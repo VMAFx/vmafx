@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: EUPL-1.2
 """Agent PreToolUse evasion interceptor (HISS), written by praetorctl adopt.
 
 Wire this script as a PreToolUse hook of the agent harness's shell tool. The harness passes

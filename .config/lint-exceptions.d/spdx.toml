@@ -15,6 +15,6 @@ reason = "Praetor-managed file: `praetorctl audit` compares it with praetor's ow
 expires = 2027-02-12
 
 [[exception]]
-path = ".config/lefthook/engine.sh"
-reason = "Praetor's hook launcher, written by `praetorctl adopt`. Adoption refreshes it only while it is one of praetor's own texts; a copy with an added header is kept as the repository's file and stops following the engine pin (ADR-3272); REUSE.toml labels it. Re-reviewed 2026-10-15: the launcher at engine pin 3bbde07 still has no SPDX line (cordanaLLM/praetor issue 1281, open); remove the entry with the engine pin that carries the fix. Category D (120 days)."
-expires = 2027-02-12
+path = ".config/lefthook/python.sh"
+reason = "Praetor's Python launcher, written by `praetorctl adopt` at engine train 32a35c8fb947. Adoption refreshes it only while it is one of praetor's own texts; a copy with an added header is kept as the repository's file and stops following the engine pin (ADR-3272). The launcher has no SPDX line (cordanaLLM/praetor issue 1441, open); remove the entry with the engine pin that carries the fix. Category D (120 days)."
+expires = 2027-02-15

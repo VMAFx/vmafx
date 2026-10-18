@@ -383,8 +383,8 @@ static char *test_acquire_order(void)
                   "wait %u bad of %u] ",
                   planted, ahead, real, N_FRAMES);
     /* The skipped wait must be seen where no import waited for its writer:
-     * CUDA, whose import never waits, and any arm whose every import ran
-     * ahead of its write. Where the platform ordered every import behind its
+     * the timeline lanes (CUDA, SYCL), whose import never waits on the host,
+     * and any arm whose every import ran ahead of its write. Where the platform ordered every import behind its
      * writer (the gfx1036 under ROCm 10.1,
      * T-HIP-DMABUF-IMPORT-WAITS-FOR-WRITER-2026-10-06) no frame can read
      * early. Between the two, a frame imported ahead of its write may or may
@@ -581,11 +581,18 @@ static bool release_frame(VmafxContext *const contexts[2], Pairs *p, VkFrame *de
         ok = vk_describe(fs[s], 2u, &imp);
         if (ok) {
             imp.acquire_more[0] = hold; /* CUDA */
-            if (!VK_DEVICE_SEMAPHORES) {
-                imp.acquire = hold; /* SYCL / HIP: the event replaces the sync_file */
+            if (VMAFX_VK_LANE == 2) {
+                /* SYCL: the event is the acquire fence, the timeline a further one */
+                imp.acquire_more[0] = imp.acquire;
+                imp.acquire = hold;
+            } else if (!VK_DEVICE_SEMAPHORES) {
+                imp.acquire = hold; /* HIP: the hold replaces the sync_file */
                 imp.acquire_more[0].kind = VMAFX_FENCE_NONE;
             }
             ok = vmafx_frame_import(gpu.device, &imp, &frames[s], NULL) == VMAFX_OK;
+            if (VMAFX_VK_LANE == 2 && imp.acquire_more[0].fd >= 0) {
+                (void)close(imp.acquire_more[0].fd); /* borrowed: the library duplicated it */
+            }
             imp.acquire.kind = VK_DEVICE_SEMAPHORES ? imp.acquire.kind : VMAFX_FENCE_NONE;
             vkp_import_close(&imp);
         }

@@ -147,7 +147,7 @@ cythonize-deps: $(VENV_PIP)
 	preflight \
 	format format-check sec sbom \
         test-netflix-golden test-netflix-golden-arm64 test-sanitizers test-fast test-timing install-hooks hooks-install help \
-        upstream-parity upstream-parity-full \
+        upstream-parity upstream-parity-full compat-abi-parity compat-abi-parity-plant \
         coverage coverage-html coverage-check assertion-density pr-check ffmpeg-input-contract \
         silent-revert-check
 
@@ -691,6 +691,16 @@ upstream-parity:
 upstream-parity-full:
 	python3 scripts/dev/upstream_parity.py --container $(UPSTREAM_PARITY_IMAGE) --mode full \
 	    --heap-check --jobs $(UPSTREAM_PARITY_JOBS) $(UPSTREAM_PARITY_ARGS)
+
+compat-abi-parity:
+	python3 scripts/dev/upstream_parity.py --container $(UPSTREAM_PARITY_IMAGE) --mode probe \
+	    --abi --jobs $(UPSTREAM_PARITY_JOBS) $(UPSTREAM_PARITY_ARGS)
+
+# The plant must fail with exit 1 (a difference); exit 2 (cannot run) is no proof.
+compat-abi-parity-plant:
+	python3 scripts/dev/upstream_parity.py --container $(UPSTREAM_PARITY_IMAGE) --mode probe \
+	    --abi --plant --jobs $(UPSTREAM_PARITY_JOBS) $(UPSTREAM_PARITY_ARGS); \
+	    status=$$?; test "$$status" -eq 1 || { echo "plant: expected exit 1, got $$status" >&2; exit 1; }
 
 # Sanitizer build (ASan + UBSan) — used by CI and `/build-vmaf --sanitizers`.
 # The suite's timeouts are sized for an uninstrumented build; a sanitizer or

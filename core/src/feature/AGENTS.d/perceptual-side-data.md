@@ -2,6 +2,8 @@
 paths:
   - core/src/feature/feature_collector.cpp
   - core/src/feature/feature_extractor.h
+  - core/src/feature/pelorus_udu_wrap.h
+  - core/src/feature/perceptual_weight.c
 invariant: Perceptual side-data weighting golden-isolation invariant and normalization contracts.
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
@@ -41,3 +43,23 @@ invariant: Perceptual side-data weighting golden-isolation invariant and normali
      / `test_complexity_modulates_grid_zero` (toggle-proven: stubbing helper
      to no-op fails test). section is grid-independent, so it also
      modulates `grid==0` scalar path.
+
+## Pelorus side data behind the x265 UUID (ADR-3340)
+
+- **Allow-list, one outer UUID.** `vmaf_pelorus_udu_classify()`: DIRECT =
+  blob or carrier UUID at offset 0; X265_WRAPPED = x265 UUID
+  `2ca2de09-b517-47db-bb55-a4fe7fc2fc4e` at 0, more than 16 data bytes, blob or
+  carrier UUID at 16; NONE = rest. Never skip an unknown UUID and retry; never
+  accept a second x265 wrap (Pelorus ADR-0210).
+- **Fork code, not mirror.** Classifier lives in `core/src/feature/`; the
+  Pelorus mirror (`pel_blob_unwrap()`, `libvmaf/pelorus/*.h`) stays
+  byte-identical to the pin (ADR-1113).
+- **Vectors = Pelorus' file.** `testdata/pelorus/udu-wrap-vectors.txt` copied
+  from VMAFx/pelorus `ffmpeg-patches/test/fixtures/udu-wrap-vectors.txt`
+  (blob `3a115ee3` at `7f6bd706`). Pelorus adds vectors: copy file, raise
+  `VEC_MIN_COUNT` in `core/test/test_pelorus_udu_wrap.c`. Never edit a vector
+  here.
+- **Guards.** `test_pelorus_udu_wrap` (replay, fails on a missing file, too few
+  vectors, a class without one); `test_perceptual_weight`
+  `test_x265_wrapped_matches_direct` (bit-identical weight, blob and carrier),
+  `test_unknown_outer_and_double_wrap_refused` (-ENOENT).

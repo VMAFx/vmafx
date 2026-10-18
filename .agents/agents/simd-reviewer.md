@@ -2,7 +2,7 @@
 name: simd-reviewer
 description: Reviews SIMD intrinsics files under core/src/feature/x86/ and core/src/feature/arm64/. Checks bit-exactness vs scalar reference, alignment, masking, lane ordering, reduction stability. Use when reviewing AVX2/AVX-512/NEON implementations.
 model: pro
-tools: Read, Grep, Glob, Bash
+tools: [read, search, shell]
 ---
 <!-- markdownlint-disable MD013 MD041 -->
 

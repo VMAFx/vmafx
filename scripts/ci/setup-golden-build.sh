@@ -129,4 +129,11 @@ if [[ -n "${GOLDEN_NINJA_JOBS:-}" ]]; then
   NINJA_ARGS+=(-j "${GOLDEN_NINJA_JOBS}")
 fi
 
-"${NINJA_BIN}" "${NINJA_ARGS[@]}" tools/vmaf
+NINJA_TARGETS=()
+if [[ $# -ge 4 ]]; then
+  NINJA_TARGETS=("${@:4}")
+else
+  NINJA_TARGETS=(tools/vmaf)
+fi
+
+"${NINJA_BIN}" "${NINJA_ARGS[@]}" "${NINJA_TARGETS[@]}"

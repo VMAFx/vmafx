@@ -1,7 +1,10 @@
 ---
-name: doc-reviewer
 description: Reviews any change under docs/ (mkdocs site, ADRs, research digests, model cards) for accuracy, freshness, link health, mkdocs strict-build conformance, and per-surface ADR-0100 doc-substance bars. Use when reviewing docs-only PRs or the doc parts of mixed PRs.
-tools: Read, Grep, Glob, Bash
+name: doc-reviewer
+tools:
+  - read
+  - search
+  - execute
 ---
 <!-- markdownlint-disable MD041 -->
 
@@ -66,3 +69,5 @@ Review documentation for VMAFx fork. Scope: `docs/` (mkdocs site),
   contradicting doc.
 
 Do not edit. Recommend.
+
+<!-- markdownlint-disable MD013 -->

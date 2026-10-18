@@ -1,0 +1,1 @@
+| [ADR-3351](3351-msvcism-scan-on-light-tier.md) | The required `Pre-Commit` job runs the `msvcism` stage of `scripts/dev/preflight.sh` on the changed files of every pull request; every scan of the stage fails rather than drops its findings when a grep finds nothing (#2852 merged five `nullptr` in a C test past the icx-cl MSVC+SYCL leg) | Accepted | ci, build, testing |

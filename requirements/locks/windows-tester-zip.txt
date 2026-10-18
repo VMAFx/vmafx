@@ -1,5 +1,5 @@
 # VMAFx hash lock; regenerate with: make python-locks-write
-# vmafx-uv-version: 0.12.18
+# vmafx-uv-version: 0.13.1
 # vmafx-input-sha256: 9f2e23b01498e3df82b67098bf60824a9b9fc58e9e1bc89acdf01296bf5ffac4
 # vmafx-inputs: requirements/locks/windows-tester-zip.in
 zopfli==0.4.3 \
