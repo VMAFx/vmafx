@@ -222,6 +222,16 @@ exit 0
         self.assertIn("MODEL_HIT=$(scripts/ci/upstream_watch_count.sh", netflix_645_content)
         self.assertNotIn('|| echo ""', netflix_645_content)
 
+    def test_no_workflow_uses_code_search(self) -> None:
+        """Code search is throttled for the workflow token; the watchers read the contents API."""
+        for workflow in WORKFLOW_FILES:
+            content = workflow.read_text(encoding="utf-8")
+            self.assertNotIn("search/code", content, f"code-search call in {workflow.name}")
+            self.assertNotIn("gh search code", content, f"code-search hint in {workflow.name}")
+        ffmpeg_content = WORKFLOW_FILES[0].read_text(encoding="utf-8")
+        self.assertIn("repos/FFmpeg/FFmpeg/contents/libavutil", ffmpeg_content)
+        self.assertIn("repos/FFmpeg/FFmpeg/contents/libavutil/hwcontext.h", ffmpeg_content)
+
 
 if __name__ == "__main__":
     unittest.main()
