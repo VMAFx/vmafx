@@ -58,8 +58,9 @@ VmafxStatus vmafx_sycl_device_count(const VmafxReport *report, uint32_t *count)
  * extractors copy rows on the device), dma-bufs (linear bound, Intel Y and
  * Tile4 de-tiled on the device), GL textures and LINEAR or DRM format
  * modifier Vulkan memory (as dma-bufs, Linux); it waits on NONE, HOST,
- * SYCL_EVENT, SYNC_FILE and GL_SYNC acquire fences and returns HOST and
- * SYCL_EVENT release fences. */
+ * SYCL_EVENT, SYNC_FILE, GL_SYNC and VULKAN_SEMAPHORE (timeline, up to three
+ * per frame) acquire fences, returns HOST and SYCL_EVENT release fences and
+ * signals the producer's Vulkan timeline semaphores at release (Linux). */
 static VmafxDeviceInfo sycl_info(int32_t index, uint32_t flags, const char *name, uint64_t memory,
                                  const uint32_t pci[4])
 {
@@ -73,7 +74,8 @@ static VmafxDeviceInfo sycl_info(int32_t index, uint32_t flags, const char *name
 #ifdef __linux__
     info.memory_kinds |=
         (1u << VMAFX_MEMORY_DMABUF) | (1u << VMAFX_MEMORY_GL_TEXTURE) | (1u << VMAFX_MEMORY_VULKAN);
-    info.fence_kinds |= (1u << VMAFX_FENCE_SYNC_FILE) | (1u << VMAFX_FENCE_GL_SYNC);
+    info.fence_kinds |= (1u << VMAFX_FENCE_SYNC_FILE) | (1u << VMAFX_FENCE_GL_SYNC) |
+                        (1u << VMAFX_FENCE_VULKAN_SEMAPHORE);
 #endif
     info.total_memory = memory;
     info.name = name;

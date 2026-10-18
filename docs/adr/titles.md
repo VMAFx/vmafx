@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1390), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1394), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5571,3 +5571,19 @@ Every ADR, one heading each (1390), so the site search finds an ADR by its title
 ## ADR-3338: Dev Container Build runs on light-tier pull requests that change the image's own inputs
 
 [3338-dev-container-own-input-lane](3338-dev-container-own-input-lane.md)
+
+## ADR-3339: Upstream Consumer ABI Drop-in Parity Verification and Defect Plant Gate
+
+[3339-compat-abi-parity-upstream-consumer](3339-compat-abi-parity-upstream-consumer.md)
+
+## ADR-3340: Pelorus side data behind the x265 UUID is read through an allow-list
+
+[3340-pelorus-udu-x265-wrap](3340-pelorus-udu-x265-wrap.md)
+
+## ADR-3351: The msvcism scan is a required step of every pull request
+
+[3351-msvcism-scan-on-light-tier](3351-msvcism-scan-on-light-tier.md)
+
+## ADR-3352: A SYCL device waits on and signals Vulkan timeline semaphores on its queue
+
+[3352-sycl-vulkan-timeline-on-queue](3352-sycl-vulkan-timeline-on-queue.md)

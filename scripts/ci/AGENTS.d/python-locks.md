@@ -14,7 +14,7 @@ area: release
 `check_python_dependency_locks.py` enforces cryptographic pinning and hermetic
 install policy across repository:
 
-- All lock files are generated via `requirements/locks/manifest.json` using reviewed `uv_version` (`0.12.18`).
+- All lock files are generated via `requirements/locks/manifest.json` using reviewed `uv_version` (`0.13.1`).
 - Manifest outputs and inputs must be local repository-relative paths on both POSIX and Windows (rejecting directory traversal `..`, drive/UNC or POSIX absolute paths, remote URLs, and surrounding whitespace); inputs must not contain duplicates.
 - Manifest `compile_args` must not specify output overrides (`-o`, `--output-file`).
 - Every `*-lock.txt` and `requirements/locks/*.txt` in tree must be registered in `manifest.json`.

@@ -379,7 +379,13 @@ variance maps) travels on the distorted frame as an unregistered SEI
 default and golden-isolated: weighting engages only when it is `1` **and** a
 valid Pelorus blob is present. Standard scoring, including the Netflix golden
 pairs that carry no side-data, is byte-identical to upstream. A foreign or
-absent SEI is ignored and the frame is scored unweighted. Pair it with a
+absent SEI is ignored and the frame is scored unweighted. The filter reads
+every user-data SEI entry of a frame, not only the first, and accepts the
+Pelorus blob form and the zero-free carrier form that `h264_nvenc` and
+`hevc_nvenc` write from Pelorus ABI 1.5. Either form is also read when
+`libx265` has put its own SEI UUID in front of it; any other outer UUID leaves
+the frame unweighted ([ADR-3340](../adr/3340-pelorus-udu-x265-wrap.md)). A
+corrupt carrier leaves the frame unweighted and logs a warning. Pair it with a
 Pelorus-enabled producer that emits the interop blob; the C API is in
 [`docs/api/perceptual-weight.md`](../api/perceptual-weight.md).
 

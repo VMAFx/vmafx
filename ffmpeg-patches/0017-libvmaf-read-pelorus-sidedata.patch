@@ -3,9 +3,6 @@ From: Lusoris <lusoris@pm.me>
 Date: Sun, 14 Jun 2026 12:00:00 +0200
 Subject: [PATCH] libvmaf: read Pelorus side-data and drive perceptual
  weighting
-MIME-Version: 1.0
-Content-Type: text/plain; charset=UTF-8
-Content-Transfer-Encoding: 8bit
 
 Wire the `libvmaf` filter's per-frame callback to read a Pelorus
 side-data blob off the distorted AVFrame (AV_FRAME_DATA_SEI_UNREGISTERED,
@@ -18,9 +15,14 @@ never enables weighting, so scoring is byte-identical to upstream. When
 `perceptual_weight=1` the weighting still only engages for frames that
 actually carry a valid Pelorus blob; frames without one (and the Netflix
 golden pairs, which have no side-data) are scored unweighted. A buffer
-that is not a Pelorus blob is cleanly ignored — av_frame_get_side_data
-returns either nothing or a foreign SEI, and vmaf_set_perceptual_sidedata
+that is not a Pelorus blob is cleanly ignored: vmaf_set_perceptual_sidedata
 rejects it (returns -ENOENT) without touching the score.
+
+A frame can carry several SEI-unregistered entries, and Pelorus 1.5 writes
+its blob in either the plain form or the COBS carrier form. The filter
+offers every entry to vmaf_set_perceptual_sidedata, newest first as
+Pelorus's own reader does, and stops at the first one accepted; an entry
+refused for another reason than -ENOENT is logged at debug level.
 
 The frame index passed to vmaf_set_perceptual_sidedata is s->frame_cnt,
 matching the index handed to vmaf_read_pictures on the same call.
@@ -30,11 +32,11 @@ ADR-1113 (vendored Pelorus interop ABI). CI validates this patch by
 replaying the full series against a clean n8.1 checkout
 (git am --3way), not standalone git apply.
 ---
- libavfilter/vf_libvmaf.c | 41 ++++++++++++++++++++++++++++++++++++++++
- 1 file changed, 41 insertions(+)
+ libavfilter/vf_libvmaf.c | 52 ++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 52 insertions(+)
 
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
-index 3d1f93285a80e2dd0bbae688a55630113426603f..727a3ffdaece129eb7db17cee80ef77c2df2e6b1 100644
+index 3d1f93285a80e2dd0bbae688a55630113426603f..c383b444b44d7ba0d0bdcef62497336f886943ea 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
 @@ -29,6 +29,9 @@
@@ -63,7 +65,7 @@ index 3d1f93285a80e2dd0bbae688a55630113426603f..727a3ffdaece129eb7db17cee80ef77c
      { NULL }
  };
  
-@@ -316,6 +321,42 @@ static int do_vmaf(FFFrameSync *fs)
+@@ -316,6 +321,53 @@ static int do_vmaf(FFFrameSync *fs)
          return AVERROR(ENOMEM);
      }
  
@@ -81,24 +83,35 @@ index 3d1f93285a80e2dd0bbae688a55630113426603f..727a3ffdaece129eb7db17cee80ef77c
 +     * re-weighted. The Netflix golden pairs have no side-data, so they score
 +     * bit-exact regardless of this option. */
 +    if (s->perceptual_weight) {
-+        const AVFrameSideData *sd;
++        int i;
 +
 +        /* Idempotent: flips a bool on the libvmaf context. Re-asserting it per
 +         * frame avoids a separate init-path hunk and is harmless. */
 +        (void)vmaf_set_perceptual_weight_enabled(s->vmaf, 1);
 +
-+        sd = av_frame_get_side_data(dist, AV_FRAME_DATA_SEI_UNREGISTERED);
-+        if (sd && sd->data && sd->size) {
-+            int pw_err = vmaf_set_perceptual_sidedata(s->vmaf, sd->data, sd->size,
-+                                                      s->frame_cnt);
-+            if (pw_err && pw_err != AVERROR(ENOENT)) {
-+                /* -EPROTO (ABI mismatch) and other soft failures are
-+                 * non-fatal: log at debug level and score the frame unweighted
-+                 * rather than failing the whole graph. */
++        /* A frame may carry several unregistered SEIs: one per Pelorus
++         * producer, in the blob or the zero-free carrier form (Pelorus
++         * interop ABI 1.5), and foreign ones. Scan them newest first, as
++         * Pelorus's own reader does, and register the first one libvmaf
++         * accepts; -ENOENT means "not Pelorus side data", keep looking. */
++        for (i = dist->nb_side_data - 1; i >= 0; i--) {
++            const AVFrameSideData *sd = dist->side_data[i];
++            int pw_err;
++
++            if (sd->type != AV_FRAME_DATA_SEI_UNREGISTERED || !sd->data || !sd->size)
++                continue;
++            pw_err = vmaf_set_perceptual_sidedata(s->vmaf, sd->data, sd->size,
++                                                  s->frame_cnt);
++            if (!pw_err)
++                break;
++            if (pw_err != AVERROR(ENOENT)) {
++                /* -EPROTO (corrupt carrier, ABI mismatch) and other soft
++                 * failures are non-fatal: log at debug level and try an
++                 * older entry; with none left the frame is scored
++                 * unweighted rather than failing the whole graph. */
 +                av_log(ctx, AV_LOG_DEBUG,
-+                       "perceptual_weight: side-data for frame %u not usable "
-+                       "(%d); frame scored unweighted.\n",
-+                       s->frame_cnt, pw_err);
++                       "perceptual_weight: side-data entry %d for frame %u not "
++                       "usable (%d).\n", i, s->frame_cnt, pw_err);
 +            }
 +        }
 +    }

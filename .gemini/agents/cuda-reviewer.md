@@ -1,7 +1,13 @@
 ---
-name: cuda-reviewer
 description: Reviews CUDA kernels and host code under core/src/cuda/ and core/src/feature/cuda/ for correctness, performance, and safety. Use when reviewing .cu files, kernel launches, or cudaMemcpy patterns.
-tools: Read, Grep, Glob, Bash
+name: cuda-reviewer
+tools:
+  - read_file
+  - read_many_files
+  - grep_search
+  - glob
+  - list_directory
+  - run_shell_command
 ---
 <!-- markdownlint-disable MD013 MD041 -->
 

@@ -43,6 +43,7 @@
 #include "vmafx_fixture_util.h"
 #include "vmafx_hip_test_util.h"
 #include "vmafx_test_util.h"
+#include "vmafx_window_cells.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
@@ -80,6 +81,7 @@ static bool have_gbm;
 #endif
 static unsigned long compared;
 static unsigned long differing; /* cells that differed in every attempt */
+static unsigned long windows_checked;
 static unsigned long retried_attempts;
 static unsigned long retried_values;
 static unsigned long cells_run;
@@ -249,10 +251,14 @@ static VmafxFrame *import_one(VmafxContext *context, const VtClip *clip, const U
 }
 
 /* The import session of a cell over the producer's frames. */
-static VmafxContext *run_import(const VtClip *clip, const Uploads *u, const VcCell *cell)
+static VmafxContext *run_import(const VtClip *clip, const Uploads *u, const VcCell *cell,
+                                VmafxContext *host, VwcSet *windows)
 {
     VmafxContext *const context = vc_cell_context(gpu.device, cell);
     bool ok = context != NULL;
+    if (ok && host && windows) {
+        ok = vwc_open(context, host, u->n, windows);
+    }
     for (unsigned i = 0; i < u->n && ok; i++) {
         VmafxFrame *const ref = import_one(context, clip, u, &u->ref[i]);
         VmafxFrame *const dist = import_one(context, clip, u, &u->dist[i]);
@@ -265,6 +271,9 @@ static VmafxContext *run_import(const VtClip *clip, const Uploads *u, const VcCe
     }
     ok = ok && vmafx_flush(context, NULL) == VMAFX_OK;
     if (!ok && context) {
+        if (windows) {
+            vwc_release(windows);
+        }
         (void)vmafx_context_destroy(context, NULL);
     }
     return ok ? context : NULL;
@@ -281,7 +290,7 @@ static bool cell_applies(const VtClip *clip, const VcCell *cell)
 
 static char *import_cell_only(const VtClip *clip, const Uploads *u, const VcCell *cell)
 {
-    VmafxContext *const imp = run_import(clip, u, cell);
+    VmafxContext *const imp = run_import(clip, u, cell, NULL, NULL);
     mu_assert("import session", imp != NULL);
     mu_assert("destroy", vmafx_context_destroy(imp, NULL) == VMAFX_OK);
     cells_run++;
@@ -291,11 +300,19 @@ static char *import_cell_only(const VtClip *clip, const Uploads *u, const VcCell
 /* One attempt at a cell: a host session and an import session, compared.
  * 1: bit-identical, 0: values differ, -1: a session failed. */
 static int attempt_cell(const VtClip *clip, const Uploads *u, const VcCell *cell,
-                        unsigned long *n_compared, unsigned long *n_differing)
+                        unsigned long *n_compared, unsigned long *n_differing,
+                        unsigned long *n_windows)
 {
+    VwcSet windows;
+    memset(&windows, 0, sizeof(windows));
     VmafxContext *const host = run_host(clip, cell);
-    VmafxContext *const imp = host ? run_import(clip, u, cell) : NULL;
-    const bool same = host && imp && vc_compare(host, imp, clip->n_frames, n_compared, n_differing);
+    VmafxContext *const imp = host ? run_import(clip, u, cell, host, &windows) : NULL;
+    const bool checked = host && imp && vwc_check(imp, host, &windows, n_compared, n_differing);
+    const bool same = checked && vc_compare(host, imp, clip->n_frames, n_compared, n_differing);
+    if (n_windows) {
+        *n_windows += windows.count;
+    }
+    vwc_release(&windows);
     const bool destroyed = (!host || vmafx_context_destroy(host, NULL) == VMAFX_OK) &&
                            (!imp || vmafx_context_destroy(imp, NULL) == VMAFX_OK);
     if (!same || !destroyed) {
@@ -321,9 +338,11 @@ static char *compare_cell(const VtClip *clip, const Uploads *u, const VcCell *ce
     for (unsigned attempt = 0; attempt < CELL_ATTEMPTS && verdict != 1; attempt++) {
         unsigned long n_compared = 0;
         unsigned long n_differing = 0;
-        verdict = attempt_cell(clip, u, cell, &n_compared, &n_differing);
+        unsigned long n_windows = 0;
+        verdict = attempt_cell(clip, u, cell, &n_compared, &n_differing, &n_windows);
         if (verdict == 1) {
             compared += n_compared;
+            windows_checked += n_windows;
             break;
         }
         retried_values += n_differing;
@@ -420,11 +439,13 @@ static char *test_counters(void)
     }
     (void)fprintf(stderr,
                   "[%lu cells, %lu values, %lu cells differing in every attempt, %lu attempts "
-                  "rerun (%lu values), %llu imports, %llu conversions, %llu host copies] ",
-                  cells_run, compared, differing, retried_attempts, retried_values,
+                  "rerun (%lu values), %lu windows, %llu imports, %llu conversions, "
+                  "%llu host copies] ",
+                  cells_run, compared, differing, retried_attempts, retried_values, windows_checked,
                   (unsigned long long)imports, (unsigned long long)vmafx_test_conversions(),
                   (unsigned long long)vmafx_test_host_copies());
     mu_assert("cells ran", cells_run > 0u && (compared > 0u || vc_import_only()));
+    mu_assert("windows checked", windows_checked > 0u || vc_import_only());
     mu_assert("no host copy of an imported frame", vmafx_test_host_copies() == 0u);
     mu_assert("semi-planar imports converted on the device", vmafx_test_conversions() > 0u);
     return NULL;

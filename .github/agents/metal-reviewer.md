@@ -1,7 +1,10 @@
 ---
-name: metal-reviewer
 description: Reviews Metal / Apple-Silicon code under core/src/metal/ (runtime, picture, IOSurface import) and core/src/feature/metal/ (.mm / .metal pairs) for correctness, parity vs the CUDA / Vulkan twins, and Apple-Family-7 gating. Use when reviewing .mm host wrappers, .metal MSL kernels, or IOSurface zero-copy patterns.
-tools: Read, Grep, Glob, Bash
+name: metal-reviewer
+tools:
+  - read
+  - search
+  - execute
 ---
 <!-- markdownlint-disable MD041 -->
 
@@ -64,3 +67,5 @@ PSNR-HVS, motion3).
   update.
 
 Do not edit. Recommend.
+
+<!-- markdownlint-disable MD013 -->

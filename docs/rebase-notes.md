@@ -8,6 +8,83 @@ search:
 # Rebase notes
 
 <!-- rebase-notes:fragments:begin (rendered from docs/rebase-notes.d/; do not edit) -->
+## SYCL lane waits on and signals Vulkan timelines on its queue (2026-10-18)
+
+- `core/src/sycl/import_frame.c`, `import_fence.c`, `vmafx_sycl_rt.{h,cpp}`:
+  Vulkan timeline semaphores are imported per frame with DPC++ external
+  semaphores, waited on the library queue before the first read and signalled
+  behind the release join ([ADR-3352](../adr/3352-sycl-vulkan-timeline-on-queue.md)).
+  Fork-only code, no upstream counterpart. **On sync**: keep the `dup()` of
+  the descriptor before the import (the runtime closes the one it imports)
+  and the `VULKAN_SEMAPHORE` bit of the SYCL fence-kind mask in
+  `import_device.c`; `test_vmafx_import_vulkan_sycl_fence` guards both on an
+  Arc device.
+
+## msvcism scan: no reset fallback, required in Pre-Commit (2026-10-18)
+
+- `scripts/dev/preflight.sh`, stage `msvcism`: every per-file scan ends its
+  grep pipeline with `|| [ $? -eq 1 ] || exit 2`, and the scan's assignment is
+  followed by `|| scan_failed '<name>'`. **On sync or rebase**: do not bring
+  back a `|| hits=""` style fallback after a `while read` scan; it erases the
+  findings whenever the last file is clean (ADR-3351). The static-aggregate
+  scanner is `$PREFLIGHT_DIR/find-nonconst-static-init.py`, not under
+  `$REPO_ROOT`.
+- `.github/workflows/lint-and-format.yml`, job `pre-commit`: keep the step
+  "MSVC-hostile constructs in the changed files".
+- `scripts/ci/tests/test-preflight-msvcism.sh` cases "a finding is still
+  reported when a clean file is scanned after it" and "a static aggregate
+  initialised from a const variable fails the stage" fail against the old
+  script; keep them.
+
+## Praetor pin 32a35c8fb947, the HISS-08 signal guard (2026-10-18)
+
+`chore/praetor-refresh-32a35c8f`. A rebase or sync keeps `PRAETOR_REF` at `32a35c8fb947...` in
+`.github/workflows/standards-gate.yml` and praetor's text of `.config/lefthook/python.sh`, which
+`.config/lint-exceptions.d/shfmt.toml` and `spdx.toml` list until a pin fixes cordanaLLM/praetor
+issue 1441; never format the launcher or add a header to it by hand. `.config/lefthook/scripts/common.py`
+keeps its guard before `os.killpg` (no pid or group of 1 or less, no bool, not its own group).
+`scripts/ci/tests/test_codex_hook_config.py` lists praetor's `praetorctl hook codex pre-tool` entry
+under `ENGINE_HOOKS`.
+
+## Pelorus side data behind the x265 UUID (2026-10-18)
+
+- `core/src/feature/perceptual_weight.c::unwrap_payload()` calls
+  `vmaf_pelorus_udu_classify()` (`core/src/feature/pelorus_udu_wrap.h`) and
+  drops the outer 16 bytes only for `VMAF_PELORUS_UDU_X265_WRAPPED`
+  (ADR-3340). Fork-only code; no upstream file changes. The Pelorus mirror
+  (`core/src/interop/pelorus_*.c`, `core/include/libvmaf/pelorus/`) is not
+  touched. `testdata/pelorus/udu-wrap-vectors.txt` is Pelorus' file byte for
+  byte; `test_pelorus_udu_wrap` and `test_perceptual_weight` guard it.
+
+## Compat ABI Parity: Upstream Consumer and Plant Gate (ADR-3339)
+
+- `scripts/dev/compat_abi_consumer.c`, `scripts/dev/compat_abi_plant.c`: new fork-authored test harnesses.
+- `scripts/dev/upstream_parity.py`: added `--abi` and `--plant` driver flags.
+- `scripts/ci/setup-golden-build.sh`: added optional ninja target support.
+- No rebase impact on Netflix code: all modified and added files are fork-only test tooling and CI gates.
+
+## Process-group signals go through one guard (2026-10-18)
+
+`fix/signal-target-guard` (#2847). Fork-only scripts and tests: no upstream file
+is touched. A rebase that brings a new `os.killpg()` or `os.kill(-pid, ...)` call
+routes it through `scripts.lib.safe_subprocess.signal_process_group()` instead;
+signal-0 probes (`_posix_process_group_exists()`) stay as they are.
+`tools/rc1-tester/src/vmaf_rc1_tester/_safe_subprocess.py` stays a byte copy of
+`scripts/lib/safe_subprocess.py` (`test_safe_subprocess_copy.py`).
+
+## Pelorus carrier form in libvmaf and patch 0017 (2026-10-17)
+
+- `ffmpeg-patches/0017-libvmaf-read-pelorus-sidedata.patch`: the filter
+  offers every `AV_FRAME_DATA_SEI_UNREGISTERED` entry of the distorted frame
+  to `vmaf_set_perceptual_sidedata()`, newest first, and stops at the first
+  accepted one. A refresh must not bring back the single
+  `av_frame_get_side_data()` lookup; `core/test/test_ffmpeg_libvmaf_pelorus_scan_contract.py`
+  refuses it. After a conflict run
+  `python3 scripts/ci/ffmpeg_patch_stack.py --refresh`, then `--check`.
+- `core/src/feature/perceptual_weight.c`: ingest unwraps the Pelorus 1.5
+  carrier form with the vendored `pel_blob_unwrap()` before it parses the
+  blob. Fork-only, nothing upstream to merge.
+
 ## Pelorus mirror re-pinned to v0.4.1 (2026-10-15)
 
 `chore/pelorus-repin-v0.4.1`, issue #2667, ADR-3332. Re-pinned the Pelorus interop mirror
@@ -5756,7 +5833,7 @@ fork's tree already carries these fixes.
   Requesting the 256-entry register file completely eliminates the 768 B spill (`spill_size: 0`, `private_size: 0`).
 - `core/src/feature/sycl/sycl_compat.h`: `VmafSyclKernelShape<SG, GRF>` (ADR-1395) already landed on master via PR #1660.
 - `core/src/sycl/scratch_ratchet.txt` and `core/src/sycl/scratch_check.cpp`: removed `motion_sycl` and `motion_v2_sycl` now that `submit_sad<int64_t>` is scratch-free.
-- Verified on Arc A380 (`ryzen-4090-arc`) under `xe`: `test_sycl_motion_tiny_frames` passes (8, 10,
+- Verified on Arc A380 (a reference workstation) under `xe`: `test_sycl_motion_tiny_frames` passes (8, 10,
   and 16-bit across all 9 geometries, bit-for-bit exact vs scalar CPU), `test_sycl_motion3_parity`,
   `test_sycl_motion_add_uv_parity`, `test_sycl_motion_v2_parity` pass, and 50 frames of 16-bit 4K BBB
   match the CPU reference bit-for-bit (max abs diff 0.0).
@@ -5862,7 +5939,7 @@ fork's tree already carries these fixes.
 ## chore/rc3-home-gpu-retest — RC3 home GPU retest kit (ADR-1386) (2026-09-30)
 
 - `scripts/dev/rc3-home-gpu-retest.sh` and `scripts/dev/rc3_retest_helpers.py`: fork-only
-  harness. Runs verify-and-time commands for open RC3 `docs/state.md` rows on `ryzen-4090-arc`
+  harness. Runs verify-and-time commands for open RC3 `docs/state.md` rows on a reference workstation
   under per-device locks (`~/.cache/vmafx-locks/{cuda-4090,sycl-a380,hip-gfx1036}.lock`).
   Commands are explicitly encoded per row and backend, never parsed at run time.
 - `scripts/dev/tests/test_rc3_home_gpu_retest.py` validates argument handling, lock isolation,
@@ -5921,7 +5998,7 @@ fork's tree already carries these fixes.
   corrupted values (~20 dB drift at 4K).
 - Verified with `ocloc` inspecting `.ze_info` across `dg2-g11` (Arc A380, SIMD16),
   `adl-s` (UHD 770, SIMD8), and `bmg-g21` (Arc B580, SIMD16).
-- Verified parity on physical Arc A380 (`ryzen-4090-arc`) under `xe`:
+- Verified parity on physical Arc A380 (a reference workstation) under `xe`:
   576x324 Netflix pair within 8.37e-5 dB (gate 5e-4), 1080p within 1.71e-3 dB,
   4K BBB (22 frames) frame 0 `psnr_hvs_y` 33.161817 dB (CPU 33.171624 dB, delta 0.0098 dB).
   4K BBB `(t(22) - t(2)) / 20` throughput: 12.55 ms/frame (corrupted) -> 10.90 ms/frame (correct).
@@ -9784,7 +9861,7 @@ no rebase impact: fork-only test wiring in `core/test/meson.build` and documenta
 ## ci/sycl-arc-self-hosted-runner — containerised self-hosted GitHub Actions runner for Intel Arc SYCL CI (ADR-1177) (2026-09-04)
 
 - `dev/Containerfile.runner`: fork-added; derives from `vmaf-dev-mcp:local` with GitHub Actions runner v2.337.0 and non-root `runner` user (uid 1001). Preserves all oneAPI SYCL tools and Level-Zero runtime. No upstream counterpart.
-- `dev/docker-compose.runner.yml`: fork-added compose file passing through only the Intel Arc A380 render node (`${ARC_RENDER_NODE:-/dev/dri/renderD129}`, by-path `pci-0000:03:00.0-render`) with NVIDIA and AMD device isolation, `seccomp=unconfined`, and 8 CPU / 16 GB limits.
+- `dev/docker-compose.runner.yml`: fork-added compose file passing through only the Intel Arc A380 render node (`${ARC_RENDER_NODE:-/dev/dri/renderD129}`, by-path `pci-<arc-bdf>-render`) with NVIDIA and AMD device isolation, `seccomp=unconfined`, and 8 CPU / 16 GB limits.
 - `dev/scripts/runner-entrypoint.sh`: fork-added runner entrypoint handling token configuration and ephemeral execution.
 - `.github/workflows/sycl-parity.yml`: fork-added workflow; runs on `[self-hosted, linux, x64, sycl-arc]`. Strictly prohibits execution on untrusted forks (`github.event.pull_request.head.repo.full_name == github.repository`).
 - `.github/workflows/required-aggregator.yml`: added `SYCL Parity (Arc A380)` to the `required` array; the check is switched by `vars.SYCL_ARC_RUNNER_ENABLED` (absence/skip accepted while disabled; skip = loud failure while enabled). No runner API call in the aggregator.
@@ -18583,12 +18660,12 @@ than per-PR. Future PRs add entries individually.
   install for SDK consumers is PR #175.
 - **Touches** (additive only): `docs/benchmarks.md` (every `TBD`
   cell replaced with measured numbers; hardware-profile table updated
-  to the `ryzen-4090-arc` host the rerun was performed on; "How to
+  to the reference workstation the rerun was performed on; "How to
   reproduce" section now documents fixture acquisition for the
   gitignored BBB 4K 200-frame pair). `CHANGELOG.md` Unreleased §
   Changed entry.
 - **Invariants** (rebase-relevant): none. The numbers are tied to
-  fork commit `41301496` and the `ryzen-4090-arc` profile; an
+  fork commit `41301496` and the reference workstation profile; an
   upstream rebase that changes feature pipelines would invalidate
   the table but not break parsing.
 - **On upstream sync**: zero interaction. Pure docs.
@@ -29225,12 +29302,12 @@ than per-PR. Future PRs add entries individually.
   install for SDK consumers is PR #175.
 - **Touches** (additive only): `docs/benchmarks.md` (every `TBD`
   cell replaced with measured numbers; hardware-profile table updated
-  to the `ryzen-4090-arc` host the rerun was performed on; "How to
+  to the reference workstation the rerun was performed on; "How to
   reproduce" section now documents fixture acquisition for the
   gitignored BBB 4K 200-frame pair). `CHANGELOG.md` Unreleased §
   Changed entry.
 - **Invariants** (rebase-relevant): none. The numbers are tied to
-  fork commit `41301496` and the `ryzen-4090-arc` profile; an
+  fork commit `41301496` and the reference workstation profile; an
   upstream rebase that changes feature pipelines would invalidate
   the table but not break parsing.
 - **On upstream sync**: zero interaction. Pure docs.
@@ -39672,12 +39749,12 @@ than per-PR. Future PRs add entries individually.
   install for SDK consumers is PR #175.
 - **Touches** (additive only): `docs/benchmarks.md` (every `TBD`
   cell replaced with measured numbers; hardware-profile table updated
-  to the `ryzen-4090-arc` host the rerun was performed on; "How to
+  to the reference workstation the rerun was performed on; "How to
   reproduce" section now documents fixture acquisition for the
   gitignored BBB 4K 200-frame pair). `CHANGELOG.md` Unreleased §
   Changed entry.
 - **Invariants** (rebase-relevant): none. The numbers are tied to
-  fork commit `41301496` and the `ryzen-4090-arc` profile; an
+  fork commit `41301496` and the reference workstation profile; an
   upstream rebase that changes feature pipelines would invalidate
   the table but not break parsing.
 - **On upstream sync**: zero interaction. Pure docs.
@@ -61493,7 +61570,7 @@ are bit-identical (the `cambi.c` changes move code into functions). CUDA CAMBI
 scores move to the CPU's (bit-identical except where the CPU's double top-K
 sum rounds); CUDA SpEED scores move from within 1e-4 of the CPU to
 bit-identical with a CPU build that rounds `log2f` correctly and does not
-fuse multiply-adds. Measured on an RTX 4090 (`ryzen-4090-arc`) against an
+fuse multiply-adds. Measured on an RTX 4090 (a reference workstation) against an
 icx build: every CAMBI and SpEED frame of the Netflix 576x324 pair and of
 BBB 3840x2160 identical to `--backend cpu`; compute-sanitizer memcheck,
 racecheck and synccheck clean on the parity tests; one readback and one
@@ -61679,7 +61756,7 @@ No public C API, CLI syntax, option table or FFmpeg patch impact. CPU scores
 are unchanged (no CPU extractor code is touched). `psnr_hvs_cuda` scores move
 to the CPU's: by up to 8.4e-5 dB on the Netflix 576x324 pair and 1.7e-2 dB at
 3840x2160. `psnr_hvs_hip`, `psnr_hvs_sycl` and the Metal twin are untouched
-and still sum per block. Measured on an RTX 4090 (`zeus`): every frame of the
+and still sum per block. Measured on an RTX 4090 (a reference workstation): every frame of the
 Netflix 576x324 pairs (8, 10, 12 bits, 4:2:2), the 1920x1080 checkerboard
 pairs and BBB 1920x1080 / 3840x2160 (8 and 10 bits) equals `--backend cpu` at
 `--precision max`. Re-verify after a rebase that touches these files with the
@@ -61922,7 +61999,7 @@ No public C API, CLI syntax, option table or FFmpeg patch impact. CPU scores
 are unchanged (no CPU extractor code is touched). `psnr_hvs_sycl` and
 `psnr_hvs_hip` scores move to the CPU's: by up to 8.4e-5 dB on the Netflix
 576x324 pair and 1.7e-2 dB at 3840x2160. The Metal twin is untouched and still
-sums per block. Measured on an Arc A380 (`xe` driver) and a gfx1036 (`zeus`):
+sums per block. Measured on an Arc A380 (`xe` driver) and a gfx1036 (a reference workstation):
 every frame of the Netflix 576x324 pairs (8, 10, 12 bits, 4:2:2), the 1920x1080
 checkerboard pairs and BBB 1920x1080 / 3840x2160 (8 and 10 bits) equals
 `--backend cpu` of the same binary at `--precision max`. Re-verify after a

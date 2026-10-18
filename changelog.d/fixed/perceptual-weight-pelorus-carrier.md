@@ -1,0 +1,1 @@
+- **NVENC-encoded Pelorus side data is now weighted.** Perceptual weighting now accepts side data in the ABI 1.5 zero-free carrier form emitted by NVENC encoders (h264_nvenc, hevc_nvenc), which was previously ignored as foreign (-ENOENT).

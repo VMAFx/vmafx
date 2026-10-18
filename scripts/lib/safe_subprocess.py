@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
 """Validated, bounded process execution for repository automation.
@@ -426,7 +425,22 @@ def _posix_process_group_exists(group_id: int) -> bool:
     return True
 
 
-def _signal_posix_process_group(group_id: int, selected_signal: signal.Signals) -> bool:
+def signal_process_group(group_id: object, selected_signal: int) -> bool:
+    """Signal one child's process group; refuse every target that is not one.
+
+    ``killpg(1, sig)`` is ``kill(-1, sig)`` and reaches every process the user
+    owns, ``killpg(0, sig)`` reaches the caller's own group, and a test double's
+    pid can index to 1 (``operator.index(MagicMock().pid)``). Such a target
+    raises :class:`ValueError` before anything is sent. Returns ``False`` when
+    the group no longer exists.
+    """
+    if (
+        not isinstance(group_id, int)
+        or isinstance(group_id, bool)
+        or group_id <= 1
+        or group_id == os.getpgrp()
+    ):
+        raise ValueError(f"refusing to signal process group {group_id!r}")
     try:
         os.killpg(group_id, selected_signal)
     except ProcessLookupError:
@@ -436,7 +450,7 @@ def _signal_posix_process_group(group_id: int, selected_signal: signal.Signals) 
 
 async def _terminate_posix_process_group(process: asyncio.subprocess.Process) -> None:
     """Terminate the whole session even when its original leader already exited."""
-    if not _signal_posix_process_group(process.pid, signal.SIGTERM):
+    if not signal_process_group(process.pid, signal.SIGTERM):
         return
 
     loop = asyncio.get_running_loop()
@@ -444,7 +458,7 @@ async def _terminate_posix_process_group(process: asyncio.subprocess.Process) ->
     while _posix_process_group_exists(process.pid) and loop.time() < deadline:
         await asyncio.sleep(min(0.05, max(0.0, deadline - loop.time())))
     if _posix_process_group_exists(process.pid):
-        _signal_posix_process_group(process.pid, signal.SIGKILL)
+        signal_process_group(process.pid, signal.SIGKILL)
     if process.returncode is None:
         try:
             await asyncio.wait_for(process.wait(), timeout=TERMINATION_GRACE_SECONDS)

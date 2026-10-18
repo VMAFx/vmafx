@@ -61,9 +61,11 @@ namespace
 /* constinit (C++20/23) guarantees compile-time initialisation of these atomics,
  * preventing the static-initialisation-order fiasco if another TU's static
  * initializer calls vmaf_get_cpu_flags() before this TU is constructed
- * (adversarial review 2026-05-28 finding #19). */
-constinit std::atomic<unsigned> g_flags{0u};
-constinit std::atomic<unsigned> g_flags_mask{std::numeric_limits<unsigned>::max()};
+ * (adversarial review 2026-05-28 finding #19). The specifier follows the type:
+ * CodeQL's C++26 front end reads a leading `constinit` as the variable's name
+ * (code-scanning alerts 1552 and 1553). */
+std::atomic<unsigned> constinit g_flags{0u};
+std::atomic<unsigned> constinit g_flags_mask{std::numeric_limits<unsigned>::max()};
 
 } // namespace
 

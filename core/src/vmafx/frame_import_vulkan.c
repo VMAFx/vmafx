@@ -262,7 +262,7 @@ VmafxStatus vmafx_import_check_acquire_more(const VmafxReport *report, const Vma
                               acquire_more_names[i], "kind %u is not a VmafxFenceKind",
                               (unsigned)kind);
         }
-        if (backend != VMAFX_BACKEND_CUDA) {
+        if (backend != VMAFX_BACKEND_CUDA && backend != VMAFX_BACKEND_SYCL) {
             return VMAFX_FAIL(report, VMAFX_E_NOTSUP, 0, VMAFX_SUBJECT_FENCE, acquire_more_names[i],
                               "backend %s: further acquire fences (kind %u); this device takes "
                               "one acquire fence per import (a Vulkan producer exports one "

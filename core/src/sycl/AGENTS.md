@@ -198,6 +198,16 @@ sycl/
   release fences refused. Adding either changes `sycl_info()` in
   `import_device.c`, docs table of `docs/api/vmafx/index.md` and refusal rows
   of `test_vmafx_import_sycl.c` together.
+- Vulkan timeline semaphores (ADR-3352, Linux): `acquire` + up to 3
+  `acquire_more` imported per frame (`vmafx_sycl_rt_semaphore_import()`,
+  DPC++ `external_semaphore_descriptor<resource_fd>`) and waited on library
+  queue before first read (`wait_semaphores()` in `import_frame.c`);
+  `signal_on_release` timelines (max 3) signalled by `signal_semaphores()`
+  behind release join, then freed. Runtime closes fd it imports: always
+  `dup()` first (caller keeps its fd, as CUDA). Planted switches
+  `VMAFX_TEST_SKIP_ACQUIRE_WAIT` / `VMAFX_TEST_EARLY_RELEASE` must score
+  frames wrong in `test_vmafx_import_vulkan_sycl_fence`. OPTIMAL tiling and
+  non-semaphore further acquires stay refused by name.
 - Guards: `test_vmafx_import_sycl`, `test_vmafx_import_sycl_bitexact`
   (`VMAFX_TEST_ONLY=netflix|bbb`), `test_vmafx_import_sycl_fence`,
   `test_vmafx_import_sycl_gl` (suite `gpu`/`sycl`, Linux, not AdaptiveCpp),

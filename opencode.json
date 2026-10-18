@@ -1,0 +1,13 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "asdecided": {
+      "command": [
+        "praetorctl",
+        "decisions",
+        "serve"
+      ],
+      "type": "local"
+    }
+  }
+}

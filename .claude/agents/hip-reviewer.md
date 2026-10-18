@@ -1,8 +1,12 @@
 ---
-name: hip-reviewer
 description: Reviews HIP / ROCm code under core/src/hip/ (runtime, dispatch, picture) and core/src/feature/hip/ (kernels) for correctness, scaffold-vs-real status, and parity with the CUDA twin. Use when reviewing .hip / .c host code, hipcc kernel launches, or new HIP feature consumers.
 model: sonnet
-tools: Read, Grep, Glob, Bash
+name: hip-reviewer
+tools:
+  - Read
+  - Grep
+  - Glob
+  - Bash
 ---
 <!-- markdownlint-disable MD041 -->
 
@@ -68,3 +72,5 @@ HIP backend **not yet feature-complete**: per ADR-0212, runtime scaffold landed
 - If kernel lands: cite cross-backend ULP gate run command.
 
 Do not edit. Recommend.
+
+<!-- markdownlint-disable MD013 -->

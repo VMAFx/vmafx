@@ -18,7 +18,7 @@ colour tags, scores exactly as before.
  1 file changed, 63 insertions(+)
 
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
-index 2120296a19e5f686d71e0dbdca3c0b8e160e952e..199a27dc7cb9a5bebd9ce4091da45e12b6d18b31 100644
+index a74f4122c29dd2e761d4d1371070199d98b328ae..eed3eb7dcaafb16abd6006b0ac14a5b502733919 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
 @@ -148,6 +148,7 @@ typedef struct LIBVMAFContext {
@@ -103,7 +103,7 @@ index 2120296a19e5f686d71e0dbdca3c0b8e160e952e..199a27dc7cb9a5bebd9ce4091da45e12
  
      if (dist->color_range != ref->color_range) {
          av_log(ctx, AV_LOG_WARNING, "distorted and reference "
-@@ -1498,6 +1559,8 @@ static int do_vmaf_sycl(FFFrameSync *fs)
+@@ -1509,6 +1570,8 @@ static int do_vmaf_sycl(FFFrameSync *fs)
          s->frame_cnt++;
      } else {
          // Software path: YUV420P / YUV420P10LE frames — copy via vmaf_picture_alloc.

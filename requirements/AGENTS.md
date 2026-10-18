@@ -13,7 +13,7 @@ authoritative, cryptographically hash-locked dependency pins (`requirements/lock
 
 1. **Manifest authority (`requirements/locks/manifest.json`)**:
    - `manifest.json` is sole declarative source of truth for all lock files in repository.
-   - Pinned generator `uv_version` is exact (`0.12.18`). Bumping uv requires reviewed manifest update.
+   - Pinned generator `uv_version` is exact (`0.13.1`). Bumping uv requires reviewed manifest update.
    - Every lock file is generated strictly through `make python-locks-write` (`check_python_dependency_locks.py write`). Never edit `*-lock.txt` or `requirements/locks/*.txt` manually.
    - Each lock file contains `# vmafx-uv-version:`, `# vmafx-input-sha256:`, and `# vmafx-inputs:` header metadata.
    - Manifest validation requires output, input, and alias-consumer bindings to be local repository-relative paths under both POSIX and Windows semantics. It rejects remote paths, surrounding whitespace, POSIX absolutes, Windows drive/UNC paths, directory traversal, duplicate inputs, output flag overrides (`-o`), repeated install targets, and unregistered `*-lock.txt` files.

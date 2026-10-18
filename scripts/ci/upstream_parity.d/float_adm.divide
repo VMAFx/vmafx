@@ -1,7 +1,7 @@
 kind: value
 runs: F.float_adm.*, M.*, C.*, B.*
 metrics: VMAF_feature_a*, adm*, aim*
-bound: 2.1e-07
+bound: 4.1e-07
 adr: ADR-1442
 upstream: Netflix/vmaf#1655, Netflix/vmaf#1654
-evidence: the decouple divides instead of multiplying by a reciprocal estimate. Full matrix in the dev image (43ef1e32cb32: GCC 15.2.0, glibc 2.43) on 2026-10-03, 9b6ecd5ae against Netflix 9e48141b: 31887 values differ, largest 2.1e-07 (q160x90, adm_scale1_csf_2_dlmw_0.7_egl_1_min_0.5_nw_0.02, frame 46: upstream 0.95826634741403061, fork 0.95826655720941922)
+evidence: the decouple divides instead of multiplying by a reciprocal estimate. Full matrix in the dev image (43ef1e32cb32: GCC 15.2.0, glibc 2.43) on 2026-10-03, 9b6ecd5ae against Netflix 9e48141b: 31887 values differ, largest 2.1e-07 (q160x90, adm_scale1_csf_2_dlmw_0.7_egl_1_min_0.5_nw_0.02, frame 46: upstream 0.95826634741403061, fork 0.95826655720941922). Upstream's reciprocal estimate (RCPSS) differs between processor vendors: the probe matrix of the compat ABI job on a hosted runner (Intel Xeon Platinum 8573C, GCC 15, upstream built at -march=x86-64) on 2026-10-18, PR #2851 head 217018bf0, gives 4.06e-07 (cb1, adm_scale1_csf_2_dlmw_0.7_egl_1_min_0.5_nw_0.02); on AMD Zen 4/5 upstream's and the fork's values agree on that cell. The full matrix has not been measured on an Intel processor.

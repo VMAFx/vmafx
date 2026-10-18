@@ -10,6 +10,9 @@ This script adds compile-database entries for translation units that meson never
    against the installed/staged libvmaf headers.
 3. The upstream parity harness ``scripts/dev/upstream_parity_harness.c`` built against
    internal headers and ``vmaf_feature_collector_get()``.
+4. The compat ABI consumer ``scripts/dev/compat_abi_consumer.c`` and its LD_PRELOAD plant
+   ``scripts/dev/compat_abi_plant.c`` (ADR-3339), measured against the fork's public
+   ``libvmaf`` headers, which declare the same API as Netflix's.
 
 Usage: gen-mex-compile-commands.py <build-dir>
 
@@ -31,6 +34,8 @@ STUB_DIR = Path("scripts/ci/lint-stubs/matlab")
 STUB_HEADERS = ("mex.h", "matrix.h")
 FAULT_INJECT_SOURCE = Path("ffmpeg-patches/test/fault_inject_libvmaf.c")
 HARNESS_SOURCE = Path("scripts/dev/upstream_parity_harness.c")
+ABI_CONSUMER_SOURCE = Path("scripts/dev/compat_abi_consumer.c")
+ABI_PLANT_SOURCE = Path("scripts/dev/compat_abi_plant.c")
 EXPECTED_ARGC = 2  # the script and the build directory
 
 
@@ -84,10 +89,26 @@ def harness_argv(source: Path, build_dir: Path, repo_root: Path) -> list[str]:
     ]
 
 
+def public_api_argv(source: Path, build_dir: Path, repo_root: Path) -> list[str]:
+    return [
+        "cc",
+        "-std=gnu11",
+        f"-I{build_dir / 'include'}",
+        f"-I{repo_root / 'core/include'}",
+        "-c",
+        str(repo_root / source),
+        "-o",
+        "/dev/null",
+    ]
+
+
 STANDALONE_BUILDERS: dict[Path, Callable[[Path, Path, Path], list[str]]] = {
     FAULT_INJECT_SOURCE: fault_inject_argv,
     HARNESS_SOURCE: harness_argv,
+    ABI_CONSUMER_SOURCE: public_api_argv,
+    ABI_PLANT_SOURCE: fault_inject_argv,
 }
+STANDALONE_SOURCES = tuple(STANDALONE_BUILDERS)
 
 
 def entry_for(source: Path, build_dir: Path, repo_root: Path) -> dict[str, str]:
@@ -111,12 +132,10 @@ def validate_sources(repo_root: Path) -> tuple[list[Path], list[str]]:
     sources = mex_sources(repo_root)
     if not sources:
         errors.append("no MEX source found")
-    missing_standalone = [
-        s for s in (FAULT_INJECT_SOURCE, HARNESS_SOURCE) if not (repo_root / s).is_file()
-    ]
+    missing_standalone = [s for s in STANDALONE_SOURCES if not (repo_root / s).is_file()]
     if missing_standalone:
         errors.append(f"missing standalone sources {missing_standalone}")
-    return [*sources, FAULT_INJECT_SOURCE, HARNESS_SOURCE], errors
+    return [*sources, *STANDALONE_SOURCES], errors
 
 
 def merge(existing: list[dict[str, str]], added: list[dict[str, str]]) -> list[dict[str, str]]:

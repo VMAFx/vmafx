@@ -191,6 +191,89 @@ jobs:
   # ADR-0726: vulkan-vif-cross-backend, vulkan-parity-matrix-gate, and
   # vulkan-vif-arc-nightly jobs deleted (Vulkan backend removed).
 
+  # ===== Upstream Consumer ABI Parity Gate (Issue #2473, ADR-3339) =====
+  compat-abi-parity:
+    needs: tier
+    if: needs.tier.outputs.light == 'true'
+    name: Compat ABI Parity
+    runs-on: ubuntu-26.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Plan CI impact (ADR-1140)
+        id: impact
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python3 scripts/ci/plan-ci-impact.py --event "$EVENT_NAME" \
+            --base "$BASE_SHA" --head "$HEAD_SHA" --github-output "$GITHUB_OUTPUT"
+
+      - name: Not impacted — Compat ABI Parity skipped by plan
+        if: steps.impact.outputs.golden_harness != 'true'
+        env:
+          MODE: ${{ steps.impact.outputs.mode }}
+          REASON: ${{ steps.impact.outputs.reason }}
+        run: echo "::notice::golden_harness not impacted (mode=$MODE reason=$REASON) — Compat ABI Parity satisfied without running (ADR-1140)"
+
+      - name: Install build deps
+        if: steps.impact.outputs.golden_harness == 'true'
+        env:
+          TMPDIR: ${{ runner.temp }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build nasm pkg-config python3-pip
+          sudo pip3 install --break-system-packages --ignore-installed --quiet --require-hashes \
+            -r requirements/locks/build.txt
+
+      - name: Restore Netflix vmaf_resource fixtures
+        if: steps.impact.outputs.golden_harness == 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: python/test/resource
+          key: vmaf-golden-fixtures-v3-${{ hashFiles('scripts/test/fetch-test-yuvs.sh') }}
+
+      - name: Fetch Netflix fixtures if missing
+        if: steps.impact.outputs.golden_harness == 'true'
+        run: |
+          mkdir -p python/test/resource/yuv
+          bash scripts/test/fetch-test-yuvs.sh
+
+      - name: Run Compat ABI Parity Probe
+        if: steps.impact.outputs.golden_harness == 'true'
+        env:
+          RESULTS: ${{ runner.temp }}/compat-abi-parity
+        run: |
+          grep -m1 'model name' /proc/cpuinfo
+          grep -m1 '^flags' /proc/cpuinfo | tr ' ' '\n' | grep -E '^(avx|fma|f16c|bmi)' | tr '\n' ' '
+          echo
+          gcc -Q --help=target | grep -E '^\s+-march=|^\s+-mfma '
+          echo | gcc -dM -E - | grep -E '__(FMA|AVX2)__' || echo 'gcc default: no FMA/AVX2'
+          dpkg --print-architecture; dpkg -s libc6 | grep -E '^(Version|Architecture)'
+          python3 scripts/dev/upstream_parity.py --unpinned --abi --mode probe --jobs 2 \
+            --summary --write-json "$RESULTS"
+
+      - name: Upload Compat ABI Parity results
+        if: failure() && steps.impact.outputs.golden_harness == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: compat-abi-parity-results
+          path: ${{ runner.temp }}/compat-abi-parity
+          retention-days: 7
+
+      - name: Run Compat ABI Planted Defect (Assert Failure)
+        if: steps.impact.outputs.golden_harness == 'true'
+        # Exit 1 (a difference) is the proof; exit 2 (cannot run) fails the step.
+        run: |
+          status=0
+          python3 scripts/dev/upstream_parity.py --unpinned --abi --plant --mode probe --jobs 2 || status=$?
+          test "$status" -eq 1 || { echo "::error::plant: expected exit 1, got $status"; exit 1; }
+
   # ===== Sanitizer build =====
   # required-aggregator: Sanitizers (address)
   # required-aggregator: Sanitizers (thread)

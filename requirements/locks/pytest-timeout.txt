@@ -1,5 +1,5 @@
 # VMAFx hash lock; regenerate with: make python-locks-write
-# vmafx-uv-version: 0.12.18
+# vmafx-uv-version: 0.13.1
 # vmafx-input-sha256: 1328225721ea477adf5a20e0d75e638464a8ae87884331a02a7ef6706962d570
 # vmafx-inputs: requirements/locks/pytest-timeout.in
 colorama==0.4.6 ; sys_platform == 'win32' \

@@ -41,6 +41,10 @@ import time
 from collections.abc import Sequence
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from scripts.lib.safe_subprocess import signal_process_group
+
 DEFAULT_TIMEOUT_S = 90.0
 DUMP_WAIT_S = 10.0
 KILL_WAIT_S = 5.0
@@ -145,7 +149,7 @@ def stop_hung(process: subprocess.Popen[str]) -> str:
         process.send_signal(signal.SIGQUIT)
         _out, dump = _drain(process, float(os.environ.get("ACTIONLINT_DUMP_WAIT_S") or DUMP_WAIT_S))
     with contextlib.suppress(OSError, AttributeError):
-        os.killpg(process.pid, signal.SIGKILL)
+        signal_process_group(process.pid, signal.SIGKILL)
     with contextlib.suppress(OSError):
         process.kill()
     try:

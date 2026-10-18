@@ -110,6 +110,13 @@ image.
 - Builds and the run cache are kept per environment under
   `build-upstream-parity/` (`image-<id>/`, `host/`), so a host build is
   never reused in the image.
+- On x86-64 the upstream build is configured with `-march=x86-64`, the
+  pinned image's compiler default. Netflix's build leaves floating-point
+  contraction at the compiler's default, and a host compiler that defaults to
+  x86-64-v3 (Ubuntu's `amd64v3` variant, as on the hosted CI runners) would
+  fuse its multiply-adds and move its scores; the fork's build turns
+  contraction off on every file. A host build configured before this pin is
+  reused as it is: remove `build-upstream-parity/host/` to reconfigure it.
 
 ### Undefined upstream values: the heap check
 
@@ -370,3 +377,22 @@ work directory the probe set took 129 s in all, the export, both builds and
 the fixtures included (108 s of runs); the full matrix with the heap check
 took 565 s of runs for both trees twice. A second run of an unchanged tree
 takes seconds.
+
+## Unmodified upstream consumer ABI parity gate
+
+The standard parity harness links statically and instruments internal hooks (`--wrap=vmaf_feature_collector_init`). To prove that the fork's shared library `libvmaf.so.3` is an exact drop-in ABI replacement for Netflix's `libvmaf.so.3`, the ABI parity gate compiles an unmodified upstream consumer against Netflix public headers and swaps the dynamic library at runtime via `LD_LIBRARY_PATH` ([ADR-3339](../adr/3339-compat-abi-parity-upstream-consumer.md)).
+
+```bash
+make compat-abi-parity        # probe matrix against unmodified consumer
+make compat-abi-parity-plant  # runs with LD_PRELOAD plant; asserts failure (exit 1)
+```
+
+### What it proves
+
+1. **Drop-in binary substitution**: `scripts/dev/compat_abi_consumer.c` uses strictly public Netflix C API headers (`libvmaf/libvmaf.h`, `model.h`, `picture.h`). It is compiled once against upstream headers and linked dynamically with `-lvmaf` to upstream `libvmaf.so.3`.
+2. **Dynamic loader verification**: The driver asserts via `ldd` and `readelf -d` that upstream resolves `libvmaf.so.3` (SONAME 3), and fork resolves `libvmaf.so.3` which in turn dynamically links `libvmafx.so.1` (SONAME 1). No silent fallbacks to system libraries are permitted.
+3. **Bit-identical public output**: The consumer discovers metric names through `vmaf_write_output()` JSON export into an ephemeral file, queries frame and pooled scores via public getters (`vmaf_feature_score_at_index`, `vmaf_feature_score_pooled`), and formats them identically to the static harness.
+
+### Planted defect verification
+
+To verify that the gate refuses regressions, `scripts/dev/compat_abi_plant.c` provides an `LD_PRELOAD` shim intercepting `vmaf_feature_score_pooled()` and `vmaf_score_pooled()`, moving pooled results by 1 ULP via `nextafter()`. Running with `--plant` injects this shim on the fork side: the gate detects the uncovered perturbation and exits with status 1 (`EXIT_DIFFERENT`), reporting the difference. `make compat-abi-parity-plant` runs this check and asserts failure.

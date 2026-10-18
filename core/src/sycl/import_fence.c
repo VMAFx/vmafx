@@ -28,6 +28,7 @@
 #include <pthread.h>
 #include <stdint.h>
 
+#include "compat/crt_portable.h"
 #include "vmafx/error_internal.h"
 #include "vmafx/internal.h"
 #include "vmafx/vmafx.h"
@@ -39,6 +40,65 @@
  * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
  * documented /std:clatest C23 feature set does not include `nullptr` and the
  * required Windows builds compile this TU with cl.exe (C2065). ADR-1138. */
+
+VmafxStatus vmafx_sycl_semaphore_import(const VmafxReport *report, const VmafxSyclDevice *dev,
+                                        const VmafxFence *fence, const char *subject, void **sem)
+{
+    *sem = NULL;
+    if (fence->fd < 0) {
+        return VMAFX_FAIL(report, fence->handle ? VMAFX_E_NOTSUP : VMAFX_E_INVALID, 0,
+                          VMAFX_SUBJECT_FENCE, subject,
+                          fence->handle ? "backend sycl: a Windows handle of a Vulkan semaphore; "
+                                          "Windows handles are not imported until a Windows "
+                                          "device runs their tests" :
+                                          "a Vulkan semaphore without its descriptor");
+    }
+    const int fd = VMAF_DUP(fence->fd); /* the driver owns the descriptor it imports */
+    if (fd < 0) {
+        return VMAFX_FAIL(report, VMAFX_E_INVALID, errno, VMAFX_SUBJECT_FENCE, subject,
+                          "cannot duplicate descriptor %d", (int)fence->fd);
+    }
+    const int err = vmafx_sycl_rt_semaphore_import(dev->rt, fd, sem);
+    if (err) {
+        return VMAFX_FAIL(report, VMAFX_E_NOTSUP, err, VMAFX_SUBJECT_FENCE, subject,
+                          "backend sycl: cannot import the Vulkan timeline semaphore (%d); is it "
+                          "an exported VK_SEMAPHORE_TYPE_TIMELINE of the device's GPU?",
+                          err);
+    }
+    return VMAFX_OK;
+}
+
+VmafxStatus vmafx_sycl_signal_on_release(const VmafxReport *report, VmafxFrame *frame,
+                                         const VmafxFence *signal)
+{
+    VmafxSyclFrame *const sf = frame->lane;
+    assert(sf != NULL);
+    (void)pthread_mutex_lock(&sf->lock);
+    const uint32_t n = sf->n_signal;
+    (void)pthread_mutex_unlock(&sf->lock);
+    if (n >= 3u) {
+        return VMAFX_FAIL(report, VMAFX_E_RANGE, 0, VMAFX_SUBJECT_FENCE, "signal",
+                          "a frame signals up to 3 producer fences at release");
+    }
+    void *sem = NULL;
+    const VmafxStatus status = vmafx_sycl_semaphore_import(report, sf->dev, signal, "signal", &sem);
+    if (status != VMAFX_OK) {
+        return status;
+    }
+    (void)pthread_mutex_lock(&sf->lock);
+    const bool room = sf->n_signal < 3u;
+    if (room) {
+        sf->signals[sf->n_signal] = sem;
+        sf->signal_values[sf->n_signal++] = signal->value;
+    }
+    (void)pthread_mutex_unlock(&sf->lock);
+    if (!room) { /* another thread took the last place meanwhile */
+        vmafx_sycl_rt_semaphore_free(sf->dev->rt, sem);
+        return VMAFX_FAIL(report, VMAFX_E_RANGE, 0, VMAFX_SUBJECT_FENCE, "signal",
+                          "a frame signals up to 3 producer fences at release");
+    }
+    return VMAFX_OK;
+}
 
 /* Write a SYCL_EVENT fence naming `slot` (one reference of it moves into
  * `out`; released here when `out` cannot take it). */
@@ -88,15 +148,32 @@ void vmafx_sycl_release_early(VmafxFrame *frame)
 {
     /* The planted defect: the release event opened when the submit returns
      * (not behind the readers), and the release callback run then. */
+    assert(frame != NULL);
     VmafxSyclFrame *const sf = frame->lane;
     if (!sf) {
         return;
     }
+    void *signals[3] = {NULL, NULL, NULL};
+    uint64_t values[3] = {0, 0, 0};
     (void)pthread_mutex_lock(&sf->lock);
     const uint32_t slot = sf->release_slot;
+    const uint32_t n_signal = sf->n_signal;
+    for (uint32_t i = 0; i < 3u; i++) {
+        signals[i] = sf->signals[i];
+        values[i] = sf->signal_values[i];
+        sf->signals[i] = NULL; /* signalled here, not at release */
+    }
+    sf->n_signal = 0;
     (void)pthread_mutex_unlock(&sf->lock);
+    assert(n_signal <= 3u);
     if (slot) {
         vmafx_sycl_rt_slot_open(slot);
+    }
+    if (n_signal) {
+        vmafx_sycl_rt_semaphore_signal_now(sf->dev->rt, signals, values, n_signal);
+        for (uint32_t i = 0; i < n_signal; i++) {
+            vmafx_sycl_rt_semaphore_free(sf->dev->rt, signals[i]);
+        }
     }
     const VmafxFrameReleaseCallback release = frame->release;
     frame->release = NULL;

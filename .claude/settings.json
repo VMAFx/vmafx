@@ -30,6 +30,11 @@
           {
             "command": ".claude/hooks/block-unsafe-bash.sh",
             "type": "command"
+          },
+          {
+            "command": "praetorctl hook claude pre-tool",
+            "timeout": 15,
+            "type": "command"
           }
         ],
         "matcher": "Bash"
