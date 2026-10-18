@@ -28,6 +28,11 @@ EXPECTED_HOOKS = {
     ("SessionStart", None, "session-start.sh"),
     ("Stop", None, "stop.sh"),
 }
+# Entries `praetorctl adopt` writes into the same file (engine train 32a35c8fb947 on):
+# praetor's own pre-tool check, called by name, not a script of .codex/hooks/.
+ENGINE_HOOKS = {
+    ("PreToolUse", "Bash", "command", "praetorctl hook codex pre-tool"),
+}
 
 
 def repo_root_command(script: str) -> str:
@@ -57,7 +62,7 @@ class CodexHookConfigTest(unittest.TestCase):
         expected = {
             (event, matcher, "command", repo_root_command(script))
             for event, matcher, script in EXPECTED_HOOKS
-        }
+        } | ENGINE_HOOKS
         self.assertEqual(len(configured), len(expected), "duplicate or extra hook entry")
         self.assertSetEqual(set(configured), expected)
 

@@ -35,8 +35,12 @@ def _kill_bounded(process):
     when a bounded command on Windows is observed to fork.
     """
     try:
+        pid = process.pid
         if hasattr(os, "killpg"):
-            os.killpg(process.pid, signal.SIGKILL)
+            # HISS-08: never signal group 0, 1 or our own group (killpg(1) is kill(-1)).
+            if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 1 or pid == os.getpgrp():
+                return
+            os.killpg(pid, signal.SIGKILL)
         else:
             process.kill()
     except (ProcessLookupError, PermissionError):

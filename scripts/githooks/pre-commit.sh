@@ -92,7 +92,7 @@ for f in "${staged[@]}"; do
   # exceptions (.config/lint-exceptions.d/shfmt.toml, reason per entry) are
   # skipped, as the framework hook's exclude skips them.
   if [[ "$f" =~ \.(sh|bash)$ ]]; then
-    if [[ "$f" =~ ^\.config/lefthook/engine\.sh$ ]]; then
+    if [[ "$f" =~ ^\.config/lefthook/python\.sh$ ]]; then
       continue
     fi
     sh_files+=("$f")

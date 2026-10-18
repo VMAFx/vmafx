@@ -1,0 +1,25 @@
+{
+  "mcpServers": {
+    "asdecided": {
+      "args": [
+        "decisions",
+        "serve"
+      ],
+      "command": "praetorctl"
+    }
+  },
+  "hooks": {
+    "BeforeTool": [
+      {
+        "matcher": "^run_shell_command$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "praetorctl hook gemini pre-tool",
+            "timeout": 15000
+          }
+        ]
+      }
+    ]
+  }
+}

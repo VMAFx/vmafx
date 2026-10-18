@@ -1,7 +1,6 @@
 ---
-name: perf-profiler
 description: Runs benchmarks + profilers and interprets output. Use when asked to profile a hot path, compare backends, or find regressions. Produces flamegraphs + top-N function lists.
-tools: Read, Glob, Grep, Bash
+name: perf-profiler
 ---
 <!-- markdownlint-disable MD013 MD041 -->
 
@@ -63,3 +62,5 @@ Frames: N  Wall: Xs  Throughput: Y fps
 ```
 
 Never modify source code. Recommend only.
+
+<!-- TOOL PERMISSION GAP: Codex custom agents inherit parent tools; no per-agent allow-list is available. -->

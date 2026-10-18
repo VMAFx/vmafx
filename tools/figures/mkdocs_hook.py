@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: EUPL-1.2
 """MkDocs hook: render each ```figure fence as the figure markup, and serve the figure stylesheet.
 
 Listed under `hooks:` in mkdocs.yml as tools/figures/mkdocs_hook.py

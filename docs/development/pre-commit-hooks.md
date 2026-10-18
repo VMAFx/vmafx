@@ -571,10 +571,12 @@ make lint-py
 The `shfmt-src` hook has no path filter: it reads every tracked shell file
 but the **declared exceptions** in `.config/lint-exceptions.d/shfmt.toml`,
 one tracked file per entry with a reason and an expiry. Today that is one
-file, praetor's hook launcher `.config/lefthook/engine.sh`. `praetorctl adopt`
+file, praetor's Python launcher `.config/lefthook/python.sh`. `praetorctl adopt`
 refreshes it at a pin move only while it is praetor's own text, so a
 formatter must not rewrite it
-([cordanaLLM/praetor#1282](https://github.com/cordanaLLM/praetor/issues/1282)).
+([cordanaLLM/praetor#1441](https://github.com/cordanaLLM/praetor/issues/1441)).
+The hook launcher `.config/lefthook/engine.sh` is shfmt-clean since engine
+train `32a35c8fb947` and is formatted like every other file.
 
 Three places skip the listed files: the `exclude` of the hook, the
 `SHFMT_FILES` list that `make format` and `make format-check` share, and the

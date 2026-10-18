@@ -71,7 +71,8 @@ prose.
 7. **Return shape** follows register block: verdict, changed paths, commands
    run, evidence pointers, open questions.
 8. **Evidence** follows register block, same wording: evidence above 58 lines or
-   1500 tokens -> file in the evidence directory the block names; return
+   1500 tokens -> file in the directory the register block names, which the
+   repository's register policy can configure; return
    `evidence: <path> sha256:<12 hex> lines:<n>`, fetch only when decision needs
    it. Manifest may tighten both numbers; block in AGENTS.md prints values in
    force.

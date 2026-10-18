@@ -1,8 +1,12 @@
 ---
-name: perf-profiler
 description: Runs benchmarks + profilers and interprets output. Use when asked to profile a hot path, compare backends, or find regressions. Produces flamegraphs + top-N function lists.
 model: sonnet
-tools: Read, Glob, Grep, Bash
+name: perf-profiler
+tools:
+  - Read
+  - Grep
+  - Glob
+  - Bash
 ---
 <!-- markdownlint-disable MD013 MD041 -->
 
