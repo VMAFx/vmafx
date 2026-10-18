@@ -123,6 +123,82 @@ exit 0
         self.assertEqual(proc.stdout.strip(), "")
         self.assertIn("::error::", proc.stderr)
 
+    def _counting_gh(self, replies: int) -> Path:
+        """Fake gh: print a stated-delay 429 for the first `replies` calls, then 3."""
+        state_file = Path(self.tmp.name) / "calls.txt"
+        self._create_fake_gh(f"""
+count=0
+if [ -f "{state_file}" ]; then
+  count=$(cat "{state_file}")
+fi
+count=$((count + 1))
+echo "$count" > "{state_file}"
+if [ "$count" -le {replies} ]; then
+  echo '{{"message":"try again in 84.556726929s","status":"429"}}'
+  echo 'gh: try again in 84.556726929s (HTTP 429)' >&2
+  exit 1
+fi
+echo 3
+exit 0
+""")
+        return state_file
+
+    def _recording_sleep(self) -> Path:
+        """Fake sleep on PATH: records each requested delay instead of waiting."""
+        log = Path(self.tmp.name) / "sleeps.txt"
+        sleep_bin = self.bin_dir / "sleep"
+        sleep_bin.write_text(f'#!/usr/bin/env bash\necho "$1" >> "{log}"\n', encoding="utf-8")
+        sleep_bin.chmod(sleep_bin.stat().st_mode | stat.S_IXUSR | stat.S_IRUSR)
+        return log
+
+    def _sleeps(self, log: Path) -> list[str]:
+        return log.read_text(encoding="utf-8").split() if log.is_file() else []
+
+    def test_stated_delay_is_waited_then_success(self) -> None:
+        """Positive: a 429 stating 84.56 s waits 86 s (not the 15 s step), then the count is returned."""
+        calls = self._counting_gh(1)
+        log = self._recording_sleep()
+        proc = self._run_script("api", "search/code", sleep_scale="1")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(proc.stdout.strip(), "3")
+        self.assertEqual(self._sleeps(log), ["86"])
+        self.assertEqual(calls.read_text(encoding="utf-8").strip(), "2")
+
+    def test_three_stated_429s_stay_red(self) -> None:
+        """Negative: three 429s exhaust the three attempts and the run fails with the reply."""
+        calls = self._counting_gh(3)
+        log = self._recording_sleep()
+        proc = self._run_script("api", "search/code", sleep_scale="1")
+        self.assertEqual(proc.returncode, 1)
+        self.assertEqual(proc.stdout.strip(), "")
+        self.assertIn("try again in 84.556726929s", proc.stderr)
+        self.assertEqual(self._sleeps(log), ["86", "86"])
+        self.assertEqual(calls.read_text(encoding="utf-8").strip(), "3")
+
+    def test_stated_delay_above_bound_fails_at_once(self) -> None:
+        """Boundary: a stated delay above the per-retry bound fails without waiting."""
+        calls = self._counting_gh(3)
+        log = self._recording_sleep()
+        proc = self._run_script(
+            "api", "search/code", sleep_scale="1", extra_env={"UPSTREAM_WATCH_MAX_WAIT_S": "85"}
+        )
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("exceeds the 85s bound", proc.stderr)
+        self.assertEqual(self._sleeps(log), [])
+        self.assertEqual(calls.read_text(encoding="utf-8").strip(), "1")
+
+    def test_total_wait_is_bounded(self) -> None:
+        """Boundary: the second wait would pass the total bound, so the run fails after two calls."""
+        calls = self._counting_gh(3)
+        log = self._recording_sleep()
+        proc = self._run_script(
+            "api", "search/code", sleep_scale="1", extra_env={"UPSTREAM_WATCH_TOTAL_WAIT_S": "171"}
+        )
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("171s total bound", proc.stderr)
+        self.assertEqual(self._sleeps(log), ["86"])
+        self.assertEqual(calls.read_text(encoding="utf-8").strip(), "2")
+
     def test_workflows_contract(self) -> None:
         """No workflow swallows a gh error, every one creates its label, the count queries use the helper."""
         for workflow in WORKFLOW_FILES:
