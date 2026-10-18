@@ -29,7 +29,10 @@ the dma-buf path: RADV exports a buffer's or a LINEAR image's memory as a
 dma-buf. ROCm 10.1 imports no Vulkan semaphore, so the acquire fence is a
 `sync_file` of the producer's write and the release a host fence; OPTIMAL
 images are refused naming `desc.vulkan_tiling`
-([Vulkan frames](../../api/vmafx/index.md#vulkan-frames)).
+([Vulkan frames](../../api/vmafx/index.md#vulkan-frames)): ROCm reads such
+memory as a linear image while RADV tiles it, so there is no correct way to
+read it ([ADR-3353](../../adr/3353-hip-keeps-refusing-vulkan-optimal.md)).
+Copy the frame into a LINEAR image or a buffer on the producer's GPU first.
 
 Frames given to `libvmaf.h` (`vmaf_read_pictures()`) still arrive with
 `VMAF_PICTURE_BUFFER_TYPE_HOST` in system memory, and the planes the
