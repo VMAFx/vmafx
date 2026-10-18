@@ -60,14 +60,13 @@ type Metrics struct {
 	ScoreRequests prometheus.Counter
 	// ScoreErrors is the total number of scoring errors.
 	ScoreErrors prometheus.Counter
-	// ScoreDuration tracks scoring latency in seconds.
-	ScoreDuration prometheus.Observer
 	// HealthRequests counts /healthz + Health RPC calls.
 	HealthRequests prometheus.Counter
 	// ReadyRequests counts /readyz calls.
 	ReadyRequests prometheus.Counter
 
-	quality Histogram
+	duration Histogram
+	quality  Histogram
 }
 
 // NewRegistry returns the isolated registry a VMAFx service serves on
@@ -116,11 +115,17 @@ func NewMetrics(reg prometheus.Registerer) (*Metrics, error) {
 	return &Metrics{
 		ScoreRequests:  counters[0].vec.WithLabelValues(),
 		ScoreErrors:    counters[1].vec.WithLabelValues(),
-		ScoreDuration:  duration.vec.WithLabelValues(),
 		HealthRequests: counters[2].vec.WithLabelValues(),
 		ReadyRequests:  counters[3].vec.WithLabelValues(),
+		duration:       duration,
 		quality:        quality,
 	}, nil
+}
+
+// ObserveScoreDuration records the duration of one Score request in
+// seconds, with the trace of ctx as its exemplar.
+func (m *Metrics) ObserveScoreDuration(ctx context.Context, seconds float64) {
+	m.duration.ObserveContext(ctx, seconds)
 }
 
 // ObserveScore records one pooled score in the quality family. tenant is

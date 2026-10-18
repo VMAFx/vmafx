@@ -84,6 +84,7 @@ func dashboards() []generatedDashboard {
 		{"vmafx-quality.json", quality()},
 		{"vmafx-nodes.json", nodes()},
 		{"vmafx-live.json", live()},
+		{"vmafx-logs.json", logsDashboard()},
 		{"vmafx-slo.json", sloDashboard()},
 		{"vmafx-usage.json", usage()},
 		{"vmafx-capacity.json", capacity()},

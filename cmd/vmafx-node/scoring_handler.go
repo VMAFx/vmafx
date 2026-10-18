@@ -109,7 +109,7 @@ func (h *scoringHandler) ScoreStream(stream vmafxv1.VmafxScoring_ScoreStreamServ
 	}
 	ctx := stream.Context()
 	start := time.Now()
-	session := h.streams.Begin()
+	session := h.streams.Begin(ctx)
 	defer func() { session.End(retErr) }()
 
 	scorer, err := h.openStreamScorer(stream)

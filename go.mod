@@ -3,8 +3,8 @@ module github.com/VMAFx/vmafx
 go 1.27.2
 
 retract (
-	[v1.0.0-rc.1, v1.0.0-rc.2] // contained a stale root LICENSE-MIT; licensing is per-file SPDX (EUPL-1.2 fork code, BSD-2-Clause-Patent Netflix code), see docs/licensing.md
 	v1.0.0-rc.3 // withdrawn: the release line restarts at v0.1.0 (docs/adr/3292-release-line-restart-0x.md)
+	[v1.0.0-rc.1, v1.0.0-rc.2] // contained a stale root LICENSE-MIT; licensing is per-file SPDX (EUPL-1.2 fork code, BSD-2-Clause-Patent Netflix code), see docs/licensing.md
 )
 
 require (
@@ -35,6 +35,7 @@ require (
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.47.0
 	go.opentelemetry.io/otel/metric v1.47.0
 	go.opentelemetry.io/otel/sdk v1.47.0
+	go.opentelemetry.io/otel/sdk/log v1.47.0
 	go.opentelemetry.io/otel/sdk/metric v1.47.0
 	go.opentelemetry.io/otel/trace v1.47.0
 	go.uber.org/fx v1.24.0
@@ -186,7 +187,6 @@ require (
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.47.0 // indirect
 	go.opentelemetry.io/otel/exporters/prometheus v0.69.0 // indirect
 	go.opentelemetry.io/otel/log v1.47.0 // indirect
-	go.opentelemetry.io/otel/sdk/log v1.47.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.11.0 // indirect
 	go.uber.org/dig v1.19.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect

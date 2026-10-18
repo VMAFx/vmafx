@@ -281,6 +281,60 @@ The SLO report, the usage and cost dashboard and the capacity dashboard read
 the settings series of the rules (see
 [Alerts and recording rules](#alerts-and-recording-rules)).
 
+### Quality
+
+`vmafx-quality.json` follows the scores the platform produced. Its **Tenant**,
+**Model** and **Profile** variables narrow the selection.
+
+| Row | Panels | Question |
+|-----|--------|----------|
+| Score levels | Median score by model, 10th percentile score by model, Median score by tenant, Share of scores below 70 | Did the scores move, for everyone or for one tenant or model, and how bad is the tail? |
+| Distribution and volume | Score distribution (heatmap), Scores per minute by model | Did the whole distribution shift or did a second band appear, and how much work is behind the numbers? |
+
+A drop on one model only after a model change points at the model; a drop on
+one tenant only points at its content or encodes.
+
+### Nodes and devices
+
+`vmafx-nodes.json` covers the worker nodes; its **Job** and **Instance**
+variables list the node targets (series `vmafx_node_info`), **Backend** the
+backends.
+
+| Row | Panels | Question |
+|-----|--------|----------|
+| Fleet | Nodes by backend, Slots in use, Node job failures | What runs where, is the fleet full, do jobs fail? |
+| Jobs per node | Running jobs and slots by node, Jobs per minute by node and outcome, Job run time by backend, Job run time p95 by node | Which node is busy, idle, failing or slow? |
+| Devices and host | GPU memory in use, Device memory reads failing, Node process memory, Node process CPU | Is a GPU out of memory, and is the node process itself the limit? |
+
+### Live sessions
+
+`vmafx-live.json` covers ScoreStream, the per-frame streaming path of
+`vmafx-server` and `vmafx-node` (ADR-0933).
+
+| Row | Panels | Question |
+|-----|--------|----------|
+| Sessions now | Open sessions, Frames per second, Failed sessions, Median session length | How much live scoring runs now, and does it fail? |
+| Over time | Open sessions by instance, Frames per second by instance, Sessions ended per minute by outcome, Session duration | Do sessions spread over the instances, and how do they end? |
+
+A session the client stops (cancelled call or passed deadline) counts as
+`cancelled`, not `failed`.
+
+### GPU exporter dashboards
+
+GPU utilisation, encoder and decoder load and power come from the vendors'
+exporters, not from VMAFx. One dashboard per exporter is generated, each with
+its own **Job** and **Instance** variables over the exporter's targets:
+
+| File | Exporter | Series |
+|------|----------|--------|
+| `vmafx-gpu-dcgm.json` | NVIDIA dcgm-exporter | `DCGM_FI_DEV_GPU_UTIL`, `DCGM_FI_DEV_FB_USED`, `DCGM_FI_DEV_FB_FREE`, `DCGM_FI_DEV_ENC_UTIL`, `DCGM_FI_DEV_DEC_UTIL`, `DCGM_FI_DEV_POWER_USAGE` |
+| `vmafx-gpu-amd.json` | AMD device-metrics-exporter | `gpu_gfx_activity`, `gpu_used_vram`, `gpu_total_vram`, `gpu_package_power` |
+| `vmafx-gpu-intel.json` | Intel XPU Manager | `xpum_engine_ratio`, `xpum_memory_ratio`, `xpum_engine_group_ratio`, `xpum_power_watts` |
+
+Import one only where its exporter runs. The contract test allows an
+exporter's series only on the dashboard tagged `vmafx-exporter-<name>`, so no
+VMAFx dashboard shows "No data" on a cluster without that exporter.
+
 ### Linting
 
 Every generated dashboard passes Grafana's
@@ -394,11 +448,57 @@ example mounts them into containers that run as other users.
 
 ## Logs
 
-Logs stay on the golusoris slog stream (stderr for `vmafx-mcp` on stdio,
-stdout otherwise). The OTLP log exporter is initialised alongside traces
-and metrics but no slog → OTel bridge is wired (ADR-0927 Phase 3), so no
-log records are exported; set `VMAFX_OTEL_EXPORT_LOGS=false` to skip the
-exporter entirely if the collector has no logs pipeline.
+Logs go to the golusoris slog stream (stderr for `vmafx-mcp` on stdio,
+stdout otherwise) and, with an OTLP endpoint configured, also to the
+collector as OTLP log records: `bootstrap.Base` wires golusoris's slog bridge
+(`otel.ModuleWithSlogBridge`, ADR-2349). Each record carries the trace and
+span of the context it was logged with, so a log line and its trace join on
+one id. Set `VMAFX_OTEL_EXPORT_LOGS=false` to keep logs off OTLP when the
+collector has no logs pipeline.
+
+!!! note "Waiting on golusoris"
+    Two golusoris changes complete this: the bridge must also cover the
+    `*slog.Logger` each service gets from the graph, not only `slog.Default`
+    ([golusoris#617](https://github.com/golusoris/golusoris/issues/617)), and
+    the stdout lines must carry `trace_id` and `span_id`
+    ([golusoris#618](https://github.com/golusoris/golusoris/issues/618)).
+    `internal/app/bootstrap/logs_test.go` holds both; they pass with the
+    golusoris release that ships them.
+
+In Loki (OTLP ingestion), a record's `service.name` resource attribute is the
+index label `service_name`; its severity text, trace id and span id are the
+structured metadata `severity_text`, `trace_id` and `span_id`:
+
+```logql
+{service_name="vmafx-controller"} | severity_text="ERROR"
+{service_name=~"vmafx-.+"} | trace_id="4bf92f3577b34da6a3ce929d0e0e4736"
+```
+
+### Traces, logs and exemplars together
+
+The latency histograms (`vmafx_server_score_duration_seconds`,
+`vmafx_stream_session_duration_seconds`) record the trace id of a sampled
+request as an exemplar, and every `/metrics` page serves the OpenMetrics
+format exemplars need. Prometheus stores them with
+`--enable-feature=exemplar-storage`. The Overview's _Score request latency_
+and Live sessions' _Session duration_ panels show them as dots that open the
+trace.
+
+`deploy/grafana/provisioning/datasources/vmafx.yaml` (generated) provisions
+the Prometheus, Tempo and Loki data sources with the links between them: an
+exemplar opens its trace in Tempo, a span opens the logs of its trace in
+Loki, and a log line's `trace_id` opens its trace. Its URLs are the service
+names of the Compose example; another deployment copies the `jsonData` blocks
+and keeps the uids `vmafx-prometheus`, `vmafx-tempo` and `vmafx-loki`.
+
+### Logs dashboard
+
+`vmafx-logs.json` reads Loki (its **Loki data source** variable) and answers:
+
+| Row | Panels | Question |
+|-----|--------|----------|
+| Volume | Log lines per minute by service and level, Errors per minute by service | Is a service logging more warnings or errors than usual? |
+| Lines | Warnings and errors, Lines of one trace (the **Trace ID** box), All lines | What did the services log, and what did they log for one request or job? |
 
 Request-scoped server log lines share one field set (`request_id`, `rpc`,
 `route`, `model`, `backend`, `duration_s`, `error`); `request_id` is the trace

@@ -29,7 +29,6 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
@@ -129,7 +128,7 @@ func (h *httpServer) routes(mux *http.ServeMux) {
 	mux.HandleFunc("/readyz", h.handleReadyz)
 
 	// Prometheus metrics.
-	mux.Handle("/metrics", promhttp.HandlerFor(h.registry, promhttp.HandlerOpts{}))
+	mux.Handle("/metrics", observability.MetricsHandler(h.registry))
 
 	// Legacy /v1/score — retained for clients predating the OpenAPI contract.
 	mux.HandleFunc("/v1/score", h.handleScore)
@@ -245,7 +244,7 @@ func (h *httpServer) scoreAndRespond(
 	// runScore, the scoring path gRPC Score uses too.
 	resp, err := runScore(r.Context(), h.scorer, req)
 	took := time.Since(start)
-	h.metrics.ScoreDuration.Observe(took.Seconds())
+	h.metrics.ObserveScoreDuration(r.Context(), took.Seconds())
 
 	if err != nil {
 		h.metrics.ScoreErrors.Inc()
