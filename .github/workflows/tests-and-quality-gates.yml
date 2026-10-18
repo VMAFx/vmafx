@@ -252,6 +252,9 @@ jobs:
           grep -m1 'model name' /proc/cpuinfo
           grep -m1 '^flags' /proc/cpuinfo | tr ' ' '\n' | grep -E '^(avx|fma|f16c|bmi)' | tr '\n' ' '
           echo
+          gcc -Q --help=target | grep -E '^\s+-march=|^\s+-mfma '
+          echo | gcc -dM -E - | grep -E '__(FMA|AVX2)__' || echo 'gcc default: no FMA/AVX2'
+          dpkg --print-architecture; dpkg -s libc6 | grep -E '^(Version|Architecture)'
           python3 scripts/dev/upstream_parity.py --unpinned --abi --mode probe --jobs 2 \
             --summary --write-json "$RESULTS"
 
