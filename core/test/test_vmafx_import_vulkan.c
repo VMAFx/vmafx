@@ -255,11 +255,13 @@ static char *lane_refusals(VmafxFrameImport *imp)
 #else
     imp->vulkan_tiling = VMAFX_VULKAN_TILING_OPTIMAL;
     mu_assert("OPTIMAL tiling refused", refused(imp, VMAFX_E_NOTSUP, "desc.vulkan_tiling"));
+#if !VK_DEVICE_SEMAPHORES
     *imp = good;
     imp->acquire.kind = VMAFX_FENCE_VULKAN_SEMAPHORE;
     imp->acquire.fd = imp->plane[0].fd;
     mu_assert("a Vulkan semaphore acquire refused",
               refused(imp, VMAFX_E_NOTSUP, "desc.acquire.kind"));
+#endif
     *imp = good;
     imp->acquire_more[0].kind = VMAFX_FENCE_SYNC_FILE;
     imp->acquire_more[0].fd = imp->acquire.fd;

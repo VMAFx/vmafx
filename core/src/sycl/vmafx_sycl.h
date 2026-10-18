@@ -74,6 +74,11 @@ void vmafx_sycl_pool_frame_free(VmafxFrame *frame);
 /* A release fence of `kind` (SYCL_EVENT) for a frame of a SYCL device. */
 VmafxStatus vmafx_sycl_release_fence(const VmafxReport *report, VmafxFrame *frame, uint32_t kind,
                                      VmafxFence *out);
+/* Signal the Vulkan timeline semaphore `signal` (VULKAN_SEMAPHORE, its
+ * descriptor duplicated) to its value when the frame is released, behind
+ * the device's last read of it (vmafx_frame_signal_on_release(), RC4 WP3). */
+VmafxStatus vmafx_sycl_signal_on_release(const VmafxReport *report, VmafxFrame *frame,
+                                         const VmafxFence *signal);
 /* The planted early-release defect: open the frame's release fences now. */
 void vmafx_sycl_release_early(VmafxFrame *frame);
 /* A new fence of `kind` on a SYCL device (SYCL_EVENT: an event object the

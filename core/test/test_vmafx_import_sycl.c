@@ -100,7 +100,7 @@ static char *test_device_info(void)
     mu_assert("info", vmafx_device_info(VMAFX_BACKEND_SYCL, 0, &info, NULL) == VMAFX_OK);
     const uint32_t fences = (1u << VMAFX_FENCE_NONE) | (1u << VMAFX_FENCE_HOST) |
                             (1u << VMAFX_FENCE_SYCL_EVENT) | (1u << VMAFX_FENCE_SYNC_FILE) |
-                            (1u << VMAFX_FENCE_GL_SYNC);
+                            (1u << VMAFX_FENCE_GL_SYNC) | (1u << VMAFX_FENCE_VULKAN_SEMAPHORE);
     const uint32_t memory = (1u << VMAFX_MEMORY_DEVICE_POINTER) | (1u << VMAFX_MEMORY_DMABUF) |
                             (1u << VMAFX_MEMORY_GL_TEXTURE) | (1u << VMAFX_MEMORY_VULKAN);
     mu_assert("fields", info.backend == VMAFX_BACKEND_SYCL && info.index == 0 && info.flags == 0u &&

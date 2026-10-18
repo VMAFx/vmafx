@@ -90,6 +90,13 @@ typedef struct VmafxSyclRelease {
     uint32_t idle_slot; /* a pool frame's: 1 + the slot its next acquire waits on, or 0 */
     void *owned;
     void *imports[3];
+    /* Vulkan timeline semaphores (vmafx_sycl_rt_semaphore_import(), RC4 WP3):
+     * `signals[i]` signalled to `signal_values[i]` on the library queue behind
+     * the release barrier (NULL: none); every semaphore of `signals` and
+     * `waits` (the frame's acquire semaphores) freed once that completed. */
+    void *signals[3];
+    uint64_t signal_values[3];
+    void *waits[3];
 } VmafxSyclRelease;
 
 /* ---- Devices ------------------------------------------------------------------ */
@@ -138,6 +145,18 @@ void vmafx_sycl_rt_free(VmafxSyclRt *rt, void *ptr);
 /* Import `size` bytes of the dma-buf `fd` as device memory (Level Zero
  * external memory; the caller keeps `fd`): 0, -EIO. */
 int vmafx_sycl_rt_dmabuf_import(VmafxSyclRt *rt, int fd, size_t size, void **ptr);
+/* Import the Vulkan timeline semaphore exported as `fd` (an opaque fd of a
+ * VK_SEMAPHORE_TYPE_TIMELINE) on the device: 0, -EIO (not a timeline
+ * semaphore the device's driver imports). The driver owns `fd` once called,
+ * on success and on failure: Intel's compute runtime closes it after its
+ * DRM_IOCTL_SYNCOBJ_FD_TO_HANDLE. RC4 WP3. */
+int vmafx_sycl_rt_semaphore_import(VmafxSyclRt *rt, int fd, void **sem);
+/* Free a semaphore nothing waits on or signals any more. */
+void vmafx_sycl_rt_semaphore_free(VmafxSyclRt *rt, void *sem);
+/* The planted early release (VMAFX_TEST_EARLY_RELEASE): signal `n` semaphores
+ * now, on a queue of their own that waits for nothing. */
+void vmafx_sycl_rt_semaphore_signal_now(VmafxSyclRt *rt, void *const *sems, const uint64_t *values,
+                                        uint32_t n);
 /* Free deferred memory whose release completed (bounded; called per import). */
 void vmafx_sycl_rt_collect(VmafxSyclRt *rt);
 
@@ -148,6 +167,9 @@ VmafxSyclFrameRt *vmafx_sycl_rt_frame_new(VmafxSyclRt *rt);
  * (`event`, a sycl::event * of the device's context): one barrier on the
  * library queue. 0 or -EIO. */
 int vmafx_sycl_rt_frame_after_event(VmafxSyclFrameRt *f, uintptr_t event);
+/* The frame's conversions and readers wait until the timeline semaphore
+ * `sem` reaches `value`: a wait on the library queue. 0 or -EIO. */
+int vmafx_sycl_rt_frame_wait_semaphore(VmafxSyclFrameRt *f, void *sem, uint64_t value);
 /* Conversions on the library queue: 0 or -EIO. */
 int vmafx_sycl_rt_frame_deinterleave(VmafxSyclFrameRt *f, const VmafxSyclPlaneOp *op);
 int vmafx_sycl_rt_frame_shift(VmafxSyclFrameRt *f, const VmafxSyclPlaneOp *op);
@@ -170,8 +192,9 @@ int vmafx_sycl_rt_frame_ready(VmafxSyclFrameRt *f);
  * memory is then freed after a queue drain). */
 int vmafx_sycl_rt_frame_release(VmafxSyclFrameRt *f, const VmafxSyclRelease *r);
 /* An import that failed after `f` was made (or a release that could not be
- * enqueued): drain the library queue, free `owned` / `imports`, run
- * `signal`, free `f`. */
+ * enqueued): drain the library queue, free `owned` / `imports` and the
+ * semaphores, signal the Vulkan signals (after the drain) and run `signal`,
+ * free `f`: no producer waits on a frame that never completes. */
 void vmafx_sycl_rt_frame_discard(VmafxSyclFrameRt *f, const VmafxSyclRelease *r);
 /* Reads recorded so far (white-box tests). */
 uint32_t vmafx_sycl_rt_frame_reads(VmafxSyclFrameRt *f);

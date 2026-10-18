@@ -24,9 +24,9 @@
  * lanes), then the barrier FFmpeg's CUDA interop makes
  * (PREP_MODE_EXTERNAL_EXPORT: VK_IMAGE_LAYOUT_GENERAL, VK_QUEUE_FAMILY_EXTERNAL)
  * behind the images' timeline semaphores, its memory and semaphores exported
- * and imported as VMAFX_MEMORY_VULKAN. CUDA waits on the semaphores and
- * signals them again at release (FFmpeg's next use waits for that); the
- * dma-buf lanes take the frame after a host wait. The scores of every exact
+ * and imported as VMAFX_MEMORY_VULKAN. CUDA and SYCL wait on the semaphores
+ * and signal them again at release (FFmpeg's next use waits for that); HIP
+ * takes the frame after a host wait. The scores of every exact
  * cell of the lane equal the software-decoded frames' bit for bit, with no
  * host copy.
  *
@@ -229,12 +229,18 @@ static bool handover_open(AVBufferRef *hw)
     if (family < 0 || vkCreateCommandPool(ho.dev->act_dev, &pool, NULL, &ho.pool) != VK_SUCCESS) {
         return false;
     }
-    vkGetDeviceQueue(ho.dev->act_dev, (uint32_t)family, 0, &ho.queue);
+    /* FFmpeg creates its queues with `queue_flags`; vkGetDeviceQueue() finds
+     * only queues created without flags. */
+    const VkDeviceQueueInfo2 qi = {.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_INFO_2,
+                                   .flags = ho.dev->queue_flags,
+                                   .queueFamilyIndex = (uint32_t)family,
+                                   .queueIndex = 0};
+    vkGetDeviceQueue2(ho.dev->act_dev, &qi, &ho.queue);
     ho.get_memory_fd =
         (PFN_vkGetMemoryFdKHR)vkGetDeviceProcAddr(ho.dev->act_dev, "vkGetMemoryFdKHR");
     ho.get_semaphore_fd =
         (PFN_vkGetSemaphoreFdKHR)vkGetDeviceProcAddr(ho.dev->act_dev, "vkGetSemaphoreFdKHR");
-    return ho.get_memory_fd && ho.get_semaphore_fd;
+    return ho.queue && ho.get_memory_fd && ho.get_semaphore_fd;
 }
 
 static unsigned images_of(const AVVkFrame *f)
@@ -294,7 +300,7 @@ static bool open_copies(AVBufferRef *hw, int w, int h)
     fc->sw_format = AV_PIX_FMT_NV12;
     fc->width = w;
     fc->height = h;
-    vfc->tiling = VK_DEVICE_SEMAPHORES ? VK_IMAGE_TILING_OPTIMAL : VK_IMAGE_TILING_LINEAR;
+    vfc->tiling = VMAFX_VK_LANE == 1 ? VK_IMAGE_TILING_OPTIMAL : VK_IMAGE_TILING_LINEAR;
     vfc->flags = AV_VK_FRAME_FLAG_DISABLE_MULTIPLANE;
     return av_hwframe_ctx_init(copies) >= 0;
 }

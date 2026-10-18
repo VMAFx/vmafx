@@ -894,10 +894,16 @@ VmafxStatus vmafx_frame_signal_on_release(VmafxFrame *frame, const VmafxFence *s
         return vmafx_cuda_signal_on_release(&report, frame, &f);
     }
 #endif
-    return VMAFX_FAIL(&report, VMAFX_E_NOTSUP, 0, VMAFX_SUBJECT_FENCE, "signal.kind",
-                      "backend %s: this device cannot signal a Vulkan semaphore (a CUDA device "
-                      "can); signal it from the frame's release callback with vkSignalSemaphore()",
-                      vmafx_backend_name(frame->device->backend));
+#ifdef HAVE_SYCL
+    if (frame->lane && frame->device->backend == VMAFX_BACKEND_SYCL) {
+        return vmafx_sycl_signal_on_release(&report, frame, &f);
+    }
+#endif
+    return VMAFX_FAIL(
+        &report, VMAFX_E_NOTSUP, 0, VMAFX_SUBJECT_FENCE, "signal.kind",
+        "backend %s: this device cannot signal a Vulkan semaphore (a CUDA or SYCL "
+        "device can); signal it from the frame's release callback with vkSignalSemaphore()",
+        vmafx_backend_name(frame->device->backend));
 }
 
 /* NOLINTEND(modernize-use-nullptr) */

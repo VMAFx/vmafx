@@ -413,9 +413,10 @@ current on the calling thread) and, on Linux, on a `VMAFX_FENCE_SYNC_FILE`
 descriptor (`poll()`); `vmafx_fence_destroy()` closes a `SYNC_FILE`
 descriptor and refuses a GL sync with `VMAFX_E_NOTSUP` (delete it with
 `glDeleteSync()`). A `VMAFX_FENCE_VULKAN_SEMAPHORE` is waited on and
-signalled by CUDA devices only ([Vulkan frames](#vulkan-frames)); the library
-never returns one, and `vmafx_fence_wait()` and `vmafx_fence_destroy()`
-refuse it (wait with `vkWaitSemaphores()`). The Metal shared events and Windows
+signalled by CUDA and, on Linux, SYCL devices
+([Vulkan frames](#vulkan-frames)); the library never returns one, and
+`vmafx_fence_wait()` and `vmafx_fence_destroy()` refuse it (wait with
+`vkWaitSemaphores()`). The Metal shared events and Windows
 shared fences are declared kinds; until their backends land they are answered
 with `VMAFX_E_NOTSUP` naming the kind.
 
@@ -814,17 +815,17 @@ What each backend reads:
 | Backend | Memory | Tiling | Acquire fence | Release to the producer |
 | --- | --- | --- | --- | --- |
 | CUDA | `OPAQUE_FD` | `OPTIMAL` (read as CUDA arrays: NV12 / P010 / P016 are planarised on the device, a planar frame needs `VMAFX_IMPORT_ALLOW_COPY`), `LINEAR` (device pointers) | `VMAFX_FENCE_VULKAN_SEMAPHORE` in `acquire` and `acquire_more`, waited on the library stream; or any CUDA acquire kind | `vmafx_frame_signal_on_release()` signals your timeline on the device behind the last reader; or any CUDA release fence |
-| SYCL | `OPAQUE_FD` or `DMA_BUF` memory that is a dma-buf (it is on the Mesa driver) | `LINEAR`; `DRM_FORMAT_MODIFIER` with the modifiers the SYCL device reads (linear, Tile4, Y-tiled) | `VMAFX_FENCE_SYNC_FILE` of the write (export a binary semaphore signalled with it as `SYNC_FD`) or `HOST` | `VMAFX_FENCE_HOST` release fence or the release callback; then signal your timeline from the host (`vkSignalSemaphore()`) |
-| HIP | As SYCL (the RADV descriptors are dma-bufs) | `LINEAR`; `DRM_FORMAT_MODIFIER` linear | As SYCL | As SYCL |
+| SYCL | `OPAQUE_FD` or `DMA_BUF` memory that is a dma-buf (it is on the Mesa driver) | `LINEAR`; `DRM_FORMAT_MODIFIER` with the modifiers the SYCL device reads (linear, Tile4, Y-tiled) | `VMAFX_FENCE_VULKAN_SEMAPHORE` (timeline, `OPAQUE_FD`) in `acquire` and `acquire_more`, waited on the library queue; or `VMAFX_FENCE_SYNC_FILE` of the write, `SYCL_EVENT` or `HOST` | `vmafx_frame_signal_on_release()` signals your timeline on the library queue behind the last reader; or a `HOST` / `SYCL_EVENT` release fence |
+| HIP | As SYCL (the RADV descriptors are dma-bufs) | `LINEAR`; `DRM_FORMAT_MODIFIER` linear | `VMAFX_FENCE_SYNC_FILE` of the write (export a binary semaphore signalled with it as `SYNC_FD`) or `HOST` | `VMAFX_FENCE_HOST` release fence or the release callback; then signal your timeline from the host (`vkSignalSemaphore()`) |
 
 Refused, each naming its field: `OPTIMAL` tiling on SYCL and HIP
 (`desc.vulkan_tiling`), `DMA_BUF` memory and `DRM_FORMAT_MODIFIER` tiling on
 CUDA (the CUDA driver imports dma-bufs on Tegra only), a modifier the device
 does not read (`desc.plane[i].modifier`), a Vulkan semaphore acquire or
-further acquire fences on SYCL and HIP (`desc.acquire.kind`,
-`desc.acquire_more[i]`: ROCm 10.1 imports no Vulkan semaphore, and the SYCL
-lane does not wait on one yet), a `VULKAN_SEMAPHORE` given to
-`vmafx_frame_signal_on_release()` on SYCL and HIP (`signal.kind`). On SYCL
+further acquire fences on HIP (`desc.acquire.kind`, `desc.acquire_more[i]`:
+ROCm 10.1 imports no Vulkan semaphore), a further acquire fence on SYCL that
+is not a `VULKAN_SEMAPHORE` (`desc.acquire_more[i]`), a `VULKAN_SEMAPHORE`
+given to `vmafx_frame_signal_on_release()` on HIP (`signal.kind`). On SYCL
 and HIP an unsignalled sync_file makes the import `VMAFX_E_BUSY`;
 `vmafx_context_import_frame()` waits for it and retries once.
 
