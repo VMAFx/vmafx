@@ -14,7 +14,9 @@
 
 The header is compiled into an FFmpeg filter, so it carries FFmpeg's licence
 like the fork's other FFmpeg sources. An option whose default is the library's
-(`default_macro`) stores NULL, and the filter asks the library at init.
+(`default_macro`) stores NULL, and the filter asks the library at init. A
+numeric option without a default stores 0 for "unset", and its range takes in
+the 0 so av_opt_set_defaults() accepts it.
 """
 
 from __future__ import annotations
@@ -86,6 +88,11 @@ def _bounds(option: Option) -> tuple[str, str]:
     if option.type in ("string",):
         return "0", "0"
     low, high = option.range or (0.0 if option.type == "uint" else None, None)
+    if low is not None and low > 0 and option.default_on("ffmpeg") is None:
+        # An option without a default stores 0 for "unset" (the filter then
+        # leaves the model's value); av_opt_set_defaults() logs an error for a
+        # default outside the range, so the range takes in the 0.
+        low = 0.0
     fallback = INT64_MAX if _wide(option) or option.type == "float" else "INT_MAX"
     low_text = (
         _number(low) if low is not None else ("-DBL_MAX" if option.type == "float" else "INT_MIN")
