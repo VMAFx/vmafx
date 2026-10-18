@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # rc3-home-gpu-retest.sh — run the RC3 verify-and-time commands that
-# docs/state.md carries for the home GPU box, ryzen-4090-arc: the RTX 4090
+# docs/state.md carries for the home GPU box, a reference workstation: the RTX 4090
 # (CUDA), the Arc A380 (SYCL over Level Zero) and the Zen 5 iGPU gfx1036 (HIP).
 #
 # Copyright 2026 Lusoris

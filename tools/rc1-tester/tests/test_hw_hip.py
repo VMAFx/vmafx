@@ -73,7 +73,7 @@ def test_hip_targets_come_from_the_meson_log_and_the_rock_manifest(tmp_path: Pat
         ("gfx1012", "rdna1"),
         ("gfx1030", "rdna2"),
         ("gfx1033", "rdna2"),
-        ("gfx1036", "rdna2"),  # the Raphael iGPU of ryzen-4090-arc
+        ("gfx1036", "rdna2"),  # the Raphael iGPU of a reference workstation
         ("gfx1100", "rdna3"),
         ("gfx1103", "rdna3"),
         ("gfx1151", "rdna3.5"),

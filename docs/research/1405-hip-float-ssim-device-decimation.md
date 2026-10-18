@@ -13,7 +13,7 @@
 
 - `core/src/feature/ssim.c`, `core/src/feature/iqa/decimate.c`, `core/src/feature/iqa/convolve.c` (`iqa_filter_pixel()`, `KBND_SYMMETRIC`), `core/src/feature/picture_copy.cpp`.
 - `core/src/feature/hip/float_ssim/ssim_decimate.h`, `core/src/feature/hip/float_ssim/ssim_score.hip`, `core/src/feature/hip/float_ssim_hip.c`.
-- Host: `ryzen-4090-arc`, AMD gfx1036 iGPU, ROCm 7.2.4, Linux 7.2.8; `meson setup build-hip core -Denable_hip=true -Denable_hipcc=true -Dhip_gfx_targets=gfx1036 -Denable_cuda=false -Denable_sycl=false --buildtype=release -Db_lto=false`.
+- Host: a reference workstation, AMD gfx1036 iGPU, ROCm 7.2.4, Linux 7.2.8; `meson setup build-hip core -Denable_hip=true -Denable_hipcc=true -Dhip_gfx_targets=gfx1036 -Denable_cuda=false -Denable_sycl=false --buildtype=release -Db_lto=false`.
 
 ## Findings
 

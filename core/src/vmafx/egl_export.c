@@ -278,7 +278,7 @@ static void gbm_load(void)
 /* ---- The display's GPU --------------------------------------------------------- */
 
 /* Render node "/dev/dri/renderD130" of the current display's device, and the
- * PCI location of the GPU behind it ("0000:0e:00.0") in `pci`. 0, or -ENOTSUP
+ * PCI location of the GPU behind it ("0000:0c:00.0") in `pci`. 0, or -ENOTSUP
  * when the display has no DRM device (named in `*why`). */
 static int display_gpu(void *dpy, char node[64], char pci[32], const char **why)
 {

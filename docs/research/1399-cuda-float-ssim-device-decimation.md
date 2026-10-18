@@ -13,7 +13,7 @@
 
 - `core/src/feature/ssim.c` (`compute_ssim()`, `ssim_low_pass_alloc()`, `ssim_decimate_pair()`), `core/src/feature/iqa/decimate.c`, `core/src/feature/iqa/convolve.c` (`iqa_filter_pixel()`, `iqa_convolve_1d_separable()`), `core/src/feature/iqa/ssim_tools.c`, `core/src/feature/iqa/ssim_accumulate_lane.h`.
 - `core/src/feature/sycl/integer_ssim_sycl.cpp` and [Research-2130](2130-sycl-float-ssim-device-decimation.md): the decimation design and its exactness proof.
-- Host `ryzen-4090-arc`: RTX 4090, CUDA 13.4 (`nvcc` 13.4.92), release build without LTO, `--precision max`. The "before" build is master `430a39622`; the change was measured on top of `2c3acf1c9` (no `float_ssim` change between the two).
+- Reference workstation: RTX 4090, CUDA 13.4 (`nvcc` 13.4.92), release build without LTO, `--precision max`. The "before" build is master `430a39622`; the change was measured on top of `2c3acf1c9` (no `float_ssim` change between the two).
 - Fixtures: the Netflix 576x324 pair at 8 bits (48 frames) and 10, 12 and 16 bits (3 frames each); the two 1920x1080 checkerboard pairs (3 frames each); BBB 3840x2160 8-bit (50 frames); a 1920x1080 pair at 8 and 10 bits scaled from BBB with ffmpeg (bicubic, 24 frames); BBB 3840x2160 at 10 bits (12 frames, the 8-bit samples shifted left by two with random low bits).
 
 ## Findings

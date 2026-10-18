@@ -413,7 +413,7 @@
   },
   {
    "id": "T-HIP-TWINS-OTHER-TARGETS-2026-10-03",
-   "part": "RDNA2 (gfx1030 to gfx1036): measured on the gfx1036 iGPU of ryzen-4090-arc on 2026-10-03; a run, on a discrete RX 6000 card or a Steam Deck (gfx1033) above all, repeats it",
+   "part": "RDNA2 (gfx1030 to gfx1036): measured on the gfx1036 iGPU of a reference workstation on 2026-10-03; a run, on a discrete RX 6000 card or a Steam Deck (gfx1033) above all, repeats it",
    "families": [
     "rdna2"
    ],

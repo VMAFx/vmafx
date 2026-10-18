@@ -118,7 +118,7 @@ invariant: Mirror CPU option tables faithfully across psnr, ssim, float_ssim, an
 - `motion_hip`: `debug` default false (CPU, CUDA); emits
   `VMAF_integer_feature_motion_sad_score` every frame, 0 at index 0 and under
   force_zero.
-- gfx1036 (`ryzen-4090-arc`, ROCm 7.2.4) loses run of stream's commands
+- gfx1036 (a reference workstation, ROCm 7.2.4) loses run of stream's commands
   about once per 10^4 frames, master too
   (T-HIP-GFX1036-DROPPED-DISPATCHES-2026-10-01). Symptoms: `vif_hip` frame =
   CPU sums of it + previous frame (lost accumulator memset), one scale 0/0

@@ -27,7 +27,7 @@ Three questions:
   `core/src/feature/hip/integer_psnr_hvs_hip.c` and
   `integer_psnr_hvs/psnr_hvs_score.hip`; before (`origin/master` `c66d28b2f`
   with ADR-1397 applied) and after.
-- Host `zeus`, 2026-10-01: Ryzen 9 9950X3D, Linux 7.2.8-1-cachyos, gcc 16.2.1.
+- Reference workstation, 2026-10-01: Ryzen 9 9950X3D, Linux 7.2.8-1-cachyos, gcc 16.2.1.
   Intel Arc A380 (dg2-g11) on the `xe` driver, compute runtime 26.35.39758.10,
   IGC 2.41.5, oneAPI DPC++ 2026.0.0, JIT build (`-Dsycl_icpx_aot_targets=`).
   AMD gfx1036 (the Ryzen's integrated GPU), ROCm 7.2.4, `hipcc` on AMD clang

@@ -20,7 +20,7 @@ from being identical, and what does the CPU's arithmetic cost on the device?
 - CUDA: `core/src/feature/cuda/integer_ciede_cuda.c` and
   `integer_ciede/ciede_score.cu` at master `5c8b9e9c7` (before) and on
   `fix/cuda-ciede-cpu-arithmetic` (after).
-- Host `zeus`: RTX 4090, CUDA 13.4 (`nvcc` V13.4.92), gcc 16.2.1, glibc 2.44,
+- Reference workstation: RTX 4090, CUDA 13.4 (`nvcc` V13.4.92), gcc 16.2.1, glibc 2.44,
   Ryzen 9 9950X3D. `meson setup build-cuda core -Denable_cuda=true
   -Denable_sycl=false --buildtype=release -Db_lto=false`.
 - Fixtures, 4:2:0, `--precision max`: the Netflix pair at 8 bits (48 frames)
