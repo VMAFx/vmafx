@@ -16,7 +16,7 @@ the headline table.
 | --- | --- | --- | --- |
 | Inherited path (`vmaf_v0.6.1`, CPU) against upstream `v3.2.0` | parity: 0.989x on the 48f 1080p fixture; scores identical since ADR-1475 | 2026-09-07 (speed), 2026-10-02 (scores) | [Upstream A/B](#upstream-ab-adr-1228) |
 | `float_ms_ssim` against upstream | 4.47x faster (1.318 s against 5.894 s) | 2026-09-07 | [Where the fork wins](#where-the-fork-actually-wins-features-upstream-left-scalar) |
-| CUDA against CPU at BBB 4K, 200 frames, `vmaf_v0.6.1` | 167.16 fps against 14.37 fps (CUDA row patched locally) | 2026-09-06, `cd52f2670` | [Baselines](#refreshed-per-backend-baselines-2026-09-06-ryzen-4090-arc) |
+| CUDA against CPU at BBB 4K, 200 frames, `vmaf_v0.6.1` | 167.16 fps against 14.37 fps (CUDA row patched locally) | 2026-09-06, `cd52f2670` | [Baselines](#refreshed-per-backend-baselines-2026-09-06-reference-workstation) |
 | Default model against `vmaf_v0.6.1`, CPU, 576x324 | 379.15 fps against 613.71 fps (0.62x) | 2026-09-06, `cd52f2670` | [Default model cost](#what-the-default-model-costs) |
 | Default model on CUDA at 4K | 9.00 fps, below the CPU's 17.52 fps | 2026-09-06, `cd52f2670` | [Default model cost](#what-the-default-model-costs) |
 
@@ -65,7 +65,7 @@ To check score equality with upstream, run the guard (`make upstream-parity`,
 see [upstream parity guard](development/upstream-parity.md)); the harness has
 no score-delta flag.
 
-### 2026-09-07 — fork `257ac1ec4` vs upstream `v3.2.0`, `ryzen-4090-arc`, single-threaded
+### 2026-09-07 — fork `257ac1ec4` vs upstream `v3.2.0`, single-threaded
 
 Measured with the six-decimal ceiling the harness had before the guard.
 
@@ -118,7 +118,7 @@ is closed.
 ### Where the fork actually wins: features upstream left scalar
 
 Measured in the 2026-09-07 session of the table above (fork `257ac1ec4`
-against upstream `v3.2.0`, `ryzen-4090-arc`, per
+against upstream `v3.2.0`, a reference workstation, per
 [ADR-1228](adr/1228-upstream-ab-perf-milestone.md)): the same 48-frame
 1920x1080 pair, single-threaded, `--feature X --no_prediction`. The fork adds
 x86 SIMD sources upstream does not have.
@@ -151,18 +151,18 @@ tables.
 
 |Profile|CPU|GPUs|Memory|OS|
 |---|---|---|---|---|
-|`ryzen-4090-arc`|AMD Ryzen 9 9950X3D (16c/32t, Zen 5, AVX-512)|NVIDIA RTX 4090 (24 GB) + Intel Arc A380 (6 GB, fp64-emulated)|96 GB DDR5-6400|Linux 7.0.x (CachyOS) at the 2026-09 measurements|
+|a reference workstation|AMD Ryzen 9 9950X3D (16c/32t, Zen 5, AVX-512)|NVIDIA RTX 4090 (24 GB) + Intel Arc A380 (6 GB, fp64-emulated)|96 GB DDR5-6400|Linux 7.0.x (CachyOS) at the 2026-09 measurements|
 |`xeon-arc`|Intel Xeon w9-3475X|Intel Arc A770|128 GB DDR5-4800|Ubuntu 26.04|
 |`m4-pro`|Apple M4 Pro|(integrated)|48 GB unified|macOS 15|
 
-The `ryzen-4090-arc` profile is the canonical fork bench host: a single
+The reference workstation profile is the canonical fork bench host: a single
 machine that exposes CUDA (RTX 4090), SYCL (Arc A380 via oneAPI Level Zero)
 and HIP, so all active backends can run back-to-back from one shell. The
 `xeon-arc` and `m4-pro` profiles are defined for future runs; no table on
 this page uses them. The Vulkan backend was removed per ADR-0726; historical
 Vulkan bench rows are preserved in the history sections for reference.
 
-## Refreshed per-backend baselines (2026-09-06, `ryzen-4090-arc`)
+## Refreshed per-backend baselines (2026-09-06, reference workstation)
 
 Produced by `testdata/bench_backends.py` on commit `cd52f2670`; methodology in
 [ADR-1185](adr/1185-backend-perf-baseline-methodology.md), reproduce steps in
@@ -402,7 +402,7 @@ Source: `python/test/resource/yuv/src01_hrc00_576x324.yuv` vs `…hrc01…`.
 Model: `model/vmaf_v0.6.1.json`. Threads: 1. Precision: CLI default
 `%.6f` per [ADR-0119](adr/0119-cli-precision-default-revert.md).
 Numbers averaged over 5 wall-clock reps after 1 warmup; standard
-deviation in parentheses. Commit `41301496` on `ryzen-4090-arc`.
+deviation in parentheses. Commit `41301496` on a reference workstation.
 
 |Backend|fps (higher better)|wall ms / 48f|vmaf pool|metrics-keys|delta vs CPU pool|
 |---|---|---|---|---|---|

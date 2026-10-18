@@ -22,7 +22,7 @@ terms on one thread? What does it cost?
 - CUDA: `core/src/feature/cuda/ssimulacra2_cuda.c`,
   `ssimulacra2/ssimulacra2_device.cu` at master `5c8b9e9c7` (before) and on
   `fix/cuda-ssimulacra2-cpu-sum-order` (after).
-- Host `zeus`: RTX 4090, CUDA 13.4, gcc 16.2.1, glibc 2.44, Ryzen 9 9950X3D.
+- Reference workstation: RTX 4090, CUDA 13.4, gcc 16.2.1, glibc 2.44, Ryzen 9 9950X3D.
   `meson setup build-cuda core -Denable_cuda=true -Denable_sycl=false
   --buildtype=release -Db_lto=false`.
 - Fixtures: Netflix 576x324 at 8 bits (48 frames) and 10, 12, 16 bits (3

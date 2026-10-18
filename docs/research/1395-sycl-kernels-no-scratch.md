@@ -17,9 +17,8 @@ catch a new one, and how can a user on the affected platform find out?
 - Host: Arc A380 (`dg2-g11`, PCI ID 56a5) on Linux 7.2.8 with
   `xe.force_probe=56a5` and `i915.force_probe=!56a5`; Intel compute runtime
   26.35.39758.10 and IGC 2.41.5 (both installed 2026-09-20); icpx 2026.0;
-  `ONEAPI_DEVICE_SELECTOR=level_zero:0`. The boots up to 2026-09-27 bound the
-  A380 to i915 (`i915 0000:03:00.0: [drm] Found dg2/g11`); the boot of
-  2026-09-30 binds it to xe.
+  `ONEAPI_DEVICE_SELECTOR=level_zero:0`. Measurements up to 2026-09-27 ran
+  with the A380 bound to i915; those from 2026-09-30 on run with it bound to xe.
 - SYCL 2020 `info::kernel_device_specific::private_mem_size`; the oneAPI
   extension `ext::intel::info::kernel_device_specific::spill_memory_size`
   (`sycl/info/ext_intel_kernel_info_traits.def`) and aspect

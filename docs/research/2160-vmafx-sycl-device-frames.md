@@ -43,7 +43,7 @@ this lane?
    in-order queue runs a host task (6 ms sleep) and then a one-row
    `ext_oneapi_memcpy2d()` of 3 MiB; the first iteration ends with
    `UR_RESULT_ERROR_DEVICE_LOST`, and the kernel log shows
-   `xe 0000:03:00.0: [drm] exec queue reset detected`. The same program with
+   `xe <arc-bdf>: [drm] exec queue reset detected`. The same program with
    `memcpy()` in place of the 2D copy runs all iterations. A Level Zero trace
    (`UR_L0_DEBUG=1`) of one device-to-device 2D copy of a padded 1920x1080
    plane shows a single kernel launch (`zeCommandListAppendLaunchKernel`).

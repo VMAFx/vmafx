@@ -71,7 +71,7 @@ The twin now reproduces the CPU arithmetic instead. Pass 2 forms each pixel's te
 
 ### Device results (gfx1036, 2026-10-01)
 
-On `ryzen-4090-arc` (Ryzen 9950X3D iGPU, gfx1036, ROCm 7.2.4, Linux 7.2.8), built with `-Dhip_gfx_targets=gfx1036`:
+On a reference workstation (Ryzen 9950X3D iGPU, gfx1036, ROCm 7.2.4, Linux 7.2.8), built with `-Dhip_gfx_targets=gfx1036`:
 
 | Check | Command | Result |
 |---|---|---|

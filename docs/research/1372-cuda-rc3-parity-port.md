@@ -15,7 +15,7 @@ The SYCL twins were brought to the CPU's arithmetic and options on 2026-09-29 (A
 - CUDA twins at `origin/master` f5dff7b58: `integer_motion_cuda.c` + `integer_motion/motion_score.cu`, `integer_motion_v2_cuda.c` + `integer_motion_v2/motion_v2_score.cu`, `integer_psnr_cuda.c`, `ssim_cuda.c`, `integer_ssim_cuda.c` + `integer_ssim/ssim_score.cu`, `float_motion_cuda.c`, `integer_adm_cuda.c` + `integer_adm/adm_dwt2.cu`, `integer_vif_cuda.c` + `integer_vif/filter1d.cu`; engine: `libvmaf.c` (`cuda_order_pictures_against_producer`, `read_pictures_extractor_loop_cuda`, `flush_context_cuda`).
 - SYCL references: `integer_motion_pipeline_sycl.cpp`, `integer_psnr_sycl.cpp`, `integer_ssim_sycl.cpp`, `float_motion_sycl.cpp`, `integer_vif_sycl.cpp`; [Research-1371](1371-sycl-motion-diff-first-pipeline.md), [Research-2127](2127-sycl-twin-cpu-option-parity.md), [Research-2123](2123-sycl-b580-psnr-hvs-and-tile-halo-faults.md).
 - Porting host: Windows 11 + WSL2, `vmaf-dev-mcp:ocloc` (CUDA 13.4 nvcc, gencode sm_80 / 86 / 89 / 90 / 100 / 120 + compute_80 / 120 PTX). **No NVIDIA device**: every CUDA device test skips (exit 77) here, and every number below that needs a GPU is taken from the SYCL measurements, not from CUDA.
-- Device host (2026-09-30): `ryzen-4090-arc`, RTX 4090 (sm_89, driver 615.71.09, CUDA 13.4), host build with nvcc 13.4.92; see [Measured on an RTX 4090](#measured-on-an-rtx-4090-2026-09-30).
+- Device host (2026-09-30): a reference workstation, RTX 4090 (sm_89, driver 615.71.09, CUDA 13.4), host build with nvcc 13.4.92; see [Measured on an RTX 4090](#measured-on-an-rtx-4090-2026-09-30).
 
 ## Findings
 
@@ -88,7 +88,7 @@ That host could not check any CUDA score, the absence of device faults under `co
 
 ## Measured on an RTX 4090 (2026-09-30)
 
-Host `ryzen-4090-arc`: RTX 4090 (sm_89, driver 615.71.09, CUDA 13.4, on a PCIe Gen4 x8 link), host build with nvcc 13.4.92 and gcc (`meson setup build-cuda core -Denable_cuda=true -Denable_nvcc=true -Denable_sycl=false -Denable_hip=false -Denable_dnn=disabled --buildtype=release -Db_lto=false`) of this branch rebased on `origin/master` 10f27efe2; the same build of `master` 10f27efe2 gives the before numbers. The first device runs were on 2026-09-30; every row below was re-run on the final head on 2026-10-01 and matches them. Other agents were building and testing on the host throughout (load average 7 to 33), so the wall times bound the cost of the change, they do not benchmark it. Every device run held the host's CUDA lock, so no other job shared the GPU.
+Reference workstation: RTX 4090 (sm_89, driver 615.71.09, CUDA 13.4, on a PCIe Gen4 x8 link), host build with nvcc 13.4.92 and gcc (`meson setup build-cuda core -Denable_cuda=true -Denable_nvcc=true -Denable_sycl=false -Denable_hip=false -Denable_dnn=disabled --buildtype=release -Db_lto=false`) of this branch rebased on `origin/master` 10f27efe2; the same build of `master` 10f27efe2 gives the before numbers. The first device runs were on 2026-09-30; every row below was re-run on the final head on 2026-10-01 and matches them. Other agents were building and testing on the host throughout (load average 7 to 33), so the wall times bound the cost of the change, they do not benchmark it. Every device run held the host's CUDA lock, so no other job shared the GPU.
 
 | Check | Result |
 |---|---|

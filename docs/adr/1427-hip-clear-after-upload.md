@@ -87,7 +87,7 @@ that calls one). A clear at allocation is not a substitute.
   Guards: `test_hip_first_frame_clear_<twin>` (device, one binary per twin)
   and `test_hip_clear_after_upload_contract.py` (device-free, every HIP
   source, six planted regressions). Reopen when ROCm or the amdgpu driver on
-  `ryzen-4090-arc` changes: revert one reorder and run the device test.
+  a reference workstation changes: revert one reorder and run the device test.
 
 ## References
 

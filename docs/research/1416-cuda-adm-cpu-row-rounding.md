@@ -21,7 +21,7 @@ made identical?
   `integer_adm/adm_csf_den.cu`, `integer_adm/adm_cm.cu` at master `b22ad4e1a`
   (before) and on `fix/cuda-adm-cpu-arithmetic` (after).
 - Upstream: Netflix/vmaf `6ec23e8f2`, `libvmaf/src/feature/integer_adm.h`.
-- Host `zeus`: RTX 4090 (sm_89, driver 615.71.09), CUDA 13.4 (`nvcc`
+- Reference workstation: RTX 4090 (sm_89, driver 615.71.09), CUDA 13.4 (`nvcc`
   V13.4.92), gcc 16.2.1, glibc 2.44. `meson setup build-cuda core
   -Denable_cuda=true -Denable_sycl=false --buildtype=release -Db_lto=false`.
 - Fixtures, 4:2:0, `--precision max`: Netflix `src01_hrc00/01_576x324` at 8

@@ -31,7 +31,7 @@ the container sees one.
 | --- | --- | --- |
 | Image | `vmaf-sycl-arc-runner:local`, `FROM vmaf-dev-mcp:local` (oneAPI, NEO and the `ocloc` the ahead-of-time SYCL build needs already inside; rebuild the runner image after rebuilding the dev image, ADR-1360) plus the official `actions/runner` tarball | [`dev/Containerfile.runner`](../../dev/Containerfile.runner) |
 | Runner version | `v2.337.0`, tarball SHA-256 `70920811a4f8ad4328818682bca5c6469c1c942fab52448868071d0063816613`, verified at build time | `Containerfile.runner` `ARG RUNNER_VERSION` / `RUNNER_SHA256` |
-| GPU exposed | the Intel Arc A380 render node only: `/dev/dri/by-path/pci-0000:03:00.0-render` (vendor `0x8086`, device `0x56a5`), currently `renderD129`. The RTX 4090 (`pci-0000:06:00.0`, `renderD128`) and the AMD iGPU (`pci-0000:7d:00.0`, `renderD130`) are not mapped | [`dev/docker-compose.runner.yml`](../../dev/docker-compose.runner.yml) `devices:` |
+| GPU exposed | the Intel Arc A380 render node only: `/dev/dri/by-path/pci-<arc-bdf>-render` (vendor `0x8086`, device `0x56a5`), currently `renderD129`. The RTX 4090 (`pci-<nvidia-bdf>`, `renderD128`) and the AMD iGPU (`pci-<amd-bdf>`, `renderD130`) are not mapped | [`dev/docker-compose.runner.yml`](../../dev/docker-compose.runner.yml) `devices:` |
 | User | `runner` (uid 1001, gid 1001) in the host `render` (988) and `video` (984) groups; never root | `Containerfile.runner`, compose `group_add:` |
 | Mounts | one named scratch volume at `/actions-runner/_work`; no host bind mounts; no Docker socket | compose `volumes:` |
 | Limits | 8 CPUs, 16 GB RAM | compose `deploy.resources.limits` |
@@ -150,7 +150,7 @@ tail -f /tmp/runner-image-build.log   # "naming to docker.io/library/vmaf-sycl-a
 ```bash
 export ARC_RENDER_NODE="$(dev/scripts/arc-render-node.sh)"   # exactly one 0x8086 node, else exit 1
 echo "$ARC_RENDER_NODE"                                       # /dev/dri/renderD129 today
-readlink -f /dev/dri/by-path/pci-0000:03:00.0-render          # must agree
+readlink -f /dev/dri/by-path/pci-<arc-bdf>-render          # must agree
 
 docker run --rm --device "$ARC_RENDER_NODE:/dev/dri/renderD129" \
   --security-opt seccomp=unconfined --group-add 988 --group-add 984 \

@@ -22,7 +22,7 @@ picture?
 - Upstream Netflix/vmaf `cea2b4d83` (2026-10-01),
   `libvmaf/src/feature/integer_adm.c`, built with
   `meson setup build -Denable_float=true`.
-- Host `zeus`: Ryzen 9 9950X3D, RTX 4090, gfx1036, Arc A380 (xe), gcc 16.2.1,
+- Reference workstation: Ryzen 9 9950X3D, RTX 4090, gfx1036, Arc A380 (xe), gcc 16.2.1,
   icx 2026.0. CPU build:
   `meson setup build-cpu core -Denable_cuda=false -Denable_sycl=false
   -Denable_hip=false -Db_lto=false --buildtype release`.

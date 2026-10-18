@@ -65,7 +65,7 @@ pytest ai/tests/test_extract_k150k_consistency.py -v
 
 ## In-flight run guidance
 
-The K150K extraction currently running (PID 307050, 98.3 % complete as
+The K150K extraction currently running (98.3 % complete as
 of 2026-05-30, ETA ~1.5 h) must complete before this fix lands. The
 fix changes only the *restart* path's behaviour — once the in-flight
 run finishes its at-end parquet write, the operator can rebase + merge

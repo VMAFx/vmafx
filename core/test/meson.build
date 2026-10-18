@@ -9356,7 +9356,7 @@ test('test_psnr', test_psnr, suite : ['fast'])
 # 16-bit samples (5.0e9 samples): a clip SSE past 2^64 needs 4.3e9 at the
 # maximum difference, whatever the frame size. Release builds take 1 to 5 s;
 # the sanitizer jobs' debug builds took 18 s (ASan) and passed 30 s (UBSan,
-# TSan), 57 s under TSan on ryzen-4090-arc, where hosted runners are about
+# TSan), 57 s under TSan on a reference workstation, where hosted runners are about
 # 3x slower (T-SANITIZER-HEAVY-TEST-TIMEOUTS-2026-10-06).
 test('test_integer_psnr_coverage', test_integer_psnr_coverage, suite : ['fast'],
     timeout : 480)

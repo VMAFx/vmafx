@@ -25,7 +25,7 @@ size unless flags are right.**
   [`include/libvmaf/libvmaf.h`](../include/libvmaf/libvmaf.h) `VmafConfiguration::gpumask`).
 - **`--backend cuda` does engage CUDA — this bullet used to say it did
   not; that is no longer true.** Re-verified on 2026-09-06 at commit
-  `cd52f2670` on `ryzen-4090-arc` host while refreshing baselines
+  `cd52f2670` on a reference workstation while refreshing baselines
   (ADR-1185): `--backend cuda` on 200-frame 4K BBB pair runs at
   167.16 fps against CPU's 14.37 fps, emits 14 `frames[0].metrics`
   keys against CPU's 15. Identical scores *and* identical fps would
