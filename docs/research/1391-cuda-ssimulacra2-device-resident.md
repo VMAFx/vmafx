@@ -19,7 +19,7 @@ on an RTX 4090?
   `core/src/feature/cuda/ssimulacra2_cuda.c` (master `10f27efe2`).
 - `core/src/feature/sycl/ssimulacra2_sycl.cpp` (the ADR-1363 chain) and
   [Research-1363](1363-sycl-ssimulacra2-msssim-device-resident.md).
-- Host `ryzen-4090-arc`: RTX 4090 (driver with CUDA 13, `/opt/cuda`), release
+- Reference workstation: RTX 4090 (driver with CUDA 13, `/opt/cuda`), release
   build without LTO, `--precision max`. CPU runs use `--threads 16`.
 - Fixtures: the Netflix 576x324 pair (48 frames), BBB 3840x2160 (50 frames),
   a 1920x1080 pair (50 frames), and pairs made from the Netflix pair with

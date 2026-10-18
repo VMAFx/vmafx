@@ -67,7 +67,7 @@ replayed branch commits. `test-resolve-state-md-conflict.py` drives real
 `git rebase` conflicts and runs in Rules workflow and under
 `scripts/ci/test_git_fixture_isolation.py`.
 
-`rc3-home-gpu-retest.sh` (ADR-1386) runs `ryzen-4090-arc` verify and
+`rc3-home-gpu-retest.sh` (ADR-1386) runs a reference workstation verify and
 time commands of `docs/state.md` rows. Preserve:
 
 - one explicit entry per row and backend; never parse `docs/state.md` at run

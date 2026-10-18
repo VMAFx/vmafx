@@ -386,7 +386,7 @@ typedef enum VmafxEglTiled {
  * as dma-bufs in `out`. A texture the driver exports linear is exported as it
  * is; one exported tiled is handled as `tiled` says; `*copied` tells whether
  * any was copied. A target's `fourcc` is checked against the export unless 0.
- * `device_pci` ("0000:0e:00.0") is the importing device's GPU, checked
+ * `device_pci` ("0000:0c:00.0") is the importing device's GPU, checked
  * against the context's; NULL skips the check. With REFUSE and COPY every
  * export waits (1 s at most) for the producer's writes; with KEEP the importer
  * honours the dma-buf's implicit fences. On a failure every descriptor is

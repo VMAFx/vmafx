@@ -4,7 +4,7 @@
 `scripts/dev/rc3-home-gpu-retest.sh` runs, in one go, the verify-and-time
 commands that the open RC3 and RC8 rows of [`docs/state.md`](../state.md) carry
 for
-the home GPU box `ryzen-4090-arc`: an RTX 4090 (CUDA), an Arc A380 (SYCL over
+the home GPU box, a reference workstation: an RTX 4090 (CUDA), an Arc A380 (SYCL over
 Level Zero) and the Zen 5 integrated GPU, gfx1036 (HIP). Each row states what
 its twin must match and how to time it; the kit runs exactly those commands,
 compares the outputs, and writes one summary line per row.

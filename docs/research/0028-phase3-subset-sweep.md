@@ -165,7 +165,7 @@ python3 ai/scripts/phase3_subset_sweep.py \
 ```
 
 Wall time: ~30 s per subset per fold = ~18 min for all 4 subsets ×
-9 folds on `ryzen-4090-arc` CPU.
+9 folds on a reference workstation CPU.
 
 The JSON report includes ADR-0661 `run_provenance` with the analyzer
 entrypoint, original argv, parsed subset / seed / standardization arguments,

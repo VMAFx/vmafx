@@ -27,7 +27,7 @@ twins copy the CPU's accumulation. Three questions followed:
 - `core/src/feature/cuda/integer_psnr_hvs_cuda.c` and
   `integer_psnr_hvs/psnr_hvs_score.cu` at master `c7f28317f` (before) and on
   `fix/psnr-hvs-twins-cpu-float-sum` (after).
-- Host `zeus`: RTX 4090 (sm_89, driver 615.71.09), CUDA 13.4 (`nvcc` V13.4.92),
+- Reference workstation: RTX 4090 (sm_89, driver 615.71.09), CUDA 13.4 (`nvcc` V13.4.92),
   Ryzen 9 9950X3D, gcc 16.2.1, glibc 2.44, release build, `-Db_lto=false`.
   2026-10-01. Other sessions shared the CPU (load average 5 to 11); the GPU was
   held under the device lock.

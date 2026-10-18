@@ -25,7 +25,7 @@ contribute, can the twin be made identical, and what does that cost?
   `float_vif/float_vif_score.cu` at master `24ac5bbb3` (before; the same
   kernel at `95df9adbe`, the base the timings use) and on
   `fix/cuda-float-vif-cpu-arithmetic` (after).
-- Host `zeus`: RTX 4090 (sm_89, driver 615.71.09), CUDA 13.4 (`nvcc`
+- Reference workstation: RTX 4090 (sm_89, driver 615.71.09), CUDA 13.4 (`nvcc`
   V13.4.92), gcc 16.2.1, clang 22.1.8, glibc 2.44, Ryzen 9 9950X3D. `meson
   setup build-cuda core -Denable_cuda=true -Denable_sycl=false
   --buildtype=release -Db_lto=false`.

@@ -59,7 +59,7 @@ floor for it, while a CUDA 13 build otherwise promises every R580 driver.
 
 ## Measurements
 
-Host `ryzen-4090-arc` (RTX 4090 driver 615.71.09, gfx1036 with the ROCm 7.2.4
+Reference workstation (RTX 4090 driver 615.71.09, gfx1036 with the ROCm 7.2.4
 runtime, Arc A380 on the xe driver), build options of the tester kits
 (`--buildtype=release --strip -Db_lto=false -Denable_float=true
 -Denable_tests=true`), HIP for the 25 tester targets, SYCL for the 19 default

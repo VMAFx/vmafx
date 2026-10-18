@@ -30,7 +30,7 @@ the CUDA port:
   for `sm_80`, `sm_86`, `sm_89`, `sm_90`, `sm_100` and `sm_120`.
 - glibc 2.43 (Ubuntu 26.04) and Intel's libimf from oneAPI 2026 on an
   i9-12900K, without an NVIDIA device (findings 1 to 6).
-- `ryzen-4090-arc`: an RTX 4090 (sm_89, driver 615.71.09, CUDA 13.4) and an
+- a reference workstation: an RTX 4090 (sm_89, driver 615.71.09, CUDA 13.4) and an
   Arc A380 (Level Zero 1.17.39758) with a Ryzen 9 9950X3D, glibc 2.44 and icx
   2026.0.0 (findings 7 and 8), 2026-09-30.
 
@@ -178,7 +178,7 @@ the correctly rounded outputs; the common path costs one compare.
 entry in quad precision.
 
 The same replay against the device code, on the device, run on
-`ryzen-4090-arc` against this branch's sources:
+a reference workstation against this branch's sources:
 
 | Device | Inputs | `speed_log2()` != correctly rounded | Special values (0, -0, -1, +-inf, NaN, -denormal) |
 |---|---:|---:|---|

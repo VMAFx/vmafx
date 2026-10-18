@@ -61,9 +61,9 @@ container's by-path only had **one** entry while the host had three).
 `ls /dev/dri/by-path/` on host:
 
 ```text
-pci-0000:03:00.0-{card,render}  -> Intel Arc A380
-pci-0000:06:00.0-{card,render}  -> NVIDIA RTX 4090
-pci-0000:7d:00.0-{card,render}  -> AMD gfx1036
+pci-<arc-bdf>-{card,render}  -> Intel Arc A380
+pci-<nvidia-bdf>-{card,render}  -> NVIDIA RTX 4090
+pci-<amd-bdf>-{card,render}  -> AMD gfx1036
 ```
 
 vs. container:

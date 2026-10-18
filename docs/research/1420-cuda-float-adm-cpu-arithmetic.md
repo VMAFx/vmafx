@@ -24,7 +24,7 @@ identical, and what does that cost?
 - CUDA: `core/src/feature/cuda/float_adm_cuda.c` and
   `float_adm/float_adm_score.cu` at master `5c8b9e9c7` (before) and on
   `fix/cuda-float-adm-cpu-arithmetic` (after).
-- Host `zeus`: RTX 4090 (sm_89, driver 615.71.09), CUDA 13.4 (`nvcc`
+- Reference workstation: RTX 4090 (sm_89, driver 615.71.09), CUDA 13.4 (`nvcc`
   V13.4.92), gcc 16.2.1, clang 22.1.8, glibc 2.44, Ryzen 9 9950X3D. `meson
   setup build-cuda core -Denable_cuda=true -Denable_sycl=false
   --buildtype=release -Db_lto=false`.
