@@ -10,7 +10,7 @@
 
 Every CUDA twin is declared exact (ADR-1457 and the fragments in
 `scripts/ci/exact_twins.d/*.cuda`) on the strength of measurements on one GPU, the
-RTX 4090 of `ryzen-4090-arc` (Ada, compute capability 8.9). The default build carries
+RTX 4090 of a reference workstation (Ada, compute capability 8.9). The default build carries
 cubins for `sm_80`, `sm_86`, `sm_89`, `sm_90`, `sm_100` and `sm_120` and PTX for
 `compute_80` and `compute_120` (`core/src/meson.build`): five of those six cubins and
 both PTX paths have never run. The maintainer asked for tester kits for hardware the

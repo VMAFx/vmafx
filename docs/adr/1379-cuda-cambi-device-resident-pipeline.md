@@ -86,7 +86,7 @@ Out of scope, as since ADR-0360: `full_ref` (FR-CAMBI) and the heatmap dump.
   submit/collect double buffering (`VMAF_FEATURE_DISPATCH_AUTO`). It now
   rejects an oversize window exactly as `cambi.c` does. One set of
   `cambi.c` helpers serves the CPU and both twins.
-- **Measured on an RTX 4090** (`ryzen-4090-arc`, sm_89, driver 615.71.09,
+- **Measured on an RTX 4090** (a reference workstation, sm_89, driver 615.71.09,
   CUDA 13.4; icx 2026.0 release build without `-march=native`; before =
   `origin/master` `10f27efe2` built the same way; commands and raw output in
   [Research-1379](../research/1379-cuda-cambi-speed-device-resident.md)):

@@ -123,7 +123,7 @@ will refuse to silently confirm any future mismatch.
   - Operator runbook update: when restarting after a crash on the
     current K150K corpus, expect the `RuntimeError` and follow the
     recovery hint in the error message.
-  - The K150K extraction currently in flight (PID 307050, 98.3 %
+  - The K150K extraction currently in flight (98.3 %
     complete as of 2026-05-30) must complete before this fix lands.
     Once landed, the next operator-initiated restart will surface
     the historical deficit.

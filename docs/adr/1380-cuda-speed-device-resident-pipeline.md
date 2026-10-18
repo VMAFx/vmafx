@@ -93,7 +93,7 @@ We port the ADR-1358 chain to CUDA as one pipeline both extractors share:
   1080p. The `lanczos4` prescale is not exact on either device twin: both
   compute the kernel weights in fp32 where the CPU uses fp64 `sin`
   (`T-GPU-SPEED-LANCZOS4-PRESCALE-DRIFT-2026-09-30`).
-- **Measured on an RTX 4090** (`ryzen-4090-arc`, sm_89, driver 615.71.09,
+- **Measured on an RTX 4090** (a reference workstation, sm_89, driver 615.71.09,
   CUDA 13.4; icx 2026.0 release build without `-march=native`; before =
   `origin/master` `10f27efe2` built the same way; commands and raw output in
   [Research-1379](../research/1379-cuda-cambi-speed-device-resident.md)):

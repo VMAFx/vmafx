@@ -263,12 +263,14 @@ jobs:
       # gitleaks runs `git log --all`, and fetch-depth: 0 fetches every
       # branch, so one branch's finding (even a force-pushed-away commit
       # still in the fetch) failed every other PR. On a pull request HEAD
-      # is the merge commit: master's history plus the PR's commits.
+      # is the merge commit: master's history plus the PR's commits. -m makes
+      # git log show the diff of each merge commit against its parents, which
+      # gitleaks needs to scan what a merge commit itself changed.
       - name: Run gitleaks (detect secrets)
         run: |
           gitleaks detect \
             --source . \
-            --log-opts="--full-history HEAD" \
+            --log-opts="-m --full-history HEAD" \
             --config .gitleaks.toml \
             --redact \
             --report-format sarif \

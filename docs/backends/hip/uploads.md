@@ -155,7 +155,7 @@ left in recycled device memory
 now uploads, then clears, then launches its kernels.
 
 One frame in a 640x360 context, then one in a 3840x2160 context of the same
-process, on `ryzen-4090-arc` (gfx1036, ROCm 7.2.4):
+process, on a reference workstation (gfx1036, ROCm 7.2.4):
 
 | First frame of the 3840x2160 context | Before | After | CPU |
 |---|---|---|---|

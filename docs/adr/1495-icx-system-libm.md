@@ -13,7 +13,7 @@ CXX=icpx`: every SYCL build, the `vmaf` of the dev image, the `Linux Intel
 LLVM` CI job) returned other scores than a GCC build in the last digits
 (`T-ICX-LIBIMF-HOST-MATH-2026-10-01`). After ADR-1415 and ADR-1461 removed
 the contraction differences, what was left was the math library. Measured on
-`ryzen-4090-arc` with icx 2026.0 and GCC 16.2.1, glibc 2.44, `--backend cpu
+a reference workstation with icx 2026.0 and GCC 16.2.1, glibc 2.44, `--backend cpu
 --precision max --threads 4`, on the Netflix 576x324 pair (48 frames), both
 1080p checkerboard pairs, BBB 1280x720 (48 frames; the clip
 `testdata/generate.sh` makes, whose scores equal `testdata/scores_cpu_720.json`

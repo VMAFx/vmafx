@@ -19,7 +19,7 @@ division?
   `core/src/feature/adm_tools.c` (`DIVS()`, `rcp_s()`,
   `adm_decouple_band_s()`), at master `953cf6ea6` (before) and on
   `fix/float-adm-reference-divides` (after).
-- Host `zeus`: Ryzen 9 9950X3D, RTX 4090, gcc 16.2.1, glibc 2.44, CUDA 13.4.
+- Reference workstation: Ryzen 9 9950X3D, RTX 4090, gcc 16.2.1, glibc 2.44, CUDA 13.4.
   CPU builds: `meson setup <dir> core -Denable_cuda=false -Denable_sycl=false
   -Db_lto=false --buildtype release`, one from each tree. Golden build:
   `scripts/ci/setup-golden-build.sh core/build-golden`.

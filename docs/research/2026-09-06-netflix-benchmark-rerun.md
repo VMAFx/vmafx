@@ -8,7 +8,7 @@ throughput baselines?*
 
 Answer: **no, they do not reproduce**, and the throughput baselines were not
 recorded because the score gate failed. Two pre-existing GPU defects were found
-along the way. Everything below is from a command run on the `ryzen-4090-arc`
+along the way. Everything below is from a command run on the reference workstation
 bench host on 2026-09-06; nothing is copied from an earlier report.
 
 ## Method

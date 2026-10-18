@@ -40,7 +40,7 @@ Three tests pin it: `test_hip_shared_frame` (the contract of `shared_frame.h` ag
 
 ## Consequences
 
-Measured on `ryzen-4090-arc` (gfx1036, ROCm 7.2.4), `origin/master` 7dc45265f against the same tree with this change. [Research-1408](../research/1408-hip-shared-frame-planes.md) has the full tables.
+Measured on a reference workstation (gfx1036, ROCm 7.2.4), `origin/master` 7dc45265f against the same tree with this change. [Research-1408](../research/1408-hip-shared-frame-planes.md) has the full tables.
 
 - **Output is unchanged, bit for bit.** At `--precision max` every metric of every frame is identical before and after: the thirteen adopted twins in one process (`adm_hip`, `float_vif_hip` and `float_moment_hip` named, because `--backend hip` does not select the first two for `adm` and `float_vif`), also with `--subsample 2`, `--model version=vmaf_v0.6.1`, `--model version=vmaf_float_v0.6.1` and the row's `psnr` + `psnr_hvs` + `motion_v2`, on the Netflix 576x324 pair (48 frames, and 3 frames at 10 bits), both 1080p checkerboard pairs (3 frames each) and BBB 3840x2160 (50 frames): 390 metric series, every frame identical.
 - **Uploads per frame**: thirteen twins 31 -> 6 planes and 11 -> 1 host waits; the default model (`motion_hip` + `vif_hip`, ADM on the CPU) 3 -> 2 planes, one wait as before; `vmaf_float_v0.6.1` (`float_adm_hip` + `float_motion_hip`, `float_vif` on the CPU) 3 -> 2 planes and 2 -> 1 waits.

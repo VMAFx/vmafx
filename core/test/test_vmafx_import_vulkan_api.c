@@ -48,7 +48,7 @@
 static VmafxError *error;
 static const VmafxReport report = {.error = &error, .sink = NULL, .function = "test"};
 
-/* A valid NV12 descriptor of LINEAR Vulkan memory on GPU 0000:06:00.0. */
+/* A valid NV12 descriptor of LINEAR Vulkan memory on GPU 0000:0a:00.0. */
 static VmafxFrameImport nv12_vulkan(int fd)
 {
     VmafxFrameImport d = VMAFX_FRAME_IMPORT_INIT;
@@ -310,7 +310,7 @@ static bool pci_is(const char *text, uint32_t a, uint32_t b, uint32_t c, uint32_
  * and the largest fields. */
 static char *test_pci_bus_id(void)
 {
-    mu_assert("CUDA form", pci_is("0000:06:00.0", 0u, 6u, 0u, 0u));
+    mu_assert("CUDA form", pci_is("0000:0a:00.0", 0u, 0xau, 0u, 0u));
     mu_assert("HIP form, hex digits", pci_is("0000:7d:1f.7", 0u, 0x7du, 0x1fu, 7u));
     mu_assert("largest fields", pci_is("fffffffe:ff:1f.7", 0xfffffffeu, 0xffu, 0x1fu, 7u));
     return NULL;
@@ -324,9 +324,9 @@ static char *test_pci_bus_id_refused(void)
     static const char *const refused[] = {"",
                                           "06:00.0",
                                           "0000:06:00",
-                                          "0000:06:00.0x",
+                                          "0000:0a:00.0x",
                                           "-001:06:00.0",
-                                          " 0000:06:00.0",
+                                          " 0000:0a:00.0",
                                           "100000000:00:00.0"};
     const uint32_t u = UINT32_MAX;
     mu_assert("NULL", pci_is(NULL, u, u, u, u));

@@ -181,7 +181,7 @@ static inline bool vegl_context_on(Vegl *e, void *device)
     return e->ctx && e->make_current(e->dpy, NULL, NULL, e->ctx);
 }
 
-/* The PCI location ("0000:0e:00.0") of the GPU behind EGL device `device`'s
+/* The PCI location ("0000:0c:00.0") of the GPU behind EGL device `device`'s
  * render node, in `pci` (sysfs); false without a render node. */
 static inline bool vegl_device_pci(const Vegl *e, void *device, char pci[32])
 {
@@ -221,7 +221,7 @@ static inline void vegl_drop(Vegl *e)
 }
 
 /* A current GL context on the EGL device whose GPU is `want_pci`
- * ("0000:0e:00.0", case-insensitive); false without one. */
+ * ("0000:0c:00.0", case-insensitive); false without one. */
 static inline bool vegl_open(Vegl *e, const char *want_pci)
 {
     VeglQueryDevices query = NULL;

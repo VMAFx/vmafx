@@ -14,7 +14,7 @@
 - CPU reference: `core/src/feature/integer_ssim.c` (`calc_ssim()`, `ssim_reduce_row_range()`).
 - HIP twin: `core/src/feature/hip/integer_ssim_hip.c`, `core/src/feature/hip/integer_ssim/integer_ssim_score.hip`.
 - [Research-1377](1377-hip-rc3-cpu-parity.md), which introduced the identical-window rule and reported the 1x1 / 2x2 difference from a host replay.
-- Host: `ryzen-4090-arc`, AMD gfx1036 iGPU, ROCm 7.2.4, Linux 7.2.8; `meson setup build-hip core -Denable_hip=true -Denable_hipcc=true -Dhip_gfx_targets=gfx1036 -Denable_cuda=false -Denable_sycl=false --buildtype=release -Db_lto=false`.
+- Host: a reference workstation, AMD gfx1036 iGPU, ROCm 7.2.4, Linux 7.2.8; `meson setup build-hip core -Denable_hip=true -Denable_hipcc=true -Dhip_gfx_targets=gfx1036 -Denable_cuda=false -Denable_sycl=false --buildtype=release -Db_lto=false`.
 
 ## Findings
 
