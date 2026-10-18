@@ -819,14 +819,16 @@ What each backend reads:
 | HIP | As SYCL (the RADV descriptors are dma-bufs) | `LINEAR`; `DRM_FORMAT_MODIFIER` linear | `VMAFX_FENCE_SYNC_FILE` of the write (export a binary semaphore signalled with it as `SYNC_FD`) or `HOST` | `VMAFX_FENCE_HOST` release fence or the release callback; then signal your timeline from the host (`vkSignalSemaphore()`) |
 
 Refused, each naming its field: `OPTIMAL` tiling on SYCL and HIP
-(`desc.vulkan_tiling`), `DMA_BUF` memory and `DRM_FORMAT_MODIFIER` tiling on
-CUDA (the CUDA driver imports dma-bufs on Tegra only), a modifier the device
-does not read (`desc.plane[i].modifier`), a Vulkan semaphore acquire or
-further acquire fences on HIP (`desc.acquire.kind`, `desc.acquire_more[i]`:
-ROCm 10.1 imports no Vulkan semaphore), a further acquire fence on SYCL that
-is not a `VULKAN_SEMAPHORE` (`desc.acquire_more[i]`), a `VULKAN_SEMAPHORE`
-given to `vmafx_frame_signal_on_release()` on HIP (`signal.kind`). On SYCL
-and HIP an unsignalled sync_file makes the import `VMAFX_E_BUSY`;
+(`desc.vulkan_tiling`; neither runtime can read the driver's private layout,
+[ADR-3353](../../adr/3353-hip-keeps-refusing-vulkan-optimal.md)), `DMA_BUF`
+memory and `DRM_FORMAT_MODIFIER` tiling on CUDA (the CUDA driver imports
+dma-bufs on Tegra only), a modifier the device does not read
+(`desc.plane[i].modifier`), a Vulkan semaphore acquire or further acquire fences
+on HIP (`desc.acquire.kind`, `desc.acquire_more[i]`: ROCm 10.1 imports no Vulkan
+semaphore), a further acquire fence on SYCL that is not a `VULKAN_SEMAPHORE`
+(`desc.acquire_more[i]`), a `VULKAN_SEMAPHORE` given to
+`vmafx_frame_signal_on_release()` on HIP (`signal.kind`). On SYCL and HIP an
+unsignalled sync_file makes the import `VMAFX_E_BUSY`;
 `vmafx_context_import_frame()` waits for it and retries once.
 
 An `AVVkFrame` on a CUDA device, from a frames context created with

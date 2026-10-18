@@ -1,0 +1,1 @@
+| [ADR-3353](3353-hip-keeps-refusing-vulkan-optimal.md) | HIP devices keep refusing Vulkan images with OPTIMAL tiling: ROCm maps the memory as a linear image while RADV tiles it, so the route faults and cannot be bit-exact. | Accepted | api, rc4, gpu, hip, vulkan, zero-copy |
