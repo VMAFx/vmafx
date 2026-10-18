@@ -242,3 +242,13 @@ expires = 2027-03-31
 path = "core/test/test_colorspace.c"
 reason = "Built only with -Denable_zimg=true (core/test/meson.build); zimg is not in dev/Containerfile (grep -i zimg dev/Containerfile is empty) nor installed by the hosted Tidy Ratchet job (.github/workflows/lint-and-format.yml \"Install deps\" step); fix = libzimg-dev in both, -Denable_zimg=true in TIDY_RATCHET_SETUP_cpu, re-measure. Re-reviewed 2026-10-15. Category D (120 days)."
 expires = 2027-02-12
+
+[[exception]]
+path = "scripts/dev/compat_abi_consumer.c"
+reason = "ABI parity consumer compiled against upstream Netflix headers during upstream parity gate runs (ADR-3339); not part of the fork meson compilation database. Category D (120 days)."
+expires = 2027-02-15
+
+[[exception]]
+path = "scripts/dev/compat_abi_plant.c"
+reason = "ABI parity defect plant LD_PRELOAD dlsym shim compiled during upstream parity gate runs (ADR-3339); not part of the fork meson compilation database. Category D (120 days)."
+expires = 2027-02-15
