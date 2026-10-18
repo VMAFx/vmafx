@@ -38,6 +38,8 @@ FILES = {
     "core/src/orphan.h": "int orphan(void);\n",
     "core/test/test_cpu.c": '#include "util.h"\n',
     "core/test/util.h": "int util(void);\n",
+    "core/tools/tool.cpp": '#include "tool.h"\n',
+    "core/tools/tool.h": "int tool(void);\n",
     "core/test/exact_cells.h": "int exact(void);\n",
     "core/test/device_cells.h": '#include "exact_cells.h"\n',
     "core/test/test_import_cuda.c": '#include "device_cells.h"\n',
@@ -63,14 +65,14 @@ path = "core/test/test_expired.c"
 reason = "Planted: an entry past its expiry."
 expires = 2026-01-31
 """
-CPU_COMMANDS = ("core/src/lib.c", "core/test/test_cpu.c")
+CPU_COMMANDS = ("core/src/lib.c", "core/test/test_cpu.c", "core/tools/tool.cpp")
 SYCL_COMMANDS = (
     "core/src/sycl/import.c",
     "core/test/test_import_sycl.c",
     "core/src/sycl/runtime.cpp",
 )
 BASELINES = {
-    "cpu": ["core/src/lib.c", "core/test/test_cpu.c"],
+    "cpu": ["core/src/lib.c", "core/test/test_cpu.c", "core/tools/tool.cpp"],
     "cuda": ["core/test/test_import_cuda.c"],
     "hip": ["core/test/test_import_cuda.c"],
     "sycl": ["core/src/sycl/import.c", "core/test/test_import_sycl.c"],
@@ -194,10 +196,20 @@ class ChangedMode(RoutedTree):
         self.assertEqual(done.returncode, 1)
         self.assertIn("core/test/lonely.h has no compile command", done.stderr)
 
-    def test_header_of_a_built_unit_and_an_orphan_header_are_linted(self) -> None:
-        done = self.route("changed", self.cpu_db, "core/test/util.h", "core/src/orphan.h")
+    def test_header_of_a_built_cxx_unit_and_an_orphan_header_are_linted(self) -> None:
+        done = self.route("changed", self.cpu_db, "core/tools/tool.h", "core/src/orphan.h")
         self.assertEqual(done.returncode, 0, done.stderr)
-        self.assertEqual(done.stdout.split(), ["core/test/util.h", "core/src/orphan.h"])
+        self.assertEqual(done.stdout.split(), ["core/tools/tool.h", "core/src/orphan.h"])
+
+    def test_c_only_header_is_linted_through_its_built_c_units(self) -> None:
+        # Linted on its own, a C header borrows a C++ unit's command (#2376).
+        done = self.route("changed", self.cpu_db, "core/test/util.h", "core/test/test_cpu.c")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(done.stdout.split(), ["core/test/test_cpu.c"])
+        self.assertIn(
+            "tidy-changed: core/test/util.h is C-only: linted through core/test/test_cpu.c",
+            done.stderr,
+        )
 
     def test_file_with_a_live_coverage_exception_is_skipped_naming_it(self) -> None:
         done = self.route("changed", self.cpu_db, "core/test/test_excepted.c")
