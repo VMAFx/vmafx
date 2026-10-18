@@ -246,8 +246,22 @@ jobs:
 
       - name: Run Compat ABI Parity Probe
         if: steps.impact.outputs.golden_harness == 'true'
+        env:
+          RESULTS: ${{ runner.temp }}/compat-abi-parity
         run: |
-          python3 scripts/dev/upstream_parity.py --unpinned --abi --mode probe --jobs 2
+          grep -m1 'model name' /proc/cpuinfo
+          grep -m1 '^flags' /proc/cpuinfo | tr ' ' '\n' | grep -E '^(avx|fma|f16c|bmi)' | tr '\n' ' '
+          echo
+          python3 scripts/dev/upstream_parity.py --unpinned --abi --mode probe --jobs 2 \
+            --summary --write-json "$RESULTS"
+
+      - name: Upload Compat ABI Parity results
+        if: failure() && steps.impact.outputs.golden_harness == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: compat-abi-parity-results
+          path: ${{ runner.temp }}/compat-abi-parity
+          retention-days: 7
 
       - name: Run Compat ABI Planted Defect (Assert Failure)
         if: steps.impact.outputs.golden_harness == 'true'
