@@ -12,6 +12,7 @@ import sys
 import unittest
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
@@ -91,6 +92,22 @@ class CompatAbiParityTests(unittest.TestCase):
         args = guard.parse_args(["--plant"])
         self.assertTrue(args.plant)
         self.assertTrue(args.abi)
+
+
+class UpstreamBaselineTests(unittest.TestCase):
+    def test_x86_64_upstream_build_takes_the_image_baseline(self) -> None:
+        with mock.patch("platform.machine", return_value="x86_64"):
+            args = guard.upstream_baseline_args()
+        self.assertEqual(args, ["-Dc_args=-march=x86-64", "-Dcpp_args=-march=x86-64"])
+
+    def test_other_machines_get_no_march(self) -> None:
+        with mock.patch("platform.machine", return_value="aarch64"):
+            self.assertEqual(guard.upstream_baseline_args(), [])
+
+    def test_v3_default_is_not_the_baseline(self) -> None:
+        with mock.patch("platform.machine", return_value="x86_64"):
+            args = guard.upstream_baseline_args()
+        self.assertFalse(any("x86-64-v" in arg for arg in args))
 
 
 if __name__ == "__main__":

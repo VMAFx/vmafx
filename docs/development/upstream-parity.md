@@ -110,6 +110,13 @@ image.
 - Builds and the run cache are kept per environment under
   `build-upstream-parity/` (`image-<id>/`, `host/`), so a host build is
   never reused in the image.
+- On x86-64 the upstream build is configured with `-march=x86-64`, the
+  pinned image's compiler default. Netflix's build leaves floating-point
+  contraction at the compiler's default, and a host compiler that defaults to
+  x86-64-v3 (Ubuntu's `amd64v3` variant, as on the hosted CI runners) would
+  fuse its multiply-adds and move its scores; the fork's build turns
+  contraction off on every file. A host build configured before this pin is
+  reused as it is: remove `build-upstream-parity/host/` to reconfigure it.
 
 ### Undefined upstream values: the heap check
 

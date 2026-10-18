@@ -20,7 +20,7 @@ To prove defect detection, an LD_PRELOAD plant shim (`scripts/dev/compat_abi_pla
 
 The parity guard (`scripts/dev/upstream_parity.py`) is extended with `--abi` and `--plant`, enforcing SONAME validation (`libvmaf.so.3`), DT_NEEDED linkage verification, and dynamic loader resolution checks (`ldd`) to eliminate silent fallbacks.
 
-In CI, the gate runs in `.github/workflows/tests-and-quality-gates.yml` on `ubuntu-26.04` with `--unpinned` (compiling both trees with the host GCC for verified compiler parity), while local and release preflight runs enforce the pinned dev container image (`vmaf-dev-mcp:local`).
+In CI, the gate runs in `.github/workflows/tests-and-quality-gates.yml` on `ubuntu-26.04` with `--unpinned` (compiling both trees with the host GCC; the hosted image's GCC defaults to `-march=x86-64-v3` with FMA enabled, so the upstream build is held to the pinned image's `-march=x86-64` baseline, because Netflix's build leaves floating-point contraction on and fused multiply-adds moved its model scores by up to 3e-12 and three float ADM cells past their measured bounds), while local and release preflight runs enforce the pinned dev container image (`vmaf-dev-mcp:local`).
 
 ## Alternatives considered
 

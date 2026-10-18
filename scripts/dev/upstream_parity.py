@@ -623,6 +623,20 @@ def build_harness(tree_source: Path, build: Path, output: Path, log: Path, cc: s
     _checked(argv, cwd=REPO, log=log)
 
 
+def upstream_baseline_args() -> list[str]:
+    """Meson arguments that hold the upstream build to the pinned image's baseline ISA.
+
+    Netflix's build leaves floating-point contraction at the compiler's default, so a
+    host compiler that defaults to x86-64-v3 (Ubuntu's amd64v3 variant) fuses its
+    multiply-adds and moves its scores; the fork turns contraction off (ADR-1461).
+    The pinned image's GCC defaults to x86-64; the SIMD libraries keep their own flags.
+    """
+
+    if platform.machine() not in ("x86_64", "AMD64"):
+        return []
+    return ["-Dc_args=-march=x86-64", "-Dcpp_args=-march=x86-64"]
+
+
 def build_upstream(commit: str, workdir: Path, jobs: int, compilers: tuple[str, str]) -> Tree:
     """Export, configure and build Netflix/vmaf at *commit* (CPU only)."""
 
@@ -635,6 +649,7 @@ def build_upstream(commit: str, workdir: Path, jobs: int, compilers: tuple[str, 
         setup: list[str | Path] = [_tool("meson"), "setup", build, root / "libvmaf"]
         setup += ["--buildtype", "release", "-Denable_float=true", "-Denable_cuda=false"]
         setup += ["-Denable_docs=false", "-Denable_tests=false", "-Db_lto=false"]
+        setup += upstream_baseline_args()
         env = dict(os.environ, CC=cc, CXX=cxx)
         _checked(setup, cwd=REPO, log=logs / "upstream-setup.log", env=env)
     if golden_compilers(build)[0] != cc:
@@ -819,6 +834,7 @@ def build_upstream_abi(
             "-Denable_tests=false",
             "-Db_lto=false",
             "-Ddefault_library=shared",
+            *upstream_baseline_args(),
         ]
         env = dict(os.environ, CC=cc, CXX=cxx)
         _checked(setup, cwd=REPO, log=logs / "upstream-setup-abi.log", env=env)
