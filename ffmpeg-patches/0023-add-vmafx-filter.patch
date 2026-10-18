@@ -17,9 +17,9 @@ the same scoring path, recommends a CRF for the next pass. Built with
  doc/filters.texi               |  151 ++
  libavfilter/Makefile           |    2 +
  libavfilter/allfilters.c       |    2 +
- libavfilter/vf_vmafx.c         | 2525 ++++++++++++++++++++++++++++++++
+ libavfilter/vf_vmafx.c         | 2530 ++++++++++++++++++++++++++++++++
  libavfilter/vf_vmafx_options.h |  152 ++
- 6 files changed, 2837 insertions(+)
+ 6 files changed, 2842 insertions(+)
  create mode 100644 libavfilter/vf_vmafx.c
  create mode 100644 libavfilter/vf_vmafx_options.h
 
@@ -250,10 +250,10 @@ index 75e598b530bb0a60f3e94098e6c8d25ed9fd9513..83727b0c8fd2ac6f3499128b9edf0a20
  extern const FFFilter ff_vf_w3fdif;
 diff --git a/libavfilter/vf_vmafx.c b/libavfilter/vf_vmafx.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..431e061dbc9d27807718f7746a7fb0d6b126ff5a
+index 0000000000000000000000000000000000000000..1dab6d796d75018c15165e0bee7881444faf2352
 --- /dev/null
 +++ b/libavfilter/vf_vmafx.c
-@@ -0,0 +1,2525 @@
+@@ -0,0 +1,2530 @@
 +/*
 + * Copyright 2026 Lusoris
 + *
@@ -306,7 +306,12 @@ index 0000000000000000000000000000000000000000..431e061dbc9d27807718f7746a7fb0d6
 +#include "libavutil/hwcontext_cuda_internal.h"
 +#endif
 +#if CONFIG_VULKAN
++#if HAVE_UNISTD_H
 +#include <unistd.h>
++#endif
++#if HAVE_IO_H
++#include <io.h>
++#endif
 +
 +#include "libavutil/hwcontext_vulkan.h"
 +#include "libavutil/internal.h"

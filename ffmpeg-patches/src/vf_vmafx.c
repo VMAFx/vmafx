@@ -50,7 +50,12 @@
 #include "libavutil/hwcontext_cuda_internal.h"
 #endif
 #if CONFIG_VULKAN
+#if HAVE_UNISTD_H
 #include <unistd.h>
+#endif
+#if HAVE_IO_H
+#include <io.h>
+#endif
 
 #include "libavutil/hwcontext_vulkan.h"
 #include "libavutil/internal.h"
