@@ -38,6 +38,9 @@
  * constant of each (offset, rounding half), the largest code value, and where
  * R, G, B are in a pixel of `elems` elements of `in_bytes` bytes. Passed to
  * a kernel by value. */
+/* NOLINTBEGIN(modernize-use-using): C header included by C translation units
+ * and by the CUDA kernels (import_convert_kernels.h); C has no `using`.
+ * ADR-1138. */
 typedef struct VmafxRgbPlan {
     int64_t coef[3][3];
     int64_t add[3];
@@ -46,6 +49,7 @@ typedef struct VmafxRgbPlan {
     uint32_t in_bytes;
     uint32_t pos[3];
 } VmafxRgbPlan;
+/* NOLINTEND(modernize-use-using) */
 
 /* Y' (plane 0), Cb' (1) or Cr' (2) of the pixel (r, g, b). */
 VMAFX_RGB_FN uint32_t vmafx_rgb_value(const VmafxRgbPlan *plan, uint32_t plane, uint32_t r,

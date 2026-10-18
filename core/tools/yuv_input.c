@@ -271,6 +271,11 @@ static int yuv_layout_setup(yuv_input *yuv, const VmafxImportLayout *layout)
     if (yuv_input_set_plane_geometry(yuv) != 0)
         return -1;
     yuv->frame_sz = yuv_layout_frame_size(yuv);
+    if (yuv->frame_sz == 0) {
+        (void)fprintf(stderr, "yuv: %s frame of %ux%u holds no samples\n", layout->name, yuv->width,
+                      yuv->height);
+        return -1;
+    }
     yuv->src_buf = malloc(yuv->frame_sz);
     if (!yuv->src_buf) {
         (void)fprintf(stderr, "Could not allocate yuv layout buffer.\n");
@@ -346,8 +351,9 @@ static void yuv_input_get_info(yuv_input *_yuv, video_input_info *_info)
 }
 
 /* Convert the layout frame in `src_buf` into the planar frame `out` (data and stride of each
- * plane): the library's reads, plane by plane. */
-static void yuv_convert_layout(const yuv_input *yuv, uint8_t *const out[3], const size_t stride[3])
+ * plane): the library's reads, plane by plane. 0 on success, -1 when a read names a producer
+ * plane the layout does not have. */
+static int yuv_convert_layout(const yuv_input *yuv, uint8_t *const out[3], const size_t stride[3])
 {
     unsigned pw[3];
     unsigned ph[3];
@@ -367,14 +373,24 @@ static void yuv_convert_layout(const yuv_input *yuv, uint8_t *const out[3], cons
     const unsigned n_out = yuv->pix_fmt == VMAF_PIX_FMT_YUV400P ? 1u : 3u;
     for (unsigned i = 0; i < n_out; i++) {
         if (yuv->layout->packed == VMAFX_IMPORT_PACKED_RGB) {
+            if (src[0] == NULL) {
+                (void)fprintf(stderr, "yuv: %s has no producer plane 0\n", yuv->layout->name);
+                return -1;
+            }
             vmafx_rgb_read_plane(out[i], stride[i], src[0], pitch[0], pw[i], ph[i], i, &yuv->rgb);
             continue;
         }
         VmafxImportRead rd;
         vmafx_import_plane_read(yuv->layout, yuv->bitdepth, i, &rd);
+        if (rd.src_plane >= yuv->layout->n_planes || src[rd.src_plane] == NULL) {
+            (void)fprintf(stderr, "yuv: %s has no producer plane %u\n", yuv->layout->name,
+                          rd.src_plane);
+            return -1;
+        }
         vmafx_import_read_plane(out[i], stride[i], out_bytes, src[rd.src_plane],
                                 pitch[rd.src_plane], pw[i], ph[i], &rd);
     }
+    return 0;
 }
 
 /* Read one frame of the layout and convert it into `out`. 1 on success, 0 for a clean EOF before
@@ -396,7 +412,8 @@ static int yuv_load_layout(yuv_input *yuv, FILE *fin, uint8_t *const out[3], con
         (void)fprintf(stderr, "Error reading YUV frame data.\n");
         return -1;
     }
-    yuv_convert_layout(yuv, out, stride);
+    if (yuv_convert_layout(yuv, out, stride) != 0)
+        return -1;
     return 1;
 }
 

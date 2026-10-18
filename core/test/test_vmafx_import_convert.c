@@ -38,7 +38,7 @@ static void put16(uint8_t *at, uint16_t v)
 
 static uint16_t get16(const uint8_t *at, unsigned i)
 {
-    return (uint16_t)(at[(size_t)2u * i] | (at[(size_t)2u * i + 1u] << 8u));
+    return (uint16_t)((unsigned)at[(size_t)2u * i] | ((unsigned)at[(size_t)2u * i + 1u] << 8u));
 }
 
 /* Plane `i` of `layout` at `bpc` read from `src` (`pitch` bytes per row) into
@@ -266,9 +266,11 @@ static char *test_v210_words(void)
     uint8_t y[12];
     uint8_t cb[6];
     uint8_t cr[6];
-    read_plane(&v210, 10u, 0u, row, 16u, 6u, 1u, y);
-    read_plane(&v210, 10u, 1u, row, 16u, 3u, 1u, cb);
-    read_plane(&v210, 10u, 2u, row, 16u, 3u, 1u, cr);
+    const VmafxImportLayout *const lv = layout_of(VMAFX_PIXEL_FORMAT_V210);
+    mu_assert("v210 is a grouped layout", lv != NULL && lv->packed == VMAFX_IMPORT_PACKED_V210);
+    read_plane(lv, 10u, 0u, row, 16u, 6u, 1u, y);
+    read_plane(lv, 10u, 1u, row, 16u, 3u, 1u, cb);
+    read_plane(lv, 10u, 2u, row, 16u, 3u, 1u, cr);
     for (unsigned k = 0; k < 6u; k++) {
         mu_assert("v210 luma in raster order", get16(y, k) == 100u + k);
     }

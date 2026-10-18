@@ -59,7 +59,7 @@ static char *check_pixel(const VmafxRgbPlan *plan, const VroConfig *cfg, const V
 {
     for (uint32_t plane = 0; plane < 3u; plane++) {
         const uint32_t want = plane == 0u ? px->y : (plane == 1u ? px->cb : px->cr);
-        const bool slack = (px->slack >> plane) & 1u;
+        const bool slack = ((unsigned)px->slack >> plane) & 1u;
         const uint32_t got = vmafx_rgb_value(plan, plane, px->r, px->g, px->b);
         if (!matches(got, want, slack)) {
             (void)fprintf(stderr,
@@ -162,8 +162,9 @@ static void put_sample(uint8_t *row, unsigned x, unsigned elems, unsigned e, siz
 
 static uint32_t get_sample(const uint8_t *plane, unsigned x, size_t bytes)
 {
-    return bytes == 2u ? (uint32_t)(plane[(size_t)2u * x] | (plane[(size_t)2u * x + 1u] << 8u)) :
-                         plane[x];
+    return bytes == 2u ?
+               ((uint32_t)plane[(size_t)2u * x] | ((uint32_t)plane[(size_t)2u * x + 1u] << 8u)) :
+               plane[x];
 }
 
 /* Import `cfg`'s pixels as `pix_fmt` and compare the three planes. 0: all equal. */
@@ -171,7 +172,7 @@ static unsigned import_config(const VroConfig *cfg, uint32_t pix_fmt, uint32_t a
 {
     const VmafxImportLayout *const layout = layout_of(pix_fmt);
     const size_t bytes = cfg->bpc > 8u ? 2u : 1u;
-    uint8_t row[512 * 4 * 2];
+    uint8_t row[512 * 4 * 2] = {0};
     for (size_t i = 0; i < cfg->n; i++) {
         const VroCase *const px = &cfg->cases[i];
         const unsigned elems = layout->rgb_elems;
@@ -203,7 +204,7 @@ static unsigned import_config(const VroConfig *cfg, uint32_t pix_fmt, uint32_t a
         const uint32_t want[3] = {px->y, px->cb, px->cr};
         for (unsigned p = 0; p < 3u; p++) {
             if (!matches(get_sample(planes.data[p], (unsigned)i, bytes), want[p],
-                         (px->slack >> p) & 1u)) {
+                         ((unsigned)px->slack >> p) & 1u)) {
                 bad |= 8u;
             }
         }

@@ -131,10 +131,11 @@ def ffmpeg_formats(api: Api) -> str:
         " * pix_fmts[] = { VMAFX_FFMPEG_YUV_PIX_FMTS, AV_PIX_FMT_NONE };`. The RGB lists are\n"
         " * accepted only when the filter is given the matrix, range and transfer of the\n"
         " * conversion (ADR-2146); a hardware list is what the library imports on that device,\n"
-        " * to be intersected with the formats FFmpeg's own hwcontext allows."
+        " * to be intersected with the formats FFmpeg's own hwcontext allows. The lists are\n"
+        " * macros only: the including file includes <libavutil/pixfmt.h> before it uses them."
     )
     lines += ["#ifndef VMAFX_FFMPEG_FORMATS_H", "#define VMAFX_FFMPEG_FORMATS_H", ""]
-    lines += ["#include <libavutil/pixfmt.h>", "", "/* clang-format off */", ""]
+    lines += ["/* clang-format off */", ""]
     for label, device in (
         ("PIX_FMTS", None),
         ("CUDA_SW_FORMATS", "cuda"),

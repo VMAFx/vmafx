@@ -28,6 +28,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "compat/crt_portable.h"
 #include "vmafx/vmafx.h"
 /* The cell table: the CUDA / HIP lanes' (vmafx_device_cells.h); a lane with its
  * own (the SYCL lane's vmafx_sycl_cells.h) defines VF_CELLS_HEADER, VF_CELLS
@@ -509,13 +510,13 @@ static inline char *vf_run_format(const VfOps *ops, const VfFormat *f, VfResult 
  * VMAFX_TEST_FORMATS. */
 static inline bool vf_selected(const VfFormat *f)
 {
-    /* NOLINTBEGIN(concurrency-mt-unsafe): single-thread test setup (ADR-0141 / ADR-0278). */
-    const char *const group = getenv("VMAFX_TEST_FORMAT_GROUP");
-    const char *const names = getenv("VMAFX_TEST_FORMATS");
-    /* NOLINTEND(concurrency-mt-unsafe) */
+    /* vmaf_getenv_portable() returns one per-thread buffer under MSVC: read
+     * the group before the second variable replaces it. */
+    const char *const group = vmaf_getenv_portable("VMAFX_TEST_FORMAT_GROUP");
     if (group && group[0] != '\0' && strtoul(group, NULL, 10) != (unsigned long)f->bpc) {
         return false;
     }
+    const char *const names = vmaf_getenv_portable("VMAFX_TEST_FORMATS");
     if (!names || names[0] == '\0') {
         return true;
     }
