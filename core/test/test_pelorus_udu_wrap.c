@@ -180,7 +180,7 @@ static char *test_replay_vectors(void)
     int failed;
     FILE *f = vmaf_test_fopen(PELORUS_UDU_VECTORS_PATH, "r");
 
-    mu_assert("vector file missing", f != nullptr);
+    mu_assert("vector file missing", f != NULL);
     failed = replay_file(f, seen, &count);
     mu_assert("a vector failed", failed == 0);
     mu_assert("fewer vectors than the copy holds", count >= VEC_MIN_COUNT);
