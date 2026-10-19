@@ -94,11 +94,18 @@ static VmafxStatus check_submit(const VmafxReport *report, const VmafxContext *c
                           "frame index %llu does not follow %llu; indices increase strictly",
                           (unsigned long long)index, (unsigned long long)context->last_index);
     }
-    if (!same_geometry(dist, ref)) {
+    /* Models that scale to a display resolution take inputs of different
+     * sizes; the engine's conversion checks the pair (Netflix/vmaf cf9a6ec51b). */
+    const bool scales = vmaf_engine_display_resolution(context->engine) != 0u;
+    if (!scales && !same_geometry(dist, ref)) {
         return geometry_failure(report, "distorted", dist, ref, "the reference");
     }
     if (context->have_frame && !same_geometry(ref, &context->first_desc)) {
         return geometry_failure(report, "reference", ref, &context->first_desc, "the first frame");
+    }
+    if (context->have_frame && !same_geometry(dist, &context->first_dist_desc)) {
+        return geometry_failure(report, "distorted", dist, &context->first_dist_desc,
+                                "the first distorted frame");
     }
     return VMAFX_OK;
 }
@@ -252,9 +259,9 @@ VmafxStatus vmafx_submit(VmafxContext *context, VmafxFrame *reference, VmafxFram
         drop_pictures(&ref, &dist);
         return status;
     }
-    assert(same_geometry(&desc[0], &desc[1]));
     if (!context->have_frame) {
         context->first_desc = desc[0];
+        context->first_dist_desc = desc[1];
         context->have_frame = true;
     }
     context->last_index = index;
