@@ -28,7 +28,7 @@ permissions:
 
 env:
   # Exact engine used to record the baseline and replay HISS evidence.
-  PRAETOR_REF: 019b879ec69178570f53b97a113f67d62629e4c1
+  PRAETOR_REF: c565cba50b57a6d6cfa628a0f424d6c9f9a9e569
 
 # ADR-1506 — `Go API Compatibility` is the job of praetor-api.yml, a file
 # praetor locks byte for byte, so its required-aggregator marker lives here.
