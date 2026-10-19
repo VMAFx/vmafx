@@ -30,8 +30,12 @@ invariant: Convert to model's conversion_target on host; input colour lives on c
   four colour attributes and rejects `unknown` values.
 - `resolution.display` (Netflix/vmaf `ca2a2a111d`): 1080 or 2160 only;
   `vmaf_conversion_policy_scale()` sets the target size (short side = display,
-  long side rounded to even, bicubic up / Lanczos down, -EINVAL above 4:1 or
-  for different input sizes). `picture_matches()` compares the pinned size;
+  long side rounded to even, bicubic up / Lanczos down, -EINVAL above 4:1).
+- Different input sizes (Netflix/vmaf `cf9a6ec51b`): the policy fills a
+  separate `dist_target` with the reference's scaled size and its own filter;
+  orientation must match and the scaled long sides may differ by 2 pixels
+  (`SCALE_ASPECT_TOLERANCE`). `validate_pic_size()` in `libvmaf.c` runs after
+  conversion and keeps the same-size rule for runs without a display. `picture_matches()` compares the pinned size;
   `register_model()` treats a different display as a different target.
 - Guards: `test_conversion_policy`, `test_model`, `test_read_pictures_convert`
   (conversions need `-Denable_zimg=true`).

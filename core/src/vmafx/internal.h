@@ -160,6 +160,7 @@ struct VmafxContext {
     bool have_frame;                 /* a frame was submitted: the fields below are set */
     uint64_t last_index;             /* indices increase strictly (ADR-0152) */
     VmafxFrameDesc first_desc;       /* every frame keeps the first frame's geometry */
+    VmafxFrameDesc first_dist_desc;  /* the distorted input's, when the models scale */
     VmafxProvenanceState provenance; /* RC4 WP5 */
     /* ADR-2094: vmafx_context_set_default_color() (reference, distorted), and
      * the colour of the frames vmafx_context_preallocate() made. */

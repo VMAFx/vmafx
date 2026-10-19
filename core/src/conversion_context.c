@@ -97,9 +97,10 @@ int vmaf_conversion_state_convert(VmafConversionState *state, VmafPicture *ref, 
                                             &needs_conversion, &target);
     if (err)
         return err;
+    VmafPictureConvertTarget dist_target = target;
     if (state->display_resolution) {
         err = vmaf_conversion_policy_scale(ref, dist, state->display_resolution, &needs_conversion,
-                                           &target);
+                                           &target, &dist_target);
         if (err)
             return err;
     }
@@ -111,7 +112,7 @@ int vmaf_conversion_state_convert(VmafConversionState *state, VmafPicture *ref, 
     err = convert_picture(&state->ref, ref, &state->ref_color, &target, &ref_converted);
     if (err)
         return err;
-    err = convert_picture(&state->dist, dist, &state->dist_color, &target, &dist_converted);
+    err = convert_picture(&state->dist, dist, &state->dist_color, &dist_target, &dist_converted);
     if (err) {
         if (ref_converted.priv)
             err = release_picture(&ref_converted, err);

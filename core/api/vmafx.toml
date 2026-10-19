@@ -1217,7 +1217,7 @@ name = "vmafx_submit"
 header = "vmafx/context.h"
 since = "0.1"
 returns = "status"
-doc = "Score frame `index` from `reference` and `distorted`. Consumes one reference of each frame on every path, failures included (the same frame as both inputs needs two); a frame submitted to several contexts needs one reference per submit and is never copied. Indices increase strictly and every frame keeps the first frame's geometry."
+doc = "Score frame `index` from `reference` and `distorted`. Consumes one reference of each frame on every path, failures included (the same frame as both inputs needs two); a frame submitted to several contexts needs one reference per submit and is never copied. Indices increase strictly and every frame keeps the first frame's geometry. The distorted frame has the reference's geometry, unless a model's `conversion_target` names a display resolution: the inputs may then differ in size, each keeps its own first frame's geometry, and both are scaled to a common size before scoring."
 params = [
   { name = "context", type = "VmafxContext", pass = "in" },
   { name = "reference", type = "VmafxFrame", pass = "in" },

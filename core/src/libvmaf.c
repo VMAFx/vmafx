@@ -3161,6 +3161,31 @@ static int threaded_read_pictures_batch(VmafContext *vmaf, VmafPicture *ref, Vma
     return upload_err | vmaf_picture_unref(ref) | vmaf_picture_unref(dist);
 }
 
+/* Pictures reaching the extractors are the same size as each other and as
+ * the first frame (Netflix/vmaf cf9a6ec51b): a model's display resolution
+ * scales different-sized inputs before this check, so it only fails when no
+ * scaling is set or the stream changes size. */
+static int validate_pic_size(const VmafContext *vmaf, const VmafPicture *ref,
+                             const VmafPicture *dist)
+{
+    if ((ref->w[0] != dist->w[0]) || (ref->h[0] != dist->h[0])) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "when no scaling is set in the models, the reference "
+                 "(%ux%u) and distorted (%ux%u) pictures must be the same "
+                 "size\n",
+                 ref->w[0], ref->h[0], dist->w[0], dist->h[0]);
+        return -EINVAL;
+    }
+    if ((ref->w[0] != vmaf->pic_params.w) || (ref->h[0] != vmaf->pic_params.h)) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "the picture size changed from %ux%u to %ux%u; every picture "
+                 "must be the size of the first\n",
+                 vmaf->pic_params.w, vmaf->pic_params.h, ref->w[0], ref->h[0]);
+        return -EINVAL;
+    }
+    return 0;
+}
+
 static int validate_pic_params(VmafContext *vmaf, const VmafPicture *ref, const VmafPicture *dist)
 {
     const VmafPicturePrivate *ref_priv = ref->priv;
@@ -3174,10 +3199,9 @@ static int validate_pic_params(VmafContext *vmaf, const VmafPicture *ref, const 
     }
     vmaf->pic_params.buf_type = ref_priv->buf_type;
 
-    if ((ref->w[0] != dist->w[0]) || (ref->w[0] != vmaf->pic_params.w))
-        return -EINVAL;
-    if ((ref->h[0] != dist->h[0]) || (ref->h[0] != vmaf->pic_params.h))
-        return -EINVAL;
+    const int size_err = validate_pic_size(vmaf, ref, dist);
+    if (size_err)
+        return size_err;
     if ((ref->pix_fmt != dist->pix_fmt) || (ref->pix_fmt != vmaf->pic_params.pix_fmt)) {
         return -EINVAL;
     }
@@ -5211,6 +5235,11 @@ int vmaf_engine_run_info(const VmafContext *vmaf, VmafEngineRunInfo *out)
 bool vmaf_engine_is_flushed(const VmafContext *vmaf)
 {
     return vmaf && vmaf->flushed;
+}
+
+unsigned vmaf_engine_display_resolution(const VmafContext *vmaf)
+{
+    return vmaf ? vmaf->convert.display_resolution : 0u;
 }
 
 unsigned vmaf_engine_thread_count(const VmafContext *vmaf)
