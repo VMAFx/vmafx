@@ -25,6 +25,10 @@
 extern "C" {
 #endif
 
+/* NOLINTBEGIN(modernize-use-using,performance-enum-size): public C header included by C
+ * and C++ translation units; C has no `using`, and C has no fixed enum underlying type
+ * across the required toolchains (ADR-1470). ADR-1138. */
+
 /**
  * Transport of the embedded MCP server (values equal VmafMcpTransport). Added in ABI 0.1.6.
  * @since 0.1
@@ -170,6 +174,8 @@ VMAFX_EXPORT VmafxStatus vmafx_mcp_stop(VmafxMcpServer *server, VmafxError **err
  * @since 0.1
  */
 VMAFX_EXPORT void vmafx_mcp_server_destroy(VmafxMcpServer *server);
+
+/* NOLINTEND(modernize-use-using,performance-enum-size) */
 
 #ifdef __cplusplus
 }

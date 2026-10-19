@@ -217,6 +217,7 @@ proto = { field = 14 }
 | `proto` | `{ field = N }`, unique in the group's `proto_message` (default `ScoreOptions`) |
 | `argv`, `argv_flag`, `model_suffix` | How a server passes it to `vmaf`: `core` (placed by the server), `extra` (appended in definition order) or `none`; the flag when not the first long spelling; a model-spec suffix (`":adm.adm_norm_view_dist={}"`) instead of a flag |
 | `reserved` | Every surface accepts only the default; the text says why |
+| `go_type` | Exported Go type of the field in the REST stubs (`x-go-type`), for an integer option whose published Go type must stay (HISS-14); the type is declared in `gen/go/oapi/compat.go` |
 
 Order matters: `vmaf --help` lists options in definition order and both MCP
 servers append the `extra` flags in that order. A struct with

@@ -68,6 +68,11 @@ $$
 8-bit scale and uses `peak` = 255.0 / 255.75 / 255.9375 / 255.99609375 for
 8 / 10 / 12 / 16 bpc.
 
+The integer extractor accepts every depth from 8 to 16 bpc, the odd depths
+(9, 11, 13, 15) and 14 included; before the input-format table
+([ADR-2145](../adr/2145-vmafx-input-format-table.md)) it accepted only 8, 10,
+12 and 16 and refused the others with `-EINVAL`.
+
 ## Options
 
 ### `psnr`
