@@ -57,9 +57,9 @@ Nothing publishes on merge except build-and-test runs of the image and of the Wi
    (for example `v1.0.0-rc.2-311-g2414774ea`; a commit that carries the tag gives the
    bare tag): the `tester-*` tags of earlier prereleases must never supply the version.
    The release step, and only that step, uses the release-bot identity of
-   `release-please.yml` (the App token when `RELEASE_BOT_APP_ID` and
-   `RELEASE_BOT_PRIVATE_KEY` exist, else `RELEASE_BOT_TOKEN`, else the step fails and
-   names the missing secrets; it prints which one it used). The job token cannot create
+   `release-please.yml`: the App installation token minted from `RELEASE_BOT_APP_ID` and
+   `RELEASE_BOT_PRIVATE_KEY`; without them the mint step fails, and there is no personal
+   access token fallback. The job token cannot create
    the tag of a commit that is behind master and differs in `.github/workflows/`: the
    token cannot hold the `workflows` permission and GitHub answers `HTTP 403: Resource not
    accessible by integration`. A release made by the release-bot identity starts other
