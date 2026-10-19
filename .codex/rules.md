@@ -113,19 +113,19 @@ Two rules. Scope: ALL agents, ALL tools, ALL commits, no exception. Override eve
 
 1. **NEVER modify Netflix golden-data assertions** (`python/test/` `assertAlmostEqual` values).
    Numerical-correctness ground truth. Scores drift -> fix code, not assertions.
-   Sole exception: port Netflix upstream update verbatim (value + places as upstream, never fork-invented) after measuring on fork CPU build ([ADR-1828](docs/adr/1828-port-netflix-golden-updates.md)).
+   Sole exception: port Netflix upstream update verbatim (value + places as upstream, never fork-invented) after measuring on fork CPU build ([ADR-1828](../docs/adr/1828-port-netflix-golden-updates.md)).
 2. **EVERY user-discoverable surface gets human-readable documentation in the same PR** as the code.
    No docs = unmergeable PR. ADRs, code comments: no substitute.
 
 Audience: any coding agent (Cursor, Copilot, Aider, Continue, Cody, Codeium, etc.).
-[CLAUDE.md](CLAUDE.md) = compiled projection of this file, never edited by hand. Claude Code–specific tooling (skills, hooks, agents): `.claude/`.
+[CLAUDE.md](../CLAUDE.md) = compiled projection of this file, never edited by hand. Claude Code–specific tooling (skills, hooks, agents): `.claude/`.
 
 ## 1. What this repo is
 
 - Fork of [Netflix/vmaf](https://github.com/Netflix/vmaf): perceptual video quality assessment.
 - Additions over upstream: SYCL / CUDA / HIP GPU backends (runtime-selected); AVX2/AVX-512/NEON SIMD; tiny-AI surface (ONNX Runtime; `ai/`, `core/src/dnn/`); MCP server (`mcp-server/vmaf-mcp/`).
 - `--precision` CLI flag: default `%.6f` Netflix-compat; `--precision=max` opts in to `%.17g` IEEE-754 round-trip lossless. ADR-0119 supersedes ADR-0006.
-- License: per-file `SPDX-License-Identifier` authoritative ([ADR-1250](docs/adr/1250-eupl-fork-relicense.md)). Netflix / other inherited code keeps its terms: BSD-2-Clause-Patent, upstream license preserved ([NOTICE](NOTICE)). Fork-authored code: EUPL-1.2 ([LICENSE](LICENSE)). Root licence files fixed ([ADR-1699](docs/adr/1699-root-licence-files-eupl.md)): no other root licence file.
+- License: per-file `SPDX-License-Identifier` authoritative ([ADR-1250](../docs/adr/1250-eupl-fork-relicense.md)). Netflix / other inherited code keeps its terms: BSD-2-Clause-Patent, upstream license preserved ([NOTICE](../NOTICE)). Fork-authored code: EUPL-1.2 ([LICENSE](../LICENSE)). Root licence files fixed ([ADR-1699](../docs/adr/1699-root-licence-files-eupl.md)): no other root licence file.
 - Default branch: `master`. Upstream tracked as remote `upstream`.
 
 ## 2. Build
@@ -137,9 +137,9 @@ meson setup build core [-Denable_cuda=true|false] [-Denable_sycl=true|false]
 ninja -C build
 ```
 
-- CPU configuration: [source-build guide](docs/getting-started/index.md#build-from-source-any-platform). SDK setup + GPU configurations: [backend guides](docs/backends/index.md).
+- CPU configuration: [source-build guide](../docs/getting-started/index.md#build-from-source-any-platform). SDK setup + GPU configurations: [backend guides](../docs/backends/index.md).
 - Skill shortcut: `/build-vmaf --backend=cpu|cuda|sycl|all`.
-- IDE: clangd / VS Code C/C++ extension read `${workspaceFolder}/build/` ([`.vscode/c_cpp_properties.json`](.vscode/c_cpp_properties.json)). Configure it with every backend toolchain present; else `compile_commands.json` lacks CUDA / SYCL include paths -> "undeclared identifier" on every backend file. Vulkan removed (ADR-0726): `volk.h` / `vk_mem_alloc.h` no longer needed. See [docs/development/ide-setup.md](docs/development/ide-setup.md).
+- IDE: clangd / VS Code C/C++ extension read `${workspaceFolder}/build/` ([`.vscode/c_cpp_properties.json`](../.vscode/c_cpp_properties.json)). Configure it with every backend toolchain present; else `compile_commands.json` lacks CUDA / SYCL include paths -> "undeclared identifier" on every backend file. Vulkan removed (ADR-0726): `volk.h` / `vk_mem_alloc.h` no longer needed. See [docs/development/ide-setup.md](../docs/development/ide-setup.md).
 
 ## 3. Test
 
@@ -163,7 +163,7 @@ make format-check  # dry-run (CI / pre-commit)
 
 ## 5. Repository layout
 
-Former [CLAUDE.md §5](CLAUDE.md) layout, merged here:
+Former [CLAUDE.md §5](../CLAUDE.md) layout, merged here:
 
 - `core/` — C library + build root (was `libvmaf/`, ADR-0700); `core/include/libvmaf/` public C API headers; `core/test/` C unit tests
 - `core/src/` — C engine: metric engine, feature extractors
@@ -188,14 +188,14 @@ Former [CLAUDE.md §5](CLAUDE.md) layout, merged here:
 
 ## 6. Coding standards
 
-Read [docs/principles.md](docs/principles.md) before writing C. All C code conforms to:
+Read [docs/principles.md](../docs/principles.md) before writing C. All C code conforms to:
 
 - NASA/JPL Power of 10 (enforced by `.clang-tidy`)
 - JPL Institutional Coding Standard for C (applicable subset)
 - SEI CERT C & CERT C++ (mandatory)
 - MISRA C:2012 (informative subset)
 
-Banned functions, pointer/loop/alloc restrictions, exact `.clang-tidy` checks codifying them: [docs/principles.md](docs/principles.md). Banned: `gets`, `strcpy`, `strcat`, `sprintf`, `strtok`, `atoi`, `atof`, `rand`, `system` (§1.2 rule 30). Every non-void return value must be checked and handled; casting it to `void` does not handle an error.
+Banned functions, pointer/loop/alloc restrictions, exact `.clang-tidy` checks codifying them: [docs/principles.md](../docs/principles.md). Banned: `gets`, `strcpy`, `strcat`, `sprintf`, `strtok`, `atoi`, `atof`, `rand`, `system` (§1.2 rule 30). Every non-void return value must be checked and handled; casting it to `void` does not handle an error.
 
 Style: K&R, 4-space indent, 100-char line budget (see `.clang-format`).
 
@@ -241,8 +241,8 @@ Three Netflix-authored CPU reference test pairs = numerical-correctness ground t
 
 - YUV files: `python/test/resource/yuv/`.
 - Golden-score assertions: hardcoded `assertAlmostEqual(...)` calls in `python/test/` (`quality_runner_test.py`, `vmafexec_test.py`, `vmafexec_feature_extractor_test.py`, `feature_extractor_test.py`, `result_test.py`).
-- **Never modified by any PR** except verbatim port of Netflix upstream update ([ADR-1828](docs/adr/1828-port-netflix-golden-updates.md)): measure first, port value + places exact, no fork-invented value. Run in CI as required status check.
-- **Isolated build profile ([ADR-1317](docs/adr/1317-golden-gate-build-isolation.md))**: `make test-netflix-golden` uses dedicated `GOLDEN_BUILD_DIR ?= core/build-golden` compiled via `scripts/ci/setup-golden-build.sh` enforcing `gcc` or `clang` and passes `VMAF_BUILD_DIR` to Python tests. This isolates the gate from developer builds configured with oneAPI ICX, which exhibit floating-point contraction drift on float-motion and float-VIF convolutions.
+- **Never modified by any PR** except verbatim port of Netflix upstream update ([ADR-1828](../docs/adr/1828-port-netflix-golden-updates.md)): measure first, port value + places exact, no fork-invented value. Run in CI as required status check.
+- **Isolated build profile ([ADR-1317](../docs/adr/1317-golden-gate-build-isolation.md))**: `make test-netflix-golden` uses dedicated `GOLDEN_BUILD_DIR ?= core/build-golden` compiled via `scripts/ci/setup-golden-build.sh` enforcing `gcc` or `clang` and passes `VMAF_BUILD_DIR` to Python tests. This isolates the gate from developer builds configured with oneAPI ICX, which exhibit floating-point contraction drift on float-motion and float-VIF convolutions.
 - Fork-added tests: separate files + directories.
 
 ## 9. Snapshot regeneration
@@ -267,13 +267,13 @@ Three Netflix-authored CPU reference test pairs = numerical-correctness ground t
 
 ## 12. Hard rules, worktree discipline and rebase invariants
 
-Three bodies of binding rules live on own pages -> harness stays inside 300-line budget per compiled vendor context file. Not optional. Hard rules: import line below pulls them in for agents expanding imports; every other agent follows link. Worktree discipline + rebase invariants: links only, never imported. Invariants page = 97 kB, an import loads it every turn of every session ([ADR-1249](docs/adr/1249-praetor-governance-adoption.md) status update 2026-10-12) -> read its section before rebase, upstream sync, conflict resolution, or edit of a file it cites.
+Three bodies of binding rules live on own pages -> harness stays inside 300-line budget per compiled vendor context file. Not optional. Hard rules: import line below pulls them in for agents expanding imports; every other agent follows link. Worktree discipline + rebase invariants: links only, never imported. Invariants page = 97 kB, an import loads it every turn of every session ([ADR-1249](../docs/adr/1249-praetor-governance-adoption.md) status update 2026-10-12) -> read its section before rebase, upstream sync, conflict resolution, or edit of a file it cites.
 
 @docs/development/agent-hard-rules.md
 
-- [Agent hard rules](docs/development/agent-hard-rules.md) — golden-data gate, branch + commit rules, same-PR documentation requirement, licence headers, container preference, `docs/state.md` bug tracking.
-- [Worktree discipline](docs/development/agent-worktree-discipline.md) — isolated agent worktrees, [ADR-0332](docs/adr/0332-agent-worktree-drift-hard-guard.md) host-side hard guard.
-- [Rebase-sensitive invariants](docs/development/rebase-sensitive-invariants.md) — project-wide index every upstream-sync or rebase agent must preserve.
+- [Agent hard rules](../docs/development/agent-hard-rules.md) — golden-data gate, branch + commit rules, same-PR documentation requirement, licence headers, container preference, `docs/state.md` bug tracking.
+- [Worktree discipline](../docs/development/agent-worktree-discipline.md) — isolated agent worktrees, [ADR-0332](../docs/adr/0332-agent-worktree-drift-hard-guard.md) host-side hard guard.
+- [Rebase-sensitive invariants](../docs/development/rebase-sensitive-invariants.md) — project-wide index every upstream-sync or rebase agent must preserve.
 
 ## 14. Interaction style — prefer structured popup questions
 
