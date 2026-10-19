@@ -67,7 +67,7 @@ func TestScoreRunMapsOptionsToGeneratedFlags(t *testing.T) {
 func TestScoreRunRefusesOptionsTheDefinitionRefuses(t *testing.T) {
 	t.Parallel()
 	cases := map[string]*vmafxv1.ScoreOptions{
-		"invalid bitdepth 14":       {Bitdepth: proto.Uint32(14)},
+		"invalid bitdepth 17":       {Bitdepth: proto.Uint32(17)},
 		"invalid backend vulkan":    {Backend: new("vulkan")},
 		"invalid target_width":      {TargetWidth: proto.Uint32(1920)},
 		"needs a backend that":      {Backend: new("cuda"), Device: new("0")},
@@ -160,7 +160,7 @@ func TestHTTPScoreReadsTheContractAndAnswersWithProvenance(t *testing.T) {
 	if code, body = post(`{"reference": "/r", "distorted": "/d", "optionz": {}}`); code != http.StatusBadRequest {
 		t.Errorf("unknown field: %d %s", code, body)
 	}
-	if code, body = post(`{"reference": "/r", "distorted": "/d", "model": "vmaf_v0.6.1", "options": {"bitdepth": 14}}`); code != http.StatusBadRequest {
+	if code, body = post(`{"reference": "/r", "distorted": "/d", "model": "vmaf_v0.6.1", "options": {"bitdepth": 17}}`); code != http.StatusBadRequest {
 		t.Errorf("bad option: %d %s", code, body)
 	}
 }

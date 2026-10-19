@@ -23,10 +23,14 @@
 extern "C" {
 #endif
 
+/* NOLINTBEGIN(modernize-use-using,performance-enum-size): public C header included by C
+ * and C++ translation units; C has no `using`, and C has no fixed enum underlying type
+ * across the required toolchains (ADR-1470). ADR-1138. */
+
 /** ABI version this header describes (ADR-1852). */
 #define VMAFX_ABI_VERSION_MAJOR 0
 #define VMAFX_ABI_VERSION_MINOR 1
-#define VMAFX_ABI_VERSION_PATCH 11
+#define VMAFX_ABI_VERSION_PATCH 12
 
 /**
  * Build version (git describe); valid for the process lifetime.
@@ -39,6 +43,8 @@ VMAFX_EXPORT const char *vmafx_version_string(void);
  * @since 0.1
  */
 VMAFX_EXPORT void vmafx_abi_version(uint32_t *major, uint32_t *minor, uint32_t *patch);
+
+/* NOLINTEND(modernize-use-using,performance-enum-size) */
 
 #ifdef __cplusplus
 }

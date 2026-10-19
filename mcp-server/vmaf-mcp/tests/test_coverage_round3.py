@@ -790,9 +790,9 @@ def test_allowed_roots_includes_workspace_path(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_vmaf_score_bitdepth_schema_is_integer_with_enum():
-    """The vmaf_score inputSchema must enumerate bitdepth as integers and
-    include the standard {8, 10, 12} subset at minimum."""
+def test_vmaf_score_bitdepth_schema_is_integer_range():
+    """The vmaf_score inputSchema must declare bitdepth as an integer from 8
+    to 16, the range the input format table reads (ADR-2145)."""
     import anyio
 
     async def get():
@@ -803,15 +803,13 @@ def test_vmaf_score_bitdepth_schema_is_integer_with_enum():
     schema = by_name["vmaf_score"].input_schema
     bitdepth_schema = schema["properties"]["bitdepth"]
     assert bitdepth_schema["type"] == "integer"
-    enum_set = set(bitdepth_schema["enum"])
-    # {8, 10, 12} are always required; 16 may or may not be present.
-    assert {8, 10, 12}.issubset(
-        enum_set
-    ), f"bitdepth enum must include at least {{8,10,12}}, got {bitdepth_schema['enum']}"
+    assert bitdepth_schema["minimum"] == 8
+    assert bitdepth_schema["maximum"] == 16
 
 
 def test_vmaf_score_pixfmt_schema_enumerates_valid_values():
-    """The vmaf_score inputSchema must enumerate pixfmt as ['420','422','444']."""
+    """The vmaf_score inputSchema must enumerate the planar layouts and the
+    layouts of the input format table, and nothing outside them."""
     import anyio
 
     async def get():
@@ -821,7 +819,10 @@ def test_vmaf_score_pixfmt_schema_enumerates_valid_values():
     by_name = {t.name: t for t in tools}
     schema = by_name["vmaf_score"].input_schema
     pixfmt_schema = schema["properties"]["pixfmt"]
-    assert set(pixfmt_schema["enum"]) == {"420", "422", "444"}
+    enum_set = set(pixfmt_schema["enum"])
+    assert {"400", "420", "422", "444", "nv12", "p010", "rgb"}.issubset(enum_set)
+    assert "411" not in enum_set
+    assert len(pixfmt_schema["enum"]) == len(enum_set)
 
 
 def test_list_tools_returns_tool_names():

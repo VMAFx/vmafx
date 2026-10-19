@@ -331,6 +331,148 @@ static char *test_null_arguments_are_rejected(void)
     return NULL;
 }
 
+/* scale a w x h pair to `display`, returning the policy's error */
+static int scale(unsigned w, unsigned h, unsigned display_resolution, bool *needs_conversion,
+                 VmafPictureConvertTarget *target)
+{
+    TaggedPic tagged = make_pic(&pq_ictcp_color, VMAF_PIX_FMT_YUV420P, 10);
+    tagged.pic.w[0] = w;
+    tagged.pic.h[0] = h;
+    *target = color_target(&pq_ictcp_color);
+    *needs_conversion = false;
+    return vmaf_conversion_policy_scale(&tagged.pic, &tagged.pic, display_resolution,
+                                        needs_conversion, target);
+}
+
+static char *test_scale_upscales_short_side_to_display(void)
+{
+    bool needs_conversion;
+    VmafPictureConvertTarget target;
+    mu_assert("720p to 1080 should be accepted",
+              !scale(1280, 720, 1080, &needs_conversion, &target));
+    mu_assert("720p should scale to 1920x1080", target.w == 1920 && target.h == 1080);
+    mu_assert("upscaling should use bicubic", target.resample_filter == VMAF_RESAMPLE_BICUBIC);
+    mu_assert("a resize should need conversion", needs_conversion);
+
+    mu_assert("1080p to 2160 should be accepted",
+              !scale(1920, 1080, 2160, &needs_conversion, &target));
+    mu_assert("1080p should scale to 3840x2160", target.w == 3840 && target.h == 2160);
+
+    return NULL;
+}
+
+static char *test_scale_downscales_short_side_to_display(void)
+{
+    bool needs_conversion;
+    VmafPictureConvertTarget target;
+    mu_assert("2160p to 1080 should be accepted",
+              !scale(3840, 2160, 1080, &needs_conversion, &target));
+    mu_assert("2160p should scale to 1920x1080", target.w == 1920 && target.h == 1080);
+    mu_assert("downscaling should use lanczos", target.resample_filter == VMAF_RESAMPLE_LANCZOS);
+    mu_assert("a resize should need conversion", needs_conversion);
+
+    return NULL;
+}
+
+static char *test_scale_follows_source_orientation(void)
+{
+    bool needs_conversion;
+    VmafPictureConvertTarget target;
+    mu_assert("portrait 720x1280 to 1080 should be accepted",
+              !scale(720, 1280, 1080, &needs_conversion, &target));
+    mu_assert("portrait should scale to 1080x1920", target.w == 1080 && target.h == 1920);
+
+    return NULL;
+}
+
+static char *test_scale_keeps_aspect_ratio_rounded_to_even(void)
+{
+    bool needs_conversion;
+    VmafPictureConvertTarget target;
+    /* 854 * 1080 / 480 = 1921.5 */
+    mu_assert("854x480 to 1080 should be accepted",
+              !scale(854, 480, 1080, &needs_conversion, &target));
+    mu_assert("the long side should round to the nearest even",
+              target.w == 1922 && target.h == 1080);
+    /* 4:3 */
+    mu_assert("1440x1080 to 2160 should be accepted",
+              !scale(1440, 1080, 2160, &needs_conversion, &target));
+    mu_assert("4:3 should keep its aspect ratio", target.w == 2880 && target.h == 2160);
+
+    return NULL;
+}
+
+static char *test_scale_at_display_keeps_source_size(void)
+{
+    bool needs_conversion;
+    VmafPictureConvertTarget target;
+    mu_assert("1080p to 1080 should be accepted",
+              !scale(1920, 1080, 1080, &needs_conversion, &target));
+    mu_assert("a source at the display size should keep its size",
+              target.w == 1920 && target.h == 1080);
+    mu_assert("a source at the display size should not need conversion", !needs_conversion);
+
+    /* an odd long side is kept, not rounded */
+    mu_assert("1919x1080 to 1080 should be accepted",
+              !scale(1919, 1080, 1080, &needs_conversion, &target));
+    mu_assert("an odd long side at the display size should be kept",
+              target.w == 1919 && target.h == 1080);
+
+    return NULL;
+}
+
+static char *test_scale_rejects_extreme_aspect_ratios(void)
+{
+    bool needs_conversion;
+    VmafPictureConvertTarget target;
+    mu_assert("32:9 should be accepted", !scale(3840, 1080, 1080, &needs_conversion, &target));
+    mu_assert("4:1 upscaled should be accepted",
+              !scale(1440, 360, 1080, &needs_conversion, &target) && target.w == 4320 &&
+                  target.h == 1080);
+    mu_assert("wider than 4:1 should be rejected",
+              scale(1442, 360, 1080, &needs_conversion, &target) == -EINVAL);
+    mu_assert("an extreme portrait should be rejected",
+              scale(8, 2000, 1080, &needs_conversion, &target) == -EINVAL);
+
+    return NULL;
+}
+
+static char *test_scale_rejects_different_sizes(void)
+{
+    TaggedPic ref = make_pic(&pq_ictcp_color, VMAF_PIX_FMT_YUV420P, 10);
+    TaggedPic dist = ref;
+    ref.pic.w[0] = 1920;
+    ref.pic.h[0] = 1080;
+    dist.pic.w[0] = 1280;
+    dist.pic.h[0] = 720;
+    bool needs_conversion = false;
+    VmafPictureConvertTarget target = color_target(&pq_ictcp_color);
+    mu_assert("different reference and distorted sizes are not supported yet",
+              vmaf_conversion_policy_scale(&ref.pic, &dist.pic, 1080, &needs_conversion, &target) ==
+                  -EINVAL);
+    mu_assert("no display should be rejected",
+              vmaf_conversion_policy_scale(&ref.pic, &ref.pic, 0, &needs_conversion, &target) ==
+                  -EINVAL);
+
+    return NULL;
+}
+
+static char *test_picture_matches_compares_pinned_size(void)
+{
+    TaggedPic tagged = make_pic(&pq_ictcp_color, VMAF_PIX_FMT_YUV420P, 10);
+    tagged.pic.w[0] = 1280;
+    tagged.pic.h[0] = 720;
+    VmafPictureConvertTarget target = color_target(&pq_ictcp_color);
+    mu_assert("an unpinned size should match any picture",
+              vmaf_conversion_policy_picture_matches(&tagged.pic, &tagged.color, &target));
+    target.w = 1920;
+    target.h = 1080;
+    mu_assert("a picture of a different size should not match",
+              !vmaf_conversion_policy_picture_matches(&tagged.pic, &tagged.color, &target));
+
+    return NULL;
+}
+
 static const MuTest policy_tests[] = {
     MU_TEST(test_no_model_target_is_pass_through),
     MU_TEST(test_target_picks_model_colorspace),
@@ -344,6 +486,14 @@ static const MuTest policy_tests[] = {
     MU_TEST(test_unspecified_source_with_target_is_an_error),
     MU_TEST(test_target_equal_compares_format_and_depth),
     MU_TEST(test_null_arguments_are_rejected),
+    MU_TEST(test_scale_upscales_short_side_to_display),
+    MU_TEST(test_scale_downscales_short_side_to_display),
+    MU_TEST(test_scale_follows_source_orientation),
+    MU_TEST(test_scale_keeps_aspect_ratio_rounded_to_even),
+    MU_TEST(test_scale_at_display_keeps_source_size),
+    MU_TEST(test_scale_rejects_extreme_aspect_ratios),
+    MU_TEST(test_scale_rejects_different_sizes),
+    MU_TEST(test_picture_matches_compares_pinned_size),
 };
 
 mu_message_t run_tests(void)

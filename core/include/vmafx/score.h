@@ -26,6 +26,10 @@
 extern "C" {
 #endif
 
+/* NOLINTBEGIN(modernize-use-using,performance-enum-size): public C header included by C
+ * and C++ translation units; C has no `using`, and C has no fixed enum underlying type
+ * across the required toolchains (ADR-1470). ADR-1138. */
+
 /**
  * What a window pools. Added in ABI 0.1.8.
  * @since 0.1
@@ -471,6 +475,8 @@ VMAFX_EXPORT VmafxStatus vmafx_window_clock_finish(VmafxWindowClock *clock, Vmaf
  * @since 0.1
  */
 VMAFX_EXPORT void vmafx_window_clock_destroy(VmafxWindowClock *clock);
+
+/* NOLINTEND(modernize-use-using,performance-enum-size) */
 
 #ifdef __cplusplus
 }

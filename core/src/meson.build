@@ -536,6 +536,7 @@ if is_hipcc_enabled and is_hip_enabled
     hip_kernel_shared_headers = files(
         'hip/common.h',
         'vmafx/import_convert_kernels.h',
+        'vmafx/rgb_math.h',
         'feature/integer_adm.h',
         'feature/adm_cm_accumulator.h',
         'feature/hip/integer_adm_hip.h',
@@ -1791,6 +1792,7 @@ if is_cuda_enabled
         # shared with the HIP lane. No parentheses in comments of this list:
         # test_device_target_header_dependencies.py reads it up to the first.
         'vmafx/import_convert_kernels.h',
+        'vmafx/rgb_math.h',
         '../include/libvmaf/libvmaf_cuda.h',
         '../include/libvmaf/model.h',
         '../include/libvmaf/picture.h',
@@ -2933,6 +2935,7 @@ libvmafx_sources = [
     src_dir + 'vmafx/model.c',
     src_dir + 'vmafx/options.c',
     src_dir + 'vmafx/register.c',
+    src_dir + 'vmafx/rgb_convert.c',
     src_dir + 'vmafx/score.c',
     # RC4 WP9: the specification strings of the filters.
     src_dir + 'vmafx/spec.c',

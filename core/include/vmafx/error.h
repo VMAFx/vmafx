@@ -23,6 +23,10 @@
 extern "C" {
 #endif
 
+/* NOLINTBEGIN(modernize-use-using,performance-enum-size): public C header included by C
+ * and C++ translation units; C has no `using`, and C has no fixed enum underlying type
+ * across the required toolchains (ADR-1470). ADR-1138. */
+
 /**
  * What the subject of a VmafxError names.
  * @since 0.1
@@ -109,6 +113,8 @@ VMAFX_EXPORT uint32_t vmafx_error_subject_kind(const VmafxError *error);
  * @since 0.1
  */
 VMAFX_EXPORT const char *vmafx_error_function(const VmafxError *error);
+
+/* NOLINTEND(modernize-use-using,performance-enum-size) */
 
 #ifdef __cplusplus
 }

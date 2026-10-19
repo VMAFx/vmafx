@@ -206,8 +206,12 @@ def _wrapped(body: list[str]) -> str:
         return ""
     return (
         '#ifdef __cplusplus\nextern "C" {\n#endif\n\n'
+        + ctext.C_HEADER_BEGIN
+        + "\n\n"
         + "\n".join(body)
-        + "\n#ifdef __cplusplus\n}\n#endif\n\n"
+        + "\n"
+        + ctext.C_HEADER_END
+        + "\n\n#ifdef __cplusplus\n}\n#endif\n\n"
     )
 
 

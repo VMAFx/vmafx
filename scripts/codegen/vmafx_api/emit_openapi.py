@@ -91,6 +91,8 @@ def _option_schema(option: Option) -> dict[str, Any]:
         schema["format"] = "double"
     if "proto" in option.repeat:
         schema = {"type": "array", "items": schema}
+    if option.go_type:
+        schema["x-go-type"] = option.go_type
     schema["description"] = option_doc(option)
     return schema
 
