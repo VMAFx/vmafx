@@ -487,6 +487,50 @@ static char *test_set_input_colorimetry_is_busy_after_conversion(void)
 }
 #endif
 
+#ifdef HAVE_ZIMG
+/* the target colorspace, scaled to a 1080-line display */
+static const char *target_1080 = "\"conversion_target\": {" COLORSPACE_ICTCP ", "
+                                 "\"resolution\": {\"display\": 1080}}, ";
+
+static char *test_target_display_scales_source(void)
+{
+    /* the synthetic frames are 256x144, already in the target colorspace */
+    double unscaled;
+    double scaled;
+    mu_assert("unscaled run failed",
+              !run(target_color_only, &pq_ictcp_color, &pq_ictcp_color, &unscaled));
+    mu_assert("scaled run failed", !run(target_1080, &pq_ictcp_color, &pq_ictcp_color, &scaled));
+    mu_assert("a source below the display size should be upscaled, but the "
+              "score matches the unscaled pictures",
+              unscaled != scaled);
+
+    return NULL;
+}
+
+static char *test_models_with_different_displays_cannot_share_a_run(void)
+{
+    VmafContext *vmaf;
+    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    int err = vmaf_init(&vmaf, cfg);
+    mu_assert("problem during vmaf_init", !err);
+
+    VmafModel *unscaled;
+
+    VmafModel *scaled;
+    mu_assert("load unscaled model", !load_model(&unscaled, target_color_only));
+    mu_assert("load scaled model", !load_model(&scaled, target_1080));
+
+    mu_assert("first model should register", !vmaf_use_features_from_model(vmaf, unscaled));
+    mu_assert("a model with a different display cannot share a run",
+              vmaf_use_features_from_model(vmaf, scaled) == -EINVAL);
+
+    vmaf_model_destroy(unscaled);
+    vmaf_model_destroy(scaled);
+    vmaf_close(vmaf);
+    return NULL;
+}
+#endif
+
 char *run_tests(void)
 {
     mu_run_test(test_set_input_colorimetry_contract);
@@ -509,6 +553,10 @@ char *run_tests(void)
 #endif
     mu_run_test(test_untagged_source_with_target_is_rejected);
     mu_run_test(test_models_must_share_a_conversion_target);
+#ifdef HAVE_ZIMG
+    mu_run_test(test_target_display_scales_source);
+    mu_run_test(test_models_with_different_displays_cannot_share_a_run);
+#endif
     return NULL;
 }
 
