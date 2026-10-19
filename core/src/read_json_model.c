@@ -713,7 +713,7 @@ static int parse_resolution(json_stream *s, VmafModel *model)
         if (json_next(s) != JSON_STRING)
             return -EINVAL;
         const char *key = json_get_string(s, NULL);
-        if (strcmp(key, "display"))
+        if (strcmp(key, "display") != 0)
             return -EINVAL;
         const int err = parse_resolution_display(s, &display_resolution);
         if (err)
