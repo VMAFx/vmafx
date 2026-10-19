@@ -72,6 +72,13 @@ jobs:
           go-version-file: go.mod  # single source of truth: the go directive in go.mod (Renovate bumps it)
           cache: true
 
+      # proxy.golang.org drops a stream now and then (INTERNAL_ERROR, master
+      # run 39313529937); fetch the module graph with a bounded retry so a
+      # later step never meets it. go.sum still verifies every module.
+      - name: Download Go modules
+        if: steps.impact.outputs.go_checks == 'true'
+        run: bash scripts/ci/go-fetch-retry.sh mod download
+
       # ADR-1622: cmd/vmafx-node embeds an eBPF object that is not committed.
       # Generate it with the pinned clang before anything loads the package.
       - name: Generate the vmafx-node eBPF object (pinned clang)
@@ -214,7 +221,7 @@ jobs:
         # type-check any package. This commit of gosec's main branch builds
         # with x/tools v0.50.0 and reports the same findings as v2.29.0 did on
         # Go 1.27.1. Go back to a release tag once one includes x/tools v0.50.0.
-        run: go install github.com/securego/gosec/v2/cmd/gosec@v2.29.1-0.20260914113419-9e8e5d91f2f3
+        run: bash scripts/ci/go-fetch-retry.sh install github.com/securego/gosec/v2/cmd/gosec@v2.29.1-0.20260914113419-9e8e5d91f2f3
 
       - name: gosec (exclude generated)
         if: steps.impact.outputs.go_checks == 'true'
