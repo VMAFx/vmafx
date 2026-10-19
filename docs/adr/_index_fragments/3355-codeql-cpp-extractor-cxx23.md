@@ -1,0 +1,1 @@
+| [ADR-3355](3355-codeql-cpp-extractor-cxx23.md) | The CodeQL C/C++ build configures `-Dcpp_std=c++23`: the extractor reads `-std=c++26` as C++17, misparses the standard headers and reported 16 false alerts in `cli_parse.cpp`; the product build keeps C++26 | Accepted | ci, security |
