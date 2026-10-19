@@ -1,19 +1,15 @@
-# Upstream watcher — polls FFmpeg master for the appearance of
-# upstream-blocked features the fork is awaiting and opens a tracking
-# GitHub issue when they land. See ADR-0339 (av1_videotoolbox
-# placeholder adapter + watcher pattern) and
-# docs/development/upstream-watchers.md.
+# Upstream watcher — polls upstream master branches for unported commits
+# and awaited features. Opens tracking GitHub issues when action is needed.
+# See ADR-0339, ADR-1086, and docs/development/upstream-watchers.md.
 #
-# Schedule: Mondays at 08:00 UTC. The watcher is cheap (a partial
-# clone of one file from upstream FFmpeg) so a weekly cadence trades
-# a tiny CI footprint against a one-week worst-case latency between
-# upstream landing and the fork noticing.
+# Schedule: Daily at 08:00 UTC. The watchers are lightweight; daily polling
+# bounds the latency between upstream changes and fork triage.
 
 name: upstream-watcher
 
 on:
   schedule:
-    - cron: '0 8 * * 1'
+    - cron: '0 8 * * *'
   workflow_dispatch:
 
 permissions:
@@ -23,6 +19,7 @@ jobs:
   ffmpeg-av1-videotoolbox:
     name: FFmpeg av1_videotoolbox
     runs-on: ubuntu-26.04
+    timeout-minutes: 15
     permissions:
       contents: read
       issues: write
@@ -97,3 +94,131 @@ jobs:
             --title "${TITLE}" \
             --body "${BODY}" \
             --label upstream-blocked
+
+  netflix-unported:
+    name: Netflix unported commits
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Fetch upstream Netflix/vmaf
+        run: |
+          git remote add --no-tags upstream https://github.com/Netflix/vmaf.git
+          git fetch --no-tags upstream master
+
+      - name: Probe unported Netflix/vmaf commits
+        id: probe
+        run: |
+          set +e
+          python3 scripts/upstream-watcher/check_netflix_unported.py --json > /tmp/netflix_unported.json 2> /tmp/netflix_unported.err
+          STATUS=$?
+          set -e
+          cat /tmp/netflix_unported.err >&2
+          if [ "${STATUS}" -eq 2 ]; then
+            echo "::error::netflix unported watcher infrastructure or ledger failure (exit 2)"
+            exit 1
+          elif [ "${STATUS}" -eq 1 ]; then
+            echo "status=clean" >> "${GITHUB_OUTPUT}"
+            exit 0
+          elif [ "${STATUS}" -eq 0 ]; then
+            echo "status=unported" >> "${GITHUB_OUTPUT}"
+            cat /tmp/netflix_unported.json
+          else
+            echo "Unexpected exit status ${STATUS} from check_netflix_unported.py"
+            exit "${STATUS}"
+          fi
+
+      - name: Open tracking issues for unported commits
+        if: steps.probe.outputs.status == 'unported'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 - <<'EOF'
+          import json
+          import os
+          import re
+          import subprocess
+          import sys
+          import tempfile
+          from pathlib import Path
+
+          commits = json.loads(Path("/tmp/netflix_unported.json").read_text(encoding="utf-8"))
+          docs = f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/blob/master/docs/development/upstream-watchers.md"
+          failed = []
+
+          for item in commits:
+              sha = item["sha"]
+              short_sha = sha[:12]
+              # Forge rule: never name an upstream PR number or forge link in fork issue text
+              raw_subject = item["subject"]
+              sanitized_subject = re.sub(r"#\d+", "", raw_subject).strip()
+
+              title = f"upstream-watcher: Netflix/vmaf {short_sha} is not ported"
+
+              check_cmd = [
+                  "gh", "issue", "list",
+                  "--state", "all",
+                  "--search", f'in:title "{title}"',
+                  "--json", "number",
+                  "--jq", ".[0].number // empty",
+              ]
+              proc = subprocess.run(check_cmd, capture_output=True, text=True, check=False)
+              if proc.returncode != 0:
+                  print(f"Issue search failed for {short_sha}: {proc.stderr}", file=sys.stderr)
+                  failed.append(short_sha)
+                  continue
+              existing = proc.stdout.strip()
+              if existing:
+                  print(f"Issue for {short_sha} already exists ({existing}); skipping.")
+                  continue
+
+              body_lines = [
+                  f"Commit {sha} in upstream master has no recorded disposition.",
+                  "",
+                  f"Subject: {sanitized_subject}",
+                  "",
+                  "## Triage checklist",
+                  "",
+                  "- [ ] Port with `/port-upstream-commit` and add a `ported` row",
+                  "- [ ] Or add an `in-fork` / `not-applicable` row with the reason",
+                  "- [ ] Move the parity heading when the range is fully disposed",
+                  "",
+                  f"See also: [upstream watchers]({docs}).",
+              ]
+              body = "\n".join(body_lines)
+
+              # Enforce forge and prompt rule: Body MUST NOT contain #<digits>, Netflix/vmaf#, or github.com/Netflix
+              if re.search(r"#\d+", body) or "Netflix/vmaf#" in body or "github.com/Netflix" in body:
+                  raise ValueError(f"Body contains forbidden upstream reference pattern: {body}")
+
+              with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False) as f:
+                  f.write(body)
+                  body_file = f.name
+
+              try:
+                  create_cmd = [
+                      "gh", "issue", "create",
+                      "--title", title,
+                      "--body-file", body_file,
+                      "--label", "upstream-blocked",
+                  ]
+                  res = subprocess.run(create_cmd, capture_output=True, text=True, check=False)
+                  if res.returncode != 0:
+                      print(f"Failed to create issue for {short_sha}: {res.stderr}", file=sys.stderr)
+                      failed.append(short_sha)
+                  else:
+                      print(f"Created tracking issue for {short_sha}: {res.stdout.strip()}")
+              finally:
+                  Path(body_file).unlink(missing_ok=True)
+
+          if failed:
+              sys.exit(f"tracking issues not filed for: {' '.join(failed)}")
+          EOF
