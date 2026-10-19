@@ -330,7 +330,8 @@ static char *test_submit_index_refusals(void)
     return with_clip(submit_index_refusals);
 }
 
-static char *submit_geometry_named(Clip *clip)
+/* The pair itself: another format is refused, another size reaches the engine. */
+static char *geometry_pair_named(Clip *clip)
 {
     VmafxContext *context = vt_psnr_context();
     const VmafxFrameDesc deep = vt_desc(VMAFX_PIXEL_FORMAT_YUV420P, 10, 64, 64);
@@ -350,7 +351,16 @@ static char *submit_geometry_named(Clip *clip)
                       VMAFX_E_INVALID &&
                   vt_failed(&error, VMAFX_E_INVALID, "index", VMAFX_SUBJECT_FRAME));
     mu_assert("destroy", vmafx_context_destroy(context, NULL) == VMAFX_OK);
-    context = vt_psnr_context();
+    return NULL;
+}
+
+/* Later pairs: each side must keep the geometry of the first frame. */
+static char *geometry_first_frame_named(Clip *clip)
+{
+    VmafxContext *context = vt_psnr_context();
+    const VmafxFrameDesc small = vt_desc(VMAFX_PIXEL_FORMAT_YUV420P, 8, 64, 64);
+    VmafxFrame *other = NULL;
+    VmafxError *error = NULL;
     mu_assert("first", submit_index(context, clip, 0, 0, NULL) == VMAFX_OK);
     mu_assert("small", vmafx_frame_create_host(NULL, &small, &other, NULL) == VMAFX_OK);
     mu_assert("distorted differs from the first frame",
@@ -363,6 +373,13 @@ static char *submit_geometry_named(Clip *clip)
               vmafx_submit(context, other, other2, 2, &error) == VMAFX_E_INVALID &&
                   vt_failed(&error, VMAFX_E_INVALID, "reference", VMAFX_SUBJECT_FRAME));
     mu_assert("destroy", vmafx_context_destroy(context, NULL) == VMAFX_OK);
+    return NULL;
+}
+
+static char *submit_geometry_named(Clip *clip)
+{
+    mu_assert_msg(geometry_pair_named(clip));
+    mu_assert_msg(geometry_first_frame_named(clip));
     mu_assert("all released", clip->released == 5);
     return NULL;
 }
@@ -412,46 +429,67 @@ static VmafxStatus submit_sized(VmafxContext *context, const VmafxFrameDesc *des
     return vmafx_submit(context, ref, dist, index, error);
 }
 
+/* A 64x64 reference with a 32x32 and a 48x48 distorted frame. */
+typedef struct DisplaySizes {
+    VmafxFrameDesc ref;
+    VmafxFrameDesc dist;
+    VmafxFrameDesc dist48;
+    uint8_t ref_data[6144];
+    uint8_t dist_data[1536];
+    uint8_t dist48_data[3456];
+} DisplaySizes;
+
+static void display_sizes_fill(DisplaySizes *sizes)
+{
+    sizes->ref = vt_desc(VMAFX_PIXEL_FORMAT_YUV420P, 8, 64, 64);
+    sizes->dist = vt_desc(VMAFX_PIXEL_FORMAT_YUV420P, 8, 32, 32);
+    sizes->dist48 = vt_desc(VMAFX_PIXEL_FORMAT_YUV420P, 8, 48, 48);
+    vt_fill(&sizes->ref, sizes->ref_data, 0);
+    vt_fill(&sizes->dist, sizes->dist_data, 1);
+    vt_fill(&sizes->dist48, sizes->dist48_data, 2);
+}
+
+#ifndef HAVE_ZIMG
+/* The scaling is a zimg conversion; without zimg the engine refuses it. */
+#define DISPLAY_SIZES_RELEASED 2u
+static char *display_sizes_submit(VmafxContext *context, DisplaySizes *sizes, unsigned *released)
+{
+    VmafxError *error = NULL;
+    mu_assert("without zimg the scaling is refused",
+              submit_sized(context, &sizes->ref, sizes->ref_data, &sizes->dist, sizes->dist_data, 0,
+                           released, &error) == VMAFX_E_NOTSUP &&
+                  vt_failed(&error, VMAFX_E_NOTSUP, "index", VMAFX_SUBJECT_FRAME));
+    return NULL;
+}
+#else
+#define DISPLAY_SIZES_RELEASED 6u
+static char *display_sizes_submit(VmafxContext *context, DisplaySizes *sizes, unsigned *released)
+{
+    VmafxError *error = NULL;
+    mu_assert("submit 0 (64x64 ref, 32x32 dist)",
+              submit_sized(context, &sizes->ref, sizes->ref_data, &sizes->dist, sizes->dist_data, 0,
+                           released, NULL) == VMAFX_OK);
+    mu_assert("submit 1 (same sizes)",
+              submit_sized(context, &sizes->ref, sizes->ref_data, &sizes->dist, sizes->dist_data, 1,
+                           released, NULL) == VMAFX_OK);
+    mu_assert("submit 2 (48x48 dist differs from first)",
+              submit_sized(context, &sizes->ref, sizes->ref_data, &sizes->dist48,
+                           sizes->dist48_data, 2, released, &error) == VMAFX_E_INVALID &&
+                  vt_failed(&error, VMAFX_E_INVALID, "distorted", VMAFX_SUBJECT_FRAME));
+    return NULL;
+}
+#endif
+
 static char *test_submit_display_scales_different_sizes(void)
 {
     VmafxContext *context = display_context(DISPLAY_MODEL_FILE);
     mu_assert("context", context != NULL);
-
-    const VmafxFrameDesc desc_ref = vt_desc(VMAFX_PIXEL_FORMAT_YUV420P, 8, 64, 64);
-    const VmafxFrameDesc desc_dist = vt_desc(VMAFX_PIXEL_FORMAT_YUV420P, 8, 32, 32);
-    const VmafxFrameDesc desc_dist48 = vt_desc(VMAFX_PIXEL_FORMAT_YUV420P, 8, 48, 48);
-
-    uint8_t ref_data[6144];
-    uint8_t dist_data[1536];
-    uint8_t dist48_data[3456];
-    vt_fill(&desc_ref, ref_data, 0);
-    vt_fill(&desc_dist, dist_data, 1);
-    vt_fill(&desc_dist48, dist48_data, 2);
-
+    DisplaySizes sizes;
+    display_sizes_fill(&sizes);
     unsigned released = 0;
-    VmafxError *error = NULL;
-#ifndef HAVE_ZIMG
-    /* The scaling is a zimg conversion; without zimg the engine refuses it. */
-    mu_assert("without zimg the scaling is refused",
-              submit_sized(context, &desc_ref, ref_data, &desc_dist, dist_data, 0, &released,
-                           &error) == VMAFX_E_NOTSUP &&
-                  vt_failed(&error, VMAFX_E_NOTSUP, "index", VMAFX_SUBJECT_FRAME));
+    mu_assert_msg(display_sizes_submit(context, &sizes, &released));
     mu_assert("destroy", vmafx_context_destroy(context, NULL) == VMAFX_OK);
-    mu_assert("both frames released", released == 2u);
-    return NULL;
-#endif
-    mu_assert("submit 0 (64x64 ref, 32x32 dist)",
-              submit_sized(context, &desc_ref, ref_data, &desc_dist, dist_data, 0, &released,
-                           NULL) == VMAFX_OK);
-    mu_assert("submit 1 (same sizes)", submit_sized(context, &desc_ref, ref_data, &desc_dist,
-                                                    dist_data, 1, &released, NULL) == VMAFX_OK);
-    mu_assert("submit 2 (48x48 dist differs from first)",
-              submit_sized(context, &desc_ref, ref_data, &desc_dist48, dist48_data, 2, &released,
-                           &error) == VMAFX_E_INVALID &&
-                  vt_failed(&error, VMAFX_E_INVALID, "distorted", VMAFX_SUBJECT_FRAME));
-
-    mu_assert("destroy", vmafx_context_destroy(context, NULL) == VMAFX_OK);
-    mu_assert("every frame released", released == 6u);
+    mu_assert("every frame released", released == DISPLAY_SIZES_RELEASED);
     return NULL;
 }
 
