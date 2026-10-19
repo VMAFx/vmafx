@@ -432,7 +432,7 @@ static char *test_untagged_source_uses_the_assumed_color(void)
     mu_assert("the tagged run failed",
               !run(target_assumed_ictcp, &pq_ictcp_color, &pq_ictcp_color, &tagged));
     mu_assert("an untagged source should score as if tagged with the assumed color",
-              assumed == tagged);
+              vmaf_test_identical_f64(assumed, tagged));
 
     VmafColor partial = pq_bt2020nc_color;
     partial.matrix = VMAF_COLOR_MATRIX_UNKNOWN;
