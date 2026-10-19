@@ -299,6 +299,11 @@ reason = "Category A (stated interval 14 days, from 2026-10-18; past 2026-10-31 
 expires = 2026-11-01
 
 [[exception]]
+path = "gstreamer/src/gstvmafx_vulkan.c"
+reason = "Category A (stated interval 14 days, from 2026-10-18; past 2026-10-31 so the expiry stays outside the candidate window that test_check_tidy_coverage.py guards): no clang-tidy lane compiles this out-of-core source yet; the gstreamer and ffmpeg-patches/src lane is VMAFx/vmafx#2860, which removes this entry."
+expires = 2026-11-01
+
+[[exception]]
 path = "gstreamer/src/gstvmafx_windows.c"
 reason = "Category A (stated interval 14 days, from 2026-10-18; past 2026-10-31 so the expiry stays outside the candidate window that test_check_tidy_coverage.py guards): no clang-tidy lane compiles this out-of-core source yet; the gstreamer and ffmpeg-patches/src lane is VMAFx/vmafx#2860, which removes this entry."
 expires = 2026-11-01
