@@ -76,7 +76,7 @@ The existing converter (zimg, optional, off by default) takes YUV and gray only.
 
 - **Positive**: RGB sources score with a conversion the caller can name; GPU
   twins equal the CPU.
-- **Negative**: ABI 0.1.11 (four appended fields, five appended enumerators); ICtCp and BT.2020 CL need a
+- **Negative**: ABI 0.1.12 (four appended fields, five appended enumerators); ICtCp and BT.2020 CL need a
   later decision with their transfer functions.
 - **Neutral / follow-ups**: the convergence with the colorimetry enums (maintainer
   decision of 2026-10-07) is done here: WP13's own `VmafxColor*` copies are

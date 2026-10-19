@@ -38,6 +38,8 @@ typedef struct VmafConversionState {
     VmafPictureConvertContext *dist;
     bool have_target;
     VmafPictureConvertTarget target;
+    /* short side the models scale both inputs to; 0 keeps the source size */
+    unsigned display_resolution;
     unsigned n_models_with_target;
     unsigned n_models_without_target;
     VmafColor ref_color;

@@ -275,27 +275,27 @@ void error(const char *const app, const char *const optarg, const int option,
  * (`pix_fmt`), the layout of a raw file that is not planar (`input_layout`) and the bit depth a
  * layout fixes (a later --bitdepth is checked against it). */
 void parse_pixel_format(const char *const value, const int option, const char *const app,
-                        CLISettings *const settings)
+                        CLISettings *const cli)
 {
     const std::string_view arg{value};
-    settings->input_layout = 0;
-    settings->pix_fmt = VMAF_PIX_FMT_UNKNOWN;
+    cli->input_layout = 0;
+    cli->pix_fmt = VMAF_PIX_FMT_UNKNOWN;
     if (arg == "400")
-        settings->pix_fmt = VMAF_PIX_FMT_YUV400P;
+        cli->pix_fmt = VMAF_PIX_FMT_YUV400P;
     if (arg == "420")
-        settings->pix_fmt = VMAF_PIX_FMT_YUV420P;
+        cli->pix_fmt = VMAF_PIX_FMT_YUV420P;
     if (arg == "422")
-        settings->pix_fmt = VMAF_PIX_FMT_YUV422P;
+        cli->pix_fmt = VMAF_PIX_FMT_YUV422P;
     if (arg == "444")
-        settings->pix_fmt = VMAF_PIX_FMT_YUV444P;
-    if (const VmafxImportLayout *const row = find_layout(arg); row && !settings->pix_fmt) {
-        settings->pix_fmt = static_cast<enum VmafPixelFormat>(row->planar_fmt);
+        cli->pix_fmt = VMAF_PIX_FMT_YUV444P;
+    if (const VmafxImportLayout *const row = find_layout(arg); row && !cli->pix_fmt) {
+        cli->pix_fmt = static_cast<enum VmafPixelFormat>(row->planar_fmt);
         if (!is_plain_planar(*row))
-            settings->input_layout = row->pix_fmt;
+            cli->input_layout = row->pix_fmt;
         if (row->bpc_min == row->bpc_max)
-            settings->bitdepth = row->bpc_min;
+            cli->bitdepth = row->bpc_min;
     }
-    if (!settings->pix_fmt) {
+    if (!cli->pix_fmt) {
         error(app, value, option,
               "a valid pixel format (400/420/422/444, or a layout: nv12 nv16 nv24 p010 p016 p210 "
               "p216 p410 p416 yuyv422 uyvy422 v210 y210 y212 xv30 xv36 vuyx ayuv yuv444p16msb "
@@ -324,7 +324,7 @@ struct NamedColor {
 /* The statement of a raw RGB input (ADR-2146). Values the integer conversion does not make
  * (bt2020cl, ictcp, linear) are parsed so that the refusal can name them. */
 void handle_rgb_flag(const int o, const char *const value, const char *const app,
-                     CLISettings *const settings)
+                     CLISettings *const cli)
 {
     static const NamedColor matrices[] = {
         {.name = "bt601", .value = VMAF_COLOR_MATRIX_BT601},
@@ -341,19 +341,19 @@ void handle_rgb_flag(const int o, const char *const value, const char *const app
                                            {.name = "linear", .value = VMAF_COLOR_TRC_LINEAR}};
     switch (o) {
     case ARG_RGB_MATRIX:
-        settings->rgb_matrix = parse_named_color(matrices, std::size(matrices), value, o, app,
-                                                 "a matrix: bt601, bt709 or bt2020ncl");
+        cli->rgb_matrix = parse_named_color(matrices, std::size(matrices), value, o, app,
+                                            "a matrix: bt601, bt709 or bt2020ncl");
         break;
     case ARG_RGB_RANGE:
-        settings->rgb_range =
+        cli->rgb_range =
             parse_named_color(ranges, std::size(ranges), value, o, app, "a range: limited or full");
         break;
     case ARG_RGB_TRANSFER:
-        settings->rgb_transfer = parse_named_color(transfers, std::size(transfers), value, o, app,
-                                                   "a transfer: bt709, srgb, pq or hlg");
+        cli->rgb_transfer = parse_named_color(transfers, std::size(transfers), value, o, app,
+                                              "a transfer: bt709, srgb, pq or hlg");
         break;
     default:
-        settings->rgb_out_range =
+        cli->rgb_out_range =
             parse_named_color(ranges, std::size(ranges), value, o, app, "a range: limited or full");
         break;
     }

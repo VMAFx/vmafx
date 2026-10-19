@@ -1,0 +1,1 @@
+| [ADR-2165](2165-vmafx-filter-pairing-contract.md) | The `vmafx` filter scores only frames it can pair: framesync defaults `eof_action=pass` / `repeatlast=0` with unscored frames counted and warned about, timestamp offsets between the inputs reported, no flush and no report when no pair was scored, an unwritable `log_path` fails at init, the input order is logged once |

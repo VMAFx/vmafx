@@ -31,7 +31,7 @@
 [api]
 name = "vmafx"
 schema = 2
-abi_version = "0.1.11"
+abi_version = "0.1.12"
 export_macro = "VMAFX_EXPORT"
 # Export / deprecation macros, VmafxStatus and the status codes live here.
 base_header = "vmafx/types.h"
@@ -292,12 +292,12 @@ values = [
   { name = "VMAFX_PIXEL_FORMAT_VUYX", value = 29, doc = "Packed 4:4:4 in one plane: the bytes V Cb Y X per pixel (FFmpeg vuyx; the unused byte is not read); vmafx_frame_import() only, the frame it makes is YUV444P at 8 bits. Added in ABI 0.1.9." },
   { name = "VMAFX_PIXEL_FORMAT_XV36", value = 30, doc = "Packed 4:4:4 in one plane: four 16-bit little-endian words Cb Y Cr X per pixel, the 12 bits most significant (Intel Y416 / XV36, FFmpeg xv36le); vmafx_frame_import() only, the frame it makes is YUV444P at 12 bits. Added in ABI 0.1.9." },
   { name = "VMAFX_PIXEL_FORMAT_YUV444P_MSB", value = 31, doc = "Planar 4:4:4 in 16-bit little-endian words whose `bpc` most significant bits hold the sample (NVDEC's 10- and 12-bit 4:4:4 surfaces, FFmpeg yuv444p10msble and yuv444p12msble); bpc 9 to 16; vmafx_frame_import() only, the frame it makes is YUV444P at `bpc` bits (each sample shifted down by 16 - bpc). Added in ABI 0.1.9." },
-  { name = "VMAFX_PIXEL_FORMAT_AYUV", value = 32, doc = "Packed 4:4:4 in one plane: the bytes A Y Cb Cr per pixel (FFmpeg ayuv; the alpha byte is not read); vmafx_frame_import() only, the frame it makes is YUV444P at 8 bits. Added in ABI 0.1.11." },
-  { name = "VMAFX_PIXEL_FORMAT_UYVY422", value = 33, doc = "Packed 4:2:2 in one plane: the bytes Cb Y0 Cr Y1 per two pixels (UYVY, FFmpeg uyvy422); vmafx_frame_import() only, the frame it makes is YUV422P at 8 bits. Added in ABI 0.1.11." },
-  { name = "VMAFX_PIXEL_FORMAT_V210", value = 34, doc = "Packed 4:2:2 in one plane: 10-bit samples, six pixels in 16 bytes (four little-endian 32-bit words, three 10-bit samples each; the two top bits of a word are not read), rows padded as the producer likes; vmafx_frame_import() only, the frame it makes is YUV422P at 10 bits. Added in ABI 0.1.11." },
-  { name = "VMAFX_PIXEL_FORMAT_RGB", value = 35, doc = "Packed R'G'B' in one plane, three samples per pixel in the order R G B (FFmpeg rgb24 at 8 bits, rgb48le at 16; 9 to 15 bits are 16-bit words holding the sample in the low bits); vmafx_frame_import() only and only with `rgb_matrix`, `rgb_range`, `rgb_transfer` and `rgb_out_range` stated: the frame it makes is YUV444P Y'CbCr at the same depth (ADR-2146). Added in ABI 0.1.11." },
-  { name = "VMAFX_PIXEL_FORMAT_RGBA", value = 36, doc = "RGB with a fourth sample per pixel, the order R G B A (FFmpeg rgba, rgba64le); the alpha sample is not read; same statement as RGB. Added in ABI 0.1.11." },
-  { name = "VMAFX_PIXEL_FORMAT_BGRA", value = 37, doc = "RGB with a fourth sample per pixel, the order B G R A (FFmpeg bgra, bgra64le); the alpha sample is not read; same statement as RGB. Added in ABI 0.1.11." },
+  { name = "VMAFX_PIXEL_FORMAT_AYUV", value = 32, doc = "Packed 4:4:4 in one plane: the bytes A Y Cb Cr per pixel (FFmpeg ayuv; the alpha byte is not read); vmafx_frame_import() only, the frame it makes is YUV444P at 8 bits. Added in ABI 0.1.12." },
+  { name = "VMAFX_PIXEL_FORMAT_UYVY422", value = 33, doc = "Packed 4:2:2 in one plane: the bytes Cb Y0 Cr Y1 per two pixels (UYVY, FFmpeg uyvy422); vmafx_frame_import() only, the frame it makes is YUV422P at 8 bits. Added in ABI 0.1.12." },
+  { name = "VMAFX_PIXEL_FORMAT_V210", value = 34, doc = "Packed 4:2:2 in one plane: 10-bit samples, six pixels in 16 bytes (four little-endian 32-bit words, three 10-bit samples each; the two top bits of a word are not read), rows padded as the producer likes; vmafx_frame_import() only, the frame it makes is YUV422P at 10 bits. Added in ABI 0.1.12." },
+  { name = "VMAFX_PIXEL_FORMAT_RGB", value = 35, doc = "Packed R'G'B' in one plane, three samples per pixel in the order R G B (FFmpeg rgb24 at 8 bits, rgb48le at 16; 9 to 15 bits are 16-bit words holding the sample in the low bits); vmafx_frame_import() only and only with `rgb_matrix`, `rgb_range`, `rgb_transfer` and `rgb_out_range` stated: the frame it makes is YUV444P Y'CbCr at the same depth (ADR-2146). Added in ABI 0.1.12." },
+  { name = "VMAFX_PIXEL_FORMAT_RGBA", value = 36, doc = "RGB with a fourth sample per pixel, the order R G B A (FFmpeg rgba, rgba64le); the alpha sample is not read; same statement as RGB. Added in ABI 0.1.12." },
+  { name = "VMAFX_PIXEL_FORMAT_BGRA", value = 37, doc = "RGB with a fourth sample per pixel, the order B G R A (FFmpeg bgra, bgra64le); the alpha sample is not read; same statement as RGB. Added in ABI 0.1.12." },
 ]
 
 [[enums]]
@@ -822,10 +822,10 @@ fields = [
   { name = "vulkan_tiling", type = "u32", enum = "VmafxVulkanTiling", doc = "VULKAN memory: the tiling of the images (LINEAR for buffers). Added in ABI 0.1.10." },
   { name = "vulkan_flags", type = "u32", flags = "VmafxVulkanFlags", doc = "VULKAN memory: properties of the memory objects. Added in ABI 0.1.10." },
   { name = "vulkan_pci", type = "u32", count = 4, doc = "VULKAN memory: PCI domain, bus, device and function of the producer's VkPhysicalDevice (VK_EXT_pci_bus_info). Memory of another GPU than the device's is refused naming `desc.vulkan_pci`, never read across devices. Added in ABI 0.1.10." },
-  { name = "rgb_matrix", type = "u32", enum = "VmafxColorMatrix", doc = "RGB, RGBA and BGRA only (ignored for every other layout): the matrix of the Y'CbCr the frame is converted to. UNSPECIFIED is refused naming this field; nothing is guessed (ADR-2146). Added in ABI 0.1.11." },
-  { name = "rgb_range", type = "u32", enum = "VmafxColorRange", doc = "RGB layouts only: the range of the R'G'B' samples. Added in ABI 0.1.11." },
-  { name = "rgb_transfer", type = "u32", enum = "VmafxColorTransfer", doc = "RGB layouts only: the transfer characteristic of the R'G'B' samples. Added in ABI 0.1.11." },
-  { name = "rgb_out_range", type = "u32", enum = "VmafxColorRange", doc = "RGB layouts only: the range of the Y'CbCr frame made; LIMITED is the range the VMAF models are trained on. Added in ABI 0.1.11." },
+  { name = "rgb_matrix", type = "u32", enum = "VmafxColorMatrix", doc = "RGB, RGBA and BGRA only (ignored for every other layout): the matrix of the Y'CbCr the frame is converted to. UNSPECIFIED is refused naming this field; nothing is guessed (ADR-2146). Added in ABI 0.1.12." },
+  { name = "rgb_range", type = "u32", enum = "VmafxColorRange", doc = "RGB layouts only: the range of the R'G'B' samples. Added in ABI 0.1.12." },
+  { name = "rgb_transfer", type = "u32", enum = "VmafxColorTransfer", doc = "RGB layouts only: the transfer characteristic of the R'G'B' samples. Added in ABI 0.1.12." },
+  { name = "rgb_out_range", type = "u32", enum = "VmafxColorRange", doc = "RGB layouts only: the range of the Y'CbCr frame made; LIMITED is the range the VMAF models are trained on. Added in ABI 0.1.12." },
 ]
 
 [[structs]]
@@ -2247,6 +2247,35 @@ params = [
 ]
 
 # ---------------------------------------------------------------------------
+# Specification strings of the filters (RC4 WP9, ADR-1852 decisions 4-5).
+# Owned by WP9. Added in ABI 0.1.11 (node VMAFX_0.1, ADR-1897).
+
+[[functions]]
+name = "vmafx_model_load_spec"
+header = "vmafx/model.h"
+since = "0.1"
+returns = "status"
+doc = "Load the model a specification string names, as the `model` option of the FFmpeg filter and the GStreamer element spells it: `key=value` items separated by `:`, keys `version` (a built-in model) or `path` (a model file), `name` (the name of its scores), `disable_clip` and `enable_transform` (`true` when given without a value), and `<extractor>.<option>=<value>` overrides, applied in order. A backslash escapes the next `:`, `=`, `.` or backslash; any other backslash is kept (Windows paths). An empty `spec` is the library's default model (vmafx_model_default_version()). `config.name` and `config.flags` are the defaults the string overrides. VMAFX_E_INVALID names the item that is not understood (both `version` and `path`, a key without a value, an override without an option), VMAFX_E_RANGE a string over 4096 bytes or more than 64 items; a load failure is vmafx_model_load()'s or vmafx_model_load_file()'s. Added in ABI 0.1.11."
+params = [
+  { name = "config", type = "VmafxModelConfig", pass = "in", nullable = true },
+  { name = "spec", type = "cstr", pass = "in" },
+  { name = "out", type = "VmafxModel", pass = "out_handle" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_context_use_feature_spec"
+header = "vmafx/context.h"
+since = "0.1"
+returns = "status"
+doc = "Register the extractor a specification string names, as the `feature` option of the FFmpeg filter and the GStreamer element spells it: `<extractor>[=<key>=<value>[:<key>=<value>...]]` (for example `psnr` or `cambi=full_ref=true`), or upstream FFmpeg's `name=<extractor>[:<key>=<value>...]`; the user-facing `integer_*` names map to their extractors as the CLI maps them. Escapes as vmafx_model_load_spec(). VMAFX_E_INVALID names an item that is not understood, VMAFX_E_RANGE a string over 4096 bytes or more than 64 items; registration failures are vmafx_context_use_feature()'s. Added in ABI 0.1.11."
+params = [
+  { name = "context", type = "VmafxContext", pass = "in" },
+  { name = "spec", type = "cstr", pass = "in" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+# ---------------------------------------------------------------------------
 # Functions of vmafx/libvmaf_bridge.h.
 
 [[functions]]
@@ -2306,9 +2335,9 @@ values = [
   { name = "VMAFX_COLOR_TRC_UNKNOWN", value = 0, doc = "Unset." },
   { name = "VMAFX_COLOR_TRC_BT709", value = 1, doc = "ITU-R BT.709." },
   { name = "VMAFX_COLOR_TRC_SMPTE2084", value = 2, doc = "SMPTE ST 2084 (PQ)." },
-  { name = "VMAFX_COLOR_TRC_SRGB", value = 3, doc = "IEC 61966-2-1 (sRGB). Added in ABI 0.1.11 (ADR-2146)." },
-  { name = "VMAFX_COLOR_TRC_HLG", value = 4, doc = "ARIB STD-B67 (HLG). Added in ABI 0.1.11." },
-  { name = "VMAFX_COLOR_TRC_LINEAR", value = 5, doc = "Linear light: declared, the RGB conversion refuses it with VMAFX_E_NOTSUP (the matrix applies to non-linear signals). Added in ABI 0.1.11." },
+  { name = "VMAFX_COLOR_TRC_SRGB", value = 3, doc = "IEC 61966-2-1 (sRGB). Added in ABI 0.1.12 (ADR-2146)." },
+  { name = "VMAFX_COLOR_TRC_HLG", value = 4, doc = "ARIB STD-B67 (HLG). Added in ABI 0.1.12." },
+  { name = "VMAFX_COLOR_TRC_LINEAR", value = 5, doc = "Linear light: declared, the RGB conversion refuses it with VMAFX_E_NOTSUP (the matrix applies to non-linear signals). Added in ABI 0.1.12." },
 ]
 
 [[enums]]
@@ -2321,8 +2350,8 @@ values = [
   { name = "VMAFX_COLOR_MATRIX_BT709", value = 1, doc = "ITU-R BT.709." },
   { name = "VMAFX_COLOR_MATRIX_BT2020_NCL", value = 2, doc = "ITU-R BT.2020 non-constant luminance." },
   { name = "VMAFX_COLOR_MATRIX_ICTCP", value = 3, doc = "ICtCp." },
-  { name = "VMAFX_COLOR_MATRIX_BT601", value = 4, doc = "ITU-R BT.601 (Kr 0.299, Kb 0.114; H.273 matrix coefficients 5 and 6). Added in ABI 0.1.11 (ADR-2146)." },
-  { name = "VMAFX_COLOR_MATRIX_BT2020_CL", value = 5, doc = "ITU-R BT.2020 constant luminance (H.273 10): declared, the RGB conversion refuses it with VMAFX_E_NOTSUP (its luma is formed in linear light). Added in ABI 0.1.11." },
+  { name = "VMAFX_COLOR_MATRIX_BT601", value = 4, doc = "ITU-R BT.601 (Kr 0.299, Kb 0.114; H.273 matrix coefficients 5 and 6). Added in ABI 0.1.12 (ADR-2146)." },
+  { name = "VMAFX_COLOR_MATRIX_BT2020_CL", value = 5, doc = "ITU-R BT.2020 constant luminance (H.273 10): declared, the RGB conversion refuses it with VMAFX_E_NOTSUP (its luma is formed in linear light). Added in ABI 0.1.12." },
 ]
 
 [[enums]]

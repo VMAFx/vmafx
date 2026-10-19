@@ -41,9 +41,6 @@ static int convert_context_get(VmafPictureConvertContext **ctx, const VmafPictur
         target.pix_fmt = pic->pix_fmt;
     if (!target.bpc)
         target.bpc = pic->bpc;
-    target.w = pic->w[0];
-    target.h = pic->h[0];
-    target.resample_filter = VMAF_RESAMPLE_DEFAULT;
     return vmaf_picture_convert_context_init_with_color(ctx, pic, pic_color, &target);
 }
 
@@ -100,6 +97,12 @@ int vmaf_conversion_state_convert(VmafConversionState *state, VmafPicture *ref, 
                                             &needs_conversion, &target);
     if (err)
         return err;
+    if (state->display_resolution) {
+        err = vmaf_conversion_policy_scale(ref, dist, state->display_resolution, &needs_conversion,
+                                           &target);
+        if (err)
+            return err;
+    }
     if (!needs_conversion)
         return 0;
 
@@ -144,10 +147,13 @@ int vmaf_conversion_state_register_model(VmafConversionState *state, const VmafM
         .bpc = model->conversion_target.bpc,
         .color = model->conversion_target.color,
     };
-    if (state->have_target && !vmaf_conversion_policy_target_equal(&state->target, &model_target))
+    if (state->have_target &&
+        (!vmaf_conversion_policy_target_equal(&state->target, &model_target) ||
+         state->display_resolution != model->conversion_target.display_resolution))
         return register_mismatch(model);
     state->have_target = true;
     state->target = model_target;
+    state->display_resolution = model->conversion_target.display_resolution;
     state->n_models_with_target++;
     return 0;
 }
