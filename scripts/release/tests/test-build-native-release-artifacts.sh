@@ -33,22 +33,8 @@ done
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "$SCRIPT_DIR/../../.." && pwd)"
-scratch="$(mktemp -d)"
-trap 'rm -rf "$scratch"' EXIT INT TERM
-pass=0
-fail=0
-
-check() {
-  local description="$1"
-  shift
-  if "$@"; then
-    printf 'PASS: %s\n' "$description"
-    pass=$((pass + 1))
-  else
-    printf 'FAIL: %s\n' "$description" >&2
-    fail=$((fail + 1))
-  fi
-}
+# shellcheck source=scripts/release/tests/lib.sh
+. "$SCRIPT_DIR/lib.sh"
 
 # The marker dev/Containerfile bakes into every stage, release-build included.
 marker="$scratch/etc-vmafx-dev-container"

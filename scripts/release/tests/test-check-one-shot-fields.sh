@@ -18,20 +18,8 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "$SCRIPT_DIR/../../.." && pwd)"
 CHECK="${CHECK_ONE_SHOT_SCRIPT:-$REPO_ROOT/scripts/release/check-one-shot-fields.sh}"
 WORKFLOW="$REPO_ROOT/.github/workflows/rule-enforcement.yml"
-scratch="$(mktemp -d)"
-trap 'rm -rf "$scratch"' EXIT INT TERM
-pass=0
-fail=0
-
-ok() {
-  printf 'PASS: %s\n' "$1"
-  pass=$((pass + 1))
-}
-
-bad() {
-  printf 'FAIL: %s\n' "$1" >&2
-  fail=$((fail + 1))
-}
+# shellcheck source=scripts/release/tests/lib.sh
+. "$SCRIPT_DIR/lib.sh"
 
 # fixture NAME MANIFEST_JSON CONFIG_JSON
 fixture() {
