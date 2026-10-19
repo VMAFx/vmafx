@@ -7,11 +7,13 @@
 # ffmpeg-patches/series.txt applied (`--enable-libvmaf-sycl`), targeting
 # Intel Arc/Xe via Level Zero.
 #
-# Base-image policy (self-contained from Intel oneAPI, no reference to any
-# prior locally-tagged bootstrap image), ffmpeg-mandatory, and SYCL-only
-# scope are locked decisions — see the ADR cited in docs/adr/README.md for
-# this Containerfile rewrite (quick task 260708-tsw). CUDA/HIP/DNN backends
-# are compiled out (`-Denable_cuda=false -Denable_dnn=disabled`; `enable_hip`
+# Test image, not a published release image (ADR-1715,
+# docs/development/docker-production.md): no SBOM, source export or notice
+# set is produced, so never push a build of it to a registry. The published
+# images are docker/Dockerfile.production and docker/Dockerfile.production-gpu.
+# Base-image policy (built from ubuntu:26.04 and the pinned Intel stack, no
+# locally tagged bootstrap image), FFmpeg included and SYCL-only scope: see
+# ADR-1715. CUDA/HIP/DNN backends are compiled out (`-Denable_cuda=false -Denable_dnn=disabled`; `enable_hip`
 # defaults false).
 #
 # ── 3 stages ────────────────────────────────────────────────────────────────
@@ -30,27 +32,27 @@
 #      `intel-basekit` tree it was built with — that stays in `build` only).
 #
 # ── Build ───────────────────────────────────────────────────────────────────
-#   podman build -t vmafx-zerocopy-fix:latest -f Containerfile.vmafx .
+#   podman build -t vmafx-sycl-test:latest -f Containerfile.vmafx .
 #
 # ── Run (CPU-only; no device passthrough needed) ────────────────────────────
-#   podman run --rm vmafx-zerocopy-fix:latest --version
+#   podman run --rm vmafx-sycl-test:latest --version
 #
 # ── Run with the Arc GPU (SYCL backend) ─────────────────────────────────────
 #   podman run --rm --device /dev/dri/renderD128 --group-add keep-groups \
-#     vmafx-zerocopy-fix:latest --backend sycl -r ref.yuv -d dis.yuv \
+#     vmafx-sycl-test:latest --backend sycl -r ref.yuv -d dis.yuv \
 #     --width W --height H --pixel_format 420 --bitdepth 8
 #
 #   podman run --rm --device /dev/dri/renderD128 --group-add keep-groups \
-#     --entrypoint ffmpeg vmafx-zerocopy-fix:latest -hide_banner -filters \
+#     --entrypoint ffmpeg vmafx-sycl-test:latest -hide_banner -filters \
 #     | grep -i libvmaf   # shows both `libvmaf` and `libvmaf_sycl`
 #
 # ── Run-time SYCL/GPU parity tests (CANNOT run at `docker build` time — no
 #    /dev/dri in the BuildKit sandbox; run them post-build with the device
 #    attached, against the intermediate `build` stage which still carries
 #    the meson build tree) ────────────────────────────────────────────────
-#   podman build --target build -t vmafx-multistage:build -f Containerfile.vmafx .
+#   podman build --target build -t vmafx-sycl-test:build -f Containerfile.vmafx .
 #   podman run --rm --device /dev/dri/renderD128 --group-add keep-groups \
-#     --entrypoint bash vmafx-multistage:build -c \
+#     --entrypoint bash vmafx-sycl-test:build -c \
 #     'cd /src/vmafx && meson test -C build test_sycl_float_adm_parity --print-errorlogs'
 #   scripts/test/run-all-tests.sh automates the full C/GOLDEN/MATERIAL matrix
 #   (GPU attached only to its [C] section) against the `prod`-tagged image.
@@ -63,7 +65,10 @@ FROM ubuntu:26.04@sha256:53958ec7b67c2c9355df922dd08dbf0360611f8c3cdb656875e8187
 LABEL org.opencontainers.image.title="vmafx"
 LABEL org.opencontainers.image.description="VMAFx fork: libvmaf (SYCL) + ffmpeg with the fork patches, Intel Arc/Xe"
 LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
-LABEL org.opencontainers.image.licenses="BSD-2-Clause-Patent"
+# FFmpeg is configured --enable-gpl --enable-version3, so the image as a
+# whole is GPL-3.0-or-later; the fork code is EUPL-1.2, Netflix code
+# BSD-2-Clause-Patent.
+LABEL org.opencontainers.image.licenses="EUPL-1.2 AND BSD-2-Clause-Patent AND GPL-3.0-or-later"
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -140,8 +145,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         build-essential zlib1g-dev \
         libdav1d-dev libva-dev libvpl-dev \
         python3 python3-pip python3-venv \
-    && dpkg -l intel-basekit 2>/dev/null | grep -q "^ii" \
-        || (echo "FATAL: intel-basekit was not installed" && exit 1)
+    && if ! dpkg -l intel-basekit 2>/dev/null | grep -q "^ii"; then \
+        echo "FATAL: intel-basekit was not installed"; exit 1; fi
 
 ENV ONEAPI_ROOT=/opt/intel/oneapi
 ENV DPCPP_ROOT=${ONEAPI_ROOT}/compiler/latest
@@ -177,7 +182,7 @@ RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed \
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends xxd \
- && command -v xxd >/dev/null || (echo "FATAL: xxd not installed" && exit 1)
+ && if ! command -v xxd >/dev/null; then echo "FATAL: xxd not installed"; exit 1; fi
 
 # ---- libvmaf build inputs: the source tree (core/, ADR-0700) + the JSON
 # models (model/, referenced as `../../model/` from core/src/meson.build).
@@ -358,13 +363,16 @@ RUN ldconfig
 # CPU-only, otherwise):
 #
 #   podman run --rm --device /dev/dri/renderD128 --group-add keep-groups \
-#     --entrypoint vmaf-selftest vmafx-zerocopy-fix:latest
+#     --entrypoint vmaf-selftest vmafx-sycl-test:latest
+#
+# The cross-backend table runs when any /dev/dri/renderD* node is present;
+# RENDER_NODE=<path> names one explicitly.
 #
 # hadolint ignore=DL3008,DL3009
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends python3 \
- && command -v python3 >/dev/null || (echo "FATAL: python3 not installed" && exit 1)
+ && if ! command -v python3 >/dev/null; then echo "FATAL: python3 not installed"; exit 1; fi
 COPY --from=build /src/vmafx/scripts/test/reference_report.py /opt/vmaf-selftest/reference_report.py
 # The 5 Netflix golden YUV fixtures (fetched + MD5-verified in the build stage;
 # excluded from the build CONTEXT by .dockerignore's `*.yuv`, so sourced from
@@ -376,13 +384,17 @@ COPY --from=build \
      /src/vmafx/python/test/resource/yuv/checkerboard_1920_1080_10_3_1_0.yuv \
      /src/vmafx/python/test/resource/yuv/checkerboard_1920_1080_10_3_10_0.yuv \
      /opt/vmaf-selftest/yuv/
+# The script's lines are written literally; they expand when it runs.
+# hadolint ignore=SC2016
 RUN printf '%s\n' \
     '#!/bin/sh' \
     '# Golden reference-pair self-check for the deployed vmaf binary (ADR-1715).' \
     'export VMAF_BIN="${VMAF_BIN:-/usr/local/bin/vmaf}"' \
     'export YUV_DIR="${YUV_DIR:-/opt/vmaf-selftest/yuv}"' \
     '# No Arc device attached -> CPU-only golden table (skip cross-backend).' \
-    '[ -e /dev/dri/renderD128 ] || export REPORT_NO_SYCL=1' \
+    'node="${RENDER_NODE:-}"' \
+    'if [ -z "$node" ]; then for n in /dev/dri/renderD*; do [ -e "$n" ] && node="$n" && break; done; fi' \
+    '[ -n "$node" ] && [ -e "$node" ] || export REPORT_NO_SYCL=1' \
     'exec python3 /opt/vmaf-selftest/reference_report.py "$@"' \
     > /usr/local/bin/vmaf-selftest \
  && chmod +x /usr/local/bin/vmaf-selftest

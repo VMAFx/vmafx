@@ -60,6 +60,10 @@ LIBM_MATRIX: dict[tuple[str, str], tuple[list[str], list[str]]] = {
     ("msvc", "msvc"): ([], []),
 }
 
+# ADR-2170: `-fno-fast-math -fcomplex-arithmetic=full` sit between the model and the contraction
+# flag, so icpx does not report `-ffp-contract=off` as overriding `-fp-model=precise`.
+ICX_RESET = ["-fno-fast-math", "-fcomplex-arithmetic=full"]
+
 # ADR-1714: a mixed toolchain gives the C++ units icpx's strict spelling too.
 MIXED_CPP_POLICY_BEGIN = "# BEGIN VMAF C++ strict FP policy for mixed toolchains"
 MIXED_CPP_POLICY_END = "# END VMAF C++ strict FP policy for mixed toolchains"
@@ -67,8 +71,8 @@ MIXED_CPP_PROJECT_ARGUMENT = (
     "add_project_arguments(vmaf_cpp_mixed_strict_fp_args, language : 'cpp')"
 )
 MIXED_CPP_MATRIX: dict[tuple[str, str], list[str]] = {
-    ("gcc", "intel-llvm"): ["-fp-model=precise", "-ffp-contract=off"],
-    ("clang", "intel-llvm"): ["-fp-model=precise", "-ffp-contract=off"],
+    ("gcc", "intel-llvm"): ["-fp-model=precise", *ICX_RESET, "-ffp-contract=off"],
+    ("clang", "intel-llvm"): ["-fp-model=precise", *ICX_RESET, "-ffp-contract=off"],
     ("intel-llvm", "intel-llvm"): [],
     ("intel-llvm", "gcc"): [],
     ("gcc", "gcc"): [],
@@ -102,9 +106,6 @@ CUDA_FP_FLAG_WORDS = ("fmad", "ffp-contract", "fp:", "fast_math", "fast-math", "
 # -fp-model=precise implies -ffp-contract=on), then correctly rounded fp32
 # division and square root. AdaptiveCpp accepts only contraction-off.
 SYCL_PREC = ["-foffload-fp32-prec-div", "-foffload-fp32-prec-sqrt"]
-# ADR-2170: `-fno-fast-math -fcomplex-arithmetic=full` sit between the model and the contraction
-# flag, so icpx does not report `-ffp-contract=off` as overriding `-fp-model=precise`.
-ICX_RESET = ["-fno-fast-math", "-fcomplex-arithmetic=full"]
 SYCL_MATRIX = {
     "icpx": (False, ["-fp-model=precise", *ICX_RESET, "-ffp-contract=off", *SYCL_PREC], SYCL_PREC),
     "acpp": (True, ["-ffp-contract=off"], []),
@@ -621,7 +622,7 @@ class StrictFpCompilerArgsTest(unittest.TestCase):
             with self.subTest(c_id=c_id, cpp_id=cpp_id):
                 fixture = "\n".join(
                     (
-                        f"project('mixed-cpp-{c_id}-{cpp_id}', 'c')",
+                        f"project('mixed-cpp-{c_id}-{cpp_id}')",
                         f"mixed_fixture_c_id = '{c_id}'",
                         f"mixed_fixture_cpp_id = '{cpp_id}'",
                         policy,

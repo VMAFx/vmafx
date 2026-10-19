@@ -38,9 +38,9 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # tree / the meson build dir — all of which live in Containerfile.vmafx's
 # `build` STAGE, not the lean `prod` stage (ADR-1715). So this harness builds
 # and runs `--target build`, tagged `:build`, and leaves the deployment image
-# `vmafx-zerocopy-fix:latest` (the default `prod` target) alone. Operators
+# `vmafx-sycl-test:latest` (the default `prod` target) alone. Operators
 # verify the lean prod image separately via its baked `vmaf-selftest`.
-IMAGE="${IMAGE:-vmafx-zerocopy-fix:build}"
+IMAGE="${IMAGE:-vmafx-sycl-test:build}"
 BUILD_TARGET="${BUILD_TARGET:-build}"
 CONTAINERFILE="${CONTAINERFILE:-Containerfile.vmafx}"
 RENDER_NODE="${RENDER_NODE:-/dev/dri/renderD128}"

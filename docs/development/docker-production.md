@@ -248,7 +248,7 @@ QSV / VA-API zero-copy) on an Intel GPU host. It is not one of the published
 release images above.
 
 ```bash
-podman build -f Containerfile.vmafx -t vmafx-zerocopy-fix:latest .
+podman build -f Containerfile.vmafx -t vmafx-sycl-test:latest .
 ```
 
 The build compiles libvmaf (SYCL, GCC for the CPU C code, see
@@ -267,7 +267,7 @@ built image:
 bash scripts/test/run-all-tests.sh
 
 # Score a pair on the GPU:
-podman run --rm --device /dev/dri -v "$PWD:/work" vmafx-zerocopy-fix:latest \
+podman run --rm --device /dev/dri -v "$PWD:/work" vmafx-sycl-test:latest \
     --backend sycl -r /work/ref.yuv -d /work/dis.yuv \
     --width 1920 --height 1080 --pixel_format 420 --bitdepth 8
 ```

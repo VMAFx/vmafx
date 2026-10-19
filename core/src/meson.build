@@ -129,12 +129,15 @@ endif
 # (CC=gcc CXX=icpx: the dev container and Containerfile.vmafx) would give the
 # C++ translation units icpx compiles GCC's spelling only, and leave them in
 # icpx's default fast model (reassociation, approximate division). They take
-# icpx's strict spelling as well, the list an icx build gives them; the
-# contraction-off flag stays last. Above the first build target, as above.
+# the list an icx build gives them, spelled as the policy above spells it
+# (ADR-2170: precise first, `-fno-fast-math -fcomplex-arithmetic=full`, then
+# contraction off, so icpx reports no -Woverriding-option). Above the first
+# build target, as above.
 # BEGIN VMAF C++ strict FP policy for mixed toolchains
 vmaf_cpp_mixed_strict_fp_args = []
 if cxx.get_id() == 'intel-llvm' and _strict_fp_compiler_id != 'intel-llvm'
-    vmaf_cpp_mixed_strict_fp_args = ['-fp-model=precise', '-ffp-contract=off']
+    vmaf_cpp_mixed_strict_fp_args = ['-fp-model=precise', '-fno-fast-math',
+        '-fcomplex-arithmetic=full', '-ffp-contract=off']
 endif
 # END VMAF C++ strict FP policy for mixed toolchains
 add_project_arguments(vmaf_cpp_mixed_strict_fp_args, language : 'cpp')

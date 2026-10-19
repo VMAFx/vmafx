@@ -15,7 +15,8 @@ invariant: CC=gcc CXX=icpx builds give icpx C++ the strict spelling and link SYC
   container and `Containerfile.vmafx`) C++ would get GCC's
   `-ffp-contract=off` only and stay in icpx's default fast model. The
   `BEGIN/END VMAF C++ strict FP policy for mixed toolchains` block right after
-  the ADR-1461 project argument adds `-fp-model=precise -ffp-contract=off` as
+  the ADR-1461 project argument adds `-fp-model=precise -fno-fast-math -fcomplex-arithmetic=full
+  -ffp-contract=off` (ADR-2170 order) as
   a project argument for `cpp` when `cxx.get_id() == 'intel-llvm'` and the C
   compiler is not Intel LLVM. On rebase: keep it above the first target and
   keep contraction-off last; never put `-fp-model=precise` on one target

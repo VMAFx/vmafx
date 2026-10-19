@@ -51,7 +51,8 @@ GCC's. Two Meson changes make the mixed toolchain work and keep it strict:
 - `core/src/meson.build`, next to the ADR-1461 policy block: when the C++
   compiler is Intel LLVM and the C compiler is not, every C++ translation
   unit also takes icpx's strict spelling (`-fp-model=precise
-  -ffp-contract=off`, the same list an icx build gives it) as a project
+  -fno-fast-math -fcomplex-arithmetic=full -ffp-contract=off`, the same list
+  an icx build gives it, in ADR-2170's order) as a project
   argument for `cpp`. This replaces the `-fp-model=precise` the first
   version of this ADR put on libsvm alone, which ADR-1461 forbids (after the
   project argument it turns contraction back on).

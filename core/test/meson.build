@@ -81,6 +81,16 @@ test('test_strict_fp_compiler_args',
     timeout : 90,
 )
 
+# ADR-1714: with SYCL on every test executable links as C++; this reads the
+# file and fails on an executable() that passes neither test_link_kwargs nor
+# its own link_language.
+test('test_test_link_kwargs_contract',
+    import('python').find_installation(),
+    args : files('test_test_link_kwargs_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # ADR-1495: an icx / icpx build links glibc's libm, not Intel's libimf, so its
 # CPU scores are a GCC build's. Reads this build's libvmaf.so and vmaf and runs
 # vmaf --version under the dynamic loader's binding trace; the binary checks
