@@ -635,7 +635,7 @@ static char *test_models_with_different_displays_cannot_share_a_run(void)
 }
 #endif
 
-char *run_tests(void)
+static char *run_conversion_tests(void)
 {
     mu_run_test(test_set_input_colorimetry_contract);
 #ifdef HAVE_ZIMG
@@ -648,23 +648,50 @@ char *run_tests(void)
 #else
     mu_run_test(test_conversion_without_zimg_is_an_error);
 #endif
+    return NULL;
+}
+
+static char *run_target_format_tests(void)
+{
     mu_run_test(test_source_matching_target_is_not_converted);
     mu_run_test(test_source_matching_pinned_format_is_not_converted);
 #ifdef HAVE_ZIMG
     mu_run_test(test_target_pixel_format_is_applied);
     mu_run_test(test_target_bit_depth_converts_without_error);
+#endif
+    return NULL;
+}
+
+static char *run_model_target_tests(void)
+{
+#ifdef HAVE_ZIMG
     mu_run_test(test_models_with_different_formats_cannot_share_a_run);
 #endif
     mu_run_test(test_untagged_source_with_target_is_rejected);
     mu_run_test(test_models_must_share_a_conversion_target);
     mu_run_test(test_untagged_source_uses_the_assumed_color);
     mu_run_test(test_models_with_different_assumed_colors_cannot_share_a_run);
+    return NULL;
+}
+
+static char *run_display_tests(void)
+{
 #ifdef HAVE_ZIMG
     mu_run_test(test_target_display_scales_source);
     mu_run_test(test_target_display_scales_different_sized_inputs);
     mu_run_test(test_models_with_different_displays_cannot_share_a_run);
 #endif
     return NULL;
+}
+
+char *run_tests(void)
+{
+    char *result = run_conversion_tests();
+    if (!result)
+        result = run_target_format_tests();
+    if (!result)
+        result = run_model_target_tests();
+    return result ? result : run_display_tests();
 }
 
 /* NOLINTEND(modernize-use-nullptr) */
