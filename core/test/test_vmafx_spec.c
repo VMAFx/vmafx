@@ -67,7 +67,7 @@ static bool model_refused(const char *spec, VmafxStatus status, const char *subj
 static bool spec_escape(char *dst, size_t n, const char *src)
 {
     size_t at = 0;
-    for (size_t i = 0; src[i] != '\0' && i < n; i++) {
+    for (size_t i = 0; i < n && src[i] != '\0'; i++) {
         if (strchr(":=\\", src[i]) != NULL) {
             if (at + 1 >= n)
                 return false;
