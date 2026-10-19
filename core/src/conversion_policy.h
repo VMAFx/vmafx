@@ -74,20 +74,27 @@ bool vmaf_conversion_policy_target_equal(const VmafPictureConvertTarget *a,
                                          const VmafPictureConvertTarget *b);
 
 /**
- * Set the size of `target` so both pictures are scaled to a model's display
- * resolution (Netflix/vmaf ca2a2a111d). `display_resolution` is the short
- * side: 1080 means 1920x1080 or 1080x1920 by the source's orientation.
+ * Set the sizes of `ref_target` and `dist_target` so both pictures are scaled
+ * to a model's display resolution (Netflix/vmaf ca2a2a111d, cf9a6ec51b).
+ * `display_resolution` is the short side: 1080 means 1920x1080 or 1080x1920 by
+ * the source's orientation.
  *
- * `ref` and `dist` must be the same size; -EINVAL (logged) otherwise. A source
- * whose short side already equals `display_resolution` keeps its dimensions
- * exactly and leaves `*needs_conversion` as it was. Otherwise the long side
- * keeps the source's aspect ratio, rounded to the nearest even number,
- * upscaling is bicubic and downscaling lanczos, and `*needs_conversion` is set
- * to true. A long side over 4 * `display_resolution` is -EINVAL (logged).
+ * `ref` and `dist` may differ in size. Both are scaled to the size the
+ * reference scales to; they must have the same orientation (a square matches
+ * either) and their scaled sizes may differ by at most 2 pixels per side, the
+ * rounding of the long side to an even number. Otherwise -EINVAL (logged).
+ * A source whose short side already equals `display_resolution` keeps its
+ * dimensions. The long side keeps the source's aspect ratio, rounded to the
+ * nearest even number; a long side over 4 * `display_resolution` is -EINVAL
+ * (logged). `*dist_target` is set to `*ref_target` with the common size; each
+ * target's filter is none for a picture already at that size, bicubic to
+ * upscale and lanczos to downscale. `*needs_conversion` is set to true when
+ * either picture is not at the common size and left as it was otherwise.
  * NULL arguments and `display_resolution` 0 are -EINVAL.
  */
 int vmaf_conversion_policy_scale(const VmafPicture *ref, const VmafPicture *dist,
                                  unsigned display_resolution, bool *needs_conversion,
-                                 VmafPictureConvertTarget *target);
+                                 VmafPictureConvertTarget *ref_target,
+                                 VmafPictureConvertTarget *dist_target);
 
 #endif /* VMAF_SRC_CONVERSION_POLICY_H_ */
