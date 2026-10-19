@@ -274,10 +274,10 @@ void error(const char *const app, const char *const optarg, const int option,
 /* `--pixel_format`: 400 / 420 / 422 / 444, or a layout of the import table. Sets the planar frame
  * (`pix_fmt`), the layout of a raw file that is not planar (`input_layout`) and the bit depth a
  * layout fixes (a later --bitdepth is checked against it). */
-void parse_pixel_format(const char *const optarg, const int option, const char *const app,
+void parse_pixel_format(const char *const value, const int option, const char *const app,
                         CLISettings *const settings)
 {
-    const std::string_view arg{optarg};
+    const std::string_view arg{value};
     settings->input_layout = 0;
     settings->pix_fmt = VMAF_PIX_FMT_UNKNOWN;
     if (arg == "400")
@@ -296,7 +296,7 @@ void parse_pixel_format(const char *const optarg, const int option, const char *
             settings->bitdepth = row->bpc_min;
     }
     if (!settings->pix_fmt) {
-        error(app, optarg, option,
+        error(app, value, option,
               "a valid pixel format (400/420/422/444, or a layout: nv12 nv16 nv24 p010 p016 p210 "
               "p216 p410 p416 yuyv422 uyvy422 v210 y210 y212 xv30 xv36 vuyx ayuv yuv444p16msb "
               "rgb rgba bgra)");
@@ -323,7 +323,7 @@ struct NamedColor {
 
 /* The statement of a raw RGB input (ADR-2146). Values the integer conversion does not make
  * (bt2020cl, ictcp, linear) are parsed so that the refusal can name them. */
-void handle_rgb_flag(const int o, const char *const optarg, const char *const app,
+void handle_rgb_flag(const int o, const char *const value, const char *const app,
                      CLISettings *const settings)
 {
     static const NamedColor matrices[] = {
@@ -341,20 +341,20 @@ void handle_rgb_flag(const int o, const char *const optarg, const char *const ap
                                            {.name = "linear", .value = VMAF_COLOR_TRC_LINEAR}};
     switch (o) {
     case ARG_RGB_MATRIX:
-        settings->rgb_matrix = parse_named_color(matrices, std::size(matrices), optarg, o, app,
+        settings->rgb_matrix = parse_named_color(matrices, std::size(matrices), value, o, app,
                                                  "a matrix: bt601, bt709 or bt2020ncl");
         break;
     case ARG_RGB_RANGE:
-        settings->rgb_range = parse_named_color(ranges, std::size(ranges), optarg, o, app,
-                                                "a range: limited or full");
+        settings->rgb_range =
+            parse_named_color(ranges, std::size(ranges), value, o, app, "a range: limited or full");
         break;
     case ARG_RGB_TRANSFER:
-        settings->rgb_transfer = parse_named_color(transfers, std::size(transfers), optarg, o, app,
+        settings->rgb_transfer = parse_named_color(transfers, std::size(transfers), value, o, app,
                                                    "a transfer: bt709, srgb, pq or hlg");
         break;
     default:
-        settings->rgb_out_range = parse_named_color(ranges, std::size(ranges), optarg, o, app,
-                                                    "a range: limited or full");
+        settings->rgb_out_range =
+            parse_named_color(ranges, std::size(ranges), value, o, app, "a range: limited or full");
         break;
     }
 }
