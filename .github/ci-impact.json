@@ -371,6 +371,7 @@
         "scripts/ci/check-container-build.sh",
         "scripts/ci/check-dev-container-build-secret.py",
         "scripts/ci/docker-hub-mirror.sh",
+        "scripts/ci/free-runner-disk.sh",
         "scripts/ci/install-cuda-toolkit.sh"
       ]
     },
