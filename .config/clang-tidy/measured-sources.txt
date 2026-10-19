@@ -379,6 +379,7 @@ core/src/vmafx/register.c
 core/src/vmafx/release_events.c
 core/src/vmafx/report.c
 core/src/vmafx/report_verify.c
+core/src/vmafx/rgb_convert.c
 core/src/vmafx/score.c
 core/src/vmafx/sha256.c
 core/src/vmafx/sized.c
@@ -852,6 +853,8 @@ core/test/test_vmafx_import_cuda_fence.c
 core/test/test_vmafx_import_cuda_formats.c
 core/test/test_vmafx_import_cuda_gl.c
 core/test/test_vmafx_import_fence.c
+core/test/test_vmafx_import_ffmpeg_oracle.c
+core/test/test_vmafx_import_formats_cpu.c
 core/test/test_vmafx_import_hip.c
 core/test/test_vmafx_import_hip_bitexact.c
 core/test/test_vmafx_import_hip_fence.c
@@ -876,6 +879,7 @@ core/test/test_vmafx_provenance.c
 core/test/test_vmafx_provenance_json.c
 core/test/test_vmafx_provenance_threads.c
 core/test/test_vmafx_report.c
+core/test/test_vmafx_rgb_convert.c
 core/test/test_vmafx_score.c
 core/test/test_vmafx_sha256.c
 core/test/test_vmafx_spec.c

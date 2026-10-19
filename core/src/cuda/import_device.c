@@ -320,6 +320,9 @@ static VmafxStatus open_stream_and_kernels(const VmafxReport *report, const Vmaf
     if (res == CUDA_SUCCESS) {
         res = f->cuModuleGetFunction(&k->gather, k->module, "vmafx_import_gather");
     }
+    if (res == CUDA_SUCCESS) {
+        res = f->cuModuleGetFunction(&k->rgb, k->module, "vmafx_import_rgb");
+    }
     return res == CUDA_SUCCESS ? VMAFX_OK : cuda_failed(report, res, "device", "cuModuleLoadData");
 }
 

@@ -232,6 +232,7 @@ nav:
       - Environment variables: usage/env-vars.md
       - FFmpeg: usage/ffmpeg.md
       - GStreamer: usage/gstreamer.md
+      - Input pixel formats: usage/pixel-formats.md
       - Python library: usage/python.md
       - MATLAB: usage/matlab.md
       - vmafx CLI: usage/vmafx-cli.md

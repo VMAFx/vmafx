@@ -28,6 +28,7 @@ ARGV_STAGES = ("core", "extra", "none")
 RANGE_WITH_MAX = 2  # `range = [min, max]`; `[min]` has no maximum
 IDENT = re.compile(r"^[a-z][a-z0-9_]*$")
 MACRO = re.compile(r"^[A-Z][A-Z0-9_]*$")
+GO_TYPE = re.compile(r"^[A-Z][A-Za-z0-9]*$")
 
 
 def _names(raw: Entry, surface: str) -> tuple[str, ...]:
@@ -197,6 +198,14 @@ def _default_form(raw: Entry, macro: str, where: str) -> str:
     return form
 
 
+def _go_type(raw: Entry, kind: str, where: str) -> str:
+    """`go_type`: the exported Go type of the REST stub field, for an integer option."""
+    name = str(raw.get("go_type", ""))
+    if name and (kind not in {"int", "uint"} or not GO_TYPE.match(name)):
+        raise DefinitionError(f"{where}: `go_type` names an exported Go type of an integer option")
+    return name
+
+
 def _base_option(raw: Entry, group: OptionGroup, where: str) -> Option:
     kind = need(raw, "type", where)
     if kind not in OPTION_TYPES:
@@ -229,6 +238,7 @@ def _base_option(raw: Entry, group: OptionGroup, where: str) -> Option:
         cli=_cli(raw, name, kind, values, where) if "cli" in surfaces else None,
         mcp_required=bool(raw.get("mcp_required", False)),
         reserved=str(raw.get("reserved", "")),
+        go_type=_go_type(raw, kind, where),
     )
 
 

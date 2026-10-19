@@ -24,6 +24,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "compat/crt_portable.h"
 #include "feature/feature_collector.h"
 #include "libvmaf_priv.h"
 #include "vmafx/libvmaf_bridge.h"
@@ -46,8 +47,7 @@ typedef struct VcCell {
  * upload every frame by design). */
 static inline bool vc_import_only(void)
 {
-    /* NOLINTNEXTLINE(concurrency-mt-unsafe): single-thread test setup (ADR-0141 / ADR-0278). */
-    const char *const v = getenv("VMAFX_TEST_IMPORT_ONLY");
+    const char *const v = vmaf_getenv_portable("VMAFX_TEST_IMPORT_ONLY");
     return v && v[0] == '1';
 }
 
