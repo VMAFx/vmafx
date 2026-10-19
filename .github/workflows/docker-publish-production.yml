@@ -489,7 +489,7 @@ jobs:
           df -h /
           docker buildx prune --all --force
           docker system prune --all --force
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          bash scripts/ci/free-runner-disk.sh
           df -h /
 
       - name: Install syft (SBOM generator)
@@ -633,7 +633,7 @@ jobs:
           df -h /
           docker buildx prune --all --force
           docker system prune --all --force
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          bash scripts/ci/free-runner-disk.sh
           df -h /
 
       - name: Install syft (SBOM generator)
@@ -784,7 +784,7 @@ jobs:
           df -h /
           docker buildx prune --all --force
           docker system prune --all --force
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          bash scripts/ci/free-runner-disk.sh
           df -h /
 
       - name: Install syft (SBOM generator)
