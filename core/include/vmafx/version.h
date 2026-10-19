@@ -30,7 +30,7 @@ extern "C" {
 /** ABI version this header describes (ADR-1852). */
 #define VMAFX_ABI_VERSION_MAJOR 0
 #define VMAFX_ABI_VERSION_MINOR 1
-#define VMAFX_ABI_VERSION_PATCH 12
+#define VMAFX_ABI_VERSION_PATCH 13
 
 /**
  * Build version (git describe); valid for the process lifetime.

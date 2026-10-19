@@ -103,8 +103,10 @@ typedef struct {
     unsigned frame_skip_ref;
     unsigned frame_skip_dist;
     unsigned frame_cnt;
+    /* the _ref and _dist sizes default to width and height */
     unsigned width;
     unsigned height;
+    unsigned width_ref, height_ref, width_dist, height_dist;
     enum VmafPixelFormat
         pix_fmt; /* the planar frame the input makes: 4:2:0, 4:2:2, 4:4:4 or 4:0:0 */
     unsigned bitdepth;

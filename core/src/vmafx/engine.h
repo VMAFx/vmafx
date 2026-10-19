@@ -117,11 +117,6 @@ enum VmafBackend vmaf_engine_extractor_backend(const char *extractor);
 /* True once the context was flushed (vmaf_read_pictures(NULL, NULL)). */
 bool vmaf_engine_is_flushed(const VmafContext *vmaf);
 
-/* Short side the models' conversion_target scales both inputs to, so the
- * inputs may differ in size (Netflix/vmaf cf9a6ec51b); 0 when the models keep
- * the source size, and for NULL. */
-unsigned vmaf_engine_display_resolution(const VmafContext *vmaf);
-
 /* The VMAFx context an engine context belongs to (NULL for NULL). */
 struct VmafxContext *vmaf_engine_api_owner(const VmafContext *vmaf);
 void vmaf_engine_set_api_owner(VmafContext *vmaf, struct VmafxContext *owner);
