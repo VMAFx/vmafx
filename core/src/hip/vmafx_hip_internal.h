@@ -30,6 +30,7 @@ typedef struct VmafxHipKernels {
     hipFunction_t deint_16; /* P010 / P016 chroma, with a right shift */
     hipFunction_t shift_16; /* P010 luma: a right shift into a plane of its own */
     hipFunction_t gather; /* packed layouts and MSB planar words: one plane by a VmafxImportRead */
+    hipFunction_t rgb;    /* RGB layouts: one plane of Y'CbCr by a VmafxRgbPlan (ADR-2146) */
 } VmafxHipKernels;
 
 /* Planes per frame. */

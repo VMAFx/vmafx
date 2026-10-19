@@ -145,6 +145,7 @@ static inline VmafxFrameImport vh_import_desc(const VmafxFrameDesc *d, uint32_t 
         imp.plane[i].offset = p->layout.offset[i];
         imp.plane[i].pitch = p->layout.pitch[i];
     }
+    vt_apply_rgb_statement(&imp); /* RGB layouts state their matrix (ADR-2146) */
     return imp;
 }
 

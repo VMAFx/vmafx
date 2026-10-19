@@ -22,6 +22,10 @@
 extern "C" {
 #endif
 
+/* NOLINTBEGIN(modernize-use-using,performance-enum-size): public C header included by C
+ * and C++ translation units; C has no `using`, and C has no fixed enum underlying type
+ * across the required toolchains (ADR-1470). ADR-1138. */
+
 #ifndef VMAFX_EXPORT
 #if defined(_MSC_VER)
 #define VMAFX_EXPORT __declspec(dllexport)
@@ -230,6 +234,42 @@ typedef enum VmafxPixelFormat {
      * shifted down by 16 - bpc). Added in ABI 0.1.9.
      */
     VMAFX_PIXEL_FORMAT_YUV444P_MSB = 31,
+    /**
+     * Packed 4:4:4 in one plane: the bytes A Y Cb Cr per pixel (FFmpeg ayuv; the alpha byte is not
+     * read); vmafx_frame_import() only, the frame it makes is YUV444P at 8 bits. Added in ABI
+     * 0.1.12.
+     */
+    VMAFX_PIXEL_FORMAT_AYUV = 32,
+    /**
+     * Packed 4:2:2 in one plane: the bytes Cb Y0 Cr Y1 per two pixels (UYVY, FFmpeg uyvy422);
+     * vmafx_frame_import() only, the frame it makes is YUV422P at 8 bits. Added in ABI 0.1.12.
+     */
+    VMAFX_PIXEL_FORMAT_UYVY422 = 33,
+    /**
+     * Packed 4:2:2 in one plane: 10-bit samples, six pixels in 16 bytes (four little-endian 32-bit
+     * words, three 10-bit samples each; the two top bits of a word are not read), rows padded as
+     * the producer likes; vmafx_frame_import() only, the frame it makes is YUV422P at 10 bits.
+     * Added in ABI 0.1.12.
+     */
+    VMAFX_PIXEL_FORMAT_V210 = 34,
+    /**
+     * Packed R'G'B' in one plane, three samples per pixel in the order R G B (FFmpeg rgb24 at 8
+     * bits, rgb48le at 16; 9 to 15 bits are 16-bit words holding the sample in the low bits);
+     * vmafx_frame_import() only and only with `rgb_matrix`, `rgb_range`, `rgb_transfer` and
+     * `rgb_out_range` stated: the frame it makes is YUV444P Y'CbCr at the same depth (ADR-2146).
+     * Added in ABI 0.1.12.
+     */
+    VMAFX_PIXEL_FORMAT_RGB = 35,
+    /**
+     * RGB with a fourth sample per pixel, the order R G B A (FFmpeg rgba, rgba64le); the alpha
+     * sample is not read; same statement as RGB. Added in ABI 0.1.12.
+     */
+    VMAFX_PIXEL_FORMAT_RGBA = 36,
+    /**
+     * RGB with a fourth sample per pixel, the order B G R A (FFmpeg bgra, bgra64le); the alpha
+     * sample is not read; same statement as RGB. Added in ABI 0.1.12.
+     */
+    VMAFX_PIXEL_FORMAT_BGRA = 37,
 } VmafxPixelFormat;
 
 /**
@@ -273,6 +313,8 @@ typedef void (*VmafxLogCallback)(uint32_t level, const char *message, void *user
  * @since 0.1
  */
 VMAFX_EXPORT const char *vmafx_backend_name(uint32_t backend);
+
+/* NOLINTEND(modernize-use-using,performance-enum-size) */
 
 #ifdef __cplusplus
 }
