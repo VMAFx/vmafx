@@ -66,6 +66,8 @@ class Entry:
     reason: str
     expires: dt.date
     part: str = ""  # the part of the file a ``PART_KEYS`` rule excepts, else empty
+    category: str = ""  # praetor's rectification category (A-D), when the rule needs one
+    entered: dt.date | None = None  # the day the entry was written, with ``category``
 
 
 def today() -> dt.date:
@@ -98,7 +100,18 @@ def load(root: Path = ROOT) -> tuple[list[Entry], list[str]]:
                 continue
             key = PART_KEYS.get(rule)
             part = str(raw.get(key, "")) if key else ""
-            entries.append(Entry(rule, str(raw["path"]), str(raw["reason"]), raw["expires"], part))
+            entered = raw.get("entered")
+            entries.append(
+                Entry(
+                    rule,
+                    str(raw["path"]),
+                    str(raw["reason"]),
+                    raw["expires"],
+                    part,
+                    str(raw.get("category", "")),
+                    entered if isinstance(entered, dt.date) else None,
+                )
+            )
     return entries, findings
 
 
