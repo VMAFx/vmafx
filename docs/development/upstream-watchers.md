@@ -18,7 +18,7 @@ opens a GitHub tracking issue the moment the feature appears.
 | Workflow | Cadence (UTC) | Upstream signal | Placeholder or deferral | ADR |
 |---|---|---|---|---|
 | `upstream-watcher.yml` (runs `scripts/upstream-watcher/check_ffmpeg_av1_videotoolbox.sh`) | Mondays 08:00 | `AV_CODEC_ID_AV1` in `libavcodec/videotoolboxenc.c` on `git.ffmpeg.org/ffmpeg.git` `master` | `tools/vmaf-tune/src/vmaftune/codec_adapters/av1_videotoolbox.py` | [ADR-0339](../adr/0339-av1-videotoolbox-placeholder-adapter.md) |
-| `upstream-ffmpeg-hip-hwdec-watcher.yml` | Sundays 06:30 | `hwcontext_hip.{c,h}` under `libavutil/`, or an `AV_HWDEVICE_TYPE_HIP` / `_ROCM` enum variant, in FFmpeg | `T-FFMPEG-HIP-FILTER-DEFERRED` row in `docs/state.md` | [ADR-0448](../adr/0448-active-upstream-monitoring-discipline.md) |
+| `upstream-ffmpeg-hip-hwdec-watcher.yml` | Sundays 06:30 | `hwcontext_hip.{c,h}` under `libavutil/`, or an `AV_HWDEVICE_TYPE_HIP` / `_ROCM` enum variant in `libavutil/hwcontext.h`, read through the contents API of the FFmpeg mirror | `T-FFMPEG-HIP-FILTER-DEFERRED` row in `docs/state.md` | [ADR-0448](../adr/0448-active-upstream-monitoring-discipline.md) |
 | `upstream-netflix-645-hdr-model-watcher.yml` | Sundays 06:15 | Netflix/vmaf#645 activity, or a `vmaf_hdr_*.json` file under `Netflix/vmaf:model/` | the HDR-VMAF model port deferral | [ADR-0448](../adr/0448-active-upstream-monitoring-discipline.md) |
 | `upstream-netflix-955-watcher.yml` | Sundays 06:00 | Netflix/vmaf#1494 merging (it closes #955) | the Netflix#955 `i4_adm_cm` deferral row | [ADR-0448](../adr/0448-active-upstream-monitoring-discipline.md) |
 
