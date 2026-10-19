@@ -229,8 +229,7 @@ file list and the `exceptions` list of `.standards.yaml`. Neither is a second so
 `python3 scripts/ci/praetor_tidy_coverage.py --write` renders
 `.config/clang-tidy/measured-sources.txt` (the union of every baseline's `measured_sources`) and the
 block of `.standards.yaml` between its `BEGIN` / `END generated` markers (one entry per unit no
-lane measures, from the shared exception list, plus the exact-twin fragments and the included
-HIP header) from the baselines and the exception list above. The pre-commit hook
+lane measures, from the shared exception list, plus the included HIP header) from the baselines and the exception list above. The pre-commit hook
 `check-praetor-tidy-coverage` fails on a stale rendering. Praetor refuses an exception that
 expires more than 90 days out, so each rendered entry expires on the earlier of its own date and
 `PRAETOR_EXPIRY_CAP` in the script (2027-01-04); renew the cap with the entries. Edit the baselines
@@ -244,6 +243,16 @@ entries for the rules in `PRAETOR_RULES` into the block, with the same expiry ca
 (`.config/lint-exceptions.d/HISS-10.toml`, a workflow whose lanes praetor's build-warnings gate
 reads as compiling without warnings as errors; empty since
 [ADR-2828](../adr/2828-ci-werror-every-lane.md), when every lane spelled its switch).
+
+Since the pin `4ae64cb27e56` the `clang_tidy.data_paths` list of `.standards.yaml` names
+directories whose files are data, not translation units: `scripts/ci/exact_twins.d/` holds the
+exact-twin fragments ([ADR-1428](../adr/1428-exact-twins-fragments.md)), files named
+`<feature>.<backend>`, which praetor read as HIP sources by their `.hip` suffix. Praetor skips a
+file under a declared data path and the script renders no entry for one; any other file with such
+a suffix still needs a lane or an exception. The same pin adds the rule `release-token` to
+`PRAETOR_RULES`, and the script now copies an entry's `category` and `entered` date into the block
+(`.config/lint-exceptions.d/release-token.toml`, category C, for the token fallback of
+`.github/workflows/release-please.yml`).
 
 | Group | Read by | Why the rest is excepted |
 | --- | --- | --- |
