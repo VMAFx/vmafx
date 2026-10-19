@@ -54,3 +54,7 @@ that namespace is reserved by ISO C and fails CERT DCL37-C.
 
 See `docs/research/logging-consistency-audit-2026-05-30.md` for
 audit that established this invariant.
+
+## Process log level atomic (T-LOG-LEVEL-GLOBAL-DATA-RACE-2026-10-06)
+
+`log.cpp`: `vmaf_log_level` and `istty` are `std::atomic<int>`, relaxed store in `vmaf_set_log_level()`, relaxed load in `vmaf_log()` (`istty` read once per line into `tty`). `vmaf_init()` sets level on any thread; `vmaf_log()` reads on every thread, workers included. Plain globals = data race (TSan, `core/test/test_log_level_threads.c`, nightly / master TSan jobs). Upstream log sync keeps the atomics. `log.c` not built (ADR-0708), unchanged.

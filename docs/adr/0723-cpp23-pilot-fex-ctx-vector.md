@@ -95,3 +95,13 @@ working template to copy.
 - ADR-0720 (`docs/adr/0720-vmafx-drop-ansnr.md`) — ansnr feature drop; the stale
   `test_ansnr_simd` meson stub removed in this PR is a residual from that change.
 - req: "Internal implementation moves `.c` to `.cpp` where C++23 features help."
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 95: `- ADR-0720 (docs/adr/0720-vmafx-drop-ansnr.md) — ansnr
+  feature drop; the stale`: Cites nonexistent ADR file
+  docs/adr/0720-vmafx-drop-ansnr.md. ADR-0720 is 0720-cpp23-pilot-mem.md
+  ("C++23 Wave-1 Pilot — mem.c conversion").

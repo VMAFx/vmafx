@@ -101,8 +101,9 @@ static int dists_sq_init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     if (rc < 0)
         return rc;
 
-    const char *path =
-        vmaf_tiny_ai_resolve_model_path("dists_sq", s->model_path, "VMAF_DISTS_SQ_MODEL_PATH");
+    char env_path[VMAF_TINY_AI_ENV_PATH_MAX];
+    const char *path = vmaf_tiny_ai_resolve_model_path(
+        "dists_sq", s->model_path, "VMAF_DISTS_SQ_MODEL_PATH", env_path, sizeof(env_path));
     if (!path)
         return -EINVAL;
 

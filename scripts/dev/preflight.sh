@@ -34,6 +34,8 @@
 set -euo pipefail
 export LC_ALL=C
 
+# The scanners next to this script, also when it checks another checkout.
+PREFLIGHT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)" || exit 2
 REPO_ROOT="$(git rev-parse --show-toplevel)" || exit 2
 cd "$REPO_ROOT" || exit 2
 
@@ -135,6 +137,20 @@ changed_metal() {
   } | sort -u
 }
 
+# meson_assignment_has FILE VAR NEEDLE: the assignment `VAR = ...` of a meson
+# file, with its backslash continuation lines, names NEEDLE. awk reads the
+# whole file, so no reader closes the pipe early.
+meson_assignment_has() {
+  [ -f "$1" ] || return 1
+  awk -v var="$2" -v needle="$3" '
+    index($0, var " = ") && $0 ~ "^[[:space:]]*" var " = " { open = 1 }
+    open {
+      if (index($0, needle)) found = 1
+      if ($0 !~ /\\[[:space:]]*$/) open = 0
+    }
+    END { exit found ? 0 : 1 }' "$1"
+}
+
 if [ "$MODE" = list ]; then
   cat <<'EOF'
 stage          mirrors CI context            catches
@@ -201,9 +217,30 @@ fi
 if want msvcism; then
   say "MSVC-hostile constructs" "mirrors: Windows MSVC+CUDA / MSVC+SYCL (static approximation)"
   msvc_fail=0
+  # Each scan below runs one grep pipeline per file. grep exits 1 when it
+  # matches nothing, which is a clean file; under pipefail that status used to
+  # end the loop, and a `|| hits=""` fallback then threw away every finding
+  # whenever the LAST file scanned was clean (#2852: five `nullptr` in a C test
+  # passed this stage because a clean file followed). A per-file status of 1
+  # now counts as clean (`|| [ $? -eq 1 ] || exit 2`); any other status ends
+  # the scan, and a scan that does not finish fails the stage, never passes it.
+  # The file filters work the same way: grep's status 1 (no line matched) is
+  # an empty list, any other failure stays a failure of the scan.
+  only_lines() {
+    grep "$@" || [ $? -eq 1 ]
+  }
+  scan_failed() {
+    printf '     %s\n' "$1 scan did not run (scripts/dev/preflight.sh)"
+    msvc_fail=1
+  }
   check_pattern() {
     local pat="$1" why="$2" hits
-    hits=$(changed_sources | xargs -r grep -nE "$pat" 2>/dev/null | head -5) || hits="" # grep / xargs exit non-zero when nothing matches
+    if ! hits=$(changed_sources | while read -r f; do
+      grep -HnE "$pat" "$f" 2>/dev/null || [ $? -eq 1 ] || exit 2
+    done | awk 'NR <= 5'); then
+      scan_failed "$why:"
+      return
+    fi
     if [ -n "$hits" ]; then
       printf '     %s\n' "$why"
       printf '%s\n' "$hits" | sed 's/^/       /'
@@ -225,8 +262,8 @@ if want msvcism; then
   # a trailing comment instead.
   cu_designated=$(changed_cuda | while read -r f; do
     grep -nE '(\{|,)[[:space:]]*\.[A-Za-z_][A-Za-z0-9_]*[[:space:]]*=|^[[:space:]]*\.[A-Za-z_][A-Za-z0-9_]*[[:space:]]*=.*(,|\{)[[:space:]]*$' "$f" 2>/dev/null |
-      grep -vE '^[0-9]+:[[:space:]]*(\*|/\*|//)' | sed "s|^|$f:|"
-  done | head -5) || cu_designated=""
+      grep -vE '^[0-9]+:[[:space:]]*(\*|/\*|//)' | sed "s|^|$f:|" || [ $? -eq 1 ] || exit 2
+  done | awk 'NR <= 5') || scan_failed 'CUDA designated initializer'
   if [ -n "$cu_designated" ]; then
     printf '     %s\n' 'designated initializer in CUDA device code — nvcc/MSVC "expected an expression"'
     printf '%s\n' "$cu_designated" | sed 's/^/       /'
@@ -238,10 +275,10 @@ if want msvcism; then
   # lane compiles core/ with cl.exe. gcc accepts it and clang accepts it under
   # -std=c23, so nothing local objects. Comment lines are skipped because the
   # ADR-1138 NOLINT bracket names the keyword in prose.
-  c_nullptr=$(changed_sources | grep -E '\.c$' | while read -r f; do
+  c_nullptr=$(changed_sources | only_lines -E '\.c$' | while read -r f; do
     grep -nE '\bnullptr\b' "$f" 2>/dev/null |
-      grep -vE '^[0-9]+:[[:space:]]*(\*|/\*|//)' | sed "s|^|$f:|"
-  done | head -60) || c_nullptr=""
+      grep -vE '^[0-9]+:[[:space:]]*(\*|/\*|//)' | sed "s|^|$f:|" || [ $? -eq 1 ] || exit 2
+  done | awk 'NR <= 60') || scan_failed 'C nullptr'
   if [ -n "$c_nullptr" ]; then
     printf '     %s\n' 'nullptr in a C translation unit — MSVC C2065; ADR-1138 keeps C on NULL'
     printf '%s\n' "$c_nullptr" | sed 's/^/       /'
@@ -254,11 +291,11 @@ if want msvcism; then
   # invocation" on the Windows MSVC+SYCL lane only (2026-10-02,
   # sycl_exact_fp.h). The parenthesised form `(std::numeric_limits<T>::max)()`
   # compiles everywhere.
-  sycl_minmax=$(changed_sources | grep -E '^core/src/(feature/)?sycl/' | while read -r f; do
+  sycl_minmax=$(changed_sources | only_lines -E '^core/src/(feature/)?sycl/' | while read -r f; do
     grep -nE 'numeric_limits<[^>]+>::(max|min)\(\)' "$f" 2>/dev/null |
       grep -vE '\(std::numeric_limits<[^>]+>::(max|min)\)\(\)' |
-      grep -vE '^[0-9]+:[[:space:]]*(\*|/\*|//)' | sed "s|^|$f:|"
-  done | head -60) || sycl_minmax=""
+      grep -vE '^[0-9]+:[[:space:]]*(\*|/\*|//)' | sed "s|^|$f:|" || [ $? -eq 1 ] || exit 2
+  done | awk 'NR <= 60') || scan_failed 'SYCL numeric_limits'
   if [ -n "$sycl_minmax" ]; then
     printf '     %s\n' 'numeric_limits<T>::max() / min() in a SYCL source — <windows.h> macro clash; write (std::numeric_limits<T>::max)()'
     printf '%s\n' "$sycl_minmax" | sed 's/^/       /'
@@ -279,9 +316,9 @@ if want msvcism; then
       git ls-files --others --exclude-standard -- 'core/test/*.py'
     } | sort -u)
   fi
-  py_keys=$(printf '%s\n' "$py_tests" | grep -v '^$' | while read -r f; do
-    grep -nE '\[str\([A-Za-z_]+\.relative_to\([^]]*\)\)\][[:space:]]*=|^[[:space:]]*str\([A-Za-z_]+\.relative_to\([^)]*\)\):' "$f" 2>/dev/null | sed "s|^|$f:|"
-  done | head -60) || py_keys=""
+  py_keys=$(printf '%s\n' "$py_tests" | only_lines -v '^$' | while read -r f; do
+    grep -nE '\[str\([A-Za-z_]+\.relative_to\([^]]*\)\)\][[:space:]]*=|^[[:space:]]*str\([A-Za-z_]+\.relative_to\([^)]*\)\):' "$f" 2>/dev/null | sed "s|^|$f:|" || [ $? -eq 1 ] || exit 2
+  done | awk 'NR <= 60') || scan_failed 'Python relative_to key'
   if [ -n "$py_keys" ]; then
     printf '     %s\n' 'dictionary keyed by str(path.relative_to(...)) in a core/test Python test — backslashes on Windows; use .as_posix()'
     printf '%s\n' "$py_keys" | sed 's/^/       /'
@@ -298,8 +335,8 @@ if want msvcism; then
   msl_reserved='(half|float2|float3|float4|int2|int3|int4|uint2|uint3|uint4|bool2|bool3|bool4|sampler)'
   msl_hits=$(changed_metal | while read -r f; do
     grep -nE "\b(ulong|uint|int|float|bool|long|short|auto|char) +$msl_reserved\b" "$f" 2>/dev/null |
-      head -2 | sed "s|^|$f:|"
-  done | head -5) || msl_hits=""
+      awk 'NR <= 2' | sed "s|^|$f:|" || [ $? -eq 1 ] || exit 2
+  done | awk 'NR <= 5') || scan_failed 'MSL reserved name'
   if [ -n "$msl_hits" ]; then
     printf '     %s\n' 'MSL reserved type name used as a variable — macOS Metal redeclaration error'
     printf '%s\n' "$msl_hits" | sed 's/^/       /'
@@ -308,37 +345,58 @@ if want msvcism; then
 
   # `M_PI` and friends are POSIX/X-Open, not ISO C. glibc exposes them only
   # under __USE_MISC/__USE_XOPEN, which `-std=c23` disables by defining
-  # __STRICT_ANSI__; the Linux lanes see them anyway because meson passes
-  # -D_GNU_SOURCE. MinGW64 does not honour _GNU_SOURCE, so a file that just
-  # includes <math.h> and uses M_PI compiles everywhere except the required
-  # `Windows MinGW64` lane. The tree's convention is _USE_MATH_DEFINES before
-  # <math.h> plus an `#ifndef M_PI` fallback (adm_csf_tools.h, adm_tools.h).
+  # __STRICT_ANSI__; the Linux lanes see them because meson passes
+  # -D_GNU_SOURCE. The MSVC runtime defines them only under
+  # _USE_MATH_DEFINES, and MinGW-w64's <math.h> hides them under
+  # __STRICT_ANSI__ unless it is defined. Since Netflix/vmaf 4e150067b (Q-301)
+  # core/meson.build passes -D_USE_MATH_DEFINES as a project argument on
+  # Windows hosts, and no translation unit keeps a guard or a copy of the
+  # constants. icpx compiles the SYCL translation units in custom targets,
+  # which project arguments never reach, so the define is project-wide only
+  # when core/src/meson.build adds the same list to both SYCL argument lists
+  # (sycl_common_args, sycl_feature_tail_args): without that the Windows SYCL
+  # build failed on M_PI (T-SYCL-WINDOWS-M-PI-UNDECLARED-2026-10-09). The macros
+  # are accepted while all three are in the build files; without them, a file
+  # needs the old per-file guard (_USE_MATH_DEFINES before <math.h>, or an
+  # `#ifndef M_PI` fallback, in the file or in an in-tree header it includes).
   m_macros='\bM_(PI|E|SQRT2|LN2|LN10|PI_2|PI_4|1_PI|2_PI|SQRT1_2|LOG2E|LOG10E)\b'
-  # A file counts as guarded when it carries the two-step itself OR includes an
-  # in-tree header that does -- integer_adm.c, adm_avx2.c and friends get M_PI
-  # from integer_adm.h / barten_csf_tools.h and are correct as written.
-  c_math=$(changed_sources | while read -r f; do
-    grep -qE "$m_macros" "$f" 2>/dev/null || continue
-    grep -qE '_USE_MATH_DEFINES|#ifndef M_PI' "$f" 2>/dev/null && continue
-    guarded_by_include=0
-    while read -r h; do
-      [ -n "$h" ] || continue
-      if find core -name "$(basename "$h")" -exec \
-        grep -lE '_USE_MATH_DEFINES|#ifndef M_PI' {} + 2>/dev/null | grep -q .; then
-        guarded_by_include=1
-        break
-      fi
-    done <<EOF_INC
+  math_list_define="^[[:space:]]*vmaf_math_constant_args = \['-D_USE_MATH_DEFINES'\]"
+  math_project_define="^[[:space:]]*add_project_arguments\(vmaf_math_constant_args,[^)]*language: *\[[^]]*'c'"
+  math_defines_project_wide=0
+  if [ -f core/meson.build ] && grep -qE "$math_list_define" core/meson.build &&
+    grep -qE "$math_project_define" core/meson.build &&
+    meson_assignment_has core/src/meson.build sycl_common_args vmaf_math_constant_args &&
+    meson_assignment_has core/src/meson.build sycl_feature_tail_args vmaf_math_constant_args; then
+    math_defines_project_wide=1
+  fi
+  c_math=""
+  if [ "$math_defines_project_wide" -eq 0 ]; then
+    # The probes of this stage trim with awk, which reads its whole input:
+    # `head` would close the pipe while a scan still writes, the scan would
+    # die of SIGPIPE, and under pipefail the `|| x=""` fallback would throw
+    # the findings away (a five-finding diff passed this stage locally).
+    c_math=$(changed_sources | while read -r f; do
+      grep -qE "$m_macros" "$f" 2>/dev/null || continue
+      grep -qE '_USE_MATH_DEFINES|#ifndef M_PI' "$f" 2>/dev/null && continue
+      guarded_by_include=0
+      while read -r h; do
+        [ -n "$h" ] || continue
+        if find core -name "$(basename "$h")" -exec \
+          grep -lE '_USE_MATH_DEFINES|#ifndef M_PI' {} + 2>/dev/null | grep -q .; then
+          guarded_by_include=1
+          break
+        fi
+      done <<EOF_INC
 $(grep -oE '#include "[^"]+"' "$f" 2>/dev/null | sed 's|#include "||; s|"||')
 EOF_INC
-    [ "$guarded_by_include" -eq 1 ] && continue
-    grep -nE "$m_macros" "$f" | head -2 | sed "s|^|$f:|"
-  done | head -5) || c_math=""
+      [ "$guarded_by_include" -eq 1 ] && continue
+      grep -nE "$m_macros" "$f" | awk 'NR <= 2' | sed "s|^|$f:|"
+    done | awk 'NR <= 5') || c_math=""
+  fi
   if [ -n "$c_math" ]; then
-    printf '     %s\n' 'M_* math macro without the _USE_MATH_DEFINES / #ifndef guard — MinGW64 C2065'
-    printf '     %s\n' '  (the _USE_MATH_DEFINES define needs a cited NOLINTNEXTLINE for'
-    printf '     %s\n' '   bugprone-reserved-identifier — put it on its OWN line above the'
-    printf '     %s\n' '   #define, not inside a multi-line comment; see core/src/libvmaf.c)'
+    printf '     %s\n' 'M_* math macro without a _USE_MATH_DEFINES define — MSVC / MinGW64 C2065'
+    printf '     %s\n' "  (core/meson.build has no add_project_arguments('-D_USE_MATH_DEFINES', ...)"
+    printf '     %s\n' '   for Windows hosts, and the file has no per-file guard)'
     printf '%s\n' "$c_math" | sed 's/^/       /'
     msvc_fail=1
   fi
@@ -349,13 +407,69 @@ EOF_INC
   # wrong members). gcc and clang accept it as an extension and emit no
   # diagnostic at all, not even under -std=c23 -pedantic-errors -Weverything,
   # so this is grepped rather than compiled.
-  c_static_init=$(changed_sources | grep -E '\.c$' |
-    xargs -r python3 "$REPO_ROOT/scripts/dev/find-nonconst-static-init.py" 2>/dev/null | head -5) || c_static_init=""
+  c_static_init=$(changed_sources | only_lines -E '\.c$' |
+    xargs -r python3 "$PREFLIGHT_DIR/find-nonconst-static-init.py" 2>/dev/null | awk 'NR <= 5') ||
+    scan_failed 'static aggregate initialiser'
   if [ -n "$c_static_init" ]; then
     printf '     %s\n' 'non-constant initialiser in a static aggregate — MSVC C2099; use #define'
     printf '%s\n' "$c_static_init" | sed 's/^/       /'
     msvc_fail=1
   fi
+  # MSVC ships no <unistd.h>, <dlfcn.h>, <poll.h>, <sys/socket.h> and the rest
+  # of the POSIX-only headers, so a source the Windows build compiles must
+  # include one only under a platform conditional. Every Linux and macOS lane
+  # accepts the unguarded include; only the required Windows MSVC lanes, which
+  # neither the local gates nor the merge train build, refuse it (2026-10-08:
+  # cuda/import_vulkan.c and <unistd.h>). Sources a meson.build keeps off
+  # Windows are skipped; a file that cannot be either is a named exception
+  # (.config/lint-exceptions.d/msvcism-posix-headers.toml). A scan that cannot
+  # run fails the stage: it must never pass for want of a result.
+  posix_files=$({
+    changed_sources
+    changed_cuda
+  } | sort -u)
+  posix_hits=""
+  if [ -n "$posix_files" ]; then
+    if ! posix_kept=$(printf '%s\n' "$posix_files" |
+      xargs python3 "$PREFLIGHT_DIR/../ci/lint_exceptions.py" filter msvcism-posix-headers --) ||
+      ! posix_hits=$(printf '%s\n' "$posix_kept" |
+        xargs -r python3 "$PREFLIGHT_DIR/find-posix-only-headers.py"); then
+      printf '     %s\n' 'POSIX-only header scan did not run (scripts/dev/find-posix-only-headers.py)'
+      msvc_fail=1
+    fi
+  fi
+  if [ -n "$posix_hits" ]; then
+    printf '     %s\n' 'POSIX-only header outside a platform conditional in a source the Windows build compiles — MSVC C1083'
+    printf '     %s\n' '  (guard it with #ifndef _WIN32 / #ifdef __linux__, use compat/crt_portable.h, or keep the'
+    printf '     %s\n' '   file off Windows in its meson.build: host_machine.system() != '"'"'windows'"'"')'
+    printf '%s\n' "$posix_hits" | head -20 | sed 's/^/       /'
+    msvc_fail=1
+  fi
+
+  # <windows.h> defines min and max as function-like macros unless NOMINMAX is
+  # defined first, and the Windows builds read it through
+  # core/src/compat/win32/pthread.h wherever a source includes <pthread.h>. A
+  # C++ translation unit that then calls std::min(a, b) compiles on every Linux
+  # and macOS lane and fails under MSVC with C2589 (2026-10-11:
+  # fex_ctx_vector_internal.h, every MSVC build of master). The scanner reads
+  # each C++ translation unit in include order and reports the calls a changed
+  # file puts behind the header. A scan that cannot run fails the stage.
+  minmax_files=$(changed_sources)
+  minmax_hits=""
+  if [ -n "$minmax_files" ]; then
+    if ! minmax_hits=$(printf '%s\n' "$minmax_files" |
+      python3 "$PREFLIGHT_DIR/find-windows-minmax.py" -); then
+      printf '     %s\n' 'Windows min/max macro scan did not run (scripts/dev/find-windows-minmax.py)'
+      msvc_fail=1
+    fi
+  fi
+  if [ -n "$minmax_hits" ]; then
+    printf '     %s\n' 'min( / max( call behind <windows.h> without NOMINMAX in a C++ translation unit the Windows build compiles — MSVC C2589'
+    printf '     %s\n' '  (write (std::min)(a, b) or a conditional expression; <pthread.h> is compat/win32/pthread.h on Windows)'
+    printf '%s\n' "$minmax_hits" | awk 'NR <= 20' | sed 's/^/       /'
+    msvc_fail=1
+  fi
+
   if [ "$msvc_fail" -eq 0 ]; then
     ok msvcism
   else

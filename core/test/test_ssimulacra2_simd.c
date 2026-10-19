@@ -49,7 +49,9 @@
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunknown-pragmas"
 #endif
+#if !defined(_MSC_VER) /* cl.exe has no contraction pragma; /fp:precise does not contract */
 #pragma clang fp contract(off)
+#endif
 #if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC diagnostic pop
 #endif
@@ -717,6 +719,9 @@ static char *test_blur(void)
     return NULL;
 }
 
+/* The Windows build skips the picture_to_linear_rgb parity test, so the reference and the
+ * dispatcher it needs are not built there either. */
+#if !(defined(_WIN32) || defined(__MINGW32__) || defined(__MINGW64__))
 /* Scalar reference: sRGB EOTF — verbatim copy of extractor's inline helper. */
 static inline float ref_srgb_to_linear(float v)
 {
@@ -783,8 +788,8 @@ static ref_yuv_consts_t ref_yuv_consts(int yuv_matrix)
     int limited = 1;
     switch (yuv_matrix) {
     case 2:
-        limited = 0; /* fall through */
-        /* fall through */
+        limited = 0;
+        [[fallthrough]];
     case 0:
         kr = 0.2126f;
         kg = 0.7152f;
@@ -893,7 +898,6 @@ static ptlr_fn_t pick_ptlr(void)
     return NULL;
 }
 
-#if !(defined(_WIN32) || defined(__MINGW32__) || defined(__MINGW64__))
 /* Fill `count` samples of `buf` with pseudo-random values in [0, maxv],
  * carrying the xorshift state across planes so each plane gets its own
  * sequence -- exactly the order the three inline copies produced. */

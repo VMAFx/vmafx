@@ -55,8 +55,10 @@ A maintainer is responsible for:
 ### 2.3 Contributors
 
 Anyone who opens an issue or PR is a contributor. Contributors do not
-need to sign a CLA — by submitting code, they agree to license that
-contribution under the licence governing the file they touch: EUPL-1.2
+need to sign a CLA. Each commit carries a Developer Certificate of Origin
+sign-off ([ADR-2462](docs/adr/2462-dco-sign-off-required.md)), and by
+submitting code they agree to license that contribution under the licence
+governing the file they touch: EUPL-1.2
 for new and fork-authored files, and the inherited licence for files
 that carry someone else's code (see [`LICENSE`](LICENSE) for the EUPL-1.2,
 [`NOTICE`](NOTICE) for Netflix's terms,
@@ -166,9 +168,87 @@ there.
 All community interactions are governed by
 [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md), adapted from the
 Contributor Covenant v2.1. Enforcement is the responsibility of
-maintainers; reports go to the address listed in the Code of Conduct.
+maintainers; reports go to the address listed in the Code of Conduct, and
+reports about the maintainer go to GitHub's abuse reporting, as described
+there.
 
-## 8. Amending this document
+## 8. Continuity and succession
+
+### 8.1 Bus factor
+
+The bus factor is one. The BDFL is the only maintainer (see
+[`MAINTAINERS.md`](MAINTAINERS.md)), the only owner of the GitHub organization
+`VMAFx` that holds the repository, and the only holder of the release
+credentials listed below. If that person becomes unavailable for an extended
+period, review, releases and security advisories stop until access passes on.
+This section says what is meant to happen then. Naming a successor is a
+decision the BDFL has not yet recorded here; until one is, the steps below
+describe the intent and the guidance for the community, and no named person
+holds any of the access.
+
+### 8.2 What access exists
+
+- **The GitHub organization and repository** (`VMAFx/vmafx`), including branch
+  protection, the required checks, secrets and environments.
+- **Release identities.** Release artifacts are signed keyless with Sigstore
+  and GitHub OIDC; no long-lived signing key exists, and the signing identity
+  is the release workflow inside the repository (see
+  [Releases](docs/development/release.md) and
+  [ADR-0010](docs/adr/0010-sigstore-keyless-signing.md)). The release
+  automation authenticates as a GitHub App, or as a personal access token
+  where the App is absent
+  ([release-bot identity](docs/development/release.md#release-bot-identity)).
+  The protected environments `release-publish` and `pypi-publish` gate
+  publication.
+- **Container images** under `ghcr.io/vmafx/`, published by the release
+  workflows.
+- **The documentation site**, published from the repository by GitHub Pages.
+- **The project mailbox** named in [`SECURITY.md`](SECURITY.md) and
+  [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md).
+- **Funding accounts.** [GitHub Sponsors](https://github.com/sponsors/lusoris)
+  (USD, live since 2026-10-08), [Ko-fi](https://ko-fi.com/lusoris) (EUR) and
+  [Patreon](https://www.patreon.com/Lusoris) (EUR) are live. The GitHub profile
+  belongs to the maintainer's personal account. Sponsorship buys recognition
+  only, listed in [`SPONSORS.md`](SPONSORS.md) and explained on [Support
+  VMAFx](docs/support-vmafx.md)
+  ([ADR-2689](docs/adr/2689-sponsorship-tiers-recognition-only.md)). Their
+  handover is part of the access list above.
+
+### 8.3 Succession plan
+
+1. **Access today.** One person holds every access listed above. A second
+   organization owner is not planned at this time; if that changes, the name is
+   recorded in [`MAINTAINERS.md`](MAINTAINERS.md).
+2. **Handing over.** The successor takes over the organization, the
+   repository settings, the release App or token, the protected environments,
+   the container registry and the mailbox. Because signing is keyless and tied
+   to the repository workflow, no signing key has to be handed over; the
+   verification identity stays valid as long as the workflow path in the
+   repository stays the same, and changes to it are announced in the release
+   notes.
+3. **If no successor takes over.** A community member who wants to continue
+   the project is welcome to fork it. The licence (EUPL-1.2, and the inherited
+   licences of the files that carry them) allows this without permission. A
+   fork is a new project: its releases are signed with its own identity and
+   its container images live under its own registry, so published
+   verification commands name the new identity. The fork should say plainly
+   that it is a continuation.
+4. **Archiving.** If the project ends, the repository is archived read-only
+   on GitHub, not deleted, so that links, release assets and signature bundles
+   stay verifiable. The final release notes and the README say that the
+   project is no longer maintained and point to the fork, if there is one.
+
+### 8.4 What the community can do now
+
+- Keep contributions in the open (issues, pull requests, ADRs) so the reasoning
+  is not held in one person's head.
+- Offer to become a maintainer by following
+  [Becoming a maintainer](MAINTAINERS.md#becoming-a-maintainer).
+- Keep local clones and forks current; release assets carry signature
+  bundles and SBOMs (see [Releases](docs/development/release.md)), so a mirror
+  can be verified.
+
+## 9. Amending this document
 
 Changes to this `GOVERNANCE.md` follow the normal ADR + PR flow —
 the change lands as a PR with a new ADR that cites this file under

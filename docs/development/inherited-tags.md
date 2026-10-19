@@ -21,6 +21,18 @@ the push guard and the tests read it.
 
 Details and the measured Go behaviour: [Release guide, Go consumers](release.md#go-consumers-and-the-inherited-tags).
 
+## Update 2026-10-12: rc.3 and the 0.x restart
+
+Since this record, `v1.0.0-rc.3` and four more `tester-*` pre-releases were
+published (`git ls-remote --tags origin` lists 11 tags on 2026-10-12). The
+release line restarts at `v0.1.0`
+([ADR-3292](../adr/3292-release-line-restart-0x.md)), whose `go.mod` retracts
+`v1.0.0-rc.1` to `v1.0.0-rc.3`. Measured on 2026-10-12, `proxy.golang.org`
+still caches Netflix's versions up to `v3.0.0+incompatible`. Go reads
+retractions from the go.mod of the highest version, so through the public
+proxy `@latest` stays `v3.0.0+incompatible` and the retraction has no effect.
+Pin `github.com/VMAFx/vmafx@v0.1.0` (or a later `v0.x`) explicitly.
+
 ## What was removed
 
 A tag was deleted only when Netflix/vmaf defined a tag of the same name

@@ -78,7 +78,7 @@ import (
 
 // DefaultAlpha is the default nominal miscoverage level. alpha = 0.05
 // corresponds to a 95 % prediction interval — the convention adopted by
-// ADR-0279 (deep-ensemble + conformal scaffold) and by the
+// ADR-0393 (deep-ensemble + conformal scaffold) and by the
 // `vmaf-tune --quality-confidence` consumer.
 const DefaultAlpha = 0.05
 

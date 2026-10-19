@@ -73,7 +73,7 @@ same bits.
 
 The SIMD functions vectorise the integer DCT, which has no rounding, and keep
 every float operation in the scalar's order: the means and variances, the
-masking threshold `sqrt(mask * variance_ratio) / 32` with its `float` product,
+masking threshold $\sqrt{\mathrm{mask} \cdot \mathrm{variance\_ratio}} / 32$ with its `float` product,
 and the running `float` sum of the masked errors.
 
 `test_psnr_hvs_dispatch_invariance` holds the extractor to that through the

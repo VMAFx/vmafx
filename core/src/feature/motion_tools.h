@@ -20,10 +20,10 @@
 #ifndef MOTION_TOOLS_H_
 #define MOTION_TOOLS_H_
 
-static const float FILTER_5_s[5] = {0.054488685, 0.244201342, 0.402619947, 0.244201342,
-                                    0.054488685};
+static const float FILTER_5_s[5] = {0.054488685f, 0.244201342f, 0.402619947f, 0.244201342f,
+                                    0.054488685f};
 
-static const float FILTER_3_s[3] = {0.166378498, 0.667243004, 0.166378498};
+static const float FILTER_3_s[3] = {0.166378498f, 0.667243004f, 0.166378498f};
 
 static const float FILTER_5_NO_OP_s[5] = {0.0, 0.0, 1.0, 0.0, 0.0};
 

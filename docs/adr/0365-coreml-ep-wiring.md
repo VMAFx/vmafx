@@ -114,3 +114,12 @@ fallback path on every push.
 - ONNX Runtime CoreML Execution Provider documentation,
   <https://onnxruntime.ai/docs/execution-providers/CoreML-ExecutionProvider.html>
   (accessed 2026-05-09).
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 110: `- [ADR-0332](0405-openvino-npu-ep-wiring.md) — OpenVINO NPU
+  EP`: Cites ADR-0332 for OpenVINO NPU EP (which is ADR-0405); ADR-0332 is
+  Agent worktree-drift hard guard.

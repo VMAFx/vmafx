@@ -1,1 +1,0 @@
-- Rewrote agent-facing documentation into caveman internal register across 6 subtree AGENTS.md files: `cmd/vmafx-controller/AGENTS.md`, `cmd/vmafx-mcp/AGENTS.md`, `compat/python-vmaf/AGENTS.md`, `deploy/helm/vmafx/AGENTS.md`, `mcp-server/AGENTS.md`, and `pkg/tune/AGENTS.md`. All load-bearing tokens and invariants preserved under determinism and context gates.

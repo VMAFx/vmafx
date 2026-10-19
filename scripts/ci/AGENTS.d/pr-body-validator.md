@@ -6,7 +6,8 @@ paths:
   - scripts/git-hooks/pre-push
   - scripts/git-hooks/pre-push-pr-body-lint.sh
   - scripts/git-hooks/test-pre-push-pr-body-lint.py
-invariant: `deliverables-check.sh` is the only parser; the validator shims `git diff --name-only` and nothing else.
+invariant: `deliverables-check.sh` only parser; validator shims diff, sentinel merge base, sentinel-head checkout only.
+area: gates
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # PR-body deliverables validator (`validate-pr-body.sh`)
@@ -16,28 +17,49 @@ invariant: `deliverables-check.sh` is the only parser; the validator shims `git 
 `.github/workflows/rule-enforcement.yml` deep-dive-checklist gate
 (ADR-0108). Re-use `scripts/ci/deliverables-check.sh` verbatim as
 parser; validator only injects diff via `PATH`-shim that
-intercepts `git diff --name-only`.
+intercepts `git diff --name-only`, plus `git merge-base
+validator-base validator-head` (answers `validator-base`), since
+the gate diffs from the merge base (`pr-diff-base.sh`), plus `git worktree
+add --detach <dir> validator-head` (checks out `HEAD`), since the ADR-3295
+render-only path runs `make docs-render-check` on a detached head worktree and
+the sentinel names no commit. Case 12 of `test-validate-pr-body.sh` guards it.
+That `make` runs with every variable of `git rev-parse --local-env-vars`
+unset: a pre-push hook exports `GIT_DIR` for its checkout, and inherited it
+gave `scripts/docs/fragment-order.py` another landing order, so a correctly
+rendered head was refused. Case 13 guards it.
 
 `pre-push-pr-body-lint.sh` = standalone entry point referenced by
-the `.pre-commit-config.yaml` `validate-pr-body` hook (`stages:
-[pre-push]`). The omnibus `pre-push` hook delegates to same
+`.pre-commit-config.yaml` `validate-pr-body` hook (`stages:
+[pre-push]`). omnibus `pre-push` hook delegates to same
 validator logic. Its `gh` lookup is time-bounded; unavailable credentials fall
-back to the public PR list and page. Only a confirmed no-open-PR result skips
+back to public PR list and page. Only confirmed no-open-PR result skips
 validation. Indeterminate metadata fails closed. Preserve
-`test-pre-push-pr-body-lint.py` in both commit and push hooks so a locked keyring
-cannot restore the unbounded hang or an authentication failure bypass.
+`test-pre-push-pr-body-lint.py` in both commit and push hooks so locked keyring
+cannot restore unbounded hang or authentication failure bypass.
 
-The hook skips the machine-generated release PR only by calling
-`release-pr-exempt.sh` (ADR-1151), the same predicate CI's Deliverables
-Checklist calls; never re-implement it in the hook. It feeds the predicate the
-PR's `headRefName` and an author mapped from `gh pr view --json author` to the
+hook skips machine-generated release PR only by calling
+`release-pr-exempt.sh` (ADR-1151), same predicate CI's Deliverables
+Checklist calls; never re-implement it in hook. It feeds predicate
+PR's `headRefName` and author mapped from `gh pr view --json author` to
 event-payload shape CI passes: `{"is_bot": true, "login": "app/<x>"}` ->
 `PR_AUTHOR=<x>[bot]`, `PR_AUTHOR_TYPE=Bot`; `{"is_bot": false, "login": "<x>"}`
 -> `<x>`, `User`; any other shape (deleted author, missing field) -> empty,
-which never exempts. The public-page fallback carries no author and must never
-exempt; a branch without the predicate validates as before. The
-`test-pr-body-lookup` hook re-runs on predicate edits and covers the bot,
+which never exempts. public-page fallback carries no author and must never
+exempt; branch without predicate validates as before.
+`test-pr-body-lookup` hook re-runs on predicate edits and covers bot,
 human-same-ref, non-bot-lookalike and fallback cases.
+
+hook skips strictly dependency-only bot PR only by calling
+`classify-dependency-pr.sh` (ADR-1152), same classifier CI's Deliverables
+Checklist and Doc-Substance Gate call; never re-implement allowlist in hook.
+Inputs = CI's: `PR_AUTHOR` from same author mapping (`app/renovate` ->
+`renovate[bot]`), `HEAD_REF` = PR's `headRefName` (must equal local branch;
+numeric branch names resolve to other PRs), `DIFF_FILE` = branch's diff
+against `origin/master`. Hook clears `GITHUB_ACTOR` and `PR_BRANCH`, classifier's
+fallbacks, so ambient CI variables never stand in for PR identity. Public-page
+fallback never exempts; branch without classifier validates as before. Merge
+train pushes Renovate PRs through this hook: without exemption, every
+dependency-only bot PR push fails with six missing deliverables (#2697).
 
 **Invariant — single parser source of truth**: do not fork or
 re-implement deliverables-check parsing logic in any other
@@ -49,9 +71,23 @@ parser's actual behaviour.
 
 **Invariant — shim scope**: `git` shim built inside
 `validate-pr-body.sh` intercepts only `diff --name-only` call
-shape. Every other `git` invocation falls through to real
+shape and `merge-base` of its own sentinel pair. Every other `git` invocation falls through to real
 binary. Future change to `deliverables-check.sh` using
 different git subcommand to compute diff must update shim.
 Else `validate-pr-body.sh` silently uses real
 git's output — potentially fine, potentially wrong depending on
 local repo state.
+
+**Invariant — rendered files (ADR-2197)**: `deliverables-check.sh` refuses
+PR diff touching `CHANGELOG.md`, `docs/adr/README.md`, `docs/adr/titles.md`,
+`docs/research/titles.md`, `docs/adr/by-tag/*`, `_order.txt`,
+`docs/rebase-notes.md`. Those = `make docs-render` output, written by
+render-only PR per batch and by release cut. Exception (ADR-3295): diff of
+rendered paths only (not `_order.txt`) passes, no other deliverables, when
+`make docs-render-check` passes on head in detached worktree; else refused.
+Tests: `scripts/ci/tests/test_deliverables_render_only.py`. PR adds fragments only
+(`changelog.d/`, `docs/adr/_index_fragments/`, `docs/rebase-notes.d/`).
+Ticked CHANGELOG item needs `changelog.d/<section>/*.md`; ticked rebase-note
+item needs `docs/rebase-notes.d/<slug>.md`. Render set lives in `Makefile`
+(`docs-render`, `docs-render-check`) and this gate's `rendered_paths`: change
+both together. `test-validate-pr-body.sh` plants each refused path.

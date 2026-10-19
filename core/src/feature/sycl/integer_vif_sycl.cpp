@@ -181,15 +181,20 @@ struct VifStateSycl {
     uint32_t *d_tmp_dis_convol;
     uint32_t *d_rd_ref;
     uint32_t *d_rd_dis;
+    /* vif_fused only: the second pair of downsampled planes, which the fused
+     * scales alternate with the first (vif_rd_output()). */
+    uint32_t *d_rd_ref_alt;
+    uint32_t *d_rd_dis_alt;
     int64_t *d_accum;     // 4 scales x 7 int64 = 224 bytes
     uint32_t *d_log2_lut; // 32768 entries
 
     // Host-side accumulator download buffer
     int64_t *h_accum;
 
-    // Fused V+H kernel mode: uses SLM intermediates, skips tmp buffers.
-    // Saves ~70 MB VRAM at 4K but may be slower on some GPUs due to
-    // SLM pressure and reduced occupancy.
+    // Fused V+H kernel mode: uses SLM intermediates, skips the seven tmp
+    // planes (232 MB at 3840x2160) for a second, quarter-size pair of rd
+    // planes; may be slower on some GPUs due to SLM pressure and reduced
+    // occupancy.
     bool use_fused;
 
     // Deferred submit/collect state
@@ -1485,6 +1490,33 @@ static int close_fex_sycl(VmafFeatureExtractor *fex); /* forward decl for init e
 
 namespace
 {
+/* Bytes of the downsampled planes a scale of w x h writes: half the rows and
+ * half the columns, rounded up (dev_downsample_rd()). */
+static inline size_t vif_rd_plane_size(unsigned w, unsigned h)
+{
+    return (size_t)((w + 1U) / 2U) * ((h + 1U) / 2U) * sizeof(uint32_t);
+}
+
+/* vif_fused only: the second pair of downsampled planes (vif_rd_output()).
+ * Scale 1 is the only scale that writes into it, so it has the size of scale
+ * 1's output, a quarter of the first pair. */
+static inline int vif_alloc_rd_alt(VmafSyclState *state, VifStateSycl *s, unsigned w, unsigned h)
+{
+    if (!s->use_fused)
+        return 0;
+    const size_t alt_size = vif_rd_plane_size(w / 2U, h / 2U);
+    s->d_rd_ref_alt = static_cast<uint32_t *>(vmaf_sycl_malloc_device(state, alt_size));
+    s->d_rd_dis_alt = static_cast<uint32_t *>(vmaf_sycl_malloc_device(state, alt_size));
+    if (!s->d_rd_ref_alt || !s->d_rd_dis_alt) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "vif_sycl: rd buffer allocation failed\n");
+        return -ENOMEM;
+    }
+    return 0;
+}
+} // namespace
+
+namespace
+{
 static inline int vif_alloc_buffers(VmafSyclState *state, VifStateSycl *s, unsigned w, unsigned h)
 {
     const size_t tmp_size = (size_t)w * h * sizeof(uint32_t);
@@ -1503,9 +1535,12 @@ static inline int vif_alloc_buffers(VmafSyclState *state, VifStateSycl *s, unsig
         }
     }
 
-    const size_t rd_size = (size_t)((w + 1U) / 2U) * ((h + 1U) / 2U) * sizeof(uint32_t);
+    const size_t rd_size = vif_rd_plane_size(w, h);
     s->d_rd_ref = static_cast<uint32_t *>(vmaf_sycl_malloc_device(state, rd_size));
     s->d_rd_dis = static_cast<uint32_t *>(vmaf_sycl_malloc_device(state, rd_size));
+    const int alt_err = vif_alloc_rd_alt(state, s, w, h);
+    if (alt_err)
+        return alt_err;
 
     const size_t accum_size = (ptrdiff_t)VIF_NUM_SCALES * ACCUM_FIELDS * sizeof(int64_t);
     s->d_accum = static_cast<int64_t *>(vmaf_sycl_malloc_device(state, accum_size));
@@ -1689,20 +1724,46 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 
 namespace
 {
+struct VifRdPlanes {
+    uint32_t *ref;
+    uint32_t *dis;
+};
+
+/* The downsampled planes scale `scale` writes and scale + 1 reads. The
+ * separate passes read a scale's input in the vertical kernel and write the
+ * next scale's in the horizontal kernel after it, so one pair serves every
+ * scale. A fused launch reads and writes in one kernel, and its work-groups do
+ * not wait for each other: with one pair, a work-group wrote its samples over
+ * input another had not read yet, and scales 1 to 3 differed from the CPU on
+ * every frame from 1920x1080 up (T-SYCL-VIF-FUSED-RD-RACE-2026-10-01). Fused
+ * scales alternate between two pairs: scale 0 writes the first, scale 1 the
+ * second, scale 2 the first again, which scale 1 has finished reading (the
+ * queue is in order); scale 3 writes nothing. */
+static inline VifRdPlanes vif_rd_output(const VifStateSycl *s, int scale)
+{
+    if (s->use_fused && (scale % 2) == 1)
+        return {.ref = s->d_rd_ref_alt, .dis = s->d_rd_dis_alt};
+    return {.ref = s->d_rd_ref, .dis = s->d_rd_dis};
+}
+} // namespace
+
+namespace
+{
 static inline void vif_dispatch_scale(sycl::queue &q, VifStateSycl *s, int scale,
                                       const void *ref_src, const void *dis_src, unsigned cur_w,
                                       unsigned cur_h, unsigned src_stride, int64_t *scale_accum)
 {
+    const VifRdPlanes rd = vif_rd_output(s, scale);
     if (s->use_fused) {
         launch_vif_fused(q, ref_src, dis_src, scale, cur_w, cur_h, src_stride, s->bpc,
-                         s->gain_limit, scale_accum, s->d_rd_ref, s->d_rd_dis, s->d_log2_lut);
+                         s->gain_limit, scale_accum, rd.ref, rd.dis, s->d_log2_lut);
     } else {
         launch_vif_vert(q, ref_src, dis_src, scale, cur_w, cur_h, src_stride, s->bpc, s->d_tmp_mu1,
                         s->d_tmp_mu2, s->d_tmp_ref, s->d_tmp_dis, s->d_tmp_ref_dis,
                         s->d_tmp_ref_convol, s->d_tmp_dis_convol);
         launch_vif_hori(q, scale, cur_w, cur_h, s->gain_limit, s->d_tmp_mu1, s->d_tmp_mu2,
                         s->d_tmp_ref, s->d_tmp_dis, s->d_tmp_ref_dis, s->d_tmp_ref_convol,
-                        s->d_tmp_dis_convol, scale_accum, s->d_rd_ref, s->d_rd_dis, s->d_log2_lut);
+                        s->d_tmp_dis_convol, scale_accum, rd.ref, rd.dis, s->d_log2_lut);
     }
 }
 } // namespace
@@ -1717,8 +1778,13 @@ static inline void enqueue_vif_work_impl(sycl::queue &q, VifStateSycl *s, void *
     unsigned src_stride = (s->bpc > 8) ? (cur_w * 2) : cur_w;
 
     for (int scale = 0; scale < VIF_NUM_SCALES; scale++) {
-        const void *ref_src = (scale == 0) ? shared_ref : s->d_rd_ref;
-        const void *dis_src = (scale == 0) ? shared_dis : s->d_rd_dis;
+        const void *ref_src = shared_ref;
+        const void *dis_src = shared_dis;
+        if (scale > 0) {
+            const VifRdPlanes rd_in = vif_rd_output(s, scale - 1);
+            ref_src = rd_in.ref;
+            dis_src = rd_in.dis;
+        }
         int64_t *const scale_accum = s->d_accum + (ptrdiff_t)scale * ACCUM_FIELDS;
 
         vif_dispatch_scale(q, s, scale, ref_src, dis_src, cur_w, cur_h, src_stride, scale_accum);
@@ -1909,6 +1975,23 @@ static int flush_fex_sycl(VmafFeatureExtractor *fex, VmafFeatureCollector *featu
 
 namespace
 {
+/* Every buffer vif_alloc_buffers() may have allocated; a NULL entry (an init
+ * that failed part way, or a buffer the mode does not use) is skipped by
+ * vmaf_sycl_free(). */
+static void vif_free_buffers(VmafSyclState *state, VifStateSycl *s)
+{
+    void *const buffers[] = {
+        s->d_tmp_mu1,        s->d_tmp_mu2,        s->d_tmp_ref, s->d_tmp_dis,  s->d_tmp_ref_dis,
+        s->d_tmp_ref_convol, s->d_tmp_dis_convol, s->d_rd_ref,  s->d_rd_dis,   s->d_rd_ref_alt,
+        s->d_rd_dis_alt,     s->d_accum,          s->h_accum,   s->d_log2_lut,
+    };
+    for (void *buffer : buffers)
+        vmaf_sycl_free(state, buffer);
+}
+} // namespace
+
+namespace
+{
 static int close_fex_sycl(VmafFeatureExtractor *fex)
 {
     auto *s = static_cast<VifStateSycl *>(fex->priv);
@@ -1917,31 +2000,7 @@ static int close_fex_sycl(VmafFeatureExtractor *fex)
     if (state) {
         (void)vmaf_sycl_queue_wait(state);
         (void)vmaf_sycl_graph_unregister(state, s);
-
-        if (s->d_tmp_mu1)
-            vmaf_sycl_free(state, s->d_tmp_mu1);
-        if (s->d_tmp_mu2)
-            vmaf_sycl_free(state, s->d_tmp_mu2);
-        if (s->d_tmp_ref)
-            vmaf_sycl_free(state, s->d_tmp_ref);
-        if (s->d_tmp_dis)
-            vmaf_sycl_free(state, s->d_tmp_dis);
-        if (s->d_tmp_ref_dis)
-            vmaf_sycl_free(state, s->d_tmp_ref_dis);
-        if (s->d_tmp_ref_convol)
-            vmaf_sycl_free(state, s->d_tmp_ref_convol);
-        if (s->d_tmp_dis_convol)
-            vmaf_sycl_free(state, s->d_tmp_dis_convol);
-        if (s->d_rd_ref)
-            vmaf_sycl_free(state, s->d_rd_ref);
-        if (s->d_rd_dis)
-            vmaf_sycl_free(state, s->d_rd_dis);
-        if (s->d_accum)
-            vmaf_sycl_free(state, s->d_accum);
-        if (s->h_accum)
-            vmaf_sycl_free(state, s->h_accum);
-        if (s->d_log2_lut)
-            vmaf_sycl_free(state, s->d_log2_lut);
+        vif_free_buffers(state, s);
     }
 
     if (s->feature_name_dict)

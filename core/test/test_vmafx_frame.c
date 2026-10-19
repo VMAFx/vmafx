@@ -35,19 +35,6 @@
 
 enum { W = 176, H = 144, N_FRAMES = 6 };
 
-static VmafxContext *psnr_context(void)
-{
-    VmafxContext *context = NULL;
-    if (vmafx_context_create(NULL, &context, NULL) != VMAFX_OK) {
-        return NULL;
-    }
-    if (vmafx_context_use_feature(context, "psnr", NULL, NULL) != VMAFX_OK) {
-        (void)vmafx_context_destroy(context, NULL);
-        return NULL;
-    }
-    return context;
-}
-
 /* ---- Devices ------------------------------------------------------------------------ */
 
 static char *test_device_skeleton(void)
@@ -271,7 +258,7 @@ static char *with_clip(char *(*body)(Clip *clip))
 
 static char *submit_and_flush(Clip *clip)
 {
-    VmafxContext *context = psnr_context();
+    VmafxContext *context = vt_psnr_context();
     for (unsigned i = 0; i < N_FRAMES; i++) {
         mu_assert("submit", submit_index(context, clip, i, i, NULL) == VMAFX_OK);
     }
@@ -297,7 +284,7 @@ static char *test_submit_and_flush(void)
 /* NULL arguments and one reference for both inputs: refused, consumed. */
 static char *submit_null_arguments(Clip *clip)
 {
-    VmafxContext *context = psnr_context();
+    VmafxContext *context = vt_psnr_context();
     VmafxError *error = NULL;
     mu_assert("NULL context",
               vmafx_submit(NULL, clip_frame(clip, true, 0), clip_frame(clip, false, 0), 0,
@@ -323,7 +310,7 @@ static char *test_submit_null_arguments(void)
 
 static char *submit_index_refusals(Clip *clip)
 {
-    VmafxContext *context = psnr_context();
+    VmafxContext *context = vt_psnr_context();
     VmafxError *error = NULL;
     const uint64_t too_far = (uint64_t)UINT_MAX + 1u;
     mu_assert("range", submit_index(context, clip, 0, too_far, &error) == VMAFX_E_RANGE &&
@@ -344,7 +331,7 @@ static char *test_submit_index_refusals(void)
 
 static char *submit_geometry_named(Clip *clip)
 {
-    VmafxContext *context = psnr_context();
+    VmafxContext *context = vt_psnr_context();
     const VmafxFrameDesc small = vt_desc(VMAFX_PIXEL_FORMAT_YUV420P, 8, 64, 64);
     VmafxFrame *other = NULL;
     mu_assert("other", vmafx_frame_create_host(NULL, &small, &other, NULL) == VMAFX_OK);
@@ -374,7 +361,7 @@ static char *test_submit_geometry_named(void)
 /* A psnr context that also runs motion with the five-frame window. */
 static VmafxContext *five_frame_context(void)
 {
-    VmafxContext *context = psnr_context();
+    VmafxContext *context = vt_psnr_context();
     VmafxOptions *five = NULL;
     const bool ok =
         context && vmafx_options_set(&five, "motion_five_frame_window", "true", NULL) == VMAFX_OK &&

@@ -22,9 +22,18 @@
 extern "C" {
 #endif
 
+/* NOLINTBEGIN(modernize-use-using,performance-enum-size): public C header included by C
+ * and C++ translation units; C has no `using`, and C has no fixed enum underlying type
+ * across the required toolchains (ADR-1470). ADR-1138. */
+
 #ifndef VMAFX_EXPORT
 #if defined(_MSC_VER)
 #define VMAFX_EXPORT __declspec(dllexport)
+#elif defined(__MINGW32__) && !defined(__clang__)
+/* GCC's PE targets have no ELF visibility: the attribute is ignored, and under LTO a use can
+ * draw "visibility attribute not supported in this configuration" (-Wattributes). Empty, as
+ * VMAF_EXPORT in libvmaf/macros.h is: the symbols are exported as before. */
+#define VMAFX_EXPORT
 #elif defined(__GNUC__) || defined(__clang__)
 #define VMAFX_EXPORT __attribute__((visibility("default")))
 #else
@@ -85,6 +94,12 @@ enum VmafxStatusCode {
      * struct.
      */
     VMAFX_E_ABI = -11,
+    /**
+     * A report does not match its provenance digest or its re-run; the error's subject names the
+     * first field that differs and its message both values (vmafx_report_verify(), RC4 WP5). Added
+     * in ABI 0.1.5.
+     */
+    VMAFX_E_MISMATCH = -12,
 };
 
 /**
@@ -146,95 +161,95 @@ typedef enum VmafxPixelFormat {
     /**
      * 4:2:2, a luma plane and one plane of interleaved Cb/Cr bytes (a pair per chroma column, full-
      * height rows); vmafx_frame_import() only, the frame it makes is YUV422P at 8 bits. Added in
-     * ABI 0.1.5.
+     * ABI 0.1.9.
      */
     VMAFX_PIXEL_FORMAT_NV16 = 19,
     /**
      * NV16 with 16-bit little-endian samples whose 10 bits are the most significant;
      * vmafx_frame_import() only, the frame it makes is YUV422P at 10 bits (each sample shifted down
-     * by 6). Added in ABI 0.1.5.
+     * by 6). Added in ABI 0.1.9.
      */
     VMAFX_PIXEL_FORMAT_P210 = 20,
     /**
      * NV16 with 16-bit little-endian samples; vmafx_frame_import() only, the frame it makes is
-     * YUV422P at 16 bits. Added in ABI 0.1.5.
+     * YUV422P at 16 bits. Added in ABI 0.1.9.
      */
     VMAFX_PIXEL_FORMAT_P216 = 21,
     /**
      * 4:4:4, a luma plane and one plane of interleaved Cb/Cr bytes (a pair per pixel);
-     * vmafx_frame_import() only, the frame it makes is YUV444P at 8 bits. Added in ABI 0.1.5.
+     * vmafx_frame_import() only, the frame it makes is YUV444P at 8 bits. Added in ABI 0.1.9.
      */
     VMAFX_PIXEL_FORMAT_NV24 = 22,
     /**
      * NV24 with 16-bit little-endian samples whose 10 bits are the most significant;
      * vmafx_frame_import() only, the frame it makes is YUV444P at 10 bits (each sample shifted down
-     * by 6). Added in ABI 0.1.5.
+     * by 6). Added in ABI 0.1.9.
      */
     VMAFX_PIXEL_FORMAT_P410 = 23,
     /**
      * NV24 with 16-bit little-endian samples; vmafx_frame_import() only, the frame it makes is
-     * YUV444P at 16 bits. Added in ABI 0.1.5.
+     * YUV444P at 16 bits. Added in ABI 0.1.9.
      */
     VMAFX_PIXEL_FORMAT_P416 = 24,
     /**
      * Packed 4:2:2 in one plane: 16-bit little-endian words Y0 Cb Y1 Cr (8 bytes per two pixels)
      * whose 10 bits are the most significant (Intel Y210, FFmpeg y210le); vmafx_frame_import()
-     * only, the frame it makes is YUV422P at 10 bits. Added in ABI 0.1.5.
+     * only, the frame it makes is YUV422P at 10 bits. Added in ABI 0.1.9.
      */
     VMAFX_PIXEL_FORMAT_Y210 = 25,
     /**
      * Packed 4:4:4 in one plane: one 32-bit little-endian word per pixel, Cb in bits 0 to 9, Y in
      * 10 to 19, Cr in 20 to 29, the top two bits alpha or unused (Intel Y410 and XV30, FFmpeg
      * xv30le); vmafx_frame_import() only, the frame it makes is YUV444P at 10 bits. Added in ABI
-     * 0.1.5.
+     * 0.1.9.
      */
     VMAFX_PIXEL_FORMAT_Y410 = 26,
     /**
      * Packed 4:2:2 in one plane: the bytes Y0 Cb Y1 Cr per two pixels (YUY2, FFmpeg yuyv422);
-     * vmafx_frame_import() only, the frame it makes is YUV422P at 8 bits. Added in ABI 0.1.5.
+     * vmafx_frame_import() only, the frame it makes is YUV422P at 8 bits. Added in ABI 0.1.9.
      */
     VMAFX_PIXEL_FORMAT_YUYV422 = 27,
     /**
      * Y210 with 12 significant bits (16-bit words, the 12 bits most significant; Intel Y212, FFmpeg
      * y212le); vmafx_frame_import() only, the frame it makes is YUV422P at 12 bits. Added in ABI
-     * 0.1.5.
+     * 0.1.9.
      */
     VMAFX_PIXEL_FORMAT_Y212 = 28,
     /**
      * Packed 4:4:4 in one plane: the bytes V Cb Y X per pixel (FFmpeg vuyx; the unused byte is not
      * read); vmafx_frame_import() only, the frame it makes is YUV444P at 8 bits. Added in ABI
-     * 0.1.5.
+     * 0.1.9.
      */
     VMAFX_PIXEL_FORMAT_VUYX = 29,
     /**
      * Packed 4:4:4 in one plane: four 16-bit little-endian words Cb Y Cr X per pixel, the 12 bits
      * most significant (Intel Y416 / XV36, FFmpeg xv36le); vmafx_frame_import() only, the frame it
-     * makes is YUV444P at 12 bits. Added in ABI 0.1.5.
+     * makes is YUV444P at 12 bits. Added in ABI 0.1.9.
      */
     VMAFX_PIXEL_FORMAT_XV36 = 30,
     /**
      * Planar 4:4:4 in 16-bit little-endian words whose `bpc` most significant bits hold the sample
      * (NVDEC's 10- and 12-bit 4:4:4 surfaces, FFmpeg yuv444p10msble and yuv444p12msble); bpc 9 to
      * 16; vmafx_frame_import() only, the frame it makes is YUV444P at `bpc` bits (each sample
-     * shifted down by 16 - bpc). Added in ABI 0.1.5.
+     * shifted down by 16 - bpc). Added in ABI 0.1.9.
      */
     VMAFX_PIXEL_FORMAT_YUV444P_MSB = 31,
     /**
      * Packed 4:4:4 in one plane: the bytes A Y Cb Cr per pixel (FFmpeg ayuv; the alpha byte is not
      * read); vmafx_frame_import() only, the frame it makes is YUV444P at 8 bits. Added in ABI
-     * 0.1.6.
+     * 0.1.11.
      */
     VMAFX_PIXEL_FORMAT_AYUV = 32,
     /**
      * Packed 4:2:2 in one plane: the bytes Cb Y0 Cr Y1 per two pixels (UYVY, FFmpeg uyvy422);
-     * vmafx_frame_import() only, the frame it makes is YUV422P at 8 bits. Added in ABI 0.1.6.
+     * vmafx_frame_import() only, the frame it makes is YUV422P at 8 bits. Added in ABI 0.1.11.
      */
     VMAFX_PIXEL_FORMAT_UYVY422 = 33,
     /**
      * Packed 4:2:2 in one plane: 10-bit samples, six pixels in 16 bytes (four little-endian 32-bit
      * words, three 10-bit samples each; the two top bits of a word are not read), rows padded as
      * the producer likes; vmafx_frame_import() only, the frame it makes is YUV422P at 10 bits.
-     * Added in ABI 0.1.6.
+     * Added in ABI 0.1.11.
      */
     VMAFX_PIXEL_FORMAT_V210 = 34,
     /**
@@ -242,17 +257,17 @@ typedef enum VmafxPixelFormat {
      * bits, rgb48le at 16; 9 to 15 bits are 16-bit words holding the sample in the low bits);
      * vmafx_frame_import() only and only with `rgb_matrix`, `rgb_range`, `rgb_transfer` and
      * `rgb_out_range` stated: the frame it makes is YUV444P Y'CbCr at the same depth (ADR-2146).
-     * Added in ABI 0.1.6.
+     * Added in ABI 0.1.11.
      */
     VMAFX_PIXEL_FORMAT_RGB = 35,
     /**
      * RGB with a fourth sample per pixel, the order R G B A (FFmpeg rgba, rgba64le); the alpha
-     * sample is not read; same statement as RGB. Added in ABI 0.1.6.
+     * sample is not read; same statement as RGB. Added in ABI 0.1.11.
      */
     VMAFX_PIXEL_FORMAT_RGBA = 36,
     /**
      * RGB with a fourth sample per pixel, the order B G R A (FFmpeg bgra, bgra64le); the alpha
-     * sample is not read; same statement as RGB. Added in ABI 0.1.6.
+     * sample is not read; same statement as RGB. Added in ABI 0.1.11.
      */
     VMAFX_PIXEL_FORMAT_BGRA = 37,
 } VmafxPixelFormat;
@@ -278,70 +293,6 @@ typedef enum VmafxPool {
 } VmafxPool;
 
 /**
- * The Y'CbCr matrix an RGB frame is converted with (ADR-2146). Only the matrices the library
- * converts exactly are accepted; the others are declared so a caller's value is refused by name.
- * Added in ABI 0.1.6.
- * @since 0.1
- */
-typedef enum VmafxColorMatrix {
-    /** Not stated; an RGB frame with it is refused: the matrix is never guessed. */
-    VMAFX_COLOR_MATRIX_UNSPECIFIED = 0,
-    /** ITU-R BT.601 (Kr 0.299, Kb 0.114; H.273 matrix coefficients 5 and 6). */
-    VMAFX_COLOR_MATRIX_BT601 = 1,
-    /** ITU-R BT.709 (Kr 0.2126, Kb 0.0722; H.273 1). */
-    VMAFX_COLOR_MATRIX_BT709 = 2,
-    /** ITU-R BT.2020 non-constant luminance (Kr 0.2627, Kb 0.0593; H.273 9). */
-    VMAFX_COLOR_MATRIX_BT2020_NCL = 3,
-    /**
-     * ITU-R BT.2020 constant luminance (H.273 10): declared, refused with VMAFX_E_NOTSUP (its luma
-     * is formed in linear light, which the integer reference does not do).
-     */
-    VMAFX_COLOR_MATRIX_BT2020_CL = 4,
-    /**
-     * ICtCp (H.273 14): declared, refused with VMAFX_E_NOTSUP (it needs the PQ or HLG transfer
-     * function in the conversion).
-     */
-    VMAFX_COLOR_MATRIX_ICTCP = 5,
-} VmafxColorMatrix;
-
-/**
- * Code-value range of the samples of a signal (ADR-2146). Added in ABI 0.1.6.
- * @since 0.1
- */
-typedef enum VmafxColorRange {
-    /** Not stated; an RGB frame with it is refused. */
-    VMAFX_COLOR_RANGE_UNSPECIFIED = 0,
-    /** Studio swing: 16 to 235 for R'G'B' and luma, 16 to 240 for chroma, scaled by 2^(bpc - 8). */
-    VMAFX_COLOR_RANGE_LIMITED = 1,
-    /** Full swing: 0 to 2^bpc - 1. */
-    VMAFX_COLOR_RANGE_FULL = 2,
-} VmafxColorRange;
-
-/**
- * Transfer characteristic of the non-linear R'G'B' samples of an RGB frame (ADR-2146). The
- * conversion applies the matrix to the code values as an encoder does; the transfer is part of the
- * statement of what the signal is and is checked, not applied. Added in ABI 0.1.6.
- * @since 0.1
- */
-typedef enum VmafxColorTransfer {
-    /** Not stated; an RGB frame with it is refused. */
-    VMAFX_COLOR_TRANSFER_UNSPECIFIED = 0,
-    /** ITU-R BT.709 (also BT.601 and BT.2020 SDR). */
-    VMAFX_COLOR_TRANSFER_BT709 = 1,
-    /** IEC 61966-2-1 (sRGB). */
-    VMAFX_COLOR_TRANSFER_SRGB = 2,
-    /** SMPTE ST 2084 (PQ). */
-    VMAFX_COLOR_TRANSFER_SMPTE2084 = 3,
-    /** ARIB STD-B67 (HLG). */
-    VMAFX_COLOR_TRANSFER_HLG = 4,
-    /**
-     * Linear light: declared, refused with VMAFX_E_NOTSUP (the matrix applies to non-linear
-     * signals; encode the samples first).
-     */
-    VMAFX_COLOR_TRANSFER_LINEAR = 5,
-} VmafxColorTransfer;
-
-/**
  * Feature options: string keys and values (the libvmaf feature dictionary).
  * @since 0.1
  */
@@ -355,6 +306,15 @@ typedef struct VmafxOptions VmafxOptions;
  * @since 0.1
  */
 typedef void (*VmafxLogCallback)(uint32_t level, const char *message, void *user);
+
+/**
+ * Lower-case name of a VmafxBackend (`cpu`, `cuda`, `sycl`, `metal`, `hip`), `unknown` for another
+ * value; a static string. Added in ABI 0.1.6.
+ * @since 0.1
+ */
+VMAFX_EXPORT const char *vmafx_backend_name(uint32_t backend);
+
+/* NOLINTEND(modernize-use-using,performance-enum-size) */
 
 #ifdef __cplusplus
 }

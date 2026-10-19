@@ -1,0 +1,1 @@
+| [ADR-2171](2171-research-radar.md) | A weekly research radar over public video-quality sources: a public source registry, a deterministic weekly digest workflow, a documented triage procedure with a licence and patent gate, and one recurring epic; unlicensed code is an oracle or a clean-room reference only. | Accepted | research, ci, governance, licence |

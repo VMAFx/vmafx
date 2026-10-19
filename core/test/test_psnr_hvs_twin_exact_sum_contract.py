@@ -58,8 +58,8 @@ NEON = "arm64/psnr_hvs_neon.c"
 # PR #552 added.
 CPU_THRESHOLDS = {
     SCALAR: (
-        "s_mask = sqrt((double)(s_mask * s_gvar)) / 32.f;",
-        "d_mask = sqrt((double)(d_mask * d_gvar)) / 32.f;",
+        "s_mask = (float)(sqrt((double)(s_mask * s_gvar)) / 32.f);",
+        "d_mask = (float)(sqrt((double)(d_mask * d_gvar)) / 32.f);",
     ),
     AVX2: (
         "b->s_mask = (float)(sqrt((double)(b->s_mask * b->s_gvar)) / 32.0);",
@@ -444,7 +444,9 @@ class PsnrHvsTwinExactSumContract(unittest.TestCase):
                 new = old.replace("sqrt((double)(", "sqrt((double)", 1)
                 failures = _contract_failures(_planted(name, old, new))
                 self.assertTrue(any(f"{name}: masking threshold is not" in i for i in failures))
-                self.assertTrue(any(f"{name}: the masking product is widened" in i for i in failures))
+                self.assertTrue(
+                    any(f"{name}: the masking product is widened" in i for i in failures)
+                )
 
     def test_exact_twin_product_is_detected(self) -> None:
         # The product the twins formed between ADR-1397 / ADR-1401 and

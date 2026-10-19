@@ -133,8 +133,8 @@ static void vif_prepare_filter(VifFilter *filter, unsigned scale, const VifSetti
         memcpy(filter->coefficients, settings->filters[scale],
                (size_t)filter->width * sizeof(filter->coefficients[0]));
     } else {
-        filter->width = vif_get_filter_size(scale, settings->kernelscale);
-        vif_get_filter(filter->coefficients, scale, settings->kernelscale);
+        filter->width = vif_get_filter_size(scale, (float)settings->kernelscale);
+        vif_get_filter(filter->coefficients, scale, (float)settings->kernelscale);
     }
 }
 
@@ -238,7 +238,7 @@ int compute_vif(const float *ref, const float *dis, int w, int h, int ref_stride
                 double vif_sigma_nsq, const float (*precomputed_filters)[128],
                 const int *precomputed_filter_widths)
 {
-    if (!precomputed_filters && !vif_validate_kernelscale(vif_kernelscale)) {
+    if (!precomputed_filters && !vif_validate_kernelscale((float)vif_kernelscale)) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "invalid vif_kernelscale: %f\n", vif_kernelscale);
         return 1;
     }

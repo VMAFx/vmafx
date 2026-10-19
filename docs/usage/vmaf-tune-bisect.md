@@ -171,7 +171,7 @@ The contract guarantees:
 | `sample_clip_seconds` | `0.0` | `0.0` scores the full source. A positive value shorter than `duration_s` encodes the centre window and scores the matching frame window; bitrate is normalised against the sample duration (ADR-0301). |
 | `preset` | adapter mid-range (`medium` when offered) | Forwarded to the adapter. |
 | `vmaf_model` | `vmaf_v1.0.16_3d0h` | Same vocabulary as `score.py`; HDR and 4K models per ADR-0289 and ADR-0295. |
-| `score_backend` | `None` | `None` emits no `--backend` flag, so libvmaf picks its default. A name (`auto`, `cpu`, `cuda`, `sycl` or `hip`) is forwarded as `--backend NAME` ([ADR-0299](../adr/0299-vmaf-tune-gpu-score.md)). Vulkan was removed in ADR-0726. |
+| `score_backend` | `None` | `None` emits no `--backend` flag, so libvmaf picks its default. A name (`auto`, `cpu`, `cuda`, `sycl`, `hip` or `metal`) is forwarded as `--backend NAME` ([ADR-0299](../adr/0299-vmaf-tune-gpu-score.md)). Vulkan was removed in ADR-0726. |
 | `ffmpeg_bin`, `vmaf_bin` | `ffmpeg`, `vmaf` | Binaries to run. |
 | `workdir` | temporary directory | Per-iteration encodes and the decoded-reference sidecar go here. `VMAFTUNE_WORKDIR` selects the parent when the argument is `None`. |
 | `decode_semaphore` | module default (`Semaphore(1)`) | Caps concurrent reference decodes across threads ([ADR-0577](../adr/0577-vmaftune-bisect-concurrency-cap-and-aggressive-cleanup.md)). |

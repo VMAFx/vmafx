@@ -1,7 +1,7 @@
-<!-- markdownlint-disable MD060 -->
+<!-- markdownlint-disable MD060 MD013 -->
 # ADR-0105: Copyright handling preserves Netflix and adds Lusoris/Claude
 
-- **Status**: Accepted
+- **Status**: Accepted (Superseded-in-part 2026-10-06 by [ADR-0861](0861-vmafx-copyright-policy-drop-anthropic.md) for the copyright-line format of the dual notice)
 - **Supersedes**: [ADR-0025](0025-copyright-handling-dual-notice.md)
 - **Date**: 2026-04-18
 - **Deciders**: Lusoris

@@ -345,6 +345,120 @@ def test_scan_build_refuses_an_unruled_generated_file(tmp_path: Path, monkeypatc
         lic.scan_build(build, repo, manifest())
 
 
+# The headers Meson writes into the build tree (configure_file, vcs_tag): the
+# image builds scan every file a compile reads, so each needs a rule in the
+# real manifest, or every container build stops at its licence scan.
+GENERATED_HEADER = re.compile(r"""output\s*:\s*'([\w.]+\.(?:h|asm))'""")
+
+
+def meson_generated_headers() -> list[str]:
+    found = []
+    for subdir in ("src", "include"):
+        text = (REPO / "core" / subdir / "meson.build").read_text(encoding="utf-8")
+        found += [f"{subdir}/{name}" for name in GENERATED_HEADER.findall(text)]
+    return sorted(found)
+
+
+def test_every_meson_generated_header_has_a_licensing_rule() -> None:
+    headers = meson_generated_headers()
+    assert "src/config.h" in headers and "include/vcs_version.h" in headers
+    rules = json.loads(lic.MANIFEST.read_text(encoding="utf-8"))["generated_build_files"]
+    for rel in headers:
+        lic.generated_rule(rules, rel)
+
+
+# Each device kernel Meson compiles is embedded as a generated C file, and its
+# rule must lead to the one source file Meson names. A kernel outside the
+# directory a rule globbed stopped the GPU image builds at their licence scan
+# (import_convert under core/src/cuda and core/src/hip).
+KERNEL_SOURCE = re.compile(
+    r"""^\s*'(\w+)'\s*:\s*\[?\s*(\w+)\s*\+\s*'([\w/]+\.(?:cu|hip))'""", re.MULTILINE
+)
+KERNEL_DIRS = {
+    "src_dir": "core/src/",
+    "feature_src_dir": "core/src/feature/",
+    "cuda_dir": "core/src/cuda/",
+}
+KERNEL_OBJECT_SUFFIX = {".cu": ".fatbin.c", ".hip": "_hsaco.c"}
+
+
+def meson_kernel_objects() -> list[tuple[str, str]]:
+    """(generated build input, repository source) of every CUDA and HIP kernel."""
+    text = (REPO / "core" / "src" / "meson.build").read_text(encoding="utf-8")
+    found = []
+    for name, directory, rel in KERNEL_SOURCE.findall(text):
+        found.append(
+            (f"src/{name}{KERNEL_OBJECT_SUFFIX[Path(rel).suffix]}", KERNEL_DIRS[directory] + rel)
+        )
+    return sorted(found)
+
+
+def test_every_meson_kernel_object_resolves_to_the_source_meson_names() -> None:
+    kernels = meson_kernel_objects()
+    assert {
+        "src/psnr_score.fatbin.c",
+        "src/import_convert.fatbin.c",
+        "src/import_convert_hsaco.c",
+    } <= {rel for rel, _ in kernels}
+    rules = json.loads(lic.MANIFEST.read_text(encoding="utf-8"))["generated_build_files"]
+    for rel, source in kernels:
+        assert lic.compiled_source(lic.generated_rule(rules, rel), rel, REPO) == source, rel
+
+
+def test_a_kernel_outside_the_feature_tree_is_refused_by_a_feature_only_rule() -> None:
+    narrow = {"suffix": "_hsaco.c", "compiled_from": "core/src/feature/hip/**/{name}.hip"}
+    with pytest.raises(lic.LicensingError, match="identifies 0 files, not 1"):
+        lic.compiled_source(narrow, "src/import_convert_hsaco.c", REPO)
+
+
+# The libraries core/src/meson.build installs, each with its pkg-config file.
+PKG_CONFIG_FILEBASE = re.compile(r"""filebase\s*:\s*'([\w.-]+)'""")
+
+
+def meson_installed_libraries() -> list[str]:
+    text = (REPO / "core" / "src" / "meson.build").read_text(encoding="utf-8")
+    return sorted(PKG_CONFIG_FILEBASE.findall(text))
+
+
+def missing_library_entries(data: dict, libraries: list[str]) -> list[str]:
+    """Components that record one installed library (`<lib>.so*` or `<lib>.pc`, any
+    directory) but not another one in the same place: the build installs them together
+    (the compat libvmaf.so.3 on libvmafx.so.1, ADR-2094), so an image or bundle that
+    ships one ships both."""
+    problems = []
+    for kind, record in data["artifacts"].items():
+        for component in record["components"]:
+            paths = component.get("paths", [])
+            for path in paths:
+                head, _, name = path.rpartition("/")
+                for lib in libraries:
+                    for suffix in (".so*", ".pc"):
+                        if name != lib + suffix:
+                            continue
+                        for other in libraries:
+                            want = f"{head}/{other}{suffix}" if head else other + suffix
+                            if want not in paths:
+                                problems.append(f"{kind}/{component['id']}: {path} without {want}")
+    return problems
+
+
+def test_every_installed_library_is_recorded_beside_its_sibling() -> None:
+    libraries = meson_installed_libraries()
+    assert libraries == ["libvmaf", "libvmafx"]  # the pattern still reads the build
+    assert missing_library_entries(lic.load_manifest(), libraries) == []
+
+
+def test_a_library_recorded_without_its_sibling_is_found() -> None:
+    data = {"artifacts": {"img": {"components": [
+        {"id": "bin", "paths": ["usr/local/lib/libvmaf.so*", "usr/local/lib/pkgconfig/libvmaf.pc"]},
+        {"id": "zip", "paths": ["libvmafx.so*", "libvmaf.so*"]},
+    ]}}}  # fmt: skip
+    assert missing_library_entries(data, ["libvmaf", "libvmafx"]) == [
+        "img/bin: usr/local/lib/libvmaf.so* without usr/local/lib/libvmafx.so*",
+        "img/bin: usr/local/lib/pkgconfig/libvmaf.pc without usr/local/lib/pkgconfig/libvmafx.pc",
+    ]
+
+
 def test_scan_build_refuses_a_compiled_file_without_licence(tmp_path: Path, monkeypatch) -> None:
     build, repo = fake_build(tmp_path, monkeypatch)
     write(repo / "core/a.c", "int a;\n")
@@ -365,7 +479,7 @@ def test_generated_source_is_identified_by_its_bytes(tmp_path: Path) -> None:
 
 
 FATBIN_RULE = {"pattern": "src/*.fatbin.c", "suffix": ".fatbin.c",
-               "compiled_from": "core/src/feature/cuda/**/{name}.cu"}  # fmt: skip
+               "compiled_from": "core/src/**/{name}.cu"}  # fmt: skip
 
 
 def test_a_kernel_object_takes_the_licence_of_the_source_it_was_compiled_from(

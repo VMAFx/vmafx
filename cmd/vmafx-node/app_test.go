@@ -42,11 +42,11 @@ import (
 	googlegrpc "google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
-	grpcmod "github.com/golusoris/golusoris/grpc"
 	"github.com/golusoris/golusoris/otel"
 
 	vmafxv1 "github.com/VMAFx/vmafx/gen/go"
 	"github.com/VMAFx/vmafx/internal/app/bootstrap"
+	"github.com/VMAFx/vmafx/internal/execstub"
 	"github.com/VMAFx/vmafx/internal/oteltest"
 	buildversion "github.com/VMAFx/vmafx/pkg/version"
 )
@@ -72,9 +72,7 @@ func writeNodeEnv(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	stub := filepath.Join(dir, "vmaf")
-	if err := os.WriteFile(stub, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
-		t.Fatalf("write vmaf stub: %v", err)
-	}
+	execstub.Write(t, stub, []byte("#!/bin/sh\nexit 0\n"))
 	modelDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(modelDir, "vmaf_v0.6.1.json"), []byte("{}"), 0o600); err != nil {
 		t.Fatalf("write model: %v", err)
@@ -83,6 +81,7 @@ func writeNodeEnv(t *testing.T) string {
 	t.Setenv("VMAFX_VMAF_BINARY", stub)
 	t.Setenv("VMAFX_MODEL_DIR", modelDir)
 	t.Setenv("VMAFX_GRPC_LISTEN", addr)
+	t.Setenv("VMAFX_HTTP_ADDR", freeLoopbackAddr(t))
 	t.Setenv("VMAFX_LOG_LEVEL", "error")
 	// /bin/true stands in for ffmpeg so the encoder probe runs (and degrades to
 	// an empty inventory) without needing a real ffmpeg binary.
@@ -105,8 +104,7 @@ func productionGraph() fx.Option {
 	return fx.Options(
 		bootstrap.Base,
 		fx.Replace(nodeEnvOptions(false)),
-		grpcmod.Module,
-		fx.Decorate(withNodeGRPCDefault),
+		nodeServerOptions(),
 		nodeDomainOptions(),
 		nodeLifecycleOptions(),
 	)

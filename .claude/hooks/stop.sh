@@ -9,7 +9,14 @@ repo_root=$(git rev-parse --show-toplevel 2>/dev/null || exit 0)
 cd "$repo_root"
 
 dirty=$(git status --porcelain | wc -l | tr -d ' ')
-unpushed=$(git log --oneline '@{u}..HEAD' 2>/dev/null | wc -l | tr -d ' ')
+# A branch without an upstream (a local branch never pushed) has nothing to
+# compare against. Under pipefail, git log '@{u}..HEAD' would fail the whole
+# pipeline (status 128) and end the hook with no message.
+if git rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1; then
+  unpushed=$(git log --oneline '@{u}..HEAD' | wc -l | tr -d ' ')
+else
+  unpushed=0
+fi
 
 if [[ "$dirty" -eq 0 && "$unpushed" -eq 0 ]]; then
   exit 0

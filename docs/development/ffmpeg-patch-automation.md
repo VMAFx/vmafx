@@ -1,16 +1,77 @@
 # FFmpeg patch automation
 
 The FFmpeg integration follows stable upstream release tags. The root
-`build-config.env` owns `FFMPEG_REMOTE` and `FFMPEG_TAG`; the patch tooling
-reads
-both values from that file. Container ARG defaults are generated mirrors, and
-publication uses those defaults without a separate release override.
+`build-config.env` owns `FFMPEG_REMOTE`, `FFMPEG_TAG` and `FFMPEG_COMMIT`
+(the commit the tag names); the patch tooling reads all three from that
+file. Container ARG defaults are generated mirrors, and publication uses
+those defaults without a separate release override.
 Development branches, snapshots and prerelease tags are outside this channel.
 
 A change to a libvmaf public surface that affects the integration updates the
 patch series in the same pull request (hard rule 11 in
 [agent-hard-rules.md](agent-hard-rules.md)). The commands below are how to
 check and refresh it.
+
+## Shared FFmpeg fix series
+
+Fixes to FFmpeg itself are not kept in `ffmpeg-patches/`. They live in
+[VMAFx/ffmpeg-patches](https://github.com/VMAFx/ffmpeg-patches), which
+publishes a signed release tarball per FFmpeg base, and every VMAFx FFmpeg
+build applies that series first and `ffmpeg-patches/series.txt` second
+([ADR-3143](../adr/3143-ffmpeg-shared-fix-series.md)). `build-config.env`
+pins it:
+
+| Key | Meaning |
+| --- | --- |
+| `FFMPEG_FIX_SERIES_REPO` | URL of the repository that publishes the series |
+| `FFMPEG_FIX_SERIES_TAG` | the release tag |
+| `FFMPEG_FIX_SERIES_SHA256` | sha256 of `ffmpeg-patches-<tag>.tar.gz` |
+
+`scripts/ci/ffmpeg-shared-series.sh` is the only code that fetches and applies
+it. The patch-stack replay below, `ffmpeg-patches/test/build-and-run.sh`, the
+hosted FFmpeg jobs and the four container builds all call it:
+
+```bash
+# Apply to a checkout of FFMPEG_TAG (commits each patch with git am --3way):
+scripts/ci/ffmpeg-shared-series.sh apply /path/to/ffmpeg
+# Apply to an unpacked release archive that is not a Git checkout:
+scripts/ci/ffmpeg-shared-series.sh apply --method apply /path/to/FFmpeg-n9.0.2
+# Only download, verify and unpack into a new directory:
+scripts/ci/ffmpeg-shared-series.sh fetch /tmp/ffmpeg-fix-series
+```
+
+The script stops, without applying anything, when:
+
+- the tarball's sha256 is not the pinned one;
+- the tarball's `base.env` names another FFmpeg tag or commit than
+  `FFMPEG_TAG` / `FFMPEG_COMMIT`;
+- a member of the tarball would be written outside its directory;
+- `FFMPEG_FIX_SERIES_VERIFY=cosign` is set and cosign is missing, or cosign
+  refuses the release's signed `SHA256SUMS`.
+
+With the default `FFMPEG_FIX_SERIES_VERIFY=auto` the signature is checked when
+cosign is installed; the script's one-line summary says whether it was. The
+`FFmpeg Patch Stack` gate installs cosign and requires it. The verified tarball
+is cached under `<cache root>/vmafx/ffmpeg-fix-series/` and unpacked afresh on
+every run; the container builds cache nothing (`FFMPEG_FIX_SERIES_CACHE=none`).
+
+Series `v0.2.0` holds eight patches. All but 0002 change FFmpeg's behaviour
+in every VMAFx build:
+
+| Patch | File | Behaviour |
+| --- | --- | --- |
+| 0001 | `libavutil/vulkan.c` | On a device with one queue family, a frame barrier no longer releases the frame to `VK_QUEUE_FAMILY_IGNORED`. |
+| 0002 | 50 files | The GCC 14/16 diagnostics hardening that was `ffmpeg-patches/0019`; no change for VMAFx builds. |
+| 0003 | `libavcodec/nvenc.c`, `nvenc.h` | `hevc_nvenc` with `udu_sei=1` drops a user data unregistered SEI that exceeds NVENC's 1024-byte limit for non-VCL NAL units, with a warning, instead of failing the encode. |
+| 0004 | `libavcodec/nvenc.c`, `nvenc.h` | `h264_nvenc` and `hevc_nvenc` do not write a user data unregistered SEI that NVENC would write truncated; the first one is a warning. |
+| 0005 | `libavutil/hwcontext_vaapi.c` | A 10- or 12-bit (P010, P012) Vulkan frame maps to VAAPI: the DRM import accepts the `GR1616` chroma plane Vulkan exports. |
+| 0006 | `libavutil/hwcontext_vulkan.c` | The external-memory query of a frames context with DRM format modifier tiling carries the image format list the images are created with. |
+| 0007 | `libavutil/hwcontext_vulkan.c` | On RADV, mapping a Vulkan frame to DRM waits on the CPU for the frame's work, because the importer does not honour the attached sync file. |
+| 0008 | `libavutil/vulkan.c`, `libavcodec/ffv1enc_vulkan.c` | Command pools start their queue rotation at different queues of a family, and video pools stay on one queue, so decode and encode can run on separate engines. |
+
+A fix to FFmpeg belongs in that repository, not in `ffmpeg-patches/`. To take
+a new series release, change the three keys together and run the refresh and
+the check below.
 
 ## Check a change locally
 
@@ -19,9 +80,9 @@ python3 scripts/ci/ffmpeg_patch_stack.py --check \
   --output-dir .workingdir/cache/ffmpeg-patch-stack/manual-check
 ```
 
-The check fetches the configured release and replays the complete patch series
-in order. It fails on a replay conflict or when patches need a canonical
-refresh.
+The check fetches the configured release, applies the shared fix series and
+replays the complete patch series in order. It fails on a replay conflict or
+when patches need a canonical refresh.
 It leaves the tracked patch files and release setting unchanged. Inspect the
 command output and the diagnostics under the selected output directory when it
 fails.
@@ -45,6 +106,35 @@ An ordinary documentation edit does not select the hook. Install the hooks
 with `make install-hooks`; see
 [Automated rule enforcement](automated-rule-enforcement.md) for what the
 installed hooks do.
+
+## The local FFmpeg source cache
+
+The tool does not download FFmpeg on every run. It keeps one bare Git
+repository per remote and stores each fetched release commit in it under the
+tag's name, so the hook at every commit and push reads the commit from disk.
+
+- **Location:** `$XDG_CACHE_HOME/vmafx/ffmpeg-patch-stack/<remote hash>/source.git`.
+  Without `XDG_CACHE_HOME` it is `~/.cache/...`, on macOS
+  `~/Library/Caches/...` and on Windows `%LOCALAPPDATA%\...`.
+  `--cache-dir <dir>` selects another root.
+- **What is verified:** the commit of the configured tag must equal
+  `FFMPEG_COMMIT`. A cache entry or a network fetch that names another commit
+  fails with both commits in the message; the wrong commit is never stored or
+  used. After a deliberate pin bump the first run fetches the new tag, and the
+  old entry stays unused.
+- **Which path ran:** the command output and `receipt.json` (`source`,
+  `target_source`, `cache`) say `cache hit`, `fetched into cache` or, for a
+  newer release found by `--latest`, `fetched (unpinned)`. A newer release has
+  no pin yet: it is always fetched, and `--refresh --latest` writes its commit
+  to `FFMPEG_COMMIT` together with the tag.
+- **Concurrency:** writers hold a lock file next to the repository (waiting at
+  most ten minutes), and a ref moves only after its commit was fetched and
+  verified, so parallel hooks share one entry.
+- **Self-repair:** an empty or corrupt cache directory, or a ref whose objects
+  are gone, is dropped and fetched again. A cached commit that differs from the
+  pin is not repaired silently; delete the directory below to discard it.
+
+To clear the cache, remove `<cache root>/vmafx/ffmpeg-patch-stack/`.
 
 ## Refresh the configured release
 
@@ -92,9 +182,17 @@ python3 scripts/ci/ffmpeg_patch_stack.py --refresh --latest \
 ```
 
 `--latest` is accepted only with `--refresh`. It discovers the highest stable
-`nX.Y` or `nX.Y.Z` upstream release tag, replays the complete series and
-updates the shared tag only after a successful refresh. Development, RC and
-snapshot refs are excluded.
+`nX.Y` or `nX.Y.Z` upstream release tag and replays the complete series onto
+it. Development, RC and snapshot refs are excluded.
+
+The pinned shared fix series targets one FFmpeg release. When a newer release
+exists, the refresh therefore stops with `FFmpeg n9.1 is released, but the
+pinned shared fix series v0.2.0 targets n9.0.2` (with the tags of the day),
+writes nothing to the tree, and
+keeps the rebased candidate patches under `<output-dir>/patches`. Move
+`FFMPEG_FIX_SERIES_TAG` and `FFMPEG_FIX_SERIES_SHA256` to a series release for
+the new FFmpeg together with `FFMPEG_TAG` and `FFMPEG_COMMIT`, then run
+`--refresh`.
 
 The job uploads a `ffmpeg-patch-refresh-<run-id>-<attempt>` artifact, retained
 for 14 days, containing:

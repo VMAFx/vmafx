@@ -3,13 +3,16 @@
 
 import contextlib
 import os
-from pathlib import Path
-import subprocess
-import signal
 import selectors
+import signal
+import subprocess
 import tempfile
 import threading
 import time
+from pathlib import Path
+
+STREAM_COUNT = 2  # stdout and stderr are drained by one thread each
+MAX_TIMEOUT_S = 60  # longest bound a checkpoint process may ask for
 
 
 class HookError(Exception):
@@ -32,8 +35,12 @@ def _kill_bounded(process):
     when a bounded command on Windows is observed to fork.
     """
     try:
+        pid = process.pid
         if hasattr(os, "killpg"):
-            os.killpg(process.pid, signal.SIGKILL)
+            # HISS-08: never signal group 0, 1 or our own group (killpg(1) is kill(-1)).
+            if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 1 or pid == os.getpgrp():
+                return
+            os.killpg(pid, signal.SIGKILL)
         else:
             process.kill()
     except (ProcessLookupError, PermissionError):
@@ -100,8 +107,10 @@ def _bounded_output_threaded(process, timeout, maximum):
     for stream, key in ((process.stdout, "stdout"), (process.stderr, "stderr")):
         threading.Thread(target=_drain, args=(stream, key, bound), daemon=True).start()
     with bound.changed:
-        done = bound.changed.wait_for(lambda: bound.exceeded or bound.finished == 2,
-                                      timeout=max(0.0, deadline - time.monotonic()))
+        done = bound.changed.wait_for(
+            lambda: bound.exceeded or bound.finished == STREAM_COUNT,
+            timeout=max(0.0, deadline - time.monotonic()),
+        )
         if bound.exceeded:
             raise HookError("checkpoint command output exceeded its byte limit")
         if not done:
@@ -142,15 +151,20 @@ def _bounded_output(process, timeout, maximum):
     raise HookError("checkpoint command exceeded its read bound")
 
 
-def run_bounded(args, cwd=None, *, timeout=10, max_output=1024 * 1024,
-                env=None, allowed=(0,)):
+def run_bounded(args, cwd=None, *, timeout=10, max_output=1024 * 1024, env=None, allowed=(0,)):
     """Bound both streams during capture; never copy credential-bearing diagnostics."""
-    if not 0 < timeout <= 60 or not 0 < max_output <= 1024 * 1024:
+    if not 0 < timeout <= MAX_TIMEOUT_S or not 0 < max_output <= 1024 * 1024:
         raise HookError("invalid checkpoint process bounds")
     try:
-        with subprocess.Popen(args, cwd=cwd, env=env, start_new_session=True,
-                              stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                              stderr=subprocess.PIPE) as process:
+        with subprocess.Popen(  # noqa: S603 -- argv is built by the hook, never from input
+            args,
+            cwd=cwd,
+            env=env,
+            start_new_session=True,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        ) as process:
             try:
                 stdout = _bounded_output(process, timeout, max_output)
             except BaseException:
@@ -168,10 +182,15 @@ def run(args, cwd=None, *, data=None, timeout=180, capture=True, env=None, allow
     settings = dict(os.environ if env is None else env)
     settings["PYTHONDONTWRITEBYTECODE"] = "1"
     try:
-        with subprocess.Popen(args, cwd=cwd, env=settings, start_new_session=True,
-                              stdin=subprocess.PIPE if data is not None else None,
-                              stdout=subprocess.PIPE if capture else None,
-                              stderr=subprocess.PIPE if capture else None) as process:
+        with subprocess.Popen(  # noqa: S603 -- argv is built by the hook, never from input
+            args,
+            cwd=cwd,
+            env=settings,
+            start_new_session=True,
+            stdin=subprocess.PIPE if data is not None else None,
+            stdout=subprocess.PIPE if capture else None,
+            stderr=subprocess.PIPE if capture else None,
+        ) as process:
             try:
                 stdout, stderr = process.communicate(input=data, timeout=timeout)
             except (subprocess.TimeoutExpired, KeyboardInterrupt):
@@ -182,8 +201,10 @@ def run(args, cwd=None, *, data=None, timeout=180, capture=True, env=None, allow
         raise HookError(f"{args[0]}: {error}") from error
     if process.returncode not in allowed:
         output = (stdout or b"") + (stderr or b"")
-        raise HookError(f"{' '.join(map(str, args))} exited {process.returncode}\n"
-                        + output.decode(errors="replace"))
+        raise HookError(
+            f"{' '.join(map(str, args))} exited {process.returncode}\n"
+            + output.decode(errors="replace")
+        )
     return stdout or b""
 
 
@@ -201,8 +222,14 @@ def changed(base, head="HEAD"):
 
 def clean_env():
     env = dict(os.environ)
-    for key in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR",
-                "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES"):
+    for key in (
+        "GIT_DIR",
+        "GIT_WORK_TREE",
+        "GIT_INDEX_FILE",
+        "GIT_COMMON_DIR",
+        "GIT_OBJECT_DIRECTORY",
+        "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    ):
         env.pop(key, None)
     env.update(CI="true", GOWORK="off", GOFLAGS="-mod=readonly")
     return env
@@ -221,10 +248,26 @@ def snapshot(ref=None):
         else:
             source = git("rev-parse", "--show-toplevel").decode().strip()
             env = clean_env()
-            origin = run(["git", "config", "--get", "remote.origin.url"], allowed=(0, 1)).decode().strip()
+            origin = (
+                run(["git", "config", "--get", "remote.origin.url"], allowed=(0, 1))
+                .decode()
+                .strip()
+            )
             refs = git("for-each-ref", "--format=%(objectname) %(refname)", "refs/remotes/origin/")
-            run(["git", "clone", "--quiet", "--no-hardlinks", "--no-checkout",
-                 "--origin", "praetor-snapshot", source, str(dest)], env=env)
+            run(
+                [
+                    "git",
+                    "clone",
+                    "--quiet",
+                    "--no-hardlinks",
+                    "--no-checkout",
+                    "--origin",
+                    "praetor-snapshot",
+                    source,
+                    str(dest),
+                ],
+                env=env,
+            )
             if origin:
                 run(["git", "remote", "add", "origin", origin], cwd=dest, env=env)
             for line in refs.decode().splitlines():

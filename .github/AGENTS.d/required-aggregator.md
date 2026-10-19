@@ -43,6 +43,28 @@ that mapping its two-minute missing-check grace can fail while legitimate work
 is still running. check-run query must remain paginated: converted
 workflows can put full run above API's 100-item page size.
 
+## A push judges its own check suites
+
+Outside pull request aggregator leaves out every check run whose suite
+belongs to `pull_request` / `pull_request_target` workflow run on commit
+(`pullRequestSuites()`, re-read every poll). merge train fast-forwards, so
+landed commit is also its pull request head and train cancels those runs;
+counting them failed every master push
+(`T-CI-AGGREGATOR-READS-OTHER-EVENT-CHECKS-2026-10-06`). Suites of workflow runs
+on another branch than aggregator's own (`foreignRun()`, `context.ref`) are
+left out too: release-please's release-notes branch and verification branches
+sit on master head, and their cancelled push runs were read as master's
+(`T-CI-AGGREGATOR-READS-OTHER-BRANCH-RUNS-2026-10-06`). Suites of `schedule`
+workflow runs left out too: scheduled run lands on master head mid-poll, gate
+job skips on schedule, newer skipped check run replaced push result
+(`T-CI-AGGREGATOR-READS-SCHEDULE-RUNS-2026-10-15`). Do not widen filter
+to workflow_dispatch on own branch or to suites no workflow run owns (code
+scanning).
+`scripts/ci/tests/test_aggregator_event_scope.py` runs embedded script.
+Every owed name must succeed; absent or skipped fails except three named
+exemptions (tier not owed, `pullRequestOnly` on push, hardware switch off)
+(ADR-3293, `scripts/ci/tests/test_aggregator_absent_fails.py`).
+
 ## CI job display names and aggregator parity
 
 All workflow job and matrix display names (`name:`) target $\le 30$ characters,

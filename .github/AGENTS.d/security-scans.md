@@ -3,7 +3,7 @@ paths:
   - .github/workflows/security-scans.yml
   - .semgrep.yml
   - requirements/locks/build.txt
-invariant: Repository .semgrep.yml owns Semgrep OSS; CodeQL configure runs in runner.temp/build; event in concurrency.
+invariant: .semgrep.yml owns Semgrep OSS; CodeQL builds in runner.temp; event in concurrency; every CodeQL language, every event.
 ---
 # Security scans workflow invariants (Semgrep and CodeQL)
 
@@ -19,8 +19,9 @@ category without superseding ADR that provides reproducibly pinned policy.
 Security Scans concurrency group includes `github.event_name` between
 workflow name and ref. Scheduled scan and master push both use
 `refs/heads/master`; without event discriminator, either can cancel
-other's CodeQL coverage. Preserve `cancel-in-progress: true` so superseded
-runs of same event/ref still collapse, keep
+other's CodeQL coverage. On master the ref slot is the SHA and
+`cancel-in-progress` is `github.ref != 'refs/heads/master'` (ADR-1673), so
+only superseded PR runs collapse; keep
 `scripts/ci/test_security_workflow_contract.py` in always-on Rules gate.
 
 ## Meson configure precedes CodeQL extraction (ADR-1222 / Alert 1279)
@@ -38,3 +39,12 @@ alerts 1232–1235). Placing build root in `${{ runner.temp }}/build` ensures
 generated build artifacts are not indexed as repository source. **On rebase or
 workflow sync:** do not move `meson setup` after `codeql-action/init` or
 configure within `$GITHUB_WORKSPACE`.
+
+## Every CodeQL language on every event (ADR-3294)
+
+`codeql-cpp`, `codeql-python`, `codeql-actions`: `init` + `analyze` steps carry
+no `if:`; no impact planner in these jobs. Skipped category -> GitHub `CodeQL`
+check neutral ("configuration not found") -> aggregator blocks (ADR-3293).
+Draft skip via job-level `needs.tier.outputs.light` stays. Guard:
+`scripts/ci/test_security_workflow_contract.py`
+(`test_codeql_analyses_every_language_on_every_event`).

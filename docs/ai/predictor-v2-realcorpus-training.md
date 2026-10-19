@@ -156,7 +156,7 @@ silent-pass path.
   reports carry ADR-0661 `run_provenance`.
 
 The fold-level training body itself (the per-fold MLP fit) is
-exercised by the existing `tools/vmaf-tune/tests/test_predictor_train.py`
+exercised by the existing `ai/tests/test_predictor_train.py`
 suite from PR #450 — Phase 2 uses the same trainer module so the
 ONNX export remains byte-stable across the synthetic-stub and real-
 corpus paths.

@@ -176,3 +176,188 @@ GCC 16 release build of `9bc68a108` (no LTO, CUDA sm_89 and HIP gfx1036 kernels)
 | hip | `vif` | = | = | = | = | = | = | = | = | = | = | = | = |
 
 <!-- exact-twin-matrix:hip:end -->
+
+## Large pictures: 8K and 16K
+
+The 357x353 grid shows layout and depth defects; it cannot show a sum, a count
+or an offset that only grows too large on a big picture. Two more grids run on
+worst-case content at the sizes the
+[accumulator bounds](accumulator-bounds.md) are derived for:
+
+- `--grid 8k`: every exact CUDA, SYCL and HIP twin against `--backend cpu`, at
+  8192x4320 (8K DCI) in 4:4:4, 8 and 16 bits.
+- `--grid 16k`: the CPU extractor of every exact twin at 15360x8640 (16K) in
+  4:4:4, 8 and 16 bits, with the host's SIMD dispatch against
+  `--cpumask 0xffffffff` (scalar code only). No device runs at 16K: device
+  memory limits belong to a later release candidate.
+
+Both grids use four frames of worst-case content, written from SHAKE256 and
+constants only, so every host gets the same bytes (`worst_case_plane()`):
+
+| Frame | Reference | Distorted | What it drives to its maximum |
+|---|---|---|---|
+| 0 | full-range noise | its complement (`max - v`) | per-sample terms of every metric on random content |
+| 1 | every sample at the maximum | every sample 0 | squared and absolute differences (PSNR SSE) |
+| 2 | every sample 0 | every sample at the maximum | the frame-to-frame motion SAD (frame 1 to 2) |
+| 3 | 1-pixel checkerboard of 0 and the maximum | the same picture | reference detail with no distortion (ADM masking, VIF variance) |
+
+`cambi` refuses both sizes at init: its window, scaled to the picture, exceeds
+the 65x65 its reciprocal table covers (`SIZE_REFUSED` in the script). Its
+cells are `n/a` while the device twin refuses the picture too; a twin that
+accepts what the CPU refuses fails the cell. `psnr_hvs` takes at most 12 bits,
+so its 16-bit cells are `n/a` as in the small grid.
+
+```bash
+python3 scripts/ci/exact_twin_matrix.py --vmaf-binary build/tools/vmaf --grid 8k \
+    --backends cuda --workdir /var/tmp/matrix
+python3 scripts/ci/exact_twin_matrix.py --vmaf-binary build/tools/vmaf --grid 16k \
+    --workdir /var/tmp/matrix
+```
+
+The 8K fixtures take 1.3 GB per depth pair at 8 bits and 1.7 GB at 16 bits,
+the 16K ones 3.2 GB and 6.4 GB: give `--workdir` a disk directory, not a RAM
+`/tmp`. A 16K CPU run of one extractor at 16 bits needs about 8 GB of memory.
+`--record` writes the 8K blocks per device backend and the 16K block (backend
+`cpu`); `test_exact_twin_matrix_contract` requires a full, passing 8K row for
+every exact device twin and a 16K row for the CPU extractor of every exact
+feature.
+
+### 8K, CUDA
+
+<!-- exact-twin-matrix-8k:cuda:begin -->
+
+GCC 16 release build of `571565a47` (no LTO, CUDA sm_89 and HIP gfx1036 kernels), 2026-10-05: 45 of 48 cells equal, 3 `n/a`.
+
+| backend | feature | 8/444 | 16/444 |
+|---|---|---|---|
+| cuda | `adm` | = | = |
+| cuda | `cambi` | n/a | n/a |
+| cuda | `float_adm` | = | = |
+| cuda | `float_moment` | = | = |
+| cuda | `float_motion` | = | = |
+| cuda | `float_ms_ssim` | = | = |
+| cuda | `float_ms_ssim_chroma` | = | = |
+| cuda | `float_ms_ssim_lcs` | = | = |
+| cuda | `float_psnr` | = | = |
+| cuda | `float_ssim` | = | = |
+| cuda | `float_ssim_lcs` | = | = |
+| cuda | `float_vif` | = | = |
+| cuda | `motion` | = | = |
+| cuda | `motion_debug` | = | = |
+| cuda | `motion_mffw` | = | = |
+| cuda | `motion_v2` | = | = |
+| cuda | `motion_v2_mffw` | = | = |
+| cuda | `psnr` | = | = |
+| cuda | `psnr_hvs` | = | n/a |
+| cuda | `speed_chroma` | = | = |
+| cuda | `speed_temporal` | = | = |
+| cuda | `ssim` | = | = |
+| cuda | `ssimulacra2` | = | = |
+| cuda | `vif` | = | = |
+
+<!-- exact-twin-matrix-8k:cuda:end -->
+
+### 8K, SYCL
+
+<!-- exact-twin-matrix-8k:sycl:begin -->
+
+icx release build of `571565a47` (no LTO, SYCL AOT `dg2-g11`, xe kernel driver), 2026-10-05: 45 of 48 cells equal, 3 `n/a`.
+
+| backend | feature | 8/444 | 16/444 |
+|---|---|---|---|
+| sycl | `adm` | = | = |
+| sycl | `cambi` | n/a | n/a |
+| sycl | `float_adm` | = | = |
+| sycl | `float_moment` | = | = |
+| sycl | `float_motion` | = | = |
+| sycl | `float_ms_ssim` | = | = |
+| sycl | `float_ms_ssim_chroma` | = | = |
+| sycl | `float_ms_ssim_lcs` | = | = |
+| sycl | `float_psnr` | = | = |
+| sycl | `float_ssim` | = | = |
+| sycl | `float_ssim_lcs` | = | = |
+| sycl | `float_vif` | = | = |
+| sycl | `motion` | = | = |
+| sycl | `motion_debug` | = | = |
+| sycl | `motion_mffw` | = | = |
+| sycl | `motion_v2` | = | = |
+| sycl | `motion_v2_mffw` | = | = |
+| sycl | `psnr` | = | = |
+| sycl | `psnr_hvs` | = | n/a |
+| sycl | `speed_chroma` | = | = |
+| sycl | `speed_temporal` | = | = |
+| sycl | `ssim` | = | = |
+| sycl | `ssimulacra2` | = | = |
+| sycl | `vif` | = | = |
+
+<!-- exact-twin-matrix-8k:sycl:end -->
+
+### 8K, HIP
+
+<!-- exact-twin-matrix-8k:hip:begin -->
+
+GCC 16 release build of `571565a47` (no LTO, CUDA sm_89 and HIP gfx1036 kernels), 2026-10-05: 45 of 48 cells equal, 3 `n/a`.
+
+| backend | feature | 8/444 | 16/444 |
+|---|---|---|---|
+| hip | `adm` | = | = |
+| hip | `cambi` | n/a | n/a |
+| hip | `float_adm` | = | = |
+| hip | `float_moment` | = | = |
+| hip | `float_motion` | = | = |
+| hip | `float_ms_ssim` | = | = |
+| hip | `float_ms_ssim_chroma` | = | = |
+| hip | `float_ms_ssim_lcs` | = | = |
+| hip | `float_psnr` | = | = |
+| hip | `float_ssim` | = | = |
+| hip | `float_ssim_lcs` | = | = |
+| hip | `float_vif` | = | = |
+| hip | `motion` | = | = |
+| hip | `motion_debug` | = | = |
+| hip | `motion_mffw` | = | = |
+| hip | `motion_v2` | = | = |
+| hip | `motion_v2_mffw` | = | = |
+| hip | `psnr` | = | = |
+| hip | `psnr_hvs` | = | n/a |
+| hip | `speed_chroma` | = | = |
+| hip | `speed_temporal` | = | = |
+| hip | `ssim` | = | = |
+| hip | `ssimulacra2` | = | = |
+| hip | `vif` | = | = |
+
+<!-- exact-twin-matrix-8k:hip:end -->
+
+### 16K, CPU SIMD against scalar
+
+<!-- exact-twin-matrix-16k:cpu:begin -->
+
+GCC 16 release build of `571565a47` (no LTO; host AVX-512 and AVX2 against `--cpumask 0xffffffff`), 2026-10-05: 45 of 48 cells equal, 3 `n/a`.
+
+| backend | feature | 8/444 | 16/444 |
+|---|---|---|---|
+| cpu | `adm` | = | = |
+| cpu | `cambi` | n/a | n/a |
+| cpu | `float_adm` | = | = |
+| cpu | `float_moment` | = | = |
+| cpu | `float_motion` | = | = |
+| cpu | `float_ms_ssim` | = | = |
+| cpu | `float_ms_ssim_chroma` | = | = |
+| cpu | `float_ms_ssim_lcs` | = | = |
+| cpu | `float_psnr` | = | = |
+| cpu | `float_ssim` | = | = |
+| cpu | `float_ssim_lcs` | = | = |
+| cpu | `float_vif` | = | = |
+| cpu | `motion` | = | = |
+| cpu | `motion_debug` | = | = |
+| cpu | `motion_mffw` | = | = |
+| cpu | `motion_v2` | = | = |
+| cpu | `motion_v2_mffw` | = | = |
+| cpu | `psnr` | = | = |
+| cpu | `psnr_hvs` | = | n/a |
+| cpu | `speed_chroma` | = | = |
+| cpu | `speed_temporal` | = | = |
+| cpu | `ssim` | = | = |
+| cpu | `ssimulacra2` | = | = |
+| cpu | `vif` | = | = |
+
+<!-- exact-twin-matrix-16k:cpu:end -->

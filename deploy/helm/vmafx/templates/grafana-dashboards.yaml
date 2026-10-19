@@ -1,0 +1,41 @@
+{{- /*
+  SPDX-License-Identifier: EUPL-1.2
+  Copyright 2026 Lusoris
+
+  One ConfigMap per generated Grafana dashboard, for the Grafana dashboard
+  sidecar (it loads every ConfigMap carrying monitoring.dashboards.labels).
+  files/dashboards holds copies of deploy/grafana/dashboards that
+  go run ./tools/obsgen -write keeps identical (Helm reads no file outside
+  the chart). A vendor GPU exporter's dashboard (vmafx-gpu-<key>.json) ships
+  only with monitoring.dashboards.gpuExporters.<key>. ADR-2349;
+  docs/observability/kubernetes.md.
+*/ -}}
+{{- if and .Values.monitoring.enabled .Values.monitoring.dashboards.enabled }}
+{{- $d := .Values.monitoring.dashboards }}
+{{- $fullName := include "vmafx.fullname" . }}
+{{- range $path, $_ := .Files.Glob "files/dashboards/*.json" }}
+{{- $file := base $path }}
+{{- $name := trimSuffix ".json" $file }}
+{{- $exporter := trimPrefix "vmafx-gpu-" $name }}
+{{- if or (not (hasPrefix "vmafx-gpu-" $name)) (get $d.gpuExporters $exporter) }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ printf "%s-dashboard-%s" $fullName (trimPrefix "vmafx-" $name) | trunc 63 | trimSuffix "-" }}
+  namespace: {{ $d.namespace | default $.Release.Namespace }}
+  labels:
+    {{- include "vmafx.labels" $ | nindent 4 }}
+    {{- with $d.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with $d.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+data:
+  {{ $file }}: |-
+    {{- $.Files.Get $path | nindent 4 }}
+{{- end }}
+{{- end }}
+{{- end }}

@@ -87,7 +87,14 @@ enum VmafFeatureExtractorFlags {
      * flush path drains their final-frame collect() — mirrors the
      * HIP / SYCL drain branches in flush_context_serial. */
     VMAF_FEATURE_EXTRACTOR_METAL = 1 << 7,
+    /* Rust twin of a CPU extractor (ADR-1713), registered by
+     * core/src/rust/shim/rust_twins.cpp as `<c name>_rust`. Lookup by feature
+     * name skips it unless this flag is requested, so the C extractor stays
+     * the default; vmaf_feature_extractor_impl_select() swaps it in. */
+    VMAF_FEATURE_EXTRACTOR_RUST = 1 << 8,
 };
+
+struct VmafFeatureExtractorContext;
 
 typedef struct VmafFeatureExtractor {
     const char *name; ///< Name of feature extractor.
@@ -128,6 +135,21 @@ typedef struct VmafFeatureExtractor {
      */
     int (*flush)(struct VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector);
     /**
+     * Advance callback. Optional, for an extractor that writes the score of a
+     * frame only once later frames are in (the motion2 / motion3 window,
+     * ADR-2090): append every such score the collector's contents now make
+     * final, never one that a later frame could still change. The engine calls
+     * it on the thread that feeds frames, on the registered extractor, after
+     * each frame it accepts and after a read fence; never at the same time as
+     * this instance's extract(), collect() or flush(). With worker threads that
+     * instance's init() has not run: build what the call needs on first use.
+     * flush() appends the rest. Returns 0 or a negative errno.
+     *
+     * @param               fex self.
+     * @param feature_collector VmafFeatureCollector used to read and write scores.
+     */
+    int (*advance)(struct VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector);
+    /**
      * Close callback. Optional, clean up fex->priv buffers here.
      *
      * @param               fex self.
@@ -154,6 +176,13 @@ typedef struct VmafFeatureExtractor {
     size_t priv_size;               ///< sizeof private data.
     uint64_t flags;                 ///< Feauture extraction flags, binary or'd.
     const char **provided_features; ///< Provided feature list, NULL terminated.
+    /**
+     * Name of a score the extractor files without the option suffix when its
+     * `debug` option is set, or NULL. Two contexts that claim the same name
+     * would write one key twice, so vmaf_use_feature() refuses the second
+     * (ADR-2056). The unsuffixed name is a contract the Netflix tests read.
+     */
+    const char *unsuffixed_debug_key;
 
 #ifdef HAVE_CUDA
     VmafCudaState *cu_state; ///< VmafCudaState, set by framework
@@ -205,6 +234,26 @@ typedef struct VmafFeatureExtractor {
      * extractor reads host pictures (chroma, or a host copy of luma).
      */
     bool (*reads_shared_luma_only)(const struct VmafFeatureExtractor *fex);
+
+    /**
+     * Optional (Netflix/vmaf 33e5f0aca, ADR-2795). At registration, when
+     * `incoming` would become a second context of this same extractor with
+     * other options, the registry offers it to each registered context of the
+     * same name that is not yet initialized. Return 1 when `existing` absorbed
+     * `incoming` (the registry then destroys `incoming`, as for a duplicate), 0
+     * to decline, or a negative errno. Integer ADM folds a second viewing
+     * distance into one context this way.
+     */
+    int (*merge)(struct VmafFeatureExtractorContext *existing,
+                 struct VmafFeatureExtractorContext *incoming);
+
+    /**
+     * Optional (ADR-2795): add entries to the feature-name dictionary an
+     * instance built from `provided_features` with its parsed options in
+     * `priv`. Called by the extractor's own init() and by the Rust twin shim,
+     * so both file the same names. Returns 0 or a negative errno.
+     */
+    int (*extend_name_dict)(const struct VmafFeatureExtractor *fex, VmafDictionary **dict);
 
     /**
      * Per-feature characteristics descriptor — drives the per-backend
@@ -262,6 +311,46 @@ VmafFeatureExtractor *vmaf_get_feature_extractor_twin(const VmafFeatureExtractor
  *         CPU extractor; 0 when every twin is reachable.
  */
 int vmaf_feature_extractor_twin_audit(void);
+
+/**
+ * @brief Extractor at index @p i of the Rust registry, or NULL past its end.
+ */
+typedef VmafFeatureExtractor *(*VmafRustExtractorAtFn)(unsigned i);
+
+/**
+ * @brief Make the Rust extractors part of the registry (ADR-1713).
+ *
+ * Called by vmaf_rust_twins_install() (core/src/rust/shim/rust_twins.cpp,
+ * built with enable_rust_features only). Every registry walk in this file then
+ * visits the static list and then @p rust_at(0), @p rust_at(1), ... until it
+ * returns NULL. A build without Rust never calls it, and nothing in this file
+ * refers to a Rust symbol.
+ */
+void vmaf_feature_extractor_install_rust_registry(VmafRustExtractorAtFn rust_at);
+
+/**
+ * @brief Apply VMAF_FEATURE_IMPL to an extractor chosen for registration.
+ *
+ * `VMAF_FEATURE_IMPL` unset or `c`: @p *selected = @p fex. `rust`: a CPU
+ * extractor (no device or Rust flag) is replaced by its Rust twin
+ * (vmaf_get_feature_extractor_twin(fex, VMAF_FEATURE_EXTRACTOR_RUST)), logged
+ * at INFO; without a twin the C extractor stays and a WARNING names it.
+ * Device twins and explicitly named Rust twins are kept. The variable is read
+ * once per process (vmaf_gpu_dispatch_env_get()).
+ *
+ * @return 0, or -EINVAL for NULL arguments or another value of the variable.
+ */
+int vmaf_feature_extractor_impl_select(VmafFeatureExtractor *fex, VmafFeatureExtractor **selected);
+
+/**
+ * @brief The implementation VMAF_FEATURE_IMPL asks for (ADR-1713).
+ *
+ * One reader of the variable for every Rust path (extractors, prediction).
+ *
+ * @return 0 when it is unset, empty or `c`; 1 when it is `rust`; -EINVAL
+ *         (logged) for another value.
+ */
+int vmaf_feature_impl_rust_requested(void);
 
 /* ADR-0544: Audit feature_extractor_list[] for accidental duplicate
  * registrations (same `name` string registered more than once).
@@ -356,6 +445,13 @@ typedef struct VmafFeatureExtractorContext {
 int vmaf_feature_extractor_context_create(VmafFeatureExtractorContext **fex_ctx,
                                           const VmafFeatureExtractor *fex,
                                           VmafDictionary *opts_dict);
+
+/**
+ * The unsuffixed debug key @p fex_ctx will write (VmafFeatureExtractor::
+ * unsuffixed_debug_key), or NULL when the extractor declares none or its
+ * `debug` option is off. Reads the options the context parsed at creation.
+ */
+const char *vmaf_feature_extractor_context_debug_key(const VmafFeatureExtractorContext *fex_ctx);
 
 int vmaf_feature_extractor_context_init(VmafFeatureExtractorContext *fex_ctx,
                                         enum VmafPixelFormat pix_fmt, unsigned bpc, unsigned w,

@@ -14,9 +14,12 @@
 
 enable_dnn_opt = get_option('enable_dnn')
 
-ort_dep = dependency('libonnxruntime', required: false)
+# include_type 'system': the ONNX Runtime header is third-party and not -Wpedantic clean
+# (an enumerator initialised by a non-constant expression); as -isystem its diagnostics are
+# not ours to fix and the first-party warnings stay at zero.
+ort_dep = dependency('libonnxruntime', required: false, include_type: 'system')
 if not ort_dep.found()
-  ort_dep = dependency('onnxruntime', required: false)
+  ort_dep = dependency('onnxruntime', required: false, include_type: 'system')
 endif
 
 dnn_have_ort = false

@@ -27,17 +27,17 @@ invariant: Motion v2 option-surface parity, five-frame window on prev_prev_ref, 
   SAD of frame n against `fex->prev_prev_ref` (n-2), frames 0 and 1 report 0,
   `flush()` uses `min_idx = stride = 2` (`motion2_at()`: `min(SAD[n-1],
   SAD[n+1])`, last frame its own SAD, frame 2 `SAD[3]`). Text = last upstream
-  `integer_motion_v2.c` (`a4a1492d^`; upstream deleted the file in `a4a1492d`,
-  fork keeps the extractor). Same arithmetic as `integer_motion.c`; change one
-  -> change both. Never bring back `-ENOTSUP` in `init()` or a constant
-  `min_idx = 1`. No frame n-2 at index >= 2 -> `-EINVAL`, never an empty
-  picture read. `reads_prev_prev_ref()` answers the option, as in
-  `integer_motion.c` (framework keeps n-2 only for a reader, ADR-1478).
-  `motion_v2_cuda` / `_sycl` / `_hip` compute the window and flush through
-  the same function (ADR-1491); `motion_v2_metal` does not declare the
-  option: model dispatch computes it on the CPU (ADR-1359).
+  `integer_motion_v2.c` (`a4a1492d^`; upstream deleted file in `a4a1492d`,
+  fork keeps extractor). Same arithmetic as `integer_motion.c`; change one
+  -> change both. Never bring back `-ENOTSUP` in `init()` or constant
+  `min_idx = 1`. No frame n-2 at index >= 2 -> `-EINVAL`, never empty
+  picture read. `reads_prev_prev_ref()` answers option, as in
+  `integer_motion.c` (framework keeps n-2 only for reader, ADR-1478).
+  `motion_v2_cuda` / `_sycl` / `_hip` compute window and flush through
+  same function (ADR-1491); `motion_v2_metal` does not declare
+  option: model dispatch computes it on CPU (ADR-1359).
   Guards: `core/test/test_motion_five_frame_window.c`
-  (scores against the three-frame SAD of frame pairs (n-2, n), threads, pool
+  (scores against three-frame SAD of frame pairs (n-2, n), threads, pool
   of four, twin verdicts), `test_integer_motion_v2_coverage`.
 - **`motion_v2` NEON shift semantics** (fork-local, ADR-0145):
   [`arm64/motion_v2_neon.c`](../arm64/motion_v2_neon.c) uses

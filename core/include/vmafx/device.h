@@ -24,6 +24,10 @@
 extern "C" {
 #endif
 
+/* NOLINTBEGIN(modernize-use-using,performance-enum-size): public C header included by C
+ * and C++ translation units; C has no `using`, and C has no fixed enum underlying type
+ * across the required toolchains (ADR-1470). ADR-1138. */
+
 /*
  * VmafxDeviceFlags: How a device is created. Bits of a u32 field.
  * @since 0.1
@@ -51,8 +55,8 @@ struct VmafxDeviceDesc {
     /** Size of this struct as the caller compiled it; set by the _INIT macro. */
     uint32_t struct_size;
     /**
-     * Backend of the device: CPU in every build, CUDA or HIP in a build with that backend; another
-     * backend is VMAFX_E_NOTSUP naming it. Values: VmafxBackend.
+     * Backend of the device: CPU in every build, CUDA, SYCL or HIP in a build with that backend;
+     * another backend is VMAFX_E_NOTSUP naming it. Values: VmafxBackend.
      */
     uint32_t backend;
     /**
@@ -100,6 +104,12 @@ struct VmafxDeviceInfo {
     uint64_t total_memory;
     /** Name of the device as its runtime reports it (`cpu` for the CPU). */
     const char *name;
+    /**
+     * PCI domain, bus, device and function of the device (a producer on the same GPU has the same,
+     * VK_EXT_pci_bus_info); UINT32_MAX in each when the backend reports none (the CPU). Added in
+     * ABI 0.1.10.
+     */
+    uint32_t pci[4];
 };
 
 /** Initialiser that sets `struct_size`; every other field is zero. */
@@ -163,6 +173,8 @@ VMAFX_EXPORT VmafxStatus vmafx_device_describe(const VmafxDevice *device, VmafxD
  */
 VMAFX_EXPORT VmafxStatus vmafx_device_profile(VmafxDevice *device, const char **out,
                                               VmafxError **error);
+
+/* NOLINTEND(modernize-use-using,performance-enum-size) */
 
 #ifdef __cplusplus
 }

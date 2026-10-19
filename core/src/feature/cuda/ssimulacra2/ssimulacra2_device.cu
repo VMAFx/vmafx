@@ -29,7 +29,7 @@
  *                                added term by term, in pixel order.
  */
 
-#include <stdint.h>
+#include <cstdint>
 
 #include "cuda/ssimulacra2_cuda.h"
 
@@ -143,7 +143,7 @@ __device__ __forceinline__ void ss2c_lane_terms(const Ss2cCombineArgs &a, unsign
                                                 unsigned chunk, unsigned lane, unsigned j,
                                                 double terms[SS2C_SUMS])
 {
-    const size_t i = (size_t)chunk * SS2C_CHUNK_PIXELS + (size_t)lane * SS2C_CHUNK_RUN + j;
+    const size_t i = (size_t)chunk * (size_t)SS2C_CHUNK_PIXELS + (size_t)lane * SS2C_CHUNK_RUN + j;
     if (i < a.pixels) {
         ss2c_terms(a, (size_t)c * a.pixels + i, terms);
         return;
@@ -209,7 +209,7 @@ __device__ __forceinline__ void ss2c_ordered_tree(long long *shared, unsigned la
 }
 
 /* What the lanes of ssimulacra2_ordered_totals do next. */
-enum ss2c_walk_command : unsigned {
+enum ss2c_walk_command : uint8_t {
     SS2C_WALK_LOAD = 0u,  /* stage batch `operand` of the plan and increments */
     SS2C_WALK_TERMS = 1u, /* compute the terms of chunk `operand` */
     SS2C_WALK_DONE = 2u,
@@ -222,7 +222,7 @@ __device__ __forceinline__ void ss2c_stage_chunk_sums(const double *sums, unsign
 {
     for (unsigned j = 0; j < SS2C_BATCH_RUN; j++) {
         const unsigned slot = lane * SS2C_BATCH_RUN + j;
-        const size_t chunk = (size_t)batch * SS2C_BATCH + slot;
+        const size_t chunk = (size_t)batch * (size_t)SS2C_BATCH + slot;
         staged[slot] = chunk < chunks ? sums[chunk * SS2C_SUMS] : 0.0;
     }
 }
@@ -235,12 +235,12 @@ __device__ __forceinline__ void ss2c_stage_batch(const int16_t *plan, const int6
 {
     for (unsigned j = 0; j < SS2C_BATCH_RUN; j++) {
         const unsigned slot = lane * SS2C_BATCH_RUN + j;
-        const size_t chunk = (size_t)batch * SS2C_BATCH + slot;
+        const size_t chunk = (size_t)batch * (size_t)SS2C_BATCH + slot;
         if (chunk >= chunks)
             continue;
         staged_plan[slot] = (short)plan[chunk];
-        staged_units[slot * 2u] = (long long)units[chunk * 2u];
-        staged_units[slot * 2u + 1u] = (long long)units[chunk * 2u + 1u];
+        staged_units[(size_t)slot * 2u] = (long long)units[chunk * 2u];
+        staged_units[(size_t)slot * 2u + 1u] = (long long)units[chunk * 2u + 1u];
     }
 }
 
@@ -252,7 +252,7 @@ __device__ __forceinline__ unsigned ss2c_walk_batch(double *sum, unsigned *chunk
                                                     const long long *units, unsigned *operand)
 {
     while (*chunk < chunks && *chunk / SS2C_BATCH == staged_batch) {
-        const unsigned slot = *chunk % SS2C_BATCH;
+        const size_t slot = *chunk % SS2C_BATCH;
         const VmafOrdsumUnits u =
             vmaf_ordsum_units((int64_t)units[slot * 2u], (int64_t)units[slot * 2u + 1u]);
         if (!vmaf_ordsum_add_chunk(sum, (int)plan[slot], u)) {
@@ -396,7 +396,7 @@ __global__ void __launch_bounds__(SS2C_REDUCE_BLOCK) ssimulacra2_chunk_plan(cons
         __syncthreads();
         for (unsigned j = 0; j < SS2C_BATCH_RUN; j++) {
             const unsigned slot = lane * SS2C_BATCH_RUN + j;
-            const size_t chunk = (size_t)batch * SS2C_BATCH + slot;
+            const size_t chunk = (size_t)batch * (size_t)SS2C_BATCH + slot;
             if (chunk < a.chunks)
                 plan[chunk] = (int16_t)staged_plan[slot];
         }
@@ -415,8 +415,8 @@ __global__ void __launch_bounds__(SS2C_REDUCE_BLOCK)
     const unsigned lane = threadIdx.x;
     const size_t first = ((size_t)c * SS2C_SUMS) * a.chunks + chunk;
     VmafOrdsumUnits units[SS2C_SUMS];
-    for (unsigned k = 0; k < SS2C_SUMS; k++)
-        units[k] = vmaf_ordsum_units(0, 0);
+    for (VmafOrdsumUnits &unit : units)
+        unit = vmaf_ordsum_units(0, 0);
     for (unsigned j = 0; j < SS2C_CHUNK_RUN; j++) {
         double terms[SS2C_SUMS];
         ss2c_lane_terms(a, c, chunk, lane, j, terms);
@@ -482,8 +482,8 @@ __global__ void __launch_bounds__(SS2C_REDUCE_BLOCK)
         __syncthreads();
         if (lane == 0u) {
             if (todo == SS2C_WALK_TERMS) {
-                for (unsigned i = 0; i < SS2C_CHUNK_PIXELS; i++)
-                    sum += terms_of_chunk[i];
+                for (const double term : terms_of_chunk)
+                    sum += term;
                 chunk = what + 1u;
             } else {
                 staged_batch = what;

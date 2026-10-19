@@ -76,6 +76,7 @@ import numpy as np
 
 from aiutils.file_utils import sha256
 from aiutils.run_manifest import build_run_provenance, write_manifest_json
+from vmaf_train.registry import write_registry_json
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT_PATH = Path(__file__).resolve()
@@ -624,7 +625,7 @@ def _update_fr_v2_registry(
     models.append(new_entry)
     models.sort(key=lambda e: e.get("id", ""))
     registry["models"] = models
-    registry_path.write_text(json.dumps(registry, indent=2, sort_keys=True) + "\n")
+    write_registry_json(registry_path, registry)
 
 
 def _write_sidecar_and_registry(

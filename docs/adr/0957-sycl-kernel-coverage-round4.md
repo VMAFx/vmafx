@@ -138,3 +138,12 @@ TUs into `core/src/meson.build` + `core/src/feature/feature_extractor.c`.
   `docs/research/0957-sycl-kernel-coverage-round4-2026-05-31.md`
 - Source: `req` — operator brief 2026-05-31 ("SYCL kernel coverage
   round 4 — close the last 4 uncovered SYCL kernels").
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 126: `- ADR-0219 — CHUG re-extraction trusted-column invariant`:
+  Cites ADR-0219 for CHUG re-extraction; ADR-0219 is "motion3 GPU coverage on
+  Vulkan + CUDA + SYCL (3-frame window)". CHUG re-extraction is ADR-0510.

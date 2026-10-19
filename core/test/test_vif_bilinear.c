@@ -73,9 +73,9 @@ static void reference_bilinear(const float *src, float *dst, int src_w, int src_
     float ratio_x = (float)src_w / dst_w;
     float ratio_y = (float)src_h / dst_h;
     for (int y = 0; y < dst_h; y++) {
-        float yy = (y + 0.5) * ratio_y - 0.5;
+        float yy = (float)((y + 0.5) * ratio_y - 0.5);
         for (int x = 0; x < dst_w; x++) {
-            float xx = (x + 0.5) * ratio_x - 0.5;
+            float xx = (float)((x + 0.5) * ratio_x - 0.5);
             dst[y * dst_stride + x] = ref_interpolate(src, src_w, src_h, src_stride, xx, yy);
         }
     }

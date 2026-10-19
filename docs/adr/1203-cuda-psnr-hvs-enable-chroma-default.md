@@ -97,3 +97,13 @@ Verification command:
 ```bash
 grep -n -A5 'enable_chroma"' core/src/feature/cuda/integer_psnr_hvs_cuda.c
 ```
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 22: `(third_party/xiph/psnr_hvs.c) documents this explicitly and
+  defaults it to`: Path `third_party/xiph/psnr_hvs.c` does not exist on
+  origin/master; the file is located at
+  `core/src/feature/third_party/xiph/psnr_hvs.c.`.

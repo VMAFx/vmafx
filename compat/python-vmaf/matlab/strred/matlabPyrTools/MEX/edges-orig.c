@@ -42,10 +42,10 @@ below.
 #include "convolve.h"
 
 #define sgn(a) (((a) > 0) ? 1 : (((a) < 0) ? -1 : 0))
-#define clip(a, mn, mx) (((a) < (mn)) ? (mn) : (((a) >= (mx)) ? (mx - 1) : (a)))
+#define clip(a, mn, mx) (((a) < (mn)) ? (mn) : (((a) >= (mx)) ? ((mx) - 1) : (a)))
 
-int reflect1(), reflect2(), repeat(), zero(), Extend(), nocompute();
-int ereflect(), predict();
+static int reflect1(), reflect2(), repeat(), zero(), Extend(), nocompute();
+static int ereflect(), predict();
 
 /* Lookup table matching a descriptive string to the edge-handling function */
 #if !THINK_C
@@ -106,15 +106,17 @@ fptr edge_function(char *edges)
 #if THINK_C
     InitializeTable(edge_foos);
 #endif
-    for (i = 0; i < sizeof(edge_foos) / sizeof(EDGE_HANDLER); i++)
+    for (i = 0; i < sizeof(edge_foos) / sizeof(EDGE_HANDLER); i++) {
         if (strcmp(edges, edge_foos[i].name) == 0)
             return (edge_foos[i].func);
+    }
     printf("Error: '%s' is not the name of a valid edge-handler!\n", edges);
     for (i = 0; i < sizeof(edge_foos) / sizeof(EDGE_HANDLER); i++) {
-        if (i == 0)
+        if (i == 0) {
             printf("  Options are: ");
-        else
+        } else {
             printf(", ");
+        }
         printf("%s", edge_foos[i].name);
     }
     printf("\n");
@@ -133,7 +135,7 @@ x_pos - position of filter relative to the horizontal image edges. Negative
 y_pos - analogous to x_pos.
 result - array where the resulting filter will go.  The edge
        of this filter will be aligned with the image for application...
-f_or_e - equal to one of the two constants EXPAND or FILTER.
+f_or_e - equal to one of the two constants EXPAND or REDUCE.
 -------------------------------------------------------------------- 
 */
 
@@ -141,32 +143,38 @@ f_or_e - equal to one of the two constants EXPAND or FILTER.
 nocompute() - Return zero for values where filter hangs over the edge.
 */
 
-int nocompute(filt, x_dim, y_dim, x_pos, y_pos, result, f_or_e)
-register double *filt, *result;
+static int nocompute(filt, x_dim, y_dim, x_pos, y_pos, result, f_or_e)
+register const double *filt;
+register double *result;
 register int x_dim;
 int y_dim, x_pos, y_pos, f_or_e;
 {
     register int i;
     register int size = x_dim * y_dim;
 
-    if ((x_pos > 1) OR(x_pos < -1) OR(y_pos > 1) OR(y_pos < -1))
+    if ((x_pos > 1) OR(x_pos < -1) OR(y_pos > 1) OR(y_pos < -1)) {
         for (i = 0; i < size; i++)
             result[i] = 0.0;
-    else
+    } else {
         for (i = 0; i < size; i++)
             result[i] = filt[i];
+    }
     return (0);
 }
 
 /* --------------------------------------------------------------------
 zero() - Zero outside of image.  Discontinuous, but adds zero energy. */
 
-int zero(filt, x_dim, y_dim, x_pos, y_pos, result, f_or_e)
-register double *filt, *result;
+static int zero(filt, x_dim, y_dim, x_pos, y_pos, result, f_or_e)
+register const double *filt;
+register double *result;
 register int x_dim;
 int y_dim, x_pos, y_pos, f_or_e;
 {
-    register int y_filt, x_filt, y_res, x_res;
+    register int y_filt;
+    register int x_filt;
+    register int y_res;
+    register int x_res;
     int filt_sz = x_dim * y_dim;
     int x_start = ((x_pos > 0) ? (x_pos - 1) : ((x_pos < 0) ? (x_pos + 1) : 0));
     int y_start = x_dim * ((y_pos > 0) ? (y_pos - 1) : ((y_pos < 0) ? (y_pos + 1) : 0));
@@ -175,11 +183,14 @@ int y_dim, x_pos, y_pos, f_or_e;
     for (i = 0; i < filt_sz; i++)
         result[i] = 0.0;
 
-    for (y_filt = 0, y_res = y_start; y_filt < filt_sz; y_filt += x_dim, y_res += x_dim)
-        if ((y_res >= 0) AND(y_res < filt_sz))
-            for (x_filt = y_filt, x_res = x_start; x_filt < y_filt + x_dim; x_filt++, x_res++)
+    for (y_filt = 0, y_res = y_start; y_filt < filt_sz; y_filt += x_dim, y_res += x_dim) {
+        if ((y_res >= 0) AND(y_res < filt_sz)) {
+            for (x_filt = y_filt, x_res = x_start; x_filt < y_filt + x_dim; x_filt++, x_res++) {
                 if ((x_res >= 0) AND(x_res < x_dim))
                     result[y_res + x_res] = filt[x_filt];
+            }
+        }
+    }
     return (0);
 }
 
@@ -188,12 +199,16 @@ repeat() - repeat edge pixel.  Continuous, but content is usually
 different from image.  
 */
 
-int repeat(filt, x_dim, y_dim, x_pos, y_pos, result, f_or_e)
-register double *filt, *result;
+static int repeat(filt, x_dim, y_dim, x_pos, y_pos, result, f_or_e)
+register const double *filt;
+register double *result;
 register int x_dim;
 int y_dim, x_pos, y_pos, f_or_e;
 {
-    register int y_filt, x_filt, y_res, x_res;
+    register int y_filt;
+    register int x_filt;
+    register int y_res;
+    register int x_res;
     int filt_sz = x_dim * y_dim;
     int x_start = ((x_pos > 0) ? (x_pos - 1) : ((x_pos < 0) ? (x_pos + 1) : 0));
     int y_start = x_dim * ((y_pos > 0) ? (y_pos - 1) : ((y_pos < 0) ? (y_pos + 1) : 0));
@@ -202,10 +217,12 @@ int y_dim, x_pos, y_pos, f_or_e;
     for (i = 0; i < filt_sz; i++)
         result[i] = 0.0;
 
-    for (y_filt = 0, y_res = y_start; y_filt < filt_sz; y_filt += x_dim, y_res += x_dim)
-        for (x_filt = y_filt, x_res = x_start; x_filt < y_filt + x_dim; x_filt++, x_res++)
+    for (y_filt = 0, y_res = y_start; y_filt < filt_sz; y_filt += x_dim, y_res += x_dim) {
+        for (x_filt = y_filt, x_res = x_start; x_filt < y_filt + x_dim; x_filt++, x_res++) {
             result[((y_res >= 0) ? ((y_res < filt_sz) ? y_res : (filt_sz - x_dim)) : 0) +
                    ((x_res >= 0) ? ((x_res < x_dim) ? x_res : (x_dim - 1)) : 0)] += filt[x_filt];
+        }
+    }
     return (0);
 }
 
@@ -215,12 +232,16 @@ then the next pixel, etc.  Continuous, attempting to maintain
 "similar" content, but discontinuous first derivative.
 */
 
-int reflect2(filt, x_dim, y_dim, x_pos, y_pos, result, f_or_e)
-register double *filt, *result;
+static int reflect2(filt, x_dim, y_dim, x_pos, y_pos, result, f_or_e)
+register const double *filt;
+register double *result;
 register int x_dim;
 int y_dim, x_pos, y_pos, f_or_e;
 {
-    register int y_filt, x_filt, y_edge, x_edge;
+    register int y_filt;
+    register int x_filt;
+    register int y_edge;
+    register int x_edge;
     register int x_base = (x_pos > 0) ? (x_dim - 1) : 0;
     register int y_base = (y_pos > 0) ? (x_dim * (y_dim - 1)) : 0;
     int filt_sz = x_dim * y_dim;
@@ -256,14 +277,21 @@ to do if you are subsampling by 2, since it maintains parity (even
 pixels positions remain even, odd ones remain odd). (note: procedure differs 
 depending on f_or_e parameter).  */
 
-int reflect1(filt, x_dim, y_dim, x_pos, y_pos, result, f_or_e)
-register double *filt, *result;
+static int reflect1(filt, x_dim, y_dim, x_pos, y_pos, result, f_or_e)
+register const double *filt;
+register double *result;
 register int x_dim;
 int y_dim, x_pos, y_pos, f_or_e;
 {
     int filt_sz = x_dim * y_dim;
-    register int x_start = 0, y_start = 0, x_stop = x_dim, y_stop = filt_sz;
-    register int y_filt, x_filt, y_edge, x_edge;
+    register int x_start = 0;
+    register int y_start = 0;
+    register int x_stop = x_dim;
+    register int y_stop = filt_sz;
+    register int y_filt;
+    register int x_filt;
+    register int y_edge;
+    register int x_edge;
     register int x_base = (x_pos > 0) ? (x_dim - 1) : 0;
     register int y_base = (y_pos > 0) ? (x_dim * (y_dim - 1)) : 0;
     int x_edge_dist = (x_pos > 0) ? (x_pos - x_dim) : ((x_pos < 0) ? (x_pos + 1) : 0);
@@ -283,35 +311,39 @@ int y_dim, x_pos, y_pos, f_or_e;
 
     /* if EXPAND and filter is centered on image edge, do not reflect */
     if (f_or_e IS EXPAND) {
-        if (x_pos IS mx_pos)
+        if (x_pos IS mx_pos) {
             x_stop = (x_dim + 1) / 2;
-        else if (x_pos IS - mx_pos) {
+        } else if (x_pos IS - mx_pos) {
             x_start = x_dim / 2;
             x_edge_dist = 0;
         }
 
-        if (y_pos IS my_pos)
+        if (y_pos IS my_pos) {
             y_stop = x_dim * ((y_dim + 1) / 2);
-        else if (y_pos IS - my_pos) {
+        } else if (y_pos IS - my_pos) {
             y_start = x_dim * (y_dim / 2);
             y_edge_dist = 0;
         }
     }
 
     /* reflect at boundary of image */
-    for (y_filt = y_start, y_edge = y_edge_dist; y_filt < y_stop; y_filt += x_dim, y_edge += x_dim)
+    for (y_filt = y_start, y_edge = y_edge_dist; y_filt < y_stop;
+         y_filt += x_dim, y_edge += x_dim) {
         for (x_filt = y_filt + x_start, x_edge = x_edge_dist; x_filt < y_filt + x_stop;
              x_filt++, x_edge++)
             result[ABS(y_base - ABS(y_edge)) + ABS(x_base - ABS(x_edge))] += filt[x_filt];
+    }
 
     /* if EXPAND and filter is not centered on image edge, mult edge by 2 */
     if (f_or_e IS EXPAND) {
-        if ((ABS(x_pos) ISNT mx_pos)AND(x_pos ISNT 0))
+        if ((ABS(x_pos) ISNT mx_pos)AND(x_pos ISNT 0)) {
             for (y_filt = x_base; y_filt < filt_sz; y_filt += x_dim)
                 result[y_filt] += result[y_filt];
-        if ((ABS(y_pos) ISNT my_pos)AND(y_pos ISNT 0))
+        }
+        if ((ABS(y_pos) ISNT my_pos)AND(y_pos ISNT 0)) {
             for (x_filt = y_base; x_filt < y_base + x_dim; x_filt++)
                 result[x_filt] += result[x_filt];
+        }
     }
     return (0);
 }
@@ -322,14 +354,21 @@ value.  Maintains continuity in intensity AND first derivative (but
 not higher derivs).
 */
 
-int Extend(filt, x_dim, y_dim, x_pos, y_pos, result, f_or_e)
-register double *filt, *result;
+static int Extend(filt, x_dim, y_dim, x_pos, y_pos, result, f_or_e)
+register const double *filt;
+register double *result;
 register int x_dim;
 int y_dim, x_pos, y_pos, f_or_e;
 {
     int filt_sz = x_dim * y_dim;
-    register int x_start = 0, y_start = 0, x_stop = x_dim, y_stop = filt_sz;
-    register int y_filt, x_filt, y_edge, x_edge;
+    register int x_start = 0;
+    register int y_start = 0;
+    register int x_stop = x_dim;
+    register int y_stop = filt_sz;
+    register int y_filt;
+    register int x_filt;
+    register int y_edge;
+    register int x_edge;
     register int x_base = (x_pos > 0) ? (x_dim - 1) : 0;
     register int y_base = (y_pos > 0) ? (x_dim * (y_dim - 1)) : 0;
     int x_edge_dist = (x_pos > 0) ? (x_pos - x_dim) : ((x_pos < -1) ? (x_pos + 1) : 0);
@@ -343,25 +382,26 @@ int y_dim, x_pos, y_pos, f_or_e;
 
     /* if EXPAND and filter is centered on image edge, do not reflect */
     if (f_or_e IS EXPAND) {
-        if (x_pos IS mx_pos)
+        if (x_pos IS mx_pos) {
             x_stop = (x_dim + 1) / 2;
-        else if (x_pos IS - mx_pos) {
+        } else if (x_pos IS - mx_pos) {
             x_start = x_dim / 2;
             x_edge_dist = 0;
         }
 
-        if (y_pos IS my_pos)
+        if (y_pos IS my_pos) {
             y_stop = x_dim * ((y_dim + 1) / 2);
-        else if (y_pos IS - my_pos) {
+        } else if (y_pos IS - my_pos) {
             y_start = x_dim * (y_dim / 2);
             y_edge_dist = 0;
         }
     }
 
     /* reflect at boundary of image */
-    for (y_filt = y_start, y_edge = y_edge_dist; y_filt < y_stop; y_filt += x_dim, y_edge += x_dim)
+    for (y_filt = y_start, y_edge = y_edge_dist; y_filt < y_stop;
+         y_filt += x_dim, y_edge += x_dim) {
         for (x_filt = y_filt + x_start, x_edge = x_edge_dist; x_filt < y_filt + x_stop;
-             x_filt++, x_edge++)
+             x_filt++, x_edge++) {
             if (((!y_base AND(sgn(y_edge) IS - 1))      /* y overhanging */
                  OR(y_base AND(sgn(y_edge) IS 1))) ISNT /* XOR */
                 ((!x_base AND(sgn(x_edge) IS - 1))      /* x overhanging */
@@ -369,8 +409,11 @@ int y_dim, x_pos, y_pos, f_or_e;
                 result[ABS(y_base - ABS(y_edge)) + ABS(x_base - ABS(x_edge))] -= filt[x_filt];
                 result[clip(y_base + y_edge, 0, y_dim) + clip(x_base + x_edge, 0, x_dim)] +=
                     filt[x_filt] + filt[x_filt];
-            } else
+            } else {
                 result[ABS(y_base - ABS(y_edge)) + ABS(x_base - ABS(x_edge))] += filt[x_filt];
+            }
+        }
+    }
     return (0);
 }
 
@@ -380,12 +423,16 @@ by the reciprocal of the percentage of filter being used.  (i.e. if
 50% of the filter is hanging over the edge of the image, multiply the
 taps being used by 2).  */
 
-int predict(filt, x_dim, y_dim, x_pos, y_pos, result, f_or_e)
-register double *filt, *result;
+static int predict(filt, x_dim, y_dim, x_pos, y_pos, result, f_or_e)
+register const double *filt;
+register double *result;
 register int x_dim;
 int y_dim, x_pos, y_pos, f_or_e;
 {
-    register int y_filt, x_filt, y_res, x_res;
+    register int y_filt;
+    register int x_filt;
+    register int y_res;
+    register int x_res;
     register double taps_used = 0.0; /* int *** */
     register double fraction = 0.0;
     int filt_sz = x_dim * y_dim;
@@ -396,15 +443,18 @@ int y_dim, x_pos, y_pos, f_or_e;
     for (i = 0; i < filt_sz; i++)
         result[i] = 0.0;
 
-    for (y_filt = 0, y_res = y_start; y_filt < filt_sz; y_filt += x_dim, y_res += x_dim)
-        if ((y_res >= 0) AND(y_res < filt_sz))
-            for (x_filt = y_filt, x_res = x_start; x_filt < y_filt + x_dim; x_filt++, x_res++)
+    for (y_filt = 0, y_res = y_start; y_filt < filt_sz; y_filt += x_dim, y_res += x_dim) {
+        if ((y_res >= 0) AND(y_res < filt_sz)) {
+            for (x_filt = y_filt, x_res = x_start; x_filt < y_filt + x_dim; x_filt++, x_res++) {
                 if ((x_res >= 0) AND(x_res < x_dim)) {
                     result[y_res + x_res] = filt[x_filt];
                     taps_used += ABS(filt[x_filt]);
                 }
+            }
+        }
+    }
     printf("TU: %f\n", taps_used);
-    if (f_or_e IS FILTER) {
+    if (f_or_e IS REDUCE) {
         /* fraction = ( (double) filt_sz ) / ( (double) taps_used ); */
         for (i = 0; i < filt_sz; i++)
             fraction += ABS(filt[i]);
@@ -421,35 +471,43 @@ by root 2.  This maintains orthogonality of odd-length linear-phase
 QMF filters, but it is not useful for most applications, since it
 alters the DC level.  */
 
-int ereflect(filt, x_dim, y_dim, x_pos, y_pos, result, f_or_e)
-register double *filt, *result;
+static int ereflect(filt, x_dim, y_dim, x_pos, y_pos, result, f_or_e)
+register const double *filt;
+register double *result;
 register int x_dim;
 int y_dim, x_pos, y_pos, f_or_e;
 {
-    register int y_filt, x_filt, y_edge, x_edge;
+    register int y_filt;
+    register int x_filt;
+    register int y_edge;
+    register int x_edge;
     register int x_base = (x_pos > 0) ? (x_dim - 1) : 0;
     register int y_base = x_dim * ((y_pos > 0) ? (y_dim - 1) : 0);
     int filt_sz = x_dim * y_dim;
     int x_edge_dist = (x_pos > 1) ? (x_pos - x_dim) : ((x_pos < -1) ? (x_pos + 1) : 0);
     int y_edge_dist = x_dim * ((y_pos > 1) ? (y_pos - y_dim) : ((y_pos < -1) ? (y_pos + 1) : 0));
     int i;
-    double norm, onorm;
+    double norm;
+    double onorm;
 
     for (i = 0; i < filt_sz; i++)
         result[i] = 0.0;
 
     /* reflect at boundary */
-    for (y_filt = 0, y_edge = y_edge_dist; y_filt < filt_sz; y_filt += x_dim, y_edge += x_dim)
+    for (y_filt = 0, y_edge = y_edge_dist; y_filt < filt_sz; y_filt += x_dim, y_edge += x_dim) {
         for (x_filt = y_filt, x_edge = x_edge_dist; x_filt < y_filt + x_dim; x_filt++, x_edge++)
             result[ABS(y_base - ABS(y_edge)) + ABS(x_base - ABS(x_edge))] += filt[x_filt];
+    }
 
     /* now multiply edge by root 2 */
-    if (x_pos ISNT 0)
+    if (x_pos ISNT 0) {
         for (y_filt = x_base; y_filt < filt_sz; y_filt += x_dim)
             result[y_filt] *= ROOT2;
-    if (y_pos ISNT 0)
+    }
+    if (y_pos ISNT 0) {
         for (x_filt = y_base; x_filt < y_base + x_dim; x_filt++)
             result[x_filt] *= ROOT2;
+    }
 
     /* now normalize to norm of original filter */
     for (norm = 0.0, i = 0; i < filt_sz; i++)

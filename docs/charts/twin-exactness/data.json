@@ -139,9 +139,9 @@
   "feature_order": 3,
   "backend": "Metal",
   "backend_order": 3,
-  "status": "not declared",
-  "label": "\u2013",
-  "detail": "no fragment in scripts/ci/exact_twins.d/"
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
  },
  {
   "feature": "float_moment",
@@ -175,9 +175,9 @@
   "feature_order": 4,
   "backend": "Metal",
   "backend_order": 3,
-  "status": "not declared",
-  "label": "\u2013",
-  "detail": "no fragment in scripts/ci/exact_twins.d/"
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
  },
  {
   "feature": "float_motion",
@@ -211,9 +211,9 @@
   "feature_order": 5,
   "backend": "Metal",
   "backend_order": 3,
-  "status": "not declared",
-  "label": "\u2013",
-  "detail": "no fragment in scripts/ci/exact_twins.d/"
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
  },
  {
   "feature": "float_ms_ssim",
@@ -247,9 +247,9 @@
   "feature_order": 6,
   "backend": "Metal",
   "backend_order": 3,
-  "status": "not declared",
-  "label": "\u2013",
-  "detail": "no fragment in scripts/ci/exact_twins.d/"
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
  },
  {
   "feature": "float_ms_ssim_chroma",
@@ -283,9 +283,9 @@
   "feature_order": 7,
   "backend": "Metal",
   "backend_order": 3,
-  "status": "not declared",
-  "label": "\u2013",
-  "detail": "no fragment in scripts/ci/exact_twins.d/"
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
  },
  {
   "feature": "float_ms_ssim_lcs",
@@ -319,9 +319,9 @@
   "feature_order": 8,
   "backend": "Metal",
   "backend_order": 3,
-  "status": "not declared",
-  "label": "\u2013",
-  "detail": "no fragment in scripts/ci/exact_twins.d/"
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
  },
  {
   "feature": "float_psnr",
@@ -355,9 +355,9 @@
   "feature_order": 9,
   "backend": "Metal",
   "backend_order": 3,
-  "status": "not declared",
-  "label": "\u2013",
-  "detail": "no fragment in scripts/ci/exact_twins.d/"
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
  },
  {
   "feature": "float_ssim",
@@ -391,9 +391,9 @@
   "feature_order": 10,
   "backend": "Metal",
   "backend_order": 3,
-  "status": "not declared",
-  "label": "\u2013",
-  "detail": "no fragment in scripts/ci/exact_twins.d/"
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
  },
  {
   "feature": "float_ssim_lcs",
@@ -427,9 +427,9 @@
   "feature_order": 11,
   "backend": "Metal",
   "backend_order": 3,
-  "status": "not declared",
-  "label": "\u2013",
-  "detail": "no fragment in scripts/ci/exact_twins.d/"
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
  },
  {
   "feature": "float_vif",
@@ -463,9 +463,9 @@
   "feature_order": 12,
   "backend": "Metal",
   "backend_order": 3,
-  "status": "not declared",
-  "label": "\u2013",
-  "detail": "no fragment in scripts/ci/exact_twins.d/"
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
  },
  {
   "feature": "motion",
@@ -499,9 +499,9 @@
   "feature_order": 13,
   "backend": "Metal",
   "backend_order": 3,
-  "status": "not declared",
-  "label": "\u2013",
-  "detail": "no fragment in scripts/ci/exact_twins.d/"
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
  },
  {
   "feature": "motion_debug",
@@ -535,9 +535,9 @@
   "feature_order": 14,
   "backend": "Metal",
   "backend_order": 3,
-  "status": "not declared",
-  "label": "\u2013",
-  "detail": "no fragment in scripts/ci/exact_twins.d/"
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
  },
  {
   "feature": "motion_mffw",
@@ -571,9 +571,9 @@
   "feature_order": 15,
   "backend": "Metal",
   "backend_order": 3,
-  "status": "not declared",
-  "label": "\u2013",
-  "detail": "no fragment in scripts/ci/exact_twins.d/"
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
  },
  {
   "feature": "motion_v2",
@@ -607,9 +607,9 @@
   "feature_order": 16,
   "backend": "Metal",
   "backend_order": 3,
-  "status": "not declared",
-  "label": "\u2013",
-  "detail": "no fragment in scripts/ci/exact_twins.d/"
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
  },
  {
   "feature": "motion_v2_mffw",
@@ -643,9 +643,9 @@
   "feature_order": 17,
   "backend": "Metal",
   "backend_order": 3,
-  "status": "not declared",
-  "label": "\u2013",
-  "detail": "no fragment in scripts/ci/exact_twins.d/"
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
  },
  {
   "feature": "psnr",
@@ -679,9 +679,9 @@
   "feature_order": 18,
   "backend": "Metal",
   "backend_order": 3,
-  "status": "not declared",
-  "label": "\u2013",
-  "detail": "no fragment in scripts/ci/exact_twins.d/"
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
  },
  {
   "feature": "psnr_hvs",
@@ -823,9 +823,9 @@
   "feature_order": 22,
   "backend": "Metal",
   "backend_order": 3,
-  "status": "not declared",
-  "label": "\u2013",
-  "detail": "no fragment in scripts/ci/exact_twins.d/"
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
  },
  {
   "feature": "ssimulacra2",
@@ -859,9 +859,9 @@
   "feature_order": 23,
   "backend": "Metal",
   "backend_order": 3,
-  "status": "not declared",
-  "label": "\u2013",
-  "detail": "no fragment in scripts/ci/exact_twins.d/"
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
  },
  {
   "feature": "vif",

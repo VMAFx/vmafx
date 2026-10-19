@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD041 MD060 -->
 # ADR-1420: `float_adm_cuda` computes the CPU's arithmetic, divides through the host's reciprocal estimate and returns the CPU's scores bit for bit
 
-- **Status**: Accepted
+- **Status**: Accepted (Superseded-in-part 2026-10-06 by [ADR-1442](1442-float-adm-reference-divides.md) for the probed reciprocal model of float ADM)
 - **Date**: 2026-10-01
 - **Deciders**: lusoris
 - **Tags**: `cuda`, `gpu-parity`, `numerics`, `float-adm`, `testing`, `ci`, `rc3`, `fork-local`

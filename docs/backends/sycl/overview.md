@@ -12,6 +12,7 @@ the CPU, and what is still open. The details live on five further pages:
 | Page | What it holds |
 | --- | --- |
 | [AOT targets](aot.md) | Ahead-of-time device code, the default target list, sub-group sizes |
+| [Device sanitizer](device-sanitizer.md) | `-Dsycl_device_asan=true`, what the DPC++ device AddressSanitizer reports on an Arc GPU and what it cannot prove |
 | [Twin notes](twins.md) | How each twin reaches the CPU's bits; compile-line guarantees |
 | [Zero-copy and pictures](zero-copy.md) | QSV / VA-API import, D3D11, picture pre-allocation |
 | [Developer notes](developer-notes.md) | fp64-free kernels, scratch-memory rules, source layout |

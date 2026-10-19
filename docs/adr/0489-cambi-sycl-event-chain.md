@@ -1,7 +1,7 @@
-<!-- markdownlint-disable MD060 -->
+<!-- markdownlint-disable MD060 MD013 -->
 # ADR-0489: CAMBI SYCL — Replace GPU-to-GPU `q.wait()` Calls with Event Chains (SY-1)
 
-- **Status**: Accepted
+- **Status**: Accepted (Superseded-in-part 2026-10-06 by [ADR-1357](1357-sycl-cambi-device-resident.md) for the SYCL host-residual provisions)
 - **Date**: 2026-05-16
 - **Deciders**: lusoris
 - **Tags**: `sycl`, `gpu`, `cambi`, `performance`, `fork-local`

@@ -98,9 +98,9 @@ static void find_collector(const VmafContext *vmaf)
 /* The two names are the ones `ld --wrap=vmaf_feature_collector_init` defines:
  * the library's call resolves to __wrap_..., and __real_... is the library's
  * own function. They are reserved identifiers by necessity. */
-// NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp): linker --wrap contract
+// NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp): ld --wrap, ADR-1487
 int __real_vmaf_feature_collector_init(VmafFeatureCollector **fc);
-// NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp): linker --wrap contract
+// NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp): ld --wrap, ADR-1487
 int __wrap_vmaf_feature_collector_init(VmafFeatureCollector **fc)
 {
     const int err = __real_vmaf_feature_collector_init(fc);

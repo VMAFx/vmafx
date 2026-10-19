@@ -1,7 +1,7 @@
-<!-- markdownlint-disable MD060 -->
+<!-- markdownlint-disable MD060 MD013 -->
 # ADR-0504: AVX-512F port of float separable convolution scanlines
 
-- **Status**: Accepted
+- **Status**: Accepted (Superseded-in-part 2026-10-06 by [ADR-1104](1104-float-vif-avx512-golden-regression-fix.md) for the AVX-512 dispatch of the float VIF convolution)
 - **Date**: 2026-05-18
 - **Deciders**: Lusoris
 - **Tags**: `simd`, `performance`, `build`

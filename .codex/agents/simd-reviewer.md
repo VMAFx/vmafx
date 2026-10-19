@@ -1,8 +1,6 @@
 ---
-name: simd-reviewer
 description: Reviews SIMD intrinsics files under core/src/feature/x86/ and core/src/feature/arm64/. Checks bit-exactness vs scalar reference, alignment, masking, lane ordering, reduction stability. Use when reviewing AVX2/AVX-512/NEON implementations.
-model: sonnet
-tools: Read, Grep, Glob, Bash
+name: simd-reviewer
 ---
 <!-- markdownlint-disable MD013 MD041 -->
 
@@ -54,3 +52,5 @@ accumulate in double precision (see commit `24c88a32` for float-ADM precedent).
   `core/test/` covers it.
 
 Do not edit. Recommend.
+
+<!-- TOOL PERMISSION GAP: Codex custom agents inherit parent tools; no per-agent allow-list is available. -->

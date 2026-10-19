@@ -179,8 +179,9 @@ fn score_inputs(paths: &InputPaths) -> Result<(u32, f64), Box<dyn std::error::Er
 
     ctx.flush()?;
     if n_frames == 0 {
-        eprintln!("ERROR: no frames read — check that the YUV paths are correct.");
-        std::process::exit(1);
+        return Err(
+            std::io::Error::other("no frames read: check that the YUV paths are correct").into(),
+        );
     }
     let score = ctx.score_pooled(&model, 0, n_frames - 1)?;
     ctx.close()

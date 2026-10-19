@@ -1,6 +1,6 @@
 # ADR-1183: Model options gate GPU twin selection
 
-- **Status:** Accepted
+- **Status**: Accepted
 - **Date:** 2026-09-05
 - **Deciders:** Lusoris
 - **Supersedes:** none
@@ -82,3 +82,12 @@ to run with unexpected default parameters without notice.
 - Brief `brief-cambicuda2.md` requirements 2, 3, 6
 - [ADR-1169](1169-default-model-v1-0-16.md): Default model `vmaf_v1.0.16_3d0h`
 - [ADR-0165](0165-state-md-bug-tracking.md): State tracking
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 82: `- Brief brief-cambicuda2.md requirements 2, 3, 6`: Cites
+  nonexistent document brief-cambicuda2.md; the file does not exist on
+  origin/master.

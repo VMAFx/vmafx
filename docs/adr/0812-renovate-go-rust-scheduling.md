@@ -70,3 +70,13 @@ We will apply three changes to `renovate.json`:
 - `go.mod` — `github.com/VMAFx/vmafx` module with k8s/grpc/prometheus/MCP deps.
 - `Cargo.toml` — workspace root with `vmafx-sys` and TAD extractor crates.
 - req: "Audit renovate.json. Verify forkProcessing, avoid weekends+business hours, group Go deps, auto-merge minor+patch known-safe, major needs human approval."
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 3: `markdownlint comment "pre-existing long lines per ADR-0864
+  tail"`: ADR-0864 has no file: it is a retired number in
+  scripts/ci/source-adr-citations.json; see ADR-0866 and ADR-0980 for the
+  markdownlint configuration tune and first sweep it names.

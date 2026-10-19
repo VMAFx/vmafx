@@ -36,8 +36,6 @@
 #include "common.h"
 #include "cuda/cuda_tile_index.h"
 
-__constant__ int32_t mv2_filter_d[5] = {3571, 16004, 26386, 16004, 3571};
-
 #define MV2_RADIUS 2
 #define MV2_BLOCK_X 16
 #define MV2_BLOCK_Y 16
@@ -53,9 +51,11 @@ __constant__ int32_t mv2_filter_d[5] = {3571, 16004, 26386, 16004, 3571};
 namespace
 {
 
-typedef int32_t DiffTile[MV2_TILE_H][MV2_TILE_PITCH];
+__constant__ int32_t mv2_filter_d[5] = {3571, 16004, 26386, 16004, 3571};
+
+using DiffTile = int32_t[MV2_TILE_H][MV2_TILE_PITCH];
 /* The vertical pass: the block's 16 output rows over all 20 tile columns. */
-typedef int32_t VTile[MV2_BLOCK_Y][MV2_TILE_PITCH];
+using VTile = int32_t[MV2_BLOCK_Y][MV2_TILE_PITCH];
 
 /* Sample `x` of row `y` of a packed plane of T. */
 template <typename T>
@@ -103,8 +103,8 @@ __device__ __forceinline__ void stage_diff(DiffTile &s_diff, const uint8_t *__re
 template <typename VAcc>
 __device__ __forceinline__ void vertical_pass(const DiffTile &s_diff, VTile &s_v, unsigned bpc)
 {
-    const int shift_y = (int)bpc;
-    const VAcc round_y = (VAcc)1 << (shift_y - 1);
+    const unsigned shift_y = bpc;
+    const VAcc round_y = (VAcc)1 << (shift_y - 1u);
     const unsigned lid = threadIdx.y * blockDim.x + threadIdx.x;
     for (unsigned i = lid; i < MV2_BLOCK_Y * MV2_TILE_W; i += MV2_BLOCK_X * MV2_BLOCK_Y) {
         const unsigned r = i / MV2_TILE_W;
@@ -121,8 +121,8 @@ __device__ __forceinline__ void vertical_pass(const DiffTile &s_diff, VTile &s_v
  *   h = (sum_k filter[k] * v[ty][tx + k] + 2^15) >> 16 */
 __device__ __forceinline__ int64_t horizontal_abs(const VTile &s_v)
 {
-    constexpr int shift_x = 16;
-    constexpr int64_t round_x = (int64_t)1 << 15;
+    constexpr unsigned shift_x = 16u;
+    constexpr int64_t round_x = (int64_t)1 << 15u;
     int64_t blurred = 0;
 #pragma unroll
     for (int k = 0; k < 5; ++k)

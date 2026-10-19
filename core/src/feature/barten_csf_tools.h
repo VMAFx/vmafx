@@ -24,13 +24,6 @@
 #ifndef BARTEN_CSF_TOOLS_H_
 #define BARTEN_CSF_TOOLS_H_
 
-/* MinGW's <math.h> does not expose M_PI unless _USE_MATH_DEFINES is set
- * before the include; provide a fallback that mirrors the convention used
- * in adm_tools.h, integer_adm.h, ciede.c, etc. */
-#ifndef M_PI
-#define M_PI 3.14159265358979323846264338327
-#endif
-
 static float linear_interpolate(float left_position, float left_value, float right_position,
                                 float right_value, float sample_position)
 {
@@ -44,19 +37,19 @@ static float linear_interpolate(float left_position, float left_value, float rig
  * Note: HDR-VDP2 paper has 5 levels, but version 2.2.1 was updated with data for 6 levels:
  * 0.002, 0.02, 0.2, 2, 20, 150
  */
-static const float barten_csf_param_anchors[6] = {0.002, 0.02, 0.2, 2, 20, 150};
+static const float barten_csf_param_anchors[6] = {0.002f, 0.02f, 0.2f, 2, 20, 150};
 
-static const float barten_csf_params[6][5] = {{0.0160737, 0.991265, 3.74038, 0.50722, 4.46044},
-                                              {0.383873, 0.800889, 3.54104, 0.682505, 4.94958},
-                                              {0.929301, 0.476505, 4.37453, 0.750315, 5.28678},
-                                              {1.29776, 0.405782, 4.40602, 0.935314, 5.61425},
-                                              {1.49222, 0.334278, 3.79542, 1.07327, 6.4635},
-                                              {1.46213, 0.394533, 2.7755, 1.16577, 7.45665}};
+static const float barten_csf_params[6][5] = {{0.0160737f, 0.991265f, 3.74038f, 0.50722f, 4.46044f},
+                                              {0.383873f, 0.800889f, 3.54104f, 0.682505f, 4.94958f},
+                                              {0.929301f, 0.476505f, 4.37453f, 0.750315f, 5.28678f},
+                                              {1.29776f, 0.405782f, 4.40602f, 0.935314f, 5.61425f},
+                                              {1.49222f, 0.334278f, 3.79542f, 1.07327f, 6.4635f},
+                                              {1.46213f, 0.394533f, 2.7755f, 1.16577f, 7.45665f}};
 
-static const float barten_csf_sa[4] = {30.162, 4.0627, 1.6596, 0.2712};
-static const float barten_mtf_params_a[4] = {0.424838596301290, 0.572435103936480,
-                                             0.000167576239164937, 0.00255872352306433};
-static const float barten_mtf_params_b[4] = {0.028, 0.37, 37, 360};
+static const float barten_csf_sa[4] = {30.162f, 4.0627f, 1.6596f, 0.2712f};
+static const float barten_mtf_params_a[4] = {0.424838596301290f, 0.572435103936480f,
+                                             0.000167576239164937f, 0.00255872352306433f};
+static const float barten_mtf_params_b[4] = {0.028f, 0.37f, 37, 360};
 
 /* Luminance-dependent component of Barten's CSF */
 static float barten_rod_cone_sens(float luminance_level)
@@ -68,9 +61,10 @@ static float barten_rod_cone_sens(float luminance_level)
      * a float, and pow() takes and returns double. Written this way a C++
      * translation unit, where pow(float, float) is another function,
      * evaluates what a C one does (ADR-1489). */
-    return (double)barten_csf_sa[0] *
-           pow(pow((double)(cvi_sens_drop / luminance_level), (double)cvi_trans_slope) + 1.0,
-               (double)-cvi_low_slope);
+    return (
+        float)((double)barten_csf_sa[0] *
+               pow(pow((double)(cvi_sens_drop / luminance_level), (double)cvi_trans_slope) + 1.0,
+                   (double)-cvi_low_slope));
 }
 
 /*  MTF portion of Barten's CSF */
@@ -80,8 +74,8 @@ static float barten_mtf(float spatial_frequency)
     for (int i = 0; i <= 3; i++) {
         /* Upstream's expression: the argument of exp() is a float product,
          * promoted after it is formed (ADR-1489). */
-        mtf = mtf +
-              barten_mtf_params_a[i] * exp((double)(-barten_mtf_params_b[i] * spatial_frequency));
+        mtf = (float)(mtf + barten_mtf_params_a[i] *
+                                exp((double)(-barten_mtf_params_b[i] * spatial_frequency)));
     }
     return mtf;
 }
@@ -106,9 +100,9 @@ static FORCE_INLINE float barten_csf(int lambda, double adm_norm_view_dist,
                                      double adm_csf_scale)
 {
     /* This is the display visual resolution (DVR), in pixels/degree of visual angle. It should be ~56.55. */
-    const float r = adm_norm_view_dist * adm_ref_display_height * M_PI / 180.0;
+    const float r = (float)(adm_norm_view_dist * adm_ref_display_height * M_PI / 180.0);
     /* This is the nominal spatial frequency for each DWT level; first level (level = 0) is half of the DVR. */
-    const float spatial_frequency = r / pow(2, lambda + 1);
+    const float spatial_frequency = (float)(r / pow(2, lambda + 1));
 
     const double clamped_lum =
         CLAMP(adm_csf_lum_level, barten_csf_param_anchors[0], barten_csf_param_anchors[5]);
@@ -149,68 +143,70 @@ static FORCE_INLINE float barten_csf(int lambda, double adm_norm_view_dist,
     // these values can be derived by the matlab code:
     // metric_par = hdrvdp_parse_options({})
     // hdrvdp_ncsf(rho, lum, metric_par); (any rho works)
-    const float a = 1.0f + pow((double)(p_0 * spatial_frequency), (double)p_1);
-    const float b = 1.0f / pow(1 - exp(-pow((double)(spatial_frequency / 7), 2)), (double)p_2);
+    const float a = (float)(1.0f + pow((double)(p_0 * spatial_frequency), (double)p_1));
+    const float b =
+        (float)(1.0f / pow(1 - exp(-pow((double)(spatial_frequency / 7), 2)), (double)p_2));
 
     /* neural contrast sensitivity function */
-    const float csf = p_3 / pow((double)(a * b), 0.5);
+    const float csf = (float)(p_3 / pow((double)(a * b), 0.5));
 
     /* return entire CSF */
-    return (double)(csf * barten_mtf(spatial_frequency) * barten_rod_cone_sens(adm_csf_lum_level)) *
-           adm_csf_scale;
+    return (float)((double)(csf * barten_mtf(spatial_frequency) *
+                            barten_rod_cone_sens((float)adm_csf_lum_level)) *
+                   adm_csf_scale);
 }
 
-static const float BLENDED_CSF_1080_3H[2][4] = {{0.01183, 0.025026, 0.04295, 0.058621},
-                                                {0.004302, 0.011778, 0.023918, 0.035901}};
+static const float BLENDED_CSF_1080_3H[2][4] = {{0.01183f, 0.025026f, 0.04295f, 0.058621f},
+                                                {0.004302f, 0.011778f, 0.023918f, 0.035901f}};
 
-static const float BLENDED_CSF_1080_5H[2][4] = {{0.004212, 0.014809, 0.029642, 0.047464},
-                                                {0.000984, 0.005852, 0.0146, 0.027574}};
+static const float BLENDED_CSF_1080_5H[2][4] = {{0.004212f, 0.014809f, 0.029642f, 0.047464f},
+                                                {0.000984f, 0.005852f, 0.0146f, 0.027574f}};
 
-static const float BLENDED_CSF_2160_3H[2][4] = {{0.00226, 0.01183, 0.025026, 0.04295},
-                                                {0.000479, 0.004302, 0.011778, 0.023918}};
+static const float BLENDED_CSF_2160_3H[2][4] = {{0.00226f, 0.01183f, 0.025026f, 0.04295f},
+                                                {0.000479f, 0.004302f, 0.011778f, 0.023918f}};
 
-static const float BLENDED_CSF_2160_5H[2][4] = {{0.000092, 0.004212, 0.014809, 0.029642},
-                                                {0.000050, 0.000984, 0.005852, 0.0146}};
+static const float BLENDED_CSF_2160_5H[2][4] = {{0.000092f, 0.004212f, 0.014809f, 0.029642f},
+                                                {0.000050f, 0.000984f, 0.005852f, 0.0146f}};
 
-static const float BLENDED_CSF_720_3H[2][4] = {{0.018715, 0.035637, 0.052798, 0.061509},
-                                               {0.007999, 0.018396, 0.031851, 0.037718}};
+static const float BLENDED_CSF_720_3H[2][4] = {{0.018715f, 0.035637f, 0.052798f, 0.061509f},
+                                               {0.007999f, 0.018396f, 0.031851f, 0.037718f}};
 
-static const float BLENDED_CSF_720_5H[2][4] = {{0.010144, 0.022561, 0.040309, 0.05672},
-                                               {0.003463, 0.010282, 0.021839, 0.034641}};
+static const float BLENDED_CSF_720_5H[2][4] = {{0.010144f, 0.022561f, 0.040309f, 0.05672f},
+                                               {0.003463f, 0.010282f, 0.021839f, 0.034641f}};
 
-static const float BLENDED_CSF_480_3H[2][4] = {{0.027961, 0.045875, 0.060275, 0.056234},
-                                               {0.013572, 0.026277, 0.036959, 0.034511}};
+static const float BLENDED_CSF_480_3H[2][4] = {{0.027961f, 0.045875f, 0.060275f, 0.056234f},
+                                               {0.013572f, 0.026277f, 0.036959f, 0.034511f}};
 
-static const float BLENDED_CSF_480_5H[2][4] = {{0.016781, 0.032822, 0.05032, 0.061594},
-                                               {0.00691, 0.016545, 0.029917, 0.037777}};
+static const float BLENDED_CSF_480_5H[2][4] = {{0.016781f, 0.032822f, 0.05032f, 0.061594f},
+                                               {0.00691f, 0.016545f, 0.029917f, 0.037777f}};
 
 /*
  * BLENDED_CSF coefficient arrays for v1.0.17+ models (with CSF bug fix)
  * These coefficients incorporate the L1 optimization scaling parameter fix
  */
-static const float BLENDED_CSF_1080_3H_MAE[2][4] = {{0.011249, 0.022606, 0.035930, 0.045673},
-                                                    {0.004097, 0.010921, 0.021430, 0.031313}};
+static const float BLENDED_CSF_1080_3H_MAE[2][4] = {{0.011249f, 0.022606f, 0.035930f, 0.045673f},
+                                                    {0.004097f, 0.010921f, 0.021430f, 0.031313f}};
 
-static const float BLENDED_CSF_1080_5H_MAE[2][4] = {{0.004052, 0.013939, 0.026298, 0.038833},
-                                                    {0.000927, 0.005544, 0.013415, 0.024515}};
+static const float BLENDED_CSF_1080_5H_MAE[2][4] = {{0.004052f, 0.013939f, 0.026298f, 0.038833f},
+                                                    {0.000927f, 0.005544f, 0.013415f, 0.024515f}};
 
-static const float BLENDED_CSF_2160_3H_MAE[2][4] = {{0.002166, 0.011249, 0.022606, 0.035930},
-                                                    {0.000447, 0.004097, 0.010921, 0.021430}};
+static const float BLENDED_CSF_2160_3H_MAE[2][4] = {{0.002166f, 0.011249f, 0.022606f, 0.035930f},
+                                                    {0.000447f, 0.004097f, 0.010921f, 0.021430f}};
 
-static const float BLENDED_CSF_2160_5H_MAE[2][4] = {{0.000077, 0.004052, 0.013939, 0.026298},
-                                                    {0.000045, 0.000927, 0.005544, 0.013415}};
+static const float BLENDED_CSF_2160_5H_MAE[2][4] = {{0.000077f, 0.004052f, 0.013939f, 0.026298f},
+                                                    {0.000045f, 0.000927f, 0.005544f, 0.013415f}};
 
-static const float BLENDED_CSF_720_3H_MAE[2][4] = {{0.017329, 0.030870, 0.042134, 0.047410},
-                                                   {0.007509, 0.016707, 0.028072, 0.032722}};
+static const float BLENDED_CSF_720_3H_MAE[2][4] = {{0.017329f, 0.030870f, 0.042134f, 0.047410f},
+                                                   {0.007509f, 0.016707f, 0.028072f, 0.032722f}};
 
-static const float BLENDED_CSF_720_5H_MAE[2][4] = {{0.009689, 0.020577, 0.034162, 0.044523},
-                                                   {0.003302, 0.009579, 0.019661, 0.030318}};
+static const float BLENDED_CSF_720_5H_MAE[2][4] = {{0.009689f, 0.020577f, 0.034162f, 0.044523f},
+                                                   {0.003302f, 0.009579f, 0.019661f, 0.030318f}};
 
-static const float BLENDED_CSF_480_3H_MAE[2][4] = {{0.024969, 0.037825, 0.046676, 0.043974},
-                                                   {0.012511, 0.023424, 0.032139, 0.030166}};
+static const float BLENDED_CSF_480_3H_MAE[2][4] = {{0.024969f, 0.037825f, 0.046676f, 0.043974f},
+                                                   {0.012511f, 0.023424f, 0.032139f, 0.030166f}};
 
-static const float BLENDED_CSF_480_5H_MAE[2][4] = {{0.015665, 0.028766, 0.040612, 0.047483},
-                                                   {0.006514, 0.015107, 0.026476, 0.032776}};
+static const float BLENDED_CSF_480_5H_MAE[2][4] = {{0.015665f, 0.028766f, 0.040612f, 0.047483f},
+                                                   {0.006514f, 0.015107f, 0.026476f, 0.032776f}};
 
 /*
  * CSF function with CSF bug fix

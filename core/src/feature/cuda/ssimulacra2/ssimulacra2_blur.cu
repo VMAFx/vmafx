@@ -40,6 +40,19 @@ struct Ss2cIir {
     float prev2[3];
 };
 
+/* The zero state, filled field by field: designated initializers do not build
+ * under nvcc's MSVC host frontend (preflight --stage msvcism) and a
+ * constructor would make the members private by clang-tidy's rules. */
+__device__ __forceinline__ Ss2cIir ss2c_iir_zero()
+{
+    Ss2cIir st;
+    for (unsigned i = 0; i < 3u; i++) {
+        st.prev1[i] = 0.0f;
+        st.prev2[i] = 0.0f;
+    }
+    return st;
+}
+
 /* One step of ssimulacra2.c::fast_gaussian_1d; returns o0 + o1 + o2. */
 __device__ __forceinline__ float ss2c_iir_step(Ss2cIir &st, const Ss2cBlurArgs &a, float lv,
                                                float rv)
@@ -129,7 +142,7 @@ __global__ void __launch_bounds__(SS2C_BLUR_TILE) ssimulacra2_blur_h(const Ss2cB
     }
     __syncwarp();
 
-    Ss2cIir st = {{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}};
+    Ss2cIir st = ss2c_iir_zero();
     float *pass = a.pass[job] + base;
     for (unsigned chunk = 0; (int)(chunk * SS2C_BLUR_TILE) - lead < w; chunk++) {
         const int first = (int)(chunk * SS2C_BLUR_TILE) - lead;
@@ -170,7 +183,7 @@ __global__ void __launch_bounds__(SS2C_BLUR_V_BLOCK) ssimulacra2_blur_v(const Ss
     const int h = (int)a.height;
     const size_t w = a.width;
 
-    Ss2cIir st = {{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}};
+    Ss2cIir st = ss2c_iir_zero();
 #pragma unroll 4
     for (int n = 1 - a.radius; n < h; n++) {
         const int left = n - a.radius - 1;

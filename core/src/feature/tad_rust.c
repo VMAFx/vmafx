@@ -29,9 +29,10 @@
  * the C spelling of the surface it exercises. ADR-1138. */
 
 /* ---------------------------------------------------------------------------
- * Gate on HAVE_RUST_TAD: defined by Meson when the Rust staticlib is linked.
- * core/src/meson.build compiles this TU, and feature_extractor.cpp registers
- * vmaf_fex_tad, only in that case (enable_rust_features=true and cargo found).
+ * Gate on HAVE_RUST_FEATURES (config.h, ADR-1713): 1 when Meson builds the
+ * Rust archive (enable_rust_features=true and cargo found). core/src/meson.build
+ * compiles this TU only in that case, and the Rust shim
+ * (core/src/rust/shim/rust_twins.cpp) registers vmaf_fex_tad at vmaf_init().
  * Without it the extractor does not exist: `--feature tad` fails with the
  * generic "problem loading feature extractor: tad", and nothing here runs.
  * The `#else` stubs below return -ENOSYS and exist only so a tool that
@@ -39,7 +40,7 @@
  * the shipped build graph never links them.
  * --------------------------------------------------------------------------- */
 
-#ifdef HAVE_RUST_TAD
+#if HAVE_RUST_FEATURES
 
 /* Declarations of the Rust-exported functions (generated header lives at
  * $OUT_DIR/include/vmafx_tad.h; the Meson rule copies it to the build tree).
@@ -80,7 +81,7 @@ static int tad_close(VmafFeatureExtractor *fex)
     return vmafx_tad_close(fex->priv);
 }
 
-#else /* !HAVE_RUST_TAD — no-op stubs */
+#else /* !HAVE_RUST_FEATURES — no-op stubs */
 
 static int tad_init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                     unsigned w, unsigned h)
@@ -115,13 +116,13 @@ static int tad_close(VmafFeatureExtractor *fex)
     return 0;
 }
 
-#endif /* HAVE_RUST_TAD */
+#endif /* HAVE_RUST_FEATURES */
 
 /* ---------------------------------------------------------------------------
  * Feature names provided by this extractor.
  * --------------------------------------------------------------------------- */
 
-static const char *const tad_provided_features[] = {
+static const char *tad_provided_features[] = {
     "tad",
     "tad_sad",
     NULL,

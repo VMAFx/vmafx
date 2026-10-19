@@ -44,6 +44,10 @@
 #include <math.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+#include <numbers>
+#endif
+
 #define CIEDE_BLOCK_X 16
 #define CIEDE_BLOCK_Y 16
 
@@ -57,17 +61,24 @@
 #define CIEDE_POWF(x, y) powf((x), (y))
 #endif
 
+#ifdef __cplusplus
+/* std::numbers::pi is the double nearest to the C branch's literal. */
+#define CIEDE_PI std::numbers::pi
+#else
 #define CIEDE_PI 3.14159265358979323846
+#endif
 /* powf(25., 7) and pow(25, 7): 25^7 = 6103515625 rounded to float, and exact. */
 #define CIEDE_POWF_25_7 6103515648.0f
 #define CIEDE_POW_25_7 6103515625.0
 
 /* ciede.c's LABColor. */
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no `using`. ADR-1138. */
 typedef struct CiedeLab {
     float l;
     float a;
     float b;
 } CiedeLab;
+/* NOLINTEND(modernize-use-using) */
 
 /* pow(x, 2) for a float x: the exact fp64 square. */
 CIEDE_HD double ciede_sq(float x)
@@ -106,7 +117,7 @@ CIEDE_HD float ciede_xyz_to_lab_map(double c)
  * them to before the call. */
 CIEDE_HD CiedeLab ciede_lab_color(double y, double u, double v, unsigned bpc)
 {
-    const double scale = (double)(1 << (bpc - 8u));
+    const double scale = (double)(1u << (bpc - 8u));
 
     y = (y - 16. * scale) * (1. / (219. * scale));
     u = (u - 128. * scale) * (1. / (224. * scale));

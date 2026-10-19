@@ -33,8 +33,8 @@
 //
 //	VMAFX_MCP_TRANSPORT   -> mcp.transport    Transport: "stdio" (default) or "http".
 //	VMAFX_MCP_HTTP_ADDR   -> mcp.http.addr    HTTP listen address (default ":3000").
-//	VMAFX_LOG_LEVEL       (-> LOG_LEVEL, bridged below — golusoris#234) slog level.
-//	VMAFX_LOG_FORMAT      (-> LOG_FORMAT, bridged below — golusoris#234) log handler.
+//	VMAFX_LOG_LEVEL       -> log.level        slog level.
+//	VMAFX_LOG_FORMAT      -> log.format       Log handler.
 //	VMAF_BIN              Path to the vmaf CLI binary (read directly by the tool
 //	                      handlers, NOT via koanf — unchanged contract).
 //	VMAFX_MCP_DIRECT      Set to "1" to enable the direct cgo scoring path
@@ -61,7 +61,6 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -93,15 +92,6 @@ const (
 )
 
 func main() {
-	// Interim env bridge, applied BEFORE fx.New so the log module observes it.
-	// golusoris#234: the pinned v0.4.0 log module reads bare LOG_LEVEL/LOG_FORMAT
-	// and ignores the VMAFX_ prefix (the prefixed read is merged to golusoris
-	// main but untagged). Bridge the prefixed vars across so operators configure
-	// the level through the same prefix as everything else; remove once the
-	// carrying golusoris tag lands. Mirrors cmd/vmafx-server/main.go.
-	bridgeLogEnv("LOG_LEVEL")
-	bridgeLogEnv("LOG_FORMAT")
-
 	fx.New(
 		// golusoris foundation: config + log + clock + id + validate + crypto,
 		// the OTel module, and the build-version supply (ADR-1119). bootstrap.Base
@@ -180,22 +170,6 @@ func runMCPTransport(
 		return nil
 	default:
 		return fmt.Errorf("unknown transport %q; set VMAFX_MCP_TRANSPORT to stdio or http", transport)
-	}
-}
-
-// bridgeLogEnv copies the VMAFX_-prefixed value of name onto the bare name, leaving an
-// already-set bare value alone.
-//
-// It runs before fx.New, so there is no logger yet; a failure goes to stderr, which is
-// where the fx logger writes too and is the only stream free to use (R3: in stdio mode
-// the MCP framing owns stdout).
-func bridgeLogEnv(name string) {
-	v := os.Getenv("VMAFX_" + name)
-	if v == "" || os.Getenv(name) != "" {
-		return
-	}
-	if err := os.Setenv(name, v); err != nil {
-		fmt.Fprintf(os.Stderr, "vmafx-mcp: bridging VMAFX_%s onto %s failed: %v\n", name, name, err)
 	}
 }
 
@@ -302,7 +276,7 @@ func warnHTTPAuthPosture(log *slog.Logger) {
 // request-body size limit), the identical gate to the Python _make_security_middleware so
 // both servers behave the same. The otelhttp server span (bootstrap.TraceHTTPHandler,
 // ADR-0782 / ADR-1119) is outermost so rejected requests are traced with their 401 / 413
-// status too; this hand-rolled *http.Server is not the golusoris.HTTP module, so the
+// status too; this hand-rolled *http.Server is not the bootstrap.HTTP module, so the
 // fx-side bootstrap.HTTPTracing decorator does not reach it and the wrapper is applied
 // here directly.
 func newHTTPTransportServer(srv *mcp.Server, addr string) *http.Server {

@@ -43,41 +43,27 @@ import (
 	"sync/atomic"
 	"time"
 
+	vmafxv1 "github.com/VMAFx/vmafx/api/vmafx/v1"
 	"github.com/VMAFx/vmafx/pkg/scoringscope"
 )
 
-// TenantSpec is the spec of one VmafxTenant resource
-// (deploy/helm/vmafx/crds/vmafx.dev_vmafxtenants.yaml). Omitted fields take
-// the CRD's defaults.
-type TenantSpec struct {
-	TenantID string         `json:"tenantId"`
-	Enabled  *bool          `json:"enabled,omitempty"`
-	OIDC     TenantOIDC     `json:"oidc"`
-	RBAC     *TenantRBAC    `json:"rbac,omitempty"`
-	Scoring  *TenantScoring `json:"scoring,omitempty"`
-}
-
-// TenantScoring limits the inputs the tenant's callers may score (ADR-1577):
-// local directories and remote prefixes (pkg/scoringscope). No roots, the
-// default, means the tenant may score nothing.
-type TenantScoring struct {
-	Roots []string `json:"roots,omitempty"`
-}
-
-// TenantOIDC is the identity provider of one tenant.
-type TenantOIDC struct {
-	Issuer       string `json:"issuer"`
-	JWKSEndpoint string `json:"jwksEndpoint"`
-	Audience     string `json:"audience,omitempty"`
-	TenantClaim  string `json:"tenantClaim,omitempty"`
-	RolesClaim   string `json:"rolesClaim,omitempty"`
-}
-
-// TenantRBAC is the role policy of one tenant.
-type TenantRBAC struct {
-	DefaultRole  string   `json:"defaultRole,omitempty"`
-	AllowedRoles []string `json:"allowedRoles,omitempty"`
-}
+// The spec of a VmafxTenant resource is the generated Go type of
+// api/vmafx/v1 (api/vmafx-platform.toml, ADR-2350 D13), the type the CRD
+// deploy/helm/vmafx/crds/vmafx.dev_vmafxtenants.yaml is generated from; the
+// auth package names it and its parts with these aliases. Omitted fields take
+// the CRD's defaults, applied by buildTenant.
+type (
+	// TenantSpec is the spec of one VmafxTenant resource.
+	TenantSpec = vmafxv1.VmafxTenantSpec
+	// TenantOIDC is the identity provider of one tenant.
+	TenantOIDC = vmafxv1.VmafxTenantOIDC
+	// TenantRBAC is the role policy of one tenant.
+	TenantRBAC = vmafxv1.VmafxTenantRBAC
+	// TenantScoring limits the inputs the tenant's callers may score
+	// (ADR-1577): local directories and remote prefixes (pkg/scoringscope).
+	// No roots, the default, means the tenant may score nothing.
+	TenantScoring = vmafxv1.VmafxTenantScoring
+)
 
 // NamedTenantSpec is a spec with the name of where it came from (a resource
 // name or a file position), for error messages. Err is set when the source

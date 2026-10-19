@@ -4,9 +4,9 @@
 // pkg/observability/observability_test.go — unit tests for the
 // observability primitives.
 //
-// Covers NewLogger level resolution, NewMetrics registration, the
-// SetControllerSources gauge wiring (with a fresh registry per case to
-// avoid global-state pollution), and NewShutdownContext's signal handling.
+// Covers NewLogger level resolution, NewMetrics registration (with a fresh
+// registry per case to avoid global-state pollution), and
+// NewShutdownContext's signal handling.
 
 package observability
 
@@ -96,128 +96,63 @@ func TestNewLogger_EmitsJSON(t *testing.T) {
 	}
 }
 
-// TestNewMetrics_RegistersAllInstruments verifies every counter and the
-// histogram are registered on the supplied registry under the expected name.
+// TestNewMetrics_RegistersAllInstruments verifies every scoring family and the
+// quality family are registered on the supplied registry under their metricdef
+// names, and that the controller's queue families are not (they belong to the
+// controller alone).
 func TestNewMetrics_RegistersAllInstruments(t *testing.T) {
 	t.Parallel()
 	reg := prometheus.NewRegistry()
-	m := NewMetrics(reg)
-	if m == nil {
-		t.Fatal("NewMetrics returned nil")
+	m, err := NewMetrics(reg)
+	if err != nil {
+		t.Fatalf("NewMetrics: %v", err)
 	}
 
-	// Increment every counter and observe a histogram value so the
-	// instruments appear in the gathered output.
+	// Increment every counter and observe each histogram so the instruments
+	// appear in the gathered output.
 	m.ScoreRequests.Inc()
 	m.ScoreErrors.Inc()
 	m.ScoreDuration.Observe(0.5)
 	m.HealthRequests.Inc()
 	m.ReadyRequests.Inc()
-	m.JobsSubmitted.Inc()
-	m.JobsCompleted.Inc()
-	m.JobsFailed.Inc()
+	m.ObserveScore("", "vmaf_v0.6.1", 93.5)
 
 	families, err := reg.Gather()
 	if err != nil {
 		t.Fatalf("Gather: %v", err)
-	}
-
-	wantNames := []string{
-		"vmafx_server_score_requests_total",
-		"vmafx_server_score_errors_total",
-		"vmafx_server_score_duration_seconds",
-		"vmafx_server_health_requests_total",
-		"vmafx_server_ready_requests_total",
-		"vmafx_controller_jobs_submitted_total",
-		"vmafx_controller_jobs_completed_total",
-		"vmafx_controller_jobs_failed_total",
 	}
 	got := map[string]bool{}
 	for _, fam := range families {
 		got[fam.GetName()] = true
 	}
-	for _, w := range wantNames {
+	for _, w := range []string{
+		"vmafx_server_score_requests_total",
+		"vmafx_server_score_errors_total",
+		"vmafx_server_score_duration_seconds",
+		"vmafx_server_health_requests_total",
+		"vmafx_server_ready_requests_total",
+		"vmafx_quality_score",
+	} {
 		if !got[w] {
 			t.Errorf("missing metric %q in registry; got %v", w, got)
 		}
 	}
-}
-
-// mockJobQueue implements the unexported jobQueueSource interface for tests.
-type mockJobQueue struct {
-	pending, running int
-}
-
-func (m *mockJobQueue) PendingCount() int { return m.pending }
-func (m *mockJobQueue) RunningCount() int { return m.running }
-
-// mockNodeRegistry implements nodeRegistrySource for tests.
-type mockNodeRegistry struct{ n int }
-
-func (m *mockNodeRegistry) Count() int { return m.n }
-
-// TestSetControllerSources_RegistersGauges verifies the three gauge funcs
-// (jobs_pending, jobs_running, nodes_live) register against the ISOLATED
-// registry that was passed to NewMetrics (not the global DefaultRegisterer),
-// and report the mock-supplied values.  ADR-1014.
-func TestSetControllerSources_RegistersGauges(t *testing.T) {
-	t.Parallel()
-	q := &mockJobQueue{pending: 3, running: 1}
-	r := &mockNodeRegistry{n: 5}
-
-	reg := prometheus.NewRegistry()
-	m := NewMetrics(reg)
-	m.SetControllerSources(q, r)
-
-	// Gauges must be visible on the ISOLATED registry, not DefaultGatherer.
-	families, err := reg.Gather()
-	if err != nil {
-		t.Fatalf("Gather: %v", err)
-	}
-	gotMetrics := map[string]float64{}
-	for _, fam := range families {
-		for _, metric := range fam.GetMetric() {
-			if g := metric.GetGauge(); g != nil {
-				gotMetrics[fam.GetName()] = g.GetValue()
-			}
-		}
-	}
-	if v, ok := gotMetrics["vmafx_controller_jobs_pending"]; !ok {
-		t.Error("vmafx_controller_jobs_pending missing from isolated registry")
-	} else if v != 3 {
-		t.Errorf("jobs_pending = %v, want 3", v)
-	}
-	if v, ok := gotMetrics["vmafx_controller_jobs_running"]; !ok {
-		t.Error("vmafx_controller_jobs_running missing from isolated registry")
-	} else if v != 1 {
-		t.Errorf("jobs_running = %v, want 1", v)
-	}
-	if v, ok := gotMetrics["vmafx_controller_nodes_live"]; !ok {
-		t.Error("vmafx_controller_nodes_live missing from isolated registry")
-	} else if v != 5 {
-		t.Errorf("nodes_live = %v, want 5", v)
+	if got["vmafx_controller_jobs_submitted_total"] {
+		t.Error("NewMetrics registered a controller queue family")
 	}
 }
 
-// TestSetControllerSources_Idempotent verifies a second call is a no-op
-// rather than a panic (sync.Once guard, ADR-1014).
-func TestSetControllerSources_Idempotent(t *testing.T) {
+// TestNewMetrics_SecondRegistrationFails verifies a second NewMetrics on the
+// same registry returns the duplicate-registration error instead of panicking.
+func TestNewMetrics_SecondRegistrationFails(t *testing.T) {
 	t.Parallel()
 	reg := prometheus.NewRegistry()
-	m := NewMetrics(reg)
-	q := &mockJobQueue{pending: 1}
-	r := &mockNodeRegistry{n: 2}
-	m.SetControllerSources(q, r) // first call — registers gauges
-	m.SetControllerSources(q, r) // second call — must not panic or double-register
-}
-
-// TestSetControllerSources_NilSources verifies the function safely handles
-// nil queue and registry sources (no panic, no registration).
-func TestSetControllerSources_NilSources(t *testing.T) {
-	t.Parallel()
-	reg := prometheus.NewRegistry()
-	m := NewMetrics(reg)
-	m.SetControllerSources(nil, nil) // must not panic
+	if _, err := NewMetrics(reg); err != nil {
+		t.Fatalf("first NewMetrics: %v", err)
+	}
+	if _, err := NewMetrics(reg); err == nil {
+		t.Fatal("second NewMetrics on one registry succeeded")
+	}
 }
 
 // TestNewShutdownContext_CancelsCleanly verifies the context is cancellable

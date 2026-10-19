@@ -9,6 +9,10 @@
 # actually caught. Every case runs against a scratch clone so the working tree
 # is never modified.
 set -euo pipefail
+
+# Drop the git hook environment and the fixture identity (see the helper).
+# shellcheck source=/dev/null
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/../../lib/clean-git-env.sh"
 export LC_ALL=C
 
 repo_root=$(git rev-parse --show-toplevel)
@@ -19,8 +23,10 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 
 # A scratch git repo containing the tracked tree, so `git grep` sees the files.
-clone() {
-  local dst="$work/$1"
+# It is built once: archiving, adding and committing the tree for each of the 33
+# cases took 396 s on a hosted runner. Every case gets its own copy of it.
+build_base() {
+  local dst="$work/.base"
   rm -rf "$dst"
   mkdir -p "$dst"
   git -C "$repo_root" archive --format=tar HEAD 2>/dev/null | tar -x -C "$dst" ||
@@ -32,14 +38,19 @@ clone() {
   git -C "$repo_root" diff HEAD --binary >"$work/wip.patch" 2>/dev/null ||
     echo "note: could not capture uncommitted work; testing HEAD only" >&2
   git -C "$dst" init -q 2>/dev/null
-  git -C "$dst" config user.email t@t
-  git -C "$dst" config user.name t
   if [ -s "$work/wip.patch" ]; then
     git -C "$dst" apply "$work/wip.patch" 2>/dev/null ||
       echo "note: uncommitted work did not apply to the scratch clone" >&2
   fi
   git -C "$dst" add -A -f >/dev/null 2>&1
   git -C "$dst" commit -qm scratch >/dev/null 2>&1
+}
+build_base
+
+clone() {
+  local dst="$work/$1"
+  rm -rf "$dst"
+  cp -a "$work/.base" "$dst"
   printf '%s\n' "$dst"
 }
 
@@ -53,6 +64,10 @@ expect() { # $1=label $2=expected-exit $3=dir
     printf '%s\n' "$out" | sed 's/^/      /'
     fails=$((fails + 1))
   fi
+  # Each case owns one scratch copy of the tracked tree (about 270 MB with its
+  # .git); keeping all of them filled a hosted runner's disk, and the next
+  # `git commit` failed with exit 128. Remove the copy once its verdict is in.
+  rm -rf "$3"
 }
 
 # 1. the tree as it stands must pass
@@ -72,6 +87,40 @@ sed -i 's/^DEFAULT_MODEL = ".*"$/DEFAULT_MODEL = "vmaf_4k_v0.6.1"/' \
   "$d/tools/vmaf-tune/src/vmaftune/defaultmodel.py"
 git -C "$d" commit -aqm drift >/dev/null 2>&1
 expect "drifted Python mirror is caught" 1 "$d"
+
+# 3b. the vmaf-mcp mirror is checked like the others
+d=$(clone mcpdrift)
+sed -i 's/^DEFAULT_MODEL = ".*"$/DEFAULT_MODEL = "vmaf_v0.6.1"/' \
+  "$d/mcp-server/vmaf-mcp/src/vmaf_mcp/defaultmodel.py"
+git -C "$d" commit -aqm drift >/dev/null 2>&1
+expect "drifted vmaf-mcp mirror is caught" 1 "$d"
+
+# 3c. the model argument spelled "version=<name>" is a literal default too.
+# These four forms shipped in the MCP servers with the pre-v1 model after the
+# library default had moved, and the gate read none of them.
+d=$(clone strarg)
+printf '\nfunc reintroducedArgDefault(args map[string]any) string {\n\treturn strArg(args, "model", "version=vmaf_v0.6.1")\n}\n' \
+  >>"$d/pkg/fast/pipeline.go"
+git -C "$d" commit -aqm strarg >/dev/null 2>&1
+expect "Go strArg --model fallback is caught" 1 "$d"
+
+d=$(clone schemadefault)
+printf '\nvar reintroducedSchema = map[string]any{"model": map[string]any{"type": "string", "default": "version=vmaf_v0.6.1"}}\n' \
+  >>"$d/pkg/fast/pipeline.go"
+git -C "$d" commit -aqm schemadefault >/dev/null 2>&1
+expect "schema default naming another model is caught" 1 "$d"
+
+d=$(clone pyannotation)
+printf '\n\nclass _Reintroduced:\n    model: str = "version=vmaf_v0.6.1"\n' \
+  >>"$d/tools/vmaf-tune/src/vmaftune/score.py"
+git -C "$d" commit -aqm pyannotation >/dev/null 2>&1
+expect "python annotated --model default is caught" 1 "$d"
+
+d=$(clone pyget)
+printf '\n\ndef _reintroduced(body):\n    return body.get("model", "version=vmaf_v0.6.1")\n' \
+  >>"$d/tools/vmaf-tune/src/vmaftune/score.py"
+git -C "$d" commit -aqm pyget >/dev/null 2>&1
+expect "python .get --model fallback is caught" 1 "$d"
 
 # 4. a newly reintroduced hardcoded default must fail
 d=$(clone hardcode)
@@ -202,9 +251,19 @@ expect "missing authoritative macro is caught" 1 "$d"
 # proto, OpenAPI and server-page forms are each checked. The OpenAPI phrase
 # wraps across lines, as YAML descriptions do.
 d=$(clone protodoc)
-printf '\n// Optional model name. Defaults to vmaf_v0.6.1.\n' >>"$d/proto/vmafx.proto"
+printf '\n// Optional model name. Defaults to vmaf_v0.6.1.\n' >>"$d/proto/vmafx/v1/vmafx.proto"
 git -C "$d" commit -aqm protodoc >/dev/null 2>&1
 expect "proto documenting another default is caught" 1 "$d"
+
+d=$(clone controllerprotodoc)
+printf '\n// Optional model name. Defaults to vmaf_v0.6.1.\n' >>"$d/proto/vmafx/controller/v1/controller.proto"
+git -C "$d" commit -aqm controllerprotodoc >/dev/null 2>&1
+expect "controller proto documenting another default is caught" 1 "$d"
+
+d=$(clone platformdoc)
+printf '\n# Optional model name. Defaults to vmaf_v0.6.1.\n' >>"$d/api/vmafx-platform.toml"
+git -C "$d" commit -aqm platformdoc >/dev/null 2>&1
+expect "platform definition documenting another default is caught" 1 "$d"
 
 d=$(clone openapidoc)
 # shellcheck disable=SC2016 # the backticks are planted Markdown, not an expansion

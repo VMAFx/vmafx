@@ -35,18 +35,29 @@ grep -Fq $'dedupe-check:\n\t@standardsctl dedupe scan .' "$repo_root/Makefile" |
 grep -Fq $'\t@$(MAKE) --no-print-directory dedupe-check' "$repo_root/Makefile" ||
   report_failure "make verify-all does not invoke dedupe-check"
 
-lefthook_count="$(grep -Fc 'praetorctl dedupe scan .' "$repo_root/lefthook.yml")"
+lefthook_count="$(grep -Fc 'sh .config/lefthook/engine.sh dedupe scan .' "$repo_root/lefthook.yml")"
 if [[ "$lefthook_count" -ne 2 ]]; then
   report_failure "expected clone scan in pre-commit and pre-push, found $lefthook_count"
 fi
 
 # A test runs once in CI (ADR-1568): the required Tooling Tests job runs this
-# file because the registry puts it in the tooling suite.
-python3 "$repo_root/scripts/ci/suite_registry.py" --root "$repo_root" list tooling |
-  grep -Fqx 'scripts/ci/tests/test-dedupe-gate.sh' ||
+# file because the registry puts it in the tooling suite. The listing is read
+# whole before it is searched: piped into `grep -q` under pipefail, the writer
+# could die of SIGPIPE once grep had its match, and the check failed at random.
+tooling_suite=$(python3 "$repo_root/scripts/ci/suite_registry.py" --root "$repo_root" list tooling)
+grep -Fqx 'scripts/ci/tests/test-dedupe-gate.sh' <<<"$tooling_suite" ||
   report_failure "contract test is not in the tooling suite that Tooling Tests runs"
 grep -Fq 'id: dedupe-gate-contract' "$repo_root/.pre-commit-config.yaml" ||
   report_failure "contract test is not wired into local hooks"
+
+# HISS-21: a native Windows make resolves standardsctl itself and cannot run the
+# POSIX stub below, so the replay would exercise the real engine instead.
+if make --version 2>/dev/null | grep -Eqi 'windows32|mingw'; then
+  echo "dedupe-gate-contract: skipped the make verify-all replay: $(command -v make) is a" \
+    "native Windows make; the Linux Deliverables Checklist job in rule-enforcement.yml runs it" >&2
+  [[ "$fail" -eq 0 ]]
+  exit
+fi
 
 cat >"$tmp_dir/standardsctl" <<'SH'
 #!/bin/sh
@@ -57,6 +68,12 @@ if [ "$*" = "dedupe scan ." ]; then
 fi
 SH
 chmod +x "$tmp_dir/standardsctl"
+
+cat >"$tmp_dir/node" <<'SH'
+#!/bin/sh
+exit 0
+SH
+chmod +x "$tmp_dir/node"
 
 export PATH="$tmp_dir:$PATH"
 export DEDUPE_INVOCATION_LOG="$tmp_dir/invocations.log"

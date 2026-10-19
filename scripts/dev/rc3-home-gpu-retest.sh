@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # rc3-home-gpu-retest.sh — run the RC3 verify-and-time commands that
-# docs/state.md carries for the home GPU box, ryzen-4090-arc: the RTX 4090
+# docs/state.md carries for the home GPU box, a reference workstation: the RTX 4090
 # (CUDA), the Arc A380 (SYCL over Level Zero) and the Zen 5 iGPU gfx1036 (HIP).
 #
 # Copyright 2026 Lusoris
@@ -865,8 +865,13 @@ done
     device_env "$b"
     echo "$b: build $(build_dir_for "$b"), ${DEV_ENV[*]:-no device}"
   done
-  command -v nvidia-smi >/dev/null 2>&1 &&
-    nvidia-smi --query-gpu=index,name,memory.used,memory.total,utilization.gpu --format=csv,noheader
+  # The inventory is a note: a failing nvidia-smi (a driver and library version
+  # mismatch after an update exits 18) is recorded, it does not end the run.
+  if command -v nvidia-smi >/dev/null 2>&1; then
+    timeout "$PROBE_TIMEOUT" nvidia-smi \
+      --query-gpu=index,name,memory.used,memory.total,utilization.gpu --format=csv,noheader ||
+      echo "nvidia-smi failed: exit $?, no GPU inventory"
+  fi
   echo "baseline: ${BASELINE:-none}; reps $REPS; threads $THREADS; timing $TIMING"
 } >"$OUT/host.txt" 2>&1
 cat "$OUT/host.txt"

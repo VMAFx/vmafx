@@ -44,21 +44,25 @@ are discarded. A 720p frame (1280x720) yields 182 x 102 = 18,564 blocks.
 Within each block, a **separable 7-tap Gaussian kernel** (sigma = 1.166,
 matching the VIF family) computes the weighted local mean and variance:
 
-```text
-mu      = sum_ij( w(i,j) * p(i,j) ) / sum_ij( w(i,j) )
-sigma^2 = sum_ij( w(i,j) * p(i,j)^2 ) / sum_ij( w(i,j) ) - mu^2
-```
+$$
+\begin{aligned}
+\mu &= \frac{\sum_{i,j} w(i,j)\, p(i,j)}{\sum_{i,j} w(i,j)} \\
+\sigma^2 &= \frac{\sum_{i,j} w(i,j)\, p(i,j)^2}{\sum_{i,j} w(i,j)} - \mu^2
+\end{aligned}
+$$
 
 Pixel values are in [0, 255] for 8-bpc input. For HBD (10 or 12 bpc) input
 the pixels are normalised to the 8-bpc range before weighting.
 
 ### Per-block entropy
 
-```text
-H(block) = 0.5 * log2( 2 * pi * e * (sigma^2 + epsilon) )
-```
+$$
+H(\mathrm{block}) = \tfrac{1}{2} \log_2\!\left( 2 \pi e \, (\sigma^2 + \epsilon)
+\right)
+$$
 
-where `epsilon = 1.0 pixel^2` is a noise floor that prevents log(0) on
+where $\epsilon = 1.0\ \mathrm{pixel}^2$ is a noise floor that prevents
+$\log(0)$ on
 perfectly flat (constant-valued) blocks.
 
 ### Spatial score
@@ -66,28 +70,32 @@ perfectly flat (constant-valued) blocks.
 The spatial score S for frame n is the mean per-block entropy over the
 distorted luma plane:
 
-```text
-S(n) = mean_i( H_i )
-```
+$$
+S(n) = \frac{1}{B} \sum_{i=1}^{B} H_i
+$$
+
+with $B$ the number of blocks.
 
 ### Temporal score
 
 The temporal score T is computed identically to S but on the frame-difference
 image:
 
-```text
-delta(i,j) = dist(n, i, j) - dist(n-1, i, j)
-T(n)       = mean_i( H_i(delta) )    for n > 0
-T(0)       = 0
-```
+$$
+\begin{aligned}
+\delta(i,j) &= \mathrm{dist}(n, i, j) - \mathrm{dist}(n-1, i, j) \\
+T(n) &= \frac{1}{B} \sum_{i=1}^{B} H_i(\delta) \quad \text{for } n > 0 \\
+T(0) &= 0
+\end{aligned}
+$$
 
 The extractor stores the previous distorted frame internally.
 
 ### Combined output
 
-```text
-score(n) = S(n) + T(n)
-```
+$$
+\mathrm{score}(n) = S(n) + T(n)
+$$
 
 ## Relationship to speed_chroma and speed_temporal
 
@@ -133,7 +141,7 @@ log2](speed.md#the-cpu-reference-and-log2f).
 - **Integer pixel reads, double accumulation.** Luma is read directly as
   `uint8_t` (8-bpc) or `uint16_t` (HBD) without intermediate float buffers.
 - **Gaussian weights are Q16 fixed-point** (kernel sum = 65535). The 2-D
-  weight for pixel (i,j) is `g[i] * g[j] / 65535^2`.
+  weight for pixel (i,j) is $g_i \, g_j / 65535^2$.
 - **VMAF_FEATURE_EXTRACTOR_TEMPORAL** flag ensures in-order frame delivery.
   The extractor maintains its own `prev_dist` buffer (aligned, private).
 

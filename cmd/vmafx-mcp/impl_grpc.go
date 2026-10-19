@@ -219,7 +219,7 @@ func scoringParamsFromArgs(args map[string]any) (*controllerv1.ScoringParams, er
 	if backend == "auto" {
 		backend = ""
 	}
-	if backend != "" && !validBackends[backend] {
+	if backend != "" && !validBackend(backend) {
 		return nil, fmt.Errorf(
 			"invalid backend %q: must be one of auto|cpu|cuda|sycl|hip|metal", backend)
 	}
@@ -449,7 +449,7 @@ func handleVmafScoreRemote(ctx context.Context, args map[string]any) (any, error
 	if err != nil {
 		return nil, err
 	}
-	// Empty means "server default" on the wire (proto/vmafx.proto).
+	// Empty means "server default" on the wire (proto/vmafx/v1/vmafx.proto).
 	model := strArg(args, "model", "")
 
 	addr := serverAddr()
@@ -468,7 +468,7 @@ func handleVmafScoreRemote(ctx context.Context, args map[string]any) (any, error
 
 	value, features, err := client.Score(rpcCtx, ref, dis, model)
 	if err != nil {
-		return nil, fmt.Errorf("Score on %s: %w", addr, err)
+		return nil, fmt.Errorf("call Score on %s: %w", addr, err)
 	}
 	return map[string]any{
 		"score":     value,

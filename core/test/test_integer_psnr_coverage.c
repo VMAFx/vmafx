@@ -18,6 +18,10 @@
  *       214-249).
  *    5. extract() for invalid bpc (returns -EINVAL at line 268-269).
  *    6. flush() with enable_apsnr=true (lines 277-292).
+ *    7. T-PSNR-APSNR-CLIP-SSE-UINT64-WRAP-2026-10-05: the clip SSE of
+ *       apsnr passes 2^64. 300 frames of 4096x4096 16-bit pictures at the
+ *       maximum difference sum to 300 * 4096^2 * 65535^2 = 2.2e19; a uint64
+ *       sum wrapped and apsnr_y read 8.3 dB for 0.
  *
  *  These do not touch the SIMD dispatch; that is exercised by the
  *  parity test_psnr.c suite already.
@@ -28,6 +32,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "mu_table.h"
 #include "test.h"
 
 #include "feature/feature_collector.h"
@@ -297,16 +302,86 @@ static char *test_psnr_extract_hbd_16bit(void)
     return run_extract_hbd_identical(16u);
 }
 
+/* ----------------------------------------------------------------- */
+/* apsnr clip SSE past 2^64                                          */
+/* ----------------------------------------------------------------- */
+
+#define APSNR_WRAP_SIDE 4096u
+#define APSNR_WRAP_FRAMES 300u
+
+/* The psnr extractor with enable_apsnr on 4096x4096 16-bit 4:0:0 input. */
+static char *apsnr_wrap_open(VmafFeatureExtractorContext **ctx, VmafFeatureCollector **fc)
+{
+    char *fail = NULL;
+    const VmafFeatureExtractor *fex = psnr_fex_or_fail(&fail);
+    if (fail)
+        return fail;
+    VmafDictionary *opts = NULL;
+    mu_assert("set enable_apsnr", vmaf_dictionary_set(&opts, "enable_apsnr", "true", 0) == 0);
+    mu_assert("psnr context_create", vmaf_feature_extractor_context_create(ctx, fex, opts) == 0);
+    mu_assert("psnr init",
+              vmaf_feature_extractor_context_init(*ctx, VMAF_PIX_FMT_YUV400P, 16u, APSNR_WRAP_SIDE,
+                                                  APSNR_WRAP_SIDE) == 0);
+    mu_assert("collector_init", vmaf_feature_collector_init(fc) == 0);
+    return NULL;
+}
+
+/* Every frame of the clip: a black reference against a white distorted
+ * picture. Returns the extractor's first error, or 0. */
+static int apsnr_wrap_clip(VmafFeatureExtractorContext *ctx, VmafFeatureCollector *fc)
+{
+    VmafPicture ref;
+    VmafPicture dist;
+    int err = alloc_grey(&ref, VMAF_PIX_FMT_YUV400P, 16u, APSNR_WRAP_SIDE, APSNR_WRAP_SIDE, 0u);
+    if (err)
+        return err;
+    err = alloc_grey(&dist, VMAF_PIX_FMT_YUV400P, 16u, APSNR_WRAP_SIDE, APSNR_WRAP_SIDE, 65535u);
+    if (err) {
+        (void)vmaf_picture_unref(&ref);
+        return err;
+    }
+    for (unsigned i = 0; i < APSNR_WRAP_FRAMES && !err; i++)
+        err = vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &dist, NULL, i, fc);
+    (void)vmaf_picture_unref(&ref);
+    (void)vmaf_picture_unref(&dist);
+    return err ? err : vmaf_feature_extractor_context_flush(ctx, fc) < 0;
+}
+
+/* Every frame has every sample at the maximum difference, so the clip's
+ * MSE is peak^2 and apsnr_y is 0 dB however many frames there are. The
+ * frames' SSE sums to 2.2e19, past 2^64 = 1.8e19 after 257 frames. */
+static char *test_psnr_apsnr_clip_sse_past_two_pow_64(void)
+{
+    VmafFeatureExtractorContext *ctx = NULL;
+    VmafFeatureCollector *fc = NULL;
+    char *setup_error = apsnr_wrap_open(&ctx, &fc);
+    if (setup_error)
+        return setup_error;
+    const int err = apsnr_wrap_clip(ctx, fc);
+    double apsnr_y = -1.0;
+    const int got = vmaf_feature_collector_get_aggregate(fc, "apsnr_y", &apsnr_y);
+    (void)vmaf_feature_extractor_context_close(ctx);
+    (void)vmaf_feature_extractor_context_destroy(ctx);
+    vmaf_feature_collector_destroy(fc);
+    mu_assert("extract and flush", err == 0);
+    mu_assert("get apsnr_y aggregate", got == 0);
+    mu_assert("apsnr_y of maximum-difference frames is 0 dB", fabs(apsnr_y) < 1e-9);
+    return NULL;
+}
+
 char *run_tests(void)
 {
-    mu_run_test(test_psnr_init_yuv400p_disables_chroma);
-    mu_run_test(test_psnr_init_yuv444p_no_chroma_subsample);
-    mu_run_test(test_psnr_init_yuv422p_horizontal_only_subsample);
-    mu_run_test(test_psnr_extract_hbd_10bit);
-    mu_run_test(test_psnr_extract_hbd_12bit);
-    mu_run_test(test_psnr_extract_hbd_16bit);
-    mu_run_test(test_psnr_flush_apsnr_enabled);
-    return NULL;
+    static const MuTest tests[] = {
+        MU_TEST(test_psnr_init_yuv400p_disables_chroma),
+        MU_TEST(test_psnr_init_yuv444p_no_chroma_subsample),
+        MU_TEST(test_psnr_init_yuv422p_horizontal_only_subsample),
+        MU_TEST(test_psnr_extract_hbd_10bit),
+        MU_TEST(test_psnr_extract_hbd_12bit),
+        MU_TEST(test_psnr_extract_hbd_16bit),
+        MU_TEST(test_psnr_flush_apsnr_enabled),
+        MU_TEST(test_psnr_apsnr_clip_sse_past_two_pow_64),
+    };
+    return mu_run_table(tests, MU_TABLE_LEN(tests));
 }
 
 /* NOLINTEND(modernize-use-nullptr) */

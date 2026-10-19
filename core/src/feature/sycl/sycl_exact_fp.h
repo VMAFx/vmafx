@@ -253,12 +253,27 @@ inline Ff ff_mul(Ff a, Ff b)
     return quick_two_sum(product.hi, product.lo + cross);
 }
 
-/* (hi + lo) / divisor, rounded once to fp32. */
-inline float ff_div_to_float(Ff value, float divisor)
+/* An element count as an exact fp32 pair: hi is the count rounded to fp32,
+ * lo the rest. lo is 0 up to 2^24 and exact above it (below 2^48). */
+inline Ff count_ff(uint32_t count)
 {
-    const float quotient = div_rn(value.hi, divisor);
-    const float remainder = sycl::fma(-quotient, divisor, value.hi);
-    const float correction = div_rn(remainder + value.lo, divisor);
+    const auto hi = static_cast<float>(count);
+    const auto rest = static_cast<int64_t>(count) - static_cast<int64_t>(hi);
+    return {.hi = hi, .lo = static_cast<float>(rest)};
+}
+
+/* (hi + lo) / (divisor.hi + divisor.lo), rounded to fp32. speed.c divides its
+ * accumulated sum by the exact size_t count; a count above 2^24 has no fp32 value,
+ * so its rest enters the remainder. With divisor.lo == 0 this is the one-float
+ * division bit for bit. */
+inline float ff_div_to_float(Ff value, Ff divisor)
+{
+    const float quotient = div_rn(value.hi, divisor.hi);
+    float remainder = sycl::fma(-quotient, divisor.hi, value.hi) + value.lo;
+    if (divisor.lo != 0.0f) {
+        remainder = remainder - (quotient * divisor.lo);
+    }
+    const float correction = div_rn(remainder, divisor.hi);
     return quotient + correction;
 }
 

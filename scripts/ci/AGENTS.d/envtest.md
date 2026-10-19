@@ -3,6 +3,7 @@ paths:
   - scripts/ci/setup-envtest.sh
   - scripts/ci/tests/test_envtest_single_source.py
 invariant: `setup-envtest.sh` consumes the `build-config.env` envtest fields; only `install` fetches; no `@latest`.
+area: tests
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Shared envtest installer (ADR-1231)

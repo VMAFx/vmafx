@@ -49,6 +49,11 @@ func Resolve(env, root string) (string, error) {
 	if path == "" {
 		path, source = filepath.Join(root, BuildRelPath), "the in-tree CPU build"
 	}
+	// #nosec G703 -- path is VMAF_BIN, the test operator's explicit choice of
+	// the binary under test, or the fixed in-tree build path. Naming any file
+	// is the purpose of the variable: there is no directory to confine it to,
+	// and the value crosses no trust boundary. The call only checks that the
+	// file is an executable regular file before a test runs it.
 	info, err := os.Stat(path)
 	if err != nil {
 		return "", fmt.Errorf(

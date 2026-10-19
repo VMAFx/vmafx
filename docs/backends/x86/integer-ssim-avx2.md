@@ -62,7 +62,7 @@ rows with a scalar reference using `memcmp` over every `integer_ssim_moments_t`:
 - 8bpc random rows, 64 pixels wide, 4 seeds.
 - 16bpc random rows in the 10-bit range, 64 pixels wide, 4 seeds.
 - 16bpc full-range alternating rows (`test_integer_ssim_avx2_16bpc_bright`),
-  a regression test for the `s * s >= 2^31` overflow described above.
+  a regression test for the $s \cdot s \ge 2^{31}$ overflow described above.
 - 8bpc uniform rows, all-white source against all-black distorted.
 - Narrow row, width 1: all boundary, no SIMD iteration.
 

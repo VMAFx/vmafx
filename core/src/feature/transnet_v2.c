@@ -198,8 +198,9 @@ static int transnet_v2_init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_
         return rc;
     }
 
-    const char *path = vmaf_tiny_ai_resolve_model_path("transnet_v2", s->model_path,
-                                                       "VMAF_TRANSNET_V2_MODEL_PATH");
+    char env_path[VMAF_TINY_AI_ENV_PATH_MAX];
+    const char *path = vmaf_tiny_ai_resolve_model_path(
+        "transnet_v2", s->model_path, "VMAF_TRANSNET_V2_MODEL_PATH", env_path, sizeof(env_path));
     if (!path) {
         return -EINVAL;
     }

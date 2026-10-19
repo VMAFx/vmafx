@@ -25,6 +25,10 @@
 
 set -euo pipefail
 
+# Drop the git hook environment and the fixture identity (see the helper).
+# shellcheck source=/dev/null
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/../../lib/clean-git-env.sh"
+
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 SCRIPT="${REPO_ROOT}/scripts/adr/next-free.sh"
 
@@ -59,8 +63,6 @@ mkdir -p "${FAKE_REPO}/docs/adr" "${STUB_BIN}"
 
 # Initialise the fake repo and create a minimal origin/master state.
 git -C "${FAKE_REPO}" init --quiet
-git -C "${FAKE_REPO}" config user.email "test@test"
-git -C "${FAKE_REPO}" config user.name "Test"
 # Create a couple of ADR files that represent origin/master state.
 touch "${FAKE_REPO}/docs/adr/0600-alpha.md"
 touch "${FAKE_REPO}/docs/adr/0601-bravo.md"
@@ -77,9 +79,15 @@ git -C "${FAKE_REPO}" update-ref refs/remotes/origin/master \
 _cleanup() {
   # Release any lock that a test may have left behind (before removing the dir).
   local gcd lkey
-  gcd="${FAKE_REPO}/.git"
+  # next-free.sh keys the lock on the absolute common .git directory.
+  gcd="$(cd "${FAKE_REPO}/.git" && pwd -P)"
   lkey="$(printf '%s' "${gcd}" | tr '/' '_')"
-  if [ -d "/tmp/vmaf_adr_claim_lock_${lkey}" ]; then rmdir "/tmp/vmaf_adr_claim_lock_${lkey}"; fi
+  if [ -d "/tmp/vmaf_adr_claim_lock_${lkey}" ]; then
+    rm -f "/tmp/vmaf_adr_claim_lock_${lkey}/owner"
+    if ! rmdir "/tmp/vmaf_adr_claim_lock_${lkey}" 2>/dev/null; then
+      printf 'note: lock %s not removed\n' "/tmp/vmaf_adr_claim_lock_${lkey}" >&2
+    fi
+  fi
   rm -rf "${TMPDIR_BASE}"
 }
 trap '_cleanup' EXIT INT TERM

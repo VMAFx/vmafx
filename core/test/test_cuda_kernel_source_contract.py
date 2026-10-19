@@ -73,9 +73,7 @@ LIBVMAF = "libvmaf.c"
 LIBVMAF_PATH = ROOT / "core" / "src" / LIBVMAF
 # ADR-1403: one FP flag list for every fatbin, and the fatbin command takes it.
 # core/test/test_strict_fp_compiler_args.py pins the policy itself.
-CUDA_DEVICE_FMAD = (
-    "cuda_device_strict_fp_args = vmaf_cuda_host_strict_fp_args + ['--fmad=false']"
-)
+CUDA_DEVICE_FMAD = "cuda_device_strict_fp_args = vmaf_cuda_host_strict_fp_args + ['--fmad=false']"
 CUDA_FATBIN_FP_ARGS = "cuda_flags + cuda_device_strict_fp_args"
 INTEGER_SSIM_KERNEL = "integer_ssim/integer_ssim_score.cu"
 PSNR_KERNEL = "integer_psnr/psnr_score.cu"
@@ -158,6 +156,12 @@ SUBMIT_FNS = {
 }
 
 
+MOTION_CLIP_SITES = 3  # motion_clip() call sites in the motion twin
+MOTION_BLEND_CLIP_SITES = 3  # motion_blend_clip() call sites in the motion twin
+SSIM_TERMS_SITES = 3  # ssim_terms() call sites in the ssim kernel
+DWT2_TAP_SITES = 4  # adm_dwt2_s123_tap() call sites in the ADM kernel
+
+
 def _code(source: str) -> str:
     """The source without its comments, so prose cannot satisfy or trip a check."""
     return re.sub(r"/\*.*?\*/|//[^\n]*", "", source, flags=re.S)
@@ -220,6 +224,7 @@ def _option_failures(sources: dict[str, str]) -> list[str]:
         "vmaf_psnr_max(",
         "vmaf_psnr_from_mse(",
         "vmaf_psnr_aggregate(",
+        "vmaf_psnr_clip_sse_add(",
     ):
         if helper not in psnr:
             failures.append(f"integer_psnr_cuda.c: does not call psnr_score.h {helper}")
@@ -240,7 +245,7 @@ def _option_failures(sources: dict[str, str]) -> list[str]:
     failures.extend(_motion_v2_option_failures(sources["integer_motion_v2_cuda.c"]))
     failures.extend(_motion_five_frame_failures(sources["integer_motion_cuda.c"]))
     motion = sources[FLOAT_MOTION_HOST]
-    if motion.count("motion_clip(s, ") != 3:
+    if motion.count("motion_clip(s, ") != MOTION_CLIP_SITES:
         failures.append(
             "float_motion_cuda.c: motion2, debug motion and tail motion2 must all "
             "be motion_clip()ped"
@@ -254,7 +259,7 @@ def _float_motion3_failures(motion: str) -> list[str]:
     failures: list[str] = []
     if '"VMAF_feature_motion3_score", NULL}' not in _code(motion):
         failures.append("float_motion_cuda.c: motion3 is not a provided feature")
-    if _code(motion).count("motion_blend_clip(s, ") != 3:
+    if _code(motion).count("motion_blend_clip(s, ") != MOTION_BLEND_CLIP_SITES:
         failures.append(
             "float_motion_cuda.c: motion3 of frame 0, of each middle frame and of the tail "
             "must all be motion_blend_clip()ped"
@@ -321,7 +326,7 @@ def _ssim_failures(sources: dict[str, str]) -> list[str]:
             failures.append(
                 f"{SSIM_KERNEL}: ssim_terms() no longer has the CPU's types and rounding ({piece})"
             )
-    if kernel.count("ssim_terms(") != 3:
+    if kernel.count("ssim_terms(") != SSIM_TERMS_SITES:
         failures.append(f"{SSIM_KERNEL}: both pass-2 kernels must share ssim_terms()")
     if FLOAT_SSIM_MEAN not in sources["integer_ssim_cuda.c"]:
         failures.append("integer_ssim_cuda.c: the frame mean is not rounded to fp32 like the CPU's")
@@ -420,12 +425,21 @@ def _float_motion_sum_failures(sources: dict[str, str]) -> list[str]:
     return failures
 
 
+FLOAT_MOTION_TILE_INDEX = "vmaf_cuda_tile_index(vmaf_cuda_reflect_101(idx, sup), sup)"
+
+
 def _guard_failures(sources: dict[str, str]) -> list[str]:
     failures: list[str] = []
+    # T-CUDA-FLOAT-MOTION-TILE-READ-BEFORE-PLANE-2026-10-05: a padding load of
+    # a plane narrower or shorter than one tile reflected to a negative index.
+    if FLOAT_MOTION_TILE_INDEX not in _code(sources[FLOAT_MOTION_KERNEL]):
+        failures.append(
+            f"{FLOAT_MOTION_KERNEL}: a tile load can reflect to an index outside the plane"
+        )
     adm = sources[ADM_KERNEL]
     if "adm_dwt2_source_row(y_out, i, h)" not in adm:
         failures.append(f"{ADM_KERNEL}: scale-0 rows bypass the clamped adm_dwt2_source_row()")
-    if adm.count("adm_dwt2_s123_tap(") != 4:
+    if adm.count("adm_dwt2_s123_tap(") != DWT2_TAP_SITES:
         failures.append(f"{ADM_KERNEL}: scale 1-3 taps bypass adm_dwt2_s123_tap()")
     vif = sources["integer_vif_cuda.c"]
     if (
@@ -665,9 +679,7 @@ class CudaKernelSourceContractTest(unittest.TestCase):
         self._assert_detected(sources, "fp32 multiply-accumulate")
 
     def test_ms_ssim_pair_sum_without_its_error_term_is_detected(self) -> None:
-        sources = self._edit(
-            MS_SSIM_KERNEL, "sum.lo = __fadd_rn(sum.lo, error);", "(void)error;"
-        )
+        sources = self._edit(MS_SSIM_KERNEL, "sum.lo = __fadd_rn(sum.lo, error);", "(void)error;")
         self._assert_detected(sources, "sum.lo = __fadd_rn")
 
     def test_approximate_ms_ssim_square_root_is_detected(self) -> None:
@@ -691,6 +703,15 @@ class CudaKernelSourceContractTest(unittest.TestCase):
             "c_means[i] = total_c / n_pixels;",
         )
         self._assert_detected(sources, "combines as the CPU does")
+
+    def test_unclamped_float_motion_tile_mirror_is_detected(self) -> None:
+        # The master form: reflect-101 without the clamp into the plane.
+        sources = self._edit(
+            FLOAT_MOTION_KERNEL,
+            FLOAT_MOTION_TILE_INDEX,
+            "idx < 0 ? -idx : (idx >= sup ? 2 * (sup - 1) - idx : idx)",
+        )
+        self._assert_detected(sources, "reflect to an index outside the plane")
 
     def test_block_reduced_float_motion_sad_is_detected(self) -> None:
         sources = _sources()

@@ -254,7 +254,9 @@ static float ref_calc_final_mask(const od_coeff_ref dct_s[64], const od_coeff_re
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunknown-pragmas"
 #endif
+#if !defined(_MSC_VER) /* cl.exe has no contraction pragma; /fp:precise does not contract */
 #pragma STDC FP_CONTRACT OFF
+#endif
 #if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC diagnostic pop
 #endif

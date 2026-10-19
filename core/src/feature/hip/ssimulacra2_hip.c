@@ -79,6 +79,7 @@ enum yuv_matrix_h {
 };
 
 /* libjxl 108 pooling weights — bit-identical to ssimulacra2.c::kWeights. */
+#ifdef HAVE_HIPCC /* only the device-kernel build pools with it */
 static const double g_weights[108] = {
     0.0,
     0.0007376606707406586,
@@ -189,6 +190,7 @@ static const double g_weights[108] = {
     0.0,
     0.00010854057858411537,
 };
+#endif /* HAVE_HIPCC */
 
 typedef struct Ssimu2StateHip {
     /* Options. */
@@ -268,6 +270,7 @@ static const VmafOption options[] = {
     {0},
 };
 
+#ifdef HAVE_HIPCC /* only the device-kernel build calls it */
 static int ss2h_hip_rc(hipError_t rc)
 {
     if (rc == hipSuccess)
@@ -287,6 +290,7 @@ static int ss2h_hip_rc(hipError_t rc)
         return -EIO;
     }
 }
+#endif /* HAVE_HIPCC */
 
 /* ADR-1324 / ADR-1359: the inputs init rejects (no chroma planes, a side
  * below 8) go to the CPU extractor when the twin was picked for a model or a
@@ -372,7 +376,7 @@ static int ss2h_yuv_primaries(int yuv_matrix, float *kr, float *kg, float *kb)
     switch (yuv_matrix) {
     case SS2H_MATRIX_BT709_FULL:
         limited = 0;
-        // fallthrough
+        [[fallthrough]];
     case SS2H_MATRIX_BT709_LIMITED:
         *kr = 0.2126f;
         *kg = 0.7152f;
@@ -380,7 +384,7 @@ static int ss2h_yuv_primaries(int yuv_matrix, float *kr, float *kg, float *kb)
         break;
     case SS2H_MATRIX_BT601_FULL:
         limited = 0;
-        // fallthrough
+        [[fallthrough]];
     case SS2H_MATRIX_BT601_LIMITED:
     default:
         *kr = 0.299f;

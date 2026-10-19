@@ -60,6 +60,7 @@
 #include "cuda_helper.cuh"
 #include "cuda/integer_moment_cuda.h"
 #include "common.h"
+#include "cuda_device_ptr.cuh"
 
 namespace
 {
@@ -77,9 +78,9 @@ __device__ __forceinline__ void add_block_sums(MomentSums m, unsigned long long 
     constexpr unsigned warps = (MOMENT_BLOCK_X * MOMENT_BLOCK_Y) / 32u;
     __shared__ unsigned long long s_warp[MOMENT_SUMS][warps];
 #pragma unroll
-    for (unsigned k = 0; k < MOMENT_SUMS; k++) {
+    for (unsigned long long &sum : m.v) {
         for (int off = 16; off > 0; off >>= 1)
-            m.v[k] += __shfl_down_sync(0xffffffffu, m.v[k], off);
+            sum += __shfl_down_sync(0xffffffffu, sum, off);
     }
     const unsigned lid = threadIdx.y * blockDim.x + threadIdx.x;
     if ((lid & 31u) == 0u) {
@@ -175,14 +176,14 @@ __global__ void calculate_moment_kernel_8bpc(const VmafPicture ref, const VmafPi
                                              VmafCudaBuffer sums, unsigned width, unsigned height)
 {
     add_block_sums(thread_sums<uint8_t>(ref, dis, width, height),
-                   reinterpret_cast<unsigned long long *>(sums.data));
+                   VMAF_CUDA_DPTR(unsigned long long, sums.data));
 }
 
 __global__ void calculate_moment_kernel_16bpc(const VmafPicture ref, const VmafPicture dis,
                                               VmafCudaBuffer sums, unsigned width, unsigned height)
 {
     add_block_sums(thread_sums<uint16_t>(ref, dis, width, height),
-                   reinterpret_cast<unsigned long long *>(sums.data));
+                   VMAF_CUDA_DPTR(unsigned long long, sums.data));
 }
 
 /* The four kernels of the CPU's second-moment sums past 2^53 units

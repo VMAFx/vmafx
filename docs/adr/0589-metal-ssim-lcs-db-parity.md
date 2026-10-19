@@ -71,3 +71,13 @@ uniform, adding zero output writes and negligible ALU overhead.
 - ADR-0421 — Metal first kernel batch (T8-1c through T8-1j)
 - ADR-0374 — HIP float_ssim (scale-only parity precedent)
 - ADR-0453 — PSNR enable_chroma GPU parity (same option-parity pattern)
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 72: `- ADR-0374 — HIP float_ssim (scale-only parity precedent)`:
+  ADR-0374 points to an unrelated topic
+  (0374-disabled-build-enosys-contract.md: "Build-time-optional public APIs
+  return -ENOSYS when disabled").

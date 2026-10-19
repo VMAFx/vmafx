@@ -27,6 +27,7 @@
 #include "predict_internal.h"
 #include "svm.h"
 #include "test.h"
+#include "float_bits.h"
 
 #include <libvmaf/model.h>
 #include <math.h>
@@ -492,13 +493,14 @@ static char *test_post_process_feature_from_another(void)
                                                                   "motion");
     mu_assert("problem during post_process_feature_from_another", !err);
     mu_assert("unexpected change to a value after post_process_feature_from_another",
-              node[1].value == model->feature[1].intercept);
+              vmaf_test_identical_f64(node[1].value, model->feature[1].intercept));
 
     err = vmaf_predict_post_process_feature_from_another_for_test(model, node, 120.0, 0.0, "adm2",
                                                                   "motion");
     mu_assert("problem during post_process_feature_from_another", !err);
     mu_assert("wrong value after post_process_feature_from_another",
-              node[1].value == (60.0 * model->feature[1].slope) + model->feature[1].intercept);
+              vmaf_test_identical_f64(node[1].value, (60.0 * model->feature[1].slope) +
+                                                         model->feature[1].intercept));
 
     vmaf_model_destroy(model);
     return NULL;

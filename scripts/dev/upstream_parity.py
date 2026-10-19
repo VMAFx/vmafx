@@ -66,6 +66,8 @@ from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
 
 UPSTREAM_URL = "https://github.com/Netflix/vmaf.git"
 HARNESS_SOURCE = Path(__file__).with_name("upstream_parity_harness.c")
+CONSUMER_SOURCE = Path(__file__).with_name("compat_abi_consumer.c")
+PLANT_SOURCE = Path(__file__).with_name("compat_abi_plant.c")
 DEFAULT_WORKDIR = "build-upstream-parity"
 # The pinned environment: the dev container image (dev/docker-compose.yml).
 DEFAULT_IMAGE = "vmaf-dev-mcp:local"
@@ -111,6 +113,7 @@ class Tree:
     model_dir: Path
     vmaf: Path
     environment: Mapping[str, object] = dataclasses.field(default_factory=dict)
+    run_env: Mapping[str, str] = dataclasses.field(default_factory=dict)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -390,7 +393,9 @@ def _version(compiler: str) -> str:
     return lines[0].strip() if result.returncode == 0 and lines else f"{compiler} (no version)"
 
 
-def describe_environment(compilers: tuple[str, str], image: str) -> dict[str, object]:
+def describe_environment(
+    compilers: tuple[str, str], image: str, abi: bool = False
+) -> dict[str, object]:
     """What a result document was measured in. Two documents compare only if it is equal."""
 
     libc = " ".join(part for part in platform.libc_ver() if part) or "unknown"
@@ -401,6 +406,7 @@ def describe_environment(compilers: tuple[str, str], image: str) -> dict[str, ob
         "cxx": _version(compilers[1]),
         "libc": libc,
         "machine": platform.machine(),
+        "abi": abi,
     }
 
 
@@ -412,8 +418,9 @@ def environment_line(environment: Mapping[str, object]) -> str:
         if environment.get("pinned")
         else "NOT PINNED (advisory, not evidence)"
     )
+    mode_tag = " [ABI drop-in]" if environment.get("abi") else ""
     details = "; ".join(str(environment.get(key)) for key in ("cc", "libc", "machine"))
-    return f"environment: {where}; {details}"
+    return f"environment{mode_tag}: {where}; {details}"
 
 
 def check_environments(
@@ -463,6 +470,7 @@ def container_command(
     """``docker run`` of the guard in *image*: no network, the caller's user, same paths."""
 
     argv = [docker, "run", "--rm", "--init", "--pull", "never", "--network", "none"]
+    argv += ["--memory=8g", "--cpus=2"]
     argv += ["--user", f"{os.getuid()}:{os.getgid()}", "--entrypoint", "python3"]
     argv += ["--workdir", str(REPO), "--env", f"{IMAGE_VARIABLE}={image_id}"]
     argv += ["--env", "HOME=/tmp", "--env", "PYTHONDONTWRITEBYTECODE=1"]
@@ -615,6 +623,20 @@ def build_harness(tree_source: Path, build: Path, output: Path, log: Path, cc: s
     _checked(argv, cwd=REPO, log=log)
 
 
+def upstream_baseline_args() -> list[str]:
+    """Meson arguments that hold the upstream build to the pinned image's baseline ISA.
+
+    Netflix's build leaves floating-point contraction at the compiler's default, so a
+    host compiler that defaults to x86-64-v3 (Ubuntu's amd64v3 variant) fuses its
+    multiply-adds and moves its scores; the fork turns contraction off (ADR-1461).
+    The pinned image's GCC defaults to x86-64; the SIMD libraries keep their own flags.
+    """
+
+    if platform.machine() not in ("x86_64", "AMD64"):
+        return []
+    return ["-Dc_args=-march=x86-64", "-Dcpp_args=-march=x86-64"]
+
+
 def build_upstream(commit: str, workdir: Path, jobs: int, compilers: tuple[str, str]) -> Tree:
     """Export, configure and build Netflix/vmaf at *commit* (CPU only)."""
 
@@ -627,6 +649,7 @@ def build_upstream(commit: str, workdir: Path, jobs: int, compilers: tuple[str, 
         setup: list[str | Path] = [_tool("meson"), "setup", build, root / "libvmaf"]
         setup += ["--buildtype", "release", "-Denable_float=true", "-Denable_cuda=false"]
         setup += ["-Denable_docs=false", "-Denable_tests=false", "-Db_lto=false"]
+        setup += upstream_baseline_args()
         env = dict(os.environ, CC=cc, CXX=cxx)
         _checked(setup, cwd=REPO, log=logs / "upstream-setup.log", env=env)
     if golden_compilers(build)[0] != cc:
@@ -662,8 +685,250 @@ def build_fork(build: Path, workdir: Path, jobs: int) -> Tree:
     return Tree("fork", head.stdout.strip(), harness, REPO / "model", build / "tools" / "vmaf")
 
 
+def check_soname(library: Path, expected_soname: str) -> None:
+    """Assert that *library* has *expected_soname* in its dynamic section."""
+
+    readelf = _tool("readelf")
+    result = run_command(
+        [readelf, "-d", str(library)],
+        allowed_executables=(readelf,),
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise CannotRun(f"readelf -d {library} failed ({result.returncode}): {result.stderr}")
+    pattern = f"Library soname: [{expected_soname}]"
+    if pattern not in result.stdout:
+        raise CannotRun(f"{library}: missing expected SONAME {expected_soname}")
+
+
+def check_needed(library: Path, expected_needed: str) -> None:
+    """Assert that *library* declares a DT_NEEDED dependency on *expected_needed*."""
+
+    readelf = _tool("readelf")
+    result = run_command(
+        [readelf, "-d", str(library)],
+        allowed_executables=(readelf,),
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise CannotRun(f"readelf -d {library} failed ({result.returncode}): {result.stderr}")
+    pattern = f"Shared library: [{expected_needed}]"
+    if pattern not in result.stdout:
+        raise CannotRun(f"{library}: missing expected DT_NEEDED dependency on {expected_needed}")
+
+
+def assert_loaded_library(
+    consumer: Path, lib_dir: Path, expected_so: str, extra_so: str | None = None
+) -> None:
+    """Assert via ldd that *consumer* under LD_LIBRARY_PATH resolves *expected_so* to *lib_dir*."""
+
+    ldd = _tool("ldd")
+    env = dict(os.environ, LD_LIBRARY_PATH=str(lib_dir))
+    result = run_command(
+        [ldd, str(consumer)],
+        allowed_executables=(ldd,),
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise CannotRun(f"ldd {consumer} failed ({result.returncode}): {result.stderr}")
+
+    def _resolve(so_name: str) -> Path:
+        for raw_line in result.stdout.splitlines():
+            line = raw_line.strip()
+            if line.startswith(f"{so_name} =>"):
+                parts = line.split("=>", 1)[1].strip().split("(", 1)
+                return Path(parts[0].strip()).resolve()
+        raise CannotRun(f"{consumer}: {so_name} not found in ldd output:\n{result.stdout}")
+
+    resolved = _resolve(expected_so)
+    target = (lib_dir / expected_so).resolve()
+    if resolved != target:
+        raise CannotRun(f"{consumer}: {expected_so} resolved to {resolved}, expected {target}")
+    print(f"abi runtime libvmaf [{lib_dir.name}]: {resolved}", file=sys.stderr)
+
+    if extra_so:
+        extra_resolved = _resolve(extra_so)
+        extra_target = (lib_dir / extra_so).resolve()
+        if extra_resolved != extra_target:
+            raise CannotRun(
+                f"{consumer}: {extra_so} resolved to {extra_resolved}, expected {extra_target}"
+            )
+        print(f"abi runtime libvmafx [{lib_dir.name}]: {extra_resolved}", file=sys.stderr)
+
+
+def build_compat_consumer(
+    upstream_source: Path,
+    upstream_build: Path,
+    output: Path,
+    log: Path,
+    cc: str,
+) -> None:
+    """Compile the unmodified upstream consumer binary against upstream headers and libvmaf.so."""
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    includes = (
+        upstream_source / "include",
+        upstream_build / "include",
+    )
+    argv: list[str | Path] = [
+        _tool(cc),
+        "-O1",
+        "-std=gnu11",
+        "-o",
+        output,
+        CONSUMER_SOURCE,
+    ]
+    argv += [f"-I{path}" for path in includes]
+    argv += [f"-L{upstream_build / 'src'}", "-lvmaf", "-lm", "-lpthread"]
+    _checked(argv, cwd=REPO, log=log)
+
+
+def build_compat_plant(
+    output: Path,
+    log: Path,
+    cc: str,
+    upstream_source: Path,
+    upstream_build: Path,
+) -> None:
+    """Compile the LD_PRELOAD plant shim."""
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    includes = (
+        upstream_source / "include",
+        upstream_build / "include",
+    )
+    argv: list[str | Path] = [
+        _tool(cc),
+        "-shared",
+        "-fPIC",
+        "-O2",
+        "-D_GNU_SOURCE",
+        "-o",
+        output,
+        PLANT_SOURCE,
+    ]
+    argv += [f"-I{path}" for path in includes]
+    argv += ["-ldl", "-lm"]
+    _checked(argv, cwd=REPO, log=log)
+
+
+def build_upstream_abi(
+    commit: str, workdir: Path, jobs: int, compilers: tuple[str, str]
+) -> tuple[Path, Path, Path]:
+    """Export, configure and build Netflix/vmaf at *commit* as a shared library."""
+
+    cc, cxx = compilers
+    root = workdir / f"upstream-{commit[:12]}"
+    build = root / "build-abi"
+    logs = workdir / "logs"
+    export_upstream(commit, root)
+    if not (build / "build.ninja").is_file():
+        setup: list[str | Path] = [_tool("meson"), "setup", build, root / "libvmaf"]
+        setup += ["--buildtype", "release", "-Denable_float=true", "-Denable_cuda=false"]
+        setup += [
+            "-Denable_docs=false",
+            "-Denable_tests=false",
+            "-Db_lto=false",
+            "-Ddefault_library=shared",
+            *upstream_baseline_args(),
+        ]
+        env = dict(os.environ, CC=cc, CXX=cxx)
+        _checked(setup, cwd=REPO, log=logs / "upstream-setup-abi.log", env=env)
+    if golden_compilers(build)[0] != cc:
+        raise CannotRun(f"{build} was configured with another compiler than {cc}; remove it")
+    ninja: list[str | Path] = [_tool("ninja"), "-C", build, "-j", str(jobs)]
+    _checked([*ninja, "tools/vmaf"], cwd=REPO, log=logs / "upstream-ninja-abi.log")
+    so_path = build / "src" / "libvmaf.so"
+    check_soname(so_path, "libvmaf.so.3")
+    return root, build, so_path
+
+
+def build_fork_abi(build: Path, workdir: Path, jobs: int) -> tuple[Path, Path]:
+    """Build this tree with the golden profile and shared library."""
+
+    logs = workdir / "logs"
+    env = dict(os.environ, GOLDEN_NINJA_JOBS=str(jobs))
+    script = REPO / "scripts" / "ci" / "setup-golden-build.sh"
+    setup: list[str | Path] = [
+        _tool("bash"),
+        script,
+        build,
+        REPO / "core",
+    ]
+    _checked(setup, cwd=REPO, log=logs / "fork-setup-abi.log", env=env)
+    vmaf_so = build / "src" / "libvmaf.so"
+    vmafx_so = build / "src" / "libvmafx.so"
+    check_soname(vmaf_so, "libvmaf.so.3")
+    check_soname(vmafx_so, "libvmafx.so.1")
+    check_needed(vmaf_so, "libvmafx.so.1")
+    return vmaf_so, vmafx_so
+
+
+def build_trees_abi(
+    commit: str,
+    fork_build: Path,
+    workdir: Path,
+    jobs: int,
+    image: str = "",
+    plant: bool = False,
+) -> tuple[Tree, Tree]:
+    """Build fork and upstream shared libraries and the compat ABI consumer."""
+    logs = workdir / "logs"
+    build_fork_abi(fork_build, workdir, jobs)
+    compilers = golden_compilers(fork_build)
+    upstream_root, upstream_build, _ = build_upstream_abi(commit, workdir, jobs, compilers)
+    consumer = workdir / "bin" / "compat-abi-consumer"
+    build_compat_consumer(
+        upstream_root / "libvmaf",
+        upstream_build,
+        consumer,
+        logs / "compat-consumer.log",
+        compilers[0],
+    )
+    assert_loaded_library(consumer, upstream_build / "src", "libvmaf.so.3")
+    assert_loaded_library(consumer, fork_build / "src", "libvmaf.so.3", "libvmafx.so.1")
+
+    up_env = {"LD_LIBRARY_PATH": str(upstream_build / "src")}
+    fork_env: dict[str, str] = {"LD_LIBRARY_PATH": str(fork_build / "src")}
+    if plant:
+        plant_so = workdir / "lib" / "compat_abi_plant.so"
+        build_compat_plant(
+            plant_so,
+            logs / "compat-plant.log",
+            compilers[0],
+            upstream_root / "libvmaf",
+            upstream_build,
+        )
+        fork_env["LD_PRELOAD"] = str(plant_so)
+
+    env = describe_environment(compilers, image, abi=True)
+    git = _tool("git")
+    head = run_command(
+        [git, "-C", str(REPO), "rev-parse", "HEAD"],
+        allowed_executables=(git,),
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+    up_so = upstream_build / "src" / "libvmaf.so"
+    up_tree = Tree("upstream", commit, consumer, upstream_root / "model", up_so, env, up_env)
+    fork_so = fork_build / "src" / "libvmaf.so"
+    fork_tree = Tree("fork", head, consumer, REPO / "model", fork_so, env, fork_env)
+    return up_tree, fork_tree
+
+
 def build_trees(
-    commit: str, fork_build: Path, workdir: Path, jobs: int, image: str = ""
+    commit: str,
+    fork_build: Path,
+    workdir: Path,
+    jobs: int,
+    image: str = "",
+    abi: bool = False,
+    plant: bool = False,
 ) -> tuple[Tree, Tree]:
     """Build this tree, then upstream at *commit* with the same compilers.
 
@@ -671,20 +936,22 @@ def build_trees(
     is the pinned image's id, or "" for an advisory run.
     """
 
+    if abi:
+        return build_trees_abi(commit, fork_build, workdir, jobs, image, plant)
     fork_tree = build_fork(fork_build, workdir, jobs)
     compilers = golden_compilers(fork_build)
     upstream_tree = build_upstream(commit, workdir, jobs, compilers)
-    environment = describe_environment(compilers, image)
+    environment = describe_environment(compilers, image, abi=False)
     return (
         dataclasses.replace(upstream_tree, environment=environment),
         dataclasses.replace(fork_tree, environment=environment),
     )
 
 
-def default_fork_build(environment_workdir: Path) -> Path:
+def default_fork_build(environment_workdir: Path, abi: bool = False) -> Path:
     """The golden-profile build of this tree in one environment's directory."""
 
-    return environment_workdir / "fork-golden"
+    return environment_workdir / ("fork-golden-abi" if abi else "fork-golden")
 
 
 # --- runs -------------------------------------------------------------------
@@ -727,10 +994,16 @@ def _request_digest(argv: Sequence[str], inputs: Sequence[Path]) -> str:
     return hashlib.sha256("\0".join(parts).encode()).hexdigest()
 
 
-def run_environment(heap_fill: int, environ: Mapping[str, str] | None = None) -> dict[str, str]:
-    """The harness's environment: the caller's, with the heap fill set or removed."""
+def run_environment(
+    heap_fill: int,
+    caller: Mapping[str, str] = os.environ,
+    extra_env: Mapping[str, str] | None = None,
+) -> dict[str, str]:
+    """The harness's environment: the caller's, with extra variables and heap fill."""
 
-    source = os.environ if environ is None else environ
+    source = dict(caller)
+    if extra_env:
+        source.update(extra_env)
     env = {key: value for key, value in source.items() if key != "MALLOC_PERTURB_"}
     if heap_fill:
         env["MALLOC_PERTURB_"] = str(heap_fill)
@@ -797,10 +1070,15 @@ def run_tree(
     """
 
     identity = tree.harness.read_bytes() + json.dumps(
-        {"environment": tree.environment, "heap_fill": heap_fill}, sort_keys=True
+        {
+            "environment": tree.environment,
+            "heap_fill": heap_fill,
+            "run_env": dict(tree.run_env),
+        },
+        sort_keys=True,
     ).encode("utf-8")
     cache = workdir / "runs" / f"{tree.label}-{hashlib.sha256(identity).hexdigest()[:16]}"
-    env = run_environment(heap_fill)
+    env = run_environment(heap_fill, extra_env=tree.run_env)
     work = [(dispatch, run) for dispatch in dispatches for run in runs]
     results: dict[str, object] = {}
     with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as pool:
@@ -1227,10 +1505,21 @@ def measure(
     fixtures_dir = workdir / "fixtures"
     runs, dispatches, skipped = _selection(args, fixtures_dir)
     envdir = environment_dir(workdir, image)
+    abi = bool(args.abi or args.plant)
     fork_build = (
-        (REPO / args.fork_build).resolve() if args.fork_build else default_fork_build(envdir)
+        (REPO / args.fork_build).resolve()
+        if args.fork_build
+        else default_fork_build(envdir, abi=abi)
     )
-    trees = build_trees(resolve_pin(fetch=not args.no_fetch), fork_build, envdir, args.jobs, image)
+    trees = build_trees(
+        resolve_pin(fetch=not args.no_fetch),
+        fork_build,
+        envdir,
+        args.jobs,
+        image,
+        abi=abi,
+        plant=args.plant,
+    )
     started = time.monotonic()
     upstream, fork = (
         run_tree(tree, runs, dispatches, fixtures_dir, envdir, args.jobs) for tree in trees
@@ -1309,7 +1598,20 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--from-json", nargs=2, type=Path, metavar=("UPSTREAM", "FORK"))
     parser.add_argument("--write-json", type=Path, metavar="DIR", help="save both result documents")
     parser.add_argument("--summary", action="store_true", help="group what is not covered")
-    return parser.parse_args(argv)
+    parser.add_argument(
+        "--abi",
+        action="store_true",
+        help="run compat ABI drop-in parity verification via unmodified upstream consumer",
+    )
+    parser.add_argument(
+        "--plant",
+        action="store_true",
+        help="inject LD_PRELOAD plant into fork run to verify parity failure detection",
+    )
+    parsed = parser.parse_args(argv)
+    if parsed.plant:
+        parsed.abi = True
+    return parsed
 
 
 def _compare(args: argparse.Namespace) -> tuple[int, list[str]]:

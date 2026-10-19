@@ -1,0 +1,16 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
+# Declared exceptions to CodeQL's cpp/include-non-header (code-scanning alerts 1463 and 1488): the two
+# tests whose purpose is to compile a device source's own bytes for the host. Format and rules:
+# scripts/ci/lint_exceptions.py. ADR-1142 binds every file; an exception names one file and ends.
+
+[[exception]]
+path = "core/test/test_adm_decouple_recip.cpp"
+reason = "The test compiles the CUDA and the HIP twin's own decouple header (adm_decouple_inline.cuh / .hip, named by ADM_TWIN_HEADER) for the host and holds it to the CPU: the kernel's bytes are the object under test, so a copy or a renamed header would test something else. Fix: none while the header keeps its device-source extension; the extension is the build lists' contract."
+expires = 2027-06-30
+
+[[exception]]
+path = "core/test/metal_integer_adm_host_replay_kernels.cpp"
+reason = "The translation unit includes core/src/feature/metal/integer_adm.metal, the Metal Shading Language source the GPU compiles, behind a host shim (ADR-1498): the replay of the kernels on the host is the check that the .metal bytes compute the CPU's integers. Fix: none while the kernels live in a .metal file."
+expires = 2027-06-30

@@ -167,20 +167,9 @@ framework and is configured purely through environment variables (the previous
 CLI flags are removed; fx owns signals and the run loop). Config is read from
 the `operator.*` koanf subtree under the `VMAFX_` prefix.
 
-| Variable | Default | Description |
-| --- | --- | --- |
-| `VMAFX_OPERATOR_METRICS_ADDR` | `:8080` | Prometheus metrics endpoint (`0` disables) |
-| `VMAFX_OPERATOR_HEALTH_PROBE_ADDR` | `:8081` | Health probe endpoint |
-| `VMAFX_OPERATOR_LEADER_ELECTION` | `false` | Enable leader election |
-| `VMAFX_OPERATOR_LEADER_ELECTION_ID` | `vmafx-operator.vmafx.dev` | Lease name used when leader election is enabled |
-| `VMAFX_OPERATOR_WEBHOOK_PORT` | `0` | Admission-webhook port; `0` disables webhooks |
-| `VMAFX_OPERATOR_WEBHOOK_HOST` | _(all interfaces)_ | Admission-webhook bind host |
-| `VMAFX_OPERATOR_GRACEFUL_SHUTDOWN` | `30s` | Manager graceful-shutdown timeout |
-| `VMAFX_LOG_LEVEL` | `info` | Log verbosity (golusoris log module: `debug\|info\|warn\|error`) |
-| `VMAFX_CONTROLLER_GRPC_ADDR` | `vmafx-controller.<ns>.svc.cluster.local:9090` | gRPC address of the vmafx-controller |
-| `VMAFX_CONTROLLER_HTTP_ADDR` | `http://vmafx-controller.<ns>.svc.cluster.local:8080` | HTTP address of the vmafx-controller |
-| `VMAFX_CONTROLLER_TOKEN_FILE` / `VMAFX_CONTROLLER_TOKEN` | _(none)_ | Bearer token `GetJob` sends; the file is re-read on every call ([server guide](../server/operator.md#authenticating-to-the-controller)) |
-| `VMAFX_CONTROLLER_TLS` / `_CA_FILE` / `_SERVER_NAME` | `false` / _(none)_ | TLS to the controller (`pkg/controllerclient`, shared with `vmafx-node`) |
+Every variable the operator reads, with its key, default and the chart value
+that sets it, is in the generated table of the
+[operator guide](../server/operator.md#configuration-12-factor-env-vars).
 
 !!! warning "Migrating from the pre-fx binary (ADR-1119)"
     The CLI flags (`--metrics-bind-address`, `--health-probe-bind-address`,
@@ -202,7 +191,8 @@ Set a port such as `9443` to enable webhooks; `0` or unset disables them.
 
 ### Controller envtest suite
 
-The envtest suite installs the CRDs into an embedded etcd + API server and
+The envtest suite installs the chart's CRDs (`deploy/helm/vmafx/crds/`, the
+generated ones the cluster gets) into an embedded etcd + API server and
 verifies each reconciler's Stage 2 behaviour (14 specs).
 
 ```bash
@@ -278,17 +268,30 @@ Install
 
 ## RBAC
 
-Three minimum-permission `ClusterRole` manifests are provided:
+`config/rbac/role.yaml` is the operator's minimum role: controller-gen writes
+it from the `+kubebuilder:rbac` markers of the reconcilers and of `main.go`
+(`scripts/codegen/crd_generate.py`, see
+[API generation](api-generation.md#change-a-custom-resource)). It holds:
 
-| File | Controller | Key verbs |
+| Resources | Verbs | Marker |
 | --- | --- | --- |
-| `config/rbac/role_vmafxjob.yaml` | VmafxJob | get/list/watch/update/patch vmafxjobs + status |
-| `config/rbac/role_vmafxnode.yaml` | VmafxNode | get/list/watch/update/patch vmafxnodes + status |
-| `config/rbac/role_vmafxmodeltraining.yaml` | VmafxModelTraining | get/list/watch/update/patch vmafxmodeltrainings + status |
+| `vmafxjobs`, `vmafxnodes`, `vmafxmodeltrainings` | get, list, watch, update, patch | each reconciler |
+| their `/status` | get, update, patch | each reconciler |
+| their `/finalizers` | update | each reconciler |
+| `events` | create, patch | the VmafxModelTraining reconciler (checkpoint events) |
+| `leases` (`coordination.k8s.io`) | get, list, watch, create, update, patch, delete | `main.go` (leader election) |
 
-All three roles include `events: create/patch` (for event emission) and
-`leases: *` (for leader election).  The `config/rbac/role.yaml` is the combined
-aggregate used by the Helm operator RBAC template.
+The Helm chart does not apply that file. `templates/operator-rbac.yaml`
+renders a `ClusterRole` for the three resources, a `ClusterRole` that may only
+create and patch events, in every namespace, because an event lands in the
+namespace of the resource it describes
+([ADR-2647](../adr/2647-operator-events-cluster-wide.md)), and a `Role` in
+the release namespace for pods and leases, and binds all three to the
+operator's service account. Together they grant at least every rule of
+`config/rbac/role.yaml`;
+`scripts/ci/tests/test_helm_operator_rbac.py` fails when a rule is missing,
+so a new marker needs a chart rule in the same change. A reconciler that
+needs another verb gets a marker first, never a chart rule alone.
 
 ---
 
@@ -314,7 +317,7 @@ Helm values are in [server/auth.md](../server/auth.md#tenant-registry).
 | --- | --- | --- |
 | Stage 1 | Shipped (ADR-0714) | Skeleton, CRDs, stub reconcilers, Helm integration, envtest |
 | Stage 2 | Shipped (ADR-0786) | gRPC poll loop, stale-heartbeat gate, checkpoint events, webhook validation, per-controller RBAC |
-| Stage 3 | Planned | VmafxJob Pod lifecycle (create/watch/delete), controller-gen codegen CI job |
+| Stage 3 | Partly shipped (ADR-2350 D13) | Types, deepcopy, CRDs and RBAC role generated from `api/vmafx-platform.toml` with drift and compatibility tests; VmafxJob Pod lifecycle (create/watch/delete) planned |
 | Stage 4 | Planned | VmafxModelTraining SGD-EMA controller, checkpoint OCI push |
 
 ---

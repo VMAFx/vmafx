@@ -34,6 +34,12 @@ WORKFLOWS = ROOT / ".github/workflows"
 GATE_SCRIPT = ROOT / "scripts/ci/scorecard_gate.py"
 
 
+def scorecard_pr_gate_job(workflow: str) -> str:
+    """The text of the `scorecard-pr-gate` job, up to the next job or the end."""
+    job = workflow.split("\n  scorecard-pr-gate:\n", 1)[1]
+    return re.split(r"(?m)^  [a-z0-9_-]+:\n", job, maxsplit=1)[0]
+
+
 class ScorecardWorkflowTests(unittest.TestCase):
     def test_publisher_preserves_upstream_authenticity_restrictions(self) -> None:
         workflow = (WORKFLOWS / "scorecard.yml").read_text()
@@ -44,7 +50,7 @@ class ScorecardWorkflowTests(unittest.TestCase):
         self.assertIn('cron: "19 4 * * 1"', prefix)
         analysis, gate = jobs.split("\n  gate:", 1)
         self.assertNotRegex(analysis, r"(?m)^    (env|defaults|container|services):")
-        self.assertIn("runs-on: ubuntu-latest", analysis)
+        self.assertIn("runs-on: ubuntu-26.04", analysis)
         self.assertIn("id-token: write", analysis)
         self.assertNotIn("id-token: write", gate)
         self.assertNotRegex(analysis, r"(?m)^\s+run:")
@@ -94,14 +100,18 @@ class ScorecardWorkflowTests(unittest.TestCase):
         self.assertNotIn("continue-on-error", gate)
 
     def test_pr_runs_unprivileged_actual_head_without_waiting_for_master(self) -> None:
-        workflow = (WORKFLOWS / "scorecard-policy.yml").read_text()
-        self.assertIn("types: [opened, synchronize, reopened, ready_for_review]", workflow)
-        self.assertIn("branches: [master]", workflow)
-        self.assertNotRegex(workflow, r"(?m)^\s+paths(?:-ignore)?:")
-        self.assertNotIn("pull_request_target", workflow)
+        # The PR gate is a job of the Security workflow since the suite cut: the
+        # triggers are the workflow's, the rest is the job's own text.
+        host = (WORKFLOWS / "security-scans.yml").read_text()
+        self.assertIn("types: [opened, synchronize, reopened, ready_for_review]", host)
+        self.assertIn("branches: [master]", host)
+        self.assertNotRegex(host, r"(?m)^\s+paths(?:-ignore)?:")
+        self.assertNotIn("pull_request_target", host)
+        workflow = scorecard_pr_gate_job(host)
         self.assertNotIn(": write", workflow)
         self.assertNotIn("secrets.", workflow)
-        self.assertNotIn("needs:", workflow)
+        # ADR-2169: the only dependency is the tier decision, never the master aggregate.
+        self.assertEqual(re.findall(r"(?m)^\s+needs:.*$", workflow), ["    needs: tier"])
         self.assertNotIn("download-artifact", workflow)
         self.assertIn('run: test "$IS_DRAFT" = false', workflow)
         self.assertIn(
@@ -124,6 +134,24 @@ class ScorecardWorkflowTests(unittest.TestCase):
         self.assertLess(snapshot, scan)
         self.assertLess(scan, validate)
 
+    def test_every_scan_uses_the_action_the_gate_reviewed(self) -> None:
+        # The gate trusts one tool identity; an action pin that moves without
+        # it fails every Scorecard gate in CI, so the two must move together.
+        spec = importlib.util.spec_from_file_location("scorecard_gate_pins", GATE_SCRIPT)
+        assert spec and spec.loader
+        pins = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = pins
+        spec.loader.exec_module(pins)
+        uses = re.compile(r"uses: ossf/scorecard-action@([0-9a-f]{40})\b")
+        found = {
+            path.name: uses.findall(path.read_text()) for path in sorted(WORKFLOWS.glob("*.yml"))
+        }
+        found = {name: commits for name, commits in found.items() if commits}
+        self.assertIn("scorecard.yml", found)
+        for name, commits in found.items():
+            for commit in commits:
+                self.assertEqual(commit, pins.ACTION_COMMIT, name)
+
     def test_contracts_are_wired_into_local_and_remote_gates(self) -> None:
         hooks = (ROOT / ".pre-commit-config.yaml").read_text()
         hook = hooks.split("- id: scorecard-policy-contract", 1)[1].split("\n      - id:", 1)[0]
@@ -140,7 +168,7 @@ class ScorecardWorkflowTests(unittest.TestCase):
 
     def test_repository_protection_controls_are_mandatory_and_separate(self) -> None:
         publisher, gate = (WORKFLOWS / "scorecard.yml").read_text().split("\n  gate:", 1)
-        pr = (WORKFLOWS / "scorecard-policy.yml").read_text()
+        pr = scorecard_pr_gate_job((WORKFLOWS / "security-scans.yml").read_text())
         # The policy's tests run once in CI, in Tooling Tests (ADR-1568), on
         # every pull request and push, not inside either Scorecard job.
         from scripts.ci.suite_registry import suite_members  # noqa: PLC0415
@@ -203,7 +231,8 @@ class VirtualDate extends Date { static now() { clock += 180000; return clock; }
 const failures = [];
 const checks = input.checks.map(c => ({...c, status: 'completed', started_at: new Date(now).toISOString()}));
 const github = {rest: {
- actions: {getWorkflowRun: async () => ({data: {created_at: new Date(now).toISOString()}})},
+ actions: {getWorkflowRun: async () => ({data: {created_at: new Date(now).toISOString()}}),
+  listWorkflowRunsForRepo: async () => ({data: {workflow_runs: []}})},
  checks: {listForRef: async () => ({data: {check_runs: checks}})}
 }};
 const context = {eventName: input.event, sha: 'abc', repo: {owner:'test',repo:'test'},

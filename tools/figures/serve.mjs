@@ -6,7 +6,7 @@
 // and the committed player at PLAYER_URI: its development server answers from them through
 // `staticHandler`, and `astro build` copies them into the built site through `publish`. The smoke
 // test (smoke.mjs) serves a whole built site as one mount at the site's base path through `serve`.
-// The MkDocs hook publishes the same files at the same site paths from Python (DIST_URI and the
+// The MkDocs hook publishes the same files at the same site paths from Python (PLAYER_URI and the
 // docs_dir copy of docs/assets/figures in mkdocs_hook.py).
 import { createServer } from 'node:http';
 import { copyFileSync, mkdirSync, readdirSync, readFileSync, statSync } from 'node:fs';
@@ -14,9 +14,9 @@ import { extname, join, resolve, sep } from 'node:path';
 
 /** Where a site serves the committed figure outputs (docs/assets/figures/), relative to its base path. */
 export const FIGURES_URI = 'assets/figures';
-/** Where a site serves the committed player files (tools/figures/dist/), relative to its base path. */
+/** Where a site serves the committed player files (tools/figures/player/), relative to its base path. */
 export const PLAYER_URI = 'assets/javascripts/figures';
-/** The files one mount publishes: dist/ holds three, a figure three per spec (LIMITS.specs in core.mjs is 256). */
+/** The files one mount publishes: player/ holds three, a figure three per spec (LIMITS.specs in core.mjs is 256). */
 export const MAX_MOUNT_FILES = 1024;
 /** How long the smoke server waits for a request (HISS-02). */
 const REQUEST_TIMEOUT_MS = 10_000;

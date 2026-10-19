@@ -16,9 +16,9 @@ same model, two surfaces, scoring the residual vs steering the encoder.
 
 For every CTU in a frame the tool emits a signed integer offset:
 
-```text
-qp_offset = clamp(-strength * (2 * saliency - 1), -12, +12)
-```
+$$
+\mathrm{qp\_offset} = \operatorname{clamp}\bigl(-\mathrm{strength} \cdot (2\,\mathrm{saliency} - 1),\ -12,\ +12\bigr)
+$$
 
 - High saliency (eyes, faces, focal subject) → **negative** offset → encoder
   spends more bits there.

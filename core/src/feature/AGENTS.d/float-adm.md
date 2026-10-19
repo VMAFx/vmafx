@@ -11,7 +11,7 @@ invariant: Float ADM GPU exports, strict division (no reciprocal estimate), min 
   [`adm_float_reference.h`](../adm_float_reference.h)). `adm_tools.c`
   exports `adm_border_s()`, `adm_csf_rfactor_s()`,
   `adm_pool_bands_s()`, `adm_decouple_cos_1deg_sq_s()`.
-  `float_adm_cuda.c` calls them instead of copying. Keep: the four
+  `float_adm_cuda.c` calls them instead of copying. Keep: four
   reductions (`adm_csf_den_scale_s[_p3]`, `adm_cm_s[_p3]`) end in
   `adm_pool_bands_s()`. Twin copies drift: old CUDA copy of
   `dwt_quant_step()` was 1-3 ulp off. Twin types
@@ -20,20 +20,20 @@ invariant: Float ADM GPU exports, strict division (no reciprocal estimate), min 
   `(cos^2 * |o|^2) * |t|^2`, fp32 row + frame accumulators. Change any
   -> change `float_adm_gpu_common.h` (CUDA + HIP twins, ADR-1420 /
   ADR-1458) and
-  `sycl/sycl_float_adm_math.h` (ADR-1434, same functions without an fp64
+  `sycl/sycl_float_adm_math.h` (ADR-1434, same functions without fp64
   type) same PR (`test_float_adm_device_math` /
   `test_sycl_float_adm_math` fail until they follow). HIP / Metal twins
   still old arithmetic: `T-GPU-FLOAT-ADM-CPU-ARITHMETIC-2026-10-01`.
 - **Float ADM SIMD = wavelet + CSF only, same bits as scalar** (ADR-1473).
   `adm.c`: `adm_dwt2_dispatch()` (NEON, AVX2, AVX-512) and
   `adm_csf_plane_select()` -> `adm_csf_planes_s(..., plane)`. `adm_csf_s()`
-  = `adm_csf_planes_s(..., adm_csf_plane_s)`; the element loop lives in
+  = `adm_csf_planes_s(..., adm_csf_plane_s)`; element loop lives in
   `adm_csf_plane_s()`, upstream's three statements verbatim. Decouple,
   denominator reduction, contrast masking: scalar on every processor (fp32
-  accumulators in column order are the golden-gated reference). New kernel
-  -> byte-compare test against the `_s` function first, see
+  accumulators in column order are golden-gated reference). New kernel
+  -> byte-compare test against `_s` function first, see
   [`../x86/AGENTS.d/float-adm.md`](../x86/AGENTS.d/float-adm.md). Upstream
-  sync touching `adm_csf_s()`: port the hunk into `adm_csf_plane_s()` /
+  sync touching `adm_csf_s()`: port hunk into `adm_csf_plane_s()` /
   `adm_csf_planes_s()`.
 - **Float ADM DIVIDES; no reciprocal estimate, ever** (ADR-1442,
   fork-local, diverges from upstream). `adm_options.h`: NO
@@ -56,14 +56,14 @@ invariant: Float ADM GPU exports, strict division (no reciprocal estimate), min 
   (`adm_csf_fixed_point.h`, same floor as fixed-point `adm`), before any
   allocation. Reason: scale-3 band = 1 sample below 17 px;
   `adm_cm_thresh3x3_s()` mirror wants index 1, `dwt2_src_indices_1d_s()`
-  fourth tap = index -1 = heap read before the band buffer (ASan, 8x8).
-  Upstream sync touching `float_adm.c::init()`: keep the check.
+  fourth tap = index -1 = heap read before band buffer (ASan, 8x8).
+  Upstream sync touching `float_adm.c::init()`: keep check.
   `float_adm_cuda` has it too; SYCL / HIP / Metal float twins not yet
   (`T-GPU-FLOAT-ADM-TINY-FRAME-FLOOR-2026-10-01`). Guard:
   `test_float_adm_coverage`. Debug key `adm` stays UNSUFFIXED
   (`provided_features` lists `adm_scale0`, upstream parity): Netflix golden
   tests read `VMAF_feature_adm_score` under non-default options; do not
-  "fix" the list (`T-FLOAT-ADM-DEBUG-KEY-UNSUFFIXED-2026-10-01`).
+  "fix" list (`T-FLOAT-ADM-DEBUG-KEY-UNSUFFIXED-2026-10-01`).
 - **`compute_adm` signature stays on fork's parameter
   list — Strategy E in Research-0024.** Netflix upstream
   `4dcc2f7c` adds 12 new parameters (`luminance_level`,

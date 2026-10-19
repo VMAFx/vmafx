@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1291), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1394), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -667,6 +667,10 @@ Every ADR, one heading each (1291), so the site search finds an ADR by its title
 ## ADR-0223 TransNet V2 shot-boundary detector — 100-frame window, placeholder weights
 
 [0223-transnet-v2-shot-detector](0223-transnet-v2-shot-detector.md)
+
+## ADR-0228: Tombstone: heap-buffer-overflow fix in the Y4M 411 to 422jpeg conversion
+
+[0228-y4m-411-422jpeg-heap-overflow-fix](0228-y4m-411-422jpeg-heap-overflow-fix.md)
 
 ## ADR-0234: GPU-generation-aware ULP calibration head
 
@@ -2076,6 +2080,10 @@ Every ADR, one heading each (1291), so the site search finds an ADR by its title
 
 [0635-ci-warning-omnibus-2026-05-19](0635-ci-warning-omnibus-2026-05-19.md)
 
+## ADR-0636: Tombstone: ADR number claimed from the allocator and never used
+
+[0636-allocator-claim-released-without-record](0636-allocator-claim-released-without-record.md)
+
 ## ADR-0637: Fix 5 master CI failures — MCP smoke syntax, coverage floor, and job timeouts
 
 [0637-ci-test-failures-omnibus](0637-ci-test-failures-omnibus.md)
@@ -2100,7 +2108,7 @@ Every ADR, one heading each (1291), so the site search finds an ADR by its title
 
 [0642-ai-refresh-full-feature-defaults](0642-ai-refresh-full-feature-defaults.md)
 
-## ADR-0643: &lt;fill in title&gt;
+## ADR-0643: vmaf-tune Reports Carry Encoder Profiles
 
 [0643-vmaf-tune-encoder-profile-contract](0643-vmaf-tune-encoder-profile-contract.md)
 
@@ -2188,11 +2196,11 @@ Every ADR, one heading each (1291), so the site search finds an ADR by its title
 
 [0664-windows-cuda-toolkit-installer](0664-windows-cuda-toolkit-installer.md)
 
-## ADR-0665: &lt;fill in title&gt;
+## ADR-0665: Fast-NR calibration quality guard
 
 [0665-fast-nr-calibration-quality-guard](0665-fast-nr-calibration-quality-guard.md)
 
-## ADR-0666: &lt;fill in title&gt;
+## ADR-0666: vmaf-tune report quick takeaways
 
 [0666-tune-report-quick-takeaways](0666-tune-report-quick-takeaways.md)
 
@@ -2220,7 +2228,7 @@ Every ADR, one heading each (1291), so the site search finds an ADR by its title
 
 [0672-saliency-materializer-temporal-controls](0672-saliency-materializer-temporal-controls.md)
 
-## ADR-0673: &lt;fill in title&gt;
+## ADR-0673: Saliency Materializer Batch Manifest
 
 [0673-saliency-materializer-batch-manifest](0673-saliency-materializer-batch-manifest.md)
 
@@ -2704,6 +2712,10 @@ Every ADR, one heading each (1291), so the site search finds an ADR by its title
 
 [0866-wire-markdownlint-into-lint-pipeline](0866-wire-markdownlint-into-lint-pipeline.md)
 
+## ADR-0867: Tombstone: run the semgrep-local pre-commit hook serially
+
+[0867-precommit-semgrep-serial-execution](0867-precommit-semgrep-serial-execution.md)
+
 ## ADR-0868: GPU backend kernel parity-test coverage gap-fill
 
 [0868-gpu-backend-kernel-coverage](0868-gpu-backend-kernel-coverage.md)
@@ -3071,6 +3083,10 @@ Every ADR, one heading each (1291), so the site search finds an ADR by its title
 ## ADR-0978: vmafx-server + pkg/score bug-audit — shutdown leak, gRPC Send-EOF surfacing, HTTP body cap, panic recovery
 
 [0978-vmafx-server-bug-audit](0978-vmafx-server-bug-audit.md)
+
+## ADR-0979: Tombstone: narrowing markdownlint to five rules, rejected
+
+[0979-markdownlint-narrow-to-five-rules](0979-markdownlint-narrow-to-five-rules.md)
 
 ## ADR-0980: Markdown-lint full-ruleset discharge — content fixes + per-file scoped disables
 
@@ -5056,6 +5072,10 @@ Every ADR, one heading each (1291), so the site search finds an ADR by its title
 
 [1622-bpf-object-generated-at-build-time](1622-bpf-object-generated-at-build-time.md)
 
+## ADR-1673: A push to master never cancels the runs of an earlier master commit; the concurrency group carries the SHA there
+
+[1673-master-runs-not-cancelled-by-concurrency](1673-master-runs-not-cancelled-by-concurrency.md)
+
 ## ADR-1679: The Metal IOSurface import reads NV12 and P010 surfaces itself, and the FFmpeg filter imports whole frames
 
 [1679-metal-iosurface-biplanar-import](1679-metal-iosurface-biplanar-import.md)
@@ -5088,6 +5108,14 @@ Every ADR, one heading each (1291), so the site search finds an ADR by its title
 
 [1701-nightly-tester-image-build](1701-nightly-tester-image-build.md)
 
+## ADR-1707: Cut v1.0.0-rc.3 without waiting for outside-hardware reports
+
+[1707-rc3-exit-without-outside-hardware](1707-rc3-exit-without-outside-hardware.md)
+
+## ADR-1713: Rust feature-extractor twins behind the unchanged C ABI (RC4 framework)
+
+[1713-rc4-rust-extractor-framework](1713-rc4-rust-extractor-framework.md)
+
 ## ADR-1755: The feature collector owns the models it mounts
 
 [1755-collector-owns-mounted-model](1755-collector-owns-mounted-model.md)
@@ -5099,6 +5127,10 @@ Every ADR, one heading each (1291), so the site search finds an ADR by its title
 ## ADR-1762: Every translation unit is read by a clang-tidy lane or excepted by name
 
 [1762-tidy-every-translation-unit-read](1762-tidy-every-translation-unit-read.md)
+
+## ADR-1768: The FFmpeg libvmaf and libvmaf\_cuda filters print no pooled score after a mid-run error
+
+[1768-ffmpeg-libvmaf-no-score-after-error](1768-ffmpeg-libvmaf-no-score-after-error.md)
 
 ## ADR-1794: Bilinear column tables without a width limit
 
@@ -5140,38 +5172,418 @@ Every ADR, one heading each (1291), so the site search finds an ADR by its title
 
 [1868-candidate-map-2026-10-05](1868-candidate-map-2026-10-05.md)
 
+## ADR-1874: The vmaf CLI reports its usable backends; the score-backend selectors read that report
+
+[1874-vmaf-list-backends](1874-vmaf-list-backends.md)
+
+## ADR-1880: Format envelope and device-targeted scoring in the 1.0.0 candidates
+
+[1880-format-envelope-device-targets](1880-format-envelope-device-targets.md)
+
+## ADR-1886: torch only where training runs
+
+[1886-torch-training-environments-only](1886-torch-training-environments-only.md)
+
 ## ADR-1897: VMAFx ABI numbering before 1.0: additions take a patch bump and join the current minor's version node
 
 [1897-vmafx-abi-0x-numbering](1897-vmafx-abi-0x-numbering.md)
+
+## ADR-1898: A resumable stage runner and a mini retrain that exercises the retrain tooling in CI
+
+[1898-mini-retrain-pipeline](1898-mini-retrain-pipeline.md)
+
+## ADR-1899: govulncheck at symbol level, OpenVEX for what is not called
+
+[1899-govulncheck-symbol-gate-openvex](1899-govulncheck-symbol-gate-openvex.md)
+
+## ADR-1900: Deterministic verification and state contract for VPL decode retry ceiling
+
+[1900-vpl-decode-ceiling-contract](1900-vpl-decode-ceiling-contract.md)
 
 ## ADR-1906: VMAFx core API semantics: per-context logging, size negotiation, frame and model references
 
 [1906-vmafx-core-api-semantics](1906-vmafx-core-api-semantics.md)
 
+## ADR-1917: The integer ADM scale-0 horizontal and vertical weight limit is 43900, set by the CSF stage's 16-bit magnitude
+
+[1917-integer-adm-scale0-weight-limit-csf-magnitude](1917-integer-adm-scale0-weight-limit-csf-magnitude.md)
+
+## ADR-1918: Samples above 2^bpc - 1 are invalid input; an opt-in check refuses them
+
+[1918-sample-range-contract-opt-in-check](1918-sample-range-contract-opt-in-check.md)
+
 ## ADR-1929: VMAFx device frames, fences and the import rule: the shared contract the backend lanes implement
 
 [1929-vmafx-device-frames-fences](1929-vmafx-device-frames-fences.md)
+
+## ADR-1930: `sycl_device_asan` puts the device sanitizer on every SYCL compile and the link
+
+[1930-sycl-device-asan-option](1930-sycl-device-asan-option.md)
+
+## ADR-2001: Release scope of 1.0.0 and the roadmap to 2.0
+
+[2001-release-scope-1-0-and-roadmap-to-2-0](2001-release-scope-1-0-and-roadmap-to-2-0.md)
+
+## ADR-2012: Lefthook and the pre-commit framework on Windows hosts
+
+[2012-lefthook-windows-host](2012-lefthook-windows-host.md)
 
 ## ADR-2023: VMAFx device frames on CUDA: one library stream per device, fences on it, release events recorded where the frame is released
 
 [2023-vmafx-cuda-device-frames](2023-vmafx-cuda-device-frames.md)
 
+## ADR-2044: VMAFx option groups generate every scoring surface, and the scoring API is a versioned contract
+
+[2044-vmafx-option-groups-scoring-contract](2044-vmafx-option-groups-scoring-contract.md)
+
+## ADR-2055: The x86 AVX2 level requires FMA
+
+[2055-x86-avx2-gate-requires-fma](2055-x86-avx2-gate-requires-fma.md)
+
+## ADR-2056: `float_adm` files its debug ratio unsuffixed; a second debug instance is refused
+
+[2056-float-adm-debug-key-refusal](2056-float-adm-debug-key-refusal.md)
+
+## ADR-2062: The `cpu` tidy lane measures the MATLAB MEX sources against self-authored stub headers
+
+[2062-matlab-mex-lint-stubs](2062-matlab-mex-lint-stubs.md)
+
+## ADR-2073: The provenance record is canonical JSON with one digest over the configuration and the scores, the library writes it into every report, and `--verify-provenance` re-runs it
+
+[2073-vmafx-provenance-record](2073-vmafx-provenance-record.md)
+
+## ADR-2074: VMAFx window scores: a completion thread per context, one pooling implementation, the window clock and the in-flight bound
+
+[2074-vmafx-window-scores](2074-vmafx-window-scores.md)
+
+## ADR-2090: Derive `motion2` / `motion3` frame by frame: final once the frame after is scored, the same statements as the flush
+
+[2090-motion-window-incremental](2090-motion-window-incremental.md)
+
+## ADR-2091: VMAFx device frames on SYCL: readers copy on the device behind the frame's ready event, the release waits on every reader
+
+[2091-vmafx-sycl-device-frames](2091-vmafx-sycl-device-frames.md)
+
 ## ADR-2092: VMAFx device frames on HIP: one library stream per device copies every frame for the twins, dma-bufs as external memory, sync\_file checked on the host
 
 [2092-vmafx-hip-device-frames](2092-vmafx-hip-device-frames.md)
+
+## ADR-2093: HDR-VMAF groundwork from upstream, with the input colorimetry on the context
+
+[2093-upstream-hdr-groundwork-input-colorimetry](2093-upstream-hdr-groundwork-input-colorimetry.md)
+
+## ADR-2094: libvmaf.so.3 is a compat library on the exported VMAFx API; the engine compiles its libvmaf bodies under engine names, and backends keep theirs until their lanes land
+
+[2094-libvmaf-compat-library-split](2094-libvmaf-compat-library-split.md)
+
+## ADR-2126: Declare the single-maintainer gaps of OpenSSF Scorecard's Code-Review and Branch-Protection checks as exceptions
+
+[2126-scorecard-single-maintainer-exceptions](2126-scorecard-single-maintainer-exceptions.md)
+
+## ADR-2132: HIP imports GL textures through EGL dma-buf export; the runtime's GL interop is not used
+
+[2132-hip-gl-textures-through-egl-dmabuf](2132-hip-gl-textures-through-egl-dmabuf.md)
 
 ## ADR-2133: Device import takes 4:2:2 and 4:4:4: semi-planar NV16 / NV24 family and packed Y210 / Y410, one CPU reference, converted on the device
 
 [2133-vmafx-import-422-444-formats](2133-vmafx-import-422-444-formats.md)
 
-## ADR-2145: One input format table generates the import layouts, the FFmpeg and GStreamer lists and the CLI names; AYUV, UYVY and V210 join the layouts
+## ADR-2134: `adm_cm_aim_line_kernel_4` gets its own register budget of 209 for the exact scale-0 angle flag
 
-[2145-vmafx-input-format-table](2145-vmafx-input-format-table.md)
+[2134-cuda-adm-cm-aim-register-budget-angle-flag](2134-cuda-adm-cm-aim-register-budget-angle-flag.md)
 
-## ADR-2146: RGB, RGBA and BGRA input is converted to Y'CbCr in integers with a matrix, range and transfer the caller states, and refused by name without them
+## ADR-2152: VMAFx imports Vulkan frames on CUDA, SYCL and HIP: one memory kind and one semaphore fence kind, opaque memory on CUDA and the dma-buf route elsewhere
 
-[2146-vmafx-rgb-input-explicit-matrix](2146-vmafx-rgb-input-explicit-matrix.md)
+[2152-vmafx-vulkan-frame-import](2152-vmafx-vulkan-frame-import.md)
 
-## ADR-2164: float\_psnr and ciede take every depth the engine reads (8 to 16 bits); psnr\_hvs stays at 12
+## ADR-2153: Move the praetor pin to 04cc813ff054 for the documentation lint budget and the tidy coverage gate
 
-[2164-vmafx-odd-bit-depths-float-psnr-ciede](2164-vmafx-odd-bit-depths-float-psnr-ciede.md)
+[2153-praetor-pin-04cc813](2153-praetor-pin-04cc813.md)
+
+## ADR-2167: `-qpfile` on libx264 applies its offsets through `quant_offsets`
+
+[2167-ffmpeg-x264-qpfile-quant-offsets](2167-ffmpeg-x264-qpfile-quant-offsets.md)
+
+## ADR-2169: CI runs the tier a pull request owes, not the whole suite on every push
+
+[2169-ci-fewer-runs](2169-ci-fewer-runs.md)
+
+## ADR-2170: A CI leg that prints no warnings turns them into errors, one leg at a time
+
+[2170-warnings-are-errors-per-leg](2170-warnings-are-errors-per-leg.md)
+
+## ADR-2171: A weekly research radar over public video-quality sources
+
+[2171-research-radar](2171-research-radar.md)
+
+## ADR-2197: Generated changelog, ADR index and rebase notes are rendered when pull requests land
+
+[2197-render-generated-docs-at-landing](2197-render-generated-docs-at-landing.md)
+
+## ADR-2198: A tester leg builds where its inputs change, and no release is cut on a leg nobody saw green
+
+[2198-windows-sycl-leg-and-cut-check](2198-windows-sycl-leg-and-cut-check.md)
+
+## ADR-2199: actionlint runs under a deadline and fails loudly when it hangs
+
+[2199-actionlint-bounded-run](2199-actionlint-bounded-run.md)
+
+## ADR-2200: The live source ADR-citation bindings are derived from the tree, not recorded
+
+[2200-source-adr-citations-derived](2200-source-adr-citations-derived.md)
+
+## ADR-2321: Move the praetor pin to afb739ed81f3 and meet its nested-context, supply-chain and harness checks
+
+[2321-praetor-pin-afb739ed](2321-praetor-pin-afb739ed.md)
+
+## ADR-2342: Record the scope decisions of 2026-10-06 and 2026-10-07 in the candidate map
+
+[2342-rc-map-amendment-2026-10](2342-rc-map-amendment-2026-10.md)
+
+## ADR-2343: Reference-exact extractors by default, with a named Netflix compatibility mode
+
+[2343-reference-exact-default-compat-mode](2343-reference-exact-default-compat-mode.md)
+
+## ADR-2349: One metric definition drives the services, the generated dashboards and the observability package
+
+[2349-observability-package](2349-observability-package.md)
+
+## ADR-2350: The VMAFx platform keeps its state in PostgreSQL, scales on queue depth and generates its platform surfaces from a definition
+
+[2350-cloud-native-platform](2350-cloud-native-platform.md)
+
+## ADR-2377: Go saliency inference runs through the core's MobileSal extractor and the RC4 Go binding
+
+[2377-go-saliency-through-mobilesal-binding](2377-go-saliency-through-mobilesal-binding.md)
+
+## ADR-2383: macOS and Windows package channels are fed by the verified native release pipelines
+
+[2383-package-channels-native-pipelines](2383-package-channels-native-pipelines.md)
+
+## ADR-2399: SLO objectives, burn-rate windows and alert thresholds are chart values, rendered from one rule builder
+
+[2399-observability-slo-settings-as-values](2399-observability-slo-settings-as-values.md)
+
+## ADR-2440: Move the praetor pin to 7458a220e1c9 and drop the exceptions for the managed workflows
+
+[2440-praetor-pin-7458a220](2440-praetor-pin-7458a220.md)
+
+## ADR-2461: A lighter deliverables track for small pull requests
+
+[2461-small-pr-deliverables-track](2461-small-pr-deliverables-track.md)
+
+## ADR-2462: Every commit carries a DCO sign-off, checked on pull requests
+
+[2462-dco-sign-off-required](2462-dco-sign-off-required.md)
+
+## ADR-2478: Rust replaces the host-side C and C++ through 3.0, behind the unchanged C ABI
+
+[2478-rust-core-migration](2478-rust-core-migration.md)
+
+## ADR-2485: VMAFx keeps its own credits page, generated from a curated list and held to the tree
+
+[2485-vmafx-credits-page](2485-vmafx-credits-page.md)
+
+## ADR-2646: POSIX-only build parts stay off Windows, and preflight refuses an unguarded POSIX header
+
+[2646-posix-only-build-options](2646-posix-only-build-options.md)
+
+## ADR-2647: the operator records events in every namespace through a write-only ClusterRole
+
+[2647-operator-events-cluster-wide](2647-operator-events-cluster-wide.md)
+
+## ADR-2673: the Helm chart declares EUPL-1.2 AND Apache-2.0 because its values schema embeds Kubernetes type schemas
+
+[2673-chart-licence-kubernetes-schemas](2673-chart-licence-kubernetes-schemas.md)
+
+## ADR-2689: sponsorship is recognition only, in four monthly tiers, with one source file for the list
+
+[2689-sponsorship-tiers-recognition-only](2689-sponsorship-tiers-recognition-only.md)
+
+## ADR-2690: The SYCL SpEED covariance replays the CPU's sequential fp64 sum, with its terms formed in parallel
+
+[2690-sycl-speed-covariance-fast-exact](2690-sycl-speed-covariance-fast-exact.md)
+
+## ADR-2705: formulas are TeX rendered by self-hosted KaTeX, checked at build time
+
+[2705-docs-math-katex](2705-docs-math-katex.md)
+
+## ADR-2751: MSVC threads stay on the Win32 shim, which gains a timed wait
+
+[2751-win32-pthread-shim-timed-wait](2751-win32-pthread-shim-timed-wait.md)
+
+## ADR-2752: A static MSVC build installs vmaf.lib and vmafx.lib
+
+[2752-msvc-static-library-platform-names](2752-msvc-static-library-platform-names.md)
+
+## ADR-2783: The patched FFmpeg is built with MSVC against vmaf.lib in CI
+
+[2783-ffmpeg-msvc-consumer-leg](2783-ffmpeg-msvc-consumer-leg.md)
+
+## ADR-2784: Move the praetor pin to 3a766f2d56ad, take its REUSE workflow and declare the build-warnings lanes it cannot read
+
+[2784-praetor-pin-3a766f2d](2784-praetor-pin-3a766f2d.md)
+
+## ADR-2795: Integer ADM evaluates two viewing distances in one context
+
+[2795-adm-shared-viewing-distances](2795-adm-shared-viewing-distances.md)
+
+## ADR-2796: Every clang-tidy ratchet lane is a hosted, path-routed required check
+
+[2796-hosted-tidy-all-lanes](2796-hosted-tidy-all-lanes.md)
+
+## ADR-2817: Re-pin the Pelorus mirror to v0.3.0, its EUPL-1.2 release, and check the licence on every sync
+
+[2817-pelorus-v030-eupl-repin](2817-pelorus-v030-eupl-repin.md)
+
+## ADR-2828: Every CI build lane spells warnings as errors where praetor's build-warnings gate reads it
+
+[2828-ci-werror-every-lane](2828-ci-werror-every-lane.md)
+
+## ADR-2949: `vmaf_picture_wrap` ships with upstream's signature, on `vmafx_frame_wrap_host`, with the fork's plane rules
+
+[2949-picture-wrap-compat-port](2949-picture-wrap-compat-port.md)
+
+## ADR-3061: Move the praetor pin to d141862c430b so the Go API gate builds its checker against golang.org/x/tools v0.51.0
+
+[3061-praetor-pin-d141862c](3061-praetor-pin-d141862c.md)
+
+## ADR-3137: The one dev image carries the Vulkan loader and lavapipe, so Vulkan-dependent tests build and run on CPU in every lane
+
+[3137-dev-image-vulkan-lavapipe](3137-dev-image-vulkan-lavapipe.md)
+
+## ADR-3143: VMAFx consumes the shared FFmpeg fix series
+
+[3143-ffmpeg-shared-fix-series](3143-ffmpeg-shared-fix-series.md)
+
+## ADR-3240: Move the praetor pin to 4ae6247c57d2, the engine the workstation hooks already run
+
+[3240-praetor-pin-4ae6247c](3240-praetor-pin-4ae6247c.md)
+
+## ADR-3251: Every hosted Linux job names its image by version; the floating label is refused
+
+[3251-hosted-runner-label-explicit](3251-hosted-runner-label-explicit.md)
+
+## ADR-3272: Move the praetor pin to 9bf502ec6ce5 and run the hooks through its engine launcher
+
+[3272-praetor-pin-9bf502ec-engine-launcher](3272-praetor-pin-9bf502ec-engine-launcher.md)
+
+## ADR-3273: Bypass mode `always` is a dated exception to the solo-repository standard
+
+[3273-solo-bypass-mode-dated-exception](3273-solo-bypass-mode-dated-exception.md)
+
+## ADR-3279: One MSVC build leg runs on light-tier pull requests that change core C or C++
+
+[3279-msvc-sycl-leg-on-light-tier](3279-msvc-sycl-leg-on-light-tier.md)
+
+## ADR-3285: Move the praetor pin to 6622361940dc and refresh the register skills
+
+[3285-praetor-pin-66223619](3285-praetor-pin-66223619.md)
+
+## ADR-3286: Pull requests from forks never reach the ARC runner pool
+
+[3286-arc-runners-fork-guard](3286-arc-runners-fork-guard.md)
+
+## ADR-3292: Restart the release line at 0.1.0; 1.0.0 becomes the first stable release
+
+[3292-release-line-restart-0x](3292-release-line-restart-0x.md)
+
+## ADR-3293: Every owed required context must succeed; absent, skipped and neutral fail
+
+[3293-aggregator-owed-contexts-must-succeed](3293-aggregator-owed-contexts-must-succeed.md)
+
+## ADR-3294: Every CodeQL language is analysed on every event
+
+[3294-codeql-every-language-every-pr](3294-codeql-every-language-every-pr.md)
+
+## ADR-3295: The render lands as its own render-only pull request
+
+[3295-render-only-pull-request](3295-render-only-pull-request.md)
+
+## ADR-3311: Stream metadata field list seeded from the Pelorus registry
+
+[3311-stream-metadata-field-list](3311-stream-metadata-field-list.md)
+
+## ADR-3312: One Renovate manager owns the CI Python interpreter
+
+[3312-renovate-python-ci-version-group](3312-renovate-python-ci-version-group.md)
+
+## ADR-3313: The solo master ruleset asks for no approval and bypasses at pull-request mode
+
+[3313-solo-ruleset-zero-reviews](3313-solo-ruleset-zero-reviews.md)
+
+## ADR-3314: Pull-request workflows stay inside the Scorecard check-suite window
+
+[3314-pr-workflow-budget-scorecard-window](3314-pr-workflow-budget-scorecard-window.md)
+
+## ADR-3315: Local images and local packages are installed pinned
+
+[3315-scorecard-pinned-local-installs](3315-scorecard-pinned-local-installs.md)
+
+## ADR-3316: Release assets carry their build provenance
+
+[3316-release-intoto-provenance](3316-release-intoto-provenance.md)
+
+## ADR-3317: One distribution manifest describes every artifact and channel
+
+[3317-distribution-manifest](3317-distribution-manifest.md)
+
+## ADR-3318: One pinned Rust toolchain for every Rust build
+
+[3318-rust-toolchain-pin](3318-rust-toolchain-pin.md)
+
+## ADR-3329: Run buf lint and buf breaking in CI
+
+[3329-ci-buf-lint-breaking](3329-ci-buf-lint-breaking.md)
+
+## ADR-3330: Run Trivy config and filesystem scans in CI
+
+[3330-ci-trivy-config-fs](3330-ci-trivy-config-fs.md)
+
+## ADR-3331: Run Spectral OpenAPI lint in CI
+
+[3331-ci-spectral-openapi-lint](3331-ci-spectral-openapi-lint.md)
+
+## ADR-3332: Re-pin the Pelorus mirror to v0.4.1 (interop ABI 1.5)
+
+[3332-pelorus-v040-abi15-repin](3332-pelorus-v040-abi15-repin.md)
+
+## ADR-3333: Move the praetor pin to 2d23b29 and give every agent persona a model tier
+
+[3333-praetor-pin-2d23b29-persona-tiers](3333-praetor-pin-2d23b29-persona-tiers.md)
+
+## ADR-3334: ONNX Runtime C Tarball SHA-256 Pinning and Verification
+
+[3334-ort-tarball-sha256-pins](3334-ort-tarball-sha256-pins.md)
+
+## ADR-3335: Python package floors match dependency resolutions
+
+[3335-python-floors-match-dependencies](3335-python-floors-match-dependencies.md)
+
+## ADR-3336: Dev Image Reverse Debugger (rr) and Build-Time Analyzer (ClangBuildAnalyzer)
+
+[3336-dev-image-rr-clangbuildanalyzer](3336-dev-image-rr-clangbuildanalyzer.md)
+
+## ADR-3337: Move the praetor pin to 320b058d and excuse the Coverage Gate timeouts for three days
+
+[3337-praetor-pin-320b058d-test-timeout](3337-praetor-pin-320b058d-test-timeout.md)
+
+## ADR-3338: Dev Container Build runs on light-tier pull requests that change the image's own inputs
+
+[3338-dev-container-own-input-lane](3338-dev-container-own-input-lane.md)
+
+## ADR-3339: Upstream Consumer ABI Drop-in Parity Verification and Defect Plant Gate
+
+[3339-compat-abi-parity-upstream-consumer](3339-compat-abi-parity-upstream-consumer.md)
+
+## ADR-3340: Pelorus side data behind the x265 UUID is read through an allow-list
+
+[3340-pelorus-udu-x265-wrap](3340-pelorus-udu-x265-wrap.md)
+
+## ADR-3351: The msvcism scan is a required step of every pull request
+
+[3351-msvcism-scan-on-light-tier](3351-msvcism-scan-on-light-tier.md)
+
+## ADR-3352: A SYCL device waits on and signals Vulkan timeline semaphores on its queue
+
+[3352-sycl-vulkan-timeline-on-queue](3352-sycl-vulkan-timeline-on-queue.md)

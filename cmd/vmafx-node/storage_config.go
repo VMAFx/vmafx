@@ -21,10 +21,6 @@ import (
 	"github.com/VMAFx/vmafx/pkg/storage"
 )
 
-// storageConfigKeys lists the underscore-bearing leaf keys of this file;
-// nodeEnvOptions appends them to its CompoundKeys.
-var storageConfigKeys = []string{"storage.mount_root"}
-
 // provideStorage opens the configured storage layer and logs what it can
 // reach: a missing rclone leaves local paths and http(s) URLs working and
 // fails every rclone remote, which the log says at startup.

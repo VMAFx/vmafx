@@ -63,6 +63,15 @@ The rules, written as in any other `AGENTS.md`.
 - The body starts with a level-one heading (`# Title`). Links are relative to
   the page, which is one directory deeper than the index:
   `../../../docs/adr/...` from `scripts/ci/AGENTS.d/`.
+- The body, `_index.md` and the `invariant:` line are agent text in the
+  internal register. Since the praetor pin `afb739ed81f3`
+  ([ADR-2321](../adr/2321-praetor-pin-afb739ed.md)), `praetorctl
+  compile-context --verify` and `praetorctl audit` lint every tracked nested
+  `AGENTS.md`, and the index is rendered from these three. Check a page with
+  `praetorctl caveman check --kind=context <page>` and the index after
+  `make docs-fragments-write`. The usual finding is article density above
+  2.0 per 100 prose words; drop the articles and split sentences longer than
+  30 prose words at a `;` or `:`.
 
 ## Regenerate and check
 
@@ -104,10 +113,31 @@ The script exits 65 for a source it rejects. It rejects:
 | `invariant:` too long | 120 characters |
 | Too many globs | 24 per page |
 | Glob matches nothing | the file was renamed or removed: update the page |
-| Front matter | exactly `paths:` (a list) and `invariant:`; no other key |
+| Front matter | `paths:` (a list) and `invariant:`, plus optional `area:`; no other key |
 | File name | lower-case words joined by `-`, ending in `.md` |
 | Body | must start with a level-one heading (`# Title`) |
-| Anything else in `AGENTS.d/` | only Markdown pages and `_index.md` |
+| Area | `area:` names an `_area-<slug>.md`; every area has a page; summary 1 to 400 characters |
+| Anything else in `AGENTS.d/` | only Markdown pages, `_index.md` and `_area-<slug>.md` |
+
+## Areas
+
+When the table of one directory would pass the 16,000-byte index budget, group
+its pages into areas (decision Q-115; `scripts/ci/` has four: gates, release,
+tidy, tests). Each area has its own generated sub-index and its own budget.
+
+1. Add `AGENTS.d/_area-<slug>.md`: a `# Title` line, then one summary
+   paragraph (at most 400 characters) that says which files and topics the
+   area covers. An agent routes by this summary.
+2. Add `area: <slug>` to the front matter of every page. Once a directory has
+   an area file, every page must name one, and every area needs a page.
+3. Run `make docs-fragments-write`. `AGENTS.md` then lists the areas, and
+   `AGENTS-<slug>.md` next to it holds the table of that area's pages, in the
+   same form as the table of an undivided index.
+
+An agent reads `AGENTS.md`, picks the area whose summary covers the paths it
+will touch (both areas when unsure), matches the paths in that sub-index and
+reads the matching pages. Page paths, links and the `invariant:` rule do not
+change. `_area-<slug>.md` is not a page: it has no front matter and no row.
 
 ## What the index contains
 

@@ -2,10 +2,13 @@
 
 ## Supported versions
 
-VMAFx is preparing its first `1.0` release candidate. As of 2026-09-08,
-[the active repository has no published releases](https://github.com/VMAFx/vmafx/releases).
-There are no supported stable VMAFx release lines yet. Version strings inherited
-from libvmaf or Netflix tags do not identify a released VMAFx support line.
+VMAFx has no supported release line yet. The candidates `v1.0.0-rc.1`,
+`v1.0.0-rc.2` and `v1.0.0-rc.3` were published as pre-releases on 2026-09-27,
+2026-09-28 and 2026-10-07 and are withdrawn: the release line restarts at
+`v0.1.0`, the first VMAFx release
+([ADR-3292](docs/adr/3292-release-line-restart-0x.md),
+[release guide](docs/development/release.md)). Version strings inherited from
+libvmaf or Netflix tags do not identify a VMAFx support line either.
 
 Report problems against the current `master` commit and include its full SHA.
 Development fixes are made on the current code; this is not a promise of
@@ -52,6 +55,14 @@ Please include:
 These are the current response policy and targets, not a statement that past
 reports met them. Badge assessments need actual response and remediation records.
 
+## Advisories in dependencies
+
+Advisories against third-party dependencies are triaged in the open: update to
+a fixed release, remove the dependency where it is not needed, or record why the
+project is not affected as an OpenVEX statement under `security/vex/`. The
+process and the current statements are in
+[dependency advisories](docs/development/dependency-advisories.md).
+
 ## Release verification
 
 The [supply-chain workflow](.github/workflows/supply-chain.yml) defines intended
@@ -75,6 +86,11 @@ or from the presence of a workflow file.
   untrusted; optional network services and model verification have their own
   security-relevant behavior. Reports involving external codec libraries are
   coordinated with their projects when appropriate.
+- File paths given on the command line of the `vmaf` tool and its test
+  programs (inputs, models, outputs, `--verify-provenance <report>`) are chosen
+  by the invoking user and opened with that user's rights. They are not a trust
+  boundary: opening the file a user names is the intended behaviour, not path
+  injection.
 - Backend numerical tolerances vary by feature; the
   [cross-backend gate](docs/development/cross-backend-gate.md) is the reference.
   A score difference alone does not establish a security defect. Describe the

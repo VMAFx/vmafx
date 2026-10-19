@@ -1,5 +1,8 @@
 # Lefthook Configuration (Go 1.27+ & HISS-21 Governance)
-# Governance commands fail closed: a failing or missing praetorctl blocks the commit or push.
+# Governance commands run the engine the repository pins (PRAETOR_REF in
+# .github/workflows/standards-gate.yml) through .config/lefthook/engine.sh, never the
+# praetorctl on PATH, and fail closed: a failing engine, a pin that cannot be read or
+# installed, or two different pins block the commit or push.
 agent-checkpoint-tool:
   commands:
     checkpoint:
@@ -19,24 +22,15 @@ pre-commit:
       glob: "*.go"
       run: go vet ./...
     framework-hooks:
-      # Hook environments are installed with the commit's git variables
-      # unset: in a linked worktree git exports an absolute GIT_INDEX_FILE, and
-      # npm's `git+file://` install of a node hook (pre-commit
-      # languages/node.py) then writes the hook repository's tree into that
-      # index. `run` keeps the commit's environment because it needs the index.
       # ADR-1249: lefthook owns .git/hooks and delegates to the pre-commit
       # framework so this repository's existing hooks (clang-format, ruff,
       # markdownlint, the ADR, state.md and aggregator gates, semgrep, the
       # ADR-0332 worktree-drift guard) keep running unchanged. Superseding note
       # for ADR-0924. Fails closed like the ADR-1241 dispatcher it replaces.
-      run: |
-        if [ -x .venv/bin/pre-commit ]; then fw=.venv/bin/pre-commit; \
-        elif command -v pre-commit >/dev/null 2>&1; then fw=pre-commit; \
-        else echo "VMAFx hooks: pre-commit is missing; activate the environment used by make install-hooks." >&2; exit 1; fi; \
-        env -u GIT_INDEX_FILE -u GIT_DIR -u GIT_WORK_TREE -u GIT_OBJECT_DIRECTORY "$fw" install-hooks || exit 1; \
-        "$fw" run
+      # Windows execution and quote-free invocation: ADR-2012.
+      run: bash scripts/git-hooks/framework-hooks.sh pre-commit
     context-check:
-      run: if command -v praetorctl >/dev/null 2>&1; then praetorctl compile-context --verify; elif [ -d ./cmd/standardsctl ]; then go run ./cmd/standardsctl compile-context --verify; else echo HISS-21 governance hook cannot run because praetorctl is not installed >&2; exit 1; fi
+      run: sh .config/lefthook/engine.sh compile-context --verify
     hiss-audit:
       # ADR-1298 — scripts/git-hooks/hiss-audit.sh, not a bare `praetorctl
       # audit`. praetorctl derives its touched-file set from `git diff
@@ -46,16 +40,16 @@ pre-commit:
       # commit.
       run: bash scripts/git-hooks/hiss-audit.sh
     hiss-evidence:
-      run: if command -v praetorctl >/dev/null 2>&1; then praetorctl hiss coverage --verify; elif [ -d ./cmd/standardsctl ]; then go run ./cmd/standardsctl hiss coverage --verify; else echo HISS-21 governance hook cannot run because praetorctl is not installed >&2; exit 1; fi
+      run: sh .config/lefthook/engine.sh hiss coverage --verify
     dedupe-scan:
-      run: if command -v praetorctl >/dev/null 2>&1; then praetorctl dedupe scan .; elif [ -d ./cmd/standardsctl ]; then go run ./cmd/standardsctl dedupe scan .; else echo HISS-21 governance hook cannot run because praetorctl is not installed >&2; exit 1; fi
+      run: sh .config/lefthook/engine.sh dedupe scan .
 
 post-commit:
   commands:
     state-sync:
       run: scripts/githooks/state-sync.sh
     dedupe-cadence:
-      run: if command -v praetorctl >/dev/null 2>&1; then praetorctl dedupe cadence --threshold=20 --record .; elif [ -d ./cmd/standardsctl ]; then go run ./cmd/standardsctl dedupe cadence --threshold=20 --record .; else echo HISS-21 governance hook cannot run because praetorctl is not installed >&2; exit 1; fi
+      run: sh .config/lefthook/engine.sh dedupe cadence --threshold=20 --record .
 
 pre-push:
   parallel: false
@@ -72,26 +66,21 @@ pre-push:
       # pre-push here (ADR-1249), so it hands that stage the same remote
       # arguments and push-ref stdin the dispatcher would; without them
       # hook-impl cannot compute the pushed range.
+      # Windows execution and quote-free invocation: ADR-2012.
       use_stdin: true
-      run: |
-        if [ -x .venv/bin/pre-commit ]; then fw=.venv/bin/pre-commit; \
-        elif command -v pre-commit >/dev/null 2>&1; then fw=pre-commit; \
-        else echo "VMAFx hooks: pre-commit is missing; activate the environment used by make install-hooks." >&2; exit 1; fi; \
-        env -u GIT_INDEX_FILE -u GIT_DIR -u GIT_WORK_TREE -u GIT_OBJECT_DIRECTORY "$fw" install-hooks || exit 1; \
-        "$fw" hook-impl --config=.pre-commit-config.yaml --hook-type=pre-push \
-          --hook-dir "$(git rev-parse --git-path hooks)" -- {1} {2}
+      run: bash scripts/git-hooks/framework-hooks.sh pre-push {1} {2}
     security:
       run: if command -v govulncheck >/dev/null 2>&1; then govulncheck ./...; else echo govulncheck is not installed, skipping >&2; fi
     flavor-audit:
-      run: if command -v praetorctl >/dev/null 2>&1; then praetorctl flavor audit .; elif [ -d ./cmd/standardsctl ]; then go run ./cmd/standardsctl flavor audit .; else echo HISS-21 governance hook cannot run because praetorctl is not installed >&2; exit 1; fi
+      run: sh .config/lefthook/engine.sh flavor audit .
     audit:
       # The same wrapper as pre-commit: one audit invocation, offline where the
       # engine supports it (scripts/git-hooks/hiss-audit.sh).
       run: bash scripts/git-hooks/hiss-audit.sh
     hiss-evidence:
-      run: if command -v praetorctl >/dev/null 2>&1; then praetorctl hiss coverage --verify; elif [ -d ./cmd/standardsctl ]; then go run ./cmd/standardsctl hiss coverage --verify; else echo HISS-21 governance hook cannot run because praetorctl is not installed >&2; exit 1; fi
+      run: sh .config/lefthook/engine.sh hiss coverage --verify
     dedupe-scan:
-      run: if command -v praetorctl >/dev/null 2>&1; then praetorctl dedupe scan .; elif [ -d ./cmd/standardsctl ]; then go run ./cmd/standardsctl dedupe scan .; else echo HISS-21 governance hook cannot run because praetorctl is not installed >&2; exit 1; fi
+      run: sh .config/lefthook/engine.sh dedupe scan .
     # The praetor gating pipeline is deliberately NOT run pre-push here. Its
     # race-detector stage runs `go test -race ./...` in a bare isolated worktree,
     # and every Go package in this repository is cgo over libvmaf

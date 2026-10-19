@@ -612,7 +612,8 @@ func TestHandleVmafScoreZeroDimensions(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for zero dimensions")
 	}
-	if !strings.Contains(err.Error(), "must be positive") {
+	// The generated width option (minimum 1) refuses 0 and names the argument.
+	if !strings.Contains(err.Error(), "invalid width 0") {
 		t.Errorf("error message: got %q", err.Error())
 	}
 }

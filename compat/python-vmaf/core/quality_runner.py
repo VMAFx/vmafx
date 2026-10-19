@@ -1333,6 +1333,8 @@ class VmafexecQualityRunner(QualityRunner, FeatureDiscoveryMixin):
             vif_enhn_gain_limit=vif_enhn_gain_limit,
             adm_enhn_gain_limit=adm_enhn_gain_limit,
             motion_force_zero=motion_force_zero,
+            color_ref=self._optional("color_ref", None),
+            color_dist=self._optional("color_dist", None),
             **flags,
         )
 
@@ -1389,6 +1391,8 @@ class VmafexecQualityRunner(QualityRunner, FeatureDiscoveryMixin):
             enc_width,
             enc_height,
             enc_bitdepth,
+            color_ref=opts.color_ref,
+            color_dist=opts.color_dist,
         )
 
     def _get_exec(self):

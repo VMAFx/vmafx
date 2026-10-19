@@ -43,8 +43,11 @@ import (
 	"google.golang.org/grpc/credentials"
 )
 
-// CompoundKeys are the underscore-bearing leaf keys of Load; a caller adds
-// them to its config.Options so the env transform keeps them intact.
+// CompoundKeys are the underscore-bearing leaf keys of Load.
+//
+// Deprecated: the vmafx binaries take their CompoundKeys from the generated
+// config_keys.gen.go of each binary (api/vmafx-platform.toml, ADR-2350 D13),
+// which holds these keys; this list stays for API compatibility.
 var CompoundKeys = []string{
 	"controller.ca_file",
 	"controller.server_name",

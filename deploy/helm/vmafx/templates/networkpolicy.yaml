@@ -230,6 +230,50 @@ spec:
 {{- end }}
 
 # ----------------------------------------------------------------------------
+# Allow rule: controller and migration Job -> PostgreSQL (ADR-2350,
+# controller.store.backend postgres): the chart's CloudNativePG Cluster pods in
+# cnpg mode, controllerToDatabase.cidrs in external mode.
+# ----------------------------------------------------------------------------
+{{- if and .Values.controller.enabled .Values.networkPolicy.allow.controllerToDatabase.enabled (eq (include "vmafx.controllerStoreBackend" .) "postgres") }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullName }}-allow-controller-to-database
+  namespace: {{ $ns }}
+  labels:
+    {{- include "vmafx.labels" . | nindent 4 }}
+    app.kubernetes.io/component: controller
+spec:
+  podSelector:
+    matchLabels:
+      {{- $selector | nindent 6 }}
+    matchExpressions:
+      - key: app.kubernetes.io/component
+        operator: In
+        values: [controller, migrate]
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        {{- if eq .Values.controller.store.postgresql.mode "cnpg" }}
+        - podSelector:
+            matchLabels:
+              cnpg.io/cluster: {{ include "vmafx.controllerDatabaseCluster" . }}
+        {{- else }}
+        {{- range .Values.networkPolicy.allow.controllerToDatabase.cidrs }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+        {{- end }}
+        {{- end }}
+      ports:
+        {{- range .Values.networkPolicy.allow.controllerToDatabase.ports }}
+        - protocol: TCP
+          port: {{ . }}
+        {{- end }}
+{{- end }}
+
+# ----------------------------------------------------------------------------
 # Allow rule: controller -> identity providers (JWKS over HTTPS) while auth is
 # on (ADR-1589; ADR-1519 tenants each name their own JWKS endpoint).
 # ----------------------------------------------------------------------------
@@ -454,6 +498,59 @@ spec:
       ports:
         - protocol: TCP
           port: {{ .Values.node.metricsPort | default 9090 }}
+{{- end }}
+
+# ----------------------------------------------------------------------------
+# Allow rule: Prometheus -> every component's metrics port while monitoring is
+# on (ADR-2349): the server's and the controller's HTTP port, the node's
+# metrics port and the operator's 8080, from the pods (and, with
+# fromNamespaceSelector, the namespaces) networkPolicy.allow.metricsScrape
+# names. Without a namespace selector only pods of the release namespace.
+# ----------------------------------------------------------------------------
+{{- $scrape := .Values.networkPolicy.allow.metricsScrape }}
+{{- if and .Values.monitoring.enabled $scrape.enabled }}
+{{- $ports := list (toString .Values.service.targetPort) }}
+{{- if .Values.controller.enabled }}
+{{- $ports = append $ports (toString .Values.controller.httpPort) }}
+{{- end }}
+{{- if .Values.node.enabled }}
+{{- $ports = append $ports (toString (.Values.node.metricsPort | default 9090)) }}
+{{- end }}
+{{- if .Values.operator.enabled }}
+{{- $ports = append $ports "8080" }}
+{{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullName }}-allow-metrics-scrape
+  namespace: {{ $ns }}
+  labels:
+    {{- include "vmafx.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- $selector | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            {{- with $scrape.fromPodSelector }}
+            matchLabels:
+              {{- toYaml . | nindent 14 }}
+            {{- else }} {}
+            {{- end }}
+          {{- with $scrape.fromNamespaceSelector }}
+          namespaceSelector:
+            matchLabels:
+              {{- toYaml . | nindent 14 }}
+          {{- end }}
+      ports:
+        {{- range uniq $ports }}
+        - protocol: TCP
+          port: {{ . }}
+        {{- end }}
 {{- end }}
 
 # ----------------------------------------------------------------------------

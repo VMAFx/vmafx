@@ -223,7 +223,42 @@ def build_ffmpeg_command(req: EncodeRequest, ffmpeg_bin: str = "ffmpeg") -> list
     cmd.extend(_build_two_pass_args(req))
     cmd.extend(with_upload_filter(req.extra_params, getattr(adapter, "hw_upload_filter", "")))
     cmd.extend(_build_sink_args(req))
-    return cmd
+    return merge_codec_params(cmd)
+
+
+# Encoder-parameter options of FFmpeg's libx264, libx265, libsvtav1 and libvvenc
+# wrappers: each takes one ":"-separated key=value list.
+CODEC_PARAM_FLAGS = frozenset({"-x264-params", "-x265-params", "-svtav1-params", "-vvenc-params"})
+
+
+def merge_codec_params(argv: list[str]) -> list[str]:
+    """Join repeated encoder-parameter options into one per flag.
+
+    FFmpeg keeps only the last occurrence of a string option, so a two-pass
+    adapter's ``-x265-params pass=1:stats=...`` followed by a saliency
+    ``-x265-params zones=...`` or an HDR ``-x265-params master-display=...``
+    would silently drop all but the last: no stats file, no zones, no HDR
+    SEI. The first occurrence keeps its position and the values are joined
+    with ``:`` in order. Go: ``ffencode.MergeCodecParams``.
+    """
+    out: list[str] = []
+    value_at: dict[str, int] = {}
+    i = 0
+    while i < len(argv):
+        flag = argv[i]
+        if flag not in CODEC_PARAM_FLAGS or i + 1 >= len(argv):
+            out.append(flag)
+            i += 1
+            continue
+        value = argv[i + 1]
+        i += 2
+        at = value_at.get(flag)
+        if at is None:
+            out.extend((flag, value))
+            value_at[flag] = len(out) - 1
+        elif value:
+            out[at] = f"{out[at]}:{value}" if out[at] else value
+    return out
 
 
 def _with_abr_rate_control(args: list[str], req: EncodeRequest) -> list[str]:

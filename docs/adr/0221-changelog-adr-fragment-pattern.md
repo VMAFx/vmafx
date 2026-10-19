@@ -1,7 +1,7 @@
-<!-- markdownlint-disable MD018 MD036 -->
+<!-- markdownlint-disable MD013 MD018 MD036 -->
 # ADR-0221: CHANGELOG + ADR-index fragment-file pattern
 
-- **Status**: Accepted
+- **Status**: Accepted (Superseded-in-part by [ADR-2197](2197-render-generated-docs-at-landing.md): the rendered files are written when pull requests land, not committed by them)
 - **Date**: 2026-04-29
 - **Deciders**: Lusoris
 - **Tags**: process, release, docs, ci, fork-local

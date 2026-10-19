@@ -1,0 +1,1 @@
+| [ADR-1898](1898-mini-retrain-pipeline.md) | A resumable stage runner (`aiutils.pipeline`) and a mini retrain driver run the retrain tooling end to end on a generated corpus in CI: named early failures, resume from per-stage manifests, recorded seeds and environment identity | Accepted | ai, ci, training, reproducibility, fork-local |

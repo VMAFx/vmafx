@@ -33,11 +33,12 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/VMAFx/vmafx/cmd/vmafx-controller/auth"
+	"github.com/VMAFx/vmafx/cmd/vmafx-controller/backend"
 	"github.com/VMAFx/vmafx/cmd/vmafx-controller/nodes"
 	"github.com/VMAFx/vmafx/cmd/vmafx-controller/queue"
 	"github.com/VMAFx/vmafx/cmd/vmafx-controller/scheduler"
 	controllerv1 "github.com/VMAFx/vmafx/gen/go/controller"
-	"github.com/VMAFx/vmafx/pkg/observability"
+	"github.com/VMAFx/vmafx/internal/oteltest"
 )
 
 // testTenantCtx returns a context with a "test-tenant" auth context injected.
@@ -113,23 +114,28 @@ func newTestControllerServer(t *testing.T) *controllerServer {
 	t.Cleanup(func() { r.Close() })
 
 	s := scheduler.New(q, r, log)
-	reg := prometheus.NewRegistry()
-	metrics := observability.NewMetrics(reg)
+	return newControllerServer(backend.NewLegacy(q, r, s), allowAllScopes(), testControllerMetrics(t, prometheus.NewRegistry()), log)
+}
 
-	return newControllerServer(q, r, s, allowAllScopes(), metrics, log)
+// testControllerMetrics registers the scoring and controller job families on
+// reg, as the production graph does.
+func testControllerMetrics(t *testing.T, reg *prometheus.Registry) *controllerMetrics {
+	t.Helper()
+	m, err := newControllerMetrics(reg, oteltest.Metrics(t, reg))
+	if err != nil {
+		t.Fatalf("newControllerMetrics: %v", err)
+	}
+	return m
 }
 
 func newTestStream(ctx context.Context) *mockStreamJobsServer {
 	return &mockStreamJobsServer{ctx: ctx}
 }
 
-// submitTestJob submits a job directly to the queue inside a controllerServer.
+// submitTestJob submits a job directly to the backend of a controllerServer.
 func submitTestJob(t *testing.T, cs *controllerServer, ref, dis string) string {
 	t.Helper()
-	id, err := cs.queue.Submit(context.Background(), &queue.Job{
-		TenantID: "test-tenant",
-		Scoring:  queue.ScoringParams{Reference: ref, Distorted: dis},
-	})
+	id, err := cs.backend.Submit(context.Background(), "test-tenant", backend.Scoring{Reference: ref, Distorted: dis})
 	if err != nil {
 		t.Fatalf("Submit: %v", err)
 	}
@@ -143,10 +149,17 @@ type grpcFixture struct {
 	queue    *queue.SQLiteQueue
 	registry *nodes.Registry
 	sched    *scheduler.Scheduler
-	metrics  *observability.Metrics
+	metrics  *controllerMetrics
 }
 
 func newGRPCFixture(t *testing.T) *grpcFixture {
+	t.Helper()
+	return newGRPCFixtureOn(t, prometheus.NewRegistry())
+}
+
+// newGRPCFixtureOn is newGRPCFixture with the controller metrics registered on
+// reg, for tests that gather them.
+func newGRPCFixtureOn(t *testing.T, metricsReg *prometheus.Registry) *grpcFixture {
 	t.Helper()
 	dir := t.TempDir()
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
@@ -159,11 +172,10 @@ func newGRPCFixture(t *testing.T) *grpcFixture {
 	reg := nodes.NewRegistry(log)
 	t.Cleanup(func() { reg.Close() })
 	sch := scheduler.New(q, reg, log)
-	reg2 := prometheus.NewRegistry()
-	metrics := observability.NewMetrics(reg2)
+	metrics := testControllerMetrics(t, metricsReg)
 
 	return &grpcFixture{
-		srv:      newControllerServer(q, reg, sch, allowAllScopes(), metrics, log),
+		srv:      newControllerServer(backend.NewLegacy(q, reg, sch), allowAllScopes(), metrics, log),
 		queue:    q,
 		registry: reg,
 		sched:    sch,
@@ -315,9 +327,15 @@ func TestGetJob_EmptyIDRejected(t *testing.T) {
 
 func TestGetJob_MissingReturnsNotFound(t *testing.T) {
 	f := newGRPCFixture(t)
-	_, err := f.srv.GetJob(context.Background(), &controllerv1.GetJobRequest{JobId: "ghost-id"})
+	_, err := f.srv.GetJob(tenantCtx("test-tenant"), &controllerv1.GetJobRequest{JobId: "ghost-id"})
 	if codeOf(err) != codes.NotFound {
 		t.Errorf("expected NotFound, got %v", codeOf(err))
+	}
+	// Without a tenant the call is refused before any job is looked up, so an
+	// unauthenticated caller learns nothing about which jobs exist.
+	_, err = f.srv.GetJob(context.Background(), &controllerv1.GetJobRequest{JobId: "ghost-id"})
+	if codeOf(err) != codes.Unauthenticated {
+		t.Errorf("without a tenant: expected Unauthenticated, got %v", codeOf(err))
 	}
 }
 
@@ -551,11 +569,11 @@ func TestReportResult_FinalSuccess(t *testing.T) {
 		t.Errorf("status: got %v, want COMPLETED", job.GetStatus())
 	}
 	// Round-3 R3-1: the reported score must survive the real producer path
-	// (ReportResult → queue → GetJob → queueJobToProto). Before the fix
-	// queueJobToProto omitted FinalScore, so GetFinalScore() always returned 0
+	// (ReportResult → queue → GetJob → jobToProto). Before the fix
+	// jobToProto omitted FinalScore, so GetFinalScore() always returned 0
 	// and the vmafx-operator copied a zero score into VmafxJob.Status.Score.
 	if got := job.GetFinalScore(); got != 76.6683 {
-		t.Errorf("FinalScore: got %v, want 76.6683 (score lost in queueJobToProto)", got)
+		t.Errorf("FinalScore: got %v, want 76.6683 (score lost in jobToProto)", got)
 	}
 }
 
@@ -652,8 +670,8 @@ func TestQueueStatusToProto(t *testing.T) {
 		{"", controllerv1.JobStatus_PENDING},
 	}
 	for _, tc := range cases {
-		if got := queueStatusToProto(tc.in); got != tc.want {
-			t.Errorf("queueStatusToProto(%q) = %v, want %v", tc.in, got, tc.want)
+		if got := backendStatusToProto(tc.in); got != tc.want {
+			t.Errorf("backendStatusToProto(%q) = %v, want %v", tc.in, got, tc.want)
 		}
 	}
 }
@@ -686,7 +704,7 @@ func TestStreamJobs_WithStatusFilter_PendingOnly(t *testing.T) {
 
 func TestProtoCapToNodes_Nil(t *testing.T) {
 	t.Parallel()
-	got := protoCapToNodes(nil)
+	got := protoCapToBackend(nil)
 	if got.GPUVendor != "" || got.Concurrency != 0 || len(got.Backends) != 0 {
 		t.Errorf("nil cap should map to zero-value, got %+v", got)
 	}
@@ -699,7 +717,7 @@ func TestProtoCapToNodes_NonNil(t *testing.T) {
 		Backends:    []string{"hip", "cpu"},
 		Concurrency: 8,
 	}
-	got := protoCapToNodes(in)
+	got := protoCapToBackend(in)
 	if got.GPUVendor != "amd" {
 		t.Errorf("GPUVendor: got %q", got.GPUVendor)
 	}
@@ -713,20 +731,20 @@ func TestProtoCapToNodes_NonNil(t *testing.T) {
 
 func TestQueueJobToProto_FieldsCopiedCorrectly(t *testing.T) {
 	t.Parallel()
-	j := &queue.Job{
+	j := &backend.Job{
 		ID:           "abc",
-		Status:       queue.StatusCompleted,
+		Status:       backend.StatusCompleted,
 		AssignedNode: "node-9",
 		Score:        92.1234,
 		Error:        "",
-		Scoring: queue.ScoringParams{
+		Scoring: backend.Scoring{
 			Reference: "/r.yuv",
 			Distorted: "/d.yuv",
 			Model:     "vmaf_v0.6.1",
 			Backend:   "cuda",
 		},
 	}
-	got := queueJobToProto(j)
+	got := jobToProto(j)
 	if got.GetId() != "abc" {
 		t.Errorf("Id: got %q", got.GetId())
 	}
@@ -739,7 +757,7 @@ func TestQueueJobToProto_FieldsCopiedCorrectly(t *testing.T) {
 	if got.GetScoring().GetReference() != "/r.yuv" {
 		t.Errorf("Scoring.Reference: got %q", got.GetScoring().GetReference())
 	}
-	// Round-3 R3-1: queue.Job.Score must map onto proto Job.FinalScore.
+	// Round-3 R3-1: Job.Score must map onto proto Job.FinalScore.
 	if got.GetFinalScore() != 92.1234 {
 		t.Errorf("FinalScore: got %v, want 92.1234", got.GetFinalScore())
 	}
@@ -751,7 +769,7 @@ func TestQueueJobToProto_FieldsCopiedCorrectly(t *testing.T) {
 
 func TestScoringServer_HealthReportsOK(t *testing.T) {
 	reg := prometheus.NewRegistry()
-	metrics := observability.NewMetrics(reg)
+	metrics := oteltest.Metrics(t, reg)
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	s := newScoringServer(nil, allowAllScopes(), metrics, log)
 	// Health does not touch the scorer.

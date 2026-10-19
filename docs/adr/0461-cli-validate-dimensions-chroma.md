@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-0461: CLI validates positive dimensions and chroma-alignment on input videos
 
-- **Status**: Accepted
+- **Status**: Accepted (Superseded-in-part 2026-10-06 by [ADR-1398](1398-cli-accept-odd-dimensions-chroma-subsampled.md) for the odd-dimension rejection policy)
 - **Date**: 2026-05-16
 - **Deciders**: lusoris
 - **Tags**: `cli`, `validation`, `correctness`

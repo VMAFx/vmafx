@@ -100,7 +100,7 @@ regardless of CRF.
 | `--vmaf-model` | `vmaf_v1.0.16_3d0h` | VMAF model forwarded to the scorer. |
 | `--neg` | off | Use the VMAF NEG model variant. |
 | `--fast-nr` | off | NR early-elimination inside each bisect, see [`vmaf-tune-fast-nr.md`](vmaf-tune-fast-nr.md). |
-| `--score-backend` | unset | `cpu`, `cuda`, `sycl`, `hip` or `auto`. See [score backends](vmaf-tune-score-backend.md). |
+| `--score-backend` | unset | `cpu`, `cuda`, `sycl`, `hip`, `metal` or `auto`. See [score backends](vmaf-tune-score-backend.md). |
 | `--ffmpeg-bin`, `--vmaf-bin` | `ffmpeg`, `vmaf` | Binary overrides. |
 | `--vaapi-device PATH` | auto | VA-API render node for Intel QSV device initialisation, for example `/dev/dri/renderD129`, used by the availability probe and by every QSV encode of the run. `auto` takes the first Intel render node from `/sys/class/drm`. The `VMAFTUNE_VAAPI_DEVICE` variable also works, and the flag wins. |
 | `--format` | `markdown` | `markdown`, `json`, `csv`, `html` or `both`. `html` and `both` render the profile card directly. `both` writes `.json`, `.html` and `.md` next to `--output` and therefore requires it. |

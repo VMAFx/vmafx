@@ -45,6 +45,7 @@ static const uint16_t vif_filter1d_table[4][18] = {
 
 static const int vif_filter1d_width[4] = {17, 9, 5, 3};
 
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no using. ADR-1138. */
 typedef struct VifBuffer {
     void *data;
 
@@ -73,19 +74,24 @@ typedef struct VifBuffer {
     ptrdiff_t stride_32;
     ptrdiff_t stride_tmp;
 } VifBuffer;
+/* NOLINTEND(modernize-use-using) */
 
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no using. ADR-1138. */
 typedef struct VifResiduals {
     int64_t accum_num_log;
     int64_t accum_den_log;
     int64_t accum_num_non_log;
     int64_t accum_den_non_log;
 } VifResiduals;
+/* NOLINTEND(modernize-use-using) */
 
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no using. ADR-1138. */
 typedef struct VifPublicState {
     VifBuffer buf;
     uint16_t log2_table[VIF_LOG2_TABLE_SIZE];
     double vif_enhn_gain_limit;
 } VifPublicState;
+/* NOLINTEND(modernize-use-using) */
 
 static inline void PADDING_SQ_DATA(const VifBuffer *buf, int w, unsigned fwidth_half)
 {
@@ -141,7 +147,7 @@ static inline int32_t log2_32(const uint16_t *log2_table, uint32_t temp)
 {
     int k = __builtin_clz(temp);
     k = 16 - k;
-    temp = temp >> k;
+    temp = temp >> (unsigned)k;
     /* After normalization temp is in [32768..65535]; strip the MSB to get the
      * 15-bit index into the compact VIF_LOG2_TABLE_SIZE-entry table. */
     return log2_table[temp & (VIF_LOG2_TABLE_SIZE - 1u)] + 2048 * k;
@@ -149,10 +155,13 @@ static inline int32_t log2_32(const uint16_t *log2_table, uint32_t temp)
 
 static inline int32_t log2_64(const uint16_t *log2_table, uint64_t temp)
 {
+    /* A runtime precondition on the parameter, which ADR-1142 forbids weakening; the check
+     * mis-fires when a C++/CUDA translation unit includes this C header. */
+    /* NOLINTNEXTLINE(cert-dcl03-c,misc-static-assert): see the comment above, ADR-1142 */
     assert(temp >= 0x20000);
     int k = __builtin_clzll(temp);
     k = 48 - k;
-    temp = temp >> k;
+    temp = temp >> (unsigned)k;
     /* After normalization temp is in [32768..65535]; strip the MSB to get the
      * 15-bit index into the compact VIF_LOG2_TABLE_SIZE-entry table. */
     return log2_table[temp & (VIF_LOG2_TABLE_SIZE - 1u)] + 2048 * k;

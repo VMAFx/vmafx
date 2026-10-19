@@ -157,3 +157,12 @@ The fork adopts the following OSSF Scorecard policy:
   <https://github.com/ossf/scorecard-action#workflow-restrictions>
 - Public dashboard:
   <https://scorecard.dev/viewer/?uri=github.com/VMAFx/vmafx>
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 152: `ADR-0118 — keyless Sigstore release signing (informs the
+  Signed-Releases follow-up).`: Cites ADR-0118 for keyless Sigstore release
+  signing, but ADR-0118 is FFmpeg patch series; Sigstore signing is ADR-0010.

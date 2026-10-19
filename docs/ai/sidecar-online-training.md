@@ -11,11 +11,9 @@ scoring model.
     Nothing is wired together in this release:
 
     - No production scoring or executor path calls `FeedbackClient.Send`.
-    - The Helm chart does not deploy the Python server.
-      `templates/sidecar-trainer.yaml` defines a named helper whose recorded
-      consumer (`node-deployment.yaml`) no longer exists, `templates/node.yaml`
-      does not include the helper, and `values.schema.json` rejects `sidecar.*`
-      values. There is no supported Helm quick start.
+    - The Helm chart does not deploy the Python server: it has no trainer
+      container, and `values.schema.json` rejects `sidecar.*` values. There is
+      no supported Helm quick start.
     - `vmafx-node` does not consume the checkpoints the server exports.
 
     Treat the architecture below as an implemented component awaiting
@@ -94,7 +92,7 @@ Design choices:
 
 For a configured batch size `B` and replay fraction `R`:
 
-- Each gradient step reserves exactly the oldest `B - floor(B * R)` pending
+- Each gradient step reserves exactly the oldest $B - \lfloor B R \rfloor$ pending
   samples.
 - Replay fills the remaining slots without replacement when history is
   sufficient, and with replacement only when the available history is smaller
@@ -225,10 +223,9 @@ checkpoint into a scoring model is an external, manual integration step today.
 
 ## Kubernetes status
 
-The orphaned `sidecar-trainer.yaml` helper holds proposed container,
-environment, volume, probe and restart fields, but no workload includes it and
-the values schema exposes no matching configuration. It is not a rendered or
-validated deployment contract.
+The chart has no trainer container. An unused `sidecar-trainer.yaml` helper,
+which no workload included, was removed; the values schema exposes no
+`sidecar.*` configuration.
 
 The `VmafxModelTraining` CRD and an operator-side status mapper also exist. The
 mapper polls an HTTP `/status` service that this Python server does not provide,

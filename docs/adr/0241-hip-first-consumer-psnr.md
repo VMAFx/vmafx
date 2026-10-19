@@ -166,3 +166,12 @@ documents the symbol the runtime PR will declare.
   host scaffolding; kernel body lands in T7-10b once the HIP toolchain
   is available in CI" (no ROCm SDK on dev box; runtime PR cadence
   matches ADR-0212's audit-first split).
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 162: `[Backlog](././BACKLOG.md) — T7-10 (closes audit half +
+  first consumer; runtime + remaining kernels remain in`: Cited file
+  BACKLOG.md does not exist in the repository root or on master.

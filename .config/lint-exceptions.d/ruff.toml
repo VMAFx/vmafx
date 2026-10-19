@@ -1,0 +1,29 @@
+# Declared exceptions to ruff. Format and rules: scripts/ci/lint_exceptions.py.
+# One file per entry; an entry stops holding on `expires`. The hook `exclude` of
+# .pre-commit-config.yaml and the extend-exclude of pyproject.toml name the same files
+# (scripts/ci/tests/test_python_format_scope.py keeps the three in step).
+
+[[exception]]
+path = ".config/hiss/testdata/HISS-04/python/gap/cyclomatic-high.py"
+reason = "HISS scanner fixture, a defect by design: its line positions are the replay evidence of the HISS-04 scanner claim (`praetorctl hiss coverage --verify`), so a formatter run would move them. Renew only while the fixture is still a planted defect."
+expires = 2027-03-31
+
+[[exception]]
+path = ".config/hiss/testdata/HISS-04/python/negative/loc-at-cap-60.py"
+reason = "HISS scanner fixture, a defect by design: its line positions are the replay evidence of the HISS-04 scanner claim (`praetorctl hiss coverage --verify`), so a formatter run would move them. Renew only while the fixture is still a planted defect."
+expires = 2027-03-31
+
+[[exception]]
+path = ".config/hiss/testdata/HISS-04/python/positive/loc-def-over-cap.py"
+reason = "HISS scanner fixture, a defect by design: its line positions are the replay evidence of the HISS-04 scanner claim (`praetorctl hiss coverage --verify`), so a formatter run would move them. Renew only while the fixture is still a planted defect."
+expires = 2027-03-31
+
+[[exception]]
+path = ".config/hiss/testdata/HISS-08/python/positive/eval-call.py"
+reason = "HISS scanner fixture, a defect by design: its line positions are the replay evidence of the HISS-08 scanner claim (`praetorctl hiss coverage --verify`), so a formatter run would move them. Renew only while the fixture is still a planted defect."
+expires = 2027-03-31
+
+[[exception]]
+path = "tools/figures/mkdocs_hook.py"
+reason = "Praetor-managed file: `praetorctl audit` compares it with praetor's own bytes (ADR-1351). Re-reviewed 2026-10-15 against the engine pin 3bbde07: the two function-local imports (lines 194 and 241, kept so the hook loads without MkDocs in tests) still fail this repository's PLC0415 (ADR-2784); the fix is praetor's (cordanaLLM/praetor issue 1204, open). Category D (120 days)."
+expires = 2027-02-12

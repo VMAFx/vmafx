@@ -433,9 +433,24 @@ static char *test_float_ms_ssim_chroma_exact(void)
     return compare_all(cases, ARRAY_LEN(cases));
 }
 
+/* T-METAL-UINT-PLANE-INDEX-2026-10-05: the five scale-0 moment planes,
+ * (w - 10) x h, are indexed in uint, so float_ms_ssim_metal refuses the
+ * picture cap. */
+static char *test_float_ms_ssim_refuses_uint_index_overflow(void)
+{
+    if (metal_twin_device_only() || !metal_twin_have_device()) {
+        return NULL;
+    }
+    mu_assert("float_ms_ssim_metal accepted the picture cap",
+              metal_twin_init_status("float_ms_ssim_metal", NULL, NULL, METAL_TWIN_PIC_DIM_MAX,
+                                     METAL_TWIN_PIC_DIM_MAX) == -EINVAL);
+    return NULL;
+}
+
 char *run_tests(void)
 {
     metal_run_case(test_float_ms_ssim_metal_registered);
+    metal_run_case(test_float_ms_ssim_refuses_uint_index_overflow);
     metal_run_case(test_float_ms_ssim_order_frame_exact);
     metal_run_case(test_float_ms_ssim_order_formula_exact);
     metal_run_case(test_float_ms_ssim_640x480_exact);

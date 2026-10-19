@@ -14,3 +14,6 @@ verdict `fail` is welcome: it is a finding.
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | 2026-10-05 | 12th Gen Intel(R) Core(TM) i9-12900K | x86_64 | sse2, ssse3, sse4.1, avx2 | Intel(R) Graphics [0xe20b] (xe2), Intel(R) Graphics [0x4680] (xe-lp) | fail | `854bf047e458` | [2026-10-05-12th-gen-intel-r-core-tm-i9-12900k-sycl.json](2026-10-05-12th-gen-intel-r-core-tm-i9-12900k-sycl.json) |
 | 2026-10-05 | 12th Gen Intel(R) Core(TM) i9-12900K | x86_64 | sse2, ssse3, sse4.1, avx2 | - | pass | `2889f963a955` | [2026-10-05-12th-gen-intel-r-core-tm-i9-12900k-windows.json](2026-10-05-12th-gen-intel-r-core-tm-i9-12900k-windows.json) |
+| 2026-10-05 | 13th Gen Intel(R) Core(TM) i5-13500 | x86_64 | sse2, ssse3, sse4.1, avx2 | NVIDIA GeForce RTX 3050 (ampere) | pass | `854bf047e458` | [2026-10-05-13th-gen-intel-r-core-tm-i5-13500-cuda.json](2026-10-05-13th-gen-intel-r-core-tm-i5-13500-cuda.json) |
+| 2026-10-05 | 13th Gen Intel(R) Core(TM) i5-13500 | x86_64 | sse2, ssse3, sse4.1, avx2 | Intel(R) UHD Graphics 770 (xe-lp) | fail | `854bf047e458` | [2026-10-05-13th-gen-intel-r-core-tm-i5-13500-sycl.json](2026-10-05-13th-gen-intel-r-core-tm-i5-13500-sycl.json) |
+| 2026-10-05 | Apple M4 Pro | arm64 | neon | - | fail | `860050c3f718` | [2026-10-05-apple-m4-pro.json](2026-10-05-apple-m4-pro.json) |

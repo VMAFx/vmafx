@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-0526: Add enable_lcs and enable_chroma to float_ms_ssim SYCL twin
 
-- **Status**: Accepted
+- **Status**: Accepted (Superseded-in-part 2026-10-06 by [ADR-1299](1299-sycl-ms-ssim-chroma-implementation.md) for the enable_chroma reasoning (the enable_lcs decision stands))
 - **Date**: 2026-05-17
 - **Deciders**: lusoris
 - **Tags**: `sycl`, `parity`, `options`

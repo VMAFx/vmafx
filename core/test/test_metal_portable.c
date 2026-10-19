@@ -56,11 +56,33 @@ static char *test_fma_rounds_once(void)
     return NULL;
 }
 
+/* vmaf_mtl_f64_equal() answers as `==` does, for every class of input. */
+static char *test_f64_equal_agrees_with_equals(void)
+{
+    mu_assert("a value equals itself", vmaf_mtl_f64_equal(0.1, 0.1));
+    mu_assert("+0 equals -0", vmaf_mtl_f64_equal(0.0, -0.0));
+    mu_assert("-0 equals +0", vmaf_mtl_f64_equal(-0.0, 0.0));
+    mu_assert("an infinity equals itself", vmaf_mtl_f64_equal(INFINITY, INFINITY));
+    return NULL;
+}
+
+static char *test_f64_equal_refuses_what_equals_refuses(void)
+{
+    mu_assert("+inf is not -inf", !vmaf_mtl_f64_equal(INFINITY, -INFINITY));
+    mu_assert("a NaN equals nothing", !vmaf_mtl_f64_equal(NAN, NAN));
+    mu_assert("a NaN is not a number", !vmaf_mtl_f64_equal(NAN, 1.0));
+    mu_assert("neighbours differ", !vmaf_mtl_f64_equal(1.0, nextafter(1.0, 2.0)));
+    mu_assert("neighbours differ the other way", !vmaf_mtl_f64_equal(nextafter(1.0, 2.0), 1.0));
+    return NULL;
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_bit_casts_round_trip);
     mu_run_test(test_clz64);
     mu_run_test(test_fma_rounds_once);
+    mu_run_test(test_f64_equal_agrees_with_equals);
+    mu_run_test(test_f64_equal_refuses_what_equals_refuses);
     return NULL;
 }
 

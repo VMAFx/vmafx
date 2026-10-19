@@ -1,0 +1,1 @@
+| [ADR-1900](1900-vpl-decode-ceiling-contract.md) | Deterministic verification and state contract for VPL decode retry ceiling under 60000-attempt bound and warning frame drop repair. | Accepted | tools, vpl, sycl, gpu, decode, ceilings, correctness |

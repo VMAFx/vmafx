@@ -39,12 +39,19 @@
  *      (-ENOENT) and an ABI-major-mismatch blob is rejected (-EPROTO); both
  *      leave the frame unweighted.
  *
+ *   7. test_newer_larger_section_reads_known_prefix /
+ *      test_older_shorter_section_zero_fills — the reader keeps R4 of the
+ *      interop ABI: it reads min(known_size, dir.size) bytes of a section, so a
+ *      newer producer's longer section and an older producer's shorter one
+ *      both stay readable.
+ *
  * Uses vmaf_import_feature_score + vmaf_feature_score_pooled — no model, no YUV,
  * mirroring test_context.c's test_get_feature_score.
  */
 
 #include <errno.h>
 #include <math.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -131,24 +138,34 @@ static void fill_banding_section(PelorusBandingSection *band, uint32_t map_off, 
     }
 }
 
+/* Bytes a newer producer may append to the banding section (R4 fixture). */
+#define PEL_TEST_NEWER_TAIL 16u
+
 /*
  * Build a synthetic UUID-prefixed Pelorus blob carrying a banding section with
  * a real per-cell risk map. Layout (manually, matching interop.c's packer):
- *   [uuid 16][header 48][dir[1] 16][banding section 24 (8-aligned)][cell map].
+ *   [uuid 16][header 48][dir[1] 16][banding section (8-aligned)][cell map].
  * `risk_byte` fills every cell, so the per-cell mean is risk_byte/255. Returns a
  * malloc'd blob the caller frees; *out_len is the full length. cols/rows set the
  * grid (0,0 => frame-level scalar path).
+ *
+ * `sect_size` is the section length the directory declares. The whole
+ * PelorusBandingSection is always written, so a shorter declared section still
+ * has its later fields in the blob, where only a reader that ignores dir.size
+ * would find them. Bytes past sizeof(PelorusBandingSection) are 0xA5, the
+ * fields a newer producer appended.
  */
-static uint8_t *build_banding_blob(uint16_t cols, uint16_t rows, uint8_t risk_byte,
-                                   float global_risk, size_t *out_len)
+static uint8_t *build_banding_blob_sized(uint16_t cols, uint16_t rows, uint8_t risk_byte,
+                                         float global_risk, uint32_t sect_size, size_t *out_len)
 {
     const uint32_t n_cells = (uint32_t)cols * (uint32_t)rows;
     const uint32_t header_size = (uint32_t)sizeof(PelorusSideData);
     const uint32_t dir_size = (uint32_t)sizeof(PelorusSectionDir);
-    const uint32_t sect_size = (uint32_t)sizeof(PelorusBandingSection);
+    const uint32_t known_size = (uint32_t)sizeof(PelorusBandingSection);
+    const uint32_t span = sect_size > known_size ? sect_size : known_size;
     /* header + 1 dir entry, already a multiple of 8. */
     const uint32_t sect_off = header_size + dir_size;
-    const uint32_t sect_padded = (sect_size + 7u) & ~7u;
+    const uint32_t sect_padded = (span + 7u) & ~7u;
     const uint32_t map_off = sect_off + sect_padded;
     const uint32_t total_size = map_off + n_cells;
     const size_t blob_len = (size_t)PELORUS_SIDEDATA_UUID_LEN + (size_t)total_size;
@@ -175,6 +192,7 @@ static uint8_t *build_banding_blob(uint16_t cols, uint16_t rows, uint8_t risk_by
     PelorusBandingSection band;
     fill_banding_section(&band, map_off, n_cells, global_risk);
     memcpy(blob + PELORUS_SIDEDATA_UUID_LEN + sect_off, &band, sizeof(band));
+    memset(blob + PELORUS_SIDEDATA_UUID_LEN + sect_off + known_size, 0xA5, span - known_size);
 
     if (n_cells > 0) {
         memset(blob + PELORUS_SIDEDATA_UUID_LEN + map_off, risk_byte, n_cells);
@@ -182,6 +200,14 @@ static uint8_t *build_banding_blob(uint16_t cols, uint16_t rows, uint8_t risk_by
 
     *out_len = blob_len;
     return blob;
+}
+
+/* The exact-size banding blob every other test uses. */
+static uint8_t *build_banding_blob(uint16_t cols, uint16_t rows, uint8_t risk_byte,
+                                   float global_risk, size_t *out_len)
+{
+    return build_banding_blob_sized(cols, rows, risk_byte, global_risk,
+                                    (uint32_t)sizeof(PelorusBandingSection), out_len);
 }
 
 /*
@@ -613,6 +639,310 @@ static char *test_complexity_modulates_grid_zero(void)
     return NULL;
 }
 
+/*
+ * R4, newer producer: the banding section declares PEL_TEST_NEWER_TAIL bytes
+ * this consumer does not know (0xA5 filler) and its cell map lies past them.
+ * The reader takes the known prefix, follows cell_data_offset to the map
+ * (every cell 255, salience 1.0) and weighs frame 2 like the exact-size section
+ * does (weight 2.0). A reader that copied dir.size bytes into its local would
+ * overflow it; the ASan + UBSan build (`make test-sanitizers`, the Sanitizers
+ * workflow) reports that.
+ */
+static char *test_newer_larger_section_reads_known_prefix(void)
+{
+    const uint32_t newer_size = (uint32_t)sizeof(PelorusBandingSection) + PEL_TEST_NEWER_TAIL;
+    size_t len = 0;
+    uint8_t *blob = build_banding_blob_sized(4, 4, 255, 0.5f, newer_size, &len);
+    mu_assert("newer-section blob alloc", blob != NULL);
+    double mean = pool_with_blob(blob, len);
+    free(blob);
+
+    double expect_w2 = (1.0 * 60.0 + 1.0 * 80.0 + 2.0 * 100.0) / 4.0;
+    mu_assert("newer section weighs like the exact-size one (w=2.0)", bit_exact(mean, expect_w2));
+    return NULL;
+}
+
+/*
+ * R4, older producer: the banding section ends before cell_data_offset, so the
+ * reader must zero what the producer did not write and use the frame scalars:
+ * risk 0.5, flat 1.0 -> salience 0.75*0.5 + 0.25*0.5 = 0.5 -> weight 1.5. The
+ * blob still holds a whole PelorusBandingSection pointing at a map of 255s; a
+ * reader that copied sizeof(PelorusBandingSection) bytes regardless of
+ * dir.size would take that map (weight 2.0) and fail the closed form.
+ */
+static char *test_older_shorter_section_zero_fills(void)
+{
+    const uint32_t older_size = (uint32_t)offsetof(PelorusBandingSection, cell_data_offset);
+    size_t len = 0;
+    uint8_t *blob = build_banding_blob_sized(4, 4, 255, 0.5f, older_size, &len);
+    mu_assert("older-section blob alloc", blob != NULL);
+    double mean = pool_with_blob(blob, len);
+    free(blob);
+
+    double expect_w15 = (1.0 * 60.0 + 1.0 * 80.0 + 1.5 * 100.0) / (1.0 + 1.0 + 1.5);
+    mu_assert("older section falls back to the frame scalars (w=1.5)", bit_exact(mean, expect_w15));
+    return NULL;
+}
+
+/* Helper to query carrier size and encode blob into carrier form. */
+static uint8_t *encode_carrier(const uint8_t *blob, size_t blob_len, size_t *out_len)
+{
+    size_t need = 0;
+    pel_result rc = pel_blob_carrier_encode(blob, blob_len, NULL, 0, &need);
+    if (rc != PEL_ERR_RANGE || need == 0) {
+        return NULL;
+    }
+    uint8_t *out = malloc(need);
+    if (out == NULL) {
+        return NULL;
+    }
+    rc = pel_blob_carrier_encode(blob, blob_len, out, need, out_len);
+    if (rc != PEL_OK || *out_len != need) {
+        free(out);
+        return NULL;
+    }
+    return out;
+}
+
+/* Bit-for-bit equality of two doubles (no floating-point equality test). */
+static int same_bits(double a, double b)
+{
+    uint64_t x = 0;
+    uint64_t y = 0;
+    memcpy(&x, &a, sizeof(x));
+    memcpy(&y, &b, sizeof(y));
+    return x == y;
+}
+
+/* Positive: valid carrier yields the same weight/summary as the blob form. */
+static char *test_carrier_positive_matches_blob(void)
+{
+    size_t blob_len = 0;
+    uint8_t *blob = build_banding_blob(4, 4, 255, 1.0f, &blob_len);
+    mu_assert("blob alloc", blob != NULL);
+
+    double mean_blob = pool_with_blob(blob, blob_len);
+    size_t carrier_len = 0;
+    uint8_t *carrier = encode_carrier(blob, blob_len, &carrier_len);
+    free(blob);
+    mu_assert("carrier encode", carrier != NULL);
+
+    double mean_carrier = pool_with_blob(carrier, carrier_len);
+    free(carrier);
+
+    mu_assert("carrier weight must match blob weight", same_bits(mean_carrier, mean_blob));
+    return NULL;
+}
+
+/* Negative: carrier UUID + body with a zero byte -> -EPROTO, no summary recorded. */
+static char *test_carrier_negative_zero_byte(void)
+{
+    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    VmafContext *vmaf = NULL;
+    mu_assert("vmaf_init failed", vmaf_init(&vmaf, cfg) == 0);
+    mu_assert("enable failed", vmaf_set_perceptual_weight_enabled(vmaf, 1) == 0);
+    mu_assert("inject failed", inject_scores(vmaf, 60.0, 80.0, 100.0) == 0);
+
+    uint8_t bad_carrier[32];
+    memcpy(bad_carrier, pelorus_carrier_uuid, PELORUS_SIDEDATA_UUID_LEN);
+    memset(bad_carrier + PELORUS_SIDEDATA_UUID_LEN, 0x00,
+           sizeof(bad_carrier) - PELORUS_SIDEDATA_UUID_LEN);
+
+    int rc = vmaf_set_perceptual_sidedata(vmaf, bad_carrier, sizeof(bad_carrier), 2);
+    mu_assert("carrier with zero byte must return -EPROTO", rc == -EPROTO);
+
+    double mean = -1.0;
+    mu_assert("pool MEAN failed",
+              vmaf_feature_score_pooled(vmaf, FEAT, VMAF_POOL_METHOD_MEAN, &mean, 0, 2) == 0);
+    double unweighted = (60.0 + 80.0 + 100.0) / 3.0;
+    mu_assert("frame 2 unweighted when carrier rejected", bit_exact(mean, unweighted));
+
+    vmaf_close(vmaf);
+    return NULL;
+}
+
+/* Negative: carrier UUID + body that decodes to < 48 bytes -> -EPROTO. */
+static char *test_carrier_negative_short_decoded_image(void)
+{
+    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    VmafContext *vmaf = NULL;
+    mu_assert("vmaf_init failed", vmaf_init(&vmaf, cfg) == 0);
+    mu_assert("enable failed", vmaf_set_perceptual_weight_enabled(vmaf, 1) == 0);
+    mu_assert("inject failed", inject_scores(vmaf, 60.0, 80.0, 100.0) == 0);
+
+    uint8_t short_carrier[PELORUS_SIDEDATA_UUID_LEN + 5];
+    memcpy(short_carrier, pelorus_carrier_uuid, PELORUS_SIDEDATA_UUID_LEN);
+    short_carrier[PELORUS_SIDEDATA_UUID_LEN] = 5;
+    short_carrier[PELORUS_SIDEDATA_UUID_LEN + 1] = 0x01;
+    short_carrier[PELORUS_SIDEDATA_UUID_LEN + 2] = 0x02;
+    short_carrier[PELORUS_SIDEDATA_UUID_LEN + 3] = 0x03;
+    short_carrier[PELORUS_SIDEDATA_UUID_LEN + 4] = 0x04;
+
+    int rc = vmaf_set_perceptual_sidedata(vmaf, short_carrier, sizeof(short_carrier), 2);
+    mu_assert("carrier decoding < 48 bytes must return -EPROTO", rc == -EPROTO);
+
+    double mean = -1.0;
+    mu_assert("pool MEAN failed",
+              vmaf_feature_score_pooled(vmaf, FEAT, VMAF_POOL_METHOD_MEAN, &mean, 0, 2) == 0);
+    double unweighted = (60.0 + 80.0 + 100.0) / 3.0;
+    mu_assert("frame 2 unweighted when short carrier rejected", bit_exact(mean, unweighted));
+
+    vmaf_close(vmaf);
+    return NULL;
+}
+
+/* Boundary: carrier UUID only (empty body) -> nonzero error, frame stays unweighted. */
+static char *test_carrier_boundary_empty(void)
+{
+    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    VmafContext *vmaf = NULL;
+    mu_assert("vmaf_init failed", vmaf_init(&vmaf, cfg) == 0);
+    mu_assert("enable failed", vmaf_set_perceptual_weight_enabled(vmaf, 1) == 0);
+    mu_assert("inject failed", inject_scores(vmaf, 60.0, 80.0, 100.0) == 0);
+
+    uint8_t carrier_empty[PELORUS_SIDEDATA_UUID_LEN];
+    memcpy(carrier_empty, pelorus_carrier_uuid, sizeof(carrier_empty));
+    int rc = vmaf_set_perceptual_sidedata(vmaf, carrier_empty, sizeof(carrier_empty), 2);
+    mu_assert("empty carrier must return nonzero error", rc != 0);
+
+    double mean = -1.0;
+    mu_assert("pool MEAN failed",
+              vmaf_feature_score_pooled(vmaf, FEAT, VMAF_POOL_METHOD_MEAN, &mean, 0, 2) == 0);
+    double unweighted = (60.0 + 80.0 + 100.0) / 3.0;
+    mu_assert("frame 2 unweighted when empty carrier rejected", bit_exact(mean, unweighted));
+
+    vmaf_close(vmaf);
+    return NULL;
+}
+
+/* Helper: build a w x h banding blob and return it in carrier form. */
+static uint8_t *banding_carrier(uint16_t w, uint16_t h, size_t *out_len)
+{
+    size_t blob_len = 0;
+    uint8_t *blob = build_banding_blob(w, h, 255, 1.0f, &blob_len);
+    if (blob == NULL) {
+        return NULL;
+    }
+    uint8_t *carrier = encode_carrier(blob, blob_len, out_len);
+    free(blob);
+    return carrier;
+}
+
+/* Boundary: a second carrier larger than the first grows the scratch buffer. */
+static char *test_carrier_boundary_growth(void)
+{
+    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    VmafContext *vmaf = NULL;
+    mu_assert("vmaf_init failed", vmaf_init(&vmaf, cfg) == 0);
+    mu_assert("enable failed", vmaf_set_perceptual_weight_enabled(vmaf, 1) == 0);
+    mu_assert("inject failed", inject_scores(vmaf, 60.0, 80.0, 100.0) == 0);
+
+    size_t c_len1 = 0;
+    uint8_t *carrier1 = banding_carrier(2, 2, &c_len1);
+    mu_assert("carrier1 encode", carrier1 != NULL);
+    int rc1 = vmaf_set_perceptual_sidedata(vmaf, carrier1, c_len1, 0);
+    free(carrier1);
+    mu_assert("first carrier ingest ok", rc1 == 0);
+
+    size_t c_len2 = 0;
+    uint8_t *carrier2 = banding_carrier(8, 8, &c_len2);
+    mu_assert("carrier2 encode", carrier2 != NULL);
+    int rc2 = vmaf_set_perceptual_sidedata(vmaf, carrier2, c_len2, 1);
+    free(carrier2);
+    mu_assert("second larger carrier ingest ok (scratch growth)", c_len2 > c_len1 && rc2 == 0);
+
+    vmaf_close(vmaf);
+    return NULL;
+}
+
+/* Prepend a 16-byte outer UUID to a payload, as libx265 does to every user data
+ * unregistered SEI it writes (ADR-3340). */
+static uint8_t *prefix_uuid(const uint8_t outer[16], const uint8_t *payload, size_t len,
+                            size_t *out_len)
+{
+    uint8_t *out = malloc(len + 16u);
+    if (out == NULL) {
+        return NULL;
+    }
+    memcpy(out, outer, 16u);
+    memcpy(out + 16, payload, len);
+    *out_len = len + 16u;
+    return out;
+}
+
+static const uint8_t x265_uuid[16] = {0x2c, 0xa2, 0xde, 0x09, 0xb5, 0x17, 0x47, 0xdb,
+                                      0xbb, 0x55, 0xa4, 0xfe, 0x7f, 0xc2, 0xfc, 0x4e};
+
+/* Pool a payload after prefixing it with outer; -1.0 on any failure. */
+static double pool_prefixed(const uint8_t outer[16], const uint8_t *payload, size_t len)
+{
+    size_t wrapped_len = 0;
+    uint8_t *wrapped = prefix_uuid(outer, payload, len, &wrapped_len);
+    double mean;
+    if (wrapped == NULL) {
+        return -1.0;
+    }
+    mean = pool_with_blob(wrapped, wrapped_len);
+    free(wrapped);
+    return mean;
+}
+
+/* Positive: a blob and a carrier behind the x265 UUID weigh as the direct form. */
+static char *test_x265_wrapped_matches_direct(void)
+{
+    size_t blob_len = 0;
+    size_t carrier_len = 0;
+    uint8_t *blob = build_banding_blob(4, 4, 255, 1.0f, &blob_len);
+    mu_assert("blob alloc", blob != NULL);
+    uint8_t *carrier = encode_carrier(blob, blob_len, &carrier_len);
+
+    double mean_direct = pool_with_blob(blob, blob_len);
+    double mean_blob = pool_prefixed(x265_uuid, blob, blob_len);
+    double mean_carrier = carrier != NULL ? pool_prefixed(x265_uuid, carrier, carrier_len) : -1.0;
+    free(blob);
+    free(carrier);
+
+    mu_assert("direct blob must weigh", mean_direct >= 0.0);
+    mu_assert("x265-wrapped blob must match direct", same_bits(mean_blob, mean_direct));
+    mu_assert("x265-wrapped carrier must match direct", same_bits(mean_carrier, mean_direct));
+    return NULL;
+}
+
+/* Negative: an unknown outer UUID stays foreign even with a valid blob behind
+ * it, and so does a second x265 UUID in front of the blob. */
+static char *test_unknown_outer_and_double_wrap_refused(void)
+{
+    static const uint8_t unknown[16] = {0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11,
+                                        0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11};
+    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    VmafContext *vmaf = NULL;
+    size_t blob_len = 0;
+    size_t once_len = 0;
+    size_t twice_len = 0;
+    size_t foreign_len = 0;
+    uint8_t *blob = build_banding_blob(4, 4, 255, 1.0f, &blob_len);
+    mu_assert("blob alloc", blob != NULL);
+    uint8_t *foreign = prefix_uuid(unknown, blob, blob_len, &foreign_len);
+    uint8_t *once = prefix_uuid(x265_uuid, blob, blob_len, &once_len);
+    uint8_t *twice = once != NULL ? prefix_uuid(x265_uuid, once, once_len, &twice_len) : NULL;
+    free(blob);
+    free(once);
+
+    int rc_foreign = -1;
+    int rc_twice = -1;
+    if (foreign != NULL && twice != NULL && vmaf_init(&vmaf, cfg) == 0) {
+        rc_foreign = vmaf_set_perceptual_sidedata(vmaf, foreign, foreign_len, 0);
+        rc_twice = vmaf_set_perceptual_sidedata(vmaf, twice, twice_len, 1);
+        vmaf_close(vmaf);
+    }
+    free(foreign);
+    free(twice);
+
+    mu_assert("unknown outer UUID must be foreign", rc_foreign == -ENOENT);
+    mu_assert("double x265 wrap must be foreign", rc_twice == -ENOENT);
+    return NULL;
+}
+
 char *run_tests(void)
 {
     static const MuTest tests[] = {
@@ -625,6 +955,15 @@ char *run_tests(void)
         MU_TEST(test_argument_guards),
         MU_TEST(test_complexity_modulates_weight),
         MU_TEST(test_complexity_modulates_grid_zero),
+        MU_TEST(test_newer_larger_section_reads_known_prefix),
+        MU_TEST(test_older_shorter_section_zero_fills),
+        MU_TEST(test_carrier_positive_matches_blob),
+        MU_TEST(test_carrier_negative_zero_byte),
+        MU_TEST(test_carrier_negative_short_decoded_image),
+        MU_TEST(test_carrier_boundary_empty),
+        MU_TEST(test_carrier_boundary_growth),
+        MU_TEST(test_x265_wrapped_matches_direct),
+        MU_TEST(test_unknown_outer_and_double_wrap_refused),
     };
     return mu_run_table(tests, MU_TABLE_LEN(tests));
 }

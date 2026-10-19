@@ -1,4 +1,4 @@
-<!-- markdownlint-disable MD060 -->
+<!-- markdownlint-disable MD013 MD060 -->
 # Environment variable reference
 
 This page lists the environment variables the VMAFx code reads at runtime,
@@ -28,6 +28,12 @@ To re-check the list against the tree, grep for the names
 Five per-feature `VMAF_*_MODEL_PATH` variables exist (the five above). Each
 works independently of `VMAF_TINY_MODEL_DIR`, and the per-feature variable takes
 precedence.
+
+### Feature implementation
+
+| Name | Type | Default | Description |
+|---|---|---|---|
+| `VMAF_FEATURE_IMPL` | `c` or `rust` | `c` | Which implementation runs a CPU feature extractor. `rust` replaces each extractor that has a Rust twin by it (logged at INFO) and keeps the C extractor, with a WARNING, where none exists; device twins are not affected. Any other value makes feature registration fail. Read once per process. Has an effect only in a build configured with `-Denable_rust_features=true`. The JSON report's `feature_backends` names the extractor that ran (`psnr_rust` for a twin). See [Rust extractor framework](../development/rust-extractor-framework.md) ([ADR-1713](../adr/1713-rc4-rust-extractor-framework.md)). |
 
 ### GPU dispatch
 
@@ -155,7 +161,8 @@ overrides not listed here.
 ## MCP server
 
 The Python MCP server (`mcp-server/vmaf-mcp`) and the Go server
-(`cmd/vmafx-mcp`) share the scoring-related variables.
+(`cmd/vmafx-mcp`) share the scoring-related variables. The Go server's own
+variables are in its [generated table](#mcp-server-cmdvmafx-mcp).
 
 | Name | Type | Default | Description |
 |---|---|---|---|
@@ -166,7 +173,6 @@ The Python MCP server (`mcp-server/vmaf-mcp`) and the Go server
 | `VMAF_ROOT` | path | _(auto-detect)_ | Repo root used by the MCP servers to find the test clips and tools. |
 | `VMAF_TUNE_BIN` | path | _(PATH lookup)_ | Path to the `vmaf-tune` binary used by MCP tuning tools. |
 | `VMAF_PER_SHOT_BIN`, `VMAF_ROI_BIN`, `VMAF_BENCH_BIN`, `VMAF_VPL_BIN` | path | _(next to `vmaf`)_ | Override the binary behind the `vmaf-perShot`, `vmaf_roi`, `vmaf_bench` and `vmaf_vpl` MCP tools. |
-| `VMAFX_MCP_DIRECT` | `1` | off | Go server only: score through libvmaf by cgo instead of a `vmaf` subprocess ([ADR-0931](../adr/0931-mcp-cgo-direct-replace-subprocess.md)). Any other value keeps the subprocess path. |
 
 ### MCP HTTP transport (`vmaf-mcp --transport http`)
 
@@ -182,15 +188,6 @@ The HTTP transport also reads `VMAFX_PORT` (listen port, default 8080,
 overridden
 by `--port`), `VMAFX_LOG_LEVEL`, `VMAFX_VMAF_BINARY` (same as `VMAF_BIN`) and
 `VMAFX_MODEL_DIR` (extra model search root).
-
-### Go MCP client of the controller and server
-
-| Name | Type | Default | Description |
-|---|---|---|---|
-| `VMAFX_CONTROLLER_ADDR` | `host:port` | `localhost:9090` | gRPC address of the controller. |
-| `VMAFX_SERVER_ADDR` | `host:port` | `localhost:9090` | gRPC address of `vmafx-server`. |
-| `VMAFX_CONTROLLER_TOKEN` | string | _(unset)_ | Bearer token attached to every controller RPC. |
-| `VMAFX_GRPC_TIMEOUT` | seconds | `30` | Per-RPC deadline; a malformed or non-positive value falls back to the default. |
 
 ## Go services (golusoris)
 
@@ -214,92 +211,342 @@ addresses are full addresses (`:8080`), not bare ports.
 
 ### Controller (`cmd/vmafx-controller`)
 
-| Name | Type | Default | golusoris key | Description |
-|---|---|---|---|---|
-| `VMAFX_HTTP_ADDR` | `host:port` | `:8080` | `http.addr` | HTTP listen address (serves `/healthz`, `/readyz`, `/metrics`, `/v1/score`). |
-| `VMAFX_GRPC_LISTEN` | `host:port` | `:9090` | `grpc.listen` | gRPC listen address (serves both `VmafxScoring` and `VmafxController`). |
-| `VMAFX_DB_PATH` | path | `vmafx-controller.db` | `db.path` | Embedded SQLite job and node-persistence database (kept, not migrated to golusoris.Jobs). |
-| `VMAFX_LOG_LEVEL` | string | `INFO` | `log.level` | `DEBUG`, `INFO`, `WARN` or `ERROR`. |
-| `VMAFX_MODEL_DIR` | path | _(none)_ | `model.dir` | Directory of VMAF `.json` model files passed to the libvmaf scorer. |
-| `VMAFX_VMAF_BINARY` | path | _(PATH lookup)_ | `vmaf.binary` | Path to the `vmaf` CLI binary. |
-| `VMAFX_AUTH_DISABLED` | bool | `false` | `auth.disabled` | Disable JWT auth (dev and internal only, never in production). A synthetic `dev` tenant with the admin role is injected. |
-| `VMAFX_JWKS_ENDPOINT` | URL | _(none)_ | `jwks.endpoint` | JWKS endpoint for RS256 verification, for example `https://idp.example.com/.well-known/jwks.json`. Required unless auth is disabled or a tenant source is set (then refused). |
-| `VMAFX_AUTH_ISSUER` | string | _(none)_ | `auth.issuer` | Expected JWT `iss` claim. Required unless auth is disabled or a tenant source is set (then refused). |
-| `VMAFX_AUTH_AUDIENCE` | string | _(none)_ | `auth.audience` | Expected JWT `aud` claim; the check is skipped when empty. |
-| `VMAFX_AUTH_TENANT_CLAIM` | string | `tid` | `auth.tenant_claim` | JWT claim carrying the tenant id. A golusoris CompoundKey, so its underscore is preserved. |
-| `VMAFX_AUTH_ROLES_CLAIM` | string | `vmafx_roles` | `auth.roles_claim` | JWT claim carrying the roles list. A CompoundKey. |
-| `VMAFX_AUTH_TENANTS_SOURCE` | string | _(none)_ | `auth.tenants.source` | `kubernetes` (the namespace's `VmafxTenant` resources) or `file`: verify tokens per tenant ([tenant registry](../server/auth.md#tenant-registry)). Excludes the five global provider variables above and `VMAFX_AUTH_DISABLED=true`. |
-| `VMAFX_AUTH_TENANTS_FILE` | path | _(none)_ | `auth.tenants.file` | YAML or JSON file of `VmafxTenant` documents (source `file`). |
-| `VMAFX_AUTH_TENANTS_NAMESPACE` | string | pod namespace | `auth.tenants.namespace` | Namespace of the `VmafxTenant` resources (source `kubernetes`). |
-| `VMAFX_SCORING_ROOTS` | list | _(none: every input refused)_ | `scoring.roots` | Comma-separated scoring roots of every caller without a tenant registry; `{tenant}` becomes the caller's tenant ID ([scoring roots](../server/auth.md#scoring-roots)). |
-| `VMAFX_AUTH_TENANTS_REFRESH` | duration | `30s` | `auth.tenants.refresh` | Re-read interval of the tenant source, `1s` to `1h`; the tenant set is refused after ten intervals without a successful read. |
+<!-- BEGIN GENERATED: vmafx-api environment vmafx-controller (scripts/codegen/vmafx-api.py) -->
+
+| Variable | Key | Type | Default | Chart value | Description |
+|---|---|---|---|---|---|
+| `VMAFX_HTTP_ADDR` | `http.addr` | `host:port` | `:8080` | `controller.httpPort` | HTTP listen address of `/healthz`, `/readyz`, `/metrics` and `POST /v1/score`, a full address. |
+| `VMAFX_HTTP_TIMEOUTS_READ` | `http.timeouts.read` | duration | `30s` |  | Deadline for reading a whole request; `0` keeps the framework default. |
+| `VMAFX_HTTP_TIMEOUTS_HEADER` | `http.timeouts.header` | duration | `5s` |  | Deadline for reading the request headers (slow-client guard); `0` keeps the framework default. |
+| `VMAFX_HTTP_TIMEOUTS_WRITE` | `http.timeouts.write` | duration | `60s` |  | Deadline for writing a response; `0` keeps the framework default. |
+| `VMAFX_HTTP_TIMEOUTS_IDLE` | `http.timeouts.idle` | duration | `120s` |  | Keep-alive idle timeout; `0` keeps the framework default. |
+| `VMAFX_HTTP_TIMEOUTS_SHUTDOWN` | `http.timeouts.shutdown` | duration | `30s` |  | Drain time of the HTTP server at shutdown; `0` keeps the framework default. |
+| `VMAFX_HTTP_LIMITS_HEADER` | `http.limits.header` | bytes | `1048576` |  | Largest request header block; `0` keeps the default. |
+| `VMAFX_HTTP_LIMITS_BODY` | `http.limits.body` | bytes | `10485760` |  | Largest request body; `0` keeps the default. `VMAFX_HTTP_LIMITS_UNLIMITED` removes the cap. |
+| `VMAFX_HTTP_LIMITS_UNLIMITED` | `http.limits.unlimited` | bool | `false` |  | Serve request bodies of any size; `VMAFX_HTTP_LIMITS_BODY` is then ignored. |
+| `VMAFX_GRPC_LISTEN` | `grpc.listen` | `host:port` | `:9090` | `controller.grpcPort` | gRPC listen address of `VmafxScoring` and `VmafxController`, a full address. |
+| `VMAFX_GRPC_TLS` | `grpc.tls` | bool | `false` |  | Serve gRPC over TLS; needs `VMAFX_GRPC_CERT_FILE` and `VMAFX_GRPC_KEY_FILE`. |
+| `VMAFX_GRPC_CERT_FILE` | `grpc.cert_file` | path | _(unset)_ |  | PEM certificate of the gRPC listener (with `VMAFX_GRPC_TLS`). |
+| `VMAFX_GRPC_KEY_FILE` | `grpc.key_file` | path | _(unset)_ |  | PEM private key of the gRPC listener (with `VMAFX_GRPC_TLS`). |
+| `VMAFX_GRPC_MAX_RECV_SIZE` | `grpc.max_recv_size` | bytes | `4194304` |  | Largest gRPC message received; `0` keeps the gRPC default. |
+| `VMAFX_GRPC_MAX_SEND_SIZE` | `grpc.max_send_size` | bytes | `4194304` |  | Largest gRPC message sent; `0` keeps the gRPC default. |
+| `VMAFX_VMAF_BINARY` | `vmaf.binary` | path | `vmaf` on `PATH` |  | Path of the `vmaf` CLI behind the scorer; a missing binary stops the program at startup. |
+| `VMAFX_MODEL_DIR` | `model.dir` | path | _(unset)_ |  | Directory of the VMAF `.json` models the scorer loads. |
+| `VMAFX_STORE_BACKEND` | `store.backend` | string | `sqlite` | set by the chart | Where jobs and node sessions live: `sqlite` or `postgres` ([job persistence](../server/controller.md#job-persistence)); anything else stops the controller. |
+| `VMAFX_DB_PATH` | `db.path` | path | `vmafx/vmafx-controller.db` under the user state directory | set by the chart | SQLite job database (`sqlite`). Unset, the controller uses `$XDG_STATE_HOME` (else `~/.local/state`) on Linux and the BSDs and the user configuration directory on macOS and Windows; it never writes to the working directory. The image and the chart set `/data/vmafx-controller.db`. |
+| `XDG_STATE_HOME` | read directly | path | `~/.local/state` |  | Base of the default `VMAFX_DB_PATH` on Linux and the BSDs; a relative value is ignored. |
+| `VMAFX_DB_DSN` | `db.dsn` | string | _(unset)_ | `controller.store.postgresql.mode`, `controller.store.postgresql.external.secretName`, `controller.store.postgresql.external.secretKey` | Secret. PostgreSQL connection string; required with `postgres` and by `vmafx-controller migrate` and `import-sqlite`. The standard `PG*` variables fill what it leaves out. |
+| `VMAFX_STORE_LEASE_TTL` | `store.lease_ttl` | duration | `60s` | `controller.store.leaseTTL` | Lease of a pulled job (`postgres`); a negative value stops the controller. |
+| `VMAFX_STORE_SESSION_TTL` | `store.session_ttl` | duration | `60s` | `controller.store.sessionTTL` | Lifetime of a node session without a heartbeat (`postgres`). |
+| `VMAFX_STORE_SWEEP_INTERVAL` | `store.sweep_interval` | duration | `5s` | `controller.store.sweepInterval` | Period of the lease sweep (`postgres`). |
+| `VMAFX_STORE_BACKOFF_BASE` | `store.backoff_base` | duration | `5s` | `controller.store.backoffBase` | Delay before a job whose lease expired is handed out again (`postgres`); doubles up to `VMAFX_STORE_BACKOFF_MAX`. |
+| `VMAFX_STORE_BACKOFF_MAX` | `store.backoff_max` | duration | `5m` | `controller.store.backoffMax` | Cap of that delay (`postgres`). |
+| `VMAFX_AUTH_DISABLED` | `auth.disabled` | bool | `false` | `auth.disabled` | Turn token verification off (development only): every call acts as tenant `dev` with the admin role. Refused with a tenant source. |
+| `VMAFX_JWKS_ENDPOINT` | `jwks.endpoint` | URL | _(unset)_ | `auth.jwksEndpoint` | JWKS endpoint of the identity provider. Required unless auth is disabled or a tenant source is set (then refused) ([auth](../server/auth.md)). |
+| `VMAFX_AUTH_ISSUER` | `auth.issuer` | string | _(unset)_ | `auth.issuer` | Expected `iss` claim; required like `VMAFX_JWKS_ENDPOINT`. |
+| `VMAFX_AUTH_AUDIENCE` | `auth.audience` | string | _(unset)_ | `auth.audience` | Expected `aud` claim; empty skips the check. Refused with a tenant source. |
+| `VMAFX_AUTH_TENANT_CLAIM` | `auth.tenant_claim` | string | `tid` | `auth.tenantClaim` | Claim that carries the tenant ID. Refused with a tenant source. |
+| `VMAFX_AUTH_ROLES_CLAIM` | `auth.roles_claim` | string | `vmafx_roles` | `auth.rolesClaim` | Claim that carries the list of roles. Refused with a tenant source. |
+| `VMAFX_AUTH_TENANTS_SOURCE` | `auth.tenants.source` | string | _(unset)_ | set by the chart | `kubernetes` (the namespace's `VmafxTenant` resources) or `file`: verify each token against its tenant's provider ([tenant registry](../server/auth.md#tenant-registry)). Excludes the provider variables above and `VMAFX_AUTH_DISABLED`. |
+| `VMAFX_AUTH_TENANTS_FILE` | `auth.tenants.file` | path | _(unset)_ |  | YAML or JSON file of `VmafxTenant` documents (source `file`). |
+| `VMAFX_AUTH_TENANTS_NAMESPACE` | `auth.tenants.namespace` | string | the pod's namespace | set by the chart | Namespace of the `VmafxTenant` resources (source `kubernetes`). |
+| `VMAFX_AUTH_TENANTS_REFRESH` | `auth.tenants.refresh` | duration | `30s` |  | Re-read interval of the tenant source, `1s` to `1h`; the tenant set is refused after ten intervals without a successful read. |
+| `VMAFX_SCORING_ROOTS` | `scoring.roots` | list | _(unset: every input refused)_ | `auth.scoringRoots` | Comma-separated scoring roots of every caller without a tenant registry; `{tenant}` becomes the caller's tenant ID ([scoring roots](../server/auth.md#scoring-roots)). Refused with a tenant registry. |
+| `VMAFX_LOG_LEVEL` | `log.level` | string | `info` |  | Log level: `debug`, `info`, `warn` or `error`, any case; an unknown value gives `info`. |
+| `VMAFX_LOG_FORMAT` | `log.format` | string | `auto` |  | Log handler: `auto` (tint on a terminal, else JSON), `tint` or `json`; logs go to stderr. |
+| `VMAFX_OTEL_ENABLED` | `otel.enabled` | bool | `true` |  | OpenTelemetry master switch; `false` installs no-op providers even with an endpoint. |
+| `VMAFX_OTEL_ENDPOINT` | `otel.endpoint` | `host:port` | _(unset)_ |  | OTLP/gRPC collector (`otel-collector:4317`); wins over `OTEL_EXPORTER_OTLP_ENDPOINT`. Neither set: no export ([OpenTelemetry](../observability/otel.md)). |
+| `VMAFX_OTEL_INSECURE` | `otel.insecure` | bool | `true` |  | Plaintext gRPC to the collector; `false` dials with TLS. |
+| `VMAFX_OTEL_SERVICE_NAME` | `otel.service.name` | string | `OTEL_SERVICE_NAME`, else the binary name |  | `service.name` resource attribute. |
+| `VMAFX_OTEL_SERVICE_VERSION` | `otel.service.version` | string | the build version |  | `service.version` resource attribute. |
+| `VMAFX_OTEL_SERVICE_NAMESPACE` | `otel.service.namespace` | string | _(unset)_ |  | `service.namespace` resource attribute. |
+| `VMAFX_OTEL_SAMPLE_RATIO` | `otel.sample.ratio` | number | `1.0` |  | Parent-based trace sample ratio in `[0, 1]`; `OTEL_TRACES_SAMPLER` and its argument are not read. |
+| `VMAFX_OTEL_EXPORT_TRACES` | `otel.export.traces` | bool | `true` |  | Export traces. |
+| `VMAFX_OTEL_EXPORT_METRICS` | `otel.export.metrics` | bool | `true` |  | Export metrics. |
+| `VMAFX_OTEL_EXPORT_LOGS` | `otel.export.logs` | bool | `true` |  | Export the logs signal; application logs are not bridged to it today. |
+| `OTEL_SERVICE_NAME` | read directly | string | _(unset)_ |  | `service.name` when `VMAFX_OTEL_SERVICE_NAME` is unset (OTel standard). |
+| `OTEL_SDK_DISABLED` | read directly | string | _(unset)_ |  | `true` (exactly) installs no-op providers (OTel standard). |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | read directly | URL | _(unset)_ |  | Collector as a URL (`http://host:4317`) when `VMAFX_OTEL_ENDPOINT` is unset; set, export is on (OTel standard). |
+| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | read directly | URL | _(unset)_ |  | Per-signal collector URL for traces; set, export is on (OTel standard). |
+| `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` | read directly | URL | _(unset)_ |  | Per-signal collector URL for metrics; set, export is on (OTel standard). |
+| `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` | read directly | URL | _(unset)_ |  | Per-signal collector URL for logs; set, export is on (OTel standard). |
+| `POD_NAME` | read directly | string | _(unset)_ |  | Pod name (Kubernetes downward API), added to log lines and OTel resources as `k8s.pod.name`. |
+| `POD_NAMESPACE` | read directly | string | _(unset)_ |  | Pod namespace, added as `k8s.namespace.name`. |
+| `POD_IP` | read directly | string | _(unset)_ |  | Pod IP, added as `k8s.pod.ip`. |
+| `NODE_NAME` | read directly | string | _(unset)_ |  | Kubernetes node name, added as `k8s.node.name`. |
+| `SERVICE_ACCOUNT` | read directly | string | _(unset)_ |  | Service account name, added as `k8s.serviceaccount.name`. |
+
+<!-- END GENERATED: vmafx-api environment vmafx-controller -->
 
 ### Server (`cmd/vmafx-server`)
 
-| Name | Type | Default | Description |
-|---|---|---|---|
-| `VMAFX_HTTP_ADDR` | `host:port` | `:8080` | HTTP listen address (serves `/healthz`, `/livez`, `/readyz`, `/startupz`, `/metrics`, `/v1/score`, `/v1/health`, `/v1/ready`, `/swagger`). Key `http.addr`. |
-| `VMAFX_GRPC_LISTEN` | `host:port` | `:9090` | gRPC listen address (`VmafxScoring`). Key `grpc.listen`. The pre-fx default was `:50051`. |
-| `VMAFX_GRPC_CERT_FILE`, `VMAFX_GRPC_KEY_FILE` | path | _(unset)_ | TLS certificate and key for the gRPC listener. |
-| `VMAFX_GRPC_MAX_RECV_SIZE`, `VMAFX_GRPC_MAX_SEND_SIZE` | bytes | _(gRPC default)_ | gRPC message size limits. |
-| `VMAFX_LOG_LEVEL` | string | `INFO` | `DEBUG`, `INFO`, `WARN` or `ERROR`. |
-| `VMAFX_MODEL_DIR` | path | _(none)_ | Model directory passed to the libvmaf scorer. The server's koanf key is `model.dir`, as for the controller and node. |
-| `VMAFX_VMAF_BINARY` | path | _(PATH lookup)_ | Path to the `vmaf` CLI binary. Key `vmaf.binary`. |
-| `VMAFX_MAX_CONCURRENT_SCORES` | integer | _(NumCPU)_ | Cap on simultaneous `Score` calls; excess requests get HTTP 429 or gRPC `ResourceExhausted`. |
-| `VMAFX_SWAGGER_TRY_IT_OUT` | string | _(off)_ | Set to `1` to enable the Swagger UI "try it out" live-execution path. |
+<!-- BEGIN GENERATED: vmafx-api environment vmafx-server (scripts/codegen/vmafx-api.py) -->
+
+| Variable | Key | Type | Default | Chart value | Description |
+|---|---|---|---|---|---|
+| `VMAFX_HTTP_ADDR` | `http.addr` | `host:port` | `:8080` |  | HTTP listen address of the REST API, `/swagger`, `/metrics` and the probes, a full address. |
+| `VMAFX_HTTP_TIMEOUTS_READ` | `http.timeouts.read` | duration | `30s` |  | Deadline for reading a whole request; `0` keeps the framework default. |
+| `VMAFX_HTTP_TIMEOUTS_HEADER` | `http.timeouts.header` | duration | `5s` |  | Deadline for reading the request headers (slow-client guard); `0` keeps the framework default. |
+| `VMAFX_HTTP_TIMEOUTS_WRITE` | `http.timeouts.write` | duration | `15m` |  | Deadline for writing a response; raised so a long `POST /v1/score` completes ([limits](../server/configuration.md#limits-and-timeouts)); `0` keeps the framework default. |
+| `VMAFX_HTTP_TIMEOUTS_IDLE` | `http.timeouts.idle` | duration | `120s` |  | Keep-alive idle timeout; `0` keeps the framework default. |
+| `VMAFX_HTTP_TIMEOUTS_SHUTDOWN` | `http.timeouts.shutdown` | duration | `30s` |  | Drain time of the HTTP server at shutdown; `0` keeps the framework default. |
+| `VMAFX_HTTP_LIMITS_HEADER` | `http.limits.header` | bytes | `1048576` |  | Largest request header block; `0` keeps the default. |
+| `VMAFX_HTTP_LIMITS_BODY` | `http.limits.body` | bytes | `10485760` |  | Largest request body; `0` keeps the default. `VMAFX_HTTP_LIMITS_UNLIMITED` removes the cap. |
+| `VMAFX_HTTP_LIMITS_UNLIMITED` | `http.limits.unlimited` | bool | `false` |  | Serve request bodies of any size; `VMAFX_HTTP_LIMITS_BODY` is then ignored. |
+| `VMAFX_GRPC_LISTEN` | `grpc.listen` | `host:port` | `:9090` |  | gRPC listen address of `VmafxScoring`, a full address. |
+| `VMAFX_GRPC_TLS` | `grpc.tls` | bool | `false` |  | Serve gRPC over TLS; needs `VMAFX_GRPC_CERT_FILE` and `VMAFX_GRPC_KEY_FILE`. |
+| `VMAFX_GRPC_CERT_FILE` | `grpc.cert_file` | path | _(unset)_ |  | PEM certificate of the gRPC listener (with `VMAFX_GRPC_TLS`). |
+| `VMAFX_GRPC_KEY_FILE` | `grpc.key_file` | path | _(unset)_ |  | PEM private key of the gRPC listener (with `VMAFX_GRPC_TLS`). |
+| `VMAFX_GRPC_MAX_RECV_SIZE` | `grpc.max_recv_size` | bytes | `67108864` |  | Largest gRPC message received; `0` keeps the gRPC default. |
+| `VMAFX_GRPC_MAX_SEND_SIZE` | `grpc.max_send_size` | bytes | `4194304` |  | Largest gRPC message sent; `0` keeps the gRPC default. |
+| `VMAFX_VMAF_BINARY` | `vmaf.binary` | path | `vmaf` on `PATH` |  | Path of the `vmaf` CLI behind the scorer; a missing binary stops the program at startup. |
+| `VMAFX_MODEL_DIR` | `model.dir` | path | _(unset)_ |  | Directory of the VMAF `.json` models the scorer loads. |
+| `VMAFX_MAX_CONCURRENT_SCORES` | `max.concurrent.scores` | integer | number of CPUs |  | Cap on simultaneous `Score` calls over HTTP and gRPC; excess calls get HTTP 429 or `ResourceExhausted`. A value below 1 or not a number keeps the default. |
+| `VMAFX_SWAGGER_TRY_IT_OUT` | read directly | `1` | off |  | `1` enables the live "try it out" execution of the Swagger UI. |
+| `VMAFX_LOG_LEVEL` | `log.level` | string | `info` |  | Log level: `debug`, `info`, `warn` or `error`, any case; an unknown value gives `info`. |
+| `VMAFX_LOG_FORMAT` | `log.format` | string | `auto` |  | Log handler: `auto` (tint on a terminal, else JSON), `tint` or `json`; logs go to stderr. |
+| `VMAFX_OTEL_ENABLED` | `otel.enabled` | bool | `true` |  | OpenTelemetry master switch; `false` installs no-op providers even with an endpoint. |
+| `VMAFX_OTEL_ENDPOINT` | `otel.endpoint` | `host:port` | _(unset)_ |  | OTLP/gRPC collector (`otel-collector:4317`); wins over `OTEL_EXPORTER_OTLP_ENDPOINT`. Neither set: no export ([OpenTelemetry](../observability/otel.md)). |
+| `VMAFX_OTEL_INSECURE` | `otel.insecure` | bool | `true` |  | Plaintext gRPC to the collector; `false` dials with TLS. |
+| `VMAFX_OTEL_SERVICE_NAME` | `otel.service.name` | string | `OTEL_SERVICE_NAME`, else the binary name |  | `service.name` resource attribute. |
+| `VMAFX_OTEL_SERVICE_VERSION` | `otel.service.version` | string | the build version |  | `service.version` resource attribute. |
+| `VMAFX_OTEL_SERVICE_NAMESPACE` | `otel.service.namespace` | string | _(unset)_ |  | `service.namespace` resource attribute. |
+| `VMAFX_OTEL_SAMPLE_RATIO` | `otel.sample.ratio` | number | `1.0` |  | Parent-based trace sample ratio in `[0, 1]`; `OTEL_TRACES_SAMPLER` and its argument are not read. |
+| `VMAFX_OTEL_EXPORT_TRACES` | `otel.export.traces` | bool | `true` |  | Export traces. |
+| `VMAFX_OTEL_EXPORT_METRICS` | `otel.export.metrics` | bool | `true` |  | Export metrics. |
+| `VMAFX_OTEL_EXPORT_LOGS` | `otel.export.logs` | bool | `true` |  | Export the logs signal; application logs are not bridged to it today. |
+| `OTEL_SERVICE_NAME` | read directly | string | _(unset)_ |  | `service.name` when `VMAFX_OTEL_SERVICE_NAME` is unset (OTel standard). |
+| `OTEL_SDK_DISABLED` | read directly | string | _(unset)_ |  | `true` (exactly) installs no-op providers (OTel standard). |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | read directly | URL | _(unset)_ |  | Collector as a URL (`http://host:4317`) when `VMAFX_OTEL_ENDPOINT` is unset; set, export is on (OTel standard). |
+| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | read directly | URL | _(unset)_ |  | Per-signal collector URL for traces; set, export is on (OTel standard). |
+| `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` | read directly | URL | _(unset)_ |  | Per-signal collector URL for metrics; set, export is on (OTel standard). |
+| `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` | read directly | URL | _(unset)_ |  | Per-signal collector URL for logs; set, export is on (OTel standard). |
+| `POD_NAME` | read directly | string | _(unset)_ |  | Pod name (Kubernetes downward API), added to log lines and OTel resources as `k8s.pod.name`. |
+| `POD_NAMESPACE` | read directly | string | _(unset)_ |  | Pod namespace, added as `k8s.namespace.name`. |
+| `POD_IP` | read directly | string | _(unset)_ |  | Pod IP, added as `k8s.pod.ip`. |
+| `NODE_NAME` | read directly | string | _(unset)_ |  | Kubernetes node name, added as `k8s.node.name`. |
+| `SERVICE_ACCOUNT` | read directly | string | _(unset)_ |  | Service account name, added as `k8s.serviceaccount.name`. |
+
+<!-- END GENERATED: vmafx-api environment vmafx-server -->
 
 ### Worker node (`cmd/vmafx-node`)
 
-| Name | koanf key | Type | Default | Description |
-|---|---|---|---|---|
-| `VMAFX_GRPC_LISTEN` | `grpc.listen` | `host:port` | `:50052` | gRPC listen address of the node's `VmafxScoring` service. Replaces `VMAFX_NODE_ADDR`; the historical `:50052` default is kept. |
-| `VMAFX_GRPC_CERT_FILE`, `VMAFX_GRPC_KEY_FILE`, `VMAFX_GRPC_MAX_RECV_SIZE`, `VMAFX_GRPC_MAX_SEND_SIZE` | `grpc.*` | | _(unset)_ | The same gRPC TLS and size settings as the server. |
-| `VMAFX_FFMPEG_BIN` | `ffmpeg.bin` | path | `ffmpeg` (PATH) | `ffmpeg` binary used by the startup encoder probe. The node image sets `/usr/local/bin/ffmpeg` ([ADR-0717](../adr/0717-vmafx-node-ffmpeg-latest.md)). |
-| `VMAFX_VMAF_BINARY` | `vmaf.binary` | path | _(FindBinary lookup)_ | `vmaf` CLI binary behind the unary `Score` RPC. |
-| `VMAFX_MODEL_DIR` | `model.dir` | path | _(binary default)_ | Directory of VMAF `.json` model files. |
-| `VMAFX_BACKEND` | `backend` | string | `cpu` | Backend the node runs (`cpu`, `cuda`, `hip`, `sycl`, `metal`); advertised to the controller and passed to the vmaf CLI as `--backend` for controller jobs. |
-| `VMAFX_SIDECAR_SOCKET` | `sidecar.socket` | path | `/tmp/vmafx-sidecar.sock` | Unix socket of the online-training sidecar ([ADR-0781](../adr/0781-sidecar-sgd-ema-online-trainer.md)). |
-| `VMAFX_CONTROLLER_ADDR` | `controller.addr` | `host:port` | _(unset)_ | Controller gRPC address; set, the node registers and pulls jobs ([ADR-1524](../adr/1524-vmafx-node-controller-client.md)). |
-| `VMAFX_CONTROLLER_TOKEN_FILE` / `VMAFX_CONTROLLER_TOKEN` | `controller.token_file` / `controller.token` | path / string | _(unset)_ | Bearer token for the controller, from a file read on every call or inline (not both); an expired JWT is not sent. |
-| `VMAFX_CONTROLLER_TLS`, `VMAFX_CONTROLLER_CA_FILE`, `VMAFX_CONTROLLER_SERVER_NAME` | `controller.tls`, `controller.ca_file`, `controller.server_name` | bool, path, string | `false`, system roots, from the address | TLS to the controller; the CA file and server name need TLS. |
-| `VMAFX_CONTROLLER_RPC_TIMEOUT`, `VMAFX_CONTROLLER_HEARTBEAT_INTERVAL`, `VMAFX_CONTROLLER_POLL_INTERVAL` | `controller.rpc_timeout`, `controller.heartbeat_interval`, `controller.poll_interval` | duration | `10s`, `10s`, `2s` | Per-call deadline, heartbeat period, wait after an empty `PullWork`. |
-| `VMAFX_NODE_ID` | `node.id` | string | host name | Node name sent to `RegisterNode`. |
-| `VMAFX_NODE_SLOTS` | `node.slots` | integer | `1` | Controller jobs run at once (1 to 64). |
-| `VMAFX_STORAGE_MODE` | `storage.mode` | string | `auto` | How rclone-remote job sources are read: `http-serve`, `mount` or `auto`; anything else stops the node ([ADR-1526](../adr/1526-node-storage-streamed-inputs.md)). |
-| `VMAFX_STORAGE_MOUNT_ROOT` | `storage.mount_root` | path | temp directory | Parent of `mount` mode's per-job mount points. |
-| `VMAFX_RCLONE_BIN`, `VMAFX_RCLONE_CONFIG` | `rclone.bin`, `rclone.config` | path | `rclone`, rclone's default | rclone binary and configuration file. |
-| `VMAFX_EBPF_BYPASS` | `ebpf.bypass` | bool | off | Starts the eBPF descriptor tracker; a host that cannot run it stops the node ([ADR-1539](../adr/1539-node-ebpf-tracker-wiring.md)). |
-| `VMAFX_EBPF_MOUNT_PREFIX` | `ebpf.mount_prefix` | path | `/rclone-mount/` | Mount prefix the tracker watches; must contain `VMAFX_STORAGE_MOUNT_ROOT`. |
-| `VMAFX_LOG_LEVEL` | `log.level` | string | `info` | Structured log level. |
-| `VMAFX_LOG_FORMAT` | `log.format` | string | `auto` | `auto` (tint on a TTY, else JSON), `tint` or `json`. |
+<!-- BEGIN GENERATED: vmafx-api environment vmafx-node (scripts/codegen/vmafx-api.py) -->
 
-The node is gRPC-only. Its Kubernetes probe is the `VmafxScoring/Health` RPC;
-there is no HTTP `/livez` or `/readyz` until `golusoris.HTTP` joins the node
-graph.
+| Variable | Key | Type | Default | Chart value | Description |
+|---|---|---|---|---|---|
+| `VMAFX_HTTP_ADDR` | `http.addr` | `host:port` | `:9090` | `node.metricsPort` | HTTP listen address of `/metrics` and the `/livez`, `/readyz` and `/startupz` probes, a full address. |
+| `VMAFX_HTTP_TIMEOUTS_READ` | `http.timeouts.read` | duration | `30s` |  | Deadline for reading a whole request; `0` keeps the framework default. |
+| `VMAFX_HTTP_TIMEOUTS_HEADER` | `http.timeouts.header` | duration | `5s` |  | Deadline for reading the request headers (slow-client guard); `0` keeps the framework default. |
+| `VMAFX_HTTP_TIMEOUTS_WRITE` | `http.timeouts.write` | duration | `60s` |  | Deadline for writing a response; `0` keeps the framework default. |
+| `VMAFX_HTTP_TIMEOUTS_IDLE` | `http.timeouts.idle` | duration | `120s` |  | Keep-alive idle timeout; `0` keeps the framework default. |
+| `VMAFX_HTTP_TIMEOUTS_SHUTDOWN` | `http.timeouts.shutdown` | duration | `30s` |  | Drain time of the HTTP server at shutdown; `0` keeps the framework default. |
+| `VMAFX_HTTP_LIMITS_HEADER` | `http.limits.header` | bytes | `1048576` |  | Largest request header block; `0` keeps the default. |
+| `VMAFX_HTTP_LIMITS_BODY` | `http.limits.body` | bytes | `10485760` |  | Largest request body; `0` keeps the default. `VMAFX_HTTP_LIMITS_UNLIMITED` removes the cap. |
+| `VMAFX_HTTP_LIMITS_UNLIMITED` | `http.limits.unlimited` | bool | `false` |  | Serve request bodies of any size; `VMAFX_HTTP_LIMITS_BODY` is then ignored. |
+| `VMAFX_GRPC_LISTEN` | `grpc.listen` | `host:port` | `:50052` | `node.grpcPort` | gRPC listen address of the node's `VmafxScoring` service, a full address. |
+| `VMAFX_GRPC_TLS` | `grpc.tls` | bool | `false` |  | Serve gRPC over TLS; needs `VMAFX_GRPC_CERT_FILE` and `VMAFX_GRPC_KEY_FILE`. |
+| `VMAFX_GRPC_CERT_FILE` | `grpc.cert_file` | path | _(unset)_ |  | PEM certificate of the gRPC listener (with `VMAFX_GRPC_TLS`). |
+| `VMAFX_GRPC_KEY_FILE` | `grpc.key_file` | path | _(unset)_ |  | PEM private key of the gRPC listener (with `VMAFX_GRPC_TLS`). |
+| `VMAFX_GRPC_MAX_RECV_SIZE` | `grpc.max_recv_size` | bytes | `4194304` |  | Largest gRPC message received; `0` keeps the gRPC default. |
+| `VMAFX_GRPC_MAX_SEND_SIZE` | `grpc.max_send_size` | bytes | `4194304` |  | Largest gRPC message sent; `0` keeps the gRPC default. |
+| `VMAFX_VMAF_BINARY` | `vmaf.binary` | path | `VMAF_BIN`, `/usr/local/bin/vmaf`, then the build trees | set by the chart | Path of the `vmaf` CLI behind the `Score` RPC and controller jobs. The chart sets `/usr/local/bin/vmaf`; without a binary the node serves only `Health`. |
+| `VMAF_BIN` | read directly | path | _(unset)_ |  | Path of the `vmaf` CLI when `VMAFX_VMAF_BINARY` is unset. |
+| `VMAFX_MODEL_DIR` | `model.dir` | path | _(unset)_ | `persistence.models.mountPath`, `persistence.models.enabled` | Directory of the VMAF `.json` models. The chart sets the models volume, or the image's `/usr/local/share/vmafx/model`. |
+| `VMAFX_BACKEND` | `backend` | string | `cpu` | `gpu.vendor` | Backend the node runs (`cpu`, `cuda`, `hip`, `sycl`, `metal`); advertised to the controller and passed to the `vmaf` CLI as `--backend` for controller jobs. The chart sets it from `gpu.vendor`. |
+| `VMAFX_NODE_ID` | `node.id` | string | host name | set by the chart | Node name sent to `RegisterNode`; the chart sets the pod name. |
+| `VMAFX_NODE_SLOTS` | `node.slots` | integer | `1` |  | Controller jobs the node runs at once, 1 to 64. |
+| `VMAFX_CONTROLLER_ADDR` | `controller.addr` | `host:port` | _(unset)_ | set by the chart | gRPC address of the controller; set, the node registers and pulls jobs ([ADR-1524](../adr/1524-vmafx-node-controller-client.md)). |
+| `VMAFX_CONTROLLER_TLS` | `controller.tls` | bool | `false` |  | Dial the controller with TLS (system roots unless `VMAFX_CONTROLLER_CA_FILE` is set). |
+| `VMAFX_CONTROLLER_CA_FILE` | `controller.ca_file` | path | system roots |  | PEM bundle that verifies the controller certificate; needs `VMAFX_CONTROLLER_TLS`. |
+| `VMAFX_CONTROLLER_SERVER_NAME` | `controller.server_name` | string | host of the address |  | TLS server name override; needs `VMAFX_CONTROLLER_TLS`. |
+| `VMAFX_CONTROLLER_TOKEN_FILE` | `controller.token_file` | path | _(unset)_ | `node.controllerToken.secretName` | File holding the bearer token for the controller, read again on every call; an expired JWT is not sent. Not together with `VMAFX_CONTROLLER_TOKEN`. |
+| `VMAFX_CONTROLLER_TOKEN` | `controller.token` | string | _(unset)_ |  | Secret. Bearer token for the controller given inline; not together with `VMAFX_CONTROLLER_TOKEN_FILE`. |
+| `VMAFX_CONTROLLER_RPC_TIMEOUT` | `controller.rpc_timeout` | duration | `10s` |  | Deadline of every controller call; a value that is not a positive duration stops the node. |
+| `VMAFX_CONTROLLER_HEARTBEAT_INTERVAL` | `controller.heartbeat_interval` | duration | `10s` |  | Heartbeat period. |
+| `VMAFX_CONTROLLER_POLL_INTERVAL` | `controller.poll_interval` | duration | `2s` |  | Wait after an empty `PullWork`. |
+| `VMAFX_FFMPEG_BIN` | `ffmpeg.bin` | path | `ffmpeg` on `PATH` |  | `ffmpeg` of the startup encoder probe; the node image sets `/usr/local/bin/ffmpeg` ([ADR-0717](../adr/0717-vmafx-node-ffmpeg-latest.md)). |
+| `VMAFX_SIDECAR_SOCKET` | `sidecar.socket` | path | `/tmp/vmafx-sidecar.sock` |  | Unix socket of the online-training sidecar ([ADR-0781](../adr/0781-sidecar-sgd-ema-online-trainer.md)). |
+| `VMAFX_STORAGE_MODE` | `storage.mode` | string | `auto` | `storage.mode` | How rclone-remote job sources are read: `http-serve`, `mount` or `auto`; anything else, or `mount` without FUSE, stops the node ([ADR-1526](../adr/1526-node-storage-streamed-inputs.md)). |
+| `VMAFX_STORAGE_MOUNT_ROOT` | `storage.mount_root` | path | temp directory | set by the chart | Parent of `mount` mode's per-job mount points; must lie under `VMAFX_EBPF_MOUNT_PREFIX` when the tracker is on. |
+| `VMAFX_RCLONE_BIN` | `rclone.bin` | path | `rclone` on `PATH` |  | rclone binary; a missing one only fails rclone sources. |
+| `VMAFX_RCLONE_CONFIG` | `rclone.config` | path | rclone's default | `storage.rclone.config` | rclone configuration file with the remotes and their credentials. |
+| `VMAFX_EBPF_BYPASS` | `ebpf.bypass` | bool | `false` | `node.ebpf.enabled` | Start the eBPF descriptor tracker (little-endian Linux); a host that cannot run it stops the node ([ADR-1539](../adr/1539-node-ebpf-tracker-wiring.md)). |
+| `VMAFX_EBPF_MOUNT_PREFIX` | `ebpf.mount_prefix` | path | `/rclone-mount/` | `node.ebpf.enabled`, `node.ebpf.mountPrefix` | Path whose opens the tracker records; must contain `VMAFX_STORAGE_MOUNT_ROOT`. |
+| `VMAFX_LOG_LEVEL` | `log.level` | string | `info` |  | Log level: `debug`, `info`, `warn` or `error`, any case; an unknown value gives `info`. |
+| `VMAFX_LOG_FORMAT` | `log.format` | string | `auto` |  | Log handler: `auto` (tint on a terminal, else JSON), `tint` or `json`; logs go to stderr. |
+| `VMAFX_OTEL_ENABLED` | `otel.enabled` | bool | `true` |  | OpenTelemetry master switch; `false` installs no-op providers even with an endpoint. |
+| `VMAFX_OTEL_ENDPOINT` | `otel.endpoint` | `host:port` | _(unset)_ |  | OTLP/gRPC collector (`otel-collector:4317`); wins over `OTEL_EXPORTER_OTLP_ENDPOINT`. Neither set: no export ([OpenTelemetry](../observability/otel.md)). |
+| `VMAFX_OTEL_INSECURE` | `otel.insecure` | bool | `true` |  | Plaintext gRPC to the collector; `false` dials with TLS. |
+| `VMAFX_OTEL_SERVICE_NAME` | `otel.service.name` | string | `OTEL_SERVICE_NAME`, else the binary name |  | `service.name` resource attribute. |
+| `VMAFX_OTEL_SERVICE_VERSION` | `otel.service.version` | string | the build version |  | `service.version` resource attribute. |
+| `VMAFX_OTEL_SERVICE_NAMESPACE` | `otel.service.namespace` | string | _(unset)_ |  | `service.namespace` resource attribute. |
+| `VMAFX_OTEL_SAMPLE_RATIO` | `otel.sample.ratio` | number | `1.0` |  | Parent-based trace sample ratio in `[0, 1]`; `OTEL_TRACES_SAMPLER` and its argument are not read. |
+| `VMAFX_OTEL_EXPORT_TRACES` | `otel.export.traces` | bool | `true` |  | Export traces. |
+| `VMAFX_OTEL_EXPORT_METRICS` | `otel.export.metrics` | bool | `true` |  | Export metrics. |
+| `VMAFX_OTEL_EXPORT_LOGS` | `otel.export.logs` | bool | `true` |  | Export the logs signal; application logs are not bridged to it today. |
+| `OTEL_SERVICE_NAME` | read directly | string | _(unset)_ |  | `service.name` when `VMAFX_OTEL_SERVICE_NAME` is unset (OTel standard). |
+| `OTEL_SDK_DISABLED` | read directly | string | _(unset)_ |  | `true` (exactly) installs no-op providers (OTel standard). |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | read directly | URL | _(unset)_ |  | Collector as a URL (`http://host:4317`) when `VMAFX_OTEL_ENDPOINT` is unset; set, export is on (OTel standard). |
+| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | read directly | URL | _(unset)_ |  | Per-signal collector URL for traces; set, export is on (OTel standard). |
+| `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` | read directly | URL | _(unset)_ |  | Per-signal collector URL for metrics; set, export is on (OTel standard). |
+| `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` | read directly | URL | _(unset)_ |  | Per-signal collector URL for logs; set, export is on (OTel standard). |
+| `POD_NAME` | read directly | string | _(unset)_ |  | Pod name (Kubernetes downward API), added to log lines and OTel resources as `k8s.pod.name`. |
+| `POD_NAMESPACE` | read directly | string | _(unset)_ |  | Pod namespace, added as `k8s.namespace.name`. |
+| `POD_IP` | read directly | string | _(unset)_ |  | Pod IP, added as `k8s.pod.ip`. |
+| `NODE_NAME` | read directly | string | _(unset)_ |  | Kubernetes node name, added as `k8s.node.name`. |
+| `SERVICE_ACCOUNT` | read directly | string | _(unset)_ |  | Service account name, added as `k8s.serviceaccount.name`. |
+
+<!-- END GENERATED: vmafx-api environment vmafx-node -->
 
 ### Operator (`cmd/vmafx-operator`)
 
-| Name | Type | Default | Description |
-|---|---|---|---|
-| `VMAFX_OPERATOR_LEADER_ELECTION` | `true`/`false` | `false` | Enable leader election; set `true` when running several operator replicas. |
-| `VMAFX_OPERATOR_LEADER_ELECTION_ID` | string | `vmafx-operator.vmafx.dev` | Lease name used when leader election is enabled. |
-| `VMAFX_OPERATOR_METRICS_ADDR` | `host:port` | `:8080` | Bind address of the Prometheus metrics endpoint. |
-| `VMAFX_OPERATOR_HEALTH_PROBE_ADDR` | `host:port` | `:8081` | Bind address of `/healthz` and `/readyz`. |
-| `VMAFX_OPERATOR_GRACEFUL_SHUTDOWN` | duration | `30s` | Manager graceful-shutdown timeout. |
-| `VMAFX_OPERATOR_WEBHOOK_PORT` | integer | `0` | Admission-webhook port; `0` disables webhooks. |
-| `VMAFX_OPERATOR_WEBHOOK_HOST` | host | _(all interfaces)_ | Admission-webhook bind host. |
-| `VMAFX_LOG_LEVEL` | string | `info` | Shared log level: `debug`, `info`, `warn` or `error`. |
-| `VMAFX_CONTROLLER_GRPC_ADDR` | `host:port` | `vmafx-controller.<ns>.svc.cluster.local:9090` | Controller gRPC address used by job reconciliation. |
-| `VMAFX_CONTROLLER_HTTP_ADDR` | URL | `http://vmafx-controller.<ns>.svc.cluster.local:8080` | Controller HTTP address used by health reconciliation. |
-| `VMAFX_CONTROLLER_TOKEN_FILE` / `VMAFX_CONTROLLER_TOKEN` | path / string | _(unset)_ | Bearer token job reconciliation sends to the controller, from a file read on every call or inline (not both); an expired JWT is not sent. |
-| `VMAFX_CONTROLLER_TLS` / `VMAFX_CONTROLLER_CA_FILE` / `VMAFX_CONTROLLER_SERVER_NAME` | `true`/`false` / path / host | `false` / _(unset)_ | TLS to the controller; the CA file and server name need TLS. Same keys as the node's. |
+<!-- BEGIN GENERATED: vmafx-api environment vmafx-operator (scripts/codegen/vmafx-api.py) -->
+
+| Variable | Key | Type | Default | Chart value | Description |
+|---|---|---|---|---|---|
+| `VMAFX_CONTROLLER_TLS` | `controller.tls` | bool | `false` |  | Dial the controller with TLS (system roots unless `VMAFX_CONTROLLER_CA_FILE` is set). |
+| `VMAFX_CONTROLLER_CA_FILE` | `controller.ca_file` | path | system roots |  | PEM bundle that verifies the controller certificate; needs `VMAFX_CONTROLLER_TLS`. |
+| `VMAFX_CONTROLLER_SERVER_NAME` | `controller.server_name` | string | host of the address |  | TLS server name override; needs `VMAFX_CONTROLLER_TLS`. |
+| `VMAFX_CONTROLLER_TOKEN_FILE` | `controller.token_file` | path | _(unset)_ | `operator.controllerToken.secretName` | File holding the bearer token for the controller, read again on every call; an expired JWT is not sent. Not together with `VMAFX_CONTROLLER_TOKEN`. |
+| `VMAFX_CONTROLLER_TOKEN` | `controller.token` | string | _(unset)_ |  | Secret. Bearer token for the controller given inline; not together with `VMAFX_CONTROLLER_TOKEN_FILE`. |
+| `VMAFX_OPERATOR_METRICS_ADDR` | `operator.metrics_addr` | `host:port` | `:8080` | set by the chart | Bind address of the Prometheus metrics endpoint; `0` disables it. |
+| `VMAFX_OPERATOR_HEALTH_PROBE_ADDR` | `operator.health_probe_addr` | `host:port` | `:8081` | set by the chart | Bind address of `/healthz` and `/readyz`. |
+| `VMAFX_OPERATOR_LEADER_ELECTION` | `operator.leader_election` | bool | `false` | `operator.leaderElect` | Leader election; `true` for several replicas. |
+| `VMAFX_OPERATOR_LEADER_ELECTION_ID` | `operator.leader_election_id` | string | `vmafx-operator.vmafx.dev` |  | Lease name of the leader election. |
+| `VMAFX_OPERATOR_GRACEFUL_SHUTDOWN` | `operator.graceful_shutdown` | duration | `30s` |  | Graceful-shutdown timeout of the manager. |
+| `VMAFX_OPERATOR_WEBHOOK_PORT` | `operator.webhook_port` | integer | `0` |  | Admission-webhook port; `0` disables the webhooks. |
+| `VMAFX_OPERATOR_WEBHOOK_HOST` | `operator.webhook_host` | host | all interfaces |  | Admission-webhook bind host. |
+| `VMAFX_CONTROLLER_GRPC_ADDR` | read directly | `host:port` | `vmafx-controller.<namespace>.svc.cluster.local:9090` | `controller.enabled`, `controller.grpcPort` | gRPC address of the controller, used by the `VmafxJob` reconciler. |
+| `VMAFX_CONTROLLER_HTTP_ADDR` | read directly | URL | `http://vmafx-controller.<namespace>.svc.cluster.local:8080` | `controller.enabled`, `controller.httpPort` | HTTP address of the controller with its scheme, used by the `VmafxNode` health probe (`/healthz` is appended). |
+| `VMAFX_LOG_LEVEL` | `log.level` | string | `info` | `operator.logLevel` | Log level: `debug`, `info`, `warn` or `error`, any case; an unknown value gives `info`. |
+| `VMAFX_LOG_FORMAT` | `log.format` | string | `auto` |  | Log handler: `auto` (tint on a terminal, else JSON), `tint` or `json`; logs go to stderr. |
+| `VMAFX_OTEL_ENABLED` | `otel.enabled` | bool | `true` |  | OpenTelemetry master switch; `false` installs no-op providers even with an endpoint. |
+| `VMAFX_OTEL_ENDPOINT` | `otel.endpoint` | `host:port` | _(unset)_ |  | OTLP/gRPC collector (`otel-collector:4317`); wins over `OTEL_EXPORTER_OTLP_ENDPOINT`. Neither set: no export ([OpenTelemetry](../observability/otel.md)). |
+| `VMAFX_OTEL_INSECURE` | `otel.insecure` | bool | `true` |  | Plaintext gRPC to the collector; `false` dials with TLS. |
+| `VMAFX_OTEL_SERVICE_NAME` | `otel.service.name` | string | `OTEL_SERVICE_NAME`, else the binary name |  | `service.name` resource attribute. |
+| `VMAFX_OTEL_SERVICE_VERSION` | `otel.service.version` | string | the build version |  | `service.version` resource attribute. |
+| `VMAFX_OTEL_SERVICE_NAMESPACE` | `otel.service.namespace` | string | _(unset)_ |  | `service.namespace` resource attribute. |
+| `VMAFX_OTEL_SAMPLE_RATIO` | `otel.sample.ratio` | number | `1.0` |  | Parent-based trace sample ratio in `[0, 1]`; `OTEL_TRACES_SAMPLER` and its argument are not read. |
+| `VMAFX_OTEL_EXPORT_TRACES` | `otel.export.traces` | bool | `true` |  | Export traces. |
+| `VMAFX_OTEL_EXPORT_METRICS` | `otel.export.metrics` | bool | `true` |  | Export metrics. |
+| `VMAFX_OTEL_EXPORT_LOGS` | `otel.export.logs` | bool | `true` |  | Export the logs signal; application logs are not bridged to it today. |
+| `OTEL_SERVICE_NAME` | read directly | string | _(unset)_ |  | `service.name` when `VMAFX_OTEL_SERVICE_NAME` is unset (OTel standard). |
+| `OTEL_SDK_DISABLED` | read directly | string | _(unset)_ |  | `true` (exactly) installs no-op providers (OTel standard). |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | read directly | URL | _(unset)_ |  | Collector as a URL (`http://host:4317`) when `VMAFX_OTEL_ENDPOINT` is unset; set, export is on (OTel standard). |
+| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | read directly | URL | _(unset)_ |  | Per-signal collector URL for traces; set, export is on (OTel standard). |
+| `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` | read directly | URL | _(unset)_ |  | Per-signal collector URL for metrics; set, export is on (OTel standard). |
+| `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` | read directly | URL | _(unset)_ |  | Per-signal collector URL for logs; set, export is on (OTel standard). |
+| `POD_NAME` | read directly | string | _(unset)_ |  | Pod name (Kubernetes downward API), added to log lines and OTel resources as `k8s.pod.name`. |
+| `POD_NAMESPACE` | read directly | string | _(unset)_ |  | Pod namespace, added as `k8s.namespace.name`. |
+| `POD_IP` | read directly | string | _(unset)_ |  | Pod IP, added as `k8s.pod.ip`. |
+| `NODE_NAME` | read directly | string | _(unset)_ |  | Kubernetes node name, added as `k8s.node.name`. |
+| `SERVICE_ACCOUNT` | read directly | string | _(unset)_ |  | Service account name, added as `k8s.serviceaccount.name`. |
+
+<!-- END GENERATED: vmafx-api environment vmafx-operator -->
 
 ### OpenTelemetry identity (all Go services)
 
-| Name | Type | Default | Description |
-|---|---|---|---|
-| `VMAFX_OTEL_SERVICE_NAME` | string | the standard `OTEL_SERVICE_NAME`, else the binary name | `service.name` resource attribute. |
-| `VMAFX_OTEL_SERVICE_VERSION` | string | the build version | `service.version` resource attribute. |
+The `VMAFX_OTEL_*` variables (service name and version, exporter, sampling) are
+read by every Go binary and are listed in each binary's table;
+[OpenTelemetry](../observability/otel.md) explains how they combine with the
+standard `OTEL_*` variables.
+
+### MCP server (`cmd/vmafx-mcp`)
+
+The Go MCP server also reads the scoring variables of the
+[MCP server](#mcp-server) section, which the Python server shares.
+
+<!-- BEGIN GENERATED: vmafx-api environment vmafx-mcp (scripts/codegen/vmafx-api.py) -->
+
+| Variable | Key | Type | Default | Chart value | Description |
+|---|---|---|---|---|---|
+| `VMAF_BIN` | read directly | path | `/usr/local/bin/vmaf`, then the build trees |  | Path of the `vmaf` CLI behind the scoring tools, looked up on every tool call. |
+| `VMAFX_CONTROLLER_ADDR` | read directly | `host:port` | `localhost:9090` |  | gRPC address of `vmafx-controller` for the control-plane tools, read on every call. |
+| `VMAFX_CONTROLLER_TOKEN` | read directly | string | _(unset)_ |  | Secret. Bearer token sent with every controller call of the control-plane tools (plaintext transport). With auth on, `get_job` and `list_jobs` need `vmafx:reader`, `submit_job` and `cancel_job` `vmafx:writer`. |
+| `VMAFX_MCP_TRANSPORT` | `mcp.transport` | string | `stdio` |  | `stdio` or `http` (streamable HTTP); anything else stops the server. |
+| `VMAFX_MCP_HTTP_ADDR` | `mcp.http.addr` | `host:port` | `:3000` |  | Listen address of the HTTP transport; an address without a host takes `VMAFX_MCP_HTTP_BIND`. |
+| `VMAFX_MCP_HTTP_BIND` | read directly | host | `127.0.0.1` |  | Host of a listen address that names none; `0.0.0.0` listens on all interfaces ([ADR-0967](../adr/0967-mcp-http-transport-security-hardening.md)). |
+| `VMAFX_MCP_HTTP_TOKEN` | read directly | string | _(unset: every request is refused unless `VMAFX_MCP_HTTP_NO_AUTH=1`)_ |  | Secret. Bearer token the HTTP transport requires in `Authorization: Bearer <token>`. |
+| `VMAFX_MCP_HTTP_NO_AUTH` | read directly | `1` | off |  | `1` turns the HTTP transport's authentication off; the server logs a warning. |
+| `VMAFX_MCP_DIRECT` | read directly | `1` | off |  | `1` scores through libvmaf by cgo instead of a `vmaf` subprocess ([ADR-0931](../adr/0931-mcp-cgo-direct-replace-subprocess.md)); read on every tool call. |
+| `VMAFX_SERVER_ADDR` | read directly | `host:port` | `localhost:9090` |  | gRPC address of `vmafx-server` for `vmaf_score_remote`. |
+| `VMAFX_GRPC_TIMEOUT` | read directly | seconds | `30` |  | Deadline of each control-plane RPC; a value that is not a positive integer keeps the default. |
+| `VMAF_MCP_ALLOW` | read directly | path list | built-in roots |  | Additional roots, separated by the OS path-list separator, under which file paths are accepted. |
+| `VMAF_PER_SHOT_BIN` | read directly | path | next to `vmaf`, then `/usr/local/bin` and the build trees |  | Binary of the `vmaf-perShot` tool. |
+| `VMAF_ROI_BIN` | read directly | path | next to `vmaf`, then `/usr/local/bin` and the build trees |  | Binary of the `vmaf_roi` tool. |
+| `VMAF_BENCH_BIN` | read directly | path | next to `vmaf`, then `/usr/local/bin` and the build trees |  | Binary of the `vmaf_bench` tool. |
+| `VMAF_VPL_BIN` | read directly | path | next to `vmaf`, then `/usr/local/bin` and the build trees |  | Binary of the `vmaf_vpl` tool. |
+| `VMAF_ROOT` | read directly | path | the repository root when it holds the fixtures, else `/workspace` |  | Data root of the fixture clips `run_benchmark` uses. |
+| `VMAF_TUNE_BIN` | read directly | path | `vmaf-tune` on `PATH`, else the repository's |  | `vmaf-tune` binary of the tuning tools. |
+| `VMAFX_LOG_LEVEL` | `log.level` | string | `info` |  | Log level: `debug`, `info`, `warn` or `error`, any case; an unknown value gives `info`. |
+| `VMAFX_LOG_FORMAT` | `log.format` | string | `auto` |  | Log handler: `auto` (tint on a terminal, else JSON), `tint` or `json`; logs go to stderr. |
+| `VMAFX_OTEL_ENABLED` | `otel.enabled` | bool | `true` |  | OpenTelemetry master switch; `false` installs no-op providers even with an endpoint. |
+| `VMAFX_OTEL_ENDPOINT` | `otel.endpoint` | `host:port` | _(unset)_ |  | OTLP/gRPC collector (`otel-collector:4317`); wins over `OTEL_EXPORTER_OTLP_ENDPOINT`. Neither set: no export ([OpenTelemetry](../observability/otel.md)). |
+| `VMAFX_OTEL_INSECURE` | `otel.insecure` | bool | `true` |  | Plaintext gRPC to the collector; `false` dials with TLS. |
+| `VMAFX_OTEL_SERVICE_NAME` | `otel.service.name` | string | `OTEL_SERVICE_NAME`, else the binary name |  | `service.name` resource attribute. |
+| `VMAFX_OTEL_SERVICE_VERSION` | `otel.service.version` | string | the build version |  | `service.version` resource attribute. |
+| `VMAFX_OTEL_SERVICE_NAMESPACE` | `otel.service.namespace` | string | _(unset)_ |  | `service.namespace` resource attribute. |
+| `VMAFX_OTEL_SAMPLE_RATIO` | `otel.sample.ratio` | number | `1.0` |  | Parent-based trace sample ratio in `[0, 1]`; `OTEL_TRACES_SAMPLER` and its argument are not read. |
+| `VMAFX_OTEL_EXPORT_TRACES` | `otel.export.traces` | bool | `true` |  | Export traces. |
+| `VMAFX_OTEL_EXPORT_METRICS` | `otel.export.metrics` | bool | `true` |  | Export metrics. |
+| `VMAFX_OTEL_EXPORT_LOGS` | `otel.export.logs` | bool | `true` |  | Export the logs signal; application logs are not bridged to it today. |
+| `OTEL_SERVICE_NAME` | read directly | string | _(unset)_ |  | `service.name` when `VMAFX_OTEL_SERVICE_NAME` is unset (OTel standard). |
+| `OTEL_SDK_DISABLED` | read directly | string | _(unset)_ |  | `true` (exactly) installs no-op providers (OTel standard). |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | read directly | URL | _(unset)_ |  | Collector as a URL (`http://host:4317`) when `VMAFX_OTEL_ENDPOINT` is unset; set, export is on (OTel standard). |
+| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | read directly | URL | _(unset)_ |  | Per-signal collector URL for traces; set, export is on (OTel standard). |
+| `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` | read directly | URL | _(unset)_ |  | Per-signal collector URL for metrics; set, export is on (OTel standard). |
+| `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` | read directly | URL | _(unset)_ |  | Per-signal collector URL for logs; set, export is on (OTel standard). |
+| `POD_NAME` | read directly | string | _(unset)_ |  | Pod name (Kubernetes downward API), added to log lines and OTel resources as `k8s.pod.name`. |
+| `POD_NAMESPACE` | read directly | string | _(unset)_ |  | Pod namespace, added as `k8s.namespace.name`. |
+| `POD_IP` | read directly | string | _(unset)_ |  | Pod IP, added as `k8s.pod.ip`. |
+| `NODE_NAME` | read directly | string | _(unset)_ |  | Kubernetes node name, added as `k8s.node.name`. |
+| `SERVICE_ACCOUNT` | read directly | string | _(unset)_ |  | Service account name, added as `k8s.serviceaccount.name`. |
+
+<!-- END GENERATED: vmafx-api environment vmafx-mcp -->
+
+### Tuning CLI (`cmd/vmafx-tune`)
+
+The Go `vmafx-tune` shares the `VMAFTUNE_*` variables of
+[`vmaf-tune`](#vmaf-tune) with the Python tool.
+
+<!-- BEGIN GENERATED: vmafx-api environment vmafx-tune (scripts/codegen/vmafx-api.py) -->
+
+| Variable | Key | Type | Default | Chart value | Description |
+|---|---|---|---|---|---|
+| `VMAFX_MODEL_DIR` | read directly | path | `/usr/local/share/vmafx/model` |  | Directory searched for `<name>.onnx` when `--model` names no file (`predict`, `sidecar`, `auto`). |
+| `VMAFX_TUNE_ENCODE_TIMEOUT` | read directly | duration | `60m` |  | Deadline of each `ffmpeg` encode; a value that does not parse keeps the default. |
+| `VMAFX_TUNE_PROBE_TIMEOUT` | read directly | duration | `30s` |  | Deadline of each `ffprobe` call; a value that does not parse keeps the default. |
+| `VMAFX_TUNE_SCORE_TIMEOUT` | read directly | duration | `30m` |  | Deadline of each `vmaf` run; a value that does not parse keeps the default. |
+| `VMAFTUNE_WORKDIR` | read directly | path | OS temp directory |  | Scratch parent of `tune-per-shot` when `--workdir` is not given; used only when it can be created and written. |
+| `VMAFTUNE_VAAPI_DEVICE` | read directly | path | first Intel render node, else `/dev/dri/renderD128` |  | VAAPI render node of QSV encodes; `auto` means unset. |
+| `VMAFTUNE_SALIENCY_FALLBACK_OK` | read directly | `1` | off |  | `1` lets `recommend-saliency` run a plain encode on an encoder without ROI support instead of exiting 2. |
+| `XDG_CACHE_HOME` | read directly | path | `~/.cache` |  | Parent of the `vmaf-tune/sidecar` cache when `--cache-dir` is not given. |
+| `VMAFX_LOG_LEVEL` | `log.level` | string | `info` |  | Log level: `debug`, `info`, `warn` or `error`, any case; an unknown value gives `info`. |
+| `VMAFX_LOG_FORMAT` | `log.format` | string | `auto` |  | Log handler: `auto` (tint on a terminal, else JSON), `tint` or `json`; logs go to stderr. |
+| `VMAFX_OTEL_ENABLED` | `otel.enabled` | bool | `true` |  | OpenTelemetry master switch; `false` installs no-op providers even with an endpoint. |
+| `VMAFX_OTEL_ENDPOINT` | `otel.endpoint` | `host:port` | _(unset)_ |  | OTLP/gRPC collector (`otel-collector:4317`); wins over `OTEL_EXPORTER_OTLP_ENDPOINT`. Neither set: no export ([OpenTelemetry](../observability/otel.md)). |
+| `VMAFX_OTEL_INSECURE` | `otel.insecure` | bool | `true` |  | Plaintext gRPC to the collector; `false` dials with TLS. |
+| `VMAFX_OTEL_SERVICE_NAME` | `otel.service.name` | string | `OTEL_SERVICE_NAME`, else the binary name |  | `service.name` resource attribute. |
+| `VMAFX_OTEL_SERVICE_VERSION` | `otel.service.version` | string | the build version |  | `service.version` resource attribute. |
+| `VMAFX_OTEL_SERVICE_NAMESPACE` | `otel.service.namespace` | string | _(unset)_ |  | `service.namespace` resource attribute. |
+| `VMAFX_OTEL_SAMPLE_RATIO` | `otel.sample.ratio` | number | `1.0` |  | Parent-based trace sample ratio in `[0, 1]`; `OTEL_TRACES_SAMPLER` and its argument are not read. |
+| `VMAFX_OTEL_EXPORT_TRACES` | `otel.export.traces` | bool | `true` |  | Export traces. |
+| `VMAFX_OTEL_EXPORT_METRICS` | `otel.export.metrics` | bool | `true` |  | Export metrics. |
+| `VMAFX_OTEL_EXPORT_LOGS` | `otel.export.logs` | bool | `true` |  | Export the logs signal; application logs are not bridged to it today. |
+| `OTEL_SERVICE_NAME` | read directly | string | _(unset)_ |  | `service.name` when `VMAFX_OTEL_SERVICE_NAME` is unset (OTel standard). |
+| `OTEL_SDK_DISABLED` | read directly | string | _(unset)_ |  | `true` (exactly) installs no-op providers (OTel standard). |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | read directly | URL | _(unset)_ |  | Collector as a URL (`http://host:4317`) when `VMAFX_OTEL_ENDPOINT` is unset; set, export is on (OTel standard). |
+| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | read directly | URL | _(unset)_ |  | Per-signal collector URL for traces; set, export is on (OTel standard). |
+| `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` | read directly | URL | _(unset)_ |  | Per-signal collector URL for metrics; set, export is on (OTel standard). |
+| `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` | read directly | URL | _(unset)_ |  | Per-signal collector URL for logs; set, export is on (OTel standard). |
+| `POD_NAME` | read directly | string | _(unset)_ |  | Pod name (Kubernetes downward API), added to log lines and OTel resources as `k8s.pod.name`. |
+| `POD_NAMESPACE` | read directly | string | _(unset)_ |  | Pod namespace, added as `k8s.namespace.name`. |
+| `POD_IP` | read directly | string | _(unset)_ |  | Pod IP, added as `k8s.pod.ip`. |
+| `NODE_NAME` | read directly | string | _(unset)_ |  | Kubernetes node name, added as `k8s.node.name`. |
+| `SERVICE_ACCOUNT` | read directly | string | _(unset)_ |  | Service account name, added as `k8s.serviceaccount.name`. |
+
+<!-- END GENERATED: vmafx-api environment vmafx-tune -->
 
 ## Online-training sidecar (`ai/sidecar`)
 

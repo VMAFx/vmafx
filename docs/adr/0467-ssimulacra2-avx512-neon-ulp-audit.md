@@ -89,3 +89,12 @@ Key evidence:
 - ADR-0214 (cross-backend ULP gate, `places=4`)
 - BACKLOG T3-9(b) (this item)
 - Source: per user direction to audit T3-9(b) post-merge ULP drift.
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 87: `- ADR-0164 (deterministic cbrtf + sRGB EOTF LUT)`: Cites
+  ADR-0164 for cbrtf and sRGB EOTF LUT; ADR-0164 is SSIMULACRA 2 snapshot-JSON
+  regression gate (T3-3).

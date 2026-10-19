@@ -1,0 +1,13 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
+# Declared supply-chain gaps (praetor HISS-11): the SLSA Build Level the policy declares and the
+# level `praetorctl audit` measures in the workflow it names. Format and rules:
+# scripts/ci/lint_exceptions.py. scripts/ci/praetor_tidy_coverage.py copies each entry into the
+# `exceptions:` block of .standards.yaml, where praetor reads it; praetor accepts an expiry at most
+# 90 days out. The path is the workflow the audit's failure line names. ADR-2321 gives the decision.
+
+[[exception]]
+path = ".github/workflows/docker-publish-operator-node.yml"
+reason = "SLSA Build Level 2 measured against the Level 3 the native-gpu-systems profile and security:high facet declare: the publish job signs provenance over image digests that build jobs uploaded, not inside a reusable workflow that builds and attests. Level 3 needs that restructuring (T-SLSA-RELEASE-PROVENANCE-LEVEL-2-2026-10-07)."
+expires = 2027-01-04

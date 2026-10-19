@@ -210,6 +210,24 @@ class PersistCacheError(RuntimeError):
     """Raised when the cache file of ``persist_to_file`` exists but cannot be read."""
 
 
+def _read_json_cache(file_name):
+    """Return the JSON cache stored in ``file_name``; an absent file is an empty cache.
+
+    The caller holds the cache's cross-process lock. On Windows an open that
+    overlaps a peer's ``os.replace`` of the same file fails with a sharing
+    violation, and a peer's ``os.replace`` fails while this handle is open.
+    """
+    try:
+        with open(file_name, "rt", encoding="utf-8") as fh:
+            return json.load(fh)
+    except FileNotFoundError:
+        return {}
+    except (OSError, ValueError) as exc:
+        raise PersistCacheError(
+            f"persist_to_file: unreadable cache file {file_name}: {exc}"
+        ) from exc
+
+
 def persist_to_file(file_name):
     """
     Cache (or persist) returned value of function in a json file.
@@ -221,15 +239,8 @@ def persist_to_file(file_name):
         lock = threading.RLock()
         lock_file = f"{file_name}.lock"
 
-        cache = {}
-        if os.path.exists(file_name):
-            try:
-                with open(file_name, "rt", encoding="utf-8") as fh:
-                    cache = json.load(fh)
-            except (IOError, ValueError) as exc:
-                raise PersistCacheError(
-                    f"persist_to_file: unreadable cache file {file_name}: {exc}"
-                ) from exc
+        with _file_lock(lock_file):
+            cache = _read_json_cache(file_name)
 
         def new_func(*args):
             raw_key = (str(original_func.__name__) + str(args)).encode()
@@ -242,14 +253,7 @@ def persist_to_file(file_name):
                     return cache[h]
 
             with lock, _file_lock(lock_file):
-                disk_cache = {}
-                if os.path.exists(file_name):
-                    try:
-                        with open(file_name, "rt", encoding="utf-8") as fh:
-                            disk_cache = json.load(fh)
-                    except (IOError, ValueError):
-                        disk_cache = {}
-                cache.update(disk_cache)
+                cache.update(_read_json_cache(file_name))
 
                 if h in cache:
                     return cache[h]

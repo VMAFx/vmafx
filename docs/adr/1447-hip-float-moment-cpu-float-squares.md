@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD041 MD060 -->
 # ADR-1447: `float_moment_hip` adds the float squares the CPU adds, and is bit-identical while the CPU's own sum is exact
 
-- **Status**: Accepted
+- **Status**: Accepted (Superseded-in-part 2026-10-06 by [ADR-1497](1497-float-moment-twins-cpu-sum-past-2-53.md) for the deferral of a bit-identical sum past 2^53 units for float_moment_hip)
 - **Date**: 2026-10-02
 - **Deciders**: lusoris
 - **Tags**: `hip`, `gpu-parity`, `numerics`, `float-moment`, `testing`, `ci`, `rc3`, `fork-local`

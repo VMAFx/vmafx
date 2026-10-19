@@ -1,12 +1,8 @@
 # ADR-0854 — Direct AVX-512 parity tests for motion kernels
 
-| Field      | Value                                         |
-|------------|-----------------------------------------------|
-| Status     | Accepted                                      |
-| Date       | 2026-05-29                                    |
-| Author     | Claude (Sonnet 4.6) on behalf of Lusoris      |
-| Supersedes | —                                             |
-| Superseded | —                                             |
+- **Status**: Accepted
+- **Date**: 2026-05-29
+- **Author**: Claude (Sonnet 4.6) on behalf of Lusoris
 
 ## Context
 

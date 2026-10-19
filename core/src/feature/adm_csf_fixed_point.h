@@ -31,7 +31,7 @@
  *  for all three bands of one scale, preserving their relative CSF weights;
  *  the contrast-masking reduction restores the removed exponent after its
  *  cube.  Invalid negative / non-finite table results are still rejected.
- *  See ADR-1191, ADR-1325, ADR-1472, and
+ *  See ADR-1191, ADR-1325, ADR-1472, ADR-1917, and
  *  docs/state.md :: T-UPSTREAM-1494-ADM-CSF-MODE-IRFACTOR-OVERFLOW-2026-09-03.
  *
  *  The frame-size bound and the rounding constant of the pipeline's right
@@ -105,20 +105,50 @@
 #define ADM_DWT_BAND_MAX_SCALE3 (746000000.0)
 #define ADM_I4_CM_WEIGHT_SHIFT (268435456.0) /* 2^28, i4_shift_dst */
 
+/*
+ * The scale-0 CSF stage binds the horizontal and vertical weight tighter than
+ * the cube does (ADR-1917). It stores the weighted band
+ * `i16 = (w * band + 2^14) >> 15` in int16 and its 1/30 magnitude
+ * `(ADM_FIX_ONE_BY_30 * |i16| + 2048) >> 12` in int16 as well (adm_csf_cols(),
+ * csf_block_avx2(), csf_block_avx512() and the device twins). The magnitude
+ * passes INT16_MAX from |i16| = 30720, ADM_CSF_FLT_I16_LIMIT.
+ *
+ * The integer DWT reaches a scale-0 band of 22930: the taps' bound 22929.4
+ * (above) plus at most 0.92 of rounding, half a unit from the second pass and
+ * half a unit from the first carried through the second (gain 0.84: the
+ * taps' absolute sum of 1.67 in Q15 against the pass's shift of 16). The
+ * artifact band the stage weights is never larger than the band.
+ * A weight w keeps the magnitude in int16 while w * 22930 + 2^14 < 30720 * 2^15,
+ * that is w < 43899.55, and the stage truncates the weight to an integer, so
+ * every fixed weight below 43900 does (adm_csf_fixed_limit()). The cube
+ * alone allows 46603.4. The diagonal band shifts by 17, so its magnitude is
+ * at most 12229 under any uint16_t weight.
+ */
+#define ADM_DWT_BAND_REACH_SCALE0 (22930.0)
+#define ADM_CSF_FLT_I16_LIMIT (30720.0)
+
 /**
  * Exclusive upper bound of the fixed-point CSF weight of `band` (0 and 1:
  * horizontal and vertical, 2: diagonal) at `scale`. A converted weight equal
  * to the bound is outside the budget, so comparisons are strict.
  *
- * Scale 0: the horizontal and vertical weights are bound by the cube; the
- * diagonal weight by its uint16_t storage (65535 * 23040 is still below the
- * s = 30 excess budget). Scales 1..3: bound by the cube; every bound is
- * below 2^30, so the uint32_t storage and the signed products hold as well.
+ * Scale 0: the horizontal and vertical weights are bound by the int16 1/30
+ * magnitude of the CSF stage (43900, derived above), which is
+ * tighter than the cube (46603.4); the diagonal weight by its uint16_t
+ * storage (65535 * 23040 is still below the s = 30 excess budget). Scales
+ * 1..3: bound by the cube; every bound is below 2^30, so the uint32_t storage
+ * and the signed products hold as well.
  */
 static inline double adm_csf_fixed_limit(int scale, int band)
 {
     if (scale == 0) {
-        return band == 2 ? ADM_CSF_SCALE0_LIMIT : ADM_CM_EXCESS_MAX_SQ29 / ADM_DWT_BAND_MAX_SCALE0;
+        if (band == 2) {
+            return ADM_CSF_SCALE0_LIMIT;
+        }
+        const double cube = ADM_CM_EXCESS_MAX_SQ29 / ADM_DWT_BAND_MAX_SCALE0;
+        const double magnitude =
+            floor(((ADM_CSF_FLT_I16_LIMIT * 32768.0) - 16384.0) / ADM_DWT_BAND_REACH_SCALE0) + 1.0;
+        return magnitude < cube ? magnitude : cube;
     }
     const double band_max = scale == 1 ?
                                 ADM_DWT_BAND_MAX_SCALE1 :
@@ -137,11 +167,21 @@ static inline double adm_csf_fixed_limit(int scale, int band)
  * relational expression intentionally matches the CPU reference's handling
  * of non-finite doubles; the option parser owns those range checks.
  */
-static inline int adm_viewing_geometry_check(double adm_norm_view_dist, int adm_ref_display_height)
+static inline int adm_viewing_geometry_check(const char *extractor, double adm_norm_view_dist,
+                                             int adm_ref_display_height)
 {
-    return adm_norm_view_dist * (double)adm_ref_display_height < ADM_MIN_VIEWING_GEOMETRY ?
-               -EINVAL :
-               0;
+    const double product = adm_norm_view_dist * (double)adm_ref_display_height;
+    if (product < ADM_MIN_VIEWING_GEOMETRY) {
+        if (extractor) {
+            vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                     "%s: viewing geometry adm_norm_view_dist (%g) * adm_ref_display_height (%d) = "
+                     "%g is below the 3240 floor (1080p at 3H); float_adm is the extractor that "
+                     "accepts it.\n",
+                     extractor, adm_norm_view_dist, adm_ref_display_height, product);
+        }
+        return -EINVAL;
+    }
+    return 0;
 }
 
 /**
@@ -221,7 +261,10 @@ static inline int adm_csf_fixed_scale(int scale, const float rfactor1[3], double
                                       int adm_ref_display_height, int adm_csf_mode, double fixed[3],
                                       uint32_t *normalization_shift)
 {
-    const int geometry_err = adm_viewing_geometry_check(adm_norm_view_dist, adm_ref_display_height);
+    /* NOLINTBEGIN(modernize-use-nullptr): C header shared with C++; MSVC C mode has no nullptr. ADR-1138. */
+    const int geometry_err =
+        adm_viewing_geometry_check(NULL, adm_norm_view_dist, adm_ref_display_height);
+    /* NOLINTEND(modernize-use-nullptr) */
     if (geometry_err) {
         return geometry_err;
     }

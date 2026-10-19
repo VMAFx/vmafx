@@ -35,6 +35,7 @@ extern "C" {
 
 /* Raw planes the kernels read: `minuend - subtrahend` per channel (see
  * SpeedGpuChannelBinding). */
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no `using`. ADR-1138. */
 typedef struct SpeedCudaBindings {
     SpeedGpuChannelBinding channel[SPEED_GPU_MAX_CHANNELS];
 } SpeedCudaBindings;
@@ -63,6 +64,7 @@ typedef struct SpeedCudaFrameArgs {
     uint32_t lowpass_width;   /* taps */
     uint32_t cov_threads;     /* covariance block size, a power of two */
 } SpeedCudaFrameArgs;
+/* NOLINTEND(modernize-use-using) */
 
 #ifdef __cplusplus
 } /* extern "C" */

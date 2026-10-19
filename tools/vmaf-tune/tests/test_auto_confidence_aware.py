@@ -4,7 +4,7 @@
 
 F.3 makes the F.2 GOSPEL/FALL_BACK gate continuous by consulting the
 conformal interval half-width returned by
-:meth:`Predictor.predict_vmaf_with_uncertainty` (ADR-0279). The decision
+:meth:`Predictor.predict_vmaf_with_uncertainty` (ADR-0393). The decision
 helper :func:`_confidence_aware_escalation` is a pure function of
 ``(verdict, interval_width, thresholds)``; the tests mock all three and
 assert the override branches fire as documented.

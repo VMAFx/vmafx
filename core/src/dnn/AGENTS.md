@@ -6,9 +6,9 @@ Edit AGENTS.d/_index.md or a page under AGENTS.d/, then run
 
 Generated index. Before editing: match every path you will touch against
 `Touching` in [Topic pages](#topic-pages) and read each matching page first; no
-match, no page. Text between here and the table binds every file of this
-directory. `Touching` paths: relative to this directory, leading `/` =
-repository root. New invariant: a page under `AGENTS.d/` ([how](../../../docs/development/agents-index.md)).
+match, no page. Text between here and [Topic pages](#topic-pages) binds every
+file of this directory. `Touching` paths: relative to this directory, leading
+`/` = repository root. New invariant: new page under `AGENTS.d/` ([how](../../../docs/development/agents-index.md)).
 
 Orientation for agents working on ONNX Runtime integration (tiny-AI
 inference layer). Parent: [../../AGENTS.md](../../AGENTS.md).
@@ -83,7 +83,7 @@ full loader → scanner → session-open path.
 | `dnn_api.c`, `model_loader.c`, `ort_backend.c` | [c23-nullptr-compatibility](AGENTS.d/c23-nullptr-compatibility.md) | C translation units suppress modernize-use-nullptr via NOLINT brackets to retain MSVC cl.exe compatibility. |
 | `model_loader.c`, `model_loader.h` | [codec-block-and-presets](AGENTS.d/codec-block-and-presets.md) | Codec block layout and preset ordinal mapping exactly mirror Python trainer constants and sidecar vocabularies. |
 | `ort_backend.c`, `ort_backend.h`, `/core/include/libvmaf/dnn.h` | [execution-provider-wiring](AGENTS.d/execution-provider-wiring.md) | Execution provider enums and CLI selectors append-only preserve device fallback chains across backends. |
-| `/core/src/libvmaf.c`, `model_loader.c`, `/core/test/dnn/test_vmaf_use_tiny_model.c`, `/core/test/dnn/test_cli.sh` | [feature-vector-inputs](AGENTS.d/feature-vector-inputs.md) | Feature-vector tiny models request their inputs, score at flush, and fail on a missing input, never reading 0.0. |
+| `/core/src/libvmaf.c`, `model_loader.c`, `/core/test/dnn/test_vmaf_use_tiny_model.c`, `/core/test/dnn/test_cli.sh` | [feature-vector-inputs](AGENTS.d/feature-vector-inputs.md) | Feature-vector tiny models request their inputs, score at flush, and fail on missing input, never reading 0.0. |
 | `dnn_api.c`, `dnn_attach_api.c`, `ort_backend.c` | [int8-quantization-and-scaling](AGENTS.d/int8-quantization-and-scaling.md) | Quantized int8 models redirect through fallback session opening and declare onnx_has_scaler to prevent drift. |
 | `model_loader.c` | [model-loader-lint-shape](AGENTS.d/model-loader-lint-shape.md) | Model loader preserves helper decomposition, parenthesized tolower, and getenv suppression for tidy compliance. |
 | `/model/tiny/registry.json`, `/model/tiny/registry.schema.json`, `/model/tiny/*.json`, `model_loader.c`, `/ai/scripts/validate_model_registry.py`, `/ai/src/aiutils/onnx_signature.py` | [model-registry-and-sigstore](AGENTS.d/model-registry-and-sigstore.md) | Model registry entries must validate against schema and verify Sigstore bundles with cosign via posix_spawnp. |

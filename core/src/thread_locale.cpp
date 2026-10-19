@@ -52,11 +52,12 @@
 #include <xlocale.h>
 #endif
 
-/* Platform-specific locale state — now a C++ class so teardown is
- * encapsulated in the destructor rather than spread across a `#ifdef`
- * ladder in `vmaf_thread_locale_pop`. */
-class VmafThreadLocaleState
-{
+/* Platform-specific locale state — now a C++ type with a destructor so teardown is
+ * encapsulated there rather than spread across a `#ifdef` ladder in
+ * `vmaf_thread_locale_pop`. Declared `struct` because the C header
+ * (thread_locale.h) forward-declares it as one; the tags must agree (MSVC C4099,
+ * clang -Wmismatched-tags). */
+struct VmafThreadLocaleState {
   public:
 #if defined(HAVE_USELOCALE)
     explicit VmafThreadLocaleState(locale_t c_loc, locale_t old_loc) noexcept
@@ -69,7 +70,8 @@ class VmafThreadLocaleState
     {
         old_locale.fill('\0');
         if (old_loc) {
-            strncpy(old_locale.data(), old_loc, old_locale.size() - 1U);
+            const size_t n = strnlen(old_loc, old_locale.size() - 1U);
+            memcpy(old_locale.data(), old_loc, n);
         }
     }
 #else

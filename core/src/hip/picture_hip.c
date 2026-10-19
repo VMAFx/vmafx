@@ -11,7 +11,7 @@
  *
  *  A pitched allocation (`hipMallocPitch`) would minimise bandwidth on tiled
  *  hardware, but the HIP picture pool follows the simpler `hipMalloc` (flat,
- *  row-major) path for its first non-stub revision (ADR-0613) because:
+ *  row-major) path for its first non-stub revision (ADR-0639) because:
  *    1. All current callers use explicit `hipMemcpy*` rather than reading
  *       `pic->stride`, so pitch freedom buys nothing today.
  *    2. `hipMallocPitch` requires `width_bytes` + `height` per plane, but
@@ -19,7 +19,7 @@
  *       changing the signature would require touching all 9 extractor sites.
  *  A full pitched-pool follow-up is tracked as T7-10c.
  *
- *  ADR-0613: fix P1-2 from the scaffold audit (core/src/hip/picture_hip.c
+ *  ADR-0639: fix P1-2 from the scaffold audit (core/src/hip/picture_hip.c
  *  previously returned -ENOSYS, blocking zero-copy upload for all HIP
  *  extractors).
  *

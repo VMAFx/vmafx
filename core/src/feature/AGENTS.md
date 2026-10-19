@@ -6,9 +6,9 @@ Edit AGENTS.d/_index.md or a page under AGENTS.d/, then run
 
 Generated index. Before editing: match every path you will touch against
 `Touching` in [Topic pages](#topic-pages) and read each matching page first; no
-match, no page. Text between here and the table binds every file of this
-directory. `Touching` paths: relative to this directory, leading `/` =
-repository root. New invariant: a page under `AGENTS.d/` ([how](../../../docs/development/agents-index.md)).
+match, no page. Text between here and [Topic pages](#topic-pages) binds every
+file of this directory. `Touching` paths: relative to this directory, leading
+`/` = repository root. New invariant: new page under `AGENTS.d/` ([how](../../../docs/development/agents-index.md)).
 
 Orientation for agents working on feature extractors (VMAF metric
 components: VIF, ADM, motion, integer-valued VIF/ADM/motion, CIEDE, CAMBI,
@@ -25,7 +25,9 @@ PSNR, SSIM, MS-SSIM, LPIPS, …). Parent: [../../AGENTS.md](../../AGENTS.md).
 | `integer_adm.c`, `integer_adm.h` | [adm-dwt](AGENTS.d/adm-dwt.md) | Integer ADM DWT mirror table for tiny extents and 16-bit vertical int64 sums. |
 | `integer_adm.c`, `adm_tools.c` | [adm-kernels-restructure](AGENTS.d/adm-kernels-restructure.md) | Integer ADM kernels header separation, AIM clipping differences, and adm_min_val clamping. |
 | `integer_adm_kernels.h`, `sycl/integer_adm_sycl.cpp`, `metal/integer_adm_metal.mm`, `metal/integer_adm_metal_host.c`, `/core/test/test_integer_adm_quant_step.c`, `/core/test/test_integer_adm_quant_step_contract.py` | [adm-quant-step](AGENTS.d/adm-quant-step.md) | dwt_quant_step() exponent = float product of k, temp, temp, as upstream; CPU and SYCL copies change together. |
-| `integer_adm.c`, `integer_adm_kernels.h`, `arm64/adm_neon.c` | [adm-rounding](AGENTS.d/adm-rounding.md) | Integer ADM i4_adm_cm rounding overflow, row rounding, scale-0 masking, and gain limits. |
+| `integer_adm.c`, `integer_adm_kernels.h`, `arm64/adm_neon.c`, `adm_cm_accumulator.h`, `x86/adm_avx2.c`, `x86/adm_avx512.c` | [adm-rounding](AGENTS.d/adm-rounding.md) | Integer ADM i4_adm_cm rounding overflow, row rounding, scale-0 masking, and gain limits. |
+| `integer_adm.c`, `integer_adm.h`, `integer_adm_kernels.h`, `adm_csf_fixed_point.h`, `adm_cm_accumulator.h`, `adm_angle_flag.h`, `adm_score.h`, `barten_csf_tools.h`, `/core/src/rust/feature/adm/**` | [adm-rust-twin](AGENTS.d/adm-rust-twin.md) | Integer ADM arithmetic change in C = same change in core/src/rust/feature/adm; rust_twin_diff.py adm shows 0 diffs. |
+| `adm_view_dist.c`, `adm_view_dist.h`, `integer_adm.c`, `cuda/integer_adm_cuda.c`, `sycl/integer_adm_sycl.cpp`, `hip/integer_adm_hip.c`, `metal/integer_adm_metal.mm`, `metal/integer_adm_metal_host.c`, `feature_extractor.h`, `/core/src/fex_ctx_vector.cpp`, `/core/src/rust/shim/rust_twins.cpp`, `/core/src/rust/feature/adm/**` | [adm-view-distance-merge](AGENTS.d/adm-view-distance-merge.md) | Second ADM distance = one context; transform once per scale, weigh per distance; scores equal separate contexts. |
 | `feature_extractor.h` | [allocation-limits](AGENTS.d/allocation-limits.md) | Per-frame malloc or aligned_malloc for geometry-sized buffers is strictly prohibited. |
 | `feature_extractor.cpp`, `feature_collector.cpp` | [ansnr-removal](AGENTS.d/ansnr-removal.md) | ANSNR and float_ansnr extractors remain removed per ADR-0865. |
 | `brisque.c`, `brisque_math.h` | [brisque](AGENTS.d/brisque.md) | BRISQUE MATLAB pipeline parity and numerical stability assertions. |
@@ -41,35 +43,39 @@ PSNR, SSIM, MS-SSIM, LPIPS, …). Parent: [../../AGENTS.md](../../AGENTS.md).
 | `fastdvdnet_pre.c` | [fastdvdnet](AGENTS.d/fastdvdnet.md) | FastDVDnet 5-frame-window buffering and temporal pre-filter lifecycle contracts. |
 | `feature_collector.cpp`, `feature_collector.h` | [feature-collector](AGENTS.d/feature-collector.md) | feature_collector.cpp mount/unmount traversal and single-authority lifecycle contracts. |
 | `feature_extractor.cpp`, `feature_extractor.h` | [feature-registration](AGENTS.d/feature-registration.md) | feature_extractor_list[] is exactly-once and all extractors register in feature_extractor.cpp. |
+| `float_adm.c`, `cuda/float_adm_cuda.c`, `sycl/float_adm_sycl.cpp`, `hip/float_adm_hip.c`, `metal/float_adm_metal.mm`, `/core/src/fex_ctx_vector.cpp`, `/core/test/float_adm_twin_parity.h`, `/core/test/test_float_adm_debug_key_refusal.c` | [float-adm-debug-key](AGENTS.d/float-adm-debug-key.md) | float_adm's debug ratio `adm` is never suffixed, on CPU and every twin; second debug instance is refused. |
 | `float_adm.c`, `adm_tools.h` | [float-adm](AGENTS.d/float-adm.md) | Float ADM GPU exports, strict division (no reciprocal estimate), min dim 17x17, and signature stability. |
 | `feature_name.cpp`, `brisque_math.h` | [float-equality](AGENTS.d/float-equality.md) | Explicit floating-point comparison contracts replace direct equality tests. |
-| `float_moment_sum.h`, `float_moment_sum_gpu.h` | [float-moment-sum](AGENTS.d/float-moment-sum.md) | float_moment twins form the CPU's rounded 2nd-moment sum past 2^53 units; integers only, checked walk. |
+| `float_moment_sum.h`, `float_moment_sum_gpu.h` | [float-moment-sum](AGENTS.d/float-moment-sum.md) | float_moment twins form CPU's rounded 2nd-moment sum past 2^53 units; integers only, checked walk. |
 | `moment.c`, `moment.h`, `arm64/moment_neon.c`, `arm64/moment_sve2.c` | [float-moment](AGENTS.d/float-moment.md) | compute_2nd_moment adds float squares into one double in raster order; every SIMD kernel returns its bits. |
-| `float_psnr_rows.h` | [float-psnr-rows](AGENTS.d/float-psnr-rows.md) | float_psnr twins add each row's exact sum into a double in the CPU's row order. |
+| `float_psnr_rows.h` | [float-psnr-rows](AGENTS.d/float-psnr-rows.md) | float_psnr twins add each row's exact sum into double in CPU's row order. |
 | `float_vif.c`, `vif_tools.h` | [float-vif](AGENTS.d/float-vif.md) | float_vif lint decomposition, run-time Gaussian filter construction, and minimum dimension checks. |
 | `feature_extractor.h` | [fmaf-ban](AGENTS.d/fmaf-ban.md) | Scalar references never call libm fmaf to prevent contraction divergence across hosts. |
 | `feature_extractor.cpp`, `feature_collector.cpp` | [governing-adrs](AGENTS.d/governing-adrs.md) | Governing ADR index and compliance contracts for feature extractors. |
-| `feature_extractor.h`, `feature_name.cpp` | [gpu-option-tables](AGENTS.d/gpu-option-tables.md) | GPU-twin VmafOption tables mirror the CPU table entry-for-entry with full semantics. |
+| `feature_extractor.h`, `feature_name.cpp` | [gpu-option-tables](AGENTS.d/gpu-option-tables.md) | GPU-twin VmafOption tables mirror CPU table entry-for-entry with full semantics. |
 | `cuda/*`, `hip/*`, `sycl/*`, `metal/*` | [gpu-row-stride](AGENTS.d/gpu-row-stride.md) | GPU code never advances a pointer to samples wider than a byte by a byte stride. |
 | `cuda/speed/speed_cuda_params.h`, `hip/float_adm/float_adm_hip_math.h`, `hip/float_ssim/ssim_decimate.h`, `hip/integer_ciede/ciede_hip_math.h`, `metal/float_ms_ssim_option_semantics.h`, `sycl/sycl_ciede_math.h`, `sycl/sycl_integer_ssim_math.h`, `sycl/sycl_ssim_terms.h`, `sycl/sycl_ssimulacra2_math.h` | [helper-header-licences](AGENTS.d/helper-header-licences.md) | Helper header = EUPL-1.2 AND licences of exactly code reproduced, notices added; no reference code = EUPL-1.2. |
 | `iqa/convolve.c`, `iqa/ssim_tools.c` | [iqa](AGENTS.d/iqa.md) | IQA/VIF SIMD helper decomposition and reserved-identifier cleanup invariants. |
 | `/core/test/test_feature_isa_invariance.c` | [isa-invariance](AGENTS.d/isa-invariance.md) | Feature scores must not depend on host ISA; promotions and reductions must match scalar. |
 | `vif_tools.c`, `vif_tools.h` | [lanczos4](AGENTS.d/lanczos4.md) | lanczos4 prescale weights single implementation shared with GPU twins. |
-| `float_motion.c`, `float_vif.c` | [min-dimension-guards](AGENTS.d/min-dimension-guards.md) | Minimum-dimension guards cover every plane, not just luma. |
-| `feature_mobilesal.c`, `/core/test/test_mobilesal.c`, `/core/test/dnn/test_mobilesal_run.c` | [mobilesal](AGENTS.d/mobilesal.md) | MobileSal extractor pads sides to a multiple of 8 for the students and averages only the frame's own area. |
+| `brisque.c`, `ciede.c`, `delta_e_itp.c`, `float_adm.c`, `float_moment.c`, `float_motion.c`, `float_ms_ssim.c`, `float_psnr.c`, `float_ssim.c`, `float_vif.c`, `integer_adm.c`, `integer_ssim.c`, `integer_vif.c`, `niqe.c`, `pu21.c`, `speed.c`, `ssimulacra2.c`, `/core/test/test_libc_named_internal_functions.py` | [libc-named-statics](AGENTS.d/libc-named-statics.md) | no static C function named after C library function; extractor close callback is close_fex. |
+| `/core/meson.build`, `/core/src/meson.build`, `adm_csf_tools.h`, `adm_tools.c`, `adm_tools.h`, `barten_csf_tools.h`, `ciede.c`, `integer_adm.h`, `integer_ssim.c`, `speed.c`, `speed_internal.c`, `speed_qa.c`, `vif_tools.c`, `y_funque_plus.c`, `sycl/float_adm_sycl.cpp`, `sycl/integer_adm_sycl.cpp` | [math-constants](AGENTS.d/math-constants.md) | No TU defines M_PI / M_E; <math.h> provides them, Windows via meson's -D_USE_MATH_DEFINES. |
+| `float_motion.c`, `float_vif.c` | [min-dimension-guards](AGENTS.d/min-dimension-guards.md) | Minimum-dimension guards cover every plane, not only luma. |
+| `feature_mobilesal.c`, `/core/test/test_mobilesal.c`, `/core/test/dnn/test_mobilesal_run.c` | [mobilesal](AGENTS.d/mobilesal.md) | MobileSal extractor pads sides to multiple of 8 for students and averages only frame's own area. |
 | `feature_collector.cpp`, `feature_name.cpp` | [model-options](AGENTS.d/model-options.md) | Model options gate GPU twin selection; every option must be parsed or safely rejected. |
 | `integer_motion_v2.c`, `motion_tools.h` | [motion-v2](AGENTS.d/motion-v2.md) | Motion v2 option-surface parity, five-frame window on prev_prev_ref, and NEON shift semantics. |
+| `motion_window.h`, `integer_motion.c`, `integer_motion_v2.c`, `feature_extractor.h`, `/core/test/test_motion_window_incremental.c`, `/core/test/test_motion_window_advance_contract.py`, `/core/test/test_score_pooled_eagain.c` | [motion-window-incremental](AGENTS.d/motion-window-incremental.md) | motion2/motion3 of frame i final once SADs 0..max(i+1,min_idx) in; same statements as flush; state carried. |
 | `motion.c`, `float_motion.c`, `integer_motion.c` | [motion](AGENTS.d/motion.md) | Motion plane structures, upstream options, mirror implementations, and chroma min dims. |
 | `ms_ssim.c`, `ms_ssim.h`, `float_ms_ssim.c` | [ms-ssim](AGENTS.d/ms-ssim.md) | MS-SSIM decimate LPF coefficients, mirror bounds, -ENOMEM handling, and SIMD parity. |
 | `niqe.c`, `niqe_math.h` | [niqe](AGENTS.d/niqe.md) | NIQE fork-pkl parity, sharpness calculation, and model coefficient loading. |
 | `feature_collector.cpp`, `feature_extractor.h` | [non-finite-publication](AGENTS.d/non-finite-publication.md) | Non-finite values follow NaN and infinity cross-backend publication semantics. |
 | `feature_extractor.cpp`, `feature_collector.cpp`, `feature_name.cpp` | [orientation](AGENTS.d/orientation.md) | Scope, ground rules, discoverability, option tables, and feature extractor workflows. |
-| `feature_collector.cpp`, `feature_extractor.h` | [perceptual-side-data](AGENTS.d/perceptual-side-data.md) | Perceptual side-data weighting golden-isolation invariant and normalization contracts. |
+| `feature_collector.cpp`, `feature_extractor.h`, `pelorus_udu_wrap.h`, `perceptual_weight.c` | [perceptual-side-data](AGENTS.d/perceptual-side-data.md) | Perceptual side-data weighting golden-isolation invariant and normalization contracts. |
 | `picture_copy.cpp`, `picture_copy.h` | [picture-copy](AGENTS.d/picture-copy.md) | picture_copy channel selection and high-bit-depth sample normalization contracts. |
 | `third_party/xiph/psnr_hvs.c`, `psnr_hvs_score.c` | [psnr-hvs](AGENTS.d/psnr-hvs.md) | Masking threshold = upstream float product (ADR-1488); host scoring tail and SIMD DCT stay bit-exact. |
-| `psnr.c`, `psnr.h`, `float_psnr.c` | [psnr](AGENTS.d/psnr.md) | PSNR bucket lint shape, cross-backend enable_chroma parity, and uncapped options. |
+| `psnr.c`, `psnr.h`, `float_psnr.c`, `integer_psnr.c`, `psnr_score.h` | [psnr](AGENTS.d/psnr.md) | PSNR bucket lint shape, cross-backend enable_chroma parity, and uncapped options. |
 | `common/convolution_internal.h`, `common/convolution.c` | [reflect-padding](AGENTS.d/reflect-padding.md) | Reflect-101 mirror padding loops, short circuits, and border clamping contracts. |
-| `feature_extractor.h`, `feature_collector.h` | [shared-headers](AGENTS.d/shared-headers.md) | Shared C/C++ headers must declare one enum definition, never a C++-only narrow enum. |
+| `feature_extractor.h`, `feature_collector.h` | [shared-headers](AGENTS.d/shared-headers.md) | Shared C/C++ headers must declare one enum definition, never C++-only narrow enum. |
 | `simd_dx.h` | [simd-dx](AGENTS.d/simd-dx.md) | SIMD DX framework macros and recurring vector kernel patterns across targets. |
 | `speed_internal.c`, `speed_internal.h` | [speed-internal](AGENTS.d/speed-internal.md) | speed_internal shared helper TU wiring, matrix multiplication dispatch, and CUDA dependencies. |
 | `speed.c`, `speed_cov.h`, `speed_givens.h`, `/core/test/test_speed_upstream_form.c` | [speed](AGENTS.d/speed.md) | SpEED buffer allocation, chroma dimensions, anti-alias decimation, covariance sums, Netflix's fp64 expressions. |

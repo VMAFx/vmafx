@@ -43,9 +43,15 @@
 #ifndef FEATURE_HIP_SPEED_SPEED_HIP_DEVICE_H_
 #define FEATURE_HIP_SPEED_SPEED_HIP_DEVICE_H_
 
+#ifdef __cplusplus
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#else
 #include <math.h>
 #include <stddef.h>
 #include <stdint.h>
+#endif
 
 /* The per-run contract every device-resident SpEED twin shares (geometry,
  * scoring constants, channel bindings, the per-frame result), filled at init
@@ -103,7 +109,7 @@
 
 /* Everything the kernels read, in device memory, written once at init.
  * Every kernel takes (const SpeedHipParams *, uint32_t binding_set). */
-typedef struct SpeedHipParams {
+struct SpeedHipParams {
     const uint8_t *raw; /* raw planes, raw_planes x plane_bytes */
     float *taps;        /* antialias[128], then lowpass[128] */
     /* lanczos4 prescale weights from the host: SPEED_HIP_LANCZOS_TAPS per
@@ -129,7 +135,10 @@ typedef struct SpeedHipParams {
     uint32_t lowpass_width;
     uint32_t cov_group; /* covariance work-group size, a power of two */
     uint32_t reserved;
-} SpeedHipParams;
+};
+#ifndef __cplusplus
+typedef struct SpeedHipParams SpeedHipParams;
+#endif
 
 /* The host C compiler and hipcc must agree on every offset. */
 SPEED_HIP_STATIC_ASSERT(SPEED_HIP_N == SPEED_GPU_ELEMENTS, "SPEED_HIP_N is elements_in_block");
@@ -148,10 +157,13 @@ static inline SPEED_HD float speed_hd_fma(float a, float b, float c)
     return fmaf(a, b, c);
 }
 
-typedef struct SpeedHdFf {
+struct SpeedHdFf {
     float hi;
     float lo;
-} SpeedHdFf;
+};
+#ifndef __cplusplus
+typedef struct SpeedHdFf SpeedHdFf;
+#endif
 
 static inline SPEED_HD SpeedHdFf speed_hd_ff(float hi, float lo)
 {
@@ -192,12 +204,26 @@ static inline SPEED_HD SpeedHdFf speed_hd_ff_add(SpeedHdFf a, SpeedHdFf b)
     return speed_hd_quick_two_sum(first.hi, low.lo + first.lo);
 }
 
-/* (hi + lo) / divisor, rounded once to fp32. */
-static inline SPEED_HD float speed_hd_ff_div_to_float(SpeedHdFf value, float divisor)
+/* An element count as an exact fp32 pair: hi is the count rounded to fp32,
+ * lo the rest. lo is 0 up to 2^24 and exact above it (below 2^48). */
+static inline SPEED_HD SpeedHdFf speed_hd_count_ff(uint32_t count)
 {
-    const float quotient = value.hi / divisor;
-    const float remainder = speed_hd_fma(-quotient, divisor, value.hi);
-    const float correction = (remainder + value.lo) / divisor;
+    const float hi = (float)count;
+    return speed_hd_ff(hi, (float)((int64_t)count - (int64_t)hi));
+}
+
+/* (hi + lo) / (divisor.hi + divisor.lo), rounded to fp32. speed.c divides its
+ * accumulated sum by the exact size_t count; a count above 2^24 has no fp32 value,
+ * so its rest enters the remainder. With divisor.lo == 0 this is the one-float
+ * division bit for bit. */
+static inline SPEED_HD float speed_hd_ff_div_to_float(SpeedHdFf value, SpeedHdFf divisor)
+{
+    const float quotient = value.hi / divisor.hi;
+    float remainder = speed_hd_fma(-quotient, divisor.hi, value.hi) + value.lo;
+    if (divisor.lo != 0.0f) {
+        remainder = remainder - (quotient * divisor.lo);
+    }
+    const float correction = remainder / divisor.hi;
     return quotient + correction;
 }
 
@@ -461,8 +487,8 @@ static inline SPEED_HD float speed_hd_scale_sample(const SpeedHipParams *p, uint
 }
 
 /* ------------------------------------------------------------------ */
-/* Anti-alias filter at the decimated sample points: vif_filter1d_s()  */
-/* + vif_dec16_s() on x86, vif_filter1d_dec16_s() elsewhere; then the  */
+/* Anti-alias filter at the decimated sample points:                   */
+/* vif_filter1d_dec16_s() on every target (ad42c532); then the         */
 /* local mean subtraction and independent term of                      */
 /* filter_and_downscale() / compute_independent_term().                */
 /* ------------------------------------------------------------------ */
@@ -621,8 +647,8 @@ static inline SPEED_HD SpeedHdFf speed_hd_covariance_partial(const SpeedHipParam
 static inline SPEED_HD void speed_hd_covariance_store(const SpeedHipParams *p, uint32_t ch,
                                                       uint32_t x, uint32_t y, SpeedHdFf sum)
 {
-    const float count = (float)(p->geometry.sub_w * p->geometry.sub_h);
-    const float value = speed_hd_ff_div_to_float(sum, count);
+    const float value =
+        speed_hd_ff_div_to_float(sum, speed_hd_count_ff(p->geometry.sub_w * p->geometry.sub_h));
     float *matrix = p->cov + (size_t)ch * SPEED_HIP_MATRIX;
     matrix[x * SPEED_HIP_N + y] = value;
     matrix[y * SPEED_HIP_N + x] = value;
@@ -642,12 +668,15 @@ static inline SPEED_HD uint32_t speed_hd_covariance_group_size(uint32_t terms)
 /* + implicit-shift QR), regularity, matrix_qr_decomposition().        */
 /* ------------------------------------------------------------------ */
 
-typedef struct SpeedHdLanes {
+struct SpeedHdLanes {
     uint32_t lid;
     uint32_t count;
-} SpeedHdLanes;
+};
+#ifndef __cplusplus
+typedef struct SpeedHdLanes SpeedHdLanes;
+#endif
 
-typedef struct SpeedHdSlm {
+struct SpeedHdSlm {
     float *a;   /* tridiagonalisation work */
     float *cov; /* covariance, untouched */
     float *z;   /* QR working matrix */
@@ -659,7 +688,10 @@ typedef struct SpeedHdSlm {
     float *d;
     float *sd;
     float *scalar; /* [0] tau, [2] norm, [3] regular, [4] capped, [5] s, [6] beta */
-} SpeedHdSlm;
+};
+#ifndef __cplusplus
+typedef struct SpeedHdSlm SpeedHdSlm;
+#endif
 
 static inline SPEED_HD SpeedHdSlm speed_hd_slm_layout(float *base)
 {
@@ -860,11 +892,14 @@ static inline SPEED_HD void speed_hd_create_givens(float a, float b, float *c, f
     *c = b_larger ? other : unit;
 }
 
-typedef struct SpeedHdRotated {
+struct SpeedHdRotated {
     float ak;
     float bk;
     float ap;
-} SpeedHdRotated;
+};
+#ifndef __cplusplus
+typedef struct SpeedHdRotated SpeedHdRotated;
+#endif
 
 /* G' T G of qr_step_size2() / qr_step_general(), speed.c. */
 static inline SPEED_HD SpeedHdRotated speed_hd_rotate(float c, float s, float ap, float bp,
@@ -901,14 +936,17 @@ static inline SPEED_HD void speed_hd_qr_step_size2(float *d, float *sd, float x,
 }
 
 /* The chase state of qr_step_general(). */
-typedef struct SpeedHdChase {
+struct SpeedHdChase {
     float bk;
     float zk;
     float ap;
     float bp;
     float aq;
     float bq;
-} SpeedHdChase;
+};
+#ifndef __cplusplus
+typedef struct SpeedHdChase SpeedHdChase;
+#endif
 
 /* Step k of qr_step_general()'s bulge chase; returns the new (x, z) in the
  * chase's bk / zk. */
@@ -1203,9 +1241,7 @@ static inline SPEED_HD void speed_hd_block_statistics(const SpeedHipParams *p, u
 {
     const uint32_t blocks = p->geometry.blocks;
     const float *b = p->indterm + (size_t)ch * SPEED_HIP_N * blocks + block;
-    float solution[SPEED_HIP_N];
-    for (uint32_t i = 0u; i < SPEED_HIP_N; i++)
-        solution[i] = 0.0f;
+    float solution[SPEED_HIP_N] = {0.0f};
     if (p->status[(size_t)ch * 2u] == 0) {
         const size_t matrix = (size_t)ch * SPEED_HIP_MATRIX;
         speed_hd_solve_block(b, blocks, p->qmat + matrix, p->rmat + matrix, solution);

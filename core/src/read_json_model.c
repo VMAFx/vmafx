@@ -532,6 +532,209 @@ static int parse_model_dict_array_key(json_stream *s, VmafModel *model, const ch
     return 1;
 }
 
+/* Optional `conversion_target` block (Netflix/vmaf 1ddf81607): the colourspace
+ * (range, primaries, trc, matrix) the model's features are defined in, plus an
+ * optional pixel format and bit depth. Parsed here, consumed by
+ * vmaf_read_pictures() (core/src/conversion_policy.c). */
+typedef struct {
+    const char *name;
+    unsigned val;
+} ColorName;
+
+static const ColorName color_range_names[] = {
+    {"limited", VMAF_COLOR_RANGE_LIMITED},
+    {"full", VMAF_COLOR_RANGE_FULL},
+};
+
+static const ColorName color_primaries_names[] = {
+    {"bt709", VMAF_COLOR_PRIMARIES_BT709},
+    {"bt2020", VMAF_COLOR_PRIMARIES_BT2020},
+    {"smpte432", VMAF_COLOR_PRIMARIES_SMPTE432},
+};
+
+static const ColorName color_trc_names[] = {
+    {"bt709", VMAF_COLOR_TRC_BT709},
+    {"smpte2084", VMAF_COLOR_TRC_SMPTE2084},
+};
+
+static const ColorName color_matrix_names[] = {
+    {"bt709", VMAF_COLOR_MATRIX_BT709},
+    {"bt2020nc", VMAF_COLOR_MATRIX_BT2020_NCL},
+    {"ictcp", VMAF_COLOR_MATRIX_ICTCP},
+};
+
+static int parse_color_name(json_stream *s, const ColorName *names, size_t n_names, unsigned *val)
+{
+    if (json_next(s) != JSON_STRING)
+        return -EINVAL;
+    const char *name = json_get_string(s, NULL);
+    for (size_t i = 0; i < n_names; i++) {
+        if (!strcmp(name, names[i].name)) {
+            *val = names[i].val;
+            return 0;
+        }
+    }
+    return -EINVAL;
+}
+
+typedef struct {
+    const char *key;
+    const ColorName *names;
+    size_t n_names;
+} ColorField;
+
+#define COLOR_FIELD(key_, names_) {key_, names_, sizeof(names_) / sizeof(*(names_))}
+
+static const ColorField color_fields[] = {
+    COLOR_FIELD("range", color_range_names),
+    COLOR_FIELD("primaries", color_primaries_names),
+    COLOR_FIELD("trc", color_trc_names),
+    COLOR_FIELD("matrix", color_matrix_names),
+};
+
+static void set_color_field(VmafColor *color, size_t field, unsigned val)
+{
+    switch (field) {
+    case 0:
+        color->range = (enum VmafColorRange)val;
+        break;
+    case 1:
+        color->primaries = (enum VmafColorPrimaries)val;
+        break;
+    case 2:
+        color->trc = (enum VmafColorTransferCharacteristic)val;
+        break;
+    default:
+        color->matrix = (enum VmafColorMatrixCoefficients)val;
+        break;
+    }
+}
+
+/* Returns 1 when the key names a colour attribute and its value was parsed
+ * into the colour, 0 for another key, or a negative errno. */
+static int parse_colorspace_entry(json_stream *s, const char *key, VmafColor *color)
+{
+    for (size_t i = 0; i < sizeof(color_fields) / sizeof(*color_fields); i++) {
+        if (strcmp(key, color_fields[i].key) != 0)
+            continue;
+        unsigned val = 0;
+        const int err = parse_color_name(s, color_fields[i].names, color_fields[i].n_names, &val);
+        if (err)
+            return err;
+        set_color_field(color, i, val);
+        return 1;
+    }
+    return 0;
+}
+
+static int parse_colorspace(json_stream *s, VmafColor *color)
+{
+    while (json_peek(s) != JSON_OBJECT_END && !json_get_error(s)) {
+        if (json_next(s) != JSON_STRING)
+            return -EINVAL;
+        const char *key = json_get_string(s, NULL);
+        const int r = parse_colorspace_entry(s, key, color);
+        if (r < 0)
+            return r;
+        if (r == 0)
+            json_skip(s);
+    }
+
+    /* a conversion target must pin down all four attributes */
+    if (color->range == VMAF_COLOR_RANGE_UNKNOWN ||
+        color->primaries == VMAF_COLOR_PRIMARIES_UNKNOWN || color->trc == VMAF_COLOR_TRC_UNKNOWN ||
+        color->matrix == VMAF_COLOR_MATRIX_UNKNOWN) {
+        return -EINVAL;
+    }
+    return 0;
+}
+
+static int parse_conversion_target_pixel_format(json_stream *s, VmafModel *model)
+{
+    if (json_next(s) != JSON_STRING)
+        return -EINVAL;
+    const char *name = json_get_string(s, NULL);
+    if (!strcmp(name, "420")) {
+        model->conversion_target.pix_fmt = VMAF_PIX_FMT_YUV420P;
+    } else if (!strcmp(name, "422")) {
+        model->conversion_target.pix_fmt = VMAF_PIX_FMT_YUV422P;
+    } else if (!strcmp(name, "444")) {
+        model->conversion_target.pix_fmt = VMAF_PIX_FMT_YUV444P;
+    } else {
+        return -EINVAL;
+    }
+    return 0;
+}
+
+static int parse_conversion_target_bit_depth(json_stream *s, VmafModel *model)
+{
+    if (json_next(s) != JSON_NUMBER)
+        return -EINVAL;
+    const double bit_depth = json_get_number(s);
+    if (bit_depth < 8 || bit_depth > 16 || bit_depth != (double)(unsigned)bit_depth)
+        return -EINVAL;
+    model->conversion_target.bpc = (unsigned)bit_depth;
+    return 0;
+}
+
+static int parse_conversion_target_colorspace(json_stream *s, VmafModel *model)
+{
+    if (json_next(s) != JSON_OBJECT)
+        return -EINVAL;
+    VmafColor color = {0};
+    const int err = parse_colorspace(s, &color);
+    if (err)
+        return err;
+    json_skip_until(s, JSON_OBJECT_END);
+    model->conversion_target.color = color;
+    return 0;
+}
+
+static int parse_conversion_target_entry(json_stream *s, VmafModel *model, const char *key,
+                                         bool *have_colorspace)
+{
+    if (!strcmp(key, "colorspace")) {
+        *have_colorspace = true;
+        return parse_conversion_target_colorspace(s, model);
+    }
+    if (!strcmp(key, "pixel_format"))
+        return parse_conversion_target_pixel_format(s, model);
+    if (!strcmp(key, "bit_depth"))
+        return parse_conversion_target_bit_depth(s, model);
+    json_skip(s);
+    return 0;
+}
+
+static int parse_conversion_target(json_stream *s, VmafModel *model)
+{
+    bool have_colorspace = false;
+    memset(&model->conversion_target, 0, sizeof(model->conversion_target));
+    while (json_peek(s) != JSON_OBJECT_END && !json_get_error(s)) {
+        if (json_next(s) != JSON_STRING)
+            return -EINVAL;
+        const char *key = json_get_string(s, NULL);
+        const int err = parse_conversion_target_entry(s, model, key, &have_colorspace);
+        if (err)
+            return err;
+    }
+
+    if (!have_colorspace)
+        return -EINVAL;
+    model->conversion_target.enabled = true;
+    return 0;
+}
+
+static int parse_model_dict_conversion_target(json_stream *s, VmafModel *model)
+{
+    if (json_next(s) != JSON_OBJECT)
+        return -EINVAL;
+    const int err = parse_conversion_target(s, model);
+    if (err)
+        return err;
+    json_skip_until(s, JSON_OBJECT_END);
+    return 0;
+}
+
 static int parse_model_dict_entry(json_stream *s, VmafModel *model, enum VmafModelFlags flags,
                                   const char *key)
 {
@@ -545,6 +748,8 @@ static int parse_model_dict_entry(json_stream *s, VmafModel *model, enum VmafMod
         return parse_model_dict_score_clip(s, model, flags);
     if (!strcmp(key, "chroma_correction_parameter"))
         return parse_model_dict_chroma_correction(s, model);
+    if (!strcmp(key, "conversion_target"))
+        return parse_model_dict_conversion_target(s, model);
 
     int r = parse_model_dict_array_key(s, model, key);
     if (r <= 0)
@@ -648,17 +853,20 @@ static int vmaf_read_json_model(VmafModel **model, VmafModelConfig *cfg, json_st
     /* ADR-1755: the loader's caller is the first owner. */
     if (vmaf_ref_init(&m->owners) != 0) {
         err = -ENOMEM;
-    } else if (!(m->name = vmaf_model_generate_name(cfg))) {
-        err = -ENOMEM;
     } else {
-        VmafThreadLocaleState *locale_state = vmaf_thread_locale_push_c();
+        m->name = vmaf_model_generate_name(cfg);
+        if (m->name) {
+            VmafThreadLocaleState *locale_state = vmaf_thread_locale_push_c();
 
-        err = model_parse(s, m, cfg->flags);
+            err = model_parse(s, m, cfg->flags);
 
-        vmaf_thread_locale_pop(locale_state);
+            vmaf_thread_locale_pop(locale_state);
 
-        if (!err)
-            return 0;
+            if (!err)
+                return 0;
+        } else {
+            err = -ENOMEM;
+        }
     }
 
     /* Leak-free teardown on parse failure. `vmaf_model_destroy`

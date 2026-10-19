@@ -36,6 +36,15 @@ divided by 4, 16 or 256 for 10, 12 and 16 bits and read any other high depth as
 5. The twins stay bit-identical to the CPU (`float_psnr`) or within `1e-9` (`ciede`,
    libm) at the new depths: `test_{cuda,hip,sycl}_float_psnr_parity` and
    `test_{cuda,hip,sycl}_ciede_parity` carry the depths.
+6. The guard master added in the meantime (`refuse_unscaled_bpc()` in
+   `core/src/feature/feature_extractor.cpp`, which refused 9, 11, 13, 14 and
+   15 bits for the five `picture_copy()` families on every backend) now refuses
+   them for the device twins only. The CPU extractors score those depths; the
+   CUDA, SYCL, HIP and Metal twins of `float_ssim`, `float_ms_ssim`,
+   `float_adm`, `float_vif` and `float_motion` read the words themselves and
+   were not compared with the CPU there, so they stay refused until they are
+   (`T-FLOAT-EXTRACTORS-ODD-DEPTH-TWINS-UNMEASURED-2026-10-07`).
+   `test_read_pictures_bpc` holds both sides.
 
 ## Alternatives considered
 

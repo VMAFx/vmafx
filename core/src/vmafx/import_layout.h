@@ -33,18 +33,23 @@
 #define VMAFX_V210_PIXELS 6u
 #define VMAFX_V210_GROUP 16u
 
-/* How a producer lays out one pixel format vmafx_frame_import() takes. */
+/* NOLINTBEGIN(modernize-use-using,performance-enum-size): C header included by C
+ * and C++ translation units (cli_parse.cpp through import_layouts_gen.h); C cannot
+ * spell `using` or fixed underlying enum types across required toolchains. ADR-1138. */
+
+/* How a producer lays out one pixel format vmafx_frame_import() takes. The
+ * members are ordered by alignment so the struct carries no padding. */
 typedef struct VmafxImportLayout {
+    const char *name;    /* FFmpeg's name, for messages */
     uint32_t pix_fmt;    /* VmafxPixelFormat the producer hands over */
     uint32_t planar_fmt; /* VmafxPixelFormat of the frame it makes */
     uint32_t n_planes;   /* planes the producer hands over */
     uint32_t bpc_min;
     uint32_t bpc_max;
     uint32_t shift;       /* right shift of every sample (P010: 6) */
-    bool interleaved;     /* plane 1 holds Cb / Cr pairs */
-    const char *name;     /* FFmpeg's name, for messages */
     uint32_t packed;      /* VmafxImportPacked: one plane of packed Y, Cb, Cr */
     uint8_t elem[3];      /* packed: element of a group that holds Y, Cb, Cr */
+    bool interleaved;     /* plane 1 holds Cb / Cr pairs */
     bool msb;             /* the `bpc` most significant bits of 16-bit words (shift 16 - bpc) */
     uint8_t rgb_elems;    /* RGB: elements per pixel (3, or 4 with an alpha sample) */
     bool needs_statement; /* RGB: accepted only with matrix, range and transfer (ADR-2146) */
@@ -67,6 +72,8 @@ typedef enum VmafxImportPacked {
      * elements per pixel; converted to Y'CbCr by rgb_convert.h (ADR-2146). */
     VMAFX_IMPORT_PACKED_RGB = 5
 } VmafxImportPacked;
+
+/* NOLINTEND(modernize-use-using,performance-enum-size) */
 
 /* The right shift of every sample of a frame of `bpc` bits in `layout`. */
 static inline uint32_t vmafx_import_shift(const VmafxImportLayout *layout, uint32_t bpc)

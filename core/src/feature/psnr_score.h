@@ -83,16 +83,46 @@ static inline double vmaf_psnr_from_mse(double mse, double peak_sq, double psnr_
     return 10. * log10(peak_sq / floored);
 }
 
+/* The SSE of one plane summed over every frame of a clip, as a 128-bit
+ * integer (hi * 2^64 + lo). One frame's SSE is below 2^62 (at most 2^30
+ * samples of at most 65535^2), but a clip of them is not: at 16 bits with
+ * every sample at the maximum difference a 64-bit sum wraps at frame 2072
+ * of 1080p, 122 of 8K and 33 of 16K
+ * (T-PSNR-APSNR-CLIP-SSE-UINT64-WRAP-2026-10-05). */
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no `using`. ADR-1138. */
+typedef struct VmafPsnrClipSse {
+    uint64_t lo;
+    uint64_t hi;
+} VmafPsnrClipSse;
+/* NOLINTEND(modernize-use-using) */
+
+/* Add one frame's SSE to the clip sum, carrying into the high word. */
+static inline void vmaf_psnr_clip_sse_add(VmafPsnrClipSse *sum, uint64_t frame_sse)
+{
+    const uint64_t lo = sum->lo + frame_sse;
+    sum->hi += (lo < frame_sse) ? 1u : 0u;
+    sum->lo = lo;
+}
+
+/* The clip sum as a double: (double)lo while hi is 0, so a clip that never
+ * passed 2^64 gives the bits the 64-bit sum gave. */
+static inline double vmaf_psnr_clip_sse_value(VmafPsnrClipSse sum)
+{
+    if (sum.hi == 0u)
+        return (double)sum.lo;
+    return ((double)sum.hi * 18446744073709551616.0) + (double)sum.lo;
+}
+
 /* Clip-aggregate APSNR over the SSE and sample count summed across every
  * frame of one plane. An all-zero SSE reports that plane's psnr_max; any
  * other value is capped at 10 * log10(peak^2 * n_pixels), rounded up. */
-static inline double vmaf_psnr_aggregate(uint32_t peak, uint64_t sse, uint64_t n_pixels,
+static inline double vmaf_psnr_aggregate(uint32_t peak, VmafPsnrClipSse sse, uint64_t n_pixels,
                                          double psnr_max)
 {
-    if (sse == 0u)
+    if (sse.lo == 0u && sse.hi == 0u)
         return psnr_max;
-    const double apsnr =
-        10 * (log10((double)peak * (double)peak) + log10((double)n_pixels) - log10((double)sse));
+    const double apsnr = 10 * (log10((double)peak * (double)peak) + log10((double)n_pixels) -
+                               log10(vmaf_psnr_clip_sse_value(sse)));
     const double max_apsnr = ceil(10 * log10((double)peak * (double)peak * (double)n_pixels));
     return apsnr < max_apsnr ? apsnr : max_apsnr;
 }

@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD041 MD060 -->
 # ADR-0989: Wire motion_add_uv through integer_motion_sycl; emit warning on motion_five_frame_window
 
-- **Status**: Accepted
+- **Status**: Accepted (Superseded-in-part 2026-10-06 by [ADR-1371](1371-sycl-motion-diff-first-pipeline.md) for the ping-pong blur of the U and V planes in the SYCL motion twin)
 - **Date**: 2026-06-03
 - **Deciders**: Lusoris
 - **Tags**: `sycl`, `motion`, `feature-extractor`, `gpu`

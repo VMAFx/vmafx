@@ -1,10 +1,11 @@
 <!-- markdownlint-disable MD060 -->
 # `vmaf-tune --score-backend` — GPU acceleration of the scoring loop
 
-`--score-backend` picks the libvmaf backend (`cuda`, `sycl`, `hip` or `cpu`)
-that scores every encoded variant, so the score axis of a sweep runs on a
-GPU while the encode axis stays unchanged. The default, `auto`, probes the
-host and takes the fastest backend it finds. This page is the reference for
+`--score-backend` picks the libvmaf backend (`cuda`, `sycl`, `hip`, `metal`
+or `cpu`) that scores every encoded variant, so the score axis of a sweep runs
+on a GPU while the encode axis stays unchanged. The default, `auto`, asks the
+local `vmaf` binary which backends it can run here and takes the first GPU
+backend among them. This page is the reference for
 the flag; the tool overview is in [`vmaf-tune.md`](vmaf-tune.md).
 
 ## Usage
@@ -41,11 +42,12 @@ the encoder profile and does not score anything.
 
 | Value | Behaviour |
 |---|---|
-| `auto` | Probe the host and pick the first usable backend in the order `cuda`, `sycl`, `hip`, `cpu`. Falls back to CPU only because no GPU was found. |
-| `cuda` | NVIDIA GPU. Errors out if the local `vmaf` was built without CUDA, or if `nvidia-smi` is missing or reports no device. |
-| `sycl` | Intel oneAPI SYCL. Errors out if `vmaf` was built without SYCL, or if `sycl-ls` lists no GPU device. |
-| `hip` | AMD ROCm. Errors out if `vmaf` was built without HIP, or if `rocminfo` / `rocm-smi` cannot see an AMD GPU. |
-| `cpu` | Force the CPU path. Always available; use it as the reference when chasing a numeric divergence or to match the Netflix golden-data gate. |
+| `auto` | Pick the first usable backend in the order `cuda`, `sycl`, `hip`, `metal`, `cpu`. Lands on CPU only when the binary reports no usable GPU backend. |
+| `cuda` | NVIDIA GPU. Errors out unless `vmaf --list-backends` reports `cuda` usable: built with CUDA and a CUDA device initialised. |
+| `sycl` | Intel oneAPI SYCL. Errors out unless `vmaf --list-backends` reports `sycl` usable. |
+| `hip` | AMD ROCm. Errors out unless `vmaf --list-backends` reports `hip` usable. |
+| `metal` | Apple Silicon. Errors out unless `vmaf --list-backends` reports `metal` usable. |
+| `cpu` | Force the CPU path. Always available, without asking the binary; use it as the reference when chasing a numeric divergence or to match the Netflix golden-data gate. |
 
 !!! note "Vulkan is gone"
     The `vulkan` backend was removed in
@@ -60,43 +62,59 @@ the encoder profile and does not score anything.
   the host does offer (the error is `BackendUnavailableError`). It never falls
   back to CPU, so a "GPU sweep" cannot quietly produce CPU numbers.
 - **`auto` walks the chain.** It takes the first backend that the local `vmaf`
-  binary advertises in `--help` **and** that a vendor tool confirms on the
-  host.
+  binary reports as usable.
 
 ```text
 vmaf-tune: backend 'cuda' requested but not available on this host
-(available: cpu). Check that the local vmaf binary was built with the
-matching backend support and the corresponding runtime/driver is
-installed.
+(available: cpu). Run `vmaf --list-backends`: the backend must be compiled
+into the vmaf binary and initialise on this host.
 ```
 
 The strict failure exits with code `2` for the subcommands that resolve the
 backend up front. The ADR-0299 guarantee (no silent downgrade) holds for all
 four values.
 
-## How the host is probed
+## How the backends are found
 
-`vmaf-tune` reads the `vmaf --help` output to learn which backends the binary
-supports. The CLI prints a line of the form
-`--backend $name: ...auto|cpu|cuda|sycl|hip`. It then runs one cheap hardware
-probe per backend:
+`vmaf-tune` runs `vmaf --list-backends` once and uses its answer
+([ADR-1874](../adr/1874-vmaf-list-backends.md)). The report lists every
+backend the CLI knows, whether it is compiled into that binary, and whether
+its state initialises on this host, the same call a scoring run makes:
 
-| Backend | Probe passes when |
-|---|---|
-| CUDA | `nvidia-smi -L` returns at least one `GPU` line. |
-| SYCL | `sycl-ls` lists at least one `:gpu` device. |
-| HIP | `rocminfo` reports a `gfx*` agent, or `rocm-smi` reports a GPU. |
+```shell
+vmaf --list-backends
+```
 
-A missing tool means "backend not available", never a hard error. CPU is
-always available, even when the help line is missing.
+```json
+{
+  "backends": [
+    {"name": "cpu", "compiled": true, "usable": true},
+    {"name": "cuda", "compiled": true, "usable": true},
+    {"name": "sycl", "compiled": false, "usable": false},
+    {"name": "hip", "compiled": true, "usable": false, "init_status": -19},
+    {"name": "metal", "compiled": false, "usable": false}
+  ]
+}
+```
 
-!!! note "Probe order differs from libvmaf"
-    The vmaf-tune order (`cuda`, `sycl`, `hip`, `cpu`) is not the libvmaf
-    registry order (`sycl`, `cuda`, `hip`, `cpu`). vmaf-tune probes CUDA first
-    because `nvidia-smi` is the most reliable availability check
+`init_status` is the negative errno the backend's initialiser returned. Vendor
+tools such as `nvidia-smi` are not consulted: a CPU-only `vmaf` on a GPU host
+reports no usable GPU backend, so `auto` scores on the CPU instead of picking a
+backend the binary would refuse. A `vmaf` built before this option rejects it;
+`vmaf-tune` then treats only `cpu` as usable and logs a warning naming the
+reason. Use the `vmaf` from the same tree as `vmaf-tune`.
+
+`vmafx-tune` (the Go tool) reads the same report through `pkg/scorebackend`
+and makes the same choices; both selectors replay the cases in
+`testdata/score_backend_selection.json`.
+
+!!! note "Order differs from libvmaf"
+    The `auto` order (`cuda`, `sycl`, `hip`, `metal`, `cpu`) is not the
+    libvmaf registry order (`sycl`, `cuda`, `hip`, `cpu`)
     ([ADR-0667](../adr/0667-vmaf-tune-score-backend-native-priority.md)).
-    On a host with both, `auto` can therefore pick a different backend than a
-    direct `vmaf --backend auto`, so keep that in mind when comparing timings.
+    On a host with several usable backends, `auto` can therefore pick a
+    different backend than a direct `vmaf --backend auto`, so keep that in
+    mind when comparing timings.
 
 ## Performance
 
@@ -126,8 +144,8 @@ bandwidth.
 vmaf-tune corpus --source ref.yuv --width 1920 --height 1080 \
     --preset medium --crf 22 --crf 28
 
-# Force CUDA. Fails clearly if nvidia-smi is missing or the vmaf binary
-# was built without CUDA support.
+# Force CUDA. Fails clearly unless `vmaf --list-backends` reports cuda
+# usable (built with CUDA and a CUDA device initialised).
 vmaf-tune corpus --source ref.yuv --width 1920 --height 1080 \
     --preset medium --crf 22 --score-backend cuda
 
@@ -170,6 +188,9 @@ For a strict comparison, run the same corpus twice, once with
 - [ADR-0667](../adr/0667-vmaf-tune-score-backend-native-priority.md): added
   HIP/ROCm and the native-first `auto` order.
 - [ADR-0726](../adr/0726-drop-vulkan-backend.md): removed Vulkan (2026-05-28).
+- [ADR-1874](../adr/1874-vmaf-list-backends.md): availability comes from
+  `vmaf --list-backends`; `metal` joins the accepted values and the `auto`
+  chain.
 
 ## See also
 

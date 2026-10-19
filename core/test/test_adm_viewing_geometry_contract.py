@@ -114,7 +114,10 @@ class AdmViewingGeometryContractTest(unittest.TestCase):
 
     def test_metal_parity_harness_releases_each_resource_once(self) -> None:
         source = (TEST_ROOT / "test_metal_integer_adm_parity.c").read_text(encoding="utf-8")
-        context = function_body(source, "adm_context")
+        # adm_context() registers through use_adm(), once per registration
+        # (two for the merged viewing distances of ADR-2795).
+        self.assertIn("use_adm(", function_body(source, "adm_context"))
+        context = function_body(source, "use_adm")
         registration = context.find("vmaf_use_feature(")
         dict_free = context.find("vmaf_feature_dictionary_free(&opts)")
         self.assertGreaterEqual(registration, 0)
@@ -132,6 +135,19 @@ class AdmViewingGeometryContractTest(unittest.TestCase):
         self.assertGreaterEqual(init, 0)
         self.assertGreater(skipped, init)
         self.assertGreater(unavailable_return, skipped)
+
+    def test_all_backends_name_refusal_via_shared_guard(self) -> None:
+        sources = {
+            "integer_adm.c": '"adm"',
+            "cuda/integer_adm_cuda.c": '"adm_cuda"',
+            "hip/integer_adm_hip.c": '"adm_hip"',
+            "sycl/integer_adm_sycl.cpp": '"adm_sycl"',
+            "metal/integer_adm_metal_host.c": '"adm_metal"',
+        }
+        for path, extractor in sources.items():
+            with self.subTest(path=path):
+                content = (FEATURE_ROOT / path).read_text(encoding="utf-8")
+                self.assertIn(f"adm_viewing_geometry_check({extractor}", content)
 
 
 if __name__ == "__main__":

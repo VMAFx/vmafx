@@ -191,10 +191,12 @@ struct CmNeighbours {
 __device__ __forceinline__ CmNeighbours i4_cm_neighbours(int pos, int n, int lo_border,
                                                          int hi_border)
 {
-    /* Positional, not designated: nvcc's MSVC host frontend rejects C++20
-     * designated initializers in device code (error: expected an expression).
-     * Order is CmNeighbours{lo, hi}. */
-    CmNeighbours nb = {pos - 1, pos + 1};
+    /* Filled field by field: nvcc's MSVC host frontend rejects C++20
+     * designated initializers in device code (error: expected an expression),
+     * and clang-tidy asks for them on a positional brace list. */
+    CmNeighbours nb;
+    nb.lo = pos - 1;
+    nb.hi = pos + 1;
     if (pos == 0 && lo_border <= 0) {
         nb.lo = pos + 1;
     } else if (pos == (n - 1) && hi_border > (n - 1)) {
@@ -238,24 +240,19 @@ __device__ __forceinline__ I4CmParams i4_cm_params(const AdmBufferCuda &buf,
     const uint32_t shift_cub = __float2uint_ru(__log2f((float)w));
     const uint32_t shift_inner_accum = __float2uint_ru(__log2f((float)h));
     const int rfactor_base = scale * 3;
-    /* Positional, not designated, for the same reason as i4_cm_neighbours above.
-     * Field order is I4CmParams{ref, dis, rfactor, adm_enhn_gain_limit, cube,
-     * shift_inner_accum, add_shift_inner_accum} and
-     * CmCubeShifts{add_shift_sq, shift_sq, add_shift_cub, shift_cub}. */
-    return {
-        &buf.i4_ref_dwt2,                /* ref */
-        &buf.i4_dis_dwt2,                /* dis */
-        &params.i_rfactor[rfactor_base], /* rfactor */
-        params.adm_enhn_gain_limit,      /* adm_enhn_gain_limit */
-        {
-            536870912,                        /* cube.add_shift_sq = 1 << 29 */
-            30,                               /* cube.shift_sq */
-            (int32_t)(1u << (shift_cub - 1)), /* cube.add_shift_cub */
-            shift_cub,                        /* cube.shift_cub */
-        },
-        shift_inner_accum,                        /* shift_inner_accum */
-        (int32_t)(1u << (shift_inner_accum - 1)), /* add_shift_inner_accum */
-    };
+    /* Filled field by field, for the same reason as i4_cm_neighbours above. */
+    I4CmParams p;
+    p.ref = &buf.i4_ref_dwt2;
+    p.dis = &buf.i4_dis_dwt2;
+    p.rfactor = &params.i_rfactor[rfactor_base];
+    p.adm_enhn_gain_limit = params.adm_enhn_gain_limit;
+    p.cube.add_shift_sq = 536870912; /* 1 << 29 */
+    p.cube.shift_sq = 30;
+    p.cube.add_shift_cub = (int32_t)(1u << (shift_cub - 1));
+    p.cube.shift_cub = shift_cub;
+    p.shift_inner_accum = shift_inner_accum;
+    p.add_shift_inner_accum = (int32_t)(1u << (shift_inner_accum - 1));
+    return p;
 }
 
 /* coeff * |v| in the 2^32 fixed point of the scale 1-3 CM threshold. */
@@ -418,29 +415,27 @@ __device__ __forceinline__ S0CmParams s0_cm_params(const AdmBufferCuda &buf,
                                                    const AdmFixedParametersCuda &params, int h,
                                                    int src_stride)
 {
-    /* Positional: see i4_cm_neighbours. Field order is
-     * S0CmParams{ref, dis, i_rfactor, adm_enhn_gain_limit, h, src_stride}. */
-    return {
-        &buf.ref_dwt2,              /* ref */
-        &buf.dis_dwt2,              /* dis */
-        params.i_rfactor,           /* i_rfactor */
-        params.adm_enhn_gain_limit, /* adm_enhn_gain_limit */
-        h,                          /* h */
-        src_stride,                 /* src_stride */
-    };
+    /* Filled field by field: see i4_cm_neighbours. */
+    S0CmParams p;
+    p.ref = &buf.ref_dwt2;
+    p.dis = &buf.dis_dwt2;
+    p.i_rfactor = params.i_rfactor;
+    p.adm_enhn_gain_limit = params.adm_enhn_gain_limit;
+    p.h = h;
+    p.src_stride = src_stride;
+    return p;
 }
 
 /* The host-computed cubic-accumulation shifts of scale-0 band `band`. */
 __device__ __forceinline__ CmCubeShifts s0_cm_cube_shifts(const WarpShift &ws, int band)
 {
-    /* Positional: see i4_cm_neighbours. Field order is
-     * CmCubeShifts{add_shift_sq, shift_sq, add_shift_cub, shift_cub}. */
-    return {
-        (int32_t)ws.add_shift_sq[band],  /* add_shift_sq */
-        ws.shift_sq[band],               /* shift_sq */
-        (int32_t)ws.add_shift_cub[band], /* add_shift_cub */
-        ws.shift_cub[band],              /* shift_cub */
-    };
+    /* Filled field by field: see i4_cm_neighbours. */
+    CmCubeShifts c;
+    c.add_shift_sq = (int32_t)ws.add_shift_sq[band];
+    c.shift_sq = ws.shift_sq[band];
+    c.add_shift_cub = (int32_t)ws.add_shift_cub[band];
+    c.shift_cub = ws.shift_cub[band];
+    return c;
 }
 
 /* Row `pos` of a scale-0 band reflected into the band: -1 mirrors to 1, h
@@ -505,18 +500,19 @@ __device__ __forceinline__ void s0_dlm_thresholds(const S0CmParams &p, int16_t *
 /* Warp-reduce each output row of a scale-0 thread and add the row's rounded
  * total to the band accumulator. */
 template <int rows_per_thread>
-__device__ __forceinline__ void s0_cm_flush_rows(const int64_t (&accum_row)[rows_per_thread], int y,
-                                                 int end_row, int64_t *band_accum,
+__device__ __forceinline__ void s0_cm_flush_rows(const uint64_cu (&accum_row)[rows_per_thread],
+                                                 int y, int end_row, int64_t *band_accum,
                                                  const uint32_t shift_inner_accum,
                                                  const uint32_t add_shift_inner_accum)
 {
 #pragma unroll
     for (int row = 0; row < rows_per_thread; ++row) {
-        const int64_t row_total = warp_reduce(accum_row[row]);
+        /* Unsigned: a scale-0 row can pass INT64_MAX (adm_cm_round_row_total_s0()). */
+        const uint64_cu row_total = warp_reduce_u64(accum_row[row]);
         if (threadIdx.x == 0 && (y + row) < end_row) {
-            const int64_t shifted =
-                adm_cm_round_row_total(row_total, add_shift_inner_accum, shift_inner_accum);
-            atomicAdd_int64(band_accum, shifted);
+            const uint64_cu shifted =
+                adm_cm_round_row_total_s0(row_total, add_shift_inner_accum, shift_inner_accum);
+            atomicAdd(reinterpret_cast<uint64_cu *>(band_accum), shifted);
         }
     }
 }
@@ -538,7 +534,7 @@ adm_cm_line_kernel(const AdmBufferCuda &buf, int h, int w, int start_row, int en
     const CmCubeShifts cube = s0_cm_cube_shifts(ws, band2);
     const int32_t shift_sub_block = shift_sub[blockIdx.z];
 
-    int64_t accum_row[rows_per_thread] = {0};
+    uint64_cu accum_row[rows_per_thread] = {0};
 
     for (int x = start_col + (int)threadIdx.x; x < end_col; x += (int)blockDim.x) {
         /* ADR-1210's asymmetric rule, as the CPU's adm_cm_thresh(): x - 1 mirrors
@@ -558,7 +554,7 @@ adm_cm_line_kernel(const AdmBufferCuda &buf, int h, int w, int start_row, int en
             }
             const int32_t accum_thread = adm_cm_excess_s0(int32_t(p.i_rfactor[blockIdx.z] * sb),
                                                           thr[row], (uint32_t)shift_sub_block);
-            accum_row[row] += cm_cube(accum_thread, cube);
+            accum_row[row] += static_cast<uint64_cu>(cm_cube(accum_thread, cube));
         }
     }
 
@@ -872,7 +868,7 @@ __device__ __forceinline__ void adm_cm_aim_line_kernel(
     const CmCubeShifts cube = s0_cm_cube_shifts(ws, band2);
     const int32_t shift_sub_block = shift_sub[blockIdx.z];
 
-    int64_t accum_row[rows_per_thread] = {0};
+    uint64_cu accum_row[rows_per_thread] = {0};
 
     for (int x = start_col + (int)threadIdx.x; x < end_col; x += (int)blockDim.x) {
         /* Reflected x-positions for the 3 columns (matches adm_cm_line_kernel).
@@ -891,7 +887,7 @@ __device__ __forceinline__ void adm_cm_aim_line_kernel(
             }
             const int32_t accum_thread_val =
                 adm_cm_excess_s0(aim_signal, thr[row], (uint32_t)shift_sub_block);
-            accum_row[row] += cm_cube(accum_thread_val, cube);
+            accum_row[row] += static_cast<uint64_cu>(cm_cube(accum_thread_val, cube));
         }
     }
 

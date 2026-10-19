@@ -260,9 +260,11 @@ static inline bool iadm_angle_flag(long ot_dp, long o_mag_sq, long t_mag_sq)
 /* ------------------------------------------------------------------ */
 static inline bool iadm_angle_flag_s0(int oh, int ov, int th, int tv)
 {
-    int ot_dp = oh * th + ov * tv;
-    int o_mag_sq = oh * oh + ov * ov;
-    int t_mag_sq = th * th + tv * tv;
+    /* The sums reach 2^31 at the corners of the int16 range (all four bands at -32768): int64
+     * as the CPU's are, each int product alone fits int. */
+    long ot_dp = (long)(oh * th) + (long)(ov * tv);
+    long o_mag_sq = (long)(oh * oh) + (long)(ov * ov);
+    long t_mag_sq = (long)(th * th) + (long)(tv * tv);
     return iadm_angle_flag(ot_dp, o_mag_sq, t_mag_sq);
 }
 

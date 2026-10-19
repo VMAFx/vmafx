@@ -9,6 +9,7 @@ RES = innerProd(MAT);
 
 #define V4_COMPAT
 #include <matrix.h>
+#include <mex.h>
 
 #include <stdio.h>
 #include <ctype.h>

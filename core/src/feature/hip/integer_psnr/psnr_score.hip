@@ -32,7 +32,7 @@
  */
 
 #include <hip/hip_runtime.h>
-#include <stdint.h>
+#include <cstdint>
 
 #define BLOCK_X 16
 #define BLOCK_Y 16
@@ -69,21 +69,21 @@ __global__ void calculate_psnr_hip_kernel_8bpc(const uint8_t *__restrict__ ref,
     /* Warp-reduce my_se via two uint32 shuffles — uses runtime warpSize
      * to handle wave64 (GCN/RDNA1) and wave32 (RDNA2+). */
     uint32_t lo = (uint32_t)my_se;
-    uint32_t hi = (uint32_t)(my_se >> 32);
-    for (int off = (int)warpSize / 2; off > 0; off >>= 1) {
+    uint32_t hi = (uint32_t)(my_se >> 32u);
+    for (unsigned off = (unsigned)warpSize / 2u; off > 0u; off >>= 1u) {
         const uint32_t tlo = __shfl_down(lo, off);
         const uint32_t thi = __shfl_down(hi, off);
-        const uint64_t other = ((uint64_t)thi << 32) | tlo;
-        const uint64_t self = ((uint64_t)hi << 32) | lo;
+        const uint64_t other = ((uint64_t)thi << 32u) | tlo;
+        const uint64_t self = ((uint64_t)hi << 32u) | lo;
         const uint64_t sum = self + other;
         lo = (uint32_t)sum;
-        hi = (uint32_t)(sum >> 32);
+        hi = (uint32_t)(sum >> 32u);
     }
 
     const unsigned lid = threadIdx.y * blockDim.x + threadIdx.x;
     const unsigned lane = lid % (unsigned)warpSize;
     if (lane == 0) {
-        const uint64_t warp_sum = ((uint64_t)hi << 32) | lo;
+        const uint64_t warp_sum = ((uint64_t)hi << 32u) | lo;
         atomicAdd(sse, (unsigned long long)warp_sum);
     }
 }
@@ -110,21 +110,21 @@ __global__ void calculate_psnr_hip_kernel_16bpc(const uint8_t *__restrict__ ref,
     }
 
     uint32_t lo = (uint32_t)my_se;
-    uint32_t hi = (uint32_t)(my_se >> 32);
-    for (int off = (int)warpSize / 2; off > 0; off >>= 1) {
+    uint32_t hi = (uint32_t)(my_se >> 32u);
+    for (unsigned off = (unsigned)warpSize / 2u; off > 0u; off >>= 1u) {
         const uint32_t tlo = __shfl_down(lo, off);
         const uint32_t thi = __shfl_down(hi, off);
-        const uint64_t other = ((uint64_t)thi << 32) | tlo;
-        const uint64_t self = ((uint64_t)hi << 32) | lo;
+        const uint64_t other = ((uint64_t)thi << 32u) | tlo;
+        const uint64_t self = ((uint64_t)hi << 32u) | lo;
         const uint64_t sum = self + other;
         lo = (uint32_t)sum;
-        hi = (uint32_t)(sum >> 32);
+        hi = (uint32_t)(sum >> 32u);
     }
 
     const unsigned lid = threadIdx.y * blockDim.x + threadIdx.x;
     const unsigned lane = lid % (unsigned)warpSize;
     if (lane == 0) {
-        const uint64_t warp_sum = ((uint64_t)hi << 32) | lo;
+        const uint64_t warp_sum = ((uint64_t)hi << 32u) | lo;
         atomicAdd(sse, (unsigned long long)warp_sum);
     }
 }

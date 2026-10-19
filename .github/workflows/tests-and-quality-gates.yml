@@ -15,38 +15,41 @@ on:
     # ADR-0331 — `ready_for_review` lets the per-job draft gate fire
     # CI when a draft PR is promoted to ready-for-review.
     types: [opened, synchronize, reopened, ready_for_review]
-    # ADR-0341 / Research-0089 §3.2: skip the full 10-job test matrix
-    # (Netflix golden + sanitizers + Tiny AI + coverage + MCP smoke +
-    # Vulkan parity gates) when only documentation paths change. The
-    # Required Checks Aggregator (ADR-0313) treats "workflow not
-    # reported" as path-filter-skipped/acceptable, so paths-ignore at
-    # the trigger level does NOT break branch protection. Conservative
-    # deny-list — `python/**`, `ai/**`, `mcp-server/**`, `core/**`,
-    # `testdata/**`, `model/**` (binaries), and `.github/workflows/`
-    # all still fire the gates because the corresponding test jobs
-    # consume them as inputs.
+    # No trigger-level paths-ignore: every required job of this workflow
+    # must report on every pull request (ADR-3293), and each job selects
+    # its own work through the CI tier and the impact planner (ADR-2169,
+    # ADR-1140). ADR-0341's docs-only paths-ignore no longer exists.
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.workflow }}-${{ github.ref == 'refs/heads/master' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
 
 env:
   DEBIAN_FRONTEND: noninteractive
 
 jobs:
+  tier:
+    name: CI tier (Tests)
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/ci-tier.yml
+
   # ===== Netflix golden-data gate (ADR-0024) =====
   # The 3 Netflix CPU test pairs (1 normal + 2 checkerboard) are the source of
   # truth for VMAF correctness. They MUST pass on every PR. No skips, no excuses.
   netflix-golden:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    needs: tier
+    if: needs.tier.outputs.light == 'true'
     # D24
     # required-aggregator
     name: Netflix CPU Golden
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -86,7 +89,7 @@ jobs:
             python3-pip
           # meson from PyPI: Ubuntu 24.04 ships meson 1.3.2, which predates `c23`
           # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
-          sudo pip3 install --break-system-packages --quiet --require-hashes \
+          sudo pip3 install --break-system-packages --ignore-installed --quiet --require-hashes \
             -r requirements/locks/build.txt
           python3 -m pip install --user --require-hashes \
             -r requirements/locks/package-build.txt
@@ -100,8 +103,10 @@ jobs:
         # external vmaf binary is configured via vmaf_path() / vmafexec_path().
         working-directory: core
         run: |
+          # shellcheck disable=SC2046  # the helper prints one option per line, split on purpose
           meson setup build -Denable_cuda=false -Denable_sycl=false \
-            -Denable_float=true -Denable_avx512=true --buildtype=release
+            -Denable_float=true -Denable_avx512=true --buildtype=release \
+            -Dwerror=true $(../scripts/ci/werror-args.sh true)
           meson compile -C build
 
       - name: Restore Netflix vmaf_resource fixtures
@@ -137,8 +142,12 @@ jobs:
         # never repaired and the test fails with "no frames decoded". The
         # success()-gated save below stops new poisoning; this heals caches
         # already poisoned, which otherwise need a manual cache deletion.
+        # --restore-tracked: the cache also carries the files git tracks under
+        # python/test/resource in the revision of the run that saved it; a
+        # restore-keys hit writes them over this checkout, so they are put
+        # back to the commit's (T-CI-FIXTURE-CACHE-STALE-TRACKED-2026-10-06).
         if: steps.impact.outputs.golden_harness == 'true'
-        run: bash scripts/ci/prune-corrupt-fixtures.sh python/test/resource
+        run: bash scripts/ci/prune-corrupt-fixtures.sh --restore-tracked python/test/resource
 
       - name: Run Netflix golden normal pair
         if: steps.impact.outputs.golden_harness == 'true'
@@ -182,19 +191,104 @@ jobs:
   # ADR-0726: vulkan-vif-cross-backend, vulkan-parity-matrix-gate, and
   # vulkan-vif-arc-nightly jobs deleted (Vulkan backend removed).
 
+  # ===== Upstream Consumer ABI Parity Gate (Issue #2473, ADR-3339) =====
+  compat-abi-parity:
+    needs: tier
+    if: needs.tier.outputs.light == 'true'
+    name: Compat ABI Parity
+    runs-on: ubuntu-26.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Plan CI impact (ADR-1140)
+        id: impact
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python3 scripts/ci/plan-ci-impact.py --event "$EVENT_NAME" \
+            --base "$BASE_SHA" --head "$HEAD_SHA" --github-output "$GITHUB_OUTPUT"
+
+      - name: Not impacted — Compat ABI Parity skipped by plan
+        if: steps.impact.outputs.golden_harness != 'true'
+        env:
+          MODE: ${{ steps.impact.outputs.mode }}
+          REASON: ${{ steps.impact.outputs.reason }}
+        run: echo "::notice::golden_harness not impacted (mode=$MODE reason=$REASON) — Compat ABI Parity satisfied without running (ADR-1140)"
+
+      - name: Install build deps
+        if: steps.impact.outputs.golden_harness == 'true'
+        env:
+          TMPDIR: ${{ runner.temp }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build nasm pkg-config python3-pip
+          sudo pip3 install --break-system-packages --ignore-installed --quiet --require-hashes \
+            -r requirements/locks/build.txt
+
+      - name: Restore Netflix vmaf_resource fixtures
+        if: steps.impact.outputs.golden_harness == 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: python/test/resource
+          key: vmaf-golden-fixtures-v3-${{ hashFiles('scripts/test/fetch-test-yuvs.sh') }}
+
+      - name: Fetch Netflix fixtures if missing
+        if: steps.impact.outputs.golden_harness == 'true'
+        run: |
+          mkdir -p python/test/resource/yuv
+          bash scripts/test/fetch-test-yuvs.sh
+
+      - name: Run Compat ABI Parity Probe
+        if: steps.impact.outputs.golden_harness == 'true'
+        env:
+          RESULTS: ${{ runner.temp }}/compat-abi-parity
+        run: |
+          grep -m1 'model name' /proc/cpuinfo
+          grep -m1 '^flags' /proc/cpuinfo | tr ' ' '\n' | grep -E '^(avx|fma|f16c|bmi)' | tr '\n' ' '
+          echo
+          gcc -Q --help=target | grep -E '^\s+-march=|^\s+-mfma '
+          echo | gcc -dM -E - | grep -E '__(FMA|AVX2)__' || echo 'gcc default: no FMA/AVX2'
+          dpkg --print-architecture; dpkg -s libc6 | grep -E '^(Version|Architecture)'
+          python3 scripts/dev/upstream_parity.py --unpinned --abi --mode probe --jobs 2 \
+            --summary --write-json "$RESULTS"
+
+      - name: Upload Compat ABI Parity results
+        if: failure() && steps.impact.outputs.golden_harness == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: compat-abi-parity-results
+          path: ${{ runner.temp }}/compat-abi-parity
+          retention-days: 7
+
+      - name: Run Compat ABI Planted Defect (Assert Failure)
+        if: steps.impact.outputs.golden_harness == 'true'
+        # Exit 1 (a difference) is the proof; exit 2 (cannot run) fails the step.
+        run: |
+          status=0
+          python3 scripts/dev/upstream_parity.py --unpinned --abi --plant --mode probe --jobs 2 || status=$?
+          test "$status" -eq 1 || { echo "::error::plant: expected exit 1, got $status"; exit 1; }
+
   # ===== Sanitizer build =====
   # required-aggregator: Sanitizers (address)
   # required-aggregator: Sanitizers (thread)
   # required-aggregator: Sanitizers (undefined)
   sanitizers:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    needs: tier
+    if: needs.tier.outputs.full == 'true'
     name: "Sanitizers (${{ matrix.sanitizer }})"
     # ADR-0359 — ARC self-hosted runner pilot (same pattern as cppcheck in
     # lint-and-format.yml). Variable `ARC_RUNNERS_ENABLED=true` routes this
     # job to the in-cluster `arc-runners` scale set; default `false` keeps
-    # GitHub-hosted ubuntu-latest. If the ARC pool is degraded, set the
-    # variable to false and re-trigger CI to fall back instantly.
-    runs-on: ${{ vars.ARC_RUNNERS_ENABLED == 'true' && 'arc-runners' || 'ubuntu-latest' }}
+    # GitHub-hosted ubuntu-26.04. If the ARC pool is degraded, set the
+    # variable to false and re-trigger CI to fall back instantly. A pull
+    # request from a fork never reaches the pool (ADR-3286).
+    runs-on: ${{ vars.ARC_RUNNERS_ENABLED == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'arc-runners' || 'ubuntu-26.04' }}
     timeout-minutes: 25
     strategy:
       fail-fast: false
@@ -243,7 +337,7 @@ jobs:
           sudo apt-get install -y clang-tools-22 libclang-rt-22-dev lld-22
           # meson from PyPI: Ubuntu 24.04 ships meson 1.3.2, which predates `c23`
           # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
-          sudo pip3 install --break-system-packages --quiet --require-hashes \
+          sudo pip3 install --break-system-packages --ignore-installed --quiet --require-hashes \
             -r requirements/locks/build.txt
       - name: Build with ${{ matrix.sanitizer }} sanitizer
         if: steps.impact.outputs.c_core == 'true'
@@ -267,10 +361,19 @@ jobs:
           else
             EXTRA_ARGS=()
           fi
+          # shellcheck disable=SC2046  # the helper prints one option per line, split on purpose
           meson setup build -Db_sanitize=${{ matrix.sanitizer }} \
             -Denable_cuda=false -Denable_sycl=false --buildtype=debug \
-            -Db_lto=false -Db_lundef=false "${EXTRA_ARGS[@]}"
+            -Db_lto=false -Db_lundef=false "${EXTRA_ARGS[@]}" \
+            -Dwerror=true $(../scripts/ci/werror-args.sh true)
           meson compile -C build
+      - name: Prefetch Go modules for the suite
+        if: steps.impact.outputs.c_core == 'true'
+        # The suite's Go-running tests find their modules in the cache: the
+        # download happens here, retried, and fails here when it cannot succeed
+        # (scripts/ci/prefetch_go_modules.py, as the user the suite runs as).
+        shell: bash
+        run: python3 scripts/ci/prefetch_go_modules.py
       - name: Run unit tests under sanitizer
         if: steps.impact.outputs.c_core == 'true'
         # ADR-0347: replace the previous `--suite=unit` invocation
@@ -351,8 +454,11 @@ jobs:
             echo "::error::ADR-0347 test enumeration produced empty list for sanitizer=${{ matrix.sanitizer }}" >&2
             exit 1
           fi
+          # --timeout-multiplier 3: the suite's timeouts are sized for an
+          # uninstrumented build (docs/development/ci.md, "Sanitizer legs").
           # shellcheck disable=SC2086
-          python3 ../scripts/ci/run_meson_test.py -- -C build --print-errorlogs $TESTS
+          python3 ../scripts/ci/run_meson_test.py -- -C build --print-errorlogs \
+            --timeout-multiplier 3 $TESTS
 
   # ===== DNN / tiny-AI gate =====
   # Builds libvmaf with --enable_dnn (ONNX Runtime C API), runs the dnn
@@ -360,11 +466,12 @@ jobs:
   # NOT require ORT at configure time — stub branch is exercised when the
   # ubuntu runner doesn't have onnxruntime available via pkg-config.
   dnn:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    needs: tier
+    if: needs.tier.outputs.light == 'true'
     # required-aggregator
     name: Tiny AI
     runs-on: ubuntu-26.04
-    timeout-minutes: 25
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -394,7 +501,7 @@ jobs:
             python3-pip python3-venv ffmpeg
           # meson from PyPI: Ubuntu 24.04 ships meson 1.3.2, which predates `c23`
           # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
-          sudo pip3 install --break-system-packages --quiet --require-hashes \
+          sudo pip3 install --break-system-packages --ignore-installed --quiet --require-hashes \
             -r requirements/locks/build.txt
       - name: Install ONNX Runtime (CPU)
         if: steps.impact.outputs.tiny_ai == 'true'
@@ -406,6 +513,7 @@ jobs:
           # 1.23.x or 1.24.x is a separate decision since the dnn loader
           # is version-sensitive.
           ORT_VERSION: "1.22.0"
+          ORT_SHA256: "8344d55f93d5bc5021ce342db50f62079daf39aaafb5d311a451846228be49b3"
         run: |
           set -euo pipefail
           ort_name="onnxruntime-linux-x64-${ORT_VERSION}.tgz"
@@ -414,6 +522,8 @@ jobs:
           curl -fSL --retry 5 --retry-delay 5 --retry-all-errors --remove-on-error \
             --max-time 600 --output "${ort_archive}" \
             "${ort_url}"
+          printf '%s  %s\n' "${ORT_SHA256}" "${ort_archive}" \
+            | sha256sum --check --strict
           sudo tar -xzf "${ort_archive}" -C /opt/
           sudo ln -sfn "/opt/onnxruntime-linux-x64-${ORT_VERSION}" /opt/onnxruntime
           # Install a pkg-config file since the tarball ships none.
@@ -438,8 +548,10 @@ jobs:
         if: steps.impact.outputs.tiny_ai == 'true'
         working-directory: core
         run: |
+          # shellcheck disable=SC2046  # the helper prints one option per line, split on purpose
           meson setup build -Denable_cuda=false -Denable_sycl=false \
-            -Denable_dnn=enabled --buildtype=release
+            -Denable_dnn=enabled --buildtype=release \
+            -Dwerror=true $(../scripts/ci/werror-args.sh true)
           meson compile -C build
       - name: Run meson dnn suite
         if: steps.impact.outputs.tiny_ai == 'true'
@@ -480,28 +592,17 @@ jobs:
           VMAF_BIN_FOR_TESTS: ${{ github.workspace }}/core/build/tools/vmaf
         run: |
           "${RUNNER_TEMP}/vmaf-train-venv/bin/pytest" ai/tests/ ai/sidecar/tests/ -v -rs --timeout=60 --timeout-method=signal
-      # Suite vmaf-tune-train (ADR-1568): vmaf-tune's predictor trainer
-      # needs torch, which only this venv holds. The test puts
-      # tools/vmaf-tune/src on sys.path itself. Any skip fails the step:
-      # torch, onnxruntime, numpy and the shipped models are inputs here.
-      - name: Run the vmaf-tune predictor trainer tests
+      # Suite mini-retrain (ADR-1898): the retrain tooling end to end on a generated
+      # corpus, with the vmaf CLI this job built. Any skip fails the step.
+      - name: Run the mini retrain end to end
         if: steps.impact.outputs.tiny_ai == 'true'
+        env:
+          VMAF_BIN: ${{ github.workspace }}/core/build/tools/vmaf
+          VMAFX_CONTAINER_IMAGE_ID: github-hosted-ubuntu-26.04
         run: |
-          set -o pipefail
-          "${RUNNER_TEMP}/vmaf-train-venv/bin/python" scripts/ci/suite_registry.py \
-            list vmaf-tune-train > "${RUNNER_TEMP}/vmaf-tune-train-files.txt"
-          mapfile -t files < "${RUNNER_TEMP}/vmaf-tune-train-files.txt"
-          if [ "${#files[@]}" -eq 0 ]; then
-            echo "::error::the registry lists no vmaf-tune-train test files" >&2
-            exit 1
-          fi
-          "${RUNNER_TEMP}/vmaf-train-venv/bin/pytest" "${files[@]}" -rs \
-            --timeout=120 --timeout-method=signal | tee "${RUNNER_TEMP}/vmaf-tune-train.log"
-          if grep -E '^SKIPPED' "${RUNNER_TEMP}/vmaf-tune-train.log"; then
-            echo "::error::a vmaf-tune predictor trainer test skipped in the torch venv" >&2
-            exit 1
-          fi
-
+          "${RUNNER_TEMP}/vmaf-train-venv/bin/pytest" ai/e2e/ -v -rs \
+            --timeout=900 --timeout-method=signal \
+            --basetemp="${RUNNER_TEMP}/mini-retrain-runs"
       # ADR-0174 / T5-3b: enforce that every quantised model in the
       # registry stays inside its per-model PLCC drop budget. Skips
       # entries whose `quant_mode == "fp32"` (nothing to gate).
@@ -515,7 +616,8 @@ jobs:
 
   # ===== RC1 external tester report package =====
   rc1-tester-report:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    needs: tier
+    if: needs.tier.outputs.light == 'true'
     # ADR-1342: this shipped tester surface has no path-filtered or optional
     # branch, so its regression lane must report to the required aggregator.
     # required-aggregator
@@ -533,8 +635,9 @@ jobs:
         run: |
           python -m pip install --require-hashes \
             -r tools/rc1-tester/requirements-dev-lock.txt
-          python -m pip install --no-deps --no-build-isolation \
-            ./tools/rc1-tester
+          python -m pip wheel --no-deps --no-build-isolation \
+            --wheel-dir dist/rc1-wheel ./tools/rc1-tester
+          python -m pip install --no-deps dist/rc1-wheel/*.whl
       - name: Run RC1 tester regressions
         run: python -m pytest tools/rc1-tester/tests/ -q
       - name: Smoke installed tester launcher
@@ -552,7 +655,8 @@ jobs:
   # well as the scripts under test, so no path routing could prove a change
   # irrelevant: the job always runs.
   tooling-tests:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    needs: tier
+    if: needs.tier.outputs.light == 'true'
     # ADR-1528 — required and in strictMustReport: no path filter and no
     # conditional skip.
     # required-aggregator
@@ -562,6 +666,12 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
+          # Full history: check-source-adr-citations.py verifies the commits
+          # that its retired-ADR records name (`git cat-file -e`), and
+          # test_repository_registry_is_current runs it on this tree. A
+          # shallow clone fails that test and skips the silent-revert history
+          # test.
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
@@ -582,6 +692,11 @@ jobs:
           python -m pip install --no-build-isolation --require-hashes \
             -r requirements/locks/tooling-tests.txt
       - name: Run the tooling suite
+        # The lock installs clang-format at the pre-commit hook's pin; naming it
+        # makes the API generator's format test fail instead of skip when the
+        # installed binary is another major (hosted images ship older ones).
+        env:
+          VMAFX_CLANG_FORMAT: clang-format
         run: python scripts/ci/suite_registry.py run tooling
 
   # ===== Python package suites (ADR-1528) =====
@@ -594,7 +709,8 @@ jobs:
   # required-aggregator: Python Package Tests (dev-llm)
   # required-aggregator: Python Package Tests (vmaf-roi-score)
   python-package-tests:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    needs: tier
+    if: needs.tier.outputs.light == 'true'
     # ADR-1528 — required and in strictMustReport: the impact plan may skip
     # the work, but every leg runs and reports.
     name: Python Package Tests (${{ matrix.name }})
@@ -678,8 +794,8 @@ jobs:
   # takes the CLI MCP Smoke builds (artifact `vmaf-cli-mcp`, uploaded right
   # after its build, so a failing MCP test does not withhold it).
   vmaf-tune-tests:
-    needs: [mcp-smoke]
-    if: ${{ !cancelled() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
+    needs: [tier, mcp-smoke]
+    if: ${{ !cancelled() && needs.tier.outputs.light == 'true' }}
     # ADR-1528 — required and in strictMustReport; the plan may skip the work.
     # required-aggregator
     name: Python Package Tests (vmaf-tune)
@@ -720,7 +836,7 @@ jobs:
           python -m pip install --no-deps --no-build-isolation -e tools/vmaf-tune
       - name: Download MCP Smoke's vmaf CLI
         if: steps.impact.outputs.python == 'true'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
           name: vmaf-cli-mcp
           path: ${{ runner.temp }}/vmaf-cli
@@ -789,7 +905,8 @@ jobs:
   #   ~/.cache/mcp-venv/bin/pip install -e .[dev] && \
   #   ~/.cache/mcp-venv/bin/pytest tests/ -v
   mcp-smoke:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    needs: tier
+    if: needs.tier.outputs.light == 'true'
     # ADR-1297 — required, and in `strictMustReport`: it builds all four
     # enable_mcp* transports and runs the MCP server suite, a shipped
     # user-discoverable surface, and it has no path filter or conditional
@@ -818,7 +935,7 @@ jobs:
             libavcodec-dev libavformat-dev libavutil-dev libswscale-dev
           # meson from PyPI: Ubuntu 24.04 ships meson 1.3.2, which predates `c23`
           # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
-          sudo pip3 install --break-system-packages --quiet --require-hashes \
+          sudo pip3 install --break-system-packages --ignore-installed --quiet --require-hashes \
             -r requirements/locks/build.txt
 
       - name: Build libvmaf (full MCP transport matrix)
@@ -829,11 +946,13 @@ jobs:
         # ubuntu-hosted-runner-only — no GPU toolchain required.
         working-directory: core
         run: |
+          # shellcheck disable=SC2046  # the helper prints one option per line, split on purpose
           meson setup build-mcp \
             -Denable_cuda=false -Denable_sycl=false \
             -Denable_mcp=true -Denable_mcp_sse=enabled \
             -Denable_mcp_uds=true -Denable_mcp_stdio=true \
-            --buildtype=release
+            --buildtype=release \
+            -Dwerror=true $(../scripts/ci/werror-args.sh true)
           meson compile -C build-mcp
 
       - name: Pack the vmaf CLI for the vmaf-tune suite
@@ -843,11 +962,12 @@ jobs:
         # Meson's object directory libvmaf.so.<version>.p/.
         working-directory: core/build-mcp
         run: |
-          find src -maxdepth 1 -name 'libvmaf.so*' \( -type f -o -type l \) > "${RUNNER_TEMP}/vmaf-cli.list"
+          find src -maxdepth 1 \( -name 'libvmaf.so*' -o -name 'libvmafx.so*' \) \( -type f -o -type l \) \
+            > "${RUNNER_TEMP}/vmaf-cli.list"
           tar -cf "${RUNNER_TEMP}/vmaf-cli.tar" tools/vmaf -T "${RUNNER_TEMP}/vmaf-cli.list"
 
       - name: Upload the vmaf CLI for the vmaf-tune suite
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: vmaf-cli-mcp
           path: ${{ runner.temp }}/vmaf-cli.tar
@@ -860,10 +980,15 @@ jobs:
         # silently wire a transport without flipping the expectations.
         # The test is registered as `test_mcp_smoke` in core/test/
         # meson.build (no suite tag — it lands in the default suite).
+        # The libvmaf compat checks run here too, because only this build
+        # has the vmaf_mcp_* compat functions (ADR-2094): their conformance
+        # against the engine's bodies and the export list with them.
         working-directory: core
         run: >-
           python3 ../scripts/ci/run_meson_test.py --
-          -C build-mcp test_mcp_smoke --print-errorlogs
+          -C build-mcp test_mcp_smoke test_compat_conformance
+          check_exported_symbols check_exported_symbols_libvmaf
+          --print-errorlogs
 
       - name: Set up Python venv + install vmaf-mcp[dev]
         # The pyproject ships a `dev` extras group (pytest +
@@ -913,7 +1038,8 @@ jobs:
   # ≥70% overall line coverage, ≥85% on security-critical files
   # (core/src/dnn/, opt.c, read_json_model.c).
   coverage:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    needs: tier
+    if: needs.tier.outputs.full == 'true'
     # ADR-1297 — required, and in `strictMustReport`. This job enforces the
     # principles.md §3 line-coverage floors and the per-PR delta tolerance
     # (ADR-0922). It self-skips in-job via plan-ci-impact.py (ADR-1140)
@@ -924,10 +1050,11 @@ jobs:
     # was not.
     # required-aggregator
     name: Coverage Gate
-    runs-on: ubuntu-latest
-    # 75, not 30: the Python suite step below is budgeted 55 min and the rest
-    # of the job (apt + pip, the gcov build, the meson unit suite, gcovr) has
-    # measured at ~5.5 min. See that step for where 55 comes from.
+    runs-on: ubuntu-26.04
+    # 75, not 30: the Python suite (four shard steps below, about 33 minutes
+    # together on master 777647fc0) and the rest of the job (apt + pip, the
+    # gcov build, the meson unit suite, gcovr; ~5.5 minutes) leave room for a
+    # runner 1.5x slower than that measurement.
     timeout-minutes: 75
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -949,6 +1076,7 @@ jobs:
           REASON: ${{ steps.impact.outputs.reason }}
         run: echo "::notice::golden_harness not impacted (mode=$MODE reason=$REASON) — Coverage Gate satisfied without running (ADR-1140)"
       - name: Install deps
+        id: coverage_install_deps
         if: steps.impact.outputs.golden_harness == 'true'
         run: |
           # The hosted runner ships pre-provisioned Microsoft/Azure apt
@@ -964,7 +1092,7 @@ jobs:
             python3-pip
           # meson from PyPI: Ubuntu 24.04 ships meson 1.3.2, which predates `c23`
           # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
-          sudo pip3 install --break-system-packages --quiet --require-hashes \
+          sudo pip3 install --break-system-packages --ignore-installed --quiet --require-hashes \
             -r requirements/locks/build.txt
           # gcovr replaces lcov: it deduplicates .gcno files belonging to
           # the same source compiled into multiple targets (libvmaf.so +
@@ -1002,6 +1130,7 @@ jobs:
           path: ${{ runner.temp }}/ort-cache
           key: ort-tarball-linux-x64-gpu-1.22.0
       - name: Install ONNX Runtime (GPU build, CPU + CUDA EPs)
+        id: coverage_install_ort
         if: steps.impact.outputs.golden_harness == 'true'
         # The GPU .tgz bundles CPU + CUDA + TensorRT execution providers in
         # one package. We install it (instead of the smaller CPU-only build)
@@ -1010,13 +1139,15 @@ jobs:
         # unreachable per ADR-0112. CUDA EP attach only requires the CUDA
         # *runtime* library to load (no actual GPU driver), which is why we
         # `apt install libcudart12` below. CreateSession then fails because
-        # there's no real GPU on ubuntu-latest; vmaf_ort_open's two-stage
+        # there's no real GPU on a hosted runner; vmaf_ort_open's two-stage
         # fallback (ADR-0113) catches that and retries with CPU-only
         # session_options, so existing tests stay green while the EP-attach
         # success arm and the new fallback path both execute.
         env:
           ORT_VERSION: "1.22.0"
+          ORT_SHA256: "2a19dbfa403672ec27378c3d40a68f793ac7a6327712cd0e8240a86be2b10c55"
         run: |
+          set -euo pipefail
           # CUDA 12.x runtime — user-space libs only, no driver. Lets ORT
           # dlopen libonnxruntime_providers_cuda.so → libcudart.so.12.
           sudo apt-get install -y libcudart12 || sudo apt-get install -y nvidia-cuda-toolkit
@@ -1027,6 +1158,10 @@ jobs:
           if [ ! -f "$tarball" ]; then
             curl -fsSL --retry 3 --retry-delay 5 --max-time 600 -o "$tarball" \
               "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-gpu-${ORT_VERSION}.tgz"
+          fi
+          if ! printf '%s  %s\n' "${ORT_SHA256}" "$tarball" | sha256sum --check --strict; then
+            rm -f "$tarball"
+            exit 1
           fi
           sudo tar -xzf "$tarball" -C /opt/
           sudo ln -sfn "/opt/onnxruntime-linux-x64-gpu-${ORT_VERSION}" /opt/onnxruntime
@@ -1047,6 +1182,7 @@ jobs:
           echo "/opt/onnxruntime/lib" | sudo tee /etc/ld.so.conf.d/onnxruntime.conf
           sudo ldconfig
       - name: Build with gcov instrumentation
+        id: coverage_build
         if: steps.impact.outputs.golden_harness == 'true'
         # Build inside core/ so python/vmaf/__init__.py finds the CLI at
         # core/build-coverage/tools/vmaf (it hardcodes that relative path).
@@ -1066,144 +1202,108 @@ jobs:
           # concurrently merge their counters into the same .gcda files for
           # the shared libvmaf.so. atomic is per-thread, not per-process —
           # the two fixes are complementary.
+          # shellcheck disable=SC2046  # the helper prints one option per line, split on purpose
           meson setup build-coverage --buildtype=debug \
             -Db_coverage=true -Denable_cuda=false -Denable_sycl=false \
             -Denable_float=true -Denable_avx512=true \
             -Denable_dnn=enabled \
             -Dc_args=-fprofile-update=atomic \
-            -Dcpp_args=-fprofile-update=atomic
+            -Dcpp_args=-fprofile-update=atomic \
+            -Dwerror=true $(../scripts/ci/werror-args.sh true)
           ninja -C build-coverage
+      - name: Prefetch Go modules for the suite
+        id: coverage_prefetch_go
+        if: steps.impact.outputs.golden_harness == 'true'
+        # The suite's Go-running tests find their modules in the cache: the
+        # download happens here, retried, and fails here when it cannot succeed
+        # (scripts/ci/prefetch_go_modules.py, as the user the suite runs as).
+        run: python3 scripts/ci/prefetch_go_modules.py
+      # --timeout-multiplier 3: the suite's timeouts are sized for an
+      # uninstrumented build (docs/development/ci.md, "Sanitizer legs").
       - name: Run meson unit suite (with gcov counters)
+        id: coverage_meson_suite
         if: steps.impact.outputs.golden_harness == 'true'
         working-directory: core
         run: >-
           python3 ../scripts/ci/run_meson_test.py -- -C build-coverage
-          --print-errorlogs --num-processes 1
-      - name: Run full Python test suite (instrumented libvmaf.so + vmaf CLI)
-        id: python_coverage_tests
+          --print-errorlogs --num-processes 1 --timeout-multiplier 3
+      - name: Prepare the Python test suite (instrumented libvmaf.so + vmaf CLI)
+        id: coverage_prepare_python
+        if: steps.impact.outputs.golden_harness == 'true'
+        run: |
+          # python/vmaf/__init__.py hardcodes core/build/tools/vmaf as the
+          # CLI path. Symlink build-coverage → build so coverage runs find it.
+          ln -sf build-coverage core/build
+          echo "${{ github.workspace }}/core/build-coverage/tools" >> "$GITHUB_PATH"
+          python3 -m pip install --user --require-hashes \
+            -r requirements/locks/pytest-timeout.txt
+          # The suite runs as four round-robin shards of one step each
+          # (scripts/ci/run_pytest_shard.py): about 890 items took 33 minutes
+          # in one step (master 777647fc0, job 117249828983), above praetor's
+          # 30-minute bound on a test step. gcov counters in the .gcda files
+          # add up across the four processes, so gcovr below sees the whole
+          # suite. Every shard keeps the unsharded command line:
+          # - --deselect matches nothing and -m "not slow" selects everything:
+          #   python/tox.ini makes python/ the rootdir, so node ids read
+          #   test/command_line_test.py::…, and no test is marked slow
+          #   (measured 2026-09-22, jobs 106740470243 and 106785621316). Both
+          #   stay so the suite that runs is the suite that is measured.
+          # - --timeout=600 with the thread method aborts the whole session
+          #   when one test crosses it. It covers the slowest test measured
+          #   (vifks360o97, 142.7 s) times the worst runner inflation seen
+          #   (2.30x) with a 1.8x margin.
+          # - The outer `timeout` only keeps a wedged vmaf subprocess from
+          #   eating the job budget before gcovr runs; a shard took about
+          #   9 minutes in the measured job.
+      - name: Run Python test suite, shard 1/4
+        id: python_coverage_shard_1
         if: steps.impact.outputs.golden_harness == 'true'
         continue-on-error: true
         env:
           PYTHONPATH: ${{ github.workspace }}/python
           LD_LIBRARY_PATH: ${{ github.workspace }}/core/build-coverage/src
         run: |
-          # python/vmaf/__init__.py hardcodes core/build/tools/vmaf as the
-          # CLI path. Symlink build-coverage → build so coverage runs find it.
-          ln -sf build-coverage core/build
-          export PATH="${{ github.workspace }}/core/build-coverage/tools:$PATH"
-          python3 -m pip install --user --require-hashes \
-            -r requirements/locks/pytest-timeout.txt
-          # Wrap in `timeout` + --kill-after so stuck vmaf CLI subprocesses
-          # from failing vmafexec tests can't zombie-hang the step past the
-          # job budget. pytest-timeout per-test is the first line; the
-          # outer timeout is the backstop.
-          # CommandLineTest (the first class in command_line_test.py) runs
-          # run_testing.py with --parallelize across multiple video pairs —
-          # each pair spawns a vmaf subprocess, and the cumulative wall-clock
-          # time can exceed the per-test timeout, killing the suite before
-          # the alphabetically-later vmafexec_test.py / quality_runner_test.py
-          # tests run. Those later tests exercise the C feature extractor code
-          # paths (vif.c, adm.c, motion.c, …) that vmaf runs on 576×324 clips
-          # in under 10 s each, and their gcov data is what pushes overall
-          # coverage above 40%. Deselecting CommandLineTest (but NOT
-          # VmafexecCommandLineTest, which is fast and stays in) was meant to
-          # let the alphabetically-later suites execute and contribute
-          # coverage.
-          # MEASURED CAVEAT (2026-09-22): that --deselect matches nothing.
-          # pytest resolves rootdir to python/ via python/tox.ini, so the
-          # node IDs are test/command_line_test.py::…, and the repo-relative
-          # spelling below never matches. All 15 CommandLineTest tests ran in
-          # both jobs 106740470243 and 106785621316 (96.1 s / 111.7 s for the
-          # 19 command_line_test items). `-m "not slow"` is likewise a no-op:
-          # python/tox.ini registers only the `main` marker and nothing in
-          # python/test/ is marked slow, so all 711 items are selected. Both
-          # are left in place deliberately — the budget below is sized for the
-          # suite that actually runs, and narrowing the measurement to fit the
-          # budget is the anti-pattern this branch exists to undo. The claim
-          # that CommandLineTest is "covered by the full Python suite in the
-          # Netflix golden gate" is also stale: that gate runs exactly two
-          # tests (test_run_vmaf_runner and …_checkerboard).
-          #
-          # --timeout=600: raised from 180 s, which was itself raised from
-          # 60 s off a single observation (vifks360o97 ≈ 138 s). A point
-          # estimate with no variance allowance is what broke: pytest-timeout
-          # with --timeout-method=thread does not fail just the slow test, it
-          # dumps stacks and calls os._exit(1), aborting the whole session, so
-          # one test crossing the line takes the remaining 40% of the suite
-          # with it. Job 106785621316 (run 35739609510) died that way at 60%,
-          # on test_run_vmaf_runner_float_vifks2, blocked in
-          # subprocess.communicate()/stdout.read() reading a still-running,
-          # perfectly healthy vmaf CLI.
-          #
-          # The measured distribution, reconstructed from the -v timestamp
-          # deltas of the two Coverage Gate jobs on this branch — 106740470243
-          # (run 35726244060, 12:16Z) and 106785621316 (run 35739609510,
-          # 14:20Z), same recipe, same ubuntu-latest class:
-          #   test                               job …243   job …316
-          #   vifks360o97                         142.7 s    not reached
-          #   vifks24o10                           91.1 s    not reached
-          #   vifks2                               78.4 s    >180 s (killed)
-          #   vifks3o2                             50.9 s    not reached
-          #   ensemblevmaf_different_models        30.8 s      47.2 s  1.53x
-          #   ensemblevmaf_same_models             30.7 s      47.1 s  1.53x
-          #   local_explainer_with_bootstrap       15.7 s      24.1 s  1.53x
-          #   bootstrap_residue_bootstrap_model    15.5 s      23.9 s  1.55x
-          #   bootstrap_with_transform_score       15.4 s      23.7 s  1.54x
-          #   explain_vmaf_results                 15.7 s      23.7 s  1.51x
-          #   bootstrap_vmaf_runner                15.4 s      23.7 s  1.54x
-          #   bagging_vmaf_runner                  15.4 s      23.7 s  1.54x
-          #   float_nvd6 / float_rdh540            15.4 s      23.6 s  1.53x
-          #   bootstrap_10models                   15.4 s      23.4 s  1.52x
-          #   bootstrap_default_model_json_model   15.5 s      23.4 s  1.51x
-          #   bootstrap_with_4k_1d5H_model         15.5 s      23.3 s  1.51x
-          #   bootstrap_specific_model             15.5 s      23.3 s  1.51x
-          #   feature_assembler_whole_feature_…    15.4 s      23.2 s  1.51x
-          # Variance between the two runners: 1.51–1.55x uniformly across the
-          # vmaf-CLI-bound tests, and >=2.30x on vifks2 (78.4 s -> >180 s). The
-          # "Run meson unit suite" step above shows the same degradation
-          # independently — 30 s in …243 vs 118 s in …316, 3.9x. So the budget
-          # has to cover the slowest test times the worst observed inflation:
-          # 142.7 s * 2.30 = 328 s. 600 s is 1.8x that, 4.2x the slowest time
-          # ever actually observed, and 18% of the 55m outer backstop, so the
-          # outer stays a genuine backstop rather than the first thing to fire.
-          #
-          # What 600 s does NOT catch: (a) a real slowdown that keeps every
-          # single test under 10 min — vifks360o97 could double again and pass;
-          # (b) an aggregate blow-up, where every test is under 600 s but the
-          # sum exceeds the outer 55m — that surfaces as `timeout` killing the
-          # step (exit 124), not as a named test; (c) because the thread method
-          # aborts the session, the test named in the dump is whichever one was
-          # running, which need not be the one that is actually pathological.
-          #
-          # The outer budget is 55m, raised from a 20m that was never big
-          # enough for the suite it wraps. Until this branch the step ended in
-          # `|| true`, so `timeout` killing pytest looked like success: the run
-          # on master at 371ff589 (job 106056156937) was cut off after 20 min
-          # at 64% of 711 tests, and the first run on this branch
-          # (job 106740470243) at 63%, both silently. Removing `|| true` and
-          # asserting the step outcome turned that into the failure it always
-          # was.
-          #
-          # Where 55 comes from, re-derived from measurement rather than the
-          # earlier estimate. Job 106740470243 ran 448 of the 711 items in
-          # 1190.6 s before the outer kill; job 106785621316 ran 431 in
-          # 901.2 s. The 263 items neither run reached measure 86.3 s locally
-          # against a release build; the debug+gcov+4-core factor, anchored on
-          # feature_extractor_test.py (194.4 s in …243 / 16.4 s local), is
-          # 11.9x for …243 and 14.0x for …316, i.e. a 1024–1208 s tail. Full
-          # suite: ~2215 s (36.9 min) at the …243 pace, 2702–3077 s
-          # (45.0–51.3 min) at the …316 pace. Non-pytest job overhead measured
-          # 5m05s (…243) / 6m25s (…316) before the step plus ~30 s of gcovr
-          # after, against a 75 min job budget.
-          # So 55m still fits, but the margin is 7–18% at the slower runner,
-          # not the ~30% claimed before. If a Coverage Gate run is ever killed
-          # by the outer `timeout` (exit 124) rather than by a test, raise this
-          # to 70m and timeout-minutes to 85 — do not shrink the suite.
-          # pytest-timeout=600 per test remains the real anti-hang gate; the
-          # outer `timeout` only exists so a wedged subprocess cannot eat the
-          # job budget before gcovr runs.
-          timeout --kill-after=30s 55m python3 -m pytest python/test/ -v \
-            -m "not slow" --tb=short \
+          timeout --kill-after=30s 30m python3 scripts/ci/run_pytest_shard.py --shard 1/4 -- \
+            python/test/ -v -m "not slow" --tb=short \
+            --timeout=600 --timeout-method=thread \
+            --ignore=python/test/resource \
+            --deselect python/test/command_line_test.py::CommandLineTest
+      - name: Run Python test suite, shard 2/4
+        id: python_coverage_shard_2
+        if: steps.impact.outputs.golden_harness == 'true'
+        continue-on-error: true
+        env:
+          PYTHONPATH: ${{ github.workspace }}/python
+          LD_LIBRARY_PATH: ${{ github.workspace }}/core/build-coverage/src
+        run: |
+          timeout --kill-after=30s 30m python3 scripts/ci/run_pytest_shard.py --shard 2/4 -- \
+            python/test/ -v -m "not slow" --tb=short \
+            --timeout=600 --timeout-method=thread \
+            --ignore=python/test/resource \
+            --deselect python/test/command_line_test.py::CommandLineTest
+      - name: Run Python test suite, shard 3/4
+        id: python_coverage_shard_3
+        if: steps.impact.outputs.golden_harness == 'true'
+        continue-on-error: true
+        env:
+          PYTHONPATH: ${{ github.workspace }}/python
+          LD_LIBRARY_PATH: ${{ github.workspace }}/core/build-coverage/src
+        run: |
+          timeout --kill-after=30s 30m python3 scripts/ci/run_pytest_shard.py --shard 3/4 -- \
+            python/test/ -v -m "not slow" --tb=short \
+            --timeout=600 --timeout-method=thread \
+            --ignore=python/test/resource \
+            --deselect python/test/command_line_test.py::CommandLineTest
+      - name: Run Python test suite, shard 4/4
+        id: python_coverage_shard_4
+        if: steps.impact.outputs.golden_harness == 'true'
+        continue-on-error: true
+        env:
+          PYTHONPATH: ${{ github.workspace }}/python
+          LD_LIBRARY_PATH: ${{ github.workspace }}/core/build-coverage/src
+        run: |
+          timeout --kill-after=30s 30m python3 scripts/ci/run_pytest_shard.py --shard 4/4 -- \
+            python/test/ -v -m "not slow" --tb=short \
             --timeout=600 --timeout-method=thread \
             --ignore=python/test/resource \
             --deselect python/test/command_line_test.py::CommandLineTest
@@ -1258,7 +1358,7 @@ jobs:
           scripts/ci/coverage-check.sh core/build-coverage/coverage.json 37 85
       - name: Upload coverage artifact
         if: ${{ (always()) && steps.impact.outputs.golden_harness == 'true' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: coverage-cpu
           path: |
@@ -1266,25 +1366,59 @@ jobs:
             core/build-coverage/coverage.json
             core/build-coverage/coverage.txt
           retention-days: 14
-      - name: Assert Python coverage suite passed
+      - name: Assert every Python coverage shard passed
         if: ${{ always() && steps.impact.outputs.golden_harness == 'true' }}
         env:
-          PYTEST_OUTCOME: ${{ steps.python_coverage_tests.outcome }}
+          SHARD_OUTCOMES: >-
+            ${{ steps.python_coverage_shard_1.outcome }}
+            ${{ steps.python_coverage_shard_2.outcome }}
+            ${{ steps.python_coverage_shard_3.outcome }}
+            ${{ steps.python_coverage_shard_4.outcome }}
+          # A shard is skipped when a step before it failed; the error names
+          # that step (run 39006126494: the meson suite timed out and the
+          # shards only reported "skipped").
+          EARLIER_OUTCOMES: >-
+            Install-deps=${{ steps.coverage_install_deps.outcome }}
+            Install-ONNX-Runtime=${{ steps.coverage_install_ort.outcome }}
+            Build-with-gcov=${{ steps.coverage_build.outcome }}
+            Prefetch-Go-modules=${{ steps.coverage_prefetch_go.outcome }}
+            Meson-unit-suite=${{ steps.coverage_meson_suite.outcome }}
+            Prepare-Python-suite=${{ steps.coverage_prepare_python.outcome }}
         run: |
-          if [[ "$PYTEST_OUTCOME" != "success" ]]; then
-            echo "::error::Python coverage suite outcome was $PYTEST_OUTCOME" >&2
+          read -r -a outcomes <<< "$SHARD_OUTCOMES"
+          if [[ "${#outcomes[@]}" -ne 4 ]]; then
+            echo "::error::expected 4 shard outcomes, got '$SHARD_OUTCOMES'" >&2
             exit 1
           fi
-          [[ "$PYTEST_OUTCOME" == "success" ]]
+          read -r -a earlier <<< "$EARLIER_OUTCOMES"
+          cause="no earlier step failed"
+          for entry in "${earlier[@]}"; do
+            if [[ "${entry#*=}" != "success" ]]; then
+              cause="step ${entry%%=*} outcome was ${entry#*=}"
+              break
+            fi
+          done
+          failed=0
+          for index in "${!outcomes[@]}"; do
+            if [[ "${outcomes[index]}" == "skipped" ]]; then
+              echo "::error::Python coverage shard $((index + 1))/4 outcome was skipped: $cause" >&2
+              failed=1
+            elif [[ "${outcomes[index]}" != "success" ]]; then
+              echo "::error::Python coverage shard $((index + 1))/4 outcome was ${outcomes[index]}" >&2
+              failed=1
+            fi
+          done
+          exit "$failed"
 
   # ===== GPU coverage admission (hosted) =====
   # ADR-1319: the operator switch is not dispatch authority. Check the live
   # runner inventory on hosted compute first so a stale true variable cannot
   # leave a job queued forever on an impossible label set.
   gpu-full-runner-available:
+    needs: tier
+    if: needs.tier.outputs.full == 'true' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository)
     name: Probe GPU Full Runner
     runs-on: ubuntu-26.04
-    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
     timeout-minutes: 5
     outputs:
       available: ${{ steps.probe.outputs.available }}
@@ -1308,7 +1442,7 @@ jobs:
 
   # ===== GPU coverage (self-hosted) =====
   # Exercises fork-added CUDA / SYCL kernels, GPU runtime glue, and
-  # AVX-512 SIMD paths that ubuntu-latest can't touch. Runs on a self-hosted
+  # AVX-512 SIMD paths that hosted runners can't touch. Runs on a self-hosted
   # runner labeled `gpu-full` (NVIDIA CUDA + Intel Arc SYCL +
   # AVX-512 CPU). See docs/development/self-hosted-runner.md for setup.
   #
@@ -1326,6 +1460,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           submodules: recursive
+          # Full history for the merge-base tests of the suite
+          # (scripts/ci/tests/test_meson_suite_checkout_history.py).
+          fetch-depth: 0
       - name: Build with gcov + CUDA + SYCL + AVX-512
         working-directory: core
         env:
@@ -1349,16 +1486,24 @@ jobs:
               -Dsycl_icpx_aot_targets= \
               -Denable_float=true -Denable_avx512=true \
               -Dc_args=-fprofile-update=atomic \
-              -Dcpp_args=-fprofile-update=atomic
+              -Dcpp_args=-fprofile-update=atomic \
+              -Dwerror=true $(../scripts/ci/werror-args.sh true)
             ninja -C build-coverage-gpu
           '
+      - name: Prefetch Go modules for the suite
+        # The suite's Go-running tests find their modules in the cache: the
+        # download happens here, retried, and fails here when it cannot succeed
+        # (scripts/ci/prefetch_go_modules.py, as the user the suite runs as).
+        run: python3 scripts/ci/prefetch_go_modules.py
       - name: Run meson unit suite
         working-directory: core
         # See CPU coverage job for --num-processes 1 rationale: serialise
-        # to keep multi-process .gcda merges race-free.
+        # to keep multi-process .gcda merges race-free. --timeout-multiplier 3:
+        # the suite's timeouts are sized for an uninstrumented build
+        # (docs/development/ci.md, "Sanitizer legs").
         run: >-
           python3 ../scripts/ci/run_meson_test.py -- -C build-coverage-gpu
-          --print-errorlogs --num-processes 1
+          --print-errorlogs --num-processes 1 --timeout-multiplier 3
       - name: Run Python suite on CUDA + SYCL backends
         env:
           PYTHONPATH: ${{ github.workspace }}/python
@@ -1422,7 +1567,7 @@ jobs:
           scripts/ci/coverage-check.sh core/build-coverage-gpu/coverage.json 70 85
       - name: Upload GPU coverage artifact
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: coverage-gpu
           path: |
@@ -1434,11 +1579,12 @@ jobs:
   # ===== Power of 10 rule 5 — assertion density =====
   # Every fork-added (non-trivial) function must contain ≥1 assert().
   assertion-density:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    needs: tier
+    if: needs.tier.outputs.light == 'true'
     # Power of 10 §5
     # required-aggregator
     name: Assertion Density
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1

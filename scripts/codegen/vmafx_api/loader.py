@@ -13,7 +13,7 @@ from pathlib import Path
 
 import tomllib
 
-from .entries import Entry, deprecation, need, since_of, version, where_of
+from .entries import Entry, deprecation, need, python_name, since_of, version, where_of
 from .model import (
     VERSION_PARTS,
     Api,
@@ -31,6 +31,7 @@ from .model import (
     Header,
     Param,
     PixelFormat,
+    ProtoRepeated,
     Status,
     Struct,
 )
@@ -194,9 +195,23 @@ def _structs(raw: list[Entry]) -> tuple[Struct, ...]:
                 since=since,
                 deprecated=deprecation(entry, where),
                 fields=tuple(fields),
+                proto=str(entry.get("proto", "")),
+                proto_repeated=_proto_repeated(entry, where),
             )
         )
     return tuple(out)
+
+
+def _proto_repeated(entry: Entry, where: str) -> tuple[ProtoRepeated, ...]:
+    return tuple(
+        ProtoRepeated(
+            name=need(raw, "name", where),
+            struct=need(raw, "struct", where),
+            number=int(need(raw, "number", where)),
+            doc=str(raw.get("doc", "")),
+        )
+        for raw in entry.get("proto_repeated", [])
+    )
 
 
 def _params(entry: Entry, where: str) -> tuple[Param, ...]:
@@ -242,6 +257,7 @@ def _functions(raw: list[Entry]) -> tuple[Function, ...]:
                 doc=need(entry, "doc", where),
                 params=_params(entry, where),
                 deprecated=deprecation(entry, where),
+                python=python_name(entry, where),
             )
         )
     return tuple(out)
@@ -263,6 +279,13 @@ def _compats(raw: list[Entry]) -> tuple[Compat, ...]:
                 returns=need(entry, "returns", where),
                 params=params,
                 spec=dict(entry),
+                engine_with=str(entry.get("engine_with", "")),
+                until=str(entry.get("until", "")),
+                when=str(entry.get("when", "")),
+                platform=str(entry.get("platform", "")),
+                file=str(entry.get("file", "")),
+                calls=tuple(entry.get("calls", [])),
+                note=str(entry.get("note", "")),
             )
         )
     return tuple(out)

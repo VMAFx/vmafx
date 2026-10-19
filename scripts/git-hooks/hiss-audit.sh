@@ -38,22 +38,19 @@ set -euo pipefail
 offline_flag() {
   local usage
   # Captured first: `grep -q` closing the pipe early would fail the pipeline.
-  usage="$(praetorctl audit -h 2>&1)" || [ "$?" -le 2 ]
+  usage="$(sh .config/lefthook/engine.sh audit -h 2>&1)" || [ "$?" -le 2 ]
   case "$usage" in
     *' -offline'*) printf '%s\n' --offline ;;
   esac
 }
 
+# The engine is the one the repository pins, resolved by .config/lefthook/engine.sh
+# (PRAETOR_REF under .github/workflows), never the praetorctl on PATH. The launcher
+# fails closed: no pin it can use, two different pins or a failed install end the
+# hook with its message.
 run_audit() {
-  if command -v praetorctl >/dev/null 2>&1; then
-    # shellcheck disable=SC2046 # the flag is one word or nothing
-    praetorctl audit $(offline_flag) "$@"
-  elif [ -d ./cmd/standardsctl ]; then
-    go run ./cmd/standardsctl audit "$@"
-  else
-    echo "HISS-21 governance hook cannot run because praetorctl is not installed" >&2
-    exit 1
-  fi
+  # shellcheck disable=SC2046 # the flag is one word or nothing
+  sh .config/lefthook/engine.sh audit $(offline_flag) "$@"
 }
 
 merge_head="$(git rev-parse --git-path MERGE_HEAD)"

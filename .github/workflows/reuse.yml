@@ -1,0 +1,53 @@
+---
+# REUSE licensing gate, written by praetorctl adopt because the repository
+# carries REUSE.toml or LICENSES/. It runs reuse lint at the release line the
+# reuse-lint pre-commit job of lefthook.yml requires.
+#
+# Edited here (praetor keeps an edited copy, --force included): both actions
+# are pinned to a commit like every other workflow of this repository, where
+# praetor renders release tags (cordanaLLM/praetor#899; ADR-2784).
+name: REUSE
+
+'on':
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: ['master']
+
+permissions:
+  contents: read
+
+jobs:
+  reuse:
+    name: REUSE lint
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - name: Stop on a draft pull request
+        if: github.event.pull_request.draft == true
+        shell: bash
+        env:
+          TITLE: Gate not run on a draft
+          MESSAGE: >-
+            The gate did not run because the pull request is a draft.
+            It runs when the pull request is marked ready for review.
+        run: |
+          echo "::error title=$TITLE::$MESSAGE"
+          echo "$MESSAGE" >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+      - name: Check out the source
+        if: github.event.pull_request.draft != true
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      # fsfe/reuse-action builds `FROM fsfe/reuse:6` while the job is set up,
+      # an anonymous Docker Hub pull that failed this job (auth.docker.io 504,
+      # pull limit). The same image runs here from mirror.gcr.io, pinned by
+      # the digest tag 6 has on Docker Hub, with the action's own wrapper
+      # (mark the workspace safe for git, then `reuse lint`).
+      - name: reuse lint
+        if: github.event.pull_request.draft != true
+        uses: docker://mirror.gcr.io/fsfe/reuse:6@sha256:85462a75c0f8efda09ddd190b92816b70e7662577c8427429e11e1b9f25a992e
+        with:
+          entrypoint: /bin/sh
+          args: -c "git config --global --add safe.directory $GITHUB_WORKSPACE && reuse lint"

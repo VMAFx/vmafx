@@ -28,6 +28,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 PATCH = ROOT / "ffmpeg-patches" / "0005-libvmaf-add-libvmaf-sycl-filter.patch"
 
+MIN_IMPORT_TRIES = 2
+MAX_IMPORT_TRIES = 5
 TRIES = re.compile(r"#define LIBVMAF_SYCL_IMPORT_TRIES (\d+)\b")
 BOUNDED_LOOP = re.compile(
     r"for \(int attempt = 1; attempt <= LIBVMAF_SYCL_IMPORT_TRIES; attempt\+\+\)"
@@ -56,7 +58,7 @@ def problems(code: str) -> list[str]:
     """Every way `code` (the filter's added C) breaks the contract."""
     found = []
     tries = TRIES.search(code)
-    if not tries or not 2 <= int(tries.group(1)) <= 5:
+    if not tries or not MIN_IMPORT_TRIES <= int(tries.group(1)) <= MAX_IMPORT_TRIES:
         found.append("no bounded number of import tries")
     if not BOUNDED_LOOP.search(code):
         found.append("the import is not retried in a bounded loop")

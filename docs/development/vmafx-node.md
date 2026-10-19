@@ -140,18 +140,12 @@ clear error message.
 
 ## Environment variables
 
-| Variable | Default | Description |
-|---|---|---|
-| `VMAFX_FFMPEG_BIN` | `ffmpeg` (PATH) | Path to the ffmpeg binary. The Docker image sets this to `/usr/local/bin/ffmpeg`. |
-| `VMAFX_GRPC_LISTEN` | `:50052` | gRPC listen address. |
-| `VMAFX_LOG_LEVEL` | `INFO` | Log level: DEBUG, INFO, WARN, ERROR. |
-| `VMAFX_BACKEND` | `cpu` | Backend the node runs and advertises to the controller. Set automatically in node-cuda/rocm/sycl variants. |
-| `VMAFX_MODEL_DIR` | `/usr/local/share/vmafx/model` | Directory of VMAF model JSON/ONNX files. |
-| `VMAFX_VMAF_BINARY` | binary lookup | Path to the `vmaf` CLI binary. |
-| `VMAFX_LOG_FORMAT` | `auto` | Log handler: `auto`, `tint` or `json`. |
-| `VMAFX_SIDECAR_SOCKET` | `/tmp/vmafx-sidecar.sock` | Unix socket of the online-training sidecar. |
-| `VMAFX_CONTROLLER_ADDR` | _(unset)_ | Controller gRPC address. Set, the node registers with the controller and pulls jobs; the other `VMAFX_CONTROLLER_*` and `VMAFX_NODE_*` settings are in [the node guide](../server/node.md#pulling-jobs-from-the-controller). |
-| `VMAFX_STORAGE_MODE` | `auto` | How rclone-remote job sources are read (`http-serve`, `mount`, `auto`); see [job sources](../server/node.md#job-sources-local-paths-urls-and-rclone-remotes). The image has rclone but no FUSE helper, so `auto` resolves to `http-serve`. |
+Every variable the node reads is in the
+[node's environment table](../server/node.md#configuration-12-factor-env-vars),
+generated from the platform definition. The node image sets
+`VMAFX_FFMPEG_BIN=/usr/local/bin/ffmpeg`, and the `node-cuda`, `node-rocm` and
+`node-sycl` images set `VMAFX_BACKEND` to their backend. The image has rclone
+but no FUSE helper, so `VMAFX_STORAGE_MODE=auto` resolves to `http-serve`.
 
 `VMAFX_NODE_ADDR` was removed (ADR-1119); use `VMAFX_GRPC_LISTEN`.
 
@@ -190,7 +184,8 @@ These details matter when you change the Dockerfile.
   - Coverage: the root CUDA image, `Dockerfile.ffmpeg`, the dev container,
     the node image, the hosted FFmpeg integration matrix and the patch
     smoke harness.
-  - The ordinary hosted matrix applies only patch 0019, which keeps its
+  - The ordinary hosted matrix applies only the shared FFmpeg fix series
+    ([ADR-3143](../adr/3143-ffmpeg-shared-fix-series.md)), which keeps its
     stock-surface compatibility purpose without compiling the
     known-warning source.
   - A stable-tag or toolchain update must fix a new warning at its root; it

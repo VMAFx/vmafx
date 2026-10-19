@@ -1,10 +1,23 @@
-version: v1
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+#
+# Go bindings of the protobuf files under proto/ (ADR-2350 D13): one
+# configuration for the scoring service and the controller. `module=` writes
+# each file under the repository path of its go_package (gen/go,
+# gen/go/controller), so `out` is the repository root. The plugins are
+# the versions go.mod pins as tools (`go tool`), so every run produces the
+# same files. Run through scripts/codegen/proto_generate.py, which also adds
+# the HISS-09 proofs (scripts/proto/postprocess_gen_go.py).
+version: v2
+inputs:
+  - directory: proto
 plugins:
-  - plugin: buf.build/protocolbuffers/go
-    out: gen/go
-    opt: paths=source_relative
-  - plugin: buf.build/grpc/go
-    out: gen/go
+  - local: ["go", "tool", "protoc-gen-go"]
+    out: .
     opt:
-      - paths=source_relative
+      - module=github.com/VMAFx/vmafx
+  - local: ["go", "tool", "protoc-gen-go-grpc"]
+    out: .
+    opt:
+      - module=github.com/VMAFx/vmafx
       - require_unimplemented_servers=false

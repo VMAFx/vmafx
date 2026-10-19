@@ -92,3 +92,13 @@ binary.
 - [ADR-0141](0141-touched-file-cleanup-rule.md) — touched-file lint-clean rule; goto-cleanup load-bearing invariant.
 - [ADR-0278](0278-t7-5-nolint-sweep.md) — NOLINT citation policy.
 - req: "Convert `core/tools/cli_parse.c` and `core/tools/vmaf.c` to .cpp. CLI parsing benefits from std::expected/std::string_view; CLI main benefits from RAII. Add extern \"C\" guards in cli_parse.h. Conservative C++23 idioms only (nullptr, static_cast, [[nodiscard]])."
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 3: `markdownlint comment "pre-existing long lines per ADR-0864
+  tail"`: ADR-0864 has no file: it is a retired number in
+  scripts/ci/source-adr-citations.json; see ADR-0866 and ADR-0980 for the
+  markdownlint configuration tune and first sweep it names.

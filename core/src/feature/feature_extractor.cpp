@@ -27,6 +27,7 @@
 
 #include "config.h"
 #include "feature_extractor.h"
+#include "gpu_dispatch_env.h"
 #include "log.h"
 #include "picture.h"
 
@@ -263,13 +264,6 @@ extern VmafFeatureExtractor vmaf_fex_mobilesal;
 extern VmafFeatureExtractor vmaf_fex_transnet_v2;
 extern VmafFeatureExtractor vmaf_fex_null;
 
-#if HAVE_RUST_TAD
-/* ADR-0707: TAD (Temporal Absolute Difference) — Rust/cbindgen pilot extractor.
- * Only registered when the Rust staticlib is linked
- * (enable_rust_features=true). */
-extern VmafFeatureExtractor vmaf_fex_tad;
-#endif
-
 } /* extern "C" */
 
 /* The registry has internal linkage: it is only ever walked by the lookup
@@ -444,14 +438,35 @@ VmafFeatureExtractor *feature_extractor_list[] = {
     &vmaf_fex_ssimulacra2_metal,
 #endif
     &vmaf_fex_speed_qa, &vmaf_fex_lpips, &vmaf_fex_dists_sq, &vmaf_fex_fastdvdnet_pre,
-    &vmaf_fex_mobilesal, &vmaf_fex_transnet_v2,
-#if HAVE_RUST_TAD
-    /* ADR-0707: TAD Rust pilot — CPU-only, off by default, no GPU twins. */
-    &vmaf_fex_tad,
-#endif
-    &vmaf_fex_null, nullptr};
+    &vmaf_fex_mobilesal, &vmaf_fex_transnet_v2, &vmaf_fex_null, nullptr};
+
+/* Entries of feature_extractor_list[] before its nullptr terminator. */
+constexpr unsigned static_extractor_count =
+    (sizeof(feature_extractor_list) / sizeof(feature_extractor_list[0])) - 1U;
+
+/* ADR-1713: the Rust extractors (the twins and the TAD pilot) are not in the
+ * static list: they exist only in a build with enable_rust_features, and this
+ * file is also linked into test binaries without the Rust archive. The shim
+ * installs an accessor here instead (vmaf_rust_twins_install(), called by
+ * vmaf_init()), so nothing in this file refers to a Rust symbol. */
+std::atomic<VmafRustExtractorAtFn> rust_extractor_at{nullptr};
+
+/* Entry @p i of the registry: the static list, then the Rust extractors. Every
+ * registry walk in this file goes through it and stops at the first NULL. */
+VmafFeatureExtractor *registry_at(unsigned i)
+{
+    if (i < static_extractor_count)
+        return feature_extractor_list[i];
+    const VmafRustExtractorAtFn rust_at = rust_extractor_at.load(std::memory_order_acquire);
+    return rust_at ? rust_at(i - static_extractor_count) : nullptr;
+}
 
 } /* anonymous namespace */
+
+void vmaf_feature_extractor_install_rust_registry(VmafRustExtractorAtFn rust_at)
+{
+    rust_extractor_at.store(rust_at, std::memory_order_release);
+}
 
 VmafFeatureExtractor *vmaf_get_feature_extractor_by_name(const char *name)
 {
@@ -459,7 +474,7 @@ VmafFeatureExtractor *vmaf_get_feature_extractor_by_name(const char *name)
         return nullptr;
 
     VmafFeatureExtractor *fex = nullptr;
-    for (unsigned i = 0; (fex = feature_extractor_list[i]); i++) {
+    for (unsigned i = 0; (fex = registry_at(i)); i++) {
         if (!strcmp(name, fex->name))
             return fex;
     }
@@ -476,12 +491,12 @@ int vmaf_feature_extractor_list_audit(void)
    * extractor objects that happen to publish the same name).  Either
    * is a registry bug. */
     int dup_count = 0;
-    for (unsigned i = 0; feature_extractor_list[i]; i++) {
-        const VmafFeatureExtractor *const a = feature_extractor_list[i];
+    for (unsigned i = 0; registry_at(i); i++) {
+        const VmafFeatureExtractor *const a = registry_at(i);
         if (!a->name)
             continue;
-        for (unsigned j = i + 1; feature_extractor_list[j]; j++) {
-            const VmafFeatureExtractor *const b = feature_extractor_list[j];
+        for (unsigned j = i + 1; registry_at(j); j++) {
+            const VmafFeatureExtractor *const b = registry_at(j);
             if (!b->name)
                 continue;
             if (a == b || !strcmp(a->name, b->name)) {
@@ -513,39 +528,57 @@ int vmaf_feature_extractor_list_audit(void)
  * ADR-0530 then falls back to any extractor providing the feature, preserving
  * ADR-0519's partial-backend posture by routing uncovered features through CPU
  * twins; CUDA's complete coverage makes this a no-op there. */
+namespace
+{
+
+/* Device twins (CUDA, SYCL, HIP, Metal). */
+constexpr uint64_t gpu_twin_mask = VMAF_FEATURE_EXTRACTOR_CUDA | VMAF_FEATURE_EXTRACTOR_SYCL |
+                                   VMAF_FEATURE_EXTRACTOR_HIP | VMAF_FEATURE_EXTRACTOR_METAL;
+
+bool provides_feature(const VmafFeatureExtractor *fex, const char *name)
+{
+    if (!fex->provided_features)
+        return false;
+    const char *fname = nullptr;
+    for (unsigned j = 0; (fname = fex->provided_features[j]); j++) {
+        if (!strcmp(name, fname))
+            return true;
+    }
+    return false;
+}
+
+/* First pass: with no flags, skip device twins (ADR-1100) and Rust twins
+ * (ADR-1713), so the C extractor is found whatever the registry order; with
+ * flags, the extractor must carry one of them. */
+bool first_pass_eligible(const VmafFeatureExtractor *fex, unsigned flags)
+{
+    if (flags == 0)
+        return !(fex->flags & (gpu_twin_mask | VMAF_FEATURE_EXTRACTOR_RUST));
+    return (fex->flags & flags) != 0;
+}
+
+/* ADR-0530 fallback pass: any provider, but a Rust twin only when asked for. */
+bool fallback_eligible(const VmafFeatureExtractor *fex, unsigned flags)
+{
+    return !(fex->flags & VMAF_FEATURE_EXTRACTOR_RUST) || (flags & VMAF_FEATURE_EXTRACTOR_RUST);
+}
+
+} /* anonymous namespace */
+
 VmafFeatureExtractor *vmaf_get_feature_extractor_by_feature_name(const char *name, unsigned flags)
 {
     if (!name)
         return nullptr;
 
     VmafFeatureExtractor *fex = nullptr;
-
-    const unsigned gpu_mask = VMAF_FEATURE_EXTRACTOR_CUDA | VMAF_FEATURE_EXTRACTOR_SYCL |
-                              VMAF_FEATURE_EXTRACTOR_HIP | VMAF_FEATURE_EXTRACTOR_METAL;
-    for (unsigned i = 0; (fex = feature_extractor_list[i]); i++) {
-        if (!fex->provided_features)
-            continue;
-        if (flags == 0) {
-            if (fex->flags & gpu_mask)
-                continue;
-        } else if (!(fex->flags & flags)) {
-            continue;
-        }
-        const char *fname = nullptr;
-        for (unsigned j = 0; (fname = fex->provided_features[j]); j++) {
-            if (!strcmp(name, fname))
-                return fex;
-        }
+    for (unsigned i = 0; (fex = registry_at(i)); i++) {
+        if (first_pass_eligible(fex, flags) && provides_feature(fex, name))
+            return fex;
     }
     if (flags) {
-        for (unsigned i = 0; (fex = feature_extractor_list[i]); i++) {
-            if (!fex->provided_features)
-                continue;
-            const char *fname = nullptr;
-            for (unsigned j = 0; (fname = fex->provided_features[j]); j++) {
-                if (!strcmp(name, fname))
-                    return fex;
-            }
+        for (unsigned i = 0; (fex = registry_at(i)); i++) {
+            if (fallback_eligible(fex, flags) && provides_feature(fex, name))
+                return fex;
         }
     }
     return nullptr;
@@ -576,16 +609,18 @@ VmafFeatureExtractor *vmaf_get_feature_extractor_twin(const VmafFeatureExtractor
 namespace
 {
 
-/* The bits that mark an extractor as a device twin. */
+/* The bits that mark an extractor as a twin of a CPU extractor: the device
+ * backends and, since ADR-1713, the Rust twins. */
 constexpr unsigned device_twin_flags = VMAF_FEATURE_EXTRACTOR_CUDA | VMAF_FEATURE_EXTRACTOR_SYCL |
-                                       VMAF_FEATURE_EXTRACTOR_HIP | VMAF_FEATURE_EXTRACTOR_METAL;
+                                       VMAF_FEATURE_EXTRACTOR_HIP | VMAF_FEATURE_EXTRACTOR_METAL |
+                                       VMAF_FEATURE_EXTRACTOR_RUST;
 
 /* Whether some CPU extractor's twin lookup returns `twin` for its backend. */
 bool device_twin_is_reachable(const VmafFeatureExtractor *twin)
 {
     const unsigned backend = twin->flags & device_twin_flags;
     const VmafFeatureExtractor *cpu_fex = nullptr;
-    for (unsigned i = 0; (cpu_fex = feature_extractor_list[i]); i++) {
+    for (unsigned i = 0; (cpu_fex = registry_at(i)); i++) {
         if (cpu_fex->flags & device_twin_flags)
             continue;
         if (vmaf_get_feature_extractor_twin(cpu_fex, backend) == twin)
@@ -600,7 +635,7 @@ int vmaf_feature_extractor_twin_audit(void)
 {
     int unreachable = 0;
     const VmafFeatureExtractor *fex = nullptr;
-    for (unsigned i = 0; (fex = feature_extractor_list[i]); i++) {
+    for (unsigned i = 0; (fex = registry_at(i)); i++) {
         if (!(fex->flags & device_twin_flags) || device_twin_is_reachable(fex))
             continue;
         vmaf_log(VMAF_LOG_LEVEL_ERROR,
@@ -610,6 +645,60 @@ int vmaf_feature_extractor_twin_audit(void)
         unreachable++;
     }
     return unreachable;
+}
+
+namespace
+{
+
+/* ADR-1713: the implementation VMAF_FEATURE_IMPL asks for. */
+enum class FeatureImpl : std::uint8_t { c, rust, invalid };
+
+FeatureImpl requested_feature_impl()
+{
+    const char *mode = vmaf_gpu_dispatch_env_get("VMAF_FEATURE_IMPL");
+    if (!mode || !*mode || !strcmp(mode, "c"))
+        return FeatureImpl::c;
+    if (!strcmp(mode, "rust"))
+        return FeatureImpl::rust;
+    vmaf_log(VMAF_LOG_LEVEL_ERROR, "VMAF_FEATURE_IMPL=%s: expected \"c\" or \"rust\"\n", mode);
+    return FeatureImpl::invalid;
+}
+
+} /* anonymous namespace */
+
+int vmaf_feature_impl_rust_requested(void)
+{
+    switch (requested_feature_impl()) {
+    case FeatureImpl::c:
+        return 0;
+    case FeatureImpl::rust:
+        return 1;
+    default:
+        return -EINVAL;
+    }
+}
+
+int vmaf_feature_extractor_impl_select(VmafFeatureExtractor *fex, VmafFeatureExtractor **selected)
+{
+    if (!fex || !selected)
+        return -EINVAL;
+    *selected = fex;
+    const FeatureImpl impl = requested_feature_impl();
+    if (impl == FeatureImpl::invalid)
+        return -EINVAL;
+    if (impl == FeatureImpl::c || (fex->flags & device_twin_flags))
+        return 0;
+    VmafFeatureExtractor *twin = vmaf_get_feature_extractor_twin(fex, VMAF_FEATURE_EXTRACTOR_RUST);
+    if (!twin) {
+        vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                 "VMAF_FEATURE_IMPL=rust: no Rust implementation of %s, running the C extractor\n",
+                 fex->name);
+        return 0;
+    }
+    vmaf_log(VMAF_LOG_LEVEL_INFO, "feature extractor %s: Rust implementation %s\n", fex->name,
+             twin->name);
+    *selected = twin;
+    return 0;
 }
 
 bool vmaf_feature_extractor_supports_options(const VmafFeatureExtractor *fex,
@@ -802,6 +891,23 @@ bool vmaf_feature_extractor_reads_shared_luma_only(const VmafFeatureExtractor *f
     return fex->reads_shared_luma_only(fex);
 }
 
+const char *vmaf_feature_extractor_context_debug_key(const VmafFeatureExtractorContext *fex_ctx)
+{
+    if (!fex_ctx || !fex_ctx->fex || !fex_ctx->fex->unsuffixed_debug_key)
+        return nullptr;
+    const VmafFeatureExtractor *fex = fex_ctx->fex;
+    if (!fex->priv || !fex->options)
+        return nullptr;
+    for (const VmafOption *opt = fex->options; opt->name; ++opt) {
+        if (strcmp(opt->name, "debug") != 0 || opt->type != VMAF_OPT_TYPE_BOOL)
+            continue;
+        bool debug = false;
+        memcpy(&debug, static_cast<const uint8_t *>(fex->priv) + opt->offset, sizeof(debug));
+        return debug ? fex->unsuffixed_debug_key : nullptr;
+    }
+    return nullptr;
+}
+
 int vmaf_feature_extractor_context_create(VmafFeatureExtractorContext **fex_ctx,
                                           const VmafFeatureExtractor *fex,
                                           VmafDictionary *opts_dict)
@@ -870,6 +976,35 @@ int consult_cuda_dispatch(const VmafFeatureExtractor *fex, unsigned w, unsigned 
 #endif
 }
 
+/* The device twins of the float extractors that normalise samples the way picture_copy()
+ * does. picture_copy() scales every depth from 8 to 16 bits (ADR-2164), so the CPU
+ * extractors score 9, 11, 13, 14 and 15-bit pictures; the CUDA, SYCL, HIP and Metal twins
+ * read the words themselves and were never compared with the CPU at those depths, so they
+ * refuse them by name until they are
+ * (T-FLOAT-EXTRACTORS-ODD-DEPTH-TWINS-UNMEASURED-2026-10-07). Other extractors keep their
+ * own depth checks; psnr_hvs, for one, scores 9 and 11 bits correctly. */
+int refuse_unscaled_bpc(const VmafFeatureExtractor *fex, unsigned bpc)
+{
+    static const char *const kFamilies[] = {"float_ssim", "float_ms_ssim", "float_adm", "float_vif",
+                                            "float_motion"};
+    constexpr uint64_t kDeviceFlags = VMAF_FEATURE_EXTRACTOR_CUDA | VMAF_FEATURE_EXTRACTOR_SYCL |
+                                      VMAF_FEATURE_EXTRACTOR_HIP | VMAF_FEATURE_EXTRACTOR_METAL;
+    if (bpc == 8U || bpc == 10U || bpc == 12U || bpc == 16U || !fex->name ||
+        (fex->flags & kDeviceFlags) == 0U)
+        return 0;
+    for (const char *family : kFamilies) {
+        const size_t n = std::strlen(family);
+        if (std::strncmp(fex->name, family, n) == 0 &&
+            (fex->name[n] == '\0' || fex->name[n] == '_')) {
+            vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                     "%s: picture bit depth %u is not supported: use 8, 10, 12 or 16 bits\n",
+                     fex->name, bpc);
+            return -EINVAL;
+        }
+    }
+    return 0;
+}
+
 } // namespace
 
 int vmaf_feature_extractor_context_init(VmafFeatureExtractorContext *fex_ctx,
@@ -885,6 +1020,9 @@ int vmaf_feature_extractor_context_init(VmafFeatureExtractorContext *fex_ctx,
     if (!pix_fmt)
         return -EINVAL;
     /* Before the close obligation below: nothing of the extractor runs yet. */
+    const int bpc_err = refuse_unscaled_bpc(fex_ctx->fex, bpc);
+    if (bpc_err)
+        return bpc_err;
     const int dispatch_err = consult_cuda_dispatch(fex_ctx->fex, w, h);
     if (dispatch_err)
         return dispatch_err;
@@ -983,6 +1121,37 @@ void advance_prev_ref_window(VmafFeatureExtractor *fex, VmafPicture *ref)
 
 } /* anonymous namespace */
 
+namespace
+{
+
+/* RC4 WP5 (#2142): the extractor of `fex_ctx` is the producer of every score
+ * written while the scope lives, so the collector records which extractor
+ * instance (and options) wrote each feature vector. */
+class ProducerScope
+{
+  public:
+    explicit ProducerScope(const VmafFeatureExtractorContext *fex_ctx)
+        : previous_(vmaf_feature_producer_swap(
+              VmafFeatureProducer{.source = VMAF_FEATURE_SOURCE_EXTRACTOR,
+                                  .name = fex_ctx->fex->name,
+                                  .options = fex_ctx->opts_dict}))
+    {
+    }
+    ProducerScope(const ProducerScope &) = delete;
+    ProducerScope &operator=(const ProducerScope &) = delete;
+    ProducerScope(ProducerScope &&) = delete;
+    ProducerScope &operator=(ProducerScope &&) = delete;
+    ~ProducerScope()
+    {
+        (void)vmaf_feature_producer_swap(previous_);
+    }
+
+  private:
+    VmafFeatureProducer previous_;
+};
+
+} // namespace
+
 int vmaf_feature_extractor_context_extract(VmafFeatureExtractorContext *fex_ctx, VmafPicture *ref,
                                            VmafPicture *ref_90, VmafPicture *dist,
                                            VmafPicture *dist_90, unsigned pic_index,
@@ -1015,6 +1184,7 @@ int vmaf_feature_extractor_context_extract(VmafFeatureExtractorContext *fex_ctx,
             return err;
     }
 
+    const ProducerScope producer(fex_ctx);
     const int err = fex_ctx->fex->extract(fex_ctx->fex, ref, ref_90, dist, dist_90, pic_index, vfc);
     if (err) {
         vmaf_log(VMAF_LOG_LEVEL_WARNING, "problem with feature extractor \"%s\" at index %d\n",
@@ -1077,6 +1247,7 @@ int vmaf_feature_extractor_context_collect(VmafFeatureExtractorContext *fex_ctx,
     if (!fex_ctx->fex->collect)
         return -EINVAL;
 
+    const ProducerScope producer(fex_ctx);
     return fex_ctx->fex->collect(fex_ctx->fex, pic_index, vfc);
 }
 
@@ -1092,6 +1263,7 @@ int vmaf_feature_extractor_context_flush(VmafFeatureExtractorContext *fex_ctx,
 
     int err = 0;
     if (fex_ctx->fex->flush) {
+        const ProducerScope producer(fex_ctx);
         while (!(err = fex_ctx->fex->flush(fex_ctx->fex, vfc))) {
             /* drain all flush-emitted features */
         }

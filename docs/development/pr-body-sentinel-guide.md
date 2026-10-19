@@ -42,6 +42,21 @@ pushed. A human PR on a `release-please--` branch is still validated, and
 a PR found only through the public-page fallback, which carries no author
 identity, is never exempted.
 
+The hook also skips a strictly dependency-only bot PR, as the CI gate does
+(ADR-1152). It asks `scripts/ci/classify-dependency-pr.sh` with the inputs CI
+gives it:
+
+- the author as the pull-request event names it, for example `renovate[bot]`
+  for the Renovate app;
+- the PR's head ref, which must also be the branch being pushed;
+- the files the branch changes against `origin/master`.
+
+The PR is exempt only when the author or branch is Renovate's or Dependabot's
+**and** every changed file is a dependency manifest, lockfile or image pin
+(for example `go.mod` and `go.sum`). A human PR on an ordinary branch with the
+same files, or a bot PR that also changes source, is still validated. The
+public-page fallback never exempts here either.
+
 ## The six deliverables and their opt-out forms
 
 Every fork-local PR body must address each of the six deliverables
@@ -61,6 +76,26 @@ are exempt from the entire section.
 | Reproducer / smoke-test command | `Reproducer / smoke-test command` | `reproducer` or `smoke` | `no smoke-test needed: doc-only` |
 | CHANGELOG fragment | `CHANGELOG fragment` | `changelog` | `no changelog needed: internal refactor` |
 | Rebase note | `Rebase note` | `rebase` | `no rebase impact: docs-only` |
+
+### Small pull requests (ADR-2461)
+
+A small pull request may put the marker `small PR (ADR-2461)` anywhere in the
+body instead of addressing four of the six items. The marker waives the
+research digest, decision matrix, `AGENTS.md` note and rebase note; the
+reproducer and the changelog fragment are still required in the forms above.
+The gate reads the diff and refuses the marker, with an `ADR-2461 small PR`
+error per reason, when the pull request:
+
+- changes more than 100 lines (changelog and rebase-note fragments, ADR index
+  fragments and lock files are not counted);
+- touches more than one top-level directory (`docs/` and `changelog.d/` do not
+  count beside another one);
+- touches `core/src/`, `core/include/`, `core/tools/`,
+  `core/meson_options.txt`, `python/test/` or `ffmpeg-patches/`;
+- adds a file under `docs/adr/`.
+
+Whether a change adds a user-discoverable surface elsewhere stays a reviewer's
+judgement. A body without the marker is parsed exactly as before.
 
 ### Exact syntax
 

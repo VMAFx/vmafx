@@ -7,20 +7,20 @@ invariant: Integer ADM kernels header separation, AIM clipping differences, and 
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # Integer ADM Restructuring and AIM Clipping
 
-- **`integer_adm_kernels.h` = the scalar integer ADM kernels** (fork-local,
-  ADR-1402 PR): `integer_adm.c` drivers and the x86 twins share them. No
-  second copy of a scalar kernel in `x86/adm_avx2.c` / `x86/adm_avx512.c`.
-  `AdmCmCtx.row_data` = frame-wide vector constants of the interior-row
-  callback (`CmFrameConsts`); NULL on the scalar path. Row fold stays in
+- **`integer_adm_kernels.h` = scalar integer ADM kernels** (fork-local,
+  ADR-1402 PR): `integer_adm.c` drivers and x86 twins share them. No
+  second copy of scalar kernel in `x86/adm_avx2.c` / `x86/adm_avx512.c`.
+  `AdmCmCtx.row_data` = frame-wide vector constants of interior-row
+  callback (`CmFrameConsts`); NULL on scalar path. Row fold stays in
   `adm_cm_rows()` / `i4_adm_cm_rows()` (ADR-1167).
 - **Integer AIM is unclipped, float AIM is clipped at 1: keep both**
   (ADR-1417). `adm_result_finalise()` -> `vmaf_adm_scale_ratios()` =
   `aim_num / den`, as upstream `integer_adm.c`. `compute_adm()` ->
   `vmaf_adm_finalize_scores()` = `MIN(aim_num / aim_den, 1)`, as upstream
   `adm.c`. Flat reference + additive impairment: integer aim > 1 (3.1756 on
-  the 64x64 patch picture), adm3 down to `adm_min_val`. Shipped
-  `vmaf_v1.0.16` models read integer adm3. Do not add the clip to the integer
-  path or drop it from the float one unless upstream does. No golden assertion
+  64x64 patch picture), adm3 down to `adm_min_val`. Shipped
+  `vmaf_v1.0.16` models read integer adm3. Do not add clip to integer
+  path or drop it from float one unless upstream does. No golden assertion
   has integer aim > 1; guard = `test_integer_adm_aim_unclipped`.
 - **`integer_adm.c` / `adm_tools.c` are restructured upstream-mirror
   files** (ADR-1141, 2026-09-02): every kernel expression is verbatim

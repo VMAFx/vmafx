@@ -15,6 +15,7 @@ Per-package invariants for subtree.
 | [ADR-0961](../../docs/adr/0961-queue-pullwork-rollback-on-get-failure.md) | PullWork rollback on post-update Get failure | queue package correctness |
 | [ADR-0962](../../docs/adr/0962-controller-streamjobs-and-reaper-stop.md) | StreamJobs snapshot + reaper stop signal | controller / queue / nodes correctness |
 | [ADR-1119](../../docs/adr/1119-golusoris-go-framework-adoption.md) | golusoris fx framework adoption | composition root, env contract, lifecycle ordering, auth injection |
+| [ADR-2350](../../docs/adr/2350-cloud-native-platform.md) | cloud-native platform (replaces ADR-1119 queue decision) | Postgres store, leased node claims, River, stateless replicas, generated proto |
 | [ADR-1518](../../docs/adr/1518-controller-grpc-authorization.md) | gRPC authorisation: per-method role table, deny by default | auth interceptors, `grpc_roles.go` |
 | [ADR-1522](../../docs/adr/1522-controller-tenant-scoped-reads.md) | tenant-scoped job reads, tenant-bound node sessions | queue, nodes, scheduler, gRPC handlers |
 | [ADR-1519](../../docs/adr/1519-controller-tenant-registry.md) | tenant registry from VmafxTenant resources or file | `auth/tenants.go`, `tenants/`, `tenant_config.go` |
@@ -23,8 +24,9 @@ Per-package invariants for subtree.
 ## Protobuf bindings (ADR-1119) — GENERATED, never hand-written
 
 `controllerv1` Go bindings at `gen/go/controller/{controller,controller_grpc}.pb.go`
-generated from `cmd/vmafx-controller/proto/controller.proto` via
-`cmd/vmafx-controller/proto/generate.sh` (`//go:generate ./generate.sh`).
+generated from `proto/vmafx/controller/v1/controller.proto`, itself generated
+from `api/vmafx-platform.toml` (ADR-2350 D13): `scripts/codegen/vmafx-api.py
+--write`, then `scripts/codegen/proto_generate.py --write` (one `buf generate`).
 
 - **NEVER hand-edit `.pb.go` files.** Hand-written stubs lacked `proto.Message`
   implementation (no `protoimpl`/`ProtoReflect`); `VmafxController` RPCs
@@ -40,15 +42,22 @@ generated from `cmd/vmafx-controller/proto/controller.proto` via
 Controller wired via `fx.New(...).Run()` over golusoris framework.
 `main.go` supplies vmafx providers + invokes; golusoris owns config (koanf,
 `VMAFX_` prefix, `.` delimiter), structured slog logging, OTel, HTTP stack
-(`golusoris.HTTP` with chi router + graceful `*http.Server`), gRPC server
+(`bootstrap.HTTP` = golusoris router + server modules: chi router + graceful `*http.Server`), gRPC server
 (OTel + logging + panic-recovery interceptors), shutdown.
 
 1. **`productionOptions(envReplace)` = single graph source.** `main` and
    `app_test.go` build from it. `fx.Replace` parameterised (fx forbids duplicate
    type replacement): binary passes `Watch:true`, tests `Watch:false`.
-2. **SQLite job queue KEPT — do NOT adopt `golusoris.Jobs`.** `provideJobQueue`
-   wraps `modernc.org/sqlite` queue with `OnStop` `Close`. Single-binary
-   queue: ADR-1119 decision; river/Postgres out of scope.
+2. **Backend chosen by `VMAFX_STORE_BACKEND`** (`store_wiring.go`,
+   ADR-2350): `sqlite` (default) = `provideJobQueue` + registry + scheduler
+   behind `backend.Legacy`, one replica, transitional (no new features);
+   `postgres` = `store` + River lease sweep behind `backend.Postgres`, any
+   replica count, no DB credentials on nodes (Q-122). Standalone profile =
+   same store on SQLite + `riversqlite` (waits golusoris#620/#621). Store
+   keys: generated `compoundKeys` (`config_keys.gen.go`, from `[[config]]`
+   of `api/vmafx-platform.toml`, ADR-2350 D13) feed `controllerEnvOptions`;
+   tests build from `controllerEnvOptions()` (no second key list). New key ->
+   `[[config]]` entry, regenerate; no hand list here.
 3. **JWT auth injected via golusoris#269 (`ProvideServerOptionFn`).** Interceptors
    wired via `grpc.ProvideServerOptionFn(func(mw *auth.Middleware) grpc.ServerOption{...})`
    into `group:"grpc.serveropts"`. fx injects `*auth.Middleware`. Do NOT reintroduce
@@ -57,14 +66,15 @@ Controller wired via `fx.New(...).Run()` over golusoris framework.
 4. **Lazy-provider bind guards load-bearing.** `fx.Invoke(func(_ *http.Server){})`
    and `fx.Invoke(func(_ *grpc.Server){})` force binding HTTP and gRPC listeners.
    Tested in `TestAppStartsAndStops` and `TestGRPCListenerBindsAndServes`.
-5. **Stop order (R1).** `fx.Invoke(func(_ *libvmaf.Scorer, _ queue.Queue, _ *nodes.Registry){})`
-   registered AHEAD of gRPC registration; scorer/queue/registry OnStop hooks
-   run in reverse: gRPC `GracefulStop` → queue `Close` + reaper stop → scorer
-   `Close`. Guard: `TestStopOrder`.
-6. **gen/go/controller proto hand-written.** `gen/go/controller/*.pb.go`
-   lacks protobuf-v2 reflection interface; `VmafxController` RPCs unmarshaled
-   by standard codec. Wire tests use `VmafxScoring`; in-process handler
-   tests call controller methods directly.
+5. **Stop order (R1).** `fx.Invoke(func(_ *libvmaf.Scorer, _ backend.Backend){})`
+   registered AHEAD of gRPC registration; backend OnStop hooks (SQLite:
+   queue `Close` + reaper stop; Postgres: River `Stop` + pool `Close`) run
+   after gRPC `GracefulStop`, scorer `Close` last. Guard: `TestStopOrder`.
+6. **gen/go/controller = buf output** (`protoc-gen-go`, `protoimpl`
+   present) from `api/vmafx-platform.toml` (ADR-2350 D13). Never hand-edit
+   proto or `.pb.go`; change the definition, run both generators. Guards:
+   `wire_test.go` (`TestControllerProtoMarshalsOverWire`, `VmafxController`
+   over `bufconn`), `test_proto_generated_current`, `buf breaking` (WIRE_JSON).
 
 ## Invariants
 
@@ -101,7 +111,20 @@ Controller wired via `fx.New(...).Run()` over golusoris framework.
    Never drop node guard or tenant compare. Partial reports: `MayReport`.
    Guards: `queue_tenant_test.go`, `grpc_tenant_test.go`.
 
-7. **`CancelledAmong` (ADR-1567)**: tenant + `status='cancelled'` in SQL
+7. **`Cancel` / `ReportResult` report the transition** (WP16, issue #2430):
+   `(bool, error)`; true only when this call moved job to terminal state.
+   Idempotent retry / already-terminal job -> false. Job metrics
+   (`metrics.go::jobFinished`) count only true -> one count per job. Never
+   count on nil error alone. Guard: `metrics_test.go::TestJobLifecycleMetrics`
+   (repeat report + repeat cancel counted once).
+8. **`Stats` = only all-tenant read, counts only** (`queue/stats.go`):
+   per-tenant pending / running COUNT + MIN(created_at) and in-memory requeue
+   totals (`requeued`, reasons `RequeueNodeLost` / `RequeueRestart` /
+   `RequeueRollback` = `metricdef.RequeueReason` values). Returns no job row,
+   no job content (ADR-1522 scopes job reads). Increment `requeued` under
+   `q.mu` where a RUNNING job returns to PENDING (`RequeueNode`,
+   `rollbackTopending`, `reload` count). Guard: `queue/stats_test.go`.
+9. **`CancelledAmong` (ADR-1567)**: tenant + `status='cancelled'` in SQL
    WHERE, IDs bound (`repeatCommaQ`), input order kept, writes nothing.
    `Heartbeat` answers `cancel_job_ids` from it; `maxHeartbeatJobs` = 64
    (node slot limit) -> InvalidArgument above. Refused session -> ok=false,
@@ -130,6 +153,73 @@ Controller wired via `fx.New(...).Run()` over golusoris framework.
    cap)` stores `Node.TenantID`; `ValidateSession` and `Heartbeat` compare
    token (constant time) and tenant (exact) in `sessionMatches`. Every session
    check takes caller tenant; no tenant-less variant.
+
+### store package (ADR-2350, WP17; not wired yet)
+
+PostgreSQL store replacing SQLite queue. `store/`: migrations
+(`migrations/postgres/`, embedded, golusoris `db/migrate`), sqlc queries
+(`queries/postgres/` -> generated `pgdb/`), Go API on top.
+
+1. **Leased claims, attempt = fencing token** (Q-122): `Claim` = `FOR UPDATE
+   SKIP LOCKED`, opens attempt n + `job_attempts` row. `Report` / `Release`
+   / `ExtendLeases` UPDATE compares `attempt` AND `lease_session` AND
+   `status = 'running'`. Never drop either compare: same session reclaiming
+   after expiry is fenced only by `attempt`
+   (`TestFencingRefusesAnOldAttemptOfTheSameSession`). Repeat of own ended
+   attempt = no-op success only for outcomes in `reportRepeatable` /
+   `releaseRepeatable`; report of released/expired attempt = `ErrFenced`.
+2. **Tenant twice**: tenant in every WHERE + RLS (`FORCE ROW LEVEL
+   SECURITY`, policies on `vmafx.tenant_id` / `vmafx.maintenance`). Tenant
+   ops via `inTenant`, cross-tenant only via `inMaintenance` (expiry,
+   counts). App role must not be superuser (superuser bypasses RLS); tests
+   run as owner role `vmafx_app` (`TestRowLevelSecurityHidesOtherTenants`).
+3. **Generated, never hand-edited**: `pgdb/*.go` = sqlc output + SPDX header.
+   Edit SQL, then `python3 scripts/codegen/sqlc_generate.py --write` (sqlc
+   pinned in `build-config.env`: `SQLC_VERSION` + per-platform SHA-256).
+   Gate: Meson `test_sqlc_generated_current` (77 + reason without pinned
+   binary). Schema change = new migration file + raise `SchemaVersion`.
+4. **Bounded loops** (HISS-02): `MaxHeartbeatJobs` 64, `MaxBackends` 16,
+   `MaxListJobs` 10000, `MaxExpiryBatch` 1000; larger input -> `ErrInvalid`.
+5. **Tests need Docker** (golusoris `testutil/pg`; image `storetest.Image`,
+   migrations also on `storetest.OldestImage`). No skip-on-missing-Docker
+   added here; `-short` skips (testutil). `storetest.Image` / `OldestImage`
+   stay `tag@sha256:<index digest>`: testutil/pg >= golusoris v0.13.0 fails
+   test on undigested image. Tag bump = new digest, same edit. Renovate
+   custom manager (`depNameTemplate: postgres`) owns both constants;
+   `OldestImage` held on 16.x by package rule.
+
+### backend package (ADR-2350, WP17)
+
+Seam between handlers and state: `backend.Backend`. `Postgres` = on
+`store`; SQLite queue + registry behind same interface until SQLite store
+lands. Wire protocol unchanged.
+
+1. **Node ID = session ID** (Postgres): `Register` returns session UUID as
+   node ID; `Report` / `MayReport` resolve attempt from session
+   (`store.AttemptOf` / `RunningAttempt`), not from wire (wire fencing =
+   WP8). Malformed node ID -> `ErrInvalidSession`; malformed job ID ->
+   `ErrNotFound` (reads) / `ErrNotAssigned` (reports).
+2. **Lease sweep = River periodic job** (`LeaseSweepKind`): leader inserts,
+   any replica works it, `SKIP LOCKED` keeps sweeps apart. No
+   `UniqueOpts.ByPeriod` (River refuses < 1 s; leader-only insert is
+   enough). Requeues counted per process (`RecordSweep`).
+3. **One-shot commands before fx** (`Command`): `migrate` (store + River
+   migrations, then `CheckSchema`), `import-sqlite --from F
+   [--empty-tenant T]` (read-only on F, refuses unmigrated DB, second run
+   skips copied IDs). `VMAFX_DB_DSN` required. Exit 2 = usage.
+4. **Backoff**: `ExponentialBackoff(base, max)`; golusoris `jobs` retry
+   policy replaces it with the golusoris bump (same formula).
+5. **Tests** (`go test ./cmd/vmafx-controller/backend/`, Docker): end to
+   end, tenants apart, refusals, River sweep, import, commands.
+   `store/storetest` = shared DB helper (tests only).
+6. **River lifetime** (`store_wiring.go`, `riverRunner`): River started
+   with own context, ended after `Stop`. Never pass fx `OnStart` ctx to
+   `river.Start`: fx ends that ctx at start timeout (fxtest at start return) ->
+   River stops fetching, notifier spins. Start retried in background
+   (2 s, 900 tries); `/readyz` 503 until River runs (`postgresBackend.Ready`)
+   -> replicas start before DB / migration Job without exiting. Guards:
+   `TestRiverKeepsSweepingAfterTheStart`,
+   `TestControllerStartedBeforeItsMigrationsWaitsUnready`.
 
 ### grpc server
 
@@ -180,7 +270,11 @@ Controller wired via `fx.New(...).Run()` over golusoris framework.
 5. **Sources** (`tenants/`): `FileSource` (YAML/JSON docs, lists) and
    `KubernetesSource` (dynamic client, namespace-scoped list, timeout).
    Strict spec decode (`DisallowUnknownFields`). `Refresher` Start/Close like
-   `nodes.Registry`.
+   `nodes.Registry`. Spec type = generated `vmafxv1.VmafxTenantSpec`
+   (`api/vmafx/v1`, ADR-2350 D13); `auth/tenants.go` aliases `TenantSpec`,
+   `TenantOIDC`, `TenantRBAC`, `TenantScoring` to it. New field ->
+   `api/vmafx-platform.toml`, regenerate; never re-declare struct here. Guard:
+   `auth/tenants_generated_type_test.go`.
 6. **Guards**: `auth/tenants_internal_test.go` (once-per-cache, key age,
    redirect, prune), `auth/tenants_test.go` (mutation-checked: tenant-claim match,
    suspension, allowedRoles, staleness, defaultRole-in-allowed),
@@ -209,10 +303,26 @@ Controller wired via `fx.New(...).Run()` over golusoris framework.
    fx lifecycle. Order: gRPC `GracefulStop` → queue `Close` + node reaper stop
    → scorer `Close`. Replaced `observability.NewShutdownContext()` / `errgroup` /
    `runHTTP`/`runGRPC`. Guard: `TestStopOrder`.
+2. **Default DB path never relative** (`db_path.go`, `provideJobQueue`):
+   `db.path` unset -> `vmafx/vmafx-controller.db` under `$XDG_STATE_HOME` /
+   `~/.local/state` (macOS, Windows: user config dir), dir 0700; unknown ->
+   startup error naming `VMAFX_DB_PATH`. Never fall back to working dir:
+   old relative default committed `vmafx-controller.db{,-shm,-wal}` (#2036).
+   `.gitignore` lists them. Guard:
+   `db_path_test.go::TestJobQueueDefaultIsNotTheWorkingDirectory`.
 
 ### observability
 
-1. **OTel from `bootstrap.Base` + `bootstrap.HTTPTracing`, spans from golusoris and `grpc_server.go`**
+1. **Metrics from `metricdef` only** (`metrics.go`, WP16 / issue #2430):
+   controller families = `metricdef.ByEmitter(metricdef.Controller)`. Event
+   families via `observability.NewCounter/NewHistogram`
+   (`newControllerMetrics`); queue + registry families read at scrape time
+   via `observability.RegisterScraped` (`registerQueueCollector`, one
+   `Stats` query per scrape, `observability.ScrapeTimeout`). No
+   `prometheus.New*Vec` / GaugeFunc / promauto here. Guard:
+   `metrics_test.go::TestControllerServesEveryFamilyItEmits`.
+
+2. **OTel from `bootstrap.Base` + `bootstrap.HTTPTracing`, spans from golusoris and `grpc_server.go`**
    (`main.go::productionOptions`, ADR-0782 / ADR-1119): `bootstrap.HTTPTracing`
    traces `POST /v1/score` with `otelhttp`; gRPC server spans via `grpcmod.Module`
    `otelgrpc`; child span `vmafx.job.submit` via `observability.StartSpan`.

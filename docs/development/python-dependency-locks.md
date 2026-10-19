@@ -17,7 +17,7 @@ into lock files (`requirements/locks/*.txt`, `*/*-lock.txt`).
 The central authority is `requirements/locks/manifest.json`, which pairs every
 lock file with its source files and compilation arguments using a reviewed,
 pinned
-version of `uv` (`0.12.18`).
+version of `uv` (`0.13.1`).
 
 The manifest validates every path it names:
 
@@ -41,7 +41,7 @@ The manifest validates every path it names:
 Input manifests (.in, pyproject.toml)
          │
          ▼
-uv pip compile (pinned uv 0.12.18) ───► Manifest Writer (make python-locks-write)
+uv pip compile (pinned uv 0.13.1) ───► Manifest Writer (make python-locks-write)
          │
          ▼
 Committed hash-lock files (*.txt, *-lock.txt)
@@ -99,6 +99,29 @@ CI Workflows & Dockerfiles                Local Workstation (make lint-tools, cy
    ```bash
    make python-locks-check
    ```
+
+4. **Verify package Python floors**:
+
+   Declared `requires-python` floors in tracked `pyproject.toml` files must
+   honestly reflect the minimum Python version required by the package's
+   direct dependencies and all optional extra groups
+   ([ADR-3335](../adr/3335-python-floors-match-dependencies.md)).
+
+   ```bash
+   make python-floors-check
+   ```
+
+   The verification script `scripts/ci/check_python_floors.py` verifies this
+   property by compiling each tracked package's requirements in an isolated
+   directory with all extras at its declared floor. The check is kept separate
+   from `make lint` because dependency resolution requires network access.
+
+   > [!NOTE]
+   > **Resolve-proven vs run-proven gap**: While the check guarantees that the
+   > dependency tree resolves without conflict at the declared floor,
+   > repository CI executes test suites under Python 3.14. The declared
+   > floors are resolve-proven rather than run-proven across older
+   > interpreters.
 
 ## Sdist packages and PEP 517 build isolation
 

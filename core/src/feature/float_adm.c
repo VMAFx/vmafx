@@ -420,13 +420,13 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     double score_den;
     double score_aim;
     double scores[8];
-    err = compute_adm(s->ref, s->dist, ref_pic->w[0], ref_pic->h[0], s->float_stride,
-                      s->float_stride, &score, &score_num, &score_den, scores, ADM_BORDER_FACTOR,
-                      s->adm_enhn_gain_limit, s->adm_norm_view_dist, s->adm_ref_display_height,
-                      s->adm_csf_mode, luminance_level, s->adm_csf_scale, s->adm_csf_diag_scale,
-                      s->adm_noise_weight, s->adm_bypass_cm, s->adm_p_norm, &score_aim, s->adm_f1s0,
-                      s->adm_f1s1, s->adm_f1s2, s->adm_f1s3, s->adm_f2s0, s->adm_f2s1, s->adm_f2s2,
-                      s->adm_f2s3, s->adm_skip_aim_scale, s->adm_skip_scale0, index);
+    err = compute_adm(
+        s->ref, s->dist, ref_pic->w[0], ref_pic->h[0], (int)s->float_stride, (int)s->float_stride,
+        &score, &score_num, &score_den, scores, ADM_BORDER_FACTOR, s->adm_enhn_gain_limit,
+        s->adm_norm_view_dist, s->adm_ref_display_height, s->adm_csf_mode, luminance_level,
+        s->adm_csf_scale, s->adm_csf_diag_scale, s->adm_noise_weight, s->adm_bypass_cm,
+        s->adm_p_norm, &score_aim, s->adm_f1s0, s->adm_f1s1, s->adm_f1s2, s->adm_f1s3, s->adm_f2s0,
+        s->adm_f2s1, s->adm_f2s2, s->adm_f2s3, s->adm_skip_aim_scale, s->adm_skip_scale0, index);
     if (err) {
         if (err == -EINVAL) {
             vmaf_log(VMAF_LOG_LEVEL_WARNING,
@@ -450,7 +450,7 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
                            scores, scale_scores, index);
 }
 
-static int close(VmafFeatureExtractor *fex)
+static int close_fex(VmafFeatureExtractor *fex)
 {
     AdmState *s = fex->priv;
     adm_state_release(s);
@@ -483,9 +483,10 @@ VmafFeatureExtractor vmaf_fex_float_adm = {
     .init = init,
     .extract = extract,
     .options = options,
-    .close = close,
+    .close = close_fex,
     .priv_size = sizeof(AdmState),
     .provided_features = provided_features,
+    .unsuffixed_debug_key = "adm",
 };
 
 /* NOLINTEND(modernize-use-nullptr) */

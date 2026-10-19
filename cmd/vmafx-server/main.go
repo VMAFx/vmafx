@@ -54,7 +54,6 @@ import (
 	"go.uber.org/fx"
 	googlegrpc "google.golang.org/grpc"
 
-	"github.com/golusoris/golusoris"
 	"github.com/golusoris/golusoris/core/clock"
 	"github.com/golusoris/golusoris/core/config"
 	grpcmod "github.com/golusoris/golusoris/grpc"
@@ -92,12 +91,9 @@ func serverEnvOptions(watch bool) config.Options {
 		EnvPrefix: "VMAFX_",
 		Delimiter: ".",
 		Watch:     watch,
-		CompoundKeys: []string{
-			"grpc.cert_file",
-			"grpc.key_file",
-			"grpc.max_recv_size",
-			"grpc.max_send_size",
-		},
+		// compoundKeys is generated from the [[config]] entries of
+		// api/vmafx-platform.toml (config_keys.gen.go, ADR-2350 D13).
+		CompoundKeys: compoundKeys,
 	}
 }
 
@@ -117,14 +113,16 @@ func productionOptions(envReplace fx.Option) []fx.Option {
 		bootstrap.Base,
 		envReplace,
 		bootstrap.FxLogger(),
-		golusoris.HTTP,
+		bootstrap.HTTP,
 		bootstrap.HTTPTracing,
 		grpcmod.Module,
+		hardeningOptions(),
 		serverProviders(),
 		fx.Invoke(realiseScorer),
 		fx.Invoke(registerScoringService),
 		fx.Invoke(mountHTTPRoutes),
 		fx.Invoke(registerHealthChecks),
+		fx.Invoke(registerBinaryReadiness),
 		fx.Invoke(realiseHTTPServer),
 	}
 }
@@ -133,6 +131,7 @@ func serverProviders() fx.Option {
 	return fx.Provide(
 		provideScorer,
 		scoringservice.ProvideMetrics,
+		provideStreamMetrics,
 		provideScoreLimiter,
 		provideStatusRegistry,
 		newGRPCServerImpl,
@@ -196,10 +195,19 @@ func provideStatusRegistry(clk clock.Clock) *statuspage.Registry {
 func newGRPCServerImpl(
 	scorer *libvmaf.Scorer,
 	metrics *observability.Metrics,
+	streams *scoringservice.StreamMetrics,
 	limiter *ScoreLimiter,
 	log *slog.Logger,
 ) *grpcServer {
-	return newGRPCServerWithLimiter(scorer, metrics, log, limiter)
+	s := newGRPCServerWithLimiter(scorer, metrics, log, limiter)
+	s.streams = streams
+	return s
+}
+
+// provideStreamMetrics registers the ScoreStream session families on the
+// registry /metrics serves.
+func provideStreamMetrics(reg *prometheus.Registry) (*scoringservice.StreamMetrics, error) {
+	return scoringservice.NewStreamMetrics(reg)
 }
 
 // mountHTTPRoutes registers the vmafx HTTP surface on the golusoris chi router:
@@ -220,7 +228,7 @@ func mountHTTPRoutes(
 
 	// Legacy Kubernetes probe aliases — kept for backwards compatibility.
 	r.Get("/healthz", hs.handleHealthz)
-	r.Get("/readyz", hs.handleReadyz)
+	r.Get("/readyz", hs.handleReadyzFromRegistry(reg))
 
 	// k8s canonical probes (/livez, /readyz, /startupz) backed by the registry.
 	// NOTE: /readyz above is the legacy JSON alias; the canonical probe set is

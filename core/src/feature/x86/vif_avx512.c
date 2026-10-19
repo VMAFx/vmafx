@@ -597,9 +597,9 @@ static FORCE_INLINE void vif_vertical_statistics8(const VifStatConfig512 *c, uns
 
         c->buf.tmp.mu1[j] = (accum_mu1 + 128) >> 8;
         c->buf.tmp.mu2[j] = (accum_mu2 + 128) >> 8;
-        c->buf.tmp.ref[j] = accum_ref;
-        c->buf.tmp.dis[j] = accum_dis;
-        c->buf.tmp.ref_dis[j] = accum_ref_dis;
+        c->buf.tmp.ref[j] = (uint32_t)accum_ref;
+        c->buf.tmp.dis[j] = (uint32_t)accum_dis;
+        c->buf.tmp.ref_dis[j] = (uint32_t)accum_ref_dis;
     }
 }
 
@@ -739,9 +739,9 @@ static FORCE_INLINE void vif_finish_statistics512(const Residuals512 *r, VifResi
     accum.accum_den_log += _mm512_reduce_add_epi64(r->maccum_den_log);
     accum.accum_num_non_log += _mm512_reduce_add_epi64(r->maccum_num_non_log);
     accum.accum_den_non_log += _mm512_reduce_add_epi64(r->maccum_den_non_log);
-    num[0] = accum.accum_num_log / 2048.0 +
-             (accum.accum_den_non_log - ((accum.accum_num_non_log) / 16384.0) / (65025.0));
-    den[0] = accum.accum_den_log / 2048.0 + accum.accum_den_non_log;
+    num[0] = (float)(accum.accum_num_log / 2048.0 +
+                     (accum.accum_den_non_log - ((accum.accum_num_non_log) / 16384.0) / (65025.0)));
+    den[0] = (float)(accum.accum_den_log / 2048.0 + accum.accum_den_non_log);
 }
 
 /* Research-2046: VifState dispatch requires the mutable VifPublicState callback ABI. */

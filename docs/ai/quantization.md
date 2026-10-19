@@ -134,7 +134,7 @@ python ai/scripts/qat_train.py \
 | --- | --- |
 | 1. fp32 warm-start | Normal fp32 training. |
 | 2. Fake-quant insertion | `torch.export` captures the trained module and `torchao.quantization.pt2e.prepare_qat_pt2e` inserts observers under `X86InductorQuantizer`'s default recipe: per-tensor `uint8` activations, per-channel symmetric `int8` weights on `ch_axis=0`. |
-| 3. QAT fine-tune | Fine-tune at 10x reduced learning rate (default `fp32_lr / 10`). |
+| 3. QAT fine-tune | Fine-tune at 10x reduced learning rate (default $\mathrm{fp32\_lr} / 10$). |
 | 4. ONNX export | Copy the QAT-conditioned weights into a fresh fp32 module, export that graph, then run `onnxruntime.quantization.quantize_static` with a calibration set drawn from the QAT training distribution. |
 
 The output is a QDQ-format `.int8.onnx`, structurally identical to the
@@ -202,7 +202,7 @@ same redirect logic to choose the file:
 | Step | Check | On failure |
 | --- | --- | --- |
 | 1 | Validate the caller-supplied fp32 path: size cap and op allowlist. | Error. |
-| 2 | Load the sidecar. `quant_mode: "fp32"` means the fp32 file is the model. | Resolution stops here on success. |
+| 2 | Load the sidecar. If the caller path already ends in `.int8.onnx`, or `quant_mode: "fp32"`, the given file is the model. | Resolution stops here on success. |
 | 3 | Strip a trailing `.onnx`, append `.int8.onnx`, run the same size and allowlist validation on that sibling. | A path overflowing the 4096-byte buffer returns `-ENAMETOOLONG`. |
 | 4 | If the int8 file validates, load it instead of the fp32 file. | Go to step 5. |
 | 5 | The int8 file is missing, over the size cap, or has a non-allowlisted op. | Log a `VMAF_LOG_LEVEL_DEBUG` line and load the fp32 baseline. The session still reports the sidecar's `quant_mode`; only the weights are fp32. |

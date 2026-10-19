@@ -3,6 +3,7 @@ paths:
   - scripts/ci/release-pr-exempt.sh
   - scripts/ci/tests/test-release-pr-exempt.sh
 invariant: Exempt = `release-please--` head ref AND bot author; always exits 0; only four authoring gates consult it.
+area: release
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # release-pr-exempt.sh invariants (ADR-1151)
@@ -13,14 +14,13 @@ invariant: Exempt = `release-please--` head ref AND bot author; always exits 0; 
   `release-please--anything`.
 - Always exits 0, communicates through `exempt=true|false`. Gate
   consuming it must use step-level `if:` so job still **reports**.
-  Skipping whole job makes check *absent*, which aggregator's
-  absent-means-pass rule (ADR-0313) cannot tell apart from path-filter skip.
-  That ambiguity is exactly what `mustReport` list exists to close.
+  Skipping whole job makes check *absent*; since ADR-3293 absent owed
+  check fails aggregator.
 - Only four authoring-discipline gates may consult it: Deliverables
   Checklist, Doc-Substance Gate, `docs/state.md` Gate, FFmpeg-Patches Surface
-  Sync. The local pre-push mirror of the Deliverables Checklist
+  Sync. local pre-push mirror of Deliverables Checklist
   (`scripts/git-hooks/pre-push-pr-body-lint.sh`) consults it too, so pushing
-  the release-branch changelog cut is not blocked by a gate CI would skip.
+  release-branch changelog cut is not blocked by gate CI would skip.
   `Release Script Contract` and `ADR Collision Guard` stay armed on
   release PRs. Former = gate proving cut ran; also runs
   `tests/test-release-pr-exempt.sh`, so exemption's own test can never

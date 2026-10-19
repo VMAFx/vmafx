@@ -70,6 +70,7 @@ import uuid
 from collections.abc import Callable
 from typing import Any
 
+from vmaf_mcp.defaultmodel import DEFAULT_MODEL_ARG
 from vmaf_mcp.http_scoring import (
     HttpScoringRuntime,
     get_http_scoring_runtime,
@@ -528,7 +529,7 @@ def _build_score_request(
             height=body["height"],
             pixfmt=body["pixfmt"],
             bitdepth=body["bitdepth"],
-            model=body.get("model", "version=vmaf_v0.6.1"),
+            model=body.get("model", DEFAULT_MODEL_ARG),
             backend=body.get("backend", "auto"),
             # "legacy" (%.6f) is the documented C-CLI default (ADR-0119) and the
             # ScoreRequest default; keep the HTTP path aligned with the stdio /
@@ -610,7 +611,7 @@ async def _handle_score(
       "height": 1080,
       "pixfmt": "420",
       "bitdepth": 8,
-      "model": "version=vmaf_v0.6.1",  // optional
+      "model": "version=vmaf_v1.0.16_3d0h",  // optional
       "backend": "auto",               // optional
       "precision": "legacy"            // optional (default %.6f, ADR-0119)
     }

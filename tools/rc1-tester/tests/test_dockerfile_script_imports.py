@@ -20,6 +20,13 @@ DOCKERFILE = ROOT / "docker" / "Dockerfile.tester"
 PACKAGE = "vmaf_rc1_tester"
 PACKAGE_SOURCE = "tools/rc1-tester/src"
 SCRIPT_RE = re.compile(r"python3\s+(?:/repo/|/src/)?(tools/rc1-tester/image/\w+\.py)")
+# The stages that configure the Meson tree. `meson setup` resolves every
+# `files()` argument at configure time, so a file the tree names outside
+# `core/` must be in each of them (a missing one failed every GPU image).
+MESON_ROOT = "core"
+MESON_BUILD_STAGES = ("vmaf-build", "sycl-build", "cuda-build", "hip-build")
+MESON_FILES_RE = re.compile(r"files\(([^)]*)\)")
+QUOTED_RE = re.compile(r"'([^']+)'")
 
 
 def logical_lines(text: str) -> list[str]:
@@ -114,3 +121,53 @@ def test_a_stage_without_the_package_is_refused() -> None:
     assert len(missing_imports(dockerfile)) == 1
     fixed = dockerfile.replace("RUN", "COPY tools/rc1-tester/src tools/rc1-tester/src\nRUN")
     assert missing_imports(fixed) == []
+
+
+def meson_inputs_outside(root: Path) -> set[str]:
+    """Repository paths outside `core/` that a `files()` call of the Meson tree names."""
+    found: set[str] = set()
+    for build in sorted((root / MESON_ROOT).rglob("meson.build")):
+        if "subprojects" in build.relative_to(root).parts:
+            continue
+        for call in MESON_FILES_RE.findall(build.read_text(encoding="utf-8")):
+            for rel in QUOTED_RE.findall(call):
+                path = (build.parent / rel).resolve()
+                if not path.is_relative_to(root):
+                    continue
+                repo_rel = path.relative_to(root)
+                if repo_rel.parts and repo_rel.parts[0] != MESON_ROOT:
+                    found.add(repo_rel.as_posix())
+    return found
+
+
+def missing_meson_inputs(text: str, inputs: set[str]) -> list[str]:
+    stages = parse_stages(text)
+    return [
+        f"{stage}: meson setup reads {path}, the stage does not copy it"
+        for stage in MESON_BUILD_STAGES
+        for path in sorted(inputs)
+        if not holds(stages, stage, path)
+    ]
+
+
+def test_every_meson_stage_has_the_files_the_tree_names() -> None:
+    inputs = meson_inputs_outside(ROOT)
+    # The reference that broke the CUDA, SYCL and HIP images on 2026-10-05.
+    assert "scripts/ci/exact_twin_matrix.py" in inputs
+    assert missing_meson_inputs(DOCKERFILE.read_text(encoding="utf-8"), inputs) == []
+
+
+def test_a_meson_stage_without_an_input_is_refused() -> None:
+    stages = "".join(f"FROM base AS {name}\nCOPY core core\n" for name in MESON_BUILD_STAGES)
+    inputs = {"scripts/ci/x.py"}
+    assert len(missing_meson_inputs(stages, inputs)) == len(MESON_BUILD_STAGES)
+    fixed = stages.replace("COPY core core\n", "COPY core core\nCOPY scripts/ci/x.py scripts/ci/\n")
+    assert missing_meson_inputs(fixed, inputs) == []
+
+
+def test_the_scan_reads_multi_argument_files_calls(tmp_path: Path) -> None:
+    (tmp_path / "core" / "test").mkdir(parents=True)
+    (tmp_path / "core" / "test" / "meson.build").write_text(
+        "x = files('a.c', '../../scripts/one.py',\n  '../../tools/two.py')\n", encoding="utf-8"
+    )
+    assert meson_inputs_outside(tmp_path) == {"scripts/one.py", "tools/two.py"}

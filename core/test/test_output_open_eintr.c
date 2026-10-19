@@ -68,7 +68,7 @@ static int make_output_path(char *path, size_t path_size)
     return close_err != 0 || remove_err != 0 ? -1 : 0;
 }
 
-static char *test_output_open_retries_eintr()
+static char *test_output_open_retries_eintr(void)
 {
     char path[512];
     int err = make_output_path(path, sizeof(path));
@@ -94,7 +94,7 @@ static char *test_output_open_retries_eintr()
     return NULL;
 }
 
-char *run_tests()
+char *run_tests(void)
 {
     mu_run_test(test_output_open_retries_eintr);
     return NULL;

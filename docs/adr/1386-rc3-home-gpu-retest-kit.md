@@ -8,7 +8,7 @@
 
 ## Context
 
-RC3 work moved from the office box (Arc B580, UHD 770) to `ryzen-4090-arc` (RTX 4090, Arc A380, gfx1036 iGPU). Fifteen open rows of [`docs/state.md`](../state.md) carry verify-and-time commands for that box, and one closed row still asks for an A380 check of the oneAPI release image. The rows were written by different changes over two days, so their commands differ in fixtures, frame counts, tolerances, and in whether they call `scripts/dev/speed_gpu_parity.py` or spell out `vmaf` runs and a Python one-liner. Run by hand, that is about seventy commands per backend. Several open pull requests (#1636 HIP parity, #1637 CUDA parity, #1639 CUDA cambi and SpEED, #1630 SYCL strict floating point) are to be measured against what `master` gives on these devices. The handoff issue #1641 names a script that runs them all as the first task at home.
+RC3 work moved from the office box (Arc B580, UHD 770) to a reference workstation (RTX 4090, Arc A380, gfx1036 iGPU). Fifteen open rows of [`docs/state.md`](../state.md) carry verify-and-time commands for that box, and one closed row still asks for an A380 check of the oneAPI release image. The rows were written by different changes over two days, so their commands differ in fixtures, frame counts, tolerances, and in whether they call `scripts/dev/speed_gpu_parity.py` or spell out `vmaf` runs and a Python one-liner. Run by hand, that is about seventy commands per backend. Several open pull requests (#1636 HIP parity, #1637 CUDA parity, #1639 CUDA cambi and SpEED, #1630 SYCL strict floating point) are to be measured against what `master` gives on these devices. The handoff issue #1641 names a script that runs them all as the first task at home.
 
 The box is also shared: several agents build and run on its three GPUs at once. A timing taken while another job holds the GPU measures the other job, and two parity runs on one device can each slow the other past a timeout.
 
@@ -33,12 +33,22 @@ Every device run holds that device's `flock` (`cuda-4090.lock`, `hip-gfx1036.loc
 
 - **Positive**: one command gives a dated, per-row record of what `master` does on this box, and the same command with `--baseline` gives the before/after comparison the rows ask for. Findings that only show on real hardware (a row whose command errors on `master`, a build option that does not build) surface in one pass.
 - **Negative**: the entries duplicate the rows' commands, so they can drift; the entry test only proves that each entry's row exists, not that its commands still match the row's text.
-- **Neutral / follow-ups**: rows that the open pull requests add for this box (for example `T-CUDA-FP-CONTRACT-DEFAULT-2026-09-29` and `T-HIP-FP-CONTRACT-DEFAULT-2026-09-29` from #1630) get entries when they land. Whether a check should require an entry for every row that names `ryzen-4090-arc` is left open.
+- **Neutral / follow-ups**: rows that the open pull requests add for this box (for example `T-CUDA-FP-CONTRACT-DEFAULT-2026-09-29` and `T-HIP-FP-CONTRACT-DEFAULT-2026-09-29` from #1630) get entries when they land. Whether a check should require an entry for every row that names this host is left open.
 
 ## References
 
-- Handoff issue [#1641](https://github.com/VMAFx/vmafx/issues/1641), "Home retest kit" (req, verbatim): "Every open CUDA/HIP row in `docs/state.md` carries its own verify-and-time commands (grep `ryzen-4090-arc`); a `scripts/dev/rc3-home-gpu-retest.sh` that runs them all is the first home task."
+- Handoff issue [#1641](https://github.com/VMAFx/vmafx/issues/1641), "Home retest kit" (req, verbatim): "Every open CUDA/HIP row in `docs/state.md` carries its own verify-and-time commands (grep for the host label); a `scripts/dev/rc3-home-gpu-retest.sh` that runs them all is the first home task."
 - Paraphrased from the dispatching instruction for this change: encode each command explicitly with its row id instead of parsing the markdown, let the user pick backends, a build directory, `--list` and `--only`, select the A380 and the gfx1036 explicitly, hold the per-device lock for every device run, and write a log per row plus a summary table.
 - [ADR-1185](1185-backend-perf-baseline-methodology.md): median-of-N timing and recording the load, which the kit follows.
 - [ADR-0165](0165-state-md-bug-tracking.md): `docs/state.md` as the bug ledger the entries point at.
-- [Research-1386](../research/1386-rc3-home-gpu-retest-master-baseline.md): the first `master` run on `ryzen-4090-arc`.
+- [Research-1386](../research/1386-rc3-home-gpu-retest-master-baseline.md): the first `master` run on a reference workstation.
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 44: `-
+  [Research-1386](./research/1386-rc3-home-gpu-retest-master-baseline.md): the
+  first master run on ryzen-4090`: Markdown link targets non-existent file
+  docs/research/1386-rc3-home-gpu-retest-master-baseline.md on origin/master.

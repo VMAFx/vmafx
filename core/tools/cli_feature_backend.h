@@ -2,9 +2,9 @@
  * Copyright 2026 Lusoris
  * SPDX-License-Identifier: EUPL-1.2
  *
- * `--feature` backend routing and the backend receipt for the vmaf CLI
- * (ADR-1359). Pure helpers over the public libvmaf API so the CLI unit test
- * can replace libvmaf with fakes.
+ * `--feature` backend routing for the vmaf CLI (ADR-1359); the backend
+ * receipt of the report is the library's since RC4 WP5. Pure helpers over
+ * the public libvmaf API so the CLI unit test can replace libvmaf with fakes.
  */
 
 #ifndef LIBVMAF_TOOLS_CLI_FEATURE_BACKEND_H_
@@ -15,9 +15,6 @@
 
 #include "libvmaf/feature.h"
 #include "libvmaf/libvmaf.h"
-
-/** Upper bound on the extractors one output receipt lists. */
-#define CLI_FEATURE_REPORT_MAX 512U
 
 #ifdef __cplusplus
 extern "C" {
@@ -52,32 +49,6 @@ struct CliFeatureChoice cli_choose_feature_extractor(VmafContext *vmaf, const ch
                                                      const VmafFeatureDictionary *opts_dict,
                                                      const VmafPictureConfiguration *pic_cfg,
                                                      char *warn, size_t warn_sz);
-
-/** Registered extractors and the backend each one ran on. */
-struct CliExtractorReport {
-    unsigned cnt;
-    const char *name[CLI_FEATURE_REPORT_MAX];
-    enum VmafBackend backend[CLI_FEATURE_REPORT_MAX];
-};
-
-/** Fill @p report from vmaf_registered_feature_extractor(); 0 or a negative errno. */
-int cli_collect_extractor_report(VmafContext *vmaf, struct CliExtractorReport *report);
-
-/** "cpu", "cuda", "sycl", "hip" or "metal"; "cpu" for VMAF_BACKEND_UNKNOWN. */
-const char *cli_backend_label(enum VmafBackend backend);
-
-/**
- * `backend_used` value: the device backend of the first extractor that ran on
- * a device, or "cpu" when every extractor ran on the CPU.
- */
-const char *cli_report_backend_used(const struct CliExtractorReport *report);
-
-/**
- * Format the JSON members `"backend_used": ..., "feature_backends": [...]`
- * into @p buf (snprintf semantics). Returns the length the full text needs,
- * excluding the terminating NUL.
- */
-size_t cli_format_backend_members(const struct CliExtractorReport *report, char *buf, size_t sz);
 
 #ifdef __cplusplus
 }

@@ -51,9 +51,7 @@ PROBE_SOURCE = (
     "kernel void k(global float *a) {{ a[get_global_id(0)] += 1.0f; }}\n"
 )
 
-_OPTION = re.compile(
-    r"option\(\s*'sycl_icpx_aot_targets'\s*,.*?value\s*:\s*'([^']*)'", re.S
-)
+_OPTION = re.compile(r"option\(\s*'sycl_icpx_aot_targets'\s*,.*?value\s*:\s*'([^']*)'", re.S)
 
 
 def default_targets(options_text: str | None = None) -> list[str]:

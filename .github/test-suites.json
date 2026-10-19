@@ -45,11 +45,21 @@
       "name": "ai",
       "paths": ["ai/tests/", "ai/sidecar/tests/"],
       "checks": ["Tiny AI"],
-      "source_paths": ["ai/", "model/"],
+      "source_paths": ["ai/", "model/", "tools/vmaf-tune/src/vmaftune/predictor.py"],
       "install": {"python": "3.14", "locks": ["requirements/locks/package-build.txt", "ai/requirements-dev-lock.txt"], "editable": ["ai"]},
       "pytest": {"timeout": 60, "method": "signal"},
       "fail_on_skip": "vmaf binary|vmaf CLI|golden YUV|Netflix .*(YUV|fixtures)|checkerboard YUVs",
       "runs": "pytest ai/tests/ ai/sidecar/tests/ with ai/requirements-dev-lock.txt"
+    },
+    {
+      "name": "mini-retrain",
+      "paths": ["ai/e2e/"],
+      "checks": ["Tiny AI"],
+      "source_paths": ["ai/", "model/tiny/registry.schema.json", "testdata/ref_576x324_48f.yuv", "testdata/dis_576x324_48f.yuv"],
+      "install": {"python": "3.14", "locks": ["requirements/locks/package-build.txt", "ai/requirements-dev-lock.txt"], "editable": ["ai"]},
+      "pytest": {"timeout": 900, "method": "signal"},
+      "fail_on_skip": ".*",
+      "runs": "pytest ai/e2e/ (the mini retrain end to end) in the Tiny AI job (which builds the vmaf CLI the test runs) and nightly in mini-retrain.yml (ADR-1898)"
     },
     {
       "name": "mcp",
@@ -79,16 +89,6 @@
       "runs": "pytest over this suite's files (suite_registry.py list vmaf-tune) with tools/vmaf-tune/requirements-dev-lock.txt"
     },
     {
-      "name": "vmaf-tune-train",
-      "paths": ["tools/vmaf-tune/tests/test_predictor_train.py"],
-      "checks": ["Tiny AI"],
-      "source_paths": ["tools/vmaf-tune/src/", "model/"],
-      "install": {"python": "3.14", "venv_of": "ai"},
-      "pytest": {"timeout": 120, "method": "signal"},
-      "fail_on_skip": ".*",
-      "runs": "pytest in the Tiny AI job, whose venv holds torch from ai/requirements-dev-lock.txt; vmaf-tune's dev lock leaves torch out (the train extra), so the predictor trainer test runs there; the file path wins over the vmaf-tune directory (ADR-1568)"
-    },
-    {
       "name": "dev-llm",
       "paths": ["dev-llm/tests/"],
       "checks": ["Python Package Tests (dev-llm)"],
@@ -106,7 +106,7 @@
     },
     {
       "name": "go",
-      "paths": ["api/", "cmd/", "internal/", "pkg/"],
+      "paths": ["api/", "cmd/", "internal/", "pkg/", "tools/obsgen/", "tools/obssmoke/"],
       "checks": ["go vet + go test"],
       "not_local": "needs the CPU + ONNX Runtime libvmaf build; the go vet + go test job runs it",
       "runs": "go test ./... against the CPU + ONNX Runtime libvmaf build"
@@ -122,11 +122,15 @@
       "name": "helm-chart",
       "paths": [
         "scripts/ci/tests/test_check_helm_selector_isolation.py",
+        "scripts/ci/tests/test_helm_config_env.py",
         "scripts/ci/tests/test_helm_controller_auth.py",
         "scripts/ci/tests/test_helm_controller_workload.py",
         "scripts/ci/tests/test_helm_node_contract.py",
         "scripts/ci/tests/test_helm_node_fuse_ebpf.py",
-        "scripts/ci/tests/test_helm_service_accounts.py"
+        "scripts/ci/tests/test_helm_observability.py",
+        "scripts/ci/tests/test_helm_operator_rbac.py",
+        "scripts/ci/tests/test_helm_service_accounts.py",
+        "scripts/ci/tests/test_helm_values_schema.py"
       ],
       "checks": ["helm lint + template"],
       "not_local": "needs the pinned, checksum-verified helm the helm lint + template job installs",
@@ -149,7 +153,7 @@
         "tools/external-bench/tests/"
       ],
       "checks": ["Tooling Tests"],
-      "source_paths": ["requirements/locks/", ".github/test-suites.json", "LICENSE", "NOTICE", "LICENSES/", "REUSE.toml"],
+      "source_paths": ["requirements/locks/", "packaging/", ".github/test-suites.json", "LICENSE", "NOTICE", "LICENSES/", "REUSE.toml"],
       "install": {"python": "3.14", "locks": ["requirements/locks/package-build.txt", "requirements/locks/tooling-tests.txt"]},
       "pytest": {"timeout": 300, "method": "signal"},
       "runs": "scripts/ci/suite_registry.py run tooling: one pytest run over every Python test file, then every shell test file with bash"

@@ -9,8 +9,8 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: go-ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: go-ci-${{ github.workflow }}-${{ github.ref == 'refs/heads/master' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
 
 # Least-privilege default for the whole workflow (ADR-0875).
 # Jobs widen only if they need to publish artefacts or push.
@@ -18,16 +18,29 @@ permissions:
   contents: read
 
 jobs:
-  go-ci:
+  tier:
+    name: CI tier (Go)
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/ci-tier.yml
+
+  go-ci:
+    needs: tier
+    if: needs.tier.outputs.light == 'true'
     # required-aggregator
     name: go vet + go test
     runs-on: ubuntu-26.04
     env:
       # pkg/libvmaf intentionally has no implicit -lvmaf fallback: every build
       # selects the just-built fork library instead of a runner's distro copy.
-      CGO_LDFLAGS: -L${{ github.workspace }}/core/build-cpu/src -lvmaf -lm
+      CGO_LDFLAGS: -L${{ github.workspace }}/core/build-cpu/src -lvmaf -lvmafx -lm
       LD_LIBRARY_PATH: ${{ github.workspace }}/core/build-cpu/src
+      # ADR-2828: the C of the cgo package (pkg/libvmaf) compiles with its
+      # warnings on and fatal. Setting CGO_CFLAGS replaces Go's default -O2 -g,
+      # so both are repeated.
+      CGO_CFLAGS: -O2 -g -Wall -Werror
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -89,7 +102,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends ninja-build pkg-config nasm rclone fuse3
           # meson from PyPI: Ubuntu 24.04 ships meson 1.3.2, which predates `c23`
           # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
-          sudo pip3 install --break-system-packages --quiet --require-hashes \
+          sudo pip3 install --break-system-packages --ignore-installed --quiet --require-hashes \
             -r requirements/locks/build.txt
 
       # cmd/vmafx-ort-runner (ADR-1134) is a cgo shim over libvmaf's ONNX
@@ -102,6 +115,7 @@ jobs:
         if: steps.impact.outputs.go_checks == 'true'
         env:
           ORT_VERSION: "1.30.0"
+          ORT_SHA256: "a5ed5a3cac51fbb2e90da632ae43d19212faaa20e76484e62bcb7c23ddb3b3fd"
         run: |
           set -euo pipefail
           ort_name="onnxruntime-linux-x64-${ORT_VERSION}.tgz"
@@ -111,6 +125,8 @@ jobs:
             --max-time 300 \
             --output "${ort_archive}" \
             "${ort_url}"
+          printf '%s  %s\n' "${ORT_SHA256}" "${ort_archive}" \
+            | sha256sum --check --strict
           sudo tar -xzf "${ort_archive}" -C /opt/
           sudo ln -sfn "/opt/onnxruntime-linux-x64-${ORT_VERSION}" /opt/onnxruntime
           # The tarball ships no pkg-config file; meson's enable_dnn needs one.
@@ -131,18 +147,42 @@ jobs:
         # source dir must be passed explicitly (or run from core/). Pre-rename
         # `meson setup core/build-cpu` worked because root had meson.build.
         run: |
+          # ADR-2170: this build prints no warnings, so they are errors.
+          # shellcheck disable=SC2046  # the helper prints one option per line, split on purpose
           meson setup core/build-cpu core \
             -Denable_cuda=false \
             -Denable_sycl=false \
             -Denable_hip=false \
             -Denable_metal=disabled \
             -Denable_avx512=false \
-            -Denable_dnn=enabled
+            -Denable_dnn=enabled \
+            -Dwerror=true \
+            $(scripts/ci/werror-args.sh true)
           ninja -C core/build-cpu
 
       - name: go vet
         if: steps.impact.outputs.go_checks == 'true'
         run: go vet ./...
+
+      # Symbol-level vulnerability scan (GOVULNCHECK_VERSION of build-config.env).
+      # Fails on a called vulnerable symbol, or on an uncalled advisory without
+      # a not_affected statement in security/vex/go.openvex.json.
+      - name: govulncheck (symbol level, OpenVEX)
+        if: steps.impact.outputs.go_checks == 'true'
+        run: python3 scripts/ci/govulncheck-gate.py
+
+      # ADR-2349: every generated Grafana dashboard passes Grafana's
+      # dashboard-linter --strict with no exclusions; the release binary is
+      # pinned and sha256-checked from build-config.env.
+      - name: dashboard-linter (generated dashboards)
+        if: steps.impact.outputs.go_checks == 'true'
+        run: bash scripts/ci/lint-dashboards.sh
+
+      # ADR-2349: promtool checks the generated rule file and runs its unit
+      # tests (a firing and a non-firing case per alert).
+      - name: promtool (generated rules)
+        if: steps.impact.outputs.go_checks == 'true'
+        run: bash scripts/ci/check-prometheus-rules.sh
 
       # The runner is what pkg/ai.Registry.Infer execs; putting it on PATH
       # lets pkg/ai's TestInfer_RealRunner drive the real subprocess path
@@ -169,35 +209,18 @@ jobs:
 
       - name: Install gosec
         if: steps.impact.outputs.go_checks == 'true'
-        # v2.21.4 pulls x/tools@v0.25.0 which fails to compile under Go 1.26
-        # (invalid array-length constant in tokeninternal.go). v2.27.1 pulls
-        # x/tools@v0.37.0 which is compatible.
-        run: go install github.com/securego/gosec/v2/cmd/gosec@v2.29.0
+        # Go 1.27.2 writes export data version 5. The v2.29.0 release builds
+        # with x/tools v0.49.0, which reads at most version 4, so it could not
+        # type-check any package. This commit of gosec's main branch builds
+        # with x/tools v0.50.0 and reports the same findings as v2.29.0 did on
+        # Go 1.27.1. Go back to a release tag once one includes x/tools v0.50.0.
+        run: go install github.com/securego/gosec/v2/cmd/gosec@v2.29.1-0.20260914113419-9e8e5d91f2f3
 
       - name: gosec (exclude generated)
         if: steps.impact.outputs.go_checks == 'true'
-        run: |
-          # Generated protobuf code (gen/) carries G103 (unsafe.Slice) and
-          # G115 (int -> uint32 cgo casts) by design; -exclude-generated
-          # filters those. Source files must remain at 0 findings.
-          #
-          # -exclude-dir=.config/hiss/testdata: the HISS rule engine's own
-          # fixtures. Each rule ships a positive/negative/gap triple whose
-          # planted defect is the fixture -- HISS-07's positive case discards
-          # an `os.Remove` error and HISS-09's reinterprets `&b[0]` through
-          # `unsafe.Pointer` -- so gosec reports G104 and G103 on them by
-          # construction, and "fixing" them would delete the evidence the
-          # standards gate replays. They are not part of the module: `go
-          # build`, `go vet` and `go test` all skip them twice over, because
-          # the Go tool ignores directories whose name starts with `.` and
-          # directories named `testdata`. gosec walks the filesystem itself
-          # and honours neither rule, so this restores the toolchain's own
-          # scoping rather than hiding a finding in shipped code. Verified:
-          # `go list ./...` names 64 packages and none of them is under
-          # .config/; with the exclusion gosec reads 162 files instead of 175
-          # and reports 0 issues.
-          gosec -exclude-generated -exclude-dir=.config/hiss/testdata \
-            -quiet ./...
+        # The flags and why each is there live with the target in the
+        # Makefile, so `make lint` and this step run the same scan.
+        run: make lint-go
 
       # Install the kubebuilder envtest control-plane binaries (etcd +
       # kube-apiserver + kubectl) so the vmafx-operator suite at
@@ -209,6 +232,16 @@ jobs:
         run: |
           ASSETS="$(scripts/ci/setup-envtest.sh install)"
           echo "KUBEBUILDER_ASSETS=${ASSETS}" >> "${GITHUB_ENV}"
+
+      # The store tests start PostgreSQL through testcontainers
+      # (cmd/vmafx-controller/store/storetest), and anonymous pulls from Docker
+      # Hub hit its rate limit on the hosted runners (run 37989639814: "You have
+      # reached your unauthenticated pull rate limit"). The daemon now pulls
+      # docker.io images through the mirror.gcr.io pull-through mirror, as in
+      # golusoris #741; the digest-pinned images are unchanged.
+      - name: Pull Docker Hub images through mirror.gcr.io
+        if: steps.impact.outputs.go_checks == 'true'
+        run: bash scripts/ci/docker-hub-mirror.sh
 
       - name: go test
         if: steps.impact.outputs.go_checks == 'true'

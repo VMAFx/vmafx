@@ -117,3 +117,12 @@ matrix without shelling into the container.
 - `req` — "of course this has to be fully connected to a ffmpeg worker as well (latest
   of course)..." (architecture popup, 2026-05-28, captured verbatim in ADR-0709
   §References).
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 99: `- Phase 4b.5+ will add full gRPC service registration in
+  cmd/vmafx-node/server/server.go`: Path cmd/vmafx-node/server/server.go does
+  not exist on master.

@@ -28,6 +28,11 @@ jobs:
     runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
+      - name: Checkout fork
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
       - name: Check Netflix/vmaf#645 + scan upstream model/ for vmaf_hdr_*.json
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -35,15 +40,13 @@ jobs:
           set -euo pipefail
 
           # Signal 1: search the upstream model/ tree for vmaf_hdr_*.json.
-          MODEL_HIT=$(gh api repos/Netflix/vmaf/contents/model \
-            --jq '[.[] | select(.name | test("^vmaf_hdr_.*\\.json$"))] | length' \
-            2>/dev/null || echo 0)
+          MODEL_HIT=$(scripts/ci/upstream_watch_count.sh repos/Netflix/vmaf/contents/model \
+            --jq '[.[] | select(.name | test("^vmaf_hdr_.*\\.json$"))] | length')
 
           # Signal 2: latest comment on issue #645.
           LAST_COMMENT_AT=$(gh issue view 645 --repo Netflix/vmaf \
             --json comments \
-            --jq '.comments | sort_by(.createdAt) | last | .createdAt // empty' \
-            2>/dev/null || echo "")
+            --jq '.comments | sort_by(.createdAt) | last | .createdAt // empty')
 
           echo "Netflix HDR signals: model_files=${MODEL_HIT} last_645_comment=${LAST_COMMENT_AT:-none}"
 
@@ -54,6 +57,11 @@ jobs:
             echo "No upstream HDR model file yet; nothing to do."
             exit 0
           fi
+
+          gh label create upstream-merged \
+            --color 0E8A16 \
+            --description "Upstream change landed that a fork deferral waits on (ADR-0448)" \
+            --force
 
           # Idempotency.
           EXISTING=$(gh issue list \

@@ -1,12 +1,10 @@
 <!-- markdownlint-disable MD013 -->
 # ADR-0584 — `float_moment` SVE2 port
 
-| Field        | Value                                          |
-|--------------|------------------------------------------------|
-| Status       | Accepted                                       |
-| Date         | 2026-05-16                                     |
-| Deciders     | lusoris                                        |
-| Tags         | arm64, sve2, simd, float_moment, bit-exactness |
+- **Status**: Accepted (Superseded-in-part 2026-10-06 by [ADR-1500](1500-arm-float-moment-scalar-order.md) for the MOMENT_REL_TOL tolerance contract of the SVE2 kernel)
+- **Date**: 2026-05-16
+- **Deciders**: lusoris
+- **Tags**: arm64, sve2, simd, float_moment, bit-exactness
 
 ## Context
 

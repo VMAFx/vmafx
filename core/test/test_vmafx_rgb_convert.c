@@ -53,6 +53,28 @@ static bool matches(uint32_t got, uint32_t want, bool slack)
     return got == want || (slack && (got + 1u == want || want + 1u == got));
 }
 
+/* One oracle pixel's three planes against the plan; counts into `checked` and `slack_used`. */
+static char *check_pixel(const VmafxRgbPlan *plan, const VroConfig *cfg, const VroCase *px,
+                         unsigned *checked, unsigned *slack_used)
+{
+    for (uint32_t plane = 0; plane < 3u; plane++) {
+        const uint32_t want = plane == 0u ? px->y : (plane == 1u ? px->cb : px->cr);
+        const bool slack = ((unsigned)px->slack >> plane) & 1u;
+        const uint32_t got = vmafx_rgb_value(plan, plane, px->r, px->g, px->b);
+        if (!matches(got, want, slack)) {
+            (void)fprintf(stderr,
+                          "\n  matrix %u in %u out %u bpc %u rgb (%u,%u,%u) plane %u: got "
+                          "%u, oracle %u",
+                          (unsigned)cfg->matrix, (unsigned)cfg->in_range, (unsigned)cfg->out_range,
+                          (unsigned)cfg->bpc, px->r, px->g, px->b, (unsigned)plane, got, want);
+        }
+        mu_assert("the conversion equals the oracle", matches(got, want, slack));
+        *slack_used += got != want;
+        (*checked)++;
+    }
+    return NULL;
+}
+
 /* Positive: the plan evaluates the oracle. */
 static char *test_plan_matches_the_oracle(void)
 {
@@ -67,27 +89,26 @@ static char *test_plan_matches_the_oracle(void)
             "the plan of a supported matrix",
             vmafx_rgb_plan_init(&plan, rgba, cfg->bpc, cfg->matrix, cfg->in_range, cfg->out_range));
         for (size_t i = 0; i < cfg->n; i++) {
-            const VroCase *const px = &cfg->cases[i];
-            for (uint32_t plane = 0; plane < 3u; plane++) {
-                const uint32_t want = plane == 0u ? px->y : (plane == 1u ? px->cb : px->cr);
-                const bool slack = (px->slack >> plane) & 1u;
-                const uint32_t got = vmafx_rgb_value(&plan, plane, px->r, px->g, px->b);
-                if (!matches(got, want, slack)) {
-                    (void)fprintf(stderr,
-                                  "\n  matrix %u in %u out %u bpc %u rgb (%u,%u,%u) plane %u: got "
-                                  "%u, oracle %u",
-                                  (unsigned)cfg->matrix, (unsigned)cfg->in_range,
-                                  (unsigned)cfg->out_range, (unsigned)cfg->bpc, px->r, px->g, px->b,
-                                  (unsigned)plane, got, want);
-                }
-                mu_assert("the conversion equals the oracle", matches(got, want, slack));
-                slack_used += got != want;
-                checked++;
-            }
+            mu_assert_msg(check_pixel(&plan, cfg, &cfg->cases[i], &checked, &slack_used));
         }
     }
     mu_assert("the oracle was read", checked > 3000u);
     mu_assert("a tie that moved is rare", slack_used * 100u < checked);
+    return NULL;
+}
+
+/* Cb' and Cr' of every gray code (a stride at 16 bits) are mid for one plan. */
+static char *check_gray(const VmafxImportLayout *rgba, uint32_t depth, uint32_t m, uint32_t rin,
+                        uint32_t rout)
+{
+    VmafxRgbPlan plan;
+    mu_assert("plan", vmafx_rgb_plan_init(&plan, rgba, depth, m, rin, rout));
+    const uint32_t mid = 1u << (depth - 1u);
+    const uint32_t step = depth == 16u ? 251u : 1u;
+    for (uint32_t v = 0; v <= plan.max; v += step) {
+        mu_assert("Cb' of a gray is mid", vmafx_rgb_value(&plan, 1u, v, v, v) == mid);
+        mu_assert("Cr' of a gray is mid", vmafx_rgb_value(&plan, 2u, v, v, v) == mid);
+    }
     return NULL;
 }
 
@@ -97,24 +118,13 @@ static char *test_gray_has_no_chroma(void)
 {
     const VmafxImportLayout *const rgba = layout_of(VMAFX_PIXEL_FORMAT_RGBA);
     static const uint32_t depths[3] = {8u, 10u, 16u};
-    for (uint32_t m = VMAFX_COLOR_MATRIX_BT601; m <= VMAFX_COLOR_MATRIX_BT2020_NCL; m++) {
-        for (uint32_t rin = VMAFX_COLOR_RANGE_LIMITED; rin <= VMAFX_COLOR_RANGE_FULL; rin++) {
-            for (uint32_t rout = VMAFX_COLOR_RANGE_LIMITED; rout <= VMAFX_COLOR_RANGE_FULL;
-                 rout++) {
-                for (unsigned d = 0; d < 3u; d++) {
-                    VmafxRgbPlan plan;
-                    mu_assert("plan", vmafx_rgb_plan_init(&plan, rgba, depths[d], m, rin, rout));
-                    const uint32_t mid = 1u << (depths[d] - 1u);
-                    const uint32_t step = depths[d] == 16u ? 251u : 1u;
-                    for (uint32_t v = 0; v <= plan.max; v += step) {
-                        mu_assert("Cb' of a gray is mid",
-                                  vmafx_rgb_value(&plan, 1u, v, v, v) == mid);
-                        mu_assert("Cr' of a gray is mid",
-                                  vmafx_rgb_value(&plan, 2u, v, v, v) == mid);
-                    }
-                }
-            }
-        }
+    static const uint32_t matrices[3] = {VMAFX_COLOR_MATRIX_BT601, VMAFX_COLOR_MATRIX_BT709,
+                                         VMAFX_COLOR_MATRIX_BT2020_NCL};
+    /* Every (matrix, input range, output range, depth): 3 x 2 x 2 x 3 plans. */
+    for (unsigned k = 0; k < 36u; k++) {
+        const uint32_t rin = VMAFX_COLOR_RANGE_LIMITED + (k / 3u) % 2u;
+        const uint32_t rout = VMAFX_COLOR_RANGE_LIMITED + (k / 6u) % 2u;
+        mu_assert_msg(check_gray(rgba, depths[k % 3u], matrices[k / 12u], rin, rout));
     }
     return NULL;
 }
@@ -134,7 +144,7 @@ static VmafxFrameImport describe(uint32_t pix_fmt, uint32_t bpc, unsigned n, con
     imp.plane[0].pitch = pitch;
     imp.rgb_matrix = VMAFX_COLOR_MATRIX_BT709;
     imp.rgb_range = VMAFX_COLOR_RANGE_FULL;
-    imp.rgb_transfer = VMAFX_COLOR_TRANSFER_SRGB;
+    imp.rgb_transfer = VMAFX_COLOR_TRC_SRGB;
     imp.rgb_out_range = VMAFX_COLOR_RANGE_LIMITED;
     return imp;
 }
@@ -152,7 +162,9 @@ static void put_sample(uint8_t *row, unsigned x, unsigned elems, unsigned e, siz
 
 static uint32_t get_sample(const uint8_t *plane, unsigned x, size_t bytes)
 {
-    return bytes == 2u ? (uint32_t)(plane[2u * x] | (plane[2u * x + 1u] << 8u)) : plane[x];
+    return bytes == 2u ?
+               ((uint32_t)plane[(size_t)2u * x] | ((uint32_t)plane[(size_t)2u * x + 1u] << 8u)) :
+               plane[x];
 }
 
 /* Import `cfg`'s pixels as `pix_fmt` and compare the three planes. 0: all equal. */
@@ -160,7 +172,7 @@ static unsigned import_config(const VroConfig *cfg, uint32_t pix_fmt, uint32_t a
 {
     const VmafxImportLayout *const layout = layout_of(pix_fmt);
     const size_t bytes = cfg->bpc > 8u ? 2u : 1u;
-    uint8_t row[512 * 4 * 2];
+    uint8_t row[512 * 4 * 2] = {0};
     for (size_t i = 0; i < cfg->n; i++) {
         const VroCase *const px = &cfg->cases[i];
         const unsigned elems = layout->rgb_elems;
@@ -192,7 +204,7 @@ static unsigned import_config(const VroConfig *cfg, uint32_t pix_fmt, uint32_t a
         const uint32_t want[3] = {px->y, px->cb, px->cr};
         for (unsigned p = 0; p < 3u; p++) {
             if (!matches(get_sample(planes.data[p], (unsigned)i, bytes), want[p],
-                         (px->slack >> p) & 1u)) {
+                         ((unsigned)px->slack >> p) & 1u)) {
                 bad |= 8u;
             }
         }
@@ -247,18 +259,18 @@ static char *test_a_missing_statement_is_refused_by_name(void)
     static const char *const names[3] = {"rgb", "rgba", "bgra"};
     for (unsigned f = 0; f < 3u; f++) {
         VmafxFrameImport imp = describe(formats[f], 8u, 2u, row, sizeof(row));
-        imp.rgb_matrix = VMAFX_COLOR_MATRIX_UNSPECIFIED;
+        imp.rgb_matrix = VMAFX_COLOR_MATRIX_UNKNOWN;
         mu_assert("no matrix", refused(&imp, VMAFX_E_INVALID, "desc.rgb_matrix", names[f]));
         mu_assert("no matrix: the message says it is not guessed",
                   refused(&imp, VMAFX_E_INVALID, "desc.rgb_matrix", "none is assumed"));
         imp = describe(formats[f], 8u, 2u, row, sizeof(row));
-        imp.rgb_range = VMAFX_COLOR_RANGE_UNSPECIFIED;
+        imp.rgb_range = VMAFX_COLOR_RANGE_UNKNOWN;
         mu_assert("no range", refused(&imp, VMAFX_E_INVALID, "desc.rgb_range", names[f]));
         imp = describe(formats[f], 8u, 2u, row, sizeof(row));
-        imp.rgb_transfer = VMAFX_COLOR_TRANSFER_UNSPECIFIED;
+        imp.rgb_transfer = VMAFX_COLOR_TRC_UNKNOWN;
         mu_assert("no transfer", refused(&imp, VMAFX_E_INVALID, "desc.rgb_transfer", names[f]));
         imp = describe(formats[f], 8u, 2u, row, sizeof(row));
-        imp.rgb_out_range = VMAFX_COLOR_RANGE_UNSPECIFIED;
+        imp.rgb_out_range = VMAFX_COLOR_RANGE_UNKNOWN;
         mu_assert("no output range",
                   refused(&imp, VMAFX_E_INVALID, "desc.rgb_out_range", names[f]));
     }
@@ -290,7 +302,7 @@ static char *test_unsupported_and_invalid_values(void)
     mu_assert("a matrix value that is none",
               refused(&imp, VMAFX_E_INVALID, "desc.rgb_matrix", "99"));
     imp = describe(VMAFX_PIXEL_FORMAT_RGBA, 8u, 2u, row, sizeof(row));
-    imp.rgb_transfer = VMAFX_COLOR_TRANSFER_LINEAR;
+    imp.rgb_transfer = VMAFX_COLOR_TRC_LINEAR;
     mu_assert("linear light", refused(&imp, VMAFX_E_NOTSUP, "desc.rgb_transfer", "LINEAR"));
     imp.rgb_transfer = 77u;
     mu_assert("a transfer value that is none",

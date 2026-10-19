@@ -7,13 +7,2515 @@ search:
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
-## float_psnr and ciede at every depth (2026-10-07, RC4 WP13 follow-up)
+<!-- rebase-notes:fragments:begin (rendered from docs/rebase-notes.d/; do not edit) -->
+## SYCL lane waits on and signals Vulkan timelines on its queue (2026-10-18)
 
-`rc4/api-wp13-odd-depths` ([ADR-2164](adr/2164-vmafx-odd-bit-depths-float-psnr-ciede.md)). Upstream-mirror files touched: `core/src/feature/float_psnr.c` (peak and ceiling by formula), `ciede.c` (the depth cases), `picture_copy.cpp` (divisor `2^(bpc - 8)` above 8 bits); a sync keeps the fork's forms. The CUDA, HIP, SYCL `float_psnr` twins and the HIP `ciede` constant table change with them; keep the CPU extractor and its twins in one change.
+- `core/src/sycl/import_frame.c`, `import_fence.c`, `vmafx_sycl_rt.{h,cpp}`:
+  Vulkan timeline semaphores are imported per frame with DPC++ external
+  semaphores, waited on the library queue before the first read and signalled
+  behind the release join ([ADR-3352](../adr/3352-sycl-vulkan-timeline-on-queue.md)).
+  Fork-only code, no upstream counterpart. **On sync**: keep the `dup()` of
+  the descriptor before the import (the runtime closes the one it imports)
+  and the `VULKAN_SEMAPHORE` bit of the SYCL fence-kind mask in
+  `import_device.c`; `test_vmafx_import_vulkan_sycl_fence` guards both on an
+  Arc device.
 
-## Input format table, RGB conversion and raw CLI layouts (2026-10-07, RC4 WP13)
+## msvcism scan: no reset fallback, required in Pre-Commit (2026-10-18)
 
-`rc4/api-wp13-input-formats` ([ADR-2145](adr/2145-vmafx-input-format-table.md), [ADR-2146](adr/2146-vmafx-rgb-input-explicit-matrix.md)). Fork-only: the import layout table is generated (`core/src/vmafx/import_layouts_gen.h`, never edit; on a conflict take either side and run `python3 scripts/codegen/vmafx-api.py --write`), `import_layout.h`, `rgb_math.h`, `rgb_convert.{h,c}`, the generated coefficient table, and the CLI's raw reader. Upstream-mirror files touched: `core/tools/yuv_input.c`, `y4m_input.c`, `vidinput.{c,h}`, `cli_parse.{cpp,h}` and `vmaf.cpp` (the raw layouts, `PF_400`, the `--rgb_*` flags); a sync keeps the fork's `raw_input_open()` meaning of `pix_fmt` (1 to 4 planar, from 16 a `VmafxPixelFormat` layout) and the table-driven y4m `420pN` / `422pN` / `444pN` / `monoN` setup. `core/src/feature/integer_psnr.c`: `extract()` takes every depth 8 to 16. When the stack rebases onto master, `--rgb_*` should be re-pointed at master's `--color_*_ref/_dist` input colorimetry (its `VmafColor` has no BT.601); the statement fields of `VmafxFrameImport` stay.
+- `scripts/dev/preflight.sh`, stage `msvcism`: every per-file scan ends its
+  grep pipeline with `|| [ $? -eq 1 ] || exit 2`, and the scan's assignment is
+  followed by `|| scan_failed '<name>'`. **On sync or rebase**: do not bring
+  back a `|| hits=""` style fallback after a `while read` scan; it erases the
+  findings whenever the last file is clean (ADR-3351). The static-aggregate
+  scanner is `$PREFLIGHT_DIR/find-nonconst-static-init.py`, not under
+  `$REPO_ROOT`.
+- `.github/workflows/lint-and-format.yml`, job `pre-commit`: keep the step
+  "MSVC-hostile constructs in the changed files".
+- `scripts/ci/tests/test-preflight-msvcism.sh` cases "a finding is still
+  reported when a clean file is scanned after it" and "a static aggregate
+  initialised from a const variable fails the stage" fail against the old
+  script; keep them.
+
+## Praetor pin 32a35c8fb947, the HISS-08 signal guard (2026-10-18)
+
+`chore/praetor-refresh-32a35c8f`. A rebase or sync keeps `PRAETOR_REF` at `32a35c8fb947...` in
+`.github/workflows/standards-gate.yml` and praetor's text of `.config/lefthook/python.sh`, which
+`.config/lint-exceptions.d/shfmt.toml` and `spdx.toml` list until a pin fixes cordanaLLM/praetor
+issue 1441; never format the launcher or add a header to it by hand. `.config/lefthook/scripts/common.py`
+keeps its guard before `os.killpg` (no pid or group of 1 or less, no bool, not its own group).
+`scripts/ci/tests/test_codex_hook_config.py` lists praetor's `praetorctl hook codex pre-tool` entry
+under `ENGINE_HOOKS`.
+
+## Pelorus side data behind the x265 UUID (2026-10-18)
+
+- `core/src/feature/perceptual_weight.c::unwrap_payload()` calls
+  `vmaf_pelorus_udu_classify()` (`core/src/feature/pelorus_udu_wrap.h`) and
+  drops the outer 16 bytes only for `VMAF_PELORUS_UDU_X265_WRAPPED`
+  (ADR-3340). Fork-only code; no upstream file changes. The Pelorus mirror
+  (`core/src/interop/pelorus_*.c`, `core/include/libvmaf/pelorus/`) is not
+  touched. `testdata/pelorus/udu-wrap-vectors.txt` is Pelorus' file byte for
+  byte; `test_pelorus_udu_wrap` and `test_perceptual_weight` guard it.
+
+## Compat ABI Parity: Upstream Consumer and Plant Gate (ADR-3339)
+
+- `scripts/dev/compat_abi_consumer.c`, `scripts/dev/compat_abi_plant.c`: new fork-authored test harnesses.
+- `scripts/dev/upstream_parity.py`: added `--abi` and `--plant` driver flags.
+- `scripts/ci/setup-golden-build.sh`: added optional ninja target support.
+- No rebase impact on Netflix code: all modified and added files are fork-only test tooling and CI gates.
+
+## Process-group signals go through one guard (2026-10-18)
+
+`fix/signal-target-guard` (#2847). Fork-only scripts and tests: no upstream file
+is touched. A rebase that brings a new `os.killpg()` or `os.kill(-pid, ...)` call
+routes it through `scripts.lib.safe_subprocess.signal_process_group()` instead;
+signal-0 probes (`_posix_process_group_exists()`) stay as they are.
+`tools/rc1-tester/src/vmaf_rc1_tester/_safe_subprocess.py` stays a byte copy of
+`scripts/lib/safe_subprocess.py` (`test_safe_subprocess_copy.py`).
+
+## Pelorus carrier form in libvmaf and patch 0017 (2026-10-17)
+
+- `ffmpeg-patches/0017-libvmaf-read-pelorus-sidedata.patch`: the filter
+  offers every `AV_FRAME_DATA_SEI_UNREGISTERED` entry of the distorted frame
+  to `vmaf_set_perceptual_sidedata()`, newest first, and stops at the first
+  accepted one. A refresh must not bring back the single
+  `av_frame_get_side_data()` lookup; `core/test/test_ffmpeg_libvmaf_pelorus_scan_contract.py`
+  refuses it. After a conflict run
+  `python3 scripts/ci/ffmpeg_patch_stack.py --refresh`, then `--check`.
+- `core/src/feature/perceptual_weight.c`: ingest unwraps the Pelorus 1.5
+  carrier form with the vendored `pel_blob_unwrap()` before it parses the
+  blob. Fork-only, nothing upstream to merge.
+
+## Pelorus mirror re-pinned to v0.4.1 (2026-10-15)
+
+`chore/pelorus-repin-v0.4.1`, issue #2667, ADR-3332. Re-pinned the Pelorus interop mirror
+from v0.3.0 (`e2e4040311a443210927549c3a336f909c6473f3`, ABI 1.3) to v0.4.1
+(`33b4a625cad64a7e9ca14f6db06eb91ba8f56663`, interop ABI 1.5).
+
+The mirror is generated by `scripts/sync-pelorus-interop.sh --update`, never
+hand-merged. A rebase or sync keeps `PELORUS_VENDOR_SHA` at
+`33b4a625cad64a7e9ca14f6db06eb91ba8f56663` and `PELORUS_MIRROR_LICENSE` at
+`EUPL-1.2` in `scripts/sync-pelorus-interop.sh`: take either side and run
+`scripts/sync-pelorus-interop.sh --update <pelorus checkout>`, then the check
+without `--update`.
+
+ABI 1.4 adds `PEL_SEC_ENC_TELEMETRY` (104 B), `PEL_SEC_ENCODE_RECORD` (48 B),
+`PelorusMotionSection.block_size_log2` (32 -> 36 B), `PEL_ERR_MISMATCH`,
+`pel_blob_pack_into`, `pel_blob_map`, and `pel_encode_record_digest_text`.
+ABI 1.5 adds the zero-free carrier form (`pelorus_carrier_uuid`,
+`PEL_CARRIER_MAX_LEN`, `pel_blob_carrier_encode`, `pel_blob_unwrap`).
+All changes are append-only.
+
+## Dev Container Build as an own-input lane (2026-10-17)
+
+- `.github/workflows/dev-container-build.yml`: `impact` and the `Dev Container Build`
+  gate run on `needs.tier.outputs.light`; step `pick` reads `dev_container` on the full
+  tier and `dev_container_inputs` otherwise (ADR-3338). Fork-only workflow, no upstream
+  counterpart. **On sync**: nothing upstream touches it; keep the three conditions and
+  the `pick` step, which `scripts/ci/tests/test_ci_routing_contract.py` guards.
+- `.github/ci-impact.json` (`dev_container_inputs`) and `.github/ci-tier.json`
+  (`own_input_lanes`) carry the selector and the lane entry.
+
+## Coverage jobs: gcov timeout multiplier and named shard skips (2026-10-17)
+
+- Every `run_meson_test.py` command of a job with a `-Db_coverage=true` build passes `--timeout-multiplier 3`; the Makefile variable is `INSTRUMENTED_TEST_TIMEOUT_MULTIPLIER` (was `SANITIZER_TEST_TIMEOUT_MULTIPLIER`) and covers `test-sanitizers` and `coverage`. `scripts/ci/tests/test_sanitizer_suite_timeouts.py` refuses a run without it.
+- The coverage job's steps before the shards carry ids that the shard assertion reads through `EARLIER_OUTCOMES`; a rebase that renames or adds such a step updates that list. `scripts/ci/test_fail_closed_ci.py` checks that each id exists and that the shard steps set `PYTHONPATH`.
+
+## dev image: ClangBuildAnalyzer built with Ninja (2026-10-17)
+
+- The `build-deps` stage of `dev/Containerfile` installs `ninja-build` and no make program, so the ClangBuildAnalyzer configure passes `-G Ninja`. A rebase that moves or rewrites that step keeps the generator, or adds a make program to the stage's package list.
+- `scripts/ci/tests/test_dev_image_build_stages.py` (`test_cmake_in_a_stage_without_make_names_a_generator`) refuses a CMake configure without `-G` in `build-deps`.
+
+## dev image: rr and ClangBuildAnalyzer (2026-10-16)
+
+- `dev/Containerfile` installs `rr` (Ubuntu 26.04 package `5.9.0-5`) in the `build-deps` stage via `rr=${RR_APT_VERSION}` for reverse debugging and deterministic execution recording (ADR-3336).
+- `dev/Containerfile` compiles and installs `ClangBuildAnalyzer` v1.6.0 (Unlicense) in the `build-deps` stage after verifying its release tarball against `CLANGBUILDANALYZER_SHA256`.
+- `dev/Containerfile` owns `RR_APT_VERSION`, `CLANGBUILDANALYZER_VERSION`, and `CLANGBUILDANALYZER_SHA256` as single-source `ARG`s.
+- `scripts/ci/check_ort_tarball_pins.py` statically enforces presence of pins in `dev/Containerfile`, 64 lowercase hex digest validity, and `sha256sum` verification prior to building ClangBuildAnalyzer (ADR-3336, generalizing ADR-3334 per HISS-19).
+
+## Coverage Gate: Python suite in four shards (2026-10-17)
+
+- The single 55-minute pytest step of the `coverage` job in
+  `.github/workflows/tests-and-quality-gates.yml` is now a preparation step and
+  four steps `Run Python test suite, shard N/4` (ids
+  `python_coverage_shard_N`), each under `timeout --kill-after=30s 30m`
+  through `scripts/ci/run_pytest_shard.py`. The step
+  `Assert every Python coverage shard passed` reads all four outcomes.
+- A rebase that touches the job keeps every step at 30 minutes or less (the
+  praetor test-timeout audit flags any `<n>m` above 30 on a line, comments
+  included) and does not bring back `.config/lint-exceptions.d/test-timeout.toml`.
+  `scripts/ci/test_fail_closed_ci.py` and
+  `scripts/ci/tests/test_run_pytest_shard.py` guard the layout and the shard
+  selection.
+
+## Praetor pin 320b058d8cca (2026-10-17)
+
+`chore/praetor-adopt-320b058d`, [ADR-3337](adr/3337-praetor-pin-320b058d-test-timeout.md). A
+rebase or sync keeps `PRAETOR_REF` at `320b058d8cca...` in `.github/workflows/standards-gate.yml`.
+`praetor-api.yml`, `praetor-docs.yml`, `.config/agent/hooks/block_evasion.py`,
+`tools/apicompat/gate/main.go` and `tools/figures/` are praetor's text at the pin: take either side
+and re-run `praetorctl adopt` (no `--force`). The figure player is under `tools/figures/player/`;
+`tools/figures/dist/` and its `.gitignore` re-include do not come back. The `test-timeout` entry
+of `.config/lint-exceptions.d/test-timeout.toml` expires on 2026-10-20 and leaves with the
+Coverage Gate split; `.standards.yaml`'s block is regenerated with
+`python3 scripts/ci/praetor_tidy_coverage.py --write`, never merged by hand.
+
+## Tidy lane dev container pull retries (2026-10-16)
+
+- `.github/actions/tidy-lane/action.yml` pulls the dev container through
+  `scripts/ci/pull-dev-image.sh` (digest check, four bounded attempts, error
+  naming the image). Fork-only CI; no upstream counterpart. Keep the action on
+  the script rather than an inline `docker pull`.
+  `scripts/ci/tests/test_pull_dev_image.py` guards it.
+
+## Python floors follow numpy (2026-10-16)
+
+- `python/pyproject.toml`, `ai/pyproject.toml`, `dev-llm/pyproject.toml`,
+  `mcp-server/vmaf-mcp/pyproject.toml`, `tools/vmaf-roi-score/pyproject.toml`:
+  floors raised to `>=3.12` to match `numpy>=2.5.3`. `tools/vmaf-tune/pyproject.toml`
+  raised to `>=3.11` to match `matplotlib>=3.11.2`. `tools/rc1-tester` stays
+  at `>=3.10`.
+- Tool targets (`[tool.ruff] target-version`) in `ai`, `dev-llm`, and
+  `mcp-server/vmaf-mcp` updated to `py312`.
+- `scripts/ci/check_python_floors.py`: new automated check verifying that all
+  tracked packages resolve at their declared floors with `--all-extras` via
+  `uv pip compile` (`make python-floors-check`; [ADR-3335](../adr/3335-python-floors-match-dependencies.md)).
+- Documentation updated in `docs/usage/python.md`, `docs/mcp/http-transport.md`,
+  and `docs/development/python-dependency-locks.md`.
+
+## Python harness: the scatter-plot fit line keeps a zero slope (2026-10-16)
+
+- `RegressorMixin._least_squares_line()` in
+  `compat/python-vmaf/core/train_test_model.py` is fork code; upstream's
+  `train_test_model.py` still calls `tools.misc.linear_fit()` there. It pads
+  the coefficients of `Polynomial.fit(...).convert()` to two, because
+  `convert()` trims a trailing zero slope. An upstream sync that touches the
+  plotting code keeps the fork's helper and the padding;
+  `python/test/least_squares_line_test.py` fails without it.
+
+## ONNX Runtime tarballs verified by sha256 (2026-10-16)
+
+- Every site fetching the ONNX Runtime C/C++ native release archive (`dev/Containerfile`,
+  `.github/workflows/go-ci.yml`, `build.yml`, `libvmaf-build-matrix.yml`, and
+  `tests-and-quality-gates.yml`) pairs `ORT_VERSION` with a pinned `ORT_SHA256`
+  and verifies the digest via `sha256sum --check --strict` before extraction
+  (ADR-3334).
+- Cached archives in `tests-and-quality-gates.yml` re-verify checksum on every
+  run, removing the cache entry and failing immediately on mismatch.
+- `scripts/ci/check_ort_tarball_pins.py` statically enforces presence of
+  `ORT_SHA256`, verification ordering before `tar -x`, and cross-site digest
+  consistency. `renovate.json` updates version and digest in locked pairs via
+  `github-release-attachments`. **On sync**: new ORT tarball download sites must
+  declare `ORT_SHA256` and verify with `sha256sum --check --strict`.
+
+## Praetor pin 2d23b2924174 (2026-10-15)
+
+`chore/persona-model-tier`, [ADR-3333](adr/3333-praetor-pin-2d23b29-persona-tiers.md). A rebase or
+sync keeps `PRAETOR_REF` at `2d23b2924174...` in `.github/workflows/standards-gate.yml`. Every
+persona under `.agents/agents/` keeps a `model:` of `flash` or `pro`; the client copies are
+generated by `praetorctl compile-context` and never merged by hand: take either side and
+regenerate. `tools/apicompat/gate/main.go` and `.config/agent/hooks/block_evasion.py` are praetor's
+text at the pin.
+
+## Dependency-advisory exception rule (2026-10-15)
+
+`.config/lint-exceptions.d/dependency-advisory.toml` is fork-only: it names lock files of open
+Dependabot alerts that no reachable version fixes. No upstream file is touched; an upstream sync
+has nothing to merge here. Delete the `mcp` entry once Renovate moves `semgrep` to a release that
+allows `mcp` 1.30.0.
+
+## Host C exception list for the pelorus mirror (2026-10-16, ADR-2478)
+
+`.config/lint-exceptions.d/host-c-cpp.toml` lists the ten files of `scripts/ci/pelorus-mirror-paths.txt`. A pelorus re-pin that adds or renames a mirror file updates both lists in the same PR; `test_host_c_list_names_every_pelorus_mirror_file` fails otherwise. no upstream file.
+
+## Upstream watchers fail closed on API errors (2026-10-15)
+
+- Upstream watcher workflows (`.github/workflows/upstream-ffmpeg-hip-hwdec-watcher.yml`,
+  `.github/workflows/upstream-netflix-645-hdr-model-watcher.yml`, and
+  `.github/workflows/upstream-netflix-955-watcher.yml`) fail closed on API errors and search rate
+  limits via `scripts/ci/upstream_watch_count.sh`, avoiding false positive issue creation when `gh api`
+  outputs rate-limit JSON.
+- Workflows idempotently ensure label `upstream-merged` exists before issue list and create calls.
+- No rebase impact beyond these files and the `scripts/ci/` test and helper scripts.
+
+## Clang-tidy compilation-database entries for hand-built sources (2026-10-15)
+
+- `scripts/ci/gen-mex-compile-commands.py`: extended to be table-driven, generating
+  compile-database entries for `ffmpeg-patches/test/fault_inject_libvmaf.c` and
+  `scripts/dev/upstream_parity_harness.c` alongside the MATLAB MEX sources, with
+  refusal on missing sources.
+- `scripts/ci/gen-gpu-compile-commands.py`: appends an entry for the standalone probe
+  `scripts/dev/hip_dispatch_drop_probe.hip` in the HIP lane, mirroring device-kernel flags.
+- `.config/lint-exceptions.d/clang-tidy-coverage.toml`: deleted exceptions for the three
+  sources; re-reviewed `core/test/test_colorspace.c` and
+  `core/test/test_sycl_cuda_serial_upload_lifetime.c` with verified facts and Category D
+  (120 days) expiry (2027-02-12).
+- **On sync**: fork-only tooling and lint infrastructure; no upstream counterpart.
+
+## Trivy config and filesystem scans in CI (2026-10-15)
+
+`ci/trivy-lint`, [ADR-3330](adr/3330-ci-trivy-config-fs.md). The `trivy` job of
+`.github/workflows/lint-and-format.yml` runs the `trivy` program directly (`trivy config`,
+`trivy fs`); keep it a direct step, because `praetorctl audit` counts a declared linter only
+when a workflow step runs it directly or uses an action with `trivy` in its repository name.
+`TRIVY_VERSION` and `TRIVY_SHA256` in `build-config.env` pin the release binary. Dockerfile
+exceptions are maintained with category and expiry in `.trivyignore.yaml`.
+
+## Spectral OpenAPI lint in CI (2026-10-15)
+
+`ci/spectral-lint`, [ADR-3331](adr/3331-ci-spectral-openapi-lint.md). The `spectral` job of
+`.github/workflows/lint-and-format.yml` runs the checksum-verified Spectral release binary directly
+(`spectral lint`); keep it a direct step, because `praetorctl audit`
+counts a declared linter only when a workflow step runs it. `SPECTRAL_VERSION` and `SPECTRAL_SHA256` in
+`build-config.env` stay the one spectral pin; move both together.
+
+## VmafPicture keeps no colour member after upstream 0b9462873 (2026-10-15)
+
+Netflix/vmaf `0b9462873` moves `VmafColor color` to the end of upstream's
+`VmafPicture`. A sync keeps the fork's struct without the member
+(ADR-1822, status update 2026-10-15) and does not port
+`vmaf_picture_convert_context_init()`; `test_picture_no_color_member` fails
+when a `color` member returns to `core/include/libvmaf/picture.h`.
+
+## buf lint and breaking in CI (2026-10-15)
+
+`ci/buf-lint-breaking`, [ADR-3329](adr/3329-ci-buf-lint-breaking.md). The `buf` job of
+`.github/workflows/lint-and-format.yml` runs the `buf` program directly (`buf lint`,
+`buf breaking`); keep it a direct step, because `praetorctl audit` counts a declared linter only
+when a workflow step runs it, not through `scripts/codegen/proto_generate.py`. `BUF_VERSION` in
+`build-config.env` stays the one buf pin.
+
+## SYCL SpEED covariance is the reference's sequential fp64 sum (2026-10-08)
+
+`fix/sycl-speed-covariance-exact`,
+[ADR-2690](adr/2690-sycl-speed-covariance-fast-exact.md). SYCL kernel, one new
+header, tests, docs.
+
+- `speed_sycl_pipeline.cpp` loses the pair-sum covariance kernel
+  (`centred_product`, `accumulate`, `covariance_partial`, `covariance_group`,
+  `kGroup`). `launch_covariance()` runs the helpers of
+  `sycl_speed_cov_math.h` in three launches: differences, products (both
+  stored as fp64 bit patterns in the new `cov_diff` / `cov_terms` buffers,
+  `cov_sums` carries the running sum between row slices) and one sequential
+  add chain per (channel, entry); `covariance_entry()` is the same operations
+  in one function, kept for the device probe. Upstream Netflix
+  has no SYCL twin, so a sync never conflicts here; a rebase onto a branch
+  that still has the old kernel keeps this side. `speed.c` is untouched.
+- The covariance quotient is `signed_div()` by the exact `uint64_t` count,
+  which keeps the exact-count division of #2188; `count_ff()` and
+  `ff_div_to_float()` stay in `sycl_exact_fp.h` but no longer store a
+  covariance. `test_speed_cov_count_contract.py` holds SYCL to the soft-fp64
+  quotient and refuses a pair store in the pipeline.
+- `core/test/test_sycl_speed_cov_math`, `test_sycl_speed_cov_chain`
+  (device-free, with `speed_cov_cases.h` and the synthetic plane
+  `speed_cov_synthetic_plane.h`, written by
+  `scripts/dev/gen_speed_cov_synthetic_plane.py`) and `test_sycl_speed_cov_exact_contract.py`
+  are new. No rebase impact outside
+  `core/src/feature/sycl/` and `core/test/`.
+
+## Scorecard gate trusts v5.6.0 (2026-10-15)
+
+- `scripts/ci/scorecard_gate.py`: `VERSION`, `TOOL_COMMIT` and
+  `ACTION_COMMIT` name Scorecard v5.6.0 and `ossf/scorecard-action` v2.5.0.
+  Fork-only, nothing upstream to merge.
+- **On sync or a later bump**: the `uses: ossf/scorecard-action@` lines of
+  `scorecard.yml` and `security-scans.yml` move in the same pull request as
+  `ACTION_COMMIT`; `test_every_scan_uses_the_action_the_gate_reviewed` fails
+  otherwise. Compare `docs/checks/internal/checks.yaml` of both tool commits
+  before keeping `WEIGHTS`.
+
+## vmafx-sys refuses a stale libvmaf header (#2786) (2026-10-15)
+
+- `bindings/rust/vmafx-sys/build.rs` checks the generated bindings against
+  `REQUIRED_SYMBOLS` in `bindings/rust/vmafx-sys/build_support/header_check.rs`
+  and fails with the header path and the missing names. Fork-only code; no
+  upstream file is involved. **On sync**: a new libvmaf name used by
+  `vmafx-sys/src/safe.rs` or `bindings/rust/vmafx/src` goes on the list;
+  `cargo test -p vmafx-sys --test header_check` fails otherwise.
+
+## ADR claim lock: stale-lock takeover and longer wait (2026-10-15)
+
+In `scripts/adr/next-free.sh` the lock is the owner file, created with
+`O_EXCL` (`noclobber`) inside the lock directory; the directory alone holds
+nothing, so a claim killed between `mkdir` and the owner write leaves a free
+lock. An owner file whose process is gone is removed with a warning, under a
+second directory (`<lock>.takeover`) that serialises takeovers, after the
+process and the owner line are checked again; a running holder's file is never
+removed. The exit trap is set before the lock is taken, and the wait bound is
+`VMAF_ADR_LOCK_WAIT_S` (default 60). A sync or cleanup must not bring back
+`mkdir`-only ownership, a grace-period takeover of a directory without an owner
+file (it raced a claim that had just created the directory), the fixed 10 s
+wait, a takeover outside the takeover lock or without the re-checks, or a
+takeover of a lock whose holder still runs.
+`scripts/adr/tests/test-next-free-stale-lock.sh` and
+`scripts/adr/tests/test-next-free-concurrent.sh` guard it.
+
+## One pinned Rust toolchain (2026-10-15)
+
+- `build-config.env` `RUST_VERSION`, `rust-toolchain.toml`, the
+  `rust-version` of `Cargo.toml` and `core/src/rust/Cargo.toml`,
+  `.github/workflows/rust-ci.yml` and the rustup install of `dev/Containerfile`
+  name one version (ADR-3318); `check-workflow-versions.py` compares them.
+  Fork-only, nothing upstream to merge.
+- `core/src/meson.build`: a missing cargo with `enable_rust_features=true` is
+  an `error()`; `core/src/rust/build_staticlib.py` runs cargo in the manifest's
+  directory. **On sync**: keep both; a new crate takes
+  `rust-version.workspace = true`, and a new place that installs Rust reads
+  `RUST_VERSION` and gets a selector in the Renovate `Rust toolchain` manager.
+
+## Distribution manifest and channel generators (2026-10-15)
+
+- `packaging/manifest.toml` is the one description of shipped artifacts and
+  channels (ADR-3317). A pull request that renames a producer job in
+  `supply-chain.yml`, `windows-tester-bundle.yml` or
+  `macos-tester-bundle.yml`, changes a licensing record in
+  `tools/rc1-tester/image/licensing.json` or a package licence field changes
+  the manifest in the same pull request; `distribution.py check` (pre-commit
+  hook `distribution-manifest`, required job `Release Script Contract`) fails
+  otherwise.
+- `packaging/schemas/winget-1.12.0/` is vendored and hash-checked by
+  `scripts/docs/check_vendored_assets.py`, which now scans `docs/` and
+  `packaging/`. Replace the files with `vendor.json` updated, never edit them.
+- No upstream Netflix file is touched.
+
+## Release provenance assets (2026-10-14)
+
+- `.github/workflows/supply-chain.yml` normalizes and uploads `vmafx-build-provenance.intoto.jsonl`
+  and `vmaf-mcp-provenance.intoto.jsonl` as release assets alongside existing `.sigstore.json` bundles.
+- `.github/workflows/macos-tester-bundle.yml` normalizes and attaches `vmafx-tester-macos-provenance.intoto.jsonl`.
+- `.github/workflows/windows-tester-bundle.yml` normalizes and attaches `vmafx-tester-windows-provenance.intoto.jsonl`.
+- `scripts/ci/check_release_provenance_assets.py` statically validates that every workflow that
+  invokes `action-gh-release` or runs `gh release create`/`upload` writes and uploads an `.intoto.jsonl` asset.
+- **On sync**: upstream Netflix does not attach GitHub-native build-provenance bundles or in-toto
+  provenance assets to its release pipeline. When merging upstream release or packaging workflows,
+  preserve the `actions/attest-build-provenance` steps, `.intoto.jsonl` staging commands, and
+  release asset upload lists (ADR-3316).
+
+## The push aggregator leaves out scheduled runs (2026-10-15)
+
+- `foreignRun()` in `.github/workflows/required-aggregator.yml` also returns true for a
+  `schedule` workflow run. Keep the line when rebasing the aggregator; a sync that drops it
+  lets a scheduled run's skipped check run fail a master push again.
+- `scripts/ci/tests/test_aggregator_event_scope.py` guards it.
+
+## FFmpeg shared fix series v0.2.0 (2026-10-15)
+
+- `build-config.env`: `FFMPEG_FIX_SERIES_TAG` and `FFMPEG_FIX_SERIES_SHA256`
+  move to `VMAFx/ffmpeg-patches` `v0.2.0` (commit `d958384a`). The release's
+  `base.env` still names FFmpeg `n9.0.2` / `946fcce0`, so `FFMPEG_TAG` and
+  `FFMPEG_COMMIT` stay. On a conflict take the newer series pin of the two
+  and run `python3 scripts/ci/ffmpeg_patch_stack.py --refresh`, then `--check`.
+- `docs/development/ffmpeg-patch-automation.md`: patch table lists 0005-0008.
+  Fork-only, nothing upstream to merge.
+
+## Pinned local image and local package installs (2026-10-14)
+
+- `Dockerfile.ffmpeg` replaces `FROM vmaf:latest` with `ARG VMAF_IMAGE_DIGEST`
+  and `FROM vmaf@sha256:${VMAF_IMAGE_DIGEST}` to satisfy OpenSSF Scorecard
+  dependency pinning. The base image validation gate in
+  `scripts/ci/check-container-image-references.py` binds this digest-based FROM.
+- `.github/workflows/tests-and-quality-gates.yml` RC1 Tester Report step replaces
+  `pip install ./tools/rc1-tester` with `pip wheel` into `dist/rc1-wheel` followed
+  by `pip install --no-deps dist/rc1-wheel/*.whl` (ADR-3315).
+- `scripts/ci/check_python_dependency_locks.py` refuses non-editable plain-directory
+  and sdist installs, requiring `.whl` files with `--no-deps`.
+- **On sync**: upstream Netflix has neither `Dockerfile.ffmpeg` nor
+  `check-container-image-references.py`. Any new local package installations in
+  CI or Docker recipes must build and install `.whl` archives with `--no-deps`
+  or use `-e` with both `--no-deps` and `--no-build-isolation`.
+
+## Pull-request workflow budget and label lanes (2026-10-14)
+
+- `pr-label-lanes.yml` is the only workflow that listens for `labeled`; it
+  calls `ci-escalate.yml`, `observability-compose.yml` and `e2e-k8s.yml`
+  through `workflow_call`. **On sync**: an upstream or fork workflow that adds
+  a `pull_request` trigger goes into an existing workflow as a job, or into
+  `pr-label-lanes.yml` as a call when a label starts it.
+- `doxygen-public-api.yml`, `scorecard-policy.yml` and
+  `upstream-consumers.yml` are gone; their jobs live in `docs.yml`,
+  `security-scans.yml` and `ffmpeg-integration.yml` with the same check names.
+  **On sync**: do not bring the files back.
+- `scripts/ci/pr_workflow_budget.py` holds the count at 27 (ADR-3314).
+
+## Solo ruleset: zero reviews, pull-request bypass (2026-10-14)
+
+- `.github/repository-security-policy.json` declares ruleset 22587111 as the forge reports it: review count 0,
+  no last-push approval, bypass mode `pull_request` (ADR-3313). A rebase keeps these values; the security
+  checker compares them with the live ruleset.
+- `.config/lint-exceptions.d/solo-repository-bypass-mode.toml` is deleted. A branch that still carries it fails
+  the checker as a stale entry; drop it when rebasing.
+- No upstream file is touched.
+
+## Renovate: one manager owns the CI Python interpreter (2026-10-14)
+
+- `renovate.json` gains a regex custom manager for `PYTHON_CI_VERSION` in
+  `build-config.env` and every workflow `python-version:` pin, a package rule
+  that disables the github-actions manager's `python` (`uses-with`)
+  dependency, and a `CI Python interpreter` group rule with
+  `allowedVersions: "<3.15.0"` (ADR-3312). Fork-local file; upstream Netflix has
+  no Renovate configuration.
+- **On sync**: nothing to merge from upstream. When adding a workflow that
+  installs Python, spell the pin as `python-version: "X.Y.Z"` so the manager
+  and `check-workflow-versions.py` both read it;
+  `scripts/ci/tests/test_renovate_file_patterns.py` fails when they disagree.
+
+## Windows MSVC+CUDA CI legs build without LTO (2026-10-13)
+
+The `Windows MSVC+CUDA` row of `.github/workflows/libvmaf-build-matrix.yml` and
+the `Windows MSVC+CUDA (full)` row of `.github/workflows/build.yml` pass
+`-Db_lto=false`. Keep it when either file is rebased: with LTO each test program
+links with `/LTCG` and the job runs into its time limit. No upstream file is
+involved.
+
+## `build.yml` plans on `build_work`, not `c_core` (2026-10-13)
+
+- `.github/ci-impact.json` gains the selector `build_work`: `c_core` plus
+  `python/**`, `compat/**`, the build, pytest-timeout and tox lock files and
+  `scripts/ci/prune-corrupt-fixtures.sh`. `.github/workflows/build.yml` reads it
+  in the `impact` job.
+- **On sync**: fork-only files; no upstream counterpart. A new `-r` lock,
+  `tox -c` config or `python -m pytest` target in `build.yml` adds its path;
+  `BuildWorkRouting` in `scripts/ci/tests/test_ci_impact.py` fails otherwise.
+  Against master's config (`build.yml` on `c_core`) the test file fails 26 tests.
+
+## nv-codec-headers pinned in the hosted CUDA legs (2026-10-13)
+
+- The four `Install nv-codec-headers` steps of `.github/workflows/build.yml`
+  and `.github/workflows/libvmaf-build-matrix.yml` call
+  `scripts/ci/fetch-nv-codec-headers.sh`; none clones the repository.
+- `scripts/ci/tests/test_nv_codec_headers_single_source.py` fails on a clone of
+  `nv-codec-headers` in either workflow and on any count of script calls other
+  than two per workflow. A workflow change that adds a CUDA leg updates
+  `CI_STEPS_PER_WORKFLOW` with it.
+
+## ADR claim lock independent of the working directory (2026-10-13)
+
+`scripts/adr/next-free.sh` builds its lock name from the resolved absolute
+path of the common git directory, records an owner token in the lock and
+decides each number with an exclusive claim file under `.git/adr-claims/`.
+A sync or cleanup must not bring back a lock name from the relative output of
+`git rev-parse --git-common-dir`, a release that removes a lock it does not
+own, or a claim file written without `noclobber`. The tests that clean up the
+lock (`scripts/adr/test-next-free.sh`,
+`scripts/adr/tests/test-next-free-remote-aware.sh`) compute the same name.
+`scripts/adr/tests/test-next-free-concurrent.sh` guards it.
+
+## Render-only pull request replaces the direct render push (2026-10-13)
+
+- `scripts/ci/deliverables-check.sh` accepts a diff of rendered paths only when
+  `make docs-render-check` passes on its head (ADR-3295); keep the detached
+  worktree check and the refusal of a rendered file next to any other file.
+- The master push step of the Docs job in
+  `.github/workflows/lint-and-format.yml` runs
+  `scripts/ci/check_render_on_master.py`, not `make docs-render-check`.
+- Tests: `scripts/ci/tests/test_deliverables_render_only.py`,
+  `scripts/ci/tests/test_check_render_on_master.py`.
+
+## Strict-FP policy fixtures declare no language (2026-10-13)
+
+- `core/test/test_strict_fp_compiler_args.py`: the five fixture `project()`
+  calls name no language, and `_meson_setup()` fails a fixture whose
+  `project()` does (`PROJECT_WITH_LANGUAGE`). Meson then skips compiler
+  detection in each throwaway setup.
+- **On sync**: fork-only test; no upstream counterpart. A new fixture that needs
+  a compiler object (`meson.get_compiler()`) cannot use `_meson_setup()`; give
+  it its own setup and keep the test under its 90 s limit on Windows ARM64.
+
+## CodeQL analyses every language on every event (2026-10-13)
+
+- `codeql-cpp`, `codeql-python` and `codeql-actions` in
+  `.github/workflows/security-scans.yml` run `init` and `analyze` without a
+  step-level `if:` and without the impact planner (ADR-3294).
+- The `python_lint` selector is gone from `.github/ci-impact.json`.
+- **On sync**: fork-only files; no upstream counterpart. Do not bring back an
+  impact gate on a CodeQL job: a skipped category makes GitHub's `CodeQL` check
+  neutral, which the aggregator blocks (ADR-3293).
+  `scripts/ci/test_security_workflow_contract.py` fails on such a gate.
+
+## Scratch repositories start no git maintenance (2026-10-13)
+
+`scripts/lib/clean-git-env.sh` sets `maintenance.auto=false` and `gc.auto=0`
+through `GIT_CONFIG_COUNT` next to `init.defaultBranch`. A sync that touches the
+helper keeps the three keys and the count of three;
+`test_the_fixture_helper_starts_no_background_maintenance` in
+`scripts/ci/test_git_fixture_isolation.py` fails when a commit after the helper
+starts `git maintenance run` or `git gc --auto`. No upstream file is involved.
+
+## The aggregator fails an owed context that did not succeed (2026-10-13)
+
+- `.github/workflows/required-aggregator.yml` accepts only `success` for an owed
+  required name. Absent or skipped passes only for a name the CI tier does not
+  owe (ADR-2169), a name in `pullRequestOnly` on a non-`pull_request` event, or
+  `Coverage GPU` / `SYCL Parity (Arc A380)` while their repository switch is off.
+  `releaseMustReport` is gone (ADR-3293).
+- `libvmaf-build-matrix.yml` and `tests-and-quality-gates.yml` have no
+  trigger-level `paths-ignore`; ADR-0341's docs-only filter no longer exists.
+- **On sync**: fork-only files; no upstream counterpart. Do not bring back an
+  absent-means-pass branch, `releaseMustReport` or a `paths-ignore` on a required
+  workflow. A workflow that loses its push trigger adds its names to
+  `pullRequestOnly` in the same pull request.
+  `scripts/ci/tests/test_aggregator_absent_fails.py` fails on the old aggregator
+  (9 failed with `AGGREGATOR_UNDER_TEST` pointed at `bfd2074e9`'s copy).
+
+## `persist_to_file` reads its cache under the file lock (2026-10-13)
+
+- `compat/python-vmaf/tools/decorator.py` is Netflix-inherited. The fork reads the
+  cache of `persist_to_file` through `_read_json_cache()`, and every read, the one at
+  decoration time included, runs inside `_file_lock(f"{file_name}.lock")`, the lock
+  that also covers `_write_json_cache_atomic()`. On Windows an unlocked open that
+  overlaps a peer's `os.replace` fails with `PermissionError` 13.
+- `_read_json_cache()` returns `{}` for an absent file and raises
+  `PersistCacheError` for any other read or parse error; a call no longer swallows the
+  error and overwrites the file.
+- On sync: keep the locked reads and the raising `_read_json_cache()`.
+  `test_persist_to_file_touches_cache_only_under_file_lock` and
+  `test_persist_to_file_corrupt_cache_at_call_time_raises_without_overwrite` in
+  `compat/python-vmaf/tests/test_decorator_extended.py` fail on the old form.
+
+## Release line restart at 0.1.0 (2026-10-12)
+
+- `release-please-config.json`: root package `versioning: default`,
+  `prerelease: false`, `bump-minor-pre-major: true`,
+  `bump-patch-for-minor-pre-major: false`, one-shot `release-as: "0.1.0"`
+  (removed by the rollover in the release-merge PR). **On sync**: upstream has
+  no release-please; nothing to merge. Do not restore `versioning: prerelease`
+  before a 1.0.0 candidate line opens (ADR-3292, ADR-1348).
+- `scripts/release/check-one-shot-fields.sh` replaces the inline step of
+  `.github/workflows/rule-enforcement.yml`; its test is
+  `scripts/release/tests/test-check-one-shot-fields.sh`.
+- Root `go.mod` retract block covers rc.1 to rc.3, one reason per entry.
+- No engine source changes; SONAMEs unchanged.
+
+## One MSVC leg on light-tier pull requests that change core C or C++ (2026-10-12)
+
+`ci/msvc-sycl-light-leg`, [ADR-3279](adr/3279-msvc-sycl-leg-on-light-tier.md). A rebase or sync
+keeps, in `.github/workflows/libvmaf-build-matrix.yml`, the job `impact`
+(`Plan MSVC leg impact`), the `if` of `windows-gpu-build` with all three terms (full tier, a
+failed planner, the selector `windows_msvc_sycl`) behind `!cancelled()`, the `tier` key of both
+matrix rows (`Windows MSVC+SYCL` is `light`, `Windows MSVC+CUDA` is `full`) and the first step
+`leg`, whose output `run` gates every step after the checkout. The checkout itself stays
+unconditional and shallow (`fetch-depth: 1`): the checkout-ordering gate counts no checkout
+that carries an `if`. A step added to that job takes
+`if: steps.leg.outputs.run == 'true'`, or it runs on the CUDA row of a light-tier pull request
+without a build tree. `.github/ci-tier.json` keeps `Windows MSVC+SYCL` in `full_only` and in
+`own_input_lanes`; `.github/ci-impact.json` keeps `windows_msvc_sycl` as `own_paths_only`. In
+`scripts/ci/ci_escalate.py`, `cancel()` treats 409 as "already completed" and `rerun_all()`
+carries on after a run it could not re-run and returns the count: do not bring back a loop that
+ends at the first refused request. `scripts/ci/tests/test_ci_routing_contract.py` (ten planted
+defects), `scripts/ci/tests/test_ci_impact.py` (`MsvcLegRouting`) and
+`scripts/ci/tests/test_ci_escalate.py` (`RerunAll`) fail when one of these is lost.
+
+## ARC runner selector refuses forks (2026-10-12)
+
+`ci/arc-fork-guard`, [ADR-3286](adr/3286-arc-runners-fork-guard.md).
+
+- `.github/workflows/tests-and-quality-gates.yml` (Sanitizers) and
+  `.github/workflows/lint-and-format.yml` (Cppcheck): the `runs-on` selector
+  carries `(github.event_name != 'pull_request' ||
+  github.event.pull_request.head.repo.full_name == github.repository)` between
+  the variable and `'arc-runners'`. An upstream sync never touches these
+  fork-only jobs' selectors; a rebase that rewrites either line keeps the guard.
+- `scripts/ci/test_self_hosted_runner_workflow_contract.py`:
+  `ArcForkGuardContract` admits only that form; a job moved to the pool copies
+  the whole expression.
+
+## Praetor pin 6622361940dc (2026-10-12)
+
+`chore/praetor-pin-66223619`, [ADR-3285](adr/3285-praetor-pin-66223619.md). A rebase or sync keeps
+`PRAETOR_REF` at `6622361940dc...` in `.github/workflows/standards-gate.yml`. The six register
+skill files under `.agents/skills/` and `.claude/skills/` are praetor's text at that pin: take them
+from one side of a conflict, or regenerate them with `adopt --lock-source-root=<praetor clone at the
+pin>` in a throwaway clone; never re-wrap or edit them by hand. The launcher rules of the
+`9bf502ec6ce5` entry still hold.
+
+## Praetor pin 9bf502ec6ce5 and the engine launcher in the hooks (2026-10-12)
+
+`build/engine-launcher-adoption`, [ADR-3272](adr/3272-praetor-pin-9bf502ec-engine-launcher.md). A
+rebase or sync keeps `PRAETOR_REF` at `9bf502ec6ce5...` in `.github/workflows/standards-gate.yml`,
+and keeps the seven governance jobs of `lefthook.yml`, `scripts/git-hooks/hiss-audit.sh` and
+`scripts/githooks/state-sync.sh` on `sh .config/lefthook/engine.sh <arguments>`: a side of a
+conflict that calls `praetorctl` or `standardsctl` directly brings back the engine from `PATH`.
+`.config/lefthook/engine.sh` and `.config/praetor/engine.mk` are praetor's text. `praetorctl adopt`
+refreshes each only while it is unedited, so never edit or format them: take them from one side of a
+conflict, or regenerate them with `adopt --lock-source-root=<praetor clone at the pin>` in a
+throwaway clone. `praetorctl audit` does not compare these two files or
+`.config/agent/hooks/block_evasion.py`; it does compare `tools/figures/mkdocs_hook.py` byte for byte.
+Keep the launcher's two dated exceptions (`.config/lint-exceptions.d/shfmt.toml`, `spdx.toml`) and
+the three places that skip it for shfmt in step (the `exclude` of the `shfmt-src` hook,
+`SHFMT_FILES` in the `Makefile`, the shell branch of `scripts/githooks/pre-commit.sh`);
+`scripts/ci/tests/test_shfmt_scope.py` fails when they differ. The `PreToolUse` entries `adopt`
+writes into `.claude/settings.json` and `.codex/hooks.json` stay out of this change; they follow in
+a change of their own.
+
+## Three hosted jobs back on ubuntu-24.04 under a dated fallback (2026-10-11)
+
+`ci/runner-2404-fallback-fallout`, [ADR-3251](adr/3251-hosted-runner-label-explicit.md). A rebase
+or sync keeps `ubuntu-24.04` on `dev-container-build-work` (`dev-container-build.yml`) and on
+`ffmpeg-work` (the `FFmpeg Ubuntu gcc` matrix row) and `ffmpeg-sycl-work`
+(`ffmpeg-integration.yml`) for as long as `.config/lint-exceptions.d/hosted-runner-label.toml`
+holds their entries (end date 2026-10-25): taking `ubuntu-26.04` on one of them without removing
+its entry fails `scripts/ci/check_hosted_runner_labels.py` on a stale entry, and removing an
+entry without the label fails it on an undeclared older image. The file exists now and goes with
+its last entry. `scripts/ci/lint_exceptions.py` keys the rule `hosted-runner-label` by file and
+job (`PART_KEYS`); every other rule keeps one entry per file, so do not add a part key for a
+rule whose check does not read one.
+
+## `min()` / `max()` behind `<windows.h>` in C++ translation units (2026-10-11)
+
+`fix/msvc-min-macro-fex-capacity`, under
+[ADR-1234](adr/1234-local-preflight-gate.md) (local preflight gate).
+
+- `core/src/fex_ctx_vector_internal.h`: `vmaf_next_fex_capacity()` spells its
+  bound `(std::min)(count_limit, bytes_limit)`. Fork-only file; nothing to
+  take from upstream. **On sync or rebase**: do not write the call back as
+  `std::min(...)`; on Windows `fex_ctx_vector.cpp` has read `<windows.h>`
+  through `core/src/compat/win32/pthread.h` before this header, and MSVC
+  stops with C2589.
+- `core/src/compat/win32/pthread.h` includes `<windows.h>` without
+  `NOMINMAX`. Until that changes, every C++ translation unit that includes
+  `<pthread.h>` on Windows has the `min` and `max` macros: a C++ port from
+  upstream that calls `std::min()`, `std::max()` or
+  `std::numeric_limits<T>::max()` after it needs the parenthesised spelling.
+- `scripts/dev/preflight.sh`: the `msvcism` stage runs
+  `scripts/dev/find-windows-minmax.py` on the changed sources and fails on a
+  finding or on a scan that did not run.
+- Reproducer: `bash scripts/ci/tests/test-preflight-msvcism.sh`, and
+  `scripts/dev/preflight.sh --full --stage msvcism` on the tree.
+
+## Hosted Linux jobs name ubuntu-26.04 explicitly (2026-10-11)
+
+`ci/hosted-runner-label-2604`, [ADR-3251](adr/3251-hosted-runner-label-explicit.md). A rebase or
+sync keeps `ubuntu-26.04` / `ubuntu-26.04-arm` on every hosted Linux job of `.github/workflows/`. A
+branch that adds a job, a matrix value or an expression fallback with `ubuntu-latest`,
+`ubuntu-slim` or an older versioned image fails `scripts/ci/check_hosted_runner_labels.py`
+(pre-commit hook `check-hosted-runner-labels`, third step of `make lint-actions`): take the
+explicit label when resolving the conflict, never the floating one. `verify-native-artifacts` in
+`supply-chain.yml` keeps `ubuntu-24.04` (ADR-1354); the script lists it in `COMPATIBILITY_TARGETS`
+and fails when the job stops naming that image. A job that fails on `ubuntu-26.04` goes back to an
+older label only together with an entry in `.config/lint-exceptions.d/hosted-runner-label.toml`
+(workflow file, job, label, reason, end date at most 90 days out); the file does not exist while no
+job needs one. Comments in install steps that describe the 24.04 image were left as they are.
+
+## Praetor pin 4ae6247c57d2, the read-only context file and refreshed gate assets (2026-10-11)
+
+`chore/praetor-adopt-4ae6247c`, [ADR-3240](adr/3240-praetor-pin-4ae6247c.md). A rebase or sync keeps
+`PRAETOR_REF` at `4ae6247c57d2...` in `.github/workflows/standards-gate.yml` and praetor's text of
+`AGENTS.readonly.md`, `tools/markdownlint/package.json` (with its lock file),
+`tools/markdownlint/verify.mjs`, `.github/workflows/praetor-docs.yml`,
+`.github/workflows/praetor-api.yml`, the register skills under `.agents/skills/` and
+`.claude/skills/` (their `LICENSE` files included) and `.config/agent/hooks/block_evasion.py`.
+Regenerate them with `adopt` in a throwaway copy, never by hand, and take generated files from one
+side of a conflict: `praetorctl compile-context --verify` and `praetorctl audit` compare them byte
+for byte. A branch that changes `AGENTS.md` runs `praetorctl compile-context` after the rebase, which
+now also writes `AGENTS.readonly.md`. Keep its `text eol=lf` line in `.gitattributes`. The
+`PreToolUse` entries `adopt` writes into `.claude/settings.json` and `.codex/hooks.json` stay out
+until the operator decides on them.
+
+## Test fixtures never write to the hook's repository (2026-10-09)
+
+- `scripts/lib/clean-git-env.sh` is the one shell implementation of the
+  isolation: it drops every `GIT_*` variable, ignores global and system git
+  configuration and supplies the fixture identity through `GIT_AUTHOR_*` /
+  `GIT_COMMITTER_*`. Test scripts source it before their first git command; none
+  runs `git config user.*`. **On sync**: a script added upstream or by a branch
+  that builds a scratch repository gets the same line;
+  `scripts/ci/test_git_fixture_isolation.py` names the ones that do not
+  (identity scan, isolation scan and sentinel run). A script that only clones or
+  initialises a repository elsewhere sources `scripts/lib/drop-git-env.sh`
+  instead.
+- No rebase impact on Netflix code: every file is fork-only test tooling.
+
+## Fixture downloads retry through one policy (2026-10-10)
+
+- `compat/python-vmaf/config.py` (upstream-mirror): `download_reactively()`
+  calls `retrieve(remote_path, tmp_path)` from the fork file
+  `compat/python-vmaf/tools/retrying_download.py` where upstream calls
+  `urllib.request.urlretrieve(remote_path, tmp_path)`. The tempfile and
+  `os.replace` structure around it is upstream's (Netflix/vmaf `32780bd9b`)
+  and unchanged. **On sync**: keep the `from vmaf.tools.retrying_download
+  import retrieve` line and the `retrieve()` call; a sync that restores the
+  bare `urlretrieve` fails `scripts/ci/tests/test_fetch_test_yuvs.py` and
+  `compat/python-vmaf/tests/test_retrying_download.py`.
+- `scripts/test/fetch-test-yuvs.sh` and
+  `.github/workflows/upstream-consumers.yml` are fork files; nothing to
+  reconcile.
+- No score, model or public interface changes.
+
+## FFmpeg builds apply the shared fix series before `ffmpeg-patches/` (2026-10-10)
+
+- `build-config.env` pins `FFMPEG_FIX_SERIES_REPO`, `_TAG` and `_SHA256`
+  (ADR-3143). `scripts/ci/ffmpeg-shared-series.sh` is the one place that
+  downloads, verifies and applies the series; `ffmpeg_patch_stack.py`,
+  `ffmpeg-patches/test/build-and-run.sh`, `ffmpeg-integration.yml`,
+  `Dockerfile`, `Dockerfile.ffmpeg`, `dev/Containerfile` and
+  `docker/Dockerfile.node` call it before they apply `series.txt`.
+- `ffmpeg-patches/0019-*` is gone and its number is retired: the diagnostics
+  hardening is patch 0002 of the shared series. A sync or a new patch must not
+  bring a fix to FFmpeg itself back into `ffmpeg-patches/`; it belongs in
+  VMAFx/ffmpeg-patches.
+- A new FFmpeg tag needs a series release whose `base.env` names it: move the
+  three pins together with `FFMPEG_TAG` / `FFMPEG_COMMIT`, then run
+  `python3 scripts/ci/ffmpeg_patch_stack.py --refresh`.
+- `SharedFixSeriesContract` (`scripts/ci/test_ffmpeg_patch_workflow_contract.py`)
+  fails when a build applies `ffmpeg-patches/` without the script before it.
+
+## nv-codec-headers pin and kernel-object licence rules (2026-10-10)
+
+`fix/release-dry-run-gpu-images`. `build-config.env` owns the nv-codec-headers release
+(`NV_CODEC_HEADERS_TAG`, `NV_CODEC_HEADERS_COMMIT`); the root `Dockerfile`,
+`dev/Containerfile`, `docker/Dockerfile.tester`,
+`docker/Dockerfile.production-gpu`, the configure errors of
+`core/src/meson.build` and the `nv-codec-headers` source of
+`tools/rc1-tester/image/licensing.json` repeat it, and
+`scripts/ci/tests/test_nv_codec_headers_single_source.py` fails on a copy that
+differs. `core/src/meson.build` is an upstream-mirror file: on a sync keep the
+fork's `nv_codec_headers_need` text and the `cc.has_member('CudaFunctions',
+'cuArray3DGetDescriptor', ...)` check after the two header checks (upstream
+names commit `876af32a202d`, which lacks that member). A port that calls a
+newer loader member raises the pin in the same PR. The kernel-object rules of
+`licensing.json` glob `core/src/**`, so a `.cu` or `.hip` stem must stay unique
+under `core/src`.
+
+## VMAFx Vulkan frame import (RC4 WP3 Vulkan lane, 2026-10-07)
+
+`rc4/api-wp3-vulkan-import`, [ADR-2152](adr/2152-vmafx-vulkan-frame-import.md),
+[ADR-2091](adr/2091-vmafx-sycl-device-frames.md),
+[ADR-2092](adr/2092-vmafx-hip-device-frames.md). Lands after the SYCL and
+HIP lanes; their single copies of the shared helpers
+(`core/src/vmafx/sync_object.{c,h}`, `core/src/vmafx/release_events.c`, the
+`vmafx_device_cells.h` / `vmafx_sycl_cells.h` tables on
+`vmafx_exact_cells.h`) are the ones this lane builds on.
+
+- A `SYNC_FILE` fence is destroyed by closing its descriptor (ADR-2091 item
+  6, landed with the SYCL lane #2342); this lane's `fence.c` adds the
+  `VULKAN_SEMAPHORE` refusals next to it, and a `GL_SYNC` fence is still
+  refused (the producer's, `glDeleteSync()`).
+- API (`core/api/vmafx.toml`, ABI 0.1.10): `VMAFX_MEMORY_VULKAN`,
+  `VMAFX_FENCE_VULKAN_SEMAPHORE`, the enums `VmafxVulkanHandleType` and
+  `VmafxVulkanTiling`, the flags `VmafxVulkanFlags`, `VmafxDeviceInfo.pci`,
+  the `VmafxFrameImport` fields `acquire_more`, `vulkan_handle_type`,
+  `vulkan_tiling`, `vulkan_flags`, `vulkan_pci`, and
+  `vmafx_frame_signal_on_release()`. On a conflict in a generated file take
+  either side and run `python3 scripts/codegen/vmafx-api.py --write`.
+- New files: `core/src/vmafx/frame_import_vulkan.c` (the device-independent
+  checks and the dma-buf translation), `core/src/cuda/import_vulkan.c` (the
+  CUDA interop; `VmafxCudaVulkan` in `vmafx_cuda_internal.h`), the producer
+  and tests `core/test/vmafx_vulkan_producer.{c,h}`,
+  `vmafx_vulkan_test_util.h`, `test_vmafx_import_vulkan*.c`; the Vulkan tests
+  are built once per device lane when `dependency('vulkan')` is found.
+- Each lane reports its device's PCI location (`cuda/import_device.c`,
+  `sycl/vmafx_sycl_rt.cpp`, `hip/import_device.c`), parsed by the one
+  `vmafx_parse_pci_bus_id()` of `vmafx/frame_import_vulkan.c`, and
+  translates a VULKAN descriptor before its own checks
+  (`cuda/import_frame.c`, `sycl/import_frame.c`, `hip/import_frame.c`).
+- `vmafx_exact_cells.h` holds `vc_import_only()` (`VMAFX_TEST_IMPORT_ONLY`),
+  formerly a copy in each of the CUDA and HIP bit-exactness tests.
+- No `libvmaf.h`, golden-data or FFmpeg patch impact.
+
+## Dev image: Vulkan loader and lavapipe (2026-10-10)
+
+- `dev/Containerfile`, stage `build-deps`, installs `libvulkan1`,
+  `libvulkan-dev`, `mesa-vulkan-drivers` (lavapipe) and `vulkan-tools`, and a
+  build step fails when `vulkaninfo --summary` lists no `llvmpipe`
+  (ADR-3137, operator decision ci-config-19). Fork-only: upstream Netflix/vmaf
+  has no dev image. **On sync**: keep the four packages, the package check and
+  the lavapipe step; do not move them into a second image.
+
+## 4:2:2 and 4:4:4 import on SYCL (RC4 WP3 formats lane, 2026-10-07)
+
+`rc4/api-wp3-formats-422-444-sycl` (on `rc4/api-wp3-sycl`),
+[ADR-2133](adr/2133-vmafx-import-422-444-formats.md).
+
+- `core/src/sycl/vmafx_sycl_rt.{h,cpp}`: `VmafxSyclPlaneOp` gained `step`,
+  `offset`, `in_bytes`, `mask` (zero for the other operations) and
+  `vmafx_sycl_rt_frame_gather()` / `launch_gather()` read a packed or MSB
+  plane by the plan of `vmafx_import_plane_read()`.
+  `core/src/sycl/import_frame.c`: `converted_plane()`, `gathered()`,
+  `gather_plane()`; the conversion counter counts every converting import.
+  A rebase keeps all three; the CPU reference
+  (`core/src/vmafx/import_convert.h`) and the CUDA / HIP kernels
+  (`import_convert_kernels.h`) are the same plan.
+- `core/test/vmafx_sycl_test_util.h`: `vs_layout()` / `vs_write()` go through
+  `vt_device_layout()` / `vt_producer_bytes()` (planar, semi-planar and
+  packed); `test_vmafx_import_sycl_formats` plugs the SYCL producer into
+  `VfOps` of `vmafx_format_cells.h` with `VF_CELLS_HEADER` set to
+  `vmafx_sycl_cells.h`.
+- The common part of ADR-2133 (pixel formats, ABI 0.1.9, CPU reference,
+  CUDA and HIP kernels) landed with #2367; this lane adds the SYCL half only
+  and no API entry.
+- No `libvmaf.h`, golden-data or FFmpeg patch impact.
+
+## Praetor pin d141862c430b, the API gate's pinned checker module (2026-10-09)
+
+`ci/apicompat-checker-xtools`, [ADR-3061](adr/3061-praetor-pin-d141862c.md). A rebase or sync keeps
+`PRAETOR_REF` at `d141862c430b...` in `.github/workflows/standards-gate.yml` and praetor's text of
+`tools/apicompat/gate/main.go` (its `checkerGoMod`, `checkerGoSum` and `checkerTools` constants
+included). Regenerate the file with `adopt` in a throwaway copy, never by hand: `praetorctl audit`
+locks it, and an older text brings back the checker that reads Go 1.27.2 packages as empty.
+
+## VMAFx device frames on SYCL (RC4 WP3 SYCL lane, 2026-10-07)
+
+`rc4/api-wp3-sycl` (on `rc4/api-wp3-cuda`),
+[ADR-2091](adr/2091-vmafx-sycl-device-frames.md),
+[ADR-1929](adr/1929-vmafx-device-frames-fences.md).
+
+- New files `core/src/sycl/vmafx_sycl.h`, `vmafx_sycl_internal.h`,
+  `import_device.c`, `import_frame.c`, `import_dmabuf.c`, `import_fence.c`,
+  `import_gl.c`, `import_pool.c` (in `libvmafx_sources` under
+  `is_sycl_enabled`, the WP6 split of ADR-2094), the C++ half `vmafx_sycl_rt.{h,cpp}` (`sycl_sources`)
+  and `detile.h`. `core/src/vmafx/sync_object.{c,h}` hold the `sync_file`,
+  dma-buf implicit-fence and GL sync helpers the CUDA, HIP and SYCL lanes
+  share (the CUDA lane's own GL sync loader and the HIP lane's
+  `core/src/vmafx/gl_sync.c` and `sync_file.c` moved there; the CUDA and HIP
+  imports call it).
+- `core/src/vmafx/*.c` dispatch to the SYCL lane under `#ifdef HAVE_SYCL` as
+  they do to CUDA; `fence.c` handles `SYNC_FILE` and `GL_SYNC` for every lane;
+  `frame_import_admit.c`'s D8 retry also waits on a dma-buf's implicit write
+  fences.
+- `core/src/picture.h`: `VmafPicturePrivate.sycl` gains `frame`.
+  `core/src/sycl/common.cpp`: `sycl_state_create()` (one constructor),
+  `vmaf_sycl_state_init_queue()`, and device branches in the shared luma and
+  chroma uploads. `core/src/libvmaf.c`: `read_pictures_sycl_device_frame()`.
+- Every SYCL twin that stages its own planes has a device branch through
+  `vmaf_sycl_picture_read_plane()` (`float_psnr`, `float_motion`,
+  `float_adm`, `float_vif`, `float_ssim` / `ssim`, `float_ms_ssim`, `ciede`,
+  `ssimulacra2`, the SpEED pair, `motion`'s chroma). An upstream sync that
+  touches a twin's staging keeps the branch (see
+  `core/src/feature/sycl/AGENTS.d/device-pictures.md`).
+- `core/src/sycl/dmabuf_import.cpp`: the Y-tiled and Tile4 de-tile kernels
+  are `detile_tiled()` on `detile.h`; `vmaf_sycl_dmabuf_import_queue()` /
+  `vmaf_sycl_dmabuf_free_queue()` take any queue's context.
+- Definition doc strings only (`VMAFX_MEMORY_GL_TEXTURE`,
+  `VmafxDeviceDesc.backend`, the release callback); no ABI change.
+
+## The WP3 SYCL lane on the HIP lanes (2026-10-07)
+
+The WP3 SYCL lane (#2342) lands after the HIP lane (#2341), its GL follow-up
+(#2360) and the 4:2:2 / 4:4:4 lane (#2367), as `rc4/integration` merged them.
+What a rebase of either side must keep:
+
+- One implementation (HISS-19) of the host-checked producer fences:
+  `core/src/vmafx/sync_object.{c,h}` (sync_file poll, dma-buf implicit
+  fences, GL sync). The HIP lane's `gl_sync.c` and `sync_file.c` and their
+  `internal.h` declarations are gone; HIP code includes `vmafx/sync_object.h`.
+  `vmafx_fence_wait()` polls SYNC_FILE and GL_SYNC fences through
+  `vmafx_fence_poll()` (the virtual test clock).
+- One EGL export: `core/src/vmafx/egl_export.c`. `vmafx_egl_export_planes()`
+  takes a `VmafxEglTiled` mode instead of `allow_copy`: the HIP lane passes
+  REFUSE or COPY (from `VMAFX_IMPORT_ALLOW_COPY`), the SYCL lane KEEP (a
+  tiled export stays tiled for its device de-tile; no writers wait, the
+  dma-buf import honours the implicit fences). A target `fourcc` of 0 and a
+  NULL `device_pci` skip those checks. `sycl/import_gl.c` keeps only the
+  translation into a DMABUF descriptor. This is the fold the HIP GL note
+  ("HIP GL textures through EGL dma-bufs") asked for when the lanes met.
+  `core/test/test_vmafx_one_egl_export_contract.py` refuses a lane that loads
+  EGL itself or a second definition of a sync-object function.
+- A SYNC_FILE fence is destroyed by closing its descriptor (ADR-2091 item
+  6): `vmafx_fence_destroy()` closes it in every build (on Windows it is
+  refused, there are no sync_files), for every lane; the HIP lane's refusal
+  (VMAFX_E_NOTSUP) is gone. `test_vmafx_fence_kinds` and
+  `test_vmafx_import_sycl`'s sync_file case check it.
+- `core/src/sycl/dmabuf_import.cpp` keeps master's descriptor handling
+  (`driver_fd()` / `driver_fd_done()`, #2377) inside
+  `vmaf_sycl_dmabuf_import_queue()`, which the VMAFx import and the
+  VA-surface import share; `test_vmafx_import_sycl`
+  `test_import_closes_only_its_own` checks the VMAFx path.
+- The HIP GL digest is Research-2161 (both lanes added a Research-2160); the
+  SYCL digest keeps 2160.
+- No `libvmaf.h`, ABI, golden-data or FFmpeg patch impact.
+
+## Warnings as errors on every CI lane (2026-10-09)
+
+`ci/hiss10-werror-literal`, [ADR-2828](adr/2828-ci-werror-every-lane.md). A rebase or sync keeps
+`-Dwerror=true` on every `meson setup` of `.github/workflows/` (on the first line of the `cmd`
+legs), beside `scripts/ci/werror-args.sh`; `-DCMAKE_COMPILE_WARNING_AS_ERROR=ON` on the Level Zero
+configures; `CGO_CFLAGS` with `-Werror` on `go-ci.yml`; `RUSTFLAGS: -D warnings` on `rust-ci.yml`;
+`werror: msvc` on the Windows MSVC+SYCL row; and an empty `.config/lint-exceptions.d/HISS-10.toml`.
+A new or rebased lane without its switch fails `praetorctl audit`. `write-compile-commands.py`
+drops `-Werror` from the analysis database only (`test_write_compile_commands.py`). For a static
+MSVC build `core/src/meson.build` passes the pkg-config module `-L${vmafx_libdir} -lvmafx` /
+`-lvmaf` strings, not the renamed targets (the module warns on any `name_prefix` / `name_suffix`
+target); keep that branch when an upstream sync touches the library naming, and
+`check_msvc_library_names.py --meson-log` fails the warning on the MSVC legs.
+
+## Import of 4:2:2 and 4:4:4 layouts (RC4 WP3 formats lane)
+
+`rc4/api-wp3-formats-422-444`, [ADR-2133](adr/2133-vmafx-import-422-444-formats.md),
+ABI 0.1.9 (additive; the lane and ADR-2133 say 0.1.5, renumbered when it landed
+after the other API additions).
+
+- One CPU reference for every import conversion:
+  `core/src/vmafx/import_convert.h` (`vmafx_import_read_plane()`,
+  `VmafxImportRead`) with the per-layout plan `vmafx_import_plane_read()` in
+  `core/src/vmafx/frame_import.c`. `vmaf_metal_read_plane()`
+  (`core/src/metal/iosurface_layout.h`) forwards to it; a rebase that brings
+  the Metal row readers back takes this side. `VmafxImportLayout`
+  (`internal.h`) gained `packed`, `elem` and `msb`: every row of
+  `import_layouts[]` initialises them (no missing-initializer warning).
+- Device kernels: `vmafx_import_gather` (its body `vmafx_import_gather_body()`
+  in `core/src/vmafx/import_convert_kernels.h`, the entry point in
+  `core/src/cuda/import_convert.cu` and `core/src/hip/import_convert.hip`, as
+  for the other import kernels), launched per
+  output plane from `gather_plane()` of `core/src/cuda/import_frame.c` and
+  `core/src/hip/import_frame.c`; the planes of a packed or MSB layout are
+  `converted_plane()`; a packed or MSB layout in an array or GL texture is
+  refused naming `desc.memory`.
+- `vmafx_count_conversion()` counts every converting import
+  (`converted_plane(layout, 0)` or `(layout, 1)`), not only interleaved ones.
+- Tests: `test_vmafx_import_convert`, `test_vmafx_import_bitexact` (wide
+  chroma, other layouts), `test_vmafx_import_{cuda,hip}_formats` with
+  `core/test/vmafx_format_cells.h` (shared by every backend lane; the SYCL
+  lane's producer plugs in through `VfOps`).
+- The SYCL conversion kernels are a separate commit on the SYCL lane
+  (`rc4/api-wp3-formats-422-444-sycl`); it carries the same definition
+  entries, which this PR lands first: on its rebase they are already there.
+- No `libvmaf.h`, golden-data or FFmpeg patch impact.
+
+## Pelorus mirror at v0.3.0, EUPL-1.2 (2026-10-09)
+
+`chore/pelorus-revendor`, [ADR-2817](adr/2817-pelorus-v030-eupl-repin.md). A rebase or sync keeps
+`PELORUS_VENDOR_SHA` at `e2e4040311a4...` and `PELORUS_MIRROR_LICENSE` at `EUPL-1.2` in
+`scripts/sync-pelorus-interop.sh`, and never hand-merges the ten mirrored files: take either side and
+run `scripts/sync-pelorus-interop.sh --update <pelorus checkout>`, then the check without `--update`.
+`REUSE.toml` has no `core/src/interop/pelorus*` annotation and `.config/lint-exceptions.d/spdx.toml`
+no Pelorus entry; a side that brings either back is stale. The `pelorus` entry of `docs/credits.yaml`
+names `EUPL-1.2`; regenerate `docs/credits.md` with `make docs-fragments-write` after a conflict.
+
+## `vmaf_picture_wrap` port, Netflix/vmaf 700124a4c, ADR-2949 (2026-10-09)
+
+- `core/include/libvmaf/picture.h`: `VmafPictureWrapped` and
+  `vmaf_picture_wrap()` as upstream declares them, with `VMAF_DEPRECATED` /
+  `VMAF_EXPORT` and one member per line (`w`, `h`). Upstream's declaration in
+  `src/picture.h` is not taken: the public header is the one declaration.
+- `core/src/picture.c`: upstream's `vmaf_picture_wrap()` split into
+  `vmaf_picture_wrap_bind()` (construction, no checks, `*pic` untouched on
+  failure, declared in `src/picture.h`) and the checked public body. **On
+  sync**: keep `vmaf_picture_plane_extents()` (chroma rounded up, ADR-1483),
+  the plane checks and the absence of `goto`; upstream's floor shifts and its
+  `free_priv` label must not come back.
+- `core/src/vmafx/frame_host.c`: `vmafx_frame_bind()` calls
+  `vmaf_picture_wrap_bind()`; fork-only.
+- `core/src/compat/libvmaf/picture.c`: the compat body on
+  `vmafx_frame_wrap_host()` (`WrapRelease` thunk); fork-only.
+- Generated: `core/api/vmafx.toml` `[[compat]]` entry, then
+  `scripts/codegen/vmafx-api.py --write` (symbol list, engine names,
+  conformance tables, compat reference).
+- Tests: `test_picture_wrap_integration.c` is upstream's test, adapted to the
+  public link (no private header) and to free the model; the fork's contract
+  is `test_picture_wrap_api.c` and the `picture_wraps()` part of
+  `test_compat_conformance_api.c`.
+
+## HIP GL textures through EGL dma-bufs (RC4 WP3 HIP follow-up)
+
+`rc4/api-wp3-hip-gl-dmabuf`, [ADR-2132](adr/2132-hip-gl-textures-through-egl-dmabuf.md).
+
+- `core/src/hip/import_gl.c` no longer calls `hipGraphics*`;
+  `core/src/vmafx/egl_export.c` (shared, `internal.h` declarations) exports
+  the textures and `import_gl()` in `core/src/hip/import_frame.c` imports them
+  as a DMABUF frame. `vmafx_hip_gl_map()` / `vmafx_hip_gl_release()`,
+  `VmafxHipGl` and `fill_failed()`'s GL branch are gone; a rebase that
+  brings them back from ADR-2092 takes this side.
+  `test_vmafx_import_hip_contract.py` holds the order (GL sync, GPU check,
+  export, copy only with `VMAFX_IMPORT_ALLOW_COPY`, writers waited).
+- `core/test/test_vmafx_import_hip_gl.c` is EGL, not GLX, and uses the new
+  `core/test/vmafx_egl_test_util.h`, which the SYCL GL test can adopt.
+- The SYCL lane (`rc4/api-wp3-sycl`) has its own EGL export in
+  `core/src/sycl/import_gl.c`: when the lanes merge, fold it onto
+  `egl_export.c` (one implementation, HISS-19).
+- No `libvmaf.h`, ABI, golden-data or FFmpeg patch impact.
+
+## ADM second viewing distance on Metal (2026-10-09)
+
+- `core/src/feature/metal/integer_adm_metal_host.{c,h}`: new
+  `iadm_metal_view_stages()`, the stage plan of one viewing distance (the
+  DWT only for the first).
+- `core/src/feature/metal/integer_adm_metal.mm`: `adm_norm_view_dist_extra`
+  (`nvde`) in the option table; `iadm_options()` takes the distance; a
+  second set of reduction buffers (`accum_x`); `submit` encodes each scale's
+  distances in turn and `collect` concludes each. The merge callback and the
+  second distance's names are the shared `adm_view_dist.c`. Fork-only,
+  nothing upstream to merge. **On sync**: keep the per-distance loop and the
+  view stage plan.
+- Tests: `test_metal_integer_adm_host_replay.c` replays two distances;
+  `test_metal_integer_adm_parity.c` (device and self-test) gains
+  `test_adm_two_views_exact` and `test_adm_merged_registrations_exact`;
+  the Metal option-table contract drops its recorded gap.
+
+## ADM second viewing distance on HIP (2026-10-09)
+
+- `core/src/feature/hip/integer_adm_hip.c`: `adm_norm_view_dist_extra`
+  (`nvde`) in the option table; `adm_hip_scale0()` / `adm_hip_scale123()`
+  became `*_transform()` (DWT) and `*_weigh()` (denominator, CSF, CM, AIM at
+  one distance, through `adm_hip_view_buffer()`); `rfactor` / `i_rfactor` are
+  indexed by distance and `adm_hip_fixed_params()` takes the distance;
+  `tmp_res` and `results_host` hold one result block per distance; the
+  context initialisers and the host conclusion take the distance as `nvd`.
+  The merge callback and the second distance's names are the shared
+  `adm_view_dist.c`. Fork-only, nothing upstream to merge. **On sync**: an
+  upstream change to the HIP ADM driver lands in the matching half; keep the
+  per-distance loop.
+- `core/test/test_hip_adm_exact.c`: `test_adm_two_views_exact` and
+  `test_adm_merged_registrations_exact` hold both distances to the CPU's
+  bits. `test_hip_adm_parity.c` drops its recorded option gap;
+  `test_hip_adm_exact_contract.py` and
+  `test_hip_adm_buffer_pointer_contract.py` pin the `nvd` contexts, the
+  `res_bytes` clear and `adm_hip_init_names()`'s failure path.
+
+## Netflix/vmaf 9f4bd165f: integer_vif copies each row's samples (2026-10-09)
+
+- `core/src/feature/integer_vif.c` `extract()`: the same change as upstream
+  (`row_bytes = w << (bpc > 8)`), with a comment. **On sync**: identical; take
+  either side.
+- `core/test/test_integer_vif_row_copy.c` (fork-only): wide-stride luma ending
+  at an inaccessible page; scores equal at either stride.
+- `4068ee3b5` (CAMBI 10-bit same-size copy with stride) is not ported: the fork
+  copies row by row since `T-CAMBI-10BIT-FULLREF-WIDE-SOURCE-ROWS-2026-10-05`
+  (`decimate_same_size_16b()` in `core/src/feature/cambi.c`), and the Rust twin
+  (`core/src/rust/feature/cambi/src/preprocess.rs`) does too. On sync, keep the
+  fork's function.
+
+## VMAFx device frames on HIP (RC4 WP3 HIP lane)
+
+`rc4/api-wp3-hip`, [ADR-2092](adr/2092-vmafx-hip-device-frames.md),
+[ADR-2023](adr/2023-vmafx-cuda-device-frames.md),
+[ADR-1929](adr/1929-vmafx-device-frames-fences.md).
+
+- New files `core/src/hip/vmafx_hip.h`, `vmafx_hip_internal.h`,
+  `import_device.c`, `import_frame.c`, `import_dmabuf.c`, `import_fence.c`,
+  `import_gl.c` (in `libvmaf_sources` under `if is_hip_enabled`, not in
+  `hip_sources`, for the reason the CUDA lane gives) and the kernel module
+  `import_convert.hip` (`hip_kernel_sources`, `import_convert_hsaco`).
+- Moved out of the CUDA lane into shared files, one copy each:
+  `core/src/vmafx/import_convert_kernels.h` (the NV12 / P010 / P016 kernels;
+  `cuda/import_convert.cu` and `hip/import_convert.hip` only include it; it
+  is in both `cuda_kernel_shared_headers` and `hip_kernel_shared_headers`),
+  `core/src/vmafx/gl_sync.c` (the GL loader and `vmafx_gl_sync_acquire()`,
+  formerly in `cuda/import_gl.c`), `core/src/vmafx/release_events.c` (the
+  release-event table, formerly in `cuda/import_fence.c`), and the new
+  `core/src/vmafx/sync_file.c`. A rebase of the CUDA lane that touches the
+  old copies applies the change to the shared file.
+- `core/src/vmafx/*.c` dispatch to the HIP lane next to the CUDA one
+  (`device.c`, `device_context.c`, `frame_import.c`, `fence.c`,
+  `frame_import_admit.c`, `submit.c`); `fence.c` waits on `SYNC_FILE` and
+  `GL_SYNC` fences without a device; `frame_pool.c` refuses HIP devices.
+- `core/src/picture.h`: `VmafPicturePrivate` gains an unconditional
+  `hip.str` (one layout in every translation unit; `HAVE_HIP` reaches only
+  some through `config.h`). `core/src/libvmaf.c`: `translate_picture()`
+  passes a HIP device picture through, and `hip_refuse_other_reader()`
+  refuses it to a non-HIP extractor.
+- `core/src/hip/picture_hip.c` and `shared_frame.c`: a device picture is
+  copied on its library stream and the reader's stream and the null stream
+  wait (`vmaf_hip_stream_wait_library()`); an upstream or fork change to the
+  upload path keeps the device branch first. `integer_psnr_hvs_hip.c`,
+  `ssimulacra2_hip.c` and `integer_ms_ssim_hip.c` (with the new kernel
+  `ms_ssim_picture_to_float` in `integer_ms_ssim/ms_ssim_score.hip`) branch
+  on `vmaf_hip_picture_device_stream()` before their host staging;
+  `core/test/test_vmafx_import_hip_contract.py` holds the order.
+- `core/meson_options.txt`: `enable_float_vif_hip_autodispatch` defaults to
+  `true`; its description and the `core/src/meson.build` comment keep the
+  `ADR-0623` citations `test_stale_text_contract.py` reads.
+- Tests: `core/test/vmafx_cuda_cells.h` is now `vmafx_device_cells.h`
+  (both lanes read `scripts/ci/exact_twins.d/`); the CUDA tests include the
+  new name.
+- `core/src/hip/import_frame.c` `fill_failed()`: a GL texture the runtime
+  maps but refuses to read (`hipErrorInvalidValue`, every read on ROCm 10.1)
+  is `VMAFX_E_NOTSUP` naming `desc.memory`, not `VMAFX_E_DEVICE`;
+  `test_vmafx_import_hip_gl` skips on that refusal. Keep both when the GL
+  path changes.
+- No `libvmaf.h`, ABI (0.1.4 unchanged), golden-data or FFmpeg patch
+  impact; `--backend hip` now runs `float_vif_hip` for `float_vif` (the CPU's
+  scores, ADR-1444).
+
+## ADM second viewing distance on SYCL (2026-10-09)
+
+- `core/src/feature/sycl/integer_adm_sycl.cpp`: `adm_norm_view_dist_extra`
+  (`nvde`) in the option table; `rfactor`, `i_rfactor` and
+  `csf_normalization_shift` are indexed by viewing distance;
+  `enqueue_adm_reductions()` runs once per distance after the scale's DWT,
+  into that distance's block of `d_accum`; `collect_view()` concludes one
+  distance. The merge callback and the second distance's names are the
+  shared `adm_view_dist.c`. Fork-only, nothing upstream to merge. **On
+  sync**: an upstream change to the SYCL ADM driver keeps the per-distance
+  loop and the `[view]` index.
+- `core/test/test_sycl_adm_parity.c`: the recorded option gap is gone;
+  `test_adm_two_views_exact` and `test_adm_merged_registrations_exact` hold
+  both distances to the CPU's bits. `core/test/test_adm_view_merge.c` and
+  `core/test/test_adm_view_dist_contract.py` list `adm_sycl` among the
+  merging descriptors.
+
+## `vif_tools.c`: AVX2 row dispatch taken for a filter with a tap (2026-10-09)
+
+- `vif_filter1d_vertical_dispatch_s()` in `core/src/feature/vif_tools.c` takes
+  the AVX2 row pass only for `fwidth >= 1`, the condition under which its row
+  table is filled for every entry `convolution_f32_avx_rows_s()` reads.
+  cppcheck 2.19.0 reports `uninitvar` on the table without it. **On sync**:
+  keep the `fwidth >= 1 &&` in front of `vif_use_avx2_convolution()` when
+  upstream changes that dispatch; no score changes with it (the Netflix golden
+  gate passes unchanged).
+
+## Netflix/vmaf 3e1385bed: FFmpeg built with MSVC in CI (2026-10-08)
+
+- Upstream adds a Windows row to `.github/workflows/ffmpeg.yml` that builds
+  FFmpeg `master` through a Meson port of FFmpeg. The fork's equivalent is the
+  `ffmpeg-msvc-work` / `ffmpeg-msvc-gate` jobs of
+  `.github/workflows/ffmpeg-integration.yml` (required check
+  `FFmpeg Windows MSVC`, ADR-2783), which run
+  `ffmpeg-patches/test/build-and-run.sh` with `FFMPEG_TOOLCHAIN=msvc`.
+  **On sync**: do not import upstream's `ffmpeg.yml` row; the fork has no
+  `ffmpeg.yml`.
+- `scripts/ci/upstream-consumer-lib.sh` now holds `uc_ffmpeg_graph` (moved
+  from `upstream-ffmpeg-compat.sh`'s `ff_graph`); the smoke script's score
+  check and the upstream-consumer check share it.
+- `docs/getting-started/building-on-windows.md`: the ARM64 toolset notes stay
+  under "Native MSVC on Windows ARM64"; "Threads on MSVC", "Library files of
+  an MSVC build" and "FFmpeg with MSVC" follow as sections of their own.
+- `ffmpeg-patches/0002` and `0008` call `ff_set_pixel_formats_from_list2()`
+  for their `enum AVPixelFormat` lists (cl.exe `C4133` with the untyped
+  `ff_set_common_formats_from_list2()`). Keep the typed helper when
+  refreshing the series. The smoke script's warning gate under `msvc` reads
+  only the lines the series writes and the linker (`msvc_findings`).
+
+## ADM second viewing distance on CUDA, shared merge helpers (2026-10-08)
+
+- `core/src/feature/adm_view_dist.{c,h}` (new): the merge callback and the
+  second distance's names, read through the option table by name, for every
+  ADM descriptor. `integer_adm.c` drops its own copies; `adm_cuda` sets the
+  same hooks. Fork-only, nothing upstream to merge.
+- `core/src/feature/cuda/integer_adm_cuda.c`: `adm_scale0_device()` /
+  `adm_scale123_device()` became `*_transform()` (DWT) and `*_weigh()`
+  (denominator, CSF, CM, AIM at one distance); `tmp_res` and `results_host`
+  hold one result block per distance; the host conclusion takes the distance
+  as an argument. **On sync**: an upstream change to the CUDA ADM driver lands
+  in the matching half; keep the per-distance loop.
+- `core/test/test_cuda_adm_parity.c`: the recorded option gap is gone;
+  `test_adm_two_views_exact` and `test_adm_merged_registrations_exact` hold
+  both distances to the CPU's bits.
+
+## Windows math-constant define on the SYCL command lines (2026-10-09)
+
+- `core/meson.build`: the Windows `-D_USE_MATH_DEFINES` is one list,
+  `vmaf_math_constant_args` (empty on other hosts), used for the project
+  argument and the header checks. **On sync**: upstream (`4e150067b`) spells
+  `add_project_arguments('-D_USE_MATH_DEFINES', ...)` literally; keep the
+  fork's list form, which `core/src/meson.build` reuses.
+- `core/src/meson.build`: `sycl_common_args` and `sycl_feature_tail_args` add
+  the list, because icpx custom targets never see project arguments. A new
+  icpx compile line must take one of the two lists
+  (`core/test/test_sycl_math_constants_contract.py`).
+- `scripts/dev/preflight.sh`: the msvcism stage reads the list form and both
+  SYCL lists.
+
+## Netflix/vmaf 33e5f0aca + cffd5b77d: ADM shares two viewing distances (2026-10-08)
+
+- `core/src/feature/feature_extractor.h`: `merge` as upstream, plus the
+  fork-only `extend_name_dict` hook. **On sync**: keep both; upstream's
+  `merge` sits between `close` and `options`, the fork's after
+  `reads_shared_luma_only` (designated initializers make the position
+  irrelevant).
+- `core/src/fex_ctx_vector.cpp`: `offer_merge()` runs after the dedup loop and
+  checks the extractor name and `is_initialized`; upstream offers inside its
+  dedup loop on the callback pointer alone. **On sync**: keep the fork's pass.
+- `core/src/feature/integer_adm.c`: the fork's per-frame driver is split into
+  `*_transform()` and `*_weigh()` per scale; upstream rewrites its single
+  `integer_compute_adm()` with an inner per-distance loop and an `AdmScore`
+  pair. Upstream keeps a second dictionary (`feature_name_dict_extra`); the
+  fork extends the one dictionary with `<base>:nvde` keys through
+  `adm_extend_name_dict()`, which the Rust twin shim also calls.
+  `adm_merge_view_dist()` differs from upstream's `adm_try_merge_view_dist()`:
+  it absorbs a repeat of the second distance and declines a `debug` incoming
+  context (docs/development/known-upstream-bugs.md). **On sync**: take
+  upstream's arithmetic changes into the `*_weigh()` helpers, keep the
+  fork's merge rules.
+- `core/src/rust/feature/adm/`: `adm_rust` mirrors the split and files the
+  second distance under `score.rs::EXTRA_VIEW_NAMES`.
+- `core/test/test_{cuda,sycl,hip}_adm_parity.c`,
+  `core/test/test_metal_twin_option_tables_contract.py`: the twins' missing
+  `adm_norm_view_dist_extra` is a recorded gap until each backend's pull
+  request adds the option and deletes the gap.
+
+## Netflix/vmaf 3b4dd350e: static MSVC builds install vmaf.lib / vmafx.lib (2026-10-08)
+
+- `core/src/meson.build`: `vmaf_static_name_kwargs` (`name_prefix: ''`,
+  `name_suffix: 'lib'`) on `libvmafx = library('vmafx', ...)` and on the
+  compat `static_library('vmaf', ...)`, for `cc.get_argument_syntax() ==
+  'msvc'` with `default_library=static` only. Upstream splits its `library()`
+  into `shared_library()` + `static_library()` and names the `both` static half
+  `vmaf-static.lib`; the fork keeps its `library()` (ADR-2752). **On sync**:
+  do not import that split; keep the keywords on both targets.
+- `.github/workflows/libvmaf-build-matrix.yml`: the MSVC CUDA / SYCL and ARM64
+  legs run `scripts/ci/check_msvc_library_names.py --prefix install` after
+  `ninja install`.
+
+## Netflix/vmaf 4e150067b (+ a8f536b9a): M_PI / M_E from <math.h> (2026-10-08)
+
+- `core/meson.build`: `-D_USE_MATH_DEFINES` as a C and C++ project argument
+  and in `test_args` on Windows hosts, beside `_GNU_SOURCE` (Linux) and
+  `_DARWIN_C_SOURCE` (macOS). Upstream adds it for `cc.get_id() == 'msvc'`
+  only; the fork also needs it for clang-cl, icx-cl and MinGW-w64 (whose
+  `<math.h>` hides the constants under `__STRICT_ANSI__`, set by `-std=c23`).
+- Removed every `#ifndef M_PI` / `#ifndef M_E` fallback and every in-file
+  `#define _USE_MATH_DEFINES`: `adm_csf_tools.h`, `adm_tools.c`, `adm_tools.h`,
+  `barten_csf_tools.h`, `ciede.c`, `integer_adm.h`, `integer_ssim.c`,
+  `speed.c`, `speed_internal.c`, `speed_qa.c`, `vif_tools.c`,
+  `y_funque_plus.c`, `sycl/float_adm_sycl.cpp`, `sycl/integer_adm_sycl.cpp`,
+  and the tests `test_adm_angle_flag.c`, `test_float_adm_csf_upstream.c`,
+  `test_integer_adm_quant_step.c`, `test_speed_upstream_form.c`. Upstream's
+  `a8f536b9a` (guards) is superseded by this. **On sync**: delete a fallback a
+  sync brings back (`core/src/feature/AGENTS.d/math-constants.md`).
+
+## Netflix/vmaf 8bc5a5c6a + b41d2340a: integer ADM NEON kernels for every scale (2026-10-08)
+
+- `core/src/feature/arm64/adm_neon.c` / `.h`: `adm_cm_neon()`,
+  `i4_adm_cm_neon()`, `adm_dwt2_s123_combined_neon()` and
+  `adm_decouple_s123_neon()`, dispatched in `init_dispatch_simd()`
+  (`integer_adm.c`; contrast masking only without
+  `csf_requires_normalization`, as on x86).
+- The fork's form differs from upstream's on purpose:
+  - contrast masking: the kernels are interior-row callbacks of the scalar
+    drivers `adm_cm_rows()` / `i4_adm_cm_rows()` (one fold per row,
+    ADR-1167) and finish through `adm_cm_result()` / `i4_adm_cm_result()`,
+    where upstream repeats the factor, shift and pooling code. The scale-0
+    centre tap stays int32 and the excess is formed in int64 and clamped
+    (ADR-1402); upstream narrows the tap to int16 (`vmovn_s32`) and
+    subtracts the threshold in int32. The scale-0 row is summed in uint64
+    (`adm_cm_fold_s0()`). Upstream's three-row running sums in `tmp_ref` are
+    not taken; each block reads its 3x3 neighbourhood.
+  - scale 1-3 decouple: the angle flag of an overshooting lane comes from
+    the scalar `adm_angle_flag()`, not from upstream's vector double test.
+  - scale 1-3 DWT: the int64 taps get the scale's rounding term from
+    `i4_dwt2_round()` and an arithmetic shift, as `i4_dwt2_tap4()`, and both
+    pictures share the scalar `tmp_ref` layout.
+  **On sync**: do not import upstream's `adm_cm_threshold_neon()` (int16
+  tap), `adm_cm_sum_row()` or its result code; port a change of the scalar
+  kernels into these callbacks.
+- Tests: `test_integer_adm_simd` runs the contrast-masking, centre-tap and
+  decouple tests on aarch64 too, and gains `test_i4_adm_cm_matches_scalar_kernels`
+  (also against `i4_adm_cm_avx2` / `_avx512`); `test_adm_dwt2_neon` gains
+  `test_adm_dwt2_s123_neon_matches_scalar`.
+
+## Praetor pin 3a766f2d56ad, the REUSE workflow and the HISS-10 entries (2026-10-08)
+
+`chore/praetor-pin-3a766f2d`, [ADR-2784](adr/2784-praetor-pin-3a766f2d.md). A rebase or sync keeps
+`PRAETOR_REF` at `3a766f2d56ad...` in `.github/workflows/standards-gate.yml` and the engine's texts of
+`praetor-api.yml`, `praetor-docs.yml`, `tools/apicompat/gate/` and `tools/figures/` (regenerate with
+`adopt` in a throwaway copy, never hand-edit). `.github/workflows/reuse.yml` is praetor's rendering with
+both actions pinned to commits; keep the pins, and keep `REUSE lint` in the aggregator's `required`
+and `strictMustReport` lists, in `always` and `untiered_jobs` of `.github/ci-tier.json`, and
+`reuse-lint` in the Pre-Commit job's `SKIP`. The `exceptions:` block of `.standards.yaml` is rendered
+from `.config/lint-exceptions.d/` (`HISS-10.toml` and `HISS-11.toml` through `PRAETOR_RULES`); on a
+conflict take either side and run `python3 scripts/ci/praetor_tidy_coverage.py --write`.
+
+## Win32 pthread shim: timed wait; host fences on a condition variable (2026-10-08)
+
+- `core/src/compat/win32/pthread.h` gains `pthread_cond_timedwait()` over
+  `SleepConditionVariableSRW()`. Its deadline arithmetic is
+  `core/src/compat/win32/pthread_timeout.h` (`vmaf_w32_timeout_ms()`), tested
+  on every host by `test_win32_pthread_timeout`. Upstream's bundled
+  pthread-win32 (Netflix/vmaf `bcd6e6159`, `-Dbundled_winpthreads`, and the
+  pthread parts of `a2660554e`, `8618ba5cd`, `5079124ea`, `e2f8b24ab`) is not
+  taken (Q-302). **On sync**: do not add the `libvmaf/subprojects/pthread-win32`
+  submodule, the CMake subproject or the option.
+- `core/src/vmafx/fence.c`: a host fence carries a mutex and a condition
+  variable (`CLOCK_MONOTONIC` on Linux); `vmafx_host_fence_signal()`
+  broadcasts, `vmafx_host_fence_wait()` (now non-const) waits in chunks of at
+  most 1 s against the monotonic deadline. The virtual test clock keeps the
+  poll path. Backend lanes that add fence kinds keep `vmafx_fence_poll()`.
+- `core/test/test_thread_pool_backpressure.c` reads `timespec_get(TIME_UTC)`
+  on MSVC; the Meson probe `has_cond_timedwait` now finds the shim's function,
+  so the test builds on the MSVC lanes.
+- `core/test/test_win32_pthread_shim_contract.py`: `PROBED` is empty; Linux-only
+  `pthread_condattr_*` calls in `fence.c` are allowed inside their guard
+  (`PLATFORM_ONLY`).
+
+## Upstream reconcile: arm64 ADM port hazards, #1551 closed (2026-10-08)
+
+`docs/upstream-reconcile-2026-10-08`, [ADR-1402](adr/1402-adm-cm-centre-tap-int32.md),
+[ADR-1413](adr/1413-adm-gain-limit-truncated-double-product.md),
+[ADR-1417](adr/1417-integer-aim-unclipped-upstream-parity.md),
+[ADR-0155](adr/0155-adm-i4-rounding-deferred-netflix-955.md). Documentation
+only; no fork code changes.
+
+**arm64 ADM contrast masking and scales 1-3 (upstream 8bc5a5c6a, b41d2340a):
+port hazards.** Port this code only if it is bit-exact with the fork's scalar
+kernels (ADR-1402, ADR-1413, ADR-1417), checked under `qemu-aarch64` with GCC
+and clang. Three places to check before taking it:
+
+1. `adm_cm_threshold_neon()` (`arm64/adm_neon.c:364-380`) narrows the scale-0
+   centre tap with `vmovn_s32`, and `adm_cm_accum_neon()` shifts the threshold
+   in 32 bits (`:401`). The fork's scalar keeps the tap in 32 bits and forms the
+   excess in 64 bits with a clamp (ADR-1402); a port must not copy these two
+   lines.
+2. `i4_adm_cm_threshold_neon()` (`:760-761`) uses `vdupq_n_s64(INT32_MIN)` as
+   the rounding term to match upstream's scalar (Netflix/vmaf#955). The fork's
+   scalar keeps that behaviour (ADR-0155), so this one is correct to keep.
+3. `adm_decouple_neon()` falls back to the scalar kernel for non-integral gain
+   limits (`:273`), which agrees with ADR-1413.
+
+`adm_cm_neon()` only runs for widths of 32 and above and falls back to the
+scalar kernel below.
+
+**Update to the `core/src/feature/compat_builtin.h` entry (Netflix/vmaf#1551,
+retracting #1422) further down this page.** Do not adopt Netflix/vmaf#1422's
+`__lzcnt` form. Upstream's #1551 retracted it and was closed on 2026-10-02
+without merging; its algorithm is now upstream's own: 7388bd6fc (in the MSVC
+compat header) and 7437f3d9a.
+
+## Server workloads without VMAFX_BACKEND, unused chart helpers removed (2026-10-08)
+
+`rc4/api-wp17-cleanup`, [ADR-2350](adr/2350-cloud-native-platform.md) D13.
+The server's Deployment, StatefulSet and Job render `env` only from
+`.Values.env`; no `[[chart_env]]` entry targets them, and the `unread`
+escape of `[[chart_env]]` is gone, so the generator refuses an entry the
+workload's binary does not read. `vmafx.podSpec`, `vmafx.containerSpec`,
+`vmafx.volumes` and `templates/sidecar-trainer.yaml` are deleted;
+`cmd/vmafx-mcp/main.go` has no `LOG_LEVEL` / `LOG_FORMAT` copy. A sync that
+brings any of them back drops it again. `test_helm_config_env.py` guards the
+server containers. no upstream file.
+
+## Netflix/vmaf ad42c532 + 9cb9479f: SpEED fused anti-alias filter on x86, AVX2 vertical pass (2026-10-08)
+
+- `core/src/feature/speed.c` `filter_and_downscale()` and its mirror
+  `speed_internal_filter_and_downscale()` (`speed_internal.c`): the
+  `#if ARCH_X86` branch (`vif_filter1d_s()` + `vif_dec16_s()`) is gone; every
+  target calls `vif_filter1d_dec16_s()` and copies the decimated plane back.
+  **On sync**: keep the two files in lockstep, as before.
+- `core/src/feature/vif_tools.c`: `vif_filter1d_dec16_s()` takes its
+  vertical pass from `vif_filter1d_vertical_dispatch_s()`, which calls
+  `convolution_f32_avx_rows_s()` (`common/convolution_avx.c`, declared in
+  `common/convolution.h`) under the same gate as `vif_filter1d_s()`'s AVX2
+  convolution. Upstream's form differs on purpose:
+  - upstream's `convolution_f32_avx_dec16_s()` carries both passes and a
+    second scalar copy of the decimated horizontal pass; the fork vectorises
+    only the vertical row and keeps one horizontal pass in `vif_tools.c`;
+  - upstream's `vif_filter1d_dec16_scalar_s()` split is not taken: the CPU
+    mask selects the scalar pass;
+  - upstream's `VMAF_NO_FUSE` asm barrier (`convolution.h`, and in the
+    existing AVX scanlines) is not taken: every translation unit builds with
+    contraction off (ADR-1461).
+  **On sync**: do not import those three; port a tap-order or mirror change
+  into `convolution_f32_avx_rows_s()` and `vif_filter1d_vertical_s()`
+  together.
+- GPU twins (`cuda/speed/speed_score.cu`, `hip/speed/speed_hip_device.h`,
+  `sycl/speed_sycl_pipeline.cpp`): comment lines only (same line counts).
+  The Rust twin already ran the fused filter.
+- `core/test/test_speed_filter.c`: SIMD and old-x86-path comparisons, an
+  aligned layout (the AVX2 convolution of the old path loads aligned),
+  upstream's checkasm size 79x48, and `test_avx_rows` for the masked tail
+  the decimated pass never reads.
+
+## Go binaries' environment and the chart's VMAFX_* entries generated (2026-10-08)
+
+`rc4/api-wp17-config`, [ADR-2350](adr/2350-cloud-native-platform.md) D13.
+`[[config_binaries]]`, `[[config]]`, `[[chart_workloads]]`, `[[chart_env]]`
+and `[[chart_maps]]` of `api/vmafx-platform.toml` generate each binary's
+`config_keys.gen.go` (its golusoris CompoundKeys), the environment tables of
+the binaries' pages and of `docs/usage/env-vars.md` (between `BEGIN/END
+GENERATED` markers), and `deploy/helm/vmafx/templates/_config.gen.tpl`. A
+template includes `vmafx.env.<workload>` where its environment list holds the
+`VMAFX_*` entries; `_helpers.tpl` keeps no environment mapping. A change that
+adds a variable, edits a CompoundKeys list, an environment table row or a
+`VMAFX_*` entry of a template by hand moves into the definition instead; on a
+conflict in a generated file or region take either side and run
+`scripts/codegen/vmafx-api.py --write`. `test_vmafx_api_generated_current`
+guards the generated files and regions, `scripts/ci/tests/test_helm_config_env.py`
+that no other template writes a `VMAFX_*` entry, and
+`cmd/vmafx-controller/env_test.go` that the controller's `grpc.*` variables
+reach their keys. no upstream file.
+
+## motion2 / motion3 derived frame by frame
+
+`rc4/api-motion-incremental`, [ADR-2090](adr/2090-motion-window-incremental.md),
+amends [ADR-2074](adr/2074-vmafx-window-scores.md) decision 9.
+
+- `core/src/feature/integer_motion.c`: the flush body is split into
+  `motion_window_stamp()`, `motion_window_count_sads()`,
+  `motion_window_derive()`, `vmaf_motion_window_advance()` and
+  `vmaf_motion_window_flush()`; `motion_flush_one()` is unchanged. An upstream
+  sync of `flush()` (Netflix `integer_motion.c`) ports the per-frame
+  statements into `motion_flush_one()` and the stamp into
+  `motion_window_stamp()`, never back into one loop in `flush()`: the
+  advance would then miss them. `integer_motion_v2.c` follows.
+- `motion_window.h`: `VmafMotionWindow` gains `state`
+  (`VmafMotionWindowState`); every caller of `vmaf_motion_window_flush()`
+  (CPU, CUDA, SYCL, HIP, Metal motion twins) also registers `.advance`.
+  `test_motion_window_advance_contract.py` lists the TUs.
+- `core/src/feature/feature_extractor.h`: `VmafFeatureExtractor` gains the
+  optional `advance` callback after `flush`. A descriptor copied whole (the
+  Rust twin shim of the RC4 Rust lanes) inherits it and must set or clear it.
+- `core/src/libvmaf.c`: `vmaf_engine_read_pictures()` is split into
+  `read_pictures_owned()` and a wrapper that calls `advance_extractors()`;
+  `vmaf_read_pictures_sycl()` and `fence_for_read()` call it too, and
+  `vmaf_engine_advance()` exposes it to the VMAFx completion thread
+  (`advance_engine()` in `core/src/vmafx/window.c`, engine lock, before each
+  pass). An upstream sync of `vmaf_read_pictures()` ports into
+  `read_pictures_owned()`.
+  `vmaf_engine_feature_score_at_index()` fences on `-EINVAL` for a fed frame.
+- Tests whose expectations moved: `test_score_pooled_eagain`
+  (`score_pooled(i - 1, i - 1)` after `read_pictures(i)` now 0),
+  `test_vmafx_window` (motion windows complete at step 4),
+  `test_gpu_float_ssim_auto_scale_contract.py` (reads `read_pictures_owned()`).
+- No golden-data impact: every motion value is the flush-time value bit for
+  bit (32 988 per-frame values against master, 0 different; Netflix golden
+  gate green); no FFmpeg patch change (`libvmaf.h` unchanged, the scores only
+  arrive earlier).
+- Rust twins (lane request MI-1, Q-093): `VmafxRsTwin` gains `advance` (last
+  field; `VMAFX_RS_ABI_VERSION` stays 1, no release has shipped the Rust ABI);
+  on a conflict in `core/src/rust/include/vmafx_rs.h` take either side and run
+  `scripts/dev/rust-abi-header.sh`. The shim maps `advance` to
+  `twin_advance()`, never the inherited C callback, and
+  `advance_one_extractor()` (`core/src/libvmaf.c`) initialises a pooled Rust
+  twin before its first advance. `motion_rust`'s `window.rs` ports
+  `motion_window_stamp()`, `motion_window_count_sads()`,
+  `motion_window_derive()`, `vmaf_motion_window_advance()` and
+  `vmaf_motion_window_flush()` statement by statement: an upstream sync that
+  changes them changes `window.rs` in the same PR
+  (`test_rust_motion_window_incremental`, `rust_twin_diff.py --feature motion`).
+
+## Helm values and schema generated from the platform definition (2026-10-08)
+
+`rc4/api-wp17-helm`, [ADR-2350](adr/2350-cloud-native-platform.md) D13.
+`deploy/helm/vmafx/values.yaml` and `values.schema.json` are written by
+`scripts/codegen/vmafx-api.py` from the `[[chart]]`, `[chart_root]` and
+`[[chart_defs]]` tables of `api/vmafx-platform.toml`; the Kubernetes types of
+the schema come from `api/kubernetes/openapi-subset.json`
+(`scripts/codegen/k8s_openapi.py`, release and digests in `build-config.env`).
+A change that edits either chart file by hand moves into the definition
+instead; on a conflict in a generated file take either side and run the
+generator. A new values key is a new `[[chart]]` entry at its place in the
+file. `test_vmafx_api_generated_current` guards both files,
+`test_k8s_openapi_subset_current` the subset. no upstream file.
+
+## POSIX-only build parts off Windows, msvcism POSIX-header check (2026-10-08)
+
+`fix/msvcism-posix-headers`, [ADR-2646](adr/2646-posix-only-build-options.md).
+
+- `core/src/meson.build`: `enable_mcp=true` on Windows is a configure `error()`;
+  `subdir('mcp')` and `compat/libvmaf/mcp.c` carry
+  `host_machine.system() != 'windows'`. `core/test/meson.build`: the MCP tests
+  carry the same gate, and `subdir('fuzz')` runs only off Windows (`fuzz=true` on
+  Windows is an `error()`). `core/tools/meson.build`: the `vmaf_vpl` block carries
+  the gate and prints a disabled message on Windows. An upstream sync that
+  touches these blocks keeps the gates: the `msvcism` scan reads them to decide
+  which sources the Windows build compiles.
+- `scripts/dev/preflight.sh` resolves its scanners next to itself
+  (`PREFLIGHT_DIR`) and fails the stage when `find-posix-only-headers.py` or
+  `lint_exceptions.py filter` cannot run.
+- Exceptions: `.config/lint-exceptions.d/msvcism-posix-headers.toml` (two files,
+  expiry 2027-06-30).
+- Reproducer: `bash scripts/ci/tests/test-preflight-msvcism.sh`;
+  `scripts/dev/preflight.sh --full --stage msvcism`.
+
+## VMAFx window scores and the window clock
+
+`rc4/api-wp4-windows`, [ADR-1852](adr/1852-vmafx-api-redesign.md),
+[ADR-2074](adr/2074-vmafx-window-scores.md).
+
+- `core/src/vmafx/` gains `window.c` (windows, the completion thread, the
+  callback thread, the hooks, the context's engine lock,
+  `vmafx_context_max_in_flight()`) and `window_clock.c`.
+  `vmafx_engine_enter()` takes the context's engine lock and
+  `vmafx_engine_leave()` now takes the context (`vmafx_engine_leave(context,
+  previous)`): a rebase that adds an engine call to a WP2 / WP3 function uses
+  the pair and never nests it. `submit.c`, `register.c` and `context.c` call
+  the hooks `vmafx_windows_note_index()`, `_note_flush()`, `_init()`,
+  `_pause()`, `_resume()` and `_close()`; `VmafxContext` (`internal.h`)
+  gains `windows`, created with the context. A rebase that reorders those
+  functions keeps each hook after the engine call it follows, and the pause
+  before `vmaf_engine_close()`.
+- `score.c`: the three pooled functions call `vmafx_pool_engine()`, which the
+  windows call too; keep one pooling path. `fence.c`'s timed wait is exported
+  as `vmafx_host_fence_wait()` for `vmafx_window_wait()`.
+- `core/src/libvmaf.c`: `VmafContext` and `struct ThreadDataBatch` gain a
+  frame listener (`vmaf_engine_set_frame_listener()`), called at the end of
+  `threaded_extract_batch_func()` after the pictures are released; no frame
+  count, submit or flush path moved (WP5's `run_note_frame()` calls are
+  untouched). `vmaf_engine_score_at_index()` is
+  `engine_score_at_index(fence = true)`; new `vmaf_engine_try_score_at_index()`
+  (no fence, inputs checked with `vmaf_predict_inputs_written()`),
+  `vmaf_engine_feature_written()`,
+  `vmaf_engine_try_score_at_index_model_collection()`,
+  `vmaf_engine_thread_count()`, `vmaf_engine_subsample()` and
+  `vmaf_engine_max_in_flight()`. `core/src/predict.c` gains
+  `vmaf_predict_inputs_written()` (collector reads only). An upstream sync of
+  `vmaf_score_at_index()` ports into `engine_score_at_index()`; a change to
+  `batch_job_take_pictures()`, to the thread pool's enqueue capacity or to the
+  device double buffering recomputes `vmaf_engine_max_in_flight()`.
+- The branch carries master's #2206 (`read_predicted_collection_score()`) as
+  a cherry-pick, which a rebase onto master drops as already applied.
+- No score, golden-data or FFmpeg patch impact: a window's values come from
+  the synchronous pooling; `libvmaf.h` behaviour is unchanged.
+
+## Controller tenant spec is the generated type (2026-10-08)
+
+`refactor/controller-tenant-spec-generated`,
+[ADR-2350](adr/2350-cloud-native-platform.md) D13. `TenantSpec`,
+`TenantOIDC`, `TenantRBAC` and `TenantScoring` in
+`cmd/vmafx-controller/auth/tenants.go` are aliases of the `VmafxTenant` types
+generated into `api/vmafx/v1` from `api/vmafx-platform.toml`; `rbac` and
+`scoring` are pointers there (`pointer = true`), as the controller's structs
+were. A rebase that brings back a struct declaration in `tenants.go`, or a new
+tenant field outside the definition, fails
+`auth/tenants_generated_type_test.go`. no upstream file.
+
+## Operator events cluster-wide (2026-10-08)
+
+`fix/operator-events-rbac`, [ADR-2647](adr/2647-operator-events-cluster-wide.md).
+`deploy/helm/vmafx/templates/operator-rbac.yaml` renders a third operator
+role, the `ClusterRole` `<fullname>-operator-events` with its binding
+(`create`, `patch` on core `events` only), and the release-namespace `Role`
+no longer lists events. A rebase that touches the template keeps events out
+of the namespace `Role` and out of the custom-resource `ClusterRole`;
+`scripts/ci/tests/test_helm_service_accounts.py` fails otherwise. no upstream
+file.
+
+## VMAFx device frames on CUDA (RC4 WP3 CUDA lane)
+
+`rc4/api-wp3-cuda`, [ADR-2023](adr/2023-vmafx-cuda-device-frames.md),
+[ADR-1929](adr/1929-vmafx-device-frames-fences.md).
+
+- New files `core/src/cuda/vmafx_cuda.h`, `vmafx_cuda_internal.h`,
+  `import_device.c`, `import_frame.c`, `import_fence.c`, `import_gl.c`,
+  `import_pool.c` (in `libvmaf_sources`, not `cuda_static_lib`, because the
+  CUDA common objects link into test programs without the VMAFx sources) and
+  the kernel `import_convert.cu` (`cuda_cu_sources`, `import_convert_ptx`).
+- `core/src/vmafx/*.c` dispatch to the lane under `#ifdef HAVE_CUDA`:
+  `device.c` (create, count, info, describe, unref), `device_context.c`
+  (engine import; `vmafx_context_release_device()` frees it after a
+  successful close), `frame_import.c` (`import_on_device()`, the release
+  fence), `fence.c` (CUDA_EVENT and GL_SYNC), `frame_import_admit.c` (the
+  per-extractor answer), `frame_pool.c` (CUDA pools), `submit.c` (the planted
+  early release). `internal.h` grows `lane` / `lane_release` on
+  `VmafxDevice`, `VmafxFrame` and `lane_state` on `VmafxContext`, and exports
+  the import layout and plane checks. `vmafx_frame_release()` calls the
+  lane's release before the release callback. `register.c` picks the device
+  twin when a feature is registered on a device context.
+- `core/src/picture.h`: `VmafPicturePrivate.cuda` gains `vmafx` and
+  `ordered`. `core/src/libvmaf.c`: `cuda_order_pictures_against_producer()`
+  skips the ADR-1199 barrier for a pair of ordered pictures, and
+  `translate_picture_device()` refuses a VMAFx frame and counts every other
+  download as a host copy. A rebase that touches these keeps both.
+- `integer_vif_cuda`: `VifBufferCuda` gains `dis_stride`; both pitches are set
+  per frame from the pictures in `vif_submit_scales()`, and
+  `vif_vert_load_tiles()` takes both. An upstream sync of `filter1d.cu` must
+  keep the second pitch.
+- `VmafxFrame.lane_persistent` (`internal.h`): a CUDA pool frame's event
+  behind its readers; `vmafx_frame_pool_acquire()` waits on it.
+- `float_ms_ssim_cuda` converts level 0 on the device: see
+  "`float_ms_ssim_cuda` builds level 0 on the device" (master #2282, carried by
+  this stack until its restack).
+- Definition: `VMAFX_MEMORY_GL_TEXTURE`, `VMAFX_FENCE_GL_SYNC`,
+  `VmafxFrameImport.release` / `user` (ABI 0.1.4); `VMAFX_MIN_FRAME_IMPORT` is
+  the 0.1.2 size (`offsetof(VmafxFrameImport, release)`).
+
+## Custom resources generated from the platform definition (2026-10-08)
+
+`rc4/api-wp17-crd`, [ADR-2350](adr/2350-cloud-native-platform.md) D13. Every
+file under `api/vmafx/v1` except `deepcopy_test.go` is generated: the types
+from `api/vmafx-platform.toml` (`scripts/codegen/vmafx-api.py --write`), and
+`zz_generated.deepcopy.go`, `deploy/helm/vmafx/crds/*.yaml` and
+`config/rbac/role.yaml` by controller-gen (`scripts/codegen/crd_generate.py
+--write`). `config/crd/bases/`, the hand-written `zz_generated_deepcopy.go` and
+the per-kind `config/rbac/role_*.yaml` files are removed. A change that edits a
+type, CRD or role by hand moves into the definition or an RBAC marker instead;
+on a conflict in a generated file take either side and run both generators.
+`test_crd_generated_current` guards drift, `test_crd_compat` narrowing within
+v1, `scripts/ci/tests/test_helm_operator_rbac.py` the chart's operator rules.
+no upstream file.
+
+## Protobuf files generated from the platform definition (2026-10-08)
+
+`rc4/api-wp17-proto`, [ADR-2350](adr/2350-cloud-native-platform.md) D13. Every
+file under `proto/` is generated: `proto/vmafx/v1/vmafx_api.proto` from
+`core/api/vmafx.toml`, `proto/vmafx/v1/vmafx.proto` and
+`proto/vmafx/controller/v1/controller.proto` from `api/vmafx-platform.toml`
+(`scripts/codegen/vmafx-api.py --write`), and every `*.pb.go` under `gen/go` by
+`scripts/codegen/proto_generate.py --write` (buf `BUF_VERSION` of
+`build-config.env`, plugins pinned as `go.mod` tools). A change that edits a
+proto or a binding by hand moves into the definition instead; on a conflict in
+a generated file take either side and run both generators.
+`test_vmafx_api_generated_current` and `test_proto_generated_current` guard
+it, `proto_generate.py --breaking-against` the wire. no upstream file.
+
+## Helm controller on PostgreSQL and its failover E2E case (2026-10-07)
+
+`rc4/api-wp17-chart`, [ADR-2350](adr/2350-cloud-native-platform.md). The
+controller Deployment takes its replica count, update strategy, volume and
+store environment from the `_helpers.tpl` helpers `vmafx.controllerStoreBackend`,
+`vmafx.controllerStoreEnv`, `vmafx.controllerDatabaseDSN` and
+`vmafx.controllerTopologySpread`; a sync that touches `controller.yaml`,
+`pdb.yaml` or `networkpolicy.yaml` keeps them, and keeps the SQLite store at
+one replica. `controller.store.*` holds one key per setting so the generator
+of the values and schema (ADR-2350 work package 4) reproduces them unchanged.
+The E2E case `02-controller-ha` moves together with
+`.github/workflows/e2e-k8s.yml`, `test/e2e/kind-cluster.sh` and
+`scripts/ci/test_e2e_runtime_contract.py`. no upstream file.
+
+## Observability: SLO report, usage and cost, capacity (2026-10-08)
+
+`rc4/obs-6-slo-cost-capacity`, [ADR-2349](adr/2349-observability-package.md), #2430. Fork-only. The rule file, the chart's
+PrometheusRule template and values block, and the three dashboards are generated (`go run ./tools/obsgen -write`): regenerate, never
+hand-merge. The settings series (`vmafx:slo_objective`, `vmafx:slo_events:rate5m`, `vmafx:slo_bad_events:rate5m`,
+`vmafx:price_job_second`, `vmafx:price_job`) keep `job` and `instance` labels, because dashboard-linter requires both matchers on
+every query; a price rule keeps only a positive price.
+
+## libvmaf compat library on libvmafx: engine names, split library targets
+
+`rc4/api-wp6-compat`, [ADR-1852](adr/1852-vmafx-api-redesign.md) decision D3,
+[ADR-2094](adr/2094-libvmaf-compat-library-split.md).
+
+- The library target is now `libvmafx` (`libvmafx.so.1`: the engine and the
+  VMAFx API) plus the compat targets `libvmaf_shared_lib` /
+  `libvmaf_static_lib` (`libvmaf.so.3`, sources `core/src/compat/libvmaf/`). A sync that adds a
+  source to the old `libvmaf_sources` list adds it to `libvmafx_sources`; a
+  sync that changes the library's link arguments changes `libvmafx`'s.
+- Every engine translation unit is compiled with the generated
+  `core/src/vmafx/engine_names_gen.h` (`add_project_arguments`), which
+  renames the engine's own definition of each libvmaf function to
+  `vmaf_engine_<stem>`. An upstream change to a libvmaf function body ports
+  into the engine source as is (`core/src/libvmaf.c`, `model.c`, `picture.c`,
+  `picture_v2.c`, `picture_convert.c`, `dict.cpp`, `dnn/`, `mcp/`, the HIP /
+  Metal stubs); the 24 bodies in `core/src/libvmaf.c` that WP2 already
+  spelled `vmaf_engine_<stem>` (`vmaf_engine_use_feature` and others) take
+  the change under that name. Never add a definition of a libvmaf name to the engine and
+  never compile an engine source without the header. A libvmaf function
+  upstream adds needs a `[[compat]]` entry in `core/api/vmafx.toml` (the
+  export checks fail otherwise) and a conformance call in
+  `core/test/test_compat_conformance_*.c` (the coverage rule fails otherwise).
+- Tests: `link_with : get_option('default_library') == 'both' ?
+  libvmaf.get_static_lib() : libvmaf` is now `vmaf_test_link` (white-box,
+  engine names) and `libvmaf_public_link` (black-box, needs
+  `vmaf_public_name_args` in `c_args` and, for C++, `cpp_args`). Resolve a
+  conflict in `core/test/meson.build` per hunk and keep the variable names.
+- The WP2 forwarders at the end of `core/src/libvmaf.c` are gone; the
+  `VmafModel` / `VmafModelCollection` structs gain `api_owner`.
+- `vmaf_engine_read_pictures()` clears both caller `VmafPicture` structs once
+  the context owns the pictures, in every build (a CUDA build left them
+  pointing at released host translations; `test_compat_conformance` compares
+  the traces). The body sits in `read_pictures_owned()`; an upstream change to
+  `vmaf_read_pictures()` goes there and keeps the clearing in the wrapper.
+- `core/include/libvmaf/*.h`: every exported declaration carries
+  `VMAF_DEPRECATED("use <vmafx successor>")` (empty unless
+  `VMAF_ENABLE_DEPRECATION_WARNINGS`); `test_libvmaf_deprecation` checks each
+  marker against the definition. An upstream header sync keeps the markers.
+- No score impact: the golden gate passes through the compat library and
+  `test_compat_conformance` compares every compat function with its engine
+  body; libvmaf return values are unchanged except the differences listed in
+  `docs/api/vmafx/index.md`. No FFmpeg patch impact: unpatched FFmpeg n9.0.2
+  builds against the split library and scores identically.
+- The two libvmaf functions master gained after this branch's base are
+  compat functions: `vmaf_set_sample_range_check_enabled()` sets the context
+  option `check_sample_range`, `vmaf_set_input_colorimetry()` calls
+  `vmafx_context_set_default_color()`. `vmafx_submit()` hands every pair's
+  colour to the engine (`vmaf_engine_set_pair_colorimetry()`, which compares
+  with `vmaf_conversion_policy_color_equal()` before
+  `vmaf_conversion_state_set_input_color()` in
+  `core/src/conversion_context.c`). An upstream change to the conversion
+  state keeps that comparison: the same colour after the first converted
+  pair is 0, another one `-EBUSY`.
+
+## Observability: Compose example and smoke test (2026-10-08)
+
+`rc4/obs-5b-compose`, [ADR-2399](adr/2399-observability-slo-settings-as-values.md), #2430. Fork-only.
+`deploy/grafana/provisioning/datasources/vmafx.yaml` is generated (`go run ./tools/obsgen -write`): on a conflict take either side and
+regenerate. Its URLs are the service names of `deploy/compose/observability/compose.yaml`; renaming a service there changes
+`obsgen/datasources.go` too. `tools/obssmoke` reads dashboards through `obsgen.DashboardQueries`, the parser `CheckDashboard` uses.
+
+## vmafx-controller job backends (2026-10-07)
+
+`rc4/api-wp17-controller`, [ADR-2350](adr/2350-cloud-native-platform.md). The
+gRPC handlers talk to `cmd/vmafx-controller/backend` (`Backend`), never to
+`queue`, `nodes` or `scheduler` directly; the SQLite queue sits behind
+`backend.Legacy` and the PostgreSQL store behind `backend.Postgres`. The
+store's generated `pgdb/` takes either side on a conflict and is regenerated
+with `python3 scripts/codegen/sqlc_generate.py --write`. A sync that touches
+`grpc_server.go` keeps the handlers on the interface and the tenant contract
+(another tenant's job is `PERMISSION_DENIED`, an unknown one `NOT_FOUND`) on
+both backends: `replicas_test.go` and `grpc_tenant_test.go` guard it. no
+upstream file.
+
+## The provenance record moves into the library (2026-10-06)
+
+`rc4/api-wp5-provenance` (RC4 work package 5, ADR-2073), on top of
+`rc4/api-wp8-options`. Upstream-mirror files touched:
+
+- `core/src/feature/feature_collector.{h,cpp}`: `FeatureVector` gains
+  `producer`, `producer_options` and `source`, recorded from the thread's
+  producer (`vmaf_feature_producer_swap()`) when a vector is created. An
+  upstream change to vector creation keeps the call to
+  `feature_vector_record_producer()`.
+- `core/src/feature/feature_extractor.cpp`: `ProducerScope` around `extract`,
+  `collect` and `flush`; `core/src/libvmaf.c` installs the producer around the
+  direct `fex->flush()` loop and appends imported and tiny-model scores with
+  `vmaf_feature_collector_append_from()`; `core/src/predict.c` appends model
+  scores the same way. A new direct call of an extractor's callbacks needs the
+  same scope, or its features have no producer.
+- `core/src/model.{h,c}` / `model_lifetime.c`: `VmafModel` gains `source`,
+  `sha256`, `load_flags`, `overrides`; every loader ends in
+  `vmaf_model_stamp_loaded()` and `vmaf_model_feature_overload()` records the
+  override. Keep both on an upstream sync of the loaders.
+- `core/src/output.cpp`: the JSON writer ends with `json_write_provenance()`
+  (`score_format`, the record, the backend receipt) and the XML writer with
+  `xml_write_provenance()`. `aggregate_metrics` no longer ends with a newline
+  of its own. Netflix's harness reads neither element.
+- `core/tools/vmaf.cpp`: the JSON splice (`amend_json_with_backend_receipt`,
+  `amend_cli_backend_receipt`) and `cli_format_backend_members()` are gone;
+  do not bring them back on a rebase that touches the output path.
+- `core/src/libvmaf.c`: `VmafContext.run` (atomics: frames, size, format,
+  first / flush times) is what a provenance query reads, from any thread;
+  `run_note_frame()` follows each `vmaf->pic_cnt++` of the submit paths and
+  the flush paths store `run.flush_ns`. A rebase that adds a submit path (RC4
+  WP4's asynchronous windows) calls `run_note_frame()` where it counts a frame;
+  never let `vmaf_engine_run_info()` read `pic_cnt` or `pic_params`.
+- `core/src/meson.build`: `vmafx_build_info.h` (configure_file) and
+  `vmafx_build_commit.h` (vcs_tag) feed `provenance_build.c`; keep them next
+  to the library target.
+- Generated: `core/src/vmafx/exactness_gen.c`
+  (`python3 scripts/codegen/vmafx_exactness.py --write`, part of
+  `make docs-fragments-write`) follows `scripts/ci/exact_twins.d` and the
+  parity gate's tables; a PR that adds a fragment regenerates it with the
+  exact-twins page (`make docs-fragments-check`,
+  `test_vmafx_exactness_table_current`). On a conflict take either side and
+  regenerate.
+
+## Observability: chart monitoring generated from the rule code (2026-10-07)
+
+`rc4/obs-5-packaging`, [ADR-2399](adr/2399-observability-slo-settings-as-values.md). Fork-only. `deploy/helm/vmafx/templates/prometheusrule.yaml`,
+`deploy/helm/vmafx/files/dashboards/*.json` and the block between `# BEGIN obsgen monitoring settings` and `# END obsgen monitoring settings`
+in `deploy/helm/vmafx/values.yaml` are written by `go run ./tools/obsgen -write`: on a conflict take either side and regenerate, never
+hand-merge. `TestGeneratedFilesAreCurrent`, `TestValidateAgreesWithTheChartSchema` and `scripts/ci/tests/test_helm_observability.py`
+guard them. A rule must match a histogram bucket with `obsgen.LeMatcher`, never `le="<whole number>"` (Prometheus 3 stores `le="30.0"`).
+
+## Observability: generated alert rules and runbooks (2026-10-07)
+
+`rc4/obs-3-alerts`, [ADR-2349](adr/2349-observability-package.md), #2430.
+
+- `deploy/prometheus/vmafx-rules.yaml` and its promtool test
+  `vmafx-rules.test.yaml` are generated (`pkg/observability/obsgen`): on a
+  conflict take either side and run `go run ./tools/obsgen -write`.
+- Every alert needs a page `docs/observability/runbooks/<slug>.md`
+  (`TestEveryAlertHasARunbook`); renaming an alert renames its page and the
+  mkdocs nav entry together.
+- `scripts/ci/pinned-tool.sh` fetches both pinned tools (dashboard-linter,
+  promtool); `build-config.env` pins `PROMETHEUS_VERSION` and its sha256.
+- No score, FFmpeg patch or C API impact.
+
+## DCO sign-off check (2026-10-08)
+
+`community-dco`, [ADR-2462](adr/2462-dco-sign-off-required.md). The job
+`dco-sign-off` in `.github/workflows/rule-enforcement.yml`, its entry
+`'DCO Sign-off'` in the `required` list of `required-aggregator.yml`,
+`scripts/ci/check-dco.py` with its bot list `BOT_LOGINS`, and `:gitSignOff` in
+`renovate.json` are fork-authored. A sync that rewrites either workflow keeps
+the job and the aggregator entry together (`check-aggregator-names.sh` fails
+when they diverge). `scripts/ci/tests/test_check_dco.py` reads the wiring.
+
+## Small-PR track in the deliverables gate (2026-10-08)
+
+`community-smallpr`, [ADR-2461](adr/2461-small-pr-deliverables-track.md).
+`scripts/ci/deliverables-check.sh` gained section 2c and a skip in the
+six-item loop; the PR template gained a paragraph. Both are fork-authored; a
+sync keeps the fork's side. `scripts/ci/tests/test_deliverables_small_pr.py`
+guards the behaviour and reads the template and the sentinel guide.
+
+## Community health documents (2026-10-08)
+
+`community-docs`, [ADR-2461](adr/2461-small-pr-deliverables-track.md)
+(Proposed). `ACCESSIBILITY.md`, `CODE_OF_CONDUCT.md`, `GOVERNANCE.md`,
+`SUPPORT.md`, `CONTRIBUTING.md` and the accessibility issue form are
+fork-authored; no upstream Netflix/vmaf file carries them in this form, so a
+sync keeps the fork's side of every hunk. `CONTRIBUTING.md` still ends with
+the inherited Netflix guide, which a sync may update below the fork's part.
+
+## Rust core migration decision (2026-10-08, ADR-2478)
+
+`docs/rust-core-plan`, [ADR-2478](adr/2478-rust-core-migration.md). Documentation only: ADR, research digest, roadmap section and one `core/AGENTS.d` page. No code path changes. A sync that ports a Netflix change into a layer with a Rust successor lands it in the C oracle and in the Rust layer in the same PR. no upstream file.
+
+## Credits page and gate (2026-10-08)
+
+`community-credits`, [ADR-2485](adr/2485-vmafx-credits-page.md).
+`docs/credits.yaml`, `docs/credits.md`, `scripts/docs/{credits_lib,credits_checks}.py`,
+`generate-credits.py` and `check-credits.py` are fork-authored. An upstream sync
+that adds a vendored directory, notice file, font or foreign-copyright source
+file must add its entry to `docs/credits.yaml` in the same change, or
+`make docs-fragments-check` fails; the gate reads `REUSE.toml`, so keep its
+annotations in step. Never hand-edit the tables of `docs/credits.md`.
+
+## Option groups generate every scoring surface (2026-10-06)
+
+`rc4/api-wp8-options` (RC4 work package 8, ADR-2044). Fork-only files except
+`core/tools/cli_parse.cpp` and `core/tools/vmaf.cpp`:
+
+- `core/tools/cli_parse.cpp` no longer holds the short option string, the
+  `ARG_*` enum, `long_opts[]` or the usage text: it includes the generated
+  `core/tools/cli_options.gen.inc`. An upstream sync that adds a CLI option
+  adds it to the option groups of `core/api/vmafx.toml` and regenerates
+  (`python3 scripts/codegen/vmafx-api.py --write`); never edit the `.inc`.
+  On the rebase onto master, master's `--check-sample-range` /
+  `--check_sample_range` and `--list-backends` join the definition the same
+  way, and `core/test/test_cli_option_table.cpp`'s frozen list gains them.
+- `core/tools/vmaf.cpp`'s JSON receipt appends a `provenance` member
+  (`cli_format_provenance_member()` of the C file `core/tools/cli_provenance.c`,
+  so no C++ CLI source includes the generated C headers); keep it when the
+  receipt code moves (WP5 moves it into the library's report writer).
+- Generated files (`*.gen.*`, `proto/vmafx_api.proto`, `gen/go/**`, the
+  marked regions of `docs/usage/cli.md`, `docs/usage/ffmpeg.md`,
+  `docs/mcp/tools.md`, `docs/server/api-contract.md` and
+  `api/openapi/vmafx-server-v1.yaml`): on a conflict take either side,
+  regenerate, then `buf generate proto` and the oapi-codegen command of
+  `gen/go/AGENTS.md`.
+- Both MCP servers read `options.gen.json`; do not bring back the hand
+  schemas (`scoringExtraProperties`, `_scoring_extra_properties`) or the
+  hand flag lists of `scoreExtras.appendArgs` / `ScoreExtras.to_argv`.
+
+## Controller PostgreSQL store (2026-10-08)
+
+`rc4/api-wp17-store`, [ADR-2350](adr/2350-cloud-native-platform.md). New fork-only package `cmd/vmafx-controller/store/`
+(migrations, sqlc queries, generated `pgdb/`), `scripts/codegen/sqlc_generate.py`, the `SQLC_*` pins in
+`build-config.env` and the Meson test `test_sqlc_generated_current`. Generated files take either side on a conflict and are
+regenerated with `python3 scripts/codegen/sqlc_generate.py --write`. no upstream file.
+
+## Rust model prediction (RC4 lane P, #1723)
+
+- `core/src/predict.c` splits `vmaf_predict_score_at_index()` into the score
+  gather (unchanged), `predict_compute_c()` (the former body, statement for
+  statement) and `predict_compute_rust()`; an upstream sync keeps the C body in
+  `predict_compute_c()` and any arithmetic change to `normalize()`, `transform()`,
+  `clip()`, `post_process_feature_from_another()`, `piecewise_*` or `svm_predict()`
+  is mirrored in `core/src/rust/predict/src/` in the same PR
+  (`scripts/ci/rust_twin_diff.py --models`). `struct VmafModel` carries three
+  trailing fields (`rust_predict_state`, `rust_predict`, `predict_raw`).
+- `predict.c` reaches Rust only through the `struct VmafRustPredictOps` table
+  declared at the end of `core/src/predict.h`; `vmaf_model_destroy()`
+  (`core/src/model_lifetime.c`) calls `vmaf_rust_predict_destroy()` and frees
+  `predict_raw`. Keep both on a sync that touches those files. No score, public
+  API or FFmpeg patch impact while `VMAF_FEATURE_IMPL` is unset.
+- `core/src/rust/include/*.h` are cbindgen 0.29.4 output, committed byte for
+  byte (`scripts/dev/rust-abi-header.sh`); the clang-format hooks and
+  `make format` skip that directory. Regenerate them, never format or merge
+  them by hand (`scripts/ci/tests/test_rust_abi_header_verbatim.py`).
+
+## Rust integer ADM twin (`core/src/rust/feature/adm/`, RC4) (2026-10-07)
+
+`rc4/adm-twin`, [ADR-1713](adr/1713-rc4-rust-extractor-framework.md).
+
+- The crate `vmafx-fex-adm` ports the scalar path of
+  `core/src/feature/integer_adm.c`, `integer_adm.h`, `integer_adm_kernels.h`,
+  `adm_csf_fixed_point.h`, `adm_cm_accumulator.h`, `adm_angle_flag.h`,
+  `adm_score.h` and `barten_csf_tools.h` statement by statement and registers
+  it as `adm_rust` (ADR-1713). An upstream sync or rebase that changes the
+  arithmetic, the option table or the emitted names of `adm` changes the crate
+  in the same change and re-runs `scripts/ci/rust_twin_diff.py --feature adm`
+  on every fixture (`core/src/feature/AGENTS.d/adm-rust-twin.md`). A change to
+  a float table of `integer_adm.h` or `barten_csf_tools.h` also regenerates
+  `core/src/rust/feature/adm/src/tables_c.rs`. No score, public C API or
+  FFmpeg patch impact.
+
+## Rust `motion` twin mirrors `integer_motion.c` (2026-10-07)
+
+`rc4/motion-twin`, #2096.
+
+- `core/src/rust/feature/motion/src/{sad,window,extractor}.rs` port
+  `motion_score_pipeline_8/16`, `motion_flush_one` / `vmaf_motion_window_flush`
+  and `extract()` of `core/src/feature/integer_motion.c` (and `motion_blend()`)
+  statement by statement. A sync that changes any of them changes the twin in the
+  same PR; `scripts/ci/rust_twin_diff.py --feature motion` and the `sad`
+  table test in `sad.rs` (values from the C pipelines) guard it. No score,
+  public API or FFmpeg patch impact.
+
+## Observability: dashboards, GPU exporters and scraped read errors (2026-10-07)
+
+`rc4/obs-2-dashboards`, [ADR-2349](adr/2349-observability-package.md), #2430.
+
+- `pkg/observability.RegisterScraped` takes a read-error counter
+  (`NewReadErrors`) and a `ScrapeGroup`; a failed read counts under its source
+  and never returns an invalid metric (that fails the whole `/metrics` page).
+- `vmafx-server` and `vmafx-node` record ScoreStream sessions through
+  `internal/app/scoringservice.StreamMetrics`; a sync that touches either
+  `ScoreStream` handler keeps `Begin` / `defer End(retErr)` and the per-frame
+  `Frame` call.
+- The dashboards under `deploy/grafana/dashboards/` (now seven) are generated:
+  on a conflict take either side and run `go run ./tools/obsgen -write`.
+  `build-config.env` pins `DASHBOARD_LINTER_VERSION` and its sha256.
+- No score, FFmpeg patch or C API impact.
+
+## OpenTelemetry: Base builds the providers (2026-10-07)
+
+`fix/otel-providers-constructed`, fork-only. `internal/app/bootstrap.Base` ends with
+`fx.Invoke(func(*otel.Providers) {})`; without it fx never builds golusoris's OTel providers and no binary exports anything.
+Keep it on a rebase or a golusoris bump, unless golusoris's `otel.Module` invokes them itself.
+`TestBase_ConstructsProvidersNobodyRequests` guards it.
+
+## Praetor pin 7458a220e1c9 and the managed workflows (2026-10-07)
+
+`chore/praetor-pin-7458a220`, [ADR-2440](adr/2440-praetor-pin-7458a220.md). A rebase or sync
+keeps `PRAETOR_REF` at `7458a220e1c9...` in `.github/workflows/standards-gate.yml`, the engine's
+`praetor-api.yml` and `praetor-docs.yml` (never hand-edit: audit refuses a changed byte), and an
+empty `push_branch_exceptions` in `.github/ci-tier.json`. A conflict in either workflow file takes
+the engine's text: regenerate with `adopt --force` in a throwaway copy, copy back only those two
+files. `test_praetor_managed_jobs_stop_on_a_draft_before_any_work` in
+`scripts/ci/tests/test_ci_routing_contract.py` guards the draft stop.
+
+## CodeQL sweep: exact float compares in tests (2026-10-06)
+
+`fix/codeql-test-float-compare`. Test-only: no rebase impact beyond the files named in
+`changelog.d/fixed/codeql-test-float-bits-sweep.md`. Upstream-mirror tests keep their assertions;
+only the comparison spelling moved to `core/test/float_bits.h` (ADR-1502).
+
+## Model JSON checked out with LF, generator format test pinned to the hook's clang-format (2026-10-08)
+
+`fix/master-red-format-pin-model-lf`, no ADR (bug fixes). `.gitattributes` adds
+`model/**/*.json text eol=lf` after upstream's `*.pkl` / `*.model` lines: an
+upstream sync that touches `.gitattributes` keeps the fork's line, or Windows
+builds report other model hashes again (`test_praetor_hashed_files_lf.py`
+fails). `scripts/codegen/tests/support.py::pinned_clang_format()` ties the
+format test to the `clang-format` hook's major in `.pre-commit-config.yaml`;
+bump the hook rev and `requirements/locks/tooling-tests.in` together.
+No upstream file besides `.gitattributes`.
+
+## RC4: `speed_chroma` Rust twin keeps Netflix's double-form statements
+
+- `core/src/rust/feature/speed/src/` is `speed.c` and `vif_tools.c` ported
+  statement by statement (`BSD-2-Clause-Patent`). A change to `create_givens()`,
+  `update_entropy()`, `get_speed_score()` (ADR-1477's double `sqrt()` / `log2()`
+  form), `EIGENVALUE_EPS` (a double), the prescale methods, the Gaussian taps or
+  `picture_copy()` changes the matching Rust function in the same PR;
+  `scripts/ci/rust_twin_diff.py --feature speed_chroma` and the golden tests in
+  `core/src/rust/feature/speed/src/lib.rs` fail on a one-ulp drift. An upstream
+  sync that touches `speed.c` re-runs both. No score, public API or FFmpeg patch
+  impact: the twin is opt-in.
+
+## Rust `cambi` twin follows `cambi.c` (RC4, ADR-1713)
+
+- `core/src/rust/feature/cambi/` is a statement-by-statement port of the scalar
+  path of `core/src/feature/cambi.c`, `cambi.h` (`reciprocal_lut`, the
+  `update_histogram_*` / `uh_slide*` helpers) and `luminance_tools.cpp`, and must
+  return the C extractor's bits. An upstream sync that changes any of them
+  (option table, init post-processing, preprocessing, spatial mask, mode filter,
+  c-values, quick-select pooling, EOTFs) changes the matching Rust module in the
+  same PR; `reciprocal_lut` is copied as literal text, never recomputed.
+  `core/test/test_rust_cambi_kernels.c` (suite `rust`) holds the table, the
+  TVI / visibility tables, the adjusted window, the mask index and the resize
+  walk to the C functions; `scripts/ci/rust_twin_diff.py --feature cambi`
+  re-checks the scores. No public C API or FFmpeg patch impact.
+
+## VMAFx device frames and fences: shared contract on the CPU device (2026-10-07)
+
+`rc4/api-wp3-common`, [ADR-1852](adr/1852-vmafx-api-redesign.md),
+[ADR-1929](adr/1929-vmafx-device-frames-fences.md).
+
+- `core/src/vmafx/` gains `device_context.c`, `fence.c`, `frame_import.c`,
+  `frame_import_admit.c`, `frame_import_hooks.{c,h}` and `frame_pool.c`;
+  `device.c` grows enumeration, information and the checks of
+  `VmafxDeviceDesc`'s new `flags` and `external` fields. The backend lanes
+  (CUDA, SYCL, HIP, Metal) add their device creation, memory kinds, fence
+  kinds and per-extractor admission behind these functions.
+- `frame_host.c`: the release of a non-pool frame is the shared
+  `vmafx_frame_release()` and signals the frame's release fence after the
+  last read; `vmafx_frame_read_desc()`, `vmafx_frame_host_device()` and
+  `vmafx_frame_bind()` are shared with the import and the pool.
+  `submit.c` checks admission before the engine counts a frame.
+  `context.c` drops the context's device after a successful close, and reads
+  and checks `VmafxContextConfig.import_retry_wait_ns` (ABI 0.1.3; the
+  `vmaf_init` compat glue sets it to 0, the default).
+  `error.c` keeps 1023 bytes of subject and message.
+- `frame_import.c` includes `core/src/metal/iosurface_layout.h` for the
+  NV12 / P010 / P016 row readers. A change to those readers changes the CPU
+  import and the Metal import together (`test_vmafx_import_bitexact` and
+  `test_metal_iosurface_layout`).
+- `scripts/codegen/vmafx_api/ctext.py` spells an `out` string parameter
+  `const char **` (it printed `const char * *`).
+- `core/src/compat/gcc/stdatomic.h` (the fallback for a compiler without
+  `<stdatomic.h>`, from dav1d) gains `atomic_uintptr_t`,
+  `atomic_uint_fast64_t`, `atomic_store_explicit`, `atomic_exchange`,
+  `atomic_compare_exchange_strong` / `_weak` and two memory orders, the C11
+  atomics `core/src/vmafx/` uses. A re-sync of that file from dav1d keeps
+  them.
+- `core/test/vmafx_fixture_util.h` holds the fixture pairs and the reader
+  both `test_vmafx_bitexact.c` and `test_vmafx_import_bitexact.c` use.
+- No `libvmaf.h`, score, golden-data or FFmpeg patch impact.
+
+## Source ADR citations: live bindings derived, registry keeps retired and fixtures (2026-10-07)
+
+`ci/citations-derived`, [ADR-2200](adr/2200-source-adr-citations-derived.md). Fork-only gate. `scripts/ci/source-adr-citations.json` is
+schema 2 with `retired` and `fixtures` only; on a conflict in it take master's side and keep only the hand-governed records your
+branch changed (a retired or fixture site count). A `live` key is an error: delete it, never re-add `--write`. An upstream sync
+that cites an ADR number needs no registry edit.
+
+## icx-cl and the Windows icpx: strict FP without the override warning (2026-10-07)
+
+`build/icx-cl-strict-fp-spelling`, [ADR-2170](adr/2170-warnings-are-errors-per-leg.md),
+[Research-2170](research/2170-windows-strict-fp-spelling-2026-10-07.md). Fork-only: the `intel-llvm-cl` branch of the strict FP policy in
+`core/src/meson.build` is `/fp:precise /clang:-fno-fast-math /clang:-fcomplex-arithmetic=full /clang:-ffp-contract=off` (it was `/fp:precise
+/Qfma-`), and the SYCL policy gives `sycl_msvc_device_link` builds the same `-fno-fast-math -fcomplex-arithmetic=full` reset as Linux. A sync
+keeps the order (model first, contraction-off last). no upstream file.
+
+## Cloud-native platform decision (2026-10-07, ADR-2350)
+
+`rc4/api-wp17-adr`, [ADR-2350](adr/2350-cloud-native-platform.md). Records the decision and marks ADR-1119, ADR-0711,
+ADR-1589, ADR-0719, ADR-1526 and ADR-2001 as partially superseded; comments and AGENTS notes of
+`cmd/vmafx-controller/`, `cmd/vmafx-operator/` and `deploy/helm/vmafx/` now call the SQLite queue transitional. No
+code path changes. no upstream file.
+
+## Observability: one metric definition and the generated Overview dashboard (2026-10-07)
+
+`rc4/obs-1-metric-definitions`, [ADR-2349](adr/2349-observability-package.md), #2430.
+
+- Every Prometheus family is defined in `pkg/observability/metricdef`; the
+  services register it through `pkg/observability`'s `NewCounter`,
+  `NewGauge`, `NewHistogram` and `RegisterScraped`. A sync that brings back a
+  `prometheus.New*Vec`, a GaugeFunc or `promauto` in a service bypasses the
+  label bounds and fails the per-binary contract tests.
+- `pkg/observability.NewMetrics` returns `(*Metrics, error)` and
+  `SetControllerSources` is gone (the controller's queue families are in
+  `cmd/vmafx-controller/metrics.go`). The controller queue's `Cancel` and
+  `ReportResult` return `(bool, error)`; the bool feeds the job counters.
+- `deploy/grafana/vmafx-overview.json` moved to
+  `deploy/grafana/dashboards/vmafx-overview.json` and is generated, as is
+  `docs/observability/metrics.md`: on a conflict take either side and run
+  `go run ./tools/obsgen -write`, never merge by hand.
+- `vmafx-node` composes `bootstrap.HTTP` (`nodeServerOptions`), listens on
+  `VMAFX_HTTP_ADDR` (default `:9090`) and its Dockerfile stages expose 9090.
+- No score, FFmpeg patch or C API impact.
+
+<!-- markdownlint-disable-file MD013 MD041 -->
+
+## Rendered docs: pull requests carry fragments only (2026-10-07)
+
+`ci/render-at-release`, [ADR-2197](adr/2197-render-generated-docs-at-landing.md). Fork-only tooling. `docs/rebase-notes.md` has a
+fragment block at its top (between two marker comments) rendered from `docs/rebase-notes.d/`; the entries below the block are the
+history and stay as they are. `CHANGELOG.md`, `docs/adr/README.md`, `docs/adr/by-tag/`, `docs/adr/titles.md` and
+`docs/research/titles.md` are outputs of `make docs-render`: on a conflict in one, take master's side and re-render, and never
+add them back to a branch (`deliverables-check.sh` refuses them). `_order.txt` is frozen; a rebased branch drops any line it added.
+`.gitattributes` no longer lists `merge=union` for these files.
+
+<!-- rebase-notes:fragments:end -->
+
+## Praetor pin afb739ed81f3 (2026-10-07)
+
+`chore/praetor-pin-afb739ed`, [ADR-2321](adr/2321-praetor-pin-afb739ed.md). Fork-only governance files; no upstream file. Engine output
+(take master's side on a conflict, then regenerate in a throwaway copy with the pinned engine): `PRAETOR_REF`, `tools/markdownlint/`,
+the DevContainer bundle (six `praetor-source.*.b64` parts), `.config/agent/hooks/block_evasion.py`, `.paperclip/harness.json`,
+`.paperclip/rules.md` and the `register.sources` digest in `.standards.yaml`, and the register block of `AGENTS.md` with the six compiled
+context files (`praetorctl compile-context`). The `exceptions:` block of `.standards.yaml` is generated: run
+`python3 scripts/ci/praetor_tidy_coverage.py --write`. A nested `AGENTS.md` or `AGENTS.d/` page brought in by a rebase or an upstream
+sync must pass `praetorctl caveman check --kind=context`; the indexes come from `make docs-fragments-write`.
+
+## Windows: _wsopen_s permission mask (2026-10-07)
+
+`fix/msvc-wsopen-pmode`. no rebase impact: fork-only `compat/path_utf8.c`; in `svm.cpp` the `vmaf_open_bin_crt()` helper (fork edit of the vendored libsvm open call) masks `pmode`; keep the mask when re-syncing.
+## DNN session test: invalid pointer literal (2026-10-07)
+
+`fix/msvc-int-to-ptr`. no rebase impact: fork test file, two literals.
+
+## MSVC zero warnings: residual sites (2026-10-07)
+
+`fix/msvc-zero-warnings-residuals`. no rebase impact beyond the series notes above: the same conversion-only edits in files the earlier notes already list (`adm_tools.c`, `float_vif.c`, `x86/motion_avx*.c`, the CUDA / HIP `adm_decouple_inline` helpers, `cli_parse.cpp`); the shifts are `((int64_t)1 << n)` with n below 31.
+
+## Tests: MSVC zero-warning conversions (2026-10-07)
+
+`fix/msvc-zero-warnings-tests`. Netflix-mirror tests (`test_speed_chroma.c`, `test_vif_tools.c`, `test_ciede.c`, `test_cambi.c`,
+`test_barten_csf.c`, `test_adm_csf_tools_coverage.c`, `test_float_adm_csf_upstream.c`) keep upstream's values; the fork adds `f` suffixes to
+float tables and explicit `(float)` / `(int)` conversions. On a sync conflict keep upstream's numbers and re-apply the suffix/cast.
+## Feature sources: MSVC zero-warning conversions (2026-10-07)
+
+`fix/msvc-zero-warnings-feature`. Upstream-mirror files (`adm_tools.[ch]`, `adm_csf_tools.h`, `barten_csf_tools.h`, `integer_adm*.[ch]`,
+`integer_vif.c`, `vif*.c`, `vif_tools.c`, `speed*.c`, `ciede.c`, `cambi.c`, `motion_tools.h`, `iqa/ssim_tools.c`, `third_party/xiph/psnr_hvs.c`, the
+`x86/` and `arm64/` twins) gain explicit `(float)` / `(int)` / `(double)` conversions where the compiler converted implicitly, and `f` on float
+table literals. On a sync conflict keep upstream's expression and re-apply the cast on the statement the conversion belongs to; two forms
+need care: `x += double` is `x = (float)(x + double)` (never `x += (float)double`, which rounds twice), and `speed*.c`'s entropy update keeps
+the increment in a `double` so the load of `entropy[i]` stays after the `log2()` calls. The twin contract tests
+(`test_*_exact_contract.py`, `test_sycl_vif_float_sums_contract.py`) quote the new statements. A statement-for-statement mirror in a GPU twin needs no
+change: the value is the same.
+## MSVC zero warnings: CRT calls, pragmas, declarations (2026-10-07)
+
+`fix/msvc-zero-warnings-crt`. Upstream-mirror files touched: `pdjson.c` (`push` / `pop` renamed `json_push` / `json_pop`, with the matching
+`core/test/meson.build` symbol list), `adm_tools.c` and `barten_csf_tools.h` (the `M_PI` fallback now spells UCRT's own literal so a second
+definition is an identical redefinition), `model.c`, `feature_name.cpp`, `cli_parse.cpp`, `y4m_input.c`, `yuv_input.c` (bounded `memcpy`,
+`VMAF_SSCANF`, explicit conversions). `pelorus_qp_report_csv.c` is a vendored file: the second local edit (`_wfsopen`) must be in pelorus before
+the next `scripts/sync-pelorus-interop.sh`, or the C4996 comes back. A sync that brings upstream's `strncpy` / `sscanf` / `getenv` back keeps the
+fork's `crt_portable.h` spelling.
+## Zero warnings: Metal links and the spill probe (2026-10-07)
+
+`ci/zero-warnings-metal-and-probe`, [ADR-2170](adr/2170-warnings-are-errors-per-leg.md). Fork-only: `core/src/metal/meson.build`
+(project link argument after `add_languages('objcpp')`), `core/src/sycl/run_captured.py` and the `sycl_quiet_launcher` of
+`sycl_common_*` in `core/src/meson.build`. no upstream file.
+
+## Warnings are errors on the MSVC legs (2026-10-07)
+
+`ci/msvc-werror-gate`, [ADR-2170](adr/2170-warnings-are-errors-per-leg.md). Fork-only: the `msvc` mode of `scripts/ci/werror-args.sh`,
+its cases and the MSVC leg contract in `scripts/ci/tests/test_werror_args.py`, the `werror: msvc` row key, the `Warnings-as-errors
+arguments` bash step (`id: werror`) and `${{ steps.werror.outputs.args }}` on the cmd configure lines of `libvmaf-build-matrix.yml`
+(`windows-gpu-build`, `windows-arm64`) and `build.yml` (`build-work`). no upstream file.
+
+## Warnings are errors per leg (2026-10-07)
+
+`ci/warnings-are-errors-per-leg`, [ADR-2170](adr/2170-warnings-are-errors-per-leg.md). Fork-only: `scripts/ci/werror-args.sh`, its test, and the
+`werror` row key and `$(scripts/ci/werror-args.sh ...)` call in the fork's workflows (`libvmaf-build-matrix.yml`, `sanitizers.yml`,
+`go-ci.yml`, `rust-ci.yml`, `ffmpeg-integration.yml`). `core/src/meson.build` gained `nvcc_werror_flags` and `hip_werror_args`, both empty
+unless `-Dwerror=true`. no upstream file.
+
+## Zero warnings: icx and clang-cl driver flags (2026-10-07)
+
+`build/zero-warnings-driver-flags`, [ADR-2170](adr/2170-warnings-are-errors-per-leg.md). `core/src/meson.build` is a fork file: the
+icx strict line gained `-fno-fast-math -fcomplex-arithmetic=full` before `-ffp-contract=off` (see the page `core/AGENTS.d/strict-fp-compiler-args.md`),
+and `-pedantic` / `-fvisibility=*` are offered only to non-MSVC-syntax drivers. no upstream file.
+
+## Zero warnings: unused code, attributes, deprecated calls (2026-10-07)
+
+`fix/zero-warnings-unused-and-attributes`, [ADR-2170](adr/2170-warnings-are-errors-per-leg.md). Upstream-mirror files touched:
+`core/include/libvmaf/macros.h` (`VMAF_EXPORT` is empty when `__MINGW32__` is defined and the compiler is not clang; keep the
+fork's branch order: MSVC, MinGW GCC, GNU / clang, empty) and `core/src/dnn/meson.build` (`include_type: 'system'` on the ONNX
+Runtime dependency). A sync keeps both. The Win32 pthread shim names `VMAF_W32_CALLBACK` / `VMAF_W32_STDCALL` instead of
+`CALLBACK` / `__stdcall`.
+
+## Zero warnings: initialisers, tags, fallthrough (2026-10-07)
+
+`fix/zero-warnings-initialisers`, [ADR-2170](adr/2170-warnings-are-errors-per-leg.md). Upstream-mirror files touched:
+`core/src/feature/integer_motion.c` (option terminator `{0}`), `core/src/feature/ssimulacra2.c` (`[[fallthrough]];` in
+`yuv_matrix_coeffs()`), vendored `core/src/mcp/3rdparty/cJSON/cJSON.c` (`true` / `false` are not redefined when `<stdbool.h>`
+leaves them keywords; hunk 7 of its `AGENTS.md`). On a sync keep the fork's side of each hunk. The Metal `.mm` option tables
+list their designators in the declaration order of `VmafOption` (`name, help, alias, offset, type, default_val, min, max,
+flags`) and of `VmafFeatureExtractor`; a rebase that brings a table from a branch keeps that order. The device-free Metal
+contract tests accept `{}` as the terminator.
+## CI tiers: one definition, a `tier` job in every pull-request workflow (2026-10-07)
+
+`ci/fewer-runs`, [ADR-2169](adr/2169-ci-fewer-runs.md). Fork-only CI; no upstream file. Every workflow with a `pull_request` trigger
+starts with a `tier` job (a call of `.github/workflows/ci-tier.yml`) and its other jobs need it. On a conflict in a workflow keep
+both: master's change to the job and the `needs: tier` / `if: needs.tier.outputs.<light|full> == 'true'` pair of this branch (a
+planner gate is `always() && needs.tier.outputs.<tier> == 'true'`). A job added since belongs to the light or the full tier:
+`.github/ci-tier.json` (`full_only`, `always`) and `test_ci_routing_contract.py` say which. `renovate.json`: the catch-all group
+is the first `packageRules` entry (the later rules win); keep it first.
+
+## Metal headers: the host double comparison uses compiler builtins (2026-10-06)
+
+`fix/metal-f64-equal-no-libimf`. no rebase impact: fork-only Metal header (`core/src/feature/metal/metal_portable.h`); no upstream file.
+## Praetor pin 04cc813ff054 (2026-10-06)
+
+`chore/praetor-pin-04cc813`, [ADR-2153](adr/2153-praetor-pin-04cc813.md). Fork-only governance files. `PRAETOR_REF` in
+`.github/workflows/standards-gate.yml`, `tools/markdownlint/verify.mjs` and the DevContainer bundle are engine output: take
+master's side on a conflict and regenerate with `adopt --force --lock-source-root <praetor source at the pin>` in a throwaway copy.
+The `exceptions:` block of `.standards.yaml` and `.config/clang-tidy/measured-sources.txt` are generated: after a conflict run
+`python3 scripts/ci/praetor_tidy_coverage.py --write`.
+
+## CI: the push aggregator reads its own branch's runs (2026-10-06)
+
+`fix/aggregator-own-branch-runs`. no rebase impact: the fork's aggregator workflow and its test harness; no upstream file.
+## vmaf-tune: the backend probe skips the PATH lookup with a runner (2026-10-06)
+
+`fix/vmaftune-probe-runner-no-path`. no rebase impact: one fork-only vmaf-tune function (`backend_report()`) and its test; no upstream file, build or public surface.
+## ADM twins: exact scale-0 angle flag, per-kernel register budget (2026-10-06)
+
+`fix/adm-angle-flag-s0-int64`, [ADR-2134](adr/2134-cuda-adm-cm-aim-register-budget-angle-flag.md). Keep the unsigned-sum form in
+`decouple_angle_flag_s0()` of `cuda/integer_adm/adm_decouple_inline.cuh` and `hip/integer_adm/adm_decouple_inline.hip`; Netflix has no GPU
+twin, so a sync has no counterpart. `KERNEL_BUDGETS` in `core/test/test_cuda_adm_cm_register_pressure.py` holds the one kernel above 208.
+## CI: the hosted cpu tidy lane runs the Makefile targets (2026-10-06)
+
+`fix/tidy-ratchet-unmeasured-baseline-files`. The `Tidy Ratchet` job (`.github/workflows/lint-and-format.yml`) and nightly `clang-tidy-full` run `make tidy-ratchet-build LANE=cpu` and `make tidy-ratchet LANE=cpu` and install `libvpl-dev`; a workflow sync must not bring back a job-local `meson setup` or direct `tidy-ratchet.py` call (`scripts/ci/tests/test_tidy_lane_container.py`). `tidy-ratchet.py` exits 4 on a baseline translation unit it did not measure. No upstream file.
+
+## Scorecard single-maintainer exceptions (2026-10-06)
+
+[ADR-2126](adr/2126-scorecard-single-maintainer-exceptions.md). Two files under
+`.config/lint-exceptions.d/` (`scorecard-code-review.toml`, `scorecard-branch-protection.toml`).
+Fork-only; no upstream counterpart. A rebase keeps both entries and their expiry.
+## Code-scanning sweep: SBOM wheel unpack, `_set_seed` (2026-10-06)
+
+`fix/code-scanning-pip-hash-and-seed`. The `Prepare the SBOM root` steps of `release-dry-run.yml` and
+`supply-chain.yml` unpack the built `vmaf_mcp` wheel with `python -m zipfile -e`; keep that, because
+`pip install` of an unhashed local wheel is a Scorecard Pinned-Dependencies finding and the repository's
+own lock check forbids a generated requirements file. `_set_seed()` in `ai/src/vmaf_train/predictor_train.py`
+uses `find_spec()`. Both are fork-only.
+## CodeQL sweep: Metal headers, include guards, Pelorus test (2026-10-06)
+
+`fix/codeql-metal-headers-guards`. `core/src/feature/ssim.h` and `ms_ssim.h` (Netflix files) gained `SSIM_H_` / `MS_SSIM_H_`
+guards in the style of `motion.h`: an upstream sync that rewrites either file keeps the guard. `vmaf_mtl_fm_blur()` takes
+`const VMAF_MTL_FM_THR VmafMtlFmWindow *` (Metal-only fork code). `core/test/meson.build` renames two static helpers of the
+vendored Pelorus parser for `test_pelorus_interop` with `c_args`; keep them when the mirror is re-vendored (the names must
+stay private to that executable).
+## ADM twins: host test of the device decouple header (2026-10-06)
+
+`fix/codeql-adm-twin-header-tests`, `T-GPU-ADM-ANGLE-FLAG-S0-INT32-CORNER-2026-10-06`. Keep the int64 sums in `iadm_angle_flag_s0()`
+(`metal/integer_adm.metal`); an upstream sync has no counterpart (Netflix has no GPU twin). `core/test/meson.build` renames
+`run_tests` per twin for `test_adm_decouple_recip_*`: keep the `c_args` and `cpp_args` pair together. The CUDA and HIP
+`decouple_angle_flag_s0()` stay int32 until the register budget is settled (see the state row).
+
+## FFmpeg patch 0022: input colorimetry from the AVFrame (2026-10-06)
+
+`port/ffmpeg-input-colorimetry`, [ADR-2093](adr/2093-upstream-hdr-groundwork-input-colorimetry.md).
+Fork-only patch, appended to the series: no upstream FFmpeg counterpart. It adds
+`vmaf_color_from_frame()` and `vmaf_declare_input_color()` before `do_vmaf()`, the `color_set`
+member of `LIBVMAFContext`, and one call each in `do_vmaf()` and the software branch of
+`do_vmaf_sycl()`. A refresh onto a new FFmpeg release must keep both call sites; a libvmaf
+without `vmaf_set_input_colorimetry()` (Netflix's) does not link it. Test:
+`core/test/test_ffmpeg_libvmaf_input_colorimetry_contract.py`,
+`ffmpeg-patches/test/check-libvmaf-input-colorimetry.sh`.
+## Go test: the controller version test keeps the loader path (2026-10-06)
+
+`fix/go-controller-version-test-loader-path`. no rebase impact: one fork-only Go test (`cmd/vmafx-controller/version_flag_test.go`); no upstream file, build or public surface.
+
+## Go CI: one gosec definition, G703 on the VMAF_BIN lookup (2026-10-06)
+
+`fix/go-vmaftest-gosec-g703`. The gosec flags live only in the Makefile's `lint-go`, and the `gosec (exclude generated)` step of `.github/workflows/go-ci.yml` runs `make lint-go`; a workflow edit that inlines the command again forks the gate. `internal/vmaftest/vmaftest.go` keeps its `#nosec G703` with the reason. No upstream file is involved.
+
+## Port of Netflix/vmaf `ed61076b2`, `1ddf81607`, `a6c0ba6d5`, `130569c45`, `efe90c8b8`, `5c3f4fb90`, `4f3f71b68`: HDR-VMAF groundwork (2026-10-06)
+
+`port/upstream-hdr-groundwork`, [ADR-2093](adr/2093-upstream-hdr-groundwork-input-colorimetry.md).
+Netflix PRs #1671 to #1675, #1677 and #1678, one batch because each depends on the one before.
+
+- **No `VmafPicture::color`.** Upstream's `vmaf.c` writes `pic->color = color` and
+  `libvmaf.c` / `conversion_policy.c` read `pic->color`; the fork has
+  `vmaf_set_input_colorimetry()` (ADR-2093) and passes the colour as an argument
+  (`vmaf_conversion_policy_target(ref, ref_color, dist, dist_color, ...)`). A sync of
+  those hunks keeps the fork's side; `ed61076b2`'s `fetch_picture()` change is not
+  applicable (`init_cli_context()` calls the setter).
+- **`libvmaf.c` glue lives in `core/src/conversion_context.c`.** Upstream's `convert`
+  member, `convert_picture()`, `convert_pictures()` and `register_conversion_target()`
+  are in that file; `libvmaf.c` has `VmafConversionState convert`, the register call in
+  `vmaf_use_features_from_model()`, the convert call at the top of
+  `vmaf_read_pictures()` (failure releases the pictures, ADR-1431) and the close in
+  `vmaf_commit_remaining_owners()`. A device picture is refused with `-ENOTSUP`, and so is
+  `vmaf_read_pictures_sycl()` when a model declares a target
+  (`vmaf_conversion_state_refuse_zero_copy()`), since no conversion reaches that path.
+- **Files.** `libvmaf/tools/cli_parse.c` / `vmaf.c` are `core/tools/cli_parse.cpp` /
+  `vmaf.cpp` (the flag handlers are split per attribute, HISS-04). The model parser has
+  a C twin (`read_json_model.c`, compiled by the fuzz harness) and the built C++ file
+  (`read_json_model.cpp`); `conversion_target` is in both. The `zimg` hunk of
+  `5c3f4fb90` is in `core/src/picture_convert.c`, not `picture.c`. The Python harness is
+  `compat/python-vmaf/` (`color_ref` / `color_dist` follow `backend` in
+  `call_vmafexec()`, so the existing positional order is kept).
+- **CAMBI twins.** `4f3f71b68` changes `cambi.c` only; the fork changes the same two
+  minimums in the CUDA, HIP, SYCL and Metal option tables. Keep them equal on a sync.
+- **Tests.** `test_cli_parse.c` (colour tests as `run_color_tests()`),
+  `test_model.c` (the hunk merges into the fork's tables), `test_conversion_policy.c`
+  (a `TaggedPic` holds the colour), `test_read_pictures_convert.c` (colour set through
+  the setter; no unref after a failed read) are upstream's, adapted as noted. The
+  missing-colour log line names `--color_range_ref/_dist` etc.; upstream's names flags
+  that do not exist.
+- **Fixtures.** The two dock clips are in `scripts/test/fetch-test-yuvs.sh` with md5
+  sums (Netflix/vmaf_resource `5e7b853ba`).
+
+## Meson secret-env contract test spells paths with forward slashes (2026-10-06)
+
+`fix/meson-secret-env-test-posix-paths`. ADR-1333 entry preserved: only the path spelling in `core/test/test_meson_secret_env_sanitization.py` changed; the runner, the setup and the credential inventory are untouched. no other rebase impact.
+## CLI exit status is the libvmaf code modulo 256 on every platform (2026-10-06)
+
+`fix/cli-exit-status-modulo-256`. A sync or refactor of `vmaf_cli_main()` in `core/tools/vmaf.cpp` keeps the return of the run result through `vmaf_cli_exit_status()` (`core/tools/cli_exit_status.h`); Netflix's `main()` returns the raw code. `core/test/test_cli_exit_status_contract.py` and `test_cli_exit_status` guard it.
+## CI: prune-corrupt-fixtures runs on bash 3.2 (2026-10-06)
+
+`fix/prune-fixtures-bash32`. no rebase impact: one CI helper script and its fixture test; no source, build or public surface changes.
+
+## ADR audit: status header forms (2026-10-06)
+
+`docs/adr-audit-mechanical`. no rebase impact: ADR status headers and dated status updates, plus one ADR number in docs/state.md; no source, build or test file changes.
+## ADR audit: Proposed ADR statuses (2026-10-06)
+
+`docs/adr-audit-status`. no rebase impact: ADR status lines, dated status updates, one drift-gate exception list and one docs/state.md Deferred row; no source, build or test file changes.
+## ADR audit: partial supersession in status lines (2026-10-06)
+
+`docs/adr-audit-partial`. no rebase impact: 45 ADR status lines; no source, build or test file changes.
+## ADR audit: unfilled template blocks and tombstone records (2026-10-06)
+
+`docs/adr-audit-backfill`. no rebase impact: four ADR files lose a template block, four short ADR files are added; no source, build or test file changes.
+## ADR audit: errata blocks (2026-10-06)
+
+`docs/adr-audit-errata`. no rebase impact: appended errata sections in ADR
+files; no source, build or test file changes.
+
+## SYCL fused VIF reads and writes different downsampled planes (2026-10-06)
+
+`fix/sycl-vif-fused-rd-pingpong`. no rebase impact: fork-only SYCL twin (`core/src/feature/sycl/integer_vif_sycl.cpp`) and
+test (`core/test/test_sycl_vif_parity.c`). A sync or refactor of the fused path keeps `vif_rd_output()`: a fused scale
+never writes the planes it reads; scale 1 writes the second pair (`d_rd_ref_alt` / `d_rd_dis_alt`, fused mode only).
+
+## Release scope of 1.0.0 and the roadmap to 2.0 (2026-10-06)
+
+`docs/rc3-adr-roadmap-2026-10-06`. no rebase impact: ADR-2001, docs, changelog fragment and the candidate-map paragraph of `AGENTS.md` section 11 with its six compiled projections (edited by the same substitutions, as ADR-1868 and ADR-1880 did). A sync that touches `AGENTS.md` keeps the fork's section 11 and recompiles the projections from it.
+## Lefthook and the pre-commit framework run on Windows hosts (2026-10-06)
+
+`fix/hooks-windows-host`, [ADR-2012](adr/2012-lefthook-windows-host.md), `T-HOOKS-WINDOWS-LEFTHOOK-QUOTING-2026-09-30`, `T-LEFTHOOK-UNINSTALL-REWRITES-AGENT-HOOK-FILES-2026-09-30`.
+
+- `lefthook.yml`: `framework-hooks` in `pre-commit` and `pre-push` call
+  `scripts/git-hooks/framework-hooks.sh` from a one-line, quote-free `run:`.
+  Keep every `run:` in `lefthook.yml` on one line and free of double quotes:
+  lefthook passes them to `sh -c` unescaped on Windows, so a double quote ends
+  the script. Guarded by `LefthookBridgeTests` in
+  `scripts/githooks/tests/test_install.py`.
+- `scripts/githooks/install.py`: leaves hooks whose shim calls `call_lefthook run`
+  in place. Install order: `lefthook install`, then `make install-hooks`.
+- `.claude/settings.json`, `.codex/hooks.json`: keep sorted keys and two-space
+  indent (`json.dumps(..., indent=2, sort_keys=True)` plus newline), the form
+  `lefthook uninstall` writes them to.
+- `requirements/locks/pre-commit.txt`: `reuse[charset-normalizer]==6.2.0`; reuse
+  skips `python-magic` on Windows.
+- `cmd/vmafx-node/bpf/`: `//go:build linux` on the tracepoint-dependent loader
+  and test files, so `govulncheck ./...` and `go vet ./...` load the package on Windows.
+- Fork-only CI and hook files: `scripts/ci/check-container-image-references.py`
+  (uses POSIX path spelling for comparison), `scripts/ci/tests/test-dedupe-gate.sh`
+  and `test_envtest_single_source.py` (skip POSIX Makefile/shebang parts on Windows),
+  `scripts/ci/tests/test_research_digest_ids.py` and `scripts/docs/generate-adr-by-tag.sh`
+  (LF newlines). No upstream-mirror file changed.
+
+## Licence provenance of the Metal integer ADM host files (2026-10-06)
+
+`fix/master-red-licence-provenance`. `scripts/dev/relicense_provenance.toml` gains two `[ports]` entries and one `[not_ports]` line; `integer_adm_metal_host.c` / `.h` take the Netflix notice and the dual tag, `.config/lint-exceptions.d/spdx.toml` its header. An upstream sync that touches `integer_adm.c` keeps the entries. No other rebase impact.
+## Cppcheck on the Metal host tests (2026-10-06)
+
+`fix/master-red-cppcheck-metal`. `metal_float_motion_math.h` and `metal_float_vif_math.h` carry a `cppcheck-suppress-begin` / `-end passedByValue` block (ADR-1498: the headers are shared with MSL); a sync must keep the block and the `{0}` initialiser in `vmaf_mtl_fvif_statistic_args()`. Six test files changed in place. No upstream-mirror file; no other rebase impact.
+## CI gates read the right inputs (2026-10-06)
+
+`fix/master-red-ci-gates`. Fork-only CI and test files: `core/test/test_meson_secret_env_sanitization.py` (`EXTERNAL_CHECKOUT_ROOTS`), three workflow files (`docs.yml`, `lint-and-format.yml`, `tests-and-quality-gates.yml`), `scripts/ci/tests/test-default-model-single-source.sh` and a new `scripts/ci/tests/test_tidy_changed_exclusions.py`. No upstream-mirror file changed; no rebase impact beyond keeping the `.ci/` skip and the three `exclude_untidyable()` entries.
+## go fix and cargo fmt applied (2026-10-06)
+
+`fix/master-red-go-rust-fmt`. Formatting and fixer output only, in Go files under `cmd/` and `pkg/` and one Rust example; no upstream-mirror file. no rebase impact.
+## CI fixture cache: tracked fixtures put back after the restore (2026-10-06)
+
+`fix/fixture-cache-tracked-files`. no rebase impact: fork-only CI files. `scripts/ci/prune-corrupt-fixtures.sh` takes
+`--restore-tracked`, and the fixture-restore steps of `build.yml`, `libvmaf-build-matrix.yml` and
+`tests-and-quality-gates.yml` pass it; a workflow edit that moves or copies the restore keeps the flag on the step
+after it, or a `restore-keys` hit brings back an older revision of a tracked `python/test/resource` file.
+## `test_icx_system_libm` runs where `os` has no `confstr` (2026-10-06)
+
+`fix/icx-libm-test-no-confstr`. no rebase impact: fork-only test file (`core/test/test_icx_system_libm.py`); its
+`os.confstr` patches keep `create=True` so the Windows legs can run them.
+## HIP smoke test follows `vmaf_hip_context_new()`'s device contract (2026-10-06)
+
+`fix/hip-smoke-context-no-device`. no rebase impact: fork-only test (`core/test/test_hip_smoke.c`); the context case
+branches on `vmaf_hip_device_count()` like the state case.
+## Metal IOSurface import self-test releases its fixtures (2026-10-06)
+
+`fix/metal-iosurface-selftest-leak`. no rebase impact: fork-only test (`core/test/test_metal_iosurface_import_parity.c`);
+both builds of `imported_psnr()` consume the planar pair they are given.
+## `test_adm_decouple_recip` builds and runs on Windows (2026-10-06)
+
+`fix/adm-decouple-recip-test-windows`. no rebase impact: fork-only test files and CI check. A host C or C++ file
+that names `__builtin_clz` keeps `#include "feature/compat_builtin.h"` (`scripts/ci/check-msvc-clz-shim.sh`
+enforces it), and a test helper fills `div_lookup` once: on `_WIN32` `div_lookup_generator()` refills the table on
+every call.
+## CPU extractor close callbacks are `close_fex` (2026-10-06)
+
+`fix/darwin-lto-static-close`. Upstream-mirror files touched: `ciede.c`, `float_adm.c`, `float_moment.c`,
+`float_motion.c`, `float_ms_ssim.c`, `float_psnr.c`, `float_ssim.c`, `float_vif.c`, `integer_adm.c`,
+`integer_ssim.c`, `integer_vif.c`, `speed.c`, `ssimulacra2.c` (and the fork's `brisque.c`, `delta_e_itp.c`,
+`niqe.c`, `pu21.c`): the `static int close(VmafFeatureExtractor *fex)` callback and its `.close =` initialiser are
+named `close_fex`. A sync that brings an upstream change to one of these functions keeps the fork's name; a
+conflict on the definition line or the initialiser takes the fork's side. Upstream's name collides with the C
+library's labelled `close()` in a macOS full-LTO link. `core/test/test_libc_named_internal_functions.py` fails if
+a `static close` comes back. See `core/src/feature/AGENTS.d/libc-named-statics.md`.
+## Heavy fast-suite tests sized for the sanitizer jobs (2026-10-06)
+
+`fix/sanitizer-heavy-test-timeouts`. no rebase impact: fork-only test files. `test_integer_psnr_coverage` carries
+`timeout : 480` for its 5e9-sample APSNR wrap case, and `test_metal_psnr_hvs_math` forms each masking table's
+terms once for both summations.
+## Metal host files balance their anonymous namespaces (2026-10-06)
+
+`fix/metal-float-motion-anon-namespace`. no rebase impact: fork-only Metal host code (`core/src/feature/metal/float_motion_metal.mm`)
+and a new device-free test, `core/test/test_metal_host_source_balance.py`.
+
+## SYCL twin option cases proven on a device (2026-10-06)
+
+`test/rc3-sycl-twin-option-regression`. no rebase impact: ledger, changelog fragment and this note only; no source or test file changed.
+## SYCL device AddressSanitizer option (2026-10-06)
+
+`test/rc3-sycl-device-sanitizer`. Fork-only: `core/meson_options.txt` gains `sycl_device_asan` and
+`core/src/meson.build` defines `sycl_asan_args` between the SYCL toolchain selection and the MSVC
+device-link block, appends it to `sycl_toolchain_args` and `sycl_link_args`, and to the
+per-translation-unit AOT override (`tu_toolchain_args`). Upstream Netflix/vmaf has no SYCL build, so
+a sync cannot conflict; a rebase onto master keeps the three appends together with
+`core/test/test_sycl_device_asan_option_contract.py`. See [ADR-1930](adr/1930-sycl-device-asan-option.md).
+
+## `float_vif` and SpEED refuse a prescaled plane past the `int` index (2026-10-05)
+
+`fix/prescaled-plane-int-index-limit`. The fork adds `vif_plane_fits_int_index()` to the
+upstream-mirror `core/src/feature/vif_tools.h` and calls it in `float_vif.c::init_scaled_plane()`
+(the scaled-size checks moved out of `init()` with it, to keep `init()` under 60 lines), in `speed.c::speed_init_dimensions()` (after the too-small check) and in
+`speed_internal.c::speed_internal_init_dimensions()`. Upstream Netflix/vmaf has no such check and
+indexes `vif_tools.c` with `int`, so a sync keeps the three calls and the helper; if upstream ever
+widens the indices of `vif_tools.c` to a 64-bit type, the check can go. `core/test/test_prescaled_plane_int_index.c`
+fails without it. See `core/src/feature/AGENTS.d/float-vif.md`.
+## Integer ADM: named refusal when viewing geometry is below fixed-point floor (2026-10-06)
+
+`fix/adm-viewing-floor-named-refusal`. `core/src/feature/adm_csf_fixed_point.h` adds
+`adm_viewing_geometry_check()` which logs a named refusal at ERROR when
+`adm_norm_view_dist * adm_ref_display_height < 3240` (the 3240 floor, 1080p at 3H)
+naming the extractor, parameter values, product, and pointing to `float_adm`.
+The CPU extractor (`core/src/feature/integer_adm.c`) calls it from `extract()` with
+`"adm"`; GPU twins (`adm_cuda`, `adm_hip`, `adm_sycl`, `adm_metal`) call it during `init()`.
+An upstream sync that touches integer ADM option validation or CSF setup must preserve
+the named refusal and the contract where CPU fails in `extract()` and GPU twins fail in `init()`.
+## Opt-in sample range check of `vmaf_read_pictures()` (2026-10-06)
+
+`feat/sample-range-check` ([ADR-1918](adr/1918-sample-range-contract-opt-in-check.md)).
+Fork-only files: `core/src/picture_sample_range.{c,h}`, `core/test/test_sample_range_check.c`,
+`docs/api/sample-range.md`. Fork hunks in upstream-mirror files: `VmafContext::check_sample_range`,
+`vmaf_set_sample_range_check_enabled()` and the call in `read_pictures_validate_and_prep()` in
+`core/src/libvmaf.c`; the contract paragraph and the declaration in `core/include/libvmaf/libvmaf.h`;
+`--check-sample-range` in `core/tools/cli_parse.cpp` / `cli_parse.h` and the setter call in
+`init_cli_context()` (`core/tools/vmaf.cpp`). An upstream sync that touches `vmaf_read_pictures()` keeps
+the check after `validate_pic_params()` and before any extractor. See
+`core/AGENTS.d/sample-range-check.md`.
+## CUDA warp reductions reached by every lane, on unsigned words (2026-10-06)
+
+`fix/cuda-warp-reduce-defined`. Upstream Netflix/vmaf calls the integer VIF horizontal flush
+(`warp_reduce()` of the seven accumulators) inside `if (y < h && x_start < w)` in
+`cuda/integer_vif/filter1d.cu`, and builds `warp_reduce(int64_t)` in `cuda_helper.cuh` from two
+shuffled halves with `(x >> 32) << 32`. The fork calls `vif_hori_flush_accums()` after the branch
+(every lane of a warp reaches the full-mask shuffles; the lanes past the edge add zeros) and adds
+the 64-bit words as unsigned values through `warp_reduce_u64()`. A sync that touches either file
+keeps the fork's form. Outputs are bit-identical (integer sums). See
+`docs/development/rebase-sensitive-invariants.md` and `core/src/feature/cuda/AGENTS.d/vif.md`.
+
+## Integer ADM: scale-0 contrast-masking rows summed unsigned; GPU gain product bounded before narrowing (2026-10-05)
+
+`fix/adm-cm-row-total-unsigned`. Upstream Netflix/vmaf sums every contrast-masking row of
+`integer_adm.c` in `int64_t`; the fork sums the scale-0 rows and frame unsigned
+(`adm_cm_round_row_total_s0()` in `core/src/feature/adm_cm_accumulator.h`, `adm_cm_fold_s0()`,
+`uint64_t` in `adm_cm_accum_px()`, `adm_cm_row()`, `AdmCmRowFn`, `adm_cm_rows()`, `adm_cm_result()`,
+`cm_row_avx2()` / `cm_row_avx512()`). An upstream sync that touches the scale-0 masking loops keeps
+the unsigned row and frame: a scale-0 row passes INT64_MAX (`core/test/adm_cm_row_overflow_frame.h`).
+Scales 1-3 keep upstream's signed sums. The CUDA and HIP `decouple_r_s123()` bound the gain product
+in double before narrowing it, as the CPU's `adm_decouple_band_s123()` does; do not restore
+`(int32_t)(...) * adm_enhn_gain_limit`. See `core/src/feature/AGENTS.d/adm-rounding.md`.
+## APSNR clip squared error summed in 128 bits (2026-10-05)
+
+`fix/apsnr-clip-sse-128`. Upstream Netflix/vmaf's `integer_psnr.c` keeps `apsnr.sse[]` as
+`uint64_t` and adds `s->apsnr.sse[p] += sse;`; the fork holds it as `VmafPsnrClipSse`
+(`core/src/feature/psnr_score.h`) and adds through `vmaf_psnr_clip_sse_add()`, because the clip
+sum wraps past 2^64 on long 12- and 16-bit clips. An upstream sync that touches `psnr()` /
+`psnr_hbd()` or `flush()` keeps the fork's form. See `core/src/feature/AGENTS.d/psnr.md`.
+## Preserve explicit `.int8.onnx` paths in DNN session open (2026-10-05)
+
+Fork-only: `core/src/dnn/dnn_api.c` (`resolve_load_path`) gains the `kInt8Suffix` early return
+matching `core/src/dnn/dnn_attach_api.c:75`. On an upstream sync that touches this file, preserve
+the `kInt8Suffix` check to avoid deriving `<name>.int8.int8.onnx`.
+## VPL decode retry ceiling contract and warning frame drop repair (2026-10-05)
+
+The `vmaf_vpl` decode retry loop is formally verified under the derived 60,000-attempt
+bound (`VPL_DECODE_MAX_ATTEMPTS`). Physical Intel Arc A380 hardware (`/dev/dri/renderD129`)
+confirmed zero ceiling exhaustion or hangs across 48-frame baseline and long-GOP streams.
+Extracted `core/tools/vmaf_vpl_core.h` and `.c` to decouple status classification and
+frame loop execution. Fixed a correctness bug where warning codes with valid synchronization
+points (`sts > 0 && sync != NULL`, such as `MFX_WRN_VIDEO_PARAM_CHANGED`) were previously dropped.
+Added transient retry for `MFX_WRN_ALLOC_TIMEOUT_EXPIRED`. An 8-test deterministic device-free
+unit test suite (`test_vmaf_vpl_decode_ceiling.c`) in Meson `fast` verifies finite busy recovery,
+ceiling sensitivity, exact 60,000 attempt exhaustion, multi-frame ordering, warning publication,
+and hard error fail-fast without GPU hardware. Added automated hardware smoke test
+`test_vmaf_vpl_hardware_smoke.sh` under `slow` / `gpu` suites.
+
+- Research digest: [Research-1900](research/1900-vpl-decode-ceiling-verification-2026-10-05.md).
+- Decision matrix: [ADR-1900](adr/1900-vpl-decode-ceiling-contract.md#alternatives-considered).
+- AGENTS.md invariant: `core/tools/AGENTS.d/vmaf-vpl.md`, "VPL decode retry ceiling contract".
+- Reproducer / smoke: `meson test -C build test_vmaf_vpl_decode_ceiling` and `meson test -C build test_vmaf_vpl_hardware_smoke`.
+- Changelog: `changelog.d/fixed/vpl-decode-ceiling-contract.md`.
+- FFmpeg impact: none; no public C header, exported libvmaf API, CLI flag, or FFmpeg patch touched.
+## Integer accumulator bounds; exact-twin matrix at 8K and 16K (2026-10-05)
+
+`fix/accumulator-bounds-audit`. Fork-only files: `docs/development/accumulator-bounds*.md`,
+`scripts/dev/adm_cm_row_bound.py`, `core/test/test_accumulator_bounds_16k.c` and its block in
+`core/test/meson.build`, the `--grid` option of `scripts/ci/exact_twin_matrix.py` and the 8K / 16K
+blocks of `docs/development/exact-twin-matrix.md`.
+
+- An upstream sync that changes an accumulator's type, its term or how many terms reach it
+  changes that row of the accumulator-bounds pages in the same PR.
+- A new exact twin needs an 8K row per backend and a 16K CPU row (`exact_twin_matrix.py --grid 8k`
+  / `--grid 16k --record`), or `test_exact_twin_matrix_contract` fails.
 
 ## MCP tool contract shared by both servers (2026-10-05)
 
@@ -21,6 +2523,13 @@ No rebase impact: both MCP servers are fork-only. Keep `mcp-server/vmaf-mcp/tool
 generated (`python3 -m vmaf_mcp.tool_contract --write`); on a conflict in it, take either side and
 regenerate. `cmd/vmafx-mcp/tool_contract_test.go` replaces the hand-copied lists that used to be in
 `server_test.go`; do not bring them back.
+## `vmaf --list-backends` and the score-backend selectors (2026-10-05)
+
+Fork-only: `core/tools/cli_backends.cpp` is new and `cli_parse.cpp` / `vmaf.cpp` / `cli_parse.h` gain the
+`--list-backends` option (`ARG_LIST_BACKENDS`, `CLISettings.list_backends`, the early return after the getopt
+loop, the branch in `vmaf_cli_main()`). On an upstream sync that touches these files keep all four; upstream
+has no such option. See `core/tools/AGENTS.d/list-backends.md`.
+
 ## v1-model test fixtures named by file (2026-10-05)
 
 No rebase impact: wording and fixture labels of a fork-only test.
@@ -274,6 +2783,20 @@ upstream counterpart.
   with the SPDX line and `black`.
 - On a sync: take Netflix's changes to the two classes into the helpers, not
   as a copy of the long methods.
+## Metal twins declared exact; 2026-10-05 hardware reports (2026-10-05)
+
+`docs/hardware-reports-lawrence-2026-10-05`. Report files, exact-twin fragments,
+gate tests and documentation; no library change.
+
+- `scripts/ci/exact_twins.d/*.metal` (18 files) declare the Metal twins the M4 Pro
+  report of 2026-10-05 measured exact. A sync must not drop them, and a Metal
+  twin that drifts from the CPU is fixed, never given a tolerance (ADR-1428).
+- `scripts/ci/test_cross_backend_parity_gate.py` no longer names `metal` as the
+  backend outside the gate (`_OFF_GATE_BACKEND = "off_gate"`) and picks its
+  held-exact Metal examples from the fragment set (`_metal_unlisted()`). Keep it
+  free of hard-coded fragment-free features or backends.
+- `docs/hardware-reports/2026-10-05-*.json` are the testers' files as submitted;
+  never reformat them: `report_sha256` covers their content.
 
 ## Port of Netflix/vmaf `6046b1926`: SpEED without `enable_float` (2026-10-05)
 
@@ -508,6 +3031,23 @@ a contract test and `test_cambi`.
   feature-name dictionary before `cambi_metal_resolve_dimensions()`. Never move
   it after any write to an option slot; the contract's `_name_order_failures`
   checks every Metal twin.
+## libvmaf and libvmaf_cuda print no score after an error (ADR-1768, 2026-10-05)
+
+`fix/ffmpeg-libvmaf-no-score-after-error`. New FFmpeg patch `0021`, test helpers under
+`ffmpeg-patches/test/`.
+
+- `0021` deliberately diverges from upstream FFmpeg's `vf_libvmaf.c`; keep it on every series
+  refresh and do not drop it when upstream moves the surrounding lines. `stop_on_frame()`
+  logs the frame and the error once, sets `stopped` (declared by `0005`) and frees the
+  frame; `do_vmaf()` and `do_vmaf_cuda()` call it on every failed copy and read, and
+  `frame_cnt` advances only after a successful read. The shared `uninit()` prints no pooled
+  score after a stop or a failed flush, and no score line for a failed model. If upstream
+  rewrites these functions, carry the rule into the new code; do not take upstream's side.
+- `ffmpeg-patches/test/fault_inject_sycl_import.c` became `fault_inject_libvmaf.c` (it now
+  also injects `vmaf_read_pictures()` failures); both checks source `filter_check_lib.sh`.
+- `core/test/test_ffmpeg_libvmaf_stop_contract.py` reads the series;
+  `ffmpeg-patches/test/check-libvmaf-no-score-after-error.sh` is the device run.
+
 ## libvmaf_sycl import retry, per-input VA display (ADR-1761, 2026-10-05)
 
 `fix/ffmpeg-sycl-import-retry`. FFmpeg patch `0005` and a device test under `ffmpeg-patches/test/`.
@@ -522,7 +3062,7 @@ a contract test and `test_cambi`.
   `frame_cnt` only after a read succeeded; `uninit_metal()` prints no pooled score when it
   is set. A refresh keeps both; the other later patches moved by offsets only.
 - `core/test/test_sycl_filter_import_contract.py` reads the patch;
-  `ffmpeg-patches/test/check-sycl-import-retry.sh` with `fault_inject_sycl_import.c`
+  `ffmpeg-patches/test/check-sycl-import-retry.sh` with `fault_inject_libvmaf.c`
   (LD_PRELOAD) is the device run.
 
 ## Tester selectors follow their own paths; nightly tester image (ADR-1700, ADR-1701, 2026-10-05)
@@ -556,6 +3096,16 @@ positive operands) and must not replace the fp32 correction with an integer
 division: that costs 80 registers in `adm_cm_line_kernel_8` and fails
 `test_cuda_adm_cm_register_pressure`. `core/test/test_adm_decouple_recip.cpp`
 (one executable per twin header) fails on the old form without a device.
+## The tidy coverage check (RC3 exit, 2026-10-05)
+
+`rc3-tidy-coverage-2`. Tooling only. `scripts/ci/check-tidy-coverage.py`, its hooks in
+`.pre-commit-config.yaml` and `.config/lint-exceptions.d/clang-tidy-coverage.toml` belong
+together; a sync that adds a `.c` / `.cpp` / `.mm` / `.cu` / `.hip` file lands it in a lane
+(`scripts/dev/tidy-lane.sh --write --only <file> <lane>`) or adds one entry there. The
+Pelorus mirror entries mirror `scripts/ci/pelorus-mirror-paths.txt`
+(`test_check_tidy_coverage.py` compares them). `write-compile-commands.py` keeps its
+`OPTIONAL_COMPILER_RULES`: without them the macOS lane loses every `.mm`.
+
 ## Every translation unit is read by a tidy lane (RC3 exit, 2026-10-05)
 
 `rc3-tidy-coverage`. Tooling only; no library change.
@@ -610,6 +3160,118 @@ division: that costs 80 registers in `adm_cm_line_kernel_8` and fails
   restamped for the `pyproject.toml` header lines.
 - `dev/Containerfile`: the licences label sits on `libvmaf-build` (derived from
   the files it copies); `build-deps` and `release-build` carry none.
+## vmaf_sycl_upload_plane waits for its copy (2026-10-05)
+
+`fix/sycl-upload-plane-fence`. SYCL runtime, one public-header comment.
+
+- `core/src/sycl/common.cpp::vmaf_sycl_upload_plane()` calls `sycl_fence_slot_readers()` and
+  waits for the last copy event before it returns. A sync that restores the fire-and-forget
+  copy brings back wrong 4K scores on the zero-copy and D3D11 paths;
+  `test_sycl_zero_copy_model_gate` (`test_upload_plane_orders_compute`) fails on it.
+- The file's four `getenv()` calls read through `vmaf_gpu_dispatch_env_get()` (ADR-0488),
+  which keeps `common.cpp` at zero clang-tidy findings.
+## Hip-lane clang-tidy debt, batch 3: CAMBI, CIEDE, MS-SSIM, SpEED and the HIP test sources (ADR-1142, 2026-10-05)
+
+`refactor/tidy-zero-hip-3`. Lint refactor, no behaviour change.
+
+- `cambi_hip_device.h`, `ms_ssim_arith.h`, `speed_hip_device.h` and
+  `core/test/hip_float_adm_math_sample.h` are included by C translation units:
+  they keep `struct X {...};` with a C-only `typedef` and C++-only includes behind
+  `__cplusplus`. `speed_hd_block_statistics()` zeroes its array with `= {0.0f}`,
+  not a range-for.
+- `test_hip_cambi_device_math.c` splits the registered-extractor check into
+  `reference_score()` and `extractor_score()`; every assertion is kept.
+- `test_sycl_fp_arith_contract.c` computes `prod` / `prod_root` only inside
+  `#if FP_ARITH_HAS_PROD_ROOT`.
+
+## Hip-lane clang-tidy debt, batch 2: ADM, moment, motion, PSNR and SSIM kernels (ADR-1142, 2026-10-05)
+
+`refactor/tidy-zero-hip-2`. Lint refactor, no behaviour change.
+
+- `core/test/test_hip_float_psnr_exact_contract.py` matches `>> 16u` / `<< 16u`
+  in `float_psnr_score.hip`; the pinned property is unchanged.
+- `adm_dwt2.hip` forms every signed arithmetic shift through `adm_dwt_asr()`
+  (one cited NOLINT, ADR-1423); `float_adm_score.hip` takes device addresses
+  through `fadm_device_ptr<T>()` (one cited NOLINT, ADR-1458). A sync that
+  inlines either brings the findings back.
+- `float_motion_rows.h` and `ssim_decimate.h` stay valid C (C++-only includes
+  behind `__cplusplus`, `struct X` plus a C-only `typedef`); `motion_v2_score.hip`
+  keeps two cited signed-shift NOLINTs (ADR-0138, ADR-0139).
+
+## Hip-lane clang-tidy debt, batch 1: VIF, SSIMULACRA 2, PSNR-HVS and the shared GPU headers (ADR-1142, 2026-10-05)
+
+`refactor/tidy-zero-hip-1`. Lint refactor, no behaviour change.
+
+- `VifBufferHip.ref` and `.dis` in `core/src/feature/hip/integer_vif_hip.h` are
+  `uint16_t *`, assigned in `vif_hip_layout_planes()`; the kernels no longer cast an
+  integer to a pointer. A sync that restores `uintptr_t` fields brings back
+  `performance-no-int-to-ptr` in `vif_statistics.hip`.
+- `core/test/test_hip_ssimulacra2_exact_contract.py` matches the kernel's
+  `kChunkPixels` / `state.sum` spellings; the properties it pins (raster order
+  within a chunk, lane order, pixel-order fallback) are the same.
+- `core/src/feature/ordered_sum.h` has `vmaf_ordsum_is_odd()` in place of `x & 1` on a
+  signed value; `adm_angle_flag.h`, `float_adm_gpu_common.h` and
+  `float_vif_gpu_common.h` use unsigned shift counts and `struct X {...};` with a C-only
+  `typedef` (the CUDA, SYCL, Metal and C hosts include them). Keep both forms on a
+  rebase.
+## rc.3 is cut without outside-hardware reports (ADR-1707, 2026-10-05)
+
+`docs/rc3-exit-without-outside-hardware`. no rebase impact: docs only (ADR, ledger disposition, changelog fragment).
+## CUDA lane clang-tidy cleanup (ADR-1142, 2026-10-05)
+
+`refactor/tidy-zero-cuda-1`. Lint refactor of CUDA kernels; no behaviour change
+(scores identical, sm_89 SASS identical or differing by commutative operand order).
+
+- `core/src/cuda/cuda_device_ptr.cuh` is new: `VMAF_CUDA_DPTR(T, address)` replaces
+  `reinterpret_cast` of a `CUdeviceptr`. It is a macro because an inline function
+  loses `ld.global.nc` loads. An upstream sync that brings a kernel with a
+  `reinterpret_cast<T *>(a.field)` converts it.
+- No designated initializers in `.cu` / `.cuh` (nvcc MSVC host frontend,
+  `preflight.sh --stage msvcism`): aggregates are filled field by field.
+- `integer_vif/vif_statistics.cuh`: `vif_statistic_calculation()` is split into
+  `vif_sigmas()`, `vif_gain()`, `vif_accumulate_log()` and `vif_statistic_pixel()`
+  and loses its unused `h` parameter; `filter1d.cu` follows. A Netflix change to the
+  statistic is ported into the helpers.
+- Source-text contract tests (`test_cuda_*_contract.py`, `test_integer_vif_sv_sq_contract.py`)
+  follow the new spelling; their assertions are unchanged.
+## RC4 Rust extractor framework (ADR-1713, 2026-10-05)
+
+`rc4/rust-extractor-framework` (draft, label `rc4`, lands after the
+`v1.0.0-rc.3` tag). Build system, registry, libvmaf registration paths, Rust
+workspace, CI. No score changes; the C extractors stay the default.
+
+- `core/src/meson.build`: `is_rust_enabled` and `cdata.set10('HAVE_RUST_FEATURES', ...)`
+  sit directly above `config_h_target`; the old TAD block
+  (`rust_tad_dep`, `rust_tad_direct_sources`, `HAVE_RUST_TAD`) is replaced by
+  `rust_core_dep` / `rust_shim_sources`. A sync that brings back the TAD block
+  or a `HAVE_RUST_TAD` define reintroduces the unregistered-TAD defect.
+- `core/src/feature/feature_extractor.cpp`: every registry walk goes through
+  `registry_at()`; the `HAVE_RUST_TAD` extern and list entry are gone.
+  `vmaf_get_feature_extractor_by_feature_name()` is split into
+  `first_pass_eligible()` / `fallback_eligible()` / `provides_feature()`; an
+  upstream change to that lookup is re-applied on the helpers, keeping the
+  Rust-twin skip. `device_twin_flags` includes `VMAF_FEATURE_EXTRACTOR_RUST`.
+- `core/src/feature/feature_extractor.h`: flag `VMAF_FEATURE_EXTRACTOR_RUST =
+  1 << 8` and three functions (`vmaf_feature_extractor_install_rust_registry`,
+  `vmaf_feature_extractor_impl_select`, `vmaf_feature_impl_rust_requested`).
+  An upstream flag at bit 8 must move, not this one.
+- `core/src/libvmaf.c`: `vmaf_rust_twins_install()` before the registry audit
+  in `vmaf_ctx_subsystems_init()`, and `vmaf_feature_extractor_impl_select()`
+  in `vmaf_use_feature()`, `vmaf_use_features_from_model()` and
+  `create_context_fallback()`. Keep all four on a conflict.
+- `core/src/feature/tad_rust.c` is gated on `HAVE_RUST_FEATURES`; the TAD crate
+  is an rlib without `build.rs`.
+- Two Cargo workspaces: the root one (bindings) `exclude`s `core/src/rust` and
+  `core/src/feature/rust/tad`; `core/src/rust/Cargo.toml` holds the
+  libvmaf-linked crates and the TAD crate (`package.workspace`). A sync that
+  adds those crates back to the root members breaks the offline build.
+  `rust-ci.yml` lost the "Rebuild vmafx-tad after a source edit" step with
+  TAD's `build.rs` (the code it guarded is gone) and gained the
+  empty-CARGO_HOME offline build.
+- Generated files: `core/src/rust/include/vmafx_rs.h` (take either side, run
+  `scripts/dev/rust-abi-header.sh`). Lockfiles: take master's side, then
+  `cargo metadata --offline --format-version 1` in the affected workspace
+  re-adds its members; no version may move.
 
 ## Post-1.0 embedding milestone is an ADR and a roadmap row (ADR-1685, 2026-10-05)
 
@@ -698,6 +3360,18 @@ no library change.
   `vmaf_read_pictures_sycl()` accepted the frame and maps `-ENOTSUP` to a message;
   `uninit_sycl()` prints no score line after a failed pooled score. Later patches moved by
   offsets only.
+## Master push runs are not cancelled by concurrency (ADR-1673, 2026-10-05)
+
+`ci/master-runs-not-cancelled-by-concurrency`. Workflows only; no C change.
+
+- Every push-to-master workflow's concurrency group is
+  `... ${{ github.ref == 'refs/heads/master' && github.sha || github.ref }}` with
+  `cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}`. An upstream or
+  rebase conflict in a `concurrency:` block keeps this form. The serialising
+  blocks (`dev-container-publish.yml`, `release-please.yml`, `scorecard.yml`,
+  `docs.yml` deploy) stay as they were. `scripts/ci/tests/test_master_concurrency_contract.py`
+  and `scripts/ci/test_security_workflow_contract.py` guard it; add a new
+  push-to-master workflow in the same form.
 
 ## The node's eBPF object is generated at build time (ADR-1622, 2026-10-05)
 
@@ -3159,7 +5833,7 @@ fork's tree already carries these fixes.
   Requesting the 256-entry register file completely eliminates the 768 B spill (`spill_size: 0`, `private_size: 0`).
 - `core/src/feature/sycl/sycl_compat.h`: `VmafSyclKernelShape<SG, GRF>` (ADR-1395) already landed on master via PR #1660.
 - `core/src/sycl/scratch_ratchet.txt` and `core/src/sycl/scratch_check.cpp`: removed `motion_sycl` and `motion_v2_sycl` now that `submit_sad<int64_t>` is scratch-free.
-- Verified on Arc A380 (`ryzen-4090-arc`) under `xe`: `test_sycl_motion_tiny_frames` passes (8, 10,
+- Verified on Arc A380 (a reference workstation) under `xe`: `test_sycl_motion_tiny_frames` passes (8, 10,
   and 16-bit across all 9 geometries, bit-for-bit exact vs scalar CPU), `test_sycl_motion3_parity`,
   `test_sycl_motion_add_uv_parity`, `test_sycl_motion_v2_parity` pass, and 50 frames of 16-bit 4K BBB
   match the CPU reference bit-for-bit (max abs diff 0.0).
@@ -3265,7 +5939,7 @@ fork's tree already carries these fixes.
 ## chore/rc3-home-gpu-retest — RC3 home GPU retest kit (ADR-1386) (2026-09-30)
 
 - `scripts/dev/rc3-home-gpu-retest.sh` and `scripts/dev/rc3_retest_helpers.py`: fork-only
-  harness. Runs verify-and-time commands for open RC3 `docs/state.md` rows on `ryzen-4090-arc`
+  harness. Runs verify-and-time commands for open RC3 `docs/state.md` rows on a reference workstation
   under per-device locks (`~/.cache/vmafx-locks/{cuda-4090,sycl-a380,hip-gfx1036}.lock`).
   Commands are explicitly encoded per row and backend, never parsed at run time.
 - `scripts/dev/tests/test_rc3_home_gpu_retest.py` validates argument handling, lock isolation,
@@ -3324,7 +5998,7 @@ fork's tree already carries these fixes.
   corrupted values (~20 dB drift at 4K).
 - Verified with `ocloc` inspecting `.ze_info` across `dg2-g11` (Arc A380, SIMD16),
   `adl-s` (UHD 770, SIMD8), and `bmg-g21` (Arc B580, SIMD16).
-- Verified parity on physical Arc A380 (`ryzen-4090-arc`) under `xe`:
+- Verified parity on physical Arc A380 (a reference workstation) under `xe`:
   576x324 Netflix pair within 8.37e-5 dB (gate 5e-4), 1080p within 1.71e-3 dB,
   4K BBB (22 frames) frame 0 `psnr_hvs_y` 33.161817 dB (CPU 33.171624 dB, delta 0.0098 dB).
   4K BBB `(t(22) - t(2)) / 20` throughput: 12.55 ms/frame (corrupted) -> 10.90 ms/frame (correct).
@@ -7187,7 +9861,7 @@ no rebase impact: fork-only test wiring in `core/test/meson.build` and documenta
 ## ci/sycl-arc-self-hosted-runner — containerised self-hosted GitHub Actions runner for Intel Arc SYCL CI (ADR-1177) (2026-09-04)
 
 - `dev/Containerfile.runner`: fork-added; derives from `vmaf-dev-mcp:local` with GitHub Actions runner v2.337.0 and non-root `runner` user (uid 1001). Preserves all oneAPI SYCL tools and Level-Zero runtime. No upstream counterpart.
-- `dev/docker-compose.runner.yml`: fork-added compose file passing through only the Intel Arc A380 render node (`${ARC_RENDER_NODE:-/dev/dri/renderD129}`, by-path `pci-0000:03:00.0-render`) with NVIDIA and AMD device isolation, `seccomp=unconfined`, and 8 CPU / 16 GB limits.
+- `dev/docker-compose.runner.yml`: fork-added compose file passing through only the Intel Arc A380 render node (`${ARC_RENDER_NODE:-/dev/dri/renderD129}`, by-path `pci-<arc-bdf>-render`) with NVIDIA and AMD device isolation, `seccomp=unconfined`, and 8 CPU / 16 GB limits.
 - `dev/scripts/runner-entrypoint.sh`: fork-added runner entrypoint handling token configuration and ephemeral execution.
 - `.github/workflows/sycl-parity.yml`: fork-added workflow; runs on `[self-hosted, linux, x64, sycl-arc]`. Strictly prohibits execution on untrusted forks (`github.event.pull_request.head.repo.full_name == github.repository`).
 - `.github/workflows/required-aggregator.yml`: added `SYCL Parity (Arc A380)` to the `required` array; the check is switched by `vars.SYCL_ARC_RUNNER_ENABLED` (absence/skip accepted while disabled; skip = loud failure while enabled). No runner API call in the aggregator.
@@ -15986,12 +18660,12 @@ than per-PR. Future PRs add entries individually.
   install for SDK consumers is PR #175.
 - **Touches** (additive only): `docs/benchmarks.md` (every `TBD`
   cell replaced with measured numbers; hardware-profile table updated
-  to the `ryzen-4090-arc` host the rerun was performed on; "How to
+  to the reference workstation the rerun was performed on; "How to
   reproduce" section now documents fixture acquisition for the
   gitignored BBB 4K 200-frame pair). `CHANGELOG.md` Unreleased §
   Changed entry.
 - **Invariants** (rebase-relevant): none. The numbers are tied to
-  fork commit `41301496` and the `ryzen-4090-arc` profile; an
+  fork commit `41301496` and the reference workstation profile; an
   upstream rebase that changes feature pipelines would invalidate
   the table but not break parsing.
 - **On upstream sync**: zero interaction. Pure docs.
@@ -26628,12 +29302,12 @@ than per-PR. Future PRs add entries individually.
   install for SDK consumers is PR #175.
 - **Touches** (additive only): `docs/benchmarks.md` (every `TBD`
   cell replaced with measured numbers; hardware-profile table updated
-  to the `ryzen-4090-arc` host the rerun was performed on; "How to
+  to the reference workstation the rerun was performed on; "How to
   reproduce" section now documents fixture acquisition for the
   gitignored BBB 4K 200-frame pair). `CHANGELOG.md` Unreleased §
   Changed entry.
 - **Invariants** (rebase-relevant): none. The numbers are tied to
-  fork commit `41301496` and the `ryzen-4090-arc` profile; an
+  fork commit `41301496` and the reference workstation profile; an
   upstream rebase that changes feature pipelines would invalidate
   the table but not break parsing.
 - **On upstream sync**: zero interaction. Pure docs.
@@ -37075,12 +39749,12 @@ than per-PR. Future PRs add entries individually.
   install for SDK consumers is PR #175.
 - **Touches** (additive only): `docs/benchmarks.md` (every `TBD`
   cell replaced with measured numbers; hardware-profile table updated
-  to the `ryzen-4090-arc` host the rerun was performed on; "How to
+  to the reference workstation the rerun was performed on; "How to
   reproduce" section now documents fixture acquisition for the
   gitignored BBB 4K 200-frame pair). `CHANGELOG.md` Unreleased §
   Changed entry.
 - **Invariants** (rebase-relevant): none. The numbers are tied to
-  fork commit `41301496` and the `ryzen-4090-arc` profile; an
+  fork commit `41301496` and the reference workstation profile; an
   upstream rebase that changes feature pipelines would invalidate
   the table but not break parsing.
 - **On upstream sync**: zero interaction. Pure docs.
@@ -58896,7 +61570,7 @@ are bit-identical (the `cambi.c` changes move code into functions). CUDA CAMBI
 scores move to the CPU's (bit-identical except where the CPU's double top-K
 sum rounds); CUDA SpEED scores move from within 1e-4 of the CPU to
 bit-identical with a CPU build that rounds `log2f` correctly and does not
-fuse multiply-adds. Measured on an RTX 4090 (`ryzen-4090-arc`) against an
+fuse multiply-adds. Measured on an RTX 4090 (a reference workstation) against an
 icx build: every CAMBI and SpEED frame of the Netflix 576x324 pair and of
 BBB 3840x2160 identical to `--backend cpu`; compute-sanitizer memcheck,
 racecheck and synccheck clean on the parity tests; one readback and one
@@ -59082,7 +61756,7 @@ No public C API, CLI syntax, option table or FFmpeg patch impact. CPU scores
 are unchanged (no CPU extractor code is touched). `psnr_hvs_cuda` scores move
 to the CPU's: by up to 8.4e-5 dB on the Netflix 576x324 pair and 1.7e-2 dB at
 3840x2160. `psnr_hvs_hip`, `psnr_hvs_sycl` and the Metal twin are untouched
-and still sum per block. Measured on an RTX 4090 (`zeus`): every frame of the
+and still sum per block. Measured on an RTX 4090 (a reference workstation): every frame of the
 Netflix 576x324 pairs (8, 10, 12 bits, 4:2:2), the 1920x1080 checkerboard
 pairs and BBB 1920x1080 / 3840x2160 (8 and 10 bits) equals `--backend cpu` at
 `--precision max`. Re-verify after a rebase that touches these files with the
@@ -59325,7 +61999,7 @@ No public C API, CLI syntax, option table or FFmpeg patch impact. CPU scores
 are unchanged (no CPU extractor code is touched). `psnr_hvs_sycl` and
 `psnr_hvs_hip` scores move to the CPU's: by up to 8.4e-5 dB on the Netflix
 576x324 pair and 1.7e-2 dB at 3840x2160. The Metal twin is untouched and still
-sums per block. Measured on an Arc A380 (`xe` driver) and a gfx1036 (`zeus`):
+sums per block. Measured on an Arc A380 (`xe` driver) and a gfx1036 (a reference workstation):
 every frame of the Netflix 576x324 pairs (8, 10, 12 bits, 4:2:2), the 1920x1080
 checkerboard pairs and BBB 1920x1080 / 3840x2160 (8 and 10 bits) equals
 `--backend cpu` of the same binary at `--precision max`. Re-verify after a
@@ -61883,6 +64557,273 @@ No score, public API or FFmpeg patch impact.
   `api/openapi/vmafx-server-v1.yaml` changes (header kept, see
   `gen/go/AGENTS.md`); `TestEmbeddedSpecMatchesContract` fails otherwise. No
   score, public C API or FFmpeg patch impact.
+## ROCm 10.1.0 and the Renovate base-image coverage
+
+- ROCm installs under `/opt/rocm/core-10.1`: `dev/Containerfile` (`rocm-src` stage) and
+  `docker/Dockerfile.node` name that directory, and `tools/rc1-tester/image/hip-runtime.json`
+  names the LLVM 24 sonames. A conflict there takes the side that matches `ROCM_VERSION` in
+  `build-config.env`. The prune lists of the `rocm-src` stage and of
+  `scripts/ci/install-rocm-from-image.sh` stay one list (RPP joined both).
+- `scripts/ci/clang-tidy-hip.sh` passes `--extra-arg=--cuda-host-only` for `.hip` files: ROCm
+  10.1.0's clang-tidy otherwise analyses the device job and the hip lane's counts move. Keep
+  the flag when the wrapper or the hip lane's Makefile recipe changes.
+- `renovate.json` selects `docker/Dockerfile.tester` in the base-image custom manager and in
+  the built-in manager's disable rule; `scripts/ci/tests/test_renovate_file_patterns.py`
+  derives that set from the tree, so a sync that adds a Dockerfile mirroring a
+  `build-config.env` image key adds it to both lists. No score, public API or FFmpeg patch
+  impact.
+## black and ruff read every Python file
+
+- The `black` and `ruff-check` hooks of `.pre-commit-config.yaml` have no `files:` filter; their
+  `exclude` regexes are exactly the files of `.config/lint-exceptions.d/{black,ruff}.toml`, which
+  `pyproject.toml`'s `extend-exclude` repeats (`scripts/ci/tests/test_python_format_scope.py`).
+  A rebase that adds an exception edits the three together. An upstream Netflix sync of
+  `compat/python-vmaf/resource/*.py` formats the incoming file with black before committing
+  (the 30 files here were reformatted; a conflict takes the incoming side and re-runs black).
+  `core/test/test_*_contract.py` files carry named constants for the counts they assert; a change
+  to a counted construct changes the constant. No score, public API or FFmpeg patch impact.
+
+## torch only in the training packages (ADR-1886)
+
+- `vmaftune.predictor_train` is now `ai/src/vmaf_train/predictor_train.py`, with its tests in
+  `ai/tests/`; an upstream-independent fork file, so no Netflix sync touches it. A change that
+  re-adds the module to vmaf-tune, or torch to any pyproject outside `ai/` and
+  `tools/ensemble-training-kit/`, fails `scripts/ci/check-torch-scope.py`.
+- `mcp-server/vmaf-mcp/src/vmaf_mcp/vlm.py` is the only VLM path of `describe_worst_frames`
+  (ONNX Runtime GenAI, local `VMAF_MCP_VLM_MODEL`); keep the `vlm` extra free of torch and
+  transformers. The `vmaf-tune-train` test suite is removed from `.github/test-suites.json` and
+  `tests-and-quality-gates.yml`; a conflict there takes the side without it. No score, public C
+  API or FFmpeg patch impact.
+
+## A feature score of a picture read waits for the worker threads (2026-10-06)
+
+`fix/feature-score-fed-frame-einval` (T-ENGINE-READ-FED-FRAME-EINVAL-2026-10-06).
+
+- `core/src/libvmaf.c::vmaf_feature_score_at_index()` fences on `-EINVAL` as
+  well as `-EAGAIN` when the index is at most the last picture read
+  (`have_last_index` / `last_index`). Upstream Netflix/vmaf returns the
+  collector's answer with no fence; an upstream sync that touches this
+  function keeps the fork's body. On the RC4 branches the body lives in
+  `vmaf_engine_feature_score_at_index()` with the same condition
+  (`rc4/api-motion-incremental`); a merge keeps one copy of it.
+- New test `core/test/test_feature_score_fed_frame.c` and its block in
+  `core/test/meson.build`. No score or golden impact: a call that returned a
+  score before returns the same score; only `-EINVAL` for a picture still with
+  a worker becomes that picture's score.
+
+## A model collection's per-frame score reads its stored values first
+
+`fix/model-set-score-idempotent` (T-MODEL-SET-SCORE-NOT-IDEMPOTENT-2026-10-05).
+
+- `core/src/libvmaf.c` gains `read_predicted_collection_score()`, which
+  `vmaf_score_at_index_model_collection()` calls before
+  `vmaf_predict_score_at_index_model_collection()`: a frame whose four named
+  bootstrap scores are already in the collector returns them. Upstream
+  Netflix/vmaf predicts every time and has the same failure; an upstream
+  sync that touches this function keeps the read.
+- New test `core/test/test_model_collection_score_repeat.c` and its block in
+  `core/test/meson.build`. No score or golden impact: a first prediction is
+  unchanged and a repeat returns its stored values.
+## Pelorus re-vendor at the tidy-clean commit (RC3 exit, 2026-10-05)
+
+`rc3-revendor-pelorus-2`. `PELORUS_VENDOR_SHA` moves to `5f5614b0229d` (VMAFx/pelorus #78). The ten
+vendored files are rendered by `scripts/sync-pelorus-interop.sh --update`, never edited by hand; a rebase
+that conflicts in them takes either side and re-runs the script, then the drift check.
+## govulncheck gate and the Go OpenVEX document (ADR-1899)
+
+- `scripts/ci/govulncheck-gate.py` runs in `go-ci.yml` after `go vet`; `GOVULNCHECK_VERSION` lives
+  in `build-config.env` with its Renovate manager. A finding that is not called needs a
+  statement in `security/vex/go.openvex.json`; a "not present" justification covers module-level
+  findings only. No upstream file is involved; no score, public API or FFmpeg patch impact.
+## The process log level is atomic
+
+`fix/log-level-atomic` (T-LOG-LEVEL-GLOBAL-DATA-RACE-2026-10-06).
+
+- `core/src/log.cpp` keeps `vmaf_log_level` and `istty` as `std::atomic<int>`:
+  `vmaf_set_log_level()` stores them relaxed, `vmaf_log()` loads them relaxed
+  (the tty flag once per line, into `tty`). An upstream change to the logger
+  keeps the atomics; upstream's plain globals race as soon as two threads
+  create contexts or one logs while another creates one. `core/src/log.c` is
+  not built (ADR-0708) and is unchanged.
+- New test `core/test/test_log_level_threads.c` and its block in
+  `core/test/meson.build`. No score, output or golden impact.
+
+## golusoris modules composed in bootstrap (ADR-1899)
+
+- `internal/app/bootstrap/bootstrap.go` defines `Core` (config, log, clock, id, validate) and
+  `HTTP` (router, server); `Base` uses `Core`, and `cmd/vmafx-server` / `cmd/vmafx-controller`
+  take `bootstrap.HTTP`. No vmafx file imports the golusoris root package: it imports every
+  golusoris module and brought `x/crypto/md4`, `x/crypto/argon2` and 59 otherwise unused
+  modules into the build. A conflict in `go.mod` / `go.sum` takes this side and reruns
+  `go mod tidy`. No upstream file is involved; no score, public API or FFmpeg patch impact.
+- **HISS native batch 1 (`refactor/hiss-zero-native-1`)**: `niqe_extract_aggd()` in
+  `core/src/feature/niqe_math.h` is now `niqe_aggd_moments()`,
+  `niqe_aggd_gamma_index()` and a short tail. An upstream or fork change to the
+  AGGD fit edits the helper that holds the changed line; the float operations and
+  their order are fixed by the NIQE snapshot. No score, public API or FFmpeg patch
+  impact.
+## The Metal host code at zero clang-tidy findings (RC3 exit, 2026-10-06)
+
+`rc3-tidy-metal-zero`. `core/src/metal/objc_handle.h` (the `vmaf_metal::borrow<>()` / `retain_to_slot()` /
+`transfer()` bridges and `vmaf_metal_library_load()`, implemented in `kernel_template.mm`) is the only place
+a handle slot becomes a Metal object or the embedded metallib is read: a Metal twin that comes from upstream or
+from another branch with its own `libvmaf_metallib_start` / `(__bridge ...)(void *)slot` code takes the helper
+instead. The `.mm` files keep their file-scope helpers and types in anonymous namespaces. The `metal` lane
+reads only `.mm` / `.c` units and `objc_handle.h` (`--header-filter` in `tidy-metal.yml`); the other headers
+are the `cpu` lane's, read as C. A rebase takes master's side of a conflicting `.mm` hunk and re-runs the
+`Tidy Metal` workflow with `fix=true`; `tidy-baseline-metal.json` is generated.
+
+## `vmaf_cuda_picture_get_pix_fmt()` is a fork accessor (PR #1118)
+
+`vmaf_cuda_picture_get_pix_fmt()` (`core/src/cuda/picture_cuda.h`, defined in
+`picture_cuda.c` as `return pic->pix_fmt;`) sits next to
+`vmaf_cuda_picture_get_stream()` and the event accessors. The PR #1067 refactor
+dropped both the definition and the declaration, which broke the link of any CUDA
+extractor that calls it; PR #1118 restored them. Upstream Netflix has no such
+function, so a sync or a rebase of a branch that predates #1118 takes the fork's
+side of both hunks and keeps the accessor. No score, public API or FFmpeg patch
+impact.
+## `float_adm` debug key and `unsuffixed_debug_key` (ADR-2056)
+
+`VmafFeatureExtractor` gains `unsuffixed_debug_key`; `float_adm.c` and the four twins set it to
+`adm`, and the twins list `adm_scale0` where they listed `adm`. `float_adm.c` is a Netflix file:
+the fork adds one line to its extractor table. A sync keeps that line and the
+`refuse_debug_key_collision()` call in `core/src/fex_ctx_vector.cpp`. No score, public API or FFmpeg
+patch impact.
+## x86 AVX2 level requires FMA (ADR-2055)
+
+`core/src/x86/cpu.c` is dav1d's CPU probe with one fork change: the AVX2 flag is set only when
+CPUID leaf 1 ECX bit 12 (FMA) is set as well as BMI1, BMI2 and AVX2, because two AVX2 kernels are
+built with `-mfma`. A sync that takes upstream's `cpu.c` keeps the `has_fma` test before the leaf 7
+read. `core/test/test_x86_cpu_gate.c` compiles the file with a mock CPUID and fails without it.
+No score, public API or FFmpeg patch impact.
+## MATLAB MEX sources are linted and edited (ADR-2062)
+
+The ten MEX sources of `compat/python-vmaf/matlab/` are Netflix training-harness files that the fork now
+edits for lint (braces, `static`, `const`, includes) and one defect (`ical_std.c` destroyed the data
+pointer of a matrix instead of the `mxArray`). An upstream sync takes upstream's text and re-applies
+`clang-tidy -fix` through `make tidy-ratchet LANE=cpu`. `edges-orig.c` also gets `FILTER` renamed to
+`REDUCE` (the name `convolve.h` defines). No score, public API or FFmpeg patch impact.
+
+## `float_ms_ssim_cuda` builds level 0 on the device (`fix/cuda-ms-ssim-device-level0`)
+
+`float_ms_ssim_cuda` converts level 0 of its pyramids on the device
+(`ms_ssim_picture_to_float` in `core/src/feature/cuda/integer_ms_ssim/ms_ssim_score.cu`)
+instead of copying each plane to pinned host memory, running `picture_copy()` there
+and uploading the floats (`T-CUDA-MS-SSIM-HOST-STAGING-2026-10-06`). An upstream sync of
+the MS-SSIM CUDA twin keeps the device conversion and must not bring back
+`h_input_uint`, the per-plane `h_ref` / `h_cmp` staging or the
+`#include "picture_copy.h"`; a conflict in `ms_ssim_stage_inputs()` takes this side.
+`test_cuda_float_ms_ssim_exact_contract.py` (device-free) and
+`test_cuda_float_ms_ssim_host_traffic` (on a device) fail on the host staging. No score,
+public API or FFmpeg patch impact.
+
+## `.gitattributes` pins the files praetorctl hashes to LF (`fix/gitattributes-praetor-hashed-lf`)
+
+`.gitattributes` holds a fork block of `eol=lf` rules above the praetor managed block: the
+archetypes `.standards.lock` pins, `.standards.*`, `AGENTS.md`, its six compiled targets, the
+persona sources under `.agents/` and their four projections
+(`T-WINDOWS-CRLF-PRAETOR-HASHED-FILES-2026-10-06`). Upstream's `.gitattributes` has none of these
+paths; a sync keeps the block where it is (the managed block must stay at the tail).
+`scripts/ci/tests/test_praetor_hashed_files_lf.py` fails when a rule is missing. No score, public
+API or FFmpeg patch impact.
+
+## nvcc on Windows uses the build's MSVC (`fix/nvcc-ccbin-build-msvc`)
+
+The Windows discovery block of `core/src/meson.build` (ported from the unmerged Netflix PR #1472, ADR-0150)
+now gives nvcc the build's own `cl.exe` when `cxx` is MSVC (`nvcc_build_msvc`, assigned just before the
+block), otherwise the newest toolset under the latest `vswhere` install, otherwise `cl` on `PATH`
+(`T-WINDOWS-NVCC-CCBIN-OLDEST-TOOLSET-2026-10-06`). Upstream master has no such block; a re-port keeps
+this order and `core/test/test_windows_cuda_compiler_discovery.py`. No score, public API or FFmpeg patch
+impact.
+
+## Option numbers parse in the C locale (`fix/numeric-options-c-locale`)
+
+`core/src/opt.cpp` `parse_double()`, `core/src/dict.cpp`
+`dict_normalize_numeric()` and `core/src/feature/feature_name.cpp`
+`format_double_c_locale()` read and write option numbers inside a thread C-locale
+scope (`vmaf_thread_locale_push_c()` / `_pop()`; `CLocaleScope` in `dict.cpp`)
+(`T-OPTION-NUMBERS-CALLER-LOCALE-2026-10-06`). Upstream's `opt.c`, `dict.c` and
+`feature_name.c` call `strtod()` and `snprintf("%g")` in the caller's locale; a sync that ports a change to
+either function keeps the scope. The test programs that compile `dict.cpp` or `opt.cpp`
+on their own (`test_dict`, `test_opt`, `test_feature`) link `thread_locale.cpp`.
+`test_locale_handling` fails when either scope is missing. No score, public API or
+FFmpeg patch impact.
+
+## The Windows hooks job copies origin refs into its scratch clone (`fix/windows-hooks-scratch-origin`)
+
+`.github/workflows/standards-gate.yml` `windows-hooks` runs the pre-commit hooks in a
+`git clone --shared` scratch copy and then fetches the checkout's
+`refs/remotes/origin/*` into it, because hooks such as `check-research-digest-ids`
+resolve `origin/master` and a pull-request checkout has no local `master`
+(`T-CI-WINDOWS-HOOKS-SCRATCH-NO-ORIGIN-MASTER-2026-10-07`). Keep the fetch if the
+step is reworked; `scripts/ci/tests/test_windows_hooks_scratch_origin.py` fails
+without it. No score, public API or build change.
+
+## The float extractors refuse depths they do not scale (`fix/refuse-unsupported-bit-depths`)
+
+`core/src/feature/feature_extractor.cpp` `refuse_unscaled_bpc()`, called first in
+`vmaf_feature_extractor_context_init()`, makes the `float_ssim`, `float_ms_ssim`,
+`float_adm`, `float_vif` and `float_motion` families (every backend's twin, matched
+by name prefix) return `-EINVAL` for `bpc` other than 8, 10, 12 and 16
+(`T-ODD-BIT-DEPTHS-SILENT-WRONG-FLOAT-SCORES-2026-10-07`): `picture_copy()` and the
+twins that mirror it scale 10, 12 and 16 bits only. When the odd-depth support of
+RC4 (#2378) lands, remove the families it fixes from the list in the same PR, with
+the twin matrix at those depths. `test_read_pictures_bpc` fails without the guard
+and checks that `psnr_hvs` still scores 9 and 11 bits. No score at 8, 10, 12 or
+16 bits changes.
+## The SYCL dma-buf import keeps the caller's descriptor (`fix/sycl-dmabuf-fd-ownership`)
+
+`core/src/sycl/dmabuf_import.cpp` gives Level Zero a private duplicate of the
+caller's descriptor (`driver_fd()` / `driver_fd_done()`), because compute
+runtime 26.35 closes the descriptor of a re-import. A rebase keeps the
+duplicate on every `zeMemAllocDevice()` import path; the RC4 integration
+branch carries the same change in `vmaf_sycl_dmabuf_import_queue()`.
+`core/test/test_sycl_dmabuf_fd_ownership.c` (GBM, Intel render node, skipped
+without them) guards it. No ABI, golden-data or FFmpeg patch impact.
+
+## `-qpfile` on libx264 through `quant_offsets` (`fix/x264-qpfile-quant-offsets`)
+
+RC4 WP15 ([ADR-2167](adr/2167-ffmpeg-x264-qpfile-quant-offsets.md)) changes the
+libx264 hunks of `ffmpeg-patches/0007-libvmaf-tune-qpfile-unified.patch`, adds
+`ffmpeg-patches/test/qpfile_check.py`, and makes `pkg/saliency` and
+`tools/vmaf-tune` pass `-qpfile` for libx264.
+
+Invariants a rebase keeps:
+
+- `libavcodec/libx264.c` has no `x264_param_parse(.., "qpfile", ..)`: libx264
+  has no such key. `X264_init()` loads the file with `ff_qpfile_load()` and
+  refuses `aq-mode=0` and a block grid other than the video's macroblock grid;
+  `setup_frame()` calls `setup_qpfile()` after the ROI side-data block, with
+  `qpf_frames` counting input frames; `X264_close()` frees the file. An upstream
+  change to `setup_roi()` or `setup_frame()` keeps the three.
+- `pkg/saliency.ExtraParamsFor("libx264")` and
+  `vmaftune.saliency.augment_extra_params_with_qpfile()` return `-qpfile`;
+  `-x264-params qpfile=` comes back only with a libx264 that has the key.
+
+No score or public C API impact.
+
+## Tool FFmpeg argv fixes (`fix/tune-ffmpeg-argv`)
+
+RC4 WP15: `pkg/ffencode`, `pkg/corpus`, `pkg/predictor`, `pkg/hdr` and
+`tools/vmaf-tune` (`encode.py`, `executor.py`, `hdr.py`, `predictor_features.py`)
+merge repeated encoder-parameter options, convert the shot start to seconds,
+and drop `-master_display` / `-max_cll` for `hevc_nvenc`; `pkg/hdr/testdata/python_hdr.json`
+is the Python dump the Go test replays and lost the two options. Invariants:
+see `docs/development/rebase-sensitive-invariants.md` ("Encoder-parameter
+options are merged"). No score or C API impact.
+## Cross-device parity report fails closed (2026-10-05)
+
+Fork-only: `ai/src/vmaf_train/cross_backend.py` (`CrossBackendReport.ok`, `unbound`), the new
+`scripts/ci/tiny_ai_cross_device_parity_gate.py` and its tests. Keep the empty-list guard in `ok` on a sync; no
+upstream file is involved and no score, public API or FFmpeg patch changes.
+## Mini retrain, stage runner and the `motion` metric alias (2026-10-05)
+
+Fork-only: `ai/src/aiutils/pipeline.py`, `mini_corpus.py`, `retrain_checks.py`, `ai/scripts/mini_retrain.py`,
+`ai/e2e/`, `.github/workflows/mini-retrain.yml` are new. `ai/data/feature_extractor.py` gains
+`_METRIC_KEY_ALIASES` and a branch in `_lookup()`; `ai/scripts/extract_full_features.py` gains
+`--assume-dims`. On an upstream sync that touches either file keep both additions. `.github/test-suites.json`
+gets a `mini-retrain` suite and the Makefile two targets; on a conflict keep both sides.
 ## VMAFx API prototype: four libvmaf entry points become generated shims
 
 `rc4/api-generation-prototype`, [ADR-1852](adr/1852-vmafx-api-redesign.md).
@@ -61922,6 +64863,18 @@ No score, public API or FFmpeg patch impact.
   list) and judges `vmafx_` exports by it, not by the header regex.
 - No score, FFmpeg patch or `libvmaf.h` impact.
 
+## Tester legs build where their inputs change; the cut checks them (2026-10-07, ADR-2198)
+
+Fork-only CI: `windows_tester_zip_sycl` in `.github/ci-impact.json`, `own_input_lanes` in `.github/ci-tier.json`
+(read by `scripts/ci/ci_tier.py`), the `light` gate of `windows-tester-bundle.yml`, `run-name` on the three tester
+workflows and `scripts/release/check-candidate-legs.py`. Keep the lane's `impact` and gate on `outputs.light` and the
+SYCL selector a superset of the x64 one on a sync. No upstream file, score, public API or FFmpeg patch is involved.
+## Pelorus re-vendor at the `_wfsopen` commit (2026-10-07)
+
+`refactor/pelorus-revendor-wfsopen`, [ADR-1113](adr/1113-vendor-pelorus-interop-abi.md). `PELORUS_VENDOR_SHA` moves to `4aae30711c65`
+(VMAFx/pelorus #89). The second local edit of `core/src/interop/pelorus_qp_report_csv.c` (`_wfsopen`, added by `fix/msvc-zero-warnings-crt`)
+is now pelorus's own code, so the mirror carries only the banner and the include rewrite again and
+`scripts/sync-pelorus-interop.sh` reports no drift. A sync takes pelorus's side of every vendored file. no upstream file.
 ## VMAFx core API: engine entry points, per-thread log sink, shared picture helpers
 
 `rc4/api-wp2-core`, [ADR-1852](adr/1852-vmafx-api-redesign.md),
@@ -61979,173 +64932,18 @@ No score, public API or FFmpeg patch impact.
 - No score impact (`test_vmafx_bitexact` compares every score with the
   `libvmaf.h` path; golden gate green), no FFmpeg patch impact; libvmaf return
   values are unchanged.
+## Pelorus re-vendor at the fixture `_fsopen` commit (2026-10-07)
 
-## VMAFx device frames on HIP (RC4 WP3 HIP lane)
+`refactor/pelorus-revendor-fsopen-fixture`, [ADR-1113](adr/1113-vendor-pelorus-interop-abi.md). `PELORUS_VENDOR_SHA` moves to
+`11e183ec0aed` (VMAFx/pelorus #91): the conformance fixture body of `core/test/test_pelorus_interop.c` opens its files for reading through
+`fixture_open_read()` (`_fsopen` on Windows). Rendered by `scripts/sync-pelorus-interop.sh --update`; a sync takes pelorus's side and re-runs the
+script, then the drift check. no upstream file.
+## icx-cl: the CRT's deprecated calls (2026-10-07)
 
-`rc4/api-wp3-hip`, [ADR-2092](adr/2092-vmafx-hip-device-frames.md),
-[ADR-2023](adr/2023-vmafx-cuda-device-frames.md),
-[ADR-1929](adr/1929-vmafx-device-frames-fences.md).
-
-- New files `core/src/hip/vmafx_hip.h`, `vmafx_hip_internal.h`,
-  `import_device.c`, `import_frame.c`, `import_dmabuf.c`, `import_fence.c`,
-  `import_gl.c` (in `libvmaf_sources` under `if is_hip_enabled`, not in
-  `hip_sources`, for the reason the CUDA lane gives) and the kernel module
-  `import_convert.hip` (`hip_kernel_sources`, `import_convert_hsaco`).
-- Moved out of the CUDA lane into shared files, one copy each:
-  `core/src/vmafx/import_convert_kernels.h` (the NV12 / P010 / P016 kernels;
-  `cuda/import_convert.cu` and `hip/import_convert.hip` only include it; it
-  is in both `cuda_kernel_shared_headers` and `hip_kernel_shared_headers`),
-  `core/src/vmafx/gl_sync.c` (the GL loader and `vmafx_gl_sync_acquire()`,
-  formerly in `cuda/import_gl.c`), `core/src/vmafx/release_events.c` (the
-  release-event table, formerly in `cuda/import_fence.c`), and the new
-  `core/src/vmafx/sync_file.c`. A rebase of the CUDA lane that touches the
-  old copies applies the change to the shared file.
-- `core/src/vmafx/*.c` dispatch to the HIP lane next to the CUDA one
-  (`device.c`, `device_context.c`, `frame_import.c`, `fence.c`,
-  `frame_import_admit.c`, `submit.c`); `fence.c` waits on `SYNC_FILE` and
-  `GL_SYNC` fences without a device; `frame_pool.c` refuses HIP devices.
-- `core/src/picture.h`: `VmafPicturePrivate` gains an unconditional
-  `hip.str` (one layout in every translation unit; `HAVE_HIP` reaches only
-  some through `config.h`). `core/src/libvmaf.c`: `translate_picture()`
-  passes a HIP device picture through, and `hip_refuse_other_reader()`
-  refuses it to a non-HIP extractor.
-- `core/src/hip/picture_hip.c` and `shared_frame.c`: a device picture is
-  copied on its library stream and the reader's stream and the null stream
-  wait (`vmaf_hip_stream_wait_library()`); an upstream or fork change to the
-  upload path keeps the device branch first. `integer_psnr_hvs_hip.c`,
-  `ssimulacra2_hip.c` and `integer_ms_ssim_hip.c` (with the new kernel
-  `ms_ssim_picture_to_float` in `integer_ms_ssim/ms_ssim_score.hip`) branch
-  on `vmaf_hip_picture_device_stream()` before their host staging;
-  `core/test/test_vmafx_import_hip_contract.py` holds the order.
-- `core/meson_options.txt`: `enable_float_vif_hip_autodispatch` defaults to
-  `true`; its description and the `core/src/meson.build` comment keep the
-  `ADR-0623` citations `test_stale_text_contract.py` reads.
-- Tests: `core/test/vmafx_cuda_cells.h` is now `vmafx_device_cells.h`
-  (both lanes read `scripts/ci/exact_twins.d/`); the CUDA tests include the
-  new name.
-- `core/src/hip/import_frame.c` `fill_failed()`: a GL texture the runtime
-  maps but refuses to read (`hipErrorInvalidValue`, every read on ROCm 10.1)
-  is `VMAFX_E_NOTSUP` naming `desc.memory`, not `VMAFX_E_DEVICE`;
-  `test_vmafx_import_hip_gl` skips on that refusal. Keep both when the GL
-  path changes.
-- No `libvmaf.h`, ABI (0.1.4 unchanged), golden-data or FFmpeg patch
-  impact; `--backend hip` now runs `float_vif_hip` for `float_vif` (the CPU's
-  scores, ADR-1444).
-
-## VMAFx device frames on CUDA (RC4 WP3 CUDA lane)
-
-`rc4/api-wp3-cuda`, [ADR-2023](adr/2023-vmafx-cuda-device-frames.md),
-[ADR-1929](adr/1929-vmafx-device-frames-fences.md).
-
-- New files `core/src/cuda/vmafx_cuda.h`, `vmafx_cuda_internal.h`,
-  `import_device.c`, `import_frame.c`, `import_fence.c`, `import_gl.c`,
-  `import_pool.c` (in `libvmaf_sources`, not `cuda_static_lib`, because the
-  CUDA common objects link into test programs without the VMAFx sources) and
-  the kernel `import_convert.cu` (`cuda_cu_sources`, `import_convert_ptx`).
-- `core/src/vmafx/*.c` dispatch to the lane under `#ifdef HAVE_CUDA`:
-  `device.c` (create, count, info, describe, unref), `device_context.c`
-  (engine import; `vmafx_context_release_device()` frees it after a
-  successful close), `frame_import.c` (`import_on_device()`, the release
-  fence), `fence.c` (CUDA_EVENT and GL_SYNC), `frame_import_admit.c` (the
-  per-extractor answer), `frame_pool.c` (CUDA pools), `submit.c` (the planted
-  early release). `internal.h` grows `lane` / `lane_release` on
-  `VmafxDevice`, `VmafxFrame` and `lane_state` on `VmafxContext`, and exports
-  the import layout and plane checks. `vmafx_frame_release()` calls the
-  lane's release before the release callback. `register.c` picks the device
-  twin when a feature is registered on a device context.
-- `core/src/picture.h`: `VmafPicturePrivate.cuda` gains `vmafx` and
-  `ordered`. `core/src/libvmaf.c`: `cuda_order_pictures_against_producer()`
-  skips the ADR-1199 barrier for a pair of ordered pictures, and
-  `translate_picture_device()` refuses a VMAFx frame and counts every other
-  download as a host copy. A rebase that touches these keeps both.
-- `integer_vif_cuda`: `VifBufferCuda` gains `dis_stride`; both pitches are set
-  per frame from the pictures in `vif_submit_scales()`, and
-  `vif_vert_load_tiles()` takes both. An upstream sync of `filter1d.cu` must
-  keep the second pitch.
-- `VmafxFrame.lane_persistent` (`internal.h`): a CUDA pool frame's event
-  behind its readers; `vmafx_frame_pool_acquire()` waits on it.
-- `float_ms_ssim_cuda` converts level 0 on the device: see
-  "`float_ms_ssim_cuda` builds level 0 on the device" (master #2282, carried by
-  this stack until its restack).
-- Definition: `VMAFX_MEMORY_GL_TEXTURE`, `VMAFX_FENCE_GL_SYNC`,
-  `VmafxFrameImport.release` / `user` (ABI 0.1.4); `VMAFX_MIN_FRAME_IMPORT` is
-  the 0.1.2 size (`offsetof(VmafxFrameImport, release)`).
-
-## VMAFx device frames and fences: shared contract on the CPU device
-
-`rc4/api-wp3-common`, [ADR-1852](adr/1852-vmafx-api-redesign.md),
-[ADR-1929](adr/1929-vmafx-device-frames-fences.md).
-
-- `core/src/vmafx/` gains `device_context.c`, `fence.c`, `frame_import.c`,
-  `frame_import_admit.c`, `frame_import_hooks.{c,h}` and `frame_pool.c`;
-  `device.c` grows enumeration, information and the checks of
-  `VmafxDeviceDesc`'s new `flags` and `external` fields. The backend lanes
-  (CUDA, SYCL, HIP, Metal) add their device creation, memory kinds, fence
-  kinds and per-extractor admission behind these functions.
-- `frame_host.c`: the release of a non-pool frame is the shared
-  `vmafx_frame_release()` and signals the frame's release fence after the
-  last read; `vmafx_frame_read_desc()`, `vmafx_frame_host_device()` and
-  `vmafx_frame_bind()` are shared with the import and the pool.
-  `submit.c` checks admission before the engine counts a frame.
-  `context.c` drops the context's device after a successful close, and reads
-  and checks `VmafxContextConfig.import_retry_wait_ns` (ABI 0.1.3; the
-  `vmaf_init` compat glue sets it to 0, the default).
-  `error.c` keeps 1023 bytes of subject and message.
-- `frame_import.c` includes `core/src/metal/iosurface_layout.h` for the
-  NV12 / P010 / P016 row readers. A change to those readers changes the CPU
-  import and the Metal import together (`test_vmafx_import_bitexact` and
-  `test_metal_iosurface_layout`).
-- `scripts/codegen/vmafx_api/ctext.py` spells an `out` string parameter
-  `const char **` (it printed `const char * *`).
-- `core/src/compat/gcc/stdatomic.h` (the fallback for a compiler without
-  `<stdatomic.h>`, from dav1d) gains `atomic_uintptr_t`,
-  `atomic_uint_fast64_t`, `atomic_store_explicit`, `atomic_exchange`,
-  `atomic_compare_exchange_strong` / `_weak` and two memory orders, the C11
-  atomics `core/src/vmafx/` uses. A re-sync of that file from dav1d keeps
-  them.
-- `core/test/vmafx_fixture_util.h` holds the fixture pairs and the reader
-  both `test_vmafx_bitexact.c` and `test_vmafx_import_bitexact.c` use.
-- No `libvmaf.h`, score, golden-data or FFmpeg patch impact.
-
-## `float_ms_ssim_cuda` builds level 0 on the device (`fix/cuda-ms-ssim-device-level0`)
-
-`float_ms_ssim_cuda` converts level 0 of its pyramids on the device
-(`ms_ssim_picture_to_float` in `core/src/feature/cuda/integer_ms_ssim/ms_ssim_score.cu`)
-instead of copying each plane to pinned host memory, running `picture_copy()` there
-and uploading the floats (`T-CUDA-MS-SSIM-HOST-STAGING-2026-10-06`). An upstream sync of
-the MS-SSIM CUDA twin keeps the device conversion and must not bring back
-`h_input_uint`, the per-plane `h_ref` / `h_cmp` staging or the
-`#include "picture_copy.h"`; a conflict in `ms_ssim_stage_inputs()` takes this side.
-`test_cuda_float_ms_ssim_exact_contract.py` (device-free) and
-`test_cuda_float_ms_ssim_host_traffic` (on a device) fail on the host staging. No score,
-public API or FFmpeg patch impact.
-
-## Import of 4:2:2 and 4:4:4 layouts (RC4 WP3 formats lane)
-
-`rc4/api-wp3-formats-422-444`, [ADR-2133](adr/2133-vmafx-import-422-444-formats.md),
-ABI 0.1.5 (additive).
-
-- One CPU reference for every import conversion:
-  `core/src/vmafx/import_convert.h` (`vmafx_import_read_plane()`,
-  `VmafxImportRead`) with the per-layout plan `vmafx_import_plane_read()` in
-  `core/src/vmafx/frame_import.c`. `vmaf_metal_read_plane()`
-  (`core/src/metal/iosurface_layout.h`) forwards to it; a rebase that brings
-  the Metal row readers back takes this side. `VmafxImportLayout`
-  (`internal.h`) gained `packed`, `elem` and `msb`: every row of
-  `import_layouts[]` initialises them (no missing-initializer warning).
-- Device kernels: `vmafx_import_gather` in
-  `core/src/vmafx/import_convert_kernels.h` (nvcc and hipcc), launched per
-  output plane from `gather_plane()` of `core/src/cuda/import_frame.c` and
-  `core/src/hip/import_frame.c`; the planes of a packed or MSB layout are
-  `converted_plane()`; a packed or MSB layout in an array or GL texture is
-  refused naming `desc.memory`.
-- `vmafx_count_conversion()` counts every converting import
-  (`converted_plane(layout, 0)` or `(layout, 1)`), not only interleaved ones.
-- Tests: `test_vmafx_import_convert`, `test_vmafx_import_bitexact` (wide
-  chroma, other layouts), `test_vmafx_import_{cuda,hip}_formats` with
-  `core/test/vmafx_format_cells.h` (shared by every backend lane; the SYCL
-  lane's producer plugs in through `VfOps`).
-- The SYCL conversion kernels are a separate commit on the SYCL lane
-  (`rc4/api-wp3-formats-422-444-sycl`); the ABI patch number 0.1.5 is shared
-  with any other branch that adds to the API: renumber on the second to land.
-- No `libvmaf.h`, golden-data or FFmpeg patch impact.
+`fix/icx-cl-crt-residuals`. Upstream-mirror files touched: `core/src/libvmaf.c` (`VMAF_STRDUP` in the tiny-model attach), `core/test/test_model.c`
+and `core/test/test_output.c` (`vmaf_fopen_utf8()`, `vmaf_tmpfile_portable()`). A sync that brings a plain `strdup` / `fopen` / `tmpfile` /
+`getenv` back into a file the Windows builds compile keeps the fork's spelling (`compat/crt_portable.h`, `compat/path_utf8.h`). Fork files:
+`compat/crt_portable.h` gains `vmaf_tmpfile_portable()`; `vmaf_tiny_ai_resolve_model_path()` takes a caller-owned buffer for the environment
+value (`VMAF_TINY_AI_ENV_PATH_MAX`), and its five callers pass one. `core/src/feature/common/macros.h` (upstream-mirror)
+defines `UNUSED_FUNCTION` as the GNU attribute for every GCC or Clang front end, clang-cl and icx-cl included (they define `_MSC_VER`); a
+sync keeps that condition. The SYCL leg's configure step no longer sets `/experimental:c11atomics`.

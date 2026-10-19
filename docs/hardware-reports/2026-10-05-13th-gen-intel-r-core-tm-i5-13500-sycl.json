@@ -1,0 +1,2254 @@
+{
+  "schema_version": "3",
+  "tool": {
+    "name": "vmaf-tester-report",
+    "version": "0.1.0"
+  },
+  "generated_utc": "2026-10-05T12:14:15Z",
+  "image": {
+    "kind": "container-image",
+    "source_commit": "854bf047e458bc97ac0da39e5c11e14029652a0f",
+    "source_ref": "854bf047e458bc97ac0da39e5c11e14029652a0f",
+    "recipe_commit": "854bf047e458bc97ac0da39e5c11e14029652a0f",
+    "built_by_workflow": true,
+    "image_arch": "x86_64",
+    "compiler": "Intel(R) oneAPI DPC++/C++ Compiler 2026.1.1 (2026.1.1.20260724)",
+    "libc": "ldd (Debian GLIBC 2.41-12+deb13u4) 2.41",
+    "base_image": "debian:13-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a",
+    "tag": "v1.0.0-rc.2-411-g854bf047e-tester-sycl",
+    "gpu_backend": "sycl",
+    "digest": null,
+    "vmaf_version": "1.0.0-rc.2",
+    "vmaf_sha256": "966f22ce664c217d9e6a10e0de982a769ce6677072d8599f9793ac4f3ac5cdc9",
+    "libvmaf_sha256": "52872fb75c886bc8ed72cc6275b3bf35202c56cc7f8f3efb1fb84a7414421b0a",
+    "files_match_build": true,
+    "python": "3.13.5"
+  },
+  "host": {
+    "platform": "linux",
+    "machine": "x86_64",
+    "kernel_release": "7.0.0-34-generic",
+    "in_container": true,
+    "cpu_model": "13th Gen Intel(R) Core(TM) i5-13500",
+    "cpuinfo": {
+      "cpu family": "6",
+      "model": "191",
+      "model name": "13th Gen Intel(R) Core(TM) i5-13500",
+      "stepping": "2",
+      "vendor_id": "GenuineIntel"
+    },
+    "cpu_features": [
+      "3dnowprefetch",
+      "abm",
+      "acpi",
+      "adx",
+      "aes",
+      "aperfmperf",
+      "apic",
+      "arat",
+      "arch_capabilities",
+      "arch_lbr",
+      "arch_perfmon",
+      "art",
+      "avx",
+      "avx2",
+      "avx_vnni",
+      "bmi1",
+      "bmi2",
+      "bts",
+      "clflush",
+      "clflushopt",
+      "clwb",
+      "cmov",
+      "constant_tsc",
+      "cpuid",
+      "cpuid_fault",
+      "cx16",
+      "cx8",
+      "de",
+      "ds_cpl",
+      "dtes64",
+      "dtherm",
+      "dts",
+      "epb",
+      "ept",
+      "ept_ad",
+      "erms",
+      "est",
+      "f16c",
+      "flexpriority",
+      "flush_l1d",
+      "fma",
+      "fpu",
+      "fsgsbase",
+      "fsrm",
+      "fxsr",
+      "gfni",
+      "hfi",
+      "ht",
+      "hwp",
+      "hwp_act_window",
+      "hwp_epp",
+      "hwp_notify",
+      "hwp_pkg_req",
+      "ibpb",
+      "ibrs",
+      "ibrs_enhanced",
+      "ibt",
+      "ida",
+      "intel_pt",
+      "invpcid",
+      "lahf_lm",
+      "lm",
+      "mca",
+      "mce",
+      "md_clear",
+      "mmx",
+      "monitor",
+      "movbe",
+      "movdir64b",
+      "movdiri",
+      "msr",
+      "mtrr",
+      "nonstop_tsc",
+      "nopl",
+      "nx",
+      "ospke",
+      "pae",
+      "pat",
+      "pbe",
+      "pcid",
+      "pclmulqdq",
+      "pconfig",
+      "pdcm",
+      "pdpe1gb",
+      "pebs",
+      "pge",
+      "pku",
+      "pln",
+      "pni",
+      "popcnt",
+      "pse",
+      "pse36",
+      "pts",
+      "rdpid",
+      "rdrand",
+      "rdseed",
+      "rdtscp",
+      "rep_good",
+      "sdbg",
+      "sep",
+      "serialize",
+      "sha_ni",
+      "smap",
+      "smep",
+      "smx",
+      "split_lock_detect",
+      "ss",
+      "ssbd",
+      "sse",
+      "sse2",
+      "sse4_1",
+      "sse4_2",
+      "ssse3",
+      "stibp",
+      "syscall",
+      "tm",
+      "tm2",
+      "tpr_shadow",
+      "tsc",
+      "tsc_adjust",
+      "tsc_deadline_timer",
+      "tsc_known_freq",
+      "umip",
+      "user_shstk",
+      "vaes",
+      "vme",
+      "vmx",
+      "vnmi",
+      "vpclmulqdq",
+      "vpid",
+      "waitpkg",
+      "x2apic",
+      "xgetbv1",
+      "xsave",
+      "xsavec",
+      "xsaveopt",
+      "xsaves",
+      "xtopology",
+      "xtpr"
+    ],
+    "hwcap": null,
+    "hwcap2": null,
+    "sve_in_hwcap": false,
+    "dispatch_flags": [
+      "sse2",
+      "ssse3",
+      "sse4.1",
+      "avx2"
+    ],
+    "dispatch_flags_source": "mirror of core/src/arm/cpu.c and core/src/x86/cpu.c rules",
+    "logical_cores": 20
+  },
+  "dispatch_equivalence": {
+    "status": "identical",
+    "fixtures": [
+      {
+        "fixture": "netflix_normal_576x324",
+        "metrics": 76,
+        "values": 3648,
+        "differing_values": 0,
+        "differing_metrics": 0,
+        "details": [],
+        "details_truncated": 0
+      },
+      {
+        "fixture": "netflix_checkerboard_1px_1080p",
+        "metrics": 76,
+        "values": 228,
+        "differing_values": 0,
+        "differing_metrics": 0,
+        "details": [],
+        "details_truncated": 0
+      },
+      {
+        "fixture": "netflix_checkerboard_10px_1080p",
+        "metrics": 76,
+        "values": 228,
+        "differing_values": 0,
+        "differing_metrics": 0,
+        "details": [],
+        "details_truncated": 0
+      },
+      {
+        "fixture": "netflix_normal_576x324_10bit",
+        "metrics": 76,
+        "values": 228,
+        "differing_values": 0,
+        "differing_metrics": 0,
+        "details": [],
+        "details_truncated": 0
+      }
+    ]
+  },
+  "reference_equivalence": {
+    "status": "identical",
+    "own_arch_scalar": {
+      "file": "x86_64-scalar.json",
+      "generated_with_flags": [],
+      "comparable": true,
+      "gating": true,
+      "status": "identical",
+      "fixtures": [
+        {
+          "fixture": "netflix_normal_576x324",
+          "metrics": 76,
+          "values": 3648,
+          "differing_values": 0,
+          "differing_metrics": 0,
+          "details": [],
+          "details_truncated": 0
+        },
+        {
+          "fixture": "netflix_checkerboard_1px_1080p",
+          "metrics": 76,
+          "values": 228,
+          "differing_values": 0,
+          "differing_metrics": 0,
+          "details": [],
+          "details_truncated": 0
+        },
+        {
+          "fixture": "netflix_checkerboard_10px_1080p",
+          "metrics": 76,
+          "values": 228,
+          "differing_values": 0,
+          "differing_metrics": 0,
+          "details": [],
+          "details_truncated": 0
+        },
+        {
+          "fixture": "netflix_normal_576x324_10bit",
+          "metrics": 76,
+          "values": 228,
+          "differing_values": 0,
+          "differing_metrics": 0,
+          "details": [],
+          "details_truncated": 0
+        }
+      ]
+    },
+    "own_arch_default": {
+      "file": "x86_64-default.json",
+      "generated_with_flags": [
+        "avx2",
+        "avx512",
+        "sse2",
+        "sse4.1",
+        "ssse3"
+      ],
+      "comparable": false,
+      "gating": false,
+      "status": "identical",
+      "fixtures": [
+        {
+          "fixture": "netflix_normal_576x324",
+          "metrics": 76,
+          "values": 3648,
+          "differing_values": 0,
+          "differing_metrics": 0,
+          "details": [],
+          "details_truncated": 0
+        },
+        {
+          "fixture": "netflix_checkerboard_1px_1080p",
+          "metrics": 76,
+          "values": 228,
+          "differing_values": 0,
+          "differing_metrics": 0,
+          "details": [],
+          "details_truncated": 0
+        },
+        {
+          "fixture": "netflix_checkerboard_10px_1080p",
+          "metrics": 76,
+          "values": 228,
+          "differing_values": 0,
+          "differing_metrics": 0,
+          "details": [],
+          "details_truncated": 0
+        },
+        {
+          "fixture": "netflix_normal_576x324_10bit",
+          "metrics": 76,
+          "values": 228,
+          "differing_values": 0,
+          "differing_metrics": 0,
+          "details": [],
+          "details_truncated": 0
+        }
+      ]
+    }
+  },
+  "metal_equivalence": {
+    "status": "not_applicable"
+  },
+  "metal_gate": {
+    "status": "not_applicable"
+  },
+  "unit_tests": {
+    "status": "pass",
+    "reason": null,
+    "total": 37,
+    "passed": 37,
+    "failed": 0,
+    "skipped": 0,
+    "failures": [],
+    "results": {
+      "test_adm_cm_row_rounding": "pass",
+      "test_adm_dwt2_x86": "pass",
+      "test_cambi_dispatch_invariance": "pass",
+      "test_cambi_simd": "pass",
+      "test_cambi_spatial_mask_simd": "pass",
+      "test_cambi_stage_simd": "pass",
+      "test_ciede_simd_parity": "pass",
+      "test_cpu": "pass",
+      "test_feature_extractor": "pass",
+      "test_feature_isa_invariance": "pass",
+      "test_float_adm_x86": "pass",
+      "test_float_motion_sad": "pass",
+      "test_integer_adm_aim_unclipped": "pass",
+      "test_integer_adm_cm_threshold": "pass",
+      "test_integer_adm_simd": "pass",
+      "test_integer_adm_simd_noise": "pass",
+      "test_integer_ssim_simd": "pass",
+      "test_integer_vif_avx2_stages": "pass",
+      "test_integer_vif_avx512_stages": "pass",
+      "test_integer_vif_log2": "pass",
+      "test_iqa_convolve": "pass",
+      "test_moment_simd": "pass",
+      "test_motion_avx512_parity": "pass",
+      "test_motion_v2_simd": "pass",
+      "test_ms_ssim_decimate": "pass",
+      "test_ordered_sum": "pass",
+      "test_predict": "pass",
+      "test_psnr_hvs_avx2": "pass",
+      "test_psnr_hvs_dispatch_invariance": "pass",
+      "test_psnr_hvs_score": "pass",
+      "test_psnr_hvs_simd": "pass",
+      "test_speed": "pass",
+      "test_speed_simd": "pass",
+      "test_ssim_x86_simd": "pass",
+      "test_ssimulacra2_simd": "pass",
+      "test_version": "pass",
+      "test_vif_simd": "pass"
+    }
+  },
+  "golden_gate": {
+    "status": "not_applicable",
+    "total": 0,
+    "passed": 0,
+    "failed": 0,
+    "skipped": 0,
+    "failures": [],
+    "reason": "the SYCL image carries no Python test stack; the CPU tester image runs the Netflix golden gate"
+  },
+  "metal_rows": {
+    "status": "not_applicable",
+    "rows": []
+  },
+  "gpu": {
+    "backend": "sycl",
+    "access": {
+      "render_nodes": [
+        {
+          "node": "renderD129",
+          "vendor": "0x8086",
+          "device": "0x4680",
+          "driver": "i915",
+          "gid": 104,
+          "mode": "0o660",
+          "accessible": true
+        }
+      ],
+      "dxg_present": false,
+      "dxg_accessible": false,
+      "wsl_libdxcore_present": false,
+      "groups": [
+        104,
+        10001
+      ],
+      "path": "drm",
+      "level_zero": {
+        "status": "ok"
+      }
+    },
+    "runtime": {
+      "intel-igc-core-2": "2.41.5",
+      "libigdgmm12": "22.10.0",
+      "libze-intel-gpu1": "26.35.39758.10-0",
+      "libze1": "1.34.0"
+    },
+    "status": "fail",
+    "devices": [
+      {
+        "index": 0,
+        "selector": {
+          "ONEAPI_DEVICE_SELECTOR": "level_zero:0"
+        },
+        "facts": {
+          "core_clock_mhz": 1550,
+          "device_id": "0x4680",
+          "driver_version": 17013582,
+          "eu_count": 32,
+          "eu_simd_width": 8,
+          "family": "xe-lp",
+          "index": 0,
+          "integrated": true,
+          "ip_version": "12.2.0",
+          "max_mem_alloc_bytes": 4294959104,
+          "name": "Intel(R) UHD Graphics 770",
+          "sub_group_sizes": [
+            8,
+            16,
+            32
+          ],
+          "threads_per_eu": 7,
+          "vendor_id": "0x8086"
+        },
+        "device_lines": [
+          "libvmaf INFO SYCL: using device: Intel(R) UHD Graphics 770"
+        ],
+        "twins": {
+          "status": "identical",
+          "fixtures": [
+            {
+              "fixture": "netflix_normal_576x324",
+              "metrics": 76,
+              "values": 3648,
+              "differing_values": 0,
+              "differing_metrics": 0,
+              "details": [],
+              "details_truncated": 0,
+              "extractors_on_device": [
+                "adm_sycl",
+                "cambi_sycl",
+                "ciede_sycl",
+                "float_adm_sycl",
+                "float_moment_sycl",
+                "float_motion_sycl",
+                "float_ms_ssim_sycl",
+                "float_psnr_sycl",
+                "float_ssim_sycl",
+                "float_vif_sycl",
+                "integer_ssim_sycl",
+                "motion_sycl",
+                "motion_v2_sycl",
+                "psnr_hvs_sycl",
+                "psnr_sycl",
+                "speed_chroma_sycl",
+                "speed_temporal_sycl",
+                "ssimulacra2_sycl",
+                "vif_sycl"
+              ],
+              "extractors_on_cpu": [
+                "brisque",
+                "delta_e_itp",
+                "niqe",
+                "pu21",
+                "y_funque_plus"
+              ]
+            },
+            {
+              "fixture": "netflix_checkerboard_1px_1080p",
+              "metrics": 76,
+              "values": 228,
+              "differing_values": 0,
+              "differing_metrics": 0,
+              "details": [],
+              "details_truncated": 0,
+              "extractors_on_device": [
+                "adm_sycl",
+                "cambi_sycl",
+                "ciede_sycl",
+                "float_adm_sycl",
+                "float_moment_sycl",
+                "float_motion_sycl",
+                "float_ms_ssim_sycl",
+                "float_psnr_sycl",
+                "float_ssim_sycl",
+                "float_vif_sycl",
+                "integer_ssim_sycl",
+                "motion_sycl",
+                "motion_v2_sycl",
+                "psnr_hvs_sycl",
+                "psnr_sycl",
+                "speed_chroma_sycl",
+                "speed_temporal_sycl",
+                "ssimulacra2_sycl",
+                "vif_sycl"
+              ],
+              "extractors_on_cpu": [
+                "brisque",
+                "delta_e_itp",
+                "niqe",
+                "pu21",
+                "y_funque_plus"
+              ]
+            },
+            {
+              "fixture": "netflix_checkerboard_10px_1080p",
+              "metrics": 76,
+              "values": 228,
+              "differing_values": 0,
+              "differing_metrics": 0,
+              "details": [],
+              "details_truncated": 0,
+              "extractors_on_device": [
+                "adm_sycl",
+                "cambi_sycl",
+                "ciede_sycl",
+                "float_adm_sycl",
+                "float_moment_sycl",
+                "float_motion_sycl",
+                "float_ms_ssim_sycl",
+                "float_psnr_sycl",
+                "float_ssim_sycl",
+                "float_vif_sycl",
+                "integer_ssim_sycl",
+                "motion_sycl",
+                "motion_v2_sycl",
+                "psnr_hvs_sycl",
+                "psnr_sycl",
+                "speed_chroma_sycl",
+                "speed_temporal_sycl",
+                "ssimulacra2_sycl",
+                "vif_sycl"
+              ],
+              "extractors_on_cpu": [
+                "brisque",
+                "delta_e_itp",
+                "niqe",
+                "pu21",
+                "y_funque_plus"
+              ]
+            },
+            {
+              "fixture": "netflix_normal_576x324_10bit",
+              "metrics": 76,
+              "values": 228,
+              "differing_values": 0,
+              "differing_metrics": 0,
+              "details": [],
+              "details_truncated": 0,
+              "extractors_on_device": [
+                "adm_sycl",
+                "cambi_sycl",
+                "ciede_sycl",
+                "float_adm_sycl",
+                "float_moment_sycl",
+                "float_motion_sycl",
+                "float_ms_ssim_sycl",
+                "float_psnr_sycl",
+                "float_ssim_sycl",
+                "float_vif_sycl",
+                "integer_ssim_sycl",
+                "motion_sycl",
+                "motion_v2_sycl",
+                "psnr_hvs_sycl",
+                "psnr_sycl",
+                "speed_chroma_sycl",
+                "speed_temporal_sycl",
+                "ssimulacra2_sycl",
+                "vif_sycl"
+              ],
+              "extractors_on_cpu": [
+                "brisque",
+                "delta_e_itp",
+                "niqe",
+                "pu21",
+                "y_funque_plus"
+              ]
+            }
+          ],
+          "features": [
+            {
+              "feature": "adm",
+              "bound": "0",
+              "source": "exact:ADR-1397",
+              "status": "identical",
+              "values": 285,
+              "differing_values": 0,
+              "max_abs_diff": "0"
+            },
+            {
+              "feature": "cambi",
+              "bound": "0",
+              "source": "exact:ADR-1397",
+              "status": "identical",
+              "values": 57,
+              "differing_values": 0,
+              "max_abs_diff": "0"
+            },
+            {
+              "feature": "ciede",
+              "bound": "1.0000000000000001e-09",
+              "source": "libm:ADR-1426",
+              "status": "identical",
+              "values": 57,
+              "differing_values": 0,
+              "max_abs_diff": "0"
+            },
+            {
+              "feature": "float_adm",
+              "bound": "0",
+              "source": "exact:ADR-1397",
+              "status": "identical",
+              "values": 285,
+              "differing_values": 0,
+              "max_abs_diff": "0"
+            },
+            {
+              "feature": "float_moment",
+              "bound": "0",
+              "source": "exact:ADR-1397",
+              "status": "identical",
+              "values": 228,
+              "differing_values": 0,
+              "max_abs_diff": "0"
+            },
+            {
+              "feature": "float_motion",
+              "bound": "0",
+              "source": "exact:ADR-1397",
+              "status": "identical",
+              "values": 171,
+              "differing_values": 0,
+              "max_abs_diff": "0"
+            },
+            {
+              "feature": "float_ms_ssim",
+              "bound": "0",
+              "source": "exact:ADR-1397",
+              "status": "identical",
+              "values": 57,
+              "differing_values": 0,
+              "max_abs_diff": "0"
+            },
+            {
+              "feature": "float_ms_ssim_chroma",
+              "bound": "0",
+              "source": "exact:ADR-1397",
+              "status": "gate_only",
+              "values": 0,
+              "differing_values": 0
+            },
+            {
+              "feature": "float_ms_ssim_lcs",
+              "bound": "0",
+              "source": "exact:ADR-1397",
+              "status": "gate_only",
+              "values": 0,
+              "differing_values": 0
+            },
+            {
+              "feature": "float_psnr",
+              "bound": "0",
+              "source": "exact:ADR-1397",
+              "status": "identical",
+              "values": 57,
+              "differing_values": 0,
+              "max_abs_diff": "0"
+            },
+            {
+              "feature": "float_ssim",
+              "bound": "0",
+              "source": "exact:ADR-1397",
+              "status": "identical",
+              "values": 57,
+              "differing_values": 0,
+              "max_abs_diff": "0"
+            },
+            {
+              "feature": "float_ssim_lcs",
+              "bound": "0",
+              "source": "exact:ADR-1397",
+              "status": "gate_only",
+              "values": 0,
+              "differing_values": 0
+            },
+            {
+              "feature": "float_vif",
+              "bound": "0",
+              "source": "exact:ADR-1397",
+              "status": "identical",
+              "values": 228,
+              "differing_values": 0,
+              "max_abs_diff": "0"
+            },
+            {
+              "feature": "motion",
+              "bound": "0",
+              "source": "exact:ADR-1397",
+              "status": "identical",
+              "values": 171,
+              "differing_values": 0,
+              "max_abs_diff": "0"
+            },
+            {
+              "feature": "motion_debug",
+              "bound": "0",
+              "source": "exact:ADR-1397",
+              "status": "gate_only",
+              "values": 0,
+              "differing_values": 0
+            },
+            {
+              "feature": "motion_mffw",
+              "bound": "0",
+              "source": "exact:ADR-1397",
+              "status": "gate_only",
+              "values": 0,
+              "differing_values": 0
+            },
+            {
+              "feature": "motion_v2",
+              "bound": "0",
+              "source": "exact:ADR-1397",
+              "status": "identical",
+              "values": 114,
+              "differing_values": 0,
+              "max_abs_diff": "0"
+            },
+            {
+              "feature": "motion_v2_mffw",
+              "bound": "0",
+              "source": "exact:ADR-1397",
+              "status": "gate_only",
+              "values": 0,
+              "differing_values": 0
+            },
+            {
+              "feature": "psnr",
+              "bound": "0",
+              "source": "exact:ADR-1397",
+              "status": "identical",
+              "values": 171,
+              "differing_values": 0,
+              "max_abs_diff": "0"
+            },
+            {
+              "feature": "psnr_hvs",
+              "bound": "0",
+              "source": "exact:ADR-1397",
+              "status": "identical",
+              "values": 228,
+              "differing_values": 0,
+              "max_abs_diff": "0"
+            },
+            {
+              "feature": "speed_chroma",
+              "bound": "0",
+              "source": "exact:ADR-1397",
+              "status": "identical",
+              "values": 171,
+              "differing_values": 0,
+              "max_abs_diff": "0"
+            },
+            {
+              "feature": "speed_temporal",
+              "bound": "0",
+              "source": "exact:ADR-1397",
+              "status": "identical",
+              "values": 57,
+              "differing_values": 0,
+              "max_abs_diff": "0"
+            },
+            {
+              "feature": "ssim",
+              "bound": "0",
+              "source": "exact:ADR-1397",
+              "status": "identical",
+              "values": 57,
+              "differing_values": 0,
+              "max_abs_diff": "0"
+            },
+            {
+              "feature": "ssimulacra2",
+              "bound": "0",
+              "source": "exact:ADR-1397",
+              "status": "identical",
+              "values": 57,
+              "differing_values": 0,
+              "max_abs_diff": "0"
+            },
+            {
+              "feature": "vif",
+              "bound": "0",
+              "source": "exact:ADR-1397",
+              "status": "identical",
+              "values": 228,
+              "differing_values": 0,
+              "max_abs_diff": "0"
+            }
+          ]
+        },
+        "gate": {
+          "status": "pass",
+          "fixtures": [
+            {
+              "fixture": "netflix_normal_576x324",
+              "left_out": [],
+              "exit_code": 0,
+              "cells": [
+                {
+                  "feature": "adm",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 48,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "cambi",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 48,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "ciede",
+                  "status": "OK",
+                  "tolerance": "1.0000000000000001e-09",
+                  "tolerance_source": "libm:ADR-1426",
+                  "frames": 48,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_adm",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 48,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_moment",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 48,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_motion",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 48,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_ms_ssim",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 48,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_ms_ssim_chroma",
+                  "status": "SKIP",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 0,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": "chroma 288x162 below the 176-pixel minimum of float_ms_ssim_chroma; run it on a pair whose chroma planes clear it"
+                },
+                {
+                  "feature": "float_ms_ssim_lcs",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 48,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_psnr",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 48,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_ssim",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 48,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_ssim_lcs",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 48,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_vif",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 48,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "motion",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 48,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "motion_debug",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 48,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "motion_mffw",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 48,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "motion_v2",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 48,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "motion_v2_mffw",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 48,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "psnr",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 48,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "psnr_hvs",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 48,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "speed_chroma",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 48,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "speed_temporal",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 48,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "ssim",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 48,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "ssimulacra2",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 48,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "vif",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 48,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                }
+              ]
+            },
+            {
+              "fixture": "netflix_checkerboard_1px_1080p",
+              "left_out": [],
+              "exit_code": 0,
+              "cells": [
+                {
+                  "feature": "adm",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "cambi",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "ciede",
+                  "status": "OK",
+                  "tolerance": "1.0000000000000001e-09",
+                  "tolerance_source": "libm:ADR-1426",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_adm",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_moment",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_motion",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_ms_ssim",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_ms_ssim_chroma",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_ms_ssim_lcs",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_psnr",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_ssim",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_ssim_lcs",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_vif",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "motion",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "motion_debug",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "motion_mffw",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "motion_v2",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "motion_v2_mffw",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "psnr",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "psnr_hvs",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "speed_chroma",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "speed_temporal",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "ssim",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "ssimulacra2",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "vif",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                }
+              ]
+            },
+            {
+              "fixture": "netflix_checkerboard_10px_1080p",
+              "left_out": [],
+              "exit_code": 0,
+              "cells": [
+                {
+                  "feature": "adm",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "cambi",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "ciede",
+                  "status": "OK",
+                  "tolerance": "1.0000000000000001e-09",
+                  "tolerance_source": "libm:ADR-1426",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_adm",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_moment",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_motion",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_ms_ssim",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_ms_ssim_chroma",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_ms_ssim_lcs",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_psnr",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_ssim",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_ssim_lcs",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_vif",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "motion",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "motion_debug",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "motion_mffw",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "motion_v2",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "motion_v2_mffw",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "psnr",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "psnr_hvs",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "speed_chroma",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "speed_temporal",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "ssim",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "ssimulacra2",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "vif",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                }
+              ]
+            },
+            {
+              "fixture": "netflix_normal_576x324_10bit",
+              "left_out": [],
+              "exit_code": 0,
+              "cells": [
+                {
+                  "feature": "adm",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "cambi",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "ciede",
+                  "status": "OK",
+                  "tolerance": "1.0000000000000001e-09",
+                  "tolerance_source": "libm:ADR-1426",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_adm",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_moment",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_motion",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_ms_ssim",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_ms_ssim_chroma",
+                  "status": "SKIP",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 0,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": "chroma 288x162 below the 176-pixel minimum of float_ms_ssim_chroma; run it on a pair whose chroma planes clear it"
+                },
+                {
+                  "feature": "float_ms_ssim_lcs",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_psnr",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_ssim",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_ssim_lcs",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_vif",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "motion",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "motion_debug",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "motion_mffw",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "motion_v2",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "motion_v2_mffw",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "psnr",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "psnr_hvs",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "speed_chroma",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "speed_temporal",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "ssim",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "ssimulacra2",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "vif",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                }
+              ]
+            }
+          ]
+        },
+        "device_tests": {
+          "status": "fail",
+          "reason": null,
+          "total": 69,
+          "passed": 68,
+          "failed": 1,
+          "skipped": 0,
+          "failures": [
+            "test_sycl_kernel_scratch"
+          ],
+          "results": {
+            "test_integer_cambi_sycl": "pass",
+            "test_sycl": "pass",
+            "test_sycl_adm_parity": "pass",
+            "test_sycl_adm_parity_large": "pass",
+            "test_sycl_adm_tiny_frames": "pass",
+            "test_sycl_cambi_parity": "pass",
+            "test_sycl_cambi_parity_large": "pass",
+            "test_sycl_ciede_math": "pass",
+            "test_sycl_ciede_parity": "pass",
+            "test_sycl_ciede_parity_large": "pass",
+            "test_sycl_exact_twins": "pass",
+            "test_sycl_float_adm_math": "pass",
+            "test_sycl_float_adm_parity": "pass",
+            "test_sycl_float_adm_parity_large": "pass",
+            "test_sycl_float_moment_parity": "pass",
+            "test_sycl_float_moment_parity_large": "pass",
+            "test_sycl_float_motion_parity": "pass",
+            "test_sycl_float_motion_parity_large": "pass",
+            "test_sycl_float_psnr_parity": "pass",
+            "test_sycl_float_psnr_parity_large": "pass",
+            "test_sycl_float_ssim_parity": "pass",
+            "test_sycl_float_ssim_parity_large": "pass",
+            "test_sycl_float_vif_math": "pass",
+            "test_sycl_float_vif_parity": "pass",
+            "test_sycl_float_vif_parity_large": "pass",
+            "test_sycl_fp_arith_contract": "pass",
+            "test_sycl_init_unwind": "pass",
+            "test_sycl_integer_ssim_math": "pass",
+            "test_sycl_integer_vif_math": "pass",
+            "test_sycl_kernel_registration": "pass",
+            "test_sycl_kernel_scratch": "fail",
+            "test_sycl_motion3_parity": "pass",
+            "test_sycl_motion3_parity_large": "pass",
+            "test_sycl_motion_add_uv_parity": "pass",
+            "test_sycl_motion_add_uv_parity_large": "pass",
+            "test_sycl_motion_five_frame_window": "pass",
+            "test_sycl_motion_sad_score": "pass",
+            "test_sycl_motion_tiny_frames": "pass",
+            "test_sycl_motion_v2_parity": "pass",
+            "test_sycl_motion_v2_parity_large": "pass",
+            "test_sycl_ms_ssim_parity": "pass",
+            "test_sycl_ms_ssim_parity_large": "pass",
+            "test_sycl_ordered_sum": "pass",
+            "test_sycl_pic_preallocation": "pass",
+            "test_sycl_psnr_hvs_parity": "pass",
+            "test_sycl_psnr_hvs_parity_large": "pass",
+            "test_sycl_psnr_hvs_parity_simd32": "pass",
+            "test_sycl_psnr_parity": "pass",
+            "test_sycl_psnr_parity_large": "pass",
+            "test_sycl_shared_frame_sticky_geometry": "pass",
+            "test_sycl_shared_planes": "pass",
+            "test_sycl_speed_chroma_parity": "pass",
+            "test_sycl_speed_chroma_parity_large": "pass",
+            "test_sycl_speed_lanczos4_parity": "pass",
+            "test_sycl_speed_singular_parity": "pass",
+            "test_sycl_speed_temporal_parity": "pass",
+            "test_sycl_speed_temporal_parity_large": "pass",
+            "test_sycl_ssim_parity": "pass",
+            "test_sycl_ssim_parity_large": "pass",
+            "test_sycl_ssimulacra2_math": "pass",
+            "test_sycl_ssimulacra2_parity": "pass",
+            "test_sycl_ssimulacra2_parity_large": "pass",
+            "test_sycl_twin_option_parity": "pass",
+            "test_sycl_vif_min_dim": "pass",
+            "test_sycl_vif_parity": "pass",
+            "test_sycl_vif_parity_large": "pass",
+            "test_sycl_vif_parity_sg32": "pass",
+            "test_vmaf_feature_backend_sycl": "pass",
+            "test_vmaf_sycl_threads": "pass"
+          },
+          "left_out": [
+            {
+              "name": "test_cuda_parity_gate_default_run",
+              "reason": "Python test of the source tree; device-free, runs in CI"
+            }
+          ]
+        },
+        "audits": {
+          "test_sycl_kernel_scratch": {
+            "status": "fail",
+            "row_result": "fail",
+            "kernels_audited": 125,
+            "kernels_in_scratch": 12,
+            "ratchet_entries": 0,
+            "failing_kernels": [
+              {
+                "kernel": "(anonymous namespace)::Ss2SlotKernel",
+                "private_bytes": 0,
+                "spill_bytes": 384
+              },
+              {
+                "kernel": "motion_sycl_pipeline::(anonymous namespace)::MotionSadHbdKernel",
+                "private_bytes": 0,
+                "spill_bytes": 3200
+              },
+              {
+                "kernel": "(anonymous namespace)::IntegerVifHoriKernel<3, 32>",
+                "private_bytes": 0,
+                "spill_bytes": 1792
+              },
+              {
+                "kernel": "sycl::_V1::detail::RoundedRangeKernel<sycl::_V1::item<2, true>, 2, (anonymous namespace)::IssimTermKernel>",
+                "private_bytes": 0,
+                "spill_bytes": 320
+              },
+              {
+                "kernel": "(anonymous namespace)::IntegerVifHoriKernel<0, 32>",
+                "private_bytes": 0,
+                "spill_bytes": 7072
+              },
+              {
+                "kernel": "(anonymous namespace)::IntegerVifHoriKernel<1, 32>",
+                "private_bytes": 0,
+                "spill_bytes": 10048
+              },
+              {
+                "kernel": "(anonymous namespace)::IntegerVifHoriKernel<2, 32>",
+                "private_bytes": 0,
+                "spill_bytes": 5696
+              },
+              {
+                "kernel": "(anonymous namespace)::IntegerVifFusedKernel<3, 32>",
+                "private_bytes": 0,
+                "spill_bytes": 2240
+              },
+              {
+                "kernel": "(anonymous namespace)::IntegerVifFusedKernel<2, 32>",
+                "private_bytes": 0,
+                "spill_bytes": 8480
+              },
+              {
+                "kernel": "(anonymous namespace)::IntegerVifFusedKernel<1, 32>",
+                "private_bytes": 0,
+                "spill_bytes": 6880
+              },
+              {
+                "kernel": "(anonymous namespace)::IntegerVifHoriKernel<0, 16>",
+                "private_bytes": 0,
+                "spill_bytes": 384
+              },
+              {
+                "kernel": "(anonymous namespace)::IntegerVifFusedKernel<0, 32>",
+                "private_bytes": 0,
+                "spill_bytes": 4640
+              }
+            ]
+          }
+        },
+        "status": "fail",
+        "rows": {
+          "status": "fail",
+          "counts": {
+            "pass": 0,
+            "fail": 1,
+            "not_measured": 0,
+            "not_applicable": 2
+          },
+          "rows": [
+            {
+              "id": "T-SYCL-ROW-KERNELS-SG16-OTHER-DEVICES-2026-10-02",
+              "part": "Xe-LP / Xe-LPG integrated GPUs (UHD 7xx, Iris Xe, Arc graphics of Meteor Lake and Arrow Lake): open",
+              "verdict": "fail",
+              "evidence": [
+                {
+                  "kind": "test",
+                  "test": "test_sycl_kernel_scratch",
+                  "result": "fail"
+                },
+                {
+                  "kind": "test",
+                  "test": "test_sycl_float_motion_parity",
+                  "result": "pass"
+                },
+                {
+                  "kind": "test",
+                  "test": "test_sycl_float_adm_parity",
+                  "result": "pass"
+                },
+                {
+                  "kind": "test",
+                  "test": "test_sycl_float_vif_parity",
+                  "result": "pass"
+                },
+                {
+                  "kind": "test",
+                  "test": "test_sycl_ssimulacra2_parity",
+                  "result": "pass"
+                },
+                {
+                  "kind": "test",
+                  "test": "test_sycl_ordered_sum",
+                  "result": "pass"
+                },
+                {
+                  "kind": "test",
+                  "test": "test_sycl_float_adm_math",
+                  "result": "pass"
+                },
+                {
+                  "kind": "audit",
+                  "test": "test_sycl_kernel_scratch",
+                  "result": "fail"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_normal_576x324",
+                  "feature": "float_motion",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_checkerboard_1px_1080p",
+                  "feature": "float_motion",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_checkerboard_10px_1080p",
+                  "feature": "float_motion",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_normal_576x324_10bit",
+                  "feature": "float_motion",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_normal_576x324",
+                  "feature": "float_adm",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_checkerboard_1px_1080p",
+                  "feature": "float_adm",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_checkerboard_10px_1080p",
+                  "feature": "float_adm",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_normal_576x324_10bit",
+                  "feature": "float_adm",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_normal_576x324",
+                  "feature": "float_vif",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_checkerboard_1px_1080p",
+                  "feature": "float_vif",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_checkerboard_10px_1080p",
+                  "feature": "float_vif",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_normal_576x324_10bit",
+                  "feature": "float_vif",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_normal_576x324",
+                  "feature": "ssimulacra2",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_checkerboard_1px_1080p",
+                  "feature": "ssimulacra2",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_checkerboard_10px_1080p",
+                  "feature": "ssimulacra2",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_normal_576x324_10bit",
+                  "feature": "ssimulacra2",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                }
+              ]
+            },
+            {
+              "id": "T-SYCL-ROW-KERNELS-SG16-OTHER-DEVICES-2026-10-02",
+              "part": "Xe2 (Arc B-series, Lunar Lake): measured on an Arc B580 and an Arc Pro B60 on 2026-10-03 (ADR-1501); a run repeats it",
+              "verdict": "not_applicable",
+              "evidence": []
+            },
+            {
+              "id": "T-SYCL-ROW-KERNELS-SG16-OTHER-DEVICES-2026-10-02",
+              "part": "Xe-HPG (Arc A-series): measured on an Arc A380 before the row opened (ADR-1468); a run repeats it",
+              "verdict": "not_applicable",
+              "evidence": []
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "not_exercised": [
+    {
+      "item": "tiny-AI / ONNX Runtime",
+      "reason": "built with -Denable_dnn=disabled"
+    },
+    {
+      "item": "Metal",
+      "reason": "needs macOS; this is a Linux container with no Metal device"
+    },
+    {
+      "item": "CUDA and HIP twins",
+      "reason": "this image is the SYCL build"
+    },
+    {
+      "item": "NEON and SVE2 kernels",
+      "reason": "not applicable on x86_64"
+    },
+    {
+      "item": "AVX-512 kernels",
+      "reason": "this CPU does not report AVX-512"
+    },
+    {
+      "item": "golden check",
+      "reason": "the SYCL image carries no Python test stack; the CPU tester image runs the Netflix golden gate"
+    },
+    {
+      "item": "SYCL test test_cuda_parity_gate_default_run",
+      "reason": "Python test of the source tree; device-free, runs in CI"
+    },
+    {
+      "item": "SYCL twins with options in the default-option run",
+      "reason": "measured by the gate only: float_ms_ssim_chroma, float_ms_ssim_lcs, float_ssim_lcs, motion_debug, motion_mffw, motion_v2_mffw"
+    }
+  ],
+  "verdict": "fail",
+  "failed_checks": [
+    "gpu"
+  ],
+  "note": "",
+  "report_sha256": "eff39284ff60d29df7d3862cae035803146e53c1f00e592a07fb77fe32bbe297"
+}

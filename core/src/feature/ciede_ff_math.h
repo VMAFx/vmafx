@@ -385,12 +385,8 @@ VMAF_FF_INLINE constexpr Ff make_pair(double value)
 VMAF_FF_INLINE constexpr Constants make_constants(unsigned bpc)
 {
     const double pi = std::numbers::pi; /* the constant ciede.c names */
-#if defined(VMAF_FF_MSL_SUBSET)
-    /* The same power of two, shifted unsigned. */
+    /* A power of two, shifted unsigned. */
     const double depth = (double)(1u << (bpc - 8u));
-#else
-    const double depth = (double)(1 << (bpc - 8u));
-#endif
     Constants k = {};
     k.luma_offset = (float)(16. * depth);
     k.chroma_offset = (float)(128. * depth);

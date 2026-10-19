@@ -213,6 +213,9 @@ static int import_frame(const VmafPicture *planar, uint32_t fourcc, VmafPicture 
     return err;
 }
 
+/* Consumes `ref` and `dist`, as the device build's imported_psnr() does: the
+ * planar pair is read into the imported pictures and released here
+ * (T-METAL-IOSURFACE-SELFTEST-LEAK-2026-10-06). */
 static int imported_psnr(VmafPicture *ref, VmafPicture *dist, uint32_t fourcc, PsnrScores *out)
 {
     VmafPicture iref = {0};
@@ -220,6 +223,9 @@ static int imported_psnr(VmafPicture *ref, VmafPicture *dist, uint32_t fourcc, P
     int err = import_frame(ref, fourcc, &iref);
     err = err ? err : import_frame(dist, fourcc, &idist);
     err = err ? err : (planes_equal(ref, &iref) && planes_equal(dist, &idist)) ? 0 : -EDOM;
+    const int ref_unref = vmaf_picture_unref(ref);
+    const int dist_unref = vmaf_picture_unref(dist);
+    err = err ? err : (ref_unref ? ref_unref : dist_unref);
     if (err) {
         (void)vmaf_picture_unref(&iref);
         (void)vmaf_picture_unref(&idist);

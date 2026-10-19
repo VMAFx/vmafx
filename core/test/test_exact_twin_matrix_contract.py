@@ -17,6 +17,12 @@ result per device backend. This test holds, without a device:
 - the comparison reports a one-ulp difference, an output only one run has and a
   frame-count difference, and takes two nulls or two NaNs as equal;
 - `--record` replaces only the block of the backend it ran.
+
+The large grids (8K for every device twin, 16K for the CPU extractors' SIMD
+against their scalar code) have their own recorded blocks: the page must
+record a full row for every twin in each, worst-case fixture planes are
+pinned bytes and reach the extremes they are written for, and a large-picture
+refusal is `n/a` only for a feature in SIZE_REFUSED.
 """
 
 from __future__ import annotations
@@ -49,6 +55,15 @@ PINNED_PLANES = {
     (16, 1): "b058683e76d66984",
 }
 MS_SSIM_MIN_SIDE = 176
+# sha256 (first 16 hex digits) of worst_case_plane(37, 5, depth, (1, frame, distorted)).
+PINNED_WORST_CASE = {
+    (8, 0, 0): "7f30fb296ae15bd8",
+    (8, 0, 1): "054d60ebd6d91aaa",
+    (8, 3, 0): "0925f867431b6e15",
+    (16, 0, 0): "561d0fc913b14e6f",
+    (16, 0, 1): "a6df8a326347c9f1",
+    (16, 3, 0): "814266d22e97e09a",
+}
 
 
 def frame(**metrics: object) -> dict[str, object]:
@@ -179,6 +194,76 @@ class Record(unittest.TestCase):
              "--record", "x.md", "--recorded-on", "y"]
         )  # fmt: skip
         self.assertIsNotNone(matrix.usage_error(args))
+
+
+class LargeGrids(unittest.TestCase):
+    def test_worst_case_planes_are_pinned_bytes(self) -> None:
+        for (depth, frame, distorted), digest in PINNED_WORST_CASE.items():
+            data = matrix.worst_case_plane(37, 5, depth, (1, frame, distorted))
+            with self.subTest(depth=depth, frame=frame, distorted=distorted):
+                self.assertEqual(hashlib.sha256(data).hexdigest()[:16], digest)
+
+    def test_worst_case_frames_reach_the_extremes(self) -> None:
+        for depth in matrix.LARGE_DEPTHS:
+            size = 1 if depth == matrix.BYTE_DEPTH else 2
+            top = b"\xff" * size
+
+            def plane(frame: int, distorted: int, d: int = depth) -> bytes:
+                return matrix.worst_case_plane(64, 4, d, (0, frame, distorted))
+
+            with self.subTest(depth=depth):
+                noise, complement = plane(0, 0), plane(0, 1)
+                self.assertEqual(
+                    bytes(a ^ b for a, b in zip(noise, complement, strict=True)),
+                    b"\xff" * len(noise),
+                )
+                self.assertEqual(plane(1, 0), top * 256)
+                self.assertEqual(plane(1, 1), bytes(256 * size))
+                self.assertEqual(plane(2, 0), plane(1, 1))
+                self.assertEqual(plane(3, 0), plane(3, 1))
+                self.assertEqual(set(plane(3, 0)), {0, 255})
+
+    def test_every_grid_needs_a_full_row(self) -> None:
+        text = PAGE.read_text(encoding="utf-8")
+        begin, end = matrix.markers("cuda", matrix.GRIDS["8k"])
+        cut = text.split(begin, 1)[0] + text.split(end, 1)[1]
+        self.assertIn(
+            "adm.cuda (8k): declared exact, no recorded matrix row", matrix.recorded_problems(cut)
+        )
+        begin, end = matrix.markers(matrix.CPU_ROW, matrix.GRIDS["16k"])
+        cut = text.split(begin, 1)[0] + text.split(end, 1)[1]
+        self.assertIn(
+            "adm.cpu (16k): declared exact, no recorded matrix row", matrix.recorded_problems(cut)
+        )
+
+    def test_large_refusals_are_allowed_for_listed_features_only(self) -> None:
+        columns = matrix.column_labels(matrix.LARGE_DEPTHS, matrix.LARGE_LAYOUTS)
+        self.assertEqual(matrix.row_problems(["n/a", "n/a"], columns, refused=True), [])
+        self.assertEqual(matrix.row_problems(["n/a", "n/a"], columns), ["8/444 is 'n/a'"])
+        self.assertEqual(set(matrix.SIZE_REFUSED), {"cambi"})
+
+    def test_a_refused_picture_the_device_accepts_fails(self) -> None:
+        cell = matrix.CellResult("cambi", "cuda", 8, "444", matrix.STATUS_NA, note="cpu refuses 8k")
+
+        class AcceptingCli:
+            def frames(self, fixture: object, feature: str, backend: str, extra: object = ()):
+                return [frame(x=1.0)], 0, ""
+
+        fixture = matrix.Fixture(Path("r"), Path("d"), 8, "444", matrix.GRIDS["8k"])
+        result = matrix.refused_cell(AcceptingCli(), fixture, cell)  # type: ignore[arg-type]
+        self.assertEqual(result.status, matrix.STATUS_FAIL)
+
+    def test_recording_a_large_grid_keeps_the_small_one(self) -> None:
+        cell = matrix.CellResult("psnr", "cuda", 8, "444", matrix.STATUS_PASS)
+        with tempfile.TemporaryDirectory() as tmp:
+            page = Path(tmp) / "page.md"
+            small = matrix.record_block("cuda", [cell], "small")
+            page.write_text(f"intro\n\n{small}\n", encoding="utf-8")
+            matrix.record(page, [cell], "large", matrix.GRIDS["8k"])
+            text = page.read_text(encoding="utf-8")
+        self.assertIn("small: 1 of 1 cells equal", text)
+        self.assertIn("large: 1 of 1 cells equal", text)
+        self.assertIn("exact-twin-matrix-8k:cuda:begin", text)
 
 
 def dataclass_copy(

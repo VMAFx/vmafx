@@ -49,3 +49,7 @@ Do not restore translation-unit-local string literals: two paths would
 again be able to publish different feature names. loops stay separate
 because their callees and ownership contracts differ. fast source-contract
 test is `core/test/test_bootstrap_name_contract.py`.
+
+## Collection per-frame score reads stored values first (T-MODEL-SET-SCORE-NOT-IDEMPOTENT-2026-10-05)
+
+`vmaf_score_at_index_model_collection()` calls `read_predicted_collection_score()` before predicting: four named scores (`bootstrap_names.h` suffixes) already in collector -> return them. Prediction writes members' + named scores once per frame; collector refuses rewrite (`cannot be overwritten`), so without the read a second per-frame call, or `vmaf_score_pooled_model_collection()` (predicts every frame of its range) after a per-frame call, returned `-EINVAL`. Same rule as `vmaf_score_at_index()` for one model. Keep on upstream sync (upstream lacks it). Test: `core/test/test_model_collection_score_repeat.c`.

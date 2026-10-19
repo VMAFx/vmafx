@@ -13,9 +13,9 @@ unrelated privileged or remote components as prerequisites for this lane.
 Every Kubernetes read, mutation, cleanup: use absolute path in
 `VMAFX_E2E_KUBECONFIG`. Before continuing, `assert-kind-context.sh`
 requires current context `kind-${KIND_CLUSTER_NAME}` + loopback API
-server. Never fall back to process-wide default kubeconfig. Kuttl keeps
-resources for diagnostics; only `kind-cluster.sh --teardown` deletes exact
-named cluster.
+server (VM mode: `https://<VM addr>:6443` only). Never fall back to
+process-wide default kubeconfig. Kuttl keeps resources for diagnostics;
+only `kind-cluster.sh --teardown` deletes exact named cluster.
 
 Readiness commands live in `01-ready.yaml`. Do not rename a
 command-backed step to `*-assert.yaml`: kuttl reserves that suffix for
@@ -45,6 +45,30 @@ also matches operator Pod. Scoring smoke must not add or modify Netflix
 golden-score assertions.
 
 Suite coupled to `.github/workflows/e2e-k8s.yml` +
-`scripts/ci/test_e2e_runtime_contract.py`: operator, CPU node, Go server
-images built/exported/loaded together, even though default chart does not
-enable node workload. Update all three surfaces in one change.
+`scripts/ci/test_e2e_runtime_contract.py`: operator, CPU node, Go server,
+controller, failover driver images built/exported/loaded together, even
+though default chart leaves node workload off. Update all three
+surfaces in one change.
+
+Case `02-controller-ha` (ADR-2350): release `vmafx`, namespace `vmafx-ha`,
+values `controller-ha/values.yaml` (2 controller replicas, postgres store on
+1-instance CloudNativePG `Cluster`, server replicas 0). CNPG operator from
+`install-cnpg.sh` only: manifest SHA-256 checked, operator image rewritten
+tag -> digest (2 refs, count checked). Driver Job (`driver.yaml`,
+`docker/Dockerfile.e2e-driver`, test image, never pushed) serves inputs:
+driver Service URL = `auth.scoringRoots` entry = driver `-fixtures-url`
+default; contract test pins all three. Streams hold after first frame until
+kill -> killed job provably mid-run; no timing on job length, no CPU-limit
+sizing. Kill = node pod of RUNNING job + 1 controller pod, grace 0. Release
+all streams except killed pod IP's (grace-0 delete removes pod object
+before kubelet stops container; released stream there could still
+complete). Pass
+= every job completed, finite score, exactly 1 completed attempt in
+`job_attempts` (read in maintenance mode), killed job >= 2 attempts.
+Driver clip geometry mirrors `fixtures/gen-tiny-yuv.sh` (contract test).
+`backoffLimit: 0`: rerun = fresh scenario via `run-driver.sh`.
+Local runs: kind only inside incus VM (`incus-kind-vm.sh`, own profile, own
+kernel; `VMAFX_E2E_INCUS_VM`), never kind/k3d/kubelet in host container:
+kubelet writes non-namespaced host sysctls (`vm.overcommit_memory=1`,
+`kernel.panic_on_oops=1`). Guard then accepts only `https://<VM addr>:6443`.
+CI hosted runner: plain kind, VM unset.

@@ -10,8 +10,8 @@
 # Needs an FFmpeg built with the series and --enable-libvmaf-sycl that links
 # libvmaf.so dynamically (the dev container's), an Intel GPU with QSV decode,
 # a C compiler and libx264 in that FFmpeg. The failures are injected with
-# fault_inject_sycl_import.c through LD_PRELOAD, so no libvmaf hook exists for
-# them.
+# fault_inject_libvmaf.c through LD_PRELOAD, so no libvmaf hook exists for
+# them. Shared helpers: filter_check_lib.sh.
 #
 #   baseline     no injection: every frame scored
 #   transient    calls 5 and 6 fail (the reference import of frame 2, twice):
@@ -40,29 +40,13 @@ FFMPEG="${FFMPEG:-ffmpeg}"
 CC="${CC:-cc}"
 WORK="$(mktemp -d)"
 trap 'rm -rf "${WORK}"' EXIT
-
-skip() {
-  echo "SKIP: $1" >&2
-  exit 77
-}
+# shellcheck source=ffmpeg-patches/test/filter_check_lib.sh
+. "${HERE}/filter_check_lib.sh"
 
 command -v "${FFMPEG}" >/dev/null 2>&1 || skip "no ${FFMPEG}"
-# The list goes to a variable first: `grep -q` on a pipe would end FFmpeg with
-# SIGPIPE, and pipefail would read that as "no filter".
-filters="$("${FFMPEG}" -hide_banner -filters 2>/dev/null)"
-grep -q " libvmaf_sycl " <<<"${filters}" || skip "${FFMPEG} has no libvmaf_sycl filter"
-command -v "${CC}" >/dev/null 2>&1 || skip "no C compiler (${CC})"
-"${CC}" -shared -fPIC -O2 -D_GNU_SOURCE ${VMAF_INCLUDE:+-I"${VMAF_INCLUDE}"} \
-  -o "${WORK}/libfault.so" "${HERE}/fault_inject_sycl_import.c" -ldl ||
-  skip "cannot build the fault injector"
-
-# Two short H.264 clips: the reference and a blurred, re-encoded copy.
-"${FFMPEG}" -hide_banner -loglevel error -y -f lavfi -i testsrc2=size=576x324:rate=24 \
-  -frames:v 24 -c:v libx264 -profile:v high -crf 10 -pix_fmt yuv420p "${WORK}/ref.mp4" ||
-  skip "cannot encode the reference clip"
-"${FFMPEG}" -hide_banner -loglevel error -y -i "${WORK}/ref.mp4" -vf boxblur=2:1 \
-  -c:v libx264 -profile:v high -crf 30 -pix_fmt yuv420p "${WORK}/dis.mp4" ||
-  skip "cannot encode the distorted clip"
+has_filter libvmaf_sycl || skip "${FFMPEG} has no libvmaf_sycl filter"
+build_fault_injector
+encode_clips
 
 run_filter() { # $1 = device, $2 = tag, $3 = second VA device (optional)
   local dev="$1" tag="$2" ref_va="va0" two=()
@@ -98,32 +82,6 @@ pick_device() {
 }
 
 DEV="$(pick_device)" || skip "no render node where libvmaf_sycl runs the QSV zero-copy path"
-
-frames_in() { # pooled frame count of a JSON log, or -1
-  python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))["frames"]))' "$1" 2>/dev/null ||
-    echo -1
-}
-
-score_in() { # the filter's "VMAF score:" value, or nothing
-  sed -n 's/.*VMAF score: \([0-9.]*\).*/\1/p' "$1" | tail -1
-}
-
-fail=0
-expect() { # $1 = label, rest = a command that must succeed
-  local label="$1"
-  shift
-  if "$@"; then
-    echo "PASS: ${label}"
-  else
-    echo "FAIL: ${label}" >&2
-    fail=1
-  fi
-}
-
-# shellcheck disable=SC2329  # called through expect()
-lacks() { # $1 = pattern, $2 = file: 0 when the file has no matching line
-  ! grep -q -- "$1" "$2"
-}
 
 # shellcheck disable=SC2329  # called through expect()
 same_frames() { # $1 $2 = JSON logs; 0 when every frame's vmaf is equal

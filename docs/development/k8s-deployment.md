@@ -32,7 +32,13 @@ false` on every typed sub-object so sibling-key typos
 (`replicaCounts`, `repostiory`, `maxSurg`) fail fast at install time
 instead of silently rendering a broken manifest. See
 [ADR-0870](../adr/0870-helm-values-schema-and-container-rebuild-audit.md)
-for the rationale.
+for the rationale. The values the chart copies into pod specs (tolerations,
+affinity, security contexts, probes, volumes, update strategies, node
+selectors, labels and annotations) have the types Kubernetes 1.26, the oldest
+supported release, gives them
+([what that refuses](#upgrading-to-the-kubernetes-typed-values-schema)). Both
+files are generated from `api/vmafx-platform.toml`
+([API generation](api-generation.md#helm-chart-values)).
 
 ## Prerequisites
 
@@ -45,6 +51,9 @@ for the rationale.
   ([what can pull them](../usage/docker.md#what-can-pull-the-images)).
 - The relevant GPU device-plugin daemonset installed on GPU nodes — see
   [GPU scheduling guide](gpu-scheduling.md)
+- For the controller on PostgreSQL with the chart's database
+  (`controller.store.postgresql.mode: cnpg`): the CloudNativePG operator — see
+  [job store and replicas](#controller-store)
 
 ## Quick start
 
@@ -86,9 +95,12 @@ helm upgrade --install vmafx deploy/helm/vmafx/ \
 sharing resource or an NVIDIA MIG slice); see the
 [GPU scheduling guide](gpu-scheduling.md#how-gpu-device-plugins-work).
 
-The chart automatically sets the `VMAFX_BACKEND` environment variable inside
-the container based on `gpu.vendor`, so the VMAFX runtime picks the correct
-backend without further configuration.
+The chart sets the node's `VMAFX_BACKEND` environment variable from
+`gpu.vendor`, so a node runs and advertises the matching backend without
+further configuration. The scoring server (`workload`) takes its backend per
+request, from the `backend` score option
+([score options](../server/api-contract.md)); the chart sets no backend
+variable on it.
 
 The Vulkan backend was removed in
 [ADR-0726](../adr/0726-drop-vulkan-backend.md). Supported backends are `cuda`,
@@ -177,13 +189,12 @@ operator:
 
 What the chart renders:
 
-- **`<release>-controller` Deployment.** One replica with the `Recreate`
-  strategy: the queue is an embedded SQLite database, so two pods would each
-  own a different queue. `VMAFX_DB_PATH=/data/vmafx-controller.db` on a
-  `ReadWriteOnce` PersistentVolumeClaim (`controller.persistence`;
-  `existingClaim` reuses one, `enabled: false` uses an emptyDir and loses the
-  queue with the pod). Liveness and readiness probe `/healthz` and `/readyz`
-  on the HTTP port. Image `ghcr.io/vmafx/vmafx-controller:v<appVersion>`.
+- **`<release>-controller` Deployment.** Where it keeps its jobs decides its
+  shape ([job store and replicas](#controller-store)): with the default
+  SQLite store one replica, the `Recreate` strategy and the queue on a
+  claim; with the PostgreSQL store `controller.replicas` replicas and a
+  rolling update. Liveness and readiness probe `/healthz` and `/readyz` on
+  the HTTP port. Image `ghcr.io/vmafx/vmafx-controller:v<appVersion>`.
 - **`<release>-controller` service account**, used only by the controller
   pods and the only account bound to the `VmafxTenant` reader Role
   ([ADR-1592](../adr/1592-helm-split-service-accounts.md)); the server, job
@@ -199,6 +210,17 @@ What the chart renders:
   unless `node.controllerAddr` names another controller.
 - **Operator** gets `VMAFX_CONTROLLER_GRPC_ADDR` and `VMAFX_CONTROLLER_HTTP_ADDR`
   of the same Service.
+- **Operator RBAC** (`operator.enabled`). The operator's service account is
+  bound to three roles. `<release>-operator-crds` is a `ClusterRole` for
+  `VmafxJob`, `VmafxNode` and `VmafxModelTraining` in every namespace, with
+  their status and finalizers. `<release>-operator-events` is a `ClusterRole`
+  that may only create and patch events, in every namespace: the operator
+  records events on the resources it reconciles, and Kubernetes stores an
+  event in the namespace of its resource
+  ([ADR-2647](../adr/2647-operator-events-cluster-wide.md)).
+  `<release>-operator-ns` is a `Role` in the release namespace for pods and
+  the leader-election lease ([ADR-1058](../adr/1058-helm-chart-security-hardening.md)).
+  None of them grants access to `VmafxTenant`.
 - **Tokens.** `node.controllerToken` / `operator.controllerToken` mount key
   `key` (default `token`) of Secret `secretName` read-only at
   `/var/run/secrets/vmafx/controller-token/token` and set
@@ -207,6 +229,91 @@ What the chart renders:
   refreshes the mounted file after its sync period). A node token carries
   `vmafx:node`, an operator token `vmafx:reader` of the tenant whose
   `VmafxJob`s it tracks.
+
+### Job store and replicas {#controller-store}
+
+`controller.store.backend` chooses where the controller keeps jobs, attempts
+and node sessions ([ADR-2350](../adr/2350-cloud-native-platform.md); the
+controller side is in [job persistence](../server/controller.md#job-persistence)):
+
+| `controller.store.backend` | Replicas | Update strategy | State |
+| --- | --- | --- | --- |
+| `sqlite` (default) | 1 (the chart refuses more) | `Recreate` | `VMAFX_DB_PATH=/data/vmafx-controller.db` on a `ReadWriteOnce` claim (`controller.persistence`; `existingClaim` reuses one, `enabled: false` uses an emptyDir and loses the queue with the pod) |
+| `postgres` | `controller.replicas` (1 or more) | `RollingUpdate`, `maxUnavailable: 0`, `maxSurge: 1` | PostgreSQL; no claim |
+
+Two controllers on SQLite would each own a different queue, so the SQLite
+store stays one replica. With PostgreSQL every replica serves every request:
+nodes keep their sessions and leases when a replica goes away, and a job
+whose node dies returns to the queue when its lease expires.
+
+```yaml
+controller:
+  enabled: true
+  replicas: 3
+  store:
+    backend: postgres
+    postgresql:
+      mode: cnpg            # or external
+```
+
+**CloudNativePG (`postgresql.mode: cnpg`, the default).** The chart renders a
+`postgresql.cnpg.io/v1` `Cluster` named `<release>-db` and refuses to render
+when the API is missing: the [CloudNativePG](https://cloudnative-pg.io/)
+operator is a prerequisite you install once per cluster, as the chart does
+not install operators. The kind test installs its release manifest, 1.30.1:
+
+```bash
+kubectl apply --server-side -f \
+  https://github.com/cloudnative-pg/cloudnative-pg/releases/download/v1.30.1/cnpg-1.30.1.yaml
+```
+
+| Value | Default | Meaning |
+| --- | --- | --- |
+| `controller.store.postgresql.cnpg.instances` | `1` | PostgreSQL instances (a primary and `instances - 1` replicas) |
+| `controller.store.postgresql.cnpg.imageName` | PostgreSQL 18.6, pinned by digest | Operand image |
+| `controller.store.postgresql.cnpg.storage.size` / `.storageClass` | `5Gi` / cluster default | Volume of each instance |
+| `controller.store.postgresql.cnpg.resources` | `{}` | Requests and limits of the database pods |
+
+The operator creates database `vmafx` owned by role `vmafx` and a Secret
+`<release>-db-app`; the controller reads `VMAFX_DB_DSN` from its `uri` key.
+Role `vmafx` is not a superuser, so row-level security applies to it.
+
+**External database (`postgresql.mode: external`).** Name a Secret that holds
+a connection URI, for example
+`postgres://vmafx:…@db.example:5432/vmafx?sslmode=verify-full`, in
+`controller.store.postgresql.external.secretName` (key `secretKey`, default
+`uri`). The role must not be a superuser.
+
+**Schema migration.** A Job `<release>-controller-migrate-<hash>` runs
+`vmafx-controller migrate` with the controller image
+(`controller.store.migration.backoffLimit` retries, default 10). The hash
+comes from the Job's pod template, so an upgrade that changes the image (or
+another setting of the Job) runs a new Job once and Helm removes the previous
+one, while an upgrade that changes neither keeps the completed Job. Controllers report ready
+only when the database holds the schema they need, so a rolling update waits
+for the migration. The Job carries Argo CD `Sync` hook annotations for
+GitOps installs. To move jobs from an earlier SQLite queue, see
+[moving from the SQLite queue](../server/controller.md#moving-from-the-sqlite-queue).
+
+**Lease and session lifetimes.** `controller.store.leaseTTL`, `sessionTTL`,
+`sweepInterval`, `backoffBase` and `backoffMax` (durations such as `30s` or
+`2m`) set `VMAFX_STORE_LEASE_TTL`, `VMAFX_STORE_SESSION_TTL`,
+`VMAFX_STORE_SWEEP_INTERVAL`, `VMAFX_STORE_BACKOFF_BASE` and
+`VMAFX_STORE_BACKOFF_MAX`. Left empty, the controller's defaults apply
+(60 s, 60 s, 5 s, 5 s, 5 min).
+
+**Several replicas.** With `controller.replicas` above 1 the chart adds a
+PodDisruptionBudget `<release>-controller` (`maxUnavailable: 1`) and, unless
+`controller.topologySpreadConstraints` lists your own, spreads the replicas
+across nodes (`kubernetes.io/hostname`, `ScheduleAnyway`). With
+`networkPolicy.enabled` the rule `allow-controller-to-database` lets the
+controller and migration pods reach the database (see
+[NetworkPolicy](#networkpolicy)).
+
+**Tested on kind.** The E2E suite's `02-controller-ha` case
+(`test/e2e/kuttl-tests/02-controller-ha/`) installs this configuration with
+two replicas, kills one replica and the node of a running job mid-job, and
+checks in the database that every job was completed by exactly one attempt.
 
 The chart refuses `image.repository` naming a `vmafx-controller` image: the
 server workload (`workload`, default `Deployment` with `vmafx-server`) no
@@ -224,20 +331,24 @@ anonymous pulls can fail.
 
 ## Environment variable reference
 
-| Variable | Set by | Description |
-|---|---|---|
-| `VMAFX_BACKEND` | Chart (from `gpu.vendor`) | Backend selector: `cuda`, `hip`, `sycl`, `cpu` |
-| `VMAFX_MODEL_DIR` | ConfigMap (`config.VMAFX_MODEL_DIR`) | Path to VMAF model JSON files |
-| `VMAFX_OUTPUT_DIR` | ConfigMap (`config.VMAFX_OUTPUT_DIR`) | Path for scored output |
-| Any `VMAFX_*` | `values.yaml` `env:` block | Override arbitrary env vars |
+Every variable a binary reads, and the chart value that sets it, is in the
+binary's generated table: [controller](../server/controller.md#configuration),
+[server](../server/grpc.md#configuration),
+[node](../server/node.md#configuration-12-factor-env-vars) and
+[operator](../server/operator.md#configuration-12-factor-env-vars). The chart
+writes those entries from `templates/_config.gen.tpl`, generated from
+`api/vmafx-platform.toml`
+([API generation](api-generation.md#environment-of-the-go-binaries)).
 
-To add extra variables:
+The server also reads the keys of the `config:` map, which the chart renders
+into a ConfigMap (`config.VMAFX_MODEL_DIR`, for example), and every workload
+takes the `env:` map as extra variables:
 
 ```yaml
 # values.yaml override
 env:
   VMAFX_LOG_LEVEL: debug
-  VMAFX_THREADS: "8"
+  VMAFX_HTTP_TIMEOUTS_WRITE: "30m"
 ```
 
 ## Persistence
@@ -280,10 +391,11 @@ publishes it, together with the operator and node images, when a release is
 published. The CLI and GPU images (`ghcr.io/vmafx/vmafx`) are documented in
 [docker-production.md](docker-production.md).
 
-The controller Deployment and the vmafx-node worker Deployment both use
-`RollingUpdate` with `maxUnavailable: 0` and `maxSurge: 1` by default,
-ensuring zero-downtime updates and preventing GPU pod eviction before
-replacements are ready (ADR-1094). The grace period defaults to 60 s
+The vmafx-node worker Deployment, and the controller Deployment on the
+PostgreSQL store, use `RollingUpdate` with `maxUnavailable: 0` and
+`maxSurge: 1`, ensuring zero-downtime updates and preventing GPU pod
+eviction before replacements are ready (ADR-1094). The controller on the
+SQLite store uses `Recreate` ([job store and replicas](#controller-store)). The grace period defaults to 60 s
 (`terminationGracePeriodSeconds: 60`), giving in-flight scoring jobs time
 to finish before SIGKILL. Raise this to 300 s or more for long CHUG
 extractions:
@@ -294,8 +406,11 @@ terminationGracePeriodSeconds: 300
 
 ## Monitoring
 
-Enable Prometheus scraping via ServiceMonitor (requires
-[prometheus-operator](https://github.com/prometheus-operator/prometheus-operator)):
+`monitoring.enabled` renders a ServiceMonitor for the server, the controller
+and the nodes, a PodMonitor for the operator, a PrometheusRule with the alerts
+and recording rules, and a ConfigMap per Grafana dashboard (requires the
+[prometheus-operator](https://github.com/prometheus-operator/prometheus-operator)
+CRDs):
 
 ```yaml
 monitoring:
@@ -305,6 +420,10 @@ monitoring:
       release: prometheus    # match your Prometheus operator selector
     interval: 30s
 ```
+
+[Monitoring on Kubernetes](../observability/kubernetes.md) covers the
+component switches, the SLO objectives and alert thresholds, the dashboard
+sidecar labels and the scrape NetworkPolicy.
 
 For Job workloads that cannot expose a scrape endpoint, use the
 Prometheus Pushgateway dependency:
@@ -438,6 +557,55 @@ pointed (an emptyDir unless you mounted a volume); copy the database to the
 new `<release>-controller-data` claim before the first start if you need its
 jobs. Nodes and the operator follow the new Service by themselves.
 
+## Upgrading to the Kubernetes-typed values schema {#upgrading-to-the-kubernetes-typed-values-schema}
+
+From this release the values schema checks the values the chart copies into
+pod specs against the Kubernetes 1.26 types of those fields
+([ADR-2350](../adr/2350-cloud-native-platform.md) D13). Before, each of these
+keys accepted any list or any mapping, and a wrong value surfaced only when
+the API server refused the rendered object or, for a field it does not check,
+not at all. Now `helm install`, `helm upgrade` and `helm lint` refuse it and
+name the key:
+
+| Key | Now refused |
+| --- | --- |
+| `tolerations`, `controller.tolerations`, `node.tolerations` | A list item that is not a toleration, or a toleration field of another type, such as `tolerationSeconds: "60"` (a number is required) |
+| `affinity` | A value that is not an `Affinity`: a list where a term mapping belongs, a node selector term without `nodeSelectorTerms`, a pod affinity term without `topologyKey` |
+| `topologySpreadConstraints`, `controller.topologySpreadConstraints` | A constraint without `maxSkew`, `topologyKey` or `whenUnsatisfiable`, or with a field of another type |
+| `podSecurityContext` | A field of another type, such as `runAsUser: root` (a user ID is a number) |
+| `securityContext` | A field of another type, such as `capabilities: {drop: ALL}` (`drop` is a list) |
+| `livenessProbe`, `readinessProbe` | A field of another type, such as `periodSeconds: often` |
+| `node.volumes`, `node.volumeMounts` | A volume without `name`, a mount without `name` or `mountPath`, a field of another type |
+| `deployment.strategy`, `node.strategy`, `statefulSet.updateStrategy` | A field of another type, such as a list for `maxSurge` |
+| `envFrom` | A list item that is not an `EnvFromSource` (`configMapRef`, `secretRef`, `prefix`) |
+| `ingress.tls` | An item whose `hosts` is not a list of names, or whose `secretName` is not a string |
+| `nodeSelector`, `controller.nodeSelector`, `node.nodeSelector`, `podAnnotations`, `serviceAccount.annotations`, `ingress.annotations`, `monitoring.serviceMonitor.labels` | A value that is not a string, such as `gpu: 1` (write `gpu: "1"`) |
+
+Fields Kubernetes does not know are still accepted inside these types, as the
+API server accepts them. The API server refuses each refused value too once
+the chart puts it into an object; the schema checks it earlier, and also when
+the workload that would use it is disabled (`node.volumes` with
+`node.enabled: false`, for example), where it used to be ignored. Write the
+value as the Kubernetes type has it; the error message names the key and the
+type it expected, for example `at '/tolerations/0/tolerationSeconds': got
+string, want integer`.
+
+The `resources` keys accept more than before: a quantity may be a decimal
+number (`cpu: 1.5`), and `claims` is accepted as Kubernetes 1.26 defines it.
+`imagePullSecrets` keeps the chart's stricter rule that every entry names a
+Secret.
+
+## Upgrading to the generated workload environment {#upgrading-to-the-generated-workload-environment}
+
+The chart writes every `VMAFX_*` variable of its workloads from the platform
+definition ([ADR-2350](../adr/2350-cloud-native-platform.md) D13). The
+scoring server's Deployment, StatefulSet and Job no longer get
+`VMAFX_BACKEND`: `vmafx-server` never read it and takes its backend from each
+request's `backend` score option. The install notes no longer print a
+`BACKEND` line. The server container has an `env` list only when `env` holds
+values. Nodes keep `VMAFX_BACKEND`, set from `gpu.vendor` as before. A script
+that read the variable from the server pod reads it from a node pod instead.
+
 ## Pod security {#pod-security}
 
 Every pod the chart emits — controller `Deployment`, batch `Job`, sticky
@@ -499,6 +667,7 @@ controller, `allow-controller-to-apiserver` only with a tenant registry):
 | `allow-controller-ingress`      | ingress   | every pod in the release namespace (`controllerIngress.fromPodSelector` narrows) | `controller.httpPort`, `controller.grpcPort` | Nodes, operator and in-namespace clients reach the controller. |
 | `allow-operator-to-controller`  | egress    | the chart's controller pods                     | `controller.grpcPort`, `controller.httpPort` | The operator's `GetJob` polls and `/healthz` probes. |
 | `allow-controller-to-identity-provider` | egress | `controllerToIdentityProvider.cidrs` (default `0.0.0.0/0`) | `443` | JWKS fetches while auth is on (not with `auth.disabled`). |
+| `allow-controller-to-database` | egress | the chart's CloudNativePG `Cluster` pods (`cnpg.io/cluster`), or `controllerToDatabase.cidrs` (default `0.0.0.0/0`) with an external database | `controllerToDatabase.ports` (`5432`) | The controller and its migration Job reach PostgreSQL; rendered with `controller.store.backend: postgres`. |
 | `allow-node-to-controller`      | egress    | the chart's controller pods with `controller.enabled`, else pods matching `networkPolicy.allow.nodeToController.podSelector` (default: every pod in the namespace) | `controller.grpcPort`, else `nodeToController.port` (9090) | The nodes' controller client (RegisterNode, Heartbeat, PullWork, ReportResult). Rendered when the nodes have a controller. |
 | `allow-node-egress-object-store`| egress    | configurable CIDR list (default `0.0.0.0/0` minus RFC1918) | `443`     | rclone egress from worker pods to S3 / GCS / Azure Blob. Tighten `networkPolicy.allow.nodeEgressObjectStore.cidrs` to your bucket VPC CIDR in production. |
 | `allow-operator-to-apiserver`   | egress    | `0.0.0.0/0` (apiserver Service IP is not selectable by a NetworkPolicy peer) | `443`, `6443` | controller-runtime list/watch traffic for the `vmafx-operator`. |
@@ -544,7 +713,9 @@ podDisruptionBudget:
 ```
 
 When enabled, the chart creates a `policy/v1 PodDisruptionBudget` for each
-active pool (controller, node, operator).
+active pool (server, node, operator). The controller has its own,
+`maxUnavailable: 1`, whenever `controller.replicas` is above 1, whether or not
+`podDisruptionBudget.enabled` is set ([job store and replicas](#controller-store)).
 
 Requires Kubernetes >= 1.21 (for `policy/v1`). See ADR-1058, ADR-1094.
 

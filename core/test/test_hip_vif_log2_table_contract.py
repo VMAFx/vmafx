@@ -211,7 +211,6 @@ class HipVifLog2TableContractTest(unittest.TestCase):
             any(f"{CPU}: a second definition" in failure for failure in failures), failures
         )
 
-
     def test_sycl_table_of_its_own_is_detected(self) -> None:
         # The pre-reuse vif_init_log2_lut().
         failures = self._edited(
@@ -221,7 +220,9 @@ class HipVifLog2TableContractTest(unittest.TestCase):
             "        table[j] = static_cast<uint16_t>(\n"
             "            std::roundf(std::log2f((float)(j + 32768)) * 2048.0f));\n",
         )
-        self.assertTrue(any(f"{SYCL_HOST}: the device table" in item for item in failures), failures)
+        self.assertTrue(
+            any(f"{SYCL_HOST}: the device table" in item for item in failures), failures
+        )
         self.assertTrue(any(f"{SYCL_HOST}: a second definition" in item for item in failures))
 
     def test_metal_table_of_its_own_is_detected(self) -> None:
@@ -233,7 +234,9 @@ class HipVifLog2TableContractTest(unittest.TestCase):
             "        ((uint16_t *)[(__bridge id<MTLBuffer>)s->log2_buf contents])[i] =\n"
             "            (uint16_t)lround(log2f((float)(0x8000u + i)) * 2048.0f);",
         )
-        self.assertTrue(any(f"{METAL_HOST}: the device table" in item for item in failures), failures)
+        self.assertTrue(
+            any(f"{METAL_HOST}: the device table" in item for item in failures), failures
+        )
         self.assertTrue(any(f"{METAL_HOST}: a second definition" in item for item in failures))
 
 

@@ -57,9 +57,10 @@ int vmaf_ref_init(VmafRef **ref)
     auto *r = static_cast<VmafRef *>(malloc(sizeof(VmafRef)));
     if (!r)
         return -ENOMEM;
+    /* Construct the count as 1 directly without std::atomic_init() (deprecated in C++20). */
     new (r) VmafRef{}; /* value-init: zero-initialises atomic_int cnt */
 
-    atomic_init(&r->cnt, 1);
+    atomic_store(&r->cnt, 1);
     *ref = r;
     return 0;
 }

@@ -8,7 +8,7 @@
 // controller-runtime v0.24+ and runs as a Kubernetes Deployment.
 //
 // ADR-1119 Phase 1: this binary is composed with the golusoris fx framework.
-// golusoris.Core supplies config (koanf) + structured slog; otel.Module wires
+// bootstrap.Core supplies config (koanf) + structured slog; otel.Module wires
 // OpenTelemetry; operator.Module (golusoris/k8s/operator) resolves the
 // rest.Config, builds the controller-runtime manager, registers the default
 // healthz/readyz "ping" probes, supports leader election, and runs the manager
@@ -69,6 +69,10 @@ import (
 	buildversion "github.com/VMAFx/vmafx/pkg/version"
 )
 
+// Leader election reads and renews its lease (config/rbac/role.yaml is
+// generated from this marker and those of the reconcilers).
+// +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;update;patch;delete
+
 // defaultLeaderElectionID is the controller-runtime lease name used when leader
 // election is enabled and no explicit ID is configured — a stable
 // vmafx-specific lease (golusoris does not default LeaderElectionID).
@@ -92,15 +96,9 @@ func operatorEnvOptions() config.Options {
 	return config.Options{
 		EnvPrefix: "VMAFX_",
 		Delimiter: ".",
-		CompoundKeys: append([]string{
-			"operator.metrics_addr",
-			"operator.health_probe_addr",
-			"operator.leader_election",
-			"operator.leader_election_id",
-			"operator.graceful_shutdown",
-			"operator.webhook_port",
-			"operator.webhook_host",
-		}, controllerclient.CompoundKeys...),
+		// compoundKeys is generated from the [[config]] entries of
+		// api/vmafx-platform.toml (config_keys.gen.go, ADR-2350 D13).
+		CompoundKeys: compoundKeys,
 	}
 }
 
@@ -183,7 +181,7 @@ func app() *fx.App {
 // validation test.
 func options() []fx.Option {
 	return []fx.Option{
-		bootstrap.Base, // golusoris.Core + otel.Module + version
+		bootstrap.Base, // bootstrap.Core + otel.Module + version
 		fx.Replace(operatorEnvOptions()),
 		operator.Module,
 		operator.ProvideScheme(vmafxv1.AddToScheme),

@@ -30,6 +30,30 @@
 static VMAF_ADM_CM_HOST_DEVICE inline int64_t
 adm_cm_round_row_total(int64_t row_total, int64_t rounding, uint32_t shift)
 {
+    /* The arithmetic shift of the signed row total is the CPU rounding the twins reproduce bit
+     * for bit; an unsigned shift would move its bits. */
+    // NOLINTNEXTLINE(bugprone-signed-bitwise): arithmetic shift of the signed total, ADR-1416
+    return (row_total + rounding) >> shift;
+}
+
+/**
+ * Scale-0 form of adm_cm_round_row_total(), on an unsigned row total.
+ *
+ * A scale-0 contrast-masking term is a non-negative cube, and a row of them
+ * can pass INT64_MAX: at the default CSF weights a picture 31-32 or 63-64
+ * pixels wide whose reference has full-range detail and no distortion
+ * reaches 1.044 / 1.021 INT64_MAX (0.52 of 2^64), and a horizontal or
+ * vertical CSF weight above 38,400 does at 16K (37,600 at the cap). The row
+ * (and the frame) are summed unsigned, which holds every row up to a
+ * horizontal or vertical weight of about 45,200; the limit of ADR-1917,
+ * 43,900, keeps every row below 0.92 of 2^64 (scripts/dev/adm_cm_row_bound.py;
+ * T-ADM-CM-SCALE0-ROW-UINT64-WEIGHT-BUDGET-2026-10-05). A row below 2^63
+ * gives the bits the signed form gave. `shift` is the row shift (ceil(log2)
+ * of the band height), so the result is far below 2^63.
+ */
+static VMAF_ADM_CM_HOST_DEVICE inline uint64_t
+adm_cm_round_row_total_s0(uint64_t row_total, uint64_t rounding, uint32_t shift)
+{
     return (row_total + rounding) >> shift;
 }
 
@@ -72,7 +96,7 @@ static VMAF_ADM_CM_HOST_DEVICE inline int32_t adm_cm_excess_s0(int32_t x, int32_
                                                                uint32_t shift)
 {
     const int64_t magnitude = (x < 0) ? -(int64_t)x : (int64_t)x;
-    const int64_t excess = magnitude - ((int64_t)thr * ((int64_t)1 << shift));
+    const int64_t excess = magnitude - ((int64_t)thr * (int64_t)((uint64_t)1 << shift));
     /* Two selects, not an early return: whether a sample is masked is as good
      * as random on noisy content, and a branch on it mispredicts. */
     const int64_t floored = (excess < 0) ? 0 : excess;

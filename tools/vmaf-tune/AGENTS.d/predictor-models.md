@@ -16,12 +16,14 @@ real-corpus retrains from `runs/phase_a/full_grid/comprehensive.jsonl`
 and their cards carry `corpus.kind: real-N=<rows>`. Software and
 AMF predictors remain synthetic stubs until matching real corpora
 exist. Trainer
-(`tools/vmaf-tune/src/vmaftune/predictor_train.py`) sources its
+(`ai/src/vmaf_train/predictor_train.py`, moved out of vmaf-tune so no
+runtime package declares torch, ADR-1886) sources its
 `CODECS` tuple from `predictor._DEFAULT_COEFFS` so two stay
 single-source. When new codec adapter is added (e.g. future
 `vp9_qsv` row in `_DEFAULT_COEFFS`), same PR must:
 
-1. Re-run `python3 -m vmaftune.predictor_train --output-dir model`
+1. Re-run `python3 -m vmaf_train.predictor_train --output-dir model`
+   in the ai/ environment
    to produce matching `predictor_<codec>.onnx` + card.
 2. Commit new ONNX bytes — shipped-model smoke test
    parameterises over `CODECS` and fails if coefficient row has

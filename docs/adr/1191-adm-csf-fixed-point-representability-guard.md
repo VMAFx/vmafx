@@ -2,7 +2,7 @@
 
 # ADR-1191: Integer ADM rejects CSF configurations its fixed-point storage cannot represent
 
-- **Status**: Accepted
+- **Status**: Accepted (Superseded-in-part 2026-10-06 by [ADR-1325](1325-integer-adm-barten-fixed-point-normalization.md) for the finite-over-range rejection)
 - **Date**: 2026-09-06
 - **Deciders**: Lusoris
 - **Tags**: `metrics`, `adm`, `cuda`, `sycl`, `hip`, `correctness`

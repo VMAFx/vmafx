@@ -73,3 +73,13 @@ xxd-embedded HSACO blob.
 - Verify command in PR description; per-feature delta tabulated in the
   deep-dive digest at
   [`docs/research/hip-integer-moment-registration.md`](../research/hip-integer-moment-registration.md).
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 69: `- ADR-0536: weak HSACO stubs for ADM modules that still
+  reference CUDA`: ADR-0536 points to an unrelated topic
+  (0536-per-shot-bitrate-predicate-chain.md: "Per-shot predicate threads
+  `bitrate_kbps` through bitrate-ladder pipeline").

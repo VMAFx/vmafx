@@ -1,7 +1,14 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
-"""Pin integer-ADM CM row rounding before the score's float conversion."""
+"""Pin integer-ADM CM row rounding before the score's float conversion.
+
+Scale 0 folds through adm_cm_round_row_total_s0(), on unsigned row totals: a
+scale-0 row of non-negative cubes can pass INT64_MAX (64-pixel-wide pictures at
+the default CSF weights, any width near the ADR-1472 weight budget). Scales 1-3
+keep the signed adm_cm_round_row_total() (CUDA's i4 rounding term is negative,
+ADR-0155).
+"""
 
 from __future__ import annotations
 
@@ -22,11 +29,20 @@ SOURCE_PATHS = {
     "metal": "metal/integer_adm.metal",
 }
 
+S0_FOLD = "adm_cm_round_row_total_s0("
+
 NATIVE_FOLD_CALLS = (
     (
         "kernels",
         "adm_cm_fold",
         "accum[k] += adm_cm_round_row_total(inner[k], add_shift_inner_accum, shift_inner_accum);",
+    ),
+    (
+        "kernels",
+        "adm_cm_fold_s0",
+        "accum[k] += adm_cm_round_row_total_s0(inner[k], add_shift_inner_accum, "
+        "shift_inner_accum);",
+        S0_FOLD,
     ),
     (
         "cuda",
@@ -37,14 +53,16 @@ NATIVE_FOLD_CALLS = (
     (
         "cuda",
         "s0_cm_flush_rows",
-        "const int64_t shifted = adm_cm_round_row_total(row_total, "
+        "const uint64_cu shifted = adm_cm_round_row_total_s0(row_total, "
         "add_shift_inner_accum, shift_inner_accum);",
+        S0_FOLD,
     ),
     (
         "hip",
         "s0_cm_block_reduce",
-        "const int64_t shifted = adm_cm_round_row_total(row_total, "
+        "const uint64_cu shifted = adm_cm_round_row_total_s0(row_total, "
         "add_shift_inner_accum, shift_inner_accum);",
+        S0_FOLD,
     ),
     (
         "hip",
@@ -55,7 +73,8 @@ NATIVE_FOLD_CALLS = (
     (
         "sycl",
         "adm_dev_fold_row",
-        "int64_t const shifted = adm_cm_round_row_total(row_total, rounding, shift);",
+        "auto const shifted = (int64_t)adm_cm_round_row_total_s0(row_total, rounding, shift);",
+        S0_FOLD,
     ),
 )
 
@@ -69,8 +88,9 @@ METAL_FOLD_CALLS = (
 # The scalar reference and both x86 twins walk the rows through the shared
 # drivers of integer_adm_kernels.h. A driver folds the first row, every
 # interior row and the last row: three calls, each after a complete row.
-ROW_DRIVERS = ("adm_cm_rows", "i4_adm_cm_rows")
-ROW_DRIVER_FOLD = "adm_cm_fold(inner, accum, c->add_shift_inner_accum, c->shift_inner_accum);"
+# driver -> its fold: the scale-0 driver folds unsigned rows.
+ROW_DRIVERS = {"adm_cm_rows": "adm_cm_fold_s0", "i4_adm_cm_rows": "adm_cm_fold"}
+ROW_DRIVER_FOLD = "{fold}(inner, accum, c->add_shift_inner_accum, c->shift_inner_accum);"
 ROW_DRIVER_FOLDS = 3
 ROW_DRIVER_INTERIOR = "interior_row(c, i, bd, inner);"
 
@@ -205,10 +225,20 @@ def _require_exact_call(
 
 
 def _require_native_contract(failures: list[str], sources: dict[str, str]) -> None:
-    header = _compact(sources["header"])
     expected_return = "return(row_total+rounding)>>shift;"
-    if header.count(expected_return) != 1:
-        failures.append("header: raw row fold arithmetic changed")
+    for helper in ("adm_cm_round_row_total", "adm_cm_round_row_total_s0"):
+        try:
+            body = _compact(_function(sources["header"], helper))
+        except ValueError as error:
+            failures.append(f"header: {error}")
+            continue
+        if body.count(expected_return) != 1:
+            failures.append("header: raw row fold arithmetic changed")
+    s0_helper = re.search(
+        r"uint64_t\s+adm_cm_round_row_total_s0\(uint64_t row_total", sources["header"]
+    )
+    if s0_helper is None:
+        failures.append("header: the scale-0 row fold is not unsigned")
 
     for role, include in {
         "kernels": '#include "adm_cm_accumulator.h"',
@@ -220,20 +250,20 @@ def _require_native_contract(failures: list[str], sources: dict[str, str]) -> No
         if _compact(sources[role]).count(_compact(include)) != 1:
             failures.append(f"{role}: missing private accumulator header")
 
-    for role, function, statement in NATIVE_FOLD_CALLS:
-        _require_exact_call(failures, role, sources[role], function, statement)
+    for role, function, statement, *fold in NATIVE_FOLD_CALLS:
+        _require_exact_call(failures, role, sources[role], function, statement, *fold)
 
 
 def _require_row_driver_contract(failures: list[str], sources: dict[str, str]) -> None:
-    for driver in ROW_DRIVERS:
+    for driver, fold in ROW_DRIVERS.items():
         try:
             body = _compact(_function(sources["kernels"], driver))
         except ValueError as error:
             failures.append(f"kernels: {error}")
             continue
-        if body.count(_compact(ROW_DRIVER_FOLD)) != ROW_DRIVER_FOLDS:
+        if body.count(_compact(ROW_DRIVER_FOLD.format(fold=fold))) != ROW_DRIVER_FOLDS:
             failures.append(f"kernels:{driver}: incomplete full-row fold coverage")
-        if body.count("adm_cm_fold(") != ROW_DRIVER_FOLDS:
+        if len(re.findall(r"\badm_cm_fold(?:_s0)?\(", body)) != ROW_DRIVER_FOLDS:
             failures.append(f"kernels:{driver}: a fold escaped the three row folds")
         if body.count(_compact(ROW_DRIVER_INTERIOR)) != 1:
             failures.append(f"kernels:{driver}: interior rows must reach the row callback once")
@@ -292,8 +322,8 @@ class AdmCmRowRoundingContractTest(unittest.TestCase):
         sources = _sources()
         sources["cuda"] = _sub_exact(
             sources["cuda"],
-            r"adm_cm_round_row_total\(row_total,\s*add_shift_inner_accum,",
-            "adm_cm_round_row_total(accum_row[row], add_shift_inner_accum,",
+            r"adm_cm_round_row_total_s0\(row_total,\s*add_shift_inner_accum,",
+            "adm_cm_round_row_total_s0(accum_row[row], add_shift_inner_accum,",
         )
         self.assertTrue(
             any("cuda:s0_cm_flush_rows" in item for item in _contract_failures(sources))
@@ -312,19 +342,17 @@ class AdmCmRowRoundingContractTest(unittest.TestCase):
         sources = _sources()
         sources["avx2"] = _sub_exact(
             sources["avx2"],
-            r"inner\[b\]\s*\+=\s*cm_as_int64\(biased - \(lanes \* "
-            r"f->band\[b\]\.cub_bias\)\);",
-            "inner[b] += cm_as_int64(biased - (lanes * f->band[b].cub_bias)) >> "
-            "c->shift_inner_accum;",
+            r"inner\[b\]\s*\+=\s*biased - \(lanes \* f->band\[b\]\.cub_bias\);",
+            "inner[b] += (biased - (lanes * f->band[b].cub_bias)) >> c->shift_inner_accum;",
         )
         self.assertTrue(any(item.startswith("avx2:") for item in _contract_failures(sources)))
 
         sources = _sources()
         sources["avx512"] = _sub_exact(
             sources["avx512"],
-            r"inner\[b\]\s*\+=\s*hsum_epi64\(_mm512_add_epi64\(accum_lo\[b\],\s*"
+            r"inner\[b\]\s*\+=\s*hsum_epu64\(_mm512_add_epi64\(accum_lo\[b\],\s*"
             r"accum_hi\[b\]\)\);",
-            "inner[b] += hsum_epi64(_mm512_add_epi64(accum_lo[b], accum_hi[b])) >> "
+            "inner[b] += hsum_epu64(_mm512_add_epi64(accum_lo[b], accum_hi[b])) >> "
             "c->shift_inner_accum;",
         )
         self.assertTrue(any(item.startswith("avx512:") for item in _contract_failures(sources)))
@@ -333,13 +361,11 @@ class AdmCmRowRoundingContractTest(unittest.TestCase):
         sources = _sources()
         sources["kernels"] = _sub_exact(
             sources["kernels"],
-            r"interior_row\(c, i, bd, inner\);\s*adm_cm_fold\(inner, accum, "
+            r"interior_row\(c, i, bd, inner\);\s*adm_cm_fold_s0\(inner, accum, "
             r"c->add_shift_inner_accum,\s*c->shift_inner_accum\);",
             "interior_row(c, i, bd, inner);",
         )
-        self.assertTrue(
-            any("kernels:adm_cm_rows" in item for item in _contract_failures(sources))
-        )
+        self.assertTrue(any("kernels:adm_cm_rows" in item for item in _contract_failures(sources)))
 
     def test_private_row_loop_mutation_is_detected(self) -> None:
         sources = _sources()
@@ -348,9 +374,7 @@ class AdmCmRowRoundingContractTest(unittest.TestCase):
             r"adm_cm_rows\(&c, &bd, cm_row_avx512, accum\);",
             "cm_row_avx512(&c, bd.start_row, &bd, accum);",
         )
-        self.assertTrue(
-            any("avx512:adm_cm_avx512" in item for item in _contract_failures(sources))
-        )
+        self.assertTrue(any("avx512:adm_cm_avx512" in item for item in _contract_failures(sources)))
 
     def test_truncation_mutation_is_detected(self) -> None:
         sources = _sources()
@@ -366,8 +390,8 @@ class AdmCmRowRoundingContractTest(unittest.TestCase):
         sources = _sources()
         sources["sycl"] = _sub_exact(
             sources["sycl"],
-            r"adm_cm_round_row_total\(row_total,\s*rounding,\s*shift\)",
-            "adm_cm_round_row_total(row_total, rounding, shift) + 1",
+            r"adm_cm_round_row_total_s0\(row_total,\s*rounding,\s*shift\)",
+            "adm_cm_round_row_total_s0(row_total, rounding, shift) + 1",
         )
         self.assertTrue(
             any("sycl:adm_dev_fold_row" in item for item in _contract_failures(sources))
@@ -381,6 +405,32 @@ class AdmCmRowRoundingContractTest(unittest.TestCase):
             "adm_cm_round_row_total(local_cm, (ulong)c.cm_add_shift_inner,",
         )
         self.assertTrue(any("metal:iadm_csf_cm_s0" in item for item in _contract_failures(sources)))
+
+    def test_signed_scale0_fold_is_detected(self) -> None:
+        # The fold the scale-0 twins had before: the signed helper on an int64
+        # row total, which wraps once the row passes INT64_MAX.
+        for role, function in (
+            ("cuda", "s0_cm_flush_rows"),
+            ("hip", "s0_cm_block_reduce"),
+            ("sycl", "adm_dev_fold_row"),
+        ):
+            sources = _sources()
+            sources[role] = _sub_exact(
+                sources[role],
+                r"adm_cm_round_row_total_s0\(row_total,",
+                "adm_cm_round_row_total(row_total,",
+            )
+            with self.subTest(role=role):
+                self.assertTrue(
+                    any(f"{role}:{function}" in item for item in _contract_failures(sources))
+                )
+        sources = _sources()
+        sources["header"] = _sub_exact(
+            sources["header"],
+            r"uint64_t\s+adm_cm_round_row_total_s0\(uint64_t row_total",
+            "int64_t adm_cm_round_row_total_s0(int64_t row_total",
+        )
+        self.assertIn("header: the scale-0 row fold is not unsigned", _contract_failures(sources))
 
     def test_helper_rounding_bias_mutation_is_detected(self) -> None:
         sources = _sources()

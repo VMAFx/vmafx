@@ -49,3 +49,13 @@ GO recommendation). Per-model docs under `docs/ai/inference.md` were
 updated in the same PR to satisfy this ADR's per-PR doc bar; the EP
 matrix gained three rows and the `attached_ep` stable-string list
 gained `"OpenVINO:NPU"`.
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 41: `[ADR-0332](0405-openvino-npu-ep-wiring.md) extended the
+  tiny-AI dispatch surface with three new --tiny-device`: Cites ADR-0332 for
+  OpenVINO NPU EP wiring; ADR-0332 is 'Agent worktree drift hard guard', an
+  unrelated topic. Target file is 0405-openvino-npu-ep-wiring.md (ADR-0405).

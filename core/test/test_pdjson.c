@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "compat/crt_portable.h"
 #include "pdjson.h"
 #include "test.h"
 
@@ -180,7 +181,7 @@ static char *test_user_source(void)
 
 static char *test_file_source(void)
 {
-    FILE *file = tmpfile();
+    FILE *file = vmaf_tmpfile_portable();
     mu_assert("temporary input", file != NULL);
     mu_assert("write temporary input", fputs("[true]", file) >= 0 && fseek(file, 0, SEEK_SET) == 0);
     json_stream stream;

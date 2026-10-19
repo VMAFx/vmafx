@@ -48,13 +48,6 @@
 #endif
 #endif
 
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
-#ifndef M_E
-#define M_E 2.71828182845904523536
-#endif
-
 #define SI_EIGENVALUE_EPS SPEED_INTERNAL_EIGENVALUE_EPS
 #define SI_MAX(x, y) ((x) > (y) ? (x) : (y))
 
@@ -90,6 +83,14 @@ int speed_internal_init_dimensions(SpeedInternalDimensions *dim, int w, int h, d
 
     if (!speed_validate_dimensions((unsigned)w, (unsigned)h, prescale)) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "SpEED: image too small, operating width or height is 0\n");
+        return -EINVAL;
+    }
+    if (!vif_plane_fits_int_index(speed_internal_float_stride(dim->alloc_width) / sizeof(float),
+                                  dim->alloc_height)) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "SpEED: the prescaled plane (%zux%zu) has more samples than the int index "
+                 "of vif_tools allows; lower speed_prescale\n",
+                 dim->alloc_width, dim->alloc_height);
         return -EINVAL;
     }
     return 0;
@@ -146,14 +147,9 @@ void speed_internal_filter_and_downscale(const SpeedInternalDimensions *dim,
     const size_t downscaled_w = dim->scaled_width >> SPEED_INTERNAL_NUM_SCALES;
     const size_t downscaled_h = dim->scaled_height >> SPEED_INTERNAL_NUM_SCALES;
 
-#if ARCH_X86
-    vif_filter1d_s(filter_antialias, frame_buffer, curr_scale, tmpbuf, (int)dim->scaled_width,
-                   (int)dim->scaled_height, (int)float_stride, (int)float_stride,
-                   filter_width_antialias);
-
-    vif_dec16_s(curr_scale, frame_buffer, (int)dim->scaled_width, (int)dim->scaled_height,
-                (int)float_stride, (int)float_stride);
-#else
+    /* Netflix/vmaf ad42c532: the fused filter on every target, x86 included
+     * (AVX2 vertical pass where dispatched, 9cb9479f); same bits as
+     * vif_filter1d_s() + vif_dec16_s() at every dispatch level. */
     vif_filter1d_dec16_s(filter_antialias, frame_buffer, curr_scale, tmpbuf, (int)dim->scaled_width,
                          (int)dim->scaled_height, (int)float_stride, (int)float_stride,
                          filter_width_antialias);
@@ -161,7 +157,6 @@ void speed_internal_filter_and_downscale(const SpeedInternalDimensions *dim,
         (void)memcpy(frame_buffer + i * stride_px, curr_scale + i * stride_px,
                      downscaled_w * sizeof(float));
     }
-#endif
 
     const int filter_width = vif_get_filter_size(SPEED_INTERNAL_NUM_SCALES, kernelscale);
     float filter[128];
@@ -390,13 +385,13 @@ static void si_create_givens(float a, float b, float *c, float *s)
     } else if (fabsf(b) > fabsf(a)) {
         const float t = -a / b;
         // NOLINTNEXTLINE(performance-type-promotion-in-math-fn) ADR-1477: upstream's double form.
-        const float s1 = 1.0 / sqrt(1 + t * t);
+        const float s1 = (float)(1.0 / sqrt(1 + t * t));
         *s = s1;
         *c = s1 * t;
     } else {
         const float t = -b / a;
         // NOLINTNEXTLINE(performance-type-promotion-in-math-fn) ADR-1477: upstream's double form.
-        const float c1 = 1.0 / sqrt(1 + t * t);
+        const float c1 = (float)(1.0 / sqrt(1 + t * t));
         *c = c1;
         *s = c1 * t;
     }
@@ -942,7 +937,8 @@ static void si_gpu_update_entropy(float *entropy, const float *S, size_t num_blo
 {
     for (size_t i = 0; i < num_blocks; i++) {
         // NOLINTNEXTLINE(performance-type-promotion-in-math-fn) ADR-1477: upstream's double form.
-        entropy[i] += log2(L * S[i] + sigma_nn) + log2(2 * M_PI * M_E);
+        const double increment = log2(L * S[i] + sigma_nn) + log2(2 * M_PI * M_E);
+        entropy[i] = (float)(entropy[i] + increment);
     }
 }
 
@@ -972,39 +968,42 @@ static void si_gpu_spatial(SiGpuSide ref_results, SiGpuSide dis_results, size_t 
     // NOLINTBEGIN(performance-type-promotion-in-math-fn) ADR-1477: upstream's double form.
     switch (speed_weight_var_mode) {
     case 0:
-        *spatial_ref = ref_results.entropies[i] * log2(1 + ref_results.variances[i]);
-        *spatial_dis = dis_results.entropies[i] * log2(1 + dis_results.variances[i]);
+        *spatial_ref = (float)(ref_results.entropies[i] * log2(1 + ref_results.variances[i]));
+        *spatial_dis = (float)(dis_results.entropies[i] * log2(1 + dis_results.variances[i]));
         break;
     case 1:
-        *spatial_ref = ref_results.entropies[i] * log2(1 + ref_results.variances[i]);
-        *spatial_dis = dis_results.entropies[i] * log2(1 + ref_results.variances[i]);
+        *spatial_ref = (float)(ref_results.entropies[i] * log2(1 + ref_results.variances[i]));
+        *spatial_dis = (float)(dis_results.entropies[i] * log2(1 + ref_results.variances[i]));
         break;
     case 2:
-        *spatial_ref = ref_results.entropies[i] * log2(1 + dis_results.variances[i]);
-        *spatial_dis = dis_results.entropies[i] * log2(1 + dis_results.variances[i]);
+        *spatial_ref = (float)(ref_results.entropies[i] * log2(1 + dis_results.variances[i]));
+        *spatial_dis = (float)(dis_results.entropies[i] * log2(1 + dis_results.variances[i]));
         break;
     case 3:
-        *spatial_ref = ref_results.entropies[i] *
-                       log2(1 + (ref_results.variances[i] + dis_results.variances[i]) / 2.0);
-        *spatial_dis = dis_results.entropies[i] *
-                       log2(1 + (ref_results.variances[i] + dis_results.variances[i]) / 2.0);
+        *spatial_ref =
+            (float)(ref_results.entropies[i] *
+                    log2(1 + (ref_results.variances[i] + dis_results.variances[i]) / 2.0));
+        *spatial_dis =
+            (float)(dis_results.entropies[i] *
+                    log2(1 + (ref_results.variances[i] + dis_results.variances[i]) / 2.0));
         break;
     case 4:
-        *spatial_ref = ref_results.entropies[i] * log2(1 + ref_results.variances[i]);
-        *spatial_dis = dis_results.entropies[i] *
-                       log2(1 + (ref_results.variances[i] + dis_results.variances[i]) / 2.0);
+        *spatial_ref = (float)(ref_results.entropies[i] * log2(1 + ref_results.variances[i]));
+        *spatial_dis =
+            (float)(dis_results.entropies[i] *
+                    log2(1 + (ref_results.variances[i] + dis_results.variances[i]) / 2.0));
         break;
     case 5:
-        *spatial_ref = ref_results.entropies[i] * log2(1 + ref_results.variances[i]);
+        *spatial_ref = (float)(ref_results.entropies[i] * log2(1 + ref_results.variances[i]));
         *spatial_dis =
-            dis_results.entropies[i] *
-            log2(1 + (0.75 * ref_results.variances[i] + 0.25 * dis_results.variances[i]));
+            (float)(dis_results.entropies[i] *
+                    log2(1 + (0.75 * ref_results.variances[i] + 0.25 * dis_results.variances[i])));
         break;
     default: /* 6 */
-        *spatial_ref = ref_results.entropies[i] * log2(1 + ref_results.variances[i]);
+        *spatial_ref = (float)(ref_results.entropies[i] * log2(1 + ref_results.variances[i]));
         *spatial_dis =
-            dis_results.entropies[i] *
-            log2(1 + (0.25 * ref_results.variances[i] + 0.75 * dis_results.variances[i]));
+            (float)(dis_results.entropies[i] *
+                    log2(1 + (0.25 * ref_results.variances[i] + 0.75 * dis_results.variances[i])));
         break;
     }
     // NOLINTEND(performance-type-promotion-in-math-fn)
@@ -1018,8 +1017,8 @@ static float si_gpu_speed_score(size_t num_blocks, SiGpuSide ref_results, SiGpuS
     const float nn_floor = scoring->nn_floor;
     const size_t elements_in_block = SI_GPU_ELEMENTS;
     float score = 0;
-    float base_entropy =
-        elements_in_block * (log2((double)((1 + nn_floor) * sigma_nn)) + log2(2 * M_PI * M_E));
+    float base_entropy = (float)(elements_in_block * (log2((double)((1 + nn_floor) * sigma_nn)) +
+                                                      log2(2 * M_PI * M_E)));
     for (size_t i = 0; i < num_blocks; i++) {
         if ((ref_results.entropies[i] < base_entropy) &&
             (dis_results.entropies[i] < base_entropy)) {

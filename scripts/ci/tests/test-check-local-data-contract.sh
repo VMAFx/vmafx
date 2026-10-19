@@ -5,6 +5,10 @@
 # Hermetic positive and negative cases for ADR-1277.
 set -euo pipefail
 
+# Drop the git hook environment and the fixture identity (see the helper).
+# shellcheck source=/dev/null
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/../../lib/clean-git-env.sh"
+
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 script="$here/../check-local-data-contract.sh"
 tmp="$(mktemp -d)"
@@ -21,8 +25,6 @@ new_case() {
   case_dir="$tmp/case-$case_number"
   mkdir -p "$case_dir"
   git -C "$case_dir" init -q
-  git -C "$case_dir" config user.email test@example.invalid
-  git -C "$case_dir" config user.name test
   printf '%s/\n%s/\n' "$state_root" "$corpus_root" >"$case_dir/.gitignore"
   printf '%s/\n%s/\n%s/\n' \
     "$state_root" "$retired_root" "$corpus_root" >"$case_dir/.dockerignore"
@@ -161,5 +163,37 @@ expect 'a retired directory still fails under the praetor rule' 1
 new_case
 track tools/markdownlint-extra/rules.mjs "const root = \"$retired_root\";"
 expect 'a path beside the praetor gate still rejects the retired path' 1
+
+# Praetor 320b058d writes the block's rules unanchored.
+praetor_block_unanchored() {
+  printf '%s\n' \
+    '# BEGIN praetor private artifacts (praetorctl adopt)' \
+    "$state_root/" "$retired_root/" '/.standards/worktrees/' \
+    '# END praetor private artifacts'
+}
+
+new_case
+praetor_block_unanchored >>"$case_dir/.gitignore"
+git -C "$case_dir" add .gitignore
+expect "praetor's unanchored managed ignore rule is tolerated" 0
+
+new_case
+printf '%s/\n' "$retired_root" >>"$case_dir/.gitignore"
+git -C "$case_dir" add .gitignore
+expect 'the unanchored rule outside the praetor block fails' 1
+
+new_case
+praetor_block_unanchored >>"$case_dir/.gitignore"
+git -C "$case_dir" add .gitignore
+mkdir -p "$case_dir/$retired_root"
+expect 'a retired directory still fails under the unanchored praetor rule' 1
+
+new_case
+{
+  praetor_block_unanchored
+  printf '%s*/\n' "$retired_root"
+} >>"$case_dir/.gitignore"
+git -C "$case_dir" add .gitignore
+expect 'a retired-root wildcard after the unanchored block still fails' 1
 
 printf 'all local-data contract cases passed\n'

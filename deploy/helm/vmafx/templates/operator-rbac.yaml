@@ -7,18 +7,22 @@
 
   Rendered only when operator.enabled == true.
 
-  Split into two bindings per the principle of least privilege:
+  Split into three bindings per the principle of least privilege:
   1. ClusterRole + ClusterRoleBinding — CRD access only (vmafxjobs,
      vmafxnodes, vmafxmodeltrainings; not vmafxtenants, ADR-1592).  CRDs are cluster-scoped
      resources and require a ClusterRole to watch across namespaces.
-  2. Role + RoleBinding (namespace-scoped) — pods, events, leader-election
-     leases.  These resources are namespaced; restricting them to the release
-     namespace prevents the operator from accidentally touching pods in other
-     namespaces on multi-tenant clusters.
+  2. ClusterRole + ClusterRoleBinding — create and patch events, nothing else
+     (ADR-2647).  The operator reconciles its resources in every namespace and
+     the API server stores an event in the namespace of the object it is
+     about, so event creation must reach every namespace the CRD access does.
+  3. Role + RoleBinding (namespace-scoped) — pods and leader-election leases.
+     Restricting them to the release namespace prevents the operator from
+     touching pods in other namespaces on multi-tenant clusters.
 
   ADR-0714: vmafx-operator kubebuilder skeleton + CRDs.
   ADR-1058: Helm chart security hardening — RBAC split ClusterRole → Role for
   namespaced resources, VmafxTenant rules added.
+  ADR-2647: events move to their own cluster-wide, write-only ClusterRole.
 */ -}}
 {{- if .Values.operator.enabled }}
 ---
@@ -96,7 +100,44 @@ subjects:
     namespace: {{ .Release.Namespace }}
 
 # ---------------------------------------------------------------------------
-# Role: namespaced resources (pods, events, leader-election leases)
+# ClusterRole: events (ADR-2647)
+# The VmafxModelTraining reconciler and leader election record events. An event
+# lives in the namespace of the object it describes, and the operator
+# reconciles objects in every namespace, so the grant is cluster-wide. It is
+# write-only: create and patch (client-go's recorder creates an event, then
+# patches its count); no get, list, watch, update or delete.
+# ---------------------------------------------------------------------------
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "vmafx.fullname" . }}-operator-events
+  labels:
+    {{- include "vmafx.labels" . | nindent 4 }}
+    app.kubernetes.io/component: operator
+rules:
+  - apiGroups: [""]
+    resources: [events]
+    verbs: [create, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "vmafx.fullname" . }}-operator-events-binding
+  labels:
+    {{- include "vmafx.labels" . | nindent 4 }}
+    app.kubernetes.io/component: operator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "vmafx.fullname" . }}-operator-events
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "vmafx.serviceAccountName" . }}-operator
+    namespace: {{ .Release.Namespace }}
+
+# ---------------------------------------------------------------------------
+# Role: namespaced resources (pods, leader-election leases)
 # Scoped to the release namespace — the operator must not create/delete pods
 # in other namespaces on a shared cluster.
 # ---------------------------------------------------------------------------
@@ -114,10 +155,6 @@ rules:
   - apiGroups: [""]
     resources: [pods]
     verbs: [get, list, watch, create, update, patch, delete]
-  # Events (namespace-scoped)
-  - apiGroups: [""]
-    resources: [events]
-    verbs: [create, patch]
   # Leader election (namespace-scoped in coordination.k8s.io)
   - apiGroups: [coordination.k8s.io]
     resources: [leases]

@@ -10,6 +10,7 @@
 #include <string.h>
 
 #include <stdint.h>
+#include "compat/crt_portable.h"
 #include "test.h"
 
 #include "../tools/vmaf_roi_input.h"
@@ -30,7 +31,7 @@ static int check_high_bitdepth(int depth)
         raw[i * 2U] = (uint8_t)(i & UINT8_MAX);
         raw[i * 2U + 1U] = (uint8_t)(i >> 8U);
     }
-    FILE *fp = tmpfile();
+    FILE *fp = vmaf_tmpfile_portable();
     int rc = -EIO;
     if (fp != NULL && fwrite(raw, 2U, SAMPLES, fp) == SAMPLES && fseek(fp, 0, SEEK_SET) == 0) {
         size_t got = 0;
@@ -76,7 +77,7 @@ static char *test_high_bitdepth_saturates_without_wrapping(void)
 
 static char *test_eight_bit_and_short_read(void)
 {
-    FILE *fp = tmpfile();
+    FILE *fp = vmaf_tmpfile_portable();
     mu_assert("tmpfile", fp != NULL);
     const uint8_t input[] = {0, 1, 128, 255};
     uint8_t output[sizeof(input)] = {0};
@@ -99,7 +100,7 @@ static char *test_eight_bit_and_short_read(void)
 
 static char *test_invalid_reader_input_does_not_read_or_write(void)
 {
-    FILE *fp = tmpfile();
+    FILE *fp = vmaf_tmpfile_portable();
     mu_assert("tmpfile", fp != NULL);
     const int depths[] = {INT_MIN, -1, 0, 7, 9, 11, 13, 15, 17, 40, INT_MAX};
     uint8_t output = 91;

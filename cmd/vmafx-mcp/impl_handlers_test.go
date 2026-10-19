@@ -39,6 +39,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/VMAFx/vmafx/internal/execstub"
 	"github.com/VMAFx/vmafx/pkg/modeleval"
 )
 
@@ -369,9 +370,7 @@ func TestRunVmafTune_SurfacesStderr(t *testing.T) {
 	fake := filepath.Join(dir, "fake-vmaf-tune.sh")
 	const diag = "boom: src not found"
 	script := "#!/bin/sh\necho '" + diag + "' >&2\nexit 3\n"
-	if err := os.WriteFile(fake, []byte(script), 0o755); err != nil {
-		t.Fatalf("write fake binary: %v", err)
-	}
+	execstub.Write(t, fake, []byte(script))
 
 	_, err := runVmafTune(context.Background(), fake, "compare", []string{"compare"})
 	if err == nil {
@@ -390,9 +389,7 @@ func TestRunVmafTune_ReturnsStdoutOnSuccess(t *testing.T) {
 	dir := t.TempDir()
 	fake := filepath.Join(dir, "fake-vmaf-tune-ok.sh")
 	script := "#!/bin/sh\nprintf '{\"ok\":true}'\nexit 0\n"
-	if err := os.WriteFile(fake, []byte(script), 0o755); err != nil {
-		t.Fatalf("write fake binary: %v", err)
-	}
+	execstub.Write(t, fake, []byte(script))
 
 	out, err := runVmafTune(context.Background(), fake, "compare", []string{"compare"})
 	if err != nil {
@@ -680,35 +677,72 @@ func TestAddRawTool_HandlerErrorBecomesIsError(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// probeBackends — advertised backends from --help output.
-// We write a tiny fake vmaf shell script that emits --no_cuda to verify
-// parsing.
+// probeBackends — usable backends from `vmaf --list-backends` (ADR-1874).
+// A tiny fake vmaf shell script prints the report; the --help text of the
+// real CLI names every backend on every build, so it must not decide.
 // ---------------------------------------------------------------------------
 
-func TestProbeBackends_ParsesHelpOutput(t *testing.T) {
-	tmp := t.TempDir()
-	script := filepath.Join(tmp, "vmaf")
-	// Script prints a --help output that advertises cuda.
-	if err := os.WriteFile(script, []byte("#!/bin/sh\necho '--no_cuda --no_sycl'\n"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-
-	// Ensure this binary isn't in the cache from a previous test run.
+// fakeVmafReport writes a fake vmaf that prints report for --list-backends and
+// a help text naming every --no_<backend> flag for anything else.
+func fakeVmafReport(t *testing.T, report string) string {
+	t.Helper()
+	script := filepath.Join(t.TempDir(), "vmaf")
+	body := "#!/bin/sh\n" +
+		"if [ \"$1\" = \"--list-backends\" ]; then\ncat <<'EOF'\n" + report + "\nEOF\nexit 0\nfi\n" +
+		"echo '--no_cuda --no_sycl --no_hip --no_metal'\n"
+	execstub.Write(t, script, []byte(body))
 	probeMu.Lock()
 	delete(probeCache, script)
 	probeMu.Unlock()
+	return script
+}
+
+func TestProbeBackends_ReadsListBackendsReport(t *testing.T) {
+	script := fakeVmafReport(t, `{"backends": [
+  {"name": "cpu", "compiled": true, "usable": true},
+  {"name": "cuda", "compiled": true, "usable": true},
+  {"name": "sycl", "compiled": false, "usable": false},
+  {"name": "hip", "compiled": true, "usable": false, "init_status": -19},
+  {"name": "metal", "compiled": false, "usable": false}]}`)
 
 	advertised := probeBackends(script)
 	if !advertised["cpu"] {
 		t.Error("cpu always true")
 	}
 	if !advertised["cuda"] {
-		t.Error("cuda should be true: script emitted '--no_cuda'")
+		t.Error("cuda should be true: the report lists it usable")
 	}
-	if !advertised["sycl"] {
-		t.Error("sycl should be true: script emitted '--no_sycl'")
+	for _, name := range []string{"sycl", "hip", "metal"} {
+		if advertised[name] {
+			t.Errorf("%s should be false: the report does not list it usable "+
+				"(the help text names it on every build)", name)
+		}
 	}
-	if advertised["hip"] {
-		t.Error("hip should be false: script did not emit '--no_hip'")
+}
+
+func TestProbeBackends_CPUOnlyBuildReportsNoGPU(t *testing.T) {
+	script := fakeVmafReport(t, `{"backends": [
+  {"name": "cpu", "compiled": true, "usable": true},
+  {"name": "cuda", "compiled": false, "usable": false},
+  {"name": "sycl", "compiled": false, "usable": false},
+  {"name": "hip", "compiled": false, "usable": false},
+  {"name": "metal", "compiled": false, "usable": false}]}`)
+
+	advertised := probeBackends(script)
+	if len(advertised) != 1 || !advertised["cpu"] {
+		t.Errorf("a CPU-only build advertises only cpu, got %v", advertised)
+	}
+}
+
+func TestProbeBackends_NoReportMeansCPUOnly(t *testing.T) {
+	script := filepath.Join(t.TempDir(), "vmaf")
+	execstub.Write(t, script, []byte("#!/bin/sh\nexit 2\n"))
+	probeMu.Lock()
+	delete(probeCache, script)
+	probeMu.Unlock()
+
+	advertised := probeBackends(script)
+	if len(advertised) != 1 || !advertised["cpu"] {
+		t.Errorf("a binary without --list-backends is CPU-only, got %v", advertised)
 	}
 }

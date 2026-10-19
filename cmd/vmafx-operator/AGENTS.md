@@ -20,22 +20,21 @@
 
 ## Rebase-sensitive invariants
 
-1. **DeepCopyObject is hand-written.** `api/vmafx/v1/zz_generated_deepcopy.go`
-   hand-written (controller-gen codegen = Stage 3 CI job). Do not delete or
-   overwrite without running `controller-gen object:headerFile=...` to
-   regenerate.
+1. **Types, deepcopy, CRDs, RBAC role: generated (ADR-2350 D13).** Source =
+   `api/vmafx-platform.toml`. `vmafx-api.py --write` -> `api/vmafx/v1/*_types.go`;
+   `crd_generate.py --write` (controller-gen, go.mod tool pin) ->
+   `zz_generated.deepcopy.go`, `deploy/helm/vmafx/crds/*.yaml`,
+   `config/rbac/role.yaml`. Never hand-edit; gates `test_crd_generated_current`,
+   `test_crd_compat` (v1 only grows).
 
-2. **CRD YAMLs live in two places.** Canonical source: `config/crd/bases/`. Helm
-   ships copies in `deploy/helm/vmafx/crds/`. Keep both in sync whenever CRD
-   schema changes.
+2. **One CRD tree: `deploy/helm/vmafx/crds/`.** Chart installs it; envtest
+   suite (`suite_test.go`) loads it. `config/crd/bases/` removed; never
+   reintroduce second copy.
 
-3. **`api/vmafx/v1/vmafxjob_types.go` has a `ControllerJobID` field.** Bridge
-   between external scheduler (vmafx-controller) and operator. Field set by
-   scheduler, read by reconciler. Do not rename without updating CRD YAML and
-   Helm CRD copies. Every new status field added to Go types file must also be
-   added to both CRD YAML files (`config/crd/bases/` and
-   `deploy/helm/vmafx/crds/`); Kubernetes API server structural schema pruning
-   silently drops unknown fields on status writes (ADR-1069).
+3. **`VmafxJobStatus.controllerJobID`: bridge scheduler -> reconciler.** Set by
+   vmafx-controller, read by reconciler. Rename = v1 break (`test_crd_compat`).
+   New status field -> definition first, regenerate; CRD schema follows, so
+   structural pruning cannot drop it on status writes (ADR-1069).
 
 4. **`status.lastHeartbeat` on VmafxNode is owned by the node agent.**
    `VmafxNodeReconciler` must NOT write `status.lastHeartbeat`. Written
@@ -43,11 +42,12 @@
    for stale-threshold detection (ADR-1069). Introducing write to field in
    reconciler defeats staleness guard.
 
-5. **`gen/go/controller/controller.pb.go` has a hand-added `FinalScore` field.**
-   Added in Stage 2 to propagate VMAF score from COMPLETED jobs. When
-   `buf generate` runs to regenerate from proto, ensure field also present in
-   proto source (`cmd/vmafx-controller/proto/controller.proto`) before
-   regenerating; otherwise silently dropped.
+5. **`Job.final_score` = field 9 of `controller.proto`.** Carries VMAF score
+   of COMPLETED jobs to reconciler. `gen/go/controller/controller.pb.go` =
+   buf output from `api/vmafx-platform.toml` (ADR-2350 D13); new field ->
+   definition first, regenerate (`vmafx-api.py --write`,
+   `proto_generate.py --write`), never hand-add. CRD types: same definition
+   (invariant 1).
 
 6. **Helm `operator.enabled` defaults to false.** Operator Deployment and RBAC
    gated by `operator.enabled`. Changing default to `true` affects all existing
@@ -65,12 +65,12 @@
 8. **No shared state between reconcilers.** Each reconciler has own
    `client.Client` and `Scheme`. Do not add package-level variables.
 
-9. **Per-controller RBAC.** `config/rbac/role_vmafxjob.yaml`,
-   `config/rbac/role_vmafxnode.yaml`, and
-   `config/rbac/role_vmafxmodeltraining.yaml` = minimum-permission roles.
-   Combined `config/rbac/role.yaml` = convenience aggregate. When adding verbs
-   to reconciler, update corresponding per-controller role, not
-   aggregate alone.
+9. **RBAC = `+kubebuilder:rbac` markers.** Reconcilers + `main.go` (leader
+   election lease) carry markers; controller-gen writes
+   `config/rbac/role.yaml`. New verb -> marker first, then chart rule in
+   `deploy/helm/vmafx/templates/operator-rbac.yaml`;
+   `scripts/ci/tests/test_helm_operator_rbac.py` fails when chart grants less
+   than generated role. Per-kind role files removed.
 
 10. **fx owns signals and the run loop — do NOT call
     `ctrl.SetupSignalHandler()` or `mgr.Start()` anywhere.** `main.go` is
@@ -97,9 +97,10 @@
     operator leaf keys (`metrics_addr`, `health_probe_addr`, `leader_election`,
     `leader_election_id`, `graceful_shutdown`, `webhook_port`, `webhook_host`)
     mis-map (`VMAFX_OPERATOR_METRICS_ADDR` -> `operator.metrics.addr`, not
-    `operator.metrics_addr`). `operatorEnvOptions()` declares each leaf as
-    CompoundKey; `TestEnvOptionsContract` fails if upstream adds new operator
-    option without registering here.
+    `operator.metrics_addr`). `operatorEnvOptions()` takes generated
+    `compoundKeys` (`config_keys.gen.go`, `[[config]]` of
+    `api/vmafx-platform.toml`, ADR-2350 D13); `TestEnvOptionsContract` fails
+    if upstream adds new operator option without `[[config]]` entry.
 
 14. **`--version` exits before fx startup** (`main.go`, ADR-1129): release
     images inject `pkg/version.version` via Go ldflags; container smoke runs
@@ -120,8 +121,9 @@
 16. **GetJob carries controller credentials** (`main.go`
     `provideControllerCredentials`, `VmafxJobReconciler.ControllerCredentials`,
     ADR-1569): `controllerclient.Load` reads `controller.tls/ca_file/
-    server_name/token_file/token` (CompoundKeys from
-    `controllerclient.CompoundKeys`); bad combination = startup error.
+    server_name/token_file/token` (in generated `compoundKeys`;
+    `controllerclient.CompoundKeys` deprecated, kept for API compatibility);
+    bad combination = startup error.
     `DialOptions()` passed to `ConnFactory.Dial` (TLS replaces plaintext,
     bearer per RPC, file re-read every call, expired JWT never sent). One
     implementation with the node (HISS-19): never copy bearer/TLS code into
@@ -133,7 +135,8 @@
 ### Controller envtest (requires kubebuilder-envtest binaries)
 
 ```bash
-export KUBEBUILDER_ASSETS=$(setup-envtest use 1.31 -p path)
+make setup-envtest
+eval "$(make -s setup-envtest-env)"
 go test ./cmd/vmafx-operator/internal/controller/... -v
 ```
 

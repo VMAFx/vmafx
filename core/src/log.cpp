@@ -62,6 +62,7 @@
 
 #include <algorithm> /* std::clamp */
 #include <array>
+#include <atomic>
 #include <cstdarg>
 #include <cassert>
 #include <cstdio>
@@ -81,8 +82,12 @@ namespace
 {
 /* File-local log state. C++23 anonymous-namespace replaces the C `static`
  * file-scope qualifier (clang-tidy misc-use-anonymous-namespace). */
-VmafLogLevel vmaf_log_level = VMAF_LOG_LEVEL_INFO;
-int istty = 0;
+/* Atomic, relaxed: vmaf_init() sets the level on whatever thread creates a
+ * context while vmaf_log() reads it on every thread, worker threads included
+ * (T-LOG-LEVEL-GLOBAL-DATA-RACE-2026-10-06). No other data is published
+ * through them, so relaxed ordering is enough. */
+std::atomic<int> vmaf_log_level{VMAF_LOG_LEVEL_INFO};
+std::atomic<int> istty{0};
 /* ADR-1852 (RC4 WP2): the sink of the VMAFx context whose engine call runs on
  * this thread, or nullptr (log.h, VmafLogSink). */
 thread_local const VmafLogSink *thread_sink = nullptr;
@@ -145,8 +150,9 @@ void vmaf_set_log_level(enum VmafLogLevel level)
 {
     /* std::clamp (C++17, mandated by C++23) replaces the pair of ternary
      * guards in the original C implementation. */
-    vmaf_log_level = std::clamp(level, VMAF_LOG_LEVEL_NONE, VMAF_LOG_LEVEL_DEBUG);
-    istty = isatty(fileno(stderr));
+    vmaf_log_level.store(std::clamp(level, VMAF_LOG_LEVEL_NONE, VMAF_LOG_LEVEL_DEBUG),
+                         std::memory_order_relaxed);
+    istty.store(isatty(fileno(stderr)), std::memory_order_relaxed);
 }
 
 /* NOLINTNEXTLINE(clang-diagnostic-unknown-attributes) — the no_sanitize
@@ -175,7 +181,8 @@ void vmaf_log(enum VmafLogLevel level, const char *fmt, ...)
     if (level_int <= static_cast<int>(VMAF_LOG_LEVEL_NONE))
         return;
     const VmafLogSink *const sink = thread_sink;
-    if (level_int > static_cast<int>(sink ? sink->level : vmaf_log_level))
+    if (level_int >
+        (sink ? static_cast<int>(sink->level) : vmaf_log_level.load(std::memory_order_relaxed)))
         return;
     if (sink) {
         va_list sink_args;
@@ -201,15 +208,16 @@ void vmaf_log(enum VmafLogLevel level, const char *fmt, ...)
      * always ends in '\0'. Required for printf-family %s pass-through which is
      * the stable libvmaf log surface (ADR-0708 — preserves byte-identical
      * output). */
+    const bool tty = istty.load(std::memory_order_relaxed) != 0;
     (void)fprintf(
-        stderr, "%slibvmaf%s %s%s%s ", istty ? "\x1B[35m" : "", istty ? "\x1B[0m" : "",
+        stderr, "%slibvmaf%s %s%s%s ", tty ? "\x1B[35m" : "", tty ? "\x1B[0m" : "",
         /* ADR-0141 §2 / ADR-0708: the asserts above prove NUL-termination. */
-        istty ? level_str_color[idx].data() // NOLINT(bugprone-suspicious-stringview-data-usage)
-                :
-                "",
+        tty ? level_str_color[idx].data() // NOLINT(bugprone-suspicious-stringview-data-usage)
+              :
+              "",
         /* ADR-0141 §2 / ADR-0708: NUL-termination proven above. */
         level_str[idx].data(), // NOLINT(bugprone-suspicious-stringview-data-usage)
-        istty ? "\x1B[0m" : "");
+        tty ? "\x1B[0m" : "");
 
     va_list args;
     va_start(args, fmt);
@@ -219,7 +227,9 @@ void vmaf_log(enum VmafLogLevel level, const char *fmt, ...)
 
 enum VmafLogLevel vmaf_get_log_level(void)
 {
-    return vmaf_log_level;
+    /* vmaf_log_level only ever holds a value vmaf_set_log_level() clamped to
+     * the enumerators, so the conversion back is value-preserving. */
+    return static_cast<enum VmafLogLevel>(vmaf_log_level.load(std::memory_order_relaxed));
 }
 
 const VmafLogSink *vmaf_log_thread_sink(void)

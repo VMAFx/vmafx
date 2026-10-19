@@ -71,3 +71,13 @@ removal when its kernel becomes real.
   assignment instructed direct removal of the
   `float_vif_score_hsaco` row from `hip_hsaco_stubs.c` after
   confirming the real kernel builds).
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 65: `- ADR-0379 — original HIP float_vif port (PR #1025).`:
+  ADR-0379 points to an unrelated topic (0379-libvmaf-symbol-visibility.md:
+  "libvmaf Symbol Visibility — Hide Internal Symbols with
+  -fvisibility=hidden").

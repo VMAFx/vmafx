@@ -118,3 +118,13 @@ Concretely:
 - ADR-0028 / ADR-0106 — ADR-maintenance immutability rule (why ADR-0006's
   body stays frozen even though its decision is reversed).
 - ADR-0115 — CI trigger consolidation that surfaced the latent break.
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 114:
+  `[feedback_no_skip_shortcuts.md](././.claude/projects/-home-kilian-dev-vmaf/memory/feedback_no_skip_shortcuts`:
+  References a local Claude memory path that does not exist in the tracked git
+  repository.

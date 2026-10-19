@@ -79,7 +79,7 @@ These numbers were measured on 2026-04-28 and are not CI-gated (see the
 `T-TINY-AI-CROSS-DEVICE-PARITY-UNGATED-2026-09-25` row in `docs/state.md`).
 
 - CPU EP and CUDA EP agree to 6 decimal places on every shipped tiny model.
-- The OpenVINO CPU plugin agrees to about 10^-4 PLCC drop.
+- The OpenVINO CPU plugin agrees to about $10^{-4}$ PLCC drop.
 
 !!! warning
     The Intel Arc A380 (`GPU.0` through OpenVINO 2026.1) is int8-broken:

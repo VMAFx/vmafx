@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-0709: VMAFX Phase 4b — Distributed Video-Quality, Encoding, and ML Platform
 
-- **Status**: Proposed
+- **Status**: Accepted (status update 2026-10-06 below)
 - **Date**: 2026-05-28
 - **Deciders**: Lusoris
 - **Tags**: `architecture`, `go`, `k8s`, `operator`, `controller`, `node`, `ffmpeg`, `rclone`, `ebpf`, `onnx`, `training`, `abi`, `platform`, `phase4b`, `fork-local`
@@ -278,3 +278,16 @@ This ADR does NOT cover:
 - `req` — "now that I concentrate on docker images/k8s, do we still need to build native
   things?... the only thing we still need is the patches for ffmpeg?" (native builds
   popup, 2026-05-28)
+
+## Status update 2026-10-06: Accepted: implemented except the breadth of the kuttl suite
+
+The decision is applied while this record still said Proposed. Checked on
+`origin/master` `fd8b8c93b`: `cmd/vmafx-controller`, `cmd/vmafx-node`,
+`cmd/vmafx-operator` and `cmd/vmafx-server` exist, with `deploy/helm` and a
+kind plus kuttl harness (`test/e2e`); `docs/state.md` and
+`docs/rebase-notes.md` track the phases. What is not finished is the breadth
+of the kuttl suite (one of the five decided cases exists). ADR-2001 assigns it
+to RC5: containers, Helm chart and the kind plus kuttl setup (#1252), the
+operator, the controller / node split and the GPU pool arbiter (#1253).
+
+The body above is unchanged.

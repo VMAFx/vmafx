@@ -127,7 +127,7 @@ Three options matter for this model:
   distorted stream, so `--reference` can be omitted).
 - `--tiny-resize bilinear|nearest|bicubic` is required whenever the clip is not
   224×224: the model input is fixed at 224×224, and without the option a
-  size mismatch is a hard error (`-ERANGE`, "problem reading pictures").
+  size mismatch is a hard error (`-ERANGE`, "problem scoring picture 0").
   The three filters give scores that differ by about 2 %, so record the filter
   next to any reported number.
 - `--tiny-model` takes a path to the ONNX file.

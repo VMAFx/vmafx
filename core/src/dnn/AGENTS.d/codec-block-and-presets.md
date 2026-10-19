@@ -7,11 +7,11 @@ invariant: Codec block layout and preset ordinal mapping exactly mirror Python t
 <!-- markdownlint-disable MD013 -->
 # Codec Block Layout and Preset Ordinals
 
-- **No pre-seeded codec block (ADR-1520).** The codec block of a
-  codec-aware model starts zero and the model refuses to score until the
-  caller names the codec; `vmaf_dnn_codec_block_fill()` finds the `"unknown"`
-  entry by name and returns `-ENOENT` for a vocabulary without one. Never
-  bring back a positional default (third-from-last or last slot): in
+- **No pre-seeded codec block (ADR-1520).** codec block of
+  codec-aware model starts zero and model refuses to score until
+  caller names codec; `vmaf_dnn_codec_block_fill()` finds `"unknown"`
+  entry by name and returns `-ENOENT` for vocabulary without one. Never
+  bring back positional default (third-from-last or last slot): in
   `fr_regressor_v3`'s vocabulary those slots are real encoders. See
   [feature-vector-inputs](feature-vector-inputs.md).
 
@@ -49,11 +49,11 @@ extend `vmaf_dnn_codec_block_fill` to different layout.
 
 `VmafModelSidecar.codec_encoding` comes from `codec_preset_norm` /
 `codec_preset_value` / `codec_crf_norm` / `codec_crf_min` / `codec_crf_max`;
-absent keys mean the `fr_regressor_v2` encoding (ordinal / 9, CRF / 63), and
-an unknown value or a missing bound makes `vmaf_dnn_sidecar_load()` return
-`-EINVAL`. `vmaf_dnn_codec_block_fill_encoded()` is the one fill routine
-(`vmaf_dnn_codec_block_fill()` passes NULL): min-max is the v3 trainer's
-formula, unclamped, 0.5 for an empty range. Never infer a model's encoding
-in C from its id or vocabulary, and never clamp the min-max value.
+absent keys mean `fr_regressor_v2` encoding (ordinal / 9, CRF / 63), and
+unknown value or missing bound makes `vmaf_dnn_sidecar_load()` return
+`-EINVAL`. `vmaf_dnn_codec_block_fill_encoded()` is one fill routine
+(`vmaf_dnn_codec_block_fill()` passes NULL): min-max is v3 trainer's
+formula, unclamped, 0.5 for empty range. Never infer model's encoding
+in C from its id or vocabulary, and never clamp min-max value.
 `test_codec_block_fill_encoded_*`, `test_sidecar_codec_encoding_*` and
 `test_fr_v3_preset_slot_is_the_trained_constant` guard it.

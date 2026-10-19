@@ -1,1 +1,0 @@
-- Refactored Go packages (`cmd/` and `pkg/`) to resolve HISS-02 context timeouts and HISS-07 exit/panic violations under ADR-1142.

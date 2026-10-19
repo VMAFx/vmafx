@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: EUPL-1.2
+# Copyright 2026 Lusoris
+#
+# The alert and cost settings of the Compose example, in the keys of the Helm
+# chart's values (monitoring.slo, .burnRates, .alerts, .cost;
+# docs/observability/kubernetes.md lists them). VMAFX_MONITORING_VALUES names
+# another file. Keys left out keep the defaults the chart's values.yaml shows.
+# The rules service renders the rule file from this file when the stack
+# starts; after an edit run `docker compose up -d --force-recreate rules
+# prometheus`. The same file works as a Helm values file.
+monitoring:
+  slo: {}
+    # jobSuccess: 0.995
+    # scoreLatencySeconds: "60"
+  burnRates: {}
+    # slow: {longWindow: 1d, shortWindow: 2h, factor: 3}
+  alerts: {}
+    # queueAgeSeconds: 3600
+  # Prices of the usage and cost dashboard; unset (0) leaves its cost panels
+  # empty. Use your own prices, in your currency.
+  cost: {}
+    # perJobSecond: 0.002
+    # perJob: 0.1
+    # currency: EUR

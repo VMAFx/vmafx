@@ -1,0 +1,1 @@
+| [ADR-2055](2055-x86-avx2-gate-requires-fma.md) | The x86 AVX2 level requires FMA: `vmaf_get_cpu_flags_x86()` tests CPUID leaf 1 ECX bit 12 before it sets the AVX2 flag, so a CPU that masks FMA falls to the SSE levels. | Accepted | simd, x86, cpu, dispatch |

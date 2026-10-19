@@ -13,13 +13,12 @@
  * pix_fmts[] = { VMAFX_FFMPEG_YUV_PIX_FMTS, AV_PIX_FMT_NONE };`. The RGB lists are
  * accepted only when the filter is given the matrix, range and transfer of the
  * conversion (ADR-2146); a hardware list is what the library imports on that device,
- * to be intersected with the formats FFmpeg's own hwcontext allows.
+ * to be intersected with the formats FFmpeg's own hwcontext allows. The lists are
+ * macros only: the including file includes <libavutil/pixfmt.h> before it uses them.
  */
 
 #ifndef VMAFX_FFMPEG_FORMATS_H
 #define VMAFX_FFMPEG_FORMATS_H
-
-#include <libavutil/pixfmt.h>
 
 /* clang-format off */
 

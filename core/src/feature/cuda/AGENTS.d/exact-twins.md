@@ -18,11 +18,11 @@ invariant: All declared exact twin extractors in CUDA maintain bit-identical out
   at 8 / 10 / 12 / 16 bit + 40x40 to 64x64, never on measurement alone.
   Listed twin drifting -> FIX twin, never tolerance, never delist.
 - `test_cuda_exact_twins` = `==` on every output, 640x480, 8 + 10 bit.
-- `float_ssim_cuda`: frame sums in CPU raster order since ADR-1464 (a mean
+- `float_ssim_cuda`: frame sums in CPU raster order since ADR-1464 (mean
   differed: `T-GPU-FLOAT-SSIM-FRAME-SUM-ORDER-2026-10-02`).
   `float_ms_ssim_cuda`: per-block sums of l / c / s per scale differ from
-  the CPU the same way, 4 of 8.32e6 noise frames at 176x176, one float step
-  of an `l` or `c` mean. State of its sums = its own paragraph above
+  CPU same way, 4 of 8.32e6 noise frames at 176x176, one float step
+  of `l` or `c` mean. State of its sums = its own paragraph above
   (ADR-1403 entry); fix = raster order as `float_ssim_cuda`, own PR
   (`fix/cuda-float-ms-ssim-raster-order-sum`).
 - NOT listed: `ciede` (libm bound 1e-9), `speed_chroma` (libm bound 5e-6).

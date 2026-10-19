@@ -1,29 +1,32 @@
+{{- /*
+  SPDX-License-Identifier: EUPL-1.2
+  Copyright 2026 Lusoris
+
+  Prometheus operator monitors, one per component that is deployed and
+  switched on in monitoring.components: a ServiceMonitor on the server,
+  controller and node Services and a PodMonitor on the operator pods (the
+  operator has no Service). All share the scrape settings of
+  monitoring.serviceMonitor. The server's keeps the release's full name, as
+  before the other components had monitors. ADR-2349;
+  docs/observability/kubernetes.md.
+*/ -}}
 {{- if and .Values.monitoring.enabled .Values.monitoring.serviceMonitor }}
-apiVersion: monitoring.coreos.com/v1
-kind: ServiceMonitor
-metadata:
-  name: {{ include "vmafx.fullname" . }}
-  {{- if .Values.monitoring.serviceMonitor.namespace }}
-  namespace: {{ .Values.monitoring.serviceMonitor.namespace }}
-  {{- else }}
-  namespace: {{ .Release.Namespace }}
-  {{- end }}
-  labels:
-    {{- include "vmafx.labels" . | nindent 4 }}
-    app.kubernetes.io/component: server
-    {{- with .Values.monitoring.serviceMonitor.labels }}
-    {{- toYaml . | nindent 4 }}
-    {{- end }}
-spec:
-  selector:
-    matchLabels:
-      {{- include "vmafx.selectorLabels" . | nindent 6 }}
-      app.kubernetes.io/component: server
-  endpoints:
-    - port: http
-      path: {{ .Values.monitoring.serviceMonitor.path }}
-      scheme: {{ .Values.monitoring.serviceMonitor.scheme }}
-      interval: {{ .Values.monitoring.serviceMonitor.interval }}
-      scrapeTimeout: {{ .Values.monitoring.serviceMonitor.scrapeTimeout }}
-      honorLabels: {{ .Values.monitoring.serviceMonitor.honorLabels }}
+{{- $fullName := include "vmafx.fullname" . }}
+{{- $on := .Values.monitoring.components }}
+{{- if $on.server }}
+---
+{{ include "vmafx.monitor" (dict "root" . "kind" "ServiceMonitor" "name" $fullName "component" "server" "port" "http") }}
+{{- end }}
+{{- if and $on.controller .Values.controller.enabled }}
+---
+{{ include "vmafx.monitor" (dict "root" . "kind" "ServiceMonitor" "name" (printf "%s-controller" $fullName) "component" "controller" "port" "http") }}
+{{- end }}
+{{- if and $on.node .Values.node.enabled }}
+---
+{{ include "vmafx.monitor" (dict "root" . "kind" "ServiceMonitor" "name" (printf "%s-node" $fullName) "component" "node" "port" "metrics") }}
+{{- end }}
+{{- if and $on.operator .Values.operator.enabled }}
+---
+{{ include "vmafx.monitor" (dict "root" . "kind" "PodMonitor" "name" (printf "%s-operator" $fullName) "component" "operator" "port" "metrics") }}
+{{- end }}
 {{- end }}

@@ -1,11 +1,9 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-0757 — CUDA MS-SSIM `ms_ssim_vert_lcs` + `ms_ssim_horiz`: `__ldg()` + `__launch_bounds__` (F3 fix #2)
 
-| Field  | Value |
-| ------ | ----- |
-| Status | Accepted |
-| Date   | 2026-05-29 |
-| Tags   | cuda, performance, ms_ssim, fork-local |
+- **Status**: Accepted
+- **Date**: 2026-05-29
+- **Tags**: cuda, performance, ms_ssim, fork-local
 
 ## Context
 

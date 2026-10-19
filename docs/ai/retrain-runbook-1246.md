@@ -60,6 +60,13 @@ and architectural records:
   rows remain parked at `smoke: true` until this run executes
   `train_fr_regressor_v2_ensemble_loso.py` and `export_ensemble_v2_seeds.py` against
   the retrained corpus at `codec_vocab = 6`.
+- **Feature mode (ADR-2343)**: the extractors' default is reference-exact and
+  Netflix's behaviour is a named compatibility mode. The shipped
+  `vmaf_v1.0.16*` models read compatibility-mode features, their training
+  inputs, until this run; the retrain extracts and trains on reference-exact
+  features. The RC7 conformance results
+  ([#2286](https://github.com/VMAFx/vmafx/issues/2286)) are accepted before
+  this run starts.
 - **Golden Data Invariant (ADR-0024)**: Netflix golden-data assertions in `python/test/`
   (`assertAlmostEqual` values) are never modified.
 
@@ -255,6 +262,9 @@ mkdir -p runs/logs runs/shards
   - *Basis*: Measured throughput of 0.36–0.40 clip/s with 8 outer workers on RTX 4090.
     $152{,}265 \text{ clips} \div 0.38 \text{ clip/s} \approx 400{,}700 \text{ s} \approx 111.3 \text{ h}$.
 - **Prerequisite**: Requires PR [#1302](https://github.com/VMAFx/vmafx/pull/1302) (`--vmaf-model` flag).
+- **Identity pairs (maintainer decision Q-013)**: K150K rows whose reference
+  equals the distorted clip (VMAF about 99) are excluded from the
+  full-reference teacher fit; K150K MOS labels feed the NR/MOS head only.
 
 ```bash
 nohup docker exec vmaf-dev-mcp /opt/vmaf-venv/bin/python /workspace/ai/scripts/extract_k150k_features.py \
@@ -753,3 +763,58 @@ verified against current live `master` state and are flagged:
    As documented in Research-2029, `vmaf_use_tiny_model()` currently lacks the
    `.int8.onnx` redirect logic (tracked as open item in Epic #1242). Retrained
    models can be verified by explicit path invocation (`--tiny-model model.int8.onnx`).
+
+---
+
+## 13. Mini retrain: the tooling dry run (ADR-1898)
+
+The one-shot retrain must not be the first time its tools run together. The mini
+retrain runs the same scripts, with the runbook's flags, on a generated corpus of
+twelve clip pairs (four sources, three distorted variants each, twelve 576x324
+frames per clip, 144 rows). The corpus is cut from the tracked
+`testdata/ref_576x324_48f.yuv` / `dis_576x324_48f.yuv` pair and two seeded
+synthetic distortions; nothing is downloaded.
+
+```bash
+meson setup build core && ninja -C build tools/vmaf
+make mini-retrain MINI_RETRAIN_DIR=runs/mini VMAF_BIN=build/tools/vmaf   # about 40 s
+make mini-retrain-test                                                   # end-to-end tests, about 2 minutes
+```
+
+Stages, in order: `fixture`, `extract` (`extract_full_features.py`),
+`verify_features`, `combine` (`combine_full_feature_parquets.py`), `registry_init`,
+then `train_tiny_vN` / `export_tiny_vN` / `validate_tiny_vN` for `vmaf_tiny_v2`,
+`v3`, `v4`, `train_fr_regressor_v1` (leave-one-source-out, registry upsert),
+`registry_validate` and `gate`. The gate report
+`<run>/reports/gate_report.json` holds PLCC, SROCC and RMSE per model against the
+profile's thresholds; a NaN metric fails the model.
+
+Per stage the runner writes `<run>/stages/<stage>.stage.json`: command line, seed,
+input and output digests, Python and library versions, the digest of
+`ai/requirements-dev-lock.txt`, the container image id (`VMAFX_CONTAINER_IMAGE_ID`;
+a bare host is recorded as `host:...`), git revision, wall seconds, CPU seconds and
+peak resident set.
+
+**Failure handling.** Every input no earlier stage produces is checked before the
+first stage starts; a missing, empty or unreadable one stops the run with
+`stage '<name>': input missing: <path>`. A stage that exits non-zero, writes no or an
+empty output, or fails its check stops the run with the stage name and the last 20
+log lines. `verify_features` refuses a table with a missing column, a NaN in a
+canonical-6 column or in `vmaf`, a column that is NaN in every row, another
+teacher than `vmaf_v1.0.16_3d0h`, a 0-1 label scale or a wrong row count.
+
+**Resume.** Run the same command again. A stage is skipped only when its manifest
+says `complete`, its key (command, input digests, seed, environment identity) is
+unchanged and its outputs still have the recorded digests; a stage left at
+`running` by a killed run, or whose output was touched, runs again from a clean
+slate. Delete `<run>/stages/<stage>.stage.json` to force one stage.
+
+**Reproducibility.** Two fresh runs give byte-identical corpus, feature tables,
+checkpoints, ONNX files, registry and gate report (the `stable` set of each stage
+manifest); sidecar JSON files embed the run directory and differ by path only.
+
+**Profiles.** `--profile mini` (default) uses thresholds that prove the plumbing on
+144 rows (PLCC and SROCC at least 0.5, RMSE at most 13); it does not claim the
+models are good. `--profile full` carries the section 8.1 gates for the real run.
+The required Tiny AI job runs the end-to-end tests for changes under `ai/`, and
+`.github/workflows/mini-retrain.yml` runs them nightly.

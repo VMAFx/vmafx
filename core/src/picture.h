@@ -26,7 +26,7 @@
 #ifdef HAVE_CUDA
 #ifdef DEVICE_CODE
 #include <cuda.h>
-typedef struct VmafCudaState VmafCudaState;
+struct VmafCudaState; /* C++ only (DEVICE_CODE): the tag is the type name */
 #else
 #include <ffnvcodec/dynlink_cuda.h>
 #include "libvmaf/libvmaf_cuda.h"
@@ -74,6 +74,9 @@ typedef struct VmafPicturePrivate {
     struct {
         void *state;
         void *ready_event;
+        /* RC4 WP3 (ADR-2091): the VMAFx SYCL frame (VmafxSyclFrameRt) of a
+         * picture whose planes are device USM; NULL for every other picture. */
+        void *frame;
     } sycl;
 #endif
     /* RC4 WP3 (ADR-2092): a frame of the VMAFx API in HIP device memory
@@ -103,6 +106,14 @@ int vmaf_picture_priv_init(VmafPicture *pic);
  * it, and the VMAFx API checks borrowed host planes against it (ADR-1852). */
 void vmaf_picture_plane_extents(enum VmafPixelFormat pix_fmt, unsigned w, unsigned h,
                                 unsigned plane_w[3], unsigned plane_h[3]);
+
+/* A picture over the caller's planes in `*pic` (Netflix/vmaf 700124a4c):
+ * vmaf_picture_plane_extents() of the wrapped size, the planes the format
+ * has, a reference count of 1 and `release_picture` (NULL: nothing to
+ * release) as its release. Checks nothing: vmaf_picture_wrap() checks the
+ * caller's arguments, vmafx_frame_bind() binds checked VMAFx frames.
+ * 0, or -ENOMEM with `*pic` untouched. */
+int vmaf_picture_wrap_bind(VmafPicture *pic, const VmafPictureWrapped *wrapped);
 
 int vmaf_picture_ref(VmafPicture *dst, VmafPicture *src);
 

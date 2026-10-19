@@ -92,13 +92,17 @@ vmaf-tune predict \
 
 ## Train predictors from a corpus
 
-`vmaftune.predictor_train` trains the per-codec ONNX predictors.
+`vmaf_train.predictor_train` trains the per-codec ONNX predictors. It belongs
+to the ai/ training package (`pip install -e ai`), the only place besides the
+ensemble kit where torch is installed
+([ADR-1886](../adr/1886-torch-training-environments-only.md)); vmaf-tune itself
+only loads the trained ONNX models.
 `--corpus` accepts one JSONL file or a directory of JSONL shards;
 directories are scanned recursively in sorted order, so the trainer can
 read `.corpus/corpus_run/` directly:
 
 ```shell
-python -m vmaftune.predictor_train \
+python -m vmaf_train.predictor_train \
     --corpus .corpus/corpus_run \
     --codec libx264 \
     --output-dir .workingdir/evidence/predictor-real

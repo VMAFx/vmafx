@@ -196,33 +196,73 @@ Kubernetes: set `node.fuse` in the Helm chart ([Kubernetes deployment](#kubernet
 
 ## Configuration (12-factor env vars)
 
-| Variable | Default | Description |
-| --- | --- | --- |
-| `VMAFX_GRPC_LISTEN` | `:50052` | gRPC listen address for the node's worker service. |
-| `VMAFX_FFMPEG_BIN` | `ffmpeg` (PATH) | Path to the `ffmpeg` binary.  The node Docker image sets this to `/usr/local/bin/ffmpeg` (ADR-0717). |
-| `VMAFX_VMAF_BINARY` | automatic lookup | Path to the `vmaf` CLI binary used for scoring. |
-| `VMAFX_MODEL_DIR` | binary default | Directory containing VMAF model files. The node image sets `/usr/local/share/vmafx/model`. |
-| `VMAFX_BACKEND` | `cpu` | Backend the node runs: `cpu`, `cuda`, `hip`, `sycl` or `metal`. Controller jobs pass it to the vmaf CLI as `--backend`. |
-| `VMAFX_SIDECAR_SOCKET` | `/tmp/vmafx-sidecar.sock` | Online-training sidecar Unix socket. |
-| `VMAFX_CONTROLLER_ADDR` | _(unset)_ | Controller gRPC address; set, the node pulls jobs from the controller. |
-| `VMAFX_CONTROLLER_TOKEN_FILE` | _(unset)_ | File holding the bearer token, read on every call. |
-| `VMAFX_CONTROLLER_TOKEN` | _(unset)_ | Bearer token given inline. |
-| `VMAFX_CONTROLLER_TLS` | `false` | Dial the controller with TLS. |
-| `VMAFX_CONTROLLER_CA_FILE` | system roots | PEM bundle that verifies the controller certificate (needs TLS). |
-| `VMAFX_CONTROLLER_SERVER_NAME` | from the address | TLS server name override (needs TLS). |
-| `VMAFX_CONTROLLER_RPC_TIMEOUT` | `10s` | Deadline of every controller call. |
-| `VMAFX_CONTROLLER_HEARTBEAT_INTERVAL` | `10s` | Heartbeat period. |
-| `VMAFX_CONTROLLER_POLL_INTERVAL` | `2s` | Wait after an empty `PullWork`. |
-| `VMAFX_NODE_ID` | host name | Node name sent to `RegisterNode`. The Helm chart sets the pod name. |
-| `VMAFX_NODE_SLOTS` | `1` | Jobs the node runs at once (1 to 64). |
-| `VMAFX_STORAGE_MODE` | `auto` | How rclone-remote sources are read: `http-serve`, `mount` or `auto`. |
-| `VMAFX_STORAGE_MOUNT_ROOT` | temp directory | Parent of `mount` mode's per-job mount points. |
-| `VMAFX_RCLONE_BIN` | `rclone` (PATH) | rclone binary. |
-| `VMAFX_RCLONE_CONFIG` | rclone's default | rclone configuration file with the remotes and their credentials. |
-| `VMAFX_EBPF_BYPASS` | off | `1` starts the eBPF descriptor tracker; the node stops if it cannot run it ([eBPF tracker](../development/ebpf-fuse-bypass.md)). |
-| `VMAFX_EBPF_MOUNT_PREFIX` | `/rclone-mount/` | Path whose opens the tracker records; must contain `VMAFX_STORAGE_MOUNT_ROOT`. |
-| `VMAFX_LOG_LEVEL` | `info` | Structured log level: `debug`, `info`, `warn`, `error` |
-| `VMAFX_LOG_FORMAT` | `auto` | Log handler: `auto`, `tint`, or `json`. |
+<!-- BEGIN GENERATED: vmafx-api environment vmafx-node (scripts/codegen/vmafx-api.py) -->
+
+| Variable | Key | Type | Default | Chart value | Description |
+|---|---|---|---|---|---|
+| `VMAFX_HTTP_ADDR` | `http.addr` | `host:port` | `:9090` | `node.metricsPort` | HTTP listen address of `/metrics` and the `/livez`, `/readyz` and `/startupz` probes, a full address. |
+| `VMAFX_HTTP_TIMEOUTS_READ` | `http.timeouts.read` | duration | `30s` |  | Deadline for reading a whole request; `0` keeps the framework default. |
+| `VMAFX_HTTP_TIMEOUTS_HEADER` | `http.timeouts.header` | duration | `5s` |  | Deadline for reading the request headers (slow-client guard); `0` keeps the framework default. |
+| `VMAFX_HTTP_TIMEOUTS_WRITE` | `http.timeouts.write` | duration | `60s` |  | Deadline for writing a response; `0` keeps the framework default. |
+| `VMAFX_HTTP_TIMEOUTS_IDLE` | `http.timeouts.idle` | duration | `120s` |  | Keep-alive idle timeout; `0` keeps the framework default. |
+| `VMAFX_HTTP_TIMEOUTS_SHUTDOWN` | `http.timeouts.shutdown` | duration | `30s` |  | Drain time of the HTTP server at shutdown; `0` keeps the framework default. |
+| `VMAFX_HTTP_LIMITS_HEADER` | `http.limits.header` | bytes | `1048576` |  | Largest request header block; `0` keeps the default. |
+| `VMAFX_HTTP_LIMITS_BODY` | `http.limits.body` | bytes | `10485760` |  | Largest request body; `0` keeps the default. `VMAFX_HTTP_LIMITS_UNLIMITED` removes the cap. |
+| `VMAFX_HTTP_LIMITS_UNLIMITED` | `http.limits.unlimited` | bool | `false` |  | Serve request bodies of any size; `VMAFX_HTTP_LIMITS_BODY` is then ignored. |
+| `VMAFX_GRPC_LISTEN` | `grpc.listen` | `host:port` | `:50052` | `node.grpcPort` | gRPC listen address of the node's `VmafxScoring` service, a full address. |
+| `VMAFX_GRPC_TLS` | `grpc.tls` | bool | `false` |  | Serve gRPC over TLS; needs `VMAFX_GRPC_CERT_FILE` and `VMAFX_GRPC_KEY_FILE`. |
+| `VMAFX_GRPC_CERT_FILE` | `grpc.cert_file` | path | _(unset)_ |  | PEM certificate of the gRPC listener (with `VMAFX_GRPC_TLS`). |
+| `VMAFX_GRPC_KEY_FILE` | `grpc.key_file` | path | _(unset)_ |  | PEM private key of the gRPC listener (with `VMAFX_GRPC_TLS`). |
+| `VMAFX_GRPC_MAX_RECV_SIZE` | `grpc.max_recv_size` | bytes | `4194304` |  | Largest gRPC message received; `0` keeps the gRPC default. |
+| `VMAFX_GRPC_MAX_SEND_SIZE` | `grpc.max_send_size` | bytes | `4194304` |  | Largest gRPC message sent; `0` keeps the gRPC default. |
+| `VMAFX_VMAF_BINARY` | `vmaf.binary` | path | `VMAF_BIN`, `/usr/local/bin/vmaf`, then the build trees | set by the chart | Path of the `vmaf` CLI behind the `Score` RPC and controller jobs. The chart sets `/usr/local/bin/vmaf`; without a binary the node serves only `Health`. |
+| `VMAF_BIN` | read directly | path | _(unset)_ |  | Path of the `vmaf` CLI when `VMAFX_VMAF_BINARY` is unset. |
+| `VMAFX_MODEL_DIR` | `model.dir` | path | _(unset)_ | `persistence.models.mountPath`, `persistence.models.enabled` | Directory of the VMAF `.json` models. The chart sets the models volume, or the image's `/usr/local/share/vmafx/model`. |
+| `VMAFX_BACKEND` | `backend` | string | `cpu` | `gpu.vendor` | Backend the node runs (`cpu`, `cuda`, `hip`, `sycl`, `metal`); advertised to the controller and passed to the `vmaf` CLI as `--backend` for controller jobs. The chart sets it from `gpu.vendor`. |
+| `VMAFX_NODE_ID` | `node.id` | string | host name | set by the chart | Node name sent to `RegisterNode`; the chart sets the pod name. |
+| `VMAFX_NODE_SLOTS` | `node.slots` | integer | `1` |  | Controller jobs the node runs at once, 1 to 64. |
+| `VMAFX_CONTROLLER_ADDR` | `controller.addr` | `host:port` | _(unset)_ | set by the chart | gRPC address of the controller; set, the node registers and pulls jobs ([ADR-1524](../adr/1524-vmafx-node-controller-client.md)). |
+| `VMAFX_CONTROLLER_TLS` | `controller.tls` | bool | `false` |  | Dial the controller with TLS (system roots unless `VMAFX_CONTROLLER_CA_FILE` is set). |
+| `VMAFX_CONTROLLER_CA_FILE` | `controller.ca_file` | path | system roots |  | PEM bundle that verifies the controller certificate; needs `VMAFX_CONTROLLER_TLS`. |
+| `VMAFX_CONTROLLER_SERVER_NAME` | `controller.server_name` | string | host of the address |  | TLS server name override; needs `VMAFX_CONTROLLER_TLS`. |
+| `VMAFX_CONTROLLER_TOKEN_FILE` | `controller.token_file` | path | _(unset)_ | `node.controllerToken.secretName` | File holding the bearer token for the controller, read again on every call; an expired JWT is not sent. Not together with `VMAFX_CONTROLLER_TOKEN`. |
+| `VMAFX_CONTROLLER_TOKEN` | `controller.token` | string | _(unset)_ |  | Secret. Bearer token for the controller given inline; not together with `VMAFX_CONTROLLER_TOKEN_FILE`. |
+| `VMAFX_CONTROLLER_RPC_TIMEOUT` | `controller.rpc_timeout` | duration | `10s` |  | Deadline of every controller call; a value that is not a positive duration stops the node. |
+| `VMAFX_CONTROLLER_HEARTBEAT_INTERVAL` | `controller.heartbeat_interval` | duration | `10s` |  | Heartbeat period. |
+| `VMAFX_CONTROLLER_POLL_INTERVAL` | `controller.poll_interval` | duration | `2s` |  | Wait after an empty `PullWork`. |
+| `VMAFX_FFMPEG_BIN` | `ffmpeg.bin` | path | `ffmpeg` on `PATH` |  | `ffmpeg` of the startup encoder probe; the node image sets `/usr/local/bin/ffmpeg` ([ADR-0717](../adr/0717-vmafx-node-ffmpeg-latest.md)). |
+| `VMAFX_SIDECAR_SOCKET` | `sidecar.socket` | path | `/tmp/vmafx-sidecar.sock` |  | Unix socket of the online-training sidecar ([ADR-0781](../adr/0781-sidecar-sgd-ema-online-trainer.md)). |
+| `VMAFX_STORAGE_MODE` | `storage.mode` | string | `auto` | `storage.mode` | How rclone-remote job sources are read: `http-serve`, `mount` or `auto`; anything else, or `mount` without FUSE, stops the node ([ADR-1526](../adr/1526-node-storage-streamed-inputs.md)). |
+| `VMAFX_STORAGE_MOUNT_ROOT` | `storage.mount_root` | path | temp directory | set by the chart | Parent of `mount` mode's per-job mount points; must lie under `VMAFX_EBPF_MOUNT_PREFIX` when the tracker is on. |
+| `VMAFX_RCLONE_BIN` | `rclone.bin` | path | `rclone` on `PATH` |  | rclone binary; a missing one only fails rclone sources. |
+| `VMAFX_RCLONE_CONFIG` | `rclone.config` | path | rclone's default | `storage.rclone.config` | rclone configuration file with the remotes and their credentials. |
+| `VMAFX_EBPF_BYPASS` | `ebpf.bypass` | bool | `false` | `node.ebpf.enabled` | Start the eBPF descriptor tracker (little-endian Linux); a host that cannot run it stops the node ([ADR-1539](../adr/1539-node-ebpf-tracker-wiring.md)). |
+| `VMAFX_EBPF_MOUNT_PREFIX` | `ebpf.mount_prefix` | path | `/rclone-mount/` | `node.ebpf.enabled`, `node.ebpf.mountPrefix` | Path whose opens the tracker records; must contain `VMAFX_STORAGE_MOUNT_ROOT`. |
+| `VMAFX_LOG_LEVEL` | `log.level` | string | `info` |  | Log level: `debug`, `info`, `warn` or `error`, any case; an unknown value gives `info`. |
+| `VMAFX_LOG_FORMAT` | `log.format` | string | `auto` |  | Log handler: `auto` (tint on a terminal, else JSON), `tint` or `json`; logs go to stderr. |
+| `VMAFX_OTEL_ENABLED` | `otel.enabled` | bool | `true` |  | OpenTelemetry master switch; `false` installs no-op providers even with an endpoint. |
+| `VMAFX_OTEL_ENDPOINT` | `otel.endpoint` | `host:port` | _(unset)_ |  | OTLP/gRPC collector (`otel-collector:4317`); wins over `OTEL_EXPORTER_OTLP_ENDPOINT`. Neither set: no export ([OpenTelemetry](../observability/otel.md)). |
+| `VMAFX_OTEL_INSECURE` | `otel.insecure` | bool | `true` |  | Plaintext gRPC to the collector; `false` dials with TLS. |
+| `VMAFX_OTEL_SERVICE_NAME` | `otel.service.name` | string | `OTEL_SERVICE_NAME`, else the binary name |  | `service.name` resource attribute. |
+| `VMAFX_OTEL_SERVICE_VERSION` | `otel.service.version` | string | the build version |  | `service.version` resource attribute. |
+| `VMAFX_OTEL_SERVICE_NAMESPACE` | `otel.service.namespace` | string | _(unset)_ |  | `service.namespace` resource attribute. |
+| `VMAFX_OTEL_SAMPLE_RATIO` | `otel.sample.ratio` | number | `1.0` |  | Parent-based trace sample ratio in `[0, 1]`; `OTEL_TRACES_SAMPLER` and its argument are not read. |
+| `VMAFX_OTEL_EXPORT_TRACES` | `otel.export.traces` | bool | `true` |  | Export traces. |
+| `VMAFX_OTEL_EXPORT_METRICS` | `otel.export.metrics` | bool | `true` |  | Export metrics. |
+| `VMAFX_OTEL_EXPORT_LOGS` | `otel.export.logs` | bool | `true` |  | Export the logs signal; application logs are not bridged to it today. |
+| `OTEL_SERVICE_NAME` | read directly | string | _(unset)_ |  | `service.name` when `VMAFX_OTEL_SERVICE_NAME` is unset (OTel standard). |
+| `OTEL_SDK_DISABLED` | read directly | string | _(unset)_ |  | `true` (exactly) installs no-op providers (OTel standard). |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | read directly | URL | _(unset)_ |  | Collector as a URL (`http://host:4317`) when `VMAFX_OTEL_ENDPOINT` is unset; set, export is on (OTel standard). |
+| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | read directly | URL | _(unset)_ |  | Per-signal collector URL for traces; set, export is on (OTel standard). |
+| `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` | read directly | URL | _(unset)_ |  | Per-signal collector URL for metrics; set, export is on (OTel standard). |
+| `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` | read directly | URL | _(unset)_ |  | Per-signal collector URL for logs; set, export is on (OTel standard). |
+| `POD_NAME` | read directly | string | _(unset)_ |  | Pod name (Kubernetes downward API), added to log lines and OTel resources as `k8s.pod.name`. |
+| `POD_NAMESPACE` | read directly | string | _(unset)_ |  | Pod namespace, added as `k8s.namespace.name`. |
+| `POD_IP` | read directly | string | _(unset)_ |  | Pod IP, added as `k8s.pod.ip`. |
+| `NODE_NAME` | read directly | string | _(unset)_ |  | Kubernetes node name, added as `k8s.node.name`. |
+| `SERVICE_ACCOUNT` | read directly | string | _(unset)_ |  | Service account name, added as `k8s.serviceaccount.name`. |
+
+<!-- END GENERATED: vmafx-api environment vmafx-node -->
 
 See also the [full environment variable reference](../usage/env-vars.md) for the
 complete table.
@@ -238,10 +278,26 @@ libvmaf build and usable on the host.
 ## Observability
 
 The node emits structured logs and OpenTelemetry data through the shared
-golusoris runtime. It is gRPC-only and does not expose a Prometheus HTTP
-listener. The Helm chart probes the TCP listener on the configured gRPC port;
-gRPC clients can use the `VmafxScoring/Health` RPC for an application-level
-health check.
+golusoris runtime, and serves a small HTTP listener on `VMAFX_HTTP_ADDR`
+(default `:9090`, the chart's `node.metricsPort`):
+
+| Path | What it answers |
+| --- | --- |
+| `/metrics` | Prometheus page: `vmafx_node_info` (backend and GPU vendor), `vmafx_node_slots`, `vmafx_node_jobs_running`, `vmafx_node_jobs_total` by backend and outcome, `vmafx_node_job_duration_seconds`, GPU memory per device (`vmafx_node_device_memory_used_bytes`, `_total_bytes`; CUDA and HIP nodes), the ScoreStream session families, `vmafx_build_info` and the Go runtime and process series. |
+| `/readyz` | 200 when the node can score (a vmaf scorer is configured), 503 otherwise. |
+| `/livez`, `/startupz` | Liveness and startup of the process. |
+
+```bash
+curl -s localhost:9090/metrics | grep '^vmafx_node_'
+# vmafx_node_info{backend="cpu",vendor="cpu"} 1
+# vmafx_node_jobs_running 0
+# vmafx_node_slots 1
+```
+
+Every metric is listed in the [metric reference](../observability/metrics.md).
+The Helm chart still probes the TCP listener on the configured gRPC port; gRPC
+clients can use the `VmafxScoring/Health` RPC for an application-level health
+check.
 
 ## Kubernetes deployment
 
@@ -331,7 +387,7 @@ the eBPF descriptor tracker on top of this
 The pinned toolkit versions live in `build-config.env` (`CUDA_VERSION`,
 `ROCM_VERSION`, `ONEAPI_VERSION`) and are consumed by
 `docker/Dockerfile.node`; read them there rather than from this page. The
-current release track uses CUDA 13.4.2 and ROCm 10.0.0 libraries, which are
+current release track uses CUDA 13.4.2 and ROCm 10.1.0 libraries, which are
 copied out of Ubuntu 26.04 based images, and oneAPI 2026.1.
 
 The release workflow currently publishes only `node-cpu`. All targets use the
@@ -339,7 +395,7 @@ same native-architecture FFmpeg dependency collector, so arm64 stages resolve
 `aarch64-linux-gnu` libraries rather than copying an amd64-only path.
 
 The release workflow builds each architecture on a native GitHub runner
-(amd64 on `ubuntu-latest`, arm64 on `ubuntu-26.04-arm`), then merges the two
+(amd64 on `ubuntu-26.04`, arm64 on `ubuntu-26.04-arm`), then merges the two
 into one multi-arch index that is signed, attested and given an SBOM as a whole
 ([ADR-1349](../adr/1349-native-arch-node-image-build.md)). Built under QEMU
 emulation instead, the arm64 half did not finish within two hours.

@@ -45,9 +45,7 @@ KERNELS = (
 OLD_KERNELS = ("ssimulacra2_combine_partials", "ssimulacra2_combine_final")
 SHARED_HELPERS = '#include "feature/ordered_sum.h"'
 # A lane's pixels are consecutive in raster order, and so are the lanes.
-LANE_PIXEL = (
-    "const size_t i = (size_t)chunk * SS2C_CHUNK_PIXELS + (size_t)lane * SS2C_CHUNK_RUN + j;"
-)
+LANE_PIXEL = "const size_t i = (size_t)chunk * (size_t)SS2C_CHUNK_PIXELS + (size_t)lane * SS2C_CHUNK_RUN + j;"
 # Lanes are composed with their neighbour, lower lane first.
 ADJACENT_PAIR = (
     "if ((lane & (2u * step - 1u)) == 0u) {",
@@ -60,8 +58,8 @@ WALK_STEP = "vmaf_ordsum_add_chunk(sum, (int)plan[slot], u)"
 # The fallback adds the chunk's terms in pixel order into the running sum.
 TERM_SLOT = "terms_of_chunk[lane * SS2C_CHUNK_RUN + j] = terms[k];"
 TERM_LOOP = (
-    "for (unsigned i = 0; i < SS2C_CHUNK_PIXELS; i++)",
-    "sum += terms_of_chunk[i];",
+    "for (const double term : terms_of_chunk)",
+    "sum += term;",
 )
 TOTAL_STORE = "a.totals[(size_t)c * SS2C_SUMS + k] = sum;"
 # The tree sum may only feed the plan.
@@ -185,7 +183,7 @@ class Ssimulacra2CudaExactContract(unittest.TestCase):
     def test_reordered_fallback_is_detected(self) -> None:
         sources = _sources()
         sources[KERNEL] = sources[KERNEL].replace(
-            "for (unsigned i = 0; i < SS2C_CHUNK_PIXELS; i++)",
+            "for (const double term : terms_of_chunk)",
             "for (unsigned i = SS2C_CHUNK_PIXELS; i-- > 0u;)",
             1,
         )

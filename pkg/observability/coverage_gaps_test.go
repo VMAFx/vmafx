@@ -9,15 +9,13 @@
 //   - WaitForShutdown signal-delivery branch (SIGTERM via os.Process.Signal).
 //   - InitOTel with a valid OTEL_TRACES_SAMPLER_ARG in [0.0, 1.0] (the
 //     `sampleRatio = parsed` assignment branch inside InitOTel).
-//   - SetControllerSources half-nil cases: q=non-nil+r=nil and q=nil+r=non-nil.
 //   - Prometheus registry isolation: two independent Metrics instances on
 //     separate registries do not interfere with each other's Gather output.
 //   - OTel attribute key string values match the documented schema (ADR-0782).
 //
 // The existing tests cover: OTEL_SDK_DISABLED, no endpoint, valid endpoint,
 // out-of-range sampler arg, non-numeric sampler arg, logInfo nil/non-nil,
-// noopShutdown, WaitForShutdown context-cancel, SetControllerSources
-// both-nil and both-non-nil.  This file targets only the remaining gaps
+// noopShutdown, WaitForShutdown context-cancel.  This file targets only the remaining gaps
 // identified by `go test -coverprofile` at 89.1 % to reach ≥94 %.
 
 package observability
@@ -156,83 +154,6 @@ func TestInitOTel_OneSamplerArg(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// SetControllerSources — half-nil cases
-// ---------------------------------------------------------------------------
-
-// TestSetControllerSources_QueueOnlyNil exercises the branch where q == nil
-// but r != nil: only the nodes_live GaugeFunc should register.
-func TestSetControllerSources_QueueOnlyNil(t *testing.T) {
-	t.Parallel()
-	r := &mockNodeRegistry{n: 7}
-
-	reg := prometheus.NewRegistry()
-	m := NewMetrics(reg)
-	m.SetControllerSources(nil, r) // q is nil; only node gauge should appear
-
-	families, err := reg.Gather()
-	if err != nil {
-		t.Fatalf("Gather: %v", err)
-	}
-	got := map[string]bool{}
-	for _, fam := range families {
-		got[fam.GetName()] = true
-	}
-
-	// Queue gauges must NOT be registered.
-	if got["vmafx_controller_jobs_pending"] {
-		t.Error("vmafx_controller_jobs_pending registered despite nil queue")
-	}
-	if got["vmafx_controller_jobs_running"] {
-		t.Error("vmafx_controller_jobs_running registered despite nil queue")
-	}
-	// Node gauge MUST be registered and report the correct value.
-	if !got["vmafx_controller_nodes_live"] {
-		t.Error("vmafx_controller_nodes_live missing when r != nil")
-	}
-}
-
-// TestSetControllerSources_NodeRegistryOnlyNil exercises the branch where
-// r == nil but q != nil: only the jobs_pending and jobs_running GaugeFuncs
-// should register.
-func TestSetControllerSources_NodeRegistryOnlyNil(t *testing.T) {
-	t.Parallel()
-	q := &mockJobQueue{pending: 4, running: 2}
-
-	reg := prometheus.NewRegistry()
-	m := NewMetrics(reg)
-	m.SetControllerSources(q, nil) // r is nil; only queue gauges should appear
-
-	families, err := reg.Gather()
-	if err != nil {
-		t.Fatalf("Gather: %v", err)
-	}
-	got := map[string]float64{}
-	for _, fam := range families {
-		for _, metric := range fam.GetMetric() {
-			if g := metric.GetGauge(); g != nil {
-				got[fam.GetName()] = g.GetValue()
-			}
-		}
-	}
-
-	// Queue gauges MUST be registered.
-	if v, ok := got["vmafx_controller_jobs_pending"]; !ok {
-		t.Error("vmafx_controller_jobs_pending missing when q != nil")
-	} else if v != 4 {
-		t.Errorf("jobs_pending = %v, want 4", v)
-	}
-	if v, ok := got["vmafx_controller_jobs_running"]; !ok {
-		t.Error("vmafx_controller_jobs_running missing when q != nil")
-	} else if v != 2 {
-		t.Errorf("jobs_running = %v, want 2", v)
-	}
-	// Node gauge must NOT be registered.
-	if _, ok := got["vmafx_controller_nodes_live"]; ok {
-		t.Error("vmafx_controller_nodes_live registered despite nil node registry")
-	}
-}
-
-// ---------------------------------------------------------------------------
 // Prometheus registry isolation
 // ---------------------------------------------------------------------------
 
@@ -246,8 +167,14 @@ func TestPrometheusRegistryIsolation(t *testing.T) {
 	reg1 := prometheus.NewRegistry()
 	reg2 := prometheus.NewRegistry()
 
-	m1 := NewMetrics(reg1)
-	m2 := NewMetrics(reg2)
+	m1, err := NewMetrics(reg1)
+	if err != nil {
+		t.Fatalf("NewMetrics reg1: %v", err)
+	}
+	m2, err := NewMetrics(reg2)
+	if err != nil {
+		t.Fatalf("NewMetrics reg2: %v", err)
+	}
 
 	// Increment m1's ScoreRequests counter three times; leave m2 untouched.
 	m1.ScoreRequests.Inc()

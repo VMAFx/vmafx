@@ -76,6 +76,8 @@ type controllerClient struct {
 	log        *slog.Logger
 	sessions   *sessionHolder
 	running    atomic.Int32
+	// metrics is nil in tests that build the client without them.
+	metrics *nodeMetrics
 
 	// jobs maps the ID of each running job to the cancel function of its
 	// context, so a heartbeat answer can stop it.
@@ -302,6 +304,8 @@ func (c *controllerClient) runJob(slot int, job *controllerv1.Job) {
 	defer cancel(nil)
 	c.trackJob(job.GetId(), cancel)
 	c.running.Add(1)
+	c.metrics.jobStarted()
+	start := time.Now()
 	c.log.Info("job pulled", "slot", slot, "job_id", job.GetId())
 	res := c.exec.Execute(ctx, job)
 	c.running.Add(-1)
@@ -313,7 +317,16 @@ func (c *controllerClient) runJob(slot int, job *controllerv1.Job) {
 	case c.execCtx.Err() != nil:
 		res.Error = fmt.Errorf("node shutting down, job interrupted: %w", res.Error)
 	}
+	c.metrics.jobDone(jobBackend(job.GetScoring(), c.nodeBackend()), res.Error, time.Since(start))
 	c.report(job.GetId(), res)
+}
+
+// nodeBackend is the backend the node advertises; empty when none is.
+func (c *controllerClient) nodeBackend() string {
+	if b := c.capability.GetBackends(); len(b) > 0 {
+		return b[0]
+	}
+	return ""
 }
 
 // trackJob records a running job's cancel function.

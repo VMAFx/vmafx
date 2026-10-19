@@ -100,7 +100,7 @@ only currently-extracted shared internal helper.
 - **GPU public-header lifecycle prose is executable contract**: keep
   `libvmaf_cuda.h` explicit that init returns caller-owned allocation,
   import copies it by value without transferring ownership, close precedes
-  the single-pointer `vmaf_cuda_state_free`, and that free does not NULL the
+  single-pointer `vmaf_cuda_state_free`, and that free does not NULL
   caller's handle. Keep `VmafSyclPicturePreallocationMethod` values explicit
   and stable (`NONE=0`, `DEVICE=1`, `HOST=2`) with their actual allocator
   mapping (`vmaf_picture_alloc`, `sycl::malloc_device`,
@@ -115,20 +115,35 @@ only currently-extracted shared internal helper.
   (`core/src/picture_v2.c`); all 5 entry points live in libvmaf.so.
 - **`vmaf_picture_convert*` is additive ([ADR-1822](../../../docs/adr/1822-additive-picture-convert.md))**:
   `picture.h` carries upstream's `VmafColor` and colour enums but `VmafPicture`
-  gets no `color` member; the source colour is the `src_color` argument of
-  `vmaf_picture_convert_context_init_with_color()`. A sync of Netflix's
+  gets no `color` member; source colour is `src_color` argument of
+  `vmaf_picture_convert_context_init_with_color()`. sync of Netflix's
   `0497a0f29` hunk of `picture.h` must not insert `VmafColor color` before
-  `ref`. `core/test/test_picture_convert_api.c` guards the layout.
+  `ref`. `core/test/test_picture_convert_api.c` guards layout.
+- **`vmaf_picture_wrap()` keeps fork plane rules ([ADR-2949](../../../docs/adr/2949-picture-wrap-compat-port.md))**:
+  struct + signature = upstream `700124a4c`. Chroma extent rounded up
+  (`vmaf_picture_plane_extents()`), size 0 / NULL plane / short or negative
+  stride = `-EINVAL`, `*pic` untouched on failure. Sync of upstream hunks of
+  `picture.h` / `src/picture.c`: no floor shifts, no unchecked planes. Compat
+  body on `vmafx_frame_wrap_host()`; engine body and
+  `vmafx_frame_bind()` share `vmaf_picture_wrap_bind()`. Guards:
+  `test_picture_wrap_api`, `test_compat_conformance` (`picture_wraps()`).
+- **`vmaf_set_input_colorimetry()` replaces `VmafPicture::color`
+  ([ADR-2093](../../../docs/adr/2093-upstream-hdr-groundwork-input-colorimetry.md))**:
+  source colour of reference and distorted inputs is declared once on
+  context (`libvmaf.h`) and read by model `conversion_target` step of
+  `vmaf_read_pictures()`. sync of Netflix's `VmafPicture::color` hunks or of
+  `pic->color` reads keeps fork's side. `-EBUSY` once picture has been
+  converted.
 - **Doxygen-clean public API**
   ([ADR-0953](../../../docs/adr/0953-doxygen-public-api-clean.md),
   [ADR-1315](../../../docs/adr/1315-doxygen-public-api-fail-closed.md)):
   every header in directory must produce **zero warnings** via
   `doxygen core/doc/Doxyfile.public-api`. Build fails closed with
   `WARN_AS_ERROR = YES` and CI workflow
-  `.github/workflows/doxygen-public-api.yml` enforces
+  `.github/workflows/docs.yml` (job `Doxygen Public API`) enforces
   `DOXYGEN_WARNING_CEILING: "0"`.
   Vendored Pelorus interop mirror (`core/include/libvmaf/pelorus/`,
-  ADR-1113) is excluded from public C API Doxygen scope because it is a
+  ADR-1113) is excluded from public C API Doxygen scope because it is
   byte-identical upstream mirror not installed as public libvmaf headers.
   Patterns to avoid (trigger warnings, enforced by
   `core/test/test_gpu_public_header_docs.py`):
@@ -143,7 +158,7 @@ only currently-extracted shared internal helper.
   - **Multi-name declarations** (`unsigned w[3], h[3];`) attach inline doc
     to 1 symbol only — split into 1 declaration per line so each symbol
     carries own doc.
-  - **Anonymous nested struct instances** require a doc comment on the
+  - **Anonymous nested struct instances** require doc comment on
     variable instance itself (e.g. `} pic_params; /**< ... */`).
 
 ## `enum VmafBackend` / `vmaf_context_get_backend` rebase invariant

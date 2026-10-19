@@ -23,9 +23,9 @@ The ten core tools are listed below; the P1 tools ``list_extractors``,
   cache on a deterministic split and report PLCC/SROCC/RMSE.
 - ``compare_models``        — rank several ONNX models on the same split.
 - ``describe_worst_frames`` — score a pair, pick the N worst-VMAF frames, and
-  describe the visible artefacts via SmolVLM / Moondream2 (ADR-0172 / T6-6;
-  requires the ``vlm`` extras for actual descriptions, otherwise returns
-  frame metadata only).
+  describe the visible artefacts with a local vision-language model through
+  ONNX Runtime GenAI (ADR-0172 / ADR-1886; needs the ``vlm`` extra and a model
+  directory in ``VMAF_MCP_VLM_MODEL``, otherwise returns frame metadata only).
 
 The server assumes ``build/tools/vmaf`` exists (build first with
 ``meson compile -C build``). Paths are validated to live under either the
@@ -57,7 +57,7 @@ import subprocess
 import sys
 import tempfile
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, cast
@@ -76,6 +76,8 @@ from mcp.types import (
 )
 from pydantic import TypeAdapter
 
+from vmaf_mcp import score_options, vlm
+from vmaf_mcp.defaultmodel import DEFAULT_MODEL_ARG
 from vmaf_mcp.http_scoring import HttpScoringRuntime, install_http_scoring_runtime
 
 _logger = logging.getLogger(__name__)
@@ -434,56 +436,20 @@ class ScoreExtras:
         """Return True when no extra flag is set."""
         return self == ScoreExtras()
 
+    def option_values(self) -> dict[str, Any]:
+        """The set fields keyed by generated option name (``features`` is ``feature``)."""
+        values: dict[str, Any] = {}
+        for field in fields(self):
+            value = getattr(self, field.name)
+            if value is None or value is False or value == ():
+                continue
+            values["feature" if field.name == "features" else field.name] = value
+        return values
+
     def to_argv(self) -> list[str]:
-        """Build the flag list, in a fixed order matching the Go server."""
-        argv: list[str] = []
-        for feat in self.features:
-            argv += ["--feature", feat]
-        if self.aom_ctc:
-            argv += ["--aom_ctc", self.aom_ctc]
-        if self.nflx_ctc:
-            argv += ["--nflx_ctc", self.nflx_ctc]
-        if self.tiny_model:
-            argv += ["--tiny-model", self.tiny_model]
-        if self.tiny_device:
-            argv += ["--tiny-device", self.tiny_device]
-        if self.tiny_threads is not None:
-            argv += ["--tiny-threads", str(self.tiny_threads)]
-        if self.tiny_fp16:
-            argv += ["--tiny-fp16"]
-        if self.tiny_model_verify:
-            argv += ["--tiny-model-verify"]
-        if self.tiny_codec:
-            argv += ["--tiny-codec", self.tiny_codec]
-        if self.tiny_preset:
-            argv += ["--tiny-preset", self.tiny_preset]
-        if self.tiny_crf is not None:
-            argv += ["--tiny-crf", str(self.tiny_crf)]
-        if self.tiny_resize:
-            argv += ["--tiny-resize", self.tiny_resize]
-        if self.no_reference:
-            argv += ["--no-reference"]
-        if self.threads is not None:
-            argv += ["--threads", str(self.threads)]
-        if self.frame_cnt is not None:
-            argv += ["--frame_cnt", str(self.frame_cnt)]
-        if self.frame_skip_ref is not None:
-            argv += ["--frame_skip_ref", str(self.frame_skip_ref)]
-        if self.frame_skip_dist is not None:
-            argv += ["--frame_skip_dist", str(self.frame_skip_dist)]
-        if self.no_prediction:
-            argv += ["--no_prediction"]
-        if self.cpumask is not None:
-            argv += ["--cpumask", str(self.cpumask)]
-        if self.gpumask is not None:
-            argv += ["--gpumask", str(self.gpumask)]
-        if self.sycl_device is not None:
-            argv += ["--sycl_device", str(self.sycl_device)]
-        if self.hip_device is not None:
-            argv += ["--hip_device", str(self.hip_device)]
-        if self.metal_device is not None:
-            argv += ["--metal_device", str(self.metal_device)]
-        return argv
+        """The generated "extra" flags of the set fields, in definition order
+        (core/api/vmafx.toml), which is the order the Go server uses too."""
+        return score_options.extra_args(self.option_values())
 
 
 @dataclass(frozen=True)
@@ -494,7 +460,7 @@ class ScoreRequest:
     height: int
     pixfmt: str  # "420" | "422" | "444"
     bitdepth: int
-    model: str = "version=vmaf_v0.6.1"
+    model: str = DEFAULT_MODEL_ARG
     backend: str = "auto"  # "cpu" | "cuda" | "sycl" | "hip" | "metal" | "auto"
     precision: str = "legacy"  # "legacy" = %.6f; matches C CLI default per ADR-0119
     subsample: int = 1  # score every Nth frame; passed as --subsample to the CLI
@@ -502,133 +468,26 @@ class ScoreRequest:
     extras: ScoreExtras = ScoreExtras()  # optional pass-through flags (ADR-1117)
 
 
-_VALID_TINY_DEVICES: set[str] = {
-    "auto",
-    "cpu",
-    "cuda",
-    "openvino",
-    "openvino-npu",
-    "openvino-cpu",
-    "openvino-gpu",
-    "coreml",
-    "coreml-ane",
-    "coreml-gpu",
-    "coreml-cpu",
-    "rocm",
-}
-_VALID_TINY_RESIZES: set[str] = {"bilinear", "nearest", "bicubic", "disabled"}
-_VALID_AOM_CTC: set[str] = {"v1.0", "v2.0", "v3.0", "v4.0", "v5.0", "v6.0", "v7.0"}
-_VALID_NFLX_CTC: set[str] = {"v1.0"}
-_VALID_PIXFMTS: set[str] = {"420", "422", "444"}
-_VALID_BITDEPTHS: set[int] = {8, 10, 12, 16}
-_VALID_BACKENDS: set[str] = {"auto", "cpu", "cuda", "sycl", "hip", "metal"}
+# The allowed values come from the generated options (core/api/vmafx.toml).
+# pixfmt and bitdepth need no set here: score_options.from_mcp() checks them.
+_VALID_BACKENDS: set[str] = score_options.allowed("backend")
 _VALID_BACKEND_RECEIPTS: set[str] = _VALID_BACKENDS - {"auto"}
-_VALID_OUTPUT_FMTS: set[str] = {"json", "xml", "csv", "sub"}
+_VALID_OUTPUT_FMTS: set[str] = score_options.allowed("output_format")
 
 
-def _opt_int(arguments: dict[str, Any], key: str) -> int | None:
-    """``arguments[key]`` as an int, or None when the key is absent or null."""
-    return int(arguments[key]) if key in arguments and arguments[key] is not None else None
-
-
-def _opt_str(arguments: dict[str, Any], key: str) -> str | None:
-    """``arguments[key]`` as a str, or None when the key is absent or null."""
-    return str(arguments[key]) if key in arguments and arguments[key] is not None else None
-
-
-def _tiny_extras_from_args(
-    arguments: dict[str, Any],
-) -> tuple[str | None, str | None, int | None, int | None]:
-    """Validate the tiny-AI options; returns (device, resize, crf, threads)."""
-    tiny_dev = _opt_str(arguments, "tiny_device")
-    dnn_ep = _opt_str(arguments, "dnn_ep")
+def _fold_tiny_device(values: dict[str, Any]) -> None:
+    """dnn_ep (the ONNX Runtime name) sets tiny_device; both must agree when given."""
+    tiny_dev = values.get("tiny_device")
+    dnn_ep = values.pop("dnn_ep", None)
     if tiny_dev is not None and dnn_ep is not None and tiny_dev != dnn_ep:
         raise ValueError(f"conflicting tiny_device ('{tiny_dev}') and dnn_ep ('{dnn_ep}') values")
-    if tiny_dev is None:
-        tiny_dev = dnn_ep
-    if tiny_dev is not None and tiny_dev not in _VALID_TINY_DEVICES:
-        raise ValueError(
-            f"invalid tiny_device '{tiny_dev}': must be one of "
-            "auto|cpu|cuda|openvino|openvino-npu|openvino-cpu|openvino-gpu|"
-            "coreml|coreml-ane|coreml-gpu|coreml-cpu|rocm"
-        )
-
-    tiny_resize = _opt_str(arguments, "tiny_resize")
-    if tiny_resize is not None and tiny_resize not in _VALID_TINY_RESIZES:
-        raise ValueError(
-            f"invalid tiny_resize '{tiny_resize}': must be one of bilinear|nearest|bicubic|disabled"
-        )
-
-    tiny_crf = _opt_int(arguments, "tiny_crf")
-    if tiny_crf is not None and not (0 <= tiny_crf <= 63):
-        raise ValueError(f"invalid tiny_crf {tiny_crf}: must be in range [0, 63]")
-
-    tiny_threads = _opt_int(arguments, "tiny_threads")
-    if tiny_threads is not None and tiny_threads < 0:
-        raise ValueError(f"invalid tiny_threads {tiny_threads}: must be non-negative")
-
-    return tiny_dev, tiny_resize, tiny_crf, tiny_threads
-
-
-def _ctc_and_frame_extras_from_args(
-    arguments: dict[str, Any],
-) -> tuple[str | None, str | None, int | None, int | None, int | None, int | None]:
-    """Validate the CTC presets, thread count and frame-window options.
-
-    ``subsample`` is validated here too even though it is not part of
-    :class:`ScoreExtras`; rejecting a bad value is the only thing the original
-    straight-line code did with it.
-    """
-    aom_ctc = _opt_str(arguments, "aom_ctc")
-    if aom_ctc is not None and aom_ctc not in _VALID_AOM_CTC:
-        raise ValueError(
-            f"invalid aom_ctc '{aom_ctc}': must be one of v1.0|v2.0|v3.0|v4.0|v5.0|v6.0|v7.0"
-        )
-
-    nflx_ctc = _opt_str(arguments, "nflx_ctc")
-    if nflx_ctc is not None and nflx_ctc not in _VALID_NFLX_CTC:
-        raise ValueError(f"invalid nflx_ctc '{nflx_ctc}': must be v1.0")
-
-    threads = _opt_int(arguments, "threads")
-    if threads is not None and threads < 1:
-        raise ValueError(f"invalid threads {threads}: must be >= 1")
-
-    frame_cnt = _opt_int(arguments, "frame_cnt")
-    if frame_cnt is not None and frame_cnt < 1:
-        raise ValueError(f"invalid frame_cnt {frame_cnt}: must be >= 1")
-
-    frame_skip_ref = _opt_int(arguments, "frame_skip_ref")
-    if frame_skip_ref is not None and frame_skip_ref < 0:
-        raise ValueError(f"invalid frame_skip_ref {frame_skip_ref}: must be non-negative")
-
-    frame_skip_dist = _opt_int(arguments, "frame_skip_dist")
-    if frame_skip_dist is not None and frame_skip_dist < 0:
-        raise ValueError(f"invalid frame_skip_dist {frame_skip_dist}: must be non-negative")
-
-    subsample = int(arguments.get("subsample", 1))
-    if subsample < 1:
-        raise ValueError(f"invalid subsample {subsample}: must be >= 1")
-
-    return aom_ctc, nflx_ctc, threads, frame_cnt, frame_skip_ref, frame_skip_dist
-
-
-def _device_masks_from_args(
-    arguments: dict[str, Any],
-) -> tuple[int | None, int | None, int | None, int | None, int | None]:
-    """Validate the CPU/GPU affinity masks and the per-backend device indices."""
-    masks: list[int | None] = []
-    for key in ("cpumask", "gpumask", "sycl_device", "hip_device", "metal_device"):
-        value = _opt_int(arguments, key)
-        if value is not None and value < 0:
-            raise ValueError(f"invalid {key} {value}: must be non-negative")
-        masks.append(value)
-    cpumask, gpumask, sycl_device, hip_device, metal_device = masks
-    return cpumask, gpumask, sycl_device, hip_device, metal_device
+    if tiny_dev is None and dnn_ep is not None:
+        values["tiny_device"] = dnn_ep
 
 
 def _output_fmt_from_args(arguments: dict[str, Any]) -> str:
     """Resolve output_fmt / format together with the csv and sub shorthand flags."""
-    output_fmt = _opt_str(arguments, "output_fmt") or _opt_str(arguments, "format")
+    output_fmt = arguments.get("output_fmt") or arguments.get("format")
     csv_flag = bool(arguments.get("csv", False))
     sub_flag = bool(arguments.get("sub", False))
     if csv_flag and sub_flag:
@@ -651,60 +510,28 @@ def _output_fmt_from_args(arguments: dict[str, Any]) -> str:
     if output_fmt not in _VALID_OUTPUT_FMTS:
         raise ValueError(f"invalid output_fmt '{output_fmt}': must be one of json|xml|csv|sub")
 
-    return output_fmt
+    return str(output_fmt)
+
+
+_EXTRA_FIELDS = {f.name for f in fields(ScoreExtras)}
 
 
 def _extras_from_args(arguments: dict[str, Any]) -> ScoreExtras:
     """Build a :class:`ScoreExtras` from a raw tool-call ``arguments`` dict.
 
-    Only keys that are present are forwarded; absent keys leave the field at
-    its default (``None`` / ``False`` / ``()``), so no CLI flag is emitted.
-    Mirrors the Go server's ``parseScoreExtras`` (cmd/vmafx-mcp/impl.go).
-
-    The per-group helpers run in the same order the single-function version
-    validated in, so a payload with several bad values still reports the same
-    first error.
+    Every argument the generated schemas name is checked against its option
+    (core/api/vmafx.toml, ``score_options``) in definition order, as the Go
+    server's ``parseScoreExtras`` does through ``pkg/scoreopts``. Only the
+    rules the definition cannot state stay here: tiny_device and dnn_ep must
+    agree, and csv / sub / output_fmt must agree. Absent keys leave a field at
+    its default, so no CLI flag is emitted.
     """
-    raw_features = arguments.get("feature")
-    features: tuple[str, ...] = ()
-    if isinstance(raw_features, list):
-        features = tuple(str(f) for f in raw_features if isinstance(f, str) and f)
-
-    tiny_dev, tiny_resize, tiny_crf, tiny_threads = _tiny_extras_from_args(arguments)
-    aom_ctc, nflx_ctc, threads, frame_cnt, frame_skip_ref, frame_skip_dist = (
-        _ctc_and_frame_extras_from_args(arguments)
-    )
-    cpumask, gpumask, sycl_device, hip_device, metal_device = _device_masks_from_args(arguments)
+    values = score_options.from_mcp(arguments)
+    _fold_tiny_device(values)
     output_fmt = _output_fmt_from_args(arguments)
-
-    return ScoreExtras(
-        features=features,
-        aom_ctc=aom_ctc,
-        nflx_ctc=nflx_ctc,
-        tiny_model=_opt_str(arguments, "tiny_model"),
-        tiny_device=tiny_dev,
-        tiny_threads=tiny_threads,
-        tiny_fp16=bool(arguments.get("tiny_fp16", False)),
-        tiny_model_verify=bool(arguments.get("tiny_model_verify", False)),
-        tiny_codec=_opt_str(arguments, "tiny_codec"),
-        tiny_preset=_opt_str(arguments, "tiny_preset"),
-        tiny_crf=tiny_crf,
-        tiny_resize=tiny_resize,
-        no_reference=bool(arguments.get("no_reference", False)),
-        threads=threads,
-        frame_cnt=frame_cnt,
-        frame_skip_ref=frame_skip_ref,
-        frame_skip_dist=frame_skip_dist,
-        no_prediction=bool(arguments.get("no_prediction", False)),
-        cpumask=cpumask,
-        gpumask=gpumask,
-        sycl_device=sycl_device,
-        hip_device=hip_device,
-        metal_device=metal_device,
-        output_fmt=output_fmt,
-        disable_clip=bool(arguments.get("disable_clip", False)),
-        enable_transform=bool(arguments.get("enable_transform", False)),
-    )
+    kept = {name: value for name, value in values.items() if name in _EXTRA_FIELDS}
+    features = tuple(values.get("feature", ()))
+    return ScoreExtras(features=features, output_fmt=output_fmt, **kept)
 
 
 # Map each named backend to the set of siblings it must disable so the
@@ -834,12 +661,37 @@ async def _get_or_create_probe_lock(key: str) -> asyncio.Lock:
         return _BACKEND_PROBE_LOCKS[key]
 
 
-def _probe_backends(vmaf: Path) -> frozenset[str]:
-    """Return the set of backends the local @p vmaf binary advertises.
+# `vmaf --list-backends` initialises every compiled GPU backend once; the CLI
+# side (pkg/scorebackend, vmaftune.score_backend) allows 60 s for the same run.
+_LIST_BACKENDS_TIMEOUT_S = 60
+_GPU_BACKENDS = ("cuda", "sycl", "hip", "metal")
 
-    Probes ``vmaf --help`` (which always lists every ``--no_<backend>``
-    flag) and matches the documented backend names. ``cpu`` is always
-    included — it has no driver dependency and is never gated.
+
+def _usable_backends_from_report(text: str) -> frozenset[str]:
+    """Parse a ``vmaf --list-backends`` document into the usable backend names.
+
+    ``cpu`` is always included. Raises ``ValueError`` when ``text`` is not a
+    report (a ``vmaf`` older than ADR-1874 rejects the option).
+    """
+    try:
+        rows = json.loads(text)["backends"]
+    except (json.JSONDecodeError, KeyError, TypeError) as exc:
+        raise ValueError(f"not a backend report: {exc}") from exc
+    usable: set[str] = {"cpu"}
+    for row in rows if isinstance(rows, list) else ():
+        if isinstance(row, dict) and row.get("name") in _GPU_BACKENDS and row.get("usable") is True:
+            usable.add(row["name"])
+    return frozenset(usable)
+
+
+def _probe_backends(vmaf: Path) -> frozenset[str]:
+    """Return the set of backends the local @p vmaf binary can use on this host.
+
+    Runs ``vmaf --list-backends`` (ADR-1874): per backend, whether it was
+    compiled in and whether its state initialises here. The ``--help`` text
+    names every ``--no_<backend>`` flag on every build, so it says nothing
+    about the binary. ``cpu`` is always included — it has no driver
+    dependency and is never gated.
 
     Result is cached for the lifetime of the server process so we don't
     fork a subprocess per `vmaf_score` call.
@@ -853,28 +705,26 @@ def _probe_backends(vmaf: Path) -> frozenset[str]:
     cached = _BACKEND_PROBE_CACHE.get(key)
     if cached is not None:
         return cached
-    advertised: set[str] = {"cpu"}
     try:
         result = subprocess.run(
-            [str(vmaf), "--help"], capture_output=True, text=True, timeout=5, check=False
+            [str(vmaf), "--list-backends"],
+            capture_output=True,
+            text=True,
+            timeout=_LIST_BACKENDS_TIMEOUT_S,
+            check=False,
         )
-    except (subprocess.TimeoutExpired, OSError):
+        if result.returncode != 0:
+            raise ValueError(f"exit status {result.returncode}")
+        probe = _usable_backends_from_report(result.stdout or "")
+    except (subprocess.TimeoutExpired, OSError, ValueError):
         # On probe failure we conservatively assume CPU-only — better to
         # over-reject and let the user override via env than to silently
         # fall back as bug #1 used to.
         _logger.warning(
-            "vmaf --help probe failed; assuming CPU-only backend support",
+            "vmaf --list-backends probe failed; assuming CPU-only backend support",
             exc_info=True,
         )
-        probe = frozenset(advertised)
-        _BACKEND_PROBE_CACHE[key] = probe
-        return probe
-    blob = (result.stdout or "") + (result.stderr or "")
-    # The CLI documents disable-flags as `--no_<backend>` (one per line).
-    for name in ("cuda", "sycl", "hip", "metal"):
-        if re.search(rf"--no_{name}\b", blob):
-            advertised.add(name)
-    probe = frozenset(advertised)
+        probe = frozenset({"cpu"})
     _BACKEND_PROBE_CACHE[key] = probe
     return probe
 
@@ -923,49 +773,39 @@ def _build_vmaf_argv(
     # when a reference is supplied — FR mode, or an NR caller passing
     # one. Mirrors the Go server's conditional -r (ADR-1117).
     if req.ref is not None:
-        argv += ["-r", str(req.ref)]
-    model = req.model
-    if req.extras.disable_clip and ":disable_clip" not in model:
-        model = f"{model}:disable_clip"
-    if req.extras.enable_transform and ":enable_transform" not in model:
-        model = f"{model}:enable_transform"
+        argv += [score_options.flag("reference"), str(req.ref)]
+    model = score_options.model_spec(req.model, req.extras.option_values())
     argv += [
-        "-d",
+        score_options.flag("distorted"),
         str(req.dis),
-        "--width",
+        score_options.flag("width"),
         str(req.width),
-        "--height",
+        score_options.flag("height"),
         str(req.height),
-        "-p",
+        score_options.flag("pixel_format"),
         req.pixfmt,
-        "-b",
+        score_options.flag("bitdepth"),
         str(req.bitdepth),
-        "-m",
+        score_options.flag("model"),
         model,
-        "--precision",
+        score_options.flag("precision"),
         req.precision,
-        "-q",
-        "-o",
+        score_options.flag("quiet"),
+        score_options.flag("output"),
         str(output),
     ]
     fmt = req.output_fmt or req.extras.output_fmt or "json"
-    if fmt == "xml":
-        argv.append("--xml")
-    elif fmt == "csv":
-        argv.append("--csv")
-    elif fmt == "sub":
-        argv.append("--sub")
-    else:
-        argv.append("--json")
+    choices = next(e for e in score_options.document()["argv"] if e["option"] == "output_format")
+    argv.append(choices["values"].get(fmt, choices["values"]["json"]))
 
     if req.subsample > 1:
-        argv += ["--subsample", str(req.subsample)]
+        argv += [score_options.flag("subsample"), str(req.subsample)]
     # Optional pass-through scoring flags (ADR-1117). Appended before
     # the backend-disable flags so the argv order matches the Go server.
     argv += req.extras.to_argv()
     if req.backend in _BACKEND_DISABLE:
         for sibling in _BACKEND_DISABLE[req.backend]:
-            argv.append(f"--no_{sibling}")
+            argv.append(score_options.flag(f"no_{sibling}"))
     return argv
 
 
@@ -1140,20 +980,14 @@ def _list_models() -> list[dict[str, Any]]:
 
 
 async def _list_backends() -> dict[str, bool]:
-    """Return which backends the local vmaf binary was compiled with.
+    """Return which backends the local vmaf binary can use on this host.
 
-    Delegates to :func:`_probe_backends_async`, which reads ``vmaf --help``
-    and looks for ``--no_<backend>`` flags (presence = compiled in).
-    This correctly identifies live CUDA/SYCL/HIP/Metal support
-    even on hosts where the ``--version`` banner does not mention GPU
-    backends — the historical ``--version`` grep approach (Bug A,
-    2026-05-18) missed CUDA on the ``vmaf-dev-mcp`` container because
-    the banner omits backend names.
-
-    Bug A fix: the old implementation searched the ``--version`` output
-    for keyword substrings which may be absent despite the backend being
-    compiled in (e.g. CUDA enabled but no "CUDA" token in the banner).
-    ``--help`` always lists ``--no_<backend>`` for every compiled backend.
+    Delegates to :func:`_probe_backends_async`, which reads
+    ``vmaf --list-backends`` (ADR-1874): a backend is true when it was
+    compiled in and its state initialises here. The ``--help`` text names
+    every ``--no_<backend>`` flag on every build, and the ``--version``
+    banner names no GPU backend, so neither says anything about the binary
+    (Bug A, 2026-05-18; ``T-MCP-BACKENDS-FROM-HELP-TEXT-2026-10-05``).
 
     ADR-1023: made async so the ``subprocess.run`` inside
     :func:`_probe_backends` does not stall the event loop.
@@ -1298,75 +1132,38 @@ def _compare_models(
 # ---------------------------------------------------------------------------
 
 
-_VLM_PROMPT = (
-    "Describe what visible compression / encoding artefacts you see in this video "
-    "frame in 1-2 sentences. Focus on blocking, ringing, banding, blur, or chroma "
-    "distortion if present. Skip aesthetic commentary."
-)
-
-# Cached VLM pipeline (model + processor). Populated by `_load_vlm()` on
-# first call and then reused. None means "unavailable / disabled".
-_vlm_state: dict[str, Any] = {"loaded": False, "pipeline": None, "model_id": None}
+# Cached describer of the configured local model (vmaf_mcp.vlm). Populated
+# by `_load_vlm()` on the first call and then reused. "pipeline" None after
+# loading means no model runs; "reason" says why.
+_vlm_state: dict[str, Any] = {"loaded": False, "pipeline": None, "model_id": None, "reason": None}
 
 
 def _load_vlm() -> tuple[Any, str] | None:
-    """Lazy-import transformers and load the smallest available VLM.
+    """Load the model ``VMAF_MCP_VLM_MODEL`` names through ONNX Runtime GenAI.
 
-    Returns ``(pipeline, model_id)`` on success, ``None`` if the
-    ``vlm`` extras aren't installed or both candidate models fail to
-    load. Cached across calls — the first load is slow, subsequent
-    calls hit the in-memory state.
+    Returns ``(describe, model_id)``, or ``None`` when the ``vlm`` extra or
+    the model directory is missing (the reason is kept in ``_vlm_state``).
+    Cached across calls. A configured model that fails to load raises: the
+    caller asked for descriptions and gets the error, not metadata.
     """
     if _vlm_state["loaded"]:
         return (_vlm_state["pipeline"], _vlm_state["model_id"]) if _vlm_state["pipeline"] else None
     _vlm_state["loaded"] = True
-
-    try:
-        import torch  # noqa: F401
-        from transformers import pipeline as hf_pipeline
-    except ImportError:
+    loaded = vlm.load_configured()
+    if isinstance(loaded, str):
+        _vlm_state["reason"] = loaded
         return None
-
-    candidates = (
-        "HuggingFaceTB/SmolVLM-Instruct",  # ~2 GB, OK on CPU
-        "vikhyatk/moondream2",  # ~2 GB, well-known fallback
-    )
-    for model_id in candidates:
-        try:
-            pipe = hf_pipeline(
-                "image-to-text",
-                model=model_id,
-                trust_remote_code=True,
-            )
-            _vlm_state["pipeline"] = pipe
-            _vlm_state["model_id"] = model_id
-            return (pipe, model_id)
-        except Exception:  # pragma: no cover - depends on local env
-            _logger.warning(
-                "VLM candidate %s failed to load; trying next fallback",
-                model_id,
-                exc_info=True,
-            )
-            continue
-    return None
+    _vlm_state["pipeline"], _vlm_state["model_id"] = loaded
+    return loaded
 
 
 def _describe_image_with_vlm(image_path: Path) -> str:
-    """Run the cached VLM on @p image_path. Returns "(VLM unavailable)" when
-    the ``vlm`` extras are missing or no candidate model loaded."""
+    """Describe @p image_path with the configured model, or say why none runs."""
     loaded = _load_vlm()
     if not loaded:
-        return "(VLM unavailable — install with `pip install vmaf-mcp[vlm]`)"
-    pipe, _model_id = loaded
-    try:
-        out = pipe(str(image_path), prompt=_VLM_PROMPT)
-    except TypeError:
-        # Older transformers don't accept `prompt=` for image-to-text;
-        # the model defaults to its training caption prompt.
-        out = pipe(str(image_path))
-    if isinstance(out, list) and out and isinstance(out[0], dict):
-        return str(out[0].get("generated_text") or out[0].get("text") or out[0]).strip()
-    return str(out).strip()
+        return vlm.unavailable_note(str(_vlm_state.get("reason") or "no model loaded"))
+    describe, _model_id = loaded
+    return str(describe(str(image_path))).strip()
 
 
 async def _extract_frame_png(
@@ -2878,13 +2675,14 @@ def _read_vmaf_version_banner(vmaf: Path) -> str | None:
 async def _vmaf_version() -> dict[str, Any]:
     """Return the local vmaf binary's version string and compiled backends.
 
-    Runs ``vmaf --version`` (for the version string) and ``vmaf --help``
-    (for the backend compile-in flags, same probe used by ``_probe_backends``).
-    The ``--version`` banner does not reliably list backends (Bug A, ADR-0511),
-    so we derive ``build_flags`` from ``--help`` instead.
+    Runs ``vmaf --version`` (for the version string) and
+    ``vmaf --list-backends`` (for the backend flags, same probe used by
+    ``_probe_backends``). The ``--version`` banner does not list backends
+    (Bug A, ADR-0511) and ``--help`` names every backend on every build, so
+    ``build_flags`` come from the report (ADR-1874).
 
     ADR-1023: this function is async so the blocking ``subprocess.run``
-    (``--version``) and ``_probe_backends_async`` (``--help``) do not stall
+    (``--version``) and ``_probe_backends_async`` (``--list-backends``) do not stall
     the event loop when called from the async ``_call_tool`` handler.
     """
     vmaf = _vmaf_binary()
@@ -2907,7 +2705,7 @@ async def _vmaf_version() -> dict[str, Any]:
     # --- version string (blocking subprocess.run, run in thread) ---
     version_str = await asyncio.to_thread(_read_vmaf_version_banner, vmaf)
 
-    # --- build flags from --help (same as _probe_backends but we don't use the cache
+    # --- build flags from --list-backends (same as _probe_backends but we don't use the cache
     #     so callers always get a fresh view even when the binary changes after startup) ---
     advertised = await _probe_backends_async(vmaf)
     build_flags = {
@@ -3115,7 +2913,7 @@ async def _run_vmaf_score_encoded(
     ref_path: Path,
     dis_path: Path,
     *,
-    model: str = "version=vmaf_v0.6.1",
+    model: str = DEFAULT_MODEL_ARG,
     backend: str = "auto",
     subsample: int = 1,
     output_fmt: str = "json",
@@ -3383,29 +3181,6 @@ def _scoring_output_properties() -> dict[str, Any]:
     }
 
 
-def _scoring_extra_properties() -> dict[str, Any]:
-    """Return the optional pass-through scoring parameters shared by
-    ``vmaf_score`` and ``vmaf_score_encoded`` (ADR-1117).
-
-    Each property maps onto a ``vmaf`` CLI flag verified against
-    ``core/tools/cli_parse.c``. Every property is optional and only forwarded
-    to the CLI when the caller supplies it, so existing callers are unaffected.
-
-    MUST stay byte-identical to the Go server's ``scoringExtraProperties()``
-    (cmd/vmafx-mcp/tools.go) — same keys, enums, defaults, and descriptions —
-    per cmd/vmafx-mcp/AGENTS.md. The per-section helpers below are merged in
-    declaration order, so the resulting key order is unchanged too.
-    """
-    return {
-        **_scoring_feature_properties(),
-        **_scoring_tiny_model_properties(),
-        **_scoring_tiny_runtime_properties(),
-        **_scoring_param_properties(),
-        **_scoring_device_properties(),
-        **_scoring_output_properties(),
-    }
-
-
 def _vmaf_per_shot_properties_a() -> dict[str, Any]:
     """First half of the input-schema properties (split for length only)."""
     return {
@@ -3585,36 +3360,8 @@ def _score_and_listing_tools() -> list[Tool]:
             description="Compute a VMAF score for a (reference, distorted) YUV pair. "
             "Optional tiny-AI/DNN, feature-selection, CTC-preset, and frame-range "
             "parameters map onto the corresponding vmaf CLI flags (ADR-1117).",
-            inputSchema={
-                "type": "object",
-                "required": ["ref", "dis", "width", "height", "pixfmt", "bitdepth"],
-                "properties": {
-                    "ref": {"type": "string", "description": "Reference YUV path."},
-                    "dis": {"type": "string", "description": "Distorted YUV path."},
-                    "width": {"type": "integer", "minimum": 1},
-                    "height": {"type": "integer", "minimum": 1},
-                    "pixfmt": {"type": "string", "enum": ["420", "422", "444"]},
-                    "bitdepth": {"type": "integer", "enum": [8, 10, 12, 16]},
-                    "model": {"type": "string", "default": "version=vmaf_v0.6.1"},
-                    "backend": {
-                        "type": "string",
-                        "enum": ["auto", "cpu", "cuda", "sycl", "hip", "metal"],
-                        "default": "auto",
-                    },
-                    "subsample": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "default": 1,
-                        "description": "Score every Nth frame (1 = every frame).",
-                    },
-                    "precision": {
-                        "type": "string",
-                        "default": "legacy",
-                        "description": "Score precision format. Default 'legacy' (%.6f, Netflix-compatible per ADR-0119); use 'max' for lossless float output (%.17g).",
-                    },
-                    **_scoring_extra_properties(),
-                },
-            },
+            # Generated from core/api/vmafx.toml (score_options), as the Go server's.
+            inputSchema=score_options.tool_schema("vmaf_score"),
         ),
         Tool(
             name="list_models",
@@ -3698,36 +3445,12 @@ def _worst_frames_tool() -> list[Tool]:
             name="describe_worst_frames",
             description=(
                 "Score a (ref, dis) pair, pick the N worst-VMAF frames, extract "
-                "each as PNG via ffmpeg, and run a vision-language model "
-                "(SmolVLM → Moondream2 fallback) to describe the visible "
-                "artefacts. Falls back to metadata-only output when the [vlm] "
-                "extras are not installed. ADR-0172 / T6-6."
+                "each as PNG via ffmpeg, and describe the visible artefacts with "
+                "a local vision-language model through ONNX Runtime GenAI "
+                "(VMAF_MCP_VLM_MODEL, [vlm] extra). Returns frame metadata with "
+                "a note when no model is configured. ADR-0172 / ADR-1886."
             ),
-            inputSchema={
-                "type": "object",
-                "required": ["ref", "dis", "width", "height", "pixfmt", "bitdepth"],
-                "properties": {
-                    "ref": {"type": "string"},
-                    "dis": {"type": "string"},
-                    "width": {"type": "integer", "minimum": 1},
-                    "height": {"type": "integer", "minimum": 1},
-                    "pixfmt": {"type": "string", "enum": ["420", "422", "444"]},
-                    "bitdepth": {"type": "integer", "enum": [8, 10, 12, 16]},
-                    "model": {"type": "string", "default": "version=vmaf_v0.6.1"},
-                    "backend": {
-                        "type": "string",
-                        "enum": ["auto", "cpu", "cuda", "sycl", "hip", "metal"],
-                        "default": "auto",
-                    },
-                    "n": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 32,
-                        "default": 5,
-                        "description": "How many worst-VMAF frames to describe.",
-                    },
-                },
-            },
+            inputSchema=score_options.tool_schema("describe_worst_frames"),
         ),
     ]
 
@@ -3789,41 +3512,7 @@ def _score_encoded_tool() -> list[Tool]:
                 "distorted_encoded fields. Requires ffmpeg + ffprobe on PATH. "
                 "ADR-0608."
             ),
-            inputSchema={
-                "type": "object",
-                "required": ["reference_encoded", "distorted_encoded"],
-                "properties": {
-                    "reference_encoded": {
-                        "type": "string",
-                        # ASCII "..." (not U+2026) so the schema is byte-identical
-                        # to the Go server's reference_encoded description (ADR-1117).
-                        "description": "Path to the reference encoded video (MP4/MKV/Y4M/...). "
-                        "Must be under an allowlisted root (VMAF_MCP_ALLOW).",
-                    },
-                    "distorted_encoded": {
-                        "type": "string",
-                        "description": "Path to the distorted encoded video.",
-                    },
-                    "model": {"type": "string", "default": "version=vmaf_v0.6.1"},
-                    "backend": {
-                        "type": "string",
-                        "enum": ["auto", "cpu", "cuda", "sycl", "hip", "metal"],
-                        "default": "auto",
-                    },
-                    "subsample": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "default": 1,
-                        "description": "Score every Nth frame (1 = every frame).",
-                    },
-                    "precision": {
-                        "type": "string",
-                        "default": "legacy",
-                        "description": "Score precision format. Default 'legacy' (%.6f, Netflix-compatible per ADR-0119); use 'max' for lossless float output (%.17g).",
-                    },
-                    **_scoring_extra_properties(),
-                },
-            },
+            inputSchema=score_options.tool_schema("vmaf_score_encoded"),
         ),
     ]
 
@@ -4238,15 +3927,13 @@ server: Server[Any] = Server(
 
 
 def _backend_and_subsample(arguments: dict[str, Any]) -> tuple[str, int]:
-    """Validate and return the ``backend`` and ``subsample`` arguments of a scoring tool."""
-    backend = str(arguments.get("backend", "auto"))
-    if backend not in _VALID_BACKENDS:
-        raise ValueError(
-            f"invalid backend '{backend}': must be one of auto|cpu|cuda|sycl|hip|metal"
-        )
-    subsample = int(arguments.get("subsample", 1))
-    if subsample < 1:
-        raise ValueError(f"invalid subsample {subsample}: must be >= 1")
+    """The ``backend`` and ``subsample`` arguments of a scoring tool, checked
+    against their generated options (the schema's defaults when absent)."""
+    values = score_options.from_mcp(
+        {key: arguments[key] for key in ("backend", "subsample") if key in arguments}
+    )
+    backend = str(values.get("backend", score_options.mcp_default("backend")))
+    subsample = int(values.get("subsample", score_options.mcp_default("subsample")))
     return backend, subsample
 
 
@@ -4274,16 +3961,12 @@ async def _tool_vmaf_score(arguments: dict[str, Any], _progress: str | int | Non
     # In NR mode the reference path is optional (only the distorted picture
     # is scored). A caller may still supply one; validate it when present.
     ref_path = _score_reference_path(arguments, extras)
+    # width, height, pixfmt, bitdepth, backend, subsample and precision were
+    # checked against their generated options by _extras_from_args.
     width = int(arguments["width"])
     height = int(arguments["height"])
-    if width <= 0 or height <= 0:
-        raise ValueError("width and height must be positive integers")
     pixfmt = str(arguments["pixfmt"])
-    if pixfmt not in _VALID_PIXFMTS:
-        raise ValueError(f"invalid pixfmt '{pixfmt}': must be one of 420|422|444")
     bitdepth = int(arguments["bitdepth"])
-    if bitdepth not in _VALID_BITDEPTHS:
-        raise ValueError(f"invalid bitdepth {bitdepth}: must be one of 8|10|12|16")
     backend, subsample = _backend_and_subsample(arguments)
     req = ScoreRequest(
         ref=ref_path,
@@ -4292,9 +3975,9 @@ async def _tool_vmaf_score(arguments: dict[str, Any], _progress: str | int | Non
         height=height,
         pixfmt=pixfmt,
         bitdepth=bitdepth,
-        model=str(arguments.get("model", "version=vmaf_v0.6.1")),
+        model=str(arguments.get("model", DEFAULT_MODEL_ARG)),
         backend=backend,
-        precision=str(arguments.get("precision", "legacy")),
+        precision=str(arguments.get("precision", score_options.mcp_default("precision"))),
         subsample=subsample,
         output_fmt=extras.output_fmt,
         extras=extras,
@@ -4345,10 +4028,10 @@ async def _tool_describe_worst_frames(
         height=int(arguments["height"]),
         pixfmt=str(arguments["pixfmt"]),
         bitdepth=int(arguments["bitdepth"]),
-        model=str(arguments.get("model", "version=vmaf_v0.6.1")),
-        backend=str(arguments.get("backend", "auto")),
+        model=str(arguments.get("model", DEFAULT_MODEL_ARG)),
+        backend=str(arguments.get("backend", score_options.mcp_default("backend"))),
     )
-    n_raw = int(arguments.get("n", 5))
+    n_raw = int(arguments.get("n", score_options.mcp_default("n")))
     if n_raw < 1 or n_raw > 32:
         raise ValueError(f"'n' must be between 1 and 32 (schema maximum); got {n_raw}")
     return await _describe_worst_frames(req, n=n_raw)
@@ -4374,7 +4057,7 @@ async def _tool_vmaf_score_encoded(arguments: dict[str, Any], _progress: str | i
     return await _run_vmaf_score_encoded(
         ref_path=_validate_path(arguments["reference_encoded"]),
         dis_path=_validate_path(arguments["distorted_encoded"]),
-        model=str(arguments.get("model", "version=vmaf_v0.6.1")),
+        model=str(arguments.get("model", DEFAULT_MODEL_ARG)),
         backend=backend,
         subsample=subsample,
         output_fmt=encoded_extras.output_fmt,

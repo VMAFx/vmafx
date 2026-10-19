@@ -1,6 +1,6 @@
 # ADR-0747 — CUDA `extern "C"` invariant for host-looked-up kernels
 
-**Status:** Accepted
+- **Status**: Accepted
 **Date:** 2026-05-28
 **Deciders:** lusoris
 **Related:** [Research-0747](../research/research-0747-cuda-extern-c-sweep.md)
@@ -66,3 +66,13 @@ introduced.
 - `core/src/feature/cuda/ssim_cuda.c:122–127` (host lookup sites)
 - `core/src/meson.build:784` (PTX generation confirming which `.cu`
   maps to `integer_ssim_score_ptx`)
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 47: `The driver API is intentional per ADR-0001 (deferred CUDA
+  context creation). Changing the dispatch pattern wou`: Cites ADR-0001 for
+  deferred CUDA context creation; ADR-0001 is "Treat uncommitted benchmark
+  result JSON as noise".

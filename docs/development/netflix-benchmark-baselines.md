@@ -194,7 +194,7 @@ Pick the node whose driver line reads `Intel iHD driver`, and pass it as
 (`testdata/benchmark_netflix.py`); it has no command-line option for it.
 
 !!! note "Example of unstable numbering"
-    On the `ryzen-4090-arc` bench host the Arc A380 moved from `renderD130`
+    On the reference workstation the Arc A380 moved from `renderD130`
     to `renderD129`, and `renderD130` became the AMD iGPU (`radeonsi`). A run
     against it fails with `DRM_IOCTL_VERSION, unsupported drm device by media
     driver: amdg`.
@@ -232,7 +232,7 @@ drifted. Toolchain versions have moved since (see `build-config.env`).
 
 | Item | Value |
 | --- | --- |
-| Host | `ryzen-4090-arc`: AMD Ryzen 9 9950X3D (32 threads), 60 GiB RAM, Linux 7.2.3-1-cachyos |
+| Host | a reference workstation: AMD Ryzen 9 9950X3D (32 threads), 60 GiB RAM, Linux 7.2.3-1-cachyos |
 | GPUs | NVIDIA RTX 4090 (driver 610.57.04), Intel Arc A380 |
 | Toolchain in `vmaf-dev-mcp` (Ubuntu 26.04) | Intel oneAPI DPC++ 2026.1.1, CUDA 13.3.73, FFmpeg n9.0.1-17-gfde3691 |
 | libvmaf build | `--buildtype=release -Db_lto=false -Dc_args=-march=native` |

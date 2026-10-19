@@ -118,16 +118,21 @@ static int observed_wait(pthread_cond_t *cond, pthread_mutex_t *mutex)
 static int await_flag(const bool *flag)
 {
     struct timespec deadline;
-    /* clock_gettime(CLOCK_REALTIME), not timespec_get(TIME_UTC): MinGW-w64's
-     * <time.h> does not declare timespec_get, so the required `Windows MinGW64`
-     * lane fails to build with "implicit declaration of function
-     * 'timespec_get'" and "'TIME_UTC' undeclared". CLOCK_REALTIME is also the
-     * clock pthread_cond_timedwait measures its deadline against by default, so
-     * this is the clock the deadline below has to come from. Matches
+    /* CLOCK_REALTIME, the clock pthread_cond_timedwait measures its deadline
+     * against by default. clock_gettime(), not timespec_get(TIME_UTC):
+     * MinGW-w64's <time.h> does not declare timespec_get, so the required
+     * `Windows MinGW64` lane fails to build with "implicit declaration of
+     * function 'timespec_get'" and "'TIME_UTC' undeclared". Matches
      * core/test/test_fex_pool_growth.c, which does the same for the same
-     * reason. */
+     * reason. MSVC has no clock_gettime(); there TIME_UTC is the clock the
+     * shim's timed wait reads (core/src/compat/win32/pthread.h). */
+#ifdef _MSC_VER
+    if (timespec_get(&deadline, TIME_UTC) != TIME_UTC)
+        return EINVAL;
+#else
     if (clock_gettime(CLOCK_REALTIME, &deadline) != 0)
         return EINVAL;
+#endif
     deadline.tv_sec += 5;
     int err = 0;
     while (!*flag && !err)

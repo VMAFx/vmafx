@@ -629,7 +629,7 @@ static inline VmafMtlFadmGainLimit vmaf_mtl_fadm_make_gain_limit(double limit)
     VmafMtlFadmGainLimit out;
     memset(&out, 0, sizeof(out));
     out.value = (float)limit;
-    out.is_float = ((double)out.value == limit) ? 1 : 0;
+    out.is_float = vmaf_mtl_f64_equal((double)out.value, limit) ? 1 : 0;
     int exponent = 0;
     const double fraction = frexp(limit, &exponent);
     out.mant = (vmaf_mtl_u64)ldexp(fraction, 53);

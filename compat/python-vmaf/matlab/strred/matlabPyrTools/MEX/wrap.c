@@ -58,23 +58,29 @@ static void wrap_inprod(const wrap_reduce_state *s, int y_startv, int y_wrap, in
                         int x_wrap, int res_pos)
 {
     double sum = 0.0;
-    int filt_pos, x_im, y_im, x_filt_stop;
-    int row, col;
+    int filt_pos;
+    int x_im;
+    int y_im;
+    int x_filt_stop;
+    int row;
+    int col;
 
     for (y_im = y_startv, filt_pos = 0, x_filt_stop = s->x_fdim; x_filt_stop <= s->filt_size;
-         y_im++, x_filt_stop += s->x_fdim)
+         y_im++, x_filt_stop += s->x_fdim) {
         for (x_im = x_startv; filt_pos < x_filt_stop; filt_pos++, x_im++) {
             row = y_wrap ? (y_im % s->y_dim) : y_im;
             col = x_wrap ? (x_im % s->x_dim) : x_im;
             sum += s->imval[row][col] * s->filt[filt_pos];
         }
+    }
     s->result[res_pos] = sum;
 }
 
 /* TOP ROWS: rows wrap, the centre column band does not. */
 static int wrap_reduce_top(const wrap_reduce_state *s, int y_start, int y_ctr_start, int *res_pos)
 {
-    int x_pos, y_pos;
+    int x_pos;
+    int y_pos;
 
     for (y_pos = y_start; y_pos < y_ctr_start; y_pos += s->y_step) {
         for (x_pos = s->x_start; x_pos < s->x_ctr_start; x_pos += s->x_step, (*res_pos)++)
@@ -133,7 +139,9 @@ image_type *image;
 int x_start, x_step, x_stop, y_start, y_step, y_stop;
 {
     image_type **imval;
-    int y_pos, y_im, res_pos = 0;
+    int y_pos;
+    int y_im;
+    int res_pos = 0;
     int x_ctr_stop = x_dim - x_fdim + 1;
     int y_ctr_stop = y_dim - y_fdim + 1;
     int y_ctr_start = 0;
@@ -179,7 +187,7 @@ int x_start, x_step, x_stop, y_start, y_step, y_stop;
     y_pos = wrap_reduce_mid(&s, y_pos, y_ctr_stop, &res_pos);
     wrap_reduce_bottom(&s, y_pos, y_stop, &res_pos);
 
-    free((image_type **)imval);
+    free((void *)imval);
 
     return (0);
 } /* end of internal_wrap_reduce */
@@ -220,22 +228,28 @@ static void wrap_inprod2(const wrap_expand_state *s, int y_startv, int y_wrap, i
                          int x_wrap, int im_pos)
 {
     double val = s->image[im_pos];
-    int filt_pos, x_res, y_res, x_filt_stop;
-    int row, col;
+    int filt_pos;
+    int x_res;
+    int y_res;
+    int x_filt_stop;
+    int row;
+    int col;
 
     for (y_res = y_startv, filt_pos = 0, x_filt_stop = s->x_fdim; x_filt_stop <= s->filt_size;
-         y_res++, x_filt_stop += s->x_fdim)
+         y_res++, x_filt_stop += s->x_fdim) {
         for (x_res = x_startv; filt_pos < x_filt_stop; filt_pos++, x_res++) {
             row = y_wrap ? (y_res % s->y_dim) : y_res;
             col = x_wrap ? (x_res % s->x_dim) : x_res;
             s->imval[row][col] += val * s->filt[filt_pos];
         }
+    }
 }
 
 /* TOP ROWS: rows wrap, the centre column band does not. */
 static int wrap_expand_top(const wrap_expand_state *s, int y_start, int y_ctr_start, int *im_pos)
 {
-    int x_pos, y_pos;
+    int x_pos;
+    int y_pos;
 
     for (y_pos = y_start; y_pos < y_ctr_start; y_pos += s->y_step) {
         for (x_pos = s->x_start; x_pos < s->x_ctr_start; x_pos += s->x_step, (*im_pos)++)
@@ -294,7 +308,9 @@ image_type *image;
 int x_start, x_step, x_stop, y_start, y_step, y_stop;
 {
     image_type **imval;
-    int y_pos, y_res, im_pos = 0;
+    int y_pos;
+    int y_res;
+    int im_pos = 0;
     int x_ctr_stop = x_dim - x_fdim + 1;
     int y_ctr_stop = y_dim - y_fdim + 1;
     int y_ctr_start = 0;
@@ -340,7 +356,7 @@ int x_start, x_step, x_stop, y_start, y_step, y_stop;
     y_pos = wrap_expand_mid(&s, y_pos, y_ctr_stop, &im_pos);
     wrap_expand_bottom(&s, y_pos, y_stop, &im_pos);
 
-    free((image_type **)imval);
+    free((void *)imval);
     return (0);
 } /* end of internal_wrap_expand */
 

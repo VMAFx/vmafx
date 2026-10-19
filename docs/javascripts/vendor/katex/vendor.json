@@ -1,0 +1,133 @@
+{
+  "name": "KaTeX",
+  "version": "0.18.9",
+  "source": "https://registry.npmjs.org/katex/-/katex-0.18.9.tgz",
+  "source_sha256": "78174318fa53363e4321ac3c10b39d3598aaa73a92dc75362eb08b16f6705782",
+  "source_integrity": "sha512-8ad9RyoKsb/g8/yLFE+KAlP+DhbCTRUNi/V9XGsxn0R+trJJltNwzcDNo0q/DEkOy5fQUQTAQyCXCYSE+OakTQ==",
+  "license": "MIT",
+  "license_file": "LICENSE.txt",
+  "fetched": "2026-10-08",
+  "changes": "only the WOFF2 fonts are kept; katex.min.css loses the WOFF and TrueType fallbacks of its @font-face sources (scripts/docs/vendor_katex.py)",
+  "files": {
+    "katex.min.js": {
+      "from": "package/dist/katex.min.js",
+      "from_sha256": "155f6c2d673c5912e3b48f45d8830eaad18ae1953915939ceb648ea8b9c3e7e2",
+      "sha256": "155f6c2d673c5912e3b48f45d8830eaad18ae1953915939ceb648ea8b9c3e7e2"
+    },
+    "auto-render.min.js": {
+      "from": "package/dist/contrib/auto-render.min.js",
+      "from_sha256": "e5372d199bcdae8b4de71d0f7ceba72a4ba12774a27c60a6f1f77d03b3228ee4",
+      "sha256": "e5372d199bcdae8b4de71d0f7ceba72a4ba12774a27c60a6f1f77d03b3228ee4"
+    },
+    "katex.min.css": {
+      "from": "package/dist/katex.min.css",
+      "from_sha256": "b9ce0e8ce93f0c18c4986fe1f1c3c269d921b56a69e6c97f83a507916b38aab5",
+      "sha256": "551905675edbd85e78862903bc58724476d63478e0c129b527d8844ebad1c6dd"
+    },
+    "LICENSE.txt": {
+      "from": "package/LICENSE",
+      "from_sha256": "766ccc1f306c885aa45542a9846bbd0a505b27a0374f146778171c2254ce18e3",
+      "sha256": "766ccc1f306c885aa45542a9846bbd0a505b27a0374f146778171c2254ce18e3"
+    },
+    "fonts/KaTeX_AMS-Regular.woff2": {
+      "from": "package/dist/fonts/KaTeX_AMS-Regular.woff2",
+      "from_sha256": "0cdd387c9590a1a9f9794560022dbb59654a7d86f187aa0c81495ad42d3a7308",
+      "sha256": "0cdd387c9590a1a9f9794560022dbb59654a7d86f187aa0c81495ad42d3a7308"
+    },
+    "fonts/KaTeX_Caligraphic-Bold.woff2": {
+      "from": "package/dist/fonts/KaTeX_Caligraphic-Bold.woff2",
+      "from_sha256": "de7701e42cf1f4cf0b766c03fb27977207eee2f4fd5d76fa82188406da43ea4c",
+      "sha256": "de7701e42cf1f4cf0b766c03fb27977207eee2f4fd5d76fa82188406da43ea4c"
+    },
+    "fonts/KaTeX_Caligraphic-Regular.woff2": {
+      "from": "package/dist/fonts/KaTeX_Caligraphic-Regular.woff2",
+      "from_sha256": "5d53e70ad607c2352162dec9e0923fb54ecdafaccbf604cd8dcf7d00facb989b",
+      "sha256": "5d53e70ad607c2352162dec9e0923fb54ecdafaccbf604cd8dcf7d00facb989b"
+    },
+    "fonts/KaTeX_Fraktur-Bold.woff2": {
+      "from": "package/dist/fonts/KaTeX_Fraktur-Bold.woff2",
+      "from_sha256": "74444efd593c005e3f4573b44524704c0af0a937fe911cca9e94068d0d140d3f",
+      "sha256": "74444efd593c005e3f4573b44524704c0af0a937fe911cca9e94068d0d140d3f"
+    },
+    "fonts/KaTeX_Fraktur-Regular.woff2": {
+      "from": "package/dist/fonts/KaTeX_Fraktur-Regular.woff2",
+      "from_sha256": "51814d270d06ff0255dba0799994fa4d8c84d11f09951d47595f4abb1f3602dc",
+      "sha256": "51814d270d06ff0255dba0799994fa4d8c84d11f09951d47595f4abb1f3602dc"
+    },
+    "fonts/KaTeX_Main-Bold.woff2": {
+      "from": "package/dist/fonts/KaTeX_Main-Bold.woff2",
+      "from_sha256": "0f60d1b897938ec918c8ce073092411baf9438f6739465693ff18b0f9d20b021",
+      "sha256": "0f60d1b897938ec918c8ce073092411baf9438f6739465693ff18b0f9d20b021"
+    },
+    "fonts/KaTeX_Main-BoldItalic.woff2": {
+      "from": "package/dist/fonts/KaTeX_Main-BoldItalic.woff2",
+      "from_sha256": "99cd42a3c072d918f2f44984a807cf7aa16e13545fd0875fc07c6c65f99e715b",
+      "sha256": "99cd42a3c072d918f2f44984a807cf7aa16e13545fd0875fc07c6c65f99e715b"
+    },
+    "fonts/KaTeX_Main-Italic.woff2": {
+      "from": "package/dist/fonts/KaTeX_Main-Italic.woff2",
+      "from_sha256": "97479ca6cce906abc961ecac96faa5f9ca2e61b8e7670d475826bcdee9a7c267",
+      "sha256": "97479ca6cce906abc961ecac96faa5f9ca2e61b8e7670d475826bcdee9a7c267"
+    },
+    "fonts/KaTeX_Main-Regular.woff2": {
+      "from": "package/dist/fonts/KaTeX_Main-Regular.woff2",
+      "from_sha256": "c2342cd8b869e01752a9321dc17213fc40d4d04c79688c1d43f2cf316abd7866",
+      "sha256": "c2342cd8b869e01752a9321dc17213fc40d4d04c79688c1d43f2cf316abd7866"
+    },
+    "fonts/KaTeX_Math-BoldItalic.woff2": {
+      "from": "package/dist/fonts/KaTeX_Math-BoldItalic.woff2",
+      "from_sha256": "dc47344dbb6cb5b655c8460d561f4df5f501b90c804ad3c6cec65fe322351ab1",
+      "sha256": "dc47344dbb6cb5b655c8460d561f4df5f501b90c804ad3c6cec65fe322351ab1"
+    },
+    "fonts/KaTeX_Math-Italic.woff2": {
+      "from": "package/dist/fonts/KaTeX_Math-Italic.woff2",
+      "from_sha256": "7af58c5ec8f132a2ddde9027c6d7814decce4d3b822a11192a42a20e2e973264",
+      "sha256": "7af58c5ec8f132a2ddde9027c6d7814decce4d3b822a11192a42a20e2e973264"
+    },
+    "fonts/KaTeX_SansSerif-Bold.woff2": {
+      "from": "package/dist/fonts/KaTeX_SansSerif-Bold.woff2",
+      "from_sha256": "e99ae51144bf1232efcc1bfe5add36262c6866b0faab24fa75740e1b98577a62",
+      "sha256": "e99ae51144bf1232efcc1bfe5add36262c6866b0faab24fa75740e1b98577a62"
+    },
+    "fonts/KaTeX_SansSerif-Italic.woff2": {
+      "from": "package/dist/fonts/KaTeX_SansSerif-Italic.woff2",
+      "from_sha256": "00b26ac825e2095056396e0553b8ac26d3f8ad158c3826e28b4c45b385c4714a",
+      "sha256": "00b26ac825e2095056396e0553b8ac26d3f8ad158c3826e28b4c45b385c4714a"
+    },
+    "fonts/KaTeX_SansSerif-Regular.woff2": {
+      "from": "package/dist/fonts/KaTeX_SansSerif-Regular.woff2",
+      "from_sha256": "68e8c73ef42afd3ccec58bf0fba302cce448938e7fc020a5e31f8a952eee1342",
+      "sha256": "68e8c73ef42afd3ccec58bf0fba302cce448938e7fc020a5e31f8a952eee1342"
+    },
+    "fonts/KaTeX_Script-Regular.woff2": {
+      "from": "package/dist/fonts/KaTeX_Script-Regular.woff2",
+      "from_sha256": "036d4e95149b69ff9bcc0cd55771efeb25ffa3947293e69acd78d5ac328c684b",
+      "sha256": "036d4e95149b69ff9bcc0cd55771efeb25ffa3947293e69acd78d5ac328c684b"
+    },
+    "fonts/KaTeX_Size1-Regular.woff2": {
+      "from": "package/dist/fonts/KaTeX_Size1-Regular.woff2",
+      "from_sha256": "6b47c40166b6dbe21a5dfca7718413f2147fd2399be1ba605d8ad39cedf25dfe",
+      "sha256": "6b47c40166b6dbe21a5dfca7718413f2147fd2399be1ba605d8ad39cedf25dfe"
+    },
+    "fonts/KaTeX_Size2-Regular.woff2": {
+      "from": "package/dist/fonts/KaTeX_Size2-Regular.woff2",
+      "from_sha256": "d04c54219f9eaec6d4d4fd42dfb28785975a4794d6b2fc71e566b9cd6db842dd",
+      "sha256": "d04c54219f9eaec6d4d4fd42dfb28785975a4794d6b2fc71e566b9cd6db842dd"
+    },
+    "fonts/KaTeX_Size3-Regular.woff2": {
+      "from": "package/dist/fonts/KaTeX_Size3-Regular.woff2",
+      "from_sha256": "73d591271b1604960cb10bb90fee021670af7297017e0e98480b332d11f51995",
+      "sha256": "73d591271b1604960cb10bb90fee021670af7297017e0e98480b332d11f51995"
+    },
+    "fonts/KaTeX_Size4-Regular.woff2": {
+      "from": "package/dist/fonts/KaTeX_Size4-Regular.woff2",
+      "from_sha256": "a4af7d414440a1c1790825cfb700cf9cf43b0f2c4b04f0ebc523011ad9853ec0",
+      "sha256": "a4af7d414440a1c1790825cfb700cf9cf43b0f2c4b04f0ebc523011ad9853ec0"
+    },
+    "fonts/KaTeX_Typewriter-Regular.woff2": {
+      "from": "package/dist/fonts/KaTeX_Typewriter-Regular.woff2",
+      "from_sha256": "71d517d67827787cfabdf186914cc3358eda539e37931941f2b2fd4a21f68c0b",
+      "sha256": "71d517d67827787cfabdf186914cc3358eda539e37931941f2b2fd4a21f68c0b"
+    }
+  }
+}

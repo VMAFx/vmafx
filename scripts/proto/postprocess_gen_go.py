@@ -19,9 +19,11 @@ committed tree.
 
 Usage::
 
-    buf generate                                   # writes gen/go/**
-    python3 scripts/proto/postprocess_gen_go.py    # re-applies the proofs
+    python3 scripts/codegen/proto_generate.py --write   # buf generate, then this script
     python3 scripts/proto/postprocess_gen_go.py --check   # CI: verify only
+
+scripts/codegen/proto_generate.py runs it with --root on the scratch tree that
+`buf generate` wrote (ADR-2350 D13).
 """
 
 from __future__ import annotations

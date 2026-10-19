@@ -10,6 +10,12 @@ front-matter block naming the paths it governs and its one-line invariant.
 ``AGENTS.md`` next to the directory is rendered from those files and is never
 edited by hand.
 
+A directory whose table would pass the index budget groups its pages into
+areas: ``AGENTS.d/_area-<slug>.md`` (a ``# `` title and a summary paragraph)
+declares one, and each page names its area with an ``area:`` front-matter key.
+``AGENTS.md`` then lists the areas, and ``AGENTS-<slug>.md`` next to it, also
+generated, holds the table of that area's pages. Each file has the index budget.
+
 Flags:
     --check   Exit 1 when an in-tree index differs from its rendering: stale
               against its pages, or edited or appended to by hand. The message
@@ -32,6 +38,7 @@ import os
 import posixpath
 import re
 import sys
+import textwrap
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -43,6 +50,7 @@ from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
 
 PAGES_DIR = "AGENTS.d"
 HEAD_NAME = "_index.md"
+AREA_PREFIX = "_area-"
 INDEX_NAME = "AGENTS.md"
 GUIDE = "docs/development/agents-index.md"
 
@@ -51,6 +59,7 @@ GUIDE = "docs/development/agents-index.md"
 INDEX_MAX_BYTES = 16_000
 PAGE_MAX_BYTES = 12_000
 INVARIANT_MAX_CHARS = 120
+SUMMARY_MAX_CHARS = 400
 MAX_PATHS_PER_PAGE = 24
 MAX_REPORTED_LINES = 5
 REPORTED_LINE_CHARS = 100
@@ -73,6 +82,7 @@ BANNER = (
     "`make docs-fragments-write`. -->\n"
 )
 TABLE_HEAD = "## Topic pages\n\n| Touching | Read first | Invariant |\n| --- | --- | --- |\n"
+AREA_HEAD = "## Areas\n\n| Area | Read first | Covers |\n| --- | --- | --- |\n"
 
 
 class AgentsIndexError(ValueError):
@@ -86,6 +96,16 @@ class Page:
     slug: str
     paths: tuple[str, ...]
     invariant: str
+    area: str = ""
+
+
+@dataclass(frozen=True)
+class Area:
+    """One group of pages with its own generated sub-index."""
+
+    slug: str
+    title: str
+    summary: str
 
 
 def map_links(text: str, rewrite: Callable[[str], str]) -> str:
@@ -160,8 +180,8 @@ def split_front_matter(text: str, name: str) -> tuple[list[str], str]:
     raise AgentsIndexError(f"{name}: the front-matter block is never closed with `---`")
 
 
-def parse_front_matter(lines: Sequence[str], name: str) -> tuple[tuple[str, ...], str]:
-    """Parse the two-key front matter: a ``paths:`` list and ``invariant:``."""
+def parse_front_matter(lines: Sequence[str], name: str) -> tuple[tuple[str, ...], str, str]:
+    """Parse the front matter: a ``paths:`` list, ``invariant:`` and optional ``area:``."""
 
     paths: list[str] = []
     fields: dict[str, str] = {}
@@ -171,14 +191,15 @@ def parse_front_matter(lines: Sequence[str], name: str) -> tuple[tuple[str, ...]
             paths.append(line[4:].strip())
             continue
         key, sep, value = line.partition(":")
-        if not sep or key not in ("paths", "invariant") or key in fields:
+        if not sep or key not in ("paths", "invariant", "area") or key in fields:
             raise AgentsIndexError(f"{name}: unexpected front-matter line {line!r}")
         fields[key] = value.strip()
-    if set(fields) != {"paths", "invariant"} or fields["paths"]:
+    if not {"paths", "invariant"} <= set(fields) or fields["paths"]:
         raise AgentsIndexError(
-            f"{name}: front matter needs `paths:` (a list) and `invariant:`, nothing else"
+            f"{name}: front matter needs `paths:` (a list) and `invariant:`, "
+            "and may add `area:`, nothing else"
         )
-    return tuple(paths), fields["invariant"]
+    return tuple(paths), fields["invariant"], fields.get("area", "")
 
 
 def _check_paths(paths: Sequence[str], name: str, root: Path) -> None:
@@ -223,12 +244,18 @@ def load_page(path: Path, root: Path) -> Page:
             f"{name}: {len(raw)} bytes, page budget {PAGE_MAX_BYTES}; split it by topic"
         )
     front, body = split_front_matter(raw.decode("utf-8"), name)
-    paths, invariant = parse_front_matter(front, name)
+    paths, invariant, area = parse_front_matter(front, name)
     _check_paths(paths, name, root)
     _check_invariant(invariant, name)
+    if area and not SLUG_RE.fullmatch(area):
+        raise AgentsIndexError(f"{name}: `area:` must be lower-case words joined by `-`")
     if not first_heading_is_h1(body):
         raise AgentsIndexError(f"{name}: the body must start with a `# ` title")
-    return Page(path.stem, paths, invariant)
+    return Page(path.stem, paths, invariant, area)
+
+
+def _is_page(entry: Path) -> bool:
+    return entry.name != HEAD_NAME and not entry.name.startswith(AREA_PREFIX)
 
 
 def load_pages(pages_dir: Path, root: Path) -> list[Page]:
@@ -239,10 +266,44 @@ def load_pages(pages_dir: Path, root: Path) -> list[Page]:
     for entry in entries:
         if entry.is_dir() or entry.suffix != ".md":
             raise AgentsIndexError(f"{name}: {entry.name} is not a Markdown page")
-    pages = [load_page(entry, root) for entry in entries if entry.name != HEAD_NAME]
+    pages = [load_page(entry, root) for entry in entries if _is_page(entry)]
     if not pages:
         raise AgentsIndexError(f"{name}: no topic page next to {HEAD_NAME}")
     return pages
+
+
+def load_areas(pages_dir: Path, root: Path, pages: Sequence[Page]) -> list[Area]:
+    """Load the area files of one ``AGENTS.d/`` and check them against the pages."""
+
+    areas = [
+        _load_area(entry, root)
+        for entry in sorted(pages_dir.iterdir())
+        if entry.name.startswith(AREA_PREFIX)
+    ]
+    name = pages_dir.relative_to(root).as_posix()
+    known = {area.slug for area in areas}
+    for page in pages:
+        if bool(areas) != bool(page.area) or (areas and page.area not in known):
+            raise AgentsIndexError(
+                f"{name}/{page.slug}.md: `area:` {page.area!r} does not match the "
+                f"{AREA_PREFIX}<slug>.md files ({', '.join(sorted(known)) or 'none'})"
+            )
+    for area in areas:
+        if not any(page.area == area.slug for page in pages):
+            raise AgentsIndexError(f"{name}: area {area.slug} has no page")
+    return areas
+
+
+def _load_area(path: Path, root: Path) -> Area:
+    name = path.relative_to(root).as_posix()
+    slug = path.stem[len(AREA_PREFIX) :]
+    if not SLUG_RE.fullmatch(slug):
+        raise AgentsIndexError(f"{name}: the area name must be lower-case words joined by `-`")
+    title, rest = split_head(path.read_text(encoding="utf-8"), name)
+    summary = " ".join(rest.split())
+    if not summary or len(summary) > SUMMARY_MAX_CHARS:
+        raise AgentsIndexError(f"{name}: the summary needs 1 to {SUMMARY_MAX_CHARS} characters")
+    return Area(slug, title.strip().splitlines()[-1].removeprefix("# ").strip(), summary)
 
 
 def split_head(text: str, name: str) -> tuple[str, str]:
@@ -272,41 +333,94 @@ def _row(page: Page, directory: str) -> str:
     return f"| {touching} | [{page.slug}]({PAGES_DIR}/{page.slug}.md) | {invariant} |\n"
 
 
-def _instruction(directory: str) -> str:
+def _instruction(directory: str, areas: bool) -> str:
     guide = posixpath.relpath(GUIDE, directory or ".")
+    target = "Areas" if areas else "Topic pages"
+    step = (
+        "Pick the area whose summary covers the paths you will touch and read its index;\n"
+        "when two areas could cover them, read both. In that index, match every path against\n"
+        "`Touching` and read each matching page first; no match, no page. "
+        if areas
+        else "match every path you will touch against\n"
+        f"`Touching` in [{target}](#topic-pages) and read each matching page first; no\n"
+        "match, no page. "
+    )
     return (
-        "Generated index. Before editing: match every path you will touch against\n"
-        "`Touching` in [Topic pages](#topic-pages) and read each matching page first; no\n"
-        "match, no page. Text between here and the table binds every file of this\n"
-        "directory. `Touching` paths: relative to this directory, leading `/` =\n"
-        f"repository root. New invariant: a page under `{PAGES_DIR}/` ([how]({guide})).\n"
+        "Generated index. Before editing: "
+        + step
+        + f"Text between here and [{target}](#{target.lower().replace(' ', '-')}) binds every\n"
+        "file of this directory. `Touching` paths: relative to this directory, leading\n"
+        f"`/` = repository root. New invariant: new page under `{PAGES_DIR}/` ([how]({guide})).\n"
     )
 
 
-def render(directory: str, root: Path = ROOT) -> str:
-    """Return the full text of ``<directory>/AGENTS.md``."""
+def _checked(directory: str, name: str, text: str) -> str:
+    size = len(text.encode("utf-8"))
+    if size > INDEX_MAX_BYTES:
+        raise AgentsIndexError(
+            f"{posixpath.join(directory, name)}: {size} bytes, index budget "
+            f"{INDEX_MAX_BYTES}; shorten `invariant:` lines or merge pages"
+        )
+    return text
 
+
+def _area_row(area: Area) -> str:
+    return f"| {area.title} | [{area.slug}]({area_index_name(area.slug)}) | {area.summary} |\n"
+
+
+def area_index_name(slug: str) -> str:
+    """File name of an area's generated sub-index, next to ``AGENTS.md``."""
+
+    return f"AGENTS-{slug}.md"
+
+
+def _load(directory: str, root: Path) -> tuple[str, str, list[Page], list[Area]]:
     pages_dir = root / directory / PAGES_DIR
     head_path = pages_dir / HEAD_NAME
     head_name = posixpath.join(directory, PAGES_DIR, HEAD_NAME)
     if not head_path.is_file():
         raise AgentsIndexError(f"{head_name}: missing; every {PAGES_DIR}/ needs it")
     pages = load_pages(pages_dir, root)
+    areas = load_areas(pages_dir, root, pages)
     title, rules = split_head(head_path.read_text(encoding="utf-8"), head_name)
     rules = rebase_links(rules, posixpath.join(directory, PAGES_DIR), directory)
-    parts = [BANNER, title, "\n", _instruction(directory), "\n"]
+    return title, rules, pages, areas
+
+
+def render(directory: str, root: Path = ROOT) -> str:
+    """Return the full text of ``<directory>/AGENTS.md``."""
+
+    title, rules, pages, areas = _load(directory, root)
+    parts = [BANNER, title, "\n", _instruction(directory, bool(areas)), "\n"]
     if rules:
         parts += [rules, "\n\n"]
-    parts.append(TABLE_HEAD)
-    parts += [_row(page, directory) for page in pages]
-    text = "".join(parts)
-    size = len(text.encode("utf-8"))
-    if size > INDEX_MAX_BYTES:
-        raise AgentsIndexError(
-            f"{posixpath.join(directory, INDEX_NAME)}: {size} bytes, index budget "
-            f"{INDEX_MAX_BYTES}; shorten `invariant:` lines or merge pages"
-        )
-    return text
+    if areas:
+        parts.append(AREA_HEAD)
+        parts += [_area_row(area) for area in areas]
+    else:
+        parts.append(TABLE_HEAD)
+        parts += [_row(page, directory) for page in pages]
+    return _checked(directory, INDEX_NAME, "".join(parts))
+
+
+def render_areas(directory: str, root: Path = ROOT) -> dict[str, str]:
+    """Return the text of every area sub-index, keyed by file name; empty without areas."""
+
+    _, _, pages, areas = _load(directory, root)
+    out: dict[str, str] = {}
+    for area in areas:
+        name = area_index_name(area.slug)
+        parts = [
+            BANNER,
+            f"# {area.title}: `{directory}/` agent invariants\n\n",
+            f"{textwrap.fill(area.summary, 78)}\n\nParent index: [{INDEX_NAME}]({INDEX_NAME}).\n\n",
+            _instruction(directory, False),
+            "\n",
+            TABLE_HEAD,
+        ]
+        parts += [_row(page, directory) for page in pages if page.area == area.slug]
+        out[name] = _checked(directory, name, "".join(parts))
+    return out
 
 
 def directories_from(files: Iterable[str]) -> list[str]:
@@ -344,10 +458,12 @@ def foreign_lines(current: str, rendered: str) -> list[str]:
     return [line for line in current.splitlines() if line.strip() and line not in produced]
 
 
-def stale_message(directory: str, current: str | None, rendered: str) -> str:
+def stale_message(
+    directory: str, current: str | None, rendered: str, index_name: str = INDEX_NAME
+) -> str:
     """Say why an in-tree index differs from its rendering and where the text belongs."""
 
-    name = posixpath.join(directory, INDEX_NAME)
+    name = posixpath.join(directory, index_name)
     pages = posixpath.join(directory, PAGES_DIR) + "/"
     if current is None:
         return f"{name} is missing; it is rendered from {pages}: run `make docs-fragments-write`"
@@ -366,16 +482,18 @@ def stale_message(directory: str, current: str | None, rendered: str) -> str:
 
 
 def _process(directory: str, root: Path, write: bool) -> int:
-    text = render(directory, root)
-    output = root / directory / INDEX_NAME
-    if write:
-        output.write_text(text, encoding="utf-8")
-        return 0
-    current = output.read_text(encoding="utf-8") if output.is_file() else None
-    if current == text:
-        return 0
-    print(f"agents index: {stale_message(directory, current, text)}", file=sys.stderr)
-    return EXIT_STALE
+    outputs = {INDEX_NAME: render(directory, root), **render_areas(directory, root)}
+    status = 0
+    for name, text in outputs.items():
+        output = root / directory / name
+        if write:
+            output.write_text(text, encoding="utf-8")
+            continue
+        current = output.read_text(encoding="utf-8") if output.is_file() else None
+        if current != text:
+            print(f"agents index: {stale_message(directory, current, text, name)}", file=sys.stderr)
+            status = EXIT_STALE
+    return status
 
 
 def main(argv: list[str] | None = None) -> int:

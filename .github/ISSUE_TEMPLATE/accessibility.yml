@@ -1,0 +1,69 @@
+name: Accessibility barrier
+description: Something in the docs, the command line, a dashboard or another output is hard or impossible to use with assistive technology or without sight, colour, a mouse or a keyboard.
+title: "[accessibility] "
+labels: ["accessibility"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting a barrier. See `ACCESSIBILITY.md` for what the
+        project covers and what is already known. Responses are best effort.
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Where did you meet it?
+      options:
+        - Documentation site
+        - README or another Markdown file in the repository
+        - Command-line tool (vmaf / vmafx)
+        - Generated Grafana dashboard
+        - ffmpeg or GStreamer filter output
+        - MCP tool
+        - Tester kit
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What is the barrier?
+      description: What did you try to do, what did you expect, and what happened instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: location
+    attributes:
+      label: Page, command or dashboard
+      description: The page address, the command line you ran, or the dashboard and panel name.
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Browser or terminal, operating system, assistive technology and its version, and any display settings that matter (zoom, contrast, reduced motion).
+    validations:
+      required: true
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: How much does it block you?
+      options:
+        - Critical - I cannot complete the task at all
+        - High - I can complete it only with great effort or outside help
+        - Medium - I can complete it with a workaround
+        - Low - an inconvenience
+    validations:
+      required: true
+
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested fix (optional)
+    validations:
+      required: false

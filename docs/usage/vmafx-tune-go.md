@@ -19,7 +19,7 @@ and the flag spellings of the three oldest ports differ from Python (see
 ## Build
 
 Go 1.27 or newer is required (`GO_VERSION` in `build-config.env`; `go.mod`
-declares `go 1.27.1`).
+declares `go 1.27.2`).
 
 ```bash
 go build -o vmafx-tune-go ./cmd/vmafx-tune
@@ -290,7 +290,7 @@ The two predicates are mutually exclusive.
 | `--keep-encodes` | off | Keep the encoded artefacts instead of deleting them after scoring. |
 | `--no-source-hash` | off | Skip the source SHA-256 (faster on very large sources). |
 | `--vmaf-model` | `vmaf_v1.0.16_3d0h` | libvmaf model version, or a `path=...` string. |
-| `--score-backend` | `auto` | libvmaf backend: `auto`, `cpu`, `cuda`, `sycl`, `hip`. |
+| `--score-backend` | `auto` | libvmaf backend: `auto`, `cpu`, `cuda`, `sycl`, `hip`, `metal`. |
 | `--ffmpeg-bin` / `--vmaf-bin` | `ffmpeg` / `vmaf` | Binary paths. |
 
 ### recommend search flags
@@ -311,7 +311,7 @@ and their corpora stay comparable. See
 
 ### recommend uncertainty flags
 
-These flags implement ADR-0279.
+These flags implement ADR-0393.
 
 | Flag | Default | Description |
 |------|---------|-------------|
@@ -425,7 +425,7 @@ required.
 
 | Encoder | Channel | Granularity |
 |---------|---------|-------------|
-| `libx264` | `-x264-params qpfile=…` | 16×16 macroblocks |
+| `libx264` | `-qpfile …` (patched FFmpeg bridge, x264 `quant_offsets`) | 16×16 macroblocks |
 | `libaom-av1` | `-qpfile …` (patched FFmpeg bridge) | 16×16 macroblocks |
 | `libx265` | `-x265-params zones=…` | per-clip spatial mean |
 | `libsvtav1` | `-svtav1-params qp-file=…` | 64×64 super-blocks |
@@ -553,7 +553,7 @@ vmafx-tune-go fast --smoke --target-vmaf 90
 | `--proxy-tolerance` | `1.5` | Max absolute proxy/verify VMAF gap before the result is flagged out-of-distribution. |
 | `--sample-chunk-seconds` | `5.0` | Probe-encode slice length per trial. Shorter is faster, longer gives more stable features. |
 | `--smoke` | `false` | Deterministic synthetic CRF→VMAF curve. No ffmpeg, no ONNX, no GPU verify. |
-| `--score-backend` | `auto` | libvmaf backend for the verify pass: `auto`, `cpu`, `cuda`, `sycl`, `hip`. `auto` walks cuda → sycl → hip → cpu; an explicit value is honoured strictly and errors rather than downgrading. |
+| `--score-backend` | `auto` | libvmaf backend for the verify pass: `auto`, `cpu`, `cuda`, `sycl`, `hip`, `metal`. `auto` walks cuda → sycl → hip → metal → cpu over the backends `vmaf --list-backends` reports usable; an explicit value is honoured strictly and errors rather than downgrading. |
 | `--ffmpeg-bin` | `ffmpeg` | Path to the ffmpeg binary. |
 | `--vmaf-bin` | `vmaf` | Path to the libvmaf CLI binary. |
 | `--vmaf-model` | `vmaf_v1.0.16_3d0h` | vmaf model version string. |
@@ -834,7 +834,7 @@ canonical-6 columns (`adm2`, `vif_scale0..3`, `motion2`) populated.
 |------|---------|-------------|
 | `--vmaf-model` | `vmaf_v1.0.16_3d0h` | libvmaf model version string. |
 | `--neg` | off | Use the VMAF NEG (No Enhancement Gain) variant. Use for codec A-vs-B comparisons; not for production monitoring (see [vmaf-neg.md](../metrics/vmaf-neg.md)). With the default model it selects `vmaf_v0.6.1neg`, because no NEG counterpart exists for `vmaf_v1.0.16_*`. |
-| `--score-backend` | `auto` | libvmaf backend: `auto`, `cpu`, `cuda`, `sycl`, `hip`. `auto` picks the fastest available (cuda > sycl > hip > cpu); a specific name is honoured strictly and errors out when unavailable. |
+| `--score-backend` | `auto` | libvmaf backend: `auto`, `cpu`, `cuda`, `sycl`, `hip`, `metal`. `auto` picks the first of cuda > sycl > hip > metal > cpu that `vmaf --list-backends` reports usable; a specific name is honoured strictly and errors out when unavailable. See [score backends](vmaf-tune-score-backend.md). |
 | `--ffmpeg-bin` | `ffmpeg` | Path to the ffmpeg binary. |
 | `--vmaf-bin` | `vmaf` | Path to the vmaf binary. |
 | `--ffprobe-bin` | `ffprobe` | Path to the ffprobe binary (used for HDR detection). |
@@ -1127,7 +1127,7 @@ Tuning:
 | `--max-iterations` | `8` | Maximum encode+score rounds per shot. |
 | `--vmaf-model` | `vmaf_v1.0.16_3d0h` | Model passed to the `vmaf` binary. |
 | `--neg` | off | Route the model to its NEG variant. There is no NEG counterpart to any `vmaf_v1.0.16_*` model, so `--neg` also selects the v0.6.1 generation (`vmaf_v0.6.1neg`). See [vmaf-neg.md](../metrics/vmaf-neg.md). |
-| `--score-backend` | `auto` | libvmaf backend: `auto`, `cpu`, `cuda`, `sycl`, `hip`. An explicit backend that the host cannot provide fails fast rather than silently downgrading. |
+| `--score-backend` | `auto` | libvmaf backend: `auto`, `cpu`, `cuda`, `sycl`, `hip`, `metal`. An explicit backend that `vmaf --list-backends` does not report usable fails fast rather than silently downgrading. |
 | `--vmaf-bin` / `--ffmpeg-bin` | `vmaf` / `ffmpeg` | Binary paths. |
 | `--workdir` | `$VMAFTUNE_WORKDIR` or OS temp | Scratch space for encode and decode artefacts (ADR-0598). Raw YUV decodes are large; point this at a volume with room. |
 | `--max-concurrent-decodes` | `1` | Concurrent reference-YUV decodes (ADR-0577). `1` is safest on space-constrained volumes. |
@@ -1209,9 +1209,9 @@ points at the Python binary.
 `sidecar` trains and inspects a bias-correction term on top of the shipped
 predictor:
 
-```text
-sidecar_vmaf = predictor_vmaf + sidecar_correction(features)
-```
+$$
+\mathrm{vmaf}_{\mathrm{sidecar}} = \mathrm{vmaf}_{\mathrm{predictor}} + \mathrm{correction}_{\mathrm{sidecar}}(\mathit{features})
+$$
 
 The shipped predictor is never mutated, so model upgrades stay deterministic
 and reproducible across hosts.
@@ -1526,19 +1526,43 @@ Configuration is read from environment variables under the `VMAFX_` prefix.
 golusoris maps each underscore in the variable name to a config-path delimiter
 (`VMAFX_LOG_LEVEL` → `log.level`).
 
-| Environment variable | Config key | Effect | Default |
-|----------------------|------------|--------|---------|
-| `VMAFX_LOG_LEVEL` | `log.level` | Minimum log level: `debug`, `info`, `warn`, `error` | `info` |
-| `VMAFX_LOG_FORMAT` | `log.format` | Log handler: `auto` (tint on a TTY, JSON otherwise), `tint`, `json` | `auto` |
+<!-- BEGIN GENERATED: vmafx-api environment vmafx-tune (scripts/codegen/vmafx-api.py) -->
 
-Other environment variables read by the Go binary:
+| Variable | Key | Type | Default | Chart value | Description |
+|---|---|---|---|---|---|
+| `VMAFX_MODEL_DIR` | read directly | path | `/usr/local/share/vmafx/model` |  | Directory searched for `<name>.onnx` when `--model` names no file (`predict`, `sidecar`, `auto`). |
+| `VMAFX_TUNE_ENCODE_TIMEOUT` | read directly | duration | `60m` |  | Deadline of each `ffmpeg` encode; a value that does not parse keeps the default. |
+| `VMAFX_TUNE_PROBE_TIMEOUT` | read directly | duration | `30s` |  | Deadline of each `ffprobe` call; a value that does not parse keeps the default. |
+| `VMAFX_TUNE_SCORE_TIMEOUT` | read directly | duration | `30m` |  | Deadline of each `vmaf` run; a value that does not parse keeps the default. |
+| `VMAFTUNE_WORKDIR` | read directly | path | OS temp directory |  | Scratch parent of `tune-per-shot` when `--workdir` is not given; used only when it can be created and written. |
+| `VMAFTUNE_VAAPI_DEVICE` | read directly | path | first Intel render node, else `/dev/dri/renderD128` |  | VAAPI render node of QSV encodes; `auto` means unset. |
+| `VMAFTUNE_SALIENCY_FALLBACK_OK` | read directly | `1` | off |  | `1` lets `recommend-saliency` run a plain encode on an encoder without ROI support instead of exiting 2. |
+| `XDG_CACHE_HOME` | read directly | path | `~/.cache` |  | Parent of the `vmaf-tune/sidecar` cache when `--cache-dir` is not given. |
+| `VMAFX_LOG_LEVEL` | `log.level` | string | `info` |  | Log level: `debug`, `info`, `warn` or `error`, any case; an unknown value gives `info`. |
+| `VMAFX_LOG_FORMAT` | `log.format` | string | `auto` |  | Log handler: `auto` (tint on a terminal, else JSON), `tint` or `json`; logs go to stderr. |
+| `VMAFX_OTEL_ENABLED` | `otel.enabled` | bool | `true` |  | OpenTelemetry master switch; `false` installs no-op providers even with an endpoint. |
+| `VMAFX_OTEL_ENDPOINT` | `otel.endpoint` | `host:port` | _(unset)_ |  | OTLP/gRPC collector (`otel-collector:4317`); wins over `OTEL_EXPORTER_OTLP_ENDPOINT`. Neither set: no export ([OpenTelemetry](../observability/otel.md)). |
+| `VMAFX_OTEL_INSECURE` | `otel.insecure` | bool | `true` |  | Plaintext gRPC to the collector; `false` dials with TLS. |
+| `VMAFX_OTEL_SERVICE_NAME` | `otel.service.name` | string | `OTEL_SERVICE_NAME`, else the binary name |  | `service.name` resource attribute. |
+| `VMAFX_OTEL_SERVICE_VERSION` | `otel.service.version` | string | the build version |  | `service.version` resource attribute. |
+| `VMAFX_OTEL_SERVICE_NAMESPACE` | `otel.service.namespace` | string | _(unset)_ |  | `service.namespace` resource attribute. |
+| `VMAFX_OTEL_SAMPLE_RATIO` | `otel.sample.ratio` | number | `1.0` |  | Parent-based trace sample ratio in `[0, 1]`; `OTEL_TRACES_SAMPLER` and its argument are not read. |
+| `VMAFX_OTEL_EXPORT_TRACES` | `otel.export.traces` | bool | `true` |  | Export traces. |
+| `VMAFX_OTEL_EXPORT_METRICS` | `otel.export.metrics` | bool | `true` |  | Export metrics. |
+| `VMAFX_OTEL_EXPORT_LOGS` | `otel.export.logs` | bool | `true` |  | Export the logs signal; application logs are not bridged to it today. |
+| `OTEL_SERVICE_NAME` | read directly | string | _(unset)_ |  | `service.name` when `VMAFX_OTEL_SERVICE_NAME` is unset (OTel standard). |
+| `OTEL_SDK_DISABLED` | read directly | string | _(unset)_ |  | `true` (exactly) installs no-op providers (OTel standard). |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | read directly | URL | _(unset)_ |  | Collector as a URL (`http://host:4317`) when `VMAFX_OTEL_ENDPOINT` is unset; set, export is on (OTel standard). |
+| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | read directly | URL | _(unset)_ |  | Per-signal collector URL for traces; set, export is on (OTel standard). |
+| `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` | read directly | URL | _(unset)_ |  | Per-signal collector URL for metrics; set, export is on (OTel standard). |
+| `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` | read directly | URL | _(unset)_ |  | Per-signal collector URL for logs; set, export is on (OTel standard). |
+| `POD_NAME` | read directly | string | _(unset)_ |  | Pod name (Kubernetes downward API), added to log lines and OTel resources as `k8s.pod.name`. |
+| `POD_NAMESPACE` | read directly | string | _(unset)_ |  | Pod namespace, added as `k8s.namespace.name`. |
+| `POD_IP` | read directly | string | _(unset)_ |  | Pod IP, added as `k8s.pod.ip`. |
+| `NODE_NAME` | read directly | string | _(unset)_ |  | Kubernetes node name, added as `k8s.node.name`. |
+| `SERVICE_ACCOUNT` | read directly | string | _(unset)_ |  | Service account name, added as `k8s.serviceaccount.name`. |
 
-| Environment variable | Used by | Effect |
-|----------------------|---------|--------|
-| `VMAFX_MODEL_DIR` | `--model` on `predict`, `sidecar`, `auto` | Model directory searched for `<name>.onnx`; default `/usr/local/share/vmafx/model`. |
-| `VMAFTUNE_WORKDIR` | `tune-per-shot` | Scratch directory when `--workdir` is not given and the path is writable. |
-| `VMAFTUNE_SALIENCY_FALLBACK_OK` | `recommend-saliency` | Set to `1` to accept a plain encode on an encoder without ROI dispatch. |
-| `XDG_CACHE_HOME` | `sidecar` | Parent of the `vmaf-tune/sidecar` cache root. |
+<!-- END GENERATED: vmafx-api environment vmafx-tune -->
 
 ```bash
 # Quiet the per-run INFO diagnostics; keep warnings and errors.
@@ -1735,7 +1759,7 @@ The Go port landed in stages. Every row below is merged unless noted.
 | Encoder introspection | `benchmark` and `encode-profile`; `pkg/benchmark`, `pkg/codecadapter`, `pkg/encodeprofile`, `pkg/pyjson` | ADR-0643 (profile contract) |
 | Stage 5 (corpus, auto, sidecar) | `corpus`, `auto` and `sidecar`; `pkg/codecadapter`, `pkg/corpus`, `pkg/pyjson`, `pkg/tune/predictor`, `pkg/tune/sidecar`, `pkg/tune/auto`, `pkg/tune/executor` | ADR-1125 ([#1153](https://github.com/VMAFx/vmafx/pull/1153)) |
 | Stage 5 (per-shot) | `tune-per-shot`; `pkg/pershot`, `pkg/scorebackend`, the codec-adapter table, the raw-YUV scorer | ADR-1124 |
-| Stage 5b | `conformal` CLI wiring, shipped as `predict --with-uncertainty` and `recommend --with-uncertainty` | ADR-0279 |
+| Stage 5b | `conformal` CLI wiring, shipped as `predict --with-uncertainty` and `recommend --with-uncertainty` | ADR-0393 |
 | Stage 6 | `fast` subcommand, `pkg/fast`, `pkg/conformal`, `pkg/scorebackend`. The smoke path is complete; the production path is blocked on ONNX named inputs ([Production-mode blocker](#production-mode-blocker-onnx-named-inputs)). | ADR-0276 / ADR-0304 |
 | Stage N | Feature parity, then rename the binary to `vmafx-tune` | Planned |
 

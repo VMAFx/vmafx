@@ -95,7 +95,7 @@ Behaviour to know:
   only a synthetic model (libx264, libx265, libsvtav1, libaom-av1, libvvenc,
   h264_amf, hevc_amf, av1_amf). Loading a stub emits a `UserWarning`: such
   models are not authoritative for production CRF picks.
-- **Analytical curve.** `vmaf = a - b*delta - c*delta^2 + d*log10(bitrate_kbps)`
+- **Analytical curve.** $\mathrm{vmaf} = a - b\,\delta - c\,\delta^2 + d \log_{10}(\mathrm{bitrate\_kbps})$
   with `delta = crf - crf_ref` and the codec's constants, bitrate floored at
   1 kbps and the result clamped to `[0, 100]`. An unknown codec uses the
   libx264 constants. The constants are seed values for tests, not trained
@@ -122,9 +122,9 @@ bitrate (kbps) and the shot length:
 
 | Condition | `keyint` | `min_keyint` |
 | --- | --- | --- |
-| Shot of at least 4 s and probe bitrate below 1500 kbps | `4 * fps` | `fps` |
-| Probe bitrate above 8000 kbps | `fps` | `max(fps / 2, 1)` |
-| Otherwise | `2 * fps` | `max(fps / 2, 1)` |
+| Shot of at least 4 s and probe bitrate below 1500 kbps | $4 \cdot \mathrm{fps}$ | `fps` |
+| Probe bitrate above 8000 kbps | `fps` | $\max(\mathrm{fps} / 2, 1)$ |
+| Otherwise | $2 \cdot \mathrm{fps}$ | $\max(\mathrm{fps} / 2, 1)$ |
 
 `fps` is rounded to an integer first (at least 1). The thresholds are
 constants chosen for 1080p natural content. The learned model picks the CRF

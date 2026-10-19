@@ -66,3 +66,13 @@ Update `provided_features` to advertise all three names.
 - ADR-0460 — `enable_chroma` for integer SSIM (PR #939)
 - req: user brief 2026-05-16 ("Apply enable_chroma pattern to float_ms_ssim and
   integer_ms_ssim extractors; same pattern as psnr enable_chroma PR#895 and PR#939")
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 66: `- ADR-0460 — enable_chroma for integer SSIM (PR #939)`:
+  ADR-0460 points to an unrelated topic
+  (0460-dispatch-registry-audit-2026-05-15.md: "Dispatch-strategy registry
+  audit 2026-05-15").

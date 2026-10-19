@@ -24,7 +24,7 @@ will be added here with the subtree(s) they own, and the
 |------------------------------------------|---------------|---------------------------------|
 | C core (`core/`)                         | @Lusoris      | `/core/`                        |
 | Python harness (`compat/python-vmaf/`)   | @Lusoris      | `/compat/python-vmaf/`          |
-| GPU backends (CUDA, SYCL, Vulkan, HIP)   | @Lusoris      | `/core/src/{cuda,sycl,vulkan}/` |
+| GPU backends (CUDA, SYCL, HIP)           | @Lusoris      | `/core/src/{cuda,sycl,vulkan}/` |
 | SIMD paths (AVX, NEON)                   | @Lusoris      | `/core/src/feature/{x86,arm64}/`|
 | Tiny-AI (`ai/`, `core/src/dnn/`)         | @Lusoris      | `/ai/`, `/core/src/dnn/`        |
 | MCP servers (`mcp-server/`)              | @Lusoris      | `/mcp-server/`                  |

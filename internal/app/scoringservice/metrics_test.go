@@ -8,7 +8,10 @@ import "testing"
 func TestProvideMetricsRegistersRuntimeAndServiceCollectors(t *testing.T) {
 	t.Parallel()
 
-	registry, metrics := ProvideMetrics()
+	registry, metrics, err := ProvideMetrics()
+	if err != nil {
+		t.Fatalf("ProvideMetrics: %v", err)
+	}
 	if registry == nil || metrics == nil {
 		t.Fatal("ProvideMetrics returned a nil dependency")
 	}

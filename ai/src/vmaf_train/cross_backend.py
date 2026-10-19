@@ -41,9 +41,19 @@ class CrossBackendReport:
     reference_provider: str = CPU_PROVIDER
     comparisons: list[BackendComparison] = field(default_factory=list)
     missing: list[str] = field(default_factory=list)
+    # Providers ORT accepted for the session but did not bind (it falls back to
+    # the CPU): comparing those outputs would compare the CPU with itself.
+    unbound: list[str] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
+        """True only when something was compared and nothing was missing or unbound.
+
+        ``all([])`` is True, so a run whose providers were all missing used to
+        pass without comparing a single output.
+        """
+        if self.missing or self.unbound or not self.comparisons:
+            return False
         return all(c.max_abs_error <= self.atol for c in self.comparisons)
 
     def to_dict(self) -> dict:
@@ -53,6 +63,7 @@ class CrossBackendReport:
             "reference_provider": self.reference_provider,
             "comparisons": [c.__dict__ | {"shape": list(c.shape)} for c in self.comparisons],
             "missing": list(self.missing),
+            "unbound": list(self.unbound),
             "ok": self.ok,
         }
 
@@ -117,24 +128,13 @@ def compare_backends(
         real_shape = _infer_or_given_shape(model_path, shape)
         x = rng.standard_normal(real_shape, dtype=np.float32)
 
-    cpu_sess = ort.InferenceSession(str(model_path), providers=[CPU_PROVIDER])
-    cpu_input_name = cpu_sess.get_inputs()[0].name
-    # ORT's session.run() returns a union (ndarray | OrtValue | SparseTensor |
-    # list | dict); for a single dense FP regressor output we know it is
-    # ``np.ndarray`` and narrow accordingly so downstream ``.astype`` resolves.
-    cpu_out_raw = cpu_sess.run(None, {cpu_input_name: x})[0]
-    assert isinstance(
-        cpu_out_raw, np.ndarray
-    ), f"unexpected ORT CPU output type {type(cpu_out_raw).__name__}"
-    cpu_out: np.ndarray = cpu_out_raw
-
+    cpu_out = _run_dense(ort.InferenceSession(str(model_path), providers=[CPU_PROVIDER]), x)
     for ep in runnable:
         sess = ort.InferenceSession(str(model_path), providers=[ep])
-        out_raw = sess.run(None, {sess.get_inputs()[0].name: x})[0]
-        assert isinstance(
-            out_raw, np.ndarray
-        ), f"unexpected ORT {ep} output type {type(out_raw).__name__}"
-        out: np.ndarray = out_raw
+        if ep not in sess.get_providers():
+            report.unbound.append(ep)
+            continue
+        out = _run_dense(sess, x)
         diff = np.abs(out.astype(np.float64) - cpu_out.astype(np.float64))
         report.comparisons.append(
             BackendComparison(
@@ -147,6 +147,16 @@ def compare_backends(
     return report
 
 
+def _run_dense(sess: ort.InferenceSession, x: np.ndarray) -> np.ndarray:
+    """Run ``sess`` on ``x`` and return its first output as a dense array."""
+    # ORT's session.run() returns a union (ndarray | OrtValue | SparseTensor |
+    # list | dict); for a single dense FP regressor output we know it is
+    # ``np.ndarray`` and narrow accordingly so downstream ``.astype`` resolves.
+    raw = sess.run(None, {sess.get_inputs()[0].name: x})[0]
+    assert isinstance(raw, np.ndarray), f"unexpected ORT output type {type(raw).__name__}"
+    return raw
+
+
 def render_table(report: CrossBackendReport) -> str:
     lines = [
         (
@@ -157,7 +167,7 @@ def render_table(report: CrossBackendReport) -> str:
         "-" * 72,
     ]
     if not report.comparisons:
-        lines.append("(no alternate providers available — CPU-only install)")
+        lines.append("(no alternate provider ran: CPU-only install or every request missing)")
     for c in report.comparisons:
         status = "OK" if c.max_abs_error <= report.atol else "FAIL"
         lines.append(
@@ -166,4 +176,8 @@ def render_table(report: CrossBackendReport) -> str:
     if report.missing:
         lines.append("")
         lines.append(f"requested but unavailable: {', '.join(report.missing)}")
+    if report.unbound:
+        lines.append(f"accepted but not bound (ran on the CPU): {', '.join(report.unbound)}")
+    if not report.ok and not report.comparisons:
+        lines.append("FAIL: no output was compared")
     return "\n".join(lines)

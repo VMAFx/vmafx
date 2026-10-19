@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import importlib.util
 import re
+import shutil
+import subprocess
 import sys
 import unittest
 from pathlib import Path
@@ -38,6 +40,14 @@ def executable_body(step: str) -> str:
     stays, because the command in front of it runs.
     """
     return "\n".join(line for line in step.splitlines() if not line.lstrip().startswith("#"))
+
+
+def step_script(step: str) -> str:
+    """Return the dedented `run: |` script of one workflow step."""
+    match = re.search(r"(?ms)^        run: \|\n(?P<body>(?:^          .*\n|^\n)+)", step)
+    if match is None:
+        raise AssertionError("step has no `run: |` block")
+    return "".join(line[10:] if line.strip() else "\n" for line in match["body"].splitlines(True))
 
 
 def workflow_job(text: str, job_id: str) -> str:
@@ -110,16 +120,21 @@ class FailClosedCIContract(unittest.TestCase):
     def test_cpu_coverage_records_and_reasserts_pytest_failure(self) -> None:
         workflow = (WORKFLOWS / "tests-and-quality-gates.yml").read_text(encoding="utf-8")
         self.assertNotRegex(workflow, r"(?m)^    if: false\s*$")
-        pytest_step = workflow_step(
-            workflow, "Run full Python test suite (instrumented libvmaf.so + vmaf CLI)"
-        )
-        self.assertIn("id: python_coverage_tests", pytest_step)
-        self.assertIn("continue-on-error: true", pytest_step)
-        self.assertNotIn("|| true", executable_body(pytest_step))
-
-        assertion = workflow_step(workflow, "Assert Python coverage suite passed")
-        self.assertIn("steps.python_coverage_tests.outcome", assertion)
-        self.assertIn('[[ "$PYTEST_OUTCOME" == "success" ]]', assertion)
+        assertion = workflow_step(workflow, "Assert every Python coverage shard passed")
+        self.assertIn('!= "success"', assertion)
+        for index in range(1, 5):
+            with self.subTest(shard=index):
+                pytest_step = workflow_step(workflow, f"Run Python test suite, shard {index}/4")
+                self.assertIn(f"id: python_coverage_shard_{index}", pytest_step)
+                self.assertIn(f"--shard {index}/4", pytest_step)
+                self.assertIn("continue-on-error: true", pytest_step)
+                self.assertNotIn("|| true", executable_body(pytest_step))
+                self.assertIn(f"steps.python_coverage_shard_{index}.outcome", assertion)
+                # #2823 wrote PYTHO1PATH..PYTHO4PATH, so no shard got the path.
+                self.assertRegex(
+                    pytest_step, r"(?m)^          PYTHONPATH: \$\{\{ github\.workspace \}\}/python$"
+                )
+                self.assertNotRegex(pytest_step, r"PYTHO\dPATH")
 
         gpu_coverage = workflow_job(workflow, "coverage-gpu")
         self.assertIn("name: Coverage GPU", gpu_coverage)
@@ -127,6 +142,42 @@ class FailClosedCIContract(unittest.TestCase):
         self.assertNotIn("continue-on-error", gpu_coverage)
         aggregator = (WORKFLOWS / "required-aggregator.yml").read_text(encoding="utf-8")
         self.assertIn("'Coverage GPU',", aggregator)
+
+    def test_coverage_shard_assertion_names_why_a_shard_was_skipped(self) -> None:
+        workflow = (WORKFLOWS / "tests-and-quality-gates.yml").read_text(encoding="utf-8")
+        assertion = workflow_step(workflow, "Assert every Python coverage shard passed")
+        coverage = workflow_job(workflow, "coverage")
+        for step_id in re.findall(r"\$\{\{ steps\.(\w+)\.outcome \}\}", assertion):
+            with self.subTest(step=step_id):
+                self.assertIn(f"        id: {step_id}\n", coverage)
+        self.assertIn("steps.coverage_meson_suite.outcome", assertion)
+        bash = shutil.which("bash")
+        if bash is None:
+            self.skipTest("bash not on PATH; the workflow step runs on ubuntu")
+        script = step_script(assertion)
+        earlier = "Build-with-gcov=success Meson-unit-suite=failure Prepare-Python-suite=skipped"
+
+        def run(shards: str, before: str) -> subprocess.CompletedProcess[str]:
+            env = {"SHARD_OUTCOMES": shards, "EARLIER_OUTCOMES": before, "PATH": "/usr/bin:/bin"}
+            return subprocess.run(  # noqa: S603 - argv is bash plus the tracked workflow step
+                [bash, "-c", script], env=env, capture_output=True, text=True, check=False
+            )
+
+        skipped = run("skipped skipped skipped skipped", earlier)
+        self.assertEqual(skipped.returncode, 1)
+        self.assertIn(
+            "shard 1/4 outcome was skipped: step Meson-unit-suite outcome was failure",
+            skipped.stderr,
+        )
+        self.assertEqual(skipped.stderr.count("::error::"), 4)
+        failed = run("success failure success success", earlier.replace("failure", "success"))
+        self.assertEqual(failed.returncode, 1)
+        self.assertIn("shard 2/4 outcome was failure\n", failed.stderr)
+        self.assertNotIn("skipped", failed.stderr)
+        passed = run("success success success success", "Meson-unit-suite=success")
+        self.assertEqual((passed.returncode, passed.stderr), (0, ""))
+        unexplained = run("success skipped success success", "Meson-unit-suite=success")
+        self.assertIn("shard 2/4 outcome was skipped: no earlier step failed", unexplained.stderr)
 
     def test_nightly_benchmark_failure_remains_a_failure(self) -> None:
         workflow = (WORKFLOWS / "nightly.yml").read_text(encoding="utf-8")
@@ -144,10 +195,17 @@ class FailClosedCIContract(unittest.TestCase):
         self.assertIn("https://apt.llvm.org/llvm.sh", tidy_job)
         self.assertIn("sudo /tmp/llvm.sh 22", tidy_job)
         self.assertIn("sudo apt-get install -y clang-tidy-22", tidy_job)
-        self.assertIn("--require-hashes", tidy_job)
-        self.assertIn("CC=gcc-15 CXX=g++-15", tidy_job)
-        self.assertIn("-Db_lto=false", tidy_job)
-        self.assertIn("--clang-tidy /usr/bin/clang-tidy-22", tidy_job)
+        # The job runs the cpu lane's Makefile targets, as the required job and
+        # the dev container do (T-TIDY-RATCHET-UNMEASURED-AS-CLEAN-2026-10-06):
+        # gcc-15, no LTO and the hashed build requirements come from there.
+        self.assertIn("make tidy-ratchet-build LANE=cpu", tidy_job)
+        self.assertIn("make tidy-ratchet LANE=cpu", tidy_job)
+        self.assertIn("CLANG_TIDY_BIN=/usr/bin/clang-tidy-22", tidy_job)
+        makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+        self.assertIn("TIDY_RATCHET_COMPILERS_cpu := CC=gcc-15 CXX=g++-15", makefile)
+        setup_cpu = makefile.split("TIDY_RATCHET_SETUP_cpu :=", 1)[1].split("\nTIDY_", 1)[0]
+        self.assertIn("-Db_lto=false", setup_cpu)
+        self.assertIn("install --require-hashes -r requirements/locks/build.txt", makefile)
 
     def test_changed_tidy_excludes_windows_only_translation_unit(self) -> None:
         workflow = (WORKFLOWS / "lint-and-format.yml").read_text(encoding="utf-8")
@@ -161,9 +219,9 @@ class FailClosedCIContract(unittest.TestCase):
         run_step = workflow_step(
             ratchet_job, "Ratchet — whole-tree clang-tidy vs committed baseline"
         )
-        self.assertIn('TIDY_BUILD_DIR="$RUNNER_TEMP/vmafx-tidy-cpu"', build_step)
-        self.assertIn('meson setup "$TIDY_BUILD_DIR" core', build_step)
-        self.assertIn('--build-dir "$RUNNER_TEMP/vmafx-tidy-cpu"', run_step)
+        self.assertIn('TIDY_RATCHET_BUILD_DIR="$RUNNER_TEMP/vmafx-tidy-cpu"', build_step)
+        self.assertIn("make tidy-ratchet-build LANE=cpu", build_step)
+        self.assertIn('TIDY_RATCHET_BUILD_DIR="$RUNNER_TEMP/vmafx-tidy-cpu"', run_step)
         self.assertNotIn("meson setup build core", executable_body(build_step))
 
     def test_fuzz_workflows_have_adequate_timeout_budget(self) -> None:

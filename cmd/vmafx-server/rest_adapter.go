@@ -16,14 +16,17 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
+
+	"google.golang.org/grpc/status"
 
 	vmafxv1 "github.com/VMAFx/vmafx/gen/go"
 	"github.com/VMAFx/vmafx/gen/go/oapi"
 	"github.com/VMAFx/vmafx/internal/app/scoringservice"
+	"github.com/VMAFx/vmafx/pkg/observability"
 )
 
 // restAdapter translates oapi.ServerInterface calls into gRPC handler calls.
@@ -67,40 +70,32 @@ func (a *restAdapter) GetReady(w http.ResponseWriter, r *http.Request) {
 
 // ScoreVideoPair implements oapi.ServerInterface.ScoreVideoPair — POST /v1/score.
 //
-// The handler decodes the oapi.ScoreRequest JSON body, calls grpcServer.Score
-// via the proto types, and encodes an oapi.ScoreResponse.
+// The body is the contract's ScoreRequest (proto field names, as the OpenAPI
+// schema spells them, options included); it goes through grpcServer.Score, so
+// the concurrency cap and the scoring path are gRPC's, and the response is the
+// proto ScoreResponse with its provenance.
 func (a *restAdapter) ScoreVideoPair(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-
-	var body oapi.ScoreRequest
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxScoreRequestBodyBytes))
+	req := &vmafxv1.ScoreRequest{}
+	if err == nil {
+		err = requestJSONOptions.Unmarshal(body, req)
+	}
+	if err != nil {
 		scoringservice.WriteJSON(a.log, w, http.StatusBadRequest,
 			oapi.ErrorResponse{Error: fmt.Sprintf("invalid JSON body: %v", err)})
 		return
 	}
-
-	model := ""
-	if body.Model != nil {
-		model = *body.Model
-	}
-
-	grpcResp, err := a.grpc.Score(r.Context(), &vmafxv1.ScoreRequest{
-		Reference: body.Reference,
-		Distorted: body.Distorted,
-		Model:     model,
-	})
+	resp, err := a.grpc.Score(r.Context(), req)
 	if err != nil {
-		a.log.Error("rest ScoreVideoPair: grpc.Score failed", "error", err)
-		scoringservice.WriteJSON(a.log, w, http.StatusInternalServerError,
-			oapi.ErrorResponse{Error: err.Error()})
+		observability.RouteLogger(r.Context(), a.log, http.MethodPost, "/v1/score").Error(
+			"rest ScoreVideoPair: grpc.Score failed", observability.FieldError, err)
+		scoringservice.WriteJSON(a.log, w, httpStatusOf(err),
+			oapi.ErrorResponse{Error: status.Convert(err).Message()})
 		return
 	}
-
-	scoringservice.WriteJSON(a.log, w, http.StatusOK, oapi.ScoreResponse{
-		Score:    grpcResp.GetScore(),
-		Features: grpcResp.GetFeatures(),
-	})
+	writeProtoJSON(a.log, w, resp)
 }

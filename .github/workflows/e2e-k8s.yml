@@ -5,15 +5,18 @@
 #
 # Kubernetes integration test harness for the supported VMAFx runtime.
 # Uses kind + kuttl to install the default Helm server workload and operator,
-# then performs a real CPU score through the server's REST API.
+# then performs a real CPU score through the server's REST API. A second case
+# runs two vmafx-controller replicas on PostgreSQL (CloudNativePG) and kills
+# a controller and a node mid-job (ADR-2350).
 #
 # Trigger policy (ADR-0783):
 #   - PRs:    SKIPPED by default (job requires label "run-e2e-k8s" OR manual dispatch).
 #             This keeps normal PR CI fast; the heavy cluster tests run nightly.
+#             Called from pr-label-lanes.yml, which holds the label condition.
 #   - Nightly (03:47 UTC): always runs.
 #   - Manual: workflow_dispatch with optional inputs.
 #
-# References: ADR-0783, ADR-0709, ADR-0713, ADR-0714.
+# References: ADR-0783, ADR-0709, ADR-0713, ADR-0714, ADR-2350.
 
 name: E2E
 # E2E — Kubernetes integration (kind + kuttl).
@@ -26,11 +29,25 @@ on:
     # runner contention; see nightly.yml which runs at 03:17).
     - cron: "47 3 * * *"
 
-  pull_request:
-    branches: [master]
-    types: [opened, synchronize, reopened, labeled]
-    # Only run on PRs that explicitly opt in — keeps normal CI fast.
-    # The required-aggregator treats "not reported due to label gate" as skipped/OK.
+  # Pull requests reach this workflow through pr-label-lanes.yml (one check
+  # suite for every label lane, Scorecard's SAST window). Only a PR that opts
+  # in runs — keeps normal CI fast. The required-aggregator treats "not
+  # reported due to label gate" as skipped/OK. ADR-2169: the gate job starts
+  # only for a ready pull request that carries the opt-in label (and, on a
+  # `labeled` event, only for that label), so a draft or an unrelated label
+  # starts no job. The inputs mirror workflow_dispatch's with their defaults.
+  workflow_call:
+    inputs:
+      cluster_name:
+        description: "kind cluster name"
+        required: false
+        default: "vmafx-e2e"
+        type: string
+      keep_cluster:
+        description: "Keep the kind cluster after the run (debug)"
+        required: false
+        default: "false"
+        type: string
 
   workflow_dispatch:
     inputs:
@@ -71,6 +88,11 @@ jobs:
   # ---------------------------------------------------------------------------
   gate:
     name: "Gate — check label / trigger"
+    if: >-
+      github.event_name != 'pull_request' ||
+      (github.event.pull_request.draft == false &&
+      contains(github.event.pull_request.labels.*.name, 'run-e2e-k8s') &&
+      (github.event.action != 'labeled' || github.event.label.name == 'run-e2e-k8s'))
     runs-on: ubuntu-26.04
     outputs:
       should_run: ${{ steps.check.outputs.should_run }}
@@ -99,7 +121,7 @@ jobs:
     needs: gate
     if: needs.gate.outputs.should_run == 'true'
     runs-on: ubuntu-26.04
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -158,6 +180,33 @@ jobs:
           build-args: |
             VMAFX_VERSION=e2e-${{ github.sha }}
 
+      - name: Build vmafx-controller image (e2e tag)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
+        with:
+          context: .
+          file: docker/Dockerfile.controller
+          target: controller
+          push: false
+          load: true
+          tags: ghcr.io/vmafx/vmafx-controller:${{ env.E2E_IMAGE_TAG }},ghcr.io/vmafx/vmafx-controller:e2e-test
+          cache-from: type=local,src=${{ runner.temp }}/.buildx-cache
+          cache-to: type=local,dest=${{ runner.temp }}/.buildx-cache-new,mode=max
+          build-args: |
+            VMAFX_VERSION=e2e-${{ github.sha }}
+            VMAF_BUILD_JOBS=4
+
+      - name: Build failover driver image (e2e tag)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
+        with:
+          context: .
+          file: docker/Dockerfile.e2e-driver
+          target: driver
+          push: false
+          load: true
+          tags: ghcr.io/vmafx/vmafx-e2e-driver:e2e-test
+          cache-from: type=local,src=${{ runner.temp }}/.buildx-cache
+          cache-to: type=local,dest=${{ runner.temp }}/.buildx-cache-new,mode=max
+
       # Replace old cache with new (avoids ever-growing cache).
       - name: Rotate build cache
         run: |
@@ -170,10 +219,12 @@ jobs:
             ghcr.io/vmafx/vmafx-operator:e2e-test \
             ghcr.io/vmafx/vmafx-node:e2e-test \
             ghcr.io/vmafx/vmafx-server:e2e-test \
+            ghcr.io/vmafx/vmafx-controller:e2e-test \
+            ghcr.io/vmafx/vmafx-e2e-driver:e2e-test \
             -o "${RUNNER_TEMP}/vmafx-e2e-images.tar"
 
       - name: Upload image tar
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: vmafx-e2e-images
           path: ${{ runner.temp }}/vmafx-e2e-images.tar
@@ -198,7 +249,7 @@ jobs:
         run: bash test/e2e/fixtures/gen-tiny-yuv.sh
 
       - name: Upload fixtures
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: yuv-fixtures
           path: test/e2e/fixtures/
@@ -295,7 +346,7 @@ jobs:
 
       # ---- Restore artifacts ----
       - name: Download e2e images
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
           name: vmafx-e2e-images
           path: ${{ runner.temp }}
@@ -305,7 +356,7 @@ jobs:
           docker load -i "${RUNNER_TEMP}/vmafx-e2e-images.tar"
 
       - name: Download YUV fixtures
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
           name: yuv-fixtures
           path: test/e2e/fixtures/
@@ -319,7 +370,7 @@ jobs:
         env:
           # `kind load docker-image` does not stream: it calls
           # fs.TempDir("", "images-tar") and writes a single images.tar
-          # holding all three images, then imports that into the node's
+          # holding all the images, then imports that into the node's
           # containerd. Go's os.MkdirTemp honours $TMPDIR and falls back to
           # /tmp, which on ubuntu-26.04 is a RAM-backed tmpfs under a
           # per-user quota — so leaving TMPDIR unset re-creates, on the
@@ -332,6 +383,8 @@ jobs:
             ghcr.io/vmafx/vmafx-operator:e2e-test \
             ghcr.io/vmafx/vmafx-node:e2e-test \
             ghcr.io/vmafx/vmafx-server:e2e-test \
+            ghcr.io/vmafx/vmafx-controller:e2e-test \
+            ghcr.io/vmafx/vmafx-e2e-driver:e2e-test \
             --name "${KIND_CLUSTER_NAME}"
 
       # ---- Run kuttl tests ----
@@ -374,18 +427,27 @@ jobs:
           diag "Server logs" kubectl logs -n vmafx-e2e-test \
             -l app.kubernetes.io/instance=vmafx,app.kubernetes.io/component=server \
             --all-containers --prefix --tail=200
+          # The controller failover case (namespace vmafx-ha).
+          diag "Database cluster" kubectl get clusters.postgresql.cnpg.io -n vmafx-ha -o wide
+          diag "Controller logs" kubectl logs -n vmafx-ha \
+            -l app.kubernetes.io/component=controller --all-containers --prefix --tail=200
+          diag "Migration logs" kubectl logs -n vmafx-ha \
+            -l app.kubernetes.io/component=migrate --all-containers --prefix --tail=100
+          diag "Node logs" kubectl logs -n vmafx-ha \
+            -l app.kubernetes.io/component=node --all-containers --prefix --tail=200
+          diag "Failover driver logs" kubectl logs -n vmafx-ha job/vmafx-e2e-driver --tail=200
           diag "Events (all namespaces)" kubectl get events -A --sort-by=.lastTimestamp
 
       - name: Upload kuttl XML results
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: kuttl-e2e-results
           path: test/e2e/results/
 
       - name: Publish test results
         if: always() && hashFiles('test/e2e/results/**/*.xml') != ''
-        uses: EnricoMi/publish-unit-test-result-action@d0a4676d0e0b938bc201470d88276b7c74c712b3  # v2.24.0
+        uses: EnricoMi/publish-unit-test-result-action@7622c5bf3d112a72ab4fa3951c2aa5723d8ab92d  # v2.25.0
         with:
           files: "test/e2e/results/**/*.xml"
           check_name: "E2E k8s results"

@@ -647,9 +647,10 @@ static FORCE_INLINE void vif_add_line_residuals(const VifPublicState *s, VifResi
 
 static FORCE_INLINE void vif_store_num_den(const VifResiduals *totals, float *num, float *den)
 {
-    num[0] = totals->accum_num_log / 2048.0 +
-             (totals->accum_den_non_log - ((totals->accum_num_non_log) / 16384.0) / (65025.0));
-    den[0] = totals->accum_den_log / 2048.0 + totals->accum_den_non_log;
+    num[0] =
+        (float)(totals->accum_num_log / 2048.0 +
+                (totals->accum_den_non_log - ((totals->accum_num_non_log) / 16384.0) / (65025.0)));
+    den[0] = (float)(totals->accum_den_log / 2048.0 + totals->accum_den_non_log);
 }
 
 /* 16 pixels widened to u16, and their squares (u8 x u8 -> u16). */

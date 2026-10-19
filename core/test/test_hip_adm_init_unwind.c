@@ -57,6 +57,7 @@
 #include "log.h"
 #include "test.h"
 
+#include "adm_view_dist.h"
 #include "hip/integer_adm_hip.h"
 #include "hip/shared_frame.h"
 
@@ -330,6 +331,12 @@ const unsigned char adm_csf_hsaco[1] = {0};
 const unsigned char adm_csf_den_hsaco[1] = {0};
 const unsigned char adm_cm_hsaco[1] = {0};
 
+/* The dictionary constructor fails (NULL) unless a case sets g_dict_ok; then
+ * it returns a placeholder the stubs never dereference. */
+static int g_dict_ok;
+static VmafDictionary g_dict_placeholder;
+static unsigned g_dict_frees;
+
 VmafDictionary *vmaf_feature_name_dict_from_provided_features(const char **provided_features,
                                                               const VmafOption *opts,
                                                               const void *obj)
@@ -337,13 +344,37 @@ VmafDictionary *vmaf_feature_name_dict_from_provided_features(const char **provi
     (void)provided_features;
     (void)opts;
     (void)obj;
-    return NULL;
+    return g_dict_ok ? &g_dict_placeholder : NULL;
 }
 
 int vmaf_dictionary_free(VmafDictionary **dict)
 {
-    if (dict != NULL)
+    if (dict != NULL && *dict != NULL) {
+        g_dict_frees++;
         *dict = NULL;
+    }
+    return 0;
+}
+
+/* The second viewing distance's helpers (adm_view_dist.c, ADR-2795). The
+ * name hook is the second injection point: g_extend_err is what it returns. */
+static int g_extend_err;
+
+const char *const vmaf_adm_view_names[VMAF_ADM_VIEW_SCORE_COUNT] = {NULL};
+const char *const vmaf_adm_extra_view_keys[VMAF_ADM_VIEW_SCORE_COUNT] = {NULL};
+
+int vmaf_adm_extend_name_dict(const VmafFeatureExtractor *fex, VmafDictionary **dict)
+{
+    (void)fex;
+    (void)dict;
+    return g_extend_err;
+}
+
+int vmaf_adm_merge_view_dist(VmafFeatureExtractorContext *existing,
+                             VmafFeatureExtractorContext *incoming)
+{
+    (void)existing;
+    (void)incoming;
     return 0;
 }
 
@@ -472,6 +503,42 @@ static mu_message_t check_handles_released(void)
     return (mu_message_t)0;
 }
 
+/* init() of a default-option instance with the stubs as they are set. */
+static int init_default_instance(void)
+{
+    ledger_reset();
+    g_plane_source_closes = 0u;
+    g_dict_frees = 0u;
+
+    VmafFeatureExtractor fex = vmaf_fex_integer_adm_hip;
+    void *priv = calloc(1u, fex.priv_size);
+    if (priv == NULL) {
+        return -ENOMEM;
+    }
+    apply_option_defaults(priv, fex.options);
+    fex.priv = priv;
+    const int err = fex.init(&fex, VMAF_PIX_FMT_YUV420P, 8u, 256u, 144u);
+    free(priv);
+    return err;
+}
+
+/* ADR-2795: the name hook refuses the second distance after the dictionary
+ * was built: init reports the hook's error, frees the dictionary and releases
+ * every resource. */
+static char *test_name_hook_failure_frees_the_dictionary_and_every_allocation(void)
+{
+    g_dict_ok = 1;
+    g_extend_err = -EINVAL;
+    const int err = init_default_instance();
+    g_dict_ok = 0;
+    g_extend_err = 0;
+    mu_assert("a refused second distance must fail init with the hook's error", err == -EINVAL);
+    mu_assert("the dictionary built before the hook must be freed", g_dict_frees == 1u);
+    mu_assert_msg(check_memory_released());
+    mu_assert_msg(check_handles_released());
+    return (char *)0;
+}
+
 static char *test_dict_failure_reports_error_and_frees_every_allocation(void)
 {
     ledger_reset();
@@ -495,5 +562,6 @@ static char *test_dict_failure_reports_error_and_frees_every_allocation(void)
 char *run_tests(void)
 {
     mu_run_test(test_dict_failure_reports_error_and_frees_every_allocation);
+    mu_run_test(test_name_hook_failure_frees_the_dictionary_and_every_allocation);
     return (char *)0;
 }

@@ -5,9 +5,9 @@ Edit AGENTS.d/_index.md or a page under AGENTS.d/, then run
 
 Generated index. Before editing: match every path you will touch against
 `Touching` in [Topic pages](#topic-pages) and read each matching page first; no
-match, no page. Text between here and the table binds every file of this
-directory. `Touching` paths: relative to this directory, leading `/` =
-repository root. New invariant: a page under `AGENTS.d/` ([how](../docs/development/agents-index.md)).
+match, no page. Text between here and [Topic pages](#topic-pages) binds every
+file of this directory. `Touching` paths: relative to this directory, leading
+`/` = repository root. New invariant: new page under `AGENTS.d/` ([how](../docs/development/agents-index.md)).
 
 Parent: [../AGENTS.md](../AGENTS.md).
 
@@ -25,6 +25,7 @@ broken `.c` file).
 | Touching | Read first | Invariant |
 | --- | --- | --- |
 | `workflows/*.yml` | [action-sha-pins](AGENTS.d/action-sha-pins.md) | Every uses directive in workflows must reference 40-character commit SHA with version comment; no floating tags. |
+| `workflows/tests-and-quality-gates.yml`, `workflows/lint-and-format.yml`, `/scripts/ci/test_self_hosted_runner_workflow_contract.py` | [arc-fork-guard](AGENTS.d/arc-fork-guard.md) | Every runs-on naming arc-runners carries the head-repo guard before the label; fork PRs stay hosted. |
 | `workflows/libvmaf-build-matrix.yml`, `workflows/build.yml` | [build-matrix-record](AGENTS.d/build-matrix-record.md) | Matrix lanes governed by ADR-1259; experimental lanes advisory; pass -Db_lto=false on hosted icpx/SYCL builds. |
 | `workflows/docker-publish-production.yml`, `workflows/docker-publish-operator-node.yml`, `workflows/supply-chain.yml` | [container-signing](AGENTS.d/container-signing.md) | Every container image dual-signed with cosign and attest-build-provenance; SBOM attached; smoke verifies cosign. |
 | `workflows/tests-and-quality-gates.yml`, `/scripts/ci/write_cppcheck_posix_model.py` | [cppcheck-posix-model](AGENTS.d/cppcheck-posix-model.md) | Derive cppcheck-posix-vmafx.cfg before analysis; do not pass bare --library=posix; verify null condition control. |
@@ -32,6 +33,7 @@ broken `.c` file).
 | `workflows/ffmpeg-integration.yml`, `/ffmpeg-patches/series.txt` | [ffmpeg-diagnostics](AGENTS.d/ffmpeg-diagnostics.md) | FFmpeg builds configure with --fatal-warnings and fail on diagnostics; exact git apply without fuzzy patch. |
 | `workflows/go-ci.yml`, `/scripts/ci/test_go_workflow_contract.py` | [go-validation](AGENTS.d/go-validation.md) | go vet + go test required; go fix -diff first step; non-draft trigger with documentation-only bypass. |
 | `workflows/build.yml`, `workflows/helm-chart.yml`, `workflows/e2e-k8s.yml` | [helm-and-e2e](AGENTS.d/helm-and-e2e.md) | ORT/Helm version+SHA together; E2E targets; kuttl outcome checked; downloads bounded; diagnostics not silenced. |
+| `workflows/*.yml`, `actionlint.yaml`, `/scripts/ci/check_hosted_runner_labels.py`, `/scripts/ci/tests/test_hosted_runner_labels.py`, `/.config/lint-exceptions.d/hosted-runner-label.toml` | [hosted-runner-labels](AGENTS.d/hosted-runner-labels.md) | Hosted Linux jobs name `ubuntu-26.04` / `ubuntu-26.04-arm`; no floating label; older image needs declaration. |
 | `workflows/*.yml` | [hosted-runner-packages](AGENTS.d/hosted-runner-packages.md) | clang-tidy beyond 18 requires llvm.sh archive setup; cc.find_library requires -dev package with unversioned symlink. |
 | `workflows/libvmaf-build-matrix.yml` | [macos-tmate](AGENTS.d/macos-tmate.md) | Triple condition on tmate step (failure, macOS, workflow_dispatch) stays intact; step placed after Run tests. |
 | `workflows/libvmaf-build-matrix.yml`, `/scripts/ci/run_meson_test.py`, `/core/test/test_meson_secret_env_sanitization.py` | [meson-sanitization](AGENTS.d/meson-sanitization.md) | Every workflow step running Meson/Ninja test invokes run_meson_test.py; resolve Python before sudo. |
@@ -44,6 +46,6 @@ broken `.c` file).
 | `workflows/rule-enforcement.yml`, `PULL_REQUEST_TEMPLATE.md`, `/scripts/ci/test_fail_closed_ci.py` | [rule-enforcement](AGENTS.d/rule-enforcement.md) | Only deep-dive-checklist blocks; opt-out regex and port exemption stay in sync; advisory paths mirror ADRs. |
 | `workflows/tests-and-quality-gates.yml`, `/docs/state.md` | [sanitizer-matrix](AGENTS.d/sanitizer-matrix.md) | Enumerate tests via meson introspect; per-sanitizer exclusions track real open bugs; never widen without ADR. |
 | `workflows/scorecard.yml`, `/scripts/ci/scorecard_gate.py`, `/scripts/ci/tests/test_scorecard_*.py` | [scorecard-lane](AGENTS.d/scorecard-lane.md) | upload-sarif commit SHA resolves; publisher restricted to approved actions; artifact binds run ID and event SHA. |
-| `workflows/security-scans.yml`, `/.semgrep.yml`, `/requirements/locks/build.txt` | [security-scans](AGENTS.d/security-scans.md) | Repository .semgrep.yml owns Semgrep OSS; CodeQL configure runs in runner.temp/build; event in concurrency. |
+| `workflows/security-scans.yml`, `/.semgrep.yml`, `/requirements/locks/build.txt` | [security-scans](AGENTS.d/security-scans.md) | .semgrep.yml owns Semgrep OSS; CodeQL builds in runner.temp; event in concurrency; every CodeQL language, every event. |
 | `workflows/*.yml`, `PULL_REQUEST_TEMPLATE.md` | [upstream-merge](AGENTS.d/upstream-merge.md) | Preserve fork-added workflows; prefer fork version on clashes; never overwrite PULL_REQUEST_TEMPLATE.md. |
 | `workflows/libvmaf-build-matrix.yml` | [windows-runners](AGENTS.d/windows-runners.md) | Windows CUDA installs direct packages without Jimver; Windows ARM64 native MSVC toolset and PE machine check. |

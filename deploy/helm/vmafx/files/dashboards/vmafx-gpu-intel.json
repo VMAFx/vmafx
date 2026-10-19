@@ -1,0 +1,330 @@
+{
+  "uid": "vmafx-gpu-intel",
+  "title": "VMAFx GPUs (Intel XPU Manager exporter)",
+  "description": "Intel GPUs of the cluster from Intel XPU Manager (series of its doc/Prometheus_Exported_Metrics.csv): GPU active time, media engines, memory, power.",
+  "tags": [
+    "vmafx",
+    "vmafx-exporter-intel"
+  ],
+  "timezone": "browser",
+  "editable": false,
+  "graphTooltip": 1,
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "fiscalYearStartMonth": 0,
+  "refresh": "1m",
+  "schemaVersion": 42,
+  "panels": [
+    {
+      "type": "row",
+      "collapsed": false,
+      "title": "GPUs",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 0,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus_datasource}"
+          },
+          "expr": "xpum_engine_ratio{job=~\"$job\",instance=~\"$instance\"}",
+          "instant": false,
+          "legendFormat": "{{pci_bdf}}/{{sub_dev}}",
+          "range": true
+        }
+      ],
+      "title": "GPU utilisation",
+      "description": "Busy time of each GPU, percent. Low while scoring jobs queue for this backend means the nodes, not the GPUs, are the limit.",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${prometheus_datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 1
+      },
+      "repeatDirection": "h",
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus_datasource}"
+          },
+          "expr": "xpum_memory_ratio{job=~\"$job\",instance=~\"$instance\"} / 100",
+          "instant": false,
+          "legendFormat": "{{pci_bdf}}/{{sub_dev}}",
+          "range": true
+        }
+      ],
+      "title": "GPU memory in use",
+      "description": "Device memory in use as a share of the device's memory.",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${prometheus_datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 1
+      },
+      "repeatDirection": "h",
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus_datasource}"
+          },
+          "expr": "xpum_engine_group_ratio{job=~\"$job\",instance=~\"$instance\",type=\"media\"}",
+          "instant": false,
+          "legendFormat": "{{pci_bdf}}/{{sub_dev}}",
+          "range": true
+        }
+      ],
+      "title": "Media engine use",
+      "description": "Utilisation of the media (video) engines per GPU tile, percent.",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${prometheus_datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 9
+      },
+      "repeatDirection": "h",
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus_datasource}"
+          },
+          "expr": "xpum_power_watts{job=~\"$job\",instance=~\"$instance\"}",
+          "instant": false,
+          "legendFormat": "{{pci_bdf}}/{{sub_dev}}",
+          "range": true
+        }
+      ],
+      "title": "Power draw",
+      "description": "Power draw per GPU.",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${prometheus_datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 9
+      },
+      "repeatDirection": "h",
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "watt",
+          "min": 0,
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      }
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "type": "datasource",
+        "name": "prometheus_datasource",
+        "label": "Prometheus data source",
+        "skipUrlSync": false,
+        "query": "prometheus",
+        "multi": false,
+        "allowCustomValue": true,
+        "includeAll": false,
+        "auto": false,
+        "auto_min": "10s",
+        "auto_count": 30
+      },
+      {
+        "type": "query",
+        "name": "job",
+        "label": "Job",
+        "skipUrlSync": false,
+        "query": "label_values(xpum_engine_ratio, job)",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${prometheus_datasource}"
+        },
+        "multi": true,
+        "allowCustomValue": true,
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": true,
+        "allValue": ".+",
+        "auto": false,
+        "auto_min": "10s",
+        "auto_count": 30,
+        "definition": "label_values(xpum_engine_ratio, job)"
+      },
+      {
+        "type": "query",
+        "name": "instance",
+        "label": "Instance",
+        "skipUrlSync": false,
+        "query": "label_values(xpum_engine_ratio{job=~\"$job\"}, instance)",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${prometheus_datasource}"
+        },
+        "multi": true,
+        "allowCustomValue": true,
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": true,
+        "allValue": ".+",
+        "auto": false,
+        "auto_min": "10s",
+        "auto_count": 30,
+        "definition": "label_values(xpum_engine_ratio{job=~\"$job\"}, instance)"
+      }
+    ]
+  },
+  "annotations": {},
+  "links": [
+    {
+      "title": "VMAFx dashboards",
+      "type": "dashboards",
+      "icon": "",
+      "tooltip": "",
+      "tags": [
+        "vmafx"
+      ],
+      "asDropdown": true,
+      "placement": "inControlsMenu",
+      "targetBlank": false,
+      "includeVars": true,
+      "keepTime": true
+    }
+  ]
+}

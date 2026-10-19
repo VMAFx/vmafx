@@ -36,6 +36,21 @@ foreach gpu_backend : ['cuda', 'sycl']
     endif
 endforeach
 
+# ADR-1874 — `vmaf --list-backends` reports this build's backends in a fixed
+# order with `compiled` equal to the configuration below; every build runs it.
+test_vmaf_list_backends = find_program('test_vmaf_list_backends.sh')
+test('test_vmaf_list_backends', test_vmaf_list_backends,
+     args : [
+         'cuda=' + get_option('enable_cuda').to_string(),
+         'sycl=' + get_option('enable_sycl').to_string(),
+         'hip=' + get_option('enable_hip').to_string(),
+         'metal=' + is_metal_enabled.to_string(),
+     ],
+     suite : ['fast'],
+     depends : [vmaf],
+     workdir : meson.project_build_root(),
+     timeout : 120)
+
 # ADR-1359 — `--feature <cpu-name>` under an explicit device `--backend` runs
 # the backend's twin or falls back to the CPU with a warning, and the JSON
 # receipt reports what ran. The `cpu` registration checks that cpu, auto and
@@ -97,7 +112,8 @@ test('test_vmaf_per_shot', test_vmaf_per_shot,
 test_vmaf_per_shot_input = executable(
     'test_vmaf_per_shot_input',
     ['../../test/test.c', 'test_vmaf_per_shot_input.c', '../vmaf_per_shot_input.c'],
-    include_directories : [include_directories('../../test'), include_directories('..')],
+    include_directories : [include_directories('../../test'), include_directories('..'),
+                           include_directories('../../src')],
     c_args : vmaf_per_shot_cflags,
 )
 test('test_vmaf_per_shot_input', test_vmaf_per_shot_input, suite : ['fast'])
@@ -117,10 +133,10 @@ test_vmaf_close_retry = executable(
 )
 test('test_vmaf_close_retry', test_vmaf_close_retry, suite : ['fast'])
 
-# ADR-1359: `--feature` routing under an explicit `--backend` and the JSON
-# backend receipt. The test defines vmaf_feature_backend_twin() and
-# vmaf_registered_feature_extractor() itself instead of linking libvmaf, so
-# every twin-lookup outcome runs without a GPU.
+# ADR-1359: `--feature` routing under an explicit `--backend`. The test
+# defines vmaf_feature_backend_twin() itself instead of linking libvmaf, so
+# every twin-lookup outcome runs without a GPU. The JSON backend receipt is
+# the library's since RC4 WP5 (test_vmafx_provenance).
 test_cli_feature_backend = executable(
     'test_cli_feature_backend',
     ['../../test/test.c', 'test_cli_feature_backend.c', '../cli_feature_backend.cpp'],
@@ -133,6 +149,39 @@ test_cli_feature_backend = executable(
     cpp_args : vmaf_tool_cflags,
 )
 test('test_cli_feature_backend', test_cli_feature_backend, suite : ['fast'])
+
+# #2142 / ADR-2073 (RC4 WP5): the CLI's command line in the provenance record,
+# its report through vmafx_report_write(), and `--verify-provenance`.
+test_cli_provenance = executable(
+    'test_cli_provenance',
+    ['../../test/test.c', 'test_cli_provenance.c', '../cli_provenance.c',
+     '../../src/compat/path_utf8.c'],
+    include_directories : [
+        include_directories('../../test'),
+        include_directories('..'),
+        libvmaf_inc,
+        vmaf_include,
+    ],
+    c_args : vmaf_tool_cflags,
+    cpp_args : vmaf_tool_cflags,
+    link_with : vmaf_tool_link_target,
+    dependencies : vmaf_tool_deps,
+)
+test('test_cli_provenance', test_cli_provenance, suite : ['fast'])
+
+# #2142 / ADR-2073 (RC4 WP5): the record in the JSON, XML and CSV reports of the
+# CLI against core/api/vmafx.toml, and `--verify-provenance` on fresh and
+# planted reports. Synthetic frames; no fixture needed.
+foreach provenance_cli_test : ['test_vmaf_provenance_report', 'test_vmaf_verify_provenance']
+    test(provenance_cli_test,
+        import('python').find_installation(),
+        args : [files(provenance_cli_test + '.py'), vmaf.full_path(),
+                meson.project_source_root() / '..'],
+        depends : [vmaf],
+        suite : ['fast'],
+        timeout : 300,
+    )
+endforeach
 
 # T6-2b / ADR-0247 — vmaf-roi accepts high-bit-depth planar YUV by
 # downscaling luma to the existing 8-bit saliency-model contract.
@@ -150,6 +199,19 @@ test('test_vmaf_roi_high_bitdepth', test_vmaf_roi_high_bitdepth,
 # two frames), so it belongs in the fast pre-push suite rather than 'slow'.
 test_vmaf_read_error_exit = find_program('test_vmaf_read_error_exit.sh')
 test('test_vmaf_read_error_exit', test_vmaf_read_error_exit,
+     suite : ['fast'],
+     depends : [vmaf],
+     workdir : meson.project_build_root(),
+     env: [
+         'MESON_BUILD_ROOT=' + meson.project_build_root(),
+         'MESON_SOURCE_ROOT=' + meson.project_source_root(),
+     ])
+
+# T-CLI-EXTRACTOR-ERROR-PROPAGATION-2026-10-05 — a frame libvmaf fails to score
+# says "problem scoring picture", never the read-failure wording. Pure CPU,
+# 16x16 x 2 frames: fast suite.
+test_vmaf_score_error_message = find_program('test_vmaf_score_error_message.sh')
+test('test_vmaf_score_error_message', test_vmaf_score_error_message,
      suite : ['fast'],
      depends : [vmaf],
      workdir : meson.project_build_root(),
@@ -213,6 +275,36 @@ if host_machine.system() == 'windows'
          timeout : 60)
 endif
 
+# ADR-1287 / ADR-1900 — VPL decode retry ceiling and status-sequence contract.
+# Deterministic device-free unit test exercising finite device-busy retries,
+# true no-progress loop ceiling termination at 60000 attempts, frame ordering,
+# transient statuses, and too-low ceiling failure.
+vpl_dep_test = dependency('vpl', required : false)
+if vpl_dep_test.found()
+    test_vmaf_vpl_decode_ceiling = executable(
+        'test_vmaf_vpl_decode_ceiling',
+        ['../../test/test.c', 'test_vmaf_vpl_decode_ceiling.c', '../vmaf_vpl_core.c'],
+        include_directories : [include_directories('../../test'), include_directories('..')],
+        dependencies : [vpl_dep_test],
+        c_args : vmaf_tool_cflags,
+    )
+    test('test_vmaf_vpl_decode_ceiling', test_vmaf_vpl_decode_ceiling, suite : ['fast'])
+endif
+
+# Real hardware smoke test on Intel GPU when SYCL + VPL tool is compiled in.
+if get_option('enable_sycl') and vmaf_vpl_ok
+    test_vmaf_vpl_hardware_smoke = find_program('test_vmaf_vpl_hardware_smoke.sh')
+    test('test_vmaf_vpl_hardware_smoke', test_vmaf_vpl_hardware_smoke,
+         suite : ['slow', 'gpu'],
+         depends : [vmaf_vpl],
+         workdir : meson.project_build_root(),
+         env : [
+             'MESON_BUILD_ROOT=' + meson.project_build_root(),
+             'MESON_SOURCE_ROOT=' + meson.project_source_root(),
+         ],
+         is_parallel : false,
+         timeout : 120)
+endif
 # ADR-2145 / ADR-2146 — raw files in the layouts of the import table (NV12, P016,
 # YUYV422, UYVY422, AYUV, V210, luma only, RGBA with a stated matrix), y4m
 # C420p9 / C422p14 / C444p16 / Cmono12 tags, and the refusals by name.

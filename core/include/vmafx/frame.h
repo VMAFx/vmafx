@@ -25,6 +25,10 @@
 extern "C" {
 #endif
 
+/* NOLINTBEGIN(modernize-use-using,performance-enum-size): public C header included by C
+ * and C++ translation units; C has no `using`, and C has no fixed enum underlying type
+ * across the required toolchains (ADR-1470). ADR-1138. */
+
 /**
  * What a VmafxImportPlane handle refers to.
  * @since 0.1
@@ -55,10 +59,24 @@ typedef enum VmafxMemoryKind {
     /**
      * An OpenGL 2D texture (`GL_TEXTURE_2D`) of the GL context current on the calling thread:
      * `handle` is the texture name, one texture per plane (NV12: an R8 luma and an RG8 chroma
-     * texture). Imported on a device of a backend with GL interop (CUDA; HIP from a GLX context of
-     * the device's GPU). Added in ABI 0.1.4.
+     * texture). Imported on a device of a backend with GL interop (CUDA; HIP through EGL dma-buf
+     * export from an EGL context of the device's GPU, ADR-2132; SYCL through an EGL dma-buf export
+     * of each texture, Linux). Added in ABI 0.1.7.
      */
     VMAFX_MEMORY_GL_TEXTURE = 8,
+    /**
+     * Vulkan device memory a Vulkan producer exported, one VkDeviceMemory per plane or shared by
+     * several (an AVVkFrame, a GStreamer Vulkan image memory): `fd` is the plane's memory exported
+     * as VmafxFrameImport.vulkan_handle_type says (Linux; the library duplicates it, yours stays
+     * open and yours), `handle` the exported Windows handle; `size` the allocation's size
+     * (required), `offset` the plane's first byte in it (the image's bind offset plus its plane's
+     * offset), `pitch` its row pitch (LINEAR and DRM_FORMAT_MODIFIER tiling, from
+     * vkGetImageSubresourceLayout(); 0 for OPTIMAL), `modifier` its DRM format modifier
+     * (DRM_FORMAT_MODIFIER tiling), `plane_index` the plane of a multi-plane image (0 for an image
+     * or buffer per plane). The images are in VK_IMAGE_LAYOUT_GENERAL and released to
+     * VK_QUEUE_FAMILY_EXTERNAL. Added in ABI 0.1.10.
+     */
+    VMAFX_MEMORY_VULKAN = 9,
 } VmafxMemoryKind;
 
 /**
@@ -91,10 +109,147 @@ typedef enum VmafxFenceKind {
     /**
      * An OpenGL sync object (`handle`, a `GLsync`) of the GL context current on the calling thread,
      * or of a context sharing objects with it; an acquire fence of VMAFX_MEMORY_GL_TEXTURE imports.
-     * Added in ABI 0.1.4.
+     * Added in ABI 0.1.7.
      */
     VMAFX_FENCE_GL_SYNC = 8,
+    /**
+     * A Vulkan timeline semaphore exported as VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT
+     * (`fd`, borrowed: the library duplicates it) or OPAQUE_WIN32 (`handle`), and a value of it
+     * (`value`). As an acquire fence the device waits, on the device, for the semaphore to reach
+     * `value`; given to vmafx_frame_signal_on_release() the device signals it to `value` behind the
+     * frame's last reader. A device that cannot import it refuses it naming the kind; the library
+     * never returns one. Added in ABI 0.1.10.
+     */
+    VMAFX_FENCE_VULKAN_SEMAPHORE = 9,
 } VmafxFenceKind;
+
+/**
+ * How the memory of a VMAFX_MEMORY_VULKAN import was exported (values equal
+ * VkExternalMemoryHandleTypeFlagBits). Added in ABI 0.1.10.
+ * @since 0.1
+ */
+typedef enum VmafxVulkanHandleType {
+    /** Not set; refused for VULKAN memory. */
+    VMAFX_VULKAN_HANDLE_NONE = 0,
+    /**
+     * VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT: a descriptor only the producer's driver
+     * interprets (`fd`).
+     */
+    VMAFX_VULKAN_HANDLE_OPAQUE_FD = 1,
+    /** VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_BIT: an NT handle (`handle`). */
+    VMAFX_VULKAN_HANDLE_OPAQUE_WIN32 = 2,
+    /** VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_KMT_BIT: a global share handle (`handle`). */
+    VMAFX_VULKAN_HANDLE_OPAQUE_WIN32_KMT = 4,
+    /** VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT: a Linux dma-buf (`fd`). */
+    VMAFX_VULKAN_HANDLE_DMA_BUF = 512,
+} VmafxVulkanHandleType;
+
+/**
+ * Tiling of the images of a VMAFX_MEMORY_VULKAN import (values equal VkImageTiling). Added in ABI
+ * 0.1.10.
+ * @since 0.1
+ */
+typedef enum VmafxVulkanTiling {
+    /**
+     * VK_IMAGE_TILING_OPTIMAL: a layout only the producer's driver knows; readable by a device that
+     * imports images of that driver (CUDA).
+     */
+    VMAFX_VULKAN_TILING_OPTIMAL = 0,
+    /** VK_IMAGE_TILING_LINEAR, or a VkBuffer: rows at `pitch`. */
+    VMAFX_VULKAN_TILING_LINEAR = 1,
+    /** VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT: the layout `modifier` names. */
+    VMAFX_VULKAN_TILING_DRM_FORMAT_MODIFIER = 1000158000,
+} VmafxVulkanTiling;
+
+/**
+ * Code-value range of a frame (values equal enum VmafColorRange). Added in ABI 0.1.6.
+ * @since 0.1
+ */
+typedef enum VmafxColorRange {
+    /** Unset. */
+    VMAFX_COLOR_RANGE_UNKNOWN = 0,
+    /** Studio (limited) range. */
+    VMAFX_COLOR_RANGE_LIMITED = 1,
+    /** Full range. */
+    VMAFX_COLOR_RANGE_FULL = 2,
+} VmafxColorRange;
+
+/**
+ * Colour primaries (values equal enum VmafColorPrimaries). Added in ABI 0.1.6.
+ * @since 0.1
+ */
+typedef enum VmafxColorPrimaries {
+    /** Unset. */
+    VMAFX_COLOR_PRIMARIES_UNKNOWN = 0,
+    /** ITU-R BT.709. */
+    VMAFX_COLOR_PRIMARIES_BT709 = 1,
+    /** ITU-R BT.2020. */
+    VMAFX_COLOR_PRIMARIES_BT2020 = 2,
+    /** SMPTE ST 432-1 (D65). */
+    VMAFX_COLOR_PRIMARIES_SMPTE432 = 3,
+} VmafxColorPrimaries;
+
+/**
+ * Transfer characteristic (values equal enum VmafColorTransferCharacteristic). Added in ABI 0.1.6.
+ * @since 0.1
+ */
+typedef enum VmafxColorTransfer {
+    /** Unset. */
+    VMAFX_COLOR_TRC_UNKNOWN = 0,
+    /** ITU-R BT.709. */
+    VMAFX_COLOR_TRC_BT709 = 1,
+    /** SMPTE ST 2084 (PQ). */
+    VMAFX_COLOR_TRC_SMPTE2084 = 2,
+    /** IEC 61966-2-1 (sRGB). Added in ABI 0.1.11 (ADR-2146). */
+    VMAFX_COLOR_TRC_SRGB = 3,
+    /** ARIB STD-B67 (HLG). Added in ABI 0.1.11. */
+    VMAFX_COLOR_TRC_HLG = 4,
+    /**
+     * Linear light: declared, the RGB conversion refuses it with VMAFX_E_NOTSUP (the matrix applies
+     * to non-linear signals). Added in ABI 0.1.11.
+     */
+    VMAFX_COLOR_TRC_LINEAR = 5,
+} VmafxColorTransfer;
+
+/**
+ * YCbCr matrix coefficients (values equal enum VmafColorMatrixCoefficients). Added in ABI 0.1.6.
+ * @since 0.1
+ */
+typedef enum VmafxColorMatrix {
+    /** Unset. */
+    VMAFX_COLOR_MATRIX_UNKNOWN = 0,
+    /** ITU-R BT.709. */
+    VMAFX_COLOR_MATRIX_BT709 = 1,
+    /** ITU-R BT.2020 non-constant luminance. */
+    VMAFX_COLOR_MATRIX_BT2020_NCL = 2,
+    /** ICtCp. */
+    VMAFX_COLOR_MATRIX_ICTCP = 3,
+    /**
+     * ITU-R BT.601 (Kr 0.299, Kb 0.114; H.273 matrix coefficients 5 and 6). Added in ABI 0.1.11
+     * (ADR-2146).
+     */
+    VMAFX_COLOR_MATRIX_BT601 = 4,
+    /**
+     * ITU-R BT.2020 constant luminance (H.273 10): declared, the RGB conversion refuses it with
+     * VMAFX_E_NOTSUP (its luma is formed in linear light). Added in ABI 0.1.11.
+     */
+    VMAFX_COLOR_MATRIX_BT2020_CL = 5,
+} VmafxColorMatrix;
+
+/**
+ * Scaling filter of a frame conversion (values equal enum VmafResampleFilter). Added in ABI 0.1.6.
+ * @since 0.1
+ */
+typedef enum VmafxResampleFilter {
+    /** The converter's default (bicubic). */
+    VMAFX_RESAMPLE_DEFAULT = 0,
+    /** Bilinear. */
+    VMAFX_RESAMPLE_BILINEAR = 1,
+    /** Bicubic. */
+    VMAFX_RESAMPLE_BICUBIC = 2,
+    /** Lanczos. */
+    VMAFX_RESAMPLE_LANCZOS = 3,
+} VmafxResampleFilter;
 
 /*
  * VmafxImportFlags: How vmafx_frame_import() may bind the producer's memory. 0, the value of a
@@ -107,6 +262,14 @@ typedef enum VmafxFenceKind {
  * Never a host copy of device memory.
  */
 #define VMAFX_IMPORT_ALLOW_COPY (UINT32_C(1) << 0U)
+
+/*
+ * VmafxVulkanFlags: Properties of the memory of a VMAFX_MEMORY_VULKAN import. Added in ABI 0.1.10.
+ * Bits of a u32 field.
+ * @since 0.1
+ */
+/** Each memory object is a dedicated allocation of its image (VkMemoryDedicatedAllocateInfo). */
+#define VMAFX_VULKAN_DEDICATED (UINT32_C(1) << 0U)
 
 /**
  * Pixels of one picture on a device. Refcounted; one frame may be submitted to several contexts.
@@ -121,12 +284,21 @@ typedef struct VmafxFrame VmafxFrame;
  */
 typedef struct VmafxFramePool VmafxFramePool;
 
+/**
+ * Converts frames of one format into another (pixel format, depth, size, colour). Added in ABI
+ * 0.1.6.
+ * @since 0.1
+ */
+typedef struct VmafxFrameConverter VmafxFrameConverter;
+
 typedef struct VmafxFence VmafxFence;
 typedef struct VmafxImportPlane VmafxImportPlane;
 typedef struct VmafxFrameImport VmafxFrameImport;
-typedef struct VmafxFrameDesc VmafxFrameDesc;
 typedef struct VmafxHostPlanes VmafxHostPlanes;
 typedef struct VmafxFramePlanes VmafxFramePlanes;
+typedef struct VmafxColor VmafxColor;
+typedef struct VmafxFrameDesc VmafxFrameDesc;
+typedef struct VmafxConvertDesc VmafxConvertDesc;
 
 /**
  * Called once, on any thread, when the library has stopped reading the planes of a wrapped host
@@ -238,32 +410,59 @@ struct VmafxFrameImport {
     uint32_t flags;
     /**
      * Called once, on the thread that drops the frame's last reference, after its release fences
-     * were signalled or recorded: a CUDA_EVENT or HIP_EVENT release fence can be waited on from
-     * here (a producer makes its stream wait on it before it reuses the planes, with no host wait);
-     * NULL: none. Added in ABI 0.1.4.
+     * were signalled or recorded: a CUDA_EVENT, HIP_EVENT or SYCL_EVENT release fence can be waited
+     * on from here (a producer makes its stream or queue wait on it before it reuses the planes,
+     * with no host wait); NULL: none. Added in ABI 0.1.7.
      */
     VmafxFrameReleaseCallback release;
-    /** Passed to `release`. Added in ABI 0.1.4. */
+    /** Passed to `release`. Added in ABI 0.1.7. */
     void *user;
+    /**
+     * Further acquire fences, waited on as `acquire` is, for a producer whose planes are written
+     * under several fences (the timeline semaphore of each image of a Vulkan frame with one image
+     * per plane). NONE entries are ignored; a device that waits on the device for none of their
+     * kinds refuses them naming the entry. Added in ABI 0.1.10.
+     */
+    VmafxFence acquire_more[2];
+    /**
+     * VULKAN memory: how each plane's memory was exported. Ignored for other kinds. Added in ABI
+     * 0.1.10. Values: VmafxVulkanHandleType.
+     */
+    uint32_t vulkan_handle_type;
+    /**
+     * VULKAN memory: the tiling of the images (LINEAR for buffers). Added in ABI 0.1.10. Values:
+     * VmafxVulkanTiling.
+     */
+    uint32_t vulkan_tiling;
+    /**
+     * VULKAN memory: properties of the memory objects. Added in ABI 0.1.10. Bits: VmafxVulkanFlags.
+     */
+    uint32_t vulkan_flags;
+    /**
+     * VULKAN memory: PCI domain, bus, device and function of the producer's VkPhysicalDevice
+     * (VK_EXT_pci_bus_info). Memory of another GPU than the device's is refused naming
+     * `desc.vulkan_pci`, never read across devices. Added in ABI 0.1.10.
+     */
+    uint32_t vulkan_pci[4];
     /**
      * RGB, RGBA and BGRA only (ignored for every other layout): the matrix of the Y'CbCr the frame
      * is converted to. UNSPECIFIED is refused naming this field; nothing is guessed (ADR-2146).
-     * Added in ABI 0.1.6. Values: VmafxColorMatrix.
+     * Added in ABI 0.1.11. Values: VmafxColorMatrix.
      */
     uint32_t rgb_matrix;
     /**
-     * RGB layouts only: the range of the R'G'B' samples. Added in ABI 0.1.6. Values:
+     * RGB layouts only: the range of the R'G'B' samples. Added in ABI 0.1.11. Values:
      * VmafxColorRange.
      */
     uint32_t rgb_range;
     /**
-     * RGB layouts only: the transfer characteristic of the R'G'B' samples. Added in ABI 0.1.6.
+     * RGB layouts only: the transfer characteristic of the R'G'B' samples. Added in ABI 0.1.11.
      * Values: VmafxColorTransfer.
      */
     uint32_t rgb_transfer;
     /**
      * RGB layouts only: the range of the Y'CbCr frame made; LIMITED is the range the VMAF models
-     * are trained on. Added in ABI 0.1.6. Values: VmafxColorRange.
+     * are trained on. Added in ABI 0.1.11. Values: VmafxColorRange.
      */
     uint32_t rgb_out_range;
 };
@@ -272,28 +471,9 @@ struct VmafxFrameImport {
 /* clang-format off */
 #define VMAFX_FRAME_IMPORT_INIT                                                                    \
     {.struct_size = sizeof(VmafxFrameImport),                                                      \
-     .acquire = VMAFX_FENCE_INIT}
+     .acquire = VMAFX_FENCE_INIT,                                                                  \
+     .acquire_more = {VMAFX_FENCE_INIT, VMAFX_FENCE_INIT}}
 /* clang-format on */
-
-/**
- * Geometry of a frame. Initialise with VMAFX_FRAME_DESC_INIT.
- * @since 0.1
- */
-struct VmafxFrameDesc {
-    /** Size of this struct as the caller compiled it; set by the _INIT macro. */
-    uint32_t struct_size;
-    /** Pixel layout. Values: VmafxPixelFormat. */
-    uint32_t pix_fmt;
-    /** Bits per component, 8 to 16; above 8 a sample is a little-endian uint16_t. */
-    uint32_t bpc;
-    /** Luma width in pixels. */
-    uint32_t w;
-    /** Luma height in pixels. */
-    uint32_t h;
-};
-
-/** Initialiser that sets `struct_size`; every other field is zero. */
-#define VMAFX_FRAME_DESC_INIT {.struct_size = sizeof(VmafxFrameDesc)}
 
 /**
  * Caller-owned host planes a frame borrows. Initialise with VMAFX_HOST_PLANES_INIT.
@@ -343,6 +523,86 @@ struct VmafxFramePlanes {
 
 /** Initialiser that sets `struct_size`; every other field is zero. */
 #define VMAFX_FRAME_PLANES_INIT {.struct_size = sizeof(VmafxFramePlanes)}
+
+/**
+ * Colour description of a frame; embedded by value, so it never grows. Added in ABI 0.1.6.
+ * @since 0.1
+ */
+struct VmafxColor {
+    /** Code-value range. Values: VmafxColorRange. */
+    uint32_t range;
+    /** Primaries. Values: VmafxColorPrimaries. */
+    uint32_t primaries;
+    /** Transfer characteristic. Values: VmafxColorTransfer. */
+    uint32_t trc;
+    /** Matrix coefficients. Values: VmafxColorMatrix. */
+    uint32_t matrix;
+};
+
+/**
+ * Geometry and colour of a frame. Initialise with VMAFX_FRAME_DESC_INIT.
+ * @since 0.1
+ */
+struct VmafxFrameDesc {
+    /** Size of this struct as the caller compiled it; set by the _INIT macro. */
+    uint32_t struct_size;
+    /** Pixel layout. Values: VmafxPixelFormat. */
+    uint32_t pix_fmt;
+    /** Bits per component, 8 to 16; above 8 a sample is a little-endian uint16_t. */
+    uint32_t bpc;
+    /** Luma width in pixels. */
+    uint32_t w;
+    /** Luma height in pixels. */
+    uint32_t h;
+    /**
+     * Colour of the frame, read when a model's `conversion_target` converts it before scoring.
+     * Every member UNKNOWN: the frame carries none and takes the context's default
+     * (vmafx_context_set_default_color()). Geometry-only uses (vmafx_feature_resolve()) ignore it.
+     * Added in ABI 0.1.6.
+     */
+    VmafxColor color;
+};
+
+/** Initialiser that sets `struct_size`; every other field is zero. */
+#define VMAFX_FRAME_DESC_INIT {.struct_size = sizeof(VmafxFrameDesc)}
+
+/**
+ * What a frame converter reads and writes. Initialise with VMAFX_CONVERT_DESC_INIT. Added in ABI
+ * 0.1.6.
+ * @since 0.1
+ */
+struct VmafxConvertDesc {
+    /** Size of this struct as the caller compiled it; set by the _INIT macro. */
+    uint32_t struct_size;
+    /** Pixel format of the frames the converter reads. Values: VmafxPixelFormat. */
+    uint32_t src_pix_fmt;
+    /** Bits per component it reads, 8 to 16. */
+    uint32_t src_bpc;
+    /** Luma width it reads. */
+    uint32_t src_w;
+    /** Luma height it reads. */
+    uint32_t src_h;
+    /**
+     * Colour of the frames it reads; an UNKNOWN member takes the converter's default for the frame
+     * size.
+     */
+    VmafxColor src_color;
+    /** Pixel format it writes. Values: VmafxPixelFormat. */
+    uint32_t dst_pix_fmt;
+    /** Bits per component it writes, 8 to 16. */
+    uint32_t dst_bpc;
+    /** Luma width it writes; 0 keeps the source width. */
+    uint32_t dst_w;
+    /** Luma height it writes; 0 keeps the source height. */
+    uint32_t dst_h;
+    /** Colour it writes. */
+    VmafxColor dst_color;
+    /** Scaling filter. Values: VmafxResampleFilter. */
+    uint32_t filter;
+};
+
+/** Initialiser that sets `struct_size`; every other field is zero. */
+#define VMAFX_CONVERT_DESC_INIT {.struct_size = sizeof(VmafxConvertDesc)}
 
 /**
  * Allocate a host frame on `device` (NULL: the CPU) with zeroed planes; fill them through
@@ -411,6 +671,20 @@ VMAFX_EXPORT VmafxStatus vmafx_frame_release_fence(VmafxFrame *frame, uint32_t k
                                                    VmafxFence *out, VmafxError **error);
 
 /**
+ * Signal a fence of the producer's once the last reference of the frame is gone, in every context
+ * it was submitted to: the device signals `signal` behind the frame's last reader, before the
+ * frame's release callback runs, so the producer reuses its memory after a wait on its own fence.
+ * VULKAN_SEMAPHORE: the semaphore is signalled to `value` on the device (a CUDA device; the
+ * producer submits its next write waiting for that value). Call it while holding a reference,
+ * before the frame is submitted; up to 3 fences per frame. The fence is borrowed (the library
+ * duplicates its descriptor). A kind the frame's device cannot signal is VMAFX_E_NOTSUP naming it.
+ * Added in ABI 0.1.10.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_frame_signal_on_release(VmafxFrame *frame, const VmafxFence *signal,
+                                                       VmafxError **error);
+
+/**
  * A new, unsignalled fence of `kind` on `device` (NULL: the CPU) for a producer to signal, for
  * example a HOST fence a producer thread signals with vmafx_fence_signal() after writing a frame.
  * The caller destroys it.
@@ -468,6 +742,34 @@ VMAFX_EXPORT VmafxStatus vmafx_frame_pool_acquire(VmafxFramePool *pool, VmafxFra
  * @since 0.1
  */
 VMAFX_EXPORT void vmafx_frame_pool_destroy(VmafxFramePool *pool);
+
+/**
+ * A converter for frames of `desc.src`. VMAFX_E_NOTSUP in a build without the conversion library
+ * (zimg); VMAFX_E_INVALID names a format, depth, size or colour it cannot convert. Added in ABI
+ * 0.1.6.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_frame_converter_create(const VmafxConvertDesc *desc,
+                                                      VmafxFrameConverter **out,
+                                                      VmafxError **error);
+
+/**
+ * Convert host frame `src` (read only, its geometry that of the converter) into a new host frame
+ * with one reference the caller holds. Added in ABI 0.1.6.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_frame_convert(VmafxFrameConverter *converter, const VmafxFrame *src,
+                                             VmafxFrame **out, VmafxError **error);
+
+/**
+ * Release a converter; VMAFX_E_INVALID for NULL, VMAFX_E_NOTSUP in a build without the conversion
+ * library. Added in ABI 0.1.6.
+ * @since 0.1
+ */
+VMAFX_EXPORT VmafxStatus vmafx_frame_converter_destroy(VmafxFrameConverter *converter,
+                                                       VmafxError **error);
+
+/* NOLINTEND(modernize-use-using,performance-enum-size) */
 
 #ifdef __cplusplus
 }

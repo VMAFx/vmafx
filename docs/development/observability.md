@@ -1,17 +1,20 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # Observability — VMAFX Go services
 
-This page is the operator guide for the telemetry the VMAFX Go binaries
-emit: what each binary traces, which environment variables switch the
-OpenTelemetry (OTel) export on, and how to point every binary at a
-collector. It covers all seven binaries under `cmd/`:
+This page is the reference for the telemetry the VMAFX Go binaries emit:
+what each binary traces, which environment variables switch the
+OpenTelemetry (OTel) export on, how to point every binary at a collector, and
+how the metrics, dashboards and rules are generated and checked. To install
+and use the monitoring, start with the
+[observability operator guide](../observability/index.md). This page
+covers all seven binaries under `cmd/`:
 `vmafx-server`, `vmafx-controller`, `vmafx-node`, `vmafx-operator`,
 `vmafx-mcp`, `vmafx-tune`, and `vmafx-ort-runner`.
 
 | Signal      | Mechanism                                             | Status                                                                                                                 |
 |-------------|-------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------|
 | **Logs**    | `log/slog` via golusoris's log module (stderr/stdout) | Production, every binary. Not exported over OTLP (no slog bridge is wired; see [Logs](#logs)).                         |
-| **Metrics** | Prometheus `/metrics` endpoint                        | Production on `vmafx-server` and `vmafx-controller` (`pkg/observability.Metrics`).                                     |
+| **Metrics** | Prometheus `/metrics` endpoint                        | Production on `vmafx-server`, `vmafx-controller` and `vmafx-node`, built from `pkg/observability/metricdef` (see [Metrics](#metrics)). |
 | **Traces**  | OpenTelemetry, OTLP/gRPC → your collector             | Production on every binary except `vmafx-ort-runner` (exempt, see [below](#vmafx-ort-runner-is-exempt)). Off by default. |
 
 Design decisions: [ADR-0782](../adr/0782-otel-tracing.md) (span and
@@ -71,7 +74,7 @@ never prevents a binary from starting or serving.
    through:
 
     ```bash
-    export OTEL_EXPORTER_OTLP_ENDPOINT=localhost:4317
+    export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
     ./vmafx-server
     ```
 
@@ -98,7 +101,7 @@ workload, so the endpoint is one value:
 
 ```bash
 helm upgrade --install vmafx ./deploy/helm/vmafx \
-  --set env.OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector.observability:4317
+  --set env.OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector.observability:4317
 ```
 
 `otelCollector.enabled=true` renders the collector **ConfigMap**
@@ -115,25 +118,20 @@ own manifests) and turns them into
 ## Configuration reference
 
 All binaries read the same keys. The vmafx keys are golusoris config
-keys under the `VMAFX_` prefix (`VMAFX_OTEL_SAMPLE_RATIO` → `otel.sample.ratio`);
-the standard `OTEL_*` variables are read by the OTel SDK / exporter
-itself, or by `bootstrap.Base` where noted.
+keys under the `VMAFX_` prefix (`VMAFX_OTEL_SAMPLE_RATIO` → `otel.sample.ratio`)
+and are rows of every Go binary's generated
+[environment table](../usage/env-vars.md#go-services-golusoris) (enable switch,
+endpoint, TLS, service name, version and namespace, sample ratio, per-signal
+export). The standard `OTEL_*` variables below are read by the OTel SDK and
+exporter themselves, or by `bootstrap.Base` where noted.
 
-| Variable                                             | Default                          | Meaning                                                                                                                                        |
-|------------------------------------------------------|----------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------|
-| `OTEL_EXPORTER_OTLP_ENDPOINT`                        | _(unset → no-op)_                | OTLP/gRPC collector target (`host:4317`). Per-signal variants `OTEL_EXPORTER_OTLP_{TRACES,METRICS,LOGS}_ENDPOINT` also count as "configured". |
-| `VMAFX_OTEL_ENDPOINT`                                | _(unset)_                        | Same target through the vmafx config key. Either variable switches export on.                                                                  |
-| `VMAFX_OTEL_INSECURE`                                | `true`                           | Plaintext gRPC to the collector. `false` dials with TLS.                                                                                       |
-| `VMAFX_OTEL_ENABLED`                                 | `true`                           | Master switch. `false` is a no-op even with an endpoint.                                                                                      |
-| `OTEL_SDK_DISABLED`                                  | `false`                          | OTel-standard kill switch; `true` forces the no-op providers.                                                                                  |
-| `OTEL_SERVICE_NAME`                                  | _(binary name)_                  | `service.name` resource attribute (honoured by `bootstrap.Base`).                                                                              |
-| `VMAFX_OTEL_SERVICE_NAME`                            | _(binary name)_                  | Same attribute through the vmafx key; wins over `OTEL_SERVICE_NAME`.                                                                           |
-| `VMAFX_OTEL_SERVICE_VERSION`                         | `pkg/version` (`--version` text) | `service.version` resource attribute.                                                                                                          |
-| `VMAFX_OTEL_SERVICE_NAMESPACE`                       | _(unset)_                        | `service.namespace` resource attribute.                                                                                                        |
-| `VMAFX_OTEL_SAMPLE_RATIO`                            | `1.0`                            | Head-based, parent-respecting trace sample ratio in `[0.0, 1.0]`. **`OTEL_TRACES_SAMPLER_ARG` is not read** — golusoris installs its own sampler. |
-| `VMAFX_OTEL_EXPORT_TRACES` / `_METRICS` / `_LOGS`    | `true`                           | Per-signal export toggles, e.g. `VMAFX_OTEL_EXPORT_LOGS=false` when the collector rejects the logs signal.                                    |
-| `OTEL_RESOURCE_ATTRIBUTES`                           | _(unset)_                        | Extra `key=value` resource attributes (OTel standard).                                                                                          |
-| `POD_NAME`, `POD_NAMESPACE`, `POD_IP`, `NODE_NAME`, `SERVICE_ACCOUNT` | _(unset)_       | Mapped to `k8s.*` resource attributes when present (Kubernetes downward API).                                                                  |
+| Variable                                                              | Default                          | Meaning                                                                                                                                                                                                           |
+|-----------------------------------------------------------------------|----------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `OTEL_EXPORTER_OTLP_ENDPOINT`                                         | _(unset → no-op)_                | OTLP/gRPC collector target as a URL (`http://host:4317`); without a scheme the SDK sends to `localhost:4317`. Per-signal variants `OTEL_EXPORTER_OTLP_{TRACES,METRICS,LOGS}_ENDPOINT` also count as "configured". |
+| `OTEL_SDK_DISABLED`                                                   | `false`                          | OTel-standard kill switch; `true` forces the no-op providers.                                                                                                                                                     |
+| `OTEL_SERVICE_NAME`                                                   | _(binary name)_                  | `service.name` resource attribute (honoured by `bootstrap.Base`).                                                                                                                                                 |
+| `OTEL_RESOURCE_ATTRIBUTES`                                            | _(unset)_                        | Extra `key=value` resource attributes (OTel standard).                                                                                                                                                            |
+| `POD_NAME`, `POD_NAMESPACE`, `POD_IP`, `NODE_NAME`, `SERVICE_ACCOUNT` | _(unset)_                        | Mapped to `k8s.*` resource attributes when present (Kubernetes downward API).                                                                                                                                     |
 
 Fixed by the module (not configurable): 5 s trace batch timeout, 15 s
 metric export interval, `ParentBased(TraceIDRatioBased(ratio))` sampler.
@@ -193,6 +191,207 @@ span: `pkg/ai.Registry.Infer` wraps the subprocess in
 same name, so ONNX latency is visible in every trace without the runner
 participating.
 
+## Metrics
+
+Three binaries serve a Prometheus `/metrics` page on their HTTP listener:
+
+| Binary | Listener (`VMAFX_HTTP_ADDR`) | Families |
+|--------|------------------------------|----------|
+| `vmafx-server` | `:8080` | Score requests, errors and latency; the quality family; ScoreStream sessions (open, ended by outcome, frames, duration); `vmafx_build_info`. |
+| `vmafx-controller` | `:8080` | The server's request and quality families, plus the job queue: submitted, completed, failed, cancelled and requeued jobs, pending and running jobs and the age of the oldest pending job per tenant, queue wait and time to result, live nodes. |
+| `vmafx-node` | `:9090` | Backend and vendor, slots, running jobs, jobs by backend and outcome, job run time, GPU memory per device, ScoreStream sessions. |
+
+Each also serves the Go runtime and process series of the Prometheus client
+library. The [metric reference](../observability/metrics.md) lists every
+family with its type, unit, labels and cardinality bound.
+
+```bash
+curl -s localhost:8080/metrics | grep '^vmafx_controller_jobs_pending'
+# vmafx_controller_jobs_pending{tenant="acme"} 3
+```
+
+All names come from one definition, `pkg/observability/metricdef`: the
+services build their collectors from it, the dashboards are generated from it
+and the reference page is rendered from it. A family is added there first,
+then registered by the binaries its `Emitters` name; a test per binary fails
+when its `/metrics` page and the definition disagree.
+
+### Values read at scrape time
+
+The controller's queue families and the node's GPU memory are read when
+Prometheus scrapes, within 2 seconds. A read that fails leaves its own
+families out of that scrape, serves the rest of the page, and counts in
+`vmafx_metrics_read_errors_total{source}` (`queue`, `device_memory`). A node
+reads GPU memory from `nvidia-smi` on a CUDA backend and from the amdgpu
+sysfs files (`mem_info_vram_used`, `mem_info_vram_total`) on a HIP backend;
+the CUDA image needs the driver utilities (`NVIDIA_DRIVER_CAPABILITIES`
+including `utility`). The Intel `xe` driver and Metal expose no device memory
+counter an unprivileged process can read: use the vendor exporter dashboards.
+
+### Label cardinality
+
+Every label is bounded. A label with a closed value set (`backend`,
+`outcome`, `reason`, `vendor`, `profile`) maps any other value to `other`. An
+open label reports at most a fixed number of distinct values per process,
+`tenant` 256 and `model` 64, and merges every later value into `other`:
+counts add up, the age of the oldest job takes the oldest, nothing is
+dropped. An empty value (a request to `vmafx-server`, which has no tenants)
+reads `none`. At these limits the largest family, `vmafx_quality_score`, is
+bounded by 634 790 series per process; a deployment with a few tenants and
+models serves a few hundred. The `profile` label of the quality family reads
+`none` until scoring requests carry a profile.
+
+### Per-tenant series
+
+The controller's job counters and queue gauges carry a `tenant` label. A
+query written against the totals keeps working once wrapped in `sum()`:
+`sum(vmafx_controller_jobs_pending)`.
+
+## Dashboards
+
+The dashboards under `deploy/grafana/dashboards/` are generated in Go with
+the [Grafana Foundation SDK](https://github.com/grafana/grafana-foundation-sdk)
+(v0.0.20, Apache-2.0) from the metric definition, never edited by hand:
+
+```bash
+go run ./tools/obsgen -write   # regenerate dashboards and the metric reference
+go run ./tools/obsgen -check   # exit 1 when a committed file is stale
+```
+
+To use one, import its JSON in Grafana (_Dashboards → New → Import_) and pick
+your Prometheus data source in the **Prometheus data source** variable. The
+**Job** and **Instance** variables list the scrape jobs and targets that
+serve `vmafx_build_info`; **Tenant** lists the tenants that submitted jobs.
+Each restart of a component is marked by the _Deploys and restarts_
+annotation with the version it started, so a change in a graph can be read
+against a rollout.
+
+A test (`TestEveryDashboardQueryIsEmitted` in `pkg/observability/obsgen`)
+fails when any panel, annotation or variable of a shipped dashboard queries a
+series that no binary emits; the dashboard as it was before generation is
+kept as its negative fixture. The same test refuses an equality matcher on a
+whole-number `le` or `quantile` value such as `le="70"`: Prometheus 3 stores
+that bucket as `le="70.0"`, so the matcher selects nothing. The generated
+queries select a bucket with `le=~"70(\\.0)?"` (`obsgen.LeMatcher`), which
+matches the label as Prometheus 2 and Prometheus 3 store it.
+
+The [dashboard tour](../observability/dashboards.md) describes each
+dashboard for operators: the question every row answers and how to read it.
+The SLO report, the usage and cost dashboard and the capacity dashboard read
+the settings series of the rules (see
+[Alerts and recording rules](#alerts-and-recording-rules)).
+
+### Linting
+
+Every generated dashboard passes Grafana's
+[dashboard-linter](https://github.com/grafana/dashboard-linter) with
+`--strict` and no exclusions; the go-ci workflow runs it on each change:
+
+```bash
+make lint-dashboards   # scripts/ci/lint-dashboards.sh: the pinned release, sha256-checked
+```
+
+The version and the checksum of its linux_amd64 release live in
+`build-config.env` (`DASHBOARD_LINTER_VERSION`,
+`DASHBOARD_LINTER_LINUX_AMD64_SHA256`); on another platform set
+`DASHBOARD_LINTER` to a binary of that version.
+
+## Alerts and recording rules
+
+`deploy/prometheus/vmafx-rules.yaml` holds the recording rules and alerts,
+generated from the same definitions as the dashboards
+(`go run ./tools/obsgen -write`), with the default settings. Load it into
+Prometheus as a rule file (`rule_files:` in `prometheus.yml`), or let the Helm
+chart install it as a PrometheusRule
+([monitoring on Kubernetes](../observability/kubernetes.md)). The thresholds
+below are the defaults.
+
+| Alert | Severity | Fires when | Runbook |
+|-------|----------|------------|---------|
+| `VMAFxComponentDown` | critical | a target that served `vmafx_build_info` in the last hour has been unscrapable for 5 minutes | [component down](../observability/runbooks/vmafx-component-down.md) |
+| `VMAFxNoLiveNodes` | critical | jobs are pending and no node is registered, for 10 minutes | [no live nodes](../observability/runbooks/vmafx-no-live-nodes.md) |
+| `VMAFxQueueAging` | warning | a tenant's oldest pending job is older than 30 minutes, for 15 minutes | [queue aging](../observability/runbooks/vmafx-queue-aging.md) |
+| `VMAFxJobErrorBudgetBurn` | critical, warning | controller jobs fail fast enough to burn the 99 % objective's budget (14.4x over 1h and 5m; 6x over 6h and 30m) | [job error budget](../observability/runbooks/vmafx-job-error-budget-burn.md) |
+| `VMAFxScoreErrorBudgetBurn` | critical, warning | the same for Score request errors | [score error budget](../observability/runbooks/vmafx-score-error-budget-burn.md) |
+| `VMAFxScoreLatencyBudgetBurn` | critical, warning | the same for Score requests slower than 30 seconds | [score latency budget](../observability/runbooks/vmafx-score-latency-budget-burn.md) |
+| `VMAFxScoreRegression` | warning | an hour's median score of a tenant and model is 5 points below the previous day's, with at least 20 scores, for an hour | [score regression](../observability/runbooks/vmafx-score-regression.md) |
+| `VMAFxMetricsReadErrors` | warning | an instance fails to read its queue or GPU memory values for 15 minutes | [metrics read errors](../observability/runbooks/vmafx-metrics-read-errors.md) |
+
+Every alert carries a `runbook_url` annotation pointing at its page under
+[alert runbooks](../observability/runbooks/index.md). The recording rules
+(`vmafx:job_failure_ratio:rate<window>`, `vmafx:score_error_ratio:...`,
+`vmafx:score_slow_ratio:...` for each window of the burn rates, by default
+1h, 5m, 6h and 30m; the settings series of the dashboards,
+`vmafx:slo_objective{slo}`, `vmafx:slo_events:rate5m{slo}`,
+`vmafx:slo_bad_events:rate5m{slo}`, `vmafx:price_job_second` and
+`vmafx:price_job`, one sample per scraped VMAFx instance so a dashboard selects
+them by job and instance;
+`vmafx:quality_score:p50_1h`, `vmafx:quality_score:count_1h`) feed the
+alerts and may be queried like any other series.
+
+`deploy/prometheus/vmafx-rules.test.yaml` is the promtool unit test of the
+rule file, generated next to it: every alert has a case where it fires and
+one where it does not.
+
+```bash
+make check-prometheus-rules   # promtool check rules + promtool test rules, pinned release
+```
+
+The objectives (by default 99 % for jobs, Score errors and Score latency
+within 30 seconds), the burn-rate windows and factors and the other alerts'
+thresholds are settings ([ADR-2399](../adr/2399-observability-slo-settings-as-values.md)):
+`monitoring.slo`, `monitoring.burnRates` and `monitoring.alerts` in the Helm
+chart's values, whose PrometheusRule template `obsgen` generates from the
+same rule code. A burn threshold is the PromQL expression
+`(factor * (1 - objective))` of the values, so the chart and a rule file
+rendered from the same values agree to the character. For Prometheus without
+the operator, render the rule file from a values file:
+
+```bash
+go run ./tools/obsgen -render-rules -values monitoring.yaml -out vmafx-rules.yaml
+```
+
+`obsgen.DefaultSettings` (`pkg/observability/obsgen/settings.go`) holds the
+defaults; `go run ./tools/obsgen -write` writes them into the block between
+the `# BEGIN obsgen monitoring settings` and `# END obsgen monitoring
+settings` markers of `deploy/helm/vmafx/values.yaml`. The chart's
+`values.schema.json` and `Settings.Validate` refuse the same values
+(`TestValidateAgreesWithTheChartSchema`), and
+`scripts/ci/tests/test_helm_observability.py` checks that the chart rendered
+with the defaults has the groups of the rule file, that a chart rendered with
+an override has the groups `-render-rules` writes for it, and that promtool
+accepts both.
+
+## Compose example and smoke test
+
+`deploy/compose/observability/` runs the three components with Prometheus,
+the OpenTelemetry Collector, Tempo, Loki and Grafana
+([Compose guide](../observability/compose.md)). Its `rules` service renders
+the rule file from `monitoring-values.yaml` with
+`go run ./tools/obsgen -render-rules`; Grafana reads the generated dashboards
+and the generated data source provisioning
+(`deploy/grafana/provisioning/datasources/vmafx.yaml`, `obsgen.PrometheusUID`,
+`TempoUID`, `LokiUID`).
+
+```bash
+scripts/ci/observability-compose-smoke.sh --build   # images from the checkout, then the smoke test
+make observability-compose-smoke                    # images already built
+```
+
+CI runs it in the non-required workflow _Observability Smoke_
+(`.github/workflows/observability-compose.yml`): nightly, on dispatch, and on
+a ready pull request labelled `run-observability-smoke`, through the
+`observability` job of `.github/workflows/pr-label-lanes.yml`.
+
+The smoke test (`tools/obssmoke`) runs in the Compose network. It reads every
+dashboard through `obsgen.DashboardQueries`, the parser the dashboard check
+uses, sets every variable to "All" and the time-range variables to `10m`, and
+requires data from each Prometheus query after its traffic; the queries that
+cannot have data on a CPU-only stack are listed with their reason in
+`tools/obssmoke/exemptions.go`, and an exempted query that returns data fails
+the run. `obsgen -write` writes world-readable files (`0644`), because the
+example mounts them into containers that run as other users.
+
 ## Logs
 
 Logs stay on the golusoris slog stream (stderr for `vmafx-mcp` on stdio,
@@ -200,6 +399,11 @@ stdout otherwise). The OTLP log exporter is initialised alongside traces
 and metrics but no slog → OTel bridge is wired (ADR-0927 Phase 3), so no
 log records are exported; set `VMAFX_OTEL_EXPORT_LOGS=false` to skip the
 exporter entirely if the collector has no logs pipeline.
+
+Request-scoped server log lines share one field set (`request_id`, `rpc`,
+`route`, `model`, `backend`, `duration_s`, `error`); `request_id` is the trace
+id when the request has a span, so a log line and its trace join on one value.
+The field table is in [gRPC service: Logging](../server/grpc.md#logging).
 
 `vmafx-server` and `vmafx-controller` also log `write JSON response` or
 `write probe response` when a client disconnect or socket failure prevents an
@@ -237,6 +441,7 @@ CGO_LDFLAGS="-L$PWD/core/build-cpu/src -lvmaf -lm" \
 - [ADR-1095](../adr/1095-otel-grpc-trace-context.md) — gRPC trace-context propagation.
 - [ADR-1119](../adr/1119-golusoris-go-framework-adoption.md) — golusoris fx adoption (`otel.Module`, `bootstrap.Base`).
 - [ADR-1134](../adr/1134-vmafx-ort-runner-in-tree.md) — why `vmafx-ort-runner` stays framework-free.
-- [OpenTelemetry schema page](../observability/otel.md) — metrics instruments, cardinality budget, Grafana dashboard.
+- [OpenTelemetry schema page](../observability/otel.md) — span names and attributes, OTel instruments.
+- [Metric reference](../observability/metrics.md) — every Prometheus family, generated from `pkg/observability/metricdef`.
 - [`internal/app/bootstrap/bootstrap.go`](../../internal/app/bootstrap/bootstrap.go) — the shared composition stanza.
 - [`pkg/observability/otel_instruments.go`](../../pkg/observability/otel_instruments.go) — span names and attribute keys.

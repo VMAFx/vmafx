@@ -1,11 +1,9 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-0362 — K150K-A corpus integration: FR-from-NR extraction of FULL_FEATURES
 
-| Field   | Value                            |
-|---------|----------------------------------|
-| Status  | Accepted                         |
-| Date    | 2026-05-09                       |
-| Tags    | ai, training-data, corpus, k150k, full-features, fork-local |
+- **Status**: Accepted
+- **Date**: 2026-05-09
+- **Tags**: ai, training-data, corpus, k150k, full-features, fork-local
 
 ## Context
 
@@ -78,3 +76,12 @@ Hardware: RTX 4090 via `build-cpu/tools/vmaf --backend cuda` (fork build).
 - [Research-0026](../research/0026-full-features-set.md) — FULL_FEATURES 22-feature set.
 - [Research-0067](../research/0067-k150k-corpus-integration.md) — companion digest.
 - [ADR-0108](0108-deep-dive-deliverables-rule.md) — six deep-dive deliverables rule.
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 78: `[Research-0026](./research/0026-full-features-set.md) —
+  FULL_FEATURES 22-feature set.`: Cited research document does not exist on
+  master.

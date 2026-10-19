@@ -135,3 +135,13 @@ explicit fallback signal to the slow Phase A grid (ADR-0276
   selection (this ADR's verify-pass enabler).
 - [Research-0076](../research/0076-vmaf-tune-fast-path-prod-wiring.md)
   — companion digest.
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 59: `future ensemble / probabilistic-head migrations (ADR-0279
+  follow-up) land in one place.`: Cites ADR-0279 for ensemble /
+  probabilistic-head, but ADR-0279 is libaom-av1 codec adapter; probabilistic
+  head is ADR-0393.

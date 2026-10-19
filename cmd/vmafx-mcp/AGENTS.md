@@ -5,7 +5,7 @@ Go MCP server: exposes 24 tools (`vmaf_score`, `list_models`, ...) to MCP client
 
 ## Composition root (golusoris fx, ADR-1119 Phase-1 PR-5)
 
-`main.go` = `fx.New(...).Run()` over `internal/app/bootstrap.Base` (golusoris.Core = config + slog + clock + id + validate + crypto, plus `otel.Module`, build-version supply). Mirrors sibling migrations (`cmd/vmafx-server`, `cmd/vmafx-node`). Shape:
+`main.go` = `fx.New(...).Run()` over `internal/app/bootstrap.Base` (`bootstrap.Core` = golusoris config + slog + clock + id + validate, plus `otel.Module`, build-version supply). Mirrors sibling migrations (`cmd/vmafx-server`, `cmd/vmafx-node`). Shape:
 
 ```go
 fx.New(
@@ -19,10 +19,9 @@ fx.New(
 
 Facts:
 
-- **MCP server NOT golusoris server module.** golusoris ships no MCP module -> no `golusoris.HTTP` / `grpc.Module` in graph. Transport (stdio or streamable-HTTP from config) owned in `runMCPTransport` fx lifecycle hook: `OnStart` launches goroutine, `OnStop` drains. If golusoris adds MCP module later, fold hook into module. Do not express transport as framework module.
+- **MCP server NOT golusoris server module.** golusoris ships no MCP module -> no `bootstrap.HTTP` / `grpc.Module` in graph. Transport (stdio or streamable-HTTP from config) owned in `runMCPTransport` fx lifecycle hook: `OnStart` launches goroutine, `OnStop` drains. If golusoris adds MCP module later, fold hook into module. Do not express transport as framework module.
 - **`buildServer` domain seam.** `buildMCPServer` = thin fx provider calling `buildServer(*slog.Logger) (*mcp.Server, error)` (`server.go`). `*config.Config` param exists for fx signature / config-driven wiring; `buildServer` itself needs only logger. Tests call `buildServer(nil)` directly and must check error. Error return load-bearing: only path tool failing schema marshal stops process instead of serving without argument validation (invariant #19). Do not widen signature; do not reduce to single return value.
 - **Config keys (env prefix `VMAFX_`, `.` delimiter — `_` becomes `.`):** `VMAFX_MCP_TRANSPORT` -> `mcp.transport` (default `stdio`); `VMAFX_MCP_HTTP_ADDR` -> `mcp.http.addr` (default `:3000`, full listen address). `VMAF_BIN` and `VMAFX_MCP_DIRECT` read directly by tool handlers via `os.Getenv`, NOT koanf — contract unchanged.
-- **Interim env bridge.** `main()` bridges `VMAFX_LOG_LEVEL → LOG_LEVEL` and `VMAFX_LOG_FORMAT → LOG_FORMAT` before `fx.New` (golusoris#234, v0.4.0 log module reads bare `LOG_LEVEL`). Delete lockstep with sibling binaries once carrying golusoris tag lands.
 
 ## Rebase-sensitive invariants
 
@@ -67,3 +66,17 @@ Facts:
 19. **Every tool reaches server through `registerTools` grouped helpers** (`tools.go`). `registerTools` list of `registerXTools(srv)` calls; tool registrations live in helpers in original order. New tool must go into one (or new helper called by `registerTools`). A `register*` function nothing calls registers nothing. Invariant #1 parity test catches dropped Python or declared Go-only tool. Schema literals marshalled by `toolRegistrar.add`, not tool literal; schema failing marshal cannot reach registered tool: `add` retains error, registers nothing, skips later registrations; `registerTools` returns error, `buildServer` fails. Never substitute default schema for failed marshal: permissive `{"type":"object"}` accepts every argument map, tool stays reachable with declared contract silently disabled, parity tests miss because they compare registered tools only. `cmd/vmafx-mcp/tool_schema_test.go` pins outcome.
 
 20. **Auto-dispatch backend identity comes from CLI receipt, never metric counts.** `decodeVmafOutput` accepts concrete top-level `backend_used` value (`cpu`, `cuda`, `sycl`, `hip`, or `metal`) when request used `auto`; missing, generic `gpu`, `auto`, non-string, and unknown receipts become `unknown`. Metric-key counts are run observations and move as extractors change. Keep non-object JSON rejection before response annotation. Explicit subprocess requests echo requested backend; direct-cgo path remains separate, keeps `cpu (direct cgo)`.
+
+21. **Scoring schemas + argv from generated options** (RC4 WP8, ADR-2044).
+    `vmaf_score`, `vmaf_score_encoded`, `describe_worst_frames` registered via
+    `toolRegistrar.addGenerated`: schema = `pkg/scoreopts` `options.gen.json`
+    (generated from `core/api/vmafx.toml`, byte-identical to Python copy
+    `mcp-server/vmaf-mcp/src/vmaf_mcp/options.gen.json`). Validation =
+    `doc.FromMCP` (bounds, enums, reserved); flags = `cliFlag()` /
+    `doc.ExtraArgs` / `scoreExtras.modelSpec`. Hand-written only: tiny_device
+    vs dnn_ep fold, csv/sub/output_fmt agreement, no_reference needs
+    tiny_model, backend -> `--no_<sibling>`. Do not bring back
+    `scoringExtraProperties` or hand flag lists. Omitted `model` =
+    `version=` + `library_defaults[VMAF_DEFAULT_MODEL_VERSION]`, never a
+    literal. New scoring argument = definition entry + regenerate + both
+    servers unchanged unless it needs a hand rule.

@@ -41,7 +41,7 @@
  */
 
 #include <hip/hip_runtime.h>
-#include <stdint.h>
+#include <cstdint>
 
 #include "hip/integer_adm_hip.h"
 #include "adm_cm_accumulator.h"
@@ -51,7 +51,9 @@
 
 /* AMD HIP atomicAdd on 64-bit unsigned: native on gfx90a/gfx10+, CAS
  * fallback on older GCN. */
-typedef unsigned long long int uint64_cu;
+using uint64_cu = unsigned long long int;
+
+namespace {
 
 /* adm_csf_den_fold(): the row total of the block, rounded once and added to
  * the band accumulator. Every thread of the block must call this, because it
@@ -66,8 +68,8 @@ __device__ __forceinline__ void adm_csf_den_fold_row(uint64_cu thread_sum, uint3
     if (threadIdx.x != 0)
         return;
     uint64_cu row_total = 0;
-    for (int t = 0; t < ADM_CSF_DEN_THREADS; ++t)
-        row_total += thread_sums[t];
+    for (const uint64_cu term : thread_sums)
+        row_total += term;
     atomicAdd(reinterpret_cast<uint64_cu *>(band_accum),
               (uint64_cu)adm_csf_den_round_row_total(row_total, add_shift_accum, shift_accum));
 }
@@ -86,6 +88,8 @@ __device__ __forceinline__ const Sample *adm_csf_den_row(const Band &src, int to
         return src.band_d + offset;
     }
 }
+
+} /* namespace */
 
 extern "C" {
 

@@ -1,6 +1,7 @@
 /**
+ *  Copyright 2016-2020 Netflix, Inc.
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: EUPL-1.2
+ *  SPDX-License-Identifier: EUPL-1.2 AND BSD-2-Clause-Patent
  *
  *  The host side of integer_adm_metal that does not touch the Metal API
  *  (integer_adm_metal_host.h). Every fixed-point term and every score formula
@@ -98,6 +99,13 @@ size_t iadm_metal_buffer_bytes(const IadmMetalGeometry *g, IadmMetalBuffer buffe
 
 int iadm_metal_check_options(const IadmMetalOptions *o)
 {
+    assert(o != NULL);
+    const int geom_err =
+        adm_viewing_geometry_check("adm_metal", o->adm_norm_view_dist, o->adm_ref_display_height);
+    if (geom_err) {
+        return geom_err;
+    }
+
     for (int scale = 0; scale < IADM_METAL_NUM_SCALES; ++scale) {
         const AdmCsfFactors f =
             adm_csf_factors(scale, o->adm_norm_view_dist, o->adm_ref_display_height,
@@ -289,6 +297,27 @@ unsigned iadm_metal_stages(const IadmMetalOptions *o, const IadmMetalGeometry *g
     return n;
 }
 
+static bool iadm_is_dwt(IadmMetalKernel entry)
+{
+    return entry == IADM_METAL_DWT_VERT_8BPC || entry == IADM_METAL_DWT_VERT_16BPC ||
+           entry == IADM_METAL_DWT_VERT_S1 || entry == IADM_METAL_DWT_VERT_S123 ||
+           entry == IADM_METAL_DWT_HORI_S0 || entry == IADM_METAL_DWT_HORI_S123;
+}
+
+unsigned iadm_metal_view_stages(const IadmMetalOptions *o, const IadmMetalGeometry *g, int scale,
+                                unsigned view, IadmMetalStage stages[IADM_METAL_MAX_STAGES])
+{
+    IadmMetalStage all[IADM_METAL_MAX_STAGES];
+    const unsigned count = iadm_metal_stages(o, g, scale, all);
+    unsigned n = 0u;
+    for (unsigned i = 0u; i < count; ++i) {
+        if (view == 0u || !iadm_is_dwt(all[i].entry)) {
+            stages[n++] = all[i];
+        }
+    }
+    return n;
+}
+
 static uint64_t iadm_slot(const uint32_t *accum, unsigned wg, unsigned slot)
 {
     return ((uint64_t)accum[vmaf_mtl_iadm_accum_word(wg, slot, 1u)] << 32) |
@@ -298,8 +327,8 @@ static uint64_t iadm_slot(const uint32_t *accum, unsigned wg, unsigned slot)
 /* The three bands' sums of one scale over its reduction rows. */
 typedef struct IadmScaleSums {
     uint64_t den[3];
-    int64_t cm[3];
-    int64_t aim[3];
+    uint64_t cm[3]; /* every term is non-negative; a scale-0 sum can pass INT64_MAX */
+    uint64_t aim[3];
 } IadmScaleSums;
 
 static IadmScaleSums iadm_scale_sums(const uint32_t *accum, unsigned wg_count)
@@ -309,8 +338,8 @@ static IadmScaleSums iadm_scale_sums(const uint32_t *accum, unsigned wg_count)
     for (unsigned wg = 0u; wg < wg_count; ++wg) {
         for (unsigned band = 0u; band < 3u; ++band) {
             t.den[band] += iadm_slot(accum, wg, VMAF_MTL_IADM_SLOT_DEN + band);
-            t.cm[band] += (int64_t)iadm_slot(accum, wg, VMAF_MTL_IADM_SLOT_CM + band);
-            t.aim[band] += (int64_t)iadm_slot(accum, wg, VMAF_MTL_IADM_SLOT_AIM + band);
+            t.cm[band] += iadm_slot(accum, wg, VMAF_MTL_IADM_SLOT_CM + band);
+            t.aim[band] += iadm_slot(accum, wg, VMAF_MTL_IADM_SLOT_AIM + band);
         }
     }
     return t;
@@ -318,7 +347,7 @@ static IadmScaleSums iadm_scale_sums(const uint32_t *accum, unsigned wg_count)
 
 /* adm_cm_result() / i4_adm_cm_result() on the CPU's context of the scale. */
 static float iadm_cm_result(const IadmMetalOptions *o, int scale, int w, int h,
-                            const int64_t accum[3], double noise_weight)
+                            const uint64_t accum[3], double noise_weight)
 {
     AdmBuffer no_planes;
     (void)memset(&no_planes, 0, sizeof(no_planes));
@@ -334,7 +363,9 @@ static float iadm_cm_result(const IadmMetalOptions *o, int scale, int w, int h,
     i4_adm_cm_ctx_init(&c, &no_planes, w, h, 0, 0, scale, o->adm_norm_view_dist,
                        o->adm_ref_display_height, o->adm_csf_mode, o->adm_csf_scale,
                        o->adm_csf_diag_scale, false);
-    return i4_adm_cm_result(&c, &bd, accum, noise_weight, o->adm_p_norm);
+    /* Scales 1-3 stay below 2^63 (accumulator bounds). */
+    const int64_t sums[3] = {(int64_t)accum[0], (int64_t)accum[1], (int64_t)accum[2]};
+    return i4_adm_cm_result(&c, &bd, sums, noise_weight, o->adm_p_norm);
 }
 
 /* adm_csf_den_result() / i4_adm_csf_den_result(). */

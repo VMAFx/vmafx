@@ -395,7 +395,7 @@ vmaf --reference ref.yuv --distorted dist.yuv \
 ## `float_ssim` runs on the device at every scale (ADR-1399)
 
 CPU `float_ssim` reduces both pictures before it scores them: by
-`max(1, round(min(w, h) / 256))`, which is 1 below a 384-pixel short side, 4
+$\max(1, \operatorname{round}(\min(w, h) / 256))$, which is 1 below a 384-pixel short side, 4
 at 1920x1080 and 8 at 3840x2160, or by the `scale` option. `float_ssim_cuda`
 used to compute scale 1 only, so at 1080p and 4K `--backend cuda --feature
 float_ssim` and models ran the CPU extractor and printed a fallback warning.
@@ -563,7 +563,7 @@ every frame ([ADR-1453](../../adr/1453-cuda-float-moment-cpu-float-squares.md)
 for 16-bit squares, after ADR-1447 for the HIP twin and ADR-1449 for the SYCL
 twin;
 [ADR-1497](../../adr/1497-float-moment-twins-cpu-sum-past-2-53.md) for sums
-past 2^53 units). The parity gate compares the twin with tolerance 0.
+past $2^{53}$ units). The parity gate compares the twin with tolerance 0.
 
 ### How it matches
 
@@ -572,15 +572,15 @@ How it matches:
 - **Squares.** The CPU forms each sample's square in `float` before adding
   it. Up to 12 bits that is the integer square; at 16 bits it is the square
   rounded to 24 bits. The 16-bit kernel adds the `float` square, an integer
-  below 2^32, into `uint64` sums.
+  below $2^{32}$, into `uint64` sums.
 - **Sums.** The CPU adds the float squares into one `double` in raster
   order.
-  - Below 2^53 units of 2^-16 that sum is exact and equal to the twin's
+  - Below $2^{53}$ units of $2^{-16}$ that sum is exact and equal to the twin's
       integer sum. This covers every frame of up to 2 097 152 pixels and
       every 8-, 10- and 12-bit frame; those frames run no extra work.
-  - On a larger 16-bit frame whose sum passes 2^53 the CPU rounds as it
+  - On a larger 16-bit frame whose sum passes $2^{53}$ the CPU rounds as it
       adds, so the twin forms the CPU's rounded sum: four more kernels add
-      each row exactly while the sum is at or below 2^53, then from integer
+      each row exactly while the sum is at or below $2^{53}$, then from integer
       increments of the sum's last place, composed in pixel order and checked
       against the exact running sum, and term by term where a row crosses
       into the next binade (`core/src/feature/float_moment_sum.h`).
@@ -603,19 +603,19 @@ repository's 16-bit Netflix clip is 8-bit content shifted left, whose squares
 have few significant bits, so the usual fixtures never showed the 16-bit
 defect.
 
-| Fixture | Before the 16-bit change | Before the 2^53 change | Now |
+| Fixture | Before the 16-bit change | Before the $2^{53}$ change | Now |
 |---|---|---|---|
 | Netflix 576x324 at 8 to 16 bits and 4:2:2, both 1080p checkerboards, Sparks 10 bit, BBB 3840x2160, noise at 8, 10 and 12 bits | 173 of 173 | 173 of 173 | 173 of 173 |
 | Full-range noise 576x324, 16 bit, 3 frames | 0 of 3, 2.8e-5 | 0 of 3 | 3 of 3 |
 | Bright 16-bit 1920x1080 (samples 56000 to 64000), 2 frames | 0 of 2, 1.0e-4 | 0 of 2 | 2 of 2 |
 | BBB 1920x1080 widened to 16 bits, 40 frames | 0 of 40, 7.5e-5 | 0 of 40 | 40 of 40 |
-| BBB 3840x2160 widened to 16 bits, 32 frames, 17 of them past 2^53 | 0 of 32, 3.9e-5 | 32 of 32 | 32 of 32 |
+| BBB 3840x2160 widened to 16 bits, 32 frames, 17 of them past $2^{53}$ | 0 of 32, 3.9e-5 | 32 of 32 | 32 of 32 |
 | Full-range 16-bit noise 3840x2160, nine tenths near the peak, 16 frames | not measured | 0 of 16, 2.7e-7 | 16 of 16 |
 | The same at 7680x4320, 4 frames | not measured | 0 of 4, 5.1e-7 | 4 of 4 |
 
 BBB widened to 16 bits (shifted left by 8, times 257, full range with a
-dithered low byte) was identical before the 2^53 change as well: its samples
-have no bits below the sum's last place until 2^55, which a 3840x2160 frame
+dithered low byte) was identical before the $2^{53}$ change as well: its samples
+have no bits below the sum's last place until $2^{55}$, which a 3840x2160 frame
 cannot reach. The parity gate's `float_moment` cell reads 0 at tolerance 0 on
 the 16-bit 3840x2160 noise (it failed there before).
 
@@ -632,14 +632,14 @@ builds on the machine:
 | 3840x2160, 16 bit | 4.77 ms | 5.25 ms | +0.04 ms |
 | 3840x2160, 8 bit (kernel unchanged) | 2.01 ms | 1.96 ms | -0.03 ms |
 
-After the 2^53 change, time per 16-bit 3840x2160 frame through libvmaf,
+After the $2^{53}$ change, time per 16-bit 3840x2160 frame through libvmaf,
 pictures preloaded, medians of 5 interleaved runs at a load average of 4 to
 5, before and after:
 
 | Input | Before | After |
 |---|---|---|
-| Noise, every frame past 2^53 | 5.28 ms | 5.31 ms |
-| BBB full range, 17 of 32 frames past 2^53 | 5.31 ms | 5.29 ms |
+| Noise, every frame past $2^{53}$ | 5.28 ms | 5.31 ms |
+| BBB full range, 17 of 32 frames past $2^{53}$ | 5.31 ms | 5.29 ms |
 
 ## `psnr_hvs_cuda` computes chroma by default (ADR-1203)
 
@@ -951,7 +951,7 @@ same fixtures:
 ### 2026-10: `float_moment_cuda` in two steps
 
 The 16-bit float-square change (ADR-1453, 2026-10-02) came first; the sum past
-2^53 units (ADR-1497, 2026-10-03) followed. The "before" columns of the
+$2^{53}$ units (ADR-1497, 2026-10-03) followed. The "before" columns of the
 `float_moment` table above belong to each step.
 
 ### 2026-10-02: ADR-1464 and ADR-1465 raster-order sums

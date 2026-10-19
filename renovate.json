@@ -2,15 +2,15 @@
   "forkProcessing": "enabled",
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
+    "github>plurano/horistes",
     "config:best-practices",
-    "helpers:pinGitHubActionDigests",
-    ":dependencyDashboard",
     ":semanticCommits",
     "helpers:disableTypesNodeMajor"
   ],
   "schedule": [
-    "before 6am every weekday"
+    "before 6am on Monday"
   ],
+  "rebaseWhen": "conflicted",
   "timezone": "Europe/Vienna",
   "prHourlyLimit": 0,
   "prConcurrentLimit": 3,
@@ -24,7 +24,6 @@
   "osvVulnerabilityAlerts": true,
   "dependencyDashboardOSVVulnerabilitySummary": "all",
   "prCreation": "immediate",
-  "minimumReleaseAge": "3 days",
   "ignorePaths": [
     "python/requirements.txt",
     "requirements/locks/*.txt",
@@ -45,6 +44,18 @@
     ]
   },
   "packageRules": [
+    {
+      "description": "ADR-2169: every minor, patch, digest and pin update that no rule below groups opens one pull request in the weekly window (Monday, Europe/Vienna), not one pull request per dependency. A pull request from this repository runs the light tier of CI, and a Renovate fan-out of a dozen pull requests used to be a dozen full CI runs. This rule comes first, so the specific rules below (their own group, automerge and review settings) still win. Major updates stay one pull request each and stay manual. Security updates are not in this rule: vulnerabilityAlerts opens them at any time.",
+      "matchUpdateTypes": [
+        "minor",
+        "patch",
+        "digest",
+        "pin",
+        "pinDigest"
+      ],
+      "groupName": "Other dependencies (minor + patch)",
+      "automerge": false
+    },
     {
       "description": "ADR-1354: the Verify Linux runtime job in supply-chain.yml stays on ubuntu-24.04, the oldest hosted image whose glibc (2.39) loads the native bundle. Moving it to a newer image would stop proving the documented glibc floor, so only this pin is frozen; other runner labels in the file still update.",
       "matchManagers": [
@@ -268,9 +279,9 @@
       "automerge": false
     },
     {
-      "description": "ROCm image version bump — manual review required. ROCm major-version bumps carry KFD ioctl ABI risk; validate kernel compat, and re-check the prune list in the rocm-src stage, before merging (ADR-1225, ADR-0604, ADR-0603).",
+      "description": "ROCm image version bump — manual review required. ROCm bumps carry KFD ioctl ABI and compiler risk; set ROCM_VERSION in build-config.env, re-check the /opt/rocm/core-<major>.<minor> paths, the prune lists (dev/Containerfile rocm-src, scripts/ci/install-rocm-from-image.sh) and tools/rc1-tester/image/hip-runtime.json, and run the HIP device suite before merging (ADR-1225, ADR-0604, ADR-0603).",
       "matchPackageNames": [
-        "rocm/dev-ubuntu-24.04"
+        "rocm/dev-ubuntu-26.04"
       ],
       "groupName": "ROCm (hip runtime)",
       "automerge": false,
@@ -327,10 +338,12 @@
         "Dockerfile.go-server",
         "dev/Containerfile",
         "docker/Dockerfile.controller",
+        "docker/Dockerfile.e2e-driver",
         "docker/Dockerfile.node",
         "docker/Dockerfile.operator",
         "docker/Dockerfile.production",
         "docker/Dockerfile.production-gpu",
+        "docker/Dockerfile.tester",
         "docker/dev/ubuntu-26.04-cuda.Dockerfile"
       ],
       "enabled": false
@@ -354,20 +367,80 @@
         "tools/figures/third_party/interfig/upstream/src/svg.ts",
         "tools/figures/third_party/interfig/upstream/src/geometry.ts",
         "tools/figures/third_party/interfig/upstream/src/model.ts",
-        "tools/figures/dist/loader.js",
-        "tools/figures/dist/player.js",
-        "tools/figures/dist/THIRD-PARTY-LICENSES.txt",
+        "tools/figures/player/loader.js",
+        "tools/figures/player/player.js",
+        "tools/figures/player/THIRD-PARTY-LICENSES.txt",
         "tools/figures/figures.css",
         "tools/figures/mkdocs_hook.py",
         "tools/figures/astro.mjs",
         "tools/figures/serve.mjs",
+        "tools/figures/eslint.figures.mjs",
         "tools/figures/README.md",
         ".github/workflows/praetor-api.yml",
         "tools/apicompat/gate/main.go",
+        "tools/apicompat/gate/placeholder.go",
         ".devcontainer/devcontainer.json",
         ".devcontainer/Dockerfile.praetor"
       ],
       "enabled": false
+    },
+    {
+      "description": "OldestImage in the controller store tests (cmd/vmafx-controller/store/storetest/storetest.go) is the oldest PostgreSQL release external servers may run, 16.x: it takes digest, minor and patch updates on that line and never a new major. Image follows the release the chart deploys (ADR-2350 D1), so its major updates stay manual, one pull request each.",
+      "matchFileNames": [
+        "cmd/vmafx-controller/store/storetest/storetest.go"
+      ],
+      "matchDepNames": [
+        "postgres"
+      ],
+      "matchCurrentValue": "/^16\\./",
+      "allowedVersions": "/^16\\./"
+    },
+    {
+      "description": "ADR-3312: the github-actions manager does not update setup-python's python-version input; the CI Python interpreter custom manager owns those pins together with PYTHON_CI_VERSION, so the workflows and build-config.env never land in separate pull requests.",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchDepNames": [
+        "python"
+      ],
+      "matchDepTypes": [
+        "uses-with"
+      ],
+      "enabled": false
+    },
+    {
+      "description": "ADR-3312: one pull request for the CI Python interpreter (build-config.env plus every workflow pin). Patch updates auto-merge. Python 3.15 is deferred past the 1.0.0 scope freeze, so updates stay below 3.15.0 until that decision is revisited.",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchDepNames": [
+        "python"
+      ],
+      "matchPackageNames": [
+        "actions/python-versions"
+      ],
+      "allowedVersions": "<3.15.0",
+      "groupName": "CI Python interpreter",
+      "automerge": true,
+      "draftPR": false
+    },
+    {
+      "description": "ADR-3318: the built-in rust-toolchain manager would move rust-toolchain.toml alone; the Rust toolchain custom manager owns that channel together with RUST_VERSION, both workspaces' rust-version and the Rust workflow's toolchain input.",
+      "matchManagers": [
+        "rust-toolchain"
+      ],
+      "enabled": false
+    },
+    {
+      "description": "ADR-3318: one pull request for the Rust toolchain (build-config.env, rust-toolchain.toml, both Cargo workspaces and the Rust workflow). A new stable release brings new clippy lints, so it is reviewed, not auto-merged.",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchDepNames": [
+        "rust"
+      ],
+      "groupName": "Rust toolchain",
+      "automerge": false
     }
   ],
   "customManagers": [
@@ -409,6 +482,18 @@
     },
     {
       "customType": "regex",
+      "description": "govulncheck release of the Go vulnerability gate, owned by build-config.env and run by scripts/ci/govulncheck-gate.py.",
+      "managerFilePatterns": [
+        "/^build-config\\.env$/"
+      ],
+      "matchStrings": [
+        "(?:^|\\n)GOVULNCHECK_VERSION=\"(?<currentValue>v[0-9.]+)\""
+      ],
+      "datasourceTemplate": "go",
+      "depNameTemplate": "golang.org/x/vuln"
+    },
+    {
+      "customType": "regex",
       "description": "Intel compute-runtime (NEO) release shared by the dev container GPU runtime and the ocloc every SYCL build host installs. build-config.env owns the version; consumers source it directly. Tracks github.com/intel/compute-runtime releases. See ADR-0605, ADR-1360.",
       "managerFilePatterns": [
         "/^build-config\\.env$/"
@@ -437,17 +522,16 @@
       "description": "ONNX Runtime C++ library version in dev/Containerfile and the Go CI job (ADR-1134). Installed via tarball from GitHub releases (not apt). Tracks github.com/microsoft/onnxruntime releases. See ADR-0605.",
       "managerFilePatterns": [
         "/^dev/Containerfile$/",
-        "/^docker/Dockerfile\\.node$/",
-        "/^Dockerfile$/",
-        "/^Dockerfile\\.ffmpeg$/",
+        "/^\\.github/workflows/build\\.yml$/",
         "/^\\.github/workflows/go-ci\\.yml$/"
       ],
       "matchStrings": [
-        "ARG ORT_VERSION=(?<currentValue>[0-9.]+)",
-        "ORT_VERSION: \"(?<currentValue>[0-9.]+)\""
+        "ARG ORT_VERSION=(?<currentValue>[0-9.]+)\\nARG ORT_SHA256=(?<currentDigest>[a-f0-9]{64})",
+        "ORT_VERSION: \"(?<currentValue>[0-9.]+)\"\\n\\s*ORT_SHA256: \"(?<currentDigest>[a-f0-9]{64})\""
       ],
-      "datasourceTemplate": "github-releases",
-      "depNameTemplate": "microsoft/onnxruntime"
+      "datasourceTemplate": "github-release-attachments",
+      "depNameTemplate": "microsoft/onnxruntime",
+      "versioningTemplate": "semver"
     },
     {
       "customType": "regex",
@@ -504,16 +588,30 @@
         "/^Dockerfile\\.go-server$/",
         "/^dev/Containerfile$/",
         "/^docker/Dockerfile\\.controller$/",
+        "/^docker/Dockerfile\\.e2e-driver$/",
         "/^docker/Dockerfile\\.node$/",
         "/^docker/Dockerfile\\.operator$/",
         "/^docker/Dockerfile\\.production$/",
         "/^docker/Dockerfile\\.production-gpu$/",
+        "/^docker/Dockerfile\\.tester$/",
         "/^docker/dev/ubuntu-26\\.04-cuda\\.Dockerfile$/"
       ],
       "matchStrings": [
         "(?:ARG\\s+)?[A-Z][A-Z0-9_]*=\"(?<depName>[^\"\\s:@]+):(?<currentValue>[^\"@\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})\""
       ],
       "datasourceTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "PostgreSQL images of the controller store tests (cmd/vmafx-controller/store/storetest/storetest.go, #2656). golusoris testutil/pg refuses an image without a digest, so Image and OldestImage are Go string constants of the form postgres:<tag>@sha256:<index digest>, which no built-in manager reads. This manager keeps both digests current and proposes newer tags; the package rule for OldestImage holds it on its 16.x line.",
+      "managerFilePatterns": [
+        "/^cmd/vmafx-controller/store/storetest/storetest\\.go$/"
+      ],
+      "matchStrings": [
+        "const (?:Image|OldestImage) = \"postgres:(?<currentValue>[^\"@\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})\""
+      ],
+      "datasourceTemplate": "docker",
+      "depNameTemplate": "postgres"
     },
     {
       "customType": "regex",
@@ -528,6 +626,57 @@
       "depNameTemplate": "nvidia-cuda-redist",
       "extractVersionTemplate": "^redistrib_(?<version>[0-9]+\\.[0-9]+\\.[0-9]+)\\.json$",
       "versioningTemplate": "semver"
+    },
+    {
+      "customType": "regex",
+      "description": "Upstream GStreamer release whose unpatched gst-plugins-bad `vmaf` plugin the consumer-conformance job builds against the libvmaf under test (scripts/ci/upstream-gstreamer-compat.sh). build-config.env owns GST_PLUGINS_BAD_VERSION and the script sparse-clones that tag of the monorepo, so the pin is a plain git tag and needs no archive digest. The versioning regex accepts stable releases only (even minor), never the odd-minor development series. The job also requires the runner's gstreamer-1.0 development packages to share the major.minor, so a minor bump stays red until the runner image carries it. FFMPEG_TAG has no manager here: the scheduled FFmpeg patch refresh owns it.",
+      "managerFilePatterns": [
+        "/^build-config\\.env$/"
+      ],
+      "matchStrings": [
+        "(?:^|\\n)GST_PLUGINS_BAD_VERSION=\"(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)\""
+      ],
+      "datasourceTemplate": "git-tags",
+      "packageNameTemplate": "https://gitlab.freedesktop.org/gstreamer/gstreamer.git",
+      "depNameTemplate": "gstreamer/gstreamer",
+      "versioningTemplate": "regex:^(?<major>[0-9]+)\\.(?<minor>[0-9]*[02468])\\.(?<patch>[0-9]+)$"
+    },
+    {
+      "customType": "regex",
+      "description": "CI Python interpreter (ADR-3312): build-config.env's PYTHON_CI_VERSION and every setup-python `python-version:` pin under .github/workflows/ are one dependency. This manager owns both, so Renovate moves them in one pull request; the github-actions manager's copy of the workflow pins is disabled below, and scripts/ci/check-workflow-versions.py refuses a workflow pin that differs from build-config.env. The datasource, versioning and extractVersion are the ones the github-actions manager uses for actions/setup-python.",
+      "managerFilePatterns": [
+        "/^build-config\\.env$/",
+        "/^\\.github/workflows/[^/]+\\.ya?ml$/"
+      ],
+      "matchStrings": [
+        "(?:^|\\n)PYTHON_CI_VERSION=\"(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)\"",
+        "python-version:[ \\t]*['\"]?(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)['\"]?"
+      ],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "python",
+      "packageNameTemplate": "actions/python-versions",
+      "versioningTemplate": "npm",
+      "extractVersionTemplate": "^(?<version>\\d+\\.\\d+\\.\\d+)(-\\d+)?$"
+    },
+    {
+      "customType": "regex",
+      "description": "Rust toolchain (ADR-3318): build-config.env's RUST_VERSION, rust-toolchain.toml's channel, the rust-version of both Cargo workspaces and the Rust workflow's toolchain input are one dependency. This manager owns all of them, so Renovate moves them in one pull request; the built-in rust-toolchain manager is disabled below, and scripts/ci/check-workflow-versions.py refuses a copy that differs from build-config.env.",
+      "managerFilePatterns": [
+        "/^build-config\\.env$/",
+        "/^rust-toolchain\\.toml$/",
+        "/^Cargo\\.toml$/",
+        "/^core/src/rust/Cargo\\.toml$/",
+        "/^\\.github/workflows/rust-ci\\.yml$/"
+      ],
+      "matchStrings": [
+        "(?:^|\\n)RUST_VERSION=\"(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)\"",
+        "(?:^|\\n)channel = \"(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)\"",
+        "(?:^|\\n)rust-version = \"(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)\"",
+        "\\n[ \\t]+toolchain:[ \\t]*['\"]?(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)['\"]?"
+      ],
+      "datasourceTemplate": "rust-version",
+      "depNameTemplate": "rust",
+      "versioningTemplate": "rust-release-channel"
     }
   ],
   "vulnerabilityAlerts": {

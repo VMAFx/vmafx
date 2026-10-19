@@ -1,6 +1,7 @@
+<!-- markdownlint-disable MD013 -->
 # ADR-0844: float_adm AVX2/AVX-512 F2+F3 — double-precision and FP-contraction
 
-- **Status**: Accepted
+- **Status**: Accepted (Superseded-in-part 2026-10-06 by [ADR-1473](1473-float-adm-x86-simd-exact-and-dispatched.md) for the float_adm kernels ADR-1473 removes)
 - **Date**: 2026-05-29
 - **Deciders**: Lusoris
 - **Tags**: simd, bit-exactness, avx2, avx512, float_adm, build

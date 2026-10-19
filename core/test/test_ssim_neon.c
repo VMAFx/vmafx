@@ -100,8 +100,8 @@ static void ref_variance(float *ref_sigma_sqd, float *cmp_sigma_sqd, float *sigm
         for (int x = 0; x < w; ++x, ++offset) {
             ref_sigma_sqd[offset] -= ref_mu[offset] * ref_mu[offset];
             cmp_sigma_sqd[offset] -= cmp_mu[offset] * cmp_mu[offset];
-            ref_sigma_sqd[offset] = REF_MAX(0.0, ref_sigma_sqd[offset]);
-            cmp_sigma_sqd[offset] = REF_MAX(0.0, cmp_sigma_sqd[offset]);
+            ref_sigma_sqd[offset] = (float)REF_MAX(0.0, ref_sigma_sqd[offset]);
+            cmp_sigma_sqd[offset] = (float)REF_MAX(0.0, cmp_sigma_sqd[offset]);
             sigma_both[offset] -= ref_mu[offset] * cmp_mu[offset];
         }
     }

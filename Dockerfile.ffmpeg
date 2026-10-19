@@ -1,6 +1,8 @@
-# 'vmaf' is built locally from the main Dockerfile — no upstream tag to pin.
-# hadolint ignore=DL3006,DL3007
-FROM vmaf:latest
+# 'vmaf' is the local image built from the root Dockerfile — no upstream tag to pin.
+# Pinned by digest so the base image is exact (OpenSSF Scorecard Pinned-Dependencies).
+# Pass --build-arg VMAF_IMAGE_DIGEST=$(docker image inspect --format '{{.Id}}' vmaf | cut -d: -f2).
+ARG VMAF_IMAGE_DIGEST
+FROM vmaf@sha256:${VMAF_IMAGE_DIGEST}
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
@@ -18,9 +20,14 @@ ARG NVCC_FLAGS="-gencode arch=compute_75,code=sm_75 -gencode arch=compute_80,cod
 RUN wget -q "${FFMPEG_REMOTE%.git}/archive/${FFMPEG_TAG}.zip" && \
     unzip -q "${FFMPEG_TAG}.zip"
 
-# Apply the same cumulative patch series as every other FFmpeg image.
+# Apply the same cumulative patch series as every other FFmpeg image: the
+# shared FFmpeg fix series (ADR-3143, verified against build-config.env by the
+# script), then ffmpeg-patches/.
 COPY ffmpeg-patches/ /tmp/ffmpeg-patches/
+COPY build-config.env scripts/ci/ffmpeg-shared-series.sh /tmp/ffmpeg-shared/
 WORKDIR /FFmpeg-${FFMPEG_TAG}
+RUN FFMPEG_FIX_SERIES_CACHE=none \
+    bash /tmp/ffmpeg-shared/ffmpeg-shared-series.sh apply --method apply .
 RUN while IFS= read -r patch_name; do \
         case "${patch_name}" in \
             ""|"#"*) continue ;; \

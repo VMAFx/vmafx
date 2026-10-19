@@ -60,6 +60,7 @@
 #include <vector>
 
 #include "test.h"
+#include "float_bits.h"
 
 #include "feature/metal/metal_float_vif_math.h"
 
@@ -143,7 +144,7 @@ const char *test_log2_special_values()
 {
     mu_assert("log2(1) must be exactly 0", vmaf_mtl_fvif_log2(1.0f) == 0.0f);
     mu_assert("log2(2) must be exactly 1", vmaf_mtl_fvif_log2(2.0f) == 1.0f);
-    mu_assert("log2(0) must be -inf", vmaf_mtl_fvif_log2(0.0f) == -INFINITY);
+    mu_assert("log2(0) must be -inf", vmaf_test_identical_f32(vmaf_mtl_fvif_log2(0.0f), -INFINITY));
     const float negative = vmaf_mtl_fvif_log2(-1.0f);
     mu_assert("log2(negative) must be NaN", negative != negative);
     return nullptr;
@@ -205,7 +206,8 @@ const char *test_statistic_arguments_rebuild_the_double()
         const VmafMtlFvifStatParams p = vmaf_mtl_fvif_stat_params(a);
         const uint64_t mant = (static_cast<uint64_t>(a.noise_mant_hi) << 32) | a.noise_mant_lo;
         const double rebuilt = std::ldexp(static_cast<double>(mant), a.noise_exp);
-        mu_assert("the significand and exponent do not rebuild vif_sigma_nsq", rebuilt == nsq);
+        mu_assert("the significand and exponent do not rebuild vif_sigma_nsq",
+                  vmaf_test_identical_f64(rebuilt, nsq));
         mu_assert("the pair does not hold vif_sigma_nsq to 2^-46",
                   std::fabs(static_cast<double>(p.noise.hi) + static_cast<double>(p.noise.lo) -
                             nsq) <= nsq * 0x1p-46);
@@ -732,7 +734,7 @@ struct Frames {
     Plane dis;
     std::vector<float> cpu_ref; /* stride in bytes: aligned */
     std::vector<float> cpu_dis;
-    int cpu_stride_bytes;
+    int cpu_stride_bytes = 0;
 };
 
 /* The pair, as the float planes both sides read: stride = width for the
@@ -799,15 +801,17 @@ const char *check_pipeline(int w, int h, unsigned bpc, float kernelscale, double
         double den = 0.0;
         run_scale(flt, scale, ref, dis, p, &num, &den);
         const size_t ni = static_cast<size_t>(scale) * 2u;
-        if (num != cpu[ni] || den != cpu[ni + 1u]) {
+        if (!vmaf_test_identical_f64(num, cpu[ni]) || !vmaf_test_identical_f64(den, cpu[ni + 1u])) {
             (void)fprintf(stderr,
                           "\n%dx%d bpc=%u ks=%g scale %d: num %.17g vs cpu %.17g, den %.17g vs "
                           "cpu %.17g\n",
                           w, h, bpc, static_cast<double>(kernelscale), scale, num, cpu[ni], den,
                           cpu[ni + 1u]);
         }
-        mu_assert("the pipeline's numerator differs from compute_vif()", num == cpu[ni]);
-        mu_assert("the pipeline's denominator differs from compute_vif()", den == cpu[ni + 1u]);
+        mu_assert("the pipeline's numerator differs from compute_vif()",
+                  vmaf_test_identical_f64(num, cpu[ni]));
+        mu_assert("the pipeline's denominator differs from compute_vif()",
+                  vmaf_test_identical_f64(den, cpu[ni + 1u]));
     }
     return nullptr;
 }
@@ -885,9 +889,9 @@ const char *check_reduction(int w, int h, double nsq, double egl)
     double den = 0.0;
     host_sum_rows(rows, h, &num, &den);
     mu_assert("the row-ordered numerator differs from vif_statistic_s()",
-              num == static_cast<double>(cpu_num));
+              vmaf_test_identical_f64(num, static_cast<double>(cpu_num)));
     mu_assert("the row-ordered denominator differs from vif_statistic_s()",
-              den == static_cast<double>(cpu_den));
+              vmaf_test_identical_f64(den, static_cast<double>(cpu_den)));
     return nullptr;
 }
 

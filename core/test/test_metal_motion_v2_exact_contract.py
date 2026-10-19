@@ -62,7 +62,7 @@ WINDOW = (
 )
 FIVE_FRAME = (
     "s->depth = s->motion_five_frame_window ? 2U : 1U;",
-    "id<MTLBuffer> slot = (__bridge id<MTLBuffer>)s->prev_luma[index % s->depth];",
+    "id<MTLBuffer> const slot = (__bridge id<MTLBuffer>)s->prev_luma[index % s->depth];",
     "if (index >= s->depth) {",
     "copy_y_plane(ref_pic, [slot contents], row_bytes);",
 )
@@ -195,8 +195,8 @@ class MetalMotionV2ExactContract(unittest.TestCase):
     def test_own_flush_is_detected(self) -> None:
         failures = self._edited(
             HOST,
-            "    if (s->feature_name_dict == NULL) { return 1; }",
-            "    if (s->feature_name_dict == NULL || n_frames < 2) { return 1; }",
+            "    if (s->feature_name_dict == nullptr) { return 1; }",
+            "    if (s->feature_name_dict == nullptr || n_frames < 2) { return 1; }",
         )
         self._assert_detected(failures, "do not come from the CPU's window")
 

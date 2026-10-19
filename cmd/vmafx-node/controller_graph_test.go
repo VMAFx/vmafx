@@ -24,6 +24,7 @@ import (
 	"go.uber.org/fx/fxtest"
 
 	controllerv1 "github.com/VMAFx/vmafx/gen/go/controller"
+	"github.com/VMAFx/vmafx/internal/execstub"
 	"github.com/VMAFx/vmafx/pkg/libvmaf"
 )
 
@@ -123,9 +124,7 @@ func TestExecuteScoring_PassesBackend(t *testing.T) {
 		argsFile := filepath.Join(t.TempDir(), "args")
 		script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > " + argsFile + "\nexit 1\n"
 		bin := filepath.Join(t.TempDir(), "vmaf")
-		if err := os.WriteFile(bin, []byte(script), 0o700); err != nil {
-			t.Fatal(err)
-		}
+		execstub.Write(t, bin, []byte(script))
 		modelDir := t.TempDir()
 		if err := os.WriteFile(filepath.Join(modelDir, "vmaf_v0.6.1.json"), []byte("{}"), 0o600); err != nil {
 			t.Fatal(err)

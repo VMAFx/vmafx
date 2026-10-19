@@ -12,8 +12,8 @@ process; the `vmaf` tool creates one.
 
 The VMAFx API imports frames a producer holds on a HIP device: device
 pointers, dma-bufs (as external memory, `hipImportExternalMemory()`), HIP
-arrays and OpenGL textures, with HIP event, sync_file and GL sync acquire
-fences ([HIP devices](../../api/vmafx/index.md#hip-devices),
+arrays and OpenGL textures (through EGL dma-bufs), with HIP event, sync_file
+and GL sync acquire fences ([HIP devices](../../api/vmafx/index.md#hip-devices),
 [ADR-2092](../../adr/2092-vmafx-hip-device-frames.md)). An imported frame is
 a `VMAF_PICTURE_BUFFER_TYPE_HIP_DEVICE` picture that carries the device's
 library stream. Where a twin uploads a host picture, it copies a device
@@ -22,6 +22,17 @@ null stream wait for the copy (`vmaf_hip_picture_upload()`,
 `vmaf_hip_stream_wait_library()` in `core/src/hip/picture_hip.c`); the shared
 planes below are filled the same way. No plane of an imported frame is copied
 to or from the host.
+
+Vulkan frames on the same GPU (`VMAFX_MEMORY_VULKAN`,
+[ADR-2152](../../adr/2152-vmafx-vulkan-frame-import.md)) are imported through
+the dma-buf path: RADV exports a buffer's or a LINEAR image's memory as a
+dma-buf. ROCm 10.1 imports no Vulkan semaphore, so the acquire fence is a
+`sync_file` of the producer's write and the release a host fence; OPTIMAL
+images are refused naming `desc.vulkan_tiling`
+([Vulkan frames](../../api/vmafx/index.md#vulkan-frames)): ROCm reads such
+memory as a linear image while RADV tiles it, so there is no correct way to
+read it ([ADR-3353](../../adr/3353-hip-keeps-refusing-vulkan-optimal.md)).
+Copy the frame into a LINEAR image or a buffer on the producer's GPU first.
 
 Frames given to `libvmaf.h` (`vmaf_read_pictures()`) still arrive with
 `VMAF_PICTURE_BUFFER_TYPE_HOST` in system memory, and the planes the
@@ -147,7 +158,7 @@ left in recycled device memory
 now uploads, then clears, then launches its kernels.
 
 One frame in a 640x360 context, then one in a 3840x2160 context of the same
-process, on `ryzen-4090-arc` (gfx1036, ROCm 7.2.4):
+process, on a reference workstation (gfx1036, ROCm 7.2.4):
 
 | First frame of the 3840x2160 context | Before | After | CPU |
 |---|---|---|---|

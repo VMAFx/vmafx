@@ -38,9 +38,11 @@
 #include "feature/float_adm_gpu_common.h"
 
 /* The argument blocks under the names the CUDA sources use. */
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no `using`. ADR-1138. */
 typedef FloatAdmGpuBands FloatAdmCudaBands;
 typedef FloatAdmGpuDecoupleArgs FloatAdmCudaDecoupleArgs;
 typedef FloatAdmGpuTermArgs FloatAdmCudaTermArgs;
 typedef FloatAdmGpuRowArgs FloatAdmCudaRowArgs;
+/* NOLINTEND(modernize-use-using) */
 
 #endif /* VMAF_SRC_FEATURE_CUDA_FLOAT_ADM_FLOAT_ADM_DEVICE_H_ */

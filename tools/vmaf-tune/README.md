@@ -105,11 +105,13 @@ without bumping `SCHEMA_VERSION` in `src/vmaftune/__init__.py`.
 
 ## Predictor Training
 
-The offline trainer accepts either one corpus JSONL file or a directory
-of sharded JSONL files:
+The offline trainer lives in the ai/ training package
+(`vmaf_train.predictor_train`, ADR-1886), so vmaf-tune never installs torch.
+From that environment it accepts either one corpus JSONL file or a
+directory of sharded JSONL files:
 
 ```bash
-python -m vmaftune.predictor_train \
+python -m vmaf_train.predictor_train \
   --corpus .corpus/corpus_run \
   --codec libx264 \
   --output-dir .workingdir/evidence/predictor-real

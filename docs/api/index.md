@@ -5,6 +5,13 @@ the header map and the rules every call shares. Per-function detail is on
 the topic pages below. Declarations live in
 [`core/include/libvmaf/`](../../core/include/libvmaf/).
 
+This API is the compatibility library `libvmaf.so.3`, built on the
+[VMAFx API](vmafx/index.md) of `libvmafx.so.1`; link it with
+`pkg-config --libs libvmaf`, which adds `-lvmafx`. Its functions are
+deprecated in favour of their VMAFx successors: the warnings are opt-in in
+1.0 (`-DVMAF_ENABLE_DEPRECATION_WARNINGS`), and the
+[migration table](vmafx/compat.md) names the successor of every function.
+
 | Page | Covers |
 | --- | --- |
 | [Lifecycle](lifecycle.md) | `vmaf_init` to `vmaf_close`: configuration, registration, feeding, scoring, pooling, reports, backend introspection, device twins |
@@ -185,6 +192,7 @@ documents it.
 | `vmaf_write_output[_with_format]` | [Write a report](lifecycle.md#write-a-report) |
 | `vmaf_context_get_backend`, `vmaf_feature_backend_twin`, `vmaf_registered_feature_extractor` | [Backend introspection](lifecycle.md#backend-introspection), [device twins](lifecycle.md#device-twins-and-the-extractors-that-ran) |
 | `VmafPicture`, `vmaf_picture_alloc`, `vmaf_picture_unref`, `VmafPicture2` | [Pictures](pictures.md) |
+| `vmaf_picture_wrap`, `VmafPictureWrapped` | [Wrap your own planes](pictures.md#wrap-your-own-planes-vmaf_picture_wrap) |
 | `VmafModel`, `vmaf_model_load*`, `vmaf_default_model_version`, `VmafModelKind` | [Models](models-and-features.md) |
 | `VmafFeatureDictionary` | [Feature options](models-and-features.md#feature-options-vmaffeaturedictionary) |
 
@@ -209,7 +217,7 @@ described under
 | Header | Symbols | Purpose |
 | --- | --- | --- |
 | [`libvmaf.h`](../../core/include/libvmaf/libvmaf.h) | `VmafContext`, `VmafConfiguration`, lifecycle and scoring functions | Main entry point; includes `feature.h`, `model.h`, `picture.h`. |
-| [`picture.h`](../../core/include/libvmaf/picture.h) | `VmafPicture`, `VmafPixelFormat`, alloc and unref | Per-frame pixel container. [Pictures](pictures.md). |
+| [`picture.h`](../../core/include/libvmaf/picture.h) | `VmafPicture`, `VmafPixelFormat`, alloc and unref, colour enums | Per-frame pixel container. [Pictures](pictures.md). The transfer enum also names sRGB, HLG and linear light, the matrix enum BT.601 and BT.2020 constant luminance; they describe RGB input, and the converter refuses the ones it does not implement ([pixel formats](../usage/pixel-formats.md)). |
 | [`picture_v2.h`](../../core/include/libvmaf/picture_v2.h) | `VmafPicture2`, `VmafBackendHandle`, converters | Picture with explicit backend state. [Pictures](pictures.md#picture-v2-picture_v2h). |
 | [`feature.h`](../../core/include/libvmaf/feature.h) | `VmafFeatureDictionary` | Options for a feature extractor. [Models and features](models-and-features.md). |
 | [`model.h`](../../core/include/libvmaf/model.h) | `VmafModel`, `VmafModelConfig`, `VmafModelCollection*`, `VmafModelKind` | SVM model, bootstrap collection, default version. |

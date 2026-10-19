@@ -6,7 +6,15 @@
 service. Provides:
 
 - `NewLogger(level)` — `log/slog` JSON logger.
-- `NewMetrics(reg)` + `SetControllerSources` — Prometheus instruments.
+- `metricdef/` — one definition of every Prometheus family (name, kind,
+  unit, labels + cardinality bound, buckets, emitting binaries). Data only,
+  stdlib only.
+- `NewRegistry()` (Go + process collectors, `vmafx_build_info`),
+  `NewMetrics(reg)` (scoring + quality families), `NewCounter` /
+  `NewGauge` / `NewHistogram` / `RegisterScraped` — collectors built from
+  `metricdef`, label values bounded (`instruments.go`, `scrape.go`).
+- `obsgen/` — dashboards (Grafana Foundation SDK v0.0.20) + metric reference
+  page generated from `metricdef`; `CheckDashboard` contract check.
 - `InitOTel(ctx, serviceName, log)` — OpenTelemetry trace + meter
   provider wiring (ADR-0927).
 - `WaitForShutdown` / `NewShutdownContext` — signal + graceful-drain.
@@ -38,10 +46,88 @@ Operator guide: [`docs/development/observability.md`](../../docs/development/obs
    logs bridge is Phase 3, depends on modernization #3 (zap → slog
    migration) completing first.
 
-5. **Narrow-interface trick (`jobQueueSource`, `nodeRegistrySource`)
-   stays.** These exist to avoid import cycle between
-   `pkg/observability` and `cmd/vmafx-controller/queue`. Do not
-   replace them with concrete types from controller package.
+5. **One metric definition (HISS-19, WP16 / issue #2430).** New family ->
+   `metricdef/families.go` + `All()` first, then registered by every binary
+   in its `Emitters` through `NewCounter` / `NewGauge` / `NewHistogram` /
+   `RegisterScraped`. Never `prometheus.New*Vec`, GaugeFunc or promauto in a
+   service: bypasses label bounds and per-binary contract tests
+   (`TestControllerServesEveryFamilyItEmits`,
+   `TestNodeServesEveryFamilyItEmits`,
+   `TestProvideMetricsServesTheServerFamilies`). Every family registers on
+   service's own registry, never `DefaultRegisterer` (ADR-1014). Open label
+   limits (`TenantLimit` 256, `ModelLimit` 64, Q-121) -> overflow `other`,
+   never drop; raising one moves `seriesBudget` in `metricdef_test.go` and the
+   docs.
+
+6. **Generated files never hand-edited.** `deploy/grafana/dashboards/*.json`,
+   `docs/observability/metrics.md` come from `go run ./tools/obsgen -write`.
+   `obsgen_test.go::TestGeneratedFilesAreCurrent` fails stale copy;
+   `TestEveryDashboardQueryIsEmitted` fails panel / annotation / variable
+   naming series nothing emits (allow-list `ExternalSeries`, proven by
+   `TestExternalSeriesAreServed`). `obsgen/testdata/overview-before-generation.json`
+   = frozen negative fixture (5 dead series), never "fixed".
+   Bucket matcher: `LeMatcher(bound)` (`le=~"70(\\.0)?"`), never `le="70"`:
+   Prometheus 3 stores `le="70.0"`. `CheckBucketMatchers` fails whole-number
+   `le` / `quantile` equality; `TestLeMatcherSelectsOneBucket` proves no other
+   bucket matched.
+
+7. **Scraped reads never fail /metrics** (`scrape.go`): `RegisterScraped`
+   takes `NewReadErrors` counter + `ScrapeGroup{Source, Families, Read}`;
+   failed read -> `errs.Inc(source)`, group's families absent this scrape,
+   rest served. Never `prometheus.NewInvalidMetric` (whole page 500). New
+   source -> value in `metricdef.ReadSource`.
+
+8. **Vendor exporter series only on own dashboard** (`obsgen/exporters.go`,
+   `check.go::ExporterSeries`): exporter dashboards tagged
+   `vmafx-exporter-<key>`; `CheckDashboard` allows that exporter's series
+   only there. Names from exporter's own reference (cite file), never
+   guessed. Every generated dashboard passes `dashboard-linter --strict`, no
+   exclusions (`scripts/ci/lint-dashboards.sh`, pinned + sha256 in
+   `build-config.env`).
+
+9. **Rules generated + tested** (`obsgen/rules.go`, `alerts.go`,
+   `rulesfile.go`): `deploy/prometheus/vmafx-rules.yaml` +
+   `vmafx-rules.test.yaml` from Go. Each alert name: >=1 firing + >=1
+   non-firing promtool case, runbook page
+   `docs/observability/runbooks/<slug>.md` (`TestEveryAlertHasARunbook`).
+   Annotations use only `{{ $labels.x }}` (rendered in Go for
+   `exp_annotations`; promtool compares exactly). Every rule expr
+   passes `CheckRules`. CI: `scripts/ci/check-prometheus-rules.sh` (pinned
+   promtool, `scripts/ci/pinned-tool.sh` shared with dashboard-linter; one
+   fetcher, HISS-19).
+
+10. **Rule settings = chart values** (ADR-2399; `obsgen/settings.go`,
+    `helm.go`): objectives, burn windows / factors, alert thresholds live in
+    `Settings`. One rule builder, two renderings via `params`:
+    `plainParams` (rule file, `-render-rules`), `helmParams`
+    (`$.Values.monitoring`, chart template). Burn threshold = PromQL
+    `(factor * (1 - objective))`, never number computed in Go or Helm
+    (Sprig decimal vs Go float drift). Floats print `fmt.Sprint` (Helm
+    float64 print), ints `strconv.Itoa` vs `| int`. Template reads `$.`
+    (inside window range). `Settings.Validate` + `ApplyValues` tag check
+    refuse what `values.schema.json` refuses
+    (`TestValidateAgreesWithTheChartSchema`); new setting -> schema entry
+    in same change.
+
+11. **Compose example + smoke** (`deploy/compose/observability`,
+    `tools/obssmoke`, `obsgen/datasources.go`): data source provisioning
+    generated, URLs = compose service names, uids = `PrometheusUID` /
+    `TempoUID` / `LokiUID`. Smoke parses dashboards only via
+    `obsgen.DashboardQueries` (one parser with `CheckDashboard`). Exemption =
+    query without data on CPU stack + reason; exempted query with data
+    fails run. `tools/obsgen` writes 0644 / dirs 0755 (containers read
+    mounts as other users). Smoke never in parallel with another heavy job;
+    stack torn down after (`down -v`).
+
+12. **Settings series** (`obsgen/settingrules.go`, Q-193 / Q-195): SLO
+    objectives, SLO event rates, prices = recording rules from `Settings`,
+    one sample per scraped instance (`perScrapedInstance`, `job` +
+    `instance` kept: dashboard-linter needs both matchers). Price rule
+    `... > 0`: unset price records nothing, cost panels empty; never assume
+    price. One price per job-second (every outcome) + one per completed or
+    failed job (`chargedOutcomes`, Q-208; cancelled never charged, promtool
+    case in rules test file), every backend. Smoke sets test prices in `XTS`
+    only.
 
 ## Test requirements
 
@@ -58,9 +144,6 @@ Additional invariants locked in by `coverage_gaps_test.go`:
 - `WaitForShutdown` must return after receiving SIGTERM (not only on
   context cancel). `TestWaitForShutdown_SIGTERMDelivery` sends real
   SIGTERM to `os.Getpid()`; do not run that test with `t.Parallel()`.
-- `SetControllerSources` must register only queue gauges when
-  `r == nil`, and only node gauge when `q == nil`. Half-nil branches
-  tested independently of both-nil and both-non-nil cases.
 - `AttrJobID`, `AttrModel`, `AttrBackend`, `AttrNodeID`, `AttrVendor`,
   `AttrStatus` key strings are schema-locked to values in ADR-0782.
   Any rename is breaking OTLP consumer change — update ADR first.
@@ -84,7 +167,7 @@ decision, not cleanup.
 What new service or new request path does instead:
 
 - fx service: start from `bootstrap.Base`; add `bootstrap.HTTPTracing`
-  next to `golusoris.HTTP`; gRPC spans come with `grpc.Module`.
+  next to `bootstrap.HTTP`; gRPC spans come with `grpc.Module`.
 - one-shot CLI: build `bootstrap.Base` per invocation
   (`cmd/vmafx-tune/cmd/golusoris.go::withGolusoris` is template).
 - application spans: `observability.StartSpan` / `EndSpan` with name

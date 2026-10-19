@@ -61,6 +61,9 @@ EPS_EXP = "-70"
 HOST_ONLY = ("make_gain_limit",)
 
 
+TERM_FIELDS = 7  # int32_t fields of struct vif_terms (ADR-1395)
+
+
 def _code(source: str) -> str:
     """The source without comments and with whitespace collapsed."""
     return SPACE.sub(" ", COMMENT.sub(" ", source))
@@ -68,8 +71,7 @@ def _code(source: str) -> str:
 
 def _sources() -> dict[str, str]:
     sources = {
-        name: (FEATURE_ROOT / name).read_text(encoding="utf-8")
-        for name in (TWIN, MATH, SOFT, CPU)
+        name: (FEATURE_ROOT / name).read_text(encoding="utf-8") for name in (TWIN, MATH, SOFT, CPU)
     }
     sources[MATH_TEST] = (TEST_ROOT / MATH_TEST).read_text(encoding="utf-8")
     return sources
@@ -111,17 +113,22 @@ def _math_failures(sources: dict[str, str]) -> list[str]:
     failures: list[str] = []
     if f"kEpsMant = {EPS_MANT};" not in math or f"kEpsExp = {EPS_EXP};" not in math:
         failures.append(f"{MATH}: kEpsMant / kEpsExp are not 65536 * 1.0e-10")
-    if 65536 * 1.0e-10 != int(EPS_MANT.rstrip("UL"), 16) * 2.0 ** int(EPS_EXP):
+    if int(EPS_MANT.rstrip("UL"), 16) * 2.0 ** int(EPS_EXP) != 65536 * 1.0e-10:
         failures.append("the contract's own eps constant is not 65536 * 1.0e-10")
     select = _function_body(math, "gain_terms")
-    for piece in ("if (!fast.replay) {", "gain_terms_replayed(sigma1_sq, sigma2_sq, sigma12, limit)"):
+    for piece in (
+        "if (!fast.replay) {",
+        "gain_terms_replayed(sigma1_sq, sigma2_sq, sigma12, limit)",
+    ):
         if piece not in select:
             failures.append(f"{MATH}: gain_terms() must replay what the integers do not decide")
             break
     replayed = _function_body(math, "gain_terms_replayed")
     for piece in ("soft_div(", "soft_mul(", "soft_sub_trunc(", "soft_trunc("):
         if piece not in replayed:
-            failures.append(f"{MATH}: gain_terms_replayed() is not the reference's sequence ({piece})")
+            failures.append(
+                f"{MATH}: gain_terms_replayed() is not the reference's sequence ({piece})"
+            )
     device = math
     for name in HOST_ONLY:
         device = device.replace(_function_body(math, name), " ")
@@ -157,7 +164,7 @@ def _twin_failures(sources: dict[str, str]) -> list[str]:
     if "s->gain_limit = vmaf_sycl_ivif::make_gain_limit(s->vif_enhn_gain_limit);" not in twin:
         failures.append(f"{TWIN}: the gain limit is not converted on the host")
     terms = re.search(r"struct vif_terms \{(.*?)\};", twin)
-    if not terms or "int64_t" in terms.group(1) or terms.group(1).count("int32_t") != 7:
+    if not terms or "int64_t" in terms.group(1) or terms.group(1).count("int32_t") != TERM_FIELDS:
         failures.append(f"{TWIN}: the per-pixel terms must be seven int32_t (ADR-1395)")
     return failures
 

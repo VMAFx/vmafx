@@ -967,7 +967,7 @@ static const char *provided_features[] = {
     "VMAF_feature_adm2_score", "VMAF_feature_adm_scale0_score", "VMAF_feature_adm_scale1_score",
     "VMAF_feature_adm_scale2_score", "VMAF_feature_adm_scale3_score",
     /* ADR-0574: AIM and ADM3 sub-features. */
-    "VMAF_feature_aim_score", "VMAF_feature_adm3_score", "adm", "adm_num", "adm_den",
+    "VMAF_feature_aim_score", "VMAF_feature_adm3_score", "adm_scale0", "adm_num", "adm_den",
     "adm_num_scale0", "adm_den_scale0", "adm_num_scale1", "adm_den_scale1", "adm_num_scale2",
     "adm_den_scale2", "adm_num_scale3", "adm_den_scale3", NULL};
 
@@ -981,6 +981,7 @@ VmafFeatureExtractor vmaf_fex_float_adm_cuda = {
     .options = options,
     .priv_size = sizeof(FloatAdmStateCuda),
     .provided_features = provided_features,
+    .unsuffixed_debug_key = "adm",
     .flags = VMAF_FEATURE_EXTRACTOR_CUDA,
 };
 

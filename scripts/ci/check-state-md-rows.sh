@@ -101,6 +101,62 @@ if [[ ! -f "$file" ]]; then
 fi
 
 report="$(awk '
+  # markup_defect(s) returns "" when every backtick run of s pairs with a later
+  # run of the same length on the line (a CommonMark code span) and every "["
+  # outside a code span is closed on the line; otherwise the defect and its
+  # column. Most of the ledger is one paragraph of rows, so one stray backtick
+  # re-pairs every code span after it, and an unclosed "[" makes the GFM
+  # autolink-literal parser behind the markdown governance gate walk back to it
+  # from every later URL candidate. One such row (an lldb frame name in single
+  # backticks) took the gate from seconds to past its 120 s budget
+  # (T-STATE-MD-UNPAIRED-CODE-SPAN-LINT-TIMEOUT-2026-10-06).
+  function markup_defect(s,    n, i, c, k, j, m, depth, open) {
+    n = length(s)
+    depth = 0
+    i = 1
+    while (i <= n) {
+      c = substr(s, i, 1)
+      if (c == "\\") { i += 2; continue }
+      if (c == "`") {
+        k = 1
+        while (substr(s, i + k, 1) == "`") k++
+        j = i + k
+        m = 0
+        while (j <= n) {
+          if (substr(s, j, 1) != "`") { j++; continue }
+          m = 1
+          while (substr(s, j + m, 1) == "`") m++
+          if (m == k) break
+          j += m
+          m = 0
+        }
+        if (m != k) return "unpaired backtick run at column " i
+        i = j + k
+        continue
+      }
+      if (c == "[") {
+        if (depth == 0) open = i
+        depth++
+      } else if (c == "]" && depth > 0) {
+        depth--
+      }
+      i++
+    }
+    if (depth > 0) return "unclosed [ at column " open
+    return ""
+  }
+
+  # Fenced blocks hold literal text, so the markup check skips them. This rule
+  # runs before the others because they end with next.
+  {
+    if ($0 ~ /^[[:space:]]*```/) {
+      infence = !infence
+    } else if (!infence) {
+      defect = markup_defect($0)
+      if (defect != "") markup[NR] = defect "\t" substr($0, 1, 70)
+    }
+  }
+
   # Section headings partition the ledger. A row\047s status token only means
   # anything relative to the section the row is filed under, so the heading is
   # tracked as the rows stream past.
@@ -289,6 +345,8 @@ report="$(awk '
     if (used_closed && !have_closed)
       printf "NOSECTION\tclosed/fixed\tRecently closed\n"
 
+    for (ln in markup) printf "MARKUP\t%d\t%s\n", ln, markup[ln]
+
     printf "COUNT\t%d\t%d\n", ids, checked
   }
 ' "$file")"
@@ -349,6 +407,26 @@ if [[ -n "$misfiled" || -n "$nosection" ]]; then
   echo "A PR that fixes a bug MOVES its row (ADR-0165 update protocol step 1);" >&2
   echo "appending a resolved row to '## Open bugs' leaves the bug reading as" >&2
   echo "open forever, which is the failure this file exists to prevent." >&2
+  exit 1
+fi
+
+# A line whose code spans or brackets do not close (see markup_defect above).
+markup="$(printf '%s\n' "$report" | grep -E '^MARKUP' | sort -t$'\t' -k2,2n || [ "$?" -eq 1 ])"
+
+if [[ -n "$markup" ]]; then
+  echo "::error title=state.md unpaired markup::a code span or [ does not close on its line" >&2
+  while IFS=$'\t' read -r _kind line defect rowtext; do
+    [[ -z "${line:-}" ]] && continue
+    echo "  line $line: $defect" >&2
+    echo "    ${rowtext}..." >&2
+  done <<<"$markup"
+  echo "" >&2
+  echo "Close the code span on the same line, and write a backtick that belongs" >&2
+  echo "to the text inside a longer run (lldb's module\`function becomes" >&2
+  echo "\`\` module\`function \`\`). Put a [ that has no ] into a code span or" >&2
+  echo "escape it (\\[). The ledger is one long paragraph: an unpaired backtick" >&2
+  echo "shifts every code span after it, and an unclosed [ made the markdown" >&2
+  echo "governance lint of this file take minutes instead of seconds." >&2
   exit 1
 fi
 

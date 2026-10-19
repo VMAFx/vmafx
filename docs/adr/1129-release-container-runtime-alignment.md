@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-1129: Align release containers with the published tag and runtime ABI
 
-- **Status**: Accepted
+- **Status**: Accepted (status update 2026-10-06 below)
 - **Date**: 2026-08-31
 - **Deciders**: Lusoris
 - **Tags**: release, container, supply-chain, security, mcp, go, gpu, ci
@@ -176,3 +176,15 @@ artifacts have complementary rather than duplicated SBOM authorities.
 - [SLSA and Sigstore release guidance](../development/release.md)
 - Source: `req` — "get everything open merged (the pr's), then fix ci so that it is green, fix the tags and then bump a release"
 - Source: `req` — "all this will be a .x patch of course, not a minor version"
+
+## Status update 2026-10-06: Image pins have moved
+
+The image and toolchain versions named above (CUDA 13.3.1, ROCm 7.2.4, oneAPI
+2025.3.1) are the pins of 2026-08-31 and stay as the record of this decision.
+The authority for the current pins is `build-config.env`
+([ADR-1231](1231-base-image-single-source.md)); on `origin/master` it reads
+`CUDA_VERSION` 13.4.2, `ROCM_VERSION` 10.1.0 and `ONEAPI_VERSION` 2026.1. The
+decision itself (every base image and toolchain is digest-pinned) is
+unchanged.
+
+The body above is unchanged.

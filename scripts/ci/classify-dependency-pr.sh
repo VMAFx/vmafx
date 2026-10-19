@@ -34,6 +34,8 @@
 
 set -euo pipefail
 
+_classify_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+
 usage() {
   cat >&2 <<USAGE_EOF
 Usage: $0 [options]
@@ -132,15 +134,19 @@ is_allowed_dependency_path() {
   # pre-commit-hooks PR (#1588) failed the deliverables gate, and Renovate
   # rewrites the PR body on each rebase, so an opt-out block does not stick.
   # Exact root path only: nested Makefiles and *.mk stay gated.
+  # rust-toolchain.toml is the one Rust toolchain pin (ADR-3318); Renovate
+  # moves it together with the workflows and crate manifests (PR #2795).
   case "$path" in
     renovate.json | \
       build-config.env | \
       Makefile | \
+      rust-toolchain.toml | \
       .github/renovate.json* | \
       .pre-commit-config.yaml | \
       dev/Containerfile | \
       docker/* | \
       deploy/helm/* | \
+      .github/actions/* | \
       .github/workflows/* | \
       requirements/* | \
       changelog.d/*)
@@ -148,8 +154,12 @@ is_allowed_dependency_path() {
       ;;
   esac
 
-  # Basename matches for manifests and lockfiles across the tree
-  case "$base" in
+  is_dependency_manifest_name "$base"
+}
+
+# Basename matches for manifests and lockfiles across the tree.
+is_dependency_manifest_name() {
+  case "$1" in
     renovate.json | \
       package.json | package-lock.json | pnpm-lock.yaml | yarn.lock | \
       go.mod | go.sum | \
@@ -205,9 +215,11 @@ else
     # moved failed the documentation gates for that reason alone.
     #
     # `git merge-base` gives the real fork point, which is what three-dot diff
-    # syntax means. The fallback branch below already did this correctly; only
-    # this explicit-SHA path was wrong.
-    diff_base="$(git merge-base "${base_sha}" "${head_sha}" 2>/dev/null || printf '%s' "${base_sha}")"
+    # syntax means. Without a merge base the classification is an environment
+    # error (exit 2), never a diff from base_sha itself (pr-diff-base.sh).
+    # shellcheck source=scripts/ci/pr-diff-base.sh
+    . "${_classify_dir}/pr-diff-base.sh"
+    diff_base="$(pr_diff_base "${base_sha}" "${head_sha}" classify-dependency-pr)" || exit 2
     diff_head="${head_sha}"
   else
     if ! git rev-parse --verify origin/master >/dev/null 2>&1; then

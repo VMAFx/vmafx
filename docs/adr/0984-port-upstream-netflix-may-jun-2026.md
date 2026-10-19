@@ -1,12 +1,7 @@
 # ADR-0984: Port Netflix Upstream May–Jun 2026 (5 commits)
 
-## Status
-
-Accepted
-
-## Date
-
-2026-06-01
+- **Status**: Accepted
+- **Date**: 2026-06-01
 
 ## Context
 

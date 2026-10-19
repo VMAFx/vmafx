@@ -99,6 +99,33 @@ static char *test_million_a(void)
     return NULL;
 }
 
+/* RC4 WP5: the streaming form returns the same digest whatever the pieces:
+ * every boundary message fed in chunks that start inside, at and across a
+ * block (a dropped or re-hashed buffered tail fails it). */
+static char *test_streaming_chunks(void)
+{
+    static const size_t chunk_sizes[] = {1, 7, 63, 64, 65, 120};
+    uint8_t message[120];
+    for (size_t i = 0; i < sizeof(message); i++) {
+        message[i] = (uint8_t)((i * 31u + 7u) & 0xffu);
+    }
+    for (size_t c = 0; c < sizeof(chunk_sizes) / sizeof(chunk_sizes[0]); c++) {
+        for (size_t i = 0; i < sizeof(boundary_cases) / sizeof(boundary_cases[0]); i++) {
+            VmafxSha256 sha;
+            vmafx_sha256_init(&sha);
+            for (size_t at = 0; at < boundary_cases[i].len; at += chunk_sizes[c]) {
+                const size_t left = boundary_cases[i].len - at;
+                vmafx_sha256_update(&sha, message + at,
+                                    left < chunk_sizes[c] ? left : chunk_sizes[c]);
+            }
+            char hex[VMAFX_SHA256_HEX_CHARS];
+            vmafx_sha256_final_hex(&sha, hex);
+            mu_assert("streamed digest", strcmp(hex, boundary_cases[i].hex) == 0);
+        }
+    }
+    return NULL;
+}
+
 static char *test_null_empty_message(void)
 {
     uint8_t digest[VMAFX_SHA256_DIGEST_SIZE];
@@ -110,10 +137,8 @@ static char *test_null_empty_message(void)
 char *run_tests(void)
 {
     static const MuTest tests[] = {
-        MU_TEST(test_fips_examples),
-        MU_TEST(test_padding_boundaries),
-        MU_TEST(test_million_a),
-        MU_TEST(test_null_empty_message),
+        MU_TEST(test_fips_examples),      MU_TEST(test_padding_boundaries), MU_TEST(test_million_a),
+        MU_TEST(test_null_empty_message), MU_TEST(test_streaming_chunks),
     };
     return mu_run_table(tests, MU_TABLE_LEN(tests));
 }

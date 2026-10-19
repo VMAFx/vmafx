@@ -2,10 +2,13 @@
 # Regression tests for the coordinated release-version preflight.
 #
 # Copyright 2026 Lusoris
-# Copyright 2026 Claude (Anthropic)
-# SPDX-License-Identifier: BSD-2-Clause-Patent
+# SPDX-License-Identifier: EUPL-1.2
 
 set -euo pipefail
+
+# Drop the git hook environment and the fixture identity (see the helper).
+# shellcheck source=/dev/null
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/../../lib/clean-git-env.sh"
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 VERIFY="$SCRIPT_DIR/../verify-release-version.sh"

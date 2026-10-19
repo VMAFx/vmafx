@@ -132,7 +132,7 @@ static float reference_flt(float csf)
 static float reference_centre(float sum, float centre)
 {
     float s = sum;
-    s += REFERENCE_ONE_BY_15 * fabsf(centre);
+    s = (float)(s + REFERENCE_ONE_BY_15 * fabsf(centre));
     return s;
 }
 
@@ -763,7 +763,7 @@ static char *check_reductions(Scale *s)
 
 static char *with_scale(char *(*check)(Scale *))
 {
-    Scale s;
+    static Scale s; /* one at a time: a check reports through its message, not through s */
     mu_assert("allocation failed", scale_alloc(&s) == 0);
     char *msg = check(&s);
     scale_free(&s);

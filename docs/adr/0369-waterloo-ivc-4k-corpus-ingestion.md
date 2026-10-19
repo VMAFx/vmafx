@@ -152,3 +152,11 @@ collapsing it at consumption time and routing the
   research digest #465 as the 2160p-gap source and the LSVQ
   PR #471 / KonViD-150k PR #447 as the adapter-pattern
   sources.
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 14: `LSVQ (ADR-0333, in flight as PR #471)`: Cites ADR-0333 for
+  LSVQ ingestion, but ADR-0333 is multi-pass encoding; LSVQ is ADR-0367.

@@ -6,9 +6,9 @@ Edit AGENTS.d/_index.md or a page under AGENTS.d/, then run
 
 Generated index. Before editing: match every path you will touch against
 `Touching` in [Topic pages](#topic-pages) and read each matching page first; no
-match, no page. Text between here and the table binds every file of this
-directory. `Touching` paths: relative to this directory, leading `/` =
-repository root. New invariant: a page under `AGENTS.d/` ([how](../docs/development/agents-index.md)).
+match, no page. Text between here and [Topic pages](#topic-pages) binds every
+file of this directory. `Touching` paths: relative to this directory, leading
+`/` = repository root. New invariant: new page under `AGENTS.d/` ([how](../docs/development/agents-index.md)).
 
 Parent: [../AGENTS.md](../AGENTS.md).
 
@@ -23,9 +23,11 @@ for diagnosis establishing these.
 | Touching | Read first | Invariant |
 | --- | --- | --- |
 | `Containerfile`, `/build-config.env`, `/docs/development/base-images.md` | [base-images](AGENTS.d/base-images.md) | All base images default from build-config.env; no `COPY --from=<external image>`; declare named stages. |
+| `Containerfile`, `/scripts/ci/tests/test_dev_image_build_stages.py` | [build-stages](AGENTS.d/build-stages.md) | libvmaf, FFmpeg build trees only in libvmaf-compile, ffmpeg-compile; image stages COPY their DESTDIR staging roots. |
 | `Containerfile` | [cache-mounts](AGENTS.d/cache-mounts.md) | Apt cache mounts without cleanup; ccache mount with CCACHE_DIR; dockerfile:1.7 syntax; vmaf user uid/gid 2000. |
 | `docker-compose.yml`, `scripts/dev-mcp-healthcheck.sh`, `scripts/test-dev-mcp-healthcheck.sh` | [compose-healthcheck](AGENTS.d/compose-healthcheck.md) | Healthcheck matches stdio transport via vmaf --version; 45s start period for CUDA; no socket check. |
-| `scripts/dev-mcp-entrypoint.sh`, `Containerfile` | [entrypoint-unprivileged](AGENTS.d/entrypoint-unprivileged.md) | Entrypoint runs as `vmaf`; it changes a path's mode or owner only if the path is its own and the change is needed. |
+| `docker-compose.yml`, `/scripts/ci/tests/test_dev_compose_corpus_mount.py` | [corpus-mount](AGENTS.d/corpus-mount.md) | dev-mcp and smoke-probe-cron each bind ${VMAFX_CORPUS_DIR:-./.corpus} read-only at /workspace/.corpus. |
+| `scripts/dev-mcp-entrypoint.sh`, `Containerfile` | [entrypoint-unprivileged](AGENTS.d/entrypoint-unprivileged.md) | Entrypoint runs as `vmaf`; it changes path's mode or owner only if path is its own and change is needed. |
 | `Containerfile`, `/ffmpeg-patches/series.txt` | [ffmpeg-encoders](AGENTS.d/ffmpeg-encoders.md) | Source-built SVT-AV1 and libvvenc; vendored AMF; QSV dual runtime; hardware encoder flags in FFmpeg configure. |
 | `Containerfile`, `docker-compose.yml` | [gpu-backend-exposure](AGENTS.d/gpu-backend-exposure.md) | LD_LIBRARY_PATH includes tcm; no image ICD pins; /dev/dri directory bind-mounted; stage 3 backend probe. |
 | `Containerfile`, `docker-compose.yml`, `scripts/dev-mcp-entrypoint.sh` | [gpu-plumbing](AGENTS.d/gpu-plumbing.md) | Entrypoint VK_DRIVER_FILES rewrite active; no HSA override; VA drivers in stage 1; NVIDIA graphics capability. |
@@ -37,3 +39,4 @@ for diagnosis establishing these.
 | `Containerfile`, `/.dockerignore` | [source-tree-paths](AGENTS.d/source-tree-paths.md) | Library source path is core/, Python harness is compat/python-vmaf/; verify renames with targeted grep. |
 | `Containerfile`, `scripts/dev-mcp-entrypoint.sh`, `scripts/fetch-intel-neo.py`, `/build-config.env` | [uapi-version-pins](AGENTS.d/uapi-version-pins.md) | NEO and ROCm match host kernel ABI; build-config.env owns pins; entrypoint probe runs argv without shell. |
 | `Containerfile` | [user-ordering](AGENTS.d/user-ordering.md) | WORKDIR creates directories as root; precede non-root directory creations with explicit chown. |
+| `Containerfile`, `/.github/actions/tidy-lane/action.yml` | [vulkan-loader](AGENTS.d/vulkan-loader.md) | Vulkan loader, headers, lavapipe in build-deps of the one dev image; build fails if vulkaninfo lacks llvmpipe. |

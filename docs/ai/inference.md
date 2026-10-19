@@ -475,9 +475,24 @@ The same `.onnx` on two different EPs produces near-identical scores:
 | CPU vs CUDA (FP32) | within 1e-4 |
 | CPU vs CUDA (FP16 via `--tiny-fp16`) | within 1e-2 |
 
-CI exercises CPU only. No CI job checks tiny-AI cross-device parity today, so
-those two bounds are workstation measurements, not gated numbers. The
-self-hosted-runner lanes are separate and do not cover this claim:
+No CI job runs a second execution provider yet, so those two bounds are
+workstation measurements until a runner with a CUDA-enabled ONNX Runtime runs the
+gate. The gate exists and fails closed:
+
+```bash
+python3 scripts/ci/tiny_ai_cross_device_parity_gate.py \
+  --reference-provider CPUExecutionProvider --target-provider CUDAExecutionProvider \
+  --json-out parity.json --md-out parity.md
+```
+
+It exits 1 and names the cause when the target provider is not installed
+(`MISSING_PROVIDER`), when ONNX Runtime accepted it but ran the session on the
+CPU (`PROVIDER_UNBOUND`), when the feature fixture is missing (`BAD_FIXTURE`), or
+when an output differs by more than the bound (`FAIL`). `--allow-missing-provider`
+is for inspection only. `vmaf-train cross-backend --fail-on-mismatch` is
+fail-closed the same way: a run that compared nothing, or whose provider fell
+back to the CPU, is not ok. The self-hosted-runner lanes are separate and do not
+run it yet:
 
 - [`sycl-parity.yml`](../../.github/workflows/sycl-parity.yml) owns Arc-only
   feature parity behind `SYCL_ARC_RUNNER_ENABLED` and the `sycl-arc` label.

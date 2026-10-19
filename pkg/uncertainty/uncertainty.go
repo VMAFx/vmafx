@@ -5,7 +5,7 @@
 // uncertainty.py — the shared confidence-band helpers the uncertainty-aware
 // recipes in `recommend`, `ladder` and `auto` all consume.
 //
-// The conformal-VQA surface (ADR-0279) turns the predictor's verdict from a
+// The conformal-VQA surface (ADR-0393) turns the predictor's verdict from a
 // binary GOSPEL / FALL_BACK into a continuous (point, low, high) interval.
 // Two width thresholds carve that interval into three bands:
 //

@@ -35,7 +35,7 @@ def _dw_sep(in_c: int, out_c: int, stride: int = 1) -> nn.Sequential:
     )
 
 
-class NRMetric(L.LightningModule):
+class NRMetric(L.LightningModule):  # type: ignore[misc]  # torch / Lightning are untyped for the mypy gate (--no-site-packages)
     """MobileNet-tiny-ish backbone → global pool → scalar MOS.
 
     Supports the same @c emit_variance mode as the FR regressor — when
@@ -85,7 +85,7 @@ class NRMetric(L.LightningModule):
         return out.squeeze(-1)
 
     def _step(self, batch: object, tag: str) -> torch.Tensor:
-        x, y = batch  # type: ignore[misc]
+        x, y = cast("tuple[torch.Tensor, torch.Tensor]", batch)
         out = self(x)
         if self._hp["emit_variance"]:
             pred = out[..., 0]

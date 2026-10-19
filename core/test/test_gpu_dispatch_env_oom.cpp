@@ -48,6 +48,7 @@ static int test_setenv(const char *name, const char *value, int overwrite)
 #endif
 
 extern "C" {
+#include "sanitizer_build.h"
 #include "test.h"
 }
 
@@ -65,16 +66,7 @@ extern "C" {
  * push, so coverage is not lost — only this one sanitizer configuration opts
  * out of the global-new override that is fundamentally incompatible with the
  * sanitizer allocator interceptors. */
-#if defined(__SANITIZE_THREAD__) || defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_MEMORY__)
-#define VMAF_OOM_TEST_SANITIZED 1
-#elif defined(__has_feature)
-#if __has_feature(thread_sanitizer) || __has_feature(address_sanitizer) ||                         \
-    __has_feature(memory_sanitizer)
-#define VMAF_OOM_TEST_SANITIZED 1
-#endif
-#endif
-
-#ifndef VMAF_OOM_TEST_SANITIZED
+#if !VMAF_TEST_SANITIZER_BUILD
 /* When armed, the next operator new call throws std::bad_alloc.  A plain bool
  * suffices (single-threaded test); std::atomic keeps it tidy and avoids any
  * tearing concern under sanitizers. */
@@ -104,14 +96,14 @@ void operator delete(void *p, std::size_t) noexcept
 {
     std::free(p);
 }
-#endif /* !VMAF_OOM_TEST_SANITIZED */
+#endif /* !VMAF_TEST_SANITIZER_BUILD */
 
 /* R2-9: a transient OOM on the value snapshot must not poison the slot. */
 namespace
 {
 mu_message_t test_env_oom_does_not_poison_slot()
 {
-#ifdef VMAF_OOM_TEST_SANITIZED
+#if VMAF_TEST_SANITIZER_BUILD
     /* Skip under sanitizers: the global-new override that arms the fault is
      * compiled out (it duplicates the sanitizer allocator symbols), so the
      * injection point does not exist here. Returning NULL signals a pass. */
@@ -162,7 +154,7 @@ mu_message_t test_env_oom_does_not_poison_slot()
     mu_assert(msg_not_cached, recovered != nullptr);
     mu_assert(msg_value_match, strcmp(recovered, want) == 0);
     return nullptr;
-#endif /* VMAF_OOM_TEST_SANITIZED */
+#endif /* VMAF_TEST_SANITIZER_BUILD */
 }
 } // namespace
 

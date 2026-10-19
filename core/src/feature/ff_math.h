@@ -429,7 +429,7 @@ VMAF_FF_INLINE SinCos sin_cos(Ff x, const VMAF_FF_TABLE_SPACE float *table)
     return {ff_add(ff_mul(sin_k, cos_r), ff_mul(cos_k, sin_r)),
             sub(ff_mul(cos_k, cos_r), ff_mul(sin_k, sin_r))};
 #else
-    const size_t index = (size_t)((int)k & 31) * 4u;
+    const size_t index = (size_t)((unsigned)(int)k & 31u) * 4u;
     const Ff sin_k = {.hi = table[index + 0u], .lo = table[index + 1u]};
     const Ff cos_k = {.hi = table[index + 2u], .lo = table[index + 3u]};
     return {.sin = ff_add(ff_mul(sin_k, cos_r), ff_mul(cos_k, sin_r)),

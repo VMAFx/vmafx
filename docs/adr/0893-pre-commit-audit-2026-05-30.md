@@ -112,3 +112,13 @@ its own diff-with-blame audit. The 6.0.1 step is the safe one.
 - Source: `req` (user prompt 2026-05-30 — "Audit
   `.pre-commit-config.yaml` for missing hooks, stale versions,
   broken hooks").
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 36: `master** and is the subject of the in-flight PR #340
+  (ADR-0867, "Pre-commit: io_uring serial execution").`: Cites nonexistent
+  ADR-0867. ADR-0867 does not exist on origin/master. ADR-0867 now has a short
+  tombstone record.

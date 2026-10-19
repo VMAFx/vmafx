@@ -79,6 +79,8 @@ static int ssim_low_pass_alloc(struct iqa_kernel *low_pass, int scale)
     low_pass->w = low_pass->h = scale;
     low_pass->normalized = 0;
     low_pass->bnd_opt = KBND_SYMMETRIC;
+    /* KBND_SYMMETRIC ignores it, but iqa_convolve() passes it by value. */
+    low_pass->bnd_const = 0.0f;
     const float inv = 1.0f / (float)scale;
     const float inv2 = 1.0f / (float)(scale * scale);
     for (int i = 0; i < scale * scale; ++i) {

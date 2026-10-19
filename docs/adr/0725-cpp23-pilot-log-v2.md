@@ -64,3 +64,17 @@ contains `log.cpp`.
 - ADR-0722 — C++11 attempt (PR #42), superseded by this ADR.
 - PR #41 — `mem_cpp23_lib` isolated static lib pattern (reference implementation).
 - req: "real C++23 — std::string_view, std::clamp, std::array<std::string_view>; same isolated-lib pattern as mem.cpp from PR #41; supersedes the C++11 attempt in PR #42."
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 2: `# ADR-0725: C++23 Pilot — log.c conversion (real C++23,
+  supersedes ADR-0722)`: Cites nonexistent ADR-0722 (referenced 6 times in
+  ADR-0725). See ADR-0725 (real C++23 conversion of log.c that supersedes it;
+  ADR-0722 is a retired number in scripts/ci/source-adr-citations.json).
+- About line 63: `- ADR-0720 (docs/adr/0720-vmafx-drop-ansnr.md) —
+  mem_cpp23_lib isolation precedent.`: Cites nonexistent ADR file
+  docs/adr/0720-vmafx-drop-ansnr.md. ADR-0720 is 0720-cpp23-pilot-mem.md
+  ("C++23 Wave-1 Pilot — mem.c conversion").

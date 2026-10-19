@@ -30,8 +30,8 @@ typedef struct VmafPicture {
 
 | Format | Chroma planes | `w[1]` / `h[1]` |
 | --- | --- | --- |
-| `VMAF_PIX_FMT_YUV420P` | half width, half height (rounded up) | `ceil(w/2)` / `ceil(h/2)` |
-| `VMAF_PIX_FMT_YUV422P` | half width | `ceil(w/2)` / `h` |
+| `VMAF_PIX_FMT_YUV420P` | half width, half height (rounded up) | $\lceil w/2 \rceil$ / $\lceil h/2 \rceil$ |
+| `VMAF_PIX_FMT_YUV422P` | half width | $\lceil w/2 \rceil$ / $h$ |
 | `VMAF_PIX_FMT_YUV444P` | full size | `w` / `h` |
 | `VMAF_PIX_FMT_YUV400P` | none (luma only) | `0` / `0` |
 | `VMAF_PIX_FMT_UNKNOWN` | sentinel, rejected by the allocator | n/a |
@@ -88,6 +88,102 @@ if (err < 0)
 
 A complete program is on the [overview page](index.md#minimal-program).
 
+## Wrap your own planes (`vmaf_picture_wrap`)
+
+When the samples already sit in planar memory you own (a decoder's frame,
+a file you mapped), `vmaf_picture_wrap()` makes a picture on that memory
+instead of copying it into a `vmaf_picture_alloc()` buffer. It is
+Netflix/vmaf `700124a4c`, with the differences listed below
+([ADR-2949](../adr/2949-picture-wrap-compat-port.md)).
+
+```c
+typedef struct VmafPictureWrapped {
+    enum VmafPixelFormat pix_fmt;
+    unsigned bpc;
+    unsigned w, h;               /* luma size in samples */
+    void *data[3];
+    ptrdiff_t stride[3];         /* bytes */
+    void *cookie;
+    int (*release_picture)(VmafPicture *pic, void *cookie);
+} VmafPictureWrapped;
+
+int vmaf_picture_wrap(VmafPicture *pic, VmafPictureWrapped pic_wrapped);
+```
+
+| | `vmaf_picture_wrap` |
+| --- | --- |
+| Does | Fills `*pic` with a picture on `data` / `stride`, without a copy. Refcount starts at 1, as for `vmaf_picture_alloc()`. |
+| Inputs | `pic` non-NULL; `pix_fmt` one of the four formats; `bpc` 8 to 16; `w`, `h` greater than 0; for each plane the format has (one for `YUV400P`, else three) a non-NULL `data[i]` and a `stride[i]` that is not negative and holds one row of that plane. |
+| Plane sizes | Luma `w` x `h`. A subsampled chroma plane is `ceil(w / 2)` samples wide and, for 4:2:0, `ceil(h / 2)` rows tall, the same as `vmaf_picture_alloc()` (so a 1919-wide 4:2:0 frame has 960-sample chroma rows, as FFmpeg lays them out). |
+| Errors | `-EINVAL` for any input above, `-ENOMEM`. On an error `*pic` is not written and `release_picture` is not called. |
+| Ownership | Same as an allocated picture: release it with `vmaf_picture_unref()` or hand it to `vmaf_read_pictures()`, which takes it whatever it returns. |
+| Release | `release_picture(view, cookie)` runs once, on the thread that drops the last reference: in your `vmaf_picture_unref()`, or inside the context once it no longer needs the frame, at the latest in `vmaf_close()`. Until then keep the planes valid and unchanged. `view` has the wrapped format, size, data and strides; its `ref` and `priv` are NULL. The return value is ignored. |
+| No callback | With `release_picture` NULL nothing is called; keep the planes valid until every context that read the picture is closed. |
+| Thread-safety | Not thread-safe; one context and its pictures per thread. The callback itself may run on a context's worker thread. |
+| ABI | Additive, `libvmaf.so.3`. Deprecated in favour of `vmafx_frame_wrap_host()` like the rest of `picture.h` (the warning is opt-in). |
+
+The planes are read in place, so they keep your strides: rows need not be
+padded to 64 samples, and a stride wider than the row is fine. Which frames
+the context still reads is described under
+[what the context keeps alive](#what-the-context-keeps-alive); the release
+callback is the signal that a frame's memory is free again.
+
+### Example: score decoder frames without a copy
+
+```c
+static int frame_done(VmafPicture *pic, void *cookie)
+{
+    (void)pic;
+    my_decoder_release_frame(cookie);   /* hand the buffer back */
+    return 0;
+}
+
+VmafPicture ref, dist;
+VmafPictureWrapped w = {
+    .pix_fmt = VMAF_PIX_FMT_YUV420P, .bpc = 8, .w = 1920, .h = 1080,
+    .data = { f->y, f->u, f->v },
+    .stride = { f->y_stride, f->uv_stride, f->uv_stride },
+    .cookie = f, .release_picture = frame_done,
+};
+int err = vmaf_picture_wrap(&ref, w);
+/* ... the same for dist ... */
+if (err == 0)
+    err = vmaf_read_pictures(vmaf, &ref, &dist, index);  /* takes both */
+```
+
+The repository's tests show the whole loop:
+[`test_picture_wrap_integration.c`](../../core/test/test_picture_wrap_integration.c)
+(upstream's) and
+[`test_picture_wrap_api.c`](../../core/test/test_picture_wrap_api.c), which
+also checks that wrapped pictures score bit for bit what the same samples
+score through `vmaf_picture_alloc()`.
+
+### Difference from upstream
+
+The signature and the struct are upstream's. The behaviour differs where
+upstream leaves a caller's mistake unchecked:
+
+- Chroma planes of an odd-size frame are rounded up, as everywhere in the
+  fork ([ADR-1483](../adr/1483-odd-size-chroma-planes-round-up.md));
+  upstream rounds down, so it reads one column (and row) fewer than the
+  plane has.
+- A size of 0, a NULL plane, or a stride that is negative or shorter than a
+  row returns `-EINVAL`; upstream accepts them.
+- On an error `*pic` is left as it was; upstream has already cleared it.
+- The release callback's `pic` carries NULL `ref` and `priv`; upstream passes
+  its internal picture.
+
+In the [VMAFx API](vmafx/index.md) the same operation is
+`vmafx_frame_wrap_host()` (see [frames](vmafx/frame.md)), which
+`vmaf_picture_wrap()` calls.
+
+## Sample range
+
+Every sample of a picture of bit depth `bpc` must be at most
+$2^{\mathrm{bpc}} - 1$. The default path does not check it;
+`vmaf_set_sample_range_check_enabled()` turns on a check that refuses an
+out-of-range picture with `-EINVAL`. See [Sample range](sample-range.md).
+
 ## Index rules
 
 `index` must increase on every call to `vmaf_read_pictures()`. A repeated
@@ -136,7 +232,7 @@ Sizing the pool:
 | Situation | Minimum `pic_cnt` |
 | --- | --- |
 | Serial run, no `n-2` extractor | 3 pictures serve it |
-| `n_threads` workers | `2 * n_threads + 2` keeps every worker supplied |
+| `n_threads` workers | $2\,n_{\mathrm{threads}} + 2$ keeps every worker supplied |
 | An extractor reads frame `n-2` (five-frame motion window) | 4: the two kept reference pictures plus the current pair |
 
 A pool below 4 with a five-frame window is refused with `-EINVAL` by
@@ -252,3 +348,53 @@ unchanged, the source colour is the `src_color` argument, and a converted
 `dst` carries no colour (it is `target->color`, which you already hold). The
 types, enumerators and the other two functions are upstream's. When upstream
 releases the function the ADR describes the migration.
+
+Upstream's master has since moved `color` to the end of the struct
+(Netflix/vmaf `0b9462873`), which keeps the offsets of the other members but
+still makes upstream's `VmafPicture` larger than the fork's. What that means
+for a caller:
+
+| Caller | Result |
+| --- | --- |
+| Source that sets `pic.color` (or `.color = ...`) against the fork's header | does not compile: there is no `color` member |
+| A binary built against upstream's header that sets `color` | the colour is not applied: the library reads no member after `priv` and cannot tell that the caller used the larger layout |
+| Colour given through `vmaf_set_input_colorimetry()` or the `src_color` argument | applied |
+
+Give the colour through one of the two functions in the last row; never rely
+on a `color` member.
+
+## Converting to a model's conversion target
+
+A model can declare a [`conversion_target`](../models/v1.md#model-declared-conversion-target).
+For such a model `vmaf_read_pictures()` converts both pictures to the target
+before feature extraction (Netflix/vmaf `a6c0ba6d5`), through the conversion
+above. The conversion runs on the host, before any upload to a GPU backend, so
+CUDA, SYCL, HIP and Metal runs see the converted pictures; a device-side
+conversion is not part of this.
+
+Upstream reads each picture's source colour from `VmafPicture::color`; the
+fork declares it once per input on the context instead:
+
+```c
+VmafColor pq = { VMAF_COLOR_RANGE_LIMITED, VMAF_COLOR_PRIMARIES_BT2020,
+                 VMAF_COLOR_TRC_SMPTE2084, VMAF_COLOR_MATRIX_BT2020_NCL };
+int err = vmaf_set_input_colorimetry(vmaf, &pq, &pq);   /* ref, dist; NULL = unspecified */
+```
+
+| Case | Result |
+| --- | --- |
+| model without `conversion_target` | pass-through; the colour is ignored |
+| target and both inputs fully specified | each picture not already matching is converted; the others are passed on |
+| target and an input unspecified or partly specified | `-EINVAL`, the log names the missing attributes |
+| models of one run with different targets (or some with, some without) | `vmaf_use_features_from_model()` returns `-EINVAL` |
+| target but no zimg in the build, a picture in device memory, or the SYCL zero-copy entry point `vmaf_read_pictures_sycl()` | `-ENOTSUP` |
+| `vmaf_set_input_colorimetry()` after a picture was converted | `-EBUSY` |
+
+`vmaf_set_input_colorimetry()` must be called before the first picture that is
+converted, because the zimg context is built from it. As for any error of
+`vmaf_read_pictures()`, the context releases the pictures it was given.
+
+On the VMAFx API a frame carries its own colour in `VmafxFrameDesc.color`, and
+`vmafx_context_set_default_color()`, which `vmaf_set_input_colorimetry()` calls,
+gives the colour of the frames that carry none; see
+[Frame colour](vmafx/index.md#frame-colour).

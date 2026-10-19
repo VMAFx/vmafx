@@ -131,7 +131,7 @@ HOST_SET_CONSTANTS = "[enc setBytes:&s->constants length:sizeof(s->constants) at
 HOST_READBACK = "vmaf_metal_kernel_buffer_alloc(&s->rb, s->ctx, (size_t)w * h * sizeof(float));"
 HOST_CALL = "const double de00_sum = ciede_frame_sum(terms, (size_t)s->frame_w * s->frame_h);"
 HOST_SCORE = "const double score = 45. - 20. * log10(de00_sum / (s->frame_w * s->frame_h));"
-HOST_OPTIONS = "static const VmafOption options[] = {{0}};"
+HOST_OPTIONS = "static const VmafOption options[] = {{}};"
 CPU_SCORE = "const double score = 45. - 20. * log10(de00_sum / (ref_pic->w[0] * ref_pic->h[0]));"
 CPU_UPSCALE = (
     "out_buf[j] = in_buf[(j / ((p && ss_hor) ? 2 : 1))];",
@@ -398,7 +398,7 @@ class CiedeMetalExactContract(unittest.TestCase):
         failures = self._edited(
             HOST,
             HOST_OPTIONS,
-            'static const VmafOption options[] = {{.name = "enable_lcs"}, {0}};',
+            'static const VmafOption options[] = {{.name = "enable_lcs"}, {}};',
         )
         self._detects(failures, "option table")
 

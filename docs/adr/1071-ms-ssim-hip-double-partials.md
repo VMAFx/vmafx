@@ -68,3 +68,12 @@ Apply the ADR-0990 precision fix to the HIP backend:
 - ADR-0214 (cross-backend places=4 CPU-parity gate)
 - ADR-0285 (HIP ms_ssim extractor scaffolding)
 - Cross-backend audit 2026-06-06: moment, ciede2000, ms_ssim
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 69: `- ADR-0285 (HIP ms_ssim extractor scaffolding)`: ADR-0285
+  points to an unrelated topic (0285-vmaf-tune-vvenc-nnvc.md: "vmaf-tune
+  libvvenc adapter — VVC / H.266 with optional NN-VC tools").

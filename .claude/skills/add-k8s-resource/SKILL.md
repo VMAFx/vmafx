@@ -1,15 +1,17 @@
 ---
 name: add-k8s-resource
-description: Scaffold a new Kubernetes CRD + kubebuilder controller + RBAC + helm chart entry for the vmafx-operator. Follows the VmafxJob / VmafxNode / VmafxModelTraining precedent in cmd/vmafx-operator/ (ADR-0714, ADR-0709 parent).
+description: Scaffold a new Kubernetes CRD + kubebuilder controller + RBAC + helm chart entry for the vmafx-operator. The types and CRD come from api/vmafx-platform.toml (ADR-2350 D13); follows the VmafxJob / VmafxNode / VmafxModelTraining precedent in cmd/vmafx-operator/ (ADR-0714, ADR-0709 parent).
 ---
 <!-- markdownlint-disable MD013 -->
 
 # /add-k8s-resource
 
 Adds new CRD under `vmafx.dev` API group.
+Appends resource + spec/status stub to `api/vmafx-platform.toml`; generators
+write Go types, deepcopy, CRD YAML (`deploy/helm/vmafx/crds/`, only CRD tree)
+and `config/rbac/role.yaml` (ADR-2350 D13).
 Generates kubebuilder-style controller stub.
 Wires stub into vmafx-operator manager.
-Ships matching CRD YAML in helm chart `crds/` directory.
 Adds RBAC rules.
 Exposes values.yaml toggle.
 Follows conventions from `VmafxJob`, `VmafxNode`, `VmafxModelTraining` in
@@ -19,8 +21,10 @@ Follows conventions from `VmafxJob`, `VmafxNode`, `VmafxModelTraining` in
 
 - Add new CRD reconciled by vmafx-operator (e.g. `VmafxBenchmarkRun`,
   `VmafxCorpusSync`, `VmafxModelDeployment`).
-- NOT for adding new sub-resource or field to existing CRD -> schema migration;
-  use `controller-gen` directly, follow CRD-versioning ADRs.
+- NOT for adding field to existing CRD -> edit its `[[messages]]` entry in
+  `api/vmafx-platform.toml`, regenerate
+  ([API generation](../../../docs/development/api-generation.md#change-a-custom-resource));
+  within v1 resource only grows (`test_crd_compat`).
 - NOT for adding non-CRD Kubernetes resource (Deployment, Service, etc.) -> goes
   directly into `deploy/helm/vmafx/templates/`.
 
@@ -38,10 +42,9 @@ Follows conventions from `VmafxJob`, `VmafxNode`, `VmafxModelTraining` in
 
 | Path                                                                                  | Purpose                                            |
 |---------------------------------------------------------------------------------------|----------------------------------------------------|
-| `api/vmafx/v1/vmafx<kind>_types.go`                                                   | Go types (Spec, Status, list type)                 |
+| `api/vmafx-platform.toml` (appended)                                                  | `[[resources]]` + spec / status `[[messages]]`     |
 | `cmd/vmafx-operator/internal/controller/vmafx<kind>_controller.go`                    | Controller reconciler stub                         |
 | `cmd/vmafx-operator/internal/controller/vmafx<kind>_controller_test.go`               | envtest-style controller smoke test                |
-| `deploy/helm/vmafx/crds/vmafx.dev_vmafx<plural>.yaml`                                 | CRD manifest (controller-gen output)               |
 | `deploy/helm/vmafx/templates/operator-rbac-<kind>.yaml`                               | Per-kind ClusterRole rule additions                |
 | `docs/k8s/crds/vmafx<kind>.md`                                                        | Human-readable CRD reference                       |
 | `changelog.d/added/k8s-crd-vmafx<kind>.md`                                            | Changelog fragment                                 |
@@ -59,7 +62,8 @@ Follows conventions from `VmafxJob`, `VmafxNode`, `VmafxModelTraining` in
 ## Workflow
 
 1. Validate `<KindName>` matches `^[A-Z][A-Za-z0-9]+$`, not already present
-   (grep `api/vmafx/v1/`, `deploy/helm/vmafx/crds/`).
+   (`kind = "Vmafx<KindName>"` in `api/vmafx-platform.toml`, no
+   `api/vmafx/v1/` or `deploy/helm/vmafx/crds/` file).
 2. Compute derived names:
    - `kind` = `Vmafx<KindName>` (Go type, CRD kind).
    - `kind_lower` = lowercased (file paths).
@@ -68,9 +72,11 @@ Follows conventions from `VmafxJob`, `VmafxNode`, `VmafxModelTraining` in
    - `short` = `vm<first-4-chars-of-kind>` (e.g. `vmbench`).
 3. Copy templates with placeholder substitution (`@KIND@`, `@KIND_LOWER@`,
    `@PLURAL@`, `@SHORT@`, `@COPYRIGHT@`).
-4. Apply patches to `main.go`, `values.yaml`, `operator.md`, `AGENTS.md`.
-5. Regenerate CRD bundle: `make manifests` (delegates to `controller-gen`) ->
-   keeps helm `crds/` YAML byte-identical to kubebuilder output.
+4. Fill spec / status fields of the stub in `api/vmafx-platform.toml`, then
+   generate types, deepcopy, CRD, RBAC role:
+   `python3 scripts/codegen/vmafx-api.py --write` then
+   `python3 scripts/codegen/crd_generate.py --write`. Never hand-edit output.
+5. Apply patches to `main.go`, `values.yaml`, `operator.md`, `AGENTS.md`.
 6. Run `go build ./cmd/vmafx-operator/...` -> confirm manager compiles.
 7. Run `go test ./cmd/vmafx-operator/...` -> confirm new controller test passes
    (stub reconcile only -> returns success without side effects).
@@ -81,14 +87,15 @@ Follows conventions from `VmafxJob`, `VmafxNode`, `VmafxModelTraining` in
      (`get,list,watch,update,patch` by default; no `delete` without
      justification).
    - Helm chart smoke (`helm template deploy/helm/vmafx | yq` -> verify new CRD
-     lands).
+     lands); `scripts/ci/tests/test_helm_operator_rbac.py` -> chart grants
+     every rule of generated `config/rbac/role.yaml`.
 
 ## Guardrails
 
 - **Never** activate controller by default. `values.yaml` ships `enabled: false`
   (users opt in per cluster -> matches Stage 1 posture in ADR-0714).
-- **Never** add CRD without helm `crds/` YAML -> operators installing via helm
-  rely on chart `crds/` directory pre-creation.
+- **Never** hand-write types, deepcopy or CRD YAML -> generated from
+  `api/vmafx-platform.toml`; `test_crd_generated_current` fails on drift.
 - **Never** add `delete` or `*` verbs to RBAC without ADR justifying it. CRDs
   operator owns default to `get,list,watch,update,patch` plus `create` only when
   controller materialises sub-resources.
@@ -107,4 +114,8 @@ Follows conventions from `VmafxJob`, `VmafxNode`, `VmafxModelTraining` in
   —
   reference controllers (Node, Job, ModelTraining)
 - [`deploy/helm/vmafx/crds/`](../../../deploy/helm/vmafx/crds/) — shipped CRD
-  manifests
+  manifests (generated)
+- [ADR-2350](../../../docs/adr/2350-cloud-native-platform.md) D13 — platform
+  definition generates types, CRDs, RBAC role
+- [API generation](../../../docs/development/api-generation.md#kubernetes-resources)
+  — definition tables, regeneration, gates

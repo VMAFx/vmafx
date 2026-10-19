@@ -4,5 +4,5 @@ metrics: apsnr_*
 frames: agg
 bound: 54
 adr: ADR-1485
-upstream: Netflix/vmaf#1666
+upstream: Netflix/vmaf#1666, Netflix/vmaf#1618
 evidence: aggregate PSNR of a plane without error: the per-frame cap here, a ceiling far above it upstream. Full matrix in the dev image (43ef1e32cb32: GCC 15.2.0, glibc 2.43) on 2026-10-03, 9b6ecd5ae against Netflix 9e48141b: 12 values differ, largest 54 (cb1, apsnr_cb, frame agg: upstream 114, fork 60)

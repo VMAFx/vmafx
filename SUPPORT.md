@@ -12,7 +12,7 @@ We track upstream but don't duplicate its discussion threads.
 
 ## Is it about this fork specifically?
 
-- **GPU backends (CUDA / SYCL / Vulkan; HIP planned)** —
+- **GPU backends (CUDA / SYCL / HIP / Metal)** —
   [open a bug report](https://github.com/VMAFx/vmafx/issues/new/choose)
 - **SIMD paths (AVX2 / AVX-512 / NEON)** — same
 - **`--precision` flag / IEEE-754 output** — same
@@ -37,11 +37,13 @@ Include:
 - What you expected vs what you got.
 - What you've already tried (different backend, precision, model, etc.).
 
-Questions that include all five usually get triaged within a few days.
+Questions that include all five are easier to answer. For what to expect
+after you ask, see [What to expect](CONTRIBUTING.md#what-to-expect).
 
 ## Chat / real-time
 
-None currently. If there's demand we'll open a Discord. Watch
+None currently. Open-ended questions and ideas go to
+[GitHub Discussions](https://github.com/VMAFx/vmafx/discussions); watch
 [the repo](https://github.com/VMAFx/vmafx) for announcements.
 
 ## Sponsoring

@@ -17,32 +17,60 @@ import re
 import shutil
 import sys
 import unittest
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, ClassVar
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
+from scripts.lib.renovate_regex import to_python
 from scripts.lib.safe_subprocess import run as run_command
 
 ROOT = Path(__file__).resolve().parents[3]
 GIT = shutil.which("git") or "/usr/bin/git"
-BASE_FILES = {
-    "build-config.env",
-    "Dockerfile",
-    "Dockerfile.go-server",
-    "dev/Containerfile",
-    "docker/Dockerfile.controller",
-    "docker/Dockerfile.node",
-    "docker/Dockerfile.operator",
-    "docker/Dockerfile.production",
-    "docker/Dockerfile.production-gpu",
-    "docker/dev/ubuntu-26.04-cuda.Dockerfile",
-}
+CONFIG = "build-config.env"
+CONFIG_LINE = re.compile(r'^([A-Z][A-Z0-9_]*)="([^"]*)"', re.MULTILINE)
+DOCKERFILE = re.compile(r"^(?:Dockerfile[^/]*|docker/Dockerfile[^/]*|dev/Containerfile[^/]*)$")
+CUDA_COMPAT = "docker/dev/ubuntu-26.04-cuda.Dockerfile"
+# The controller store tests' PostgreSQL images (#2656): Go string constants
+# of the form postgres:<tag>@sha256:<digest>, read by a custom manager.
+STORETEST = "cmd/vmafx-controller/store/storetest/storetest.go"
+IMAGE_CONSTANT = re.compile(
+    r'^const (\w+) = "postgres:([^"@]+)@(sha256:[a-f0-9]{64})"$', re.MULTILINE
+)
+
+
+def image_keys(config_text: str) -> set[str]:
+    """The build-config.env keys whose value is an image reference, by the shape
+    scripts/ci/check-base-image-single-source.sh uses: a registry path or a tag
+    separator, and not a URL."""
+    return {
+        key
+        for key, value in CONFIG_LINE.findall(config_text)
+        if not value.startswith("http") and ("/" in value or ":" in value)
+    }
+
+
+def base_files(files: list[str], read: Callable[[str], str]) -> set[str]:
+    """build-config.env and every Dockerfile in the single-source gate's scope that
+    mirrors one of its image keys as an ARG default. Derived from the tree, so a
+    new mirror the custom manager does not select fails the tests below instead
+    of being left to the built-in manager (docker/Dockerfile.tester kept ROCm
+    10.0.0 in the 10.1.0 bump, #2170)."""
+    keys = image_keys(read(CONFIG))
+    arg = re.compile(r"^\s*ARG\s+(" + "|".join(sorted(keys)) + r")=", re.MULTILINE)
+    scope = [
+        path
+        for path in files
+        if (DOCKERFILE.match(path) and not path.startswith("docker/dev/")) or path == CUDA_COMPAT
+    ]
+    return {CONFIG} | {path for path in scope if arg.search(read(path))}
 
 
 class RenovateFilePatterns(unittest.TestCase):
     config: ClassVar[dict[str, Any]]
     files: ClassVar[list[str]]
+    base: ClassVar[set[str]]
 
     @classmethod
     def setUpClass(cls) -> None:
@@ -60,6 +88,7 @@ class RenovateFilePatterns(unittest.TestCase):
         )
         assert isinstance(result.stdout, str)
         cls.files = result.stdout.splitlines()
+        cls.base = base_files(cls.files, lambda path: (ROOT / path).read_text(encoding="utf-8"))
 
     def patterns(self, manager: dict[str, Any]) -> list[re.Pattern[str]]:
         patterns = manager["managerFilePatterns"]
@@ -92,7 +121,7 @@ class RenovateFilePatterns(unittest.TestCase):
         selected = {
             path for path in self.files if any(pattern.search(path) for pattern in patterns)
         }
-        self.assertEqual(selected, BASE_FILES)
+        self.assertEqual(selected, self.base)
 
     def test_builtin_docker_exclusions_are_covered_by_the_custom_manager(self) -> None:
         rules = [
@@ -101,7 +130,40 @@ class RenovateFilePatterns(unittest.TestCase):
             if rule.get("matchManagers") == ["dockerfile"] and rule.get("enabled") is False
         ]
         self.assertEqual(len(rules), 1)
-        self.assertEqual(set(rules[0]["matchFileNames"]), BASE_FILES - {"build-config.env"})
+        self.assertEqual(set(rules[0]["matchFileNames"]), self.base - {CONFIG})
+
+    def test_base_files_follow_the_config(self) -> None:
+        # The derivation must see the known mirrors, and a Dockerfile that stops
+        # mirroring a config key must drop out of it.
+        self.assertIn("docker/Dockerfile.tester", self.base)
+        self.assertIn("dev/Containerfile", self.base)
+        fake = {
+            CONFIG: 'ROCM_BUILDER="rocm/dev-ubuntu-26.04:1.0-full@sha256:00"\nROCM_VERSION="1.0"\n',
+            "docker/Dockerfile.a": 'ARG ROCM_BUILDER="x"\n',
+            "docker/Dockerfile.b": 'ARG ROCM_VERSION="1.0"\n',
+            "docker/dev/alpine.Dockerfile": 'ARG ROCM_BUILDER="x"\n',
+        }
+        self.assertEqual(base_files(list(fake), fake.__getitem__), {CONFIG, "docker/Dockerfile.a"})
+
+    def test_rocm_review_rule_matches_the_pinned_image(self) -> None:
+        # The manual-review rule (ADR-1225) named rocm/dev-ubuntu-24.04 after the
+        # pin moved to the 26.04 image, so the 10.1.0 bump (#2170) arrived without
+        # its rocm / manual-review labels.
+        config = (ROOT / CONFIG).read_text(encoding="utf-8")
+        pinned = {
+            value.split(":", 1)[0]
+            for key, value in CONFIG_LINE.findall(config)
+            if key in {"ROCM_BUILDER", "ROCM_RUNTIME"}
+        }
+        self.assertEqual(len(pinned), 1)
+        rules = [
+            rule
+            for rule in self.config["packageRules"]
+            if rule.get("groupName") == "ROCm (hip runtime)"
+        ]
+        self.assertEqual(len(rules), 1)
+        self.assertLessEqual(pinned, set(rules[0]["matchPackageNames"]))
+        self.assertIn("manual-review", rules[0]["labels"])
 
     def test_glibc_floor_runner_pin_is_frozen(self) -> None:
         # ADR-1354: Renovate must not move the native-bundle verify job off the
@@ -121,6 +183,344 @@ class RenovateFilePatterns(unittest.TestCase):
         match = re.search(r"(?ms)^  verify-native-artifacts:\n(.*?)(?=^  [\w-]+:\n|\Z)", workflow)
         self.assertIsNotNone(match, "supply-chain.yml has no verify-native-artifacts job")
         self.assertRegex(match.group(1) if match else "", r"(?m)^    runs-on: ubuntu-24\.04$")
+
+    def storetest_manager(self) -> dict[str, Any]:
+        managers = [
+            manager
+            for manager in self.config["customManagers"]
+            if any(pattern.search(STORETEST) for pattern in self.patterns(manager))
+        ]
+        self.assertEqual(len(managers), 1)
+        manager: dict[str, Any] = managers[0]
+        return manager
+
+    def test_storetest_postgres_images_are_tracked(self) -> None:
+        # No built-in manager reads a Go string constant, so without the custom
+        # manager neither image digest is ever updated. Every image constant of
+        # the file must be a match, with its tag and digest.
+        manager = self.storetest_manager()
+        self.assertEqual(manager["datasourceTemplate"], "docker")
+        self.assertEqual(manager["depNameTemplate"], "postgres")
+        text = (ROOT / STORETEST).read_text(encoding="utf-8")
+        constants = {name: (tag, digest) for name, tag, digest in IMAGE_CONSTANT.findall(text)}
+        self.assertEqual(set(constants), {"Image", "OldestImage"})
+        patterns = [re.compile(to_python(match)) for match in manager["matchStrings"]]
+        found = {
+            (match["currentValue"], match["currentDigest"])
+            for pattern in patterns
+            for match in pattern.finditer(text)
+        }
+        self.assertEqual(found, set(constants.values()))
+        # An image without a digest is not a match (testutil/pg refuses it).
+        undigested = 'const Image = "postgres:18.6-alpine"\n'
+        self.assertFalse(any(pattern.search(undigested) for pattern in patterns))
+
+    def test_oldest_postgres_image_stays_on_its_major(self) -> None:
+        # OldestImage is the oldest release external servers may run: digest,
+        # minor and patch updates only. Image keeps its major updates.
+        rules = [
+            rule
+            for rule in self.config["packageRules"]
+            if rule.get("matchFileNames") == [STORETEST]
+        ]
+        self.assertEqual(len(rules), 1)
+        rule = rules[0]
+        self.assertEqual(rule["matchDepNames"], ["postgres"])
+        text = (ROOT / STORETEST).read_text(encoding="utf-8")
+        tags = {name: tag for name, tag, _ in IMAGE_CONSTANT.findall(text)}
+        current = re.compile(to_python(rule["matchCurrentValue"][1:-1]))
+        allowed = re.compile(to_python(rule["allowedVersions"][1:-1]))
+        self.assertTrue(current.search(tags["OldestImage"]))
+        self.assertFalse(current.search(tags["Image"]))
+        major = int(tags["OldestImage"].split(".", 1)[0])
+        self.assertTrue(allowed.search(f"{major}.99-alpine"))
+        self.assertFalse(allowed.search(f"{major + 1}.0-alpine"))
+
+
+# The CI Python interpreter (ADR-3312): one custom manager owns
+# build-config.env's PYTHON_CI_VERSION and every workflow `python-version:` pin,
+# read with the pattern scripts/ci/check-workflow-versions.py uses.
+WORKFLOW_PYTHON = re.compile(r'python-version:\s*[\'"]?([0-9]+\.[0-9]+\.[0-9]+)[\'"]?')
+WORKFLOW = re.compile(r"^\.github/workflows/[^/]+\.ya?ml$")
+
+
+def python_ci_manager(config: dict[str, Any]) -> dict[str, Any] | None:
+    """The custom manager that owns the CI Python interpreter, or None."""
+    managers = [
+        manager
+        for manager in config.get("customManagers", [])
+        if manager.get("depNameTemplate") == "python"
+        and manager.get("packageNameTemplate") == "actions/python-versions"
+    ]
+    return managers[0] if len(managers) == 1 else None
+
+
+def python_ci_findings(
+    config: dict[str, Any], files: list[str], read: Callable[[str], str]
+) -> list[str]:
+    """Every way the config fails to own the CI Python interpreter as one group."""
+    manager = python_ci_manager(config)
+    if manager is None:
+        return ["no single custom manager for python / actions/python-versions"]
+    selectors = [re.compile(p[1:-1]) for p in manager.get("managerFilePatterns", [])]
+    patterns = [re.compile(to_python(m)) for m in manager.get("matchStrings", [])]
+    errors: list[str] = []
+    for path in [CONFIG, *(f for f in files if WORKFLOW.match(f))]:
+        text = read(path)
+        if path == CONFIG:
+            want = re.findall(r'^PYTHON_CI_VERSION="([^"]*)"', text, re.MULTILINE)
+        else:
+            want = WORKFLOW_PYTHON.findall(text)
+        if not want:
+            continue
+        if not any(s.search(path) for s in selectors):
+            errors.append(f"{path} is not selected by the manager")
+            continue
+        got = [m["currentValue"] for p in patterns for m in p.finditer(text)]
+        if sorted(got) != sorted(want):
+            errors.append(f"{path}: manager reads {sorted(got)}, the check reads {sorted(want)}")
+    rules = config.get("packageRules", [])
+    if not any(
+        r.get("matchManagers") == ["github-actions"]
+        and r.get("matchDepNames") == ["python"]
+        and r.get("enabled") is False
+        for r in rules
+    ):
+        errors.append("the github-actions manager still updates python-version")
+    if not any(
+        r.get("matchManagers") == ["custom.regex"]
+        and r.get("matchPackageNames") == ["actions/python-versions"]
+        and r.get("groupName") == "CI Python interpreter"
+        and r.get("allowedVersions") == "<3.15.0"
+        for r in rules
+    ):
+        errors.append("no CI Python interpreter group rule below 3.15.0")
+    return errors
+
+
+class PythonCiVersionGroup(unittest.TestCase):
+    """Positive: the checked-in config owns every pin. Negative: a manager that
+    misses the workflows, a manager that misses build-config.env, a removed
+    disable rule and a removed freeze bound each fail. Boundary: other Python
+    keys of build-config.env are not read."""
+
+    config: ClassVar[dict[str, Any]]
+    files: ClassVar[list[str]]
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        RenovateFilePatterns.setUpClass()
+        cls.config = RenovateFilePatterns.config
+        cls.files = RenovateFilePatterns.files
+
+    def findings(self, change: Callable[[dict[str, Any]], None] | None = None) -> list[str]:
+        config = json.loads(json.dumps(self.config))
+        if change is not None:
+            change(config)
+        return python_ci_findings(
+            config, self.files, lambda path: (ROOT / path).read_text(encoding="utf-8")
+        )
+
+    def test_checked_in_config_owns_every_pin(self) -> None:
+        self.assertEqual(self.findings(), [])
+        pins = [f for f in self.files if WORKFLOW.match(f)]
+        read = (ROOT / CONFIG).read_text(encoding="utf-8")
+        self.assertIn("PYTHON_CI_VERSION=", read)
+        self.assertTrue(
+            any(WORKFLOW_PYTHON.search((ROOT / f).read_text(encoding="utf-8")) for f in pins)
+        )
+
+    def test_other_python_keys_are_not_read(self) -> None:
+        manager = python_ci_manager(self.config)
+        assert manager is not None
+        patterns = [re.compile(to_python(m)) for m in manager["matchStrings"]]
+        for line in ('PYTHON_VERSION="3.14"\n', 'RELEASE_PYTHON_BASE="python:3.14.8-slim"\n'):
+            with self.subTest(line=line):
+                self.assertFalse(any(p.search(line) for p in patterns))
+
+    def test_manager_without_workflows_fails(self) -> None:
+        def drop(config: dict[str, Any]) -> None:
+            manager = python_ci_manager(config)
+            assert manager is not None
+            manager["managerFilePatterns"] = ["/^build-config\\.env$/"]
+
+        self.assertTrue(any("not selected" in e for e in self.findings(drop)))
+
+    def test_manager_without_config_string_fails(self) -> None:
+        def drop(config: dict[str, Any]) -> None:
+            manager = python_ci_manager(config)
+            assert manager is not None
+            manager["matchStrings"] = manager["matchStrings"][1:]
+
+        self.assertTrue(any(e.startswith(CONFIG) for e in self.findings(drop)))
+
+    def test_github_actions_copy_left_enabled_fails(self) -> None:
+        def enable(config: dict[str, Any]) -> None:
+            for rule in config["packageRules"]:
+                if rule.get("matchManagers") == ["github-actions"] and rule.get(
+                    "matchDepNames"
+                ) == ["python"]:
+                    rule["enabled"] = True
+
+        self.assertIn(
+            "the github-actions manager still updates python-version", self.findings(enable)
+        )
+
+    def test_group_without_freeze_bound_fails(self) -> None:
+        def unbound(config: dict[str, Any]) -> None:
+            for rule in config["packageRules"]:
+                if rule.get("groupName") == "CI Python interpreter":
+                    rule.pop("allowedVersions")
+
+        self.assertIn("no CI Python interpreter group rule below 3.15.0", self.findings(unbound))
+
+    def test_missing_manager_fails(self) -> None:
+        def remove(config: dict[str, Any]) -> None:
+            config["customManagers"] = [
+                m for m in config["customManagers"] if m.get("depNameTemplate") != "python"
+            ]
+
+        self.assertEqual(
+            self.findings(remove), ["no single custom manager for python / actions/python-versions"]
+        )
+
+
+RUST_PINS = {
+    CONFIG: re.compile(r'^RUST_VERSION="([^"]*)"', re.MULTILINE),
+    "rust-toolchain.toml": re.compile(r'^channel = "([^"]*)"', re.MULTILINE),
+    "Cargo.toml": re.compile(r'^rust-version = "([^"]*)"', re.MULTILINE),
+    "core/src/rust/Cargo.toml": re.compile(r'^rust-version = "([^"]*)"', re.MULTILINE),
+    ".github/workflows/rust-ci.yml": re.compile(r"^[ \t]+toolchain:[ \t]*(\S+)", re.MULTILINE),
+}
+
+
+def rust_manager(config: dict[str, Any]) -> dict[str, Any] | None:
+    managers = [
+        m
+        for m in config.get("customManagers", [])
+        if m.get("depNameTemplate") == "rust" and m.get("datasourceTemplate") == "rust-version"
+    ]
+    return managers[0] if len(managers) == 1 else None
+
+
+def rust_findings(config: dict[str, Any], read: Callable[[str], str]) -> list[str]:
+    """Every way the config fails to own the Rust toolchain pins as one group (ADR-3318)."""
+    manager = rust_manager(config)
+    if manager is None:
+        return ["no single custom manager for rust / rust-version"]
+    selectors = [re.compile(p[1:-1]) for p in manager.get("managerFilePatterns", [])]
+    patterns = [re.compile(to_python(m)) for m in manager.get("matchStrings", [])]
+    errors: list[str] = []
+    for path, pin in RUST_PINS.items():
+        text = read(path)
+        want = pin.findall(text)
+        if not want:
+            errors.append(f"{path}: no Rust pin")
+            continue
+        if not any(s.search(path) for s in selectors):
+            errors.append(f"{path} is not selected by the manager")
+            continue
+        got = [m["currentValue"] for p in patterns for m in p.finditer(text)]
+        if sorted(got) != sorted(want):
+            errors.append(f"{path}: manager reads {sorted(got)}, the pin is {sorted(want)}")
+    rules = config.get("packageRules", [])
+    if not any(
+        r.get("matchManagers") == ["rust-toolchain"] and r.get("enabled") is False for r in rules
+    ):
+        errors.append("the rust-toolchain manager still updates rust-toolchain.toml")
+    if not any(
+        r.get("matchManagers") == ["custom.regex"]
+        and r.get("matchDepNames") == ["rust"]
+        and r.get("groupName") == "Rust toolchain"
+        for r in rules
+    ):
+        errors.append("no Rust toolchain group rule")
+    return errors
+
+
+class RustToolchainGroup(unittest.TestCase):
+    """Positive: the checked-in config owns every Rust pin. Negative: a manager that
+    misses a file, a dropped match string, the built-in manager left on and a
+    missing group each fail. Boundary: other keys and other workflows' inputs are
+    not read."""
+
+    config: ClassVar[dict[str, Any]]
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        RenovateFilePatterns.setUpClass()
+        cls.config = RenovateFilePatterns.config
+
+    def findings(self, change: Callable[[dict[str, Any]], None] | None = None) -> list[str]:
+        config = json.loads(json.dumps(self.config))
+        if change is not None:
+            change(config)
+        return rust_findings(config, lambda path: (ROOT / path).read_text(encoding="utf-8"))
+
+    def manager(self, config: dict[str, Any]) -> dict[str, Any]:
+        manager = rust_manager(config)
+        assert manager is not None
+        return manager
+
+    def test_checked_in_config_owns_every_pin(self) -> None:
+        self.assertEqual(self.findings(), [])
+
+    def test_other_lines_are_not_read(self) -> None:
+        patterns = [re.compile(to_python(m)) for m in self.manager(self.config)["matchStrings"]]
+        for line in (
+            'RUST_TOOLCHAIN="1.99.0"\n',
+            'PYTHON_CI_VERSION="3.14.8"\n',
+            "toolchain: 12.4\n",
+            'version = "1.99.0"\n',
+        ):
+            with self.subTest(line=line):
+                self.assertFalse(any(p.search(line) for p in patterns))
+
+    def test_manager_without_the_workflow_fails(self) -> None:
+        def drop(config: dict[str, Any]) -> None:
+            manager = self.manager(config)
+            manager["managerFilePatterns"] = [
+                p for p in manager["managerFilePatterns"] if "rust-ci" not in p
+            ]
+
+        self.assertIn(
+            ".github/workflows/rust-ci.yml is not selected by the manager", self.findings(drop)
+        )
+
+    def test_manager_without_the_toolchain_string_fails(self) -> None:
+        def drop(config: dict[str, Any]) -> None:
+            manager = self.manager(config)
+            manager["matchStrings"] = [s for s in manager["matchStrings"] if "channel" not in s]
+
+        self.assertTrue(any(e.startswith("rust-toolchain.toml:") for e in self.findings(drop)))
+
+    def test_builtin_manager_left_enabled_fails(self) -> None:
+        def enable(config: dict[str, Any]) -> None:
+            for rule in config["packageRules"]:
+                if rule.get("matchManagers") == ["rust-toolchain"]:
+                    rule["enabled"] = True
+
+        self.assertIn(
+            "the rust-toolchain manager still updates rust-toolchain.toml", self.findings(enable)
+        )
+
+    def test_missing_group_fails(self) -> None:
+        def ungroup(config: dict[str, Any]) -> None:
+            for rule in config["packageRules"]:
+                if rule.get("groupName") == "Rust toolchain":
+                    rule.pop("groupName")
+
+        self.assertIn("no Rust toolchain group rule", self.findings(ungroup))
+
+    def test_missing_manager_fails(self) -> None:
+        def remove(config: dict[str, Any]) -> None:
+            config["customManagers"] = [
+                m for m in config["customManagers"] if m.get("depNameTemplate") != "rust"
+            ]
+
+        self.assertEqual(
+            self.findings(remove), ["no single custom manager for rust / rust-version"]
+        )
 
 
 if __name__ == "__main__":

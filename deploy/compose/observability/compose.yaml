@@ -1,0 +1,188 @@
+# SPDX-License-Identifier: EUPL-1.2
+# Copyright 2026 Lusoris
+#
+# VMAFx with its observability stack on one machine (ADR-2349, ADR-2399):
+# vmafx-server, vmafx-controller and one CPU vmafx-node; Prometheus with the
+# generated alert and recording rules; an OpenTelemetry Collector that sends
+# traces to Tempo and logs to Loki; Grafana with the generated dashboards and
+# the linked data sources. docs/observability/compose.md is the guide.
+#
+#   docker compose -f deploy/compose/observability/compose.yaml up -d
+#
+# The alert settings come from monitoring-values.yaml, the same keys as the
+# Helm chart's values; the rules service renders the rule file from it at
+# start. The VMAFx images are built from this checkout on the first `up`
+# (local/<name>:dev); VMAFX_IMAGE_REGISTRY and VMAFX_TAG select others, for
+# example ghcr.io/vmafx and a release tag with `up --no-build`.
+name: vmafx-observability
+
+x-vmafx-env: &vmafx-env
+  # host:port of the collector's OTLP/gRPC receiver (otel.endpoint). The
+  # standard OTEL_EXPORTER_OTLP_ENDPOINT needs a URL (http://host:4317).
+  VMAFX_OTEL_ENDPOINT: otel-collector:4317
+  # The collector here has no metrics pipeline: Prometheus scrapes /metrics.
+  VMAFX_OTEL_EXPORT_METRICS: "false"
+  VMAFX_LOG_FORMAT: json
+  VMAFX_SCORING_ROOTS: /media
+
+services:
+  rules:
+    image: golang:1.27-trixie@sha256:47667934874913a449b96faa7ef4777fa285d9ec29126ee80ed61c45b7cccf0e
+    working_dir: /src
+    command:
+      - go
+      - run
+      - -buildvcs=false
+      - ./tools/obsgen
+      - -render-rules
+      - -values
+      - /config/monitoring-values.yaml
+      - -out
+      - /rules/vmafx-rules.yaml
+    environment:
+      CGO_ENABLED: "0"
+      GOCACHE: /cache/build
+      GOMODCACHE: /cache/mod
+      GOFLAGS: -p=4
+    volumes:
+      - ../../..:/src:ro
+      - ${VMAFX_MONITORING_VALUES:-./monitoring-values.yaml}:/config/monitoring-values.yaml:ro
+      - go-cache:/cache
+      - rules:/rules
+
+  prometheus:
+    image: prom/prometheus:v3.15.0@sha256:efd719c99d83b060d9daefdcf00360461adf279f45ef5391f8d111892118753e
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --enable-feature=exemplar-storage
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - rules:/etc/prometheus/rules:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"
+    depends_on:
+      rules:
+        condition: service_completed_successfully
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.162.0@sha256:39923a8e431bd1f57be82411999d389fcfe40857492e4365456d97a4c1f74be6
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./otel-collector.yaml:/etc/otelcol/config.yaml:ro
+    depends_on:
+      - tempo
+      - loki
+
+  tempo:
+    image: grafana/tempo:3.1.0@sha256:3076b8dcdfb32fd6bc5ccef85e7b7313e6199b9cb84366257fc17ecb696db5fd
+    command: ["-target=all", "-config.file=/etc/tempo.yaml"]
+    volumes:
+      - ./tempo.yaml:/etc/tempo.yaml:ro
+      - tempo-data:/var/tempo
+
+  loki:
+    image: grafana/loki:3.7.8@sha256:1107dd5274e0ada47e42472b7a7e71f3b2a2fe878878108f3e2f9e51528f0193
+    command: ["-config.file=/etc/loki/loki.yaml"]
+    volumes:
+      - ./loki.yaml:/etc/loki/loki.yaml:ro
+      - loki-data:/loki
+
+  grafana:
+    image: grafana/grafana:13.2.3@sha256:b28bae15e219c998fb0e0424ed724930cc61b1f61fb404d47c862f9a23f9e572
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    volumes:
+      - ../../grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./grafana-dashboards.yaml:/etc/grafana/provisioning/dashboards/vmafx.yaml:ro
+      - ../../grafana/dashboards:/var/lib/grafana/dashboards/vmafx:ro
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
+    depends_on:
+      - prometheus
+      - tempo
+      - loki
+
+  vmafx-server:
+    image: ${VMAFX_IMAGE_REGISTRY:-local}/vmafx-server:${VMAFX_TAG:-dev}
+    build:
+      context: ../../..
+      dockerfile: Dockerfile.go-server
+      target: go-server
+    environment:
+      <<: *vmafx-env
+      VMAFX_HTTP_ADDR: ":8080"
+      VMAFX_GRPC_LISTEN: ":9090"
+    volumes:
+      - ${VMAFX_MEDIA_DIR:-./media}:/media:ro
+    ports:
+      - "127.0.0.1:${VMAFX_SERVER_PORT:-8080}:8080"
+    depends_on:
+      - otel-collector
+
+  vmafx-controller:
+    image: ${VMAFX_IMAGE_REGISTRY:-local}/vmafx-controller:${VMAFX_TAG:-dev}
+    build:
+      context: ../../..
+      dockerfile: docker/Dockerfile.controller
+      target: controller
+    environment:
+      <<: *vmafx-env
+      VMAFX_HTTP_ADDR: ":8080"
+      VMAFX_GRPC_LISTEN: ":9090"
+      VMAFX_DB_PATH: /data/vmafx-controller.db
+      # One machine, no identity provider: every call is tenant "dev".
+      VMAFX_AUTH_DISABLED: "true"
+    volumes:
+      - controller-data:/data
+      - ${VMAFX_MEDIA_DIR:-./media}:/media:ro
+    ports:
+      - "127.0.0.1:${VMAFX_CONTROLLER_GRPC_PORT:-9091}:9090"
+    depends_on:
+      - otel-collector
+
+  vmafx-node:
+    image: ${VMAFX_IMAGE_REGISTRY:-local}/vmafx-node:${VMAFX_TAG:-dev}
+    build:
+      context: ../../..
+      dockerfile: docker/Dockerfile.node
+      target: node-cpu
+    environment:
+      <<: *vmafx-env
+      VMAFX_CONTROLLER_ADDR: vmafx-controller:9090
+      VMAFX_BACKEND: cpu
+      VMAFX_GRPC_LISTEN: ":50052"
+      VMAFX_HTTP_ADDR: ":9090"
+    volumes:
+      - ${VMAFX_MEDIA_DIR:-./media}:/media:ro
+    depends_on:
+      - vmafx-controller
+
+  # The smoke test (scripts/ci/observability-compose-smoke.sh):
+  # docker compose --profile smoke run --rm smoke
+  smoke:
+    profiles: [smoke]
+    image: golang:1.27-trixie@sha256:47667934874913a449b96faa7ef4777fa285d9ec29126ee80ed61c45b7cccf0e
+    working_dir: /src
+    command: [go, run, -buildvcs=false, ./tools/obssmoke]
+    environment:
+      CGO_ENABLED: "0"
+      GOCACHE: /cache/build
+      GOMODCACHE: /cache/mod
+      GOFLAGS: -p=4
+      GRAFANA_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+    volumes:
+      - ../../..:/src:ro
+      - ${VMAFX_MEDIA_DIR:-./media}:/media:ro
+      - go-cache:/cache
+
+volumes:
+  go-cache:
+  rules:
+  prometheus-data:
+  tempo-data:
+  loki-data:
+  controller-data:

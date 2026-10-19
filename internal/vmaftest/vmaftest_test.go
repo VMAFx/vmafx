@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/VMAFx/vmafx/internal/execstub"
 )
 
 func writeExe(t *testing.T, path string) {
@@ -15,12 +17,7 @@ func writeExe(t *testing.T, path string) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte("#!/bin/sh\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chmod(path, 0o700); err != nil { // #nosec G302 -- the fixture must be executable
-		t.Fatal(err)
-	}
+	execstub.Write(t, path, []byte("#!/bin/sh\n"))
 }
 
 func TestResolve_envWins(t *testing.T) {

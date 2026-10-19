@@ -276,6 +276,33 @@ static int alloc_buffers(VmafFeatureExtractor *fex, VifState *s, unsigned h)
     return 0;
 }
 
+/* The prescaled plane compute_vif() works on: its size, which must clear the
+ * four-scale ladder minimum, and its strides; the plane must also fit the int
+ * index of vif_tools.c (T-PRESCALED-PLANE-INT-INDEX-2026-10-05). */
+static int init_scaled_plane(VifState *s, unsigned w, unsigned h, int vif_min_dim)
+{
+    s->scaled_w = (size_t)lround(w * s->vif_prescale);
+    s->scaled_h = (size_t)lround(h * s->vif_prescale);
+
+    if (s->scaled_w < (size_t)vif_min_dim || s->scaled_h < (size_t)vif_min_dim) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "float_vif requires scaled width >= %d and height >= %d for the "
+                 "four-scale ladder (got %zux%zu)\n",
+                 vif_min_dim, vif_min_dim, s->scaled_w, s->scaled_h);
+        return -EINVAL;
+    }
+    s->float_stride = ALIGN_CEIL(w * sizeof(float));
+    s->scaled_float_stride = ALIGN_CEIL(s->scaled_w * sizeof(float));
+    if (!vif_plane_fits_int_index(s->scaled_float_stride / sizeof(float), s->scaled_h)) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "float_vif: the prescaled plane (%zux%zu) has more samples than the "
+                 "int index of vif_tools allows; lower vif_prescale\n",
+                 s->scaled_w, s->scaled_h);
+        return -EINVAL;
+    }
+    return 0;
+}
+
 static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc, unsigned w,
                 unsigned h)
 {
@@ -314,18 +341,10 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
         return -EINVAL;
     }
 
-    s->scaled_w = (size_t)lround(w * s->vif_prescale);
-    s->scaled_h = (size_t)lround(h * s->vif_prescale);
-
-    if (s->scaled_w < (size_t)vif_min_dim || s->scaled_h < (size_t)vif_min_dim) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR,
-                 "float_vif requires scaled width >= %d and height >= %d for the "
-                 "four-scale ladder (got %zux%zu)\n",
-                 vif_min_dim, vif_min_dim, s->scaled_w, s->scaled_h);
-        return -EINVAL;
+    const int plane_err = init_scaled_plane(s, w, h, vif_min_dim);
+    if (plane_err) {
+        return plane_err;
     }
-    s->float_stride = ALIGN_CEIL(w * sizeof(float));
-    s->scaled_float_stride = ALIGN_CEIL(s->scaled_w * sizeof(float));
 
     const int alloc_err = alloc_buffers(fex, s, h);
     if (alloc_err) {
@@ -368,27 +387,30 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     picture_copy(s->ref, s->float_stride, ref_pic, -128, ref_pic->bpc, 0);
     picture_copy(s->dist, s->float_stride, dist_pic, -128, dist_pic->bpc, 0);
 
-    // The scaling method has been checked for validity in the init callback
+    // The scaling method has been checked for validity in the init callback;
+    // the result is still checked, so scaling_method is never read unset.
     enum vif_scaling_method scaling_method;
-    vif_get_scaling_method(s->vif_prescale_method, &scaling_method);
+    if (vif_get_scaling_method(s->vif_prescale_method, &scaling_method)) {
+        return -EINVAL;
+    }
 
     vif_scale_frame_s(scaling_method, s->ref, s->ref_scaled, ref_pic->w[0], ref_pic->h[0],
-                      s->float_stride / sizeof(float), s->scaled_w, s->scaled_h,
-                      s->scaled_float_stride / sizeof(float));
+                      (int)(s->float_stride / sizeof(float)), (int)s->scaled_w, (int)s->scaled_h,
+                      (int)(s->scaled_float_stride / sizeof(float)));
 
     vif_scale_frame_s(scaling_method, s->dist, s->dist_scaled, dist_pic->w[0], dist_pic->h[0],
-                      s->float_stride / sizeof(float), s->scaled_w, s->scaled_h,
-                      s->scaled_float_stride / sizeof(float));
+                      (int)(s->float_stride / sizeof(float)), (int)s->scaled_w, (int)s->scaled_h,
+                      (int)(s->scaled_float_stride / sizeof(float)));
 
     double score;
     double score_num;
     double score_den;
     double scores[8];
-    err =
-        compute_vif(s->ref_scaled, s->dist_scaled, s->scaled_w, s->scaled_h, s->scaled_float_stride,
-                    s->scaled_float_stride, &score, &score_num, &score_den, scores,
-                    s->vif_enhn_gain_limit, s->vif_kernelscale, s->vif_skip_scale0,
-                    s->vif_sigma_nsq, (const float (*)[128])s->filter_cache, s->filter_width_cache);
+    err = compute_vif(s->ref_scaled, s->dist_scaled, (int)s->scaled_w, (int)s->scaled_h,
+                      (int)s->scaled_float_stride, (int)s->scaled_float_stride, &score, &score_num,
+                      &score_den, scores, s->vif_enhn_gain_limit, s->vif_kernelscale,
+                      s->vif_skip_scale0, s->vif_sigma_nsq, (const float (*)[128])s->filter_cache,
+                      s->filter_width_cache);
     if (err) {
         return err;
     }
@@ -396,7 +418,7 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     return emit_vif_scores(s, feature_collector, index, score, score_num, score_den, scores);
 }
 
-static int close(VmafFeatureExtractor *fex)
+static int close_fex(VmafFeatureExtractor *fex)
 {
     VifState *s = fex->priv;
     /* Byte-identical to the unwind init() uses, so it is the same function
@@ -428,7 +450,7 @@ VmafFeatureExtractor vmaf_fex_float_vif = {
     .init = init,
     .extract = extract,
     .options = options,
-    .close = close,
+    .close = close_fex,
     .priv_size = sizeof(VifState),
     .provided_features = provided_features,
 };

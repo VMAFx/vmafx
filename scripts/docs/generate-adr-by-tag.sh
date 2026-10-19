@@ -135,7 +135,8 @@ os.makedirs(work_dir, exist_ok=True)
 for tag, entries in sorted(by_tag.items()):
     safe = tag  # normalise_tag validated the output basename.
     out = os.path.join(work_dir, f"{safe}.md")
-    with open(out, "w", encoding="utf-8") as fh:
+    # newline="\n": the committed pages are LF; Windows text mode writes CRLF.
+    with open(out, "w", encoding="utf-8", newline="\n") as fh:
         rules = ["MD013", "MD060"]
         # Literal space-bearing patterns such as `^## ` are meaningful.
         # ADR-1242 preserves them rather than trimming code to appease MD038.
@@ -159,7 +160,7 @@ for tag, entries in sorted(by_tag.items()):
             fh.write(f"| [ADR-{num:04d}](../{fname}) | {title} |\n")
 
 # Index file.
-with open(os.path.join(work_dir, "index.md"), "w", encoding="utf-8") as fh:
+with open(os.path.join(work_dir, "index.md"), "w", encoding="utf-8", newline="\n") as fh:
     fh.write("<!-- markdownlint-disable MD013 MD060 -->\n")
     fh.write("# ADRs by tag\n\n")
     fh.write(

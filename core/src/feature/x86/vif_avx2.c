@@ -237,9 +237,9 @@ static FORCE_INLINE void vif_vertical8_tail(const VifBuffer *buf, unsigned i, un
 
     buf->tmp.mu1[j] = (accum_mu1 + 128) >> 8;
     buf->tmp.mu2[j] = (accum_mu2 + 128) >> 8;
-    buf->tmp.ref[j] = accum_ref;
-    buf->tmp.dis[j] = accum_dis;
-    buf->tmp.ref_dis[j] = accum_ref_dis;
+    buf->tmp.ref[j] = (uint32_t)accum_ref;
+    buf->tmp.dis[j] = (uint32_t)accum_dis;
+    buf->tmp.ref_dis[j] = (uint32_t)accum_ref_dis;
 }
 
 static FORCE_INLINE void vif_vertical8_row(const VifBuffer *buf, unsigned w, unsigned i)
@@ -480,9 +480,10 @@ void vif_statistic_8_avx2(struct VifPublicState *s, float *num, float *den, unsi
     }
 
     /* log has to be divided by 2048 as log_value = log2(i*2048)  i=16384 to 65535 */
-    num[0] = totals.accum_num_log / 2048.0 +
-             (totals.accum_den_non_log - ((totals.accum_num_non_log) / 16384.0) / (65025.0));
-    den[0] = totals.accum_den_log / 2048.0 + totals.accum_den_non_log;
+    num[0] =
+        (float)(totals.accum_num_log / 2048.0 +
+                (totals.accum_den_non_log - ((totals.accum_num_non_log) / 16384.0) / (65025.0)));
+    den[0] = (float)(totals.accum_den_log / 2048.0 + totals.accum_den_non_log);
 }
 
 static FORCE_INLINE VifPair256 vif_product16(VifPair256 a, VifPair256 b)
@@ -779,9 +780,10 @@ void vif_statistic_16_avx2(struct VifPublicState *s, float *num, float *den, uns
         }
     }
 
-    num[0] = totals.accum_num_log / 2048.0 +
-             (totals.accum_den_non_log - ((totals.accum_num_non_log) / 16384.0) / (65025.0));
-    den[0] = totals.accum_den_log / 2048.0 + totals.accum_den_non_log;
+    num[0] =
+        (float)(totals.accum_num_log / 2048.0 +
+                (totals.accum_den_non_log - ((totals.accum_num_non_log) / 16384.0) / (65025.0)));
+    den[0] = (float)(totals.accum_den_log / 2048.0 + totals.accum_den_non_log);
 }
 
 typedef struct VifSubsample8Taps256 {

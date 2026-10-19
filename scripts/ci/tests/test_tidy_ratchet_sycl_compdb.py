@@ -62,12 +62,16 @@ class SyclLaneAugmentsCompileCommands(unittest.TestCase):
             with self.subTest(lane=lane):
                 self.assertIn(GPU_GENERATOR, variable(f"TIDY_RATCHET_COMPDB_{lane}", text))
 
-    def test_native_lanes_have_an_empty_hook(self) -> None:
-        """cpu and arm64 compile entirely through meson's native compiler rules."""
-        text = makefile()
-        for lane in ("cpu", "arm64"):
-            with self.subTest(lane=lane):
-                self.assertEqual(variable(f"TIDY_RATCHET_COMPDB_{lane}", text), "")
+    def test_arm64_has_an_empty_hook(self) -> None:
+        """arm64 compiles entirely through meson's native compiler rules."""
+        self.assertEqual(variable("TIDY_RATCHET_COMPDB_arm64", makefile()), "")
+
+    def test_cpu_hook_adds_only_the_matlab_mex_sources(self) -> None:
+        """cpu is native too; its hook adds the MEX sources meson never builds (ADR-2062)."""
+        hook = variable("TIDY_RATCHET_COMPDB_cpu", makefile())
+        self.assertIn("gen-mex-compile-commands.py", hook)
+        self.assertNotIn("gen-sycl", hook)
+        self.assertNotIn("gen-gpu", hook)
 
     def test_both_targets_expand_the_hook_in_order(self) -> None:
         """The hook appends to a database that exists and is not yet measured."""

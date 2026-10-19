@@ -61,3 +61,13 @@ preemptively migrate the 8–10 existing call sites.
 - Research digest: [`docs/research/0951-github-actions-custom-audit.md`](../research/0951-github-actions-custom-audit.md).
 - Source: `req` — "Audit `.github/actions/` (custom composite/JS
   actions if any) + workflow reusable patterns."
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 44: `The two deferred abstraction candidates are captured in the
+  digest under [docs/research/](./research/github-a`: Target path
+  docs/research/github-actions-custom-audit-2026-05-31.md does not exist on
+  master (committed as docs/research/0951-github-actions-custom-audit.md).

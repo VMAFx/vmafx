@@ -22,8 +22,11 @@ The existing converter (zimg, optional, off by default) takes YUV and gray only.
    made is YUV444P Y'CbCr at the same depth.
 2. **A statement is mandatory.** `VmafxFrameImport` gains `rgb_matrix`,
    `rgb_range` (of the R'G'B' samples), `rgb_transfer` and `rgb_out_range` (of
-   the Y'CbCr frame; LIMITED is the range the models were trained on). Zero in
-   any of them is refused with `VMAFX_E_INVALID` naming the field and the format
+   the Y'CbCr frame; LIMITED is the range the models were trained on). They
+   take the frame colour enums of ADR-2094 (`VmafxColorMatrix`,
+   `VmafxColorRange`, `VmafxColorTransfer`, values equal to libvmaf's
+   `VmafColor*`), to which this ADR appends BT.601 and BT.2020 CL (matrix) and
+   sRGB, HLG and linear (transfer), in both. UNKNOWN (0) in any of them is refused with `VMAFX_E_INVALID` naming the field and the format
    ("none is assumed"). Declared and not converted: BT.2020 constant luminance,
    ICtCp and linear light are refused with `VMAFX_E_NOTSUP` naming them; a value
    that is no enumerator is `VMAFX_E_INVALID`. Other layouts ignore the fields.
@@ -54,7 +57,9 @@ The existing converter (zimg, optional, off by default) takes YUV and gray only.
    16 bits; a pixel whose exact value is within 2^-11 of a tie may differ by
    one.
 7. **CLI.** `--pixel_format rgb|rgba|bgra` with `--rgb_matrix`, `--rgb_range`,
-   `--rgb_transfer` and `--rgb_out_range`; each missing flag is a usage error
+   `--rgb_transfer` and `--rgb_out_range`, declared in the `input` option group
+   of `core/api/vmafx.toml` (so the usage text, the long options and the
+   MCP schema are generated); each missing flag is a usage error
    naming it.
 
 ## Alternatives considered
@@ -71,13 +76,14 @@ The existing converter (zimg, optional, off by default) takes YUV and gray only.
 
 - **Positive**: RGB sources score with a conversion the caller can name; GPU
   twins equal the CPU.
-- **Negative**: ABI 0.1.6 (four appended fields); ICtCp and BT.2020 CL need a
+- **Negative**: ABI 0.1.11 (four appended fields, five appended enumerators); ICtCp and BT.2020 CL need a
   later decision with their transfer functions.
-- **Neutral / follow-ups**: planned convergence (maintainer decision): the
-  `--rgb_*` command line flags exist on this branch only. After the stack
-  restacks onto master, the RGB statement uses master's colorimetry option
-  names and enum (ADR-2093, `vmaf_set_input_colorimetry()`), with BT.601 added
-  to that enum (additive). There is no permanent second flag set.
+- **Neutral / follow-ups**: the convergence with the colorimetry enums (maintainer
+  decision of 2026-10-07) is done here: WP13's own `VmafxColor*` copies are
+  gone, the RGB statement uses the ADR-2094 enums, and the flags are option
+  group entries, not hand-written. `vmaf_set_input_colorimetry()` (ADR-2093)
+  still takes its own four attributes; mapping an RGB input's statement onto it
+  is a later step.
 
 ## References
 

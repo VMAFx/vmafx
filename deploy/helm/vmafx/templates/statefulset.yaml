@@ -64,12 +64,12 @@ spec:
             - name: http
               containerPort: {{ .Values.service.targetPort }}
               protocol: TCP
+          {{- with .Values.env }}
           env:
-            - name: VMAFX_BACKEND
-              value: {{ include "vmafx.backendEnvValue" . | quote }}
-          {{- range $k, $v := .Values.env }}
+          {{- range $k, $v := . }}
             - name: {{ $k | quote }}
               value: {{ $v | quote }}
+          {{- end }}
           {{- end }}
           envFrom:
             - configMapRef:
@@ -149,7 +149,9 @@ spec:
           requests:
             storage: {{ .Values.statefulSet.statePVCSize | default "1Gi" }}
 ---
-# Headless Service required for StatefulSet DNS.
+# Headless Service required for StatefulSet DNS. The headless label keeps the
+# server's ServiceMonitor off it, which would otherwise scrape every pod a
+# second time through this Service (vmafx.monitor in _helpers.tpl).
 apiVersion: v1
 kind: Service
 metadata:
@@ -158,6 +160,7 @@ metadata:
   labels:
     {{- include "vmafx.labels" . | nindent 4 }}
     app.kubernetes.io/component: server
+    vmafx.dev/headless: "true"
 spec:
   clusterIP: None
   selector:

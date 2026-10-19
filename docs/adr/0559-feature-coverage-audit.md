@@ -102,3 +102,22 @@ copies exist. Re-extract deferred to the corpus agent.
 - `core/src/feature/speed.c` — extractor implementation
 - Netflix upstream `speed_ported` branch — upstream context
 - `req: feature-coverage-audit-2026-05-18` (task directive)
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 97: `- ADR-0555 (cross-backend parity matrix, identified the GPU
+  twin gap)`: Cites nonexistent ADR-0555. See ADR-0599 (cross-backend parity
+  audit, full extractor matrix).
+- About line 98: `- ADR-0557 (speed_temporal CUDA port, parallel agent)`:
+  Cites nonexistent ADR-0557. See ADR-0567 (real on-device GPU kernels for
+  `speed_chroma` and `speed_temporal`).
+- About line 99: `- ADR-0558 (speed_chroma GPU port, parallel agent)`: Cites
+  nonexistent ADR-0558. See ADR-0567 (real on-device GPU kernels for
+  `speed_chroma` and `speed_temporal`).
+- About line 101: `- ADR-0382 (K150K-A parallelism, where speed features were
+  first added)`: ADR-0382 points to an unrelated topic
+  (0382-y4m-neg-dimension-rejection.md: "Y4M header parser — reject
+  non-positive width or height before allocation").

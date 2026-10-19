@@ -36,11 +36,11 @@
  *  go through the CPU's helpers; enable_chroma scores the chroma planes too.
  */
 
-#include <errno.h>
-#include <math.h>
-#include <stddef.h>
-#include <stdint.h>
-#include <string.h>
+#include <cerrno>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
@@ -55,6 +55,7 @@ extern "C" {
 #include "feature_collector.h"
 #include "feature_name.h"
 #include "log.h"
+#include "metal/metal_plane_index.h"
 #include "libvmaf/picture.h"
 #include "feature/nonfinite_score.h"
 #include "float_ms_ssim_option_semantics.h"
@@ -64,13 +65,11 @@ extern "C" {
 #include "../../metal/kernel_template.h"
 }
 
+#include "../../metal/objc_handle.h"
+
 #include "metal/metal_ms_ssim_math.h"
 #include "metal/metal_ssim_terms.h"
 
-extern "C" {
-extern const unsigned char libvmaf_metallib_start[] __asm("section$start$__TEXT$__metallib");
-extern const unsigned char libvmaf_metallib_end[]   __asm("section$end$__TEXT$__metallib");
-}
 
 #define MS_SSIM_MAX_PLANES    3
 #define MS_SSIM_SCALES         VMAF_MTL_MS_SSIM_SCALES
@@ -79,7 +78,9 @@ extern const unsigned char libvmaf_metallib_end[]   __asm("section$end$__TEXT$__
 #define MS_SSIM_BLOCK_X       16
 #define MS_SSIM_BLOCK_Y        8
 
-typedef struct MsSsimPlaneGeometryMetal {
+namespace {
+
+using MsSsimPlaneGeometryMetal = struct MsSsimPlaneGeometryMetal {
     unsigned width;
     unsigned height;
     unsigned scale_w[MS_SSIM_SCALES];
@@ -90,9 +91,9 @@ typedef struct MsSsimPlaneGeometryMetal {
     unsigned scale_grid_w[MS_SSIM_SCALES];
     unsigned scale_grid_h[MS_SSIM_SCALES];
     unsigned window_offset[MS_SSIM_SCALES]; /* first window of the scale in the term buffers */
-} MsSsimPlaneGeometryMetal;
+};
 
-typedef struct FloatMsSsimStateMetal {
+using FloatMsSsimStateMetal = struct FloatMsSsimStateMetal {
     VmafMetalKernelLifecycle lc;
     VmafMetalContext *ctx;
 
@@ -141,7 +142,10 @@ typedef struct FloatMsSsimStateMetal {
 
     unsigned index;
     VmafDictionary *feature_name_dict;
-} FloatMsSsimStateMetal;
+};
+} // namespace
+
+namespace {
 
 static const VmafOption options[] = {
     {
@@ -172,37 +176,28 @@ static const VmafOption options[] = {
         .type        = VMAF_OPT_TYPE_BOOL,
         .default_val = {.b = false},
     },
-    {0},
+    {.name=nullptr},
 };
 
-static id<MTLComputePipelineState> make_pipeline(id<MTLDevice> device, id<MTLLibrary> lib,
+id<MTLComputePipelineState> make_pipeline(id<MTLDevice> device, id<MTLLibrary> lib,
                                                  NSString *name)
 {
-    id<MTLFunction> fn = [lib newFunctionWithName:name];
+    id<MTLFunction> const fn = [lib newFunctionWithName:name];
     if (fn == nil) { return nil; }
     NSError *err = nil;
     return [device newComputePipelineStateWithFunction:fn error:&err];
 }
 
-static int build_pipelines(FloatMsSsimStateMetal *s, id<MTLDevice> device)
+int build_pipelines(FloatMsSsimStateMetal *s, id<MTLDevice> device)
 {
-    const size_t blob_size = (size_t)(libvmaf_metallib_end - libvmaf_metallib_start);
-    if (blob_size == 0) { return -ENODEV; }
+    int load_rc = 0;
+    id<MTLLibrary> const lib = vmaf_metal_library_load(device, &load_rc);
+    if (lib == nil) { return load_rc; }
 
-    dispatch_data_t data = dispatch_data_create(
-        libvmaf_metallib_start, blob_size,
-        dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0),
-        DISPATCH_DATA_DESTRUCTOR_DEFAULT);
-    if (data == NULL) { return -ENOMEM; }
-
-    NSError *err = nil;
-    id<MTLLibrary> lib = [device newLibraryWithData:data error:&err];
-    if (lib == nil) { return -ENODEV; }
-
-    id<MTLComputePipelineState> pso_dh   = make_pipeline(device, lib, @"ms_ssim_decimate_h");
-    id<MTLComputePipelineState> pso_dv   = make_pipeline(device, lib, @"ms_ssim_decimate_v");
-    id<MTLComputePipelineState> pso_hor  = make_pipeline(device, lib, @"ms_ssim_horiz");
-    id<MTLComputePipelineState> pso_vlcs = make_pipeline(device, lib, @"ms_ssim_vert_lcs");
+    id<MTLComputePipelineState> const pso_dh   = make_pipeline(device, lib, @"ms_ssim_decimate_h");
+    id<MTLComputePipelineState> const pso_dv   = make_pipeline(device, lib, @"ms_ssim_decimate_v");
+    id<MTLComputePipelineState> const pso_hor  = make_pipeline(device, lib, @"ms_ssim_horiz");
+    id<MTLComputePipelineState> const pso_vlcs = make_pipeline(device, lib, @"ms_ssim_vert_lcs");
     if (pso_dh == nil || pso_dv == nil || pso_hor == nil || pso_vlcs == nil) { return -ENODEV; }
 
     s->pso_decimate_h = (__bridge_retained void *)pso_dh;
@@ -212,15 +207,15 @@ static int build_pipelines(FloatMsSsimStateMetal *s, id<MTLDevice> device)
     return 0;
 }
 
-static void release_object(void **handle)
+void release_object(void **handle)
 {
-    if (*handle != NULL) {
+    if (*handle != nullptr) {
         (void)(__bridge_transfer id)*handle;
-        *handle = NULL;
+        *handle = nullptr;
     }
 }
 
-static void release_metal_psos(FloatMsSsimStateMetal *s)
+void release_metal_psos(FloatMsSsimStateMetal *s)
 {
     release_object(&s->pso_vert_lcs);
     release_object(&s->pso_horiz);
@@ -228,7 +223,7 @@ static void release_metal_psos(FloatMsSsimStateMetal *s)
     release_object(&s->pso_decimate_h);
 }
 
-static void release_metal_buffers(FloatMsSsimStateMetal *s)
+void release_metal_buffers(FloatMsSsimStateMetal *s)
 {
     for (unsigned p = 0; p < MS_SSIM_MAX_PLANES; ++p) {
         for (int i = 0; i < MS_SSIM_SCALES; ++i) {
@@ -243,19 +238,19 @@ static void release_metal_buffers(FloatMsSsimStateMetal *s)
     release_object(&s->hbuf);
 }
 
-static id<MTLBuffer> shared_buffer(id<MTLDevice> device, size_t bytes)
+id<MTLBuffer> shared_buffer(id<MTLDevice> device, size_t bytes)
 {
     return [device newBufferWithLength:bytes options:MTLResourceStorageModeShared];
 }
 
-static int alloc_pyramid(FloatMsSsimStateMetal *s, id<MTLDevice> device)
+int alloc_pyramid(FloatMsSsimStateMetal *s, id<MTLDevice> device)
 {
     for (unsigned p = 0; p < s->n_planes; ++p) {
         const MsSsimPlaneGeometryMetal *geom = &s->geom[p];
         for (int i = 0; i < MS_SSIM_SCALES; ++i) {
             const size_t bytes = (size_t)geom->scale_w[i] * geom->scale_h[i] * sizeof(float);
-            id<MTLBuffer> br = shared_buffer(device, bytes);
-            id<MTLBuffer> bc = shared_buffer(device, bytes);
+            id<MTLBuffer> const br = shared_buffer(device, bytes);
+            id<MTLBuffer> const bc = shared_buffer(device, bytes);
             if (br == nil || bc == nil) { return -ENOMEM; }
             s->pyramid_ref[p][i] = (__bridge_retained void *)br;
             s->pyramid_cmp[p][i] = (__bridge_retained void *)bc;
@@ -264,18 +259,18 @@ static int alloc_pyramid(FloatMsSsimStateMetal *s, id<MTLDevice> device)
     return 0;
 }
 
-static int alloc_metal_buffers(FloatMsSsimStateMetal *s, id<MTLDevice> device)
+int alloc_metal_buffers(FloatMsSsimStateMetal *s, id<MTLDevice> device)
 {
-    int err = alloc_pyramid(s, device);
+    int const err = alloc_pyramid(s, device);
     if (err != 0) { return err; }
 
-    id<MTLBuffer> lum = shared_buffer(device, s->window_count * sizeof(uint64_t));
-    id<MTLBuffer> con = shared_buffer(device, s->window_count * sizeof(uint64_t));
-    id<MTLBuffer> str = shared_buffer(device, s->window_count * sizeof(float));
-    id<MTLBuffer> tmp = shared_buffer(device, s->dec_tmp_floats * sizeof(float));
+    id<MTLBuffer> const lum = shared_buffer(device, s->window_count * sizeof(uint64_t));
+    id<MTLBuffer> const con = shared_buffer(device, s->window_count * sizeof(uint64_t));
+    id<MTLBuffer> const str = shared_buffer(device, s->window_count * sizeof(float));
+    id<MTLBuffer> const tmp = shared_buffer(device, s->dec_tmp_floats * sizeof(float));
     const size_t hbuf_bytes =
         5u * (size_t)s->geom[0].scale_w_h[0] * s->geom[0].scale_h[0] * sizeof(float);
-    id<MTLBuffer> hb = shared_buffer(device, hbuf_bytes);
+    id<MTLBuffer> const hb = shared_buffer(device, hbuf_bytes);
     if (lum == nil || con == nil || str == nil || tmp == nil || hb == nil) { return -ENOMEM; }
     s->lum_terms = (__bridge_retained void *)lum;
     s->con_terms = (__bridge_retained void *)con;
@@ -285,7 +280,7 @@ static int alloc_metal_buffers(FloatMsSsimStateMetal *s, id<MTLDevice> device)
     return 0;
 }
 
-static int check_chroma_min_dim(const VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
+int check_chroma_min_dim(const VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
                                 unsigned w, unsigned h, unsigned min_dim)
 {
     unsigned chroma_w = 0u;
@@ -309,7 +304,7 @@ static int check_chroma_min_dim(const VmafFeatureExtractor *fex, enum VmafPixelF
     return -EINVAL;
 }
 
-static void init_plane_geometry(MsSsimPlaneGeometryMetal *geom)
+void init_plane_geometry(MsSsimPlaneGeometryMetal *geom)
 {
     geom->scale_w[0] = geom->width;
     geom->scale_h[0] = geom->height;
@@ -342,6 +337,13 @@ static int validate_dimensions(VmafFeatureExtractor *fex, FloatMsSsimStateMetal 
                  fex->name, w, h, MS_SSIM_SCALES, MS_SSIM_GAUSSIAN_LEN, min_dim, min_dim);
         return -EINVAL;
     }
+    /* The scale-0 luma moment planes, (w - 10) x h, are the largest and are
+     * indexed in uint (T-METAL-UINT-PLANE-INDEX-2026-10-05). */
+    const int index_err = vmaf_mtl_plane_index_check(
+        fex->name, (uint64_t)(w - (unsigned)(MS_SSIM_K - 1)) * (uint64_t)h, VMAF_MTL_MOMENT_PLANES);
+    if (index_err) {
+        return index_err;
+    }
 
     if (s->n_planes > 1u) {
         const int chroma_err = check_chroma_min_dim(fex, pix_fmt, w, h, min_dim);
@@ -350,7 +352,7 @@ static int validate_dimensions(VmafFeatureExtractor *fex, FloatMsSsimStateMetal 
     return 0;
 }
 
-static void init_state_geometry(FloatMsSsimStateMetal *s, enum VmafPixelFormat pix_fmt,
+void init_state_geometry(FloatMsSsimStateMetal *s, enum VmafPixelFormat pix_fmt,
                                 unsigned bpc, unsigned w, unsigned h)
 {
     /* ADR-1334 extends ADR-1221's geometry-derived ceiling to Metal. */
@@ -382,25 +384,25 @@ static void init_state_geometry(FloatMsSsimStateMetal *s, enum VmafPixelFormat p
     s->c2 = k.c2;
 }
 
-static int init_metal_device_context(FloatMsSsimStateMetal *s)
+int init_metal_device_context(FloatMsSsimStateMetal *s)
 {
     int err = vmaf_metal_context_new(&s->ctx, 0);
     if (err != 0) { return err; }
     err = vmaf_metal_kernel_lifecycle_init(&s->lc, s->ctx);
     if (err != 0) {
         vmaf_metal_context_destroy(s->ctx);
-        s->ctx = NULL;
+        s->ctx = nullptr;
         return err;
     }
 
-    void *dh = vmaf_metal_context_device_handle(s->ctx);
-    if (dh == NULL) {
+    const void *const dh = vmaf_metal_context_device_handle(s->ctx);
+    if (dh == nullptr) {
         (void)vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
         vmaf_metal_context_destroy(s->ctx);
-        s->ctx = NULL;
+        s->ctx = nullptr;
         return -ENODEV;
     }
-    id<MTLDevice> device = (__bridge id<MTLDevice>)dh;
+    id<MTLDevice> const device = (__bridge id<MTLDevice>)dh;
 
     err = alloc_metal_buffers(s, device);
     if (err != 0) { goto fail_alloc; }
@@ -412,11 +414,11 @@ fail_alloc:
     release_metal_buffers(s);
     (void)vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
     vmaf_metal_context_destroy(s->ctx);
-    s->ctx = NULL;
+    s->ctx = nullptr;
     return err;
 }
 
-static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
+int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
                           unsigned bpc, unsigned w, unsigned h)
 {
     FloatMsSsimStateMetal *s = (FloatMsSsimStateMetal *)fex->priv;
@@ -432,55 +434,55 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features,
                                                       fex->options, s);
-    if (s->feature_name_dict == NULL) {
+    if (s->feature_name_dict == nullptr) {
         release_metal_psos(s);
         release_metal_buffers(s);
         (void)vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
         vmaf_metal_context_destroy(s->ctx);
-        s->ctx = NULL;
+        s->ctx = nullptr;
         return -ENOMEM;
     }
     return 0;
 }
 
 /* picture_copy(): the CPU's normalisation of one plane to float. */
-static void fill_float_plane(VmafPicture *pic, unsigned plane, id<MTLBuffer> dst, unsigned w)
+void fill_float_plane(VmafPicture *pic, unsigned plane, id<MTLBuffer> dst, unsigned w)
 {
     picture_copy((float *)[dst contents], (ptrdiff_t)((size_t)w * sizeof(float)), pic, 0,
                  pic->bpc, (int)plane);
 }
 
 /* One decimation pass over `grid` output columns and `rows` rows. */
-static void encode_decimate_pass(id<MTLCommandBuffer> cmd, id<MTLComputePipelineState> pso,
+void encode_decimate_pass(id<MTLCommandBuffer> cmd, id<MTLComputePipelineState> pso,
                                  id<MTLBuffer> src, id<MTLBuffer> dst,
                                  VmafMtlMsdecParams dims, unsigned columns, unsigned rows)
 {
-    id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
+    id<MTLComputeCommandEncoder> const enc = [cmd computeCommandEncoder];
     [enc setComputePipelineState:pso];
     [enc setBuffer:src offset:0 atIndex:0];
     [enc setBuffer:dst offset:0 atIndex:1];
     [enc setBytes:&dims length:sizeof(dims) atIndex:2];
-    MTLSize tg   = MTLSizeMake(16, 16, 1);
-    MTLSize grid = MTLSizeMake((columns + 15u) / 16u, (rows + 15u) / 16u, 1);
+    MTLSize const tg   = MTLSizeMake(16, 16, 1);
+    MTLSize const grid = MTLSizeMake((columns + 15u) / 16u, (rows + 15u) / 16u, 1);
     [enc dispatchThreadgroups:grid threadsPerThreadgroup:tg];
     [enc endEncoding];
 }
 
-static void encode_plane_decimate(id<MTLCommandBuffer> cmd, FloatMsSsimStateMetal *s,
+void encode_plane_decimate(id<MTLCommandBuffer> cmd, FloatMsSsimStateMetal *s,
                                   unsigned plane)
 {
     const MsSsimPlaneGeometryMetal *geom = &s->geom[plane];
-    id<MTLBuffer> tmp = (__bridge id<MTLBuffer>)s->dec_tmp;
-    id<MTLComputePipelineState> pso_h = (__bridge id<MTLComputePipelineState>)s->pso_decimate_h;
-    id<MTLComputePipelineState> pso_v = (__bridge id<MTLComputePipelineState>)s->pso_decimate_v;
+    id<MTLBuffer> const tmp = (__bridge id<MTLBuffer>)s->dec_tmp;
+    id<MTLComputePipelineState> const pso_h = (__bridge id<MTLComputePipelineState>)s->pso_decimate_h;
+    id<MTLComputePipelineState> const pso_v = (__bridge id<MTLComputePipelineState>)s->pso_decimate_v;
     for (int i = 0; i < MS_SSIM_SCALES - 1; ++i) {
-        const VmafMtlMsdecParams dims = {geom->scale_w[i], geom->scale_h[i], geom->scale_w[i + 1],
-                                         geom->scale_h[i + 1]};
+        const VmafMtlMsdecParams dims = {.width=geom->scale_w[i], .height=geom->scale_h[i], .output_width=geom->scale_w[i + 1],
+                                         .output_height=geom->scale_h[i + 1]};
         for (int side = 0; side < 2; ++side) {
-            id<MTLBuffer> src_buf = (side == 0)
+            id<MTLBuffer> const src_buf = (side == 0)
                 ? (__bridge id<MTLBuffer>)s->pyramid_ref[plane][i]
                 : (__bridge id<MTLBuffer>)s->pyramid_cmp[plane][i];
-            id<MTLBuffer> dst_buf = (side == 0)
+            id<MTLBuffer> const dst_buf = (side == 0)
                 ? (__bridge id<MTLBuffer>)s->pyramid_ref[plane][i + 1]
                 : (__bridge id<MTLBuffer>)s->pyramid_cmp[plane][i + 1];
             encode_decimate_pass(cmd, pso_h, src_buf, tmp, dims, dims.output_width, dims.height);
@@ -490,26 +492,26 @@ static void encode_plane_decimate(id<MTLCommandBuffer> cmd, FloatMsSsimStateMeta
     }
 }
 
-static void encode_horizontal(id<MTLCommandBuffer> cmd, FloatMsSsimStateMetal *s,
+void encode_horizontal(id<MTLCommandBuffer> cmd, FloatMsSsimStateMetal *s,
                               unsigned plane, int i)
 {
     const MsSsimPlaneGeometryMetal *geom = &s->geom[plane];
     const uint32_t params[4] = {
         (uint32_t)geom->scale_w[i], (uint32_t)geom->scale_h[i], (uint32_t)geom->scale_w_h[i], 0u,
     };
-    id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
+    id<MTLComputeCommandEncoder> const enc = [cmd computeCommandEncoder];
     [enc setComputePipelineState:(__bridge id<MTLComputePipelineState>)s->pso_horiz];
     [enc setBuffer:(__bridge id<MTLBuffer>)s->pyramid_ref[plane][i] offset:0 atIndex:0];
     [enc setBuffer:(__bridge id<MTLBuffer>)s->pyramid_cmp[plane][i] offset:0 atIndex:1];
     [enc setBuffer:(__bridge id<MTLBuffer>)s->hbuf offset:0 atIndex:2];
     [enc setBytes:params length:sizeof(params) atIndex:3];
-    MTLSize tg   = MTLSizeMake(MS_SSIM_BLOCK_X, MS_SSIM_BLOCK_Y, 1);
-    MTLSize grid = MTLSizeMake((geom->scale_w_h[i] + 15u) / 16u, (geom->scale_h[i] + 7u) / 8u, 1);
+    MTLSize const tg   = MTLSizeMake(MS_SSIM_BLOCK_X, MS_SSIM_BLOCK_Y, 1);
+    MTLSize const grid = MTLSizeMake((geom->scale_w_h[i] + 15u) / 16u, (geom->scale_h[i] + 7u) / 8u, 1);
     [enc dispatchThreadgroups:grid threadsPerThreadgroup:tg];
     [enc endEncoding];
 }
 
-static void encode_windows(id<MTLCommandBuffer> cmd, FloatMsSsimStateMetal *s, unsigned plane,
+void encode_windows(id<MTLCommandBuffer> cmd, FloatMsSsimStateMetal *s, unsigned plane,
                            int i)
 {
     const MsSsimPlaneGeometryMetal *geom = &s->geom[plane];
@@ -522,20 +524,20 @@ static void encode_windows(id<MTLCommandBuffer> cmd, FloatMsSsimStateMetal *s, u
     params.reserved          = 0u;
     params.c1                = s->c1;
     params.c2                = s->c2;
-    id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
+    id<MTLComputeCommandEncoder> const enc = [cmd computeCommandEncoder];
     [enc setComputePipelineState:(__bridge id<MTLComputePipelineState>)s->pso_vert_lcs];
     [enc setBuffer:(__bridge id<MTLBuffer>)s->hbuf offset:0 atIndex:0];
     [enc setBuffer:(__bridge id<MTLBuffer>)s->lum_terms offset:0 atIndex:1];
     [enc setBuffer:(__bridge id<MTLBuffer>)s->con_terms offset:0 atIndex:2];
     [enc setBuffer:(__bridge id<MTLBuffer>)s->str_terms offset:0 atIndex:3];
     [enc setBytes:&params length:sizeof(params) atIndex:4];
-    MTLSize tg   = MTLSizeMake(MS_SSIM_BLOCK_X, MS_SSIM_BLOCK_Y, 1);
-    MTLSize grid = MTLSizeMake(geom->scale_grid_w[i], geom->scale_grid_h[i], 1);
+    MTLSize const tg   = MTLSizeMake(MS_SSIM_BLOCK_X, MS_SSIM_BLOCK_Y, 1);
+    MTLSize const grid = MTLSizeMake(geom->scale_grid_w[i], geom->scale_grid_h[i], 1);
     [enc dispatchThreadgroups:grid threadsPerThreadgroup:tg];
     [enc endEncoding];
 }
 
-static void encode_plane_scales(id<MTLCommandBuffer> cmd, FloatMsSsimStateMetal *s,
+void encode_plane_scales(id<MTLCommandBuffer> cmd, FloatMsSsimStateMetal *s,
                                 unsigned plane)
 {
     for (int i = 0; i < MS_SSIM_SCALES; ++i) {
@@ -544,7 +546,7 @@ static void encode_plane_scales(id<MTLCommandBuffer> cmd, FloatMsSsimStateMetal 
     }
 }
 
-static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
+int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
                             VmafPicture *ref_pic_90, VmafPicture *dist_pic,
                             VmafPicture *dist_pic_90, unsigned index)
 {
@@ -554,11 +556,11 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
 
     s->index = index;
 
-    void *qh = vmaf_metal_context_queue_handle(s->ctx);
-    if (qh == NULL) { return -ENODEV; }
+    const void *const qh = vmaf_metal_context_queue_handle(s->ctx);
+    if (qh == nullptr) { return -ENODEV; }
 
-    id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)qh;
-    id<MTLCommandBuffer> cmd  = [queue commandBuffer];
+    id<MTLCommandQueue> const queue = (__bridge id<MTLCommandQueue>)qh;
+    id<MTLCommandBuffer> const cmd  = [queue commandBuffer];
     if (cmd == nil) { return -ENOMEM; }
 
     for (unsigned p = 0; p < s->n_planes; ++p) {
@@ -576,7 +578,7 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     return 0;
 }
 
-static const char *const ms_ssim_feature_names[MS_SSIM_MAX_PLANES] = {
+const char *const ms_ssim_feature_names[MS_SSIM_MAX_PLANES] = {
     "float_ms_ssim",
     "float_ms_ssim_cb",
     "float_ms_ssim_cr",
@@ -586,7 +588,7 @@ static const char *const ms_ssim_feature_names[MS_SSIM_MAX_PLANES] = {
  * iqa_ssim() returns them: each sum one double over the windows in raster
  * order (vmaf_mtl_ssim_lcs_sums(); the terms and the order are the CPU's, so
  * the sums are), divided by the pixel count in fp64, then rounded to fp32. */
-static void sum_scale_lcs(const FloatMsSsimStateMetal *s, unsigned plane, int scale,
+void sum_scale_lcs(const FloatMsSsimStateMetal *s, unsigned plane, int scale,
                           double *l_mean, double *c_mean, double *s_mean)
 {
     const MsSsimPlaneGeometryMetal *geom = &s->geom[plane];
@@ -634,10 +636,10 @@ static int reduce_plane_means(const FloatMsSsimStateMetal *s, unsigned plane, un
     return 0;
 }
 
-static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
+int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
                              VmafFeatureCollector *feature_collector)
 {
-    FloatMsSsimStateMetal *s = (FloatMsSsimStateMetal *)fex->priv;
+    const FloatMsSsimStateMetal *const s = (FloatMsSsimStateMetal *)fex->priv;
 
     double plane_scores[MS_SSIM_MAX_PLANES] = {0.0};
     double l_means[MS_SSIM_MAX_PLANES][MS_SSIM_SCALES] = {{0.0}};
@@ -645,7 +647,7 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
     double s_means[MS_SSIM_MAX_PLANES][MS_SSIM_SCALES] = {{0.0}};
 
     for (unsigned plane = 0; plane < s->n_planes; ++plane) {
-        int err = reduce_plane_means(s, plane, index, l_means[plane], c_means[plane],
+        int const err = reduce_plane_means(s, plane, index, l_means[plane], c_means[plane],
                                      s_means[plane], &plane_scores[plane]);
         if (err) { return err; }
     }
@@ -675,7 +677,7 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
     return err;
 }
 
-static int close_fex_metal(VmafFeatureExtractor *fex)
+int close_fex_metal(VmafFeatureExtractor *fex)
 {
     FloatMsSsimStateMetal *s = (FloatMsSsimStateMetal *)fex->priv;
 
@@ -685,12 +687,12 @@ static int close_fex_metal(VmafFeatureExtractor *fex)
     release_metal_buffers(s);
 
     if (s->feature_name_dict) {
-        int err = vmaf_dictionary_free(&s->feature_name_dict);
+        int const err = vmaf_dictionary_free(&s->feature_name_dict);
         if (err != 0 && rc == 0) { rc = err; }
     }
     if (s->ctx) {
         vmaf_metal_context_destroy(s->ctx);
-        s->ctx = NULL;
+        s->ctx = nullptr;
     }
     return rc;
 }
@@ -699,8 +701,9 @@ static const char *provided_features[] = {
     "float_ms_ssim",
     "float_ms_ssim_cb",
     "float_ms_ssim_cr",
-    NULL,
+    nullptr,
 };
+} // namespace
 
 extern "C" {
 /* Registered via extern in feature_extractor.c's feature_extractor_list[];
@@ -711,14 +714,14 @@ extern "C" {
 VmafFeatureExtractor vmaf_fex_float_ms_ssim_metal = {
     .name              = "float_ms_ssim_metal",
     .init              = init_fex_metal,
+    .flush             = nullptr,
+    .close             = close_fex_metal,
     .submit            = submit_fex_metal,
     .collect           = collect_fex_metal,
-    .flush             = NULL,
-    .close             = close_fex_metal,
     .options           = options,
     .priv_size         = sizeof(FloatMsSsimStateMetal),
-    .provided_features = provided_features,
     .flags             = VMAF_FEATURE_EXTRACTOR_METAL,
+    .provided_features = provided_features,
     .chars = {
         .n_dispatches_per_frame = 2 * MS_SSIM_SCALES + 4 * (MS_SSIM_SCALES - 1),
         .is_reduction_only      = false,

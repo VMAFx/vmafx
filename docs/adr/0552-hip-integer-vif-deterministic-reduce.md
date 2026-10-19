@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-0552: Deterministic wavefront reduction for `integer_vif_hip` horizontal kernels
 
-- **Status**: Accepted
+- **Status**: Accepted (Superseded-in-part 2026-10-06 by [ADR-0563](0563-hip-extractor-audit-verification.md) for the wavefront reduction (carry-bit defect))
 - **Date**: 2026-05-18
 - **Deciders**: lusoris
 - **Tags**: `hip`, `gpu`, `kernel`, `vif`, `parity`, `correctness`, `fork-local`
@@ -111,3 +111,13 @@ Replace the per-thread `atomicAdd` pattern in both horizontal-pass kernels
   `core/src/feature/cuda/integer_vif/filter1d.cu` lines 424–432, 765–772.
 - AMD wavefront size: GCN/RDNA default = 64 lanes. RDNA2+ supports wave32 via
   kernel attribute but this kernel does not request it.
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 109: `- ADR-0554: Supersedes ADR-0537's per-feature tolerance;
+  mandates places=4.`: Cites nonexistent ADR-0554. (the ADR mandating places=4
+  for HIP VIF is ADR-0566). See ADR-0566 (HIP VIF per-feature parity gate,
+  places=4).

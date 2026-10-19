@@ -117,8 +117,9 @@ Every maintained FFmpeg builder configures with `--fatal-warnings` and scans
 complete compiler log for `warning:`. same contract is mirrored by root CUDA image, `Dockerfile.ffmpeg`, `dev/Containerfile`, and
 `docker/Dockerfile.node`; `scripts/ci/test_e2e_runtime_contract.py` pins all
 four. Fix new diagnostics in source without warning suppressions or component
-removal. Patch 0019 owns 126-diagnostic GCC 14/16 hardening for n9.0.2
-baseline. Use `scripts/ci/checkout-annotated-tag.sh` for FFmpeg checkout;
+removal. Shared FFmpeg fix series (VMAFx/ffmpeg-patches, pinned in
+`build-config.env`, applied first by `scripts/ci/ffmpeg-shared-series.sh`,
+ADR-3143) owns 126-diagnostic GCC 14/16 hardening for n9.0.2 baseline. Use `scripts/ci/checkout-annotated-tag.sh` for FFmpeg checkout;
 direct shallow clones emit warning for annotated release tag and violate
 same zero-diagnostic image contract.
 
@@ -146,3 +147,10 @@ repository-write → install → cleanup short-circuiting, and default-off
 branch. Literal `\n` text cannot terminate Dockerfile heredoc: breaks parsing
 even with branch disabled. Root Dockerfile's redirected while loop unrelated.
 See [Research-2056](../docs/research/2056-fedora-scorecard-heredoc.md).
+
+## nv-codec-headers pin
+
+`build-config.env` owns `NV_CODEC_HEADERS_TAG` / `NV_CODEC_HEADERS_COMMIT`.
+`ARG NV_CODEC_HEADERS_COMMIT` of `Dockerfile.tester` + `Dockerfile.production-gpu` repeat commit.
+Never bump one copy alone: `scripts/ci/tests/test_nv_codec_headers_single_source.py`
+fails on drift. Published rc records in `licensing.json` keep own commit.

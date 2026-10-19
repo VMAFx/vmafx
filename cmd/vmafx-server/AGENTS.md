@@ -5,14 +5,15 @@ Go gRPC + HTTP scoring service. See
 
 ## Rebase-sensitive invariants
 
-1. **Proto-package stability** (`proto/vmafx.proto`): proto stays in package
+1. **Proto-package stability** (`proto/vmafx/v1/vmafx.proto`, generated from
+   `api/vmafx-platform.toml`): proto stays in package
    `vmafx.v1`. Unary `Score` and `Health` RPCs frozen for compatibility;
    never rename or remove request / response fields. Additive surfaces (new
    RPCs, new messages, new enum variants) only. Breaking change -> bump proto
    package to `vmafx.v2`, ship side-by-side until v1 deprecation closes; never
    edit `vmafx.v1` in-place.
 
-2. **`ScoreStream` opening message** (`proto/vmafx.proto` + `grpc_server.go`):
+2. **`ScoreStream` opening message** (`api/vmafx-platform.toml` + `grpc_server.go`):
    first `ScoreStreamRequest` on bidirectional stream MUST set `config` oneof
    (`StreamConfig`); every subsequent request MUST set `frame_pair`. Server
    validates in `grpcServer.ScoreStream`, rejects malformed sequences with
@@ -91,7 +92,7 @@ Go gRPC + HTTP scoring service. See
    architecture-specific library path: either compiles binary against
    different libvmaf from runtime.
 
-10. **`bootstrap.HTTPTracing` sits next to `golusoris.HTTP`** (`main.go`,
+10. **`bootstrap.HTTPTracing` sits next to `bootstrap.HTTP`** (`main.go`,
     `app_test.go::productionGraph`, ADR-0782 / ADR-1119): decorates
     `http.Handler` golusoris server module serves with `otelhttp` span
     (`<METHOD> <path>`, probes and `/metrics` filtered) -> every REST route
@@ -100,3 +101,58 @@ Go gRPC + HTTP scoring service. See
     code. `app_test.go::TestHTTPRouteEmitsServerSpan` and
     `TestOTelWiredThroughBootstrap` lock this; keep `productionGraph()` in step
     with `main.go` when option lists change.
+
+11. **Metrics contract** (`main.go::provideStreamMetrics`, WP16): server
+    /metrics = `scoringservice.ProvideMetrics` + `NewStreamMetrics`, families
+    = `metricdef.ByEmitter(metricdef.Server)`. `ScoreStream` records
+    session (`streams.Begin` / `End(retErr)`, `Frame` in `ingestFrames`) +
+    aggregate score in quality family. Guard:
+    `metrics_contract_test.go::TestServerServesEveryFamilyItEmits`.
+
+12. **vmafx limit defaults** (`hardening.go`, issue #1251): two `fx.Decorate`
+    functions raise golusoris defaults that do not fit scoring: gRPC
+    `grpc.max_recv_size` 64 MiB (a 1080p `FramePair` is 6.2 MB; framework cap
+    is 4 MiB) and `http.timeouts.write` 15 min (synchronous `/v1/score`;
+    framework 60 s). Apply only when the key is absent; operator env wins.
+    `hardeningOptions()` stays in `productionOptions`.
+    `TestServerDefaultsFitScoring` pins the effective values. Also
+    `scoringKeepalive()`: app gRPC server option (golusoris appends app options
+    after its hard-coded keepalive: 2 min age, 5 s grace) -> grace 30 min =
+    vmaf run bound, else long `Score` / `ScoreStream` cut.
+    `TestScoringKeepaliveOutlastsFrameworkGrace`,
+    `TestProductionGraphCarriesTheKeepalive` pin it.
+
+13. **`/readyz` reads the status registry** (`readiness.go`): legacy `/readyz`
+    is ready only when the scorer exists and every `health.TagReadiness` check
+    passes, including `vmaf-binary` (`registerBinaryReadiness`: binary
+    executable, `model.dir` a directory). Keep `registerBinaryReadiness` in
+    `productionOptions`. `TestReadyzFollowsBinaryAvailability` pins it.
+
+14. **Env contract** (`docs/server/configuration.md`): precedence is env over
+    file over defaults; code reads dotted keys (`max.concurrent.scores`).
+    `config_precedence_test.go` pins it. Tests bind `127.0.0.1:0`, never a
+    fixed port (`fixed_port_guard_test.go`).
+
+15. **One scoring path, options generated, provenance mandatory** (`score_options.go`,
+    #2155, ADR-2044): gRPC `Score`, served `POST /v1/score` (`http_server.go`)
+    and `restAdapter.ScoreVideoPair` all reach `runScore()`; no second
+    `scorer.Score` call. `ScoreRequest.options` -> vmaf flags only through
+    `pkg/scoreopts` (`scoreRun`, `optionArgs`, `backendDeviceArgs`); never
+    spell a scoring flag here. Device flag = `<backend>_device` from the
+    definition (no hand backend list). Unset precision = proto surface
+    default `max` (lossless) -> server score == CLI == C API bit for bit.
+    HTTP bodies read with `protojson` (`requestJSONOptions`,
+    DiscardUnknown false: unknown field = 400), written with proto names.
+    Report without `provenance` = Internal error, never a response without
+    it; stream aggregate gets it from `StreamScorer.Provenance()`
+    (`harvestStream`). Contract: `score_contract_test.go`, run by meson
+    `test_vmafx_score_contract` (env set by `core/test/run_score_contract.py`;
+    skip without env). Test stubs print a `provenance` object (required).
+
+16. **Test stubs via `internal/execstub.Write`** (`*_test.go`): executable
+    stub (fake `vmaf`) written with `execstub.Write`, never
+    `os.WriteFile`. Parallel tests fork during stub write -> child holds
+    stub's write descriptor until child exec -> run fails `text file busy`
+    (ETXTBSY, go.dev/issue/22315). `Write` holds `syscall.ForkLock` for
+    reading across open/write/close. Temp file + rename = no fix (same
+    inode). Guard: `internal/execstub` stress test.

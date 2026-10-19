@@ -1,0 +1,140 @@
+{
+  "schema_version": 1,
+  "description": "CI tier definition (ADR-2169). The one place that says which pull requests run which part of the suite. scripts/ci/ci_tier.py decides the tier of an event, .github/workflows/ci-tier.yml hands the decision to every workflow, and the Required Checks Aggregator reads this file to know which required contexts a tier does not owe.",
+  "labels": {
+    "full": "ci: full",
+    "cut": "autorelease: cut"
+  },
+  "release_ref_prefix": "release-please--",
+  "tiers": {
+    "full": "Every event that is not a pull request from this repository (master push, dispatch, schedule), every fork pull request, an own pull request labelled `ci: full`, and a release pull request labelled `autorelease: cut`. Runs the whole suite.",
+    "light": "A pull request whose head repository is this repository (Renovate included). Runs lint, format, the fast suite and the governance gates; the contexts in `full_only` are not run.",
+    "release-light": "The machine-generated release pull request without the cut label. Runs the contexts in `always` only."
+  },
+  "always": [
+    "Release Script Contract",
+    "Go API Compatibility",
+    "REUSE lint"
+  ],
+  "full_only": [
+    "Windows UCRT64",
+    "Windows MSVC+CUDA",
+    "Windows MSVC+SYCL",
+    "Windows MSVC+CUDA (full)",
+    "Windows ARM64 MSVC",
+    "Ubuntu gcc",
+    "Ubuntu clang",
+    "Ubuntu ARM clang",
+    "Ubuntu gcc static",
+    "macOS clang",
+    "macOS clang+DNN",
+    "macOS Metal",
+    "Ubuntu CUDA",
+    "Ubuntu CUDA static",
+    "Ubuntu SYCL",
+    "Ubuntu SYCL+CUDA",
+    "Ubuntu HIP",
+    "Linux Intel LLVM",
+    "macOS Clang+Metal",
+    "Coverage GPU",
+    "Coverage Gate",
+    "Sanitizers (address)",
+    "Sanitizers (thread)",
+    "Sanitizers (undefined)",
+    "Sanitizers ASan+UBSan",
+    "SYCL Parity (Arc A380)",
+    "FFmpeg Ubuntu gcc",
+    "FFmpeg macOS clang",
+    "FFmpeg SYCL",
+    "FFmpeg Windows MSVC",
+    "Docker Image Build",
+    "Dev Container Build",
+    "Tester Image",
+    "Windows Tester Zip",
+    "Release Dry Run"
+  ],
+  "own_input_lanes": [
+    {
+      "workflow": "windows-tester-bundle.yml",
+      "context": "Windows Tester Zip",
+      "selectors": [
+        "windows_tester_zip",
+        "windows_tester_zip_sycl"
+      ],
+      "reason": "A full-only context whose lane also runs on a light-tier pull request, but only when the diff touches an input the lane reads (selectors of .github/ci-impact.json, ADR-2198): the Windows zip legs failed on master for two days because a pull request that changed their inputs never built them (ADR-1595 built the x64 zip only, ADR-2169 built nothing)."
+    },
+    {
+      "workflow": "libvmaf-build-matrix.yml",
+      "context": "Windows MSVC+SYCL",
+      "selectors": [
+        "windows_msvc_sycl"
+      ],
+      "reason": "A full-only context whose leg also runs on a light-tier pull request, but only when the diff touches a C or C++ source, a header or a Meson file under core/ or an input of the leg itself (selector of .github/ci-impact.json, ADR-3279): a pull request that changed core C++ ran no MSVC build, and both MSVC legs of the master push that followed failed to compile. The CUDA and ARM64 MSVC legs stay on the full tier."
+    },
+    {
+      "workflow": "dev-container-build.yml",
+      "context": "Dev Container Build",
+      "selectors": [
+        "dev_container_inputs"
+      ],
+      "reason": "A full-only context whose build also runs on a light-tier pull request, but only when the diff touches dev/, .dockerignore, build-config.env or a script the build job calls (selector of .github/ci-impact.json, ADR-3338): #2821 changed dev/Containerfile on the light tier, built no image, and the master push 2c0db0b99 that followed failed in the stage it added. The broad dev_container selector (core, Python, AI, Go and shell sources the image copies) still runs on the full tier and the master push."
+    }
+  ],
+  "untiered_jobs": [
+    {
+      "workflow": "required-aggregator.yml",
+      "job": "aggregator",
+      "reason": "The aggregator is the merge gate: it reads the tier itself and must fail, not skip, on a draft (a skipped required context would count as passing).",
+      "expires": "2027-12-31"
+    },
+    {
+      "workflow": "rule-enforcement.yml",
+      "job": "release-script-contract",
+      "reason": "Owed by every tier: it proves that the release cut ran and is the one check a release pull request keeps without the cut label.",
+      "expires": "2027-12-31"
+    },
+    {
+      "workflow": "pr-type-label.yml",
+      "job": "label",
+      "reason": "pull_request_target label job: one API call, writes a label, runs no repository code. It does not run on synchronize.",
+      "expires": "2027-12-31"
+    },
+    {
+      "workflow": "pr-label-lanes.yml",
+      "job": "escalate",
+      "reason": "Starts the full suite when `ci: full` or `autorelease: cut` is applied; skipped for every other label.",
+      "expires": "2027-12-31"
+    },
+    {
+      "workflow": "pr-label-lanes.yml",
+      "job": "e2e",
+      "reason": "Opt-in lane, calls e2e-k8s.yml: the job starts only for a ready pull request that carries the label `run-e2e-k8s` (ADR-0783); every other job of the workflow follows it.",
+      "expires": "2027-12-31"
+    },
+    {
+      "workflow": "pr-label-lanes.yml",
+      "job": "observability",
+      "reason": "Opt-in lane, not required (Q-194), calls observability-compose.yml: the job starts only for a ready pull request that carries the label `run-observability-smoke`; the smoke job follows it. Nightly and dispatch runs are the full tier.",
+      "expires": "2027-12-31"
+    },
+    {
+      "workflow": "praetor-api.yml",
+      "job": "api-compatibility",
+      "reason": "Praetor-managed, byte-locked by `praetorctl audit`. Since praetor#815 its first step fails closed on a draft and every later step is skipped, so a draft does no work, but the job itself still starts and reports a red check, which the tier's job-level gate cannot express. `test_praetor_managed_jobs_stop_on_a_draft_before_any_work` proves the step shape.",
+      "expires": "2027-12-31"
+    },
+    {
+      "workflow": "praetor-docs.yml",
+      "job": "documentation",
+      "reason": "Praetor-managed, byte-locked by `praetorctl audit`. Since praetor#815 its first step fails closed on a draft and every later step is skipped, so a draft does no work, but the job itself still starts and reports a red check, which the tier's job-level gate cannot express. `test_praetor_managed_jobs_stop_on_a_draft_before_any_work` proves the step shape.",
+      "expires": "2027-12-31"
+    },
+    {
+      "workflow": "reuse.yml",
+      "job": "reuse",
+      "reason": "Written by praetor (ADR-2784) and kept in its hosted gate shape, edited only to pin the actions to commits: its first step fails closed on a draft and every later step is skipped, so a draft does no work, but the job itself still starts and reports a red check. A job-level skip would report success on a draft, which praetor's audit warns against. `test_praetor_managed_jobs_stop_on_a_draft_before_any_work` proves the step shape.",
+      "expires": "2027-12-31"
+    }
+  ],
+  "push_branch_exceptions": []
+}

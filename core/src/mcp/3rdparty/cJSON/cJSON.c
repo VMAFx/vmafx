@@ -71,7 +71,12 @@
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
-/* define our own boolean type */
+/* define our own boolean type. In C23 `true` and `false` are keywords and <stdbool.h> defines no
+ * macro for them; redefining a keyword is -Wkeyword-macro, and the keyword already converts to
+ * cJSON_bool (int) with the value the macro would give. Before C23 <stdbool.h> makes both
+ * macros, which the fork replaces with typed constants as upstream does. */
+#include <stdbool.h>
+#if defined(true) || defined(false)
 #ifdef true
 #undef true
 #endif
@@ -81,6 +86,7 @@
 #undef false
 #endif
 #define false ((cJSON_bool)0)
+#endif
 
 /* define isnan and isinf for ANSI C, if in C99 or above, isnan and isinf has been defined in math.h */
 #ifndef isinf

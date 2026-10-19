@@ -33,18 +33,28 @@ permissions:
   contents: read
 
 concurrency:
-  group: build-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: build-${{ github.workflow }}-${{ github.ref == 'refs/heads/master' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
 
 env:
   DEBIAN_FRONTEND: noninteractive
 
 jobs:
+  tier:
+    name: CI tier (Build)
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/ci-tier.yml
+
   impact:
+    needs: tier
+    if: needs.tier.outputs.full == 'true'
     name: Plan build impact
     runs-on: ubuntu-26.04
     outputs:
-      selected: ${{ steps.impact.outputs.c_core }}
+      selected: ${{ steps.impact.outputs.build_work }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -110,15 +120,22 @@ jobs:
           # Proves the Windows MSVC+NVCC path. Build-only (no GPU on
           # windows-2025 runner). CPU-only meson tests are run after build.
           # ──────────────────────────────────────────────────────────────
+          # ADR-2170: the leg prints no warnings, so cl.exe, link.exe and
+          # nvcc make them errors (scripts/ci/werror-args.sh msvc).
           - os: windows-2025
             check_name: Windows MSVC+CUDA (full)
             cuda: true
             windows: true
+            werror: msvc
+            # -Db_lto=false: as the Windows MSVC+CUDA row of
+            # libvmaf-build-matrix.yml; /LTCG links of the test programs
+            # took most of this job's 75 minutes.
             meson_extra: >-
-              --default-library=static
+              --default-library=static -Dc_std=none
               -Denable_cuda=true -Denable_nvcc=true
               -Denable_sycl=false
               -Denable_float=true
+              -Db_lto=false
 
     name: ${{ matrix.check_name }} work
     runs-on: ${{ matrix.os }}
@@ -283,7 +300,8 @@ jobs:
           sudo -E apt-get -yq install "${ONEAPI_APT_PACKAGE}"
           git clone --depth=1 --branch "v${LEVEL_ZERO_VERSION}" \
             https://github.com/oneapi-src/level-zero.git /tmp/level-zero
-          cmake -S /tmp/level-zero -B /tmp/level-zero/build -DCMAKE_INSTALL_PREFIX=/usr
+          cmake -S /tmp/level-zero -B /tmp/level-zero/build -DCMAKE_INSTALL_PREFIX=/usr \
+            -DCMAKE_COMPILE_WARNING_AS_ERROR=ON
           cmake --build /tmp/level-zero/build -j"$(nproc)"
           sudo cmake --install /tmp/level-zero/build
           rm -rf /tmp/level-zero
@@ -299,8 +317,8 @@ jobs:
       - name: Install nv-codec-headers (Linux)
         if: matrix.cuda && !matrix.windows
         run: |
-          git clone --depth=1 https://code.ffmpeg.org/FFmpeg/nv-codec-headers
-          cd nv-codec-headers && sudo make install && cd .. && rm -rf nv-codec-headers
+          bash scripts/ci/fetch-nv-codec-headers.sh "$RUNNER_TEMP/nv-codec-headers"
+          sudo make -C "$RUNNER_TEMP/nv-codec-headers" install
 
       - name: Install base deps for CUDA leg (Linux)
         if: matrix.cuda && !matrix.sycl && startsWith(matrix.os, 'ubuntu')
@@ -310,16 +328,16 @@ jobs:
       # (Vulkan backend dropped).
 
       # ── ROCm / HIP (Linux) ───────────────────────────────────────────
-      # ROCm 10.0.0 has no apt channel. Since ROCm 7.14 AMD builds and
+      # ROCm 10 has no apt channel. Since ROCm 7.14 AMD builds and
       # releases through "TheRock"; repo.radeon.com/rocm/apt/ tops out at
-      # 7.2.4 (its own `latest` resolves there, and apt/7.14 and apt/10.0.0
-      # both 404), the manylinux channel stops at rocm-rel-7.2.4, and the
-      # TheRock wheel index carries only 7.14.0 alphas. The official
-      # container image is the only stable, digest-pinnable ROCm 10.0.0
-      # artifact -- see ADR-1225.
+      # 7.2.4 (its own `latest` resolves there, and apt/7.14, apt/10.0.0
+      # and apt/10.1.0 all 404), the manylinux channel stops at
+      # rocm-rel-7.2.4, and the TheRock wheel index carries only 7.14.0
+      # alphas. The official container image is the only stable,
+      # digest-pinnable ROCm 10 artifact -- see ADR-1225.
       #
-      # `docker pull` is not viable here: the image is 8.2 GB compressed /
-      # 29 GB extracted and this leg already carries the CUDA toolkit and
+      # `docker pull` is not viable here: the image is 8.9 GB compressed /
+      # 31 GB extracted and this leg already carries the CUDA toolkit and
       # oneAPI on the same runner. `install-rocm-from-image.sh` instead
       # streams each layer blob from the registry straight into tar,
       # extracting only /opt/rocm and skipping the math libraries libvmaf
@@ -364,12 +382,13 @@ jobs:
 
       - name: Install nv-codec-headers (Windows)
         if: matrix.windows && matrix.cuda
-        shell: cmd
+        shell: bash
         run: |
-          git clone --depth=1 https://code.ffmpeg.org/FFmpeg/nv-codec-headers nv-codec-headers
-          mkdir nvcodec-prefix\include\ffnvcodec
-          copy nv-codec-headers\include\ffnvcodec\*.h nvcodec-prefix\include\ffnvcodec\
-          echo INCLUDE=%CD%\nvcodec-prefix\include;%INCLUDE%>>%GITHUB_ENV%
+          headers="$(cygpath -u "$RUNNER_TEMP")/nv-codec-headers"
+          bash scripts/ci/fetch-nv-codec-headers.sh "$headers"
+          mkdir -p nvcodec-prefix/include
+          cp -r "$headers/include/ffnvcodec" nvcodec-prefix/include/
+          echo "INCLUDE=$(cygpath -w "$PWD/nvcodec-prefix/include");${INCLUDE-}" >> "$GITHUB_ENV"
 
       - name: Disable ccache wrap (Windows)
         if: matrix.windows
@@ -397,9 +416,14 @@ jobs:
           if [ "${{ matrix.sycl }}" = "true" ]; then
             source /opt/intel/oneapi/setvars.sh
           fi
+          # ADR-2170 / ADR-2828: warnings are errors; the literal is what praetor's
+          # build-warnings gate reads, the helper adds the linker's switch.
+          # shellcheck disable=SC2046  # the helper prints one option per line, split on purpose
           meson setup core core/build --buildtype release \
             --prefix "$PWD/install" \
-            ${{ matrix.meson_extra }}
+            ${{ matrix.meson_extra }} \
+            -Dwerror=true \
+            $(scripts/ci/werror-args.sh true)
 
       - name: Configure libvmaf (macOS)
         if: matrix.os == 'macos-latest'
@@ -407,9 +431,25 @@ jobs:
           CC: ${{ matrix.CC }}
           CXX: ${{ matrix.CXX }}
         run: |
+          # ADR-2170 / ADR-2828: warnings are errors; the literal is what praetor's
+          # build-warnings gate reads, the helper adds the linker's switch.
+          # shellcheck disable=SC2046  # the helper prints one option per line, split on purpose
           meson setup core core/build --buildtype release \
             --prefix "$PWD/install" \
-            ${{ matrix.meson_extra }}
+            ${{ matrix.meson_extra }} \
+            -Dwerror=true \
+            $(scripts/ci/werror-args.sh true)
+
+      # ADR-2170: the Windows steps run under cmd, so the one helper that
+      # turns warnings into errors runs here and hands its arguments over.
+      - name: Warnings-as-errors arguments (Windows)
+        if: matrix.windows
+        id: werror
+        shell: bash
+        run: |
+          args="$(bash scripts/ci/werror-args.sh "${{ matrix.werror }}")"
+          echo "werror arguments: ${args:-none}"
+          echo "args=${args//$'\n'/ }" >> "$GITHUB_OUTPUT"
 
       - name: Configure libvmaf (Windows)
         if: matrix.windows
@@ -418,9 +458,9 @@ jobs:
           CFLAGS: /experimental:c11atomics
           CXXFLAGS: /experimental:c11atomics
         run: |
-          meson setup core core\build --buildtype release ^
+          meson setup core core\build -Dwerror=true --buildtype release ^
             --prefix %CD%\install ^
-            ${{ matrix.meson_extra }}
+            ${{ matrix.meson_extra }} ${{ steps.werror.outputs.args }}
 
       # ── Build ────────────────────────────────────────────────────────
       - name: Build libvmaf (Linux)
@@ -463,14 +503,36 @@ jobs:
       # ── Netflix golden + unit tests (Linux) ──────────────────────────
       # Native Meson tests; Python golden assertions run in the dedicated
       # CPU/GCC jobs described at the top of this workflow.
+      # The tests that compile or link (test_compat_library_gates,
+      # test_libvmaf_deprecation) run the build's own compiler, `icx` on the Intel
+      # LLVM leg: source the oneAPI environment as the build step does and keep
+      # PATH through sudo, whose secure_path drops it.
+      - name: Prefetch Go modules for the suite (Linux)
+        if: startsWith(matrix.os, 'ubuntu')
+        # The suite's Go-running tests find their modules in the cache: the
+        # download happens here, retried, and fails here when it cannot succeed
+        # (scripts/ci/prefetch_go_modules.py, as the user the suite runs as).
+        run: >-
+          sudo -E PATH="$PATH" "$(command -v python3)"
+          scripts/ci/prefetch_go_modules.py
       - name: Run tests (Linux)
         if: startsWith(matrix.os, 'ubuntu')
-        run: >-
-          sudo "$(command -v python3)" scripts/ci/run_meson_test.py
-          --meson-executable "$(command -v meson)" -- -C core/build
-          --no-rebuild --print-errorlogs
+        run: |
+          if [ "${{ matrix.sycl }}" = "true" ]; then
+            source /opt/intel/oneapi/setvars.sh
+          fi
+          sudo -E PATH="$PATH" LD_LIBRARY_PATH="$LD_LIBRARY_PATH" \
+            "$(command -v python3)" scripts/ci/run_meson_test.py \
+            --meson-executable "$(command -v meson)" -- -C core/build \
+            --no-rebuild --print-errorlogs
 
       # ── Tests (macOS) ────────────────────────────────────────────────
+      - name: Prefetch Go modules for the suite (macOS)
+        if: matrix.os == 'macos-latest'
+        # The suite's Go-running tests find their modules in the cache: the
+        # download happens here, retried, and fails here when it cannot succeed
+        # (scripts/ci/prefetch_go_modules.py, as the user the suite runs as).
+        run: python3 scripts/ci/prefetch_go_modules.py
       - name: Run tests (macOS)
         if: matrix.os == 'macos-latest'
         run: >-
@@ -510,8 +572,12 @@ jobs:
         # never repaired and the test fails with "no frames decoded". The
         # success()-gated save below stops new poisoning; this heals caches
         # already poisoned, which otherwise need a manual cache deletion.
+        # --restore-tracked: the cache also carries the files git tracks under
+        # python/test/resource in the revision of the run that saved it; a
+        # restore-keys hit writes them over this checkout, so they are put
+        # back to the commit's (T-CI-FIXTURE-CACHE-STALE-TRACKED-2026-10-06).
         if: (startsWith(matrix.os, 'ubuntu') && !matrix.sycl) || matrix.os == 'macos-latest'
-        run: bash scripts/ci/prune-corrupt-fixtures.sh python/test/resource
+        run: bash scripts/ci/prune-corrupt-fixtures.sh --restore-tracked python/test/resource
 
       - name: Run tox tests (Linux)
         # Python snapshots and the immutable Netflix assertions are authored
@@ -585,81 +651,90 @@ jobs:
       # ── Artifact ──────────────────────────────────────────────────────
       - name: Upload vmaf binary (Linux + macOS)
         if: "!matrix.windows"
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: ${{ matrix.check_name }}-vmaf
           path: ./install/bin/vmaf
 
       - name: Upload vmaf.exe artifact (Windows)
         if: matrix.windows
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: windows-msvc-cuda-vmaf
           path: install/bin/vmaf.exe
           if-no-files-found: warn
 
   linux-intel-llvm-gate:
-    needs: [impact, build-work]
-    if: always()
+    needs: [tier, impact, build-work]
+    if: always() && needs.tier.outputs.full == 'true'
     # required-aggregator
     name: Linux Intel LLVM
     runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      actions: read
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts/ci/gate_leg_result.py
+          sparse-checkout-cone-mode: false
       - name: Require selected Linux Intel LLVM work
         env:
           PLAN_RESULT: ${{ needs.impact.result }}
           SELECTED: ${{ needs.impact.outputs.selected }}
-          WORK_RESULT: ${{ needs.build-work.result }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          if [ "$PLAN_RESULT" != success ]; then
-            echo "::error::impact planning did not succeed ($PLAN_RESULT)"
-            exit 1
-          fi
-          case "$SELECTED:$WORK_RESULT" in
-            true:success|false:skipped) ;;
-            *) echo "::error::invalid Linux Intel LLVM gate state selected=$SELECTED work=$WORK_RESULT"; exit 1 ;;
-          esac
+          # Judge this leg's own job: the matrix job's aggregate result covers every leg.
+          gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs?per_page=100" --paginate \
+            | python3 scripts/ci/gate_leg_result.py --job "Linux Intel LLVM work"
 
   macos-clang-metal-gate:
-    needs: [impact, build-work]
-    if: always()
+    needs: [tier, impact, build-work]
+    if: always() && needs.tier.outputs.full == 'true'
     # required-aggregator
     name: macOS Clang+Metal
     runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      actions: read
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts/ci/gate_leg_result.py
+          sparse-checkout-cone-mode: false
       - name: Require selected macOS Clang+Metal work
         env:
           PLAN_RESULT: ${{ needs.impact.result }}
           SELECTED: ${{ needs.impact.outputs.selected }}
-          WORK_RESULT: ${{ needs.build-work.result }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          if [ "$PLAN_RESULT" != success ]; then
-            echo "::error::impact planning did not succeed ($PLAN_RESULT)"
-            exit 1
-          fi
-          case "$SELECTED:$WORK_RESULT" in
-            true:success|false:skipped) ;;
-            *) echo "::error::invalid macOS Clang+Metal gate state selected=$SELECTED work=$WORK_RESULT"; exit 1 ;;
-          esac
+          # Judge this leg's own job: the matrix job's aggregate result covers every leg.
+          gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs?per_page=100" --paginate \
+            | python3 scripts/ci/gate_leg_result.py --job "macOS Clang+Metal work"
 
   windows-msvc-cuda-full-gate:
-    needs: [impact, build-work]
-    if: always()
+    needs: [tier, impact, build-work]
+    if: always() && needs.tier.outputs.full == 'true'
     # required-aggregator
     name: Windows MSVC+CUDA (full)
     runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      actions: read
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts/ci/gate_leg_result.py
+          sparse-checkout-cone-mode: false
       - name: Require selected Windows MSVC+CUDA work
         env:
           PLAN_RESULT: ${{ needs.impact.result }}
           SELECTED: ${{ needs.impact.outputs.selected }}
-          WORK_RESULT: ${{ needs.build-work.result }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          if [ "$PLAN_RESULT" != success ]; then
-            echo "::error::impact planning did not succeed ($PLAN_RESULT)"
-            exit 1
-          fi
-          case "$SELECTED:$WORK_RESULT" in
-            true:success|false:skipped) ;;
-            *) echo "::error::invalid Windows MSVC+CUDA gate state selected=$SELECTED work=$WORK_RESULT"; exit 1 ;;
-          esac
+          # Judge this leg's own job: the matrix job's aggregate result covers every leg.
+          gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs?per_page=100" --paginate \
+            | python3 scripts/ci/gate_leg_result.py --job "Windows MSVC+CUDA (full) work"

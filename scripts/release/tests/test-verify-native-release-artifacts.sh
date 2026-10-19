@@ -60,9 +60,17 @@ expect_status() {
 
 build="$scratch/build"
 mkdir -p "$build"
+# Two chains, as the library split ships them (ADR-2094): the compat
+# libvmaf.so.3 needs libvmafx.so.1, and so does the CLI.
 printf '%s\n' \
+  'int vmafx_engine_fixture(void) {' \
+  '    return 7;' \
+  '}' >"$scratch/libvmafx.c"
+printf '%s\n' \
+  'int vmafx_engine_fixture(void);' \
+  '' \
   'int vmafx_fixture(void) {' \
-  '    return 321;' \
+  '    return 314 + vmafx_engine_fixture();' \
   '}' >"$scratch/libvmaf.c"
 # The fixture CLI reports whatever VMAFX_FIXTURE_VERSION was compiled in, on
 # stderr, exactly like core/tools/cli_parse.cpp prints vmaf_version().
@@ -71,17 +79,29 @@ printf '%s\n' \
   '#include <string.h>' \
   '' \
   'int vmafx_fixture(void);' \
+  'int vmafx_engine_fixture(void);' \
   '' \
   'int main(int argc, char **argv) {' \
+  '#ifdef VMAFX_FIXTURE_NO_ENGINE' \
+  '    const int engine = 7;' \
+  '#else' \
+  '    const int engine = vmafx_engine_fixture();' \
+  '#endif' \
   '    if (argc == 2 && strcmp(argv[1], "--version") == 0 &&' \
-  '        vmafx_fixture() == 321) {' \
+  '        vmafx_fixture() == 321 && engine == 7) {' \
   '        (void)fprintf(stderr, "%s\n", VMAFX_FIXTURE_VERSION);' \
   '        return 0;' \
   '    }' \
   '    return 1;' \
   '}' >"$scratch/vmaf.c"
+cc -fPIC -shared -Wl,-soname,libvmafx.so.1 \
+  -o "$build/libvmafx.so.1.0.0" "$scratch/libvmafx.c"
+ln -s libvmafx.so.1.0.0 "$build/libvmafx.so.1"
+ln -s libvmafx.so.1 "$build/libvmafx.so"
+# shellcheck disable=SC2016 # $ORIGIN is for the dynamic loader, not the shell.
 cc -fPIC -shared -Wl,-soname,libvmaf.so.3 \
-  -o "$build/libvmaf.so.3.0.0" "$scratch/libvmaf.c"
+  -o "$build/libvmaf.so.3.0.0" "$scratch/libvmaf.c" \
+  -L"$build" -lvmafx -Wl,--enable-new-dtags -Wl,-rpath,'$ORIGIN'
 ln -s libvmaf.so.3.0.0 "$build/libvmaf.so.3"
 ln -s libvmaf.so.3 "$build/libvmaf.so"
 
@@ -93,8 +113,12 @@ link_cli() {
   local reported="$1"
   local output="$2"
   shift 2
+  local engine_flags=(-lvmafx)
+  if [[ "${FIXTURE_NO_ENGINE:-0}" == 1 ]]; then
+    engine_flags=(-DVMAFX_FIXTURE_NO_ENGINE)
+  fi
   cc -DVMAFX_FIXTURE_VERSION="\"$reported\"" -o "$output" "$scratch/vmaf.c" \
-    -L"$build" -lvmaf "$@"
+    -L"$build" -lvmaf "${engine_flags[@]}" "$@"
 }
 
 # The loader token the release CLI carries as its only RUNPATH entry.
@@ -115,7 +139,7 @@ stage_fixture() {
     cp -L -- "$library" "$destination/$(basename -- "$library")"
   done < <(
     find "$build" -maxdepth 1 \( -type f -o -type l \) \
-      -name 'libvmaf.so*' -print0
+      \( -name 'libvmaf.so*' -o -name 'libvmafx.so*' \) -print0
   )
   cp -- "$cli" "$destination/vmaf"
   chmod +x "$destination/vmaf"
@@ -234,6 +258,31 @@ stage_fixture "$different_bytes"
 printf 'different\n' >>"$different_bytes/libvmaf.so.3"
 check 'divergent materialized link-chain bytes are rejected' \
   expect_rejected "$different_bytes"
+
+# --- The engine chain (ADR-2094) ---------------------------------------------
+no_engine="$scratch/no-engine"
+stage_fixture "$no_engine"
+rm -- "$no_engine"/libvmafx.so*
+check 'a bundle without the libvmafx chain is rejected' \
+  expect_status 1 "$no_engine" 3.2.1 'libvmafx.so must be a non-empty regular staged file'
+
+engine_soname_missing="$scratch/engine-soname-missing"
+stage_fixture "$engine_soname_missing"
+rm -- "$engine_soname_missing/libvmafx.so.1"
+check 'missing libvmafx SONAME filename is rejected' \
+  expect_status 1 "$engine_soname_missing" 3.2.1 'staged SONAME file is missing'
+
+engine_realname_missing="$scratch/engine-realname-missing"
+stage_fixture "$engine_realname_missing"
+rm -- "$engine_realname_missing/libvmafx.so.1.0.0"
+check 'missing libvmafx real-name filename is rejected' \
+  expect_status 1 "$engine_realname_missing" 3.2.1 'real name'
+
+FIXTURE_NO_ENGINE=1 build_cli '3.2.1' "$scratch/vmaf-no-engine"
+cli_without_engine="$scratch/cli-without-engine"
+stage_fixture "$cli_without_engine" "$scratch/vmaf-no-engine"
+check 'a CLI that does not need libvmafx.so.1 is rejected' \
+  expect_status 1 "$cli_without_engine" 3.2.1 'vmaf does not declare libvmafx.so.1 as a dependency'
 
 not_executable="$scratch/not-executable"
 stage_fixture "$not_executable"

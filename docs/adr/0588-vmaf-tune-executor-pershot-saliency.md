@@ -70,3 +70,12 @@ without any real binary.
 - ADR-0222: `vmaf-perShot` C-side binary (TransNet V2 wrapper).
 - ADR-0293: saliency-aware ROI encoding (`saliency_aware_encode`).
 - Per user direction: Phase F follow-up item, 2026-05-16.
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 69: `- ADR-0454: Phase F base execute mode.`: ADR-0454 points to
+  an unrelated topic (0454-vif-cuda-smem-staging.md: "VIF CUDA shared-memory
+  staging for horizontal and vertical convolutions").

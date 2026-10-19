@@ -72,7 +72,8 @@ static void x_conv_edge_cols_neon(const uint16_t *src, uint16_t *dst_row, unsign
 {
     const unsigned shift_add_round = 32768;
     for (unsigned j = first; j < last; j++) {
-        dst_row[j] = (edge_16(true, src, width, height, src_stride, i, j) + shift_add_round) >> 16;
+        dst_row[j] =
+            (edge_16(true, src, width, height, (int)src_stride, i, j) + shift_add_round) >> 16;
     }
 }
 

@@ -20,9 +20,18 @@ A depth the CPU extractor refuses is ``n/a`` (only 16 bits may be refused);
 at 8, 10 and 12 bits a CPU failure is an error. Usage::
 
     exact_twin_matrix.py --vmaf-binary build/tools/vmaf --backends cuda \\
-        [--depths 8 10 12 16] [--layouts 420 422 444] [--features ...] \\
-        [--json-out m.json] [--md-out m.md] \\
+        [--grid standard|8k|16k] [--depths 8 10 12 16] [--layouts 420 422 444] \\
+        [--features ...] [--json-out m.json] [--md-out m.md] \\
         [--record docs/development/exact-twin-matrix.md --recorded-on TEXT]
+
+``--grid 8k`` runs every device twin on 8192x4320 4:4:4 pictures at 8 and 16
+bits, and ``--grid 16k`` runs the CPU extractor of every exact twin on
+15360x8640 4:4:4 pictures with the host's SIMD dispatch against
+``--cpumask 0xffffffff`` (scalar code only). Both use worst-case content
+(``worst_case_plane()``): full-range noise against its complement, a whole
+frame at the maximum difference each way, and a 1-pixel checkerboard
+compared with itself. A CPU extractor listed in ``SIZE_REFUSED`` may refuse
+a large picture; its cell is ``n/a`` only when the device refuses it too.
 
 ``--record`` replaces each run backend's table in the page (between its
 ``exact-twin-matrix:<backend>`` markers) and needs a full run: every exact twin
@@ -40,6 +49,7 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import hashlib
 import json
 import math
 import os
@@ -80,6 +90,45 @@ STATUS_PASS = "="  # noqa: S105 - a table mark, not a credential
 STATUS_FAIL = "FAIL"
 STATUS_ERROR = "ERROR"
 STATUS_NA = "n/a"
+
+# The large grids: worst-case content at 8K (every device twin against the CPU)
+# and at 16K (the CPU's SIMD dispatch against its scalar code). See
+# docs/development/accumulator-bounds.md.
+LARGE_DEPTHS = (8, 16)
+LARGE_LAYOUTS = ("444",)
+LARGE_FRAMES = 4
+LARGE_RUN_LIMIT_S = 1800
+CPU_SCALAR_MASK = "0xffffffff"
+# CPU extractors that refuse a large picture at init. A large cell of one of
+# these is n/a when the device twin refuses the picture too.
+SIZE_REFUSED = {
+    "cambi": "the window adjusted to the picture exceeds 65, the reciprocal LUT (cambi.h)",
+}
+
+
+@dataclasses.dataclass(frozen=True)
+class Grid:
+    """One picture geometry and its cells: depths x layouts, recorded between markers."""
+
+    name: str
+    width: int
+    height: int
+    frames: int
+    depths: tuple[int, ...]
+    layouts: tuple[str, ...]
+    marker: str
+
+
+GRIDS = {
+    "standard": Grid("standard", WIDTH, HEIGHT, FRAMES, DEPTHS, LAYOUTS, "exact-twin-matrix"),
+    "8k": Grid("8k", 8192, 4320, LARGE_FRAMES, LARGE_DEPTHS, LARGE_LAYOUTS, "exact-twin-matrix-8k"),
+    "16k": Grid(
+        "16k", 15360, 8640, LARGE_FRAMES, LARGE_DEPTHS, LARGE_LAYOUTS, "exact-twin-matrix-16k"
+    ),
+}
+STANDARD = GRIDS["standard"]
+# The 16K grid compares two CPU runs; its rows carry this backend name.
+CPU_ROW = "cpu"
 
 
 # ---------------------------------------------------------------------------
@@ -147,23 +196,84 @@ def write_fixture(path: Path, depth: int, layout: str, distorted: bool) -> None:
                 out.write(plane_bytes(width, height, depth, key))
 
 
+# Worst-case content of the large grids, one kind per frame: full-range noise
+# against its complement, the reference at the maximum and the distorted
+# picture at 0, the other way round, and a 1-pixel checkerboard of 0 and the
+# maximum compared with itself. Frames 1 to 2 move every sample from the
+# maximum to 0 (the largest motion SAD); frame 3 has the most reference
+# detail with no distortion (the largest ADM masking and VIF terms).
+WORST_CASE_KINDS = ("noise", "ref-max", "ref-zero", "checkerboard")
+
+
+def checkerboard_row(width: int, sample_bytes: int, phase: int) -> bytes:
+    """One row alternating 0 and the maximum, starting with the maximum when `phase` is odd."""
+    pair = b"\x00" * sample_bytes + b"\xff" * sample_bytes
+    if phase % 2:
+        pair = pair[sample_bytes:] + pair[:sample_bytes]
+    return (pair * (width // 2 + 1))[: width * sample_bytes]
+
+
+def worst_case_plane(width: int, height: int, depth: int, key: tuple[int, int, int]) -> bytes:
+    """One plane of worst-case content; `key` is (plane, frame, distorted).
+
+    Every value is 0, the maximum or SHAKE256 noise, so the bytes are the
+    same on every host. 16-bit words are little-endian; above 8 bits only 16
+    is used, where every byte pattern is a valid sample.
+    """
+    plane, frame, distorted = key
+    sample_bytes = 1 if depth == BYTE_DEPTH else 2
+    size = width * height * sample_bytes
+    kind = WORST_CASE_KINDS[frame % len(WORST_CASE_KINDS)]
+    if kind == "noise":
+        seed = f"vmafx-worst-case/{width}x{height}/{depth}/{plane}/{frame}".encode()
+        noise = hashlib.shake_256(seed).digest(size)
+        return noise.translate(COMPLEMENT) if distorted else noise
+    if kind in ("ref-max", "ref-zero"):
+        high = (kind == "ref-max") != bool(distorted)
+        return b"\xff" * size if high else bytes(size)
+    rows = (
+        checkerboard_row(width, sample_bytes, plane),
+        checkerboard_row(width, sample_bytes, plane + 1),
+    )
+    return (rows[0] + rows[1]) * (height // 2) + (rows[0] if height % 2 else b"")
+
+
+# Byte complement: 255 - b, which complements a 16-bit word too.
+COMPLEMENT = bytes(range(255, -1, -1))
+
+
+def write_worst_case_fixture(path: Path, grid: Grid, depth: int, distorted: bool) -> None:
+    """Write the worst-case frames of `grid` (4:4:4) at `depth`."""
+    with path.open("wb") as out:
+        for frame in range(grid.frames):
+            for plane in range(3):
+                out.write(
+                    worst_case_plane(grid.width, grid.height, depth, (plane, frame, int(distorted)))
+                )
+
+
 @dataclasses.dataclass(frozen=True)
 class Fixture:
-    """The reference and distorted files of one (depth, layout)."""
+    """The reference and distorted files of one (grid, depth, layout)."""
 
     ref: Path
     dis: Path
     depth: int
     layout: str
+    grid: Grid = STANDARD
 
 
-def make_fixture(workdir: Path, depth: int, layout: str) -> Fixture:
-    """Generate (once) the pair of one (depth, layout) under `workdir`."""
-    stem = workdir / f"matrix_{WIDTH}x{HEIGHT}_{layout}p{depth}"
-    fixture = Fixture(Path(f"{stem}_ref.yuv"), Path(f"{stem}_dis.yuv"), depth, layout)
+def make_fixture(workdir: Path, depth: int, layout: str, grid: Grid = STANDARD) -> Fixture:
+    """Generate (once) the pair of one (depth, layout) of `grid` under `workdir`."""
+    stem = workdir / f"matrix_{grid.width}x{grid.height}_{layout}p{depth}"
+    fixture = Fixture(Path(f"{stem}_ref.yuv"), Path(f"{stem}_dis.yuv"), depth, layout, grid)
     for path, distorted in ((fixture.ref, False), (fixture.dis, True)):
-        if not path.is_file():
+        if path.is_file():
+            continue
+        if grid is STANDARD:
             write_fixture(path, depth, layout, distorted)
+        else:
+            write_worst_case_fixture(path, grid, depth, distorted)
     return fixture
 
 
@@ -227,23 +337,33 @@ class Cli:
     lock_dir: Path
 
     def frames(
-        self, fixture: Fixture, feature: str, backend: str
+        self, fixture: Fixture, feature: str, backend: str, extra: Sequence[str] = ()
     ) -> tuple[list[dict[str, Any]] | None, int, str]:
-        """(frames, exit status, message) of one run; frames is None on a failure."""
-        out = self.workdir / f"{feature}_{fixture.layout}p{fixture.depth}_{backend}.json"
-        geometry = (WIDTH, HEIGHT, fixture.layout, fixture.depth)
+        """(frames, exit status, message) of one run; frames is None on a failure.
+
+        `extra` is appended to the command line (the 16K grid's scalar run).
+        """
+        grid = fixture.grid
+        tag = "_scalar" if extra else ""
+        out = (
+            self.workdir
+            / f"{feature}_{grid.name}_{fixture.layout}p{fixture.depth}_{backend}{tag}.json"
+        )
+        geometry = (grid.width, grid.height, fixture.layout, fixture.depth)
         argv = build_command(
             self.binary, fixture.ref, fixture.dis, *geometry, feature, backend, None, out, "max"
         )
+        argv += list(extra)
         device = backend != "cpu"
         full = [*lock_prefix(backend, self.lock_dir), *argv] if device else argv
+        cpu_limit = DEVICE_RUN_LIMIT_S if grid is STANDARD else LARGE_RUN_LIMIT_S
         proc = run_command(
             full,
             allowed_executables=(full[0],),
             capture_output=True,
             text=True,
             check=False,
-            timeout_seconds=WAIT_LIMIT_S if device else DEVICE_RUN_LIMIT_S,
+            timeout_seconds=WAIT_LIMIT_S if device else cpu_limit,
             max_output_bytes=4 * 1_048_576,
         )
         if proc.returncode != 0:
@@ -271,8 +391,16 @@ class BackendRefused(Exception):
     """The CLI refused a device backend (exit 100): no device on this host."""
 
 
-def cpu_cell_status(fixture: Fixture, code: int, message: str) -> tuple[str, str]:
-    """Status and note of a cell whose CPU run failed."""
+def cpu_cell_status(
+    fixture: Fixture, code: int, message: str, feature: str = ""
+) -> tuple[str, str]:
+    """Status and note of a cell whose CPU run failed.
+
+    The CPU may refuse 16 bits, and a large picture when `feature` is in
+    SIZE_REFUSED; any other refusal is an error.
+    """
+    if fixture.grid is not STANDARD and feature in SIZE_REFUSED:
+        return STATUS_NA, f"cpu refuses {fixture.grid.name}: {SIZE_REFUSED[feature]}"
     if fixture.depth == OPTIONAL_DEPTH:
         return STATUS_NA, f"cpu refuses {fixture.depth}-bit: {message}"
     return STATUS_ERROR, f"cpu exited {code}: {message}"
@@ -295,6 +423,28 @@ def compare_cell(
     )
 
 
+def second_run(
+    cli: Cli, fixture: Fixture, feature: str, backend: str
+) -> tuple[list[dict[str, Any]] | None, int, str]:
+    """The run compared with the CPU: the device, or the CPU's scalar code (row `cpu`)."""
+    if backend == CPU_ROW:
+        return cli.frames(fixture, feature, "cpu", ("--cpumask", CPU_SCALAR_MASK))
+    frames, code, message = cli.frames(fixture, feature, backend)
+    if code == EXIT_BACKEND_REFUSED:
+        raise BackendRefused(f"--backend {backend}: {message}")
+    return frames, code, message
+
+
+def refused_cell(cli: Cli, fixture: Fixture, cell: CellResult) -> CellResult:
+    """A large cell the CPU refused: n/a while the other run refuses the picture too."""
+    frames, _, _ = second_run(cli, fixture, cell.feature, cell.backend)
+    if frames is None:
+        return cell
+    return dataclasses.replace(
+        cell, status=STATUS_FAIL, note=f"{cell.backend} accepts a picture the cpu refuses"
+    )
+
+
 def run_cell(
     cli: Cli, fixture: Fixture, feature: str, backend: str, cpu: tuple[Any, int, str]
 ) -> CellResult:
@@ -302,11 +452,11 @@ def run_cell(
     base = CellResult(feature, backend, fixture.depth, fixture.layout, STATUS_ERROR)
     cpu_frames, cpu_code, cpu_message = cpu
     if cpu_frames is None:
-        status, note = cpu_cell_status(fixture, cpu_code, cpu_message)
-        return dataclasses.replace(base, status=status, note=note)
-    dev_frames, code, message = cli.frames(fixture, feature, backend)
-    if code == EXIT_BACKEND_REFUSED:
-        raise BackendRefused(f"--backend {backend}: {message}")
+        status, note = cpu_cell_status(fixture, cpu_code, cpu_message, feature)
+        cell = dataclasses.replace(base, status=status, note=note)
+        large_na = status == STATUS_NA and fixture.grid is not STANDARD
+        return refused_cell(cli, fixture, cell) if large_na else cell
+    dev_frames, code, message = second_run(cli, fixture, feature, backend)
     if dev_frames is None:
         return dataclasses.replace(base, note=f"{backend} exited {code}: {message}")
     return compare_cell(base, cpu_frames, dev_frames)
@@ -323,14 +473,25 @@ def exact_features(backends: Iterable[str], only: Sequence[str]) -> dict[str, li
     return plan
 
 
+def grid_plan(grid: Grid, backends: Iterable[str], only: Sequence[str]) -> dict[str, list[str]]:
+    """The plan of `grid`: the device twins, or for 16K the CPU row of every exact feature."""
+    if grid.name == "16k":
+        return {feature: [CPU_ROW] for feature in exact_features(DEVICE_BACKENDS, only)}
+    return exact_features(backends, only)
+
+
 def run_matrix(
-    cli: Cli, plan: dict[str, list[str]], depths: Sequence[int], layouts: Sequence[str]
+    cli: Cli,
+    plan: dict[str, list[str]],
+    depths: Sequence[int],
+    layouts: Sequence[str],
+    grid: Grid = STANDARD,
 ) -> list[CellResult]:
-    """Every cell of `plan` over `depths` x `layouts`, printed as it completes."""
+    """Every cell of `plan` over `depths` x `layouts` of `grid`, printed as it completes."""
     results: list[CellResult] = []
     for depth in depths:
         for layout in layouts:
-            fixture = make_fixture(cli.workdir, depth, layout)
+            fixture = make_fixture(cli.workdir, depth, layout, grid)
             for feature, backends in plan.items():
                 cpu = cli.frames(fixture, feature, "cpu")
                 for backend in backends:
@@ -379,27 +540,31 @@ def markdown_table(results: list[CellResult], depths: Sequence[int], layouts: Se
 # The recorded page: one table per device backend between markers.
 # ---------------------------------------------------------------------------
 
-RECORD_BEGIN = "<!-- exact-twin-matrix:{backend}:begin -->"
-RECORD_END = "<!-- exact-twin-matrix:{backend}:end -->"
+
+def markers(backend: str, grid: Grid = STANDARD) -> tuple[str, str]:
+    """The begin and end markers of the block of `backend` in `grid`."""
+    return (f"<!-- {grid.marker}:{backend}:begin -->", f"<!-- {grid.marker}:{backend}:end -->")
 
 
-def record_block(backend: str, results: list[CellResult], recorded_on: str) -> str:
+def record_block(
+    backend: str, results: list[CellResult], recorded_on: str, grid: Grid = STANDARD
+) -> str:
     """The marked block of `backend`: the provenance line, then its table."""
     rows = [r for r in results if r.backend == backend]
     equal = sum(r.status == STATUS_PASS for r in rows)
     absent = sum(r.status == STATUS_NA for r in rows)
     counts = f"{equal} of {len(rows)} cells equal, {absent} `n/a`."
-    table = markdown_table(rows, DEPTHS, LAYOUTS)
-    begin, end = RECORD_BEGIN.format(backend=backend), RECORD_END.format(backend=backend)
+    table = markdown_table(rows, grid.depths, grid.layouts)
+    begin, end = markers(backend, grid)
     return f"{begin}\n\n{recorded_on}: {counts}\n\n{table}\n{end}"
 
 
-def record(page: Path, results: list[CellResult], recorded_on: str) -> None:
-    """Replace (or append) the block of every backend `results` covers."""
+def record(page: Path, results: list[CellResult], recorded_on: str, grid: Grid = STANDARD) -> None:
+    """Replace (or append) the block of every backend `results` covers in `grid`."""
     text = page.read_text(encoding="utf-8")
     for backend in sorted({r.backend for r in results}):
-        begin, end = RECORD_BEGIN.format(backend=backend), RECORD_END.format(backend=backend)
-        block = record_block(backend, results, recorded_on)
+        begin, end = markers(backend, grid)
+        block = record_block(backend, results, recorded_on, grid)
         if begin in text and end in text:
             head, rest = text.split(begin, 1)
             text = head + block + rest.split(end, 1)[1]
@@ -408,61 +573,91 @@ def record(page: Path, results: list[CellResult], recorded_on: str) -> None:
     page.write_text(text, encoding="utf-8")
 
 
-def recorded_rows(text: str) -> dict[tuple[str, str], list[str]]:
-    """(backend, feature) -> the cell marks of its row, from every recorded table."""
+def recorded_rows(text: str, grid: Grid = STANDARD) -> dict[tuple[str, str], list[str]]:
+    """(backend, feature) -> the cell marks of its row, from the blocks of `grid`."""
     rows: dict[tuple[str, str], list[str]] = {}
-    for line in text.splitlines():
-        parts = [part.strip() for part in line.strip().strip("|").split("|")]
-        if (
-            len(parts) < MIN_ROW_PARTS
-            or parts[0] not in DEVICE_BACKENDS
-            or not parts[1].startswith("`")
-        ):
+    for backend in (*DEVICE_BACKENDS, CPU_ROW):
+        begin, end = markers(backend, grid)
+        if begin not in text or end not in text:
             continue
-        rows[(parts[0], parts[1].strip("`"))] = parts[2:]
+        for line in text.split(begin, 1)[1].split(end, 1)[0].splitlines():
+            parts = [part.strip() for part in line.strip().strip("|").split("|")]
+            if len(parts) < MIN_ROW_PARTS or parts[0] != backend or not parts[1].startswith("`"):
+                continue
+            rows[(parts[0], parts[1].strip("`"))] = parts[2:]
     return rows
 
 
-def row_problems(marks: list[str], columns: list[str]) -> list[str]:
-    """Why a recorded row is not a full, passing row."""
+def row_problems(marks: list[str], columns: list[str], refused: bool = False) -> list[str]:
+    """Why a recorded row is not a full, passing row.
+
+    `n/a` is allowed at 16 bits, and in every cell when `refused` (a large
+    grid of a SIZE_REFUSED feature).
+    """
     if len(marks) != len(columns):
         return [f"{len(marks)} cells, not {len(columns)}"]
     bad = []
     for column, mark in zip(columns, marks, strict=True):
-        optional = column.startswith(f"{OPTIONAL_DEPTH}/") and mark == STATUS_NA
+        optional = mark == STATUS_NA and (refused or column.startswith(f"{OPTIONAL_DEPTH}/"))
         if mark != STATUS_PASS and not optional:
             bad.append(f"{column} is {mark!r}")
     return bad
 
 
-def recorded_problems(text: str, twins: dict[str, frozenset[str]] = EXACT_TWINS) -> list[str]:
-    """Every exact twin of a device backend that the page does not record as equal."""
-    rows = recorded_rows(text)
-    columns = column_labels(DEPTHS, LAYOUTS)
+def grid_pairs(grid: Grid, twins: dict[str, frozenset[str]]) -> list[tuple[str, str]]:
+    """(feature, row backend) pairs `grid` must record: every device twin, or for 16K
+    the CPU row of every feature with an exact device twin."""
+    pairs = [
+        (feature, backend)
+        for feature in sorted(twins)
+        for backend in sorted(set(twins[feature]) & set(DEVICE_BACKENDS))
+    ]
+    if grid.name == "16k":
+        return sorted({(feature, CPU_ROW) for feature, _ in pairs})
+    return pairs
+
+
+def grid_problems(text: str, grid: Grid, twins: dict[str, frozenset[str]]) -> list[str]:
+    """The problems of one grid's recorded rows."""
+    rows = recorded_rows(text, grid)
+    columns = column_labels(grid.depths, grid.layouts)
+    where = "" if grid is STANDARD else f" ({grid.name})"
     problems: list[str] = []
-    for feature in sorted(twins):
-        for backend in sorted(set(twins[feature]) & set(DEVICE_BACKENDS)):
-            marks = rows.get((backend, feature))
-            if marks is None:
-                problems.append(f"{feature}.{backend}: declared exact, no recorded matrix row")
-                continue
-            problems += [f"{feature}.{backend}: {p}" for p in row_problems(marks, columns)]
+    for feature, backend in grid_pairs(grid, twins):
+        marks = rows.get((backend, feature))
+        if marks is None:
+            problems.append(f"{feature}.{backend}{where}: declared exact, no recorded matrix row")
+            continue
+        refused = grid is not STANDARD and feature in SIZE_REFUSED
+        problems += [
+            f"{feature}.{backend}{where}: {p}" for p in row_problems(marks, columns, refused)
+        ]
+    return problems
+
+
+def recorded_problems(text: str, twins: dict[str, frozenset[str]] = EXACT_TWINS) -> list[str]:
+    """Every exact twin the page does not record as equal, in every grid."""
+    problems: list[str] = []
+    for grid in GRIDS.values():
+        problems += grid_problems(text, grid, twins)
     return problems
 
 
 def write_outputs(args: argparse.Namespace, results: list[CellResult]) -> None:
     """The JSON and Markdown files requested on the command line."""
+    grid = GRIDS[args.grid]
     if args.json_out is not None:
         payload = {
             "schema_version": 1,
-            "geometry": [WIDTH, HEIGHT, FRAMES],
+            "grid": grid.name,
+            "geometry": [grid.width, grid.height, grid.frames],
             "cells": [dataclasses.asdict(r) for r in results],
         }
         args.json_out.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
     if args.md_out is not None:
         args.md_out.write_text(markdown_table(results, args.depths, args.layouts))
     if args.record is not None:
-        record(args.record, results, args.recorded_on)
+        record(args.record, results, args.recorded_on, grid)
 
 
 def summary(results: list[CellResult]) -> int:
@@ -471,7 +666,7 @@ def summary(results: list[CellResult]) -> int:
     failed = [r for r in results if r.status not in (STATUS_PASS, STATUS_NA)]
     print(
         f"exact-twin matrix: {len(results)} cells, {counts[STATUS_PASS]} equal, "
-        f"{counts[STATUS_NA]} n/a (cpu refuses the depth), {len(failed)} failed"
+        f"{counts[STATUS_NA]} n/a (cpu refuses the depth or size), {len(failed)} failed"
     )
     for cell in failed:
         print(f"  FAILED {cell.backend} {cell.feature} {cell.depth}/{cell.layout}: {cell.note}")
@@ -481,9 +676,10 @@ def summary(results: list[CellResult]) -> int:
 def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--vmaf-binary", type=Path, required=True)
-    parser.add_argument("--backends", nargs="+", choices=DEVICE_BACKENDS, required=True)
-    parser.add_argument("--depths", nargs="+", type=int, choices=DEPTHS, default=list(DEPTHS))
-    parser.add_argument("--layouts", nargs="+", choices=LAYOUTS, default=list(LAYOUTS))
+    parser.add_argument("--grid", choices=sorted(GRIDS), default=STANDARD.name)
+    parser.add_argument("--backends", nargs="+", choices=DEVICE_BACKENDS, default=[])
+    parser.add_argument("--depths", nargs="+", type=int, choices=DEPTHS, default=None)
+    parser.add_argument("--layouts", nargs="+", choices=LAYOUTS, default=None)
     parser.add_argument("--features", nargs="*", default=[])
     parser.add_argument("--workdir", type=Path, default=None)
     parser.add_argument("--lock-dir", type=Path, default=None)
@@ -491,17 +687,26 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument("--md-out", type=Path, default=None)
     parser.add_argument("--record", type=Path, default=None)
     parser.add_argument("--recorded-on", default="")
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    grid = GRIDS[args.grid]
+    args.depths = args.depths or list(grid.depths)
+    args.layouts = args.layouts or list(grid.layouts)
+    return args
 
 
 def usage_error(args: argparse.Namespace) -> str | None:
     """Why the arguments cannot run, or None."""
+    grid = GRIDS[args.grid]
     if not args.vmaf_binary.is_file():
         return f"vmaf binary not found: {args.vmaf_binary}"
+    if grid.name != "16k" and not args.backends:
+        return f"--grid {grid.name} needs --backends"
+    if not set(args.depths) <= set(grid.depths) or not set(args.layouts) <= set(grid.layouts):
+        return f"--grid {grid.name} has depths {grid.depths} and layouts {grid.layouts}"
     if args.record is None:
         return None
-    full = not args.features and set(args.depths) == set(DEPTHS)
-    if not full or set(args.layouts) != set(LAYOUTS) or not args.recorded_on:
+    full = not args.features and set(args.depths) == set(grid.depths)
+    if not full or set(args.layouts) != set(grid.layouts) or not args.recorded_on:
         return "--record needs every depth, layout and feature, and --recorded-on"
     return None
 
@@ -512,7 +717,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     if error is not None:
         sys.stderr.write(f"{error}\n")
         return 2
-    plan = exact_features(args.backends, args.features)
+    grid = GRIDS[args.grid]
+    plan = grid_plan(grid, args.backends, args.features)
     if not plan:
         sys.stderr.write("no exact twin matches --backends / --features\n")
         return 2
@@ -522,7 +728,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         workdir.mkdir(parents=True, exist_ok=True)
         cli = Cli(args.vmaf_binary.resolve(), workdir, args.lock_dir or default_locks)
         try:
-            results = run_matrix(cli, plan, args.depths, args.layouts)
+            results = run_matrix(cli, plan, args.depths, args.layouts, grid)
         except BackendRefused as refused:
             sys.stderr.write(f"{refused}; skipping ({SKIP})\n")
             return SKIP

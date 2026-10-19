@@ -165,48 +165,48 @@ static char *test_ciede_scale_chroma_422_16b(void)
     return msg;
 }
 
-static const KSubArgs default_ksub = {.l = 0.65, .c = 1.0, .h = 4.0};
+static const KSubArgs default_ksub = {.l = 0.65f, .c = 1.0f, .h = 4.0f};
 
 static char *test_ciede(void)
 {
-    const LABColor color_1 = {.l = 0.052488625, .a = -0.587470829, .b = -8.98771572};
-    const LABColor color_2 = {.l = 0.465437293, .a = 0.386364758, .b = -12.7648535};
+    const LABColor color_1 = {.l = 0.052488625f, .a = -0.587470829f, .b = -8.98771572f};
+    const LABColor color_2 = {.l = 0.465437293f, .a = 0.386364758f, .b = -12.7648535f};
 
     const float de00 = ciede2000(color_1, color_2, default_ksub);
-    mu_assert("de00 for this input should be 2.54780269", close_enough(de00, 2.54780269));
+    mu_assert("de00 for this input should be 2.54780269", close_enough(de00, 2.54780269f));
 
     return NULL;
 }
 
 static char *test_ciede2(void)
 {
-    const LABColor color_1 = {.l = 87.156334, .a = -12.049645, .b = -1.205325};
-    const LABColor color_2 = {.l = 83.455727, .a = -9.040445, .b = -8.894289};
+    const LABColor color_1 = {.l = 87.156334f, .a = -12.049645f, .b = -1.205325f};
+    const LABColor color_2 = {.l = 83.455727f, .a = -9.040445f, .b = -8.894289f};
 
     const float de00 = ciede2000(color_1, color_2, default_ksub);
-    mu_assert("de00 for this input should be 4.22714281", close_enough(de00, 4.22714281));
+    mu_assert("de00 for this input should be 4.22714281", close_enough(de00, 4.22714281f));
 
     return NULL;
 }
 
 static char *test_ciede3(void)
 {
-    const LABColor color_1 = {.l = 79.718491, .a = 9.109915, .b = 13.727915};
-    const LABColor color_2 = {.l = 78.717224, .a = 7.526546, .b = 5.597448};
+    const LABColor color_1 = {.l = 79.718491f, .a = 9.109915f, .b = 13.727915f};
+    const LABColor color_2 = {.l = 78.717224f, .a = 7.526546f, .b = 5.597448f};
 
     const float de00 = ciede2000(color_1, color_2, default_ksub);
-    mu_assert("de00 for this input should be 4.26012468", close_enough(de00, 4.26012468));
+    mu_assert("de00 for this input should be 4.26012468", close_enough(de00, 4.26012468f));
 
     return NULL;
 }
 
 static char *test_ciede4(void)
 {
-    const LABColor color_1 = {.l = 99.205299, .a = -3.339410, .b = 1.205873};
-    const LABColor color_2 = {.l = 97.991730, .a = -2.497345, .b = 2.473533};
+    const LABColor color_1 = {.l = 99.205299f, .a = -3.339410f, .b = 1.205873f};
+    const LABColor color_2 = {.l = 97.991730f, .a = -2.497345f, .b = 2.473533f};
 
     const float de00 = ciede2000(color_1, color_2, default_ksub);
-    mu_assert("de00 for this input should be 1.26915979", close_enough(de00, 1.26915979));
+    mu_assert("de00 for this input should be 1.26915979", close_enough(de00, 1.26915979f));
 
     return NULL;
 }

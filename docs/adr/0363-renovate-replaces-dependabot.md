@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-0363: Mend Renovate replaces Dependabot as the dependency-update bot
 
-- **Status**: Accepted
+- **Status**: Accepted (Superseded-in-part 2026-10-06 by [ADR-0387](0387-renovate-github-app-migration.md) for self-hosted Renovate adoption)
 - **Date**: 2026-05-09
 - **Deciders**: lusoris
 - **Tags**: ci, security, dependencies, github-actions, pre-commit, fork-local

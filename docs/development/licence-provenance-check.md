@@ -44,6 +44,15 @@ line and the EUPL-1.2 tag) the tool writes into Python files. The name
 `pyproject.toml` carries no provenance signal, so upstream's
 `python/pyproject.toml` does not veto a fork package's manifest.
 
+Copyright notices must name the project holder only
+([ADR-0861](../adr/0861-vmafx-copyright-policy-drop-anthropic.md)). The gate
+refuses any tracked file whose header (the leading comment block within the
+first 30 lines) carries a copyright line naming an AI tool or its vendor
+(case-insensitive: Claude, Anthropic, OpenAI, ChatGPT, Copilot, Gemini, Codex)
+with a message naming the file and line number. To fix this refusal, delete the
+AI tool copyright line from the file header, keeping the `Copyright <year> Lusoris`
+notice and the SPDX licence identifier intact.
+
 ## Running it locally
 
 ```bash
@@ -111,11 +120,16 @@ and in `strictMustReport`, so a run in which it never reported fails too.
 - `scripts/ci/exact_twins.d/` (data fragments whose suffix names a backend).
 - `.codex/agents/*.toml` (praetor's Codex projections of `.agents/agents/`,
   written by the engine; [ADR-1699](../adr/1699-root-licence-files-eupl.md)).
-- `tools/figures/` and `.config/agent/hooks/block_evasion.py` (byte-locked
-  files of the governance engine).
+- `tools/figures/` (files of the governance engine that `praetorctl audit`
+  compares with praetor's own bytes).
+- `.config/agent/hooks/block_evasion.py` and `.config/lefthook/python.sh`
+  (praetor's scripts, which `praetorctl adopt` refreshes only while they are
+  praetor's own text; dated exceptions in
+  `.config/lint-exceptions.d/spdx.toml`).
 - Verbatim mirrors of another repository (`[mirrors]`, the Pelorus files).
 - A licence grant below a file's own header (the first 60 lines), for example
   the header template a sync script embeds as a string.
 
-`reuse lint` (`make lint-reuse`) covers these files' licence metadata through
-[`REUSE.toml`](../../REUSE.toml).
+`reuse lint` (`make lint-reuse` locally, the `REUSE lint` job of
+[`reuse.yml`](../../.github/workflows/reuse.yml) in CI) covers these files'
+licence metadata through [`REUSE.toml`](../../REUSE.toml).

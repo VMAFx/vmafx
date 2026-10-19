@@ -55,7 +55,10 @@
 #include <unistd.h>
 #endif
 
+#include "cli_backends.h"
+#include "cli_exit_status.h"
 #include "cli_feature_backend.h"
+#include "cli_provenance.h"
 #include "cli_parse.h"
 #include "compat/path_utf8.h"
 #include "spinner.h"
@@ -789,6 +792,7 @@ namespace
 {
     const VmafSyclConfiguration cfg = {
         .device_index = c->sycl_device >= 0 ? c->sycl_device : 0,
+        .enable_profiling = 0,
     };
     if ((c->sycl_device < 0 && !c->use_gpumask) || c->no_sycl)
         return 0;
@@ -1830,6 +1834,17 @@ void release_unpaired_pictures(int ret1, int ret2, VmafPicture *pic_ref, VmafPic
 namespace
 {
 
+/* vmaf_read_pictures() failed: the pictures were read, libvmaf could not score
+ * them. A feature extractor that refuses the frame or its options is named by
+ * the libvmaf warning printed before this line. Input read failures keep
+ * their own "problem while reading pictures" (classify_frame_fetch), so the
+ * two never read alike (T-CLI-EXTRACTOR-ERROR-PROPAGATION-2026-10-05). */
+void report_score_failure(unsigned picture_index, int err)
+{
+    (void)fprintf(stderr, "\nproblem scoring picture %u: libvmaf returned %d\n", picture_index,
+                  err);
+}
+
 FrameLoopResult score_frames(VmafContext *vmaf, FrameReader *ref, FrameReader *dist,
                              const CLISettings *c, unsigned limit, int istty)
 {
@@ -1865,7 +1880,7 @@ FrameLoopResult score_frames(VmafContext *vmaf, FrameReader *ref, FrameReader *d
 
         const int err = vmaf_read_pictures(vmaf, &pic_ref, &pic_dist, picture_index);
         if (err) {
-            (void)fprintf(stderr, "\nproblem reading pictures\n");
+            report_score_failure(picture_index, err);
             /* Handing the pictures to the library failed, so this frame never
              * entered the score. Same reasoning as a failed read: do not let
              * the run report success over the frames that came before. */
@@ -1966,71 +1981,6 @@ namespace
 
 } // namespace
 
-/* ADR-0498 / Bug #v2-E: amend the JSON output file with a top-level
- * ``"backend_used": "NAME"`` key so downstream consumers (CI gates,
- * MCP probes per PR #1251) can confirm which backend actually ran.
- * ADR-1359 derives that value from the registered extractors and adds the
- * per-extractor ``"feature_backends"`` list next to it; ``members`` carries
- * both, formatted by cli_format_backend_members().
- * Implemented as a textual edit on the closing ``}`` to avoid pulling
- * a JSON parser into the CLI; the writer always emits a single
- * top-level object so the brace is at the file tail.
- *
- * No-op when output_path is NULL or format isn't JSON.
- */
-namespace
-{
-
-void amend_json_with_backend_receipt(const char *output_path, enum VmafOutputFormat fmt,
-                                     const char *members)
-{
-    if (!output_path || !members)
-        return;
-    if (fmt != VMAF_OUTPUT_FORMAT_JSON)
-        return;
-
-    FILE *fp = vmaf_fopen_utf8(output_path, "rb+");
-    if (!fp)
-        return;
-    if (fseek(fp, 0, SEEK_END) != 0) {
-        (void)fclose(fp);
-        return;
-    }
-    const long size = ftell(fp);
-    if (size <= 1) {
-        (void)fclose(fp);
-        return;
-    }
-    /* Walk backwards over trailing whitespace + the final '}'. */
-    long pos = size - 1;
-    while (pos > 0) {
-        if (fseek(fp, pos, SEEK_SET) != 0) {
-            (void)fclose(fp);
-            return;
-        }
-        const int ch = fgetc(fp);
-        if (ch == EOF) {
-            (void)fclose(fp);
-            return;
-        }
-        if (ch == '}')
-            break;
-        if (ch != ' ' && ch != '\t' && ch != '\n' && ch != '\r') {
-            (void)fclose(fp);
-            return;
-        }
-        pos--;
-    }
-    if (fseek(fp, pos, SEEK_SET) != 0) {
-        (void)fclose(fp);
-        return;
-    }
-    (void)fprintf(fp, ", %s}\n", members);
-    (void)fclose(fp);
-}
-
-} // namespace
-
 namespace
 {
 
@@ -2048,6 +1998,9 @@ struct CliRunState {
     int common_bitdepth = 0;
     VmafPictureConfiguration pic_cfg = {};
     bool readahead = false; /* ADR-1366: inputs are read on reader threads */
+    /* RC4 WP5: the command line, recorded in the provenance record. */
+    int argc = 0;
+    char *const *argv = nullptr;
 };
 
 [[nodiscard]] int cleanup_gpu_states(GpuStates *states)
@@ -2197,9 +2150,23 @@ namespace
         .cpumask = state->c.cpumask,
         .gpumask = state->c.gpumask,
     };
-    const int err = vmaf_init(&state->vmaf, cfg);
-    if (err)
+    int err = vmaf_init(&state->vmaf, cfg);
+    if (err) {
         (void)fprintf(stderr, "problem initializing VMAF context\n");
+        return -1;
+    }
+    err = vmaf_set_sample_range_check_enabled(state->vmaf, state->c.check_sample_range ? 1 : 0);
+    if (err) {
+        (void)fprintf(stderr, "problem enabling the sample range check\n");
+        return -1;
+    }
+    /* ed61076b2: per-input colorimetry, consumed by a model's conversion_target.
+     * Fork adaptation: given to the context, not attached to each picture
+     * (VmafPicture is unchanged, ADR-1822 / ADR-2093). An all-unknown colour
+     * is an unspecified input. */
+    err = vmaf_set_input_colorimetry(state->vmaf, &state->c.color_ref, &state->c.color_dist);
+    if (err)
+        (void)fprintf(stderr, "problem setting the input colorimetry\n");
     return err ? -1 : 0;
 }
 
@@ -2369,36 +2336,15 @@ namespace
 namespace
 {
 
-/* ADR-1359: `backend_used` names the backend the registered extractors ran on,
- * not the backend that was initialised, and `feature_backends` lists each
- * extractor so a run that mixes device twins and CPU extractors says so. */
-void amend_cli_backend_receipt(const CliRunState *state)
-{
-    if (state->c.output_fmt != VMAF_OUTPUT_FORMAT_JSON)
-        return;
-    CliExtractorReport report = {};
-    const int err = cli_collect_extractor_report(state->vmaf, &report);
-    if (err) {
-        (void)fprintf(stderr, "vmaf: could not list the feature extractors (err=%d)\n", err);
-        return;
-    }
-    std::string members(cli_format_backend_members(&report, nullptr, 0), '\0');
-    (void)cli_format_backend_members(&report, members.data(), members.size() + 1);
-    amend_json_with_backend_receipt(state->c.output_path, state->c.output_fmt, members.c_str());
-}
-
+/* RC4 WP5 (#2142): the library writes the report with its provenance record,
+ * the backend receipt (`backend_used`, `feature_backends`, ADR-1359) and the
+ * score format; the CLI no longer edits the file afterwards. */
 [[nodiscard]] int write_cli_output(const CliRunState *state)
 {
     if (!state->c.output_path)
         return 0;
-    const int err = vmaf_write_output_with_format(state->vmaf, state->c.output_path,
-                                                  state->c.output_fmt, state->c.precision_fmt);
-    if (err) {
-        (void)fprintf(stderr, "problem writing output to %s (err=%d)\n", state->c.output_path, err);
-        return err;
-    }
-    amend_cli_backend_receipt(state);
-    return 0;
+    return cli_write_report(state->vmaf, state->c.output_path, state->c.output_fmt,
+                            state->c.precision_fmt, state->c.provenance_sidecar);
 }
 
 } // namespace
@@ -2443,6 +2389,9 @@ namespace
     err = init_cli_context(state);
     if (err)
         return err;
+    err = cli_annotate_run(state->vmaf, state->argc, state->argv);
+    if (err)
+        return err;
     err = init_cli_backends(state);
     if (err)
         return err;
@@ -2468,16 +2417,40 @@ namespace
 // NOLINTBEGIN(clang-analyzer-unix.Malloc) — ADR-1336: when both bounded
 // vmaf_close attempts fail, model and backend owners must remain allocated
 // until process exit rather than dangling the retryable context.
-[[nodiscard]] int vmaf_cli_main(int argc, char *argv[])
+[[nodiscard]] int vmaf_cli_run(int argc, char *argv[], int istty)
 {
     CliRunState state = {};
     cli_parse(argc, argv, &state.c);
+    state.argc = argc;
+    state.argv = argv;
     CliRunGuard guard(&state);
-    const int run_err = run_cli(&state, isatty(fileno(stderr)));
+    if (state.c.list_backends) {
+        const int list_err = cli_list_backends(stdout);
+        const int list_cleanup_err = guard.close();
+        return (list_err || list_cleanup_err) ? EXIT_FAILURE : EXIT_SUCCESS;
+    }
+    const int run_err = run_cli(&state, istty);
     const int cleanup_err = guard.close();
-    return run_err ? run_err : (cleanup_err ? EXIT_FAILURE : EXIT_SUCCESS);
+    /* The status is the libvmaf code modulo 256 on every platform, never negative. */
+    return vmaf_cli_exit_status(run_err ? run_err : (cleanup_err ? EXIT_FAILURE : EXIT_SUCCESS));
 }
 // NOLINTEND(clang-analyzer-unix.Malloc)
+
+/* RC4 WP5: `--verify-provenance` re-runs the recorded command line through
+ * the same code path as a scoring run; getopt starts over for it. */
+int rerun_cli(int argc, char **argv, void * /*user*/)
+{
+    cli_parse_reset();
+    return vmaf_cli_run(argc, argv, 0);
+}
+
+[[nodiscard]] int vmaf_cli_main(int argc, char *argv[])
+{
+    const char *const report = cli_verify_provenance_arg(argc, argv);
+    if (report)
+        return cli_verify_provenance(report, argv[0], rerun_cli, nullptr);
+    return vmaf_cli_run(argc, argv, isatty(fileno(stderr)));
+}
 
 } // namespace
 

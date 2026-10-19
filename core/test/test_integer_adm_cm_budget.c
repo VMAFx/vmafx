@@ -29,6 +29,15 @@
  *       the `adm` extractor in Barten mode scores and agrees with
  *       `float_adm`. Before the fix four of the five failed and the fifth
  *       returned 0.862 for 1.0.
+ *
+ *  ADR-1917 / T-ADM-SCALE0-CSF-FLT-INT16-WRAP-2026-10-05: at scale 0 the
+ *  int16 1/30 magnitude of the CSF stage binds the horizontal and vertical
+ *  weight before the cube does (43900 against 46603.4). Its constants are
+ *  derived again from the stage's arithmetic and the taps; a weight under
+ *  the limit keeps the magnitude in int16 and one two percent over it does
+ *  not; a Barten configuration whose scale-0 weight was 46012 under the old
+ *  limit is now normalised once more. On master the magnitude test and the
+ *  normalisation test fail.
  */
 
 #include <errno.h>
@@ -44,6 +53,7 @@
 #include "feature/feature_collector.h"
 #include "feature/feature_extractor.h"
 #include "feature/integer_adm.h"
+#include "feature/integer_adm_kernels.h"
 #include "libvmaf/picture.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
@@ -163,6 +173,52 @@ static unsigned square_shift(int scale, int band)
     return (scale == 0 && band != 2) ? 29u : 30u;
 }
 
+/* The CSF stage's int16 1/30 magnitude of a scale-0 band sample `i16`. */
+static int64_t csf_magnitude(int64_t i16)
+{
+    return ((ADM_FIX_ONE_BY_30 * i16) + 2048) >> 12;
+}
+
+/* True when the 1/30 magnitude of the largest scale-0 band, weighted by the
+ * integer part of `weight` in the h / v band (shift 15) or the d band (shift
+ * 17), fits int16. Holds trivially at scales 1..3, whose CSF stage is int32. */
+static bool magnitude_fits(int scale, int band, double weight)
+{
+    if (scale != 0) {
+        return true;
+    }
+    const int64_t w = (int64_t)weight;
+    const int64_t reach = (int64_t)ADM_DWT_BAND_REACH_SCALE0;
+    const int64_t i16 = band == 2 ? ((w * reach) + 65535) >> 17 : ((w * reach) + 16384) >> 15;
+    return i16 <= INT16_MAX && csf_magnitude(i16) <= INT16_MAX;
+}
+
+/* positive: ADM_CSF_FLT_I16_LIMIT is the first |i16| whose magnitude passes
+ * INT16_MAX, and ADM_DWT_BAND_REACH_SCALE0 covers the taps' bound plus the
+ * rounding of the two passes (half a unit each, the first through the second
+ * pass's gain: the absolute tap sum over 2^16). */
+static char *test_scale0_magnitude_constants_follow_the_stage(void)
+{
+    int64_t first = 0;
+    while (csf_magnitude(first) <= INT16_MAX) {
+        first++;
+    }
+    mu_assert("ADM_CSF_FLT_I16_LIMIT is not the first |i16| past INT16_MAX",
+              (double)first == ADM_CSF_FLT_I16_LIMIT);
+    double tap_sum = 0.0;
+    for (int k = 0; k < 4; k++) {
+        tap_sum += fabs((double)dwt2_db2_coeffs_lo[k]);
+    }
+    const double reach = floor(band_supremum(0) + 0.5 + (0.5 * tap_sum / 65536.0));
+    mu_assert("ADM_DWT_BAND_REACH_SCALE0 is below the band the integer DWT can reach",
+              ADM_DWT_BAND_REACH_SCALE0 >= reach);
+    mu_assert("ADM_DWT_BAND_REACH_SCALE0 is above the taps' bound plus one",
+              ADM_DWT_BAND_REACH_SCALE0 <= band_supremum(0) + 1.0);
+    mu_assert("the scale-0 h / v limit is not 43900", adm_csf_fixed_limit(0, 0) == 43900.0);
+    mu_assert("the scale-0 h / v limit is not 43900", adm_csf_fixed_limit(0, 1) == 43900.0);
+    return NULL;
+}
+
 /* boundary: just under its limit a weight keeps the worst square in int32. */
 static char *test_a_weight_under_the_limit_keeps_the_square_in_int32(void)
 {
@@ -174,20 +230,48 @@ static char *test_a_weight_under_the_limit_keeps_the_square_in_int32(void)
                       limit <= (scale == 0 ? 65536.0 : 1073741824.0));
             mu_assert("the worst sample under the largest weight leaves int32 when squared",
                       square_fits(worst_excess(scale, weight), square_shift(scale, band)));
+            mu_assert("the CSF magnitude of the worst sample under the largest weight leaves int16",
+                      magnitude_fits(scale, band, weight));
         }
     }
     return NULL;
 }
 
-/* negative: two percent over the limit the square leaves int32. The scale-0
- * diagonal weight is bound by its uint16_t storage and has no such point. */
+/* negative: two percent over the limit the square leaves int32 at scales 1..3
+ * and the CSF magnitude leaves int16 at scale 0, where it binds first (the
+ * square still fits there up to 46603). The scale-0 diagonal weight is bound
+ * by its uint16_t storage and has no such point. */
 static char *test_a_weight_over_the_limit_leaves_int32(void)
 {
-    for (int scale = 0; scale < NUM_SCALES; scale++) {
+    const double over0 = ceil(adm_csf_fixed_limit(0, 0) * 1.02);
+    mu_assert("a scale-0 weight two percent over the limit keeps its CSF magnitude in int16",
+              !magnitude_fits(0, 0, over0));
+    mu_assert("the cube no longer allows the scale-0 weight two percent over the limit",
+              square_fits(worst_excess(0, over0), square_shift(0, 0)));
+    for (int scale = 1; scale < NUM_SCALES; scale++) {
         const double weight = ceil(adm_csf_fixed_limit(scale, 0) * 1.02);
         mu_assert("a weight two percent over the limit still fits: the limit is not tight",
                   !square_fits(worst_excess(scale, weight), square_shift(scale, 0)));
     }
+    return NULL;
+}
+
+/* T-ADM-SCALE0-CSF-FLT-INT16-WRAP-2026-10-05: Barten mode with
+ * adm_csf_scale=1.16 and adm_csf_diag_scale=0.3 gave a scale-0 h / v weight of
+ * 46012 after six halvings, inside the cube's budget but past the magnitude's.
+ * Now it takes a seventh. */
+static char *test_a_scale0_weight_past_the_magnitude_limit_is_halved_again(void)
+{
+    const AdmCsfFactors f = adm_csf_factors(0, 3.0, 1080, ADM_CSF_MODE_BARTEN, 1.16, 0.3);
+    const float rfactor1[3] = {f.factor1, f.factor1, f.factor2};
+    double fixed[3];
+    uint32_t shift = 0u;
+    mu_assert("adm_csf_fixed_scale rejected a Barten weight",
+              adm_csf_fixed_scale(0, rfactor1, 3.0, 1080, ADM_CSF_MODE_BARTEN, fixed, &shift) == 0);
+    mu_assert("the scale-0 weight was not halved past the magnitude limit", shift == 7u);
+    mu_assert("the halved scale-0 weight is not below 43900", fixed[0] < 43900.0);
+    mu_assert("the halved scale-0 weight keeps no CSF magnitude in int16",
+              magnitude_fits(0, 0, fixed[0]));
     return NULL;
 }
 
@@ -200,6 +284,8 @@ static char *check_normalised(int scale, const double fixed[3], uint32_t shift)
         mu_assert("a normalised weight is not below its limit", fixed[band] < limit);
         mu_assert("the worst sample under a normalised weight leaves int32 when squared",
                   square_fits(worst_excess(scale, fixed[band]), square_shift(scale, band)));
+        mu_assert("the CSF magnitude under a normalised weight leaves int16",
+                  magnitude_fits(scale, band, fixed[band]));
         minimal = minimal || (fixed[band] * 2.0 >= limit);
     }
     mu_assert("the normalisation exponent is larger than the limits require", minimal);
@@ -364,7 +450,7 @@ static char *check_case(const Case *c)
  * h / v limit binds. */
 static char *test_adversarial_frames_score_in_barten_mode(void)
 {
-    static const Case CASES[5] = {
+    static const Case CASES[6] = {
         {1, true, true, NULL, NULL, "integer_adm2_csf_1", "integer_aim_csf_1", "adm2_csf_1",
          "aim_csf_1"},
         {2, true, true, NULL, NULL, "integer_adm2_csf_1", "integer_aim_csf_1", "adm2_csf_1",
@@ -376,8 +462,14 @@ static char *test_adversarial_frames_score_in_barten_mode(void)
         {0, false, false, "1.4", "0.3", "integer_adm2_scfd_0.3_csf_1_scf_1.4",
          "integer_aim_scfd_0.3_csf_1_scf_1.4", "adm2_scfd_0.3_csf_1_scf_1.4",
          "aim_scfd_0.3_csf_1_scf_1.4"},
+        /* Scale-0 h weight 46,012 after normalisation: inside the cube's budget
+         * (46,603) but past 43,900, where the 1/30 magnitude of the largest
+         * band leaves int16 (T-ADM-SCALE0-CSF-FLT-INT16-WRAP-2026-10-05). */
+        {0, false, false, "1.16", "0.3", "integer_adm2_scfd_0.3_csf_1_scf_1.16",
+         "integer_aim_scfd_0.3_csf_1_scf_1.16", "adm2_scfd_0.3_csf_1_scf_1.16",
+         "aim_scfd_0.3_csf_1_scf_1.16"},
     };
-    for (unsigned i = 0u; i < 5u; i++) {
+    for (unsigned i = 0u; i < 6u; i++) {
         char *msg = check_case(&CASES[i]);
         if (msg) {
             return msg;
@@ -389,8 +481,10 @@ static char *test_adversarial_frames_score_in_barten_mode(void)
 char *run_tests(void)
 {
     mu_run_test(test_band_bounds_follow_the_filter_taps);
+    mu_run_test(test_scale0_magnitude_constants_follow_the_stage);
     mu_run_test(test_a_weight_under_the_limit_keeps_the_square_in_int32);
     mu_run_test(test_a_weight_over_the_limit_leaves_int32);
+    mu_run_test(test_a_scale0_weight_past_the_magnitude_limit_is_halved_again);
     mu_run_test(test_normalisation_brings_every_weight_under_its_limit);
     mu_run_test(test_adversarial_frames_score_in_barten_mode);
     return NULL;

@@ -21,26 +21,26 @@ HIP / Metal motion twins listed in Twin-update table above — same PR.
   `T-SYCL-MOTION-FORCE-ZERO-IGNORED-2026-10-02`).
   `motion_append_sad_score()` appends
   `VMAF_integer_feature_motion_sad_score` EVERY frame (0 at frame 0, else
-  `MIN(sad * motion_fps_weight, motion_max_val)`), the same value as
-  `motion_score` only with `debug`; `provided_features` lists the SAD score
-  first, as `integer_motion.c` does. libvmaf drives a SYCL extractor through
-  `submit` / `collect`, never `extract`: an option handled only in
-  `extract_fex_sycl()` is ignored (that was the force-zero bug). Under
+  `MIN(sad * motion_fps_weight, motion_max_val)`), same value as
+  `motion_score` only with `debug`; `provided_features` lists SAD score
+  first, as `integer_motion.c` does. libvmaf drives SYCL extractor through
+  `submit` / `collect`, never `extract`: option handled only in
+  `extract_fex_sycl()` is ignored (that was force-zero bug). Under
   `motion_force_zero`: init returns before any device allocation and before
-  `vmaf_sycl_graph_register()` (a registered extractor must call
-  `vmaf_sycl_graph_submit()` every frame, an unregistered one must not),
-  `submit` only marks the frame pending, `collect` =
+  `vmaf_sycl_graph_register()` (registered extractor must call
+  `vmaf_sycl_graph_submit()` every frame, unregistered one must not);
+  `submit` only marks frame pending, `collect` =
   `motion_append_forced_zero()` (SAD, motion2, motion3 = 0, + motion with
-  debug), `flush` returns 1 without appending. On rebase: a new CPU output
+  debug); `flush` returns 1 without appending. On rebase: new CPU output
   or emit site in `integer_motion.c::extract` -> same change here, same PR.
   Guards: `test_sycl_motion_sad_score` (11 frames, 8 / 10 bit, default /
-  debug / force zero / weight + cap, `==` on every output, and no output the
+  debug / force zero / weight + cap, `==` on every output, and no output
   CPU lacks), `test_sycl_exact_twins`, gate cells `motion` / `motion_debug`
   (SAD score in `FEATURE_METRICS`).
 - **`integer_motion_sycl.cpp::motion3_postprocess_*` honours
   motion3 GPU contract** (ADR-0219). Applies CPU's host-side
   post-process to motion2 with no device-side state.
-  `motion_five_frame_window=true` is computed by the twin, through the
+  `motion_five_frame_window=true` is computed by twin, through
   CPU's window function at flush
   ([motion-five-frame-window](motion-five-frame-window.md), ADR-1491). See [../../AGENTS.md §"motion3_score GPU contract"](../../../AGENTS.md).
 - **`motion_fps_weight` cross-backend parity** — see canonical
@@ -49,10 +49,10 @@ HIP / Metal motion twins listed in Twin-update table above — same PR.
   `motion_fps_weight` option, apply it in `flush()` /
   `collect()` exactly as documented there. Any future change to
   weight application math must span all motion-family GPU twins in
-  same PR. Since ADR-1365 `float_motion_sycl.cpp` spells it the CPU
+  same PR. Since ADR-1365 `float_motion_sycl.cpp` spells it CPU
   way, `motion_clip(min(prev, cur))` = min, then weight, then
   `motion_max_val` cap; for weight >= 0 bit-identical to
-  weight-before-min the note describes. v1 `integer_motion_sycl.cpp`
+  weight-before-min note describes. v1 `integer_motion_sycl.cpp`
   twin covered by same canonical note's **applied exactly once**
   clause (ADR-1216): `motion3_postprocess_sycl()` must not re-apply
   weight its callers already applied.

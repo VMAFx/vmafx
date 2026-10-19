@@ -252,9 +252,9 @@ across the full workload, with VIF being the dominant contributor).
 **Proposal:** Replace `vpgatherdq` + table with a 5th-order minimax
 polynomial for `log2(x)` evaluated in `__m512d`:
 
-```text
-log2(x) = exponent + polynomial(mantissa)
-```
+$$
+\log_2 x = \mathrm{exponent} + \mathrm{polynomial}(\mathrm{mantissa})
+$$
 
 The exponent extraction is `_mm512_getexp_pd` (AVX-512F). The polynomial
 evaluation is 5 FMA operations in `__m512d`. This eliminates all three

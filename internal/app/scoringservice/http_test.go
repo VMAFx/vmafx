@@ -15,6 +15,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/VMAFx/vmafx/internal/oteltest"
 	"github.com/VMAFx/vmafx/pkg/observability"
 )
 
@@ -65,7 +66,7 @@ func TestLegacyProbeContracts(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			metrics := observability.NewMetrics(prometheus.NewRegistry())
+			metrics := oteltest.Metrics(t, prometheus.NewRegistry())
 			recorder := httptest.NewRecorder()
 			tc.serve(metrics, slog.New(slog.NewTextHandler(io.Discard, nil)), recorder,
 				httptest.NewRequest(tc.method, "/", nil))
@@ -85,7 +86,7 @@ func TestResponseWriteFailuresAreLogged(t *testing.T) {
 	var logs bytes.Buffer
 	log := slog.New(slog.NewTextHandler(&logs, nil))
 	w := failingResponseWriter{header: make(http.Header)}
-	metrics := observability.NewMetrics(prometheus.NewRegistry())
+	metrics := oteltest.Metrics(t, prometheus.NewRegistry())
 
 	HandleHealthz(metrics, log, w, httptest.NewRequest(http.MethodGet, "/healthz", nil))
 	WriteJSON(log, w, http.StatusOK, map[string]string{"status": "ok"})

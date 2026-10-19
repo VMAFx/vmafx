@@ -16,6 +16,7 @@
 #ifdef _WIN32
 #include <direct.h>
 #include <io.h>
+#include <share.h>
 #include <windows.h>
 #else
 #include <unistd.h>
@@ -106,7 +107,9 @@ FILE *vmaf_fopen_utf8(const char *path, const char *mode)
         return NULL;
     }
 
-    return _wfopen(wpath, wmode);
+    /* _wfsopen with _SH_DENYNO shares the file as _wfopen does; _wfopen_s opens it
+     * exclusively. */
+    return _wfsopen(wpath, wmode, _SH_DENYNO);
 #else
     return fopen(path, mode);
 #endif
@@ -127,7 +130,16 @@ int vmaf_open_utf8(const char *path, int flags, int mode)
         return -1;
     }
 
-    return _wopen(wpath, flags, mode);
+    /* _wsopen_s rejects (and aborts on) permission bits other than _S_IREAD and
+     * _S_IWRITE; _wopen ignored them, and callers pass POSIX modes such as 0644. */
+    int fd = -1;
+    const errno_t open_err =
+        _wsopen_s(&fd, wpath, flags, _SH_DENYNO, mode & (_S_IREAD | _S_IWRITE));
+    if (open_err != 0) {
+        errno = open_err;
+        return -1;
+    }
+    return fd;
 #else
     return open(path, flags, (mode_t)mode);
 #endif

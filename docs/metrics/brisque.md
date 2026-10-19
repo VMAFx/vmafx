@@ -88,11 +88,11 @@ the gregfreeman MATLAB pipeline that **trained the model**
 (`brisque_feature.m`):
 
 1. Read the luma into a `[0, 255]` double working buffer (8-bit copied directly;
-   higher bit depths scaled `value * 255 / (2^bpc - 1)`).
+   higher bit depths scaled $\mathrm{value} \cdot 255 / (2^{\mathrm{bpc}} - 1)$).
 2. For each of two scales (full resolution, then ½-resolution):
    1. **MSCN** — `mu = filter2(gauss7x7, img)`, `sigma = sqrt(|filter2(gauss7x7,
       img²) − mu²|)`, `mscn = (img − mu) / (sigma + 1)`. The 7×7 Gaussian uses
-      `sigma = 7/6` (separable, unit-volume, zero boundary — MATLAB
+      $\sigma = 7/6$ (separable, unit-volume, zero boundary — MATLAB
       `filter2('same')`).
    2. **GGD fit** of the MSCN field → push `{alpha, sigma²}` (2 features).
    3. **AGGD fit** of each of the 4 paired products (shifts
@@ -100,7 +100,8 @@ the gregfreeman MATLAB pipeline that **trained the model**
       `{alpha, eta, leftstd², rightstd²}` (16 features).
    4. Downsample `img` by ½ (MATLAB antialiased bicubic, Catmull-Rom a=-0.5).
 3. The 36-D vector is `[scale1 f1..f18, scale2 f1..f18]`.
-4. **Range-scale** each feature to `[-1, 1]` via `xs = -1 + 2·(f-min)/(max-min)`
+4. **Range-scale** each feature to $[-1, 1]$ via
+   $x_s = -1 + 2\,(f - \min) / (\max - \min)$
    (no clamp).
 5. **Predict**: `score = svm_predict(allmodel, x)` over the embedded EPSILON_SVR
    RBF model (`gamma 0.05`, `total_sv 770`, `rho -155.845`).
@@ -118,7 +119,7 @@ never trained with:
 - **GGD (not AGGD) for the MSCN field** (features f1, f2). krshrimali fits the
   MSCN field with AGGD — a bug versus both the paper (Table I) and the trained
   model. The model expects GGD.
-- **Gaussian `sigma = 7/6`** (not the truncated `1.166` in the C++ port).
+- **Gaussian $\sigma = 7/6$** (not the truncated `1.166` in the C++ port).
 - **MATLAB antialiased bicubic** ½-downscale (not OpenCV `INTER_CUBIC`).
 
 ### Range arrays
@@ -208,7 +209,7 @@ core/build-cpu/tools/vmaf \
 - gamma-table anchors `GGD(2)=1.5707963`, `AGGD(1)=0.5`, `AGGD(2)=2/π`;
 - the 7×7 Gaussian window (unit sum, symmetric);
 - GGD / AGGD fits of `[-2,-1,0,1,2,3]` (with zeros excluded from the AGGD
-  buckets — `right² = 14/3`, not the NIQE zero-bucketing);
+  buckets — $\mathrm{right}^2 = 14/3$, not the NIQE zero-bucketing);
 - a symmetric AGGD giving `eta == 0` exactly and an all-zero flat-patch NaN
   guard;
 - the MATLAB-imresize bicubic coefficients (normalized to 1, odd-dimension

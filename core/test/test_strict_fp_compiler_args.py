@@ -76,9 +76,7 @@ CUDA_DEVICE_MATRIX = {
     "clang": (False, ["-Xcompiler=-ffp-contract=off"], ["-ffp-contract=off"]),
 }
 # The fatbin custom_target appends the shared list to every kernel's command.
-CUDA_FATBIN_COMMAND = (
-    "] + nvcc_thread_flags + cuda_flags + cuda_device_strict_fp_args + nvcc_ccbin_flags"
-)
+CUDA_FATBIN_COMMAND = "] + nvcc_thread_flags + nvcc_werror_flags + cuda_flags + cuda_device_strict_fp_args + nvcc_ccbin_flags"
 CUDA_FP_FLAG_WORDS = ("fmad", "ffp-contract", "fp:", "fast_math", "fast-math", "ffast")
 
 # ADR-1367: toolchain -> (is_sycl_acpp, sycl_strict_fp_args, sycl_fp32_prec_args).
@@ -86,9 +84,17 @@ CUDA_FP_FLAG_WORDS = ("fmad", "ffp-contract", "fp:", "fast_math", "fast-math", "
 # -fp-model=precise implies -ffp-contract=on), then correctly rounded fp32
 # division and square root. AdaptiveCpp accepts only contraction-off.
 SYCL_PREC = ["-foffload-fp32-prec-div", "-foffload-fp32-prec-sqrt"]
+# ADR-2170: `-fno-fast-math -fcomplex-arithmetic=full` sit between the model and the contraction
+# flag, so icpx does not report `-ffp-contract=off` as overriding `-fp-model=precise`.
+ICX_RESET = ["-fno-fast-math", "-fcomplex-arithmetic=full"]
 SYCL_MATRIX = {
-    "icpx": (False, ["-fp-model=precise", "-ffp-contract=off", *SYCL_PREC], SYCL_PREC),
+    "icpx": (False, ["-fp-model=precise", *ICX_RESET, "-ffp-contract=off", *SYCL_PREC], SYCL_PREC),
     "acpp": (True, ["-ffp-contract=off"], []),
+}
+# The MSVC build (ADR-1364) compiles and device-links its SYCL TUs with icpx too, so it
+# takes the same reset (ADR-2170). Toolchain -> sycl_strict_fp_args.
+SYCL_MSVC_DRIVER = {
+    "icx-cl": ["-fp-model=precise", *ICX_RESET, "-ffp-contract=off", *SYCL_PREC],
 }
 # The icpx driver link carries the precision pair for the SPIR-V JIT image. The
 # MSVC build (ADR-1364) links with link.exe, and its explicit device link, which
@@ -115,14 +121,19 @@ COMPILER_MATRIX = {
     "intel-llvm": (
         "linux",
         ["-fp-model=precise"],
-        ["-fp-model=precise", "-ffp-contract=off"],
+        ["-fp-model=precise", *ICX_RESET, "-ffp-contract=off"],
         ["-Xcompiler=-ffp-contract=off"],
     ),
     "msvc": ("windows", [], ["/fp:precise"], ["-Xcompiler=/fp:precise"]),
     "intel-llvm-cl": (
         "windows",
         ["/fp:precise"],
-        ["/fp:precise", "/Qfma-"],
+        [
+            "/fp:precise",
+            "/clang:-fno-fast-math",
+            "/clang:-fcomplex-arithmetic=full",
+            "/clang:-ffp-contract=off",
+        ],
         ["-Xcompiler=/fp:precise"],
     ),
     "clang-cl": (
@@ -189,12 +200,15 @@ STRICT_LAST_FLAG = {
     "clang": "-ffp-contract=off",
     "intel-llvm": "-ffp-contract=off",
     "msvc": "/fp:precise",
-    "intel-llvm-cl": "/Qfma-",
+    "intel-llvm-cl": "/clang:-ffp-contract=off",
     "clang-cl": "/clang:-ffp-contract=off",
 }
 C_FAMILY_SUFFIXES = (".c", ".cc", ".cpp", ".cxx")
 # Set by the test() call in core/test/meson.build.
 BUILD_ROOT_ENV = "VMAF_STRICT_FP_BUILD_ROOT"
+
+
+POLICY_DEFINITIONS = 2  # definitions of cuda_device_strict_fp_args (clang and nvcc spelling)
 
 
 def _project_floor_failures(source: str, tests: str, tools: str, metal: str) -> list[str]:
@@ -319,8 +333,8 @@ def _cuda_device_policy_failures(source: str) -> list[str]:
     except ValueError:
         return ["the CUDA device strict FP policy markers are missing"]
     code = _meson_code(source)
-    if code.count("cuda_device_strict_fp_args = ") != 2 or (
-        policy.count("cuda_device_strict_fp_args = ") != 2
+    if code.count("cuda_device_strict_fp_args = ") != POLICY_DEFINITIONS or (
+        policy.count("cuda_device_strict_fp_args = ") != POLICY_DEFINITIONS
     ):
         failures.append("cuda_device_strict_fp_args is defined outside its policy block")
     if code.count("'--fmad=false'") != 1 or policy.count("'--fmad=false'") != 1:
@@ -337,8 +351,30 @@ def _cuda_device_policy_failures(source: str) -> list[str]:
     return failures
 
 
+FIXTURE_PROJECT = re.compile(r"^\s*project\(\s*'[^']*'\s*(?P<rest>[^)]*)\)", re.MULTILINE)
+
+
+def _fixture_project_failure(fixture: str) -> str | None:
+    """Refuse a fixture project that declares a language.
+
+    The fixtures only evaluate Meson code and call no compiler. A language in
+    project() makes Meson detect and sanity-check that compiler on every
+    setup, which took MSVC on the Windows ARM64 runner past the test's
+    timeout.
+    """
+    match = FIXTURE_PROJECT.search(fixture)
+    if match is None:
+        return "fixture has no project('<name>') call"
+    if match.group("rest").strip():
+        return f"fixture project() declares more than a name: {match.group(0).strip()}"
+    return None
+
+
 def _meson_setup(case: unittest.TestCase, name: str, fixture: str) -> None:
     """Configure a throwaway Meson project; its assert() calls are the checks."""
+    failure = _fixture_project_failure(fixture)
+    if failure is not None:
+        case.fail(f"{name}: {failure}")
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         (root / "meson.build").write_text(fixture, encoding="utf-8")
@@ -382,7 +418,7 @@ class StrictFpCompilerArgsTest(unittest.TestCase):
         ) in COMPILER_MATRIX.items():
             with self.subTest(compiler_id=compiler_id):
                 fixture = textwrap.dedent(f"""\
-                    project('strict-fp-args-{compiler_id}', 'c')
+                    project('strict-fp-args-{compiler_id}')
                     strict_fp_fixture_compiler_id = '{compiler_id}'
                     strict_fp_fixture_system = '{system}'
 
@@ -396,6 +432,17 @@ class StrictFpCompilerArgsTest(unittest.TestCase):
                            'wrong CUDA host FP arguments for {compiler_id}')
                     """)
                 _meson_setup(self, compiler_id, fixture)
+
+    def test_fixture_project_with_a_language_is_refused(self) -> None:
+        self.assertIsNone(_fixture_project_failure("project('strict-fp-args-gcc')\n"))
+        for planted in (
+            "project('strict-fp-args-gcc', 'c')\n",
+            "project('host-libm-gcc-gcc', 'c', 'cpp')\n",
+            "project('sycl-strict-fp-icpx', languages : ['c'])\n",
+            "x = 1\n",
+        ):
+            with self.subTest(planted=planted):
+                self.assertIsNotNone(_fixture_project_failure(planted))
 
     def test_all_strict_consumers_use_shared_policy(self) -> None:
         source = SOURCE_MESON.read_text(encoding="utf-8")
@@ -460,9 +507,16 @@ class StrictFpCompilerArgsTest(unittest.TestCase):
         for compiler_id, flags in (
             ("gcc", "-ffp-contract=off"),
             ("clang", "-ffp-contract=off -mavx2 -mfma -ffp-contract=off"),
-            ("intel-llvm", "-fp-model=precise -ffp-contract=off"),
+            (
+                "intel-llvm",
+                "-fp-model=precise -fno-fast-math -fcomplex-arithmetic=full -ffp-contract=off",
+            ),
             ("msvc", "/fp:precise"),
-            ("intel-llvm-cl", "/fp:precise /Qfma-"),
+            (
+                "intel-llvm-cl",
+                "/fp:precise /clang:-fno-fast-math /clang:-fcomplex-arithmetic=full"
+                " /clang:-ffp-contract=off",
+            ),
             ("clang-cl", "/clang:-ffp-contract=off"),
         ):
             with self.subTest(compiler_id=compiler_id, flags=flags):
@@ -473,7 +527,8 @@ class StrictFpCompilerArgsTest(unittest.TestCase):
             ("clang", "-ffp-contract=off -ffp-contract=fast", "follows"),
             ("clang", "-ffp-contract=off -ffast-math", "follows"),
             ("intel-llvm", "-fp-model=precise -ffp-contract=off -fp-model=precise", "follows"),
-            ("intel-llvm-cl", "/Qfma- /fp:precise", "follows"),
+            ("intel-llvm-cl", "/clang:-ffp-contract=off /fp:precise", "follows"),
+            ("intel-llvm-cl", "/fp:precise /Qfma-", "is missing"),
             ("clang-cl", "-ffp-contract=off", "is missing"),
         ):
             with self.subTest(compiler_id=compiler_id, flags=flags):
@@ -513,7 +568,7 @@ class StrictFpCompilerArgsTest(unittest.TestCase):
             with self.subTest(c_id=c_id, cpp_id=cpp_id):
                 fixture = "\n".join(
                     (
-                        f"project('host-libm-{c_id}-{cpp_id}', 'c')",
+                        f"project('host-libm-{c_id}-{cpp_id}')",
                         f"libm_fixture_c_id = '{c_id}'",
                         f"libm_fixture_cpp_id = '{cpp_id}'",
                         policy,
@@ -555,7 +610,7 @@ class StrictFpCompilerArgsTest(unittest.TestCase):
             with self.subTest(compiler=compiler):
                 fixture = "\n".join(
                     (
-                        f"project('cuda-device-strict-fp-{compiler}', 'c')",
+                        f"project('cuda-device-strict-fp-{compiler}')",
                         f"cuda_fixture_enable_nvcc = {'true' if enable_nvcc else 'false'}",
                         f"vmaf_cuda_host_strict_fp_args = {_meson_list(host_args)}",
                         policy,
@@ -619,13 +674,28 @@ class StrictFpCompilerArgsTest(unittest.TestCase):
             with self.subTest(toolchain=toolchain):
                 fixture = "\n".join(
                     (
-                        f"project('sycl-strict-fp-{toolchain}', 'c')",
+                        f"project('sycl-strict-fp-{toolchain}')",
                         f"is_sycl_acpp = {'true' if is_acpp else 'false'}",
+                        "sycl_msvc_device_link = false",
                         policy,
                         f"assert(sycl_strict_fp_args == {_meson_list(strict_args)},",
                         f"       'wrong SYCL strict FP arguments for {toolchain}')",
                         f"assert(sycl_fp32_prec_args == {_meson_list(prec_args)},",
                         f"       'wrong SYCL fp32 precision arguments for {toolchain}')",
+                        "",
+                    )
+                )
+                _meson_setup(self, toolchain, fixture)
+        for toolchain, strict_args in SYCL_MSVC_DRIVER.items():
+            with self.subTest(toolchain=toolchain):
+                fixture = "\n".join(
+                    (
+                        f"project('sycl-strict-fp-{toolchain}')",
+                        "is_sycl_acpp = false",
+                        "sycl_msvc_device_link = true",
+                        policy,
+                        f"assert(sycl_strict_fp_args == {_meson_list(strict_args)},",
+                        f"       'wrong SYCL strict FP arguments for {toolchain}')",
                         "",
                     )
                 )
@@ -653,6 +723,42 @@ class StrictFpCompilerArgsTest(unittest.TestCase):
         # No subset list beside it (ADR-1358 / ADR-1363 names folded into it).
         for retired in ("sycl_exact_fp_args", "sycl_exact_fp_sources", "sycl_speed_strict_fp_args"):
             self.assertNotIn(retired, source)
+
+    @unittest.skipUnless(shutil.which("icx"), "icx is not on PATH (source oneAPI setvars.sh)")
+    def test_icx_strict_policy_draws_no_overriding_option_warning(self) -> None:
+        """ADR-2170: the strict spelling compiles clean under -Werror; the old one does not."""
+        icx = shutil.which("icx")
+        assert icx is not None
+        strict = COMPILER_MATRIX["intel-llvm"][2]
+        old = ["-fp-model=precise", "-ffp-contract=off"]
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / "probe.c"
+            src.write_text("float f(float a, float b, float c) { return a * b + c; }\n")
+            obj = Path(tmp) / "probe.o"
+
+            def compile_with(flags: list[str]) -> subprocess.CompletedProcess[str]:
+                return subprocess.run(  # noqa: S603 -- icx is resolved on PATH above.
+                    [icx, "-O2", "-Werror", *flags, "-c", str(src), "-o", str(obj)],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+
+            ok = compile_with(strict)
+            self.assertEqual(ok.returncode, 0, ok.stderr)
+            # Negative case: the check can fail. The two-flag spelling is reported as an override.
+            bad = compile_with(old)
+            self.assertNotEqual(bad.returncode, 0)
+            self.assertIn("-Woverriding-option", bad.stderr)
+            # No contraction: a * b + c is two instructions with the strict spelling.
+            disasm = subprocess.run(  # noqa: S603 -- icx is resolved on PATH above.
+                [icx, "-O2", "-mavx2", "-mfma", *strict, "-S", "-o", "-", str(src)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(disasm.returncode, 0, disasm.stderr)
+            self.assertNotIn("vfmadd", disasm.stdout)
 
 
 if __name__ == "__main__":

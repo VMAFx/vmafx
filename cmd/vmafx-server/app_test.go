@@ -49,6 +49,7 @@ import (
 	"github.com/golusoris/golusoris/observability/statuspage"
 	"github.com/golusoris/golusoris/otel"
 
+	"github.com/VMAFx/vmafx/internal/execstub"
 	"github.com/VMAFx/vmafx/internal/oteltest"
 	"github.com/VMAFx/vmafx/pkg/libvmaf"
 )
@@ -60,9 +61,7 @@ func writeVmafStubForApp(t *testing.T) {
 	t.Helper()
 	dir := t.TempDir()
 	stub := filepath.Join(dir, "vmaf")
-	if err := os.WriteFile(stub, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
-		t.Fatalf("write vmaf stub: %v", err)
-	}
+	execstub.Write(t, stub, []byte("#!/bin/sh\nexit 0\n"))
 	modelDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(modelDir, "vmaf_v0.6.1.json"), []byte("{}"), 0o600); err != nil {
 		t.Fatalf("write model: %v", err)
@@ -262,7 +261,7 @@ func TestOTelWiredThroughBootstrap(t *testing.T) {
 }
 
 // TestHTTPRouteEmitsServerSpan drives a request through the *http.Server
-// golusoris.HTTP built for the production graph and asserts the otelhttp span
+// bootstrap.HTTP built for the production graph and asserts the otelhttp span
 // bootstrap.HTTPTracing adds (ADR-0782 follow-up), plus the probe filter.
 func TestHTTPRouteEmitsServerSpan(t *testing.T) {
 	writeVmafStubForApp(t)

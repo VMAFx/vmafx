@@ -123,10 +123,6 @@ typedef struct AdmBuffer {
 #define NUM_BUFS_ADM 30
 #endif
 
-#ifndef M_PI
-#define M_PI 3.14159265358979323846264338327
-#endif // M_PI
-
 /* Enhancement gain imposed on adm, must be >= 1.0, where 1.0 means the gain is completely disabled */
 #ifndef DEFAULT_ADM_ENHN_GAIN_LIMIT
 #define DEFAULT_ADM_ENHN_GAIN_LIMIT (100.0)
@@ -205,6 +201,8 @@ static inline int32_t adm_dwt2_vpass16_tap4(const int16_t *filter, int32_t filte
     accum += (int64_t)filter[2] * s2;
     accum += (int64_t)filter[3] * s3;
     accum -= (int64_t)filter_sum * add;
+    /* The arithmetic shift of the signed accumulator is the upstream rounding. */
+    // NOLINTNEXTLINE(bugprone-signed-bitwise): upstream's arithmetic shift, ADR-1141
     return (int32_t)((accum + add) >> shift);
 }
 
@@ -259,9 +257,9 @@ struct dwt_model_params {
 // omit the table from .cu TUs entirely. Either shape resolves the
 // MSVC/nvcc issue; fork prefers visibility over #ifdef.
 static const struct dwt_model_params dwt_7_9_YCbCr_threshold[3] = {
-    {0.495, 0.466, 0.401, {1.501, 1.0, 0.534, 1.0}},
-    {1.633, 0.353, 0.209, {1.520, 1.0, 0.502, 1.0}},
-    {0.944, 0.521, 0.404, {1.868, 1.0, 0.516, 1.0}}};
+    {0.495f, 0.466f, 0.401f, {1.501f, 1.0f, 0.534f, 1.0f}},
+    {1.633f, 0.353f, 0.209f, {1.520f, 1.0f, 0.502f, 1.0f}},
+    {0.944f, 0.521f, 0.404f, {1.868f, 1.0f, 0.516f, 1.0f}}};
 
 /*
  * The following dwt basis function amplitudes, A(lambda,theta), are taken from
@@ -274,9 +272,9 @@ static const struct dwt_model_params dwt_7_9_YCbCr_threshold[3] = {
  * These amplitudes were calculated for the 7-9 biorthogonal wavelet basis
  */
 static const float dwt_7_9_basis_function_amplitudes[6][4] = {
-    {0.62171, 0.67234, 0.72709, 0.67234},     {0.34537, 0.41317, 0.49428, 0.41317},
-    {0.18004, 0.22727, 0.28688, 0.22727},     {0.091401, 0.11792, 0.15214, 0.11792},
-    {0.045943, 0.059758, 0.077727, 0.059758}, {0.023013, 0.030018, 0.039156, 0.030018}};
+    {0.62171f, 0.67234f, 0.72709f, 0.67234f},     {0.34537f, 0.41317f, 0.49428f, 0.41317f},
+    {0.18004f, 0.22727f, 0.28688f, 0.22727f},     {0.091401f, 0.11792f, 0.15214f, 0.11792f},
+    {0.045943f, 0.059758f, 0.077727f, 0.059758f}, {0.023013f, 0.030018f, 0.039156f, 0.030018f}};
 
 /* NOLINTEND(modernize-use-using,performance-enum-size,modernize-redundant-void-arg,modernize-use-designated-initializers) */
 

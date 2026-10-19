@@ -23,12 +23,14 @@ SCALARS = {
     "uptr": "uintptr_t",
     "size": "size_t",
     "ptr": "void *",
+    "cptr": "const void *",
     "status": "VmafxStatus",
     "cstr": "const char *",
 }
 VERSION_PARTS = 3  # MAJOR.MINOR.PATCH of [api] abi_version
 SINCE_PARTS = 2  # MAJOR.MINOR of `since`, `removal`: one linker version node each
 PASS_MODES = {"in", "in_const", "out", "out_handle", "error"}
+PROTO_REPEATED_MIN = 100  # first field number of a struct's proto-only repeated members
 HEADER_GROUPS = ("umbrella", "core", "optional")
 
 
@@ -137,6 +139,22 @@ class Field:
 
 
 @dataclass(frozen=True)
+class ProtoRepeated:
+    """A proto-only member of a struct's message: `repeated <struct's message> name = number`.
+
+    The C struct reaches these records through indexed functions; the proto
+    message carries them inline (RC4 WP5). Numbers start at
+    PROTO_REPEATED_MIN so the field-order numbers of the scalar fields never
+    reach them.
+    """
+
+    name: str
+    struct: str
+    number: int
+    doc: str
+
+
+@dataclass(frozen=True)
 class Struct:
     name: str
     header: str
@@ -145,6 +163,8 @@ class Struct:
     since: tuple[int, int]
     deprecated: Deprecation | None
     fields: tuple[Field, ...]
+    proto: str = ""  # name of the proto message emitted from the struct; "" = none
+    proto_repeated: tuple[ProtoRepeated, ...] = ()
 
     @property
     def init_macro(self) -> str:
@@ -181,6 +201,19 @@ class Function:
     doc: str
     params: tuple[Param, ...]
     deprecated: Deprecation | None = None
+    python: str = ""  # method name in the Python binding; empty: derived from `name`
+
+
+# libvmaf compat entries (ADR-1852 design section 2.11). `shim` / `glue`
+# bodies are generated; `manual` ones are hand-written in COMPAT_DIR; `engine`
+# functions keep the engine's own definition in builds with `engine_with`
+# (declared exception, `until` names what ends it) and exist nowhere else.
+COMPAT_KINDS = ("shim", "glue", "manual", "engine")
+COMPAT_BACKENDS = ("cuda", "sycl", "hip", "metal")
+COMPAT_FEATURES = ("mcp",)
+# Operating systems a libvmaf function may be limited to (`#ifdef _WIN32` in its header).
+COMPAT_PLATFORMS = ("windows",)
+COMPAT_DIR = "core/src/compat/libvmaf/"
 
 
 @dataclass(frozen=True)
@@ -192,22 +225,75 @@ class Compat:
     returns: str
     params: tuple[tuple[str, str], ...]
     spec: dict[str, Any]
+    engine_with: str = ""  # a backend whose builds keep the engine's definition
+    until: str = ""  # what ends that exception
+    when: str = ""  # build feature the function exists in; "" = every build
+    platform: str = ""  # operating system the function exists on; "" = every one
+    file: str = ""  # manual: the compat source that defines it
+    calls: tuple[str, ...] = ()  # manual: the vmafx_ functions its body calls
+    note: str = ""  # one line for the migration table
+
+    @property
+    def generated(self) -> bool:
+        """The body comes from the generator (shim, glue)."""
+        return self.kind in ("shim", "glue")
+
+    @property
+    def stem(self) -> str:
+        """vmaf_picture_alloc -> picture_alloc: the engine body is vmaf_engine_<stem>."""
+        return self.name.removeprefix("vmaf_")
+
+
+@dataclass(frozen=True)
+class CliSpelling:
+    """How the `vmaf` command line spells one option (emit_cli.py)."""
+
+    flags: tuple[str, ...]  # long spellings, "--name"; the first one is the usage name
+    short: str = ""  # one-letter short option, "" for none
+    meta: str = ""  # usage placeholder of the value ("$path"); "" for a switch
+    ident: str = ""  # getopt value: "'r'" or "ARG_THREADS"
+    values: tuple[tuple[str, str], ...] = ()  # enum value -> switch flag ("--xml")
+
+
+@dataclass(frozen=True)
+class McpArgv:
+    """How the MCP servers and the scoring server turn an argument into `vmaf` flags."""
+
+    stage: str  # "core": placed by the caller; "extra": appended in definition order
+    flag: str  # the flag passed ("-r", "--threads"); "" for model suffixes
+    form: str  # "value", "switch", "repeat", "choice", "suffix"
+    suffix: str = ""  # model-spec suffix; "{}" is replaced by the value
 
 
 @dataclass(frozen=True)
 class Option:
-    """One option of an option group (design section 3.4); WP8 emits the surfaces."""
+    """One option of an option group (design section 3.4); emitted by WP8."""
 
     name: str
     type: str
-    default: object
+    default: object  # None: no default value (the consumer's documented behaviour)
     doc: str
     since: tuple[int, int]
     deprecated: Deprecation | None
-    range: tuple[float, float] | None
-    values: tuple[str, ...]
+    range: tuple[float, float | None] | None  # (minimum, maximum or None)
+    values: tuple[str, ...]  # enum and flags options
     spellings: dict[str, tuple[str, ...]]
     proto_field: int
+    surfaces: tuple[str, ...] = ()  # the surfaces this option is on
+    choices: tuple[int, ...] = ()  # an integer option limited to these values
+    repeat: tuple[str, ...] = ()  # surfaces on which it is given several times (a list)
+    default_macro: str = ""  # the default is the library's, named by this C macro
+    default_form: str = ""  # how the MCP schema spells that default: "version={}" + macro value
+    surface_defaults: tuple[tuple[str, object], ...] = ()  # (surface, default) overrides
+    cli: CliSpelling | None = None
+    mcp_required: bool = False
+    argv: McpArgv | None = None
+    reserved: str = ""  # accepted only at its default; the reason names when it lands
+    go_type: str = ""  # REST Go stub type of the field (`x-go-type`), kept for a published name
+
+    def default_on(self, surface: str) -> object:
+        """The default a surface documents; a surface override wins."""
+        return dict(self.surface_defaults).get(surface, self.default)
 
 
 @dataclass(frozen=True)
@@ -217,6 +303,8 @@ class OptionGroup:
     since: tuple[int, int]
     surfaces: tuple[str, ...]
     options: tuple[Option, ...]
+    mcp_tools: tuple[str, ...] = ()  # MCP tools whose input schema holds the group
+    proto_message: str = "ScoreOptions"  # message the proto fields of the group join
 
 
 @dataclass(frozen=True)

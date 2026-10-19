@@ -179,3 +179,12 @@ fail because of the harness, not the code under test.
   `feedback_no_skip_shortcuts` (memory).
 - Source: `req` ("the matrix builds with sanitizers enabled but never
   exercises code; pure cost, zero correctness coverage").
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 30: `[Research-0089
+  §5](./research/0089-sanitizer-matrix-test-scope.md)`: Cited research
+  document does not exist on master.

@@ -108,7 +108,7 @@ static void *waiter_thread_func(void *arg)
  * by ADR-0960. The direct error-path trigger (OOM after free-list pop)
  * would require malloc interception and is documented above as infeasible.
  */
-static char *test_pool_waiter_woken_on_unref()
+static char *test_pool_waiter_woken_on_unref(void)
 {
     VmafPicturePoolConfig cfg = {
         .pic_cnt = 1,
@@ -162,7 +162,7 @@ static char *test_pool_waiter_woken_on_unref()
  * error-path null-out, i.e. the fix does not inadvertently clear priv
  * on the success path.
  */
-static char *test_pool_fetch_priv_not_null_on_success()
+static char *test_pool_fetch_priv_not_null_on_success(void)
 {
     VmafPicturePoolConfig cfg = {
         .pic_cnt = 2,
@@ -199,7 +199,7 @@ static char *test_pool_fetch_priv_not_null_on_success()
  * single-picture pool, the second fetch would deadlock if the first unref
  * failed to push the index back or signal.
  */
-static char *test_pool_fetch_unref_refetch()
+static char *test_pool_fetch_unref_refetch(void)
 {
     VmafPicturePoolConfig cfg = {
         .pic_cnt = 1,
@@ -236,7 +236,7 @@ static char *test_pool_fetch_unref_refetch()
     return NULL;
 }
 
-char *run_tests()
+char *run_tests(void)
 {
     mu_run_test(test_pool_fetch_priv_not_null_on_success);
     mu_run_test(test_pool_fetch_unref_refetch);

@@ -100,3 +100,13 @@ Additionally:
 - ADR-0124: `docs/adr/0124-automated-rule-enforcement.md`.
 - Related PRs that tripped the gate: #461, #438, #470, #473, #486,
   #511, #468, #526.
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 93: `auto-installed for new clones via the existing make
+  hooks-install documentation in docs/development/contributi`: Cites
+  docs/development/contributing.md which never existed on master; contributing
+  doc is root CONTRIBUTING.md.

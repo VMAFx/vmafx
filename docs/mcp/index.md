@@ -189,7 +189,9 @@ A complete example covering the Docker image variant lives in
 ## Environment variables
 
 The tool-handler variables below are read by both servers unless the last
-column says otherwise.
+column says otherwise. The variables only the Go server reads (its transport,
+the control-plane tools, the direct scoring path) are in its
+[environment table](#environment-vmafx-mcp).
 
 | Variable | Purpose | Default | Server |
 | --- | --- | --- | --- |
@@ -202,9 +204,6 @@ column says otherwise.
 | `VMAF_ROOT` | Data root holding the fixture YUVs that `run_benchmark` uses | repo root if it holds the fixtures, else `/workspace` | both |
 | `VMAF_BENCH_OUTDIR` | Output directory of `testdata/bench_all.sh` (see [tools.md](tools.md#run_benchmark)) | `/tmp/vmaf-bench-<pid>` | both |
 | `VMAF_PER_SHOT_BIN`, `VMAF_ROI_BIN`, `VMAF_BENCH_BIN`, `VMAF_VPL_BIN` | Override the path of each sidecar binary | next to `vmaf`, then `/usr/local/bin`, then the build trees | both |
-| `VMAFX_MCP_DIRECT` | Set to `1` to opt into the direct cgo scoring path | unset | Go |
-| `VMAFX_MCP_TRANSPORT`, `VMAFX_MCP_HTTP_ADDR` | Transport selection and HTTP listen address | `stdio`, `:3000` | Go |
-| `VMAFX_CONTROLLER_ADDR`, `VMAFX_SERVER_ADDR`, `VMAFX_CONTROLLER_TOKEN`, `VMAFX_GRPC_TIMEOUT` | Control-plane tools: see [tools.md](tools.md) | `localhost:9090`, `localhost:9090`, unset, `30` s | Go |
 
 The HTTP security variables (`VMAFX_MCP_HTTP_TOKEN`, `..._NO_AUTH`,
 `..._BIND`, `..._TLS_CERT`, `..._TLS_KEY`) are documented in
@@ -303,6 +302,59 @@ variables.
     address, not a bare port. The historical default port `3000` is kept as
     the default address `:3000`.
 
+### Environment (`vmafx-mcp`)
+
+Every variable the Go binary reads, from the
+[platform definition](../development/api-generation.md#environment-of-the-go-binaries):
+
+<!-- BEGIN GENERATED: vmafx-api environment vmafx-mcp (scripts/codegen/vmafx-api.py) -->
+
+| Variable | Key | Type | Default | Chart value | Description |
+|---|---|---|---|---|---|
+| `VMAF_BIN` | read directly | path | `/usr/local/bin/vmaf`, then the build trees |  | Path of the `vmaf` CLI behind the scoring tools, looked up on every tool call. |
+| `VMAFX_CONTROLLER_ADDR` | read directly | `host:port` | `localhost:9090` |  | gRPC address of `vmafx-controller` for the control-plane tools, read on every call. |
+| `VMAFX_CONTROLLER_TOKEN` | read directly | string | _(unset)_ |  | Secret. Bearer token sent with every controller call of the control-plane tools (plaintext transport). With auth on, `get_job` and `list_jobs` need `vmafx:reader`, `submit_job` and `cancel_job` `vmafx:writer`. |
+| `VMAFX_MCP_TRANSPORT` | `mcp.transport` | string | `stdio` |  | `stdio` or `http` (streamable HTTP); anything else stops the server. |
+| `VMAFX_MCP_HTTP_ADDR` | `mcp.http.addr` | `host:port` | `:3000` |  | Listen address of the HTTP transport; an address without a host takes `VMAFX_MCP_HTTP_BIND`. |
+| `VMAFX_MCP_HTTP_BIND` | read directly | host | `127.0.0.1` |  | Host of a listen address that names none; `0.0.0.0` listens on all interfaces ([ADR-0967](../adr/0967-mcp-http-transport-security-hardening.md)). |
+| `VMAFX_MCP_HTTP_TOKEN` | read directly | string | _(unset: every request is refused unless `VMAFX_MCP_HTTP_NO_AUTH=1`)_ |  | Secret. Bearer token the HTTP transport requires in `Authorization: Bearer <token>`. |
+| `VMAFX_MCP_HTTP_NO_AUTH` | read directly | `1` | off |  | `1` turns the HTTP transport's authentication off; the server logs a warning. |
+| `VMAFX_MCP_DIRECT` | read directly | `1` | off |  | `1` scores through libvmaf by cgo instead of a `vmaf` subprocess ([ADR-0931](../adr/0931-mcp-cgo-direct-replace-subprocess.md)); read on every tool call. |
+| `VMAFX_SERVER_ADDR` | read directly | `host:port` | `localhost:9090` |  | gRPC address of `vmafx-server` for `vmaf_score_remote`. |
+| `VMAFX_GRPC_TIMEOUT` | read directly | seconds | `30` |  | Deadline of each control-plane RPC; a value that is not a positive integer keeps the default. |
+| `VMAF_MCP_ALLOW` | read directly | path list | built-in roots |  | Additional roots, separated by the OS path-list separator, under which file paths are accepted. |
+| `VMAF_PER_SHOT_BIN` | read directly | path | next to `vmaf`, then `/usr/local/bin` and the build trees |  | Binary of the `vmaf-perShot` tool. |
+| `VMAF_ROI_BIN` | read directly | path | next to `vmaf`, then `/usr/local/bin` and the build trees |  | Binary of the `vmaf_roi` tool. |
+| `VMAF_BENCH_BIN` | read directly | path | next to `vmaf`, then `/usr/local/bin` and the build trees |  | Binary of the `vmaf_bench` tool. |
+| `VMAF_VPL_BIN` | read directly | path | next to `vmaf`, then `/usr/local/bin` and the build trees |  | Binary of the `vmaf_vpl` tool. |
+| `VMAF_ROOT` | read directly | path | the repository root when it holds the fixtures, else `/workspace` |  | Data root of the fixture clips `run_benchmark` uses. |
+| `VMAF_TUNE_BIN` | read directly | path | `vmaf-tune` on `PATH`, else the repository's |  | `vmaf-tune` binary of the tuning tools. |
+| `VMAFX_LOG_LEVEL` | `log.level` | string | `info` |  | Log level: `debug`, `info`, `warn` or `error`, any case; an unknown value gives `info`. |
+| `VMAFX_LOG_FORMAT` | `log.format` | string | `auto` |  | Log handler: `auto` (tint on a terminal, else JSON), `tint` or `json`; logs go to stderr. |
+| `VMAFX_OTEL_ENABLED` | `otel.enabled` | bool | `true` |  | OpenTelemetry master switch; `false` installs no-op providers even with an endpoint. |
+| `VMAFX_OTEL_ENDPOINT` | `otel.endpoint` | `host:port` | _(unset)_ |  | OTLP/gRPC collector (`otel-collector:4317`); wins over `OTEL_EXPORTER_OTLP_ENDPOINT`. Neither set: no export ([OpenTelemetry](../observability/otel.md)). |
+| `VMAFX_OTEL_INSECURE` | `otel.insecure` | bool | `true` |  | Plaintext gRPC to the collector; `false` dials with TLS. |
+| `VMAFX_OTEL_SERVICE_NAME` | `otel.service.name` | string | `OTEL_SERVICE_NAME`, else the binary name |  | `service.name` resource attribute. |
+| `VMAFX_OTEL_SERVICE_VERSION` | `otel.service.version` | string | the build version |  | `service.version` resource attribute. |
+| `VMAFX_OTEL_SERVICE_NAMESPACE` | `otel.service.namespace` | string | _(unset)_ |  | `service.namespace` resource attribute. |
+| `VMAFX_OTEL_SAMPLE_RATIO` | `otel.sample.ratio` | number | `1.0` |  | Parent-based trace sample ratio in `[0, 1]`; `OTEL_TRACES_SAMPLER` and its argument are not read. |
+| `VMAFX_OTEL_EXPORT_TRACES` | `otel.export.traces` | bool | `true` |  | Export traces. |
+| `VMAFX_OTEL_EXPORT_METRICS` | `otel.export.metrics` | bool | `true` |  | Export metrics. |
+| `VMAFX_OTEL_EXPORT_LOGS` | `otel.export.logs` | bool | `true` |  | Export the logs signal; application logs are not bridged to it today. |
+| `OTEL_SERVICE_NAME` | read directly | string | _(unset)_ |  | `service.name` when `VMAFX_OTEL_SERVICE_NAME` is unset (OTel standard). |
+| `OTEL_SDK_DISABLED` | read directly | string | _(unset)_ |  | `true` (exactly) installs no-op providers (OTel standard). |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | read directly | URL | _(unset)_ |  | Collector as a URL (`http://host:4317`) when `VMAFX_OTEL_ENDPOINT` is unset; set, export is on (OTel standard). |
+| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | read directly | URL | _(unset)_ |  | Per-signal collector URL for traces; set, export is on (OTel standard). |
+| `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` | read directly | URL | _(unset)_ |  | Per-signal collector URL for metrics; set, export is on (OTel standard). |
+| `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` | read directly | URL | _(unset)_ |  | Per-signal collector URL for logs; set, export is on (OTel standard). |
+| `POD_NAME` | read directly | string | _(unset)_ |  | Pod name (Kubernetes downward API), added to log lines and OTel resources as `k8s.pod.name`. |
+| `POD_NAMESPACE` | read directly | string | _(unset)_ |  | Pod namespace, added as `k8s.namespace.name`. |
+| `POD_IP` | read directly | string | _(unset)_ |  | Pod IP, added as `k8s.pod.ip`. |
+| `NODE_NAME` | read directly | string | _(unset)_ |  | Kubernetes node name, added as `k8s.node.name`. |
+| `SERVICE_ACCOUNT` | read directly | string | _(unset)_ |  | Service account name, added as `k8s.serviceaccount.name`. |
+
+<!-- END GENERATED: vmafx-api environment vmafx-mcp -->
+
 ### Claude Desktop configuration (Go binary)
 
 ```json
@@ -326,7 +378,7 @@ variables.
 | Tool count | 19 | 24 (19 shared + 5 control-plane) |
 | Shared tool names / schemas | Reference | Byte-for-byte parity |
 | Transport | stdio (default), HTTP (PR #1583); `--transport` / `--port` flags | stdio (default), streamable HTTP; env vars `VMAFX_MCP_TRANSPORT` / `VMAFX_MCP_HTTP_ADDR`, no flags (ADR-1119) |
-| VLM descriptions (`describe_worst_frames`) | SmolVLM / Moondream2 when the `[vlm]` extra is installed | Returns a placeholder; a native VLM bridge is planned |
+| VLM descriptions (`describe_worst_frames`) | A local ONNX Runtime GenAI vision model (`[vlm]` extra, `VMAF_MCP_VLM_MODEL`) | Returns a placeholder |
 | `eval_model_on_split`, `compare_models` | Native Python (onnxruntime, pandas, scipy) | Native Go, no Python: parquet via `parquet-go`, statistics in `pkg/modeleval`, ONNX via libvmaf's `vmaf_dnn_session_*` API |
 | Binary size | about 50 MB Python environment | about 10 MB static binary |
 | Startup time | about 300 ms (Python import) | about 10 ms |
@@ -338,20 +390,10 @@ missing-`[eval]`-extra behaviour.
 
 ### Go environment variables
 
-The tool-handler variables are in the [table above](#environment-variables).
-The fx framework (ADR-1119) adds the config-driven keys below. Config uses
-the `VMAFX_` env prefix with a `.` koanf delimiter, so every `_` in the
-variable name becomes a `.` in the koanf key.
-
-| Variable | koanf key | Default | Purpose |
-| --- | --- | --- | --- |
-| `VMAFX_MCP_TRANSPORT` | `mcp.transport` | `stdio` | Transport: `stdio` or `http`. |
-| `VMAFX_MCP_HTTP_ADDR` | `mcp.http.addr` | `:3000` | HTTP listen address, used only when the transport is `http`. Full address (`:3000`), not a bare port. |
-| `VMAFX_LOG_LEVEL` | (bridged to `LOG_LEVEL`) | `INFO` | slog level. golusoris#234: bridged to the bare `LOG_LEVEL` that the v0.4.0 log module reads. |
-| `VMAFX_LOG_FORMAT` | (bridged to `LOG_FORMAT`) | auto | Log handler (`auto`/`tint`/`json`). |
-
-All framework logging goes to **stderr**, so the stdio JSON-RPC stream on
-stdout stays uncorrupted.
+Every variable `vmafx-mcp` reads, the framework's `VMAFX_LOG_*` and
+`VMAFX_OTEL_*` keys included, is in its
+[environment table](#environment-vmafx-mcp). All framework logging goes to
+**stderr**, so the stdio JSON-RPC stream on stdout stays uncorrupted.
 
 ### Startup contract: all tools or none
 

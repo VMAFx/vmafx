@@ -32,10 +32,11 @@ export VMAFX_EBPF_BYPASS=1
 # INFO ebpf descriptor tracker running mount_prefix=/rclone-mount/
 ```
 
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `VMAFX_EBPF_BYPASS` | off | `1` or `true` starts the tracker; `0`, `false` or unset leaves it off. Any other value stops the node. |
-| `VMAFX_EBPF_MOUNT_PREFIX` | `/rclone-mount/` | Absolute path whose opens are recorded; at most 255 bytes. |
+`VMAFX_EBPF_BYPASS` and `VMAFX_EBPF_MOUNT_PREFIX` are in the
+[node's environment table](../server/node.md#configuration-12-factor-env-vars).
+`1` or `true` starts the tracker; `0`, `false` or unset leaves it off, and any
+other value stops the node. The prefix (default `/rclone-mount/`) is an
+absolute path of at most 255 bytes.
 
 ## What stops the node
 

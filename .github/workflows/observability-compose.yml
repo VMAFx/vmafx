@@ -1,0 +1,76 @@
+# SPDX-License-Identifier: EUPL-1.2
+# Copyright 2026 Lusoris
+#
+# .github/workflows/observability-compose.yml
+#
+# Smoke test of the Docker Compose observability example
+# (deploy/compose/observability, ADR-2349, ADR-2399): builds the server,
+# controller and CPU node images from the checkout, starts the stack and runs
+# tools/obssmoke in it (every component scraped, the rendered rules healthy,
+# every dashboard query returning data, Grafana provisioned, traces in Tempo).
+#
+# Not a required check (decision Q-194). Trigger policy:
+#   - Nightly (04:53 UTC): always runs.
+#   - Manual: workflow_dispatch.
+#   - Pull requests: only a ready pull request labelled
+#     `run-observability-smoke` (ADR-2169: the gate job starts for nothing else),
+#     called from pr-label-lanes.yml, which holds the same condition so an
+#     unlabelled pull request starts no run here at all.
+# docs/observability/compose.md#smoke-test documents it.
+
+name: Observability Smoke
+
+on:
+  schedule:
+    - cron: "53 4 * * *"
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: observability-compose-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    name: "Gate — check label / trigger"
+    if: >-
+      github.event_name != 'pull_request' ||
+      (github.event.pull_request.draft == false &&
+      contains(github.event.pull_request.labels.*.name, 'run-observability-smoke') &&
+      (github.event.action != 'labeled' || github.event.label.name == 'run-observability-smoke'))
+    runs-on: ubuntu-26.04
+    outputs:
+      should_run: ${{ steps.check.outputs.should_run }}
+    steps:
+      - name: Determine whether to proceed
+        id: check
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: |
+          if [ "$EVENT_NAME" = "schedule" ] || [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          elif echo "$PR_LABELS" | grep -q '"run-observability-smoke"'; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+            echo "Pull request is not labelled run-observability-smoke: skipping the smoke." >&2
+          fi
+
+  smoke:
+    name: Compose observability smoke
+    needs: gate
+    if: needs.gate.outputs.should_run == 'true'
+    runs-on: ubuntu-26.04
+    # The node image compiles FFmpeg; the smoke itself takes about three minutes.
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build the images and run the smoke test
+        run: bash scripts/ci/observability-compose-smoke.sh --build

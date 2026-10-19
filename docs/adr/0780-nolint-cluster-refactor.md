@@ -2,7 +2,7 @@
 
 <!-- markdownlint-disable MD013 -- ADR/research body text; pre-existing long lines per ADR-0864 tail -->
 
-- **Status**: Proposed
+- **Status**: Superseded by [ADR-1142](1142-whole-codebase-standards.md)
 - **Date**: 2026-05-29
 - **Deciders**: lusoris
 - **Tags**: `ci`, `simd`, `cuda`, `sycl`, `hip`, `lint`
@@ -73,3 +73,23 @@ ADR-0141 §2 and is not touched.
 - Source: user direction (paraphrased): sweep for NOLINT clusters larger than 5 in
   the same area; assess root cause, refactor feasibility, and ADR-0278 compliance;
   produce digest and open a ready PR.
+
+## Status update 2026-10-06: Superseded by ADR-1142
+
+The NOLINT inventory is now bounded by the whole-tree clang-tidy ratchet of
+[ADR-1142](1142-whole-codebase-standards.md): baselines only shrink, and a
+touched file is brought clean. The three follow-up pull requests this record
+plans were not made (`core/src/feature/gpu_slab.h` does not exist on
+`origin/master` `fd8b8c93b`).
+
+The body above is unchanged.
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 3: `markdownlint comment "pre-existing long lines per ADR-0864
+  tail"`: ADR-0864 has no file: it is a retired number in
+  scripts/ci/source-adr-citations.json; see ADR-0866 and ADR-0980 for the
+  markdownlint configuration tune and first sweep it names.

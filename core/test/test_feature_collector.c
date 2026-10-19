@@ -245,7 +245,7 @@ static char *test_cuda_state_import_rejects_duplicate_owners(void)
 }
 #endif
 
-static char *test_model_mount_with_use_features()
+static char *test_model_mount_with_use_features(void)
 {
     int err = 0;
 
@@ -452,7 +452,7 @@ static void destroy_three_test_models(VmafModel *models[3])
         vmaf_model_destroy(models[k]);
 }
 
-static char *test_model_mount()
+static char *test_model_mount(void)
 {
     VmafFeatureCollector *feature_collector;
     int err = vmaf_feature_collector_init(&feature_collector);
@@ -479,7 +479,7 @@ static char *test_model_mount()
     return NULL;
 }
 
-static char *test_model_unmount()
+static char *test_model_unmount(void)
 {
     VmafFeatureCollector *feature_collector;
     int err = vmaf_feature_collector_init(&feature_collector);
@@ -534,7 +534,7 @@ static char *prepare_aggregate_vector(AggregateVector *aggregate_vector)
     return NULL;
 }
 
-static char *test_aggregate_vector_init_append_and_destroy()
+static char *test_aggregate_vector_init_append_and_destroy(void)
 {
     AggregateVector aggregate_vector;
     mu_assert_msg(prepare_aggregate_vector(&aggregate_vector));
@@ -551,7 +551,7 @@ static char *test_aggregate_vector_init_append_and_destroy()
     return NULL;
 }
 
-static char *test_feature_vector_init_append_and_destroy()
+static char *test_feature_vector_init_append_and_destroy(void)
 {
     int err;
 
@@ -585,7 +585,7 @@ static char *test_feature_vector_init_append_and_destroy()
  * before that it tries multi-gigabyte allocations).  This test passes a huge
  * index and asserts a clean error return; without the guard it would hang or
  * OOM rather than return. */
-static char *test_feature_vector_append_rejects_huge_index()
+static char *test_feature_vector_append_rejects_huge_index(void)
 {
     int err;
 
@@ -674,13 +674,77 @@ static char *check_feature_collector_aggregates(VmafFeatureCollector *feature_co
     return NULL;
 }
 
-static char *test_feature_collector_init_append_get_and_destroy()
+static char *test_feature_collector_init_append_get_and_destroy(void)
 {
     VmafFeatureCollector *feature_collector;
     mu_assert_msg(prepare_feature_collector(&feature_collector));
     mu_assert_msg(check_feature_collector_scores(feature_collector));
     mu_assert_msg(check_feature_collector_aggregates(feature_collector));
     vmaf_feature_collector_destroy(feature_collector);
+    return NULL;
+}
+
+/* ---- The provided-feature walk of vmaf_engine_feature_producer() ---------- */
+
+#define FEX_NAME_LEN 16u
+
+_Static_assert(VMAF_ENGINE_MAX_PROVIDED_FEATURES == 256u,
+               "the names in the bound test below spell the bound");
+
+/* `n` names "feature_<i>", each in its row of `text`. */
+static bool fill_feature_names(const char **names, char (*text)[FEX_NAME_LEN], unsigned n)
+{
+    for (unsigned i = 0; i < n; i++) {
+        const int len = snprintf(text[i], FEX_NAME_LEN, "feature_%u", i);
+        if (len <= 0 || (unsigned)len >= FEX_NAME_LEN)
+            return false;
+        names[i] = text[i];
+    }
+    return true;
+}
+
+/* fex_declares_feature() on a list of `n` names "feature_<i>": 1 found, 0 not
+ * found, -1 when the list cannot be built. With `terminated` false the block
+ * of pointers ends with the last name, so reading one entry more is a read
+ * past the block, which the sanitizer builds refuse. */
+static int walk_declares(unsigned n, bool terminated, const char *feature)
+{
+    char (*text)[FEX_NAME_LEN] = calloc((size_t)n + 1u, sizeof(*text));
+    const char **names =
+        (const char **)malloc(((size_t)n + (terminated ? 1u : 0u)) * sizeof(*names));
+    int found = -1;
+    if (text && names && fill_feature_names(names, text, n)) {
+        if (terminated)
+            names[n] = NULL;
+        found = fex_declares_feature(names, feature) ? 1 : 0;
+    }
+    free((void *)names);
+    free(text);
+    return found;
+}
+
+/* The walk reads at most VMAF_ENGINE_MAX_PROVIDED_FEATURES entries and tests
+ * that bound before it reads an entry (it used to read the entry first). */
+static char *test_provided_feature_walk_stops_at_its_bound(void)
+{
+    const unsigned bound = VMAF_ENGINE_MAX_PROVIDED_FEATURES;
+    mu_assert("the last name inside the bound is found",
+              walk_declares(bound, false, "feature_255") == 1);
+    mu_assert("a list of exactly the bound is read without a terminator",
+              walk_declares(bound, false, "feature_256") == 0);
+    mu_assert("a name past the bound is not searched",
+              walk_declares(bound + 1u, true, "feature_256") == 0);
+    mu_assert("the names inside the bound of a longer list are",
+              walk_declares(bound + 1u, true, "feature_255") == 1);
+    return NULL;
+}
+
+static char *test_provided_feature_walk_reads_a_terminated_list(void)
+{
+    mu_assert("a declared name is found", walk_declares(3, true, "feature_2") == 1);
+    mu_assert("an undeclared name is not found", walk_declares(3, true, "feature_3") == 0);
+    mu_assert("an empty list declares nothing", walk_declares(0, true, "feature_0") == 0);
+    mu_assert("no list declares nothing", !fex_declares_feature(NULL, "feature_0"));
     return NULL;
 }
 
@@ -694,7 +758,7 @@ static char *run_model_option_capability_tests(void)
     return NULL;
 }
 
-char *run_tests()
+char *run_tests(void)
 {
     static const MuTest tests[] = {
         MU_TEST(test_vmaf_close_retains_context_for_retry),
@@ -710,6 +774,8 @@ char *run_tests()
         MU_TEST(test_model_mount),
         MU_TEST(test_model_unmount),
         MU_TEST(test_model_mount_with_use_features),
+        MU_TEST(test_provided_feature_walk_stops_at_its_bound),
+        MU_TEST(test_provided_feature_walk_reads_a_terminated_list),
     };
     mu_message_t err = mu_run_table(tests, MU_TABLE_LEN(tests));
     if (err)

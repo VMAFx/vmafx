@@ -80,7 +80,7 @@ geometry for a raw source, or a failed bisect on a shot.
 | `--vmaf-model NAME` | `vmaf_v1.0.16_3d0h` | VMAF model for the per-shot scorer. |
 | `--neg` | off | Use the VMAF NEG model variant. |
 | `--fast-nr` | off | NR early-elimination in each per-shot bisect, see [`vmaf-tune-fast-nr.md`](vmaf-tune-fast-nr.md). |
-| `--score-backend NAME` | `auto` | `auto`, `cpu`, `cuda`, `sycl` or `hip`. See [score backends](vmaf-tune-score-backend.md). |
+| `--score-backend NAME` | `auto` | `auto`, `cpu`, `cuda`, `sycl`, `hip` or `metal`. See [score backends](vmaf-tune-score-backend.md). |
 | `--predicate-module SPEC` | none | `MODULE:CALLABLE` matching `(shot, target_vmaf, encoder) -> (crf, measured_vmaf)`. Bypasses the real bisect. |
 | `--workdir PATH` | none | Parent of the per-run scratch directory. Overrides `VMAFTUNE_WORKDIR`. See [`vmaf-tune-compare.md`](vmaf-tune-compare.md#workdir-and-decode-concurrency). |
 | `--max-concurrent-decodes N` | `1` | Cap on simultaneous reference-YUV decodes across the per-shot bisect threads. |
@@ -138,7 +138,7 @@ authoritative deliverable
 |---|---|
 | `predicate` | `"bisect"` for the built-in search, otherwise the `--predicate-module` spec. |
 | `start_frame`, `end_frame` | Half-open range: start inclusive, end exclusive (Python-slice convention). |
-| `bitrate_kbps` | Encoded-segment bitrate measured by the bisect, `(segment_size_bytes * 8 / 1000) / shot_duration_s` (ADR-0531). `null` with a custom `--predicate-module`, because no real encode runs. `vmaf-tune report` shows `null` as a dash in the per-shot table. |
+| `bitrate_kbps` | Encoded-segment bitrate measured by the bisect, $\dfrac{8 \cdot \mathrm{segment\_size\_bytes} / 1000}{\mathrm{shot\_duration\_s}}$ (ADR-0531). `null` with a custom `--predicate-module`, because no real encode runs. `vmaf-tune report` shows `null` as a dash in the per-shot table. |
 | `segment_commands` | One FFmpeg command per shot. They honour the half-open range through `-frames:v`. |
 | `concat_command` | The FFmpeg concat-demuxer command that joins the segments. |
 
@@ -154,7 +154,8 @@ the shot detector.
 
 The uniform-window splitter still applies to the fallback. Even when the
 detector returns one giant shot, `--max-shot-duration` (default `2.0` s)
-slices it into about `ceil(duration / window)` equal sub-shots, so the tuner
+slices it into about $\lceil \mathrm{duration} / \mathrm{window} \rceil$ equal
+sub-shots, so the tuner
 still produces a useful CRF timeline. `--max-shot-duration 0` restores the
 historical single-shot behaviour
 ([ADR-0513](../adr/0513-per-shot-scene-threshold-and-1-shot-chart.md)).

@@ -16,7 +16,7 @@ bit? Where it is not, which fork change made the difference, and was it meant?
 - Netflix/vmaf `cea2b4d8` (2026-10-01); fork master `b34732ae1` for the audit,
   `d6719babf` for the guard's measurements. Netflix `9e48141b` adds an
   aarch64-only kernel; its x86 arithmetic is `cea2b4d8`'s.
-- Host `ryzen-4090-arc`: Ryzen 9 9950X3D (AVX-512), GCC 16.2.1, glibc 2.44.
+- Reference workstation: Ryzen 9 9950X3D (AVX-512), GCC 16.2.1, glibc 2.44.
   Upstream `-O3 -std=c11`; fork `-O3 -std=c23 -ffp-contract=off`. Neither
   `libvmaf` has a fused multiply-add outside its `*_avx2` / `*_avx512`
   functions.

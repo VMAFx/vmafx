@@ -14,8 +14,8 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: helm-chart-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: helm-chart-${{ github.workflow }}-${{ github.ref == 'refs/heads/master' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
 
 # Least-privilege default for the whole workflow (ADR-0875).
 permissions:
@@ -28,7 +28,17 @@ env:
   HELM_SHA256: "c306b46f719b0a4da32d0f78ee21bf90ce8d602f15b22ab753f0674d1670a7f3"
 
 jobs:
+  tier:
+    name: CI tier (Helm Chart)
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/ci-tier.yml
+
   impact:
+    needs: tier
+    if: needs.tier.outputs.light == 'true'
     name: Plan Helm impact
     runs-on: ubuntu-26.04
     outputs:
@@ -111,7 +121,8 @@ jobs:
       - name: helm template (all optional components enabled)
         run: |
           helm template vmafx deploy/helm/vmafx \
-            --set pushgateway.enabled=true > /dev/null
+            --set pushgateway.enabled=true \
+            --set monitoring.enabled=true > /dev/null
 
       # The node contract on real renders: the controller address the node's
       # controller client reads and the NetworkPolicy egress it needs (ADR-1524).
@@ -131,14 +142,45 @@ jobs:
         run: python3 -B -m unittest discover -s scripts/ci/tests -p 'test_helm_controller_workload.py' -v
 
       # ADR-1592: only the controller's own service account reads VmafxTenants.
+      # ADR-2647: the operator writes events in every namespace, nothing else.
       - name: Service accounts and tenant RBAC
         run: python3 -B -m unittest discover -s scripts/ci/tests -p 'test_helm_service_accounts.py' -v
+
+      # ADR-2350 D13: the chart grants the operator every rule controller-gen
+      # derives from its +kubebuilder:rbac markers (config/rbac/role.yaml).
+      - name: Operator RBAC covers the generated role
+        run: python3 -B -m unittest discover -s scripts/ci/tests -p 'test_helm_operator_rbac.py' -v
+
+      # ADR-2350 D13: the values the chart copies into pod specs have the
+      # Kubernetes 1.26 types; planted invalid values are refused, valid ones
+      # render. A full clone also renders them with the schema before the types.
+      - name: Values schema with Kubernetes types
+        run: python3 -B -m unittest discover -s scripts/ci/tests -p 'test_helm_values_schema.py' -v
+
+      # ADR-2350 D13: every VMAFX_* entry of every workload comes from the
+      # generated templates/_config.gen.tpl, and a definition edit changes the
+      # render. A full clone also compares it with the hand-written lists.
+      - name: Generated workload environment
+        run: python3 -B -m unittest discover -s scripts/ci/tests -p 'test_helm_config_env.py' -v
 
       # ADR-1593: node.fuse (FUSE device resource, the setuid helper's
       # capability bounding set) and node.ebpf (tracker env, UID 0 with BPF /
       # PERFMON / SYS_ADMIN, tracefs), and the combinations the chart refuses.
       - name: Node FUSE and eBPF renders
         run: python3 -B -m unittest discover -s scripts/ci/tests -p 'test_helm_node_fuse_ebpf.py' -v
+
+      # ADR-2349: the monitors, the PrometheusRule (the default render is the
+      # generated rule file, an override is what obsgen -render-rules writes
+      # for it, promtool accepts both), the dashboard ConfigMaps and the
+      # scrape NetworkPolicy. Go runs the obsgen renderer; the test downloads
+      # the promtool release pinned in build-config.env.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Monitoring renders
+        run: python3 -B -m unittest discover -s scripts/ci/tests -p 'test_helm_observability.py' -v
 
       # ADR-1353: the server Deployment selected every Pod of the release, the
       # operator's and node's included. Render each server workload with every
@@ -243,8 +285,8 @@ jobs:
           PY
 
   helm-chart:
-    needs: [impact, helm-chart-work]
-    if: always()
+    needs: [tier, impact, helm-chart-work]
+    if: always() && needs.tier.outputs.light == 'true'
     # required-aggregator
     name: helm lint + template
     runs-on: ubuntu-26.04

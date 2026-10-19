@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD041 MD060 -->
 # ADR-1058: Helm chart security hardening — PDB, RBAC split, metrics NetworkPolicy, schema tightening
 
-- **Status**: Accepted (VmafxTenant rule replaced by [ADR-1592](1592-helm-split-service-accounts.md))
+- **Status**: Accepted (VmafxTenant rule replaced by [ADR-1592](1592-helm-split-service-accounts.md); events rule replaced by [ADR-2647](2647-operator-events-cluster-wide.md))
 - **Date**: 2026-06-06
 - **Deciders**: Lusoris
 - **Tags**: `helm`, `k8s`, `rbac`, `security`, `networkpolicy`

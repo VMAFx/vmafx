@@ -7,10 +7,10 @@
 
 /*
  * VMAFx contexts (ADR-1852): create / destroy, the per-context log callback,
- * context options, version, provenance and extractor queries, on the scoring
- * engine of core/src/libvmaf.c. libvmaf's vmaf_init(), vmaf_close() and
- * vmaf_version() are generated shims on these
- * (core/src/vmafx/compat_libvmaf_gen.c).
+ * context options, version and extractor queries (provenance: provenance.c,
+ * RC4 WP5), on the scoring engine of core/src/libvmaf.c. libvmaf's
+ * vmaf_init(), vmaf_close() and vmaf_version() are generated shims on these
+ * (core/src/compat/libvmaf/libvmaf_gen.c, libvmaf.so.3).
  *
  * Logging (RC4 WP2): a context with a log callback receives its own messages
  * (failures reported without an error out-parameter, and what the engine logs
@@ -100,12 +100,14 @@ const VmafLogSink *vmafx_context_log_sink(const VmafxContext *context)
 
 const VmafLogSink *vmafx_engine_enter(const VmafxContext *context)
 {
+    vmafx_context_lock(context); /* RC4 WP4: the completion thread enters too */
     return vmaf_log_swap_thread_sink(vmafx_context_log_sink(context));
 }
 
-void vmafx_engine_leave(const VmafLogSink *previous)
+void vmafx_engine_leave(const VmafxContext *context, const VmafLogSink *previous)
 {
     (void)vmaf_log_swap_thread_sink(previous);
+    vmafx_context_unlock(context);
 }
 
 VmafContext *vmafx_context_engine(const VmafxContext *context)
@@ -175,6 +177,10 @@ static VmafxContext *new_context(const VmafxContextConfig *cfg)
     if (!context) {
         return NULL;
     }
+    if (vmafx_provenance_init(&context->provenance) != 0) {
+        free(context);
+        return NULL;
+    }
     context->log_callback = cfg->log_callback;
     context->log_user = cfg->log_user;
     context->import_retry_wait_ns =
@@ -200,7 +206,11 @@ VmafxStatus vmafx_context_create(const VmafxContextConfig *config, VmafxContext 
         return status;
     }
     VmafxContext *const context = new_context(&cfg);
-    if (!context) {
+    if (!context || !vmafx_windows_init(context)) {
+        if (context) {
+            vmafx_provenance_release(&context->provenance);
+        }
+        free(context);
         return VMAFX_FAIL(&report, VMAFX_E_NOMEM, 0, VMAFX_SUBJECT_CONTEXT, "context",
                           "cannot allocate a context");
     }
@@ -211,16 +221,20 @@ VmafxStatus vmafx_context_create(const VmafxContextConfig *config, VmafxContext 
     }
     const VmafLogSink *const previous = vmafx_engine_enter(context);
     const int err = vmaf_engine_init(&context->engine, engine_config(&cfg));
-    vmafx_engine_leave(previous);
+    vmafx_engine_leave(context, previous);
     if (err) {
         const VmafxReport own = VMAFX_REPORT(context, error);
         const VmafxStatus failed =
             VMAFX_FAIL(&own, vmafx_status_from_errno(err), err, VMAFX_SUBJECT_CONTEXT, "engine",
                        "engine initialisation failed (%d)", err);
+        vmafx_windows_close(context);
+        vmafx_provenance_release(&context->provenance);
         free(context);
         return failed;
     }
     vmaf_engine_set_api_owner(context->engine, context);
+    /* RC4 WP4: worker jobs wake the window completion thread (ADR-2074). */
+    vmaf_engine_set_frame_listener(context->engine, vmafx_windows_frame_final, context->windows);
     *out = context;
     return VMAFX_OK;
 }
@@ -232,16 +246,23 @@ VmafxStatus vmafx_context_destroy(VmafxContext *context, VmafxError **error)
         return VMAFX_FAIL(&report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_PARAMETER, "context",
                           "no context");
     }
+    assert(context->engine != NULL); /* a context exists only with its engine */
+    vmafx_windows_pause(context);    /* RC4 WP4: no window work during the close */
     const VmafLogSink *const previous = vmafx_engine_enter(context);
     const int err = vmaf_engine_close(context->engine);
-    vmafx_engine_leave(previous);
+    vmafx_engine_leave(context, previous);
     if (err) {
+        vmafx_windows_resume(context);
         return VMAFX_FAIL(&report, vmafx_status_from_errno(err), err, VMAFX_SUBJECT_CONTEXT,
                           "engine", "close failed (%d); the context stays valid for a retry", err);
     }
+    /* RC4 WP4: open windows complete with VMAFX_E_INVALID and every callback
+     * runs before the context goes; window handles stay the caller's. */
+    vmafx_windows_close(context);
     /* The engine released its collector's model owners; drop the context's
      * references (ADR-1755) only now, so a failed close keeps them. */
     release_held(context);
+    vmafx_provenance_release(&context->provenance);
     free(context);
     return VMAFX_OK;
 }
@@ -279,14 +300,40 @@ static VmafxStatus parse_strength(const VmafxReport *report, const char *key, co
     return VMAFX_OK;
 }
 
+/* A switch: `perceptual_weight`, or `check_sample_range` (ADR-1918). */
+static bool switch_option(const char *key)
+{
+    return !strcmp(key, "perceptual_weight") || !strcmp(key, "check_sample_range");
+}
+
+/* Parse `value` for `key`; VMAFX_E_NOTFOUND names a key no option has. */
+static VmafxStatus parse_option(const VmafxReport *report, const char *key, const char *value,
+                                int *enabled, double *strength)
+{
+    if (switch_option(key)) {
+        return parse_switch(report, key, value, enabled);
+    }
+    if (!strcmp(key, "perceptual_weight_strength")) {
+        return parse_strength(report, key, value, strength);
+    }
+    return VMAFX_FAIL(report, VMAFX_E_NOTFOUND, 0, VMAFX_SUBJECT_OPTION, key,
+                      "no context option has this name; the context options are "
+                      "perceptual_weight, perceptual_weight_strength and check_sample_range");
+}
+
 /* Apply a parsed option to the engine; returns its errno. */
 static int apply_option(VmafxContext *context, const char *key, int enabled, double strength)
 {
     const VmafLogSink *const previous = vmafx_engine_enter(context);
-    const int err = !strcmp(key, "perceptual_weight") ?
-                        vmaf_engine_set_perceptual_weight_enabled(context->engine, enabled) :
-                        vmaf_engine_set_perceptual_weight_strength(context->engine, strength);
-    vmafx_engine_leave(previous);
+    int err = 0;
+    if (!strcmp(key, "check_sample_range")) {
+        err = vmaf_engine_set_sample_range_check_enabled(context->engine, enabled);
+    } else if (!strcmp(key, "perceptual_weight")) {
+        err = vmaf_engine_set_perceptual_weight_enabled(context->engine, enabled);
+    } else {
+        err = vmaf_engine_set_perceptual_weight_strength(context->engine, strength);
+    }
+    vmafx_engine_leave(context, previous);
     return err;
 }
 
@@ -303,16 +350,7 @@ VmafxStatus vmafx_context_set_option(VmafxContext *context, const char *key, con
     }
     int enabled = 0;
     double strength = 0.0;
-    VmafxStatus status = VMAFX_OK;
-    if (!strcmp(key, "perceptual_weight")) {
-        status = parse_switch(&report, key, value, &enabled);
-    } else if (!strcmp(key, "perceptual_weight_strength")) {
-        status = parse_strength(&report, key, value, &strength);
-    } else {
-        return VMAFX_FAIL(&report, VMAFX_E_NOTFOUND, 0, VMAFX_SUBJECT_OPTION, key,
-                          "no context option has this name; the context options are "
-                          "perceptual_weight and perceptual_weight_strength");
-    }
+    const VmafxStatus status = parse_option(&report, key, value, &enabled, &strength);
     if (status != VMAFX_OK) {
         return status;
     }
@@ -342,30 +380,6 @@ void vmafx_abi_version(uint32_t *major, uint32_t *minor, uint32_t *patch)
     if (patch) {
         *patch = VMAFX_ABI_VERSION_PATCH;
     }
-}
-
-VmafxStatus vmafx_context_provenance(const VmafxContext *context, VmafxProvenance *out,
-                                     VmafxError **error)
-{
-    const VmafxReport report = VMAFX_REPORT(context, error);
-    if (!context || !out) {
-        return VMAFX_FAIL(&report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_PARAMETER,
-                          context ? "out" : "context", "NULL argument");
-    }
-    enum VmafBackend backend = VMAF_BACKEND_UNKNOWN;
-    const int err = vmaf_context_get_backend(context->engine, &backend);
-    if (err) {
-        return VMAFX_FAIL(&report, vmafx_status_from_errno(err), err, VMAFX_SUBJECT_CONTEXT,
-                          "context", "cannot read the active backend (%d)", err);
-    }
-    VmafxProvenance full = VMAFX_PROVENANCE_INIT;
-    full.abi_major = VMAFX_ABI_VERSION_MAJOR;
-    full.abi_minor = VMAFX_ABI_VERSION_MINOR;
-    full.abi_patch = VMAFX_ABI_VERSION_PATCH;
-    full.active_backend = (uint32_t)backend;
-    full.n_extractors = vmaf_engine_extractor_count(context->engine);
-    full.version = vmaf_engine_version();
-    return vmafx_write_sized(&report, out, &full, (uint32_t)sizeof(full), "out");
 }
 
 VmafxStatus vmafx_context_extractor_info(const VmafxContext *context, uint32_t index,

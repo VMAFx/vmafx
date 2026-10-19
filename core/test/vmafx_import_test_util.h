@@ -175,10 +175,7 @@ static inline size_t vt_packed_row(const VmafxFrameDesc *d, uint32_t pix_fmt)
         return (size_t)((d->w + 5u) / 6u) * 16u;
     case VMAFX_PIXEL_FORMAT_RGB:
         return (size_t)d->w * 3u * bytes;
-    case VMAFX_PIXEL_FORMAT_RGBA:
-    case VMAFX_PIXEL_FORMAT_BGRA:
-        return (size_t)d->w * 4u * bytes;
-    default: /* XV36, VUYX, AYUV */
+    default: /* XV36, VUYX, AYUV, RGBA, BGRA */
         return (size_t)d->w * 4u * bytes;
     }
 }
@@ -405,8 +402,8 @@ typedef struct VtDeviceLayout {
  * (`skew` 0): every plane starts 8-byte aligned (not at the buffer's start)
  * with a pitch a multiple of 8; `skew` > 0 starts each plane `skew` bytes
  * later and leaves the pitch unrounded. Fills the rows and bytes per row of
- * each plane; returns the bytes the buffer needs. Shared by the CUDA and HIP
- * lane tests (ADR-2023, ADR-2092). */
+ * each plane; returns the bytes the buffer needs. Shared by the CUDA, HIP and
+ * SYCL lane tests (ADR-2023, ADR-2092, ADR-2091). */
 static inline size_t vt_device_layout(const VmafxFrameDesc *d, uint32_t pix_fmt, size_t pad,
                                       size_t skew, VtDeviceLayout *p, size_t rows[3],
                                       size_t row_bytes[3])

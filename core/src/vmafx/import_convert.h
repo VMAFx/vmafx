@@ -35,8 +35,9 @@
 #include <stdint.h>
 #include <string.h>
 
-/* NOLINTBEGIN(modernize-use-nullptr): C header included by C translation
- * units; MSVC's C mode has no `nullptr`. ADR-1138. */
+/* NOLINTBEGIN(modernize-use-nullptr,modernize-use-using): C header included by C
+ * translation units and by C++ ones (cli_parse.cpp through import_layouts_gen.h);
+ * MSVC's C mode has no `nullptr` and C has no `using`. ADR-1138. */
 
 /* How a plane of the frame is read: sample `x` of a row is element
  * `x * step + offset` of the producer's row (elements of `in_bytes` bytes,
@@ -115,6 +116,6 @@ static inline void vmafx_import_read_plane(uint8_t *dst, size_t dst_stride, uint
     }
 }
 
-/* NOLINTEND(modernize-use-nullptr) */
+/* NOLINTEND(modernize-use-nullptr,modernize-use-using) */
 
 #endif /* VMAF_SRC_VMAFX_IMPORT_CONVERT_H_ */

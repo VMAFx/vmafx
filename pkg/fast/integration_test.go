@@ -3,7 +3,7 @@
 //
 // pkg/fast/integration_test.go — end-to-end exercise of the production
 // probe-encode / decode / libvmaf-score pipeline against the real ffmpeg and
-// vmaf binaries.
+// vmaf binaries (the vmaf CLI under test, never a host install).
 //
 // These tests skip when the tools or the raw-YUV fixture are unavailable, so
 // they are safe on a bare CI runner but give real coverage in the dev
@@ -20,6 +20,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+
+	"github.com/VMAFx/vmafx/internal/vmaftest"
 )
 
 // fixtureRef is a 48-frame 576x324 8-bit 4:2:0 raw YUV shipped in-tree.
@@ -30,14 +32,13 @@ const (
 	fixtureFPS    = 24.0
 )
 
-// requireTools skips the test unless ffmpeg, vmaf and the fixture are all
-// present, and returns the absolute fixture path.
+// requireTools skips the test unless ffmpeg and the fixture are present, and
+// returns the absolute fixture path. The vmaf CLI is the build under test
+// (testConfig, internal/vmaftest): a vmaf on PATH is never looked up.
 func requireTools(t *testing.T) string {
 	t.Helper()
-	for _, bin := range []string{"ffmpeg", "vmaf"} {
-		if _, err := exec.LookPath(bin); err != nil {
-			t.Skipf("%s not on PATH; skipping the pipeline integration test", bin)
-		}
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg not on PATH; skipping the pipeline integration test")
 	}
 	abs, err := filepath.Abs(fixtureRel)
 	if err != nil {
@@ -64,7 +65,7 @@ func testConfig(t *testing.T, src string, proxy Proxy) PipelineConfig {
 		CRFHi:              DefaultCRFHi,
 		SampleChunkSeconds: 1.0,
 		FFmpegBin:          "ffmpeg",
-		VMAFBin:            "vmaf",
+		VMAFBin:            vmaftest.Binary(t),
 		VMAFModel:          "vmaf_v0.6.1",
 		ScoreBackend:       "cpu",
 		EncodeDir:          t.TempDir(),

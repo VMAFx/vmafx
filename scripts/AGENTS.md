@@ -296,6 +296,18 @@ non-doc invocations select scope before requiring docs toolchain.
 Paired updates to config, dispatcher, fixture, and
 `docs/development/pre-commit-hooks.md` preserve this contract.
 
+### Lefthook run lines stay quote-free; installer yields to lefthook
+
+[ADR-2012](../docs/adr/2012-lefthook-windows-host.md). Lefthook on
+Windows passes each `run:` to `sh -c` unescaped: one line, no double quotes,
+logic in `git-hooks/framework-hooks.sh` or sibling script. Bridge prefers
+`.venv/bin` / `.venv/Scripts` pre-commit, prepends that dir to `PATH` via
+`cygpath` when present (lefthook hands Git Bash `C:/` PWD).
+`githooks/install.py` leaves `call_lefthook run` shims in place; order =
+`lefthook install`, then `make install-hooks`. `.claude/settings.json` +
+`.codex/hooks.json` stay sorted-key JSON (`lefthook uninstall` output).
+`githooks/tests/test_install.py` `LefthookBridgeTests` guards all four.
+
 ### Post-commit state sync preserves worktree identity
 
 [ADR-1280](../docs/adr/1280-worktree-state-sync.md) requires
@@ -305,8 +317,15 @@ with `.workingdir` symlink or run synchronizer against main checkout,
 because those paths respectively violate Praetor confinement and record false
 Git identity. Keep common-Git lock fail-closed, preserve worktree-local
 cache content, and copy only derived `STATE.md` back to canonical private
-state. real-worktree regression in `githooks/tests/test_install.py` must
-cover branch identity, regular files, cache preservation, and symlink refusal.
+state. Lock dir carries `owner` (`pid=`, `boot=`); stale = owner ran in other
+boot, owner pid gone, or no owner file and older than 2 minutes -> next sync
+takes lock over: rename aside, owner recheck, log line. Live owner -> refuse.
+Mirror every ledger with its metadata: `bugs.meta.json`,
+`questions.meta.json` (Praetor reads one entry per bug / question; missing ->
+sync fails in every worktree). real-worktree regression in
+`githooks/tests/test_install.py` must cover branch identity, regular files,
+metadata files, cache preservation, symlink refusal, and stale versus live
+lock owners.
 
 ### Python pre-push scope follows the PR merge base
 
@@ -375,12 +394,47 @@ too late because mypy rejects duplicate module discovery before diagnostics are
 filtered. dedicated `ai/src` run remains responsible for checking those
 sources with `--explicit-package-bases`.
 
+### `adr/next-free.sh --claim` lock + claim file independent of cwd
+
+- Lock name = resolved absolute common git dir
+  (`cd "$(git rev-parse --git-common-dir)" && pwd -P`). Relative `.git`
+  vs `../.git` gave root and `docs/` callers different locks -> duplicate
+  numbers (#2769 CI).
+- Lock holds owner token; release only own lock.
+- Exclusive claim file `.git/adr-claims/NNNN` (`noclobber`) decides number;
+  taken -> N+1, max 100 tries.
+- Test cleanups (`adr/test-next-free.sh`,
+  `adr/tests/test-next-free-remote-aware.sh`) compute same name.
+- Lock = owner file, created `noclobber` (O_EXCL) in lock dir; dir without
+  owner file = free. Owner pid dead -> under `<lock>.takeover` mutex: pid
+  re-checked, owner line re-compared, file removed with WARNING. Live holder
+  never taken over. No grace takeover (raced fresh mkdir, soak 2). Exit trap
+  set before mkdir. Wait = `VMAF_ADR_LOCK_WAIT_S`
+  (default 60, was fixed 10) (#2784).
+- Guards: `adr/tests/test-next-free-concurrent.sh`,
+  `adr/tests/test-next-free-stale-lock.sh`.
+
 ### `run_unittests.sh` is upstream-mirror
 
 Script = part of original Netflix Python test harness
 (invokes `python3 -m unittest discover` against `python/test/`).
 Keep byte-identical on rebase. Fork's CI uses meson +
 pytest paths; file ships unchanged for upstream-sync hygiene.
+
+## Credits page (ADR-2485)
+
+`docs/credits.yaml` is the curated list; `docs/credits.md` keeps hand-written prose
+and renders its tables between `<!-- credits:table ID -->` markers.
+`scripts/docs/credits_lib.py` loads, validates and renders (one implementation);
+`generate-credits.py` writes / checks the page; `check-credits.py` holds the list
+to the tree through `credits_checks.py`: page drift, uncredited third-party path
+(REUSE.toml non-project licences, `third_party` / `3rdparty` / `vendor` dirs, notice
+and font files, foreign copyright headers), unused `LICENSES/*.txt`, skill or agent
+file with `derived_from` / "Adapted from" and no entry, entry path missing. An
+`exceptions:` item in the list names one file, one rule, a reason and an expiry;
+expired or idle items fail. Add an entry, never an ignore. Tests:
+`scripts/docs/tests/test_credits.py` (planted defect per check). Wired into
+`make docs-fragments-check` / `-write`. Do not hand-edit tables.
 
 ## Twin-update awareness
 
@@ -394,6 +448,8 @@ pytest paths; file ships unchanged for upstream-sync hygiene.
 
 ## Governing ADRs
 
+- [ADR-2485](../docs/adr/2485-vmafx-credits-page.md) —
+  credits list, generated page and gate.
 - [ADR-0025](../docs/adr/0025-copyright-handling-dual-notice.md) —
   dual-copyright policy.
 - [ADR-0218](../docs/adr/0218-mobilesal-saliency-extractor.md) —

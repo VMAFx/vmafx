@@ -5,9 +5,9 @@ Edit AGENTS.d/_index.md or a page under AGENTS.d/, then run
 
 Generated index. Before editing: match every path you will touch against
 `Touching` in [Topic pages](#topic-pages) and read each matching page first; no
-match, no page. Text between here and the table binds every file of this
-directory. `Touching` paths: relative to this directory, leading `/` =
-repository root. New invariant: a page under `AGENTS.d/` ([how](../../../../docs/development/agents-index.md)).
+match, no page. Text between here and [Topic pages](#topic-pages) binds every
+file of this directory. `Touching` paths: relative to this directory, leading
+`/` = repository root. New invariant: new page under `AGENTS.d/` ([how](../../../../docs/development/agents-index.md)).
 
 Orientation for agents working on AVX2 / AVX-512 feature SIMD
 paths. Parent: [../AGENTS.md](../AGENTS.md).
@@ -70,15 +70,15 @@ Complete invariants live in [../AGENTS.md
 | Touching | Read first | Invariant |
 | --- | --- | --- |
 | `cambi_avx2.c`, `cambi_avx512.c`, `/core/src/feature/cambi.c`, `/core/src/feature/cambi.h`, `/core/src/feature/cambi_c_values_frame.h` | [cambi](AGENTS.d/cambi.md) | Dispatch binds calculate_c_values_scan_avx2, not upstream calculate_c_values_avx2. |
-| `float_adm_avx2.c`, `float_adm_avx512.c`, `/core/src/feature/adm_tools.c`, `/core/src/feature/adm.c` | [float-adm](AGENTS.d/float-adm.md) | Float ADM x86 kernels return the scalar bits; sums start at +0, multiply then add, CSF filter in double. |
-| `adm_avx2.c`, `adm_avx512.c`, `/core/src/feature/integer_adm.c`, `/core/src/feature/adm_csf_fixed_point.h` | [integer-adm](AGENTS.d/integer-adm.md) | Integer ADM tail bounds are measured from the loop start, not from column 0. |
+| `float_adm_avx2.c`, `float_adm_avx512.c`, `/core/src/feature/adm_tools.c`, `/core/src/feature/adm.c` | [float-adm](AGENTS.d/float-adm.md) | Float ADM x86 kernels return scalar bits; sums start at +0, multiply then add, CSF filter in double. |
+| `adm_avx2.c`, `adm_avx512.c`, `/core/src/feature/integer_adm.c`, `/core/src/feature/adm_csf_fixed_point.h` | [integer-adm](AGENTS.d/integer-adm.md) | Integer ADM tail bounds are measured from loop start, not from column 0. |
 | `integer_ssim_avx2.c`, `integer_ssim_avx2.h`, `/core/src/feature/integer_ssim.c` | [integer-ssim](AGENTS.d/integer-ssim.md) | Layout of integer_ssim_moments_t in same order as ssim_moments is a cross-TU invariant. |
 | `convolve_avx2.c`, `convolve_avx512.c`, `/core/src/feature/iqa/convolve.c`, `/core/src/feature/common/convolution_avx.c` | [iqa-convolve](AGENTS.d/iqa-convolve.md) | Reserved-identifier hygiene: no leading-underscore names. |
-| `moment_avx2.c`, `moment_avx512.c`, `/core/src/feature/float_moment.c` | [moment](AGENTS.d/moment.md) | Every lane is added into one double in raster order; the scalar bits on every input (ADR-1500). |
+| `moment_avx2.c`, `moment_avx512.c`, `/core/src/feature/float_moment.c` | [moment](AGENTS.d/moment.md) | Every lane is added into one double in raster order; scalar bits on every input (ADR-1500). |
 | `motion_avx2.c`, `motion_avx512.c`, `float_motion_avx2.c`, `float_motion_avx512.c` | [motion](AGENTS.d/motion.md) | motion_v2_avx2.c using logical shift is knowingly out-of-spec vs scalar; do not port to NEON. |
 | `ms_ssim_decimate_avx2.c`, `ms_ssim_decimate_avx512.c`, `/core/src/feature/ms_ssim_decimate.c` | [ms-ssim](AGENTS.d/ms-ssim.md) | The 9-tap filter table appears verbatim in all four; diff all four when any one moves. |
 | `/core/src/meson.build`, `/core/src/feature/feature_extractor.cpp` | [orientation](AGENTS.d/orientation.md) | Cross-feature plumbing lives in parent directory; feature/x86 contains kernel TUs. |
-| `psnr_hvs_avx2.c`, `/core/src/feature/third_party/xiph/psnr_hvs.c` | [psnr-hvs](AGENTS.d/psnr-hvs.md) | Butterfly block is byte-identical across the three; AVX-512 closed as ceiling. |
+| `psnr_hvs_avx2.c`, `/core/src/feature/third_party/xiph/psnr_hvs.c` | [psnr-hvs](AGENTS.d/psnr-hvs.md) | Butterfly block is byte-identical across three; AVX-512 closed as ceiling. |
 | `/core/src/feature/simd_dx.h` | [simd-dx-macros](AGENTS.d/simd-dx-macros.md) | simd_dx macro names are ISA-suffixed on purpose; never collapse them into cross-ISA aliases. |
 | `speed_avx2.c`, `speed_avx512.c`, `/core/src/feature/speed.c`, `/core/src/feature/speed_cov.h` | [speed](AGENTS.d/speed.md) | One lane equals one covariance sum, multiply then add, no FMA. |
 | `ssim_avx2.c`, `ssim_avx512.c`, `/core/src/feature/iqa/ssim_tools.c`, `/core/src/feature/iqa/ssim_accumulate_lane.h` | [ssim](AGENTS.d/ssim.md) | Scalar tails are plain C and need contraction off to preserve bit-exact scalar pairing. |

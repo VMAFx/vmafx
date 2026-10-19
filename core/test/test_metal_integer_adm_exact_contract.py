@@ -116,7 +116,7 @@ HOST_PIECES = {
     ),
     "conclusion": (
         "return adm_cm_result(&c, &bd, accum, noise_weight, o->adm_p_norm);",
-        "return i4_adm_cm_result(&c, &bd, accum, noise_weight, o->adm_p_norm);",
+        "return i4_adm_cm_result(&c, &bd, sums, noise_weight, o->adm_p_norm);",
         "return adm_csf_den_result(&c, accum, o->adm_noise_weight);",
         "return i4_adm_csf_den_result(&c, accum, o->adm_noise_weight);",
         "out[0] = iadm_cm_result(o, scale, w, h, t.cm, o->adm_noise_weight);",
@@ -124,12 +124,17 @@ HOST_PIECES = {
 }
 REFERENCE_LINES = (
     "const int32_t tmp_k = (o == 0) ? 32768 : (((int64_t)lut[o + 32768] * t) + 16384) >> 15;",
-    "rst = ADM_KERNEL_MIN((rst * gain), t);",
-    "rst = ADM_KERNEL_MAX((rst * gain), t);",
+    "rst = (int16_t)(ADM_KERNEL_MIN((rst * gain), t));",
+    "rst = (int16_t)(ADM_KERNEL_MAX((rst * gain), t));",
+    "rst = (int32_t)(ADM_KERNEL_MIN((rst * gain), t));",
+    "rst = (int32_t)(ADM_KERNEL_MAX((rst * gain), t));",
     "add_bef_shift_flt[idx] = (int32_t)(1u << (i4_shift_flt[idx] - 1));",
     "const uint32_t add_shift_sq[3] = {1u << shift_sq[0], 1u << shift_sq[1], 1u << shift_sq[2]};",
 )
 TABLE_LINE = "const int32_t recip = (int32_t)(div_Q_factor / i);"
+
+
+GUARD_COUNT = 2  # #if !defined(__METAL_VERSION__) guards of the shared header
 
 
 def _flat(source: str) -> str:
@@ -227,6 +232,11 @@ def _skip_scale0_failures(code: str) -> list[str]:
     decouple = stages.find("IADM_METAL_DECOUPLE_CSF_S0")
     if skip < 0 or decouple < 0 or "return n;" not in stages[skip:decouple]:
         failures.append(f"{HOST}: adm_skip_scale0 runs more than the DWT at scale 0")
+    views = _function_body(code, "unsigned iadm_metal_view_stages(")
+    if "iadm_metal_stages(o, g, scale, all)" not in views or (
+        "view == 0u || !iadm_is_dwt(all[i].entry)" not in views
+    ):
+        failures.append(f"{HOST}: a later viewing distance does not run the stages after the DWT")
     return failures
 
 
@@ -239,7 +249,8 @@ def _mm_failures(mm: str) -> list[str]:
         failures.append(f"{MM}: the dispatch keeps its own uniforms, slots or score formulas")
     for piece in (
         "iadm_metal_uniforms(&o, &s->geom, scale, &d, &c);",
-        "iadm_metal_stages(&o, &s->geom, scale, stages);",
+        # Every viewing distance's stages, the DWT only for the first (ADR-2795).
+        "iadm_metal_view_stages(&o, &s->geom, scale, v, stages);",
         "iadm_metal_scores(&o, &s->geom, accum, index, &r);",
         "bind_buffer(enc, s->ref_band[scale - 1], 6);",
     ):
@@ -253,7 +264,7 @@ def _shared_failures(shared: str) -> list[str]:
     guards = [m.start() for m in re.finditer(r"#if !defined\(__METAL_VERSION__\)", code)]
     product = code.find("adm_gain_limit_product(int32_t rst")
     split = code.find("adm_gain_limit_split(double gain)")
-    if len(guards) != 2 or not guards[0] < guards[1] < split:
+    if len(guards) != GUARD_COUNT or not guards[0] < guards[1] < split:
         return [f"{SHARED}: the includes and the split are not kept out of Metal"]
     if product < 0 or code.rfind("#endif", 0, product) < split:
         return [f"{SHARED}: adm_gain_limit_product() is not visible to Metal"]
@@ -321,6 +332,21 @@ class IntegerAdmMetalExactContract(unittest.TestCase):
             "    const vmaf_mtl_i32 rst = (vmaf_mtl_i32)(float)(((k * o) + 16384) >> 15);",
         )
         self._assert_detected(failures, "vmaf_mtl_iadm_decouple_s123(")
+
+    def test_later_view_rerunning_the_dwt_is_detected(self) -> None:
+        # ADR-2795: the second viewing distance reads the first one's bands.
+        failures = self._edited(
+            HOST, "view == 0u || !iadm_is_dwt(all[i].entry)", "view == 0u || view != 0u"
+        )
+        self._assert_detected(failures, "stages after the DWT")
+
+    def test_dispatch_without_the_view_stages_is_detected(self) -> None:
+        failures = self._edited(
+            MM,
+            "iadm_metal_view_stages(&o, &s->geom, scale, v, stages);",
+            "iadm_metal_stages(&o, &s->geom, scale, stages);",
+        )
+        self._assert_detected(failures, "iadm_metal_view_stages")
 
     def test_kernel_side_decouple_is_detected(self) -> None:
         failures = self._edited(
@@ -443,8 +469,8 @@ class IntegerAdmMetalExactContract(unittest.TestCase):
     def test_changed_reference_gain_limit_is_detected(self) -> None:
         failures = self._edited(
             REFERENCE,
-            "        rst = ADM_KERNEL_MIN((rst * gain), t);",
-            "        rst = ADM_KERNEL_MIN((int32_t)(rst * (float)gain), t);",
+            "        rst = (int32_t)(ADM_KERNEL_MIN((rst * gain), t));",
+            "        rst = (int32_t)(ADM_KERNEL_MIN((int32_t)(rst * (float)gain), t));",
         )
         self._assert_detected(failures, "the twin mirrors it")
 

@@ -44,10 +44,19 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  plan:
-    name: Plan release dry run
+  tier:
+    name: CI tier (Release Dry Run)
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
-    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/ci-tier.yml
+
+  plan:
+    needs: tier
+    if: needs.tier.outputs.full == 'true'
+    name: Plan release dry run
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
       contents: read
@@ -83,7 +92,7 @@ jobs:
     name: Image dry run (${{ matrix.name }})
     needs: plan
     if: needs.plan.outputs.images == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 90
     permissions:
       contents: read
@@ -155,7 +164,7 @@ jobs:
     name: GPU image dry run (${{ matrix.name }})
     needs: plan
     if: needs.plan.outputs.gpu == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 120
     permissions:
       contents: read
@@ -198,7 +207,7 @@ jobs:
     name: vmaf-mcp dist and SBOM dry run
     needs: plan
     if: needs.plan.outputs.mcp == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     permissions:
       contents: read
@@ -256,8 +265,18 @@ jobs:
           python -m pip install --disable-pip-version-check --no-compile \
             --ignore-installed --only-binary=:all: --target mcp-sbom-root \
             --require-hashes -r mcp-server/vmaf-mcp/requirements-runtime-lock.txt
-          python -m pip install --disable-pip-version-check --no-compile \
-            --ignore-installed --no-deps --target mcp-sbom-root mcp-dist/vmaf_mcp-*.whl
+          # The wheel is built earlier in this job, so no published hash exists to pin
+          # (Scorecard Pinned-Dependencies). Its dependencies are installed above under
+          # --require-hashes; the wheel itself is unpacked, which lays down the same
+          # package and .dist-info files as `pip install --no-deps --target` (it leaves
+          # out the console scripts and the INSTALLER, REQUESTED and direct_url.json
+          # markers, which the SBOM does not read).
+          wheel_files=(mcp-dist/vmaf_mcp-*.whl)
+          [[ ${#wheel_files[@]} -eq 1 && -f "${wheel_files[0]}" ]] || {
+            echo "ERROR: expected exactly one vmaf-mcp wheel" >&2
+            exit 1
+          }
+          python -m zipfile -e "${wheel_files[0]}" mcp-sbom-root
           cp -- mcp-dist/vmaf_mcp-"$VMAFX_PEP440_VERSION"-*.whl \
             mcp-dist/vmaf_mcp-"$VMAFX_PEP440_VERSION".tar.gz mcp-sbom-root/distributions/
       - uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c  # v0.24.3
@@ -292,11 +311,11 @@ jobs:
   # The required context (ADR-1687). Each group must be selected and pass, or be
   # unselected and skipped; a failed or skipped plan fails the gate.
   gate:
-    needs: [plan, images, gpu, mcp]
-    if: always()
+    needs: [tier, plan, images, gpu, mcp]
+    if: always() && needs.tier.outputs.full == 'true'
     # required-aggregator
     name: Release Dry Run
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions:
       contents: read

@@ -1,44 +1,8 @@
 <!-- markdownlint-disable MD013 MD025 MD033 MD060 -->
-<!-- ADR-0665 stub — claimed by scripts/adr/next-free.sh --claim fast-nr-calibration-quality-guard on 2026-05-21T16:51:54Z -->
-<!-- Replace this file with the real ADR and rename to 0665-fast-nr-calibration-quality-guard.md before committing. -->
-<!-- To abandon this claim run: scripts/adr/next-free.sh --release 0665 -->
-
-# ADR-0665: <fill in title>
-
-- **Status**: Accepted
-- **Date**: 2026-05-21
-- **Deciders**: <fill in>
-- **Tags**: <fill in>
-
-## Context
-
-<fill in>
-
-## Decision
-
-<fill in>
-
-## Alternatives considered
-
-| Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
-| | | | |
-
-## Consequences
-
-- **Positive**: <fill in>
-- **Negative**: <fill in>
-- **Neutral / follow-ups**: <fill in>
-
-## References
-
-- See [ADR-0535](0535-adr-atomic-allocator.md) for the original allocator design.
-- See [ADR-0628](0628-adr-allocator-remote-aware.md) for the remote-aware extension.
-- Source: <req or Q<round>.<q>>
 
 # ADR-0665: Fast-NR calibration quality guard
 
-- **Status**: Accepted
+- **Status**: Accepted (status update 2026-10-06 below)
 - **Date**: 2026-05-21
 - **Deciders**: Lusoris maintainers
 - **Tags**: ai, vmaf-tune, calibration, fast-nr, quality-gate
@@ -102,3 +66,13 @@ Verification command:
 ```bash
 git grep -n -E 'allow-weak-calibration|_DEFAULT_MIN_PLCC' origin/master -- ai/scripts/calibrate_nr_threshold.py
 ```
+
+## Status update 2026-10-06: The unfilled template block was removed
+
+Until this date the file began with an unfilled template block from the ADR
+number allocator (stub comments, the title `<fill in title>`, `<fill in>`
+sections), followed by this record. The block carried no decision and made the
+first heading, the Deciders line and the Tags line unreadable by tools; it was
+removed. The record itself is unchanged.
+
+The body above is unchanged.

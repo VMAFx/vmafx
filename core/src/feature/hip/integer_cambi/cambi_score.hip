@@ -22,17 +22,19 @@
  */
 
 #include <hip/hip_runtime.h>
-#include <stdint.h>
+#include <cstdint>
 
 #include "cambi_hip_device.h"
 
+namespace {
+
 /* The work-item's 2-D position inside a 16x16-block grid. */
-__device__ static inline uint32_t cambi_gx(void)
+__device__ inline uint32_t cambi_gx()
 {
     return blockIdx.x * blockDim.x + threadIdx.x;
 }
 
-__device__ static inline uint32_t cambi_gy(void)
+__device__ inline uint32_t cambi_gy()
 {
     return blockIdx.y * blockDim.y + threadIdx.y;
 }
@@ -40,18 +42,21 @@ __device__ static inline uint32_t cambi_gy(void)
 /* Sum of one uint64 per work-item over the whole work-group; `lanes` is the
  * work-group size, a power of two. Integer addition, so the tree order does
  * not matter and the result is the same on wave32 and wave64 devices. */
-__device__ static uint64_t cambi_group_sum(uint64_t value, uint64_t *shared, uint32_t lanes)
+__device__ uint64_t cambi_group_sum(uint64_t value, uint64_t *shared, uint32_t lanes)
 {
     const uint32_t lid = threadIdx.x;
     shared[lid] = value;
     __syncthreads();
     for (uint32_t span = lanes / 2u; span > 0u; span >>= 1u) {
-        if (lid < span)
+        if (lid < span) {
             shared[lid] += shared[lid + span];
+        }
         __syncthreads();
     }
     return shared[0];
 }
+
+} // namespace
 
 extern "C" {
 
@@ -102,9 +107,10 @@ __global__ void cambi_hip_spatial_mask(const CambiHipParams *p, int scale, int p
     __syncthreads();
     const uint32_t x = cambi_gx();
     const uint32_t y = cambi_gy();
-    if (x < p->proc_width && y < p->proc_height)
+    if (x < p->proc_width && y < p->proc_height) {
         p->mask[y * p->proc_width + x] =
             cambi_hd_mask_tile_out(row_sums, threadIdx.y, threadIdx.x, p->mask_index);
+    }
 }
 
 /* cambi.c::decimate of the previous scale's filtered image. */
@@ -234,9 +240,9 @@ __global__ void cambi_hip_radix_scan(const CambiHipParams *p, int scale, int pas
     __syncthreads();
     if (lane == 0u) {
         uint32_t running = 0u;
-        for (uint32_t l = 0u; l < CAMBI_HIP_POOL_BLOCK; ++l) {
-            const uint32_t count = counts[l];
-            counts[l] = running;
+        for (uint32_t &slot : counts) {
+            const uint32_t count = slot;
+            slot = running;
             running += count;
         }
     }

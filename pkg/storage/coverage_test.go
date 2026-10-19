@@ -28,6 +28,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/VMAFx/vmafx/internal/execstub"
 )
 
 // ---------------------------------------------------------------------------
@@ -195,9 +197,7 @@ func TestUnmount_FirstBinSucceeds(t *testing.T) {
 
 	// Write a trivially-successful fake fusermount3.
 	fakeScript := filepath.Join(dir, "fusermount3")
-	if err := os.WriteFile(fakeScript, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
-		t.Fatalf("write fake fusermount3: %v", err)
-	}
+	execstub.Write(t, fakeScript, []byte("#!/bin/sh\nexit 0\n"))
 
 	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
 
@@ -217,9 +217,7 @@ func TestUnmount_FallbackToUmount(t *testing.T) {
 
 	// Only provide a fake "umount" that exits 0.
 	fakeScript := filepath.Join(dir, "umount")
-	if err := os.WriteFile(fakeScript, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
-		t.Fatalf("write fake umount: %v", err)
-	}
+	execstub.Write(t, fakeScript, []byte("#!/bin/sh\nexit 0\n"))
 
 	// fusermount3 and fusermount are NOT in dir; they will fail via PATH lookup.
 	t.Setenv("PATH", dir)

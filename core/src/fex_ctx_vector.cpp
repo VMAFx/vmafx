@@ -88,6 +88,56 @@ int grow_context_vector(RegisteredFeatureExtractors *rfe)
     return 0;
 }
 
+/* ADR-2056: two contexts with `debug` set that claim the same unsuffixed key
+ * would write it twice ("cannot be overwritten" at the first frame). Refuse the
+ * second at registration, naming the key. */
+int refuse_debug_key_collision(const RegisteredFeatureExtractors *rfe,
+                               const VmafFeatureExtractorContext *fex_ctx)
+{
+    const char *key = vmaf_feature_extractor_context_debug_key(fex_ctx);
+    if (!key)
+        return 0;
+    for (unsigned i = 0; i < rfe->cnt; i++) {
+        const char *other = vmaf_feature_extractor_context_debug_key(rfe->fex_ctx[i]);
+        if (!other || strcmp(other, key) != 0)
+            continue;
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "feature extractor \"%s\": a second instance with debug=true would file its "
+                 "ratio under the key \"%s\", which instance \"%s\" already uses. The key is "
+                 "never suffixed with the options (the Netflix tests read it), so only one "
+                 "debug instance can run; set debug=false on the other.\n",
+                 fex_ctx->fex->name, key, rfe->fex_ctx[i]->fex->name);
+        return -EINVAL;
+    }
+    return 0;
+}
+
+/* Netflix/vmaf 33e5f0aca, ADR-2795: after no registered context duplicates
+ * `fex_ctx`, offer it to each not yet initialized context of the same
+ * extractor whose descriptor has a merge callback. Returns 1 when one absorbed
+ * it, 0 when none did, or a negative errno. The name check keeps a C extractor
+ * and its Rust twin, which share the callback, apart. */
+int offer_merge(const RegisteredFeatureExtractors *rfe, VmafFeatureExtractorContext *fex_ctx)
+{
+    const VmafFeatureExtractor *incoming = fex_ctx->fex;
+    if (!incoming->merge)
+        return 0;
+    for (unsigned i = 0; i < rfe->cnt; i++) {
+        VmafFeatureExtractorContext *existing = rfe->fex_ctx[i];
+        if (existing->is_initialized || existing->fex->merge != incoming->merge ||
+            strcmp(existing->fex->name, incoming->name) != 0)
+            continue;
+        const int merged = incoming->merge(existing, fex_ctx);
+        if (merged > 0) {
+            vmaf_log(VMAF_LOG_LEVEL_DEBUG,
+                     "feature extractor \"%s\" merged into a registered context\n", incoming->name);
+        }
+        if (merged != 0)
+            return merged;
+    }
+    return 0;
+}
+
 void log_registered_context(const VmafFeatureExtractorContext *fex_ctx)
 {
     const unsigned cnt = fex_ctx->opts_dict ? fex_ctx->opts_dict->cnt : 0u;
@@ -136,6 +186,16 @@ int feature_extractor_vector_append(RegisteredFeatureExtractors *rfe,
             return vmaf_feature_extractor_context_destroy(fex_ctx);
         }
     }
+
+    const int merged = offer_merge(rfe, fex_ctx);
+    if (merged < 0)
+        return merged;
+    if (merged > 0)
+        return vmaf_feature_extractor_context_destroy(fex_ctx);
+
+    const int collision = refuse_debug_key_collision(rfe, fex_ctx);
+    if (collision)
+        return collision;
 
     if (rfe->cnt >= rfe->capacity) {
         const int err = grow_context_vector(rfe);

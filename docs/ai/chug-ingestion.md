@@ -76,12 +76,13 @@ CHUG-specific fields are also preserved:
 | `chug_content_name` | Source content name from the CHUG CSV. |
 | `chug_height_manifest`, `chug_width_manifest` | Manifest geometry. |
 
-CHUG's source MOS is 0-100. The adapter maps trainer-facing `mos` onto
-`[1, 5]` with:
+CHUG's source MOS is 0-100 (`mos_raw_0_100`). The adapter maps trainer-facing
+`mos` onto
+$[1, 5]$ with:
 
-```text
-mos = 1 + 4 * mos_raw_0_100 / 100
-```
+$$
+\mathrm{mos} = 1 + \frac{4 \cdot \mathrm{mos}_{\mathrm{raw}}}{100}
+$$
 
 The raw value remains available for future aggregation paths that use a
 0-100 MOS axis directly.

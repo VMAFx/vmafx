@@ -49,13 +49,13 @@ BLOCK_SUM = (
     "unsigned long long v = mine;",
     "v += __shfl_down_sync(0xffffffffu, v, off);",
     "unsigned long long total = 0ull;",
-    "total += s_warps[i];",
+    "total += warp_sum;",
 )
 BLOCK = (
     "unsigned long long my_noise = 0ull;",
     "my_noise = fpsnr_square(rv, dv);",
     "const unsigned long long total = fpsnr_block_sum(my_noise);",
-    "reinterpret_cast<unsigned long long *>(partials.data)[block_idx] = total;",
+    "VMAF_CUDA_DPTR(unsigned long long, partials.data)[block_idx] = total;",
 )
 HOST_SUM = (
     "const unsigned per_row = (s->frame_w + FPSNR_BX - 1u) / FPSNR_BX;",

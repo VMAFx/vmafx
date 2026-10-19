@@ -17,6 +17,7 @@
  *
  */
 
+#include "compat/crt_portable.h"
 #include "compat/path_utf8.h"
 #include "libvmaf/model.h"
 #include "log.h"
@@ -32,6 +33,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <iterator>
 #include <utility>
 
 #define MODEL_FEATURE_INITIAL_CAP 8u
@@ -147,7 +149,7 @@ int parse_feature_opts_object(json_stream *s, VmafModel *model, unsigned i)
     while (json_peek(s) != JSON_OBJECT_END && !json_get_error(s)) {
         if (json_next(s) != JSON_STRING)
             return -EINVAL;
-        char *key = strdup(json_get_string(s, nullptr));
+        char *key = VMAF_STRDUP(json_get_string(s, nullptr));
         if (!key)
             return -ENOMEM;
         const int err = parse_feature_opts_entry(s, model, i, key);
@@ -275,7 +277,7 @@ int append_feature_name(VmafModel *model, const char *name, unsigned index)
      * occupants — the orphan is unreachable and leaks. Caught by the
      * nightly fuzz_json_model LeakSanitizer lane. */
     free(model->feature[index].name);
-    model->feature[index].name = strdup(name);
+    model->feature[index].name = VMAF_STRDUP(name);
     if (!model->feature[index].name)
         return -ENOMEM;
     return 0;
@@ -409,7 +411,7 @@ int parse_libsvm_model(json_stream *s, VmafModel *model)
      * file; the pair is not in scripts/ci/twin-drift-allowlist.txt.
      * svm_free_and_destroy_model is null-safe and clears the pointer. */
     svm_free_and_destroy_model(&model->svm);
-    model->svm = svm_parse_model_from_buffer(libsvm_model, sz);
+    model->svm = svm_parse_model_from_buffer(libsvm_model, (unsigned int)sz);
     if (!model->svm)
         return -ENOMEM;
 
@@ -529,6 +531,210 @@ int parse_model_dict_array_key(json_stream *s, VmafModel *model, const char *key
     return 1;
 }
 
+/* Optional `conversion_target` block (Netflix/vmaf 1ddf81607): the colourspace
+ * (range, primaries, trc, matrix) the model's features are defined in, plus an
+ * optional pixel format and bit depth. Parsed here, consumed by
+ * vmaf_read_pictures() (core/src/conversion_policy.c). */
+struct ColorName {
+    const char *name;
+    unsigned val;
+};
+
+const ColorName color_range_names[] = {
+    {.name = "limited", .val = VMAF_COLOR_RANGE_LIMITED},
+    {.name = "full", .val = VMAF_COLOR_RANGE_FULL},
+};
+
+const ColorName color_primaries_names[] = {
+    {.name = "bt709", .val = VMAF_COLOR_PRIMARIES_BT709},
+    {.name = "bt2020", .val = VMAF_COLOR_PRIMARIES_BT2020},
+    {.name = "smpte432", .val = VMAF_COLOR_PRIMARIES_SMPTE432},
+};
+
+const ColorName color_trc_names[] = {
+    {.name = "bt709", .val = VMAF_COLOR_TRC_BT709},
+    {.name = "smpte2084", .val = VMAF_COLOR_TRC_SMPTE2084},
+};
+
+const ColorName color_matrix_names[] = {
+    {.name = "bt709", .val = VMAF_COLOR_MATRIX_BT709},
+    {.name = "bt2020nc", .val = VMAF_COLOR_MATRIX_BT2020_NCL},
+    {.name = "ictcp", .val = VMAF_COLOR_MATRIX_ICTCP},
+};
+
+int parse_color_name(json_stream *s, const ColorName *names, size_t n_names, unsigned *val)
+{
+    if (json_next(s) != JSON_STRING)
+        return -EINVAL;
+    const char *name = json_get_string(s, nullptr);
+    for (size_t i = 0; i < n_names; i++) {
+        if (!strcmp(name, names[i].name)) {
+            *val = names[i].val;
+            return 0;
+        }
+    }
+    return -EINVAL;
+}
+
+struct ColorField {
+    const char *key;
+    const ColorName *names;
+    size_t n_names;
+};
+
+const ColorField color_fields[] = {
+    {.key = "range", .names = color_range_names, .n_names = std::size(color_range_names)},
+    {.key = "primaries",
+     .names = color_primaries_names,
+     .n_names = std::size(color_primaries_names)},
+    {.key = "trc", .names = color_trc_names, .n_names = std::size(color_trc_names)},
+    {.key = "matrix", .names = color_matrix_names, .n_names = std::size(color_matrix_names)},
+};
+
+void set_color_field(VmafColor *color, size_t field, unsigned val)
+{
+    switch (field) {
+    case 0:
+        color->range = static_cast<enum VmafColorRange>(val);
+        break;
+    case 1:
+        color->primaries = static_cast<enum VmafColorPrimaries>(val);
+        break;
+    case 2:
+        color->trc = static_cast<enum VmafColorTransferCharacteristic>(val);
+        break;
+    default:
+        color->matrix = static_cast<enum VmafColorMatrixCoefficients>(val);
+        break;
+    }
+}
+
+/* Returns 1 when the key names a colour attribute and its value was parsed
+ * into the colour, 0 for another key, or a negative errno. */
+int parse_colorspace_entry(json_stream *s, const char *key, VmafColor *color)
+{
+    for (size_t i = 0; i < std::size(color_fields); i++) {
+        if (strcmp(key, color_fields[i].key) != 0)
+            continue;
+        unsigned val = 0;
+        const int err = parse_color_name(s, color_fields[i].names, color_fields[i].n_names, &val);
+        if (err)
+            return err;
+        set_color_field(color, i, val);
+        return 1;
+    }
+    return 0;
+}
+
+int parse_colorspace(json_stream *s, VmafColor *color)
+{
+    while (json_peek(s) != JSON_OBJECT_END && !json_get_error(s)) {
+        if (json_next(s) != JSON_STRING)
+            return -EINVAL;
+        const char *key = json_get_string(s, nullptr);
+        const int r = parse_colorspace_entry(s, key, color);
+        if (r < 0)
+            return r;
+        if (r == 0)
+            json_skip(s);
+    }
+
+    /* a conversion target must pin down all four attributes */
+    if (color->range == VMAF_COLOR_RANGE_UNKNOWN ||
+        color->primaries == VMAF_COLOR_PRIMARIES_UNKNOWN || color->trc == VMAF_COLOR_TRC_UNKNOWN ||
+        color->matrix == VMAF_COLOR_MATRIX_UNKNOWN) {
+        return -EINVAL;
+    }
+    return 0;
+}
+
+int parse_conversion_target_pixel_format(json_stream *s, VmafModel *model)
+{
+    if (json_next(s) != JSON_STRING)
+        return -EINVAL;
+    const char *name = json_get_string(s, nullptr);
+    if (!strcmp(name, "420")) {
+        model->conversion_target.pix_fmt = VMAF_PIX_FMT_YUV420P;
+    } else if (!strcmp(name, "422")) {
+        model->conversion_target.pix_fmt = VMAF_PIX_FMT_YUV422P;
+    } else if (!strcmp(name, "444")) {
+        model->conversion_target.pix_fmt = VMAF_PIX_FMT_YUV444P;
+    } else {
+        return -EINVAL;
+    }
+    return 0;
+}
+
+int parse_conversion_target_bit_depth(json_stream *s, VmafModel *model)
+{
+    if (json_next(s) != JSON_NUMBER)
+        return -EINVAL;
+    const double bit_depth = json_get_number(s);
+    if (bit_depth < 8 || bit_depth > 16 ||
+        bit_depth != static_cast<double>(static_cast<unsigned>(bit_depth)))
+        return -EINVAL;
+    model->conversion_target.bpc = static_cast<unsigned>(bit_depth);
+    return 0;
+}
+
+int parse_conversion_target_colorspace(json_stream *s, VmafModel *model)
+{
+    if (json_next(s) != JSON_OBJECT)
+        return -EINVAL;
+    VmafColor color{};
+    const int err = parse_colorspace(s, &color);
+    if (err)
+        return err;
+    json_skip_until(s, JSON_OBJECT_END);
+    model->conversion_target.color = color;
+    return 0;
+}
+
+int parse_conversion_target_entry(json_stream *s, VmafModel *model, const char *key,
+                                  bool *have_colorspace)
+{
+    if (!strcmp(key, "colorspace")) {
+        *have_colorspace = true;
+        return parse_conversion_target_colorspace(s, model);
+    }
+    if (!strcmp(key, "pixel_format"))
+        return parse_conversion_target_pixel_format(s, model);
+    if (!strcmp(key, "bit_depth"))
+        return parse_conversion_target_bit_depth(s, model);
+    json_skip(s);
+    return 0;
+}
+
+int parse_conversion_target(json_stream *s, VmafModel *model)
+{
+    bool have_colorspace = false;
+    memset(&model->conversion_target, 0, sizeof(model->conversion_target));
+    while (json_peek(s) != JSON_OBJECT_END && !json_get_error(s)) {
+        if (json_next(s) != JSON_STRING)
+            return -EINVAL;
+        const char *key = json_get_string(s, nullptr);
+        const int err = parse_conversion_target_entry(s, model, key, &have_colorspace);
+        if (err)
+            return err;
+    }
+
+    if (!have_colorspace)
+        return -EINVAL;
+    model->conversion_target.enabled = true;
+    return 0;
+}
+
+int parse_model_dict_conversion_target(json_stream *s, VmafModel *model)
+{
+    if (json_next(s) != JSON_OBJECT)
+        return -EINVAL;
+    const int err = parse_conversion_target(s, model);
+    if (err)
+        return err;
+    json_skip_until(s, JSON_OBJECT_END);
+    return 0;
+}
+
 int parse_model_dict_entry(json_stream *s, VmafModel *model, enum VmafModelFlags flags,
                            const char *key)
 {
@@ -542,6 +748,8 @@ int parse_model_dict_entry(json_stream *s, VmafModel *model, enum VmafModelFlags
         return parse_model_dict_score_clip(s, model, flags);
     if (!strcmp(key, "chroma_correction_parameter"))
         return parse_model_dict_chroma_correction(s, model);
+    if (!strcmp(key, "conversion_target"))
+        return parse_model_dict_conversion_target(s, model);
 
     const int r = parse_model_dict_array_key(s, model, key);
     if (r <= 0)

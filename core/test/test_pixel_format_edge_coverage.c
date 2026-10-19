@@ -71,7 +71,7 @@ static void fill_pic_pattern_8(VmafPicture *pic)
         uint8_t *data = (uint8_t *)pic->data[p];
         if (!data)
             continue;
-        const unsigned stride = pic->stride[p];
+        const unsigned stride = (unsigned)pic->stride[p];
         for (unsigned i = 0; i < pic->h[p]; i++) {
             for (unsigned j = 0; j < pic->w[p]; j++) {
                 /* Cheap rolling pattern; identical for ref and dist so
@@ -92,7 +92,7 @@ static void fill_pic_pattern_hbd(VmafPicture *pic, unsigned bpc)
         uint16_t *data = (uint16_t *)pic->data[p];
         if (!data)
             continue;
-        const unsigned stride = pic->stride[p] / 2u;
+        const unsigned stride = (unsigned)(pic->stride[p] / 2u);
         for (unsigned i = 0; i < pic->h[p]; i++) {
             for (unsigned j = 0; j < pic->w[p]; j++) {
                 const uint16_t v = (uint16_t)((i * 7u + j * 13u + p * 53u) & 0xFFFFu);

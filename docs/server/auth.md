@@ -533,22 +533,11 @@ production.
 The controller has no CLI flags beyond `--version`; all configuration is
 environment-only (ADR-1119).
 
-| Env var | Default | Description |
-| --- | --- | --- |
-| `VMAFX_AUTH_DISABLED` | `false` | Bypass all auth checks. |
-| `VMAFX_JWKS_ENDPOINT` | — | JWKS endpoint URL (one identity provider). |
-| `VMAFX_AUTH_ISSUER` | — | Expected `iss` claim value (one identity provider). |
-| `VMAFX_AUTH_AUDIENCE` | — | Expected `aud` claim value (one identity provider). |
-| `VMAFX_AUTH_TENANT_CLAIM` | `tid` | Tenant claim field name (one identity provider). |
-| `VMAFX_AUTH_ROLES_CLAIM` | `vmafx_roles` | Roles claim field name (one identity provider). |
-| `VMAFX_AUTH_TENANTS_SOURCE` | — | `kubernetes` or `file`: use a [tenant registry](#tenant-registry) instead of one identity provider. |
-| `VMAFX_AUTH_TENANTS_FILE` | — | Tenant file (`VMAFX_AUTH_TENANTS_SOURCE=file`). |
-| `VMAFX_AUTH_TENANTS_NAMESPACE` | pod namespace | Namespace of the `VmafxTenant` resources (`VMAFX_AUTH_TENANTS_SOURCE=kubernetes`). |
-| `VMAFX_AUTH_TENANTS_REFRESH` | `30s` | Re-read interval of the tenant source (`1s` to `1h`); the set is refused after ten intervals without a successful read. |
-| `VMAFX_SCORING_ROOTS` | — | [Scoring roots](#scoring-roots) of every caller without a tenant registry; `{tenant}` becomes the caller's tenant ID. Unset: every input is refused. |
-
-The listen addresses and the other controller settings are in
-[controller.md](controller.md#configuration).
+The auth variables (`VMAFX_AUTH_*`, `VMAFX_JWKS_ENDPOINT`, `VMAFX_SCORING_ROOTS`)
+are rows of the controller's generated
+[environment table](controller.md#configuration), with their keys, defaults
+and the chart values that set them; the sections above explain how they
+combine.
 
 ---
 

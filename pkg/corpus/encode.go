@@ -211,7 +211,7 @@ func BuildPass1StatsCommand(req EncodeRequest, statsPrefix, ffmpegBin string) []
 	cmd = append(cmd, "-c:v", req.Encoder, "-preset", req.Preset, "-crf", strconv.Itoa(req.CRF))
 	cmd = append(cmd, req.ExtraParams...)
 	cmd = append(cmd, "-pass", "1", "-passlogfile", statsPrefix, "-f", "null", os.DevNull)
-	return cmd
+	return ffencode.MergeCodecParams(cmd)
 }
 
 // statsFileFor is the path FFmpeg writes the stats file to under -passlogfile:

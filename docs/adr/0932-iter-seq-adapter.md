@@ -96,3 +96,13 @@ over the underlying slice (or map) and call `yield`, honouring the
   `cloud` / `hull` / `samples` JSON fields stay as slices.
 - ADR-0713 (vmafx-node Go worker binary) — context for the
   `pkg/ai.Registry` surface being a hot loop on the worker.
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 95: `- ADR-0705 (JSON schema-forward invariant) — explains why
+  the cloud / hull / samples JSON fields stay as slice`: Cites ADR-0705 for
+  the cloud/hull/samples JSON fields; ADR-0705 is Stage 1 compare. Those
+  fields belong to pkg/ladder from Stage 2 (ADR-0730).

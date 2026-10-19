@@ -22,10 +22,15 @@
 
 #if defined(_MSC_VER)
 #define FORCE_INLINE __forceinline
-#define UNUSED_FUNCTION /**/
 #else
 #define FORCE_INLINE __attribute__((always_inline)) inline
+#endif
+/* clang-cl and icx-cl define _MSC_VER but are Clang: they take the GNU attribute and,
+ * without it, report the function under -Wunused-function. cl.exe has no such warning. */
+#if defined(__GNUC__) || defined(__clang__)
 #define UNUSED_FUNCTION __attribute__((unused))
+#else
+#define UNUSED_FUNCTION /**/
 #endif
 #define RESTRICT __restrict
 

@@ -23,6 +23,7 @@
 
 #ifndef LIBVMAF_TEST_FLOAT_MOMENT_SUM_MODEL_H_
 #define LIBVMAF_TEST_FLOAT_MOMENT_SUM_MODEL_H_
+#include "float_bits.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
@@ -214,13 +215,13 @@ static unsigned case_mismatches(const FloatMomentTwinCase *c, MomentModel *m)
     for (unsigned wrong = 0; wrong <= WRONG_PLAN_KINDS; wrong++) {
         const uint64_t sum = model_sum(&pic, wrong, m);
         exact = wrong == 0u ? model_exact(m) : exact;
-        if (moment_of(sum, &pic) != cpu) {
+        if (!vmaf_test_identical_f64(moment_of(sum, &pic), cpu)) {
             bad++;
             (void)fprintf(stderr, "\n%s (wrong plans %u): model %.17g, CPU %.17g", c->name, wrong,
                           moment_of(sum, &pic), cpu);
         }
     }
-    if ((moment_of(exact, &pic) != cpu) != c->rounds) {
+    if ((!vmaf_test_identical_f64(moment_of(exact, &pic), cpu)) != c->rounds) {
         bad++;
         (void)fprintf(stderr, "\n%s: the exact sum %s the CPU's", c->name,
                       c->rounds ? "equals" : "differs from");

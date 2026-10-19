@@ -88,3 +88,13 @@ All three exception classes are added to `python/vmaf/tools/exceptions.py`.
 - `python/vmaf/core/train_test_model.py` (P0-2 fix)
 - `python/vmaf/core/local_explainer.py` (P0-3 fix)
 - `python/test/test_adr0620_scaffold_audit_p0.py` (16 regression tests)
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 90: `- python/test/test_adr0620_scaffold_audit_p0.py (16
+  regression tests)`: Path `python/test/test_adr0620_scaffold_audit_p0.py`
+  does not exist on master (actual path on master is
+  `python/test/adr0620_scaffold_audit_p0_test.py`).

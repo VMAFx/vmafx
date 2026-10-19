@@ -20,7 +20,7 @@ requires-python = ">=3.14"
 [project.urls]
 Homepage = "https://github.com/VMAFx/vmafx"
 Repository = "https://github.com/VMAFx/vmafx"
-Documentation = "https://vmafx.github.io/vmafx/"
+Documentation = "https://vmafx.dev/"
 Issues = "https://github.com/VMAFx/vmafx/issues"
 Changelog = "https://github.com/VMAFx/vmafx/blob/master/CHANGELOG.md"
 
@@ -34,21 +34,25 @@ extend-exclude = '''
   | build
   | dist
   | subprojects
-  | python/test/resource
-  | compat/python-vmaf/resource
-  | compat/python-vmaf/matlab
 )/
+  | \.config/hiss/testdata/HISS-02/python/positive/spaced-while-true\.py
 '''
 
 [tool.ruff]
 line-length = 100
 target-version = "py310"
+# Every Python file is read. The files below are the declared exceptions of
+# .config/lint-exceptions.d/ruff.toml (a reason and an expiry each); keep the two in step
+# (scripts/ci/tests/test_python_format_scope.py).
 extend-exclude = [
   "build",
   "subprojects",
-  "python/test/resource",
-  "compat/python-vmaf/resource",
-  "compat/python-vmaf/matlab",
+  ".config/lint-exceptions.d",
+  ".config/hiss/testdata/HISS-04/python/gap/cyclomatic-high.py",
+  ".config/hiss/testdata/HISS-04/python/negative/loc-at-cap-60.py",
+  ".config/hiss/testdata/HISS-04/python/positive/loc-def-over-cap.py",
+  ".config/hiss/testdata/HISS-08/python/positive/eval-call.py",
+  "tools/figures/mkdocs_hook.py",
 ]
 
 [tool.ruff.lint]
@@ -106,6 +110,9 @@ ignore = [
 # made to agree (per-member trailing comments and alias ordering), which
 # deadlocked `pre-commit run --all-files`. aiutils lives in ai/src/ (#908).
 known-first-party = ["vmaf", "ai", "vmaf_train", "corpus", "aiutils"]
+# packaging/ at the root holds the distribution manifest (ADR-3317), not a
+# Python package; without this, ruff reads `packaging` (PyPA) as first-party.
+known-third-party = ["packaging"]
 
 [tool.ruff.lint.per-file-ignores]
 # Upstream Netflix Python is not our style canon. Keep F821 (undefined

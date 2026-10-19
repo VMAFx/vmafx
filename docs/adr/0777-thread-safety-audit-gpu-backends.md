@@ -1,11 +1,9 @@
 <!-- Copyright 2026 Lusoris — BSD-3-Clause-Plus-Patent -->
 # ADR-0777: Thread-Safety Audit — CUDA / SYCL / HIP Backends
 
-| Field | Value |
-| ----------- | ----------------------------------------------- |
-| Status | Accepted |
-| Date | 2026-05-29 |
-| Tags | cuda, sycl, hip, thread-safety, audit, research, fork-local |
+- **Status**: Accepted
+- **Date**: 2026-05-29
+- **Tags**: cuda, sycl, hip, thread-safety, audit, research, fork-local
 
 ---
 

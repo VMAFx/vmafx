@@ -100,7 +100,8 @@ int  vmaf_cuda_kernel_readback_free(VmafCudaKernelReadback *,
   function handle).
 - The `cuModuleLoadData` / `cuModuleGetFunction` chain — kernel binary names
   and symbol counts vary per metric.
-- The host-side reduction and score emission. PSNR's `10 * log10(peak² / mse)`
+- The host-side reduction and score emission. PSNR's
+  $10 \log_{10}(\mathrm{peak}^2 / \mathrm{mse})$
   is one line; `ssimulacra2` has a 6-band pyramid pool. Neither belongs in a
   shared header.
 

@@ -1,0 +1,18 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
+# Declared exceptions to the msvcism stage's POSIX-only header check of
+# scripts/dev/preflight.sh (scripts/dev/find-posix-only-headers.py). Format and
+# rules: scripts/ci/lint_exceptions.py. A source the Windows build compiles
+# includes such a header only under a platform conditional; a file no
+# meson.build builds, and that is POSIX-only by design, is named here.
+
+[[exception]]
+path = "compat/python-vmaf/matlab/strred/matlabPyrTools/MEX/innerProd.c"
+reason = "Vendored MATLAB MEX source of matlabPyrTools, built by MATLAB's mex on a POSIX host for the STRRED reference and by no meson.build; its <strings.h> is the upstream file's. Renew while the MATLAB tree stays vendored as is."
+expires = 2027-06-30
+
+[[exception]]
+path = "ffmpeg-patches/test/fault_inject_libvmaf.c"
+reason = "LD_PRELOAD fault-injection shim of the FFmpeg patch tests (dlsym(RTLD_NEXT) over libvmaf): a Linux-only mechanism, compiled by ffmpeg-patches/test/check-sycl-import-retry.sh and check-libvmaf-no-score-after-error.sh, not by meson and not on Windows. Renew while the patch tests inject faults through the dynamic loader."
+expires = 2027-06-30

@@ -1,0 +1,50 @@
+# SPDX-License-Identifier: EUPL-1.2
+# Copyright 2026 Lusoris
+#
+# docker/Dockerfile.e2e-driver — the controller failover scenario of the
+# Kubernetes E2E suite (test/e2e/controller-ha/driver, ADR-2350).
+#
+# A test image: the E2E workflow builds it, loads it into the kind cluster
+# and runs it as a Job next to the chart. It is never pushed or published,
+# so it carries no licence notices or source export (those belong to the
+# published images, ADR-1503).
+#
+# Stages:
+#   go-builder : compiles the driver with ${RELEASE_GO_BASE} (pure Go)
+#   driver     : ${RELEASE_RUNTIME_STATIC} runtime with the binary only
+#
+# Build:
+#   docker build -f docker/Dockerfile.e2e-driver \
+#     -t ghcr.io/vmafx/vmafx-e2e-driver:e2e-test .
+
+# Base images come from build-config.env -- the single source of truth for
+# every container base in this repository. These defaults are mirrors kept in
+# sync by scripts/ci/check-base-image-single-source.sh; edit the config, not
+# these lines, then run that script with --write.
+ARG RELEASE_GO_BASE="golang:1.27-trixie@sha256:47667934874913a449b96faa7ef4777fa285d9ec29126ee80ed61c45b7cccf0e"
+ARG RELEASE_RUNTIME_STATIC="gcr.io/distroless/static-debian13:nonroot@sha256:e2e927ec666bae08560abb3c55d0659eceabb657f56b6782ab500a9fc7f555e3"
+
+FROM ${RELEASE_GO_BASE} AS go-builder
+
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY gen/ gen/
+COPY test/e2e/controller-ha/driver/ test/e2e/controller-ha/driver/
+RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" \
+        -o /out/vmafx-e2e-driver ./test/e2e/controller-ha/driver
+
+FROM ${RELEASE_RUNTIME_STATIC} AS driver
+
+LABEL org.opencontainers.image.title="vmafx-e2e-driver"
+LABEL org.opencontainers.image.description="VMAFx E2E test driver: controller failover scenario on kind. Test image, not published."
+LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
+LABEL org.opencontainers.image.licenses="EUPL-1.2"
+LABEL org.opencontainers.image.vendor="Lusoris"
+
+COPY --from=go-builder /out/vmafx-e2e-driver /usr/local/bin/vmafx-e2e-driver
+
+EXPOSE 8080
+USER 65532:65532
+ENTRYPOINT ["/usr/local/bin/vmafx-e2e-driver"]

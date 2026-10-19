@@ -15,15 +15,15 @@ invariant: reads_shared_luma_only() true only if submit() reads no picture for t
 <!-- markdownlint-disable MD013 MD060 -->
 # Zero-copy admission hook
 
-- **`reads_shared_luma_only()` tells the truth** ([ADR-1688](../../../../docs/adr/1688-sycl-zero-copy-luma-only-admission.md)).
-  `vmaf_read_pictures_sycl()` passes no picture and has luma only on the
-  device; it admits an extractor only when the hook answers true for the
+- **`reads_shared_luma_only()` tells truth** ([ADR-1688](../../../../docs/adr/1688-sycl-zero-copy-luma-only-admission.md)).
+  `vmaf_read_pictures_sycl()` passes no picture and has luma only on
+  device; it admits extractor only when hook answers true for
   parsed options. Hook today: `adm_sycl`, `vif_sycl`, `motion_v2_sycl`,
   `cambi_sycl`, `float_moment_sycl` always true; `motion_sycl` =
   `!motion_add_uv`; `psnr_sycl` / `psnr_hvs_sycl` = `!enable_chroma`. Every
-  other SYCL twin has no hook (refused). **On rebase / change**: a twin whose
+  other SYCL twin has no hook (refused). **On rebase / change**: twin whose
   `submit()` starts reading `ref_pic` / `dist_pic` (host copy of luma, chroma)
-  narrows or drops its hook in the same PR; a twin moved onto the shared luma
+  narrows or drops its hook in same PR; twin moved onto shared luma
   may add one. Designated initializer goes after `.provided_features`, before
   `.chars` / `.context_check` (C++ declaration order). Guards:
   `test_sycl_zero_copy_admission` (every SYCL extractor's answer, device-free),

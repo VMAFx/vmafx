@@ -27,7 +27,7 @@ func TestCancelledAmong(t *testing.T) {
 	}
 	first, second, pending, rival := submit("acme"), submit("acme"), submit("acme"), submit("rival")
 	for _, id := range []string{first, second, rival} {
-		if err := q.Cancel(ctx, id); err != nil {
+		if _, err := q.Cancel(ctx, id); err != nil {
 			t.Fatalf("Cancel %s: %v", id, err)
 		}
 	}

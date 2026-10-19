@@ -38,7 +38,7 @@ Test PR body for the validator harness.
 - [x] **`AGENTS.md` invariant note** — added.
 - [x] **Reproducer / smoke-test command** — pasted below.
 - [x] **CHANGELOG fragment** — `changelog.d/added/foo.md`.
-- [x] **Rebase note** — `docs/rebase-notes.md`.
+- [x] **Rebase note** — `docs/rebase-notes.d/foo.md`.
 
 ### Reproducer
 
@@ -72,7 +72,7 @@ expect_exit() {
 canonical_body >"${work}/case1.body"
 {
   echo "docs/research/0001-foo.md"
-  echo "docs/rebase-notes.md"
+  echo "docs/rebase-notes.d/foo.md"
   echo "changelog.d/added/foo.md"
   echo "src/foo.c"
 } >"${work}/case1.diff"
@@ -81,7 +81,7 @@ expect_exit "ticked + files present in diff" 0 "${work}/case1.body" "${work}/cas
 # ---------- Case 2: ticked Research digest BUT no docs/research/* in diff -> fail ----------
 canonical_body >"${work}/case2.body"
 {
-  echo "docs/rebase-notes.md"
+  echo "docs/rebase-notes.d/foo.md"
   echo "changelog.d/added/foo.md"
   echo "src/foo.c"
 } >"${work}/case2.diff"
@@ -96,11 +96,11 @@ cat >"${work}/case3.body" <<'EOF'
 3. **`AGENTS.md` invariant note** — added.
 4. **Reproducer / smoke-test command** — pasted below.
 5. **CHANGELOG fragment** — `changelog.d/added/foo.md`.
-6. **Rebase note** — `docs/rebase-notes.md`.
+6. **Rebase note** — `docs/rebase-notes.d/foo.md`.
 EOF
 {
   echo "docs/research/0001-foo.md"
-  echo "docs/rebase-notes.md"
+  echo "docs/rebase-notes.d/foo.md"
   echo "changelog.d/added/foo.md"
 } >"${work}/case3.diff"
 expect_exit "numbered-list shape (no - [x])" 1 "${work}/case3.body" "${work}/case3.diff"
@@ -132,13 +132,13 @@ cat >"${work}/case5.body" <<'EOF'
 - [x] **`AGENTS.md` invariant note** — added.
 - [x] **Reproducer / smoke-test command** — below.
 - [x] **CHANGELOG fragment** — `changelog.d/added/foo.md`.
-- [x] **Rebase note** — `docs/rebase-notes.md`.
+- [x] **Rebase note** — `docs/rebase-notes.d/foo.md`.
 
 no rebase impact: still ticked, parser accepts the tick.
 EOF
 {
   echo "docs/research/0001-foo.md"
-  echo "docs/rebase-notes.md"
+  echo "docs/rebase-notes.d/foo.md"
   echo "changelog.d/added/foo.md"
 } >"${work}/case5.diff"
 expect_exit "sentinel + ticked (parser-permissive)" 0 "${work}/case5.body" "${work}/case5.diff"
@@ -161,19 +161,45 @@ expect_exit "all six opted-out via sentinels" 0 "${work}/case6.body" "${work}/ca
 canonical_body >"${work}/case7.body"
 {
   echo "docs/research/0001-foo.md"
-  echo "docs/rebase-notes.md"
+  echo "docs/rebase-notes.d/foo.md"
   # no changelog.d/* file
   echo "src/foo.c"
 } >"${work}/case7.diff"
 expect_exit "ticked CHANGELOG, no fragment in diff" 1 "${work}/case7.body" "${work}/case7.diff"
 
-# ---------- Case 8: ticked Rebase note without docs/rebase-notes.md in diff -> fail ----------
+# ---------- Case 8: ticked Rebase note without a docs/rebase-notes.d fragment in diff -> fail ----------
 canonical_body >"${work}/case8.body"
 {
   echo "docs/research/0001-foo.md"
   echo "changelog.d/added/foo.md"
 } >"${work}/case8.diff"
-expect_exit "ticked Rebase note, no rebase-notes.md in diff" 1 "${work}/case8.body" "${work}/case8.diff"
+expect_exit "ticked Rebase note, no rebase-notes.d fragment in diff" 1 "${work}/case8.body" "${work}/case8.diff"
+
+# ---------- Case 8b-8f: a pull request does not carry a rendered file (ADR-2197) ----------
+# Planted defect: each rendered output in the diff must be refused, even with
+# every deliverable ticked and every fragment present. The control case (only
+# fragments) passes, so the refusal is the rendered path and nothing else.
+for rendered in CHANGELOG.md docs/adr/README.md docs/adr/titles.md docs/adr/by-tag/ci.md \
+  docs/adr/_index_fragments/_order.txt docs/rebase-notes.md; do
+  slug="$(printf '%s' "${rendered}" | tr '/.' '__')"
+  canonical_body >"${work}/render-${slug}.body"
+  {
+    echo "docs/research/0001-foo.md"
+    echo "changelog.d/added/foo.md"
+    echo "docs/rebase-notes.d/foo.md"
+    echo "${rendered}"
+  } >"${work}/render-${slug}.diff"
+  expect_exit "a PR that edits ${rendered} is refused" 1 \
+    "${work}/render-${slug}.body" "${work}/render-${slug}.diff"
+done
+canonical_body >"${work}/render-ok.body"
+{
+  echo "docs/research/0001-foo.md"
+  echo "changelog.d/added/foo.md"
+  echo "docs/rebase-notes.d/foo.md"
+  echo "docs/adr/_index_fragments/2000-foo.md"
+} >"${work}/render-ok.diff"
+expect_exit "a fragment-only PR passes" 0 "${work}/render-ok.body" "${work}/render-ok.diff"
 
 # ---------- Case 9: an explicitly-supplied EMPTY body reports itself ----------
 # `[ ! -t 0 ]` is true in ANY non-interactive shell, pipe or not, so the stdin
@@ -233,6 +259,70 @@ else
   echo "FAIL: \$PR_BODY path gave exit=${exit11}, expected 1"
   fail_count=$((fail_count + 1))
 fi
+
+# ---------- Case 12: a render-only diff reaches make docs-render-check ----------
+# ADR-3295: a diff of rendered paths only is judged by running
+# make docs-render-check on a detached worktree of the head. The validator
+# passes a sentinel as the head, which names no commit; the checkout must
+# still get the commit the validator runs on, never stop at "cannot check out".
+# Match the error line itself: the rendered-diff output can quote the words.
+printf '%s\n' "CHANGELOG.md" "docs/adr/README.md" >"${work}/case12.diff"
+canonical_body >"${work}/case12.body"
+exit12=0
+out12="$("${validator}" --body "${work}/case12.body" --diff "${work}/case12.diff" 2>&1)" || exit12=$?
+if printf '%s\n' "${out12}" | grep -q '^::error title=ADR-3295 render-only pull request::cannot check out'; then
+  echo "FAIL: render-only diff stopped at the checkout (exit=${exit12})"
+  printf '%s\n' "${out12}"
+  fail_count=$((fail_count + 1))
+elif printf '%s\n' "${out12}" | grep -qE 'make docs-render-check passed|does not pass make docs-render-check'; then
+  echo "PASS: render-only diff ran make docs-render-check on the head (exit=${exit12})"
+  pass_count=$((pass_count + 1))
+else
+  echo "FAIL: render-only diff did not reach make docs-render-check (exit=${exit12})"
+  printf '%s\n' "${out12}"
+  fail_count=$((fail_count + 1))
+fi
+
+# ---------- Case 13: the render check ignores a hook's GIT_DIR ----------
+# A pre-push hook exports GIT_DIR for the checkout it runs in. Inherited by
+# the render check, it moved git's work-tree root for
+# scripts/docs/fragment-order.py and the ADR index rendered in another
+# landing order, so a correctly rendered head was refused. The fixture is a
+# commit of `make docs-render` on HEAD (plumbing only, no hooks run); the
+# validator must accept it with and without GIT_DIR.
+render_fixture="${work}/render-fixture"
+git worktree add --quiet --detach "${render_fixture}" HEAD
+trap 'git worktree remove --force "${render_fixture}" >/dev/null 2>&1 || true; rm -rf "${work}"' EXIT
+# The validator runs the deliverables check of the checkout it is called in:
+# give the fixture the scripts under test, not the ones HEAD committed.
+cp "${repo_root}/scripts/ci/validate-pr-body.sh" "${repo_root}/scripts/ci/deliverables-check.sh" \
+  "${render_fixture}/scripts/ci/"
+make -s -C "${render_fixture}" docs-render >/dev/null
+git -C "${render_fixture}" add -A
+fixture_tree="$(git -C "${render_fixture}" write-tree)"
+fixture_commit="$(GIT_AUTHOR_NAME=fixture GIT_AUTHOR_EMAIL=fixture@invalid \
+  GIT_COMMITTER_NAME=fixture GIT_COMMITTER_EMAIL=fixture@invalid \
+  git -C "${render_fixture}" commit-tree "${fixture_tree}" -p HEAD -m 'fixture: render')"
+git -C "${render_fixture}" checkout --quiet --detach "${fixture_commit}"
+fixture_git_dir="$(git -C "${render_fixture}" rev-parse --absolute-git-dir)"
+for git_dir_mode in unset hook; do
+  exit13=0
+  if [ "${git_dir_mode}" = hook ]; then
+    out13="$(cd "${render_fixture}" && GIT_DIR="${fixture_git_dir}" \
+      "${validator}" --body "${work}/case12.body" --diff "${work}/case12.diff" 2>&1)" || exit13=$?
+  else
+    out13="$(cd "${render_fixture}" &&
+      "${validator}" --body "${work}/case12.body" --diff "${work}/case12.diff" 2>&1)" || exit13=$?
+  fi
+  if [ "${exit13}" -eq 0 ] && printf '%s\n' "${out13}" | grep -q 'make docs-render-check passed'; then
+    echo "PASS: rendered head accepted with GIT_DIR ${git_dir_mode}"
+    pass_count=$((pass_count + 1))
+  else
+    echo "FAIL: rendered head refused with GIT_DIR ${git_dir_mode} (exit=${exit13})"
+    printf '%s\n' "${out13}" | tail -20
+    fail_count=$((fail_count + 1))
+  fi
+done
 
 # ---------- Summary ----------
 echo ""

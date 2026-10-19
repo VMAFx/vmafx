@@ -31,16 +31,17 @@
 [api]
 name = "vmafx"
 schema = 2
-abi_version = "0.1.6"
+abi_version = "0.1.11"
 export_macro = "VMAFX_EXPORT"
 # Export / deprecation macros, VmafxStatus and the status codes live here.
 base_header = "vmafx/types.h"
 # ABI version macros live here.
 version_header = "vmafx/version.h"
-# false while the vmafx_ functions share libvmaf.so with the libvmaf API: the
-# version script then versions vmafx_ symbols and leaves the rest alone. The
-# library split (ADR-1852 D3) sets it to true (`local: *;`).
-hide_unlisted = false
+# true since the library split (ADR-1852 D3, RC4 WP6): libvmafx.so.1 exports
+# the vmafx_ functions and nothing else (`local: *;`); the libvmaf functions
+# live in libvmaf.so.3, except a backend's declared engine exceptions, which
+# core/src/vmafx_legacy_<backend>.map exports in builds with that backend.
+hide_unlisted = true
 
 # Header layout of design section 2.10. `group`: `umbrella` includes every
 # `core` header; `optional` headers are never included by it. Each header
@@ -228,6 +229,13 @@ errno = "EINVAL"
 reverse = false
 doc = "A struct_size below the size the struct had when it was introduced; the error names the struct."
 
+[[status]]
+name = "VMAFX_E_MISMATCH"
+since = "0.1"
+value = -12
+errno = "EBADMSG"
+doc = "A report does not match its provenance digest or its re-run; the error's subject names the first field that differs and its message both values (vmafx_report_verify(), RC4 WP5). Added in ABI 0.1.5."
+
 # ---------------------------------------------------------------------------
 # Enumerations (values equal the libvmaf ones where libvmaf has the concept).
 
@@ -271,25 +279,25 @@ values = [
   { name = "VMAFX_PIXEL_FORMAT_NV12", value = 16, doc = "4:2:0, a luma plane and one plane of interleaved Cb/Cr bytes; vmafx_frame_import() only, the frame it makes is YUV420P at 8 bits. Added in ABI 0.1.2." },
   { name = "VMAFX_PIXEL_FORMAT_P010", value = 17, doc = "NV12 with 16-bit little-endian samples whose 10 bits are the most significant; vmafx_frame_import() only, the frame it makes is YUV420P at 10 bits (each sample shifted down by 6, ADR-1679). Added in ABI 0.1.2." },
   { name = "VMAFX_PIXEL_FORMAT_P016", value = 18, doc = "NV12 with 16-bit little-endian samples; vmafx_frame_import() only, the frame it makes is YUV420P at 16 bits. Added in ABI 0.1.2." },
-  { name = "VMAFX_PIXEL_FORMAT_NV16", value = 19, doc = "4:2:2, a luma plane and one plane of interleaved Cb/Cr bytes (a pair per chroma column, full-height rows); vmafx_frame_import() only, the frame it makes is YUV422P at 8 bits. Added in ABI 0.1.5." },
-  { name = "VMAFX_PIXEL_FORMAT_P210", value = 20, doc = "NV16 with 16-bit little-endian samples whose 10 bits are the most significant; vmafx_frame_import() only, the frame it makes is YUV422P at 10 bits (each sample shifted down by 6). Added in ABI 0.1.5." },
-  { name = "VMAFX_PIXEL_FORMAT_P216", value = 21, doc = "NV16 with 16-bit little-endian samples; vmafx_frame_import() only, the frame it makes is YUV422P at 16 bits. Added in ABI 0.1.5." },
-  { name = "VMAFX_PIXEL_FORMAT_NV24", value = 22, doc = "4:4:4, a luma plane and one plane of interleaved Cb/Cr bytes (a pair per pixel); vmafx_frame_import() only, the frame it makes is YUV444P at 8 bits. Added in ABI 0.1.5." },
-  { name = "VMAFX_PIXEL_FORMAT_P410", value = 23, doc = "NV24 with 16-bit little-endian samples whose 10 bits are the most significant; vmafx_frame_import() only, the frame it makes is YUV444P at 10 bits (each sample shifted down by 6). Added in ABI 0.1.5." },
-  { name = "VMAFX_PIXEL_FORMAT_P416", value = 24, doc = "NV24 with 16-bit little-endian samples; vmafx_frame_import() only, the frame it makes is YUV444P at 16 bits. Added in ABI 0.1.5." },
-  { name = "VMAFX_PIXEL_FORMAT_Y210", value = 25, doc = "Packed 4:2:2 in one plane: 16-bit little-endian words Y0 Cb Y1 Cr (8 bytes per two pixels) whose 10 bits are the most significant (Intel Y210, FFmpeg y210le); vmafx_frame_import() only, the frame it makes is YUV422P at 10 bits. Added in ABI 0.1.5." },
-  { name = "VMAFX_PIXEL_FORMAT_Y410", value = 26, doc = "Packed 4:4:4 in one plane: one 32-bit little-endian word per pixel, Cb in bits 0 to 9, Y in 10 to 19, Cr in 20 to 29, the top two bits alpha or unused (Intel Y410 and XV30, FFmpeg xv30le); vmafx_frame_import() only, the frame it makes is YUV444P at 10 bits. Added in ABI 0.1.5." },
-  { name = "VMAFX_PIXEL_FORMAT_YUYV422", value = 27, doc = "Packed 4:2:2 in one plane: the bytes Y0 Cb Y1 Cr per two pixels (YUY2, FFmpeg yuyv422); vmafx_frame_import() only, the frame it makes is YUV422P at 8 bits. Added in ABI 0.1.5." },
-  { name = "VMAFX_PIXEL_FORMAT_Y212", value = 28, doc = "Y210 with 12 significant bits (16-bit words, the 12 bits most significant; Intel Y212, FFmpeg y212le); vmafx_frame_import() only, the frame it makes is YUV422P at 12 bits. Added in ABI 0.1.5." },
-  { name = "VMAFX_PIXEL_FORMAT_VUYX", value = 29, doc = "Packed 4:4:4 in one plane: the bytes V Cb Y X per pixel (FFmpeg vuyx; the unused byte is not read); vmafx_frame_import() only, the frame it makes is YUV444P at 8 bits. Added in ABI 0.1.5." },
-  { name = "VMAFX_PIXEL_FORMAT_XV36", value = 30, doc = "Packed 4:4:4 in one plane: four 16-bit little-endian words Cb Y Cr X per pixel, the 12 bits most significant (Intel Y416 / XV36, FFmpeg xv36le); vmafx_frame_import() only, the frame it makes is YUV444P at 12 bits. Added in ABI 0.1.5." },
-  { name = "VMAFX_PIXEL_FORMAT_YUV444P_MSB", value = 31, doc = "Planar 4:4:4 in 16-bit little-endian words whose `bpc` most significant bits hold the sample (NVDEC's 10- and 12-bit 4:4:4 surfaces, FFmpeg yuv444p10msble and yuv444p12msble); bpc 9 to 16; vmafx_frame_import() only, the frame it makes is YUV444P at `bpc` bits (each sample shifted down by 16 - bpc). Added in ABI 0.1.5." },
-  { name = "VMAFX_PIXEL_FORMAT_AYUV", value = 32, doc = "Packed 4:4:4 in one plane: the bytes A Y Cb Cr per pixel (FFmpeg ayuv; the alpha byte is not read); vmafx_frame_import() only, the frame it makes is YUV444P at 8 bits. Added in ABI 0.1.6." },
-  { name = "VMAFX_PIXEL_FORMAT_UYVY422", value = 33, doc = "Packed 4:2:2 in one plane: the bytes Cb Y0 Cr Y1 per two pixels (UYVY, FFmpeg uyvy422); vmafx_frame_import() only, the frame it makes is YUV422P at 8 bits. Added in ABI 0.1.6." },
-  { name = "VMAFX_PIXEL_FORMAT_V210", value = 34, doc = "Packed 4:2:2 in one plane: 10-bit samples, six pixels in 16 bytes (four little-endian 32-bit words, three 10-bit samples each; the two top bits of a word are not read), rows padded as the producer likes; vmafx_frame_import() only, the frame it makes is YUV422P at 10 bits. Added in ABI 0.1.6." },
-  { name = "VMAFX_PIXEL_FORMAT_RGB", value = 35, doc = "Packed R'G'B' in one plane, three samples per pixel in the order R G B (FFmpeg rgb24 at 8 bits, rgb48le at 16; 9 to 15 bits are 16-bit words holding the sample in the low bits); vmafx_frame_import() only and only with `rgb_matrix`, `rgb_range`, `rgb_transfer` and `rgb_out_range` stated: the frame it makes is YUV444P Y'CbCr at the same depth (ADR-2146). Added in ABI 0.1.6." },
-  { name = "VMAFX_PIXEL_FORMAT_RGBA", value = 36, doc = "RGB with a fourth sample per pixel, the order R G B A (FFmpeg rgba, rgba64le); the alpha sample is not read; same statement as RGB. Added in ABI 0.1.6." },
-  { name = "VMAFX_PIXEL_FORMAT_BGRA", value = 37, doc = "RGB with a fourth sample per pixel, the order B G R A (FFmpeg bgra, bgra64le); the alpha sample is not read; same statement as RGB. Added in ABI 0.1.6." },
+  { name = "VMAFX_PIXEL_FORMAT_NV16", value = 19, doc = "4:2:2, a luma plane and one plane of interleaved Cb/Cr bytes (a pair per chroma column, full-height rows); vmafx_frame_import() only, the frame it makes is YUV422P at 8 bits. Added in ABI 0.1.9." },
+  { name = "VMAFX_PIXEL_FORMAT_P210", value = 20, doc = "NV16 with 16-bit little-endian samples whose 10 bits are the most significant; vmafx_frame_import() only, the frame it makes is YUV422P at 10 bits (each sample shifted down by 6). Added in ABI 0.1.9." },
+  { name = "VMAFX_PIXEL_FORMAT_P216", value = 21, doc = "NV16 with 16-bit little-endian samples; vmafx_frame_import() only, the frame it makes is YUV422P at 16 bits. Added in ABI 0.1.9." },
+  { name = "VMAFX_PIXEL_FORMAT_NV24", value = 22, doc = "4:4:4, a luma plane and one plane of interleaved Cb/Cr bytes (a pair per pixel); vmafx_frame_import() only, the frame it makes is YUV444P at 8 bits. Added in ABI 0.1.9." },
+  { name = "VMAFX_PIXEL_FORMAT_P410", value = 23, doc = "NV24 with 16-bit little-endian samples whose 10 bits are the most significant; vmafx_frame_import() only, the frame it makes is YUV444P at 10 bits (each sample shifted down by 6). Added in ABI 0.1.9." },
+  { name = "VMAFX_PIXEL_FORMAT_P416", value = 24, doc = "NV24 with 16-bit little-endian samples; vmafx_frame_import() only, the frame it makes is YUV444P at 16 bits. Added in ABI 0.1.9." },
+  { name = "VMAFX_PIXEL_FORMAT_Y210", value = 25, doc = "Packed 4:2:2 in one plane: 16-bit little-endian words Y0 Cb Y1 Cr (8 bytes per two pixels) whose 10 bits are the most significant (Intel Y210, FFmpeg y210le); vmafx_frame_import() only, the frame it makes is YUV422P at 10 bits. Added in ABI 0.1.9." },
+  { name = "VMAFX_PIXEL_FORMAT_Y410", value = 26, doc = "Packed 4:4:4 in one plane: one 32-bit little-endian word per pixel, Cb in bits 0 to 9, Y in 10 to 19, Cr in 20 to 29, the top two bits alpha or unused (Intel Y410 and XV30, FFmpeg xv30le); vmafx_frame_import() only, the frame it makes is YUV444P at 10 bits. Added in ABI 0.1.9." },
+  { name = "VMAFX_PIXEL_FORMAT_YUYV422", value = 27, doc = "Packed 4:2:2 in one plane: the bytes Y0 Cb Y1 Cr per two pixels (YUY2, FFmpeg yuyv422); vmafx_frame_import() only, the frame it makes is YUV422P at 8 bits. Added in ABI 0.1.9." },
+  { name = "VMAFX_PIXEL_FORMAT_Y212", value = 28, doc = "Y210 with 12 significant bits (16-bit words, the 12 bits most significant; Intel Y212, FFmpeg y212le); vmafx_frame_import() only, the frame it makes is YUV422P at 12 bits. Added in ABI 0.1.9." },
+  { name = "VMAFX_PIXEL_FORMAT_VUYX", value = 29, doc = "Packed 4:4:4 in one plane: the bytes V Cb Y X per pixel (FFmpeg vuyx; the unused byte is not read); vmafx_frame_import() only, the frame it makes is YUV444P at 8 bits. Added in ABI 0.1.9." },
+  { name = "VMAFX_PIXEL_FORMAT_XV36", value = 30, doc = "Packed 4:4:4 in one plane: four 16-bit little-endian words Cb Y Cr X per pixel, the 12 bits most significant (Intel Y416 / XV36, FFmpeg xv36le); vmafx_frame_import() only, the frame it makes is YUV444P at 12 bits. Added in ABI 0.1.9." },
+  { name = "VMAFX_PIXEL_FORMAT_YUV444P_MSB", value = 31, doc = "Planar 4:4:4 in 16-bit little-endian words whose `bpc` most significant bits hold the sample (NVDEC's 10- and 12-bit 4:4:4 surfaces, FFmpeg yuv444p10msble and yuv444p12msble); bpc 9 to 16; vmafx_frame_import() only, the frame it makes is YUV444P at `bpc` bits (each sample shifted down by 16 - bpc). Added in ABI 0.1.9." },
+  { name = "VMAFX_PIXEL_FORMAT_AYUV", value = 32, doc = "Packed 4:4:4 in one plane: the bytes A Y Cb Cr per pixel (FFmpeg ayuv; the alpha byte is not read); vmafx_frame_import() only, the frame it makes is YUV444P at 8 bits. Added in ABI 0.1.11." },
+  { name = "VMAFX_PIXEL_FORMAT_UYVY422", value = 33, doc = "Packed 4:2:2 in one plane: the bytes Cb Y0 Cr Y1 per two pixels (UYVY, FFmpeg uyvy422); vmafx_frame_import() only, the frame it makes is YUV422P at 8 bits. Added in ABI 0.1.11." },
+  { name = "VMAFX_PIXEL_FORMAT_V210", value = 34, doc = "Packed 4:2:2 in one plane: 10-bit samples, six pixels in 16 bytes (four little-endian 32-bit words, three 10-bit samples each; the two top bits of a word are not read), rows padded as the producer likes; vmafx_frame_import() only, the frame it makes is YUV422P at 10 bits. Added in ABI 0.1.11." },
+  { name = "VMAFX_PIXEL_FORMAT_RGB", value = 35, doc = "Packed R'G'B' in one plane, three samples per pixel in the order R G B (FFmpeg rgb24 at 8 bits, rgb48le at 16; 9 to 15 bits are 16-bit words holding the sample in the low bits); vmafx_frame_import() only and only with `rgb_matrix`, `rgb_range`, `rgb_transfer` and `rgb_out_range` stated: the frame it makes is YUV444P Y'CbCr at the same depth (ADR-2146). Added in ABI 0.1.11." },
+  { name = "VMAFX_PIXEL_FORMAT_RGBA", value = 36, doc = "RGB with a fourth sample per pixel, the order R G B A (FFmpeg rgba, rgba64le); the alpha sample is not read; same statement as RGB. Added in ABI 0.1.11." },
+  { name = "VMAFX_PIXEL_FORMAT_BGRA", value = 37, doc = "RGB with a fourth sample per pixel, the order B G R A (FFmpeg bgra, bgra64le); the alpha sample is not read; same statement as RGB. Added in ABI 0.1.11." },
 ]
 
 [[enums]]
@@ -348,45 +356,6 @@ bits = [
 # fences.
 
 [[enums]]
-name = "VmafxColorMatrix"
-header = "vmafx/types.h"
-since = "0.1"
-doc = "The Y'CbCr matrix an RGB frame is converted with (ADR-2146). Only the matrices the library converts exactly are accepted; the others are declared so a caller's value is refused by name. Added in ABI 0.1.6."
-values = [
-  { name = "VMAFX_COLOR_MATRIX_UNSPECIFIED", value = 0, doc = "Not stated; an RGB frame with it is refused: the matrix is never guessed." },
-  { name = "VMAFX_COLOR_MATRIX_BT601", value = 1, doc = "ITU-R BT.601 (Kr 0.299, Kb 0.114; H.273 matrix coefficients 5 and 6)." },
-  { name = "VMAFX_COLOR_MATRIX_BT709", value = 2, doc = "ITU-R BT.709 (Kr 0.2126, Kb 0.0722; H.273 1)." },
-  { name = "VMAFX_COLOR_MATRIX_BT2020_NCL", value = 3, doc = "ITU-R BT.2020 non-constant luminance (Kr 0.2627, Kb 0.0593; H.273 9)." },
-  { name = "VMAFX_COLOR_MATRIX_BT2020_CL", value = 4, doc = "ITU-R BT.2020 constant luminance (H.273 10): declared, refused with VMAFX_E_NOTSUP (its luma is formed in linear light, which the integer reference does not do)." },
-  { name = "VMAFX_COLOR_MATRIX_ICTCP", value = 5, doc = "ICtCp (H.273 14): declared, refused with VMAFX_E_NOTSUP (it needs the PQ or HLG transfer function in the conversion)." },
-]
-
-[[enums]]
-name = "VmafxColorRange"
-header = "vmafx/types.h"
-since = "0.1"
-doc = "Code-value range of the samples of a signal (ADR-2146). Added in ABI 0.1.6."
-values = [
-  { name = "VMAFX_COLOR_RANGE_UNSPECIFIED", value = 0, doc = "Not stated; an RGB frame with it is refused." },
-  { name = "VMAFX_COLOR_RANGE_LIMITED", value = 1, doc = "Studio swing: 16 to 235 for R'G'B' and luma, 16 to 240 for chroma, scaled by 2^(bpc - 8)." },
-  { name = "VMAFX_COLOR_RANGE_FULL", value = 2, doc = "Full swing: 0 to 2^bpc - 1." },
-]
-
-[[enums]]
-name = "VmafxColorTransfer"
-header = "vmafx/types.h"
-since = "0.1"
-doc = "Transfer characteristic of the non-linear R'G'B' samples of an RGB frame (ADR-2146). The conversion applies the matrix to the code values as an encoder does; the transfer is part of the statement of what the signal is and is checked, not applied. Added in ABI 0.1.6."
-values = [
-  { name = "VMAFX_COLOR_TRANSFER_UNSPECIFIED", value = 0, doc = "Not stated; an RGB frame with it is refused." },
-  { name = "VMAFX_COLOR_TRANSFER_BT709", value = 1, doc = "ITU-R BT.709 (also BT.601 and BT.2020 SDR)." },
-  { name = "VMAFX_COLOR_TRANSFER_SRGB", value = 2, doc = "IEC 61966-2-1 (sRGB)." },
-  { name = "VMAFX_COLOR_TRANSFER_SMPTE2084", value = 3, doc = "SMPTE ST 2084 (PQ)." },
-  { name = "VMAFX_COLOR_TRANSFER_HLG", value = 4, doc = "ARIB STD-B67 (HLG)." },
-  { name = "VMAFX_COLOR_TRANSFER_LINEAR", value = 5, doc = "Linear light: declared, refused with VMAFX_E_NOTSUP (the matrix applies to non-linear signals; encode the samples first)." },
-]
-
-[[enums]]
 name = "VmafxMemoryKind"
 header = "vmafx/frame.h"
 since = "0.1"
@@ -400,7 +369,8 @@ values = [
   { name = "VMAFX_MEMORY_METAL_SURFACE", value = 5, doc = "A shared surface: `handle` is the surface, `plane_index` its plane." },
   { name = "VMAFX_MEMORY_METAL_TEXTURE", value = 6, doc = "A Metal texture per plane: `handle` is the texture." },
   { name = "VMAFX_MEMORY_WIN32_SHARED", value = 7, doc = "A Windows shared texture: `handle` is the shared NT handle, `plane_index` its plane." },
-  { name = "VMAFX_MEMORY_GL_TEXTURE", value = 8, doc = "An OpenGL 2D texture (`GL_TEXTURE_2D`) of the GL context current on the calling thread: `handle` is the texture name, one texture per plane (NV12: an R8 luma and an RG8 chroma texture). Imported on a device of a backend with GL interop (CUDA; HIP from a GLX context of the device's GPU). Added in ABI 0.1.4." },
+  { name = "VMAFX_MEMORY_GL_TEXTURE", value = 8, doc = "An OpenGL 2D texture (`GL_TEXTURE_2D`) of the GL context current on the calling thread: `handle` is the texture name, one texture per plane (NV12: an R8 luma and an RG8 chroma texture). Imported on a device of a backend with GL interop (CUDA; HIP through EGL dma-buf export from an EGL context of the device's GPU, ADR-2132; SYCL through an EGL dma-buf export of each texture, Linux). Added in ABI 0.1.7." },
+  { name = "VMAFX_MEMORY_VULKAN", value = 9, doc = "Vulkan device memory a Vulkan producer exported, one VkDeviceMemory per plane or shared by several (an AVVkFrame, a GStreamer Vulkan image memory): `fd` is the plane's memory exported as VmafxFrameImport.vulkan_handle_type says (Linux; the library duplicates it, yours stays open and yours), `handle` the exported Windows handle; `size` the allocation's size (required), `offset` the plane's first byte in it (the image's bind offset plus its plane's offset), `pitch` its row pitch (LINEAR and DRM_FORMAT_MODIFIER tiling, from vkGetImageSubresourceLayout(); 0 for OPTIMAL), `modifier` its DRM format modifier (DRM_FORMAT_MODIFIER tiling), `plane_index` the plane of a multi-plane image (0 for an image or buffer per plane). The images are in VK_IMAGE_LAYOUT_GENERAL and released to VK_QUEUE_FAMILY_EXTERNAL. Added in ABI 0.1.10." },
 ]
 
 [[enums]]
@@ -417,7 +387,8 @@ values = [
   { name = "VMAFX_FENCE_SYNC_FILE", value = 5, doc = "A Linux sync_file descriptor (`fd`), borrowed: an acquire fence a device without a kernel-scheduled queue checks on the host (HIP)." },
   { name = "VMAFX_FENCE_METAL_SHARED_EVENT", value = 6, doc = "A Metal shared event (`handle`) and the value it reaches when signalled (`value`)." },
   { name = "VMAFX_FENCE_WIN32_SHARED", value = 7, doc = "A Windows shared fence (`handle`, an NT handle) and the value it reaches when signalled (`value`)." },
-  { name = "VMAFX_FENCE_GL_SYNC", value = 8, doc = "An OpenGL sync object (`handle`, a `GLsync`) of the GL context current on the calling thread, or of a context sharing objects with it; an acquire fence of VMAFX_MEMORY_GL_TEXTURE imports. Added in ABI 0.1.4." },
+  { name = "VMAFX_FENCE_GL_SYNC", value = 8, doc = "An OpenGL sync object (`handle`, a `GLsync`) of the GL context current on the calling thread, or of a context sharing objects with it; an acquire fence of VMAFX_MEMORY_GL_TEXTURE imports. Added in ABI 0.1.7." },
+  { name = "VMAFX_FENCE_VULKAN_SEMAPHORE", value = 9, doc = "A Vulkan timeline semaphore exported as VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT (`fd`, borrowed: the library duplicates it) or OPAQUE_WIN32 (`handle`), and a value of it (`value`). As an acquire fence the device waits, on the device, for the semaphore to reach `value`; given to vmafx_frame_signal_on_release() the device signals it to `value` behind the frame's last reader. A device that cannot import it refuses it naming the kind; the library never returns one. Added in ABI 0.1.10." },
 ]
 
 [[flags]]
@@ -430,6 +401,40 @@ bits = [
   { name = "VMAFX_IMPORT_ALLOW_COPY", bit = 0, doc = "A layout the device cannot bind may be copied on the device; the copy is logged once per context. Never a host copy of device memory." },
 ]
 
+[[enums]]
+name = "VmafxVulkanHandleType"
+header = "vmafx/frame.h"
+since = "0.1"
+doc = "How the memory of a VMAFX_MEMORY_VULKAN import was exported (values equal VkExternalMemoryHandleTypeFlagBits). Added in ABI 0.1.10."
+values = [
+  { name = "VMAFX_VULKAN_HANDLE_NONE", value = 0, doc = "Not set; refused for VULKAN memory." },
+  { name = "VMAFX_VULKAN_HANDLE_OPAQUE_FD", value = 1, doc = "VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT: a descriptor only the producer's driver interprets (`fd`)." },
+  { name = "VMAFX_VULKAN_HANDLE_OPAQUE_WIN32", value = 2, doc = "VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_BIT: an NT handle (`handle`)." },
+  { name = "VMAFX_VULKAN_HANDLE_OPAQUE_WIN32_KMT", value = 4, doc = "VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_KMT_BIT: a global share handle (`handle`)." },
+  { name = "VMAFX_VULKAN_HANDLE_DMA_BUF", value = 512, doc = "VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT: a Linux dma-buf (`fd`)." },
+]
+
+[[enums]]
+name = "VmafxVulkanTiling"
+header = "vmafx/frame.h"
+since = "0.1"
+doc = "Tiling of the images of a VMAFX_MEMORY_VULKAN import (values equal VkImageTiling). Added in ABI 0.1.10."
+values = [
+  { name = "VMAFX_VULKAN_TILING_OPTIMAL", value = 0, doc = "VK_IMAGE_TILING_OPTIMAL: a layout only the producer's driver knows; readable by a device that imports images of that driver (CUDA)." },
+  { name = "VMAFX_VULKAN_TILING_LINEAR", value = 1, doc = "VK_IMAGE_TILING_LINEAR, or a VkBuffer: rows at `pitch`." },
+  { name = "VMAFX_VULKAN_TILING_DRM_FORMAT_MODIFIER", value = 1000158000, doc = "VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT: the layout `modifier` names." },
+]
+
+[[flags]]
+name = "VmafxVulkanFlags"
+header = "vmafx/frame.h"
+type = "u32"
+since = "0.1"
+doc = "Properties of the memory of a VMAFX_MEMORY_VULKAN import. Added in ABI 0.1.10."
+bits = [
+  { name = "VMAFX_VULKAN_DEDICATED", bit = 0, doc = "Each memory object is a dedicated allocation of its image (VkMemoryDedicatedAllocateInfo)." },
+]
+
 [[flags]]
 name = "VmafxDeviceFlags"
 header = "vmafx/device.h"
@@ -438,6 +443,52 @@ since = "0.1"
 doc = "How a device is created."
 bits = [
   { name = "VMAFX_DEVICE_PROFILING", bit = 0, doc = "Time every kernel the device runs; read with vmafx_device_profile(). Refused by a device without a kernel profiler (the CPU)." },
+]
+
+# Provenance and reports (RC4 WP5, #2142).
+
+[[enums]]
+name = "VmafxFeatureSource"
+header = "vmafx/provenance.h"
+since = "0.1"
+doc = "Where the scores of a feature come from. Added in ABI 0.1.5."
+values = [
+  { name = "VMAFX_FEATURE_SOURCE_UNKNOWN", value = 0, doc = "Not recorded (a feature written outside an extractor, a model and an import)." },
+  { name = "VMAFX_FEATURE_SOURCE_EXTRACTOR", value = 1, doc = "Computed by a registered feature extractor." },
+  { name = "VMAFX_FEATURE_SOURCE_IMPORTED", value = 2, doc = "Computed outside the library and recorded with vmafx_context_import_score()." },
+  { name = "VMAFX_FEATURE_SOURCE_MODEL", value = 3, doc = "Predicted by a mounted model from other features." },
+]
+
+[[enums]]
+name = "VmafxReportFormat"
+header = "vmafx/report.h"
+since = "0.1"
+doc = "Format of a report (values equal enum VmafOutputFormat). Added in ABI 0.1.5."
+values = [
+  { name = "VMAFX_REPORT_FORMAT_XML", value = 1, doc = "XML; carries a `<provenance>` element." },
+  { name = "VMAFX_REPORT_FORMAT_JSON", value = 2, doc = "JSON; carries a `provenance` object." },
+  { name = "VMAFX_REPORT_FORMAT_CSV", value = 3, doc = "CSV; columns unchanged, provenance in the sidecar when asked." },
+  { name = "VMAFX_REPORT_FORMAT_SUB", value = 4, doc = "Subtitles; lines unchanged, provenance in the sidecar when asked." },
+]
+
+[[flags]]
+name = "VmafxReportFlags"
+header = "vmafx/report.h"
+type = "u32"
+since = "0.1"
+doc = "How vmafx_report_write() writes a report. Added in ABI 0.1.5."
+bits = [
+  { name = "VMAFX_REPORT_PROVENANCE_SIDECAR", bit = 0, doc = "Also write the provenance record to `<path>.provenance.json` (any format; CSV and SUB carry it nowhere else)." },
+]
+
+[[flags]]
+name = "VmafxProvenanceJsonFlags"
+header = "vmafx/provenance.h"
+type = "u32"
+since = "0.1"
+doc = "Which form of the record vmafx_context_provenance_json() returns. Added in ABI 0.1.5."
+bits = [
+  { name = "VMAFX_PROVENANCE_JSON_CANONICAL", bit = 0, doc = "The bytes the digest covers: the record without `digest` and `elapsed_ns` (RFC 8785 form either way)." },
 ]
 
 # ---------------------------------------------------------------------------
@@ -499,6 +550,13 @@ since = "0.1"
 release = "vmafx_frame_pool_destroy"
 doc = "Frames of one geometry allocated once on a device and reused (RC4 WP3). A frame returns to its pool when its last reference is dropped."
 
+[[handles]]
+name = "VmafxReportFile"
+header = "vmafx/report.h"
+since = "0.1"
+release = "vmafx_report_close"
+doc = "A JSON report read back for verification (vmafx_report_open()). Added in ABI 0.1.5."
+
 # ---------------------------------------------------------------------------
 # Callbacks.
 
@@ -549,6 +607,10 @@ name = "VmafxProvenance"
 header = "vmafx/provenance.h"
 since = "0.1"
 sized = true
+# Emitted as the proto message `Provenance` and its OpenAPI schema (#2155):
+# every scoring response carries it. Fields only grow at the end, so the proto
+# field numbers (field order) never change.
+proto = "Provenance"
 doc = "How the scores of a context are made (#2142). Strings live as long as the context."
 fields = [
   { name = "abi_major", type = "u32", doc = "ABI major version of the library that ran." },
@@ -557,6 +619,87 @@ fields = [
   { name = "active_backend", type = "u32", enum = "VmafxBackend", doc = "Backend imported into the context." },
   { name = "n_extractors", type = "u32", doc = "Registered feature extractors; see vmafx_context_extractor_info()." },
   { name = "version", type = "cstr", doc = "Build version (git describe)." },
+  { name = "commit", type = "cstr", doc = "Commit the library was built from (`git rev-parse HEAD`); `unknown` outside a git checkout. Added in ABI 0.1.5." },
+  { name = "build_id", type = "cstr", doc = "`sha256:` and the SHA-256 of the canonical build description (`compiler`, `build_flags`, `fp_policy`, `backends`, `rust_twins`): two builds that differ in any of them have different ids. Added in ABI 0.1.5." },
+  { name = "compiler", type = "cstr", doc = "C and C++ compiler ids and versions (`c=gcc 15.2.1 cpp=gcc 15.2.1`). Added in ABI 0.1.5." },
+  { name = "build_flags", type = "cstr", doc = "Build type, optimisation level, assertions, LTO and the extra C / C++ arguments of the build. Added in ABI 0.1.5." },
+  { name = "fp_policy", type = "cstr", doc = "Strict floating-point arguments of every C and C++ translation unit (ADR-1461). Added in ABI 0.1.5." },
+  { name = "backends", type = "cstr", doc = "Backends the library was built with, comma-separated in VmafxBackend order (`cpu,cuda`). Added in ABI 0.1.5." },
+  { name = "rust_twins", type = "u32", doc = "1 when the library was built with Rust extractors, else 0. Added in ABI 0.1.5." },
+  { name = "simd", type = "cstr", doc = "Highest instruction-set level the CPU extractors dispatch to under the context's cpumask (`avx512icl`, `avx512`, `avx2`, `sse4.1`, `ssse3`, `sse2`, `sve2`, `neon`, `scalar`). Added in ABI 0.1.5." },
+  { name = "device_index", type = "i32", doc = "Index of the device the context scores on within its backend; 0 for the CPU, -1 for a device made from external handles. Added in ABI 0.1.5." },
+  { name = "device_name", type = "cstr", doc = "Name of that device as its runtime reports it (`cpu` for the CPU). Added in ABI 0.1.5." },
+  { name = "device_runtime", type = "cstr", doc = "Runtime and driver of that device (the host architecture for the CPU, `x86_64`); `unknown` when the backend does not report it yet. Added in ABI 0.1.5." },
+  { name = "n_threads", type = "u32", doc = "Worker threads of the context. Added in ABI 0.1.5." },
+  { name = "n_subsample", type = "u32", doc = "Frame subsampling of the context (1: every frame). Added in ABI 0.1.5." },
+  { name = "cpumask", type = "u64", doc = "CPU instruction-set bits the context disabled. Added in ABI 0.1.5." },
+  { name = "gpumask", type = "u64", doc = "GPU dispatch bits the context disabled. Added in ABI 0.1.5." },
+  { name = "frame_width", type = "u32", doc = "Luma width of the submitted frames; 0 before the first frame. Added in ABI 0.1.5." },
+  { name = "frame_height", type = "u32", doc = "Luma height of the submitted frames; 0 before the first frame. Added in ABI 0.1.5." },
+  { name = "pix_fmt", type = "u32", enum = "VmafxPixelFormat", doc = "Pixel layout of the submitted frames. Added in ABI 0.1.5." },
+  { name = "bpc", type = "u32", doc = "Bits per component of the submitted frames. Added in ABI 0.1.5." },
+  { name = "n_frames", type = "u64", doc = "Frames submitted. Added in ABI 0.1.5." },
+  { name = "n_models", type = "u32", doc = "Mounted models; see vmafx_context_model_provenance(). Added in ABI 0.1.5." },
+  { name = "n_features", type = "u32", doc = "Features with scores; see vmafx_context_feature_provenance(). Added in ABI 0.1.5." },
+  { name = "n_annotations", type = "u32", doc = "Caller annotations; see vmafx_context_annotation(). Added in ABI 0.1.5." },
+  { name = "encode_record", type = "cstr", doc = "Digest of the encode record of the distorted input (`sha256:` and 64 hex digits, VMAFx/pelorus#81), set with vmafx_context_set_encode_record(); empty when none. Added in ABI 0.1.5." },
+  { name = "scores_digest", type = "cstr", doc = "`sha256:` and the SHA-256 of every per-frame score written so far: one line `<feature> <index> <16 hex digits of the IEEE-754 bits>` per score, features in byte order, frames in index order. Added in ABI 0.1.5." },
+  { name = "elapsed_ns", type = "u64", doc = "Nanoseconds from the first submitted frame to the flush (to now before it); timing, not covered by `digest`. Added in ABI 0.1.5." },
+  { name = "digest", type = "cstr", doc = "`sha256:` and the SHA-256 of the record's canonical JSON (RFC 8785) without `digest` and `elapsed_ns`: models, features and annotations included (vmafx_context_provenance_json() with VMAFX_PROVENANCE_JSON_CANONICAL). Added in ABI 0.1.5." },
+]
+# Proto-only members (RC4 WP5): the repeated records of the context, numbered
+# from 100 so the field-order numbers of the scalar fields above never meet
+# them.
+proto_repeated = [
+  { name = "models", struct = "VmafxModelProvenance", number = 100, doc = "Mounted models." },
+  { name = "features", struct = "VmafxFeatureProvenance", number = 101, doc = "Features with scores." },
+  { name = "annotations", struct = "VmafxAnnotation", number = 102, doc = "Caller annotations, in the order they were added." },
+]
+
+[[structs]]
+name = "VmafxModelProvenance"
+header = "vmafx/provenance.h"
+since = "0.1"
+sized = true
+proto = "ModelProvenance"
+doc = "One mounted model (#2142). Strings live as long as the context. Added in ABI 0.1.5."
+fields = [
+  { name = "name", type = "cstr", doc = "Name of the model's scores." },
+  { name = "version", type = "cstr", doc = "Built-in model version, or the path of the file it was loaded from." },
+  { name = "sha256", type = "cstr", doc = "SHA-256 of the model bytes as loaded, 64 lower-case hex digits." },
+  { name = "flags", type = "u64", flags = "VmafxModelFlags", doc = "Load flags." },
+  { name = "overrides", type = "cstr", doc = "Feature option overloads applied after loading, `<extractor>.<key>=<value>` separated by `:` in the order applied; empty when none." },
+]
+
+[[structs]]
+name = "VmafxFeatureProvenance"
+header = "vmafx/provenance.h"
+since = "0.1"
+sized = true
+proto = "FeatureProvenance"
+doc = "How the scores of one feature are made (#2142). Strings live as long as the context. Added in ABI 0.1.5."
+fields = [
+  { name = "feature", type = "cstr", doc = "Feature name as the scores carry it (option-decorated names included)." },
+  { name = "extractor", type = "cstr", doc = "Extractor that wrote the scores; the model's name for a model score; empty for an imported score." },
+  { name = "implementation", type = "cstr", doc = "`c` or `rust` (an extractor registered as `<name>_rust`); empty when no extractor wrote the scores." },
+  { name = "backend", type = "u32", enum = "VmafxBackend", doc = "Backend the extractor runs on (CPU for model and imported scores)." },
+  { name = "device", type = "cstr", doc = "Device that ran the extractor (`cpu` for the CPU)." },
+  { name = "runtime", type = "cstr", doc = "Runtime and driver of that device (VmafxProvenance.device_runtime of a device extractor, the host architecture for the CPU)." },
+  { name = "options", type = "cstr", doc = "Options of the extractor instance, `key=value` separated by `:` in key order; empty when none." },
+  { name = "exactness", type = "cstr", doc = "How the scores relate to the CPU extractor's, generated from scripts/ci/exact_twins.d and the parity gate's tables: `cpu-reference`, `exact`, `libm-bounded <bound>`, `tolerance <bound>`, or `unclassified` for a device extractor the tables do not list; empty when no extractor wrote the scores." },
+  { name = "source", type = "u32", enum = "VmafxFeatureSource", doc = "Where the scores come from." },
+]
+
+[[structs]]
+name = "VmafxAnnotation"
+header = "vmafx/provenance.h"
+since = "0.1"
+sized = true
+proto = "Annotation"
+doc = "One caller annotation of the provenance record (vmafx_context_annotate()). Strings live as long as the context. Added in ABI 0.1.5."
+fields = [
+  { name = "key", type = "cstr", doc = "Key: 1 to 64 characters of `a-z`, `0-9` and `_`." },
+  { name = "value", type = "cstr", doc = "Value as given." },
 ]
 
 [[structs]]
@@ -581,7 +724,7 @@ fields = [
   { name = "index", type = "u64", doc = "Frame index." },
   { name = "value", type = "f64", doc = "Score." },
   { name = "feature", type = "cstr", doc = "Feature name as requested." },
-  { name = "extractor", type = "cstr", doc = "Registered extractor that declares the feature, or NULL (imported scores, option-decorated names until WP5)." },
+  { name = "extractor", type = "cstr", doc = "Registered extractor that wrote the feature (option-decorated names included, RC4 WP5), or NULL (imported and model scores); vmafx_feature_provenance() describes it." },
 ]
 
 [[structs]]
@@ -603,7 +746,7 @@ since = "0.1"
 sized = true
 doc = "Which device to create. Initialise with VMAFX_DEVICE_DESC_INIT."
 fields = [
-  { name = "backend", type = "u32", enum = "VmafxBackend", doc = "Backend of the device: CPU in every build, CUDA or HIP in a build with that backend; another backend is VMAFX_E_NOTSUP naming it." },
+  { name = "backend", type = "u32", enum = "VmafxBackend", doc = "Backend of the device: CPU in every build, CUDA, SYCL or HIP in a build with that backend; another backend is VMAFX_E_NOTSUP naming it." },
   { name = "index", type = "i32", doc = "Device index within the backend (see vmafx_device_count()); -1: any device of the backend. Ignored when `external[0]` is set." },
   { name = "flags", type = "u32", flags = "VmafxDeviceFlags", doc = "How to create the device. Added in ABI 0.1.2." },
   { name = "external", type = "uptr", count = 2, doc = "The caller's runtime objects, which stay the caller's and must outlive the device: CUDA context and stream, SYCL queue and 0, HIP stream and 0 (the device is the stream's), Metal device and command queue. 0: the library creates its own. The CPU takes none. Added in ABI 0.1.2." },
@@ -623,6 +766,7 @@ fields = [
   { name = "fence_kinds", type = "u32", doc = "Bit `1 << k` set for each VmafxFenceKind `k` the device waits on and returns as a release fence." },
   { name = "total_memory", type = "u64", doc = "Bytes of device memory; 0 when the backend does not report it (the CPU)." },
   { name = "name", type = "cstr", doc = "Name of the device as its runtime reports it (`cpu` for the CPU)." },
+  { name = "pci", type = "u32", count = 4, doc = "PCI domain, bus, device and function of the device (a producer on the same GPU has the same, VK_EXT_pci_bus_info); UINT32_MAX in each when the backend reports none (the CPU). Added in ABI 0.1.10." },
 ]
 
 [[structs]]
@@ -671,12 +815,17 @@ fields = [
   { name = "plane", type = "VmafxImportPlane", count = 3, doc = "Each plane; entries past `n_planes` are ignored." },
   { name = "acquire", type = "VmafxFence", doc = "Signalled when the producer has written the planes. Borrowed for the call: the library takes what it needs (a reference, a duplicated descriptor, a device-side wait). NONE: the planes are written." },
   { name = "flags", type = "u32", flags = "VmafxImportFlags", doc = "0: zero copy only." },
-  { name = "release", type = "VmafxFrameReleaseCallback", doc = "Called once, on the thread that drops the frame's last reference, after its release fences were signalled or recorded: a CUDA_EVENT or HIP_EVENT release fence can be waited on from here (a producer makes its stream wait on it before it reuses the planes, with no host wait); NULL: none. Added in ABI 0.1.4." },
-  { name = "user", type = "ptr", doc = "Passed to `release`. Added in ABI 0.1.4." },
-  { name = "rgb_matrix", type = "u32", enum = "VmafxColorMatrix", doc = "RGB, RGBA and BGRA only (ignored for every other layout): the matrix of the Y'CbCr the frame is converted to. UNSPECIFIED is refused naming this field; nothing is guessed (ADR-2146). Added in ABI 0.1.6." },
-  { name = "rgb_range", type = "u32", enum = "VmafxColorRange", doc = "RGB layouts only: the range of the R'G'B' samples. Added in ABI 0.1.6." },
-  { name = "rgb_transfer", type = "u32", enum = "VmafxColorTransfer", doc = "RGB layouts only: the transfer characteristic of the R'G'B' samples. Added in ABI 0.1.6." },
-  { name = "rgb_out_range", type = "u32", enum = "VmafxColorRange", doc = "RGB layouts only: the range of the Y'CbCr frame made; LIMITED is the range the VMAF models are trained on. Added in ABI 0.1.6." },
+  { name = "release", type = "VmafxFrameReleaseCallback", doc = "Called once, on the thread that drops the frame's last reference, after its release fences were signalled or recorded: a CUDA_EVENT, HIP_EVENT or SYCL_EVENT release fence can be waited on from here (a producer makes its stream or queue wait on it before it reuses the planes, with no host wait); NULL: none. Added in ABI 0.1.7." },
+  { name = "user", type = "ptr", doc = "Passed to `release`. Added in ABI 0.1.7." },
+  { name = "acquire_more", type = "VmafxFence", count = 2, doc = "Further acquire fences, waited on as `acquire` is, for a producer whose planes are written under several fences (the timeline semaphore of each image of a Vulkan frame with one image per plane). NONE entries are ignored; a device that waits on the device for none of their kinds refuses them naming the entry. Added in ABI 0.1.10." },
+  { name = "vulkan_handle_type", type = "u32", enum = "VmafxVulkanHandleType", doc = "VULKAN memory: how each plane's memory was exported. Ignored for other kinds. Added in ABI 0.1.10." },
+  { name = "vulkan_tiling", type = "u32", enum = "VmafxVulkanTiling", doc = "VULKAN memory: the tiling of the images (LINEAR for buffers). Added in ABI 0.1.10." },
+  { name = "vulkan_flags", type = "u32", flags = "VmafxVulkanFlags", doc = "VULKAN memory: properties of the memory objects. Added in ABI 0.1.10." },
+  { name = "vulkan_pci", type = "u32", count = 4, doc = "VULKAN memory: PCI domain, bus, device and function of the producer's VkPhysicalDevice (VK_EXT_pci_bus_info). Memory of another GPU than the device's is refused naming `desc.vulkan_pci`, never read across devices. Added in ABI 0.1.10." },
+  { name = "rgb_matrix", type = "u32", enum = "VmafxColorMatrix", doc = "RGB, RGBA and BGRA only (ignored for every other layout): the matrix of the Y'CbCr the frame is converted to. UNSPECIFIED is refused naming this field; nothing is guessed (ADR-2146). Added in ABI 0.1.11." },
+  { name = "rgb_range", type = "u32", enum = "VmafxColorRange", doc = "RGB layouts only: the range of the R'G'B' samples. Added in ABI 0.1.11." },
+  { name = "rgb_transfer", type = "u32", enum = "VmafxColorTransfer", doc = "RGB layouts only: the transfer characteristic of the R'G'B' samples. Added in ABI 0.1.11." },
+  { name = "rgb_out_range", type = "u32", enum = "VmafxColorRange", doc = "RGB layouts only: the range of the Y'CbCr frame made; LIMITED is the range the VMAF models are trained on. Added in ABI 0.1.11." },
 ]
 
 [[structs]]
@@ -698,12 +847,13 @@ name = "VmafxFrameDesc"
 header = "vmafx/frame.h"
 since = "0.1"
 sized = true
-doc = "Geometry of a frame. Initialise with VMAFX_FRAME_DESC_INIT."
+doc = "Geometry and colour of a frame. Initialise with VMAFX_FRAME_DESC_INIT."
 fields = [
   { name = "pix_fmt", type = "u32", enum = "VmafxPixelFormat", doc = "Pixel layout." },
   { name = "bpc", type = "u32", doc = "Bits per component, 8 to 16; above 8 a sample is a little-endian uint16_t." },
   { name = "w", type = "u32", doc = "Luma width in pixels." },
   { name = "h", type = "u32", doc = "Luma height in pixels." },
+  { name = "color", type = "VmafxColor", doc = "Colour of the frame, read when a model's `conversion_target` converts it before scoring. Every member UNKNOWN: the frame carries none and takes the context's default (vmafx_context_set_default_color()). Geometry-only uses (vmafx_feature_resolve()) ignore it. Added in ABI 0.1.6." },
 ]
 
 [[structs]]
@@ -968,7 +1118,7 @@ name = "vmafx_context_set_option"
 header = "vmafx/context.h"
 since = "0.1"
 returns = "status"
-doc = "Set a context option: `perceptual_weight` (`0` / `1`) or `perceptual_weight_strength` (a finite number >= 0). VMAFX_E_NOTFOUND names an unknown key, VMAFX_E_INVALID a value the key refuses."
+doc = "Set a context option: `perceptual_weight` (`0` / `1`), `perceptual_weight_strength` (a finite number >= 0) or `check_sample_range` (`0` / `1`; since ABI 0.1.6: refuse a frame pair with a sample above 2^bpc - 1 with VMAFX_E_INVALID, naming its plane, row, column and value; off by default; a device frame cannot be scanned and is VMAFX_E_NOTSUP). VMAFX_E_NOTFOUND names an unknown key, VMAFX_E_INVALID a value the key refuses."
 params = [
   { name = "context", type = "VmafxContext", pass = "in" },
   { name = "key", type = "cstr", pass = "in" },
@@ -1057,7 +1207,7 @@ name = "vmafx_context_frame_retention"
 header = "vmafx/context.h"
 since = "0.1"
 returns = "u32"
-doc = "How many earlier reference frames the context keeps after vmafx_submit() returns: 1 (frame n-1), or 2 when a registered extractor reads frame n-2 (ADR-1478). With worker threads, up to `n_threads` further frames of each input stay in flight until their work finishes. 0 for NULL."
+doc = "How many earlier reference frames the context keeps after vmafx_submit() returns: 1 (frame n-1), or 2 when a registered extractor reads frame n-2 (ADR-1478). With worker threads more frames stay in flight until their work finishes: vmafx_context_max_in_flight() gives the bound. 0 for NULL."
 params = [
   { name = "context", type = "VmafxContext", pass = "in_const" },
 ]
@@ -1285,6 +1435,18 @@ params = [
   { name = "frame", type = "VmafxFrame", pass = "in" },
   { name = "kind", type = "u32", pass = "in" },
   { name = "out", type = "VmafxFence", pass = "out" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_frame_signal_on_release"
+header = "vmafx/frame.h"
+since = "0.1"
+returns = "status"
+doc = "Signal a fence of the producer's once the last reference of the frame is gone, in every context it was submitted to: the device signals `signal` behind the frame's last reader, before the frame's release callback runs, so the producer reuses its memory after a wait on its own fence. VULKAN_SEMAPHORE: the semaphore is signalled to `value` on the device (a CUDA device; the producer submits its next write waiting for that value). Call it while holding a reference, before the frame is submitted; up to 3 fences per frame. The fence is borrowed (the library duplicates its descriptor). A kind the frame's device cannot signal is VMAFX_E_NOTSUP naming it. Added in ABI 0.1.10."
+params = [
+  { name = "frame", type = "VmafxFrame", pass = "in" },
+  { name = "signal", type = "VmafxFence", pass = "in" },
   { name = "error", type = "VmafxError", pass = "error" },
 ]
 
@@ -1688,6 +1850,403 @@ params = [
 ]
 
 # ---------------------------------------------------------------------------
+# Provenance records and reports (RC4 WP5, #2142).
+
+[[functions]]
+name = "vmafx_context_model_provenance"
+header = "vmafx/provenance.h"
+since = "0.1"
+returns = "status"
+doc = "Describe mounted model `index` (models of vmafx_context_use_model() and vmafx_context_use_model_set(), and models mounted through the libvmaf API), in mount order; VMAFX_E_NOTFOUND past the last one. Added in ABI 0.1.5."
+params = [
+  { name = "context", type = "VmafxContext", pass = "in_const" },
+  { name = "index", type = "u32", pass = "in" },
+  { name = "out", type = "VmafxModelProvenance", pass = "out" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_context_feature_provenance"
+header = "vmafx/provenance.h"
+since = "0.1"
+returns = "status"
+python = "feature_provenance_at"
+doc = "Describe feature `index` of the context, features in byte order of their names; VMAFX_E_NOTFOUND past the last one. Added in ABI 0.1.5."
+params = [
+  { name = "context", type = "VmafxContext", pass = "in_const" },
+  { name = "index", type = "u32", pass = "in" },
+  { name = "out", type = "VmafxFeatureProvenance", pass = "out" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_feature_provenance"
+header = "vmafx/provenance.h"
+since = "0.1"
+returns = "status"
+doc = "Describe the feature named `feature` (as the scores carry it, option-decorated names included); VMAFX_E_NOTFOUND when the context has no score of it. Added in ABI 0.1.5."
+params = [
+  { name = "context", type = "VmafxContext", pass = "in_const" },
+  { name = "feature", type = "cstr", pass = "in" },
+  { name = "out", type = "VmafxFeatureProvenance", pass = "out" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_context_annotate"
+header = "vmafx/provenance.h"
+since = "0.1"
+returns = "status"
+doc = "Add `key` = `value` (both copied) to the context's provenance record, for what only the caller knows: the inputs, the command line. A key may repeat; annotations keep their order. VMAFX_E_INVALID names a key outside 1 to 64 characters of `a-z`, `0-9` and `_`, VMAFX_E_RANGE a value over 4096 bytes or the 257th annotation. Added in ABI 0.1.5."
+params = [
+  { name = "context", type = "VmafxContext", pass = "in" },
+  { name = "key", type = "cstr", pass = "in" },
+  { name = "value", type = "cstr", pass = "in" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_context_annotation"
+header = "vmafx/provenance.h"
+since = "0.1"
+returns = "status"
+doc = "Annotation `index` of the context, in the order added; VMAFX_E_NOTFOUND past the last one. Added in ABI 0.1.5."
+params = [
+  { name = "context", type = "VmafxContext", pass = "in_const" },
+  { name = "index", type = "u32", pass = "in" },
+  { name = "out", type = "VmafxAnnotation", pass = "out" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_context_set_encode_record"
+header = "vmafx/provenance.h"
+since = "0.1"
+returns = "status"
+doc = "Record the digest of the encode record of the distorted input (VMAFx/pelorus#81): `sha256:` and 64 lower-case hex digits, copied; NULL or empty clears it. VMAFX_E_INVALID names any other form. Added in ABI 0.1.5."
+params = [
+  { name = "context", type = "VmafxContext", pass = "in" },
+  { name = "record", type = "cstr", pass = "in", nullable = true },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_context_provenance_json"
+header = "vmafx/provenance.h"
+since = "0.1"
+returns = "status"
+doc = "The provenance record as JSON in RFC 8785 form (keys in byte order, no whitespace; integers as numbers, 64-bit integers as strings, enums by their lower-case value names, as the proto Provenance message maps to JSON), with models, features and annotations. `*json` lives until the next call of this function on the context or its destruction. Added in ABI 0.1.5."
+params = [
+  { name = "context", type = "VmafxContext", pass = "in" },
+  { name = "flags", type = "u32", pass = "in" },
+  { name = "json", type = "cstr", pass = "out" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_report_write"
+header = "vmafx/report.h"
+since = "0.1"
+returns = "status"
+doc = "Write the context's scores to `path` in `format` (VmafxReportFormat), numbers with `score_format` (a printf format of one double; NULL: `%.6f`). JSON and XML carry the provenance record; CSV and SUB keep their columns. `flags` (VmafxReportFlags) may also ask for a `<path>.provenance.json` sidecar. Added in ABI 0.1.5."
+params = [
+  { name = "context", type = "VmafxContext", pass = "in" },
+  { name = "path", type = "cstr", pass = "in" },
+  { name = "format", type = "u32", pass = "in" },
+  { name = "flags", type = "u32", pass = "in" },
+  { name = "score_format", type = "cstr", pass = "in", nullable = true },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_report_open"
+header = "vmafx/report.h"
+since = "0.1"
+returns = "status"
+doc = "Read the JSON report at `path` for verification; VMAFX_E_IO names an unreadable file, VMAFX_E_INVALID a report that is not JSON or carries no provenance object. Added in ABI 0.1.5."
+params = [
+  { name = "path", type = "cstr", pass = "in" },
+  { name = "out", type = "VmafxReportFile", pass = "out_handle" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_report_close"
+header = "vmafx/report.h"
+since = "0.1"
+returns = "void"
+doc = "Release a report; NULL is a no-op. Added in ABI 0.1.5."
+params = [
+  { name = "file", type = "VmafxReportFile", pass = "in", nullable = true },
+]
+
+[[functions]]
+name = "vmafx_report_field"
+header = "vmafx/report.h"
+since = "0.1"
+returns = "cstr"
+doc = "Value of the report member at `path` (`provenance.models[0].sha256`, `frames[3].metrics.vmaf`): a string's characters, or a number, `true`, `false` or `null` as written; NULL when absent or when the member is an object or array. Lives as long as the report. Added in ABI 0.1.5."
+params = [
+  { name = "file", type = "VmafxReportFile", pass = "in_const" },
+  { name = "path", type = "cstr", pass = "in" },
+]
+
+[[functions]]
+name = "vmafx_report_verify"
+header = "vmafx/report.h"
+since = "0.1"
+returns = "status"
+doc = "Check `recorded`: its provenance digest and score digest (lossless reports) match its contents; with `rerun` (a report of the same configuration made again), every configuration field of the provenance record and every score equal bit for bit. VMAFX_E_MISMATCH names the first field that differs (`provenance.models[0].sha256`, `frames[3].metrics.vmaf`) with both values; environment fields (version, build, device, timing) may differ. Added in ABI 0.1.5."
+params = [
+  { name = "recorded", type = "VmafxReportFile", pass = "in_const" },
+  { name = "rerun", type = "VmafxReportFile", pass = "in_const", nullable = true },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+# ---------------------------------------------------------------------------
+# Window scores (RC4 WP4, ADR-2074; design section 2.8, #2138, #2238).
+# Owned by WP4: every entry from here to the libvmaf_bridge.h functions.
+# Added in ABI 0.1.8 (node VMAFX_0.1, ADR-1897).
+
+[[enums]]
+name = "VmafxWindowTarget"
+header = "vmafx/score.h"
+since = "0.1"
+doc = "What a window pools. Added in ABI 0.1.8."
+values = [
+  { name = "VMAFX_WINDOW_TARGET_NONE", value = 0, doc = "Not set; refused by vmafx_window_submit()." },
+  { name = "VMAFX_WINDOW_TARGET_MODEL", value = 1, doc = "The scores of `model`, as vmafx_score_pooled() pools them." },
+  { name = "VMAFX_WINDOW_TARGET_MODEL_SET", value = 2, doc = "The bootstrap scores of `model_set`, as vmafx_score_pooled_model_set() pools them." },
+  { name = "VMAFX_WINDOW_TARGET_FEATURE", value = 3, doc = "The scores of `feature`, as vmafx_feature_score_pooled() pools them." },
+]
+
+[[flags]]
+name = "VmafxPoolMask"
+header = "vmafx/score.h"
+type = "u32"
+since = "0.1"
+doc = "A set of pooling methods: bit `1 << p` for each VmafxPool `p`. Bit 0 (VMAFX_POOL_NONE) is not a method. Added in ABI 0.1.8."
+bits = [
+  { name = "VMAFX_POOL_MASK_MIN", bit = 1, doc = "VMAFX_POOL_MIN." },
+  { name = "VMAFX_POOL_MASK_MAX", bit = 2, doc = "VMAFX_POOL_MAX." },
+  { name = "VMAFX_POOL_MASK_MEAN", bit = 3, doc = "VMAFX_POOL_MEAN." },
+  { name = "VMAFX_POOL_MASK_HARMONIC_MEAN", bit = 4, doc = "VMAFX_POOL_HARMONIC_MEAN." },
+  { name = "VMAFX_POOL_MASK_MEDIAN", bit = 5, doc = "VMAFX_POOL_MEDIAN." },
+  { name = "VMAFX_POOL_MASK_PERC5", bit = 6, doc = "VMAFX_POOL_PERC5." },
+  { name = "VMAFX_POOL_MASK_PERC10", bit = 7, doc = "VMAFX_POOL_PERC10." },
+  { name = "VMAFX_POOL_MASK_PERC20", bit = 8, doc = "VMAFX_POOL_PERC20." },
+]
+
+[[flags]]
+name = "VmafxWindowFlags"
+header = "vmafx/score.h"
+type = "u32"
+since = "0.1"
+doc = "What is true of a window result or a window span. Added in ABI 0.1.8."
+bits = [
+  { name = "VMAFX_WINDOW_PARTIAL", bit = 0, doc = "The stream ended inside the window: a result pooled fewer frames than it asked for (the context was flushed before frame `last`); a span is the last window of the stream, cut off by vmafx_window_clock_finish()." },
+]
+
+[[handles]]
+name = "VmafxWindow"
+header = "vmafx/score.h"
+since = "0.1"
+release = "vmafx_window_release"
+doc = "An asynchronous pooled score over a range of frames (vmafx_window_submit()). Owns its result until released. Added in ABI 0.1.8."
+
+[[handles]]
+name = "VmafxWindowClock"
+header = "vmafx/score.h"
+since = "0.1"
+release = "vmafx_window_clock_destroy"
+doc = "Cuts a stream of frames into windows of `n_stats` seconds or `n_stats_frames` frames (#2138). Holds no context; one per stream. Added in ABI 0.1.8."
+
+[[callbacks]]
+name = "VmafxWindowCallback"
+header = "vmafx/score.h"
+returns = "void"
+since = "0.1"
+doc = "Called once when a window completes, on the context's callback thread (a library thread, never the caller's, apart from the completion thread so a slow callback holds up no window), in completion order. `result` is valid during the call; the same result stays readable with vmafx_window_poll(). It may call vmafx_window_poll(), vmafx_window_wait() and vmafx_window_release() (also on its own window) and must not call any other function on the window's context: no vmafx_submit(), no vmafx_flush(). Added in ABI 0.1.8."
+params = [
+  { name = "window", type = "VmafxWindow", pass = "in" },
+  { name = "result", type = "VmafxWindowResult", pass = "in_const" },
+  { name = "user", type = "ptr", pass = "in" },
+]
+
+[[structs]]
+name = "VmafxWindowRequest"
+header = "vmafx/score.h"
+since = "0.1"
+sized = true
+doc = "A window to pool. Initialise with VMAFX_WINDOW_REQUEST_INIT. Added in ABI 0.1.8."
+fields = [
+  { name = "target", type = "u32", enum = "VmafxWindowTarget", doc = "What to pool; the matching one of `model`, `model_set` and `feature` is set, the other two are ignored." },
+  { name = "pool_mask", type = "u32", flags = "VmafxPoolMask", doc = "Pooling methods, at least one." },
+  { name = "first", type = "u64", doc = "First frame index (inclusive)." },
+  { name = "last", type = "u64", doc = "Last frame index (inclusive), at most 4294967295 (the engine's frame index)." },
+  { name = "model", type = "VmafxModel", const = true, doc = "The model of a MODEL window; the window holds a reference until it is released." },
+  { name = "model_set", type = "VmafxModelSet", const = true, doc = "The model set of a MODEL_SET window; the window holds a reference until it is released." },
+  { name = "feature", type = "cstr", doc = "The feature of a FEATURE window, as vmafx_feature_score_pooled() names it (copied)." },
+  { name = "on_complete", type = "VmafxWindowCallback", doc = "Called once when the window completes; NULL: observe completion with vmafx_window_poll() or vmafx_window_wait()." },
+  { name = "user", type = "ptr", doc = "Passed to `on_complete`." },
+]
+
+[[structs]]
+name = "VmafxWindowResult"
+header = "vmafx/score.h"
+since = "0.1"
+sized = true
+doc = "The scores of a completed window. Each value is the synchronous call's (vmafx_score_pooled(), vmafx_feature_score_pooled(), vmafx_score_pooled_model_set()) over frames `first` to `first + n_frames - 1`, bit for bit: both run one pooling implementation. Initialise with VMAFX_WINDOW_RESULT_INIT. Added in ABI 0.1.8."
+fields = [
+  { name = "status", type = "status", doc = "VMAFX_OK when every requested method has its value; otherwise why the window has none, for example VMAFX_E_RANGE when no scored frame of the window was in the stream, VMAFX_E_NOTFOUND when its feature or a feature its model reads was never scored, VMAFX_E_INVALID when the context was destroyed first. The failure is also logged to the context." },
+  { name = "flags", type = "u32", flags = "VmafxWindowFlags", doc = "VMAFX_WINDOW_PARTIAL when the stream ended before frame `last`." },
+  { name = "target", type = "u32", enum = "VmafxWindowTarget", doc = "What the window pooled." },
+  { name = "pool_mask", type = "u32", flags = "VmafxPoolMask", doc = "The requested methods; `value[p]` is set for each bit `1 << p`." },
+  { name = "first", type = "u64", doc = "First frame index, as requested." },
+  { name = "last", type = "u64", doc = "Last frame index, as requested." },
+  { name = "n_frames", type = "u64", doc = "Frames pooled over: `last - first + 1`, fewer for a partial window." },
+  { name = "n_scored", type = "u64", doc = "Frames of those the context scored (every `n_subsample`-th index) and the values summarise." },
+  { name = "value", type = "f64", count = 9, doc = "Indexed by VmafxPool: the pooled score of each requested method (the bagging score for a model set); 0 elsewhere." },
+  { name = "stddev", type = "f64", count = 9, doc = "MODEL_SET windows: the pooled standard deviation per method; 0 otherwise." },
+  { name = "ci95_lo", type = "f64", count = 9, doc = "MODEL_SET windows: the pooled lower bound of the 95% confidence interval per method; 0 otherwise." },
+  { name = "ci95_hi", type = "f64", count = 9, doc = "MODEL_SET windows: the pooled upper bound of the 95% confidence interval per method; 0 otherwise." },
+  { name = "name", type = "cstr", doc = "The model's name, the model set's name or the feature; lives as long as the window." },
+]
+
+[[structs]]
+name = "VmafxWindowClockConfig"
+header = "vmafx/score.h"
+since = "0.1"
+sized = true
+doc = "Window length of a VmafxWindowClock: exactly one of the two is set, as the `window` option group's `n_stats` and `n_stats_frames` (#2138). Initialise with VMAFX_WINDOW_CLOCK_CONFIG_INIT. Added in ABI 0.1.8."
+fields = [
+  { name = "n_stats", type = "f64", doc = "Window length in seconds, finite and above 0, rounded to whole nanoseconds (at least 1); 0: windows by frame count. Window `k` holds the frames whose presentation time lies in `[t0 + k * n_stats, t0 + (k + 1) * n_stats)`, `t0` the first frame's." },
+  { name = "n_stats_frames", type = "u64", doc = "Window length in frames; 0: windows by time. Window `k` holds the frames whose index lies in `[i0 + k * n_stats_frames, i0 + (k + 1) * n_stats_frames)`, `i0` the first frame's." },
+]
+
+[[structs]]
+name = "VmafxWindowSpan"
+header = "vmafx/score.h"
+since = "0.1"
+sized = true
+doc = "One window of a stream as a VmafxWindowClock cut it: submit `first` to `last` with vmafx_window_submit(). Initialise with VMAFX_WINDOW_SPAN_INIT. Added in ABI 0.1.8."
+fields = [
+  { name = "flags", type = "u32", flags = "VmafxWindowFlags", doc = "VMAFX_WINDOW_PARTIAL for the last window of the stream when the stream ended inside it." },
+  { name = "window", type = "u64", doc = "Window number `k`. Windows without a frame (a gap in the stream) are skipped, so numbers can jump." },
+  { name = "first", type = "u64", doc = "Index of the window's first frame." },
+  { name = "last", type = "u64", doc = "Index of the window's last frame." },
+  { name = "n_frames", type = "u64", doc = "Frames the clock saw in the window." },
+  { name = "start_ns", type = "i64", doc = "Windows by time: the window's start, `t0 + k * n_stats`, in the stream's nanoseconds. Windows by frame count: the presentation time of its first frame." },
+  { name = "end_ns", type = "i64", doc = "Windows by time: the window's end, `t0 + (k + 1) * n_stats` (exclusive). Windows by frame count: the presentation time of its last frame." },
+]
+
+[[functions]]
+name = "vmafx_window_submit"
+header = "vmafx/score.h"
+since = "0.1"
+returns = "status"
+doc = "Ask for `request.target` pooled with every method of `request.pool_mask` over frames `first` to `last`, and return at once. The window completes when every scored frame of its range is final, or at vmafx_flush(), which completes it over the frames the stream had and flags it VMAFX_WINDOW_PARTIAL when the stream ended before `last`. A device backend collects a frame's scores one submit later. motion2 / motion3 of a frame, and so every VMAF model, are final once the frame after it is scored (ADR-2090); the last frame's at vmafx_flush(). The context's completion thread (started by its first window) finds completion: the worker that finishes a frame, a submit, a flush, an import and this call wake it, so a window completes whether or not the feeding thread calls again; a window already final completes right after this call. At most 1024 windows of a context are open; one more is VMAFX_E_BUSY naming `context`. The caller holds the window until vmafx_window_release(). Added in ABI 0.1.8."
+params = [
+  { name = "context", type = "VmafxContext", pass = "in" },
+  { name = "request", type = "VmafxWindowRequest", pass = "in" },
+  { name = "out", type = "VmafxWindow", pass = "out_handle" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_window_poll"
+header = "vmafx/score.h"
+since = "0.1"
+returns = "status"
+doc = "VMAFX_OK and the result when the window has completed, VMAFX_PENDING (no error, `out` untouched) while it has not. Thread-safe: may run on any thread while the context is in use. A completed window's own failure is in `out.status`, not in the return value. Added in ABI 0.1.8."
+params = [
+  { name = "window", type = "VmafxWindow", pass = "in_const" },
+  { name = "out", type = "VmafxWindowResult", pass = "out" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_window_wait"
+header = "vmafx/score.h"
+since = "0.1"
+returns = "status"
+doc = "vmafx_window_poll() after waiting up to `timeout_ns` nanoseconds for the window to complete (UINT64_MAX: without a limit); VMAFX_PENDING, without an error, when it has not by then. Thread-safe, also on the thread that feeds the context: the completion thread completes the window. Added in ABI 0.1.8."
+params = [
+  { name = "window", type = "VmafxWindow", pass = "in_const" },
+  { name = "timeout_ns", type = "u64", pass = "in" },
+  { name = "out", type = "VmafxWindowResult", pass = "out" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_window_release"
+header = "vmafx/score.h"
+since = "0.1"
+returns = "void"
+doc = "Release the caller's window, completed or not. An open window is cancelled: its callback never runs. A callback of the window running on the callback thread is waited for, unless this call is made from that callback. Thread-safe; NULL is a no-op. Added in ABI 0.1.8."
+params = [
+  { name = "window", type = "VmafxWindow", pass = "in", nullable = true },
+]
+
+[[functions]]
+name = "vmafx_context_max_in_flight"
+header = "vmafx/context.h"
+since = "0.1"
+returns = "u32"
+doc = "The most frames of each input the context holds when vmafx_submit() returns, whatever the producer's rate: with `R` = vmafx_context_frame_retention() and `T` = n_threads, `R + 2 * T * (R + 1)`, plus 1 on a device backend. Without worker threads a submit scores its frame before it returns (`R`). With them a submit waits while `T` frames wait for a worker (backpressure), so at most `2 * T` frames are in flight, each holding itself and its `R` earlier reference frames; a device extractor holds its frame until the next submit collects it. A producer that recycles its frames (a texture ring, a frame pool) needs this many plus the frame it is filling. 0 for NULL. Added in ABI 0.1.8."
+params = [
+  { name = "context", type = "VmafxContext", pass = "in_const" },
+]
+
+[[functions]]
+name = "vmafx_window_clock_create"
+header = "vmafx/score.h"
+since = "0.1"
+returns = "status"
+doc = "A clock that cuts a stream into windows of `config.n_stats` seconds or `config.n_stats_frames` frames (#2138). Both set, neither set, or `n_stats` negative, not finite or below 1 ns is VMAFX_E_INVALID naming the field. Added in ABI 0.1.8."
+params = [
+  { name = "config", type = "VmafxWindowClockConfig", pass = "in" },
+  { name = "out", type = "VmafxWindowClock", pass = "out_handle" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_window_clock_frame"
+header = "vmafx/score.h"
+since = "0.1"
+returns = "status"
+doc = "Tell the clock frame `index` at presentation time `pts_ns`. When the frame lies past the open window, that window is complete: VMAFX_OK, its span in `out`, and the frame opens the next window. Otherwise VMAFX_PENDING (no error, `out` untouched). Indices increase strictly and times never decrease, else VMAFX_E_INVALID naming `index` or `pts_ns`. Added in ABI 0.1.8."
+params = [
+  { name = "clock", type = "VmafxWindowClock", pass = "in" },
+  { name = "index", type = "u64", pass = "in" },
+  { name = "pts_ns", type = "i64", pass = "in" },
+  { name = "out", type = "VmafxWindowSpan", pass = "out" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_window_clock_finish"
+header = "vmafx/score.h"
+since = "0.1"
+returns = "status"
+doc = "End of stream: VMAFX_OK and the span of the open window, flagged VMAFX_WINDOW_PARTIAL unless it is a full window by frame count; VMAFX_PENDING (no error, `out` untouched) when no window is open. Afterwards the clock takes no more frames. Added in ABI 0.1.8."
+params = [
+  { name = "clock", type = "VmafxWindowClock", pass = "in" },
+  { name = "out", type = "VmafxWindowSpan", pass = "out" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_window_clock_destroy"
+header = "vmafx/score.h"
+since = "0.1"
+returns = "void"
+doc = "Free the clock. NULL is a no-op. Added in ABI 0.1.8."
+params = [
+  { name = "clock", type = "VmafxWindowClock", pass = "in", nullable = true },
+]
+
+# ---------------------------------------------------------------------------
 # Functions of vmafx/libvmaf_bridge.h.
 
 [[functions]]
@@ -1711,9 +2270,885 @@ params = [
 ]
 
 # ---------------------------------------------------------------------------
-# libvmaf compatibility shims (core/src/vmafx/compat_libvmaf_gen.c). The old
-# declarations stay in core/include/libvmaf/*.h unchanged; these entries
-# generate their definitions on top of the functions above.
+# RC4 WP6 (ADR-1852 decision D3): what the libvmaf compat library needs from
+# the public API so that every libvmaf function is written on exported vmafx_
+# symbols only. Added in ABI 0.1.6.
+
+[[enums]]
+name = "VmafxColorRange"
+header = "vmafx/frame.h"
+since = "0.1"
+doc = "Code-value range of a frame (values equal enum VmafColorRange). Added in ABI 0.1.6."
+values = [
+  { name = "VMAFX_COLOR_RANGE_UNKNOWN", value = 0, doc = "Unset." },
+  { name = "VMAFX_COLOR_RANGE_LIMITED", value = 1, doc = "Studio (limited) range." },
+  { name = "VMAFX_COLOR_RANGE_FULL", value = 2, doc = "Full range." },
+]
+
+[[enums]]
+name = "VmafxColorPrimaries"
+header = "vmafx/frame.h"
+since = "0.1"
+doc = "Colour primaries (values equal enum VmafColorPrimaries). Added in ABI 0.1.6."
+values = [
+  { name = "VMAFX_COLOR_PRIMARIES_UNKNOWN", value = 0, doc = "Unset." },
+  { name = "VMAFX_COLOR_PRIMARIES_BT709", value = 1, doc = "ITU-R BT.709." },
+  { name = "VMAFX_COLOR_PRIMARIES_BT2020", value = 2, doc = "ITU-R BT.2020." },
+  { name = "VMAFX_COLOR_PRIMARIES_SMPTE432", value = 3, doc = "SMPTE ST 432-1 (D65)." },
+]
+
+[[enums]]
+name = "VmafxColorTransfer"
+header = "vmafx/frame.h"
+since = "0.1"
+doc = "Transfer characteristic (values equal enum VmafColorTransferCharacteristic). Added in ABI 0.1.6."
+values = [
+  { name = "VMAFX_COLOR_TRC_UNKNOWN", value = 0, doc = "Unset." },
+  { name = "VMAFX_COLOR_TRC_BT709", value = 1, doc = "ITU-R BT.709." },
+  { name = "VMAFX_COLOR_TRC_SMPTE2084", value = 2, doc = "SMPTE ST 2084 (PQ)." },
+  { name = "VMAFX_COLOR_TRC_SRGB", value = 3, doc = "IEC 61966-2-1 (sRGB). Added in ABI 0.1.11 (ADR-2146)." },
+  { name = "VMAFX_COLOR_TRC_HLG", value = 4, doc = "ARIB STD-B67 (HLG). Added in ABI 0.1.11." },
+  { name = "VMAFX_COLOR_TRC_LINEAR", value = 5, doc = "Linear light: declared, the RGB conversion refuses it with VMAFX_E_NOTSUP (the matrix applies to non-linear signals). Added in ABI 0.1.11." },
+]
+
+[[enums]]
+name = "VmafxColorMatrix"
+header = "vmafx/frame.h"
+since = "0.1"
+doc = "YCbCr matrix coefficients (values equal enum VmafColorMatrixCoefficients). Added in ABI 0.1.6."
+values = [
+  { name = "VMAFX_COLOR_MATRIX_UNKNOWN", value = 0, doc = "Unset." },
+  { name = "VMAFX_COLOR_MATRIX_BT709", value = 1, doc = "ITU-R BT.709." },
+  { name = "VMAFX_COLOR_MATRIX_BT2020_NCL", value = 2, doc = "ITU-R BT.2020 non-constant luminance." },
+  { name = "VMAFX_COLOR_MATRIX_ICTCP", value = 3, doc = "ICtCp." },
+  { name = "VMAFX_COLOR_MATRIX_BT601", value = 4, doc = "ITU-R BT.601 (Kr 0.299, Kb 0.114; H.273 matrix coefficients 5 and 6). Added in ABI 0.1.11 (ADR-2146)." },
+  { name = "VMAFX_COLOR_MATRIX_BT2020_CL", value = 5, doc = "ITU-R BT.2020 constant luminance (H.273 10): declared, the RGB conversion refuses it with VMAFX_E_NOTSUP (its luma is formed in linear light). Added in ABI 0.1.11." },
+]
+
+[[enums]]
+name = "VmafxResampleFilter"
+header = "vmafx/frame.h"
+since = "0.1"
+doc = "Scaling filter of a frame conversion (values equal enum VmafResampleFilter). Added in ABI 0.1.6."
+values = [
+  { name = "VMAFX_RESAMPLE_DEFAULT", value = 0, doc = "The converter's default (bicubic)." },
+  { name = "VMAFX_RESAMPLE_BILINEAR", value = 1, doc = "Bilinear." },
+  { name = "VMAFX_RESAMPLE_BICUBIC", value = 2, doc = "Bicubic." },
+  { name = "VMAFX_RESAMPLE_LANCZOS", value = 3, doc = "Lanczos." },
+]
+
+[[enums]]
+name = "VmafxDnnDevice"
+header = "vmafx/dnn.h"
+since = "0.1"
+doc = "Inference device of a tiny-AI session (values equal VmafDnnDevice). Added in ABI 0.1.6."
+values = [
+  { name = "VMAFX_DNN_DEVICE_AUTO", value = 0, doc = "The best execution provider the runtime offers." },
+  { name = "VMAFX_DNN_DEVICE_CPU", value = 1, doc = "The CPU." },
+  { name = "VMAFX_DNN_DEVICE_CUDA", value = 2, doc = "A CUDA GPU." },
+  { name = "VMAFX_DNN_DEVICE_OPENVINO", value = 3, doc = "The OpenVINO provider, its default device." },
+  { name = "VMAFX_DNN_DEVICE_ROCM", value = 4, doc = "A ROCm GPU." },
+  { name = "VMAFX_DNN_DEVICE_COREML", value = 5, doc = "The Core ML provider, its default unit." },
+  { name = "VMAFX_DNN_DEVICE_COREML_ANE", value = 6, doc = "Core ML on the neural engine." },
+  { name = "VMAFX_DNN_DEVICE_COREML_GPU", value = 7, doc = "Core ML on the GPU." },
+  { name = "VMAFX_DNN_DEVICE_COREML_CPU", value = 8, doc = "Core ML on the CPU." },
+  { name = "VMAFX_DNN_DEVICE_OPENVINO_NPU", value = 9, doc = "OpenVINO on the NPU." },
+  { name = "VMAFX_DNN_DEVICE_OPENVINO_CPU", value = 10, doc = "OpenVINO on the CPU." },
+  { name = "VMAFX_DNN_DEVICE_OPENVINO_GPU", value = 11, doc = "OpenVINO on the GPU." },
+]
+
+[[enums]]
+name = "VmafxDnnResize"
+header = "vmafx/dnn.h"
+since = "0.1"
+doc = "How a tiny model's input is resized to the model's fixed shape (values equal VmafDnnResizeMode). Added in ABI 0.1.6."
+values = [
+  { name = "VMAFX_DNN_RESIZE_DISABLED", value = 0, doc = "No resize: a frame of another size is refused." },
+  { name = "VMAFX_DNN_RESIZE_BILINEAR", value = 1, doc = "Bilinear." },
+  { name = "VMAFX_DNN_RESIZE_NEAREST", value = 2, doc = "Nearest neighbour." },
+  { name = "VMAFX_DNN_RESIZE_BICUBIC", value = 3, doc = "Bicubic." },
+]
+
+[[enums]]
+name = "VmafxMcpTransport"
+header = "vmafx/mcp.h"
+since = "0.1"
+doc = "Transport of the embedded MCP server (values equal VmafMcpTransport). Added in ABI 0.1.6."
+values = [
+  { name = "VMAFX_MCP_TRANSPORT_SSE", value = 0, doc = "Server-sent events over loopback HTTP." },
+  { name = "VMAFX_MCP_TRANSPORT_UDS", value = 1, doc = "A Unix domain socket." },
+  { name = "VMAFX_MCP_TRANSPORT_STDIO", value = 2, doc = "A pair of file descriptors." },
+]
+
+[[flags]]
+name = "VmafxDnnFlags"
+header = "vmafx/dnn.h"
+type = "u32"
+since = "0.1"
+doc = "How a tiny-AI session runs. Added in ABI 0.1.6."
+bits = [
+  { name = "VMAFX_DNN_FP16_IO", bit = 0, doc = "Exchange tensors with the runtime in half precision." },
+]
+
+[[handles]]
+name = "VmafxFrameConverter"
+header = "vmafx/frame.h"
+since = "0.1"
+release = "vmafx_frame_converter_destroy"
+doc = "Converts frames of one format into another (pixel format, depth, size, colour). Added in ABI 0.1.6."
+
+[[handles]]
+name = "VmafxDnnSession"
+header = "vmafx/dnn.h"
+since = "0.1"
+release = "vmafx_dnn_session_close"
+doc = "An ONNX session of a tiny model run directly (a libvmaf VmafDnnSession under its new name). Added in ABI 0.1.6."
+
+[[handles]]
+name = "VmafxMcpServer"
+header = "vmafx/mcp.h"
+since = "0.1"
+release = "vmafx_mcp_server_destroy"
+doc = "The embedded MCP server of a context (a libvmaf VmafMcpServer under its new name). Added in ABI 0.1.6."
+
+[[structs]]
+name = "VmafxColor"
+header = "vmafx/frame.h"
+since = "0.1"
+sized = false
+doc = "Colour description of a frame; embedded by value, so it never grows. Added in ABI 0.1.6."
+fields = [
+  { name = "range", type = "u32", enum = "VmafxColorRange", doc = "Code-value range." },
+  { name = "primaries", type = "u32", enum = "VmafxColorPrimaries", doc = "Primaries." },
+  { name = "trc", type = "u32", enum = "VmafxColorTransfer", doc = "Transfer characteristic." },
+  { name = "matrix", type = "u32", enum = "VmafxColorMatrix", doc = "Matrix coefficients." },
+]
+
+[[structs]]
+name = "VmafxConvertDesc"
+header = "vmafx/frame.h"
+since = "0.1"
+sized = true
+doc = "What a frame converter reads and writes. Initialise with VMAFX_CONVERT_DESC_INIT. Added in ABI 0.1.6."
+fields = [
+  { name = "src_pix_fmt", type = "u32", enum = "VmafxPixelFormat", doc = "Pixel format of the frames the converter reads." },
+  { name = "src_bpc", type = "u32", doc = "Bits per component it reads, 8 to 16." },
+  { name = "src_w", type = "u32", doc = "Luma width it reads." },
+  { name = "src_h", type = "u32", doc = "Luma height it reads." },
+  { name = "src_color", type = "VmafxColor", doc = "Colour of the frames it reads; an UNKNOWN member takes the converter's default for the frame size." },
+  { name = "dst_pix_fmt", type = "u32", enum = "VmafxPixelFormat", doc = "Pixel format it writes." },
+  { name = "dst_bpc", type = "u32", doc = "Bits per component it writes, 8 to 16." },
+  { name = "dst_w", type = "u32", doc = "Luma width it writes; 0 keeps the source width." },
+  { name = "dst_h", type = "u32", doc = "Luma height it writes; 0 keeps the source height." },
+  { name = "dst_color", type = "VmafxColor", doc = "Colour it writes." },
+  { name = "filter", type = "u32", enum = "VmafxResampleFilter", doc = "Scaling filter." },
+]
+
+[[structs]]
+name = "VmafxDnnConfig"
+header = "vmafx/dnn.h"
+since = "0.1"
+sized = true
+doc = "How to open a tiny-AI session. Initialise with VMAFX_DNN_CONFIG_INIT. Added in ABI 0.1.6."
+fields = [
+  { name = "device", type = "u32", enum = "VmafxDnnDevice", doc = "Inference device." },
+  { name = "device_index", type = "i32", doc = "Device index within the provider; 0 is the first." },
+  { name = "threads", type = "i32", doc = "Intra-op threads; 0 lets the runtime choose." },
+  { name = "flags", type = "u32", flags = "VmafxDnnFlags", doc = "Session flags." },
+]
+
+[[structs]]
+name = "VmafxDnnInput"
+header = "vmafx/dnn.h"
+since = "0.1"
+sized = false
+doc = "One named input tensor of vmafx_dnn_session_run(), float32 in row-major order; the layout of a libvmaf VmafDnnInput, never grows. Added in ABI 0.1.6."
+fields = [
+  { name = "name", type = "cstr", doc = "Input name; NULL takes the session's inputs in order." },
+  { name = "data", type = "cptr", doc = "The tensor's float32 values." },
+  { name = "shape", type = "cptr", doc = "`rank` int64 extents." },
+  { name = "rank", type = "size", doc = "Number of dimensions." },
+]
+
+[[structs]]
+name = "VmafxDnnOutput"
+header = "vmafx/dnn.h"
+since = "0.1"
+sized = false
+doc = "One named output tensor of vmafx_dnn_session_run(); the layout of a libvmaf VmafDnnOutput, never grows. Added in ABI 0.1.6."
+fields = [
+  { name = "name", type = "cstr", doc = "Output name; NULL takes the session's outputs in order." },
+  { name = "data", type = "ptr", doc = "Float32 storage the call fills." },
+  { name = "capacity", type = "size", doc = "Floats `data` holds." },
+  { name = "written", type = "size", doc = "Floats written (set by the call)." },
+]
+
+[[structs]]
+name = "VmafxMcpConfig"
+header = "vmafx/mcp.h"
+since = "0.1"
+sized = true
+doc = "How to create an MCP server. Initialise with VMAFX_MCP_CONFIG_INIT. Added in ABI 0.1.6."
+fields = [
+  { name = "queue_depth", type = "u32", doc = "Requests queued per frame; 0 takes the default." },
+  { name = "max_drain_per_frame", type = "u32", doc = "Requests answered per frame; 0 takes the default." },
+  { name = "user_agent", type = "cstr", doc = "Server name reported to clients (copied); NULL takes the default." },
+]
+
+[[structs]]
+name = "VmafxMcpSseConfig"
+header = "vmafx/mcp.h"
+since = "0.1"
+sized = true
+doc = "The SSE transport. Initialise with VMAFX_MCP_SSE_CONFIG_INIT. Added in ABI 0.1.6."
+fields = [
+  { name = "port", type = "u32", doc = "Loopback TCP port, 0 to 65535; 0 takes an ephemeral port." },
+  { name = "path", type = "cstr", doc = "URL path (copied); NULL takes the default." },
+]
+
+[[structs]]
+name = "VmafxMcpUdsConfig"
+header = "vmafx/mcp.h"
+since = "0.1"
+sized = true
+doc = "The Unix domain socket transport. Initialise with VMAFX_MCP_UDS_CONFIG_INIT. Added in ABI 0.1.6."
+fields = [
+  { name = "path", type = "cstr", doc = "Socket path (copied), shorter than 100 bytes." },
+]
+
+[[structs]]
+name = "VmafxMcpStdioConfig"
+header = "vmafx/mcp.h"
+since = "0.1"
+sized = true
+doc = "The file-descriptor transport. Initialise with VMAFX_MCP_STDIO_CONFIG_INIT. Added in ABI 0.1.6."
+fields = [
+  { name = "fd_in", type = "i32", doc = "Descriptor requests are read from." },
+  { name = "fd_out", type = "i32", doc = "Descriptor answers are written to." },
+]
+
+[[functions]]
+name = "vmafx_backend_name"
+header = "vmafx/types.h"
+since = "0.1"
+returns = "cstr"
+doc = "Lower-case name of a VmafxBackend (`cpu`, `cuda`, `sycl`, `metal`, `hip`), `unknown` for another value; a static string. Added in ABI 0.1.6."
+params = [
+  { name = "backend", type = "u32", pass = "in" },
+]
+
+[[functions]]
+name = "vmafx_context_backend"
+header = "vmafx/context.h"
+since = "0.1"
+returns = "u32"
+doc = "Backend the context scores on (VmafxBackend): the backend of its device, or of the device state a libvmaf caller imported; CPU for NULL and for a context on the CPU. Added in ABI 0.1.6."
+params = [
+  { name = "context", type = "VmafxContext", pass = "in_const" },
+]
+
+[[functions]]
+name = "vmafx_context_preallocate"
+header = "vmafx/context.h"
+since = "0.1"
+returns = "status"
+doc = "Let the context allocate `count` frames of `desc` once, in the memory its device reads fastest (page-locked host memory for a GPU device state, else host memory), for vmafx_context_acquire_frame(). Checked against the context's frame retention: a count below the depth its extractors keep is VMAFX_E_INVALID, now and when such an extractor is registered later. Added in ABI 0.1.6."
+params = [
+  { name = "context", type = "VmafxContext", pass = "in" },
+  { name = "desc", type = "VmafxFrameDesc", pass = "in" },
+  { name = "count", type = "u32", pass = "in" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_context_acquire_frame"
+header = "vmafx/context.h"
+since = "0.1"
+returns = "status"
+doc = "One of the frames vmafx_context_preallocate() made, with one reference the caller holds; waits until a frame is free (one returns when its last reference is dropped). VMAFX_E_INVALID without preallocated frames. Added in ABI 0.1.6."
+params = [
+  { name = "context", type = "VmafxContext", pass = "in" },
+  { name = "out", type = "VmafxFrame", pass = "out_handle" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_context_attach_sidedata"
+header = "vmafx/context.h"
+since = "0.1"
+returns = "status"
+doc = "Attach the perceptual side data of frame `index` (a pre-processor's interop blob, ADR-1118) to the context; it weights the frame in pooled scores while the `perceptual_weight` option is on. A blob of another interop major version is ignored for that frame with a warning and the engine's errno. Added in ABI 0.1.6."
+params = [
+  { name = "context", type = "VmafxContext", pass = "in" },
+  { name = "index", type = "u64", pass = "in" },
+  { name = "data", type = "cptr", pass = "in" },
+  { name = "size", type = "size", pass = "in" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_context_set_default_color"
+header = "vmafx/context.h"
+since = "0.1"
+returns = "status"
+doc = "The colour of the submitted frames that carry none (every member of their VmafxFrameDesc.color UNKNOWN), per input; NULL leaves that input's default unset. Only a model with a `conversion_target` reads frame colour: it converts every pair from its colour and refuses a pair whose colour is not fully specified. VMAFX_E_BUSY once a pair has been converted (the conversion is built from the first converted pair's colour), as is a submitted pair whose colour differs from it. Added in ABI 0.1.6."
+params = [
+  { name = "context", type = "VmafxContext", pass = "in" },
+  { name = "reference", type = "VmafxColor", pass = "in_const", nullable = true },
+  { name = "distorted", type = "VmafxColor", pass = "in_const", nullable = true },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_frame_converter_create"
+header = "vmafx/frame.h"
+since = "0.1"
+returns = "status"
+doc = "A converter for frames of `desc.src`. VMAFX_E_NOTSUP in a build without the conversion library (zimg); VMAFX_E_INVALID names a format, depth, size or colour it cannot convert. Added in ABI 0.1.6."
+params = [
+  { name = "desc", type = "VmafxConvertDesc", pass = "in" },
+  { name = "out", type = "VmafxFrameConverter", pass = "out_handle" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_frame_convert"
+header = "vmafx/frame.h"
+since = "0.1"
+returns = "status"
+doc = "Convert host frame `src` (read only, its geometry that of the converter) into a new host frame with one reference the caller holds. Added in ABI 0.1.6."
+params = [
+  { name = "converter", type = "VmafxFrameConverter", pass = "in" },
+  { name = "src", type = "VmafxFrame", pass = "in_const" },
+  { name = "out", type = "VmafxFrame", pass = "out_handle" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_frame_converter_destroy"
+header = "vmafx/frame.h"
+since = "0.1"
+returns = "status"
+doc = "Release a converter; VMAFX_E_INVALID for NULL, VMAFX_E_NOTSUP in a build without the conversion library. Added in ABI 0.1.6."
+params = [
+  { name = "converter", type = "VmafxFrameConverter", pass = "in" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_dnn_available"
+header = "vmafx/dnn.h"
+since = "0.1"
+returns = "u32"
+doc = "1 when this build runs tiny-AI models (ONNX Runtime), else 0. Added in ABI 0.1.6."
+params = []
+
+[[functions]]
+name = "vmafx_context_use_tiny_model"
+header = "vmafx/dnn.h"
+since = "0.1"
+returns = "status"
+doc = "Attach the tiny model at `onnx_path` (checked against the operator allowlist and size limit; its sidecar JSON read when present) to the context; it scores every frame as one more feature. `config` may be NULL. The engine's errno names a model it refuses; -ENOSYS in a build without tiny-AI support. Added in ABI 0.1.6."
+params = [
+  { name = "context", type = "VmafxContext", pass = "in" },
+  { name = "onnx_path", type = "cstr", pass = "in" },
+  { name = "config", type = "VmafxDnnConfig", pass = "in", nullable = true },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_context_set_codec_context"
+header = "vmafx/dnn.h"
+since = "0.1"
+returns = "status"
+doc = "The encoder `codec` (may be NULL), its `preset` (may be NULL) and `crf` that a codec-aware tiny model attached to the context reads. Added in ABI 0.1.6."
+params = [
+  { name = "context", type = "VmafxContext", pass = "in" },
+  { name = "codec", type = "cstr", pass = "in", nullable = true },
+  { name = "preset", type = "cstr", pass = "in", nullable = true },
+  { name = "crf", type = "i32", pass = "in" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_context_is_codec_aware"
+header = "vmafx/dnn.h"
+since = "0.1"
+returns = "u32"
+doc = "1 when the tiny model attached to the context reads the codec context, else 0 (also for NULL). Added in ABI 0.1.6."
+params = [
+  { name = "context", type = "VmafxContext", pass = "in_const" },
+]
+
+[[functions]]
+name = "vmafx_context_set_tiny_resize"
+header = "vmafx/dnn.h"
+since = "0.1"
+returns = "status"
+doc = "How frames are resized to the fixed input shape of the attached tiny model (VmafxDnnResize). Added in ABI 0.1.6."
+params = [
+  { name = "context", type = "VmafxContext", pass = "in" },
+  { name = "mode", type = "u32", pass = "in" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_dnn_session_open"
+header = "vmafx/dnn.h"
+since = "0.1"
+returns = "status"
+doc = "Open the ONNX model at `onnx_path` for direct runs (allowlist and size limit as vmafx_context_use_tiny_model()). `config` may be NULL. Added in ABI 0.1.6."
+params = [
+  { name = "onnx_path", type = "cstr", pass = "in" },
+  { name = "config", type = "VmafxDnnConfig", pass = "in", nullable = true },
+  { name = "out", type = "VmafxDnnSession", pass = "out_handle" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_dnn_session_run_luma8"
+header = "vmafx/dnn.h"
+since = "0.1"
+returns = "status"
+doc = "Run a single-input, single-output session on an 8-bit plane of `w` x `h` (`in`, rows `in_stride` bytes apart) into `out` (rows `out_stride` bytes apart). Added in ABI 0.1.6."
+params = [
+  { name = "session", type = "VmafxDnnSession", pass = "in" },
+  { name = "in", type = "cptr", pass = "in" },
+  { name = "in_stride", type = "size", pass = "in" },
+  { name = "w", type = "u32", pass = "in" },
+  { name = "h", type = "u32", pass = "in" },
+  { name = "out", type = "ptr", pass = "in" },
+  { name = "out_stride", type = "size", pass = "in" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_dnn_session_run_plane16"
+header = "vmafx/dnn.h"
+since = "0.1"
+returns = "status"
+doc = "vmafx_dnn_session_run_luma8() on a plane of `bpc` bits (9 to 16) in 16-bit samples; strides in bytes. Added in ABI 0.1.6."
+params = [
+  { name = "session", type = "VmafxDnnSession", pass = "in" },
+  { name = "in", type = "cptr", pass = "in" },
+  { name = "in_stride", type = "size", pass = "in" },
+  { name = "w", type = "u32", pass = "in" },
+  { name = "h", type = "u32", pass = "in" },
+  { name = "bpc", type = "u32", pass = "in" },
+  { name = "out", type = "ptr", pass = "in" },
+  { name = "out_stride", type = "size", pass = "in" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_dnn_session_run"
+header = "vmafx/dnn.h"
+since = "0.1"
+returns = "status"
+doc = "Run the session on `n_inputs` named float32 tensors into `n_outputs` caller-sized outputs (each output's `written` is set). Added in ABI 0.1.6."
+params = [
+  { name = "session", type = "VmafxDnnSession", pass = "in" },
+  { name = "inputs", type = "VmafxDnnInput", pass = "in" },
+  { name = "n_inputs", type = "size", pass = "in" },
+  { name = "outputs", type = "VmafxDnnOutput", pass = "out" },
+  { name = "n_outputs", type = "size", pass = "in" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_dnn_session_close"
+header = "vmafx/dnn.h"
+since = "0.1"
+returns = "void"
+doc = "Close a session; NULL is a no-op. Added in ABI 0.1.6."
+params = [
+  { name = "session", type = "VmafxDnnSession", pass = "in" },
+]
+
+[[functions]]
+name = "vmafx_dnn_session_runtime_device"
+header = "vmafx/dnn.h"
+since = "0.1"
+returns = "cstr"
+doc = "Execution provider the runtime attached to the session (`CPU`, `CUDA`, ...); lives as long as the session; NULL for NULL. Added in ABI 0.1.6."
+params = [
+  { name = "session", type = "VmafxDnnSession", pass = "in" },
+]
+
+[[functions]]
+name = "vmafx_dnn_verify_signature"
+header = "vmafx/dnn.h"
+since = "0.1"
+returns = "status"
+doc = "Verify the signature the model registry at `registry_path` records for the ONNX file at `onnx_path` (ADR-0211). The engine's errno names the failure; -ENOSYS without tiny-AI support. Added in ABI 0.1.6."
+params = [
+  { name = "onnx_path", type = "cstr", pass = "in" },
+  { name = "registry_path", type = "cstr", pass = "in", nullable = true },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_mcp_available"
+header = "vmafx/mcp.h"
+since = "0.1"
+returns = "u32"
+doc = "1 when this build has the embedded MCP server, else 0. Added in ABI 0.1.6."
+params = []
+
+[[functions]]
+name = "vmafx_mcp_transport_available"
+header = "vmafx/mcp.h"
+since = "0.1"
+returns = "u32"
+doc = "1 when this build has MCP transport `transport` (VmafxMcpTransport), else 0. Added in ABI 0.1.6."
+params = [
+  { name = "transport", type = "u32", pass = "in" },
+]
+
+[[functions]]
+name = "vmafx_mcp_server_create"
+header = "vmafx/mcp.h"
+since = "0.1"
+returns = "status"
+doc = "An MCP server answering for `context`, which must outlive it; no transport runs yet. `config` may be NULL. VMAFX_E_NOTSUP in a build without the MCP server. Added in ABI 0.1.6."
+params = [
+  { name = "context", type = "VmafxContext", pass = "in" },
+  { name = "config", type = "VmafxMcpConfig", pass = "in", nullable = true },
+  { name = "out", type = "VmafxMcpServer", pass = "out_handle" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_mcp_start_sse"
+header = "vmafx/mcp.h"
+since = "0.1"
+returns = "status"
+doc = "Start the SSE transport on loopback; `port` receives the bound port (the ephemeral one for port 0). Added in ABI 0.1.6."
+params = [
+  { name = "server", type = "VmafxMcpServer", pass = "in" },
+  { name = "config", type = "VmafxMcpSseConfig", pass = "in" },
+  { name = "port", type = "u32", pass = "out" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_mcp_start_uds"
+header = "vmafx/mcp.h"
+since = "0.1"
+returns = "status"
+doc = "Start the Unix domain socket transport. Added in ABI 0.1.6."
+params = [
+  { name = "server", type = "VmafxMcpServer", pass = "in" },
+  { name = "config", type = "VmafxMcpUdsConfig", pass = "in" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_mcp_start_stdio"
+header = "vmafx/mcp.h"
+since = "0.1"
+returns = "status"
+doc = "Start the file-descriptor transport. Added in ABI 0.1.6."
+params = [
+  { name = "server", type = "VmafxMcpServer", pass = "in" },
+  { name = "config", type = "VmafxMcpStdioConfig", pass = "in" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_mcp_stop"
+header = "vmafx/mcp.h"
+since = "0.1"
+returns = "status"
+doc = "Stop every running transport and join its thread. Added in ABI 0.1.6."
+params = [
+  { name = "server", type = "VmafxMcpServer", pass = "in" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_mcp_server_destroy"
+header = "vmafx/mcp.h"
+since = "0.1"
+returns = "void"
+doc = "Stop and release a server; NULL is a no-op. Added in ABI 0.1.6."
+params = [
+  { name = "server", type = "VmafxMcpServer", pass = "in" },
+]
+
+[[functions]]
+name = "vmafx_frame_from_picture"
+header = "vmafx/libvmaf_bridge.h"
+since = "0.1"
+returns = "status"
+doc = "A frame handle for a libvmaf picture (from vmaf_picture_alloc(), a preallocated pool, a device import), holding one new reference to its memory; the picture keeps its own. Not for the same picture on two threads at once. VMAFX_E_INVALID for a picture without a reference count. Added in ABI 0.1.6."
+params = [
+  { name = "picture", type = "foreign:VmafPicture", pass = "in" },
+  { name = "out", type = "VmafxFrame", pass = "out_handle" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_frame_to_picture"
+header = "vmafx/libvmaf_bridge.h"
+since = "0.1"
+returns = "status"
+doc = "Fill `picture` with a libvmaf view of `frame` holding one new reference (released with vmaf_picture_unref() or consumed by vmaf_read_pictures()); the caller keeps its frame reference. Added in ABI 0.1.6."
+params = [
+  { name = "frame", type = "VmafxFrame", pass = "in" },
+  { name = "picture", type = "foreign:VmafPicture", pass = "in" },
+  { name = "error", type = "VmafxError", pass = "error" },
+]
+
+[[functions]]
+name = "vmafx_model_from_libvmaf"
+header = "vmafx/libvmaf_bridge.h"
+since = "0.1"
+returns = "handle:VmafxModel"
+doc = "The VmafxModel a libvmaf model handle belongs to (borrowed), or NULL. Added in ABI 0.1.6."
+params = [
+  { name = "model", type = "foreign:VmafModel", pass = "in" },
+]
+
+[[functions]]
+name = "vmafx_model_libvmaf_handle"
+header = "vmafx/libvmaf_bridge.h"
+since = "0.1"
+returns = "foreign:VmafModel"
+doc = "The libvmaf handle of a model (borrowed: lives as long as the model), or NULL. Added in ABI 0.1.6."
+params = [
+  { name = "model", type = "VmafxModel", pass = "in" },
+]
+
+[[functions]]
+name = "vmafx_model_set_from_libvmaf"
+header = "vmafx/libvmaf_bridge.h"
+since = "0.1"
+returns = "handle:VmafxModelSet"
+doc = "The VmafxModelSet a libvmaf model collection belongs to (borrowed), or NULL. Added in ABI 0.1.6."
+params = [
+  { name = "collection", type = "foreign:VmafModelCollection", pass = "in" },
+]
+
+[[functions]]
+name = "vmafx_model_set_libvmaf_handle"
+header = "vmafx/libvmaf_bridge.h"
+since = "0.1"
+returns = "foreign:VmafModelCollection"
+doc = "The libvmaf handle of a model set (borrowed: lives as long as the set), or NULL. Added in ABI 0.1.6."
+params = [
+  { name = "set", type = "VmafxModelSet", pass = "in" },
+]
+
+
+# ---------------------------------------------------------------------------
+# The libvmaf compatibility layer (ADR-1852 design section 2.11, decision D3):
+# every function the libvmaf headers export, in header order. libvmaf.so.3
+# defines them on exported vmafx_ functions only. `shim` / `glue` bodies are
+# generated into core/src/compat/libvmaf/libvmaf_gen.c; `manual` ones are
+# hand-written in `file` and call `calls`; `engine` functions keep the
+# engine's own definition while their backend (`engine_with`) is built, a
+# declared exception that `until` ends. A manual function with `engine_with`
+# serves builds without that backend. `when` names a build feature the
+# function exists in. core/src/vmafx/engine_names_gen.h renames every engine
+# body of a compat function to vmaf_engine_<stem>.
+
+[[compat]]
+name = "vmaf_dnn_available"
+header = "libvmaf/dnn.h"
+kind = "shim"
+target = "vmafx_dnn_available"
+returns = "int"
+params = []
+return_expr = "(int)vmafx_dnn_available()"
+
+[[compat]]
+name = "vmaf_use_tiny_model"
+header = "libvmaf/dnn.h"
+kind = "manual"
+target = "vmafx_context_use_tiny_model"
+returns = "int"
+params = [
+  { name = "ctx", c = "VmafContext *" },
+  { name = "onnx_path", c = "const char *" },
+  { name = "cfg", c = "const VmafDnnConfig *" },
+]
+file = "core/src/compat/libvmaf/dnn.c"
+calls = ["vmafx_context_from_libvmaf", "vmafx_context_use_tiny_model"]
+note = "VmafDnnConfig -> VmafxDnnConfig"
+
+[[compat]]
+name = "vmaf_dnn_set_codec_context"
+header = "libvmaf/dnn.h"
+kind = "manual"
+target = "vmafx_context_set_codec_context"
+returns = "int"
+params = [
+  { name = "ctx", c = "VmafContext *" },
+  { name = "codec_name", c = "const char *" },
+  { name = "preset", c = "const char *" },
+  { name = "crf", c = "int" },
+]
+file = "core/src/compat/libvmaf/dnn.c"
+calls = ["vmafx_context_from_libvmaf", "vmafx_context_set_codec_context"]
+
+[[compat]]
+name = "vmaf_dnn_is_codec_aware"
+header = "libvmaf/dnn.h"
+kind = "manual"
+target = "vmafx_context_is_codec_aware"
+returns = "int"
+params = [
+  { name = "ctx", c = "const VmafContext *" },
+]
+file = "core/src/compat/libvmaf/dnn.c"
+calls = ["vmafx_context_from_libvmaf", "vmafx_context_is_codec_aware"]
+
+[[compat]]
+name = "vmaf_dnn_set_resize_mode"
+header = "libvmaf/dnn.h"
+kind = "manual"
+target = "vmafx_context_set_tiny_resize"
+returns = "int"
+params = [
+  { name = "ctx", c = "VmafContext *" },
+  { name = "mode", c = "VmafDnnResizeMode" },
+]
+file = "core/src/compat/libvmaf/dnn.c"
+calls = ["vmafx_context_from_libvmaf", "vmafx_context_set_tiny_resize"]
+
+[[compat]]
+name = "vmaf_dnn_session_open"
+header = "libvmaf/dnn.h"
+kind = "manual"
+target = "vmafx_dnn_session_open"
+returns = "int"
+params = [
+  { name = "out", c = "VmafDnnSession **" },
+  { name = "onnx_path", c = "const char *" },
+  { name = "cfg", c = "const VmafDnnConfig *" },
+]
+file = "core/src/compat/libvmaf/dnn.c"
+calls = ["vmafx_dnn_session_open"]
+note = "VmafDnnSession is VmafxDnnSession under the old name"
+
+[[compat]]
+name = "vmaf_dnn_session_run_luma8"
+header = "libvmaf/dnn.h"
+kind = "manual"
+target = "vmafx_dnn_session_run_luma8"
+returns = "int"
+params = [
+  { name = "sess", c = "VmafDnnSession *" },
+  { name = "in", c = "const uint8_t *" },
+  { name = "in_stride", c = "size_t" },
+  { name = "w", c = "int" },
+  { name = "h", c = "int" },
+  { name = "out", c = "uint8_t *" },
+  { name = "out_stride", c = "size_t" },
+]
+file = "core/src/compat/libvmaf/dnn.c"
+calls = ["vmafx_dnn_session_run_luma8"]
+note = "negative w / h refused before the call"
+
+[[compat]]
+name = "vmaf_dnn_session_run_plane16"
+header = "libvmaf/dnn.h"
+kind = "manual"
+target = "vmafx_dnn_session_run_plane16"
+returns = "int"
+params = [
+  { name = "sess", c = "VmafDnnSession *" },
+  { name = "in", c = "const uint16_t *" },
+  { name = "in_stride", c = "size_t" },
+  { name = "w", c = "int" },
+  { name = "h", c = "int" },
+  { name = "bpc", c = "int" },
+  { name = "out", c = "uint16_t *" },
+  { name = "out_stride", c = "size_t" },
+]
+file = "core/src/compat/libvmaf/dnn.c"
+calls = ["vmafx_dnn_session_run_plane16"]
+
+[[compat]]
+name = "vmaf_dnn_session_run"
+header = "libvmaf/dnn.h"
+kind = "manual"
+target = "vmafx_dnn_session_run"
+returns = "int"
+params = [
+  { name = "sess", c = "VmafDnnSession *" },
+  { name = "inputs", c = "const VmafDnnInput *" },
+  { name = "n_inputs", c = "size_t" },
+  { name = "outputs", c = "VmafDnnOutput *" },
+  { name = "n_outputs", c = "size_t" },
+]
+file = "core/src/compat/libvmaf/dnn.c"
+calls = ["vmafx_dnn_session_run"]
+note = "VmafDnnInput / VmafDnnOutput layouts equal VmafxDnnInput / VmafxDnnOutput"
+
+[[compat]]
+name = "vmaf_dnn_session_close"
+header = "libvmaf/dnn.h"
+kind = "manual"
+target = "vmafx_dnn_session_close"
+returns = "void"
+params = [
+  { name = "sess", c = "VmafDnnSession *" },
+]
+file = "core/src/compat/libvmaf/dnn.c"
+calls = ["vmafx_dnn_session_close"]
+
+[[compat]]
+name = "vmaf_dnn_session_attached_ep"
+header = "libvmaf/dnn.h"
+kind = "manual"
+target = "vmafx_dnn_session_runtime_device"
+returns = "const char *"
+params = [
+  { name = "sess", c = "VmafDnnSession *" },
+]
+file = "core/src/compat/libvmaf/dnn.c"
+calls = ["vmafx_dnn_session_runtime_device"]
+
+[[compat]]
+name = "vmaf_dnn_verify_signature"
+header = "libvmaf/dnn.h"
+kind = "manual"
+target = "vmafx_dnn_verify_signature"
+returns = "int"
+params = [
+  { name = "onnx_path", c = "const char *" },
+  { name = "registry_path", c = "const char *" },
+]
+file = "core/src/compat/libvmaf/dnn.c"
+calls = ["vmafx_dnn_verify_signature"]
+
+[[compat]]
+name = "vmaf_feature_dictionary_set"
+header = "libvmaf/feature.h"
+kind = "shim"
+target = "vmafx_options_set"
+returns = "int"
+params = [
+  { name = "dict", c = "VmafFeatureDictionary **" },
+  { name = "key", c = "const char *" },
+  { name = "val", c = "const char *" },
+]
+note = "VmafFeatureDictionary is VmafxOptions under the old name"
+args = ["(VmafxOptions **)dict", "key", "val", "&error"]
+
+[[compat]]
+name = "vmaf_feature_dictionary_free"
+header = "libvmaf/feature.h"
+kind = "manual"
+target = "vmafx_options_free"
+returns = "int"
+params = [
+  { name = "dict", c = "VmafFeatureDictionary **" },
+]
+file = "core/src/compat/libvmaf/context.c"
+calls = ["vmafx_options_free"]
 
 [[compat]]
 name = "vmaf_init"
@@ -1733,17 +3168,142 @@ args = ["&config", "&context", "&error"]
 store = "*vmaf = vmafx_context_libvmaf_handle(context);"
 
 [[compat]]
-name = "vmaf_close"
+name = "vmaf_use_features_from_model"
 header = "libvmaf/libvmaf.h"
-kind = "shim"
-target = "vmafx_context_destroy"
+kind = "manual"
+target = "vmafx_context_use_model"
 returns = "int"
 params = [
   { name = "vmaf", c = "VmafContext *" },
+  { name = "model", c = "VmafModel *" },
+]
+file = "core/src/compat/libvmaf/context.c"
+calls = ["vmafx_context_from_libvmaf", "vmafx_model_from_libvmaf", "vmafx_context_use_model"]
+note = "the context takes a model reference (ADR-1755)"
+
+[[compat]]
+name = "vmaf_use_features_from_model_collection"
+header = "libvmaf/libvmaf.h"
+kind = "manual"
+target = "vmafx_context_use_model_set"
+returns = "int"
+params = [
+  { name = "vmaf", c = "VmafContext *" },
+  { name = "model_collection", c = "VmafModelCollection *" },
+]
+file = "core/src/compat/libvmaf/context.c"
+calls = ["vmafx_context_from_libvmaf", "vmafx_model_set_from_libvmaf", "vmafx_context_use_model_set"]
+
+[[compat]]
+name = "vmaf_use_feature"
+header = "libvmaf/libvmaf.h"
+kind = "manual"
+target = "vmafx_context_use_feature"
+returns = "int"
+params = [
+  { name = "vmaf", c = "VmafContext *" },
+  { name = "feature_name", c = "const char *" },
+  { name = "opts_dict", c = "VmafFeatureDictionary *" },
+]
+file = "core/src/compat/libvmaf/context.c"
+calls = ["vmafx_context_from_libvmaf", "vmafx_context_use_feature", "vmafx_options_free"]
+note = "consumes opts_dict past the argument checks, as libvmaf does"
+
+[[compat]]
+name = "vmaf_import_feature_score"
+header = "libvmaf/libvmaf.h"
+kind = "shim"
+target = "vmafx_context_import_score"
+returns = "int"
+params = [
+  { name = "vmaf", c = "VmafContext *" },
+  { name = "feature_name", c = "const char *" },
+  { name = "value", c = "double" },
+  { name = "index", c = "unsigned" },
 ]
 null_checks = ["vmaf"]
 context = "vmaf"
-args = ["context", "&error"]
+args = ["context", "feature_name", "(uint64_t)index", "value", "&error"]
+
+[[compat]]
+name = "vmaf_read_pictures"
+header = "libvmaf/libvmaf.h"
+kind = "manual"
+target = "vmafx_submit"
+returns = "int"
+params = [
+  { name = "vmaf", c = "VmafContext *" },
+  { name = "ref", c = "VmafPicture *" },
+  { name = "dist", c = "VmafPicture *" },
+  { name = "index", c = "unsigned" },
+]
+file = "core/src/compat/libvmaf/context.c"
+calls = ["vmafx_context_from_libvmaf", "vmafx_frame_from_picture", "vmafx_frame_unref", "vmafx_submit", "vmafx_flush"]
+note = "(NULL, NULL) flushes; both pictures consumed on every path past the argument checks"
+
+[[compat]]
+name = "vmaf_set_sample_range_check_enabled"
+header = "libvmaf/libvmaf.h"
+kind = "manual"
+target = "vmafx_context_set_option"
+returns = "int"
+params = [
+  { name = "vmaf", c = "VmafContext *" },
+  { name = "enabled", c = "int" },
+]
+file = "core/src/compat/libvmaf/context.c"
+calls = ["vmafx_context_from_libvmaf", "vmafx_context_set_option"]
+note = "option check_sample_range (ADR-1918)"
+
+[[compat]]
+name = "vmaf_set_input_colorimetry"
+header = "libvmaf/libvmaf.h"
+kind = "manual"
+target = "vmafx_context_set_default_color"
+returns = "int"
+params = [
+  { name = "vmaf", c = "VmafContext *" },
+  { name = "ref", c = "const VmafColor *" },
+  { name = "dist", c = "const VmafColor *" },
+]
+file = "core/src/compat/libvmaf/context.c"
+calls = ["vmafx_context_from_libvmaf", "vmafx_context_set_default_color"]
+note = "the colour of frames that carry none; VmafxFrameDesc.color gives a frame its own (ADR-2093)"
+
+[[compat]]
+name = "vmaf_score_at_index"
+header = "libvmaf/libvmaf.h"
+kind = "shim"
+target = "vmafx_score_frame"
+returns = "int"
+params = [
+  { name = "vmaf", c = "VmafContext *" },
+  { name = "model", c = "VmafModel *" },
+  { name = "score", c = "double *" },
+  { name = "index", c = "unsigned" },
+]
+null_checks = ["vmaf", "model", "score"]
+context = "vmaf"
+out_struct = { var = "record", type = "VmafxScore" }
+args = ["context", "vmafx_model_from_libvmaf(model)", "(uint64_t)index", "&record", "&error"]
+post = ["record.index == (uint64_t)index"]
+store = "*score = record.value;"
+
+[[compat]]
+name = "vmaf_score_at_index_model_collection"
+header = "libvmaf/libvmaf.h"
+kind = "manual"
+target = "vmafx_score_frame_model_set"
+returns = "int"
+params = [
+  { name = "vmaf", c = "VmafContext *" },
+  { name = "model_collection", c = "VmafModelCollection *" },
+  { name = "score", c = "VmafModelCollectionScore *" },
+  { name = "index", c = "unsigned" },
+]
+file = "core/src/compat/libvmaf/score.c"
+calls = ["vmafx_context_from_libvmaf", "vmafx_model_set_from_libvmaf", "vmafx_score_frame_model_set"]
+note = "VmafxModelSetScore -> VmafModelCollectionScore"
 
 [[compat]]
 name = "vmaf_feature_score_at_index"
@@ -1761,7 +3321,185 @@ null_checks = ["vmaf", "feature_name", "score"]
 context = "vmaf"
 out_struct = { var = "record", type = "VmafxScore" }
 args = ["context", "feature_name", "(uint64_t)index", "&record", "&error"]
+post = ["record.index == (uint64_t)index"]
 store = "*score = record.value;"
+
+[[compat]]
+name = "vmaf_score_pooled"
+header = "libvmaf/libvmaf.h"
+kind = "glue"
+target = "vmafx_score_pooled"
+returns = "int"
+params = [
+  { name = "vmaf", c = "VmafContext *" },
+  { name = "model", c = "VmafModel *" },
+  { name = "pool_method", c = "enum VmafPoolingMethod" },
+  { name = "score", c = "double *" },
+  { name = "index_low", c = "unsigned" },
+  { name = "index_high", c = "unsigned" },
+]
+note = "pool values equal; VMAFX_PENDING -> -EAGAIN"
+null_checks = ["vmaf", "model", "score"]
+context = "vmaf"
+out_struct = { var = "record", type = "VmafxPooledScore" }
+args = ["context", "vmafx_model_from_libvmaf(model)", "(uint32_t)pool_method", "(uint64_t)index_low", "(uint64_t)index_high", "&record", "&error"]
+store = "*score = record.value;"
+
+[[compat]]
+name = "vmaf_score_pooled_model_collection"
+header = "libvmaf/libvmaf.h"
+kind = "manual"
+target = "vmafx_score_pooled_model_set"
+returns = "int"
+params = [
+  { name = "vmaf", c = "VmafContext *" },
+  { name = "model_collection", c = "VmafModelCollection *" },
+  { name = "pool_method", c = "enum VmafPoolingMethod" },
+  { name = "score", c = "VmafModelCollectionScore *" },
+  { name = "index_low", c = "unsigned" },
+  { name = "index_high", c = "unsigned" },
+]
+file = "core/src/compat/libvmaf/score.c"
+calls = ["vmafx_context_from_libvmaf", "vmafx_model_set_from_libvmaf", "vmafx_score_pooled_model_set"]
+
+[[compat]]
+name = "vmaf_feature_score_pooled"
+header = "libvmaf/libvmaf.h"
+kind = "glue"
+target = "vmafx_feature_score_pooled"
+returns = "int"
+params = [
+  { name = "vmaf", c = "VmafContext *" },
+  { name = "feature_name", c = "const char *" },
+  { name = "pool_method", c = "enum VmafPoolingMethod" },
+  { name = "score", c = "double *" },
+  { name = "index_low", c = "unsigned" },
+  { name = "index_high", c = "unsigned" },
+]
+null_checks = ["vmaf", "feature_name", "score"]
+context = "vmaf"
+out_struct = { var = "record", type = "VmafxPooledScore" }
+args = ["context", "feature_name", "(uint32_t)pool_method", "(uint64_t)index_low", "(uint64_t)index_high", "&record", "&error"]
+store = "*score = record.value;"
+
+[[compat]]
+name = "vmaf_preallocate_pictures"
+header = "libvmaf/libvmaf.h"
+kind = "manual"
+target = "vmafx_context_preallocate"
+returns = "int"
+params = [
+  { name = "vmaf", c = "VmafContext *" },
+  { name = "cfg", c = "VmafPictureConfiguration" },
+]
+file = "core/src/compat/libvmaf/context.c"
+calls = ["vmafx_context_from_libvmaf", "vmafx_context_preallocate"]
+note = "pool owned by the bridged context; pinned for an imported GPU state as before"
+
+[[compat]]
+name = "vmaf_fetch_preallocated_picture"
+header = "libvmaf/libvmaf.h"
+kind = "manual"
+target = "vmafx_context_acquire_frame"
+returns = "int"
+params = [
+  { name = "vmaf", c = "VmafContext *" },
+  { name = "pic", c = "VmafPicture *" },
+]
+file = "core/src/compat/libvmaf/context.c"
+calls = ["vmafx_context_from_libvmaf", "vmafx_context_acquire_frame", "vmafx_frame_to_picture", "vmafx_frame_unref"]
+
+[[compat]]
+name = "vmaf_close"
+header = "libvmaf/libvmaf.h"
+kind = "shim"
+target = "vmafx_context_destroy"
+returns = "int"
+params = [
+  { name = "vmaf", c = "VmafContext *" },
+]
+null_checks = ["vmaf"]
+context = "vmaf"
+args = ["context", "&error"]
+
+[[compat]]
+name = "vmaf_write_output"
+header = "libvmaf/libvmaf.h"
+kind = "glue"
+target = "vmafx_report_write"
+returns = "int"
+params = [
+  { name = "vmaf", c = "VmafContext *" },
+  { name = "output_path", c = "const char *" },
+  { name = "fmt", c = "enum VmafOutputFormat" },
+]
+note = "format values equal; JSON / XML carry the provenance record (ADR-2073)"
+null_checks = ["vmaf"]
+context = "vmaf"
+args = ["context", "output_path", "(uint32_t)fmt", "0u", "NULL", "&error"]
+
+[[compat]]
+name = "vmaf_write_output_with_format"
+header = "libvmaf/libvmaf.h"
+kind = "glue"
+target = "vmafx_report_write"
+returns = "int"
+params = [
+  { name = "vmaf", c = "VmafContext *" },
+  { name = "output_path", c = "const char *" },
+  { name = "fmt", c = "enum VmafOutputFormat" },
+  { name = "score_format", c = "const char *" },
+]
+null_checks = ["vmaf"]
+context = "vmaf"
+args = ["context", "output_path", "(uint32_t)fmt", "0u", "score_format", "&error"]
+
+[[compat]]
+name = "vmaf_context_get_backend"
+header = "libvmaf/libvmaf.h"
+kind = "manual"
+target = "vmafx_context_backend"
+returns = "int"
+params = [
+  { name = "vmaf", c = "VmafContext *" },
+  { name = "out", c = "enum VmafBackend *" },
+]
+file = "core/src/compat/libvmaf/context.c"
+calls = ["vmafx_context_from_libvmaf", "vmafx_context_backend"]
+note = "backend values equal"
+
+[[compat]]
+name = "vmaf_feature_backend_twin"
+header = "libvmaf/libvmaf.h"
+kind = "manual"
+target = "vmafx_feature_resolve"
+returns = "int"
+params = [
+  { name = "vmaf", c = "VmafContext *" },
+  { name = "feature_name", c = "const char *" },
+  { name = "opts_dict", c = "const VmafFeatureDictionary *" },
+  { name = "pic_cfg", c = "const VmafPictureConfiguration *" },
+  { name = "twin_name", c = "const char **" },
+  { name = "unsupported_option", c = "const char **" },
+]
+file = "core/src/compat/libvmaf/context.c"
+calls = ["vmafx_context_from_libvmaf", "vmafx_feature_resolve"]
+note = "VmafxFeatureResolution -> (twin_name, unsupported_option)"
+
+[[compat]]
+name = "vmaf_registered_feature_extractor"
+header = "libvmaf/libvmaf.h"
+kind = "manual"
+target = "vmafx_context_extractor_info"
+returns = "int"
+params = [
+  { name = "vmaf", c = "VmafContext *" },
+  { name = "index", c = "unsigned" },
+  { name = "name", c = "const char **" },
+  { name = "backend", c = "enum VmafBackend *" },
+]
+file = "core/src/compat/libvmaf/context.c"
+calls = ["vmafx_context_from_libvmaf", "vmafx_context_extractor_info"]
 
 [[compat]]
 name = "vmaf_version"
@@ -1771,6 +3509,1957 @@ target = "vmafx_version_string"
 returns = "const char *"
 params = []
 return_expr = "vmafx_version_string()"
+
+[[compat]]
+name = "vmaf_cuda_state_init"
+header = "libvmaf/libvmaf_cuda.h"
+kind = "engine"
+target = "vmafx_device_create (CUDA, external context)"
+returns = "int"
+params = [
+  { name = "cu_state", c = "VmafCudaState **" },
+  { name = "cfg", c = "VmafCudaConfiguration" },
+]
+engine_with = "cuda"
+until = "the CUDA lane of RC4 WP3 (#2277) lands: then a manual compat function on its CUDA device frames"
+
+[[compat]]
+name = "vmaf_cuda_state_free"
+header = "libvmaf/libvmaf_cuda.h"
+kind = "engine"
+target = "vmafx_device_unref"
+returns = "int"
+params = [
+  { name = "cu_state", c = "VmafCudaState *" },
+]
+engine_with = "cuda"
+until = "the CUDA lane of RC4 WP3 (#2277) lands: then a manual compat function on its CUDA device frames"
+
+[[compat]]
+name = "vmaf_cuda_import_state"
+header = "libvmaf/libvmaf_cuda.h"
+kind = "engine"
+target = "vmafx_context_use_device"
+returns = "int"
+params = [
+  { name = "vmaf", c = "VmafContext *" },
+  { name = "cu_state", c = "VmafCudaState *" },
+]
+engine_with = "cuda"
+until = "the CUDA lane of RC4 WP3 (#2277) lands: then a manual compat function on its CUDA device frames"
+
+[[compat]]
+name = "vmaf_cuda_preallocate_pictures"
+header = "libvmaf/libvmaf_cuda.h"
+kind = "engine"
+target = "vmafx_frame_pool_create (CUDA device)"
+returns = "int"
+params = [
+  { name = "vmaf", c = "VmafContext *" },
+  { name = "cfg", c = "VmafCudaPictureConfiguration" },
+]
+engine_with = "cuda"
+until = "the CUDA lane of RC4 WP3 (#2277) lands: then a manual compat function on its CUDA device frames"
+
+[[compat]]
+name = "vmaf_cuda_fetch_preallocated_picture"
+header = "libvmaf/libvmaf_cuda.h"
+kind = "engine"
+target = "vmafx_frame_pool_acquire + vmafx_frame_to_picture"
+returns = "int"
+params = [
+  { name = "vmaf", c = "VmafContext *" },
+  { name = "pic", c = "VmafPicture *" },
+]
+engine_with = "cuda"
+until = "the CUDA lane of RC4 WP3 (#2277) lands: then a manual compat function on its CUDA device frames"
+
+[[compat]]
+name = "vmaf_hip_available"
+header = "libvmaf/libvmaf_hip.h"
+kind = "manual"
+target = "vmafx_device_count"
+returns = "int"
+params = []
+engine_with = "hip"
+until = "the HIP lane of RC4 WP3 lands: then the compat function serves HIP builds too"
+file = "core/src/compat/libvmaf/backend_absent_hip.c"
+calls = ["vmafx_device_count"]
+note = "builds without HIP; HIP builds keep the engine definition"
+
+[[compat]]
+name = "vmaf_hip_state_init"
+header = "libvmaf/libvmaf_hip.h"
+kind = "manual"
+target = "vmafx_device_create"
+returns = "int"
+params = [
+  { name = "out", c = "VmafHipState **" },
+  { name = "cfg", c = "VmafHipConfiguration" },
+]
+engine_with = "hip"
+until = "the HIP lane of RC4 WP3 lands: then the compat function serves HIP builds too"
+file = "core/src/compat/libvmaf/backend_absent_hip.c"
+calls = ["vmafx_device_create", "vmafx_device_unref"]
+
+[[compat]]
+name = "vmaf_hip_import_state"
+header = "libvmaf/libvmaf_hip.h"
+kind = "manual"
+target = "vmafx_context_use_device"
+returns = "int"
+params = [
+  { name = "ctx", c = "VmafContext *" },
+  { name = "state", c = "VmafHipState *" },
+]
+engine_with = "hip"
+until = "the HIP lane of RC4 WP3 lands: then the compat function serves HIP builds too"
+file = "core/src/compat/libvmaf/backend_absent_hip.c"
+calls = []
+
+[[compat]]
+name = "vmaf_hip_state_free"
+header = "libvmaf/libvmaf_hip.h"
+kind = "manual"
+target = "vmafx_device_unref"
+returns = "void"
+params = [
+  { name = "state", c = "VmafHipState **" },
+]
+engine_with = "hip"
+until = "the HIP lane of RC4 WP3 lands: then the compat function serves HIP builds too"
+file = "core/src/compat/libvmaf/backend_absent_hip.c"
+calls = []
+
+[[compat]]
+name = "vmaf_hip_list_devices"
+header = "libvmaf/libvmaf_hip.h"
+kind = "manual"
+target = "vmafx_device_count"
+returns = "int"
+params = []
+engine_with = "hip"
+until = "the HIP lane of RC4 WP3 lands: then the compat function serves HIP builds too"
+file = "core/src/compat/libvmaf/backend_absent_hip.c"
+calls = ["vmafx_device_count"]
+
+[[compat]]
+name = "vmaf_mcp_available"
+header = "libvmaf/libvmaf_mcp.h"
+kind = "shim"
+target = "vmafx_mcp_available"
+returns = "int"
+params = []
+return_expr = "(int)vmafx_mcp_available()"
+when = "mcp"
+
+[[compat]]
+name = "vmaf_mcp_transport_available"
+header = "libvmaf/libvmaf_mcp.h"
+kind = "shim"
+target = "vmafx_mcp_transport_available"
+returns = "int"
+params = [
+  { name = "transport", c = "VmafMcpTransport" },
+]
+return_expr = "(int)vmafx_mcp_transport_available((uint32_t)transport)"
+when = "mcp"
+
+[[compat]]
+name = "vmaf_mcp_init"
+header = "libvmaf/libvmaf_mcp.h"
+kind = "manual"
+target = "vmafx_mcp_server_create"
+returns = "int"
+params = [
+  { name = "out", c = "VmafMcpServer **" },
+  { name = "ctx", c = "VmafContext *" },
+  { name = "cfg", c = "const VmafMcpConfig *" },
+]
+when = "mcp"
+file = "core/src/compat/libvmaf/mcp.c"
+calls = ["vmafx_context_from_libvmaf", "vmafx_mcp_server_create"]
+note = "VmafMcpServer is VmafxMcpServer under the old name"
+
+[[compat]]
+name = "vmaf_mcp_start_sse"
+header = "libvmaf/libvmaf_mcp.h"
+kind = "manual"
+target = "vmafx_mcp_start_sse"
+returns = "int"
+params = [
+  { name = "server", c = "VmafMcpServer *" },
+  { name = "cfg", c = "VmafMcpSseConfig *" },
+]
+when = "mcp"
+file = "core/src/compat/libvmaf/mcp.c"
+calls = ["vmafx_mcp_start_sse"]
+note = "the bound port is written back to cfg->port"
+
+[[compat]]
+name = "vmaf_mcp_start_uds"
+header = "libvmaf/libvmaf_mcp.h"
+kind = "manual"
+target = "vmafx_mcp_start_uds"
+returns = "int"
+params = [
+  { name = "server", c = "VmafMcpServer *" },
+  { name = "cfg", c = "const VmafMcpUdsConfig *" },
+]
+when = "mcp"
+file = "core/src/compat/libvmaf/mcp.c"
+calls = ["vmafx_mcp_start_uds"]
+
+[[compat]]
+name = "vmaf_mcp_start_stdio"
+header = "libvmaf/libvmaf_mcp.h"
+kind = "manual"
+target = "vmafx_mcp_start_stdio"
+returns = "int"
+params = [
+  { name = "server", c = "VmafMcpServer *" },
+  { name = "cfg", c = "const VmafMcpStdioConfig *" },
+]
+when = "mcp"
+file = "core/src/compat/libvmaf/mcp.c"
+calls = ["vmafx_mcp_start_stdio"]
+
+[[compat]]
+name = "vmaf_mcp_stop"
+header = "libvmaf/libvmaf_mcp.h"
+kind = "manual"
+target = "vmafx_mcp_stop"
+returns = "int"
+params = [
+  { name = "server", c = "VmafMcpServer *" },
+]
+when = "mcp"
+file = "core/src/compat/libvmaf/mcp.c"
+calls = ["vmafx_mcp_stop"]
+
+[[compat]]
+name = "vmaf_mcp_close"
+header = "libvmaf/libvmaf_mcp.h"
+kind = "manual"
+target = "vmafx_mcp_server_destroy"
+returns = "void"
+params = [
+  { name = "server", c = "VmafMcpServer **" },
+]
+when = "mcp"
+file = "core/src/compat/libvmaf/mcp.c"
+calls = ["vmafx_mcp_server_destroy"]
+
+[[compat]]
+name = "vmaf_metal_available"
+header = "libvmaf/libvmaf_metal.h"
+kind = "manual"
+target = "vmafx_device_count"
+returns = "int"
+params = []
+engine_with = "metal"
+until = "the Metal lane of RC4 WP3 lands: then the compat function serves Metal builds too"
+file = "core/src/compat/libvmaf/backend_absent_metal.c"
+calls = ["vmafx_device_count"]
+note = "builds without Metal; Metal builds keep the engine definition"
+
+[[compat]]
+name = "vmaf_metal_state_init"
+header = "libvmaf/libvmaf_metal.h"
+kind = "manual"
+target = "vmafx_device_create"
+returns = "int"
+params = [
+  { name = "out", c = "VmafMetalState **" },
+  { name = "cfg", c = "VmafMetalConfiguration" },
+]
+engine_with = "metal"
+until = "the Metal lane of RC4 WP3 lands: then the compat function serves Metal builds too"
+file = "core/src/compat/libvmaf/backend_absent_metal.c"
+calls = ["vmafx_device_create", "vmafx_device_unref"]
+
+[[compat]]
+name = "vmaf_metal_import_state"
+header = "libvmaf/libvmaf_metal.h"
+kind = "manual"
+target = "vmafx_context_use_device"
+returns = "int"
+params = [
+  { name = "ctx", c = "VmafContext *" },
+  { name = "state", c = "VmafMetalState *" },
+]
+engine_with = "metal"
+until = "the Metal lane of RC4 WP3 lands: then the compat function serves Metal builds too"
+file = "core/src/compat/libvmaf/backend_absent_metal.c"
+calls = []
+
+[[compat]]
+name = "vmaf_metal_state_free"
+header = "libvmaf/libvmaf_metal.h"
+kind = "manual"
+target = "vmafx_device_unref"
+returns = "void"
+params = [
+  { name = "state", c = "VmafMetalState **" },
+]
+engine_with = "metal"
+until = "the Metal lane of RC4 WP3 lands: then the compat function serves Metal builds too"
+file = "core/src/compat/libvmaf/backend_absent_metal.c"
+calls = []
+
+[[compat]]
+name = "vmaf_metal_list_devices"
+header = "libvmaf/libvmaf_metal.h"
+kind = "manual"
+target = "vmafx_device_count"
+returns = "int"
+params = []
+engine_with = "metal"
+until = "the Metal lane of RC4 WP3 lands: then the compat function serves Metal builds too"
+file = "core/src/compat/libvmaf/backend_absent_metal.c"
+calls = ["vmafx_device_count"]
+
+[[compat]]
+name = "vmaf_metal_state_init_external"
+header = "libvmaf/libvmaf_metal.h"
+kind = "manual"
+target = "vmafx_device_create"
+returns = "int"
+params = [
+  { name = "out", c = "VmafMetalState **" },
+  { name = "handles", c = "VmafMetalExternalHandles" },
+]
+engine_with = "metal"
+until = "the Metal lane of RC4 WP3 lands: then the compat function serves Metal builds too"
+file = "core/src/compat/libvmaf/backend_absent_metal.c"
+calls = ["vmafx_device_create", "vmafx_device_unref"]
+
+[[compat]]
+name = "vmaf_metal_picture_import"
+header = "libvmaf/libvmaf_metal.h"
+kind = "manual"
+target = "vmafx_frame_import"
+returns = "int"
+params = [
+  { name = "state", c = "VmafMetalState *" },
+  { name = "iosurface", c = "uintptr_t" },
+  { name = "plane", c = "unsigned" },
+  { name = "w", c = "unsigned" },
+  { name = "h", c = "unsigned" },
+  { name = "bpc", c = "unsigned" },
+  { name = "is_ref", c = "int" },
+  { name = "index", c = "unsigned" },
+]
+engine_with = "metal"
+until = "the Metal lane of RC4 WP3 lands: then the compat function serves Metal builds too"
+file = "core/src/compat/libvmaf/backend_absent_metal.c"
+calls = []
+
+[[compat]]
+name = "vmaf_metal_wait_compute"
+header = "libvmaf/libvmaf_metal.h"
+kind = "manual"
+target = "vmafx_fence_wait"
+returns = "int"
+params = [
+  { name = "state", c = "VmafMetalState *" },
+]
+engine_with = "metal"
+until = "the Metal lane of RC4 WP3 lands: then the compat function serves Metal builds too"
+file = "core/src/compat/libvmaf/backend_absent_metal.c"
+calls = []
+
+[[compat]]
+name = "vmaf_metal_read_imported_pictures"
+header = "libvmaf/libvmaf_metal.h"
+kind = "manual"
+target = "vmafx_submit"
+returns = "int"
+params = [
+  { name = "ctx", c = "VmafContext *" },
+  { name = "index", c = "unsigned" },
+]
+engine_with = "metal"
+until = "the Metal lane of RC4 WP3 lands: then the compat function serves Metal builds too"
+file = "core/src/compat/libvmaf/backend_absent_metal.c"
+calls = []
+
+[[compat]]
+name = "vmaf_sycl_state_init"
+header = "libvmaf/libvmaf_sycl.h"
+kind = "engine"
+target = "vmafx_device_create (SYCL, by index)"
+returns = "int"
+params = [
+  { name = "sycl_state", c = "VmafSyclState **" },
+  { name = "cfg", c = "VmafSyclConfiguration" },
+]
+engine_with = "sycl"
+until = "the SYCL lane of RC4 WP3 lands: then a manual compat function on its SYCL device frames"
+
+[[compat]]
+name = "vmaf_sycl_import_state"
+header = "libvmaf/libvmaf_sycl.h"
+kind = "engine"
+target = "vmafx_context_use_device"
+returns = "int"
+params = [
+  { name = "vmaf", c = "VmafContext *" },
+  { name = "sycl_state", c = "VmafSyclState *" },
+]
+engine_with = "sycl"
+until = "the SYCL lane of RC4 WP3 lands: then a manual compat function on its SYCL device frames"
+
+[[compat]]
+name = "vmaf_sycl_preallocate_pictures"
+header = "libvmaf/libvmaf_sycl.h"
+kind = "engine"
+target = "vmafx_frame_pool_create (SYCL device)"
+returns = "int"
+params = [
+  { name = "vmaf", c = "VmafContext *" },
+  { name = "cfg", c = "VmafSyclPictureConfiguration" },
+]
+engine_with = "sycl"
+until = "the SYCL lane of RC4 WP3 lands: then a manual compat function on its SYCL device frames"
+
+[[compat]]
+name = "vmaf_sycl_picture_fetch"
+header = "libvmaf/libvmaf_sycl.h"
+kind = "engine"
+target = "vmafx_frame_pool_acquire + vmafx_frame_to_picture"
+returns = "int"
+params = [
+  { name = "vmaf", c = "VmafContext *" },
+  { name = "pic", c = "VmafPicture *" },
+]
+engine_with = "sycl"
+until = "the SYCL lane of RC4 WP3 lands: then a manual compat function on its SYCL device frames"
+
+[[compat]]
+name = "vmaf_sycl_init_frame_buffers"
+header = "libvmaf/libvmaf_sycl.h"
+kind = "engine"
+target = "vmafx_frame_pool_create (SYCL device, 2 frames)"
+returns = "int"
+params = [
+  { name = "vmaf", c = "VmafContext *" },
+  { name = "w", c = "unsigned" },
+  { name = "h", c = "unsigned" },
+  { name = "bpc", c = "unsigned" },
+]
+engine_with = "sycl"
+until = "the SYCL lane of RC4 WP3 lands: then a manual compat function on its SYCL device frames"
+
+[[compat]]
+name = "vmaf_sycl_get_frame_buffers"
+header = "libvmaf/libvmaf_sycl.h"
+kind = "engine"
+target = "vmafx_frame_planes"
+returns = "int"
+params = [
+  { name = "vmaf", c = "VmafContext *" },
+  { name = "ref", c = "void **" },
+  { name = "dis", c = "void **" },
+]
+engine_with = "sycl"
+until = "the SYCL lane of RC4 WP3 lands: then a manual compat function on its SYCL device frames"
+
+[[compat]]
+name = "vmaf_sycl_wait_compute"
+header = "libvmaf/libvmaf_sycl.h"
+kind = "engine"
+target = "vmafx_fence_wait (frame release fence)"
+returns = "int"
+params = [
+  { name = "vmaf", c = "VmafContext *" },
+]
+engine_with = "sycl"
+until = "the SYCL lane of RC4 WP3 lands: then a manual compat function on its SYCL device frames"
+
+[[compat]]
+name = "vmaf_read_pictures_sycl"
+header = "libvmaf/libvmaf_sycl.h"
+kind = "engine"
+target = "vmafx_submit (imported frames)"
+returns = "int"
+params = [
+  { name = "vmaf", c = "VmafContext *" },
+  { name = "index", c = "unsigned" },
+]
+engine_with = "sycl"
+until = "the SYCL lane of RC4 WP3 lands: then a manual compat function on its SYCL device frames"
+
+[[compat]]
+name = "vmaf_flush_sycl"
+header = "libvmaf/libvmaf_sycl.h"
+kind = "engine"
+target = "vmafx_flush"
+returns = "int"
+params = [
+  { name = "vmaf", c = "VmafContext *" },
+]
+engine_with = "sycl"
+until = "the SYCL lane of RC4 WP3 lands: then a manual compat function on its SYCL device frames"
+
+[[compat]]
+name = "vmaf_sycl_dmabuf_import"
+header = "libvmaf/libvmaf_sycl.h"
+kind = "engine"
+target = "vmafx_frame_import (dma-buf)"
+returns = "int"
+params = [
+  { name = "sycl_state", c = "VmafSyclState *" },
+  { name = "fd", c = "int" },
+  { name = "size", c = "size_t" },
+  { name = "ptr", c = "void **" },
+]
+engine_with = "sycl"
+until = "the SYCL lane of RC4 WP3 lands: then a manual compat function on its SYCL device frames"
+
+[[compat]]
+name = "vmaf_sycl_dmabuf_free"
+header = "libvmaf/libvmaf_sycl.h"
+kind = "engine"
+target = "vmafx_frame_unref"
+returns = "void"
+params = [
+  { name = "sycl_state", c = "VmafSyclState *" },
+  { name = "ptr", c = "void *" },
+]
+engine_with = "sycl"
+until = "the SYCL lane of RC4 WP3 lands: then a manual compat function on its SYCL device frames"
+
+[[compat]]
+name = "vmaf_sycl_import_va_surface"
+header = "libvmaf/libvmaf_sycl.h"
+kind = "engine"
+target = "vmafx_frame_import (dma-buf exported from the surface)"
+returns = "int"
+params = [
+  { name = "sycl_state", c = "VmafSyclState *" },
+  { name = "va_display", c = "void *" },
+  { name = "va_surface", c = "unsigned int" },
+  { name = "is_ref", c = "int" },
+  { name = "w", c = "unsigned" },
+  { name = "h", c = "unsigned" },
+  { name = "bpc", c = "unsigned" },
+]
+engine_with = "sycl"
+until = "the SYCL lane of RC4 WP3 lands: then a manual compat function on its SYCL device frames"
+
+[[compat]]
+name = "vmaf_sycl_upload_plane"
+header = "libvmaf/libvmaf_sycl.h"
+kind = "engine"
+target = "vmafx_frame_import (host plane upload)"
+returns = "int"
+params = [
+  { name = "sycl_state", c = "VmafSyclState *" },
+  { name = "src", c = "const void *" },
+  { name = "pitch", c = "unsigned" },
+  { name = "is_ref", c = "int" },
+  { name = "w", c = "unsigned" },
+  { name = "h", c = "unsigned" },
+  { name = "bpc", c = "unsigned" },
+]
+engine_with = "sycl"
+until = "the SYCL lane of RC4 WP3 lands: then a manual compat function on its SYCL device frames"
+
+[[compat]]
+name = "vmaf_sycl_import_d3d11_surface"
+header = "libvmaf/libvmaf_sycl.h"
+kind = "engine"
+target = "vmafx_frame_import (Windows shared texture)"
+returns = "int"
+params = [
+  { name = "sycl_state", c = "VmafSyclState *" },
+  { name = "d3d11_device", c = "void *" },
+  { name = "d3d11_texture", c = "void *" },
+  { name = "subresource", c = "unsigned" },
+  { name = "is_ref", c = "int" },
+  { name = "w", c = "unsigned" },
+  { name = "h", c = "unsigned" },
+  { name = "bpc", c = "unsigned" },
+]
+platform = "windows"
+engine_with = "sycl"
+until = "the SYCL lane of RC4 WP3 lands: then a manual compat function on its SYCL device frames"
+
+[[compat]]
+name = "vmaf_sycl_profiling_enable"
+header = "libvmaf/libvmaf_sycl.h"
+kind = "engine"
+target = "vmafx_device_create (VMAFX_DEVICE_PROFILING)"
+returns = "int"
+params = [
+  { name = "sycl_state", c = "VmafSyclState *" },
+]
+engine_with = "sycl"
+until = "the SYCL lane of RC4 WP3 lands: then a manual compat function on its SYCL device frames"
+
+[[compat]]
+name = "vmaf_sycl_profiling_disable"
+header = "libvmaf/libvmaf_sycl.h"
+kind = "engine"
+target = "vmafx_device_create (VMAFX_DEVICE_PROFILING)"
+returns = "void"
+params = [
+  { name = "sycl_state", c = "VmafSyclState *" },
+]
+engine_with = "sycl"
+until = "the SYCL lane of RC4 WP3 lands: then a manual compat function on its SYCL device frames"
+
+[[compat]]
+name = "vmaf_sycl_profiling_print"
+header = "libvmaf/libvmaf_sycl.h"
+kind = "engine"
+target = "vmafx_device_profile"
+returns = "void"
+params = [
+  { name = "sycl_state", c = "VmafSyclState *" },
+]
+engine_with = "sycl"
+until = "the SYCL lane of RC4 WP3 lands: then a manual compat function on its SYCL device frames"
+
+[[compat]]
+name = "vmaf_sycl_profiling_get_string"
+header = "libvmaf/libvmaf_sycl.h"
+kind = "engine"
+target = "vmafx_device_profile"
+returns = "int"
+params = [
+  { name = "sycl_state", c = "VmafSyclState *" },
+  { name = "output", c = "char **" },
+]
+engine_with = "sycl"
+until = "the SYCL lane of RC4 WP3 lands: then a manual compat function on its SYCL device frames"
+
+[[compat]]
+name = "vmaf_sycl_state_free"
+header = "libvmaf/libvmaf_sycl.h"
+kind = "engine"
+target = "vmafx_device_unref"
+returns = "void"
+params = [
+  { name = "sycl_state", c = "VmafSyclState **" },
+]
+engine_with = "sycl"
+until = "the SYCL lane of RC4 WP3 lands: then a manual compat function on its SYCL device frames"
+
+[[compat]]
+name = "vmaf_sycl_list_devices"
+header = "libvmaf/libvmaf_sycl.h"
+kind = "engine"
+target = "vmafx_device_count + vmafx_device_info"
+returns = "int"
+params = []
+engine_with = "sycl"
+until = "the SYCL lane of RC4 WP3 lands: then a manual compat function on its SYCL device frames"
+
+[[compat]]
+name = "vmaf_model_load"
+header = "libvmaf/model.h"
+kind = "manual"
+target = "vmafx_model_load"
+returns = "int"
+params = [
+  { name = "model", c = "VmafModel **" },
+  { name = "cfg", c = "VmafModelConfig *" },
+  { name = "version", c = "const char *" },
+]
+file = "core/src/compat/libvmaf/model.c"
+calls = ["vmafx_model_load", "vmafx_model_libvmaf_handle"]
+note = "VmafModelConfig -> VmafxModelConfig"
+
+[[compat]]
+name = "vmaf_model_load_from_path"
+header = "libvmaf/model.h"
+kind = "manual"
+target = "vmafx_model_load_file"
+returns = "int"
+params = [
+  { name = "model", c = "VmafModel **" },
+  { name = "cfg", c = "VmafModelConfig *" },
+  { name = "path", c = "const char *" },
+]
+file = "core/src/compat/libvmaf/model.c"
+calls = ["vmafx_model_load_file", "vmafx_model_libvmaf_handle"]
+
+[[compat]]
+name = "vmaf_model_feature_overload"
+header = "libvmaf/model.h"
+kind = "manual"
+target = "vmafx_model_override_feature"
+returns = "int"
+params = [
+  { name = "model", c = "VmafModel *" },
+  { name = "feature_name", c = "const char *" },
+  { name = "opts_dict", c = "VmafFeatureDictionary *" },
+]
+file = "core/src/compat/libvmaf/model.c"
+calls = ["vmafx_model_from_libvmaf", "vmafx_model_override_feature", "vmafx_options_free"]
+note = "consumes opts_dict past the argument checks, as libvmaf does"
+
+[[compat]]
+name = "vmaf_model_destroy"
+header = "libvmaf/model.h"
+kind = "shim"
+target = "vmafx_model_unref"
+returns = "void"
+params = [
+  { name = "model", c = "VmafModel *" },
+]
+note = "drops the caller reference; mounted models live on (ADR-1755)"
+body = ["vmafx_model_unref(vmafx_model_from_libvmaf(model));"]
+uses = ["vmafx_model_from_libvmaf"]
+
+[[compat]]
+name = "vmaf_model_feature_count"
+header = "libvmaf/model.h"
+kind = "shim"
+target = "vmafx_model_feature_count"
+returns = "unsigned"
+params = [
+  { name = "model", c = "const VmafModel *" },
+]
+return_expr = "vmafx_model_feature_count(vmafx_model_from_libvmaf((VmafModel *)model))"
+uses = ["vmafx_model_from_libvmaf"]
+
+[[compat]]
+name = "vmaf_model_feature_name"
+header = "libvmaf/model.h"
+kind = "shim"
+target = "vmafx_model_feature_name"
+returns = "const char *"
+params = [
+  { name = "model", c = "const VmafModel *" },
+  { name = "index", c = "unsigned" },
+]
+return_expr = "vmafx_model_feature_name(vmafx_model_from_libvmaf((VmafModel *)model), index)"
+uses = ["vmafx_model_from_libvmaf"]
+
+[[compat]]
+name = "vmaf_model_collection_load"
+header = "libvmaf/model.h"
+kind = "manual"
+target = "vmafx_model_set_load"
+returns = "int"
+params = [
+  { name = "model", c = "VmafModel **" },
+  { name = "model_collection", c = "VmafModelCollection **" },
+  { name = "cfg", c = "VmafModelConfig *" },
+  { name = "version", c = "const char *" },
+]
+file = "core/src/compat/libvmaf/model.c"
+calls = ["vmafx_model_set_load", "vmafx_model_set_lead", "vmafx_model_ref", "vmafx_model_libvmaf_handle", "vmafx_model_set_libvmaf_handle"]
+note = "returns the lead model as VmafModel as libvmaf does"
+
+[[compat]]
+name = "vmaf_model_collection_load_from_path"
+header = "libvmaf/model.h"
+kind = "manual"
+target = "vmafx_model_set_load_file"
+returns = "int"
+params = [
+  { name = "model", c = "VmafModel **" },
+  { name = "model_collection", c = "VmafModelCollection **" },
+  { name = "cfg", c = "VmafModelConfig *" },
+  { name = "path", c = "const char *" },
+]
+file = "core/src/compat/libvmaf/model.c"
+calls = ["vmafx_model_set_load_file", "vmafx_model_set_lead", "vmafx_model_ref", "vmafx_model_libvmaf_handle", "vmafx_model_set_libvmaf_handle"]
+
+[[compat]]
+name = "vmaf_model_collection_feature_overload"
+header = "libvmaf/model.h"
+kind = "manual"
+target = "vmafx_model_set_override_feature"
+returns = "int"
+params = [
+  { name = "model", c = "VmafModel *" },
+  { name = "model_collection", c = "VmafModelCollection **" },
+  { name = "feature_name", c = "const char *" },
+  { name = "opts_dict", c = "VmafFeatureDictionary *" },
+]
+file = "core/src/compat/libvmaf/model.c"
+calls = ["vmafx_model_from_libvmaf", "vmafx_model_set_from_libvmaf", "vmafx_model_set_lead", "vmafx_model_unref", "vmafx_model_set_override_feature", "vmafx_model_ref", "vmafx_model_override_feature", "vmafx_options_free"]
+
+[[compat]]
+name = "vmaf_model_collection_destroy"
+header = "libvmaf/model.h"
+kind = "shim"
+target = "vmafx_model_set_unref"
+returns = "void"
+params = [
+  { name = "model_collection", c = "VmafModelCollection *" },
+]
+body = ["vmafx_model_set_unref(vmafx_model_set_from_libvmaf(model_collection));"]
+uses = ["vmafx_model_set_from_libvmaf"]
+
+[[compat]]
+name = "vmaf_model_version_next"
+header = "libvmaf/model.h"
+kind = "manual"
+target = "vmafx_model_builtin_next"
+returns = "const void *"
+params = [
+  { name = "prev", c = "const void *" },
+  { name = "version", c = "const char **" },
+]
+file = "core/src/compat/libvmaf/model.c"
+calls = ["vmafx_model_builtin_next"]
+note = "the cursor is the version string"
+
+[[compat]]
+name = "vmaf_default_model_version"
+header = "libvmaf/model.h"
+kind = "shim"
+target = "vmafx_model_default_version"
+returns = "const char *"
+params = []
+return_expr = "vmafx_model_default_version()"
+
+[[compat]]
+name = "vmaf_set_perceptual_weight_enabled"
+header = "libvmaf/perceptual_weight.h"
+kind = "manual"
+target = "vmafx_context_set_option"
+returns = "int"
+params = [
+  { name = "vmaf", c = "VmafContext *" },
+  { name = "enabled", c = "int" },
+]
+file = "core/src/compat/libvmaf/context.c"
+calls = ["vmafx_context_from_libvmaf", "vmafx_context_set_option"]
+note = "option perceptual_weight"
+
+[[compat]]
+name = "vmaf_set_perceptual_weight_strength"
+header = "libvmaf/perceptual_weight.h"
+kind = "manual"
+target = "vmafx_context_set_option"
+returns = "int"
+params = [
+  { name = "vmaf", c = "VmafContext *" },
+  { name = "strength", c = "double" },
+]
+file = "core/src/compat/libvmaf/context.c"
+calls = ["vmafx_context_from_libvmaf", "vmafx_context_set_option"]
+note = "option perceptual_weight_strength, %.17g"
+
+[[compat]]
+name = "vmaf_set_perceptual_sidedata"
+header = "libvmaf/perceptual_weight.h"
+kind = "manual"
+target = "vmafx_context_attach_sidedata"
+returns = "int"
+params = [
+  { name = "vmaf", c = "VmafContext *" },
+  { name = "blob", c = "const uint8_t *" },
+  { name = "len", c = "size_t" },
+  { name = "pic_index", c = "unsigned" },
+]
+file = "core/src/compat/libvmaf/context.c"
+calls = ["vmafx_context_from_libvmaf", "vmafx_context_attach_sidedata"]
+
+[[compat]]
+name = "vmaf_picture_alloc"
+header = "libvmaf/picture.h"
+kind = "manual"
+target = "vmafx_frame_create_host"
+returns = "int"
+params = [
+  { name = "pic", c = "VmafPicture *" },
+  { name = "pix_fmt", c = "enum VmafPixelFormat" },
+  { name = "bpc", c = "unsigned" },
+  { name = "w", c = "unsigned" },
+  { name = "h", c = "unsigned" },
+]
+file = "core/src/compat/libvmaf/picture.c"
+calls = ["vmafx_frame_create_host", "vmafx_frame_to_picture", "vmafx_frame_unref"]
+note = "VmafPicture stays a caller-visible struct: a view of a host frame"
+
+[[compat]]
+name = "vmaf_picture_unref"
+header = "libvmaf/picture.h"
+kind = "manual"
+target = "vmafx_frame_unref"
+returns = "int"
+params = [
+  { name = "pic", c = "VmafPicture *" },
+]
+file = "core/src/compat/libvmaf/picture.c"
+calls = ["vmafx_frame_from_picture", "vmafx_frame_unref"]
+
+[[compat]]
+name = "vmaf_picture_wrap"
+header = "libvmaf/picture.h"
+kind = "manual"
+target = "vmafx_frame_wrap_host"
+returns = "int"
+params = [
+  { name = "pic", c = "VmafPicture *" },
+  { name = "pic_wrapped", c = "VmafPictureWrapped" },
+]
+file = "core/src/compat/libvmaf/picture.c"
+calls = ["vmafx_frame_wrap_host", "vmafx_frame_to_picture", "vmafx_frame_unref"]
+note = "A view of a host frame on the caller's planes; release_picture runs from the frame's release (ADR-2949)"
+
+[[compat]]
+name = "vmaf_picture_convert_context_init_with_color"
+header = "libvmaf/picture.h"
+kind = "manual"
+target = "vmafx_frame_converter_create"
+returns = "int"
+params = [
+  { name = "ctx", c = "VmafPictureConvertContext **" },
+  { name = "src", c = "const VmafPicture *" },
+  { name = "src_color", c = "const VmafColor *" },
+  { name = "target", c = "const VmafPictureConvertTarget *" },
+]
+file = "core/src/compat/libvmaf/picture.c"
+calls = ["vmafx_frame_converter_create"]
+note = "VmafColor + VmafPictureConvertTarget -> VmafxConvertDesc (#2140)"
+
+[[compat]]
+name = "vmaf_picture_convert"
+header = "libvmaf/picture.h"
+kind = "manual"
+target = "vmafx_frame_convert"
+returns = "int"
+params = [
+  { name = "ctx", c = "VmafPictureConvertContext *" },
+  { name = "dst", c = "VmafPicture *" },
+  { name = "src", c = "const VmafPicture *" },
+]
+file = "core/src/compat/libvmaf/picture.c"
+calls = ["vmafx_frame_from_picture", "vmafx_frame_wrap_host", "vmafx_frame_convert", "vmafx_frame_to_picture", "vmafx_frame_unref"]
+
+[[compat]]
+name = "vmaf_picture_convert_context_close"
+header = "libvmaf/picture.h"
+kind = "manual"
+target = "vmafx_frame_converter_destroy"
+returns = "int"
+params = [
+  { name = "ctx", c = "VmafPictureConvertContext *" },
+]
+file = "core/src/compat/libvmaf/picture.c"
+calls = ["vmafx_frame_converter_destroy"]
+
+[[compat]]
+name = "vmaf_picture2_alloc"
+header = "libvmaf/picture_v2.h"
+kind = "manual"
+target = "vmafx_frame_create_host"
+returns = "int"
+params = [
+  { name = "pic", c = "VmafPicture2 *" },
+  { name = "pix_fmt", c = "enum VmafPixelFormat" },
+  { name = "bpc", c = "unsigned" },
+  { name = "w", c = "unsigned" },
+  { name = "h", c = "unsigned" },
+]
+file = "core/src/compat/libvmaf/picture.c"
+calls = ["vmafx_frame_create_host", "vmafx_frame_to_picture", "vmafx_frame_unref"]
+note = "v2 struct kept until 0.11.0 with v1"
+
+[[compat]]
+name = "vmaf_picture2_unref"
+header = "libvmaf/picture_v2.h"
+kind = "manual"
+target = "vmafx_frame_unref"
+returns = "int"
+params = [
+  { name = "pic", c = "VmafPicture2 *" },
+]
+file = "core/src/compat/libvmaf/picture.c"
+calls = ["vmafx_frame_from_picture", "vmafx_frame_unref"]
+
+[[compat]]
+name = "vmaf_picture_v1_to_v2"
+header = "libvmaf/picture_v2.h"
+kind = "manual"
+target = "vmafx_frame_from_picture"
+returns = "int"
+params = [
+  { name = "src", c = "const VmafPicture *" },
+  { name = "dst", c = "VmafPicture2 *" },
+]
+file = "core/src/compat/libvmaf/picture.c"
+calls = ["vmafx_frame_from_picture", "vmafx_frame_to_picture", "vmafx_frame_unref"]
+note = "one more reference, as libvmaf takes"
+
+[[compat]]
+name = "vmaf_picture_v2_to_v1"
+header = "libvmaf/picture_v2.h"
+kind = "manual"
+target = "vmafx_frame_from_picture"
+returns = "int"
+params = [
+  { name = "src", c = "const VmafPicture2 *" },
+  { name = "dst", c = "VmafPicture *" },
+]
+file = "core/src/compat/libvmaf/picture.c"
+calls = ["vmafx_frame_from_picture", "vmafx_frame_to_picture", "vmafx_frame_unref"]
+
+[[compat]]
+name = "vmaf_backend_handle_name"
+header = "libvmaf/picture_v2.h"
+kind = "manual"
+target = "vmafx_backend_name"
+returns = "const char *"
+params = [
+  { name = "backend", c = "VmafBackendHandle" },
+]
+file = "core/src/compat/libvmaf/picture.c"
+calls = ["vmafx_backend_name"]
+note = "VMAF_BACKEND_HANDLE_* mapped to VmafxBackend; NONE and the removed backend keep their names"
+
+# ---------------------------------------------------------------------------
+# Option groups (design sections 3.4 and 5.2, RC4 WP8, ADR-1852). Every scoring
+# option of every surface: the `vmaf` command line (`cli`), the `vmafx` FFmpeg
+# filter (`ffmpeg`), the MCP scoring tools (`mcp`) and the scoring server's
+# `ScoreOptions` message (`proto`). An option names the surfaces it is on; a
+# surface without a spelling stops generation. Order matters: the usage text
+# lists options in this order, and the MCP servers append the `argv = "extra"`
+# flags in this order. Keep every existing CLI spelling (HISS-14); new names
+# are additive. The default model is the library's (VMAF_DEFAULT_MODEL_VERSION),
+# never a literal here.
+# ---------------------------------------------------------------------------
+
+[[option_groups]]
+name = "input"
+since = "0.1"
+doc = "The reference and distorted videos and the geometry of raw input."
+surfaces = ["cli", "mcp", "proto"]
+mcp_tools = ["vmaf_score", "describe_worst_frames"]
+
+[[option_groups.options]]
+name = "reference"
+type = "string"
+doc = "Reference video: a .y4m file, or raw planar .yuv together with the width, height, pixel format and bit depth."
+surfaces = ["cli", "mcp"]
+cli = ["--reference"]
+cli_short = "r"
+cli_meta = "$path"
+mcp = "ref"
+mcp_required = true
+argv = "core"
+argv_flag = "-r"
+
+[[option_groups.options]]
+name = "distorted"
+type = "string"
+doc = "Distorted video, in the same form as the reference."
+surfaces = ["cli", "mcp"]
+cli = ["--distorted"]
+cli_short = "d"
+cli_meta = "$path"
+mcp = "dis"
+mcp_required = true
+argv = "core"
+argv_flag = "-d"
+
+[[option_groups.options]]
+name = "width"
+type = "uint"
+range = [1]
+doc = "Width of raw .yuv input in pixels."
+cli = ["--width"]
+cli_short = "w"
+mcp = "width"
+mcp_required = true
+proto = { field = 1 }
+argv = "core"
+
+[[option_groups.options]]
+name = "height"
+type = "uint"
+range = [1]
+doc = "Height of raw .yuv input in pixels."
+cli = ["--height"]
+cli_short = "h"
+mcp = "height"
+mcp_required = true
+proto = { field = 2 }
+argv = "core"
+
+[[option_groups.options]]
+name = "pixel_format"
+type = "enum"
+enum = ["400", "420", "422", "444", "nv12", "nv16", "nv24", "p010", "p016", "p210", "p216", "p410", "p416", "yuyv422", "uyvy422", "v210", "y210", "y212", "xv30", "xv36", "vuyx", "ayuv", "yuv444p16msb", "rgb", "rgba", "bgra"]
+doc = "Layout of raw .yuv input: 400 (luma only), 420, 422 or 444 planar, or a layout of the input format table (semi-planar, packed, or RGB converted to Y'CbCr with the rgb_* statement, ADR-2145, ADR-2146)."
+cli = ["--pixel_format"]
+cli_short = "p"
+mcp = "pixfmt"
+mcp_required = true
+proto = { field = 3 }
+argv = "core"
+argv_flag = "-p"
+
+[[option_groups.options]]
+name = "bitdepth"
+type = "uint"
+range = [8, 16]
+doc = "Bits per sample of raw .yuv input, 8 to 16 (implied by a layout that fixes it)."
+go_type = "ScoreOptionsBitdepth"
+cli = ["--bitdepth"]
+cli_short = "b"
+mcp = "bitdepth"
+mcp_required = true
+proto = { field = 4 }
+argv = "core"
+argv_flag = "-b"
+
+[[option_groups.options]]
+name = "check_sample_range"
+type = "bool"
+default = false
+doc = "Refuse a frame with a sample above 2^bpc - 1 and name the plane, row, column and value (ADR-1918)."
+surfaces = ["cli"]
+cli = ["--check-sample-range", "--check_sample_range"]
+
+[[option_groups.options]]
+name = "color_range_ref"
+type = "enum"
+enum = ["unknown", "limited", "full"]
+doc = "Colour range of the reference input."
+surfaces = ["cli"]
+cli = ["--color_range_ref"]
+
+[[option_groups.options]]
+name = "color_range_dist"
+type = "enum"
+enum = ["unknown", "limited", "full"]
+doc = "Colour range of the distorted input."
+surfaces = ["cli"]
+cli = ["--color_range_dist"]
+
+[[option_groups.options]]
+name = "color_primaries_ref"
+type = "enum"
+enum = ["unknown", "bt709", "bt2020"]
+doc = "Colour primaries of the reference input."
+surfaces = ["cli"]
+cli = ["--color_primaries_ref"]
+
+[[option_groups.options]]
+name = "color_primaries_dist"
+type = "enum"
+enum = ["unknown", "bt709", "bt2020"]
+doc = "Colour primaries of the distorted input."
+surfaces = ["cli"]
+cli = ["--color_primaries_dist"]
+
+[[option_groups.options]]
+name = "color_trc_ref"
+type = "enum"
+enum = ["unknown", "bt709", "smpte2084", "pq"]
+doc = "Transfer characteristic of the reference input."
+surfaces = ["cli"]
+cli = ["--color_trc_ref"]
+
+[[option_groups.options]]
+name = "color_trc_dist"
+type = "enum"
+enum = ["unknown", "bt709", "smpte2084", "pq"]
+doc = "Transfer characteristic of the distorted input."
+surfaces = ["cli"]
+cli = ["--color_trc_dist"]
+
+[[option_groups.options]]
+name = "color_matrix_ref"
+type = "enum"
+enum = ["unknown", "bt709", "bt2020nc", "ictcp"]
+doc = "Matrix coefficients of the reference input."
+surfaces = ["cli"]
+cli = ["--color_matrix_ref"]
+
+[[option_groups.options]]
+name = "color_matrix_dist"
+type = "enum"
+enum = ["unknown", "bt709", "bt2020nc", "ictcp"]
+doc = "Matrix coefficients of the distorted input."
+surfaces = ["cli"]
+cli = ["--color_matrix_dist"]
+
+[[option_groups.options]]
+name = "rgb_matrix"
+type = "enum"
+enum = ["bt601", "bt709", "bt2020ncl"]
+doc = "Raw rgb, rgba and bgra input: the Y'CbCr matrix of the conversion; no default, the input is refused without it (ADR-2146)."
+surfaces = ["cli"]
+cli = ["--rgb_matrix"]
+
+[[option_groups.options]]
+name = "rgb_range"
+type = "enum"
+enum = ["limited", "full"]
+doc = "Raw RGB input: the range of the R'G'B' samples; no default."
+surfaces = ["cli"]
+cli = ["--rgb_range"]
+
+[[option_groups.options]]
+name = "rgb_transfer"
+type = "enum"
+enum = ["bt709", "srgb", "pq", "hlg"]
+doc = "Raw RGB input: the transfer characteristic of the R'G'B' samples (checked, not applied); no default."
+surfaces = ["cli"]
+cli = ["--rgb_transfer"]
+
+[[option_groups.options]]
+name = "rgb_out_range"
+type = "enum"
+enum = ["limited", "full"]
+doc = "Raw RGB input: the range of the Y'CbCr frame made; limited is the range the VMAF models are trained on; no default."
+surfaces = ["cli"]
+cli = ["--rgb_out_range"]
+
+[[option_groups]]
+name = "encoded_input"
+since = "0.1"
+doc = "Encoded videos the MCP server decodes before scoring."
+surfaces = ["mcp"]
+mcp_tools = ["vmaf_score_encoded"]
+
+[[option_groups.options]]
+name = "reference_encoded"
+type = "string"
+doc = "Path to the reference encoded video (MP4/MKV/Y4M/...). Must be under an allowlisted root (VMAF_MCP_ALLOW)."
+mcp = "reference_encoded"
+mcp_required = true
+
+[[option_groups.options]]
+name = "distorted_encoded"
+type = "string"
+doc = "Path to the distorted encoded video."
+mcp = "distorted_encoded"
+mcp_required = true
+
+[[option_groups]]
+name = "model"
+since = "0.1"
+doc = "The model that turns features into a score."
+surfaces = ["cli", "ffmpeg", "mcp"]
+mcp_tools = ["vmaf_score", "vmaf_score_encoded", "describe_worst_frames"]
+
+[[option_groups.options]]
+name = "model"
+type = "string"
+default_macro = "VMAF_DEFAULT_MODEL_VERSION"
+default_form = "version={}"
+repeat = ["cli"]
+doc = "Model, colon-delimited: version= a built-in model, path= a model file, name= the name in the report, disable_clip, enable_transform, <feature>.<option>=<value> overloads. Several models score in one pass (repeat the option; the filter separates them with |)."
+cli = ["--model"]
+cli_short = "m"
+cli_meta = "$params"
+ffmpeg = "model"
+mcp = "model"
+argv = "core"
+argv_flag = "-m"
+
+[[option_groups]]
+name = "model_flags"
+since = "0.1"
+doc = "Switches the servers append to the model specification."
+surfaces = ["mcp", "proto"]
+mcp_tools = ["vmaf_score", "vmaf_score_encoded"]
+
+[[option_groups.options]]
+name = "disable_clip"
+type = "bool"
+default = false
+doc = "Do not clip the model score to [0, 100] (the model's disable_clip)."
+mcp = "disable_clip"
+proto = { field = 10 }
+model_suffix = ":disable_clip"
+argv = "core"
+
+[[option_groups.options]]
+name = "enable_transform"
+type = "bool"
+default = false
+doc = "Apply the model's score transform (the model's enable_transform)."
+mcp = "enable_transform"
+proto = { field = 11 }
+model_suffix = ":enable_transform"
+argv = "core"
+
+[[option_groups]]
+name = "backend"
+since = "0.1"
+doc = "Which compute backend runs the feature extractors."
+surfaces = ["cli", "ffmpeg", "mcp", "proto"]
+mcp_tools = ["vmaf_score", "vmaf_score_encoded", "describe_worst_frames"]
+
+[[option_groups.options]]
+name = "backend"
+type = "enum"
+enum = ["auto", "cpu", "cuda", "sycl", "hip", "metal"]
+default = "auto"
+doc = "Backend: auto uses the available ones; any other value runs that backend alone and fails when it is not available."
+cli = ["--backend"]
+cli_meta = "$name"
+ffmpeg = "backend"
+mcp = "backend"
+proto = { field = 12 }
+argv = "none"
+
+[[option_groups.options]]
+name = "no_cuda"
+type = "bool"
+default = false
+doc = "Disable the CUDA backend."
+surfaces = ["cli"]
+cli = ["--no_cuda"]
+
+[[option_groups.options]]
+name = "no_sycl"
+type = "bool"
+default = false
+doc = "Disable the SYCL (oneAPI) backend."
+surfaces = ["cli"]
+cli = ["--no_sycl"]
+
+[[option_groups.options]]
+name = "no_hip"
+type = "bool"
+default = false
+doc = "Disable the HIP (ROCm) backend."
+surfaces = ["cli"]
+cli = ["--no_hip"]
+
+[[option_groups.options]]
+name = "no_metal"
+type = "bool"
+default = false
+doc = "Disable the Metal (Apple silicon) backend."
+surfaces = ["cli"]
+cli = ["--no_metal"]
+
+[[option_groups]]
+name = "feature"
+since = "0.1"
+doc = "Features scored besides the model's, and the common-test-condition presets."
+surfaces = ["cli", "ffmpeg", "mcp", "proto"]
+mcp_tools = ["vmaf_score", "vmaf_score_encoded"]
+
+[[option_groups.options]]
+name = "feature"
+type = "string"
+repeat = ["cli", "mcp", "proto"]
+doc = "Additional feature extractor, name[=key=value:...] (for example psnr or cambi=full_ref=true); several may be given (the filter separates them with |). Mutually exclusive with the CTC presets."
+cli = ["--feature"]
+ffmpeg = "feature"
+mcp = "feature"
+proto = { field = 22 }
+
+[[option_groups.options]]
+name = "aom_ctc"
+type = "enum"
+enum = ["v1.0", "v2.0", "v3.0", "v4.0", "v5.0", "v6.0", "v7.0"]
+doc = "AOM common test conditions preset: a fixed model and feature set."
+surfaces = ["cli", "mcp", "proto"]
+cli = ["--aom_ctc"]
+cli_meta = "$version"
+mcp = "aom_ctc"
+proto = { field = 23 }
+
+[[option_groups.options]]
+name = "nflx_ctc"
+type = "enum"
+enum = ["v1.0"]
+doc = "Netflix common test conditions preset: a fixed model and feature set."
+surfaces = ["cli", "mcp", "proto"]
+cli = ["--nflx_ctc"]
+cli_meta = "$version"
+mcp = "nflx_ctc"
+proto = { field = 24 }
+
+[[option_groups]]
+name = "tiny_model"
+since = "0.1"
+doc = "A tiny ONNX model scored alongside the classic models (tiny-AI)."
+surfaces = ["cli", "ffmpeg", "mcp", "proto"]
+mcp_tools = ["vmaf_score", "vmaf_score_encoded"]
+
+[[option_groups.options]]
+name = "tiny_model"
+type = "string"
+doc = "Tiny ONNX model to load alongside the classic models."
+cli = ["--tiny-model", "--tiny_model"]
+cli_meta = "$path"
+ffmpeg = "tiny_model"
+mcp = "tiny_model"
+proto = { field = 30 }
+
+[[option_groups.options]]
+name = "tiny_device"
+type = "enum"
+enum = ["auto", "cpu", "cuda", "openvino", "openvino-npu", "openvino-cpu", "openvino-gpu", "coreml", "coreml-ane", "coreml-gpu", "coreml-cpu", "rocm"]
+default = "auto"
+doc = "ONNX Runtime execution provider of the tiny model."
+cli = ["--tiny-device", "--tiny_device"]
+ffmpeg = "tiny_device"
+mcp = "tiny_device"
+proto = { field = 31 }
+
+[[option_groups.options]]
+name = "dnn_ep"
+type = "enum"
+enum = ["auto", "cpu", "cuda", "openvino", "openvino-npu", "openvino-cpu", "openvino-gpu", "coreml", "coreml-ane", "coreml-gpu", "coreml-cpu", "rocm"]
+doc = "Alias of the tiny-model device under the ONNX Runtime name (execution provider); both set the same setting."
+surfaces = ["cli", "mcp"]
+cli = ["--dnn-ep", "--dnn_ep"]
+cli_id = "ARG_DNN_EP"
+mcp = "dnn_ep"
+argv = "none"
+
+[[option_groups.options]]
+name = "tiny_threads"
+type = "uint"
+doc = "Intra-op threads of the CPU execution provider (0: the runtime's default)."
+cli = ["--tiny-threads", "--tiny_threads"]
+ffmpeg = "tiny_threads"
+mcp = "tiny_threads"
+proto = { field = 32 }
+
+[[option_groups.options]]
+name = "tiny_fp16"
+type = "bool"
+default = false
+doc = "Request fp16 input and output where the execution provider supports it."
+cli = ["--tiny-fp16", "--tiny_fp16"]
+ffmpeg = "tiny_fp16"
+mcp = "tiny_fp16"
+proto = { field = 33 }
+
+[[option_groups.options]]
+name = "tiny_model_verify"
+type = "bool"
+default = false
+doc = "Require a Sigstore bundle verification of the tiny model (cosign verify-blob) before it loads; a missing bundle, a missing cosign or a failed verification refuses the model."
+surfaces = ["cli", "mcp", "proto"]
+cli = ["--tiny-model-verify", "--tiny_model_verify"]
+mcp = "tiny_model_verify"
+proto = { field = 34 }
+
+[[option_groups.options]]
+name = "tiny_codec"
+type = "string"
+doc = "Encoder of the distorted clip, required by codec-aware tiny models (fr_regressor_v2/v3), which refuse to score without it. Must be in the model sidecar's encoder_vocab; the ffprobe names h264, hevc, av1, vp9 and vvc are accepted."
+surfaces = ["cli", "mcp", "proto"]
+cli = ["--tiny-codec", "--tiny_codec"]
+cli_meta = "$name"
+mcp = "tiny_codec"
+proto = { field = 35 }
+
+[[option_groups.options]]
+name = "tiny_preset"
+type = "string"
+doc = "Encoder preset (medium, slow, p4, 5, ...), read as the encoder defines it. Unset: ordinal 5 (medium). A model trained with one preset (fr_regressor_v3) ignores it and warns."
+surfaces = ["cli", "mcp", "proto"]
+cli = ["--tiny-preset", "--tiny_preset"]
+mcp = "tiny_preset"
+proto = { field = 36 }
+
+[[option_groups.options]]
+name = "tiny_crf"
+type = "uint"
+range = [0, 63]
+doc = "CRF or QP used for the encode, normalised as the model sidecar declares. Required with the codec and preset."
+surfaces = ["cli", "mcp", "proto"]
+cli = ["--tiny-crf", "--tiny_crf"]
+mcp = "tiny_crf"
+proto = { field = 37 }
+
+[[option_groups.options]]
+name = "tiny_resize"
+type = "enum"
+enum = ["bilinear", "nearest", "bicubic", "disabled"]
+default = "disabled"
+doc = "Resize filter for NCHW tiny models whose input size differs from the frame; disabled refuses the mismatch (-ERANGE). The three filters give scores about 2% apart: record the filter with the model."
+surfaces = ["cli", "mcp", "proto"]
+cli = ["--tiny-resize", "--tiny_resize"]
+mcp = "tiny_resize"
+proto = { field = 38 }
+
+[[option_groups.options]]
+name = "no_reference"
+type = "bool"
+default = false
+doc = "No-reference mode; needs a no-reference tiny model. The reference becomes a formality: only the distorted picture is scored."
+surfaces = ["cli", "mcp", "proto"]
+cli = ["--no-reference", "--no_reference"]
+mcp = "no_reference"
+proto = { field = 39 }
+
+[[option_groups]]
+name = "threads"
+since = "0.1"
+doc = "Worker threads of the feature extractors."
+surfaces = ["cli", "ffmpeg", "mcp", "proto"]
+mcp_tools = ["vmaf_score", "vmaf_score_encoded"]
+
+[[option_groups.options]]
+name = "threads"
+type = "uint"
+doc = "Worker threads of the feature extractors, capped to the hardware threads (0: score in the calling thread)."
+cli = ["--threads"]
+ffmpeg = "threads"
+aliases = ["n_threads"]
+mcp = "threads"
+proto = { field = 14 }
+
+[[option_groups]]
+name = "frames"
+since = "0.1"
+doc = "Which frames are scored."
+surfaces = ["cli", "mcp", "proto"]
+mcp_tools = ["vmaf_score", "vmaf_score_encoded"]
+
+[[option_groups.options]]
+name = "frame_cnt"
+type = "uint"
+range = [1]
+doc = "Score at most this many frames."
+cli = ["--frame_cnt"]
+mcp = "frame_cnt"
+proto = { field = 16 }
+
+[[option_groups.options]]
+name = "frame_skip_ref"
+type = "uint"
+doc = "Skip this many frames at the start of the reference."
+cli = ["--frame_skip_ref"]
+mcp = "frame_skip_ref"
+proto = { field = 17 }
+
+[[option_groups.options]]
+name = "frame_skip_dist"
+type = "uint"
+doc = "Skip this many frames at the start of the distorted video."
+cli = ["--frame_skip_dist"]
+mcp = "frame_skip_dist"
+proto = { field = 18 }
+
+[[option_groups]]
+name = "prediction"
+since = "0.1"
+doc = "Whether a model predicts a score."
+surfaces = ["cli", "mcp", "proto"]
+mcp_tools = ["vmaf_score", "vmaf_score_encoded"]
+
+[[option_groups.options]]
+name = "no_prediction"
+type = "bool"
+default = false
+doc = "Extract features only; no model score."
+cli = ["--no_prediction"]
+cli_short = "n"
+mcp = "no_prediction"
+proto = { field = 19 }
+
+[[option_groups]]
+name = "masks"
+since = "0.1"
+doc = "Restrictions of the instruction sets and GPU operations the extractors may use."
+surfaces = ["cli", "ffmpeg", "mcp", "proto"]
+mcp_tools = ["vmaf_score", "vmaf_score_encoded"]
+
+[[option_groups.options]]
+name = "cpumask"
+type = "uint"
+doc = "Bitmask of CPU instruction sets the extractors must not use."
+cli = ["--cpumask"]
+cli_short = "c"
+cli_meta = "$bitmask"
+cli_id = "ARG_CPUMASK"
+ffmpeg = "cpumask"
+mcp = "cpumask"
+proto = { field = 20 }
+
+[[option_groups.options]]
+name = "gpumask"
+type = "uint"
+doc = "Bitmask of GPU operations the extractors must not use."
+cli = ["--gpumask"]
+cli_meta = "$bitmask"
+ffmpeg = "gpumask"
+mcp = "gpumask"
+proto = { field = 21 }
+
+[[option_groups]]
+name = "device"
+since = "0.1"
+doc = "Which GPU of the selected backend runs the extractors."
+surfaces = ["cli", "ffmpeg", "mcp", "proto"]
+mcp_tools = ["vmaf_score", "vmaf_score_encoded"]
+
+[[option_groups.options]]
+name = "device"
+type = "string"
+default = "auto"
+doc = "GPU of the selected backend: auto, or a device index. Needs a GPU backend that selects devices by index (sycl, hip, metal)."
+surfaces = ["ffmpeg", "proto"]
+ffmpeg = "device"
+proto = { field = 13 }
+
+[[option_groups.options]]
+name = "sycl_device"
+type = "uint"
+doc = "SYCL GPU by index (unset: selected automatically)."
+surfaces = ["cli", "mcp"]
+cli = ["--sycl_device"]
+mcp = "sycl_device"
+
+[[option_groups.options]]
+name = "hip_device"
+type = "uint"
+doc = "HIP GPU by index (opt-in: HIP is off unless this or --backend hip is given)."
+surfaces = ["cli", "mcp"]
+cli = ["--hip_device"]
+mcp = "hip_device"
+
+[[option_groups.options]]
+name = "metal_device"
+type = "uint"
+doc = "Metal GPU by index (opt-in: Metal is off unless this or --backend metal is given)."
+surfaces = ["cli", "mcp"]
+cli = ["--metal_device"]
+mcp = "metal_device"
+
+[[option_groups]]
+name = "subsample"
+since = "0.1"
+doc = "How often a frame is scored."
+surfaces = ["cli", "ffmpeg", "mcp", "proto"]
+mcp_tools = ["vmaf_score", "vmaf_score_encoded"]
+
+[[option_groups.options]]
+name = "subsample"
+type = "uint"
+range = [1]
+default = 1
+doc = "Score every n-th frame (1: every frame)."
+cli = ["--subsample"]
+ffmpeg = "subsample"
+aliases = ["n_subsample"]
+mcp = "subsample"
+proto = { field = 15 }
+argv = "core"
+
+[[option_groups]]
+name = "precision"
+since = "0.1"
+doc = "How many digits a score is written with."
+surfaces = ["cli", "mcp", "proto"]
+mcp_tools = ["vmaf_score", "vmaf_score_encoded"]
+
+[[option_groups.options]]
+name = "precision"
+type = "enum"
+enum = ["legacy", "max", "full", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17"]
+default = "legacy"
+surface_defaults = { proto = "max" }
+doc = "Score precision: N (1 to 17) writes %.<N>g; max or full write %.17g (round-trip lossless); legacy writes %.6f (Netflix-compatible). The scoring server returns lossless scores unless asked otherwise."
+cli = ["--precision"]
+cli_meta = "$spec"
+mcp = "precision"
+proto = { field = 40 }
+argv = "core"
+
+[[option_groups]]
+name = "output"
+since = "0.1"
+doc = "The report: where it goes and its format."
+surfaces = ["cli", "ffmpeg", "mcp"]
+mcp_tools = ["vmaf_score", "vmaf_score_encoded"]
+
+[[option_groups.options]]
+name = "output"
+type = "string"
+doc = "Report file."
+surfaces = ["cli", "ffmpeg"]
+cli = ["--output"]
+cli_short = "o"
+cli_meta = "$path"
+ffmpeg = "log_path"
+
+[[option_groups.options]]
+name = "output_format"
+type = "enum"
+enum = ["json", "xml", "csv", "sub"]
+default = "xml"
+surface_defaults = { mcp = "json", ffmpeg = "json" }
+doc = "Report format; json and xml carry the backend receipt."
+cli_values = { xml = "--xml", json = "--json", csv = "--csv", sub = "--sub" }
+cli_id = "ARG_OUTPUT"
+ffmpeg = "log_fmt"
+mcp = "output_fmt"
+argv = "core"
+
+[[option_groups.options]]
+name = "csv"
+type = "bool"
+default = false
+doc = "Write the report as CSV; the same as output_fmt csv."
+surfaces = ["mcp"]
+mcp = "csv"
+
+[[option_groups.options]]
+name = "sub"
+type = "bool"
+default = false
+doc = "Write per-frame scores as subtitles; the same as output_fmt sub."
+surfaces = ["mcp"]
+mcp = "sub"
+
+[[option_groups.options]]
+name = "provenance_sidecar"
+type = "bool"
+default = false
+doc = "Also write the provenance record to <output>.provenance.json; CSV and SUB reports carry it nowhere else (RC4 WP5)."
+surfaces = ["cli"]
+cli = ["--provenance-sidecar"]
+
+[[option_groups]]
+name = "device_target"
+since = "0.1"
+doc = "The display a score is computed for (device-targeted scoring, decided in PR #2185): viewing distance and display height reach the ADM extractor now; target size and scaling are reserved for device-targeted scoring."
+surfaces = ["ffmpeg", "mcp", "proto"]
+mcp_tools = ["vmaf_score", "vmaf_score_encoded"]
+
+[[option_groups.options]]
+name = "view_distance"
+type = "float"
+range = [3.0, 24.0]
+doc = "Viewing distance in display heights (ADM adm_norm_view_dist). Unset: the model's value. The ADM extractor's default CSF refuses a distance below 3 (it accepts 0.75 with other CSF modes, which these options do not set)."
+ffmpeg = "view_distance"
+mcp = "view_distance"
+proto = { field = 50 }
+model_suffix = ":adm.adm_norm_view_dist={}"
+argv = "core"
+
+[[option_groups.options]]
+name = "display_height"
+type = "uint"
+range = [1]
+doc = "Height of the reference display in pixels (ADM adm_ref_display_height). Unset: the model's value."
+ffmpeg = "display_height"
+mcp = "display_height"
+proto = { field = 51 }
+model_suffix = ":adm.adm_ref_display_height={}"
+argv = "core"
+
+[[option_groups.options]]
+name = "target_width"
+type = "uint"
+default = 0
+doc = "Width of the target display the distorted video is scaled to (0: no scaling)."
+ffmpeg = "target_width"
+mcp = "target_width"
+proto = { field = 52 }
+reserved = "device-targeted scoring lands in RC5"
+
+[[option_groups.options]]
+name = "target_height"
+type = "uint"
+default = 0
+doc = "Height of the target display the distorted video is scaled to (0: no scaling)."
+ffmpeg = "target_height"
+mcp = "target_height"
+proto = { field = 53 }
+reserved = "device-targeted scoring lands in RC5"
+
+[[option_groups.options]]
+name = "target_scaling"
+type = "enum"
+enum = ["none", "bilinear", "bicubic", "lanczos"]
+default = "none"
+doc = "Scaling filter towards the target display."
+ffmpeg = "target_scaling"
+mcp = "target_scaling"
+proto = { field = 54 }
+reserved = "device-targeted scoring lands in RC5"
+
+[[option_groups]]
+name = "worst_frames"
+since = "0.1"
+doc = "How many frames describe_worst_frames inspects."
+surfaces = ["mcp"]
+mcp_tools = ["describe_worst_frames"]
+
+[[option_groups.options]]
+name = "n"
+type = "uint"
+range = [1, 32]
+default = 5
+doc = "How many worst-VMAF frames to describe."
+mcp = "n"
+
+[[option_groups]]
+name = "pool"
+since = "0.1"
+doc = "How per-frame scores are pooled."
+surfaces = ["ffmpeg"]
+
+[[option_groups.options]]
+name = "pool"
+type = "flags"
+enum = ["min", "max", "mean", "harmonic_mean", "median", "perc5", "perc10", "perc20"]
+default = ["mean"]
+doc = "Pool methods of the final score and of the windows."
+ffmpeg = "pool"
+
+[[option_groups]]
+name = "window"
+since = "0.1"
+doc = "Window statistics (n_stats, #2138)."
+surfaces = ["ffmpeg"]
+
+[[option_groups.options]]
+name = "n_stats"
+type = "float"
+range = [0.0]
+default = 0.0
+doc = "Window length in seconds (0: no windows)."
+ffmpeg = "n_stats"
+
+[[option_groups.options]]
+name = "n_stats_frames"
+type = "uint"
+default = 0
+doc = "Window length in frames (0: no windows); exclusive with n_stats."
+ffmpeg = "n_stats_frames"
+
+[[option_groups.options]]
+name = "stats_out"
+type = "flags"
+enum = ["log", "metadata", "file"]
+default = ["log"]
+doc = "Where window statistics go."
+ffmpeg = "stats_out"
+
+[[option_groups.options]]
+name = "stats_path"
+type = "string"
+doc = "NDJSON file of the window statistics, one object per window."
+ffmpeg = "stats_path"
+
+[[option_groups]]
+name = "report"
+since = "0.1"
+doc = "What the filter reports besides the scores."
+surfaces = ["ffmpeg"]
+
+[[option_groups.options]]
+name = "score_fmt"
+type = "string"
+default = "%.6f"
+doc = "printf format of the scores (%.17g is lossless)."
+ffmpeg = "score_fmt"
+
+[[option_groups.options]]
+name = "provenance"
+type = "flags"
+enum = ["log", "report"]
+default = ["log", "report"]
+doc = "Print the provenance record at init (log) and embed it in the report (report)."
+ffmpeg = "provenance"
+
+[[option_groups.options]]
+name = "metadata"
+type = "bool"
+default = false
+doc = "Attach per-frame scores to the frames as lavfi.vmafx.<metric> metadata (delays output by the retention depth)."
+ffmpeg = "metadata"
+
+[[option_groups.options]]
+name = "profile"
+type = "bool"
+default = false
+doc = "Log the device timing breakdown at uninit."
+ffmpeg = "profile"
+
+[[option_groups]]
+name = "frame_import"
+since = "0.1"
+doc = "How the filter hands frames to the library."
+surfaces = ["ffmpeg"]
+
+[[option_groups.options]]
+name = "import_mode"
+type = "enum"
+enum = ["auto", "device", "host"]
+default = "auto"
+doc = "auto imports hardware frames without a copy and uploads software frames; device refuses software frames; host downloads hardware frames (logged once with the reason)."
+ffmpeg = "import"
+
+[[option_groups]]
+name = "perceptual_weight"
+since = "0.1"
+doc = "Perceptual weighting from frame side data."
+surfaces = ["ffmpeg"]
+
+[[option_groups.options]]
+name = "perceptual_weight"
+type = "bool"
+default = false
+doc = "Weight the scores with the perceptual side data of the frames."
+ffmpeg = "perceptual_weight"
+
+[[option_groups]]
+name = "program"
+since = "0.1"
+doc = "Switches of the command-line program itself."
+surfaces = ["cli"]
+
+[[option_groups.options]]
+name = "netflix_compat"
+type = "bool"
+default = false
+doc = "Restore the Netflix-upstream defaults: CPU backend, %.6f precision, vmaf_v0.6.1 model."
+cli = ["--netflix-compat", "--netflix_compat"]
+
+[[option_groups.options]]
+name = "quiet"
+type = "bool"
+default = false
+doc = "Disable the FPS meter when run in a terminal."
+cli = ["--quiet"]
+cli_short = "q"
+
+[[option_groups.options]]
+name = "version"
+type = "bool"
+default = false
+doc = "Print the version and exit."
+cli = ["--version"]
+cli_short = "v"
+
+[[option_groups.options]]
+name = "list_backends"
+type = "bool"
+default = false
+doc = "Print the scoring backends this binary was built with and which of them initialise here, as JSON, and exit (ADR-1874)."
+cli = ["--list-backends"]
+
+[[option_groups.options]]
+name = "help"
+type = "bool"
+default = false
+doc = "Print this message and exit."
+cli = ["--help"]
+
+[[option_groups.options]]
+name = "verify_provenance"
+type = "string"
+doc = "Re-run the configuration a JSON report records and compare every configuration field and score bit for bit; exits nonzero naming the first difference (RC4 WP5)."
+cli = ["--verify-provenance"]
+cli_meta = "$report"
 
 # ---------------------------------------------------------------------------
 # Input format table (ADR-2145). One row per VmafxPixelFormat value: how the

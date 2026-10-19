@@ -1,16 +1,17 @@
 site_name: "VMAFx"
-site_url: https://vmafx.github.io/vmafx/
+site_url: https://vmafx.dev/
 site_description: Perceptual video quality assessment with GPU/SIMD acceleration.
 repo_url: https://github.com/VMAFx/vmafx
 repo_name: VMAFx/vmafx
 edit_uri: edit/master/docs/
-copyright: 'Fork-authored files EUPL-1.2, files inherited from Netflix BSD-2-Clause-Patent: each file''s SPDX header decides (ADR-1250). <a href="https://vmafx.github.io/vmafx/licensing/">Licensing</a> · <a href="https://github.com/VMAFx/vmafx/blob/master/LICENSE">LICENSE</a> (EUPL-1.2) · <a href="https://github.com/VMAFx/vmafx/blob/master/NOTICE">NOTICE</a> · <a href="https://github.com/VMAFx/vmafx/tree/master/LICENSES">LICENSES/</a>'
+copyright: 'Fork-authored files EUPL-1.2, files inherited from Netflix BSD-2-Clause-Patent: each file''s SPDX header decides (ADR-1250). <a href="https://vmafx.dev/licensing/">Licensing</a> · <a href="https://github.com/VMAFx/vmafx/blob/master/LICENSE">LICENSE</a> (EUPL-1.2) · <a href="https://github.com/VMAFx/vmafx/blob/master/NOTICE">NOTICE</a> · <a href="https://github.com/VMAFx/vmafx/tree/master/LICENSES">LICENSES/</a>'
 
 docs_dir: docs
 site_dir: build-docs/site
 
 # ADR-0221 fragment files are concatenation source (assembled into
-# `docs/adr/README.md` by `scripts/docs/concat-adr-index.sh`) — they are
+# `docs/adr/README.md` by `scripts/docs/concat-adr-index.sh`, and the rebase
+# notes of `docs/rebase-notes.d/` into `docs/rebase-notes.md`) — they are
 # never rendered as standalone pages, so exclude them from the site build.
 # Same for changelog fragments under `changelog.d/` (which live in repo
 # root, not docs/, but listed here defensively if a future reorg moves
@@ -20,6 +21,7 @@ site_dir: build-docs/site
 # patterns avoid `**`, which tools/figures/build.mjs sources does not parse.
 exclude_docs: |
   adr/_index_fragments/*
+  rebase-notes.d/*
   /changelog.d/
   /figures/
 
@@ -78,6 +80,11 @@ markdown_extensions:
       line_spans: __span
       pygments_lang_class: true
   - pymdownx.inlinehilite
+  # Pulls the tier table and sponsor list out of the root SPONSORS.md, the single
+  # source for sponsor recognition (ADR-2689).
+  - pymdownx.snippets:
+      base_path: ['.']
+      check_paths: true
   - pymdownx.tabbed:
       alternate_style: true
   - pymdownx.tasklist:
@@ -85,6 +92,12 @@ markdown_extensions:
   - pymdownx.emoji:
       emoji_index: !!python/name:material.extensions.emoji.twemoji
       emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  # `$...$` and `$$...$$` become <span|div class="arithmatex"> carrying \(...\)
+  # or \[...\]; docs/javascripts/katex.js typesets them with the vendored KaTeX
+  # (ADR-2705). generic keeps the markup renderer-neutral, so the sources also
+  # render in GitHub's Markdown view.
+  - pymdownx.arithmatex:
+      generic: true
   - attr_list
   - md_in_html
   - tables
@@ -144,14 +157,22 @@ validation:
 # and publishes the figure stylesheet and player; diagrams use no Mermaid.
 hooks:
   - tools/figures/mkdocs_hook.py
+  # Frozen pages keep their dollar signs as text (ADR-2705).
+  - scripts/docs/mkdocs_math_hook.py
 
 extra_css:
   - stylesheets/vmafx.css
+  - javascripts/vendor/katex/katex.min.css
 
 # Mounts the interactive charts; loads the Vega bundle only on a page with a
 # chart (ADR-1508, scripts/docs/generate-charts.py).
 extra_javascript:
   - javascripts/charts.js
+  # Formulas (ADR-2705): the pinned KaTeX release in docs/javascripts/vendor/katex/,
+  # served from the site, never from a CDN. katex.js runs after the two libraries.
+  - javascripts/vendor/katex/katex.min.js
+  - javascripts/vendor/katex/auto-render.min.js
+  - javascripts/katex.js
 
 extra:
   social:
@@ -175,6 +196,8 @@ nav:
       - Docker: usage/docker.md
       - Releases and roadmap: roadmap.md
       - Licensing: licensing.md
+      - Credits: credits.md
+      - Support VMAFx: support-vmafx.md
   - Choose a backend:
       - backends/index.md
       - x86 SIMD (AVX2 / AVX-512): backends/x86/avx512.md
@@ -187,6 +210,7 @@ nav:
       - SYCL / oneAPI:
           - Overview: backends/sycl/overview.md
           - AOT targets: backends/sycl/aot.md
+          - Device sanitizer: backends/sycl/device-sanitizer.md
           - Twin notes: backends/sycl/twins.md
           - Zero-copy imports: backends/sycl/zero-copy.md
           - Bundling: backends/sycl/bundling.md
@@ -203,6 +227,7 @@ nav:
       - Context API contract: backends/context-api-contract.md
   - Use VMAFx:
       - CLI reference: usage/cli.md
+      - Score provenance: usage/provenance.md
       - '--precision': usage/precision.md
       - Environment variables: usage/env-vars.md
       - FFmpeg: usage/ffmpeg.md
@@ -269,10 +294,14 @@ nav:
       - MCP C API: api/mcp.md
       - Pelorus interop ABI (vendored): api/pelorus-interop.md
       - Perceptual pooling weighting: api/perceptual-weight.md
+      - Sample range: api/sample-range.md
+      - Stream metadata field list: api/stream-metadata-fields.md
       - vmaftune.ladder: api/ladder.md
       - vmaftune.predictor: api/predictor.md
       - VMAFx API (preview): api/vmafx/index.md
+      - VMAFx window scores: api/vmafx/windows.md
       - VMAFx API reference (generated): api/vmafx/reference.md
+      - libvmaf migration table (generated): api/vmafx/compat.md
   - Metrics and models:
       - Feature index: metrics/features.md
       - ADM: metrics/adm.md
@@ -394,12 +423,30 @@ nav:
   - Server:
       - Controller: server/controller.md
       - gRPC service: server/grpc.md
+      - Server configuration: server/configuration.md
       - Worker node: server/node.md
       - Auth gateway: server/auth.md
       - Operator: server/operator.md
       - REST API: server/rest.md
+      - Scoring API contract: server/api-contract.md
       - Operator image and publishing: backends/operator.md
-      - Observability (OpenTelemetry): observability/otel.md
+      - Observability:
+          - observability/index.md
+          - Dashboard tour: observability/dashboards.md
+          - Monitoring on Kubernetes: observability/kubernetes.md
+          - Observability stack with Docker Compose: observability/compose.md
+          - Metric reference: observability/metrics.md
+          - OpenTelemetry: observability/otel.md
+      - Alert runbooks:
+          - observability/runbooks/index.md
+          - Component down: observability/runbooks/vmafx-component-down.md
+          - No live nodes: observability/runbooks/vmafx-no-live-nodes.md
+          - Queue aging: observability/runbooks/vmafx-queue-aging.md
+          - Job error budget burn: observability/runbooks/vmafx-job-error-budget-burn.md
+          - Score error budget burn: observability/runbooks/vmafx-score-error-budget-burn.md
+          - Score latency budget burn: observability/runbooks/vmafx-score-latency-budget-burn.md
+          - Score regression: observability/runbooks/vmafx-score-regression.md
+          - Metrics read errors: observability/runbooks/vmafx-metrics-read-errors.md
       - Kubernetes integration tests: k8s/integration-tests.md
   - Architecture:
       - architecture/index.md
@@ -430,6 +477,10 @@ nav:
       - Cross-backend gate: development/cross-backend-gate.md
       - Exact GPU twins (generated): development/cross-backend-exact-twins.md
       - Exact twins by depth and layout: development/exact-twin-matrix.md
+      - Integer accumulator bounds: development/accumulator-bounds.md
+      - "Accumulator bounds: CPU and SIMD": development/accumulator-bounds-cpu-simd.md
+      - "Accumulator bounds: CUDA and HIP": development/accumulator-bounds-cuda-hip.md
+      - "Accumulator bounds: SYCL and Metal": development/accumulator-bounds-sycl-metal.md
       - RC3 home GPU retest: development/rc3-home-gpu-retest.md
       - Fuzzing: development/fuzzing.md
       - IDE setup: development/ide-setup.md
@@ -439,6 +490,7 @@ nav:
       - Intel Arc / VAAPI driver priority: development/intel-arc-vaapi-driver-priority.md
       - FFmpeg patches refresh: development/ffmpeg-patches-refresh.md
       - FFmpeg patch automation: development/ffmpeg-patch-automation.md
+      - Upstream consumer conformance: development/upstream-consumers.md
       - API generation: development/api-generation.md
       - GPU backend template: development/gpu-backend-template.md
       - Upstream watchers: development/upstream-watchers.md
@@ -450,6 +502,7 @@ nav:
       - Best Practices assessment: development/best-practices-assessment.md
       - Repository security: development/repository-security.md
       - Dependency bot: development/dependency-bot.md
+      - Dependency advisories: development/dependency-advisories.md
       - Python dependency locks: development/python-dependency-locks.md
       - Project modernization audit: development/project-modernization-audit.md
       - Self-hosted runner: development/self-hosted-runner.md
@@ -467,16 +520,19 @@ nav:
       - Languages: development/languages.md
       - Production Docker: development/docker-production.md
       - Rust guide: development/rust.md
+      - Rust extractor framework: development/rust-extractor-framework.md
       - GPU scheduling: development/gpu-scheduling.md
       - Performance benchmarking: development/perf.md
       - Merge train: development/merge-train.md
       - Silent-revert gate: development/silent-revert-gate.md
+      - DCO sign-off: development/dco.md
       - Coverage gate: development/coverage-gate.md
       - Perf gate: development/perf-gate.md
       - Pre-commit hooks: development/pre-commit-hooks.md
       - CI job names: development/ci-job-names.md
       - Self-hosted SYCL runner (Arc): development/ci-self-hosted-sycl.md
       - Publishing artifacts: development/publishing.md
+      - Distribution manifest: development/distribution.md
       - Release workflow verification: development/release-workflow-verification.md
       - AGENTS.md index and topic pages: development/agents-index.md
       - cargo-deny: development/cargo-deny.md

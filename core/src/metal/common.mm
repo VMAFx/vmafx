@@ -17,12 +17,16 @@
  *  (ADR-0361 §"Header purity").
  */
 
-#include <errno.h>
-#include <stdlib.h>
-#include <stdio.h>
+#include <cerrno>
+#include <cstdlib>
+#include <cstdio>
 
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
+
+#include <utility>
+
+#include <print>
 
 extern "C" {
 #include "common.h"
@@ -30,6 +34,8 @@ extern "C" {
 #include "import.h"
 #include "libvmaf/libvmaf_metal.h"
 }
+
+namespace {
 
 /* Struct layouts for VmafMetalContext + VmafMetalState live in
  * state_priv.h so the IOSurface import TU (picture_import.mm) can
@@ -54,10 +60,10 @@ extern "C" {
  * `supportsFamily:` check and surface as -ENODEV. The fork's NEON
  * path remains the production fallback for those hosts.
  */
-static id<MTLDevice> select_device_or_nil(int device_index)
+id<MTLDevice> select_device_or_nil(int device_index)
 {
     if (device_index == -1) {
-        id<MTLDevice> dev = MTLCreateSystemDefaultDevice();
+        id<MTLDevice> const dev = MTLCreateSystemDefaultDevice();
         if (dev == nil) {
             return nil;
         }
@@ -71,7 +77,7 @@ static id<MTLDevice> select_device_or_nil(int device_index)
     if (device_index < 0) {
         return nil;
     }
-    NSArray<id<MTLDevice>> *all = MTLCopyAllDevices();
+    NSArray<id<MTLDevice>> *const all = MTLCopyAllDevices();
     if (all == nil) {
         return nil;
     }
@@ -83,11 +89,11 @@ static id<MTLDevice> select_device_or_nil(int device_index)
      * Apple7 device precedes an Apple7+ one in enumeration order. */
     NSUInteger family7_index = 0;
     for (NSUInteger i = 0; i < all.count; i++) {
-        id<MTLDevice> dev = all[i];
+        id<MTLDevice> const dev = all[i];
         if (![dev supportsFamily:MTLGPUFamilyApple7]) {
             continue;
         }
-        if (family7_index == (NSUInteger)device_index) {
+        if (std::cmp_equal(family7_index ,device_index)) {
             return dev;
         }
         family7_index++;
@@ -98,27 +104,28 @@ static id<MTLDevice> select_device_or_nil(int device_index)
     return nil;
 #endif
 }
+} // namespace
 
 /* ---- Internal C++ entry points (common.h) ---- */
 
 int vmaf_metal_context_new(VmafMetalContext **out, int device_index)
 {
-    if (out == NULL) {
+    if (out == nullptr) {
         return -EINVAL;
     }
 
-    id<MTLDevice> device = select_device_or_nil(device_index);
+    id<MTLDevice> const device = select_device_or_nil(device_index);
     if (device == nil) {
         return -ENODEV;
     }
 
-    id<MTLCommandQueue> queue = [device newCommandQueue];
+    id<MTLCommandQueue> const queue = [device newCommandQueue];
     if (queue == nil) {
         return -ENOMEM;
     }
 
     VmafMetalContext *ctx = (VmafMetalContext *)calloc(1, sizeof(*ctx));
-    if (ctx == NULL) {
+    if (ctx == nullptr) {
         return -ENOMEM;
     }
     ctx->device_index = device_index;
@@ -131,36 +138,36 @@ int vmaf_metal_context_new(VmafMetalContext **out, int device_index)
 
 void vmaf_metal_context_destroy(VmafMetalContext *ctx)
 {
-    if (ctx == NULL) {
+    if (ctx == nullptr) {
         return;
     }
     /* Bridge-transfer back to ARC ownership so the autorelease pool
      * + ARC release on scope exit drop the +1 retain we took in _new. */
-    if (ctx->command_queue != NULL) {
-        id<MTLCommandQueue> q __attribute__((unused)) =
+    if (ctx->command_queue != nullptr) {
+        id<MTLCommandQueue> const q __attribute__((unused)) =
             (__bridge_transfer id<MTLCommandQueue>)ctx->command_queue;
-        ctx->command_queue = NULL;
+        ctx->command_queue = nullptr;
     }
-    if (ctx->device != NULL) {
-        id<MTLDevice> d __attribute__((unused)) =
+    if (ctx->device != nullptr) {
+        id<MTLDevice> const d __attribute__((unused)) =
             (__bridge_transfer id<MTLDevice>)ctx->device;
-        ctx->device = NULL;
+        ctx->device = nullptr;
     }
     free(ctx);
 }
 
 void *vmaf_metal_context_device_handle(VmafMetalContext *ctx)
 {
-    if (ctx == NULL) {
-        return NULL;
+    if (ctx == nullptr) {
+        return nullptr;
     }
     return ctx->device;
 }
 
 void *vmaf_metal_context_queue_handle(VmafMetalContext *ctx)
 {
-    if (ctx == NULL) {
-        return NULL;
+    if (ctx == nullptr) {
+        return nullptr;
     }
     return ctx->command_queue;
 }
@@ -168,8 +175,8 @@ void *vmaf_metal_context_queue_handle(VmafMetalContext *ctx)
 int vmaf_metal_device_count(void)
 {
 #if !TARGET_OS_IPHONE
-    NSArray<id<MTLDevice>> *all = MTLCopyAllDevices();
-    NSUInteger n = (all == nil) ? 0 : all.count;
+    NSArray<id<MTLDevice>> *const all = MTLCopyAllDevices();
+    NSUInteger const n = (all == nil) ? 0 : all.count;
     NSUInteger family7 = 0;
     for (NSUInteger i = 0; i < n; i++) {
         if ([all[i] supportsFamily:MTLGPUFamilyApple7]) {
@@ -195,7 +202,7 @@ int vmaf_metal_available(void)
 
 int vmaf_metal_state_init(VmafMetalState **out, VmafMetalConfiguration cfg)
 {
-    if (out == NULL) {
+    if (out == nullptr) {
         return -EINVAL;
     }
     if (cfg.flags != 0) {
@@ -203,17 +210,17 @@ int vmaf_metal_state_init(VmafMetalState **out, VmafMetalConfiguration cfg)
     }
 
     VmafMetalState *state = (VmafMetalState *)calloc(1, sizeof(*state));
-    if (state == NULL) {
+    if (state == nullptr) {
         return -ENOMEM;
     }
 
-    id<MTLDevice> device = select_device_or_nil(cfg.device_index);
+    id<MTLDevice> const device = select_device_or_nil(cfg.device_index);
     if (device == nil) {
         free(state);
         return -ENODEV;
     }
 
-    id<MTLCommandQueue> queue = [device newCommandQueue];
+    id<MTLCommandQueue> const queue = [device newCommandQueue];
     if (queue == nil) {
         free(state);
         return -ENOMEM;
@@ -234,7 +241,7 @@ int vmaf_metal_state_init(VmafMetalState **out, VmafMetalConfiguration cfg)
 
 void vmaf_metal_state_free(VmafMetalState **state)
 {
-    if (state == NULL || *state == NULL) {
+    if (state == nullptr || *state == nullptr) {
         return;
     }
     VmafMetalState *s = *state;
@@ -242,28 +249,28 @@ void vmaf_metal_state_free(VmafMetalState **state)
      * the device/queue handles — the ring may hold VmafPicture
      * buffers we own. No-op if no import was ever started. */
     vmaf_metal_state_import_ring_free(s);
-    if (s->ctx.command_queue != NULL) {
-        id<MTLCommandQueue> q __attribute__((unused)) =
+    if (s->ctx.command_queue != nullptr) {
+        id<MTLCommandQueue> const q __attribute__((unused)) =
             (__bridge_transfer id<MTLCommandQueue>)s->ctx.command_queue;
-        s->ctx.command_queue = NULL;
+        s->ctx.command_queue = nullptr;
     }
-    if (s->ctx.device != NULL) {
-        id<MTLDevice> d __attribute__((unused)) =
+    if (s->ctx.device != nullptr) {
+        id<MTLDevice> const d __attribute__((unused)) =
             (__bridge_transfer id<MTLDevice>)s->ctx.device;
-        s->ctx.device = NULL;
+        s->ctx.device = nullptr;
     }
     free(s);
-    *state = NULL;
+    *state = nullptr;
 }
 
 int vmaf_metal_list_devices(void)
 {
 #if !TARGET_OS_IPHONE
-    NSArray<id<MTLDevice>> *all = MTLCopyAllDevices();
-    NSUInteger n = (all == nil) ? 0 : all.count;
+    NSArray<id<MTLDevice>> *const all = MTLCopyAllDevices();
+    NSUInteger const n = (all == nil) ? 0 : all.count;
     int printed = 0;
     for (NSUInteger i = 0; i < n; i++) {
-        id<MTLDevice> dev = all[i];
+        id<MTLDevice> const dev = all[i];
         if (![dev supportsFamily:MTLGPUFamilyApple7]) {
             continue;
         }
@@ -274,7 +281,7 @@ int vmaf_metal_list_devices(void)
         } else if ([dev supportsFamily:MTLGPUFamilyApple8]) {
             family = "Apple8";
         }
-        fprintf(stdout, "  [%d] %s (GPU family: %s)\n", printed, name, family);
+        std::println(stdout, "  [{}] {} (GPU family: {})", printed, name, family);
         printed++;
     }
     return printed;

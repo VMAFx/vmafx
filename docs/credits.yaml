@@ -1,0 +1,2798 @@
+# Credits list (ADR-2468). One entry per third-party item VMAFx ships, vendors,
+# adapts, learns from or uses. docs/credits.md renders its tables from this file;
+# `make docs-fragments-write` rewrites them and `make docs-fragments-check` holds
+# the list to the repository. The prose of docs/credits.md says how to add an entry.
+#
+# license: an SPDX expression exactly as the upstream states it, or one of
+#   proprietary (a closed product, service or custom terms used as its provider
+#   states them), none (the upstream states no licence) or unknown (not verified).
+# Licences of GitHub-hosted projects were read from the repository LICENSE as
+# GitHub detects it on 2026-10-08 and, where it could not decide, from the
+# LICENSE file or the published package metadata; GNU licences carry -only or
+# -or-later only where the upstream states which.
+entries:
+- id: netflix-vmaf
+  name: Netflix VMAF
+  url: https://github.com/Netflix/vmaf
+  kind: upstream
+  relation: vendored
+  license: BSD-2-Clause-Patent AND BSD-3-Clause-Clear
+  license_note: the inherited Python harness files are tagged BSD-3-Clause-Clear
+  paths:
+  - NOTICE
+  - core/
+  - compat/python-vmaf/
+  - python/
+  - resource/
+  - model/vmaf_*
+  evidence:
+  - docs/adr/1250-eupl-fork-relicense.md
+  - docs/licensing.md
+  note: The project VMAFx is forked from. Inherited files keep Netflix terms (ADR-1250).
+- id: nvidia-cuda-contribution
+  name: NVIDIA's CUDA backend in Netflix VMAF
+  url: https://github.com/Netflix/vmaf
+  kind: code
+  relation: vendored
+  license: BSD-2-Clause-Patent
+  paths:
+  - core/src/cuda/common.c
+  - core/src/cuda/common.h
+  - core/src/cuda/cuda_helper.cuh
+  - core/src/cuda/picture_cuda.c
+  - core/src/cuda/picture_cuda.h
+  - core/src/feature/cuda/integer_adm/adm_cm.cu
+  - core/src/feature/cuda/integer_adm/adm_csf.cu
+  - core/src/feature/cuda/integer_adm/adm_csf_den.cu
+  - core/src/feature/cuda/integer_adm/adm_decouple_inline.cuh
+  - core/src/feature/cuda/integer_adm/adm_dwt2.cu
+  - core/src/feature/cuda/integer_adm/adm_dwt2_rows.h
+  - core/src/feature/cuda/integer_adm_cuda.c
+  - core/src/feature/cuda/integer_adm_cuda.h
+  - core/src/feature/cuda/integer_motion_cuda.h
+  - core/src/feature/cuda/integer_vif/filter1d.cu
+  - core/src/feature/cuda/integer_vif/vif_statistics.cuh
+  - core/src/feature/cuda/integer_vif_cuda.c
+  - core/src/feature/cuda/integer_vif_cuda.h
+  - core/src/feature/hip/integer_adm/adm_cm.hip
+  - core/src/feature/hip/integer_adm/adm_csf.hip
+  - core/src/feature/hip/integer_adm/adm_csf_den.hip
+  - core/src/feature/hip/integer_adm/adm_decouple_inline.hip
+  - core/src/feature/hip/integer_adm/adm_dwt2.hip
+  - core/src/feature/hip/integer_adm_hip.c
+  - core/src/feature/hip/integer_adm_hip.h
+  - core/src/feature/hip/integer_motion_hip.c
+  - core/src/feature/hip/integer_vif/vif_statistics.hip
+  - core/src/feature/hip/integer_vif_hip.c
+  - core/src/feature/hip/integer_vif_hip.h
+  - core/src/feature/metal/integer_adm.metal
+  - core/src/feature/metal/integer_adm_metal.mm
+  - core/src/gpu_picture_pool.cpp
+  - core/src/gpu_picture_pool.h
+  - core/test/test_cuda_pic_preallocation.c
+  - core/test/test_gpu_picture_pool.c
+  - tools/rc1-tester/image/licensing.json
+  note: Files that carry NVIDIA Corporation copyright, from the CUDA backend NVIDIA contributed to Netflix/vmaf.
+- id: cjson
+  name: cJSON
+  url: https://github.com/DaveGamble/cJSON
+  kind: code
+  relation: vendored
+  license: MIT
+  paths:
+  - core/src/mcp/3rdparty/cJSON/
+  note: Vendored for the embedded MCP server.
+- id: pdjson
+  name: pdjson
+  url: https://github.com/skeeto/pdjson
+  kind: code
+  relation: vendored
+  license: Unlicense
+  paths:
+  - core/src/pdjson.c
+  - core/src/pdjson.h
+  note: Streaming JSON parser for model files.
+- id: libsvm
+  name: libsvm
+  url: https://github.com/cjlin1/libsvm
+  kind: code
+  relation: vendored
+  license: BSD-3-Clause
+  paths:
+  - core/src/svm.cpp
+  - core/src/svm.h
+  evidence:
+  - docs/licensing.md
+  - core/src/AGENTS.d/vendored-libsvm.md
+  note: Chih-Chung Chang and Chih-Jen Lin; SVM model evaluation for VMAF models.
+- id: iqa
+  name: IQA by Tom Distler
+  url: https://tdistler.com/
+  kind: code
+  relation: vendored
+  license: BSD-3-Clause
+  paths:
+  - core/src/feature/arm64/convolve_neon.c
+  - core/src/feature/arm64/convolve_neon.h
+  - core/src/feature/arm64/ms_ssim_decimate_neon.c
+  - core/src/feature/arm64/ms_ssim_decimate_neon.h
+  - core/src/feature/arm64/ssim_neon.c
+  - core/src/feature/cuda/float_ssim_cuda.h
+  - core/src/feature/cuda/integer_ms_ssim/ms_ssim_score.cu
+  - core/src/feature/cuda/integer_ms_ssim_cuda.c
+  - core/src/feature/cuda/integer_ms_ssim_cuda.h
+  - core/src/feature/cuda/integer_ssim/integer_ssim_score.cu
+  - core/src/feature/cuda/integer_ssim/ssim_score.cu
+  - core/src/feature/cuda/integer_ssim_cuda.c
+  - core/src/feature/cuda/integer_ssim_cuda.h
+  - core/src/feature/cuda/ssim_cuda.c
+  - core/src/feature/cuda/ssim_cuda.h
+  - core/src/feature/hip/float_ssim/ssim_decimate.h
+  - core/src/feature/hip/float_ssim/ssim_score.hip
+  - core/src/feature/hip/float_ssim_hip.c
+  - core/src/feature/hip/float_ssim_hip.h
+  - core/src/feature/hip/integer_ms_ssim/ms_ssim_arith.h
+  - core/src/feature/hip/integer_ms_ssim/ms_ssim_score.hip
+  - core/src/feature/hip/integer_ms_ssim_hip.c
+  - core/src/feature/hip/integer_ms_ssim_hip.h
+  - core/src/feature/hip/integer_ssim/integer_ssim_score.hip
+  - core/src/feature/hip/integer_ssim_hip.c
+  - core/src/feature/hip/integer_ssim_hip.h
+  - core/src/feature/iqa/convolve.c
+  - core/src/feature/iqa/convolve.h
+  - core/src/feature/iqa/decimate.c
+  - core/src/feature/iqa/decimate.h
+  - core/src/feature/iqa/decimate_dim.h
+  - core/src/feature/iqa/iqa.h
+  - core/src/feature/iqa/iqa_os.h
+  - core/src/feature/iqa/math_utils.c
+  - core/src/feature/iqa/math_utils.h
+  - core/src/feature/iqa/ssim_tools.c
+  - core/src/feature/iqa/ssim_tools.h
+  - core/src/feature/metal/float_ms_ssim.metal
+  - core/src/feature/metal/float_ms_ssim_metal.mm
+  - core/src/feature/metal/float_ssim.metal
+  - core/src/feature/metal/float_ssim_metal.mm
+  - core/src/feature/metal/metal_ms_ssim_math.h
+  - core/src/feature/metal/metal_ssim_terms.h
+  - core/src/feature/ms_ssim_decimate.c
+  - core/src/feature/ms_ssim_decimate.h
+  - core/src/feature/pu21_ssim.c
+  - core/src/feature/sycl/integer_ms_ssim_sycl.cpp
+  - core/src/feature/sycl/integer_ssim_sycl.cpp
+  - core/src/feature/sycl/sycl_ssim_terms.h
+  - core/src/feature/x86/convolve_avx2.c
+  - core/src/feature/x86/convolve_avx2.h
+  - core/src/feature/x86/convolve_avx512.c
+  - core/src/feature/x86/convolve_avx512.h
+  - core/src/feature/x86/ms_ssim_decimate_avx2.c
+  - core/src/feature/x86/ms_ssim_decimate_avx2.h
+  - core/src/feature/x86/ms_ssim_decimate_avx512.c
+  - core/src/feature/x86/ms_ssim_decimate_avx512.h
+  - core/src/feature/x86/ssim_avx2.c
+  - tools/rc1-tester/image/published-rc/scans/v1.0.0-rc.1/cpu.json
+  - tools/rc1-tester/image/published-rc/scans/v1.0.0-rc.1/cuda.json
+  - tools/rc1-tester/image/published-rc/scans/v1.0.0-rc.1/go-server.json
+  - tools/rc1-tester/image/published-rc/scans/v1.0.0-rc.1/sycl.json
+  - tools/rc1-tester/image/published-rc/scans/v1.0.0-rc.2/cpu.json
+  - tools/rc1-tester/image/published-rc/scans/v1.0.0-rc.2/cuda.json
+  - tools/rc1-tester/image/published-rc/scans/v1.0.0-rc.2/go-server.json
+  - tools/rc1-tester/image/published-rc/scans/v1.0.0-rc.2/sycl.json
+  evidence:
+  - docs/licensing.md
+  note: Image-quality library behind the SSIM and MS-SSIM extractors; SIMD and GPU twins keep its header.
+- id: xiph-psnr-hvs
+  name: Xiph.Org Daala code (PSNR-HVS and helpers)
+  url: https://github.com/xiph/daala
+  kind: code
+  relation: vendored
+  license: BSD-2-Clause
+  paths:
+  - core/src/feature/arm64/psnr_hvs_neon.c
+  - core/src/feature/arm64/psnr_hvs_neon.h
+  - core/src/feature/cuda/float_ssim_cuda.h
+  - core/src/feature/cuda/integer_psnr_hvs/psnr_hvs_score.cu
+  - core/src/feature/cuda/integer_psnr_hvs_cuda.c
+  - core/src/feature/cuda/integer_psnr_hvs_cuda.h
+  - core/src/feature/cuda/integer_ssim/integer_ssim_score.cu
+  - core/src/feature/cuda/integer_ssim/ssim_score.cu
+  - core/src/feature/cuda/integer_ssim_cuda.c
+  - core/src/feature/cuda/integer_ssim_cuda.h
+  - core/src/feature/cuda/ssim_cuda.c
+  - core/src/feature/cuda/ssim_cuda.h
+  - core/src/feature/hip/float_ssim/ssim_score.hip
+  - core/src/feature/hip/float_ssim_hip.c
+  - core/src/feature/hip/float_ssim_hip.h
+  - core/src/feature/hip/integer_psnr_hvs/psnr_hvs_score.hip
+  - core/src/feature/hip/integer_psnr_hvs_hip.c
+  - core/src/feature/hip/integer_psnr_hvs_hip.h
+  - core/src/feature/hip/integer_ssim/integer_ssim_score.hip
+  - core/src/feature/hip/integer_ssim_hip.c
+  - core/src/feature/hip/integer_ssim_hip.h
+  - core/src/feature/integer_ssim.c
+  - core/src/feature/integer_ssim.h
+  - core/src/feature/metal/integer_psnr_hvs.metal
+  - core/src/feature/metal/integer_psnr_hvs_metal.mm
+  - core/src/feature/metal/integer_ssim.metal
+  - core/src/feature/metal/integer_ssim_metal.mm
+  - core/src/feature/metal/metal_integer_ssim_math.h
+  - core/src/feature/metal/metal_psnr_hvs_math.h
+  - core/src/feature/sycl/integer_psnr_hvs_sycl.cpp
+  - core/src/feature/sycl/integer_ssim_sycl.cpp
+  - core/src/feature/sycl/sycl_integer_ssim_math.h
+  - core/src/feature/third_party/xiph/psnr_hvs.c
+  - core/src/feature/x86/integer_ssim_avx2.c
+  - core/src/feature/x86/integer_ssim_avx2.h
+  - core/src/feature/x86/psnr_hvs_avx2.c
+  - core/src/feature/x86/psnr_hvs_avx2.h
+  - core/test/test_integer_ssim_simd.c
+  - core/test/test_psnr_hvs_avx2.c
+  - core/test/test_psnr_hvs_neon.c
+  - core/test/test_psnr_hvs_simd.c
+  - tools/rc1-tester/image/published-rc/scans/v1.0.0-rc.1/cpu.json
+  - tools/rc1-tester/image/published-rc/scans/v1.0.0-rc.1/cuda.json
+  - tools/rc1-tester/image/published-rc/scans/v1.0.0-rc.1/go-server.json
+  - tools/rc1-tester/image/published-rc/scans/v1.0.0-rc.1/sycl.json
+  - tools/rc1-tester/image/published-rc/scans/v1.0.0-rc.2/cpu.json
+  - tools/rc1-tester/image/published-rc/scans/v1.0.0-rc.2/cuda.json
+  - tools/rc1-tester/image/published-rc/scans/v1.0.0-rc.2/go-server.json
+  - tools/rc1-tester/image/published-rc/scans/v1.0.0-rc.2/sycl.json
+  evidence:
+  - docs/licensing.md
+  note: Xiph.Org code behind the PSNR-HVS extractor and its twins.
+- id: daala-video-input
+  name: Daala video input code
+  url: https://github.com/xiph/daala
+  kind: code
+  relation: vendored
+  license: BSD-2-Clause
+  paths:
+  - core/tools/vidinput.c
+  - core/tools/vidinput.h
+  - core/tools/y4m_input.c
+  note: Y4M and video readers of the CLI.
+- id: libjxl-ssimulacra2
+  name: libjxl SSIMULACRA 2 reference
+  url: https://github.com/libjxl/libjxl
+  kind: code
+  relation: adapted
+  license: BSD-3-Clause
+  paths:
+  - core/src/feature/arm64/ssimulacra2_arm64_common.h
+  - core/src/feature/arm64/ssimulacra2_host_neon.c
+  - core/src/feature/arm64/ssimulacra2_host_neon.h
+  - core/src/feature/arm64/ssimulacra2_neon.c
+  - core/src/feature/arm64/ssimulacra2_neon.h
+  - core/src/feature/arm64/ssimulacra2_sve2.c
+  - core/src/feature/arm64/ssimulacra2_sve2.h
+  - core/src/feature/cuda/ssimulacra2/ssimulacra2_blur.cu
+  - core/src/feature/cuda/ssimulacra2/ssimulacra2_device.cu
+  - core/src/feature/cuda/ssimulacra2_cuda.c
+  - core/src/feature/cuda/ssimulacra2_cuda.h
+  - core/src/feature/hip/ssimulacra2/ssimulacra2_device.hip
+  - core/src/feature/hip/ssimulacra2_hip.c
+  - core/src/feature/hip/ssimulacra2_hip.h
+  - core/src/feature/metal/ssimulacra2.metal
+  - core/src/feature/metal/ssimulacra2_metal.mm
+  - core/src/feature/ssimulacra2.c
+  - core/src/feature/sycl/ssimulacra2_sycl.cpp
+  - core/src/feature/sycl/sycl_ssimulacra2_math.h
+  - core/src/feature/x86/ssimulacra2_avx2.c
+  - core/src/feature/x86/ssimulacra2_avx2.h
+  - core/src/feature/x86/ssimulacra2_avx512.c
+  - core/src/feature/x86/ssimulacra2_avx512.h
+  - core/src/feature/x86/ssimulacra2_host_avx2.c
+  - core/src/feature/x86/ssimulacra2_host_avx2.h
+  - tools/rc1-tester/image/published-rc/scans/v1.0.0-rc.1/cpu.json
+  - tools/rc1-tester/image/published-rc/scans/v1.0.0-rc.1/cuda.json
+  - tools/rc1-tester/image/published-rc/scans/v1.0.0-rc.1/go-server.json
+  - tools/rc1-tester/image/published-rc/scans/v1.0.0-rc.1/sycl.json
+  - tools/rc1-tester/image/published-rc/scans/v1.0.0-rc.2/cpu.json
+  - tools/rc1-tester/image/published-rc/scans/v1.0.0-rc.2/cuda.json
+  - tools/rc1-tester/image/published-rc/scans/v1.0.0-rc.2/go-server.json
+  - tools/rc1-tester/image/published-rc/scans/v1.0.0-rc.2/sycl.json
+  evidence:
+  - docs/research/0003-ssimulacra2-port-sourcing.md
+  - docs/licensing.md
+  note: The JPEG XL Project Authors tools/ssimulacra2.cc is the reference the SSIMULACRA 2 port follows.
+- id: av-metrics-ciede2000
+  name: av-metrics (CIEDE2000)
+  url: https://github.com/rust-av/av-metrics
+  kind: code
+  relation: adapted
+  license: MIT
+  paths:
+  - core/src/feature/ciede.c
+  - core/src/feature/ciede_ff_math.h
+  - core/src/feature/cuda/integer_ciede/ciede_device.h
+  - core/src/feature/cuda/integer_ciede/ciede_score.cu
+  - core/src/feature/cuda/integer_ciede_cuda.c
+  - core/src/feature/cuda/integer_ciede_cuda.h
+  - core/src/feature/hip/ciede_hip.c
+  - core/src/feature/hip/ciede_hip.h
+  - core/src/feature/hip/integer_ciede/ciede_score.hip
+  - core/src/feature/metal/integer_ciede.metal
+  - core/src/feature/metal/integer_ciede_metal.mm
+  - core/src/feature/sycl/integer_ciede_sycl.cpp
+  - core/test/test_ciede_upstream_products.c
+  - tools/rc1-tester/image/published-rc/scans/v1.0.0-rc.1/cuda.json
+  - tools/rc1-tester/image/published-rc/scans/v1.0.0-rc.2/cuda.json
+  evidence:
+  - docs/metrics/ciede.md
+  note: Joshua Holmer; the CIEDE2000 maths of the ciede extractor and its twins.
+- id: dav1d-cpu
+  name: dav1d CPU detection and atomics shim
+  url: https://code.videolan.org/videolan/dav1d
+  kind: code
+  relation: vendored
+  license: BSD-2-Clause
+  paths:
+  - core/src/compat/gcc/stdatomic.h
+  - core/src/x86/cpu.c
+  - core/src/x86/cpuid.asm
+  - tools/rc1-tester/image/published-rc/scans/v1.0.0-rc.1/cpu.json
+  - tools/rc1-tester/image/published-rc/scans/v1.0.0-rc.1/cuda.json
+  - tools/rc1-tester/image/published-rc/scans/v1.0.0-rc.1/go-server.json
+  - tools/rc1-tester/image/published-rc/scans/v1.0.0-rc.1/sycl.json
+  - tools/rc1-tester/image/published-rc/scans/v1.0.0-rc.2/cpu.json
+  - tools/rc1-tester/image/published-rc/scans/v1.0.0-rc.2/cuda.json
+  - tools/rc1-tester/image/published-rc/scans/v1.0.0-rc.2/go-server.json
+  - tools/rc1-tester/image/published-rc/scans/v1.0.0-rc.2/sycl.json
+  note: VideoLAN and dav1d authors, Two Orioles, LLC.
+- id: x264-x86inc
+  name: x264 x86inc.asm
+  url: https://code.videolan.org/videolan/x264
+  kind: code
+  relation: vendored
+  license: ISC
+  paths:
+  - core/src/ext/x86/x86inc.asm
+  evidence:
+  - docs/licensing.md
+  note: x264 project assembler macros.
+- id: mkdirp-c
+  name: mkdirp.c by Stephen Mathieson
+  url: https://github.com/stephenmathieson/mkdirp.c
+  kind: code
+  relation: adapted
+  license: MIT
+  paths:
+  - core/src/feature/mkdirp.cpp
+  - core/src/feature/mkdirp.h
+  note: C++ conversion of the original C implementation.
+- id: ffmpeg
+  name: FFmpeg
+  url: https://github.com/FFmpeg/FFmpeg
+  kind: upstream
+  relation: integrated
+  license: LGPL-2.1-or-later AND GPL-2.0-or-later
+  paths:
+  - ffmpeg-patches/
+  evidence:
+  - REUSE.toml
+  - docs/licensing.md
+  note: The patch series adds libvmaf filters. The shared fix series applied before it (VMAFx/ffmpeg-patches,
+    fetched at build time) also touches GPL units. Upstream states most files LGPL v2.1 or later and some GPL.
+- id: lime-local-explainer
+  name: LIME local explainer
+  url: https://github.com/marcotcr/lime
+  kind: code
+  relation: vendored
+  license: BSD-2-Clause
+  paths:
+  - compat/python-vmaf/core/local_explainer.py
+  note: Marco Tulio Correia Ribeiro, 2016.
+- id: scanf-py
+  name: scanf.py by Danny Yoo
+  url: https://github.com/Netflix/vmaf
+  kind: code
+  relation: vendored
+  license: BSD-2-Clause
+  paths:
+  - compat/python-vmaf/tools/scanf.py
+  note: Copied into Netflix/vmaf; the file header names the author and carries the SPDX tag.
+- id: matlab-reference-code
+  name: MATLAB reference implementations (iCID, SpEED, STMAD, matlabPyrTools, colorspace)
+  url: https://github.com/Netflix/vmaf
+  kind: code
+  relation: vendored
+  license: unknown
+  paths:
+  - compat/python-vmaf/matlab/
+  note: Inherited from Netflix/vmaf; most files state no licence. iCID is supplementary material of Preiss,
+    Fernandes and Urban (IEEE TIP 2014); the colorspace code is by Pascal Getreuer.
+- id: strred-matlab
+  name: STRRED MATLAB code (LIVE, University of Texas at Austin)
+  url: https://live.ece.utexas.edu/research/quality/
+  kind: code
+  relation: vendored
+  license: proprietary
+  license_note: 'header: educational and research use without fee; not to be used as the basis of a commercial
+    product without permission'
+  paths:
+  - compat/python-vmaf/matlab/strred/strred/
+  note: Inherited from Netflix/vmaf.
+- id: hacl-star
+  name: HACL*
+  url: https://github.com/hacl-star/hacl-star
+  kind: code
+  relation: shipped
+  license: MIT
+  paths:
+  - tools/rc1-tester/image/licenses/hacl-star.txt
+  note: Linked into the interpreter of the tester artifacts; the licence text is reproduced for their
+    notices (ADR-1503).
+- id: nv-codec-headers
+  name: nv-codec-headers
+  url: https://git.ffmpeg.org/gitweb/ffmpeg/nv-codec-headers.git
+  kind: code
+  relation: shipped
+  license: MIT
+  paths:
+  - tools/rc1-tester/image/licenses/nv-codec-headers.txt
+  note: Notice reproduced for the CUDA images published before ADR-1513 (ADR-1578).
+- id: interfig
+  name: interfig (from hindsight)
+  url: https://github.com/vectorize-io/hindsight
+  kind: code
+  relation: vendored
+  license: MIT
+  paths:
+  - tools/figures/third_party/interfig/
+  note: Figure engine vendored for interactive figures (ADR-0015).
+- id: react-figures
+  name: React, react-dom and scheduler (Meta)
+  url: https://github.com/facebook/react
+  kind: library
+  relation: shipped
+  license: MIT
+  paths:
+  - tools/figures/player/
+  note: Bundled in the figure player; texts in player/THIRD-PARTY-LICENSES.txt.
+- id: prometheus-pushgateway-chart
+  name: Prometheus Pushgateway Helm chart
+  url: https://github.com/prometheus-community/helm-charts
+  kind: library
+  relation: vendored
+  license: Apache-2.0
+  paths:
+  - deploy/helm/vmafx/charts/
+  note: Chart dependency fetched by helm dependency build.
+- id: cilium-ebpf
+  name: cilium/ebpf
+  url: https://github.com/cilium/ebpf
+  kind: library
+  relation: shipped
+  license: MIT
+  paths:
+  - cmd/vmafx-node/bpf/
+  - go.mod
+  note: Loads and generates the rclone-bypass eBPF object of the node daemon.
+- id: vega
+  name: Vega
+  url: https://github.com/vega/vega
+  kind: library
+  relation: shipped
+  license: BSD-3-Clause
+  paths:
+  - docs/javascripts/vendor/vega/
+  note: Chart runtime in the documentation; the bundle lists its dependencies in THIRD-PARTY-LICENSES.txt.
+- id: vega-lite
+  name: Vega-Lite
+  url: https://github.com/vega/vega-lite
+  kind: library
+  relation: shipped
+  license: BSD-3-Clause
+  paths:
+  - docs/javascripts/vendor/vega/
+- id: vega-embed
+  name: vega-embed
+  url: https://github.com/vega/vega-embed
+  kind: library
+  relation: shipped
+  license: BSD-3-Clause
+  paths:
+  - docs/javascripts/vendor/vega/
+- id: katex
+  name: KaTeX
+  url: https://github.com/KaTeX/KaTeX
+  kind: library
+  relation: shipped
+  license: MIT
+  paths:
+  - docs/javascripts/vendor/katex/
+  note: Formula renderer of the documentation site (ADR-2705); also compiles every formula in the docs build check.
+- id: winget-manifest-schemas
+  name: winget manifest schemas
+  url: https://github.com/microsoft/winget-cli
+  kind: standard
+  relation: vendored
+  license: MIT
+  paths:
+  - packaging/schemas/winget-1.12.0/
+  note: JSON schemas of winget manifest 1.12.0; the distribution tests validate the generated winget manifests against them (ADR-3317).
+- id: d3
+  name: D3
+  url: https://github.com/d3/d3
+  kind: library
+  relation: shipped
+  license: ISC
+  paths:
+  - docs/javascripts/vendor/vega/
+  note: Reached through the Vega bundle.
+- id: vl-convert
+  name: vl-convert
+  url: https://github.com/vega/vl-convert
+  kind: tool
+  relation: used-by-CI
+  license: BSD-3-Clause
+  paths:
+  - scripts/docs/generate-charts.py
+  note: Renders the documentation charts and writes the Vega bundle.
+- id: inter-font
+  name: Inter
+  url: https://github.com/rsms/inter
+  kind: font
+  relation: vendored
+  license: OFL-1.1
+  paths:
+  - docs/assets/fonts/inter/
+  note: Subset served by the documentation site (ADR-1508).
+- id: jetbrains-mono-font
+  name: JetBrains Mono
+  url: https://github.com/JetBrains/JetBrainsMono
+  kind: font
+  relation: vendored
+  license: OFL-1.1
+  paths:
+  - docs/assets/fonts/jetbrains-mono/
+  note: Subset served by the documentation site (ADR-1508).
+- id: u2netp
+  name: U-2-Net (u2netp)
+  url: https://github.com/xuebinqin/U-2-Net
+  kind: model
+  relation: integrated
+  license: LicenseRef-Apache-2.0-u2netp
+  paths:
+  - docs/ai/u2netp-mirror.md
+  - docs/ai/models/u2netp_mirror_card.md
+  evidence:
+  - docs/ai/models/u2netp_mirror_card.md
+  - LICENSES/LicenseRef-Apache-2.0-u2netp.txt
+  note: Checkpoint mirrored as a release asset, not committed; the upstream weights are Apache-2.0.
+- id: fastdvdnet-weights
+  name: FastDVDnet weights (m-tassano/fastdvdnet)
+  url: https://github.com/m-tassano/fastdvdnet
+  kind: model
+  relation: shipped
+  license: MIT
+  paths:
+  - model/tiny/fastdvdnet_pre.*
+  - ai/scripts/export_fastdvdnet_pre.py
+  evidence:
+  - docs/ai/models/fastdvdnet_pre.md
+  - REUSE.toml
+  note: Matias Tassano; the temporal pre-filter model.
+- id: lpips-weights
+  name: LPIPS (richzhang/PerceptualSimilarity)
+  url: https://github.com/richzhang/PerceptualSimilarity
+  kind: model
+  relation: shipped
+  license: BSD-2-Clause AND BSD-3-Clause
+  paths:
+  - model/tiny/lpips_sq.*
+  - ai/lpips_export.py
+  evidence:
+  - docs/ai/models/lpips_sq.md
+  - REUSE.toml
+  note: LPIPS linear layers on torchvision SqueezeNet 1.1 ImageNet features.
+- id: transnet-v2-weights
+  name: TransNet V2 weights (soCzech/TransNetV2)
+  url: https://github.com/soCzech/TransNetV2
+  kind: model
+  relation: shipped
+  license: MIT
+  paths:
+  - model/tiny/transnet_v2.*
+  - ai/scripts/export_transnet_v2.py
+  evidence:
+  - docs/ai/models/transnet_v2.md
+  - REUSE.toml
+  note: Tomas Soucek; shot-boundary model.
+- id: brisque-live-model
+  name: BRISQUE model (LIVE, University of Texas at Austin)
+  url: https://live.ece.utexas.edu/research/quality/
+  kind: model
+  relation: shipped
+  license: LicenseRef-LIVE-BRISQUE
+  paths:
+  - model/other_models/brisque_live.model
+  - model/other_models/NOTICE-brisque
+  evidence:
+  - docs/licensing.md
+  - docs/metrics/brisque.md
+  note: Used under the release notice as written; publications reporting research with it acknowledge
+    and cite it (ADR-1507).
+- id: mobilesal
+  name: MobileSal
+  url: https://github.com/yuhuan-wu/MobileSal
+  kind: model
+  relation: inspired
+  license: CC-BY-NC-SA-4.0
+  paths:
+  - docs/ai/models/mobilesal.md
+  evidence:
+  - docs/ai/models/mobilesal.md
+  note: 'Not shipped: the upstream weights are incompatible with the project licence; the shipped placeholder
+    and the fork-trained students are not derived from them.'
+- id: dists-model
+  name: DISTS (Ding et al.)
+  url: https://github.com/dingkeyan93/DISTS
+  kind: model
+  relation: inspired
+  license: MIT
+  paths:
+  - docs/metrics/dists.md
+  - docs/ai/models/dists_sq.md
+  evidence:
+  - docs/metrics/dists.md
+  note: The shipped checkpoint is a smoke placeholder, not the authors production weights.
+- id: torchvision
+  name: torchvision
+  url: https://github.com/pytorch/vision
+  kind: library
+  relation: integrated
+  license: BSD-3-Clause
+  paths:
+  - ai/lpips_export.py
+  - ai/pyproject.toml
+  evidence:
+  - REUSE.toml
+  note: SqueezeNet 1.1 features under LPIPS.
+- id: netflix-public-dataset
+  name: Netflix Public Dataset
+  url: https://github.com/Netflix/vmaf/blob/0fb4152418d0351901e9c5fd2d30668dced89cdb/resource/doc/datasets.md
+  kind: dataset
+  relation: integrated
+  license: none
+  license_note: the page states no terms beyond requesting access
+  paths:
+  - docs/models/datasets.md
+  evidence:
+  - docs/ai/training-data.md
+  note: 'Access on request. Trained on it: fr_regressor v1 to v3 and the vmaf_tiny models.'
+- id: konvid-1k
+  name: KoNViD-1k
+  url: https://database.mmsp-kn.de/konvid-1k-database.html
+  kind: dataset
+  relation: integrated
+  license: none
+  license_note: the page names no licence and offers the database to the research community
+  paths:
+  - ai/scripts/konvid_1k_to_corpus_jsonl.py
+  - docs/ai/konvid-1k-ingestion.md
+  evidence:
+  - docs/ai/training-data.md
+  - docs/ai/mos-corpora.md
+  note: Not redistributed. Clips keep the Creative Commons licence of their YFCC100M upload.
+- id: konvid-150k
+  name: KonViD-150k
+  url: https://database.mmsp-kn.de/konvid-150k-vqa-database.html
+  kind: dataset
+  relation: integrated
+  license: proprietary
+  license_note: research-only per ADR-0325
+  paths:
+  - ai/scripts/konvid_150k_to_corpus_jsonl.py
+  - docs/ai/konvid-150k-ingestion.md
+  evidence:
+  - docs/ai/konvid-150k-ingestion.md
+  - docs/ai/mos-corpora.md
+  note: Not redistributed.
+- id: bvi-dvc
+  name: BVI-DVC
+  url: https://fan-aaron-zhang.github.io/BVI-DVC/
+  kind: dataset
+  relation: integrated
+  license: proprietary
+  license_note: all rights stay with the originators of each sequence; one source is for academic research
+    only
+  paths:
+  - ai/scripts/bvi_dvc_to_corpus_jsonl.py
+  - docs/ai/bvi-dvc-corpus-ingestion.md
+  evidence:
+  - docs/ai/training-data.md
+  - docs/ai/bvi-dvc-corpus-ingestion.md
+  note: Ma, Zhang and Bull. Not redistributed.
+- id: duts-tr
+  name: DUTS-TR
+  url: https://saliencydetection.net/duts/
+  kind: dataset
+  relation: integrated
+  license: proprietary
+  license_note: all rights reserved by the original authors; images come from ImageNet
+  paths:
+  - docs/ai/models/saliency_student_v1.md
+  evidence:
+  - docs/ai/training-data.md
+  - docs/ai/models/saliency_student_v1.md
+  note: Training input of the saliency students; no file is redistributed.
+- id: imagenet
+  name: ImageNet
+  url: https://image-net.org/download.php
+  kind: dataset
+  relation: integrated
+  license: proprietary
+  license_note: non-commercial research and education only
+  paths:
+  - docs/ai/models/saliency_student_v1.md
+  evidence:
+  - docs/ai/training-data.md
+  note: Source of the DUTS-TR images.
+- id: lsvq
+  name: LSVQ (Patch-VQ)
+  url: https://github.com/baidut/PatchVQ
+  kind: dataset
+  relation: integrated
+  license: CC-BY-4.0
+  license_note: as the Hugging Face mirror states it
+  paths:
+  - ai/scripts/lsvq_to_corpus_jsonl.py
+  - docs/ai/lsvq-ingestion.md
+  evidence:
+  - docs/ai/lsvq-ingestion.md
+  - docs/ai/mos-corpora.md
+  note: Ying, Mandal, Ghadiyaram and Bovik, CVPR 2021.
+- id: youtube-ugc
+  name: YouTube UGC Dataset
+  url: https://research.google/pubs/youtube-ugc-dataset-for-video-compression-research/
+  kind: dataset
+  relation: integrated
+  license: CC-BY-4.0
+  license_note: the ATTRIBUTION file of the dataset states CC BY 4.0 for the listed clips
+  paths:
+  - ai/scripts/youtube_ugc_to_corpus_jsonl.py
+  - docs/ai/youtube-ugc-ingestion.md
+  evidence:
+  - docs/ai/youtube-ugc-ingestion.md
+  - docs/ai/mos-corpora.md
+  note: Wang, Inguva and Adsumilli, MMSP 2019.
+- id: waterloo-ivc-4k
+  name: Waterloo IVC 4K-VQA
+  url: https://ivc.uwaterloo.ca/database/4KVQA.html
+  kind: dataset
+  relation: integrated
+  license: proprietary
+  license_note: permissive academic licence, attribution required
+  paths:
+  - ai/scripts/waterloo_ivc_to_corpus_jsonl.py
+  - docs/ai/waterloo-ivc-4k-ingestion.md
+  evidence:
+  - docs/ai/waterloo-ivc-4k-ingestion.md
+  note: Li, Duanmu, Liu and Wang, ICIAR 2019.
+- id: live-vqc
+  name: LIVE-VQC
+  url: https://live.ece.utexas.edu/research/LIVEVQC/
+  kind: dataset
+  relation: integrated
+  license: proprietary
+  license_note: research use with attribution
+  paths:
+  - ai/scripts/live_vqc_to_corpus_jsonl.py
+  - docs/ai/live-vqc-ingestion.md
+  evidence:
+  - docs/ai/live-vqc-ingestion.md
+  note: Sinno and Bovik, IEEE TIP 2019.
+- id: chug
+  name: CHUG UGC-HDR
+  url: https://doi.org/10.1109/ICIP55913.2025.11084488
+  kind: dataset
+  relation: integrated
+  license: CC-BY-NC-SA-4.0
+  license_note: the README badge says CC BY-NC 4.0 while license.txt holds the NC-SA text
+  paths:
+  - ai/scripts/chug_to_corpus_jsonl.py
+  - docs/ai/chug-ingestion.md
+  evidence:
+  - docs/ai/chug-ingestion.md
+  note: Saini, Bovik, Birkbeck, Wang and Adsumilli, ICIP 2025.
+- id: paper-vmaf-blog
+  name: Toward a practical perceptual video quality metric (Netflix, 2016)
+  url: https://netflixtechblog.com/toward-a-practical-perceptual-video-quality-metric-653f208b9652
+  kind: paper
+  relation: inspired
+  license: unknown
+  paths: []
+  evidence:
+  - docs/reference/references.md
+  - docs/reference/faq.md
+  note: The tech blog that open sourced VMAF.
+- id: paper-vmaf-2020-blog
+  name: Toward a better quality metric for the video community (Netflix, 2020)
+  url: https://netflixtechblog.com/toward-a-better-quality-metric-for-the-video-community-7ed94e752a30
+  kind: paper
+  relation: inspired
+  license: unknown
+  paths: []
+  evidence:
+  - docs/reference/references.md
+  - docs/models/overview.md
+  note: Speed work, the API and the NEG mode.
+- id: paper-cambi
+  name: CAMBI banding detector (Tandon et al., PCS 2021)
+  url: https://netflixtechblog.medium.com/cambi-a-banding-artifact-detector-96777ae12fe2
+  kind: paper
+  relation: adapted
+  license: BSD-2-Clause-Patent
+  paths: []
+  evidence:
+  - docs/metrics/cambi.md
+  - docs/reference/references.md
+  - REUSE.toml
+  note: The paper is mirrored in docs/reference/papers; REUSE.toml records BSD-2-Clause-Patent for the
+    PDF.
+- id: paper-brisque
+  name: Mittal, Moorthy and Bovik, No-reference image quality assessment in the spatial domain (IEEE TIP
+    2012)
+  url: https://doi.org/10.1109/tip.2012.2214050
+  kind: paper
+  relation: adapted
+  license: unknown
+  paths: []
+  evidence:
+  - docs/metrics/brisque.md
+  note: BRISQUE extractor.
+- id: paper-niqe
+  name: Mittal, Soundararajan and Bovik, Making a completely blind image quality analyzer (IEEE SPL 2013)
+  url: https://doi.org/10.1109/lsp.2012.2227726
+  kind: paper
+  relation: adapted
+  license: unknown
+  paths: []
+  evidence:
+  - docs/metrics/niqe.md
+  note: NIQE extractor.
+- id: paper-vif
+  name: Sheikh and Bovik, Image information and visual quality (IEEE TIP 2006)
+  url: https://doi.org/10.1109/tip.2005.859378
+  kind: paper
+  relation: adapted
+  license: unknown
+  paths: []
+  evidence:
+  - docs/metrics/vif.md
+  note: VIF; luma only by design.
+- id: paper-dlm
+  name: Li, Zhang, Ma and Ngan, Image quality assessment by separately evaluating detail losses and additive
+    impairments (IEEE TMM 2011)
+  url: https://doi.org/10.1109/tmm.2011.2152382
+  kind: paper
+  relation: adapted
+  license: unknown
+  paths: []
+  evidence:
+  - docs/metrics/adm.md
+  - docs/reference/references.md
+  note: The detail-loss measure behind ADM.
+- id: paper-speed-qa
+  name: Bampis, Gupta, Soundararajan and Bovik, SpEED-QA (IEEE SPL 2017)
+  url: https://doi.org/10.1109/lsp.2017.2726542
+  kind: paper
+  relation: adapted
+  license: unknown
+  paths: []
+  evidence:
+  - docs/metrics/speed_qa.md
+  note: SpEED extractors.
+- id: paper-pu21
+  name: Mantiuk and Azimi, PU21 (QoMEX and PCS 2021)
+  url: https://ieeexplore.ieee.org/document/9477471/
+  kind: paper
+  relation: adapted
+  license: unknown
+  paths: []
+  evidence:
+  - docs/metrics/pu21.md
+  - docs/adr/1111-pu21-hdr-metric.md
+  note: PU21 HDR adapter; the official code is credited separately.
+- id: pu21-code
+  name: PU21 reference implementation (gfxdisp/pu21)
+  url: https://github.com/gfxdisp/pu21
+  kind: code
+  relation: adapted
+  license: BSD-3-Clause
+  paths:
+  - docs/metrics/pu21.md
+  evidence:
+  - docs/metrics/pu21.md
+  note: Encoder coefficients, formula and range for the pu21 extractor.
+- id: paper-y-funque
+  name: Venkataramanan, Stejerean, Katsavounidis and Bovik, One Transform To Compute Them All (arXiv:2304.03412)
+  url: https://arxiv.org/abs/2304.03412
+  kind: paper
+  relation: adapted
+  license: CC-BY-4.0
+  paths: []
+  evidence:
+  - docs/metrics/y-funque-plus.md
+  - docs/adr/1114-y-funque-plus-atoms.md
+  note: Y-FUNQUE+ atom features.
+  license_note: the arXiv listing names it
+- id: paper-transnet-v2
+  name: Soucek and Lokoc, TransNet V2 (arXiv:2008.04838)
+  url: https://arxiv.org/abs/2008.04838
+  kind: paper
+  relation: adapted
+  license: proprietary
+  paths: []
+  evidence:
+  - docs/ai/models/transnet_v2.md
+  - docs/adr/0223-transnet-v2-shot-detector.md
+  note: Shot-boundary detector.
+  license_note: arXiv non-exclusive distribution licence
+- id: paper-fastdvdnet
+  name: Tassano, Delon and Veit, FastDVDnet (arXiv:1907.01361)
+  url: https://arxiv.org/abs/1907.01361
+  kind: paper
+  relation: inspired
+  license: proprietary
+  paths: []
+  evidence:
+  - docs/ai/models/fastdvdnet_pre.md
+  note: Temporal pre-filter.
+  license_note: arXiv non-exclusive distribution licence
+- id: paper-lpips
+  name: Zhang, Isola, Efros, Shechtman and Wang, The Unreasonable Effectiveness of Deep Features as a
+    Perceptual Metric (arXiv:1801.03924)
+  url: https://arxiv.org/abs/1801.03924
+  kind: paper
+  relation: inspired
+  license: proprietary
+  paths: []
+  evidence:
+  - docs/ai/models/lpips_sq.md
+  note: LPIPS.
+  license_note: arXiv non-exclusive distribution licence
+- id: paper-dists
+  name: 'Ding, Ma, Wang and Simoncelli, Image Quality Assessment: Unifying Structure and Texture Similarity
+    (arXiv:2004.07728)'
+  url: https://arxiv.org/abs/2004.07728
+  kind: paper
+  relation: inspired
+  license: proprietary
+  paths: []
+  evidence:
+  - docs/metrics/dists.md
+  note: DISTS.
+  license_note: arXiv non-exclusive distribution licence
+- id: paper-mobilesal
+  name: Wu, Liu, Cheng, Lu and Cheng, MobileSal (arXiv:2012.13095)
+  url: https://arxiv.org/abs/2012.13095
+  kind: paper
+  relation: inspired
+  license: CC-BY-NC-SA-4.0
+  paths: []
+  evidence:
+  - docs/ai/models/mobilesal.md
+  note: Saliency extractor design.
+  license_note: the arXiv listing names it
+- id: std-bt2124
+  name: ITU-R BT.2124-0 (2019), potential visibility of colour differences in television
+  url: https://www.itu.int/rec/R-REC-BT.2124
+  kind: standard
+  relation: adapted
+  license: unknown
+  paths: []
+  evidence:
+  - docs/metrics/delta_e_itp.md
+  note: Annex 1 pipeline and Annex 4 worked example behind delta_e_itp.
+- id: std-bt2100
+  name: ITU-R BT.2100, image parameter values for HDR television
+  url: https://www.itu.int/rec/R-REC-BT.2100
+  kind: standard
+  relation: adapted
+  license: unknown
+  paths: []
+  evidence:
+  - docs/metrics/delta_e_itp.md
+  note: RGB to LMS matrix, PQ transfer function, ICtCp.
+- id: std-st2084
+  name: SMPTE ST 2084:2014, Perceptual Quantizer EOTF
+  url: https://doi.org/10.5594/SMPTE.ST2084.2014
+  kind: standard
+  relation: adapted
+  license: unknown
+  paths: []
+  evidence:
+  - docs/metrics/delta_e_itp.md
+  - docs/metrics/pu21.md
+  note: PQ code values to absolute luminance.
+- id: std-bt2022
+  name: ITU-R BT.2022, general viewing conditions for subjective assessment
+  url: https://www.itu.int/rec/R-REC-BT.2022
+  kind: standard
+  relation: adapted
+  license: unknown
+  paths: []
+  evidence:
+  - docs/models/overview.md
+  note: Viewing distance of the VMAF training experiments.
+- id: caveman
+  name: Caveman
+  url: https://github.com/JuliusBrussee/caveman
+  kind: text
+  relation: adapted
+  license: MIT
+  license_note: terms at adaptation; upstream relicensed to Apache-2.0 on 2026-09-24
+  paths:
+  - .agents/skills/caveman/LICENSE
+  - .claude/skills/caveman/LICENSE
+  evidence:
+  - AGENTS.md
+  - .agents/skills/caveman/SKILL.md
+  note: Julius Brussee and contributors; the internal text register skill is adapted from it. The LICENSE file next to the skill holds the MIT text as praetor ships it with the skill.
+- id: i-have-adhd
+  name: i-have-adhd
+  url: https://github.com/ayghri/i-have-adhd
+  kind: text
+  relation: adapted
+  license: MIT
+  paths:
+  - .agents/skills/adhd-format/LICENSE
+  - .agents/skills/social-text/LICENSE
+  - .claude/skills/adhd-format/LICENSE
+  - .claude/skills/social-text/LICENSE
+  evidence:
+  - .agents/skills/adhd-format/SKILL.md
+  - .agents/skills/social-text/SKILL.md
+  note: Ayoub Ghriss and contributors; source of the adhd-format and social-text skills. The LICENSE file next to each skill holds the MIT text as praetor ships it with the skill.
+- id: contributor-covenant
+  name: Contributor Covenant 2.1
+  url: https://www.contributor-covenant.org/version/2/1/code_of_conduct/
+  kind: text
+  relation: adapted
+  license: unknown
+  license_note: the page states no licence for the text
+  paths:
+  - CODE_OF_CONDUCT.md
+  evidence:
+  - CODE_OF_CONDUCT.md
+  note: Our code of conduct, with the enforcement guidelines of the same version.
+- id: mozilla-enforcement-ladder
+  name: Mozilla community enforcement ladder
+  url: https://github.com/mozilla/diversity
+  kind: text
+  relation: inspired
+  license: MPL-2.0
+  paths:
+  - CODE_OF_CONDUCT.md
+  evidence:
+  - CODE_OF_CONDUCT.md
+  note: The Community Impact Guidelines of the Covenant were inspired by it.
+- id: developer-certificate-of-origin
+  name: Developer Certificate of Origin 1.1
+  url: https://developercertificate.org/
+  kind: text
+  relation: integrated
+  license: unknown
+  license_note: the text allows verbatim copies only
+  paths:
+  - CONTRIBUTING.md
+  note: The sign-off certifies it; the text is referenced, not copied.
+- id: nygard-adr
+  name: Documenting Architecture Decisions (Michael Nygard)
+  url: https://www.cognitect.com/blog/2011/11/15/documenting-architecture-decisions
+  kind: text
+  relation: inspired
+  license: unknown
+  paths:
+  - docs/adr/0000-template.md
+  evidence:
+  - docs/adr/0000-template.md
+  note: The ADR template follows this format.
+- id: keep-a-changelog
+  name: Keep a Changelog
+  url: https://github.com/olivierlacan/keep-a-changelog
+  kind: text
+  relation: inspired
+  license: MIT
+  paths:
+  - changelog.d/README.md
+  evidence:
+  - changelog.d/README.md
+  note: Section names of the changelog fragments.
+- id: conventional-commits
+  name: Conventional Commits
+  url: https://www.conventionalcommits.org/
+  kind: text
+  relation: inspired
+  license: CC-BY-3.0
+  license_note: as the specification page states it
+  paths:
+  - CONTRIBUTING.md
+  evidence:
+  - CONTRIBUTING.md
+  note: Commit subjects and release automation.
+- id: nasa-power-of-10
+  name: NASA/JPL Power of 10 and the JPL C coding standard
+  url: https://spinroot.com/gerard/pdf/P10.pdf
+  kind: standard
+  relation: adapted
+  license: unknown
+  paths:
+  - docs/principles.md
+  evidence:
+  - docs/principles.md
+  note: Coding rules enforced through .clang-tidy and the praetor HISS invariants.
+- id: sei-cert-c
+  name: SEI CERT C Coding Standard
+  url: https://wiki.sei.cmu.edu/confluence/display/c
+  kind: standard
+  relation: adapted
+  license: unknown
+  paths:
+  - docs/principles.md
+  evidence:
+  - docs/principles.md
+  note: Mandatory rules of the C coding standard.
+- id: misra-c
+  name: MISRA C:2012
+  url: https://misra.org.uk/
+  kind: standard
+  relation: inspired
+  license: proprietary
+  paths:
+  - docs/principles.md
+  evidence:
+  - docs/principles.md
+  note: Informative subset only.
+- id: praetor
+  name: praetor
+  url: https://github.com/cordanaLLM/praetor
+  kind: tool
+  relation: used-by-CI
+  license: EUPL-1.2
+  paths:
+  - .standards.yaml
+  - .github/workflows/standards-gate.yml
+  note: Standards engine, hooks and skills; installed by praetorctl adopt.
+- id: golusoris
+  name: golusoris
+  url: https://github.com/golusoris/golusoris
+  kind: library
+  relation: shipped
+  license: EUPL-1.2
+  paths:
+  - go.mod
+  note: Go framework of the services.
+- id: pelorus
+  name: pelorus
+  url: https://github.com/VMAFx/pelorus
+  kind: code
+  relation: vendored
+  license: EUPL-1.2
+  paths:
+  - core/include/libvmaf/pelorus/
+  - core/src/interop/
+  - core/test/test_pelorus_interop.c
+  evidence:
+  - scripts/ci/pelorus-mirror-paths.txt
+  - scripts/sync-pelorus-interop.sh
+  note: Interop ABI headers, parser and conformance fixture vendored from the VMAFx/pelorus repository.
+- id: go-goptuna
+  name: goptuna (Go)
+  url: https://github.com/c-bata/goptuna
+  kind: library
+  relation: shipped
+  license: MIT
+  paths:
+  - go.mod
+  note: Go module github.com/c-bata/goptuna.
+- id: go-kin-openapi
+  name: kin-openapi (Go)
+  url: https://github.com/getkin/kin-openapi
+  kind: library
+  relation: shipped
+  license: MIT
+  paths:
+  - go.mod
+  note: Go module github.com/getkin/kin-openapi.
+- id: go-chi
+  name: chi (Go)
+  url: https://github.com/go-chi/chi
+  kind: library
+  relation: shipped
+  license: MIT
+  paths:
+  - go.mod
+  note: Go module github.com/go-chi/chi.
+- id: go-logr
+  name: logr (Go)
+  url: https://github.com/go-logr/logr
+  kind: library
+  relation: shipped
+  license: Apache-2.0
+  paths:
+  - go.mod
+  note: Go module github.com/go-logr/logr.
+- id: go-uuid
+  name: uuid (Go)
+  url: https://github.com/google/uuid
+  kind: library
+  relation: shipped
+  license: BSD-3-Clause
+  paths:
+  - go.mod
+  note: Go module github.com/google/uuid.
+- id: go-grafana-foundation-sdk
+  name: grafana-foundation-sdk (Go)
+  url: https://github.com/grafana/grafana-foundation-sdk
+  kind: library
+  relation: shipped
+  license: Apache-2.0
+  paths:
+  - go.mod
+  note: Go module github.com/grafana/grafana-foundation-sdk.
+- id: go-ginkgo
+  name: ginkgo (Go)
+  url: https://github.com/onsi/ginkgo
+  kind: library
+  relation: shipped
+  license: MIT
+  paths:
+  - go.mod
+  note: Go module github.com/onsi/ginkgo.
+- id: go-gomega
+  name: gomega (Go)
+  url: https://github.com/onsi/gomega
+  kind: library
+  relation: shipped
+  license: MIT
+  paths:
+  - go.mod
+  note: Go module github.com/onsi/gomega.
+- id: go-parquet-go
+  name: parquet-go (Go)
+  url: https://github.com/parquet-go/parquet-go
+  kind: library
+  relation: shipped
+  license: Apache-2.0
+  paths:
+  - go.mod
+  note: Go module github.com/parquet-go/parquet-go.
+- id: go-client-golang
+  name: client_golang (Go)
+  url: https://github.com/prometheus/client_golang
+  kind: library
+  relation: shipped
+  license: Apache-2.0
+  paths:
+  - go.mod
+  note: Go module github.com/prometheus/client_golang.
+- id: go-client-model
+  name: client_model (Go)
+  url: https://github.com/prometheus/client_model
+  kind: library
+  relation: shipped
+  license: Apache-2.0
+  paths:
+  - go.mod
+  note: Go module github.com/prometheus/client_model.
+- id: go-cobra
+  name: cobra (Go)
+  url: https://github.com/spf13/cobra
+  kind: library
+  relation: shipped
+  license: Apache-2.0
+  paths:
+  - go.mod
+  note: Go module github.com/spf13/cobra.
+- id: go-pflag
+  name: pflag (Go)
+  url: https://github.com/spf13/pflag
+  kind: library
+  relation: shipped
+  license: BSD-3-Clause
+  paths:
+  - go.mod
+  note: Go module github.com/spf13/pflag.
+- id: go-opentelemetry-go
+  name: opentelemetry-go (Go)
+  url: https://github.com/open-telemetry/opentelemetry-go
+  kind: library
+  relation: shipped
+  license: Apache-2.0
+  paths:
+  - go.mod
+  note: Go module go.opentelemetry.io/otel.
+- id: go-opentelemetry-go-contrib
+  name: opentelemetry-go-contrib (Go)
+  url: https://github.com/open-telemetry/opentelemetry-go-contrib
+  kind: library
+  relation: shipped
+  license: Apache-2.0
+  paths:
+  - go.mod
+  note: Go module go.opentelemetry.io/contrib.
+- id: go-fx
+  name: fx (Go)
+  url: https://github.com/uber-go/fx
+  kind: library
+  relation: shipped
+  license: MIT
+  paths:
+  - go.mod
+  note: Go module go.uber.org/fx.
+- id: go-sync
+  name: sync (Go)
+  url: https://github.com/golang/sync
+  kind: library
+  relation: shipped
+  license: BSD-3-Clause
+  paths:
+  - go.mod
+  note: Go module golang.org/x/sync.
+- id: go-grpc-go
+  name: grpc-go (Go)
+  url: https://github.com/grpc/grpc-go
+  kind: library
+  relation: shipped
+  license: Apache-2.0
+  paths:
+  - go.mod
+  note: Go module google.golang.org/grpc.
+- id: go-protobuf-go
+  name: protobuf-go (Go)
+  url: https://github.com/protocolbuffers/protobuf-go
+  kind: library
+  relation: shipped
+  license: BSD-3-Clause
+  paths:
+  - go.mod
+  note: Go module google.golang.org/protobuf.
+- id: go-api
+  name: api (Go)
+  url: https://github.com/kubernetes/api
+  kind: library
+  relation: shipped
+  license: Apache-2.0
+  paths:
+  - go.mod
+  note: Go module k8s.io/api.
+- id: kubernetes-openapi
+  name: Kubernetes OpenAPI v3 specification
+  url: https://github.com/kubernetes/kubernetes
+  kind: code
+  relation: vendored
+  license: Apache-2.0
+  paths:
+  - deploy/helm/vmafx/values.schema.json
+  - deploy/helm/vmafx/THIRD-PARTY-NOTICES.txt
+  - api/kubernetes/openapi-subset.json
+  - scripts/codegen/k8s_openapi.py
+  - build-config.env
+  note: Type schemas of the Helm chart's values schema, from the release build-config.env pins (K8S_SCHEMA_VERSION); attributed in the chart's THIRD-PARTY-NOTICES.txt (ADR-2350 D13, ADR-2673).
+- id: go-apimachinery
+  name: apimachinery (Go)
+  url: https://github.com/kubernetes/apimachinery
+  kind: library
+  relation: shipped
+  license: Apache-2.0
+  paths:
+  - go.mod
+  note: Go module k8s.io/apimachinery.
+- id: go-client-go
+  name: client-go (Go)
+  url: https://github.com/kubernetes/client-go
+  kind: library
+  relation: shipped
+  license: Apache-2.0
+  paths:
+  - go.mod
+  note: Go module k8s.io/client-go.
+- id: go-controller-runtime
+  name: controller-runtime (Go)
+  url: https://github.com/kubernetes-sigs/controller-runtime
+  kind: library
+  relation: shipped
+  license: Apache-2.0
+  paths:
+  - go.mod
+  note: Go module sigs.k8s.io/controller-runtime.
+- id: go-mcp-sdk
+  name: MCP Go SDK
+  url: https://github.com/modelcontextprotocol/go-sdk
+  kind: library
+  relation: shipped
+  license: Apache-2.0 AND MIT
+  license_note: upstream is moving from MIT to Apache-2.0; both apply
+  paths:
+  - go.mod
+  note: Go module github.com/modelcontextprotocol/go-sdk.
+- id: go-modernc-sqlite
+  name: modernc.org/sqlite
+  url: https://gitlab.com/cznic/sqlite
+  kind: library
+  relation: shipped
+  license: BSD-3-Clause
+  license_note: from its LICENSE file; the repository is not on GitHub
+  paths:
+  - go.mod
+  note: Pure Go SQLite driver.
+- id: py-numpy
+  name: numpy (Python)
+  url: https://github.com/numpy/numpy
+  kind: library
+  relation: integrated
+  license: BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0
+  paths:
+  - ai/pyproject.toml
+  - dev-llm/pyproject.toml
+  - mcp-server/vmaf-mcp/pyproject.toml
+  - python/pyproject.toml
+  - tools/ensemble-training-kit/pyproject.toml
+  - tools/vmaf-roi-score/pyproject.toml
+- id: py-scipy
+  name: scipy (Python)
+  url: https://github.com/scipy/scipy
+  kind: library
+  relation: integrated
+  license: BSD-3-Clause
+  paths:
+  - ai/pyproject.toml
+  - dev-llm/pyproject.toml
+  - mcp-server/vmaf-mcp/pyproject.toml
+  - python/pyproject.toml
+  - tools/ensemble-training-kit/pyproject.toml
+- id: py-pandas
+  name: pandas (Python)
+  url: https://github.com/pandas-dev/pandas
+  kind: library
+  relation: integrated
+  license: BSD-3-Clause
+  paths:
+  - ai/pyproject.toml
+  - dev-llm/pyproject.toml
+  - mcp-server/vmaf-mcp/pyproject.toml
+  - python/pyproject.toml
+  - tools/ensemble-training-kit/pyproject.toml
+- id: py-scikit-learn
+  name: scikit-learn (Python)
+  url: https://github.com/scikit-learn/scikit-learn
+  kind: library
+  relation: integrated
+  license: BSD-3-Clause
+  paths:
+  - ai/pyproject.toml
+  - python/pyproject.toml
+  - tools/ensemble-training-kit/pyproject.toml
+- id: py-scikit-image
+  name: scikit-image (Python)
+  url: https://github.com/scikit-image/scikit-image
+  kind: library
+  relation: integrated
+  license: BSD-3-Clause
+  paths:
+  - python/pyproject.toml
+- id: py-matplotlib
+  name: matplotlib (Python)
+  url: https://github.com/matplotlib/matplotlib
+  kind: library
+  relation: integrated
+  license: unknown
+  paths:
+  - ai/pyproject.toml
+  - python/pyproject.toml
+  - tools/ensemble-training-kit/pyproject.toml
+  - tools/vmaf-tune/pyproject.toml
+- id: py-h5py
+  name: h5py (Python)
+  url: https://github.com/h5py/h5py
+  kind: library
+  relation: integrated
+  license: BSD-3-Clause
+  paths:
+  - python/pyproject.toml
+- id: py-joblib
+  name: joblib (Python)
+  url: https://github.com/joblib/joblib
+  kind: library
+  relation: integrated
+  license: BSD-3-Clause
+  paths:
+  - python/pyproject.toml
+- id: py-pywavelets
+  name: PyWavelets (Python)
+  url: https://github.com/PyWavelets/pywt
+  kind: library
+  relation: integrated
+  license: MIT AND BSD-3-Clause
+  paths:
+  - python/pyproject.toml
+- id: py-sureal
+  name: sureal (Python)
+  url: https://github.com/Netflix/sureal
+  kind: library
+  relation: integrated
+  license: Apache-2.0
+  paths:
+  - python/pyproject.toml
+- id: py-torch
+  name: torch (Python)
+  url: https://github.com/pytorch/pytorch
+  kind: library
+  relation: integrated
+  license: Apache-2.0 AND Apache-2.0 WITH LLVM-exception AND BSD-2-Clause AND BSD-3-Clause AND BSL-1.0
+    AND MIT
+  paths:
+  - ai/pyproject.toml
+  - mcp-server/vmaf-mcp/pyproject.toml
+  - tools/ensemble-training-kit/pyproject.toml
+  - tools/vmaf-tune/pyproject.toml
+- id: py-pytorch-lightning
+  name: pytorch-lightning (Python)
+  url: https://github.com/Lightning-AI/pytorch-lightning
+  kind: library
+  relation: integrated
+  license: Apache-2.0
+  paths:
+  - ai/pyproject.toml
+- id: py-onnx
+  name: onnx (Python)
+  url: https://github.com/onnx/onnx
+  kind: library
+  relation: integrated
+  license: Apache-2.0
+  paths:
+  - ai/pyproject.toml
+  - dev-llm/pyproject.toml
+  - mcp-server/vmaf-mcp/pyproject.toml
+  - tools/ensemble-training-kit/pyproject.toml
+  - tools/vmaf-tune/pyproject.toml
+- id: py-onnxruntime
+  name: onnxruntime (Python)
+  url: https://github.com/microsoft/onnxruntime
+  kind: library
+  relation: integrated
+  license: MIT
+  paths:
+  - ai/pyproject.toml
+  - dev-llm/pyproject.toml
+  - mcp-server/vmaf-mcp/pyproject.toml
+  - tools/ensemble-training-kit/pyproject.toml
+  - tools/vmaf-roi-score/pyproject.toml
+  - tools/vmaf-tune/pyproject.toml
+- id: py-onnxscript
+  name: onnxscript (Python)
+  url: https://github.com/microsoft/onnxscript
+  kind: library
+  relation: integrated
+  license: MIT
+  paths:
+  - ai/pyproject.toml
+- id: py-optuna
+  name: optuna (Python)
+  url: https://github.com/optuna/optuna
+  kind: library
+  relation: integrated
+  license: MIT
+  paths:
+  - ai/pyproject.toml
+  - tools/ensemble-training-kit/pyproject.toml
+  - tools/vmaf-tune/pyproject.toml
+- id: py-pydantic
+  name: pydantic (Python)
+  url: https://github.com/pydantic/pydantic
+  kind: library
+  relation: integrated
+  license: MIT
+  paths:
+  - ai/pyproject.toml
+  - mcp-server/vmaf-mcp/pyproject.toml
+- id: py-pyarrow
+  name: pyarrow (Python)
+  url: https://github.com/apache/arrow
+  kind: library
+  relation: integrated
+  license: Apache-2.0
+  paths:
+  - ai/pyproject.toml
+  - dev-llm/pyproject.toml
+  - mcp-server/vmaf-mcp/pyproject.toml
+- id: py-pyyaml
+  name: pyyaml (Python)
+  url: https://github.com/yaml/pyyaml
+  kind: library
+  relation: integrated
+  license: MIT
+  paths:
+  - ai/pyproject.toml
+  - dev-llm/pyproject.toml
+  - tools/ensemble-training-kit/pyproject.toml
+- id: py-rich
+  name: rich (Python)
+  url: https://github.com/Textualize/rich
+  kind: library
+  relation: integrated
+  license: MIT
+  paths:
+  - ai/pyproject.toml
+  - dev-llm/pyproject.toml
+- id: py-typer
+  name: typer (Python)
+  url: https://github.com/fastapi/typer
+  kind: library
+  relation: integrated
+  license: MIT
+  paths:
+  - ai/pyproject.toml
+  - dev-llm/pyproject.toml
+  - mcp-server/vmaf-mcp/pyproject.toml
+- id: py-tqdm
+  name: tqdm (Python)
+  url: https://github.com/tqdm/tqdm
+  kind: library
+  relation: integrated
+  license: MPL-2.0 AND MIT
+  paths:
+  - ai/pyproject.toml
+- id: py-aiohttp
+  name: aiohttp (Python)
+  url: https://github.com/aio-libs/aiohttp
+  kind: library
+  relation: integrated
+  license: Apache-2.0 AND MIT
+  paths:
+  - mcp-server/vmaf-mcp/pyproject.toml
+- id: py-anyio
+  name: anyio (Python)
+  url: https://github.com/agronholm/anyio
+  kind: library
+  relation: integrated
+  license: MIT
+  paths:
+  - mcp-server/vmaf-mcp/pyproject.toml
+- id: py-mcp
+  name: mcp (Python)
+  url: https://github.com/modelcontextprotocol/python-sdk
+  kind: library
+  relation: integrated
+  license: MIT
+  paths:
+  - mcp-server/vmaf-mcp/pyproject.toml
+- id: py-prometheus-client
+  name: prometheus-client (Python)
+  url: https://github.com/prometheus/client_python
+  kind: library
+  relation: integrated
+  license: Apache-2.0 AND BSD-2-Clause
+  paths:
+  - mcp-server/vmaf-mcp/pyproject.toml
+- id: py-jsonschema
+  name: jsonschema (Python)
+  url: https://github.com/python-jsonschema/jsonschema
+  kind: library
+  relation: integrated
+  license: MIT
+  paths:
+  - ai/pyproject.toml
+  - tools/rc1-tester/pyproject.toml
+- id: py-seaborn
+  name: seaborn (Python)
+  url: https://github.com/mwaskom/seaborn
+  kind: library
+  relation: integrated
+  license: BSD-3-Clause
+  paths:
+  - ai/pyproject.toml
+- id: py-dill
+  name: dill (Python)
+  url: https://github.com/uqfoundation/dill
+  kind: library
+  relation: integrated
+  license: BSD-3-Clause
+  paths:
+  - python/pyproject.toml
+- id: py-python-slugify
+  name: python-slugify (Python)
+  url: https://github.com/un33k/python-slugify
+  kind: library
+  relation: integrated
+  license: MIT
+  paths:
+  - python/pyproject.toml
+- id: py-defusedxml
+  name: defusedxml (Python)
+  url: https://github.com/tiran/defusedxml
+  kind: library
+  relation: integrated
+  license: PSF-2.0
+  paths:
+  - python/pyproject.toml
+- id: py-libsvm-official
+  name: libsvm-official (Python)
+  url: https://github.com/cjlin1/libsvm
+  kind: library
+  relation: integrated
+  license: BSD-3-Clause
+  paths:
+  - python/pyproject.toml
+- id: meson
+  name: Meson
+  url: https://github.com/mesonbuild/meson
+  kind: tool
+  relation: used-by-CI
+  license: Apache-2.0
+  paths:
+  - .github/AGENTS.d/build-matrix-record.md
+  - .github/AGENTS.d/hosted-runner-packages.md
+  - .github/AGENTS.d/meson-sanitization.md
+  - .github/AGENTS.d/release-fan-out.md
+  - .github/AGENTS.d/sanitizer-matrix.md
+  - .github/AGENTS.d/security-scans.md
+  - .github/AGENTS.d/windows-runners.md
+  - .github/AGENTS.md
+  note: Build system of libvmaf.
+- id: ninja
+  name: Ninja
+  url: https://github.com/ninja-build/ninja
+  kind: tool
+  relation: used-by-CI
+  license: Apache-2.0
+  paths:
+  - .github/AGENTS.d/meson-sanitization.md
+  - .github/AGENTS.d/security-scans.md
+  - .github/AGENTS.d/windows-runners.md
+  - .github/AGENTS.md
+  - .github/codeql-config.yml
+  - .github/copilot-instructions.md
+  - .github/workflows/build.yml
+  - .github/workflows/ffmpeg-integration.yml
+- id: nasm
+  name: NASM
+  url: https://github.com/netwide-assembler/nasm
+  kind: tool
+  relation: used-by-CI
+  license: BSD-2-Clause
+  paths:
+  - .github/AGENTS.d/windows-runners.md
+  - .github/workflows/build.yml
+  - .github/workflows/ffmpeg-integration.yml
+  - .github/workflows/fuzz.yml
+  - .github/workflows/go-ci.yml
+  - .github/workflows/libvmaf-build-matrix.yml
+  - .github/workflows/lint-and-format.yml
+  - .github/workflows/macos-tester-bundle.yml
+  note: Assembler of the x86 SIMD code.
+- id: llvm-clang
+  name: LLVM (clang, clang-tidy, clang-format)
+  url: https://github.com/llvm/llvm-project
+  kind: tool
+  relation: used-by-CI
+  license: Apache-2.0 WITH LLVM-exception
+  paths:
+  - .github/AGENTS.d/hosted-runner-packages.md
+  - .github/AGENTS.md
+  - .github/agents/c-reviewer.md
+  - .github/ci-impact.json
+  - .github/copilot-instructions.md
+  - .github/workflows/ffmpeg-integration.yml
+  - .github/workflows/lint-and-format.yml
+  - .github/workflows/nightly.yml
+  note: Lint and format gates, and the CUDA clang driver.
+- id: cppcheck
+  name: Cppcheck
+  url: https://github.com/danmar/cppcheck
+  kind: tool
+  relation: used-by-CI
+  license: GPL-3.0-or-later
+  paths:
+  - .github/AGENTS.d/cppcheck-posix-model.md
+  - .github/AGENTS.md
+  - .github/agents/c-reviewer.md
+  - .github/ci-impact.json
+  - .github/copilot-instructions.md
+  - .github/workflows/lint-and-format.yml
+  - .github/workflows/required-aggregator.yml
+  - .github/workflows/tests-and-quality-gates.yml
+- id: shellcheck
+  name: ShellCheck
+  url: https://github.com/koalaman/shellcheck
+  kind: tool
+  relation: used-by-CI
+  license: GPL-3.0-only
+  paths:
+  - .github/workflows/ffmpeg-integration.yml
+  - .github/workflows/go-ci.yml
+  - .github/workflows/libvmaf-build-matrix.yml
+  - .github/workflows/lint-and-format.yml
+  - .github/workflows/required-aggregator.yml
+  - .github/workflows/rust-ci.yml
+  - .github/workflows/sanitizers.yml
+  - .github/workflows/tests-and-quality-gates.yml
+- id: shfmt
+  name: shfmt (mvdan/sh)
+  url: https://github.com/mvdan/sh
+  kind: tool
+  relation: used-by-CI
+  license: BSD-3-Clause
+  paths:
+  - .github/workflows/lint-and-format.yml
+  - .github/workflows/required-aggregator.yml
+  - .pre-commit-config.yaml
+  - Makefile
+  - docker/dev/alpine-3.20.Dockerfile
+  - docker/dev/arch.Dockerfile
+  - scripts/ci/tests/test-native-pre-commit.sh
+- id: markdownlint-cli2
+  name: markdownlint-cli2
+  url: https://github.com/DavidAnson/markdownlint-cli2
+  kind: tool
+  relation: used-by-CI
+  license: MIT
+  paths:
+  - .github/AGENTS.d/dev-image-private-guard.md
+  - .github/PULL_REQUEST_TEMPLATE.md
+  - .github/agents/c-reviewer.md
+  - .github/agents/cuda-reviewer.md
+  - .github/agents/doc-reviewer.md
+  - .github/agents/hip-reviewer.md
+  - .github/agents/meson-reviewer.md
+  - .github/agents/metal-reviewer.md
+- id: mkdocs
+  name: MkDocs
+  url: https://github.com/mkdocs/mkdocs
+  kind: tool
+  relation: used-by-CI
+  license: BSD-2-Clause
+  paths:
+  - .github/PULL_REQUEST_TEMPLATE.md
+  - .github/agents/doc-reviewer.md
+  - .github/ci-impact.json
+  - .github/workflows/docs.yml
+  - .github/workflows/lint-and-format.yml
+  - .pre-commit-config.yaml
+  - Makefile
+  - lefthook.yml
+  note: Documentation site generator.
+- id: mkdocs-material
+  name: Material for MkDocs
+  url: https://github.com/squidfunk/mkdocs-material
+  kind: tool
+  relation: used-by-CI
+  license: MIT
+  paths:
+  - mkdocs.yml
+- id: semgrep
+  name: Semgrep
+  url: https://github.com/semgrep/semgrep
+  kind: tool
+  relation: used-by-CI
+  license: LGPL-2.1-or-later
+  paths:
+  - .github/AGENTS.d/security-scans.md
+  - .github/AGENTS.md
+  - .github/ci-impact.json
+  - .github/copilot-instructions.md
+  - .github/workflows/lint-and-format.yml
+  - .github/workflows/required-aggregator.yml
+  - .github/workflows/security-scans.yml
+  - .pre-commit-config.yaml
+- id: gitleaks
+  name: Gitleaks
+  url: https://github.com/gitleaks/gitleaks
+  kind: tool
+  relation: used-by-CI
+  license: MIT
+  paths:
+  - .github/ci-impact.json
+  - .github/workflows/required-aggregator.yml
+  - .github/workflows/security-scans.yml
+  - .pre-commit-config.yaml
+  - scripts/ci/AGENTS.d/pre-commit-hygiene.md
+  - scripts/ci/tests/test_gitleaks_scan_scope.py
+- id: cosign
+  name: Sigstore cosign
+  url: https://github.com/sigstore/cosign
+  kind: tool
+  relation: used-by-CI
+  license: Apache-2.0
+  paths:
+  - .github/AGENTS.d/container-signing.md
+  - .github/AGENTS.md
+  - .github/actions/image-licence-artifacts/action.yml
+  - .github/workflows/dev-container-publish.yml
+  - .github/workflows/docker-publish-operator-node.yml
+  - .github/workflows/docker-publish-production.yml
+  - .github/workflows/docker-publish-tester.yml
+  - .github/workflows/macos-tester-bundle.yml
+  note: Keyless signing of release artifacts.
+- id: syft
+  name: Syft
+  url: https://github.com/anchore/syft
+  kind: tool
+  relation: used-by-CI
+  license: Apache-2.0
+  paths:
+  - .github/AGENTS.d/container-signing.md
+  - .github/actions/image-licence-artifacts/action.yml
+  - .github/actions/image-licence-artifacts/sbom.sh
+  - .github/workflows/docker-publish-operator-node.yml
+  - .github/workflows/docker-publish-production.yml
+  - .github/workflows/docker-publish-tester.yml
+  - .github/workflows/macos-tester-bundle.yml
+  - .github/workflows/release-dry-run.yml
+  note: SBOM generation.
+- id: lefthook
+  name: Lefthook
+  url: https://github.com/evilmartians/lefthook
+  kind: tool
+  relation: used-by-CI
+  license: MIT
+  paths:
+  - .github/ci-impact.json
+  - .github/copilot-instructions.md
+  - .github/workflows/standards-gate.yml
+  - .pre-commit-config.yaml
+  - lefthook.yml
+  - scripts/ci/AGENTS.d/workflow-contract-tests.md
+  - scripts/ci/tests/test-dedupe-gate.sh
+  - scripts/ci/tests/test_ci_impact.py
+- id: renovate
+  name: Renovate
+  url: https://github.com/renovatebot/renovate
+  kind: tool
+  relation: used-by-CI
+  license: AGPL-3.0-only
+  paths:
+  - .github/AGENTS.d/build-matrix-record.md
+  - .github/AGENTS.d/container-signing.md
+  - .github/AGENTS.d/macos-tmate.md
+  - .github/AGENTS.d/python-requirement.md
+  - .github/AGENTS.d/renovate-bot.md
+  - .github/AGENTS.d/scorecard-lane.md
+  - .github/AGENTS.d/upstream-merge.md
+  - .github/AGENTS.md
+  note: Dependency updates.
+- id: release-please
+  name: release-please
+  url: https://github.com/googleapis/release-please
+  kind: tool
+  relation: used-by-CI
+  license: Apache-2.0
+  paths:
+  - .github/AGENTS.d/release-fan-out.md
+  - .github/AGENTS.d/required-aggregator.md
+  - .github/AGENTS.md
+  - .github/CODEOWNERS
+  - .github/ci-impact.json
+  - .github/ci-tier.json
+  - .github/copilot-instructions.md
+  - .github/release.yml
+  note: Release pull requests and tags.
+- id: pre-commit
+  name: pre-commit
+  url: https://github.com/pre-commit/pre-commit
+  kind: tool
+  relation: used-by-CI
+  license: MIT
+  paths:
+  - .github/AGENTS.d/pelorus-mirror.md
+  - .github/AGENTS.md
+  - .github/ci-impact.json
+  - .github/copilot-instructions.md
+  - .github/workflows/lint-and-format.yml
+  - .github/workflows/required-aggregator.yml
+  - .github/workflows/rule-enforcement.yml
+  - .github/workflows/standards-gate.yml
+- id: ruff
+  name: Ruff
+  url: https://github.com/astral-sh/ruff
+  kind: tool
+  relation: used-by-CI
+  license: MIT
+  paths:
+  - .github/copilot-instructions.md
+  - .github/workflows/lint-and-format.yml
+  - .github/workflows/tests-and-quality-gates.yml
+  - .pre-commit-config.yaml
+  - Makefile
+  - dev/requirements-python-env-lock.txt
+  - lefthook.yml
+  - noxfile.py
+- id: black
+  name: Black
+  url: https://github.com/psf/black
+  kind: tool
+  relation: used-by-CI
+  license: MIT
+  paths:
+  - .github/copilot-instructions.md
+  - .github/workflows/lint-and-format.yml
+  - .pre-commit-config.yaml
+  - Makefile
+  - noxfile.py
+  - pyproject.toml
+  - requirements/locks/dev-linters.in
+  - requirements/locks/dev-linters.txt
+- id: mypy
+  name: mypy
+  url: https://github.com/python/mypy
+  kind: tool
+  relation: used-by-CI
+  license: MIT
+  paths:
+  - .github/workflows/lint-and-format.yml
+  - .github/workflows/tests-and-quality-gates.yml
+  - .pre-commit-config.yaml
+  - Makefile
+  - dev/requirements-python-env-lock.txt
+  - lefthook.yml
+  - pyproject.toml
+  - requirements/locks/dev-linters.in
+- id: pytest
+  name: pytest
+  url: https://github.com/pytest-dev/pytest
+  kind: tool
+  relation: used-by-CI
+  license: MIT
+  paths:
+  - .github/test-suites.json
+  - .github/workflows/build.yml
+  - .github/workflows/mini-retrain.yml
+  - .github/workflows/tests-and-quality-gates.yml
+  - .pre-commit-config.yaml
+  - Makefile
+  - dev/AGENTS.d/shell-contract.md
+  - dev/Containerfile
+- id: cython
+  name: Cython
+  url: https://github.com/cython/cython
+  kind: tool
+  relation: used-by-CI
+  license: Apache-2.0
+  paths:
+  - .github/test-suites.json
+  - .github/workflows/lint-and-format.yml
+  - docker/Dockerfile.tester
+  - noxfile.py
+  - requirements/AGENTS.md
+  - requirements/locks/cythonize.in
+  - requirements/locks/cythonize.txt
+  - requirements/locks/package-build.in
+  note: Builds the Python harness extension.
+- id: tox
+  name: tox
+  url: https://github.com/tox-dev/tox
+  kind: tool
+  relation: used-by-CI
+  license: MIT
+  paths:
+  - .github/test-suites.json
+  - .github/workflows/build.yml
+  - .github/workflows/libvmaf-build-matrix.yml
+  - .github/workflows/tests-and-quality-gates.yml
+  - .pre-commit-config.yaml
+  - noxfile.py
+  - requirements/locks/manifest.json
+  - requirements/locks/tox.in
+- id: nox
+  name: nox
+  url: https://github.com/wntrblm/nox
+  kind: tool
+  relation: used-by-CI
+  license: Apache-2.0
+  paths:
+  - .github/workflows/tests-and-quality-gates.yml
+  - noxfile.py
+  - requirements/AGENTS.md
+  - requirements/locks/manifest.json
+  - requirements/locks/nox.in
+  - requirements/locks/nox.txt
+  - scripts/ci/AGENTS.d/python-locks.md
+  - scripts/ci/check_python_dependency_locks.py
+- id: gcovr
+  name: gcovr
+  url: https://github.com/gcovr/gcovr
+  kind: tool
+  relation: used-by-CI
+  license: BSD-3-Clause
+  paths:
+  - .github/workflows/tests-and-quality-gates.yml
+  - Makefile
+  - requirements/locks/gcovr.in
+  - requirements/locks/gcovr.txt
+  - requirements/locks/manifest.json
+  - scripts/ci/AGENTS.d/coverage-gate.md
+  - scripts/ci/coverage-check.sh
+  - scripts/ci/coverage-delta-check.sh
+- id: doxygen
+  name: Doxygen
+  url: https://github.com/doxygen/doxygen
+  kind: tool
+  relation: used-by-CI
+  license: unknown
+  paths:
+  - .github/agents/hip-reviewer.md
+  - .github/agents/metal-reviewer.md
+  - .github/ci-impact.json
+  - .github/codeql-config.yml
+  - .github/copilot-instructions.md
+  - .github/workflows/docs.yml
+  - .github/workflows/required-aggregator.yml
+  - .pre-commit-config.yaml
+- id: hadolint
+  name: Hadolint
+  url: https://github.com/hadolint/hadolint
+  kind: tool
+  relation: used-by-CI
+  license: unknown
+  paths:
+  - Dockerfile
+  - Dockerfile.ffmpeg
+  - Dockerfile.go-server
+  - dev/AGENTS.d/shell-contract.md
+  - dev/Containerfile
+  - docker/Dockerfile.controller
+  - docker/Dockerfile.node
+  - docker/Dockerfile.operator
+- id: actionlint
+  name: actionlint
+  url: https://github.com/rhysd/actionlint
+  kind: tool
+  relation: used-by-CI
+  license: MIT
+  paths:
+  - .github/AGENTS.d/required-aggregator.md
+  - .github/actionlint.yaml
+  - .github/workflows/ffmpeg-integration.yml
+  - .pre-commit-config.yaml
+  - Makefile
+  - scripts/ci/check_composite_actions.py
+- id: qemu
+  name: QEMU
+  url: https://github.com/qemu/qemu
+  kind: tool
+  relation: used-by-CI
+  license: unknown
+  paths:
+  - .github/copilot-instructions.md
+  - .github/workflows/docker-publish-operator-node.yml
+  - .github/workflows/docker-publish-production.yml
+  - Dockerfile.go-server
+  - Makefile
+  - docker/Dockerfile.controller
+  - docker/Dockerfile.operator
+  - scripts/ci/AGENTS.d/golden-gate-arm64.md
+  note: User-mode emulation for the Arm and SVE2 runs.
+- id: osv-scanner
+  name: OSV-Scanner
+  url: https://github.com/google/osv-scanner
+  kind: tool
+  relation: used-by-CI
+  license: Apache-2.0
+  paths:
+  - .github/ci-impact.json
+  - scripts/ci/tests/test_ci_impact.py
+- id: cargo-deny
+  name: cargo-deny
+  url: https://github.com/EmbarkStudios/cargo-deny
+  kind: tool
+  relation: used-by-CI
+  license: Apache-2.0
+  paths:
+  - .github/workflows/required-aggregator.yml
+  - .github/workflows/rust-ci.yml
+  - mkdocs.yml
+  - scripts/ci/tests/test_ci_impact.py
+  - scripts/ci/tests/test_hiss_replay_contract.py
+  - scripts/ci/tests/test_rust_ci_workflow_contract.py
+- id: helm
+  name: Helm
+  url: https://github.com/helm/helm
+  kind: tool
+  relation: used-by-CI
+  license: Apache-2.0
+  paths:
+  - .github/AGENTS.d/helm-and-e2e.md
+  - .github/AGENTS.md
+  - .github/ci-impact.json
+  - .github/copilot-instructions.md
+  - .github/test-suites.json
+  - .github/workflows/e2e-k8s.yml
+  - .github/workflows/helm-chart.yml
+  - .github/workflows/required-aggregator.yml
+  note: Chart packaging and tests.
+- id: kind
+  name: kind
+  url: https://github.com/kubernetes-sigs/kind
+  kind: tool
+  relation: used-by-CI
+  license: Apache-2.0
+  paths:
+  - .github/AGENTS.d/build-matrix-record.md
+  - .github/AGENTS.d/helm-and-e2e.md
+  - .github/copilot-instructions.md
+  - .github/workflows/e2e-k8s.yml
+  - .github/workflows/helm-chart.yml
+  - .github/workflows/lint-and-format.yml
+  - .github/workflows/release-dry-run.yml
+  - .github/workflows/required-aggregator.yml
+  note: Cluster for the end-to-end tests.
+- id: rclone
+  name: rclone
+  url: https://github.com/rclone/rclone
+  kind: tool
+  relation: integrated
+  license: MIT
+  paths:
+  - .github/workflows/docker-publish-operator-node.yml
+  - .github/workflows/go-ci.yml
+  - build-config.env
+  - deploy/helm/vmafx/AGENTS.md
+  - deploy/helm/vmafx/crds/vmafx.dev_vmafxjobs.yaml
+  - deploy/helm/vmafx/crds/vmafx.dev_vmafxtenants.yaml
+  - deploy/helm/vmafx/templates/networkpolicy.yaml
+  - deploy/helm/vmafx/templates/node-validate.yaml
+  note: Mover in the node image; the eBPF program bypasses its reads.
+- id: reuse-tool
+  name: REUSE tool
+  url: https://github.com/fsfe/reuse-tool
+  kind: tool
+  relation: used-by-CI
+  license: Apache-2.0 AND CC0-1.0 AND CC-BY-SA-4.0 AND GPL-3.0-or-later
+  paths:
+  - .github/ci-impact.json
+  - .github/copilot-instructions.md
+  - .github/test-suites.json
+  - .github/workflows/docker-publish-tester.yml
+  - .github/workflows/e2e-k8s.yml
+  - .github/workflows/lint-and-format.yml
+  - .github/workflows/security-scans.yml
+  - .github/workflows/tests-and-quality-gates.yml
+  note: Licence metadata checks.
+- id: onnxruntime-engine
+  name: ONNX Runtime (C library)
+  url: https://github.com/microsoft/onnxruntime
+  kind: tool
+  relation: integrated
+  license: MIT
+  paths:
+  - docker/Dockerfile.production
+  - docs/ai/inference.md
+  note: Inference engine of the tiny-AI surface.
+- id: cuda-toolkit
+  name: NVIDIA CUDA Toolkit
+  url: https://developer.nvidia.com/cuda-toolkit
+  kind: tool
+  relation: integrated
+  license: proprietary
+  paths:
+  - Dockerfile
+  - build-config.env
+  - dev/AGENTS.d/ffmpeg-encoders.md
+  - dev/AGENTS.d/package-names.md
+  - dev/Containerfile
+  - docker/AGENTS.md
+  - docker/Dockerfile.production-gpu
+  - docker/Dockerfile.tester
+  note: Compiler and headers; the CUDA kernels contain NVIDIA code from the toolkit headers and libdevice
+    (docs/licensing.md).
+- id: rocm
+  name: ROCm
+  url: https://github.com/ROCm/ROCm
+  kind: tool
+  relation: integrated
+  license: MIT
+  paths:
+  - dev/Containerfile
+  - dev/docker-compose.yml
+  note: HIP compiler stack.
+- id: intel-llvm
+  name: Intel oneAPI DPC++ (intel/llvm)
+  url: https://github.com/intel/llvm
+  kind: tool
+  relation: integrated
+  license: Apache-2.0 WITH LLVM-exception
+  paths:
+  - build-config.env
+  - dev/AGENTS.d/uapi-version-pins.md
+  - dev/Containerfile
+  - dev/scripts/fetch-intel-neo.py
+  - docker/Dockerfile.production-gpu
+  - docker/Dockerfile.tester
+  note: SYCL compiler.
+- id: level-zero
+  name: oneAPI Level Zero
+  url: https://github.com/oneapi-src/level-zero
+  kind: tool
+  relation: integrated
+  license: MIT
+  paths:
+  - Dockerfile
+  - dev/AGENTS.d/gpu-backend-exposure.md
+  - dev/AGENTS.d/uapi-version-pins.md
+  - dev/Containerfile
+  - dev/docker-compose.yml
+  - dev/scripts/fetch-intel-neo.py
+  - dev/scripts/test_fetch_intel_neo.py
+  - docker/Dockerfile.production-gpu
+  note: Device runtime of the SYCL backend.
+- id: intel-compute-runtime
+  name: Intel compute-runtime (NEO)
+  url: https://github.com/intel/compute-runtime
+  kind: tool
+  relation: integrated
+  license: MIT
+  paths:
+  - build-config.env
+  - dev/AGENTS.d/runtime-dependencies.md
+  - dev/AGENTS.d/uapi-version-pins.md
+  - dev/AGENTS.md
+  - dev/Containerfile
+  - dev/docker-compose.runner.yml
+  - dev/docker-compose.yml
+  - dev/scripts/dev-mcp-entrypoint.sh
+  note: Intel GPU compute stack in the dev image.
+- id: intel-oneapi-basekit
+  name: Intel oneAPI Base Toolkit
+  url: https://www.intel.com/content/www/us/en/developer/tools/oneapi/base-toolkit.html
+  kind: tool
+  relation: integrated
+  license: unknown
+  paths:
+  - Dockerfile
+  - build-config.env
+  - dev/AGENTS.d/gpu-backend-exposure.md
+  - dev/AGENTS.d/package-names.md
+  - dev/AGENTS.d/runtime-dependencies.md
+  - dev/AGENTS.d/uapi-version-pins.md
+  - dev/Containerfile
+  - dev/Containerfile.runner
+  note: Toolkit packages installed in the SYCL images.
+- id: image-debian
+  name: Debian base image
+  url: https://hub.docker.com/_/debian
+  kind: image
+  relation: shipped
+  license: unknown
+  paths:
+  - build-config.env
+  - docker/AGENTS.md
+  - docker/Dockerfile.controller
+  - docker/Dockerfile.node
+  - docker/Dockerfile.operator
+  - docker/Dockerfile.production
+  - docker/Dockerfile.production-gpu
+  - docker/Dockerfile.published-source
+  note: Image of many packages under their own licences; the per-image notices list them (docs/licensing.md).
+- id: image-ubuntu
+  name: Ubuntu base image
+  url: https://hub.docker.com/_/ubuntu
+  kind: image
+  relation: shipped
+  license: unknown
+  paths:
+  - Dockerfile
+  - build-config.env
+  - dev/AGENTS.d/entrypoint-unprivileged.md
+  - dev/AGENTS.d/ffmpeg-encoders.md
+  - dev/AGENTS.d/release-build.md
+  - dev/AGENTS.d/uapi-version-pins.md
+  - dev/AGENTS.md
+  - dev/Containerfile
+  note: Same note as the Debian image.
+- id: image-python
+  name: Python base image
+  url: https://hub.docker.com/_/python
+  kind: image
+  relation: shipped
+  license: unknown
+  paths:
+  - Dockerfile
+  - build-config.env
+  - docker/Dockerfile.controller
+  - docker/Dockerfile.node
+  - docker/Dockerfile.operator
+  - docker/Dockerfile.production
+  - docker/Dockerfile.production-gpu
+  - docker/Dockerfile.tester
+  note: Same note as the Debian image.
+- id: image-golang
+  name: Go base image
+  url: https://hub.docker.com/_/golang
+  kind: image
+  relation: used-by-CI
+  license: unknown
+  paths:
+  - build-config.env
+  - docker/Dockerfile.controller
+  - docker/Dockerfile.node
+  - docker/Dockerfile.operator
+  note: Same note as the Debian image.
+- id: image-distroless
+  name: Distroless base images
+  url: https://github.com/GoogleContainerTools/distroless
+  kind: image
+  relation: shipped
+  license: Apache-2.0
+  paths:
+  - build-config.env
+  - docker/AGENTS.md
+  - docker/Dockerfile.controller
+  - docker/Dockerfile.node
+  - docker/Dockerfile.operator
+  - docker/Dockerfile.production
+- id: image-rocm-dev
+  name: ROCm development image
+  url: https://hub.docker.com/r/rocm/dev-ubuntu-26.04
+  kind: image
+  relation: shipped
+  license: unknown
+  paths:
+  - build-config.env
+  - docker/Dockerfile.node
+  - docker/Dockerfile.production-gpu
+  - docker/Dockerfile.tester
+- id: image-oneapi-basekit
+  name: Intel oneAPI Base Toolkit image
+  url: https://hub.docker.com/r/intel/oneapi-basekit
+  kind: image
+  relation: used-by-CI
+  license: unknown
+  paths:
+  - .github/workflows/docker-publish-production.yml
+  - docker/AGENTS.md
+  - docker/dev/ubuntu-26.04-sycl.Dockerfile
+- id: action-actions-checkout
+  name: actions/checkout
+  url: https://github.com/actions/checkout
+  kind: action
+  relation: used-by-CI
+  license: MIT
+  paths:
+  - .github/workflows/build.yml
+  - .github/workflows/ci-escalate.yml
+  - .github/workflows/ci-tier.yml
+  - .github/workflows/dev-container-build.yml
+  - .github/workflows/dev-container-publish.yml
+  - .github/workflows/docker-image.yml
+  - .github/workflows/docker-publish-operator-node.yml
+  - .github/workflows/docker-publish-production.yml
+- id: action-actions-upload-artifact
+  name: actions/upload-artifact
+  url: https://github.com/actions/upload-artifact
+  kind: action
+  relation: used-by-CI
+  license: MIT
+  paths:
+  - .github/actions/image-licence-artifacts/action.yml
+  - .github/workflows/build.yml
+  - .github/workflows/docker-publish-operator-node.yml
+  - .github/workflows/docker-publish-production.yml
+  - .github/workflows/docker-publish-tester.yml
+  - .github/workflows/docs.yml
+  - .github/workflows/e2e-k8s.yml
+  - .github/workflows/ffmpeg-patch-stack.yml
+- id: action-actions-download-artifact
+  name: actions/download-artifact
+  url: https://github.com/actions/download-artifact
+  kind: action
+  relation: used-by-CI
+  license: MIT
+  paths:
+  - .github/workflows/docker-publish-operator-node.yml
+  - .github/workflows/docker-publish-tester.yml
+  - .github/workflows/e2e-k8s.yml
+  - .github/workflows/macos-tester-bundle.yml
+  - .github/workflows/scorecard.yml
+  - .github/workflows/supply-chain.yml
+  - .github/workflows/tests-and-quality-gates.yml
+  - .github/workflows/windows-tester-bundle.yml
+- id: action-actions-setup-python
+  name: actions/setup-python
+  url: https://github.com/actions/setup-python
+  kind: action
+  relation: used-by-CI
+  license: MIT
+  paths:
+  - .github/workflows/build.yml
+  - .github/workflows/docs.yml
+  - .github/workflows/ffmpeg-integration.yml
+  - .github/workflows/libvmaf-build-matrix.yml
+  - .github/workflows/lint-and-format.yml
+  - .github/workflows/nightly-bisect.yml
+  - .github/workflows/release-dry-run.yml
+  - .github/workflows/research-radar.yml
+- id: action-docker-build-push-action
+  name: docker/build-push-action
+  url: https://github.com/docker/build-push-action
+  kind: action
+  relation: used-by-CI
+  license: Apache-2.0
+  paths:
+  - .github/actions/image-licence-artifacts/action.yml
+  - .github/workflows/dev-container-publish.yml
+  - .github/workflows/docker-publish-operator-node.yml
+  - .github/workflows/docker-publish-production.yml
+  - .github/workflows/docker-publish-tester.yml
+  - .github/workflows/e2e-k8s.yml
+  - .github/workflows/release-dry-run.yml
+- id: action-docker-setup-buildx-action
+  name: docker/setup-buildx-action
+  url: https://github.com/docker/setup-buildx-action
+  kind: action
+  relation: used-by-CI
+  license: Apache-2.0
+  paths:
+  - .github/workflows/dev-container-publish.yml
+  - .github/workflows/docker-publish-operator-node.yml
+  - .github/workflows/docker-publish-production.yml
+  - .github/workflows/docker-publish-tester.yml
+  - .github/workflows/e2e-k8s.yml
+  - .github/workflows/published-rc-licence-companions.yml
+  - .github/workflows/release-dry-run.yml
+- id: action-docker-login-action
+  name: docker/login-action
+  url: https://github.com/docker/login-action
+  kind: action
+  relation: used-by-CI
+  license: Apache-2.0
+  paths:
+  - .github/workflows/dev-container-publish.yml
+  - .github/workflows/docker-publish-operator-node.yml
+  - .github/workflows/docker-publish-production.yml
+  - .github/workflows/docker-publish-tester.yml
+  - .github/workflows/published-rc-licence-companions.yml
+- id: action-sigstore-cosign-installer
+  name: sigstore/cosign-installer
+  url: https://github.com/sigstore/cosign-installer
+  kind: action
+  relation: used-by-CI
+  license: Apache-2.0
+  paths:
+  - .github/workflows/dev-container-publish.yml
+  - .github/workflows/docker-publish-operator-node.yml
+  - .github/workflows/docker-publish-production.yml
+  - .github/workflows/docker-publish-tester.yml
+  - .github/workflows/macos-tester-bundle.yml
+  - .github/workflows/published-rc-licence-companions.yml
+  - .github/workflows/supply-chain.yml
+  - .github/workflows/windows-tester-bundle.yml
+- id: action-anchore-sbom-action
+  name: anchore/sbom-action
+  url: https://github.com/anchore/sbom-action
+  kind: action
+  relation: used-by-CI
+  license: Apache-2.0
+  paths:
+  - .github/actions/image-licence-artifacts/action.yml
+  - .github/workflows/docker-publish-operator-node.yml
+  - .github/workflows/docker-publish-production.yml
+  - .github/workflows/docker-publish-tester.yml
+  - .github/workflows/macos-tester-bundle.yml
+  - .github/workflows/release-dry-run.yml
+  - .github/workflows/supply-chain.yml
+  - .github/workflows/windows-tester-bundle.yml
+- id: action-actions-attest-build-provenance
+  name: actions/attest-build-provenance
+  url: https://github.com/actions/attest-build-provenance
+  kind: action
+  relation: used-by-CI
+  license: MIT
+  paths:
+  - .github/actions/image-licence-artifacts/action.yml
+  - .github/workflows/docker-publish-operator-node.yml
+  - .github/workflows/docker-publish-production.yml
+  - .github/workflows/docker-publish-tester.yml
+  - .github/workflows/macos-tester-bundle.yml
+  - .github/workflows/supply-chain.yml
+  - .github/workflows/windows-tester-bundle.yml
+- id: action-actions-cache
+  name: actions/cache
+  url: https://github.com/actions/cache
+  kind: action
+  relation: used-by-CI
+  license: MIT
+  paths:
+  - .github/workflows/build.yml
+  - .github/workflows/e2e-k8s.yml
+  - .github/workflows/libvmaf-build-matrix.yml
+  - .github/workflows/lint-and-format.yml
+  - .github/workflows/praetor-api.yml
+  - .github/workflows/sanitizers.yml
+  - .github/workflows/tests-and-quality-gates.yml
+- id: action-docker-metadata-action
+  name: docker/metadata-action
+  url: https://github.com/docker/metadata-action
+  kind: action
+  relation: used-by-CI
+  license: Apache-2.0
+  paths:
+  - .github/workflows/docker-publish-operator-node.yml
+  - .github/workflows/docker-publish-production.yml
+- id: action-actions-attest
+  name: actions/attest
+  url: https://github.com/actions/attest
+  kind: action
+  relation: used-by-CI
+  license: MIT
+  paths:
+  - .github/actions/image-licence-artifacts/action.yml
+  - .github/workflows/docker-publish-operator-node.yml
+  - .github/workflows/docker-publish-production.yml
+  - .github/workflows/docker-publish-tester.yml
+  - .github/workflows/macos-tester-bundle.yml
+  - .github/workflows/supply-chain.yml
+  - .github/workflows/windows-tester-bundle.yml
+- id: action-github-codeql-action
+  name: github/codeql-action
+  url: https://github.com/github/codeql-action
+  kind: action
+  relation: used-by-CI
+  license: MIT
+  paths:
+  - .github/workflows/scorecard.yml
+  - .github/workflows/security-scans.yml
+- id: action-actions-setup-go
+  name: actions/setup-go
+  url: https://github.com/actions/setup-go
+  kind: action
+  relation: used-by-CI
+  license: MIT
+  paths:
+  - .github/workflows/go-ci.yml
+  - .github/workflows/praetor-api.yml
+  - .github/workflows/published-rc-licence-companions.yml
+  - .github/workflows/standards-gate.yml
+- id: action-themrmilchmann-setup-msvc-dev
+  name: TheMrMilchmann/setup-msvc-dev
+  url: https://github.com/TheMrMilchmann/setup-msvc-dev
+  kind: action
+  relation: used-by-CI
+  license: MIT
+  paths:
+  - .github/workflows/build.yml
+  - .github/workflows/libvmaf-build-matrix.yml
+  - .github/workflows/windows-tester-bundle.yml
+- id: action-actions-create-github-app-token
+  name: actions/create-github-app-token
+  url: https://github.com/actions/create-github-app-token
+  kind: action
+  relation: used-by-CI
+  license: MIT
+  paths:
+  - .github/workflows/macos-tester-bundle.yml
+  - .github/workflows/release-please.yml
+  - .github/workflows/windows-tester-bundle.yml
+- id: action-ossf-scorecard-action
+  name: ossf/scorecard-action
+  url: https://github.com/ossf/scorecard-action
+  kind: action
+  relation: used-by-CI
+  license: Apache-2.0
+  paths:
+  - .github/workflows/scorecard.yml
+  - .github/workflows/security-scans.yml
+- id: action-mxschmitt-action-tmate
+  name: mxschmitt/action-tmate
+  url: https://github.com/mxschmitt/action-tmate
+  kind: action
+  relation: used-by-CI
+  license: MIT
+  paths:
+  - .github/AGENTS.d/macos-tmate.md
+  - .github/workflows/libvmaf-build-matrix.yml
+- id: action-googleapis-release-please-action
+  name: googleapis/release-please-action
+  url: https://github.com/googleapis/release-please-action
+  kind: action
+  relation: used-by-CI
+  license: Apache-2.0
+  paths:
+  - .github/workflows/release-please.yml
+- id: action-docker-setup-qemu-action
+  name: docker/setup-qemu-action
+  url: https://github.com/docker/setup-qemu-action
+  kind: action
+  relation: used-by-CI
+  license: Apache-2.0
+  paths:
+  - .github/workflows/docker-publish-production.yml
+- id: action-actions-setup-node
+  name: actions/setup-node
+  url: https://github.com/actions/setup-node
+  kind: action
+  relation: used-by-CI
+  license: MIT
+  paths:
+  - .github/workflows/lint-and-format.yml
+  - .github/workflows/praetor-docs.yml
+- id: action-swatinem-rust-cache
+  name: Swatinem/rust-cache
+  url: https://github.com/Swatinem/rust-cache
+  kind: action
+  relation: used-by-CI
+  license: unknown
+  paths:
+  - .github/workflows/rust-ci.yml
+- id: action-softprops-action-gh-release
+  name: softprops/action-gh-release
+  url: https://github.com/softprops/action-gh-release
+  kind: action
+  relation: used-by-CI
+  license: MIT
+  paths:
+  - .github/workflows/supply-chain.yml
+- id: action-pypa-gh-action-pypi-publish
+  name: pypa/gh-action-pypi-publish
+  url: https://github.com/pypa/gh-action-pypi-publish
+  kind: action
+  relation: used-by-CI
+  license: BSD-3-Clause
+  paths:
+  - .github/workflows/supply-chain.yml
+- id: action-msys2-setup-msys2
+  name: msys2/setup-msys2
+  url: https://github.com/msys2/setup-msys2
+  kind: action
+  relation: used-by-CI
+  license: MIT
+  paths:
+  - .github/workflows/libvmaf-build-matrix.yml
+- id: action-enricomi-publish-unit-test-result-action
+  name: EnricoMi/publish-unit-test-result-action
+  url: https://github.com/EnricoMi/publish-unit-test-result-action
+  kind: action
+  relation: used-by-CI
+  license: Apache-2.0
+  paths:
+  - .github/workflows/e2e-k8s.yml
+- id: action-embarkstudios-cargo-deny-action
+  name: EmbarkStudios/cargo-deny-action
+  url: https://github.com/EmbarkStudios/cargo-deny-action
+  kind: action
+  relation: used-by-CI
+  license: Apache-2.0
+  paths:
+  - .github/workflows/rust-ci.yml
+- id: action-dtolnay-rust-toolchain
+  name: dtolnay/rust-toolchain
+  url: https://github.com/dtolnay/rust-toolchain
+  kind: action
+  relation: used-by-CI
+  license: MIT
+  paths:
+  - .github/workflows/rust-ci.yml
+- id: action-actions-upload-pages-artifact
+  name: actions/upload-pages-artifact
+  url: https://github.com/actions/upload-pages-artifact
+  kind: action
+  relation: used-by-CI
+  license: MIT
+  paths:
+  - .github/workflows/docs.yml
+- id: action-actions-github-script
+  name: actions/github-script
+  url: https://github.com/actions/github-script
+  kind: action
+  relation: used-by-CI
+  license: MIT
+  paths:
+  - .github/workflows/required-aggregator.yml
+- id: action-actions-deploy-pages
+  name: actions/deploy-pages
+  url: https://github.com/actions/deploy-pages
+  kind: action
+  relation: used-by-CI
+  license: MIT
+  paths:
+  - .github/workflows/docs.yml
+- id: action-actions-dependency-review-action
+  name: actions/dependency-review-action
+  url: https://github.com/actions/dependency-review-action
+  kind: action
+  relation: used-by-CI
+  license: MIT
+  paths:
+  - .github/workflows/security-scans.yml

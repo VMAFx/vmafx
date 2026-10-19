@@ -156,10 +156,10 @@ filter, for example, does not include this step.
 
 ### Q: Why are PSNR values capped at 60 dB for 8-bit inputs, 72 dB for 10-bit, 84 dB for 12-bit, and 108 dB for 16-bit?
 
-A: The caps follow the rule of thumb `6·N + 12`, where `N` is the bit depth.
+A: The caps follow the rule of thumb $6N + 12$, where $N$ is the bit depth.
 
 This approximates the more precise
-`10 · log10( (2^N - 1)^2 / (1/12) )`, where `2^N - 1` is the peak signal of an
+$10 \log_{10} \dfrac{(2^N - 1)^2}{1/12}$, where $2^N - 1$ is the peak signal of an
 N-bit representation and `1/12` is the variance of `Uniform[0, 1]`-distributed
 quantisation noise (the noise of rounding a real-valued signal to its integer
 representation). For `N = 8`, the precise formula yields 58.92 dB; the

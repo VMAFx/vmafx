@@ -65,6 +65,7 @@ extern "C" {
  *
  * @return 1 if Metal support was compiled in, 0 otherwise.
  */
+VMAF_DEPRECATED("use vmafx_device_count")
 VMAF_EXPORT int vmaf_metal_available(void);
 
 /**
@@ -98,6 +99,7 @@ typedef struct VmafMetalConfiguration {
  *         host, or M-series device unavailable), -EINVAL on bad
  *         arguments.
  */
+VMAF_DEPRECATED("use vmafx_device_create")
 VMAF_EXPORT int vmaf_metal_state_init(VmafMetalState **out, VmafMetalConfiguration cfg);
 
 /**
@@ -115,6 +117,7 @@ VMAF_EXPORT int vmaf_metal_state_init(VmafMetalState **out, VmafMetalConfigurati
  * @return 0 on success, -EINVAL on bad arguments, -ENOSYS when built
  *         without Metal.
  */
+VMAF_DEPRECATED("use vmafx_context_use_device")
 VMAF_EXPORT int vmaf_metal_import_state(VmafContext *ctx, VmafMetalState *state);
 
 /**
@@ -127,6 +130,7 @@ VMAF_EXPORT int vmaf_metal_import_state(VmafContext *ctx, VmafMetalState *state)
  * @param state  pointer to the state handle to release; set to NULL on
  *               return.
  */
+VMAF_DEPRECATED("use vmafx_device_unref")
 VMAF_EXPORT void vmaf_metal_state_free(VmafMetalState **state);
 
 /**
@@ -135,6 +139,7 @@ VMAF_EXPORT void vmaf_metal_state_free(VmafMetalState **state);
  *
  * @return Device count, or -ENOSYS when built without Metal.
  */
+VMAF_DEPRECATED("use vmafx_device_count")
 VMAF_EXPORT int vmaf_metal_list_devices(void);
 
 /* -----------------------------------------------------------------
@@ -208,6 +213,7 @@ typedef struct VmafMetalExternalHandles {
  * @return 0 on success, -EINVAL on bad arguments, -ENODEV on a
  *         non-Apple-Family-7 device, -ENOMEM on allocation failure.
  */
+VMAF_DEPRECATED("use vmafx_device_create")
 VMAF_EXPORT int vmaf_metal_state_init_external(VmafMetalState **out,
                                                VmafMetalExternalHandles handles);
 
@@ -254,6 +260,7 @@ VMAF_EXPORT int vmaf_metal_state_init_external(VmafMetalState **out,
  *         format outside the list above, -EIO on IOSurface lock
  *         failure, -ENOMEM on allocation failure.
  */
+VMAF_DEPRECATED("use vmafx_frame_import")
 VMAF_EXPORT int vmaf_metal_picture_import(VmafMetalState *state, uintptr_t iosurface,
                                           unsigned plane, unsigned w, unsigned h, unsigned bpc,
                                           int is_ref, unsigned index);
@@ -272,6 +279,7 @@ VMAF_EXPORT int vmaf_metal_picture_import(VmafMetalState *state, uintptr_t iosur
  *
  * @return 0 on success, -EINVAL on NULL state.
  */
+VMAF_DEPRECATED("use vmafx_fence_wait")
 VMAF_EXPORT int vmaf_metal_wait_compute(VmafMetalState *state);
 
 /**
@@ -287,6 +295,7 @@ VMAF_EXPORT int vmaf_metal_wait_compute(VmafMetalState *state);
  *
  * @return 0 on success, -EINVAL on missing imports or stale state.
  */
+VMAF_DEPRECATED("use vmafx_submit")
 VMAF_EXPORT int vmaf_metal_read_imported_pictures(VmafContext *ctx, unsigned index);
 
 #ifdef __cplusplus

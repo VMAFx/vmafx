@@ -60,7 +60,7 @@ Treat accuracy numbers as pre-retrain.
 | --- | --- |
 | [Predictor](predictor.md) | Per-codec ONNX predictors used by `vmaf-tune` |
 | [Predictor v2 real-corpus training](predictor-v2-realcorpus-training.md) | Ship gate and runbook for the real-corpus predictor retrain |
-| [Conformal VQA](conformal-vqa.md) | Distribution-free prediction intervals on top of any predictor (split conformal and CV+, ADR-0279) |
+| [Conformal VQA](conformal-vqa.md) | Distribution-free prediction intervals on top of any predictor (split conformal and CV+, ADR-0393) |
 | [FR-from-NR adapter](fr-from-nr-adapter.md) | Use an NR model where an FR score is expected |
 | [Hardware capability priors](hardware-capability-priors.md) | Per-architecture capability vectors for predictors |
 | [U2NetP mirror](u2netp-mirror.md) | Hosting and licensing of the U2NetP saliency checkpoint |

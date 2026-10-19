@@ -75,6 +75,20 @@ static uint32_t sample_hash(unsigned row, unsigned col, unsigned frame, unsigned
     return x;
 }
 
+/* One sample: luma is noise, chroma is flat. A non-zero salt adds a smaller,
+ * independent noise to the luma sample. */
+static uint8_t sample_value(unsigned plane, unsigned row, unsigned col, unsigned frame,
+                            unsigned salt)
+{
+    uint32_t v = 128u;
+    if (plane == 0u) {
+        v = sample_hash(row, col, frame, 0u) >> 24;
+        if (salt != 0u)
+            v = (v + (sample_hash(row, col, frame, salt) >> 27)) & 0xFFu;
+    }
+    return (uint8_t)v;
+}
+
 /* Luma is noise; the distorted picture adds a smaller, independent noise to
  * the reference so every metric sees a real difference. Chroma is flat. */
 static int fill_picture(VmafPicture *pic, unsigned frame, unsigned salt)
@@ -85,15 +99,8 @@ static int fill_picture(VmafPicture *pic, unsigned frame, unsigned salt)
     for (unsigned p = 0; p < 3u; p++) {
         for (unsigned row = 0; row < pic->h[p]; row++) {
             uint8_t *line = (uint8_t *)pic->data[p] + ((size_t)row * pic->stride[p]);
-            for (unsigned col = 0; col < pic->w[p]; col++) {
-                uint32_t v = 128u;
-                if (p == 0u) {
-                    v = sample_hash(row, col, frame, 0u) >> 24;
-                    if (salt != 0u)
-                        v = (v + (sample_hash(row, col, frame, salt) >> 27)) & 0xFFu;
-                }
-                line[col] = (uint8_t)v;
-            }
+            for (unsigned col = 0; col < pic->w[p]; col++)
+                line[col] = sample_value(p, row, col, frame, salt);
         }
     }
     return 0;
@@ -217,18 +224,22 @@ static void *instance_main(void *arg)
     return NULL;
 }
 
+static void report_difference(const Job *ref, const Job *job, unsigned i, unsigned k)
+{
+    (void)fprintf(stderr, "\n  frame %u %s: single=%.17g threaded=%.17g", i, KEYS[k],
+                  ref->scores[i][k], job->scores[i][k]);
+}
+
 static unsigned count_differences(const Job *ref, const Job *job)
 {
     unsigned differences = 0;
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
         for (unsigned k = 0; k < NUM_KEYS; k++) {
-            if (ref->scores[i][k] != job->scores[i][k]) {
-                if (differences < 3u) {
-                    (void)fprintf(stderr, "\n  frame %u %s: single=%.17g threaded=%.17g", i,
-                                  KEYS[k], ref->scores[i][k], job->scores[i][k]);
-                }
-                differences++;
-            }
+            if (ref->scores[i][k] == job->scores[i][k])
+                continue;
+            if (differences < 3u)
+                report_difference(ref, job, i, k);
+            differences++;
         }
     }
     return differences;
@@ -247,6 +258,22 @@ static char *run_threads(Job *jobs, VmafCudaState *shared)
     for (unsigned t = 0; t < started; t++)
         (void)pthread_join(threads[t], NULL);
     mu_assert("could not start every thread", started == NUM_THREADS);
+    return NULL;
+}
+
+/* The first job that failed or disagrees with the single instance, else NULL. */
+static const char *first_job_failure(const Job *single, const Job *jobs)
+{
+    for (unsigned t = 0; t < NUM_THREADS; t++) {
+        if (jobs[t].err != 0) {
+            (void)fprintf(stderr, "\n  thread %u failed with %d\n", t, jobs[t].err);
+            return "an instance failed";
+        }
+        if (count_differences(single, &jobs[t]) != 0) {
+            (void)fprintf(stderr, "\n  thread %u disagrees with the single instance\n", t);
+            return "scores of an instance on a shared context differ from a single instance";
+        }
+    }
     return NULL;
 }
 
@@ -276,15 +303,8 @@ static char *test_instances_on_one_context_match_a_single_instance(void)
     } else {
         msg = run_threads(jobs, shared);
     }
-    for (unsigned t = 0; t < NUM_THREADS && !msg; t++) {
-        if (jobs[t].err != 0) {
-            (void)fprintf(stderr, "\n  thread %u failed with %d\n", t, jobs[t].err);
-            msg = "an instance failed";
-        } else if (count_differences(&single, &jobs[t]) != 0) {
-            (void)fprintf(stderr, "\n  thread %u disagrees with the single instance\n", t);
-            msg = "scores of an instance on a shared context differ from a single instance";
-        }
-    }
+    if (!msg)
+        msg = (char *)first_job_failure(&single, jobs);
     free_templates();
     (void)vmaf_cuda_state_free(shared);
     return msg;

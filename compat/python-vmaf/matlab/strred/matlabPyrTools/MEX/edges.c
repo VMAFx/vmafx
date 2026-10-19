@@ -40,10 +40,10 @@ below.
 #include "convolve.h"
 
 #define sgn(a) (((a) > 0) ? 1 : (((a) < 0) ? -1 : 0))
-#define clip(a, mn, mx) (((a) < (mn)) ? (mn) : (((a) >= (mx)) ? (mx - 1) : (a)))
+#define clip(a, mn, mx) (((a) < (mn)) ? (mn) : (((a) >= (mx)) ? ((mx) - 1) : (a)))
 
-int reflect1(), reflect2(), qreflect2(), repeat(), zero(), Extend(), nocompute();
-int ereflect(), predict();
+static int reflect1(), reflect2(), qreflect2(), repeat(), zero(), Extend(), nocompute();
+static int ereflect(), predict();
 
 /* Lookup table matching a descriptive string to the edge-handling function */
 #if !THINK_C
@@ -105,15 +105,17 @@ fptr edge_function(char *edges)
 #if THINK_C
     InitializeTable(edge_foos);
 #endif
-    for (i = 0; i < sizeof(edge_foos) / sizeof(EDGE_HANDLER); i++)
+    for (i = 0; i < sizeof(edge_foos) / sizeof(EDGE_HANDLER); i++) {
         if (strcmp(edges, edge_foos[i].name) IS 0)
             return (edge_foos[i].func);
+    }
     printf("Error: '%s' is not the name of a valid edge-handler!\n", edges);
     for (i = 0; i < sizeof(edge_foos) / sizeof(EDGE_HANDLER); i++) {
-        if (i IS 0)
+        if (i IS 0) {
             printf("  Options are: ");
-        else
+        } else {
             printf(", ");
+        }
         printf("%s", edge_foos[i].name);
     }
     printf("\n");
@@ -140,20 +142,22 @@ r_or_e - equal to one of the two constants EXPAND or REDUCE.
 nocompute() - Return zero for values where filter hangs over the edge.
 */
 
-int nocompute(filt, x_dim, y_dim, x_pos, y_pos, result, r_or_e)
-register double *filt, *result;
+static int nocompute(filt, x_dim, y_dim, x_pos, y_pos, result, r_or_e)
+register const double *filt;
+register double *result;
 register int x_dim;
 int y_dim, x_pos, y_pos, r_or_e;
 {
     register int i;
     register int size = x_dim * y_dim;
 
-    if ((x_pos > 1) OR(x_pos < -1) OR(y_pos > 1) OR(y_pos < -1))
+    if ((x_pos > 1) OR(x_pos < -1) OR(y_pos > 1) OR(y_pos < -1)) {
         for (i = 0; i < size; i++)
             result[i] = 0.0;
-    else
+    } else {
         for (i = 0; i < size; i++)
             result[i] = filt[i];
+    }
 
     return (0);
 }
@@ -161,12 +165,16 @@ int y_dim, x_pos, y_pos, r_or_e;
 /* --------------------------------------------------------------------
 zero() - Zero outside of image.  Discontinuous, but adds zero energy. */
 
-int zero(filt, x_dim, y_dim, x_pos, y_pos, result, r_or_e)
-register double *filt, *result;
+static int zero(filt, x_dim, y_dim, x_pos, y_pos, result, r_or_e)
+register const double *filt;
+register double *result;
 register int x_dim;
 int y_dim, x_pos, y_pos, r_or_e;
 {
-    register int y_filt, x_filt, y_res, x_res;
+    register int y_filt;
+    register int x_filt;
+    register int y_res;
+    register int x_res;
     int filt_sz = x_dim * y_dim;
     int x_start = ((x_pos > 0) ? (x_pos - 1) : ((x_pos < 0) ? (x_pos + 1) : 0));
     int y_start = x_dim * ((y_pos > 0) ? (y_pos - 1) : ((y_pos < 0) ? (y_pos + 1) : 0));
@@ -175,11 +183,14 @@ int y_dim, x_pos, y_pos, r_or_e;
     for (i = 0; i < filt_sz; i++)
         result[i] = 0.0;
 
-    for (y_filt = 0, y_res = y_start; y_filt < filt_sz; y_filt += x_dim, y_res += x_dim)
-        if ((y_res >= 0) AND(y_res < filt_sz))
-            for (x_filt = y_filt, x_res = x_start; x_filt < y_filt + x_dim; x_filt++, x_res++)
+    for (y_filt = 0, y_res = y_start; y_filt < filt_sz; y_filt += x_dim, y_res += x_dim) {
+        if ((y_res >= 0) AND(y_res < filt_sz)) {
+            for (x_filt = y_filt, x_res = x_start; x_filt < y_filt + x_dim; x_filt++, x_res++) {
                 if ((x_res >= 0) AND(x_res < x_dim))
                     result[y_res + x_res] = filt[x_filt];
+            }
+        }
+    }
     return (0);
 }
 
@@ -190,13 +201,17 @@ are subsampling by 2, since it maintains parity (even pixels positions
 remain even, odd ones remain odd).
 */
 
-int reflect1(filt, x_dim, y_dim, x_pos, y_pos, result, r_or_e)
-register double *filt, *result;
+static int reflect1(filt, x_dim, y_dim, x_pos, y_pos, result, r_or_e)
+register const double *filt;
+register double *result;
 register int x_dim;
 int y_dim, x_pos, y_pos, r_or_e;
 {
     int filt_sz = x_dim * y_dim;
-    register int y_filt, x_filt, y_res, x_res;
+    register int y_filt;
+    register int x_filt;
+    register int y_res;
+    register int x_res;
     register int x_base = (x_pos > 0) ? (x_dim - 1) : 0;
     register int y_base = x_dim * ((y_pos > 0) ? (y_dim - 1) : 0);
     int x_overhang = (x_pos > 0) ? (x_pos - 1) : ((x_pos < 0) ? (x_pos + 1) : 0);
@@ -208,13 +223,14 @@ int y_dim, x_pos, y_pos, r_or_e;
     for (i = 0; i < filt_sz; i++)
         result[i] = 0.0;
 
-    if (r_or_e IS REDUCE)
+    if (r_or_e IS REDUCE) {
         for (y_filt = 0, y_res = y_overhang - y_base; y_filt < filt_sz;
-             y_filt += x_dim, y_res += x_dim)
+             y_filt += x_dim, y_res += x_dim) {
             for (x_filt = y_filt, x_res = x_overhang - x_base; x_filt < y_filt + x_dim;
                  x_filt++, x_res++)
                 result[ABS(y_base - ABS(y_res)) + ABS(x_base - ABS(x_res))] += filt[x_filt];
-    else {
+        }
+    } else {
         y_overhang = ABS(y_overhang);
         x_overhang = ABS(x_overhang);
         for (y_res = y_base, y_filt = y_base - y_overhang; y_filt > y_base - filt_sz;
@@ -222,22 +238,25 @@ int y_dim, x_pos, y_pos, r_or_e;
             for (x_res = x_base, x_filt = x_base - x_overhang; x_filt > x_base - x_dim;
                  x_res--, x_filt--)
                 result[ABS(y_res) + ABS(x_res)] += filt[ABS(y_filt) + ABS(x_filt)];
-            if ((x_overhang ISNT mx_pos)AND(x_pos ISNT 0))
+            if ((x_overhang ISNT mx_pos)AND(x_pos ISNT 0)) {
                 for (x_res = x_base, x_filt = x_base - 2 * mx_pos + x_overhang;
                      x_filt > x_base - x_dim; x_res--, x_filt--)
                     result[ABS(y_res) + ABS(x_res)] += filt[ABS(y_filt) + ABS(x_filt)];
+            }
         }
-        if ((y_overhang ISNT my_pos)AND(y_pos ISNT 0))
+        if ((y_overhang ISNT my_pos)AND(y_pos ISNT 0)) {
             for (y_res = y_base, y_filt = y_base - 2 * my_pos + y_overhang;
                  y_filt > y_base - filt_sz; y_filt -= x_dim, y_res -= x_dim) {
                 for (x_res = x_base, x_filt = x_base - x_overhang; x_filt > x_base - x_dim;
                      x_res--, x_filt--)
                     result[ABS(y_res) + ABS(x_res)] += filt[ABS(y_filt) + ABS(x_filt)];
-                if ((x_overhang ISNT mx_pos)AND(x_pos ISNT 0))
+                if ((x_overhang ISNT mx_pos)AND(x_pos ISNT 0)) {
                     for (x_res = x_base, x_filt = x_base - 2 * mx_pos + x_overhang;
                          x_filt > x_base - x_dim; x_res--, x_filt--)
                         result[ABS(y_res) + ABS(x_res)] += filt[ABS(y_filt) + ABS(x_filt)];
+                }
             }
+        }
     }
 
     return (0);
@@ -249,13 +268,17 @@ then the next pixel, etc.  Continuous, but discontinuous first
 derivative.
 */
 
-int reflect2(filt, x_dim, y_dim, x_pos, y_pos, result, r_or_e)
-register double *filt, *result;
+static int reflect2(filt, x_dim, y_dim, x_pos, y_pos, result, r_or_e)
+register const double *filt;
+register double *result;
 register int x_dim;
 int y_dim, x_pos, y_pos, r_or_e;
 {
     int filt_sz = x_dim * y_dim;
-    register int y_filt, x_filt, y_res, x_res;
+    register int y_filt;
+    register int x_filt;
+    register int y_res;
+    register int x_res;
     register int x_base = (x_pos > 0) ? (x_dim - 1) : 0;
     register int y_base = x_dim * ((y_pos > 0) ? (y_dim - 1) : 0);
     int x_overhang = (x_pos > 0) ? (x_pos - 1) : ((x_pos < 0) ? (x_pos + 1) : 0);
@@ -267,7 +290,7 @@ int y_dim, x_pos, y_pos, r_or_e;
     for (i = 0; i < filt_sz; i++)
         result[i] = 0.0;
 
-    if (r_or_e IS REDUCE)
+    if (r_or_e IS REDUCE) {
         for (y_filt = 0, y_res = (y_overhang - y_base) - ((y_pos > 0) ? x_dim : 0);
              y_filt < filt_sz; y_filt += x_dim, y_res += x_dim) {
             if (y_res IS 0)
@@ -280,7 +303,7 @@ int y_dim, x_pos, y_pos, r_or_e;
                     filt[x_filt];
             }
         }
-    else {
+    } else {
         y_overhang = ABS(y_overhang);
         x_overhang = ABS(x_overhang);
         for (y_res = y_base, y_filt = y_base - y_overhang; y_filt > y_base - filt_sz;
@@ -288,22 +311,25 @@ int y_dim, x_pos, y_pos, r_or_e;
             for (x_res = x_base, x_filt = x_base - x_overhang; x_filt > x_base - x_dim;
                  x_res--, x_filt--)
                 result[ABS(y_res) + ABS(x_res)] += filt[ABS(y_filt) + ABS(x_filt)];
-            if (x_pos ISNT 0)
+            if (x_pos ISNT 0) {
                 for (x_res = x_base, x_filt = x_base - 2 * mx_pos + x_overhang - 1;
                      x_filt > x_base - x_dim; x_res--, x_filt--)
                     result[ABS(y_res) + ABS(x_res)] += filt[ABS(y_filt) + ABS(x_filt)];
+            }
         }
-        if (y_pos ISNT 0)
+        if (y_pos ISNT 0) {
             for (y_res = y_base, y_filt = y_base - 2 * my_pos + y_overhang - x_dim;
                  y_filt > y_base - filt_sz; y_filt -= x_dim, y_res -= x_dim) {
                 for (x_res = x_base, x_filt = x_base - x_overhang; x_filt > x_base - x_dim;
                      x_res--, x_filt--)
                     result[ABS(y_res) + ABS(x_res)] += filt[ABS(y_filt) + ABS(x_filt)];
-                if (x_pos ISNT 0)
+                if (x_pos ISNT 0) {
                     for (x_res = x_base, x_filt = x_base - 2 * mx_pos + x_overhang - 1;
                          x_filt > x_base - x_dim; x_res--, x_filt--)
                         result[ABS(y_res) + ABS(x_res)] += filt[ABS(y_filt) + ABS(x_filt)];
+                }
             }
+        }
     }
 
     return (0);
@@ -314,7 +340,7 @@ qreflect2() - Modified version of reflect2 that  works properly for
 even-length QMF filters.
 */
 
-int qreflect2(filt, x_dim, y_dim, x_pos, y_pos, result, r_or_e)
+static int qreflect2(filt, x_dim, y_dim, x_pos, y_pos, result, r_or_e)
 double *filt, *result;
 int x_dim, y_dim, x_pos, y_pos, r_or_e;
 {
@@ -327,12 +353,18 @@ repeat() - repeat edge pixel.  Continuous, with discontinuous first
 derivative.
 */
 
-int repeat(filt, x_dim, y_dim, x_pos, y_pos, result, r_or_e)
-register double *filt, *result;
+static int repeat(filt, x_dim, y_dim, x_pos, y_pos, result, r_or_e)
+register const double *filt;
+register double *result;
 register int x_dim;
 int y_dim, x_pos, y_pos, r_or_e;
 {
-    register int y_filt, x_filt, y_res, x_res, y_tmp, x_tmp;
+    register int y_filt;
+    register int x_filt;
+    register int y_res;
+    register int x_res;
+    register int y_tmp;
+    register int x_tmp;
     register int x_base = (x_pos > 0) ? (x_dim - 1) : 0;
     register int y_base = x_dim * ((y_pos > 0) ? (y_dim - 1) : 0);
     int x_overhang = ((x_pos > 0) ? (x_pos - 1) : ((x_pos < 0) ? (x_pos + 1) : 0));
@@ -345,39 +377,49 @@ int y_dim, x_pos, y_pos, r_or_e;
     for (i = 0; i < filt_sz; i++)
         result[i] = 0.0;
 
-    if (r_or_e IS REDUCE)
-        for (y_filt = 0, y_res = y_overhang; y_filt < filt_sz; y_filt += x_dim, y_res += x_dim)
-            for (x_filt = y_filt, x_res = x_overhang; x_filt < y_filt + x_dim; x_filt++, x_res++)
+    if (r_or_e IS REDUCE) {
+        for (y_filt = 0, y_res = y_overhang; y_filt < filt_sz; y_filt += x_dim, y_res += x_dim) {
+            for (x_filt = y_filt, x_res = x_overhang; x_filt < y_filt + x_dim; x_filt++, x_res++) {
                 /* Clip the index: */
                 result[((y_res >= 0) ? ((y_res < filt_sz) ? y_res : (filt_sz - x_dim)) : 0) +
                        ((x_res >= 0) ? ((x_res < x_dim) ? x_res : (x_dim - 1)) : 0)] +=
                     filt[x_filt];
-    else {
-        if ((y_base - y_overhang) ISNT my_pos)
+            }
+        }
+    } else {
+        if ((y_base - y_overhang) ISNT my_pos) {
             for (y_res = y_base, y_filt = y_base - ABS(y_overhang); y_filt > y_base - filt_sz;
-                 y_filt -= x_dim, y_res -= x_dim)
-                if ((x_base - x_overhang) ISNT mx_pos)
+                 y_filt -= x_dim, y_res -= x_dim) {
+                if ((x_base - x_overhang) ISNT mx_pos) {
                     for (x_res = x_base, x_filt = x_base - ABS(x_overhang); x_filt > x_base - x_dim;
                          x_res--, x_filt--)
                         result[ABS(y_res) + ABS(x_res)] += filt[ABS(y_filt) + ABS(x_filt)];
-                else /* ((x_base-x_overhang) IS mx_pos) */
+                } else { /* ((x_base-x_overhang) IS mx_pos) */
                     for (x_res = x_base, x_filt = x_base - ABS(x_overhang); x_filt > x_base - x_dim;
-                         x_filt--, x_res--)
+                         x_filt--, x_res--) {
                         for (x_tmp = x_filt; x_tmp > x_base - x_dim; x_tmp--)
                             result[ABS(y_res) + ABS(x_res)] += filt[ABS(y_filt) + ABS(x_tmp)];
-        else /* ((y_base-y_overhang) IS my_pos) */
+                    }
+                }
+            }
+        } else { /* ((y_base-y_overhang) IS my_pos) */
             for (y_res = y_base, y_filt = y_base - ABS(y_overhang); y_filt > y_base - filt_sz;
-                 y_filt -= x_dim, y_res -= x_dim)
-                for (y_tmp = y_filt; y_tmp > y_base - filt_sz; y_tmp -= x_dim)
-                    if ((x_base - x_overhang) ISNT mx_pos)
+                 y_filt -= x_dim, y_res -= x_dim) {
+                for (y_tmp = y_filt; y_tmp > y_base - filt_sz; y_tmp -= x_dim) {
+                    if ((x_base - x_overhang) ISNT mx_pos) {
                         for (x_res = x_base, x_filt = x_base - ABS(x_overhang);
                              x_filt > x_base - x_dim; x_filt--, x_res--)
                             result[ABS(y_res) + ABS(x_res)] += filt[ABS(y_tmp) + ABS(x_filt)];
-                    else /* ((x_base-x_overhang) IS mx_pos) */
+                    } else { /* ((x_base-x_overhang) IS mx_pos) */
                         for (x_res = x_base, x_filt = x_base - ABS(x_overhang);
-                             x_filt > x_base - x_dim; x_filt--, x_res--)
+                             x_filt > x_base - x_dim; x_filt--, x_res--) {
                             for (x_tmp = x_filt; x_tmp > x_base - x_dim; x_tmp--)
                                 result[ABS(y_res) + ABS(x_res)] += filt[ABS(y_tmp) + ABS(x_tmp)];
+                        }
+                    }
+                }
+            }
+        }
     } /* End, if r_or_e IS EXPAND */
 
     return (0);
@@ -406,7 +448,7 @@ typedef struct {
 } extend_geometry;
 
 /* Modeled on reflect1() */
-static void extend_reduce(double *filt, double *result, const extend_geometry *g)
+static void extend_reduce(const double *filt, double *result, const extend_geometry *g)
 {
     int x_dim = g->x_dim;
     int filt_sz = g->filt_sz;
@@ -414,19 +456,23 @@ static void extend_reduce(double *filt, double *result, const extend_geometry *g
     int y_base = g->y_base;
     int x_overhang = g->x_overhang;
     int y_overhang = g->y_overhang;
-    int y_filt, x_filt, y_res, x_res;
+    int y_filt;
+    int x_filt;
+    int y_res;
+    int x_res;
 
-    for (y_filt = 0, y_res = y_overhang; y_filt < filt_sz; y_filt += x_dim, y_res += x_dim)
-        if ((y_res >= 0) AND(y_res < filt_sz))
-            for (x_filt = y_filt, x_res = x_overhang; x_filt < y_filt + x_dim; x_filt++, x_res++)
-                if ((x_res >= 0) AND(x_res < x_dim))
+    for (y_filt = 0, y_res = y_overhang; y_filt < filt_sz; y_filt += x_dim, y_res += x_dim) {
+        if ((y_res >= 0) AND(y_res < filt_sz)) {
+            for (x_filt = y_filt, x_res = x_overhang; x_filt < y_filt + x_dim; x_filt++, x_res++) {
+                if ((x_res >= 0) AND(x_res < x_dim)) {
                     result[y_res + x_res] += filt[x_filt];
-                else {
+                } else {
                     result[y_res + ABS(x_base - ABS(x_res - x_base))] -= filt[x_filt];
                     result[y_res + x_base] += 2 * filt[x_filt];
                 }
-        else
-            for (x_filt = y_filt, x_res = x_overhang; x_filt < y_filt + x_dim; x_filt++, x_res++)
+            }
+        } else {
+            for (x_filt = y_filt, x_res = x_overhang; x_filt < y_filt + x_dim; x_filt++, x_res++) {
                 if ((x_res >= 0) AND(x_res < x_dim)) {
                     result[ABS(y_base - ABS(y_res - y_base)) + x_res] -= filt[x_filt];
                     result[y_base + x_res] += 2 * filt[x_filt];
@@ -435,9 +481,84 @@ static void extend_reduce(double *filt, double *result, const extend_geometry *g
                         filt[x_filt];
                     result[y_base + x_base] += 2 * filt[x_filt];
                 }
+            }
+        }
+    }
 }
 
-static void extend_expand(double *filt, double *result, const extend_geometry *g)
+/* y_overhang differs from my_pos: subtract the mirrored rows (one row of the filter per pass). */
+static void expand_y_edge_subtract(const double *filt, double *result, const extend_geometry *g,
+                                   int x_overhang, int y_overhang)
+{
+    int x_dim = g->x_dim;
+    int filt_sz = g->filt_sz;
+    int x_base = g->x_base;
+    int y_base = g->y_base;
+    int mx_pos = g->mx_pos;
+    int y_filt;
+    int x_filt;
+    int y_res;
+    int x_res;
+
+    for (y_res = y_base, y_filt = y_base - 2 * g->my_pos + y_overhang; y_filt > y_base - filt_sz;
+         y_filt -= x_dim, y_res -= x_dim) {
+        for (x_res = x_base, x_filt = x_base - x_overhang; x_filt > x_base - x_dim;
+             x_res--, x_filt--)
+            result[ABS(y_res) + ABS(x_res)] -= filt[ABS(y_filt) + ABS(x_filt)];
+        if ((g->x_pos ISNT 0)AND(x_overhang ISNT mx_pos)) {
+            for (x_res = x_base, x_filt = x_base - 2 * mx_pos + x_overhang; x_filt > x_base - x_dim;
+                 x_res--, x_filt--)
+                result[ABS(y_res) + ABS(x_res)] -= filt[ABS(y_filt) + ABS(x_filt)];
+        }
+    }
+}
+
+/* The x corner of expand_y_edge_double(): twice the filter sample at (y_tmp, x_tmp). */
+static void expand_x_corner_double(const double *filt, double *result, const extend_geometry *g,
+                                   int x_overhang, int y_res, int y_tmp)
+{
+    int x_dim = g->x_dim;
+    int x_base = g->x_base;
+    int mx_pos = g->mx_pos;
+    int x_filt;
+    int x_res;
+    int x_tmp;
+
+    for (x_res = x_base, x_filt = x_base - 2 * mx_pos + x_overhang - 1; x_filt > x_base - x_dim;
+         x_res--, x_filt--) {
+        for (x_tmp = x_filt; x_tmp > x_base - x_dim; x_tmp--) {
+            result[ABS(y_res) + ABS(x_res)] += 2 * filt[ABS(y_tmp) + ABS(x_tmp)];
+        }
+    }
+}
+
+/* y_overhang is my_pos: add twice the mirrored rows. */
+static void expand_y_edge_double(const double *filt, double *result, const extend_geometry *g,
+                                 int x_overhang, int y_overhang)
+{
+    int x_dim = g->x_dim;
+    int filt_sz = g->filt_sz;
+    int x_base = g->x_base;
+    int y_base = g->y_base;
+    int y_filt;
+    int x_filt;
+    int y_res;
+    int x_res;
+    int y_tmp;
+
+    for (y_res = y_base, y_filt = y_base - 2 * g->my_pos + y_overhang - x_dim;
+         y_filt > y_base - filt_sz; y_res -= x_dim, y_filt -= x_dim) {
+        for (y_tmp = y_filt; y_tmp > y_base - filt_sz; y_tmp -= x_dim) {
+            for (x_res = x_base, x_filt = x_base - x_overhang; x_filt > x_base - x_dim;
+                 x_res--, x_filt--)
+                result[ABS(y_res) + ABS(x_res)] += 2 * filt[ABS(y_tmp) + ABS(x_filt)];
+            if ((g->x_pos ISNT 0)AND(x_overhang IS g->mx_pos))
+                expand_x_corner_double(filt, result, g, x_overhang, y_res, y_tmp);
+        }
+    }
+}
+
+static void extend_expand(const double *filt, double *result, const extend_geometry *g)
 {
     int x_dim = g->x_dim;
     int filt_sz = g->filt_sz;
@@ -449,7 +570,11 @@ static void extend_expand(double *filt, double *result, const extend_geometry *g
     int y_pos = g->y_pos;
     int x_overhang = g->x_overhang;
     int y_overhang = g->y_overhang;
-    int y_filt, x_filt, y_res, x_res, y_tmp, x_tmp;
+    int y_filt;
+    int x_filt;
+    int y_res;
+    int x_res;
+    int x_tmp;
 
     y_overhang = ABS(y_overhang);
     x_overhang = ABS(x_overhang);
@@ -458,47 +583,32 @@ static void extend_expand(double *filt, double *result, const extend_geometry *g
         for (x_res = x_base, x_filt = x_base - x_overhang; x_filt > x_base - x_dim;
              x_res--, x_filt--)
             result[ABS(y_res) + ABS(x_res)] += filt[ABS(y_filt) + ABS(x_filt)];
-        if (x_pos ISNT 0)
-            if (x_overhang ISNT mx_pos)
+        if (x_pos ISNT 0) {
+            if (x_overhang ISNT mx_pos) {
                 for (x_res = x_base, x_filt = x_base - 2 * mx_pos + x_overhang;
                      x_filt > x_base - x_dim; x_res--, x_filt--)
                     result[ABS(y_res) + ABS(x_res)] -= filt[ABS(y_filt) + ABS(x_filt)];
-            else /* x_overhang IS mx_pos */
+            } else { /* x_overhang IS mx_pos */
                 for (x_res = x_base, x_filt = x_base - 2 * mx_pos + x_overhang - 1;
-                     x_filt > x_base - x_dim; x_res--, x_filt--)
+                     x_filt > x_base - x_dim; x_res--, x_filt--) {
                     for (x_tmp = x_filt; x_tmp > x_base - x_dim; x_tmp--)
                         result[ABS(y_res) + ABS(x_res)] += 2 * filt[ABS(y_filt) + ABS(x_tmp)];
-    }
-    if (y_pos ISNT 0)
-        if (y_overhang ISNT my_pos)
-            for (y_res = y_base, y_filt = y_base - 2 * my_pos + y_overhang;
-                 y_filt > y_base - filt_sz; y_filt -= x_dim, y_res -= x_dim) {
-                for (x_res = x_base, x_filt = x_base - x_overhang; x_filt > x_base - x_dim;
-                     x_res--, x_filt--)
-                    result[ABS(y_res) + ABS(x_res)] -= filt[ABS(y_filt) + ABS(x_filt)];
-                if ((x_pos ISNT 0)AND(x_overhang ISNT mx_pos))
-                    for (x_res = x_base, x_filt = x_base - 2 * mx_pos + x_overhang;
-                         x_filt > x_base - x_dim; x_res--, x_filt--)
-                        result[ABS(y_res) + ABS(x_res)] -= filt[ABS(y_filt) + ABS(x_filt)];
-            }
-        else /* y_overhang IS my_pos */
-            for (y_res = y_base, y_filt = y_base - 2 * my_pos + y_overhang - x_dim;
-                 y_filt > y_base - filt_sz; y_res -= x_dim, y_filt -= x_dim)
-                for (y_tmp = y_filt; y_tmp > y_base - filt_sz; y_tmp -= x_dim) {
-                    for (x_res = x_base, x_filt = x_base - x_overhang; x_filt > x_base - x_dim;
-                         x_res--, x_filt--)
-                        result[ABS(y_res) + ABS(x_res)] += 2 * filt[ABS(y_tmp) + ABS(x_filt)];
-                    if ((x_pos ISNT 0)AND(x_overhang IS mx_pos))
-                        for (x_res = x_base, x_filt = x_base - 2 * mx_pos + x_overhang - 1;
-                             x_filt > x_base - x_dim; x_res--, x_filt--)
-                            for (x_tmp = x_filt; x_tmp > x_base - x_dim; x_tmp--)
-                                result[ABS(y_res) + ABS(x_res)] +=
-                                    2 * filt[ABS(y_tmp) + ABS(x_tmp)];
                 }
+            }
+        }
+    }
+    if (y_pos ISNT 0) {
+        if (y_overhang ISNT my_pos) {
+            expand_y_edge_subtract(filt, result, g, x_overhang, y_overhang);
+        } else {
+            expand_y_edge_double(filt, result, g, x_overhang, y_overhang);
+        }
+    }
 }
 
-int Extend(filt, x_dim, y_dim, x_pos, y_pos, result, r_or_e)
-register double *filt, *result;
+static int Extend(filt, x_dim, y_dim, x_pos, y_pos, result, r_or_e)
+register const double *filt;
+register double *result;
 register int x_dim;
 int y_dim, x_pos, y_pos, r_or_e;
 {
@@ -519,10 +629,11 @@ int y_dim, x_pos, y_pos, r_or_e;
     for (i = 0; i < g.filt_sz; i++)
         result[i] = 0.0;
 
-    if (r_or_e IS REDUCE)
+    if (r_or_e IS REDUCE) {
         extend_reduce(filt, result, &g);
-    else /* r_or_e ISNT  REDUCE */
+    } else { /* r_or_e ISNT  REDUCE */
         extend_expand(filt, result, &g);
+    }
 
     return (0);
 }
@@ -533,12 +644,16 @@ by the reciprocal of the percentage of filter being used.  (i.e. if
 50% of the filter is hanging over the edge of the image, multiply the
 taps being used by 2).  */
 
-int predict(filt, x_dim, y_dim, x_pos, y_pos, result, r_or_e)
-register double *filt, *result;
+static int predict(filt, x_dim, y_dim, x_pos, y_pos, result, r_or_e)
+register const double *filt;
+register double *result;
 register int x_dim;
 int y_dim, x_pos, y_pos, r_or_e;
 {
-    register int y_filt, x_filt, y_res, x_res;
+    register int y_filt;
+    register int x_filt;
+    register int y_res;
+    register int x_res;
     register double taps_used = 0.0; /* int *** */
     register double fraction = 0.0;
     int filt_sz = x_dim * y_dim;
@@ -549,13 +664,16 @@ int y_dim, x_pos, y_pos, r_or_e;
     for (i = 0; i < filt_sz; i++)
         result[i] = 0.0;
 
-    for (y_filt = 0, y_res = y_start; y_filt < filt_sz; y_filt += x_dim, y_res += x_dim)
-        if ((y_res >= 0) AND(y_res < filt_sz))
-            for (x_filt = y_filt, x_res = x_start; x_filt < y_filt + x_dim; x_filt++, x_res++)
+    for (y_filt = 0, y_res = y_start; y_filt < filt_sz; y_filt += x_dim, y_res += x_dim) {
+        if ((y_res >= 0) AND(y_res < filt_sz)) {
+            for (x_filt = y_filt, x_res = x_start; x_filt < y_filt + x_dim; x_filt++, x_res++) {
                 if ((x_res >= 0) AND(x_res < x_dim)) {
                     result[y_res + x_res] = filt[x_filt];
                     taps_used += ABS(filt[x_filt]);
                 }
+            }
+        }
+    }
 
     if (r_or_e IS REDUCE) {
         /* fraction = ( (double) filt_sz ) / ( (double) taps_used ); */
@@ -574,35 +692,43 @@ by root 2.  This maintains orthogonality of odd-length linear-phase
 QMF filters, but it is not useful for most applications, since it
 alters the DC level.  */
 
-int ereflect(filt, x_dim, y_dim, x_pos, y_pos, result, r_or_e)
-register double *filt, *result;
+static int ereflect(filt, x_dim, y_dim, x_pos, y_pos, result, r_or_e)
+register const double *filt;
+register double *result;
 register int x_dim;
 int y_dim, x_pos, y_pos, r_or_e;
 {
-    register int y_filt, x_filt, y_res, x_res;
+    register int y_filt;
+    register int x_filt;
+    register int y_res;
+    register int x_res;
     register int x_base = (x_pos > 0) ? (x_dim - 1) : 0;
     register int y_base = x_dim * ((y_pos > 0) ? (y_dim - 1) : 0);
     int filt_sz = x_dim * y_dim;
     int x_overhang = (x_pos > 1) ? (x_pos - x_dim) : ((x_pos < -1) ? (x_pos + 1) : 0);
     int y_overhang = x_dim * ((y_pos > 1) ? (y_pos - y_dim) : ((y_pos < -1) ? (y_pos + 1) : 0));
     int i;
-    double norm, onorm;
+    double norm;
+    double onorm;
 
     for (i = 0; i < filt_sz; i++)
         result[i] = 0.0;
 
     /* reflect at boundary */
-    for (y_filt = 0, y_res = y_overhang; y_filt < filt_sz; y_filt += x_dim, y_res += x_dim)
+    for (y_filt = 0, y_res = y_overhang; y_filt < filt_sz; y_filt += x_dim, y_res += x_dim) {
         for (x_filt = y_filt, x_res = x_overhang; x_filt < y_filt + x_dim; x_filt++, x_res++)
             result[ABS(y_base - ABS(y_res)) + ABS(x_base - ABS(x_res))] += filt[x_filt];
+    }
 
     /* now multiply edge by root 2 */
-    if (x_pos ISNT 0)
+    if (x_pos ISNT 0) {
         for (y_filt = x_base; y_filt < filt_sz; y_filt += x_dim)
             result[y_filt] *= ROOT2;
-    if (y_pos ISNT 0)
+    }
+    if (y_pos ISNT 0) {
         for (x_filt = y_base; x_filt < y_base + x_dim; x_filt++)
             result[x_filt] *= ROOT2;
+    }
 
     /* now normalize to norm of original filter */
     for (norm = 0.0, i = 0; i < filt_sz; i++)

@@ -1,0 +1,1105 @@
+{
+  "uid": "vmafx-slo",
+  "title": "VMAFx SLO report",
+  "description": "Compliance with the SLO objectives over the dashboard's time range (30 days by default), the error budget left, and its burn rate. The objectives are the rule settings (monitoring.slo); the events are recorded every 5 minutes (vmafx:slo_events:rate5m, vmafx:slo_bad_events:rate5m). Generated from pkg/observability/metricdef by tools/obsgen.",
+  "tags": [
+    "vmafx"
+  ],
+  "timezone": "browser",
+  "editable": false,
+  "graphTooltip": 1,
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "fiscalYearStartMonth": 0,
+  "refresh": "1m",
+  "schemaVersion": 42,
+  "panels": [
+    {
+      "type": "row",
+      "collapsed": false,
+      "title": "Jobs",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 0,
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus_datasource}"
+          },
+          "expr": "1 - (sum(sum_over_time(vmafx:slo_bad_events:rate5m{job=~\"$job\",instance=~\"$instance\",slo=\"job_success\"}[$__range])) or vector(0)) / sum(sum_over_time(vmafx:slo_events:rate5m{job=~\"$job\",instance=~\"$instance\",slo=\"job_success\"}[$__range]))",
+          "instant": true,
+          "legendFormat": "compliance",
+          "range": false
+        }
+      ],
+      "title": "Jobs: compliance",
+      "description": "Share of controller jobs that complete rather than fail over the time range. Compare it with the objective next to it.",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${prometheus_datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 1
+      },
+      "repeatDirection": "h",
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "percentChangeColorMode": "standard",
+        "orientation": ""
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "blue"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus_datasource}"
+          },
+          "expr": "max(vmafx:slo_objective{job=~\"$job\",instance=~\"$instance\",slo=\"job_success\"})",
+          "instant": true,
+          "legendFormat": "objective",
+          "range": false
+        }
+      ],
+      "title": "Jobs: objective",
+      "description": "The objective of the rule settings: the share of controller jobs that complete rather than fail the SLO promises over 30 days.",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${prometheus_datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 1
+      },
+      "repeatDirection": "h",
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "percentChangeColorMode": "standard",
+        "orientation": ""
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "blue"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus_datasource}"
+          },
+          "expr": "1 - ((sum(sum_over_time(vmafx:slo_bad_events:rate5m{job=~\"$job\",instance=~\"$instance\",slo=\"job_success\"}[$__range])) or vector(0)) / sum(sum_over_time(vmafx:slo_events:rate5m{job=~\"$job\",instance=~\"$instance\",slo=\"job_success\"}[$__range]))) / (1 - max(vmafx:slo_objective{job=~\"$job\",instance=~\"$instance\",slo=\"job_success\"}))",
+          "instant": true,
+          "legendFormat": "budget left",
+          "range": false
+        }
+      ],
+      "title": "Jobs: error budget left",
+      "description": "Share of the error budget (1 - objective) the time range has left: 100 % is untouched, 0 % spent, below 0 the objective is missed.",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${prometheus_datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 1
+      },
+      "repeatDirection": "h",
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "percentChangeColorMode": "standard",
+        "orientation": ""
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "red"
+              },
+              {
+                "value": 0,
+                "color": "orange"
+              },
+              {
+                "value": 0.25,
+                "color": "green"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus_datasource}"
+          },
+          "expr": "((sum(sum_over_time(vmafx:slo_bad_events:rate5m{job=~\"$job\",instance=~\"$instance\",slo=\"job_success\"}[1h])) or vector(0)) / sum(sum_over_time(vmafx:slo_events:rate5m{job=~\"$job\",instance=~\"$instance\",slo=\"job_success\"}[1h]))) / (1 - max(vmafx:slo_objective{job=~\"$job\",instance=~\"$instance\",slo=\"job_success\"}))",
+          "instant": true,
+          "legendFormat": "burn rate",
+          "range": false
+        }
+      ],
+      "title": "Jobs: burn rate, last hour",
+      "description": "How many times faster than the objective allows the last hour spent the budget: 1 spends it exactly over 30 days; the fast burn alert fires at 14.4 by default.",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${prometheus_datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 1
+      },
+      "repeatDirection": "h",
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "percentChangeColorMode": "standard",
+        "orientation": ""
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              },
+              {
+                "value": 1,
+                "color": "orange"
+              },
+              {
+                "value": 6,
+                "color": "red"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus_datasource}"
+          },
+          "expr": "(sum(sum_over_time(vmafx:slo_bad_events:rate5m{job=~\"$job\",instance=~\"$instance\",slo=\"job_success\"}[1h])) or vector(0)) / sum(sum_over_time(vmafx:slo_events:rate5m{job=~\"$job\",instance=~\"$instance\",slo=\"job_success\"}[1h]))",
+          "instant": false,
+          "legendFormat": "bad events",
+          "range": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus_datasource}"
+          },
+          "expr": "(1 - max(vmafx:slo_objective{job=~\"$job\",instance=~\"$instance\",slo=\"job_success\"}))",
+          "instant": false,
+          "legendFormat": "error budget",
+          "range": true
+        }
+      ],
+      "title": "Jobs: bad events against the budget",
+      "description": "Hourly share of bad events (not controller jobs that complete rather than fail) against the error budget: a curve above the budget line spends it faster than 30 days.",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${prometheus_datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 5
+      },
+      "repeatDirection": "h",
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "row",
+      "collapsed": false,
+      "title": "Score errors",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 13
+      },
+      "id": 0,
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus_datasource}"
+          },
+          "expr": "1 - (sum(sum_over_time(vmafx:slo_bad_events:rate5m{job=~\"$job\",instance=~\"$instance\",slo=\"score_success\"}[$__range])) or vector(0)) / sum(sum_over_time(vmafx:slo_events:rate5m{job=~\"$job\",instance=~\"$instance\",slo=\"score_success\"}[$__range]))",
+          "instant": true,
+          "legendFormat": "compliance",
+          "range": false
+        }
+      ],
+      "title": "Score errors: compliance",
+      "description": "Share of Score requests that return no error over the time range. Compare it with the objective next to it.",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${prometheus_datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 14
+      },
+      "repeatDirection": "h",
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "percentChangeColorMode": "standard",
+        "orientation": ""
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "blue"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus_datasource}"
+          },
+          "expr": "max(vmafx:slo_objective{job=~\"$job\",instance=~\"$instance\",slo=\"score_success\"})",
+          "instant": true,
+          "legendFormat": "objective",
+          "range": false
+        }
+      ],
+      "title": "Score errors: objective",
+      "description": "The objective of the rule settings: the share of Score requests that return no error the SLO promises over 30 days.",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${prometheus_datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 14
+      },
+      "repeatDirection": "h",
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "percentChangeColorMode": "standard",
+        "orientation": ""
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "blue"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus_datasource}"
+          },
+          "expr": "1 - ((sum(sum_over_time(vmafx:slo_bad_events:rate5m{job=~\"$job\",instance=~\"$instance\",slo=\"score_success\"}[$__range])) or vector(0)) / sum(sum_over_time(vmafx:slo_events:rate5m{job=~\"$job\",instance=~\"$instance\",slo=\"score_success\"}[$__range]))) / (1 - max(vmafx:slo_objective{job=~\"$job\",instance=~\"$instance\",slo=\"score_success\"}))",
+          "instant": true,
+          "legendFormat": "budget left",
+          "range": false
+        }
+      ],
+      "title": "Score errors: error budget left",
+      "description": "Share of the error budget (1 - objective) the time range has left: 100 % is untouched, 0 % spent, below 0 the objective is missed.",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${prometheus_datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 14
+      },
+      "repeatDirection": "h",
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "percentChangeColorMode": "standard",
+        "orientation": ""
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "red"
+              },
+              {
+                "value": 0,
+                "color": "orange"
+              },
+              {
+                "value": 0.25,
+                "color": "green"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus_datasource}"
+          },
+          "expr": "((sum(sum_over_time(vmafx:slo_bad_events:rate5m{job=~\"$job\",instance=~\"$instance\",slo=\"score_success\"}[1h])) or vector(0)) / sum(sum_over_time(vmafx:slo_events:rate5m{job=~\"$job\",instance=~\"$instance\",slo=\"score_success\"}[1h]))) / (1 - max(vmafx:slo_objective{job=~\"$job\",instance=~\"$instance\",slo=\"score_success\"}))",
+          "instant": true,
+          "legendFormat": "burn rate",
+          "range": false
+        }
+      ],
+      "title": "Score errors: burn rate, last hour",
+      "description": "How many times faster than the objective allows the last hour spent the budget: 1 spends it exactly over 30 days; the fast burn alert fires at 14.4 by default.",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${prometheus_datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 14
+      },
+      "repeatDirection": "h",
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "percentChangeColorMode": "standard",
+        "orientation": ""
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              },
+              {
+                "value": 1,
+                "color": "orange"
+              },
+              {
+                "value": 6,
+                "color": "red"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus_datasource}"
+          },
+          "expr": "(sum(sum_over_time(vmafx:slo_bad_events:rate5m{job=~\"$job\",instance=~\"$instance\",slo=\"score_success\"}[1h])) or vector(0)) / sum(sum_over_time(vmafx:slo_events:rate5m{job=~\"$job\",instance=~\"$instance\",slo=\"score_success\"}[1h]))",
+          "instant": false,
+          "legendFormat": "bad events",
+          "range": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus_datasource}"
+          },
+          "expr": "(1 - max(vmafx:slo_objective{job=~\"$job\",instance=~\"$instance\",slo=\"score_success\"}))",
+          "instant": false,
+          "legendFormat": "error budget",
+          "range": true
+        }
+      ],
+      "title": "Score errors: bad events against the budget",
+      "description": "Hourly share of bad events (not Score requests that return no error) against the error budget: a curve above the budget line spends it faster than 30 days.",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${prometheus_datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 18
+      },
+      "repeatDirection": "h",
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "row",
+      "collapsed": false,
+      "title": "Score latency",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 26
+      },
+      "id": 0,
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus_datasource}"
+          },
+          "expr": "1 - (sum(sum_over_time(vmafx:slo_bad_events:rate5m{job=~\"$job\",instance=~\"$instance\",slo=\"score_latency\"}[$__range])) or vector(0)) / sum(sum_over_time(vmafx:slo_events:rate5m{job=~\"$job\",instance=~\"$instance\",slo=\"score_latency\"}[$__range]))",
+          "instant": true,
+          "legendFormat": "compliance",
+          "range": false
+        }
+      ],
+      "title": "Score latency: compliance",
+      "description": "Share of Score requests that finish within the latency bound over the time range. Compare it with the objective next to it.",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${prometheus_datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 27
+      },
+      "repeatDirection": "h",
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "percentChangeColorMode": "standard",
+        "orientation": ""
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "blue"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus_datasource}"
+          },
+          "expr": "max(vmafx:slo_objective{job=~\"$job\",instance=~\"$instance\",slo=\"score_latency\"})",
+          "instant": true,
+          "legendFormat": "objective",
+          "range": false
+        }
+      ],
+      "title": "Score latency: objective",
+      "description": "The objective of the rule settings: the share of Score requests that finish within the latency bound the SLO promises over 30 days.",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${prometheus_datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 27
+      },
+      "repeatDirection": "h",
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "percentChangeColorMode": "standard",
+        "orientation": ""
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "blue"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus_datasource}"
+          },
+          "expr": "1 - ((sum(sum_over_time(vmafx:slo_bad_events:rate5m{job=~\"$job\",instance=~\"$instance\",slo=\"score_latency\"}[$__range])) or vector(0)) / sum(sum_over_time(vmafx:slo_events:rate5m{job=~\"$job\",instance=~\"$instance\",slo=\"score_latency\"}[$__range]))) / (1 - max(vmafx:slo_objective{job=~\"$job\",instance=~\"$instance\",slo=\"score_latency\"}))",
+          "instant": true,
+          "legendFormat": "budget left",
+          "range": false
+        }
+      ],
+      "title": "Score latency: error budget left",
+      "description": "Share of the error budget (1 - objective) the time range has left: 100 % is untouched, 0 % spent, below 0 the objective is missed.",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${prometheus_datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 27
+      },
+      "repeatDirection": "h",
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "percentChangeColorMode": "standard",
+        "orientation": ""
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "red"
+              },
+              {
+                "value": 0,
+                "color": "orange"
+              },
+              {
+                "value": 0.25,
+                "color": "green"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus_datasource}"
+          },
+          "expr": "((sum(sum_over_time(vmafx:slo_bad_events:rate5m{job=~\"$job\",instance=~\"$instance\",slo=\"score_latency\"}[1h])) or vector(0)) / sum(sum_over_time(vmafx:slo_events:rate5m{job=~\"$job\",instance=~\"$instance\",slo=\"score_latency\"}[1h]))) / (1 - max(vmafx:slo_objective{job=~\"$job\",instance=~\"$instance\",slo=\"score_latency\"}))",
+          "instant": true,
+          "legendFormat": "burn rate",
+          "range": false
+        }
+      ],
+      "title": "Score latency: burn rate, last hour",
+      "description": "How many times faster than the objective allows the last hour spent the budget: 1 spends it exactly over 30 days; the fast burn alert fires at 14.4 by default.",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${prometheus_datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 27
+      },
+      "repeatDirection": "h",
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "percentChangeColorMode": "standard",
+        "orientation": ""
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              },
+              {
+                "value": 1,
+                "color": "orange"
+              },
+              {
+                "value": 6,
+                "color": "red"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus_datasource}"
+          },
+          "expr": "(sum(sum_over_time(vmafx:slo_bad_events:rate5m{job=~\"$job\",instance=~\"$instance\",slo=\"score_latency\"}[1h])) or vector(0)) / sum(sum_over_time(vmafx:slo_events:rate5m{job=~\"$job\",instance=~\"$instance\",slo=\"score_latency\"}[1h]))",
+          "instant": false,
+          "legendFormat": "bad events",
+          "range": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus_datasource}"
+          },
+          "expr": "(1 - max(vmafx:slo_objective{job=~\"$job\",instance=~\"$instance\",slo=\"score_latency\"}))",
+          "instant": false,
+          "legendFormat": "error budget",
+          "range": true
+        }
+      ],
+      "title": "Score latency: bad events against the budget",
+      "description": "Hourly share of bad events (not Score requests that finish within the latency bound) against the error budget: a curve above the budget line spends it faster than 30 days.",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${prometheus_datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 31
+      },
+      "repeatDirection": "h",
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      }
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "type": "datasource",
+        "name": "prometheus_datasource",
+        "label": "Prometheus data source",
+        "skipUrlSync": false,
+        "query": "prometheus",
+        "multi": false,
+        "allowCustomValue": true,
+        "includeAll": false,
+        "auto": false,
+        "auto_min": "10s",
+        "auto_count": 30
+      },
+      {
+        "type": "query",
+        "name": "job",
+        "label": "Job",
+        "skipUrlSync": false,
+        "query": "label_values(vmafx_build_info, job)",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${prometheus_datasource}"
+        },
+        "multi": true,
+        "allowCustomValue": true,
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": true,
+        "allValue": ".+",
+        "auto": false,
+        "auto_min": "10s",
+        "auto_count": 30,
+        "definition": "label_values(vmafx_build_info, job)"
+      },
+      {
+        "type": "query",
+        "name": "instance",
+        "label": "Instance",
+        "skipUrlSync": false,
+        "query": "label_values(vmafx_build_info{job=~\"$job\"}, instance)",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${prometheus_datasource}"
+        },
+        "multi": true,
+        "allowCustomValue": true,
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": true,
+        "allValue": ".+",
+        "auto": false,
+        "auto_min": "10s",
+        "auto_count": 30,
+        "definition": "label_values(vmafx_build_info{job=~\"$job\"}, instance)"
+      }
+    ]
+  },
+  "annotations": {
+    "list": [
+      {
+        "name": "Deploys and restarts",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${prometheus_datasource}"
+        },
+        "enable": true,
+        "hide": false,
+        "iconColor": "blue",
+        "builtIn": 0,
+        "placement": "inControlsMenu",
+        "expr": "max by (job, instance, version) (vmafx_build_info{job=~\"$job\",instance=~\"$instance\"}) and on (job, instance) changes(process_start_time_seconds{job=~\"$job\",instance=~\"$instance\"}[5m]) \u003e 0",
+        "textFormat": "{{instance}}",
+        "titleFormat": "{{job}} {{version}} started",
+        "step": "1m"
+      }
+    ]
+  },
+  "links": [
+    {
+      "title": "VMAFx dashboards",
+      "type": "dashboards",
+      "icon": "",
+      "tooltip": "",
+      "tags": [
+        "vmafx"
+      ],
+      "asDropdown": true,
+      "placement": "inControlsMenu",
+      "targetBlank": false,
+      "includeVars": true,
+      "keepTime": true
+    }
+  ]
+}

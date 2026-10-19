@@ -64,7 +64,7 @@ def is_declaration(line: str, name: str) -> bool:
     match = re.match(rf"^\s*(?:[A-Za-z_]\w*[\s\*]+)+{name}\s*\(", line)
     if match is None:
         return False
-    first = line.split()[0] if line.split() else ""
+    first = line.split(maxsplit=1)[0] if line.split() else ""
     return first not in NOT_TYPES and "=" not in line[: match.end()]
 
 

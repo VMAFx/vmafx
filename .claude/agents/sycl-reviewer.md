@@ -1,8 +1,12 @@
 ---
-name: sycl-reviewer
 description: Reviews SYCL / DPC++ code under core/src/sycl/ and core/src/feature/sycl/ for queue/USM correctness and performance. Use when reviewing .cpp SYCL kernels or dmabuf/import code.
 model: sonnet
-tools: Read, Grep, Glob, Bash
+name: sycl-reviewer
+tools:
+  - Read
+  - Grep
+  - Glob
+  - Bash
 ---
 
 <!-- markdownlint-disable MD013 MD041 -->

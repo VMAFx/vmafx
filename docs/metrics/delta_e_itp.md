@@ -34,12 +34,12 @@ neither is appropriate for measuring colour error on PQ HDR content.
 Per pixel, both frames are converted to the ITP colour space and the
 scaled Euclidean distance is taken:
 
-```text
-ΔE_ITP = 720 * sqrt( (ΔI)^2 + (ΔT)^2 + (ΔP)^2 )
-```
+$$
+\Delta E_{\mathrm{ITP}} = 720 \sqrt{(\Delta I)^2 + (\Delta T)^2 + (\Delta P)^2}
+$$
 
 The per-frame score is the **mean per-pixel ΔE-ITP** over the frame
-(`sum / (width * height)`).
+($\text{sum} / (\text{width} \cdot \text{height})$).
 
 ## Pipeline (ITU-R BT.2124-0 Annex 1)
 

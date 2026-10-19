@@ -99,6 +99,7 @@ typedef struct VmafFeatureDictionary VmafFeatureDictionary;
  *
  * @since libvmaf 3.0.0 (upstream).
  */
+VMAF_DEPRECATED("use vmafx_options_set")
 VMAF_EXPORT int vmaf_feature_dictionary_set(VmafFeatureDictionary **dict, const char *key,
                                             const char *val);
 
@@ -122,6 +123,7 @@ VMAF_EXPORT int vmaf_feature_dictionary_set(VmafFeatureDictionary **dict, const 
  *
  * @since libvmaf 3.0.0 (upstream).
  */
+VMAF_DEPRECATED("use vmafx_options_free")
 VMAF_EXPORT int vmaf_feature_dictionary_free(VmafFeatureDictionary **dict);
 
 #ifdef __cplusplus

@@ -146,7 +146,7 @@ static int run_lifetime_probe(unsigned n_threads, double scores[N_FRAMES], unsig
     return err ? err : close_err;
 }
 
-static char *test_serial_cleanup_waits_before_host_release()
+static char *test_serial_cleanup_waits_before_host_release(void)
 {
     double scores[N_FRAMES] = {0.0};
     unsigned release_count = 0u;
@@ -171,7 +171,7 @@ static char *test_serial_cleanup_waits_before_host_release()
     return NULL;
 }
 
-static char *test_threaded_cleanup_waits_before_host_release()
+static char *test_threaded_cleanup_waits_before_host_release(void)
 {
     double scores[N_FRAMES] = {0.0};
     unsigned release_count = 0u;
@@ -196,7 +196,7 @@ static char *test_threaded_cleanup_waits_before_host_release()
     return NULL;
 }
 
-char *run_tests()
+char *run_tests(void)
 {
     mu_run_test(test_serial_cleanup_waits_before_host_release);
     mu_run_test(test_threaded_cleanup_waits_before_host_release);

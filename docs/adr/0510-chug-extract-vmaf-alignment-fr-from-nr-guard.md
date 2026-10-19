@@ -130,3 +130,15 @@ parquet, several GPU-hours into the run.
   from the dispatch request that opened this fix; paraphrased to
   neutral English in `## Context` per CLAUDE.md §13 / global rule
   "User-quote handling in project artifacts".
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 118: `metric degeneration), ADR-0382 (extract_k150k_features.py`:
+  Cites ADR-0382 for k150k parallelism; ADR-0382 is Y4M negative dimensions.
+  Parallelism is ADR-0383.
+- About line 121: `- Same-family precedent: ADR-0503 (BBB v5 cluster`: Cites
+  ADR-0503 for BBB v5 cluster; ADR-0503 is VIF loop fission. BBB v5 cluster is
+  ADR-0505.

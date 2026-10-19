@@ -50,12 +50,15 @@ operator:
 # ---------------------------------------------------------------------------
 # Controller — vmafx-controller: job queue, node API, auth gateway (ADR-1589)
 # ---------------------------------------------------------------------------
-# One replica: the job queue is an embedded SQLite database (ADR-1119), so the
-# Deployment uses the Recreate strategy and a ReadWriteOnce volume. The node
-# pool (node.enabled) and the operator (operator.enabled) find it through the
-# <fullname>-controller Service. controller.enabled needs auth.enabled (an
-# identity provider, a tenant registry or auth.disabled for dev) and the other
-# way round: the auth settings below configure this workload.
+# With controller.store.backend sqlite (the default) the job queue is an
+# embedded SQLite database: one replica, the Recreate strategy and a
+# ReadWriteOnce volume. With postgres the controller runs as several replicas
+# on PostgreSQL (ADR-2350). The node pool (node.enabled) and the operator
+# (operator.enabled) find it
+# through the <fullname>-controller Service. controller.enabled needs
+# auth.enabled (an identity provider, a tenant registry or auth.disabled for
+# dev) and the other way round: the auth settings below configure this
+# workload.
 controller:
   enabled: false
   image:
@@ -66,8 +69,52 @@ controller:
   # grpcPort serves VmafxScoring and VmafxController (nodes, operator, clients).
   httpPort: 8080
   grpcPort: 9090
+  # replicas — controller pods. More than one needs store.backend postgres
+  # (two pods on the SQLite backend would each own a different queue).
+  replicas: 1
+  # store — where the controller keeps jobs and node sessions (ADR-2350).
+  store:
+    # backend — sqlite: the embedded queue on persistence below, one replica,
+    # Recreate. postgres: PostgreSQL, any number of replicas, rolling update,
+    # no claim; a migration Job applies the schema
+    # (vmafx-controller migrate).
+    backend: sqlite
+    # Lifetimes of the postgres backend (VMAFX_STORE_*, Go duration strings).
+    # Empty keeps the controller's default (60s, 60s, 5s, 5s, 5m).
+    leaseTTL: ""
+    sessionTTL: ""
+    sweepInterval: ""
+    backoffBase: ""
+    backoffMax: ""
+    postgresql:
+      # mode — cnpg: the chart renders a CloudNativePG Cluster named
+      # <fullname>-db (the CloudNativePG operator is a prerequisite);
+      # external: a database you run, its connection string in a Secret.
+      mode: cnpg
+      cnpg:
+        # instances — PostgreSQL pods; 3 for production (one primary, two
+        # replicas with automated failover), 1 for a test cluster.
+        instances: 1
+        imageName: ghcr.io/cloudnative-pg/postgresql:18.6-202610050823-minimal-trixie@sha256:37ade18dbdddba430858c72725aceeec66f33fa5333e82ea1df4942f6c1c83a3
+        storage:
+          size: 5Gi
+          storageClass: ""
+        resources: {}
+      external:
+        # secretName / secretKey — the Secret key holding the connection
+        # string (postgres://user:password@host:5432/db?sslmode=verify-full).
+        secretName: ""
+        secretKey: uri
+    migration:
+      # backoffLimit — retries of the migration Job; it waits for the
+      # database to come up by failing and retrying.
+      backoffLimit: 10
+  # topologySpreadConstraints — spread of the controller pods. Empty with more
+  # than one replica: a soft spread over Kubernetes nodes.
+  topologySpreadConstraints: []
   # persistence keeps the SQLite job queue (VMAFX_DB_PATH=/data/...) across
-  # restarts. Disabled: an emptyDir, and every job is lost with the pod.
+  # restarts; only the sqlite backend uses it. Disabled: an emptyDir, and
+  # every job is lost with the pod.
   persistence:
     enabled: true
     size: 1Gi
@@ -214,7 +261,8 @@ ingress:
 # ADR-0726: Vulkan backend removed. See docs/backends/README.md.
 # See docs/development/gpu-scheduling.md for vendor-to-backend mapping.
 #
-# The chart also sets VMAFX_BACKEND automatically from vendor (see env below).
+# The chart sets the node's VMAFX_BACKEND from vendor; the scoring server
+# takes its backend per request (the `backend` score option).
 gpu:
   enabled: true
   vendor: nvidia    # nvidia | amd | intel | cpu
@@ -238,8 +286,7 @@ resources:
 # ---------------------------------------------------------------------------
 # Environment variables
 # ---------------------------------------------------------------------------
-# VMAFX_BACKEND is set automatically from gpu.vendor.
-# Override individual variables here.
+# Extra environment variables of the scoring server container.
 env: {}
   # VMAFX_LOG_LEVEL: info
   # VMAFX_THREADS: "4"
@@ -392,6 +439,15 @@ networkPolicy:
         - 443
       cidrs:
         - 0.0.0.0/0
+    # controller and its migration Job → PostgreSQL (controller.store.backend
+    # postgres). cnpg mode: the pods of the chart's Cluster; external mode:
+    # cidrs, tighten them to your database.
+    controllerToDatabase:
+      enabled: true
+      ports:
+        - 5432
+      cidrs:
+        - 0.0.0.0/0
     # node → object store (rclone egress to S3/GCS/Azure/etc.)
     nodeEgressObjectStore:
       enabled: true
@@ -435,6 +491,16 @@ networkPolicy:
       # Example (Prometheus operator):
       #   fromPodSelector:
       #     app.kubernetes.io/name: prometheus
+      fromPodSelector: {}
+    # Prometheus scraping of every component's metrics port while
+    # monitoring.enabled: the server's and the controller's HTTP port, the
+    # node's metrics port and the operator's 8080. Empty selectors allow any
+    # pod of the release namespace; a Prometheus in another namespace needs
+    # fromNamespaceSelector (for example kubernetes.io/metadata.name:
+    # monitoring) and, to narrow it, fromPodSelector.
+    metricsScrape:
+      enabled: true
+      fromNamespaceSelector: {}
       fromPodSelector: {}
     # DNS egress for every VMAFX pod (CoreDNS by default).
     dns:
@@ -490,12 +556,16 @@ readinessProbe:
   failureThreshold: 3
 
 # ---------------------------------------------------------------------------
-# Monitoring — Prometheus ServiceMonitor
+# Monitoring — scrape targets, alert rules and Grafana dashboards for the
+# Prometheus operator and the Grafana dashboard sidecar
+# (docs/observability/kubernetes.md). Nothing renders while enabled is false.
 # ---------------------------------------------------------------------------
 monitoring:
   enabled: false
+  # Scrape settings shared by every component's ServiceMonitor / PodMonitor.
   serviceMonitor:
-    # Prometheus operator namespace selector.
+    # Namespace of the monitors and of the PrometheusRule's default; empty is
+    # the release namespace.
     namespace: ""
     # Additional labels so Prometheus picks up the ServiceMonitor.
     labels: {}
@@ -505,6 +575,94 @@ monitoring:
     scheme: http
     # Honor labels from the target (useful when job labels are in metrics).
     honorLabels: false
+  # Which components get a monitor. A component that is not deployed
+  # (controller.enabled, node.enabled, operator.enabled) gets none. The
+  # server, controller and node are scraped through their Services
+  # (ServiceMonitor), the operator through its pods (PodMonitor).
+  components:
+    server: true
+    controller: true
+    node: true
+    operator: true
+  # The PrometheusRule of the generated alert and recording rules, with the
+  # objectives and thresholds below.
+  prometheusRule:
+    enabled: true
+    # Empty is the release namespace.
+    namespace: ""
+    # Additional labels so Prometheus selects the rule (ruleSelector).
+    labels: {}
+  # One ConfigMap per generated dashboard, labelled for the Grafana sidecar
+  # (kube-prometheus-stack: grafana.sidecar.dashboards).
+  dashboards:
+    enabled: true
+    # Empty is the release namespace; set the sidecar's namespace when it
+    # watches only its own.
+    namespace: ""
+    # The label the sidecar selects ConfigMaps with.
+    labels:
+      grafana_dashboard: "1"
+    # For example grafana_folder: VMAFx, when the sidecar reads folders from
+    # an annotation.
+    annotations: {}
+    # The dashboards of the vendor GPU exporters, each for clusters that run
+    # that exporter (NVIDIA DCGM, AMD device metrics exporter, Intel XPU
+    # Manager).
+    gpuExporters:
+      dcgm: false
+      amd: false
+      intel: false
+  # BEGIN obsgen monitoring settings
+  # Generated from obsgen.DefaultSettings by go run ./tools/obsgen -write;
+  # change the defaults in pkg/observability/obsgen/settings.go. Override them
+  # in your own values file: the PrometheusRule (prometheusRule.enabled) is
+  # rendered from them, and the Compose example reads the same keys.
+  # slo: the share of events that must be good over 30 days; the error
+  # budget is 1 - objective. Each lies strictly between 0 and 1.
+  slo:
+    # Controller jobs that complete rather than fail.
+    jobSuccess: 0.99
+    # Score requests that return no error.
+    scoreSuccess: 0.99
+    # Score requests that finish within scoreLatencySeconds.
+    scoreLatency: 0.99
+    # A bucket bound of vmafx_server_score_duration_seconds, quoted.
+    scoreLatencySeconds: "30"
+  # burnRates: multi-window, multi-burn-rate alerting. A rule fires when the
+  # ratio of bad events over longWindow and over shortWindow both exceed
+  # factor * (1 - objective) for the for duration. fast is critical, slow a
+  # warning. Windows and for are Prometheus durations.
+  burnRates:
+    fast:
+      longWindow: 1h
+      shortWindow: 5m
+      factor: 14.4
+      for: 2m
+    slow:
+      longWindow: 6h
+      shortWindow: 30m
+      factor: 6
+      for: 15m
+  # alerts: thresholds of the alerts that are not burn rates.
+  alerts:
+    # VMAFxQueueAging: how old, in seconds, a tenant's oldest pending job
+    # may get.
+    queueAgeSeconds: 1800
+    # VMAFxScoreRegression: the drop, in score points, of an hour's median
+    # below the median of the previous day's hourly medians.
+    scoreRegressionPoints: 5
+    # VMAFxScoreRegression: the scores an hour needs to be compared.
+    scoreRegressionMinScores: 20
+  # cost: the prices of the VMAFx Usage and cost dashboard, the same for
+  # every backend. 0 is unset: its cost panels stay empty.
+  cost:
+    # Price of one second a node spends on a job.
+    perJobSecond: 0
+    # Price of one completed or failed job; cancelled jobs are not charged.
+    perJob: 0
+    # ISO 4217 code shown with the costs, or empty.
+    currency: ""
+  # END obsgen monitoring settings
 
 # ---------------------------------------------------------------------------
 # Prometheus Pushgateway (for Job workloads)

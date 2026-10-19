@@ -1,0 +1,289 @@
+# Public source registry of the VMAFx research radar (ADR-2171).
+#
+# Public sources only: organisations, repositories, queries, venues, standards
+# documents and datasets. An entry names a source, never a person. The collector
+# (scripts/research/radar_collect.py) reads every kind except `manual`; the weekly
+# triage lane reads the `manual` entries by hand (docs/research/radar/triage.md).
+#
+# Fields: id (unique, kebab-case), kind, url, why (what it can give VMAFx),
+# licence_note (what is known about the terms; re-read the licence file before any
+# use, this is a pointer and not a legal opinion). Kind fields: owner (github_owner),
+# repo (github_repo), query (arxiv_query, openalex_query). Optional: include_forks,
+# name_filter (regex on repository names), releases_only.
+schema: 1
+sources:
+  # --- GitHub owners ------------------------------------------------------------
+  - id: gh-utlive
+    kind: github_owner
+    owner: utlive
+    url: https://github.com/utlive
+    include_forks: true
+    why: Reference implementations of full-reference, no-reference and HDR/gaming quality models (SSIM family, VIF, SpEED, ST-RRED, MOVIE, FUNQUE, HDRMAX, GAMIVAL); oracle candidates for RC7 conformance (#2286) and metric candidates for 1.3.
+    licence_note: Mixed. `live_python_qa` BSD-3-Clause; `VIDEVAL`, `funque_plus`, `ChipQA-0` MIT; `enhanced_ssim` and `funque` carry a BSD-2-Clause-Patent text with an educational-use disclaimer (custom, read it); `HDRMAX` MIT text plus a citation clause; the VIF, SpEED, ST-RRED and MOVIE sources carry a permission notice in the file headers (custom, attribution required); most others have no licence file.
+  - id: gh-pavancm
+    kind: github_owner
+    owner: pavancm
+    url: https://github.com/pavancm
+    why: Reference code for contrastive no-reference image and video quality models, a frame-rate-dependent full-reference model and the LIVE-YT-HFR database; candidates for 1.3 (no-reference neural model, #2166) and 1.4 (A/B and data, #2240, #2241).
+    licence_note: Most repositories have no licence file (all rights reserved by default); forks are excluded from the watch. See the licence-request issues linked from the first-sweep table.
+  - id: gh-vqeg
+    kind: github_owner
+    owner: VQEG
+    url: https://github.com/VQEG
+    why: Tools of the Video Quality Experts Group (SI/TI calculation, subject-count calculation); conformance references for the no-reference artefact work (#2272).
+    licence_note: Per repository; `siti-tools` MIT. Check each before use.
+  - id: gh-tu-ilmenau-avt
+    kind: github_owner
+    owner: Telecommunication-Telemedia-Assessment
+    url: https://github.com/Telecommunication-Telemedia-Assessment
+    why: Open reference implementations of ITU-T bitstream models (P.1204.3) and 4K/8K quality databases; inputs for the standardised QoE cross-validation (#2270) and for neural-codec metric studies (#2168).
+    licence_note: Per repository; GPL-3.0 (tools, `AVT-VQDB-UHD-1`), LGPL-2.1 (video parser), custom or unstated on several databases. Copyleft code is an oracle only, never linked.
+  - id: gh-ntia
+    kind: github_owner
+    owner: NTIA
+    url: https://github.com/NTIA
+    name_filter: vqm|nrmetric|video|quality|cdvl
+    why: The Video Quality Metric (VQM) software and a no-reference metric development framework; historical full-reference baseline and framework for no-reference work.
+    licence_note: US-government work with an NTIA/ITS software notice (`NOASSERTION` on GitHub); read the notice before use.
+  - id: gh-vqassessment
+    kind: github_owner
+    owner: VQAssessment
+    url: https://github.com/VQAssessment
+    why: Deep no-reference video quality models (DOVER incl. DOVER-Mobile, FAST-VQA / FasterVQA) and explainable-quality datasets; local oracles for the project's own clean-room NR models (#2415) behind the live NR mode (#2413, #2166).
+    licence_note: Code under the S-Lab License 1.0 (non-commercial); the DOVER weights card on Hugging Face says MIT, asked upstream (VQAssessment/DOVER#43). Oracle only until answered.
+  - id: gh-q-future
+    kind: github_owner
+    owner: Q-Future
+    url: https://github.com/Q-Future
+    why: Multimodal (LMM) quality assessment, including VQA2 for video; optional scorers for AI-generated video (#2418).
+    licence_note: Per repository; the VQA2 code and weights are Apache-2.0. Check each before use.
+  # --- GitHub repositories ------------------------------------------------------
+  - id: gh-netflix-vmaf
+    kind: github_repo
+    repo: Netflix/vmaf
+    releases_only: true
+    url: https://github.com/Netflix/vmaf
+    why: The upstream VMAF library; releases only here, pushes are followed by the upstream sync lane (docs/development/upstream-watchers.md).
+    licence_note: BSD-2-Clause-Patent.
+  - id: gh-netflix-sureal
+    kind: github_repo
+    repo: Netflix/sureal
+    url: https://github.com/Netflix/sureal
+    why: Subjective-score recovery from noisy ratings (maximum likelihood); input for model training and data cleaning (1.4, #2241).
+    licence_note: BSD-2-Clause-Patent (read the file).
+  - id: gh-ffmpeg-quality-metrics
+    kind: github_repo
+    repo: slhck/ffmpeg-quality-metrics
+    url: https://github.com/slhck/ffmpeg-quality-metrics
+    why: Widely used wrapper that tracks the metric set people actually run through FFmpeg; a reference for the user-facing metric list and option names.
+    licence_note: MIT.
+  - id: gh-pyiqa
+    kind: github_repo
+    repo: chaofengc/IQA-PyTorch
+    url: https://github.com/chaofengc/IQA-PyTorch
+    why: A catalogue of image and video quality metrics with licences noted per model; the quickest way to see which metrics have an open reference at all.
+    licence_note: Toolbox licence plus per-model terms; check each metric's own licence.
+  - id: gh-fgsvqa
+    kind: github_repo
+    repo: xinyiW915/FGSVQA
+    url: https://github.com/xinyiW915/FGSVQA
+    why: Frequency-guided short-form video quality model (QoMEX 2026); oracle for our own implementation (#2415).
+    licence_note: No licence file; oracle only, implementation from the paper.
+  - id: gh-vqm4has
+    kind: github_repo
+    repo: cd-athena/VQM4HAS
+    url: https://github.com/cd-athena/VQM4HAS
+    why: Real-time VMAF / P.1204.3 predictor for HEVC adaptive streaming (IEEE TMM 2025); the repository is empty today, watched for a code release (#2416).
+    licence_note: No licence file and no code (2026-10-07); implementation from the paper.
+  - id: gh-ugvq
+    kind: github_repo
+    repo: zczhang-sjtu/UGVQ
+    url: https://github.com/zczhang-sjtu/UGVQ
+    why: Multi-dimensional quality model and dataset for AI-generated video (TOMM 2025); oracle for our implementation (#2418).
+    licence_note: No licence file; dataset links only; implementation from the paper.
+  # --- arXiv queries ------------------------------------------------------------
+  - id: arxiv-vqa
+    kind: arxiv_query
+    query: abs:"video quality assessment" AND (cat:eess.IV OR cat:cs.CV)
+    url: https://arxiv.org/search/?query=video+quality+assessment&searchtype=abstract
+    why: General video quality assessment literature; the main feed of new full-reference and no-reference models.
+    licence_note: Papers carry their own licence; code links in a paper are checked at triage.
+  - id: arxiv-iqa
+    kind: arxiv_query
+    query: abs:"image quality assessment" AND cat:eess.IV
+    url: https://arxiv.org/search/?query=image+quality+assessment&searchtype=abstract
+    why: Image quality models that extend to video (feature extractors for 1.3).
+    licence_note: As above.
+  - id: arxiv-vmaf
+    kind: arxiv_query
+    query: abs:VMAF
+    url: https://arxiv.org/search/?query=VMAF&searchtype=abstract
+    why: Papers that evaluate, extend or retrain VMAF; direct evidence for the A/B harness (1.4, #2240).
+    licence_note: As above.
+  - id: arxiv-nr-vqa
+    kind: arxiv_query
+    query: abs:"no-reference" AND abs:"video quality"
+    url: https://arxiv.org/search/?query=no-reference+video+quality&searchtype=abstract
+    why: No-reference video quality models for the 1.3 no-reference surface (#2166, #2272).
+    licence_note: As above.
+  - id: arxiv-hdr-quality
+    kind: arxiv_query
+    query: abs:HDR AND abs:"quality assessment" AND abs:video
+    url: https://arxiv.org/search/?query=HDR+video+quality+assessment&searchtype=abstract
+    why: High dynamic range quality models (HDR-SSIM family, #2161) and HDR datasets.
+    licence_note: As above.
+  - id: arxiv-hfr-quality
+    kind: arxiv_query
+    query: abs:"frame rate" AND abs:"quality assessment" AND abs:video
+    url: https://arxiv.org/search/?query=frame+rate+video+quality+assessment&searchtype=abstract
+    why: High-frame-rate and frame-rate-dependent quality models.
+    licence_note: As above.
+  - id: arxiv-gaming-quality
+    kind: arxiv_query
+    query: abs:"gaming" AND abs:"video quality"
+    url: https://arxiv.org/search/?query=gaming+video+quality&searchtype=abstract
+    why: Gaming and cloud-gaming content quality models; a content class VMAF handles poorly.
+    licence_note: As above.
+  - id: arxiv-av-quality
+    kind: arxiv_query
+    query: abs:"audiovisual" AND abs:"quality" AND abs:"video"
+    url: https://arxiv.org/search/?query=audiovisual+quality&searchtype=abstract
+    why: Audio-visual quality models and datasets (audio-video joint scoring).
+    licence_note: As above.
+  - id: arxiv-generative-quality
+    kind: arxiv_query
+    query: abs:"quality assessment" AND (abs:"generative video" OR abs:"AI-generated video" OR abs:"neural codec")
+    url: https://arxiv.org/search/?query=generative+video+quality+assessment&searchtype=abstract
+    why: Quality metrics for neural and generative codecs and generated video (research watch #2168).
+    licence_note: As above.
+  - id: arxiv-aigc-video-quality
+    kind: arxiv_query
+    query: abs:"video quality" AND (abs:"AI-generated" OR abs:AIGC OR abs:"video generation" OR abs:"reward model")
+    url: https://arxiv.org/search/?query=AI-generated+video+quality&searchtype=abstract
+    why: Quality and reward models for generated video (spatial fidelity, motion, prompt alignment); feed for the generation-loop scorers (#2418).
+    licence_note: Papers carry their own licence; code links in a paper are checked at triage.
+  - id: arxiv-foveated-quality
+    kind: arxiv_query
+    query: abs:foveated AND (abs:"quality assessment" OR abs:"video quality")
+    url: https://arxiv.org/search/?query=foveated+quality+assessment&searchtype=abstract
+    why: Foveated and space-variant quality models for AR / VR; feed for the gaze-weighted extractor maps (#2419).
+    licence_note: As above.
+  - id: arxiv-vmaf-prediction
+    kind: arxiv_query
+    query: abs:VMAF AND (abs:predict OR abs:"low-complexity" OR abs:"real-time")
+    url: https://arxiv.org/search/?query=VMAF+prediction&searchtype=abstract
+    why: Low-cost VMAF predictors that run in or next to the encoder (VQM4HAS, in-loop predictors); feed for #2416.
+    licence_note: As above.
+  # --- OpenAlex queries ---------------------------------------------------------
+  - id: openalex-vqa
+    kind: openalex_query
+    query: video quality assessment
+    url: https://openalex.org/works?filter=title_and_abstract.search%3Avideo%20quality%20assessment
+    why: Journal and proceedings coverage that arXiv misses (IEEE, ACM, Springer venues).
+    licence_note: Metadata only; the work itself keeps its terms.
+  - id: openalex-vmaf
+    kind: openalex_query
+    query: VMAF
+    url: https://openalex.org/works?filter=title_and_abstract.search%3AVMAF
+    why: Works that name VMAF in title or abstract, any venue.
+    licence_note: Metadata only.
+  - id: openalex-perceptual-metric
+    kind: openalex_query
+    query: perceptual video quality metric
+    url: https://openalex.org/works?filter=title_and_abstract.search%3Aperceptual%20video%20quality%20metric
+    why: Metric-design papers that do not use the words "assessment" or "VMAF".
+    licence_note: Metadata only.
+  - id: openalex-hdr-quality
+    kind: openalex_query
+    query: HDR video quality
+    url: https://openalex.org/works?filter=title_and_abstract.search%3AHDR%20video%20quality
+    why: HDR quality literature in venues arXiv does not cover.
+    licence_note: Metadata only.
+  # --- Manual: standards bodies (read by the triage lane) ----------------------
+  - id: vqeg-documents
+    kind: manual
+    url: https://vqeg.org/
+    why: VQEG meeting documents, project test plans and final reports (NORM, IGVQM, SAM, ETG, SOGAI); early view of validation studies and test-plan changes.
+    licence_note: Document licences vary; cite, do not copy.
+  - id: itu-t-sg12
+    kind: manual
+    url: https://www.itu.int/en/ITU-T/studygroups/2025-2028/12/Pages/default.aspx
+    why: ITU-T Study Group 12 (P.910 subjective methods, P.1203 / P.1204 quality models, J-series); the standardised models VMAF is compared against (#2270).
+    licence_note: Recommendations are copyrighted; implementing from a published recommendation needs a patent check.
+  - id: itu-r-sg6
+    kind: manual
+    url: https://www.itu.int/en/ITU-R/study-groups/rsg6/Pages/default.aspx
+    why: ITU-R Study Group 6 (BT.500 and BT.1788 assessment methodology, HDR broadcast quality).
+    licence_note: As above.
+  - id: itu-t-p1204
+    kind: manual
+    url: https://www.itu.int/rec/T-REC-P.1204
+    why: The P.1204 family of bitstream and hybrid quality models; cross-validation target (#2270).
+    licence_note: Recommendation text is copyrighted; reference implementations carry their own licence (see gh-tu-ilmenau-avt).
+  - id: itu-t-p1204-1-2
+    kind: manual
+    url: https://www.itu.int/rec/T-REC-P.1204.2/en
+    why: P.1204.1 (metadata) and P.1204.2 (metadata plus frame size / type) streaming quality models; implemented by the project from the Recommendation texts for the live monitor (#2417). Companion page https://www.itu.int/rec/T-REC-P.1204.1/en.
+    licence_note: Recommendations are copyrighted; no open implementation exists; the ITU-T common patent policy applies, so the patent check comes first.
+  - id: live-fovqa
+    kind: manual
+    url: http://live.ece.utexas.edu/research/Quality/FOVQA.zip
+    why: FOVQA, blind foveated video quality (IEEE TIP 2021), MATLAB release with a centre fixation; oracle for our own FOVQA with gaze input (#2419).
+    licence_note: No licence file in the archive; oracle only, implementation from the paper.
+  # --- Manual: conference proceedings ------------------------------------------
+  - id: conf-qomex
+    kind: manual
+    url: https://dblp.org/db/conf/qomex/index.html
+    why: International Conference on Quality of Multimedia Experience; the main venue for subjective-methodology and metric-validation work.
+    licence_note: Proceedings are publisher-licensed; metadata only.
+  - id: conf-icip
+    kind: manual
+    url: https://dblp.org/db/conf/icip/index.html
+    why: IEEE International Conference on Image Processing; new image and video quality models.
+    licence_note: As above.
+  - id: conf-pcs
+    kind: manual
+    url: https://dblp.org/db/conf/pcs/index.html
+    why: Picture Coding Symposium; codec evaluation and quality-driven coding.
+    licence_note: As above.
+  - id: conf-mmsp
+    kind: manual
+    url: https://dblp.org/db/conf/mmsp/index.html
+    why: IEEE Workshop on Multimedia Signal Processing; quality and streaming studies.
+    licence_note: As above.
+  - id: conf-icme
+    kind: manual
+    url: https://dblp.org/db/conf/icme/index.html
+    why: IEEE International Conference on Multimedia and Expo; learned quality models.
+    licence_note: As above.
+  - id: conf-acm-mm
+    kind: manual
+    url: https://dblp.org/db/conf/mm/index.html
+    why: ACM Multimedia; large no-reference models and quality datasets.
+    licence_note: As above.
+  # --- Manual: datasets ---------------------------------------------------------
+  - id: data-live
+    kind: manual
+    url: https://live.ece.utexas.edu/
+    why: LIVE quality databases (LIVE-VQA, LIVE-YT-HFR, LIVE-Meta Gaming, HDR sets) with subjective scores; training and A/B data for 1.4 (#2241).
+    licence_note: Per-database terms, usually research use only; each needs a licence clearance before it enters a training corpus.
+  - id: data-bvi
+    kind: manual
+    url: https://vilab.blogs.bristol.ac.uk/
+    why: The BVI family of compression-oriented databases (BVI-DVC and others), used for training and codec evaluation.
+    licence_note: Per-database terms; clear each before use.
+  - id: data-cdvl
+    kind: manual
+    url: https://cdvl.org/
+    why: Consumer Digital Video Library with source sequences with an open registration and a stated licence.
+    licence_note: CDVL licence (registration, research use); read it before redistribution.
+  - id: data-youtube-ugc
+    kind: manual
+    url: https://media.withyoutube.com/ugc-dataset
+    why: User-generated content dataset with quality labels; content diversity for A/B work.
+    licence_note: Creative Commons per clip; check the clip list.
+  - id: data-konvid
+    kind: manual
+    url: http://database.mmsp-kn.de/konvid-1k-database.html
+    why: KoNViD-1k in-the-wild video quality database; a standard no-reference benchmark.
+    licence_note: Creative Commons per clip; check the terms page.

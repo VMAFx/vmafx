@@ -2,9 +2,10 @@
  * Copyright 2026 Lusoris
  * SPDX-License-Identifier: EUPL-1.2
  *
- * ADR-1359: `--feature` routing under an explicit `--backend` and the JSON
- * backend receipt. libvmaf is replaced by the two fakes below, so every
- * outcome of vmaf_feature_backend_twin() is reachable without a GPU.
+ * ADR-1359: `--feature` routing under an explicit `--backend`. libvmaf is
+ * replaced by the fake below, so every outcome of vmaf_feature_backend_twin()
+ * is reachable without a GPU. The JSON backend receipt is the library's since
+ * RC4 WP5 (core/src/vmafx/provenance_render.c, test_vmafx_provenance).
  */
 
 #include <errno.h>
@@ -61,47 +62,6 @@ int vmaf_feature_backend_twin(VmafContext *vmaf, const char *feature_name,
     if (unsupported_option)
         *unsupported_option = twin_fake.option;
     return twin_fake.status;
-}
-
-#define FAKE_REGISTRY_MAX 4U
-
-static struct {
-    unsigned cnt;
-    unsigned fail_at;
-    int fail_err;
-    unsigned endless;
-    const char *name[FAKE_REGISTRY_MAX];
-    enum VmafBackend backend[FAKE_REGISTRY_MAX];
-} registry_fake;
-
-static void script_registry(unsigned cnt, const char *const *names,
-                            const enum VmafBackend *backends)
-{
-    memset(&registry_fake, 0, sizeof(registry_fake));
-    registry_fake.cnt = cnt;
-    registry_fake.fail_at = FAKE_REGISTRY_MAX + 1U;
-    for (unsigned i = 0; i < cnt && i < FAKE_REGISTRY_MAX; i++) {
-        registry_fake.name[i] = names[i];
-        registry_fake.backend[i] = backends[i];
-    }
-}
-
-int vmaf_registered_feature_extractor(VmafContext *vmaf, unsigned index, const char **name,
-                                      enum VmafBackend *backend)
-{
-    (void)vmaf;
-    if (index == registry_fake.fail_at)
-        return registry_fake.fail_err;
-    if (registry_fake.endless) {
-        *name = "vif_sycl";
-        *backend = VMAF_BACKEND_SYCL;
-        return 0;
-    }
-    if (index >= registry_fake.cnt)
-        return -ENOENT;
-    *name = registry_fake.name[index];
-    *backend = registry_fake.backend[index];
-    return 0;
 }
 
 static struct CliFeatureChoice choose(const char *backend, const char *feature, char *warn,
@@ -229,97 +189,6 @@ static char *test_warning_buffer_boundaries(void)
     return NULL;
 }
 
-static char *test_report_mixed_run(void)
-{
-    const char *const names[] = {"vif_sycl", "ciede", "motion_sycl"};
-    const enum VmafBackend backends[] = {VMAF_BACKEND_SYCL, VMAF_BACKEND_UNKNOWN,
-                                         VMAF_BACKEND_SYCL};
-    script_registry(3U, names, backends);
-    struct CliExtractorReport report;
-    mu_assert("collect failed", cli_collect_extractor_report(NULL, &report) == 0);
-    mu_assert("count wrong", report.cnt == 3U);
-    mu_assert("device run reported as cpu", !strcmp(cli_report_backend_used(&report), "sycl"));
-
-    char json[256];
-    const size_t len = cli_format_backend_members(&report, json, sizeof(json));
-    const char *expected = "\"backend_used\": \"sycl\", \"feature_backends\": ["
-                           "{\"extractor\": \"vif_sycl\", \"backend\": \"sycl\"}, "
-                           "{\"extractor\": \"ciede\", \"backend\": \"cpu\"}, "
-                           "{\"extractor\": \"motion_sycl\", \"backend\": \"sycl\"}]";
-    mu_assert("receipt text wrong", !strcmp(json, expected));
-    mu_assert("receipt length wrong", len == strlen(expected));
-    return NULL;
-}
-
-static char *test_report_cpu_only_and_empty(void)
-{
-    const char *const names[] = {"ciede"};
-    const enum VmafBackend backends[] = {VMAF_BACKEND_UNKNOWN};
-    script_registry(1U, names, backends);
-    struct CliExtractorReport report;
-    mu_assert("collect failed", cli_collect_extractor_report(NULL, &report) == 0);
-    mu_assert("cpu run reported as a device", !strcmp(cli_report_backend_used(&report), "cpu"));
-
-    script_registry(0U, NULL, NULL);
-    mu_assert("collect failed", cli_collect_extractor_report(NULL, &report) == 0);
-    char json[128];
-    (void)cli_format_backend_members(&report, json, sizeof(json));
-    mu_assert("empty receipt wrong",
-              !strcmp(json, "\"backend_used\": \"cpu\", \"feature_backends\": []"));
-    mu_assert("NULL report is cpu", !strcmp(cli_report_backend_used(NULL), "cpu"));
-    return NULL;
-}
-
-static char *test_report_errors_and_bounds(void)
-{
-    const char *const names[] = {"vif_sycl", "ciede"};
-    const enum VmafBackend backends[] = {VMAF_BACKEND_SYCL, VMAF_BACKEND_UNKNOWN};
-    script_registry(2U, names, backends);
-    registry_fake.fail_at = 1U;
-    registry_fake.fail_err = -EINVAL;
-    struct CliExtractorReport report;
-    mu_assert("lookup error swallowed", cli_collect_extractor_report(NULL, &report) == -EINVAL);
-    mu_assert("NULL report accepted", cli_collect_extractor_report(NULL, NULL) == -EINVAL);
-
-    script_registry(0U, NULL, NULL);
-    registry_fake.endless = 1U;
-    mu_assert("bounded collect failed", cli_collect_extractor_report(NULL, &report) == 0);
-    mu_assert("collect not bounded", report.cnt == CLI_FEATURE_REPORT_MAX);
-    return NULL;
-}
-
-static char *test_receipt_truncation_and_sanitising(void)
-{
-    const char *const names[] = {"odd\"name\\"};
-    const enum VmafBackend backends[] = {VMAF_BACKEND_CUDA};
-    script_registry(1U, names, backends);
-    struct CliExtractorReport report;
-    mu_assert("collect failed", cli_collect_extractor_report(NULL, &report) == 0);
-
-    char full[128];
-    const size_t len = cli_format_backend_members(&report, full, sizeof(full));
-    mu_assert("quote or backslash leaked into JSON",
-              strstr(full, "\"odd_name_\"") != NULL && !strchr(full + 1, '\\'));
-    mu_assert("sizing pass disagrees", cli_format_backend_members(&report, NULL, 0) == len);
-
-    char small[10];
-    const size_t needed = cli_format_backend_members(&report, small, sizeof(small));
-    mu_assert("truncated call did not report the full length", needed == len);
-    mu_assert("truncated receipt not terminated", small[sizeof(small) - 1U] == '\0');
-    mu_assert("truncated receipt lost its prefix", !strncmp(small, full, sizeof(small) - 1U));
-    return NULL;
-}
-
-static char *test_backend_labels(void)
-{
-    mu_assert("cpu", !strcmp(cli_backend_label(VMAF_BACKEND_UNKNOWN), "cpu"));
-    mu_assert("cuda", !strcmp(cli_backend_label(VMAF_BACKEND_CUDA), "cuda"));
-    mu_assert("sycl", !strcmp(cli_backend_label(VMAF_BACKEND_SYCL), "sycl"));
-    mu_assert("hip", !strcmp(cli_backend_label(VMAF_BACKEND_HIP), "hip"));
-    mu_assert("metal", !strcmp(cli_backend_label(VMAF_BACKEND_METAL), "metal"));
-    return NULL;
-}
-
 char *run_tests(void)
 {
     static const MuTest tests[] = {
@@ -332,11 +201,6 @@ char *run_tests(void)
         MU_TEST(test_invalid_request_keeps_name_silently),
         MU_TEST(test_cpu_auto_and_unset_backend_skip_lookup),
         MU_TEST(test_warning_buffer_boundaries),
-        MU_TEST(test_report_mixed_run),
-        MU_TEST(test_report_cpu_only_and_empty),
-        MU_TEST(test_report_errors_and_bounds),
-        MU_TEST(test_receipt_truncation_and_sanitising),
-        MU_TEST(test_backend_labels),
     };
     return mu_run_table(tests, MU_TABLE_LEN(tests));
 }

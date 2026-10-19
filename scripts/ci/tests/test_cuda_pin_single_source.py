@@ -34,6 +34,10 @@ from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, ClassVar
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+from scripts.lib.renovate_regex import to_python
+
 ROOT = Path(__file__).resolve().parents[3]
 GIT = shutil.which("git") or "/usr/bin/git"
 GATE = "scripts/ci/check-cuda-pin-lockstep.py"
@@ -71,14 +75,6 @@ def read_config() -> dict[str, Any]:
     if not isinstance(data, dict):
         raise TypeError("renovate.json must contain a JSON object")
     return data
-
-
-JS_GROUP = re.compile(r"\(\?<([A-Za-z_][A-Za-z0-9_]*)>")
-
-
-def to_python(pattern: str) -> str:
-    """Renovate's regexes use JavaScript named groups; Python spells them (?P<x>)."""
-    return JS_GROUP.sub(r"(?P<\1>", pattern)
 
 
 def compiled(patterns: list[str]) -> list[re.Pattern[str]]:
@@ -421,6 +417,14 @@ class CudaPinGate(unittest.TestCase):
             text=True,
         )
 
+    def pin(self, name: str) -> str:
+        """Return the fixture's build-config.env value of NAME, so the cases follow a bump."""
+        text = (self.repo / "build-config.env").read_text(encoding="utf-8")
+        match = re.search(rf'^{name}="([^"]*)"', text, re.MULTILINE)
+        self.assertIsNotNone(match, f"build-config.env has no {name}")
+        assert match is not None
+        return match.group(1)
+
     def edit(self, path: str, old: str, new: str) -> None:
         file = self.repo / path
         text = file.read_text(encoding="utf-8")
@@ -437,25 +441,25 @@ class CudaPinGate(unittest.TestCase):
         cases = (
             (
                 "build-config.env",
-                'CUDA_APT_LOCK_RELEASE="13.4.2"',
+                f'CUDA_APT_LOCK_RELEASE="{self.pin("CUDA_APT_LOCK_RELEASE")}"',
                 'CUDA_APT_LOCK_RELEASE="13.4.1"',
                 "apt-lock-release",
             ),
             (
                 "build-config.env",
-                'CUDA_APT_TOOLKIT_VERSION="13.4.2-1"',
+                f'CUDA_APT_TOOLKIT_VERSION="{self.pin("CUDA_APT_TOOLKIT_VERSION")}"',
                 'CUDA_APT_TOOLKIT_VERSION="13.4.1-1"',
                 "apt-toolkit-version",
             ),
             (
                 "build-config.env",
-                'CUDA_APT_NVCC_VERSION="13.4.92-1"',
+                f'CUDA_APT_NVCC_VERSION="{self.pin("CUDA_APT_NVCC_VERSION")}"',
                 'CUDA_APT_NVCC_VERSION="13.5.1-1"',
                 "apt-nvcc-version",
             ),
             (
                 "build-config.env",
-                'CUDA_APT_CUDART_VERSION="13.4.92-1"',
+                f'CUDA_APT_CUDART_VERSION="{self.pin("CUDA_APT_CUDART_VERSION")}"',
                 'CUDA_APT_CUDART_VERSION="12.9.1-1"',
                 "apt-cudart-version",
             ),
@@ -467,7 +471,7 @@ class CudaPinGate(unittest.TestCase):
             ),
             (
                 "docker/Dockerfile.production-gpu",
-                "production CUDA 13.4.2 runtime",
+                f"production CUDA {self.pin('CUDA_VERSION')} runtime",
                 "production CUDA 13.5.0 runtime",
                 "label",
             ),
@@ -482,7 +486,11 @@ class CudaPinGate(unittest.TestCase):
                 self.assertIn(path, result.stderr)
 
     def test_renovate_release_bump_fails_until_exact_metadata_is_refreshed(self) -> None:
-        self.edit("build-config.env", 'CUDA_VERSION="13.4.2"', 'CUDA_VERSION="13.5.0"')
+        self.edit(
+            "build-config.env",
+            f'CUDA_VERSION="{self.pin("CUDA_VERSION")}"',
+            'CUDA_VERSION="13.5.0"',
+        )
         result = self.gate()
         self.assertEqual(result.returncode, 1, result.stdout)
         self.assertIn("apt-lock-release pin reads", result.stderr)
@@ -529,7 +537,7 @@ class CudaPinGate(unittest.TestCase):
         )
         self.edit(
             "docker/Dockerfile.production-gpu",
-            "production CUDA 13.4.2 runtime",
+            f"production CUDA {self.pin('CUDA_VERSION')} runtime",
             "production CUDA 12.1.0 runtime",
         )
         result = self.gate("--write")
@@ -540,7 +548,7 @@ class CudaPinGate(unittest.TestCase):
         self.assertIn('CUDA_APT_NVCC_VERSION="13.4.92-1"', config)
         self.assertIn('CUDA_APT_CUDART_VERSION="13.4.92-1"', config)
         self.assertIn(
-            "CUDA 13.4.2 runtime",
+            f"CUDA {self.pin('CUDA_VERSION')} runtime",
             (self.repo / "docker/Dockerfile.production-gpu").read_text(),
         )
 
@@ -558,7 +566,9 @@ class CudaPinGate(unittest.TestCase):
     def test_a_missing_authority_is_a_configuration_error_not_drift(self) -> None:
         config = self.repo / "build-config.env"
         config.write_text(
-            config.read_text(encoding="utf-8").replace('CUDA_VERSION="13.4.2"', ""),
+            config.read_text(encoding="utf-8").replace(
+                f'CUDA_VERSION="{self.pin("CUDA_VERSION")}"', ""
+            ),
             encoding="utf-8",
         )
         self.git("add", "--", "build-config.env")

@@ -1,12 +1,10 @@
 <!-- markdownlint-disable MD060 -->
 # ADR-0357 — Vulkan readback buffer VMA allocation flag separation
 
-| Field    | Value                                      |
-|----------|--------------------------------------------|
-| Status   | Accepted                                   |
-| Date     | 2026-05-09                                 |
-| Deciders | lusoris                                    |
-| Area     | vulkan, performance                        |
+- **Status**: Accepted
+- **Date**: 2026-05-09
+- **Deciders**: lusoris
+- **Area**: vulkan, performance
 
 ## Context
 

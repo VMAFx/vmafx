@@ -53,10 +53,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define KERNEL_WEIGHT (1 << KERNEL_SHIFT)
 #define KERNEL_ROUND ((1 << KERNEL_SHIFT) >> 1)
 
-#ifndef M_PI
-#define M_PI 3.141592653589793238462643
-#endif
-
 static int gaussian_filter_init(unsigned **iqa_kernel, double _sigma, int _max_len)
 {
     unsigned *kernel;
@@ -252,7 +248,7 @@ static void ssim_reduce_row_range(ssim_moments *const *lines, int line_mask, int
             m.w += window * buf->w;
         }
         // NOLINTEND(clang-analyzer-security.ArrayBound)
-        w_d = m.w;
+        w_d = (double)m.w;
         c1 = sm * sm * SSIM_K1 * w_d * w_d;
         c2 = sm * sm * SSIM_K2 * w_d * w_d;
         mx2 = m.mux * (double)m.mux;
@@ -416,15 +412,15 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     (void)ref_pic_90;
     (void)dist_pic_90;
 
-    double score =
-        calc_ssim(ref_pic->data[0], ref_pic->stride[0], dist_pic->data[0], dist_pic->stride[0], 1.0,
-                  ref_pic->bpc, ref_pic->w[0], ref_pic->h[0], s->accum8, s->accum16);
+    double score = calc_ssim(ref_pic->data[0], (int)ref_pic->stride[0], dist_pic->data[0],
+                             (int)dist_pic->stride[0], 1.0, ref_pic->bpc, ref_pic->w[0],
+                             ref_pic->h[0], s->accum8, s->accum16);
 
     return vmaf_ssim_emit_score_named(feature_collector, NULL, "integer_ssim", "ssim", score,
                                       s->enable_db, s->max_db, index);
 }
 
-static int close(VmafFeatureExtractor *fex)
+static int close_fex(VmafFeatureExtractor *fex)
 {
     (void)fex;
     return 0;
@@ -444,7 +440,7 @@ VmafFeatureExtractor vmaf_fex_ssim = {
     .init = init,
     .extract = extract,
     .options = options,
-    .close = close,
+    .close = close_fex,
     .priv_size = sizeof(IntegerSsimState),
     .provided_features = provided_features,
 };

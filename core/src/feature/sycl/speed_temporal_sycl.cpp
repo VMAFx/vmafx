@@ -222,21 +222,34 @@ int init_temporal_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, 
     return 0;
 }
 
+/* Both luma planes into raw planes `first` and `first + 1`: staged on the
+ * host and uploaded, or, for frames of the VMAFx API on this device, copied
+ * on the device (ADR-2091). */
+int upload_luma(SpeedTemporalSyclState *s, const VmafPicture *ref_pic, const VmafPicture *dist_pic,
+                uint32_t first)
+{
+    if (vmaf_sycl_picture_on_device(ref_pic) || vmaf_sycl_picture_on_device(dist_pic)) {
+        const int err = speed_sycl::read_device_plane(s->pipeline, first, ref_pic, 0u) |
+                        speed_sycl::read_device_plane(s->pipeline, first + 1u, dist_pic, 0u);
+        return err ? -EINVAL : 0;
+    }
+    int err = speed_sycl::stage_plane(s->pipeline, 0u, ref_pic, 0u);
+    err |= speed_sycl::stage_plane(s->pipeline, 1u, dist_pic, 0u);
+    if (err) {
+        return -EINVAL;
+    }
+    return speed_sycl::pipeline_upload(s->pipeline, first, kTemporalChannels);
+}
+
 int submit_temporal_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
                          VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
 {
     (void)ref_pic_90;
     (void)dist_pic_90;
     auto *s = static_cast<SpeedTemporalSyclState *>(fex->priv);
-    int err = speed_sycl::stage_plane(s->pipeline, 0u, ref_pic, 0u);
-    err |= speed_sycl::stage_plane(s->pipeline, 1u, dist_pic, 0u);
-    if (err) {
-        return -EINVAL;
-    }
     const auto current = static_cast<int32_t>(kTemporalChannels * (index % kTemporalSlots));
     const auto previous = static_cast<int32_t>(kTemporalChannels * ((index + 1u) % kTemporalSlots));
-    err =
-        speed_sycl::pipeline_upload(s->pipeline, static_cast<uint32_t>(current), kTemporalChannels);
+    const int err = upload_luma(s, ref_pic, dist_pic, static_cast<uint32_t>(current));
     if (err || index == 0u) {
         return err;
     }

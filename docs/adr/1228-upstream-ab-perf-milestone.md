@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-1228: A recurring "faster than upstream, and still exact" milestone
 
-- **Status**: Accepted
+- **Status**: Accepted (Superseded-in-part 2026-10-06 by [ADR-1487](1487-upstream-parity-policy-and-guard.md) for the pooled six-decimal delta and the --max-score-delta ceiling)
 - **Date**: 2026-09-07
 - **Deciders**: Lusoris
 - **Tags**: performance, benchmarking, cuda, sycl, hip, process, fork-local

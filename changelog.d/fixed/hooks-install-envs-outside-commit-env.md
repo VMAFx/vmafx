@@ -1,1 +1,0 @@
-- Local hooks: a commit in a linked worktree no longer risks rewriting that worktree's index when the pre-commit framework installs a node hook environment. `lefthook.yml` now runs `pre-commit install-hooks` with the commit's git variables unset before `pre-commit run` and `hook-impl`.

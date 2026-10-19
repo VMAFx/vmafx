@@ -199,3 +199,12 @@ entire repository using manifest-driven hash locks.
   format for source trees.
 - [PEP 660](https://peps.python.org/pep-0660/) — Editable installs for
   pyproject.toml.
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 192: `- ADR-1128 — SLSA Provenance and Builder Verification.`:
+  ADR-1128 points to an unrelated topic (1128-fragment-owned-release-cuts.md:
+  "Make changelog fragments own release cuts").

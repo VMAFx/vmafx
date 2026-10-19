@@ -91,8 +91,9 @@ static char *test_barten_csf_lum_mid(void)
 static char *test_barten_csf_interp(void)
 {
     mu_assert("linear interpolate",
-              almost_equal(linear_interpolate(log10(20), barten_csf_params[4][1], log10(150.0),
-                                              barten_csf_params[5][1], log10(50.0)),
+              almost_equal(linear_interpolate((float)log10(20), barten_csf_params[4][1],
+                                              (float)log10(150.0), barten_csf_params[5][1],
+                                              (float)log10(50.0)),
                            0.361679));
     return NULL;
 }

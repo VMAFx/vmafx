@@ -41,7 +41,9 @@
 
 /* The five blurred quantities of ssimulacra2.c::extract, one blur job each:
  * blur(ref), blur(dis), blur(ref * ref), blur(dis * dis), blur(ref * dis). */
+/* NOLINTBEGIN(performance-enum-size): C header included by C and C++ translation units; C has no fixed enum underlying type across the required toolchains (ADR-1470). ADR-1138. */
 enum ss2c_blur_job { SS2C_MU1 = 0, SS2C_MU2, SS2C_S11, SS2C_S22, SS2C_S12, SS2C_BLUR_JOBS };
+/* NOLINTEND(performance-enum-size) */
 /* Horizontal pass: one warp per block, one row per lane, 32-column tiles
  * staged through shared memory. Vertical pass: one column per thread. */
 #define SS2C_BLUR_TILE 32
@@ -52,6 +54,7 @@ enum ss2c_blur_job { SS2C_MU1 = 0, SS2C_MU2, SS2C_S11, SS2C_S22, SS2C_S12, SS2C_
 
 /* YUV -> linear RGB constants, evaluated on the host with the float
  * expressions of ssimulacra2.c::picture_to_linear_rgb. */
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no `using`. ADR-1138. */
 typedef struct Ss2cYuvCoefficients {
     float inv_peak;
     float y_off;
@@ -113,6 +116,7 @@ typedef struct Ss2cCombineArgs {
     unsigned chunks;
     unsigned pad_;
 } Ss2cCombineArgs;
+/* NOLINTEND(modernize-use-using) */
 
 extern const unsigned char ssimulacra2_blur_ptx[];
 extern const unsigned char ssimulacra2_device_ptx[];

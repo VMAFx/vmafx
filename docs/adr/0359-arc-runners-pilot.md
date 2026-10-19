@@ -1,6 +1,6 @@
 # ADR-0359 — ARC self-hosted runner pool: pilot via `ARC_RUNNERS_ENABLED` flag
 
-- Status: Accepted
+- **Status**: Accepted
 - Date: 2026-05-09
 - Tags: ci, infra, fork-local
 

@@ -5,12 +5,14 @@
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import shutil
 import sys
 import tempfile
 import unittest
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
+from types import ModuleType
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
@@ -22,6 +24,58 @@ GIT = shutil.which("git") or "/usr/bin/git"
 BASH = shutil.which("bash") or "/bin/bash"
 GATE = "scripts/ci/check-base-image-single-source.sh"
 BASE = 'ARG RELEASE_BUILDER_BASE="{pin}"\nFROM ${{RELEASE_BUILDER_BASE}} AS builder\n'
+
+
+def _load_references() -> ModuleType:
+    path = ROOT / "scripts/ci/check-container-image-references.py"
+    spec = importlib.util.spec_from_file_location("check_container_image_references", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"cannot import {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+REFERENCES = _load_references()
+
+
+class LocalImageExceptionPathSpelling(unittest.TestCase):
+    """The exception tables must match whichever separator the host uses."""
+
+    def test_windows_and_posix_spellings_reach_the_same_exceptions(self) -> None:
+        for flavour in (PurePosixPath, PureWindowsPath):
+            with self.subTest(flavour=flavour.__name__):
+                runner = flavour("dev", "Containerfile.runner")
+                local = {"BASE_IMAGE": "vmaf-dev-mcp:local"}
+                self.assertIsNone(
+                    REFERENCES.check_from(runner, "${BASE_IMAGE}", set(), set(), local)
+                )
+                external = {"BASE_IMAGE": "alpine:latest"}
+                self.assertIn(
+                    "needs a global default",
+                    REFERENCES.check_from(runner, "${BASE_IMAGE}", set(), set(), external),
+                )
+                ffmpeg = flavour("Dockerfile.ffmpeg")
+                self.assertIsNone(
+                    REFERENCES.check_from(
+                        ffmpeg, "vmaf@sha256:${VMAF_IMAGE_DIGEST}", set(), set(), {}
+                    )
+                )
+                self.assertIn(
+                    "hardcodes a base image",
+                    REFERENCES.check_from(ffmpeg, "vmaf:latest", set(), set(), {}),
+                )
+                self.assertIn(
+                    "hardcodes a base image",
+                    REFERENCES.check_from(ffmpeg, "vmaf@sha256:${OTHER}", set(), set(), {}),
+                )
+                nested = flavour("docker", "Dockerfile.ffmpeg")
+                self.assertIn(
+                    "hardcodes a base image",
+                    REFERENCES.check_from(
+                        nested, "vmaf@sha256:${VMAF_IMAGE_DIGEST}", set(), set(), {}
+                    ),
+                )
 
 
 class BaseImageGate(unittest.TestCase):
@@ -36,6 +90,9 @@ class BaseImageGate(unittest.TestCase):
             "scripts/ci/check-workflow-versions.py",
             "scripts/ci/check-container-image-references.py",
             "scripts/lib/safe_subprocess.py",
+            "rust-toolchain.toml",
+            "Cargo.toml",
+            "core/src/rust/Cargo.toml",
         ):
             source = ROOT / name
             if source.exists():
@@ -127,10 +184,11 @@ class BaseImageGate(unittest.TestCase):
                 self.check(instruction, 1)
 
     def test_local_image_exceptions_are_bound_to_exact_consumer_and_value(self) -> None:
-        self.check("FROM vmaf:latest\n", 0, "Dockerfile.ffmpeg")
+        self.check("FROM vmaf@sha256:${VMAF_IMAGE_DIGEST}\n", 0, "Dockerfile.ffmpeg")
         self.check("FROM alpine:latest\n", 1, "Dockerfile.ffmpeg")
-        self.check("FROM vmaf:latest\n", 0, "Dockerfile.ffmpeg")
-        self.check("FROM vmaf:latest\n", 1)
+        self.check("FROM vmaf:latest\n", 1, "Dockerfile.ffmpeg")
+        self.check("FROM vmaf@sha256:${OTHER}\n", 1, "Dockerfile.ffmpeg")
+        self.check("FROM vmaf@sha256:${VMAF_IMAGE_DIGEST}\n", 1)
 
     def test_local_runner_argument_cannot_be_replaced_by_an_external_image(self) -> None:
         name = "dev/Containerfile.runner"

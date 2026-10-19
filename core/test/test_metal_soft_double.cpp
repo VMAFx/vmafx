@@ -284,11 +284,12 @@ void carry_pair(Sequence &s, unsigned kind, double &a, double &b)
     }
     /* A * Q at most 2^51 below 2^105, A and Q in [2^52, 2^53): their
      * product's significand rounds to 2^53. */
+    const double kBelowLimit = std::ldexp(1.0, 51); /* 2^51 */
     for (int attempt = 0; attempt < 32; attempt++) {
         const double big_a = (double)((s.next() >> 11) | kTop);
         const double q = 0x1p105 / big_a;
         const double below = std::fma(big_a, q, -0x1p105); /* exact */
-        if (below < 0.0 && below >= -0x1p51) {
+        if (below < 0.0 && below >= -kBelowLimit) {
             a = std::ldexp(big_a, s.below(400) - 252);
             b = std::ldexp(q, s.below(400) - 252);
             return;

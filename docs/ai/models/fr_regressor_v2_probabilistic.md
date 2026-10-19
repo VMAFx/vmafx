@@ -58,22 +58,16 @@ one is active for the shipped checkpoint):
 1. **`ensemble`** (default) — Gaussian assumption. With `z_α/2 = 1.96`
    for 95 % coverage:
 
-   ```text
-   lower = mu - 1.96 * sigma
-   upper = mu + 1.96 * sigma
-   ```
+   $\mathrm{lower} = \mu - 1.96\,\sigma$ and $\mathrm{upper} = \mu + 1.96\,\sigma$.
 
 2. **`ensemble+conformal`** — split-conformal calibration (Romano et
    al. 2019, Vovk-style). The trainer holds out a calibration fraction
    of the corpus (default `--conformal-calibration-frac 0.2`), computes
-   the standardised residual `|y - mu| / sigma` on the held-out rows,
+   the standardised residual $\lvert y - \mu \rvert / \sigma$ on the held-out rows,
    and stores the empirical (1 − α) quantile as
    `confidence.conformal_q_residual` in the manifest. Inference:
 
-   ```text
-   lower = mu - q * sigma
-   upper = mu + q * sigma
-   ```
+   $\mathrm{lower} = \mu - q\,\sigma$ and $\mathrm{upper} = \mu + q\,\sigma$.
 
    Marginal coverage is provably ≥ 1 − α on exchangeable data
    regardless of whether `(mu, sigma)` is well-calibrated (Vovk 2005,

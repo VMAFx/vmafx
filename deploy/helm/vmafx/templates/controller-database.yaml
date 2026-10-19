@@ -1,0 +1,72 @@
+{{- /*
+SPDX-License-Identifier: EUPL-1.2
+Copyright 2026 Lusoris
+
+deploy/helm/vmafx/templates/controller-database.yaml
+The controller's PostgreSQL store (ADR-2350, controller.store.backend
+postgres): in cnpg mode a CloudNativePG Cluster <fullname>-db (the
+CloudNativePG operator is a prerequisite the chart never installs; its
+application Secret <fullname>-db-app carries the connection string), and in
+every postgres mode the migration Job that applies the store's and River's
+schema with `vmafx-controller migrate`.
+
+The Job is an ordinary resource, not a Helm hook: in cnpg mode the database
+does not exist before the release is applied, so the Job retries until it is
+up (backoffLimit), and controllers report not ready on /readyz until the
+schema is current. Its name carries a hash of its pod template
+(vmafx.controllerMigrationPod): a Job's pod template cannot change, so a new
+image or other settings get a new Job, and an unchanged release keeps the
+completed one. The Argo CD annotations make Argo CD run it as a Sync hook
+instead of tracking it.
+*/ -}}
+{{- if and .Values.controller.enabled (eq (include "vmafx.controllerStoreBackend" .) "postgres") }}
+{{- $fullName := include "vmafx.fullname" . }}
+{{- $pg := .Values.controller.store.postgresql }}
+{{- $pod := include "vmafx.controllerMigrationPod" . }}
+{{- if eq $pg.mode "cnpg" }}
+{{- if not (.Capabilities.APIVersions.Has "postgresql.cnpg.io/v1") }}
+{{- fail "controller.store.postgresql.mode cnpg needs the CloudNativePG operator (API postgresql.cnpg.io/v1), a prerequisite the chart does not install; install it first, render with --api-versions postgresql.cnpg.io/v1, or use mode external" }}
+{{- end }}
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ include "vmafx.controllerDatabaseCluster" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "vmafx.labels" . | nindent 4 }}
+    app.kubernetes.io/component: database
+spec:
+  instances: {{ $pg.cnpg.instances }}
+  imageName: {{ $pg.cnpg.imageName | quote }}
+  bootstrap:
+    initdb:
+      database: vmafx
+      owner: vmafx
+  storage:
+    size: {{ $pg.cnpg.storage.size | quote }}
+    {{- with $pg.cnpg.storage.storageClass }}
+    storageClass: {{ . | quote }}
+    {{- end }}
+  {{- with $pg.cnpg.resources }}
+  resources:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ printf "%s-controller-migrate-%s" $fullName ($pod | sha256sum | trunc 8) }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "vmafx.labels" . | nindent 4 }}
+    app.kubernetes.io/component: migrate
+  annotations:
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: {{ .Values.controller.store.migration.backoffLimit }}
+  template:
+    {{- $pod | nindent 4 }}
+{{- end }}

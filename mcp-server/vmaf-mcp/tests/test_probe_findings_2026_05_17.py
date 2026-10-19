@@ -298,16 +298,25 @@ def test_bug5_no_warning_for_unknown_models(
 # ---------------------------------------------------------------------------
 
 
-def test_probe_backends_parses_help_output(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """`_probe_backends` must pick out advertised `--no_<backend>` flags
-    from vmaf's --help output."""
+def test_probe_backends_parses_backend_report(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`_probe_backends` must pick out the usable backends of vmaf's
+    ``--list-backends`` report (a compiled but unusable one is left out)."""
     fake = tmp_path / "vmaf"
     fake.write_text("#!/bin/sh\nexit 0\n")
     fake.chmod(0o755)
     srv._BACKEND_PROBE_CACHE.pop(str(fake), None)
 
     class _R:
-        stdout = "--no_cuda    disable CUDA\n--no_hip     disable HIP\n"
+        returncode = 0
+        stdout = (
+            '{"backends": [{"name": "cpu", "compiled": true, "usable": true},'
+            ' {"name": "cuda", "compiled": true, "usable": true},'
+            ' {"name": "sycl", "compiled": true, "usable": false, "init_status": -19},'
+            ' {"name": "hip", "compiled": true, "usable": true},'
+            ' {"name": "metal", "compiled": false, "usable": false}]}'
+        )
         stderr = ""
 
     def _fake_run(*args, **kwargs):

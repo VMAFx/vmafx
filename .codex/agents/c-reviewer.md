@@ -1,8 +1,6 @@
 ---
-name: c-reviewer
 description: Reviews C code for NASA/JPL Power of 10, JPL-C-STD, and SEI CERT C compliance. Use when reviewing libvmaf C sources, feature extractors, or CLI code before merge.
-model: sonnet
-tools: Read, Grep, Glob, Bash
+name: c-reviewer
 ---
 <!-- markdownlint-disable MD013 MD041 -->
 
@@ -73,3 +71,5 @@ Read files, cross-reference findings against rules above. Provide:
 3. Positive notes on well-done parts (brief).
 
 Do not write code changes. Recommend them.
+
+<!-- TOOL PERMISSION GAP: Codex custom agents inherit parent tools; no per-agent allow-list is available. -->

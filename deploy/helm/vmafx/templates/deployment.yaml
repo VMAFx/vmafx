@@ -57,12 +57,12 @@ spec:
             - name: http
               containerPort: {{ .Values.service.targetPort }}
               protocol: TCP
+          {{- with .Values.env }}
           env:
-            - name: VMAFX_BACKEND
-              value: {{ include "vmafx.backendEnvValue" . | quote }}
-          {{- range $k, $v := .Values.env }}
+          {{- range $k, $v := . }}
             - name: {{ $k | quote }}
               value: {{ $v | quote }}
+          {{- end }}
           {{- end }}
           envFrom:
             - configMapRef:

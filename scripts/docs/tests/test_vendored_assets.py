@@ -71,6 +71,16 @@ class VendoredAssetTests(unittest.TestCase):
         self.assertEqual(status, 1)
         self.assertIn("Example.woff2: sha256", err)
 
+    def test_changed_file_under_packaging_fails(self) -> None:
+        moved = self.root / "packaging/schemas/example"
+        moved.parent.mkdir(parents=True)
+        self.dir.rename(moved)
+        self.assertEqual(self.run_check(), (0, ""))
+        (moved / "Example.woff2").write_bytes(b"schema bytes, edited")
+        status, err = self.run_check()
+        self.assertEqual(status, 1)
+        self.assertIn("packaging/schemas/example/Example.woff2: sha256", err)
+
     def test_missing_file_fails(self) -> None:
         (self.dir / "Example.woff2").unlink()
         status, err = self.run_check()

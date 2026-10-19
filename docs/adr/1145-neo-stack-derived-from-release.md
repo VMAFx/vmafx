@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-1145: Derive the Intel NEO compute stack (gmmlib and IGC) dynamically from pinned compute-runtime release metadata
 
-- **Status**: Accepted
+- **Status**: Accepted (Superseded-in-part 2026-10-06 by [ADR-1271](1271-neo-buildkit-github-token-secret.md) for the ARG GITHUB_TOKEN transport clause)
 - **Date**: 2026-09-02
 - **Deciders**: kilian, Antigravity
 - **Tags**: `build`, `container`, `supply-chain`, `renovate`, `sycl`, `intel`

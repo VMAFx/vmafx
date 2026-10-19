@@ -26,12 +26,17 @@ MSVC_CLZ_GUARD = "scripts/ci/check-msvc-clz-shim.sh"
 GITIGNORE = REPO_ROOT / ".gitignore"
 KIND_SCRIPT = REPO_ROOT / "test" / "e2e" / "kind-cluster.sh"
 ASSERT_CONTEXT_SCRIPT = REPO_ROOT / "test" / "e2e" / "assert-kind-context.sh"
+VM_SCRIPT = REPO_ROOT / "test" / "e2e" / "incus-kind-vm.sh"
 KUTTL_CASES = REPO_ROOT / "test" / "e2e" / "kuttl-tests"
 KUTTL_CONFIG = KUTTL_CASES / "kuttl-test.yaml"
 INSTALL_STEP = KUTTL_CASES / "01-chart-cpu-score" / "00-install.yaml"
 READY_STEP = KUTTL_CASES / "01-chart-cpu-score" / "01-ready.yaml"
 SCORE_STEP = KUTTL_CASES / "01-chart-cpu-score" / "02-score.yaml"
 SCORE_SCRIPT = REPO_ROOT / "test" / "e2e" / "score-smoke.sh"
+HA_CASE = KUTTL_CASES / "02-controller-ha"
+HA_DIR = REPO_ROOT / "test" / "e2e" / "controller-ha"
+HA_DRIVER = HA_DIR / "driver"
+DRIVER_DOCKERFILE = REPO_ROOT / "docker" / "Dockerfile.e2e-driver"
 FIXTURE_SCRIPT = REPO_ROOT / "test" / "e2e" / "fixtures" / "gen-tiny-yuv.sh"
 DEFAULT_MODEL_HEADER = REPO_ROOT / "core" / "include" / "libvmaf" / "model.h"
 CAMBI_HEADER = REPO_ROOT / "core" / "src" / "feature" / "cambi_internal.h"
@@ -46,6 +51,8 @@ IMAGE_NAMES = (
     "ghcr.io/vmafx/vmafx-operator:e2e-test",
     "ghcr.io/vmafx/vmafx-node:e2e-test",
     "ghcr.io/vmafx/vmafx-server:e2e-test",
+    "ghcr.io/vmafx/vmafx-controller:e2e-test",
+    "ghcr.io/vmafx/vmafx-e2e-driver:e2e-test",
 )
 
 
@@ -119,9 +126,10 @@ def _stage_lineage(dockerfile: str, name: str) -> list[str]:
 # The libvmaf SONAME chain, copied as regular files and symlinks (ADR-1514):
 # `find` keeps Meson's object directory `libvmaf.so.<version>.p/` out, and
 # `cp -a` keeps the symlinks.
+# Both libraries' SONAME chains (libvmafx.so.1 and the compat libvmaf.so.3, ADR-2094).
 SONAME_CHAIN_COPY = (
-    "find /build/src -maxdepth 1 -name 'libvmaf.so*' \\( -type f -o -type l \\) \\\n"
-    "        -exec cp -a {} /dist/lib/ \\;"
+    "find /build/src -maxdepth 1 \\( -name 'libvmaf.so*' -o -name 'libvmafx.so*' \\) \\\n"
+    "        \\( -type f -o -type l \\) -exec cp -a {} /dist/lib/ \\;"
 )
 
 
@@ -241,6 +249,15 @@ class E2EFixtureGeometryTest(unittest.TestCase):
         )
         self.assertIsNotNone(yuv420_rejection(self.CONSTRAINED, 64, 64))
 
+    def test_failover_driver_streams_the_same_geometry(self) -> None:
+        # The controller failover case streams a synthetic clip from its
+        # driver instead of the committed pair; it must stay scorable too.
+        source = (HA_DRIVER / "fixtures.go").read_text(encoding="utf-8")
+        width, height, _ = _fixture_geometry()
+        for name, value in (("fixtureWidth", width), ("fixtureHeight", height)):
+            with self.subTest(constant=name):
+                self.assertRegex(source, rf"(?m)^\s+{name}\s+= {value}$")
+
     def test_unconstrained_model_accepts_small_input(self) -> None:
         features = ["VMAF_integer_feature_adm2_score", "VMAF_integer_feature_motion2_score"]
         self.assertIsNone(yuv420_rejection(features, 64, 64))
@@ -299,6 +316,10 @@ class E2ERuntimeContractTest(unittest.TestCase):
                 self.assertIn(SONAME_CHAIN_COPY, builder)
                 self.assertIn(
                     "cp /build/meson-private/libvmaf.pc /dist/lib/pkgconfig/libvmaf.pc",
+                    builder,
+                )
+                self.assertIn(
+                    "cp /build/meson-private/libvmafx.pc /dist/lib/pkgconfig/libvmafx.pc",
                     builder,
                 )
                 # A glob copies the object directory; a copy without -a turns
@@ -362,8 +383,15 @@ class E2ERuntimeContractTest(unittest.TestCase):
                 self.assertIn("FATAL: patch", source)
                 self.assertNotIn("patch -p1 <", source)
 
-        series = FFMPEG_SERIES.read_text(encoding="utf-8").splitlines()
-        self.assertIn("0019-ffmpeg-eliminate-gcc-14-build-diagnostics.patch", series)
+    def test_ffmpeg_images_take_the_diagnostics_fix_from_the_shared_series(self) -> None:
+        """ADR-3143: both images apply the shared fix series before the fork series."""
+        self.assertNotIn("diagnostics", FFMPEG_SERIES.read_text(encoding="utf-8"))
+        for dockerfile in (ROOT_DOCKERFILE, FFMPEG_DOCKERFILE):
+            with self.subTest(shared_series=dockerfile.name):
+                source = dockerfile.read_text(encoding="utf-8")
+                self.assertLess(
+                    source.index("ffmpeg-shared-series.sh apply"), source.index("series.txt")
+                )
 
     def test_language_standards_use_warning_clean_meson_options(self) -> None:
         """Language standards come from Meson's built-in preference lists.
@@ -434,6 +462,93 @@ class E2ERuntimeContractTest(unittest.TestCase):
         score_script = SCORE_SCRIPT.read_text(encoding="utf-8")
         self.assertIn("isinstance(score, bool)", score_script)
         self.assertIn("isinstance(feature_vmaf, bool)", score_script)
+
+    def test_failover_images_are_built_from_their_dockerfiles(self) -> None:
+        controller = _workflow_step(self.workflow, "Build vmafx-controller image (e2e tag)")
+        driver = _workflow_step(self.workflow, "Build failover driver image (e2e tag)")
+        self.assertRegex(controller, r"(?m)^\s+file:\s+docker/Dockerfile\.controller\s*$")
+        self.assertRegex(controller, r"(?m)^\s+target:\s+controller\s*$")
+        self.assertRegex(driver, r"(?m)^\s+file:\s+docker/Dockerfile\.e2e-driver\s*$")
+        self.assertRegex(driver, r"(?m)^\s+target:\s+driver\s*$")
+        for step in (controller, driver):
+            self.assertRegex(step, r"(?m)^\s+push:\s+false\s*$")
+        dockerfile = DRIVER_DOCKERFILE.read_text(encoding="utf-8")
+        self.assertRegex(dockerfile, r"(?m)^FROM\s+\$\{RELEASE_RUNTIME_STATIC\}\s+AS\s+driver\s*$")
+        self.assertIn("./test/e2e/controller-ha/driver", dockerfile)
+
+    def test_controller_failover_case_runs_on_postgres(self) -> None:
+        install = (HA_CASE / "00-install.yaml").read_text(encoding="utf-8")
+        ready = (HA_CASE / "01-ready.yaml").read_text(encoding="utf-8")
+        failover = (HA_CASE / "02-failover.yaml").read_text(encoding="utf-8")
+        values = (HA_DIR / "values.yaml").read_text(encoding="utf-8")
+
+        self.assertIn("bash ../../controller-ha/install-cnpg.sh", install)
+        self.assertIn("helm upgrade --install vmafx", install)
+        self.assertIn("-f ../../controller-ha/values.yaml", install)
+        self.assertIn("cluster.postgresql.cnpg.io/vmafx-db", ready)
+        self.assertIn("--for=condition=Complete", ready)
+        self.assertIn("app.kubernetes.io/component=migrate", ready)
+        self.assertIn("deployment/vmafx-controller", ready)
+        self.assertIn("bash ../../controller-ha/run-driver.sh", failover)
+        self.assertFalse((HA_CASE / "01-assert.yaml").exists())
+        self.assertRegex(values, r"(?m)^  replicas: 2$")
+        self.assertRegex(values, r"(?m)^    backend: postgres$")
+        self.assertEqual(values.count("pullPolicy: Never"), 2)
+        self.assertEqual(values.count("tag: e2e-test"), 3)
+        self.assertRegex(values, r"(?m)^gpu:\n  vendor: cpu$")
+
+    def test_failover_driver_is_the_scoring_root(self) -> None:
+        # The nodes read the inputs from the driver's Service; the chart's
+        # scoring root, the driver's default URL and the Service must agree.
+        values = (HA_DIR / "values.yaml").read_text(encoding="utf-8")
+        manifest = (HA_DIR / "driver.yaml").read_text(encoding="utf-8")
+        main = (HA_DRIVER / "main.go").read_text(encoding="utf-8")
+        url = "http://vmafx-e2e-driver:8080/fixtures"
+        self.assertIn(f"    - {url}\n", values)
+        self.assertIn(f'"fixtures-url", "{url}"', main)
+        self.assertRegex(
+            manifest, r"(?m)^    kind: Service\n    metadata:\n      name: vmafx-e2e-driver$"
+        )
+        self.assertRegex(manifest, r"(?m)^          port: 8080$")
+        self.assertRegex(manifest, r"(?m)^      backoffLimit: 0$")
+        self.assertIn("image: ghcr.io/vmafx/vmafx-e2e-driver:e2e-test", manifest)
+        self.assertIn("imagePullPolicy: Never", manifest)
+
+    def test_database_operator_is_pinned_and_checked(self) -> None:
+        script = (HA_DIR / "install-cnpg.sh").read_text(encoding="utf-8")
+        self.assertRegex(script, r'(?m)^CNPG_MANIFEST_SHA256="[0-9a-f]{64}"$')
+        self.assertRegex(script, r'(?m)^CNPG_IMAGE_DIGEST="sha256:[0-9a-f]{64}"$')
+        self.assertIn("sha256sum --check --strict", script)
+        self.assertIn('"${REPO_ROOT}/test/e2e/assert-kind-context.sh"', script)
+        # The deployment guide shows the install command of the same release.
+        version = re.search(r'(?m)^CNPG_VERSION="([0-9.]+)"$', script)
+        self.assertIsNotNone(version)
+        guide = (REPO_ROOT / "docs/development/k8s-deployment.md").read_text(encoding="utf-8")
+        shown = set(
+            re.findall(r"cloudnative-pg/releases/download/v([0-9.]+)/cnpg-([0-9.]+)\.yaml", guide)
+        )
+        self.assertEqual(shown, {(version.group(1), version.group(1))} if version else set())
+        runner = (HA_DIR / "run-driver.sh").read_text(encoding="utf-8")
+        self.assertIn('"${REPO_ROOT}/test/e2e/assert-kind-context.sh"', runner)
+        self.assertIn('s.get("ok") is True', runner)
+
+    def test_local_clusters_run_in_an_incus_vm(self) -> None:
+        # The kubelet writes kernel settings containers do not isolate
+        # (vm.overcommit_memory, kernel.panic_on_oops); a workstation runs the
+        # cluster in a VM with its own kernel and its own incus profile.
+        vm = VM_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn('incus launch "${IMAGE}" "${VM}" --vm --no-profiles --profile "${VM}"', vm)
+        self.assertIn('limits.cpu="${CPUS}" limits.memory="${MEMORY}"', vm)
+        self.assertIn('[[ "${VM}" != default ]]', vm)
+        self.assertIn("sha256sum --check --strict", vm)
+        kind_script = KIND_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn('incus exec "${INCUS_VM}" -- kind "$@"', kind_script)
+        self.assertIn('apiServerAddress: \\"${address}\\"', kind_script)
+        guard = ASSERT_CONTEXT_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn('incus-kind-vm.sh" address', guard)
+        self.assertIn('"https://${vm_address}:6443"', guard)
+        # The workflow's hosted runner is disposable: it never sets the VM.
+        self.assertNotIn("VMAFX_E2E_INCUS_VM", self.workflow)
 
     def test_chart_service_selects_only_server_workloads(self) -> None:
         service = (CHART_TEMPLATES / "service.yaml").read_text(encoding="utf-8")

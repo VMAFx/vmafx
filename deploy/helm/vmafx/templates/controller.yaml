@@ -3,17 +3,22 @@ SPDX-License-Identifier: EUPL-1.2
 Copyright 2026 Lusoris
 
 deploy/helm/vmafx/templates/controller.yaml
-The vmafx-controller workload (ADR-1589): a one-replica Deployment (the job
-queue is an embedded SQLite database, ADR-1119, so Recreate and a
-ReadWriteOnce volume), its Service with the HTTP and gRPC ports the nodes, the
-operator and the clients use, and the queue's PersistentVolumeClaim. The auth
-settings of auth.* configure this workload only (vmafx.controllerAuthEnv).
+The vmafx-controller workload (ADR-1589): its Deployment, its Service with the
+HTTP and gRPC ports the nodes, the operator and the clients use, and with the
+sqlite store the queue's PersistentVolumeClaim. controller.store.backend
+sqlite: one replica, Recreate, the queue on the claim (ADR-1119). postgres:
+controller.replicas pods with a rolling update and no claim, the connection
+string from a Secret (ADR-2350; the database and the migration Job are in
+controller-database.yaml). The auth settings of auth.* configure this workload
+only. Its VMAFX_* environment is vmafx.env.controller (_config.gen.tpl,
+generated from api/vmafx-platform.toml, ADR-2350 D13).
 
 ADR-0711: vmafx-controller. ADR-0794: auth gateway. ADR-1519: tenant registry.
 */ -}}
 {{- if .Values.controller.enabled }}
 {{- $fullName := include "vmafx.fullname" . }}
 {{- $claim := .Values.controller.persistence.existingClaim | default (printf "%s-controller-data" $fullName) }}
+{{- $postgres := eq (include "vmafx.controllerStoreBackend" .) "postgres" }}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -36,10 +41,17 @@ metadata:
     {{- include "vmafx.labels" . | nindent 4 }}
     app.kubernetes.io/component: controller
 spec:
-  # One replica: two controllers would each own a different SQLite queue.
-  replicas: 1
+  replicas: {{ .Values.controller.replicas }}
   strategy:
+    {{- if $postgres }}
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+    {{- else }}
+    # One replica on its own queue: a second pod must never run beside it.
     type: Recreate
+    {{- end }}
   selector:
     matchLabels:
       {{- include "vmafx.selectorLabels" . | nindent 6 }}
@@ -71,6 +83,7 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- include "vmafx.controllerTopologySpread" . | nindent 6 }}
       containers:
         - name: vmafx-controller
           image: {{ include "vmafx.controllerImage" . | quote }}
@@ -83,13 +96,7 @@ spec:
               containerPort: {{ .Values.controller.grpcPort }}
               protocol: TCP
           env:
-            - name: VMAFX_HTTP_ADDR
-              value: ":{{ .Values.controller.httpPort }}"
-            - name: VMAFX_GRPC_LISTEN
-              value: ":{{ .Values.controller.grpcPort }}"
-            - name: VMAFX_DB_PATH
-              value: /data/vmafx-controller.db
-            {{- include "vmafx.controllerAuthEnv" . | nindent 12 }}
+            {{- include "vmafx.env.controller" . }}
             {{- range $k, $v := .Values.controller.env }}
             - name: {{ $k | quote }}
               value: {{ $v | quote }}
@@ -113,11 +120,14 @@ spec:
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           volumeMounts:
+            {{- if not $postgres }}
             - name: data
               mountPath: /data
+            {{- end }}
             - name: tmp
               mountPath: /tmp
       volumes:
+        {{- if not $postgres }}
         - name: data
           {{- if .Values.controller.persistence.enabled }}
           persistentVolumeClaim:
@@ -125,6 +135,7 @@ spec:
           {{- else }}
           emptyDir: {}
           {{- end }}
+        {{- end }}
         - name: tmp
           emptyDir: {}
 ---
@@ -150,7 +161,7 @@ spec:
       port: {{ .Values.controller.grpcPort }}
       targetPort: grpc
       protocol: TCP
-{{- if and .Values.controller.persistence.enabled (not .Values.controller.persistence.existingClaim) }}
+{{- if and (not $postgres) .Values.controller.persistence.enabled (not .Values.controller.persistence.existingClaim) }}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim

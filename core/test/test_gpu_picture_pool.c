@@ -59,6 +59,16 @@ static char *fetch_and_check(VmafGpuPicturePool *pool, VmafPicture *pic)
     return NULL;
 }
 
+/* The ring holds four pictures: the fifth fetch wraps to the first buffer. */
+enum { RING_FETCHES = 5 };
+
+static char *fetch_ring(VmafGpuPicturePool *pool, VmafPicture pics[RING_FETCHES])
+{
+    for (unsigned i = 0; i < RING_FETCHES; i++)
+        mu_assert_msg(fetch_and_check(pool, &pics[i]));
+    return NULL;
+}
+
 static char *test_ring_buffer(void)
 {
     VmafCudaCookie my_cookie = {
@@ -88,23 +98,11 @@ static char *test_ring_buffer(void)
     err = vmaf_gpu_picture_pool_init(&ring_buffer, cfg);
     mu_assert("problem during vmaf_picture_pool_init", !err);
 
-    VmafPicture pic_1;
-    mu_assert_msg(fetch_and_check(ring_buffer, &pic_1));
-
-    VmafPicture pic_2;
-    mu_assert_msg(fetch_and_check(ring_buffer, &pic_2));
-
-    VmafPicture pic_3;
-    mu_assert_msg(fetch_and_check(ring_buffer, &pic_3));
-
-    VmafPicture pic_4;
-    mu_assert_msg(fetch_and_check(ring_buffer, &pic_4));
-
-    VmafPicture pic_5;
-    mu_assert_msg(fetch_and_check(ring_buffer, &pic_5));
+    VmafPicture pics[RING_FETCHES];
+    mu_assert_msg(fetch_ring(ring_buffer, pics));
 
     mu_assert("pic_5 should use the same data buffer as pic_1 did.",
-              pic_1.data[0] == pic_5.data[0]);
+              pics[0].data[0] == pics[RING_FETCHES - 1u].data[0]);
 
     err = vmaf_gpu_picture_pool_close(ring_buffer);
     mu_assert("problem during vmaf_gpu_picture_pool_close", !err);

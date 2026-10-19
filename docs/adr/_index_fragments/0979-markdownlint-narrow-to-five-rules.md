@@ -1,0 +1,1 @@
+| [ADR-0979](0979-markdownlint-narrow-to-five-rules.md) | Tombstone: narrowing markdownlint to five rules, rejected; written on 2026-10-06 for a number that is cited but had no file. | Superseded by ADR-0980 | tombstone, docs, lint, markdown |

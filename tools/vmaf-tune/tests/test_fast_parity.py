@@ -127,7 +127,9 @@ def _run_go_twin(repo_root: Path, vmaf_bin: str) -> tuple[list[float], list[floa
     nothing re-implemented on the Python side.
     """
     env = dict(os.environ)
-    env["PATH"] = f"{Path(vmaf_bin).resolve().parent}{os.pathsep}{env.get('PATH', '')}"
+    # The Go test takes the vmaf under test from VMAF_BIN (internal/vmaftest),
+    # never from PATH.
+    env["VMAF_BIN"] = str(Path(vmaf_bin).resolve())
     env.setdefault("GOTOOLCHAIN", "auto")
     completed = subprocess.run(
         ["go", "test", "-count=1", "-v", "-run", f"^{_GO_TEST_NAME}$", "./pkg/fast/"],

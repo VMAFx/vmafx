@@ -12,6 +12,7 @@ invariant: Quantized int8 models redirect through fallback session opening and d
 
 - **Sidecar `quant_mode` drives redirect**:
   - entry points: `vmaf_use_tiny_model()` (`dnn_attach_api.c`), `vmaf_dnn_session_open()` (`dnn_api.c`).
+  - explicit `.int8.onnx` paths: if the caller passes a path ending in `.int8.onnx`, path resolution preserves it directly without appending a redundant `.int8` suffix (shared `kInt8Suffix` early return in both entry points).
   - sidecar `quant_mode != VMAF_QUANT_FP32` -> load sibling `<basename>.int8.onnx` when present and valid; else fp32 baseline, logged at `VMAF_LOG_LEVEL_DEBUG` (ADR-1032).
   - trigger 1: int8 file fails size cap or op allowlist -> each entry point's own path resolver.
   - trigger 2: `vmaf_ort_open()` fails on int8 graph that passed those gates (ONNX Runtime build without kernel for quantised op; seen: `ConvInteger`) -> `vmaf_ort_open_with_fallback()` in `ort_backend.c`, only home. First attempt logs its `CreateSession` failure at DEBUG.

@@ -94,7 +94,7 @@ paths post-dates the container image's build timestamp, rebuild.
 | gdb / lldb crash investigation | Yes — use the sanitizer-enabled host build |
 | ASan / UBSan / TSan sweep | Yes — `meson setup build-asan -Db_sanitize=address` |
 | Producing a release binary | **No** — must use container |
-| Running the Netflix golden gate | Yes — it is a verification job, not an artifact producer, and is out of scope for this policy. The CI job `netflix-golden` in `tests-and-quality-gates.yml` builds with host meson/ninja on `ubuntu-latest` and runs pytest there |
+| Running the Netflix golden gate | Yes — it is a verification job, not an artifact producer, and is out of scope for this policy. The CI job `netflix-golden` in `tests-and-quality-gates.yml` builds with host meson/ninja on `ubuntu-26.04` and runs pytest there |
 | Quick local smoke test during development | Yes — acceptable, but results should not be published |
 
 If a backend fails to reproduce in the container, diagnose the container first.
@@ -262,7 +262,7 @@ and been cancelled.
 [ADR-1354](../adr/1354-native-bundle-release-track.md) then moved the compile
 from the Ubuntu 26.04 `build-deps` stage onto the Debian 13 release track.
 `build-artifacts` in `.github/workflows/supply-chain.yml` runs on
-`ubuntu-latest`:
+`ubuntu-26.04`:
 
 1. It checks out the release tag.
 2. It builds the `release-build` stage of that tag's `dev/Containerfile` with
@@ -292,7 +292,7 @@ writes the same bytes. The gate accepts no other identity.
 `ubuntu-24.04` (glibc 2.39, the oldest GitHub-hosted image that can load it)
 and starts the CLI on the release runtime image `RELEASE_RUNTIME_CC`
 (distroless `cc-debian13`), each time with no `LD_LIBRARY_PATH`, so the
-CLI must find `libvmaf.so.3` through its RUNPATH `$ORIGIN`. See
+CLI must find `libvmaf.so.3` and `libvmafx.so.1` through its RUNPATH `$ORIGIN`. See
 [the release guide](release.md#native-linux-release-layout) for the runtime
 requirements.
 
@@ -320,7 +320,9 @@ that rule. Until ADR-1354 it was built on the `DEV_*` track and needed glibc
 
 **Rehearsal on every container-affecting pull request.** The Dev Container PR
 gate (`dev-container-build.yml`) builds `release-build` with the same script
-and runs the same `docker run` invocation. A pull request checkout reaches no tag,
+and runs the same `docker run` invocation. On a light-tier pull request it builds when the
+image's own inputs change; the full tier and the master push build it for every
+input the image copies ([CI tiers](ci.md), ADR-3338). A pull request checkout reaches no tag,
 so the gate first creates a local lightweight tag named after
 `.release-please-manifest.json`'s version on `HEAD`; `vmaf --version` then
 reports the `v<version>-0-g<commit>` form a release reports, and the verifier

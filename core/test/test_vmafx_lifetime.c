@@ -35,6 +35,7 @@
 #include "test.h"
 #include "vmafx/vmafx.h"
 #include "vmafx_test_util.h"
+#include "vmafx_window_test_util.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
@@ -167,6 +168,61 @@ static char *test_failed_destroy_is_retried(void)
     return NULL;
 }
 
+typedef struct KeptCalls {
+    unsigned count;
+    VmafxStatus status;
+} KeptCalls;
+
+static void kept_callback(VmafxWindow *window, const VmafxWindowResult *result, void *user)
+{
+    (void)window;
+    KeptCalls *const calls = user;
+    calls->count++;
+    calls->status = result->status;
+}
+
+/* RC4 WP4 (ADR-2074): a failed destroy pauses the window completion thread
+ * and resumes it; an open window stays open (not completed as destroyed) and
+ * completes when its last score arrives after the failure. */
+/* A window over imported scores of "kept" frames 0 and 1, with a callback. */
+static VmafxWindow *kept_window(VmafxContext *context, KeptCalls *calls)
+{
+    VmafxWindowRequest r = vw_request(vw_feature("kept"), 0, 1, VW_ALL_POOLS);
+    r.on_complete = kept_callback;
+    r.user = calls;
+    VmafxWindow *window = NULL;
+    return context && vmafx_window_submit(context, &r, &window, NULL) == VMAFX_OK ? window : NULL;
+}
+
+/* After the failed destroy the window is still open and completes with its
+ * last score: the completion thread resumed. */
+static char *complete_after_failed_destroy(VmafxContext *context, const VmafxWindow *window)
+{
+    VmafxWindowResult result;
+    mu_assert("still open", !vw_done(window, &result));
+    mu_assert("last score", vmafx_context_import_score(context, "kept", 1, 2.0, NULL) == VMAFX_OK);
+    mu_assert("completes after the failed destroy",
+              vw_complete(window, &result) && result.status == VMAFX_OK);
+    return NULL;
+}
+
+static char *test_failed_destroy_keeps_windows(void)
+{
+    static KeptCalls calls;
+    VmafxContext *context = threaded_context();
+    VmafxWindow *window = kept_window(context, &calls);
+    mu_assert("window", window != NULL);
+    mu_assert("first score", vmafx_context_import_score(context, "kept", 0, 1.0, NULL) == VMAFX_OK);
+    fail_pool_destroy_once = 1;
+    mu_assert("the forced failure fails the destroy",
+              vmafx_context_destroy(context, NULL) == VMAFX_E_IO);
+    mu_assert_msg(complete_after_failed_destroy(context, window));
+    mu_assert("the retried destroy succeeds", vmafx_context_destroy(context, NULL) == VMAFX_OK);
+    mu_assert("one callback, with the scores", calls.count == 1 && calls.status == VMAFX_OK);
+    vmafx_window_release(window);
+    return NULL;
+}
+
 static char *test_frames_retained_across_n_minus_2(void)
 {
     VmafxContext *context = threaded_context();
@@ -188,6 +244,7 @@ char *run_tests(void)
         MU_TEST(test_model_released_before_destroy),
         MU_TEST(test_failed_destroy_is_retried),
         MU_TEST(test_frames_retained_across_n_minus_2),
+        MU_TEST(test_failed_destroy_keeps_windows),
     };
     return mu_run_table(tests, MU_TABLE_LEN(tests));
 }

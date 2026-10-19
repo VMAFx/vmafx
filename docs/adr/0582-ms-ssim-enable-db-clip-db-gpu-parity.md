@@ -85,3 +85,12 @@ pre-patch binary on both backends.
 - `.workingdir/wiring-audit-2026-05-16.md` — source finding
 - `.workingdir/copy-paste-parity-audit-2026-05-16.md` — severity rating
 - PR that implements this: fix/ms-ssim-gpu-enable-db-lcs-sycl-2026-05-16
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 21: `docs/metrics/ms_ssim.md.`: Path `docs/metrics/ms_ssim.md`
+  does not exist on master (actual path uses a hyphen:
+  docs/metrics/ms-ssim.md).

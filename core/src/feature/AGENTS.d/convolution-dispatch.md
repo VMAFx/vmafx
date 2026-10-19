@@ -19,6 +19,19 @@ invariant: Convolution scanline helpers and SIMD dispatch twin synchronization a
   See [ADR-0143](../../../../docs/adr/0143-port-netflix-f3a628b4-generalized-avx-convolve.md)
   and [rebase-notes 0036](../../../../docs/rebase-notes.md).
 
+## `convolution_f32_avx_rows_s`: SpEED's AVX2 vertical pass (Netflix/vmaf 9cb9479f)
+
+Public, called from `vif_tools.c` (`vif_filter1d_vertical_dispatch_s()`) only.
+Caller resolves mirrored row pointers; function takes no stride and no
+alignment (unaligned loads, masked tail: no read or write past `width`), so
+SpEED's fused filter runs it on any plane. Returns scalar vertical pass's
+bits (products in tap order, sum from 0, no FMA). Fork form of upstream's
+`convolution_f32_avx_dec16_s()` vertical half; decimated horizontal pass
+stays in `vif_tools.c`. **On rebase**: do not import upstream's
+`convolution_f32_avx_dec16_s()` or `VMAF_NO_FUSE` (contraction already off,
+ADR-1461); port tap-order changes into this function. Guard:
+`test_speed_filter` (`test_avx_rows`, `test_filter_dec16`).
+
 ## `convolution_f32_c_s` dispatches to SIMD — fix the twins, not just the scalar
 
 `core/src/feature/common/convolution.c::convolution_f32_c_s` returns straight

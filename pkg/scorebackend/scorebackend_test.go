@@ -1,327 +1,211 @@
 // Copyright 2026 Lusoris
 // SPDX-License-Identifier: EUPL-1.2
 //
-// pkg/scorebackend/scorebackend_test.go — table-driven tests for the Go port
-// of the backend-selection half of vmaftune/score_backend.py.
+// pkg/scorebackend/scorebackend_test.go — tests for the Go twin of the
+// backend-selection half of vmaftune/score_backend.py. The report and
+// selection cases come from testdata/score_backend_selection.json, which the
+// Python tests replay too (ADR-1874).
 
 package scorebackend
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
 
-// fakeHost builds a Runner + LookPath pair describing a synthetic machine.
-//
-//	present  — binaries LookPath resolves
-//	stdout   — per-binary stdout
-//	failing  — binaries whose exit status is non-zero
-func fakeHost(present map[string]bool, stdout map[string]string, failing map[string]bool) Options {
-	return Options{
-		LookPath: func(name string) (string, error) {
-			if present[name] {
-				return "/usr/bin/" + name, nil
-			}
-			return "", exec.ErrNotFound
-		},
-		Run: func(_ context.Context, name string, _ ...string) (string, string, bool) {
-			return stdout[name], "", !failing[name]
-		},
-	}
+// sharedCases is testdata/score_backend_selection.json.
+type sharedCases struct {
+	Reports []struct {
+		Case   string   `json:"case"`
+		Stdout string   `json:"stdout"`
+		Usable []string `json:"usable"`
+	} `json:"reports"`
+	Selections []struct {
+		Prefer    string   `json:"prefer"`
+		Available []string `json:"available"`
+		Fallbacks []string `json:"fallbacks"`
+		Want      string   `json:"want"`
+		Error     string   `json:"error"`
+	} `json:"selections"`
 }
 
-// forkHelpText is the fork's `vmaf --help` line advertising every backend.
-const forkHelpText = `
-  --backend $name:              exclusive backend selector — auto|cpu|cuda|sycl|hip.
-`
-
-// TestParseSupportedBackends pins the --help alternation parser.
-func TestParseSupportedBackends(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name string
-		help string
-		want []string
-	}{
-		{
-			name: "fork help advertises every backend",
-			help: forkHelpText,
-			want: []string{"cpu", "cuda", "sycl", "hip"},
-		},
-		{
-			name: "empty help still yields cpu",
-			help: "",
-			want: []string{"cpu"},
-		},
-		{
-			name: "upstream help without a backend line yields cpu",
-			help: "usage: vmaf --reference REF --distorted DIS\n",
-			want: []string{"cpu"},
-		},
-		{
-			name: "partial build advertises only what it has",
-			help: "  --backend $name: auto|cpu|cuda.\n",
-			want: []string{"cpu", "cuda"},
-		},
-		{
-			name: "prose mentioning CUDA must not be a false positive",
-			help: "This build was compiled without cuda support; see docs about cuda.\n",
-			want: []string{"cpu"},
-		},
-		{
-			name: "trailing-newline delimiter matches",
-			help: "auto|cpu|sycl\nmore text",
-			want: []string{"cpu", "sycl"},
-		},
-		{
-			name: "trailing-space delimiter matches",
-			help: "auto|cpu|hip and so on",
-			want: []string{"cpu", "hip"},
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			got := ParseSupportedBackends(tc.help)
-			for _, want := range tc.want {
-				if !got[want] {
-					t.Errorf("backend %q missing from %v", want, got)
-				}
-			}
-			if len(got) != len(tc.want) {
-				t.Errorf("parsed %v, want exactly %v", got, tc.want)
-			}
-		})
-	}
-}
-
-// TestDetect covers the probe matrix: the vmaf binary has to advertise the
-// backend AND the hardware probe has to succeed.
-func TestDetect(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name    string
-		present map[string]bool
-		stdout  map[string]string
-		failing map[string]bool
-		want    []string
-	}{
-		{
-			name:    "no vmaf binary at all yields cpu only",
-			present: map[string]bool{},
-			want:    []string{"cpu"},
-		},
-		{
-			name:    "fork build with an NVIDIA GPU",
-			present: map[string]bool{"vmaf": true, "nvidia-smi": true},
-			stdout: map[string]string{
-				"vmaf":        forkHelpText,
-				"nvidia-smi":  "GPU 0: NVIDIA GeForce RTX 4090 (UUID: GPU-abc)",
-				"placeholder": "",
-			},
-			want: []string{"cpu", "cuda"},
-		},
-		{
-			name:    "nvidia-smi present but reporting no GPU",
-			present: map[string]bool{"vmaf": true, "nvidia-smi": true},
-			stdout: map[string]string{
-				"vmaf":       forkHelpText,
-				"nvidia-smi": "No devices found.",
-			},
-			want: []string{"cpu"},
-		},
-		{
-			name:    "nvidia-smi present but failing",
-			present: map[string]bool{"vmaf": true, "nvidia-smi": true},
-			stdout: map[string]string{
-				"vmaf":       forkHelpText,
-				"nvidia-smi": "GPU 0: NVIDIA",
-			},
-			failing: map[string]bool{"nvidia-smi": true},
-			want:    []string{"cpu"},
-		},
-		{
-			name:    "sycl-ls listing a GPU device",
-			present: map[string]bool{"vmaf": true, "sycl-ls": true},
-			stdout: map[string]string{
-				"vmaf":    forkHelpText,
-				"sycl-ls": "[ext_oneapi_level_zero:gpu][0] Intel(R) Arc(TM) A770",
-			},
-			want: []string{"cpu", "sycl"},
-		},
-		{
-			name:    "sycl-ls listing only CPU devices",
-			present: map[string]bool{"vmaf": true, "sycl-ls": true},
-			stdout: map[string]string{
-				"vmaf":    forkHelpText,
-				"sycl-ls": "[opencl:cpu][0] Intel(R) OpenCL",
-			},
-			want: []string{"cpu"},
-		},
-		{
-			name:    "rocminfo naming a gfx target",
-			present: map[string]bool{"vmaf": true, "rocminfo": true},
-			stdout: map[string]string{
-				"vmaf":     forkHelpText,
-				"rocminfo": "  Name:                    gfx1100",
-			},
-			want: []string{"cpu", "hip"},
-		},
-		{
-			name:    "rocm-smi fallback when rocminfo is absent",
-			present: map[string]bool{"vmaf": true, "rocm-smi": true},
-			stdout: map[string]string{
-				"vmaf":     forkHelpText,
-				"rocm-smi": "GPU[0] : Card Series: Radeon RX 7900 XTX",
-			},
-			want: []string{"cpu", "hip"},
-		},
-		{
-			name:    "every backend live, reported in canonical order",
-			present: map[string]bool{"vmaf": true, "nvidia-smi": true, "sycl-ls": true, "rocminfo": true},
-			stdout: map[string]string{
-				"vmaf":       forkHelpText,
-				"nvidia-smi": "GPU 0: NVIDIA",
-				"sycl-ls":    "[opencl:gpu][0] Intel",
-				"rocminfo":   "gfx1100",
-			},
-			want: []string{"cpu", "cuda", "sycl", "hip"},
-		},
-		{
-			name:    "a GPU present but the vmaf build lacks the backend",
-			present: map[string]bool{"vmaf": true, "nvidia-smi": true},
-			stdout: map[string]string{
-				"vmaf":       "usage: vmaf ...\n",
-				"nvidia-smi": "GPU 0: NVIDIA",
-			},
-			want: []string{"cpu"},
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			opts := fakeHost(tc.present, tc.stdout, tc.failing)
-			got := Detect(context.Background(), opts)
-			if strings.Join(got, ",") != strings.Join(tc.want, ",") {
-				t.Errorf("Detect = %v, want %v", got, tc.want)
-			}
-		})
-	}
-}
-
-// TestSelect covers preference resolution, including the strict-mode failure
-// that must never silently downgrade.
-func TestSelect(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name       string
-		prefer     string
-		available  []string
-		fallbacks  []string
-		want       string
-		wantErr    bool
-		wantUnavai bool
-	}{
-		{
-			name: "auto prefers cuda", prefer: "auto",
-			available: []string{"cpu", "cuda", "sycl"}, want: "cuda",
-		},
-		{
-			name: "auto falls through to sycl", prefer: "auto",
-			available: []string{"cpu", "sycl"}, want: "sycl",
-		},
-		{
-			name: "auto falls through to hip", prefer: "auto",
-			available: []string{"cpu", "hip"}, want: "hip",
-		},
-		{
-			name: "auto lands on cpu", prefer: "auto",
-			available: []string{"cpu"}, want: "cpu",
-		},
-		{
-			name: "auto returns cpu even when nothing is available", prefer: "auto",
-			available: []string{}, want: "cpu",
-		},
-		{
-			name: "a custom fallback chain is honoured", prefer: "auto",
-			available: []string{"cpu", "cuda", "sycl"},
-			fallbacks: []string{"sycl", "cuda", "cpu"}, want: "sycl",
-		},
-		{
-			name: "an explicit empty fallback chain goes directly to cpu", prefer: "auto",
-			available: []string{"cpu", "cuda"}, fallbacks: []string{}, want: "cpu",
-		},
-		{
-			name: "an explicit available backend is honoured", prefer: "cuda",
-			available: []string{"cpu", "cuda"}, want: "cuda",
-		},
-		{
-			name: "explicit cpu is honoured", prefer: "cpu",
-			available: []string{"cpu", "cuda"}, want: "cpu",
-		},
-		{
-			name:   "an explicit unavailable backend fails rather than downgrading",
-			prefer: "cuda", available: []string{"cpu"},
-			wantErr: true, wantUnavai: true,
-		},
-		{
-			name: "an unknown backend name is rejected", prefer: "vulkan",
-			available: []string{"cpu"}, wantErr: true,
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			got, err := Select(context.Background(), tc.prefer, Options{
-				Available: tc.available,
-				Fallbacks: tc.fallbacks,
-			})
-			if tc.wantErr {
-				if err == nil {
-					t.Fatalf("want an error, got %q", got)
-				}
-				if IsUnavailable(err) != tc.wantUnavai {
-					t.Errorf("IsUnavailable = %v, want %v (err: %v)",
-						IsUnavailable(err), tc.wantUnavai, err)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("Select: %v", err)
-			}
-			if got != tc.want {
-				t.Errorf("Select(%q) = %q, want %q", tc.prefer, got, tc.want)
-			}
-		})
-	}
-}
-
-// TestSelectRunsDetectionWhenAvailableIsNil verifies the default path probes
-// the host rather than assuming a list.
-func TestSelectRunsDetectionWhenAvailableIsNil(t *testing.T) {
-	t.Parallel()
-
-	opts := fakeHost(
-		map[string]bool{"vmaf": true, "nvidia-smi": true},
-		map[string]string{"vmaf": forkHelpText, "nvidia-smi": "GPU 0: NVIDIA"},
-		nil,
-	)
-	got, err := Select(context.Background(), "auto", opts)
+func loadSharedCases(t *testing.T) sharedCases {
+	t.Helper()
+	path := filepath.Join("..", "..", "testdata", "score_backend_selection.json")
+	raw, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("Select: %v", err)
+		t.Fatalf("read %s: %v", path, err)
 	}
-	if got != "cuda" {
-		t.Errorf("Select = %q, want cuda", got)
+	var cases sharedCases
+	if err := json.Unmarshal(raw, &cases); err != nil {
+		t.Fatalf("parse %s: %v", path, err)
+	}
+	if len(cases.Reports) == 0 || len(cases.Selections) == 0 {
+		t.Fatalf("%s holds no cases", path)
+	}
+	return cases
+}
+
+// reportRunner returns Options whose vmaf prints stdout for --list-backends
+// (or fails), and records each argv it was given.
+func reportRunner(stdout string, ok bool, calls *[][]string) Options {
+	return Options{
+		VMAFBin: "/opt/vmaf/bin/vmaf",
+		Run: func(_ context.Context, name string, args ...string) (string, string, bool) {
+			if calls != nil {
+				*calls = append(*calls, append([]string{name}, args...))
+			}
+			return stdout, "unknown option", ok
+		},
+		Warnings: &bytes.Buffer{},
+	}
+}
+
+// TestSharedReportCases replays the report cases of the shared table.
+func TestSharedReportCases(t *testing.T) {
+	t.Parallel()
+	for _, tc := range loadSharedCases(t).Reports {
+		report, err := ParseReport(tc.Stdout)
+		if tc.Usable == nil {
+			if err == nil {
+				t.Errorf("%s: ParseReport accepted %q", tc.Case, tc.Stdout)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("%s: ParseReport: %v", tc.Case, err)
+			continue
+		}
+		if got := UsableBackends(report); !slices.Equal(got, tc.Usable) {
+			t.Errorf("%s: usable = %v, want %v", tc.Case, got, tc.Usable)
+		}
+	}
+}
+
+// TestSharedSelectionCases replays the selection cases of the shared table.
+func TestSharedSelectionCases(t *testing.T) {
+	t.Parallel()
+	for _, tc := range loadSharedCases(t).Selections {
+		got, err := Select(context.Background(), tc.Prefer, Options{
+			Available: tc.Available,
+			Fallbacks: tc.Fallbacks,
+		})
+		label := fmt.Sprintf("Select(%q, available=%v, fallbacks=%v)", tc.Prefer, tc.Available,
+			tc.Fallbacks)
+		switch tc.Error {
+		case "unavailable":
+			if !IsUnavailable(err) {
+				t.Errorf("%s = %q, %v; want an *UnavailableError", label, got, err)
+			}
+		case "unknown":
+			if err == nil || IsUnavailable(err) {
+				t.Errorf("%s = %q, %v; want an unknown-backend error", label, got, err)
+			}
+		default:
+			if err != nil || got != tc.Want {
+				t.Errorf("%s = %q, %v; want %q", label, got, err, tc.Want)
+			}
+		}
+	}
+}
+
+// TestDetectRunsListBackends checks Detect asks the binary, not the host.
+func TestDetectRunsListBackends(t *testing.T) {
+	t.Parallel()
+	cases := loadSharedCases(t)
+	var calls [][]string
+	got := Detect(context.Background(), reportRunner(cases.Reports[1].Stdout, true, &calls))
+	if !slices.Equal(got, []string{"cpu", "cuda"}) {
+		t.Errorf("Detect = %v, want [cpu cuda]", got)
+	}
+	if len(calls) != 1 || !slices.Equal(calls[0], []string{"/opt/vmaf/bin/vmaf", "--list-backends"}) {
+		t.Errorf("runner calls = %v, want one vmaf --list-backends", calls)
+	}
+}
+
+// TestCPUOnlyBuildIsNotOfferedAGPU is the defect this design replaces: a
+// CPU-only vmaf on a host with GPU tools. The help text names every backend
+// whatever the build, and the vendor tools answered for the host, so auto
+// picked a backend the binary then refused.
+func TestCPUOnlyBuildIsNotOfferedAGPU(t *testing.T) {
+	t.Parallel()
+	cases := loadSharedCases(t)
+	opts := reportRunner(cases.Reports[0].Stdout, true, nil)
+	got, err := Select(context.Background(), "auto", opts)
+	if err != nil || got != "cpu" {
+		t.Errorf("Select(auto) on a CPU-only build = %q, %v; want cpu", got, err)
+	}
+	if _, err := Select(context.Background(), "cuda", opts); !IsUnavailable(err) {
+		t.Errorf("Select(cuda) on a CPU-only build: err = %v, want *UnavailableError", err)
+	}
+}
+
+// TestOldBinaryYieldsCPUAndAWarning covers a vmaf without --list-backends.
+func TestOldBinaryYieldsCPUAndAWarning(t *testing.T) {
+	t.Parallel()
+	opts := reportRunner("", false, nil)
+	warnings := &bytes.Buffer{}
+	opts.Warnings = warnings
+	if got := Detect(context.Background(), opts); !slices.Equal(got, []string{"cpu"}) {
+		t.Errorf("Detect = %v, want [cpu]", got)
+	}
+	if !strings.Contains(warnings.String(), "--list-backends failed") {
+		t.Errorf("warning %q does not name the failed report", warnings.String())
+	}
+}
+
+// TestReportSkipsMissingBinary verifies a bare binary name that is not on
+// PATH is reported, not executed.
+func TestReportSkipsMissingBinary(t *testing.T) {
+	t.Parallel()
+	var ran bool
+	opts := Options{
+		LookPath: func(string) (string, error) { return "", exec.ErrNotFound },
+		Run: func(context.Context, string, ...string) (string, string, bool) {
+			ran = true
+			return "", "", true
+		},
+	}
+	if _, err := Report(context.Background(), opts); err == nil || !strings.Contains(err.Error(), "not on PATH") {
+		t.Errorf("Report error = %v, want a not-on-PATH error", err)
+	}
+	if ran {
+		t.Error("the runner must not be invoked for a binary absent from PATH")
+	}
+}
+
+// TestExplicitCPUNeedsNoReport checks cpu is answered without running vmaf.
+func TestExplicitCPUNeedsNoReport(t *testing.T) {
+	t.Parallel()
+	var calls [][]string
+	got, err := Select(context.Background(), "cpu", reportRunner("", false, &calls))
+	if err != nil || got != "cpu" || len(calls) != 0 {
+		t.Errorf("Select(cpu) = %q, %v with %d runs; want cpu, nil, 0", got, err, len(calls))
+	}
+}
+
+// TestDeprecatedHelpParserNamesEveryBackend pins why the help text was
+// dropped: it names every backend, whatever the build.
+func TestDeprecatedHelpParserNamesEveryBackend(t *testing.T) {
+	t.Parallel()
+	help := " --backend $name:              exclusive backend selector — auto|cpu|cuda|sycl|hip|metal.\n"
+	got := ParseSupportedBackends(help)
+	for _, name := range AllBackends() {
+		if !got[name] {
+			t.Errorf("ParseSupportedBackends missed %q", name)
+		}
+	}
+	if got := ParseSupportedBackends(""); len(got) != 1 || !got["cpu"] {
+		t.Errorf("ParseSupportedBackends(\"\") = %v, want cpu only", got)
 	}
 }
 
@@ -339,7 +223,7 @@ func TestUnavailableErrorMessage(t *testing.T) {
 			name: "with an available list",
 			err:  &UnavailableError{Requested: "hip", Available: []string{"cpu", "cuda"}},
 			wantParts: []string{
-				`backend "hip" requested`, "available: cpu, cuda", "runtime/driver",
+				`backend "hip" requested`, "available: cpu, cuda", "--list-backends",
 			},
 		},
 		{
@@ -398,11 +282,11 @@ func TestOptionDefaults(t *testing.T) {
 	if strings.Join(o.fallbacks(), ",") != strings.Join(DefaultFallbacks(), ",") {
 		t.Errorf("default fallbacks = %v", o.fallbacks())
 	}
-	if o.runner() == nil {
-		t.Error("default runner must not be nil")
+	if o.runner() == nil || o.lookPath() == nil {
+		t.Error("default runner and lookPath must not be nil")
 	}
-	if o.lookPath() == nil {
-		t.Error("default lookPath must not be nil")
+	if o.warnings() != os.Stderr {
+		t.Error("default warnings must go to stderr")
 	}
 
 	explicit := Options{VMAFBin: "/opt/vmaf", Fallbacks: []string{"cpu"}}
@@ -411,33 +295,6 @@ func TestOptionDefaults(t *testing.T) {
 	}
 	if strings.Join(explicit.fallbacks(), ",") != "cpu" {
 		t.Errorf("explicit fallbacks = %v", explicit.fallbacks())
-	}
-}
-
-// TestVMAFHelpSkipsMissingBinary verifies a bare binary name that is not on
-// PATH degrades to empty help rather than executing anything.
-func TestVMAFHelpSkipsMissingBinary(t *testing.T) {
-	t.Parallel()
-
-	var ran bool
-	opts := Options{
-		LookPath: func(string) (string, error) { return "", exec.ErrNotFound },
-		Run: func(context.Context, string, ...string) (string, string, bool) {
-			ran = true
-			return forkHelpText, "", true
-		},
-	}
-	if got := vmafHelp(context.Background(), opts); got != "" {
-		t.Errorf("help = %q, want empty for a missing binary", got)
-	}
-	if ran {
-		t.Error("the runner must not be invoked for a binary absent from PATH")
-	}
-
-	// An explicit path (containing a slash) skips the PATH lookup entirely.
-	opts.VMAFBin = "/opt/vmaf/bin/vmaf"
-	if got := vmafHelp(context.Background(), opts); !strings.Contains(got, "--backend") {
-		t.Errorf("an explicit binary path must be executed; got %q", got)
 	}
 }
 

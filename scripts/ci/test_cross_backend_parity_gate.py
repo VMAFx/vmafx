@@ -1068,8 +1068,10 @@ def test_psnr_hvs_per_block_twin_keeps_area_scaled_tolerance() -> None:
 # ---------------------------------------------------------------------------
 
 _GATE_BACKENDS = tuple(backend for backend in BACKEND_SUFFIX if backend != "cpu")
-# A backend outside the gate's list: never exact, whatever the fragments say.
-_OFF_GATE_BACKEND = "metal"
+# A backend outside the gate's list: never exact, whatever the fragments say. It is
+# no real backend name, so no fragment can list it (the gate refuses a fragment for
+# an unknown backend at import).
+_OFF_GATE_BACKEND = "off_gate"
 
 
 def _twin_cell(
@@ -1597,9 +1599,25 @@ def _tolerance(feature: str, backends: tuple[str, str], held: tuple[str, ...]) -
     )
 
 
+def _metal_unlisted() -> list[str]:
+    """Gate features with no Metal fragment and no math-library bound."""
+    return [
+        f
+        for f in sorted(FEATURE_METRICS)
+        if "metal" not in EXACT_TWINS.get(f, frozenset()) and f not in LIBM_TWINS
+    ]
+
+
 def test_held_exact_backend_is_compared_exactly() -> None:
-    assert _tolerance("adm", ("cpu", "metal"), ("metal",)) == (0.0, HELD_EXACT_SOURCE)
-    assert _tolerance("float_ms_ssim_lcs", ("cpu", "metal"), ("metal",)) == (0.0, HELD_EXACT_SOURCE)
+    # Held exact (ADR-1496) covers every Metal cell without a fragment; a cell
+    # with a Metal fragment is exact by the fragment (ADR-1428).
+    unlisted = _metal_unlisted()
+    assert unlisted
+    for feature in unlisted:
+        assert _tolerance(feature, ("cpu", "metal"), ("metal",)) == (0.0, HELD_EXACT_SOURCE)
+    for feature, backends in EXACT_TWINS.items():
+        if "metal" in backends:
+            assert _tolerance(feature, ("cpu", "metal"), ("metal",)) == (0.0, EXACT_TWIN_SOURCE)
 
 
 def test_held_exact_math_library_feature_keeps_its_bound() -> None:
@@ -1608,14 +1626,15 @@ def test_held_exact_math_library_feature_keeps_its_bound() -> None:
 
 
 def test_without_hold_exact_a_metal_cell_keeps_the_feature_tolerance() -> None:
-    assert _tolerance("adm", ("cpu", "metal"), ()) == (FEATURE_TOLERANCE["adm"], "default")
+    feature = next(f for f in _metal_unlisted() if f in FEATURE_TOLERANCE)
+    assert _tolerance(feature, ("cpu", "metal"), ()) == (FEATURE_TOLERANCE[feature], "default")
 
 
 def test_hold_exact_needs_every_other_side_exact() -> None:
-    # adm is listed for CUDA, so a CUDA <-> held Metal cell is exact; a feature
-    # with no CUDA fragment keeps its tolerance in that cell.
-    assert "cuda" in EXACT_TWINS["adm"]
-    assert _tolerance("adm", ("cuda", "metal"), ("metal",)) == (0.0, HELD_EXACT_SOURCE)
+    # A feature listed for CUDA but not for Metal: a CUDA <-> held Metal cell is
+    # exact; a feature with no CUDA fragment keeps its tolerance in that cell.
+    listed = next(f for f in _metal_unlisted() if "cuda" in EXACT_TWINS.get(f, frozenset()))
+    assert _tolerance(listed, ("cuda", "metal"), ("metal",)) == (0.0, HELD_EXACT_SOURCE)
     unlisted = next(f for f in FEATURE_METRICS if "cuda" not in EXACT_TWINS.get(f, frozenset()))
     tolerance, source = _tolerance(unlisted, ("cuda", "metal"), ("metal",))
     assert source != HELD_EXACT_SOURCE

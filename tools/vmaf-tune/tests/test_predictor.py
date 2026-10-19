@@ -446,3 +446,42 @@ def test_predictor_synthetic_stub_detection_and_warning(tmp_path, monkeypatch):
         warnings.simplefilter("error")
         p_real = Predictor(model_path=real_model)
     assert p_real.is_stub is False
+
+
+# --- the shot start is seconds for FFmpeg's -ss ---------------------
+
+
+def _recording_runner(commands: list[list[str]]):
+    """A subprocess stub that records argv; ffprobe reports 24 fps."""
+
+    class _Done:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    def _run(cmd, **_kwargs):
+        commands.append(list(cmd))
+        done = _Done()
+        if cmd and "ffprobe" in str(cmd[0]):
+            done.stdout = '{"streams": [{"width": 1920, "height": 1080, "r_frame_rate": "24/1"}]}'
+        return done
+
+    return _run
+
+
+def test_probe_and_signalstats_start_at_the_shot_in_seconds():
+    """``-ss`` reads seconds: frame 480 at 24 fps is 20 s, not second 480."""
+    from vmaftune.predictor_features import extract_features
+
+    commands: list[list[str]] = []
+    cfg = FeatureExtractorConfig(use_signalstats=True, use_saliency=False)
+    extract_features(
+        Shot(start_frame=480, end_frame=720),
+        Path("/src/a.mkv"),
+        "libx264",
+        config=cfg,
+        runner=_recording_runner(commands),
+    )
+    seeks = [cmd[cmd.index("-ss") + 1] for cmd in commands if "-ss" in cmd]
+    assert seeks, commands
+    assert set(seeks) == {"20.000000"}, seeks

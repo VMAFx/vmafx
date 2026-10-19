@@ -58,13 +58,13 @@ ARG VMAFX_VERSION=dev
 # every container base in this repository. These defaults are mirrors kept in
 # sync by scripts/ci/check-base-image-single-source.sh; edit the config, not
 # these lines, then run `make base-images-sync`.
-ARG RELEASE_BUILDER_BASE="debian:13-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a"
-ARG RELEASE_GO_BASE="golang:1.27-trixie@sha256:3b77fc618ec235a1ab412de7737f120dd507c57e8d87de4cbb7994fb94275ed5"
-ARG RELEASE_PYTHON_BASE="python:3.14-slim@sha256:c3e521df8b2b498a7a682e7e18676771cb80c6b75b8699af886b2d554ce40151"
+ARG RELEASE_BUILDER_BASE="debian:13-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f"
+ARG RELEASE_GO_BASE="golang:1.27-trixie@sha256:47667934874913a449b96faa7ef4777fa285d9ec29126ee80ed61c45b7cccf0e"
+ARG RELEASE_PYTHON_BASE="python:3.14-slim@sha256:a2b82f3c48559aa0a8446d9af49826b6e2b2016f4cd2afabfe6013ec53729170"
 ARG RELEASE_RUNTIME_CC="gcr.io/distroless/cc-debian13:nonroot@sha256:e792ab3d241a468a4fd7519ddbbebe66b49b5f365771716ea688ad40b6c6f1c2"
-ARG CUDA_RUNTIME="ubuntu:26.04@sha256:f144425ff09be612d6d9ad965196e9cdc23dae1f42110a8a11a3e9a8198759f7"
-ARG ROCM_RUNTIME="rocm/dev-ubuntu-26.04:10.0.0-full@sha256:8ebc02ee1aefb6b7c0e952b4088542133bad8805d19730db92cc61be673421d1"
-ARG ONEAPI_RUNTIME="debian:13-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a"
+ARG CUDA_RUNTIME="ubuntu:26.04@sha256:c098726dd9b9733f3e885f8de0ef375206a311b0a317eadc40d347b1115fb944"
+ARG ROCM_RUNTIME="rocm/dev-ubuntu-26.04:10.1.0-full@sha256:4f5ed1bf6532a4b9920400401b0ad0f706af356dae61e40afefbfd6c8073f0ce"
+ARG ONEAPI_RUNTIME="debian:13-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f"
 
 # Vendor runtime libraries as named stages: a digest-pinned
 # `COPY --from=<image>` is a base-image pin that no FROM-oriented search
@@ -178,9 +178,10 @@ RUN meson setup /build core \
 # The SONAME chain only: the glob would also take Meson's object directory
 # libvmaf.so.3.0.0.p/.
 RUN mkdir -p /dist/lib/pkgconfig /dist/bin /dist/model \
-    && find /build/src -maxdepth 1 -name 'libvmaf.so*' \( -type f -o -type l \) \
-        -exec cp -a {} /dist/lib/ \; \
+    && find /build/src -maxdepth 1 \( -name 'libvmaf.so*' -o -name 'libvmafx.so*' \) \
+        \( -type f -o -type l \) -exec cp -a {} /dist/lib/ \; \
     && cp /build/meson-private/libvmaf.pc /dist/lib/pkgconfig/libvmaf.pc \
+    && cp /build/meson-private/libvmafx.pc /dist/lib/pkgconfig/libvmafx.pc \
     && cp /build/tools/vmaf /dist/bin/ \
     && cp -r model/. /dist/model/ \
     && test -f /dist/model/vmaf_v0.6.1.json
@@ -217,6 +218,7 @@ RUN apt-get update \
         make \
         cmake \
         git \
+        curl \
         nasm \
         yasm \
         pkg-config \
@@ -277,13 +279,17 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 COPY ffmpeg-patches/ /src/ffmpeg-patches/
 COPY scripts/ci/checkout-annotated-tag.sh /usr/local/bin/checkout-annotated-tag
+COPY build-config.env scripts/ci/ffmpeg-shared-series.sh /src/ffmpeg-shared/
 
 RUN checkout-annotated-tag "${FFMPEG_REMOTE}" "${FFMPEG_TAG}" /src/ffmpeg
 
 WORKDIR /src/ffmpeg
 
-# Apply the fork's patch series in order.
+# The shared FFmpeg fix series first (ADR-3143; verified against
+# build-config.env by the script), then the fork's patch series in order.
 # See ffmpeg-patches/README.md for the apply invariants.
+RUN FFMPEG_FIX_SERIES_CACHE=none \
+    bash /src/ffmpeg-shared/ffmpeg-shared-series.sh apply --method am /src/ffmpeg
 RUN git config user.email "vmafx-node-builder@localhost" \
     && git config user.name "vmafx-node builder" \
     && while IFS= read -r patch_name; do \
@@ -406,7 +412,7 @@ RUN ./scripts/dev/gen-node-bpf.sh --require-pin
 # Keep module download independently cacheable from source compilation.
 # hadolint ignore=DL3059
 RUN CGO_ENABLED=${CGO_ENABLED} \
-    CGO_LDFLAGS="-L/usr/local/lib -lvmaf -lm" \
+    CGO_LDFLAGS="-L/usr/local/lib -lvmaf -lvmafx -lm" \
     go build \
         -trimpath \
         -ldflags "-s -w -X github.com/VMAFx/vmafx/pkg/version.version=${VMAFX_VERSION}" \
@@ -550,7 +556,7 @@ FROM node-with-notices AS node-cpu
 
 COPY --from=node-licence-check /out/licence-check.json /usr/local/share/vmafx/licence-check.json
 
-EXPOSE 50052
+EXPOSE 50052 9090
 
 USER nonroot:nonroot
 ENTRYPOINT ["/usr/local/bin/vmafx-node"]
@@ -577,7 +583,7 @@ COPY --from=go-builder /out/vmafx-node /usr/local/bin/vmafx-node
 
 ENV VMAFX_BACKEND=cuda
 
-EXPOSE 50052
+EXPOSE 50052 9090
 
 USER nonroot:nonroot
 ENTRYPOINT ["/usr/local/bin/vmafx-node"]
@@ -593,7 +599,7 @@ COPY --from=ffmpeg-builder-cpu /ffmpeg-install/lib/libav*.so*  /usr/local/lib/
 COPY --from=ffmpeg-builder-cpu /ffmpeg-install/lib/libsw*.so*  /usr/local/lib/
 COPY --from=ffmpeg-builder-cpu /ffmpeg-install/runtime-libs/ /usr/local/lib/
 
-# ROCm 10.0.0 HIP runtime libs (ADR-1225).
+# ROCm 10.1.0 HIP runtime libs (ADR-1225).
 #
 # Two things changed versus the flat `libamdhip64.so* + libhsa-runtime64.so*`
 # copy this stage used under ROCm 7:
@@ -610,26 +616,26 @@ COPY --from=ffmpeg-builder-cpu /ffmpeg-install/runtime-libs/ /usr/local/lib/
 #     `$ORIGIN/rocm_sysdeps/lib`), so they must keep their directory
 #     structure rather than being flattened into /usr/local/lib.
 #
-# Source paths use the real `/opt/rocm/core-10.0/` prefix rather than
+# Source paths use the real `/opt/rocm/core-10.1/` prefix rather than
 # `/opt/rocm/`: ROCm 10 makes `/opt/rocm/lib` a Debian-alternatives symlink,
 # and BuildKit resolves a `COPY --from` source against the source image's
 # filesystem without following that indirection reliably.
 COPY --from=rocm-runtime-libs \
-     /opt/rocm/core-10.0/lib/libamdhip64.so*            /opt/rocm/lib/
+     /opt/rocm/core-10.1/lib/libamdhip64.so*            /opt/rocm/lib/
 COPY --from=rocm-runtime-libs \
-     /opt/rocm/core-10.0/lib/libhsa-runtime64.so*       /opt/rocm/lib/
+     /opt/rocm/core-10.1/lib/libhsa-runtime64.so*       /opt/rocm/lib/
 COPY --from=rocm-runtime-libs \
-     /opt/rocm/core-10.0/lib/libamd_comgr.so*           /opt/rocm/lib/
+     /opt/rocm/core-10.1/lib/libamd_comgr.so*           /opt/rocm/lib/
 COPY --from=rocm-runtime-libs \
-     /opt/rocm/core-10.0/lib/librocm_kpack.so*          /opt/rocm/lib/
+     /opt/rocm/core-10.1/lib/librocm_kpack.so*          /opt/rocm/lib/
 COPY --from=rocm-runtime-libs \
-     /opt/rocm/core-10.0/lib/librocprofiler-register.so* /opt/rocm/lib/
+     /opt/rocm/core-10.1/lib/librocprofiler-register.so* /opt/rocm/lib/
 COPY --from=rocm-runtime-libs \
-     /opt/rocm/core-10.0/lib/rocm_sysdeps/lib/          /opt/rocm/lib/rocm_sysdeps/lib/
+     /opt/rocm/core-10.1/lib/rocm_sysdeps/lib/          /opt/rocm/lib/rocm_sysdeps/lib/
 COPY --from=rocm-runtime-libs \
-     /opt/rocm/core-10.0/lib/llvm/lib/libLLVM.so.*      /opt/rocm/lib/llvm/lib/
+     /opt/rocm/core-10.1/lib/llvm/lib/libLLVM.so.*      /opt/rocm/lib/llvm/lib/
 COPY --from=rocm-runtime-libs \
-     /opt/rocm/core-10.0/lib/llvm/lib/libclang-cpp.so.* /opt/rocm/lib/llvm/lib/
+     /opt/rocm/core-10.1/lib/llvm/lib/libclang-cpp.so.* /opt/rocm/lib/llvm/lib/
 
 ENV LD_LIBRARY_PATH="/usr/local/lib:/opt/rocm/lib"
 
@@ -637,7 +643,7 @@ COPY --from=go-builder /out/vmafx-node /usr/local/bin/vmafx-node
 
 ENV VMAFX_BACKEND=hip
 
-EXPOSE 50052
+EXPOSE 50052 9090
 
 USER nonroot:nonroot
 ENTRYPOINT ["/usr/local/bin/vmafx-node"]
@@ -661,7 +667,7 @@ COPY --from=go-builder /out/vmafx-node /usr/local/bin/vmafx-node
 
 ENV VMAFX_BACKEND=sycl
 
-EXPOSE 50052
+EXPOSE 50052 9090
 
 USER nonroot:nonroot
 ENTRYPOINT ["/usr/local/bin/vmafx-node"]

@@ -21,6 +21,13 @@
 # anything: the header is the sole definition of `__builtin_clz` for the
 # generic scalar path, so that leg simply fails to compile.
 #
+# cl.exe has no `__builtin_clz` of its own either: a host C or C++ file that
+# names it (directly or through a `#define`, as the host build of a device
+# header does) must include the shim itself, or the Windows MSVC legs fail
+# with C3861 "identifier not found" (test_adm_decouple_recip.cpp, #2095;
+# T-ADM-DECOUPLE-RECIP-TEST-WINDOWS-2026-10-06). The SYCL and Metal sources
+# are not compiled by cl.exe and are left out.
+#
 # Usage: scripts/ci/check-msvc-clz-shim.sh [repo-root]
 # Exit 0 when the shim is in the required shape, 1 otherwise.
 #
@@ -100,7 +107,21 @@ if [[ -n "$others" ]]; then
   rc=1
 fi
 
+clz_users=$(grep -rlE '\b__builtin_clz(ll)?\b' "$ROOT/core/src" "$ROOT/core/test" \
+  --include='*.c' --include='*.h' --include='*.cpp' --include='*.hpp' \
+  --exclude='compat_builtin.h' 2>/dev/null || [ "$?" -eq 1 ])
+while IFS= read -r f; do
+  case "$f" in
+    "" | */sycl/* | */metal/*) continue ;;
+  esac
+  if grep -vE '^[[:space:]]*(\*|/\*|//)' "$f" | grep -qE '\b__builtin_clz(ll)?\b' &&
+    ! grep -qE '^[[:space:]]*#[[:space:]]*include[[:space:]]+"(feature/)?compat_builtin\.h"' "$f"; then
+    echo "FAIL: $f names __builtin_clz but does not include compat_builtin.h (MSVC C3861)." >&2
+    rc=1
+  fi
+done <<<"$clz_users"
+
 if [[ $rc -eq 0 ]]; then
-  echo "OK: MSVC clz shim uses _BitScanReverse and is architecture-guarded."
+  echo "OK: MSVC clz shim uses _BitScanReverse, is architecture-guarded and reaches every host user."
 fi
 exit $rc

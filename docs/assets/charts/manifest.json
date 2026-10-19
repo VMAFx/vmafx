@@ -7,9 +7,9 @@
       "light_svg_sha256": "3a51562e109a5f2fcd318dff02e72e5288d388591a84a997540e293c97976e2f"
     },
     "twin-exactness": {
-      "dark_svg_sha256": "c2e3256900d53f6ce9e811d8f67510289cd6f9d37bb782986a76869fc3ccb450",
-      "inputs_sha256": "9f197e274286303299045511ad0bffc756fc830c3e62bbd1771ea9366e7c35f2",
-      "light_svg_sha256": "319de9cf91df7f4326ed7eeb8741aabae2c69f1480d73f6d2c2e946d12a86a70"
+      "dark_svg_sha256": "7618f53d6ebd0185ef49070a4234eee01a6ce6d3cd7273ef72d5ae2cf5f2137a",
+      "inputs_sha256": "d34d64df66596caeedd75535f8fa3741ef97039b54bacda017ab3f4dccc56dc6",
+      "light_svg_sha256": "715911f4f77170341582de0c9297e1b91dec63c72eb5059eb0e07701463bd830"
     },
     "upstream-parity-allowlist": {
       "dark_svg_sha256": "8d000aa5fa28920515d01e082080f0c99f779631dfb1f610e98e518c40f8d706",

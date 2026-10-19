@@ -52,7 +52,7 @@ DEVICE_REDUCTION = re.compile(r"__shfl_\w+\s*\(|\batomicAdd\s*\(|__shared__")
 UNPROMOTED = re.compile(
     r"\b(atan2|sin|cos|exp|sqrt)\(\s*(?!\(double\)|[0-9(]|ciede_sq|c_bar_7|h\b|2\.0)"
 )
-TERM_STORE = "reinterpret_cast<float *>(terms.data)[(size_t)y * width + x] ="
+TERM_STORE = "term_out[(size_t)y * width + x] ="
 HOST_SUM = (
     "double de00_sum = 0.0;",
     "for (size_t i = 0u; i < count; i++)",

@@ -183,7 +183,7 @@ Limitations:
 - The shipped checkpoint `model/tiny/fastdvdnet_pre.onnx` carries real upstream
   m-tassano/FastDVDnet weights (`smoke: false` in `model/tiny/registry.json`)
   wrapped by the ADR-0255 luma adapter. The wrapper tiles Y into RGB, supplies
-  the fixed `sigma = 25/255` noise map, and collapses the RGB output back to
+  the fixed $\sigma = 25/255$ noise map, and collapses the RGB output back to
   BT.601 luma while preserving the C extractor's `[1, 5, H, W] -> [1, 1, H, W]`
   ONNX contract.
 - Remaining follow-ups are the FFmpeg `vmaf_pre_temporal` consumer filter and a

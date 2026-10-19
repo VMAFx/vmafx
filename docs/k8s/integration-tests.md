@@ -4,7 +4,10 @@ The `test/e2e/` suite uses [kind](https://kind.sigs.k8s.io/) and
 [kuttl](https://kuttl.dev/) to prove an executable Kubernetes runtime contract:
 the Helm chart's default server Deployment and opt-in operator start from the
 images built for the exact commit, and the server completes a real CPU VMAF
-score through the chart Service.
+score through the chart Service. A second case runs two `vmafx-controller`
+replicas on the PostgreSQL job store, kills one of them and the node of a
+running job mid-job, and checks that every job is still completed exactly
+once ([ADR-2350](../adr/2350-cloud-native-platform.md)).
 
 The suite does not claim that the operator creates scoring Pods or trainer
 workloads. Those are not responsibilities implemented by the current
@@ -22,19 +25,43 @@ for the executable-scope correction.
 | kubectl | v1.37.0 | <https://kubernetes.io/docs/tasks/tools/> |
 | Helm | v4.2.4 | <https://helm.sh/docs/intro/install/> |
 | kuttl | v0.26.0 | <https://kuttl.dev/docs/cli.html> |
-| curl, python3 | distribution package | used by `test/e2e/score-smoke.sh` and `test/e2e/fixtures/gen-tiny-yuv.sh` |
+| curl, python3 | distribution package | used by `test/e2e/score-smoke.sh`, `test/e2e/fixtures/gen-tiny-yuv.sh` and `test/e2e/controller-ha/` |
 
 The pins live in the `env` block of `.github/workflows/e2e-k8s.yml`. Earlier
 versions may work locally; CI is the reference.
 
 ## Running locally
 
+Run the cluster in a virtual machine, not on your workstation's Docker. kind
+runs the kubelet in a privileged container, and the kubelet writes kernel
+settings that containers do not isolate (`vm.overcommit_memory`,
+`kernel.panic_on_oops`, `kernel.panic`). Run directly, a kind cluster sets
+them on the workstation's own kernel: with memory overcommit enabled, a test
+elsewhere on the machine that deliberately requests far more memory than
+exists succeeds and fills RAM and swap. In a VM the cluster changes only the
+VM's kernel.
+
+`test/e2e/incus-kind-vm.sh` creates that VM with [incus](https://linuxcontainers.org/incus/):
+a Debian 13 VM with its own profile (named after the VM, never the shared
+`default` profile; 6 CPUs, 12 GiB, a 20 GiB root disk on the `default` pool, a
+NIC on `incusbr0`, all overridable through the variables in the script's
+header), Docker from Debian and the kind release the workflow pins (checked
+against its published SHA-256). With `VMAFX_E2E_INCUS_VM` set,
+`kind-cluster.sh` runs kind inside the VM, publishes the API server on the
+VM's address, copies the kubeconfig out, and copies your local images in; the
+other commands run unchanged on the host. You need membership in
+`incus-admin` and KVM.
+
 Run these commands from the repository root:
 
 ```bash
 export KIND_CLUSTER_NAME=vmafx-e2e
+export VMAFX_E2E_INCUS_VM=vmafx-e2e-kind
 export VMAFX_E2E_KUBECONFIG="${TMPDIR:-/tmp}/vmafx-e2e.kubeconfig"
 export KUBECONFIG="${VMAFX_E2E_KUBECONFIG}"
+
+# 0. Create the VM (once; later runs reuse it).
+bash test/e2e/incus-kind-vm.sh create
 
 # 1. Build the exact images used by the chart and image contract.
 docker build --target operator \
@@ -46,20 +73,31 @@ docker build --target node-cpu \
 docker build --target go-server \
   -t ghcr.io/vmafx/vmafx-server:e2e-test \
   -f Dockerfile.go-server .
+docker build --target controller --build-arg VMAF_BUILD_JOBS=4 \
+  -t ghcr.io/vmafx/vmafx-controller:e2e-test \
+  -f docker/Dockerfile.controller .
+docker build --target driver \
+  -t ghcr.io/vmafx/vmafx-e2e-driver:e2e-test \
+  -f docker/Dockerfile.e2e-driver .
 
 # 2. Validate the committed raw clips and generate geometry-bearing Y4M files.
 bash test/e2e/fixtures/gen-tiny-yuv.sh
 
-# 3. Create the cluster, install CRDs, and preload locally available images.
+# 3. Create the cluster in the VM, install CRDs, and preload locally
+#    available images.
 bash test/e2e/kind-cluster.sh
 
-# 4. Run the chart and scoring contract.
+# 4. Run every case, or one with --test 02-controller-ha.
 kubectl kuttl test \
   --config test/e2e/kuttl-tests/kuttl-test.yaml
 
-# 5. Tear down the cluster when finished.
+# 5. Tear down the cluster, then the VM and its profile.
 TEARDOWN=1 bash test/e2e/kind-cluster.sh
+bash test/e2e/incus-kind-vm.sh destroy
 ```
+
+On a disposable machine (the CI runner) leave `VMAFX_E2E_INCUS_VM` unset and
+skip steps 0 and the VM teardown: `kind-cluster.sh` then uses the local Docker.
 
 `VMAFX_E2E_KUBECONFIG` is mandatory and must be an absolute path dedicated to
 the disposable cluster; `KUBECONFIG` must equal it. Cluster creation can write
@@ -67,7 +105,8 @@ an absent dedicated file, but refuses any pre-existing file unless it already
 proves the exact local kind identity. Before applying CRDs, running kuttl,
 collecting logs, scoring, or deleting the cluster, the harness verifies that
 its current context is exactly `kind-${KIND_CLUSTER_NAME}` and that the API
-server is a loopback endpoint. It refuses a shared, symlinked, or remote
+server is a loopback endpoint, or, with `VMAFX_E2E_INCUS_VM`, port 6443 at the
+address the named VM reports. It refuses a shared, symlinked, or remote
 Kubernetes context, and a failed teardown guard remains a visible failure.
 
 The Helm step pins `image.tag` and `operator.image.tag` to `e2e-test` and sets
@@ -98,11 +137,44 @@ The score helper chooses an unused loopback port unless
 `VMAFX_E2E_LOCAL_PORT` is explicitly set, avoiding collisions with unrelated
 developer port-forwards.
 
-## Test case
+## Test cases
 
 | Directory | What is exercised |
 | --- | --- |
 | `01-chart-cpu-score/` | CRDs become established; the default `vmafx-server` Deployment and enabled operator become available; `/v1/score` returns finite, matching `score` and `features.vmaf` values for the mounted Y4M pair. |
+| `02-controller-ha/` | The CloudNativePG operator installs from its pinned manifest; the chart's database `Cluster` becomes ready, the migration Job completes, two controller replicas and a CPU node become available; a controller replica and the node of a running job are killed mid-job, and every job completes with a finite score, each by exactly one attempt. |
+
+### Controller failover case
+
+`02-controller-ha` installs the chart as release `vmafx` in namespace
+`vmafx-ha` with `test/e2e/controller-ha/values.yaml`: `controller.replicas: 2`,
+`controller.store.backend: postgres` on a one-instance CloudNativePG `Cluster`,
+short leases (30 s) and sweeps (2 s), one CPU node, and requests and limits
+sized for a kind node. `install-cnpg.sh` downloads the CloudNativePG 1.30.1
+release manifest, checks its SHA-256, and runs the operator from the image
+digest rather than the manifest's tag.
+
+`run-driver.sh` then runs the driver (`test/e2e/controller-ha/driver/`, image
+`docker/Dockerfile.e2e-driver`) as a Job in the same namespace:
+
+1. The driver serves a synthetic 216x160 Y4M pair over HTTP; its Service is the
+   case's scoring root (`auth.scoringRoots`), so the nodes stream the inputs
+   from it.
+2. It submits four jobs and scales the node pool to two.
+3. Every stream sends its header and first frame and then waits, so each
+   first attempt is still running when the driver kills the node pod of a
+   running job and one controller pod (grace period 0).
+4. It releases every stream except those of the killed pod's address: a pod
+   deleted with grace period 0 leaves the API before the kubelet has stopped
+   its container, and a released stream could still complete there. The
+   other node finishes its jobs, and the killed node's job returns to the
+   queue when its lease expires and runs again on another node.
+5. It waits until every job completed with a finite score and reads
+   `job_attempts` in the database: each job has exactly one completed
+   attempt, and the killed job has at least two attempts.
+
+The driver prints one JSON summary line (jobs, killed pods, attempts and
+outcomes per job); `run-driver.sh` passes only when its `ok` field is true.
 
 The score check intentionally validates structure and finiteness rather than a
 Netflix golden number. Netflix-authored CPU golden assertions remain in their
@@ -118,11 +190,16 @@ test promise.
 ## CI integration
 
 `.github/workflows/e2e-k8s.yml` runs nightly, on manual dispatch, and on pull
-requests carrying the `run-e2e-k8s` label. Its image job builds and transfers:
+requests carrying the `run-e2e-k8s` label, which
+`.github/workflows/pr-label-lanes.yml` calls it for. Its image job builds and transfers:
 
 - `ghcr.io/vmafx/vmafx-operator:e2e-test`;
-- `ghcr.io/vmafx/vmafx-node:e2e-test` from the explicit `node-cpu` target; and
-- `ghcr.io/vmafx/vmafx-server:e2e-test` from the release `go-server` target.
+- `ghcr.io/vmafx/vmafx-node:e2e-test` from the explicit `node-cpu` target;
+- `ghcr.io/vmafx/vmafx-server:e2e-test` from the release `go-server` target;
+- `ghcr.io/vmafx/vmafx-controller:e2e-test` from the release `controller`
+  target; and
+- `ghcr.io/vmafx/vmafx-e2e-driver:e2e-test`, the failover driver, a test image
+  that is never published.
 
 The cheap standard-library contract test also runs in the always-on Rules
 workflow, so ordinary pull requests cannot change the image target or remove
@@ -198,6 +275,20 @@ kubectl get events -A --sort-by=.lastTimestamp
 
 CRD application is fail-closed. `kind-cluster.sh` no longer hides a failed
 Helm workload behind a direct-apply fallback.
+
+### Controller failover case fails
+
+```bash
+kubectl get clusters.postgresql.cnpg.io,jobs,pods -n vmafx-ha -o wide
+kubectl logs -n vmafx-ha -l app.kubernetes.io/component=migrate --tail=100
+kubectl logs -n vmafx-ha -l app.kubernetes.io/component=controller --prefix --tail=200
+kubectl logs -n vmafx-ha job/vmafx-e2e-driver
+```
+
+A controller that stays not ready usually waits for the migration Job, which
+waits for the database. The driver's summary names the killed job and the
+attempts of every job: a job with no completed attempt, or two, is the
+failure the case exists to catch.
 
 ## Adding a test case
 

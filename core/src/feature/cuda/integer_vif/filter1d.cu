@@ -18,6 +18,7 @@
  *
  */
 
+#include "cuda_device_ptr.cuh"
 #include "cuda_helper.cuh"
 #include "cuda/integer_vif_cuda.h"
 
@@ -85,20 +86,27 @@
 #define VIF_WRITEBACK_BYTES sizeof(uint4)
 #define VIF_WRITEBACK_SUMS (sizeof(uint4) / sizeof(uint32_t))
 
+namespace
+{
+
 /* Mirror `i` into [0, n): reflect at 0, then at n - 1 (two bounces), then
  * clamp, which only acts on an axis shorter than the filter.  Applied while
  * a tile is loaded, so the compute stages read shared memory without any
  * boundary check. */
 __device__ __forceinline__ int vif_mirror_index(int i, int n)
 {
-    if (i < 0)
+    if (i < 0) {
         i = -i;
-    if (i >= n)
+    }
+    if (i >= n) {
         i = 2 * n - i - 2;
-    if (i < 0)
+    }
+    if (i < 0) {
         i = 0;
-    if (i >= n)
+    }
+    if (i >= n) {
         i = n - 1;
+    }
     return i;
 }
 
@@ -139,9 +147,10 @@ vif_vert_load_tiles(sample_type (*ref_tile)[VIF_VERT_TILE_COLS],
 }
 
 /* Four sums of one tmp plane, written as one uint4. */
-__device__ __forceinline__ void vif_store_sums(uint32_t *plane, int buffer_idx, uint32_t *sums)
+__device__ __forceinline__ void vif_store_sums(uint32_t *plane, int buffer_idx,
+                                               const uint32_t *sums)
 {
-    *reinterpret_cast<uint4 *>(&plane[buffer_idx]) = *reinterpret_cast<uint4 *>(sums);
+    *reinterpret_cast<uint4 *>(&plane[buffer_idx]) = *reinterpret_cast<const uint4 *>(sums);
 }
 
 /* The rounded sums of a vertical pass, as the write-back takes them.  Every
@@ -179,6 +188,28 @@ __device__ __forceinline__ void vif_vert_store(const VifBufferCuda &buf, VifVert
     }
 }
 
+/* One 8-bit vertical tap `fi` of output sample `off`: the means, the second
+ * moments and, inside the reduced filter's window, its two sums. */
+template <int vpt, int fwidth_0, int fwidth_1>
+__device__ __forceinline__ void vif_vert8_tap(VifVertOut<vpt> &o, int off, int fi, uint32_t ref_val,
+                                              uint32_t dis_val,
+                                              const filter_table_stuct &vif_filt_s0)
+{
+    const uint32_t fcoeff = vif_filt_s0.filter[0][fi];
+    const uint32_t img_coeff_ref = fcoeff * ref_val;
+    const uint32_t img_coeff_dis = fcoeff * dis_val;
+    o.mu1[off] += img_coeff_ref;
+    o.mu2[off] += img_coeff_dis;
+    o.ref[off] += img_coeff_ref * ref_val;
+    o.dis[off] += img_coeff_dis * dis_val;
+    o.ref_dis[off] += img_coeff_ref * dis_val;
+    if (fi >= (fwidth_0 - fwidth_1) / 2 && fi < (fwidth_0 - (fwidth_0 - fwidth_1) / 2)) {
+        const uint16_t fcoeff_rd = vif_filt_s0.filter[1][fi - ((fwidth_0 - fwidth_1) / 2)];
+        o.ref_rd[off] += fcoeff_rd * ref_val;
+        o.dis_rd[off] += fcoeff_rd * dis_val;
+    }
+}
+
 /* 8-bit vertical taps.  smem_row = threadIdx.y + fi: tile_row=0 holds image
  * row (blockIdx.y*blockDim.y - half_fv), so the thread at threadIdx.y finds
  * tap fi's mirrored row at tile row threadIdx.y + fi. */
@@ -193,23 +224,9 @@ vif_vert8_accumulate(VifVertOut<vpt> &o, uint8_t (*ref_tile)[VIF_VERT_TILE_COLS]
         for (int off = 0; off < vpt; ++off) {
             const int j = x_start + off;
             if (j < w) {
-                const uint32_t fcoeff = vif_filt_s0.filter[0][fi];
                 const uint32_t ref_val = ref_tile[smem_row][col + off];
                 const uint32_t dis_val = dis_tile[smem_row][col + off];
-                const uint32_t img_coeff_ref = fcoeff * ref_val;
-                const uint32_t img_coeff_dis = fcoeff * dis_val;
-                o.mu1[off] += img_coeff_ref;
-                o.mu2[off] += img_coeff_dis;
-                o.ref[off] += img_coeff_ref * ref_val;
-                o.dis[off] += img_coeff_dis * dis_val;
-                o.ref_dis[off] += img_coeff_ref * dis_val;
-                if (fi >= (fwidth_0 - fwidth_1) / 2 &&
-                    fi < (fwidth_0 - (fwidth_0 - fwidth_1) / 2)) {
-                    const uint16_t fcoeff_rd =
-                        vif_filt_s0.filter[1][fi - ((fwidth_0 - fwidth_1) / 2)];
-                    o.ref_rd[off] += fcoeff_rd * ref_val;
-                    o.dis_rd[off] += fcoeff_rd * dis_val;
-                }
+                vif_vert8_tap<vpt, fwidth_0, fwidth_1>(o, off, fi, ref_val, dis_val, vif_filt_s0);
             }
         }
     }
@@ -248,10 +265,10 @@ __device__ __forceinline__ void filter1d_8_vertical_kernel(VifBufferCuda buf, ui
         vif_vert8_accumulate<val_per_thread, fwidth_0, fwidth_1>(
             o, ref_tile, dis_tile, threadIdx.x * val_per_thread, x_start, w, vif_filt_s0);
         for (int off = 0; off < val_per_thread; ++off) {
-            o.mu1[off] = (o.mu1[off] + 128) >> 8;
-            o.mu2[off] = (o.mu2[off] + 128) >> 8;
-            o.ref_rd[off] = (o.ref_rd[off] + 128) >> 8;
-            o.dis_rd[off] = (o.dis_rd[off] + 128) >> 8;
+            o.mu1[off] = (o.mu1[off] + 128) >> 8u;
+            o.mu2[off] = (o.mu2[off] + 128) >> 8u;
+            o.ref_rd[off] = (o.ref_rd[off] + 128) >> 8u;
+            o.dis_rd[off] = (o.dis_rd[off] + 128) >> 8u;
         }
         vif_vert_store<val_per_thread, true>(buf, o, y, x_start, w);
     }
@@ -374,6 +391,27 @@ __device__ __forceinline__ void vif_hori_tap_pairs(VifHoriSums<vpt> &s, const Vi
     }
 }
 
+/* One border tap `fj` of output sample `off`; `si` is its shared-memory index. */
+template <int vpt, int fwidth, int fwidth_rd>
+__device__ __forceinline__ void vif_hori_border_tap(VifHoriSums<vpt> &s, const VifHoriTile &t,
+                                                    int off, int fj, int si, const uint16_t *filt,
+                                                    const uint16_t *filt_rd)
+{
+    constexpr int rd_start = (fwidth - fwidth_rd) / 2;
+    const uint16_t fcoeff = filt[fj];
+    s.mu1[off] += fcoeff * t.mu1[si];
+    s.mu2[off] += fcoeff * t.mu2[si];
+    s.ref_tmp[off] += fcoeff * (uint64_t)t.ref[si];
+    s.dis_tmp[off] += fcoeff * (uint64_t)t.dis[si];
+    s.ref_dis_tmp[off] += fcoeff * (uint64_t)t.ref_dis[si];
+
+    if (fj >= rd_start && fj < (fwidth - rd_start) && fwidth_rd > 0 && off % 2 == 0) {
+        const uint32_t fcoeff_rd = filt_rd[fj - rd_start];
+        s.ref_rd[off / 2] += fcoeff_rd * t.ref_convol[si];
+        s.dis_rd[off / 2] += fcoeff_rd * t.dis_convol[si];
+    }
+}
+
 /* Border path: the tile already holds the mirrored boundary values, so
  * si = smem_base + off + fj is the same formula as in the interior.  The
  * per-element `j < w` guard stays because x_start+off may exceed w at the
@@ -383,26 +421,14 @@ __device__ __forceinline__ void vif_hori_border(VifHoriSums<vpt> &s, const VifHo
                                                 int smem_base, int x_start, int w,
                                                 const uint16_t *filt, const uint16_t *filt_rd)
 {
-    constexpr int rd_start = (fwidth - fwidth_rd) / 2;
 #pragma unroll
     for (int fj = 0; fj < fwidth; ++fj) {
 #pragma unroll
         for (int off = 0; off < vpt; ++off) {
             const int j = x_start + off;
             if (j < w) {
-                const int si = smem_base + off + fj;
-                const uint16_t fcoeff = filt[fj];
-                s.mu1[off] += fcoeff * t.mu1[si];
-                s.mu2[off] += fcoeff * t.mu2[si];
-                s.ref_tmp[off] += fcoeff * (uint64_t)t.ref[si];
-                s.dis_tmp[off] += fcoeff * (uint64_t)t.dis[si];
-                s.ref_dis_tmp[off] += fcoeff * (uint64_t)t.ref_dis[si];
-
-                if (fj >= rd_start && fj < (fwidth - rd_start) && fwidth_rd > 0 && off % 2 == 0) {
-                    const uint32_t fcoeff_rd = filt_rd[fj - rd_start];
-                    s.ref_rd[off / 2] += fcoeff_rd * t.ref_convol[si];
-                    s.dis_rd[off / 2] += fcoeff_rd * t.dis_convol[si];
-                }
+                vif_hori_border_tap<vpt, fwidth, fwidth_rd>(s, t, off, fj, smem_base + off + fj,
+                                                            filt, filt_rd);
             }
         }
     }
@@ -411,29 +437,29 @@ __device__ __forceinline__ void vif_hori_border(VifHoriSums<vpt> &s, const VifHo
 /* Round the second-moment sums and add each pixel's VIF statistics to the
  * thread's accumulators. */
 template <int vpt>
-__device__ __forceinline__ void vif_hori_statistics(const VifHoriSums<vpt> &s, int x_start, int w,
-                                                    int h, int32_t add_shift_round_HP,
-                                                    int32_t shift_HP, double vif_enhn_gain_limit,
-                                                    vif_accums &thread_accum)
+__device__ __forceinline__ void
+vif_hori_statistics(const VifHoriSums<vpt> &s, int x_start, int w, int32_t add_shift_round_HP,
+                    int32_t shift_HP, double vif_enhn_gain_limit, vif_accums &thread_accum)
 {
+    const uint32_t shift = (uint32_t)shift_HP;
     for (int off = 0; off < vpt; ++off) {
         const int x = x_start + off;
         if (x < w) {
-            const uint32_t accum_ref =
-                (uint32_t)((s.ref_tmp[off] + add_shift_round_HP) >> shift_HP);
-            const uint32_t accum_dis =
-                (uint32_t)((s.dis_tmp[off] + add_shift_round_HP) >> shift_HP);
+            const uint32_t accum_ref = (uint32_t)((s.ref_tmp[off] + add_shift_round_HP) >> shift);
+            const uint32_t accum_dis = (uint32_t)((s.dis_tmp[off] + add_shift_round_HP) >> shift);
             const uint32_t accum_ref_dis =
-                (uint32_t)((s.ref_dis_tmp[off] + add_shift_round_HP) >> shift_HP);
+                (uint32_t)((s.ref_dis_tmp[off] + add_shift_round_HP) >> shift);
             vif_statistic_calculation<uint32_t>(s.mu1[off], s.mu2[off], accum_ref, accum_dis,
-                                                accum_ref_dis, x, w, h, vif_enhn_gain_limit,
+                                                accum_ref_dis, x, w, vif_enhn_gain_limit,
                                                 thread_accum);
         }
     }
 }
 
 /* Warp-reduce the thread's seven accumulators and add each warp's sums to the
- * frame accumulators. */
+ * frame accumulators. Every lane of the warp calls it, a lane past the plane
+ * edge with zeros: warp_reduce() shuffles with the full mask
+ * (T-CUDA-WARP-REDUCE-UB-2026-10-05). */
 __device__ __forceinline__ void vif_hori_flush_accums(int64_t *thread_accum_i64, vif_accums *accum)
 {
     for (int i = 0; i < 7; ++i) {
@@ -454,15 +480,15 @@ __device__ __forceinline__ void vif_hori_store_rd(const VifBufferCuda &buf,
                                                   const VifHoriSums<vpt> &s, int y, int x_start,
                                                   int w, int h)
 {
-    uint16_t *ref = (uint16_t *)buf.ref;
-    uint16_t *dis = (uint16_t *)buf.dis;
+    uint16_t *ref = VMAF_CUDA_DPTR(uint16_t, buf.ref);
+    uint16_t *dis = VMAF_CUDA_DPTR(uint16_t, buf.dis);
     for (int off = 0; off < vpt; ++off) {
         const int x = x_start + off;
         if (y < h && x < w) {
             if ((y % 2) == 0 && (off % 2) == 0) {
                 const ptrdiff_t rd_stride = buf.rd_stride / sizeof(uint16_t);
-                ref[(y / 2) * rd_stride + (x / 2)] = (uint16_t)((s.ref_rd[off / 2] + 32768) >> 16);
-                dis[(y / 2) * rd_stride + (x / 2)] = (uint16_t)((s.dis_rd[off / 2] + 32768) >> 16);
+                ref[(y / 2) * rd_stride + (x / 2)] = (uint16_t)((s.ref_rd[off / 2] + 32768) >> 16u);
+                dis[(y / 2) * rd_stride + (x / 2)] = (uint16_t)((s.dis_rd[off / 2] + 32768) >> 16u);
             }
         }
     }
@@ -511,11 +537,11 @@ vif_hori_kernel(VifBufferCuda buf, int w, int h, int32_t add_shift_round_HP, int
     }
     __syncthreads();
 
+    union {
+        vif_accums thread_accum;
+        int64_t thread_accum_i64[7] = {0};
+    };
     if (y < h && x_start < w) {
-        union {
-            vif_accums thread_accum;
-            int64_t thread_accum_i64[7] = {0};
-        };
         VifHoriSums<val_per_thread> sums = {};
         const uint16_t *filt = vif_filt.filter[filt_row];
         const uint16_t *filt_rd = vif_filt.filter[(fwidth_rd > 0) ? filt_row + 1 : filt_row];
@@ -531,10 +557,14 @@ vif_hori_kernel(VifBufferCuda buf, int w, int h, int32_t add_shift_round_HP, int
             vif_hori_border<val_per_thread, fwidth, fwidth_rd>(sums, tile, smem_base, x_start, w,
                                                                filt, filt_rd);
         }
-        vif_hori_statistics<val_per_thread>(sums, x_start, w, h, add_shift_round_HP, shift_HP,
+        vif_hori_statistics<val_per_thread>(sums, x_start, w, add_shift_round_HP, shift_HP,
                                             vif_enhn_gain_limit, thread_accum);
-        vif_hori_flush_accums(thread_accum_i64, accum);
         vif_hori_store_rd<val_per_thread>(buf, sums, y, x_start, w, h);
+    }
+    /* y is the same for the whole block; the lanes past the plane edge add
+     * zeros, so every lane of a warp reaches the full-mask shuffles. */
+    if (y < h) {
+        vif_hori_flush_accums(thread_accum_i64, accum);
     }
 }
 
@@ -558,8 +588,30 @@ template <int vpt> struct VifVert16Sums {
     uint64_t ref_dis[vpt];
 };
 
-/* 16-bit vertical taps: the means and the reduced filter in 32 bits (in `o`),
- * the second moments in 64 bits (in `s`). */
+/* One 16-bit vertical tap `fi` of output sample `off`: the means and the
+ * reduced filter in 32 bits (in `o`), the second moments in 64 bits (in `s`). */
+template <int vpt, int fwidth, int fwidth_rd, int scale>
+__device__ __forceinline__ void vif_vert16_tap(VifVertOut<vpt> &o, VifVert16Sums<vpt> &s, int off,
+                                               int fi, uint32_t imgcoeff_ref, uint32_t imgcoeff_dis,
+                                               const filter_table_stuct &vif_filt)
+{
+    const uint16_t fcoeff = vif_filt.filter[scale][fi];
+    const uint32_t img_coeff_ref = fcoeff * imgcoeff_ref;
+    const uint32_t img_coeff_dis = fcoeff * imgcoeff_dis;
+    o.mu1[off] += img_coeff_ref;
+    o.mu2[off] += img_coeff_dis;
+    s.ref[off] += img_coeff_ref * (uint64_t)imgcoeff_ref;
+    s.dis[off] += img_coeff_dis * (uint64_t)imgcoeff_dis;
+    s.ref_dis[off] += img_coeff_ref * (uint64_t)imgcoeff_dis;
+    if (fi >= (fwidth - fwidth_rd) / 2 && fi < (fwidth - (fwidth - fwidth_rd) / 2) &&
+        fwidth_rd > 0) {
+        const uint16_t fcoeff_rd = vif_filt.filter[scale + 1][fi - ((fwidth - fwidth_rd) / 2)];
+        o.ref_rd[off] += fcoeff_rd * imgcoeff_ref;
+        o.dis_rd[off] += fcoeff_rd * imgcoeff_dis;
+    }
+}
+
+/* 16-bit vertical taps over the tile rows. */
 template <int vpt, int fwidth, int fwidth_rd, int scale>
 __device__ __forceinline__ void vif_vert16_accumulate(VifVertOut<vpt> &o, VifVert16Sums<vpt> &s,
                                                       uint16_t (*ref_tile)[VIF_VERT_TILE_COLS],
@@ -572,23 +624,10 @@ __device__ __forceinline__ void vif_vert16_accumulate(VifVertOut<vpt> &o, VifVer
         for (int off = 0; off < vpt; ++off) {
             const int j = x_start + off;
             if (j < w) {
-                const uint16_t fcoeff = vif_filt.filter[scale][fi];
                 const uint32_t imgcoeff_ref = ref_tile[smem_row][col + off];
                 const uint32_t imgcoeff_dis = dis_tile[smem_row][col + off];
-                const uint32_t img_coeff_ref = fcoeff * imgcoeff_ref;
-                const uint32_t img_coeff_dis = fcoeff * imgcoeff_dis;
-                o.mu1[off] += img_coeff_ref;
-                o.mu2[off] += img_coeff_dis;
-                s.ref[off] += img_coeff_ref * (uint64_t)imgcoeff_ref;
-                s.dis[off] += img_coeff_dis * (uint64_t)imgcoeff_dis;
-                s.ref_dis[off] += img_coeff_ref * (uint64_t)imgcoeff_dis;
-                if (fi >= (fwidth - fwidth_rd) / 2 && fi < (fwidth - (fwidth - fwidth_rd) / 2) &&
-                    fwidth_rd > 0) {
-                    const uint16_t fcoeff_rd =
-                        vif_filt.filter[scale + 1][fi - ((fwidth - fwidth_rd) / 2)];
-                    o.ref_rd[off] += fcoeff_rd * imgcoeff_ref;
-                    o.dis_rd[off] += fcoeff_rd * imgcoeff_dis;
-                }
+                vif_vert16_tap<vpt, fwidth, fwidth_rd, scale>(o, s, off, fi, imgcoeff_ref,
+                                                              imgcoeff_dis, vif_filt);
             }
         }
     }
@@ -600,15 +639,17 @@ __device__ __forceinline__ void vif_vert16_round(VifVertOut<vpt> &o, const VifVe
                                                  int32_t add_shift_round_VP, int32_t shift_VP,
                                                  int32_t add_shift_round_VP_sq, int32_t shift_VP_sq)
 {
+    const uint32_t sh = (uint32_t)shift_VP;
+    const uint32_t sh_sq = (uint32_t)shift_VP_sq;
     for (int off = 0; off < vpt; ++off) {
-        o.mu1[off] = (uint16_t)((o.mu1[off] + add_shift_round_VP) >> shift_VP);
-        o.mu2[off] = (uint16_t)((o.mu2[off] + add_shift_round_VP) >> shift_VP);
-        o.ref[off] = (uint32_t)((s.ref[off] + add_shift_round_VP_sq) >> shift_VP_sq);
-        o.dis[off] = (uint32_t)((s.dis[off] + add_shift_round_VP_sq) >> shift_VP_sq);
-        o.ref_dis[off] = (uint32_t)((s.ref_dis[off] + add_shift_round_VP_sq) >> shift_VP_sq);
+        o.mu1[off] = (uint16_t)((o.mu1[off] + add_shift_round_VP) >> sh);
+        o.mu2[off] = (uint16_t)((o.mu2[off] + add_shift_round_VP) >> sh);
+        o.ref[off] = (uint32_t)((s.ref[off] + add_shift_round_VP_sq) >> sh_sq);
+        o.dis[off] = (uint32_t)((s.dis[off] + add_shift_round_VP_sq) >> sh_sq);
+        o.ref_dis[off] = (uint32_t)((s.ref_dis[off] + add_shift_round_VP_sq) >> sh_sq);
         if (has_rd) {
-            o.ref_rd[off] = (uint16_t)((o.ref_rd[off] + add_shift_round_VP) >> shift_VP);
-            o.dis_rd[off] = (uint16_t)((o.dis_rd[off] + add_shift_round_VP) >> shift_VP);
+            o.ref_rd[off] = (uint16_t)((o.ref_rd[off] + add_shift_round_VP) >> sh);
+            o.dis_rd[off] = (uint16_t)((o.dis_rd[off] + add_shift_round_VP) >> sh);
         }
     }
 }
@@ -668,6 +709,8 @@ filter1d_16_horizontal_kernel(VifBufferCuda buf, int w, int h, int32_t add_shift
     vif_hori_kernel<val_per_thread, fwidth, fwidth_rd, scale, false>(
         buf, w, h, add_shift_round_HP, shift_HP, vif_filt, vif_enhn_gain_limit, accum);
 }
+
+} /* namespace */
 
 #define FILTER1D_8_VERT(alignment_type, fwidth_0, fwidth_1)                                        \
     __global__ void filter1d_8_vertical_kernel_##alignment_type##_##fwidth_0##_##fwidth_1(         \

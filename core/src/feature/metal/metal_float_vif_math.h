@@ -52,6 +52,11 @@
 #include <stdbool.h>
 #endif
 
+/* cppcheck passedByValue: every function here takes its argument structs by
+ * value because the header is shared with C and Metal Shading Language, which
+ * have no const references (an MSL reference needs an address space), ADR-1498. */
+// cppcheck-suppress-begin passedByValue
+
 /* ------------------------------------------------------------------ */
 /* Geometry and kernel argument blocks                                 */
 /* ------------------------------------------------------------------ */
@@ -579,8 +584,11 @@ VMAF_MTL_FUNC VmafMtlFvifTerm vmaf_mtl_fvif_pixel_term(float mu1, float mu2, flo
 static inline VmafMtlFvifStatisticArgs vmaf_mtl_fvif_statistic_args(double sigma_nsq,
                                                                     double enhn_gain_limit)
 {
-    VmafMtlFvifStatisticArgs a;
-    memset(&a, 0, sizeof(a));
+    /* Every field named, zero: the memset of a float struct this replaces is what
+     * cppcheck's memsetClassFloat refuses, and a shorter list trips
+     * -Wmissing-field-initializers. */
+    // NOLINTNEXTLINE(modernize-use-designated-initializers): MSL has none, ADR-1498
+    VmafMtlFvifStatisticArgs a = {0u, 0u, 0, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
     a.noise_hi = (float)sigma_nsq;
     a.noise_lo = (float)(sigma_nsq - (double)a.noise_hi);
     a.noise_above = a.noise_hi;
@@ -609,5 +617,7 @@ static inline VmafMtlFvifStatParams vmaf_mtl_fvif_stat_params(VmafMtlFvifStatist
 }
 
 #endif /* !__METAL_VERSION__ */
+
+// cppcheck-suppress-end passedByValue
 
 #endif /* VMAF_FEATURE_METAL_METAL_FLOAT_VIF_MATH_H_ */

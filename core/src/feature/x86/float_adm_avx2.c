@@ -264,7 +264,7 @@ void float_adm_csf_avx2(const float *src, float *dst, float *flt, int w, int h, 
         for (; j < w; ++j) {
             const float dst_val = factor * src_row[j];
             dst_row[j] = dst_val;
-            flt_row[j] = one_by_30 * fabsf(dst_val);
+            flt_row[j] = (float)(one_by_30 * fabsf(dst_val));
         }
     }
 }

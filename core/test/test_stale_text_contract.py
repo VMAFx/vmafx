@@ -18,11 +18,15 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT))
+
+from scripts.lib.scratch_program import remove_program  # noqa: E402 -- path set above
 
 
 def read(relative: str) -> str:
@@ -33,7 +37,8 @@ class CliHelpDefaults(unittest.TestCase):
     """Defect 9: HIP and Metal are opt-in, so their help must not say `auto`."""
 
     def test_hip_and_metal_device_help_say_opt_in(self) -> None:
-        usage = read("core/tools/cli_parse.cpp")
+        # The usage text is generated from core/api/vmafx.toml (RC4 WP8).
+        usage = read("core/tools/cli_options.gen.inc")
         for backend, flag in (("HIP", "hip"), ("Metal", "metal")):
             line = re.search(rf"--{flag}_device \$unsigned:[^\n]*\n[^\n]*\n", usage)
             self.assertIsNotNone(line, flag)
@@ -118,6 +123,8 @@ class SyclNoGraphDeprecation(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls) -> None:
+        # Windows can hold the harness for a moment after it ran (WinError 5).
+        remove_program(cls.binary)
         cls.tmp.cleanup()
 
     def run_harness(self, **env: str) -> tuple[list[str], list[str]]:
@@ -177,14 +184,18 @@ class TadDisabledText(unittest.TestCase):
         self.assertIn("problem loading feature extractor: tad", tad)
 
     def test_the_build_graph_really_omits_the_tu_and_the_registration(self) -> None:
+        # ADR-1713: tad_rust.c is a direct libvmaf source only inside the Rust
+        # block, and only the Rust shim (built in that block) registers it.
         meson = read("core/src/meson.build")
-        self.assertRegex(
-            meson,
-            r"rust_tad_direct_sources = \[\]\nif is_rust_enabled\n"
-            r"\s+rust_tad_direct_sources = \[feature_src_dir \+ 'tad_rust.c'\]",
-        )
+        source = "feature_src_dir + 'tad_rust.c'"
+        self.assertEqual(meson.count(source), 1, "tad_rust.c is listed once")
+        start = meson.index("rust_shim_sources = []\nif is_rust_enabled\n")
+        end = meson.index("\nendif\n", start)
+        self.assertIn(source, meson[start:end], "tad_rust.c is inside the Rust block")
+        shim = read("core/src/rust/shim/rust_twins.cpp")
+        self.assertIn("g_slots[g_count].fex = vmaf_fex_tad;", shim)
         registry = read("core/src/feature/feature_extractor.cpp")
-        self.assertIn("#if HAVE_RUST_TAD\n    /* ADR-0707: TAD Rust pilot", registry)
+        self.assertNotIn("&vmaf_fex_tad", registry)
 
 
 class MesonOptionDescriptions(unittest.TestCase):

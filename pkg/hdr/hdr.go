@@ -430,15 +430,12 @@ func svtAV1Args(info *Info) []string {
 	return append(globalColorArgs(info), "-svtav1-params", strings.Join(parts, ":"))
 }
 
-// nvencHEVCArgs relies on 10-bit main10 plus the ffmpeg-global colour flags
-// for SEI propagation, with the explicit SEI knobs when available.
+// nvencHEVCArgs is hevcMain10Global: FFmpeg 9.0.2's hevc_nvenc has no
+// -master_display or -max_cll option (an unrecognised option aborts the whole
+// encode), so the static HDR metadata cannot be given on the command line.
+// NVENC takes it from the mastering-display and content-light-level side data
+// of the decoded frames, which a container source carries and a raw YUV does
+// not.
 func nvencHEVCArgs(info *Info) []string {
-	args := hevcMain10Global(info)
-	if info.MasterDisplay != "" {
-		args = append(args, "-master_display", info.MasterDisplay)
-	}
-	if info.MaxCLL != "" {
-		args = append(args, "-max_cll", info.MaxCLL)
-	}
-	return args
+	return hevcMain10Global(info)
 }

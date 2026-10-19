@@ -5,7 +5,7 @@ import subprocess
 
 __copyright__ = "Copyright 2016-2020, Netflix, Inc."
 __license__ = "BSD+Patent"
-__version__ = "1.0.0-rc.2"  # x-release-please-version
+__version__ = "1.0.0-rc.3"  # x-release-please-version
 
 logging.basicConfig()
 logger = logging.getLogger(os.path.splitext(os.path.basename(__file__))[0])
@@ -227,7 +227,9 @@ def _vmafexec_base_command(
     )
 
 
-def _vmafexec_feature_flags(float_psnr, psnr, float_ssim, ssim, float_ms_ssim, ms_ssim, float_moment):
+def _vmafexec_feature_flags(
+    float_psnr, psnr, float_ssim, ssim, float_ms_ssim, ms_ssim, float_moment
+):
     """The ``--feature`` flags of ``call_vmafexec``, in the order the command has always had."""
     flags = ""
     if float_psnr:
@@ -246,6 +248,28 @@ def _vmafexec_feature_flags(float_psnr, psnr, float_ssim, ssim, float_ms_ssim, m
         assert False, "ssim (the daala integer ssim) is deprecated"
     if ms_ssim:
         flags += " --feature ms_ssim"
+    return flags
+
+
+_VMAFEXEC_COLOR_KEYS = {"range", "primaries", "trc", "matrix"}
+
+
+def _vmafexec_color_flags(color_ref, color_dist):
+    """``--color_<attribute>_ref`` / ``--color_<attribute>_dist`` of ``call_vmafexec``.
+
+    Per-input source colorimetry, e.g. ``{'range': 'limited', 'primaries': 'bt2020',
+    'trc': 'smpte2084', 'matrix': 'bt2020nc'}``. All four keys are required for an
+    input that is given; ``None`` leaves that input unspecified.
+    """
+    flags = ""
+    for suffix, color in (("ref", color_ref), ("dist", color_dist)):
+        if color is None:
+            continue
+        assert (
+            set(color) == _VMAFEXEC_COLOR_KEYS
+        ), "color_{} needs exactly range, primaries, trc and matrix".format(suffix)
+        for attribute, value in color.items():
+            flags += " --color_{}_{} {}".format(attribute, suffix, value)
     return flags
 
 
@@ -268,7 +292,9 @@ def _vmafexec_model_overloads(
     if motion_force_zero:
         assert isinstance(motion_force_zero, bool)
         force_zero = str(motion_force_zero).lower()
-        suffix += f":motion.motion_force_zero={force_zero}:float_motion.motion_force_zero={force_zero}"
+        suffix += (
+            f":motion.motion_force_zero={force_zero}:float_motion.motion_force_zero={force_zero}"
+        )
 
     # CAMBI encode-resolution / encode-bitdepth overrides. These
     # flow through to the cambi feature so its feature-name key
@@ -453,14 +479,16 @@ class ExternalProgramCaller(object):
         enc_height=None,
         enc_bitdepth=None,
         backend=None,
+        color_ref=None,
+        color_dist=None,
     ):
-
         if exe is None:
             exe = required(ExternalProgram.vmafexec)
 
         vmafexec_cmd = _vmafexec_base_command(
             exe, reference, distorted, width, height, pixel_format, bitdepth, output
         )
+        vmafexec_cmd += _vmafexec_color_flags(color_ref, color_dist)
         vmafexec_cmd += _vmafexec_feature_flags(
             float_psnr, psnr, float_ssim, ssim, float_ms_ssim, ms_ssim, float_moment
         )

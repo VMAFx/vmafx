@@ -20,9 +20,11 @@
  *  collect() publishes the CPU's motion_v2_sad_score: the normalised SAD,
  *  fps-weighted and capped at motion_max_val (integer_motion_v2.c::extract),
  *  0 for the frames without an earlier frame to difference against.
- *  flush() derives motion2_v2 and motion3_v2 from those stored scores with
- *  the CPU's own function, vmaf_motion_window_flush() (motion_window.h,
- *  ADR-1478), so the twin's scores are the CPU's whenever its SADs are. No
+ *  advance() and flush() derive motion2_v2 and motion3_v2 from those stored
+ *  scores with the CPU's own functions, vmaf_motion_window_advance() and
+ *  vmaf_motion_window_flush() (motion_window.h, ADR-1478), each frame once its
+ *  window is complete (ADR-2090), so the twin's scores are the CPU's whenever
+ *  its SADs are. No
  *  GPU work is needed for the post-process. Its option surface was added
  *  in ADR-1108 (closing the GPU-twin deferral ADR-0337 left open).
  */
@@ -97,6 +99,8 @@ typedef struct MotionV2StateCuda {
     bool motion_moving_average;
 
     VmafDictionary *feature_name_dict;
+    /* motion2_v2 / motion3_v2, derived as the SAD scores come in (ADR-2090). */
+    VmafMotionWindowState window_state;
 } MotionV2StateCuda;
 
 /* Option table mirrors integer_motion_v2.c (CPU reference) for the
@@ -353,8 +357,8 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
     }
 
     /* The CPU's SAD score (integer_motion_v2.c::extract): normalised, then
-     * fps-weighted and capped at motion_max_val. flush() derives motion2_v2
-     * and motion3_v2 from these stored values, as the CPU does. */
+     * fps-weighted and capped at motion_max_val. advance() and flush() derive
+     * motion2_v2 and motion3_v2 from these stored values, as the CPU does. */
     const uint64_t *sad_host = s->rb.host_pinned;
     const double sad_score = (double)*sad_host / 256.0 / ((double)s->frame_w * s->frame_h);
     return vmaf_feature_collector_append_with_dict(
@@ -362,18 +366,11 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
         MIN(sad_score * s->motion_fps_weight, s->motion_max_val), index);
 }
 
-/* motion2_v2 and motion3_v2 of every frame, from the stored SAD scores: the
- * CPU extractor's own derivation (integer_motion.c::vmaf_motion_window_flush(),
- * ADR-1478), with the three-frame or the five-frame window. A one-frame
- * input gets motion2_v2 = motion3_v2 = 0 at index 0, as on the CPU. */
-static int flush_fex_cuda(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector)
+/* The window of this twin's options, on its state: the CPU extractor's
+ * (integer_motion.c::vmaf_motion_window_advance() / _flush(), ADR-1478),
+ * with the three-frame or the five-frame window. */
+static VmafMotionWindow motion_v2_window_of(MotionV2StateCuda *s)
 {
-    MotionV2StateCuda *s = fex->priv;
-
-    /* No frame reached init(): nothing was stored, nothing to derive. */
-    if (s->feature_name_dict == NULL)
-        return 1;
-
     const VmafMotionWindow window = {
         .sad_feature = "VMAF_integer_feature_motion_v2_sad_score",
         .motion2_feature = "VMAF_integer_feature_motion2_v2_score",
@@ -383,7 +380,35 @@ static int flush_fex_cuda(VmafFeatureExtractor *fex, VmafFeatureCollector *featu
         .motion_max_val = s->motion_max_val,
         .motion_five_frame_window = s->motion_five_frame_window,
         .motion_moving_average = s->motion_moving_average,
+        .state = &s->window_state,
     };
+    return window;
+}
+
+/* ADR-2090: motion2_v2 / motion3_v2 of the frames whose window the SAD scores
+ * collected so far complete. */
+static int advance_fex_cuda(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector)
+{
+    MotionV2StateCuda *s = fex->priv;
+    /* No frame reached init(): nothing was stored, nothing to derive. */
+    if (s->feature_name_dict == NULL)
+        return 0;
+    const VmafMotionWindow window = motion_v2_window_of(s);
+    return vmaf_motion_window_advance(feature_collector, s->feature_name_dict, &window);
+}
+
+/* motion2_v2 and motion3_v2 of the frames no advance derived, from the stored
+ * SAD scores. A one-frame input gets motion2_v2 = motion3_v2 = 0 at index 0,
+ * as on the CPU. */
+static int flush_fex_cuda(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector)
+{
+    MotionV2StateCuda *s = fex->priv;
+
+    /* No frame reached init(): nothing was stored, nothing to derive. */
+    if (s->feature_name_dict == NULL)
+        return 1;
+
+    const VmafMotionWindow window = motion_v2_window_of(s);
     const int err = vmaf_motion_window_flush(feature_collector, s->feature_name_dict, &window);
     return err ? err : 1;
 }
@@ -405,6 +430,7 @@ VmafFeatureExtractor vmaf_fex_integer_motion_v2_cuda = {
     .submit = submit_fex_cuda,
     .collect = collect_fex_cuda,
     .flush = flush_fex_cuda,
+    .advance = advance_fex_cuda,
     .close = close_fex_cuda,
     .options = options,
     .priv_size = sizeof(MotionV2StateCuda),

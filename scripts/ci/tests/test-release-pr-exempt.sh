@@ -23,6 +23,8 @@ if [[ ! -f "$GATE" ]]; then
 fi
 
 TMPDIR_TESTS="$(mktemp -d)"
+NOGIT_DIR="$TMPDIR_TESTS/nogit"
+mkdir -p "$NOGIT_DIR"
 cleanup() {
   rm -rf -- "$TMPDIR_TESTS"
 }
@@ -40,13 +42,23 @@ expect() {
   local log_file="$TMPDIR_TESTS/log"
   : >"$out_file"
   local rc=0
-  HEAD_REF="$head_ref" \
-    PR_AUTHOR="$author" \
-    PR_AUTHOR_TYPE="$author_type" \
-    DIFF_FILE="$diff_file" \
-    RELEASE_BOT_PAT_USER="$pat_user" \
-    GITHUB_OUTPUT="$out_file" \
-    bash "$GATE" >"$log_file" 2>&1 || rc=$?
+  # Run the gate outside any Git checkout. Without DIFF_FILE it diffs the checkout
+  # it runs in against origin/master, and inside the release PR's own CI run that
+  # diff is release-shaped, so the "without diff" cases saw a diff and failed on
+  # every release PR (T-CI-RELEASE-PR-EXEMPT-TEST-READS-CHECKOUT-2026-10-07).
+  # GIT_CEILING_DIRECTORIES stops Git from finding a repository above the scratch
+  # directory.
+  (
+    cd "$NOGIT_DIR" &&
+      GIT_CEILING_DIRECTORIES="$TMPDIR_TESTS" \
+        HEAD_REF="$head_ref" \
+        PR_AUTHOR="$author" \
+        PR_AUTHOR_TYPE="$author_type" \
+        DIFF_FILE="$diff_file" \
+        RELEASE_BOT_PAT_USER="$pat_user" \
+        GITHUB_OUTPUT="$out_file" \
+        bash "$GATE"
+  ) >"$log_file" 2>&1 || rc=$?
   if [[ $rc -ne 0 ]]; then
     printf 'FAIL %s: exited %d (must always exit 0)\n' "$label" "$rc"
     sed 's/^/      /' "$log_file"

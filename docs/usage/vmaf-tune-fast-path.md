@@ -92,7 +92,7 @@ vmaf-tune fast \
 | `--proxy-tolerance` | `1.5` | Largest proxy/verify gap in VMAF points before exit code `3`. |
 | `--sample-chunk-seconds` | `5.0` | Probe-slice duration per TPE trial. |
 | `--smoke` | off | Synthetic curve; no ffmpeg, ONNX or GPU. |
-| `--score-backend` | `auto` | Verify-pass backend: `auto`, `cpu`, `cuda`, `sycl` or `hip`. See [score backends](vmaf-tune-score-backend.md). |
+| `--score-backend` | `auto` | Verify-pass backend: `auto`, `cpu`, `cuda`, `sycl`, `hip` or `metal`. See [score backends](vmaf-tune-score-backend.md). |
 | `--ffmpeg-bin`, `--vmaf-bin` | `ffmpeg`, `vmaf` | Tool paths. |
 | `--vmaf-model` | `vmaf_v1.0.16_3d0h` | libvmaf model for the verify pass. |
 | `--encode-dir` | `.workingdir/cache/vmafx-tune/fast` | Scratch directory for probe and verify encodes. |

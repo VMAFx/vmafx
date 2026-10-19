@@ -15,7 +15,7 @@ import (
 //
 // F.2 treats the predictor's verdict as a binary GOSPEL / FALL_BACK gate. F.3
 // makes the gate continuous by consulting the conformal interval half-width
-// (ADR-0279). The two thresholds carve the width axis into three regions:
+// (ADR-0393). The two thresholds carve the width axis into three regions:
 //
 //   - width <= tight  → predictor is confident; trust the point estimate even
 //     if the native verdict was nominally FALL_BACK.

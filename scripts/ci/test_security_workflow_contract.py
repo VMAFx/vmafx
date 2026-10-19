@@ -11,12 +11,46 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SECURITY_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "security-scans.yml"
-EXPECTED_GROUP = "group: security-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}"
+EXPECTED_GROUP = (
+    "group: security-${{ github.workflow }}-${{ github.event_name }}-"
+    "${{ github.ref == 'refs/heads/master' && github.sha || github.ref }}"
+)
 COLLIDING_GROUP = "group: security-${{ github.workflow }}-${{ github.ref }}"
 EXPECTED_DEPENDENCY_LICENSE_ALLOWLIST = {
     "pkg:pypi/python-debian",
     "pkg:pypi/text-unidecode",
 }
+# Every language master analyses must be analysed on every pull request too:
+# GitHub's `CodeQL` check is neutral ("configuration not found") when a
+# category of the base is missing from the head, and the required aggregator
+# fails a neutral owed check (ADR-3293).
+CODEQL_JOBS = {
+    "codeql-cpp": "cpp",
+    "codeql-python": "python",
+    "codeql-actions": "actions",
+}
+
+
+def codeql_job_problems(job: str, language: str) -> list[str]:
+    """Return why a CodeQL job could skip its analysis, or an empty list."""
+    problems = []
+    if "steps.impact.outputs" in job:
+        problems.append("analysis depends on the impact planner's outputs")
+    if "Plan CI impact" in job:
+        problems.append("job still runs the impact planner")
+    if f"languages: {language}" not in job:
+        problems.append(f"init does not name language {language}")
+    if f'category: "/language:{language}"' not in job:
+        problems.append(f"analyze does not upload category /language:{language}")
+    for action in ("init", "analyze"):
+        _, found, rest = job.partition(f"- uses: github/codeql-action/{action}@")
+        if not found:
+            problems.append(f"no codeql-action/{action} step")
+            continue
+        body = rest.split("\n      - ", maxsplit=1)[0]
+        if re.search(r"^\s+if:", body, flags=re.MULTILINE):
+            problems.append(f"codeql-action/{action} step is conditional")
+    return problems
 
 
 class SecurityWorkflowContractTest(unittest.TestCase):
@@ -41,7 +75,7 @@ class SecurityWorkflowContractTest(unittest.TestCase):
 
         self.assertIn(EXPECTED_GROUP, concurrency)
         self.assertNotIn(COLLIDING_GROUP, concurrency)
-        self.assertIn("cancel-in-progress: true", concurrency)
+        self.assertIn("cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}", concurrency)
 
     def test_cpp_configure_is_outside_extraction_and_checkout(self) -> None:
         workflow = SECURITY_WORKFLOW.read_text(encoding="utf-8")
@@ -61,6 +95,36 @@ class SecurityWorkflowContractTest(unittest.TestCase):
         self.assertIn('meson compile -C "${{ runner.temp }}/build"', job)
         self.assertNotIn("working-directory: core", job)
         self.assertNotIn("meson setup build", job)
+
+    def test_codeql_analyses_every_language_on_every_event(self) -> None:
+        workflow = SECURITY_WORKFLOW.read_text(encoding="utf-8")
+        for job_name, language in CODEQL_JOBS.items():
+            with self.subTest(job=job_name):
+                job = self._job_block(workflow, job_name)
+                self.assertEqual(codeql_job_problems(job, language), [])
+
+    def test_codeql_gate_refuses_an_impact_gated_analysis(self) -> None:
+        workflow = SECURITY_WORKFLOW.read_text(encoding="utf-8")
+        job = self._job_block(workflow, "codeql-python")
+        planted = job.replace(
+            "      - uses: github/codeql-action/analyze@",
+            "      - if: steps.impact.outputs.python_lint == 'true'\n"
+            "        uses: github/codeql-action/analyze@",
+        )
+        self.assertNotEqual(planted, job)
+        self.assertIn(
+            "analysis depends on the impact planner's outputs",
+            codeql_job_problems(planted, "python"),
+        )
+        conditional = job.replace(
+            "        with:\n          category:",
+            "        if: github.event_name == 'push'\n        with:\n          category:",
+        )
+        self.assertNotEqual(conditional, job)
+        self.assertIn(
+            "codeql-action/analyze step is conditional",
+            codeql_job_problems(conditional, "python"),
+        )
 
     def test_semgrep_registry_results_stay_advisory(self) -> None:
         workflow = SECURITY_WORKFLOW.read_text(encoding="utf-8")
@@ -83,7 +147,7 @@ class SecurityWorkflowContractTest(unittest.TestCase):
         ].split("- name:", maxsplit=1)[0]
         self.assertIn("hashFiles('semgrep-registry.sarif')", archive_step)
         self.assertIn(
-            "uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+            "uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
             archive_step,
         )
         self.assertIn("name: semgrep-registry-sarif", archive_step)

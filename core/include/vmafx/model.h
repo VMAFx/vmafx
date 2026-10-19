@@ -24,6 +24,10 @@
 extern "C" {
 #endif
 
+/* NOLINTBEGIN(modernize-use-using,performance-enum-size): public C header included by C
+ * and C++ translation units; C has no `using`, and C has no fixed enum underlying type
+ * across the required toolchains (ADR-1470). ADR-1138. */
+
 /*
  * VmafxModelFlags: Model load flags (bit values equal enum VmafModelFlags). Bits of a u64 field.
  * @since 0.1
@@ -204,6 +208,8 @@ VMAFX_EXPORT uint32_t vmafx_model_set_size(const VmafxModelSet *set);
  * @since 0.1
  */
 VMAFX_EXPORT const char *vmafx_model_set_hash(const VmafxModelSet *set);
+
+/* NOLINTEND(modernize-use-using,performance-enum-size) */
 
 #ifdef __cplusplus
 }

@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD060 -->
 # ADR-0352: Vulkan submit-pool migration — PR A (adm, motion, psnr)
 
-- Status: Accepted
+- **Status**: Accepted
 - Date: 2026-05-09
 - Tags: vulkan, perf, kernel-template
 - Supersedes: —
@@ -134,3 +134,12 @@ Risk:
 - req: user direction 2026-05-09 to migrate adm+motion+psnr as PR A of the
   remaining-13-extractors submit-pool batch (bottleneck #2 from the perf-hunt
   report; ADR-0256 follow-up).
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 130: `- Profile doc:
+  [docs/development/vulkan-dedup-profile-2026-05-02.md](./development/vulkan-dedup-profile-2026-`:
+  Cited profile document does not exist on master.

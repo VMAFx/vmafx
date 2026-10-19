@@ -85,7 +85,7 @@ a bisect-backed loop or a precomputed corpus stream.
 | `--pix-fmt FMT` | `yuv420p` | Source pixel format, for example `yuv422p` or `yuv420p10le`. |
 | `--crf-sweep CSV` | sampler default `20,25,30,35,40` | CRF list that replaces the default sweep. |
 | `--src-width INT`, `--src-height INT` | largest `--resolutions` entry (by pixel count), each independently | Actual raw-YUV source size when it exceeds a rung. Container sources auto-detect geometry and ignore both. |
-| `--score-backend NAME` | `auto` | `auto`, `cpu`, `cuda`, `sycl` or `hip` (Vulkan was removed in ADR-0726). |
+| `--score-backend NAME` | `auto` | `auto`, `cpu`, `cuda`, `sycl`, `hip` or `metal` (Vulkan was removed in ADR-0726). |
 | `--vmaf-bin PATH` | `vmaf` | `vmaf` binary used to probe the scoring backends. |
 | `--neg` | off | Use the NEG variant of the VMAF model (see [VMAF NEG](../metrics/vmaf-neg.md)). |
 | `--with-uncertainty` | off | Prune and insert rungs from conformal intervals. See [below](#uncertainty-aware-extension). |

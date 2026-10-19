@@ -6,11 +6,12 @@
 from __future__ import annotations
 
 import copy
+import datetime as dt
 import importlib.util
 import json
 import unittest
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -54,10 +55,11 @@ class RepositorySecurityTests(unittest.TestCase):
         self.assertFalse((ROOT / ".github/rulesets/main.json").exists())
 
     def test_declared_review_requirements_are_the_live_ones(self) -> None:
-        """One approval, no code-owner review, no required signatures (ADR-1252)."""
+        """No approval, no last-push approval, no code-owner review, no signatures (ADR-3313)."""
         rules = self.policy["ruleset"]["rules"]
         review = next(r for r in rules if r["type"] == "pull_request")["parameters"]
-        self.assertEqual(review["required_approving_review_count"], 1)
+        self.assertEqual(review["required_approving_review_count"], 0)
+        self.assertIs(review["require_last_push_approval"], False)
         self.assertIs(review["require_code_owner_review"], False)
         self.assertNotIn("required_signatures", {r["type"] for r in rules})
 
@@ -146,8 +148,8 @@ class RepositorySecurityTests(unittest.TestCase):
 
     def test_review_freshness_or_check_origin_changes_are_detected(self) -> None:
         for rule_type, key, value in [
-            ("pull_request", "required_approving_review_count", 0),
-            ("pull_request", "require_last_push_approval", False),
+            ("pull_request", "required_approving_review_count", 1),
+            ("pull_request", "require_last_push_approval", True),
             ("pull_request", "dismiss_stale_reviews_on_push", False),
             ("required_status_checks", "strict_required_status_checks_policy", False),
             (
@@ -189,6 +191,78 @@ class RepositorySecurityTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "VMAFx/vmafx master"):
                 CHECK.inspect(self.policy)
             fetch.assert_not_called()
+
+
+class BypassModeExceptionTests(unittest.TestCase):
+    """A bypass mode other than pull-request mode holds only under a dated exception."""
+
+    PATH = ".github/repository-security-policy.json"
+    DAY = dt.date(2026, 10, 12)
+
+    def setUp(self) -> None:
+        self.policy = json.loads((ROOT / self.PATH).read_text())
+        self.listed = CHECK.lint_exceptions.Entry
+
+    def entry(self, expires: dt.date, rule: str = "", path: str = "") -> Any:
+        return self.listed(rule or CHECK.BYPASS_MODE_RULE, path or self.PATH, "reason", expires)
+
+    def findings(self, entries: list[Any], day: dt.date | None = None) -> list[str]:
+        return cast(list[str], CHECK.bypass_mode_findings(self.policy, entries, day or self.DAY))
+
+    def set_mode(self, mode: str) -> None:
+        for actor in self.policy["ruleset"]["bypass_actors"]:
+            actor["bypass_mode"] = mode
+
+    def tracked(self) -> list[Any]:
+        entries, malformed = CHECK.lint_exceptions.load(ROOT)
+        self.assertEqual(malformed, [])
+        return [entry for entry in entries if entry.rule == CHECK.BYPASS_MODE_RULE]
+
+    def test_the_tracked_policy_is_pull_request_mode_without_an_entry(self) -> None:
+        """ADR-3313: the bypass is at pull-request mode and the list holds no entry."""
+        modes = {actor["bypass_mode"] for actor in self.policy["ruleset"]["bypass_actors"]}
+        self.assertEqual(modes, {"pull_request"})
+        own = self.tracked()
+        self.assertEqual(own, [])
+        self.assertEqual(self.findings(own, CHECK.lint_exceptions.today()), [])
+
+    def test_a_mode_other_than_pull_request_without_an_entry_is_a_finding(self) -> None:
+        self.set_mode("always")
+        found = " ".join(self.findings([]))
+        self.assertIn("bypass_mode always", found)
+        self.assertIn("solo-repository-bypass-mode.toml", found)
+
+    def test_an_expired_entry_does_not_hold(self) -> None:
+        self.set_mode("always")
+        yesterday = self.DAY - dt.timedelta(1)
+        self.assertIn("unexpired", " ".join(self.findings([self.entry(yesterday)])))
+        self.assertEqual(self.findings([self.entry(self.DAY)]), [])
+
+    def test_an_entry_of_another_rule_or_file_does_not_hold(self) -> None:
+        self.set_mode("always")
+        later = self.DAY + dt.timedelta(30)
+        for other in (
+            self.entry(later, rule="scorecard-branch-protection"),
+            self.entry(later, path=".github/CODEOWNERS"),
+        ):
+            with self.subTest(other=other):
+                self.assertIn("unexpired", " ".join(self.findings([other])))
+
+    def test_pull_request_mode_needs_no_entry_and_refuses_a_stale_one(self) -> None:
+        self.set_mode("pull_request")
+        self.assertEqual(self.findings([]), [])
+        stale = self.findings([self.entry(self.DAY + dt.timedelta(30))])
+        self.assertIn("stale entry", " ".join(stale))
+
+    def test_the_checker_fails_on_a_stale_entry(self) -> None:
+        stale = self.entry(self.DAY + dt.timedelta(days=30))
+        with (
+            patch.object(CHECK, "inspect", return_value=([], {})),
+            patch.object(CHECK.sys, "argv", ["check_repository_security.py"]),
+        ):
+            self.assertEqual(CHECK.main(), 0)
+            with patch.object(CHECK.lint_exceptions, "load", return_value=([stale], [])):
+                self.assertEqual(CHECK.main(), 1)
 
 
 if __name__ == "__main__":

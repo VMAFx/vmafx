@@ -74,9 +74,23 @@ class RgbMathContract(unittest.TestCase):
                 src = Path(tmp) / f"t.{'c' if lang == 'c' else 'cpp'}"
                 src.write_text('#include "vmafx/rgb_math.h"\nint main(void) { return 0; }\n')
                 done = subprocess.run(  # noqa: S603 -- resolved compiler, fixed argv
-                    [exe, std, "-Wall", "-Wextra", "-Werror", "-pedantic", f"-I{ROOT}/core/src",
-                     "-x", lang, str(src), "-o", str(Path(tmp) / "t")],
-                    capture_output=True, text=True, check=False,
+                    [
+                        exe,
+                        std,
+                        "-Wall",
+                        "-Wextra",
+                        "-Werror",
+                        "-pedantic",
+                        f"-I{ROOT}/core/src",
+                        "-x",
+                        lang,
+                        str(src),
+                        "-o",
+                        str(Path(tmp) / "t"),
+                    ],
+                    capture_output=True,
+                    text=True,
+                    check=False,
                 )
                 self.assertEqual(done.returncode, 0, done.stderr)
 

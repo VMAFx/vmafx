@@ -44,7 +44,6 @@ ALLOWED = {
     "testdata/test_run_sycl_scores.py": "argv and environment builders under test; never run",
     "tools/rc1-tester/tests/test_probe.py": "stubbed shutil.which of the shipped probe",
     "tools/vmaf-tune/tests/test_report_coverage_push.py": "value recorded in a report profile",
-    "tools/vmaf-tune/tests/test_score_backend_coverage_push.py": "argument to a fake runner",
 }
 
 

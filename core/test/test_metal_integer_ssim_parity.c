@@ -120,6 +120,20 @@ static char *test_ssim_identical_tiny(void)
     return ssim_twin_identical(&twin, 3u, 3u, NULL);
 }
 
+/* T-METAL-UINT-PLANE-INDEX-2026-10-05: the five W x H moment planes are
+ * indexed in uint, so integer_ssim_metal refuses the picture cap (2^30
+ * samples per plane, past 858,993,459). */
+static char *test_ssim_refuses_uint_index_overflow(void)
+{
+    if (metal_twin_device_only() || !metal_twin_have_device()) {
+        return NULL;
+    }
+    mu_assert("integer_ssim_metal accepted the picture cap",
+              metal_twin_init_status("integer_ssim_metal", NULL, NULL, METAL_TWIN_PIC_DIM_MAX,
+                                     METAL_TWIN_PIC_DIM_MAX) == -EINVAL);
+    return NULL;
+}
+
 static void run_bit_depth_cases(void)
 {
     metal_run_case(test_ssim_8bit);
@@ -135,6 +149,7 @@ static void run_geometry_cases(void)
     metal_run_case(test_ssim_tiny_frame_16bit);
     metal_run_case(test_ssim_one_pixel);
     metal_run_case(test_ssim_1080p);
+    metal_run_case(test_ssim_refuses_uint_index_overflow);
 }
 
 static void run_db_cases(void)

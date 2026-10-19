@@ -33,16 +33,25 @@ permissions:
   contents: read
 
 concurrency:
-  group: sycl-parity-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: sycl-parity-${{ github.workflow }}-${{ github.ref == 'refs/heads/master' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
 
 jobs:
+  tier:
+    name: CI tier (SYCL Parity)
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/ci-tier.yml
+
   runner-available:
+    needs: tier
+    if: needs.tier.outputs.full == 'true' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository)
     name: "Probe SYCL Runner"
     runs-on: ubuntu-26.04
     # Security: never schedule anything from a fork PR onto self-hosted
     # infrastructure; drafts do not contend for the scarce runner (ADR-0331).
-    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
     timeout-minutes: 5
     outputs:
       available: ${{ steps.probe.outputs.available }}
@@ -87,12 +96,14 @@ jobs:
         run: |
           # ADR-1360: parity runs don't need AOT device images, and the
           # self-hosted runner has no ocloc; build the SPIR-V JIT path only.
+          # shellcheck disable=SC2046  # the helper prints one option per line, split on purpose
           meson setup core/build core \
             --buildtype=release \
             -Denable_cuda=false \
             -Denable_sycl=true \
             -Dsycl_icpx_aot_targets= \
-            -Denable_float=true
+            -Denable_float=true \
+            -Dwerror=true $(scripts/ci/werror-args.sh true)
           ninja -C core/build
       - name: Run SYCL unit and parity tests
         run: >-
@@ -115,7 +126,7 @@ jobs:
             --md-out sycl_parity.md
       - name: Upload parity artifacts
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: sycl-parity-report
           path: |

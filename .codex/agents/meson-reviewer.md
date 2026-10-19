@@ -1,8 +1,6 @@
 ---
-name: meson-reviewer
 description: Reviews meson.build / meson_options.txt changes for the libvmaf build system. Checks dependency declarations, subproject use, feature flags, install targets, test registration. Use when reviewing build-system PRs.
-model: sonnet
-tools: Read, Grep, Glob, Bash
+name: meson-reviewer
 ---
 
 <!-- markdownlint-disable MD013 MD041 -->
@@ -40,3 +38,5 @@ You review Meson build-system changes for VMAFx fork. Scope: `meson.build`
 - Verify with `meson introspect build --targets` and `meson configure build`.
 
 Do not edit. Recommend.
+
+<!-- TOOL PERMISSION GAP: Codex custom agents inherit parent tools; no per-agent allow-list is available. -->

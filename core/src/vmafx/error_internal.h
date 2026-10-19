@@ -11,11 +11,19 @@
 #define VMAFX_ERROR_INTERNAL_H
 
 #include <stdint.h>
+#include <stdio.h>
 
 #include "internal.h"
 #include "vmafx/vmafx.h"
 
-#if defined(__GNUC__) || defined(__clang__)
+/* vmafx_fail_report() formats with the C runtime's vsnprintf(). On MinGW, GCC's
+ * `printf` archetype is the MSVCRT one, which rejects %zu (the Windows UCRT64
+ * build failed on model.c with -Werror=format); <stdio.h> names the archetype
+ * the runtime's own declarations use in __MINGW_PRINTF_FORMAT (gnu_printf
+ * under UCRT or __USE_MINGW_ANSI_STDIO, ms_printf for the old MSVCRT). */
+#if defined(__MINGW_PRINTF_FORMAT)
+#define VMAFX_PRINTF_FORMAT(fmt, args) __attribute__((format(__MINGW_PRINTF_FORMAT, fmt, args)))
+#elif defined(__GNUC__) || defined(__clang__)
 #define VMAFX_PRINTF_FORMAT(fmt, args) __attribute__((format(printf, fmt, args)))
 #else
 #define VMAFX_PRINTF_FORMAT(fmt, args)

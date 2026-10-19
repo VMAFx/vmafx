@@ -37,6 +37,7 @@
 
 #include "mu_table.h"
 #include "test.h"
+#include "float_bits.h"
 
 #include "libvmaf/dnn.h"
 #include "libvmaf/libvmaf.h"
@@ -554,7 +555,7 @@ static char *expect_tiny_score_from_features(VmafContext *ctx, VmafDnnSession *s
     mu_assert("tiny score recorded",
               vmaf_feature_score_at_index(ctx, "vmaf_tiny_model", &tiny, index) == 0);
     mu_assert("ADR-1520: tiny score is the model applied to the computed features",
-              (float)tiny == expect);
+              vmaf_test_identical_f32((float)tiny, expect));
     return NULL;
 }
 
@@ -684,7 +685,8 @@ static char *test_fr_v3_preset_slot_is_the_trained_constant(void)
     if (err)
         return err;
     mu_assert("ADR-1558: the preset does not reach the v3 codec block",
-              medium[0] == veryslow[0] && medium[1] == veryslow[1]);
+              vmaf_test_identical_f64(medium[0], veryslow[0]) &&
+                  vmaf_test_identical_f64(medium[1], veryslow[1]));
     return NULL;
 }
 
@@ -868,6 +870,67 @@ static char *test_use_tiny_model_int8_session_fail_falls_back_to_fp32(void)
     return NULL;
 }
 
+static char *stage_invalid_int8_triple(char *tmpl, char *onnx, char *int8_onnx, char *sidecar,
+                                       size_t cap)
+{
+    const int fd = mkstemp(tmpl);
+    mu_assert("mkstemp failed", fd >= 0);
+    (void)close(fd);
+
+    (void)snprintf(onnx, cap, "%s.onnx", tmpl);
+    (void)snprintf(int8_onnx, cap, "%s.int8.onnx", tmpl);
+    (void)snprintf(sidecar, cap, "%s.json", tmpl);
+
+    mu_assert("copy smoke onnx failed", copy_file_600(SMOKE_FP32_MODEL, onnx) == 0);
+
+    static const unsigned char corrupt_bytes[] = "invalid_int8_onnx_payload";
+    mu_assert("write invalid int8 failed",
+              write_file_600(int8_onnx, corrupt_bytes, sizeof(corrupt_bytes) - 1u) == 0);
+
+    static const unsigned char json_dyn[] =
+        "{\"kind\":\"fr\",\"quant_mode\":\"dynamic\",\"name\":\"redir_invalid_test\"}\n";
+    mu_assert("write sidecar failed",
+              write_file_600(sidecar, json_dyn, sizeof(json_dyn) - 1u) == 0);
+    return NULL;
+}
+
+static char *test_use_tiny_model_int8_invalid_falls_back_to_fp32(void)
+{
+    if (!vmaf_dnn_available())
+        return NULL;
+    if (access(SMOKE_FP32_MODEL, R_OK) != 0)
+        return NULL;
+
+    char tmpl[] = "/tmp/vmaf-tiny-inv-XXXXXX";
+    char onnx[1024];
+    char int8_onnx[1024];
+    char sidecar[1024];
+    char *err = stage_invalid_int8_triple(tmpl, onnx, int8_onnx, sidecar, sizeof(onnx));
+    if (err)
+        return err;
+
+    /* 1. Invalid int8 sibling with valid fp32 baseline: falls back to fp32 and succeeds. */
+    err = expect_tiny_attach(onnx, 1, "invalid int8 sibling should fall back to fp32");
+    if (err)
+        return err;
+
+    /* 2. Direct invocation of invalid int8 path: fails closed (< 0). */
+    err = expect_tiny_attach(int8_onnx, 0, "direct invalid int8 invocation must fail closed");
+    if (err)
+        return err;
+
+    /* 3. Baseline removed: invalid int8 cannot fall back; fails closed (< 0). */
+    mu_assert("unlink fp32 failed", unlink(onnx) == 0);
+    err = expect_tiny_attach(onnx, 0, "invalid int8 with missing baseline must fail closed");
+    if (err)
+        return err;
+
+    (void)unlink(int8_onnx);
+    (void)unlink(sidecar);
+    (void)unlink(tmpl);
+    return NULL;
+}
+
 /* Stage @p src_onnx (and @p src_data, its external-data file, when not NULL)
  * as <dir>/<base>.onnx next to a sidecar holding @p json, in a fresh
  * directory. The external-data file keeps its own name, which the graph
@@ -995,6 +1058,7 @@ char *run_tests(void)
         MU_TEST(test_use_tiny_model_int8_redirect_and_fallback),
         MU_TEST(test_use_tiny_model_missing_external_data_returns_error_not_abort),
         MU_TEST(test_use_tiny_model_int8_session_fail_falls_back_to_fp32),
+        MU_TEST(test_use_tiny_model_int8_invalid_falls_back_to_fp32),
         MU_TEST(test_feature_vector_unknown_feature_refused),
         MU_TEST(test_feature_vector_name_count_mismatch_refused),
         MU_TEST(test_codec_layout_mismatch_refused),

@@ -18,18 +18,18 @@ invariant: dwt_quant_step() exponent = float product of k, temp, temp, as upstre
   weights of scales 1..3 moved 1..3 ulp, `adm2` up to 8.5e-8 and
   `vmaf_v0.6.1` up to 1.83e-5 off Netflix on 94 % of frames. Golden gate
   blind (4..5 decimals).
-- **CodeQL `cpp/integer-multiplication-cast-to-long` on that line: convert the
-  RESULT explicitly.** `pow(10.0, (double)(params->k * temp * temp))` is the
+- **CodeQL `cpp/integer-multiplication-cast-to-long` on that line: convert
+  RESULT explicitly.** `pow(10.0, (double)(params->k * temp * temp))` is
   same operation as upstream's implicit promotion (same object code, checked
-  with `objdump`); the query reports only implicit widenings. `// codeql[...]`
-  comments do not suppress in this repository's setup. Never cast an operand.
+  with `objdump`); query reports only implicit widenings. `// codeql[...]`
+  comments do not suppress in this repository's setup. Never cast operand.
 - **Two copies, one edit.** CPU header (CUDA + HIP hosts include),
   `sycl/integer_adm_sycl.cpp::dwt_quant_step()`. SYCL copy: exponent in named
   `float`, then `pow(10.0, (double)exponent)`. Twins exact
   (`scripts/ci/exact_twins.d/adm.*`): copy left behind = red cell. Metal has
   no copy since T-METAL-INTEGER-ADM-TWIN-DEFECTS-2026-10-05:
-  `metal/integer_adm_metal_host.c` takes `adm_csf_factors()` through the CPU
-  contexts; never bring a local step back.
+  `metal/integer_adm_metal_host.c` takes `adm_csf_factors()` through CPU
+  contexts; never bring local step back.
 - **Guards.** `test_integer_adm_quant_step`: values == float-product form on
   5 geometries x 4 scales x 2 bands; double-product form differs (test keeps
   teeth); on glibc == bits of Netflix `cea2b4d8` build.

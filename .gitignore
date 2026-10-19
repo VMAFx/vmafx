@@ -26,9 +26,6 @@ build-golden/
 core/build-golden/
 core/build-golden-arm64-*/
 dist/
-# praetor commits its figure player bundle under tools/figures/dist/ (praetorctl
-# adopt, docs:seo-portal) and audit hashes it, so that one dist/ stays tracked.
-!/tools/figures/dist/
 vmaf_output.xml
 compile_commands.json
 
@@ -89,7 +86,6 @@ compat/python-vmaf/core/adm_dwt2_cy.cpp
 .corpus/
 
 # Working/scratch directories
-.workingdir/
 # Also match it as a symlink. A trailing slash only matches a real
 # directory, so an agent worktree that symlinks this shared state dir
 # in (the praetor flavor audit wants them present) leaves an untracked
@@ -234,16 +230,38 @@ build-upstream-parity/
 
 # Vendor skill mirrors. `.claude/skills/` is canonical and tracked; the
 # per-vendor copies drift and are regenerated from it.
-.agents/skills/
+.agents/skills/*
+# Praetor's text-register bundle (decision Q-113): tracked, byte-identical
+# to the praetor pin, and projected into .claude/skills by compile-context.
+!.agents/skills/social-text/
+!.agents/skills/caveman/
+!.agents/skills/adhd-format/
 
 # vmafx-node eBPF object: generated at build time by scripts/dev/gen-node-bpf.sh,
 # never committed (ADR-1622). The bpf2go binding next to it is committed source.
 /cmd/vmafx-node/bpf/rclonebypass_bpfel.o
 /cmd/vmafx-node/bpf/.rclonebypass.stamp
 
+# The controller's SQLite job queue and its WAL files: runtime state, never
+# committed. The default path is under the user's state directory
+# (cmd/vmafx-controller/db_path.go); these catch a VMAFX_DB_PATH pointed into
+# the tree.
+vmafx-controller.db
+vmafx-controller.db-shm
+vmafx-controller.db-wal
+
+# Core dumps a crashing test child writes into its working directory on a host
+# whose core_pattern is a plain name with core_uses_pid set (core.<pid>). Tests
+# that kill a child with a core signal set `ulimit -c 0` for it; this catches a
+# leak. No bare `core` rule: it would match the core/ source tree.
+core.[0-9]*
+
 # BEGIN praetor private artifacts (praetorctl adopt)
-/.workingdir/
-/.workingdir2/
+.workingdir/
+.workingdir2/
 /.standards/worktrees/
 /.agents/mcp_config.json
+/.standards/cache/
+/.claude/settings.local.json
+/.standards-receipt.json
 # END praetor private artifacts

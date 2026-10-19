@@ -201,7 +201,7 @@ static VmafxStatus release_kind_refused(const VmafxReport *report, uint32_t kind
                           "kernel fence (HIP queues are user-mode queues), so HIP frames signal "
                           "HOST and HIP_EVENT release fences and call the release callback");
     }
-    return VMAFX_FAIL(report, kind > VMAFX_FENCE_GL_SYNC ? VMAFX_E_INVALID : VMAFX_E_NOTSUP, 0,
+    return VMAFX_FAIL(report, kind > VMAFX_FENCE_KIND_LAST ? VMAFX_E_INVALID : VMAFX_E_NOTSUP, 0,
                       VMAFX_SUBJECT_FENCE, "kind",
                       "backend hip: a release fence of kind %u; HIP frames signal HOST and "
                       "HIP_EVENT release fences",
@@ -259,8 +259,8 @@ VmafxStatus vmafx_hip_fence_create(const VmafxReport *report, VmafxDevice *devic
                                    VmafxFence *out)
 {
     if (kind != VMAFX_FENCE_HIP_EVENT) {
-        return VMAFX_FAIL(report, kind > VMAFX_FENCE_GL_SYNC ? VMAFX_E_INVALID : VMAFX_E_NOTSUP, 0,
-                          VMAFX_SUBJECT_FENCE, "kind",
+        return VMAFX_FAIL(report, kind > VMAFX_FENCE_KIND_LAST ? VMAFX_E_INVALID : VMAFX_E_NOTSUP,
+                          0, VMAFX_SUBJECT_FENCE, "kind",
                           "backend hip: a fence of kind %u; a HIP device creates HOST and "
                           "HIP_EVENT fences (a GL sync comes from glFenceSync(), a sync_file "
                           "from its producer)",

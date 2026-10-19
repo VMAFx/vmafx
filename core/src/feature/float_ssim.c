@@ -178,8 +178,8 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     double l_score;
     double c_score;
     double s_score;
-    err = compute_ssim(s->ref, s->dist, ref_pic->w[0], ref_pic->h[0], s->float_stride,
-                       s->float_stride, &score, &l_score, &c_score, &s_score, s->scale);
+    err = compute_ssim(s->ref, s->dist, ref_pic->w[0], ref_pic->h[0], (int)s->float_stride,
+                       (int)s->float_stride, &score, &l_score, &c_score, &s_score, s->scale);
     if (err)
         return err;
 
@@ -208,7 +208,7 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     return err;
 }
 
-static int close(VmafFeatureExtractor *fex)
+static int close_fex(VmafFeatureExtractor *fex)
 {
     SsimState *s = fex->priv;
     if (s->ref)
@@ -226,7 +226,7 @@ VmafFeatureExtractor vmaf_fex_float_ssim = {
     .init = init,
     .extract = extract,
     .options = options,
-    .close = close,
+    .close = close_fex,
     .priv_size = sizeof(SsimState),
     .provided_features = provided_features,
 };

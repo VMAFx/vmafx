@@ -42,15 +42,30 @@ validation pass.
 ## Configuration
 
 All configuration lives in [`renovate.json`](../../renovate.json). The
-App reads it on every webhook. Top-level knobs:
+App reads it on every webhook. It extends the fleet's shared preset
+`github>plurano/horistes` (Greek *horistes*, the boundary commissioner who
+fixes limits, pronounced ho-RIS-tees; repository
+<https://github.com/plurano/horistes>), which sets `config:recommended`,
+`:gitSignOff`, `minimumReleaseAge: 3 days`, `automerge: false` and turns off
+updates of GitHub-hosted runner labels. `renovate.json` keeps only what is
+specific to this repository; the per-rule `automerge` values below override
+the preset's default. Top-level knobs:
 
 | Setting | Value |
 |---------|-------|
-| `schedule` | `before 6am every weekday` (`Europe/Vienna`) |
+| `extends` | `github>plurano/horistes`, `config:best-practices`, `:semanticCommits`, `helpers:disableTypesNodeMajor` |
+| `schedule` | `before 6am on Monday` (`Europe/Vienna`) |
 | `prHourlyLimit` | `0` (unlimited) |
 | `prConcurrentLimit` | `3` |
 | `prCreation` | `immediate` |
-| `minimumReleaseAge` | `3 days` |
+| `minimumReleaseAge` | `3 days` (from the preset) |
+
+Check a change with the validator in strict mode, for example:
+
+```bash
+npx --yes --package renovate@44.161.2 -- \
+  renovate-config-validator --no-global --strict renovate.json
+```
 
 ## Disable / rollback to Dependabot
 
@@ -97,6 +112,61 @@ when adding a consumer. These tests check selection, not whether a scheduled
 Renovate run has opened an update PR. The
 [research note](../research/renovate-file-pattern-delimiters.md) records the
 installed Renovate matcher used to reproduce the defect.
+
+### CI Python interpreter
+
+The CI interpreter is one version written in two kinds of places:
+`PYTHON_CI_VERSION` in `build-config.env` and the `python-version:` input of
+every `actions/setup-python` step in `.github/workflows/`.
+`scripts/ci/check-workflow-versions.py` fails a pull request in which the two
+disagree. Renovate's built-in `github-actions` manager reads only the
+workflows, so its pull requests raised the workflow pins without
+`build-config.env` and failed that check.
+
+One custom manager (`depNameTemplate: python`, `packageNameTemplate:
+actions/python-versions`) now reads both kinds of places, and a package rule
+turns the `github-actions` manager off for the `python` input. A second rule
+groups the interpreter as "CI Python interpreter", so one pull request raises
+every pin together. That rule also holds the interpreter below 3.15.0
+(`allowedVersions: "<3.15.0"`) until 1.0.0 is released. To move to 3.15 after
+that, raise the bound in the same pull request as `PYTHON_VERSION` and
+`requires-python`. The decision is
+[ADR-3312](../adr/3312-renovate-python-ci-version-group.md).
+
+`PythonCiVersionGroup` in `scripts/ci/tests/test_renovate_file_patterns.py`
+reads `build-config.env` and the workflows with the same pattern as the
+version check. It fails in any of these cases:
+
+- a workflow pin the check reads is not read by the manager;
+- the manager reads a value the check does not;
+- the `github-actions` rule is turned back on;
+- the version bound or the group is removed.
+
+The test runs from the same pre-commit hook as the other file-selection
+fixtures:
+
+```bash
+python3 -m pytest scripts/ci/tests/test_renovate_file_patterns.py -k PythonCiVersionGroup
+```
+
+### Images pinned in Go source
+
+The controller store tests start PostgreSQL from two Go constants in
+`cmd/vmafx-controller/store/storetest/storetest.go`: `Image`, the release the
+chart deploys, and `OldestImage`, the oldest release external servers may run.
+Each is a `postgres:<tag>@sha256:<digest>` string, because golusoris
+`testutil/pg` refuses a test image without a digest. No built-in Renovate
+manager reads a Go string, so a custom manager (`depNameTemplate: postgres`)
+matches both constants and proposes new digests and tags for them. A package
+rule keeps `OldestImage` on its major line (`allowedVersions` `/^16\./`);
+`Image` receives major updates as ordinary manual pull requests.
+
+`test_storetest_postgres_images_are_tracked` and
+`test_oldest_postgres_image_stays_on_its_major` in
+`scripts/ci/tests/test_renovate_file_patterns.py` evaluate the configured
+patterns against the file. They fail when a constant is added that the
+manager does not match, when the manager loses the digest, or when the rule
+stops matching the oldest image.
 
 ## Migration from self-hosted (2026-05-10)
 

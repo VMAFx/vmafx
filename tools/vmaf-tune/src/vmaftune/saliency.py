@@ -484,12 +484,18 @@ def write_x264_qpfile(
 
 
 def augment_extra_params_with_qpfile(base: Sequence[str], qpfile: Path) -> tuple[str, ...]:
-    """Return ``base + ('-x264-params', f'qpfile={qpfile}')``.
+    """Return ``base + ('-qpfile', str(qpfile))`` for patched libx264.
 
-    Keeping this a pure helper means the encode driver itself stays
+    libx264 has no ``qpfile`` parameter (that is a feature of the x264
+    command line), so ``-x264-params qpfile=...`` is refused by libx264 and
+    ignored with a warning. The fork's FFmpeg patch stack (patch 0007)
+    exposes a top-level ``-qpfile`` AVOption on ``libx264`` and applies the
+    per-macroblock offsets through x264's ``quant_offsets``; stock FFmpeg
+    refuses the option, so the encode fails instead of running without the
+    ROI. Keeping this a pure helper means the encode driver itself stays
     agnostic of saliency.
     """
-    return tuple(base) + ("-x264-params", f"qpfile={qpfile}")
+    return tuple(base) + ("-qpfile", str(qpfile))
 
 
 def augment_extra_params_with_libaom_qpfile(base: Sequence[str], qpfile: Path) -> tuple[str, ...]:

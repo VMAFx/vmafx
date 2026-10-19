@@ -85,3 +85,12 @@ name matching, fixing the `.1` truncation bug permanently.
 - ADR-0495 (backend-probe allowlist)
 - ADR-0513 (run_benchmark / bench_all.sh)
 - ADR-0638 stub reserved by `scripts/adr/next-free.sh --claim mcp-p1-vmaftune-extractors-models-progress`
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 86: `- ADR-0513 (run_benchmark / bench_all.sh)`: ADR-0513 points
+  to an unrelated topic (0513-per-shot-scene-threshold-and-1-shot-chart.md:
+  "Expose --scene-threshold + --max-shot-duration").

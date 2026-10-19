@@ -35,6 +35,8 @@ import (
 	"google.golang.org/grpc/status"
 
 	vmafxv1 "github.com/VMAFx/vmafx/gen/go"
+	"github.com/VMAFx/vmafx/internal/execstub"
+	"github.com/VMAFx/vmafx/internal/oteltest"
 	"github.com/VMAFx/vmafx/pkg/libvmaf"
 	"github.com/VMAFx/vmafx/pkg/observability"
 )
@@ -166,15 +168,13 @@ for i in $(seq 1 300); do
 done
 # Emit canned JSON so parseOutput succeeds.
 if [ -n "$outfile" ]; then
-  printf '%%s' '{"pooled_metrics":{"vmaf":{"mean":76.6683}}}' > "$outfile"
+  printf '%%s' '{"pooled_metrics":{"vmaf":{"mean":76.6683}},"provenance":{"abi_major":0,"version":"test"}}' > "$outfile"
 fi
 exit 0
 `, signalDir, signalDir)
 
 	p := filepath.Join(dir, "vmaf")
-	if err := os.WriteFile(p, []byte(script), 0o700); err != nil {
-		t.Fatalf("writeBlockingVmafStub: %v", err)
-	}
+	execstub.Write(t, p, []byte(script))
 	return p
 }
 
@@ -208,7 +208,7 @@ func TestHTTP_ConcurrencyCap_Enforced(t *testing.T) {
 	}
 
 	reg := prometheus.NewRegistry()
-	metrics := observability.NewMetrics(reg)
+	metrics := oteltest.Metrics(t, reg)
 	log := observability.NewLogger("ERROR")
 	grpcSrv := newGRPCServerWithLimiter(scorer, metrics, log, limiter)
 	hs := newHTTPServerWithLimiter(scorer, metrics, reg, log, grpcSrv, limiter)
@@ -301,7 +301,7 @@ func TestHTTP_NoCap_AllPass(t *testing.T) {
 	}
 
 	reg := prometheus.NewRegistry()
-	metrics := observability.NewMetrics(reg)
+	metrics := oteltest.Metrics(t, reg)
 	log := observability.NewLogger("ERROR")
 	grpcSrv := newGRPCServer(scorer, metrics, log) // no limiter
 	hs := newHTTPServer(scorer, metrics, reg, log, grpcSrv)
@@ -404,7 +404,7 @@ func TestGRPC_ConcurrencyCap_ResourceExhausted(t *testing.T) {
 	}
 
 	reg := prometheus.NewRegistry()
-	metrics := observability.NewMetrics(reg)
+	metrics := oteltest.Metrics(t, reg)
 	log := observability.NewLogger("ERROR")
 	impl := newGRPCServerWithLimiter(scorer, metrics, log, limiter)
 
@@ -562,7 +562,7 @@ func TestHTTP_429_Body(t *testing.T) {
 	// Build a minimal httpServer with the filled limiter but nil scorer (won't
 	// be reached because Acquire fails first).
 	reg := prometheus.NewRegistry()
-	metrics := observability.NewMetrics(reg)
+	metrics := oteltest.Metrics(t, reg)
 	log := observability.NewLogger("ERROR")
 	hs := newHTTPServerWithLimiter(nil, metrics, reg, log, nil, limiter)
 

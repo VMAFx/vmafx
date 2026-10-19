@@ -131,4 +131,13 @@ FOOTER
 fi
 
 echo "pre-push-mkdocs-strict: mkdocs build --strict passed." >&2
+
+# Formulas (ADR-2705): compile every one with the vendored KaTeX. The script
+# exits 3 when Node.js is missing, which blocks like any other failure.
+if [ -f "${repo_root}/scripts/docs/check_math.py" ]; then
+  if ! python3 "${repo_root}/scripts/docs/check_math.py" --site "${tmp_site}" >&2; then
+    echo "pre-push-mkdocs-strict: BLOCKED — a formula does not compile with KaTeX." >&2
+    exit 1
+  fi
+fi
 exit 0

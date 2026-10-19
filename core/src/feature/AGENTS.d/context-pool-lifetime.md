@@ -14,12 +14,12 @@ invariant: VmafFeatureExtractorContextPool fex_list growable pointer table lifec
 it only after `init_fex_list_slot()` succeeds. Do not move initialized entry:
 `vmaf_fex_ctx_pool_aquire()` retains it while `pthread_cond_wait()` releases
 pool mutex, and release must signal same condition-variable address.
-The entry also owns a by-value snapshot of the registered
-`VmafFeatureExtractor`; never restore the caller-owned descriptor pointer.
+entry also owns by-value snapshot of registered
+`VmafFeatureExtractor`; never restore caller-owned descriptor pointer.
 Callers may register stack descriptors, while CUDA/SYCL/frame-sync runtime
-pointers are refreshed under the pool lock before lazy context creation.
+pointers are refreshed under pool lock before lazy context creation.
 Preserve pointer-table and context-array size checks, and free each options copy
 even if its first context allocation failed. Linux
 `test_fex_pool_growth` regression forces table relocation while another
-acquisition waits and mutates a caller descriptor after registration. See
+acquisition waits and mutates caller descriptor after registration. See
 [pool-growth digest](../../../../docs/research/fex-pool-growth-2026-09-08.md).

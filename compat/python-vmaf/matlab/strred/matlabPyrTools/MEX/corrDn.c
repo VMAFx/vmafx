@@ -151,9 +151,12 @@ void mexFunction(int nlhs,             /* Num return vals on lhs */
                  const mxArray *prhs[] /* Matrices on rhs */
 )
 {
+    (void)nlhs;
     corrdn_args a;
-    double *temp, *result;
-    int x_rdim, y_rdim;
+    double *temp;
+    double *result;
+    int x_rdim;
+    int y_rdim;
 
     parse_args(nrhs, prhs, &a);
 
@@ -166,7 +169,7 @@ void mexFunction(int nlhs,             /* Num return vals on lhs */
         mexErrMsgTxt("Cannot allocate result matrix");
     result = mxGetPr(plhs[0]);
 
-    temp = mxCalloc(a.x_fdim * a.y_fdim, sizeof(double));
+    temp = mxCalloc((size_t)a.x_fdim * (size_t)a.y_fdim, sizeof(double));
     if (temp == NULL)
         mexErrMsgTxt("Cannot allocate necessary temporary space");
 
@@ -184,5 +187,4 @@ void mexFunction(int nlhs,             /* Num return vals on lhs */
     /* End edit */
 
     mxFree((char *)temp);
-    return;
 }

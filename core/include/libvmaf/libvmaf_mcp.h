@@ -77,6 +77,7 @@ extern "C" {
  *
  * @return 1 if the MCP feature was compiled in, 0 otherwise.
  */
+VMAF_DEPRECATED("use vmafx_mcp_available")
 VMAF_EXPORT int vmaf_mcp_available(void);
 
 /**
@@ -99,6 +100,7 @@ typedef enum VmafMcpTransport {
  * @return 1 if the transport was compiled in, 0 otherwise (also 0
  *         for unknown transport ids).
  */
+VMAF_DEPRECATED("use vmafx_mcp_transport_available")
 VMAF_EXPORT int vmaf_mcp_transport_available(VmafMcpTransport transport);
 
 /**
@@ -147,6 +149,7 @@ typedef struct VmafMcpConfig {
  *         on bad arguments, -ENOMEM on ring allocation failure,
  *         -EBUSY if measurement is already in flight.
  */
+VMAF_DEPRECATED("use vmafx_mcp_server_create")
 VMAF_EXPORT int vmaf_mcp_init(VmafMcpServer **out, VmafContext *ctx, const VmafMcpConfig *cfg);
 
 /**
@@ -178,6 +181,7 @@ typedef struct VmafMcpSseConfig {
  *         -EADDRINUSE if the requested port is busy, -EBUSY if
  *         the transport is already running on this server.
  */
+VMAF_DEPRECATED("use vmafx_mcp_start_sse")
 VMAF_EXPORT int vmaf_mcp_start_sse(VmafMcpServer *server, VmafMcpSseConfig *cfg);
 
 /**
@@ -205,6 +209,7 @@ typedef struct VmafMcpUdsConfig {
  *         -EADDRINUSE if the path is already bound, -EBUSY if the
  *         transport is already running.
  */
+VMAF_DEPRECATED("use vmafx_mcp_start_uds")
 VMAF_EXPORT int vmaf_mcp_start_uds(VmafMcpServer *server, const VmafMcpUdsConfig *cfg);
 
 /**
@@ -237,6 +242,7 @@ typedef struct VmafMcpStdioConfig {
  *         (negative fds), -EBUSY if the transport is already
  *         running.
  */
+VMAF_DEPRECATED("use vmafx_mcp_start_stdio")
 VMAF_EXPORT int vmaf_mcp_start_stdio(VmafMcpServer *server, const VmafMcpStdioConfig *cfg);
 
 /**
@@ -249,6 +255,7 @@ VMAF_EXPORT int vmaf_mcp_start_stdio(VmafMcpServer *server, const VmafMcpStdioCo
  *
  * @return 0 on success, -EINVAL on NULL @p server.
  */
+VMAF_DEPRECATED("use vmafx_mcp_stop")
 VMAF_EXPORT int vmaf_mcp_stop(VmafMcpServer *server);
 
 /**
@@ -261,6 +268,7 @@ VMAF_EXPORT int vmaf_mcp_stop(VmafMcpServer *server);
  *
  * @param server  Pointer to the server handle to release.
  */
+VMAF_DEPRECATED("use vmafx_mcp_server_destroy")
 VMAF_EXPORT void vmaf_mcp_close(VmafMcpServer **server);
 
 #ifdef __cplusplus

@@ -58,7 +58,7 @@ HOST_OUTPUTS = (
     'apsnr_name[PSNR_NUM_PLANES] = {"apsnr_y", "apsnr_cb", "apsnr_cr"};',
     "if (err == 0 && s->enable_mse) {",
     "if (s->enable_apsnr) {",
-    "s->apsnr_sse[p] += sse;",
+    "vmaf_psnr_clip_sse_add(&s->apsnr_sse[p], sse);",
     "vmaf_feature_collector_set_aggregate(feature_collector, apsnr_name[p], apsnr);",
 )
 HOST_GEOMETRY = (
@@ -98,6 +98,7 @@ REFERENCE_LINES = (
     "s->peak = vmaf_psnr_peak(bpc, s->reduced_hbd_peak);",
     "const double mse = ((double)sse) / (ref_pic->w[p] * ref_pic->h[p]);",
     "vmaf_psnr_aggregate(s->peak, s->apsnr.sse[i], s->apsnr.n_pixels[i], s->psnr_max[i]);",
+    "vmaf_psnr_clip_sse_add(&s->apsnr.sse[p], sse);",
     ".flags = VMAF_FEATURE_EXTRACTOR_TEMPORAL,",
 )
 

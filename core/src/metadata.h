@@ -20,6 +20,10 @@
 #ifndef VMAF_SRC_METADATA_H_
 #define VMAF_SRC_METADATA_H_
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no `using`. ADR-1138. */
 typedef struct VmafContext VmafContext;
 /* NOLINTEND(modernize-use-using) */
@@ -71,5 +75,9 @@ typedef struct VmafMetadataConfiguration {
  * @return 0 on success, or < 0 (a negative errno code) on error.
  */
 int vmaf_register_metadata_handler(VmafContext *vmaf, VmafMetadataConfiguration cfg);
+
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 
 #endif /* VMAF_SRC_METADATA_H_ */

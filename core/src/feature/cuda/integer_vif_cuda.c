@@ -702,12 +702,12 @@ typedef struct VifScore {
 static void vif_reduce_accums(const vif_accums *accum, VifScore *vif)
 {
     for (unsigned scale = 0; scale < 4; ++scale) {
-        vif->scale[scale].num =
-            accum[scale].num_log / 2048.0 + accum[scale].x2 +
-            (accum[scale].den_non_log - ((accum[scale].num_non_log) / 16384.0) / (65025.0));
-        vif->scale[scale].den = accum[scale].den_log / 2048.0 -
-                                (accum[scale].x + (accum[scale].num_x * 17)) +
-                                accum[scale].den_non_log;
+        vif->scale[scale].num = (float)(accum[scale].num_log / 2048.0 + accum[scale].x2 +
+                                        (accum[scale].den_non_log -
+                                         ((accum[scale].num_non_log) / 16384.0) / (65025.0)));
+        vif->scale[scale].den =
+            (float)(accum[scale].den_log / 2048.0 - (accum[scale].x + (accum[scale].num_x * 17)) +
+                    accum[scale].den_non_log);
     }
 }
 

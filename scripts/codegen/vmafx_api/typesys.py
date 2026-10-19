@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: EUPL-1.2
 """What a type name in the definition is, and how C spells a value of it.
 
-Kinds: `scalar` (fixed-width numbers, `uptr`, `size`, `ptr`, `cstr`,
+Kinds: `scalar` (fixed-width numbers, `uptr`, `size`, `ptr`, `cptr`, `cstr`,
 `status`), `struct` (embedded by value in a struct, passed by pointer),
 `handle` (always a pointer), `callback` (a function pointer), `enum` (named
 constants; fields and parameters carry them as `u32`), `foreign` (a type of
@@ -14,7 +14,20 @@ from __future__ import annotations
 
 from .model import SCALARS, Api, DefinitionError
 
-FIELD_SCALARS = ("u32", "u64", "i32", "i64", "f32", "f64", "uptr", "size", "ptr", "cstr", "status")
+FIELD_SCALARS = (
+    "u32",
+    "u64",
+    "i32",
+    "i64",
+    "f32",
+    "f64",
+    "uptr",
+    "size",
+    "ptr",
+    "cptr",
+    "cstr",
+    "status",
+)
 MAX_ARRAY = 64  # a fixed array longer than this is a buffer, not a field
 
 

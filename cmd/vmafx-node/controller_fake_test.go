@@ -15,6 +15,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net"
 	"sync"
 	"testing"
@@ -70,9 +71,7 @@ func (f *fakeController) callsSnapshot() map[string]int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	out := make(map[string]int, len(f.calls))
-	for k, v := range f.calls {
-		out[k] = v
-	}
+	maps.Copy(out, f.calls)
 	return out
 }
 
@@ -202,6 +201,12 @@ func testControllerConfig(addr string) controllerConfig {
 // startTestClient dials addr in plaintext and starts a client around exec.
 func startTestClient(t *testing.T, cfg controllerConfig, exec jobExecutor) *controllerClient {
 	t.Helper()
+	return startTestClientWith(t, cfg, exec, nil)
+}
+
+// startTestClientWith is startTestClient with the client recording into m.
+func startTestClientWith(t *testing.T, cfg controllerConfig, exec jobExecutor, m *nodeMetrics) *controllerClient {
+	t.Helper()
 	conn, err := googlegrpc.NewClient(cfg.Addr, googlegrpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		t.Fatalf("dial fake controller: %v", err)
@@ -212,6 +217,7 @@ func startTestClient(t *testing.T, cfg controllerConfig, exec jobExecutor) *cont
 	}
 	log := slog.New(slog.DiscardHandler)
 	c := newControllerClient(cfg, controllerv1.NewVmafxControllerClient(conn), exec, capability, log)
+	c.metrics = m
 	c.start()
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

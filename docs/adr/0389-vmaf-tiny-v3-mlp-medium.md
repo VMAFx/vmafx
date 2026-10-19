@@ -45,3 +45,12 @@ Ship `vmaf_tiny_v3.onnx` alongside (not replacing) `vmaf_tiny_v2.onnx` in `model
 - LOSO eval: [`ai/scripts/eval_loso_vmaf_tiny_v3.py`](../../ai/scripts/eval_loso_vmaf_tiny_v3.py)
 - LOSO results: `runs/vmaf_tiny_v3_loso_metrics.json`
 - Phase-3 chain: [Research-0027](../research/0027-phase2-feature-importance.md), [-0028](../research/0028-phase3-subset-sweep.md), [-0029](../research/0029-phase3b-standardscaler-results.md), [-0030](../research/0030-phase3b-multiseed-validation.md)
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 11: `vmaf_tiny_v2 (ADR-0216) ships the validated Phase-3
+  configuration: mlp_small`: Cites ADR-0216 as shipping `vmaf_tiny_v2`;
+  ADR-0216 is vulkan-chroma-psnr. `vmaf_tiny_v2` is ADR-0244.

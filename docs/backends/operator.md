@@ -82,20 +82,10 @@ uid 65532 (`nonroot`) by default.
 
 ## Environment variables
 
-| Variable | Default | Description |
-| --- | --- | --- |
-| `VMAFX_OPERATOR_METRICS_ADDR` | `:8080` | Prometheus `/metrics` endpoint bind address |
-| `VMAFX_OPERATOR_HEALTH_PROBE_ADDR` | `:8081` | `/healthz` + `/readyz` bind address |
-| `VMAFX_OPERATOR_LEADER_ELECTION` | `false` | Enable leader election for HA deployments |
-| `VMAFX_OPERATOR_LEADER_ELECTION_ID` | `vmafx-operator.vmafx.dev` | Lease name used when leader election is on |
-| `VMAFX_OPERATOR_WEBHOOK_PORT` | `0` | Admission-webhook port; `0` disables the webhooks |
-| `VMAFX_OPERATOR_WEBHOOK_HOST` | all interfaces | Admission-webhook bind host |
-| `VMAFX_LOG_LEVEL` | `info` | Log verbosity: `debug`, `info`, `warn`, `error` |
-
-`--version` is the only process CLI switch; runtime configuration is supplied
-through the environment variables above. The table follows the header comment
-of `cmd/vmafx-operator/main.go`; the Helm chart sets the leader-election and
-log-level variables from `operator.leaderElect` and `operator.logLevel`.
+The operator's variables, their defaults and the chart values that set them
+are in the [operator's environment table](../server/operator.md#configuration-12-factor-env-vars),
+generated from the platform definition. `--version` is the only process CLI
+switch; runtime configuration is supplied through the environment.
 
 ## Exposed ports
 

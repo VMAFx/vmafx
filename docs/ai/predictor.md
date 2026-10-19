@@ -11,7 +11,7 @@
     Phase-A corpora. At point of use, `Predictor` and `vmaf-tune` emit a warning
     when loading a stub model. To use software or AMF predictors in production,
     generate a real corpus via `python -m vmaftune.cli corpus` and re-train with
-    `python -m vmaftune.predictor_train`. Tracked as
+    `python -m vmaf_train.predictor_train`. Tracked as
     `T-PREDICTOR-SOFTWARE-AMF-STUB-MODELS-2026-09-08` in `docs/state.md`.
 
 The per-shot VMAF predictor turns "encode every shot, score every
@@ -60,7 +60,7 @@ path automatically; production deployments load the ONNX file.
 
 ## 2. Training data
 
-The trainer is `tools/vmaf-tune/src/vmaftune/predictor_train.py`. It
+The trainer is `ai/src/vmaf_train/predictor_train.py`. It
 consumes the same vmaf-tune Phase A JSONL corpus
 ([ADR-0237](../adr/0237-quality-aware-encode-automation.md)) that the
 recommend / per-shot tools already produce — one row per
@@ -104,7 +104,7 @@ python -m vmaftune.cli corpus --encoder libx264 \
     --source ref.yuv --output corpus.jsonl ...
 
 # 2. Re-train the predictor for one or more codecs against it.
-python -m vmaftune.predictor_train \
+python -m vmaf_train.predictor_train \
     --corpus corpus.jsonl \
     --output-dir model \
     --codec libx264 --codec libx265 \
@@ -165,7 +165,7 @@ matching the existing `fr_regressor_v2` gate
 ([ADR-0291](../adr/0291-fr-regressor-v2-prod-ship.md)).
 
 The trainer also pins the runtime contract via
-`tools/vmaf-tune/tests/test_predictor_train.py`:
+`ai/tests/test_predictor_train.py`:
 
 - Every shipped `model/predictor_<codec>.onnx` loads under ONNX
   Runtime CPU.
@@ -209,22 +209,26 @@ model/
 tools/vmaf-tune/src/vmaftune/
   predictor.py                   # runtime: Predictor, pick_crf, pick_keyint
   predictor_features.py          # probe-encode + signalstats extractor
-  predictor_train.py             # trainer (this PR)
   predictor_validate.py          # GOSPEL / RECALIBRATE / FALL_BACK loop
 
 tools/vmaf-tune/tests/
   test_predictor.py              # runtime + analytical fallback pins
-  test_predictor_train.py        # trainer + shipped-model pins (this PR)
+
+ai/src/vmaf_train/
+  predictor_train.py             # trainer (torch; moved here by ADR-1886)
+
+ai/tests/
+  test_predictor_train.py        # trainer + shipped-model pins
 ```
 
 ## Reproduction
 
 ```bash
-# Re-train every shipped stub (~30s on CPU).
-python -m vmaftune.predictor_train --output-dir model --epochs 120
+# Re-train every shipped stub (~30s on CPU), in the ai/ environment.
+python -m vmaf_train.predictor_train --output-dir model --epochs 120
 
 # Verify every shipped model.
-pytest tools/vmaf-tune/tests/test_predictor_train.py -v
+pytest ai/tests/test_predictor_train.py -v
 ```
 
 ## See also

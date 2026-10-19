@@ -1,6 +1,7 @@
+<!-- markdownlint-disable MD013 -->
 # ADR-0205: cambi GPU feasibility spike
 
-- **Status**: Accepted
+- **Status**: Accepted (Superseded-in-part 2026-10-06 by [ADR-1357](1357-sycl-cambi-device-resident.md) for the SYCL host-residual provisions)
 - **Date**: 2026-04-28
 - **Deciders**: <lusoris@pm.me>
 - **Tags**: vulkan, gpu, cambi, feasibility-spike, fork-local

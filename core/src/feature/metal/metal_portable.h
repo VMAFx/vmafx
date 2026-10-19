@@ -93,6 +93,33 @@ static inline uint32_t vmaf_mtl_clz64(uint64_t x)
     return n;
 }
 
+/* The compiler's own ordered comparisons where it has them. icx's C <math.h> spells
+ * isless() and its siblings as calls into libimf, which the strict-FP link leaves out
+ * (`-no-intel-lib=libimf`, core/src/meson.build): every C test that reached
+ * vmaf_mtl_f64_equal() failed to link in the oneAPI build. The builtins are compare
+ * instructions on gcc, clang and icx; a compiler without them (MSVC) keeps <math.h>. */
+#if defined(__has_builtin)
+#if __has_builtin(__builtin_isless) && __has_builtin(__builtin_isgreater) &&                       \
+    __has_builtin(__builtin_isunordered)
+#define VMAF_MTL_ISLESS(a, b) __builtin_isless((a), (b))
+#define VMAF_MTL_ISGREATER(a, b) __builtin_isgreater((a), (b))
+#define VMAF_MTL_ISUNORDERED(a, b) __builtin_isunordered((a), (b))
+#endif
+#endif
+#ifndef VMAF_MTL_ISLESS
+#define VMAF_MTL_ISLESS(a, b) isless((a), (b))
+#define VMAF_MTL_ISGREATER(a, b) isgreater((a), (b))
+#define VMAF_MTL_ISUNORDERED(a, b) isunordered((a), (b))
+#endif
+
+/* `a == b` for doubles, spelled with ordered comparisons: the same answer for every input
+ * (+0 equals -0, an infinity equals itself, a NaN equals nothing). Host code only. Two
+ * computed values compared with `==` are CodeQL cpp/equality-on-floats findings. */
+static inline int vmaf_mtl_f64_equal(double a, double b)
+{
+    return !(VMAF_MTL_ISLESS(a, b) || VMAF_MTL_ISGREATER(a, b) || VMAF_MTL_ISUNORDERED(a, b));
+}
+
 #define VMAF_MTL_F2U(x) vmaf_mtl_f2u(x)
 #define VMAF_MTL_U2F(x) vmaf_mtl_u2f(x)
 #define VMAF_MTL_CLZ64(x) vmaf_mtl_clz64((uint64_t)(x))

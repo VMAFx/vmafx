@@ -98,11 +98,9 @@ The generated Markdown has five sections:
 
 Defaults:
 
-```text
-redundancy threshold: |Pearson r| >= 0.95
-complement threshold: |Pearson r| <= 0.70
-minimum finite ratio: 0.80
-```
+- redundancy threshold: $\lvert r_{\mathrm{Pearson}} \rvert \ge 0.95$
+- complement threshold: $\lvert r_{\mathrm{Pearson}} \rvert \le 0.70$
+- minimum finite ratio: $0.80$
 
 Defaults for the remaining flags: `--top-k` is 12 (rows shown in the target
 signal and intersection sections).

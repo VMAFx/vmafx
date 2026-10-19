@@ -25,15 +25,17 @@
 
 #include "common.h"
 
-#include <assert.h>
+#include <cassert>
 #include <cstdint>
 
 #include "cuda_helper.cuh"
 #include "adm_decouple_inline.cuh"
 
+namespace
+{
 template <int cols_per_thread>
-static __device__ __forceinline__ void copy_vec_4(const int32_t *__restrict__ in,
-                                                  int32_t *__restrict__ out)
+__device__ __forceinline__ void copy_vec_4(const int32_t *__restrict__ in,
+                                           int32_t *__restrict__ out)
 {
     //__builtin_assume_aligned(in, 16);
     //__builtin_assume_aligned(out, 16);
@@ -46,8 +48,8 @@ static __device__ __forceinline__ void copy_vec_4(const int32_t *__restrict__ in
 }
 
 template <int cols_per_thread>
-static __device__ __forceinline__ void copy_vec_4(const int16_t *__restrict__ in,
-                                                  int16_t *__restrict__ out)
+__device__ __forceinline__ void copy_vec_4(const int16_t *__restrict__ in,
+                                           int16_t *__restrict__ out)
 {
     // __builtin_assume_aligned(in, 8);
     // __builtin_assume_aligned(out, 8);
@@ -59,7 +61,7 @@ static __device__ __forceinline__ void copy_vec_4(const int16_t *__restrict__ in
     }
 }
 
-static __device__ __forceinline__ int32_t
+__device__ __forceinline__ int32_t
 i4_adm_csf_value(const int32_t *__restrict__ ref_h, const int32_t *__restrict__ ref_v,
                  const int32_t *__restrict__ ref_d, const int32_t *__restrict__ dis_h,
                  const int32_t *__restrict__ dis_v, const int32_t *__restrict__ dis_d, int idx,
@@ -113,8 +115,8 @@ __device__ __forceinline__ void i4_adm_csf_kernel(AdmBufferCuda buf, int scale, 
     const int32_t *__restrict__ dis_v = dis->band_v;
     const int32_t *__restrict__ dis_d = dis->band_d;
 
-    int y = top + (blockIdx.y * blockDim.y + threadIdx.y) * rows_per_thread;
-    int x = left + (blockIdx.x * blockDim.x + threadIdx.x) * cols_per_thread;
+    const int y = top + (blockIdx.y * blockDim.y + threadIdx.y) * rows_per_thread;
+    const int x = left + (blockIdx.x * blockDim.x + threadIdx.x) * cols_per_thread;
 
     const uint32_t i_rfactor = params.i_rfactor[scale * 3 + blockIdx.z];
     const double adm_enhn_gain_limit = params.adm_enhn_gain_limit;
@@ -140,7 +142,7 @@ __device__ __forceinline__ void i4_adm_csf_kernel(AdmBufferCuda buf, int scale, 
 __constant__ const uint8_t i_shifts[4] = {0, 15, 15, 17};
 __constant__ const uint16_t i_shiftsadd[4] = {0, 16384, 16384, 65535};
 
-static __device__ __forceinline__ int16_t
+__device__ __forceinline__ int16_t
 adm_csf_value(const int16_t *__restrict__ ref_h, const int16_t *__restrict__ ref_v,
               const int16_t *__restrict__ ref_d, const int16_t *__restrict__ dis_h,
               const int16_t *__restrict__ dis_v, const int16_t *__restrict__ dis_d, int idx,
@@ -191,8 +193,8 @@ __device__ __forceinline__ void adm_csf_kernel(AdmBufferCuda buf, int top, int b
     const int16_t *__restrict__ dis_v = dis->band_v;
     const int16_t *__restrict__ dis_d = dis->band_d;
 
-    int y = top + (blockIdx.y * blockDim.y + threadIdx.y) * rows_per_thread;
-    int x = left + (blockIdx.x * blockDim.x + threadIdx.x) * cols_per_thread;
+    const int y = top + (blockIdx.y * blockDim.y + threadIdx.y) * rows_per_thread;
+    const int x = left + (blockIdx.x * blockDim.x + threadIdx.x) * cols_per_thread;
 
     const uint32_t i_rfactor = params.i_rfactor[blockIdx.z];
     const double adm_enhn_gain_limit = params.adm_enhn_gain_limit;
@@ -214,6 +216,7 @@ __device__ __forceinline__ void adm_csf_kernel(AdmBufferCuda buf, int top, int b
         }
     }
 }
+} // namespace
 
 #define ADM_CSF_KERNEL(rows_per_thread, cols_per_thread)                                           \
     __global__ void adm_csf_kernel_##rows_per_thread##_##cols_per_thread(                          \

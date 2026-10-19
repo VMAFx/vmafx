@@ -1,5 +1,5 @@
 {
-  "uv_version": "0.12.18",
+  "uv_version": "0.13.1",
   "locks": [
     {
       "output": "requirements/locks/build.txt",
@@ -65,6 +65,11 @@
       "output": "requirements/locks/jsonschema.txt",
       "inputs": ["requirements/locks/jsonschema.in"],
       "compile_args": ["requirements/locks/jsonschema.in", "--universal", "--python-version", "3.12", "--generate-hashes"]
+    },
+    {
+      "output": "requirements/locks/docs-check.txt",
+      "inputs": ["requirements/locks/docs-check.in"],
+      "compile_args": ["requirements/locks/docs-check.in", "--universal", "--python-version", "3.14", "--generate-hashes"]
     },
     {
       "output": "requirements/locks/windows-tester-zip.txt",

@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-0618: Content-Aware Classifier for Encoder Routing
 
-- **Status**: Proposed
+- **Status**: Proposed (status update 2026-10-06 below)
 - **Date**: 2026-05-19
 - **Deciders**: lusoris
 - **Tags**: `ai`, `planning`, `vmaf-tune`, `dnn`
@@ -86,3 +86,13 @@ Total estimate: 8 days (largest item on the roadmap).
 - Anthropic Claude Vision API (claude.ai/docs; 2025).
 - `tools/vmaf-tune/src/vmaftune/saliency.py` — existing visual-feature pipeline.
 - Source: per user direction (roadmap planning session 2026-05-19).
+
+## Status update 2026-10-06: Proposed, scheduled for 1.4
+
+The decision is not implemented and stays Proposed. It is scheduled for the
+1.4 milestone ("Metric A/B, best mix & more data") as the content classes
+(encoder routing); the tracking issue is
+[#2261](https://github.com/VMAFx/vmafx/issues/2261). The module this record
+names does not exist on `origin/master` `fd8b8c93b`.
+
+The body above is unchanged.

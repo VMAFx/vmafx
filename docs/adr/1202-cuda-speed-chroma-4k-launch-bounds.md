@@ -2,7 +2,7 @@
 
 # ADR-1202: GPU SpEED-chroma twins report singularity separately from failure
 
-- **Status**: Proposed
+- **Status**: Accepted (status update 2026-10-06 below)
 - **Date**: 2026-09-06
 - **Deciders**: Lusoris
 - **Tags**: cuda, sycl, hip, correctness, feature-extractor
@@ -93,3 +93,20 @@ launch fixes the block size at eight warps and grows the block count.
   most 1024 threads on every currently supported compute capability
 - Source: found while auditing the "CUDA 4K throughput collapse" claim in
   epic #1245; per user direction to keep working the 1.0.0 blockers
+
+## Status update 2026-10-06: Accepted: singularity is reported separately
+
+The decision holds in substance, and its mechanism changed after it was taken.
+Checked on `origin/master` `fd8b8c93b`: #1360 (`8aee0982f`, 2026-09-06) gave
+the CUDA, HIP and SYCL SpEED-chroma twins a singularity report that is
+separate from failure, and #1377 (`ff49e6fe8`) did the same for the temporal
+twin. The device-resident pipelines of ADR-1358, ADR-1380 and ADR-1384 later
+replaced the literal `bool *singular_out` out-parameter of the Decision text:
+singular channels are now counted in `SpeedInternalSingularTally` and reported
+through `speed_internal_report_singular()`, and the return value is reserved
+for hard failures. Imputation keys off the singularity flag as decided. The
+file name `1202-cuda-speed-chroma-4k-launch-bounds.md` does not match the
+title; the slug is left as it is, because a rename would break every link to
+it.
+
+The body above is unchanged.

@@ -83,6 +83,17 @@ class ScorecardReportTests(unittest.TestCase):
                 with self.assertRaises(gate.InvalidReport):
                     gate.assess(data, "master", REPO, SHA)
 
+    def test_previous_reviewed_tool_is_refused(self) -> None:
+        # The identity reviewed before the v5.6.0 move; a report from it must
+        # not pass once the pins have moved on.
+        data = report()
+        data["scorecard"] = {
+            "version": "v5.5.0",
+            "commit": "c395761df6afe1a69e476bc60a013a94bcbc153f",
+        }
+        with self.assertRaisesRegex(gate.InvalidReport, "differs from reviewed tool"):
+            gate.assess(data, "master", REPO, SHA)
+
     def test_local_unknown_commit_never_satisfies_master(self) -> None:
         with self.assertRaises(gate.InvalidReport):
             gate.assess(report("local"), "master", REPO, SHA)

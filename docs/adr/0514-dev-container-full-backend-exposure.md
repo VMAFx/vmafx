@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-0514: dev-MCP container exposes every host GPU backend (CUDA + SYCL + Vulkan + HIP)
 
-- **Status**: Accepted
+- **Status**: Accepted (Superseded-in-part 2026-10-06 by [ADR-0529](0529-dev-container-whole-dri-bind.md) for the /dev/dri/by-path bind mount)
 - **Date**: 2026-05-18
 - **Deciders**: lusoris
 - **Tags**: container, dev-experience, gpu, sycl, vulkan, hip, cuda, fork-local

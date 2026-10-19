@@ -130,6 +130,9 @@ KERNEL_NAMES = (
 HOST_MARKER = "#if !defined(__METAL_VERSION__)\n\n"
 
 
+TAP_BINDINGS = 3  # scales whose taps the host binds and the kernel declares
+
+
 def _code(source: str) -> str:
     """The source with its comments blanked, so prose cannot trip a check."""
     return COMMENT.sub(" ", source)
@@ -178,10 +181,10 @@ def _tap_failures(sources: dict[str, str]) -> list[str]:
     init = _function_body(host, "init_filters")
     if "vif_get_filter(s->taps[scale], scale, (float)s->vif_kernelscale);" not in init:
         failures.append(f"{HOST}: the taps no longer come from vif_get_filter()")
-    if host.count("[enc setBytes:s->taps[scale]") != 3:
+    if host.count("[enc setBytes:s->taps[scale]") != TAP_BINDINGS:
         failures.append(f"{HOST}: the vertical, compute and decimate launches must take the taps")
     kernel = _code(sources[KERNEL])
-    if kernel.count("constant float *taps [[buffer(") != 3:
+    if kernel.count("constant float *taps [[buffer(") != TAP_BINDINGS:
         failures.append(f"{KERNEL}: every filtering kernel must read its taps from an argument")
     for name in ("float_vif_vertical", "float_vif_compute", "float_vif_decimate"):
         if "taps[" not in _function_body(kernel, name):

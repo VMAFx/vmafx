@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD060 -->
 # ADR-0614: Per-Shot ABR Rendition Selection
 
-- **Status**: Proposed
+- **Status**: Proposed (status update 2026-10-06 below)
 - **Date**: 2026-05-19
 - **Deciders**: lusoris
 - **Tags**: `ai`, `planning`, `vmaf-tune`
@@ -71,3 +71,13 @@ Total estimate: 5.5–6.5 days (excluding P5).
 - arXiv:2512.12952 — Durbha et al., 2025 (retrieved 2026-05-19).
 - `tools/vmaf-tune/src/vmaftune/ladder.py`, `per_shot.py`.
 - Source: per user direction (roadmap planning session 2026-05-19).
+
+## Status update 2026-10-06: Proposed, scheduled for 1.4
+
+The decision is not implemented and stays Proposed. It is scheduled for the
+1.4 milestone ("Metric A/B, best mix & more data") as the ladder (rendition
+selection); the tracking issue is
+[#2261](https://github.com/VMAFx/vmafx/issues/2261). The module this record
+names does not exist on `origin/master` `fd8b8c93b`.
+
+The body above is unchanged.

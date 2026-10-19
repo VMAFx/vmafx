@@ -57,7 +57,7 @@ index 402b843649b4f5369cf80714eef53755fad9ac9a..71723329049141015ec849b516350046
  extern const FFFilter ff_vf_w3fdif;
 diff --git a/libavfilter/vf_vmaf_pre.c b/libavfilter/vf_vmaf_pre.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..de41ced64d09ddaa531eae6c1af83706f4f490c3
+index 0000000000000000000000000000000000000000..b0861876582b7ba6b0d79484015fbf3c36929b33
 --- /dev/null
 +++ b/libavfilter/vf_vmaf_pre.c
 @@ -0,0 +1,272 @@
@@ -311,7 +311,7 @@ index 0000000000000000000000000000000000000000..de41ced64d09ddaa531eae6c1af83706
 +        AV_PIX_FMT_YUV420P12LE, AV_PIX_FMT_YUV422P12LE, AV_PIX_FMT_YUV444P12LE,
 +        AV_PIX_FMT_NONE,
 +    };
-+    return ff_set_common_formats_from_list2(ctx, cfg_in, cfg_out, pix_fmts);
++    return ff_set_pixel_formats_from_list2(ctx, cfg_in, cfg_out, pix_fmts);
 +}
 +
 +static const AVFilterPad vmaf_pre_inputs[] = {

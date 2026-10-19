@@ -140,3 +140,13 @@ The NEON path:
 - Backlog item: `.workingdir2/BACKLOG.md` T3-4 (gap-fill Step 2).
 - Source: user direction 2026-04-23 (motion bundle popup;
   NEON-solo selected).
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 133: `Fork-local AVX2 variant:
+  [x86/motion_v2_avx2.c](././core/src/feature/x86/motion_v2_avx2.c).`:
+  `core/src/feature/x86/motion_v2_avx2.c` does not exist on origin/master (the
+  file is `core/src/feature/x86/motion_avx2.c`).

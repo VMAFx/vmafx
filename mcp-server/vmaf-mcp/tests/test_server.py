@@ -571,16 +571,18 @@ def _make_counting_subprocess(current_concurrent, peak_concurrent):
     return fake_subprocess
 
 
-def test_describe_image_falls_back_to_metadata_only_without_extras(monkeypatch):
-    """When the [vlm] extras aren't installed, _load_vlm() returns
-    None and _describe_image_with_vlm surfaces a clear hint."""
+def test_describe_image_falls_back_to_metadata_only_without_extras(monkeypatch, tmp_path):
+    """With a model directory but without the [vlm] extra, _load_vlm() returns
+    None and _describe_image_with_vlm names what is missing."""
     # Reset the cache so this test isn't influenced by other tests.
-    srv._vlm_state["loaded"] = False
-    srv._vlm_state["pipeline"] = None
-    srv._vlm_state["model_id"] = None
-
-    # Force the import-failure branch by hiding `transformers`.
-    monkeypatch.setitem(__import__("sys").modules, "transformers", None)
+    monkeypatch.setitem(srv._vlm_state, "loaded", False)
+    monkeypatch.setitem(srv._vlm_state, "pipeline", None)
+    monkeypatch.setitem(srv._vlm_state, "model_id", None)
+    (tmp_path / "genai_config.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setenv("VMAF_MCP_VLM_MODEL", str(tmp_path))
+    # Force the import-failure branch by hiding the runtime.
+    monkeypatch.setitem(__import__("sys").modules, "onnxruntime_genai", None)
     msg = srv._describe_image_with_vlm(Path("/tmp/nonexistent.png"))
     assert "VLM unavailable" in msg
+    assert "onnxruntime-genai is not installed" in msg
     assert "vmaf-mcp[vlm]" in msg

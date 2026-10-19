@@ -6,9 +6,9 @@ Edit AGENTS.d/_index.md or a page under AGENTS.d/, then run
 
 Generated index. Before editing: match every path you will touch against
 `Touching` in [Topic pages](#topic-pages) and read each matching page first; no
-match, no page. Text between here and the table binds every file of this
-directory. `Touching` paths: relative to this directory, leading `/` =
-repository root. New invariant: a page under `AGENTS.d/` ([how](../docs/development/agents-index.md)).
+match, no page. Text between here and [Topic pages](#topic-pages) binds every
+file of this directory. `Touching` paths: relative to this directory, leading
+`/` = repository root. New invariant: new page under `AGENTS.d/` ([how](../docs/development/agents-index.md)).
 
 Orientation for agents working on tiny-AI **training** side. Parent:
 [../AGENTS.md](../AGENTS.md).
@@ -73,13 +73,15 @@ at runtime. Stack: PyTorch + Lightning → ONNX.
 | `scripts/extract_k150k_features.py`, `tests/test_extract_k150k_features.py` | [k150k-extraction](AGENTS.d/k150k-extraction.md) | Parquet written at-end only; staging file WAL; scratch on /dev/shm; fail-loud on empty frames; misuse guard. |
 | `scripts/analyze_knob_sweep.py`, `tests/test_knob_sweep_analysis.py` | [knob-sweep](AGENTS.d/knob-sweep.md) | Pareto frontiers per (source, codec, rc_mode); structural regressions (>=7 of 9 sources) must not ship. |
 | `scripts/konvid_to_full_features.py`, `scripts/konvid_to_vmaf_pairs.py`, `scripts/combine_full_feature_parquets.py` | [konvid-1k-corpus](AGENTS.d/konvid-1k-corpus.md) | KoNViD-1k refresh requires fresh fork binary; stable balanced hash fold assignment; replay manifest. |
-| `/docs/ai/training-data.md`, `/docs/ai/models/*.md`, `/model/tiny/registry.json`, `/scripts/ci/tests/test_model_card_dataset_terms.py` | [model-card-dataset-terms](AGENTS.d/model-card-dataset-terms.md) | Card of a model on outside data quotes the data's terms verbatim from training-data.md; a test holds it. |
+| `scripts/mini_retrain.py`, `src/aiutils/pipeline.py`, `src/aiutils/mini_corpus.py`, `src/aiutils/retrain_checks.py`, `e2e/test_mini_retrain_e2e.py`, `/.github/workflows/mini-retrain.yml` | [mini-retrain](AGENTS.d/mini-retrain.md) | retrain tooling runs end to end in CI; each stage has manifest; killed run resumes; NaN fails gate. |
+| `/docs/ai/training-data.md`, `/docs/ai/models/*.md`, `/model/tiny/registry.json`, `/scripts/ci/tests/test_model_card_dataset_terms.py` | [model-card-dataset-terms](AGENTS.d/model-card-dataset-terms.md) | Card of model on outside data quotes data's terms verbatim from training-data.md; test holds it. |
 | `src/vmaf_train/registry.py`, `src/vmaf_train/train.py`, `src/vmaf_train/data/datasets.py` | [model-metadata-pydantic](AGENTS.d/model-metadata-pydantic.md) | Operator-facing TrainConfig, ModelMetadata, ManifestEntry use pydantic v2 BaseModels; internal stay @dataclass. |
 | `scripts/konvid_150k_to_corpus_jsonl.py`, `scripts/lsvq_to_corpus_jsonl.py`, `scripts/youtube_ugc_to_corpus_jsonl.py`, `scripts/waterloo_ivc_to_corpus_jsonl.py` | [mos-corpus-adapters](AGENTS.d/mos-corpus-adapters.md) | MOS corpus adapters share row schema; manifest-csv strict; cross-corpus rescaling is trainer-side concern. |
 | `scripts/train_konvid_mos_head.py`, `scripts/train_chug_hdr_mos_head.py`, `/model/konvid_mos_head_v1*` | [mos-head](AGENTS.d/mos-head.md) | MOS head: 11-D feature layout load-bearing; MOS range [1, 5] baked in graph; production-flip gate unchanged. |
 | `scripts/materialize_mos_labels.py`, `scripts/batch_materialize_mos_labels.py` | [mos-labels](AGENTS.d/mos-labels.md) | MOS labels are explicit real-training inputs; batch manifests orchestrate joins without duplicating logic. |
 | `data/netflix_loader.py`, `data/feature_extractor.py`, `data/scores.py`, `train/dataset.py`, `train/eval.py`, `train/train.py`, `tests/conftest.py` | [netflix-prep](AGENTS.d/netflix-prep.md) | Netflix prep stack: requires_pytorch_lightning test guard; iter_pairs ladder regex; zero payload smoke. |
 | `pyproject.toml`, `src/vmaf_train/__init__.py`, `src/vmaf_train/cli.py` | [orientation](AGENTS.d/orientation.md) | PyTorch + Lightning to ONNX training stack; vmaf-train CLI and local scripts are the operator surfaces. |
+| `src/vmaf_train/predictor_train.py`, `tests/test_predictor_train.py`, `tests/test_predictor_card_markdown.py`, `scripts/run_predictor_v2_training.sh`, `scripts/train_predictor_v2_realcorpus.py` | [predictor-trainer](AGENTS.d/predictor-trainer.md) | Predictor trainer is in vmaf_train (torch only in training envs, ADR-1886); imports vmaftune.predictor only. |
 | `scripts/ptq_dynamic.py`, `scripts/measure_quant_drop.py`, `/model/tiny/*.int8.onnx` | [ptq-dynamic](AGENTS.d/ptq-dynamic.md) | Dynamic-PTQ int8 sidecars; measure_quant_drop gate requires drop < 1e-3 against fp32 baseline. |
 | `train/qat.py`, `scripts/qat_train.py`, `configs/*qat*.yaml` | [qat](AGENTS.d/qat.md) | Two-step QAT: PyTorch QAT to fp32 ONNX then ORT static-quantize; torchao.quantization.pt2e recipe. |
 | `src/aiutils/run_manifest.py`, `tests/test_run_manifest*.py`, `tests/test_dataset_fetch_manifests.py` | [run-manifests](AGENTS.d/run-manifests.md) | Derived tables, JSONL merges, legacy extractions, and dataset fetchers unconditionally write replay manifests. |

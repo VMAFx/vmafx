@@ -102,10 +102,11 @@ static uint32_t emu_lcg(uint32_t x)
  * inverted border ring (the stages a flat fixture cannot observe). */
 static void emu_put(VmafPicture *pic, const EmuCase *c, unsigned row, unsigned col, unsigned v)
 {
-    if (c->bpc <= 8u)
+    if (c->bpc <= 8u) {
         ((uint8_t *)pic->data[0])[row * pic->stride[0] + col] = (uint8_t)v;
-    else
+    } else {
         ((uint16_t *)pic->data[0])[row * (pic->stride[0] / 2u) + col] = (uint16_t)v;
+    }
 }
 
 static void emu_fill_sample(VmafPicture *pic, const EmuCase *c, unsigned row, unsigned col)
@@ -157,6 +158,7 @@ static int emu_fill(VmafPicture *pic, const EmuCase *c)
 
 static int emu_configure(const EmuCase *c, EmuConfig *cfg)
 {
+    memset(cfg, 0, sizeof(*cfg));
     cfg->proc_w = c->enc_w ? c->enc_w : c->w;
     cfg->proc_h = c->enc_h ? c->enc_h : c->h;
     cfg->enc_bpc = c->enc_bpc ? c->enc_bpc : c->bpc;
@@ -190,21 +192,25 @@ typedef struct CpuRun {
 static int cpu_prepare(const VmafPicture *dist, const EmuConfig *cfg, CpuRun *run)
 {
     int err = vmaf_picture_alloc(&run->pics[0], VMAF_PIX_FMT_YUV400P, 10, cfg->proc_w, cfg->proc_h);
-    if (!err)
+    if (!err) {
         err = vmaf_picture_alloc(&run->pics[1], VMAF_PIX_FMT_YUV400P, 10, cfg->proc_w, cfg->proc_h);
-    if (!err)
+    }
+    if (!err) {
         err = vmaf_cambi_preprocessing(dist, &run->pics[0], (int)cfg->proc_w, (int)cfg->proc_h,
                                        (int)cfg->enc_bpc);
-    if (err)
+    }
+    if (err) {
         return err;
+    }
     const unsigned dp_w = cfg->proc_w + 2u * 3u + 1u;
     uint32_t *dp = calloc((size_t)dp_w * (2u * 3u + 2u), sizeof(uint32_t));
     uint16_t *deriv = calloc(cfg->proc_w, sizeof(uint16_t));
     VmafCambiDerivativeCalculator derivative = NULL;
     vmaf_cambi_default_callbacks(NULL, NULL, &derivative);
-    if (dp && deriv)
+    if (dp && deriv) {
         vmaf_cambi_get_spatial_mask(&run->pics[0], &run->pics[1], dp, deriv, cfg->proc_w,
                                     cfg->proc_h, derivative);
+    }
     err = (dp && deriv) ? 0 : -ENOMEM;
     free(dp);
     free(deriv);
@@ -251,9 +257,10 @@ static int cpu_run(const VmafPicture *dist, const EmuCase *c, const EmuConfig *c
         }
         err = cpu_scale(run, cfg, scale, w, h);
     }
-    if (!err)
+    if (!err) {
         run->score = vmaf_cambi_weight_scores_per_scale(
             run->scores, vmaf_cambi_get_pixels_in_window(cfg->window));
+    }
     return err;
 }
 
@@ -432,9 +439,10 @@ static void emu_mask_tile(const CambiHipParams *p, unsigned ty, unsigned tx)
         for (uint32_t lx = 0u; lx < CAMBI_HIP_TILE; lx++) {
             const uint32_t y = ty * CAMBI_HIP_TILE + ly;
             const uint32_t x = tx * CAMBI_HIP_TILE + lx;
-            if (x < p->proc_width && y < p->proc_height)
+            if (x < p->proc_width && y < p->proc_height) {
                 p->mask[y * p->proc_width + x] =
                     cambi_hd_mask_tile_out(row_sums, ly, lx, p->mask_index);
+            }
         }
     }
 }
@@ -503,7 +511,8 @@ static int emu_cvals(const CambiHipParams *p, unsigned scale)
     const CambiHdCvals a = cambi_hd_cvals_args(p, (int)scale);
     CambiHipSelect *sel = &p->frame->select[scale];
     const unsigned blocks = (sc->width + CAMBI_HIP_CVALS_BLOCK - 1u) / CAMBI_HIP_CVALS_BLOCK;
-    const size_t items = (size_t)sc->chunks * blocks * CAMBI_HIP_CVALS_BLOCK;
+    const size_t groups = (size_t)sc->chunks * blocks;
+    const size_t items = groups * CAMBI_HIP_CVALS_BLOCK;
     CambiHdColumn *cols = calloc(items, sizeof(*cols));
     CambiHdTally *tallies = calloc(items, sizeof(*tallies));
     unsigned char *live = calloc(items, 1u);
@@ -520,18 +529,21 @@ static int emu_cvals(const CambiHipParams *p, unsigned scale)
     }
     for (uint32_t r = 0u; r < sc->chunk_rows; r++) {
         for (size_t i = 0u; i < items; i++) {
-            if (live[i] && cols[i].y0 + r < cols[i].y1)
+            if (live[i] && cols[i].y0 + r < cols[i].y1) {
                 cambi_hd_cvals_row(&a, &cols[i], cols[i].y0 + r, &tallies[i]);
+            }
         }
     }
-    for (size_t group = 0u; group < (size_t)sc->chunks * blocks; group++) {
-        uint64_t sum = 0u;
-        for (uint32_t lane = 0u; lane < CAMBI_HIP_CVALS_BLOCK; lane++) {
-            CambiHdTally *tally = &tallies[group * CAMBI_HIP_CVALS_BLOCK + lane];
-            cambi_hd_tally_flush(a.radix_hist, tally);
-            sum += tally->sum;
+    /* One group sum per block of CAMBI_HIP_CVALS_BLOCK work-items, walked
+     * over the same index range the work-items were allocated for. */
+    uint64_t sum = 0u;
+    for (size_t i = 0u; i < items; i++) {
+        cambi_hd_tally_flush(a.radix_hist, &tallies[i]);
+        sum += tallies[i].sum;
+        if ((i + 1u) % CAMBI_HIP_CVALS_BLOCK == 0u) {
+            cambi_hd_add_split(&sel->all_lo, &sel->all_hi, sum);
+            sum = 0u;
         }
-        cambi_hd_add_split(&sel->all_lo, &sel->all_hi, sum);
     }
     free(cols);
     free(tallies);
@@ -677,9 +689,10 @@ static int emu_run_case(const EmuCase *c, double *score)
             vmaf_cambi_weight_scores_per_scale(scores, vmaf_cambi_get_pixels_in_window(cfg.window));
         fail = *score != cpu.score;
     }
-    if (fail)
+    if (fail) {
         (void)fprintf(stderr, "\n%s: device replay %.17g, cambi.c %.17g\n", c->name, *score,
                       cpu.score);
+    }
     emu_free(&e);
     cpu_free(&cpu);
     if (dist.ref)
@@ -765,31 +778,74 @@ static char *test_out_of_range_sample_sets_status(void)
 /* The reference above is cambi.c's pipeline assembled from its helpers; pin it
  * to the registered extractor so the replay compares against what `cambi`
  * reports, not against a copy that could drift. */
+static int reference_score(const EmuCase *c, const VmafPicture *dist, double *score)
+{
+    EmuConfig cfg;
+    CpuRun cpu;
+    memset(&cpu, 0, sizeof(cpu));
+    int err = emu_configure(c, &cfg);
+    if (!err) {
+        err = cpu_run(dist, c, &cfg, &cpu);
+    }
+    *score = cpu.score > 1000.0 ? 1000.0 : cpu.score;
+    cpu_free(&cpu);
+    return err;
+}
+
+/* The registered `cambi` extractor's score of the pair. vmaf_read_pictures()
+ * releases both pictures on every path past its argument check; a failure
+ * before it releases them here. */
+static int extractor_score(VmafPicture *ref, VmafPicture *dist, double *score)
+{
+    VmafConfiguration vcfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    VmafContext *vmaf = NULL;
+    int err = vmaf_init(&vmaf, vcfg);
+    if (!err) {
+        err = vmaf_use_feature(vmaf, "cambi", NULL);
+    }
+    if (err) {
+        (void)vmaf_picture_unref(ref);
+        (void)vmaf_picture_unref(dist);
+        (void)vmaf_close(vmaf);
+        return err;
+    }
+    err = vmaf_read_pictures(vmaf, ref, dist, 0u);
+    if (!err) {
+        err = vmaf_read_pictures(vmaf, NULL, NULL, 0u);
+    }
+    if (!err) {
+        err = vmaf_feature_score_at_index(vmaf, "Cambi_feature_cambi_score", score, 0u);
+    }
+    (void)vmaf_close(vmaf);
+    return err;
+}
+
 static char *test_reference_matches_registered_extractor(void)
 {
     const EmuCase *c = &emu_cases[0];
     VmafPicture ref;
     VmafPicture dist;
-    EmuConfig cfg;
-    CpuRun cpu;
-    memset(&cpu, 0, sizeof(cpu));
-    mu_assert("fixtures", !emu_fill(&ref, c) && !emu_fill(&dist, c));
-    mu_assert("configure", !emu_configure(c, &cfg));
-    mu_assert("reference", !cpu_run(&dist, c, &cfg, &cpu));
-    const double reference = cpu.score > 1000.0 ? 1000.0 : cpu.score;
-    cpu_free(&cpu);
-    VmafConfiguration vcfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
-    mu_assert("vmaf_init", !vmaf_init(&vmaf, vcfg));
-    mu_assert("use cambi", !vmaf_use_feature(vmaf, "cambi", NULL));
-    mu_assert("read", !vmaf_read_pictures(vmaf, &ref, &dist, 0u));
-    mu_assert("flush", !vmaf_read_pictures(vmaf, NULL, NULL, 0u));
+    memset(&ref, 0, sizeof(ref));
+    memset(&dist, 0, sizeof(dist));
+    const int fixtures = emu_fill(&ref, c) || emu_fill(&dist, c);
+    double reference = 0.0;
+    const int ref_err = fixtures ? -EINVAL : reference_score(c, &dist, &reference);
     double extractor = NAN;
-    const int err = vmaf_feature_score_at_index(vmaf, "Cambi_feature_cambi_score", &extractor, 0u);
-    (void)vmaf_close(vmaf);
+    const int err = fixtures ? -EINVAL : extractor_score(&ref, &dist, &extractor);
+    if (fixtures) {
+        if (ref.ref) {
+            (void)vmaf_picture_unref(&ref);
+        }
+        if (dist.ref) {
+            (void)vmaf_picture_unref(&dist);
+        }
+    }
+    mu_assert("fixtures", !fixtures);
+    mu_assert("reference", !ref_err);
     mu_assert("cambi score", !err);
-    if (extractor != reference)
+    if (extractor != reference) {
         (void)fprintf(stderr, "\nextractor %.17g, reference %.17g\n", extractor, reference);
+    }
     mu_assert("helper pipeline differs from the registered cambi extractor",
               extractor == reference);
     return NULL;
@@ -833,13 +889,16 @@ static int emu_window_init_rc(const char *name, const EmuWindowCase *c, int *rc)
         err = vmaf_feature_dictionary_set(&opts, key, eq + 1);
     }
     VmafFeatureExtractorContext *ctx = NULL;
-    if (!err)
+    if (!err) {
         err = vmaf_feature_extractor_context_create(&ctx, fex, (VmafDictionary *)opts);
-    if (err)
+    }
+    if (err) {
         return err;
+    }
     *rc = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, 8u, 3840u, 2160u);
-    if (*rc == 0)
+    if (*rc == 0) {
         err = vmaf_feature_extractor_context_close(ctx);
+    }
     const int destroy = vmaf_feature_extractor_context_destroy(ctx);
     return err ? err : destroy;
 }
@@ -854,9 +913,10 @@ static char *test_window_guard_matches_cambi_c(void)
         int hip_rc = 1;
         mu_assert("cambi init harness", !emu_window_init_rc("cambi", c, &cpu_rc));
         mu_assert("cambi_hip init harness", !emu_window_init_rc("cambi_hip", c, &hip_rc));
-        if ((cpu_rc == -EINVAL) != c->rejected || (hip_rc == -EINVAL) != c->rejected)
+        if ((cpu_rc == -EINVAL) != c->rejected || (hip_rc == -EINVAL) != c->rejected) {
             (void)fprintf(stderr, "\nwindow case %zu (%s): cambi %d, cambi_hip %d, rejected %d\n",
                           i, c->options[0], cpu_rc, hip_rc, c->rejected);
+        }
         mu_assert("cambi.c's window guard moved", (cpu_rc == -EINVAL) == c->rejected);
         if (hip_rc == -ENOSYS && c->rejected) {
             /* Only a scaffold build reports -ENOSYS for a window the guard

@@ -121,3 +121,15 @@ Three constraints govern the implementation:
 - Source: `req` (operator brief, 2026-05-09: aggregate the multiple
   ingestion-PR JSONLs into one trainer-consumable stream via
   per-corpus normalization).
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 114: `ADR-0333 — LSVQ ingestion (in flight on PR #471).`: Cites
+  ADR-0333 for LSVQ ingestion, but ADR-0333 is multi-pass encoding; LSVQ
+  ingestion is ADR-0367.
+- About line 115: `ADR-0334 — YouTube UGC + Waterloo IVC ingestion (in flight
+  on PRs #481 / #485).`: Cites ADR-0334 for YouTube UGC + Waterloo IVC
+  ingestion, but ADR-0334 is state.md touch check; Waterloo IVC is ADR-0369.

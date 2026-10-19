@@ -1,6 +1,6 @@
 # ADR-1169: The fork's default VMAF model is `vmaf_v1.0.16_3d0h`
 
-- **Status:** Accepted
+- **Status**: Accepted
 - **Date:** 2026-09-03
 - **Deciders:** Lusoris
 - **Supersedes:** none

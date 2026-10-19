@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD041 MD060 -->
 # ADR-1034: Fix SYCL integer_vif rd_stride OOB on odd widths and integer_motion UV queue sync gap
 
-- **Status**: Accepted
+- **Status**: Accepted (Superseded-in-part 2026-10-06 by [ADR-1371](1371-sycl-motion-diff-first-pipeline.md) for the primary-queue wait for the UV copies)
 - **Date**: 2026-06-04
 - **Deciders**: Lusoris
 - **Tags**: `sycl`, `correctness`, `gpu`

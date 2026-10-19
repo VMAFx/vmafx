@@ -41,16 +41,16 @@ accumulated several load-bearing modifications on top.
 
 ## Rebase-sensitive invariants
 
-- **`decimate.c::iqa_decimate` + `ssim.c`'s low-pass are the bit-exact
-  reference of the SYCL `float_ssim` decimation** (ADR-1370). The device
+- **`decimate.c::iqa_decimate` + `ssim.c`'s low-pass are bit-exact
+  reference of SYCL `float_ssim` decimation** (ADR-1370). device
   kernel in `../sycl/integer_ssim_sycl.cpp` (`decimate_sample`) reproduces
-  the window centring of `iqa_filter_pixel()` (offsets `-k/2 .. k-1-k/2`),
-  `KBND_SYMMETRIC`, the fp32 `prod` and its exact `double` sum, and sizes its
+  window centring of `iqa_filter_pixel()` (offsets `-k/2 .. k-1-k/2`),
+  `KBND_SYMMETRIC`, fp32 `prod` and its exact `double` sum, and sizes its
   planes with `iqa_decimate_dim()` from [`decimate_dim.h`](decimate_dim.h),
-  which `decimate.c` calls too. A change to any of those, or to
-  `ssim_low_pass_alloc()`'s tap `1.0f / (scale * scale)`, must change the
-  device kernel in the same PR; `decimate_dim.h` stays include-free so the
-  C++ SYCL TU does not parse the C-only kernel declarations.
+  which `decimate.c` calls too. change to any of those, or to
+  `ssim_low_pass_alloc()`'s tap `1.0f / (scale * scale)`, must change
+  device kernel in same PR; `decimate_dim.h` stays include-free so
+  C++ SYCL TU does not parse C-only kernel declarations.
 
 - **Same reference for CUDA `float_ssim`, plus `convolve.c`** (ADR-1399).
   `../cuda/integer_ssim/ssim_score.cu` mirrors `iqa_decimate` + `ssim.c`
@@ -61,14 +61,14 @@ accumulated several load-bearing modifications on top.
   that kernel in same PR; `test_cuda_float_ssim_parity` asserts equality
   with CPU and fails otherwise.
 
-- **The HIP `float_ssim` decimation mirrors the same reference**
+- **HIP `float_ssim` decimation mirrors same reference**
   (ADR-1405). `../hip/float_ssim/ssim_decimate.h`
   (`vmaf_hip_ssim_decimate_sample`) is that window sum in plain C and HIP
   C++; `../hip/float_ssim_hip.c` sizes its planes with `iqa_decimate_dim()`.
   `core/test/test_hip_float_ssim_decimate.c` compares it with
-  `iqa_decimate()` byte for byte on every build with HIP enabled, so a change
-  to `iqa_filter_pixel()`, `KBND_SYMMETRIC`, `iqa_decimate()` or the tap of
-  `ssim_low_pass_alloc()` fails that test until the header follows.
+  `iqa_decimate()` byte for byte on every build with HIP enabled, so change
+  to `iqa_filter_pixel()`, `KBND_SYMMETRIC`, `iqa_decimate()` or tap of
+  `ssim_low_pass_alloc()` fails that test until header follows.
 
 - **`ssim_tools.c::ssim_accumulate_default_scalar` defines
   ADR-0139 reduction shape.** Two `2.0 *` literals
@@ -83,21 +83,21 @@ accumulated several load-bearing modifications on top.
   matching rewrite in same PR.**
 
 - **`convolve.c::iqa_convolve` taps = widen-then-add** (ADR-0138):
-  every product is evaluated as `float * float` before it is widened into the
+  every product is evaluated as `float * float` before it is widened into
   `double` running sum. Most scalar sites spell that as `const float prod =
   img[i] * k[j]; sum += (double)prod;`. AVX2 / AVX-512 / NEON twins in
   `../x86/convolve_*.c` and `../arm64/convolve_neon.c` mirror this
   with single-rounded `_mm256_cvtps_pd(_mm256_mul_ps(...))`
   / `vcvt_f64_f32(vmul_f32(...))` chains. **No FMA, no pre-widen
-  of kernel taps.** Changing the arithmetic requires matching all three SIMD
-  variants. The vertical-pass expression keeps the direct equivalent spelling
-  and writes the
-  conversion of the product's result explicitly,
+  of kernel taps.** Changing arithmetic requires matching all three SIMD
+  variants. vertical-pass expression keeps direct equivalent spelling
+  and writes
+  conversion of product's result explicitly,
   `sum += (double)(img_cache[...] * k->kernel_v[k])`, which is what
   `cpp/integer-multiplication-cast-to-long` accepts (it reports implicit
   widenings only; `// codeql[...]` comments do not suppress here). Research-2031's
-  SSIM/MS-SSIM/PU21 domain proof in `core/test/test_iqa_convolve.c` stays the
-  evidence that the product is exact. Never cast an operand.
+  SSIM/MS-SSIM/PU21 domain proof in `core/test/test_iqa_convolve.c` stays
+  evidence that product is exact. Never cast operand.
 
 - **TU-static rename `_calc_scale` → `iqa_calc_scale`** (fork-local,
   ADR-0148). Keep non-reserved spelling on rebase.
@@ -118,18 +118,18 @@ accumulated several load-bearing modifications on top.
   `struct ssim_workspace`.
   Same on-rebase rule as convolve split.
 
-- **`iqa_ssim()` hands the SIMD kernels `ssim_window_count()`, never
-  `w * h`** (`T-FLOAT-SSIM-SUB-WINDOW-SIMD-COUNT-2026-10-02`). A plane
-  smaller than the window leaves both extents negative after the
-  convolution, and their product is positive (8x8: 4; 4x4: 49). The scalar
-  loops visit nothing there; the SIMD variance and accumulate kernels take
+- **`iqa_ssim()` hands SIMD kernels `ssim_window_count()`, never
+  `w * h`** (`T-FLOAT-SSIM-SUB-WINDOW-SIMD-COUNT-2026-10-02`). plane
+  smaller than window leaves both extents negative after
+  convolution, and their product is positive (8x8: 4; 4x4: 49). scalar
+  loops visit nothing there; SIMD variance and accumulate kernels take
   one flat count, read statistics no convolution wrote and, from 4x4 down,
-  ran past the workspace. `iqa_convolve_dispatch()` also keeps a plane
-  smaller than the window on the scalar `iqa_convolve()`: the SIMD
-  convolves require `w >= kw` and `h >= kh`. The divisor of the means stays
-  upstream's `w * h` (an 8x8 frame scores 0, as in Netflix's libvmaf). On a
+  ran past workspace. `iqa_convolve_dispatch()` also keeps plane
+  smaller than window on scalar `iqa_convolve()`: SIMD
+  convolves require `w >= kw` and `h >= kh`. divisor of means stays
+  upstream's `w * h` (8x8 frame scores 0, as in Netflix's libvmaf). On
   sync, keep both guards; `core/test/test_iqa_ssim_sub_window.c` holds every
-  dispatch to the scalar bits below, at and above the window.
+  dispatch to scalar bits below, at and above window.
 - **`ssim_accumulate_lane.h` = single source of truth** for
   per-lane reduction. AVX2 / AVX-512 / NEON each pre-compute
   float-valued intermediates (`srsc`, `l_den`, `c_den`,

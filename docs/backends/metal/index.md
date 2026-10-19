@@ -175,9 +175,35 @@ mapping with GPU completion/fence tracking) is deferred under
    return the CPU's scores bit for bit (see
    [What a ported twin computes](#what-a-ported-twin-computes)), measured on
    an Apple device by the macOS tester bundle
-   ([ADR-1496](../../adr/1496-metal-gate-in-tester-bundle.md)).
+   ([ADR-1496](../../adr/1496-metal-gate-in-tester-bundle.md)). The first
+   device report (an Apple M4 Pro, 2026-10-05, listed under
+   [hardware reports](../../hardware-reports/index.md)) held 18 gate
+   features exact on all four fixtures; their twins are in the
+   [exact twins table](../../development/cross-backend-exact-twins.md), and
+   the gate compares them with tolerance 0. `adm`, `cambi`, `psnr_hvs` and
+   `vif` differed from the CPU in that report; their causes and fixes are
+   rows of the [bug ledger](../../state.md) and wait for the next report.
 7. **`enable_metal` default flip** from `auto` to `enabled`: only after a
    tester's report shows every Metal twin equal to the CPU.
+
+## Largest frame of the five-plane twins
+
+`float_vif_metal`, `integer_ssim_metal`, `float_ssim_metal` and
+`float_ms_ssim_metal` keep five moment planes in one buffer and index them in
+32 bits, so a plane may hold at most 858,993,459 samples (five planes fill the
+`uint` range). Each refuses a larger frame in `init()`, before it creates a
+Metal context, and names the limit:
+
+```text
+libvmaf ERROR integer_ssim_metal: 5 planes of 1073741824 samples pass the 32-bit index of the Metal kernels (at most 858993459 samples per plane)
+```
+
+16K (15360x8640) is accepted. The 32768x32768 picture cap is refused by all
+four, and `float_vif_metal` also refuses 16K with a `vif_prescale` above about
+2.544. A buffer of that size is beyond the memory of the Apple GPUs in any
+case. `core/test/test_metal_plane_index.c` checks the limit on every platform;
+the `*_refuses_uint_index_overflow` cases of the four Metal parity tests check
+each twin on a Mac.
 
 ## Feature extractor options
 
@@ -192,7 +218,7 @@ extractor (ADR-0484):
   `float_ssim_vert_lcs` kernel stores every window's `l`, `c` and `s`, and the
   host adds each plane in the CPU's raster order.
 - `enable_db` (bool, default `false`) — convert the SSIM score to decibels:
-  `-10·log10(1 − SSIM)`, on the host through the CPU's helper.
+  $-10 \log_{10}(1 - \mathrm{SSIM})$, on the host through the CPU's helper.
 - `clip_db` (bool, default `false`) — clamp the dB output to a finite maximum
   derived from frame dimensions and bit depth.  Mirrors the CPU helper exactly.
 - `scale` (int, default `0` = auto-detect) — decimation scale factor.
@@ -340,12 +366,12 @@ row stays open.
 
 | Twin | What changed for a user | Host proof |
 | --- | --- | --- |
-| `float_psnr_metal` | Exact at 10, 12 and 16 bits with large differences: integer sums of the CPU's `float` terms per row segment, rows added in the CPU's order, so frames past 2^53 units match too. | `test_metal_float_psnr_math` |
-| `float_moment_metal` | Exact at 16 bits full range (the CPU's `float` squares), and past 2^53 units of the sum (16-bit frames above about 2 megapixels) it forms the CPU's rounded sum with five more kernels; a device whose pipelines cannot run 256 threads per threadgroup fails at init. | `test_metal_float_moment_math`, `test_metal_float_moment_sum` |
+| `float_psnr_metal` | Exact at 10, 12 and 16 bits with large differences: integer sums of the CPU's `float` terms per row segment, rows added in the CPU's order, so frames past $2^{53}$ units match too. | `test_metal_float_psnr_math` |
+| `float_moment_metal` | Exact at 16 bits full range (the CPU's `float` squares), and past $2^{53}$ units of the sum (16-bit frames above about 2 megapixels) it forms the CPU's rounded sum with five more kernels; a device whose pipelines cannot run 256 threads per threadgroup fails at init. | `test_metal_float_moment_math`, `test_metal_float_moment_sum` |
 | `integer_adm_metal` | Integer decouple reciprocal and gain limit as the CPU computes them. Since the first tester report (issue #2118, every exact case off): the reduction slots are read where the kernels write them, scale 1 reads the 16-bit band of scale 0, the scales-1-3 masking and denominator terms round as the CPU, `adm_skip_scale0` leaves scale 0 without an AIM numerator, and every score is concluded by the CPU's own routines. | `test_metal_integer_adm_math`, `test_metal_integer_adm_host_replay` |
 | `integer_motion_metal` | Differences frames before the blur, as the CPU; emits `motion_sad_score` and `motion3`; CPU option table (`motion_add_uv` is gone); `motion2` / `motion3` from the CPU's window code. | `test_metal_integer_motion_math` |
 | `integer_motion_v2_metal` | Same window code; `motion_fps_weight` and `motion_max_val` applied per frame, as the CPU. | `test_metal_motion_v2_exact_contract.py` |
-| `integer_psnr_metal` | Exact 64-bit error sum (the old 32-bit halves lost carries above 2^32); `apsnr` and chroma per pixel format. | `test_metal_integer_psnr_exact_contract.py` |
+| `integer_psnr_metal` | Exact 64-bit error sum (the old 32-bit halves lost carries above $2^{32}$); `apsnr` and chroma per pixel format. | `test_metal_integer_psnr_exact_contract.py` |
 | `integer_vif_metal` | The CPU's gain integers (one integer division, the CPU's double operations replayed in 64-bit integers when needed). Each scale's score is the quotient of its two `float` sums in single precision, as the CPU divides (a double quotient put every score up to 3.0e-8 off on an Apple M4 Pro). In a model run, frames below 16 pixels go to the CPU `vif`; a direct request on them fails at init. Borders fold as the CPU's mirror. | `test_metal_integer_vif_gain`, `test_metal_integer_vif_math`, `test_sycl_vif_float_sums_contract.py` |
 | `integer_cambi_metal` | CPU option table, `heatmaps_path` included (written by `cambi.c`'s own heatmap writers); the score keeps the CPU's feature name. | `test_metal_twin_option_tables_contract.py`, `test_cambi_heatmap_writers` |
 | `float_motion_metal` | Row sums in the CPU's order, `motion3` and the CPU's nine options. | `test_metal_float_motion_math` |

@@ -165,9 +165,9 @@ static char *test_run_rejects_zero_n_inputs(void)
     int64_t shape[1] = {1};
     VmafDnnInput in = {.name = NULL, .data = buf, .shape = shape, .rank = 1};
     VmafDnnOutput out = {.name = NULL, .data = buf, .capacity = 1, .written = 0};
-    int rc = vmaf_dnn_session_run((VmafDnnSession *)0xdeadbeef, &in, 0u, &out, 1u);
+    int rc = vmaf_dnn_session_run((VmafDnnSession *)0xdeadbeefULL, &in, 0u, &out, 1u);
     mu_assert("zero n_inputs rejected", rc < 0);
-    rc = vmaf_dnn_session_run((VmafDnnSession *)0xdeadbeef, &in, 1u, &out, 0u);
+    rc = vmaf_dnn_session_run((VmafDnnSession *)0xdeadbeefULL, &in, 1u, &out, 0u);
     mu_assert("zero n_outputs rejected", rc < 0);
     return NULL;
 }
@@ -491,6 +491,119 @@ static char *test_session_open_int8_session_fail_falls_back_to_fp32(void)
     (void)unlink(sidecar);
     (void)unlink(int8_onnx);
     (void)unlink(onnx);
+    (void)unlink(base);
+    return NULL;
+}
+
+static char *test_session_open_int8_invalid_falls_back_to_fp32(void)
+{
+    if (!vmaf_dnn_available())
+        return NULL;
+    if (access(SMOKE_FP32_MODEL, R_OK) != 0)
+        return NULL;
+
+    char base[] = "/tmp/vmaf-dnn-int8-inv-XXXXXX";
+    const int fd = mkstemp(base);
+    if (fd < 0)
+        return NULL;
+    (void)close(fd);
+
+    char onnx[1100];
+    char int8_onnx[1200];
+    char sidecar[1100];
+    (void)snprintf(onnx, sizeof(onnx), "%s.onnx", base);
+    (void)snprintf(int8_onnx, sizeof(int8_onnx), "%s.int8.onnx", base);
+    (void)snprintf(sidecar, sizeof(sidecar), "%s.json", base);
+
+    if (copy_file(SMOKE_FP32_MODEL, onnx) != 0) {
+        (void)unlink(base);
+        return NULL;
+    }
+    FILE *fint8 = fopen_w_600(int8_onnx);
+    if (!fint8) {
+        (void)unlink(onnx);
+        (void)unlink(base);
+        return NULL;
+    }
+    const char corrupt_bytes[] = "invalid_int8_onnx_payload";
+    (void)fwrite(corrupt_bytes, 1, sizeof(corrupt_bytes) - 1u, fint8);
+    (void)fclose(fint8);
+
+    mu_assert("write sidecar ok", write_sidecar_dynamic(sidecar) == 0);
+
+    /* 1. When given the fp32 path, invalid int8 falls back to fp32 and opens. */
+    VmafDnnSession *sess = NULL;
+    int rc = vmaf_dnn_session_open(&sess, onnx, NULL);
+    mu_assert("invalid int8 falls back to fp32 (rc == 0)", rc == 0);
+    mu_assert("session populated on fallback", sess != NULL);
+    vmaf_dnn_session_close(sess);
+
+    /* 2. Direct invocation of invalid int8 fails closed. */
+    sess = NULL;
+    rc = vmaf_dnn_session_open(&sess, int8_onnx, NULL);
+    mu_assert("direct invalid int8 open must fail (< 0)", rc < 0);
+    mu_assert("session must be NULL on failure", sess == NULL);
+
+    (void)unlink(sidecar);
+    (void)unlink(int8_onnx);
+    (void)unlink(onnx);
+    (void)unlink(base);
+    return NULL;
+}
+
+#define TINY_V2_MODEL "model/tiny/vmaf_tiny_v2.onnx"
+
+/* The caller passes an explicit .int8.onnx path to vmaf_dnn_session_open().
+ * resolve_load_path() must NOT derive <name>.int8.int8.onnx.
+ * If .int8.int8.onnx exists as a distinct model (here TINY_V2_MODEL, rank-2 FV),
+ * an unpatched resolver would derive and load it instead of the caller's model,
+ * causing vmaf_dnn_session_run_luma8() to fail with -ENOTSUP. */
+static char *test_session_open_explicit_int8_path_preserves_path(void)
+{
+    if (!vmaf_dnn_available())
+        return NULL;
+    if (access(SMOKE_FP32_MODEL, R_OK) != 0 || access(TINY_V2_MODEL, R_OK) != 0)
+        return NULL;
+
+    char base[] = "/tmp/vmaf-dnn-int8-exp-XXXXXX";
+    const int fd = mkstemp(base);
+    if (fd < 0)
+        return NULL;
+    (void)close(fd);
+
+    char int8_onnx[1200];
+    char int8_int8_onnx[1200];
+    char sidecar[1100];
+    (void)snprintf(int8_onnx, sizeof(int8_onnx), "%s.int8.onnx", base);
+    (void)snprintf(int8_int8_onnx, sizeof(int8_int8_onnx), "%s.int8.int8.onnx", base);
+    (void)snprintf(sidecar, sizeof(sidecar), "%s.int8.json", base);
+
+    if (copy_file(SMOKE_FP32_MODEL, int8_onnx) != 0) {
+        (void)unlink(base);
+        return NULL;
+    }
+    if (copy_file(TINY_V2_MODEL, int8_int8_onnx) != 0) {
+        (void)unlink(int8_onnx);
+        (void)unlink(base);
+        return NULL;
+    }
+    mu_assert("write sidecar ok", write_sidecar_dynamic(sidecar) == 0);
+
+    VmafDnnSession *sess = NULL;
+    int rc = vmaf_dnn_session_open(&sess, int8_onnx, NULL);
+    mu_assert("explicit int8 path opens directly (rc == 0)", rc == 0);
+    mu_assert("session populated", sess != NULL);
+
+    uint8_t in[4 * 4] = {0};
+    uint8_t out[4 * 4] = {0};
+    rc = vmaf_dnn_session_run_luma8(sess, in, 4, 4, 4, out, 4);
+    mu_assert("explicit int8 model executes as luma filter", rc == 0);
+
+    vmaf_dnn_session_close(sess);
+
+    (void)unlink(sidecar);
+    (void)unlink(int8_int8_onnx);
+    (void)unlink(int8_onnx);
     (void)unlink(base);
     return NULL;
 }
@@ -1090,6 +1203,8 @@ static char *run_session_api_group_8(void)
 {
 #ifndef _WIN32
     mu_run_test(test_copy_file_rejects_read_error);
+    mu_run_test(test_session_open_int8_invalid_falls_back_to_fp32);
+    mu_run_test(test_session_open_explicit_int8_path_preserves_path);
 #endif
     return NULL;
 }

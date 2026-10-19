@@ -1,0 +1,8 @@
+# Canonical identity for the maintainer's commits. Some were recorded under
+# addresses that are not linked to the maintainer's GitHub account (lusoris@pm.me)
+# or under a placeholder an automation wrote into a shared Git config (x@x, from
+# 2026-10-05). Git reads this file for log, shortlog, blame and contributor
+# counts; GitHub's web view does not.
+Lusoris <lusoris@proton.me>
+Lusoris <lusoris@proton.me> <lusoris@pm.me>
+Lusoris <lusoris@proton.me> <x@x>

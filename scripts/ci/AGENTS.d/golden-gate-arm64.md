@@ -6,6 +6,7 @@ paths:
   - build-aux/aarch64-linux-gnu-clang.ini
   - Makefile
 invariant: Golden gate builds: one profile (`setup-golden-build.sh`), native and aarch64 cross; preflight before any configure.
+area: tests
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Golden gate build profile, native and aarch64 (ADR-1317, ADR-1461)

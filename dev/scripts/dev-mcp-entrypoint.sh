@@ -4,9 +4,9 @@
 #
 # dev/scripts/dev-mcp-entrypoint.sh — container entrypoint
 #
-# Keeps the container alive so MCP clients can attach via
+# Without a command, keeps the container alive so MCP clients can attach via
 #   docker exec -i vmaf-dev-mcp vmafx-mcp
-# (stdio transport).
+# (stdio transport). With a command, runs it and exits with its status.
 #
 # ADR-1229: the server is the Go binary `vmafx-mcp`, built from cmd/vmafx-mcp
 # and already installed at /usr/local/bin by the go-build stage. It replaced
@@ -109,6 +109,16 @@ if ! mkdir -p "${VMAFTUNE_WORKDIR:-/probes/vmaftune-work}" 2>/dev/null; then
 fi
 if ! chown vmaf:vmaf "${VMAFTUNE_WORKDIR:-/probes/vmaftune-work}" 2>/dev/null; then
   echo "[dev-mcp-entrypoint] cannot chown ${VMAFTUNE_WORKDIR:-/probes/vmaftune-work}; continuing" >&2
+fi
+
+# One-shot mode: when the container is started with a command
+# (`docker run --rm vmaf-dev-mcp:local pkg-config --modversion vpl`), run it
+# and exit with its status. Before this, the arguments were ignored and every
+# one-shot probe left a container (and its `vmaf --version` healthcheck) running
+# until someone stopped it. The long-running mode below, which keeps the
+# container up for `docker exec`, is for a start with no command only.
+if [ "$#" -gt 0 ]; then
+  exec "$@"
 fi
 
 LOG_FILE="${VMAF_MCP_LOG:-/tmp/vmaf-mcp.log}"

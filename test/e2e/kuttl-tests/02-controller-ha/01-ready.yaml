@@ -1,0 +1,31 @@
+# SPDX-License-Identifier: EUPL-1.2
+# Copyright 2026 Lusoris
+#
+# Fail closed unless the database Cluster is ready, the migration Job has
+# applied the schema, and both controller replicas and the node are
+# available (a controller reports ready only on the current schema).
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+metadata:
+  name: assert-ha-controller
+commands:
+  - command: >-
+      kubectl wait --for=condition=Ready
+      cluster.postgresql.cnpg.io/vmafx-db
+      --namespace vmafx-ha
+      --timeout=300s
+    timeout: 320
+  - command: >-
+      kubectl wait --for=condition=Complete
+      job --selector app.kubernetes.io/component=migrate
+      --namespace vmafx-ha
+      --timeout=300s
+    timeout: 320
+  - command: >-
+      kubectl wait --for=condition=Available
+      deployment/vmafx-controller
+      deployment/vmafx-node
+      --namespace vmafx-ha
+      --timeout=180s
+    timeout: 200

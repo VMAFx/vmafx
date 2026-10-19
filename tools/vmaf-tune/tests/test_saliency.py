@@ -188,13 +188,13 @@ def test_write_x264_qpfile_emits_per_frame_block(tmp_path):
     assert "-4 0 4" in text
 
 
-def test_augment_extra_params_with_qpfile_appends_x264_params(tmp_path):
+def test_augment_extra_params_with_qpfile_appends_the_qpfile_option(tmp_path):
     qp = tmp_path / "qp.txt"
     qp.write_text("0 I 0\n", encoding="ascii")
     out = augment_extra_params_with_qpfile(("-x264-opts", "ref=4"), qp)
-    assert out[-2] == "-x264-params"
-    assert out[-1].startswith("qpfile=")
-    assert str(qp) in out[-1]
+    # libx264 has no qpfile parameter: -x264-params qpfile=... never reaches the ROI.
+    assert out[-2:] == ("-qpfile", str(qp))
+    assert "-x264-params" not in out
 
 
 # ---- compute_saliency_map ---------------------------------------------------
@@ -422,9 +422,9 @@ def test_saliency_aware_encode_includes_qpfile_in_command(tmp_path):
     )
     assert result.exit_status == 0
     cmd = captured["cmd"]
-    assert "-x264-params" in cmd
-    qp_arg_idx = cmd.index("-x264-params") + 1
-    assert cmd[qp_arg_idx].startswith("qpfile=")
+    assert "-x264-params" not in cmd
+    qp_arg_idx = cmd.index("-qpfile") + 1
+    assert cmd[qp_arg_idx].endswith(".qpfile.txt")
 
 
 def test_saliency_aware_encode_passes_temporal_aggregator(tmp_path):
@@ -467,7 +467,7 @@ def test_saliency_aware_encode_passes_temporal_aggregator(tmp_path):
     )
 
     assert result.exit_status == 0
-    assert "-x264-params" in captured["cmd"]
+    assert "-qpfile" in captured["cmd"]
 
 
 def test_saliency_aware_encode_falls_back_when_unavailable(tmp_path):

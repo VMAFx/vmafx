@@ -165,7 +165,7 @@ python3 ai/scripts/phase3_subset_sweep.py \
   --standardize
 ```
 
-Wall: ~18 min on `ryzen-4090-arc` CPU (same as Phase-3a; the
+Wall: ~18 min on a reference workstation CPU (same as Phase-3a; the
 StandardScaler step is negligible).
 
 ## Caveats

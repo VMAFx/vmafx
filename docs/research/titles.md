@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # Research digest titles
 
-Every research digest, one heading each (792), so the site search finds a digest by its title; digest bodies are not in the search index ([ADR-1512](../adr/1512-docs-search-user-pages-only.md)).
+Every research digest, one heading each (802), so the site search finds a digest by its title; digest bodies are not in the search index ([ADR-1512](../adr/1512-docs-search-user-pages-only.md)).
 
 ## Research-0001: Cache shape for `bisect-model-quality` nightly
 
@@ -2160,6 +2160,10 @@ Every research digest, one heading each (792), so the site search finds a digest
 
 [1590-device-code-compression](1590-device-code-compression.md)
 
+## Research-1900: Verification and contract analysis for VPL decode retry ceiling
+
+[1900-vpl-decode-ceiling-verification-2026-10-05](1900-vpl-decode-ceiling-verification-2026-10-05.md)
+
 ## SYCL QSV Zero-Copy — Two-Bug Investigation (Phase 3 fix digest)
 
 [2026-06-30-sycl-qsv-zerocopy-two-bug-investigation](2026-06-30-sycl-qsv-zerocopy-two-bug-investigation.md)
@@ -2652,6 +2656,10 @@ Every research digest, one heading each (792), so the site search finds a digest
 
 [2144-metal-integer-adm-twin-defects](2144-metal-integer-adm-twin-defects.md)
 
+## Research-2151: What the RC4 Rust extractor framework has to match
+
+[2151-rc4-rust-extractor-framework](2151-rc4-rust-extractor-framework.md)
+
 ## Research-2158: VMAFx API redesign, generated surfaces and the VMAFx FFmpeg filters
 
 [2158-vmafx-api-redesign](2158-vmafx-api-redesign.md)
@@ -2659,6 +2667,38 @@ Every research digest, one heading each (792), so the site search finds a digest
 ## Research-2159: What the HIP runtime of a gfx1036 does with imported frames, fences and GL textures
 
 [2159-vmafx-hip-device-frames](2159-vmafx-hip-device-frames.md)
+
+## Research-2160: SYCL device frames: what the Level Zero runtime does with cross-queue copies, host tasks and event queries, and whether batched command lists drop imports on xe
+
+[2160-vmafx-sycl-device-frames](2160-vmafx-sycl-device-frames.md)
+
+## Research-2161: What an EGL dma-buf export of a GL texture is on a gfx1036, and how HIP can read it
+
+[2161-hip-gl-egl-dmabuf-tiling](2161-hip-gl-egl-dmabuf-tiling.md)
+
+## Research-2162: What CUDA, Level Zero and HIP do with memory and semaphores a Vulkan producer exported
+
+[2162-vmafx-vulkan-frame-import](2162-vmafx-vulkan-frame-import.md)
+
+## Research-2170: Windows icx-cl and icpx strict FP spelling — 2026-10-07
+
+[2170-windows-strict-fp-spelling-2026-10-07](2170-windows-strict-fp-spelling-2026-10-07.md)
+
+## Research-2351: components of the cloud-native platform, their versions, licences and limits
+
+[2351-cloud-native-platform-components](2351-cloud-native-platform-components.md)
+
+## Research-2399: Packaging the generated rules and dashboards in the Helm chart
+
+[2399-observability-helm-packaging](2399-observability-helm-packaging.md)
+
+## Research-2479: what replacing the C and C++ host code with Rust takes
+
+[2479-rust-core-migration](2479-rust-core-migration.md)
+
+## Research-2480: Stale-lock recovery for the ADR number allocator
+
+[2480-adr-allocator-stale-lock](2480-adr-allocator-stale-lock.md)
 
 ## ADR-0108 Six-Deliverables Compliance Audit — 2026-05-29
 

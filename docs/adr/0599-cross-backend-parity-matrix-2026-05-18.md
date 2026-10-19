@@ -62,3 +62,13 @@ but limited to scaffold/ENOSYS (no discrete AMD GPU on the audit host).
 - ADR-0533 (HIP extractor sweep registration)
 - ADR-0551 (HIP extractor audit — confirmed all 18 have real HSACO kernels)
 - `req`: The user directed the full systematic sweep in the session briefing of 2026-05-18.
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 63: `- ADR-0551 (HIP extractor audit — confirmed all 18 have real
+  HSACO kernels)`: ADR-0551 points to an unrelated topic
+  (0551-local-explainer-hang-diagnosis.md: "VCQ-223 LocalExplainer CI
+  timeout"). The HIP extractor audit was ADR-0563.

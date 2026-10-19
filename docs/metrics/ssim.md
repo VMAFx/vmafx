@@ -48,8 +48,8 @@ The extractor is luma-only; it has no chroma option.
 
 | Option | Type | Default | Effect |
 |---|---|---|---|
-| `enable_db` | bool | `false` | Report `-10 * log10(1 - ssim)` instead of the linear score. A perfect score (identical frames) is `+inf`. |
-| `clip_db` | bool | `false` | Cap the dB value at `ceil(10 * log10(peak^2 / (0.5 / (w * h))))`, the dB of half a sample of error over the frame. Needs `enable_db` to have an effect. |
+| `enable_db` | bool | `false` | Report $-10 \log_{10}(1 - \mathrm{ssim})$ instead of the linear score. A perfect score (identical frames) is `+inf`. |
+| `clip_db` | bool | `false` | Cap the dB value at $\left\lceil 10 \log_{10} \dfrac{\mathrm{peak}^2}{0.5 / (w\,h)} \right\rceil$, the dB of half a sample of error over the frame. Needs `enable_db` to have an effect. |
 
 The CPU extractor and the CUDA, HIP, SYCL and Metal twins accept both options.
 A model that sets an option the active backend's twin lacks computes `ssim` on

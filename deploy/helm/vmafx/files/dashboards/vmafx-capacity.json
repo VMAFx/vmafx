@@ -1,0 +1,529 @@
+{
+  "uid": "vmafx-capacity",
+  "title": "VMAFx Capacity",
+  "description": "Capacity measured from the nodes (slots times the mean job run time of the last 6 hours) against demand (jobs submitted per hour), the headroom between them, and linear forecasts of the queue and the demand. Generated from pkg/observability/metricdef by tools/obsgen.",
+  "tags": [
+    "vmafx"
+  ],
+  "timezone": "browser",
+  "editable": false,
+  "graphTooltip": 1,
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "fiscalYearStartMonth": 0,
+  "refresh": "1m",
+  "schemaVersion": 42,
+  "panels": [
+    {
+      "type": "row",
+      "collapsed": false,
+      "title": "Now",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 0,
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus_datasource}"
+          },
+          "expr": "sum(vmafx_node_slots{job=~\"$job\",instance=~\"$instance\"}) * 3600 / (sum(increase(vmafx_node_job_duration_seconds_sum{job=~\"$job\",instance=~\"$instance\"}[6h])) / sum(increase(vmafx_node_job_duration_seconds_count{job=~\"$job\",instance=~\"$instance\"}[6h])))",
+          "instant": true,
+          "legendFormat": "jobs per hour",
+          "range": false
+        }
+      ],
+      "title": "Measured capacity",
+      "description": "Jobs per hour the nodes can finish: their slots times 3600 over the mean job run time of the last 6 hours.",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${prometheus_datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 1
+      },
+      "repeatDirection": "h",
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "percentChangeColorMode": "standard",
+        "orientation": ""
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "blue"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus_datasource}"
+          },
+          "expr": "sum(increase(vmafx_controller_jobs_submitted_total{job=~\"$job\",instance=~\"$instance\"}[1h]))",
+          "instant": true,
+          "legendFormat": "jobs per hour",
+          "range": false
+        }
+      ],
+      "title": "Demand",
+      "description": "Jobs submitted to the controller in the last hour.",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${prometheus_datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 1
+      },
+      "repeatDirection": "h",
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "percentChangeColorMode": "standard",
+        "orientation": ""
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "blue"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus_datasource}"
+          },
+          "expr": "1 - (sum(increase(vmafx_controller_jobs_submitted_total{job=~\"$job\",instance=~\"$instance\"}[1h]))) / (sum(vmafx_node_slots{job=~\"$job\",instance=~\"$instance\"}) * 3600 / (sum(increase(vmafx_node_job_duration_seconds_sum{job=~\"$job\",instance=~\"$instance\"}[6h])) / sum(increase(vmafx_node_job_duration_seconds_count{job=~\"$job\",instance=~\"$instance\"}[6h]))))",
+          "instant": true,
+          "legendFormat": "headroom",
+          "range": false
+        }
+      ],
+      "title": "Headroom",
+      "description": "1 - demand / capacity: the share of the capacity the demand leaves free. Below 0 the queue grows.",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${prometheus_datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 1
+      },
+      "repeatDirection": "h",
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "percentChangeColorMode": "standard",
+        "orientation": ""
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "red"
+              },
+              {
+                "value": 0,
+                "color": "orange"
+              },
+              {
+                "value": 0.2,
+                "color": "green"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus_datasource}"
+          },
+          "expr": "deriv((sum(increase(vmafx_controller_jobs_submitted_total{job=~\"$job\",instance=~\"$instance\"}[1h])))[1d:1m]) * 86400",
+          "instant": true,
+          "legendFormat": "jobs per hour per day",
+          "range": false
+        }
+      ],
+      "title": "Demand growth per day",
+      "description": "How much the hourly demand grew per day over the last day (linear fit): with the headroom, how soon demand meets capacity. Negative is shrinking.",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${prometheus_datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 1
+      },
+      "repeatDirection": "h",
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "percentChangeColorMode": "standard",
+        "orientation": ""
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              },
+              {
+                "value": 0,
+                "color": "orange"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "row",
+      "collapsed": false,
+      "title": "Forecast",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 5
+      },
+      "id": 0,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus_datasource}"
+          },
+          "expr": "sum(vmafx_controller_jobs_pending{job=~\"$job\",instance=~\"$instance\"}) or vector(0)",
+          "instant": false,
+          "legendFormat": "pending",
+          "range": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus_datasource}"
+          },
+          "expr": "predict_linear((sum(vmafx_controller_jobs_pending{job=~\"$job\",instance=~\"$instance\"}) or vector(0))[6h:1m], 86400)",
+          "instant": false,
+          "legendFormat": "pending in 24 h",
+          "range": true
+        }
+      ],
+      "title": "Pending jobs, forecast 24 hours",
+      "description": "Jobs waiting in the queue, and where the trend of the last 6 hours puts them in 24 hours. A rising forecast with headroom left points at a backend no node serves.",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${prometheus_datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 6
+      },
+      "repeatDirection": "h",
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus_datasource}"
+          },
+          "expr": "sum(increase(vmafx_controller_jobs_submitted_total{job=~\"$job\",instance=~\"$instance\"}[1h]))",
+          "instant": false,
+          "legendFormat": "demand",
+          "range": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus_datasource}"
+          },
+          "expr": "predict_linear((sum(increase(vmafx_controller_jobs_submitted_total{job=~\"$job\",instance=~\"$instance\"}[1h])))[1d:1m], 7 * 86400)",
+          "instant": false,
+          "legendFormat": "demand in 7 days",
+          "range": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus_datasource}"
+          },
+          "expr": "sum(vmafx_node_slots{job=~\"$job\",instance=~\"$instance\"}) * 3600 / (sum(increase(vmafx_node_job_duration_seconds_sum{job=~\"$job\",instance=~\"$instance\"}[6h])) / sum(increase(vmafx_node_job_duration_seconds_count{job=~\"$job\",instance=~\"$instance\"}[6h])))",
+          "instant": false,
+          "legendFormat": "capacity",
+          "range": true
+        }
+      ],
+      "title": "Demand, forecast 7 days, against capacity",
+      "description": "Jobs submitted per hour, the trend of the last day projected 7 days ahead, and the measured capacity.",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${prometheus_datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 6
+      },
+      "repeatDirection": "h",
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      }
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "type": "datasource",
+        "name": "prometheus_datasource",
+        "label": "Prometheus data source",
+        "skipUrlSync": false,
+        "query": "prometheus",
+        "multi": false,
+        "allowCustomValue": true,
+        "includeAll": false,
+        "auto": false,
+        "auto_min": "10s",
+        "auto_count": 30
+      },
+      {
+        "type": "query",
+        "name": "job",
+        "label": "Job",
+        "skipUrlSync": false,
+        "query": "label_values(vmafx_build_info, job)",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${prometheus_datasource}"
+        },
+        "multi": true,
+        "allowCustomValue": true,
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": true,
+        "allValue": ".+",
+        "auto": false,
+        "auto_min": "10s",
+        "auto_count": 30,
+        "definition": "label_values(vmafx_build_info, job)"
+      },
+      {
+        "type": "query",
+        "name": "instance",
+        "label": "Instance",
+        "skipUrlSync": false,
+        "query": "label_values(vmafx_build_info{job=~\"$job\"}, instance)",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${prometheus_datasource}"
+        },
+        "multi": true,
+        "allowCustomValue": true,
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": true,
+        "allValue": ".+",
+        "auto": false,
+        "auto_min": "10s",
+        "auto_count": 30,
+        "definition": "label_values(vmafx_build_info{job=~\"$job\"}, instance)"
+      }
+    ]
+  },
+  "annotations": {
+    "list": [
+      {
+        "name": "Deploys and restarts",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${prometheus_datasource}"
+        },
+        "enable": true,
+        "hide": false,
+        "iconColor": "blue",
+        "builtIn": 0,
+        "placement": "inControlsMenu",
+        "expr": "max by (job, instance, version) (vmafx_build_info{job=~\"$job\",instance=~\"$instance\"}) and on (job, instance) changes(process_start_time_seconds{job=~\"$job\",instance=~\"$instance\"}[5m]) \u003e 0",
+        "textFormat": "{{instance}}",
+        "titleFormat": "{{job}} {{version}} started",
+        "step": "1m"
+      }
+    ]
+  },
+  "links": [
+    {
+      "title": "VMAFx dashboards",
+      "type": "dashboards",
+      "icon": "",
+      "tooltip": "",
+      "tags": [
+        "vmafx"
+      ],
+      "asDropdown": true,
+      "placement": "inControlsMenu",
+      "targetBlank": false,
+      "includeVars": true,
+      "keepTime": true
+    }
+  ]
+}

@@ -332,3 +332,13 @@ meson test -C build test_metal_smoke
   itself is deferred to T8-1b per audit-first split; the
   first-feature kernel scaffold ships in this PR with a
   registration-only posture.
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 70:
+  `[core/src/feature/metal/integer_motion_v2_metal.c](././core/src/feature/metal/integer_motion_v2_metal.c)`:
+  Cited source file does not exist on master (implemented as Objective-C++
+  .mm).

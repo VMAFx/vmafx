@@ -1,0 +1,27 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
+[package]
+name = "vmafx-fex-motion"
+# Independently versioned (ADR-1127, ADR-1151); not published.
+version = "0.1.0"
+description = "Rust twin of the `motion` feature extractor (RC4, ADR-1713)"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+readme.workspace = true
+publish = false
+
+[lib]
+name = "vmafx_fex_motion"
+crate-type = ["rlib"]
+
+[dependencies]
+vmafx-fex = { path = "../../fex" }
+
+[lints]
+workspace = true

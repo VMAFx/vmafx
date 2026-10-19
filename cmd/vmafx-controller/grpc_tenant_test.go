@@ -29,6 +29,7 @@ import (
 
 	"github.com/VMAFx/vmafx/cmd/vmafx-controller/auth"
 	"github.com/VMAFx/vmafx/cmd/vmafx-controller/auth/authtest"
+	"github.com/VMAFx/vmafx/cmd/vmafx-controller/backend"
 	"github.com/VMAFx/vmafx/cmd/vmafx-controller/nodes"
 	"github.com/VMAFx/vmafx/cmd/vmafx-controller/scheduler"
 	controllerv1 "github.com/VMAFx/vmafx/gen/go/controller"
@@ -307,7 +308,7 @@ func restartedController(t *testing.T, f *grpcFixture) *grpcFixture {
 	t.Cleanup(reg.Close)
 	sch := scheduler.New(f.queue, reg, log)
 	return &grpcFixture{
-		srv:   newControllerServer(f.queue, reg, sch, allowAllScopes(), f.metrics, log),
+		srv:   newControllerServer(backend.NewLegacy(f.queue, reg, sch), allowAllScopes(), f.metrics, log),
 		queue: f.queue, registry: reg, sched: sch, metrics: f.metrics,
 	}
 }

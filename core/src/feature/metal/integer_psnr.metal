@@ -17,7 +17,7 @@
  *
  *  No simd_sum: a 16-bit squared difference reaches 65535^2 (just under
  *  2^32), so a 32-lane uint32 sum, or separate sums of the low and high
- *  halves, would drop carries (core/src/feature/metal/AGENTS.md, exact 64-bit
+ *  halves, would drop carries (core/src/feature/metal/AGENTS.d/exact-designs.md, exact 64-bit
  *  reductions). No 64-bit atomics (Apple GPUs have none for ulong).
  *
  *  Buffer bindings (both kernels):

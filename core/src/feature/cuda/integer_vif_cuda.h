@@ -31,6 +31,7 @@
 #define DEFAULT_VIF_ENHN_GAIN_LIMIT (100.0)
 #endif // !DEFAULT_VIF_ENHN_GAIN_LIMIT
 
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no using. ADR-1138. */
 typedef struct VifBufferCuda {
     VmafCudaState cu_state;
 
@@ -89,6 +90,7 @@ typedef struct vif_accums {
     int64_t num_non_log;
     int64_t den_non_log;
 } vif_accums;
+/* NOLINTEND(modernize-use-using) */
 
 extern const unsigned char filter1d_ptx[];
 

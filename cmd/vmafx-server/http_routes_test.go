@@ -30,6 +30,7 @@ import (
 	"github.com/golusoris/golusoris/core/clock"
 	"github.com/golusoris/golusoris/observability/statuspage"
 
+	"github.com/VMAFx/vmafx/internal/oteltest"
 	"github.com/VMAFx/vmafx/pkg/libvmaf"
 	"github.com/VMAFx/vmafx/pkg/observability"
 )
@@ -49,7 +50,7 @@ func newProductionRoutesServer(t *testing.T) *httptest.Server {
 	}
 
 	registry := prometheus.NewRegistry()
-	metrics := observability.NewMetrics(registry)
+	metrics := oteltest.Metrics(t, registry)
 	log := observability.NewLogger("ERROR")
 
 	limiter, err := NewScoreLimiter(2)

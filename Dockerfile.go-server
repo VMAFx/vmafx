@@ -51,10 +51,10 @@ ARG VMAFX_VERSION=dev
 # every container base in this repository. These defaults are mirrors kept in
 # sync by scripts/ci/check-base-image-single-source.sh; edit the config, not
 # these lines, then run that script with --write.
-ARG RELEASE_BUILDER_BASE="debian:13-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a"
-ARG RELEASE_GO_BASE="golang:1.27-trixie@sha256:3b77fc618ec235a1ab412de7737f120dd507c57e8d87de4cbb7994fb94275ed5"
+ARG RELEASE_BUILDER_BASE="debian:13-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f"
+ARG RELEASE_GO_BASE="golang:1.27-trixie@sha256:47667934874913a449b96faa7ef4777fa285d9ec29126ee80ed61c45b7cccf0e"
 ARG RELEASE_RUNTIME_CC="gcr.io/distroless/cc-debian13:nonroot@sha256:e792ab3d241a468a4fd7519ddbbebe66b49b5f365771716ea688ad40b6c6f1c2"
-ARG RELEASE_PYTHON_BASE="python:3.14-slim@sha256:c3e521df8b2b498a7a682e7e18676771cb80c6b75b8699af886b2d554ce40151"
+ARG RELEASE_PYTHON_BASE="python:3.14-slim@sha256:a2b82f3c48559aa0a8446d9af49826b6e2b2016f4cd2afabfe6013ec53729170"
 
 FROM ${RELEASE_BUILDER_BASE} AS vmaf-builder
 
@@ -96,9 +96,10 @@ RUN meson setup /build core \
 # The SONAME chain only: the glob would also take Meson's object directory
 # libvmaf.so.3.0.0.p/.
 RUN mkdir -p /dist/lib/pkgconfig /dist/bin /dist/model \
-    && find /build/src -maxdepth 1 -name 'libvmaf.so*' \( -type f -o -type l \) \
-        -exec cp -a {} /dist/lib/ \; \
+    && find /build/src -maxdepth 1 \( -name 'libvmaf.so*' -o -name 'libvmafx.so*' \) \
+        \( -type f -o -type l \) -exec cp -a {} /dist/lib/ \; \
     && cp /build/meson-private/libvmaf.pc /dist/lib/pkgconfig/libvmaf.pc \
+    && cp /build/meson-private/libvmafx.pc /dist/lib/pkgconfig/libvmafx.pc \
     && cp /build/tools/vmaf /dist/bin/ \
     && ln -s vmaf /dist/bin/vmafx \
     && cp -r model/. /dist/model/
@@ -139,7 +140,7 @@ COPY . .
 RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
     --mount=type=cache,target=/root/.cache/go-build,sharing=locked \
     CGO_ENABLED=${CGO_ENABLED} \
-    CGO_LDFLAGS="-L/usr/local/lib -lvmaf -lm" \
+    CGO_LDFLAGS="-L/usr/local/lib -lvmaf -lvmafx -lm" \
     go build \
         -trimpath \
         -ldflags "-s -w -X github.com/VMAFx/vmafx/pkg/version.version=${VMAFX_VERSION}" \

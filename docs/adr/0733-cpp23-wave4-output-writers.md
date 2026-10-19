@@ -76,3 +76,12 @@ ADR-0720 (commit `70ed8b3ce3`). This was a pre-existing issue that blocked
 - req: "Convert cpp23 Wave 4 candidates: pick 2-3 small `core/src/output_*.c`
   writer files and convert them to `.cpp` with real C++23 idioms, following
   ADR-0708's playbook."
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 73: `- ADR-0720 (legacy ansnr feature drop — source of the stale
+  test_ansnr_simd ref)`: Cites ADR-0720 as legacy ansnr feature drop; ADR-0720
+  is "C++23 Wave-1 Pilot — mem.c conversion". Legacy ansnr drop is ADR-0865.

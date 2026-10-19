@@ -296,7 +296,7 @@ VMAF_MTL_FUNC VmafMtlGainLimit vmaf_mtl_ivif_make_gain_limit(double limit)
     int exponent = 0;
     const double fraction = frexp(limit, &exponent);
     out.value = vmaf_mtl_soft_make((vmaf_mtl_u64)ldexp(fraction, 53), exponent - 53);
-    const bool is_integer = limit == floor(limit) && limit < 2048.0;
+    const bool is_integer = vmaf_mtl_f64_equal(limit, floor(limit)) && limit < 2048.0;
     out.integer = is_integer ? (vmaf_mtl_u32)limit : 0u;
     out.hi = (float)limit;
     out.lo = (float)(limit - (double)out.hi);

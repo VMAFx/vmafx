@@ -50,3 +50,12 @@ Train `vmaf_tiny_v5` with the **identical** mlp_small architecture, hyperparamet
 - LOSO results: `runs/vmaf_tiny_v5_loso_metrics.json`
 - YouTube UGC dataset: <https://media.withyoutube.com/> + GCS bucket `gs://ugc-dataset/` (CC-BY per bucket-root ATTRIBUTION file)
 - UGC paper: Wang et al., "YouTube UGC Dataset for Video Compression Research" (CoINVQ.pdf at the bucket root)
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 44: `- v4 arch ladder: ADR-0242 (mlp_large)`: Cites ADR-0242 for
+  `mlp_large` (v4), but ADR-0242 is training on Netflix corpus; `mlp_large` is
+  ADR-0390.

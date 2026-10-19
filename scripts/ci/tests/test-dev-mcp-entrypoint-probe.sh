@@ -191,5 +191,27 @@ else
   ok "the entrypoint has no eval command"
 fi
 
+# --- Case 8: a command given to the entrypoint runs and the entrypoint exits. -
+# `docker run --rm image <command>` must end with the command. The old script
+# ignored its arguments and blocked on `tail -F`, so every one-shot probe left
+# a container running; here that shows as a timeout (exit 124).
+ONESHOT_ENV=(VMAFTUNE_WORKDIR="${WORKDIR}/work" VMAF_MCP_LOG="${WORKDIR}/mcp.log")
+rc=0
+out="$(env "${ONESHOT_ENV[@]}" timeout 20 bash "${ENTRYPOINT}" sh -c 'echo oneshot-ran; exit 7' 2>&1)" || rc=$?
+if [[ "${rc}" -eq 7 ]] && grep -q 'oneshot-ran' <<<"${out}"; then
+  ok "a command runs and its exit status is the entrypoint's"
+else
+  ko "one-shot command: rc=${rc} (124 means the entrypoint kept running) output=${out}"
+fi
+
+# --- Case 9: without a command the entrypoint still stays up. ---------------
+rc=0
+env "${ONESHOT_ENV[@]}" timeout 8 bash "${ENTRYPOINT}" >/dev/null 2>&1 || rc=$?
+if [[ "${rc}" -eq 124 ]]; then
+  ok "without a command the entrypoint keeps running for docker exec"
+else
+  ko "no-command mode ended early: rc=${rc}"
+fi
+
 echo "[test-dev-mcp-entrypoint-probe] summary: ${pass} pass, ${fail} fail"
 [[ "${fail}" -eq 0 ]]

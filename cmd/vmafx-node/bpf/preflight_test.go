@@ -1,6 +1,8 @@
 // Copyright 2026 Lusoris
 // SPDX-License-Identifier: EUPL-1.2
 
+//go:build linux
+
 // preflight_test.go — the host checks, the prefix validation, and the
 // embedded object's agreement with the Go mirrors of its structs. None of
 // these needs kernel privileges.

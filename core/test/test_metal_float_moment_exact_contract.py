@@ -114,10 +114,11 @@ RENAMES = (
     ("VMAF_ORDSUM_", "VMAF_MTL_OS_"),
 )
 ADDRESS_SPACE = re.compile(r"\bVMAF_MTL_(?:DEV|TG|THR)\b")
-# What the copy takes from ordered_sum.h: the four functions and two constants.
+# What the copy takes from ordered_sum.h: the five functions and two constants.
 ORDERED_FUNCTIONS = (
     "vmaf_ordsum_units",
     "vmaf_ordsum_round_shifted",
+    "vmaf_ordsum_is_odd",
     "vmaf_ordsum_cap",
     "vmaf_ordsum_then",
 )
@@ -481,7 +482,7 @@ class FloatMomentMetalExactContract(unittest.TestCase):
     def test_ull_literal_is_detected(self) -> None:
         failures = self._edited(
             SUM_COPY,
-            "#define VMAF_MTL_OS_UNFIT ((int64_t)1 << 54)",
+            "#define VMAF_MTL_OS_UNFIT ((int64_t)((uint64_t)1 << 54u))",
             "#define VMAF_MTL_OS_UNFIT (1ULL << 54)",
         )
         self._assert_detected(failures, "ULL")

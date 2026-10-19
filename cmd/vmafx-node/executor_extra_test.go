@@ -20,11 +20,11 @@ package main
 import (
 	"context"
 	"log/slog"
-	"os"
 	"path/filepath"
 	"testing"
 
 	controllerv1 "github.com/VMAFx/vmafx/gen/go/controller"
+	"github.com/VMAFx/vmafx/internal/execstub"
 	"github.com/VMAFx/vmafx/pkg/ai"
 	"github.com/VMAFx/vmafx/pkg/libvmaf"
 )
@@ -36,9 +36,7 @@ func writeFakeVmafBin(t *testing.T) string {
 	dir := t.TempDir()
 	script := "#!/bin/sh\nexit 1\n"
 	binPath := filepath.Join(dir, "vmaf")
-	if err := os.WriteFile(binPath, []byte(script), 0o700); err != nil {
-		t.Fatalf("writeFakeVmafBin: %v", err)
-	}
+	execstub.Write(t, binPath, []byte(script))
 	return binPath
 }
 

@@ -745,6 +745,36 @@ static void stage_raw_luma(const SsimStateSycl *s, const VmafPicture *picture, v
     }
 }
 
+/* Both pictures' luma rows (`row` bytes each) into `ref_dst` / `cmp_dst`,
+ * packed, copied on the device: the frames of the VMAFx API on this device
+ * are never read on the host (ADR-2091). 0, or the first failure. */
+static int read_device_luma(sycl::queue &q, const VmafPicture *reference,
+                            const VmafPicture *comparison, void *ref_dst, void *cmp_dst, size_t row,
+                            unsigned rows)
+{
+    const int err =
+        vmaf_sycl_picture_read_plane(reference, 0, &q, ref_dst, row, row, rows, nullptr);
+    return err ? err :
+                 vmaf_sycl_picture_read_plane(comparison, 0, &q, cmp_dst, row, row, rows, nullptr);
+}
+
+/* float_ssim's raw luma into d_ref_raw / d_cmp_raw: packed on the host and
+ * uploaded (one DMA per plane), or copied on the device for device frames. */
+static int upload_raw_luma(sycl::queue &q, const SsimStateSycl *s, const VmafPicture *ref_pic,
+                           const VmafPicture *dist_pic)
+{
+    const size_t row = (size_t)s->width * s->sample_bytes;
+    if (vmaf_sycl_picture_on_device(ref_pic) || vmaf_sycl_picture_on_device(dist_pic)) {
+        return read_device_luma(q, ref_pic, dist_pic, s->d_ref_raw, s->d_cmp_raw, row, s->height);
+    }
+    stage_raw_luma(s, ref_pic, s->h_ref_raw);
+    stage_raw_luma(s, dist_pic, s->h_cmp_raw);
+    const size_t raw_bytes = row * s->height;
+    q.memcpy(s->d_ref_raw, s->h_ref_raw, raw_bytes);
+    q.memcpy(s->d_cmp_raw, s->h_cmp_raw, raw_bytes);
+    return 0;
+}
+
 } // namespace
 
 namespace
@@ -849,11 +879,8 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     /* ADR-1370: raw luma up (one DMA per plane), then picture_copy()'s
      * normalisation and ssim.c's decimation on the device. No host wait:
      * collect() waits once for the read-back. */
-    stage_raw_luma(s, ref_pic, s->h_ref_raw);
-    stage_raw_luma(s, dist_pic, s->h_cmp_raw);
-    const size_t raw_bytes = (size_t)s->width * s->height * s->sample_bytes;
-    q.memcpy(s->d_ref_raw, s->h_ref_raw, raw_bytes);
-    q.memcpy(s->d_cmp_raw, s->h_cmp_raw, raw_bytes);
+    if (upload_raw_luma(q, s, ref_pic, dist_pic) != 0)
+        return -EIO;
     launch_decimate(q,
                     {.reference = s->d_ref_raw,
                      .comparison = s->d_cmp_raw,
@@ -1578,26 +1605,49 @@ static int init_fex_issim_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat p
 namespace
 {
 
-template <typename Picture>
-static void submit_integer_horizontal(IssimStateSycl *s, sycl::queue &queue, Picture *reference,
-                                      Picture *comparison)
+/* The luma planes into d_ref_* / d_cmp_*: packed on the host and uploaded,
+ * or copied on the device for device frames (ADR-2091). 0, or a failure. */
+static int upload_integer_luma(IssimStateSycl *s, sycl::queue &queue, const VmafPicture *reference,
+                               const VmafPicture *comparison)
 {
     const size_t pixels = (size_t)s->width * s->height;
-    if (s->bpc == 8u) {
+    const bool eight = s->bpc == 8u;
+    if (vmaf_sycl_picture_on_device(reference) || vmaf_sycl_picture_on_device(comparison)) {
+        const size_t row = (size_t)s->width * (eight ? sizeof(uint8_t) : sizeof(uint16_t));
+        return eight ? read_device_luma(queue, reference, comparison, s->d_ref_u8, s->d_cmp_u8, row,
+                                        s->height) :
+                       read_device_luma(queue, reference, comparison, s->d_ref_u16, s->d_cmp_u16,
+                                        row, s->height);
+    }
+    if (eight) {
         pack_integer_plane(s->h_ref_u8, reference, s->width, s->height);
         pack_integer_plane(s->h_cmp_u8, comparison, s->width, s->height);
         queue.memcpy(s->d_ref_u8, s->h_ref_u8, pixels * sizeof(uint8_t));
         queue.memcpy(s->d_cmp_u8, s->h_cmp_u8, pixels * sizeof(uint8_t));
-        launch_issim_horiz_8bpc(queue, s->d_ref_u8, s->d_cmp_u8, s->d_mux, s->d_muy, s->d_x2,
-                                s->d_xy, s->d_y2, s->width, s->height);
-        return;
+        return 0;
     }
     pack_integer_plane(s->h_ref_u16, reference, s->width, s->height);
     pack_integer_plane(s->h_cmp_u16, comparison, s->width, s->height);
     queue.memcpy(s->d_ref_u16, s->h_ref_u16, pixels * sizeof(uint16_t));
     queue.memcpy(s->d_cmp_u16, s->h_cmp_u16, pixels * sizeof(uint16_t));
+    return 0;
+}
+
+template <typename Picture>
+static int submit_integer_horizontal(IssimStateSycl *s, sycl::queue &queue, Picture *reference,
+                                     Picture *comparison)
+{
+    if (upload_integer_luma(s, queue, reference, comparison) != 0) {
+        return -EIO;
+    }
+    if (s->bpc == 8u) {
+        launch_issim_horiz_8bpc(queue, s->d_ref_u8, s->d_cmp_u8, s->d_mux, s->d_muy, s->d_x2,
+                                s->d_xy, s->d_y2, s->width, s->height);
+        return 0;
+    }
     launch_issim_horiz_16bpc(queue, s->d_ref_u16, s->d_cmp_u16, s->d_mux, s->d_muy, s->d_x2,
                              s->d_xy, s->d_y2, s->width, s->height);
+    return 0;
 }
 
 } // namespace
@@ -1617,7 +1667,8 @@ static int submit_fex_issim_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic
         return -EINVAL;
     sycl::queue &q = *qptr;
 
-    submit_integer_horizontal(s, q, ref_pic, dist_pic);
+    if (submit_integer_horizontal(s, q, ref_pic, dist_pic) != 0)
+        return -EIO;
     launch_issim_terms(q, {.reference_mean = s->d_mux,
                            .comparison_mean = s->d_muy,
                            .reference_square = s->d_x2,

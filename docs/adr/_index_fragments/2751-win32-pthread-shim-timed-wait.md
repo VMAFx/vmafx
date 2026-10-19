@@ -1,0 +1,1 @@
+| [ADR-2751](2751-win32-pthread-shim-timed-wait.md) | MSVC builds keep the header-only Win32 pthread shim as their only threads implementation (upstream's bundled pthread-win32, `bcd6e6159`, not taken); the shim gains `pthread_cond_timedwait()` and the VMAFx host fences wait on a condition variable instead of polling. | Accepted | build, windows, threads, upstream-port |

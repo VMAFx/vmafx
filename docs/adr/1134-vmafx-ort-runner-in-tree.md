@@ -134,3 +134,13 @@ no configuration, no logger and no lifecycle to manage.
 - [docs/research/vmafx-tune-go-fast-2026-08-30.md](../research/vmafx-tune-go-fast-2026-08-30.md) §4.1 — the option table that marked "extend the runner" as preferred but blocked on its missing source.
 - User docs: [docs/usage/vmafx-ort-runner.md](../usage/vmafx-ort-runner.md).
 - Source: per user direction (task brief, 2026-09-02) — resolve `vmafx-ort-runner`, referenced by 22 files but built by nothing, either by wiring it into the build, Makefile, dev container and CI with a smoke test, or by removing every reference; write the decision down with the reference list as evidence.
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 44: `pkg/libvmaf/dnn.go wraps libvmaf's vmaf_dnn_session_open /
+  vmaf_dnn_session_run (libvmaf/dnn.h) through cgo`: Header path libvmaf/dnn.h
+  does not exist on origin/master; public C API headers are placed under
+  core/include/libvmaf/.

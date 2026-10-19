@@ -491,7 +491,7 @@ static char *test_batch_two_prev_ref_extractors(void)
     return NULL;
 }
 
-char *run_tests()
+char *run_tests(void)
 {
     mu_run_test(test_batch_prev_ref_lifecycle);
     mu_run_test(test_batch_flush_initialized_threaded);

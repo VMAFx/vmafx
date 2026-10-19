@@ -34,6 +34,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.*/
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
+#include "compat/crt_portable.h"
 #include "vidinput.h"
 #include <stddef.h>
 #include <stdint.h>
@@ -103,17 +104,17 @@ static int y4m_process_single_tag(y4m_input *const y4m, const char *const p, con
 {
     switch (p[0]) {
     case 'W':
-        if (sscanf(p + 1, "%d", &y4m->pic_w) != 1)
+        if (VMAF_SSCANF(p + 1, "%d", &y4m->pic_w) != 1)
             return -1;
         state->got_w = 1;
         break;
     case 'H':
-        if (sscanf(p + 1, "%d", &y4m->pic_h) != 1)
+        if (VMAF_SSCANF(p + 1, "%d", &y4m->pic_h) != 1)
             return -1;
         state->got_h = 1;
         break;
     case 'F':
-        if (sscanf(p + 1, "%d:%d", &y4m->fps_n, &y4m->fps_d) != 2)
+        if (VMAF_SSCANF(p + 1, "%d:%d", &y4m->fps_n, &y4m->fps_d) != 2)
             return -1;
         state->got_fps = 1;
         break;
@@ -122,7 +123,7 @@ static int y4m_process_single_tag(y4m_input *const y4m, const char *const p, con
         state->got_interlace = 1;
         break;
     case 'A':
-        if (sscanf(p + 1, "%d:%d", &y4m->par_n, &y4m->par_d) != 2)
+        if (VMAF_SSCANF(p + 1, "%d:%d", &y4m->par_n, &y4m->par_d) != 2)
             return -1;
         state->got_par = 1;
         break;

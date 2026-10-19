@@ -46,14 +46,16 @@ LOCAL_COPY = re.compile(
     re.M,
 )
 CPU_RESULTS = (
-    "adm_cm_result(&c, &bd, accum, noise_weight, s->adm_p_norm)",
+    "adm_cm_result(&c, &bd, s0_accum, noise_weight, s->adm_p_norm)",
     "i4_adm_cm_result(&c, &bd, accum, noise_weight, s->adm_p_norm)",
     "adm_csf_den_result(&c, accum, s->adm_noise_weight)",
     "i4_adm_csf_den_result(&c, accum, s->adm_noise_weight)",
 )
+# The viewing distance is an argument since the twin evaluates one or two
+# distances per frame (ADR-2795): the launch and the result take the same one.
 CPU_DEN_CONTEXTS = (
-    "adm_csf_den_ctx_init(&c, w, h, s->adm_norm_view_dist",
-    "i4_adm_csf_den_ctx_init(&c, scale, w, h, s->adm_norm_view_dist",
+    "adm_csf_den_ctx_init(&c, w, h, nvd",
+    "i4_adm_csf_den_ctx_init(&c, scale, w, h, nvd",
 )
 SKIP_SCALE0_SEED = "float den_scale = (float)1e-10;"
 DEVICE_LOG2 = re.compile(r"__log2f\s*\(|\blog2f?\s*\(")
@@ -64,6 +66,10 @@ ROW_LAUNCHES = (
     "cuLaunchKernel(s->func_adm_csf_den_s123_row_kernel, 1, (unsigned)rows,",
 )
 CPU_FOLD = "accum[k] += adm_csf_den_round_row_total(inner[k], add_shift_accum, shift_accum);"
+
+
+MIN_CALLS = 2  # calls of one helper a kernel must keep
+ROW_LOOP_COUNT = 2  # row loops the denominator kernel keeps
 
 
 def _code(source: str) -> str:
@@ -100,7 +106,7 @@ def _host_failures(sources: dict[str, str]) -> list[str]:
         if not _calls(flat, call):
             failures.append(f"{HOST}: a scale is no longer concluded by {call.split('(')[0]}()")
     for call in CPU_DEN_CONTEXTS:
-        if _calls(flat, call) < 2:
+        if _calls(flat, call) < MIN_CALLS:
             failures.append(
                 f"{HOST}: {call.split('(')[0]}() no longer feeds both the launch and the result"
             )
@@ -131,7 +137,7 @@ def _kernel_failures(sources: dict[str, str]) -> list[str]:
         failures.append(
             f"{DEN_KERNEL}: the fold is no longer thread 0's, after the block has been reduced"
         )
-    if flat.count(ROW_LOOP) != 2:
+    if flat.count(ROW_LOOP) != ROW_LOOP_COUNT:
         failures.append(f"{DEN_KERNEL}: a block no longer covers a whole row of its band")
     return failures
 

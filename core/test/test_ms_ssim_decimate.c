@@ -48,6 +48,9 @@
 #include "x86/cpu.h"
 #endif
 
+/* run_tests() skips the whole table on Windows (see its TODO), so nothing below it, up to the
+ * test cases, is built there: each would be an unused function. */
+#if !(defined(_WIN32) || defined(__MINGW32__) || defined(__MINGW64__))
 /* Runtime CPU-feature gates. Set in run_tests() before any case runs. The
  * SIMD kernels emit AVX2/AVX-512 instructions unconditionally; calling them
  * on a CPU without the corresponding ISA SIGILLs. GitHub Actions Windows
@@ -215,6 +218,7 @@ static char *test_480x270(void)
 {
     return check_case(480, 270, 0x77778888u);
 }
+#endif /* not Windows */
 
 char *run_tests(void)
 {

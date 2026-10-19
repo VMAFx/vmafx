@@ -11,9 +11,10 @@ through the shared `internal/app/bootstrap.Base` composition
 ([ADR-1134](../adr/1134-vmafx-ort-runner-in-tree.md)); its caller emits
 the inference span.
 
-The operator guide — every environment variable, how to point the
+The configuration reference — every environment variable, how to point the
 binaries at a collector, and the per-binary span table — is
-[docs/development/observability.md](../development/observability.md).
+[docs/development/observability.md](../development/observability.md); the
+[observability operator guide](index.md) covers installing the monitoring.
 This page keeps the schema.
 
 ## Quick start
@@ -23,12 +24,12 @@ This page keeps the schema.
 docker run -p 4317:4317 -p 16686:16686 jaegertracing/all-in-one:latest
 
 # Export is off until an endpoint is set; plaintext gRPC by default.
-OTEL_EXPORTER_OTLP_ENDPOINT=localhost:4317 ./vmafx-controller
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317 ./vmafx-controller
 ```
 
 Open `http://localhost:16686` to view traces. In Kubernetes, pass the
 same variable through the chart's `env` map
-(`--set env.OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector:4317`);
+(`--set env.OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317`);
 `--set otelCollector.enabled=true` renders a collector ConfigMap you can
 mount into a collector sidecar or DaemonSet.
 
@@ -36,15 +37,15 @@ mount into a collector sidecar or DaemonSet.
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | _(unset → no-op providers)_ | OTLP/gRPC collector endpoint (`host:4317`). Unset means no exporter, no network, no spans. |
-| `VMAFX_OTEL_ENDPOINT` | _(unset)_ | Same, through the vmafx config key. |
-| `OTEL_SERVICE_NAME` / `VMAFX_OTEL_SERVICE_NAME` | _binary name_ | `service.name` resource attribute (the vmafx key wins). |
-| `VMAFX_OTEL_SERVICE_VERSION` | `pkg/version` | `service.version` resource attribute. |
-| `VMAFX_OTEL_SAMPLE_RATIO` | `1.0` | Parent-based trace sample ratio. |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | _(unset → no-op providers)_ | OTLP/gRPC collector endpoint as a URL (`http://host:4317`). Without a scheme the SDK finds no host and sends to `localhost:4317`. Unset means no exporter, no network, no spans. |
+| `OTEL_SERVICE_NAME` | _binary name_ | `service.name` resource attribute; `VMAFX_OTEL_SERVICE_NAME` wins. |
 | `OTEL_SDK_DISABLED` | `false` | `true` forces no-op providers. |
 
-The full table, including TLS, per-signal toggles and the Kubernetes
-downward-API attributes, is in the operator guide.
+The `VMAFX_OTEL_*` variables (endpoint, TLS, service name and version, sample
+ratio, per-signal export) are rows of every Go binary's generated
+[environment table](../usage/env-vars.md#go-services-golusoris); the
+[configuration reference](../development/observability.md#configuration-reference)
+explains the library behaviour behind them.
 
 ## Span names
 
@@ -78,21 +79,22 @@ OTel-native instruments (`pkg/observability.OTelMetrics`):
 | `vmafx.gpu_utilization` | Gauge | `%` | Per-node GPU compute utilisation (0–100). |
 
 These instruments are defined and unit-tested but no binary registers
-them yet (`InitOTelMetrics` has no production caller); the Prometheus
-`/metrics` endpoint remains the production metrics path, extended with
-`vmafx_controller_jobs_submitted_total`, `vmafx_controller_jobs_completed_total`,
-`vmafx_controller_jobs_failed_total`, `vmafx_controller_jobs_pending`,
-`vmafx_controller_jobs_running`, and `vmafx_controller_nodes_live`.
+them yet (`InitOTelMetrics` has no production caller). The production
+metrics path is the Prometheus `/metrics` page of `vmafx-server`,
+`vmafx-controller` and `vmafx-node`; every family it serves, with its labels
+and cardinality bound, is in the [metric reference](metrics.md), generated
+from `pkg/observability/metricdef`.
 
-## Grafana dashboard
+## Grafana dashboards
 
-Import `deploy/grafana/vmafx-overview.json` into Grafana.  The dashboard
-requires a Prometheus data source configured to scrape `/metrics` on the
-controller (or via the OTel collector's Prometheus exporter).
+The dashboards under `deploy/grafana/dashboards/` are generated from the same
+metric definition; import them as described in the
+[observability guide](../development/observability.md#dashboards).
 
 ## Cardinality budget
 
-All span attributes and metric labels are bounded-cardinality:
+All span attributes are bounded-cardinality (the Prometheus label bounds are
+in the [metric reference](metrics.md#labels)):
 
 - `vmafx.job_id` — present on spans only (not metrics).
 - `vmafx.model` — at most ~10 VMAF model variants.
@@ -101,4 +103,4 @@ All span attributes and metric labels are bounded-cardinality:
 - `vmafx.mcp.tool` — the registered MCP tool list.
 - `vmafx.tune.command` — the `vmafx-tune` subcommand tree.
 
-No per-file or per-clip attributes are added to metrics.
+No per-file or per-clip attribute is added to a metric.

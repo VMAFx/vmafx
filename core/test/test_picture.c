@@ -34,7 +34,7 @@
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
 // NOLINTNEXTLINE(readability-function-size): test scaffolding (ADR-0141 / ADR-0278) — explicitly walks every alloc / fill / ref / unref state to keep failures localised; splitting hides the assertion that fired.
-static char *test_picture_alloc_ref_and_unref()
+static char *test_picture_alloc_ref_and_unref(void)
 {
     int err;
 
@@ -56,7 +56,7 @@ static char *test_picture_alloc_ref_and_unref()
     return NULL;
 }
 
-static char *test_picture_data_alignment()
+static char *test_picture_data_alignment(void)
 {
     int err;
 
@@ -151,7 +151,7 @@ static char *test_picture_chroma_ceiling_444(void)
  * read.  After the fix, vmaf_picture_alloc rejects w > 32768 or h > 32768
  * with -EINVAL before any arithmetic.  CERT INT30-C.
  */
-static char *test_picture_alloc_rejects_overflow_dimensions()
+static char *test_picture_alloc_rejects_overflow_dimensions(void)
 {
     int err;
     VmafPicture pic;
@@ -223,7 +223,7 @@ static char *test_picture_alloc_yuv400p_luma_only(void)
  * These paths were added as part of the 2026-06 error-path coverage
  * audit (r12) triggered by PR #765 (ADR-1072) and PR #766 (ADR-1073).
  */
-static char *test_picture_ref_null_error_paths()
+static char *test_picture_ref_null_error_paths(void)
 {
     int err;
     VmafPicture src;
@@ -248,7 +248,7 @@ static char *test_picture_ref_null_error_paths()
     return NULL;
 }
 
-static char *test_picture_unref_null_error_paths()
+static char *test_picture_unref_null_error_paths(void)
 {
     int err;
 
@@ -309,7 +309,7 @@ static char *test_picture_buffer_is_zero_filled(void)
 
 /* A table, not a sequence of mu_run_test(): every mu_run_test expands to two
  * branches and readability-function-size allows 15 (mu_table.h, ADR-1142). */
-char *run_tests()
+char *run_tests(void)
 {
     static const MuTest tests[] = {
         MU_TEST(test_picture_alloc_ref_and_unref),

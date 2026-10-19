@@ -122,3 +122,13 @@ lane is not in scope for ADR-0335 and remains a follow-up item.
 icpx stays the **primary** toolchain; the multi-version recipe and
 clang-tidy wrapper described here continue to apply unchanged for
 icpx builds.
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 121: `A separate AdaptiveCpp-specific lint lane is not in scope
+  for ADR-0335 and remains a follow-up item.`: Cites ADR-0335 for AdaptiveCpp
+  SYCL toolchain, but ADR-0335 is hardware capability priors; AdaptiveCpp is
+  ADR-0407.

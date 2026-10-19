@@ -38,8 +38,13 @@
 #ifndef VMAF_SRC_FEATURE_HIP_INTEGER_MS_SSIM_MS_SSIM_ARITH_H_
 #define VMAF_SRC_FEATURE_HIP_INTEGER_MS_SSIM_MS_SSIM_ARITH_H_
 
+#ifdef __cplusplus
+#include <cmath>
+#include <cstddef>
+#else
 #include <math.h>
 #include <stddef.h>
+#endif
 
 #include "../hip_tile_index.h"
 
@@ -50,29 +55,38 @@
 #define VMAF_HIP_MS_SSIM_LPF_HALF 4
 
 /* The five window statistics of one sample after a convolution pass. */
-typedef struct VmafHipMsWindow {
+struct VmafHipMsWindow {
     float ref_mu;
     float cmp_mu;
     float ref_sq;
     float cmp_sq;
     float refcmp;
-} VmafHipMsWindow;
+};
+#ifndef __cplusplus
+typedef struct VmafHipMsWindow VmafHipMsWindow;
+#endif
 
 /* The five horizontal-pass planes the vertical pass reads. */
-typedef struct VmafHipMsPlanes {
+struct VmafHipMsPlanes {
     const float *ref_mu;
     const float *cmp_mu;
     const float *ref_sq;
     const float *cmp_sq;
     const float *refcmp;
-} VmafHipMsPlanes;
+};
+#ifndef __cplusplus
+typedef struct VmafHipMsPlanes VmafHipMsPlanes;
+#endif
 
 /* One sample's luminance, contrast and structure terms. */
-typedef struct VmafHipMsLcs {
+struct VmafHipMsLcs {
     double l;
     double c;
     double s;
-} VmafHipMsLcs;
+};
+#ifndef __cplusplus
+typedef struct VmafHipMsLcs VmafHipMsLcs;
+#endif
 
 /* ms_ssim_decimate.c::ms_ssim_decimate_mirror(): period-2n mirror, edge
  * sample repeated. */
@@ -138,10 +152,13 @@ VMAF_HIP_HOST_DEVICE float vmaf_hip_ms_ssim_decimate_sample(const float *src, in
  * scores on a gfx1036 and costs 126 ms more per 3840x2160 frame (173 -> 299):
  * the device runs fp64 at a fraction of its fp32 rate. The six operations
  * must stay six: no contraction, no reassociation (`hip_strict_fp_args`). */
-typedef struct VmafHipMsPair {
+struct VmafHipMsPair {
     float hi;
     float lo;
-} VmafHipMsPair;
+};
+#ifndef __cplusplus
+typedef struct VmafHipMsPair VmafHipMsPair;
+#endif
 
 VMAF_HIP_HOST_DEVICE void vmaf_hip_ms_pair_add(VmafHipMsPair *sum, float term)
 {
@@ -159,13 +176,16 @@ VMAF_HIP_HOST_DEVICE float vmaf_hip_ms_pair_round(const VmafHipMsPair *sum)
 }
 
 /* Five window sums in progress, and their rounded values. */
-typedef struct VmafHipMsSums {
+struct VmafHipMsSums {
     VmafHipMsPair ref_mu;
     VmafHipMsPair cmp_mu;
     VmafHipMsPair ref_sq;
     VmafHipMsPair cmp_sq;
     VmafHipMsPair refcmp;
-} VmafHipMsSums;
+};
+#ifndef __cplusplus
+typedef struct VmafHipMsSums VmafHipMsSums;
+#endif
 
 VMAF_HIP_HOST_DEVICE VmafHipMsWindow vmaf_hip_ms_sums_round(const VmafHipMsSums *sums)
 {

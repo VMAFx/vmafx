@@ -11,7 +11,7 @@ invariant: Helper functions split to meet LOC bounds must preserve expressions w
 When function here is split to fit 60-LOC bound, helper is `static` in same
 TU, never reached through function pointer, never in another TU. Arithmetic
 moves whole: each statement lives on one side of helper boundary. Reason is
-FMA contraction — `a * b + c` inside helper contracts same way it did inline,
+FMA contraction: `a * b + c` inside helper contracts same way it did inline,
 but `t = a * b;` in caller plus `t + c` in helper does not, and that is 1 ULP
 that ssimulacra2 pooling amplifies into visible score delta (ADR-1205).
 Reductions keep their order: move whole accumulation loop, never partial sums.
@@ -29,6 +29,6 @@ per-scale sums added into doubles: num, den, then aim_den before aim_num).
 port into owning helper. `ADM_OPT_DEBUG_DUMP` blocks gone (called
 `write_image` / `PRINTF`, defined nowhere: could not compile). For
 `brisque_fit_aggd` in
-`brisque_math.h` (pure scalar, no SIMD twins), the inner loop was extracted to
+`brisque_math.h` (pure scalar, no SIMD twins), inner loop was extracted to
 `static brisque_aggd_accumulate` to satisfy HISS-04 (60 LOC max), keeping both
 accumulation loops intact and statements unsplit.

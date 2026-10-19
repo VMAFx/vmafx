@@ -64,6 +64,7 @@
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/libvmaf_sycl.h"
 #include "libvmaf/picture.h"
+#include "compat/path_utf8.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
@@ -329,7 +330,7 @@ static int read_aggregate(VmafContext *vmaf, const char *path, const char *name,
 {
     if (vmaf_write_output_with_format(vmaf, path, VMAF_OUTPUT_FORMAT_JSON, "%.17g"))
         return -EIO;
-    FILE *fh = fopen(path, "rb");
+    FILE *fh = vmaf_fopen_utf8(path, "rb");
     if (!fh)
         return -EIO;
     static char buf[1u << 16];

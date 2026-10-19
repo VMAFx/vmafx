@@ -1,6 +1,8 @@
 // Copyright 2026 Lusoris
 // SPDX-License-Identifier: EUPL-1.2
 
+//go:build linux
+
 // coverage_test.go — branch-coverage tests for the bpf package not exercised
 // by bypass_unit_test.go or bypass_smoke_test.go.
 //

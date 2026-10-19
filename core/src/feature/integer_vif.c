@@ -336,9 +336,9 @@ static FORCE_INLINE void vif_accumulate_pixel(VifResiduals *acc, const uint16_t 
 
 static void vif_store_residuals(const VifResiduals *acc, float *num, float *den)
 {
-    num[0] = acc->accum_num_log / 2048.0 +
-             (acc->accum_den_non_log - ((acc->accum_num_non_log) / 16384.0) / (65025.0));
-    den[0] = acc->accum_den_log / 2048.0 + acc->accum_den_non_log;
+    num[0] = (float)(acc->accum_num_log / 2048.0 +
+                     (acc->accum_den_non_log - ((acc->accum_num_non_log) / 16384.0) / (65025.0)));
+    den[0] = (float)(acc->accum_den_log / 2048.0 + acc->accum_den_non_log);
 }
 
 /* Vertical filter pass of source row i for the 8-bit scale-0 statistic. */
@@ -660,9 +660,13 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     unsigned char *ref_out = s->public.buf.ref;
     unsigned char *dis_out = s->public.buf.dis;
 
+    /* Copy each row's samples only (Netflix/vmaf 9f4bd165f): a picture's
+     * stride may exceed the buffer's, and its last row need not extend to a
+     * full stride (a wrapped or cropped picture). */
+    const size_t row_bytes = (size_t)w << (ref_pic->bpc > 8);
     for (unsigned i = 0; i < h; i++) {
-        memcpy(ref_out, ref_in, ref_pic->stride[0]);
-        memcpy(dis_out, dis_in, dist_pic->stride[0]);
+        memcpy(ref_out, ref_in, row_bytes);
+        memcpy(dis_out, dis_in, row_bytes);
         ref_in += ref_pic->stride[0];
         dis_in += dist_pic->stride[0];
         ref_out += s->public.buf.stride;
@@ -699,7 +703,7 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     return write_scores(feature_collector, index, &vif_score, s);
 }
 
-static int close(VmafFeatureExtractor *fex)
+static int close_fex(VmafFeatureExtractor *fex)
 {
     VifState *s = fex->priv;
     if (s->public.buf.data)
@@ -731,7 +735,7 @@ VmafFeatureExtractor vmaf_fex_integer_vif = {
     .init = init,
     .extract = extract,
     .options = options,
-    .close = close,
+    .close = close_fex,
     .priv_size = sizeof(VifState),
     .provided_features = provided_features,
     /* 4 scales × 1 dispatch per scale on GPU backends (see ADR-0181). */

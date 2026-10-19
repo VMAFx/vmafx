@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-0767: Phase 4b.8 — libvmaf C ABI Break for VMAFx v4.0.0
 
-- **Status**: Proposed
+- **Status**: Superseded by [ADR-1852](1852-vmafx-api-redesign.md)
 - **Date**: 2026-05-29
 - **Deciders**: lusoris
 - **Tags**: `api`, `abi`, `phase4b`, `breaking-change`, `v4`, `ffmpeg-patches`, `fork-local`
@@ -105,3 +105,25 @@ land until the user reviews and approves the research digest.
 - Memory note: "VMAFX rebrand plan (decided 2026-05-27)" — `project_vmafx_rebrand_plan.md`
 - Memory note: "VMAFX Phase 4: language modernization (2026-05-28)" — `project_vmafx_phase4_language_modernization.md`
 - Source: `req` — user authorized "BREAK C ABI" in the Phase 4b.8 planning message.
+
+## Status update 2026-10-06: Superseded by ADR-1852
+
+The "libvmaf C ABI break for VMAFx v4.0.0" was never made. The API shape is
+decided by [ADR-1852](1852-vmafx-api-redesign.md): a `vmafx` header family and
+library, with `libvmaf.h` kept as a compatibility layer until 2.0 (ADR-2001,
+decision D7 of ADR-1852). The version line is 1.x. Of the eight changes listed
+above only `vmaf_context_get_backend()` shipped, additively, in
+`core/include/libvmaf/libvmaf.h`; `vmaf_model_load_builtin()`,
+`vmaf_sycl_fetch_preallocated_picture()`, `core/test/test_vmaf_v4_api.c` and
+`docs/api/migration-v3-to-v4.md` do not exist.
+
+The body above is unchanged.
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 100: `- ADR-0518 / ADR-0519 (DNN codec conditioning)`: Cites
+  ADR-0519 for DNN codec conditioning; ADR-0519 is "Implement
+  `vmaf_hip_import_state` to unblock --backend hip".

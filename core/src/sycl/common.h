@@ -56,6 +56,42 @@ extern "C" {
  */
 int vmaf_sycl_registered_kernel_count(void);
 
+/**
+ * Create a state whose queues live in the SYCL context and on the device of
+ * `queue_ptr` (a sycl::queue *): the engine state of a VMAFx context on a
+ * SYCL device (ADR-2091), so the device's USM frames are valid in every
+ * queue the engine reads them on. Profiling follows VMAF_SYCL_PROFILE.
+ *
+ * @return 0 on success, -EINVAL, -ENODEV when the runtime throws.
+ */
+int vmaf_sycl_state_init_queue(VmafSyclState **sycl_state, void *queue_ptr);
+
+/* ---- VMAFx device pictures (RC4 WP3, ADR-2091) ---- */
+
+/**
+ * Whether `pic` is a frame of the VMAFx API on a SYCL device: its planes are
+ * USM memory of the device's context (an import or a pool frame), never
+ * read on the host. The engine's readers copy its planes on the device with
+ * vmaf_sycl_picture_read_plane() instead of packing them on the host.
+ */
+bool vmaf_sycl_picture_on_device(const VmafPicture *pic);
+
+/**
+ * Copy `rows` rows of `row_bytes` bytes of plane `plane` of a device picture
+ * into `dst` (`dst_pitch` bytes between rows) on `queue_ptr` (a
+ * sycl::queue *), after the frame's producer: the copy waits on the frame's
+ * ready event (its acquire fence and its conversions), and is recorded as a
+ * reader of the frame, so the frame's release fences follow it.
+ *
+ * @param[out] done  Receives the copy's sycl::event (a sycl::event *, may be
+ *                   NULL): a reader that orders later work on another queue
+ *                   waits on it.
+ * @return 0, -EINVAL (not a device picture, plane missing, NULL argument),
+ *         -EIO when the runtime throws.
+ */
+int vmaf_sycl_picture_read_plane(const VmafPicture *pic, unsigned plane, void *queue_ptr, void *dst,
+                                 size_t dst_pitch, size_t row_bytes, unsigned rows, void *done);
+
 /* ---- Device-memory helpers (USM wrappers) ---- */
 
 /**

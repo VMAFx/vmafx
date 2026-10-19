@@ -37,10 +37,12 @@
 #include "feature/float_vif_gpu_common.h"
 
 /* The argument blocks under the names the CUDA sources use. */
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no using. ADR-1138. */
 typedef FloatVifGpuTaps FloatVifCudaTaps;
 typedef FloatVifGpuInput FloatVifCudaInput;
 typedef FloatVifGpuComputeArgs FloatVifCudaComputeArgs;
 typedef FloatVifGpuDecimateArgs FloatVifCudaDecimateArgs;
 typedef FloatVifGpuRowArgs FloatVifCudaRowArgs;
+/* NOLINTEND(modernize-use-using) */
 
 #endif /* VMAF_SRC_FEATURE_CUDA_FLOAT_VIF_FLOAT_VIF_DEVICE_H_ */

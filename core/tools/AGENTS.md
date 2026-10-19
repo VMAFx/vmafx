@@ -5,9 +5,9 @@ Edit AGENTS.d/_index.md or a page under AGENTS.d/, then run
 
 Generated index. Before editing: match every path you will touch against
 `Touching` in [Topic pages](#topic-pages) and read each matching page first; no
-match, no page. Text between here and the table binds every file of this
-directory. `Touching` paths: relative to this directory, leading `/` =
-repository root. New invariant: a page under `AGENTS.d/` ([how](../../docs/development/agents-index.md)).
+match, no page. Text between here and [Topic pages](#topic-pages) binds every
+file of this directory. `Touching` paths: relative to this directory, leading
+`/` = repository root. New invariant: new page under `AGENTS.d/` ([how](../../docs/development/agents-index.md)).
 
 Orientation for agents working on CLI binaries. Parent:
 [../AGENTS.md](../AGENTS.md).
@@ -34,12 +34,14 @@ Three C binaries built by libvmaf's Meson tree:
 | `cli_feature_backend.cpp`, `cli_feature_backend.h`, `vmaf.cpp` | [feature-backend-twin](AGENTS.d/feature-backend-twin.md) | register_cli_feature() maps CPU extractor to twin through libvmaf; backend_used reflects device if any ran. |
 | `vmaf.cpp`, `test/test_vmaf_frame_readahead.sh` | [frame-readahead](AGENTS.d/frame-readahead.md) | Reader threads run up to kReadaheadDepth frames ahead; reserve ring slot before pool picture; request_stop both. |
 | `test/meson.build` | [gpu-tool-tests](AGENTS.d/gpu-tool-tests.md) | Every test under core/tools/test/ carrying Meson gpu suite tag must set is_parallel : false. |
+| `cli_backends.cpp`, `cli_backends.h`, `cli_parse.cpp`, `vmaf.cpp`, `/tools/vmaf-tune/src/vmaftune/score_backend.py`, `/pkg/scorebackend/scorebackend.go` | [list-backends](AGENTS.d/list-backends.md) | vmaf --list-backends is one source of usable backends; both score-backend selectors read it. |
 | `vmaf.cpp`, `cli_parse.cpp` | [no-reference-mode](AGENTS.d/no-reference-mode.md) | --no-reference requires tiny_model_path, forces no_prediction; open_cli_inputs opens distorted source twice. |
 | `cli_parse.cpp`, `cli_parse.h` | [option-parsing-and-escape](AGENTS.d/option-parsing-and-escape.md) | Option dicts belong to CLISettings; parse_unsigned rejects negatives; long-only options pass enum to error(). |
 | `meson.build`, `vmaf.cpp` | [orientation](AGENTS.d/orientation.md) | Upstream-mirror tools conform to fork lint profile; CliRunGuard invokes ordered cleanup after parsing. |
 | `vmaf.cpp`, `test/test_vmaf_read_error_exit.sh` | [picture-pool-and-frame-loop](AGENTS.d/picture-pool-and-frame-loop.md) | Picture pool is always-on; classify_frame_fetch() tests error before end of stream; read failures exit 102. |
 | `cli_parse.cpp`, `cli_parse.h` | [precision-and-tinyai](AGENTS.d/precision-and-tinyai.md) | Default precision is %.6f; --precision=max opts in to %.17g; --tiny-model passes string through unchanged. |
+| `cli_provenance.c`, `cli_provenance.h`, `vmaf.cpp`, `cli_options.gen.inc`, `cli_parse.cpp` | [provenance-receipt](AGENTS.d/provenance-receipt.md) | Option table generated from core/api/vmafx.toml; library writes provenance + receipt; CLI only annotates and verifies. |
 | `vmaf_per_shot.c`, `vmaf_per_shot_input.c` | [vmaf-per-shot](AGENTS.d/vmaf-per-shot.md) | vmaf-perShot is standalone sidecar; --help short-option is -H; scan stops at VMAF_PER_SHOT_MAX_FRAMES or --frames. |
 | `vmaf_roi.c`, `vmaf_roi_core.h`, `vmaf_roi_input.h` | [vmaf-roi](AGENTS.d/vmaf-roi.md) | vmaf_roi sidecar emits x265 or svt-av1 QP offsets with +-12 clamp; per-CTU reduction is mean. |
-| `vmaf_vpl.c` | [vmaf-vpl](AGENTS.d/vmaf-vpl.md) | vpl_decode_frame retries under VPL_DECODE_MAX_ATTEMPTS; VplFallbackState flags release acquired stages. |
+| `vmaf_vpl.c`, `vmaf_vpl_core.h`, `vmaf_vpl_core.c` | [vmaf-vpl](AGENTS.d/vmaf-vpl.md) | vpl_decode_frame bounded by VPL_DECODE_MAX_ATTEMPTS; decoupled classification; warning frames delivered. |
 | `y4m_input.c`, `yuv_input.c`, `vmaf_bench.c` | [y4m-and-yuv-input](AGENTS.d/y4m-and-yuv-input.md) | y4m 411->422jpeg guards secondary write; readers cast to (size_t) before multiply; malloc checks return. |

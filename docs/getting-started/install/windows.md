@@ -44,9 +44,13 @@ missing:
 3. From the repository root, configure and build:
 
     ```bat
-    meson setup build core --buildtype=release
+    meson setup build core --buildtype=release -Dc_std=none
     ninja -C build
     ```
+
+    `-Dc_std=none` keeps Meson from adding `/std:c17`; the build adds `/std:clatest`
+    itself, and without the option `cl.exe` prints warning D9025 ("overriding
+    `/std:c17` with `/std:clatest`") for every C file.
 
 The binary is `build\tools\vmaf.exe`.
 

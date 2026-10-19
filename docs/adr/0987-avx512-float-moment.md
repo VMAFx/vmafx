@@ -1,6 +1,7 @@
+<!-- markdownlint-disable MD013 -->
 # ADR-0987: AVX-512 path for float_moment feature extractor
 
-- **Status**: Accepted
+- **Status**: Accepted (Superseded-in-part 2026-10-06 by [ADR-1500](1500-arm-float-moment-scalar-order.md) for the MOMENT_REL_TOL tolerance contract of the AVX-512 kernel)
 - **Date**: 2026-06-03
 - **Deciders**: Lusoris
 - **Tags**: `simd`, `avx512`, `performance`, `float_moment`, `fork-local`

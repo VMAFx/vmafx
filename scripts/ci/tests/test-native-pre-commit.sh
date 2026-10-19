@@ -7,6 +7,10 @@
 # one is left alone, and a missing formatter is skipped with a notice. The
 # formatter is a fake `shfmt` on PATH, so the test needs no toolchain.
 set -euo pipefail
+
+# Drop the git hook environment and the fixture identity (see the helper).
+# shellcheck source=/dev/null
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/../../lib/clean-git-env.sh"
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 hook="$here/../../githooks/pre-commit.sh"
 tmp="$(mktemp -d)"
@@ -34,8 +38,6 @@ chmod +x "$tmp/bin/shfmt"
 
 cd "$tmp/repo"
 git init -q
-git config user.email t@t
-git config user.name t
 printf 'needs-format\n' >a.sh
 printf 'clean\n' >b.sh
 git add a.sh b.sh
@@ -50,6 +52,21 @@ out="$(run_hook)" || fail "hook failed: $out"
 [ "$(git show :b.sh)" = "clean" ] || fail "b.sh changed although already formatted"
 case "$out" in *"re-staged 1 file"*) ;; *) fail "summary lacks 're-staged 1 file': $out" ;; esac
 echo "ok   a changed file is re-staged, an unchanged one is left alone"
+
+# A declared shfmt exception (.config/lint-exceptions.d/shfmt.toml) is a file
+# no formatter may rewrite: the hook must not hand it to shfmt.
+mkdir -p .config/lefthook
+printf 'needs-format\n' >.config/lefthook/python.sh
+printf 'needs-format\n' >d.sh
+git add .config/lefthook/python.sh d.sh
+out="$(run_hook)" || fail "hook failed: $out"
+[ "$(git show :.config/lefthook/python.sh)" = "needs-format" ] ||
+  fail "the declared shfmt exception was formatted: $(git show :.config/lefthook/python.sh)"
+[ "$(cat .config/lefthook/python.sh)" = "needs-format" ] ||
+  fail "the declared shfmt exception was rewritten in the working tree"
+[ "$(git show :d.sh)" = "formatted" ] || fail "d.sh was not re-staged formatted"
+case "$out" in *"re-staged 1 file"*) ;; *) fail "summary lacks 're-staged 1 file': $out" ;; esac
+echo "ok   a declared shfmt exception is left alone, its neighbour is formatted"
 
 rm "$tmp/bin/shfmt"
 printf 'needs-format\n' >c.sh

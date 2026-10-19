@@ -2,17 +2,25 @@
 paths:
   - core/src/meson.build
   - core/test/check_exported_symbols.py
-invariant: Windows CUDA discovers compiler on vswhere and PATH; C++ targets take vmaf_cppflags_common with hidden inlines.
+invariant: Windows nvcc host = build MSVC, else newest vswhere toolset, else PATH; C++ targets take vmaf_cppflags_common.
 ---
 <!-- markdownlint-disable MD013 -->
 # Build system, compiler discovery, and C++ profile invariants
 
 ## Windows CUDA compiler discovery
 
-`meson.build` must assign `cl_path` on both `vswhere` and `PATH` discovery
-routes. NVCC's `-ccbin` and MSVC include discovery consume that same path.
-Keep configure regression in `../test/test_windows_cuda_compiler_discovery.py`
-when rebasing Windows discovery block from Netflix PR #1472.
+`meson.build` must assign `cl_path` on every discovery route. NVCC's `-ccbin`
+and MSVC include discovery consume that same path. Order: build's own
+MSVC (`nvcc_build_msvc`, from `cxx` when its id is `msvc`), then newest
+toolset under latest `vswhere` install (sorted by `[version]`, never
+first `cl.exe` of recursive walk: that was v142 toolset 14.29 of VS 18,
+whose STL hides `<numbers>` from nvcc's C++20 host passes;
+`T-WINDOWS-NVCC-CCBIN-OLDEST-TOOLSET-2026-10-06`), then `PATH`.
+`nvcc_build_msvc` is assigned before `host_machine.system() == 'windows'`
+block because regression extracts that block into project without
+compilers and sets variable itself. Keep configure regression in
+`../test/test_windows_cuda_compiler_discovery.py` when rebasing Windows
+discovery block from Netflix PR #1472.
 
 ## C++ targets take `vmaf_cppflags_common` (ADR-0379)
 

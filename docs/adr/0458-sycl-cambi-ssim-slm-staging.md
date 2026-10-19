@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-0458: SYCL CAMBI queue-sync collapse + SSIM horizontal SLM staging
 
-- **Status**: Accepted
+- **Status**: Accepted (Superseded-in-part 2026-10-06 by [ADR-1357](1357-sycl-cambi-device-resident.md) for the SYCL host-residual provisions)
 - **Date**: 2026-05-16
 - **Deciders**: lusoris
 - **Tags**: `sycl`, `perf`, `cambi`, `ssim`, `gpu`, `fork-local`

@@ -1,7 +1,7 @@
 kind: value
 runs: M.vmaf_float*, C.vmaf_float*, C.vmaf_rb*, C.vmaf_4k_rb*, M.nflxtrain*, M.vmaf_v0.6.0, B.vmaf_float*
 metrics: model0*
-bound: 1.8e-05
+bound: 1.9e-05
 adr: ADR-1442
 upstream: Netflix/vmaf#1655, Netflix/vmaf#1654
-evidence: scores of the models that read float_adm follow its division. Full matrix in the dev image (43ef1e32cb32: GCC 15.2.0, glibc 2.43) on 2026-10-03, 9b6ecd5ae against Netflix 9e48141b: 15720 values differ, largest 1.79e-05 (nflx10, model0, frame 2: upstream 79.077078216564914, fork 79.07709611993036)
+evidence: scores of the models that read float_adm follow its division. Full matrix in the dev image (43ef1e32cb32: GCC 15.2.0, glibc 2.43) on 2026-10-03, 9b6ecd5ae against Netflix 9e48141b: 15720 values differ, largest 1.79e-05 (nflx10, model0, frame 2: upstream 79.077078216564914, fork 79.07709611993036). On an Intel processor (hosted runner, Xeon Platinum 8573C, probe matrix of the compat ABI job, 2026-10-18, PR #2851 head 217018bf0) the largest is 1.803e-05 (nflx8, vmaf_float_b_v0.6.3 model0, frame 43: upstream 76.839901606913699, fork 76.839919636132763); upstream's reciprocal estimate differs between processor vendors.

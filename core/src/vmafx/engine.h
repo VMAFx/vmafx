@@ -10,17 +10,24 @@
  * VMAFx API (core/src/vmafx/) is built on (ADR-1852). The libvmaf functions
  * these replace (vmaf_init, vmaf_close, vmaf_feature_score_at_index,
  * vmaf_version) are generated compat shims on the VMAFx API now
- * (core/src/vmafx/compat_libvmaf_gen.c). Nothing here is exported.
+ * (core/src/compat/libvmaf/libvmaf_gen.c, libvmaf.so.3). Nothing here is
+ * exported: libvmafx.so.1's version script hides every engine symbol.
  */
 
 #ifndef VMAFX_ENGINE_H
 #define VMAFX_ENGINE_H
 
 #include <stdbool.h>
+#include <stdint.h>
 
 #include "libvmaf/feature.h"
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/model.h"
+/* Declares vmaf_set_perceptual_weight_enabled() / _strength(), which the forced
+ * engine_names_gen.h renames to vmaf_engine_*; declared once, with the public
+ * header's linkage: a second plain declaration is MSVC error C2375 (different
+ * linkage) in a TU that includes both. */
+#include "libvmaf/perceptual_weight.h"
 
 /* Bound of the provided-feature walk in vmaf_engine_feature_producer()
  * (HISS-02); no extractor declares more than a few dozen. */
@@ -46,8 +53,6 @@ int vmaf_engine_use_features_from_model_collection(VmafContext *vmaf,
                                                    VmafModelCollection *model_collection);
 int vmaf_engine_import_feature_score(VmafContext *vmaf, const char *feature_name, double value,
                                      unsigned index);
-int vmaf_engine_set_perceptual_weight_enabled(VmafContext *vmaf, int enabled);
-int vmaf_engine_set_perceptual_weight_strength(VmafContext *vmaf, double strength);
 int vmaf_engine_feature_backend_twin(VmafContext *vmaf, const char *feature_name,
                                      const VmafFeatureDictionary *opts_dict,
                                      const VmafPictureConfiguration *pic_cfg,
@@ -72,6 +77,34 @@ int vmaf_engine_score_pooled_model_collection(VmafContext *vmaf,
                                               VmafModelCollectionScore *score, unsigned index_low,
                                               unsigned index_high);
 
+/* ADR-2094: the colorimetry of the next pair for a model's conversion_target
+ * (the VMAFx frames' colour, else the context's default): 0 when unchanged,
+ * else as vmaf_set_input_colorimetry() (-EBUSY once a picture was
+ * converted); -EINVAL for a NULL argument. */
+int vmaf_engine_set_pair_colorimetry(VmafContext *vmaf, const VmafColor *ref,
+                                     const VmafColor *dist);
+/* RC4 WP4 (ADR-2074): whether a frame's score is final, without waiting for
+ * work in flight (no fence) and without a log line. 0 when final; -EAGAIN when
+ * an input is not written yet; -EINVAL when the feature or an input has no
+ * score at `index` in the collector yet; another negative errno on failure.
+ * The model and model-set forms predict the frame when its inputs are
+ * written, as the first synchronous read of it would, so a later read
+ * returns that stored score. */
+int vmaf_engine_feature_written(VmafContext *vmaf, const char *feature_name, unsigned index);
+int vmaf_engine_try_score_at_index(VmafContext *vmaf, VmafModel *model, unsigned index);
+int vmaf_engine_try_score_at_index_model_collection(VmafContext *vmaf,
+                                                    VmafModelCollection *model_collection,
+                                                    unsigned index);
+
+/* The context's worker threads (0: none) and its subsampling (1: every
+ * frame is scored); 0 and 1 for NULL. */
+unsigned vmaf_engine_thread_count(const VmafContext *vmaf);
+/* The most pictures of each input the context holds when
+ * vmaf_engine_read_pictures() returns (vmafx_context_max_in_flight()); 0 for
+ * NULL. */
+unsigned vmaf_engine_max_in_flight(const VmafContext *vmaf);
+unsigned vmaf_engine_subsample(const VmafContext *vmaf);
+
 /* Earlier reference frames the context keeps after a frame was read: 1, or 2
  * once an extractor that reads frame n-2 is registered (ADR-1478); 0 for
  * NULL. */
@@ -88,6 +121,19 @@ bool vmaf_engine_is_flushed(const VmafContext *vmaf);
 struct VmafxContext *vmaf_engine_api_owner(const VmafContext *vmaf);
 void vmaf_engine_set_api_owner(VmafContext *vmaf, struct VmafxContext *owner);
 
+/* ADR-2074: `listener(user)` runs on a worker thread after each frame job
+ * (its features are in the collector). Set before the first frame is read;
+ * NULL turns it off. */
+void vmaf_engine_set_frame_listener(VmafContext *vmaf, void (*listener)(void *user), void *user);
+
+/* ADR-2090: append the scores the collector's contents now make final
+ * (motion2 / motion3 of every frame whose window the SAD scores complete),
+ * as vmaf_engine_read_pictures() does after each frame. For the VMAFx
+ * completion thread, under the context's engine lock, before it probes: a
+ * SAD a worker appended after the feeder's last call completes its frames.
+ * 0, or the first extractor's negative errno; nothing after the flush. */
+int vmaf_engine_advance(VmafContext *vmaf);
+
 /* Number of registered feature extractors. */
 unsigned vmaf_engine_extractor_count(const VmafContext *vmaf);
 
@@ -95,5 +141,22 @@ unsigned vmaf_engine_extractor_count(const VmafContext *vmaf);
  * 0 and its name and backend, or -ENOENT (name NULL, backend UNKNOWN). */
 int vmaf_engine_feature_producer(const VmafContext *vmaf, const char *feature,
                                  const char **extractor, enum VmafBackend *backend);
+
+/* Nanoseconds of a monotonic clock (core/src/vmafx/fence.c; the test clock
+ * while it is virtual). */
+uint64_t vmafx_monotonic_ns(void);
+
+/* RC4 WP5 (#2142): the run a context made, for the provenance record. Safe
+ * to call while another thread submits frames: everything but `cfg` (set at
+ * init) comes from atomics the submitting thread publishes. */
+typedef struct VmafEngineRunInfo {
+    VmafConfiguration cfg;
+    unsigned w, h, bpc;
+    enum VmafPixelFormat pix_fmt;
+    unsigned pic_cnt;    /* frames accepted */
+    uint64_t elapsed_ns; /* first frame to flush (to now before it); 0 without a frame */
+} VmafEngineRunInfo;
+
+int vmaf_engine_run_info(const VmafContext *vmaf, VmafEngineRunInfo *out);
 
 #endif /* VMAFX_ENGINE_H */

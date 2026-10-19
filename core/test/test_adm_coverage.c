@@ -24,13 +24,25 @@
 #include <errno.h>
 #include <math.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
+
+#ifdef _WIN32
+#include <io.h>
+#define dup _dup
+#define dup2 _dup2
+#define fileno _fileno
+#define close _close
+#else
+#include <unistd.h>
+#endif
 
 #include "test.h"
 
 #include "feature/feature_collector.h"
 #include "feature/feature_extractor.h"
 #include "libvmaf/picture.h"
+#include "compat/crt_portable.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
@@ -240,6 +252,51 @@ static char *test_adm_10bit_extract(void)
 /* (adm_norm_view_dist * adm_ref_display_height < default)          */
 /* ----------------------------------------------------------------- */
 
+static int extract_with_stderr_capture(VmafFeatureExtractorContext *ctx, VmafPicture *ref,
+                                       VmafPicture *dist, VmafFeatureCollector *fc, char *log_buf,
+                                       size_t log_buf_sz)
+{
+    FILE *tmp_err = vmaf_tmpfile_portable();
+    if (!tmp_err)
+        return -EIO;
+    (void)fflush(stderr);
+    const int saved_stderr = dup(fileno(stderr));
+    if (saved_stderr < 0) {
+        (void)fclose(tmp_err);
+        return -EIO;
+    }
+    (void)dup2(fileno(tmp_err), fileno(stderr));
+
+    const int err = vmaf_feature_extractor_context_extract(ctx, ref, NULL, dist, NULL, 0, fc);
+
+    (void)fflush(stderr);
+    (void)dup2(saved_stderr, fileno(stderr));
+    (void)close(saved_stderr);
+
+    if (log_buf && log_buf_sz > 0) {
+        if (fseek(tmp_err, 0, SEEK_SET) == 0) {
+            const size_t n = fread(log_buf, 1, log_buf_sz - 1, tmp_err);
+            log_buf[n] = '\0';
+        } else {
+            log_buf[0] = '\0';
+        }
+    }
+    (void)fclose(tmp_err);
+    return err;
+}
+
+static char *verify_viewing_geometry_named_refusal(const char *log_buf)
+{
+    mu_assert("log names adm", strstr(log_buf, "adm: ") != NULL);
+    mu_assert("log names adm_norm_view_dist", strstr(log_buf, "adm_norm_view_dist (0.75)") != NULL);
+    mu_assert("log names adm_ref_display_height",
+              strstr(log_buf, "adm_ref_display_height (1080)") != NULL);
+    mu_assert("log names product", strstr(log_buf, "= 810 ") != NULL);
+    mu_assert("log names 3240 floor", strstr(log_buf, "3240 floor (1080p at 3H)") != NULL);
+    mu_assert("log names float_adm", strstr(log_buf, "float_adm") != NULL);
+    return NULL;
+}
+
 static char *test_adm_invalid_view_dist_returns_einval(void)
 {
     /* adm_norm_view_dist is a FEATURE_PARAM; setting it to its minimum
@@ -264,15 +321,14 @@ static char *test_adm_invalid_view_dist_returns_einval(void)
     err = alloc_grey8(&dist, 100u);
     mu_assert("alloc dist", err == 0);
 
-    /* With norm_view_dist=0.01 the view_dist * display_height product is
-     * below the DEFAULT_ADM_NORM_VIEW_DIST * DEFAULT_ADM_REF_DISPLAY_HEIGHT
-     * minimum; extract() must return -EINVAL. */
-    err = vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &dist, NULL, 0, fc);
-    mu_assert("extract with bad norm_view_dist should return -EINVAL", err == -EINVAL);
+    char log_buf[512] = {0};
+    err = extract_with_stderr_capture(ctx, &ref, &dist, fc, log_buf, sizeof(log_buf));
 
+    mu_assert("extract with bad norm_view_dist should return -EINVAL", err == -EINVAL);
+    char *refusal_msg = verify_viewing_geometry_named_refusal(log_buf);
     adm_fixture_close(ctx, fc, &ref, &dist);
     /* opts ownership transferred to ctx and freed by context_destroy. */
-    return NULL;
+    return refusal_msg;
 }
 
 char *run_tests(void)

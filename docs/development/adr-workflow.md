@@ -118,14 +118,31 @@ answer, because the read-only mode prints the next free number without
 reserving it. That caused about ten renumbers and rebases in a single session
 (ADR-0532).
 
-`--claim` prevents this in three steps:
+`--claim` prevents this in four steps:
 
-1. It acquires a POSIX `mkdir` lock (`/tmp/vmaf_adr_claim_lock_<repo>`), atomic
-   on Linux ext4 and tmpfs, so concurrent callers on the same host serialize.
-2. It writes a `docs/adr/NNNN-<slug>.md.stub` placeholder that all later callers
-   (including read-only mode) treat as a taken number.
-3. It scans remote branches via `git ls-remote --heads` and `git ls-tree` to
+1. It acquires a POSIX `mkdir` lock, atomic on Linux ext4 and tmpfs, so
+   concurrent callers on the same host serialize. The lock name
+   (`/tmp/vmaf_adr_claim_lock_<path>`) is built from the absolute, resolved path
+   of the repository's common git directory, so a caller in `docs/`, one in the
+   repository root and one in a linked worktree take the same lock. The lock
+   is held by the caller that creates its owner file (exclusively, `O_EXCL`);
+   the file records an owner token, and a caller only removes a lock it holds.
+   A lock directory without an owner file is free.
+   A caller waits up to 60 s for the lock (`VMAF_ADR_LOCK_WAIT_S` changes the
+   bound) and then fails with the holder's owner line and process id. An
+   owner file whose process is no longer running was left by a killed claim:
+   the next caller takes a second lock that serialises takeovers, checks the
+   process again, checks that the owner line is still the one it read, removes
+   the file and prints a `WARNING: took over a stale ADR allocator lock` line.
+   A lock whose holder still runs is never taken over.
+2. It scans remote branches via `git ls-remote --heads` and `git ls-tree` to
    also skip numbers already claimed by in-flight branches on origin.
+3. It creates the claim file `.git/adr-claims/NNNN` exclusively (`O_EXCL`, the
+   shell's `noclobber`). If another caller already created it, the number is
+   taken and the next one is tried, up to 100 times. This step decides the
+   number even if two callers ever hold the lock at once.
+4. It writes a `docs/adr/NNNN-<slug>.md.stub` placeholder that all later callers
+   (including read-only mode) treat as a taken number.
 
 ### The invariant for agents
 
@@ -221,10 +238,13 @@ afterwards. A dead link is better than a confident wrong one.
 
 ```bash
 bash scripts/adr/test-next-free.sh
+bash scripts/adr/tests/test-next-free-concurrent.sh
 ```
 
-The test suite covers sequential claims, parallel (race) claims, `--release`
-and invalid-slug rejection. All assertions must pass. Run it after any change
+The first suite covers sequential claims, parallel (race) claims, `--release`
+and invalid-slug rejection. The second starts parallel claims from the
+repository root and from `docs/` in a throwaway repository, repeats the round,
+and fails when two callers receive the same number. All assertions must pass. Run it after any change
 to `scripts/adr/next-free.sh`.
 
 ## References

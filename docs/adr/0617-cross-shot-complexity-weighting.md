@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD060 -->
 # ADR-0617: Cross-Shot Complexity Weighting and Title-Level Quality Constraints
 
-- **Status**: Proposed
+- **Status**: Proposed (status update 2026-10-06 below)
 - **Date**: 2026-05-19
 - **Deciders**: lusoris
 - **Tags**: `ai`, `planning`, `vmaf-tune`
@@ -69,3 +69,13 @@ Total estimate: 4.5 days.
 - `tools/vmaf-tune/src/vmaftune/per_shot.py`, `bisect.py`, `uncertainty.py`.
 - Lagrangian rate control: H.264 / H.265 HRD standard literature.
 - Source: per user direction (roadmap planning session 2026-05-19).
+
+## Status update 2026-10-06: Proposed, scheduled for 1.4
+
+The decision is not implemented and stays Proposed. It is scheduled for the
+1.4 milestone ("Metric A/B, best mix & more data") as the constraints
+(title-level quality constraints); the tracking issue is
+[#2261](https://github.com/VMAFx/vmafx/issues/2261). The module this record
+names does not exist on `origin/master` `fd8b8c93b`.
+
+The body above is unchanged.

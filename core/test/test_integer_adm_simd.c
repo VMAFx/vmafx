@@ -52,10 +52,19 @@
  *      1.5 and 100 and requires the same restored and additive samples. The
  *      scalar kernels truncate rst * gain toward zero; a vector kernel that
  *      rounds it differs at 1.2 and 1.5.
- *      On aarch64 tests 1 and 5 run; test 5 runs against `adm_decouple_neon` (Netflix/vmaf
+ *      On aarch64 test 5 runs against `adm_decouple_neon` (Netflix/vmaf
  *      9e48141b), whose vector path serves integral limits and whose scalar
- *      fallback serves fractional ones. Gains 1, 2, 3 and 7 are part of it:
- *      a limited sample that is off by one passes at 1.2, 1.5 and 100 alone.
+ *      fallback serves fractional ones, and `adm_decouple_s123_neon`
+ *      (b41d2340a), whose vector path serves a limit of 1. Gains 1, 2, 3 and
+ *      7 are part of it: a limited sample that is off by one passes at 1.2,
+ *      1.5 and 100 alone.
+ *
+ *   4b. test_i4_adm_cm_matches_scalar_kernels: the scale 1-3 contrast
+ *      masking (i4_adm_cm_avx2 / _avx512, i4_adm_cm_neon) against the scalar
+ *      kernels, every scale, DLM and AIM, p-norm 3 and 1, bit for bit.
+ *
+ *   On aarch64 tests 1, 4, 4b, 5 and the centre-tap test run, against the
+ *   NEON kernels (Netflix/vmaf 8bc5a5c6a, b41d2340a).
  *
  * Boilerplate provided by `simd_bitexact_test.h` (ADR-0245).
  */
@@ -75,6 +84,8 @@
 #include <string.h>
 
 #include "config.h"
+#include "mu_table.h"
+#include "sanitizer_build.h"
 #include "test.h"
 /* clang-format off — test.h has no header guard; must precede harness. */
 #include "simd_bitexact_test.h"
@@ -167,7 +178,7 @@ static char *test_adm_accum_precision(void)
 typedef void (*adm_decouple_fn)(AdmBuffer *buf, int w, int h, int stride,
                                 double adm_enhn_gain_limit, int32_t *adm_div_lookup);
 
-#if ARCH_X86
+#if ARCH_X86 || ARCH_AARCH64
 
 /* ---------------------------------------------------------------------
  * Test 2: end-to-end smoke test for adm_cm_avx2 with synthetic buffer.
@@ -230,6 +241,7 @@ static void adm_bands16_free(AdmBands16 *b)
     simd_test_aligned_free(b->ca_d);
 }
 
+#if ARCH_X86
 /* Fill band arrays with small non-zero int16 values. Using
  * simd_test_xorshift32 masked to int16 range [0, 255]. */
 static void adm_bands16_fill(AdmBands16 *b, uint32_t seed)
@@ -322,6 +334,7 @@ static char *test_adm_cm_avx2_smoke(void)
 
     return check_adm_cm_avx2_smoke_result(r1, r2, r_p2);
 }
+#endif /* ARCH_X86 */
 
 /* Nine synthetic band arrays for i4_decouple_r and i4_csf_a/i4_csf_f. */
 typedef struct AdmBands32 {
@@ -360,6 +373,7 @@ static void adm_bands32_free(AdmBands32 *b)
     simd_test_aligned_free(b->ca_d);
 }
 
+#if ARCH_X86
 static void adm_bands32_fill(AdmBands32 *b, uint32_t seed)
 {
     uint32_t state = seed;
@@ -426,6 +440,7 @@ static char *test_i4_adm_cm_avx2_p_norm(void)
 
     return check_i4_adm_cm_avx2_p_norm_result(r_p3, r_p2);
 }
+#endif /* ARCH_X86 */
 
 /* ---------------------------------------------------------------------
  * Test 4: adm_cm_avx2 / adm_cm_avx512 against the scalar kernels on
@@ -589,7 +604,7 @@ static float cm_scalar(CmFixture *f, bool aim, double p_norm)
     adm_cm_ctx_init(&c, &f->buf, f->w, f->h, f->stride, f->stride, CM_NVD, CM_RDH,
                     ADM_CSF_MODE_WATSON97, 1.0, 1.0, aim);
     const AdmCmBounds bd = adm_cm_bounds(f->w, f->h);
-    int64_t accum[3] = {0, 0, 0};
+    uint64_t accum[3] = {0, 0, 0};
     adm_cm_rows(&c, &bd, adm_cm_row, accum);
     return adm_cm_result(&c, &bd, accum, CM_NW, p_norm);
 }
@@ -625,6 +640,9 @@ typedef struct CmKernels {
 
 static CmKernels cm_kernels(void)
 {
+#if ARCH_AARCH64
+    const CmKernels k = {{adm_cm_neon, NULL}, {"adm_cm_neon", NULL}, 1u};
+#else
     CmKernels k = {{adm_cm_avx2, NULL}, {"adm_cm_avx2", NULL}, 1u};
 #if HAVE_AVX512
     if (simd_test_have_avx512()) {
@@ -632,6 +650,7 @@ static CmKernels cm_kernels(void)
         k.name[1] = "adm_cm_avx512";
         k.count = 2u;
     }
+#endif
 #endif
     return k;
 }
@@ -659,8 +678,29 @@ static char *cm_check(CmFixture *f, const CmKernels *k, const char *fill, int id
     return NULL;
 }
 
+/* The event sweeps of tests 4 and 4b visit every position in a plain build,
+ * which is what proves every vector lane bit for bit. An instrumented build (the
+ * ASan + UBSan, TSan and UBSan legs, debug) runs the kernels some 17 times slower:
+ * test 4b's full sweep alone took 31 s there, over the 30 s test budget
+ * (T-ADM-SIMD-SANITIZER-SWEEP-TIMEOUT-2026-10-09,
+ * T-ADM-SIMD-UBSAN-SWEEP-TIMEOUT-2026-10-09). What such a build adds is
+ * memory and arithmetic checking. The kernels' addresses do not depend on the
+ * data (the dense fills reach all of them), and the arithmetic an event drives
+ * depends on its distance to a border (mirroring, the scalar edge columns),
+ * not on its lane; so it visits the first three, the middle and the last three
+ * rows, crossed with the same columns. */
+static bool event_coordinate_swept(int v, int n)
+{
+    return !VMAF_TEST_INSTRUMENTED_BUILD || v < 3 || v >= n - 3 || v == n / 2;
+}
+
+static bool event_position_swept(int row, int col, int w, int h)
+{
+    return event_coordinate_swept(row, h) && event_coordinate_swept(col, w);
+}
+
 /* Dense fills over eight seeds, half of them with filtered bands of either
- * sign, then one event at every position. */
+ * sign, then one event at every position (event_position_swept()). */
 static char *cm_check_geometry(CmFixture *f, const CmKernels *k)
 {
     for (int seed = 1; seed <= 8; ++seed) {
@@ -671,6 +711,9 @@ static char *cm_check_geometry(CmFixture *f, const CmKernels *k)
         }
     }
     for (int pos = 0; pos < f->w * f->h; ++pos) {
+        if (!event_position_swept(pos / f->w, pos % f->w, f->w, f->h)) {
+            continue;
+        }
         cm_fill_event(f, pos / f->w, pos % f->w, 0x85EBCA6Bu + (uint32_t)pos);
         char *msg = cm_check(f, k, "event", pos);
         if (msg) {
@@ -769,6 +812,203 @@ static char *test_adm_cm_centre_tap_stays_int32(void)
     return NULL;
 }
 
+/* ---------------------------------------------------------------------
+ * Test 4b: i4_adm_cm vector kernels (scales 1-3) against the scalar kernels.
+ *
+ * The scalar side is i4_adm_cm() of integer_adm.c, assembled from the
+ * kernels of integer_adm_kernels.h. Every scale, the DLM and the AIM pass,
+ * adm_p_norm 3 and 1, on dense fills (filtered bands of either sign, so the
+ * threshold is negative in about half the columns) and on one large event
+ * at every position. The magnitudes keep every scalar int32 sum and every
+ * row inside its type: the scalar arithmetic is the definition only where
+ * it is defined.
+ * ------------------------------------------------------------------- */
+
+typedef float (*i4_adm_cm_fn)(AdmBuffer *buf, int w, int h, int src_stride, int csf_a_stride,
+                              int scale, double adm_norm_view_dist, int adm_ref_display_height,
+                              int adm_csf_mode, double adm_csf_scale, double adm_csf_diag_scale,
+                              double adm_noise_weight, double adm_p_norm, bool measure_aim);
+
+typedef struct I4CmFixture {
+    AdmBands32 bands;
+    AdmBuffer buf;
+    int32_t *planes[9];
+    int w;
+    int h;
+    int stride;
+} I4CmFixture;
+
+static int i4_cm_fixture_alloc(I4CmFixture *f, int w, int h)
+{
+    (void)memset(f, 0, sizeof(*f));
+    f->w = w;
+    f->h = h;
+    f->stride = (w + 7) & ~7;
+    const size_t bytes = (size_t)f->stride * (size_t)h * sizeof(int32_t);
+    if (adm_bands32_alloc(&f->bands, bytes)) {
+        return -1;
+    }
+    int32_t *const planes[9] = {f->bands.dr_h, f->bands.dr_v, f->bands.dr_d,
+                                f->bands.cf_h, f->bands.cf_v, f->bands.cf_d,
+                                f->bands.ca_h, f->bands.ca_v, f->bands.ca_d};
+    for (unsigned p = 0; p < 9u; ++p) {
+        f->planes[p] = planes[p];
+    }
+    f->buf.i4_decouple_r =
+        (i4_adm_dwt_band_t){.band_h = planes[0], .band_v = planes[1], .band_d = planes[2]};
+    f->buf.i4_decouple_a = f->buf.i4_decouple_r;
+    f->buf.i4_csf_f =
+        (i4_adm_dwt_band_t){.band_h = planes[3], .band_v = planes[4], .band_d = planes[5]};
+    f->buf.i4_csf_a =
+        (i4_adm_dwt_band_t){.band_h = planes[6], .band_v = planes[7], .band_d = planes[8]};
+    return 0;
+}
+
+/* A sample in [-limit, limit] (limit below 2^30). */
+static int32_t i4_cm_sample(uint32_t *state, int32_t limit)
+{
+    const uint32_t r = simd_test_xorshift32(state);
+    return (int32_t)(r % (uint32_t)((2 * limit) + 1)) - limit;
+}
+
+/* Dense: decoupled bands within 2^20, filtered bands within 2^16 of either
+ * sign (`any_sign`) or non-negative. */
+static void i4_cm_fill_dense(I4CmFixture *f, uint32_t seed, bool any_sign)
+{
+    uint32_t state = seed;
+    const size_t count = (size_t)f->stride * (size_t)f->h;
+    for (unsigned p = 0; p < 9u; ++p) {
+        for (size_t i = 0; i < count; ++i) {
+            const int32_t v = i4_cm_sample(&state, (p < 3u) ? (1 << 20) : (1 << 16));
+            f->planes[p][i] = (p < 3u || any_sign || v >= 0) ? v : -v;
+        }
+    }
+}
+
+/* One event: a decoupled coefficient within 2^26 and filtered values within
+ * 2^24 on it and on one neighbour; everything else 0. */
+static void i4_cm_fill_event(I4CmFixture *f, int row, int col, uint32_t seed)
+{
+    uint32_t state = seed;
+    const size_t count = (size_t)f->stride * (size_t)f->h;
+    for (unsigned p = 0; p < 9u; ++p) {
+        (void)memset(f->planes[p], 0, count * sizeof(int32_t));
+    }
+    const int d_row = (int)(simd_test_xorshift32(&state) % 3u) - 1;
+    const int d_col = (int)(simd_test_xorshift32(&state) % 3u) - 1;
+    const int rows[2] = {row, row + d_row};
+    const int cols[2] = {col, col + d_col};
+    for (int n = 0; n < 2; ++n) {
+        if (rows[n] < 0 || rows[n] >= f->h || cols[n] < 0 || cols[n] >= f->w) {
+            continue;
+        }
+        const ptrdiff_t at = ((ptrdiff_t)rows[n] * f->stride) + cols[n];
+        for (unsigned p = (n == 0) ? 0u : 3u; p < 9u; ++p) {
+            f->planes[p][at] = i4_cm_sample(&state, (p < 3u) ? (1 << 26) : (1 << 24));
+        }
+    }
+}
+
+/* i4_adm_cm() of integer_adm.c, from the kernels it is built on. */
+static float i4_cm_scalar(I4CmFixture *f, int scale, bool aim, double p_norm)
+{
+    I4AdmCmCtx c;
+    i4_adm_cm_ctx_init(&c, &f->buf, f->w, f->h, f->stride, f->stride, scale, CM_NVD, CM_RDH,
+                       ADM_CSF_MODE_WATSON97, 1.0, 1.0, aim);
+    const AdmCmBounds bd = adm_cm_bounds(f->w, f->h);
+    int64_t accum[3] = {0, 0, 0};
+    i4_adm_cm_rows(&c, &bd, i4_adm_cm_row, accum);
+    return i4_adm_cm_result(&c, &bd, accum, CM_NW, p_norm);
+}
+
+typedef struct I4CmKernels {
+    i4_adm_cm_fn fn[2];
+    const char *name[2];
+    unsigned count;
+} I4CmKernels;
+
+static I4CmKernels i4_cm_kernels(void)
+{
+#if ARCH_AARCH64
+    const I4CmKernels k = {{i4_adm_cm_neon, NULL}, {"i4_adm_cm_neon", NULL}, 1u};
+#else
+    I4CmKernels k = {{i4_adm_cm_avx2, NULL}, {"i4_adm_cm_avx2", NULL}, 1u};
+#if HAVE_AVX512
+    if (simd_test_have_avx512()) {
+        k.fn[1] = i4_adm_cm_avx512;
+        k.name[1] = "i4_adm_cm_avx512";
+        k.count = 2u;
+    }
+#endif
+#endif
+    return k;
+}
+
+/* Every kernel against the scalar for every scale, pass and p-norm. */
+static char *i4_cm_check(I4CmFixture *f, const I4CmKernels *k, const char *fill, int id)
+{
+    static const double P_NORMS[2] = {3.0, 1.0};
+    for (unsigned variant = 0; variant < 12u; ++variant) {
+        const int scale = 1 + (int)(variant % 3u);
+        const bool aim = ((variant / 3u) & 1u) != 0u;
+        const double p_norm = P_NORMS[variant / 6u];
+        const float want = i4_cm_scalar(f, scale, aim, p_norm);
+        for (unsigned n = 0; n < k->count; ++n) {
+            const float got = k->fn[n](&f->buf, f->w, f->h, f->stride, f->stride, scale, CM_NVD,
+                                       CM_RDH, ADM_CSF_MODE_WATSON97, 1.0, 1.0, CM_NW, p_norm, aim);
+            if (cm_float_bits(got) != cm_float_bits(want)) {
+                (void)fprintf(stderr,
+                              "\n  %s %dx%d %s case %d scale %d aim=%d p_norm=%g: %a, scalar %a\n",
+                              k->name[n], f->w, f->h, fill, id, scale, (int)aim, p_norm,
+                              (double)got, (double)want);
+                return "i4_adm_cm vector kernel differs from the scalar kernels";
+            }
+        }
+    }
+    return NULL;
+}
+
+static char *i4_cm_check_geometry(int w, int h, const I4CmKernels *k)
+{
+    I4CmFixture f;
+    char *msg = NULL;
+    if (i4_cm_fixture_alloc(&f, w, h)) {
+        adm_bands32_free(&f.bands);
+        return "aligned_malloc failed";
+    }
+    for (int seed = 1; seed <= 6 && !msg; ++seed) {
+        i4_cm_fill_dense(&f, 0x2545F491u * (uint32_t)seed, (seed & 1) != 0);
+        msg = i4_cm_check(&f, k, (seed & 1) ? "dense" : "dense, non-negative", seed);
+    }
+    for (int pos = 0; pos < w * h && !msg; ++pos) {
+        if (!event_position_swept(pos / w, pos % w, w, h)) {
+            continue;
+        }
+        i4_cm_fill_event(&f, pos / w, pos % w, 0x27D4EB2Fu + (uint32_t)pos);
+        msg = i4_cm_check(&f, k, "event", pos);
+    }
+    adm_bands32_free(&f.bands);
+    return msg;
+}
+
+static char *test_i4_adm_cm_matches_scalar_kernels(void)
+{
+    /* The geometries of the scale-0 test: edge columns inside the region,
+     * rows narrower than one block and every leftover column count. */
+    static const int geometries[][2] = {{12, 10}, {15, 9},  {16, 9},  {23, 17},
+                                        {40, 30}, {67, 21}, {130, 12}};
+    const I4CmKernels k = i4_cm_kernels();
+
+    for (size_t g = 0; g < sizeof(geometries) / sizeof(geometries[0]); ++g) {
+        char *msg = i4_cm_check_geometry(geometries[g][0], geometries[g][1], &k);
+        if (msg) {
+            return msg;
+        }
+    }
+    return NULL;
+}
+
+#if ARCH_X86
 /* ---------------------------------------------------------------------
  * Test 3: guard band + small-size sweep for adm_decouple_avx2 / _avx512.
  *
@@ -950,6 +1190,8 @@ static char *test_adm_decouple_guard_band(void)
 }
 
 #endif /* ARCH_X86 */
+
+#endif /* ARCH_X86 || ARCH_AARCH64 */
 
 #if ARCH_X86 || ARCH_AARCH64
 
@@ -1145,8 +1387,9 @@ typedef struct GainKernels {
 static GainKernels gain_kernels(void)
 {
 #if ARCH_AARCH64
-    /* Only the scale-0 decouple has a NEON kernel (Netflix/vmaf 9e48141b). */
-    const GainKernels k = {{adm_decouple_neon, NULL}, {NULL, NULL}, {"NEON", NULL}, 1};
+    /* Netflix/vmaf 9e48141b (scale 0) and b41d2340a (scales 1-3). */
+    const GainKernels k = {
+        {adm_decouple_neon, NULL}, {adm_decouple_s123_neon, NULL}, {"NEON", NULL}, 1};
     return k;
 #else
     GainKernels k = {{adm_decouple_avx2, NULL}, {adm_decouple_s123_avx2, NULL}, {"AVX2", NULL}, 1};
@@ -1250,26 +1493,39 @@ static char *test_adm_decouple_matches_scalar_for_gains(void)
 char *run_tests(void)
 {
     /* The arithmetic precision test runs on every arch (it is pure C). */
-    mu_run_test(test_adm_accum_precision);
-
+    static const MuTest portable[] = {MU_TEST(test_adm_accum_precision)};
+    char *msg = mu_run_table(portable, MU_TABLE_LEN(portable));
+    if (msg) {
+        return msg;
+    }
 #if ARCH_X86
     if (!simd_test_have_avx2()) {
         return NULL;
     }
+    static const MuTest simd[] = {
+        MU_TEST(test_adm_cm_avx2_smoke),
+        MU_TEST(test_i4_adm_cm_avx2_p_norm),
+        MU_TEST(test_adm_cm_centre_tap_stays_int32),
+        MU_TEST(test_adm_cm_matches_scalar_kernels),
+        MU_TEST(test_i4_adm_cm_matches_scalar_kernels),
+        MU_TEST(test_adm_decouple_guard_band),
+        MU_TEST(test_adm_decouple_matches_scalar_for_gains),
+    };
     div_lookup_generator();
-    mu_run_test(test_adm_cm_avx2_smoke);
-    mu_run_test(test_i4_adm_cm_avx2_p_norm);
-    mu_run_test(test_adm_cm_centre_tap_stays_int32);
-    mu_run_test(test_adm_cm_matches_scalar_kernels);
-    mu_run_test(test_adm_decouple_guard_band);
-    mu_run_test(test_adm_decouple_matches_scalar_for_gains);
+    return mu_run_table(simd, MU_TABLE_LEN(simd));
 #elif ARCH_AARCH64
+    static const MuTest simd[] = {
+        MU_TEST(test_adm_cm_centre_tap_stays_int32),
+        MU_TEST(test_adm_cm_matches_scalar_kernels),
+        MU_TEST(test_i4_adm_cm_matches_scalar_kernels),
+        MU_TEST(test_adm_decouple_matches_scalar_for_gains),
+    };
     div_lookup_generator();
-    mu_run_test(test_adm_decouple_matches_scalar_for_gains);
+    return mu_run_table(simd, MU_TABLE_LEN(simd));
 #else
     (void)fprintf(stderr, "skipping SIMD smoke: non-x86 arch\n");
-#endif
     return NULL;
+#endif
 }
 
 /* NOLINTEND(modernize-use-nullptr) */

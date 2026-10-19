@@ -1,11 +1,9 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-0754 — CUDA SSIM `vert_combine`: `__ldg()` + `__launch_bounds__` + pinned-host leak fix
 
-| Field  | Value |
-| ------ | ----- |
-| Status | Accepted |
-| Date   | 2026-05-29 |
-| Tags   | cuda, performance, correctness, ssim, fork-local |
+- **Status**: Accepted
+- **Date**: 2026-05-29
+- **Tags**: cuda, performance, correctness, ssim, fork-local
 
 ## Context
 

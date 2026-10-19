@@ -270,3 +270,13 @@ downstream pipeline already pins to upstream u2netp behaviour.
   fork-local release-artefact mirror for `u2netp.pth` under
   Apache-2.0 §4 NOTICE compliance ... ships the SCAFFOLD:
   license, doc, release-workflow step, model card stub").
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 128: `6.
+  **docs/adr/_index_fragments/0367-u2netp-fork-mirror-scaffold.md**`: Cites
+  fragment with number 0367 instead of 0412; ADR-0367 is
+  lsvq-corpus-ingestion.

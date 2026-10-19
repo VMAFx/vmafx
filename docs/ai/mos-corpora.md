@@ -293,7 +293,7 @@ PYTHONPATH=ai/src python ai/scripts/chug_to_corpus_jsonl.py --full   # whole cor
 
 CHUG is UGC-HDR and reports MOS on a **0–100 continuous scale**. The
 adapter preserves that source value as `mos_raw_0_100` and maps
-trainer-facing `mos` onto `[1, 5]` via `1 + 4 * mos_raw_0_100 / 100`
+trainer-facing `mos` onto `[1, 5]` via $1 + 4 \cdot \mathrm{mos}_{\mathrm{raw}} / 100$ (`mos_raw_0_100`)
 so the existing MOS-head trainer can consume the rows directly. The
 adapter also preserves CHUG bitrate-ladder, orientation, manifest
 geometry, and content-name metadata under `chug_*` optional fields.

@@ -45,6 +45,7 @@
  *  that matters here is spelled with an intrinsic.
  */
 
+#include "cuda_device_ptr.cuh"
 #include "cuda_helper.cuh"
 #include "cuda/integer_ssim_cuda.h"
 #include "common.h"
@@ -117,19 +118,22 @@ __device__ inline SsimVertInputs vert_inputs(const VmafCudaBuffer &ref_mu,
                                              const VmafCudaBuffer &cmp_sq,
                                              const VmafCudaBuffer &refcmp)
 {
-    return {
-        reinterpret_cast<const float *>(ref_mu.data), reinterpret_cast<const float *>(cmp_mu.data),
-        reinterpret_cast<const float *>(ref_sq.data), reinterpret_cast<const float *>(cmp_sq.data),
-        reinterpret_cast<const float *>(refcmp.data)};
+    SsimVertInputs in;
+    in.ref_mu = VMAF_CUDA_DPTR(const float, ref_mu.data);
+    in.cmp_mu = VMAF_CUDA_DPTR(const float, cmp_mu.data);
+    in.ref_sq = VMAF_CUDA_DPTR(const float, ref_sq.data);
+    in.cmp_sq = VMAF_CUDA_DPTR(const float, cmp_sq.data);
+    in.refcmp = VMAF_CUDA_DPTR(const float, refcmp.data);
+    return in;
 }
 
 /* The five sums of one convolution pass, in iqa/convolve.c's type. */
 struct MomentSums {
-    double ref_mu;
-    double cmp_mu;
-    double ref_sq;
-    double cmp_sq;
-    double refcmp;
+    double ref_mu = 0.0;
+    double cmp_mu = 0.0;
+    double ref_sq = 0.0;
+    double cmp_sq = 0.0;
+    double refcmp = 0.0;
 };
 
 /* One tap of iqa/convolve.c: `const float prod = img * kernel;
@@ -153,16 +157,20 @@ __device__ inline void add_horizontal_tap(MomentSums &sums, float ref, float cmp
 /* A pass result: iqa/convolve.c's `(float)(sum * scale)` with scale 1. */
 __device__ inline SsimMoments round_moments(const MomentSums &sums)
 {
-    return {__double2float_rn(sums.ref_mu), __double2float_rn(sums.cmp_mu),
-            __double2float_rn(sums.ref_sq), __double2float_rn(sums.cmp_sq),
-            __double2float_rn(sums.refcmp)};
+    SsimMoments m;
+    m.ref_mu = __double2float_rn(sums.ref_mu);
+    m.cmp_mu = __double2float_rn(sums.cmp_mu);
+    m.ref_sq = __double2float_rn(sums.ref_sq);
+    m.cmp_sq = __double2float_rn(sums.cmp_sq);
+    m.refcmp = __double2float_rn(sums.refcmp);
+    return m;
 }
 
 /* Vertical 11-tap of the five horizontal-pass moments at (x, y). */
 __device__ inline SsimMoments vertical_moments(const SsimVertInputs &in, unsigned x, unsigned y,
                                                unsigned w_horiz)
 {
-    MomentSums sums = {0.0, 0.0, 0.0, 0.0, 0.0};
+    MomentSums sums;
     for (int v = 0; v < K; v++) {
         const unsigned src_idx = (y + (unsigned)v) * w_horiz + x;
         const float w = G[v];
@@ -178,45 +186,51 @@ __device__ inline SsimMoments vertical_moments(const SsimVertInputs &in, unsigne
 /* Pass-1 sample sources: the picture's luma at scale 1, the decimated fp32
  * planes above it. */
 struct LumaPicture8 {
-    const VmafPicture &ref;
-    const VmafPicture &cmp;
-    __device__ float reference(unsigned x, unsigned y) const
-    {
-        return read_norm_8bpc(ref, x, y);
-    }
-    __device__ float comparison(unsigned x, unsigned y) const
-    {
-        return read_norm_8bpc(cmp, x, y);
-    }
+    const VmafPicture *ref;
+    const VmafPicture *cmp;
 };
 
 struct LumaPicture16 {
-    const VmafPicture &ref;
-    const VmafPicture &cmp;
+    const VmafPicture *ref;
+    const VmafPicture *cmp;
     float scaler;
-    __device__ float reference(unsigned x, unsigned y) const
-    {
-        return read_norm_16bpc(ref, x, y, scaler);
-    }
-    __device__ float comparison(unsigned x, unsigned y) const
-    {
-        return read_norm_16bpc(cmp, x, y, scaler);
-    }
 };
 
 struct LumaPlanes {
     const float *__restrict__ ref;
     const float *__restrict__ cmp;
     unsigned width;
-    __device__ float reference(unsigned x, unsigned y) const
-    {
-        return __ldg(&ref[y * width + x]);
-    }
-    __device__ float comparison(unsigned x, unsigned y) const
-    {
-        return __ldg(&cmp[y * width + x]);
-    }
 };
+
+__device__ inline float luma_reference(const LumaPicture8 &s, unsigned x, unsigned y)
+{
+    return read_norm_8bpc(*s.ref, x, y);
+}
+
+__device__ inline float luma_comparison(const LumaPicture8 &s, unsigned x, unsigned y)
+{
+    return read_norm_8bpc(*s.cmp, x, y);
+}
+
+__device__ inline float luma_reference(const LumaPicture16 &s, unsigned x, unsigned y)
+{
+    return read_norm_16bpc(*s.ref, x, y, s.scaler);
+}
+
+__device__ inline float luma_comparison(const LumaPicture16 &s, unsigned x, unsigned y)
+{
+    return read_norm_16bpc(*s.cmp, x, y, s.scaler);
+}
+
+__device__ inline float luma_reference(const LumaPlanes &s, unsigned x, unsigned y)
+{
+    return __ldg(&s.ref[y * s.width + x]);
+}
+
+__device__ inline float luma_comparison(const LumaPlanes &s, unsigned x, unsigned y)
+{
+    return __ldg(&s.cmp[y * s.width + x]);
+}
 
 /* The five pass-1 output planes, w_horiz x h_horiz each. */
 struct SsimHorizOutputs {
@@ -233,9 +247,13 @@ __device__ inline SsimHorizOutputs horiz_outputs(const VmafCudaBuffer &ref_mu,
                                                  const VmafCudaBuffer &cmp_sq,
                                                  const VmafCudaBuffer &refcmp)
 {
-    return {reinterpret_cast<float *>(ref_mu.data), reinterpret_cast<float *>(cmp_mu.data),
-            reinterpret_cast<float *>(ref_sq.data), reinterpret_cast<float *>(cmp_sq.data),
-            reinterpret_cast<float *>(refcmp.data)};
+    SsimHorizOutputs out;
+    out.ref_mu = VMAF_CUDA_DPTR(float, ref_mu.data);
+    out.cmp_mu = VMAF_CUDA_DPTR(float, cmp_mu.data);
+    out.ref_sq = VMAF_CUDA_DPTR(float, ref_sq.data);
+    out.cmp_sq = VMAF_CUDA_DPTR(float, cmp_sq.data);
+    out.refcmp = VMAF_CUDA_DPTR(float, refcmp.data);
+    return out;
 }
 
 /* Pass 1 for one thread: output pixel (x, y) of the (W-10) x H "valid"
@@ -248,10 +266,11 @@ __device__ inline void horizontal_pass(const Source &source, const SsimHorizOutp
     const unsigned y = blockIdx.y * blockDim.y + threadIdx.y;
     if (x >= w_horiz || y >= h_horiz)
         return;
-    MomentSums sums = {0.0, 0.0, 0.0, 0.0, 0.0};
+    MomentSums sums;
     for (int u = 0; u < K; u++) {
         const unsigned src_x = x + (unsigned)u;
-        add_horizontal_tap(sums, source.reference(src_x, y), source.comparison(src_x, y), G[u]);
+        add_horizontal_tap(sums, luma_reference(source, src_x, y),
+                           luma_comparison(source, src_x, y), G[u]);
     }
     const SsimMoments m = round_moments(sums);
     const unsigned dst_idx = y * w_horiz + x;
@@ -335,10 +354,8 @@ __device__ inline void decimate_pass(const VmafPicture &ref, const VmafPicture &
     const int centre_x = (int)x * g.scale;
     const int centre_y = (int)y * g.scale;
     const unsigned dst_idx = y * g.out_width + x;
-    reinterpret_cast<float *>(ref_out.data)[dst_idx] =
-        decimate_sample<T>(ref, g, centre_x, centre_y);
-    reinterpret_cast<float *>(cmp_out.data)[dst_idx] =
-        decimate_sample<T>(cmp, g, centre_x, centre_y);
+    VMAF_CUDA_DPTR(float, ref_out.data)[dst_idx] = decimate_sample<T>(ref, g, centre_x, centre_y);
+    VMAF_CUDA_DPTR(float, cmp_out.data)[dst_idx] = decimate_sample<T>(cmp, g, centre_x, centre_y);
 }
 
 /* One pixel's SSIM and its luminance, contrast and structure terms. */
@@ -413,8 +430,14 @@ __global__ void calculate_ssim_decimate_8bpc(const VmafPicture ref, const VmafPi
                                              unsigned out_height, int scale, float sample_scale,
                                              float tap_weight)
 {
-    const DecimateGeometry g = {width, height,       out_width, out_height,
-                                scale, sample_scale, tap_weight};
+    DecimateGeometry g;
+    g.width = width;
+    g.height = height;
+    g.out_width = out_width;
+    g.out_height = out_height;
+    g.scale = scale;
+    g.sample_scale = sample_scale;
+    g.tap_weight = tap_weight;
     decimate_pass<uint8_t>(ref, cmp, ref_out, cmp_out, g);
 }
 
@@ -424,8 +447,14 @@ __global__ void calculate_ssim_decimate_16bpc(const VmafPicture ref, const VmafP
                                               unsigned out_height, int scale, float sample_scale,
                                               float tap_weight)
 {
-    const DecimateGeometry g = {width, height,       out_width, out_height,
-                                scale, sample_scale, tap_weight};
+    DecimateGeometry g;
+    g.width = width;
+    g.height = height;
+    g.out_width = out_width;
+    g.out_height = out_height;
+    g.scale = scale;
+    g.sample_scale = sample_scale;
+    g.tap_weight = tap_weight;
     decimate_pass<uint16_t>(ref, cmp, ref_out, cmp_out, g);
 }
 
@@ -438,7 +467,9 @@ __global__ void calculate_ssim_horiz_8bpc(const VmafPicture ref, const VmafPictu
                                           VmafCudaBuffer h_refcmp, unsigned w_horiz,
                                           unsigned h_horiz)
 {
-    const LumaPicture8 source = {ref, cmp};
+    LumaPicture8 source;
+    source.ref = &ref;
+    source.cmp = &cmp;
     horizontal_pass(source, horiz_outputs(h_ref_mu, h_cmp_mu, h_ref_sq, h_cmp_sq, h_refcmp),
                     w_horiz, h_horiz);
 }
@@ -449,7 +480,10 @@ __global__ void calculate_ssim_horiz_16bpc(const VmafPicture ref, const VmafPict
                                            VmafCudaBuffer h_refcmp, unsigned w_horiz,
                                            unsigned h_horiz, unsigned bpc)
 {
-    const LumaPicture16 source = {ref, cmp, scaler_for_bpc(bpc)};
+    LumaPicture16 source;
+    source.ref = &ref;
+    source.cmp = &cmp;
+    source.scaler = scaler_for_bpc(bpc);
     horizontal_pass(source, horiz_outputs(h_ref_mu, h_cmp_mu, h_ref_sq, h_cmp_sq, h_refcmp),
                     w_horiz, h_horiz);
 }
@@ -462,8 +496,10 @@ __global__ void calculate_ssim_horiz_planes(VmafCudaBuffer ref_plane, VmafCudaBu
                                             VmafCudaBuffer h_refcmp, unsigned w_horiz,
                                             unsigned h_horiz, unsigned width)
 {
-    const LumaPlanes source = {reinterpret_cast<const float *>(ref_plane.data),
-                               reinterpret_cast<const float *>(cmp_plane.data), width};
+    LumaPlanes source;
+    source.ref = VMAF_CUDA_DPTR(const float, ref_plane.data);
+    source.cmp = VMAF_CUDA_DPTR(const float, cmp_plane.data);
+    source.width = width;
     horizontal_pass(source, horiz_outputs(h_ref_mu, h_cmp_mu, h_ref_sq, h_cmp_sq, h_refcmp),
                     w_horiz, h_horiz);
 }
@@ -486,7 +522,7 @@ __launch_bounds__(BLOCK_SIZE) __global__
         return;
     const SsimVertInputs in =
         vert_inputs(h_ref_mu_buf, h_cmp_mu_buf, h_ref_sq_buf, h_cmp_sq_buf, h_refcmp_buf);
-    double *const terms = reinterpret_cast<double *>(terms_buf.data);
+    double *const terms = VMAF_CUDA_DPTR(double, terms_buf.data);
     terms[(size_t)y * w_final + x] = ssim_terms(vertical_moments(in, x, y, w_horiz), c1, c2).ssim;
 }
 
@@ -508,7 +544,7 @@ __launch_bounds__(BLOCK_SIZE) __global__
         vert_inputs(h_ref_mu_buf, h_cmp_mu_buf, h_ref_sq_buf, h_cmp_sq_buf, h_refcmp_buf);
     const SsimTerms t = ssim_terms(vertical_moments(in, x, y, w_horiz), c1, c2);
     double *const window =
-        reinterpret_cast<double *>(terms_buf.data) + (((size_t)y * w_final + x) * LCS_TERMS);
+        VMAF_CUDA_DPTR(double, terms_buf.data) + (((size_t)y * w_final + x) * LCS_TERMS);
     window[0] = t.ssim;
     window[1] = t.l;
     window[2] = t.c;

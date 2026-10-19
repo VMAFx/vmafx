@@ -20,7 +20,7 @@ contract, licence-compliance receipt.
 | --- | --- |
 | Upstream repository | <https://github.com/xuebinqin/U-2-Net> |
 | Upstream commit pin | `ac7e1c81` (re-pinned at binary upload time) |
-| Upstream paper | Qin et al., *U^2-Net*, Pattern Recognition 2020 |
+| Upstream paper | Qin et al., *$U^{2}$-Net*, Pattern Recognition 2020 |
 | Upstream model file | `u2netp.pth` (~4.7 MB) |
 | Upstream license | Apache-2.0 (no NOTICE file in upstream tree) |
 | Fork release tag | `u2netp-mirror-v1` (ADR-0412 scheme) |
@@ -204,5 +204,5 @@ steps:
   allowlist addition that resolves ADR-0265 axis-2 blocker.
 - [Research-0086](../../research/0086-u2netp-fork-mirror-license-compliance.md)
   — full compliance walk and alternatives table.
-- Upstream paper: Qin et al., *U^2-Net*, Pattern Recognition 2020.
+- Upstream paper: Qin et al., *$U^{2}$-Net*, Pattern Recognition 2020.
 - Upstream code: <https://github.com/xuebinqin/U-2-Net>.

@@ -127,3 +127,19 @@ FFmpeg n8.1 (smoke build verified — see PR description). libx264's
 - [ADR-0237: vmaf-tune harness](./0237-vmaf-tune-harness.md) — parent feature
 - [ADR-0286: saliency_student_v1](./0286-saliency-student-model-v1.md) — model that emits the qpfile
 - [CLAUDE.md §12 r14](../../CLAUDE.md) — patches-must-update-with-libvmaf rule
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 126: `[ADR-0247: vmaf-roi sidecar](./0247-vmaf-roi-c-sidecar.md)
+  — sibling roi-map work`: Relative link target ./0247-vmaf-roi-c-sidecar.md
+  does not exist on master.
+- About line 127: `[ADR-0237: vmaf-tune harness](./0237-vmaf-tune-harness.md)
+  — parent feature`: Relative link target ./0237-vmaf-tune-harness.md does not
+  exist on master.
+- About line 128: `[ADR-0286:
+  saliency_student_v1](./0286-saliency-student-model-v1.md) — model that emits
+  the qpfile`: Relative link target ./0286-saliency-student-model-v1.md does
+  not exist on master.

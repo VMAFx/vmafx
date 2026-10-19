@@ -78,9 +78,28 @@ static char *test_float_vif_small_odd_frame_identical(void)
     return vif_twin_small_odd_frame_identical(&twin);
 }
 
+/* T-METAL-UINT-PLANE-INDEX-2026-10-05: the five moment planes are indexed in
+ * uint, so float_vif_metal refuses a prescaled plane of more than 858,993,459
+ * samples: 16K at vif_prescale 2.6 (39936 x 22464) and the picture cap. 16K
+ * at the default prescale is far below the limit. */
+static char *test_float_vif_refuses_uint_index_overflow(void)
+{
+    if (metal_twin_device_only() || !metal_twin_have_device()) {
+        return NULL;
+    }
+    mu_assert("float_vif_metal accepted 16K at vif_prescale 2.6",
+              metal_twin_init_status("float_vif_metal", "vif_prescale", "2.6", 15360u, 8640u) ==
+                  -EINVAL);
+    mu_assert("float_vif_metal accepted the picture cap",
+              metal_twin_init_status("float_vif_metal", NULL, NULL, METAL_TWIN_PIC_DIM_MAX,
+                                     METAL_TWIN_PIC_DIM_MAX) == -EINVAL);
+    return NULL;
+}
+
 char *run_tests(void)
 {
     metal_run_case(test_float_vif_metal_registered);
+    metal_run_case(test_float_vif_refuses_uint_index_overflow);
     metal_run_case(test_float_vif_default_identical);
     metal_run_case(test_float_vif_debug_identical);
     metal_run_case(test_float_vif_model_options_identical);

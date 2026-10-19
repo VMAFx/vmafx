@@ -234,8 +234,8 @@ static void ssim_variance_scalar(float *ref_sigma_sqd, float *cmp_sigma_sqd, flo
             ref_sigma_sqd[offset] -= ref_mu[offset] * ref_mu[offset];
             cmp_sigma_sqd[offset] -= cmp_mu[offset] * cmp_mu[offset];
             /* zli-nflx: clamp to zero after subtraction */
-            ref_sigma_sqd[offset] = MAX(0.0, ref_sigma_sqd[offset]);
-            cmp_sigma_sqd[offset] = MAX(0.0, cmp_sigma_sqd[offset]);
+            ref_sigma_sqd[offset] = (float)(MAX(0.0, ref_sigma_sqd[offset]));
+            cmp_sigma_sqd[offset] = (float)(MAX(0.0, cmp_sigma_sqd[offset]));
             sigma_both[offset] -= ref_mu[offset] * cmp_mu[offset];
         }
     }

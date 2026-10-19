@@ -1,0 +1,101 @@
+# SPDX-License-Identifier: EUPL-1.2
+# Copyright 2026 Lusoris
+#
+# test/e2e/controller-ha/driver.yaml — the failover scenario as a Job in the
+# release's namespace: its service account may read, list and delete pods
+# (the kill) and scale the node pool; its Service is the scoring root the
+# nodes stream the inputs from; it reads the job attempts from the database
+# through the CloudNativePG application Secret.
+#
+# One List document, so YAML checkers see a single document; kubectl applies
+# every item.
+---
+apiVersion: v1
+kind: List
+items:
+  - apiVersion: v1
+    kind: ServiceAccount
+    metadata:
+      name: vmafx-e2e-driver
+  - apiVersion: rbac.authorization.k8s.io/v1
+    kind: Role
+    metadata:
+      name: vmafx-e2e-driver
+    rules:
+      - apiGroups: [""]
+        resources: [pods]
+        verbs: [get, list, delete]
+      - apiGroups: [apps]
+        resources: [deployments/scale]
+        verbs: [get, update]
+  - apiVersion: rbac.authorization.k8s.io/v1
+    kind: RoleBinding
+    metadata:
+      name: vmafx-e2e-driver
+    roleRef:
+      apiGroup: rbac.authorization.k8s.io
+      kind: Role
+      name: vmafx-e2e-driver
+    subjects:
+      - kind: ServiceAccount
+        name: vmafx-e2e-driver
+  - apiVersion: v1
+    kind: Service
+    metadata:
+      name: vmafx-e2e-driver
+    spec:
+      selector:
+        app.kubernetes.io/name: vmafx-e2e-driver
+      ports:
+        - name: fixtures
+          port: 8080
+          targetPort: fixtures
+  - apiVersion: batch/v1
+    kind: Job
+    metadata:
+      name: vmafx-e2e-driver
+    spec:
+      # The scenario is not retried: a second run would see the first's jobs.
+      backoffLimit: 0
+      activeDeadlineSeconds: 900
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: vmafx-e2e-driver
+        spec:
+          serviceAccountName: vmafx-e2e-driver
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: driver
+              image: ghcr.io/vmafx/vmafx-e2e-driver:e2e-test
+              imagePullPolicy: Never
+              args: [-deadline=12m]
+              ports:
+                - name: fixtures
+                  containerPort: 8080
+              env:
+                - name: POD_NAMESPACE
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.namespace
+                - name: VMAFX_DB_DSN
+                  valueFrom:
+                    secretKeyRef:
+                      name: vmafx-db-app
+                      key: uri
+              resources:
+                requests:
+                  cpu: 20m
+                  memory: 32Mi
+                limits:
+                  cpu: 250m
+                  memory: 128Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: [ALL]

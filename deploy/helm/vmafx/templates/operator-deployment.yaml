@@ -41,26 +41,7 @@ spec:
           image: {{ include "vmafx.operatorImage" . | quote }}
           imagePullPolicy: {{ .Values.operator.image.pullPolicy | default "IfNotPresent" }}
           env:
-            - name: VMAFX_OPERATOR_METRICS_ADDR
-              value: ":8080"
-            - name: VMAFX_OPERATOR_HEALTH_PROBE_ADDR
-              value: ":8081"
-            - name: VMAFX_OPERATOR_LEADER_ELECTION
-              value: {{ .Values.operator.leaderElect | default false | quote }}
-            - name: VMAFX_LOG_LEVEL
-              value: {{ .Values.operator.logLevel | default "info" | quote }}
-            {{- if .Values.controller.enabled }}
-            # The chart's controller (ADR-1589): GetJob polls and /healthz probes.
-            - name: VMAFX_CONTROLLER_GRPC_ADDR
-              value: {{ printf "%s:%v" (include "vmafx.controllerHost" .) .Values.controller.grpcPort | quote }}
-            - name: VMAFX_CONTROLLER_HTTP_ADDR
-              value: {{ printf "http://%s:%v" (include "vmafx.controllerHost" .) .Values.controller.httpPort | quote }}
-            {{- end }}
-            {{- if .Values.operator.controllerToken.secretName }}
-            # Bearer token of the GetJob polls, re-read on every poll.
-            - name: VMAFX_CONTROLLER_TOKEN_FILE
-              value: {{ include "vmafx.controllerTokenPath" . | quote }}
-            {{- end }}
+            {{- include "vmafx.env.operator" . }}
           ports:
             - name: metrics
               containerPort: 8080

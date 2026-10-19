@@ -14,10 +14,10 @@ full-range noise; options too. Already listed: `adm_hip`, `float_motion_hip`,
 `psnr_hvs_hip`. Rebase-sensitive:
 - Exact because integer on device + CPU helpers on host (motion ADR-1377,
   psnr ADR-1382, cambi ADR-1378) or CPU arithmetic type for type (ms_ssim
-  ADR-1403). A float reduction, a host copy of a CPU routine, or a device
-  libm call in any of them breaks the listing: fix the twin, never loosen.
-- `integer_ms_ssim_hip`: per-scale fp64 sum in the CPU's raster order on the
-  host since 2026-10-02 (a mean differed on a constructed frame; section
+  ADR-1403). float reduction, host copy of CPU routine, or device
+  libm call in any of them breaks listing: fix twin, never loosen.
+- `integer_ms_ssim_hip`: per-scale fp64 sum in CPU's raster order on
+  host since 2026-10-02 (mean differed on constructed frame; section
   above), mean rounded to fp32.
 - NOT exact, do not list: `float_moment_hip` (exact integer squares; CPU rounds
   each square to float, differs at 16 bits; `float_psnr_hip` became exact

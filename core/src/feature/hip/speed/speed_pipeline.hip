@@ -24,20 +24,24 @@
  */
 
 #include <hip/hip_runtime.h>
-#include <stdint.h>
+#include <cstdint>
 
 #include "speed_hip_device.h"
 
 /* The work-item's pixel position and channel in a 2-D-tile x channel grid. */
-__device__ static inline uint32_t speed_gx(void)
+namespace {
+
+__device__ inline uint32_t speed_gx()
 {
     return blockIdx.x * blockDim.x + threadIdx.x;
 }
 
-__device__ static inline uint32_t speed_gy(void)
+__device__ inline uint32_t speed_gy()
 {
     return blockIdx.y * blockDim.y + threadIdx.y;
 }
+
+} // namespace
 
 extern "C" {
 
@@ -48,9 +52,10 @@ __global__ void speed_hip_scale(const SpeedHipParams *p, uint32_t set)
     const uint32_t x = speed_gx();
     const uint32_t y = speed_gy();
     const uint32_t ch = blockIdx.z;
-    if (x < g->scaled_w && y < g->scaled_h)
+    if (x < g->scaled_w && y < g->scaled_h) {
         p->scaled[((size_t)ch * g->scaled_h + y) * g->scaled_w + x] =
             speed_hd_scale_sample(p, set, ch, y, x);
+    }
 }
 
 /* The anti-alias filter evaluated only at the 16x-decimated points. */
@@ -60,9 +65,10 @@ __global__ void speed_hip_decimate(const SpeedHipParams *p, uint32_t set)
     const uint32_t j = speed_gx();
     const uint32_t i = speed_gy();
     const uint32_t ch = blockIdx.z;
-    if (j < g->down_w && i < g->down_h)
+    if (j < g->down_w && i < g->down_h) {
         p->down[((size_t)ch * g->down_h + i) * g->down_w + j] =
             speed_hd_antialias_at(p, set, ch, i, j);
+    }
 }
 
 /* Local mean subtraction and the independent term. */

@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD041 MD060 -->
 # ADR-1762: Every translation unit is read by a clang-tidy lane or excepted by name
 
-- **Status**: Proposed
+- **Status**: Accepted (status update 2026-10-06 below)
 - **Date**: 2026-10-05
 - **Deciders**: Lusoris
 - **Tags**: ci, clang-tidy, lint, ratchet, metal, fuzz, mcp, fork-local
@@ -66,3 +66,17 @@ are listed with that reason.
   [ADR-1243](1243-tidy-scoped-baseline-tightening.md) (scoped writes),
   [ADR-1471](1471-tidy-lanes-in-dev-container.md) (container lanes),
   [ADR-1113](1113-vendor-pelorus-interop-abi.md) (the Pelorus mirror).
+
+## Status update 2026-10-06: Accepted
+
+The decision was applied while this record still said Proposed. Checked on
+`origin/master` `fd8b8c93b`: #2101 (`483c8274b`, 2026-10-05) added the
+coverage check `scripts/ci/check-tidy-coverage.py` and its pre-commit hook
+`clang-tidy-coverage`, the shared exception list
+`.config/lint-exceptions.d/clang-tidy-coverage.toml`, the `clang` and `metal`
+baselines (`scripts/ci/tidy-baseline-clang.json`,
+`scripts/ci/tidy-baseline-metal.json`) and the macOS lane
+`.github/workflows/tidy-metal.yml`; `docs/development/tidy-lanes.md` describes
+the lanes.
+
+The body above is unchanged.

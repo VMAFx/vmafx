@@ -25,6 +25,7 @@
 #include "integer_adm.h"
 #include "common.h"
 
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no `using`. ADR-1138. */
 typedef struct cuda_adm_dwt_band_t {
     union {
         struct {
@@ -92,6 +93,7 @@ typedef struct AdmBufferCuda {
     int64_t *adm_aim_cm[4]; /* AIM CM accumulator slots — ADR-0746 */
     void *results_host;
 } AdmBufferCuda;
+/* NOLINTEND(modernize-use-using) */
 
 extern const unsigned char adm_dwt2_ptx[];
 extern const unsigned char adm_csf_den_ptx[];

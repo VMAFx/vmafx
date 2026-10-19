@@ -30,6 +30,7 @@
 
 #include "libvmaf/model.h"
 
+#include "compat/crt_portable.h"
 #include "compat/path_utf8.h"
 #include "model_loader.h"
 #include "onnx_scan.h"
@@ -1064,9 +1065,11 @@ int vmaf_dnn_validate_onnx(const char *path, size_t max_bytes)
      * ADR-0488 caller-contract: no other thread calls setenv("VMAF_*")
      * concurrently with this read. A pthread_once snapshot (the
      * gpu_dispatch_env posture) is deliberately NOT used here — the tiny-model
-     * tests setenv() this variable between cases and must observe each value. */
-    /* NOLINTNEXTLINE(concurrency-mt-unsafe) — ADR-0488 caller-contract. */
-    const char *jail_dir = getenv("VMAF_TINY_MODEL_DIR");
+     * tests setenv() this variable between cases and must observe each value.
+     * vmaf_getenv_portable() is getenv() outside MSVC and getenv_s() into a
+     * per-thread buffer under it (and icx-cl), where getenv() is deprecated;
+     * the value is consumed before any other read of the environment. */
+    const char *jail_dir = vmaf_getenv_portable("VMAF_TINY_MODEL_DIR");
 
     /* Optional chroot-style path jail via VMAF_TINY_MODEL_DIR. Applied
      * before any I/O on the target so a jail violation can't even trigger
@@ -1123,6 +1126,7 @@ int vmaf_dnn_validate_onnx(const char *path, size_t max_bytes)
 extern char **environ;
 #endif
 
+#ifndef _WIN32 /* only the POSIX vmaf_dnn_verify_signature() below uses the two registry helpers */
 /* Find the sigstore_bundle path for the model entry whose onnx basename
  * matches `onnx_basename`. Writes a registry-relative path into `out`
  * (size `out_sz`) on success, or returns -ENOENT when no match. The
@@ -1223,6 +1227,7 @@ static int slurp_registry(const char *registry_path, char **out_buf)
     *out_buf = buf;
     return 0;
 }
+#endif /* !_WIN32 */
 
 #ifdef _WIN32
 int vmaf_dnn_verify_signature(const char *onnx_path, const char *registry_path)

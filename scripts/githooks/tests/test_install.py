@@ -11,6 +11,7 @@ import re
 import shutil
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -131,11 +132,7 @@ class HookInstallTests(unittest.TestCase):
         self.run_git("init", "-b", "master")
         self.run_git("config", "user.name", "Hook Test")
         self.run_git("config", "user.email", "hook-test@example.invalid")
-        for directory in ("githooks", "git-hooks"):
-            shutil.copytree(ROOT / "scripts" / directory, self.repo / "scripts" / directory)
-        helper = self.repo / "scripts/lib/safe_subprocess.py"
-        helper.parent.mkdir(parents=True)
-        shutil.copy2(ROOT / "scripts/lib/safe_subprocess.py", helper)
+        self.copy_hook_sources()
         self.write(".pre-commit-config.yaml", CONFIG)
         self.write("probe.py", PROBE)
         self.write("docs/index.md", "# Docs\n")
@@ -162,6 +159,20 @@ class HookInstallTests(unittest.TestCase):
             "mkdocs",
             '#!/bin/sh\nprintf \'["mkdocs"]\\n\' >> "$HOOK_TEST_LOG"\nexit "${HOOK_TEST_MKDOCS_EXIT:-0}"\n',
         )
+
+    def copy_hook_sources(self) -> None:
+        """Copy the hook scripts, their Python helper and the engine launcher into the fixture."""
+        for directory in ("githooks", "git-hooks"):
+            shutil.copytree(ROOT / "scripts" / directory, self.repo / "scripts" / directory)
+        helper = self.repo / "scripts/lib/safe_subprocess.py"
+        helper.parent.mkdir(parents=True)
+        shutil.copy2(ROOT / "scripts/lib/safe_subprocess.py", helper)
+        # state-sync.sh reaches the engine through the launcher, which runs the engine
+        # the repository pins. The fixture declares no pin, so the launcher runs the
+        # stand-in from PATH; it is committed so a linked worktree holds it too.
+        launcher = self.repo / ".config/lefthook/engine.sh"
+        launcher.parent.mkdir(parents=True)
+        shutil.copy2(ROOT / ".config/lefthook/engine.sh", launcher)
 
     def write(self, path: str, text: str, *, executable: bool = False) -> None:
         target = self.repo / path
@@ -270,6 +281,26 @@ class HookInstallTests(unittest.TestCase):
                 self.assertFalse((hooks / "pre-commit").exists())
                 path.unlink()
 
+    def test_install_leaves_lefthook_shims_in_place_and_installs_the_rest(self) -> None:
+        hooks = self.repo / ".git/hooks"
+        shim = '#!/bin/sh\ncall_lefthook()\n{\n  exit 0\n}\ncall_lefthook run "HOOK" "$@"\n'
+        for hook in ("pre-commit", "pre-push"):
+            self.write(f".git/hooks/{hook}", shim.replace("HOOK", hook), executable=True)
+        result = self.install()
+        self.assertIn("left lefthook's", result.stdout)
+        dispatcher = (self.repo / "scripts/githooks/dispatch.sh").read_bytes()
+        for hook in ("pre-commit", "pre-push"):
+            with self.subTest(hook=hook):
+                self.assertIn(f'call_lefthook run "{hook}"', (hooks / hook).read_text())
+                self.assertEqual(list(hooks.glob(f"{hook}.vmafx-backup-*")), [])
+        for hook in ("commit-msg", "pre-rebase"):
+            with self.subTest(hook=hook):
+                self.assertEqual((hooks / hook).read_bytes(), dispatcher)
+        self.assertNotEqual(
+            self.run_git("commit", "--allow-empty", "-m", "bad message", check=False).returncode, 0
+        )
+        self.run_git("commit", "--allow-empty", "-m", "test: accepted")
+
     def test_framework_migration_preserves_legacy_and_native_stages(self) -> None:
         self.run_command(
             "pre-commit", "install", "--hook-type", "pre-commit", "--hook-type", "commit-msg"
@@ -346,41 +377,23 @@ class HookInstallTests(unittest.TestCase):
                 self.run_command("bash", "scripts/git-hooks/pre-push-mkdocs-strict.sh")
                 self.assertIn(["mkdocs"], self.events())
 
-    def test_state_sync_uses_regular_worktree_mirror_and_shared_state(self) -> None:
+    def state_sync_worktree(self) -> tuple[Path, Path]:
+        """Canonical ledgers, a linked worktree and the praetorctl stand-in."""
         canonical_state = self.repo / ".workingdir"
         canonical_state.mkdir()
-        ledger_names = (
-            "OPEN.md",
-            "BACKLOG.md",
-            "BUGS.md",
-            "QUESTIONS.md",
-            "STATE.md",
-            "bugs.meta.json",
-        )
-        for name in ledger_names:
+        for name in STATE_LEDGERS:
             (canonical_state / name).write_text(f"canonical:{name}\n")
-
         worktree = self.base / "state worktree"
         self.run_git("worktree", "add", "-b", "state-sync-fixture", str(worktree))
+        self.write_bin("praetorctl", STATE_SYNC_PRAETORCTL)
+        return canonical_state, worktree
+
+    def test_state_sync_uses_regular_worktree_mirror_and_shared_state(self) -> None:
+        canonical_state, worktree = self.state_sync_worktree()
+        ledger_names = STATE_LEDGERS
         local_state = worktree / ".workingdir"
         (local_state / "cache").mkdir(parents=True)
         (local_state / "cache/keep.txt").write_text("preserve me\n")
-        self.write_bin(
-            "praetorctl",
-            "#!/bin/sh\n"
-            "set -eu\n"
-            '[ "$1" = state ]\n'
-            '[ "$2" = sync ]\n'
-            "root=$3\n"
-            '[ "$root" = "$PWD" ]\n'
-            '[ -d "$root/.workingdir" ]\n'
-            '[ ! -L "$root/.workingdir" ]\n'
-            "for name in OPEN.md BACKLOG.md BUGS.md QUESTIONS.md STATE.md bugs.meta.json; do\n"
-            '  grep -qx "canonical:$name" "$root/.workingdir/$name"\n'
-            "done\n"
-            'branch=$(git -C "$root" branch --show-current)\n'
-            'printf \'synced:%s\\n\' "$branch" >> "$root/.workingdir/STATE.md"\n',
-        )
 
         self.run_command("bash", "scripts/githooks/state-sync.sh", cwd=worktree)
 
@@ -405,6 +418,263 @@ class HookInstallTests(unittest.TestCase):
             (canonical_state / "STATE.md").read_text(),
             "canonical:STATE.md\nsynced:state-sync-fixture\n",
         )
+
+    def test_state_sync_runs_no_engine_when_the_pin_is_unusable(self) -> None:
+        canonical_state, worktree = self.state_sync_worktree()
+        workflow = worktree / ".github/workflows/gate.yml"
+        workflow.parent.mkdir(parents=True)
+        workflow.write_text("env:\n  PRAETOR_REF: main\n", encoding="utf-8")
+
+        result = self.run_command(
+            "bash", "scripts/githooks/state-sync.sh", cwd=worktree, check=False
+        )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("praetor hooks: PRAETOR_REF='main'", result.stderr)
+        self.assertEqual(
+            (canonical_state / "STATE.md").read_text(),
+            "canonical:STATE.md\n",
+            "the engine on PATH ran although the pin is unusable",
+        )
+
+    def test_state_sync_takes_over_a_stale_lock_and_refuses_a_live_one(self) -> None:
+        _, worktree = self.state_sync_worktree()
+        lock = self.repo / ".git/vmafx-state-sync.lock"
+        boot = host_boot_id()
+        live, gone = os.getpid(), NO_SUCH_PID
+        long_ago = time.time() - 600
+        cases = [
+            ("dead owner", f"pid={gone}\nboot={boot}\n", None, True),
+            ("ownerless and old", None, long_ago, True),
+            ("live owner", f"pid={live}\nboot={boot}\n", None, False),
+            ("ownerless and fresh", None, None, False),
+        ]
+        if boot != "unknown":
+            cases.append(("owner of an earlier boot", f"pid={live}\nboot=not-{boot}\n", None, True))
+        for name, owner, mtime, stale in cases:
+            with self.subTest(case=name):
+                shutil.rmtree(lock, ignore_errors=True)
+                lock.mkdir()
+                if owner is not None:
+                    (lock / "owner").write_text(owner)
+                if mtime is not None:
+                    os.utime(lock, (mtime, mtime))
+                result = self.run_command(
+                    "bash", "scripts/githooks/state-sync.sh", cwd=worktree, check=False
+                )
+                if stale:
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertIn("took over the stale lock", result.stderr)
+                    self.assertFalse(lock.exists(), "the lock outlived the sync that took it")
+                else:
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("another state synchronization owns", result.stderr)
+                    self.assertEqual(
+                        (lock / "owner").read_text() if owner is not None else None, owner
+                    )
+
+
+def host_boot_id() -> str:
+    """The boot state-sync.sh records: Linux's boot_id, macOS's boot session."""
+    linux = Path("/proc/sys/kernel/random/boot_id")
+    if linux.is_file():
+        return linux.read_text().strip()
+    sysctl = shutil.which("sysctl")
+    if sysctl is not None:
+        result = run_command(
+            (sysctl, "-n", "kern.bootsessionuuid"),
+            allowed_executables=(sysctl,),
+            text=True,
+            capture_output=True,
+            timeout_seconds=30,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+    return "unknown"
+
+
+# A process id no host hands out: above every pid_max (Linux 2^22, macOS 99998).
+NO_SUCH_PID = 2_147_483_000
+STATE_LEDGERS = (
+    "OPEN.md",
+    "BACKLOG.md",
+    "BUGS.md",
+    "QUESTIONS.md",
+    "STATE.md",
+    "bugs.meta.json",
+    "questions.meta.json",
+)
+
+
+# A stand-in for `praetorctl state sync <root>`: it requires a regular
+# mirror holding every canonical ledger and its metadata, then records the
+# committing branch in STATE.md.
+STATE_SYNC_PRAETORCTL = (
+    "#!/bin/sh\n"
+    "set -eu\n"
+    '[ "$1" = state ]\n'
+    '[ "$2" = sync ]\n'
+    "root=$3\n"
+    '[ "$root" = "$PWD" ]\n'
+    '[ -d "$root/.workingdir" ]\n'
+    '[ ! -L "$root/.workingdir" ]\n'
+    "for name in OPEN.md BACKLOG.md BUGS.md QUESTIONS.md STATE.md bugs.meta.json \\\n"
+    "    questions.meta.json; do\n"
+    '  grep -qx "canonical:$name" "$root/.workingdir/$name"\n'
+    "done\n"
+    'branch=$(git -C "$root" branch --show-current)\n'
+    'printf \'synced:%s\\n\' "$branch" >> "$root/.workingdir/STATE.md"\n'
+)
+
+
+BRIDGE_STUB = """#!/bin/sh
+printf '%s|%s|%s\\n' "$0" "$*" "$(command -v reuse || echo none)" >> "$BRIDGE_LOG"
+if [ "$1" = hook-impl ]; then cat >> "$BRIDGE_LOG"; fi
+"""
+
+
+class LefthookBridgeTests(unittest.TestCase):
+    """lefthook.yml hands its framework stages to framework-hooks.sh (ADR-1249, ADR-2012)."""
+
+    def test_run_values_survive_the_windows_command_line(self) -> None:
+        # lefthook on Windows starts `sh -c "<run>"` without escaping it, so a
+        # double quote ends the script early; framework-hooks.sh has the detail.
+        lefthook = (ROOT / "lefthook.yml").read_text(encoding="utf-8")
+        runs = re.findall(r"^ +run: (.*)$", lefthook, flags=re.MULTILINE)
+        self.assertGreaterEqual(len(runs), 10)
+        for value in runs:
+            with self.subTest(run=value):
+                self.assertFalse(value.startswith(("|", ">")), "a block scalar hides its quotes")
+                self.assertNotIn('"', value)
+        for stage in ("pre-commit\n", "pre-push {1} {2}\n"):
+            self.assertEqual(
+                lefthook.count(f"run: bash scripts/git-hooks/framework-hooks.sh {stage}"), 1
+            )
+
+    def test_agent_hook_files_are_in_the_form_lefthook_rewrites_them_to(self) -> None:
+        # `lefthook uninstall` (v2.1.14 internal/command/uninstall_ai.go) re-marshals
+        # both files with Go's json.MarshalIndent even when it removes nothing:
+        # sorted keys, two-space indent, and <, > and & escaped. Committed in that
+        # form, an uninstall leaves the checkout clean instead of dirtying both files.
+        for name in (".claude/settings.json", ".codex/hooks.json"):
+            with self.subTest(file=name):
+                raw = (ROOT / name).read_bytes()
+                parsed = json.loads(raw)
+                canonical = json.dumps(parsed, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+                self.assertEqual(
+                    raw.decode("utf-8"),
+                    canonical,
+                    f"rewrite {name} with json.dumps(indent=2, sort_keys=True) plus a newline",
+                )
+                self.assertFalse(set(canonical) & set("<>&"), "Go would escape these")
+
+    def setUp(self) -> None:
+        temporary = tempfile.TemporaryDirectory(prefix="vmafx-bridge-")
+        self.addCleanup(temporary.cleanup)
+        self.repo = Path(temporary.name)
+        self.log = self.repo / "bridge.log"
+        self.bash = shutil.which("bash") or "/bin/bash"
+        self.git = shutil.which("git") or "/usr/bin/git"
+        self.env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+        self.env["BRIDGE_LOG"] = str(self.log)
+        run_command(
+            (self.git, "init", "--quiet"),
+            allowed_executables=(self.git,),
+            cwd=self.repo,
+            env=self.env,
+            check=True,
+            timeout_seconds=60,
+        )
+
+    def stub(self, relative: str, *, with_reuse: bool = False) -> None:
+        target = self.repo / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(BRIDGE_STUB, encoding="utf-8", newline="\n")
+        target.chmod(0o755)
+        if with_reuse:
+            reuse = target.parent / "reuse"
+            reuse.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8", newline="\n")
+            reuse.chmod(0o755)
+
+    def bridge(self, *args: str, path: str | None = None, stdin: str = "") -> TextCommandResult:
+        # lefthook hands Git Bash a PWD of the C:/... form on Windows; the
+        # bridge must still build a working PATH entry from it.
+        env = dict(self.env, PWD=self.repo.as_posix())
+        if path is not None:
+            env["PATH"] = path
+        return run_command(
+            (self.bash, str(ROOT / "scripts/git-hooks/framework-hooks.sh"), *args),
+            allowed_executables=(self.bash,),
+            cwd=self.repo,
+            env=env,
+            input_data=stdin,
+            capture_output=True,
+            text=True,
+            timeout_seconds=60,
+        )
+
+    def calls(self) -> list[str]:
+        return self.log.read_text(encoding="utf-8").splitlines()
+
+    def test_repository_virtualenv_layouts_win_and_activate_their_tools(self) -> None:
+        for layout in (".venv/bin/pre-commit", ".venv/Scripts/pre-commit.exe"):
+            with self.subTest(layout=layout):
+                shutil.rmtree(self.repo / ".venv", ignore_errors=True)
+                self.log.unlink(missing_ok=True)
+                self.stub(layout, with_reuse=True)
+                result = self.bridge("pre-commit")
+                self.assertEqual(result.returncode, 0, result.stderr)
+                calls = self.calls()
+                self.assertEqual(len(calls), 2, calls)
+                self.assertEqual(calls[0].split("|")[1], "install-hooks")
+                program, arguments, reuse = calls[1].split("|")
+                self.assertTrue(program.endswith(layout), program)
+                self.assertEqual(arguments, "run")
+                self.assertTrue(reuse.endswith(f"{Path(layout).parent.as_posix()}/reuse"), reuse)
+
+    def test_pre_push_forwards_remote_arguments_and_push_refs(self) -> None:
+        self.stub(".venv/bin/pre-commit")
+        refs = "refs/heads/topic 1111 refs/heads/topic 0000\n"
+        result = self.bridge("pre-push", "origin", "https://example.invalid/x.git", stdin=refs)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = self.calls()
+        self.assertEqual(calls[0].split("|")[1], "install-hooks")
+        self.assertIn(
+            "hook-impl --config=.pre-commit-config.yaml --hook-type=pre-push "
+            "--hook-dir .git/hooks -- origin https://example.invalid/x.git",
+            calls[1],
+        )
+        self.assertEqual(calls[2] + "\n", refs)
+
+    def test_path_fallback_missing_framework_and_unknown_stage(self) -> None:
+        tools = self.repo / "tools"
+        self.stub("tools/pre-commit")
+        env_cmd = shutil.which("env")
+        sys_tools = self.repo / "sys_tools"
+        sys_tools.mkdir(parents=True, exist_ok=True)
+        if env_cmd:
+            env_target = sys_tools / Path(env_cmd).name
+            if not env_target.exists():
+                try:
+                    env_target.symlink_to(env_cmd)
+                except OSError:
+                    shutil.copy(env_cmd, env_target)
+        path = f"{tools}{os.pathsep}{sys_tools}"
+        result = self.bridge("pre-commit", path=path)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = self.calls()
+        self.assertEqual(calls[0].split("|")[1], "install-hooks")
+        program, arguments = calls[1].split("|")[:2]
+        self.assertTrue(program.endswith("/tools/pre-commit"), program)
+        self.assertEqual(arguments, "run")
+        (tools / "pre-commit").unlink()
+        missing = self.bridge("pre-commit", path=path)
+        self.assertEqual(missing.returncode, 1)
+        self.assertIn("pre-commit is missing", missing.stderr)
+        self.stub(".venv/bin/pre-commit")
+        unknown = self.bridge("commit-msg")
+        self.assertEqual(unknown.returncode, 2)
+        self.assertIn("unknown stage", unknown.stderr)
 
 
 if __name__ == "__main__":

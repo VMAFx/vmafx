@@ -64,7 +64,7 @@ class CythonBandDeclaration(unittest.TestCase):
         self.assertRegex(text, NAME + r"\(&aa_dwt2, data_top, buf_sz_one // sizeof\(double\)\)")
 
     def test_planted_regression_is_rejected(self) -> None:
-        stale = "cdef extern from \"x\":\n    char *init_dwt_band_d(adm_dwt_band_t_d *band, char *data_top, size_t buf_sz_one)\n"
+        stale = 'cdef extern from "x":\n    char *init_dwt_band_d(adm_dwt_band_t_d *band, char *data_top, size_t buf_sz_one)\n'
         defined = return_and_params(ADM_C.read_text(encoding="utf-8"), r"static\s+")
         self.assertNotEqual(return_and_params(stale, r"\n\s+"), defined)
 

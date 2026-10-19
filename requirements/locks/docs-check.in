@@ -1,0 +1,6 @@
+# The third-party imports of `make docs-fragments-check` in the Docs job of
+# lint-and-format.yml: jsonschema validates docs/hardware-reports
+# (scripts/ci/check-hardware-reports.py), PyYAML reads docs/credits.yaml
+# (scripts/docs/credits_lib.py, ADR-2485).
+jsonschema==4.26.0
+pyyaml==6.0.3

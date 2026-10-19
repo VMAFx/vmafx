@@ -50,14 +50,6 @@ const (
 	maxNodeSlots             = 64
 )
 
-// controllerConfigKeys lists the underscore-bearing leaf keys of this file and
-// of pkg/controllerclient. nodeEnvOptions appends them to its CompoundKeys.
-var controllerConfigKeys = append([]string{
-	"controller.rpc_timeout",
-	"controller.heartbeat_interval",
-	"controller.poll_interval",
-}, controllerclient.CompoundKeys...)
-
 // controllerConfig is the validated configuration of the controller client.
 type controllerConfig struct {
 	Addr              string

@@ -12,7 +12,7 @@ type: application
 # rollover-changelog-fragments.sh both require exactly one marker per file, so
 # annotating this line too would hard-fail every release preflight.
 version: 0.1.0
-appVersion: "1.0.0-rc.2" # x-release-please-version
+appVersion: "1.0.0-rc.3" # x-release-please-version
 home: https://github.com/VMAFx/vmafx
 sources:
   - https://github.com/VMAFx/vmafx
@@ -28,16 +28,17 @@ maintainers:
   - name: Lusoris
     url: https://github.com/lusoris
 annotations:
-  # The licence of the chart's own files (ADR-1250, ADR-1699); the subchart in
-  # charts/ declares its own. scripts/ci/check_licence_metadata.py checks both.
-  artifacthub.io/license: EUPL-1.2
+  # The licence of the chart's own files (ADR-1250, ADR-1699): values.schema.json
+  # carries Kubernetes types (Apache-2.0, ADR-2350 D13); the subchart in charts/
+  # declares its own. scripts/ci/check_licence_metadata.py checks both.
+  artifacthub.io/license: EUPL-1.2 AND Apache-2.0
 
 dependencies:
   # Optional Prometheus Pushgateway — needed when Jobs push metrics to
   # a central Prometheus instance rather than exposing a scrape endpoint.
   # Disable entirely if you use a scraping Prometheus or another sink.
   - name: prometheus-pushgateway
-    version: ">=3.9.0"
+    version: ">=3.9.1"
     repository: https://prometheus-community.github.io/helm-charts
     condition: pushgateway.enabled
     alias: pushgateway

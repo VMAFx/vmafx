@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD041 MD060 -->
 # ADR-1455: `float_psnr_cuda` adds its squared differences as integers, and is bit-identical to the CPU
 
-- **Status**: Accepted
+- **Status**: Accepted (Superseded-in-part 2026-10-06 by [ADR-1499](1499-float-psnr-twins-cpu-row-order.md) for the bound past 2^53 units for float_psnr_cuda)
 - **Date**: 2026-10-02
 - **Deciders**: lusoris
 - **Tags**: `cuda`, `gpu-parity`, `numerics`, `psnr`, `testing`, `ci`, `rc3`, `fork-local`

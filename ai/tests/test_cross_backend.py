@@ -11,9 +11,11 @@ parity check runs downstream where those providers are installed.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import onnx
+import onnxruntime as ort
 import pandas as pd
 import pytest
 from onnx import TensorProto, helper
@@ -46,14 +48,77 @@ def test_cpu_vs_cpu_is_zero_diff(tmp_path: Path) -> None:
     assert report.ok
 
 
-def test_missing_provider_recorded_not_errored(tmp_path: Path) -> None:
+def test_missing_provider_recorded_and_fails_closed(tmp_path: Path) -> None:
     p = tmp_path / "m.onnx"
     _tiny_mlp(p)
     report = compare_backends(p, providers=["DoesNotExistExecutionProvider"])
     assert "DoesNotExistExecutionProvider" in report.missing
     assert report.comparisons == []
-    # No comparisons → vacuously ok (nothing to compare against).
-    assert report.ok
+    # Nothing was compared, so nothing passed: `all([])` is True and used to make
+    # this report ok (T-TINY-AI-CROSS-DEVICE-PARITY-UNGATED-2026-09-25).
+    assert not report.ok
+    assert report.to_dict()["ok"] is False
+
+
+def test_cpu_only_install_with_default_providers_fails_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No `--provider` on a host whose only provider is the CPU compares nothing: not ok."""
+    p = tmp_path / "m.onnx"
+    _tiny_mlp(p)
+    monkeypatch.setattr(ort, "get_available_providers", lambda: [CPU_PROVIDER])
+    report = compare_backends(p)
+    assert report.comparisons == [] and report.missing == []
+    assert not report.ok
+
+
+def test_one_missing_provider_fails_even_when_another_compared(tmp_path: Path) -> None:
+    p = tmp_path / "m.onnx"
+    _tiny_mlp(p)
+    report = compare_backends(p, providers=[CPU_PROVIDER, "DoesNotExistExecutionProvider"])
+    assert len(report.comparisons) == 1 and report.missing
+    assert not report.ok
+
+
+def test_session_that_falls_back_to_cpu_is_reported_unbound(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ORT builds a session for an unavailable-at-runtime EP on the CPU; that is not a comparison."""
+    p = tmp_path / "m.onnx"
+    _tiny_mlp(p)
+    real = ort.InferenceSession
+
+    class Fallback:
+        def __init__(self, path: str, providers: list[str]) -> None:
+            self._s = real(path, providers=[CPU_PROVIDER])
+
+        def get_inputs(self) -> Any:
+            return self._s.get_inputs()
+
+        def run(self, *a: Any, **k: Any) -> Any:
+            return self._s.run(*a, **k)
+
+        def get_providers(self) -> list[str]:
+            return [CPU_PROVIDER]
+
+    monkeypatch.setattr(
+        ort, "get_available_providers", lambda: [CPU_PROVIDER, "FakeExecutionProvider"]
+    )
+    calls = {"n": 0}
+
+    def factory(path: str, providers: list[str]) -> Any:
+        calls["n"] += 1
+        return (
+            real(path, providers=providers)
+            if providers == [CPU_PROVIDER] and calls["n"] == 1
+            else Fallback(path, providers)
+        )
+
+    monkeypatch.setattr(ort, "InferenceSession", factory)
+    report = compare_backends(p, providers=["FakeExecutionProvider"])
+    assert report.unbound == ["FakeExecutionProvider"]
+    assert report.comparisons == []
+    assert not report.ok
 
 
 def test_synthetic_shape_inference(tmp_path: Path) -> None:

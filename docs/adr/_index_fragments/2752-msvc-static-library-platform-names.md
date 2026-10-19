@@ -1,0 +1,1 @@
+| [ADR-2752](2752-msvc-static-library-platform-names.md) | A static MSVC, clang-cl or icx-cl build installs `vmaf.lib` and `vmafx.lib` (explicit Meson names; `namingscheme` needs Meson 1.10, above the 1.4.0 floor), checked on the MSVC legs by `scripts/ci/check_msvc_library_names.py`. | Accepted | build, windows, packaging, upstream-port |

@@ -131,25 +131,25 @@ func TestProbeCommand(t *testing.T) {
 	shot := pershot.Shot{StartFrame: 480, EndFrame: 720}
 	cfg := predictor.DefaultExtractorConfig()
 
-	got, err := predictor.ProbeCommand(shot, "/src/a.mkv", "libx264", cfg, "/tmp/vstats.txt", 240)
+	got, err := predictor.ProbeCommand(shot, "/src/a.mkv", "libx264", cfg, "/tmp/vstats.txt", 240, 24.0)
 	if err != nil {
 		t.Fatalf("ProbeCommand: %v", err)
 	}
 	want := []string{
 		"ffmpeg", "-hide_banner", "-y",
 		"-vstats_file", "/tmp/vstats.txt",
-		"-ss", "480",
+		"-ss", "20.000000", // frame 480 at 24 fps, in seconds
 		"-i", "/src/a.mkv",
 		"-frames:v", "240",
 		"-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
-		"-an", "-f", "null", "/dev/null",
+		"-an", "-f", "null", os.DevNull,
 	}
 	if !slices.Equal(got, want) {
 		t.Errorf("ProbeCommand mismatch\n got: %v\nwant: %v", got, want)
 	}
 
 	if _, unknownErr := predictor.ProbeCommand(
-		shot, "/src/a.mkv", "libtheora", cfg, "/tmp/v.txt", 10); unknownErr == nil {
+		shot, "/src/a.mkv", "libtheora", cfg, "/tmp/v.txt", 10, 24.0); unknownErr == nil {
 		t.Error("expected an error for an unregistered codec")
 	}
 }
@@ -308,15 +308,15 @@ func TestSignalstatsCommand(t *testing.T) {
 
 	want := []string{
 		"ffmpeg", "-hide_banner",
-		"-ss", "480",
+		"-ss", "20.000000", // frame 480 at 24 fps, in seconds
 		"-i", "/src/a.mkv",
 		"-frames:v", "240",
 		"-vf", "signalstats,metadata=mode=print:file=-",
-		"-f", "null", "/dev/null",
+		"-f", "null", os.DevNull,
 	}
 	got := predictor.SignalstatsCommand(
 		pershot.Shot{StartFrame: 480, EndFrame: 720},
-		"/src/a.mkv", predictor.DefaultExtractorConfig(), 240)
+		"/src/a.mkv", predictor.DefaultExtractorConfig(), 240, 24.0)
 	if !slices.Equal(got, want) {
 		t.Errorf("SignalstatsCommand mismatch\n got: %v\nwant: %v", got, want)
 	}

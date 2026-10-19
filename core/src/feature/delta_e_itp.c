@@ -381,7 +381,7 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     return vmaf_feature_collector_append(feature_collector, "delta_e_itp", score, index);
 }
 
-static int close(VmafFeatureExtractor *fex)
+static int close_fex(VmafFeatureExtractor *fex)
 {
     assert(fex && fex->priv);
     DeltaEItpState *s = fex->priv;
@@ -433,7 +433,7 @@ VmafFeatureExtractor vmaf_fex_delta_e_itp = {
     .name = "delta_e_itp",
     .init = init,
     .extract = extract,
-    .close = close,
+    .close = close_fex,
     .options = options,
     .priv_size = sizeof(DeltaEItpState),
     .provided_features = provided_features,

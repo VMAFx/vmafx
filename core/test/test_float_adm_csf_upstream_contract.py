@@ -60,7 +60,7 @@ BARTEN_REQUIRED = {
         "pow((double)(p_0 * spatial_frequency), (double)p_1)",
         "pow((double)(spatial_frequency / 7), 2)",
         "pow((double)(a * b), 0.5)",
-        "(double)(csf * barten_mtf(spatial_frequency) * barten_rod_cone_sens(adm_csf_lum_level))",
+        "(double)(csf * barten_mtf(spatial_frequency) * barten_rod_cone_sens((float)adm_csf_lum_level))",
     ),
 }
 # An operand promoted before the float operation: the forms PR #44 introduced.

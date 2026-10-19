@@ -74,8 +74,21 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #ifdef _WIN32
+#include <errno.h>
 #include <io.h>
-#define VMAF_OPEN_BIN _open
+#include <share.h>
+/* _sopen_s with _SH_DENYNO is the CRT's non-deprecated spelling of _open() (same sharing). */
+static inline int vmaf_open_bin_crt(const char *path, int oflag, int pmode)
+{
+    int fd = -1;
+    const errno_t err = _sopen_s(&fd, path, oflag, _SH_DENYNO, pmode & (_S_IREAD | _S_IWRITE));
+    if (err != 0) {
+        errno = err;
+        return -1;
+    }
+    return fd;
+}
+#define VMAF_OPEN_BIN vmaf_open_bin_crt
 #define VMAF_FDOPEN_FN _fdopen
 #else
 #include <unistd.h>
@@ -3449,7 +3462,7 @@ bool SVMModelParser<TSource>::parse_header_scalar(std::string &buffer, svm_param
         param.svm_type = -1;
         for (size_t i = 0; svm_type_table[i]; ++i) {
             if (buffer == svm_type_table[i]) {
-                param.svm_type = i;
+                param.svm_type = (int)i;
                 break;
             }
         }
@@ -3459,7 +3472,7 @@ bool SVMModelParser<TSource>::parse_header_scalar(std::string &buffer, svm_param
         exceptAssert(model_source.read_next(buffer), "Failed to read kernel_type.");
         for (size_t i = 0; kernel_type_table[i]; ++i) {
             if (buffer == kernel_type_table[i]) {
-                param.kernel_type = i;
+                param.kernel_type = (int)i;
                 break;
             }
         }

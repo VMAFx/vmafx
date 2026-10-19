@@ -71,7 +71,11 @@ src/qp_report_csv.c|core/src/interop/pelorus_qp_report_csv.c|pelorus/interop.h|l
 src/version.c|core/src/interop/pelorus_version.c|pelorus/pelorus.h|libvmaf/pelorus/pelorus.h
 MANIFEST
 
+# Pelorus headers declare their licence in one SPDX line, which the guard
+# requires. The tag is split so REUSE does not read it as this file's licence.
+spdx_tag='SPDX-''License-Identifier:'
 {
+  printf '/**\n *\n *  Copyright 2026 Lusoris\n *\n * %s EUPL-1.2\n */\n\n' "${spdx_tag}"
   printf '/* reconstructed source fixture */\n'
   awk '/^#include "libvmaf\/pelorus\// { f = 1 } f { print }' \
     "${mirror}/core/test/test_pelorus_interop.c" |
@@ -97,9 +101,11 @@ else
   fail=$((fail + 1))
 fi
 
-# Rewrite bytes portably: BSD sed requires an argument after -i, while GNU sed
-# does not. The fixture exercises the same path on Linux and macOS runners.
-python3 - "${mirror}/scripts/sync-pelorus-interop.sh" "${fixture_pin}" <<'PY'
+# Point the mirror's guard at another pin. Rewrite bytes portably: BSD sed
+# requires an argument after -i, while GNU sed does not. The fixture exercises
+# the same path on Linux and macOS runners.
+repin_mirror() {
+  python3 - "${mirror}/scripts/sync-pelorus-interop.sh" "$1" <<'PY'
 from pathlib import Path
 import re
 import sys
@@ -115,6 +121,8 @@ data, replacements = re.subn(
 assert replacements == 1
 path.write_bytes(data)
 PY
+}
+repin_mirror "${fixture_pin}"
 
 update_output=""
 update_rc=0
@@ -252,6 +260,57 @@ while IFS= read -r suffix; do
   git -C "${mirror}" rm -q -f -- "${extra_source}"
 done < <(python3 "${repo_root}/scripts/ci/pelorus_mirror.py" suffixes)
 expect_clean "unmanifested native mirrors removed"
+
+# A source whose licence header names another identifier, or none, is refused
+# in both modes, and a refused --update leaves every mirrored file as it was.
+# Each case commits one change on a branch of the source repository and pins it.
+mirror_digest() {
+  (cd "${mirror}" && git ls-files -z -- core | xargs -0 sha256sum)
+}
+
+expect_license_refused() {
+  local name="$1" rel="$2" old="$3" new="$4" expected="$5" pin before output rc=0
+  git -C "${source_repo}" checkout -q -b "license-${name// /-}" "${fixture_pin}"
+  python3 - "${source_repo}/libpelorus/${rel}" "${old}" "${new}" <<'PY'
+from pathlib import Path
+import sys
+
+path, old, new = Path(sys.argv[1]), sys.argv[2].encode(), sys.argv[3].encode()
+data = path.read_bytes()
+assert data.count(old) == 1
+path.write_bytes(data.replace(old, new))
+PY
+  git -C "${source_repo}" -c user.name=fixture -c user.email=fixture.invalid \
+    commit -q -a -m "${name}"
+  pin="$(git -C "${source_repo}" rev-parse HEAD)"
+  repin_mirror "${pin}"
+  expect_drift "${name}" "${expected}"
+  before="$(mirror_digest)"
+  output="$(cd "${mirror}" && scripts/sync-pelorus-interop.sh --update "${source_repo}" 2>&1)" ||
+    rc=$?
+  if [[ "${rc}" -eq 0 ]] || ! grep -Fq "${expected}" <<<"${output}"; then
+    printf 'FAIL: --update accepted %s\n%s\n' "${name}" "${output}" >&2
+    fail=$((fail + 1))
+  elif [[ "$(mirror_digest)" != "${before}" ]]; then
+    printf 'FAIL: refused --update for %s changed the mirror\n' "${name}" >&2
+    fail=$((fail + 1))
+  else
+    printf 'PASS: --update refuses %s and leaves the mirror unchanged\n' "${name}"
+  fi
+  git -C "${source_repo}" checkout -q "${fixture_pin}"
+  repin_mirror "${fixture_pin}"
+}
+
+expect_license_refused "source with another licence" "src/version.c" \
+  "${spdx_tag} EUPL-1.2" "${spdx_tag} BSD-2-Clause-Patent" \
+  "Pelorus license header does not declare exactly EUPL-1.2"
+expect_license_refused "source without an SPDX line" "include/pelorus/interop.h" \
+  " * ${spdx_tag} EUPL-1.2" " * Licence: see LICENSE" \
+  "Pelorus license header does not declare exactly EUPL-1.2"
+expect_license_refused "fixture with another licence" "test/interop_test.c" \
+  "${spdx_tag} EUPL-1.2" "${spdx_tag} MIT" \
+  "Pelorus fixture does not declare exactly EUPL-1.2"
+expect_clean "licence cases restored"
 
 workflow="${repo_root}/.github/workflows/lint-and-format.yml"
 for required in \

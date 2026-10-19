@@ -12,22 +12,22 @@ invariant: Every ssimulacra2 init() refuses 4:0:0 first, through vmaf_ss2_check_
 ---
 # SSIMULACRA 2 input pixel formats
 
-- The colour conversion of every ssimulacra2 extractor reads the U and V
-  planes. A 4:0:0 picture has neither (`picture.c` leaves `data[1]` /
-  `data[2]` NULL and their sizes 0), and the chroma reader then clamps its
-  coordinate to -1 and reads before NULL. The CPU extractor crashed that way
-  until `T-SSIMULACRA2-CPU-YUV400-NULL-CHROMA-2026-10-01`, the Metal twin
+- colour conversion of every ssimulacra2 extractor reads U and V
+  planes. 4:0:0 picture has neither (`picture.c` leaves `data[1]` /
+  `data[2]` NULL and their sizes 0), and chroma reader then clamps its
+  coordinate to -1 and reads before NULL. CPU extractor crashed that way
+  until `T-SSIMULACRA2-CPU-YUV400-NULL-CHROMA-2026-10-01`, Metal twin
   until `T-METAL-SSIMULACRA2-YUV400-ACCEPTED-2026-10-05`.
-- `ssimulacra2_pixel_format.h` is the one check. `init()` of the CPU
-  extractor and of the CUDA, SYCL, HIP and Metal twins calls
+- `ssimulacra2_pixel_format.h` is one check. `init()` of CPU
+  extractor and of CUDA, SYCL, HIP and Metal twins calls
   `vmaf_ss2_check_pixel_format(pix_fmt, "<extractor name>")` before it
-  allocates anything; the ADR-1324 context checks use `vmaf_ss2_has_chroma()`.
-  A new twin does the same. Do not add a `VMAF_PIX_FMT_YUV400P` comparison of
+  allocates anything; ADR-1324 context checks use `vmaf_ss2_has_chroma()`.
+  A new twin does same. Do not add `VMAF_PIX_FMT_YUV400P` comparison of
   your own and do not discard `pix_fmt` in `init()`:
   `core/test/test_ssimulacra2_pixel_format_contract.py` fails on either.
-- The header is host code only (it calls `vmaf_log()`). Keep it out of
-  `ssimulacra2_score.h`, which the CUDA and HIP kernels compile as device
+- header is host code only (it calls `vmaf_log()`). Keep it out of
+  `ssimulacra2_score.h`, which CUDA and HIP kernels compile as device
   code.
-- The CPU's message `ssimulacra2: needs a YUV 4:2:0, 4:2:2 or 4:4:4 input,
+- CPU's message `ssimulacra2: needs a YUV 4:2:0, 4:2:2 or 4:4:4 input,
   not 4:0:0` is quoted in `docs/metrics/ssimulacra2.md`;
   `test_ssimulacra2_pixel_format` pins it.

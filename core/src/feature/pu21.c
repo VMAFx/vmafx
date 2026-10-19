@@ -278,7 +278,7 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     return vmaf_feature_collector_append(feature_collector, "pu21_ssim", ssim_score, index);
 }
 
-static int close(VmafFeatureExtractor *fex)
+static int close_fex(VmafFeatureExtractor *fex)
 {
     Pu21State *s = fex->priv;
     if (!s)
@@ -301,7 +301,7 @@ VmafFeatureExtractor vmaf_fex_pu21 = {
     .init = init,
     .extract = extract,
     .options = options,
-    .close = close,
+    .close = close_fex,
     .priv_size = sizeof(Pu21State),
     .provided_features = provided_features,
     /* Per-pixel PU21 encode (double pow) + a double-precision PSNR reduction

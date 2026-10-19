@@ -54,13 +54,11 @@ VMAF_WRAP_EXPORT int __wrap_vmaf_thread_pool_destroy(void *tpool)
     return __real_vmaf_thread_pool_destroy(tpool);
 }
 
-static int g_callbacks;
-
+/* The handler only has to be registered; the watched feature is never produced here. */
 static void count_callback(void *data, VmafMetadata *metadata)
 {
     (void)data;
     (void)metadata;
-    g_callbacks++;
 }
 
 /* Register `model`, free the caller's copy, and make every appended score run

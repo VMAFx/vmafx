@@ -41,8 +41,13 @@
 #ifndef VMAF_SRC_FEATURE_HIP_FLOAT_MOTION_FLOAT_MOTION_ROWS_H_
 #define VMAF_SRC_FEATURE_HIP_FLOAT_MOTION_FLOAT_MOTION_ROWS_H_
 
+#ifdef __cplusplus
+#include <cmath>
+#include <cstddef>
+#else
 #include <math.h>
 #include <stddef.h>
+#endif
 
 #include "../hip_tile_index.h"
 
@@ -122,14 +127,17 @@ VMAF_HIP_HOST_DEVICE float vmaf_hip_float_motion_bilinear(const float *src, unsi
 
 /* The two blurred frames of one plane and the half-size plane
  * motion.c::vmaf_image_sad_c() scales them to. */
-typedef struct VmafHipFloatMotionScale1 {
+struct VmafHipFloatMotionScale1 {
     const float *cur;
     const float *prev;
     unsigned width;
     unsigned height;
     unsigned scaled_width;
     unsigned scaled_height;
-} VmafHipFloatMotionScale1;
+};
+#ifndef __cplusplus
+typedef struct VmafHipFloatMotionScale1 VmafHipFloatMotionScale1;
+#endif
 
 /* Sample (x, y) of the scale-1 term: motion_scale_bilinear() of both frames
  * at that sample, and their absolute difference. */
@@ -159,6 +167,7 @@ static inline double vmaf_hip_float_motion_plane_score(const float *rows, unsign
                                                        unsigned scaled_height)
 {
     float score = (float)vmaf_float_motion_score_from_row_sads(rows, width, height);
+    /* NOLINTNEXTLINE(modernize-use-nullptr) -- C header, MSVC's C mode has no nullptr (ADR-1138) */
     if (scale1_rows != NULL) {
         score +=
             (float)vmaf_float_motion_score_from_row_sads(scale1_rows, scaled_width, scaled_height);

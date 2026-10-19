@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD033 MD038 MD060 -->
 # ADR-0635 — CI Warning Omnibus (2026-05-19)
 
-**Status**: Accepted
+- **Status**: Accepted
 **Date**: 2026-05-19
 **Deciders**: lusoris
 **PR**: chore/ci-warning-omnibus

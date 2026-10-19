@@ -6,12 +6,25 @@ This page covers getting started with the VMAFX Rust bindings.
 ## Overview
 
 The repository ships a Rust workspace at the repo root (`Cargo.toml`,
-edition 2024). It has three members:
+edition 2024). Its members fall into two groups.
+
+Bindings that call libvmaf from Rust:
 
 | Crate | Path | Description |
 |-------|------|-------------|
 | `vmafx-sys` | `bindings/rust/vmafx-sys` | Auto-generated raw FFI bindings plus thin safe wrappers. |
 | `vmafx` | [`bindings/rust/vmafx`](../../bindings/rust/vmafx) | Higher-level safe API (`Context`, `Model`, `Picture`, `Score`; ADR-0929) over `vmafx-sys`. |
+
+Rust code linked into libvmaf (`-Denable_rust_features=true`), a separate
+workspace (`core/src/rust/Cargo.toml`, offline build) described in
+[Rust extractor framework](rust-extractor-framework.md):
+
+| Crate | Path | Description |
+|-------|------|-------------|
+| `vmafx-core-rs` | `core/src/rust/staticlib` | The one Rust archive libvmaf links. |
+| `vmafx-fex` | `core/src/rust/fex` | Framework of the Rust twins of C extractors (ADR-1713). |
+| `vmafx-fex-psnr`, `-speed`, `-motion`, `-adm`, `-cambi` | `core/src/rust/feature/*` | One twin per crate (`psnr` is the reference twin). |
+| `vmafx-predict` | `core/src/rust/predict` | Model prediction (RC4). |
 | `vmafx-tad` | `core/src/feature/rust/tad` | Rust pilot of the Temporal Absolute Difference feature extractor (ADR-0707). |
 
 The crates are versioned independently (currently 0.1.0) and are not
@@ -38,15 +51,21 @@ output.
 
 ### Rust toolchain
 
-Install the stable toolchain via [rustup](https://rustup.rs/):
+The toolchain version is pinned once, as `RUST_VERSION` in `build-config.env`
+([ADR-3318](../adr/3318-rust-toolchain-pin.md)). `rust-toolchain.toml` at the
+repository root names the same version with the `rustfmt` and `clippy`
+components, so [rustup](https://rustup.rs/) installs and selects it on the
+first `cargo` call in the checkout. Install rustup itself:
 
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-rustup component add rustfmt clippy
+cargo --version   # in the checkout: installs and prints the pinned version
 ```
 
-The workspace uses **Rust edition 2024**, which needs Rust 1.85 or newer.
-Any recent stable toolchain is sufficient.
+Every crate inherits `rust-version` from its workspace, so an older `cargo`
+refuses the build with a message that names the required version. The CI
+`Rust` workflow, the dev container and Renovate read the same pin;
+`scripts/ci/check-workflow-versions.py` fails when one of them differs.
 
 ### libvmaf
 
@@ -85,6 +104,25 @@ and the shared library (used by the linker). `LD_LIBRARY_PATH` is for the
 dynamic loader at run time; `build.rs` does not read it. If you also use
 `pkg-config` to inspect the install, add
 `PKG_CONFIG_PATH=$LIBVMAF_PREFIX/lib/pkgconfig`.
+
+#### An older install under the prefix
+
+`build.rs` checks the bindings it generates for every libvmaf name that
+`vmafx-sys` and `vmafx` use. A header from an older install (for example a
+`/usr/local` left from an earlier build) stops the build with the header path
+and the names it lacks:
+
+```text
+Error: "libvmaf header /usr/local/include/libvmaf/libvmaf.h is older than vmafx-sys: it lacks VmafPoolingMethod_VMAF_POOL_METHOD_MEDIAN, ..."
+```
+
+Install the libvmaf of this tree (`meson install` of `core/`) and point
+`LIBVMAF_PREFIX` at that prefix. The API version in `libvmaf/version.h` does
+not tell such installs apart (both report 3.0.0), which is why the check reads
+the names. The list is `REQUIRED_SYMBOLS` in
+`bindings/rust/vmafx-sys/build_support/header_check.rs`;
+`cargo test -p vmafx-sys --test header_check` fails when a crate starts using a
+libvmaf name that the list does not hold.
 
 ## Using `vmafx-sys` as a dependency
 
@@ -213,6 +251,21 @@ crate added to the root `Cargo.toml`). CI (`.github/workflows/rust-ci.yml`) runs
 these two gates, the build, the tests, the golden smoke example and `cargo-deny`
 on every PR touching `bindings/rust/` or the Rust workspace. The required
 contexts are `vmafx-sys CI` and `cargo-deny`.
+
+The job builds libvmaf twice, so it stays inside its 30-minute limit only
+because both builds are trimmed:
+
+- **First build.** This is the CPU build that `vmafx-sys` links. It is
+  configured with `-Denable_tests=false` and installs only the library, the
+  headers and the tools.
+- **Second build.** This is `build-rust`, with `-Denable_rust_features=true`.
+  It builds only `tools/vmaf`, which the twin harness runs. `meson test --suite
+  rust` then builds just the rust suite's test targets.
+
+Building every target compiled the whole C test suite twice: 19 minutes for the
+first build alone on the hosted runner (run 37989639764). Locally, do the same:
+`ninja -C build-rust tools/vmaf`, then
+`python3 scripts/ci/run_meson_test.py -- -C build-rust --suite rust`.
 
 ## Environment variables reference
 

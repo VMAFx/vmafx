@@ -76,15 +76,6 @@
 #include "log.h"
 #include "mem.h"
 
-/* MSVC and MinGW (-std=c11 -> __STRICT_ANSI__) do not expose M_PI from
- * <math.h>; provide the portable fallback the tree already uses elsewhere
- * (cf. core/src/feature/adm_tools.c, integer_ssim.c) so the Windows builds
- * resolve psi_diff's M_PI. Order-independent — no reliance on _USE_MATH_DEFINES
- * preceding a transitive math.h include. */
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
-
 /* Fixed Y-FUNQUE+ recipe constants (verified, ADR-1114). */
 #define YF_LEVELS 2u
 #define YF_NUM_ATOMS 3

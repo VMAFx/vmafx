@@ -104,3 +104,12 @@ Verification command:
 ```bash
 grep -n 'vmafx.gpuResource\|vmafx.backendEnvValue' deploy/helm/vmafx/templates/_helpers.tpl | head -3
 ```
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 11: `The VMAFX fork rebrand (ADR-0686) and cloud-native redesign
+  (ADR-0697)`: Cites nonexistent ADR-0697 (actual cloud-native redesign ADR is
+  ADR-0701). See ADR-0701 (VMAFX cloud-native redesign).

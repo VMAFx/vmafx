@@ -66,7 +66,7 @@ func provideScoringScopes(cfg *config.Config, reg *auth.TenantRegistry) (*scorin
 // splitRoots splits a comma-separated list and drops empty entries.
 func splitRoots(raw string) []string {
 	var out []string
-	for _, r := range strings.Split(raw, ",") {
+	for r := range strings.SplitSeq(raw, ",") {
 		if r = strings.TrimSpace(r); r != "" {
 			out = append(out, r)
 		}

@@ -30,10 +30,21 @@ from . import (
     changelog,
     emit_build,
     emit_c,
+    emit_chart,
+    emit_cli,
     emit_compat,
+    emit_config,
+    emit_conformance,
     emit_docs,
+    emit_ffmpeg_options,
     emit_formats,
+    emit_kube_types,
     emit_layout_test,
+    emit_mcp,
+    emit_openapi,
+    emit_option_docs,
+    emit_platform_proto,
+    emit_proto,
     emit_python,
     emit_rgb,
     emit_symbols,
@@ -42,6 +53,9 @@ from . import (
 from .headers import plan
 from .loader import load
 from .model import Api, DefinitionError
+from .platform import DEFINITION as PLATFORM_DEFINITION
+from .platform import Platform, external_messages, load_platform
+from .splice import spliced
 
 DEFINITION = Path("core/api/vmafx.toml")
 SKIP = 77  # Meson's "test skipped"
@@ -50,20 +64,75 @@ FIXED_OUTPUTS: tuple[tuple[str, Renderer], ...] = (
     ("core/include/vmafx/meson.build", emit_build.header_install),
     ("core/src/vmafx/status_gen.h", emit_c.status_header),
     ("core/src/vmafx/status_gen.c", emit_c.status_source),
-    ("core/src/vmafx/compat_libvmaf_gen.c", emit_compat.compat_source),
+    (emit_compat.PATH, emit_compat.compat_source),
+    (emit_compat.ENGINE_NAMES_PATH, emit_compat.engine_names),
+    (emit_c.COMPAT_STATUS_PATH, emit_c.compat_status_source),
+    (emit_conformance.HEADER_PATH, emit_conformance.header_text),
+    (emit_conformance.TABLE_PATH, emit_conformance.table_text),
     ("core/src/vmafx.map", emit_symbols.version_script),
     ("core/src/vmafx.def", emit_symbols.def_file),
     ("core/src/vmafx_symbols.txt", emit_symbols.symbol_list),
+    ("core/src/libvmaf_symbols.txt", emit_symbols.compat_symbol_list),
     ("core/test/test_vmafx_abi_layout.c", emit_layout_test.layout_test_source),
     ("bindings/python/vmafx/_api.py", emit_python.module_text),
 )
 
 
-def render(api: Api) -> dict[str, str]:
-    """Every generated file: path -> text."""
+OPTION_OUTPUTS: tuple[tuple[str, Renderer], ...] = (
+    ("core/tools/cli_options.gen.inc", emit_cli.include_text),
+    *((path, emit_mcp.options_json) for path in emit_mcp.OUTPUTS),
+    (emit_proto.PATH, emit_proto.proto_text),
+    (emit_openapi.COMPONENTS_PATH, emit_openapi.components_text),
+    (emit_ffmpeg_options.PATH, emit_ffmpeg_options.header_text),
+)
+
+
+def regions(api: Api, root: Path) -> dict[str, str]:
+    """Hand-written files with a generated region (option tables, server schemas)."""
+    files = emit_option_docs.pages(api, root)
+    begin, end = emit_openapi.BEGIN, emit_openapi.END
+    files[emit_openapi.SERVER_SPEC] = spliced(
+        root, emit_openapi.SERVER_SPEC, begin, end, emit_openapi.schema_lines(api)
+    )
+    return files
+
+
+def platform_of(api: Api, root: Path) -> Platform | None:
+    """The platform definition under `root` (ADR-2350), None when it has none."""
+    path = root / PLATFORM_DEFINITION
+    if not path.exists():
+        return None
+    external = external_messages(
+        api, emit_proto.IMPORT_PATH, emit_proto.PACKAGE, emit_proto.GO_PACKAGE
+    )
+    return load_platform(path, external)
+
+
+def render(api: Api, root: Path | None = None, platform: Platform | None = None) -> dict[str, str]:
+    """Every generated file: path -> text. With `root`, also the generated
+    regions of the hand-written files under it; option-group outputs only when
+    the definition has option groups; the platform's protobuf files with a
+    platform definition."""
     files = {f"core/include/{p.header.path}": emit_c.header_text(api, p) for p in plan(api)}
     files.update({path: renderer(api) for path, renderer in FIXED_OUTPUTS})
+    for backend in emit_symbols.legacy_backends(api):
+        files[emit_symbols.legacy_map_path(backend)] = emit_symbols.legacy_version_script(
+            api, backend
+        )
     files.update(dict(emit_docs.pages(api)))
+    if api.option_groups:
+        files.update({path: renderer(api) for path, renderer in OPTION_OUTPUTS})
+        if root is not None:
+            files.update(regions(api, root))
+    if platform is not None:
+        files.update(emit_platform_proto.files(platform))
+        files.update(emit_kube_types.files(platform.kube))
+        if platform.chart is not None:
+            files.update(emit_chart.files(platform.chart, platform.kubernetes))
+        if platform.config is not None:
+            files.update(emit_config.files(platform.config))
+            if root is not None:
+                files.update(emit_config.pages(platform.config, root))
     files.update(dict(emit_formats.outputs(api)))
     files.update(dict(emit_rgb.outputs(api)))
     return files
@@ -96,10 +165,13 @@ def check(root: Path, files: dict[str, str]) -> int:
         )
         print("\n".join(list(diff)[:40]))
     if stale:
-        print(f"{len(stale)} generated file(s) differ from {DEFINITION}: {', '.join(stale)}")
+        print(
+            f"{len(stale)} generated file(s) differ from {DEFINITION} or "
+            f"{PLATFORM_DEFINITION}: {', '.join(stale)}"
+        )
         print("Run: python3 scripts/codegen/vmafx-api.py --write (never edit generated files)")
         return 1
-    print(f"{len(files)} generated files match {DEFINITION}")
+    print(f"{len(files)} generated files match {DEFINITION} and {PLATFORM_DEFINITION}")
     return 0
 
 
@@ -154,7 +226,7 @@ def _run(root: Path, args: argparse.Namespace) -> int:
     if args.changelog:
         print(changelog.draft(_old_definition(root, args)[0], api), end="")
         return 0
-    files = render(api)
+    files = render(api, root, platform_of(api, root))
     return write(root, files) if args.write else check(root, files)
 
 

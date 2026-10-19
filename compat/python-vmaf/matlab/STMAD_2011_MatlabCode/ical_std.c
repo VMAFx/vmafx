@@ -11,8 +11,14 @@
 static void block_mean_and_std(const double *xVal, const double *yVal, double *outStd,
                                double *outMean, int rowLen, int colLen)
 {
-    double mean, mean2, stdev, tmp1;
-    int i, j, iB, jB;
+    double mean;
+    double mean2;
+    double stdev;
+    double tmp1;
+    int i;
+    int j;
+    int iB;
+    int jB;
 
     /*Copy matrix while multiplying each point by 2*/
     for (i = 0; i < rowLen - 15; i += 4) {
@@ -54,8 +60,13 @@ static void block_mean_and_std(const double *xVal, const double *yVal, double *o
 static void block_modified_std(const double *yVal, double *outStdMod, double *TMP, int rowLen,
                                int colLen)
 {
-    double mean, stdev, tmp1;
-    int i, j, iB, jB;
+    double mean;
+    double stdev;
+    double tmp1;
+    int i;
+    int j;
+    int iB;
+    int jB;
 
     for (i = 0; i < rowLen - 15; i += 4) {
         for (j = 0; j < colLen - 15; j += 4) {
@@ -94,7 +105,10 @@ static void block_modified_std(const double *yVal, double *outStdMod, double *TM
 static void block_min_filter(double *outStdMod, const double *TMP, int rowLen, int colLen)
 {
     double mean;
-    int i, j, iB, jB;
+    int i;
+    int j;
+    int iB;
+    int jB;
 
     for (i = 0; i < rowLen - 15; i += 4) {
         for (j = 0; j < colLen - 15; j += 4) {
@@ -115,7 +129,7 @@ static void block_min_filter(double *outStdMod, const double *TMP, int rowLen, i
     }
 }
 
-void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
+void mexFunction(int /* nlhs */, mxArray *plhs[], int /* nrhs */, const mxArray *prhs[])
 {
     /* We have input of one double type matrix*/
     /* this function calculates the local mean, std, skewness, and kurtosis*/
@@ -124,10 +138,17 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
     /*---Inside mexFunction---*/
 
     /*Declarations*/
-    mxArray *xData, *yData;
-    double *xVal, *yVal, *outStd, *outStdMod, *outMean;
+    mxArray *xData;
+    mxArray *yData;
+    double *xVal;
+    double *yVal;
+    double *outStd;
+    double *outStdMod;
+    double *outMean;
+    mxArray *tmp_array;
     double *TMP;
-    int rowLen, colLen;
+    int rowLen;
+    int colLen;
 
     /*Copy input pointer x*/
     xData = prhs[0];
@@ -135,8 +156,6 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
 
     /*Get matrix x*/
     xVal = mxGetPr(xData);
-    rowLen = mxGetN(xData);
-    colLen = mxGetM(xData);
 
     /*Get matrix y*/
     yVal = mxGetPr(yData);
@@ -156,7 +175,8 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
     plhs[2] = mxCreateDoubleMatrix(colLen, rowLen, mxREAL); /*mxReal is our data-type*/
     outMean = mxGetPr(plhs[2]);
 
-    TMP = mxGetPr(mxCreateDoubleMatrix(colLen, rowLen, mxREAL));
+    tmp_array = mxCreateDoubleMatrix(colLen, rowLen, mxREAL);
+    TMP = mxGetPr(tmp_array);
 
     block_mean_and_std(xVal, yVal, outStd, outMean, rowLen, colLen);
 
@@ -167,7 +187,5 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
 
     block_min_filter(outStdMod, TMP, rowLen, colLen);
 
-    mxDestroyArray(TMP);
-
-    return;
+    mxDestroyArray(tmp_array);
 }

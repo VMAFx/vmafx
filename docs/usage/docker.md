@@ -83,12 +83,31 @@ An explicit `--backend` that the image does not provide fails with exit code
     never on a host
     ([ADR-1102](../adr/1102-phase4b9-container-only-publishing.md)).
 
+## Image security and scanning
+
+Published container images and repository Dockerfiles are validated for security
+hygiene, supply-chain provenance, and vulnerability posture:
+
+- **Non-root execution:** Published production runtime images run as unprivileged
+  UID/GID 65532 ([ADR-0878](../adr/0878-trivy-container-scan-baseline.md)).
+- **IaC configuration linting:** The CI `Trivy Config + FS` job runs `trivy config`
+  on every pull request to enforce Dockerfile best practices and CIS benchmarks.
+  Known non-runtime exceptions (such as developer sandboxes and intermediate build
+  stages) are tracked with category and expiry in `.trivyignore.yaml`
+  ([ADR-3330](../adr/3330-ci-trivy-config-fs.md)).
+- **Vulnerability and secret scanning:** CI runs `trivy fs` over the repository
+  filesystem with vulnerability and secret scanners (`--scanners vuln,secret`)
+  to guard against known CVEs and credential leaks.
+- **Signing and SBOM:** Published images are signed with keyless Sigstore cosign
+  and carry CycloneDX and SPDX SBOM attestations
+  ([verifying image provenance](../development/docker-production.md#verifying-image-provenance)).
+
 ## Dockerfiles in the repository
 
 | File | Produces | Entry point |
 | --- | --- | --- |
 | [`Dockerfile`](../../Dockerfile) | `libvmaf` plus FFmpeg with the fork's patch series; CUDA on by default | `ffmpeg` |
-| [`Dockerfile.ffmpeg`](../../Dockerfile.ffmpeg) | FFmpeg with NVIDIA nv-codec headers, so hardware decoders feed `libvmaf_cuda` on the GPU; built `FROM vmaf:latest` | `ffmpeg` |
+| [`Dockerfile.ffmpeg`](../../Dockerfile.ffmpeg) | FFmpeg with NVIDIA nv-codec headers, so hardware decoders feed `libvmaf_cuda` on the GPU; built on the local `vmaf` image, selected by digest | `ffmpeg` |
 | [`docker/Dockerfile.production`](../../docker/Dockerfile.production) | The published CPU image (`--target cli`) and the MCP server image (`--target server`) | `vmaf` / `vmaf-mcp` |
 | [`docker/Dockerfile.production-gpu`](../../docker/Dockerfile.production-gpu) | The published CUDA, ROCm and oneAPI images | `vmaf` |
 | [`Dockerfile.go-server`](../../Dockerfile.go-server), `docker/Dockerfile.controller`, `.node`, `.operator` | The Go services `vmafx-server`, `vmafx-controller`, `vmafx-node` and `vmafx-operator` | the service binary |
@@ -159,12 +178,17 @@ docker run --rm vmaf -h filter=libvmaf
 
 3. Optionally, build the dedicated FFmpeg image so that decoding also happens
    on the GPU. CUDA keeps the metric fast, but the `vmaf` CLI is usually
-   I/O-bound for compressed inputs. `Dockerfile.ffmpeg` starts `FROM
-   vmaf:latest`, so the `docker build -t vmaf .` above must have run on the same
-   machine first:
+   I/O-bound for compressed inputs. `Dockerfile.ffmpeg` builds on the local
+   `vmaf` image and pins it by digest so the base image is exact and satisfies
+   OpenSSF Scorecard Pinned-Dependencies requirements. The `docker build -t
+   vmaf .` command above must have run on the same machine first. Pass the
+   base image digest via `--build-arg VMAF_IMAGE_DIGEST`; building without this
+   argument fails because the base digest is required:
 
     ```bash
-    docker build -f Dockerfile.ffmpeg -t ffmpeg_vmaf .
+    docker build -f Dockerfile.ffmpeg \
+      --build-arg VMAF_IMAGE_DIGEST=$(docker image inspect --format '{{.Id}}' vmaf | cut -d: -f2) \
+      -t ffmpeg_vmaf .
     ```
 
 Example on two HEVC bitstreams:

@@ -20,12 +20,12 @@
 
 // test.h declares run_tests() without extern "C"; wrap it so the C test harness
 // (test.c, compiled as C) can link the symbol from this C++ TU.
-extern "C" {
+#include <cerrno>
 #include <cstring>
 
+extern "C" {
 #include "test.h"
 }
-#include <cerrno>
 
 #include "dict.h"
 #include "libvmaf/feature.h"

@@ -1,6 +1,11 @@
 // Copyright 2026 Lusoris
 // SPDX-License-Identifier: EUPL-1.2
 
+//go:build linux
+
+// The loader attaches Linux tracepoints (cilium/ebpf link.Tracepoint), so the
+// package builds on Linux only (ADR-0996); gen.go keeps it non-empty elsewhere.
+
 // Package bpf provides the Go-side loader for the rclone FUSE bypass eBPF
 // program (ADR-0779).
 //

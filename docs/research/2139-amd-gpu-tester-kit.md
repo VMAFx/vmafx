@@ -3,7 +3,7 @@
 
 - **Date**: 2026-10-03
 - **Status**: input to [ADR-1511](../adr/1511-amd-gpu-tester-image.md)
-- **Measured on**: the `gfx1036` graphics of the Ryzen 9 9950X3D in `ryzen-4090-arc`
+- **Measured on**: the `gfx1036` graphics of the Ryzen 9 9950X3D in a reference workstation
   (RDNA2, 2 compute units, Linux 7.2.8, `amdgpu`), Docker 29.8.2, in the image built from
   `docker/Dockerfile.tester --target final-hip` (ROCm 10.0.0 runtime; the host has ROCm
   7.2.4, which the image does not use).

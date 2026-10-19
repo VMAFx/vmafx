@@ -3,7 +3,13 @@ name: Praetor API Compatibility
 
 'on':
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
+    branches: ['master']
+  merge_group:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -14,12 +20,27 @@ jobs:
     runs-on: ubuntu-26.04
     timeout-minutes: 60
     steps:
+      - name: Stop on a draft pull request
+        if: github.event.pull_request.draft == true
+        shell: bash
+        env:
+          TITLE: Gate not run on a draft
+          MESSAGE: >-
+            The gate did not run because the pull request is a draft.
+            It runs when the pull request is marked ready for review.
+        run: |
+          echo "::error title=$TITLE::$MESSAGE"
+          echo "$MESSAGE" >> "$GITHUB_STEP_SUMMARY"
+          exit 1
       - name: Checkout source
+        if: github.event.pull_request.draft != true
         # yamllint disable-line rule:line-length
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
       - name: Setup Go
+        if: github.event.pull_request.draft != true
         # yamllint disable-line rule:line-length
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
         with:
@@ -27,6 +48,7 @@ jobs:
           cache: false
       # yamllint disable rule:line-length
       - name: Restore Go module cache
+        if: github.event.pull_request.draft != true
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
           path: ~/go/pkg/mod
@@ -34,6 +56,7 @@ jobs:
           restore-keys: |
             gomod-${{ runner.os }}-${{ runner.arch }}-
       - name: Restore Go build cache
+        if: github.event.pull_request.draft != true
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
           path: ~/.cache/go-build
@@ -43,6 +66,8 @@ jobs:
             gobuild-${{ runner.os }}-${{ runner.arch }}-api-compatibility-
       # yamllint enable rule:line-length
       - name: Compare the API of every Go module
+        if: github.event.pull_request.draft != true
         env:
           BASE: ${{ github.event.pull_request.base.sha }}
+          GOTOOLCHAIN: auto
         run: go run tools/apicompat/gate/main.go -base="$BASE"

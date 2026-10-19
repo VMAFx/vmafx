@@ -15,6 +15,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+
+	"github.com/VMAFx/vmafx/internal/execstub"
 )
 
 // writeShim writes a shell script at dir/name that echoes payload to
@@ -23,9 +25,7 @@ func writeShim(t *testing.T, dir, name, payload string) {
 	t.Helper()
 	script := "#!/bin/sh\ncat <<'__VMAFX_EOF__'\n" + payload + "\n__VMAFX_EOF__\n"
 	path := filepath.Join(dir, name)
-	if err := os.WriteFile(path, []byte(script), 0o700); err != nil {
-		t.Fatalf("writeShim(%s): %v", name, err)
-	}
+	execstub.Write(t, path, []byte(script))
 }
 
 // withPATH replaces $PATH with the supplied prefix + the original value

@@ -32,6 +32,7 @@
  *  smaller than a tile (cuda_tile_index.h).
  */
 
+#include "cuda_device_ptr.cuh"
 #include "cuda_helper.cuh"
 #include "common.h"
 
@@ -40,42 +41,46 @@
 
 #define FVIF_MAX_TILE_W (FVIF_BX + 2 * FVIF_MAX_HFW)
 
+namespace
+{
+
 /* picture_copy() with offset -128: an 8-bit sample as is, a 10-, 12- or
  * 16-bit sample divided by 4, 16 or 256 (exact in fp32). */
-__device__ static __forceinline__ float fvif_read_raw(const uint8_t *plane, ptrdiff_t stride_bytes,
-                                                      int y, int x, unsigned bpc)
+__device__ __forceinline__ float fvif_read_raw(const uint8_t *plane, ptrdiff_t stride_bytes, int y,
+                                               int x, unsigned bpc)
 {
     if (bpc <= 8u)
         return FVIF_FSUB((float)plane[y * stride_bytes + x], 128.0f);
     const uint16_t v = reinterpret_cast<const uint16_t *>(plane + y * stride_bytes)[x];
     float scaler = 1.0f;
-    if (bpc == 10u)
+    if (bpc == 10u) {
         scaler = 4.0f;
-    else if (bpc == 12u)
+    } else if (bpc == 12u) {
         scaler = 16.0f;
-    else if (bpc == 16u)
+    } else if (bpc == 16u) {
         scaler = 256.0f;
+    }
     return FVIF_FSUB(FVIF_FDIV((float)v, scaler), 128.0f);
 }
 
 /* One sample of each input plane at (x, y), already inside the plane. */
-__device__ static __forceinline__ void fvif_read_pair(const FloatVifCudaInput &in, int y, int x,
-                                                      float *ref, float *dis)
+__device__ __forceinline__ void fvif_read_pair(const FloatVifCudaInput &in, int y, int x,
+                                               float *ref, float *dis)
 {
     if (in.is_raw != 0u) {
-        *ref = fvif_read_raw(reinterpret_cast<const uint8_t *>(in.ref), (ptrdiff_t)in.stride, y, x,
+        *ref = fvif_read_raw(VMAF_CUDA_DPTR(const uint8_t, in.ref), (ptrdiff_t)in.stride, y, x,
                              in.bpc);
-        *dis = fvif_read_raw(reinterpret_cast<const uint8_t *>(in.dis), (ptrdiff_t)in.stride, y, x,
+        *dis = fvif_read_raw(VMAF_CUDA_DPTR(const uint8_t, in.dis), (ptrdiff_t)in.stride, y, x,
                              in.bpc);
         return;
     }
     const size_t at = (size_t)y * (size_t)in.stride + (size_t)x;
-    *ref = reinterpret_cast<const float *>(in.ref)[at];
-    *dis = reinterpret_cast<const float *>(in.dis)[at];
+    *ref = VMAF_CUDA_DPTR(const float, in.ref)[at];
+    *dis = VMAF_CUDA_DPTR(const float, in.dis)[at];
 }
 
 /* Reflect-101 for a consumed sample, clamped for one that is not. */
-__device__ static __forceinline__ int fvif_plane_index(int idx, int extent)
+__device__ __forceinline__ int fvif_plane_index(int idx, int extent)
 {
     return vmaf_cuda_tile_index(vmaf_cuda_reflect_101(idx, extent), extent);
 }
@@ -92,8 +97,8 @@ struct FvifMoments {
 
 /* Phase 1: this thread's share of the block's tile, mirrored at the plane
  * edges. The tile is the block plus `hfw` samples on every side. */
-__device__ static __forceinline__ void fvif_load_tile(const FloatVifCudaInput &in, int hfw,
-                                                      float *s_ref, float *s_dis)
+__device__ __forceinline__ void fvif_load_tile(const FloatVifCudaInput &in, int hfw, float *s_ref,
+                                               float *s_dis)
 {
     const int tile_w = FVIF_BX + 2 * hfw;
     const int tile_h = FVIF_BY + 2 * hfw;
@@ -111,9 +116,8 @@ __device__ static __forceinline__ void fvif_load_tile(const FloatVifCudaInput &i
 }
 
 /* Phase 2: this thread's share of the vertical pass, taps in order. */
-__device__ static __forceinline__ void fvif_vertical_pass(const FloatVifCudaTaps &taps,
-                                                          const float *s_ref, const float *s_dis,
-                                                          FvifMoments *v)
+__device__ __forceinline__ void fvif_vertical_pass(const FloatVifCudaTaps &taps, const float *s_ref,
+                                                   const float *s_dis, FvifMoments *v)
 {
     const int tile_w = FVIF_BX + 2 * (taps.width / 2);
     const int lid = (int)threadIdx.y * FVIF_BX + (int)threadIdx.x;
@@ -145,8 +149,8 @@ __device__ static __forceinline__ void fvif_vertical_pass(const FloatVifCudaTaps
 
 /* Phase 3: this thread's pixel. The horizontal pass over the vertically
  * filtered moments, then the statistic. */
-__device__ static __forceinline__ void
-fvif_pixel_terms(const FloatVifCudaComputeArgs &args, const FvifMoments *v, float *num, float *den)
+__device__ __forceinline__ void fvif_pixel_terms(const FloatVifCudaComputeArgs &args,
+                                                 const FvifMoments *v, float *num, float *den)
 {
     const int at = (int)threadIdx.y * FVIF_MAX_TILE_W + (int)threadIdx.x;
     float mu1 = 0.0f;
@@ -165,6 +169,8 @@ fvif_pixel_terms(const FloatVifCudaComputeArgs &args, const FvifMoments *v, floa
     fvif_pixel_statistic(mu1, mu2, xx, yy, xy, args.sigma_max_inv, args.vif_enhn_gain_limit,
                          args.vif_sigma_nsq, num, den);
 }
+
+} /* namespace */
 
 extern "C" {
 
@@ -191,7 +197,7 @@ __global__ void __launch_bounds__(FVIF_BX *FVIF_BY) float_vif_compute(FloatVifCu
     float den = 0.0f;
     fvif_pixel_terms(args, &s_v, &num, &den);
 
-    float *terms = reinterpret_cast<float *>(args.terms);
+    float *terms = VMAF_CUDA_DPTR(float, args.terms);
     const size_t at = fvif_term_index(gx, gy, args.in.height);
     terms[at] = num;
     terms[at + 1u] = den;
@@ -205,9 +211,8 @@ __global__ void __launch_bounds__(FVIF_ROW_THREADS) float_vif_row_sums(FloatVifC
         return;
     float num = 0.0f;
     float den = 0.0f;
-    fvif_row_sum(reinterpret_cast<const float *>(args.terms), args.width, args.height, y, &num,
-                 &den);
-    float *rows = reinterpret_cast<float *>(args.rows);
+    fvif_row_sum(VMAF_CUDA_DPTR(const float, args.terms), args.width, args.height, y, &num, &den);
+    float *rows = VMAF_CUDA_DPTR(float, args.rows);
     rows[(size_t)y * FVIF_TERM_FLOATS] = num;
     rows[(size_t)y * FVIF_TERM_FLOATS + 1u] = den;
 }
@@ -221,7 +226,9 @@ __global__ void __launch_bounds__(FVIF_BX *FVIF_BY)
 {
     const int gx = blockIdx.x * FVIF_BX + threadIdx.x;
     const int gy = blockIdx.y * FVIF_BY + threadIdx.y;
-    if (gx >= (int)args.out_width || gy >= (int)args.out_height)
+    const int out_w = (int)args.out_width;
+    const int out_h = (int)args.out_height;
+    if (gx >= out_w || gy >= out_h)
         return;
 
     const int fw = args.taps.width;
@@ -251,8 +258,8 @@ __global__ void __launch_bounds__(FVIF_BX *FVIF_BY)
     }
 
     const size_t at = (size_t)gy * (size_t)args.out_width + (size_t)gx;
-    reinterpret_cast<float *>(args.ref_out)[at] = acc_ref;
-    reinterpret_cast<float *>(args.dis_out)[at] = acc_dis;
+    VMAF_CUDA_DPTR(float, args.ref_out)[at] = acc_ref;
+    VMAF_CUDA_DPTR(float, args.dis_out)[at] = acc_dis;
 }
 
 } /* extern "C" */

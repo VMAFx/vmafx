@@ -15,7 +15,7 @@ invariant: Private forced-inline helpers in vif_avx512.c pass aggregate vector s
 
 | Group | TUs that move in lockstep |
 | --- | --- |
-| **`vif_subsample_rd_8` noinline helpers** (ADR-0503) | `vif_avx512.c` (`vif_subsample_rd_8_vert_j` + `vif_subsample_rd_8_horiz_j`). These are `static __attribute__((noinline))` helpers carved from `vif_subsample_rd_8_avx512` to eliminate a ~30-ZMM live-set spill cluster. **Do NOT mark them `inline`, `always_inline`, or remove `noinline` — doing so re-merges the vertical and horizontal register live-sets back into the caller frame and restores the spill cluster.** Any change to the accumulation order inside these helpers breaks ADR-0138 / 0139 bit-exactness. |
+| **`vif_subsample_rd_8` noinline helpers** (ADR-0503) | `vif_avx512.c` (`vif_subsample_rd_8_vert_j` + `vif_subsample_rd_8_horiz_j`). These are `static __attribute__((noinline))` helpers carved from `vif_subsample_rd_8_avx512` to eliminate a ~30-ZMM live-set spill cluster. **Do NOT mark them `inline`, `always_inline`, or remove `noinline` — doing so re-merges vertical and horizontal register live-sets back into caller frame and restores spill cluster.** Any change to accumulation order inside these helpers breaks ADR-0138 / 0139 bit-exactness. |
 
 - `float_vif` filters = run-time `vif_get_filter()` since ADR-0416
   (#758); `vif_filter1d_table_s` no longer exists. AVX2 convolution
@@ -69,10 +69,10 @@ than by value. Under System V AMD64 and Windows x64 ABIs, aggregates > 64 bytes
 cannot be passed in vector registers; passing them by value forces caller stack
 allocation and copies when out of line, triggering CodeQL `cpp/large-parameter`
 alerts 1108–1112. Under GCC 16 x86-64 System V ABI `-O3`, inlining folds
-pointer dereferences without changing the hot `.text` section (verified by a
-byte-for-byte comparison against an independently built `origin/master`
-object). The host structural stack scanner is clean, while definitive Win64
-acceptance remains the hosted MinGW build because no cross compiler is
+pointer dereferences without changing hot `.text` section (verified by
+byte-for-byte comparison against independently built `origin/master`
+object). host structural stack scanner is clean, while definitive Win64
+acceptance remains hosted MinGW build because no cross compiler is
 installed locally. Do not revert these internal parameters to pass-by-value on
 rebase. Public API signatures in `vif_avx512.h` remain unchanged. See
 [Research-2098](../../../../../docs/research/2098-vif-avx512-large-parameter-codeql.md).

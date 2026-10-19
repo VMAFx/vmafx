@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-0600: Port upstream USE_DIRECT_READ zero-copy input path (Netflix/vmaf@30a6e2a8d)
 
-- **Status**: Accepted
+- **Status**: Accepted (Superseded-in-part 2026-10-06 by [ADR-0984](0984-port-upstream-netflix-may-jun-2026.md) for the compile-time USE_DIRECT_READ flag)
 - **Date**: 2026-05-18
 - **Deciders**: lusoris
 - **Tags**: `upstream-port`, `performance`, `tools`, `cli`, `build`

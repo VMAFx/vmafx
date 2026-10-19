@@ -1391,7 +1391,7 @@ static FORCE_INLINE __m512i cm_row_pass_avx512(const AdmCmCtx *c, int i, const A
  * row that reaches the first or the last column needs the mirrored
  * neighbourhood, and a row narrower than a block has no block to overlap:
  * both stay scalar. */
-static void cm_row_avx512(const AdmCmCtx *c, int i, const AdmCmBounds *bd, int64_t inner[3])
+static void cm_row_avx512(const AdmCmCtx *c, int i, const AdmCmBounds *bd, uint64_t inner[3])
 {
     if (bd->left_edge || bd->right_edge || (bd->end_col - bd->start_col) < 14) {
         adm_cm_row(c, i, bd, inner);
@@ -1406,7 +1406,7 @@ static void cm_row_avx512(const AdmCmCtx *c, int i, const AdmCmBounds *bd, int64
         (void)cm_row_pass_avx512(c, i, bd, true, accum_lo, accum_hi);
     }
     for (int b = 0; b < 3; ++b) {
-        inner[b] += hsum_epi64(_mm512_add_epi64(accum_lo[b], accum_hi[b]));
+        inner[b] += hsum_epu64(_mm512_add_epi64(accum_lo[b], accum_hi[b]));
     }
 }
 
@@ -1423,7 +1423,7 @@ float adm_cm_avx512(AdmBuffer *buf, int w, int h, int src_stride, int csf_a_stri
     const CmFrameConsts frame = cm_frame_consts_avx512(&c);
     c.row_data = &frame;
 
-    int64_t accum[3] = {0, 0, 0};
+    uint64_t accum[3] = {0, 0, 0};
     adm_cm_rows(&c, &bd, cm_row_avx512, accum);
     return adm_cm_result(&c, &bd, accum, adm_noise_weight, adm_p_norm);
 }

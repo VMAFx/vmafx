@@ -26,6 +26,8 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/VMAFx/vmafx/internal/execstub"
+	"github.com/VMAFx/vmafx/internal/oteltest"
 	"github.com/VMAFx/vmafx/pkg/libvmaf"
 	"github.com/VMAFx/vmafx/pkg/observability"
 )
@@ -64,9 +66,7 @@ fi
 exit 0
 `
 	p := filepath.Join(dir, "vmaf")
-	if err := os.WriteFile(p, []byte(script), 0o700); err != nil {
-		t.Fatalf("writeVmafStub: %v", err)
-	}
+	execstub.Write(t, p, []byte(script))
 	return p
 }
 
@@ -90,7 +90,7 @@ func newTestHTTPServer(t *testing.T) (*httpServer, *prometheus.Registry) {
 		t.Fatalf("libvmaf.New: %v", err)
 	}
 	reg := prometheus.NewRegistry()
-	metrics := observability.NewMetrics(reg)
+	metrics := oteltest.Metrics(t, reg)
 	log := observability.NewLogger("ERROR") // suppress noise in tests
 	return newHTTPServer(scorer, allowAllScopes(), metrics, reg, nil, log), reg
 }
@@ -144,7 +144,7 @@ func TestReadyEndpoint(t *testing.T) {
 // TestReadyEndpointNotReady verifies that /readyz returns 503 when scorer is nil.
 func TestReadyEndpointNotReady(t *testing.T) {
 	reg := prometheus.NewRegistry()
-	metrics := observability.NewMetrics(reg)
+	metrics := oteltest.Metrics(t, reg)
 	log := observability.NewLogger("ERROR")
 	hs := newHTTPServer(nil, allowAllScopes(), metrics, reg, nil, log) // nil scorer → not ready
 	mux := http.NewServeMux()

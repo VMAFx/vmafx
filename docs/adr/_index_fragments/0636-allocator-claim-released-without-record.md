@@ -1,0 +1,1 @@
+| [ADR-0636](0636-allocator-claim-released-without-record.md) | Tombstone: ADR number claimed from the allocator and never used; written on 2026-10-06 for a number that is cited but had no file. | Deprecated | tombstone, process |

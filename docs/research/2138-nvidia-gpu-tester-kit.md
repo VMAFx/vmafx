@@ -3,7 +3,7 @@
 
 - **Date**: 2026-10-03
 - **Status**: input to [ADR-1509](../adr/1509-nvidia-gpu-tester-image.md)
-- **Measured on**: RTX 4090 (compute capability 8.9) of `ryzen-4090-arc`, NVIDIA
+- **Measured on**: RTX 4090 (compute capability 8.9) of a reference workstation, NVIDIA
   driver 615.71.09 (CUDA 13.4), NVIDIA Container Toolkit 1.20.0, Docker 29.8.2, in the
   image built from `docker/Dockerfile.tester --target final-cuda`.
 

@@ -125,7 +125,7 @@ func registerPredictFlags(cmd *cobra.Command, flags *predictFlags) {
 	cmd.Flags().StringVar(&flags.reportOut, "report-out", "",
 		"Write the validation report here (default: stdout)")
 	cmd.Flags().BoolVar(&flags.withUncertainty, "with-uncertainty", false,
-		"Emit conformal prediction intervals alongside each predicted VMAF (ADR-0279)")
+		"Emit conformal prediction intervals alongside each predicted VMAF (ADR-0393)")
 	cmd.Flags().StringVar(&flags.calibrationSidecar, "calibration-sidecar", "",
 		"Split-conformal calibration JSON; without one the intervals are degenerate")
 	cmd.Flags().Float64Var(&flags.alpha, "alpha", math.NaN(),

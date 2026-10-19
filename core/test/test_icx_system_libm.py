@@ -268,34 +268,57 @@ class ParserTest(unittest.TestCase):
 
 
 class LibcDetectionTest(unittest.TestCase):
-    """The glibc probe answers on every platform instead of raising."""
+    """The glibc probe answers on every platform instead of raising.
+
+    Windows' os module has no confstr, so every patch of it here may create
+    the attribute (`create=True`): without it mock.patch.object raises
+    AttributeError before the case runs (T-ICX-LIBM-TEST-CONFSTR-WINDOWS-2026-10-06).
+    """
 
     def test_confstr_value_error_means_no_glibc(self) -> None:
         # macOS: os.confstr("CS_GNU_LIBC_VERSION") raises ValueError.
         with mock.patch.object(
-            os, "confstr", side_effect=ValueError("unrecognized configuration name")
+            os, "confstr", create=True, side_effect=ValueError("unrecognized configuration name")
         ):
             self.assertEqual(_gnu_libc_version(), "")
 
     def test_no_confstr_means_no_glibc(self) -> None:
         # Windows: the os module has no confstr.
-        with mock.patch.object(os, "confstr", side_effect=AttributeError):
+        with mock.patch.dict(os.__dict__):
+            os.__dict__.pop("confstr", None)
             self.assertEqual(_gnu_libc_version(), "")
 
     def test_glibc_value_is_passed_through(self) -> None:
-        with mock.patch.object(os, "confstr", return_value="glibc 2.44"):
+        with mock.patch.object(os, "confstr", create=True, return_value="glibc 2.44"):
             self.assertEqual(_gnu_libc_version(), "glibc 2.44")
 
     def test_trace_test_skips_without_glibc(self) -> None:
         # The skip names its precondition and the trace is not attempted.
         case = LoaderTraceTest("test_trace_does_not_run_the_program")
         with (
-            mock.patch.object(os, "confstr", side_effect=ValueError),
+            mock.patch.object(os, "confstr", create=True, side_effect=ValueError),
             mock.patch(f"{__name__}._loader_trace", side_effect=AssertionError("traced")),
         ):
             with self.assertRaises(unittest.SkipTest) as raised:
                 case.test_trace_does_not_run_the_program()
         self.assertIn("needs glibc's dynamic loader", str(raised.exception))
+
+    def test_cases_run_where_os_has_no_confstr(self) -> None:
+        # Every case of this class, run as Windows has os: without confstr.
+        names = (
+            "test_confstr_value_error_means_no_glibc",
+            "test_no_confstr_means_no_glibc",
+            "test_glibc_value_is_passed_through",
+            "test_trace_test_skips_without_glibc",
+        )
+        result = unittest.TestResult()
+        with mock.patch.dict(os.__dict__):
+            os.__dict__.pop("confstr", None)
+            unittest.TestSuite(LibcDetectionTest(name) for name in names).run(result)
+        self.assertEqual(
+            [str(test) for test, _ in result.errors + result.failures], [], result.errors
+        )
+        self.assertEqual(result.testsRun, len(names))
 
 
 class LoaderTraceTest(unittest.TestCase):

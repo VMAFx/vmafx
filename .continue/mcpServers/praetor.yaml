@@ -1,0 +1,9 @@
+name: Praetor MCP
+version: 1.0.0
+schema: v1
+mcpServers:
+  - name: asdecided
+    command: praetorctl
+    args:
+      - decisions
+      - serve

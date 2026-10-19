@@ -1,0 +1,80 @@
+{
+  "schema": "vmafx/stream-metadata-fields/1",
+  "description": "Field names, JSON types and units of the per-frame stream metadata of VMAFx (VMAFx/vmafx#2271), the decode-side bitstream facts reported next to a score. Seeded from the Pelorus telemetry field registry; a field marked pelorus 'shared' is spelled, typed and measured exactly as the registry row of the same key. not_carried lists the registry's shared keys VMAFx does not report. Append-only: a key is never renamed, retyped or reused (docs/api/stream-metadata-fields.md).",
+  "seeded_from": "VMAFx/pelorus@ec45e24d7342df908a2545e3a1d6dc7516d27475:libpelorus/schema/telemetry-fields.json",
+  "fields": [
+    {
+      "key": "display_index",
+      "json": "integer",
+      "unit": "frame",
+      "range": "0-based display order",
+      "pelorus": "shared"
+    },
+    {
+      "key": "decode_index",
+      "json": "integer",
+      "unit": "frame",
+      "range": "0-based coding order",
+      "pelorus": "shared"
+    },
+    {
+      "key": "frame_bytes",
+      "json": "integer",
+      "unit": "byte",
+      "range": "coded frame, headers included, container excluded",
+      "pelorus": "shared"
+    },
+    {
+      "key": "avg_qp",
+      "json": "number",
+      "unit": "qp_scale",
+      "range": "inside the qp_scale range",
+      "pelorus": "shared"
+    },
+    {
+      "key": "qp_scale",
+      "json": "string",
+      "unit": "none",
+      "range": "slice_qp|av1_qindex|vp9_qindex|av1_encoder_qp",
+      "pelorus": "shared"
+    },
+    {
+      "key": "picture_type",
+      "json": "string",
+      "unit": "none",
+      "range": "i|p|b",
+      "pelorus": "shared"
+    },
+    {
+      "key": "key_frame",
+      "json": "boolean",
+      "unit": "none",
+      "range": "random-access point",
+      "pelorus": "shared"
+    },
+    {
+      "key": "codec",
+      "json": "string",
+      "unit": "none",
+      "range": "h264|hevc|vvc|av1|vp9",
+      "pelorus": "shared"
+    },
+    {
+      "key": "coded_bit_depth",
+      "json": "integer",
+      "unit": "bit",
+      "range": "8|10|12",
+      "pelorus": "shared"
+    }
+  ],
+  "not_carried": [
+    "avg_qp_norm",
+    "reference",
+    "shown",
+    "qp_map",
+    "granularity",
+    "map_cols",
+    "map_rows",
+    "block_size_log2"
+  ]
+}

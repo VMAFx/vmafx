@@ -1,0 +1,1 @@
+| [ADR-2062](2062-matlab-mex-lint-stubs.md) | The `cpu` tidy lane measures the ten MATLAB MEX sources against self-authored stub `mex.h` / `matrix.h` on a lint-only include path; the ten lint exceptions and the changed-files exclusion are removed. | Accepted | lint, clang-tidy, standards, matlab |

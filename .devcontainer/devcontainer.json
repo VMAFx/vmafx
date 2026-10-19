@@ -5,7 +5,10 @@
     "context": "."
   },
   "features": {
-    "ghcr.io/devcontainers/features/common-utils:2": {},
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "installZsh": false,
+      "upgradePackages": true
+    },
     "ghcr.io/devcontainers/features/nix:1": {},
     "ghcr.io/devcontainers/features/rust:1": {}
   },
@@ -16,10 +19,10 @@
         "state": "source-bundle",
         "builderImage": "docker.io/library/golang@sha256:8a5910f31396cd4d89662f56c68b3ae31d374308270a1c3bd96672ee5ed43414",
         "baseImage": "ghcr.io/vmafx/vmafx-dev-mcp@sha256:3956ebc9342a75cc0120804cee37144fff402dc1bab83849c68bf73a2cd6c9cc",
-        "sourceSHA256": "sha256:a7792aded5ae08292fb4d1cd918f2a250d6db1dec5450df7aececcb09c7de104",
-        "archiveSHA256": "sha256:a95d9e09bc7bb51876cb860bfee3d937e5b61e01d4c33ef8b87fd4de3f6e034d",
-        "archiveParts": 5,
-        "dockerfileSHA256": "sha256:af778d8289aed981dd1bbab4885688235d56e02b9ef905e0580cdd498d19f9a5"
+        "sourceSHA256": "sha256:938d9df5df2d6b7e950f125d691e6e5b03fdb38a7de12145ea8e7d2c938e141f",
+        "archiveSHA256": "sha256:4e15718a2f4225b23d4ff2feb0264279ce7a210898a5a30334c39f2c7384c86d",
+        "archiveParts": 6,
+        "dockerfileSHA256": "sha256:78241b34b2173193b84315cc7da10de1c0463d5a16cbe535fbe4394560e8a780"
       }
     },
     "vscode": {

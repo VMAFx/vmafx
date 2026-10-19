@@ -32,6 +32,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	vmafxv1 "github.com/VMAFx/vmafx/gen/go"
+	"github.com/VMAFx/vmafx/internal/oteltest"
 	"github.com/VMAFx/vmafx/pkg/libvmaf"
 	"github.com/VMAFx/vmafx/pkg/observability"
 )
@@ -75,7 +76,7 @@ func startStreamTestServer(t *testing.T, modelDir string) (vmafxv1.VmafxScoringC
 	}
 
 	reg := prometheus.NewRegistry()
-	metrics := observability.NewMetrics(reg)
+	metrics := oteltest.Metrics(t, reg)
 	log := observability.NewLogger("ERROR")
 	impl := newGRPCServer(scorer, metrics, log)
 
@@ -249,6 +250,12 @@ func TestGRPCScoreStream_EndToEnd(t *testing.T) {
 	}
 	if len(aggregate.GetFeatures()) == 0 {
 		t.Error("expected non-empty aggregate feature map")
+	}
+	// #2155: the aggregate carries the provenance of the in-process context.
+	p := aggregate.GetProvenance()
+	if p.GetLibrary().GetVersion() == "" || len(p.GetModelSha256()) != 64 ||
+		p.GetBackendUsed() != "cpu" || p.GetPrecision() != "max" || p.GetLibrary().GetNExtractors() == 0 {
+		t.Errorf("aggregate provenance = %v", p)
 	}
 }
 

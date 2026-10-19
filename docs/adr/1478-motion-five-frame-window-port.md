@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD041 MD060 -->
 # ADR-1478: Port `motion_five_frame_window` from Netflix; the deferral of ADR-0337 ends for this option
 
-- **Status**: Accepted
+- **Status**: Accepted (Superseded-in-part 2026-10-06 by [ADR-1491](1491-gpu-motion-five-frame-window.md) for decision 5 (GPU twins leave motion_five_frame_window to the CPU))
 - **Date**: 2026-10-02
 - **Deciders**: lusoris
 - **Tags**: `upstream-port`, `motion`, `feature-extractor`, `models`, `picture-pool`, `gpu-parity`, `golden-gate`, `rc3`

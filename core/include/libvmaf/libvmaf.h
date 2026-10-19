@@ -280,6 +280,7 @@ typedef struct VmafContext VmafContext;
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
+VMAF_DEPRECATED("use vmafx_context_create")
 VMAF_EXPORT int vmaf_init(VmafContext **vmaf, VmafConfiguration cfg);
 
 /**
@@ -306,6 +307,7 @@ VMAF_EXPORT int vmaf_init(VmafContext **vmaf, VmafConfiguration cfg);
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
+VMAF_DEPRECATED("use vmafx_context_use_model")
 VMAF_EXPORT int vmaf_use_features_from_model(VmafContext *vmaf, VmafModel *model);
 
 /**
@@ -326,6 +328,7 @@ VMAF_EXPORT int vmaf_use_features_from_model(VmafContext *vmaf, VmafModel *model
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
+VMAF_DEPRECATED("use vmafx_context_use_model_set")
 VMAF_EXPORT int vmaf_use_features_from_model_collection(VmafContext *vmaf,
                                                         VmafModelCollection *model_collection);
 
@@ -359,6 +362,7 @@ VMAF_EXPORT int vmaf_use_features_from_model_collection(VmafContext *vmaf,
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
+VMAF_DEPRECATED("use vmafx_context_use_feature")
 VMAF_EXPORT int vmaf_use_feature(VmafContext *vmaf, const char *feature_name,
                                  VmafFeatureDictionary *opts_dict);
 
@@ -381,6 +385,7 @@ VMAF_EXPORT int vmaf_use_feature(VmafContext *vmaf, const char *feature_name,
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
+VMAF_DEPRECATED("use vmafx_context_import_score")
 VMAF_EXPORT int vmaf_import_feature_score(VmafContext *vmaf, const char *feature_name, double value,
                                           unsigned index);
 
@@ -394,6 +399,13 @@ VMAF_EXPORT int vmaf_import_feature_score(VmafContext *vmaf, const char *feature
  * released before the call returns and the caller must not unref them. A call
  * without a context or with only one of the two pictures returns `-EINVAL`
  * and takes nothing.
+ *
+ * Every sample of a picture of bit depth `bpc` must be at most 2^bpc - 1 (a
+ * 10-bit picture in `uint16_t` storage holds values up to 1023). A picture with
+ * a sample above that is invalid input: nothing on the default path checks
+ * it, and the CPU extractors and their GPU twins may then give different
+ * scores. `vmaf_set_sample_range_check_enabled()` turns on a check that
+ * refuses such a picture with `-EINVAL`.
  *
  * When you're done reading pictures call this function again with both `ref`
  * and `dist` set to NULL to flush all feature extractors.
@@ -422,8 +434,72 @@ VMAF_EXPORT int vmaf_import_feature_score(VmafContext *vmaf, const char *feature
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
+VMAF_DEPRECATED("use vmafx_submit")
 VMAF_EXPORT int vmaf_read_pictures(VmafContext *vmaf, VmafPicture *ref, VmafPicture *dist,
                                    unsigned index);
+
+/**
+ * Turn the sample range check of `vmaf_read_pictures()` on or off. Off by
+ * default, and then `vmaf_read_pictures()` reads no sample for it.
+ *
+ * On, `vmaf_read_pictures()` scans both pictures of every call before it
+ * extracts anything and refuses a call in which a sample of a 9- to 15-bit
+ * picture is above 2^bpc - 1: it returns `-EINVAL` (the pictures are released
+ * as for any other error) and logs the picture (reference or distorted), the
+ * plane, row and column of the first such sample, its value and the limit.
+ * 8- and 16-bit pictures cannot hold such a sample. A picture in device memory
+ * cannot be scanned on the host: the call returns `-ENOTSUP`.
+ *
+ * The `vmaf` command line sets it with `--check-sample-range`. See
+ * docs/api/sample-range.md.
+ *
+ * @param vmaf    The VMAF context allocated with `vmaf_init()`.
+ * @param enabled Non-zero turns the check on, zero turns it off.
+ *
+ * @return 0 on success, or `-EINVAL` without a context.
+ *
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
+ */
+VMAF_DEPRECATED("use vmafx_context_set_option")
+VMAF_EXPORT int vmaf_set_sample_range_check_enabled(VmafContext *vmaf, int enabled);
+
+/**
+ * Declare the colorimetry (range, primaries, transfer characteristic and matrix)
+ * of the reference and the distorted pictures that `vmaf_read_pictures()` will
+ * receive.
+ *
+ * A model can declare a `conversion_target` in its model file: the colorspace
+ * (and optionally the pixel format and bit depth) its features are defined in.
+ * For such a model `vmaf_read_pictures()` converts both pictures to that target
+ * before extraction, and needs to know what the pictures are. All four
+ * attributes of each input must be specified, otherwise the call returns
+ * `-EINVAL` and logs the missing ones: a guessed colorimetry would give a
+ * plausible but wrong score. A model without a `conversion_target` never
+ * converts and ignores this. The conversion needs libvmaf built with zimg
+ * (`-Denable_zimg=true`); without it `-ENOTSUP`.
+ *
+ * Netflix/vmaf carries this colour in `VmafPicture::color`. The fork keeps
+ * `VmafPicture` unchanged (ABI), so the colour is declared once per input on
+ * the context instead. The `vmaf` command line sets it with
+ * `--color_range_ref/_dist`, `--color_primaries_ref/_dist`,
+ * `--color_trc_ref/_dist` and `--color_matrix_ref/_dist`. See
+ * docs/api/pictures.md.
+ *
+ * The conversion context is built from the first picture, so this must be
+ * called before the first `vmaf_read_pictures()` that converts.
+ *
+ * @param vmaf The VMAF context allocated with `vmaf_init()`.
+ * @param ref  Colorimetry of the reference input, or NULL for unspecified.
+ * @param dist Colorimetry of the distorted input, or NULL for unspecified.
+ *
+ * @return 0 on success, `-EINVAL` without a context, or `-EBUSY` once a
+ *         picture has been converted.
+ *
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
+ */
+VMAF_DEPRECATED("use vmafx_context_set_default_color")
+VMAF_EXPORT int vmaf_set_input_colorimetry(VmafContext *vmaf, const VmafColor *ref,
+                                           const VmafColor *dist);
 
 /**
  * Predict VMAF score at specific index.
@@ -449,6 +525,7 @@ VMAF_EXPORT int vmaf_read_pictures(VmafContext *vmaf, VmafPicture *ref, VmafPict
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
+VMAF_DEPRECATED("use vmafx_score_frame")
 VMAF_EXPORT int vmaf_score_at_index(VmafContext *vmaf, VmafModel *model, double *score,
                                     unsigned index);
 
@@ -468,6 +545,7 @@ VMAF_EXPORT int vmaf_score_at_index(VmafContext *vmaf, VmafModel *model, double 
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
+VMAF_DEPRECATED("use vmafx_score_frame_model_set")
 VMAF_EXPORT int vmaf_score_at_index_model_collection(VmafContext *vmaf,
                                                      VmafModelCollection *model_collection,
                                                      VmafModelCollectionScore *score,
@@ -489,9 +567,13 @@ VMAF_EXPORT int vmaf_score_at_index_model_collection(VmafContext *vmaf,
  *         means the feature has not been written at this index yet (see
  *         `vmaf_score_at_index()`); `-EINVAL` is returned for invalid
  *         arguments and for a feature name no registered extractor writes.
+ *         For a picture already read, both codes come after libvmaf has
+ *         waited for the worker threads, so neither stands for a score a
+ *         worker is still computing.
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
+VMAF_DEPRECATED("use vmafx_feature_score")
 VMAF_EXPORT int vmaf_feature_score_at_index(VmafContext *vmaf, const char *feature_name,
                                             double *score, unsigned index);
 
@@ -517,6 +599,7 @@ VMAF_EXPORT int vmaf_feature_score_at_index(VmafContext *vmaf, const char *featu
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
+VMAF_DEPRECATED("use vmafx_score_pooled")
 VMAF_EXPORT int vmaf_score_pooled(VmafContext *vmaf, VmafModel *model,
                                   enum VmafPoolingMethod pool_method, double *score,
                                   unsigned index_low, unsigned index_high);
@@ -543,6 +626,7 @@ VMAF_EXPORT int vmaf_score_pooled(VmafContext *vmaf, VmafModel *model,
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
+VMAF_DEPRECATED("use vmafx_score_pooled_model_set")
 VMAF_EXPORT int vmaf_score_pooled_model_collection(VmafContext *vmaf,
                                                    VmafModelCollection *model_collection,
                                                    enum VmafPoolingMethod pool_method,
@@ -569,6 +653,7 @@ VMAF_EXPORT int vmaf_score_pooled_model_collection(VmafContext *vmaf,
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
+VMAF_DEPRECATED("use vmafx_feature_score_pooled")
 VMAF_EXPORT int vmaf_feature_score_pooled(VmafContext *vmaf, const char *feature_name,
                                           enum VmafPoolingMethod pool_method, double *score,
                                           unsigned index_low, unsigned index_high);
@@ -630,6 +715,7 @@ typedef struct VmafPictureConfiguration {
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
+VMAF_DEPRECATED("use vmafx_context_preallocate")
 VMAF_EXPORT int vmaf_preallocate_pictures(VmafContext *vmaf, VmafPictureConfiguration cfg);
 
 /**
@@ -646,6 +732,7 @@ VMAF_EXPORT int vmaf_preallocate_pictures(VmafContext *vmaf, VmafPictureConfigur
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
+VMAF_DEPRECATED("use vmafx_context_acquire_frame")
 VMAF_EXPORT int vmaf_fetch_preallocated_picture(VmafContext *vmaf, VmafPicture *pic);
 
 /**
@@ -679,6 +766,7 @@ VMAF_EXPORT int vmaf_fetch_preallocated_picture(VmafContext *vmaf, VmafPicture *
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
+VMAF_DEPRECATED("use vmafx_context_destroy")
 VMAF_EXPORT int vmaf_close(VmafContext *vmaf);
 
 /**
@@ -696,6 +784,7 @@ VMAF_EXPORT int vmaf_close(VmafContext *vmaf);
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
+VMAF_DEPRECATED("use vmafx_report_write")
 VMAF_EXPORT int vmaf_write_output(VmafContext *vmaf, const char *output_path,
                                   enum VmafOutputFormat fmt);
 
@@ -724,6 +813,7 @@ VMAF_EXPORT int vmaf_write_output(VmafContext *vmaf, const char *output_path,
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
+VMAF_DEPRECATED("use vmafx_report_write")
 VMAF_EXPORT int vmaf_write_output_with_format(VmafContext *vmaf, const char *output_path,
                                               enum VmafOutputFormat fmt, const char *score_format);
 
@@ -740,6 +830,7 @@ VMAF_EXPORT int vmaf_write_output_with_format(VmafContext *vmaf, const char *out
  *
  * @return 0 on success, or -EINVAL when @vmaf or @out is NULL.
  */
+VMAF_DEPRECATED("use vmafx_context_backend")
 VMAF_EXPORT int vmaf_context_get_backend(VmafContext *vmaf, enum VmafBackend *out);
 
 /**
@@ -785,6 +876,7 @@ VMAF_EXPORT int vmaf_context_get_backend(VmafContext *vmaf, enum VmafBackend *ou
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
+VMAF_DEPRECATED("use vmafx_feature_resolve")
 VMAF_EXPORT int vmaf_feature_backend_twin(VmafContext *vmaf, const char *feature_name,
                                           const VmafFeatureDictionary *opts_dict,
                                           const VmafPictureConfiguration *pic_cfg,
@@ -813,6 +905,7 @@ VMAF_EXPORT int vmaf_feature_backend_twin(VmafContext *vmaf, const char *feature
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
+VMAF_DEPRECATED("use vmafx_context_extractor_info")
 VMAF_EXPORT int vmaf_registered_feature_extractor(VmafContext *vmaf, unsigned index,
                                                   const char **name, enum VmafBackend *backend);
 
@@ -824,6 +917,7 @@ VMAF_EXPORT int vmaf_registered_feature_extractor(VmafContext *vmaf, unsigned in
  *
  * @note Thread safety: Safe to call from any thread.
  */
+VMAF_DEPRECATED("use vmafx_version_string")
 VMAF_EXPORT const char *vmaf_version(void);
 
 #ifdef __cplusplus

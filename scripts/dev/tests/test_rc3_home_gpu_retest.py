@@ -54,6 +54,25 @@ def run_script(*argv: str, env: dict[str, str] | None = None) -> subprocess.Comp
     )
 
 
+# A stand-in nvidia-smi for the kit's tests (#2688), so no test depends on the
+# host's driver. FAKE_SMI_EXIT makes it fail with that status: nvidia-smi exits
+# 18 when the loaded driver and its library do not match.
+FAKE_SMI = (
+    '#!/bin/sh\n[ -z "$FAKE_SMI_EXIT" ] || exit "$FAKE_SMI_EXIT"\n'
+    'echo "7, NVIDIA GeForce RTX 4090, 0 MiB, 24564 MiB, 0 %"\n'
+)
+
+
+def stand_in_nvidia_smi(directory: Path, **env: str) -> dict[str, str]:
+    """The environment with the stand-in nvidia-smi in *directory* first on PATH."""
+    directory.mkdir(parents=True, exist_ok=True)
+    smi = directory / "nvidia-smi"
+    smi.write_text(FAKE_SMI, encoding="utf-8")
+    smi.chmod(0o755)
+    path = f"{directory}{os.pathsep}{os.environ.get('PATH', '')}"
+    return dict(os.environ, PATH=path, **env)
+
+
 # Stands in for tools/vmaf: parses the arguments the kit passes, logs the
 # device it was pinned to, and writes one frame of psnr_hvs JSON.
 FAKE_VMAF = """#!/bin/sh
@@ -283,7 +302,7 @@ class ScriptTests(unittest.TestCase):
 
     def test_dry_run_prints_the_rows_commands_without_devices(self) -> None:
         row = "T-CUDA-MOTION-BLUR-THEN-DIFF-2026-09-29"
-        with TemporaryDirectory() as out:
+        with TemporaryDirectory() as out, TemporaryDirectory() as tools:
             result = run_script(
                 "--dry-run",
                 "--out",
@@ -296,6 +315,7 @@ class ScriptTests(unittest.TestCase):
                 "0",
                 "--build-dir",
                 "cuda=/nonexistent/build-cuda",
+                env=stand_in_nvidia_smi(Path(tools)),
             )
             summary = (Path(out) / "summary.tsv").read_text(encoding="utf-8")
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -304,6 +324,33 @@ class ScriptTests(unittest.TestCase):
             "--backend cuda --no_prediction --feature motion --precision=max", result.stderr
         )
         self.assertIn("--backend cpu --no_prediction --feature motion", result.stderr)
+        self.assertEqual(summary.split("\t")[:3], [row, "cuda", "DRY-RUN"])
+
+    def test_a_failing_nvidia_smi_is_noted_and_the_run_goes_on(self) -> None:
+        """The host inventory is a note; nvidia-smi exits 18 on a driver mismatch."""
+        row = "T-CUDA-MOTION-BLUR-THEN-DIFF-2026-09-29"
+        with TemporaryDirectory() as tmp:
+            out = Path(tmp) / "out"
+            env = stand_in_nvidia_smi(Path(tmp) / "bin", FAKE_SMI_EXIT="18")
+            result = run_script(
+                "--dry-run",
+                "--out",
+                str(out),
+                "--only",
+                row,
+                "--backend",
+                "cuda",
+                "--cuda-device",
+                "0",
+                "--build-dir",
+                "cuda=/nonexistent/build-cuda",
+                env=env,
+            )
+            host = (out / "host.txt").read_text(encoding="utf-8")
+            summary = (out / "summary.tsv").read_text(encoding="utf-8")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("nvidia-smi failed: exit 18, no GPU inventory", host)
+        self.assertIn("nvidia-smi failed: exit 18, no GPU inventory", result.stdout)
         self.assertEqual(summary.split("\t")[:3], [row, "cuda", "DRY-RUN"])
 
 
@@ -335,7 +382,7 @@ class FakeDeviceRunTests(unittest.TestCase):
         ):
             (fixtures / name).touch()
         self.log = self.dir / "vmaf.log"
-        self.env = dict(os.environ, FAKE_VMAF_LOG=str(self.log))
+        self.env = stand_in_nvidia_smi(self.dir / "bin", FAKE_VMAF_LOG=str(self.log))
 
     def tearDown(self) -> None:
         self.tmp.cleanup()
@@ -384,6 +431,16 @@ class FakeDeviceRunTests(unittest.TestCase):
         self.assertEqual(runs.count("backend=cuda cuda=7"), 6)
         with (self.dir / "locks/cuda-4090.lock").open("a") as handle:
             fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+    def test_failing_nvidia_smi_does_not_stop_the_run(self) -> None:
+        # Exit 18 is what nvidia-smi returns when the driver and its library differ.
+        result = self.kit("run", "--no-timing", FAKE_SMI_EXIT="18")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.summary("run")[2], "PASS")
+        self.assertIn(
+            "nvidia-smi failed: exit 18, no GPU inventory",
+            (self.dir / "run/host.txt").read_text(encoding="utf-8"),
+        )
 
     def test_twin_beyond_the_rows_bound_fails(self) -> None:
         result = self.kit("run", "--no-timing", FAKE_GPU_VALUE="30.001")

@@ -22,12 +22,12 @@ invariant: feature_collector.cpp mount/unmount traversal and single-authority li
   would trip clang-tidy `readability-function-size` (JPL-P10 rule 4).
   See [ADR-0132](../../../../docs/adr/0132-port-netflix-1406-feature-collector-model-list.md)
   and [rebase-notes 0031](../../../../docs/rebase-notes.md).
-- **`feature_collector.cpp` is the only implementation authority.** Commit
-  `5d070b0b4` accidentally recreated a C implementation after the C++ migration,
+- **`feature_collector.cpp` is only implementation authority.** Commit
+  `5d070b0b4` accidentally recreated C implementation after C++ migration,
   leaving production and tests on different bodies. Do not add
-  `feature_collector.c` or point any build target at one. Preserve the mutex
+  `feature_collector.c` or point any build target at one. Preserve mutex
   coverage, full mounted-model snapshot, unlocked destroy traversal, unwind
-  helpers, and `-EAGAIN` read contract together in the C++ TU. The fast
-  `test_feature_collector_source_authority` gate fails if the twin or a stale
+  helpers, and `-EAGAIN` read contract together in C++ TU. fast
+  `test_feature_collector_source_authority` gate fails if twin or stale
   build reference returns. See
   [Research-2100](../../../../docs/research/2100-feature-collector-source-authority-2026-09-24.md).

@@ -1,6 +1,6 @@
 # ADR-0416: VIF on-the-fly filter sync from Netflix upstream
 
-Status: Accepted
+- **Status**: Accepted
 Date: 2026-05-10
 Tags: vif, upstream-sync, fork-local, netflix-golden, fork-internal
 

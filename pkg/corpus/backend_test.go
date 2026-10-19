@@ -169,6 +169,16 @@ func TestSelectBackendHonoursACustomFallbackChain(t *testing.T) {
 func TestDetectAvailableBackends(t *testing.T) {
 	t.Parallel()
 
+	// ADR-1874: detection reads `vmaf --list-backends`; vendor tools are
+	// never asked, so a stub that only answers vmaf describes the host.
+	report := func(cuda, sycl, hip bool) RunResult {
+		row := func(name string, usable bool) string {
+			return `{"name": "` + name + `", "compiled": true, "usable": ` +
+				map[bool]string{true: "true", false: "false"}[usable] + `}`
+		}
+		return RunResult{Stdout: `{"backends": [` + row("cpu", true) + `, ` + row("cuda", cuda) +
+			`, ` + row("sycl", sycl) + `, ` + row("hip", hip) + `]}`}
+	}
 	tests := []struct {
 		name string
 		// stub answers keyed by the first argv token.
@@ -176,56 +186,28 @@ func TestDetectAvailableBackends(t *testing.T) {
 		want    []string
 	}{
 		{
-			name: "a CPU-only vmaf build probes nothing else",
-			answers: map[string]RunResult{
-				"vmaf": {Stdout: "--backend $name: auto|cpu.\n"},
-			},
-			want: []string{"cpu"},
+			name:    "a CPU-only vmaf build",
+			answers: map[string]RunResult{"vmaf": report(false, false, false)},
+			want:    []string{"cpu"},
 		},
 		{
-			name: "a CUDA build with a reachable GPU",
+			name:    "a CUDA build with a reachable GPU",
+			answers: map[string]RunResult{"vmaf": report(true, false, false)},
+			want:    []string{"cpu", "cuda"},
+		},
+		{
+			name: "vendor tools do not count",
 			answers: map[string]RunResult{
-				"vmaf":       {Stdout: "--backend $name: auto|cpu|cuda|sycl|hip.\n"},
+				"vmaf":       report(false, false, false),
 				"nvidia-smi": {Stdout: "GPU 0: NVIDIA GeForce RTX 4090 (UUID: GPU-x)\n"},
-				"sycl-ls":    {ReturnCode: 1},
-				"rocminfo":   {ReturnCode: 1},
-				"rocm-smi":   {ReturnCode: 1},
-			},
-			want: []string{"cpu", "cuda"},
-		},
-		{
-			name: "a build advertising cuda with no reachable GPU",
-			answers: map[string]RunResult{
-				"vmaf":       {Stdout: "--backend $name: auto|cpu|cuda.\n"},
-				"nvidia-smi": {ReturnCode: 1},
+				"rocminfo":   {Stdout: "  Name:  gfx1100\n"},
 			},
 			want: []string{"cpu"},
 		},
 		{
-			name: "a SYCL build with a level-zero GPU",
-			answers: map[string]RunResult{
-				"vmaf":       {Stdout: "--backend $name: auto|cpu|sycl.\n"},
-				"sycl-ls":    {Stdout: "[ext_oneapi_level_zero:gpu][0] Intel Arc A770\n"},
-				"nvidia-smi": {ReturnCode: 1},
-			},
-			want: []string{"cpu", "sycl"},
-		},
-		{
-			name: "a HIP build with rocminfo reporting a gfx target",
-			answers: map[string]RunResult{
-				"vmaf":     {Stdout: "--backend $name: auto|cpu|hip.\n"},
-				"rocminfo": {Stdout: "  Name:  gfx1100\n"},
-			},
-			want: []string{"cpu", "hip"},
-		},
-		{
-			name: "a HIP build falling back to rocm-smi",
-			answers: map[string]RunResult{
-				"vmaf":     {Stdout: "--backend $name: auto|cpu|hip.\n"},
-				"rocminfo": {ReturnCode: 1},
-				"rocm-smi": {Stdout: "GPU[0] : Card series: Radeon RX 7900 XTX\n"},
-			},
-			want: []string{"cpu", "hip"},
+			name:    "a SYCL and HIP build",
+			answers: map[string]RunResult{"vmaf": report(false, true, true)},
+			want:    []string{"cpu", "sycl", "hip"},
 		},
 	}
 
@@ -233,7 +215,7 @@ func TestDetectAvailableBackends(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			stub := func(_ context.Context, argv []string) RunResult {
-				if res, ok := tc.answers[argv[0]]; ok {
+				if res, ok := tc.answers[argv[0]]; ok && (argv[0] != "vmaf" || argv[1] == "--list-backends") {
 					return res
 				}
 				return RunResult{ReturnCode: 1}
@@ -251,10 +233,10 @@ func TestAllBackendsAndFallbackOrder(t *testing.T) {
 
 	// ADR-0726 dropped the Vulkan backend; the vocabulary and the auto
 	// preference order are part of the CLI's documented contract.
-	if !reflect.DeepEqual(AllBackends, []string{"cpu", "cuda", "sycl", "hip"}) {
-		t.Errorf("AllBackends = %v, want [cpu cuda sycl hip]", AllBackends)
+	if !reflect.DeepEqual(AllBackends, []string{"cpu", "cuda", "sycl", "hip", "metal"}) {
+		t.Errorf("AllBackends = %v, want [cpu cuda sycl hip metal]", AllBackends)
 	}
-	if !reflect.DeepEqual(DefaultFallbacks, []string{"cuda", "sycl", "hip", "cpu"}) {
-		t.Errorf("DefaultFallbacks = %v, want [cuda sycl hip cpu]", DefaultFallbacks)
+	if !reflect.DeepEqual(DefaultFallbacks, []string{"cuda", "sycl", "hip", "metal", "cpu"}) {
+		t.Errorf("DefaultFallbacks = %v, want [cuda sycl hip metal cpu]", DefaultFallbacks)
 	}
 }

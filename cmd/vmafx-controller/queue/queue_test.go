@@ -153,7 +153,7 @@ func TestReportResultCompleted(t *testing.T) {
 		Score:    76.6683,
 		Features: map[string]float64{"adm2": 0.98, "vif_scale0": 0.91},
 	}
-	if err := q.ReportResult(context.Background(), queue.Report{NodeID: "node-x", JobID: id, Result: result}); err != nil {
+	if _, err := q.ReportResult(context.Background(), queue.Report{NodeID: "node-x", JobID: id, Result: result}); err != nil {
 		t.Fatalf("ReportResult: %v", err)
 	}
 
@@ -178,7 +178,7 @@ func TestReportResultFailed(t *testing.T) {
 	_, _ = q.PullWork(context.Background(), "node-x", "", cap)
 
 	result := &queue.JobResult{Err: "libvmaf returned exit 1"}
-	if err := q.ReportResult(context.Background(), queue.Report{NodeID: "node-x", JobID: id, Result: result}); err != nil {
+	if _, err := q.ReportResult(context.Background(), queue.Report{NodeID: "node-x", JobID: id, Result: result}); err != nil {
 		t.Fatalf("ReportResult: %v", err)
 	}
 
@@ -199,7 +199,7 @@ func TestCancelPending(t *testing.T) {
 	q := newTestQueue(t)
 	id := submit(t, q, "/r.yuv", "/d.yuv", "")
 
-	if err := q.Cancel(context.Background(), id); err != nil {
+	if _, err := q.Cancel(context.Background(), id); err != nil {
 		t.Fatalf("Cancel: %v", err)
 	}
 	got, err := q.Get(context.Background(), id)

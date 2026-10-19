@@ -1,0 +1,639 @@
+{
+  "uid": "vmafx-usage",
+  "title": "VMAFx Usage and cost",
+  "description": "Per-tenant usage over the dashboard's time range (7 days by default): finished jobs, node run time and scores, and their cost at the prices of the rule settings (monitoring.cost: one price per job-second and one per job, the same for every backend). Without prices the cost panels stay empty. Generated from pkg/observability/metricdef by tools/obsgen.",
+  "tags": [
+    "vmafx"
+  ],
+  "timezone": "browser",
+  "editable": false,
+  "graphTooltip": 1,
+  "time": {
+    "from": "now-7d",
+    "to": "now"
+  },
+  "fiscalYearStartMonth": 0,
+  "refresh": "1m",
+  "schemaVersion": 42,
+  "panels": [
+    {
+      "type": "row",
+      "collapsed": false,
+      "title": "Usage over the time range",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 0,
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus_datasource}"
+          },
+          "expr": "sum by (tenant, outcome) (increase(vmafx_controller_job_duration_seconds_count{job=~\"$job\",instance=~\"$instance\",tenant=~\"$tenant\"}[$__range]))",
+          "instant": true,
+          "legendFormat": "{{tenant}} {{outcome}}",
+          "range": false
+        }
+      ],
+      "title": "Finished jobs by tenant and outcome",
+      "description": "Controller jobs that finished in the time range, by outcome. The per-job price applies to completed and failed jobs; cancelled jobs are not charged.",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${prometheus_datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 0,
+        "y": 1
+      },
+      "repeatDirection": "h",
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "percentChangeColorMode": "standard",
+        "orientation": ""
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "blue"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus_datasource}"
+          },
+          "expr": "sum by (tenant) (increase(vmafx_controller_job_duration_seconds_sum{job=~\"$job\",instance=~\"$instance\",tenant=~\"$tenant\"}[$__range]))",
+          "instant": true,
+          "legendFormat": "{{tenant}}",
+          "range": false
+        }
+      ],
+      "title": "Job run time by tenant",
+      "description": "Node time the tenant's finished jobs took in the time range: what the per-second price applies to.",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${prometheus_datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 8,
+        "y": 1
+      },
+      "repeatDirection": "h",
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "percentChangeColorMode": "standard",
+        "orientation": ""
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "blue"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus_datasource}"
+          },
+          "expr": "sum by (tenant) (increase(vmafx_quality_score_count{job=~\"$job\",instance=~\"$instance\",tenant=~\"$tenant\"}[$__range]))",
+          "instant": true,
+          "legendFormat": "{{tenant}}",
+          "range": false
+        }
+      ],
+      "title": "Scores by tenant",
+      "description": "Pooled scores produced for the tenant in the time range, by jobs and by Score requests on the controller.",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${prometheus_datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 1
+      },
+      "repeatDirection": "h",
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "percentChangeColorMode": "standard",
+        "orientation": ""
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "blue"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "row",
+      "collapsed": false,
+      "title": "Cost over the time range",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 5
+      },
+      "id": 0,
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus_datasource}"
+          },
+          "expr": "sum by (tenant) (increase(vmafx_controller_job_duration_seconds_sum{job=~\"$job\",instance=~\"$instance\",tenant=~\"$tenant\"}[$__range])) * on () group_left (currency) max by (currency) (vmafx:price_job_second{job=~\"$job\",instance=~\"$instance\"})",
+          "instant": true,
+          "legendFormat": "{{tenant}} {{currency}}",
+          "range": false
+        }
+      ],
+      "title": "Run-time cost by tenant",
+      "description": "Job run time times the price per job-second (monitoring.cost.perJobSecond). Empty while the price is unset.",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${prometheus_datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 0,
+        "y": 6
+      },
+      "repeatDirection": "h",
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "percentChangeColorMode": "standard",
+        "orientation": ""
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "blue"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus_datasource}"
+          },
+          "expr": "sum by (tenant) (increase(vmafx_controller_job_duration_seconds_count{job=~\"$job\",instance=~\"$instance\",tenant=~\"$tenant\",outcome=~\"completed|failed\"}[$__range])) * on () group_left (currency) max by (currency) (vmafx:price_job{job=~\"$job\",instance=~\"$instance\"})",
+          "instant": true,
+          "legendFormat": "{{tenant}} {{currency}}",
+          "range": false
+        }
+      ],
+      "title": "Per-job cost by tenant",
+      "description": "Completed and failed jobs times the price per job (monitoring.cost.perJob); cancelled jobs are not charged. Empty while the price is unset.",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${prometheus_datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 8,
+        "y": 6
+      },
+      "repeatDirection": "h",
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "percentChangeColorMode": "standard",
+        "orientation": ""
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "blue"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus_datasource}"
+          },
+          "expr": "(sum by (tenant) (increase(vmafx_controller_job_duration_seconds_sum{job=~\"$job\",instance=~\"$instance\",tenant=~\"$tenant\"}[$__range])) * on () group_left (currency) max by (currency) (vmafx:price_job_second{job=~\"$job\",instance=~\"$instance\"}) + sum by (tenant) (increase(vmafx_controller_job_duration_seconds_count{job=~\"$job\",instance=~\"$instance\",tenant=~\"$tenant\",outcome=~\"completed|failed\"}[$__range])) * on () group_left (currency) max by (currency) (vmafx:price_job{job=~\"$job\",instance=~\"$instance\"})) or sum by (tenant) (increase(vmafx_controller_job_duration_seconds_sum{job=~\"$job\",instance=~\"$instance\",tenant=~\"$tenant\"}[$__range])) * on () group_left (currency) max by (currency) (vmafx:price_job_second{job=~\"$job\",instance=~\"$instance\"}) or sum by (tenant) (increase(vmafx_controller_job_duration_seconds_count{job=~\"$job\",instance=~\"$instance\",tenant=~\"$tenant\",outcome=~\"completed|failed\"}[$__range])) * on () group_left (currency) max by (currency) (vmafx:price_job{job=~\"$job\",instance=~\"$instance\"})",
+          "instant": true,
+          "legendFormat": "{{tenant}} {{currency}}",
+          "range": false
+        }
+      ],
+      "title": "Total cost by tenant",
+      "description": "Run-time cost plus per-job cost; either alone when only one price is set.",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${prometheus_datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 6
+      },
+      "repeatDirection": "h",
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "percentChangeColorMode": "standard",
+        "orientation": ""
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "blue"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "row",
+      "collapsed": false,
+      "title": "Usage over time",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 10
+      },
+      "id": 0,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus_datasource}"
+          },
+          "expr": "sum by (tenant) (rate(vmafx_controller_job_duration_seconds_sum{job=~\"$job\",instance=~\"$instance\",tenant=~\"$tenant\"}[$__rate_interval])) * 3600",
+          "instant": false,
+          "legendFormat": "{{tenant}}",
+          "range": true
+        }
+      ],
+      "title": "Node time per hour by tenant",
+      "description": "Run time of the tenant's jobs finishing per hour.",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${prometheus_datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 11
+      },
+      "repeatDirection": "h",
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0,
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus_datasource}"
+          },
+          "expr": "sum by (tenant) (rate(vmafx_controller_job_duration_seconds_count{job=~\"$job\",instance=~\"$instance\",tenant=~\"$tenant\"}[$__rate_interval])) * 3600",
+          "instant": false,
+          "legendFormat": "{{tenant}}",
+          "range": true
+        }
+      ],
+      "title": "Jobs per hour by tenant",
+      "description": "The tenant's jobs finishing per hour, every outcome.",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${prometheus_datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 11
+      },
+      "repeatDirection": "h",
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      }
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "type": "datasource",
+        "name": "prometheus_datasource",
+        "label": "Prometheus data source",
+        "skipUrlSync": false,
+        "query": "prometheus",
+        "multi": false,
+        "allowCustomValue": true,
+        "includeAll": false,
+        "auto": false,
+        "auto_min": "10s",
+        "auto_count": 30
+      },
+      {
+        "type": "query",
+        "name": "job",
+        "label": "Job",
+        "skipUrlSync": false,
+        "query": "label_values(vmafx_controller_jobs_submitted_total, job)",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${prometheus_datasource}"
+        },
+        "multi": true,
+        "allowCustomValue": true,
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": true,
+        "allValue": ".+",
+        "auto": false,
+        "auto_min": "10s",
+        "auto_count": 30,
+        "definition": "label_values(vmafx_controller_jobs_submitted_total, job)"
+      },
+      {
+        "type": "query",
+        "name": "instance",
+        "label": "Instance",
+        "skipUrlSync": false,
+        "query": "label_values(vmafx_controller_jobs_submitted_total{job=~\"$job\"}, instance)",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${prometheus_datasource}"
+        },
+        "multi": true,
+        "allowCustomValue": true,
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": true,
+        "allValue": ".+",
+        "auto": false,
+        "auto_min": "10s",
+        "auto_count": 30,
+        "definition": "label_values(vmafx_controller_jobs_submitted_total{job=~\"$job\"}, instance)"
+      },
+      {
+        "type": "query",
+        "name": "tenant",
+        "label": "Tenant",
+        "skipUrlSync": false,
+        "query": "label_values(vmafx_controller_jobs_submitted_total{job=~\"$job\"}, tenant)",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${prometheus_datasource}"
+        },
+        "multi": true,
+        "allowCustomValue": true,
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": true,
+        "allValue": ".+",
+        "auto": false,
+        "auto_min": "10s",
+        "auto_count": 30,
+        "definition": "label_values(vmafx_controller_jobs_submitted_total{job=~\"$job\"}, tenant)"
+      }
+    ]
+  },
+  "annotations": {
+    "list": [
+      {
+        "name": "Deploys and restarts",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${prometheus_datasource}"
+        },
+        "enable": true,
+        "hide": false,
+        "iconColor": "blue",
+        "builtIn": 0,
+        "placement": "inControlsMenu",
+        "expr": "max by (job, instance, version) (vmafx_build_info{job=~\"$job\",instance=~\"$instance\"}) and on (job, instance) changes(process_start_time_seconds{job=~\"$job\",instance=~\"$instance\"}[5m]) \u003e 0",
+        "textFormat": "{{instance}}",
+        "titleFormat": "{{job}} {{version}} started",
+        "step": "1m"
+      }
+    ]
+  },
+  "links": [
+    {
+      "title": "VMAFx dashboards",
+      "type": "dashboards",
+      "icon": "",
+      "tooltip": "",
+      "tags": [
+        "vmafx"
+      ],
+      "asDropdown": true,
+      "placement": "inControlsMenu",
+      "targetBlank": false,
+      "includeVars": true,
+      "keepTime": true
+    }
+  ]
+}

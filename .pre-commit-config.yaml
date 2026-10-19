@@ -78,7 +78,7 @@ repos:
       - id: forbid-new-submodules
 
   - repo: https://github.com/pre-commit/mirrors-clang-format
-    rev: v23.1.2
+    rev: v23.1.3
     hooks:
       - id: clang-format
         entry: python3 scripts/ci/pelorus_mirror.py clang-format
@@ -86,7 +86,10 @@ repos:
         # Pelorus interop sources, headers, and shared conformance fixture are
         # a vendored read-only mirror (ADR-1113). The wrapper exempts only paths
         # in the shared exact-path manifest; an added pelorus_*.cpp stays linted.
-        exclude: '^subprojects/|^core/test/data/'
+        # core/src/rust/include/ holds the cbindgen output, committed byte for byte
+        # as cbindgen 0.29.4 writes it (ADR-1713); scripts/dev/rust-abi-header.sh
+        # --check compares it with a fresh run, so a formatter must not touch it.
+        exclude: '^subprojects/|^core/test/data/|^core/src/rust/include/'
       # `.hip` and `.metal` have no identify tag, so `types_or` above never selects them;
       # this second entry reads them by extension, with the same wrapper, the same
       # `.clang-format` and the same pin. `scripts/ci/exact_twins.d/*.hip` are parity-gate
@@ -101,26 +104,22 @@ repos:
         exclude: '^scripts/ci/exact_twins\.d/'
 
   - repo: https://github.com/psf/black
-    rev: 26.10.0
+    rev: 26.10.1
     hooks:
       - id: black
-        files: '^(python|ai|scripts|tools)/.*\.py$'
-        # Upstream Netflix training-harness tree — not authored by us; see
-        # pyproject.toml [tool.black] extend-exclude. Black's extend-exclude
-        # only filters during directory walks, not explicitly-passed files,
-        # so pre-commit needs its own exclude to skip them.
-        # tools/figures/ is praetor's figure engine: `standardsctl audit` locks
-        # it byte for byte, so a reformat would break the Standards gate
-        # (ADR-1351, cordanaLLM/praetor#578).
-        exclude: '^python/test/resource/|^compat/python-vmaf/resource/|^compat/python-vmaf/matlab/|^tools/figures/'
+        # Every Python file in the tree (pre-commit's default `types_or`: python, pyi).
+        # The only exclusions are the files declared in
+        # .config/lint-exceptions.d/black.toml (a reason and an expiry each);
+        # scripts/ci/tests/test_python_format_scope.py keeps this regex, the list and
+        # pyproject.toml's extend-exclude equal.
+        exclude: '^\.config/hiss/testdata/HISS-02/python/positive/spaced-while-true\.py$'
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.16.10
+    rev: v0.17.1
     hooks:
       - id: ruff-check
-        files: '^(python|ai|scripts|tools)/.*\.py$'
-        # Same praetor-locked tools/figures/ exclusion as black above.
-        exclude: '^python/test/resource/|^compat/python-vmaf/resource/|^compat/python-vmaf/matlab/|^tools/figures/'
+        # Same scope rule as black above; list: .config/lint-exceptions.d/ruff.toml.
+        exclude: '^(\.config/hiss/testdata/HISS-04/python/(gap/cyclomatic-high|negative/loc-at-cap-60|positive/loc-def-over-cap)\.py|\.config/hiss/testdata/HISS-08/python/positive/eval-call\.py|tools/figures/mkdocs_hook\.py)$'
         args: ["--fix"]
 
   - repo: https://github.com/scop/pre-commit-shfmt
@@ -131,9 +130,13 @@ repos:
       # The binary variant ("shfmt") hit HTTP 502 on the mvdan.cc CDN on every
       # CI run because the pre-commit cache key was stale (py3.12 vs py3.14),
       # forcing a re-download on every push. shfmt-src is immune to that CDN
-      # and is equally fast once Go is available on the runner (ubuntu-latest
-      # ships Go). Cache key is now pinned to py3.14 in lint-and-format.yml.
+      # and is equally fast once Go is available on the runner (the hosted
+      # image ships Go). Cache key is now pinned to py3.14 in lint-and-format.yml.
       - id: shfmt-src
+        # Every tracked shell file but the declared exceptions, which no formatter
+        # may rewrite (reason per entry). List: .config/lint-exceptions.d/shfmt.toml
+        # (scripts/ci/tests/test_shfmt_scope.py keeps this pattern in step with it).
+        exclude: '^\.config/lefthook/python\.sh$'
         args: ["-w", "-i", "2", "-ci"]
 
   - repo: https://github.com/shellcheck-py/shellcheck-py
@@ -166,7 +169,7 @@ repos:
         #   - docs/adr/README.md, CHANGELOG.md: auto-generated from
         #     fragments by scripts/docs/concat-adr-index.sh /
         #     scripts/release/concat-changelog-fragments.sh (ADR-0221).
-        #   - docs/adr/_index_fragments/, changelog.d/: per-PR fragments
+        #   - docs/adr/_index_fragments/, docs/rebase-notes.d/, changelog.d/: per-PR fragments
         #     that are concatenated mechanically. Each fragment is a
         #     bare table row or a body-only ## heading section — they
         #     are not standalone documents and will always trip MD013
@@ -185,12 +188,23 @@ repos:
         #   tools/figures/ is praetor's figure engine, locked byte for byte by
         #   `standardsctl audit` (ADR-1351, cordanaLLM/praetor#578); praetor's
         #   own `make docs-lint` styles its README under praetor's rules.
-        exclude: '^subprojects/|^core/test/data/|^python/test/resource/|^compat/python-vmaf/resource/|^compat/python-vmaf/matlab/|^model/|(^|/)testdata/|^docs/adr/README\.md$|^CHANGELOG\.md$|^docs/adr/_index_fragments/|^changelog\.d/|^tools/figures/'
+        #
+        #   The register skills (social-text, caveman, adhd-format) under
+        #   .agents/skills/ and .claude/skills/ are praetor's files, kept byte
+        #   for byte (decision Q-113): `compile-context --verify` checks the
+        #   projection against the .agents/skills copy and the praetor pin
+        #   supplies the text. They are styled under praetor's rules, not this
+        #   repository's, so a style edit here would make them drift.
+        exclude: '^(\.agents|\.claude)/skills/(social-text|caveman|adhd-format)/|^subprojects/|^core/test/data/|^python/test/resource/|^compat/python-vmaf/resource/|^compat/python-vmaf/matlab/|^model/|(^|/)testdata/|^docs/adr/README\.md$|^CHANGELOG\.md$|^docs/adr/_index_fragments/|^docs/rebase-notes\.d/|^changelog\.d/|^tools/figures/'
 
   - repo: https://github.com/rhysd/actionlint
     rev: v1.7.12
     hooks:
       - id: actionlint
+        # ADR-2199: actionlint deadlocks when a `run:` script is larger than the pipe
+        # it writes to shellcheck before starting it, which a user holding many
+        # pipes makes common. The wrapper runs it under a deadline and fails loudly.
+        entry: python3 scripts/ci/run_actionlint.py
 
   # Composite actions under .github/actions/ are not workflows: actionlint rejects
   # them ("jobs section is missing"). The GitHub action schema is checked here, the
@@ -222,7 +236,7 @@ repos:
         # zopfli: the Windows zip builder's encoder its tests exercise (ADR-1594);
         # keep equal to requirements/locks/windows-tester-zip.in.
         additional_dependencies: [pytest==9.1.1, zopfli==0.4.3]
-        files: '^tools/rc1-tester/(src/|tests/|vmaf-rc1-report|pyproject\.toml|README\.md|AGENTS\.md)'
+        files: '^(tools/rc1-tester/(src/|tests/|vmaf-rc1-report|pyproject\.toml|README\.md|AGENTS\.md)|scripts/lib/safe_subprocess\.py$)'
         pass_filenames: false
 
       - id: no-conflict-markers
@@ -254,6 +268,13 @@ repos:
         # alongside the formatters. Bypass with `git commit --no-verify`
         # for legitimate main-checkout commits while an agent is active.
 
+      - id: test-check-msvc-library-names
+        name: MSVC library-name check refuses classic names (Q-299)
+        entry: python3 -B scripts/ci/tests/test_check_msvc_library_names.py
+        language: system
+        files: '^scripts/ci/(check_msvc_library_names\.py|tests/test_check_msvc_library_names\.py)$'
+        pass_filenames: false
+
       - id: test-codex-hook-config
         name: Codex hooks resolve from the active repository worktree
         entry: python3 -B scripts/ci/tests/test_codex_hook_config.py
@@ -268,6 +289,14 @@ repos:
         language: system
         files: '^(scripts/release/(delete-inherited-upstream-tags\.py|inherited-upstream-tags\.json|tests/test_inherited_tags\.py)|scripts/git-hooks/check-push-tags\.py|lefthook\.yml)$'
         pass_filenames: false
+
+      - id: distribution-manifest
+        name: Distribution manifest agrees with the tree and its generators keep their contract (#2314)
+        entry: bash -c 'python3 -B scripts/release/distribution.py check && python3 -B -m unittest scripts/release/tests/test_distribution.py'
+        language: system
+        files: '^(packaging/|scripts/release/(distribution\.py|lint-distribution-recipes\.sh|tests/test_distribution\.py)|scripts/ci/check_licence_metadata\.py|tools/rc1-tester/image/licensing\.json|REUSE\.toml|mcp-server/vmaf-mcp/pyproject\.toml|bindings/rust/vmafx(-sys)?/Cargo\.toml|\.github/workflows/(supply-chain|windows-tester-bundle|macos-tester-bundle)\.yml|\.pre-commit-config\.yaml)'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
 
       - id: merge-train-guard-contract
         name: Merge-train ownership and validation regressions
@@ -383,6 +412,13 @@ repos:
         files: '^(scripts/ci/(check_licence_metadata\.py|tests/test_check_licence_metadata\.py)|tools/rc1-tester/image/licensing\.(py|json)|LICENSE[^/]*|LICENSES/.*)$'
         pass_filenames: false
 
+      - id: test-master-concurrency-contract
+        name: A push to master never cancels an earlier master run (ADR-1673)
+        entry: bash -c 'python3 -B scripts/ci/tests/test_master_concurrency_contract.py && python3 -B scripts/ci/test_security_workflow_contract.py'
+        language: system
+        files: '^(\.github/workflows/.*\.yml|scripts/ci/(tests/test_master_concurrency_contract|test_security_workflow_contract)\.py)$'
+        pass_filenames: false
+
       - id: test-upstream-parity-pin
         name: Recorded upstream head parses and the Licence Provenance job reads it (ADR-1474)
         entry: python3 -B scripts/ci/tests/test_upstream_parity_pin.py
@@ -403,6 +439,13 @@ repos:
         language: script
         pass_filenames: false
         always_run: true
+
+      - id: check-torch-scope
+        name: torch only in the training packages (ADR-1886)
+        entry: scripts/ci/check-torch-scope.py
+        language: script
+        pass_filenames: false
+        files: '(^|/)(pyproject\.toml|requirements[^/]*\.(txt|in))$|^scripts/ci/(check-torch-scope\.py|tests/test_check_torch_scope\.py)$'
 
       - id: check-cuda-pin-lockstep
         name: CUDA release and exact apt metadata stay locked across seven sites
@@ -429,7 +472,7 @@ repos:
         name: Base image and toolchain single-source tests
         entry: python3 -m unittest discover -s scripts/ci/tests -p 'test_*single_source.py'
         language: system
-        files: '^(Makefile|\.pre-commit-config\.yaml|build-config\.env|pyproject\.toml|dev/Containerfile|renovate\.json|Dockerfile|docker/Dockerfile\.[a-z-]+|\.github/workflows/(build|libvmaf-build-matrix)\.yml|scripts/ci/(check-base-image-single-source\.sh|check-container-image-references\.py|check-cuda-pin-lockstep\.py|check-workflow-versions\.py|tests/test_(base_image|cuda_pin|level_zero|formatter_pins|mypy_python_version)_single_source\.py))$'
+        files: '^(Makefile|\.pre-commit-config\.yaml|build-config\.env|pyproject\.toml|rust-toolchain\.toml|Cargo\.toml|core/src/rust/Cargo\.toml|dev/Containerfile|renovate\.json|Dockerfile|docker/Dockerfile\.[a-z-]+|\.github/workflows/(build|go-ci|libvmaf-build-matrix|rust-ci|tests-and-quality-gates)\.yml|scripts/ci/(check-base-image-single-source\.sh|check-container-image-references\.py|check-cuda-pin-lockstep\.py|check-workflow-versions\.py|check_ort_tarball_pins\.py|tests/test_(base_image|cuda_pin|level_zero|formatter_pins|mypy_python_version|ort_tarball|rust_toolchain)_single_source\.py))$'
         pass_filenames: false
 
       - id: test-install-cuda-toolkit
@@ -489,6 +532,53 @@ repos:
         files: '^(Makefile|scripts/ci/(tidy-ratchet\.py|tidy-baseline-arm64\.json|tests/test_tidy_ratchet\.py)|build-aux/aarch64-linux-gnu\.ini|\.pre-commit-config\.yaml)$'
         pass_filenames: false
 
+      - id: check-tidy-coverage
+        # Every tracked C, C++, CUDA, HIP, Objective-C++ and Metal translation
+        # unit is read by a clang-tidy lane (measured_sources of a
+        # scripts/ci/tidy-baseline-*.json) or sits in the exception list
+        # .config/lint-exceptions.d/clang-tidy-coverage.toml with a reason and
+        # an expiry. pass_filenames is off: the answer depends on the whole set.
+        name: Every translation unit is read by a tidy lane or excepted
+        entry: python3 scripts/ci/check-tidy-coverage.py
+        language: system
+        files: '(\.(c|cc|cpp|cxx|cu|hip|mm|metal)|scripts/ci/(tidy-baseline-[a-z0-9]+\.json|check-tidy-coverage\.py)|\.config/lint-exceptions\.d/clang-tidy-coverage\.toml)$'
+        pass_filenames: false
+
+      - id: test-tidy-changed-route
+        # Q-341 / Q-342: the routing of the Tidy Changed and Tidy SYCL jobs. A file
+        # no lane measures fails and is named; a file a lane measures is skipped with
+        # the lane named; a C-only SYCL header is linted through its C includers.
+        name: The changed-files tidy routing refuses a file no lane measures
+        entry: python3 -m unittest discover -s scripts/ci/tests -p test_tidy_changed_route.py
+        language: system
+        files: '^(scripts/ci/(tidy_changed_route\.py|lint_exceptions\.py|tests/test_tidy_changed_route\.py)|\.github/workflows/lint-and-format\.yml|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+
+      - id: test-tidy-coverage
+        name: The tidy coverage check refuses a unit no lane reads
+        entry: python3 -m unittest discover -s scripts/ci/tests -p test_check_tidy_coverage.py
+        language: system
+        files: '^(scripts/ci/(check-tidy-coverage\.py|tests/test_check_tidy_coverage\.py)|\.config/lint-exceptions\.d/clang-tidy-coverage\.toml|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+
+      - id: check-praetor-tidy-coverage
+        # Praetor's clang-tidy coverage gate reads a lane file list and the exceptions of
+        # .standards.yaml. Both are rendered from the sources above (the baselines' measured_sources
+        # and clang-tidy-coverage.toml) by scripts/ci/praetor_tidy_coverage.py: one list, two
+        # renderings. `--write` repairs a stale one.
+        name: Praetor's tidy coverage inputs match the lanes and the exception list
+        entry: python3 scripts/ci/praetor_tidy_coverage.py --check
+        language: system
+        files: '(\.(c|cc|cpp|cxx|cu|hip|mm)|scripts/ci/(tidy-baseline-[a-z0-9]+\.json|praetor_tidy_coverage\.py)|\.config/(lint-exceptions\.d/clang-tidy-coverage\.toml|clang-tidy/measured-sources\.txt)|\.standards\.yaml)$'
+        pass_filenames: false
+
+      - id: test-praetor-tidy-coverage
+        name: The praetor tidy coverage renderer refuses a stale rendering
+        entry: python3 -m unittest discover -s scripts/ci/tests -p test_praetor_tidy_coverage.py
+        language: system
+        files: '^(scripts/ci/(praetor_tidy_coverage\.py|tests/test_praetor_tidy_coverage\.py)|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+
       - id: test-tidy-lane-container
         # ADR-1471: the lanes are measured in the dev container. The lane
         # configuration lives in the Makefile, the hosted job repeats the cpu
@@ -498,7 +588,7 @@ repos:
         name: Tidy lanes in the dev container (ADR-1471)
         entry: python3 -m unittest discover -s scripts/ci/tests -p test_tidy_lane_container.py
         language: system
-        files: '^(Makefile|scripts/dev/tidy-lane\.sh|scripts/ci/(clang-tidy-(hip|sycl)\.sh|tests/test_tidy_lane_container\.py)|\.github/workflows/lint-and-format\.yml|\.pre-commit-config\.yaml)$'
+        files: '^(Makefile|scripts/dev/tidy-lane\.sh|scripts/ci/(clang-tidy-(hip|sycl)\.sh|tests/test_tidy_lane_container\.py)|\.github/workflows/(lint-and-format|tidy-metal)\.yml|\.pre-commit-config\.yaml)$'
         pass_filenames: false
 
       - id: test-gen-gpu-compile-commands
@@ -549,7 +639,22 @@ repos:
         name: Git fixtures preserve caller repositories
         entry: python3 scripts/ci/test_git_fixture_isolation.py
         language: system
-        files: '^(scripts/ci/test_(git_fixture_isolation|ffmpeg_patch_stack|ffmpeg_patch_smoke_safety)\.py|scripts/ci/test-classify-dependency-pr\.sh|scripts/ci/tests/(test_level_zero_single_source\.py|test-sync-pelorus-interop\.sh)|scripts/dev/(test-cleanup-agent-state\.sh|(test-)?resolve-state-md-conflict\.py)|\.pre-commit-config\.yaml)$'
+        files: '^(scripts/ci/test_(git_fixture_isolation|ffmpeg_patch_stack|ffmpeg_patch_smoke_safety)\.py|scripts/ci/test-classify-dependency-pr\.sh|scripts/ci/tests/(test_level_zero_single_source\.py|test-sync-pelorus-interop\.sh)|scripts/dev/(test-cleanup-agent-state\.sh|(test-)?resolve-state-md-conflict\.py)|scripts/lib/(clean|drop)-git-env\.sh|(.*/)?test[-_][^/]*\.(sh|py)|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
+
+      # The two static rules of the same gate, on every script: a file that is not a
+      # test (or a pytest-only test) cannot be run under the sentinel, so its
+      # `git init` / `git clone` / `git config <key> <value>` is checked by reading it.
+      - id: git-fixture-isolation-static
+        name: No script creates or configures a repository with the caller's GIT_* set
+        entry: >-
+          python3 scripts/ci/test_git_fixture_isolation.py
+          GitFixtureIsolation.test_no_script_writes_a_fixture_identity_into_a_git_config
+          GitFixtureIsolation.test_no_script_creates_or_configures_a_repository_unisolated
+          GitFixtureIsolation.test_isolation_exceptions_are_live_and_needed
+        language: system
+        files: '\.(sh|py|mjs|go|rs|mk)$|(^|/)Makefile$'
         pass_filenames: false
         stages: [pre-commit, pre-push]
 
@@ -631,6 +736,48 @@ repos:
         entry: python3 scripts/ci/tests/test_check_composite_actions.py
         language: system
         files: '^(scripts/ci/(check_composite_actions\.py|tests/test_check_composite_actions\.py)|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+
+      - id: check-hosted-runner-labels
+        name: Workflow jobs name an explicit hosted Ubuntu image, an older one only with a dated fallback
+        entry: python3 scripts/ci/check_hosted_runner_labels.py
+        language: system
+        files: '^(\.github/workflows/|scripts/ci/(check_hosted_runner_labels|lint_exceptions)\.py$|\.config/lint-exceptions\.d/hosted-runner-label\.toml$)'
+        pass_filenames: false
+
+      - id: test-check-hosted-runner-labels
+        name: Hosted runner label check keeps positive, negative and boundary cases
+        entry: python3 scripts/ci/tests/test_hosted_runner_labels.py
+        language: system
+        files: '^(\.github/workflows/|scripts/ci/(check_hosted_runner_labels\.py|lint_exceptions\.py|tests/test_hosted_runner_labels\.py)|\.pre-commit-config\.yaml$)'
+        pass_filenames: false
+
+      - id: check-pr-workflow-budget
+        name: Pull-request workflows stay inside the Scorecard check-suite window
+        entry: python3 scripts/ci/pr_workflow_budget.py
+        language: system
+        files: '^(\.github/workflows/|scripts/ci/pr_workflow_budget\.py$)'
+        pass_filenames: false
+
+      - id: test-check-pr-workflow-budget
+        name: Pull-request workflow budget keeps positive, negative and boundary cases
+        entry: python3 scripts/ci/tests/test_pr_workflow_budget.py
+        language: system
+        files: '^(\.github/workflows/|scripts/ci/(pr_workflow_budget\.py|tests/test_pr_workflow_budget\.py)|\.pre-commit-config\.yaml$)'
+        pass_filenames: false
+
+      - id: check-release-provenance-assets
+        name: Release workflows upload build-provenance assets (.intoto.jsonl)
+        entry: python3 scripts/ci/check_release_provenance_assets.py
+        language: system
+        files: '^(\.github/workflows/|scripts/ci/check_release_provenance_assets\.py$)'
+        pass_filenames: false
+
+      - id: test-check-release-provenance-assets
+        name: Release provenance asset check keeps positive, negative and boundary cases
+        entry: python3 scripts/ci/tests/test_check_release_provenance_assets.py
+        language: system
+        files: '^(\.github/workflows/|scripts/ci/(check_release_provenance_assets\.py|tests/test_check_release_provenance_assets\.py)|\.pre-commit-config\.yaml$)'
         pass_filenames: false
 
       - id: test-check-copyright
@@ -785,7 +932,7 @@ repos:
         name: Scorecard exact-head policy and workflow contracts
         entry: python3 -B -m unittest discover -s scripts/ci/tests -p test_scorecard_*.py
         language: system
-        files: '^(scripts/ci/(scorecard_gate\.py|tests/test_scorecard_.*\.py)|\.github/workflows/(scorecard(-policy)?|required-aggregator)\.yml|\.pre-commit-config\.yaml)$'
+        files: '^(scripts/ci/(scorecard_gate\.py|tests/test_scorecard_.*\.py)|\.github/workflows/(scorecard|security-scans|required-aggregator)\.yml|\.pre-commit-config\.yaml)$'
         pass_filenames: false
         stages: [pre-commit, pre-push]
 
@@ -801,7 +948,7 @@ repos:
         name: Repository security policy failure controls
         entry: python3 -B scripts/dev/tests/test_repository_security.py
         language: system
-        files: '^(scripts/dev/(check_repository_security\.py|tests/test_repository_security\.py)|\.github/(repository-security-policy\.json|workflows/scorecard(-policy)?\.yml)|\.pre-commit-config\.yaml)$'
+        files: '^(scripts/dev/(check_repository_security\.py|tests/test_repository_security\.py)|\.github/(repository-security-policy\.json|workflows/scorecard(-policy)?\.yml)|\.config/lint-exceptions\.d/solo-repository-bypass-mode\.toml|scripts/ci/lint_exceptions\.py|\.pre-commit-config\.yaml)$'
         pass_filenames: false
         stages: [pre-commit, pre-push]
 
@@ -867,7 +1014,7 @@ repos:
         # hook would fail with `Executable 'semgrep' not found` on
         # every CI run.
         language: python
-        additional_dependencies: ["semgrep>=1.179.0,<2.0"]
+        additional_dependencies: ["semgrep>=1.181.0,<2.0"]
         require_serial: true
         types_or: [c, c++, cuda, python]
         # Paths this hook skips: (a) upstream vendored subprojects,
@@ -905,7 +1052,7 @@ repos:
         # Same isolated semgrep environment and serial execution as above.
         entry: python3 -m unittest discover -s scripts/ci/tests -p test_semgrep_vendored_scope.py
         language: python
-        additional_dependencies: ["semgrep>=1.179.0,<2.0"]
+        additional_dependencies: ["semgrep>=1.181.0,<2.0"]
         require_serial: true
         files: '^(\.semgrep\.yml|\.semgrepignore|\.pre-commit-config\.yaml|scripts/ci/tests/test_semgrep_vendored_scope\.py|core/src/pdjson\.(c|h)|core/src/mcp/3rdparty/.*)$'
         pass_filenames: false
@@ -1028,14 +1175,22 @@ repos:
         entry: make docs-fragments-check
         language: system
         stages: [pre-commit]
-        files: '^(docs/adr/|docs/research/|docs/assets/|docs/charts/|docs/javascripts/vendor/|docs/index\.md$|docs/backends/index\.md$|docs/development/(upstream-parity|netflix-benchmark-baselines)\.md$|testdata/scores_(cpu|sycl_[a-z0-9]+)_576\.json$|changelog\.d/|scripts/docs/|scripts/release/concat-changelog-fragments\.sh$|scripts/ci/exact_twins\.d/|scripts/ci/cross_backend_calibration\.py$|docs/development/cross-backend-exact-twins\.md$|scripts/ci/upstream_parity\.d/|scripts/ci/upstream_parity_allowlist\.py$|docs/development/upstream-parity-allowlist\.md$|(.*/)?AGENTS\.d/|(.*/)?AGENTS\.md$|mkdocs\.yml$|CHANGELOG\.md$|Makefile$)'
+        files: '^(docs/adr/|docs/research/|docs/assets/|docs/charts/|docs/javascripts/vendor/|packaging/schemas/|docs/index\.md$|docs/backends/index\.md$|docs/development/(upstream-parity|netflix-benchmark-baselines)\.md$|testdata/scores_(cpu|sycl_[a-z0-9]+)_576\.json$|changelog\.d/|scripts/docs/|scripts/release/concat-changelog-fragments\.sh$|scripts/ci/exact_twins\.d/|scripts/ci/cross_backend_calibration\.py$|docs/development/cross-backend-exact-twins\.md$|scripts/ci/upstream_parity\.d/|scripts/ci/upstream_parity_allowlist\.py$|docs/development/upstream-parity-allowlist\.md$|(.*/)?AGENTS\.d/|(.*/)?AGENTS\.md$|mkdocs\.yml$|CHANGELOG\.md$|Makefile$)'
         pass_filenames: false
 
       - id: test-docs-vendored-assets
         name: Vendored docs assets check keeps its contract
         entry: python3 -B scripts/docs/tests/test_vendored_assets.py
         language: system
-        files: '^(scripts/docs/(check_vendored_assets|vendor_fonts|tests/test_vendored_assets)\.py|\.pre-commit-config\.yaml)$'
+        files: '^(scripts/docs/(check_vendored_assets|vendor_fonts|tests/test_vendored_assets)\.py|packaging/schemas/.*|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
+
+      - id: test-docs-math
+        name: Documentation formula check and KaTeX vendoring keep their contract
+        entry: python3 -B scripts/docs/tests/test_check_math.py
+        language: system
+        files: '^(scripts/docs/(check_math|check_math_worker|mkdocs_math_hook|vendor_katex|tests/test_check_math)\.(py|js)|docs/javascripts/(katex\.js|vendor/katex/)|\.pre-commit-config\.yaml)'
         pass_filenames: false
         stages: [pre-commit, pre-push]
 
@@ -1068,4 +1223,18 @@ repos:
         entry: python3 -B scripts/ci/tests/test_clang_format_scope.py
         language: system
         files: '^(scripts/ci/tests/test_clang_format_scope\.py|scripts/githooks/pre-commit\.sh|Makefile|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+
+      - id: test-shfmt-scope
+        name: shfmt reads every shell file; its exceptions are declared and unexpired
+        entry: python3 -B scripts/ci/tests/test_shfmt_scope.py
+        language: system
+        always_run: true
+        pass_filenames: false
+
+      - id: test-python-format-scope
+        name: black and ruff read every Python file; their exceptions are declared and unexpired
+        entry: python3 -B scripts/ci/tests/test_python_format_scope.py
+        language: system
+        always_run: true
         pass_filenames: false

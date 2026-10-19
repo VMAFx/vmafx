@@ -16,7 +16,7 @@ invariant: Motion v2 CPU mirror contract and score emission parity.
 - **`integer_motion_v2_cuda.c::flush_fex_cuda` = CPU's window function**
   (ADR-1108, ADR-1491). `motion2_v2` / `motion3_v2` of every frame come from
   `vmaf_motion_window_flush()` (`core/src/feature/motion_window.h`, defined
-  in `integer_motion.c`) over the stored SAD scores: blend, `motion_max_val`
+  in `integer_motion.c`) over stored SAD scores: blend, `motion_max_val`
   clip, `stamp_value` for `i < min_idx`, optional moving average, three-frame
   or five-frame window. Twin holds no copy of that arithmetic; do not add one
   back (SYCL / HIP twins same; Metal still carries its copy). Options
@@ -29,6 +29,6 @@ invariant: Motion v2 CPU mirror contract and score emission parity.
   collect; flush hands stored values to `vmaf_motion_window_flush()`:
   no re-weighting, one-frame input and every end case decided there, as for
   CPU. `test_cuda_kernel_source_contract.py` pins it device-free: weighted,
-  capped SAD in collect; the call in `flush_fex_cuda`; no
-  `vmaf_feature_collector_get_score` in the TU; `motion_cuda` calls the same
+  capped SAD in collect; call in `flush_fex_cuda`; no
+  `vmaf_feature_collector_get_score` in TU; `motion_cuda` calls same
   function in `motion_flush_window()`.

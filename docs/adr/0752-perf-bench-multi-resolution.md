@@ -1,13 +1,10 @@
 <!-- markdownlint-disable MD060 -->
 # ADR-0752 — Multi-Resolution Performance Benchmark Baseline
 
-| Field      | Value                                          |
-|------------|------------------------------------------------|
-| Status     | Accepted                                       |
-| Date       | 2026-05-29                                     |
-| Deciders   | lusoris                                        |
-| Supersedes | —                                              |
-| See also   | ADR-0108 (deep-dive deliverables), ADR-0165 (state.md tracking) |
+- **Status**: Accepted
+- **Date**: 2026-05-29
+- **Deciders**: lusoris
+- **See also**: ADR-0108 (deep-dive deliverables), ADR-0165 (state.md tracking)
 
 ## Context
 

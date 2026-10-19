@@ -7,7 +7,7 @@
 // StreamScorer drives a single, stateful libvmaf context across a sequence of
 // raw planar (ref, dis) frame pairs supplied as in-memory byte buffers rather
 // than file paths.  It backs the gRPC ScoreStream bidirectional RPC defined in
-// proto/vmafx.proto: the server feeds each FramePair's raw_reference /
+// proto/vmafx/v1/vmafx.proto: the server feeds each FramePair's raw_reference /
 // raw_distorted bytes into PushFrame, then calls Finish to obtain per-frame and
 // pooled scores.
 //

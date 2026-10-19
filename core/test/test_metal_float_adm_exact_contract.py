@@ -62,10 +62,10 @@ REFERENCE_LINES = (
     "#define DIVS(n, d) ((n) / (d))",
     "return (ot_dp >= 0.0f) && (ot_dp * ot_dp >= cos_1deg_sq * o_mag_sq * t_mag_sq);",
     "float k = DIVS(t, o + eps);",
-    "rst = MIN(rst * adm_enhn_gain_limit, t);",
-    "rst = MAX(rst * adm_enhn_gain_limit, t);",
-    "flt_ptr[dst_offset + j] = FLOAT_ONE_BY_30 * fabsf(dst_val);",
-    "sum += FLOAT_ONE_BY_15 * fabsf(src_ptr[j]);",
+    "rst = (float)(MIN(rst * adm_enhn_gain_limit, t));",
+    "rst = (float)(MAX(rst * adm_enhn_gain_limit, t));",
+    "flt_ptr[dst_offset + j] = (float)(FLOAT_ONE_BY_30 * fabsf(dst_val));",
+    "sum = (float)(sum + (FLOAT_ONE_BY_15 * fabsf(src_ptr[j])));",
 )
 # Where the host's copies of the reference's constants were.
 COPIED_HOST = (

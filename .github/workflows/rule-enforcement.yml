@@ -22,8 +22,17 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  deep-dive-checklist:
+  tier:
+    name: CI tier (Rules)
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/ci-tier.yml
+
+  deep-dive-checklist:
+    needs: tier
+    if: needs.tier.outputs.light == 'true'
     # ADR-0108
     # required-aggregator
     name: Deliverables Checklist
@@ -126,7 +135,8 @@ jobs:
         run: bash scripts/ci/deliverables-check.sh
 
   doc-substance-check:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    needs: tier
+    if: needs.tier.outputs.light == 'true'
     # ADR-0100 / ADR-0167
     # required-aggregator
     name: Doc-Substance Gate
@@ -297,7 +307,8 @@ jobs:
           echo "Doc-Substance: every touched user-discoverable surface has a matching docs/ edit."
 
   state-md-touch-check:
-    if: github.event.pull_request.draft == false || github.event_name != 'pull_request'
+    needs: tier
+    if: needs.tier.outputs.light == 'true'
     # ADR-0165
     # required-aggregator
     name: docs/state.md Gate
@@ -347,7 +358,8 @@ jobs:
         run: bash scripts/ci/state-md-touch-check.sh
 
   silent-revert-check:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    needs: tier
+    if: needs.tier.outputs.light == 'true'
     # ADR-1284
     # required-aggregator
     name: Silent-Revert Guard
@@ -418,8 +430,70 @@ jobs:
         # `make silent-revert-check`.
         run: python3 scripts/ci/check-silent-revert.py
 
+  dco-sign-off:
+    needs: tier
+    if: needs.tier.outputs.light == 'true'
+    # ADR-2462
+    # required-aggregator
+    name: DCO Sign-off
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    # ADR-2462: every non-merge commit of the pull request carries a
+    # `Signed-off-by:` trailer whose address is the commit's author or
+    # committer (what `git commit -s` writes). Exempt: commits of an
+    # allow-listed bot (scripts/ci/check-dco.py BOT_LOGINS) inside a pull
+    # request GitHub reports as opened by that bot, and the machine-generated
+    # release pull request. The range is the live target tip..head, as in the
+    # Silent-Revert Guard, so a branch behind master is not charged for
+    # master's commits.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Detect a machine-generated release PR
+        id: release_pr
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_AUTHOR_TYPE: ${{ github.event.pull_request.user.type }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: bash scripts/ci/release-pr-exempt.sh
+
+      - name: Resolve the live target tip and the branch head
+        id: refs
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --quiet origin "${BASE_REF}"
+          base="$(git rev-parse FETCH_HEAD)"
+          git cat-file -e "${HEAD_SHA}^{commit}" 2>/dev/null \
+            || git fetch --no-tags --quiet origin "${HEAD_SHA}"
+          echo "base=${base}" >> "$GITHUB_OUTPUT"
+          echo "head=${HEAD_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Require a DCO sign-off on every commit
+        env:
+          BASE_SHA: ${{ steps.refs.outputs.base }}
+          HEAD_SHA: ${{ steps.refs.outputs.head }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_AUTHOR_TYPE: ${{ github.event.pull_request.user.type }}
+          DCO_RELEASE_PR: ${{ steps.release_pr.outputs.exempt }}
+          # ADR-2462 rollout: older pull requests are grandfathered by the
+          # cutoff in scripts/ci/dco-cutoff.txt.
+          PR_CREATED_AT: ${{ github.event.pull_request.created_at }}
+        # Single source of truth lives in scripts/ci/check-dco.py so a
+        # developer can run the identical gate before `gh pr create`:
+        # `python3 scripts/ci/check-dco.py --base origin/master --head HEAD`.
+        run: python3 scripts/ci/check-dco.py
+
   ffmpeg-patches-surface-check:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    needs: tier
+    if: needs.tier.outputs.light == 'true'
     # CLAUDE.md §12 r14, ADR-0356
     # required-aggregator
     name: FFmpeg-Patches Surface Sync
@@ -465,7 +539,8 @@ jobs:
         run: bash scripts/ci/ffmpeg-patches-surface-check.sh
 
   adr-backfill-check:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    needs: tier
+    if: needs.tier.outputs.light == 'true'
     # ADR-0106
     name: ADR-Backfill Advisory
     runs-on: ubuntu-26.04
@@ -514,7 +589,8 @@ jobs:
           fi
 
   adr-collision-check:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    needs: tier
+    if: needs.tier.outputs.light == 'true'
     # ADR-0386 / ADR-0628
     # required-aggregator
     name: ADR Collision Guard
@@ -531,7 +607,7 @@ jobs:
     #     fetch its HEAD and scan docs/adr/ for NNNN-*.md files.  If a number
     #     matches, the check fails.
     #
-    # Phase 2 uses the gh CLI (pre-installed on ubuntu-latest) and is
+    # Phase 2 uses the gh CLI (pre-installed on the hosted image) and is
     # best-effort: if the gh call fails (e.g. rate limit, permissions), the
     # step emits a WARNING but does not block the PR (to preserve offline /
     # restricted-token builds).
@@ -735,19 +811,51 @@ jobs:
     # required-aggregator
     name: Release Script Contract
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    # The channel linters below pull two images when the distribution
+    # manifest or its generator changes; every other run takes about a minute.
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      pull-requests: write
+      actions: read  # the cut check reads the runs of the tester workflows (ADR-2198)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
 
+      # ADR-2198: the cut is the pull request carrying the cut label. Its base is the
+      # master commit the release is cut on, and the cut commits touch only the
+      # changelog and the manifest, so every tester leg (Windows zips, macOS bundle,
+      # tester images) must be green on that commit before the release can merge.
+      - name: Every tester leg is green on the commit the release is cut on (ADR-2198)
+        if: >-
+          github.event_name == 'pull_request' &&
+          startsWith(github.event.pull_request.head.ref, 'release-please--') &&
+          contains(github.event.pull_request.labels.*.name, 'autorelease: cut')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_SHA: ${{ github.event.pull_request.base.sha }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          python3 scripts/release/check-candidate-legs.py \
+            --repo "$GITHUB_REPOSITORY" --sha "$CANDIDATE_SHA"
+
       # The release scripts' tests (scripts/release/tests/) and the
       # self-tests of the gates below run in Tooling Tests, which also runs on
       # the release PR: a test runs once in CI (ADR-1568). This job keeps the
       # checks that read the live tree.
-      - name: The rendered changelog matches its fragments
-        run: scripts/release/concat-changelog-fragments.sh --check
+      - name: The changelog fragments are well formed (and rendered on the release PR)
+        # A pull request carries fragments and not CHANGELOG.md (ADR-2197);
+        # the generated release pull request carries the render of the cut.
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          if [[ "${HEAD_REF}" == release-please--* ]]; then
+            scripts/release/concat-changelog-fragments.sh --check
+          else
+            scripts/release/concat-changelog-fragments.sh --lint
+          fi
 
       - name: Check tester versions name the nearest v tag
         # `make lint-sh` runs both; no hosted job did. The check reads the
@@ -799,51 +907,41 @@ jobs:
         run: bash scripts/ci/check-no-non-header-includes.sh
 
       - name: One-shot release-please fields must not outlive the first release
+        # ADR-1151, ADR-1348, ADR-3292; the rules are in the script's header.
+        run: bash scripts/release/check-one-shot-fields.sh
+
+      - name: ONNX Runtime C tarballs have verified sha256 pins (ADR-3334)
+        run: python3 scripts/ci/check_ort_tarball_pins.py
+
+      - name: Distribution manifest agrees with the tree (#2314)
+        # packaging/manifest.toml names every artifact and channel once; the
+        # check fails on a channel that names an artifact no pipeline builds,
+        # a licence that differs from the licensing record or the package
+        # manifest, and a producer job that does not exist. Its tests run in
+        # Tooling Tests (ADR-1568).
         run: |
-          # ADR-1151. `release-as` and `bootstrap-sha` are one-shot cutover
-          # fields that force the fork's FIRST release onto the 1.0.0 number
-          # line. release-as is a persistent, deprecated override applied AFTER
-          # commit analysis: left in place it pins every subsequent release to
-          # the same version and silently swallows feat/BREAKING bumps.
-          # rollover-changelog-fragments.sh deletes both in the release-merge
-          # PR; this gate makes sure neither comes back afterwards. It is inert
-          # until the manifest reaches 1.0.0, which is exactly when the first
-          # release has landed. Force a later version with a `Release-As:
-          # X.Y.Z` commit footer instead - that form is inherently one-shot.
-          manifest_version="$(jq -er '.["."]' .release-please-manifest.json)"
-          echo "root manifest version: $manifest_version"
-          # ADR-1201: a release-candidate manifest (1.0.0-rc.N) still predates the
-          # first FINAL release, so the one-shot fields are still allowed. This
-          # must be checked BEFORE the sort, because `sort -V` orders 1.0.0
-          # ahead of 1.0.0-rc.1 -- so a naive comparison concludes the RC line
-          # has "reached 1.0.0" and fails every RC build while release-as is
-          # legitimately still present. Verified: printf '1.0.0\n1.0.0-rc.1\n'
-          # | sort -V | head -1  ->  1.0.0
-          if [[ "$manifest_version" == *-* ]]; then
-            # ADR-1348: while candidates are cut, release-please must count
-            # them. `versioning: default` turns a fix on 1.0.0-rc.1 into
-            # 1.0.1-rc.1 (release PR #1575); `prerelease` gives 1.0.0-rc.2.
-            versioning="$(jq -r '.packages["."].versioning // "default"' release-please-config.json)"
-            if [[ "$versioning" != prerelease ]]; then
-              echo "::error::manifest $manifest_version is a release candidate but release-please versioning is '$versioning'; set \"versioning\": \"prerelease\" (ADR-1348)"
-              exit 1
-            fi
-            echo "::notice::manifest $manifest_version is a prerelease - one-shot fields still allowed"
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/dist"
+          "$RUNNER_TEMP/dist/bin/pip" install --quiet --require-hashes \
+            -r requirements/locks/build.txt
+          "$RUNNER_TEMP/dist/bin/python" -B scripts/release/distribution.py check
+
+      - name: Channel linters accept the generated recipes (#2314)
+        # brew style + brew audit --strict and conda-smithy recipe-lint run in
+        # digest-pinned images. They run when the manifest, its generator or
+        # the linter script changes, and on every master push; any other pull
+        # request is covered by the check above, and the step says so.
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == pull_request ]] && ! git diff --name-only "$BASE_SHA" HEAD -- \
+              packaging scripts/release/distribution.py \
+              scripts/release/lint-distribution-recipes.sh \
+              tools/rc1-tester/image/licensing.json REUSE.toml | grep -q .; then
+            echo "skipped: no change to the distribution manifest, its generator or its inputs;"
+            echo "the manifest check above covers this pull request."
             exit 0
           fi
-          lowest="$(printf '1.0.0\n%s\n' "$manifest_version" | sort -V | head -n1)"
-          if [[ "$lowest" != "1.0.0" ]]; then
-            echo "::notice::manifest $manifest_version predates the first 1.0.0 release - one-shot fields still allowed"
-            exit 0
-          fi
-          survivors="$(jq -r '[
-            (if has("bootstrap-sha") then "bootstrap-sha" else empty end),
-            (if (.packages["."] | has("release-as")) then "release-as" else empty end)
-          ] | join(", ")' release-please-config.json)"
-          if [[ -n "$survivors" ]]; then
-            echo "::error::one-shot release-please field(s) survive at manifest $manifest_version: $survivors"
-            echo "Remove them from release-please-config.json (see ADR-1151);"
-            echo "use a 'Release-As: X.Y.Z' commit footer to force a version instead."
-            exit 1
-          fi
-          echo "No one-shot release-please cutover fields remain."
+          PYTHON="$RUNNER_TEMP/dist/bin/python" scripts/release/lint-distribution-recipes.sh

@@ -6,4 +6,10 @@
 
 [[IgnoredVulns]]
 id = "GO-2026-5932"
-reason = "Unmaintained/deprecated subpackage golang.org/x/crypto/openpgp is an indirect dependency not imported or reachable anywhere in the vmafx codebase."
+ignoreUntil = 2027-02-13
+reason = "Unmaintained/deprecated subpackage golang.org/x/crypto/openpgp is an indirect dependency not imported or reachable anywhere in the vmafx codebase. Category D (120 days from 2026-10-16)."
+
+[[IgnoredVulns]]
+id = "GHSA-84m7-p3x7-pcfv"
+ignoreUntil = 2026-10-26
+reason = "mcp 1.29.0 is pulled into requirements/locks/tooling-tests.txt only through semgrep; the tooling suite runs `semgrep scan` and never starts the MCP Streamable HTTP server the advisory concerns. Category C (10 days from 2026-10-16); a semgrep release that requires mcp>=1.30.0 ends it."

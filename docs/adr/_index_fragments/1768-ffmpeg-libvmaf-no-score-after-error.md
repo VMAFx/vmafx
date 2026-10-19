@@ -1,0 +1,1 @@
+| [ADR-1768](1768-ffmpeg-libvmaf-no-score-after-error.md) | After a mid-run error the FFmpeg `libvmaf` and `libvmaf_cuda` filters log the frame and the error once, exit non-zero, and print no pooled score and write no report (patch `0021`); a deliberate divergence from upstream's shared `uninit()`, kept on every series refresh | Accepted | ffmpeg, cuda, correctness, fork-local |

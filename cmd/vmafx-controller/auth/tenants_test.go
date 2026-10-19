@@ -50,7 +50,8 @@ func tierPolicy() auth.MethodRoles {
 	}
 }
 
-func boolPtr(b bool) *bool { return &b }
+//go:fix inline
+func boolPtr(b bool) *bool { return new(b) }
 
 // tenantSpec returns a valid spec of id trusting iss.
 func tenantSpec(id string, iss *authtest.Issuer) auth.NamedTenantSpec {
@@ -221,7 +222,7 @@ func TestPerTenantClaimNamesAudienceAndSharedIssuer(t *testing.T) {
 func TestSuspendedTenantRefused(t *testing.T) {
 	iss := authtest.NewIssuer(t)
 	off := tenantSpec("acme", iss)
-	off.Spec.Enabled = boolPtr(false)
+	off.Spec.Enabled = new(false)
 	mw := tenantMiddleware(t, newRegistry(t, off))
 	tok := iss.Token(t, map[string]any{"tid": "acme", "vmafx_roles": []string{auth.RoleAdmin}})
 

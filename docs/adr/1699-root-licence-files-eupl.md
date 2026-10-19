@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-1699: The root licence files state ADR-1250's terms, and every package manifest declares the licences of the files it ships
 
-- **Status**: Accepted
+- **Status**: Accepted (Helm chart row amended by [ADR-2673](2673-chart-licence-kubernetes-schemas.md))
 - **Date**: 2026-10-05
 - **Deciders**: maintainer, agent
 - **Tags**: license, compliance, docs, ci, rust, helm, python, go, fork-local

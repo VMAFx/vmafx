@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-0594: Per-kernel `hip_cu_extra_flags` dispatch — disable FMA contraction for `ssimulacra2_blur` HIP HSACO
 
-- **Status**: Accepted
+- **Status**: Accepted (Superseded-in-part 2026-10-06 by [ADR-1407](1407-hip-strict-fp-every-kernel.md) for the per-kernel hip_cu_extra_flags table)
 - **Date**: 2026-05-18
 - **Deciders**: lusoris
 - **Tags**: `hip`, `build`, `ssimulacra2`, `numerics`

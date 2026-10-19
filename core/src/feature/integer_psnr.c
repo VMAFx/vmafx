@@ -61,7 +61,7 @@ typedef struct PsnrState {
      * bit-identical. */
     bool uncapped;
     struct {
-        uint64_t sse[3];
+        VmafPsnrClipSse sse[3];
         uint64_t n_pixels[3];
     } apsnr;
     uint32_t (*sse_line_8)(const uint8_t *ref, const uint8_t *dis, unsigned w);
@@ -208,7 +208,7 @@ static int psnr(VmafPicture *ref_pic, VmafPicture *dist_pic, unsigned index,
         }
 
         if (s->enable_apsnr) {
-            s->apsnr.sse[p] += sse;
+            vmaf_psnr_clip_sse_add(&s->apsnr.sse[p], sse);
             s->apsnr.n_pixels[p] += (uint64_t)ref_pic->h[p] * ref_pic->w[p];
         }
 
@@ -246,7 +246,7 @@ static int psnr_hbd(VmafPicture *ref_pic, VmafPicture *dist_pic, unsigned index,
         }
 
         if (s->enable_apsnr) {
-            s->apsnr.sse[p] += sse;
+            vmaf_psnr_clip_sse_add(&s->apsnr.sse[p], sse);
             s->apsnr.n_pixels[p] += (uint64_t)ref_pic->h[p] * ref_pic->w[p];
         }
 

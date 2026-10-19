@@ -82,3 +82,16 @@ INT32-C (avoid signed integer overflow in size arithmetic).
 - req: "Fix T-FUZZ-Y4M-NEG-WIDTH-SEGV: real ASan-detected SEGV in the
   Y4M parser ... reject W <= 0 / H <= 0 in the YUV4MPEG header parser
   before any allocation."
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 75: `- ADR-0332 (docs/adr/0332-nightly-fuzz-triage-keep-gates.md)
+  — policy to keep the fuzz workflow on while bugs`: Cites ADR-0332 as nightly
+  fuzz triage; ADR-0332 is Agent worktree-drift hard guard. Nightly fuzz
+  triage is ADR-0404.
+- About line 78: `(y4m_convert_411_422jpeg 1-byte heap-buffer-overflow,
+  ADR-0228).`: Cites ADR-0228 which does not exist anywhere in the repository
+  or ADR tree. ADR-0228 now has a short tombstone record.

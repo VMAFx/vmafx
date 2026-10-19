@@ -21,9 +21,13 @@ void mexFunction(int nlhs,             /* Num return vals on lhs */
                  const mxArray *prhs[] /* Matrices on rhs */
 )
 {
-    register double temp, mn, mx;
+    (void)nlhs;
+    register double temp;
+    register double mn;
+    register double mx;
     register double *mtx;
-    register int i, size;
+    register int i;
+    register int size;
     mxArray *arg;
 
     if (nrhs != 1)
@@ -41,10 +45,11 @@ void mexFunction(int nlhs,             /* Num return vals on lhs */
     mx = *mtx;
     for (i = 1; i < size; i++) {
         temp = mtx[i];
-        if (temp < mn)
+        if (temp < mn) {
             mn = temp;
-        else if (temp > mx)
+        } else if (temp > mx) {
             mx = temp;
+        }
     }
 
     plhs[0] = (mxArray *)mxCreateDoubleMatrix(1, 1, mxREAL);
@@ -57,6 +62,4 @@ void mexFunction(int nlhs,             /* Num return vals on lhs */
     mtx[0] = mn;
     mtx = mxGetPr(plhs[1]);
     mtx[0] = mx;
-
-    return;
 }

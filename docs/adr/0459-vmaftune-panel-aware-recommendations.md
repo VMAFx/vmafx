@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD060 -->
 # ADR-0459: vmaf-tune panel/display-aware recommendation workstream
 
-- **Status**: Proposed
+- **Status**: Proposed (status update 2026-10-06 below)
 - **Date**: 2026-05-15
 - **Deciders**: Lusoris
 - **Tags**: vmaf-tune, ai, hdr, training, panel, display, fork-local
@@ -84,3 +84,12 @@ dedicated workstream tracked under this ADR. Concrete scope:
   separate-adapter pattern this ADR mirrors).
 - ADR-0336 — KonViD MOS head (the model-registration pattern this
   ADR mirrors).
+
+## Status update 2026-10-06: Proposed, scheduled for 1.5
+
+The decision is not implemented and stays Proposed. It is scheduled for the
+1.5 milestone ("Next model generation") as the panel predictor; the tracking
+issue is [#2262](https://github.com/VMAFx/vmafx/issues/2262). The code this
+record names does not exist on `origin/master` `fd8b8c93b`.
+
+The body above is unchanged.

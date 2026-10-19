@@ -123,7 +123,7 @@ static double reference_term(ssim_moments m, int samplemax)
     double mxy;
     double my2;
     double w_d;
-    w_d = m.w;
+    w_d = (double)m.w;
     c1 = sm * sm * SSIM_K1 * w_d * w_d;
     c2 = sm * sm * SSIM_K2 * w_d * w_d;
     mx2 = m.mux * (double)m.mux;

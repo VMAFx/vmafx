@@ -44,7 +44,12 @@ only. The smallest accepted frame is 17x17 ([Small frames](#small-frames)).
   `adm_min_val` in both cases. This is the ADM feature the default model
   consumes.
 - With `debug=true`: `adm`, `adm_num`, `adm_den`, and per-scale
-  numerator / denominator.
+  numerator / denominator. `adm` is never suffixed with the options (the
+  Netflix tests read it under every option set), so a run can hold only one
+  `float_adm` instance with `debug=true`: a second is refused when it is
+  registered, with a message naming the key
+  ([ADR-2056](../adr/2056-float-adm-debug-key-refusal.md)). Put `debug=true`
+  on one instance, or leave it off.
 
 **Output range** — `adm2` and the scale scores lie in `[0, 1]` unless the
 distorted picture has more of the reference's detail than the reference, which
@@ -61,8 +66,9 @@ the fixed-point one has no upper bound.
 
 ## Options
 
-Every option is a feature parameter, so a non-default value changes the
-published feature name (the alias is appended, for example `adm_egl_1.2`).
+Every option except `debug`, `adm_skip_aim` and `adm_norm_view_dist_extra` is
+a feature parameter, so a non-default value changes the published feature name
+(the alias is appended, for example `adm_egl_1.2`).
 "Declared by" lists the extractors whose option table has the entry; an
 extractor that does not declare an option rejects it as unknown.
 
@@ -70,15 +76,16 @@ extractor that does not declare an option rejects it as unknown.
 | --- | --- | --- | --- | --- | --- | --- |
 | `debug` | — | bool | `false` | — | all | Emit debug metrics. |
 | `adm_enhn_gain_limit` | `egl` | double | `100.0` | `1.0–100.0` | all | How many times its reference value a restored coefficient may count for. `1.0` (`egl=1.0`) counts no enhancement as restored detail (NEG models and `vmaf_v1.0.16_*`); `100.0` is upstream's default. Note 1. |
-| `adm_norm_view_dist` | `nvd` | double | `3.0` | `0.75–24.0` | all | Normalised viewing distance (distance ÷ display height). |
+| `adm_norm_view_dist` | `nvd` | double | `3.0` | `0.75–24.0` (integer `adm`: `nvd × rdh ≥ 3240`) | all | Normalised viewing distance (distance ÷ display height). Note 6. |
+| `adm_norm_view_dist_extra` | `nvde` | double | `0.0` (none) | `0–24.0`; must pass the same floor and give names other than `adm_norm_view_dist`'s | `adm` (CPU, `adm_rust`, CUDA, SYCL, HIP, Metal) | A second viewing distance evaluated on the same DWT and decouple; its scores carry that distance's `nvd` suffix. Note 7. |
 | `adm_ref_display_height` | `rdh` (`adm`), `rdf` (`float_adm`) | int | `1080` | `1–4320` | all | Reference display height in pixels, for viewing-distance scaling. |
 | `adm_csf_mode` | `csf` | int | `0` | `0–3` (`adm`), `0–9` (`float_adm`) | all | Contrast-sensitivity-function model. Note 2. |
 | `adm_csf_scale` | `scf` | double | `1.0` | `0–50` | all | H/V-axis CSF sensitivity scale. Read only by `adm_csf_mode=1`. Note 3. |
 | `adm_csf_diag_scale` | `scfd` | double | `1.0` | `0–50` | all | Diagonal-axis CSF sensitivity scale; same applicability. |
-| `adm_noise_weight` | `nw` | double | `0.03125` | `0–1500` | all | Weight in the `(area × noise_weight)^(1/3)` noise-floor term of `adm_cm` / `adm_csf_den`; the default `1/32 ≈ 0.03125` is upstream's noise-floor divisor. |
+| `adm_noise_weight` | `nw` | double | `0.03125` | `0–1500` | all | Weight in the $(\mathrm{area} \times \mathrm{noise\_weight})^{1/3}$ noise-floor term of `adm_cm` / `adm_csf_den`; the default `1/32 ≈ 0.03125` is upstream's noise-floor divisor. |
 | `adm_dlm_weight` | `dlmw` | double | `0.5` | `0.0–1.0` | all | Linear blend between DLM and AIM; `1.0` = DLM only, `0.0` = AIM only. |
 | `adm_min_val` | `min` | double | `0.0` | `0.0–1.0` | all | Floor: fused ADM scores below it are raised to it. |
-| `adm_p_norm` | `apn` | double | `3.0` | `1.0–20.0` | all | p-norm exponent of the contrast-measure finalisation (`x^(1/p)` pooling in `adm_cm`). Note 4. |
+| `adm_p_norm` | `apn` | double | `3.0` | `1.0–20.0` | all | p-norm exponent of the contrast-measure finalisation ($x^{1/p}$ pooling in `adm_cm`). Note 4. |
 | `adm_skip_scale0` | `ssz` | bool | `false` | — | `adm` (CPU, CUDA, SYCL, HIP, Metal); `float_adm` (CPU, SYCL, Metal) | Skip scale 0: its outputs are `0.0` and it leaves the fused score. Note 5. |
 | `adm_skip_aim` | — | bool | `false` | — | `adm` (CPU, CUDA, SYCL, Metal; not HIP) | Skip the AIM sub-band calculation; forces the AIM contribution to zero. |
 | `adm_bypass_cm` | `bcm` | int | `0` | `0–1` | `float_adm` (CPU, CUDA, SYCL, HIP, Metal) | Bypass contrast masking: drops the 3x3 masking threshold from the numerator, so `adm2` rises sharply. |
@@ -108,6 +115,20 @@ extractor that does not declare an option rejects it as unknown.
     [ADR-1325](../adr/1325-integer-adm-barten-fixed-point-normalization.md)).
 - **Note 3** — `1.0` is upstream-canonical. Modes 0, 2 and 3 ignore it on every
   backend, the CPU included. It is the `adm_csf_scale` argument of `barten_csf()`.
+- **Note 6** — The integer `adm` pipeline enforces an angular-frequency floor
+  of `adm_norm_view_dist × adm_ref_display_height ≥ 3240` (1080p viewed at 3H).
+  Geometries below this floor are refused with a named error and `-EINVAL`;
+  use `float_adm` for geometries below the floor ([Fixed-point CSF limits](#fixed-point-csf-limits)).
+- **Note 7** — You rarely set it yourself: libvmaf sets it when two models
+  need `adm` at two viewing distances
+  ([Two viewing distances share one `adm`](#two-viewing-distances-share-one-adm)).
+  Set by hand, `--feature adm=nvd=3:nvde=5` files the `nvd=5` scores under
+  `integer_adm2_nvd_5`, `integer_aim_nvd_5`, `integer_adm3_nvd_5` and
+  `integer_adm_scale0_nvd_5` … `integer_adm_scale3_nvd_5`, the names
+  `--feature adm=nvd=5` gives them. With `debug=true` the numerators and
+  denominators are the first distance's only. A second distance equal to the
+  first, or one whose `%g` text names the same feature (`3.0000001` next to
+  `3`), stops initialisation with `-EINVAL`.
 
 ### Notes on `adm_p_norm` and `adm_skip_scale0`
 
@@ -152,11 +173,50 @@ parity gate compares them with tolerance 0
 ([generated table](../development/cross-backend-exact-twins.md)). The Metal
 twins are not declared exact. The sections below give the measurements.
 
+On the CPU, a build with Rust features also has `adm_rust`, a Rust port of
+`adm` with the same scores ([Rust implementation](#rust-implementation-adm_rust)).
+
 ## Behaviour you can rely on
 
 Each subsection states what a twin or path returns relative to the CPU
 extractor, how it was measured and what it means for stored scores. Pick the
 one for the extractor you run.
+
+### Two viewing distances share one `adm`
+
+Two models that ask for `adm` with the same options except
+`adm_norm_view_dist`, such as `vmaf_v1.0.16_3d0h` and `vmaf_v1.0.16_5d0h`,
+run one `adm` instead of two. The wavelet transform and the decouple stage do
+not depend on the viewing distance and run once per scale; the
+contrast-sensitivity, denominator and masking stages run once per distance.
+The second distance's scores keep the names the second model reads
+(Netflix/vmaf `cffd5b77d`, [ADR-2795](../adr/2795-adm-shared-viewing-distances.md)).
+
+```sh
+vmaf -r ref.yuv -d dis.yuv -w 576 -h 324 -p 420 -b 8 \
+  --model version=vmaf_v1.0.16_3d0h --model version=vmaf_v1.0.16_5d0h
+```
+
+#### What this means when you use it
+
+- **The scores do not change.** Every frame and pooled value of the two-model
+  run equals the values of each model run alone, as text at `%.6f` and as
+  doubles at `--precision max`: 1560 values on the 48 frames of the 576x324
+  test pair, with `--threads 1` and `4`, for `adm` and for `adm_rust`
+  (`VMAF_FEATURE_IMPL=rust`). `test_integer_adm_view_dist` checks the seven
+  scores of both distances at 8 and 10 bits on the scalar and SIMD paths.
+- **What is not shared.** A context keeps two distances at most; a third model
+  at a third distance gets its own. A context whose `debug` is set, or whose
+  `adm_skip_aim` differs, is not folded in, so its debug scores and its AIM
+  stay its own. A model at a distance a context already evaluates second is
+  absorbed, not run again.
+- **Which backends.** Every integer ADM extractor shares: the CPU extractor,
+  `adm_rust`, `adm_cuda`, `adm_sycl`, `adm_hip` and `integer_adm_metal`. The
+  GPU twins run the wavelet transform once and the other kernels per
+  distance, and return the CPU's bits for both (`test_cuda_adm_parity`,
+  `test_sycl_adm_parity`, `test_hip_adm_exact`). The Metal twin's arithmetic
+  is held to the CPU's on the host (`test_metal_integer_adm_host_replay`); its
+  device run is the macOS tester bundle's (`test_metal_integer_adm_parity`).
 
 ### `float_adm` does not depend on the processor
 
@@ -310,10 +370,9 @@ as well. A 3840x2160 frame takes 12.3 ms, 15.1 ms before.
 - One option is not identical: with `adm_p_norm` other than 1 or 3 the twin
   is within 1.8e-7 of the CPU, because the two sides raise each term with
   different `powf` implementations.
-- With `debug=true` and another option set, the CPU files the ratio under
-  `adm` and the twin under `adm` plus the option suffix (for example
-  `adm_egl_1.2`). The value is the same; every other output has the same
-  name on both.
+- With `debug=true` the ratio is filed under the same unsuffixed key `adm` on
+  the CPU and on every twin, whatever other option is set; every other output
+  carries the option suffix on both (for example `adm_num_egl_1.2`).
 - Frames smaller than 17x17 are refused by both; see the next section.
 - The twin uses 48 MB more device memory at 3840x2160.
 
@@ -567,7 +626,7 @@ and 16 bits, both 1920x1080 checkerboard pairs and 3840x2160, with
   before it differ from new ones by that much.
 - On a few unusual frame sizes the old twin was wrong, not merely imprecise:
   where the scale-0 region inside the ADM border has an area just above a
-  power of two (81 areas up to 2^26, for example 962x13542), it reported
+  power of two (81 areas up to $2^{26}$, for example 962x13542), it reported
   `integer_adm_scale0` up to 0.12 too low (0.860 instead of 0.979) and
   `adm2` 0.014 too low. Re-score such material.
 - With `adm_skip_scale0=true` the debug output `integer_adm_den_scale0` is
@@ -588,8 +647,8 @@ difference, and exits 0 only when every frame is.
 ### Fixed-point CSF limits
 
 The fixed-point `adm` extractor stores each scale's CSF weight as an integer:
-`uint16_t` at scale 0 (horizontal/vertical bands scaled by 2^21, the diagonal
-band by 2^23) and `uint32_t` at scales 1-3 (scaled by 2^32). Those budgets
+`uint16_t` at scale 0 (horizontal/vertical bands scaled by $2^{21}$, the diagonal
+band by $2^{23}$) and `uint32_t` at scales 1-3 (scaled by $2^{32}$). Those budgets
 were sized for Watson97 weights near `1e-2`. Full-scale Barten weights are
 about 1.21 at scale 0 and 26.98 at scale 3, so direct narrowing used to wrap
 and publish NaN or near-zero scores. ADR-1191 first made that failure explicit;
@@ -601,8 +660,8 @@ finite weights computable instead.
 For each scale, `adm` chooses the smallest non-negative power-of-two exponent
 `k` that puts all three fixed-point bands inside their arithmetic budget:
 
-- scale 0: the horizontal and vertical weights stay below 46603.4, the
-  diagonal weight below 2^16;
+- scale 0: the horizontal and vertical weights stay below 43900, the
+  diagonal weight below $2^{16}$;
 - scales 1, 2 and 3: every weight stays below 279958309, 539893111 and
   546406567.
 
@@ -615,7 +674,20 @@ has a square that fits. The largest coefficient follows from the filter taps
 and holds for every picture and bit depth
 ([ADR-1472](../adr/1472-integer-adm-cm-weight-budget.md)).
 
-With the earlier limit of 2^30 a high-contrast picture could wrap that square in
+At scale 0 one more stage binds the horizontal and vertical weight first
+([ADR-1917](../adr/1917-integer-adm-scale0-weight-limit-csf-magnitude.md)).
+The CSF stage keeps the 1/30 magnitude of the weighted band in 16 bits, and
+for the largest band the integer wavelet produces (22930) that holds only
+below a weight of 43900; the square would allow 46603.4. Between the two, the
+magnitude wrapped negative in the scalar code and on the GPUs and saturated
+in AVX2, and a 31-32 pixel wide masking row could pass $2^{64}$. A weight in that
+range now takes one more halving. Watson97 at every viewing geometry, the
+default Barten configuration and both blend modes stay below 43900 and keep
+their bits; a Barten configuration that lands in the range (for example
+`adm_csf_scale=1.16:adm_csf_diag_scale=0.3`) moves by about 1e-6.
+
+With the earlier limit of $2^{30}$ a high-contrast picture could wrap that
+square in
 Barten mode:
 `adm=adm_csf_mode=1` failed every frame of the 10 px checkerboard with a NaN
 numerator and returned `integer_adm2` 0.587 instead of 0.784 on the 1 px
@@ -675,6 +747,62 @@ commits [`8a289703`](https://github.com/Netflix/vmaf/commit/8a289703) and
 [`1b6c3886`](https://github.com/Netflix/vmaf/commit/1b6c3886) and completed
 in ADR-1258, so they compile for 32-bit x86. Nothing builds or tests 32-bit in
 CI, so that is portability hygiene, not a supported configuration.
+
+## Rust implementation (`adm_rust`)
+
+A build configured with `-Denable_rust_features=true` also contains `adm_rust`,
+a Rust port of the fixed-point `adm` extractor
+(`core/src/rust/feature/adm/`). It reads the options of `adm` from the C
+option table, so every option above works, with the same defaults, aliases and
+ranges. It emits the same features under the same names (`adm2`, `aim`,
+`adm3`, the four scale scores, and with `debug=true` the numerators and
+denominators) and returns the C extractor's values bit for bit.
+
+Run it:
+
+- `VMAF_FEATURE_IMPL=rust` replaces `adm` by `adm_rust` wherever `adm` is
+  requested, by `--feature adm` or by a model such as `vmaf_v1.0.16`. The log
+  line `feature extractor adm: Rust implementation adm_rust` and the
+  `feature_backends` entry of the JSON output name what ran.
+- `--feature adm_rust` runs the Rust extractor directly, with or without the
+  variable.
+- Without the variable, or with `VMAF_FEATURE_IMPL=c`, the C extractor runs.
+
+The build option, the selection rules and the fallback are in the
+[Rust extractor framework](../development/rust-extractor-framework.md#build-and-run-the-rust-path)
+guide.
+
+The Rust extractor refuses what `adm` refuses, at the same point: frames below
+17x17 at initialisation, a viewing geometry below 1080p at 3H, and a blended
+CSF (`adm_csf_mode` 2 or 3) at a geometry it has no table for, on every frame.
+It reads 8-, 10-, 12- and 16-bit input, Y plane only.
+
+**What "bit for bit" was measured on.** `scripts/ci/rust_twin_diff.py
+--feature adm` runs the same `vmaf` binary once with each implementation at
+`--precision max` and compares every metric of every frame as IEEE doubles.
+Zero differences on the Netflix 576x324 pair (48 frames), both 1080p
+checkerboard pairs, the 10-bit 480x270 `sparks` pair and the 3840x2160 `bbb`
+pair (200 frames), for the default options and for the four option sets of the
+`vmaf_v1.0.16` models (`adm_csf_mode=2` at 1.5H and 3H for 2160 lines, 3H and
+5H for 1080 lines). The options the Netflix golden tests set (Barten CSF,
+`adm_skip_aim`, `adm_skip_scale0`, `adm_p_norm`, `debug`, fractional
+`adm_enhn_gain_limit`) were compared on the 576x324 pair with the same result.
+The Netflix golden tests (the test list of `make test-netflix-golden`) pass
+unchanged with `VMAF_FEATURE_IMPL=rust` set.
+
+**Speed.** The Rust extractor is scalar and runs as fast as the C extractor's
+scalar path; the C extractor is faster where it can use its AVX2 or AVX-512
+kernels. Processor time of a single-threaded `vmaf --feature adm
+--no_prediction` run per frame, default options, median of three runs, on an
+AMD Ryzen 9 9950X3D (AVX-512) under load:
+
+| Input | `adm`, AVX-512 | `adm`, scalar (`--cpumask 4294967295`) | `adm_rust` |
+| --- | --- | --- | --- |
+| 576x324, 48 frames | 0.6 ms | 3.4 ms | 3.2 ms |
+| 3840x2160, 50 frames | 30.7 ms | 128.4 ms | 133.7 ms |
+
+The same runs with `--feature null` take 0.1 ms and 4.2 ms per frame, the cost
+of reading the input.
 
 ## Reference
 

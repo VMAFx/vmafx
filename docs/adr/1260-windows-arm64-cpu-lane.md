@@ -208,3 +208,12 @@ Verification command:
 ```bash
 grep -n 'windows-arm64\|0xAA64' .github/workflows/libvmaf-build-matrix.yml
 ```
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 59: `__builtin_clz* under _M_ARM64; arm/cpu.c probes SVE2 only
+  under`: Path arm/cpu.c does not exist on origin/master; the file is located
+  at core/src/arm/cpu.c.

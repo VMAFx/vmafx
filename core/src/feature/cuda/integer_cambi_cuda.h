@@ -58,6 +58,7 @@ extern const unsigned char cambi_score_ptx[];
  * is set when pass 0 lands in bin 0: that bin holds only exact zeros (every
  * non-zero c-value is >= 0.5), so the threshold is 0 and the later passes
  * have nothing to do. */
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no `using`. ADR-1138. */
 typedef struct CambiCudaSelect {
     uint32_t hist[CAMBI_CUDA_RADIX_BINS];
     uint32_t prefix;
@@ -164,6 +165,7 @@ typedef struct CambiCudaPoolArgs {
     int32_t pass;
     int32_t scale;
 } CambiCudaPoolArgs;
+/* NOLINTEND(modernize-use-using) */
 
 #ifdef __cplusplus
 } /* extern "C" */

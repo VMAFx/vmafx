@@ -51,7 +51,9 @@
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunknown-pragmas"
 #endif
+#if !defined(_MSC_VER) /* cl.exe has no contraction pragma; /fp:precise does not contract */
 #pragma STDC FP_CONTRACT OFF
+#endif
 #if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC diagnostic pop
 #endif
@@ -494,7 +496,7 @@ static void accumulate_error(const psnr_hvs_block *b, float mask[8][8], float cs
 {
     for (int i = 0; i < 8; i++) {
         for (int j = 0; j < 8; j++) {
-            float err = abs(b->dct_s[i * 8 + j] - b->dct_d[i * 8 + j]);
+            float err = (float)abs(b->dct_s[i * 8 + j] - b->dct_d[i * 8 + j]);
             if (i != 0 || j != 0) {
                 err = err < b->s_mask / mask[i][j] ? 0 : err - b->s_mask / mask[i][j];
             }
@@ -517,7 +519,8 @@ double calc_psnrhvs_avx2(const unsigned char *src, int systride, const unsigned 
 
     for (int x = 0; x < 8; x++) {
         for (int y = 0; y < 8; y++) {
-            mask[x][y] = (csf[x][y] * 0.3885746225901003) * (csf[x][y] * 0.3885746225901003);
+            mask[x][y] =
+                (float)((csf[x][y] * 0.3885746225901003) * (csf[x][y] * 0.3885746225901003));
         }
     }
 

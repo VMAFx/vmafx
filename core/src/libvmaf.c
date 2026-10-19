@@ -25,6 +25,8 @@
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <limits.h>
+#include <stdatomic.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -50,6 +52,7 @@ __attribute__((weak)) char __libc_single_threaded = 1;
 #include "libvmaf/picture.h"
 
 #include "bootstrap_names.h"
+#include "conversion_context.h"
 #include "cpu.h"
 #include "dnn/dnn_ctx.h"
 #include "dnn/tensor_io.h"
@@ -59,16 +62,22 @@ __attribute__((weak)) char __libc_single_threaded = 1;
 #include "metadata_handler.h"
 #include "fex_ctx_vector.h"
 #include "libvmaf_priv.h"
+#include "compat/crt_portable.h"
 #include "compat/path_utf8.h"
 #include "log.h"
 #include "model.h"
 #include "output.h"
 #include "percentile.h"
 #include "picture.h"
+#include "picture_sample_range.h"
 #include "predict.h"
 #include "thread_pool.h"
 #include "vcs_version.h"
 #include "vmafx/engine.h"
+#if HAVE_RUST_FEATURES
+#include "rust/shim/rust_predict.h"
+#include "rust/shim/rust_twins.h"
+#endif
 
 #ifdef HAVE_CUDA
 #include "libvmaf/libvmaf_cuda.h"
@@ -194,6 +203,21 @@ typedef struct VmafContext {
     } pic_params;
     unsigned pic_cnt;
     bool flushed;
+    /* RC4 WP5 (#2142, ADR-2073): what the provenance record reads of the
+     * run. The submitting thread writes it and a record query may read it
+     * from any thread while frames are submitted (design section 2.5), so it
+     * is atomic and separate from pic_cnt / pic_params, which stay the
+     * submitting thread's own. `size` (w << 32 | h) and `format`
+     * (bpc << 8 | pix_fmt) are stored before `frames` leaves 0 (release), so
+     * a reader that loads a nonzero count (acquire) sees them; the times are
+     * monotonic nanoseconds, 0 until the first frame / the flush. */
+    struct {
+        _Atomic uint64_t frames;
+        _Atomic uint64_t size;
+        _Atomic uint32_t format;
+        _Atomic uint64_t first_ns;
+        _Atomic uint64_t flush_ns;
+    } run;
     /* Active compute backend — set by vmaf_<backend>_import_state().
      * Zero-initialised (VMAF_BACKEND_UNKNOWN) for CPU-only contexts. */
     enum VmafBackend active_backend;
@@ -206,8 +230,9 @@ typedef struct VmafContext {
      * is fine — `have_last_index` guards the first call. */
     unsigned last_index;
     bool have_last_index;
-    VmafPicture prev_ref;      // n-1 ref pic for PREV_REF extractors (in-order only)
-    VmafPicture prev_prev_ref; // n-2 ref pic, kept only while keep_prev_prev_ref (ADR-1478)
+    VmafConversionState convert; // ADR-2093: model conversion_target + input colorimetry
+    VmafPicture prev_ref;        // n-1 ref pic for PREV_REF extractors (in-order only)
+    VmafPicture prev_prev_ref;   // n-2 ref pic, kept only while keep_prev_prev_ref (ADR-1478)
     /* ADR-1478: set once a registered extractor reads frame n-2 (the
      * five-frame motion window). Only then does the context keep
      * prev_prev_ref, and only then must a preallocated pool hold
@@ -270,12 +295,36 @@ typedef struct VmafContext {
      * a build without this feature. Mutated only by the
      * vmaf_set_perceptual_* entry points; read only in the pooling path. */
     VmafPerceptualWeightStore perceptual;
+    /* vmaf_set_sample_range_check_enabled() (ADR-1918): off by default, and
+     * then vmaf_read_pictures() reads no sample for it. */
+    bool check_sample_range;
     /* ADR-1852: the VMAFx API context this engine context belongs to. Set by
      * vmafx_context_create() right after vmaf_engine_init(); every engine
      * context has one, because libvmaf's vmaf_init() is a compat shim on
-     * vmafx_context_create() (core/src/vmafx/compat_libvmaf_gen.c). */
+     * vmafx_context_create() (core/src/compat/libvmaf/libvmaf_gen.c). A
+     * context the engine made directly (vmaf_engine_init() in a white-box
+     * test) has none. */
     struct VmafxContext *api_owner;
+    /* ADR-2074 (RC4 WP4): called by a worker thread when its frame's job has
+     * run, so the VMAFx completion thread looks at the windows that frame may
+     * have made final. Set once, before the first frame is read. */
+    void (*frame_listener)(void *user);
+    void *frame_listener_user;
 } VmafContext;
+
+/* RC4 WP5: count one accepted frame for the provenance record (see `run`). */
+static void run_note_frame(VmafContext *vmaf)
+{
+    if (atomic_load_explicit(&vmaf->run.frames, memory_order_relaxed) == 0u) {
+        const uint64_t size = ((uint64_t)vmaf->pic_params.w << 32) | vmaf->pic_params.h;
+        const uint32_t format =
+            ((uint32_t)vmaf->pic_params.bpc << 8) | ((uint32_t)vmaf->pic_params.pix_fmt & 0xffu);
+        atomic_store_explicit(&vmaf->run.size, size, memory_order_relaxed);
+        atomic_store_explicit(&vmaf->run.format, format, memory_order_relaxed);
+        atomic_store_explicit(&vmaf->run.first_ns, vmafx_monotonic_ns(), memory_order_relaxed);
+    }
+    atomic_fetch_add_explicit(&vmaf->run.frames, 1u, memory_order_release);
+}
 
 typedef struct BatchThreadData {
     VmafFeatureExtractorContext **fex_ctx;
@@ -348,7 +397,12 @@ static int vmaf_ctx_subsystems_init(VmafContext *v)
      * fast.  The static `feature_extractor_list[]` should hold each
      * extractor exactly once; a duplicate doubles ctx-pool entries and
      * runs init/extract/flush twice per pic.  Run the audit before any
-     * other state is touched. */
+     * other state is touched. ADR-1713: the Rust extractors join the
+     * registry first, so the audit covers them too. */
+#if HAVE_RUST_FEATURES
+    vmaf_rust_twins_install();
+    vmaf_rust_predict_install();
+#endif
     int err = vmaf_feature_extractor_list_audit();
     if (err)
         return err;
@@ -1237,7 +1291,7 @@ static char *dnn_make_output_feature_name(const char *base, const char *suffix, 
     if (!base)
         return NULL;
     if (!multi_output)
-        return strdup(base);
+        return VMAF_STRDUP(base);
 
     char fallback[VMAF_DNN_NAME_FALLBACK_BUF];
     const char *raw = suffix;
@@ -1381,9 +1435,9 @@ static int dnn_append_scalar_outputs(VmafContext *vmaf, const VmafOrtTensorOut *
             return -EINVAL;
     }
     for (size_t i = 0; i < vmaf->dnn.n_outputs; ++i) {
-        int rc = vmaf_feature_collector_append(vmaf->feature_collector,
-                                               vmaf->dnn.output_feature_names[i],
-                                               (double)outputs[i].data[0], index);
+        int rc = vmaf_feature_collector_append_from(
+            vmaf->feature_collector, vmaf->dnn.output_feature_names[i], (double)outputs[i].data[0],
+            index, VMAF_FEATURE_SOURCE_MODEL, "tiny_model");
         if (rc < 0)
             return rc;
     }
@@ -1791,7 +1845,7 @@ int vmaf_ctx_dnn_attach(VmafContext *ctx, VmafOrtSession *sess, const VmafModelS
         return -ENOTSUP;
     }
 
-    char *name = strdup(feature_name);
+    char *name = VMAF_STRDUP(feature_name);
     if (!name)
         return -ENOMEM;
 
@@ -2140,6 +2194,7 @@ static int vmaf_commit_extractor_owners(VmafContext *vmaf)
 static int vmaf_commit_remaining_owners(VmafContext *vmaf)
 {
     int err = 0;
+    vmaf_conversion_state_close(&vmaf->convert); /* ADR-2093; idempotent on a close retry */
     if (vmaf->prev_ref.ref) {
         err = vmaf_picture_unref(&vmaf->prev_ref);
         if (err)
@@ -2195,7 +2250,8 @@ int vmaf_engine_import_feature_score(VmafContext *vmaf, const char *feature_name
     if (!feature_name)
         return -EINVAL;
 
-    return vmaf_feature_collector_append(vmaf->feature_collector, feature_name, value, index);
+    return vmaf_feature_collector_append_from(vmaf->feature_collector, feature_name, value, index,
+                                              VMAF_FEATURE_SOURCE_IMPORTED, NULL);
 }
 
 /* ---- Pelorus perceptual spatial-pooling weighting (ADR-1118) ------------- *
@@ -2204,6 +2260,34 @@ int vmaf_engine_import_feature_score(VmafContext *vmaf, const char *feature_name
  * is inert (per-frame weight == 1.0, byte-identical legacy arithmetic) unless
  * weighting is enabled AND side-data is present for the frame. The Netflix
  * golden pairs carry no side-data and MUST score bit-exact. */
+
+int vmaf_set_sample_range_check_enabled(VmafContext *vmaf, int enabled)
+{
+    if (!vmaf)
+        return -EINVAL;
+
+    vmaf->check_sample_range = (enabled != 0);
+    return 0;
+}
+
+int vmaf_set_input_colorimetry(VmafContext *vmaf, const VmafColor *ref, const VmafColor *dist)
+{
+    if (!vmaf)
+        return -EINVAL;
+    return vmaf_conversion_state_set_input_color(&vmaf->convert, ref, dist);
+}
+
+/* ADR-2094: vmafx_submit() hands the colour of every pair it submits (each
+ * frame's own, else the context's default) to the conversion state. The same
+ * colour again is 0, also after a conversion; another one is what
+ * vmaf_set_input_colorimetry() would answer: -EBUSY once a picture has been
+ * converted. */
+int vmaf_engine_set_pair_colorimetry(VmafContext *vmaf, const VmafColor *ref, const VmafColor *dist)
+{
+    if (!vmaf || !ref || !dist)
+        return -EINVAL;
+    return vmaf_conversion_state_offer_input_color(&vmaf->convert, ref, dist);
+}
 
 int vmaf_engine_set_perceptual_weight_enabled(VmafContext *vmaf, int enabled)
 {
@@ -2276,9 +2360,12 @@ static int create_context_fallback(VmafContext *vmaf, const VmafFeatureExtractor
         vmaf_get_feature_extractor_by_name(ctx->fex->context_fallback_name);
     if (!fallback)
         return -EINVAL;
+    /* ADR-1713: the CPU fallback honours VMAF_FEATURE_IMPL like any CPU choice. */
+    int err = vmaf_feature_extractor_impl_select(fallback, &fallback);
+    if (err)
+        return err;
 
     VmafDictionary *options = NULL;
-    int err = 0;
     if (ctx->opts_dict) {
         err = fex_options_copy(ctx->opts_dict, &options);
         if (err)
@@ -2359,9 +2446,13 @@ int vmaf_engine_use_feature(VmafContext *vmaf, const char *feature_name,
 
     int err = 0;
 
-    const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name(feature_name);
+    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name(feature_name);
     if (!fex)
         return -EINVAL;
+    /* ADR-1713: VMAF_FEATURE_IMPL=rust swaps a CPU extractor for its Rust twin. */
+    err = vmaf_feature_extractor_impl_select(fex, &fex);
+    if (err)
+        return err;
 
     /* Netflix/vmaf#1242 ownership contract: past the argument guards above, this
      * call consumes `opts_dict` on every path. Both failure paths below used to
@@ -2482,7 +2573,9 @@ int vmaf_engine_use_features_from_model(VmafContext *vmaf, VmafModel *model)
     if (!model)
         return -EINVAL;
 
-    int err = 0;
+    int err = vmaf_conversion_state_register_model(&vmaf->convert, model);
+    if (err)
+        return err;
     const unsigned fex_flags = compute_fex_flags(vmaf);
 
     RegisteredFeatureExtractors *rfe = &(vmaf->registered_feature_extractors);
@@ -2499,6 +2592,9 @@ int vmaf_engine_use_features_from_model(VmafContext *vmaf, VmafModel *model)
         fex = fex_honouring_model_options(fex, &model->feature[i]);
         if (!fex)
             return -EINVAL;
+        err = vmaf_feature_extractor_impl_select(fex, &fex);
+        if (err)
+            return err;
 
         VmafFeatureExtractorContext *fex_ctx = NULL;
         VmafDictionary *d = NULL;
@@ -2748,6 +2844,9 @@ struct ThreadDataBatch {
     /* ADR-1906: the log sink of the call that submitted the job (the VMAFx
      * context's, or NULL), installed on the worker while the job runs. */
     const VmafLogSink *log_sink;
+    /* ADR-2074: the context's frame listener, called when the job has run. */
+    void (*frame_listener)(void *user);
+    void *frame_listener_user;
     /* _Atomic int err: the worker thread writes this field multiple times as
      * it iterates over extractors; the thread pool runner reads it once (as
      * the function return value) to accumulate into pool->last_error.  Making
@@ -2805,6 +2904,65 @@ static bool batch_extractor_skip(const VmafFeatureExtractorContext *shared_ctx, 
     if (fex_ctx_runs_on_caller_thread(shared_ctx))
         return true;
     return fex_subsample_skip(shared_ctx->fex->flags, index, n_subsample);
+}
+
+/* ADR-1713 (lane request M-1): a Rust twin's flush runs on the state its init
+ * creates, but the shared context of a threaded run is never initialised; only
+ * the per-thread copies are. A C extractor's flush needs no init state, so the
+ * C path never noticed. Initialise the shared context of a Rust twin before
+ * its flush, with the run's picture parameters. ADR-2090 (lane request MI-1):
+ * the same before its first advance, which runs on that context too. */
+static int init_shared_rust_twin(VmafContext *vmaf, VmafFeatureExtractorContext *fex_ctx)
+{
+    if (!(fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_RUST) || fex_ctx->is_initialized)
+        return 0;
+    return vmaf_feature_extractor_context_init(fex_ctx, vmaf->pic_params.pix_fmt,
+                                               vmaf->pic_params.bpc, vmaf->pic_params.w,
+                                               vmaf->pic_params.h);
+}
+
+/* advance() of one registered context. A pooled context never extracts and
+ * is marked initialised, as the threaded flush marks it, so close() frees
+ * what advance() built; a pooled Rust twin is initialised first, so the twin
+ * has its instance (MI-1). */
+static int advance_one_extractor(VmafContext *vmaf, VmafFeatureExtractorContext *fex_ctx,
+                                 bool pooled)
+{
+    const int init_err = pooled ? init_shared_rust_twin(vmaf, fex_ctx) : 0;
+    if (init_err)
+        return init_err;
+    fex_ctx->is_initialized = true;
+    /* RC4 WP5: the scores advance() writes are this extractor's. */
+    const VmafFeatureProducer previous = vmaf_feature_producer_swap((VmafFeatureProducer){
+        VMAF_FEATURE_SOURCE_EXTRACTOR, fex_ctx->fex->name, fex_ctx->opts_dict});
+    const int err = fex_ctx->fex->advance(fex_ctx->fex, vmaf->feature_collector);
+    (void)vmaf_feature_producer_swap(previous);
+    return err;
+}
+
+/* ADR-2090: let every registered extractor with an advance() callback append
+ * the scores its collector entries now make final (motion2 / motion3 of the
+ * frames whose window is complete), so they need not wait for the flush. Runs
+ * on the thread that feeds frames, after a frame is accepted and after a read
+ * fence. An extractor the worker pool runs is advanced on its registered
+ * context, which never extracts (advance_one_extractor()). Any other context
+ * is advanced once it has been initialised by its first frame. */
+static int advance_extractors(VmafContext *vmaf)
+{
+    if (vmaf->flushed)
+        return 0;
+    int err = 0;
+    const RegisteredFeatureExtractors rfe = vmaf->registered_feature_extractors;
+    for (unsigned i = 0; i < rfe.cnt && !err; i++) {
+        VmafFeatureExtractorContext *fex_ctx = rfe.fex_ctx[i];
+        if (!fex_ctx->fex->advance || fex_ctx->is_closed)
+            continue;
+        const bool pooled = vmaf->thread_pool && !fex_ctx_runs_on_caller_thread(fex_ctx);
+        if (!pooled && !fex_ctx->is_initialized)
+            continue;
+        err = advance_one_extractor(vmaf, fex_ctx, pooled);
+    }
+    return err;
 }
 
 /* Create (once) this worker's private context for extractor i.
@@ -2897,6 +3055,8 @@ static int threaded_extract_batch_func(void *e, void **thread_data)
         (void)vmaf_picture_unref(&f->prev_prev_ref);
     (void)vmaf_picture_unref(&f->ref);
     (void)vmaf_picture_unref(&f->dist);
+    if (f->frame_listener)
+        f->frame_listener(f->frame_listener_user); /* ADR-2074: the frame's scores are in */
     (void)vmaf_log_swap_thread_sink(previous_sink);
     return atomic_load(&f->err);
 }
@@ -2914,6 +3074,17 @@ static int read_pictures_wait_sycl_upload(VmafContext *vmaf)
     (void)vmaf;
 #endif
     return 0;
+}
+
+/* Whether `pic` is a VMAFx frame in SYCL device memory (ADR-2091). */
+static bool read_pictures_sycl_device_frame(const VmafPicture *pic)
+{
+#ifdef HAVE_SYCL
+    return vmaf_sycl_picture_on_device(pic);
+#else
+    (void)pic;
+    return false;
+#endif
 }
 
 /* Give a worker job references of its own: the frame's pair, and counted
@@ -2959,6 +3130,8 @@ static int threaded_read_pictures_batch(VmafContext *vmaf, VmafPicture *ref, Vma
         .registered_fex = &vmaf->registered_feature_extractors,
         .n_subsample = vmaf->cfg.n_subsample,
         .log_sink = vmaf_log_thread_sink(),
+        .frame_listener = vmaf->frame_listener,
+        .frame_listener_user = vmaf->frame_listener_user,
         .err = 0,
     };
     batch_job_take_pictures(&data, vmaf, ref, dist);
@@ -3044,10 +3217,19 @@ static int flush_non_temporal_cpu_extractors(VmafContext *vmaf)
          * is_initialized == false causes close to return -EINVAL early,
          * leaking the dict (detected as a memory leak by ASan with
          * detect_leaks=1; root cause of ADR-1073 residual failure). */
+        const int init_err = init_shared_rust_twin(vmaf, fex_ctx);
+        if (init_err) {
+            err |= init_err;
+            continue;
+        }
         fex_ctx->is_initialized = true;
         int flush_err = 0;
+        /* RC4 WP5: scores the flush writes are this extractor's. */
+        const VmafFeatureProducer previous = vmaf_feature_producer_swap(
+            (VmafFeatureProducer){VMAF_FEATURE_SOURCE_EXTRACTOR, fex->name, fex_ctx->opts_dict});
         while (!(flush_err = fex->flush(fex, vmaf->feature_collector)))
             ;
+        (void)vmaf_feature_producer_swap(previous);
         if (flush_err < 0)
             err |= flush_err;
     }
@@ -3256,8 +3438,10 @@ static int flush_context(VmafContext *vmaf)
     /* Only mark the context terminally flushed once every backend flush
      * succeeded.  On any error the caller may retry vmaf_read_pictures(NULL,
      * NULL) to re-run the flush pass. */
-    if (!err)
+    if (!err) {
         vmaf->flushed = true;
+        atomic_store_explicit(&vmaf->run.flush_ns, vmafx_monotonic_ns(), memory_order_release);
+    }
     return err;
 }
 
@@ -3594,6 +3778,18 @@ static int init_before_dispatch(VmafFeatureExtractorContext *fex_ctx, const Vmaf
 static int read_pictures_dispatch_one(VmafContext *vmaf, VmafFeatureExtractorContext *fex_ctx,
                                       VmafPicture *ref, VmafPicture *dist, unsigned index)
 {
+    /* A frame of the VMAFx API in SYCL device memory is never copied to the
+     * host (ADR-1929, ADR-2091): admission refuses CPU extractors for it,
+     * and one that appears later (a twin's context fallback) fails here
+     * instead of reading device memory on the host. */
+    if (read_pictures_sycl_device_frame(ref) &&
+        !(fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_SYCL)) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "feature extractor \"%s\" would read a frame in SYCL device memory on the host; "
+                 "device frames of the VMAFx API are never copied to the host\n",
+                 fex_ctx->fex->name);
+        return -ENOTSUP;
+    }
     const int init_err = init_before_dispatch(fex_ctx, ref);
     if (init_err)
         return init_err;
@@ -3643,6 +3839,12 @@ static int read_pictures_validate_and_prep(VmafContext *vmaf, VmafPicture *ref, 
     int err = validate_pic_params(vmaf, ref, dist);
     if (err)
         return err;
+    if (vmaf->check_sample_range) {
+        err = vmaf_picture_check_sample_range(ref, "reference");
+        err = err ? err : vmaf_picture_check_sample_range(dist, "distorted");
+        if (err)
+            return err;
+    }
     err = check_picture_pool(vmaf);
     if (err)
         return err;
@@ -4065,8 +4267,11 @@ static int read_pictures_frame_cleanup(VmafContext *vmaf, ReadPicturesFrame *fr,
 {
     /* The CUDA host-cleanup branch below returns early in a combined
      * CUDA+SYCL build. Drain SYCL's final host upload before any branch can
-     * release the caller's picture storage back to its pool. */
-    err |= read_pictures_wait_sycl_upload(vmaf);
+     * release the caller's picture storage back to its pool. A VMAFx device
+     * frame on SYCL needs no host wait: its memory lives until its release
+     * fence, which follows its last reader on the device (ADR-2091). */
+    if (!read_pictures_sycl_device_frame(fr->ref))
+        err |= read_pictures_wait_sycl_upload(vmaf);
 #ifdef HAVE_CUDA
     if (fr->hw_flags & HW_FLAG_HOST) {
         return err | read_pictures_cuda_cleanup(vmaf, &fr->ref_host, &fr->ref_device,
@@ -4100,16 +4305,9 @@ static int read_pictures_frame_cleanup_after_batch(VmafContext *vmaf, ReadPictur
     return err;
 }
 
-int vmaf_engine_read_pictures(VmafContext *vmaf, VmafPicture *ref, VmafPicture *dist,
-                              unsigned index)
+static int read_pictures_owned(VmafContext *vmaf, VmafPicture *ref, VmafPicture *dist,
+                               unsigned index)
 {
-    if (!vmaf)
-        return -EINVAL;
-    if (!ref != !dist)
-        return -EINVAL;
-    if (!ref && !dist)
-        return vmaf->flushed ? -EINVAL : flush_context(vmaf);
-
     /* From here on the context owns both pictures whatever the result: every
      * return below releases them (Netflix/vmaf#1420, ADR-1431). A picture
      * left behind on a failure stays out of the picture pool, and the CLI's
@@ -4117,7 +4315,13 @@ int vmaf_engine_read_pictures(VmafContext *vmaf, VmafPicture *ref, VmafPicture *
     ReadPicturesFrame fr = {.ref = ref, .dist = dist};
     if (vmaf->flushed)
         return read_pictures_frame_cleanup(vmaf, &fr, -EINVAL);
-    int err = read_pictures_validate_and_prep(vmaf, ref, dist, index);
+    /* Before validation and before any device upload: the model's
+     * conversion_target (Netflix/vmaf a6c0ba6d5) changes the format the rest
+     * of the call sees. */
+    int err = vmaf_conversion_state_convert(&vmaf->convert, ref, dist);
+    if (err)
+        return read_pictures_frame_cleanup(vmaf, &fr, err);
+    err = read_pictures_validate_and_prep(vmaf, ref, dist, index);
     if (err)
         return read_pictures_frame_cleanup(vmaf, &fr, err);
     err = resolve_context_fallbacks(vmaf);
@@ -4126,6 +4330,7 @@ int vmaf_engine_read_pictures(VmafContext *vmaf, VmafPicture *ref, VmafPicture *
     /* Increment only after successful validation so a retry on transient
      * -ENOMEM does not double-count the frame and corrupt FPS / end-index. */
     vmaf->pic_cnt++;
+    run_note_frame(vmaf);
 
 #ifdef HAVE_CUDA
     err = read_pictures_frame_translate(vmaf, &fr);
@@ -4148,6 +4353,28 @@ int vmaf_engine_read_pictures(VmafContext *vmaf, VmafPicture *ref, VmafPicture *
 
     read_pictures_update_prev_ref(vmaf, fr.ref);
     return read_pictures_frame_cleanup(vmaf, &fr, 0);
+}
+
+int vmaf_engine_read_pictures(VmafContext *vmaf, VmafPicture *ref, VmafPicture *dist,
+                              unsigned index)
+{
+    if (!vmaf)
+        return -EINVAL;
+    if (!ref != !dist)
+        return -EINVAL;
+    if (!ref && !dist)
+        return vmaf->flushed ? -EINVAL : flush_context(vmaf);
+
+    const int err = read_pictures_owned(vmaf, ref, dist, index);
+    /* The context owns both pictures now, whatever the result. A CUDA build
+     * releases its host translations, struct copies of the caller's pictures,
+     * and would leave the caller's structs pointing at released storage: clear
+     * them, as vmaf_picture_unref() clears the structs of a CPU build (the
+     * compat library does the same, ADR-2094). */
+    memset(ref, 0, sizeof(*ref));
+    memset(dist, 0, sizeof(*dist));
+    /* ADR-2090: the scores this frame completes, before the call returns. */
+    return err ? err : advance_extractors(vmaf);
 }
 
 #ifdef HAVE_SYCL
@@ -4231,6 +4458,10 @@ int vmaf_read_pictures_sycl(VmafContext *vmaf, unsigned index)
     const int admit_err = sycl_zero_copy_admit(vmaf);
     if (admit_err)
         return admit_err;
+    const int convert_err =
+        vmaf_conversion_state_refuse_zero_copy(&vmaf->convert, "vmaf_read_pictures_sycl");
+    if (convert_err)
+        return convert_err;
 
     // Ensure de-tile kernels on the primary queue have finished reading from
     // imported VA surface memory.  After this function returns, the caller
@@ -4243,6 +4474,7 @@ int vmaf_read_pictures_sycl(VmafContext *vmaf, unsigned index)
     /* Increment only after queue_wait succeeds so a retry on error does not
      * double-count the frame (mirrors the fix to vmaf_read_pictures, ADR-1008). */
     vmaf->pic_cnt++;
+    run_note_frame(vmaf);
 
     // Advance double-buffer slot and frame counter for the zero-copy VA import path.
     // Mirrors shared_frame_upload:597-599: cur_compute = cur_upload; cur_upload = 1-cur_upload.
@@ -4264,7 +4496,9 @@ int vmaf_read_pictures_sycl(VmafContext *vmaf, unsigned index)
     /* GPU buffers are already populated (for example through VPL Level Zero
      * interop), so the extractor pass only collects prior work and submits the
      * current frame without an upload. */
-    return read_pictures_sycl_extractors(vmaf, index);
+    const int extract_err = read_pictures_sycl_extractors(vmaf, index);
+    /* ADR-2090: the scores this frame completes, before the call returns. */
+    return extract_err ? extract_err : advance_extractors(vmaf);
 }
 
 int vmaf_flush_sycl(VmafContext *vmaf)
@@ -4300,8 +4534,10 @@ int vmaf_flush_sycl(VmafContext *vmaf)
         vmaf_sycl_print_timing(vmaf->sycl.state);
     }
 
-    if (!err)
+    if (!err) {
         vmaf->flushed = true;
+        atomic_store_explicit(&vmaf->run.flush_ns, vmafx_monotonic_ns(), memory_order_release);
+    }
     return err;
 }
 #endif
@@ -4366,7 +4602,9 @@ static int fence_for_read(VmafContext *vmaf, unsigned index)
     (void)index;
 #endif
 
-    return 0;
+    /* ADR-2090: what the fenced writes complete (motion2 / motion3 of the
+     * frames whose window the worker threads or the collects just filled). */
+    return advance_extractors(vmaf);
 }
 
 int vmaf_engine_feature_score_at_index(VmafContext *vmaf, const char *feature_name, double *score,
@@ -4380,9 +4618,14 @@ int vmaf_engine_feature_score_at_index(VmafContext *vmaf, const char *feature_na
         return -EINVAL;
 
     int err = vmaf_feature_collector_get_score(vmaf->feature_collector, feature_name, score, index);
-    if (err == -EAGAIN) {
-        /* The slot exists but is unwritten: fence and read once more before
-         * telling the caller the frame is not ready (Netflix/vmaf#1305). */
+    /* A frame the context was fed may still be with a worker thread while the
+     * collector has no slot for it yet (no score of the feature written so
+     * far, or the vector not grown to `index`): -EINVAL then means "not yet",
+     * not an unknown name (T-ENGINE-READ-FED-FRAME-EINVAL-2026-10-06). */
+    const bool fed = vmaf->have_last_index && index <= vmaf->last_index;
+    if (err == -EAGAIN || (err == -EINVAL && fed)) {
+        /* The slot is unwritten: fence and read once more before telling the
+         * caller the frame is not ready (Netflix/vmaf#1305). */
         const int fence_err = fence_for_read(vmaf, index);
         if (fence_err)
             return fence_err;
@@ -4391,7 +4634,12 @@ int vmaf_engine_feature_score_at_index(VmafContext *vmaf, const char *feature_na
     return err;
 }
 
-int vmaf_engine_score_at_index(VmafContext *vmaf, VmafModel *model, double *score, unsigned index)
+/* The score of `model` at `index`, predicted on first read. `fence`: wait for
+ * the frame's work in flight first (the synchronous scores); without it a
+ * frame whose inputs are not all written is -EAGAIN, without a wait (the
+ * window scores of RC4 WP4, which check the inputs first, ADR-2074). */
+static int engine_score_at_index(VmafContext *vmaf, VmafModel *model, double *score, unsigned index,
+                                 bool fence)
 {
     if (!vmaf)
         return -EINVAL;
@@ -4417,15 +4665,91 @@ int vmaf_engine_score_at_index(VmafContext *vmaf, VmafModel *model, double *scor
         /* Netflix/vmaf#1305: the input features for this index may still be in
          * flight (worker threads, or a CUDA collect that has not run yet), so
          * fence before predicting — otherwise the prediction is computed from
-         * unwritten slots. */
-        const int fence_err = fence_for_read(vmaf, index);
+         * unwritten slots. Without the fence, the inputs must be written. */
+        const int fence_err =
+            fence ? fence_for_read(vmaf, index) :
+                    vmaf_predict_inputs_written(model, vmaf->feature_collector, index);
         if (fence_err)
             return fence_err;
+        /* ADR-2090: a fed frame whose motion2 / motion3 is not derived yet
+         * (the frame after it is not scored) is not ready, also when an input
+         * vector has not grown to `index` (the collector reads that as
+         * -EINVAL). T-RC4-SCORE-FRAME-INVALID-AT-VECTOR-END-2026-10-06. */
+        const bool fed = vmaf->have_last_index && index <= vmaf->last_index;
+        if (fence && fed &&
+            vmaf_predict_inputs_written(model, vmaf->feature_collector, index) == -EAGAIN)
+            return -EAGAIN;
         err = vmaf_predict_score_at_index(model, vmaf->feature_collector, index, score, true, false,
                                           0);
     }
 
     return err;
+}
+
+int vmaf_engine_score_at_index(VmafContext *vmaf, VmafModel *model, double *score, unsigned index)
+{
+    return engine_score_at_index(vmaf, model, score, index, true);
+}
+
+int vmaf_engine_try_score_at_index(VmafContext *vmaf, VmafModel *model, unsigned index)
+{
+    double score = 0.0;
+    return engine_score_at_index(vmaf, model, &score, index, false);
+}
+
+int vmaf_engine_feature_written(VmafContext *vmaf, const char *feature_name, unsigned index)
+{
+    if (!vmaf || !feature_name)
+        return -EINVAL;
+    double score = 0.0;
+    return vmaf_feature_collector_get_score(vmaf->feature_collector, feature_name, &score, index);
+}
+
+int vmaf_engine_try_score_at_index_model_collection(VmafContext *vmaf,
+                                                    VmafModelCollection *model_collection,
+                                                    unsigned index)
+{
+    if (!vmaf || !model_collection)
+        return -EINVAL;
+    for (unsigned i = 0; i < model_collection->cnt; i++) {
+        const int err =
+            vmaf_predict_inputs_written(model_collection->model[i], vmaf->feature_collector, index);
+        if (err)
+            return err;
+    }
+    VmafModelCollectionScore score;
+    return vmaf_engine_score_at_index_model_collection(vmaf, model_collection, &score, index);
+}
+
+/* The bootstrap score of a model collection already predicted at `index`:
+ * the four named scores its first prediction wrote into the collector
+ * (bootstrap_append_named_scores() in predict.c). Returns 0, or the
+ * collector's error for the first one missing. */
+static int read_predicted_collection_score(VmafContext *vmaf,
+                                           const VmafModelCollection *model_collection,
+                                           VmafModelCollectionScore *score, unsigned index)
+{
+    const size_t name_sz = BOOTSTRAP_NAME_BUF_SZ(model_collection->name);
+    char *name = (char *)calloc(1u, name_sz);
+    if (!name)
+        return -ENOMEM;
+    const char *const suffix[] = {BOOTSTRAP_SUFFIX_BAGGING, BOOTSTRAP_SUFFIX_STDDEV,
+                                  BOOTSTRAP_SUFFIX_CI_LO, BOOTSTRAP_SUFFIX_CI_HI};
+    double value[4] = {0.0, 0.0, 0.0, 0.0};
+    int err = 0;
+    for (unsigned i = 0; i < 4u && !err; i++) {
+        (void)snprintf(name, name_sz, "%s%s", model_collection->name, suffix[i]);
+        err = vmaf_feature_collector_get_score(vmaf->feature_collector, name, &value[i], index);
+    }
+    free(name);
+    if (err)
+        return err;
+    score->type = VMAF_MODEL_COLLECTION_SCORE_BOOTSTRAP;
+    score->bootstrap.bagging_score = value[0];
+    score->bootstrap.stddev = value[1];
+    score->bootstrap.ci.p95.lo = value[2];
+    score->bootstrap.ci.p95.hi = value[3];
+    return 0;
 }
 
 int vmaf_engine_score_at_index_model_collection(VmafContext *vmaf,
@@ -4439,6 +4763,14 @@ int vmaf_engine_score_at_index_model_collection(VmafContext *vmaf,
     if (!score)
         return -EINVAL;
 
+    /* T-MODEL-SET-SCORE-NOT-IDEMPOTENT-2026-10-05: the prediction writes the
+     * members' and the four named scores of this frame into the collector,
+     * which refuses a second write. A frame already predicted (by an earlier
+     * per-frame call, or by the per-frame loop of
+     * vmaf_score_pooled_model_collection()) returns the stored values, as
+     * vmaf_score_at_index() does for a single model. */
+    if (read_predicted_collection_score(vmaf, model_collection, score, index) == 0)
+        return 0;
     return vmaf_predict_score_at_index_model_collection(model_collection, vmaf->feature_collector,
                                                         index, score);
 }
@@ -4774,15 +5106,32 @@ void vmaf_engine_set_api_owner(VmafContext *vmaf, struct VmafxContext *owner)
         vmaf->api_owner = owner;
 }
 
+int vmaf_engine_advance(VmafContext *vmaf)
+{
+    if (!vmaf)
+        return -EINVAL;
+    return advance_extractors(vmaf);
+}
+
+void vmaf_engine_set_frame_listener(VmafContext *vmaf, void (*listener)(void *user), void *user)
+{
+    if (!vmaf)
+        return;
+    vmaf->frame_listener = listener;
+    vmaf->frame_listener_user = user;
+}
+
 unsigned vmaf_engine_extractor_count(const VmafContext *vmaf)
 {
     return vmaf ? vmaf->registered_feature_extractors.cnt : 0;
 }
 
-/* True when the NULL-terminated `features` list names `feature`. */
+/* True when the NULL-terminated `features` list names `feature` among its
+ * first VMAF_ENGINE_MAX_PROVIDED_FEATURES entries. The bound is tested before
+ * the entry is read, so a list of exactly that many names needs no terminator. */
 static bool fex_declares_feature(const char **features, const char *feature)
 {
-    for (unsigned i = 0; features && features[i] && i < VMAF_ENGINE_MAX_PROVIDED_FEATURES; i++) {
+    for (unsigned i = 0; features && i < VMAF_ENGINE_MAX_PROVIDED_FEATURES && features[i]; i++) {
         if (!strcmp(features[i], feature))
             return true;
     }
@@ -4796,6 +5145,16 @@ int vmaf_engine_feature_producer(const VmafContext *vmaf, const char *feature,
         return -EINVAL;
     *extractor = NULL;
     *backend = VMAF_BACKEND_UNKNOWN;
+    /* RC4 WP5: the collector recorded who wrote the vector (option-decorated
+     * names included); model and imported scores have no extractor. */
+    const FeatureVector *const fv = vmaf_feature_collector_find(vmaf->feature_collector, feature);
+    if (fv && fv->source == VMAF_FEATURE_SOURCE_EXTRACTOR && fv->producer) {
+        *extractor = fv->producer;
+        *backend = vmaf_engine_extractor_backend(fv->producer);
+        return 0;
+    }
+    if (fv && fv->source != VMAF_FEATURE_SOURCE_UNKNOWN)
+        return -ENOENT;
     const RegisteredFeatureExtractors *rfe = &vmaf->registered_feature_extractors;
     for (unsigned i = 0; i < rfe->cnt; i++) {
         const VmafFeatureExtractorContext *ctx = rfe->fex_ctx[i];
@@ -4825,102 +5184,69 @@ enum VmafBackend vmaf_engine_extractor_backend(const char *extractor)
     return fex ? fex_flags_backend(fex->flags) : VMAF_BACKEND_UNKNOWN;
 }
 
+int vmaf_engine_run_info(const VmafContext *vmaf, VmafEngineRunInfo *out)
+{
+    if (!vmaf || !out)
+        return -EINVAL;
+    memset(out, 0, sizeof(*out));
+    /* cfg is set once by vmaf_engine_init(); the rest is `run` (atomic). */
+    out->cfg = vmaf->cfg;
+    const uint64_t frames = atomic_load_explicit(&vmaf->run.frames, memory_order_acquire);
+    if (!frames)
+        return 0;
+    const uint64_t size = atomic_load_explicit(&vmaf->run.size, memory_order_relaxed);
+    const uint32_t format = atomic_load_explicit(&vmaf->run.format, memory_order_relaxed);
+    out->w = (unsigned)(size >> 32);
+    out->h = (unsigned)(size & 0xffffffffu);
+    out->bpc = format >> 8;
+    out->pix_fmt = (enum VmafPixelFormat)(format & 0xffu);
+    out->pic_cnt = frames > UINT_MAX ? UINT_MAX : (unsigned)frames;
+    const uint64_t first = atomic_load_explicit(&vmaf->run.first_ns, memory_order_relaxed);
+    const uint64_t flush = atomic_load_explicit(&vmaf->run.flush_ns, memory_order_acquire);
+    const uint64_t end = flush ? flush : vmafx_monotonic_ns();
+    out->elapsed_ns = end > first ? end - first : 0u;
+    return 0;
+}
+
 bool vmaf_engine_is_flushed(const VmafContext *vmaf)
 {
     return vmaf && vmaf->flushed;
 }
 
-/* ---- libvmaf entry points on the engine (ADR-1852, RC4 WP2) ---------------
- * The bodies above are the engine entry points the VMAFx API calls
- * (core/src/vmafx/engine.h). The libvmaf functions forward to them until the
- * compat layer generates them as shims on the VMAFx API (WP6); engine code
- * calls the vmaf_engine_ names, never these, so that change cannot recurse. */
-
-int vmaf_import_feature_score(VmafContext *vmaf, const char *feature_name, double value,
-                              unsigned index)
+unsigned vmaf_engine_thread_count(const VmafContext *vmaf)
 {
-    return vmaf_engine_import_feature_score(vmaf, feature_name, value, index);
+    return vmaf ? vmaf->cfg.n_threads : 0u;
 }
 
-int vmaf_set_perceptual_weight_enabled(VmafContext *vmaf, int enabled)
+unsigned vmaf_engine_max_in_flight(const VmafContext *vmaf)
 {
-    return vmaf_engine_set_perceptual_weight_enabled(vmaf, enabled);
+    if (!vmaf)
+        return 0;
+    /* The context keeps `retention` reference pictures (frame n, and n-1 for
+     * an extractor that reads n-2). With worker threads, a submit returns
+     * once its job is queued, and enqueue waits while n_threads jobs wait
+     * (thread_pool.c): at most 2 * n_threads jobs are in flight, n_threads
+     * waiting and n_threads running, in any order. Each holds its frame and
+     * the `retention` reference pictures before it (batch_job_take_pictures).
+     * A device extractor holds the frame it submitted, and that frame's
+     * previous reference picture, until the next frame collects it
+     * (dispatch_gpu_double_buffer): one picture beyond the context's. */
+    const unsigned retention = vmaf_engine_frame_retention(vmaf);
+    const unsigned device = vmaf->active_backend != VMAF_BACKEND_UNKNOWN ? 1u : 0u;
+    return retention + 2u * vmaf->cfg.n_threads * (retention + 1u) + device;
 }
 
-int vmaf_set_perceptual_weight_strength(VmafContext *vmaf, double strength)
+unsigned vmaf_engine_subsample(const VmafContext *vmaf)
 {
-    return vmaf_engine_set_perceptual_weight_strength(vmaf, strength);
+    return vmaf && vmaf->cfg.n_subsample > 1u ? vmaf->cfg.n_subsample : 1u;
 }
 
-int vmaf_use_feature(VmafContext *vmaf, const char *feature_name, VmafFeatureDictionary *opts_dict)
-{
-    return vmaf_engine_use_feature(vmaf, feature_name, opts_dict);
-}
-
-int vmaf_use_features_from_model(VmafContext *vmaf, VmafModel *model)
-{
-    return vmaf_engine_use_features_from_model(vmaf, model);
-}
-
-int vmaf_use_features_from_model_collection(VmafContext *vmaf,
-                                            VmafModelCollection *model_collection)
-{
-    return vmaf_engine_use_features_from_model_collection(vmaf, model_collection);
-}
-
-int vmaf_feature_backend_twin(VmafContext *vmaf, const char *feature_name,
-                              const VmafFeatureDictionary *opts_dict,
-                              const VmafPictureConfiguration *pic_cfg, const char **twin_name,
-                              const char **unsupported_option)
-{
-    return vmaf_engine_feature_backend_twin(vmaf, feature_name, opts_dict, pic_cfg, twin_name,
-                                            unsupported_option);
-}
-
-int vmaf_registered_feature_extractor(VmafContext *vmaf, unsigned index, const char **name,
-                                      enum VmafBackend *backend)
-{
-    return vmaf_engine_registered_feature_extractor(vmaf, index, name, backend);
-}
-
-int vmaf_read_pictures(VmafContext *vmaf, VmafPicture *ref, VmafPicture *dist, unsigned index)
-{
-    return vmaf_engine_read_pictures(vmaf, ref, dist, index);
-}
-
-int vmaf_score_at_index(VmafContext *vmaf, VmafModel *model, double *score, unsigned index)
-{
-    return vmaf_engine_score_at_index(vmaf, model, score, index);
-}
-
-int vmaf_score_at_index_model_collection(VmafContext *vmaf, VmafModelCollection *model_collection,
-                                         VmafModelCollectionScore *score, unsigned index)
-{
-    return vmaf_engine_score_at_index_model_collection(vmaf, model_collection, score, index);
-}
-
-int vmaf_feature_score_pooled(VmafContext *vmaf, const char *feature_name,
-                              enum VmafPoolingMethod pool_method, double *score, unsigned index_low,
-                              unsigned index_high)
-{
-    return vmaf_engine_feature_score_pooled(vmaf, feature_name, pool_method, score, index_low,
-                                            index_high);
-}
-
-int vmaf_score_pooled(VmafContext *vmaf, VmafModel *model, enum VmafPoolingMethod pool_method,
-                      double *score, unsigned index_low, unsigned index_high)
-{
-    return vmaf_engine_score_pooled(vmaf, model, pool_method, score, index_low, index_high);
-}
-
-int vmaf_score_pooled_model_collection(VmafContext *vmaf, VmafModelCollection *model_collection,
-                                       enum VmafPoolingMethod pool_method,
-                                       VmafModelCollectionScore *score, unsigned index_low,
-                                       unsigned index_high)
-{
-    return vmaf_engine_score_pooled_model_collection(vmaf, model_collection, pool_method, score,
-                                                     index_low, index_high);
-}
+/* ---- libvmaf entry points (ADR-1852 decision D3, RC4 WP6) -----------------
+ * The libvmaf functions live in the compat library (libvmaf.so.3,
+ * core/src/compat/libvmaf/) on the VMAFx API. Every function of this file
+ * that keeps a libvmaf name in the source is compiled as vmaf_engine_<stem>
+ * (core/src/vmafx/engine_names_gen.h, forced on every engine translation
+ * unit), so an upstream change to such a function ports here unchanged. */
 
 /* Open `output_path` for writing with mode 0644 so the output file is never
  * world-writable: fopen(3) defaults to 0666 & ~umask, which CodeQL flags as

@@ -137,11 +137,14 @@ EXCLUDED_PREFIXES = (
     # <feature>.<backend>. A `.hip` fragment is not HIP source, and the fragment
     # reader rejects any line that is not `key: value`, a comment header included.
     "scripts/ci/exact_twins.d/",
-    # praetor's managed files: `praetorctl audit` compares them with praetor's
-    # own bytes, so they cannot take a header. REUSE.toml labels them and the
-    # check-copyright hook leaves them alone for the same reason (ADR-1351).
+    # praetor's files: `praetorctl audit` compares `tools/figures/` with praetor's
+    # own bytes, and `praetorctl adopt` refreshes the three scripts only while
+    # they are praetor's own text, so none can take a header. REUSE.toml labels them
+    # and the check-copyright hook leaves them alone (ADR-1351, ADR-3272).
     "tools/figures/",
     ".config/agent/hooks/block_evasion.py",
+    ".config/lefthook/engine.sh",
+    ".config/lefthook/python.sh",
     # praetor's Codex projections of `.agents/agents/*.md`, written by the engine
     # (`praetorctl compile-context`, ADR-1249) and regenerated from their source;
     # a header added here would not survive the next compile. REUSE.toml's
@@ -216,6 +219,100 @@ SOURCE_REF = re.compile(r"[\w/.-]+\.(?:c|h|cpp|cu|cuh|comp|py|asm)\b")
 MIN_SIGNAL_NAME = 6
 # Include and import lines name dependencies, not origins.
 IMPORT_LINE = re.compile(r"^\s*(?:#\s*(?:include|import)\b|import\s|from\s\S+\s+import\s|use\s)")
+AI_VENDORS = re.compile(r"\b(?:claude|anthropic|openai|chatgpt|copilot|gemini|codex)\b", re.I)
+AI_COPYRIGHT_SCAN = 30
+
+
+class CommentTracker:
+    def __init__(self) -> None:
+        self.in_block = False
+        self.in_html = False
+        self.in_doc: str | None = None
+
+    def _update_ongoing(self, line: str) -> None:
+        if self.in_block:
+            self.in_block = "*/" not in line
+        elif self.in_html:
+            self.in_html = "-->" not in line
+        elif self.in_doc is not None and self.in_doc in line:
+            self.in_doc = None
+
+    def check(self, raw: str) -> bool:
+        line = raw.strip()
+        if self.in_block or self.in_html or self.in_doc is not None:
+            self._update_ongoing(line)
+            return True
+        if line.startswith("/*"):
+            self.in_block = "*/" not in line[2:]
+            return True
+        if line.startswith("<!--"):
+            self.in_html = "-->" not in line[4:]
+            return True
+        if line.startswith(('"""', "'''")):
+            delim = line[:3]
+            self.in_doc = delim if delim not in line[3:] else None
+            return True
+        deco = decoration(raw).strip()
+        return deco.startswith(("#", "//", "--", ";", "*")) or line.startswith(
+            ("#", "//", "--", ";", "*")
+        )
+
+
+def is_preamble(idx: int, raw: str) -> bool:
+    line = raw.strip()
+    return (
+        (idx == 1 and line.startswith("#!"))
+        or bool(CODING_COOKIE.match(raw))
+        or line.startswith("<?xml")
+    )
+
+
+def ai_vendor_match(raw: str) -> str | None:
+    body = undecorated(raw)
+    is_copyright = bool(
+        COPYRIGHT_LINE.search(body) or COPYRIGHT_NOTICE.search(body) or FILE_COPYRIGHT.search(raw)
+    )
+    if not is_copyright:
+        return None
+    matches = AI_VENDORS.findall(body) or AI_VENDORS.findall(raw)
+    if not matches:
+        return None
+    return ", ".join(dict.fromkeys(m.capitalize() for m in matches))
+
+
+def check_ai_copyright(text: str, path: str = "<text>") -> list[str]:
+    """Refuse copyright lines naming an AI tool or vendor in the header (ADR-0861).
+
+    Checks the leading comment block within the first 30 lines of ``text``.
+    """
+    violations: list[str] = []
+    tracker = CommentTracker()
+
+    for idx, raw in enumerate(text.splitlines()[:AI_COPYRIGHT_SCAN], start=1):
+        if not raw.strip() or is_preamble(idx, raw):
+            continue
+        if IMPORT_LINE.match(raw) or not tracker.check(raw):
+            break
+        vendors = ai_vendor_match(raw)
+        if vendors:
+            violations.append(
+                f"{path}:{idx}: copyright line names an AI tool or vendor ({vendors}), forbidden by ADR-0861"
+            )
+    return violations
+
+
+def check_all_ai_copyright(repo: Path) -> list[str]:
+    """Check every tracked file for copyright lines naming an AI tool or vendor."""
+    violations: list[str] = []
+    for path in git(repo, "ls-files").splitlines():
+        full = repo / path
+        if not full.is_file():
+            continue
+        text = read_text(full)
+        if text is None or text == "\0":
+            continue
+        violations.extend(check_ai_copyright(text, path))
+    return violations
 
 
 @dataclass(frozen=True)
@@ -901,10 +998,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     tally = Counter(v.reason for v in verdicts)
     print(", ".join(f"{r} {n}" for r, n in sorted(tally.items())), file=sys.stderr)
 
+    ai_violations = check_all_ai_copyright(repo)
+    for err in ai_violations:
+        print(err, file=sys.stderr)
+
     if args.list:
         for v in verdicts:
             print(f"{v.reason}\t{v.path}")
-        return 0
+        return 1 if ai_violations else 0
 
     pending = 0
     for v in verdicts:
@@ -923,7 +1024,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     for path in stale:
         print(f"stale-review\t{path}")
     print(f"{'rewrote' if args.write else 'pending'}: {pending}", file=sys.stderr)
-    return 1 if stale or (args.check and pending) else 0
+    return 1 if stale or ai_violations or (args.check and pending) else 0
 
 
 if __name__ == "__main__":

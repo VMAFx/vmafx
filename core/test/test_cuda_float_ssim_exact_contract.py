@@ -201,9 +201,13 @@ class FloatSsimCudaExactContract(unittest.TestCase):
     def test_reordered_lcs_sum_is_detected(self) -> None:
         sources = _sources()
         sources[HOST] = sources[HOST].replace(
-            "for (size_t i = 0u; i < n_windows; i++) {", "for (size_t i = n_windows; i-- > 0u;) {", 1
+            "for (size_t i = 0u; i < n_windows; i++) {",
+            "for (size_t i = n_windows; i-- > 0u;) {",
+            1,
         )
-        self.assertTrue(any("one pass in raster order" in item for item in _contract_failures(sources)))
+        self.assertTrue(
+            any("one pass in raster order" in item for item in _contract_failures(sources))
+        )
 
     def test_lcs_sum_of_another_term_is_detected(self) -> None:
         sources = _sources()
@@ -213,7 +217,9 @@ class FloatSsimCudaExactContract(unittest.TestCase):
     def test_lcs_sum_of_part_of_the_plane_is_detected(self) -> None:
         sources = _sources()
         sources[HOST] = sources[HOST].replace(
-            HOST_LCS_CALL, "float_ssim_frame_sums_lcs(s->rb.host_pinned, s->n_windows / 2u, sums);", 1
+            HOST_LCS_CALL,
+            "float_ssim_frame_sums_lcs(s->rb.host_pinned, s->n_windows / 2u, sums);",
+            1,
         )
         self.assertTrue(any("L, C and S sums" in item for item in _contract_failures(sources)))
 

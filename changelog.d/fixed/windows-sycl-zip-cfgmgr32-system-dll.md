@@ -1,0 +1,1 @@
+- **The Windows SYCL tester zip passes its import check.** `cfgmgr32.dll`, which the Level Zero loader imports, is a System32 DLL and is now accepted by `scripts/ci/check-windows-bundle-imports.py`; an unknown DLL is still refused. The x64-sycl leg failed on it, so no rc.3 Windows zip was published.

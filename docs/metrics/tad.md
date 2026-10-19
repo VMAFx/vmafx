@@ -3,9 +3,9 @@
 
 **Feature name (CLI):** `tad`
 **Output scores:** `tad`, `tad_sad`
-**Implementation:** Rust (cbindgen pilot — ADR-0707)
+**Implementation:** Rust (pilot, ADR-0707; built through the Rust extractor framework, ADR-1713)
 **Availability:** CPU only. Off by default: configure with
-`-Denable_rust_features=true` (needs `cargo` and `cbindgen`; see [Build
+`-Denable_rust_features=true` (needs `cargo`; see [Build
 requirements](#build-requirements)).
 
 ---
@@ -15,16 +15,16 @@ requirements](#build-requirements)).
 TAD is the mean absolute difference of luma (Y) pixel values between a reference
 frame
 and a distorted frame, normalised to the [0.0, 1.0] range by the peak luma value
-(2^bpc − 1):
+($2^{\mathrm{bpc}} - 1$):
 
-```text
-tad(ref, dis) = (1 / (W × H × peak)) × Σ_{i,j} |ref_Y[i,j] − dis_Y[i,j]|
-```
+$$
+\mathrm{tad}(\mathrm{ref}, \mathrm{dis}) = \frac{1}{W \, H \, \mathrm{peak}} \sum_{i,j} \left\lvert \mathrm{ref}_Y[i,j] - \mathrm{dis}_Y[i,j] \right\rvert
+$$
 
 where:
 
-- `W × H` = number of luma pixels per frame
-- `peak` = maximum luma sample value (255 for 8-bit, 1023 for 10-bit, etc.)
+- $W \times H$ = number of luma pixels per frame
+- $\mathrm{peak}$ = maximum luma sample value (255 for 8-bit, 1023 for 10-bit, etc.)
 - Only the luma (Y) plane is used; chroma planes are ignored.
 
 A second sub-score `tad_sad` reports the raw (unnormalised) sum of absolute
@@ -78,7 +78,9 @@ aggregate (mean, harmonic mean, etc.) in the summary block.
 
 TAD is implemented in Rust and is **off by default**. The Meson build option
 `enable_rust_features` (default `false`) controls whether the Rust crate is
-compiled. Enabling it needs `cargo` and `cbindgen` on `PATH`.
+compiled. Enabling it needs `cargo` on `PATH`; the cargo build runs offline.
+Before ADR-1713 such a build compiled TAD but never registered it, so
+`--feature tad` failed there too; it is registered now.
 
 ```bash
 # Opt in:
@@ -88,13 +90,15 @@ meson setup build core -Denable_rust_features=true
 meson setup build core
 ```
 
-Two cases leave the extractor out of the build:
+With the option off (the default) the `tad` extractor is not registered, and
+`--feature tad` fails with `problem loading feature extractor: tad`.
 
-- **Option off (the default).** The `tad` extractor is not registered, and
-  `--feature tad` fails with `problem loading feature extractor: tad`.
-- **Option on, `cargo` missing.** Meson prints a warning
-  (`enable_rust_features=true but cargo not found; TAD extractor will be
-  skipped`) and configures the build without TAD.
+With the option on and no `cargo` in `PATH`, configure stops with
+`enable_rust_features=true but cargo was not found: install the toolchain
+pinned in rust-toolchain.toml (RUST_VERSION in build-config.env) or configure
+with -Denable_rust_features=false`. The pinned version is the one in
+[`rust-toolchain.toml`](https://github.com/VMAFx/vmafx/blob/master/rust-toolchain.toml);
+rustup installs it on the first `cargo` call in the checkout.
 
 ---
 
@@ -117,11 +121,11 @@ Two cases leave the extractor out of the build:
 Source files:
 
 - `core/src/feature/rust/tad/src/lib.rs` — Rust implementation + unit tests
-- `core/src/feature/rust/tad/Cargo.toml` — crate manifest (cbindgen build-dep)
-- `core/src/feature/rust/tad/build.rs` — cbindgen header generation
+- `core/src/feature/rust/tad/Cargo.toml` — crate manifest (an rlib of the
+  `vmafx-core-rs` archive, no external dependency)
 - `core/src/feature/tad_rust.c` — C wrapper adapting the Rust ABI to
-  `VmafFeatureExtractor`
+  `VmafFeatureExtractor`, registered by `core/src/rust/shim/rust_twins.cpp`
 
-Architecture: ADR-0707 documents the cbindgen → Meson integration recipe. Future
-Rust
-feature extractors should follow the same pattern.
+New Rust extractors are twins of C extractors and follow the
+[Rust extractor framework](../development/rust-extractor-framework.md)
+(ADR-1713), not TAD's hand-written wrapper.

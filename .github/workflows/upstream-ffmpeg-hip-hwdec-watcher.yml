@@ -3,9 +3,9 @@
 # Per ADR-0448. The fork's docs/state.md
 # T-FFMPEG-HIP-FILTER-DEFERRED row is deferred behind FFmpeg
 # acquiring AV_HWDEVICE_TYPE_HIP (or AV_HWDEVICE_TYPE_ROCM, etc.).
-# Polls weekly: searches FFmpeg's GitHub mirror for any commit on
-# master that introduces an AV_HWDEVICE_TYPE_HIP / _ROCM enum
-# variant, or new hwcontext_hip.{c,h} files.
+# Polls weekly: reads FFmpeg's GitHub mirror (default branch) for an
+# AV_HWDEVICE_TYPE_HIP / _ROCM enum variant in libavutil/hwcontext.h, or
+# new hwcontext_hip.{c,h} files under libavutil/.
 name: Watcher — FFmpeg HIP hwdec
 # Watcher — FFmpeg HIP hwdec — closes T-FFMPEG-HIP-FILTER-DEFERRED.
 # The display name is deliberately short: GitHub's badge.svg paints it
@@ -30,6 +30,11 @@ jobs:
     runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
+      - name: Checkout fork
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
       - name: Search FFmpeg for HIP / ROCm hwcontext additions
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -38,16 +43,18 @@ jobs:
 
           # Two signals:
           # (1) hwcontext_hip.{c,h} appears under libavutil/.
-          # (2) AV_HWDEVICE_TYPE_HIP enum variant appears in libavutil/hwcontext.h.
-          # Use the GitHub code-search API on the FFmpeg/FFmpeg mirror.
+          # (2) an AV_HWDEVICE_TYPE_HIP / _ROCM variant appears in libavutil/hwcontext.h.
+          # Read with the contents API of the FFmpeg/FFmpeg mirror, not code
+          # search: the code-search endpoint is throttled for the workflow
+          # token and failed with 429 on three attempts in run 39160669868.
 
-          FILES_HIT=$(gh api -X GET search/code \
-            -f q='filename:hwcontext_hip.h repo:FFmpeg/FFmpeg' \
-            --jq '.total_count' 2>/dev/null || echo 0)
+          FILES_HIT=$(scripts/ci/upstream_watch_count.sh -X GET \
+            repos/FFmpeg/FFmpeg/contents/libavutil \
+            --jq '[.[] | select(.name | test("^hwcontext_hip\\.[ch]$"))] | length')
 
-          ENUM_HIT=$(gh api -X GET search/code \
-            -f q='AV_HWDEVICE_TYPE_HIP repo:FFmpeg/FFmpeg path:libavutil/hwcontext.h' \
-            --jq '.total_count' 2>/dev/null || echo 0)
+          ENUM_HIT=$(scripts/ci/upstream_watch_count.sh -X GET \
+            repos/FFmpeg/FFmpeg/contents/libavutil/hwcontext.h \
+            --jq '.content | @base64d | [scan("AV_HWDEVICE_TYPE_(HIP|ROCM)\\b")] | length')
 
           echo "FFmpeg HIP hwdec signals: hwcontext_hip files=${FILES_HIT} enum_hits=${ENUM_HIT}"
 
@@ -55,6 +62,11 @@ jobs:
             echo "No HIP-hwdec signal upstream this week."
             exit 0
           fi
+
+          gh label create upstream-merged \
+            --color 0E8A16 \
+            --description "Upstream change landed that a fork deferral waits on (ADR-0448)" \
+            --force
 
           EXISTING=$(gh issue list \
             --repo "${GITHUB_REPOSITORY}" \
@@ -72,16 +84,16 @@ jobs:
             --title "FFmpeg HIP hwdec landed upstream — ship libvmaf_hip filter (closes T-FFMPEG-HIP-FILTER-DEFERRED)" \
             --label upstream-merged \
             --body "$(cat <<'EOF'
-          FFmpeg has acquired a HIP / ROCm hwdec context (search-API
-          surfaced the enum or files). The fork's
+          FFmpeg has acquired a HIP / ROCm hwdec context (the contents
+          API surfaced the enum or files). The fork's
           T-FFMPEG-HIP-FILTER-DEFERRED row in docs/state.md can now
           actively close.
 
           Action items:
 
-          1. Confirm the upstream landing: `gh search code
-             AV_HWDEVICE_TYPE_HIP --repo FFmpeg/FFmpeg`. Note the
-             commit SHA + author + date.
+          1. Confirm the upstream landing: `gh api
+             repos/FFmpeg/FFmpeg/commits?path=libavutil/hwcontext.h`
+             lists the commit. Note the commit SHA + author + date.
           2. Bump the fork's `ffmpeg-patches/series.txt` baseline if
              needed (reviewed release: build-config.env FFMPEG_TAG).
           3. Write `ffmpeg-patches/0014-libvmaf-add-libvmaf-hip-filter.patch`

@@ -95,6 +95,9 @@ REFERENCE_LINES = (
 )
 
 
+PIECE_COUNT = 2  # times each kernel piece appears (the 8 and the 16 bit kernel)
+
+
 def _flat(source: str) -> str:
     """Code without comments, every run of whitespace collapsed."""
     return " ".join(COMMENT.sub(" ", source).split())
@@ -139,7 +142,7 @@ def _kernel_failures(kernel: str) -> list[str]:
     group_sum = _function_body(code, GROUP_SUM_SIGNATURE)
     if any(piece not in group_sum for piece in GROUP_SUM):
         failures.append(f"{KERNEL}: a threadgroup sum is not an integer sum")
-    if any(code.count(piece) != 2 for piece in KERNEL_PIECES[1:]):
+    if any(code.count(piece) != PIECE_COUNT for piece in KERNEL_PIECES[1:]):
         failures.append(f"{KERNEL}: a kernel does not add the header's integer terms")
     if KERNEL_PIECES[0] not in code:
         failures.append(f"{KERNEL}: the kernel does not include the term's header")
@@ -235,8 +238,8 @@ class FloatPsnrMetalExactContract(unittest.TestCase):
     def test_square_threadgroup_is_detected(self) -> None:
         failures = self._edited(
             HOST,
-            "    MTLSize tg   = MTLSizeMake(FPSNR_SEGMENT, 1, 1);",
-            "    MTLSize tg   = MTLSizeMake(16, 16, 1);",
+            "    const MTLSize tg   = MTLSizeMake(FPSNR_SEGMENT, 1, 1);",
+            "    const MTLSize tg   = MTLSizeMake(16, 16, 1);",
         )
         self._assert_detected(failures, "not one 256-pixel segment of one row")
 

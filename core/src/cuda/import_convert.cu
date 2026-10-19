@@ -12,3 +12,44 @@
  */
 
 #include "vmafx/import_convert_kernels.h"
+
+/* The entry points the module lookup finds (import_device.c). */
+extern "C" {
+
+__global__ void vmafx_import_deint_8(const uint8_t *src, size_t src_pitch, uint8_t *cb, uint8_t *cr,
+                                     size_t dst_pitch, unsigned w, unsigned h)
+{
+    vmafx_import_deint_8_body(src, src_pitch, cb, cr, dst_pitch, w, h);
+}
+
+__global__ void vmafx_import_deint_16(const uint8_t *src, size_t src_pitch, uint8_t *cb,
+                                      uint8_t *cr, size_t dst_pitch, unsigned w, unsigned h,
+                                      unsigned shift)
+{
+    vmafx_import_deint_16_body(src, src_pitch, cb, cr, dst_pitch, w, h, shift);
+}
+
+__global__ void vmafx_import_shift_16(const uint8_t *src, size_t src_pitch, uint8_t *dst,
+                                      size_t dst_pitch, unsigned w, unsigned h, unsigned shift)
+{
+    vmafx_import_shift_16_body(src, src_pitch, dst, dst_pitch, w, h, shift);
+}
+
+__global__ void vmafx_import_gather(const uint8_t *src, size_t src_pitch, uint8_t *dst,
+                                    size_t dst_pitch, unsigned w, unsigned h, unsigned step,
+                                    unsigned offset, unsigned in_bytes, unsigned shift,
+                                    unsigned mask, unsigned out_bytes, unsigned period,
+                                    unsigned group_elems, unsigned pattern)
+{
+    vmafx_import_gather_body(src, src_pitch, dst, dst_pitch, w, h, step, offset, in_bytes, shift,
+                             mask, out_bytes, period, group_elems, pattern);
+}
+
+__global__ void vmafx_import_rgb(const uint8_t *src, size_t src_pitch, uint8_t *dst,
+                                 size_t dst_pitch, unsigned w, unsigned h, unsigned plane,
+                                 VmafxRgbPlan rgb)
+{
+    vmafx_import_rgb_body(src, src_pitch, dst, dst_pitch, w, h, plane, rgb);
+}
+
+} /* extern "C" */

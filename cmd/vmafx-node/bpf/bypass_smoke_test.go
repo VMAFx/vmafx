@@ -1,6 +1,8 @@
 // Copyright 2026 Lusoris
 // SPDX-License-Identifier: EUPL-1.2
 
+//go:build linux
+
 // bypass_smoke_test.go — smoke tests for the eBPF loader's compile-time
 // surface and feature flag; no kernel privileges needed.
 //

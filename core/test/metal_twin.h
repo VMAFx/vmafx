@@ -35,11 +35,15 @@
 #ifndef LIBVMAF_TEST_METAL_TWIN_H_
 #define LIBVMAF_TEST_METAL_TWIN_H_
 
+#include <errno.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 
 #include "test.h"
 
+#include "dict.h"
+#include "feature/feature_extractor.h"
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/libvmaf_metal.h"
 
@@ -158,6 +162,37 @@ static inline void metal_run_case_named(const char *name, mu_message_t (*test)(v
 }
 
 #define metal_run_case(test) metal_run_case_named(#test, (test))
+
+/* init() status of extractor `name` on a `w` x `h` 8-bit 4:2:0 frame with one
+ * option `key` = `value` (none when `key` is NULL). No picture is allocated:
+ * for a frame the twin refuses, init() returns before the twin creates a
+ * Metal context or a buffer (T-METAL-UINT-PLANE-INDEX-2026-10-05). */
+static inline int metal_twin_init_status(const char *name, const char *key, const char *value,
+                                         unsigned w, unsigned h)
+{
+    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name(name);
+    if (!fex) {
+        return -ENOENT;
+    }
+    VmafDictionary *dict = NULL;
+    if (key && vmaf_dictionary_set(&dict, key, value, 0)) {
+        (void)vmaf_dictionary_free(&dict);
+        return -ENOMEM;
+    }
+    VmafFeatureExtractorContext *ctx = NULL;
+    /* create() takes ownership of `dict`, and frees it on failure. */
+    int err = vmaf_feature_extractor_context_create(&ctx, fex, dict);
+    if (err) {
+        return err;
+    }
+    err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, 8u, w, h);
+    (void)vmaf_feature_extractor_context_close(ctx);
+    (void)vmaf_feature_extractor_context_destroy(ctx);
+    return err;
+}
+
+/* The largest picture VMAFx accepts (VMAF_PIC_DIM_MAX, core/src/picture.c). */
+#define METAL_TWIN_PIC_DIM_MAX (32768u)
 
 /* NOLINTEND(modernize-use-nullptr) */
 

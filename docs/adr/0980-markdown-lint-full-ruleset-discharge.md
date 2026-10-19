@@ -134,3 +134,18 @@ cli2 v0.22.1 (markdownlint v0.40.0). All 23 pre-commit hooks pass
   time to do" (paraphrased); follow-on directive "DO NOT NARROW THE
   GATE — `.markdownlint.json` stays at its full rule set."
 - PR #497 — closed by this ADR / superseded.
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 25: `Two prior attempts to discharge the tail (ADR-0864,
+  ADR-0979) chose **gate narrowing** as the response`: Cites nonexistent
+  ADR-0864; ADR-0864 does not exist on origin/master. See ADR-0866 and
+  ADR-0980 (markdownlint configuration tune and first sweep; ADR-0864 is a
+  retired number in scripts/ci/source-adr-citations.json). ADR-0979 now has a
+  short tombstone record.
+- About line 27: `ADR-0979 (proposed in PR #497) reduced .markdownlint.json
+  from ~36 rules to 5`: Cites nonexistent ADR-0979; ADR-0979 does not exist on
+  origin/master. ADR-0979 now has a short tombstone record.

@@ -37,6 +37,7 @@
 #include <stdlib.h>
 
 #include "test.h"
+#include "float_bits.h"
 
 #include "feature/integer_motion.h"
 #include "feature/metal/metal_integer_motion_math.h"
@@ -267,7 +268,7 @@ static char *check_fixture(const Fixture *fx, unsigned *bad, unsigned *old_off)
     double cpu = -1.0;
     mu_assert("the CPU motion extractor failed", cpu_score(fx, &cpu) == 0);
     const double twin = twin_score(fx);
-    if (twin != cpu) {
+    if (!vmaf_test_identical_f64(twin, cpu)) {
         (*bad)++;
         (void)fprintf(stderr, "\n  %ux%u %u-bit kind %d: cpu=%.17g twin=%.17g\n", fx->w, fx->h,
                       fx->bpc, (int)fx->kind, cpu, twin);

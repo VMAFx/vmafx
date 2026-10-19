@@ -175,6 +175,73 @@ else
   echo "ADR-0524: dist YUV or nr_metric_v1 model missing; skipping NR end-to-end smoke"
 fi
 
+# 5c. --tiny-model int8 redirect and fp32 fallback CLI coverage (ADR-1032).
+# Tests that:
+#   (a) when .int8.onnx is missing, the CLI falls back to the fp32 baseline and succeeds.
+#   (b) when .int8.onnx is invalid/corrupt, the CLI falls back to fp32 and succeeds.
+#   (c) when an invalid .int8.onnx is specified directly, the CLI fails closed (non-zero exit).
+if [[ -f "$DIST_YUV" && -f model/tiny/nr_metric_v1.onnx && -f model/tiny/nr_metric_v1.json ]]; then
+  tmp_cli_dir="$(mktemp -d -t vmaf_cli_int8_XXXXXX)"
+  cp model/tiny/nr_metric_v1.onnx "$tmp_cli_dir/model.onnx"
+  cp model/tiny/nr_metric_v1.json "$tmp_cli_dir/model.json"
+
+  # Case (a): .int8.onnx is missing -> falls back to fp32 baseline and succeeds.
+  json_fallback_miss="$(mktemp -t vmaf_cli_miss_XXXXXX.json)"
+  if ! miss_out="$("$VMAF_BIN" --no-reference --tiny-model "$tmp_cli_dir/model.onnx" \
+    --tiny-device cpu --tiny-resize bilinear --distorted "$DIST_YUV" \
+    --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
+    --frame_cnt 1 --json --output "$json_fallback_miss" 2>&1)"; then
+    printf '%s\n' "$miss_out"
+    echo "ADR-1032: CLI missing .int8.onnx fp32 fallback FAILED to run"
+    rm -rf "$tmp_cli_dir" "$json_fallback_miss"
+    exit 1
+  fi
+  if ! grep -qE 'vmaf_tiny_model|nr_metric' "$json_fallback_miss"; then
+    echo "ADR-1032: missing int8 fallback produced no feature column"
+    rm -rf "$tmp_cli_dir" "$json_fallback_miss"
+    exit 1
+  fi
+  rm -f "$json_fallback_miss"
+
+  # Case (b): .int8.onnx is corrupt -> falls back to fp32 baseline and succeeds.
+  printf 'corrupt_int8_payload_marker\n' >"$tmp_cli_dir/model.int8.onnx"
+  json_fallback_inv="$(mktemp -t vmaf_cli_inv_XXXXXX.json)"
+  if ! inv_out="$("$VMAF_BIN" --no-reference --tiny-model "$tmp_cli_dir/model.onnx" \
+    --tiny-device cpu --tiny-resize bilinear --distorted "$DIST_YUV" \
+    --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
+    --frame_cnt 1 --json --output "$json_fallback_inv" 2>&1)"; then
+    printf '%s\n' "$inv_out"
+    echo "ADR-1032: CLI corrupt .int8.onnx fp32 fallback FAILED to run"
+    rm -rf "$tmp_cli_dir" "$json_fallback_inv"
+    exit 1
+  fi
+  if ! grep -qE 'vmaf_tiny_model|nr_metric' "$json_fallback_inv"; then
+    echo "ADR-1032: corrupt int8 fallback produced no feature column"
+    rm -rf "$tmp_cli_dir" "$json_fallback_inv"
+    exit 1
+  fi
+  rm -f "$json_fallback_inv"
+
+  # Case (c): directly naming corrupt .int8.onnx fails closed (non-zero exit).
+  if direct_inv_out="$("$VMAF_BIN" --no-reference --tiny-model "$tmp_cli_dir/model.int8.onnx" \
+    --tiny-device cpu --tiny-resize bilinear --distorted "$DIST_YUV" \
+    --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
+    --frame_cnt 1 2>&1)"; then
+    printf '%s\n' "$direct_inv_out"
+    echo "ADR-1032: directly naming corrupt .int8.onnx should have failed closed"
+    rm -rf "$tmp_cli_dir"
+    exit 1
+  fi
+  if ! printf '%s\n' "$direct_inv_out" | grep -q 'problem loading tiny model'; then
+    printf '%s\n' "$direct_inv_out"
+    echo "ADR-1032: directly naming corrupt int8 did not report expected loader error"
+    rm -rf "$tmp_cli_dir"
+    exit 1
+  fi
+
+  rm -rf "$tmp_cli_dir"
+fi
+
 # 6. Feature-vector + external-data ONNX models load successfully
 # (ADR-0518). Each of the shipped tiny FR-regressor checkpoints carries
 # either rank-2 inputs (feature vector), external-data weights, or both.

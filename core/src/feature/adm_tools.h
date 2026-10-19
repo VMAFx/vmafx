@@ -25,10 +25,6 @@
 #include "barten_csf_tools.h"
 #include "adm_csf_tools.h"
 
-#ifndef M_PI
-#define M_PI 3.14159265358979323846264338327
-#endif
-
 /* Upstream defines nine ADM_CM_THRESH_S_{0_0, 0_W_M_1, 0_J, H_M_1_0, H_M_1_W_M_1,
  * H_M_1_J, I_J, I_0, I_W_M_1} macros here, one per corner, edge and interior
  * case of the 3x3 masking-threshold sum. The fork has no expansion of them
@@ -158,9 +154,9 @@ struct dwt_model_params {
 
 // 0 -> Y, 1 -> Cb, 2 -> Cr
 static const struct dwt_model_params dwt_7_9_YCbCr_threshold[3] = {
-    {.a = 0.495, .k = 0.466, .f0 = 0.401, .g = {1.501, 1.0, 0.534, 1.0}},
-    {.a = 1.633, .k = 0.353, .f0 = 0.209, .g = {1.520, 1.0, 0.502, 1.0}},
-    {.a = 0.944, .k = 0.521, .f0 = 0.404, .g = {1.868, 1.0, 0.516, 1.0}}};
+    {.a = 0.495f, .k = 0.466f, .f0 = 0.401f, .g = {1.501f, 1.0f, 0.534f, 1.0f}},
+    {.a = 1.633f, .k = 0.353f, .f0 = 0.209f, .g = {1.520f, 1.0f, 0.502f, 1.0f}},
+    {.a = 0.944f, .k = 0.521f, .f0 = 0.404f, .g = {1.868f, 1.0f, 0.516f, 1.0f}}};
 
 /*
  * The following dwt basis function amplitudes, A(lambda,theta), are taken from
@@ -172,9 +168,9 @@ static const struct dwt_model_params dwt_7_9_YCbCr_threshold[3] = {
  * These amplitudes were calculated for the 7-9 biorthogonal wavelet basis
  */
 static const float dwt_7_9_basis_function_amplitudes[6][4] = {
-    {0.62171, 0.67234, 0.72709, 0.67234},     {0.34537, 0.41317, 0.49428, 0.41317},
-    {0.18004, 0.22727, 0.28688, 0.22727},     {0.091401, 0.11792, 0.15214, 0.11792},
-    {0.045943, 0.059758, 0.077727, 0.059758}, {0.023013, 0.030018, 0.039156, 0.030018}};
+    {0.62171f, 0.67234f, 0.72709f, 0.67234f},     {0.34537f, 0.41317f, 0.49428f, 0.41317f},
+    {0.18004f, 0.22727f, 0.28688f, 0.22727f},     {0.091401f, 0.11792f, 0.15214f, 0.11792f},
+    {0.045943f, 0.059758f, 0.077727f, 0.059758f}, {0.023013f, 0.030018f, 0.039156f, 0.030018f}};
 
 /*
  * lambda = 0 (finest scale), 1, 2, 3 (coarsest scale);
@@ -185,10 +181,10 @@ static FORCE_INLINE float dwt_quant_step(const struct dwt_model_params *params, 
                                          int adm_ref_display_height)
 {
     // Formula (1), page 1165 - display visual resolution (DVR), in pixels/degree of visual angle. This should be 56.55
-    float r = adm_norm_view_dist * adm_ref_display_height * M_PI / 180.0;
+    float r = (float)(adm_norm_view_dist * adm_ref_display_height * M_PI / 180.0);
 
     // Formula (9), page 1171
-    float temp = log10(pow(2.0, lambda + 1) * params->f0 * params->g[theta] / r);
+    float temp = (float)log10(pow(2.0, lambda + 1) * params->f0 * params->g[theta] / r);
     /* Upstream's statements (Netflix/vmaf libvmaf/src/feature/adm_tools.h,
      * dwt_quant_step()): r and temp are rounded to float where they are
      * stored, and the exponent k * temp * temp is a float product whose
@@ -196,8 +192,8 @@ static FORCE_INLINE float dwt_quant_step(const struct dwt_model_params *params, 
      * changes every CSF weight in the last digits and with it every float_adm
      * score. The cast widens the product's result, as upstream's implicit
      * promotion does (ADR-1489). */
-    float Q = 2.0 * params->a * pow(10.0, (double)(params->k * temp * temp)) /
-              dwt_7_9_basis_function_amplitudes[lambda][theta];
+    float Q = (float)(2.0 * params->a * pow(10.0, (double)(params->k * temp * temp)) /
+                      dwt_7_9_basis_function_amplitudes[lambda][theta]);
 
     return Q;
 }

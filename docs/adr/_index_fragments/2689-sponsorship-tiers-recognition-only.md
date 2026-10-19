@@ -1,0 +1,1 @@
+| [ADR-2689](2689-sponsorship-tiers-recognition-only.md) | Sponsorship is recognition only, in four monthly tiers ($5, $25, $100, $500) plus one-time amounts, with no paid support, voting or paywall; the root `SPONSORS.md` is the single source of the tier table and sponsor list, included into the docs page by snippet. | Accepted | docs, community, funding |

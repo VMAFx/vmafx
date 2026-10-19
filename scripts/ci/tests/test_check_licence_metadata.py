@@ -370,6 +370,67 @@ class HelmTests(GateTestCase):
         )
 
 
+# The single-token pattern the gate used before ADR-2673, kept to show why it
+# changed: it reads no licence from an AND expression.
+OLD_CHART_LICENCE = gate.re.compile(
+    r"^[ \t]+artifacthub\.io/license:[ \t]*[\"']?([^\"'\s#]+)[\"']?[ \t]*(?:#.*)?$",
+    gate.re.MULTILINE,
+)
+
+
+def _chart_with_schema(own_licence: str) -> dict[str, str | bytes]:
+    """A chart whose values.schema.json embeds Apache-2.0 Kubernetes types."""
+    files = _chart(own_licence, "Apache-2.0", "Apache-2.0")
+    files["REUSE.toml"] = str(files["REUSE.toml"]) + (
+        "[[annotations]]\npath = ['chart/values.schema.json']\nprecedence = 'override'\n"
+        "SPDX-FileCopyrightText = ['x', 'The Kubernetes Authors']\n"
+        "SPDX-License-Identifier = 'EUPL-1.2 AND Apache-2.0'\n"
+    )
+    files["chart/values.schema.json"] = "{}\n"
+    return files
+
+
+class HelmExpressionTests(GateTestCase):
+    """ADR-2673: a chart whose files carry two licences declares both."""
+
+    def test_both_licences_pass(self) -> None:
+        self.assertEqual(self.problems(_chart_with_schema("EUPL-1.2 AND Apache-2.0")), [])
+        self.assertEqual(self.problems(_chart_with_schema('"Apache-2.0 AND EUPL-1.2"')), [])
+
+    def test_the_old_pattern_reads_no_licence_from_the_expression(self) -> None:
+        line = "annotations:\n  artifacthub.io/license: EUPL-1.2 AND Apache-2.0\n"
+        self.assertEqual(OLD_CHART_LICENCE.findall(line), [])
+        self.assertEqual(gate.chart_licence(line), "EUPL-1.2 AND Apache-2.0")
+
+    def test_a_wrong_second_licence_is_refused(self) -> None:
+        self.assertEqual(
+            self.problems(_chart_with_schema("EUPL-1.2 AND MIT")),
+            [
+                "chart/Chart.yaml: artifacthub.io/license = 'EUPL-1.2 AND MIT', "
+                "but its files carry Apache-2.0 AND EUPL-1.2"
+            ],
+        )
+
+    def test_one_identifier_is_refused_when_the_files_carry_two(self) -> None:
+        self.assertEqual(
+            self.problems(_chart_with_schema("EUPL-1.2")),
+            [
+                "chart/Chart.yaml: artifacthub.io/license = 'EUPL-1.2', "
+                "but its files carry Apache-2.0 AND EUPL-1.2"
+            ],
+        )
+
+    def test_a_list_without_and_is_refused(self) -> None:
+        for declared in ("EUPL-1.2 Apache-2.0", "EUPL-1.2 OR Apache-2.0", "EUPL-1.2 AND"):
+            with self.subTest(declared):
+                self.assertEqual(
+                    self.problems(_chart_with_schema(declared)),
+                    [
+                        "chart/Chart.yaml: artifacthub.io/license must be an SPDX AND expression, is None"
+                    ],
+                )
+
+
 class NpmTests(GateTestCase):
     def test_a_private_package_may_omit_the_licence(self) -> None:
         files = _root_layout()

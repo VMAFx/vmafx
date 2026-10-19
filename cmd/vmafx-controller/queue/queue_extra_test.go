@@ -65,7 +65,7 @@ func TestRunningCount_TransitionsAcrossLifecycle(t *testing.T) {
 		t.Errorf("after PullWork RunningCount: got %d, want 1", got)
 	}
 
-	if err := q.ReportResult(ctx, queue.Report{NodeID: "node-a", JobID: id, Result: &queue.JobResult{Score: 90.0}}); err != nil {
+	if _, err := q.ReportResult(ctx, queue.Report{NodeID: "node-a", JobID: id, Result: &queue.JobResult{Score: 90.0}}); err != nil {
 		t.Fatalf("ReportResult: %v", err)
 	}
 	if got := q.RunningCount(); got != 0 {
@@ -103,8 +103,8 @@ func TestCancel_RunningJob(t *testing.T) {
 		t.Fatalf("precondition: RunningCount = %d, want 1", q.RunningCount())
 	}
 
-	if err := q.Cancel(ctx, id); err != nil {
-		t.Fatalf("Cancel: %v", err)
+	if changed, err := q.Cancel(ctx, id); err != nil || !changed {
+		t.Fatalf("Cancel of a running job = %v, %v; want true, nil", changed, err)
 	}
 	if q.RunningCount() != 0 {
 		t.Errorf("after Cancel RunningCount: got %d, want 0", q.RunningCount())
@@ -127,11 +127,11 @@ func TestCancel_AlreadyTerminalIsIdempotent(t *testing.T) {
 	id, _ := q.Submit(ctx, j)
 	cap := queue.NodeCapacity{Backends: []string{"cpu"}, Slots: 1}
 	_, _ = q.PullWork(ctx, "node-x", "", cap)
-	_ = q.ReportResult(ctx, queue.Report{NodeID: "node-x", JobID: id, Result: &queue.JobResult{Score: 90.0}})
+	_, _ = q.ReportResult(ctx, queue.Report{NodeID: "node-x", JobID: id, Result: &queue.JobResult{Score: 90.0}})
 
-	// Job is COMPLETED; Cancel should be a no-op (no error).
-	if err := q.Cancel(ctx, id); err != nil {
-		t.Errorf("Cancel of completed job should be no-op, got: %v", err)
+	// Job is COMPLETED; Cancel should be a no-op (no error, no transition).
+	if changed, err := q.Cancel(ctx, id); err != nil || changed {
+		t.Errorf("Cancel of completed job = %v, %v; want false, nil", changed, err)
 	}
 	got, _ := q.Get(ctx, id)
 	if got.Status != queue.StatusCompleted {
@@ -192,7 +192,7 @@ func TestPullWork_SkipsCancelledFIFOEntry(t *testing.T) {
 
 	// Cancel id1 in-place; the FIFO entry for id1 stays put (Cancel walks the
 	// FIFO and removes it eagerly, so this exercises the eager-removal path).
-	if err := q.Cancel(ctx, id1); err != nil {
+	if _, err := q.Cancel(ctx, id1); err != nil {
 		t.Fatalf("Cancel: %v", err)
 	}
 

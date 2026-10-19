@@ -49,17 +49,17 @@ The minimum supported input resolution is 176x176 (see
 |---|---|---|---|
 | `enable_chroma` | bool | `false` | Emit per-plane `_cb` and `_cr` scores in addition to luma. YUV400P sources are always luma-only. |
 | `enable_lcs` | bool | `false` | Emit per-scale luminance, contrast, and structure intermediate components for the luma plane. |
-| `enable_db` | bool | `false` | Report the luma MS-SSIM score as dB (`-10 * log10(1 - score)`). |
+| `enable_db` | bool | `false` | Report the luma MS-SSIM score as dB ($-10 \log_{10}(1 - \mathrm{score})$). |
 | `clip_db` | bool | `false` | Cap the dB score at a ceiling derived from the frame geometry. Only meaningful when `enable_db=true`. |
 
-`clip_db` sets `max_db = ceil(10 * log10(peak² / mse))` with
-`mse = 0.5 / (w * h)`. It is a ceiling on the dB *output*, not a clamp on the
+`clip_db` sets $\mathrm{max\_db} = \left\lceil 10 \log_{10}(\mathrm{peak}^2 / \mathrm{mse}) \right\rceil$ with
+$\mathrm{mse} = 0.5 / (w\,h)$. It is a ceiling on the dB *output*, not a clamp on the
 linear score, and it also defines what a perfect match reports: `score >= 1.0`
 returns `max_db` rather than `+Inf`.
 
 !!! warning "GPU `clip_db` scores before ADR-1221 were wrong"
     Up to and including v3.2.1 the CUDA, SYCL and HIP twins read `clip_db` as
-    a clamp on the *linear* score (`[0, 1]`, then `-10 * log10(1 - score)`
+    a clamp on the *linear* score ($[0, 1]$, then $-10 \log_{10}(1 - \mathrm{score})$
     with no ceiling) and carried no `max_db` at all. Scoring an identical
     reference/distorted pair returned `+Inf`, and every high-similarity pair
     returned an uncapped dB value, so `clip_db` did not clip. Fixed per

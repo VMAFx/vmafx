@@ -123,7 +123,7 @@ next to it ([ADR-1513](adr/1513-production-artifact-licensing.md),
 | `ghcr.io/vmafx/vmafx-node:<tag>` | `/usr/local/share/vmafx/licenses/`; FFmpeg's and SVT-AV1's files under `/usr/local/share/vmafx/ffmpeg/` and `svt-av1/`; the copied libraries' copyright files under `copied-packages/`, the FUSE tools' under `fuse-tools/` | `ghcr.io/vmafx/vmafx-node:<tag>-source` (FFmpeg as built with its configure line, Debian sources, Go module zips) |
 | Tester images and bundles | `/opt/vmafx/licenses/`, `licenses/` in a bundle | `<image>-source` |
 | `vmaf-mcp` on PyPI | the `licenses/` directory of the wheel's and the sdist's metadata (EUPL-1.2, BSD-2-Clause-Patent) | the sdist |
-| GitHub release files (`libvmaf.so*`, `vmaf`) | `THIRD_PARTY_NOTICES.txt` and `licenses.tar.gz` next to them on the release | the release's source archives |
+| GitHub release files (`libvmaf.so*`, `libvmafx.so*`, `vmaf`) | `THIRD_PARTY_NOTICES.txt` and `licenses.tar.gz` next to them on the release | the release's source archives |
 | `models.tar.gz` (release) | `licenses/` inside the archive | the release's source archives |
 
 `THIRD_PARTY_NOTICES.txt` in that directory names every component, its licence,
@@ -208,7 +208,7 @@ licences of exactly the files the package ships
 | `vmafx-sys` crate | `bindings/rust/vmafx-sys/Cargo.toml` (inherits the workspace's) | `license` | `EUPL-1.2` |
 | `vmafx` crate | `bindings/rust/vmafx/Cargo.toml` | `license` | `EUPL-1.2` |
 | `vmafx-tad` crate (not published) | `core/src/feature/rust/tad/Cargo.toml` | `license` | `EUPL-1.2 AND BSD-2-Clause-Patent` (it ships the root `README.md`, BSD-2-Clause-Patent in `REUSE.toml`) |
-| Helm chart `vmafx` | `deploy/helm/vmafx/Chart.yaml` | `artifacthub.io/license` | `EUPL-1.2` |
+| Helm chart `vmafx` | `deploy/helm/vmafx/Chart.yaml` | `artifacthub.io/license` | `EUPL-1.2 AND Apache-2.0` (its `values.schema.json` embeds Kubernetes type schemas, Apache-2.0; the chart ships `THIRD-PARTY-NOTICES.txt`, [ADR-2673](adr/2673-chart-licence-kubernetes-schemas.md)) |
 | Its Prometheus Pushgateway subchart | `charts/prometheus-pushgateway-*.tgz` | its own `Chart.yaml` | `Apache-2.0` |
 
 A crate's files are what `cargo package --list` puts into it; a chart's are its
@@ -314,10 +314,12 @@ Copies of it remain where those trees were published
 - GitHub's source archives of `v1.0.0-rc.1`, `v1.0.0-rc.2` and the other tags
   made between 2026-05-28 and 2026-10-05. The tags stay.
 - The Go module proxy's zips of `github.com/VMAFx/vmafx@v1.0.0-rc.1` and
-  `@v1.0.0-rc.2`. The root `go.mod` retracts both versions:
+  `@v1.0.0-rc.2`. The root `go.mod` retracts both versions (its `retract`
+  block also withdraws `v1.0.0-rc.3`, see
+  [ADR-3292](adr/3292-release-line-restart-0x.md)):
 
   ```text
-  retract [v1.0.0-rc.1, v1.0.0-rc.2] // contained a stale root LICENSE-MIT; licensing is per-file SPDX (EUPL-1.2 fork code, BSD-2-Clause-Patent Netflix code), see docs/licensing.md
+  [v1.0.0-rc.1, v1.0.0-rc.2] // contained a stale root LICENSE-MIT; licensing is per-file SPDX (EUPL-1.2 fork code, BSD-2-Clause-Patent Netflix code), see docs/licensing.md
   ```
 
   The go command reads retractions from the `go.mod` of a module's latest

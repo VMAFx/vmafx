@@ -9,8 +9,14 @@ sycl_dir = './sycl/'
 
 vmaf_base_include = include_directories('./', './feature', './feature/common', '../include')
 
-vmaf_cflags_common = cc.get_supported_arguments([
-    '-pedantic',
+# clang-cl and icx-cl take an option they do not know with a -Wunknown-argument
+# warning, not an error, so get_supported_arguments() keeps it and every
+# compile prints "unknown argument ignored in clang-cl". -pedantic and
+# -fvisibility=hidden mean nothing to them (PE has no ELF visibility), so the
+# MSVC-syntax drivers are not offered them.
+_gnu_driver_only_args = cc.get_argument_syntax() == 'msvc' ? [] : ['-pedantic', '-fvisibility=hidden']
+
+vmaf_cflags_common = cc.get_supported_arguments(_gnu_driver_only_args + [
     # ADR-0692: enforce the JPL Rule-24 fallthrough annotation at compile time.
     # C23 provides the standard [[fallthrough]] spelling.
     '-Wimplicit-fallthrough',
@@ -18,9 +24,9 @@ vmaf_cflags_common = cc.get_supported_arguments([
     # no C consumer exists anywhere in the tree.
     # ADR-0379: hide all symbols by default; only vmaf_*-prefixed entry
     # points annotated with VMAF_EXPORT in the public headers are visible
-    # in the final libvmaf.so. This eliminates the 207-symbol leak
-    # found by Research-0092 (libsvm C API, pdjson, SIMD internals, etc.)
-    '-fvisibility=hidden',
+    # in the final libvmaf.so (-fvisibility=hidden above). This eliminates the
+    # 207-symbol leak found by Research-0092 (libsvm C API, pdjson, SIMD
+    # internals, etc.)
 ]) + [
     # Suppresses the VMAF_POOL_METHOD_NB deprecation attribute for internal
     # translation units that legitimately iterate over all pool methods (e.g.
@@ -72,12 +78,29 @@ endif
 if _strict_fp_compiler_id == 'intel-llvm'
     vmaf_fp_model_args = ['-fp-model=precise']
     # ORDER IS LOAD-BEARING: precise first, contraction-off last.
-    vmaf_strict_fp_args = vmaf_fp_model_args + ['-ffp-contract=off']
+    # `-fno-fast-math -fcomplex-arithmetic=full` between them (ADR-2170): a
+    # `-ffp-contract=off` straight after `-fp-model=precise` is the override
+    # icx reports as -Woverriding-option on every compile. Passed after the
+    # model, `-fno-fast-math` leaves nothing to override and removes the
+    # diagnostic, but it also drops the complex-arithmetic mode the model had
+    # set to full, so that is spelled again. Measured on 182 translation units
+    # of this tree: the objects of the two spellings are byte-identical, and
+    # the frontend arguments differ only by the `-fcomplex-arithmetic=full`
+    # token itself.
+    vmaf_strict_fp_args = vmaf_fp_model_args + ['-fno-fast-math', '-fcomplex-arithmetic=full', '-ffp-contract=off']
 elif _strict_fp_compiler_id == 'intel-llvm-cl'
     vmaf_fp_model_args = ['/fp:precise']
-    # Intel's Windows driver has no -ffp-contract option. /Qfma- is the
-    # documented separate-rounding equivalent for AVX2-or-newer targets.
-    vmaf_strict_fp_args = vmaf_fp_model_args + ['/Qfma-']
+    # Intel's Windows driver takes Clang options only through /clang:. The
+    # documented pair `/fp:precise /Qfma-` is the override icx-cl reports as
+    # -Woverriding-option on every compile; the Unix icx spelling above, passed
+    # through /clang:, sets the same state without it (ADR-2170). Measured with
+    # icx-cl 2026.0 for x86_64-pc-windows-msvc: the -cc1 arguments differ only
+    # by the `-fcomplex-arithmetic=full` token, the 402 predefined macros are
+    # equal, and the objects of a contraction, division, mixed-precision and
+    # complex-arithmetic corpus are byte-identical at /O2, /O3, /arch:AVX2 and
+    # /arch:CORE-AVX512.
+    vmaf_strict_fp_args = vmaf_fp_model_args + ['/clang:-fno-fast-math',
+        '/clang:-fcomplex-arithmetic=full', '/clang:-ffp-contract=off']
 elif _strict_fp_compiler_id == 'msvc'
     # Since Visual Studio 2022, /fp:precise leaves contraction disabled unless
     # /fp:contract is explicitly requested.
@@ -88,6 +111,19 @@ elif _strict_fp_compiler_id == 'clang-cl'
 endif
 # END VMAF strict FP compiler-argument policy
 add_project_arguments(vmaf_strict_fp_args, language : ['c', 'cpp'])
+
+# The x86 SIMD instruction-set options. cl.exe does not take the Unix spellings
+# (D9002: it warns and ignores them) and its intrinsics need no option, so it
+# gets none; clang-cl and the Windows Intel driver (icx-cl) take them through
+# their Clang front end and need them for the target-feature checks of the
+# intrinsics headers.
+vmaf_x86_isa_unix_flags_ok = _strict_fp_compiler_id != 'msvc'
+vmaf_x86_avx2_isa_args = []
+vmaf_x86_avx512_isa_args = []
+if vmaf_x86_isa_unix_flags_ok
+    vmaf_x86_avx2_isa_args = ['-mavx', '-mavx2', '-mfma']
+    vmaf_x86_avx512_isa_args = ['-mavx512f', '-mavx512dq', '-mavx512bw', '-mavx512cd', '-mavx512vl']
+endif
 
 # ADR-1495: the host math functions (log10, pow, powf, log2f, exp, log and
 # the others libvmaf calls) come from the C library's libm in every build, so
@@ -230,10 +266,47 @@ endif
 is_mcp_enabled = get_option('enable_mcp')
 mcp_sources = []
 mcp_defines = []
-if is_mcp_enabled
+# The MCP server is POSIX code (Unix-domain and TCP sockets, <unistd.h>,
+# <sys/socket.h>): a Windows build that asks for it fails here instead of in
+# the compiler, and its sources stay off the Windows build (the msvcism stage
+# of scripts/dev/preflight.sh reads this gate).
+if is_mcp_enabled and host_machine.system() == 'windows'
+    error('enable_mcp=true: the embedded MCP server is POSIX-only (Unix-domain and TCP ' +
+          'sockets through <sys/socket.h> and <unistd.h>) and cannot be built for Windows')
+endif
+if is_mcp_enabled and host_machine.system() != 'windows'
     subdir('mcp')
     vmaf_cflags_common += mcp_defines
 endif
+
+# RC4 WP6 (ADR-1852 decision D3): libvmafx (the engine and the VMAFx API)
+# defines no libvmaf function; libvmaf.so.3 (core/src/compat/libvmaf/) defines
+# them on exported vmafx_ symbols. Every engine translation unit is compiled
+# with the generated core/src/vmafx/engine_names_gen.h first, which renames
+# the engine's own definition of each libvmaf function to vmaf_engine_<stem>,
+# so a static link of both libraries never binds a libvmaf call to the engine.
+# The switches tell it (and the compat sources) which backends still keep
+# their libvmaf functions in the engine (declared exceptions of [[compat]] in
+# core/api/vmafx.toml). Code that must see the libvmaf names (the compat
+# library, the tools, black-box tests) adds -DVMAF_PUBLIC_NAMES.
+vmaf_engine_name_args = [
+    '-DVMAFX_ENGINE_EXPORTS_CUDA=' + (is_cuda_enabled ? '1' : '0'),
+    '-DVMAFX_ENGINE_EXPORTS_SYCL=' + (is_sycl_enabled ? '1' : '0'),
+    '-DVMAFX_ENGINE_EXPORTS_HIP=' + (is_hip_enabled ? '1' : '0'),
+    '-DVMAFX_ENGINE_EXPORTS_METAL=' + (is_metal_enabled ? '1' : '0'),
+    '-DVMAFX_BUILD_MCP=' + (is_mcp_enabled ? '1' : '0'),
+]
+vmaf_engine_names_header = meson.current_source_dir() / 'vmafx' / 'engine_names_gen.h'
+if cc.get_argument_syntax() == 'msvc'
+    vmaf_engine_name_args += '/FI' + vmaf_engine_names_header
+else
+    vmaf_engine_name_args += '-include' + vmaf_engine_names_header
+endif
+# Project arguments, so every C / C++ target takes them whatever flag list it
+# names (engine static libraries, white-box tests compiling engine sources);
+# the Objective-C++ Metal targets name them through metal_objcpp_args.
+add_project_arguments(vmaf_engine_name_args, language : ['c', 'cpp'])
+vmaf_public_name_args = ['-DVMAF_PUBLIC_NAMES']
 
 # HIP compute backend (ADR-0209 / T7-10 scaffold). Same pattern: empty arrays
 # when the option is off, no-cost
@@ -433,6 +506,9 @@ if is_hipcc_enabled and is_hip_enabled
     # flags, not intrinsics, carry the policy. core/test/meson.build compiles
     # the device probe of test_hip_fp_arith_contract with this list.
     hip_strict_fp_args = ['-ffp-contract=off', '-fhip-fp32-correctly-rounded-divide-sqrt']
+    # ADR-2170: `-Dwerror=true` (scripts/ci/werror-args.sh) reaches the device compilers too.
+    # Meson applies it to C and C++ targets only, and the HSACOs are custom targets.
+    hip_werror_args = get_option('werror') ? ['-Werror'] : []
     # END VMAF HIP strict FP policy
     # BEGIN VMAF HIP device code compression policy
     # ADR-1590: the code object bundle of every HIP kernel is stored as a
@@ -542,7 +618,7 @@ if is_hipcc_enabled and is_hip_enabled
             depfile: name + '.hsaco.d',
             depend_files: hip_kernel_shared_headers,
             command: [hipcc_exe, '--genco'] + hip_offload_arch_flags +
-                     hip_include_flags + hip_strict_fp_args + hip_compress_args +
+                     hip_include_flags + hip_strict_fp_args + hip_werror_args + hip_compress_args +
                      hip_kernel_extra_args.get(name, []) +
                      ['-I', meson.current_source_dir(),
                       '-I', meson.current_source_dir() + '/feature',
@@ -876,6 +952,22 @@ if built_in_models_enabled
     endif
 endif
 
+# ---------------------------------------------------------------------------
+# ADR-1713: Rust extractor framework. Decided before config.h so every
+# translation unit sees HAVE_RUST_FEATURES; the targets come further below.
+# A requested Rust build without cargo fails configure (ADR-3318): a build that
+# quietly dropped the Rust extractors would report the C path as the Rust one.
+# The toolchain version is rust-toolchain.toml's, pinned from build-config.env.
+# ---------------------------------------------------------------------------
+is_rust_enabled = get_option('enable_rust_features')
+if is_rust_enabled
+    cargo_exe = find_program('cargo', required: false)
+    if not cargo_exe.found()
+        error('enable_rust_features=true but cargo was not found: install the toolchain pinned in rust-toolchain.toml (RUST_VERSION in build-config.env) or configure with -Denable_rust_features=false')
+    endif
+endif
+cdata.set10('HAVE_RUST_FEATURES', is_rust_enabled)
+
 config_h_target = configure_file(output: 'config.h', configuration: cdata)
 
 libvmaf_cpu_sources = [
@@ -1068,7 +1160,7 @@ if is_asm_enabled
       # -fp-model=precise is also passed on the command line. For strict-FP
       # carve-out static libs the shared policy adds both flags so scalar tails
       # and C-level glue stay bit-exact with their references. Windows icx-cl
-      # uses the equivalent `/fp:precise /Qfma-` spellings.
+      # uses the equivalent /fp:precise and /clang: spellings.
       #
       # ORDER HAZARD, measured -- do not "tidy" the shared policy above.
       # `-fp-model=precise` implies `-ffp-contract=on`, so when it lands AFTER
@@ -1123,7 +1215,7 @@ if is_asm_enabled
           'x86_avx2',
           x86_avx2_sources,
           include_directories : vmaf_base_include,
-          c_args : ['-mavx', '-mavx2', '-mfma'] + vmaf_strict_fp_args + vmaf_cflags_common,
+          c_args : vmaf_x86_avx2_isa_args + vmaf_strict_fp_args + vmaf_cflags_common,
       )
 
       # ssim_avx2 carve-out (mirror of psnr_hvs_avx2 / ms_ssim_decimate_avx2
@@ -1137,7 +1229,7 @@ if is_asm_enabled
           'x86_ssim_avx2',
           feature_src_dir + 'x86/ssim_avx2.c',
           include_directories : vmaf_base_include,
-          c_args : ['-mavx', '-mavx2', '-mfma'] + vmaf_strict_fp_args + vmaf_cflags_common,
+          c_args : vmaf_x86_avx2_isa_args + vmaf_strict_fp_args + vmaf_cflags_common,
       )
 
 
@@ -1152,13 +1244,13 @@ if is_asm_enabled
           'x86_psnr_hvs_avx2',
           feature_src_dir + 'x86/psnr_hvs_avx2.c',
           include_directories : vmaf_base_include,
-          c_args : ['-mavx', '-mavx2', '-mfma'] + vmaf_strict_fp_args + vmaf_cflags_common,
+          c_args : vmaf_x86_avx2_isa_args + vmaf_strict_fp_args + vmaf_cflags_common,
       )
       x86_ms_ssim_decimate_avx2_lib = static_library(
           'x86_ms_ssim_decimate_avx2',
           feature_src_dir + 'x86/ms_ssim_decimate_avx2.c',
           include_directories : vmaf_base_include,
-          c_args : ['-mavx', '-mavx2', '-mfma'] + vmaf_strict_fp_args + vmaf_cflags_common,
+          c_args : vmaf_x86_avx2_isa_args + vmaf_strict_fp_args + vmaf_cflags_common,
       )
 
       # ssimulacra2 AVX2 compiles in its own static lib with
@@ -1176,7 +1268,7 @@ if is_asm_enabled
               feature_src_dir + 'x86/ssimulacra2_host_avx2.c',
           ],
           include_directories : vmaf_base_include,
-          c_args : ['-mavx', '-mavx2', '-mfma'] + vmaf_strict_fp_args + vmaf_cflags_common,
+          c_args : vmaf_x86_avx2_isa_args + vmaf_strict_fp_args + vmaf_cflags_common,
       )
 
       platform_specific_cpu_objects += x86_avx2_static_lib.extract_all_objects(recursive: true)
@@ -1196,7 +1288,7 @@ if is_asm_enabled
           'x86_float_adm_avx2',
           feature_src_dir + 'x86/float_adm_avx2.c',
           include_directories : vmaf_base_include,
-          c_args : ['-mavx', '-mavx2', '-mfma'] + vmaf_strict_fp_args + vmaf_cflags_common,
+          c_args : vmaf_x86_avx2_isa_args + vmaf_strict_fp_args + vmaf_cflags_common,
       )
       platform_specific_cpu_objects += x86_float_adm_avx2_lib.extract_all_objects(recursive: true)
 
@@ -1211,7 +1303,7 @@ if is_asm_enabled
           'x86_speed_matmul_avx2',
           feature_src_dir + 'x86/speed_matmul_avx2.c',
           include_directories : vmaf_base_include,
-          c_args : ['-mavx', '-mavx2', '-mfma'] + vmaf_strict_fp_args + vmaf_cflags_common,
+          c_args : vmaf_x86_avx2_isa_args + vmaf_strict_fp_args + vmaf_cflags_common,
       )
       platform_specific_cpu_objects += x86_speed_matmul_avx2_lib.extract_all_objects(recursive: true)
 
@@ -1239,8 +1331,7 @@ if is_asm_enabled
             include_directories : vmaf_base_include,
             # ADR-1415: strict FP like every x86 SIMD library; see
             # x86_avx2_static_lib above.
-            c_args : ['-mavx512f', '-mavx512dq', '-mavx512bw', '-mavx512cd',
-                      '-mavx512vl'] +
+            c_args : vmaf_x86_avx512_isa_args +
                      vmaf_strict_fp_args +
                      vmaf_cflags_common,
             # b_lto=false: with b_lto=true at meson.build top, LTO over
@@ -1259,8 +1350,7 @@ if is_asm_enabled
             'x86_ssimulacra2_avx512',
             feature_src_dir + 'x86/ssimulacra2_avx512.c',
             include_directories : vmaf_base_include,
-            c_args : ['-mavx512f', '-mavx512dq', '-mavx512bw', '-mavx512cd',
-                      '-mavx512vl'] + vmaf_strict_fp_args + vmaf_cflags_common,
+            c_args : vmaf_x86_avx512_isa_args + vmaf_strict_fp_args + vmaf_cflags_common,
         )
 
         platform_specific_cpu_objects += x86_avx512_static_lib.extract_all_objects(recursive: true)
@@ -1272,8 +1362,7 @@ if is_asm_enabled
             'x86_float_adm_avx512',
             feature_src_dir + 'x86/float_adm_avx512.c',
             include_directories : vmaf_base_include,
-            c_args : ['-mavx512f', '-mavx512dq', '-mavx512bw', '-mavx512cd',
-                      '-mavx512vl'] + vmaf_strict_fp_args + vmaf_cflags_common,
+            c_args : vmaf_x86_avx512_isa_args + vmaf_strict_fp_args + vmaf_cflags_common,
         )
         platform_specific_cpu_objects += x86_float_adm_avx512_lib.extract_all_objects(recursive: true)
 
@@ -1283,8 +1372,7 @@ if is_asm_enabled
             'x86_speed_matmul_avx512',
             feature_src_dir + 'x86/speed_matmul_avx512.c',
             include_directories : vmaf_base_include,
-            c_args : ['-mavx512f', '-mavx512dq', '-mavx512bw', '-mavx512cd',
-                      '-mavx512vl'] + vmaf_strict_fp_args + vmaf_cflags_common,
+            c_args : vmaf_x86_avx512_isa_args + vmaf_strict_fp_args + vmaf_cflags_common,
         )
         platform_specific_cpu_objects += x86_speed_matmul_avx512_lib.extract_all_objects(recursive: true)
       endif
@@ -1336,15 +1424,26 @@ endif
 # public vmaf_* API and, of C++ symbols, only libstdc++ template members, which
 # namespace std declares with default visibility.
 # ADR-1337: hide inline C++ placement new/delete symbols with -fvisibility-inlines-hidden.
-vmaf_cppflags_common = cxx.get_supported_arguments(vmaf_cflags_common + ['-fvisibility-inlines-hidden'])
+vmaf_cppflags_common = cxx.get_supported_arguments(vmaf_cflags_common + (cxx.get_argument_syntax() == 'msvc' ? [] : ['-fvisibility-inlines-hidden']))
 
 if is_cuda_enabled
-    # Check for required CUDA headers
+    # Check for required CUDA headers. The release named here is
+    # build-config.env's NV_CODEC_HEADERS_TAG and NV_CODEC_HEADERS_COMMIT
+    # (scripts/ci/tests/test_nv_codec_headers_single_source.py compares them).
+    nv_codec_headers_need = 'nv-codec-headers n13.1.15.0 (commit 0a6fba9a2820628b8103464f4c8753ee05838baa) or newer from https://code.ffmpeg.org/FFmpeg/nv-codec-headers'
     if not cc.has_header('ffnvcodec/dynlink_cuda.h', args : test_args)
-        error('ffnvcodec/dynlink_cuda.h not found. Please install nv-codec-headers from https://code.ffmpeg.org/FFmpeg/nv-codec-headers (commit 876af32a202d0de83bd1d36fe74ee0f7fcf86b0d or greater required).')
+        error('ffnvcodec/dynlink_cuda.h not found. Please install ' + nv_codec_headers_need + '.')
     endif
     if not cc.has_header('ffnvcodec/dynlink_loader.h', args : test_args)
-        error('ffnvcodec/dynlink_loader.h not found. Please install nv-codec-headers from https://code.ffmpeg.org/FFmpeg/nv-codec-headers (commit 876af32a202d0de83bd1d36fe74ee0f7fcf86b0d or greater required).')
+        error('ffnvcodec/dynlink_loader.h not found. Please install ' + nv_codec_headers_need + '.')
+    endif
+    # cuda/import_frame.c reads a CUarray's descriptor through the loader
+    # (ADR-2023). Headers before n13.1.15.0 have no such member, and the build
+    # stopped in that file with "no member named". Stop here and say what
+    # is needed. Of the loader members core/ calls, this is the newest one.
+    if not cc.has_member('CudaFunctions', 'cuArray3DGetDescriptor',
+                         prefix : '#include <ffnvcodec/dynlink_loader.h>', args : test_args)
+        error('ffnvcodec/dynlink_loader.h has no CudaFunctions.cuArray3DGetDescriptor: the installed nv-codec-headers are too old. Please install ' + nv_codec_headers_need + '.')
     endif
 
     cuda_cu_sources = {
@@ -1403,23 +1502,47 @@ if is_cuda_enabled
         # On Windows, nvcc requires MSVC's cl.exe as host compiler for preprocessing.
         # We avoid adding cl.exe to PATH as that causes meson to pick MSVC as the
         # default C compiler. Use vswhere + powershell to find cl.exe automatically.
+        #
+        # When the build itself compiles C++ with MSVC, nvcc's host compiler is that
+        # same cl.exe: a second toolset compiles the host half of every .cu against
+        # another STL than the objects it links with, and a Visual Studio install
+        # carries older toolsets beside the current one. The search used to take
+        # the first cl.exe of a recursive walk, the v142 toolset (14.29) of VS 18,
+        # whose STL hides <numbers> from nvcc's C++20 host passes, so
+        # ciede_score.cu stopped compiling (T-WINDOWS-NVCC-CCBIN-OLDEST-TOOLSET-2026-10-06).
+        # Without an MSVC build compiler the search takes the newest toolset of
+        # the latest install. test_windows_cuda_compiler_discovery.py runs this block.
+        nvcc_build_msvc = ''
+        if is_variable('cxx')
+            if cxx.get_id() == 'msvc'
+                nvcc_build_msvc = find_program(cxx.cmd_array()[0]).full_path()
+            endif
+        endif
         if host_machine.system() == 'windows'
-            cl_find_result = run_command('powershell', '-NoProfile', '-Command',
-                '(Get-ChildItem -Path (& "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe" -latest -products * -property installationPath) -Recurse -Filter cl.exe -ErrorAction SilentlyContinue | Where-Object { $_.DirectoryName -like "*HostX64*x64*" } | Select-Object -First 1).FullName',
-                check: false)
-            if cl_find_result.returncode() == 0 and cl_find_result.stdout().strip() != ''
-                cl_path = cl_find_result.stdout().strip()
-                message('Found MSVC cl.exe at: ' + cl_path)
-                nvcc_ccbin_flags = ['--allow-unsupported-compiler', '-ccbin', cl_path]
+            if nvcc_build_msvc != ''
+                cl_path = nvcc_build_msvc
+                message('nvcc host compiler: the build MSVC at ' + cl_path)
             else
-                cl_exe = find_program('cl', required: false)
-                if cl_exe.found()
-                    cl_path = cl_exe.full_path()
-                    nvcc_ccbin_flags = ['--allow-unsupported-compiler', '-ccbin', cl_path]
+                cl_find_result = run_command('powershell', '-NoProfile', '-Command',
+                    '$vs = & "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe" -latest -products * -property installationPath; ' +
+                    '(Get-ChildItem -Path "$vs/VC/Tools/MSVC" -Directory -ErrorAction SilentlyContinue | ' +
+                    'Sort-Object { [version]$_.Name } -Descending | ' +
+                    'ForEach-Object { Join-Path $_.FullName "bin/HostX64/x64/cl.exe" } | ' +
+                    'Where-Object { Test-Path $_ } | Select-Object -First 1)',
+                    check: false)
+                if cl_find_result.returncode() == 0 and cl_find_result.stdout().strip() != ''
+                    cl_path = cl_find_result.stdout().strip()
+                    message('Found MSVC cl.exe at: ' + cl_path)
                 else
-                    error('MSVC cl.exe not found. nvcc on Windows requires Visual Studio Build Tools.')
+                    cl_exe = find_program('cl', required: false)
+                    if cl_exe.found()
+                        cl_path = cl_exe.full_path()
+                    else
+                        error('MSVC cl.exe not found. nvcc on Windows requires Visual Studio Build Tools.')
+                    endif
                 endif
             endif
+            nvcc_ccbin_flags = ['--allow-unsupported-compiler', '-ccbin', cl_path]
 
             # Find MSVC and Windows SDK include dirs so cl.exe can find system
             # headers when invoked by nvcc outside a vcvars environment.
@@ -1561,6 +1684,10 @@ if is_cuda_enabled
     # redeclaration conflict even if a future CUDA patch re-introduces the
     # mismatch. ADR-0603.
     cuda_flags = ['-D_USE_MATH_DEFINES', '-D__MATH_NO_INLINES', '--std', 'c++20']
+    # ADR-2170: `-Dwerror=true` (scripts/ci/werror-args.sh) makes every nvcc diagnostic of the
+    # fatbin targets fatal; Meson's own switch reaches C and C++ targets only. nvcc only: the
+    # clang CUDA driver (enable_nvcc=false) takes -Werror from Meson like any clang compile.
+    nvcc_werror_flags = get_option('werror') ? ['--Werror', 'all-warnings'] : []
 
     # BEGIN VMAF CUDA device strict FP policy
     # ADR-1403: no CUDA feature kernel contracts `a * b + c` into an FMA.
@@ -1673,6 +1800,7 @@ if is_cuda_enabled
         'cpu.h',
         'cuda/common.h',
         'cuda/cuda_helper.cuh',
+        'cuda/cuda_device_ptr.cuh',
         'dict.h',
         'feature/compat_builtin.h',
         'feature/feature_collector.h',
@@ -1753,7 +1881,7 @@ if is_cuda_enabled
                 cuda_inc_flags,
                 cuda_extra_includes,
                 '-DDEVICE_CODE',
-            ] + nvcc_thread_flags + cuda_flags + cuda_device_strict_fp_args + nvcc_ccbin_flags
+            ] + nvcc_thread_flags + nvcc_werror_flags + cuda_flags + cuda_device_strict_fp_args + nvcc_ccbin_flags
               + nvcc_host_includes + per_kernel_flags + cuda_compress_args + nvcc_dep_flags
         )
         ptx_files += {name : [t]}
@@ -1990,6 +2118,23 @@ if is_sycl_enabled
         endif
     endif
 
+    # Device AddressSanitizer (opt-in, icpx, Linux). cpp_args never reach these
+    # custom-target compiles, so `-Dcpp_args=-Xarch_device -fsanitize=address`
+    # instruments nothing and still loads the sanitizer layer through the link
+    # line (T-SYCL-DEVICE-SANITIZER-UNPROVEN-2026-10-05): the flag has to be on
+    # every SYCL TU's own command line and on the link. -g alone drops icpx's
+    # default -O2 to -O0, and an -O0 instrumented kernel never completes on the
+    # Arc A380 (the run hangs), so -O2 is spelled out.
+    sycl_asan_args = []
+    if get_option('sycl_device_asan')
+        if is_sycl_acpp or cc.get_argument_syntax() == 'msvc'
+            error('sycl_device_asan needs the icpx driver on Linux (device AddressSanitizer of the DPC++ compiler).')
+        endif
+        sycl_asan_args = ['-Xarch_device', '-fsanitize=address', '-g', '-O2']
+        sycl_toolchain_args += sycl_asan_args
+        message('SYCL device AddressSanitizer: on (sycl_device_asan)')
+    endif
+
     # ADR-1364: with an MSVC-syntax toolchain (icx-cl on Windows) Meson links
     # every target with link.exe itself, never through the icpx driver. link.exe
     # ignores -fsycl (LNK4044), so nothing wraps or registers the device images
@@ -2019,7 +2164,10 @@ if is_sycl_enabled
         message('SYCL device images: explicit device link (MSVC link.exe), ADR-1364')
     endif
 
-    sycl_common_args = vmaf_cflags_common + ['-c'] + sycl_toolchain_args + ['-std=c++20'] + sycl_pic_arg
+    # vmaf_math_constant_args: M_PI and M_E on Windows (core/meson.build). icpx
+    # runs in custom targets, which project arguments never reach.
+    sycl_common_args = vmaf_cflags_common + ['-c'] + sycl_toolchain_args + ['-std=c++20'] + sycl_pic_arg \
+        + vmaf_math_constant_args
     if sycl_msvc_device_link
         # common.cpp pulls the device-link object out of vmaf.lib (/include).
         sycl_common_args += ['-DVMAF_SYCL_MSVC_DEVICE_LINK=1']
@@ -2062,7 +2210,13 @@ if is_sycl_enabled
     if is_sycl_acpp
         sycl_strict_fp_args = ['-ffp-contract=off']
     else
-        sycl_strict_fp_args = ['-fp-model=precise', '-ffp-contract=off'] + sycl_fp32_prec_args
+        # The MSVC build compiles and device-links the SYCL TUs with icpx (GNU syntax)
+        # as well, so the reset applies there too (ADR-2170). Measured with icpx 2026.0
+        # for x86_64-pc-windows-msvc: the -cc1 lines of the host and both device
+        # passes, and the device link's, differ only by `-fcomplex-arithmetic=full`;
+        # the device bitcode and the 970 predefined macros are identical.
+        sycl_fast_math_reset = ['-fno-fast-math', '-fcomplex-arithmetic=full']
+        sycl_strict_fp_args = ['-fp-model=precise'] + sycl_fast_math_reset + ['-ffp-contract=off'] + sycl_fp32_prec_args
     endif
     # END VMAF SYCL strict FP policy
 
@@ -2073,6 +2227,9 @@ if is_sycl_enabled
         sycl_dir + 'dmabuf_import.cpp',
         sycl_dir + 'd3d11_import.cpp',
         sycl_dir + 'scratch_check.cpp',
+        # RC4 WP3 (ADR-2091): the VMAFx SYCL lane's runtime half (library
+        # queue, conversions, device picture reads, release events).
+        sycl_dir + 'vmafx_sycl_rt.cpp',
     ]
 
     sycl_surface_args = []
@@ -2115,13 +2272,17 @@ if is_sycl_enabled
     sycl_depfile_args = sycl_tracks_headers ? ['-MD', '-MF', '@DEPFILE@'] : []
 
     # Compile each SYCL common source with icpx
+    # scratch_check.cpp holds the deliberate spill probe whose AOT compile prints the spill as
+    # a device-compiler warning on every target: that compile alone keeps its output out of the
+    # build log unless it fails (sycl/run_captured.py, ADR-2170).
+    sycl_quiet_launcher = [import('python').find_installation(), files('sycl/run_captured.py'), '--']
     foreach src : sycl_sources
         name = fs.stem(src)
         common_sycl_objects += custom_target('sycl_common_' + name,
             output : name + '.o',
             input : src,
             depfile : sycl_tracks_headers ? name + '.o.d' : '',
-            command : [icpx] + sycl_common_args + sycl_inc_flags
+            command : (name == 'scratch_check' ? sycl_quiet_launcher : []) + [icpx] + sycl_common_args + sycl_inc_flags
                       + sycl_surface_args + sycl_depfile_args
                       + ['@INPUT@', '-o', '@OUTPUT@'],
         )
@@ -2193,6 +2354,7 @@ if is_sycl_enabled
     # build options. The MSVC build passes the pair to its explicit device link
     # instead, with the rest of sycl_strict_fp_args.
     sycl_link_args = sycl_msvc_device_link ? ['/IGNORE:4078'] : (['-fsycl'] + sycl_fp32_prec_args)
+    sycl_link_args += sycl_asan_args
     # ADR-1590: the link also compresses that SPIR-V image; the spir64_gen
     # images of the objects it links are compressed already. The MSVC build
     # compresses at its explicit device link instead.
@@ -2215,76 +2377,52 @@ vmaf_include = include_directories(
 )
 
 # ---------------------------------------------------------------------------
-# ADR-0707: Rust/cbindgen pilot — build the TAD feature extractor crate.
+# ADR-1713 (supersedes the build shape of ADR-0707): the one Rust archive.
 #
-# cargo build --release produces libvmafx_tad.a in the crate's
-# target/release/ directory.  We wrap it in a declare_dependency so the
-# archive is linked into libvmaf.so alongside the C sources.
-#
-# The option enable_rust_features (default: false, see meson_options.txt)
-# lets operators enable the Rust build on hosts with a Rust toolchain
-# (cargo + cbindgen).  When disabled, tad_rust.c is not compiled and the tad
-# extractor is not registered, so --feature tad fails with "problem loading
-# feature extractor: tad" (not -ENOSYS).
+# core/src/rust/build_staticlib.py runs `cargo build --release --locked
+# --offline -p vmafx-core-rs` against core/src/rust/Cargo.toml (a workspace
+# with no external crate, so no registry is needed) and writes a depfile
+# from cargo's dep-info, so ninja rebuilds the archive exactly when a Rust
+# source changes. The archive holds every Rust twin, the Rust predictor and
+# the TAD pilot. It links into the libvmaf library target only, with the
+# shim (rust/shim/rust_twins.cpp) and the TAD wrapper as direct sources:
+# feature_extractor.cpp, which test binaries also link, reaches the Rust
+# extractors through the accessor the shim installs at vmaf_init(), never
+# through a symbol. `--exclude-libs` keeps the Rust standard library out of
+# libvmaf.so's dynamic symbol table where the linker supports it.
 # ---------------------------------------------------------------------------
-is_rust_enabled = get_option('enable_rust_features')
-
-rust_tad_objects = []
-rust_tad_dep = []
-
+rust_core_dep = []
+rust_shim_sources = []
 if is_rust_enabled
-    cargo_exe = find_program('cargo', required: false)
-    if not cargo_exe.found()
-        warning('enable_rust_features=true but cargo not found; TAD extractor will be skipped.')
-        is_rust_enabled = false
-    endif
-endif
-
-if is_rust_enabled
-    rust_tad_crate_dir = meson.current_source_dir() / 'feature' / 'rust' / 'tad'
-    rust_tad_target_dir = meson.current_build_dir() / 'rust_tad_target'
-    rust_tad_lib_name = 'libvmafx_tad.a'
-
-    rust_tad_staticlib = custom_target('rust_tad_staticlib',
-        output: rust_tad_lib_name,
-        input: [
-            rust_tad_crate_dir / 'src' / 'lib.rs',
-            rust_tad_crate_dir / 'Cargo.toml',
-        ],
+    rust_core_lib_name = 'libvmafx_core_rs.a'
+    rust_core_staticlib = custom_target('rust_core_staticlib',
+        output: rust_core_lib_name,
+        depfile: 'libvmafx_core_rs.d',
         command: [
-            'sh', '-c',
-            cargo_exe.full_path() + ' build --release' +
-                ' --manifest-path ' + rust_tad_crate_dir / 'Cargo.toml' +
-                ' --target-dir ' + rust_tad_target_dir +
-                ' && cp ' + rust_tad_target_dir / 'release' / rust_tad_lib_name +
-                ' @OUTPUT@',
+            import('python').find_installation(),
+            files('rust/build_staticlib.py'),
+            '--cargo', cargo_exe.full_path(),
+            '--manifest', meson.current_source_dir() / 'rust' / 'Cargo.toml',
+            '--target-dir', meson.current_build_dir() / 'rust_target',
+            '--output', '@OUTPUT@',
+            '--depfile', '@DEPFILE@',
         ],
         build_by_default: true,
-        build_always_stale: false,
+        console: true,
     )
-
-    # -DHAVE_RUST_TAD is emitted as a compile_args so any TU that
-    # depends on this dependency gets the define. In practice only
-    # feature_extractor.cpp and tad_rust.c use it — the define gates the
-    # extern vmafx_tad_* declarations and the extractor's registration; a
-    # build without the archive compiles neither tad_rust.c nor registers
-    # the extractor.
-    rust_tad_dep = declare_dependency(
-        sources: [rust_tad_staticlib],
-        compile_args: ['-DHAVE_RUST_TAD'],
-        link_args: [
-            meson.current_build_dir() / rust_tad_lib_name,
-        ],
+    rust_link_args = [meson.current_build_dir() / rust_core_lib_name]
+    if cc.has_link_argument('-Wl,--exclude-libs,' + rust_core_lib_name)
+        rust_link_args = ['-Wl,--exclude-libs,' + rust_core_lib_name] + rust_link_args
+    endif
+    rust_core_dep = declare_dependency(
+        sources: [rust_core_staticlib],
+        link_args: rust_link_args,
     )
-endif
-
-# tad_rust.c is compiled as a DIRECT source of the libvmaf library() target,
-# not into libvmaf_feature.a. This keeps it out of the static-lib variant that
-# tests link against (avoiding unresolved vmafx_tad_* refs in tests that don't
-# include rust_tad_dep). The shared libvmaf.so picks it up via libvmaf_sources.
-rust_tad_direct_sources = []
-if is_rust_enabled
-    rust_tad_direct_sources = [feature_src_dir + 'tad_rust.c']
+    rust_shim_sources = [
+        src_dir + 'rust/shim/rust_twins.cpp',
+        feature_src_dir + 'tad_rust.c',
+        src_dir + 'rust/shim/rust_predict.c',
+    ]
 endif
 
 libvmaf_feature_sources = [
@@ -2294,6 +2432,7 @@ libvmaf_feature_sources = [
     feature_src_dir + 'feature_name.cpp',
     feature_src_dir + 'alias.c',
     feature_src_dir + 'integer_adm.c',
+    feature_src_dir + 'adm_view_dist.c',
     feature_src_dir + 'feature_collector.cpp',
     feature_src_dir + 'integer_motion.c',
     feature_src_dir + 'integer_motion_v2.c',
@@ -2348,10 +2487,10 @@ libvmaf_feature_sources = [
     # decline at runtime on stub builds.
     feature_src_dir + 'transnet_v2.c',
     # Note: tad_rust.c is NOT added here — it is compiled directly into
-    # the libvmaf library() target (see rust_tad_direct_sources) to avoid
+    # the libvmaf library() target (see rust_shim_sources) to avoid
     # pulling vmafx_tad_* undefined references into libvmaf_feature.a, which
     # would break static-lib-linked test executables that don't include
-    # rust_tad_dep. See ADR-0707.
+    # rust_core_dep. See ADR-1713.
 
     # SpEED (speed_chroma, speed_temporal) is built whatever enable_float
     # says, as Netflix/vmaf builds it since 4718b4f5f / 6046b1926: the
@@ -2460,7 +2599,8 @@ if is_sycl_enabled
 
     # sycl_strict_fp_args: the SYCL strict FP policy above (ADR-1367), the same
     # for every feature TU.
-    sycl_feature_tail_args = ['-std=c++20'] + sycl_strict_fp_args + sycl_pic_arg + ['-fpermissive']
+    sycl_feature_tail_args = ['-std=c++20'] + sycl_strict_fp_args + sycl_pic_arg + ['-fpermissive'] \
+        + vmaf_math_constant_args
     sycl_feature_inc = sycl_inc_flags + [
         '-I' + meson.current_source_dir() / 'cuda',
         '-I' + meson.current_source_dir() / 'feature' / 'sycl',
@@ -2496,9 +2636,9 @@ if is_sycl_enabled
             if tu_aot_list.length() > 0
                 tu_toolchain_args = sycl_compress_args + sycl_icpx_aot_base_args + [
                     '-device ' + ','.join(tu_aot_list),
-                ]
+                ] + sycl_asan_args
             else
-                tu_toolchain_args = ['-fsycl']
+                tu_toolchain_args = ['-fsycl'] + sycl_asan_args
             endif
             message('SYCL AOT: ' + name + ' excludes ' +
                     ','.join(sycl_icpx_aot_igc_skip[name]) +
@@ -2757,41 +2897,65 @@ picture_convert_lib = static_library(
     install : false,
 )
 
-libvmaf_sources = [
+# The engine and the VMAFx API: libvmafx (ADR-1852 decision D3, RC4 WP6).
+libvmafx_sources = [
     src_dir + 'libvmaf.c',
     src_dir + 'model.c',
     src_dir + 'picture.c',
+    src_dir + 'conversion_policy.c', # Netflix a6c0ba6d5: model conversion_target policy
+    src_dir + 'conversion_context.c', # ADR-2093: conversion state of one VmafContext
     src_dir + 'picture_v2.c', # ADR-0928 cycle N+1: v2 allocator / converter implementation
-    # ADR-1852: VMAFx API prototype slice. The *_gen.c files are generated from
-    # core/api/vmafx.toml by scripts/codegen/vmafx-api.py and committed;
-    # compat_libvmaf_gen.c defines vmaf_init / vmaf_close / vmaf_version /
-    # vmaf_feature_score_at_index on the new API.
+    src_dir + 'picture_sample_range.c', # ADR-1918: opt-in sample range check of vmaf_read_pictures()
+    # ADR-1852: the VMAFx API. The *_gen.c files are generated from
+    # core/api/vmafx.toml by scripts/codegen/vmafx-api.py and committed.
     src_dir + 'vmafx/context.c',
     src_dir + 'vmafx/error.c',
     src_dir + 'vmafx/status_gen.c',
-    src_dir + 'vmafx/compat_libvmaf_gen.c',
+    # RC4 WP6: what the libvmaf compat library needs from the public API
+    # (libvmaf bridge, context-owned frames, conversion, tiny AI, MCP).
+    src_dir + 'vmafx/bridge.c',
+    src_dir + 'vmafx/context_frames.c',
+    src_dir + 'vmafx/convert.c',
+    src_dir + 'vmafx/mcp_server.c',
+    src_dir + 'vmafx/tiny_model.c',
     # ADR-1852 RC4 WP2: the core API (devices, host frames, options, models,
     # registration, submission, synchronous scores) on the engine.
     src_dir + 'vmafx/device.c',
     # RC4 WP3 common lane: devices, fences, imported frames, pools, admission.
     src_dir + 'vmafx/device_context.c',
+    src_dir + 'vmafx/egl_export.c',
     src_dir + 'vmafx/fence.c',
     src_dir + 'vmafx/frame_import.c',
     src_dir + 'vmafx/frame_import_admit.c',
     src_dir + 'vmafx/frame_import_hooks.c',
+    src_dir + 'vmafx/frame_import_vulkan.c',
     src_dir + 'vmafx/frame_pool.c',
     src_dir + 'vmafx/frame_host.c',
-    src_dir + 'vmafx/gl_sync.c',
     src_dir + 'vmafx/release_events.c',
-    src_dir + 'vmafx/sync_file.c',
     src_dir + 'vmafx/model.c',
     src_dir + 'vmafx/options.c',
     src_dir + 'vmafx/register.c',
     src_dir + 'vmafx/rgb_convert.c',
     src_dir + 'vmafx/score.c',
+    # RC4 WP5 (#2142): provenance records, the generated exactness table,
+    # the report writer and verifier.
+    src_dir + 'vmafx/exactness.c',
+    src_dir + 'vmafx/exactness_gen.c',
+    src_dir + 'vmafx/provenance.c',
+    src_dir + 'vmafx/provenance_build.c',
+    src_dir + 'vmafx/provenance_json.c',
+    src_dir + 'vmafx/provenance_render.c',
+    src_dir + 'vmafx/report.c',
+    src_dir + 'vmafx/report_verify.c',
     src_dir + 'vmafx/sha256.c',
     src_dir + 'vmafx/sized.c',
     src_dir + 'vmafx/submit.c',
+    # RC4 WP4: window scores and the window clock (ADR-2074).
+    src_dir + 'vmafx/window.c',
+    src_dir + 'vmafx/window_clock.c',
+    # RC4 WP3 (ADR-2091): sync_file, dma-buf implicit fences and GL syncs,
+    # shared by the backend lanes.
+    src_dir + 'vmafx/sync_object.c',
     src_dir + 'mem.cpp',
     src_dir + 'output.cpp',
     src_dir + 'fex_ctx_vector.cpp',
@@ -2811,7 +2975,7 @@ libvmaf_sources = [
     # ADR-1113: vendored Pelorus <-> vmafx interop ABI (pack/parse, deband +
     # denoise param contracts, x265 CSV QP-report reader, version/result-string
     # accessors). CPU-only, dependency-free, NO Vulkan. Verbatim mirror of
-    # VMAFx/pelorus@42cb17106a2d3fae7790754f7cd8c6e1fbe6fa7f (ABI 1.3).
+    # VMAFx/pelorus@e2e4040311a443210927549c3a336f909c6473f3 (v0.3.0, ABI 1.3).
     # DO NOT EDIT; re-sync via
     # scripts/sync-pelorus-interop.sh. See docs/api/pelorus-interop.md.
     src_dir + 'interop/pelorus_interop.c',
@@ -2827,21 +2991,22 @@ libvmaf_sources = [
     # GOLDEN-GATE ISOLATION: inert unless opted in AND side-data present — the
     # Netflix golden pairs carry no side-data and score bit-exact.
     feature_src_dir + 'perceptual_weight.c',
-    # ADR-0707: TAD Rust extractor C wrapper — compiled directly into
-    # the libvmaf library() target so it is not included in the static
-    # intermediate libs (avoids unresolved vmafx_tad_* refs in test
-    # binaries that link against libvmaf.a without rust_tad_dep).
-] + rust_tad_direct_sources
+    # ADR-1713: the Rust shim and the TAD wrapper are compiled directly into
+    # the libvmaf library() target, never into the static intermediate libs
+    # that test binaries extract (they would need the Rust archive).
+] + rust_shim_sources
 
 # RC4 WP3 CUDA lane (ADR-2023): devices, imports, fences, GL interop and pools
 # of the VMAFx API on CUDA. In the library target, not in cuda_static_lib: the
-# CUDA common objects link into test programs without the VMAFx sources.
+# CUDA common objects link into test programs without the VMAFx sources. The
+# engine library since the WP6 split (ADR-2094): libvmafx_sources.
 if is_cuda_enabled
-    libvmaf_sources += [
+    libvmafx_sources += [
         cuda_dir + 'import_device.c',
         cuda_dir + 'import_fence.c',
         cuda_dir + 'import_frame.c',
         cuda_dir + 'import_gl.c',
+        cuda_dir + 'import_vulkan.c',
         cuda_dir + 'import_pool.c',
     ]
 endif
@@ -2850,14 +3015,30 @@ endif
 # arrays and GL textures, and the HIP event / GL sync / sync_file fences of
 # the VMAFx API on HIP (hip/vmafx_hip.h is its interface). In the library
 # target, not in hip_sources: the HIP runtime objects link into test
-# programs without the VMAFx sources, as the CUDA lane's do.
+# programs without the VMAFx sources, as the CUDA lane's do. The engine
+# library since the WP6 split (ADR-2094): libvmafx_sources.
 if is_hip_enabled
-    libvmaf_sources += [
+    libvmafx_sources += [
         src_dir + 'hip/import_device.c',
         src_dir + 'hip/import_dmabuf.c',
         src_dir + 'hip/import_fence.c',
         src_dir + 'hip/import_frame.c',
         src_dir + 'hip/import_gl.c',
+    ]
+endif
+
+# RC4 WP3 SYCL lane (ADR-2091): devices, imports, fences, GL interop and pools
+# of the VMAFx API on SYCL. The C half; its SYCL calls are
+# sycl/vmafx_sycl_rt.cpp (a SYCL common object, sycl_sources above). In the
+# engine library since the WP6 split (ADR-2094): libvmafx_sources.
+if is_sycl_enabled
+    libvmafx_sources += [
+        sycl_dir + 'import_device.c',
+        sycl_dir + 'import_dmabuf.c',
+        sycl_dir + 'import_fence.c',
+        sycl_dir + 'import_frame.c',
+        sycl_dir + 'import_gl.c',
+        sycl_dir + 'import_pool.c',
     ]
 endif
 
@@ -2889,6 +3070,17 @@ if get_option('default_library') != 'static' \
     vmaf_link_args += ['-Wl,--version-script=' + (meson.current_source_dir() / 'vmafx.map'),
                        '-Wl,--no-undefined-version']
     vmafx_link_depends += vmafx_version_script
+    # RC4 WP6: a backend whose libvmaf functions still live in the engine
+    # (declared exceptions, `engine_with` in core/api/vmafx.toml) exports them
+    # from libvmafx in its own version node until its WP3 lane lands.
+    foreach legacy : [['cuda', is_cuda_enabled], ['sycl', is_sycl_enabled],
+                      ['hip', is_hip_enabled], ['metal', is_metal_enabled]]
+        if legacy[1]
+            legacy_map = 'vmafx_legacy_' + legacy[0] + '.map'
+            vmaf_link_args += '-Wl,--version-script=' + (meson.current_source_dir() / legacy_map)
+            vmafx_link_depends += files(legacy_map)
+        endif
+    endforeach
 endif
 
 if is_sycl_enabled
@@ -2910,9 +3102,56 @@ if is_sycl_enabled
     endif
 endif
 
-libvmaf = library(
-    'vmaf',
-    [libvmaf_sources, rev_target, json_model_c_sources, dnn_sources, dnn_libvmaf_only_sources, mcp_sources],
+# RC4 WP5 (#2142, ADR-2073): the build description of the provenance record
+# (core/src/vmafx/provenance_build.c): compilers, build options, the strict FP
+# policy of every C / C++ translation unit (ADR-1461), backends in VmafxBackend
+# order, Rust extractors and the commit. A change to any of them changes the
+# record's build_id.
+vmafx_build_backends = ['cpu']
+foreach backend : [['cuda', is_cuda_enabled], ['sycl', is_sycl_enabled],
+                   ['metal', is_metal_enabled], ['hip', is_hip_enabled]]
+    if backend[1]
+        vmafx_build_backends += backend[0]
+    endif
+endforeach
+vmafx_build_conf = configuration_data()
+vmafx_build_conf.set_quoted('VMAFX_BUILD_COMPILER',
+    'c=' + cc.get_id() + ' ' + cc.version() + ' cpp=' + cxx.get_id() + ' ' + cxx.version())
+vmafx_build_conf.set_quoted('VMAFX_BUILD_FLAGS',
+    'buildtype=' + get_option('buildtype') + ' optimization=' + get_option('optimization')
+    + ' debug=' + get_option('debug').to_string() + ' b_ndebug=' + get_option('b_ndebug')
+    + ' b_lto=' + get_option('b_lto').to_string()
+    + ' c_args=' + ' '.join(get_option('c_args')) + ' cpp_args=' + ' '.join(get_option('cpp_args')))
+vmafx_build_conf.set_quoted('VMAFX_BUILD_FP_POLICY', ' '.join(vmaf_strict_fp_args))
+vmafx_build_conf.set_quoted('VMAFX_BUILD_BACKENDS', ','.join(vmafx_build_backends))
+vmafx_build_conf.set('VMAFX_BUILD_RUST', is_rust_enabled ? 1 : 0)
+vmafx_build_conf.set_quoted('VMAFX_BUILD_ARCH', host_machine.cpu_family())
+vmafx_build_info_h = configure_file(output : 'vmafx_build_info.h',
+                                    configuration : vmafx_build_conf)
+vmafx_build_commit_h = vcs_tag(
+    command : ['git', '-C', meson.project_source_root() / '..', 'rev-parse', 'HEAD'],
+    fallback : 'unknown',
+    input : 'vmafx/build_commit.h.in',
+    output : 'vmafx_build_commit.h',
+)
+
+# Installed static libraries of an MSVC-like build (cl, clang-cl, icx-cl) are
+# named vmafx.lib / vmaf.lib, the files `-lvmafx` / `-lvmaf` name for the MSVC
+# linker: what pkg-config gives FFmpeg's msvc toolchain and other consumers.
+# Meson's classic naming makes them libvmafx.a / libvmaf.a. Its `namingscheme`
+# option (Meson 1.10) is above this project's floor (meson_version >= 1.4.0),
+# so the names are set explicitly (Netflix/vmaf 3b4dd350e, Q-299). Static-only
+# builds only: with default_library=both, vmaf.lib is the import library of
+# vmaf.dll and the static libraries keep the lib*.a names.
+vmaf_msvc_static_names = cc.get_argument_syntax() == 'msvc' \
+    and get_option('default_library') == 'static'
+vmaf_static_name_kwargs = vmaf_msvc_static_names ? \
+    {'name_prefix' : '', 'name_suffix' : 'lib'} : {}
+
+libvmafx = library(
+    'vmafx',
+    [libvmafx_sources, rev_target, vmafx_build_commit_h, json_model_c_sources, dnn_sources,
+     dnn_libvmaf_only_sources, mcp_sources],
     include_directories : [libvmaf_inc, vmaf_include, dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
     cpp_args : vmaf_cppflags_common + dnn_defines,
@@ -2928,7 +3167,7 @@ libvmaf = library(
       dnn_deps,
       hip_deps,
       metal_deps,
-      rust_tad_dep,
+      rust_core_dep,
       zimg_dependency,
     ],
     objects : [
@@ -2953,10 +3192,78 @@ libvmaf = library(
         # ADR-1822: zimg picture conversion (or its -ENOTSUP stubs).
         picture_convert_lib.extract_all_objects(recursive: true),
     ],
-    version : vmaf_soname_version,
-    soversion : vmaf_soversion,
+    # ADR-1852 decision D2: libvmafx.so.1; ABI 1.0.0 freezes at the v1.0.0
+    # tag (WP12 owns the packaging around it).
+    version : vmafx_soname_version,
+    soversion : vmafx_soversion,
     install: true,
+    kwargs : vmaf_static_name_kwargs,
 )
+
+# The libvmaf compatibility library (ADR-1852 decision D3, RC4 WP6): the 107
+# libvmaf functions on exported vmafx_ symbols only. It links libvmafx and
+# nothing of the engine: shared libraries link with the linker's no-undefined
+# rule (Meson's b_lundef), so a compat source that reaches past the exported
+# API fails the link (test_compat_link_completeness plants one). Each variant
+# links the libvmafx of its kind, so a static link pulls libvmafx.a, whose
+# engine names (vmaf_engine_*) never meet the libvmaf names.
+vmaf_default_library = get_option('default_library')
+libvmafx_shared_lib = vmaf_default_library == 'both' ? libvmafx.get_shared_lib() : libvmafx
+libvmafx_static_lib = vmaf_default_library == 'both' ? libvmafx.get_static_lib() : libvmafx
+libvmaf_compat_sources = files(
+    'compat/libvmaf/context.c',
+    'compat/libvmaf/dnn.c',
+    'compat/libvmaf/libvmaf_gen.c',
+    'compat/libvmaf/model.c',
+    'compat/libvmaf/picture.c',
+    'compat/libvmaf/score.c',
+    'compat/libvmaf/status_errno_gen.c',
+)
+# Build-dependent members, as libvmaf exported them: the MCP functions with
+# the server; the HIP / Metal functions of a build without that backend (with
+# it, the engine keeps its own, a declared exception until its WP3 lane).
+if is_mcp_enabled and host_machine.system() != 'windows'
+    libvmaf_compat_sources += files('compat/libvmaf/mcp.c')
+endif
+if not is_hip_enabled
+    libvmaf_compat_sources += files('compat/libvmaf/backend_absent_hip.c')
+endif
+if not is_metal_enabled
+    libvmaf_compat_sources += files('compat/libvmaf/backend_absent_metal.c')
+endif
+libvmaf_compat_kwargs = {
+    'include_directories' : [libvmaf_inc, include_directories('compat/libvmaf')],
+    'c_args' : vmaf_cflags_common + vmaf_public_name_args,
+    'dependencies' : [stdatomic_dependency],
+}
+libvmaf_shared_lib = disabler()
+libvmaf_static_lib = disabler()
+if vmaf_default_library != 'static'
+    libvmaf_shared_lib = shared_library('vmaf', libvmaf_compat_sources,
+        kwargs : libvmaf_compat_kwargs,
+        link_with : libvmafx_shared_lib,
+        version : vmaf_soname_version,
+        soversion : vmaf_soversion,
+        install : true,
+    )
+endif
+if vmaf_default_library != 'shared'
+    libvmaf_static_lib = static_library('vmaf', libvmaf_compat_sources,
+        kwargs : libvmaf_compat_kwargs + vmaf_static_name_kwargs,
+        link_with : libvmafx_static_lib,
+        install : true,
+    )
+endif
+libvmaf = vmaf_default_library == 'static' ? libvmaf_static_lib : libvmaf_shared_lib
+# What a consumer of the libvmaf API links: the shared libraries when built
+# (libvmafx for the vmafx_ functions the tools also call), else libvmaf.a,
+# which carries libvmafx.a.
+libvmaf_public_libs = vmaf_default_library == 'static' ? [libvmaf_static_lib] \
+    : [libvmaf_shared_lib, libvmafx_shared_lib]
+# What a white-box test links: the static libraries when built (libvmafx.a
+# exports the engine's internal symbols), else the shared ones.
+vmaf_test_link = vmaf_default_library == 'shared' ? [libvmaf_shared_lib, libvmafx_shared_lib] \
+    : [libvmaf_static_lib]
 
 # ADR-1360: fail the build, not the first cold start, when AOT goes inert.
 # The check reads the linked libvmaf.so and requires a spir64_gen image with an
@@ -2973,7 +3280,7 @@ if is_sycl_enabled and sycl_icpx_aot_list.length() > 0 \
         sycl_aot_check_args += ['--partial', tu_name + '=' + ','.join(skipped_targets)]
     endforeach
     sycl_aot_image_check = custom_target('sycl_aot_image_check',
-        input : get_option('default_library') == 'both' ? libvmaf.get_shared_lib() : libvmaf,
+        input : libvmafx_shared_lib,
         output : 'sycl_aot_image_check.stamp',
         command : [import('python').find_installation(), files('sycl/check_aot_image.py')]
                   + sycl_aot_check_args + ['--stamp', '@OUTPUT@', '@INPUT@'],
@@ -2986,7 +3293,7 @@ endif
 if is_sycl_enabled and get_option('compress_device_code') \
         and host_machine.system() == 'linux' and get_option('default_library') != 'static'
     sycl_device_compression_check = custom_target('sycl_device_compression_check',
-        input : get_option('default_library') == 'both' ? libvmaf.get_shared_lib() : libvmaf,
+        input : libvmafx_shared_lib,
         output : 'sycl_device_compression_check.stamp',
         command : [import('python').find_installation(), files('check_device_compression.py'),
                    '--stamp', '@OUTPUT@', '--sycl-elf', '@INPUT@'],
@@ -3067,18 +3374,56 @@ endif
 # build failed with "Package 'libvmaf' has version '1.0.0-rc.1', required
 # version is '>= 2.0.0'". Bump this only alongside `vmaf_soname_version`, i.e.
 # when the C API changes. See ADR-1235 (amends ADR-1151).
-pkg_mod.generate(libraries: libvmaf,
+# A library target with name_prefix / name_suffix makes the pkg-config module
+# warn on every configure that `-lvmafx` may not find it, although the MSVC
+# names above exist for that flag (ADR-2752). So the static MSVC names reach
+# the .pc files as flags, with their directory in a variable each variant
+# sets: the install libdir, or this build directory for the -uninstalled.pc
+# (ADR-2828). Every other build hands the targets to the module as before.
+if vmaf_msvc_static_names
+    vmafx_pc_libraries = ['-L${vmafx_libdir}', '-lvmafx']
+    vmaf_pc_libraries = ['-L${vmafx_libdir}', '-lvmaf']
+    vmaf_pc_dir_kwargs = {
+        'variables' : {'vmafx_libdir' : '${libdir}'},
+        'uninstalled_variables' : {'vmafx_libdir' : meson.current_build_dir()},
+    }
+else
+    vmafx_pc_libraries = vmaf_default_library == 'static' ? libvmafx_static_lib : libvmafx_shared_lib
+    vmaf_pc_libraries = libvmaf
+    vmaf_pc_dir_kwargs = {}
+endif
+# libvmafx.pc (ADR-1852 decision D2): the engine's private dependencies are
+# its own; WP12 owns the rest of the packaging.
+pkg_mod.generate(libraries: vmafx_pc_libraries,
+    version: vmafx_soname_version,
+    name: 'libvmafx',
+    filebase: 'libvmafx',
+    description: 'VMAFx, the VMAF engine and its C API',
+    subdirs: ['.'],
+    requires_private: libvmaf_private_reqs,
+    libraries_private: libvmaf_private_libs,
+    kwargs: vmaf_pc_dir_kwargs,
+)
+# libvmaf.pc: the compat library on libvmafx (decision D3). `Requires:` (not
+# private) so that a shared and a static consumer both link -lvmafx after
+# -lvmaf; `Version:` keeps the libvmaf interface line (ADR-1235).
+pkg_mod.generate(libraries: vmaf_pc_libraries,
     version: vmaf_soname_version,
     name: 'libvmaf',
     filebase: 'libvmaf',
-    description: 'VMAF, Video Multimethod Assessment Fusion',
+    description: 'VMAF, Video Multimethod Assessment Fusion (libvmaf API on libvmafx)',
     subdirs: [ '.', 'libvmaf'],
-    requires_private: libvmaf_private_reqs,
-    libraries_private: libvmaf_private_libs,
+    requires: ['libvmafx'],
+    kwargs: vmaf_pc_dir_kwargs,
 )
 
-libvmaf_dep = declare_dependency(
-    link_with: libvmaf,
+libvmafx_dep = declare_dependency(
+    link_with: vmaf_default_library == 'static' ? libvmafx_static_lib : libvmafx_shared_lib,
     include_directories: [libvmaf_inc],
 )
+libvmaf_dep = declare_dependency(
+    link_with: libvmaf_public_libs,
+    include_directories: [libvmaf_inc],
+)
+meson.override_dependency('libvmafx', libvmafx_dep)
 meson.override_dependency('libvmaf', libvmaf_dep)

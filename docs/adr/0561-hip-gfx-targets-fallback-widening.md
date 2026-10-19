@@ -1,12 +1,10 @@
 <!-- markdownlint-disable MD060 -->
 # ADR-0561 — Widen HIP `gfx_targets` hardcoded fallback
 
-| Field | Value |
-|---|---|
-| **Status** | Accepted |
-| **Date** | 2026-05-18 |
-| **Deciders** | lusoris, Claude (Anthropic) |
-| **Tags** | hip, build, gfx, rocm, meson, fork-local |
+- **Status**: Accepted
+- **Date**: 2026-05-18
+- **Deciders**: lusoris, Claude (Anthropic)
+- **Tags**: hip, build, gfx, rocm, meson, fork-local
 
 ## Context
 

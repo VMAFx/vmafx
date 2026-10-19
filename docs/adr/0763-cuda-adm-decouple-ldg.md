@@ -1,10 +1,8 @@
 # ADR-0763 — CUDA `adm_decouple` kernels: `__ldg()` F3 fix
 
-| Field | Value |
-| ------ | ----- |
-| Status | Accepted |
-| Date | 2026-05-29 |
-| Tags | cuda, performance, adm, fork-local |
+- **Status**: Accepted
+- **Date**: 2026-05-29
+- **Tags**: cuda, performance, adm, fork-local
 
 ## Context
 

@@ -36,6 +36,7 @@ WarningsAsErrors: >
   bugprone-use-after-move,
   bugprone-integer-division,
   bugprone-infinite-loop,
+  cert-err33-c,
   cert-flp30-c,
   cert-msc30-c,
   cert-msc50-cpp,

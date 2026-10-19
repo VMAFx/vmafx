@@ -226,7 +226,7 @@ func splitRemote(rp string) (string, string, bool) {
 
 // hasDotDot reports whether a slash-separated path has a ".." element.
 func hasDotDot(p string) bool {
-	for _, el := range strings.Split(p, "/") {
+	for el := range strings.SplitSeq(p, "/") {
 		if el == ".." {
 			return true
 		}

@@ -1,0 +1,1 @@
+| [ADR-2673](2673-chart-licence-kubernetes-schemas.md) | The Helm chart declares `artifacthub.io/license: EUPL-1.2 AND Apache-2.0` and ships an Apache-2.0 notice, because its generated values schema embeds Kubernetes 1.26 type schemas; amends ADR-1699's chart row; revisit if the chart is published on Artifact Hub. | Accepted | license, compliance, helm, k8s |

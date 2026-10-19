@@ -112,22 +112,6 @@ gpu.intel.com/{{ .Values.gpu.intelDriver | default "i915" }}
 {{- end }}
 
 {{/*
-Resolve the VMAFX_BACKEND env-var value for the requested GPU vendor.
-This tells the vmafx-server which backend to activate on startup.
-*/}}
-{{- define "vmafx.backendEnvValue" -}}
-{{- if eq .Values.gpu.vendor "nvidia" -}}
-cuda
-{{- else if eq .Values.gpu.vendor "amd" -}}
-hip
-{{- else if eq .Values.gpu.vendor "intel" -}}
-sycl
-{{- else -}}
-cpu
-{{- end }}
-{{- end }}
-
-{{/*
 Render the Go server container image reference (repository:tag).
 Falls back to the canonical published release tag when .Values.image.tag is empty.
 */}}
@@ -165,121 +149,6 @@ node package. Override via .Values.node.image.repository / .Values.node.image.ta
 {{- $repo := .Values.node.image.repository | default (printf "%s-node" .Values.image.repository) -}}
 {{- $tag  := .Values.node.image.tag        | default (include "vmafx.releaseImageTag" .) -}}
 {{- printf "%s:%s" $repo $tag -}}
-{{- end }}
-
-{{/*
-Shared pod-spec fragments used by Deployment, Job, and StatefulSet.
-Extracted here to avoid triplicating the container spec.
-*/}}
-{{- define "vmafx.containerSpec" -}}
-- name: {{ include "vmafx.name" . }}
-  image: {{ include "vmafx.image" . }}
-  imagePullPolicy: {{ .Values.image.pullPolicy }}
-  ports:
-    - name: http
-      containerPort: {{ .Values.service.targetPort }}
-      protocol: TCP
-  env:
-    - name: VMAFX_BACKEND
-      value: {{ include "vmafx.backendEnvValue" . | quote }}
-  {{- range $k, $v := .Values.env }}
-    - name: {{ $k | quote }}
-      value: {{ $v | quote }}
-  {{- end }}
-  envFrom:
-    - configMapRef:
-        name: {{ include "vmafx.fullname" . }}-config
-  {{- with .Values.envFrom }}
-  {{- toYaml . | nindent 4 }}
-  {{- end }}
-  resources:
-    limits:
-      cpu: {{ .Values.resources.limits.cpu | quote }}
-      memory: {{ .Values.resources.limits.memory | quote }}
-    {{- if and .Values.gpu.enabled (include "vmafx.gpuResource" .) }}
-      {{ include "vmafx.gpuResource" . }}: {{ .Values.gpu.count | quote }}
-    {{- end }}
-    requests:
-      cpu: {{ .Values.resources.requests.cpu | quote }}
-      memory: {{ .Values.resources.requests.memory | quote }}
-  securityContext:
-    {{- toYaml .Values.securityContext | nindent 4 }}
-  volumeMounts:
-    - name: tmp
-      mountPath: /tmp
-  {{- if .Values.persistence.corpus.enabled }}
-    - name: corpus
-      mountPath: {{ .Values.persistence.corpus.mountPath }}
-      readOnly: true
-  {{- end }}
-  {{- if .Values.persistence.output.enabled }}
-    - name: output
-      mountPath: {{ .Values.persistence.output.mountPath }}
-  {{- end }}
-  {{- if .Values.persistence.models.enabled }}
-    - name: models
-      mountPath: {{ .Values.persistence.models.mountPath }}
-      readOnly: true
-  {{- end }}
-{{- end }}
-
-{{/*
-Shared volume list used by all workload types.
-*/}}
-{{- define "vmafx.volumes" -}}
-- name: tmp
-  emptyDir: {}
-{{- if .Values.persistence.corpus.enabled }}
-- name: corpus
-  persistentVolumeClaim:
-    claimName: {{ include "vmafx.fullname" . }}-corpus
-    readOnly: true
-{{- end }}
-{{- if .Values.persistence.output.enabled }}
-- name: output
-  persistentVolumeClaim:
-    claimName: {{ include "vmafx.fullname" . }}-output
-{{- end }}
-{{- if .Values.persistence.models.enabled }}
-- name: models
-  persistentVolumeClaim:
-    claimName: {{ include "vmafx.fullname" . }}-models
-    readOnly: true
-{{- end }}
-{{- end }}
-
-{{/*
-Shared pod-level spec (security context, affinity, tolerations, etc.).
-Rendered inside spec.template.spec for all workload types.
-*/}}
-{{- define "vmafx.podSpec" -}}
-serviceAccountName: {{ include "vmafx.serviceAccountName" . }}
-securityContext:
-  {{- toYaml .Values.podSecurityContext | nindent 2 }}
-{{- with .Values.imagePullSecrets }}
-imagePullSecrets:
-  {{- toYaml . | nindent 2 }}
-{{- end }}
-{{- with .Values.nodeSelector }}
-nodeSelector:
-  {{- toYaml . | nindent 2 }}
-{{- end }}
-{{- with .Values.affinity }}
-affinity:
-  {{- toYaml . | nindent 2 }}
-{{- end }}
-{{- with .Values.tolerations }}
-tolerations:
-  {{- toYaml . | nindent 2 }}
-{{- end }}
-{{- with .Values.topologySpreadConstraints }}
-topologySpreadConstraints:
-  {{- toYaml . | nindent 2 }}
-{{- end }}
-containers:
-  {{- include "vmafx.containerSpec" . | nindent 2 }}
-volumes:
-  {{- include "vmafx.volumes" . | nindent 2 }}
 {{- end }}
 
 {{/*
@@ -359,48 +228,6 @@ names a Secret; call with (dict "token" .Values.node.controllerToken).
 {{- end }}
 
 {{/*
-Auth environment of the controller (ADR-0794, ADR-1519, ADR-1577). With a
-tenant registry the controller reads VmafxTenants and gets no global provider
-setting (it refuses them next to a registry); otherwise the single provider and
-the scoring roots.
-*/}}
-{{- define "vmafx.controllerAuthEnv" -}}
-- name: VMAFX_AUTH_DISABLED
-  value: {{ .Values.auth.disabled | toString | quote }}
-{{- if eq (include "vmafx.tenantSource" .) "kubernetes" }}
-- name: VMAFX_AUTH_TENANTS_SOURCE
-  value: "kubernetes"
-- name: VMAFX_AUTH_TENANTS_NAMESPACE
-  value: {{ .Release.Namespace | quote }}
-{{- else }}
-{{- with .Values.auth.jwksEndpoint }}
-- name: VMAFX_JWKS_ENDPOINT
-  value: {{ . | quote }}
-{{- end }}
-{{- with .Values.auth.issuer }}
-- name: VMAFX_AUTH_ISSUER
-  value: {{ . | quote }}
-{{- end }}
-{{- with .Values.auth.audience }}
-- name: VMAFX_AUTH_AUDIENCE
-  value: {{ . | quote }}
-{{- end }}
-{{- with .Values.auth.tenantClaim }}
-- name: VMAFX_AUTH_TENANT_CLAIM
-  value: {{ . | quote }}
-{{- end }}
-{{- with .Values.auth.rolesClaim }}
-- name: VMAFX_AUTH_ROLES_CLAIM
-  value: {{ . | quote }}
-{{- end }}
-{{- with .Values.auth.scoringRoots }}
-- name: VMAFX_SCORING_ROOTS
-  value: {{ join "," . | quote }}
-{{- end }}
-{{- end }}
-{{- end }}
-
-{{/*
 vmafx.nodeMountRoot — VMAFX_STORAGE_MOUNT_ROOT of the node pods: storage.mountRoot,
 or with the eBPF tracker on its mount prefix without the trailing slash
 (ADR-1593). Empty: the node's temp dir.
@@ -449,4 +276,137 @@ process has no effective capabilities) with BPF, PERFMON and SYS_ADMIN only.
 {{- end -}}
 {{- end -}}
 {{- toYaml $sc -}}
+{{- end }}
+
+{{/*
+A ServiceMonitor or PodMonitor of one component, with the scrape settings of
+monitoring.serviceMonitor (templates/servicemonitor.yaml). Arguments: root,
+kind (ServiceMonitor or PodMonitor), name, component, port. A monitor in
+another namespace than the release selects the release namespace; a
+ServiceMonitor skips the StatefulSet's headless Service.
+*/}}
+{{- define "vmafx.monitor" -}}
+{{- $root := .root -}}
+{{- $sm := $root.Values.monitoring.serviceMonitor -}}
+apiVersion: monitoring.coreos.com/v1
+kind: {{ .kind }}
+metadata:
+  name: {{ .name }}
+  namespace: {{ $sm.namespace | default $root.Release.Namespace }}
+  labels:
+    {{- include "vmafx.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: {{ .component }}
+    {{- with $sm.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  {{- if and $sm.namespace (ne $sm.namespace $root.Release.Namespace) }}
+  namespaceSelector:
+    matchNames:
+      - {{ $root.Release.Namespace }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "vmafx.selectorLabels" $root | nindent 6 }}
+      app.kubernetes.io/component: {{ .component }}
+    {{- if eq .kind "ServiceMonitor" }}
+    # A StatefulSet's headless Service selects the same pods.
+    matchExpressions:
+      - key: vmafx.dev/headless
+        operator: DoesNotExist
+    {{- end }}
+  {{ if eq .kind "PodMonitor" }}podMetricsEndpoints{{ else }}endpoints{{ end }}:
+    - port: {{ .port }}
+      path: {{ $sm.path }}
+      scheme: {{ $sm.scheme }}
+      interval: {{ $sm.interval }}
+      scrapeTimeout: {{ $sm.scrapeTimeout }}
+      honorLabels: {{ $sm.honorLabels }}
+{{- end }}
+
+{{/*
+vmafx.controllerStoreBackend — controller.store.backend after its checks
+(ADR-2350): sqlite or postgres; more than one replica needs postgres, and
+postgres in external mode needs the Secret that holds the connection string.
+*/}}
+{{- define "vmafx.controllerStoreBackend" -}}
+{{- $store := .Values.controller.store -}}
+{{- if not (has $store.backend (list "sqlite" "postgres")) -}}
+{{- fail (printf "controller.store.backend: %q is neither sqlite nor postgres" $store.backend) -}}
+{{- end -}}
+{{- if lt (int .Values.controller.replicas) 1 -}}
+{{- fail "controller.replicas: at least 1" -}}
+{{- end -}}
+{{- if and (gt (int .Values.controller.replicas) 1) (ne $store.backend "postgres") -}}
+{{- fail "controller.replicas above 1 needs controller.store.backend postgres: two controllers on the SQLite backend would each own a different queue" -}}
+{{- end -}}
+{{- if eq $store.backend "postgres" -}}
+{{- if not (has $store.postgresql.mode (list "cnpg" "external")) -}}
+{{- fail (printf "controller.store.postgresql.mode: %q is neither cnpg nor external" $store.postgresql.mode) -}}
+{{- end -}}
+{{- if and (eq $store.postgresql.mode "external") (not $store.postgresql.external.secretName) -}}
+{{- fail "controller.store.postgresql.external.secretName: the Secret holding the database connection string is required in external mode" -}}
+{{- end -}}
+{{- end -}}
+{{- $store.backend -}}
+{{- end }}
+
+{{/*
+vmafx.controllerDatabaseCluster — name of the CloudNativePG Cluster the chart
+renders in cnpg mode.
+*/}}
+{{- define "vmafx.controllerDatabaseCluster" -}}
+{{- printf "%s-db" (include "vmafx.fullname" .) -}}
+{{- end }}
+
+{{/*
+vmafx.controllerTopologySpread — controller.topologySpreadConstraints, or with
+more than one replica and none set a soft spread over Kubernetes nodes.
+*/}}
+{{- define "vmafx.controllerTopologySpread" -}}
+{{- if .Values.controller.topologySpreadConstraints -}}
+topologySpreadConstraints:
+  {{- toYaml .Values.controller.topologySpreadConstraints | nindent 2 }}
+{{- else if gt (int .Values.controller.replicas) 1 -}}
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: ScheduleAnyway
+    labelSelector:
+      matchLabels:
+        {{- include "vmafx.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: controller
+{{- end -}}
+{{- end }}
+
+{{/*
+vmafx.controllerMigrationPod — pod template of the migration Job
+(controller-database.yaml), which also names the Job by its hash.
+*/}}
+{{- define "vmafx.controllerMigrationPod" -}}
+metadata:
+  labels:
+    {{- include "vmafx.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: migrate
+spec:
+  restartPolicy: OnFailure
+  serviceAccountName: {{ include "vmafx.controllerServiceAccountName" . }}
+  automountServiceAccountToken: false
+  securityContext:
+    {{- toYaml .Values.podSecurityContext | nindent 4 }}
+  {{- with .Values.imagePullSecrets }}
+  imagePullSecrets:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  containers:
+    - name: migrate
+      image: {{ include "vmafx.controllerImage" . | quote }}
+      imagePullPolicy: {{ .Values.controller.image.pullPolicy | default "IfNotPresent" }}
+      args: ["migrate"]
+      env:
+        {{- include "vmafx.env.migrate" . }}
+      resources:
+        {{- toYaml .Values.controller.resources | nindent 8 }}
+      securityContext:
+        {{- toYaml .Values.securityContext | nindent 8 }}
 {{- end }}

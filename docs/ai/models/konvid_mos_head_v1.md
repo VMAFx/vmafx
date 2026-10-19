@@ -50,7 +50,7 @@ two-input contract from ADR-0040):
 | 5     | `motion2`            | libvmaf canonical-6             |
 | 6     | `saliency_mean`      | `saliency_student_v1` (ADR-0286)|
 | 7     | `saliency_var`       | `saliency_student_v1` (ADR-0286)|
-| 8     | `shot_count_norm`    | TransNet v2 (ADR-0223): `log10(1+N)/3` |
+| 8     | `shot_count_norm`    | TransNet v2 (ADR-0223): $\log_{10}(1+N)/3$ |
 | 9     | `shot_mean_len_norm` | TransNet v2 (ADR-0223): seconds / 30 |
 | 10    | `shot_cut_density`   | TransNet v2 (ADR-0223): cuts / frame |
 
@@ -221,7 +221,7 @@ python ai/scripts/train_konvid_mos_head.py --smoke
 - When `model/konvid_mos_head_v1.onnx` is present and `onnxruntime` is
   importable the call loads the ONNX once and returns the head's prediction.
 - When either is absent the call falls back to a documented linear
-  approximation: `mos = (predicted_vmaf − 30) / 14`, clamped to [1, 5].
+  approximation: $\mathrm{mos} = (\mathrm{predicted\_vmaf} - 30) / 14$, clamped to $[1, 5]$.
   This fallback is approximate and is not authoritative; the model card
   flags it as such.
 

@@ -98,7 +98,7 @@ struct PsnrStateSycl {
     bool reduced_hbd_peak;
     bool uncapped;
     double min_sse;
-    uint64_t apsnr_sse[PSNR_NUM_PLANES];
+    VmafPsnrClipSse apsnr_sse[PSNR_NUM_PLANES];
     uint64_t apsnr_n_pixels[PSNR_NUM_PLANES];
     /* Number of active planes (1 for YUV400, 3 otherwise). */
     unsigned n_planes;
@@ -425,7 +425,8 @@ static void configure_scores(PsnrStateSycl *s, unsigned bpc)
     for (unsigned p = 0; p < PSNR_NUM_PLANES; p++) {
         const double min_sse = p < s->n_planes ? s->min_sse : 0.0;
         s->psnr_max[p] = vmaf_psnr_max(bpc, s->peak, min_sse, s->width[p], s->height[p]);
-        s->apsnr_sse[p] = 0U;
+        s->apsnr_sse[p].lo = 0u;
+        s->apsnr_sse[p].hi = 0u;
         s->apsnr_n_pixels[p] = 0U;
     }
 }
@@ -547,7 +548,7 @@ static int emit_plane(PsnrStateSycl *s, unsigned p, unsigned index,
 {
     const auto sse = static_cast<uint64_t>(*s->h_sse[p]);
     if (s->enable_apsnr) {
-        s->apsnr_sse[p] += sse;
+        vmaf_psnr_clip_sse_add(&s->apsnr_sse[p], sse);
         s->apsnr_n_pixels[p] += (uint64_t)s->height[p] * s->width[p];
     }
     const double mse = (double)sse / ((double)s->width[p] * (double)s->height[p]);

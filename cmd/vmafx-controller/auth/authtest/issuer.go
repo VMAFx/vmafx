@@ -22,6 +22,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -72,9 +73,7 @@ func (i *Issuer) Token(t testing.TB, claims map[string]any) string {
 	payload := make(map[string]any, len(claims)+2)
 	payload["iss"] = i.URL()
 	payload["exp"] = time.Now().Add(time.Hour).Unix()
-	for k, v := range claims {
-		payload[k] = v
-	}
+	maps.Copy(payload, claims)
 	return Sign(t, i.Key, "RS256", i.Kid, payload)
 }
 

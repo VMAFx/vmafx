@@ -131,7 +131,7 @@ ffmpeg -i ref.yuv -c:v h264_amf \
 
 The count of visited points is the figure that matters. Wall time per point
 varies with source resolution, preset and the libvmaf backend
-(`cpu`, `cuda`, `sycl` or `hip`), so the figures below are illustrative.
+(`cpu`, `cuda`, `sycl`, `hip` or `metal`), so the figures below are illustrative.
 
 | Mode | Points visited | Relative wall time |
 | --- | ---: | ---: |

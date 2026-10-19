@@ -1,5 +1,5 @@
 {
- "comment": "The ROCm runtime files the AMD GPU tester image and the production ROCm image ship, copied unmodified from the ROCm 10.0.0 tree of their build stages (prepare_build.py rocm-runtime; paths relative to /opt/rocm): libamdhip64 and what it loads, keeping the directories their RPATHs name ($ORIGIN/llvm/lib, $ORIGIN/rocm_sysdeps/lib), and the licence texts ROCm installs. The texts ROCm does not install (kpack, LLVM, the bundled system libraries) are fetched_texts of licensing.json. tools/rc1-tester/tests/test_prepare_build.py keeps the list to library files.",
+ "comment": "The ROCm runtime files the AMD GPU tester image and the production ROCm image ship, copied unmodified from the ROCm 10.1.0 tree of their build stages (prepare_build.py rocm-runtime; paths relative to /opt/rocm): libamdhip64 and what it loads, keeping the directories their RPATHs name ($ORIGIN/llvm/lib, $ORIGIN/rocm_sysdeps/lib), and the licence texts ROCm installs. The texts ROCm does not install (kpack, LLVM, the bundled system libraries) are fetched_texts of licensing.json. tools/rc1-tester/tests/test_prepare_build.py keeps the list to library files.",
  "licence_dir": "licenses/rocm",
  "components": [
   {
@@ -47,7 +47,7 @@
    "dir": "lib/llvm/lib",
    "credist": false,
    "dest": "lib/rocm/llvm/lib",
-   "names": ["libLLVM.so.23.0git", "libclang-cpp.so.23.0git"],
+   "names": ["libLLVM.so.24.0git", "libclang-cpp.so.24.0git"],
    "licences": []
   },
   {

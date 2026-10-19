@@ -88,3 +88,15 @@ ordering.
   `tools/vmaf-tune/tests/test_codec_adapter_av1_videotoolbox.py`, and
   `ruff-check` rewrites both back; three consecutive `ruff` + `black`
   rounds with isort absent produce an empty `git status`.
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 87: `isort rewrites
+  tools/vmaf-tune/src/vmaftune/predictor_train.py and
+  tools/vmaf-tune/tests/test_codec_adapter_av`: Path
+  `tools/vmaf-tune/src/vmaftune/predictor_train.py` does not exist on
+  origin/master (the file is located at
+  `ai/src/vmaf_train/predictor_train.py`).

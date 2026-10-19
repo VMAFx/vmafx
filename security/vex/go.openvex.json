@@ -1,0 +1,29 @@
+{
+  "@context": "https://openvex.dev/ns/v0.2.0",
+  "@id": "https://github.com/VMAFx/vmafx/blob/master/security/vex/go.openvex.json",
+  "author": "VMAFx maintainers",
+  "role": "Project maintainer",
+  "timestamp": "2026-10-05T23:00:00Z",
+  "version": 1,
+  "statements": [
+    {
+      "vulnerability": {
+        "name": "GO-2026-5932",
+        "@id": "https://pkg.go.dev/vuln/GO-2026-5932"
+      },
+      "products": [
+        {
+          "@id": "pkg:golang/github.com/VMAFx/vmafx",
+          "subcomponents": [
+            {
+              "@id": "pkg:golang/golang.org/x/crypto@v0.57.0"
+            }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "GO-2026-5932 covers the golang.org/x/crypto/openpgp packages (openpgp, packet, armor, clearsign, errors, elgamal, s2k); it has no fixed version because the packages are deprecated. No vmafx binary compiles them: `go list -deps ./...` names no openpgp package (the x/crypto packages in the build are argon2, blake2b, md4 and sha3), `go mod why golang.org/x/crypto/openpgp` answers that the main module does not need the package, and govulncheck v1.8.0 at symbol level reports the advisory only at module level. scripts/ci/govulncheck-gate.py fails as soon as a package or symbol of the advisory becomes reachable without a new statement."
+    }
+  ]
+}

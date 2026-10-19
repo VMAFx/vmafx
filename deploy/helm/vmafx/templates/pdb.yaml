@@ -14,6 +14,25 @@
   ADR-1058: Helm chart security hardening — PDB, RBAC split, metrics
   NetworkPolicy, schema tightening.
 */ -}}
+{{- if and .Values.controller.enabled (gt (int .Values.controller.replicas) 1) }}
+---
+# The controller with more than one replica (ADR-2350): at most one replica
+# away at a time, with or without podDisruptionBudget.enabled.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "vmafx.fullname" . }}-controller
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "vmafx.labels" . | nindent 4 }}
+    app.kubernetes.io/component: controller
+spec:
+  selector:
+    matchLabels:
+      {{- include "vmafx.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: controller
+  maxUnavailable: 1
+{{- end }}
 {{- if .Values.podDisruptionBudget.enabled }}
 {{- $fullName := include "vmafx.fullname" . }}
 {{- $selector := include "vmafx.selectorLabels" . }}

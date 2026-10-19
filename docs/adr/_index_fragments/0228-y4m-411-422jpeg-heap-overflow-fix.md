@@ -1,0 +1,1 @@
+| [ADR-0228](0228-y4m-411-422jpeg-heap-overflow-fix.md) | Tombstone: heap-buffer-overflow fix in the Y4M 411 to 422jpeg conversion; written on 2026-10-06 for a number that is cited but had no file. | Accepted | tombstone, y4m, fuzz, correctness |

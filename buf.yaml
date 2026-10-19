@@ -1,0 +1,34 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+#
+# The one buf workspace of the repository (ADR-2350 D13). The protobuf files
+# under proto/ are generated from api/vmafx-platform.toml and
+# core/api/vmafx.toml by scripts/codegen/vmafx-api.py; never edit them.
+# scripts/codegen/proto_generate.py runs `buf lint`, `buf generate` and, with
+# --breaking-against, `buf breaking`.
+version: v2
+modules:
+  - path: proto
+lint:
+  use:
+    - STANDARD
+  # Names that are wire contract since v1 and cannot follow the style rules
+  # without breaking clients: the services' names, JobStatus's values, and
+  # Job as the answer of GetJob and StreamJobs.
+  ignore_only:
+    SERVICE_SUFFIX:
+      - proto/vmafx/v1/vmafx.proto
+      - proto/vmafx/controller/v1/controller.proto
+    ENUM_VALUE_PREFIX:
+      - proto/vmafx/controller/v1/controller.proto
+    ENUM_ZERO_VALUE_SUFFIX:
+      - proto/vmafx/controller/v1/controller.proto
+    RPC_REQUEST_RESPONSE_UNIQUE:
+      - proto/vmafx/controller/v1/controller.proto
+    RPC_RESPONSE_STANDARD_NAME:
+      - proto/vmafx/controller/v1/controller.proto
+breaking:
+  # What clients depend on is the wire and JSON form, not the file layout:
+  # moving a file or its Go package is not a break, renumbering a field is.
+  use:
+    - WIRE_JSON

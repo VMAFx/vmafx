@@ -8,6 +8,10 @@
 # describe without --match, a moved describe and a missing workflow fail.
 # Boundary: comments that mention the banned flag are ignored.
 set -euo pipefail
+
+# Drop the git hook environment and the fixture identity (see the helper).
+# shellcheck source=/dev/null
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/../../lib/clean-git-env.sh"
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd "$here/../../.." && pwd)"
 tmp="$(mktemp -d)"

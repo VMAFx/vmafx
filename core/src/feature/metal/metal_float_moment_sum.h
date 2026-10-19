@@ -70,7 +70,7 @@
 /* A chunk increment at or above this is "does not fit the plan"; no plan binade
  * is named by this code. */
 #define VMAF_MTL_OS_PLAN_TERMS (-32768)
-#define VMAF_MTL_OS_UNFIT ((int64_t)1 << 54)
+#define VMAF_MTL_OS_UNFIT ((int64_t)((uint64_t)1 << 54u))
 
 /* What a run of terms adds to a running sum that is `m * u`: `even` when m is
  * even, `odd` when it is odd. */
@@ -95,14 +95,14 @@ VMAF_MTL_FUNC VmafMtlOrdsumUnits vmaf_mtl_os_units(int64_t even, int64_t odd)
  * m + whole + 1, whichever is even. */
 VMAF_MTL_FUNC VmafMtlOrdsumUnits vmaf_mtl_os_round_shifted(uint64_t mantissa, int shift)
 {
-    const int64_t whole = (int64_t)(mantissa >> shift);
-    const uint64_t rest = mantissa & (((uint64_t)1 << shift) - 1u);
-    const uint64_t half_way = (uint64_t)1 << (shift - 1);
+    const int64_t whole = (int64_t)(mantissa >> (unsigned)shift);
+    const uint64_t rest = mantissa & (((uint64_t)1 << (unsigned)shift) - 1u);
+    const uint64_t half_way = (uint64_t)1 << (unsigned)(shift - 1);
     if (rest != half_way) {
         const int64_t rounded = whole + (rest > half_way ? 1 : 0);
         return vmaf_mtl_os_units(rounded, rounded);
     }
-    const int64_t odd_whole = whole & 1;
+    const int64_t odd_whole = (int64_t)((uint64_t)whole & 1u);
     return vmaf_mtl_os_units(whole + odd_whole, whole + 1 - odd_whole);
 }
 
@@ -111,13 +111,19 @@ VMAF_MTL_FUNC int64_t vmaf_mtl_os_cap(int64_t v)
     return v > VMAF_MTL_OS_UNFIT ? VMAF_MTL_OS_UNFIT : v;
 }
 
+/* 1 for an odd running integer (the integers here are never negative). */
+VMAF_MTL_FUNC int vmaf_mtl_os_is_odd(int64_t v)
+{
+    return ((uint64_t)v & 1u) != 0u;
+}
+
 /* Increment of run `a` followed by run `b`. Associative, not commutative:
  * `b` starts at the parity `a` leaves. A result past VMAF_MTL_OS_UNFIT stays
  * there, so long runs cannot overflow. */
 VMAF_MTL_FUNC VmafMtlOrdsumUnits vmaf_mtl_os_then(VmafMtlOrdsumUnits a, VmafMtlOrdsumUnits b)
 {
-    const int64_t even = a.even + ((a.even & 1) ? b.odd : b.even);
-    const int64_t odd = a.odd + ((a.odd & 1) ? b.even : b.odd);
+    const int64_t even = a.even + (vmaf_mtl_os_is_odd(a.even) ? b.odd : b.even);
+    const int64_t odd = a.odd + (vmaf_mtl_os_is_odd(a.odd) ? b.even : b.odd);
     return vmaf_mtl_os_units(vmaf_mtl_os_cap(even), vmaf_mtl_os_cap(odd));
 }
 

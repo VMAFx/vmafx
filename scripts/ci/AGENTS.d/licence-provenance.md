@@ -5,6 +5,7 @@ paths:
   - scripts/ci/check_licence_metadata.py
   - scripts/ci/tests/test_check_licence_metadata.py
 invariant: Parity heading pins upstream; root, manifest licences match shipped files.
+area: release
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Licence provenance job and recorded upstream head

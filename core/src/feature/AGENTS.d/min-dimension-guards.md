@@ -2,7 +2,7 @@
 paths:
   - core/src/feature/float_motion.c
   - core/src/feature/float_vif.c
-invariant: Minimum-dimension guards cover every plane, not just luma.
+invariant: Minimum-dimension guards cover every plane, not only luma.
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # Minimum-Dimension Guards Across All Picture Planes

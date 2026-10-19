@@ -33,6 +33,7 @@
 #include <string.h>
 
 #include "test.h"
+#include "float_bits.h"
 
 #include "feature/cambi_internal.h"
 #include "libvmaf/feature.h"
@@ -285,8 +286,8 @@ static unsigned run_mismatches(const CambiRun *run, unsigned bpc, const CambiSco
     unsigned bad = 0u;
     for (unsigned f = 0; f < NUM_FRAMES; f++) {
         const double combined = fmax(0.0, s->dist[f] - s->source[f]);
-        const bool dist_ok = s->dist[f] == nr->dist[f];
-        const bool combined_ok = s->full_reference[f] == combined;
+        const bool dist_ok = vmaf_test_identical_f64(s->dist[f], nr->dist[f]);
+        const bool combined_ok = vmaf_test_identical_f64(s->full_reference[f], combined);
         if (!dist_ok || !combined_ok) {
             (void)fprintf(stderr,
                           "\n  %u-bit %s frame %u: cambi=%.17g (no-reference %.17g) "

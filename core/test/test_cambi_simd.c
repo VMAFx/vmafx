@@ -67,6 +67,15 @@
 #include "feature/arm64/cambi_neon.h"
 #endif
 
+/* True when a parity test below exists to call the scalar reference and the fixture builder:
+ * the AVX-512 tests need HAVE_AVX512, the NEON tests need AArch64. Without either, both helpers
+ * would be unused functions. */
+#if (ARCH_X86 && HAVE_AVX512) || ARCH_AARCH64
+#define CAMBI_HAS_PARITY_TESTS 1
+#else
+#define CAMBI_HAS_PARITY_TESTS 0
+#endif
+
 /* ---- Local scalar reference ---------------------------------------- */
 
 /*
@@ -81,7 +90,7 @@
  * reached (via CALL_SCALAR) from the AVX-512 / NEON parity tests further
  * down, so it is guarded the same way they are — `#if ARCH_X86` (AVX-512)
  * unioned with `#if ARCH_AARCH64` (NEON). */
-#if ARCH_X86 || ARCH_AARCH64
+#if CAMBI_HAS_PARITY_TESTS
 static void calculate_c_values_row_scalar(float *c_values, const uint16_t *histograms,
                                           const uint16_t *image, const uint16_t *mask, int row,
                                           int width, ptrdiff_t stride, const uint16_t num_diffs,
@@ -127,7 +136,7 @@ static void calculate_c_values_row_scalar(float *c_values, const uint16_t *histo
         c_row[col] = c_v;
     }
 }
-#endif /* ARCH_X86 || ARCH_AARCH64 */
+#endif /* CAMBI_HAS_PARITY_TESTS */
 
 /* ---- Fixture parameters -------------------------------------------- */
 
@@ -171,7 +180,7 @@ typedef struct {
 
 /* Only reached from the AVX-512 / NEON parity tests further down — same
  * guard as calculate_c_values_row_scalar above. */
-#if ARCH_X86 || ARCH_AARCH64
+#if CAMBI_HAS_PARITY_TESTS
 static void build_fixture(CambiRowFixture *fx, uint32_t seed)
 {
     uint32_t state = seed;
@@ -215,7 +224,7 @@ static void build_fixture(CambiRowFixture *fx, uint32_t seed)
     /* vlt_luma: low enough that most pixels satisfy (value + delta) > vlt_luma. */
     fx->vlt_luma = 50;
 }
-#endif /* ARCH_X86 || ARCH_AARCH64 */
+#endif /* CAMBI_HAS_PARITY_TESTS */
 
 /* ---- Helpers to call both scalar and SIMD with the same args ------- */
 

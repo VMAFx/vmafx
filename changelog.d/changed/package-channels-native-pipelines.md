@@ -1,0 +1,1 @@
+- **Packaging**: ADR-2383 lets the macOS and Windows package channels (Homebrew, winget and the others in the distribution manifest) take their artifacts from the attested native release pipelines, as a bounded exception to the container-only rule; Linux artifacts stay container-built.

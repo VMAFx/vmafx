@@ -197,3 +197,12 @@ Acceptance criteria verified in tree at HEAD `0a8b539e`:
 - Verification command:
   `grep -E "quant_mode|quant_accuracy_budget_plcc"
   model/tiny/registry.schema.json`.
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 171: `[model/registry.json](././model/registry.json) — the
+  registry this ADR extends.`: model/registry.json does not exist on
+  origin/master; the registry file is located at model/tiny/registry.json.

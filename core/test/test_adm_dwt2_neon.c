@@ -24,8 +24,15 @@
  * The bands therefore use the stride integer_adm.c derives and start out
  * filled with the simd_bitexact_test.h guard pattern: any store outside the
  * band, including into the slack after its last row, fails the test.
+ *
+ * Netflix/vmaf b41d2340a: adm_dwt2_s123_combined_neon(), the 32-bit DWT of
+ * scales 1 to 3, against the scalar kernels of integer_adm_kernels.h
+ * (i4_dwt2_vpass() / i4_dwt2_hpass(), the body of adm_dwt2_s123_combined()),
+ * for both pictures, every scale, full-range int32 sources and widths 3 to
+ * 70, with the same guard band.
  */
 
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -39,6 +46,7 @@
 #include "mem.h"
 
 #include "feature/integer_adm.h"
+#include "feature/integer_adm_kernels.h"
 
 #if ARCH_AARCH64
 #include "feature/arm64/adm_neon.h"
@@ -308,6 +316,150 @@ static char *dwt2_geometry_matches_scalar(int w, int h)
     SIMD_GUARD_ASSERT_UNTOUCHED(touched, "adm_dwt2_8_neon wrote outside its band");
     return NULL;
 }
+
+/* The 32-bit DWT of scales 1-3: two int32 source planes, both pictures'
+ * four bands for the scalar side (out[0..7]) and for NEON (out[8..15]). */
+typedef struct I4Dwt2Fixture {
+    int w;
+    int h;
+    int w_half;
+    int h_half;
+    int dst_stride;
+    size_t band_elems;
+    int32_t *src[2];
+    int32_t *out[16];
+    int *iy[4];
+    int *ix[4];
+    AdmBuffer buf;
+} I4Dwt2Fixture;
+
+static void i4_fixture_free(I4Dwt2Fixture *f)
+{
+    for (int k = 0; k < 4; ++k) {
+        free(f->iy[k]);
+        free(f->ix[k]);
+    }
+    for (int k = 0; k < 16; ++k) {
+        free(f->out[k]);
+    }
+    free(f->src[0]);
+    free(f->src[1]);
+    free(f->buf.tmp_ref);
+    memset(f, 0, sizeof(*f));
+}
+
+/* Points the AdmBuffer's 32-bit DWT bands at the scalar (`side` 0) or the
+ * NEON (`side` 1) outputs. */
+static void i4_fixture_bind(I4Dwt2Fixture *f, int side)
+{
+    int32_t *const *o = f->out + ((ptrdiff_t)8 * side);
+    f->buf.i4_ref_dwt2 =
+        (i4_adm_dwt_band_t){.band_a = o[0], .band_v = o[1], .band_h = o[2], .band_d = o[3]};
+    f->buf.i4_dis_dwt2 =
+        (i4_adm_dwt_band_t){.band_a = o[4], .band_v = o[5], .band_h = o[6], .band_d = o[7]};
+}
+
+static int i4_fixture_alloc(I4Dwt2Fixture *f, int w, int h)
+{
+    memset(f, 0, sizeof(*f));
+    f->w = w;
+    f->h = h;
+    f->w_half = (w + 1) / 2;
+    f->h_half = (h + 1) / 2;
+    f->dst_stride = ALIGN_CEIL(f->w_half * (int)sizeof(int32_t)) / (int)sizeof(int32_t);
+    f->band_elems = (size_t)f->h_half * (size_t)f->dst_stride;
+
+    int ok = 1;
+    for (int p = 0; p < 2; ++p) {
+        f->src[p] = malloc((size_t)w * (size_t)h * sizeof(int32_t));
+        ok = ok && (f->src[p] != NULL);
+    }
+    for (int k = 0; k < 4; ++k) {
+        f->iy[k] = calloc((size_t)f->h_half + 64, sizeof(int));
+        f->ix[k] = calloc((size_t)f->w_half + 64, sizeof(int));
+        ok = ok && (f->iy[k] != NULL) && (f->ix[k] != NULL);
+        f->buf.ind_y[k] = f->iy[k];
+        f->buf.ind_x[k] = f->ix[k];
+    }
+    for (int k = 0; k < 16; ++k) {
+        f->out[k] = calloc(f->band_elems + DWT2_SLACK, sizeof(int32_t));
+        ok = ok && (f->out[k] != NULL);
+        if (ok && k >= 8)
+            simd_test_guard_fill(f->out[k], (f->band_elems + DWT2_SLACK) * sizeof(int32_t));
+    }
+    /* adm_dwt2_s123_combined(): tmplo / tmphi of both pictures, w each. */
+    f->buf.tmp_ref = calloc((size_t)w * 4, sizeof(int32_t));
+    ok = ok && (f->buf.tmp_ref != NULL);
+    if (!ok) {
+        i4_fixture_free(f);
+        return -1;
+    }
+    return 0;
+}
+
+/* Full-range int32 samples, deterministic per (w, h, scale). */
+static void i4_fixture_fill_src(I4Dwt2Fixture *f, int scale)
+{
+    uint32_t seed = 0x51230000u ^ (uint32_t)((f->w * 131) + (f->h * 7) + scale);
+    for (int p = 0; p < 2; ++p) {
+        for (int i = 0; i < f->w * f->h; ++i)
+            f->src[p][i] = (int32_t)simd_test_xorshift32(&seed);
+    }
+}
+
+/* adm_dwt2_s123_combined() of integer_adm.c, from its kernels. */
+static void i4_ref_dwt2_s123(I4Dwt2Fixture *f, int scale)
+{
+    const I4Dwt2Round r = i4_dwt2_round(scale);
+    for (int i = 0; i < f->h_half; ++i) {
+        i4_dwt2_vpass(f->src[0], f->src[1], f->buf.ind_y, i, f->w, f->w, f->w, 0, f->w,
+                      f->buf.tmp_ref, r.add_vp, r.shift_vp);
+        i4_dwt2_hpass(f->buf.tmp_ref, &f->buf.i4_ref_dwt2, &f->buf.i4_dis_dwt2, f->buf.ind_x, i,
+                      f->w, 0, f->w_half, f->dst_stride, r.add_hp, r.shift_hp);
+    }
+}
+
+/* In-band mismatches between the scalar and the NEON bands, plus NEON
+ * elements written outside the h_half x w_half band. */
+static size_t i4_fixture_bad(const I4Dwt2Fixture *f, size_t *touched)
+{
+    const SimdTestRect rect = {0, (size_t)f->h_half, 0, (size_t)f->w_half};
+    size_t bad = 0;
+    *touched = 0;
+    for (int b = 0; b < 8; ++b) {
+        for (size_t idx = 0; idx < f->band_elems; ++idx) {
+            const bool in_band = (int)(idx % (size_t)f->dst_stride) < f->w_half;
+            bad += (in_band && f->out[b][idx] != f->out[b + 8][idx]) ? 1u : 0u;
+        }
+        const SimdTestPlane plane = {f->out[b + 8], sizeof(int32_t), (size_t)f->dst_stride,
+                                     (size_t)f->h_half, DWT2_SLACK};
+        *touched += simd_test_guard_count_outside(plane, rect);
+    }
+    return bad;
+}
+
+static char *dwt2_s123_geometry_matches_scalar(int w, int h, int scale)
+{
+    I4Dwt2Fixture f;
+
+    mu_assert("allocation failed for the 32-bit DWT2 fixture", i4_fixture_alloc(&f, w, h) == 0);
+    i4_fixture_fill_src(&f, scale);
+    ref_src_indices(f.buf.ind_y, f.buf.ind_x, w, h);
+    i4_fixture_bind(&f, 0);
+    i4_ref_dwt2_s123(&f, scale);
+    memset(f.buf.tmp_ref, 0, (size_t)w * 4 * sizeof(int32_t));
+    i4_fixture_bind(&f, 1);
+    adm_dwt2_s123_combined_neon(f.src[0], f.src[1], &f.buf, w, h, w, w, f.dst_stride, scale);
+
+    size_t touched = 0;
+    const size_t bad = i4_fixture_bad(&f, &touched);
+    i4_fixture_free(&f);
+    if (bad != 0 || touched != 0)
+        (void)fprintf(stderr, "  %dx%d scale %d: %zu samples differ\n", w, h, scale, bad);
+    mu_assert("adm_dwt2_s123_combined_neon diverges from the scalar reference", bad == 0);
+    SIMD_GUARD_ASSERT_UNTOUCHED(touched, "adm_dwt2_s123_combined_neon wrote outside its band");
+    return NULL;
+}
 #endif /* ARCH_AARCH64 */
 
 static char *test_adm_dwt2_8_neon_matches_scalar(void)
@@ -331,13 +483,38 @@ static char *test_adm_dwt2_8_neon_matches_scalar(void)
 #endif
 }
 
+static char *test_adm_dwt2_s123_neon_matches_scalar(void)
+{
+#if !ARCH_AARCH64
+    return NULL; /* NEON kernel is aarch64-only. */
+#else
+    /* Every width from 3 (a scale-3 input of a 17-pixel frame) to 70, so the
+     * four-wide vertical loop and the de-interleaved horizontal blocks meet
+     * every tail and every mirrored last column. */
+    static const int heights[] = {3, 4, 7, 12};
+
+    for (int scale = 1; scale <= 3; ++scale) {
+        for (size_t t = 0; t < sizeof(heights) / sizeof(heights[0]); ++t) {
+            for (int w = 3; w <= 70; ++w) {
+                char *msg = dwt2_s123_geometry_matches_scalar(w, heights[t], scale);
+                if (msg)
+                    return msg;
+            }
+        }
+    }
+    return dwt2_s123_geometry_matches_scalar(288, 18, 1); /* the Netflix pair's scale 1 */
+#endif
+}
+
 char *run_tests(void)
 {
 #if ARCH_AARCH64
     mu_run_test(test_adm_dwt2_8_neon_matches_scalar);
+    mu_run_test(test_adm_dwt2_s123_neon_matches_scalar);
 #else
     (void)fprintf(stderr, "skipping: non-aarch64 arch\n");
     (void)test_adm_dwt2_8_neon_matches_scalar;
+    (void)test_adm_dwt2_s123_neon_matches_scalar;
 #endif
     return NULL;
 }

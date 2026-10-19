@@ -446,6 +446,11 @@ chroma isn't flat, or wrong plane reads same sentinel as right one.
 - Guards: `test_vmafx_import_cuda`, `test_vmafx_import_cuda_bitexact`,
   `test_vmafx_import_cuda_fence`, `test_vmafx_import_cuda_gl` (device, suite
   `gpu`/`cuda`), `test_vmafx_import_cuda_cells_contract.py` (fast).
+- `test_vmafx_import_cuda_fence` skipped-wait control: late producer. From
+  frame 1, distorted frame written only after its `CUDA_EVENT` release fence
+  signalled (host-function gate, test opens it). No timed hold for that arm:
+  adm readers outran 6 ms in ~1 run of 10. Frame 0 stays out: extractors'
+  first-frame setup waits for producer stream.
 
 ## Teardown helpers replace the cleanup labels (HISS-21 / 2026-09-21)
 
@@ -455,3 +460,26 @@ whether context pop still has to run; `pinned_alloc_unwind` takes `PINNED_UNWIND
 because it replaced `free_priv` -> `free_data` -> `fail_no_data` cascade. Adding resource to
 either path means adding stage to helper, not second exit. `CHECK_CUDA_GOTO` labels stay
 — they are macro's jump targets and now call helper.
+
+## Device pointers and device-code lint (ADR-1142, RC3 tidy-zero)
+
+- Kernel arg structs carry `CUdeviceptr` as `uint64_t`. Kernel turns one back into pointer with
+  `VMAF_CUDA_DPTR(T, address)` (`cuda_device_ptr.cuh`), never `reinterpret_cast` on integer. One
+  macro, one NOLINT(performance-no-int-to-ptr).
+- Macro, not function: function wrapper (`reinterpret_cast` or `__builtin_bit_cast`) turned 134 of
+  `speed_score.cu`'s 378 `LDG.E.CONSTANT` into plain loads (sm_89, nvcc 13.4). Do not turn it into
+  an inline function.
+- No designated initializers (`{.a = 1}`) in `.cu` / `.cuh`: nvcc's MSVC host frontend rejects them
+  (`preflight.sh --stage msvcism`). Fill aggregate field by field (`make_*()` helper). No
+  constructor: it trips `misc-non-private-member-variables-in-classes`.
+- Helpers and device structs of a `.cu` live in `namespace {}`, no `static`. `__global__` kernels
+  and symbols the host looks up by name stay `extern "C"` / external.
+- Header included by C host (`typedef`, plain `enum`): `NOLINTBEGIN(modernize-use-using ...)`
+  with ADR-1138 / ADR-1470 wording, like `core/include/libvmaf/model.h`.
+- Refactor proof: sm_89 SASS before / after (`cuobjdump -sass`) identical, or the diff explained
+  (commutative operand swap, register names).
+- Loader member (`dev->state.f->cu*`) new to host code: present in nv-codec-headers
+  `NV_CODEC_HEADERS_TAG` (`build-config.env`), else raise tag + commit + licence record in
+  same PR and point `cc.has_member` check of `core/src/meson.build` at new member. Hosted CUDA
+  legs clone default branch of headers: green there proves nothing for pinned images
+  (`T-NV-CODEC-HEADERS-CI-LEGS-UNPINNED-2026-10-10`).

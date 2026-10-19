@@ -1,10 +1,8 @@
 # ADR-0788: Doxygen doc-comment and @thread-safety tags on public C-API
 
-| Field    | Value                             |
-|----------|-----------------------------------|
-| Status   | Accepted                          |
-| Date     | 2026-05-29                        |
-| Tags     | api, docs, thread-safety, libvmaf |
+- **Status**: Accepted
+- **Date**: 2026-05-29
+- **Tags**: api, docs, thread-safety, libvmaf
 
 ## Context
 

@@ -117,3 +117,12 @@ Integration architecture:
 - [ADR-0700](0700-vmafx-repo-layout.md) — repo layout rename (`libvmaf/` → `core/`).
 - [cbindgen documentation](https://github.com/mozilla/cbindgen)
 - Related PR: `feat/tad-rust-pilot`
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 87: `extractors can follow (see
+  docs/development/rust-feature-guide.md).`: Path
+  docs/development/rust-feature-guide.md does not exist on master.

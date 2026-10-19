@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # ADR-1173: AI Teacher Model Follows Default Model Single Source
 
-- **Status:** Accepted
+- **Status**: Accepted
 - **Date:** 2026-09-04
 - **Deciders:** Lusoris
 - **Supersedes:** none

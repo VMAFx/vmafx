@@ -1,0 +1,1 @@
+- `test_dnn_session_api.c` spells its invalid session pointer as the literal `0xdeadbeefULL`, which MSVC accepts without C4312 and clang-tidy accepts without `performance-no-int-to-ptr`; the value is unchanged.

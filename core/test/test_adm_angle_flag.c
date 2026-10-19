@@ -34,25 +34,7 @@
  *  Host-only: no GPU, no device runtime.
  */
 
-/* Define _USE_MATH_DEFINES before <math.h> so MSVC exposes `M_PI`. POSIX
- * libcs export it unconditionally; MSVC gates it on this macro, and MinGW64
- * hides it whenever `__STRICT_ANSI__` is on -- which `-std=c23` sets, so the
- * `Windows MinGW64` lane sees no `M_PI` at all without the fallback below.
- * Same two-step as core/src/feature/adm_csf_tools.h and adm_tools.h; the
- * literal matches adm_tools.h so this test computes cos(1deg) from exactly
- * the constant integer_adm.c uses. */
-#ifndef _USE_MATH_DEFINES
-/* The leading underscore is not ours to choose: `_USE_MATH_DEFINES` is the name
- * MSVC's and MinGW's <math.h> look for, so renaming it defeats the whole point
- * of defining it. Same posture as the feature-test macro in
- * core/src/libvmaf.c. ADR-1142 rule 12: a NOLINT cites what forces it. */
-/* NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) */
-#define _USE_MATH_DEFINES
-#endif
 #include <math.h>
-#ifndef M_PI
-#define M_PI 3.14159265358979323846264338327
-#endif
 #include <stdint.h>
 #include <stdio.h>
 

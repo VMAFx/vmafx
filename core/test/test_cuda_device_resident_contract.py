@@ -33,9 +33,7 @@ CAMBI_HOST = "integer_cambi_cuda.c"
 CAMBI_KERNELS = "integer_cambi/cambi_score.cu"
 SPEED_HOSTS = ("speed_chroma_cuda.c", "speed_temporal_cuda.c", "speed_cuda_pipeline.c")
 SPEED_KERNELS = "speed/speed_score.cu"
-CUDA_DEVICE_FMAD = (
-    "cuda_device_strict_fp_args = vmaf_cuda_host_strict_fp_args + ['--fmad=false']"
-)
+CUDA_DEVICE_FMAD = "cuda_device_strict_fp_args = vmaf_cuda_host_strict_fp_args + ['--fmad=false']"
 CUDA_FATBIN_FP_ARGS = "cuda_flags + cuda_device_strict_fp_args"
 
 # Calls, not mentions: the sources cite the retired helpers in comments.
@@ -144,7 +142,9 @@ def _readback_failures(
         return [f"{file}: device-to-host copy outside the pipeline"] if copies else []
     if len(copies) != 1:
         return [f"{file}: {len(copies)} device-to-host copies per frame, expected one"]
-    if (size or f"sizeof({result_type})") not in copies[0] or (size and result_type not in copies[0]):
+    if (size or f"sizeof({result_type})") not in copies[0] or (
+        size and result_type not in copies[0]
+    ):
         return [f"{file}: the readback is not the {result_type} block"]
     return []
 
@@ -267,17 +267,19 @@ class CudaKernelSourceContractTest(unittest.TestCase):
         # The kernels' own log2 before ADR-1477: fp32 pairs rounded to float.
         sources = _sources()
         sources[SPEED_KERNELS] = sources[SPEED_KERNELS].replace(
-            "    reinterpret_cast<float *>(a.var)[idx] = variance;",
-            "    reinterpret_cast<float *>(a.var)[idx] = speed_log2(variance);",
+            "    VMAF_CUDA_DPTR(float, a.var)[idx] = variance;",
+            "    VMAF_CUDA_DPTR(float, a.var)[idx] = speed_log2(variance);",
             1,
         )
-        self.assertTrue(any("evaluates a logarithm" in item for item in _contract_failures(sources)))
+        self.assertTrue(
+            any("evaluates a logarithm" in item for item in _contract_failures(sources))
+        )
 
     def test_speed_device_score_kernel_is_detected(self) -> None:
         sources = _sources()
-        sources[SPEED_KERNELS] += (
-            "\n__global__ void speed_score_kernel(const SpeedCudaFrameArgs a)\n{\n}\n"
-        )
+        sources[
+            SPEED_KERNELS
+        ] += "\n__global__ void speed_score_kernel(const SpeedCudaFrameArgs a)\n{\n}\n"
         failures = _contract_failures(sources)
         self.assertTrue(any("formed on the device" in item for item in failures))
 
@@ -456,9 +458,9 @@ class CudaKernelSourceContractTest(unittest.TestCase):
     def test_speed_device_sine_is_detected(self) -> None:
         sources = _sources()
         sources[SPEED_KERNELS] = sources[SPEED_KERNELS].replace(
-            "template <class Source>\nstatic __device__ float scale_lanczos(",
-            "static __device__ float lanczos_weight(float x)\n{\n    return sinpif(x);\n}\n\n"
-            "template <class Source>\nstatic __device__ float scale_lanczos(",
+            "template <class Source>\n__device__ float scale_lanczos(",
+            "__device__ float lanczos_weight(float x)\n{\n    return sinpif(x);\n}\n\n"
+            "template <class Source>\n__device__ float scale_lanczos(",
             1,
         )
         self.assertTrue(any("device sine" in item for item in _contract_failures(sources)))

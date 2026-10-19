@@ -118,7 +118,7 @@ spread.
 ## Reading the output
 
 Example row, copied from the refreshed baselines in
-[`docs/benchmarks.md`](../benchmarks.md) (2026-09-06, host `ryzen-4090-arc`,
+[`docs/benchmarks.md`](../benchmarks.md) (2026-09-06, a reference workstation,
 commit `cd52f2670`, the command above with `v0.6.1` on `src01_576x324`). It
 was not re-measured for this page:
 
@@ -126,7 +126,7 @@ was not re-measured for this page:
     cpu    ...   613.71 fps  median 0.078s  spread 3.5%  pool 76.667831  keys=15  load=6.6
 ```
 
-- `fps` — `nframes / median_time`. The headline figure.
+- `fps` — $\mathrm{nframes} / \mathrm{median\_time}$. The headline figure.
 - `spread` — `(max - min) / median`. Treat anything above ~10 % as noise-dominated
   and re-run on a quieter machine before quoting it.
 - `pool` — pooled VMAF mean, a sanity signal only (see above).
@@ -143,7 +143,7 @@ difference.
 Expected, and not a bug, whenever the frame count is small or the resolution is
 low: the fixed per-run cost (context creation, module load, host↔device copies)
 is not amortised. The fork's own numbers in `docs/benchmarks.md` (refreshed 2026-09-06 on
-`ryzen-4090-arc`; the CUDA rows there were measured with a local flush patch
+a reference workstation; the CUDA rows there were measured with a local flush patch
 and are not reproducible from `master`) show CPU winning at 576×324 and at
 1080p×3f, and CUDA winning decisively at 4K×200f. If a GPU row loses at 4K with
 a few hundred frames, that *is* worth investigating — start with

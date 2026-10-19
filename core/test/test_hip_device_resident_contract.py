@@ -533,9 +533,9 @@ class HipDeviceResidentContractTest(unittest.TestCase):
 
     def test_device_score_kernel_is_detected(self) -> None:
         src = _sources()
-        src[SPEED_KERNEL] += (
-            "\n__global__ void speed_hip_score(const SpeedHipParams *p, uint32_t set)\n{\n}\n"
-        )
+        src[
+            SPEED_KERNEL
+        ] += "\n__global__ void speed_hip_score(const SpeedHipParams *p, uint32_t set)\n{\n}\n"
         self.assert_detected(src, "formed on the device")
 
     def test_dropped_host_tail_is_detected(self) -> None:
@@ -565,6 +565,7 @@ class HipDeviceResidentContractTest(unittest.TestCase):
             "    const float unit = 1.0f / sqrtf(1.0f + tt);",
         )
         self.assert_detected(src, "create_givens()")
+
     def test_fp64_in_speed_kernel_is_detected(self) -> None:
         src = _replace(
             _sources(),

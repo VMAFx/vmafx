@@ -10,7 +10,8 @@
 # intentionally absent. Neither is a prerequisite for the current chart or
 # operator configuration, and unrelated downloads must not decide this lane.
 #
-# Prerequisites: Docker, kind >= 0.23, kubectl.
+# Prerequisites: Docker, kind >= 0.23, kubectl; with VMAFX_E2E_INCUS_VM, incus
+# and kubectl only (Docker and kind run in the VM).
 #
 # Usage: ./test/e2e/kind-cluster.sh [--cluster-name NAME] [--teardown]
 #
@@ -18,6 +19,12 @@
 #   KIND_CLUSTER_NAME   override cluster name (default: vmafx-e2e)
 #   VMAFX_E2E_KUBECONFIG absolute path to the dedicated test kubeconfig (required)
 #   TEARDOWN            set to "1" to delete the cluster instead of creating it
+#   VMAFX_E2E_INCUS_VM  run kind inside this incus VM (test/e2e/incus-kind-vm.sh
+#                       creates it) instead of on the local Docker: the
+#                       kubelet writes kernel settings that are not namespaced,
+#                       so a workstation runs the cluster in a VM with its own
+#                       kernel. The API server listens on the VM's address.
+#                       Unset in CI, where the runner is disposable.
 #
 # ADR-0783: k8s e2e integration test harness design.
 
@@ -31,6 +38,8 @@ TEARDOWN="${TEARDOWN:-}"
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 ASSERT_CONTEXT="${REPO_ROOT}/test/e2e/assert-kind-context.sh"
 KUBECONFIG_PATH="${VMAFX_E2E_KUBECONFIG:-}"
+INCUS_VM="${VMAFX_E2E_INCUS_VM:-}"
+VM_SCRIPT="${REPO_ROOT}/test/e2e/incus-kind-vm.sh"
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -79,18 +88,79 @@ while [[ $# -gt 0 ]]; do
 done
 export KIND_CLUSTER_NAME="${CLUSTER_NAME}"
 
+# kind and docker run locally, or inside the incus VM.
+kind_run() {
+  if [[ -n "${INCUS_VM}" ]]; then
+    incus exec "${INCUS_VM}" -- kind "$@"
+  else
+    kind "$@"
+  fi
+}
+
+cluster_exists() {
+  kind_run get clusters 2>/dev/null | grep -qx "${CLUSTER_NAME}"
+}
+
+# create_cluster: locally kind writes the dedicated kubeconfig itself; in the
+# VM the API server is published on the VM's address (kind adds it to the
+# certificate) and the kubeconfig is copied out of the VM.
+create_cluster() {
+  if [[ -z "${INCUS_VM}" ]]; then
+    kind create cluster --name "${CLUSTER_NAME}" \
+      --kubeconfig "${KUBECONFIG_PATH}" --wait 120s
+    return
+  fi
+  local address
+  address="$("${VM_SCRIPT}" address)"
+  printf '%s\n' \
+    "kind: Cluster" \
+    "apiVersion: kind.x-k8s.io/v1alpha4" \
+    "networking:" \
+    "  apiServerAddress: \"${address}\"" \
+    "  apiServerPort: 6443" |
+    incus exec "${INCUS_VM}" -- kind create cluster --name "${CLUSTER_NAME}" \
+      --config - --wait 120s
+}
+
+export_kubeconfig() {
+  if [[ -z "${INCUS_VM}" ]]; then
+    kind export kubeconfig --name "${CLUSTER_NAME}" \
+      --kubeconfig "${KUBECONFIG_PATH}"
+    return
+  fi
+  (
+    umask 077
+    incus exec "${INCUS_VM}" -- kind get kubeconfig --name "${CLUSTER_NAME}" \
+      >"${KUBECONFIG_PATH}"
+  )
+}
+
+# load_image copies a local image into the cluster's node.
+load_image() {
+  if [[ -z "${INCUS_VM}" ]]; then
+    kind load docker-image "$1" --name "${CLUSTER_NAME}"
+    return
+  fi
+  docker save "$1" | incus exec "${INCUS_VM}" -- docker load
+  incus exec "${INCUS_VM}" -- kind load docker-image "$1" --name "${CLUSTER_NAME}"
+}
+
 # ---------------------------------------------------------------------------
 # Teardown path
 # ---------------------------------------------------------------------------
 if [ "${TEARDOWN}" = "1" ]; then
-  require kind
+  if [[ -n "${INCUS_VM}" ]]; then require incus; else require kind; fi
   require kubectl
   require_isolated_kubeconfig_path
-  if kind get clusters 2>/dev/null | grep -qx "${CLUSTER_NAME}"; then
+  if cluster_exists; then
     "${ASSERT_CONTEXT}"
     log "Deleting kind cluster: ${CLUSTER_NAME}"
-    kind delete cluster --name "${CLUSTER_NAME}" \
-      --kubeconfig "${KUBECONFIG_PATH}"
+    if [[ -n "${INCUS_VM}" ]]; then
+      kind_run delete cluster --name "${CLUSTER_NAME}"
+    else
+      kind delete cluster --name "${CLUSTER_NAME}" \
+        --kubeconfig "${KUBECONFIG_PATH}"
+    fi
   else
     log "Kind cluster '${CLUSTER_NAME}' does not exist; nothing to delete."
   fi
@@ -100,7 +170,12 @@ fi
 # ---------------------------------------------------------------------------
 # Prerequisite checks
 # ---------------------------------------------------------------------------
-for tool in docker kind kubectl; do
+if [[ -n "${INCUS_VM}" ]]; then
+  tools=(docker incus kubectl)
+else
+  tools=(docker kind kubectl)
+fi
+for tool in "${tools[@]}"; do
   require "$tool"
 done
 require_isolated_kubeconfig_path
@@ -108,7 +183,7 @@ require_isolated_kubeconfig_path
 # ---------------------------------------------------------------------------
 # Create (or reuse) cluster
 # ---------------------------------------------------------------------------
-if kind get clusters 2>/dev/null | grep -qx "${CLUSTER_NAME}"; then
+if cluster_exists; then
   log "Cluster '${CLUSTER_NAME}' already exists — reusing."
 else
   # Cluster creation is a local Docker operation, not a Kubernetes API
@@ -117,14 +192,12 @@ else
   if [[ -e "${KUBECONFIG_PATH}" ]]; then
     "${ASSERT_CONTEXT}"
   fi
-  log "Creating kind cluster '${CLUSTER_NAME}'..."
-  kind create cluster --name "${CLUSTER_NAME}" \
-    --kubeconfig "${KUBECONFIG_PATH}" --wait 120s
+  log "Creating kind cluster '${CLUSTER_NAME}'${INCUS_VM:+ in VM ${INCUS_VM}}..."
+  create_cluster
 fi
 
 # Export and verify the dedicated kubeconfig before any Kubernetes mutation.
-kind export kubeconfig --name "${CLUSTER_NAME}" \
-  --kubeconfig "${KUBECONFIG_PATH}"
+export_kubeconfig
 "${ASSERT_CONTEXT}"
 log "Dedicated kubeconfig: ${KUBECONFIG_PATH}"
 
@@ -150,11 +223,13 @@ VMAFX_IMAGES=(
   "ghcr.io/vmafx/vmafx-operator:e2e-test"
   "ghcr.io/vmafx/vmafx-node:e2e-test"
   "ghcr.io/vmafx/vmafx-server:e2e-test"
+  "ghcr.io/vmafx/vmafx-controller:e2e-test"
+  "ghcr.io/vmafx/vmafx-e2e-driver:e2e-test"
 )
 for img in "${VMAFX_IMAGES[@]}"; do
   if docker image inspect "${img}" >/dev/null 2>&1; then
     log "Pre-loading image into kind: ${img}"
-    kind load docker-image "${img}" --name "${CLUSTER_NAME}"
+    load_image "${img}"
   else
     log "Image not present locally, skipping pre-load: ${img}"
   fi

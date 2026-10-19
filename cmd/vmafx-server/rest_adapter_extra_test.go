@@ -28,6 +28,8 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/VMAFx/vmafx/internal/execstub"
+	"github.com/VMAFx/vmafx/internal/oteltest"
 	"github.com/VMAFx/vmafx/pkg/libvmaf"
 	"github.com/VMAFx/vmafx/pkg/observability"
 )
@@ -42,7 +44,7 @@ func newTestRestAdapter(t *testing.T) *restAdapter {
 		t.Fatalf("libvmaf.New: %v", err)
 	}
 	reg := prometheus.NewRegistry()
-	metrics := observability.NewMetrics(reg)
+	metrics := oteltest.Metrics(t, reg)
 	log := observability.NewLogger("ERROR")
 	grpcSrv := newGRPCServer(scorer, metrics, log)
 	return newRestAdapter(grpcSrv, log)
@@ -121,9 +123,7 @@ func TestRestAdapter_ScoreVideoPair_ScorerError(t *testing.T) {
 echo "deliberate error" >&2
 exit 1
 `
-	if err := os.WriteFile(stub, []byte(script), 0o700); err != nil {
-		t.Fatalf("write stub: %v", err)
-	}
+	execstub.Write(t, stub, []byte(script))
 	modelDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(modelDir, "vmaf_v0.6.1.json"), []byte("{}"), 0o600); err != nil {
 		t.Fatalf("write model: %v", err)
@@ -133,7 +133,7 @@ exit 1
 		t.Fatalf("libvmaf.New: %v", err)
 	}
 	reg := prometheus.NewRegistry()
-	metrics := observability.NewMetrics(reg)
+	metrics := oteltest.Metrics(t, reg)
 	log := observability.NewLogger("ERROR")
 	grpcSrv := newGRPCServer(scorer, metrics, log)
 	adapter := newRestAdapter(grpcSrv, log)
@@ -187,7 +187,7 @@ func TestRestAdapter_GetHealth_OK(t *testing.T) {
 func TestRestAdapter_GetReady_NotReady(t *testing.T) {
 	t.Parallel()
 	reg := prometheus.NewRegistry()
-	metrics := observability.NewMetrics(reg)
+	metrics := oteltest.Metrics(t, reg)
 	log := observability.NewLogger("ERROR")
 	// nil scorer → not ready
 	grpcSrv := newGRPCServer(nil, metrics, log)

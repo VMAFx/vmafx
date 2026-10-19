@@ -84,7 +84,7 @@ Two modes:
                         full sweep (ADR-0296).
 
 --with-uncertainty consumes the conformal prediction intervals carried in the
-rows' vmaf_interval blocks (ADR-0279). A tight interval whose lower bound
+rows' vmaf_interval blocks (ADR-0393). A tight interval whose lower bound
 already clears the target short-circuits the search; a wide interval refuses
 to short-circuit and tags the result (UNCERTAIN). It changes which encodes get
 probed, never which get shipped.
@@ -155,7 +155,7 @@ func addRecommendSearchFlags(cmd *cobra.Command, flags *recommendFlags) {
 
 func addRecommendSelectionFlags(cmd *cobra.Command, flags *recommendFlags) {
 	cmd.Flags().BoolVar(&flags.withUncertainty, "with-uncertainty", false,
-		"Consume conformal prediction intervals when picking the CRF (ADR-0279)")
+		"Consume conformal prediction intervals when picking the CRF (ADR-0393)")
 	cmd.Flags().StringVar(&flags.uncertaintySidecar, "uncertainty-sidecar", "",
 		"Calibration sidecar JSON; defaults to the Research-0067 floor (2.0 / 5.0 VMAF)")
 

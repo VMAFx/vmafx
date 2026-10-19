@@ -21,8 +21,11 @@ def _extract_options_block(source: str) -> str:
 
 
 def _extract_struct_block(source: str) -> str:
+    # The struct is a C++ definition (`struct X {...};`) since the Metal lane's
+    # clang-tidy fixes; the C `typedef struct X {...} X;` form is accepted too.
     match = re.search(
-        r"typedef\s+struct\s+FloatMotionStateMetal\s*\{([\s\S]*?)\}\s*FloatMotionStateMetal;",
+        r"(?:typedef\s+)?struct\s+FloatMotionStateMetal\s*\{([\s\S]*?)\}\s*"
+        r"(?:FloatMotionStateMetal\s*)?;",
         source,
     )
     if not match:
@@ -50,9 +53,10 @@ class MetalFloatMotionContractTest(unittest.TestCase):
 
     def test_force_zero_init_retains_close_callback(self) -> None:
         self.assertIn("fex->close = close_fex_metal;", self.source)
-        self.assertIn("fex->flush = NULL;", self.source)
-        self.assertIn("fex->submit = NULL;", self.source)
-        self.assertIn("fex->collect = NULL;", self.source)
+        # nullptr in the Objective-C++ source, NULL in the C form.
+        self.assertRegex(self.source, r"fex->flush = (?:nullptr|NULL);")
+        self.assertRegex(self.source, r"fex->submit = (?:nullptr|NULL);")
+        self.assertRegex(self.source, r"fex->collect = (?:nullptr|NULL);")
         self.assertIn("fex->extract = extract_force_zero_metal;", self.source)
 
     def test_force_zero_extract_gated_by_debug(self) -> None:

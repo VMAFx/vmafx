@@ -1,0 +1,2 @@
+adr: ADR-1496, ADR-1498
+evidence: Apple M4 Pro (macOS 26.6), macOS tester bundle built from 860050c3f, outside-tester report #2118 (docs/hardware-reports/2026-10-05-apple-m4-pro.json): the parity gate's metal cell, held exact at --precision max, is 0 on both 1080p checkerboards (3 + 3 frames; the 576x324 pairs skip it, chroma below the 176-pixel minimum); test_metal_float_ms_ssim_parity == on 8 of 8 cases, test_float_ms_ssim_chroma_exact among them.

@@ -40,6 +40,7 @@
 
 #include "test.h"
 
+#include "compat/crt_portable.h"
 #include "config.h"
 #include "libvmaf/dnn.h"
 #include "feature/feature_extractor.h"
@@ -147,8 +148,8 @@ static int vmaf_tiny_ai_test_unsetenv(const char *name)
         fex->priv = priv;                                                                            \
                                                                                                      \
         /* Save + clear the env var for the duration of this test. */                                \
-        const char *saved = getenv(env_var);                                                         \
-        char *saved_copy = saved ? strdup(saved) : NULL;                                             \
+        const char *saved = vmaf_getenv_portable(env_var);                                           \
+        char *saved_copy = saved ? VMAF_STRDUP(saved) : NULL;                                        \
         (void)vmaf_tiny_ai_test_unsetenv(env_var);                                                   \
                                                                                                      \
         int rc = fex->init(fex, VMAF_PIX_FMT_YUV420P, 8u, 64u, 64u);                                 \

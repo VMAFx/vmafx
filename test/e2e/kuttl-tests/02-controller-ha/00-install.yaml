@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: EUPL-1.2
+# Copyright 2026 Lusoris
+#
+# Install the CloudNativePG operator from its pinned manifest, then the chart
+# with two controller replicas on the PostgreSQL store, a one-instance
+# database Cluster, its migration Job and one CPU node (ADR-2350). The
+# release lives in its own namespace next to the CPU score case's.
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+metadata:
+  name: install-ha-controller
+commands:
+  - command: bash ../../controller-ha/install-cnpg.sh
+    timeout: 300
+  - command: >-
+      helm upgrade --install vmafx
+      ../../../../deploy/helm/vmafx
+      --namespace vmafx-ha
+      --create-namespace
+      -f ../../controller-ha/values.yaml
+    timeout: 120

@@ -34,6 +34,7 @@
 #include <string.h>
 
 #include "test.h"
+#include "float_bits.h"
 
 #include "feature/metal/metal_float_psnr_math.h"
 #include "feature/picture_copy.h"
@@ -110,7 +111,7 @@ static void compare_terms(const void *ref, const void *dis, const float *rf, con
         const int r = (int)get_sample(ref, bpc, i);
         const int d = (int)get_sample(dis, bpc, i);
         const vmaf_mtl_u32 term = vmaf_mtl_fpsnr_term(r, d);
-        if ((double)term != cpu_term(rf[i], df[i]) * s2) {
+        if (!vmaf_test_identical_f64((double)term, cpu_term(rf[i], df[i]) * s2)) {
             (*bad)++;
         }
         if ((uint64_t)term != (uint64_t)((int64_t)(r - d) * (int64_t)(r - d))) {
@@ -282,8 +283,8 @@ static char *check_noise_frame(unsigned bpc, int *fp32_differs)
     free(rf);
     free(df);
     mu_assert("allocation failed", allocated);
-    *fp32_differs = fp32 != cpu;
-    mu_assert("the twin's noise is not float_psnr.c's", exact == cpu);
+    *fp32_differs = !vmaf_test_identical_f64(fp32, cpu);
+    mu_assert("the twin's noise is not float_psnr.c's", vmaf_test_identical_f64(exact, cpu));
     return NULL;
 }
 

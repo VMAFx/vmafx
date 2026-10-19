@@ -6,9 +6,9 @@ Edit AGENTS.d/_index.md or a page under AGENTS.d/, then run
 
 Generated index. Before editing: match every path you will touch against
 `Touching` in [Topic pages](#topic-pages) and read each matching page first; no
-match, no page. Text between here and the table binds every file of this
-directory. `Touching` paths: relative to this directory, leading `/` =
-repository root. New invariant: a page under `AGENTS.d/` ([how](../../../../docs/development/agents-index.md)).
+match, no page. Text between here and [Topic pages](#topic-pages) binds every
+file of this directory. `Touching` paths: relative to this directory, leading
+`/` = repository root. New invariant: new page under `AGENTS.d/` ([how](../../../../docs/development/agents-index.md)).
 
 Parent: [../AGENTS.md](../AGENTS.md). HIP backend runtime lives at
 [`../../hip/AGENTS.md`](../../hip/AGENTS.md); CUDA sibling =
@@ -19,7 +19,7 @@ Parent: [../AGENTS.md](../AGENTS.md). HIP backend runtime lives at
 | Touching | Read first | Invariant |
 | --- | --- | --- |
 | `integer_adm_hip.c`, `integer_adm_hip.h` | [adm-buffer-pointer](AGENTS.d/adm-buffer-pointer.md) | AdmBufferHip must be passed by pointer across HIP ADM helpers. |
-| `integer_adm_hip.c`, `integer_adm_hip.h`, `integer_adm/adm_cm.hip`, `integer_adm/adm_csf.hip`, `integer_adm/adm_dwt2.hip` | [adm](AGENTS.d/adm.md) | Integer ADM maintains exact CPU parity, staging buffer rules, int64 vertical sums, and single reflection clamping. |
+| `integer_adm_hip.c`, `integer_adm_hip.h`, `integer_adm/adm_cm.hip`, `integer_adm/adm_csf.hip`, `integer_adm/adm_dwt2.hip`, `integer_adm/adm_decouple_inline.hip` | [adm](AGENTS.d/adm.md) | Integer ADM maintains exact CPU parity, staging buffer rules, int64 vertical sums, and single reflection clamping. |
 | `/core/src/meson.build`, `/core/meson.build` | [build-wiring-extractor](AGENTS.d/build-wiring-extractor.md) | Wire new HIP extractors into Meson source lists and library declarations cleanly. |
 | `integer_cambi_hip.c`, `integer_cambi_hip.h`, `integer_cambi/cambi_score.hip` | [cambi](AGENTS.d/cambi.md) | CAMBI uses the shared TVI helper, CPU border rules, and device-resident single-wait execution. |
 | `ciede_hip.c`, `ciede_hip.h`, `integer_ciede/ciede_score.hip` | [ciede](AGENTS.d/ciede.md) | ciede_hip performs CPU arithmetic in fp32 pairs with libm residual handling. |
@@ -34,7 +34,7 @@ Parent: [../AGENTS.md](../AGENTS.md). HIP backend runtime lives at
 | `float_psnr_hip.c`, `float_psnr_hip.h`, `float_psnr/float_psnr_score.hip` | [float-psnr](AGENTS.d/float-psnr.md) | float_psnr_hip reproduces CPU reference bits identically, past 2^53 units too. |
 | `float_vif_hip.c`, `float_vif_hip.h`, `float_vif/float_vif_score.hip` | [float-vif](AGENTS.d/float-vif.md) | float_vif options must be kernel arguments and match CPU reference bits. |
 | `integer_adm_hip.c`, `integer_cambi_hip.c` | [frame-order-lifecycle](AGENTS.d/frame-order-lifecycle.md) | Maintain strict frame lifecycle order of upload, clear, and kernel execution. |
-| `/core/src/meson.build`, `/core/meson.build` | [hip-platform-amd](AGENTS.d/hip-platform-amd.md) | HIP_PLATFORM_AMD macro definition originates solely from the build system. |
+| `/core/src/meson.build`, `/core/meson.build` | [hip-platform-amd](AGENTS.d/hip-platform-amd.md) | HIP_PLATFORM_AMD macro definition originates solely from build system. |
 | `integer_adm_hip.c`, `hip_hsaco_stubs.c` | [hsaco-symbol-naming](AGENTS.d/hsaco-symbol-naming.md) | HSACO symbol kernel keys must match host translation unit consumers exactly. |
 | `hip_hsaco_stubs.c`, `integer_adm_hip.c` | [hsaco-weak-stubs](AGENTS.d/hsaco-weak-stubs.md) | Remove weak HSACO stub symbols when real HIP kernels land. |
 | `integer_ssim_hip.c`, `integer_ssim_hip.h`, `integer_ssim/integer_ssim_score.hip` | [integer-ssim](AGENTS.d/integer-ssim.md) | Integer SSIM satisfies the CPU contract and identical window accumulation. |
@@ -42,18 +42,18 @@ Parent: [../AGENTS.md](../AGENTS.md). HIP backend runtime lives at
 | `integer_adm_hip.c`, `integer_vif_hip.c` | [kernel-name-suffix](AGENTS.d/kernel-name-suffix.md) | Kernel name suffixes do not encode filter half-width dimensions. |
 | `integer_adm/adm_dwt2.hip`, `integer_adm/adm_csf.hip` | [macro-instantiation-pattern](AGENTS.d/macro-instantiation-pattern.md) | Extern C macro instantiation pattern is required for HIP kernel exports. |
 | `/core/src/hip/picture_hip.c`, `integer_adm_hip.c` | [memcpy-direction-enum](AGENTS.d/memcpy-direction-enum.md) | HIP memory copy direction enum must match the intended transfer direction. |
-| `integer_motion_hip.c`, `integer_motion_v2_hip.c`, `/core/test/test_hip_motion_five_frame_window.c` | [motion-five-frame-window](AGENTS.d/motion-five-frame-window.md) | motion_five_frame_window on the HIP twins = two kept planes + the CPU's window function at flush; bit-identical. |
+| `integer_motion_hip.c`, `integer_motion_v2_hip.c`, `/core/test/test_hip_motion_five_frame_window.c` | [motion-five-frame-window](AGENTS.d/motion-five-frame-window.md) | HIP five-frame window = two kept planes + CPU window function per frame (advance) and at flush; bit-identical. |
 | `integer_motion_sad_hip.c`, `integer_motion_sad_hip.h` | [motion-sad](AGENTS.d/motion-sad.md) | Motion SAD uses one diff-first kernel and a single launcher implementation. |
 | `integer_motion_v2_hip.c`, `integer_motion_v2_hip.h`, `integer_motion_v2/motion_v2_score.hip` | [motion-v2](AGENTS.d/motion-v2.md) | motion3_v2 cross-twin invariants and score consistency must be preserved. |
-| `integer_ms_ssim_hip.c`, `integer_ms_ssim_hip.h`, `integer_ms_ssim/ms_ssim_score.hip` | [ms-ssim](AGENTS.d/ms-ssim.md) | MS-SSIM vertical LCS terms must be double, clip_db is treated as a ceiling, and enable_chroma scores every plane. |
+| `integer_ms_ssim_hip.c`, `integer_ms_ssim_hip.h`, `integer_ms_ssim/ms_ssim_score.hip` | [ms-ssim](AGENTS.d/ms-ssim.md) | MS-SSIM vertical LCS terms must be double, clip_db is treated as ceiling, and enable_chroma scores every plane. |
 | `integer_adm_hip.c`, `integer_ssim_hip.c` | [option-dictionary-timing](AGENTS.d/option-dictionary-timing.md) | Serialize option dictionaries prior to extractor initialization and dispatch. |
-| `integer_adm_hip.c`, `integer_ssim_hip.c` | [picture-upload-sync](AGENTS.d/picture-upload-sync.md) | Never return from submit while a picture upload transfer is in flight. |
+| `integer_adm_hip.c`, `integer_ssim_hip.c` | [picture-upload-sync](AGENTS.d/picture-upload-sync.md) | Never return from submit while picture upload transfer is in flight. |
 | `integer_psnr_hvs_hip.c`, `integer_psnr_hvs_hip.h`, `integer_psnr_hvs/psnr_hvs_score.hip` | [psnr-hvs](AGENTS.d/psnr-hvs.md) | HIP PSNR-HVS matches CPU reference scores bit for bit. |
 | `integer_psnr_hvs/psnr_hvs_score.hip`, `integer_adm/adm_csf.hip` | [reduction-atomic-add](AGENTS.d/reduction-atomic-add.md) | Per-thread atomicAdd replaces CUDA per-warp shfl_down_sync reduction on HIP. |
 | `/core/src/feature/feature_extractor.cpp`, `integer_adm_hip.c` | [registration-coverage](AGENTS.d/registration-coverage.md) | Every new HIP feature extractor must be registered in feature_extractor.cpp under HAVE_HIP. |
 | `integer_adm_hip.c`, `ciede_hip.c` | [scaffold-posture](AGENTS.d/scaffold-posture.md) | Scaffolding posture returns -ENOSYS and performs no uninitialized operations. |
 | `integer_adm_hip.c`, `integer_cambi_hip.c` | [scalar-vs-tiled-baseline](AGENTS.d/scalar-vs-tiled-baseline.md) | Scalar-per-thread implementation is the correctness baseline prior to templated tiled optimization. |
-| `speed_hip_pipeline.c`, `speed_hip_pipeline.h`, `speed/speed_pipeline.hip` | [speed](AGENTS.d/speed.md) | SpEED singular-covariance contract and device-resident CPU fp32 arithmetic flags must hold. |
+| `speed_hip_pipeline.c`, `speed_hip_pipeline.h`, `speed/speed_pipeline.hip`, `speed/speed_hip_device.h` | [speed](AGENTS.d/speed.md) | SpEED singular-covariance contract and device-resident CPU fp32 arithmetic flags must hold. |
 | `ssimulacra2_hip.c`, `ssimulacra2_hip.h`, `ssimulacra2/ssimulacra2_device.hip` | [ssimulacra2](AGENTS.d/ssimulacra2.md) | ssimulacra2_hip produces bit-exact CPU results. |
 | `integer_adm_hip.c`, `integer_ssim_hip.c` | [static-const-device-upload](AGENTS.d/static-const-device-upload.md) | Static const lookup tables must be uploaded to device memory before kernel launch. |
 | `/core/meson.build`, `/core/src/meson.build` | [strict-fp](AGENTS.d/strict-fp.md) | Every HIP kernel builds with strict IEEE-754 floating-point argument flags. |

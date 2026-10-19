@@ -89,6 +89,8 @@ WORKFLOW_REQ_FLAGS = {"-r", "--requirement", "-c", "--constraint"}
 WORKFLOW_REQ_PREFIXES = ("-r=", "--requirement=", "-c=", "--constraint=")
 WORKFLOW_EDIT_FLAGS = {"-e", "--editable"}
 WORKFLOW_EDIT_PREFIXES = ("-e=", "--editable=")
+PIP_TOOL_NAMES = {"uv", "uvx", "pip-sync", "pip-compile", "pipx", "poetry", "pdm", "hatch"}
+SHELL_CONTROL_OPERATORS = {"&", "&&", ";", "|", "||"}
 SHELL_RUNNERS = {
     "sh",
     "bash",
@@ -540,7 +542,7 @@ def _pip_install_tokens(command: str) -> Iterable[list[str]]:
         pre_flags: list[str] = []
         if PIP_NAME_RE.search(token) and not invoked_by_python:
             j = index + 1
-            while j < len(tokens) and tokens[j] not in {"&", "&&", ";", "|", "||"}:
+            while j < len(tokens) and tokens[j] not in SHELL_CONTROL_OPERATORS:
                 if tokens[j].lower() == "install":
                     pre_flags = tokens[index + 1 : j]
                     arguments_at = j + 1
@@ -549,7 +551,7 @@ def _pip_install_tokens(command: str) -> Iterable[list[str]]:
         elif PYTHON_NAME_RE.search(token) and index + 2 < len(tokens):
             if tokens[index + 1].lower() == "-m" and PIP_NAME_RE.search(tokens[index + 2]):
                 j = index + 3
-                while j < len(tokens) and tokens[j] not in {"&", "&&", ";", "|", "||"}:
+                while j < len(tokens) and tokens[j] not in SHELL_CONTROL_OPERATORS:
                     if tokens[j].lower() == "install":
                         pre_flags = tokens[index + 3 : j]
                         arguments_at = j + 1
@@ -558,7 +560,7 @@ def _pip_install_tokens(command: str) -> Iterable[list[str]]:
         if arguments_at is None:
             continue
         end = arguments_at
-        while end < len(tokens) and tokens[end] not in {"&", "&&", ";", "|", "||"}:
+        while end < len(tokens) and tokens[end] not in SHELL_CONTROL_OPERATORS:
             end += 1
         raw_tail = [*pre_flags, *tokens[arguments_at:end]]
         normalized_tail = _normalize_pip_tokens(raw_tail)
@@ -900,13 +902,9 @@ def _is_secure_install(  # noqa: PLR0911
     if not package_tokens or not no_deps:
         return False
 
-    is_whl = all(
+    return all(
         t.lower().endswith(".whl") and _is_local_source(t, root=root, consumer_path=consumer_path)
         for t in package_tokens
-    )
-    return is_whl or (
-        no_build_isolation
-        and all(_is_local_source(t, root=root, consumer_path=consumer_path) for t in package_tokens)
     )
 
 
@@ -1182,14 +1180,34 @@ def scan_install_commands(
         if not stripped or stripped.startswith("#"):
             continue
         for tokens in _pip_install_tokens(command):
+            findings.extend(_system_install_findings(path, line, tokens))
             if _is_secure_install(tokens, valid_lock_outputs, root=search_root, consumer_path=path):
                 continue
             findings.append(
                 f"{path}:{line}: pip install must use --require-hashes with a lock file, "
                 "or install a local wheel with --no-deps, "
-                "or install a local editable/source tree with both --no-deps and --no-build-isolation"
+                "or install a local editable tree with both --no-deps and --no-build-isolation"
             )
     return findings
+
+
+def _system_install_findings(path: Path, line: int, tokens: list[str]) -> list[str]:
+    """Require --ignore-installed on an install into the system interpreter.
+
+    pip cannot uninstall a distribution-installed package (no RECORD file), so
+    a lock that pins a newer version of one, as build.txt pins PyYAML over
+    Ubuntu's python3-yaml, fails the whole install unless pip installs over it.
+    A --user install never uninstalls outside the user site and is exempt.
+    """
+    lowered = [token.lower() for token in tokens]
+    if "--break-system-packages" not in lowered:
+        return []
+    if "--ignore-installed" in lowered or "--user" in lowered:
+        return []
+    return [
+        f"{path}:{line}: pip install with --break-system-packages must also pass "
+        "--ignore-installed: pip cannot uninstall a package the distribution installed"
+    ]
 
 
 def _is_repo_local_target(target: str, root: Path | None = None) -> bool:
@@ -1227,14 +1245,15 @@ def _extract_flag_value(
 
 
 def _check_precheckout_token(
-    token: str, next_token: str | None, root: Path | None = None
+    token: str, next_token: str | None, root: Path | None = None, *, pip_segment: bool = False
 ) -> list[str]:
-    req = _extract_flag_value(token, next_token, WORKFLOW_REQ_FLAGS, WORKFLOW_REQ_PREFIXES)
-    if req and _is_repo_local_target(req, root):
-        return [f"consumes repo-local requirements file {req!r}"]
-    edit = _extract_flag_value(token, next_token, WORKFLOW_EDIT_FLAGS, WORKFLOW_EDIT_PREFIXES)
-    if edit and _is_repo_local_target(edit, root):
-        return [f"consumes repo-local editable target {edit!r}"]
+    if pip_segment:
+        req = _extract_flag_value(token, next_token, WORKFLOW_REQ_FLAGS, WORKFLOW_REQ_PREFIXES)
+        if req and _is_repo_local_target(req, root):
+            return [f"consumes repo-local requirements file {req!r}"]
+        edit = _extract_flag_value(token, next_token, WORKFLOW_EDIT_FLAGS, WORKFLOW_EDIT_PREFIXES)
+        if edit and _is_repo_local_target(edit, root):
+            return [f"consumes repo-local editable target {edit!r}"]
     clean = token.strip("\"'`();, \t")
     if clean.startswith(("scripts/", "./scripts/", "testdata/")):
         return [f"consumes repo-local helper file {clean!r}"]
@@ -1243,12 +1262,36 @@ def _check_precheckout_token(
     return []
 
 
+def _is_pip_tool_token(token: str) -> bool:
+    name = re.split(r"[/\\]", token)[-1].lower()
+    return PIP_NAME_RE.search(token) is not None or name in PIP_TOOL_NAMES
+
+
+def _shell_segments(tokens: list[str]) -> Iterable[list[str]]:
+    """Split shell tokens into the commands between control operators."""
+
+    segment: list[str] = []
+    for token in tokens:
+        if token in SHELL_CONTROL_OPERATORS:
+            yield segment
+            segment = []
+        else:
+            segment.append(token)
+    yield segment
+
+
 def _check_precheckout_command_tokens(tokens: list[str], root: Path | None = None) -> list[str]:
+    # -r / -c / -e name a requirements file or an editable target only for a pip-like tool;
+    # for jq, bash, grep and the rest they are that tool's own flags.
     findings: list[str] = []
-    norm = _normalize_pip_tokens(tokens)
-    for idx, token in enumerate(norm):
-        next_tok = norm[idx + 1] if idx + 1 < len(norm) else None
-        findings.extend(_check_precheckout_token(token, next_tok, root))
+    for segment in _shell_segments(tokens):
+        norm = _normalize_pip_tokens(segment)
+        pip_segment = any(_is_pip_tool_token(token) for token in norm)
+        for idx, token in enumerate(norm):
+            next_tok = norm[idx + 1] if idx + 1 < len(norm) else None
+            findings.extend(
+                _check_precheckout_token(token, next_tok, root, pip_segment=pip_segment)
+            )
     return findings
 
 

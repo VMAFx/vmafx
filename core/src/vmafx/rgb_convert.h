@@ -65,14 +65,15 @@ static inline bool vmafx_rgb_plan_init(VmafxRgbPlan *plan, const VmafxImportLayo
             plan->coef[row][col] = m[row][col];
         }
     }
-    const int64_t unit = (int64_t)1 << (bpc - 8u);
+    const int64_t unit = (int64_t)((uint64_t)1u << (bpc - 8u));
     const int64_t off_in = in_range == VMAFX_RGB_RANGE_LIMITED ? VMAFX_RGB_LIMITED_BLACK * unit : 0;
     const int64_t off_out =
         out_range == VMAFX_RGB_RANGE_LIMITED ? VMAFX_RGB_LIMITED_BLACK * unit : 0;
-    const int64_t half = (int64_t)1 << (VMAFX_RGB_SHIFT - 1u);
-    const int64_t mid = (int64_t)1 << (bpc - 1u);
-    plan->add[0] = (off_out << VMAFX_RGB_SHIFT) + half - luma_sum * off_in;
-    plan->add[1] = (mid << VMAFX_RGB_SHIFT) + half;
+    const int64_t half = (int64_t)((uint64_t)1u << (VMAFX_RGB_SHIFT - 1u));
+    const int64_t mid = (int64_t)((uint64_t)1u << (bpc - 1u));
+    const int64_t scale = (int64_t)((uint64_t)1u << VMAFX_RGB_SHIFT);
+    plan->add[0] = off_out * scale + half - luma_sum * off_in;
+    plan->add[1] = mid * scale + half;
     plan->add[2] = plan->add[1];
     plan->max = (uint32_t)(((uint32_t)1u << bpc) - 1u);
     plan->elems = layout->rgb_elems;

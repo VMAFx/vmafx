@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 -->
 # ADR-1119: Adopt the golusoris fx framework across all vmafx Go binaries
 
-- **Status**: Accepted
+- **Status**: Accepted (partially superseded by [ADR-2350](2350-cloud-native-platform.md) for the controller job queue (River on PostgreSQL replaces the embedded SQLite queue))
 - **Date**: 2026-06-14
 - **Deciders**: Lusoris
 - **Tags**: go, framework, fx, golusoris, server, controller, node, operator, mcp, vmaf-tune, rc-blocking, fork-local

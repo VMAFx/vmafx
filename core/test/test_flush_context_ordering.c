@@ -288,7 +288,7 @@ static char *test_flush_via_public_api_sets_flushed(void)
     return check_double_flush_rejected_and_close(vmaf);
 }
 
-char *run_tests()
+char *run_tests(void)
 {
     mu_run_test(test_threaded_flush_does_not_set_flushed);
     mu_run_test(test_central_flush_sets_flushed);

@@ -36,7 +36,7 @@ import (
 	"github.com/VMAFx/vmafx/cmd/vmafx-controller/auth"
 	vmafxv1 "github.com/VMAFx/vmafx/gen/go"
 	controllerv1 "github.com/VMAFx/vmafx/gen/go/controller"
-	"github.com/VMAFx/vmafx/pkg/observability"
+	"github.com/VMAFx/vmafx/internal/oteltest"
 )
 
 // allowAllScopes admits every local path, for tests about other behaviour.
@@ -128,7 +128,7 @@ func TestScoringScopesConfiguration(t *testing.T) {
 
 func TestScoreAdmitsOnlyTheTenantsRoot(t *testing.T) {
 	dir := mediaTree(t)
-	s := &scoringServer{scopes: tenantScopes(dir), metrics: observability.NewMetrics(prometheus.NewRegistry()), log: slog.New(slog.DiscardHandler)}
+	s := &scoringServer{scopes: tenantScopes(dir), metrics: oteltest.Metrics(t, prometheus.NewRegistry()), log: slog.New(slog.DiscardHandler)}
 	ctx := tenantCtx("acme")
 	ref, dis, err := s.scopedInputs(ctx, filepath.Join(dir, "acme", "ref.y4m"), filepath.Join(dir, "acme", "ref.y4m"))
 	if err != nil || ref != filepath.Join(dir, "acme", "ref.y4m") || dis != ref {
@@ -210,7 +210,7 @@ func TestPullWorkHandsTheRootsToTheNode(t *testing.T) {
 
 func TestHTTPScoreRefusesWithForbidden(t *testing.T) {
 	dir := mediaTree(t)
-	h := &httpServer{scopes: tenantScopes(dir), metrics: observability.NewMetrics(prometheus.NewRegistry()), log: slog.New(slog.DiscardHandler)}
+	h := &httpServer{scopes: tenantScopes(dir), metrics: oteltest.Metrics(t, prometheus.NewRegistry()), log: slog.New(slog.DiscardHandler)}
 	body := `{"reference":"` + filepath.Join(dir, "acme", "steal.y4m") + `","distorted":"` + filepath.Join(dir, "acme", "ref.y4m") + `"}`
 	req := httptest.NewRequestWithContext(auth.ContextWithClaims(context.Background(), auth.Claims{TenantID: "acme"}),
 		http.MethodPost, "/v1/score", bytes.NewBufferString(body))

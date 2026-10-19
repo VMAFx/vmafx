@@ -36,6 +36,7 @@ static const struct {
     {VMAFX_E_INTERNAL, "VMAFX_E_INTERNAL", -EIO, 0},
     {VMAFX_E_TIMEOUT, "VMAFX_E_TIMEOUT", -ETIMEDOUT, 1},
     {VMAFX_E_ABI, "VMAFX_E_ABI", -EINVAL, 0},
+    {VMAFX_E_MISMATCH, "VMAFX_E_MISMATCH", -EBADMSG, 1},
 };
 
 #define N_STATUS_ROWS (sizeof(status_rows) / sizeof(status_rows[0]))

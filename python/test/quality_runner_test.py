@@ -702,7 +702,7 @@ class QualityRunnerTest(MyTestCase):
 
         results = self.runner.results
 
-        self.assertAlmostEqual(results[0]["ADM2_score"], 0.9345057708333333, places=4)
+        self.assertAlmostEqual(results[0]["ADM2_score"], 0.9345149030293786, places=4)
         self.assertAlmostEqual(results[1]["ADM2_score"], 1.0, places=4)
 
     def test_run_vif_runner(self):

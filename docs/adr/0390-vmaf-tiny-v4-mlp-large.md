@@ -37,3 +37,12 @@ We ship `vmaf_tiny_v4` (mlp_large, 3 073 params) as an **opt-in-only** model alo
 - Research digest: `docs/research/0048-vmaf-tiny-v4-mlp-large-evaluation.md`.
 - LOSO metrics: `runs/vmaf_tiny_v4_loso_metrics.json` (9 folds, single seed for parity with v3).
 - Source: PR #294 body — "v4 candidate: mlp_large (6 → 64 → 32 → 16 → 1, ~2.7K params); SHIP if PLCC ≥ v3's, DO NOT SHIP otherwise". Verbatim user direction in this session: train + benchmark v4 and report SHIP / NO-SHIP / OPT-IN per the gate.
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 36: `- Parent ADR-0241 (v3 mlp_medium, ladder candidate).`: Cites
+  ADR-0241 as parent for v3 `mlp_medium`; ADR-0241 is HIP first-consumer
+  kernel `integer_psnr_hip.` v3 is ADR-0389.

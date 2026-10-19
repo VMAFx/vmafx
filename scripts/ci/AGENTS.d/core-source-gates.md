@@ -5,6 +5,7 @@ paths:
   - scripts/ci/check-no-non-header-includes.sh
   - scripts/ci/tests/test-check-no-non-header-includes.sh
 invariant: Every `vmaf_fex_*_<backend>` symbol is registered; `core/test/` translation units never include `.c` / `.cpp` sources.
+area: tests
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Core source gates: dispatch registry and test includes

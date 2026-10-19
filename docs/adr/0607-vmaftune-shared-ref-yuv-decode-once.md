@@ -105,3 +105,13 @@ real-world speedup on BBB 1080p is approximately 392×.
   for ~10h without converging … every worker's bisect finally block deletes
   the shared 118 GB reference YUV … Fix design — pick option 2 — simplest,
   biggest wall-time win."
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 103: `- ADR-0549: workdir relocation + ENOSPC preflight`:
+  ADR-0549 points to an unrelated topic (0549-audit-cleanup-bundle-2.md:
+  "Audit cleanup bundle 2", which has zero mentions of workdir relocation or
+  ENOSPC preflight).

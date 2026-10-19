@@ -70,6 +70,21 @@ def test_lookup_returns_none_when_absent() -> None:
     assert _lookup(metrics, "psnr_y") is None
 
 
+def test_lookup_motion_reads_the_sad_score_libvmaf_emits() -> None:
+    """libvmaf has no ``integer_motion`` key; without the alias ``motion`` was NaN everywhere."""
+    metrics = {
+        "VMAF_integer_feature_motion_sad_score": 3.25,
+        "integer_motion2": 1.5,
+        "integer_motion3": 1.25,
+    }
+    assert _lookup(metrics, "motion") == pytest.approx(3.25)
+    assert _lookup(metrics, "motion2") == pytest.approx(1.5)
+
+
+def test_lookup_motion_is_none_when_the_sad_score_is_absent() -> None:
+    assert _lookup({"integer_motion2": 1.5}, "motion") is None
+
+
 def test_lookup_prefers_direct_over_integer_prefix() -> None:
     metrics = {"adm2": 0.95, "integer_adm2": 0.80}
     assert _lookup(metrics, "adm2") == pytest.approx(0.95)

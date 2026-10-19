@@ -50,10 +50,10 @@ Research: docs/research/0084-ffmpeg-patch-vmaf-tune-integration-survey.md
  libavcodec/Makefile        |   4 +-
  libavcodec/libaomenc.c     | 235 ++++++++++++++++++++++++++++
  libavcodec/libsvtav1.c     | 312 +++++++++++++++++++++++++++++++++++++
- libavcodec/libx264.c       |  18 +++
+ libavcodec/libx264.c       |  77 +++++++++
  libavcodec/qpfile_parser.c | 302 +++++++++++++++++++++++++++++++++++
  libavcodec/qpfile_parser.h |  55 +++++++
- 6 files changed, 925 insertions(+), 1 deletion(-)
+ 6 files changed, 984 insertions(+), 1 deletion(-)
  create mode 100644 libavcodec/qpfile_parser.c
  create mode 100644 libavcodec/qpfile_parser.h
 
@@ -747,7 +747,7 @@ index 0bcc176243d4a810f8c3b0885928dd3c8a97b0d5..2932a0079f280ce292fe1859fa31ebbe
      { "dolbyvision", "Enable Dolby Vision RPU coding", OFFSET(dovi.enable), AV_OPT_TYPE_BOOL, {.i64 = FF_DOVI_AUTOMATIC }, -1, 1, VE, .unit = "dovi" },
      {   "auto", NULL, 0, AV_OPT_TYPE_CONST, {.i64 = FF_DOVI_AUTOMATIC}, .flags = VE, .unit = "dovi" },
 diff --git a/libavcodec/libx264.c b/libavcodec/libx264.c
-index b688d4f3218414b4b572438c455625f7e4ce8e72..44a6bacbd28cbc213d4efb8cefee95caa100b8db 100644
+index b688d4f3218414b4b572438c455625f7e4ce8e72..15beb2e2e4d259bd6b59730c7a5193a27f8f30d7 100644
 --- a/libavcodec/libx264.c
 +++ b/libavcodec/libx264.c
 @@ -39,6 +39,8 @@
@@ -759,40 +759,120 @@ index b688d4f3218414b4b572438c455625f7e4ce8e72..44a6bacbd28cbc213d4efb8cefee95ca
  #include <x264.h>
  #include <float.h>
  #include <math.h>
-@@ -126,6 +128,8 @@ typedef struct X264Context {
+@@ -126,6 +128,10 @@ typedef struct X264Context {
      int roi_warned;
  
      int mb_info;
 +
 +    char *qpfile_path;
++    VmafTuneQpFile qpf;   /* the loaded qpfile (frame_count 0: none) */
++    unsigned qpf_frames;  /* input frames seen: the qpfile's frame index */
  } X264Context;
  
  static void X264_log(void *p, int level, const char *fmt, va_list args)
-@@ -1395,6 +1399,19 @@ static av_cold int X264_init(AVCodecContext *avctx)
+@@ -463,6 +469,40 @@ static int setup_roi(AVCodecContext *ctx, x264_picture_t *pic,
+     return 0;
+ }
+ 
++/* Add the qpfile's per-MB QP offsets of input frame `frame_index` to the
++ * picture's quant_offsets (x264 adds them to adaptive quantization's own, as
++ * for a region of interest). x264 has no qpfile parameter: its qpfile is a
++ * feature of the x264 command line, not of libx264. */
++static int setup_qpfile(AVCodecContext *ctx, x264_picture_t *pic, unsigned frame_index)
++{
++    X264Context *x4 = ctx->priv_data;
++    const VmafTuneQpFrame *qf = NULL;
++    const size_t n_mb = (size_t)x4->qpf.block_cols * x4->qpf.block_rows;
++    float *qoffsets;
++
++    for (unsigned k = 0; k < x4->qpf.frame_count; k++) {
++        if (x4->qpf.frames[k].frame_index == frame_index) {
++            qf = &x4->qpf.frames[k];
++            break;
++        }
++    }
++    if (!qf)
++        return 0;
++
++    qoffsets = pic->prop.quant_offsets;
++    if (!qoffsets) {
++        qoffsets = av_calloc(n_mb, sizeof(*qoffsets));
++        if (!qoffsets)
++            return AVERROR(ENOMEM);
++        pic->prop.quant_offsets      = qoffsets;
++        pic->prop.quant_offsets_free = av_free;
++    }
++    for (size_t i = 0; i < n_mb; i++)
++        qoffsets[i] += (float)qf->block_offsets[i];
++
++    return 0;
++}
++
+ static int setup_frame(AVCodecContext *ctx, const AVFrame *frame,
+                        x264_picture_t **ppic)
+ {
+@@ -560,6 +600,12 @@ static int setup_frame(AVCodecContext *ctx, const AVFrame *frame,
+             goto fail;
+     }
+ 
++    if (x4->qpf.frame_count) {
++        ret = setup_qpfile(ctx, pic, x4->qpf_frames++);
++        if (ret < 0)
++            goto fail;
++    }
++
+     mbinfo_sd = av_frame_get_side_data(frame, AV_FRAME_DATA_VIDEO_HINT);
+     if (mbinfo_sd) {
+         int err = setup_mb_info(ctx, pic, frame, (const AVVideoHint *)mbinfo_sd->data);
+@@ -762,6 +808,7 @@ static av_cold int X264_close(AVCodecContext *avctx)
+     X264Context *x4 = avctx->priv_data;
+ 
+     av_freep(&x4->sei);
++    ff_qpfile_free(&x4->qpf);
+ 
+     for (int i = 0; i < x4->nb_reordered_opaque; i++)
+         opaque_uninit(&x4->reordered_opaque[i]);
+@@ -1395,6 +1442,35 @@ static av_cold int X264_init(AVCodecContext *avctx)
  
      x4->params.analyse.b_mb_info = x4->mb_info;
  
 +
 +    if (x4->qpfile_path && *x4->qpfile_path) {
-+        ret = x264_param_parse(&x4->params, "qpfile", x4->qpfile_path);
++        const unsigned mbx = (avctx->width  + MB_SIZE - 1) / MB_SIZE;
++        const unsigned mby = (avctx->height + MB_SIZE - 1) / MB_SIZE;
++
++        ret = ff_qpfile_load(x4->qpfile_path, &x4->qpf);
 +        if (ret < 0) {
++            av_log(avctx, AV_LOG_ERROR, "libx264: cannot read qpfile %s: %s\n",
++                   x4->qpfile_path, av_err2str(ret));
++            return ret;
++        }
++        if (x4->params.rc.i_aq_mode == X264_AQ_NONE) {
 +            av_log(avctx, AV_LOG_ERROR,
-+                   "libx264: failed to load qpfile=%s (x264 ret=%d).\n",
-+                   x4->qpfile_path, ret);
++                   "libx264: a qpfile needs adaptive quantization (aq-mode other than 0): "
++                   "x264 applies per-macroblock offsets through it.\n");
 +            return AVERROR(EINVAL);
 +        }
-+        av_log(avctx, AV_LOG_INFO, "libx264: qpfile=%s loaded.\n",
-+               x4->qpfile_path);
++        if (x4->qpf.block_cols != mbx || x4->qpf.block_rows != mby) {
++            av_log(avctx, AV_LOG_ERROR,
++                   "libx264: the qpfile has %ux%u blocks per frame, the %dx%d video has %ux%u "
++                   "macroblocks.\n", x4->qpf.block_cols, x4->qpf.block_rows, avctx->width,
++                   avctx->height, mbx, mby);
++            return AVERROR(EINVAL);
++        }
++        av_log(avctx, AV_LOG_INFO, "libx264: qpfile=%s loaded (%u frames, %ux%u macroblocks); "
++               "offsets applied as quant_offsets.\n", x4->qpfile_path, x4->qpf.frame_count,
++               mbx, mby);
 +    }
 +
      // update AVCodecContext with x264 parameters
      avctx->has_b_frames = x4->params.i_bframe ?
          x4->params.i_bframe_pyramid ? 2 : 1 : 0;
-@@ -1570,6 +1587,7 @@ static const AVOption options[] = {
+@@ -1570,6 +1646,7 @@ static const AVOption options[] = {
      { "udu_sei",      "Use user data unregistered SEI if available",      OFFSET(udu_sei),  AV_OPT_TYPE_BOOL,   { .i64 = 0 }, 0, 1, VE },
      { "x264-params",  "Override the x264 configuration using a :-separated list of key=value parameters", OFFSET(x264_params), AV_OPT_TYPE_DICT, { 0 }, 0, 0, VE },
      { "mb_info",      "Set mb_info data through AVSideData, only useful when used from the API", OFFSET(mb_info), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, VE },
-+    { "qpfile",       "Path to a vmaf-tune qpfile (per-frame + per-MB QP offsets, see docs/usage/vmaf-tune-ffmpeg.md).", OFFSET(qpfile_path), AV_OPT_TYPE_STRING, { .str = NULL }, 0, 0, VE },
++    { "qpfile",       "Path to a vmaf-tune qpfile: per-MB QP offsets per input frame, applied as x264 quant_offsets (needs aq-mode other than 0; see docs/usage/vmaf-tune-ffmpeg.md).", OFFSET(qpfile_path), AV_OPT_TYPE_STRING, { .str = NULL }, 0, 0, VE },
      { NULL },
  };
  

@@ -164,7 +164,9 @@ class MetalShaderBuildContract(unittest.TestCase):
 
     def test_a_loosened_or_second_fp_list_is_detected(self) -> None:
         text = METAL_MESON.read_text()
-        self.assertTrue(strict_fp_failures(text.replace("'-ffp-contract=off'", "'-ffp-contract=fast'")))
+        self.assertTrue(
+            strict_fp_failures(text.replace("'-ffp-contract=off'", "'-ffp-contract=fast'"))
+        )
         self.assertTrue(strict_fp_failures(text + "\nx = ['-ffast-math']\n"))
         self.assertTrue(strict_fp_failures(text.replace(POLICY_BEGIN, "# moved")))
 

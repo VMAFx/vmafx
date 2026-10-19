@@ -69,8 +69,12 @@ unsigned vmaf_get_cpu_flags_x86(void)
     if (!X(xcr0, 0x00000006) || max_leaf < 7) /* XMM/YMM */
         return flags;
 
+    /* The AVX2 level is AVX2 + FMA + BMI1/BMI2 (ADR-2055): two AVX2 kernels are
+     * compiled with -mfma, and a processor or hypervisor that masks FMA falls to
+     * the SSE levels. `r` still holds leaf 1 here. */
+    const int has_fma = X(r.ecx, 0x00001000); /* FMA */
     vmaf_cpu_cpuid(&r, 7, 0);
-    if (!X(r.ebx, 0x00000128)) /* BMI1/BMI2/AVX2 */
+    if (!has_fma || !X(r.ebx, 0x00000128)) /* FMA, BMI1/BMI2/AVX2 */
         return flags;
 
     flags |= VMAF_X86_CPU_FLAG_AVX2;

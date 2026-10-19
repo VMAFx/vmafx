@@ -2,7 +2,7 @@
 
 # ADR-1201: Cut release candidates before the final 1.0.0
 
-- **Status**: Accepted
+- **Status**: Accepted (Superseded-in-part 2026-10-06 by [ADR-1341](1341-rc-correctness-benchmark-retrain-sequence.md) for the suggested candidate count)
 - **Date**: 2026-09-06
 - **Deciders**: Lusoris
 - **Tags**: release, ci, supply-chain

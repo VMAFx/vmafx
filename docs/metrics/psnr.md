@@ -55,17 +55,24 @@ example `--feature psnr=enable_mse=true:enable_apsnr=true`.
 
 For each plane `p`:
 
-```text
-sse_p = sum over samples of (ref - dis)^2
-mse_p = sse_p / (w_p * h_p)
-psnr_p = 10 * log10(peak^2 / mse_p)
-```
+$$
+\begin{aligned}
+\mathrm{sse}_p &= \sum_{\text{samples}} (\mathrm{ref} - \mathrm{dis})^2 \\
+\mathrm{mse}_p &= \frac{\mathrm{sse}_p}{w_p \, h_p} \\
+\mathrm{psnr}_p &= 10 \log_{10} \frac{\mathrm{peak}^2}{\mathrm{mse}_p}
+\end{aligned}
+$$
 
 `peak` is `(1 << bpc) - 1` for the integer extractor (255 at 8 bpc, 1023 at
 10 bpc, and so on). `float_psnr` normalises high bit depths back onto an
 8-bit scale and uses `peak` = `(2^bpc - 1) / 2^(bpc - 8)` (255.0, 255.75, 255.9375,
 255.99609375 at 8, 10, 12, 16 bpc; every depth from 8 to 16 is scored) and the
 ceiling `6 * bpc + 12`.
+
+The integer extractor accepts every depth from 8 to 16 bpc, the odd depths
+(9, 11, 13, 15) and 14 included; before the input-format table
+([ADR-2145](../adr/2145-vmafx-input-format-table.md)) it accepted only 8, 10,
+12 and 16 and refused the others with `-EINVAL`.
 
 ## Options
 
@@ -150,7 +157,7 @@ samples, true PSNR 100.840479 dB.
 ### `min_sse`, the older escape hatch
 
 `min_sse` (double, default `0.0`) constrains the minimum MSE, which raises
-`psnr_max` to `ceil(10 * log10(peak^2 / (min_sse / n_samples)))`. It also
+`psnr_max` to $\left\lceil 10 \log_{10} \dfrac{\mathrm{peak}^2}{\mathrm{min\_sse} / n_{\mathrm{samples}}} \right\rceil$. It also
 lifts the score of *identical* planes, because it moves the sentinel rather
 than removing the truncation: on the pair above,
 `--feature psnr=min_sse=0.000001` gives `psnr_y = 100.840479` but reports
@@ -239,9 +246,9 @@ The same holds with `uncapped=true`.
 #### Past 2^53 units
 
 The CPU adds each row's squared differences, which is exact, and the rows
-into one `double`, which rounds once the sum passes 2^53 units of
-1 / scaler^2. A 16-bit frame whose mean squared error times its pixel count
-passes 2^37 on the 8-bit scale reaches that point: 16570 at 3840x2160, a PSNR
+into one `double`, which rounds once the sum passes $2^{53}$ units of
+1 / $\mathrm{scaler}^{2}$. A 16-bit frame whose mean squared error times its pixel count
+passes $2^{37}$ on the 8-bit scale reaches that point: 16570 at 3840x2160, a PSNR
 below 6 dB.
 
 Since [ADR-1499](../adr/1499-float-psnr-twins-cpu-row-order.md) the CUDA, SYCL
@@ -269,7 +276,7 @@ load average of 7 to 10:
 | 1920x1080, 16 bit | 1.02 ms | 0.97 ms | +0.01 ms |
 | 3840x2160, 16 bit | 4.64 ms | 4.37 ms | -0.24 ms |
 
-For the past-2^53 change the frame time per 16-bit 3840x2160 frame, before and
+For the past-$2^{53}$ change the frame time per 16-bit 3840x2160 frame, before and
 after, pictures preloaded, medians of 5 interleaved runs:
 
 | Device | Before | After |
@@ -282,7 +289,7 @@ after, pictures preloaded, medians of 5 interleaved runs:
 
 - The `psnr` extractor sets the temporal flag only because `apsnr`
   accumulates across the clip; the per-frame PSNR itself is stateless.
-- `apsnr_*` has its own ceiling, `ceil(10 * log10(peak^2 * n_pixels))`,
+- `apsnr_*` has its own ceiling, $\left\lceil 10 \log_{10}(\mathrm{peak}^2 \, n_{\mathrm{pixels}}) \right\rceil$,
   which is a true theoretical maximum rather than a truncation and is not
   affected by `uncapped`.
 - A PSNR gap that looks like "28 dB where I expected 72 dB" is almost never
@@ -292,7 +299,7 @@ after, pictures preloaded, medians of 5 interleaved runs:
 ## History
 
 - **2026-10-03, ADR-1499.** The `float_psnr` CUDA, SYCL and HIP twins return
-  the CPU's bits past 2^53 units. Before, they added every block of the frame
+  the CPU's bits past $2^{53}$ units. Before, they added every block of the frame
   into one exact total and rounded it once.
 - **2026-10-01, ADR-1440.** `float_psnr_hip` adds the squared differences as
   integers. Before, it added in single precision.

@@ -17,7 +17,7 @@ them.
 | `pkg/recommend` | `vmaftune/recommend.py` |
 | `pkg/saliency` | `vmaftune/saliency.py` |
 | `pkg/prefilter` | `vmaftune/prefilter.py`, `filter_adapters/pelorus_deband.py` |
-| `pkg/corpusrow` | the `recommend`-scoped part of `vmaftune/corpus.py` |
+| `pkg/corpusrow` | `recommend`-scoped part of `vmaftune/corpus.py` |
 | `pkg/pyjson` | Python `json.dumps` / `jsonio.dumps_strict` output compatibility (ADR-1137) |
 
 ## Rebase-sensitive invariants
@@ -39,15 +39,15 @@ them.
    is part of codec argv proper (`qualityTail`) — Python emits it from
    `ffmpeg_codec_args`.
 
-3. **AMF trio's argv carries the constant-QP block once, in both
-   implementations.** Python's AMF `extra_params()` used to return the
+3. **AMF trio's argv carries constant-QP block once, in both
+   implementations.** Python's AMF `extra_params()` used to return
    `-quality … -rc cqp -qp_i … -qp_p …` block `ffmpeg_codec_args`
-   already produced, so the Python driver emitted it twice and this port
-   documented its single copy as a deviation. Python's `extra_params()`
-   now returns `()`, the fixture's AMF `extra` is empty, and
-   `TestCodecArgsMatchPythonAtDefaultQuality` holds AMF to the same
-   equality as every other adapter. A change that repeats the block on
-   either side is a parity break.
+   already produced, so Python driver emitted it twice and this port
+   documented its single copy as deviation. Python's `extra_params()`
+   now returns `()`, fixture's AMF `extra` is empty, and
+   `TestCodecArgsMatchPythonAtDefaultQuality` holds AMF to same
+   equality as every other adapter. change that repeats block on
+   either side is parity break.
 
 4. **`recommend`'s CRF window is 10–50, not adapter's quality range**
    (`cmd/vmafx-tune/cmd/recommend.go`). Python CLI never overrides
@@ -97,7 +97,7 @@ them.
     requested-but-unavailable feature (no Pelorus filter, no ROI
     dispatch for encoder, bad CRF range) and for `predict`'s
     `fall_back` verdict; scripts branch on it.
-    `cmd/vmafx-tune/cmd/root.go` honours an error's `ExitCode()` for
+    `cmd/vmafx-tune/cmd/root.go` honours error's `ExitCode()` for
     that reason. Returning plain error from those paths silently
     downgrades them to exit 1.
 
@@ -125,8 +125,8 @@ them.
     options (`sample`, `blur`, `planes`, `meta`) excluded on purpose,
     must stay rejected.
 
-14. **Registry names are sorted through the standard library.**
-    `codecadapter.Known`, `prefilter.KnownFilters`, and the private knob-name
+14. **Registry names are sorted through standard library.**
+    `codecadapter.Known`, `prefilter.KnownFilters`, and private knob-name
     diagnostic use `slices.Sorted(maps.Keys(...))`. Do not re-grow parallel
     key-collection/sort loops; CLI choice and diagnostic order stays
     deterministic.

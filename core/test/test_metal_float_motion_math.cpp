@@ -41,6 +41,7 @@
 #include <cstring>
 
 #include "test.h"
+#include "float_bits.h"
 
 extern "C" {
 #include "feature/common/convolution.h"
@@ -163,7 +164,7 @@ VmafMtlFmWindow fm_window(const float *tile, unsigned lx, unsigned ly)
 
 /* One threadgroup of float_motion_blur: the tile load of all its threads,
  * then the blur of each thread's sample, with the kernel's index arithmetic. */
-void fm_twin_blur_group(const float *samples, unsigned w, unsigned h, VmafMtlFmTaps taps,
+void fm_twin_blur_group(const float *samples, unsigned w, unsigned h, const VmafMtlFmTaps &taps,
                         unsigned bx, unsigned by, float *out)
 {
     float tile[VMAF_MTL_FM_TILE * VMAF_MTL_FM_TILE];
@@ -179,7 +180,8 @@ void fm_twin_blur_group(const float *samples, unsigned w, unsigned h, VmafMtlFmT
             const unsigned x = bx * VMAF_MTL_FM_BLOCK + lx;
             const unsigned y = by * VMAF_MTL_FM_BLOCK + ly;
             if (x < w && y < h) {
-                out[(size_t)y * w + x] = vmaf_mtl_fm_blur(taps, fm_window(tile, lx, ly));
+                const VmafMtlFmWindow win = fm_window(tile, lx, ly);
+                out[(size_t)y * w + x] = vmaf_mtl_fm_blur(taps, &win);
             }
         }
     }
@@ -344,7 +346,7 @@ float *fm_twin_rows(const float *cur, const float *prev, unsigned w, unsigned h)
 }
 
 /* The four samples of `plane` float_motion.metal's fm_corners() reads. */
-VmafMtlFmCorners fm_corners(const float *plane, unsigned w, VmafMtlFmBilinearAt at)
+VmafMtlFmCorners fm_corners(const float *plane, unsigned w, const VmafMtlFmBilinearAt &at)
 {
     const size_t row1 = (size_t)at.y1 * w;
     const size_t row2 = (size_t)at.y2 * w;
@@ -441,7 +443,7 @@ int fm_rows_case(unsigned w, unsigned h, bool scale1, unsigned seed)
     if (err != 0 || !(cpu > 0.0)) {
         return -1;
     }
-    if (cpu == twin) {
+    if (vmaf_test_identical_f64(cpu, twin)) {
         return 0;
     }
     (void)fprintf(stderr, "\n%ux%u scale1=%d: cpu=%.17g twin=%.17g", w, h, (int)scale1, cpu, twin);
@@ -548,7 +550,7 @@ int fm_frame_case(const FmCase *k)
         (void)fprintf(stderr, "\n%s %ux%u %u-bit: a run failed", k->key, k->w, k->h, k->bpc);
         return -1;
     }
-    if (cpu == twin) {
+    if (vmaf_test_identical_f64(cpu, twin)) {
         return 0;
     }
     (void)fprintf(stderr, "\n%s %ux%u %u-bit: cpu=%.17g twin=%.17g", k->key, k->w, k->h, k->bpc,
@@ -760,7 +762,7 @@ mu_message_t test_block_reduction_is_detected()
     free(prev);
     mu_assert("compute_motion() failed", err == 0);
     mu_assert("a per-block sum gives the CPU's score: the fixture cannot tell the orders apart",
-              blocks != cpu);
+              !vmaf_test_identical_f64(blocks, cpu));
     return nullptr;
 }
 

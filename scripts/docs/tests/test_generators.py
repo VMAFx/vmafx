@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: EUPL-1.2
 """Check source-driven ADR generation without modifying the caller's repo."""
 
+import os
 import shutil
 import sys
 import tempfile
@@ -20,6 +21,21 @@ ADR_NAV = [
     "- Template: adr/0000-template.md",
     "- By tag: adr/by-tag/index.md",
 ]
+
+
+def git_init(root: Path) -> None:
+    """Make the fixture a repository: the fragment order is read from its history."""
+    git = shutil.which("git")
+    assert git is not None, "git is required by the generator fixture"
+    run_command(
+        (git, "init", "-q", str(root)),
+        allowed_executables=(git,),
+        # Without the hook's GIT_DIR: the fixture, not the caller's repository.
+        env={key: value for key, value in os.environ.items() if not key.startswith("GIT_")},
+        capture_output=True,
+        check=True,
+        timeout_seconds=60,
+    )
 
 
 def adr_nav_entries(mkdocs_text: str) -> list[str]:
@@ -45,8 +61,12 @@ class GeneratorTests(unittest.TestCase):
             "generate-adr-by-tag.sh",
             "concat-adr-index.sh",
             "check-adr-index.py",
+            "fragment-order.py",
         ):
             shutil.copyfile(ROOT / "scripts/docs" / script, self.root / "scripts/docs" / script)
+        shutil.copytree(ROOT / "scripts/lib", self.root / "scripts/lib")
+        (self.root / "scripts/__init__.py").write_text("")
+        git_init(self.root)
         self.adr = self.root / "docs/adr"
         self.adr.mkdir(parents=True)
         (self.adr / "0000-template.md").write_text("# ADR-0000: Template\nTags: ignore\n")
@@ -141,19 +161,34 @@ class GeneratorTests(unittest.TestCase):
 
     def test_make_order_required_docs_and_deploy_contract(self) -> None:
         makefile = (ROOT / "Makefile").read_text()
-        for mode in ("check", "write"):
-            target = makefile.split(f"docs-fragments-{mode}:\n", 1)[1].split("\n\n", 1)[0]
+        # ADR-2197: the rendered outputs are written by `docs-render` and compared by
+        # `docs-render-check`; `docs-fragments-write` calls the first and
+        # `docs-fragments-check` does not compare them (a pull request carries none).
+        for mode, name in (("check", "docs-render-check"), ("write", "docs-render")):
+            target = makefile.split(f"\n{name}:", 1)[1].split("\n\n", 1)[0]
             scripts = [
                 "concat-changelog-fragments",
                 "concat-adr-index",
                 "generate-adr-by-tag",
+                "generate-record-titles",
+                "concat-rebase-notes",
             ]
-            positions = [target.index(f"{script}.sh --{mode}") for script in scripts]
+            positions = [target.index(f"{script}.") for script in scripts]
             self.assertEqual(positions, sorted(positions))
+            for script in scripts:
+                self.assertIn(f"--{mode}", target.split(script, 1)[1].splitlines()[0])
+        self.assertIn("docs-fragments-write: docs-render\n", makefile)
+        check = makefile.split("\ndocs-fragments-check:\n", 1)[1].split("\n\n", 1)[0]
+        for rendered in ("concat-adr-index.sh --check", "generate-adr-by-tag.sh --check"):
+            self.assertNotIn(rendered, check)
+        self.assertNotIn("concat-changelog-fragments.sh --check", check)
         lint = (ROOT / ".github/workflows/lint-and-format.yml").read_text()
         docs = lint.split("  docs-lint:\n", 1)[1].split("  check-conflict-markers:\n", 1)[0]
         self.assertIn("# required-aggregator", docs)
         self.assertIn("run: make docs-fragments-check", docs)
+        # The master push judges the render through ADR-3295's bounded check.
+        self.assertIn("run: python3 scripts/ci/check_render_on_master.py", docs)
+        self.assertIn("if: github.event_name == 'push'", docs)
         # A test runs once in CI (ADR-1568): Tooling Tests runs this file.
         from scripts.ci.suite_registry import suite_members  # noqa: PLC0415
 

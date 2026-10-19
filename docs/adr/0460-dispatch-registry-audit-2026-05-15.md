@@ -1,11 +1,9 @@
 <!-- markdownlint-disable MD060 -->
 # ADR-0460: Dispatch-strategy registry audit 2026-05-15
 
-| Field | Value |
-|-------|-------|
-| Status | Accepted |
-| Date | 2026-05-15 |
-| Tags | dispatch, hip, metal, sycl, vulkan, correctness |
+- **Status**: Accepted
+- **Date**: 2026-05-15
+- **Tags**: dispatch, hip, metal, sycl, vulkan, correctness
 
 ## Context
 

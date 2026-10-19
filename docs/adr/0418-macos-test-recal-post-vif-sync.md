@@ -1,6 +1,6 @@
 # ADR-0418: Full upstream ADM + VIF-prescale sync (companion to PR #758 / ADR-0416)
 
-Status: Accepted
+- **Status**: Accepted
 Date: 2026-05-11
 Tags: adm, vif, prescale, upstream-sync, fork-local, netflix-golden, fork-internal
 

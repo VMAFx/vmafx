@@ -15,7 +15,7 @@ import site
 import sys
 import tempfile
 import unittest
-from pathlib import Path
+from pathlib import Path, PurePath, PureWindowsPath
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -95,6 +95,11 @@ ENTRYPOINT_GLOBS = (
 )
 
 MAKEFILE_NAMES = frozenset(("Makefile", "GNUmakefile", "makefile"))
+# `.ci/` holds checkouts of other repositories that a workflow makes inside the
+# workspace (`.ci/pelorus`, lint-and-format.yml). Their files are not this
+# repository's entry points and are never edited here, so the contract does not
+# govern them; the Pelorus mirror inside this tree stays governed.
+EXTERNAL_CHECKOUT_ROOTS = frozenset((".ci",))
 WORKFLOW_YAML_PREFIXES = ((".github", "workflows"), (".github", "actions"))
 YAML_RUN_KEY = re.compile(
     r"^(?P<indent>\s*)(?P<sequence_item>-\s+)?(?:run|'run'|\"run\")\s*:\s*(?P<value>.*)$"
@@ -114,6 +119,8 @@ EXPECTED_RUNNER_PATHS = {
         r"scripts\ci\run_meson_test.py",
     ),
     Path(".github/workflows/nightly.yml"): ("scripts/ci/run_meson_test.py",),
+    # ADR-1713: the Rust workflow runs the `rust` suite of a Rust build.
+    Path(".github/workflows/rust-ci.yml"): ("scripts/ci/run_meson_test.py",),
     Path(".github/workflows/sanitizers.yml"): ("../scripts/ci/run_meson_test.py",) * 2,
     Path(".github/workflows/sycl-parity.yml"): ("scripts/ci/run_meson_test.py",),
     Path(".github/workflows/tests-and-quality-gates.yml"): ("../scripts/ci/run_meson_test.py",) * 5,
@@ -435,6 +442,15 @@ def _normalize_test_tool_executables(command: str) -> str:
     return UNQUOTED_TEST_TOOL.sub(lambda match: match.group("tool").lower(), normalized)
 
 
+def _display_path(path: PurePath) -> str:
+    """Spell a repository path with forward slashes on every platform.
+
+    `str(Path)` yields backslashes on Windows; the contract messages and the
+    inventories they are compared with name repository paths the way git does.
+    """
+    return path.as_posix()
+
+
 _ENTRYPOINT_SOURCES_CACHE: dict[Path, dict[Path, str]] = {}
 
 
@@ -446,6 +462,8 @@ def _read_entrypoint_sources() -> dict[Path, str]:
             for absolute_path in ROOT.glob(pattern):
                 if absolute_path.is_file():
                     relative_path = absolute_path.relative_to(ROOT)
+                    if relative_path.parts[0] in EXTERNAL_CHECKOUT_ROOTS:
+                        continue
                     if relative_path.name in MAKEFILE_NAMES:
                         stat = absolute_path.stat()
                         identity = (stat.st_dev, stat.st_ino)
@@ -470,7 +488,7 @@ def _raw_commands_errors(path: Path, commands: list[tuple[int, str]]) -> list[st
         command_without_runner = RUNNER_PATH.sub(" ", command)
         normalized_command = _normalize_test_tool_executables(command_without_runner)
         if RAW_MESON_TEST.search(normalized_command) or RAW_NINJA_TEST.search(normalized_command):
-            errors.append(f"raw Meson test entry point at {path}:{line_number}")
+            errors.append(f"raw Meson test entry point at {_display_path(path)}:{line_number}")
     return errors
 
 
@@ -608,7 +626,7 @@ def _meson_contract_errors(sources: dict[Path, str]) -> list[str]:
     for path, content in sources.items():
         setup_sites.extend([path] * len(re.findall(r"\badd_test_setup\s*\(", content)))
     if setup_sites != [CORE_MESON_BUILD]:
-        relative_sites = [str(path.relative_to(ROOT)) for path in setup_sites]
+        relative_sites = [_display_path(path.relative_to(ROOT)) for path in setup_sites]
         errors.append(
             f"expected exactly one add_test_setup in core/meson.build; got {relative_sites}"
         )
@@ -639,7 +657,7 @@ def _meson_contract_errors(sources: dict[Path, str]) -> list[str]:
         for secret_var in SECRET_ENV_VARS:
             if secret_var in scan_content:
                 errors.append(
-                    f"forbidden credential name {secret_var} reintroduced in {path.relative_to(ROOT)}"
+                    f"forbidden credential name {secret_var} reintroduced in {_display_path(path.relative_to(ROOT))}"
                 )
     return errors
 
@@ -761,6 +779,33 @@ class MesonSecretEnvSanitizationContractTest(unittest.TestCase):
 
     def test_supported_entrypoints_use_repository_runner(self) -> None:
         self.assertEqual(_entrypoint_contract_errors(_read_entrypoint_sources()), [])
+
+    def test_external_checkout_root_is_not_governed(self) -> None:
+        """A workflow's `.ci/<repo>` checkout is skipped; the same file under scripts/ is not."""
+        raw = "test:\n\tmeson test -C build\n"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / ".ci" / "other").mkdir(parents=True)
+            (root / ".ci" / "other" / "Makefile").write_text(raw, encoding="utf-8")
+            (root / "scripts").mkdir()
+            (root / "scripts" / "Makefile").write_text(raw, encoding="utf-8")
+            with mock.patch.dict(_ENTRYPOINT_SOURCES_CACHE, clear=True):
+                with mock.patch(f"{__name__}.ROOT", root):
+                    sources = _read_entrypoint_sources()
+            self.assertEqual(sorted(_display_path(path) for path in sources), ["scripts/Makefile"])
+            self.assertEqual(
+                _raw_entrypoint_errors(Path("scripts/Makefile"), raw),
+                ["raw Meson test entry point at scripts/Makefile:2"],
+            )
+
+    def test_contract_messages_spell_paths_with_forward_slashes_on_windows(self) -> None:
+        """A Windows path (backslashes) is reported the way git and the inventories spell it."""
+        raw = "test:\n\tmeson test -C build\n"
+        self.assertEqual(
+            _raw_entrypoint_errors(PureWindowsPath("scripts\\Makefile"), raw),
+            ["raw Meson test entry point at scripts/Makefile:2"],
+        )
+        self.assertEqual(_display_path(PureWindowsPath("core\\meson.build")), "core/meson.build")
 
     def test_precommit_hook_covers_every_contract_input_scope(self) -> None:
         pattern = _precommit_contract_pattern()

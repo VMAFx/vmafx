@@ -92,3 +92,13 @@ Three complementary fixes ship together:
 - `req`: fix scope: `--max-concurrent-decodes N` CLI flag (default 1);
   aggressive workdir cleanup (per-iteration MKV and YUV, per-bisect ref
   YUV); mid-run disk-space monitoring with 2x headroom before each decode.
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 86: `- ADR-0549: workdir relocation and preflight disk-space
+  check (the ADR-0577`: ADR-0549 points to an unrelated topic
+  (0549-audit-cleanup-bundle-2.md: "Audit cleanup bundle 2", covering naming,
+  container assertions, state.md, `vmafexec_test.py`, and .gitignore).

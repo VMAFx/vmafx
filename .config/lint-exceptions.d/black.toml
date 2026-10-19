@@ -1,0 +1,9 @@
+# Declared exceptions to black. Format and rules: scripts/ci/lint_exceptions.py.
+# One file per entry; an entry stops holding on `expires`. The hook `exclude` of
+# .pre-commit-config.yaml and the extend-exclude of pyproject.toml name the same files
+# (scripts/ci/tests/test_python_format_scope.py keeps the three in step).
+
+[[exception]]
+path = ".config/hiss/testdata/HISS-02/python/positive/spaced-while-true.py"
+reason = "HISS scanner fixture, a defect by design: its line positions are the replay evidence of the HISS-02 scanner claim (`praetorctl hiss coverage --verify`), so a formatter run would move them. Renew only while the fixture is still a planted defect."
+expires = 2027-03-31

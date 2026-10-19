@@ -517,9 +517,24 @@ static char *test_float_ssim_flat_clip_db_exact(void)
     return compare_all(cases, ARRAY_LEN(cases));
 }
 
+/* T-METAL-UINT-PLANE-INDEX-2026-10-05: the five (w - 10) x h moment planes are
+ * indexed in uint, so float_ssim_metal refuses the picture cap at scale=1
+ * (32758 x 32768 samples per plane, past 858,993,459). */
+static char *test_float_ssim_refuses_uint_index_overflow(void)
+{
+    if (metal_twin_device_only() || !metal_twin_have_device()) {
+        return NULL;
+    }
+    mu_assert("float_ssim_metal accepted the picture cap at scale=1",
+              metal_twin_init_status("float_ssim_metal", "scale", "1", METAL_TWIN_PIC_DIM_MAX,
+                                     METAL_TWIN_PIC_DIM_MAX) == -EINVAL);
+    return NULL;
+}
+
 char *run_tests(void)
 {
     metal_run_case(test_float_ssim_metal_registered);
+    metal_run_case(test_float_ssim_refuses_uint_index_overflow);
     metal_run_case(test_float_ssim_order_frame_exact);
     metal_run_case(test_float_ssim_order_noise_exact);
     metal_run_case(test_float_ssim_texture_8bit_exact);

@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-0388: Ingest BVI-CC as the second tiny-AI training corpus
 
-- **Status**: Draft
+- **Status**: Draft (status update 2026-10-06 below)
 - **Date**: 2026-05-02
 - **Deciders**: TBD
 - **Tags**: ai, fr-regressor, corpus, license, bristol
@@ -85,3 +85,14 @@ local-build artifact, not committed.
 - Prior: [ADR-0042 — Tiny-AI docs required per PR](0042-tinyai-docs-required-per-pr.md)
 - Prior: [ADR-0235 — Codec-aware fr_regressor v2](0235-codec-aware-fr-regressor.md)
 - Source: `req` (user direction, 2026-05-02 — feasibility investigation for Bristol BVI-* corpora)
+
+## Status update 2026-10-06: Deferred to 1.4
+
+The BVI-CC ingest is deferred and the record stays a Draft. It joins the 1.4
+corpus expansion ([#2241](https://github.com/VMAFx/vmafx/issues/2241),
+"Training-corpus expansion with licence-cleared data") and is tracked as the
+Deferred row `T-BVI-CC-CORPUS-INGEST-2026-10-06` in `docs/state.md`; the
+manifest `bvi-cc.json` and the `mos_convention` column do not exist on
+`origin/master` `fd8b8c93b`.
+
+The body above is unchanged.

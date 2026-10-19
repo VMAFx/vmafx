@@ -99,7 +99,7 @@ class HardRulesPage(unittest.TestCase):
         self.assertIn("default entrypoint uses stdio and does not create the socket", compose)
 
     def test_rule_8_names_the_generators_that_exist(self) -> None:
-        self.assertIn("make docs-fragments-write", self.text)
+        self.assertIn("make docs-render", self.text)
         makefile = (ROOT / "Makefile").read_text("utf-8")
         self.assertIn("scripts/docs/concat-adr-index.sh --write", makefile)
         for path in repo_paths(self.text):

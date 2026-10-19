@@ -23,10 +23,11 @@
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. ADR-1138. */
 
-static const char *const matrix_names[] = {"UNSPECIFIED", "BT601",     "BT709",
-                                           "BT2020_NCL",  "BT2020_CL", "ICTCP"};
-static const char *const transfer_names[] = {"UNSPECIFIED", "BT709", "SRGB",
-                                             "SMPTE2084",   "HLG",   "LINEAR"};
+/* Names by enumerator value (VmafxColorMatrix, VmafxColorTransfer of vmafx/frame.h). */
+static const char *const matrix_names[] = {"UNKNOWN", "BT709", "BT2020_NCL",
+                                           "ICTCP",   "BT601", "BT2020_CL"};
+static const char *const transfer_names[] = {"UNKNOWN", "BT709", "SMPTE2084",
+                                             "SRGB",    "HLG",   "LINEAR"};
 
 static const char *const statement =
     "an RGB frame is converted to Y'CbCr with a matrix, range and transfer you state; none "
@@ -42,10 +43,10 @@ static VmafxStatus refuse_unstated(const VmafxReport *report, const VmafxImportL
 static VmafxStatus check_matrix(const VmafxReport *report, const VmafxFrameImport *d,
                                 const VmafxImportLayout *layout)
 {
-    if (d->rgb_matrix == VMAFX_COLOR_MATRIX_UNSPECIFIED) {
+    if (d->rgb_matrix == VMAFX_COLOR_MATRIX_UNKNOWN) {
         return refuse_unstated(report, layout, "desc.rgb_matrix", "BT601, BT709 or BT2020_NCL");
     }
-    if (d->rgb_matrix > VMAFX_COLOR_MATRIX_ICTCP) {
+    if (d->rgb_matrix > VMAFX_COLOR_MATRIX_BT2020_CL) {
         return VMAFX_FAIL(report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_PARAMETER, "desc.rgb_matrix",
                           "%u is not a VmafxColorMatrix", (unsigned)d->rgb_matrix);
     }
@@ -63,7 +64,7 @@ static VmafxStatus check_matrix(const VmafxReport *report, const VmafxFrameImpor
 static VmafxStatus check_range(const VmafxReport *report, uint32_t range, const char *field,
                                const VmafxImportLayout *layout)
 {
-    if (range == VMAFX_COLOR_RANGE_UNSPECIFIED) {
+    if (range == VMAFX_COLOR_RANGE_UNKNOWN) {
         return refuse_unstated(report, layout, field, "LIMITED or FULL");
     }
     if (range > VMAFX_COLOR_RANGE_FULL) {
@@ -76,15 +77,15 @@ static VmafxStatus check_range(const VmafxReport *report, uint32_t range, const 
 static VmafxStatus check_transfer(const VmafxReport *report, const VmafxFrameImport *d,
                                   const VmafxImportLayout *layout)
 {
-    if (d->rgb_transfer == VMAFX_COLOR_TRANSFER_UNSPECIFIED) {
+    if (d->rgb_transfer == VMAFX_COLOR_TRC_UNKNOWN) {
         return refuse_unstated(report, layout, "desc.rgb_transfer",
                                "BT709, SRGB, SMPTE2084 or HLG");
     }
-    if (d->rgb_transfer > VMAFX_COLOR_TRANSFER_LINEAR) {
+    if (d->rgb_transfer > VMAFX_COLOR_TRC_LINEAR) {
         return VMAFX_FAIL(report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_PARAMETER, "desc.rgb_transfer",
                           "%u is not a VmafxColorTransfer", (unsigned)d->rgb_transfer);
     }
-    if (d->rgb_transfer == VMAFX_COLOR_TRANSFER_LINEAR) {
+    if (d->rgb_transfer == VMAFX_COLOR_TRC_LINEAR) {
         return VMAFX_FAIL(report, VMAFX_E_NOTSUP, 0, VMAFX_SUBJECT_PARAMETER, "desc.rgb_transfer",
                           "pixel format %s, transfer %s: the matrix applies to non-linear "
                           "R'G'B'; encode the samples first",

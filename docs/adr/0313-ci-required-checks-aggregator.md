@@ -1,13 +1,9 @@
 <!-- markdownlint-disable MD013 MD036 -->
 # ADR-0313 — CI required-checks aggregator (unblock doc/Python-only PRs)
 
-| Field | Value |
-| --- | --- |
-| Status | Accepted |
-| Date | 2026-05-05 |
-| Authors | Kilian, Claude |
-| Supersedes | — |
-| Superseded by | — |
+- **Status**: Accepted
+- **Date**: 2026-05-05
+- **Authors**: Kilian, Claude
 
 ## Context
 

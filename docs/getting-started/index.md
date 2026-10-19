@@ -11,7 +11,7 @@ binary, or from a source build. Pick one below, then
 | Route | What you get | Runs on | Start here |
 | --- | --- | --- | --- |
 | Container image | the `vmaf` CLI and `libvmaf`, CPU or one GPU backend per image | any Docker host; GPU images on x86-64 | [Container image](#container-image) |
-| Release download | the `vmaf` CLI and `libvmaf.so.3`, CPU only | Linux x86-64 with glibc 2.41 or later | [Release download](#release-download) |
+| Release download | the `vmaf` CLI, `libvmaf.so.3` and `libvmafx.so.1`, CPU only | Linux x86-64 with glibc 2.41 or later | [Release download](#release-download) |
 | Source build | every backend your hardware and SDKs support, the tests, the tools | Linux, macOS, Windows | [Build from source](#build-from-source-any-platform) |
 
 Each release is listed on the
@@ -55,12 +55,14 @@ Each release attaches a CPU build of the CLI for Linux x86-64:
 | Asset | Contents |
 | --- | --- |
 | `vmaf` | the command-line tool |
-| `libvmaf.so`, `libvmaf.so.3`, `libvmaf.so.3.0.0` | the library the tool loads |
+| `libvmaf.so`, `libvmaf.so.3`, `libvmaf.so.3.0.0` | the libvmaf API library the tool loads |
+| `libvmafx.so`, `libvmafx.so.1`, `libvmafx.so.1.0.0` | the VMAFx engine library; the tool and `libvmaf.so.3` both load it |
 | `models.tar.gz` | the VMAF model files |
 | `*.bundle` | a Sigstore signature for each file |
 
-1. Download `vmaf` and the three `libvmaf.so*` files into one directory. The
-   tool finds the library next to itself, so no `LD_LIBRARY_PATH` is needed.
+1. Download `vmaf`, the three `libvmaf.so*` files and the three `libvmafx.so*`
+   files into one directory. The tool finds both libraries next to itself, so
+   no `LD_LIBRARY_PATH` is needed.
 2. Restore the executable bit, which a download does not keep:
 
     ```bash

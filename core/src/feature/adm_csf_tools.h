@@ -20,26 +20,8 @@
 #ifndef ADM_CSF_TOOLS_H_
 #define ADM_CSF_TOOLS_H_
 
-/* Define _USE_MATH_DEFINES before <math.h> so MSVC exposes `M_PI`,
- * `M_PI_2`, etc. POSIX libcs export these unconditionally; MSVC gates
- * them on the macro. Must precede the <math.h> include below. */
-#ifndef _USE_MATH_DEFINES
-/* The name is not ours to choose: `_USE_MATH_DEFINES` is what MSVC's and
- * MinGW's <math.h> look for, and the two-step with the M_PI fallback below is
- * what the Windows lanes need. */
-/* NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp): platform feature-test macro (ADR-1234). */
-#define _USE_MATH_DEFINES
-#endif
 #include <math.h>
 #include "common/macros.h"
-
-/* MinGW64's <math.h> still doesn't export `M_PI` without an extra
- * fallback (it expects `__STRICT_ANSI__` to be off but our `-pipe
- * -static` build sets `-D_FILE_OFFSET_BITS=64` which leaves it on for
- * the header sequence). Define it manually if missing. */
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
 
 /*
  * CSF used in the DLM paper:
@@ -50,19 +32,19 @@ FORCE_INLINE float adm_native_csf(int lambda, double adm_norm_view_dist, int adm
                                   int theta)
 {
     /* This is the display visual resolution (DVR), in pixels/degree of visual angle. It should be ~56.55. */
-    float r = adm_norm_view_dist * adm_ref_display_height * M_PI / 180.0;
+    float r = (float)(adm_norm_view_dist * adm_ref_display_height * M_PI / 180.0);
     /* This is the nominal spatial frequency for each DWT level; first level (level = 0) is half of the DVR. */
-    float spatial_frequency = r / pow(2, lambda + 1);
+    float spatial_frequency = (float)(r / pow(2, lambda + 1));
 
     /*
      * Oblique effect: the HVS is more sensitive to the horizontal and vertical
      * channels than the diagonal channels.
      */
     if (theta == 45) {
-        spatial_frequency /= 0.7;
+        spatial_frequency = (float)(spatial_frequency / (0.7));
     }
 
-    return (0.31 + 0.69 * spatial_frequency) * exp(-0.29 * spatial_frequency);
+    return (float)((0.31 + 0.69 * spatial_frequency) * exp(-0.29 * spatial_frequency));
 }
 
 #endif /* ADM_CSF_TOOLS_H_ */

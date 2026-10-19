@@ -95,3 +95,12 @@ interactive development.
     duplicate of ADR-0028 that this ADR exists to prevent),
   [ADR-0124](0124-automated-rule-enforcement.md) (automated rule enforcement).
 - Source: user direction in session 2026-05-10 (`req`).
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 92: `- Research digest:
+  docs/research/0386-adr-numbering-collision-2026-05-10.md.`: Cites research
+  digest file that was never committed and does not exist on master.

@@ -41,7 +41,9 @@ extern "C" {
  * `VmafMetalState`. One state pins one device; callers that want multi-GPU
  * fan-out create one state per device and one VmafContext per state.
  */
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no `using`. ADR-1138. */
 typedef struct VmafCudaState VmafCudaState;
+/* NOLINTEND(modernize-use-using) */
 
 /**
  * @struct VmafCudaConfiguration
@@ -55,9 +57,11 @@ typedef struct VmafCudaState VmafCudaState;
  * VmafContext until `vmaf_close()` returns exactly 0. A nonzero close retains
  * that dependency for retry.
  */
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no `using`. ADR-1138. */
 typedef struct VmafCudaConfiguration {
     void *cu_ctx; /**< Optional CUcontext (cast from `CUcontext`); NULL → create one. */
 } VmafCudaConfiguration;
+/* NOLINTEND(modernize-use-using) */
 
 /**
  * Initialize VmafCudaState.
@@ -76,6 +80,7 @@ typedef struct VmafCudaConfiguration {
  *
  * @note Thread safety: Not thread-safe. Allocate one VmafCudaState per driver thread.
  */
+VMAF_DEPRECATED("use vmafx_device_create (CUDA, external context)")
 VMAF_EXPORT int vmaf_cuda_state_init(VmafCudaState **cu_state, VmafCudaConfiguration cfg);
 
 /**
@@ -105,6 +110,7 @@ VMAF_EXPORT int vmaf_cuda_state_init(VmafCudaState **cu_state, VmafCudaConfigura
  * @note Thread safety: Not thread-safe. Call only after vmaf_close() returns
  *               0 on every context that imported this state.
  */
+VMAF_DEPRECATED("use vmafx_device_unref")
 VMAF_EXPORT int vmaf_cuda_state_free(VmafCudaState *cu_state);
 
 /**
@@ -129,6 +135,7 @@ VMAF_EXPORT int vmaf_cuda_state_free(VmafCudaState *cu_state);
  *               and before the first `vmaf_read_pictures()` on the same
  *               context.
  */
+VMAF_DEPRECATED("use vmafx_context_use_device")
 VMAF_EXPORT int vmaf_cuda_import_state(VmafContext *vmaf, VmafCudaState *cu_state);
 
 /**
@@ -152,12 +159,14 @@ VMAF_EXPORT int vmaf_cuda_import_state(VmafContext *vmaf, VmafCudaState *cu_stat
  *
  * Stable enumerator values — append-only across libvmaf releases.
  */
+/* NOLINTBEGIN(performance-enum-size): C header included by C and C++ translation units; C has no fixed enum underlying type across the required toolchains (ADR-1470). ADR-1138. */
 enum VmafCudaPicturePreallocationMethod {
     VMAF_CUDA_PICTURE_PREALLOCATION_METHOD_NONE = 0,
     VMAF_CUDA_PICTURE_PREALLOCATION_METHOD_DEVICE,
     VMAF_CUDA_PICTURE_PREALLOCATION_METHOD_HOST,
     VMAF_CUDA_PICTURE_PREALLOCATION_METHOD_HOST_PINNED,
 };
+/* NOLINTEND(performance-enum-size) */
 
 /**
  * @struct VmafCudaPictureConfiguration
@@ -172,6 +181,7 @@ enum VmafCudaPicturePreallocationMethod {
  * Storage tier is selected by `pic_prealloc_method` (see
  * `VmafCudaPicturePreallocationMethod`).
  */
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no `using`. ADR-1138. */
 typedef struct VmafCudaPictureConfiguration {
     struct {
         unsigned w;                   /**< Per-plane width in samples. */
@@ -181,6 +191,7 @@ typedef struct VmafCudaPictureConfiguration {
     } pic_params;                     /**< Per-picture shape (width/height/bpc/pixel-format). */
     enum VmafCudaPicturePreallocationMethod pic_prealloc_method; /**< Storage tier selector. */
 } VmafCudaPictureConfiguration;
+/* NOLINTEND(modernize-use-using) */
 
 /**
  * Config and preallocate VmafPictures for use during CUDA feature extraction.
@@ -196,6 +207,7 @@ typedef struct VmafCudaPictureConfiguration {
  * @note Thread safety: Not thread-safe. Call before vmaf_read_pictures() on the
  *               same context.
  */
+VMAF_DEPRECATED("use vmafx_frame_pool_create (CUDA device)")
 VMAF_EXPORT int vmaf_cuda_preallocate_pictures(VmafContext *vmaf, VmafCudaPictureConfiguration cfg);
 
 /**
@@ -212,6 +224,7 @@ VMAF_EXPORT int vmaf_cuda_preallocate_pictures(VmafContext *vmaf, VmafCudaPictur
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per driver thread.
  */
+VMAF_DEPRECATED("use vmafx_frame_pool_acquire + vmafx_frame_to_picture")
 VMAF_EXPORT int vmaf_cuda_fetch_preallocated_picture(VmafContext *vmaf, VmafPicture *pic);
 
 #ifdef __cplusplus

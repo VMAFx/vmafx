@@ -10,7 +10,7 @@
 //     pkg/version and honours OTEL_SERVICE_NAME behind the vmafx config key,
 //     and — being a root-scope decorator — reaches golusoris's own module;
 //   - TraceHTTPHandler names spans "<METHOD> <path>", filters probe / scrape
-//     endpoints, and HTTPTracing applies it to the handler golusoris.HTTP
+//     endpoints, and HTTPTracing applies it to the handler bootstrap.HTTP
 //     serves.
 //
 // None of these tests use t.Parallel(): they install the process-global
@@ -25,9 +25,11 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/golusoris/golusoris"
 	"github.com/golusoris/golusoris/core/config"
 	"github.com/golusoris/golusoris/otel"
+	otelapi "go.opentelemetry.io/otel"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	tracenoop "go.opentelemetry.io/otel/trace/noop"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxtest"
 
@@ -201,7 +203,7 @@ func TestHTTPTracing_DecoratesGolusorisServerHandler(t *testing.T) {
 		Base,
 		fx.Replace(testEnvOptions()),
 		fx.NopLogger,
-		golusoris.HTTP,
+		HTTP,
 		HTTPTracing,
 		fx.Invoke(func(r chi.Router) {
 			r.Get("/v1/health", func(w http.ResponseWriter, _ *http.Request) {
@@ -219,7 +221,7 @@ func TestHTTPTracing_DecoratesGolusorisServerHandler(t *testing.T) {
 		t.Fatalf("GET /v1/health through the golusoris server handler: status %d", rec.Code)
 	}
 	if got := oteltest.Ended(sr, "GET /v1/health"); len(got) != 1 {
-		t.Fatalf("HTTPTracing did not reach golusoris.HTTP's handler; spans: %v", oteltest.Names(sr))
+		t.Fatalf("HTTPTracing did not reach HTTP's handler; spans: %v", oteltest.Names(sr))
 	}
 }
 
@@ -234,5 +236,30 @@ func TestBase_ShutdownFlushesProviders(t *testing.T) {
 	app.RequireStop()
 	if err := providers.Shutdown(context.Background()); err != nil {
 		t.Errorf("Shutdown on no-op providers returned %v", err)
+	}
+}
+
+// TestBase_ConstructsProvidersNobodyRequests is the regression test of
+// T-OTEL-PROVIDERS-NEVER-CONSTRUCTED-2026-10-07: fx builds a provider only
+// when something depends on it, and no service binary takes *otel.Providers,
+// so with an OTLP endpoint set the exporters were never built and no span left
+// any binary. The graph here requests nothing from otel.Module; starting it
+// must still install the SDK tracer provider globally.
+func TestBase_ConstructsProvidersNobodyRequests(t *testing.T) {
+	quietEnv(t)
+	// A closed port: the gRPC exporter dials lazily, so nothing connects.
+	// Metrics and logs stay off: their shutdown flush would try to upload.
+	t.Setenv("VMAFX_OTEL_ENDPOINT", "127.0.0.1:1")
+	t.Setenv("VMAFX_OTEL_EXPORT_METRICS", "false")
+	t.Setenv("VMAFX_OTEL_EXPORT_LOGS", "false")
+	t.Cleanup(func() { otelapi.SetTracerProvider(tracenoop.NewTracerProvider()) })
+	otelapi.SetTracerProvider(tracenoop.NewTracerProvider())
+
+	app := fxtest.New(t, Base, fx.Replace(testEnvOptions()), fx.NopLogger)
+	app.RequireStart()
+	defer app.RequireStop()
+
+	if _, ok := otelapi.GetTracerProvider().(*sdktrace.TracerProvider); !ok {
+		t.Fatalf("global TracerProvider is %T; Base did not build the OTel providers", otelapi.GetTracerProvider())
 	}
 }

@@ -3,7 +3,10 @@
 # Copyright 2026 Lusoris
 #
 # Refuse Kubernetes E2E mutations unless they target the named local kind
-# cluster through the dedicated kubeconfig supplied by the caller.
+# cluster through the dedicated kubeconfig supplied by the caller. The API
+# server must be a loopback endpoint, or, with VMAFX_E2E_INCUS_VM set, port
+# 6443 at the address the named incus VM reports for its NIC
+# (test/e2e/incus-kind-vm.sh address).
 
 set -euo pipefail
 
@@ -40,8 +43,14 @@ api_server="$(
   kubectl --kubeconfig "${KUBECONFIG_PATH}" config view --minify \
     -o jsonpath='{.clusters[0].cluster.server}'
 )"
-[[ "${api_server}" =~ ^https://127\.0\.0\.1:[0-9]+$ ]] ||
-  die "API server is not a loopback kind endpoint: ${api_server@Q}"
+if [[ -n "${VMAFX_E2E_INCUS_VM:-}" ]]; then
+  vm_address="$("$(dirname "$0")/incus-kind-vm.sh" address)"
+  [[ "${api_server}" == "https://${vm_address}:6443" ]] ||
+    die "API server is not the kind endpoint of VM ${VMAFX_E2E_INCUS_VM@Q} (${vm_address}): ${api_server@Q}"
+else
+  [[ "${api_server}" =~ ^https://127\.0\.0\.1:[0-9]+$ ]] ||
+    die "API server is not a loopback kind endpoint: ${api_server@Q}"
+fi
 
 printf '[assert-kind-context] verified context=%s server=%s\n' \
   "${current_context}" "${api_server}"

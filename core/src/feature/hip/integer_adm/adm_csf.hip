@@ -126,11 +126,13 @@ i4_adm_csf_kernel(const AdmBufferHip *__restrict__ buf_ptr, int scale, int top, 
                 const int32_t t_val = csf_band_sample<int32_t>(band, th, tv, td);
                 const int32_t a_val = t_val - r_val;
 
-                const int32_t dst_val =
-                    (int32_t)(((i_rfactor * int64_t(a_val)) + add_bef_shift_dst) >> shift_dst);
-                flt_vec[col] =
-                    (int32_t)((((int64_t)FIX_ONE_BY_30 * abs(dst_val)) + add_bef_shift_flt) >>
-                              shift_flt);
+                const int64_t dst_sum = (i_rfactor * int64_t(a_val)) + add_bef_shift_dst;
+                // NOLINTNEXTLINE(bugprone-signed-bitwise) -- ADR-1423: the CPU's arithmetic shift of a signed sum
+                const int32_t dst_val = (int32_t)(dst_sum >> shift_dst);
+                /* add_bef_shift_flt wraps negative at shift_flt = 32, as on the CPU */
+                const int64_t flt_sum = ((int64_t)FIX_ONE_BY_30 * abs(dst_val)) + add_bef_shift_flt;
+                // NOLINTNEXTLINE(bugprone-signed-bitwise) -- ADR-1423: the CPU's arithmetic shift of a signed sum
+                flt_vec[col] = (int32_t)(flt_sum >> shift_flt);
             }
             copy_vec_4<cols_per_thread>(flt_vec, flt_ptr + row_off);
         }
@@ -189,8 +191,11 @@ __device__ __forceinline__ void adm_csf_kernel(const AdmBufferHip *__restrict__ 
                 const int16_t a_val = t_val - r_val;
 
                 const int32_t dst_val = i_rfactor * (uint32_t)a_val;
+                // NOLINTNEXTLINE(bugprone-signed-bitwise) -- ADR-1423: the CPU's arithmetic shift of a signed sum
                 const int16_t i16_dst_val = (dst_val + i_shiftsadd[band]) >> i_shifts[band];
-                flt_vec[col] = ((FIX_ONE_BY_30 * abs((int32_t)i16_dst_val)) + 2048) >> 12;
+                flt_vec[col] =
+                    (((uint32_t)FIX_ONE_BY_30 * (uint32_t)abs((int32_t)i16_dst_val)) + 2048u) >>
+                    12u;
             }
             copy_vec_4<cols_per_thread>(flt_vec, flt_ptr + row_off);
         }

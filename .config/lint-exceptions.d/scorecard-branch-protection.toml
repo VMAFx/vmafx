@@ -1,0 +1,12 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
+# Declared exception to OpenSSF Scorecard's Branch-Protection check (code-scanning alert
+# 1054: administrators exempt, one required approval, no code-owner review). Format and
+# rules: scripts/ci/lint_exceptions.py. The path is the ADR that owns the protection
+# settings; ADR-2126 gives the decision. No ruleset or protection setting changes.
+
+[[exception]]
+path = "docs/adr/0037-master-branch-protection.md"
+reason = "Single maintainer: every change lands through the local merge train, whose per-PR gates (deliverables, state-row, silent-revert, praetorctl audit) and the required status checks on the exact head stand in for a human review, and a second approver does not exist (ADR-2126). Fix: a second maintainer joins, then the repository requires and records a human approval; renew only while the reason is true."
+expires = 2027-03-31

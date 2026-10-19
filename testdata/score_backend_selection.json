@@ -1,0 +1,197 @@
+{
+  "_comment": "Shared cases for the two score-backend selectors: tools/vmaf-tune/src/vmaftune/score_backend.py and pkg/scorebackend (ADR-1874). 'reports' are vmaf --list-backends documents and the usable backends each yields (null: not a report); 'selections' are select calls and their result or error class. Both test suites replay every case.",
+  "reports": [
+    {
+      "case": "cpu-only build",
+      "stdout": "{\"backends\": [{\"name\": \"cpu\", \"compiled\": true, \"usable\": true}, {\"name\": \"cuda\", \"compiled\": false, \"usable\": false}, {\"name\": \"sycl\", \"compiled\": false, \"usable\": false}, {\"name\": \"hip\", \"compiled\": false, \"usable\": false}, {\"name\": \"metal\", \"compiled\": false, \"usable\": false}]}",
+      "usable": [
+        "cpu"
+      ]
+    },
+    {
+      "case": "cuda compiled and initialised",
+      "stdout": "{\"backends\": [{\"name\": \"cpu\", \"compiled\": true, \"usable\": true}, {\"name\": \"cuda\", \"compiled\": true, \"usable\": true}, {\"name\": \"sycl\", \"compiled\": false, \"usable\": false}, {\"name\": \"hip\", \"compiled\": false, \"usable\": false}, {\"name\": \"metal\", \"compiled\": false, \"usable\": false}]}",
+      "usable": [
+        "cpu",
+        "cuda"
+      ]
+    },
+    {
+      "case": "compiled but no device",
+      "stdout": "{\"backends\": [{\"name\": \"cpu\", \"compiled\": true, \"usable\": true}, {\"name\": \"cuda\", \"compiled\": true, \"usable\": false, \"init_status\": -19}, {\"name\": \"sycl\", \"compiled\": true, \"usable\": false, \"init_status\": -19}, {\"name\": \"hip\", \"compiled\": false, \"usable\": false}, {\"name\": \"metal\", \"compiled\": false, \"usable\": false}]}",
+      "usable": [
+        "cpu"
+      ]
+    },
+    {
+      "case": "every gpu backend usable",
+      "stdout": "{\"backends\": [{\"name\": \"cpu\", \"compiled\": true, \"usable\": true}, {\"name\": \"cuda\", \"compiled\": true, \"usable\": true}, {\"name\": \"sycl\", \"compiled\": true, \"usable\": true}, {\"name\": \"hip\", \"compiled\": true, \"usable\": true}, {\"name\": \"metal\", \"compiled\": false, \"usable\": false}]}",
+      "usable": [
+        "cpu",
+        "cuda",
+        "sycl",
+        "hip"
+      ]
+    },
+    {
+      "case": "metal usable",
+      "stdout": "{\"backends\": [{\"name\": \"cpu\", \"compiled\": true, \"usable\": true}, {\"name\": \"cuda\", \"compiled\": false, \"usable\": false}, {\"name\": \"sycl\", \"compiled\": false, \"usable\": false}, {\"name\": \"hip\", \"compiled\": false, \"usable\": false}, {\"name\": \"metal\", \"compiled\": true, \"usable\": true}]}",
+      "usable": [
+        "cpu",
+        "metal"
+      ]
+    },
+    {
+      "case": "unknown backend ignored",
+      "stdout": "{\"backends\": [{\"name\": \"cpu\", \"compiled\": true, \"usable\": true}, {\"name\": \"future\", \"compiled\": true, \"usable\": true}, {\"name\": \"hip\", \"compiled\": true, \"usable\": true}]}",
+      "usable": [
+        "cpu",
+        "hip"
+      ]
+    },
+    {
+      "case": "help text is not a report",
+      "stdout": "--backend $name: exclusive backend selector - auto|cpu|cuda|sycl|hip|metal.\n",
+      "usable": null
+    },
+    {
+      "case": "empty report",
+      "stdout": "{\"backends\": []}",
+      "usable": null
+    },
+    {
+      "case": "row without usable",
+      "stdout": "{\"backends\": [{\"name\": \"cuda\", \"compiled\": true}]}",
+      "usable": null
+    }
+  ],
+  "selections": [
+    {
+      "prefer": "auto",
+      "available": [
+        "cpu",
+        "cuda",
+        "hip"
+      ],
+      "want": "cuda"
+    },
+    {
+      "prefer": "auto",
+      "available": [
+        "cpu",
+        "sycl",
+        "hip"
+      ],
+      "want": "sycl"
+    },
+    {
+      "prefer": "auto",
+      "available": [
+        "cpu",
+        "hip",
+        "metal"
+      ],
+      "want": "hip"
+    },
+    {
+      "prefer": "auto",
+      "available": [
+        "cpu",
+        "metal"
+      ],
+      "want": "metal"
+    },
+    {
+      "prefer": "auto",
+      "available": [
+        "cpu"
+      ],
+      "want": "cpu"
+    },
+    {
+      "prefer": "auto",
+      "available": [],
+      "want": "cpu"
+    },
+    {
+      "prefer": "auto",
+      "available": [
+        "cpu",
+        "cuda"
+      ],
+      "fallbacks": [
+        "hip",
+        "cpu"
+      ],
+      "want": "cpu"
+    },
+    {
+      "prefer": "auto",
+      "available": [
+        "cpu",
+        "cuda"
+      ],
+      "fallbacks": [],
+      "want": "cpu"
+    },
+    {
+      "prefer": "cpu",
+      "available": [
+        "cpu"
+      ],
+      "want": "cpu"
+    },
+    {
+      "prefer": "cuda",
+      "available": [
+        "cpu",
+        "cuda"
+      ],
+      "want": "cuda"
+    },
+    {
+      "prefer": "cuda",
+      "available": [
+        "cpu"
+      ],
+      "error": "unavailable"
+    },
+    {
+      "prefer": "hip",
+      "available": [
+        "cpu",
+        "cuda"
+      ],
+      "error": "unavailable"
+    },
+    {
+      "prefer": "metal",
+      "available": [
+        "cpu",
+        "metal"
+      ],
+      "want": "metal"
+    },
+    {
+      "prefer": "metal",
+      "available": [
+        "cpu"
+      ],
+      "error": "unavailable"
+    },
+    {
+      "prefer": "vulkan",
+      "available": [
+        "cpu"
+      ],
+      "error": "unknown"
+    },
+    {
+      "prefer": "",
+      "available": [
+        "cpu"
+      ],
+      "error": "unknown"
+    }
+  ]
+}

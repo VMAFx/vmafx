@@ -3,8 +3,8 @@
 //
 // pkg/corpus/backend.go — compatibility adapters for backend selection.
 //
-// pkg/scorebackend owns the one backend vocabulary, probe implementation and
-// strict selection policy. These wrappers preserve the corpus package's
+// pkg/scorebackend owns the one backend vocabulary, the reader of
+// `vmaf --list-backends` (ADR-1874) and the strict selection policy. These wrappers preserve the corpus package's
 // pre-consolidation API while callers migrate to that canonical package.
 
 package corpus
@@ -30,14 +30,16 @@ var DefaultFallbacks = scorebackend.DefaultFallbacks()
 // Deprecated: use scorebackend.UnavailableError.
 type BackendUnavailableError = scorebackend.UnavailableError
 
-// ParseSupportedBackends delegates to the canonical vmaf help parser.
+// ParseSupportedBackends delegates to the deprecated vmaf help parser.
 //
-// Deprecated: use scorebackend.ParseSupportedBackends.
+// Deprecated: the help text names every backend whatever the build; use
+// scorebackend.Report and scorebackend.UsableBackends.
 func ParseSupportedBackends(helpText string) map[string]bool {
 	return scorebackend.ParseSupportedBackends(helpText)
 }
 
-// DetectAvailableBackends delegates to the canonical bounded host probes.
+// DetectAvailableBackends delegates to scorebackend.Detect, which reads
+// `vmaf --list-backends`.
 //
 // Deprecated: use scorebackend.Detect with scorebackend.Options.
 func DetectAvailableBackends(ctx context.Context, vmafBin string, run Runner) []string {

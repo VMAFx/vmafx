@@ -48,25 +48,25 @@ invariant: CAMBI GPU twins mirror host-side semantics and hybrid host/GPU dispat
   7×7 spatial mask + 2× decimate + 3-tap mode filter) and call
   `vmaf_cambi_calculate_c_values` + `vmaf_cambi_spatial_pooling` on host
   against GPU-produced image + mask; those call sites stay lock-step with
-  CPU `calculate_c_values` because they *are* the CPU code. `cambi_sycl`
+  CPU `calculate_c_values` because they *are* CPU code. `cambi_sycl`
   reimplements c-values (per-chunk column histograms) and top-K pooling
   (radix select + exact 128-bit fixed-point sum) on device: any CPU-side
-  change to `c_value_pixel`, the histogram window walk,
+  change to `c_value_pixel`, histogram window walk,
   `spatial_pooling`, `cambi_preprocessing` or `filter_mode` must be
   mirrored into `sycl/integer_cambi_sycl.cpp` in same PR
   (`test_sycl_cambi_parity` asserts bit-exact per frame). Open host-residual rows
   `T-{CUDA,HIP,METAL}-CAMBI-HOST-RESIDUAL-2026-09-29` in
-  `docs/state.md` port the SYCL design to the other twins.
+  `docs/state.md` port SYCL design to other twins.
   - **`cambi_internal.h` invariant**: this internal-only header
     exposes cambi.c's file-static helpers (`get_spatial_mask`,
     `decimate`, `filter_mode`, `calculate_c_values`,
     `spatial_pooling`, `weight_scores_per_scale`,
     `get_pixels_in_window`, `cambi_preprocessing`,
     `increment_range` / `decrement_range` /
-    `get_derivative_data_for_row` callbacks) and the
-    heatmap writers (`open_heatmaps`, `dump_c_values`, the close loop:
+    `get_derivative_data_for_row` callbacks) and
+    heatmap writers (`open_heatmaps`, `dump_c_values`, close loop:
     `vmaf_cambi_open_heatmaps` / `_dump_c_values` / `_close_heatmaps`,
-    called by the CPU and by `integer_cambi_metal`), and the
+    called by CPU and by `integer_cambi_metal`), and
     `reciprocal_lut` table (`vmaf_cambi_reciprocal_lut`, ADR-1357 —
     device twins upload it verbatim; 42 entries are 1 ulp off
     `1.0f / i`, so never recompute it) to GPU twins via
@@ -79,5 +79,5 @@ invariant: CAMBI GPU twins mirror host-side semantics and hybrid host/GPU dispat
   - Strategy III (fully-on-GPU c-values) from
     [research digest 0020](../../../../docs/research/0020-cambi-gpu-strategies.md)
     is implemented for SYCL by ADR-1357 (column-owned sliding window,
-    not the direct per-pixel histogram 0020 sketched); see
+    not direct per-pixel histogram 0020 sketched); see
     [Research-2122](../../../../docs/research/2122-sycl-cambi-device-resident.md).

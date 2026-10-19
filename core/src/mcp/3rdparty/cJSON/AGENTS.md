@@ -68,6 +68,13 @@ and clang keep denormal. `test_print_number_precision` probes running build
 instead of asserting one answer. Do not pin one spelling into test. Do not
 "fix" printer: both outputs = what their build's own arithmetic says.
 
+**`true` / `false` are not redefined in C23** (fork delta 7). Upstream `#define`s both
+after `#undef`; in C23 they are keywords and clang / gcc report `-Wkeyword-macro` on
+every TU that includes this file. `cJSON.c` includes `<stdbool.h>` and keeps the typed
+macros only when that header made `true` / `false` macros (before C23, MSVC's UCRT).
+The keyword converts to `cJSON_bool` with the same value, so no behaviour changes. A
+re-vendor re-applies this hunk.
+
 **Do not** silence any of this with `NOLINT`, Semgrep path exclude,
 `.semgrepignore` line or baseline entry. Fix call site.
 

@@ -1,0 +1,31 @@
+
+# @KIND@ (scaffolded by /add-k8s-resource). Describe the resource, add the
+# spec and status fields, then run scripts/codegen/vmafx-api.py --write and
+# scripts/codegen/crd_generate.py --write.
+[[resources]]
+kind = "@KIND@"
+group = "vmafx"
+doc = "@KIND@ is the Schema for the @PLURAL@ API. TODO(@KIND@): say what one object stands for."
+short_names = ["@SHORT@"]
+spec = "@KIND@Spec"
+status = "@KIND@Status"
+printer_columns = [
+  { name = "Age", type = "date", json_path = ".metadata.creationTimestamp" },
+]
+
+[[messages]]
+name = "@KIND@Spec"
+group = "vmafx"
+doc = "@KIND@Spec defines the desired state of a @KIND@."
+fields = [
+  # TODO(@KIND@): the desired-state fields, e.g.
+  # { name = "target", type = "string", min_length = 1, doc = "Target is ..." },
+]
+
+[[messages]]
+name = "@KIND@Status"
+group = "vmafx"
+doc = "@KIND@Status defines the observed state of a @KIND@."
+fields = [
+  { name = "observedGeneration", type = "int64", optional = true, doc = "ObservedGeneration is the metadata.generation this status describes." },
+]

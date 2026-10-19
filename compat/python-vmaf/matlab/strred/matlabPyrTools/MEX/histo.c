@@ -10,6 +10,7 @@
 #define V4_COMPAT
 #include <matrix.h> /* Matlab matrices */
 #include <mex.h>
+#include <stdio.h>
 
 #include <stddef.h> /* NULL */
 #include <math.h>   /* ceil */
@@ -23,15 +24,19 @@
 static void mtx_extremes(const double *im, int size, double *mn_out, double *mx_out,
                          double *mean_out)
 {
-    double temp, mn = *im, mx = *im, sum = 0;
+    double temp;
+    double mn = *im;
+    double mx = *im;
+    double sum = 0;
     int i;
 
     for (i = 1; i < size; i++) {
         temp = im[i];
-        if (temp < mn)
+        if (temp < mn) {
             mn = temp;
-        else if (temp > mx)
+        } else if (temp > mx) {
             mx = temp;
+        }
         sum += temp;
     }
     *mn_out = mn;
@@ -84,7 +89,8 @@ static int adjust_bins(double mn, double mx, double *origin_io, double *binsize_
 {
     double origin = *origin_io;
     double binsize = *binsize_io;
-    int nbins, i;
+    int nbins;
+    int i;
 
     if (binsize < 0) /* user specified BINSIZE */
     {
@@ -98,10 +104,11 @@ static int adjust_bins(double mn, double mx, double *origin_io, double *binsize_
             mexErrMsgTxt("NBINS must be greater than zero.");
         binsize = (mx - mn) / (nbins - 1 + 2 * PAD); /* start with lower bound */
         i = ceil((origin - mn - binsize / 2) / binsize);
-        if (mn < (origin - i * binsize - PAD * binsize))
+        if (mn < (origin - i * binsize - PAD * binsize)) {
             binsize = (origin - mn) / (i + PAD);
-        else if (mx > (origin + (nbins - 1 - i) * binsize + PAD * binsize))
+        } else if (mx > (origin + (nbins - 1 - i) * binsize + PAD * binsize)) {
             binsize = (mx - origin) / ((nbins - 1 - i) + PAD);
+        }
         origin -= binsize * ceil((origin - mn - PAD * binsize) / binsize);
     }
 
@@ -110,21 +117,55 @@ static int adjust_bins(double mn, double mx, double *origin_io, double *binsize_
     return nbins;
 }
 
+/* Second output: the centre of every bin, origin + i * binsize. */
+static void write_bincenters(mxArray *out, int nbins, double origin, double binsize)
+{
+    double *bincenters;
+    double temp;
+    int i;
+
+    if (out == NULL)
+        mexErrMsgTxt("Error allocating result matrix");
+    bincenters = mxGetPr(out);
+    for (i = 0, temp = origin; i < nbins; i++, temp += binsize)
+        bincenters[i] = temp;
+}
+
+/* Count every sample into its bin; a sample outside the bins is reported. */
+static void accumulate_hist(const double *im, int size, double *hist, int nbins, double origin,
+                            double binsize)
+{
+    int i;
+    int binnum;
+
+    for (i = 0; i < size; i++) {
+        binnum = (int)((im[i] - origin) / binsize + 0.5);
+        if ((binnum < nbins) && (binnum >= 0)) {
+            (hist[binnum]) += 1.0;
+        } else {
+            printf("HISTO warning: value %f outside of range [%f,%f]\n", im[i],
+                   origin - 0.5 * binsize, origin + (nbins - 0.5) * binsize);
+        }
+    }
+}
+
 void mexFunction(int nlhs,             /* Num return vals on lhs */
                  mxArray *plhs[],      /* Matrices on lhs      */
                  int nrhs,             /* Num args on rhs    */
                  const mxArray *prhs[] /* Matrices on rhs */
 )
 {
-    register double temp;
-    register int binnum, i, size;
+    register int size;
     register double *im;
     register double *hist;
     register int nbins;
     /* mn, mx, mean, origin and binsize are filled in through pointers by the
        helpers above, so they cannot carry the register storage class. */
-    double binsize, origin, mn, mx, mean;
-    double *bincenters;
+    double binsize;
+    double origin;
+    double mn;
+    double mx;
+    double mean;
     const mxArray *arg;
 
     if (nrhs < 1)
@@ -157,21 +198,8 @@ void mexFunction(int nlhs,             /* Num return vals on lhs */
 
     if (nlhs > 1) {
         plhs[1] = (mxArray *)mxCreateDoubleMatrix(1, nbins, mxREAL);
-        if (plhs[1] == NULL)
-            mexErrMsgTxt("Error allocating result matrix");
-        bincenters = mxGetPr(plhs[1]);
-        for (i = 0, temp = origin; i < nbins; i++, temp += binsize)
-            bincenters[i] = temp;
+        write_bincenters(plhs[1], nbins, origin, binsize);
     }
 
-    for (i = 0; i < size; i++) {
-        binnum = (int)((im[i] - origin) / binsize + 0.5);
-        if ((binnum < nbins) && (binnum >= 0))
-            (hist[binnum]) += 1.0;
-        else
-            printf("HISTO warning: value %f outside of range [%f,%f]\n", im[i],
-                   origin - 0.5 * binsize, origin + (nbins - 0.5) * binsize);
-    }
-
-    return;
+    accumulate_hist(im, size, hist, nbins, origin, binsize);
 }

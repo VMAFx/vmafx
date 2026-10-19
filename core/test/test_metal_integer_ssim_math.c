@@ -50,6 +50,7 @@
 #include <string.h>
 
 #include "test.h"
+#include "float_bits.h"
 
 #include "ssim_twin_parity.h"
 
@@ -97,7 +98,7 @@ static double reference_term(ssim_moments m, int samplemax)
     double mxy;
     double my2;
     double w_d;
-    w_d = m.w;
+    w_d = (double)m.w;
     c1 = sm * sm * SSIM_K1 * w_d * w_d;
     c2 = sm * sm * SSIM_K2 * w_d * w_d;
     mx2 = m.mux * (double)m.mux;
@@ -360,11 +361,12 @@ static mu_message_t check_frame(const SsimTwinCase *c)
     const int unref_dis = vmaf_picture_unref(&dis);
     mu_assert("twin emulation failed", err == 0);
     mu_assert("vmaf_picture_unref failed", unref_ref == 0 && unref_dis == 0);
-    if (cpu != twin) {
+    if (!vmaf_test_identical_f64(cpu, twin)) {
         (void)fprintf(stderr, "\n%s %ux%u %u-bit: cpu=%.17g twin=%.17g\n", c->what, c->w, c->h,
                       c->bpc, cpu, twin);
     }
-    mu_assert("the twin's ssim on the host differs from the CPU extractor", cpu == twin);
+    mu_assert("the twin's ssim on the host differs from the CPU extractor",
+              vmaf_test_identical_f64(cpu, twin));
     return NULL;
 }
 

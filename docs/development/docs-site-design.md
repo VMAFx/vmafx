@@ -9,7 +9,8 @@ in Zensical's `classic` variant when the site moves there
 
 This page is for people who change the site's look or write a page that uses
 its components. Writing ordinary pages needs nothing from it: Markdown,
-tables, code blocks and admonitions are styled automatically.
+tables, code blocks and admonitions are styled automatically. A page with
+formulas follows [Writing math](#writing-math).
 
 ## Preview a change
 
@@ -21,6 +22,10 @@ python3 -m venv .venv-docs
 .venv-docs/bin/pip install --no-build-isolation --require-hashes -r docs/requirements-lock.txt
 .venv-docs/bin/mkdocs serve
 ```
+
+With the toolchain on `PATH`, `make docs-serve` is the same preview and
+`make docs-build` the strict build the docs workflow runs (`mkdocs build
+--strict`, output in `build-docs/site`).
 
 The site switches between light and dark with the toggle in the header and
 follows the system setting on a first visit. Check a change in both, at a
@@ -302,6 +307,85 @@ the committed copy. Without the archive,
 recorded hash, is missing, or is not listed, or when the licence file is not
 listed. `scripts/docs/tests/test_vendored_assets.py` holds both tools to that
 contract.
+
+## Writing math
+
+Formulas are TeX between dollar signs, rendered by KaTeX 0.18.9 that the site
+serves itself ([ADR-2705](../adr/2705-docs-math-katex.md)). The same syntax
+renders in GitHub's Markdown view.
+
+| You write | You get |
+| --- | --- |
+| `$2^{\mathrm{bpc}} - 1$` | an inline formula inside the sentence |
+| a line holding only `$$`, the TeX, a line holding only `$$` | a centred display formula |
+
+```markdown
+PSNR of a plane is $10 \log_{10}(\mathrm{peak}^2 / \mathrm{mse})$, with
+
+$$
+\mathrm{mse}_p = \frac{\mathrm{sse}_p}{w_p \, h_p}
+$$
+```
+
+Rules for a page:
+
+- Only real math becomes math. Identifiers, option names, file names and a C
+  expression quoted from the source stay in backticks; a formula that
+  explains what the code computes is TeX. Where both help, keep the quoted code
+  and add the TeX beside it.
+- Name multi-letter quantities with `\mathrm{...}` (`\mathrm{peak}`), not as
+  italic products of letters. Write `\log_{10}`, `\frac{a}{b}`, `\sqrt{x}`,
+  `\sum_{i}`, `\lceil x \rceil`, and `\lvert x \rvert` for an absolute value
+  (a bare `|` ends a table cell).
+- Keep a heading free of math: the heading's anchor is built from its text.
+- A dollar sign that is not math (a price, a shell variable) goes in backticks
+  or is written `\$`. `$5 and $10` is read as text, `$x$` as math.
+- Leave the files that are frozen or generated as they are: the bodies of
+  Accepted ADRs, `docs/research/`, `docs/changelog-archive/`,
+  `docs/state.md`, the rebase notes and the generated pages.
+
+`mkdocs.yml` turns the syntax into `<span class="arithmatex">` /
+`<div class="arithmatex">` elements (`pymdownx.arithmatex`, `generic: true`),
+and `docs/javascripts/katex.js` typesets them with the files in
+`docs/javascripts/vendor/katex/`: `katex.min.js`, `auto-render.min.js`,
+`katex.min.css` and the WOFF2 fonts, none loaded from another host. Without
+JavaScript the TeX source stays readable.
+
+### Check the formulas
+
+```bash
+make docs-build                                     # strict build, then the check
+python3 scripts/docs/check_math.py --site build-docs/site
+```
+
+`scripts/docs/check_math.py` reads every formula from the built HTML and
+compiles it with the vendored KaTeX in strict mode with `throwOnError`, so an
+unknown command, an unbalanced brace or unicode text in math mode fails the
+build instead of showing as red text on the site. It needs Node.js and exits 3,
+not 0, without it. The docs workflow runs it after the strict build, and the
+pre-push MkDocs hook runs it on the temporary build.
+`scripts/docs/tests/test_check_math.py` holds it to its contract, including a
+planted broken formula that must fail the check.
+
+### Update KaTeX
+
+Download the tarball named in a new `source` of
+`docs/javascripts/vendor/katex/vendor.json`, set `source_sha256`,
+`source_integrity` (the `dist.integrity` the npm registry lists) and the
+members' `from_sha256`, then write the files:
+
+```bash
+curl -LO https://registry.npmjs.org/katex/-/katex-<version>.tgz
+python3 scripts/docs/vendor_katex.py --manifest docs/javascripts/vendor/katex/vendor.json \
+  --archive katex-<version>.tgz
+```
+
+`--check` rebuilds the files from the tarball and fails when one differs. The
+build keeps the WOFF2 fonts only and drops the WOFF and TrueType fallbacks
+from `katex.min.css`. `check_vendored_assets.py` (in `make docs-fragments-check`)
+holds the committed files to the recorded SHA-256 values. KaTeX is MIT
+licensed; its licence text sits in the same directory and `REUSE.toml` records
+the copyright.
 
 ## Typography and contrast, measured
 

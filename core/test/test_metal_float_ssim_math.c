@@ -43,6 +43,7 @@
 #include <string.h>
 
 #include "test.h"
+#include "float_bits.h"
 
 #include "float_ssim_order_frame.h"
 #include "ssim_order_noise.h"
@@ -93,8 +94,8 @@ static void reference_terms(window_moments m, float C1, float C2, double *l_out,
     float sigma_both = m.both;
     ref_sigma_sqd -= m.ref_mu * m.ref_mu;
     cmp_sigma_sqd -= m.cmp_mu * m.cmp_mu;
-    ref_sigma_sqd = MAX(0.0, ref_sigma_sqd);
-    cmp_sigma_sqd = MAX(0.0, cmp_sigma_sqd);
+    ref_sigma_sqd = (float)MAX(0.0, ref_sigma_sqd);
+    cmp_sigma_sqd = (float)MAX(0.0, cmp_sigma_sqd);
     sigma_both -= m.ref_mu * m.cmp_mu;
 
     const float sigma_ref_sigma_cmp = sqrtf(ref_sigma_sqd * cmp_sigma_sqd);
@@ -213,7 +214,8 @@ static char *test_terms_are_the_cpu_expressions(void)
         const uint64_t got_bits = vmaf_mtl_ssim_product_bits(got);
         const int ok = same_double(vmaf_mtl_signed_bits(got.luminance), l) &&
                        same_double(vmaf_mtl_signed_bits(got.contrast), c) &&
-                       (double)got.structure == (double)(float)s && (double)got.structure == s &&
+                       vmaf_test_identical_f64((double)got.structure, (double)(float)s) &&
+                       vmaf_test_identical_f64((double)got.structure, s) &&
                        same_double(got_bits, ssim);
         if (!ok && bad++ < 5u) {
             report_term(i, m, l, c, s, ssim, &got, got_bits);
@@ -394,11 +396,12 @@ static void report_frame(const Case *c, int lcs, const double cpu[4], const doub
 static char *check_flat_db(const Case *c, const double cpu[4], const double plain[4])
 {
     const double db = to_db(plain[0]);
-    if (db != c->expect_db) {
+    if (!vmaf_test_identical_f64(db, c->expect_db)) {
         (void)fprintf(stderr, "\n%s: enable_db twin %.17g cpu %.17g\n", c->what, db, c->expect_db);
     }
     mu_assert("enable_db on a flat identical frame is not the CPU's value",
-              db == c->expect_db && to_db(cpu[0]) == c->expect_db);
+              vmaf_test_identical_f64(db, c->expect_db) &&
+                  vmaf_test_identical_f64(to_db(cpu[0]), c->expect_db));
     mu_assert("a flat identical frame must not score exactly 1", plain[0] < 1.0);
     return NULL;
 }
@@ -406,17 +409,19 @@ static char *check_flat_db(const Case *c, const double cpu[4], const double plai
 static char *check_means(const Case *c, const double cpu[4], const double plain[4],
                          const double lcs[4])
 {
-    if (plain[0] != cpu[0]) {
+    if (!vmaf_test_identical_f64(plain[0], cpu[0])) {
         report_frame(c, 0, cpu, plain);
     }
-    if (lcs[0] != cpu[0] || lcs[1] != cpu[1] || lcs[2] != cpu[2] || lcs[3] != cpu[3]) {
+    if (!vmaf_test_identical_f64(lcs[0], cpu[0]) || !vmaf_test_identical_f64(lcs[1], cpu[1]) ||
+        !vmaf_test_identical_f64(lcs[2], cpu[2]) || !vmaf_test_identical_f64(lcs[3], cpu[3])) {
         report_frame(c, 1, cpu, lcs);
     }
-    mu_assert("float_ssim differs from the CPU", plain[0] == cpu[0]);
-    mu_assert("float_ssim under enable_lcs differs from the CPU", lcs[0] == cpu[0]);
-    mu_assert("float_ssim_l differs from the CPU", lcs[1] == cpu[1]);
-    mu_assert("float_ssim_c differs from the CPU", lcs[2] == cpu[2]);
-    mu_assert("float_ssim_s differs from the CPU", lcs[3] == cpu[3]);
+    mu_assert("float_ssim differs from the CPU", vmaf_test_identical_f64(plain[0], cpu[0]));
+    mu_assert("float_ssim under enable_lcs differs from the CPU",
+              vmaf_test_identical_f64(lcs[0], cpu[0]));
+    mu_assert("float_ssim_l differs from the CPU", vmaf_test_identical_f64(lcs[1], cpu[1]));
+    mu_assert("float_ssim_c differs from the CPU", vmaf_test_identical_f64(lcs[2], cpu[2]));
+    mu_assert("float_ssim_s differs from the CPU", vmaf_test_identical_f64(lcs[3], cpu[3]));
     return NULL;
 }
 

@@ -40,7 +40,8 @@ in both directions automatically.
 
 ## Message shape
 
-The proto lives in [`proto/vmafx.proto`](../../proto/vmafx.proto).
+The proto is [`proto/vmafx/v1/vmafx.proto`](../../proto/vmafx/v1/vmafx.proto), generated
+from `api/vmafx-platform.toml` ([API generation](../development/api-generation.md#platform-definition)).
 Summarised:
 
 | Direction | Message | Meaning |

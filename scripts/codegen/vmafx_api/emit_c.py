@@ -24,6 +24,11 @@ from .model import (
 EXPORT_DEFINITION = """#ifndef {macro}
 #if defined(_MSC_VER)
 #define {macro} __declspec(dllexport)
+#elif defined(__MINGW32__) && !defined(__clang__)
+/* GCC's PE targets have no ELF visibility: the attribute is ignored, and under LTO a use can
+ * draw "visibility attribute not supported in this configuration" (-Wattributes). Empty, as
+ * VMAF_EXPORT in libvmaf/macros.h is: the symbols are exported as before. */
+#define {macro}
 #elif defined(__GNUC__) || defined(__clang__)
 #define {macro} __attribute__((visibility("default")))
 #else
@@ -201,8 +206,12 @@ def _wrapped(body: list[str]) -> str:
         return ""
     return (
         '#ifdef __cplusplus\nextern "C" {\n#endif\n\n'
+        + ctext.C_HEADER_BEGIN
+        + "\n\n"
         + "\n".join(body)
-        + "\n#ifdef __cplusplus\n}\n#endif\n\n"
+        + "\n"
+        + ctext.C_HEADER_END
+        + "\n\n#ifdef __cplusplus\n}\n#endif\n\n"
     )
 
 
@@ -313,4 +322,33 @@ def status_header(api: Api) -> str:
         + "/** Status for a negative errno the engine returned. */\n"
         + "VmafxStatus vmafx_status_from_errno(int negative_errno);\n\n"
         + "#endif /* VMAFX_STATUS_GEN_H */\n"
+    )
+
+
+COMPAT_STATUS_PATH = "core/src/compat/libvmaf/status_errno_gen.c"
+COMPAT_STATUS_FUNCTION = """int vmaf_compat_status_errno(VmafxStatus status)
+{
+    for (size_t i = 0; i < N_STATUS_ROWS; i++) {
+        if (status_rows[i].status == status) {
+            return status_rows[i].negative_errno;
+        }
+    }
+    return -EIO;
+}
+"""
+
+
+def compat_status_source(api: Api) -> str:
+    """The status-to-errno map of the compat library (libvmaf.so.3), which links
+    exported vmafx_ symbols only and so carries its own copy of the table."""
+    return (
+        ctext.licence_block()
+        + "\n"
+        + ctext.banner_comment()
+        + "\n"
+        + '#include <errno.h>\n#include <stddef.h>\n\n#include "compat_errno.h"\n'
+        + f'#include "{_status_header_path(api)}"\n\n'
+        + _status_rows(api)
+        + "\n"
+        + COMPAT_STATUS_FUNCTION
     )

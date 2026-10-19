@@ -4,7 +4,7 @@
 """Real-corpus LOSO trainer for the per-codec predictor models (Phase 2).
 
 Companion to PR #450 (predictor training pipeline + 14 stub ONNX models —
-``tools/vmaf-tune/src/vmaftune/predictor_train.py``). PR #450 ships
+``ai/src/vmaf_train/predictor_train.py``). PR #450 ships
 synthetic-stub weights for every codec adapter; this script promotes
 those stubs into production-flippable models trained on a real corpus
 under 5-fold leave-one-source-out cross-validation, with the
@@ -249,7 +249,7 @@ def discover_corpora(roots: Sequence[Path]) -> list[CorpusFile]:
 def load_rows(corpus_files: Sequence[CorpusFile], codec: str) -> list[dict]:
     """Load every row matching ``encoder == codec`` across all corpus files.
 
-    Mirrors ``vmaftune.predictor_train.load_corpus`` row filtering but
+    Mirrors ``vmaf_train.predictor_train.load_corpus`` row filtering but
     accepts a list of files (so multi-corpus runs are explicit) and
     tags each row's ``_source_corpus`` provenance for the report.
     """
@@ -368,12 +368,12 @@ def loso_folds(
 def _import_predictor_train() -> Any:
     """Import the PR #450 trainer module if it is on the path."""
     try:
-        from vmaftune import predictor_train  # type: ignore[import-not-found]
+        from vmaf_train import predictor_train
 
         return predictor_train
     except ImportError as exc:
         raise RuntimeError(
-            "vmaftune.predictor_train is not importable. Either rebase onto a "
+            "vmaf_train.predictor_train is not importable. Either rebase onto a "
             "branch that includes PR #450, or run with --synthetic-smoke (which "
             "uses the in-process synthetic generator and does not need the "
             "shipped trainer module)."
@@ -381,7 +381,7 @@ def _import_predictor_train() -> Any:
 
 
 # ---------------------------------------------------------------------
-# Tiny inline trainer (used when vmaftune.predictor_train is unavailable
+# Tiny inline trainer (used when vmaf_train.predictor_train is unavailable
 # OR the caller passes --synthetic-smoke). Mirrors the PR #450 trainer's
 # tiny-MLP architecture so the gate-enforcement tests don't depend on
 # torch being installed; the real-corpus path always defers to PR #450.
@@ -440,7 +440,7 @@ def _train_one_fold(
 ) -> tuple[float, float, float]:
     """Fit a tiny MLP on ``train_rows``, evaluate on ``val_rows``.
 
-    Defers to ``vmaftune.predictor_train`` when importable so the
+    Defers to ``vmaf_train.predictor_train`` when importable so the
     fold-level training body shares the exact projection + tiny-MLP
     architecture as the shipped stubs (no behavioural drift between
     LOSO eval and the production model). When that module is
@@ -607,7 +607,7 @@ def train_codec_loso(
     """Run 5-fold LOSO + gate evaluation for one codec.
 
     Defers per-fold training to ``_train_one_fold`` (which in turn
-    requires ``vmaftune.predictor_train``). When the row count is
+    requires ``vmaf_train.predictor_train``). When the row count is
     insufficient for 5-fold LOSO, returns a CodecResult with
     ``status='insufficient-sources'`` so the caller can mark the
     model card accordingly without crashing the batch.
@@ -865,7 +865,7 @@ def _train_codec_batch(
         try:
             result = train_codec_loso(codec, rows, epochs=epochs, seed=seed)
         except RuntimeError as exc:
-            # vmaftune.predictor_train missing — render a diagnostic
+            # vmaf_train.predictor_train missing — render a diagnostic
             # row rather than crashing the whole batch.
             result = CodecResult(
                 codec=codec,

@@ -1,58 +1,8 @@
 {
   "version": 1,
-  "generated_at": "2026-10-05T17:51:49Z",
+  "generated_at": "2026-10-06T02:08:19Z",
   "repository": "VMAFx/vmafx",
-  "commit_sha": "0cf544c542466e67e5339ec6459349f0fa21cfb0",
-  "total_infractions": 6,
-  "infractions": [
-    {
-      "rule_id": "HISS-07",
-      "file_path": ".github/workflows/docker-image.yml",
-      "line_number": 96,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:0384c48dc174",
-      "fingerprint": ".github/workflows/docker-image.yml:HISS-07:text:0384c48dc174#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": ".github/workflows/docker-image.yml",
-      "line_number": 97,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:90891aa10dd2",
-      "fingerprint": ".github/workflows/docker-image.yml:HISS-07:text:90891aa10dd2#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": ".github/workflows/pr-type-label.yml",
-      "line_number": 70,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:19d9eb5def6c",
-      "fingerprint": ".github/workflows/pr-type-label.yml:HISS-07:text:19d9eb5def6c#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": ".github/workflows/pr-type-label.yml",
-      "line_number": 75,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:0f34b4adc0f0",
-      "fingerprint": ".github/workflows/pr-type-label.yml:HISS-07:text:0f34b4adc0f0#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "bindings/rust/vmafx-sys/examples/score.rs",
-      "line_number": 183,
-      "message": "process::exit ends the process from library code; return an error to fn main instead",
-      "anchor": "fn:score_inputs",
-      "fingerprint": "bindings/rust/vmafx-sys/examples/score.rs:HISS-07:fn:score_inputs#1"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/niqe_math.h",
-      "line_number": 105,
-      "symbol": "niqe_extract_aggd",
-      "message": "Function 'niqe_extract_aggd' (84 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "anchor": "fn:niqe_extract_aggd",
-      "fingerprint": "core/src/feature/niqe_math.h:HISS-04:fn:niqe_extract_aggd#1"
-    }
-  ]
+  "commit_sha": "2ea795282c04636f1a66354cdab04c51ef450373",
+  "total_infractions": 0,
+  "infractions": []
 }

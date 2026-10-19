@@ -57,6 +57,7 @@ class Twin:
     score_set: str  # the function that builds the VmafVifScoreSet
     score_pieces: tuple[str, ...]
     debug_default: str  # the debug option's default, as the table spells it
+    float_fields: bool = False  # the score fields are float too (the cast above is explicit)
 
 
 TWINS = (
@@ -79,13 +80,14 @@ TWINS = (
         path="cuda/integer_vif_cuda.c",
         sums="vif_reduce_accums",
         sums_pieces=("vif->scale[scale].num =", "vif->scale[scale].den ="),
-        roundings=0,
+        roundings=2,
         score_set="write_scores",
         score_pieces=(
             "output.score_num += vif.scale[scale].num;",
             "output.score_den += vif.scale[scale].den;",
         ),
         debug_default=".default_val.b = false,",
+        float_fields=True,
     ),
     Twin(
         path="hip/integer_vif_hip.c",
@@ -182,7 +184,7 @@ def _sums_failures(twin: Twin, code: str) -> list[str]:
             f"{twin.path}: {twin.sums}() must round each scale's numerator and denominator "
             f"to float once ({twin.roundings} casts)"
         )
-    if twin.roundings == 0 and FLOAT_SCORE not in code:
+    if (twin.roundings == 0 or twin.float_fields) and FLOAT_SCORE not in code:
         failures.append(f"{twin.path}: VifScore must hold each scale's sums as float")
     return failures
 

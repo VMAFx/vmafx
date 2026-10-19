@@ -37,6 +37,9 @@ HIP_FEATURE = SRC / "feature" / "hip"
 SHARED = "hip/shared_frame.c"
 LIBVMAF = "libvmaf.c"
 FEX = "feature/feature_extractor.cpp"
+# frame_upload() waits for the copies on both paths: when an earlier twin
+# already copied the planes, and after its own copy or upload (ADR-2092).
+FRAME_FOLLOW_CALLS = 2
 
 # Twins that read whole picture planes and share them. A twin that packs or
 # converts on the host (ms_ssim, cambi, SpEED) or that an open change still
@@ -154,7 +157,7 @@ def _shared_frame_failures(src: dict[str, str]) -> list[str]:
         failures.append(f"{SHARED}: an upload leaves the planes of the frame before to later waits")
     if (
         "batch_copy_on_device(f, &batch)" not in upload
-        or upload.count("frame_follow(f, stream)") < 2
+        or upload.count("frame_follow(f, stream)") < FRAME_FOLLOW_CALLS
         or "hipStreamWaitEvent(" not in _function_body(text, "frame_follow")
     ):
         failures.append(

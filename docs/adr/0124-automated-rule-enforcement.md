@@ -128,3 +128,13 @@ surface as PR comments for the reviewer to weigh.
   [ADR-0106](0106-adr-maintenance-rule.md),
   [ADR-0108](0108-deep-dive-deliverables-rule.md),
   [ADR-0116](0116-ci-workflow-naming-convention.md).
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 70: `4. **Copyright pre-commit hook** (ADR-0105) —
+  scripts/check-copyright.sh invoked from .pre-commit-config.yaml.`:
+  scripts/check-copyright.sh does not exist on origin/master; the script was
+  created at scripts/ci/check-copyright.sh.

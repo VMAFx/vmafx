@@ -45,6 +45,7 @@ import "C"
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -216,6 +217,9 @@ type ScoreDirectResult struct {
 	// Backend is always "cpu" in Phase 1.  Phase 2 extends to GPU backends
 	// via cpumask / gpumask + the backend-specific runtime init calls.
 	Backend string
+	// Provenance is the context's provenance record (#2142, RC4 WP5), the
+	// JSON the CLI report's "provenance" object carries.
+	Provenance json.RawMessage
 }
 
 // init runs once per process to pin LC_NUMERIC=C before any libvmaf scoring
@@ -408,7 +412,13 @@ func ScoreDirect(ctx context.Context, req ScoreDirectRequest) (
 	if err != nil {
 		return nil, err
 	}
-	return &ScoreDirectResult{VMAF: score, FrameCount: frameIdx, Backend: "cpu"}, nil
+	provenance, err := contextProvenance(vmafCtx)
+	if err != nil {
+		return nil, fmt.Errorf("ScoreDirect: %w", err)
+	}
+	return &ScoreDirectResult{
+		VMAF: score, FrameCount: frameIdx, Backend: "cpu", Provenance: provenance,
+	}, nil
 }
 
 func loadAndRegisterDirectModel(

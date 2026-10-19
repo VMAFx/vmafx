@@ -79,3 +79,13 @@ loaded.
   — runtime consumer.
 - Source: `req` — task brief specifies "synthetic 100-row training corpus
   per codec, deterministic seed".
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 76: `-
+  [tools/vmaf-tune/src/vmaftune/predictor_train.py](././tools/vmaf-tune/src/vmaftune/predictor_train.py)`:
+  Target file does not exist at cited path; trainer is located at
+  `ai/src/vmaf_train/predictor_train.py.`.

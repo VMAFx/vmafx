@@ -1,6 +1,6 @@
 # ADR-1168: The default VMAF model is defined in exactly one place
 
-- **Status:** Accepted
+- **Status**: Accepted
 - **Date:** 2026-09-03
 - **Deciders:** Lusoris
 - **Supersedes:** none

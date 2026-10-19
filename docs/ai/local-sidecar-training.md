@@ -24,10 +24,15 @@ and the libvmaf score actually observed at encode time. At inference
 the sidecar's correction is *added* to the shipped predictor's
 output; the shipped predictor itself stays read-only:
 
-```text
-sidecar_vmaf = Predictor.predict_vmaf(features, crf, codec)
-             + SidecarModel.predict_correction(features, crf)
-```
+$$
+\mathrm{vmaf}_{\mathrm{sidecar}}
+  = \mathrm{vmaf}_{\mathrm{predictor}}
+    (\mathit{features}, \mathit{crf}, \mathit{codec}) +
+  \mathrm{correction}_{\mathrm{sidecar}}(\mathit{features}, \mathit{crf})
+$$
+
+The two terms are `Predictor.predict_vmaf(features, crf, codec)` and
+`SidecarModel.predict_correction(features, crf)`.
 
 The sidecar adapts to:
 

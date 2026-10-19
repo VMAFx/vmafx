@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-0686: VMAFX Rebrand and Aggressive Modernization — Umbrella ADR
 
-- **Status**: Proposed (partially superseded by [ADR-1699](1699-root-licence-files-eupl.md) for the root `LICENSE-MIT` file, and by [ADR-1852](1852-vmafx-api-redesign.md) for the library and FFmpeg filter names)
+- **Status**: Accepted (status update 2026-10-06 below; partly superseded by [ADR-1699](1699-root-licence-files-eupl.md) and [ADR-1852](1852-vmafx-api-redesign.md))
 - **Date**: 2026-05-27
 - **Deciders**: Lusoris
 - **Tags**: rebrand, fork-policy, modernization, license, vmafx, build, ci, cli, docs
@@ -226,3 +226,26 @@ Related ADRs:
 - [ADR-0257](0257-mobilesal-real-weights-deferred.md) — MobileSal CC-BY-NC-SA license incompatibility (dual-license motivation)
 - [ADR-0386](0386-adr-numbering-collision-prevention.md) — ADR allocator
 - [ADR-0514](0514-dev-container-full-backend-exposure.md) — dev-MCP container backend exposure
+
+## Status update 2026-10-06: Accepted, with what stands and what later records replaced
+
+This record was Proposed since 2026-05-27 while most of its umbrella scope was
+applied or replaced. It is accepted as the umbrella it was meant to be; the
+list below says what stands and what a later record replaced. Per-sweep
+records refine within these bounds.
+
+Stands:
+
+- The documentation brand is VMAFx (`site_name: "VMAFx"` in `mkdocs.yml`); the Go tools carry the `vmafx-` names (`cmd/vmafx-mcp`, `cmd/vmafx-tune`).
+- Netflix-inherited code keeps the licence it already has (kept by ADR-1250).
+- Model removals and per-model decisions are left to their own records.
+
+Replaced:
+
+- The version scheme `v3.x.y-lusoris.N`: by ADR-1127, then ADR-1151 (the first release is v1.0.0 on a fresh SemVer line).
+- "`libvmaf.so`, its public C API and the FFmpeg filter names are not renamed": by ADR-1852 (a new `vmafx` header family and library with `libvmaf.h` as a compatibility layer, and VMAFx filter names).
+- Dual licensing of fork-added code (`BSD-3-Clause-Plus-Patent OR MIT`) and the root `LICENSE-MIT`: by ADR-1250 (EUPL-1.2 for fork-authored code) and ADR-1699 (the root licence files; `LICENSE-MIT` is removed).
+- The backend order CUDA > Vulkan > SYCL > CPU: the Vulkan backend was removed by ADR-0726; availability now comes from `vmaf --list-backends` (ADR-1874).
+- Which legacy build paths were dropped and the CI matrix deduplication: ADR-1259 supersedes ADR-0689, ADR-0691, ADR-0710 and ADR-0728 and states what still holds.
+
+The body above is unchanged.

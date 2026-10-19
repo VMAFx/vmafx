@@ -113,17 +113,20 @@ type Queue interface {
 	// when no matching job is available.
 	PullWork(ctx context.Context, nodeID, tenantID string, capacity NodeCapacity) (*Job, error)
 	// ReportResult records the terminal outcome of a job assigned to the
-	// reporting node (or of an orphaned job of its tenant, see Report). It
-	// returns an error wrapping ErrNotAssigned, and changes nothing, for any
-	// other job.
-	ReportResult(ctx context.Context, r Report) error
+	// reporting node (or of an orphaned job of its tenant, see Report) and
+	// reports whether this call moved the job to its terminal state; a
+	// repeated report of a finished job reports false. It returns an error
+	// wrapping ErrNotAssigned, and changes nothing, for any other job.
+	ReportResult(ctx context.Context, r Report) (bool, error)
 	// MayReport reports whether a partial report would be accepted; it writes
 	// nothing.
 	MayReport(ctx context.Context, r Report) bool
 	// Get returns a snapshot of a job by ID.
 	Get(ctx context.Context, jobID string) (*Job, error)
-	// Cancel requests cancellation of a pending or running job.
-	Cancel(ctx context.Context, jobID string) error
+	// Cancel requests cancellation of a pending or running job. It reports
+	// whether this call moved the job to CANCELLED; a job already in a
+	// terminal state is left alone and reports false.
+	Cancel(ctx context.Context, jobID string) (bool, error)
 	// CancelledAmong returns the IDs of ids that name a CANCELLED job of
 	// tenantID, in the order of ids. Unknown IDs and other tenants' jobs are
 	// left out. The controller answers a node's Heartbeat with it, so the node
@@ -142,6 +145,10 @@ type Queue interface {
 	PendingCount() int
 	// RunningCount returns the current number of RUNNING jobs.
 	RunningCount() int
+	// Stats returns the queue's per-tenant counts and its requeue totals for
+	// the controller's /metrics page. It reads every tenant's counts, never a
+	// job (ADR-1522 scopes job reads, not aggregate counts).
+	Stats(ctx context.Context) (Stats, error)
 	// Close releases database resources.
 	Close() error
 }
@@ -156,6 +163,10 @@ type SQLiteQueue struct {
 	pendingFIFO []string
 	// runningSet tracks IDs of RUNNING jobs for counter accuracy.
 	runningSet map[string]struct{}
+
+	// requeued counts the RUNNING jobs returned to PENDING since the queue
+	// opened, by reason (RequeueNodeLost, RequeueRestart, RequeueRollback).
+	requeued map[string]uint64
 
 	// getUnlockedHook is called at the start of getUnlocked when non-nil.
 	// It is used in tests to inject failures on demand; production code
@@ -189,6 +200,7 @@ func New(dbPath string, log *slog.Logger) (*SQLiteQueue, error) {
 		db:         db,
 		log:        log,
 		runningSet: make(map[string]struct{}),
+		requeued:   make(map[string]uint64),
 	}
 
 	// Reload in-flight state from the previous run.
@@ -199,7 +211,7 @@ func New(dbPath string, log *slog.Logger) (*SQLiteQueue, error) {
 	log.Info("job queue opened",
 		"db", dbPath,
 		"pending", len(q.pendingFIFO),
-		"running_reset", len(q.runningSet),
+		"running_reset", q.requeued[RequeueRestart],
 	)
 	return q, nil
 }
@@ -209,12 +221,19 @@ func New(dbPath string, log *slog.Logger) (*SQLiteQueue, error) {
 func (q *SQLiteQueue) reload() error {
 	// Reset any RUNNING jobs to PENDING — the nodes that were executing them
 	// are no longer connected after a controller restart.
-	_, err := q.db.Exec(
+	res, err := q.db.Exec(
 		"UPDATE jobs SET status=?, assigned_node=NULL, updated_at=? WHERE status=?",
 		StatusPending, time.Now().Unix(), StatusRunning,
 	)
 	if err != nil {
 		return fmt.Errorf("reset running jobs: %w", err)
+	}
+	reset, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("count reset running jobs: %w", err)
+	}
+	if reset > 0 {
+		q.requeued[RequeueRestart] += uint64(reset)
 	}
 
 	// Load PENDING jobs in submission order.
@@ -394,6 +413,7 @@ func (q *SQLiteQueue) rollbackTopending(jobID string) error {
 	}
 	delete(q.runningSet, jobID)
 	q.pendingFIFO = append([]string{jobID}, q.pendingFIFO...)
+	q.requeued[RequeueRollback]++
 	return nil
 }
 
@@ -422,10 +442,11 @@ type Report struct {
 //     node, and moves the assignment to the reporter in the same statement.
 //
 // A repeated report of a job that is already terminal and was the reporter's
-// (or its orphaned predecessor's) is an idempotent success. Every other report
-// — another tenant's job, a pending job, a job of a live node, an unknown job
-// — changes nothing and returns an error wrapping ErrNotAssigned.
-func (q *SQLiteQueue) ReportResult(ctx context.Context, r Report) error {
+// (or its orphaned predecessor's) is an idempotent success that reports false.
+// Every other report — another tenant's job, a pending job, a job of a live
+// node, an unknown job — changes nothing and returns an error wrapping
+// ErrNotAssigned.
+func (q *SQLiteQueue) ReportResult(ctx context.Context, r Report) (bool, error) {
 	status := StatusCompleted
 	if r.Result.Err != "" {
 		status = StatusFailed
@@ -434,7 +455,7 @@ func (q *SQLiteQueue) ReportResult(ctx context.Context, r Report) error {
 	if err != nil {
 		// map[string]float64 marshal can only fail on non-finite floats (NaN/Inf);
 		// surface the error rather than silently discarding per-feature scores.
-		return fmt.Errorf("queue: marshal features for job %s: %w", r.JobID, err)
+		return false, fmt.Errorf("queue: marshal features for job %s: %w", r.JobID, err)
 	}
 	// ExecContext propagates the caller's ctx so the node's ReportResult RPC
 	// deadline / cancellation aborts the UPDATE cleanly.
@@ -448,30 +469,31 @@ func (q *SQLiteQueue) ReportResult(ctx context.Context, r Report) error {
 		StatusCompleted, StatusFailed, StatusCancelled,
 	)
 	if err != nil {
-		return fmt.Errorf("queue: report result for job %s: %w", r.JobID, err)
+		return false, fmt.Errorf("queue: report result for job %s: %w", r.JobID, err)
 	}
 	if n, _ := res.RowsAffected(); n == 1 {
 		q.finishReport(r, status)
-		return nil
+		return true, nil
 	}
 	return q.reportUnassigned(ctx, r, status, string(featuresJSON))
 }
 
 // reportUnassigned handles a report the guarded UPDATE did not write: an
-// idempotent retry, an orphaned job of the reporter's tenant, or a refusal.
-func (q *SQLiteQueue) reportUnassigned(ctx context.Context, r Report, status, featuresJSON string) error {
+// idempotent retry, an orphaned job of the reporter's tenant, or a refusal. It
+// reports whether it wrote the result (an adopted orphan).
+func (q *SQLiteQueue) reportUnassigned(ctx context.Context, r Report, status, featuresJSON string) (bool, error) {
 	switch q.reportDecision(ctx, r) {
 	case reportIdempotent:
 		q.log.Info("ReportResult: job already in terminal state, ignoring", "job_id", r.JobID)
-		return nil
+		return false, nil
 	case reportAdopt:
 		adopted, err := q.adoptOrphan(ctx, r, status, featuresJSON)
 		if err != nil || adopted {
-			return err
+			return adopted, err
 		}
 	}
 	q.log.Warn("ReportResult: refused, job not assigned to node", "job_id", r.JobID, "node_id", r.NodeID)
-	return fmt.Errorf("queue: job %s: %w", r.JobID, ErrNotAssigned)
+	return false, fmt.Errorf("queue: job %s: %w", r.JobID, ErrNotAssigned)
 }
 
 // adoptOrphan writes the result of an orphaned RUNNING job of the reporter's
@@ -600,9 +622,10 @@ func (q *SQLiteQueue) getUnlocked(jobID string) (*Job, error) {
 	return &job, nil
 }
 
-// Cancel marks a PENDING or RUNNING job as CANCELLED.  Returns nil if the job
-// was already in a terminal state (idempotent).
-func (q *SQLiteQueue) Cancel(ctx context.Context, jobID string) error {
+// Cancel marks a PENDING or RUNNING job as CANCELLED and reports true. A job
+// already in a terminal state is left alone: Cancel reports false and no error
+// (idempotent).
+func (q *SQLiteQueue) Cancel(ctx context.Context, jobID string) (bool, error) {
 	// ExecContext propagates the caller's ctx so an aborted CancelJob RPC
 	// does not leave the UPDATE in flight.
 	now := time.Now().Unix()
@@ -611,14 +634,17 @@ func (q *SQLiteQueue) Cancel(ctx context.Context, jobID string) error {
 		StatusCancelled, now, jobID, StatusPending, StatusRunning,
 	)
 	if err != nil {
-		return fmt.Errorf("queue: cancel job %s: %w", jobID, err)
+		return false, fmt.Errorf("queue: cancel job %s: %w", jobID, err)
 	}
 
-	rows, _ := res.RowsAffected()
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("queue: cancel job %s: count rows: %w", jobID, err)
+	}
 	if rows == 0 {
 		// Job was already terminal — treat as idempotent success.
 		q.log.Debug("cancel no-op (already terminal)", "job_id", jobID)
-		return nil
+		return false, nil
 	}
 
 	// Remove from in-memory structures.
@@ -633,7 +659,7 @@ func (q *SQLiteQueue) Cancel(ctx context.Context, jobID string) error {
 	delete(q.runningSet, jobID)
 
 	q.log.Info("job cancelled", "job_id", jobID)
-	return nil
+	return true, nil
 }
 
 // CancelledAmong returns the entries of ids that name a CANCELLED job of
@@ -713,6 +739,7 @@ func (q *SQLiteQueue) RequeueNode(ctx context.Context, nodeID string) (int, erro
 		delete(q.runningSet, id)
 	}
 	q.pendingFIFO = append(ids, q.pendingFIFO...)
+	q.requeued[RequeueNodeLost] += uint64(len(ids))
 	q.log.Warn("jobs of evicted node returned to the queue", "node_id", nodeID, "jobs", len(ids))
 	return len(ids), nil
 }

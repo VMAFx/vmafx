@@ -65,6 +65,18 @@ finite fails the frame (see
 
 The tables are from the `VmafOption` arrays of `core/src/feature/speed.c`.
 
+`speed_prescale` has one more limit: the upscaled plane must have at most
+INT_MAX (2,147,483,647) samples, because the resampling and filter functions
+of `core/src/feature/vif_tools.c` index it with `int`. 16K (15360x8640) stays
+inside at every accepted prescale, up to 4.0 (2,123,366,400 samples); at the
+32768x32768 picture cap the limit is a prescale of about 1.414. A larger plane
+fails `init()` on every backend (the CPU and the SpEED device twins share the
+geometry of `speed_internal_init_dimensions()`):
+
+```text
+libvmaf ERROR SpEED: the prescaled plane (49152x49152) has more samples than the int index of vif_tools allows; lower speed_prescale
+```
+
 ## Agreement with Netflix's scores {#the-scores-are-netflixs}
 
 `speed_chroma` and `speed_temporal` return the values Netflix/vmaf returns for
@@ -175,13 +187,21 @@ setting. The tracked fixture `testdata/ref_576x324_48f.yuv` against
 
 ## CPU SIMD dispatch
 
-Two parts of the CPU SpEED path pick a vector kernel at runtime from the
+Three parts of the CPU SpEED path pick a vector kernel at runtime from the
 instruction sets the host reports:
 
 | Kernel | Scalar | AVX2 | AVX-512 |
 | --- | --- | --- | --- |
+| Anti-alias filter, vertical pass at the decimated rows | yes | yes | AVX2 kernel |
 | Block covariance sum | yes | yes | yes |
 | Dense matrix product (QR factorisation and the `QᵀB` solve) | yes | yes | yes |
+
+The anti-alias filter runs only at the samples the 16x decimation keeps, on
+every target (Netflix/vmaf `ad42c532`). Its vertical pass is vectorised for
+AVX2 (Netflix/vmaf `9cb9479f`) and adds each sample's products in the scalar
+order, so an AVX-512 host runs the AVX2 kernel and every setting returns the
+same bits. Filters wider than 17 taps (`speed_kernelscale` 2 and above) stay
+scalar.
 
 Nothing has to be enabled: the widest supported kernel is chosen when the
 extractor initialises. `--cpumask` restricts the choice, because its bits name
@@ -205,6 +225,44 @@ Picking the widest kernel is worth roughly 1.2x on the whole default-model run
 [research digest](../research/2030-speed-matmul-and-cambi-cpu-hot-path.md) for
 the profile and the measurement method. Models that do not carry a SpEED
 feature, such as `vmaf_v0.6.1.json`, never reach these kernels.
+
+## Rust twin of `speed_chroma` {#rust-twin}
+
+`speed_chroma` has a second CPU implementation written in Rust
+(`core/src/rust/feature/speed/`, crate `vmafx-fex-speed`), part of the Rust
+extractor framework ([ADR-1713](../adr/1713-rc4-rust-extractor-framework.md)).
+It is built with `-Denable_rust_features=true` and returns the C extractor's
+scores bit for bit: the same `speed_*` options (the C option parser still owns
+the defaults, aliases and ranges), the same three features
+(`speed_chroma_u`, `speed_chroma_v`, `speed_chroma_uv`), the same frames.
+`speed_temporal` has no Rust twin and always runs the C extractor.
+
+Select it for one run with the twin's own name, or for every CPU extractor of
+the run with the environment variable (C is the default):
+
+```bash
+vmaf -r ref.yuv -d dis.yuv -w 1920 -h 1080 -p 420 -b 8 --no_prediction \
+     --feature speed_chroma_rust --json -o out.json
+
+VMAF_FEATURE_IMPL=rust vmaf -r ref.yuv -d dis.yuv -w 1920 -h 1080 -p 420 -b 8 \
+     --no_prediction --feature speed_chroma --json -o out.json
+```
+
+The JSON `feature_backends` array lists `speed_chroma_rust` for the Rust run
+and `speed_chroma` for the C run, so the receipt proves which one ran. A GPU
+backend still wins over the Rust twin (`--backend cuda|sycl|hip`).
+
+Evidence, `scripts/ci/rust_twin_diff.py --feature speed_chroma`: every option
+set a `vmaf_v1.0.16*` model sets (prescale 1.0, 0.5 bilinear and 0.6 bilinear;
+`speed_weight_var_mode` 5) and the default set give 0 differing values on the
+Netflix 576x324 pair, both 1080p checkerboard pairs, the 4K pair and the
+10-bit `sparks` pair (that pair is too small for prescale 0.5; C and Rust both
+refuse it). The arithmetic keeps the C's float and double steps and its libm
+calls; the pitfalls (a double `1.0 / sqrt()` in the Givens rotation, a double
+logarithm in the entropy, `EIGENVALUE_EPS` compared in double) are listed in
+`core/src/rust/feature/speed/src/`. The twin logs what the C extractor logs:
+the first singular covariance matrix, the count at close and the eigenvalue
+iteration cap.
 
 ## GPU twins
 
@@ -261,7 +319,8 @@ makes, in the same library. The cost is 38 to 380 microseconds per frame on a
 Ryzen 9 9950X3D (1920x1080 `speed_chroma` to 3840x2160 `speed_temporal`).
 
 One fp64 statement stays on the device, the Givens rotation's
-`1.0 / sqrt(1 + t * t)`. The kernels have no fp64 type; they compute it from
+$1 / \sqrt{1 + t^2}$ (`1.0 / sqrt(1 + t * t)`). The kernels have no fp64 type;
+they compute it from
 fp32 operations (`core/src/feature/speed_givens.h`), and
 `test_speed_upstream_form` compares that routine with the fp64 statement on
 every input it can receive, all 8,388,609 floats of [1, 2].

@@ -59,7 +59,7 @@ struct json_stack {
     long count;
 };
 
-static enum json_type push(json_stream *json, enum json_type type)
+static enum json_type json_push(json_stream *json, enum json_type type)
 {
     /* ADR-1061: depth counts containers, while stack_top is a zero-based
      * index. Reject before changing the accepted stack or allocating. */
@@ -93,7 +93,7 @@ static enum json_type push(json_stream *json, enum json_type type)
     return type;
 }
 
-static enum json_type pop(json_stream *json, int c, enum json_type expected)
+static enum json_type json_pop(json_stream *json, int c, enum json_type expected)
 {
     if (json->stack == NULL || json->stack[json->stack_top].type != expected) {
         json_error(json, "unexpected byte '%c'", c);
@@ -633,9 +633,9 @@ static enum json_type read_value(json_stream *json, int c)
         json_error(json, "%s", "unexpected end of text");
         return JSON_ERROR;
     case '{':
-        return push(json, JSON_OBJECT);
+        return json_push(json, JSON_OBJECT);
     case '[':
-        return push(json, JSON_ARRAY);
+        return json_push(json, JSON_ARRAY);
     case '"':
         return read_string(json);
     case 'n':
@@ -676,7 +676,7 @@ static enum json_type read_array_item(json_stream *json, int c)
     struct json_stack *frame = &json->stack[json->stack_top];
     if (frame->count == 0) {
         if (c == ']')
-            return pop(json, c, JSON_ARRAY);
+            return json_pop(json, c, JSON_ARRAY);
         frame->count++;
         return read_value(json, c);
     }
@@ -685,7 +685,7 @@ static enum json_type read_array_item(json_stream *json, int c)
         return read_value(json, next_nonspace(json));
     }
     if (c == ']')
-        return pop(json, c, JSON_ARRAY);
+        return json_pop(json, c, JSON_ARRAY);
     json_error(json, "unexpected byte '%c'", c);
     return JSON_ERROR;
 }
@@ -707,12 +707,12 @@ static enum json_type read_object_item(json_stream *json, int c)
     struct json_stack *frame = &json->stack[json->stack_top];
     if (frame->count == 0) {
         if (c == '}')
-            return pop(json, c, JSON_OBJECT);
+            return json_pop(json, c, JSON_OBJECT);
         return read_member_name(json, c, "expected member name or '}'");
     }
     if ((frame->count % 2) == 0) {
         if (c == '}')
-            return pop(json, c, JSON_OBJECT);
+            return json_pop(json, c, JSON_OBJECT);
         if (c != ',') {
             json_error(json, "%s", "expected ',' or '}' after member value");
             return JSON_ERROR;

@@ -6,10 +6,16 @@
 from __future__ import annotations
 
 import re
+import shutil
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
 INCLUDE_DIR = Path(__file__).resolve().parents[1] / "include" / "libvmaf"
+# Between a block and its declaration only a deprecation marker may stand
+# (VMAF_DEPRECATED, ADR-1852 decision D7).
+ATTACHED_GAP = re.compile(r'\s*(?:VMAF_DEPRECATED\("[^"]*"\)\s*)?')
 
 
 def _doxygen_before(source: str, declaration: str) -> str:
@@ -20,7 +26,7 @@ def _doxygen_before(source: str, declaration: str) -> str:
     comment_end = source.find("*/", comment_start, declaration_start)
     if comment_end < 0:
         raise AssertionError(f"unterminated Doxygen block before {declaration}")
-    if source[comment_end + 2 : declaration_start].strip():
+    if not ATTACHED_GAP.fullmatch(source[comment_end + 2 : declaration_start]):
         raise AssertionError(f"Doxygen block is not attached to {declaration}")
     block = source[comment_start : comment_end + 2]
     block = re.sub(r"^\s*/\*\*\s*$", "", block, flags=re.MULTILINE)
@@ -93,12 +99,9 @@ class GpuPublicHeaderDocsTest(unittest.TestCase):
 class PublicHeaderDoxygenContractTest(unittest.TestCase):
     def setUp(self) -> None:
         self.repo_root = Path(__file__).resolve().parents[2]
-        self.headers = [
-            p for p in INCLUDE_DIR.glob("*.h")
-            if "pelorus" not in p.parts
-        ]
+        self.headers = [p for p in INCLUDE_DIR.glob("*.h") if "pelorus" not in p.parts]
         self.doxyfile = self.repo_root / "core" / "doc" / "Doxyfile.public-api"
-        self.workflow = self.repo_root / ".github" / "workflows" / "doxygen-public-api.yml"
+        self.workflow = self.repo_root / ".github" / "workflows" / "docs.yml"
 
     def test_no_field_tags_in_public_headers(self) -> None:
         """ADR-0953 / ADR-1315: @field is not a Doxygen command; use /**< ... */."""
@@ -140,17 +143,14 @@ class PublicHeaderDoxygenContractTest(unittest.TestCase):
         self.assertRegex(content, re.compile(r"EXCLUDE_PATTERNS\s*=.*?\*/pelorus/\*", re.DOTALL))
 
     def test_workflow_ceiling_zero(self) -> None:
-        """ADR-1315: doxygen-public-api.yml warning ceiling must be 0."""
+        """ADR-1315: the docs.yml Doxygen job's warning ceiling must be 0."""
         content = self.workflow.read_text(encoding="utf-8")
         self.assertIn('DOXYGEN_WARNING_CEILING: "0"', content)
 
     def test_doxygen_execution_zero_warnings(self) -> None:
         """ADR-1315: running Doxygen against Doxyfile.public-api must produce zero warnings."""
-        import shutil
-        import subprocess
-        import tempfile
-
-        if not shutil.which("doxygen"):
+        doxygen = shutil.which("doxygen")
+        if not doxygen:
             self.skipTest("doxygen binary not found on PATH")
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -161,8 +161,8 @@ class PublicHeaderDoxygenContractTest(unittest.TestCase):
             content += f"WARN_LOGFILE = {warn_log}\n"
             tmp_doxyfile.write_text(content, encoding="utf-8")
 
-            proc = subprocess.run(
-                ["doxygen", str(tmp_doxyfile)],
+            proc = subprocess.run(  # noqa: S603 -- doxygen resolved by shutil.which, fixed argv
+                [doxygen, str(tmp_doxyfile)],
                 cwd=str(self.repo_root),
                 capture_output=True,
                 text=True,

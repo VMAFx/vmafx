@@ -29,34 +29,39 @@ sycl/
   new macro to `sycl_compat.h`, do not hard-code attribute. **On
   rebase**: upstream cherry-pick bringing bare `[[intel::*]]` attribute
   on SYCL kernel lambda -> wrap in compat macro before merging.
-- **Runtime invariants a lint cleanup once broke (PR #1837 review).** Guard:
+- **Runtime invariants lint cleanup once broke (PR #1837 review).** Guard:
   `core/test/test_sycl_runtime_contract.py` (device-free).
-  (1) `VmafSyclState` is an aggregate, initialised in
+  (1) `VmafSyclState` is aggregate, initialised in
   `vmaf_sycl_state_init()` as `new VmafSyclState{.queue = std::move(q),
   .copy_queue = std::move(cq)}`; `queue` and `copy_queue` stay its first two
-  members. Never default-construct it and assign the queues: a
-  default-constructed `sycl::queue` selects the DEFAULT device and creates
-  a queue there (and a context, when that device is on another platform).
+  members. Never default-construct it and assign queues:
+  default-constructed `sycl::queue` selects DEFAULT device and creates
+  queue there (and context, when that device is on another platform).
   Measured: `--sycl_device 1` (OpenCL A380) then made 2 contexts + 5 queues
-  over two devices; correct = 1 context + 3 queues on the selected one
-  (`SYCL_UR_TRACE=2`, count `urContextCreate` / `urQueueCreate`). A
-  constructor is not the fix: it makes every member a
-  `misc-non-private-member-variables-in-classes` finding (that is why the
+  over two devices; correct = 1 context + 3 queues on selected one
+  (`SYCL_UR_TRACE=2`, count `urContextCreate` / `urQueueCreate`).
+  constructor is not fix: it makes every member
+  `misc-non-private-member-variables-in-classes` finding (that is why
   cleanup removed it).
   (2) A type C and C++ both read has ONE definition: no
-  `#ifdef __cplusplus enum X : uint8_t` next to a plain C enum (caller and
-  callee disagree on the size across `extern "C"`: `libvmaf.c` passes
+  `#ifdef __cplusplus enum X : uint8_t` next to plain C enum (caller and
+  callee disagree on size across `extern "C"`: `libvmaf.c` passes
   `enum VmafSyclPoolMethod` to `vmaf_sycl_picture_pool_init()`), no
   `using` / `typedef` pairs. Plain C form + cited NOLINT
   (`modernize-use-using`, `performance-enum-size`).
   (3) `vmaf_sycl_import_va_surface()` is `extern "C"`: every submit under
-  it runs inside `dispatch_detile()`'s try; on a throw
-  `detile_submit_failed()` drains the queue, frees the import, returns
-  `-EIO`. The Level Zero descriptors of `vmaf_sycl_dmabuf_import()` are
-  initialised with designated initialisers (valid `stype` from the start,
+  it runs inside `dispatch_detile()`'s try; on throw
+  `detile_submit_failed()` drains queue, frees import, returns
+  `-EIO`. Level Zero descriptors of `vmaf_sycl_dmabuf_import()` are
+  initialised with designated initialisers (valid `stype` from start,
   unnamed fields zero); `= {}` + assignments trips
-  `bugprone-invalid-enum-default-initialization`, bare declarations leave a
-  future field uninitialised.
+  `bugprone-invalid-enum-default-initialization`, bare declarations leave
+  future field uninitialised. Level Zero gets private duplicate of
+  caller's dma-buf descriptor (`driver_fd()`, from high floor), closed
+  afterwards unless driver closed it: compute runtime 26.35 closes
+  descriptor of import that finds buffer already imported, and
+  caller keeps its own (`libvmaf_sycl.h`). Never hand caller's descriptor
+  to `zeMemAllocDevice()`; `test_sycl_dmabuf_fd_ownership` guards it.
 - **Required sub-group size = 16 or 32, never 8
   ([ADR-1468](../../../docs/adr/1468-sycl-sub-group-sizes-every-aot-target.md)).**
   Default build AOT-compiles every kernel for 19 targets
@@ -69,10 +74,10 @@ sycl/
   static_assert in `sycl_compat.h` (any configuration);
   `core/test/test_sycl_sub_group_size_contract.py` (fast, device-free;
   also rejects raw `reqd_sub_group_size(` / `sub_group_size<` outside
-  the header); `meson test --suite sycl-aot`
-  (`test_sycl_aot_default_targets.py`: every TU of the build for the full
-  default list, ocloc, no device). Run the suite before pushing a kernel
-  change from a JIT-only or single-target build. New target in the
+  header); `meson test --suite sycl-aot`
+  (`test_sycl_aot_default_targets.py`: every TU of build for full
+  default list, ocloc, no device). Run suite before pushing kernel
+  change from JIT-only or single-target build. New target in
   default list -> measure its sizes
   (`core/test/sycl_aot_targets.py::ocloc_accepts`) and add its family.
   Narrow shape wanted (row kernels: one work-item per row) -> 16.
@@ -138,6 +143,80 @@ sycl/
   [ADR-0186](../../../docs/adr/0186-vulkan-image-import-impl.md).
   Public surface change touches patch file too — see CLAUDE.md §12
   r14.
+
+## VMAFx device frames on SYCL (RC4 WP3, ADR-2091)
+
+- 4:2:2 / 4:4:4 layouts (ADR-2133): packed (Y210, Y212, YUYV422, Y410 / XV30,
+  XV36, VUYX) and MSB planar words = one `vmafx_sycl_rt_frame_gather()` per
+  output plane (`launch_gather()` in `vmafx_sycl_rt.cpp`: plan of
+  `vmafx_import_plane_read()` / `vmafx_import_read_plane()`,
+  `core/src/vmafx/import_convert.h`; change both together; scratch-free,
+  `test_sycl_kernel_scratch`). Semi-planar NV16 .. P416 use existing
+  de-interleave and shift kernels (they take chroma plane's own size).
+  Packed / MSB in GL texture or Intel-tiled dma-buf: refused naming
+  `desc.memory` / plane's `modifier`. `test_vmafx_import_sycl_formats`
+  (`VfOps` of `core/test/vmafx_format_cells.h`) holds all of it on A380.
+- Files: `vmafx_sycl.h` (what `core/src/vmafx/` calls),
+  `vmafx_sycl_internal.h`, `import_device.c` (Level Zero GPUs, devices,
+  engine attach), `import_frame.c` (checks, plan, conversions, picture
+  attach), `import_dmabuf.c` (Linux dma-buf planes, implicit fences),
+  `import_gl.c` (GL textures via shared `vmafx/egl_export.c` in keep mode:
+  tiled exports stay tiled for device de-tile; HISS-19), `import_fence.c`,
+  `import_pool.c`; C++ half = `vmafx_sycl_rt.{h,cpp}` (C ABI, catches every
+  exception). C files build into library target; `.cpp` in `sycl_sources`.
+- One in-order library queue per device with `immediate_command_list`
+  (draft PR #2217's ADR-1763 precaution; `vmafx_sycl_rt_test_omit_immediate()`
+  and `VMAFX_TEST_SYCL_OMIT_IMMEDIATE=1` exist for re-evaluating it). Engine
+  states of contexts on device live in its SYCL context
+  (`vmaf_sycl_state_init_queue()`); `sycl_state_create()` = only place
+  building `VmafSyclState`.
+- Frame = SYCL device picture (`VMAF_PICTURE_BUFFER_TYPE_SYCL_DEVICE`,
+  `priv->sycl.frame` = `VmafxSyclFrameRt`). Every engine reader copies plane
+  with `vmaf_sycl_picture_read_plane()` (kernel on reader's queue after
+  frame's ready event; read's event recorded on frame). Never
+  `ext_oneapi_memcpy2d()` (behind host task it lost A380 on DPC++ 2026.0 and
+  2026.1.1, Research-2160 finding 1), never host read.
+- Ordering: `join()` (empty kernel with `depends_on()`) for acquire and
+  release, never `ext_oneapi_submit_barrier()`: barrier on event of command
+  behind host task returns only after that host task ran (finding 2).
+  Release = join over ready + every recorded read; behind it HOST fence's
+  host task, SYCL_EVENT slot record, deferred frees
+  (`vmafx_sycl_rt_collect()`). Never `ext_oneapi_get_last_event()` in hot
+  path: it waits for queue (finding 3).
+- SYCL_EVENT release fences = slots of table in `vmafx_sycl_rt.cpp` (4096,
+  refcounted): pending until release records join's event; release callback
+  runs after record. `vmafx_fence_destroy()` of caller's own event =
+  `VMAFX_E_INVALID` (caller's stays caller's).
+- De-tile address math lives once in `detile.h`, shared with VA-surface
+  import of `dmabuf_import.cpp` (`detile_tiled()`): change to Intel Y-tiled /
+  Tile4 handling changes it there, both paths follow. P010 shift fused
+  (`shift = 16 - bpc` when bpc > 8). Kernels byte-wise integer, scratch-free
+  (ADR-1395): `test_sycl_kernel_scratch` audits every kernel of its program;
+  `vmafx_sycl_rt.o` linked into it through `vmaf_sycl_picture_read_plane()`
+  (common.cpp): keep that reference, else lane's kernels drop out of audit.
+- `WIN32_SHARED` refused (`VMAFX_E_NOTSUP` naming `desc.memory`); SYNC_FILE
+  release fences refused. Adding either changes `sycl_info()` in
+  `import_device.c`, docs table of `docs/api/vmafx/index.md` and refusal rows
+  of `test_vmafx_import_sycl.c` together.
+- Vulkan timeline semaphores (ADR-3352, Linux): `acquire` + up to 3
+  `acquire_more` imported per frame (`vmafx_sycl_rt_semaphore_import()`,
+  DPC++ `external_semaphore_descriptor<resource_fd>`) and waited on library
+  queue before first read (`wait_semaphores()` in `import_frame.c`);
+  `signal_on_release` timelines (max 3) signalled by `signal_semaphores()`
+  behind release join, then freed. Runtime closes fd it imports: always
+  `dup()` first (caller keeps its fd, as CUDA). Planted switches
+  `VMAFX_TEST_SKIP_ACQUIRE_WAIT` / `VMAFX_TEST_EARLY_RELEASE` must score
+  frames wrong in `test_vmafx_import_vulkan_sycl_fence`. OPTIMAL tiling and
+  non-semaphore further acquires stay refused by name.
+- Guards: `test_vmafx_import_sycl`, `test_vmafx_import_sycl_bitexact`
+  (`VMAFX_TEST_ONLY=netflix|bbb`), `test_vmafx_import_sycl_fence`,
+  `test_vmafx_import_sycl_gl` (suite `gpu`/`sycl`, Linux, not AdaptiveCpp),
+  `test_vmafx_import_sycl_cells_contract.py` (fast: cell table equals
+  `scripts/ci/exact_twins.d/*.sycl`).
+- Tests never wait on host for producer queue while one of its host tasks
+  completes: DPC++ runtime crashed in its host-task cleanup that way (2026.0
+  and 2026.1.1, Research-2160 finding 8). Fence test zeroes every buffer
+  before its first host task.
 
 ## Rebase-sensitive build invariants
 
@@ -250,6 +329,16 @@ sycl/
   only, so chroma readers must fail (`-EINVAL`) on NULL pictures, never
   read stale chroma. Guards: `test_sycl_shared_planes`,
   `test_sycl_init_unwind` (wraps `vmaf_sycl_shared_chroma_init`).
+
+- **`vmaf_sycl_upload_plane()` returns after its copy completed.**
+  Copy queue memcpy from caller host memory; function calls
+  `sycl_fence_slot_readers()` first, then `last_ev.wait_and_throw()`
+  before return. Caller may free/unmap source right after (D3D11 import
+  unmaps staging), and compute on other queues has no barrier on this
+  copy. **On rebase**: never make it return with copy in flight; without
+  wait 4K frame scored wrong pixels on A380
+  (`T-SYCL-UPLOAD-PLANE-NO-COMPUTE-FENCE-2026-10-05`). Guard:
+  `test_sycl_zero_copy_model_gate` case `test_upload_plane_orders_compute`.
 
 - **Zero-copy admission gate (ADR-1688).** `vmaf_read_pictures_sycl()`
   (`core/src/libvmaf.c`) calls `sycl_zero_copy_admit()` before

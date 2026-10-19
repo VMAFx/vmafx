@@ -51,7 +51,7 @@
  *  Final: ssim = sum(contribution) / sum(weight)
  */
 
-#include <stdint.h>
+#include <cstdint>
 #include "cuda_helper.cuh"
 
 #define ISSIM_BLOCK_X 16
@@ -67,27 +67,30 @@
  *   w[4] = 256 - 2*(w[0]+w[1]+w[2]+w[3])
  * Result: [2, 9, 28, 55, 68, 55, 28, 9, 2], sum=256.
  */
-__device__ static const int32_t ISSIM_KERNEL[ISSIM_K_SZ] = {2, 9, 28, 55, 68, 55, 28, 9, 2};
+namespace
+{
+
+__device__ const int32_t ISSIM_KERNEL[ISSIM_K_SZ] = {2, 9, 28, 55, 68, 55, 28, 9, 2};
 
 /* The six vertical moments of one output pixel (CPU ssim_moments). */
 struct IssimMoments {
-    int64_t mux;
-    int64_t muy;
-    int64_t x2;
-    int64_t xy;
-    int64_t y2;
-    int64_t w;
+    int64_t mux = 0LL;
+    int64_t muy = 0LL;
+    int64_t x2 = 0LL;
+    int64_t xy = 0LL;
+    int64_t y2 = 0LL;
+    int64_t w = 0LL;
 };
 
 /* Vertical 9-tap accumulation over the horizontal moment arrays, with the
  * CPU's boundary truncation (out-of-plane taps skipped). */
-__device__ static inline IssimMoments
+__device__ inline IssimMoments
 issim_vertical_moments(const int64_t *__restrict__ d_mux_h, const int64_t *__restrict__ d_muy_h,
                        const int64_t *__restrict__ d_x2_h, const int64_t *__restrict__ d_xy_h,
                        const int64_t *__restrict__ d_y2_h, const int64_t *__restrict__ d_w_h,
                        unsigned x, unsigned y, unsigned width, unsigned height)
 {
-    IssimMoments m = {0LL, 0LL, 0LL, 0LL, 0LL, 0LL};
+    IssimMoments m;
     const int k_min = (int)y < ISSIM_HALF_K ? ISSIM_HALF_K - (int)y : 0;
     const int k_max = ((int)y + ISSIM_HALF_K >= (int)height) ?
                           ISSIM_K_SZ - ((int)y + ISSIM_HALF_K - (int)height + 1) :
@@ -111,7 +114,7 @@ issim_vertical_moments(const int64_t *__restrict__ d_mux_h, const int64_t *__res
  * ((m.w * a) * b) / den, not m.w * (a * b / den): on border pixels, where
  * m.w is not a power of two, the two round differently. Returns false for a
  * zero denominator, whose pixel then contributes neither term nor weight. */
-__device__ static inline bool issim_term(const IssimMoments &m, int64_t samplemax, double *term)
+__device__ inline bool issim_term(const IssimMoments &m, int64_t samplemax, double *term)
 {
     const double w_d = (double)m.w;
     const double sm = (double)samplemax;
@@ -127,11 +130,14 @@ __device__ static inline bool issim_term(const IssimMoments &m, int64_t samplema
     const double b = 2.0 * (dxy * w_d - mxy) + c2;
     const double den =
         (dmux * dmux + dmuy * dmuy + c1) * (dx2 * w_d - dmux * dmux + dy2 * w_d - dmuy * dmuy + c2);
-    if (den == 0.0)
+    if (den == 0.0) {
         return false;
+    }
     *term = w_d * a * b / den;
     return true;
 }
+
+} /* namespace */
 
 /*
  * Pass 1 — horizontal 9-tap integer moment accumulation (8bpc).
@@ -155,10 +161,16 @@ __global__ void integer_ssim_horiz_8bpc(const uint8_t *__restrict__ ref, ptrdiff
 {
     const unsigned x = blockIdx.x * blockDim.x + threadIdx.x;
     const unsigned y = blockIdx.y * blockDim.y + threadIdx.y;
-    if (x >= width || y >= height)
+    if (x >= width || y >= height) {
         return;
+    }
 
-    int64_t mux = 0, muy = 0, x2 = 0, xy = 0, y2 = 0, w = 0;
+    int64_t mux = 0;
+    int64_t muy = 0;
+    int64_t x2 = 0;
+    int64_t xy = 0;
+    int64_t y2 = 0;
+    int64_t w = 0;
     const int k_min = (int)x < ISSIM_HALF_K ? ISSIM_HALF_K - (int)x : 0;
     const int k_max = ((int)x + ISSIM_HALF_K >= (int)width) ?
                           ISSIM_K_SZ - ((int)x + ISSIM_HALF_K - (int)width + 1) :
@@ -201,10 +213,16 @@ __global__ void integer_ssim_horiz_16bpc(const uint8_t *__restrict__ ref, ptrdif
 {
     const unsigned x = blockIdx.x * blockDim.x + threadIdx.x;
     const unsigned y = blockIdx.y * blockDim.y + threadIdx.y;
-    if (x >= width || y >= height)
+    if (x >= width || y >= height) {
         return;
+    }
 
-    int64_t mux = 0, muy = 0, x2 = 0, xy = 0, y2 = 0, w = 0;
+    int64_t mux = 0;
+    int64_t muy = 0;
+    int64_t x2 = 0;
+    int64_t xy = 0;
+    int64_t y2 = 0;
+    int64_t w = 0;
     const int k_min = (int)x < ISSIM_HALF_K ? ISSIM_HALF_K - (int)x : 0;
     const int k_max = ((int)x + ISSIM_HALF_K >= (int)width) ?
                           ISSIM_K_SZ - ((int)x + ISSIM_HALF_K - (int)width + 1) :
@@ -277,8 +295,9 @@ integer_ssim_vert_combine(const int64_t *__restrict__ d_mux_h, const int64_t *__
         const IssimMoments m = issim_vertical_moments(d_mux_h, d_muy_h, d_x2_h, d_xy_h, d_y2_h,
                                                       d_w_h, x, y, width, height);
         double term = 0.0;
-        if (issim_term(m, samplemax, &term))
+        if (issim_term(m, samplemax, &term)) {
             my_weight = m.w;
+        }
         terms[(size_t)y * width + x] = term;
     }
 
@@ -289,14 +308,16 @@ integer_ssim_vert_combine(const int64_t *__restrict__ d_mux_h, const int64_t *__
     const int tid = threadIdx.y * (int)blockDim.x + threadIdx.x;
     const int lane = tid % 32;
     const int warp_id = tid / 32;
-    if (lane == 0)
+    if (lane == 0) {
         s_wgt[warp_id] = warp_wgt;
+    }
     __syncthreads();
 
     if (tid == 0) {
         int64_t block_wgt = 0LL;
-        for (int i = 0; i < ISSIM_BLOCK_SZ / 32; i++)
-            block_wgt += s_wgt[i];
+        for (const int64_t wgt : s_wgt) {
+            block_wgt += wgt;
+        }
         const unsigned blk = blockIdx.y * gridDim.x + blockIdx.x;
         partial_weights[blk] = block_wgt;
     }

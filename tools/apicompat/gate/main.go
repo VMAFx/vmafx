@@ -5,12 +5,14 @@
 // SPDX-License-Identifier: EUPL-1.2
 
 // Command gate is the Go API compatibility gate of the api:public-contract facet. The
-// workflow .github/workflows/praetor-api.yml runs it on every pull request and push:
+// workflow .github/workflows/praetor-api.yml runs it on every pull request that is ready for
+// review and on every push to the default branch; on a draft pull request it fails without
+// running the gate, and a push to another branch or a tag starts no run:
 //
 //	go run tools/apicompat/gate/main.go [-base=<rev>] [-policy=auto|warn|reject] [-checker=<path>]
 //
 // It compares the exported API of every public Go module between a base revision and the
-// commit checked out (HEAD) with the pinned checker (checkerModule), run once per module from
+// commit checked out (HEAD) with the pinned checker (checkerPackage), run once per module from
 // that module's directory against the repository root, so a nested module is compared as
 // itself and never skipped by a root-only run.
 //
@@ -36,17 +38,28 @@
 // gate passes saying so.
 //
 // Compatibility policy and execution policy are separate. -policy=auto rejects incompatible
-// changes once the newest root release tag merged into HEAD is v1 or later and reports them as
-// warnings before that; warn and reject fix the policy. A comparison that did not run fails the
-// gate whatever the policy: a git or discovery error, a malformed go.mod, a compared module
-// whose packages do not build at HEAD, a checker that cannot be installed, that misses the
-// removed function of a canary module (verifyChecker), that exits with any status but 0 or 1,
-// or that prints an error.
+// changes once the newest root release tag merged into HEAD is v1 or later. Before v1, it passes
+// incompatible changes only when the commit range carries a breaking marker (! in the Conventional
+// Commits subject) with a Migration: footer, and rejects them otherwise; warn and reject fix the
+// policy. A comparison that did not run fails the gate whatever the policy: a git or discovery
+// error, a malformed go.mod, a compared module whose packages do not build at HEAD, a checker
+// that cannot be installed, that misses the removed function of a canary module (verifyChecker),
+// that exits with any status but 0 or 1, or that prints an error.
 //
-// Exit status: 0 compatible, or incompatible under the warn policy; 1 incompatible under the
-// reject policy; 2 the comparison did not run. The checker checks each revision out in the
-// working tree, restores HEAD afterwards and refuses a dirty tree, so run the gate in a clean
-// checkout.
+// A module whose packages cannot be built even with the system packages the manifest declares
+// (api.system_packages, installed by the workflow before this program runs) takes an exception
+// from the manifest's exceptions list (rule api-compatibility, path <module dir>/go.mod). The
+// workflow passes the entries in the environment variable APICOMPAT_EXCEPTIONS as a JSON list of
+// {path, reason, expires} objects, because this program reads no manifest. While an entry holds
+// (until the end of its expires day, UTC), the module is reported as not compared, with the
+// entry's reason and expiry, and the gate goes on; once it expired, or with no entry, the
+// build failure fails the gate as before. A module that builds is compared whatever the list
+// says. The program never sets CGO_ENABLED.
+//
+// Exit status: 0 compatible, incompatible under the warn policy, or pre-v1 auto with a breaking
+// marker and Migration footer; 1 incompatible under the reject policy or pre-v1 auto without
+// marker; 2 the comparison did not run. The checker checks each revision out in the working
+// tree, restores HEAD afterwards and refuses a dirty tree, so run the gate in a clean checkout.
 //
 // praetorctl adopt writes this file and praetorctl audit locks it: change it in Praetor's
 // tools/apicompat, never in an adopted repository.
@@ -54,10 +67,16 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"go/ast"
+	"go/format"
+	"go/parser"
+	"go/token"
 	"io"
 	"os"
 	"os/exec"
@@ -76,27 +95,44 @@ const (
 	exitRejected   = 1
 	exitNotRun     = 2
 
-	// checkerModule pins the checker, github.com/joelanford/go-apidiff, to commit c3e0953fa2fd
-	// of its main branch (2026-09-10). Its newest release, v0.8.3, builds against
-	// golang.org/x/tools v0.33.0, which cannot decode the export data of Go 1.27 and reads every
-	// package as empty, so it passes every module; this commit only moves the dependencies
-	// forward (x/tools v0.49.0). The CLI is "go-apidiff <oldCommit> [newCommit]
+	// checkerPackage is the checker, github.com/joelanford/go-apidiff, built from the pinned build
+	// module (checkerGoMod, checkerGoSum, checkerTools) rather than installed as module@version.
+	// The build module requires go-apidiff at commit c3e0953fa2fd of its main branch (2026-09-10),
+	// the newest upstream commit, and golang.org/x/tools v0.51.0 exactly. Its newest release,
+	// v0.8.3, builds against x/tools v0.33.0 and the commit against v0.49.0, which reads export
+	// data up to version 4; Go 1.27.2 writes version 5, so either checker reads every package as
+	// empty and passes every module (#1049). The CLI is "go-apidiff <oldCommit> [newCommit]
 	// --repo-path=<root>": it loads ./... from its working directory and exits 0 when
 	// compatible, 1 when it found an incompatible change and 2 when the comparison failed. A
 	// flag or argument error is printed with cobra's "Error: " prefix while the status stays 0,
 	// which classifyChecker reads as a failed run.
-	checkerModule = "github.com/joelanford/go-apidiff@v0.8.4-0.20260910211158-c3e0953fa2fd"
-	checkerBinary = "go-apidiff"
+	checkerPackage = "github.com/joelanford/go-apidiff"
+	checkerBinary  = "go-apidiff"
 
-	maxTreeEntries   = 1 << 21
-	maxModules       = 512
-	maxTags          = 1 << 16
-	maxRecordBytes   = 1 << 16
-	maxGoModBytes    = 1 << 20
-	maxGoModLines    = 1 << 16
-	maxPathElements  = 256
-	maxDiagnostics   = 1 << 20
-	maxRevisionBytes = 4096
+	maxTreeEntries     = 1 << 21
+	maxModules         = 512
+	maxTags            = 1 << 16
+	maxRecordBytes     = 1 << 16
+	maxGoModBytes      = 1 << 20
+	maxGoModLines      = 1 << 16
+	maxPathElements    = 256
+	maxDiagnostics     = 1 << 20
+	maxRevisionBytes   = 4096
+	maxAnalyzedCommits = 1000
+	maxCommitLogBytes  = 8 << 20
+	maxGoFiles         = 2048
+	maxAliases         = 512
+	maxDeclBytes       = 2 << 20
+	maxImports         = 256
+	maxOutputLines     = 4096
+	maxDecls           = 1024
+	maxSpecs           = 512
+
+	// exceptionsEnv carries the manifest's api-compatibility exceptions, as the workflow renders
+	// them (tools/apicompat/render.go).
+	exceptionsEnv  = "APICOMPAT_EXCEPTIONS"
+	maxExceptions  = 1024
+	exceptionsDate = "2006-01-02"
 
 	runTimeout     = 3 * time.Hour
 	gitTimeout     = 2 * time.Minute
@@ -104,10 +140,204 @@ const (
 	moduleTimeout  = 30 * time.Minute
 )
 
+// The checker's build module, written to a temporary directory by buildChecker. It is the text
+// of a go.mod, go.sum and tools.go: go.mod requires go-apidiff and golang.org/x/tools exactly,
+// tools.go imports both so "go mod tidy" keeps them required directly, and go.sum pins the
+// closure. The text lives here, not in a nested module directory, because go:embed cannot embed
+// files of another module and the gate ships as embedded bytes. Refresh all three together:
+// change the two requirements, run "go mod tidy" in a scratch directory holding them and copy
+// the three files back (docs/guides/api-compatibility.md, "The pinned checker"). Renovate moves
+// the two requirements (renovate.json) and TestGatePinsItsChecker fails the branch until go.sum
+// covers them.
+const (
+	checkerGoMod = `module apicompat.invalid/checker
+
+go 1.26.0
+
+require (
+	github.com/joelanford/go-apidiff v0.8.4-0.20260910211158-c3e0953fa2fd
+	golang.org/x/tools v0.51.0
+)
+
+require (
+	dario.cat/mergo v1.0.2 // indirect
+	github.com/Microsoft/go-winio v0.6.2 // indirect
+	github.com/ProtonMail/go-crypto v1.2.0 // indirect
+	github.com/cloudflare/circl v1.6.3 // indirect
+	github.com/cyphar/filepath-securejoin v0.6.1 // indirect
+	github.com/emirpasic/gods v1.18.1 // indirect
+	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 // indirect
+	github.com/go-git/go-billy/v5 v5.9.1 // indirect
+	github.com/go-git/go-git/v5 v5.19.2 // indirect
+	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
+	github.com/inconshreveable/mousetrap v1.1.0 // indirect
+	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
+	github.com/kevinburke/ssh_config v1.2.0 // indirect
+	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
+	github.com/pjbgf/sha1cd v0.6.0 // indirect
+	github.com/sergi/go-diff v1.3.2-0.20230802210424-5b0b94c5c0d3 // indirect
+	github.com/skeema/knownhosts v1.3.1 // indirect
+	github.com/spf13/cobra v1.10.2 // indirect
+	github.com/spf13/pflag v1.0.9 // indirect
+	github.com/xanzy/ssh-agent v0.3.3 // indirect
+	golang.org/x/crypto v0.57.0 // indirect
+	golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f // indirect
+	golang.org/x/mod v0.41.0 // indirect
+	golang.org/x/net v0.59.0 // indirect
+	golang.org/x/sync v0.23.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
+	gopkg.in/warnings.v0 v0.1.2 // indirect
+)
+`
+	checkerTools = `//go:build tools
+
+package tools
+
+import (
+	_ "github.com/joelanford/go-apidiff"
+	_ "golang.org/x/tools/go/packages"
+)
+`
+	checkerGoSum = `dario.cat/mergo v1.0.2 h1:85+piFYR1tMbRrLcDwR18y4UKJ3aH1Tbzi24VRW1TK8=
+dario.cat/mergo v1.0.2/go.mod h1:E/hbnu0NxMFBjpMIE34DRGLWqDy0g5FuKDhCb31ngxA=
+github.com/Microsoft/go-winio v0.5.2/go.mod h1:WpS1mjBmmwHBEWmogvA2mj8546UReBk4v8QkMxJ6pZY=
+github.com/Microsoft/go-winio v0.6.2 h1:F2VQgta7ecxGYO8k3ZZz3RS8fVIXVxONVUPlNERoyfY=
+github.com/Microsoft/go-winio v0.6.2/go.mod h1:yd8OoFMLzJbo9gZq8j5qaps8bJ9aShtEA8Ipt1oGCvU=
+github.com/ProtonMail/go-crypto v1.2.0 h1:+PhXXn4SPGd+qk76TlEePBfOfivE0zkWFenhGhFLzWs=
+github.com/ProtonMail/go-crypto v1.2.0/go.mod h1:9whxjD8Rbs29b4XWbB8irEcE8KHMqaR2e7GWU1R+/PE=
+github.com/anmitsu/go-shlex v0.0.0-20200514113438-38f4b401e2be h1:9AeTilPcZAjCFIImctFaOjnTIavg87rW78vTPkQqLI8=
+github.com/anmitsu/go-shlex v0.0.0-20200514113438-38f4b401e2be/go.mod h1:ySMOLuWl6zY27l47sB3qLNK6tF2fkHG55UZxx8oIVo4=
+github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5 h1:0CwZNZbxp69SHPdPJAN/hZIm0C4OItdklCFmMRWYpio=
+github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5/go.mod h1:wHh0iHkYZB8zMSxRWpUBQtwG5a7fFgvEO+odwuTv2gs=
+github.com/cloudflare/circl v1.6.3 h1:9GPOhQGF9MCYUeXyMYlqTR6a5gTrgR/fBLXvUgtVcg8=
+github.com/cloudflare/circl v1.6.3/go.mod h1:2eXP6Qfat4O/Yhh8BznvKnJ+uzEoTQ6jVKJRn81BiS4=
+github.com/cpuguy83/go-md2man/v2 v2.0.6/go.mod h1:oOW0eioCTA6cOiMLiUPZOpcVxMig6NIQQ7OS05n1F4g=
+github.com/cyphar/filepath-securejoin v0.6.1 h1:5CeZ1jPXEiYt3+Z6zqprSAgSWiggmpVyciv8syjIpVE=
+github.com/cyphar/filepath-securejoin v0.6.1/go.mod h1:A8hd4EnAeyujCJRrICiOWqjS1AX0a9kM5XL+NwKoYSc=
+github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
+github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
+github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
+github.com/elazarl/goproxy v1.7.2 h1:Y2o6urb7Eule09PjlhQRGNsqRfPmYI3KKQLFpCAV3+o=
+github.com/elazarl/goproxy v1.7.2/go.mod h1:82vkLNir0ALaW14Rc399OTTjyNREgmdL2cVoIbS6XaE=
+github.com/emirpasic/gods v1.18.1 h1:FXtiHYKDGKCW2KzwZKx0iC0PQmdlorYgdFG9jPXJ1Bc=
+github.com/emirpasic/gods v1.18.1/go.mod h1:8tpGGwCnJ5H4r6BWwaV6OrWmMoPhUl5jm/FMNAnJvWQ=
+github.com/gliderlabs/ssh v0.3.8 h1:a4YXD1V7xMF9g5nTkdfnja3Sxy1PVDCj1Zg4Wb8vY6c=
+github.com/gliderlabs/ssh v0.3.8/go.mod h1:xYoytBv1sV0aL3CavoDuJIQNURXkkfPA/wxQ1pL1fAU=
+github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 h1:+zs/tPmkDkHx3U66DAb0lQFJrpS6731Oaa12ikc+DiI=
+github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376/go.mod h1:an3vInlBmSxCcxctByoQdvwPiA7DTK7jaaFDBTtu0ic=
+github.com/go-git/go-billy/v5 v5.9.1 h1:8U73XiOTfINdItHVa6z4Gv7ToObcZ6grkqQbLryLCdA=
+github.com/go-git/go-billy/v5 v5.9.1/go.mod h1:ExsU+jcGwXTBOnyilvAnEM1wug1IxHr4yP2ZXsNRtV0=
+github.com/go-git/go-git-fixtures/v4 v4.3.2-0.20231010084843-55a94097c399 h1:eMje31YglSBqCdIqdhKBW8lokaMrL3uTkpGYlE2OOT4=
+github.com/go-git/go-git-fixtures/v4 v4.3.2-0.20231010084843-55a94097c399/go.mod h1:1OCfN199q1Jm3HZlxleg+Dw/mwps2Wbk9frAWm+4FII=
+github.com/go-git/go-git/v5 v5.19.2 h1:wkfn7vOlUBu8ivAWKBWisTiwJK4jYHzTF8Ndv1LyGqY=
+github.com/go-git/go-git/v5 v5.19.2/go.mod h1:QqCBE1EFN5ddFmrliLQ3/ntRCUjZU3EJuwuB/jWEHjk=
+github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 h1:f+oWsMOmNPc8JmEHVZIycC7hBoQxHH9pNKQORJNozsQ=
+github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8/go.mod h1:wcDNUvekVysuuOpQKo3191zZyTpiI6se1N1ULghS0sw=
+github.com/google/go-cmp v0.7.0 h1:wk8382ETsv4JYUZwIsn6YpYiWiBsYLSJiTsyBybVuN8=
+github.com/google/go-cmp v0.7.0/go.mod h1:pXiqmnSA92OHEEa9HXL2W4E7lf9JzCmGVUdgjX3N/iU=
+github.com/inconshreveable/mousetrap v1.1.0 h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2s0bqwp9tc8=
+github.com/inconshreveable/mousetrap v1.1.0/go.mod h1:vpF70FUmC8bwa3OWnCshd2FqLfsEA9PFc4w1p2J65bw=
+github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 h1:BQSFePA1RWJOlocH6Fxy8MmwDt+yVQYULKfN0RoTN8A=
+github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99/go.mod h1:1lJo3i6rXxKeerYnT8Nvf0QmHCRC1n8sfWVwXF2Frvo=
+github.com/joelanford/go-apidiff v0.8.4-0.20260910211158-c3e0953fa2fd h1:wlybhuDMr6L5NFy1uR8iV0wLmGNuIDQg0b0NkUj1IPo=
+github.com/joelanford/go-apidiff v0.8.4-0.20260910211158-c3e0953fa2fd/go.mod h1:wF5i6giMX2ISm5UBkIo/RerIPqluJ4BqfwAwQy6YjY4=
+github.com/kevinburke/ssh_config v1.2.0 h1:x584FjTGwHzMwvHx18PXxbBVzfnxogHaAReU4gf13a4=
+github.com/kevinburke/ssh_config v1.2.0/go.mod h1:CT57kijsi8u/K/BOFA39wgDQJ9CxiF4nAY/ojJ6r6mM=
+github.com/klauspost/cpuid/v2 v2.3.0 h1:S4CRMLnYUhGeDFDqkGriYKdfoFlDnMtqTiI/sFzhA9Y=
+github.com/klauspost/cpuid/v2 v2.3.0/go.mod h1:hqwkgyIinND0mEev00jJYCxPNVRVXFQeu1XKlok6oO0=
+github.com/kr/pretty v0.1.0/go.mod h1:dAy3ld7l9f0ibDNOQOHHMYYIIbhfbHSm3C4ZsoJORNo=
+github.com/kr/pretty v0.3.1 h1:flRD4NNwYAUpkphVc1HcthR4KEIFJ65n8Mw5qdRn3LE=
+github.com/kr/pretty v0.3.1/go.mod h1:hoEshYVHaxMs3cyo3Yncou5ZscifuDolrwPKZanG3xk=
+github.com/kr/pty v1.1.1/go.mod h1:pFQYn66WHrOpPYNljwOMqo10TkYh1fy3cYio2l3bCsQ=
+github.com/kr/text v0.1.0/go.mod h1:4Jbv+DJW3UT/LiOwJeYQe1efqtUx/iVham/4vfdArNI=
+github.com/kr/text v0.2.0 h1:5Nx0Ya0ZqY2ygV366QzturHI13Jq95ApcVaJBhpS+AY=
+github.com/kr/text v0.2.0/go.mod h1:eLer722TekiGuMkidMxC/pM04lWEeraHUUmBw8l2grE=
+github.com/onsi/gomega v1.34.1 h1:EUMJIKUjM8sKjYbtxQI9A4z2o+rruxnzNvpknOXie6k=
+github.com/onsi/gomega v1.34.1/go.mod h1:kU1QgUvBDLXBJq618Xvm2LUX6rSAfRaFRTcdOeDLwwY=
+github.com/pjbgf/sha1cd v0.6.0 h1:3WJ8Wz8gvDz29quX1OcEmkAlUg9diU4GxJHqs0/XiwU=
+github.com/pjbgf/sha1cd v0.6.0/go.mod h1:lhpGlyHLpQZoxMv8HcgXvZEhcGs0PG/vsZnEJ7H0iCM=
+github.com/pkg/errors v0.9.1 h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=
+github.com/pkg/errors v0.9.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
+github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
+github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
+github.com/rogpeppe/go-internal v1.14.1 h1:UQB4HGPB6osV0SQTLymcB4TgvyWu6ZyliaW0tI/otEQ=
+github.com/rogpeppe/go-internal v1.14.1/go.mod h1:MaRKkUm5W0goXpeCfT7UZI6fk/L7L7so1lCWt35ZSgc=
+github.com/russross/blackfriday/v2 v2.1.0/go.mod h1:+Rmxgy9KzJVeS9/2gXHxylqXiyQDYRxCVz55jmeOWTM=
+github.com/sergi/go-diff v1.3.2-0.20230802210424-5b0b94c5c0d3 h1:n661drycOFuPLCN3Uc8sB6B/s6Z4t2xvBgU1htSHuq8=
+github.com/sergi/go-diff v1.3.2-0.20230802210424-5b0b94c5c0d3/go.mod h1:A0bzQcvG0E7Rwjx0REVgAGH58e96+X0MeOfepqsbeW4=
+github.com/sirupsen/logrus v1.7.0/go.mod h1:yWOB1SBYBC5VeMP7gHvWumXLIWorT60ONWic61uBYv0=
+github.com/skeema/knownhosts v1.3.1 h1:X2osQ+RAjK76shCbvhHHHVl3ZlgDm8apHEHFqRjnBY8=
+github.com/skeema/knownhosts v1.3.1/go.mod h1:r7KTdC8l4uxWRyK2TpQZ/1o5HaSzh06ePQNxPwTcfiY=
+github.com/spf13/cobra v1.10.2 h1:DMTTonx5m65Ic0GOoRY2c16WCbHxOOw6xxezuLaBpcU=
+github.com/spf13/cobra v1.10.2/go.mod h1:7C1pvHqHw5A4vrJfjNwvOdzYu0Gml16OCs2GRiTUUS4=
+github.com/spf13/pflag v1.0.9 h1:9exaQaMOCwffKiiiYk6/BndUBv+iRViNW+4lEMi0PvY=
+github.com/spf13/pflag v1.0.9/go.mod h1:McXfInJRrz4CZXVZOBLb0bTZqETkiAhM9Iw0y3An2Bg=
+github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
+github.com/stretchr/testify v1.2.2/go.mod h1:a8OnRcib4nhh0OaRAV+Yts87kKdq0PP7pXfy6kDkUVs=
+github.com/stretchr/testify v1.4.0/go.mod h1:j7eGeouHqKxXV5pUuKE4zz7dFj8WfuZ+81PSLYec5m4=
+github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu7U=
+github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
+github.com/xanzy/ssh-agent v0.3.3 h1:+/15pJfg/RsTxqYcX6fHqOXZwwMP+2VyYWJeWM2qQFM=
+github.com/xanzy/ssh-agent v0.3.3/go.mod h1:6dzNDKs0J9rVPHPhaGCukekBHKqfl+L3KghI1Bc68Uw=
+go.yaml.in/yaml/v3 v3.0.4/go.mod h1:DhzuOOF2ATzADvBadXxruRBLzYTpT36CKvDb3+aBEFg=
+golang.org/x/crypto v0.0.0-20220622213112-05595931fe9d/go.mod h1:IxCIyHEi3zRg3s0A5j5BB6A9Jmi73HwBIUl50j+osU4=
+golang.org/x/crypto v0.57.0 h1:3ZVCjf8Ggz7zneR/EHRVx68Ctf+2pmIMP2UFhh9cC6M=
+golang.org/x/crypto v0.57.0/go.mod h1:Fdz0i5U6CoizGwLda9DttjSk6qlZo25zYNtR+ycvuZA=
+golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f h1:W3F4c+6OLc6H2lb//N1q4WpJkhzJCK5J6kUi1NTVXfM=
+golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f/go.mod h1:J1xhfL/vlindoeF/aINzNzt2Bket5bjo9sdOYzOsU80=
+golang.org/x/mod v0.41.0 h1:qJmnOUb4YB+FsEuM3HcWucdZASCPGhsX6uljO6pog0c=
+golang.org/x/mod v0.41.0/go.mod h1:Ek9pY8RKWXwsWvd3rQiHYtMqkjSUV+s1Rj7j4H5Ur6o=
+golang.org/x/net v0.0.0-20211112202133-69e39bad7dc2/go.mod h1:9nx3DQGgdP8bBQD5qxJ1jj9UTztislL4KSBs9R2vV5Y=
+golang.org/x/net v0.59.0 h1:5zfYln+w5XCxwrnMMJPufRgNoXEaGxl0wo5GqPXyues=
+golang.org/x/net v0.59.0/go.mod h1:2DA/G1UfVbCpQPeWTmMPGY7Cs2PkBkwu743bVX5PIVg=
+golang.org/x/sync v0.23.0 h1:KameEIfc1IkluZyXWLn39Wd4tURc6GbCiISGiZm2bQk=
+golang.org/x/sync v0.23.0/go.mod h1:sUUOizhqBxiL6pEWpqNLUiaJn1ShEbZ6BBqskPbjZm0=
+golang.org/x/sys v0.0.0-20191026070338-33540a1f6037/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
+golang.org/x/sys v0.0.0-20201119102817-f84b799fce68/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
+golang.org/x/sys v0.0.0-20210124154548-22da62e12c0c/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
+golang.org/x/sys v0.0.0-20210423082822-04245dca01da/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
+golang.org/x/sys v0.0.0-20210615035016-665e8c7367d1/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
+golang.org/x/sys v0.0.0-20220715151400-c0bba94af5f8/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
+golang.org/x/sys v0.48.0 h1:bbX/i/6MgT9BVLM9RT1thmxL04yeTAhbEz4SyadbXoo=
+golang.org/x/sys v0.48.0/go.mod h1:hNLxWAXmnKAxqDtdwIYC4bM9oQPEecfsnNMuSxOs3og=
+golang.org/x/term v0.0.0-20201126162022-7de9c90e9dd1/go.mod h1:bj7SfCRtBDWHUb9snDiAeCFNEtKQo2Wmx5Cou7ajbmo=
+golang.org/x/term v0.46.0 h1:3+OXuTbaKDgwk8jTi3aSLHRlmWqHEUDUtxnbFigO4YE=
+golang.org/x/term v0.46.0/go.mod h1:+K02xbkittuwc0Am4abfA3Fc+XRGXkvBXNO88NCXPoc=
+golang.org/x/text v0.3.6/go.mod h1:5Zoc/QRtKVWzQhOtBMvqHzDpF6irO9z98xDceosuGiQ=
+golang.org/x/text v0.42.0 h1:JbOZXgfeCPU9gacVtYliJqOhD+zhrEqK4LfdpmlUZqI=
+golang.org/x/text v0.42.0/go.mod h1:ojzP1Z+2QtioaF8DTtO8K5q7JWVVYwZKenzujK0Zd0E=
+golang.org/x/tools v0.0.0-20180917221912-90fa682c2a6e/go.mod h1:n7NCudcB/nEzxVGmLbDWY5pfWTLqBcC2KZ6jyYvM4mQ=
+golang.org/x/tools v0.51.0 h1:k4Xc/1Om9jwkBJBo4NVLMSARBoWtK10mx+W5BnXCeAI=
+golang.org/x/tools v0.51.0/go.mod h1:9eEncMayCV6zRMGhR5eZEC2iBx98qWcF1HZ9Z7wJOoA=
+golang.org/x/tools/go/expect v0.1.1-deprecated h1:jpBZDwmgPhXsKZC6WhL20P4b/wmnpsEAGHaNy0n/rJM=
+golang.org/x/tools/go/expect v0.1.1-deprecated/go.mod h1:eihoPOH+FgIqa3FpoTwguz/bVUSGBlGQU67vpBeOrBY=
+golang.org/x/tools/go/packages/packagestest v0.1.1-deprecated h1:1h2MnaIAIXISqTFKdENegdpAgUXz6NrPEsbIeWaBRvM=
+golang.org/x/tools/go/packages/packagestest v0.1.1-deprecated/go.mod h1:RVAQXBGNv1ib0J382/DPCRS/BPnsGebyM1Gj5VSDpG8=
+gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=
+gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=
+gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c h1:Hei/4ADfdWqJk1ZMxUNpqntNwaWcugrBjAiHlqqRiVk=
+gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c/go.mod h1:JHkPIbrfpd72SG/EVd6muEfDQjcINNoR0C8j2r3qZ4Q=
+gopkg.in/warnings.v0 v0.1.2 h1:wFXVbFY8DY5/xOe1ECiWdKCzZlxgshcYVNkBHstARME=
+gopkg.in/warnings.v0 v0.1.2/go.mod h1:jksf8JmL6Qr/oQM2OXTHunEvvTAsrWBLb6OOjuVWRNI=
+gopkg.in/yaml.v2 v2.2.2/go.mod h1:hI93XBmqTisBFMUTm0b8Fm+jr3Dg1NNxqwp+5A1VGuI=
+gopkg.in/yaml.v2 v2.4.0/go.mod h1:RDklbk79AGWmwhnvt/jBztapEOGDOx6ZbXqjP6csGnQ=
+gopkg.in/yaml.v3 v3.0.1 h1:fxVm/GzAzEWqLHuvctI91KS9hhNmmWOoWu0XTYJS7CA=
+gopkg.in/yaml.v3 v3.0.1/go.mod h1:K4uyk7z7BCEPqu6E+C64Yfv1cQ7kz7rIZviUmN+EgEM=
+`
+)
+
 // releaseTagPattern matches a root release tag. A nested module's tags carry the module's
 // directory as a prefix (Go modules reference, "Mapping versions to commits"), and a
 // pre-release or build suffix does not publish a release, so neither matches.
-var releaseTagPattern = regexp.MustCompile(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
+var (
+	releaseTagPattern = regexp.MustCompile(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
+	// The breaking marker and the Migration footer are read with the patterns of the engine's commit
+	// policy (internal/forge/pr.go), copied because this file runs stdlib-only in adopted repositories;
+	// TestGatePatternsMatchCommitPolicy keeps the copies equal (#1317).
+	breakingHeaderRegex = regexp.MustCompile(`(?i)^[a-z]+(\([^\)]+\))?!:\s*.+`)
+	breakingFooterRegex = regexp.MustCompile(`(?m)^BREAKING[ -]CHANGE:`)
+	migrationRegex      = regexp.MustCompile(`(?i)(?:\r?\n|^)Migration:\s*([\s\S]+)`)
+)
 
 // The canary module verifyChecker compares: its second commit removes the exported function
 // its first declares.
@@ -162,6 +392,9 @@ func runGate(ctx context.Context, args []string, stdout, stderr *printer) (int, 
 	if err != nil {
 		return exitNotRun, err
 	}
+	if opts.exceptions, err = parseExceptions(os.Getenv(exceptionsEnv)); err != nil {
+		return exitNotRun, err
+	}
 	return gate(ctx, opts, stdout, stderr)
 }
 
@@ -190,6 +423,62 @@ func (p *printer) annotate(level, message string) {
 // options are the gate's flags.
 type options struct {
 	repo, base, policy, checker string
+	exceptions                  []exception
+}
+
+// exception is one live-or-expired entry of the manifest's api-compatibility exceptions: the
+// go.mod of a module whose build failure is excused until the end of the day expires.
+type exception struct {
+	Path    string `json:"path"`
+	Reason  string `json:"reason"`
+	Expires string `json:"expires"`
+}
+
+// parseExceptions reads the JSON list in exceptionsEnv. An empty value is no exception; a value
+// that is not a bounded list of well-formed entries fails the run, so a damaged workflow never
+// reads as "no exceptions" by accident.
+func parseExceptions(raw string) ([]exception, error) {
+	if strings.TrimSpace(raw) == "" {
+		return nil, nil
+	}
+	decoder := json.NewDecoder(strings.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	var entries []exception
+	if err := decoder.Decode(&entries); err != nil {
+		return nil, fmt.Errorf("%s is not a JSON list of {path, reason, expires}: %w", exceptionsEnv, err)
+	}
+	if len(entries) > maxExceptions {
+		return nil, fmt.Errorf("%s lists %d exceptions, want at most %d", exceptionsEnv, len(entries), maxExceptions)
+	}
+	for index := 0; index < len(entries) && index < maxExceptions; index++ {
+		entry := entries[index]
+		if path.Base(entry.Path) != "go.mod" || path.Clean(entry.Path) != entry.Path || strings.TrimSpace(entry.Reason) == "" {
+			return nil, fmt.Errorf("%s entry %d must name a module's go.mod and give a reason", exceptionsEnv, index)
+		}
+		if _, err := time.Parse(exceptionsDate, entry.Expires); err != nil {
+			return nil, fmt.Errorf("%s entry %d: expires %q is not a YYYY-MM-DD date", exceptionsEnv, index, entry.Expires)
+		}
+	}
+	return entries, nil
+}
+
+// exceptionFor returns what entries say about the module in dir ("." for the root module) on
+// today: the last entry that still holds, or else the first expired one. Both are nil without an
+// entry for the module.
+func exceptionFor(entries []exception, dir string, today time.Time) (live, expired *exception) {
+	for index := 0; index < len(entries) && index < maxExceptions; index++ {
+		if path.Dir(entries[index].Path) != dir {
+			continue
+		}
+		until, err := time.Parse(exceptionsDate, entries[index].Expires)
+		switch {
+		case err == nil && !until.Before(today):
+			live = &entries[index]
+		case expired == nil:
+			expired = &entries[index]
+		}
+	}
+	return live, expired
 }
 
 func parseOptions(args []string, stderr io.Writer) (options, error) {
@@ -199,7 +488,7 @@ func parseOptions(args []string, stderr io.Writer) (options, error) {
 	flags.StringVar(&opts.repo, "repo", ".", "any directory inside the repository to compare")
 	flags.StringVar(&opts.base, "base", "", "base revision; empty selects the newest root release tag merged into HEAD")
 	flags.StringVar(&opts.policy, "policy", "auto", "compatibility policy: auto, warn or reject")
-	flags.StringVar(&opts.checker, "checker", "", "go-apidiff binary; empty installs "+checkerModule)
+	flags.StringVar(&opts.checker, "checker", "", "go-apidiff binary; empty builds "+checkerPackage+" from the pinned build module")
 	if err := flags.Parse(args); err != nil {
 		return options{}, err
 	}
@@ -222,6 +511,9 @@ func gate(ctx context.Context, opts options, stdout, stderr *printer) (int, erro
 	if err != nil {
 		return exitNotRun, err
 	}
+	repo.exceptions = opts.exceptions
+	year, month, day := time.Now().UTC().Date()
+	repo.today = time.Date(year, month, day, 0, 0, 0, 0, time.UTC)
 	if repo.base == "" {
 		stdout.printf("No root release tag vMAJOR.MINOR.PATCH is merged into HEAD %s and -base is unset: "+
 			"no published API to compare.\n", short(repo.head))
@@ -239,7 +531,7 @@ func gate(ctx context.Context, opts options, stdout, stderr *printer) (int, erro
 	if err != nil {
 		return exitNotRun, err
 	}
-	return verdict(repo, plan, results, stdout, stderr), nil
+	return verdict(ctx, repo, plan, results, stdout, stderr), nil
 }
 
 // repository is what one gate run compares: the root, the two commits and the policy.
@@ -249,12 +541,16 @@ type repository struct {
 	base     string
 	baseName string
 	policy   policy
+	// exceptions are the manifest's module exceptions and today the UTC day they are judged on.
+	exceptions []exception
+	today      time.Time
 }
 
 // policy is the compatibility policy: whether an incompatible change fails the gate, and why.
 type policy struct {
-	reject bool
-	reason string
+	reject    bool
+	autoPreV1 bool
+	reason    string
 }
 
 // releaseTag is the newest root release tag merged into HEAD.
@@ -345,11 +641,11 @@ func resolvePolicy(flagValue string, newest releaseTag) policy {
 	case flagValue == "reject":
 		return policy{reject: true, reason: "-policy=reject"}
 	case !newest.found:
-		return policy{reason: "auto: no root release tag, so the API is pre-v1"}
+		return policy{autoPreV1: true, reason: "auto: no root release tag, so the API is pre-v1"}
 	case newest.version[0] >= 1:
 		return policy{reject: true, reason: "auto: newest root release tag " + newest.name + " is v1 or later"}
 	default:
-		return policy{reason: "auto: newest root release tag " + newest.name + " is pre-v1"}
+		return policy{autoPreV1: true, reason: "auto: newest root release tag " + newest.name + " is pre-v1"}
 	}
 }
 
@@ -365,11 +661,13 @@ type module struct {
 // version at HEAD of the base's module, added at HEAD only, removed from HEAD, and not public
 // because the module path has an internal element.
 type modulePlan struct {
-	compared  []module
-	newMajor  []module
-	added     []module
-	removed   []module
-	notPublic []module
+	baseModules []module
+	headModules []module
+	compared    []module
+	newMajor    []module
+	added       []module
+	removed     []module
+	notPublic   []module
 }
 
 func (p modulePlan) empty() bool {
@@ -385,7 +683,7 @@ func planModules(ctx context.Context, repo repository) (modulePlan, error) {
 	if err != nil {
 		return modulePlan{}, err
 	}
-	var plan modulePlan
+	plan := modulePlan{baseModules: slices.Clone(base), headModules: slices.Clone(head)}
 	base, plan.notPublic = splitPublic(base, nil)
 	head, plan.notPublic = splitPublic(head, plan.notPublic)
 	for index := 0; index < len(head) && index < maxModules; index++ {
@@ -557,6 +855,9 @@ func unquotedModulePath(value string) (string, error) {
 type result struct {
 	module       module
 	incompatible bool
+	// notCompared, when set, says why the module was not compared: the exception that excuses
+	// its build failure.
+	notCompared string
 }
 
 // compareModules verifies the checker, then builds and compares each compared module in
@@ -581,19 +882,32 @@ func compareModules(
 		return nil, err
 	}
 	defer func() { err = errors.Join(err, release()) }()
-	return compareEach(ctx, repo, plan, checker, sites, stdout, stderr)
+	aliases, err := collectAliasesAtHead(ctx, repo.root, repo.head, plan.headModules)
+	if err != nil {
+		return nil, fmt.Errorf("collect aliases at HEAD: %w", err)
+	}
+	return compareEach(ctx, repo, plan, checker, sites, aliases, stdout, stderr)
 }
 
 // compareEach builds and compares each compared module in directory order, stopping at the
 // first failure.
 func compareEach(
-	ctx context.Context, repo repository, plan modulePlan, checker string, sites checkerSites, stdout, stderr *printer,
+	ctx context.Context, repo repository, plan modulePlan, checker string, sites checkerSites, aliases []typeAlias, stdout, stderr *printer,
 ) ([]result, error) {
 	results := make([]result, 0, len(plan.compared))
 	for index := 0; index < len(plan.compared) && index < maxModules; index++ {
 		target := plan.compared[index]
 		stdout.printf("Comparing %s (%s) from %s to %s\n", target.dir, target.path, short(repo.base), short(repo.head))
-		incompatible, err := compareModule(ctx, checker, repo.root, sites.of(target.dir), target.dir, stdout.w, stderr.w)
+		buildErr := buildModule(ctx, repo.root, target.dir, stderr.w)
+		if buildErr != nil {
+			note, err := excuseBuildFailure(repo, target, buildErr, stderr)
+			if err != nil {
+				return nil, err
+			}
+			results = append(results, result{module: target, notCompared: note})
+			continue
+		}
+		incompatible, err := compareModule(ctx, checker, sites.of(target.dir), target, plan.baseModules, plan.headModules, aliases, stdout.w, stderr.w)
 		if err != nil {
 			return nil, fmt.Errorf("module %s (%s): %w", target.dir, target.path, err)
 		}
@@ -602,22 +916,70 @@ func compareEach(
 	return results, nil
 }
 
-// compareModule builds the module's packages at HEAD in the repository at root, then runs the
-// checker on the module's directory in site. The checker reads a package it cannot type-check
-// as empty without saying so, so a module that does not build would otherwise read as
-// compatible; go list -export builds what the checker loads and writes nothing into the working
-// tree. A vendor-free clone has no checkout, so the module's directory is created there for the
-// checker to start in.
-func compareModule(ctx context.Context, checker, root string, site checkerSite, dir string, stdout, stderr io.Writer) (bool, error) {
+// buildModule builds the module's packages at HEAD in the repository at root. The checker reads
+// a package it cannot type-check as empty without saying so, so a module that does not build
+// would otherwise read as compatible; go list -export builds what the checker loads and writes
+// nothing into the working tree.
+func buildModule(ctx context.Context, root, dir string, stderr io.Writer) error {
 	moduleDir := filepath.Join(root, filepath.FromSlash(dir))
 	if err := runTool(ctx, moduleDir, io.Discard, stderr, "go", "list", "-export", "./..."); err != nil {
-		return false, fmt.Errorf("its packages do not build at HEAD, so the checker cannot read them: %w", err)
+		return fmt.Errorf("its packages do not build at HEAD, so the checker cannot read them: %w", err)
 	}
-	checkerDir := filepath.Join(site.root, filepath.FromSlash(dir))
+	return nil
+}
+
+// excuseBuildFailure returns the note that reports target as not compared when a live exception
+// names its go.mod, and the failure otherwise, naming an expired exception when there is one.
+// The module is never compared in place of a build the exception excuses.
+func excuseBuildFailure(repo repository, target module, buildErr error, stderr *printer) (string, error) {
+	live, expired := exceptionFor(repo.exceptions, target.dir, repo.today)
+	if live == nil {
+		failure := fmt.Errorf("module %s (%s): %w", target.dir, target.path, buildErr)
+		if expired != nil {
+			failure = fmt.Errorf("%w; the exception for %s expired on %s (%s), so it excuses nothing",
+				failure, expired.Path, expired.Expires, expired.Reason)
+		}
+		return "", failure
+	}
+	note := fmt.Sprintf("excepted until %s: %s", live.Expires, live.Reason)
+	stderr.annotate("warning", fmt.Sprintf("module %s (%s) was not compared: %s; build failure: %v",
+		target.dir, target.path, note, buildErr))
+	return note, nil
+}
+
+// compareModule runs the checker on the module's directory in site, after buildModule built the
+// module. A vendor-free clone has no checkout, so the module's directory is created there for the
+// checker to start in.
+func compareModule(ctx context.Context, checker string, site checkerSite, target module, baseModules, headModules []module, aliases []typeAlias, stdout, stderr io.Writer) (bool, error) {
+	checkerDir := filepath.Join(site.root, filepath.FromSlash(target.dir))
 	if err := os.MkdirAll(checkerDir, 0o700); err != nil {
 		return false, fmt.Errorf("create the checker's directory: %w", err)
 	}
-	return runChecker(ctx, checker, site.root, checkerDir, site.base, site.head, stdout, stderr)
+	var buf bytes.Buffer
+	incompatible, err := runChecker(ctx, checker, site.root, checkerDir, site.base, site.head, &buf, stderr)
+	if err != nil {
+		if _, writeErr := stdout.Write(buf.Bytes()); writeErr != nil {
+			return false, writeErr
+		}
+		return false, err
+	}
+	if !incompatible {
+		if _, writeErr := stdout.Write(buf.Bytes()); writeErr != nil {
+			return false, writeErr
+		}
+		return false, nil
+	}
+	stillIncompatible, filteredOutput, filterErr := filterModuleOutput(ctx, site.root, site.base, site.head, target, baseModules, headModules, aliases, buf.String())
+	if filterErr != nil {
+		if _, writeErr := stdout.Write(buf.Bytes()); writeErr != nil {
+			return false, writeErr
+		}
+		return true, filterErr
+	}
+	if _, writeErr := io.WriteString(stdout, filteredOutput); writeErr != nil {
+		return false, writeErr
+	}
+	return stillIncompatible, nil
 }
 
 // checkerSite is where the checker compares a module: a repository root and the two commits.
@@ -749,13 +1111,16 @@ func emptyHead(ctx context.Context, clone string, config []string) error {
 // and the vendor-free clone: a fixed identity, no signing and a hooks directory that does not
 // exist, so no configuration of the machine changes or blocks them.
 func scratchGitConfig(hooks string) []string {
-	return []string{"-c", "user.name=apicompat", "-c", "user.email=apicompat@example.invalid",
-		"-c", "commit.gpgSign=false", "-c", "core.hooksPath=" + hooks}
+	return []string{
+		"-c", "user.name=apicompat", "-c", "user.email=apicompat@example.invalid",
+		"-c", "commit.gpgSign=false", "-c", "core.hooksPath=" + hooks,
+	}
 }
 
-// resolveChecker returns the checker binary: the -checker path, or checkerModule installed into
-// a temporary directory the returned cleanup removes. The install runs outside the repository,
-// so no go.mod, go.work or vendor directory of the repository changes what it builds.
+// resolveChecker returns the checker binary: the -checker path, or checkerPackage built from the
+// pinned build module into a temporary directory the returned cleanup removes. The build runs
+// outside the repository, so no go.mod, go.work or vendor directory of the repository changes
+// what it builds.
 func resolveChecker(ctx context.Context, explicit string, stderr io.Writer) (string, func() error, error) {
 	if explicit != "" {
 		return explicit, func() error { return nil }, nil
@@ -764,20 +1129,45 @@ func resolveChecker(ctx context.Context, explicit string, stderr io.Writer) (str
 	if err != nil {
 		return "", nil, fmt.Errorf("create the checker directory: %w", err)
 	}
-	ctx, cancel := context.WithTimeout(ctx, installTimeout)
-	defer cancel()
-	install := exec.CommandContext(ctx, "go", "install", checkerModule)
-	install.Dir = dir
-	install.Env = append(os.Environ(), "GOBIN="+dir)
-	install.Stdout, install.Stderr = stderr, stderr
-	if err := install.Run(); err != nil {
-		return "", nil, errors.Join(fmt.Errorf("install %s: %w", checkerModule, err), os.RemoveAll(dir))
+	cleanup := func() error { return os.RemoveAll(dir) }
+	binary, err := buildChecker(ctx, dir, stderr)
+	if err != nil {
+		return "", nil, errors.Join(err, cleanup())
+	}
+	return binary, cleanup, nil
+}
+
+// buildChecker writes the build module into dir/module and builds checkerPackage from it into
+// dir. The module's go.sum pins every dependency, so the build downloads nothing it does not
+// verify, and -mod=readonly refuses to change the module.
+func buildChecker(ctx context.Context, dir string, stderr io.Writer) (string, error) {
+	module := filepath.Join(dir, "module")
+	if err := os.Mkdir(module, 0o700); err != nil {
+		return "", fmt.Errorf("create the checker build module: %w", err)
+	}
+	files := [...]struct{ name, text string }{
+		{"go.mod", checkerGoMod}, {"go.sum", checkerGoSum}, {"tools.go", checkerTools},
+	}
+	for _, file := range files {
+		if err := os.WriteFile(filepath.Join(module, file.name), []byte(file.text), 0o600); err != nil {
+			return "", fmt.Errorf("write the checker build module: %w", err)
+		}
 	}
 	name := checkerBinary
 	if runtime.GOOS == "windows" {
 		name += ".exe"
 	}
-	return filepath.Join(dir, name), func() error { return os.RemoveAll(dir) }, nil
+	binary := filepath.Join(dir, name)
+	ctx, cancel := context.WithTimeout(ctx, installTimeout)
+	defer cancel()
+	// #nosec G204 -- the arguments are constants; no shell runs.
+	build := exec.CommandContext(ctx, "go", "build", "-mod=readonly", "-o", binary, checkerPackage)
+	build.Dir = module
+	build.Stdout, build.Stderr = stderr, stderr
+	if err := build.Run(); err != nil {
+		return "", fmt.Errorf("build %s from the pinned build module: %w", checkerPackage, err)
+	}
+	return binary, nil
 }
 
 // verifyChecker runs the checker on a canary repository whose second commit removes an
@@ -881,7 +1271,7 @@ func reportedError(diagnostics string) bool {
 }
 
 // verdict prints every module's outcome and the policy, and returns the exit status.
-func verdict(repo repository, plan modulePlan, results []result, stdout, stderr *printer) int {
+func verdict(ctx context.Context, repo repository, plan modulePlan, results []result, stdout, stderr *printer) int {
 	if plan.empty() {
 		stdout.printf("No Go module is tracked at %s or HEAD %s: nothing to compare.\n", repo.baseName, short(repo.head))
 		return exitCompatible
@@ -889,6 +1279,10 @@ func verdict(repo repository, plan modulePlan, results []result, stdout, stderr 
 	stdout.printf("\nGo API compatibility from %s (%s) to HEAD %s:\n", repo.baseName, short(repo.base), short(repo.head))
 	incompatible := len(plan.removed)
 	for index := 0; index < len(results) && index < maxModules; index++ {
+		if results[index].notCompared != "" {
+			printModule(stdout, "not compared", results[index].module, results[index].notCompared)
+			continue
+		}
 		state := "compatible"
 		if results[index].incompatible {
 			state = "incompatible"
@@ -907,13 +1301,76 @@ func verdict(repo repository, plan modulePlan, results []result, stdout, stderr 
 		stdout.printf("Every compared module is compatible (policy %s).\n", repo.policy.reason)
 		return exitCompatible
 	}
+	return incompatibleVerdict(ctx, repo, incompatible, stdout, stderr)
+}
+
+// incompatibleVerdict decides whether incompatible changes fail the gate or pass as a warning.
+func incompatibleVerdict(ctx context.Context, repo repository, incompatible int, stdout, stderr *printer) int {
 	message := fmt.Sprintf("%d incompatible module change(s) from %s to HEAD %s", incompatible, repo.baseName, short(repo.head))
 	if repo.policy.reject {
 		stderr.annotate("error", message+" rejected ("+repo.policy.reason+")")
 		return exitRejected
 	}
-	stdout.annotate("warning", message+" reported, not rejected ("+repo.policy.reason+")")
+	if !repo.policy.autoPreV1 {
+		stdout.annotate("warning", message+" reported, not rejected ("+repo.policy.reason+")")
+		return exitCompatible
+	}
+	breakingCommit, err := findBreakingCommit(ctx, repo)
+	if err != nil {
+		stderr.annotate("error", fmt.Sprintf("failed reading commits %s..%s: %v", repo.baseName, short(repo.head), err))
+		return exitNotRun
+	}
+	if breakingCommit == "" {
+		stderr.annotate("error", message+" rejected ("+repo.policy.reason+": missing breaking marker (! in subject) with Migration: footer)")
+		return exitRejected
+	}
+	stdout.annotate("warning", message+" reported, not rejected ("+repo.policy.reason+"): breaking commit "+short(breakingCommit))
 	return exitCompatible
+}
+
+// findBreakingCommit returns the SHA of the first commit in base..head carrying a breaking
+// marker (! in subject) and a non-empty Migration: footer, or "" if none carries it.
+func findBreakingCommit(ctx context.Context, repo repository) (string, error) {
+	limit := fmt.Sprintf("--max-count=%d", maxAnalyzedCommits+1)
+	format := "--format=%H%x1f%B%x00"
+	out, err := gitCapture(ctx, repo.root, maxCommitLogBytes, "log", limit, format, repo.base+".."+repo.head, "--")
+	if err != nil {
+		return "", fmt.Errorf("git log %s..%s: %w", short(repo.base), short(repo.head), err)
+	}
+	records := strings.Split(string(out), "\x00")
+	if len(records) > maxAnalyzedCommits+1 {
+		return "", fmt.Errorf("commit range %s..%s exceeds %d commits", short(repo.base), short(repo.head), maxAnalyzedCommits)
+	}
+	for index := 0; index < len(records) && index < maxAnalyzedCommits; index++ {
+		record := strings.TrimSpace(records[index])
+		if record == "" {
+			continue
+		}
+		sha, message, ok := strings.Cut(record, "\x1f")
+		if !ok {
+			continue
+		}
+		if isBreakingCommit(message) {
+			return sha, nil
+		}
+	}
+	return "", nil
+}
+
+// isBreakingCommit reports whether message is a breaking commit as the engine's commit policy reads
+// it (a ! subject or a BREAKING CHANGE footer) with a non-empty Migration: footer.
+func isBreakingCommit(message string) bool {
+	trimmed := strings.TrimSpace(message)
+	if trimmed == "" {
+		return false
+	}
+	header, _, _ := strings.Cut(trimmed, "\n")
+	header = strings.TrimSuffix(header, "\r")
+	if !breakingHeaderRegex.MatchString(header) && !breakingFooterRegex.MatchString(trimmed) {
+		return false
+	}
+	m := migrationRegex.FindStringSubmatch(trimmed)
+	return len(m) > 1 && strings.TrimSpace(m[1]) != ""
 }
 
 func printModules(stdout *printer, state string, modules []module, note string) {
@@ -1047,4 +1504,541 @@ func (b *boundedBuffer) Write(p []byte) (int, error) {
 
 func (b *boundedBuffer) String() string {
 	return string(b.data)
+}
+
+const maxTypeStringBytes = 1 << 16
+
+type typeAlias struct {
+	moduleDir  string
+	pkgPath    string
+	aliasName  string
+	targetPkg  string
+	targetName string
+}
+
+type replacementKind int
+
+const (
+	kindFull replacementKind = iota
+	kindShort
+	kindBare
+)
+
+type aliasReplacement struct {
+	pattern string
+	target  string
+	kind    replacementKind
+}
+
+func isWordChar(b byte) bool {
+	return b == '_' || (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9')
+}
+
+// isGoSourceFile reports whether a tracked path is a Go source file outside directories skipped
+// by the go command.
+func isGoSourceFile(name string) bool {
+	if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+		return false
+	}
+	elements := strings.Split(path.Dir(name), "/")
+	if len(elements) > maxPathElements {
+		return false
+	}
+	return !slices.ContainsFunc(elements, skippedDirectory)
+}
+
+func matchLeftBoundary(s string, start int, kind replacementKind) bool {
+	if start == 0 {
+		return true
+	}
+	prev := s[start-1]
+	switch kind {
+	case kindBare:
+		return !isWordChar(prev) && prev != '/' && prev != '.'
+	case kindShort:
+		return !isWordChar(prev) && prev != '/'
+	default:
+		return !isWordChar(prev)
+	}
+}
+
+func replaceAliasPattern(s string, r aliasReplacement) (string, bool) {
+	var sb strings.Builder
+	idx := 0
+	pLen := len(r.pattern)
+	changed := false
+	for loop := 0; idx < len(s) && loop < maxTypeStringBytes; loop++ {
+		match := strings.Index(s[idx:], r.pattern)
+		if match < 0 {
+			sb.WriteString(s[idx:])
+			break
+		}
+		start := idx + match
+		end := start + pLen
+		leftOK := matchLeftBoundary(s, start, r.kind)
+		rightOK := (end == len(s) || !isWordChar(s[end]))
+		if leftOK && rightOK {
+			sb.WriteString(s[idx:start])
+			sb.WriteString(r.target)
+			idx = end
+			changed = true
+		} else {
+			sb.WriteString(s[idx : start+1])
+			idx = start + 1
+		}
+	}
+	return sb.String(), changed
+}
+
+func buildAliasReplacements(aliases []typeAlias, currentPkg string) []aliasReplacement {
+	replacements := make([]aliasReplacement, 0, len(aliases)*3)
+	for index := 0; index < len(aliases) && index < maxAliases; index++ {
+		a := aliases[index]
+		target := a.targetPkg + "." + a.targetName
+		replacements = append(replacements,
+			aliasReplacement{pattern: a.pkgPath + "." + a.aliasName, target: target, kind: kindFull},
+			aliasReplacement{pattern: path.Base(a.pkgPath) + "." + a.aliasName, target: target, kind: kindShort},
+		)
+		if currentPkg == a.pkgPath {
+			replacements = append(replacements, aliasReplacement{pattern: a.aliasName, target: target, kind: kindBare})
+		}
+	}
+	slices.SortFunc(replacements, func(a, b aliasReplacement) int {
+		return len(b.pattern) - len(a.pattern)
+	})
+	return replacements
+}
+
+func replaceTypeAliases(typeStr, currentPkg string, aliases []typeAlias) (string, bool) {
+	replacements := buildAliasReplacements(aliases, currentPkg)
+	res := typeStr
+	anyChanged := false
+	for index := 0; index < len(replacements) && index < maxAliases*3; index++ {
+		newRes, changed := replaceAliasPattern(res, replacements[index])
+		if changed {
+			anyChanged = true
+			res = newRes
+		}
+	}
+	return res, anyChanged
+}
+
+func collectFileImports(importSpecs []*ast.ImportSpec) map[string]string {
+	imports := make(map[string]string, len(importSpecs))
+	for index := 0; index < len(importSpecs) && index < maxImports; index++ {
+		imp := importSpecs[index]
+		val, err := strconv.Unquote(imp.Path.Value)
+		if err != nil {
+			continue
+		}
+		name := path.Base(val)
+		if imp.Name != nil && imp.Name.Name != "" {
+			name = imp.Name.Name
+		}
+		if name != "_" && name != "." {
+			imports[name] = val
+		}
+	}
+	return imports
+}
+
+func formatTypeDecl(ts *ast.TypeSpec, fileImports []*ast.ImportSpec) string {
+	imports := collectFileImports(fileImports)
+	ast.Inspect(ts, func(n ast.Node) bool {
+		switch node := n.(type) {
+		case *ast.Field:
+			node.Doc = nil
+			node.Comment = nil
+		case *ast.SelectorExpr:
+			if ident, ok := node.X.(*ast.Ident); ok {
+				if canonical, found := imports[ident.Name]; found {
+					ident.Name = path.Base(canonical)
+				}
+			}
+		}
+		return true
+	})
+
+	var buf bytes.Buffer
+	fset := token.NewFileSet()
+	if ts.TypeParams != nil {
+		if err := format.Node(&buf, fset, ts.TypeParams); err != nil {
+			return ""
+		}
+		buf.WriteByte(' ')
+	}
+	if err := format.Node(&buf, fset, ts.Type); err != nil {
+		return ""
+	}
+	return buf.String()
+}
+
+func checkCompatibleAlias(line, currentPkg string, identical, nonIdentical []typeAlias) (bool, string) {
+	if !strings.HasPrefix(line, "  - ") {
+		return false, ""
+	}
+	stripped := line[4:]
+	colonIdx := strings.Index(stripped, ": changed from ")
+	if colonIdx < 0 {
+		return false, ""
+	}
+	target := stripped[:colonIdx]
+	rem := stripped[colonIdx+len(": changed from "):]
+	toIdx := strings.Index(rem, " to ")
+	if toIdx < 0 {
+		return false, ""
+	}
+	oldType := rem[:toIdx]
+	newType := rem[toIdx+len(" to "):]
+
+	if _, bad := replaceTypeAliases(oldType, currentPkg, nonIdentical); bad {
+		return false, ""
+	}
+	if _, bad := replaceTypeAliases(newType, currentPkg, nonIdentical); bad {
+		return false, ""
+	}
+
+	ro, co := replaceTypeAliases(oldType, currentPkg, identical)
+	rn, cn := replaceTypeAliases(newType, currentPkg, identical)
+	if ro == rn && (co || cn) {
+		accepted := fmt.Sprintf("  - %s: changed from %s to %s (compatible: alias of identical type)",
+			target, oldType, newType)
+		return true, accepted
+	}
+	return false, ""
+}
+
+func moduleDirs(modules []module) []string {
+	dirs := make([]string, 0, min(len(modules), maxModules))
+	for index := 0; index < len(modules) && index < maxModules; index++ {
+		dirs = append(dirs, modules[index].dir)
+	}
+	return dirs
+}
+
+func ownerModuleDir(filePath string, moduleDirs []string) string {
+	p := strings.TrimPrefix(path.Clean(filepath.ToSlash(filePath)), "/")
+	owner := "."
+	bestLen := 0
+	for index := 0; index < len(moduleDirs) && index < maxModules; index++ {
+		dir := strings.TrimPrefix(path.Clean(filepath.ToSlash(moduleDirs[index])), "/")
+		if dir == "." || dir == "" {
+			continue
+		}
+		if (p == dir || strings.HasPrefix(p, dir+"/")) && len(dir) > bestLen {
+			owner = dir
+			bestLen = len(dir)
+		}
+	}
+	return owner
+}
+
+func listModuleGoFiles(ctx context.Context, root, rev string, target module, modules []module) ([]string, error) {
+	args := []string{"ls-tree", "-r", "-z", "--full-tree", "--name-only", rev}
+	if target.dir != "." && target.dir != "" {
+		args = append(args, "--", target.dir)
+	}
+	records, err := gitRecords(ctx, root, 0, maxTreeEntries, isGoSourceFile, args...)
+	if err != nil {
+		return nil, err
+	}
+	targetDir := path.Clean(filepath.ToSlash(target.dir))
+	dirs := moduleDirs(modules)
+	files := make([]string, 0, min(len(records), maxTreeEntries))
+	for index := 0; index < len(records) && index < maxTreeEntries; index++ {
+		filePath := records[index]
+		if ownerModuleDir(filePath, dirs) == targetDir {
+			files = append(files, filePath)
+		}
+	}
+	return files, nil
+}
+
+func filePackagePath(modulePath, moduleDir, filePath string) string {
+	rel := filePath
+	if moduleDir != "." && moduleDir != "" {
+		rel = strings.TrimPrefix(strings.TrimPrefix(filePath, moduleDir), "/")
+	}
+	dir := path.Dir(rel)
+	if dir == "." || dir == "" {
+		return modulePath
+	}
+	return modulePath + "/" + path.Clean(dir)
+}
+
+func resolveAliasTarget(ts *ast.TypeSpec, imports map[string]string, moduleDir, pkgPath string) (typeAlias, bool) {
+	switch expr := ts.Type.(type) {
+	case *ast.SelectorExpr:
+		ident, ok := expr.X.(*ast.Ident)
+		if !ok {
+			return typeAlias{}, false
+		}
+		targetPkg, found := imports[ident.Name]
+		if !found {
+			return typeAlias{}, false
+		}
+		return typeAlias{
+			moduleDir:  moduleDir,
+			pkgPath:    pkgPath,
+			aliasName:  ts.Name.Name,
+			targetPkg:  targetPkg,
+			targetName: expr.Sel.Name,
+		}, true
+	case *ast.Ident:
+		return typeAlias{
+			moduleDir:  moduleDir,
+			pkgPath:    pkgPath,
+			aliasName:  ts.Name.Name,
+			targetPkg:  pkgPath,
+			targetName: expr.Name,
+		}, true
+	default:
+		return typeAlias{}, false
+	}
+}
+
+func appendAliases(aliases []typeAlias, f *ast.File, moduleDir, pkgPath string) []typeAlias {
+	imports := collectFileImports(f.Imports)
+	for dIdx := 0; dIdx < len(f.Decls) && dIdx < maxDecls && len(aliases) < maxAliases; dIdx++ {
+		gen, ok := f.Decls[dIdx].(*ast.GenDecl)
+		if !ok || gen.Tok != token.TYPE {
+			continue
+		}
+		aliases = appendTypeSpecs(aliases, gen.Specs, imports, moduleDir, pkgPath)
+	}
+	return aliases
+}
+
+func appendTypeSpecs(aliases []typeAlias, specs []ast.Spec, imports map[string]string, moduleDir, pkgPath string) []typeAlias {
+	for sIdx := 0; sIdx < len(specs) && sIdx < maxSpecs && len(aliases) < maxAliases; sIdx++ {
+		ts, ok := specs[sIdx].(*ast.TypeSpec)
+		if !ok || !ts.Assign.IsValid() || !ast.IsExported(ts.Name.Name) {
+			continue
+		}
+		if alias, found := resolveAliasTarget(ts, imports, moduleDir, pkgPath); found {
+			aliases = append(aliases, alias)
+		}
+	}
+	return aliases
+}
+
+func collectAliasesAtHead(ctx context.Context, root, head string, modules []module) ([]typeAlias, error) {
+	fset := token.NewFileSet()
+	aliases := make([]typeAlias, 0, maxAliases)
+	for modIndex := 0; modIndex < len(modules) && modIndex < maxModules && len(aliases) < maxAliases; modIndex++ {
+		target := modules[modIndex]
+		files, err := listModuleGoFiles(ctx, root, head, target, modules)
+		if err != nil {
+			return nil, fmt.Errorf("list Go files in module %s: %w", target.dir, err)
+		}
+		for index := 0; index < len(files) && index < maxGoFiles && len(aliases) < maxAliases; index++ {
+			filePath := files[index]
+			data, err := gitCapture(ctx, root, maxDeclBytes, "cat-file", "blob", head+":"+filePath)
+			if err != nil {
+				return nil, fmt.Errorf("read alias source %s: %w", filePath, err)
+			}
+			f, err := parser.ParseFile(fset, filePath, data, parser.SkipObjectResolution)
+			if err != nil {
+				continue
+			}
+			pkgPath := filePackagePath(target.path, target.dir, filePath)
+			aliases = appendAliases(aliases, f, target.dir, pkgPath)
+		}
+	}
+	return aliases, nil
+}
+
+func matchTypeDeclInFile(fset *token.FileSet, filePath string, data []byte, typeName string) (string, bool) {
+	f, err := parser.ParseFile(fset, filePath, data, parser.SkipObjectResolution)
+	if err != nil {
+		return "", false
+	}
+	for dIdx := 0; dIdx < len(f.Decls) && dIdx < maxDecls; dIdx++ {
+		gen, ok := f.Decls[dIdx].(*ast.GenDecl)
+		if !ok || gen.Tok != token.TYPE {
+			continue
+		}
+		for sIdx := 0; sIdx < len(gen.Specs) && sIdx < maxSpecs; sIdx++ {
+			ts, ok := gen.Specs[sIdx].(*ast.TypeSpec)
+			if !ok || ts.Assign.IsValid() || ts.Name.Name != typeName {
+				continue
+			}
+			return formatTypeDecl(ts, f.Imports), true
+		}
+	}
+	return "", false
+}
+
+func findTypeDecl(ctx context.Context, root, rev string, modules []module, pkgPath, typeName string) (string, error) {
+	fset := token.NewFileSet()
+	for modIndex := 0; modIndex < len(modules) && modIndex < maxModules; modIndex++ {
+		target := modules[modIndex]
+		files, err := listModuleGoFiles(ctx, root, rev, target, modules)
+		if err != nil {
+			return "", fmt.Errorf("list Go files in module %s: %w", target.dir, err)
+		}
+		for index := 0; index < len(files) && index < maxGoFiles; index++ {
+			filePath := files[index]
+			if filePackagePath(target.path, target.dir, filePath) != pkgPath {
+				continue
+			}
+			data, err := gitCapture(ctx, root, maxDeclBytes, "cat-file", "blob", rev+":"+filePath)
+			if err != nil {
+				return "", fmt.Errorf("read type source %s: %w", filePath, err)
+			}
+			decl, found := matchTypeDeclInFile(fset, filePath, data, typeName)
+			if found {
+				return decl, nil
+			}
+		}
+	}
+	return "", nil
+}
+
+func verifyIdenticalAliases(ctx context.Context, root, base, head string, baseModules, headModules []module, aliases []typeAlias) ([]typeAlias, []typeAlias) {
+	var identical, nonIdentical []typeAlias
+	for index := 0; index < len(aliases) && index < maxAliases; index++ {
+		a := aliases[index]
+		bDecl, errB := findTypeDecl(ctx, root, base, baseModules, a.pkgPath, a.aliasName)
+		hDecl, errH := findTypeDecl(ctx, root, head, headModules, a.targetPkg, a.targetName)
+		if errB == nil && errH == nil && bDecl != "" && bDecl == hDecl {
+			identical = append(identical, a)
+		} else {
+			nonIdentical = append(nonIdentical, a)
+		}
+	}
+	return identical, nonIdentical
+}
+
+func writeFilteredSection(sb *strings.Builder, pkg string, incomp, comp []string) {
+	if len(incomp) == 0 && len(comp) == 0 {
+		return
+	}
+	sb.WriteString("\n" + pkg + "\n")
+	if len(incomp) > 0 {
+		sb.WriteString("  Incompatible changes:\n")
+		for index := 0; index < len(incomp) && index < maxOutputLines; index++ {
+			sb.WriteString(incomp[index] + "\n")
+		}
+	}
+	if len(comp) > 0 {
+		sb.WriteString("  Compatible changes:\n")
+		for index := 0; index < len(comp) && index < maxOutputLines; index++ {
+			sb.WriteString(comp[index] + "\n")
+		}
+	}
+}
+
+type lineKind int
+
+const (
+	lineIgnored lineKind = iota
+	linePackage
+	lineIncompatibleHeader
+	lineCompatibleHeader
+	lineChange
+)
+
+func classifyLine(line string) (lineKind, string) {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" {
+		return lineIgnored, ""
+	}
+	if !strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "\t") {
+		return linePackage, trimmed
+	}
+	if strings.HasPrefix(trimmed, "Incompatible changes:") {
+		return lineIncompatibleHeader, ""
+	}
+	if strings.HasPrefix(trimmed, "Compatible changes:") {
+		return lineCompatibleHeader, ""
+	}
+	if strings.HasPrefix(line, "  - ") {
+		return lineChange, line
+	}
+	return lineIgnored, ""
+}
+
+func routeChangeLine(line, pkg string, inIncomp, inComp bool, id, nonId []typeAlias, incomp, comp []string) ([]string, []string) {
+	if inIncomp {
+		if ok, acc := checkCompatibleAlias(line, pkg, id, nonId); ok {
+			return incomp, append(comp, acc)
+		}
+		return append(incomp, line), comp
+	}
+	if inComp {
+		return incomp, append(comp, line)
+	}
+	return incomp, comp
+}
+
+func filterOutput(output string, identical, nonIdentical []typeAlias) (bool, string) {
+	lines := strings.Split(output, "\n")
+	var res strings.Builder
+	currentPkg := ""
+	inIncompatible, inCompatible := false, false
+	var incompLines, compLines []string
+	hasIncompatible := false
+
+	flush := func() {
+		if currentPkg != "" {
+			if len(incompLines) > 0 {
+				hasIncompatible = true
+			}
+			writeFilteredSection(&res, currentPkg, incompLines, compLines)
+			currentPkg = ""
+			incompLines, compLines = nil, nil
+		}
+	}
+
+	for lIdx := 0; lIdx < len(lines) && lIdx < maxOutputLines; lIdx++ {
+		kind, text := classifyLine(lines[lIdx])
+		switch kind {
+		case linePackage:
+			flush()
+			currentPkg = text
+			inIncompatible, inCompatible = false, false
+		case lineIncompatibleHeader:
+			inIncompatible, inCompatible = true, false
+		case lineCompatibleHeader:
+			inIncompatible, inCompatible = false, true
+		case lineChange:
+			incompLines, compLines = routeChangeLine(text, currentPkg, inIncompatible, inCompatible, identical, nonIdentical, incompLines, compLines)
+		}
+	}
+	flush()
+	return hasIncompatible, res.String()
+}
+
+func isNestedBeneath(subDir, parentDir string) bool {
+	p := path.Clean(filepath.ToSlash(parentDir))
+	s := path.Clean(filepath.ToSlash(subDir))
+	if p == s {
+		return false
+	}
+	if p == "." || p == "" {
+		return s != "." && s != ""
+	}
+	return strings.HasPrefix(s, p+"/")
+}
+
+func filterAliasesForTarget(aliases []typeAlias, target module) []typeAlias {
+	filtered := make([]typeAlias, 0, len(aliases))
+	for index := 0; index < len(aliases) && index < maxAliases; index++ {
+		a := aliases[index]
+		if !isNestedBeneath(a.moduleDir, target.dir) {
+			filtered = append(filtered, a)
+		}
+	}
+	return filtered
+}
+
+func filterModuleOutput(ctx context.Context, root, base, head string, target module, baseModules, headModules []module, aliases []typeAlias, rawOutput string) (bool, string, error) {
+	targetAliases := filterAliasesForTarget(aliases, target)
+	if len(targetAliases) == 0 {
+		return true, rawOutput, nil
+	}
+	identical, nonIdentical := verifyIdenticalAliases(ctx, root, base, head, baseModules, headModules, targetAliases)
+	hasIncompatible, filtered := filterOutput(rawOutput, identical, nonIdentical)
+	return hasIncompatible, filtered, nil
 }

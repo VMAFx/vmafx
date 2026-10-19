@@ -88,7 +88,7 @@ TERM_STEPS = {
 REFERENCE_LINES = (
     "#define SSIM_K1 (0.01 * 0.01)",
     "#define SSIM_K2 (0.03 * 0.03)",
-    "w_d = m.w;",
+    "w_d = (double)m.w;",
     "c1 = sm * sm * SSIM_K1 * w_d * w_d;",
     "c2 = sm * sm * SSIM_K2 * w_d * w_d;",
     "mx2 = m.mux * (double)m.mux;",

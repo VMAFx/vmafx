@@ -1,0 +1,1 @@
+| [ADR-2012](2012-lefthook-windows-host.md) | Single-line quote-free Lefthook execution scripts for Windows; hook installer coexistence preserving Lefthook shims; Windows cross-platform build fixes and standards-gate verification | Accepted | ci, tooling, workspace, agents, git-hooks, windows |

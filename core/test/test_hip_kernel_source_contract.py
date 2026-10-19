@@ -390,9 +390,8 @@ def _issim_raster_failures(src: dict[str, str]) -> list[str]:
     ):
         failures.append(f"{ISSIM_HOST}: pass 2 is not the per-pixel kernel at every frame size")
     collect = _function_body(host, "collect_fex_hip")
-    if (
-        "for (size_t i = 0u; i < s->term_count; i++) total_term += terms[i];"
-        not in _squeeze(collect)
+    if "for (size_t i = 0u; i < s->term_count; i++) total_term += terms[i];" not in _squeeze(
+        collect
     ):
         failures.append(f"{ISSIM_HOST}: collect() no longer adds the terms in ascending order")
     return failures
@@ -433,6 +432,7 @@ def _option_failures(src: dict[str, str]) -> list[str]:
         "vmaf_psnr_max(",
         "vmaf_psnr_from_mse(",
         "vmaf_psnr_aggregate(",
+        "vmaf_psnr_clip_sse_add(",
     ):
         if helper not in psnr:
             failures.append(f"{PSNR_HOST}: {helper}) of psnr_score.h is not called")
@@ -478,7 +478,9 @@ def _float_motion_sum_failures(src: dict[str, str]) -> list[str]:
     kernel = _squeeze(src[FMOTION_KERNEL])
     for call in FMOTION_KERNEL_CALLS:
         if call not in kernel:
-            failures.append(f"{FMOTION_KERNEL}: a kernel no longer goes through {FMOTION_ROWS} ({call})")
+            failures.append(
+                f"{FMOTION_KERNEL}: a kernel no longer goes through {FMOTION_ROWS} ({call})"
+            )
     if "__shfl_down" in kernel or "partials" in kernel:
         failures.append(f"{FMOTION_KERNEL}: a kernel reduces the SAD per wave or per block")
     host = src[FMOTION_HOST]
@@ -1137,7 +1139,9 @@ class HipKernelSourceContractTest(unittest.TestCase):
         self.assert_detected(src, "per wave or per block")
 
     def test_double_float_motion_row_sum_is_detected(self) -> None:
-        src = _replace(_sources(), FMOTION_ROWS, "    float accum = 0.0f;", "    double accum = 0.0;")
+        src = _replace(
+            _sources(), FMOTION_ROWS, "    float accum = 0.0f;", "    double accum = 0.0;"
+        )
         self.assert_detected(src, "float accum = 0.0f;")
 
     def test_untransposed_float_motion_row_sum_is_detected(self) -> None:
@@ -1176,7 +1180,6 @@ class HipKernelSourceContractTest(unittest.TestCase):
             _sources(), FMOTION_HOST, "s->n_planes = FMH_MAX_PLANES;", "s->n_planes = 1u;"
         )
         self.assert_detected(src, "motion_add_uv does not run the chroma planes")
-
 
     def test_unfused_ms_ssim_decimate_is_detected(self) -> None:
         src = _replace(
@@ -1320,6 +1323,7 @@ class HipKernelSourceContractTest(unittest.TestCase):
             "        ms_ssim_hip_block_sums(pl, i, &total_l, &total_c, &total_s);",
         )
         self.assert_detected(src, "does not take the sums in the CPU's order")
+
     def test_ms_ssim_luma_only_plane_count_is_detected(self) -> None:
         src = _replace(
             _sources(),

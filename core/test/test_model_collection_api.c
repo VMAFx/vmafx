@@ -25,6 +25,7 @@
 #include <errno.h>
 #include <math.h>
 #include <stdio.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -33,6 +34,7 @@
 #include "libvmaf/feature.h"
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/model.h"
+#include "compat/path_utf8.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
@@ -370,7 +372,7 @@ static char *read_open_file(FILE *in, char **out, long *out_len)
 
 static char *read_whole_file(const char *path, char **out, long *out_len)
 {
-    FILE *in = fopen(path, "rb");
+    FILE *in = vmaf_fopen_utf8(path, "rb");
     mu_assert("could not open source model json", in != NULL);
     char *msg = read_open_file(in, out, out_len);
     (void)fclose(in);
@@ -403,7 +405,10 @@ static char *test_model_collection_partial_failure_no_leak(void)
     }
     int n = snprintf(json, cap, "%s%s%s%s%s", prefix, valid, mid, valid, suffix);
     free(valid);
-    mu_assert("snprintf truncated collection json", n > 0 && (size_t)n < cap);
+    const bool fits = n > 0 && (size_t)n < cap;
+    if (!fits)
+        free(json);
+    mu_assert("snprintf truncated collection json", fits);
 
     VmafModel *model = (VmafModel *)0x1;                  /* poison: must be NULLed */
     VmafModelCollection *mc = (VmafModelCollection *)0x1; /* poison: must be NULLed */

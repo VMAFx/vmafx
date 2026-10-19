@@ -11,12 +11,11 @@
 // executor, sidecar feedback client, gRPC scoring handler) and mounts the node
 // health surface.
 //
-// The node serves a single gRPC service — VmafxScoring (Score, ScoreStream,
-// Health). It is gRPC-only: there is no HTTP server in the node binary, so the
-// canonical k8s probe is the gRPC Health RPC (golusoris.HTTP is intentionally
-// NOT in the graph). mountNodeHealth wires a statuspage readiness check (scorer
-// usable) for parity with the server's seam and so an HTTP livez/readyz can be
-// mounted in one place the day golusoris.HTTP is added to the node.
+// The node serves one gRPC service — VmafxScoring (Score, ScoreStream,
+// Health) — and a small HTTP surface for operators: the Prometheus /metrics
+// page and the statuspage probes /livez, /readyz and /startupz
+// (mountNodeHTTP). The HTTP listener defaults to :9090, the chart's
+// node.metricsPort, and moves with VMAFX_HTTP_ADDR.
 //
 // Configuration (koanf via golusoris/config, env prefix VMAFX_, "." delimiter).
 // The golusoris env transform strips the VMAFX_ prefix, lowercases, and replaces
@@ -24,6 +23,7 @@
 // shown in the third column:
 //
 //	VMAFX_GRPC_LISTEN     -> grpc.listen      gRPC listen address (node default ":50052").
+//	VMAFX_HTTP_ADDR       -> http.addr        HTTP listen address of /metrics and the probes (node default ":9090").
 //	VMAFX_LOG_LEVEL       -> log.level (golusoris v0.7.0)  slog level.
 //	VMAFX_LOG_FORMAT      -> log.format       log handler (auto|tint|json).
 //	VMAFX_FFMPEG_BIN      -> ffmpeg.bin       Path to the ffmpeg binary (default: PATH lookup).
@@ -66,22 +66,27 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
-	"slices"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/fx"
 	googlegrpc "google.golang.org/grpc"
 
 	"github.com/golusoris/golusoris/core/clock"
 	"github.com/golusoris/golusoris/core/config"
 	grpcmod "github.com/golusoris/golusoris/grpc"
+	"github.com/golusoris/golusoris/httpx/server"
 	"github.com/golusoris/golusoris/k8s/health"
 	"github.com/golusoris/golusoris/observability/statuspage"
 
 	"github.com/VMAFx/vmafx/cmd/vmafx-node/probe"
 	vmafxv1 "github.com/VMAFx/vmafx/gen/go"
 	"github.com/VMAFx/vmafx/internal/app/bootstrap"
+	"github.com/VMAFx/vmafx/internal/app/scoringservice"
 	"github.com/VMAFx/vmafx/pkg/libvmaf"
 	buildversion "github.com/VMAFx/vmafx/pkg/version"
 )
@@ -89,6 +94,11 @@ import (
 // probeTimeout bounds the startup encoder probe so a hung ffmpeg binary cannot
 // stall node startup indefinitely (carried over from the pre-fx root).
 const probeTimeout = 30 * time.Second
+
+// defaultNodeHTTPAddr is the node's metrics and probe listener: the chart's
+// node.metricsPort (9090). The shared HTTP module defaults to :8080, the
+// server's and controller's API port.
+const defaultNodeHTTPAddr = ":9090"
 
 // defaultNodeGRPCListen preserves the node's pre-golusoris public port. The
 // shared grpc module defaults to :9090, which is correct for the other Go
@@ -114,12 +124,9 @@ func nodeEnvOptions(watch bool) config.Options {
 		EnvPrefix: "VMAFX_",
 		Delimiter: ".",
 		Watch:     watch,
-		CompoundKeys: slices.Concat([]string{
-			"grpc.cert_file",
-			"grpc.key_file",
-			"grpc.max_recv_size",
-			"grpc.max_send_size",
-		}, controllerConfigKeys, storageConfigKeys, ebpfConfigKeys),
+		// compoundKeys is generated from the [[config]] entries of
+		// api/vmafx-platform.toml (config_keys.gen.go, ADR-2350 D13).
+		CompoundKeys: compoundKeys,
 	}
 }
 
@@ -129,6 +136,15 @@ func nodeEnvOptions(watch bool) config.Options {
 func withNodeGRPCDefault(framework grpcmod.Config, raw *config.Config) grpcmod.Config {
 	if raw.Get("grpc.listen") == "" {
 		framework.Listen = defaultNodeGRPCListen
+	}
+	return framework
+}
+
+// withNodeHTTPDefault gives the HTTP listener the node's default address when
+// http.addr is absent or empty; an explicit address is retained.
+func withNodeHTTPDefault(framework server.Options, raw *config.Config) server.Options {
+	if raw.Get("http.addr") == "" {
+		framework.Addr = defaultNodeHTTPAddr
 	}
 	return framework
 }
@@ -159,9 +175,20 @@ func nodeFoundationOptions() fx.Option {
 		// Route fx lifecycle events onto the golusoris slog logger.
 		bootstrap.FxLogger(),
 
-		// gRPC server with OTel + logging + recovery interceptors baked in.
+		nodeServerOptions(),
+	)
+}
+
+// nodeServerOptions wires the node's two listeners: the gRPC server (OTel +
+// logging + recovery interceptors baked in) and HTTP for /metrics and the
+// probes (mountNodeHTTP), traced like the server's and controller's.
+func nodeServerOptions() fx.Option {
+	return fx.Options(
 		grpcmod.Module,
 		fx.Decorate(withNodeGRPCDefault),
+		bootstrap.HTTP,
+		bootstrap.HTTPTracing,
+		fx.Decorate(withNodeHTTPDefault),
 	)
 }
 
@@ -175,6 +202,9 @@ func nodeDomainOptions() fx.Option {
 		provideControllerClient, // (controllerClientParams) -> *controllerClient (nil without VMAFX_CONTROLLER_ADDR; start OnStart, drain OnStop)
 		provideEBPFBypass,       // -> *ebpfBypass (nil unless VMAFX_EBPF_BYPASS; tracker Start OnStart, fail closed)
 		provideStatusRegistry,   // (clock.Clock) -> *statuspage.Registry
+		provideNodeRegistry,     // -> *prometheus.Registry (Go + process collectors)
+		provideNodeMetrics,      // (*prometheus.Registry, *Executor) -> (*nodeMetrics, error)
+		provideStreamMetrics,    // (*prometheus.Registry) -> (*scoringservice.StreamMetrics, error)
 		newScoringHandler,       // (*libvmaf.Scorer, *probe.Inventory, *slog.Logger) -> *scoringHandler
 	)
 }
@@ -220,9 +250,7 @@ func nodeLifecycleOptions() fx.Option {
 		// Register the VmafxScoring service on the golusoris gRPC server. The arg
 		// order (scorer-bearing handler first, then the server) also keeps the
 		// Scorer ahead of the server in construction order, reinforcing R-node.
-		fx.Invoke(func(s *googlegrpc.Server, h *scoringHandler) {
-			vmafxv1.RegisterVmafxScoringServer(s, h)
-		}),
+		fx.Invoke(registerScoringService),
 
 		// Lazy-provider guard: fx providers are lazy, so without a consumer of
 		// *grpc.Server the golusoris grpc.Module's OnStart listener never binds and
@@ -233,11 +261,29 @@ func nodeLifecycleOptions() fx.Option {
 		// FeedbackClient drainer stops → scorer Close. See app_test.go.
 		fx.Invoke(func(_ *googlegrpc.Server) {}),
 
-		// Mount the node health surface (statuspage readiness check + log). The
-		// node's k8s probe is the gRPC Health RPC; this seam carries the readiness
-		// state and is where HTTP livez/readyz mount once golusoris.HTTP is wired.
+		// Mount the node health surface (statuspage readiness check + log).
 		fx.Invoke(mountNodeHealth),
+
+		// Mount /metrics and the probes on the HTTP router, then bind the
+		// listener (lazy-provider guard, as for gRPC). Its OnStop is appended
+		// last, so it stops first; scraping during the drain is not needed.
+		fx.Invoke(mountNodeHTTP),
+		fx.Invoke(func(_ *http.Server) {}),
 	)
+}
+
+// mountNodeHTTP serves the node's /metrics page from its own registry
+// (ADR-1014) and the statuspage probes.
+func mountNodeHTTP(router chi.Router, reg *prometheus.Registry, checks *statuspage.Registry) {
+	router.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
+	health.Mount(router, checks)
+}
+
+// registerScoringService registers the VmafxScoring service on the golusoris
+// gRPC server, its handler recording ScoreStream sessions in streams.
+func registerScoringService(s *googlegrpc.Server, h *scoringHandler, streams *scoringservice.StreamMetrics) {
+	h.streams = streams
+	vmafxv1.RegisterVmafxScoringServer(s, h)
 }
 
 // provideStatusRegistry builds the health-check registry that backs the node
@@ -248,12 +294,11 @@ func provideStatusRegistry(clk clock.Clock) *statuspage.Registry {
 }
 
 // mountNodeHealth registers the node's readiness check on the status registry
-// and logs the served health contract. The node is gRPC-only, so its canonical
-// k8s probe is the VmafxScoring Health RPC (always available, even without a
-// scorer). The statuspage check below records whether scoring is actually
-// usable (scorer present) so an HTTP /readyz can expose it the day
-// golusoris.HTTP joins the node graph — without that, k8s would mark a
-// scorer-less node ready and route un-servable Score RPCs to it.
+// and logs the served health contract. The VmafxScoring Health RPC stays
+// available even without a scorer; the statuspage check below records whether
+// scoring is actually usable (scorer present), which /readyz (mountNodeHTTP)
+// reports — without it, k8s would mark a scorer-less node ready and route
+// un-servable Score RPCs to it.
 //
 // Consuming *grpc.Server here is not required for the listener to bind (the
 // standalone lazy-provider guard invoke in main does that); it is taken so this

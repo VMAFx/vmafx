@@ -1238,10 +1238,10 @@ constexpr VmafOption string_option(const char *name, const char *help, const cha
 static constexpr VmafOption options_cambi_sycl[] = {
     double_option("cambi_max_val", "maximum value allowed; larger values will be clipped", "cmxv",
                   offsetof(CambiStateSycl, cambi_max_val), CAMBI_SYCL_DEFAULT_MAX_VAL, 0.0, 1000.0),
-    int_option("enc_width", "Encoding width", "encw", offsetof(CambiStateSycl, enc_width), 0, 180,
+    int_option("enc_width", "Encoding width", "encw", offsetof(CambiStateSycl, enc_width), 0, 144,
                7680),
     int_option("enc_height", "Encoding height", "ench", offsetof(CambiStateSycl, enc_height), 0,
-               150, 7680),
+               144, 7680),
     int_option("enc_bitdepth", "Encoding bitdepth", "encbd", offsetof(CambiStateSycl, enc_bitdepth),
                0, 6, 16),
     int_option("window_size", "Window size to compute CAMBI: 65 corresponds to ~1 degree at 4k",

@@ -15,7 +15,7 @@ RES = pointOp(IM, LUT, ORIGIN, INCREMENT, WARNINGS)
 
 #define notDblMtx(it) (!mxIsNumeric(it) || !mxIsDouble(it) || mxIsSparse(it) || mxIsComplex(it))
 
-void internal_pointop();
+static void internal_pointop();
 
 /* Read a mandatory-or-optional real scalar argument.  @p name is used in the
    two diagnostics, which keep the exact wording the inline checks had. */
@@ -37,9 +37,16 @@ void mexFunction(int nlhs,             /* Num return vals on lhs */
                  const mxArray *prhs[] /* Matrices on rhs */
 )
 {
-    double *image, *lut, *res;
-    double origin, increment;
-    int x_dim, y_dim, lx_dim, ly_dim;
+    (void)nlhs;
+    double *image;
+    double *lut;
+    double *res;
+    double origin;
+    double increment;
+    int x_dim;
+    int y_dim;
+    int lx_dim;
+    int ly_dim;
     int warnings = 1;
     const mxArray *arg;
 
@@ -73,9 +80,10 @@ void mexFunction(int nlhs,             /* Num return vals on lhs */
                                 "INCREMENT arg must be a real scalar.");
 
     /* ARG 5: WARNINGS */
-    if (nrhs > 4)
+    if (nrhs > 4) {
         warnings = (int)read_scalar_arg(prhs[4], "WARINGS arg must be a real scalar.",
                                         "WARNINGS arg must be a real scalar.");
+    }
 
     plhs[0] = (mxArray *)mxCreateDoubleMatrix(x_dim, y_dim, mxREAL);
     if (plhs[0] == NULL)
@@ -83,24 +91,26 @@ void mexFunction(int nlhs,             /* Num return vals on lhs */
     res = mxGetPr(plhs[0]);
 
     internal_pointop(image, res, x_dim * y_dim, lut, lx_dim * ly_dim, origin, increment, warnings);
-    return;
 }
 
 /* Use linear interpolation on a lookup table.
    Taken from OBVIUS.  EPS, Spring, 1987.
  */
-void internal_pointop(im, res, size, lut, lutsize, origin, increment, warnings) register double *im,
-    *res, *lut;
+static void internal_pointop(im, res, size, lut, lutsize, origin, increment,
+                             warnings) register const double *im,
+    *lut;
+register double *res;
 register double origin, increment;
 register int size, lutsize, warnings;
 {
-    register int i, index;
+    register int i;
+    register int index;
     register double pos;
     register int l_unwarned = warnings;
     register int r_unwarned = warnings;
 
     lutsize = lutsize - 2; /* Maximum index value */
-    if (increment > 0)
+    if (increment > 0) {
         for (i = 0; i < size; i++) {
             pos = (im[i] - origin) / increment;
             index = (int)pos; /* Floor */
@@ -119,7 +129,8 @@ register int size, lutsize, warnings;
             }
             res[i] = lut[index] + (lut[index + 1] - lut[index]) * (pos - index);
         }
-    else
+    } else {
         for (i = 0; i < size; i++)
             res[i] = *lut;
+    }
 }

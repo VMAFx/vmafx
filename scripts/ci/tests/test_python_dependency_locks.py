@@ -55,6 +55,33 @@ class InstallCommandTests(unittest.TestCase):
         text = "run: python -m pip install --require-hashes -r requirements/locks/build.txt\n"
         self.assertEqual(self.findings(text), [])
 
+    def test_system_install_without_ignore_installed_is_rejected(self) -> None:
+        text = (
+            "run: sudo pip3 install --break-system-packages --require-hashes "
+            "-r requirements/locks/build.txt\n"
+        )
+        findings = self.findings(text)
+        self.assertEqual(len(findings), 1)
+        self.assertIn("--ignore-installed", findings[0])
+
+    def test_system_install_with_ignore_installed_is_accepted(self) -> None:
+        text = (
+            "run: sudo pip3 install --break-system-packages --ignore-installed "
+            "--require-hashes -r requirements/locks/build.txt\n"
+        )
+        self.assertEqual(self.findings(text), [])
+
+    def test_user_install_with_break_system_packages_is_exempt(self) -> None:
+        text = (
+            "run: python3 -m pip install --user --break-system-packages --require-hashes "
+            "-r requirements/locks/build.txt\n"
+        )
+        self.assertEqual(self.findings(text), [])
+
+    def test_unhashed_system_install_reports_both_rules(self) -> None:
+        findings = self.findings("run: sudo pip3 install --break-system-packages meson\n")
+        self.assertEqual(len(findings), 2)
+
     def test_unhashed_install_is_rejected(self) -> None:
         findings = self.findings("run: sudo pip3 install --quiet meson\n")
         self.assertEqual(len(findings), 1)
@@ -84,13 +111,21 @@ class InstallCommandTests(unittest.TestCase):
         targeted = "RUN pip install --no-deps --target /root /wheels/pkg.whl\n"
         self.assertEqual(self.findings(targeted), [])
         self.assertEqual(len(self.findings("RUN pip install /wheels/*.whl\n")), 1)
+        wheel_build_and_install = (
+            "run: |\n"
+            "  pip wheel --no-deps --no-build-isolation --wheel-dir dist/rc1-wheel ./tools/rc1-tester\n"
+            "  pip install --no-deps dist/rc1-wheel/*.whl\n"
+        )
+        self.assertEqual(self.findings(wheel_build_and_install), [])
 
-    def test_local_source_tree_requires_no_deps_and_no_build_isolation(self) -> None:
+    def test_non_editable_local_source_tree_is_refused(self) -> None:
         self.assertEqual(
-            self.findings(
-                "RUN pip install --no-deps --no-build-isolation /opt/vmaf-mcp\n", "Dockerfile"
+            len(
+                self.findings(
+                    "RUN pip install --no-deps --no-build-isolation /opt/vmaf-mcp\n", "Dockerfile"
+                )
             ),
-            [],
+            1,
         )
         self.assertEqual(
             len(self.findings("RUN pip install --no-deps /opt/vmaf-mcp\n", "Dockerfile")), 1
@@ -102,6 +137,15 @@ class InstallCommandTests(unittest.TestCase):
             1,
         )
         self.assertEqual(len(self.findings("RUN pip install /opt/vmaf-mcp\n", "Dockerfile")), 1)
+        self.assertEqual(
+            len(
+                self.findings(
+                    "RUN pip install --no-deps --no-build-isolation /tmp/pkg.tar.gz\n",
+                    "Dockerfile",
+                )
+            ),
+            1,
+        )
 
     def test_documentation_echo_is_not_an_install(self) -> None:
         text = 'echo "Install with: pip install -r docs/requirements.txt" >&2\n'
@@ -341,8 +385,8 @@ class InstallCommandTests(unittest.TestCase):
         text = "run: pip install --require-hashes -r /tmp/requirements-runtime-lock.txt\n"
         self.assertEqual(len(self.findings(text, ".github/workflows/example.yml")), 1)
         text_docker = (
-            "RUN pip install --no-cache-dir --break-system-packages --require-hashes "
-            "-r /tmp/requirements-runtime-lock.txt\n"
+            "RUN pip install --no-cache-dir --break-system-packages --ignore-installed "
+            "--require-hashes -r /tmp/requirements-runtime-lock.txt\n"
         )
         self.assertEqual(self.findings(text_docker, "mcp-server/vmaf-mcp/Dockerfile"), [])
 
@@ -1312,6 +1356,43 @@ jobs:
         )
         self.assertEqual(len(findings), 1)
         self.assertIn("consumes repo-local editable target '.'", findings[0])
+
+    def test_precheckout_non_pip_dash_c_accepted(self) -> None:
+        # -c is jq's and bash's own flag, not a pip constraint file.
+        text = """
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Compact JSON
+        run: echo "$PAYLOAD" | jq -c . > out.json
+      - name: Shell
+        run: bash -c "echo ok" && grep -c x -r .
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+"""
+        findings = self.checker.scan_workflow_checkout_ordering(
+            Path(".github/workflows/test.yml"), text, root=ROOT
+        )
+        self.assertEqual(findings, [])
+
+    def test_precheckout_pip_tool_constraint_rejected(self) -> None:
+        # A pip-like tool other than pip install still reads its -r / -c file.
+        text = """
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sync
+        run: echo start && uv pip sync -c requirements/locks/build.txt requirements/locks/build.txt
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+"""
+        findings = self.checker.scan_workflow_checkout_ordering(
+            Path(".github/workflows/test.yml"), text, root=ROOT
+        )
+        self.assertEqual(len(findings), 1)
+        self.assertIn(
+            "consumes repo-local requirements file 'requirements/locks/build.txt'", findings[0]
+        )
 
     def test_precheckout_local_action_rejected(self) -> None:
         text = """

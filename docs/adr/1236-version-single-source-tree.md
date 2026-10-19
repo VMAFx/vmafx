@@ -75,3 +75,13 @@ Prior to this decision, package versions and dependencies across the repository 
 - Refs user prompt requirement on branch `build/version-single-source-tree`.
 
 - `req` (2026-09-08): “everything that needs to be configured in mutliple places is in global envs”. A declaration becomes an owner only when consumers or executable drift checks use it.
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 25: `- Package version manifests: tools/vmaf-tune/pyproject.toml
+  declared 0.0.1 while src/vmaftune/__init__.py decl`: Path
+  `src/vmaftune/__init__.py` does not exist on origin/master; the file is
+  located at `tools/vmaf-tune/src/vmaftune/__init__.py.`.

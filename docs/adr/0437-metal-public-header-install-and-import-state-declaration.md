@@ -88,3 +88,12 @@ We will:
 - ADR-0361 (Metal scaffold), ADR-0420 (Metal runtime), ADR-0423 (IOSurface
   import).
 - Gap-fill plan Batch 4: `.workingdir/GAP-FILL-PLAN-2026-05-15.md`.
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 14: `absent from the platform_specific_headers list in
+  core/include/core/meson.build.`: Cites core/include/core/meson.build which
+  never existed; header build file is core/include/libvmaf/meson.build.

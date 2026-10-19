@@ -34,10 +34,11 @@ precedence = "override"
 SPDX-FileCopyrightText = "2020 Netflix, Inc."
 SPDX-License-Identifier = "BSD-2-Clause-Patent"
 
-# FFmpeg patch files are derivative source contributions.  Patches 0001-0018
-# touch LGPL-2.1-or-later translation units; 0006 also carries Lawrence
-# Curtis's no-CLA contribution.  Patch 0019 spans both LGPL and GPL units, so
-# both terms apply to that file instead of the fork-local EUPL default.
+# FFmpeg patch files are derivative source contributions.  They touch
+# LGPL-2.1-or-later translation units; 0006 also carries Lawrence Curtis's
+# no-CLA contribution.  The diagnostics patch that spanned LGPL and GPL units
+# (0019) is now part of the shared fix series, which is not in this tree
+# (ADR-3143).
 [[annotations]]
 path = [
     "ffmpeg-patches/0001-libvmaf-add-tiny-model-option.patch",
@@ -71,12 +72,6 @@ SPDX-FileCopyrightText = [
     "2026 Lusoris",
 ]
 SPDX-License-Identifier = "LGPL-2.1-or-later"
-
-[[annotations]]
-path = ["ffmpeg-patches/0019-ffmpeg-eliminate-gcc-14-build-diagnostics.patch"]
-precedence = "override"
-SPDX-FileCopyrightText = ["2000-2026 the FFmpeg developers", "2026 Lusoris"]
-SPDX-License-Identifier = "LGPL-2.1-or-later AND GPL-2.0-or-later"
 
 # The repository has no CLA or DCO.  These files were created or touched by
 # outside contributors while the fork was BSD-2-Clause-Patent; ADR-1250 says
@@ -325,12 +320,6 @@ SPDX-FileCopyrightText = "2005-2020 x264 project"
 SPDX-License-Identifier = "ISC"
 
 [[annotations]]
-path = ["core/src/interop/pelorus*"]
-precedence = "closest"
-SPDX-FileCopyrightText = "2026 Lusoris"
-SPDX-License-Identifier = "BSD-2-Clause-Patent"
-
-[[annotations]]
 path = ["model/tiny/**"]
 precedence = "closest"
 SPDX-FileCopyrightText = "2026 Lusoris"
@@ -423,7 +412,7 @@ SPDX-FileCopyrightText = "2025 Vectorize AI, Inc."
 SPDX-License-Identifier = "MIT"
 
 [[annotations]]
-path = ["tools/figures/dist/**"]
+path = ["tools/figures/player/**"]
 precedence = "override"
 SPDX-FileCopyrightText = [
     "2026 Lusoris <lusoris@proton.me>",
@@ -463,6 +452,35 @@ SPDX-FileCopyrightText = [
 ]
 SPDX-License-Identifier = "BSD-3-Clause AND ISC AND MIT AND Unlicense AND 0BSD"
 
+# The documentation's formula renderer (ADR-2705): KaTeX 0.18.9 from its pinned
+# npm release (scripts/docs/vendor_katex.py), served from the site itself. The
+# licence text sits beside it; vendor.json there is fork-authored.
+[[annotations]]
+path = ["docs/javascripts/vendor/katex/katex.min.js", "docs/javascripts/vendor/katex/auto-render.min.js", "docs/javascripts/vendor/katex/katex.min.css", "docs/javascripts/vendor/katex/LICENSE.txt", "docs/javascripts/vendor/katex/fonts/**"]
+precedence = "override"
+SPDX-FileCopyrightText = [
+    "2013-2020 Khan Academy and other contributors",
+]
+SPDX-License-Identifier = "MIT"
+
+# The Kubernetes types of the chart's values schema (ADR-2350 D13): a subset of
+# the OpenAPI v3 specification of kubernetes/kubernetes at the release
+# build-config.env pins (K8S_SCHEMA_VERSION), descriptions and extensions
+# removed by scripts/codegen/k8s_openapi.py, and the chart's notice that
+# attributes them and carries the Apache-2.0 text (ADR-2673). The values schema
+# is fork-authored and carries a copy of those types in its $defs.
+[[annotations]]
+path = ["api/kubernetes/openapi-subset.json", "deploy/helm/vmafx/THIRD-PARTY-NOTICES.txt"]
+precedence = "override"
+SPDX-FileCopyrightText = "The Kubernetes Authors"
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = ["deploy/helm/vmafx/values.schema.json"]
+precedence = "override"
+SPDX-FileCopyrightText = ["2026 Lusoris", "The Kubernetes Authors"]
+SPDX-License-Identifier = "EUPL-1.2 AND Apache-2.0"
+
 # The Helm chart's Prometheus Pushgateway dependency (deploy/helm/vmafx/Chart.lock):
 # the prometheus-community chart archive as `helm dependency build` fetches it.
 # Its own Chart.yaml declares Apache-2.0, the licence of the
@@ -474,3 +492,13 @@ path = ["deploy/helm/vmafx/charts/prometheus-pushgateway-*.tgz"]
 precedence = "override"
 SPDX-FileCopyrightText = "the prometheus-community/helm-charts contributors"
 SPDX-License-Identifier = "Apache-2.0"
+
+# The winget manifest schemas the distribution drift check validates the
+# generated winget manifests against (ADR-3317): three files of
+# microsoft/winget-cli at a pinned commit, unchanged, with its licence text.
+# vendor.json there is fork-authored.
+[[annotations]]
+path = ["packaging/schemas/winget-1.12.0/manifest.*.json", "packaging/schemas/winget-1.12.0/LICENSE"]
+precedence = "override"
+SPDX-FileCopyrightText = "Microsoft Corporation"
+SPDX-License-Identifier = "MIT"

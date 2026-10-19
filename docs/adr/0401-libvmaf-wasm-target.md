@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD060 -->
 # ADR-0401: libvmaf WebAssembly target — phased EXPERIMENT then GO
 
-- **Status**: Proposed
+- **Status**: Proposed (status update 2026-10-06 below)
 - **Date**: 2026-05-09
 - **Deciders**: lusoris
 - **Tags**: build, wasm, browser, ai, fork-local
@@ -133,3 +133,13 @@ data lands.
   research-only feasibility study for compiling libvmaf to
   WebAssembly, with phased tier rollout, decision matrix as the
   deliverable, no implementation in this PR.
+
+## Status update 2026-10-06: Proposed, scheduled for 1.2
+
+The experiment this record asks for is not done and the record stays Proposed.
+The WebAssembly target is scheduled for the 1.2 milestone ("Encoder feedback,
+embedding & platforms") under
+[#2248](https://github.com/VMAFx/vmafx/issues/2248); `enable_wasm` and the
+pages named above do not exist on `origin/master` `fd8b8c93b`.
+
+The body above is unchanged.

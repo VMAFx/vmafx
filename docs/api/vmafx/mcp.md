@@ -6,6 +6,101 @@ Embedded MCP server.
 
 `#include <vmafx/mcp.h>`.
 
-No declarations yet: a later RC4 work package fills this header.
+## `VmafxMcpTransport`
+
+Transport of the embedded MCP server (values equal VmafMcpTransport). Added in ABI 0.1.6. Since 0.1.
+
+| Constant | Value | Since |
+| --- | --- | --- |
+| `VMAFX_MCP_TRANSPORT_SSE` | 0 | 0.1 |
+| `VMAFX_MCP_TRANSPORT_UDS` | 1 | 0.1 |
+| `VMAFX_MCP_TRANSPORT_STDIO` | 2 | 0.1 |
+
+## Handles and callbacks
+
+| Type | Since | Description |
+| --- | --- | --- |
+| `VmafxMcpServer` | 0.1 | The embedded MCP server of a context (a libvmaf VmafMcpServer under its new name). Added in ABI 0.1.6. Released by `vmafx_mcp_server_destroy`. |
+
+## Structs
+
+### `VmafxMcpConfig`
+
+How to create an MCP server. Initialise with VMAFX_MCP_CONFIG_INIT. Added in ABI 0.1.6. Size 24 bytes, alignment 8. Since 0.1.
+
+| Field | C declaration | Offset | Since | Description |
+| --- | --- | --- | --- | --- |
+| `struct_size` | `uint32_t struct_size` | 0 | 0.1 | Size of this struct as the caller compiled it; set by the _INIT macro. |
+| `queue_depth` | `uint32_t queue_depth` | 4 | 0.1 | Requests queued per frame; 0 takes the default. |
+| `max_drain_per_frame` | `uint32_t max_drain_per_frame` | 8 | 0.1 | Requests answered per frame; 0 takes the default. |
+| `user_agent` | `const char *user_agent` | 16 | 0.1 | Server name reported to clients (copied); NULL takes the default. |
+
+Initialise with `VMAFX_MCP_CONFIG_INIT`.
+
+### `VmafxMcpSseConfig`
+
+The SSE transport. Initialise with VMAFX_MCP_SSE_CONFIG_INIT. Added in ABI 0.1.6. Size 16 bytes, alignment 8. Since 0.1.
+
+| Field | C declaration | Offset | Since | Description |
+| --- | --- | --- | --- | --- |
+| `struct_size` | `uint32_t struct_size` | 0 | 0.1 | Size of this struct as the caller compiled it; set by the _INIT macro. |
+| `port` | `uint32_t port` | 4 | 0.1 | Loopback TCP port, 0 to 65535; 0 takes an ephemeral port. |
+| `path` | `const char *path` | 8 | 0.1 | URL path (copied); NULL takes the default. |
+
+Initialise with `VMAFX_MCP_SSE_CONFIG_INIT`.
+
+### `VmafxMcpUdsConfig`
+
+The Unix domain socket transport. Initialise with VMAFX_MCP_UDS_CONFIG_INIT. Added in ABI 0.1.6. Size 16 bytes, alignment 8. Since 0.1.
+
+| Field | C declaration | Offset | Since | Description |
+| --- | --- | --- | --- | --- |
+| `struct_size` | `uint32_t struct_size` | 0 | 0.1 | Size of this struct as the caller compiled it; set by the _INIT macro. |
+| `path` | `const char *path` | 8 | 0.1 | Socket path (copied), shorter than 100 bytes. |
+
+Initialise with `VMAFX_MCP_UDS_CONFIG_INIT`.
+
+### `VmafxMcpStdioConfig`
+
+The file-descriptor transport. Initialise with VMAFX_MCP_STDIO_CONFIG_INIT. Added in ABI 0.1.6. Size 12 bytes, alignment 4. Since 0.1.
+
+| Field | C declaration | Offset | Since | Description |
+| --- | --- | --- | --- | --- |
+| `struct_size` | `uint32_t struct_size` | 0 | 0.1 | Size of this struct as the caller compiled it; set by the _INIT macro. |
+| `fd_in` | `int32_t fd_in` | 4 | 0.1 | Descriptor requests are read from. |
+| `fd_out` | `int32_t fd_out` | 8 | 0.1 | Descriptor answers are written to. |
+
+Initialise with `VMAFX_MCP_STDIO_CONFIG_INIT`.
+
+## Functions
+
+| Function | Since | Description |
+| --- | --- | --- |
+| `vmafx_mcp_available` | 0.1 | 1 when this build has the embedded MCP server, else 0. Added in ABI 0.1.6. |
+| `vmafx_mcp_transport_available` | 0.1 | 1 when this build has MCP transport `transport` (VmafxMcpTransport), else 0. Added in ABI 0.1.6. |
+| `vmafx_mcp_server_create` | 0.1 | An MCP server answering for `context`, which must outlive it; no transport runs yet. `config` may be NULL. VMAFX_E_NOTSUP in a build without the MCP server. Added in ABI 0.1.6. |
+| `vmafx_mcp_start_sse` | 0.1 | Start the SSE transport on loopback; `port` receives the bound port (the ephemeral one for port 0). Added in ABI 0.1.6. |
+| `vmafx_mcp_start_uds` | 0.1 | Start the Unix domain socket transport. Added in ABI 0.1.6. |
+| `vmafx_mcp_start_stdio` | 0.1 | Start the file-descriptor transport. Added in ABI 0.1.6. |
+| `vmafx_mcp_stop` | 0.1 | Stop every running transport and join its thread. Added in ABI 0.1.6. |
+| `vmafx_mcp_server_destroy` | 0.1 | Stop and release a server; NULL is a no-op. Added in ABI 0.1.6. |
+
+```c
+VMAFX_EXPORT uint32_t vmafx_mcp_available(void);
+VMAFX_EXPORT uint32_t vmafx_mcp_transport_available(uint32_t transport);
+VMAFX_EXPORT VmafxStatus vmafx_mcp_server_create(VmafxContext *context,
+                                                 const VmafxMcpConfig *config, VmafxMcpServer **out,
+                                                 VmafxError **error);
+VMAFX_EXPORT VmafxStatus vmafx_mcp_start_sse(VmafxMcpServer *server,
+                                             const VmafxMcpSseConfig *config, uint32_t *port,
+                                             VmafxError **error);
+VMAFX_EXPORT VmafxStatus vmafx_mcp_start_uds(VmafxMcpServer *server,
+                                             const VmafxMcpUdsConfig *config, VmafxError **error);
+VMAFX_EXPORT VmafxStatus vmafx_mcp_start_stdio(VmafxMcpServer *server,
+                                               const VmafxMcpStdioConfig *config,
+                                               VmafxError **error);
+VMAFX_EXPORT VmafxStatus vmafx_mcp_stop(VmafxMcpServer *server, VmafxError **error);
+VMAFX_EXPORT void vmafx_mcp_server_destroy(VmafxMcpServer *server);
+```
 
 Back to the [reference index](reference.md).

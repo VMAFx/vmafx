@@ -40,6 +40,9 @@ STRING = re.compile(r'"((?:[^"\\]|\\.)*)"')
 WIDE_REGISTER = re.compile(r"^[yz]mm(\d+)$")
 
 
+CLOBBER_SECTION = 3  # index of the clobber list: what follows the third colon
+
+
 def _clobbers(statement: str) -> list[str]:
     """The clobber list of an extended asm statement: what follows the third colon."""
     template_end = 0
@@ -48,9 +51,9 @@ def _clobbers(statement: str) -> list[str]:
             break
         template_end = match.end()
     sections = statement[template_end:].split(":")
-    if len(sections) <= 3:
+    if len(sections) <= CLOBBER_SECTION:
         return []
-    return [match.group(1) for match in STRING.finditer(sections[3])]
+    return [match.group(1) for match in STRING.finditer(sections[CLOBBER_SECTION])]
 
 
 def _failures(sources: dict[str, str]) -> list[str]:

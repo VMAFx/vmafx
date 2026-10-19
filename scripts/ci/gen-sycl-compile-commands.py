@@ -31,17 +31,19 @@ from pathlib import Path
 # target has a depfile (the SYCL feature TUs since PR #1764); the DEPFILE
 # lines then stand between the build statement and COMMAND.
 SYCL_COMMAND_PATTERN = re.compile(
-    r"^build\s+\S+:\s+CUSTOM_COMMAND(?:_DEP)?\s+(\S+\.cpp)\s+\|.*icpx\s*\n"
+    r"^build\s+\S+:\s+CUSTOM_COMMAND(?:_DEP)?\s+(\S+\.cpp)\s+\|[^\n]*\bicpx\b[^\n]*\n"
     r"(?:[ \t]+\S[^\n]*\n)*?"
     r"[ \t]+COMMAND\s*=\s*(.+?)(?:\n|$)",
     re.MULTILINE,
 )
 
 # Every build statement that compiles a .cpp with icpx, whatever its rule is
-# called. One that SYCL_COMMAND_PATTERN does not parse would leave its TU out
-# of the database, and a lane that measures no SYCL TU still reports clean.
+# called and wherever icpx stands among the implicit dependencies (the spill
+# probe's statement lists its launcher script and python after icpx). One that
+# SYCL_COMMAND_PATTERN does not parse would leave its TU out of the database,
+# and a lane that measures no SYCL TU still reports clean.
 SYCL_BUILD_STATEMENT = re.compile(
-    r"^build\s+\S+:\s+\S+\s+\S+\.cpp\s+\|.*icpx\s*$",
+    r"^build\s+\S+:\s+\S+\s+\S+\.cpp\s+\|[^\n]*\bicpx\b[^\n]*$",
     re.MULTILINE,
 )
 
@@ -93,10 +95,13 @@ def clang_tidy_command(raw_command: str) -> str:
     `-MD -MF <file>` (PR #1764) writes the build's depfile; the analyzer's
     command drops it so a tidy run leaves the build's dependency record alone.
     """
+    # The spill probe is compiled through a quiet launcher (ADR-2170):
+    # `python3 .../run_captured.py -- icpx ...`. The analyzer runs the compiler itself.
+    command = re.sub(r"^\S*python\S*\s+\S*run_captured\.py\s+--\s+", "", raw_command)
     command = re.sub(
         r"(?:/opt/intel/oneapi/compiler/[^/]+/bin/)?icpx\b",
         "clang++",
-        raw_command,
+        command,
     )
     command = re.sub(r"\s+-fsycl-targets=\S+", "", command)
     command = re.sub(r"\s+-fno-sycl-rdc\b", "", command)

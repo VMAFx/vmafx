@@ -21,6 +21,9 @@ SETUP_DIR = REPO / "scripts" / "setup"
 SETUP_LINE = re.compile(r"meson setup\s+(?P<args>[^\"'\n]*)")
 
 
+MESON_SETUP_ARGS = 2  # positional arguments of `meson setup <builddir> <sourcedir>`
+
+
 def configure_hints(text: str) -> list[str]:
     """Return the argument string of every `meson setup` mention in a script."""
     return [m.group("args").strip() for m in SETUP_LINE.finditer(text)]
@@ -29,7 +32,7 @@ def configure_hints(text: str) -> list[str]:
 def names_core_source_dir(args: str) -> bool:
     """True when the positional arguments are a build directory and `core`."""
     positional = [a for a in args.split() if not a.startswith("-")]
-    return len(positional) >= 2 and positional[1] == "core"
+    return len(positional) >= MESON_SETUP_ARGS and positional[1] == "core"
 
 
 class SetupScriptsConfigureHint(unittest.TestCase):

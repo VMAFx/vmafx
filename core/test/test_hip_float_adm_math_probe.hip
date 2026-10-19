@@ -9,8 +9,8 @@
  */
 
 #include <hip/hip_runtime.h>
-#include <stddef.h>
-#include <stdint.h>
+#include <cstddef>
+#include <cstdint>
 
 #include "feature/hip/float_adm/float_adm_hip_math.h"
 

@@ -112,3 +112,13 @@ We will ship `vmaf-perShot` as a standalone executable under
   row T6-2 part b T6-3b.
 - Source: `req` — direct user direction, scoping note in T6-3b
   briefing 2026-04-29.
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 16: `T6-3a — TransNet V2 shot-boundary feature extractor (~1M
+  params, 100-frame window). Already proposed as PR #21`: Cites ADR-0220 for
+  TransNet V2 shot detector, but ADR-0220 is SYCL fp64-free kernels; TransNet
+  V2 is ADR-0223.

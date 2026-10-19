@@ -115,7 +115,7 @@ EXECUTED = {
         "return (score < s->cambi_max_val) ? score : s->cambi_max_val;",
         "err = vmaf_cambi_open_heatmaps(s->heatmaps_path, (unsigned)s->enc_width,",
         "const int err = vmaf_cambi_dump_c_values(s->heatmaps_files, s->buffers.c_values,",
-        "const unsigned *heatmap_frame = (s->heatmaps_path != NULL) ? &index : NULL;",
+        "const unsigned *heatmap_frame = (s->heatmaps_path != nullptr) ? &index : nullptr;",
         "const int heatmaps = vmaf_cambi_close_heatmaps(s->heatmaps_files);",
     ),
 }
@@ -285,7 +285,7 @@ def _before_names(code: str, init: str) -> list[str] | None:
             return None
         at = body.find(NAME_DICT)
         if at >= 0:
-            return texts + [body[:at]]
+            return [*texts, body[:at]]
         step = next((m for m in CALLED.finditer(body) if m.group(1) in naming), None)
         if step is None:
             return None

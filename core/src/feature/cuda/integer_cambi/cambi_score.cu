@@ -56,6 +56,7 @@
 
 #include "cuda_helper.cuh"
 #include "cuda/integer_cambi_cuda.h"
+#include "cuda_device_ptr.cuh"
 
 namespace
 {
@@ -152,7 +153,7 @@ __device__ __forceinline__ unsigned cambi_src_sample(const CambiCudaPreprocArgs 
                                                      unsigned col)
 {
     const unsigned char *line =
-        reinterpret_cast<const unsigned char *>(a.src) + (size_t)row * a.src_pitch;
+        VMAF_CUDA_DPTR(const unsigned char, a.src) + (size_t)row * a.src_pitch;
     if (a.bpc <= 8u) {
         return __ldg(line + col);
     }
@@ -163,8 +164,8 @@ __device__ __forceinline__ unsigned cambi_src_sample(const CambiCudaPreprocArgs 
 __device__ __forceinline__ unsigned cambi_preproc_sample(const CambiCudaPreprocArgs &a, unsigned i,
                                                          unsigned j)
 {
-    const uint32_t *ori_x = reinterpret_cast<const uint32_t *>(a.ori_x);
-    const uint32_t *ori_y = reinterpret_cast<const uint32_t *>(a.ori_y);
+    const uint32_t *ori_x = VMAF_CUDA_DPTR(const uint32_t, a.ori_x);
+    const uint32_t *ori_y = VMAF_CUDA_DPTR(const uint32_t, a.ori_y);
     const unsigned row = a.same_size ? i : __ldg(ori_y + i);
     const unsigned col = a.same_size ? j : __ldg(ori_x + j);
     const unsigned v = cambi_src_sample(a, row, col);
@@ -235,22 +236,24 @@ namespace
 __device__ __forceinline__ uint8_t cambi_zero_deriv(const CambiCudaMaskArgs &a, int bx, int by,
                                                     int k)
 {
-    const uint16_t *image = reinterpret_cast<const uint16_t *>(a.image);
+    const uint16_t *image = VMAF_CUDA_DPTR(const uint16_t, a.image);
+    const int width_i = (int)a.width;
+    const int height_i = (int)a.height;
     const int ti = k / (int)ZD_TILE_W;
     const int tj = k % (int)ZD_TILE_W;
     const int gy = by - (int)SMEM_HALF + ti;
     const int gx = bx - (int)SMEM_HALF + tj;
-    if (gy < 0 || gy >= (int)a.height || gx < 0 || gx >= (int)a.width) {
+    if (gy < 0 || gy >= height_i || gx < 0 || gx >= width_i) {
         return 0u;
     }
     const uint16_t p = __ldg(image + (size_t)gy * a.width + (unsigned)gx);
-    const unsigned r_gx = (unsigned)((gx == (int)a.width - 1) ? gx : gx + 1);
-    const unsigned b_gy = (unsigned)((gy == (int)a.height - 1) ? gy : gy + 1);
+    const unsigned r_gx = (unsigned)((gx == width_i - 1) ? gx : gx + 1);
+    const unsigned b_gy = (unsigned)((gy == height_i - 1) ? gy : gy + 1);
     const uint16_t r = __ldg(image + (size_t)gy * a.width + r_gx);
     const uint16_t b = __ldg(image + (size_t)b_gy * a.width + (unsigned)gx);
-    const int eq_r = (gx == (int)a.width - 1) || (p == r);
-    const int eq_b = (gy == (int)a.height - 1) || (p == b);
-    return (uint8_t)(eq_r & eq_b);
+    const bool eq_r = (gx == width_i - 1) || (p == r);
+    const bool eq_b = (gy == height_i - 1) || (p == b);
+    return (uint8_t)(eq_r && eq_b);
 }
 
 } // namespace
@@ -304,15 +307,15 @@ struct CvalsCtx {
 __device__ __forceinline__ CvalsCtx cvals_ctx(const CambiCudaCvalsArgs &a)
 {
     CvalsCtx c;
-    c.q = reinterpret_cast<const uint16_t *>(a.q);
-    c.runs = reinterpret_cast<const uint32_t *>(a.runs);
-    c.change = reinterpret_cast<const uint32_t *>(a.change);
-    c.hist = reinterpret_cast<uint16_t *>(a.hist);
-    c.cvals = reinterpret_cast<float *>(a.cvals);
-    c.select = reinterpret_cast<CambiCudaSelect *>(a.select);
-    c.lut = reinterpret_cast<const float *>(a.lut);
-    c.tvi = reinterpret_cast<const uint16_t *>(a.tvi);
-    c.weights = reinterpret_cast<const int *>(a.weights);
+    c.q = VMAF_CUDA_DPTR(const uint16_t, a.q);
+    c.runs = VMAF_CUDA_DPTR(const uint32_t, a.runs);
+    c.change = VMAF_CUDA_DPTR(const uint32_t, a.change);
+    c.hist = VMAF_CUDA_DPTR(uint16_t, a.hist);
+    c.cvals = VMAF_CUDA_DPTR(float, a.cvals);
+    c.select = VMAF_CUDA_DPTR(CambiCudaSelect, a.select);
+    c.lut = VMAF_CUDA_DPTR(const float, a.lut);
+    c.tvi = VMAF_CUDA_DPTR(const uint16_t, a.tvi);
+    c.weights = VMAF_CUDA_DPTR(const int, a.weights);
     c.a = &a;
     return c;
 }
@@ -426,6 +429,17 @@ struct CvalsTally {
     uint32_t count;
 };
 
+/* Filled field by field: designated initializers do not build under nvcc's MSVC
+ * host frontend and a constructor would make the members private. */
+__device__ __forceinline__ CvalsTally make_cvals_tally()
+{
+    CvalsTally tally;
+    tally.sum = 0u;
+    tally.bin = 0u;
+    tally.count = 0u;
+    return tally;
+}
+
 __device__ __forceinline__ void tally_flush(const CvalsCtx &c, CvalsTally &tally)
 {
     if (tally.count != 0u) {
@@ -494,7 +508,7 @@ __device__ __forceinline__ void pool_block(const CambiCudaPoolArgs &a, unsigned 
 __device__ void radix_count_block(const CambiCudaPoolArgs &a, const CambiCudaSelect *select,
                                   uint32_t *local_hist)
 {
-    const float *cvals = reinterpret_cast<const float *>(a.cvals);
+    const float *cvals = VMAF_CUDA_DPTR(const float, a.cvals);
     unsigned begin = 0u;
     unsigned end = 0u;
     pool_block(a, blockIdx.x, begin, end);
@@ -526,18 +540,26 @@ struct U128 {
     uint64_t hi;
 };
 
+__device__ __forceinline__ U128 make_u128(uint64_t lo, uint64_t hi)
+{
+    U128 r;
+    r.lo = lo;
+    r.hi = hi;
+    return r;
+}
+
 /* hi32 * 2^32 + lo32 as a 128-bit value (both halves < 2^64). */
 __device__ __forceinline__ U128 u128_from_halves(uint64_t hi32_sum, uint64_t lo32_sum)
 {
     const uint64_t shifted = hi32_sum << 32u;
-    U128 r{shifted + lo32_sum, hi32_sum >> 32u};
+    U128 r = make_u128(shifted + lo32_sum, hi32_sum >> 32u);
     r.hi += r.lo < shifted ? 1u : 0u;
     return r;
 }
 
 __device__ __forceinline__ U128 u128_add(U128 x, U128 y)
 {
-    U128 r{x.lo + y.lo, x.hi + y.hi};
+    U128 r = make_u128(x.lo + y.lo, x.hi + y.hi);
     r.hi += r.lo < x.lo ? 1u : 0u;
     return r;
 }
@@ -561,7 +583,7 @@ __global__ void __launch_bounds__(CAMBI_IMAGE_THREADS)
         return;
     }
     if (cambi_src_sample(a, y, x) > (1u << a.bpc) - 1u) {
-        CambiCudaResults *results = reinterpret_cast<CambiCudaResults *>(a.results);
+        CambiCudaResults *results = VMAF_CUDA_DPTR(CambiCudaResults, a.results);
         atomicOr(&results->status, CAMBI_CUDA_STATUS_INVALID_INPUT);
     }
 }
@@ -576,7 +598,7 @@ __global__ void __launch_bounds__(CAMBI_IMAGE_THREADS)
     if (j >= a.out_width || i >= a.out_height) {
         return;
     }
-    uint16_t *dst = reinterpret_cast<uint16_t *>(a.dst);
+    uint16_t *dst = VMAF_CUDA_DPTR(uint16_t, a.dst);
     dst[(size_t)i * a.out_width + j] = (uint16_t)cambi_preproc_pixel(a, i, j);
 }
 
@@ -599,14 +621,18 @@ __global__ void __launch_bounds__(CAMBI_IMAGE_THREADS)
     const int ly = (int)threadIdx.y;
     const int tid = ly * (int)blockDim.x + lx;
 
-    for (int k = tid; k < (int)(ZD_TILE_H * ZD_TILE_W); k += (int)CAMBI_IMAGE_THREADS) {
+    constexpr int zd_tile_elems = static_cast<int>(ZD_TILE_H * ZD_TILE_W);
+    constexpr int image_threads = static_cast<int>(CAMBI_IMAGE_THREADS);
+    for (int k = tid; k < zd_tile_elems; k += image_threads) {
         zd_tile[k / (int)ZD_TILE_W][k % (int)ZD_TILE_W] = cambi_zero_deriv(a, bx, by, k);
     }
     __syncthreads();
 
+    const int width_i = (int)a.width;
+    const int height_i = (int)a.height;
     const int x = bx + lx;
     const int y = by + ly;
-    if (x >= (int)a.width || y >= (int)a.height) {
+    if (x >= width_i || y >= height_i) {
         return;
     }
     unsigned box_sum = 0u;
@@ -617,7 +643,7 @@ __global__ void __launch_bounds__(CAMBI_IMAGE_THREADS)
             box_sum += (unsigned)zd_tile[ly + dy][lx + dx];
         }
     }
-    uint16_t *mask = reinterpret_cast<uint16_t *>(a.mask);
+    uint16_t *mask = VMAF_CUDA_DPTR(uint16_t, a.mask);
     mask[(size_t)(unsigned)y * a.width + (unsigned)x] =
         (uint16_t)(box_sum > a.mask_index ? 1u : 0u);
 }
@@ -636,9 +662,9 @@ __global__ void __launch_bounds__(CAMBI_IMAGE_THREADS)
     if (x >= a.out_width || y >= a.out_height) {
         return;
     }
-    const uint16_t *src = reinterpret_cast<const uint16_t *>(a.src);
-    uint16_t *dst = reinterpret_cast<uint16_t *>(a.dst);
-    dst[(size_t)y * a.out_width + x] = __ldg(src + (size_t)(y * 2u) * a.src_stride + x * 2u);
+    const uint16_t *src = VMAF_CUDA_DPTR(const uint16_t, a.src);
+    uint16_t *dst = VMAF_CUDA_DPTR(uint16_t, a.dst);
+    dst[(size_t)y * a.out_width + x] = __ldg(src + (size_t)y * 2u * a.src_stride + (size_t)x * 2u);
 }
 
 /* filter_mode, horizontal pass: edge columns keep their value because
@@ -651,10 +677,10 @@ __global__ void __launch_bounds__(CAMBI_IMAGE_THREADS)
     if (x >= a.width || y >= a.height) {
         return;
     }
-    const uint16_t *row = reinterpret_cast<const uint16_t *>(a.image) + (size_t)y * a.width;
+    const uint16_t *row = VMAF_CUDA_DPTR(const uint16_t, a.image) + (size_t)y * a.width;
     const unsigned left = x > 0u ? x - 1u : 0u;
     const unsigned right = x + 1u < a.width ? x + 1u : a.width - 1u;
-    uint16_t *out = reinterpret_cast<uint16_t *>(a.filtered_h);
+    uint16_t *out = VMAF_CUDA_DPTR(uint16_t, a.filtered_h);
     out[(size_t)y * a.width + x] = mode3(__ldg(row + left), __ldg(row + x), __ldg(row + right));
 }
 
@@ -671,8 +697,8 @@ __global__ void __launch_bounds__(CAMBI_IMAGE_THREADS)
     if (x >= a.width || y >= a.height) {
         return;
     }
-    const uint16_t *filtered_h = reinterpret_cast<const uint16_t *>(a.filtered_h);
-    uint16_t *image = reinterpret_cast<uint16_t *>(a.image);
+    const uint16_t *filtered_h = VMAF_CUDA_DPTR(const uint16_t, a.filtered_h);
+    uint16_t *image = VMAF_CUDA_DPTR(uint16_t, a.image);
     const size_t idx = (size_t)y * a.width + x;
     uint16_t value = image[idx];
     if (y > 0u && y + 1u < a.height) {
@@ -681,8 +707,8 @@ __global__ void __launch_bounds__(CAMBI_IMAGE_THREADS)
         image[idx] = value;
     }
     const uint16_t compact = (uint16_t)(value - a.v_band_base);
-    const uint16_t *mask = reinterpret_cast<const uint16_t *>(a.mask);
-    uint16_t *q = reinterpret_cast<uint16_t *>(a.q);
+    const uint16_t *mask = VMAF_CUDA_DPTR(const uint16_t, a.mask);
+    uint16_t *q = VMAF_CUDA_DPTR(uint16_t, a.q);
     q[idx] = (__ldg(mask + idx) != 0u && compact < a.v_band_size) ? compact :
                                                                     (uint16_t)CAMBI_CUDA_Q_INVALID;
 }
@@ -700,7 +726,7 @@ __global__ void __launch_bounds__(CAMBI_IMAGE_THREADS)
 __global__ void __launch_bounds__(CAMBI_ROWMASK_THREADS)
     cambi_row_masks_kernel(const CambiCudaCvalsArgs a)
 {
-    const uint16_t *q = reinterpret_cast<const uint16_t *>(a.q);
+    const uint16_t *q = VMAF_CUDA_DPTR(const uint16_t, a.q);
     const unsigned x = blockIdx.x * CAMBI_WARP + threadIdx.x;
     const unsigned y = blockIdx.y * CAMBI_CUDA_ROWMASK_ROWS + threadIdx.y;
     bool run_start = false;
@@ -718,8 +744,8 @@ __global__ void __launch_bounds__(CAMBI_ROWMASK_THREADS)
     const uint32_t runs_word = __ballot_sync(CAMBI_FULL_WARP, run_start);
     const uint32_t change_word = __ballot_sync(CAMBI_FULL_WARP, differs);
     if (threadIdx.x == 0u && y < a.height) {
-        reinterpret_cast<uint32_t *>(a.runs)[(size_t)y * a.words + blockIdx.x] = runs_word;
-        reinterpret_cast<uint32_t *>(a.change)[(size_t)y * a.words + blockIdx.x] = change_word;
+        VMAF_CUDA_DPTR(uint32_t, a.runs)[(size_t)y * a.words + blockIdx.x] = runs_word;
+        VMAF_CUDA_DPTR(uint32_t, a.change)[(size_t)y * a.words + blockIdx.x] = change_word;
     }
 }
 
@@ -731,12 +757,12 @@ __global__ void __launch_bounds__(CAMBI_CUDA_CVALS_BLOCK)
 {
     __shared__ uint64_t warp_sums[CAMBI_CUDA_CVALS_BLOCK / CAMBI_WARP];
     const CvalsCtx c = cvals_ctx(a);
-    CvalsTally tally{0u, 0u, 0u};
+    CvalsTally tally = make_cvals_tally();
     cvals_column(c, blockIdx.y, blockIdx.x * CAMBI_CUDA_CVALS_BLOCK + threadIdx.x, tally);
     tally_flush(c, tally);
     const uint64_t total = cambi_block_sum(tally.sum, warp_sums, CAMBI_CUDA_CVALS_BLOCK);
     if (threadIdx.x == 0u) {
-        uint64_t *partials = reinterpret_cast<uint64_t *>(a.partials);
+        uint64_t *partials = VMAF_CUDA_DPTR(uint64_t, a.partials);
         partials[(size_t)blockIdx.y * gridDim.x + blockIdx.x] = total;
     }
 }
@@ -752,7 +778,7 @@ __global__ void __launch_bounds__(CAMBI_CUDA_POOL_BLOCK)
     cambi_radix_hist_kernel(const CambiCudaPoolArgs a)
 {
     __shared__ uint32_t local_hist[CAMBI_CUDA_RADIX_BINS];
-    CambiCudaSelect *select = reinterpret_cast<CambiCudaSelect *>(a.select);
+    CambiCudaSelect *select = VMAF_CUDA_DPTR(CambiCudaSelect, a.select);
     if (select->resolved != 0u) {
         return;
     }
@@ -777,7 +803,7 @@ __global__ void __launch_bounds__(CAMBI_CUDA_POOL_BLOCK)
     cambi_radix_scan_kernel(const CambiCudaPoolArgs a)
 {
     __shared__ uint32_t warp_totals[CAMBI_CUDA_POOL_BLOCK / CAMBI_WARP];
-    CambiCudaSelect *select = reinterpret_cast<CambiCudaSelect *>(a.select);
+    CambiCudaSelect *select = VMAF_CUDA_DPTR(CambiCudaSelect, a.select);
     if (select->resolved != 0u) {
         return;
     }
@@ -813,11 +839,11 @@ __global__ void __launch_bounds__(CAMBI_CUDA_POOL_BLOCK)
     cambi_topk_partials_kernel(const CambiCudaPoolArgs a)
 {
     __shared__ uint64_t warp_sums[CAMBI_CUDA_POOL_BLOCK / CAMBI_WARP];
-    const CambiCudaSelect *select = reinterpret_cast<const CambiCudaSelect *>(a.select);
+    const CambiCudaSelect *select = VMAF_CUDA_DPTR(const CambiCudaSelect, a.select);
     if (select->resolved != 0u) {
         return;
     }
-    const float *cvals = reinterpret_cast<const float *>(a.cvals);
+    const float *cvals = VMAF_CUDA_DPTR(const float, a.cvals);
     unsigned begin = 0u;
     unsigned end = 0u;
     pool_block(a, blockIdx.x, begin, end);
@@ -829,7 +855,7 @@ __global__ void __launch_bounds__(CAMBI_CUDA_POOL_BLOCK)
     }
     const uint64_t total = cambi_block_sum(sum, warp_sums, CAMBI_CUDA_POOL_BLOCK);
     if (threadIdx.x == 0u) {
-        reinterpret_cast<uint64_t *>(a.partials)[blockIdx.x] = total;
+        VMAF_CUDA_DPTR(uint64_t, a.partials)[blockIdx.x] = total;
     }
 }
 
@@ -841,8 +867,8 @@ __global__ void __launch_bounds__(CAMBI_CUDA_POOL_BLOCK)
 {
     __shared__ uint64_t lo_sums[CAMBI_CUDA_POOL_BLOCK / CAMBI_WARP];
     __shared__ uint64_t hi_sums[CAMBI_CUDA_POOL_BLOCK / CAMBI_WARP];
-    const CambiCudaSelect *select = reinterpret_cast<const CambiCudaSelect *>(a.select);
-    const uint64_t *partials = reinterpret_cast<const uint64_t *>(a.partials);
+    const CambiCudaSelect *select = VMAF_CUDA_DPTR(const CambiCudaSelect, a.select);
+    const uint64_t *partials = VMAF_CUDA_DPTR(const uint64_t, a.partials);
     const bool resolved = select->resolved != 0u;
     const unsigned count = resolved ? a.cvals_groups : a.groups;
     uint64_t lo32 = 0u;
@@ -861,7 +887,7 @@ __global__ void __launch_bounds__(CAMBI_CUDA_POOL_BLOCK)
     const uint64_t k_rem = select->k_next[CAMBI_CUDA_RADIX_PASSES - 1];
     const U128 ties = u128_from_halves((t_fixed >> 32u) * k_rem, (t_fixed & 0xFFFFFFFFu) * k_rem);
     const U128 total = u128_add(u128_from_halves(hi32, lo32), ties);
-    CambiCudaResults *results = reinterpret_cast<CambiCudaResults *>(a.results);
+    CambiCudaResults *results = VMAF_CUDA_DPTR(CambiCudaResults, a.results);
     results->sum_lo[a.scale] = total.lo;
     results->sum_hi[a.scale] = total.hi;
 }

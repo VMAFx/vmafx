@@ -24,6 +24,7 @@ from typing import Protocol, cast
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
+from scripts.ci import gate_leg_result as glr
 from scripts.lib.safe_subprocess import run as run_command
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -35,7 +36,7 @@ BASH = shutil.which("bash") or "/bin/bash"
 
 REQUIRED_CONSUMER_CONTRACTS = {
     "build.yml": (
-        "c_core",
+        "build_work",
         ("build-work",),
         (
             ("linux-intel-llvm-gate", "Linux Intel LLVM", "build-work"),
@@ -60,18 +61,19 @@ REQUIRED_CONSUMER_CONTRACTS = {
         ("validate",),
         (("tester-image", "Tester Image", "build"),),
     ),
-    "doxygen-public-api.yml": (
+    "docs.yml": (
         "doxygen",
         ("doxygen-work",),
         (("doxygen", "Doxygen Public API", "doxygen-work"),),
     ),
     "ffmpeg-integration.yml": (
         "c_core",
-        ("ffmpeg-work", "ffmpeg-sycl-work"),
+        ("ffmpeg-work", "ffmpeg-sycl-work", "ffmpeg-msvc-work"),
         (
             ("ffmpeg-ubuntu-gate", "FFmpeg Ubuntu gcc", "ffmpeg-work"),
             ("ffmpeg-macos-gate", "FFmpeg macOS clang", "ffmpeg-work"),
             ("ffmpeg-sycl-gate", "FFmpeg SYCL", "ffmpeg-sycl-work"),
+            ("ffmpeg-msvc-gate", "FFmpeg Windows MSVC", "ffmpeg-msvc-work"),
         ),
     ),
     "helm-chart.yml": (
@@ -135,7 +137,24 @@ planner = _load_planner()
 
 
 # ADR-1700: the selectors that the full-mode fallback does not set by itself.
-OWN_PATHS_ONLY = {"tester_image", "windows_tester_zip"}
+TIDY_LANES = ("cuda", "hip", "sycl", "arm64", "clang", "metal")
+TIDY_SELECTORS = {f"tidy_{lane}" for lane in TIDY_LANES}
+TESTER_SELECTORS = {"tester_image", "windows_tester_zip", "windows_tester_zip_sycl"}
+# ADR-3279: the MSVC leg a light-tier pull request owes when it touches core C or C++.
+MSVC_LEG_SELECTORS = {"windows_msvc_sycl"}
+# The upstream consumer job folded into ffmpeg-integration.yml keeps the path
+# filter its own workflow had (SAST check-suite budget).
+CONSUMER_SELECTORS = {"upstream_consumers"}
+# ADR-3338: the dev-container build a light-tier pull request owes when it
+# touches the image's own inputs.
+DEV_CONTAINER_LANE_SELECTORS = {"dev_container_inputs"}
+OWN_PATHS_ONLY = (
+    TESTER_SELECTORS
+    | MSVC_LEG_SELECTORS
+    | TIDY_SELECTORS
+    | CONSUMER_SELECTORS
+    | DEV_CONTAINER_LANE_SELECTORS
+)
 
 
 def _plan_for(paths: list[str], statuses: list[str] | None = None) -> ImpactPlan:
@@ -193,12 +212,11 @@ class ConfigContract(unittest.TestCase):
             ".github/workflows/dev-container-build.yml",
             ".github/workflows/docker-image.yml",
             ".github/workflows/docker-publish-tester.yml",
-            ".github/workflows/doxygen-public-api.yml",
+            ".github/workflows/docs.yml",
             ".github/workflows/ffmpeg-integration.yml",
             ".github/workflows/helm-chart.yml",
             ".github/workflows/required-aggregator.yml",
             ".github/workflows/rust-ci.yml",
-            ".github/workflows/scorecard-policy.yml",
             ".github/workflows/windows-tester-bundle.yml",
             ".pre-commit-config.yaml",
             ".gosec.json",
@@ -252,7 +270,7 @@ class RoutingContract(unittest.TestCase):
         cases = {
             "Dockerfile": {"docker_image"},
             "python/requirements.txt": {"docker_image", "dev_container"},
-            "dev/Containerfile": {"dev_container"},
+            "dev/Containerfile": {"dev_container", "dev_container_inputs"},
             "core/doc/Doxyfile.public-api": {"doxygen"},
             "deploy/helm/vmafx/Chart.yaml": {"helm"},
             "docker/Dockerfile.tester": {"tester_image"},
@@ -271,7 +289,7 @@ class RoutingContract(unittest.TestCase):
             ".github/workflows/build.yml",
             ".github/workflows/dev-container-build.yml",
             ".github/workflows/docker-image.yml",
-            ".github/workflows/doxygen-public-api.yml",
+            ".github/workflows/docs.yml",
             ".github/workflows/ffmpeg-integration.yml",
             ".github/workflows/helm-chart.yml",
             ".github/workflows/rust-ci.yml",
@@ -332,7 +350,14 @@ class RoutingContract(unittest.TestCase):
         self.assertTrue(
             all(on for name, on in plan.selectors.items() if name not in OWN_PATHS_ONLY)
         )
-        self.assertFalse(any(plan.selectors[name] for name in OWN_PATHS_ONLY))
+        self.assertFalse(
+            any(plan.selectors[name] for name in TESTER_SELECTORS | MSVC_LEG_SELECTORS)
+        )
+        # The workflow hosts the lanes, so it is one of their own paths (not Metal's).
+        self.assertEqual(
+            {name for name in TIDY_SELECTORS if plan.selectors[name]},
+            TIDY_SELECTORS - {"tidy_metal"},
+        )
 
     def test_go_workflow_change_forces_full(self) -> None:
         plan = _plan_for([".github/workflows/go-ci.yml"])
@@ -427,7 +452,7 @@ class GitIntegration(unittest.TestCase):
     def _repo(self) -> tuple[str, GitCommand]:
         tmp = tempfile.mkdtemp()
         env = {
-            **os.environ,
+            **{k: v for k, v in os.environ.items() if not k.startswith("GIT_")},
             "GIT_AUTHOR_NAME": "t",
             "GIT_AUTHOR_EMAIL": "t@t",
             "GIT_COMMITTER_NAME": "t",
@@ -535,6 +560,291 @@ class GitIntegration(unittest.TestCase):
         self.assertTrue(kv["reason"].startswith("event-not-routed:"))
 
 
+class TidyLaneRouting(unittest.TestCase):
+    """Q-315: every hosted tidy lane runs only when a file of that lane changes."""
+
+    def _lanes(self, plan: ImpactPlan) -> set[str]:
+        return {lane for lane in TIDY_LANES if plan.selectors[f"tidy_{lane}"]}
+
+    def test_a_cuda_file_selects_the_cuda_lane_and_the_cpu_gate_only(self) -> None:
+        plan = _plan_for(["core/src/feature/cuda/integer_ssim/ssim_score.cu"])
+        self.assertEqual(plan.mode, "impact")
+        self.assertEqual(self._lanes(plan), {"cuda"})
+        self.assertTrue(plan.selectors["c_core"])  # the cpu lane ("Tidy Ratchet")
+
+    def test_each_lane_is_selected_by_its_own_files_and_no_other_lane(self) -> None:
+        cases = {
+            "cuda": "core/src/cuda/picture.c",
+            "hip": "core/src/feature/hip/ciede_hip.c",
+            "sycl": "core/src/feature/sycl/integer_ssim_sycl.cpp",
+            "arm64": "core/src/feature/arm64/vif_neon.c",
+            "clang": "core/test/fuzz/fuzz_json.c",
+            "metal": "core/src/feature/metal/psnr_metal.mm",
+        }
+        for lane, path in cases.items():
+            with self.subTest(lane=lane):
+                self.assertEqual(self._lanes(_plan_for([path])), {lane})
+
+    def test_a_docs_only_change_selects_no_lane_and_not_the_cpu_gate(self) -> None:
+        plan = _plan_for(["docs/development/tidy-ratchet.md", "changelog.d/fixed/x.md"])
+        self.assertEqual(self._lanes(plan), set())
+        self.assertFalse(plan.selectors["c_core"])
+
+    def test_a_shared_cpu_file_selects_no_device_lane(self) -> None:
+        plan = _plan_for(["core/src/libvmaf.c"])
+        self.assertEqual(self._lanes(plan), set())
+        self.assertTrue(plan.selectors["c_core"])
+
+    def test_the_ratchet_and_a_lane_baseline_select_the_lanes_they_define(self) -> None:
+        self.assertEqual(self._lanes(_plan_for(["scripts/ci/tidy-baseline-hip.json"])), {"hip"})
+        plan = _plan_for(["scripts/ci/tidy-ratchet.py"])
+        self.assertEqual(self._lanes(plan), set(TIDY_LANES))
+
+    def test_a_fallback_plan_keeps_the_lanes_off_unless_a_path_matches(self) -> None:
+        plan = _plan_for(["scripts/ci/plan-ci-impact.py"])
+        self.assertEqual(plan.mode, "full")
+        self.assertEqual(self._lanes(plan), set())
+
+    def test_every_baseline_only_source_matches_its_lane_patterns(self) -> None:
+        """A lane's selector must see every file the lane alone measures (drift guard)."""
+        root = CONFIG.parents[1]
+        baselines = {
+            lane: set(
+                json.loads(
+                    (root / f"scripts/ci/tidy-baseline-{lane}.json").read_text(encoding="utf-8")
+                ).get("measured_sources", [])
+            )
+            for lane in ("cpu", *TIDY_LANES)
+        }
+        selectors = planner.load_config(CONFIG)["selectors"]
+        for lane in TIDY_LANES:
+            patterns = tuple(selectors[f"tidy_{lane}"]["patterns"])
+            alone = {p for p in baselines[lane] - baselines["cpu"] if (root / p).exists()}
+            unmatched = sorted(p for p in alone if not planner._matches(p, patterns))
+            with self.subTest(lane=lane):
+                self.assertEqual(unmatched, [], f"{lane}: files only this lane measures")
+
+
+class MsvcLegRouting(unittest.TestCase):
+    """ADR-3279: `windows_msvc_sycl` follows what the MSVC+SYCL leg compiles."""
+
+    SELECTOR = "windows_msvc_sycl"
+
+    def test_core_c_cpp_header_and_meson_files_select_the_leg(self) -> None:
+        for path in (
+            "core/src/libvmaf.c",
+            "core/src/fex_ctx_vector_internal.h",
+            "core/tools/vmaf.cpp",
+            "core/test/test_feature_extractor.c",
+            "core/include/libvmaf/version.h.in",
+            "core/meson.build",
+            "core/src/meson.build",
+            "core/meson_options.txt",
+        ):
+            with self.subTest(path=path):
+                plan = _plan_for([path])
+                self.assertEqual(plan.mode, "impact")
+                self.assertTrue(plan.selectors[self.SELECTOR])
+
+    def test_the_legs_own_inputs_select_it(self) -> None:
+        for path in (
+            "scripts/ci/werror-args.sh",
+            "scripts/ci/check_msvc_library_names.py",
+            "scripts/ci/run_meson_test.py",
+            ".github/workflows/libvmaf-build-matrix.yml",
+        ):
+            with self.subTest(path=path):
+                plan = _plan_for([path])
+                self.assertEqual(plan.mode, "full")
+                self.assertTrue(plan.selectors[self.SELECTOR])
+        lock = _plan_for(["requirements/locks/build.txt"])
+        self.assertTrue(lock.selectors[self.SELECTOR])
+
+    def test_files_the_leg_does_not_compile_leave_it_off(self) -> None:
+        for path in (
+            "docs/index.md",
+            "core/src/AGENTS.md",
+            "core/src/feature/cuda/integer_adm/adm_csf_den.cu",
+            "core/src/feature/hip/float_vif/float_vif_score.hip",
+            "core/api/vmafx.toml",
+            "python/vmaf/__init__.py",
+            "go.mod",
+        ):
+            with self.subTest(path=path):
+                self.assertFalse(_plan_for([path]).selectors[self.SELECTOR])
+
+    def test_a_ci_authority_change_alone_leaves_it_off(self) -> None:
+        for path in ("scripts/ci/plan-ci-impact.py", ".github/workflows/lint-and-format.yml"):
+            with self.subTest(path=path):
+                plan = _plan_for([path])
+                self.assertEqual(plan.mode, "full")
+                self.assertFalse(plan.selectors[self.SELECTOR])
+
+    def test_a_full_plan_with_known_paths_follows_the_core_paths(self) -> None:
+        mixed = _plan_for(["core/src/libvmaf.c", "Makefile"])
+        deleted = _plan_for(["core/src/libvmaf.c"], ["D"])
+        for plan in (mixed, deleted):
+            with self.subTest(reason=plan.reason):
+                self.assertEqual(plan.mode, "full")
+                self.assertTrue(plan.selectors[self.SELECTOR])
+
+    def test_an_unknown_change_set_selects_it_and_an_empty_diff_does_not(self) -> None:
+        config = planner.load_config(CONFIG)
+        unknown = planner.build_plan(config, None, "event-not-routed:schedule", "b" * 40, "h" * 40)
+        empty = planner.build_plan(config, (), None, "b" * 40, "h" * 40)
+        self.assertTrue(cast(ImpactPlan, unknown).selectors[self.SELECTOR])
+        self.assertFalse(cast(ImpactPlan, empty).selectors[self.SELECTOR])
+
+    def test_planted_pattern_without_a_suffix_is_seen_by_the_negative_cases(self) -> None:
+        config = copy.deepcopy(planner.load_config(CONFIG))
+        config["selectors"][self.SELECTOR]["patterns"].append("core/*")
+        changes = (planner.Change(status="M", paths=("core/src/AGENTS.md",)),)
+        plan = cast(ImpactPlan, planner.build_plan(config, changes, None, "b" * 40, "h" * 40))
+        self.assertTrue(plan.selectors[self.SELECTOR])
+
+
+class DevContainerLaneRouting(unittest.TestCase):
+    """ADR-3338: `dev_container_inputs` follows the dev image's own inputs."""
+
+    SELECTOR = "dev_container_inputs"
+
+    def test_the_images_own_inputs_select_it(self) -> None:
+        for path in ("dev/Containerfile", "dev/scripts/fetch-intel-neo.py", ".dockerignore"):
+            with self.subTest(path=path):
+                plan = _plan_for([path])
+                self.assertEqual(plan.mode, "impact")
+                self.assertTrue(plan.selectors[self.SELECTOR])
+                self.assertTrue(plan.selectors["dev_container"])
+
+    def test_inputs_that_force_a_full_plan_still_select_it(self) -> None:
+        for path in (
+            "build-config.env",
+            ".github/workflows/dev-container-build.yml",
+            "scripts/ci/build-dev-container-stage.sh",
+            "scripts/ci/install-cuda-toolkit.sh",
+        ):
+            with self.subTest(path=path):
+                self.assertTrue(_plan_for([path]).selectors[self.SELECTOR])
+
+    def test_sources_left_to_the_full_tier_leave_it_off(self) -> None:
+        for path in (
+            "docs/index.md",
+            "core/src/libvmaf.c",
+            "python/vmaf/__init__.py",
+            "ai/README.md",
+            "go.mod",
+            ".github/workflows/supply-chain.yml",
+            "scripts/release/build-native-release-artifacts.sh",
+        ):
+            with self.subTest(path=path):
+                self.assertFalse(_plan_for([path]).selectors[self.SELECTOR])
+
+    def test_a_ci_authority_change_alone_leaves_it_off(self) -> None:
+        plan = _plan_for(["scripts/ci/plan-ci-impact.py"])
+        self.assertEqual(plan.mode, "full")
+        self.assertFalse(plan.selectors[self.SELECTOR])
+        self.assertTrue(plan.selectors["dev_container"])
+
+    def test_an_unknown_change_set_selects_it_and_an_empty_diff_does_not(self) -> None:
+        config = planner.load_config(CONFIG)
+        unknown = planner.build_plan(config, None, "event-not-routed:schedule", "b" * 40, "h" * 40)
+        empty = planner.build_plan(config, (), None, "b" * 40, "h" * 40)
+        self.assertTrue(cast(ImpactPlan, unknown).selectors[self.SELECTOR])
+        self.assertFalse(cast(ImpactPlan, empty).selectors[self.SELECTOR])
+
+    def test_planted_pattern_without_a_suffix_is_seen_by_the_negative_cases(self) -> None:
+        config = copy.deepcopy(planner.load_config(CONFIG))
+        config["selectors"][self.SELECTOR]["patterns"].append("docs/*")
+        changes = (planner.Change(status="M", paths=("docs/index.md",)),)
+        plan = cast(ImpactPlan, planner.build_plan(config, changes, None, "b" * 40, "h" * 40))
+        self.assertTrue(plan.selectors[self.SELECTOR])
+
+
+class BuildWorkRouting(unittest.TestCase):
+    """`build_work` runs build.yml's legs for every file their Python steps read.
+
+    The work job runs `compat/vmaf/tests/test_decorator_extended.py` on every
+    leg (the Windows leg is the only Windows run of it) and `tox -c python` on
+    macOS, so a change under `python/` or `compat/` must start the legs.
+    """
+
+    SELECTOR = "build_work"
+    PYTHON_STEP_INPUTS = (
+        "compat/python-vmaf/tools/decorator.py",
+        "compat/python-vmaf/config.py",
+        "compat/python-vmaf/core/result.py",
+        "compat/python-vmaf/tests/test_decorator_extended.py",
+        "compat/vmaf",
+        "python/vmaf/__init__.py",
+        "python/test/result_test.py",
+        "python/tox.ini",
+        "python/requirements-test-lock.txt",
+        "requirements/locks/build.txt",
+        "requirements/locks/pytest-timeout.txt",
+        "requirements/locks/tox.txt",
+        "scripts/ci/prune-corrupt-fixtures.sh",
+    )
+
+    def test_the_python_steps_inputs_select_it(self) -> None:
+        for path in self.PYTHON_STEP_INPUTS:
+            with self.subTest(path=path):
+                plan = _plan_for([path])
+                self.assertTrue(plan.selectors[self.SELECTOR])
+                if plan.mode == "impact":  # a scripts/ci/ change plans the full matrix
+                    self.assertFalse(plan.selectors["c_core"])
+
+    def test_core_changes_still_select_it(self) -> None:
+        self.assertTrue(_plan_for(["core/src/libvmaf.c"]).selectors[self.SELECTOR])
+
+    def test_files_build_yml_does_not_read_leave_it_off(self) -> None:
+        for path in (
+            "docs/index.md",
+            "go.mod",
+            "mcp-server/vmaf-mcp/pyproject.toml",
+            "tools/vmaf-tune/pyproject.toml",
+            "requirements/locks/docs-check.txt",
+        ):
+            with self.subTest(path=path):
+                self.assertFalse(_plan_for([path]).selectors[self.SELECTOR])
+
+    def test_every_pytest_target_of_build_yml_selects_it(self) -> None:
+        text = (CONFIG.parent / "workflows" / "build.yml").read_text(encoding="utf-8")
+        targets = re.findall(r"python -m pytest (\S+\.py)", text)
+        self.assertNotEqual(targets, [], "build.yml must run a pytest target")
+        for target in targets:
+            # compat/vmaf is a symlink; git reports the file under its target.
+            tracked = (REPO_ROOT / target).resolve().relative_to(REPO_ROOT).as_posix()
+            with self.subTest(target=tracked):
+                self.assertTrue(_plan_for([tracked]).selectors[self.SELECTOR])
+
+    def test_every_tox_config_build_yml_runs_selects_it(self) -> None:
+        text = (CONFIG.parent / "workflows" / "build.yml").read_text(encoding="utf-8")
+        configs = re.findall(r"tox -c (\S+)", text)
+        self.assertNotEqual(configs, [], "build.yml must run tox")
+        for directory in configs:
+            with self.subTest(config=directory):
+                self.assertTrue(_plan_for([f"{directory}/tox.ini"]).selectors[self.SELECTOR])
+
+    def test_every_lock_build_yml_installs_selects_it(self) -> None:
+        text = (CONFIG.parent / "workflows" / "build.yml").read_text(encoding="utf-8")
+        locks = sorted(set(re.findall(r"-r (requirements/\S+\.txt)", text)))
+        self.assertNotEqual(locks, [], "build.yml must install from a lock")
+        for lock in locks:
+            with self.subTest(lock=lock):
+                self.assertTrue(_plan_for([lock]).selectors[self.SELECTOR])
+
+    def test_planted_c_core_only_selector_misses_python_changes(self) -> None:
+        config = copy.deepcopy(planner.load_config(CONFIG))
+        config["selectors"][self.SELECTOR]["patterns"] = []
+        for path in ("compat/python-vmaf/tools/decorator.py", "python/test/result_test.py"):
+            with self.subTest(path=path):
+                changes = (planner.Change(status="M", paths=(path,)),)
+                plan = cast(
+                    ImpactPlan, planner.build_plan(config, changes, None, "b" * 40, "h" * 40)
+                )
+                self.assertFalse(plan.selectors[self.SELECTOR])
+
+
 class OwnPathsOnlyContract(unittest.TestCase):
     """ADR-1700: `own_paths_only` selectors follow their own paths in full mode."""
 
@@ -547,7 +857,7 @@ class OwnPathsOnlyContract(unittest.TestCase):
     def _changes(*records: tuple[str, tuple[str, ...]]) -> tuple[object, ...]:
         return tuple(planner.Change(status=status, paths=paths) for status, paths in records)
 
-    def test_the_exception_is_declared_for_exactly_the_two_tester_selectors(self) -> None:
+    def test_the_exception_is_declared_for_exactly_the_tester_msvc_and_tidy_selectors(self) -> None:
         selectors = planner.load_config(CONFIG)["selectors"]
         declared = {name for name, sel in selectors.items() if sel.get("own_paths_only")}
         self.assertEqual(declared, OWN_PATHS_ONLY)
@@ -562,15 +872,21 @@ class OwnPathsOnlyContract(unittest.TestCase):
     def test_a_full_plan_still_selects_a_tester_build_on_its_own_paths(self) -> None:
         cases = {
             ".github/workflows/docker-publish-tester.yml": {"tester_image"},
-            ".github/workflows/windows-tester-bundle.yml": {"windows_tester_zip"},
+            ".github/workflows/windows-tester-bundle.yml": {
+                "windows_tester_zip",
+                "windows_tester_zip_sycl",
+            },
             "scripts/ci/install-cuda-toolkit.sh": {"tester_image"},
-            "scripts/ci/build-windows-tester-bundle.py": {"windows_tester_zip"},
+            "scripts/ci/build-windows-tester-bundle.py": {
+                "windows_tester_zip",
+                "windows_tester_zip_sycl",
+            },
         }
         for path, selected in cases.items():
             with self.subTest(path=path):
                 plan = _plan_for([path, "Makefile"])
                 self.assertEqual(plan.mode, "full")
-                self.assertEqual({n for n in OWN_PATHS_ONLY if plan.selectors[n]}, selected)
+                self.assertEqual({n for n in TESTER_SELECTORS if plan.selectors[n]}, selected)
 
     def test_other_fallbacks_with_known_paths_follow_own_paths(self) -> None:
         config = planner.load_config(CONFIG)
@@ -701,7 +1017,13 @@ class WorkflowContract(unittest.TestCase):
         with self.subTest(workflow=filename, job="impact"):
             self.assertRegex(trigger, r"(?m)^  push:\s*$")
             self.assertRegex(trigger, r"(?m)^  pull_request:\s*$")
-            self.assertIn(f"selected: ${{{{ steps.impact.outputs.{selector} }}}}", impact)
+            # ADR-3338: an own-input lane picks its tier's selector in a `pick`
+            # step; the planner's selector must still feed it.
+            self.assertIn(f"${{{{ steps.impact.outputs.{selector} }}}}", impact)
+            self.assertTrue(
+                f"selected: ${{{{ steps.impact.outputs.{selector} }}}}" in impact
+                or "selected: ${{ steps.pick.outputs.selected }}" in impact
+            )
             self.assertIn("fetch-depth: 0", impact)
             self.assertIn("scripts/ci/plan-ci-impact.py", impact)
         for work_job in work_jobs:
@@ -712,11 +1034,19 @@ class WorkflowContract(unittest.TestCase):
         for gate_job, check_name, work_job in gates:
             block = self._job_block(text, gate_job)
             with self.subTest(workflow=filename, job=gate_job):
-                self.assertIn(f"needs: [impact, {work_job}]", block)
-                self.assertIn("if: always()", block)
+                # ADR-2169: the gate also needs the tier, and a tier that does not own
+                # the gate leaves it skipped (a skipped required context is accepted
+                # by the aggregator only for a tier that does not owe it).
+                self.assertIn(f"needs: [tier, impact, {work_job}]", block)
+                self.assertRegex(
+                    block, r"if: always\(\) && needs\.tier\.outputs\.(light|full) == 'true'"
+                )
                 self.assertIn(f"name: {check_name}", block)
-                self.assertIn('if [ "$PLAN_RESULT" != success ]', block)
-                self.assertIn("true:success|false:skipped", block)
+                if "gate_leg_result.py" in block:
+                    self.assertIn(f'gate_leg_result.py --job "{check_name} work"', block)
+                else:
+                    self.assertIn('if [ "$PLAN_RESULT" != success ]', block)
+                    self.assertIn("true:success|false:skipped", block)
         return {check_name for _, check_name, _ in gates}
 
     def test_required_consumers_use_fail_closed_planner_work_gate_contract(self) -> None:
@@ -729,12 +1059,40 @@ class WorkflowContract(unittest.TestCase):
         strict_names = set(re.findall(r"'([^']+)'", match.group(1) if match else ""))
         self.assertLessEqual(expected_strict, strict_names)
 
+    def _assert_gate_leg_result_states(self, filename: str, check_name: str) -> None:
+        for plan_result in ("success", "failure", "cancelled", "skipped"):
+            for selected in ("true", "false", ""):
+                for work_result in ("success", "skipped", "failure", "cancelled"):
+                    expected = plan_result == "success" and (
+                        selected,
+                        work_result,
+                    ) in {("true", "success"), ("false", "skipped")}
+                    jobs = [{"name": f"{check_name} work", "conclusion": work_result}]
+                    reason = glr.judge(plan_result, selected, f"{check_name} work", jobs)
+                    with self.subTest(
+                        workflow=filename,
+                        gate=check_name,
+                        plan=plan_result,
+                        selected=selected,
+                        work=work_result,
+                    ):
+                        self.assertEqual(
+                            reason is None,
+                            expected,
+                            f"plan={plan_result} selected={selected} "
+                            f"work={work_result} produced reason={reason!r}",
+                        )
+
     def test_gate_scripts_accept_only_the_two_valid_state_tuples(self) -> None:
         workflow_root = REPO_ROOT / ".github" / "workflows"
         for filename, (_selector, _work_jobs, gates) in REQUIRED_CONSUMER_CONTRACTS.items():
             text = (workflow_root / filename).read_text(encoding="utf-8")
             for gate_job, check_name, _work_job in gates:
-                script = self._literal_run(self._job_block(text, gate_job))
+                block = self._job_block(text, gate_job)
+                if "gate_leg_result.py" in block:
+                    self._assert_gate_leg_result_states(filename, check_name)
+                    continue
+                script = self._literal_run(block)
                 for plan_result in ("success", "failure", "cancelled", "skipped"):
                     for selected in ("true", "false", ""):
                         for work_result in ("success", "skipped", "failure", "cancelled"):

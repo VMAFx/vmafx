@@ -175,7 +175,10 @@ static double *resolve_result(int nrhs, const mxArray *prhs[], mxArray *plhs[],
 static int pad_even_filter(upconv_args *a)
 {
     double *orig_filt;
-    int orig_x, orig_y, x, y;
+    int orig_x;
+    int orig_y;
+    int x;
+    int y;
 
     if (!((!strcmp(a->edges, "reflect1") || !strcmp(a->edges, "extend") ||
            !strcmp(a->edges, "repeat")) &&
@@ -187,12 +190,13 @@ static int pad_even_filter(upconv_args *a)
     orig_y = a->y_fdim;
     a->x_fdim = 2 * (orig_x / 2) + 1;
     a->y_fdim = 2 * (orig_y / 2) + 1;
-    a->filt = mxCalloc(a->x_fdim * a->y_fdim, sizeof(double));
+    a->filt = mxCalloc((size_t)a->x_fdim * (size_t)a->y_fdim, sizeof(double));
     if (a->filt == NULL)
         mexErrMsgTxt("Cannot allocate necessary temporary space");
-    for (y = 0; y < orig_y; y++)
+    for (y = 0; y < orig_y; y++) {
         for (x = 0; x < orig_x; x++)
             a->filt[y * a->x_fdim + x] = orig_filt[y * orig_x + x];
+    }
     return orig_x;
 }
 
@@ -202,9 +206,13 @@ void mexFunction(int nlhs,             /* Num return vals on lhs */
                  const mxArray *prhs[] /* Matrices on rhs */
 )
 {
+    (void)nlhs;
     upconv_args a;
-    double *temp, *result;
-    int x_rdim, y_rdim, orig_x;
+    double *temp;
+    double *result;
+    int x_rdim;
+    int y_rdim;
+    int orig_x;
 
     parse_args(nrhs, prhs, &a);
 
@@ -228,20 +236,19 @@ void mexFunction(int nlhs,             /* Num return vals on lhs */
         mexErrMsgTxt("FILTER dimensions larger than RESULT dimensions.");
     }
 
-    temp = mxCalloc(a.x_fdim * a.y_fdim, sizeof(double));
+    temp = mxCalloc((size_t)a.x_fdim * (size_t)a.y_fdim, sizeof(double));
     if (temp == NULL)
         mexErrMsgTxt("Cannot allocate necessary temporary space");
 
-    if (strcmp(a.edges, "circular") == 0)
+    if (strcmp(a.edges, "circular") == 0) {
         internal_wrap_expand(a.image, a.filt, a.x_fdim, a.y_fdim, a.x_start, a.x_step, a.x_stop,
                              a.y_start, a.y_step, a.y_stop, result, x_rdim, y_rdim);
-    else
+    } else {
         internal_expand(a.image, a.filt, temp, a.x_fdim, a.y_fdim, a.x_start, a.x_step, a.x_stop,
                         a.y_start, a.y_step, a.y_stop, result, x_rdim, y_rdim, a.edges);
+    }
 
     if (orig_x)
         mxFree((char *)a.filt);
     mxFree((char *)temp);
-
-    return;
 }

@@ -90,3 +90,13 @@ they are amd64-only and will be wired in a follow-on.
 - ADR-0714: vmafx-operator kubebuilder skeleton.
 - ADR-0717: vmafx-node ffmpeg version policy + existing `docker/Dockerfile.node`.
 - req: "add `Dockerfile.operator` and `Dockerfile.node` (the operator builds the Go binary `cmd/vmafx-operator`, the node builds `cmd/vmafx-node`). Both distroless per ADR-0698. Multi-arch amd64+arm64. Wire to release-please + CI to build on tag."
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 3: `markdownlint comment "pre-existing long lines per ADR-0864
+  tail"`: ADR-0864 has no file: it is a retired number in
+  scripts/ci/source-adr-citations.json; see ADR-0866 and ADR-0980 for the
+  markdownlint configuration tune and first sweep it names.

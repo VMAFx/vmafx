@@ -146,3 +146,13 @@ Extend `extract_k150k_features.py` to:
   `core/src/feature/integer_motion_v2.c:110`.
 - Source: `req` — direct user direction (Slack 2026-05-15: "we do
   extract the full cambi right? like for hdr? rofl … i mean on chug").
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 139: `-
+  [docs/research/0135-hdr-ugc-dataset-license-audit-2026-05-15.md](./research/0135-hdr-ugc-dataset-license-au`:
+  Research digest 0135 is a different topic; the HDR license audit is
+  docs/research/0136-hdr-ugc-dataset-license-audit-2026-05-15.md.

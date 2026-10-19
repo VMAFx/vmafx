@@ -60,16 +60,16 @@ def _bool(value: bool) -> str:
 def _row(row: PixelFormat) -> str:
     elem = ", ".join(f"{e}u" for e in row.elem)
     return (
-        f"    {{.pix_fmt = {row.enum},\n"
+        f'    {{.name = "{row.name}",\n'
+        f"     .pix_fmt = {row.enum},\n"
         f"     .planar_fmt = {row.planar},\n"
         f"     .n_planes = {row.planes}u,\n"
         f"     .bpc_min = {row.bpc[0]}u,\n"
         f"     .bpc_max = {row.bpc[1]}u,\n"
         f"     .shift = {row.shift}u,\n"
-        f"     .interleaved = {_bool(row.interleaved)},\n"
-        f'     .name = "{row.name}",\n'
         f"     .packed = VMAFX_IMPORT_PACKED_{PACKED_CONSTANT[row.packing]},\n"
         f"     .elem = {{{elem}}},\n"
+        f"     .interleaved = {_bool(row.interleaved)},\n"
         f"     .msb = {_bool(row.msb)},\n"
         f"     .rgb_elems = {row.rgb_elems}u,\n"
         f"     .needs_statement = {_bool(row.needs_statement)}}},"
@@ -131,10 +131,11 @@ def ffmpeg_formats(api: Api) -> str:
         " * pix_fmts[] = { VMAFX_FFMPEG_YUV_PIX_FMTS, AV_PIX_FMT_NONE };`. The RGB lists are\n"
         " * accepted only when the filter is given the matrix, range and transfer of the\n"
         " * conversion (ADR-2146); a hardware list is what the library imports on that device,\n"
-        " * to be intersected with the formats FFmpeg's own hwcontext allows."
+        " * to be intersected with the formats FFmpeg's own hwcontext allows. The lists are\n"
+        " * macros only: the including file includes <libavutil/pixfmt.h> before it uses them."
     )
     lines += ["#ifndef VMAFX_FFMPEG_FORMATS_H", "#define VMAFX_FFMPEG_FORMATS_H", ""]
-    lines += ["#include <libavutil/pixfmt.h>", "", "/* clang-format off */", ""]
+    lines += ["/* clang-format off */", ""]
     for label, device in (
         ("PIX_FMTS", None),
         ("CUDA_SW_FORMATS", "cuda"),

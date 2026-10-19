@@ -68,6 +68,11 @@ option('sycl_acpp_targets',
     value: 'generic',
     description: 'AdaptiveCpp --acpp-targets argument (e.g. "generic", "omp", "omp;cuda:sm_80", "omp;hip:gfx1100"). Ignored when sycl_compiler is icpx. See ADR-0335.')
 
+option('sycl_device_asan',
+    type: 'boolean',
+    value: false,
+    description: 'Instrument every SYCL translation unit with the DPC++ device AddressSanitizer (icpx -Xarch_device -fsanitize=address -g, on the compiles and the link; Linux only). Run the binaries with ONEAPI_DEVICE_SELECTOR=level_zero:gpu; the Level Zero sanitizer layer reports out-of-bounds device USM accesses. Keeps -Dsycl_icpx_aot_targets= empty (SPIR-V JIT) for the measured check. Debug builds only. See docs/backends/sycl/device-sanitizer.md and scripts/dev/sycl_device_asan_check.sh.')
+
 option('sycl_icpx_aot_targets',
     type: 'string',
     value: 'dg2-g10,dg2-g11,acm-g10,acm-g11,acm-g12,tgllp,adl-s,adl-p,adl-n,rpl-s,rpl-p,mtl-h,mtl-u,arl-h,arl-s,arl-u,lnl-m,bmg-g21,bmg-g31',
@@ -147,4 +152,4 @@ option('fuzz',
 option('enable_rust_features',
     type: 'boolean',
     value: false,
-    description: 'Build Rust-implemented feature extractors (requires cargo + cbindgen in PATH). ADR-0707 cbindgen pilot: TAD (Temporal Absolute Difference). Default OFF — CI defaults to false; enable_rust_features=true requires cargo + cbindgen.')
+    description: 'Build the Rust extractors: the Rust twins of C extractors, selected with VMAF_FEATURE_IMPL=rust, and the TAD pilot (ADR-1713, ADR-0707). Needs cargo in PATH; the cargo build runs offline. Without cargo, configure fails (ADR-3318); the toolchain version is pinned in rust-toolchain.toml. Default OFF.')

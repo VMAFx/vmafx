@@ -81,6 +81,7 @@ if str(REPO_ROOT / "ai" / "src") not in sys.path:
 
 from aiutils.file_utils import sha256  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
+from vmaf_train.registry import write_registry_json  # noqa: E402
 
 CANONICAL_6: tuple[str, ...] = (
     "adm2",
@@ -356,7 +357,7 @@ def _update_registry(
         )
     keep.sort(key=lambda e: e.get("id", ""))
     registry["models"] = keep
-    registry_path.write_text(json.dumps(registry, indent=2, sort_keys=True) + "\n")
+    write_registry_json(registry_path, registry)
 
 
 def _build_parser() -> argparse.ArgumentParser:

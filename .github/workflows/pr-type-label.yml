@@ -10,7 +10,9 @@ name: PR type label
 
 on:
   pull_request_target:
-    types: [opened, edited, reopened, synchronize]
+    # ADR-2169: no `synchronize`. The label comes from the pull request title,
+    # which a push does not change; `edited` covers a title change.
+    types: [opened, edited, reopened]
 
 permissions:
   pull-requests: write
@@ -22,7 +24,7 @@ concurrency:
 jobs:
   label:
     name: Label PR by commit type
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - name: Apply type label
         env:
@@ -66,13 +68,18 @@ jobs:
           # Replace any previously-derived type label: the title can be edited,
           # and a PR carrying two type labels would appear twice in the release
           # notes, once under each section.
-          current=$(gh pr view "$PR_NUMBER" --repo "$REPO" \
-                      --json labels --jq '.labels[].name' || true)
+          if ! current=$(gh pr view "$PR_NUMBER" --repo "$REPO" \
+                           --json labels --jq '.labels[].name'); then
+            echo "::warning::could not read the labels of PR $PR_NUMBER; stale type labels are not removed."
+            current=""
+          fi
           while IFS= read -r existing; do
             case "$existing" in
               type:*)
                 [ "$existing" = "$label" ] && continue
-                gh pr edit "$PR_NUMBER" --repo "$REPO" --remove-label "$existing" || true
+                if ! gh pr edit "$PR_NUMBER" --repo "$REPO" --remove-label "$existing"; then
+                  echo "::warning::could not remove label $existing from PR $PR_NUMBER."
+                fi
                 ;;
             esac
           done <<< "$current"

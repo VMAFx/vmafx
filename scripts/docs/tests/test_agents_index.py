@@ -302,6 +302,76 @@ class SourceContractTests(Fixture):
         self.assert_invalid("no topic page")
 
 
+class AreaTests(Fixture):
+    """A directory that groups its pages into areas gets one sub-index per area."""
+
+    def with_areas(self) -> None:
+        self.write("_area-first.md", "# First\n\nAlpha things.\n")
+        self.write("_area-second.md", "# Second\n\nBeta things.\n")
+        self.write("alpha.md", ALPHA.replace("---\n<!--", "area: first\n---\n<!--", 1))
+        self.write(
+            "beta.md",
+            BETA.replace(
+                "invariant: Beta exits 2 on bad usage.",
+                "invariant: Beta exits 2 on bad usage.\narea: second",
+            ),
+        )
+
+    def test_index_lists_areas_and_each_area_has_its_own_table(self) -> None:
+        self.with_areas()
+        index = agents_index.render(DIRECTORY, self.root)
+        self.assertIn("## Areas", index)
+        self.assertIn("[first](AGENTS-first.md)", index)
+        self.assertNotIn("## Topic pages", index)
+        self.assertNotIn("[alpha](", index)
+        areas = agents_index.render_areas(DIRECTORY, self.root)
+        self.assertEqual(sorted(areas), ["AGENTS-first.md", "AGENTS-second.md"])
+        self.assertIn("[alpha](AGENTS.d/alpha.md)", areas["AGENTS-first.md"])
+        self.assertNotIn("[beta](", areas["AGENTS-first.md"])
+
+    def test_write_then_check_passes_and_a_stale_sub_index_fails(self) -> None:
+        self.with_areas()
+        self.assertEqual(self.run_index("--write")[0], 0)
+        self.assertEqual(self.run_index("--check")[0], 0)
+        sub = self.root / DIRECTORY / "AGENTS-first.md"
+        sub.write_text(sub.read_text(encoding="utf-8") + "hand edit\n", encoding="utf-8")
+        status, err = self.run_index("--check")
+        self.assertEqual(status, agents_index.EXIT_STALE, err)
+        self.assertIn("AGENTS-first.md", err)
+
+    def test_each_sub_index_has_the_index_budget(self) -> None:
+        self.with_areas()
+        size = len(agents_index.render_areas(DIRECTORY, self.root)["AGENTS-first.md"].encode())
+        with mock.patch.object(agents_index, "INDEX_MAX_BYTES", size - 1):
+            with self.assertRaisesRegex(agents_index.AgentsIndexError, "AGENTS-first.md"):
+                agents_index.render_areas(DIRECTORY, self.root)
+
+    def test_a_page_in_an_unknown_area_is_refused(self) -> None:
+        self.with_areas()
+        self.write(
+            "beta.md",
+            BETA.replace("invariant: Beta exits 2 on bad usage.", "invariant: x\narea: nowhere"),
+        )
+        self.assert_invalid("`area:` 'nowhere'")
+
+    def test_a_page_without_an_area_is_refused_once_areas_exist(self) -> None:
+        self.with_areas()
+        self.write("beta.md", BETA)
+        self.assert_invalid("does not match")
+
+    def test_an_area_without_pages_is_refused(self) -> None:
+        self.with_areas()
+        self.write("_area-empty.md", "# Empty\n\nNothing.\n")
+        self.assert_invalid("area empty has no page")
+
+    def test_an_area_key_without_area_files_is_refused(self) -> None:
+        self.write(
+            "beta.md",
+            BETA.replace("invariant: Beta exits 2 on bad usage.", "invariant: x\narea: first"),
+        )
+        self.assert_invalid("does not match")
+
+
 class BudgetTests(Fixture):
     def page_with_invariant(self, length: int) -> str:
         return BETA.replace("Beta exits 2 on bad usage.\n---", "x" * length + "\n---")

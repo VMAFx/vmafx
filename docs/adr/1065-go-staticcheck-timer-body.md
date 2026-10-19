@@ -71,3 +71,14 @@ correctness bugs across four files:
 - ADR-1017 (grpc-dial-backoff) — first instance of `time.NewTimer` + `defer Stop()` in this codebase.
 - SA1015 staticcheck rule: "Using `time.Tick` in a short-lived context may cause a memory leak."
 - `observability/observability.go` comment: "Use time.NewTimer so the timer is stopped … preventing a goroutine-timer leak. ADR-1017."
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 71: `- ADR-1017 (grpc-dial-backoff) — first instance of
+  time.NewTimer + defer Stop() in this codebase`: ADR-1017 points to an
+  unrelated topic (1017-r5-go-timer-ctx-cancel.md: "Go operator controller
+  resource-allocation fixes", covering http.Client allocation and
+  grpc.WithBlock).

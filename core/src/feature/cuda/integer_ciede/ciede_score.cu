@@ -24,6 +24,7 @@
 #include "cuda_helper.cuh"
 #include "cuda/integer_ciede_cuda.h"
 #include "common.h"
+#include "cuda_device_ptr.cuh"
 
 #include "ciede_device.h"
 
@@ -50,7 +51,8 @@ __global__ void calculate_ciede_kernel_8bpc(const VmafPicture ref, const VmafPic
     const uint8_t *__restrict__ d_u = (const uint8_t *)dis.data[1] + (size_t)cy * dis.stride[1];
     const uint8_t *__restrict__ d_v = (const uint8_t *)dis.data[2] + (size_t)cy * dis.stride[2];
 
-    reinterpret_cast<float *>(terms.data)[(size_t)y * width + x] =
+    float *const term_out = VMAF_CUDA_DPTR(float, terms.data);
+    term_out[(size_t)y * width + x] =
         ciede_pixel((float)__ldg(&r_y[x]), (float)__ldg(&r_u[cx]), (float)__ldg(&r_v[cx]),
                     (float)__ldg(&d_y[x]), (float)__ldg(&d_u[cx]), (float)__ldg(&d_v[cx]), bpc);
 }
@@ -79,7 +81,8 @@ __global__ void calculate_ciede_kernel_16bpc(const VmafPicture ref, const VmafPi
     const uint16_t *__restrict__ d_v =
         (const uint16_t *)((const uint8_t *)dis.data[2] + (size_t)cy * dis.stride[2]);
 
-    reinterpret_cast<float *>(terms.data)[(size_t)y * width + x] =
+    float *const term_out = VMAF_CUDA_DPTR(float, terms.data);
+    term_out[(size_t)y * width + x] =
         ciede_pixel((float)__ldg(&r_y[x]), (float)__ldg(&r_u[cx]), (float)__ldg(&r_v[cx]),
                     (float)__ldg(&d_y[x]), (float)__ldg(&d_u[cx]), (float)__ldg(&d_v[cx]), bpc);
 }

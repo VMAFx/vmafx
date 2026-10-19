@@ -58,3 +58,12 @@ Accept Research-0775 findings as the authoritative audit. No code changes in thi
 - `core/src/libvmaf.c` — `VmafContext.dnn` field and `vmaf_ctx_dnn_run_frame`
 - ADR-0113 — two-stage `CreateSession` CPU fallback
 - ADR-0517 — feature-vector model input rank
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 60: `- ADR-0517 — feature-vector model input rank`: Cites
+  ADR-0517 for feature-vector model input rank; ADR-0517 is "Repair MCP
+  `run_benchmark` tool..". Actual feature rank ADR is ADR-0518.

@@ -200,6 +200,18 @@ def _add_extraction_args(parser: argparse.ArgumentParser) -> None:
     """Register pair cap, codec label, and teacher-model flags."""
     parser.add_argument("--max-pairs", type=int, default=None)
     parser.add_argument(
+        "--assume-dims",
+        type=_parse_dims,
+        default=None,
+        metavar="WxH",
+        help=(
+            "Stamp every pair with this frame size instead of probing it. "
+            "The loader's probe knows only 1920x1080 yuv420p and ffprobe "
+            "cannot read a raw yuv, so a corpus of any other size (the mini "
+            "retrain fixture is 576x324) needs this flag."
+        ),
+    )
+    parser.add_argument(
         "--codec",
         type=str,
         default="unknown",
@@ -218,6 +230,14 @@ def _add_extraction_args(parser: argparse.ArgumentParser) -> None:
             "default (vmaf_v1.0.16_3d0h via ADR-1168/ADR-1173)."
         ),
     )
+
+
+def _parse_dims(text: str) -> tuple[int, int]:
+    """Parse ``WxH`` into ``(width, height)``; refuse anything else."""
+    parts = text.lower().split("x")
+    if len(parts) != 2 or not all(p.isdigit() and int(p) > 0 for p in parts):
+        raise argparse.ArgumentTypeError(f"expected WxH with positive integers, got {text!r}")
+    return int(parts[0]), int(parts[1])
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:
@@ -273,7 +293,10 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     resolved_teacher = resolve_teacher_model(args.vmaf_model)
-    pairs = list(iter_pairs(args.data_root, max_pairs=args.max_pairs))
+    iter_pairs_kwargs: dict[str, Any] = {"max_pairs": args.max_pairs}
+    if args.assume_dims is not None:
+        iter_pairs_kwargs["assume_dims"] = args.assume_dims
+    pairs = list(iter_pairs(args.data_root, **iter_pairs_kwargs))
     print(
         f"[extract] {len(pairs)} pairs; FULL_FEATURES = {len(FULL_FEATURES)} features; "
         f"teacher = {resolved_teacher.name}"

@@ -227,7 +227,7 @@ _PROXY_ADJUSTMENTS: dict[str, dict[str, Any]] = {
     },
     "live_action_hdr": {
         # HDR live-action — wide tonal swings → tighter interval gate
-        # because predictor was largely SDR-trained (ADR-0279). No
+        # because predictor was largely SDR-trained (ADR-0393). No
         # target lift (HDR ground-truth VMAF already calibrated to
         # ITU-R BT.2100 per ADR-0300).
         "target_vmaf_offset_abs": 0.0,
@@ -329,7 +329,7 @@ def _ugc_tight_interval_width(rows: Sequence[CorpusRow]) -> float:
     inter-quartile range of MOS-VMAF residuals, scaled to a 90 %
     nominal-coverage gap. UGC's natural variance is high
     (upstream-encode noise + source-side artefacts), so the recipe
-    widens its tight gate accordingly. Per ADR-0279 the conformal
+    widens its tight gate accordingly. Per ADR-0393 the conformal
     gate uses width directly; the calibration emits a value in
     the same units the F.4 placeholder used (1.5..3.0 VMAF).
     """

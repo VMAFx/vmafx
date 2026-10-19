@@ -5,9 +5,9 @@ Edit AGENTS.d/_index.md or a page under AGENTS.d/, then run
 
 Generated index. Before editing: match every path you will touch against
 `Touching` in [Topic pages](#topic-pages) and read each matching page first; no
-match, no page. Text between here and the table binds every file of this
-directory. `Touching` paths: relative to this directory, leading `/` =
-repository root. New invariant: a page under `AGENTS.d/` ([how](../../../docs/development/agents-index.md)).
+match, no page. Text between here and [Topic pages](#topic-pages) binds every
+file of this directory. `Touching` paths: relative to this directory, leading
+`/` = repository root. New invariant: new page under `AGENTS.d/` ([how](../../../docs/development/agents-index.md)).
 
 Orientation for agents working on HIP (AMD ROCm) backend. Parent:
 [../../AGENTS.md](../../AGENTS.md). Mirrors
@@ -154,7 +154,7 @@ ninja -C build_full
 ```
 
 required CI lane `Ubuntu HIP` leaves `enable_hipcc` at its default
-(`false`): it installs ROCm 10.0.0 from digest-pinned image (ADR-1225) and
+(`false`): it installs ROCm 10.1.0 from digest-pinned image (ADR-1225) and
 builds host side without device kernels. Kernel-enabled builds
 (`-Denable_hipcc=true`) require `hipcc` in `PATH` and ROCm 7.0+.
 
@@ -174,3 +174,4 @@ builds host side without device kernels. Kernel-enabled builds
 | `/core/src/feature/hip/integer_psnr_hip.c`, `/core/src/feature/hip/integer_psnr_hip.h` | [psnr](AGENTS.d/psnr.md) | integer_psnr_hip mirrors CUDA call-graph and splits uint64 warp reduction into uint32 shuffles under HAVE_HIPCC. |
 | `/core/src/feature/hip/float_ssim_hip.c`, `/core/src/feature/hip/float_ssim_hip.h` | [ssim](AGENTS.d/ssim.md) | float_ssim_hip mirrors CUDA twin with two dispatches per frame and five intermediate float buffers. |
 | `import_*.c`, `import_convert.hip`, `vmafx_hip.h`, `vmafx_hip_internal.h`, `/core/test/test_vmafx_import_hip*`, `/core/test/vmafx_hip_test_util.h` | [vmafx-device-frames](AGENTS.d/vmafx-device-frames.md) | Imported HIP frames are read only on the library stream; reader and null stream wait; import submits. |
+| `import_frame.c`, `import_dmabuf.c`, `/core/test/test_vmafx_import_vulkan.c`, `/core/test/vmafx_vulkan_test_util.h` | [vulkan-optimal-refusal](AGENTS.d/vulkan-optimal-refusal.md) | HIP refuses Vulkan OPTIMAL images naming desc.vulkan_tiling; no mapped-mipmap-array route returns. |

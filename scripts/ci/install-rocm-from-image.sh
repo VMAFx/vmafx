@@ -6,19 +6,20 @@
 #
 # Why this exists (ADR-1225): since ROCm 7.14 AMD builds and releases through
 # "TheRock", and the legacy apt channel at repo.radeon.com/rocm/apt/ tops out
-# at 7.2.4 (its own `latest` resolves there; apt/7.14 and apt/10.0.0 both
-# 404). The manylinux channel stops at rocm-rel-7.2.4 and the TheRock wheel
+# at 7.2.4 (its own `latest` resolves there; apt/7.14, apt/10.0.0 and
+# apt/10.1.0 all 404). The manylinux channel stops at rocm-rel-7.2.4 and the TheRock wheel
 # index carries only 7.14.0 alphas, so for ROCm >= 7.14 the official container
 # image is the only stable, digest-pinnable artifact.
 #
-# `docker pull` is not an option on a GitHub-hosted runner: the 10.0.0-full
-# image is 8.2 GB compressed / 29 GB extracted, and the HIP leg shares its
+# `docker pull` is not an option on a GitHub-hosted runner: the 10.1.0-full
+# image is 8.9 GB compressed / 31 GB extracted, and the HIP leg shares its
 # runner with the CUDA toolkit and oneAPI. This script instead streams each
 # layer blob straight from the registry into tar, extracting only /opt/rocm
 # and skipping the math libraries libvmaf never links (hipBLASLt, rocBLAS,
 # MIOpen, Composable Kernel's device-op archives, rocFFT/rocSPARSE/rocSOLVER,
-# the profilers). Nothing is ever stored whole: peak disk is the ~5.5 GB
-# result, not the 29 GB image.
+# RPP, the profilers). Nothing is ever stored whole: peak disk is the ~5.8 GB
+# result, not the 31 GB image. Mid-stream network resets are recovered by
+# retrying the whole layer streaming pipeline.
 #
 # Usage:
 #   scripts/ci/install-rocm-from-image.sh \
@@ -42,6 +43,9 @@ AUTH_SERVICE="registry.docker.io"
 # Deadlines (seconds): a registry call, and one layer (the largest is about 8 GB).
 API_MAX_TIME=120
 LAYER_MAX_TIME=3600
+# Layer streaming attempts and retry delay (seconds). Overridable via env for tests.
+LAYER_ATTEMPTS="${ROCM_LAYER_ATTEMPTS:-4}"
+LAYER_RETRY_DELAY="${ROCM_LAYER_RETRY_DELAY:-10}"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -112,6 +116,7 @@ EXCLUDES=(
   'opt/rocm/*/lib/librccl*'
   'opt/rocm/*/lib/librocprof-sys*'
   'opt/rocm/*/lib/librocprofiler-sdk*'
+  'opt/rocm/*/lib/librpp*'
   'opt/rocm/*/share/miopen'
   'opt/rocm/*/share/doc'
 )
@@ -174,26 +179,42 @@ TAR_ERRORS="$STAGE/.tar-errors"
 # member makes GNU tar exit 2 with "Not found in archive", the normal case for
 # most layers; any other failure of the download, the decompression or tar
 # stops the install instead of leaving a partial tree.
+#
+# If a network drop or mid-stream reset occurs, curl's in-pipe retry cannot
+# recover because downstream decompressor and tar processes have already died.
+# We therefore retry the entire pipeline (curl | decomp | tar) up to
+# LAYER_ATTEMPTS times. Re-extracting a layer over a partial extraction is safe:
+# tar overwrites the same paths.
 extract_layer() {
-  local digest="$1" statuses
-  set +e
-  curl -fsSL --max-time "$LAYER_MAX_TIME" --retry 5 --retry-delay 10 --retry-all-errors \
-    -H "Authorization: Bearer ${TOKEN}" \
-    "https://${REGISTRY}/v2/${REPO}/blobs/${digest}" |
-    "${decomp[@]}" |
-    tar -x -C "$STAGE" "${tar_excludes[@]}" --wildcards 'opt/rocm/*' 2>"$TAR_ERRORS"
-  statuses=("${PIPESTATUS[@]}")
-  set -e
-  if [ "${statuses[0]}" -ne 0 ] || [ "${statuses[1]}" -ne 0 ]; then
-    echo "install-rocm-from-image.sh: layer $digest: download exit ${statuses[0]}," \
-      "decompression exit ${statuses[1]}" >&2
-    exit 1
-  fi
-  if [ "${statuses[2]}" -ne 0 ] &&
-    grep -v -e 'Not found in archive' -e 'Exiting with failure status' "$TAR_ERRORS" >&2; then
-    echo "install-rocm-from-image.sh: layer $digest: tar exit ${statuses[2]}" >&2
-    exit 1
-  fi
+  local digest="$1" attempt=1 statuses
+  while [ "$attempt" -le "$LAYER_ATTEMPTS" ]; do
+    set +e
+    curl -fsSL --max-time "$LAYER_MAX_TIME" \
+      -H "Authorization: Bearer ${TOKEN}" \
+      "https://${REGISTRY}/v2/${REPO}/blobs/${digest}" |
+      "${decomp[@]}" |
+      tar -x -C "$STAGE" "${tar_excludes[@]}" --wildcards 'opt/rocm/*' 2>"$TAR_ERRORS"
+    statuses=("${PIPESTATUS[@]}")
+    set -e
+    if [ "${statuses[0]}" -ne 0 ] || [ "${statuses[1]}" -ne 0 ]; then
+      if [ "$attempt" -ge "$LAYER_ATTEMPTS" ]; then
+        echo "install-rocm-from-image.sh: layer $digest: download exit ${statuses[0]}," \
+          "decompression exit ${statuses[1]} after $LAYER_ATTEMPTS attempts" >&2
+        exit 1
+      fi
+      if [ "$LAYER_RETRY_DELAY" != "0" ]; then
+        sleep "$LAYER_RETRY_DELAY"
+      fi
+      attempt=$((attempt + 1))
+      continue
+    fi
+    if [ "${statuses[2]}" -ne 0 ] &&
+      grep -v -e 'Not found in archive' -e 'Exiting with failure status' "$TAR_ERRORS" >&2; then
+      echo "install-rocm-from-image.sh: layer $digest: tar exit ${statuses[2]}" >&2
+      exit 1
+    fi
+    break
+  done
 }
 
 # Layers apply in order, so extracting them in order reproduces the image's

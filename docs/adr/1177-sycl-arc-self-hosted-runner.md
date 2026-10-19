@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-1177: Containerised self-hosted GitHub Actions runner for Intel Arc SYCL parity CI
 
-- **Status:** Accepted
+- **Status**: Accepted
 - **Date:** 2026-09-04
 - **Deciders:** Lusoris
 - **Supersedes:** none
@@ -19,7 +19,7 @@ Consequently, SYCL kernel execution was historically unexercised in hosted pull-
 relying on manual developer verification or post-merge checks.
 
 The workstation environment running CachyOS contains an Intel Arc A380 discrete GPU
-(PCI `0000:03:00.0`, vendor `0x8086`, device `0x56a5`, DG2-G10 die class) coexisting with an
+(PCI `<arc-bdf>`, vendor `0x8086`, device `0x56a5`, DG2-G10 die class) coexisting with an
 NVIDIA GeForce RTX 4090 and an AMD Raphael processor integrated GPU. To establish an automated,
 reliable CI gate for SYCL kernel execution on real Intel silicon without compromising host
 security, polluting the host OS, or interfering with adjacent accelerators, a containerised
@@ -33,7 +33,7 @@ self-hosted GitHub Actions runner architecture is required.
    service or systemd unit.
 2. **Strict device node isolation**: Only the Intel Arc A380 DRI render node is passed into the
    container:
-   - Host path: `/dev/dri/by-path/pci-0000:03:00.0-render` (vendor `0x8086`, device `0x56a5`),
+   - Host path: `/dev/dri/by-path/pci-<arc-bdf>-render` (vendor `0x8086`, device `0x56a5`),
      `renderD129` at the time of writing. Because render-node numbers and PCI BDFs change after a PCI
      re-enumeration, the compose file takes the node from `ARC_RENDER_NODE`, resolved by
      `dev/scripts/arc-render-node.sh` (exactly one `0x8086` render node, else it refuses).

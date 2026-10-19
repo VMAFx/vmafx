@@ -373,7 +373,7 @@ static int adm_accumulate_scales(AdmFrameBufs *b, const AdmScaleOpts *o, const A
         w = (w + 1) / 2;
         h = (h + 1) / 2;
         if (skipped) {
-            den_scale = 1e-10; // avoid divide by zero
+            den_scale = 1e-10f; // avoid divide by zero
         } else {
             adm_scale_sums(b, o, in->h, scale, w, h, &num_scale, &den_scale, &aim_num_scale);
         }

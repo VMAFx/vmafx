@@ -470,6 +470,24 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 namespace
 {
 
+/* The reference luma into d_ref: packed on the host and uploaded, or, for a
+ * frame of the VMAFx API on this device, copied on the device (ADR-2091; the
+ * frame's planes are never read on the host). */
+static int stage_ref(sycl::queue &q, FloatMotionStateSycl *s, VmafPicture *ref_pic)
+{
+    if (vmaf_sycl_picture_on_device(ref_pic)) {
+        const size_t row = (size_t)s->width * (s->bpc <= 8 ? 1u : 2u);
+        return vmaf_sycl_picture_read_plane(ref_pic, 0, &q, s->d_ref, row, row, s->height, nullptr);
+    }
+    if (s->bpc <= 8) {
+        copy_y_plane<uint8_t>(ref_pic, s->h_ref, s->width, s->height);
+    } else {
+        copy_y_plane<uint16_t>(ref_pic, s->h_ref, s->width, s->height);
+    }
+    q.memcpy(s->d_ref, s->h_ref, s->plane_bytes);
+    return 0;
+}
+
 static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
                            VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
 {
@@ -489,12 +507,10 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     }
     sycl::queue &q = *qptr;
 
-    if (s->bpc <= 8) {
-        copy_y_plane<uint8_t>(ref_pic, s->h_ref, s->width, s->height);
-    } else {
-        copy_y_plane<uint16_t>(ref_pic, s->h_ref, s->width, s->height);
+    const int stage_err = stage_ref(q, s, ref_pic);
+    if (stage_err) {
+        return stage_err;
     }
-    q.memcpy(s->d_ref, s->h_ref, s->plane_bytes);
 
     const unsigned cur_idx = (unsigned)s->cur_blur;
     const unsigned prev_idx = 1u - cur_idx;

@@ -1,0 +1,1 @@
+| [ADR-2056](2056-float-adm-debug-key-refusal.md) | `float_adm` keeps its debug ratio under the unsuffixed key `adm` (the Netflix tests read it); a second instance with `debug=true` is refused at registration with a message naming the key, and the CUDA, SYCL, HIP and Metal twins file it unsuffixed as the CPU does. | Accepted | feature-extractor, float-adm, gpu, parity, cli |

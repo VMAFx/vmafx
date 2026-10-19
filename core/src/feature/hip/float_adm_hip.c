@@ -799,7 +799,7 @@ static const char *provided_features[] = {"VMAF_feature_adm2_score",
                                           "VMAF_feature_adm_scale3_score",
                                           "VMAF_feature_aim_score",
                                           "VMAF_feature_adm3_score",
-                                          "adm",
+                                          "adm_scale0",
                                           "adm_num",
                                           "adm_den",
                                           "adm_num_scale0",
@@ -826,6 +826,7 @@ VmafFeatureExtractor vmaf_fex_float_adm_hip = {
     .options = options,
     .priv_size = sizeof(FloatAdmStateHip),
     .provided_features = provided_features,
+    .unsuffixed_debug_key = "adm",
     .flags = VMAF_FEATURE_EXTRACTOR_HIP,
     .chars =
         {

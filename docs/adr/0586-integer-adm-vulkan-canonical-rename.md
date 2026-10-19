@@ -64,3 +64,13 @@ retained until the shim is removed in a follow-up cleanup PR.
 - ADR-0350: two-level GPU reduction (`adm_reduce.comp`).
 - Source: `req` — user directed: "Port CUDA integer_adm_cuda.c to Vulkan.
   Create integer_adm_vulkan.c + GLSL compute shaders. Wire + register."
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 64: `- ADR-0350: two-level GPU reduction (adm_reduce.comp).`:
+  ADR-0350 points to an unrelated topic (0350-psnr-hvs-avx512-rebench.md). The
+  two-level GPU reduction was ADR-0356
+  (0356-vulkan-two-level-gpu-reduction.md).

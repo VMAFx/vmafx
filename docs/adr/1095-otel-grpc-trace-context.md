@@ -1,11 +1,9 @@
 # ADR-1095: Fix OTel trace context propagation across gRPC boundaries
 
-| Field       | Value                                          |
-|-------------|------------------------------------------------|
-| **Status**  | Accepted                                       |
-| **Date**    | 2026-06-07                                     |
-| **Deciders**| Lusoris                                        |
-| **Tags**    | observability, otel, grpc, bug                 |
+- **Status**: Accepted
+- **Date**: 2026-06-07
+- **Deciders**: Lusoris
+- **Tags**: observability, otel, grpc, bug
 
 ## Context
 

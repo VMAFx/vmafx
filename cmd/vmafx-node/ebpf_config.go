@@ -28,10 +28,6 @@ import (
 // configuration compiles where the bpf package does not (non-Linux).
 const defaultEBPFMountPrefix = "/rclone-mount/"
 
-// ebpfConfigKeys lists the underscore-bearing leaf keys of this file;
-// nodeEnvOptions appends them to its CompoundKeys.
-var ebpfConfigKeys = []string{"ebpf.mount_prefix"}
-
 // ebpfConfig is the validated tracker configuration.
 type ebpfConfig struct {
 	Enabled     bool

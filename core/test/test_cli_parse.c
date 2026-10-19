@@ -57,7 +57,7 @@ static int release_parsed(CLISettings *settings)
     return 0;
 }
 
-static char *test_aom_ctc_v1_0()
+static char *test_aom_ctc_v1_0(void)
 {
     char *argv[7] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--aom_ctc", "v1.0"};
     int argc = 7;
@@ -75,7 +75,7 @@ static char *test_aom_ctc_v1_0()
     return NULL;
 }
 
-static char *test_aom_ctc_v2_0()
+static char *test_aom_ctc_v2_0(void)
 {
     char *argv[7] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--aom_ctc", "v2.0"};
     int argc = 7;
@@ -93,7 +93,7 @@ static char *test_aom_ctc_v2_0()
     return NULL;
 }
 
-static char *test_aom_ctc_v3_0()
+static char *test_aom_ctc_v3_0(void)
 {
     char *argv[7] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--aom_ctc", "v3.0"};
     int argc = 7;
@@ -111,7 +111,7 @@ static char *test_aom_ctc_v3_0()
     return NULL;
 }
 
-static char *test_aom_ctc_v4_0()
+static char *test_aom_ctc_v4_0(void)
 {
     char *argv[7] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--aom_ctc", "v4.0"};
     int argc = 7;
@@ -129,7 +129,7 @@ static char *test_aom_ctc_v4_0()
     return NULL;
 }
 
-static char *test_aom_ctc_v5_0()
+static char *test_aom_ctc_v5_0(void)
 {
     char *argv[7] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--aom_ctc", "v5.0"};
     int argc = 7;
@@ -147,7 +147,7 @@ static char *test_aom_ctc_v5_0()
     return NULL;
 }
 
-static char *test_aom_ctc_v6_0()
+static char *test_aom_ctc_v6_0(void)
 {
     char *argv[7] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--aom_ctc", "v6.0"};
     int argc = 7;
@@ -165,7 +165,7 @@ static char *test_aom_ctc_v6_0()
     return NULL;
 }
 
-static char *test_nflx_ctc_v1_0()
+static char *test_nflx_ctc_v1_0(void)
 {
     char *argv[7] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--nflx_ctc", "v1.0"};
     int argc = 7;
@@ -190,7 +190,7 @@ static char *test_nflx_ctc_v1_0()
  * picks the CUDA extractors because gpumask is 0. Earlier revisions
  * set gpumask = 1 here, which silently routed every "CUDA" run
  * through the CPU path. */
-static char *test_backend_cuda_engages_cuda()
+static char *test_backend_cuda_engages_cuda(void)
 {
     char *argv[8] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--backend", "cuda"};
     int argc = 7;
@@ -209,7 +209,45 @@ static char *test_backend_cuda_engages_cuda()
     return NULL;
 }
 
-static char *test_backend_cpu()
+/* ADR-1874: `--list-backends` needs no inputs. cli_parse() must return with
+ * the flag set instead of exiting on the missing reference and distorted
+ * paths, so vmaf.cpp can print the report. */
+static char *test_list_backends_needs_no_inputs(void)
+{
+    char *argv[2] = {"vmaf", "--list-backends"};
+    int argc = 2;
+    CLISettings settings;
+    optind = 1;
+    cli_parse(argc, argv, &settings);
+    mu_assert("cli_parse: --list-backends must set list_backends", settings.list_backends);
+    mu_assert("cli_parse: --list-backends must not need a reference", !settings.path_ref);
+    mu_assert("cli_free must release every option dictionary", release_parsed(&settings) == 0);
+    return NULL;
+}
+
+/* ADR-1918: --check-sample-range (and the underscore alias) sets the flag that
+ * vmaf.cpp hands to vmaf_set_sample_range_check_enabled(); off without it. */
+static char *check_sample_range_flag(char *flag, bool expect)
+{
+    char *argv[7] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", flag};
+    const int argc = flag ? 6 : 5;
+    CLISettings settings;
+    optind = 1;
+    cli_parse(argc, argv, &settings);
+    mu_assert("cli_parse: --check-sample-range sets check_sample_range, nothing else does",
+              settings.check_sample_range == expect);
+    mu_assert("cli_free must release every option dictionary", release_parsed(&settings) == 0);
+    return NULL;
+}
+
+static char *test_check_sample_range_flag(void)
+{
+    char *msg = check_sample_range_flag("--check-sample-range", true);
+    msg = msg ? msg : check_sample_range_flag("--check_sample_range", true);
+    return msg ? msg : check_sample_range_flag(NULL, false);
+}
+
+static char *test_backend_cpu(void)
 {
     char *argv[8] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--backend", "cpu"};
     int argc = 7;
@@ -224,7 +262,7 @@ static char *test_backend_cpu()
     return NULL;
 }
 
-static char *test_backend_sycl()
+static char *test_backend_sycl(void)
 {
     char *argv[8] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--backend", "sycl"};
     int argc = 7;
@@ -241,7 +279,7 @@ static char *test_backend_sycl()
 
 /* test_backend_vulkan removed — ADR-0726: Vulkan backend dropped. */
 
-static char *test_backend_hip()
+static char *test_backend_hip(void)
 {
     char *argv[8] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--backend", "hip"};
     int argc = 7;
@@ -257,7 +295,7 @@ static char *test_backend_hip()
     return NULL;
 }
 
-static char *test_backend_metal()
+static char *test_backend_metal(void)
 {
     char *argv[8] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--backend", "metal"};
     int argc = 7;
@@ -274,7 +312,7 @@ static char *test_backend_metal()
     return NULL;
 }
 
-static char *test_hip_device_explicit()
+static char *test_hip_device_explicit(void)
 {
     char *argv[8] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--hip_device", "2"};
     int argc = 7;
@@ -287,7 +325,7 @@ static char *test_hip_device_explicit()
     return NULL;
 }
 
-static char *test_metal_device_explicit()
+static char *test_metal_device_explicit(void)
 {
     char *argv[8] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--metal_device", "1"};
     int argc = 7;
@@ -313,7 +351,7 @@ static char *test_sycl_device_explicit(void)
     return NULL;
 }
 
-static char *test_no_hip_no_metal_flags()
+static char *test_no_hip_no_metal_flags(void)
 {
     char *argv[8] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--no_hip", "--no_metal"};
     int argc = 7;
@@ -334,7 +372,7 @@ static char *test_no_hip_no_metal_flags()
  * getopt_long consumed the option value and the switch fell into
  * default:, silently discarding the cpumask.  The fix adds a
  * 'case 'c':' fall-through before ARG_CPUMASK. */
-static char *test_cpumask_short_opt()
+static char *test_cpumask_short_opt(void)
 {
     /* -c 0xff must set settings.cpumask = 255, same as --cpumask 0xff. */
     char *argv[9] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "-c", "0xff"};
@@ -360,7 +398,7 @@ static char *test_cpumask_short_opt()
 
 /* Explicit `--gpumask=N --backend cuda` must preserve the user's gpumask,
  * NOT clobber it. Multi-GPU rigs need fine-grained disable bits. */
-static char *test_backend_cuda_preserves_explicit_gpumask()
+static char *test_backend_cuda_preserves_explicit_gpumask(void)
 {
     char *argv[8] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--gpumask=2", "--backend", "cuda"};
     int argc = 8;
@@ -453,6 +491,7 @@ static char *run_backend_selection_tests(void)
     /* test_backend_vulkan removed — ADR-0726 */
     mu_run_test(test_backend_hip);
     mu_run_test(test_backend_metal);
+    mu_run_test(test_list_backends_needs_no_inputs);
     return NULL;
 }
 
@@ -463,6 +502,7 @@ static char *run_backend_device_tests(void)
     mu_run_test(test_metal_device_explicit);
     mu_run_test(test_no_hip_no_metal_flags);
     mu_run_test(test_cpumask_short_opt);
+    mu_run_test(test_check_sample_range_flag);
     return NULL;
 }
 
@@ -973,7 +1013,256 @@ static char *run_feature_delimiter_tests(void)
     return NULL;
 }
 
-char *run_tests()
+static char *test_color_metadata_defaults_to_unknown(void)
+{
+    char *argv[13] = {"vmaf", "-r", "ref.yuv", "-d",  "dis.yuv", "-w", "16",
+                      "-h",   "16", "-p",      "420", "-b",      "8"};
+    int argc = 13;
+    CLISettings settings;
+    optind = 1;
+    cli_parse(argc, argv, &settings);
+    mu_assert("cli_parse: color.range should default to unknown",
+              settings.color_ref.range == VMAF_COLOR_RANGE_UNKNOWN);
+    mu_assert("cli_parse: color.primaries should default to unknown",
+              settings.color_ref.primaries == VMAF_COLOR_PRIMARIES_UNKNOWN);
+    mu_assert("cli_parse: color.trc should default to unknown",
+              settings.color_ref.trc == VMAF_COLOR_TRC_UNKNOWN);
+    mu_assert("cli_parse: color.matrix should default to unknown",
+              settings.color_ref.matrix == VMAF_COLOR_MATRIX_UNKNOWN);
+    mu_assert("cli_parse: distorted color should default to unknown",
+              settings.color_dist.range == VMAF_COLOR_RANGE_UNKNOWN &&
+                  settings.color_dist.primaries == VMAF_COLOR_PRIMARIES_UNKNOWN &&
+                  settings.color_dist.trc == VMAF_COLOR_TRC_UNKNOWN &&
+                  settings.color_dist.matrix == VMAF_COLOR_MATRIX_UNKNOWN);
+    mu_assert("cli_free must release every option dictionary", release_parsed(&settings) == 0);
+
+    return NULL;
+}
+
+static char *test_color_metadata_parses(void)
+{
+    char *argv[29] = {"vmaf",      "-r",
+                      "ref.yuv",   "-d",
+                      "dis.yuv",   "-w",
+                      "16",        "-h",
+                      "16",        "-p",
+                      "420",       "-b",
+                      "8",         "--color_range_ref",
+                      "full",      "--color_range_dist",
+                      "full",      "--color_primaries_ref",
+                      "bt2020",    "--color_primaries_dist",
+                      "bt2020",    "--color_trc_ref",
+                      "smpte2084", "--color_trc_dist",
+                      "smpte2084", "--color_matrix_ref",
+                      "bt2020nc",  "--color_matrix_dist",
+                      "bt2020nc"};
+    int argc = 29;
+    CLISettings settings;
+    optind = 1;
+    cli_parse(argc, argv, &settings);
+    mu_assert("cli_parse: --color_range full not parsed",
+              settings.color_ref.range == VMAF_COLOR_RANGE_FULL);
+    mu_assert("cli_parse: --color_primaries bt2020 not parsed",
+              settings.color_ref.primaries == VMAF_COLOR_PRIMARIES_BT2020);
+    mu_assert("cli_free must release every option dictionary", release_parsed(&settings) == 0);
+
+    return NULL;
+}
+
+static char *test_color_trc_and_matrix_parse(void)
+{
+    char *argv[29] = {"vmaf",     "-r",
+                      "ref.yuv",  "-d",
+                      "dis.yuv",  "-w",
+                      "16",       "-h",
+                      "16",       "-p",
+                      "420",      "-b",
+                      "10",       "--color_range_ref",
+                      "limited",  "--color_range_dist",
+                      "limited",  "--color_primaries_ref",
+                      "bt2020",   "--color_primaries_dist",
+                      "bt2020",   "--color_trc_ref",
+                      "pq",       "--color_trc_dist",
+                      "pq",       "--color_matrix_ref",
+                      "bt2020nc", "--color_matrix_dist",
+                      "bt2020nc"};
+    int argc = 29;
+    CLISettings settings;
+    optind = 1;
+    cli_parse(argc, argv, &settings);
+    mu_assert("cli_parse: --color_trc pq not parsed",
+              settings.color_ref.trc == VMAF_COLOR_TRC_SMPTE2084);
+    mu_assert("cli_parse: --color_matrix bt2020nc not parsed",
+              settings.color_ref.matrix == VMAF_COLOR_MATRIX_BT2020_NCL);
+    mu_assert("cli_free must release every option dictionary", release_parsed(&settings) == 0);
+
+    return NULL;
+}
+
+static char *test_color_trc_and_matrix_aliases_parse(void)
+{
+    char *argv[29] = {"vmaf",    "-r",
+                      "ref.yuv", "-d",
+                      "dis.yuv", "-w",
+                      "16",      "-h",
+                      "16",      "-p",
+                      "420",     "-b",
+                      "10",      "--color_range_ref",
+                      "limited", "--color_range_dist",
+                      "limited", "--color_primaries_ref",
+                      "bt709",   "--color_primaries_dist",
+                      "bt709",   "--color_trc_ref",
+                      "pq",      "--color_trc_dist",
+                      "pq",      "--color_matrix_ref",
+                      "ictcp",   "--color_matrix_dist",
+                      "ictcp"};
+    int argc = 29;
+    CLISettings settings;
+    optind = 1;
+    cli_parse(argc, argv, &settings);
+    mu_assert("cli_parse: --color_trc pq alias not parsed",
+              settings.color_ref.trc == VMAF_COLOR_TRC_SMPTE2084);
+    mu_assert("cli_parse: --color_matrix ictcp not parsed",
+              settings.color_ref.matrix == VMAF_COLOR_MATRIX_ICTCP);
+    mu_assert("cli_free must release every option dictionary", release_parsed(&settings) == 0);
+
+    return NULL;
+}
+
+static bool color_is(const VmafColor *c, enum VmafColorRange range,
+                     enum VmafColorPrimaries primaries, enum VmafColorTransferCharacteristic trc,
+                     enum VmafColorMatrixCoefficients matrix)
+{
+    return c->range == range && c->primaries == primaries && c->trc == trc && c->matrix == matrix;
+}
+
+static char *test_per_side_color_flags_differ(void)
+{
+    char *argv[29] = {"vmaf",     "-r",
+                      "ref.yuv",  "-d",
+                      "dis.yuv",  "-w",
+                      "16",       "-h",
+                      "16",       "-p",
+                      "420",      "-b",
+                      "10",       "--color_range_ref",
+                      "limited",  "--color_primaries_ref",
+                      "bt2020",   "--color_trc_ref",
+                      "pq",       "--color_matrix_ref",
+                      "bt2020nc", "--color_range_dist",
+                      "full",     "--color_primaries_dist",
+                      "bt709",    "--color_trc_dist",
+                      "bt709",    "--color_matrix_dist",
+                      "bt709"};
+    int argc = 29;
+    CLISettings settings;
+    optind = 1;
+    cli_parse(argc, argv, &settings);
+    mu_assert("cli_parse: --color_*_ref should set only the reference",
+              color_is(&settings.color_ref, VMAF_COLOR_RANGE_LIMITED, VMAF_COLOR_PRIMARIES_BT2020,
+                       VMAF_COLOR_TRC_SMPTE2084, VMAF_COLOR_MATRIX_BT2020_NCL));
+    mu_assert("cli_parse: --color_*_dist should set only the distorted input",
+              color_is(&settings.color_dist, VMAF_COLOR_RANGE_FULL, VMAF_COLOR_PRIMARIES_BT709,
+                       VMAF_COLOR_TRC_BT709, VMAF_COLOR_MATRIX_BT709));
+    mu_assert("cli_free must release every option dictionary", release_parsed(&settings) == 0);
+
+    return NULL;
+}
+
+static char *test_one_input_can_be_left_unspecified(void)
+{
+    char *argv[21] = {"vmaf",    "-r",
+                      "ref.yuv", "-d",
+                      "dis.yuv", "-w",
+                      "16",      "-h",
+                      "16",      "-p",
+                      "420",     "-b",
+                      "10",      "--color_range_ref",
+                      "limited", "--color_primaries_ref",
+                      "bt2020",  "--color_trc_ref",
+                      "pq",      "--color_matrix_ref",
+                      "bt2020nc"};
+    int argc = 21;
+    CLISettings settings;
+    optind = 1;
+    cli_parse(argc, argv, &settings);
+    mu_assert("cli_parse: the reference should be fully specified",
+              color_is(&settings.color_ref, VMAF_COLOR_RANGE_LIMITED, VMAF_COLOR_PRIMARIES_BT2020,
+                       VMAF_COLOR_TRC_SMPTE2084, VMAF_COLOR_MATRIX_BT2020_NCL));
+    mu_assert("cli_parse: the distorted input should stay unspecified",
+              color_is(&settings.color_dist, VMAF_COLOR_RANGE_UNKNOWN, VMAF_COLOR_PRIMARIES_UNKNOWN,
+                       VMAF_COLOR_TRC_UNKNOWN, VMAF_COLOR_MATRIX_UNKNOWN));
+    mu_assert("cli_free must release every option dictionary", release_parsed(&settings) == 0);
+
+    return NULL;
+}
+
+#if VMAF_BUILT_IN_MODELS
+static char *test_default_model_is_sdr_without_color_metadata(void)
+{
+    char *argv[13] = {"vmaf", "-r", "ref.yuv", "-d",  "dis.yuv", "-w", "16",
+                      "-h",   "16", "-p",      "420", "-b",      "8"};
+    int argc = 13;
+    CLISettings settings;
+    optind = 1;
+    cli_parse(argc, argv, &settings);
+    mu_assert("cli_parse: no model given should insert exactly one default",
+              settings.model_cnt == 1);
+    mu_assert("cli_parse: default model without color metadata should be "
+              "the SDR default",
+              !strcmp(settings.model_config[0].version, "vmaf_v0.6.1"));
+    mu_assert("cli_free must release every option dictionary", release_parsed(&settings) == 0);
+
+    return NULL;
+}
+
+static char *test_default_model_is_sdr_for_bt709_source(void)
+{
+    char *argv[29] = {"vmaf",    "-r",
+                      "ref.yuv", "-d",
+                      "dis.yuv", "-w",
+                      "16",      "-h",
+                      "16",      "-p",
+                      "420",     "-b",
+                      "8",       "--color_range_ref",
+                      "limited", "--color_range_dist",
+                      "limited", "--color_primaries_ref",
+                      "bt709",   "--color_primaries_dist",
+                      "bt709",   "--color_trc_ref",
+                      "bt709",   "--color_trc_dist",
+                      "bt709",   "--color_matrix_ref",
+                      "bt709",   "--color_matrix_dist",
+                      "bt709"};
+    int argc = 29;
+    CLISettings settings;
+    optind = 1;
+    cli_parse(argc, argv, &settings);
+    mu_assert("cli_parse: default model for a fully-specified bt709 source "
+              "should still be the SDR default",
+              !strcmp(settings.model_config[0].version, "vmaf_v0.6.1"));
+    mu_assert("cli_free must release every option dictionary", release_parsed(&settings) == 0);
+
+    return NULL;
+}
+
+#endif
+
+static char *run_color_tests(void)
+{
+    mu_run_test(test_color_metadata_defaults_to_unknown);
+    mu_run_test(test_color_metadata_parses);
+    mu_run_test(test_color_trc_and_matrix_parse);
+    mu_run_test(test_color_trc_and_matrix_aliases_parse);
+    mu_run_test(test_per_side_color_flags_differ);
+    mu_run_test(test_one_input_can_be_left_unspecified);
+#if VMAF_BUILT_IN_MODELS
+    mu_run_test(test_default_model_is_sdr_without_color_metadata);
+    mu_run_test(test_default_model_is_sdr_for_bt709_source);
+#endif
+    // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
+    return NULL;
+}
+
+char *run_tests(void)
 {
     char *result = run_aom_ctc_tests();
     if (result)
@@ -997,6 +1286,9 @@ char *run_tests()
     if (result)
         return result;
     result = run_value_backslash_tests();
+    if (result)
+        return result;
+    result = run_color_tests();
     if (result)
         return result;
     return NULL;

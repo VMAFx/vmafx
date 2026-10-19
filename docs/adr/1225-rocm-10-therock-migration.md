@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-1225: Migrate the HIP backend to ROCm 10.0.0, installed from digest-pinned container images
 
-- **Status**: Accepted
+- **Status**: Accepted (status update 2026-10-06 below)
 - **Date**: 2026-09-07
 - **Deciders**: Lusoris
 - **Tags**: hip, rocm, build, ci, container, dependencies, fork-local
@@ -167,3 +167,15 @@ load.
 - [ADR-0542](0542-dev-container-full-gpu-plumbing.md) — introduced the `HSA_OVERRIDE_GFX_VERSION` pin this drops.
 - [ADR-0546](0546-audit-bundle-vulkan-saliency-modelcard.md) — the `hip_gfx_targets` fallback list widened to include `gfx1036`.
 - [ADR-1129](1129-release-container-runtime-alignment.md) — the release-container runtime alignment whose ROCm reference this moves.
+
+## Status update 2026-10-06: ROCm is no longer 10.0.0
+
+The sentence "ROCm 10.0.0 is the current release" describes the day the
+decision was taken. The tree has moved on: `build-config.env` on
+`origin/master` pins `ROCM_VERSION` 10.1.0
+(`rocm/dev-ubuntu-26.04:10.1.0-full`, digest-pinned), and
+[ADR-1231](1231-base-image-single-source.md) makes that file the one place the
+version is written. The decision (migrate every ROCm consumer to the ROCm 10
+line through digest-pinned images) is unchanged.
+
+The body above is unchanged.

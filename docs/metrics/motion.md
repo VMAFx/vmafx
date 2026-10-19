@@ -72,6 +72,36 @@ Frame 0 always emits `motion2_score = 0.0`. The output range is
 `[0, motion_max_val]` (default 10 000), with no inherent upper bound; larger
 values indicate more temporal activity.
 
+### When `motion2` and `motion3` are final
+
+`motion2` of a frame reads the SAD of the frame after it, so neither score of
+frame `i` exists when frame `i` is read. The engine writes both as soon as the
+SAD scores of frames `0` to `max(i + 1, min_idx)` are in, where `min_idx` is 1,
+or 2 with `motion_five_frame_window`
+([ADR-2090](../adr/2090-motion-window-incremental.md)):
+
+- without worker threads, by the time `vmaf_read_pictures()` of frame `i + 1`
+  returns;
+- with worker threads, in the first `vmaf_read_pictures()` after the workers
+  finished frame `i + 1`, or in a read of the score
+  (`vmaf_feature_score_at_index()`, `vmaf_score_at_index()`,
+  `vmaf_score_pooled()`), which waits for the workers; a VMAFx context with
+  an open window derives them as soon as the worker finishes the frame
+  ([window scores](../api/vmafx/windows.md));
+- on a device backend, when the twin's SAD of frame `i + 1` is collected: one
+  `vmaf_read_pictures()` later, and for `motion_cuda` at the end of its
+  readback batch of eight frames;
+- the last frame has no frame after it: its scores are written by the flush,
+  `vmaf_read_pictures(vmaf, NULL, NULL, 0)`.
+
+The values are the ones a flush over the whole stream computes, bit for bit:
+the derivation runs upstream's statements frame by frame in index order and
+carries the moving average from one frame to the next. A per-frame model score
+(a metadata callback, a VMAFx window over a VMAF model) is therefore available
+one frame after its frame, not only after the flush. `motion_v2` and every
+GPU twin of `motion` and `motion_v2` follow the same rule; `float_motion`
+always has (it writes frame `i - 1` while it reads frame `i`).
+
 ### Options
 
 | Option                    | Alias    | Type   | Default   | Range         | Effect                                                                 |
@@ -157,8 +187,13 @@ Registered name: `motion_v2`
 (`VmafFeatureExtractor vmaf_fex_integer_motion_v2`).
 
 A pipelined re-implementation that exploits the linearity of the blur kernel:
-`SAD(blur(f[N-1]), blur(f[N])) == sum(|blur(f[N-1] - f[N])|)`. The frame
-difference, blur, and absolute-sum are fused into a single row-at-a-time
+
+$$
+\mathrm{SAD}(\mathrm{blur}(f_{N-1}), \mathrm{blur}(f_N))
+  = \sum \lvert \mathrm{blur}(f_{N-1} - f_N) \rvert
+$$
+
+The frame difference, blur, and absolute-sum are fused into a single row-at-a-time
 pipeline requiring only one scratch row. Per-frame blurred-state storage is
 eliminated.
 
@@ -173,9 +208,10 @@ eliminated.
 `motion3_v2_score` is the `motion_v2` analogue of motion v1's `motion3_score`:
 a per-frame `motion_blend(motion2, motion_blend_factor, motion_blend_offset)`
 clipped to `motion_max_val`, optionally smoothed by a two-frame moving average
-(`motion_moving_average=true`). It is emitted host-side in the extractor's
-end-of-stream flush. The output range is `[0, motion_max_val]`, in the same
-units as `motion`.
+(`motion_moving_average=true`). It is written host-side as soon as the frame
+after it is scored, the last frame's at the end-of-stream flush
+([When `motion2` and `motion3` are final](#when-motion2-and-motion3-are-final)).
+The output range is `[0, motion_max_val]`, in the same units as `motion`.
 
 ### Options
 
@@ -217,7 +253,7 @@ All four GPU twins emit `motion3_v2_score` and accept the `motion_blend_factor`,
   twins, so any change to the CPU `motion_v2` flush blend, clip, seed or
   moving-average logic must be mirrored into all four in the same PR.
 - **Edge formula.** All GPU kernels use the CPU `integer_motion_v2.c::mirror`
-  high-edge formula (`2 * size - idx - 2`).
+  high-edge formula ($2\,\mathrm{size} - \mathrm{idx} - 2$).
 
 !!! note "`motion_fps_weight` and `motion_max_val` on `motion_v2`"
     The CPU reference stores `MIN(sad * motion_fps_weight, motion_max_val)` as
@@ -503,6 +539,28 @@ minimum 3x3; refusing to avoid out-of-bounds mirror reads
   ([Netflix/vmaf#1580](https://github.com/Netflix/vmaf/issues/1580)).
 - **ADR-1216.** GPU `motion3_score` carried `motion_fps_weight` squared up to
   and including v3.2.1 (see the warning under [Options](#options)).
+
+## Rust implementation
+
+The integer `motion` extractor has a Rust twin, `motion_rust`
+([`core/src/rust/feature/motion`](https://github.com/VMAFx/vmafx/tree/master/core/src/rust/feature/motion)),
+a port of `integer_motion.c` that returns the C extractor's scores bit for bit:
+`VMAF_integer_feature_motion_sad_score`, `motion2` and `motion3` (and `motion`
+with `debug`), with every option of the table, including
+`motion_five_frame_window` and `motion_moving_average`. It is built with
+`-Denable_rust_features=true` and selected with `VMAF_FEATURE_IMPL=rust` (every
+`motion` of the run, including the one a model asks for) or by name with
+`--feature motion_rust`; without either the C extractor runs. Like the C
+extractor it appends `motion2` and `motion3` of a frame as soon as the frame
+after it is scored ([ADR-2090](../adr/2090-motion-window-incremental.md)), so a
+window over a VMAF model completes before the end of the stream with the twin
+too. The JSON `feature_backends` entry names the twin that ran. Check the twin
+against the C extractor on your own clips with:
+
+```bash
+python3 scripts/ci/rust_twin_diff.py --vmaf build-rs/tools/vmaf \
+  --feature motion --fixtures netflix
+```
 
 ## See also
 

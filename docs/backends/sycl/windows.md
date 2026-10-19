@@ -148,7 +148,7 @@ extractor, run
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
-| `SYCL exception ... No kernel named ... was found`, then `problem reading pictures` | the program was linked without `sycl_device_link.obj` | rebuild from a tree that has ADR-1364; `test_sycl_kernel_registration` shows the count |
+| `SYCL exception ... No kernel named ... was found`, then `problem scoring picture 0` | the program was linked without `sycl_device_link.obj` | rebuild from a tree that has ADR-1364; `test_sycl_kernel_registration` shows the count |
 | `setvars.bat` prints `"vars.bat" is not recognized` for every component | `NoDefaultCurrentDirectoryInExePath` is set in the environment, so `cmd` does not run scripts from the current directory | `set NoDefaultCurrentDirectoryInExePath=` before `setvars.bat` |
 | `MSB8040: Spectre-mitigated libraries are required` while building Level Zero | Visual Studio generator with the loader's `/Qspectre` | use `cmake -G Ninja`, or install the Spectre libraries |
 | `Unknown acronym <target>` from `ocloc` | this oneAPI's `ocloc` predates the target | narrow `-Dsycl_icpx_aot_targets` |

@@ -84,8 +84,12 @@ static char *test_empty_plane_is_nan(void)
 {
     const float rows[1] = {1.0f};
     /* No rows: 0 / 0. The extractors refuse such a frame before they get
-     * here; the helper must not report it as a score. */
-    mu_assert("zero rows give a score", isnan(vmaf_float_motion_score_from_row_sads(rows, 4u, 0u)));
+     * here; the helper must not report it as a score. The zero is read through
+     * a volatile object so a whole-program optimiser (MSVC /LTCG, C4723) cannot
+     * fold the division it asks the helper to refuse. */
+    volatile unsigned no_rows = 0u;
+    mu_assert("zero rows give a score",
+              isnan(vmaf_float_motion_score_from_row_sads(rows, 4u, no_rows)));
     return NULL;
 }
 

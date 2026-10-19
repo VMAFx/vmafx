@@ -149,6 +149,13 @@ int vmaf_read_pictures(VmafContext *ctx, VmafPicture *ref,
 - **Index:** strictly increasing, starting at 0, no gaps. A repeated or
   smaller index returns `-EINVAL`
   ([ADR-0152](../adr/0152-vmaf-read-pictures-monotonic-index.md)).
+- **Bit depth:** the float extractors `float_ssim`, `float_ms_ssim`,
+  `float_adm`, `float_vif` and `float_motion` (and their GPU twins) take 8, 10,
+  12 or 16-bit pictures. At any other depth the call returns `-EINVAL` and logs
+  `<extractor>: picture bit depth N is not supported`; before, they read 9, 11,
+  13, 14 and 15-bit samples as 8-bit bytes and returned a wrong score without
+  an error. Extractors that score odd depths, such as `psnr_hvs` at 9 and 11
+  bits, are unaffected.
 - **Flush:** call `vmaf_read_pictures(ctx, NULL, NULL, 0)` after the last
   frame so every extractor completes.
 
@@ -235,12 +242,18 @@ an error:
 - `-EINVAL`: invalid arguments, or a feature name no registered extractor
   writes.
 
-Before returning `-EAGAIN`, libvmaf waits for the worker threads and, on
-CUDA, collects every frame the device has already finished. A query a few
-frames behind the last picture therefore usually succeeds, and one for the
-newest picture does not. Treat `-EAGAIN` as "not yet": flush and ask again,
-or ask again after more pictures. `vmaf_score_pooled()` returns it when any
-picture of the interval is missing a score
+Before returning either code for a picture already read, libvmaf waits for
+the worker threads and, on CUDA, collects every frame the device has already
+finished, then reads once more. A score a worker thread is still computing is
+therefore returned, not refused, even for the newest picture: with worker
+threads the collector may have no slot for that picture yet, and before
+2026-10-06 `vmaf_feature_score_at_index()` and `vmaf_feature_score_pooled()`
+answered `-EINVAL` at once in that case
+(`core/test/test_feature_score_fed_frame.c`). What still needs a later
+picture stays `-EAGAIN`: `motion2` and `motion3` of the newest picture, and a
+CUDA batch the device has not finished. Treat `-EAGAIN` as "not yet": flush
+and ask again, or ask again after more pictures. `vmaf_score_pooled()`
+returns it when any picture of the interval is missing a score
 ([ADR-0154](../adr/0154-score-pooled-eagain-netflix-755.md)).
 
 An index that skips values is accepted, because single-picture features

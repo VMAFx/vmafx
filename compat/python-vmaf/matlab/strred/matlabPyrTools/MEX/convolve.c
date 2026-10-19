@@ -64,12 +64,15 @@ typedef struct {
 static void reduce_inprod(const reduce_state *s, int xcnr, int ycnr, int res_pos)
 {
     double sum = 0.0;
-    int im_pos, filt_pos, x_filt_stop;
+    int im_pos;
+    int filt_pos;
+    int x_filt_stop;
 
     for (im_pos = ycnr * s->x_dim + xcnr, filt_pos = 0, x_filt_stop = s->x_fdim;
-         x_filt_stop <= s->filt_size; im_pos += (s->x_dim - s->x_fdim), x_filt_stop += s->x_fdim)
+         x_filt_stop <= s->filt_size; im_pos += (s->x_dim - s->x_fdim), x_filt_stop += s->x_fdim) {
         for (; filt_pos < x_filt_stop; filt_pos++, im_pos++)
             sum += s->image[im_pos] * s->temp[filt_pos];
+    }
     s->result[res_pos] = sum;
 }
 
@@ -77,7 +80,8 @@ static void reduce_inprod(const reduce_state *s, int xcnr, int ycnr, int res_pos
    starts at (the old `y_ctr_start = y_pos` hand-off). */
 static int reduce_top_rows(const reduce_state *s, int y_start, int y_ctr_start, int *res_pos)
 {
-    int x_pos, y_pos;
+    int x_pos;
+    int y_pos;
 
     for (y_pos = y_start; y_pos < y_ctr_start; y_pos += s->y_step) {
         for (x_pos = s->x_start; /* TOP-LEFT CORNER */
@@ -106,7 +110,8 @@ static int reduce_top_rows(const reduce_state *s, int y_start, int y_ctr_start, 
 static void reduce_middle_rows(const reduce_state *s, int y_ctr_start, int y_ctr_stop, int *res_pos,
                                int *y_pos_out)
 {
-    int x_pos, base_res_pos;
+    int x_pos;
+    int base_res_pos;
     int y_pos = y_ctr_start;
     int res = *res_pos;
 
@@ -120,10 +125,11 @@ static void reduce_middle_rows(const reduce_state *s, int y_ctr_start, int y_ctr
 
     (*s->reflect)(s->filt, s->x_fdim, s->y_fdim, 0, 0, s->temp, REDUCE);
     for (; /* CENTER */
-         x_pos < s->x_ctr_stop; x_pos += s->x_step, base_res_pos++)
+         x_pos < s->x_ctr_stop; x_pos += s->x_step, base_res_pos++) {
         for (y_pos = y_ctr_start, res = base_res_pos; y_pos < y_ctr_stop;
              y_pos += s->y_step, res += s->x_res_dim)
             reduce_inprod(s, x_pos, y_pos, res);
+    }
 
     for (; /* RIGHT EDGE */
          x_pos < s->x_stop; x_pos += s->x_step, base_res_pos++) {
@@ -258,19 +264,23 @@ typedef struct {
 static void expand_inprod(const expand_state *s, int xcnr, int ycnr, int im_pos)
 {
     double val = s->image[im_pos];
-    int res_pos, filt_pos, x_filt_stop;
+    int res_pos;
+    int filt_pos;
+    int x_filt_stop;
 
     for (res_pos = ycnr * s->x_dim + xcnr, filt_pos = 0, x_filt_stop = s->x_fdim;
-         x_filt_stop <= s->filt_size; res_pos += (s->x_dim - s->x_fdim), x_filt_stop += s->x_fdim)
+         x_filt_stop <= s->filt_size; res_pos += (s->x_dim - s->x_fdim), x_filt_stop += s->x_fdim) {
         for (; filt_pos < x_filt_stop; filt_pos++, res_pos++)
             s->result[res_pos] += val * s->temp[filt_pos];
+    }
 }
 
 /* TOP ROWS.  Advances *im_pos and returns the y position the middle band
    starts at (the old `y_ctr_start = y_pos` hand-off). */
 static int expand_top_rows(const expand_state *s, int y_start, int y_ctr_start, int *im_pos)
 {
-    int x_pos, y_pos;
+    int x_pos;
+    int y_pos;
 
     for (y_pos = y_start; y_pos < y_ctr_start; y_pos += s->y_step) {
         for (x_pos = s->x_start; /* TOP-LEFT CORNER */
@@ -298,7 +308,8 @@ static int expand_top_rows(const expand_state *s, int y_start, int y_ctr_start, 
 static void expand_middle_rows(const expand_state *s, int y_ctr_start, int y_ctr_stop, int *im_pos,
                                int *y_pos_out)
 {
-    int x_pos, base_im_pos;
+    int x_pos;
+    int base_im_pos;
     int y_pos = y_ctr_start;
     int im = *im_pos;
 
@@ -312,10 +323,11 @@ static void expand_middle_rows(const expand_state *s, int y_ctr_start, int y_ctr
 
     (*s->reflect)(s->filt, s->x_fdim, s->y_fdim, 0, 0, s->temp, EXPAND);
     for (; /* CENTER */
-         x_pos < s->x_ctr_stop; x_pos += s->x_step, base_im_pos++)
+         x_pos < s->x_ctr_stop; x_pos += s->x_step, base_im_pos++) {
         for (y_pos = y_ctr_start, im = base_im_pos; y_pos < y_ctr_stop;
              y_pos += s->y_step, im += s->x_im_dim)
             expand_inprod(s, x_pos, y_pos, im);
+    }
 
     for (; /* RIGHT EDGE */
          x_pos < s->x_stop; x_pos += s->x_step, base_im_pos++) {
@@ -367,6 +379,8 @@ int x_start, y_start;
 image_type *filt;
 int y_fdim, y_dim;
 char *edges;
+int x_stop;
+int y_stop;
 {
     int im_pos = 0;
     int y_pos;

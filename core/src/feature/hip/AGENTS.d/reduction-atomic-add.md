@@ -26,16 +26,16 @@ wide** on every GCN / CDNA / RDNA target we ship to (gfx906 / gfx90a
 gfx11, falls back to CAS loop on older GCN — HIP runtime handles
 arch selection.
 
-Precedent: `integer_vif/vif_statistics.hip` (ADR-0537). The pattern holds
-only where each thread adds an unrounded value.
+Precedent: `integer_vif/vif_statistics.hip` (ADR-0537). pattern holds
+only where each thread adds unrounded value.
 
-**Integer ADM is the explicit exception**, contrast masking (ADR-1167) and
+**Integer ADM is explicit exception**, contrast masking (ADR-1167) and
 denominator (ADR-1423) alike: its rounding shift is non-distributive, so
-`integer_adm/adm_cm.hip` must first reduce the complete row and call
+`integer_adm/adm_cm.hip` must first reduce complete row and call
 `adm_cm_round_row_total()` exactly once, and `integer_adm/adm_csf_den.hip`
-reduces the row in shared memory and folds it once. Per-thread or per-wave
-rounding followed by `atomicAdd` changes the raw accumulator even when the
+reduces row in shared memory and folds it once. Per-thread or per-wave
+rounding followed by `atomicAdd` changes raw accumulator even when
 later float score hides it; `adm_csf_den.hip` did that until ADR-1423 and
-was 4e-7 off on low-detail frames. The device-free
+was 4e-7 off on low-detail frames. device-free
 `test_adm_cm_row_rounding_contract.py` pins both HIP contrast-masking
-reduction shapes and `test_hip_adm_exact_contract.py` the denominator's.
+reduction shapes and `test_hip_adm_exact_contract.py` denominator's.

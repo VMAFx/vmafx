@@ -53,6 +53,7 @@
 #endif
 
 #include "libvmaf/picture.h"
+#include "compat/crt_portable.h"
 #include "compat/path_utf8.h"
 #include "libvmaf/libvmaf.h"
 #include "vmaf_close_retry.h"
@@ -120,7 +121,7 @@ static const char *get_data_dir(void)
 {
     if (!g_datadir) {
         // NOLINTNEXTLINE(concurrency-mt-unsafe) — ADR-1155: single-threaded benchmark initialization
-        g_datadir = getenv("VMAF_TEST_DATA");
+        g_datadir = vmaf_getenv_portable("VMAF_TEST_DATA");
         if (!g_datadir || !g_datadir[0])
             g_datadir = DEFAULT_DATA_DIR;
     }

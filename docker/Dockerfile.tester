@@ -25,11 +25,11 @@
 # See docs/usage/tester-image.md and docs/development/tester-image.md.
 
 # Base images come from build-config.env (single source, ADR-1129).
-ARG RELEASE_BUILDER_BASE="debian:13-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a"
-ARG RELEASE_PYTHON_BASE="python:3.14-slim@sha256:c3e521df8b2b498a7a682e7e18676771cb80c6b75b8699af886b2d554ce40151"
-ARG ONEAPI_BUILDER="debian:13-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a"
-ARG ONEAPI_RUNTIME="debian:13-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a"
-ARG ROCM_BUILDER="rocm/dev-ubuntu-26.04:10.0.0-full@sha256:8ebc02ee1aefb6b7c0e952b4088542133bad8805d19730db92cc61be673421d1"
+ARG RELEASE_BUILDER_BASE="debian:13-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f"
+ARG RELEASE_PYTHON_BASE="python:3.14-slim@sha256:a2b82f3c48559aa0a8446d9af49826b6e2b2016f4cd2afabfe6013ec53729170"
+ARG ONEAPI_BUILDER="debian:13-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f"
+ARG ONEAPI_RUNTIME="debian:13-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f"
+ARG ROCM_BUILDER="rocm/dev-ubuntu-26.04:10.1.0-full@sha256:4f5ed1bf6532a4b9920400401b0ad0f706af356dae61e40afefbfd6c8073f0ce"
 
 # ---------------------------------------------------------------------------
 # fixtures: Netflix test videos, fetched at a pinned commit and SHA-256 checked
@@ -89,7 +89,9 @@ WORKDIR /src
 COPY core core
 COPY model model
 COPY REUSE.toml REUSE.toml
-COPY scripts/ci/check-msvc-clz-shim.sh scripts/ci/check-msvc-clz-shim.sh
+COPY scripts/ci/check-msvc-clz-shim.sh scripts/ci/exact_twin_matrix.py \
+     scripts/ci/rust_twin_diff.py scripts/ci/
+COPY scripts/dev/sycl_device_asan_check.sh scripts/dev/
 COPY tools/rc1-tester/image tools/rc1-tester/image
 COPY tools/rc1-tester/src tools/rc1-tester/src
 # hadolint ignore=SC2046
@@ -104,7 +106,8 @@ RUN meson setup /build core --buildtype=release --strip -Db_lto=false \
         --out /licence-inputs/vmafx-sources.json
 RUN mkdir -p /opt/vmafx/build/tools /opt/vmafx/build/src \
     && cp /build/tools/vmaf /opt/vmafx/build/tools/ \
-    && cp -a /build/src/libvmaf.so* /opt/vmafx/build/src/ \
+    && find /build/src -maxdepth 1 \( -name 'libvmaf.so*' -o -name 'libvmafx.so*' \) -not -type d \
+        -exec cp -a {} /opt/vmafx/build/src/ \; \
     && python3 tools/rc1-tester/image/prepare_build.py stage /build \
         tools/rc1-tester/image/unit-tests.txt /opt/vmafx \
     && mkdir -p /opt/vmafx/model \
@@ -219,8 +222,10 @@ COPY REUSE.toml REUSE.toml
 COPY scripts/__init__.py scripts/__init__.py
 COPY scripts/lib scripts/lib
 COPY scripts/ci/check-msvc-clz-shim.sh scripts/ci/cross_backend_parity_gate.py \
-     scripts/ci/cross_backend_calibration.py scripts/ci/
+     scripts/ci/cross_backend_calibration.py scripts/ci/exact_twin_matrix.py \
+     scripts/ci/rust_twin_diff.py scripts/ci/
 COPY scripts/ci/exact_twins.d scripts/ci/exact_twins.d
+COPY scripts/dev/sycl_device_asan_check.sh scripts/dev/
 COPY docs/adr docs/adr
 COPY tools/rc1-tester/image tools/rc1-tester/image
 COPY tools/rc1-tester/src tools/rc1-tester/src
@@ -239,7 +244,7 @@ RUN CC=icx CXX=icpx meson setup build core --buildtype=release --strip -Db_lto=f
         --repo /opt/vmafx/src --out /licence-inputs/vmafx-sources.json
 RUN mkdir -p /opt/vmafx/build/tools /opt/vmafx/build/src /opt/vmafx/model \
     && cp build/tools/vmaf /opt/vmafx/build/tools/ \
-    && find build/src -maxdepth 1 -name 'libvmaf.so*' -not -type d \
+    && find build/src -maxdepth 1 \( -name 'libvmaf.so*' -o -name 'libvmafx.so*' \) -not -type d \
         -exec cp -a {} /opt/vmafx/build/src/ \; \
     && python3 tools/rc1-tester/image/prepare_build.py stage build \
         tools/rc1-tester/image/unit-tests.txt /opt/vmafx \
@@ -427,15 +432,15 @@ ENTRYPOINT ["/usr/bin/python3", "/opt/vmafx/tester/vmaf-tester-report"]
 
 # ---------------------------------------------------------------------------
 # cuda-build: Debian 13, nvcc and cudart from NVIDIA's debian13 repository at
-# build-config.env's exact versions (scripts/ci/install-cuda-toolkit.sh), the
-# nv-codec-headers commit core/src/meson.build requires. The default gencode
+# build-config.env's exact versions (scripts/ci/install-cuda-toolkit.sh), and
+# nv-codec-headers at build-config.env's NV_CODEC_HEADERS_COMMIT. The default gencode
 # list of core/src/meson.build: cubins for sm_80, sm_86, sm_89, sm_90, sm_100
 # and sm_120, PTX for compute_80 and compute_120. The compilers stay here.
 # ---------------------------------------------------------------------------
 FROM ${RELEASE_BUILDER_BASE} AS cuda-build
 ARG DEBIAN_FRONTEND=noninteractive
 ARG VMAF_BUILD_JOBS=4
-ARG NV_CODEC_HEADERS_COMMIT=876af32a202d0de83bd1d36fe74ee0f7fcf86b0d
+ARG NV_CODEC_HEADERS_COMMIT=0a6fba9a2820628b8103464f4c8753ee05838baa
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # hadolint ignore=DL3008
 RUN apt-get update \
@@ -468,8 +473,10 @@ COPY REUSE.toml REUSE.toml
 COPY scripts/__init__.py scripts/__init__.py
 COPY scripts/lib scripts/lib
 COPY scripts/ci/check-msvc-clz-shim.sh scripts/ci/cross_backend_parity_gate.py \
-     scripts/ci/cross_backend_calibration.py scripts/ci/
+     scripts/ci/cross_backend_calibration.py scripts/ci/exact_twin_matrix.py \
+     scripts/ci/rust_twin_diff.py scripts/ci/
 COPY scripts/ci/exact_twins.d scripts/ci/exact_twins.d
+COPY scripts/dev/sycl_device_asan_check.sh scripts/dev/
 COPY docs/adr docs/adr
 COPY tools/rc1-tester/image tools/rc1-tester/image
 COPY tools/rc1-tester/src tools/rc1-tester/src
@@ -492,7 +499,7 @@ RUN meson setup build core --buildtype=release --strip -Db_lto=false \
 RUN mkdir -p /opt/vmafx/build/tools /opt/vmafx/build/src /opt/vmafx/model \
         /opt/vmafx/licenses/nvidia \
     && cp build/tools/vmaf /opt/vmafx/build/tools/ \
-    && find build/src -maxdepth 1 -name 'libvmaf.so*' -not -type d \
+    && find build/src -maxdepth 1 \( -name 'libvmaf.so*' -o -name 'libvmafx.so*' \) -not -type d \
         -exec cp -a {} /opt/vmafx/build/src/ \; \
     && python3 tools/rc1-tester/image/prepare_build.py stage build \
         tools/rc1-tester/image/unit-tests.txt /opt/vmafx \
@@ -501,7 +508,8 @@ RUN mkdir -p /opt/vmafx/build/tools /opt/vmafx/build/src /opt/vmafx/model \
     && python3 tools/rc1-tester/image/prepare_build.py gate /opt/vmafx/src /opt/vmafx \
     && python3 tools/rc1-tester/image/prepare_build.py twins /opt/vmafx cuda \
     && python3 tools/rc1-tester/image/prepare_build.py cuda-targets build /opt/vmafx \
-    && for binary in /opt/vmafx/build/tools/vmaf /opt/vmafx/build/src/libvmaf.so.* /opt/vmafx/tests/*; do \
+    && for binary in /opt/vmafx/build/tools/vmaf /opt/vmafx/build/src/libvmaf.so.* \
+        /opt/vmafx/build/src/libvmafx.so.* /opt/vmafx/tests/*; do \
         if [ "$(head -c 4 "${binary}" | tail -c 3)" = ELF ] \
             && readelf -d "${binary}" | grep -E 'NEEDED.*lib(cuda|nv)'; then \
             echo "${binary} links an NVIDIA library" >&2; exit 1; \
@@ -583,7 +591,8 @@ RUN --mount=type=bind,source=tools/rc1-tester/image,target=/repo/tools/rc1-teste
 RUN nvidia="$(find / -xdev \( -name 'libcuda*' -o -name 'libcudart*' -o -name 'libnvidia-*' \
             -o -name 'libnvrtc*' -o -name 'libnvJitLink*' -o -name 'libdevice*' \) -print)" \
     && if [ -n "${nvidia}" ]; then echo "NVIDIA files in the image: ${nvidia}" >&2; exit 1; fi \
-    && for binary in /opt/vmafx/build/tools/vmaf /opt/vmafx/build/src/libvmaf.so.* /opt/vmafx/tests/*; do \
+    && for binary in /opt/vmafx/build/tools/vmaf /opt/vmafx/build/src/libvmaf.so.* \
+        /opt/vmafx/build/src/libvmafx.so.* /opt/vmafx/tests/*; do \
         if [ "$(head -c 4 "${binary}" | tail -c 3)" = ELF ] && ldd "${binary}" | grep 'not found'; then \
             echo "unresolved dependency in ${binary}" >&2; exit 1; \
         fi; \
@@ -656,7 +665,7 @@ ENTRYPOINT ["/usr/bin/python3", "/opt/vmafx/tester/vmaf-tester-report"]
 # ===========================================================================
 # AMD GPU variant: ghcr.io/vmafx/vmafx:<describe>-tester-hip (linux/amd64).
 #   docker build -f docker/Dockerfile.tester --target final-hip .
-# The HIP runtime comes from the pinned ROCm 10.0.0 image (ROCM_BUILDER of
+# The HIP runtime comes from the pinned ROCm 10.1.0 image (ROCM_BUILDER of
 # build-config.env); the image ships only the files libvmaf loads, unmodified,
 # with their licence texts (tools/rc1-tester/image/hip-runtime.json).
 # ===========================================================================
@@ -665,7 +674,7 @@ ENTRYPOINT ["/usr/bin/python3", "/opt/vmafx/tester/vmaf-tester-report"]
 # hip-build: Debian 13 with /opt/rocm streamed out of the ROCm image
 # (scripts/ci/install-rocm-from-image.sh, as the CI HIP legs do; share/doc kept
 # for the licence texts). The code objects cover HIP_GFX_TARGETS: every target
-# ROCm 10.0.0 builds its own libraries for (share/therock/dist_info.json; the
+# ROCm 10.1.0 builds its own libraries for (share/therock/dist_info.json; the
 # build checks the two lists agree). The compilers stay in this stage.
 # ---------------------------------------------------------------------------
 FROM ${RELEASE_BUILDER_BASE} AS hip-build
@@ -689,8 +698,10 @@ COPY REUSE.toml REUSE.toml
 COPY scripts/__init__.py scripts/__init__.py
 COPY scripts/lib scripts/lib
 COPY scripts/ci/check-msvc-clz-shim.sh scripts/ci/cross_backend_parity_gate.py \
-     scripts/ci/cross_backend_calibration.py scripts/ci/
+     scripts/ci/cross_backend_calibration.py scripts/ci/exact_twin_matrix.py \
+     scripts/ci/rust_twin_diff.py scripts/ci/
 COPY scripts/ci/exact_twins.d scripts/ci/exact_twins.d
+COPY scripts/dev/sycl_device_asan_check.sh scripts/dev/
 COPY docs/adr docs/adr
 COPY tools/rc1-tester/image tools/rc1-tester/image
 COPY tools/rc1-tester/src tools/rc1-tester/src
@@ -718,7 +729,7 @@ RUN python3 -c 'import json, sys; dist = json.load(open(sys.argv[1]))["dist_amdg
 # RPATHs ($ORIGIN/llvm/lib, $ORIGIN/rocm_sysdeps/lib) resolve without patching.
 RUN mkdir -p /opt/vmafx/build/tools /opt/vmafx/build/src /opt/vmafx/model \
     && cp build/tools/vmaf /opt/vmafx/build/tools/ \
-    && find build/src -maxdepth 1 -name 'libvmaf.so*' -not -type d \
+    && find build/src -maxdepth 1 \( -name 'libvmaf.so*' -o -name 'libvmafx.so*' \) -not -type d \
         -exec cp -a {} /opt/vmafx/build/src/ \; \
     && python3 tools/rc1-tester/image/prepare_build.py stage build \
         tools/rc1-tester/image/unit-tests.txt /opt/vmafx \
@@ -796,7 +807,8 @@ RUN --mount=type=bind,source=tools/rc1-tester/image,target=/repo/tools/rc1-teste
     python3 /repo/tools/rc1-tester/image/licensing.py notices --artifact hip-image --root / \
         --repo /repo --build-scan /licence-inputs/vmafx-sources.json --texts /texts \
         --source-commit "${VMAFX_SOURCE_COMMIT}" --tag "${VMAFX_IMAGE_TAG}"
-RUN for binary in /opt/vmafx/build/tools/vmaf /opt/vmafx/build/src/libvmaf.so.* /opt/vmafx/tests/* \
+RUN for binary in /opt/vmafx/build/tools/vmaf /opt/vmafx/build/src/libvmaf.so.* \
+        /opt/vmafx/build/src/libvmafx.so.* /opt/vmafx/tests/* \
         /opt/vmafx/lib/rocm/*.so.* /opt/vmafx/lib/rocm/llvm/lib/*.so.* \
         /opt/vmafx/lib/rocm/rocm_sysdeps/lib/*.so*; do \
         if [ "$(head -c 4 "${binary}" | tail -c 3)" = ELF ] && ldd "${binary}" | grep 'not found'; then \

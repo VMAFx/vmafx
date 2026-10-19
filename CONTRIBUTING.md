@@ -21,6 +21,30 @@ extractors, quality runners, models).
 5. Test: `python3 scripts/ci/run_meson_test.py -- -C build`
 6. Format + lint before pushing: `make format && make lint`
 
+## Your first contribution
+
+New here? You do not need to understand the whole tree.
+
+1. Pick an issue labelled
+   [`good first issue`](https://github.com/VMAFx/vmafx/labels/good%20first%20issue)
+   (small, self-contained, with the files named) or
+   [`help wanted`](https://github.com/VMAFx/vmafx/labels/help%20wanted)
+   (larger, but wanted). Comment on the issue that you are taking it, so two
+   people do not do the same work.
+2. Follow the [Quickstart](#quickstart) to build and run the tests.
+3. Keep the change small and focused: one issue, one pull request.
+4. Open the pull request and fill in the template. For a small change the
+   [lighter deliverables track](#lighter-track-for-small-pull-requests)
+   below applies.
+5. Ask in the issue or the pull request if you are stuck; questions are
+   welcome there. Open-ended questions go to
+   [Discussions](https://github.com/VMAFx/vmafx/discussions).
+
+Contributions that are not code count too: documentation fixes, bug
+reproductions, [hardware reports](.github/ISSUE_TEMPLATE/hardware_report.yml)
+from machines the project does not own, and
+[accessibility reports](.github/ISSUE_TEMPLATE/accessibility.yml).
+
 ## Core rules
 
 - **Conventional Commits** — every commit. Enforced by commit-msg hook and
@@ -43,6 +67,21 @@ extractors, quality runners, models).
   and the Netflix header for files touched in upstream.
 - **No `git push --force` to `master`**. No `--no-verify` skipping hooks.
   `master` is merge-via-squash-or-ff-only via branch protection.
+
+## Developer Certificate of Origin
+
+Every commit carries a sign-off: `git commit -s` appends
+`Signed-off-by: Your Name <you@example.org>`. It states, under the
+[Developer Certificate of Origin 1.1](https://developercertificate.org/), that
+you wrote the change or have the right to submit it under the licence of the
+files it touches. There is no contributor licence agreement. The required
+check **DCO Sign-off** fails a pull request with an unsigned commit; fix a
+branch with `git rebase --signoff origin/master`, then
+`git push --force-with-lease`. Bot commits (Renovate, release automation) are
+exempt. The check applies to pull requests created on or after
+2026-10-09 (the cutoff in `scripts/ci/dco-cutoff.txt`); earlier pull requests
+are grandfathered. Details, the check command and the exact exemptions:
+[DCO sign-off](docs/development/dco.md).
 
 ## Branch naming
 
@@ -80,9 +119,12 @@ Every **fork-local** PR ships the six deliverables in
 5. **`changelog.d/<section>/<topic>.md`** fragment file
    ([ADR-0221](docs/adr/0221-changelog-adr-fragment-pattern.md)).
    Never edit `CHANGELOG.md` directly — it is rendered from the
-   fragment tree by `scripts/release/concat-changelog-fragments.sh`.
-6. **Rebase note** in [`docs/rebase-notes.md`](docs/rebase-notes.md),
-   OR `no rebase impact: REASON`.
+   fragment tree when pull requests land
+   ([ADR-2197](docs/adr/2197-render-generated-docs-at-landing.md)).
+6. **Rebase note** as one fragment file
+   `docs/rebase-notes.d/<slug>.md`
+   (see [`docs/rebase-notes.d/_README.md`](docs/rebase-notes.d/_README.md)),
+   OR `no rebase impact: REASON`. Never edit `docs/rebase-notes.md`.
 
 The PR template
 ([`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md))
@@ -93,6 +135,23 @@ for the exact sentinel forms.
 
 **Upstream-port PRs are exempt** — pure `/port-upstream-commit` and
 `/sync-upstream` PRs skip this gate.
+
+### Lighter track for small pull requests
+
+The six deliverables fit a feature. For a small change they are mostly
+"no ... needed" lines. [ADR-2461](docs/adr/2461-small-pr-deliverables-track.md)
+gives small pull requests a lighter track. A pull request is small when it
+changes at most 100 lines in one subtree, adds no user-discoverable surface,
+needs no ADR, and leaves SIMD/GPU twins, numeric results and the Netflix golden
+assertions alone. Such a pull request puts `small PR (ADR-2461)` in its
+description and waives the research digest, decision matrix, `AGENTS.md` note
+and rebase note without a further reason. It still carries a reproducer, a
+changelog fragment when users can see the change, and documentation for any
+surface it touches. The checking script reads the diff and refuses the marker
+when the pull request is larger than 100 lines, spans more than one top-level
+directory, touches `core/src/`, `core/include/`, `core/tools/`,
+`core/meson_options.txt`, `python/test/` or `ffmpeg-patches/`, or adds an ADR
+([details](docs/development/pr-body-sentinel-guide.md#small-pull-requests-adr-2461)).
 
 ## Architecture Decision Records
 
@@ -142,6 +201,24 @@ not a public issue.
   opened.
 - Performance-claiming PRs must include before/after numbers produced by
   `/profile-hotpath` or equivalent (no eyeballed claims).
+
+## What to expect
+
+VMAFx is maintained by one person alongside other work, so everything below is
+best effort and carries no guaranteed response time.
+
+- **Issues and pull requests** are read and triaged as time allows, and
+  availability varies. A short wait, or a longer one, is not a judgement of
+  your contribution. If a pull request has had no reply for a while, a polite
+  comment on it is fine.
+- **Review** checks the points under "Review expectations" above. You may be
+  asked to change things, to split a pull request, or told that a change does
+  not fit the project; the reason is given.
+- **Security reports** are the exception: they follow the timelines in
+  [SECURITY.md](SECURITY.md).
+- **Conduct reports** follow the [Code of Conduct](CODE_OF_CONDUCT.md).
+- **Support questions** are answered when someone can; see
+  [SUPPORT.md](SUPPORT.md) for where to ask.
 
 ## Upstream sync
 

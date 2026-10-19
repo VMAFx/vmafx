@@ -527,26 +527,6 @@
    ]
   },
   {
-   "id": "T-GPU-FLOAT-ADM-FRAME-SUM-FLOOR-2026-10-01",
-   "closes_when": "with adm_noise_weight=0 on a flat 16-bit frame float_adm_metal reports the CPU's adm2 = 0",
-   "cases": [
-    {
-     "test": "test_metal_float_adm_parity",
-     "case": "test_float_adm_small_sums_are_not_floored"
-    }
-   ]
-  },
-  {
-   "id": "T-GPU-FLOAT-ADM-TINY-FRAME-FLOOR-2026-10-01",
-   "closes_when": "float_adm_metal's init() refuses frames below 17x17 with -EINVAL",
-   "cases": [
-    {
-     "test": "test_metal_float_adm_parity",
-     "case": "test_float_adm_metal_rejects_frames_below_17"
-    }
-   ]
-  },
-  {
    "id": "T-GPU-FLOAT-MOTION-CPU-FLOAT-SUM-2026-10-01",
    "closes_when": "float_motion_metal returns the CPU's motion and motion2 on every frame of every fixture and case",
    "cases": [
@@ -1082,49 +1062,6 @@
    ]
   },
   {
-   "id": "T-GPU-TWIN-PARITY-GAPS-OUTSIDE-CUDA-2026-09-30",
-   "closes_when": "the Metal twins pass the flat-frame, --subsample 2, motion_v2 option and one-frame cases (items 1 to 3); item 4 is device-free",
-   "cases": [
-    {
-     "test": "test_metal_float_ssim_parity",
-     "case": "test_float_ssim_flat_db_exact"
-    },
-    {
-     "test": "test_metal_float_ssim_parity",
-     "case": "test_float_ssim_flat_clip_db_exact"
-    },
-    {
-     "test": "test_metal_integer_ssim_parity",
-     "case": "test_ssim_identical"
-    },
-    {
-     "test": "test_metal_integer_ssim_parity",
-     "case": "test_ssim_identical_clipped"
-    },
-    {
-     "test": "test_metal_integer_ssim_parity",
-     "case": "test_ssim_identical_tiny"
-    },
-    {
-     "test": "test_metal_integer_psnr_parity",
-     "case": "test_psnr_apsnr_with_subsample"
-    },
-    {
-     "test": "test_metal_motion_v2_parity",
-     "case": "test_motion_v2_weight_and_cap_exact"
-    },
-    {
-     "test": "test_metal_motion_v2_parity",
-     "case": "test_motion_v2_one_frame_exact"
-    },
-    {
-     "test": "test_metal_motion_v2_parity",
-     "case": "test_motion_v2_default_exact"
-    }
-   ],
-   "device_free": "item (4), the float_ssim_metal scale message, is a source contract that needs no device"
-  },
-  {
    "id": "T-GPU-FLOAT-MOTION3-MISSING-2026-09-30",
    "closes_when": "float_motion_metal emits the CPU's motion3 (default and blend options, one frame) on every fixture",
    "cases": [
@@ -1217,6 +1154,69 @@
     {
      "test": "test_metal_iosurface_import_parity",
      "case": "test_iosurface_p010_import_exact"
+    }
+   ]
+  },
+  {
+   "id": "T-METAL-EQUIVALENCE-ALL-EXTRACTORS-RUN-FAILS-2026-10-05",
+   "closes_when": "the Metal equivalence run (every CPU extractor with --backend metal in one process) produces scores on every fixture; its float_psnr, exact on the M4 Pro, equals the CPU's",
+   "metrics": [
+    {
+     "extractor": "float_psnr_metal",
+     "metrics": [
+      "float_psnr"
+     ],
+     "bound": 0
+    }
+   ]
+  },
+  {
+   "id": "T-METAL-UINT-PLANE-INDEX-2026-10-05",
+   "closes_when": "float_vif_metal, integer_ssim_metal, float_ssim_metal and float_ms_ssim_metal refuse at init() a frame whose five moment planes pass the 32-bit uint index (the four refusal cases pass on an Apple GPU), and their parity-gate cells stay exact",
+   "cases": [
+    {
+     "test": "test_metal_float_vif_parity",
+     "case": "test_float_vif_refuses_uint_index_overflow"
+    },
+    {
+     "test": "test_metal_float_ssim_parity",
+     "case": "test_float_ssim_refuses_uint_index_overflow"
+    },
+    {
+     "test": "test_metal_float_ms_ssim_parity",
+     "case": "test_float_ms_ssim_refuses_uint_index_overflow"
+    },
+    {
+     "test": "test_metal_integer_ssim_parity",
+     "case": "test_ssim_refuses_uint_index_overflow"
+    }
+   ],
+   "gate": [
+    {
+     "feature": "float_vif"
+    },
+    {
+     "feature": "ssim"
+    },
+    {
+     "feature": "float_ssim"
+    },
+    {
+     "feature": "float_ms_ssim"
+    }
+   ]
+  },
+  {
+   "id": "T-METAL-ADM-SECOND-VIEW-DIST-DEVICE-2026-10-09",
+   "closes_when": "integer_adm_metal at two viewing distances, in one context and as two folded registrations, equals the CPU on every output of both distances",
+   "cases": [
+    {
+     "test": "test_metal_integer_adm_parity",
+     "case": "test_adm_two_views_exact"
+    },
+    {
+     "test": "test_metal_integer_adm_parity",
+     "case": "test_adm_merged_registrations_exact"
     }
    ]
   }

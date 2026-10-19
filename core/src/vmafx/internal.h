@@ -26,6 +26,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <pthread.h>
+
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/model.h"
 #include "libvmaf/picture.h"
@@ -61,6 +63,9 @@ typedef struct VmafxHostFence VmafxHostFence;
 /* The frame pool a frame returns to (frame_pool.c). */
 typedef struct VmafxFramePool VmafxFramePool;
 
+/* The windows of a context (window.c, RC4 WP4). */
+typedef struct VmafxWindowSet VmafxWindowSet;
+
 struct VmafxModel {
     VmafRef *refs;
     VmafModel *engine; /* this wrapper holds one owner of it (ADR-1755) */
@@ -94,6 +99,9 @@ struct VmafxFrame {
     void *owned;
     /* The pool the frame returns to instead of being freed, or NULL. */
     VmafxFramePool *pool;
+    /* VmafxFrameDesc.color of the frame (ADR-2094); every member UNKNOWN:
+     * the frame carries none and the context's default applies. */
+    VmafxColor color;
     /* RC4 WP3 backend lanes: the lane's per-frame state (device memory the
      * import converted into, gates of release fences, interop handles) and
      * the lane's release, which vmafx_frame_release() / the pool's release
@@ -108,6 +116,30 @@ struct VmafxFrame {
     void *lane_persistent;
 };
 
+/* "sha256:" + 64 hex digits + NUL (RC4 WP5 digests). */
+#define VMAFX_DIGEST_TEXT_SIZE 72u
+
+/* One caller annotation of a provenance record (vmafx_context_annotate()). */
+typedef struct VmafxAnnotationEntry {
+    char *key;
+    char *value;
+} VmafxAnnotationEntry;
+
+/* The provenance state of a context (provenance.c, RC4 WP5): what the caller
+ * added, and the text of the last record query, which the record's strings
+ * point into. `lock` serialises queries, which may run on any thread. */
+typedef struct VmafxProvenanceState {
+    pthread_mutex_t lock;
+    bool lock_ready;
+    VmafxAnnotationEntry *annotations;
+    uint32_t n_annotations;
+    uint32_t annotations_capacity;
+    char encode_record[VMAFX_DIGEST_TEXT_SIZE]; /* "" when none */
+    char digest[VMAFX_DIGEST_TEXT_SIZE];
+    char scores_digest[VMAFX_DIGEST_TEXT_SIZE];
+    char *json; /* last vmafx_context_provenance_json() */
+} VmafxProvenanceState;
+
 /* References a context holds until it is destroyed: one list per handle type. */
 typedef struct VmafxHeld {
     void **items;
@@ -119,15 +151,24 @@ struct VmafxContext {
     VmafContext *engine;
     VmafxLogCallback log_callback;
     void *log_user;
-    VmafLogSink sink;     /* delivers to log_callback; used when it is set */
-    VmafxHeld models;     /* VmafxModel * (ADR-1755) */
-    VmafxHeld model_sets; /* VmafxModelSet * */
-    VmafxDevice *device;  /* vmafx_context_use_device(); NULL: the CPU, no device held */
-    void *lane_state;     /* the engine state the device's lane imported (CUDA: a VmafCudaState) */
-    uint64_t import_retry_wait_ns; /* the import rule's host wait, resolved (never 0) */
-    bool have_frame;               /* a frame was submitted: the fields below are set */
-    uint64_t last_index;           /* indices increase strictly (ADR-0152) */
-    VmafxFrameDesc first_desc;     /* every frame keeps the first frame's geometry */
+    VmafLogSink sink;                /* delivers to log_callback; used when it is set */
+    VmafxHeld models;                /* VmafxModel * (ADR-1755) */
+    VmafxHeld model_sets;            /* VmafxModelSet * */
+    VmafxDevice *device;             /* vmafx_context_use_device(); NULL: the CPU, no device held */
+    void *lane_state;                /* engine state the lane imported (CUDA: a VmafCudaState) */
+    uint64_t import_retry_wait_ns;   /* the import rule's host wait, resolved (never 0) */
+    bool have_frame;                 /* a frame was submitted: the fields below are set */
+    uint64_t last_index;             /* indices increase strictly (ADR-0152) */
+    VmafxFrameDesc first_desc;       /* every frame keeps the first frame's geometry */
+    VmafxProvenanceState provenance; /* RC4 WP5 */
+    /* ADR-2094: vmafx_context_set_default_color() (reference, distorted), and
+     * the colour of the frames vmafx_context_preallocate() made. */
+    VmafxColor default_color[2];
+    VmafxColor preallocated_color;
+    /* RC4 WP4 (window.c, ADR-2074): the windows, their completion thread
+     * and the engine lock; created with the context, never NULL after
+     * vmafx_context_create() succeeded. */
+    VmafxWindowSet *windows;
 };
 
 /* Where a failure is reported: the caller's error out-parameter, the log sink
@@ -160,10 +201,18 @@ const VmafLogSink *vmafx_context_log_sink(const VmafxContext *context);
 #define VMAFX_MIN_CONTEXT_CONFIG ((uint32_t)offsetof(VmafxContextConfig, log_callback)) /* 0.1.0 */
 #define VMAFX_MIN_DEVICE_DESC ((uint32_t)offsetof(VmafxDeviceDesc, flags))              /* 0.1.1 */
 #define VMAFX_MIN_MODEL_CONFIG ((uint32_t)sizeof(VmafxModelConfig))                     /* 0.1.1 */
-#define VMAFX_MIN_FRAME_DESC ((uint32_t)sizeof(VmafxFrameDesc))                         /* 0.1.1 */
+#define VMAFX_MIN_FRAME_DESC ((uint32_t)offsetof(VmafxFrameDesc, color))                /* 0.1.1 */
 #define VMAFX_MIN_HOST_PLANES ((uint32_t)sizeof(VmafxHostPlanes))                       /* 0.1.1 */
 #define VMAFX_MIN_FRAME_IMPORT ((uint32_t)offsetof(VmafxFrameImport, release))          /* 0.1.2 */
 #define VMAFX_MIN_FENCE ((uint32_t)sizeof(VmafxFence))                                  /* 0.1.2 */
+#define VMAFX_MIN_CONVERT_DESC ((uint32_t)sizeof(VmafxConvertDesc))                     /* 0.1.6 */
+#define VMAFX_MIN_DNN_CONFIG ((uint32_t)sizeof(VmafxDnnConfig))                         /* 0.1.6 */
+#define VMAFX_MIN_MCP_CONFIG ((uint32_t)sizeof(VmafxMcpConfig))                         /* 0.1.6 */
+#define VMAFX_MIN_MCP_SSE_CONFIG ((uint32_t)sizeof(VmafxMcpSseConfig))                  /* 0.1.6 */
+#define VMAFX_MIN_MCP_UDS_CONFIG ((uint32_t)sizeof(VmafxMcpUdsConfig))                  /* 0.1.6 */
+#define VMAFX_MIN_MCP_STDIO_CONFIG ((uint32_t)sizeof(VmafxMcpStdioConfig))              /* 0.1.6 */
+#define VMAFX_MIN_WINDOW_REQUEST ((uint32_t)sizeof(VmafxWindowRequest))                 /* 0.1.8 */
+#define VMAFX_MIN_WINDOW_CLOCK_CONFIG ((uint32_t)sizeof(VmafxWindowClockConfig))        /* 0.1.8 */
 
 VmafxStatus vmafx_read_sized(const VmafxReport *report, void *local, uint32_t full, const void *in,
                              uint32_t min, const char *subject);
@@ -174,10 +223,13 @@ void vmafx_store_sized(void *out, const void *record, uint32_t full);
 
 /* ---- Engine access ------------------------------------------------------- */
 
-/* The engine context; the context's log sink is installed on this thread
- * until vmafx_engine_leave(previous). */
+/* Enter the engine of `context`: takes the context's engine lock (the
+ * window completion thread calls the engine too, ADR-2074) and installs the
+ * context's log sink on this thread until vmafx_engine_leave(context,
+ * previous). Never nested: an entered section calls no other VMAFx function
+ * that enters. */
 const VmafLogSink *vmafx_engine_enter(const VmafxContext *context);
-void vmafx_engine_leave(const VmafLogSink *previous);
+void vmafx_engine_leave(const VmafxContext *context, const VmafLogSink *previous);
 VmafContext *vmafx_context_engine(const VmafxContext *context);
 
 /* Make room for one more reference in `held`, so that the push after an
@@ -201,6 +253,9 @@ VmafxDevice *vmafx_device_cpu(void);
  * reference moves into the returned picture, which the engine releases. */
 VmafPicture vmafx_frame_take_picture(VmafxFrame *frame);
 
+/* libvmaf's colour of a VMAFx colour (the enum values are equal). */
+VmafColor vmafx_engine_color(const VmafxColor *color);
+
 /* Read and check a frame descriptor (pixel format, depth, size). */
 VmafxStatus vmafx_frame_read_desc(const VmafxReport *report, const VmafxFrameDesc *desc,
                                   VmafxFrameDesc *d);
@@ -222,12 +277,26 @@ int vmafx_frame_release(VmafPicture *pic, void *cookie);
  * frame's reference to it (the frame's memory is no longer read). */
 void vmafx_frame_signal_released(VmafxFrame *frame);
 
+/* ---- libvmaf pictures as frames (bridge.c, RC4 WP6) ----------------------- */
+
+/* The frame a libvmaf picture is a view of, or NULL when an engine path made
+ * it without one (`pic` has a slot: priv and ref set). */
+VmafxFrame *vmafx_frame_of_picture(const VmafPicture *pic);
+/* The frame of `pic`, adopting a picture the engine made without one: the
+ * frame takes over the picture's release (no reference is added; the count
+ * stays the picture's). VMAFX_E_NOMEM, with the picture unchanged. */
+VmafxStatus vmafx_frame_adopt_picture(const VmafxReport *report, const VmafPicture *pic,
+                                      VmafxFrame **out);
+/* True when `release` is the release of a pool frame (frame_pool.c). */
+bool vmafx_frame_pool_release_is(int (*release)(VmafPicture *pic, void *cookie));
+
 /* ---- Host fences (fence.c) ---------------------------------------------- */
 
 /* A new unsignalled host fence with one reference, or NULL (no memory). */
 VmafxHostFence *vmafx_host_fence_new(void);
 VmafxHostFence *vmafx_host_fence_ref(VmafxHostFence *fence);
 void vmafx_host_fence_unref(VmafxHostFence *fence);
+/* Signal / query `fence`; a NULL fence is never signalled (signal: no-op). */
 void vmafx_host_fence_signal(VmafxHostFence *fence);
 bool vmafx_host_fence_signalled(const VmafxHostFence *fence);
 /* The host fence a VMAFX_FENCE_HOST VmafxFence names (borrowed), or
@@ -280,23 +349,55 @@ bool vmafx_release_events_unrecorded(VmafxReleaseEvents *t, uintptr_t event);
 /* Drop a fence's reference of `event`: false when it is not in the table. */
 bool vmafx_release_events_drop(VmafxReleaseEvents *t, uintptr_t event);
 
-/* ---- Producer fences checked on the host (gl_sync.c, sync_file.c) -------- */
+/* Producer fences checked on the host (GL syncs, sync_files, dma-buf implicit
+ * fences): sync_object.h, one implementation for every lane (HISS-19). */
 
-/* Host check of a GL sync object of the GL context current on the calling
- * thread (or one sharing with it): 1 signalled, 0 not within `timeout_ns`,
- * negative on a GL error or without GL (entry points resolved at run time). */
-int vmafx_gl_sync_wait(uintptr_t sync, uint64_t timeout_ns);
-/* An acquire fence of kind GL_SYNC: VMAFX_OK when signalled (or planted as
- * skipped), VMAFX_E_BUSY when not yet, VMAFX_E_INVALID without GL; any other
- * kind is VMAFX_OK. `backend` names the device's backend in messages. */
-VmafxStatus vmafx_gl_sync_acquire(const VmafxReport *report, const VmafxFence *acquire,
-                                  const char *backend);
-/* Host check of a Linux sync_file: 1 signalled, 0 not within `timeout_ns`, a
- * negative errno for a descriptor that is not one (-ENOSYS off Linux). */
-int vmafx_sync_file_wait(int fd, uint64_t timeout_ns);
-/* An acquire fence of kind SYNC_FILE, as vmafx_gl_sync_acquire(). */
-VmafxStatus vmafx_sync_file_acquire(const VmafxReport *report, const VmafxFence *acquire,
-                                    const char *backend);
+/* ---- GL textures as linear dma-bufs (egl_export.c) ------------------------ */
+
+/* One plane to export: GL texture name, DRM fourcc of its format (R8, GR88,
+ * R16, GR1616) and its size in samples. */
+typedef struct VmafxEglTarget {
+    uintptr_t texture;
+    uint32_t fourcc;
+    uint32_t w;
+    uint32_t h;
+} VmafxEglTarget;
+
+/* One exported plane: a dma-buf descriptor the caller closes
+ * (vmafx_egl_close_planes()), its layout and size. */
+typedef struct VmafxEglPlane {
+    int fd;
+    uint64_t offset;
+    uint64_t pitch;
+    uint64_t modifier;
+    uint64_t size;
+} VmafxEglPlane;
+
+/* What vmafx_egl_export_planes() does with a texture the driver exports in
+ * its own tiling. One EGL export for every lane (HISS-19): the HIP lane reads
+ * linear rows (refuse, or copy with VMAFX_IMPORT_ALLOW_COPY, ADR-2132), the
+ * SYCL lane de-tiles Intel tilings on the device (keep, ADR-2091). */
+typedef enum VmafxEglTiled {
+    VMAFX_EGL_TILED_REFUSE = 0, /* VMAFX_E_NOTSUP naming VMAFX_IMPORT_ALLOW_COPY */
+    VMAFX_EGL_TILED_COPY = 1,   /* a GPU copy into a linear dma-buf (GBM, one blit) */
+    VMAFX_EGL_TILED_KEEP = 2,   /* as exported, with its modifier; the importer reads it */
+} VmafxEglTiled;
+
+/* The `n` (1 to 3) textures of the EGL context current on the calling thread
+ * as dma-bufs in `out`. A texture the driver exports linear is exported as it
+ * is; one exported tiled is handled as `tiled` says; `*copied` tells whether
+ * any was copied. A target's `fourcc` is checked against the export unless 0.
+ * `device_pci` ("0000:0c:00.0") is the importing device's GPU, checked
+ * against the context's; NULL skips the check. With REFUSE and COPY every
+ * export waits (1 s at most) for the producer's writes; with KEEP the importer
+ * honours the dma-buf's implicit fences. On a failure every descriptor is
+ * closed. */
+VmafxStatus vmafx_egl_export_planes(const VmafxReport *report, const char *backend,
+                                    const char *device_pci, const VmafxEglTarget *targets,
+                                    uint32_t n, VmafxEglTiled tiled, VmafxEglPlane out[3],
+                                    bool *copied);
+/* Close the descriptors of `n` exported planes. */
+void vmafx_egl_close_planes(VmafxEglPlane *planes, uint32_t n);
 
 /* ---- Imports (frame_import.c) -------------------------------------------- */
 
@@ -320,6 +421,99 @@ VmafxStatus vmafx_rgb_check_statement(const VmafxReport *report, const VmafxFram
 /* Subject names of the fields of plane `i` (handle, pitch, modifier, size,
  * offset, fd, plane_index). */
 const char *vmafx_import_plane_field(uint32_t i, const char *field);
+
+/* Wait until `fence` is signalled or `timeout_ns` passed (UINT64_MAX: no
+ * limit): true when signalled; false at once for a NULL fence. Waits on the
+ * fence's condition variable against a monotonic deadline (fence.c). */
+bool vmafx_host_fence_wait(VmafxHostFence *fence, uint64_t timeout_ns);
+
+/* ---- Pooling and windows (score.c, window.c; RC4 WP4, ADR-2074) ---------- */
+
+/* What a pooled score pools: `kind` is a VmafxWindowTarget and names the one
+ * of `model`, `set` and `feature` that is set. */
+typedef struct VmafxPoolTarget {
+    uint32_t kind;
+    const VmafxModel *model;
+    const VmafxModelSet *set;
+    const char *feature;
+} VmafxPoolTarget;
+
+/* A pooled score: `value` for a model or a feature, the four bootstrap values
+ * for a model set (`value` is its bagging score). */
+typedef struct VmafxPoolValue {
+    double value;
+    double stddev;
+    double ci95_lo;
+    double ci95_hi;
+} VmafxPoolValue;
+
+/* The one pooling implementation of vmafx_score_pooled(),
+ * vmafx_feature_score_pooled(), vmafx_score_pooled_model_set() and the window
+ * scores (HISS-19): `target` pooled with the VmafxPool `pool` over
+ * [first, last] (first <= last <= UINT_MAX) by the engine, on the calling
+ * thread with the context's log sink installed. Returns the engine's errno
+ * (-EAGAIN: a frame is not final). */
+int vmafx_pool_engine(VmafxContext *context, const VmafxPoolTarget *target, uint32_t pool,
+                      uint64_t first, uint64_t last, VmafxPoolValue *out);
+/* The model's, the model set's or the feature's name. */
+const char *vmafx_pool_target_name(const VmafxPoolTarget *target);
+
+/* The window set of a new context (its engine lock included), and the
+ * frame listener the engine's worker jobs call; false when it cannot be
+ * allocated. Called before the context first enters its engine. */
+bool vmafx_windows_init(VmafxContext *context);
+void vmafx_windows_frame_final(void *user);
+/* The context's engine lock (vmafx_engine_enter() / _leave()). */
+void vmafx_context_lock(const VmafxContext *context);
+void vmafx_context_unlock(const VmafxContext *context);
+
+/* Window hooks, called on the thread that feeds the context after the
+ * engine call: a frame `index` was submitted or a score of frame `index`
+ * imported; the context was flushed. Each wakes the completion thread. */
+void vmafx_windows_note_index(VmafxContext *context, uint64_t index);
+void vmafx_windows_note_flush(VmafxContext *context);
+/* vmafx_context_destroy(): pause stops the completion thread's engine work
+ * before the engine closes (resume undoes it when the close fails and the
+ * context stays valid, ADR-1336); close completes the open windows with
+ * VMAFX_E_INVALID, runs every callback, joins the thread and drops the set;
+ * free drops a set whose context never got an engine. */
+void vmafx_windows_pause(VmafxContext *context);
+void vmafx_windows_resume(VmafxContext *context);
+void vmafx_windows_close(VmafxContext *context);
+
+/* The last value of VmafxMemoryKind and VmafxFenceKind this ABI declares. */
+#define VMAFX_MEMORY_KIND_LAST VMAFX_MEMORY_VULKAN
+#define VMAFX_FENCE_KIND_LAST VMAFX_FENCE_VULKAN_SEMAPHORE
+
+/* ---- Vulkan imports (frame_import_vulkan.c, RC4 WP3 Vulkan lane) --------- */
+
+/* Names of VmafxVulkanHandleType / VmafxVulkanTiling values ("unknown"). */
+const char *vmafx_vulkan_handle_name(uint32_t type);
+const char *vmafx_vulkan_tiling_name(uint32_t tiling);
+/* The device-independent checks of a VULKAN descriptor: handle type, tiling,
+ * flags, and each plane's descriptor, allocation size and rows. */
+VmafxStatus vmafx_import_check_vulkan(const VmafxReport *report, const VmafxFrameImport *d,
+                                      const VmafxImportLayout *layout);
+/* A PCI bus id "dddd:bb:dd.f" (cuDeviceGetPCIBusId(), hipDeviceGetPCIBusId())
+ * as domain, bus, device and function; UINT32_MAX in each for NULL or text
+ * of another form. */
+void vmafx_parse_pci_bus_id(const char *bus_id, uint32_t pci[4]);
+/* The producer's GPU (`d->vulkan_pci`) is the device's (`pci`): else
+ * VMAFX_E_NOTSUP naming desc.vulkan_pci. */
+VmafxStatus vmafx_import_check_vulkan_device(const VmafxReport *report, const VmafxFrameImport *d,
+                                             const uint32_t pci[4], const char *backend);
+/* The further acquire fences: kinds the API declares, and on a device of
+ * `backend` that waits on several (CUDA) only. */
+VmafxStatus vmafx_import_check_acquire_more(const VmafxReport *report, const VmafxFrameImport *d,
+                                            uint32_t backend);
+/* Subject of acquire fence `i` of an import: desc.acquire, then the further
+ * ones (desc.acquire_more[0], [1]). */
+const char *vmafx_import_acquire_name(uint32_t i);
+/* A LINEAR or DRM_FORMAT_MODIFIER VULKAN descriptor as the DMABUF one a
+ * dma-buf lane imports (SYCL, HIP): OPTIMAL tiling and an OPAQUE_FD that is
+ * no dma-buf are refused naming the field. */
+VmafxStatus vmafx_import_vulkan_as_dmabuf(const VmafxReport *report, const VmafxFrameImport *d,
+                                          const char *backend, VmafxFrameImport *out);
 
 /* ---- Admission (frame_import_admit.c) ------------------------------------ */
 
@@ -348,5 +542,36 @@ enum VmafPixelFormat vmafx_engine_pixel_format(uint32_t pix_fmt);
 
 /* A model set's engine collection. */
 VmafModelCollection *vmafx_model_set_engine(const VmafxModelSet *set);
+
+/* ---- Provenance (provenance*.c, RC4 WP5) ---------------------------------- */
+
+/* Set up / release a context's provenance state: 0 or a negative errno. */
+int vmafx_provenance_init(VmafxProvenanceState *state);
+void vmafx_provenance_release(VmafxProvenanceState *state);
+
+/* The build description of the library (provenance_build.c). */
+typedef struct VmafxBuildInfo {
+    const char *commit;
+    const char *compiler;
+    const char *flags;
+    const char *fp_policy;
+    const char *backends;
+    const char *arch;
+    uint32_t rust_twins;
+} VmafxBuildInfo;
+
+/* This library's build description; `build_id` its digest (both static). */
+const VmafxBuildInfo *vmafx_build_info(void);
+const char *vmafx_build_id(void);
+/* `sha256:` and the SHA-256 of the canonical JSON of `info` (commit and arch
+ * excluded) into `out`: 0, or -ENOMEM. */
+int vmafx_build_id_of(const VmafxBuildInfo *info, char out[VMAFX_DIGEST_TEXT_SIZE]);
+/* Highest SIMD level of the CPU flags in effect (`avx512`, `neon`, `scalar`). */
+const char *vmafx_simd_level(void);
+
+/* Text of a VmafxPixelFormat / VmafxFeatureSource value as the proto JSON
+ * mapping names it ("yuv420p", "extractor"; "unknown"). */
+const char *vmafx_pixel_format_name(uint32_t pix_fmt);
+const char *vmafx_feature_source_name(uint32_t source);
 
 #endif /* VMAFX_INTERNAL_H */

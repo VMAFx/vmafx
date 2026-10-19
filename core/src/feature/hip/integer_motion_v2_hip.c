@@ -14,12 +14,13 @@
  *  (`prev_luma`, `hipMalloc`: the previous frame, or the frame two back with
  *  motion_five_frame_window, ADR-1491), the diff-first SAD pipeline it
  *  shares with motion_hip (integer_motion_sad_hip.h, ADR-1377), and a
- *  host-side flush() that derives `motion2_v2` and `motion3_v2` from the
- *  stored SAD scores. Without `HAVE_HIPCC` the scaffold posture is
+ *  host-side advance() and flush() that derive `motion2_v2` and
+ *  `motion3_v2` from the stored SAD scores, each frame once its window is
+ *  complete (ADR-2090). Without `HAVE_HIPCC` the scaffold posture is
  *  preserved.
  *
- *  The flush is the CPU extractor's own function,
- *  vmaf_motion_window_flush() (motion_window.h, ADR-1478), so the twin's
+ *  The derivation is the CPU extractor's own, vmaf_motion_window_advance()
+ *  and vmaf_motion_window_flush() (motion_window.h, ADR-1478), so the twin's
  *  scores are the CPU's whenever its SADs are. The option surface was
  *  added on the HIP backend in ADR-1108 (cross-backend follow-up closing
  *  the GPU-twin deferral ADR-0337 left open). No GPU work is needed for the
@@ -119,6 +120,8 @@ typedef struct MotionV2StateHip {
     bool motion_moving_average;
 
     VmafDictionary *feature_name_dict;
+    /* motion2_v2 / motion3_v2, derived as the SAD scores come in (ADR-2090). */
+    VmafMotionWindowState window_state;
 } MotionV2StateHip;
 
 /* Option table mirrors integer_motion_v2.c (CPU reference) for the
@@ -375,8 +378,8 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
 
     /* SAD sum -> sad / 256.0 / (w*h), stored as the CPU stores it
      * (integer_motion_v2.c::extract): scaled by motion_fps_weight, then capped
-     * at motion_max_val. flush() folds motion2_v2 / motion3_v2 from the stored
-     * value and does not weight it again. */
+     * at motion_max_val. advance() and flush() fold motion2_v2 / motion3_v2
+     * from the stored value and do not weight it again. */
     const uint64_t *sad_host = s->rb.host_pinned;
     const double sad_score = (double)*sad_host / 256.0 / ((double)s->frame_w * (double)s->frame_h);
     return vmaf_feature_collector_append_with_dict(
@@ -389,10 +392,40 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
 #endif /* HAVE_HIPCC */
 }
 
-/* motion2_v2 and motion3_v2 of every frame, from the stored SAD scores: the
- * CPU extractor's own derivation (integer_motion.c::vmaf_motion_window_flush(),
- * ADR-1478), with the three-frame or the five-frame window. A one-frame run
- * gets motion2_v2 = motion3_v2 = 0, as on the CPU; an empty run nothing. */
+/* The window of this twin's options, on its state: the CPU extractor's
+ * (integer_motion.c::vmaf_motion_window_advance() / _flush(), ADR-1478),
+ * with the three-frame or the five-frame window. */
+static VmafMotionWindow mv2_hip_window_of(MotionV2StateHip *s)
+{
+    const VmafMotionWindow window = {
+        .sad_feature = "VMAF_integer_feature_motion_v2_sad_score",
+        .motion2_feature = "VMAF_integer_feature_motion2_v2_score",
+        .motion3_feature = "VMAF_integer_feature_motion3_v2_score",
+        .motion_blend_factor = s->motion_blend_factor,
+        .motion_blend_offset = s->motion_blend_offset,
+        .motion_max_val = s->motion_max_val,
+        .motion_five_frame_window = s->motion_five_frame_window,
+        .motion_moving_average = s->motion_moving_average,
+        .state = &s->window_state,
+    };
+    return window;
+}
+
+/* ADR-2090: motion2_v2 / motion3_v2 of the frames whose window the SAD scores
+ * collected so far complete. */
+static int advance_fex_hip(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector)
+{
+    MotionV2StateHip *s = fex->priv;
+    /* No frame reached init(): nothing was stored, nothing to derive. */
+    if (s->feature_name_dict == NULL)
+        return 0;
+    const VmafMotionWindow window = mv2_hip_window_of(s);
+    return vmaf_motion_window_advance(feature_collector, s->feature_name_dict, &window);
+}
+
+/* motion2_v2 and motion3_v2 of the frames no advance derived, from the stored
+ * SAD scores. A one-frame run gets motion2_v2 = motion3_v2 = 0, as on the
+ * CPU; an empty run nothing. */
 static int flush_fex_hip(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector)
 {
 #ifndef HAVE_HIPCC
@@ -406,16 +439,7 @@ static int flush_fex_hip(VmafFeatureExtractor *fex, VmafFeatureCollector *featur
     if (s->feature_name_dict == NULL)
         return 1;
 
-    const VmafMotionWindow window = {
-        .sad_feature = "VMAF_integer_feature_motion_v2_sad_score",
-        .motion2_feature = "VMAF_integer_feature_motion2_v2_score",
-        .motion3_feature = "VMAF_integer_feature_motion3_v2_score",
-        .motion_blend_factor = s->motion_blend_factor,
-        .motion_blend_offset = s->motion_blend_offset,
-        .motion_max_val = s->motion_max_val,
-        .motion_five_frame_window = s->motion_five_frame_window,
-        .motion_moving_average = s->motion_moving_average,
-    };
+    const VmafMotionWindow window = mv2_hip_window_of(s);
     const int err = vmaf_motion_window_flush(feature_collector, s->feature_name_dict, &window);
     return err ? err : 1;
 #endif /* HAVE_HIPCC */
@@ -445,6 +469,7 @@ VmafFeatureExtractor vmaf_fex_integer_motion_v2_hip = {
     .submit = submit_fex_hip,
     .collect = collect_fex_hip,
     .flush = flush_fex_hip,
+    .advance = advance_fex_hip,
     .close = close_fex_hip,
     .options = options,
     .priv_size = sizeof(MotionV2StateHip),

@@ -181,7 +181,7 @@ discovered = report["corpus"]["discovered_files"]
 
 
 def _retrain_full_corpus(codec: str) -> None:
-    """Re-run vmaftune.predictor_train for one codec on the full corpus.
+    """Re-run vmaf_train.predictor_train for one codec on the full corpus.
 
     PR #450's trainer is the canonical ONNX exporter; we invoke it via
     -m so the ONNX byte stream matches exactly what shipped on master.
@@ -195,7 +195,7 @@ def _retrain_full_corpus(codec: str) -> None:
     corpus = discovered[0]
     cmd = [
         sys.executable,
-        "-m", "vmaftune.predictor_train",
+        "-m", "vmaf_train.predictor_train",
         "--corpus", corpus,
         "--output-dir", str(model_dir),
         "--epochs", str(epochs),
@@ -204,7 +204,8 @@ def _retrain_full_corpus(codec: str) -> None:
     ]
     env = {
         **{k: v for k, v in __import__("os").environ.items()},
-        "PYTHONPATH": str(repo_root / "tools" / "vmaf-tune" / "src")
+        "PYTHONPATH": str(repo_root / "ai" / "src")
+        + ":" + str(repo_root / "tools" / "vmaf-tune" / "src")
         + ":" + (__import__("os").environ.get("PYTHONPATH") or ""),
     }
     print(f"  {codec}: retraining on full corpus -> {model_dir}/predictor_{codec}.onnx")

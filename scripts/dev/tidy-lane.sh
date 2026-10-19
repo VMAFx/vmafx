@@ -140,18 +140,36 @@ source_tar() {
       -T - -cf -
 }
 
+# The container's results go into a fresh staging directory first. The shared
+# report directory ($OUT) keeps the files of earlier runs, so a baseline read
+# from it after a run that wrote none (a rejected write, a container that died)
+# would be a stale one and --write would copy it over the checkout's baseline
+# (T-TIDY-LANE-WRITE-STALE-BASELINE-2026-10-06). Only a file the container
+# produced in this run can reach scripts/ci/.
 copy_results() {
-  local cid="$1" lane
+  local cid="$1" lane stage status=0
+  stage="$(mktemp -d)"
   mkdir -p "$OUT"
-  docker cp "$cid:$WORK/out/." "$OUT/" >/dev/null 2>&1 ||
+  docker cp "$cid:$WORK/out/." "$stage/" >/dev/null 2>&1 ||
     printf 'tidy-lane: the container produced no report\n' >&2
-  [ "$WRITE" -eq 1 ] || return 0
-  for lane in $LANES; do
-    if [ -f "$OUT/tidy-baseline-$lane.json" ]; then
-      cp "$OUT/tidy-baseline-$lane.json" "$REPO_ROOT/scripts/ci/tidy-baseline-$lane.json"
-      printf 'tidy-lane: wrote scripts/ci/tidy-baseline-%s.json\n' "$lane"
-    fi
-  done
+  if [ "$WRITE" -eq 1 ]; then
+    for lane in $LANES; do
+      if [ -f "$stage/tidy-baseline-$lane.json" ]; then
+        cp "$stage/tidy-baseline-$lane.json" "$REPO_ROOT/scripts/ci/tidy-baseline-$lane.json"
+        printf 'tidy-lane: wrote scripts/ci/tidy-baseline-%s.json\n' "$lane"
+      else
+        printf 'tidy-lane: this run produced no baseline for %s; %s is left as it is\n' \
+          "$lane" "scripts/ci/tidy-baseline-$lane.json" >&2
+        status=1
+      fi
+    done
+  fi
+  if ! cp -R "$stage/." "$OUT/" 2>/dev/null; then
+    printf 'tidy-lane: could not copy the results into %s\n' "$OUT" >&2
+    status=1
+  fi
+  rm -rf "$stage"
+  return "$status"
 }
 
 run_on_host() {
@@ -168,7 +186,7 @@ run_on_host() {
   trap "docker rm -f '$cid' >/dev/null 2>&1 || true" EXIT
   source_tar | docker cp - "$cid:/tmp" || die "could not copy the checkout into the container"
   docker start --attach "$cid" || rc=$?
-  copy_results "$cid"
+  copy_results "$cid" || [ "$rc" -ne 0 ] || rc=1
   printf 'tidy-lane: reports and logs in %s\n' "$OUT"
   return "$rc"
 }

@@ -164,7 +164,7 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
 
     int w = ref_pic->w[0];
     int h = ref_pic->h[0];
-    int stride = s->float_stride / sizeof(float);
+    int stride = (int)(s->float_stride / sizeof(float));
 
     double noise_ = 0;
     for (int i = 0; i < h; i++)
@@ -192,7 +192,7 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     return 0;
 }
 
-static int close(VmafFeatureExtractor *fex)
+static int close_fex(VmafFeatureExtractor *fex)
 {
     PsnrState *s = fex->priv;
     if (s->ref)
@@ -210,7 +210,7 @@ VmafFeatureExtractor vmaf_fex_float_psnr = {
     .options = options,
     .init = init,
     .extract = extract,
-    .close = close,
+    .close = close_fex,
     .priv_size = sizeof(PsnrState),
     .provided_features = provided_features,
 };

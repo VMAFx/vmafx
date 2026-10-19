@@ -29,7 +29,7 @@ SCHEMA_VERSION = 1
 VALID_KINDS = {"fr", "nr", "filter"}
 
 
-class ModelMetadata(BaseModel):
+class ModelMetadata(BaseModel):  # type: ignore[misc]  # pydantic is untyped for the mypy gate (--no-site-packages)
     """Sidecar JSON describing a shipped tiny model.
 
     Migrated from ``@dataclass`` to ``pydantic.BaseModel`` so the load
@@ -59,7 +59,7 @@ class ModelMetadata(BaseModel):
     cosign_signature: str | None = None
     notes: str | None = None
 
-    @field_validator("kind")
+    @field_validator("kind")  # type: ignore[untyped-decorator]  # pydantic is untyped for the mypy gate (--no-site-packages)
     @classmethod
     def _valid_kind(cls, v: str) -> str:
         if v not in VALID_KINDS:
@@ -138,7 +138,7 @@ def register(
 
 def load(sidecar_path: Path) -> ModelMetadata:
     doc: dict[str, Any] = json.loads(sidecar_path.read_text())
-    return ModelMetadata.model_validate(doc)
+    return ModelMetadata.model_validate(doc)  # type: ignore[no-any-return]  # pydantic is untyped for the mypy gate (--no-site-packages)
 
 
 def _sanitize_nonfinite(obj: Any) -> Any:
@@ -167,7 +167,7 @@ def _sanitize_nonfinite(obj: Any) -> Any:
     return holder[0]
 
 
-def dumps_registry_json(payload: dict, **kwargs: Any) -> str:
+def dumps_registry_json(payload: dict[str, Any], **kwargs: Any) -> str:
     """Serialise a registry payload to a pretty-printed, non-finite-safe JSON string.
 
     NaN and Infinity values inside *payload* are replaced with ``null`` so the
@@ -187,7 +187,7 @@ def dumps_registry_json(payload: dict, **kwargs: Any) -> str:
     return json.dumps(_sanitize_nonfinite(payload), **kwargs)
 
 
-def write_registry_json(path: Path, payload: dict, **kwargs: Any) -> None:
+def write_registry_json(path: Path, payload: dict[str, Any], **kwargs: Any) -> None:
     """Write *payload* as pretty-printed, newline-terminated JSON to *path*.
 
     Convenience wrapper around :func:`dumps_registry_json` that appends a

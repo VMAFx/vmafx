@@ -29,11 +29,10 @@ under `docs/research/`, and any Markdown referenced from
    reaches `Status: Accepted` its body is frozen except for explicit
    "Status update YYYY-MM-DD" sections. Flag any edit to an
    Accepted ADR's `## Context` or `## Decision` body.
-5. **ADR fragment / index discipline (ADR-0221)** — never edit
-   `docs/adr/README.md` directly. New ADRs ship a fragment under
-   `docs/adr/_index_fragments/NNNN-slug.md` plus a slug append in
-   `docs/adr/_index_fragments/_order.txt`; the README is regenerated
-   by `scripts/docs/concat-adr-index.sh`.
+5. **ADR fragment / index discipline (ADR-0221, ADR-2197)** — a PR never
+   edits `docs/adr/README.md`, `by-tag/`, `titles.md` or `_order.txt`. New
+   ADRs ship fragment under `docs/adr/_index_fragments/NNNN-slug.md` only;
+   `make docs-render` writes the index at landing.
 6. **Stale "TODO / coming soon" claims** — every doc page must
    reflect shipped state. Flag pages that say `Phase X not yet
    shipped` when the corresponding code is on master; flag `Status:

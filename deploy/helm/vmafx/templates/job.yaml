@@ -60,12 +60,12 @@ spec:
           args:
             {{- toYaml . | nindent 12 }}
           {{- end }}
+          {{- with .Values.env }}
           env:
-            - name: VMAFX_BACKEND
-              value: {{ include "vmafx.backendEnvValue" . | quote }}
-          {{- range $k, $v := .Values.env }}
+          {{- range $k, $v := . }}
             - name: {{ $k | quote }}
               value: {{ $v | quote }}
+          {{- end }}
           {{- end }}
           envFrom:
             - configMapRef:

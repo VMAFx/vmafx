@@ -120,3 +120,12 @@ which includes `test_motion_v2_simd`, but the test body early-exits via
 - ADR-0138 — float-ADM reduction stability (AVX2 precedent)
 - ADR-0161 — SSIMULACRA2 NEON `-ffp-contract=off` carve-out
 - docs/rebase-notes.md §0052 — psnr_hvs NEON bit-exactness invariant
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 120: `- ADR-0138 — float-ADM reduction stability (AVX2
+  precedent)`: Cites ADR-0138 for float-ADM reduction stability; ADR-0138 is
+  "`_iqa_convolve` AVX2 bit-exact double-precision fast path".

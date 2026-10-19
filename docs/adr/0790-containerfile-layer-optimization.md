@@ -91,3 +91,12 @@ Apply four targeted changes to `dev/Containerfile`:
 - `dev/Containerfile` — the patched file.
 - ADR-0541: FFmpeg encoder matrix and codec dep rationale.
 - ADR-0603: Ubuntu 26.04 / glibc 2.43 base-image policy.
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 92: `- ADR-0541: FFmpeg encoder matrix and codec dep rationale.`:
+  Cites ADR-0541 for FFmpeg encoder matrix; ADR-0541 is "Pin dev-MCP container
+  Intel NEO + ROCm runtimes to versions matching the host kernel".

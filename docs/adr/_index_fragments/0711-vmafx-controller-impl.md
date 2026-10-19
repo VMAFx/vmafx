@@ -1,1 +1,1 @@
-| [ADR-0711](0711-vmafx-controller-impl.md) | vmafx-controller Phase 4b.1 — Go service: gRPC + HTTP, in-memory job queue, persistent node registry, FIFO scheduler | Accepted | go, controller, phase4b, grpc, http, fork-local |
+| [ADR-0711](0711-vmafx-controller-impl.md) | vmafx-controller Phase 4b.1 — Go service: gRPC + HTTP, in-memory job queue, persistent node registry, FIFO scheduler; partially superseded by [ADR-2350](2350-cloud-native-platform.md) for the SQLite job persistence and the in-memory node registry | Accepted | go, controller, phase4b, grpc, http, fork-local |

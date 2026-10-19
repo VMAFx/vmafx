@@ -16,17 +16,17 @@ invariant: Every library of this directory takes vmaf_strict_fp_args; no FMA on 
 ## Strict FP for every x86 SIMD library (ADR-1415)
 
 Every library of this directory in `core/src/meson.build` takes
-`vmaf_strict_fp_args`: the general `x86_avx2` / `x86_avx512` ones and the
+`vmaf_strict_fp_args`: general `x86_avx2` / `x86_avx512` ones and
 named carve-outs alike. Reason: scalar references sit in baseline libraries
 (no FMA exists there), kernels here end in plain-C tails under `-mfma` /
 `-mavx512f`; icx contracts those under `-fp-model=precise` alone, GCC does
 not. Fused multiply-add wanted -> write `_mm256_fmadd_ps` /
 `_mm512_fmadd_ps` / `vmaf_fmaf_exact()`, never rely on contraction. New
 library -> strict args + entry in `STRICT_TARGETS`
-(`core/test/test_strict_fp_compiler_args.py`). Test TU that compiles a
+(`core/test/test_strict_fp_compiler_args.py`). Test TU that compiles
 scalar reference itself -> `_simd_strict_fp_args` (icx default = fast
-model; `test_integer_adm_simd` failed on icx without it). Check after a
-flag change: `objdump -d <object> | grep -c vfmadd` for a GCC and an icx
+model; `test_integer_adm_simd` failed on icx without it). Check after
+flag change: `objdump -d <object> | grep -c vfmadd` for GCC and icx
 build; GCC objects must not change.
 
 - [ADR-0918](../../../../../docs/adr/0918-llvm-ir-diff-harness.md) —

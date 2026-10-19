@@ -4,6 +4,7 @@ paths:
   - scripts/ci/tests/test_scorecard_*.py
   - .github/workflows/scorecard*.yml
 invariant: Complete check sets on exact source bytes; never latest-API results, the merge SHA or a dropped check.
+area: gates
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Exact-source Scorecard reports (ADR-1247)

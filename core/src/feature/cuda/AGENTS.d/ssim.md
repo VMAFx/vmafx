@@ -12,17 +12,17 @@ invariant: Integer SSIM CPU bits, distinct ssim vs integer_ssim features, and fm
   d3647c73 prerequisite port. If future upstream commit
   evolves signature further, update these call sites in
   lockstep with upstream-mirror callers (`float_*` series).
-  See [../../AGENTS.md §"`picture_copy()` carries a `channel`
+  See [../../AGENTS.md §"`picture_copy()` carries `channel`
   parameter"](../../../AGENTS.md).
 - **`integer_ssim_cuda` (`ssim_cuda.c`) = CPU bits** (ADR-1424,
   `EXACT_TWINS["ssim"]`). CPU `calc_ssim()` = ONE double accumulator through
-  the whole frame, raster order. So: `integer_ssim_vert_combine` stores the
+  whole frame, raster order. So: `integer_ssim_vert_combine` stores
   double term per pixel (`terms[y * width + x]`), NO warp / block reduction
-  of it; host `issim_frame_sum()` adds the read-back plane in index order.
+  of it; host `issim_frame_sum()` adds read-back plane in index order.
   int64 weights: order-free, block reduction stays (`warp_reduce(int64_t)`,
   ADR-1224). Term grouping `((w * a) * b) / den`, fatbin without contraction
   (ADR-1403). Cost: 66 MB read-back + 8.3M sequential adds per 4K frame
-  (9.7 ms vs 2.2 ms): `T-CUDA-SSIM-EXACT-THROUGHPUT-2026-10-01` holds the
+  (9.7 ms vs 2.2 ms): `T-CUDA-SSIM-EXACT-THROUGHPUT-2026-10-01` holds
   parallel-exact candidate (integer sums per binade); tune only with
   `test_cuda_ssim_parity` (`==`, 8 cases) green. Guard without device:
   `test_cuda_ssim_exact_contract.py`.
@@ -41,7 +41,7 @@ invariant: Integer SSIM CPU bits, distinct ssim vs integer_ssim features, and fm
 - **`ssim_score.cu::ssim_terms()` = CPU `l * c * s`, operand for operand**
   (`iqa/ssim_tools.c::ssim_variance_scalar` + `iqa/ssim_accumulate_lane.h`):
   double numerators over fp32 denominators, fp32 `s`, double product, each
-  rounding an intrinsic (`__fmul_rn` / `__fadd_rn` / `__ddiv_rn` ...). Host
+  rounding intrinsic (`__fmul_rn` / `__fadd_rn` / `__ddiv_rn` ...). Host
   rounds frame means to fp32 (`float_ssim_frame_mean`).
 - **`integer_ssim_score` builds with `--fmad=false`** (every fatbin,
   ADR-1403; as HIP `-ffp-contract=off`, ADR-0564 / ADR-1373) and groups term as CPU:

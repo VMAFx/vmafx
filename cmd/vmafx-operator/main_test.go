@@ -42,7 +42,7 @@ func TestVersionRequest(t *testing.T) {
 }
 
 // TestOptionsGraphValidates asserts the production fx option list resolves into
-// a consistent dependency graph: golusoris.Core (config + slog + clock + id),
+// a consistent dependency graph: bootstrap.Core (config + slog + clock + id + validate),
 // otel.Module, operator.Module (manager.Manager + Options), the CRD scheme
 // adder, and both fx.Invoke wiring functions (reconcilers + webhooks) all have
 // their dependencies satisfied.

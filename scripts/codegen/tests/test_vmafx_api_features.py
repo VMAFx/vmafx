@@ -14,8 +14,8 @@ import copy
 import unittest
 from typing import Any
 
-from support import entry, fixture
-from vmafx_api import emit_c
+from support import document, entry, fixture
+from vmafx_api import emit_c, emit_python
 from vmafx_api.headers import plan
 from vmafx_api.loader import parse
 from vmafx_api.model import Api, DefinitionError
@@ -176,12 +176,58 @@ class OptionGroupTest(unittest.TestCase):
             (("threads", 0, "cli", ["-t"]), "start with --"),
             (("pool", 0, "default", "median"), "not one of"),
             (("pool", 1, "ffmpeg", "pool"), "also used by"),
-            (("pool", 1, "type", "bool"), "`range` is \\[min, max\\]"),
+            (("pool", 1, "type", "bool"), "`range` is \\[min\\] or \\[min, max\\]"),
         )
         for change, text in cases:
             with self.subTest(change=change):
                 self.assert_refused(change, text)
 
 
+def python_record(text: str, name: str) -> str:
+    start = text.index(f"class {name}:")
+    return text[start : text.index("\n@dataclass", start)]
+
+
+class PythonRecordToCTest(unittest.TestCase):
+    """A record converts back to C when its fields are numbers or one struct of
+    numbers: VmafxFrameDesc kept to_c() when it gained `color` (ADR-2094)."""
+
+    def test_a_struct_of_numbers_converts_back(self) -> None:
+        record = python_record(emit_python.module_text(parse(document())), "FrameDesc")
+        self.assertIn("    def to_c(self) -> VmafxFrameDesc:\n", record)
+        self.assertIn("        raw.color = self.color.to_c()\n", record)
+
+    def test_a_struct_with_a_pointer_does_not(self) -> None:
+        # VmafxFrameImport embeds VmafxFence, whose handle has no record value.
+        record = python_record(emit_python.module_text(parse(document())), "FrameImport")
+        self.assertNotIn("def to_c", record)
+
+
 if __name__ == "__main__":
     unittest.main()
+
+
+class PythonMethodNameTest(unittest.TestCase):
+    """Two functions on one Python class with one method name: the later
+    definition hid the earlier one (vmafx_context_feature_provenance behind
+    vmafx_feature_provenance, T-VMAFX-PYTHON-METHOD-SHADOWED-2026-10-07)."""
+
+    NAME = "vmafx_context_feature_provenance"
+
+    def test_the_definition_binds_both_provenance_lookups(self) -> None:
+        text = emit_python.module_text(parse(document()))
+        self.assertIn("    def feature_provenance_at(self, index: int)", text)
+        self.assertIn("    def feature_provenance(self, feature: str)", text)
+
+    def test_a_collision_is_refused(self) -> None:
+        doc = document()
+        del entry(doc["functions"], self.NAME)["python"]
+        with self.assertRaisesRegex(DefinitionError, "Context.feature_provenance would bind both"):
+            emit_python.module_text(parse(doc))
+
+    def test_python_name_must_be_an_identifier(self) -> None:
+        for bad in ("feature-provenance", "class", 7):
+            doc = document()
+            entry(doc["functions"], self.NAME)["python"] = bad
+            with self.assertRaises(DefinitionError):
+                parse(doc)

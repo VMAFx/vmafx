@@ -177,9 +177,9 @@ def test_build_ssl_context_logs_info_when_tls_enabled(
     with caplog.at_level(logging.INFO, logger="vmafx.http"):
         ht._build_ssl_context()
 
-    assert any("TLS enabled" in r.message for r in caplog.records), (
-        f"Expected 'TLS enabled' in log records; got: {[r.message for r in caplog.records]}"
-    )
+    assert any(
+        "TLS enabled" in r.message for r in caplog.records
+    ), f"Expected 'TLS enabled' in log records; got: {[r.message for r in caplog.records]}"
 
 
 # ---------------------------------------------------------------------------
@@ -296,9 +296,9 @@ async def test_serve_logs_warning_when_token_unset_and_no_auth_not_set(
         await ht._serve(port=0, metrics=metrics)
 
     warning_msgs = [r.message for r in caplog.records if r.levelno >= logging.WARNING]
-    assert any("VMAFX_MCP_HTTP_TOKEN" in m for m in warning_msgs), (
-        f"Expected token-unset warning; got: {warning_msgs}"
-    )
+    assert any(
+        "VMAFX_MCP_HTTP_TOKEN" in m for m in warning_msgs
+    ), f"Expected token-unset warning; got: {warning_msgs}"
 
 
 @pytest.mark.asyncio
@@ -334,9 +334,9 @@ async def test_serve_logs_warning_when_no_auth_mode_enabled(
         await ht._serve(port=0, metrics=metrics)
 
     warning_msgs = [r.message for r in caplog.records if r.levelno >= logging.WARNING]
-    assert any("NO_AUTH" in m or "authentication disabled" in m for m in warning_msgs), (
-        f"Expected NO_AUTH warning; got: {warning_msgs}"
-    )
+    assert any(
+        "NO_AUTH" in m or "authentication disabled" in m for m in warning_msgs
+    ), f"Expected NO_AUTH warning; got: {warning_msgs}"
 
 
 @pytest.mark.asyncio

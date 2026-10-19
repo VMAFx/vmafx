@@ -83,12 +83,14 @@ static char *test_device_info(void)
     VmafxDeviceInfo info = VMAFX_DEVICE_INFO_INIT;
     mu_assert("info", vmafx_device_info(VMAFX_BACKEND_CUDA, 0, &info, NULL) == VMAFX_OK);
     const uint32_t fences = (1u << VMAFX_FENCE_NONE) | (1u << VMAFX_FENCE_HOST) |
-                            (1u << VMAFX_FENCE_CUDA_EVENT) | (1u << VMAFX_FENCE_GL_SYNC);
+                            (1u << VMAFX_FENCE_CUDA_EVENT) | (1u << VMAFX_FENCE_GL_SYNC) |
+                            (1u << VMAFX_FENCE_VULKAN_SEMAPHORE);
     mu_assert("fields", info.backend == VMAFX_BACKEND_CUDA && info.index == 0 && info.flags == 0u &&
                             info.total_memory > 0u && info.name && info.name[0] != '\0' &&
-                            info.fence_kinds == fences &&
+                            info.fence_kinds == fences && info.pci[1] != UINT32_MAX &&
                             (info.memory_kinds & (1u << VMAFX_MEMORY_DEVICE_POINTER)) &&
                             (info.memory_kinds & (1u << VMAFX_MEMORY_GL_TEXTURE)) &&
+                            (info.memory_kinds & (1u << VMAFX_MEMORY_VULKAN)) &&
                             !(info.memory_kinds & (1u << VMAFX_MEMORY_HOST)));
     VmafxError *error = NULL;
     mu_assert("past the last",

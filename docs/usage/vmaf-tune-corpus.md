@@ -79,7 +79,7 @@ is on the [AV1 codecs page](vmaf-tune-codec-av1.md)
 | `--ffmpeg-bin PATH` | `ffmpeg` | ffmpeg binary. |
 | `--ffprobe-bin PATH` | `ffprobe` | ffprobe binary, used for HDR detection. |
 | `--vmaf-bin PATH` | `vmaf` | vmaf binary. |
-| `--score-backend NAME` | `auto` | libvmaf scoring backend: `auto`, `cpu`, `cuda`, `sycl` or `hip`. See [score backend](vmaf-tune-score-backend.md). |
+| `--score-backend NAME` | `auto` | libvmaf scoring backend: `auto`, `cpu`, `cuda`, `sycl`, `hip` or `metal`. See [score backend](vmaf-tune-score-backend.md). |
 | `--no-source-hash` | off | Skip `src_sha256`: faster on large YUV files, but loses provenance. |
 | `--two-pass` | off | Two-pass encode for adapters with `supports_two_pass` (`libx264`, `libx265`, `libvpx-vp9`, `libaom-av1`, `libvvenc`); other adapters warn on stderr and run single-pass. Doubles encode time. See [multi-pass](vmaf-tune-multipass.md). |
 | `--sample-clip-seconds N` | `0.0` | Encode and score only the centre N seconds of each source; `0` uses the full source. See [HDR and sampling](vmaf-tune-hdr-and-sampling.md). |
@@ -150,7 +150,7 @@ bumping the version in step with the predictor training code.
 | `extra_params` | list[str] | Additional encoder arguments; `[]` for a plain grid run. |
 | `encode_path` | str | Path to the encoded file; empty when not retained. |
 | `encode_size_bytes` | int | Encoded file size. |
-| `bitrate_kbps` | float | `(encode_size_bytes × 8 / 1000) / duration_s`. |
+| `bitrate_kbps` | float | $\dfrac{8 \cdot \mathrm{encode\_size\_bytes} / 1000}{\mathrm{duration\_s}}$. |
 | `encode_time_ms` | float | Wall-clock encode time. |
 | `vmaf_score` | float | Pooled-mean VMAF; `NaN` if scoring was skipped or failed. |
 | `vmaf_model` | str | Model version string that scored the row. |

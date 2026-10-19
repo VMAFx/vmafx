@@ -101,3 +101,13 @@ Verification command:
 ```bash
 grep -n 'MOTION_BATCH_DEPTH' core/src/feature/cuda/integer_motion_cuda.c | head -3
 ```
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 83: `- ADR-0242: engine-scope fence batching (drain_batch — no
+  longer consumed by motion after this ADR)`: Cites ADR-0242 for engine-scope
+  fence batching; ADR-0242 is "Tiny-AI training on the original Netflix VMAF
+  training corpus".

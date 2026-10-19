@@ -89,3 +89,14 @@ independently validated.
   name `delta_e_itp`, mean pooling, `matrix`/`range` options defaulting to
   bt2020/limited, double-precision math, no out-of-gamut clamping, and the
   places=4 ITP-triple oracle.
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 67: `The pre-existing stale feature_extractor.c (dead twin of the
+  live C++23 feature_extractor.cpp, ADR-0846) is a`: Cites nonexistent
+  ADR-0846; ADR-0846 does not exist on origin/master (the ADR for the C++23
+  `feature_extractor` rename is ADR-0772). See ADR-0772 (rename of
+  `feature_extractor.c` to `feature_extractor.cpp`).

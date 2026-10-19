@@ -37,9 +37,12 @@ and [ADR-0913](../docs/adr/0913-changelog-renderer-splice-contract.md).
    prefix (e.g. `T7-39-changelog-fragments.md`) gives implicit ordering.
 3. Write a Markdown bullet (or a small block of bullets) — same shape as
    what you would have pasted into `CHANGELOG.md`.
-4. Run `bash scripts/release/concat-changelog-fragments.sh --write` to
-   regenerate `CHANGELOG.md` locally before pushing. CI runs `--check`
-   and fails on drift.
+4. Do not edit `CHANGELOG.md`: a pull request carries the fragment only
+   (`scripts/ci/deliverables-check.sh` refuses one that edits it). The
+   render is written when pull requests land (`make docs-render`; the
+   merge train per batch, the release cut), ADR-2197. Run
+   `bash scripts/release/concat-changelog-fragments.sh --lint` to check
+   your fragment.
 
 ## How fragments render
 

@@ -17,7 +17,7 @@ unrelated workstreams.
 |---|---|---|---|
 | `fr_regressor_v1` | none (single-input) | canonical-6 | shipped (ADR-0249) |
 | `fr_regressor_v2` | v2 (13-slot) | canonical-6 + 8-D codec block | shipped (ADR-0272 / ADR-0291) |
-| `fr_regressor_v2_ensemble_v1_seed{0..4}` | v2 (13-slot) | canonical-6 + 8-D codec block | shipped (ADR-0279) |
+| `fr_regressor_v2_ensemble_v1_seed{0..4}` | v2 (13-slot) | canonical-6 + 8-D codec block | shipped (ADR-0393) |
 | `fr_regressor_v3` | v3 (16-slot) | canonical-6 + 18-D codec block | shipped (ADR-0302 / ADR-0323) |
 | `fr_regressor_v3plus_features` | v3 (16-slot) | canonical-6 + `encoder_internal` + shot-boundary + `hwcap` | **reserved** (ADR-0349) — registry row lands with future PR that ships `.onnx` |
 

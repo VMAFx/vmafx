@@ -1,0 +1,31 @@
+# SPDX-FileCopyrightText: 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+#
+# Classification vectors for user data unregistered SEI payloads (ADR-0210).
+# Replayed by ffmpeg-patches/test/udu_wrap_test.c against
+# ffmpeg-patches/files/pelorus_udu_wrap.h; the vmafx reader replays the same
+# file, so both readers are proven against one set.
+#
+# One vector per line: name outer_uuid_hex data_hex expected
+#   outer_uuid_hex  the 16-byte uuid_iso_iec_11578 of the SEI message
+#   data_hex        the bytes after it; "-" means no bytes (length 0)
+#   expected        direct | x265_wrapped | none
+# x265 UUID 2ca2de09-b517-47db-bb55-a4fe7fc2fc4e is the one libx265 writes in
+# front of every caller payload (since x265 2.1).
+direct_pelorus e1d7c4a26b934f089a550f3c2db17e64 - direct
+direct_carrier 3f9b37b8fd9a4621920e9b78b55cf9b5 - direct
+direct_pelorus_with_data e1d7c4a26b934f089a550f3c2db17e64 aabb direct
+wrapped_pelorus_len17 2ca2de09b51747dbbb55a4fe7fc2fc4e e1d7c4a26b934f089a550f3c2db17e64aa x265_wrapped
+wrapped_pelorus_len64 2ca2de09b51747dbbb55a4fe7fc2fc4e e1d7c4a26b934f089a550f3c2db17e64555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555 x265_wrapped
+wrapped_carrier_len17 2ca2de09b51747dbbb55a4fe7fc2fc4e 3f9b37b8fd9a4621920e9b78b55cf9b5bb x265_wrapped
+wrapped_carrier_len64 2ca2de09b51747dbbb55a4fe7fc2fc4e 3f9b37b8fd9a4621920e9b78b55cf9b5777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777 x265_wrapped
+neg_unknown_outer_pelorus_inner 11111111111111111111111111111111 e1d7c4a26b934f089a550f3c2db17e64555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555 none
+neg_x265_unknown_inner 2ca2de09b51747dbbb55a4fe7fc2fc4e 44444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444 none
+neg_x265_len0 2ca2de09b51747dbbb55a4fe7fc2fc4e - none
+neg_x265_len15 2ca2de09b51747dbbb55a4fe7fc2fc4e e1d7c4a26b934f089a550f3c2db17e none
+neg_x265_len16_truncated_wrap 2ca2de09b51747dbbb55a4fe7fc2fc4e e1d7c4a26b934f089a550f3c2db17e64 none
+neg_outer_pelorus_bit_flipped e0d7c4a26b934f089a550f3c2db17e64 e1d7c4a26b934f089a550f3c2db17e64aa none
+neg_inner_pelorus_bit_flipped 2ca2de09b51747dbbb55a4fe7fc2fc4e e0d7c4a26b934f089a550f3c2db17e64aa none
+neg_inner_carrier_last_byte 2ca2de09b51747dbbb55a4fe7fc2fc4e 3f9b37b8fd9a4621920e9b78b55cf9b4aa none
+neg_double_x265_wrap 2ca2de09b51747dbbb55a4fe7fc2fc4e 2ca2de09b51747dbbb55a4fe7fc2fc4ee1d7c4a26b934f089a550f3c2db17e64aa none
+neg_inner_pelorus_at_offset1 2ca2de09b51747dbbb55a4fe7fc2fc4e 00e1d7c4a26b934f089a550f3c2db17e64aa none

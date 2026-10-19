@@ -2,22 +2,12 @@
  *
  *  Copyright 2026 Lusoris
  *
- *     Licensed under the BSD+Patent License (the "License");
- *     you may not use this file except in compliance with the License.
- *     You may obtain a copy of the License at
- *
- *         https://opensource.org/licenses/BSDplusPatent
- *
- *     Unless required by applicable law or agreed to in writing, software
- *     distributed under the License is distributed on an "AS IS" BASIS,
- *     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *     See the License for the specific language governing permissions and
- *     limitations under the License.
- *
+ * SPDX-FileCopyrightText: 2026 Lusoris
+ * SPDX-License-Identifier: EUPL-1.2
  */
 
 /*
- * VENDORED FROM VMAFx/pelorus@42cb17106a2d3fae7790754f7cd8c6e1fbe6fa7f — DO NOT EDIT.
+ * VENDORED FROM VMAFx/pelorus@33b4a625cad64a7e9ca14f6db06eb91ba8f56663 — DO NOT EDIT.
  * Append-only ABI; single
  * source of truth is pelorus. Re-sync via scripts/sync-pelorus-interop.sh.
  * See docs/adr/1113-vendor-pelorus-interop-abi.md.
@@ -32,6 +22,12 @@
  * Defaults are the conservative pre-encode preset: a safe floor the vmafx
  * autotune loop (ADR-0106) sweeps strength/sigma upward from. See denoise.h.
  */
+
+/* NOLINTBEGIN(modernize-use-nullptr): this C translation unit is built as C23
+ * by vmafx, where clang-tidy also proposes the `nullptr` keyword, but MSVC's C
+ * mode has no `nullptr` (C2065); the Windows builds compile it with cl.exe.
+ * The NULL macro stays. Same decision as vmafx ADR-1138
+ * (docs/adr/1138-c-translation-units-keep-null.md in VMAFx/vmafx). */
 
 #include "libvmaf/pelorus/denoise.h"
 
@@ -120,3 +116,5 @@ pel_result pel_denoise_params_validate(const PelorusDenoiseParams *p, const char
     }
     return PEL_OK;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

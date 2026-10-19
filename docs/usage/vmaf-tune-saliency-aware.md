@@ -93,7 +93,7 @@ vmaftune.saliency` command.
 
 | Encoder | ROI channel | Granularity | argv slot |
 |---|---|---|---|
-| `libx264` | ASCII qpfile (x264 r2390 or newer) | 16x16 luma macroblock | `-x264-params qpfile=...` |
+| `libx264` | patched FFmpeg `-qpfile` ROI bridge (per-macroblock offsets through x264 `quant_offsets`; needs `aq-mode` other than 0) | 16x16 luma macroblock | `-qpfile ...` |
 | `libaom-av1` | patched FFmpeg `-qpfile` ROI bridge | 16x16 macroblock mapped onto libaom mode-info cells | `-qpfile ...` |
 | `libx265` | `--zones` QP delta | whole-clip spatial mean | `-x265-params zones=0,N,q=<delta>` |
 | `libsvtav1` | `--qp-file` offset map (SVT-AV1 v1.7 or newer) | 64x64 super-block | `-svtav1-params qp-file=...` |

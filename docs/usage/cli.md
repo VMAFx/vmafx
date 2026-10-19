@@ -48,6 +48,81 @@ Without `--model`, the built-in `vmaf_v1.0.16_3d0h` model is loaded. Without
     576x324 test pair the pooled VMAF moves from `76.667831` to `82.816060`.
     See [models/v1.md](../models/v1.md) for the v1 model family.
 
+## Option reference
+
+Every option of `vmaf`, generated from the API definition
+(`core/api/vmafx.toml`, option groups; see
+[API generation](../development/api-generation.md#option-groups)). The
+sections below explain each group in detail. `vmaf --help` prints the same
+list from the same source.
+
+<!-- BEGIN GENERATED: vmafx-api cli options (scripts/codegen/vmafx-api.py) -->
+
+| Option | Short | Value | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--reference` | `-r` | string | | Reference video: a .y4m file, or raw planar .yuv together with the width, height, pixel format and bit depth. |
+| `--distorted` | `-d` | string | | Distorted video, in the same form as the reference. |
+| `--width` | `-w` | uint >= 1 | | Width of raw .yuv input in pixels. |
+| `--height` | `-h` | uint >= 1 | | Height of raw .yuv input in pixels. |
+| `--pixel_format` | `-p` | `400` \| `420` \| `422` \| `444` \| `nv12` \| `nv16` \| `nv24` \| `p010` \| `p016` \| `p210` \| `p216` \| `p410` \| `p416` \| `yuyv422` \| `uyvy422` \| `v210` \| `y210` \| `y212` \| `xv30` \| `xv36` \| `vuyx` \| `ayuv` \| `yuv444p16msb` \| `rgb` \| `rgba` \| `bgra` | | Layout of raw .yuv input: 400 (luma only), 420, 422 or 444 planar, or a layout of the input format table (semi-planar, packed, or RGB converted to Y'CbCr with the rgb_* statement, ADR-2145, ADR-2146). |
+| `--bitdepth` | `-b` | uint 8..16 | | Bits per sample of raw .yuv input, 8 to 16 (implied by a layout that fixes it). |
+| `--check-sample-range`, `--check_sample_range` | | bool | `false` | Refuse a frame with a sample above 2^bpc - 1 and name the plane, row, column and value (ADR-1918). |
+| `--color_range_ref` | | `unknown` \| `limited` \| `full` | | Colour range of the reference input. |
+| `--color_range_dist` | | `unknown` \| `limited` \| `full` | | Colour range of the distorted input. |
+| `--color_primaries_ref` | | `unknown` \| `bt709` \| `bt2020` | | Colour primaries of the reference input. |
+| `--color_primaries_dist` | | `unknown` \| `bt709` \| `bt2020` | | Colour primaries of the distorted input. |
+| `--color_trc_ref` | | `unknown` \| `bt709` \| `smpte2084` \| `pq` | | Transfer characteristic of the reference input. |
+| `--color_trc_dist` | | `unknown` \| `bt709` \| `smpte2084` \| `pq` | | Transfer characteristic of the distorted input. |
+| `--color_matrix_ref` | | `unknown` \| `bt709` \| `bt2020nc` \| `ictcp` | | Matrix coefficients of the reference input. |
+| `--color_matrix_dist` | | `unknown` \| `bt709` \| `bt2020nc` \| `ictcp` | | Matrix coefficients of the distorted input. |
+| `--rgb_matrix` | | `bt601` \| `bt709` \| `bt2020ncl` | | Raw rgb, rgba and bgra input: the Y'CbCr matrix of the conversion; no default, the input is refused without it (ADR-2146). |
+| `--rgb_range` | | `limited` \| `full` | | Raw RGB input: the range of the R'G'B' samples; no default. |
+| `--rgb_transfer` | | `bt709` \| `srgb` \| `pq` \| `hlg` | | Raw RGB input: the transfer characteristic of the R'G'B' samples (checked, not applied); no default. |
+| `--rgb_out_range` | | `limited` \| `full` | | Raw RGB input: the range of the Y'CbCr frame made; limited is the range the VMAF models are trained on; no default. |
+| `--model` | `-m` | string | library default (`VMAF_DEFAULT_MODEL_VERSION`) | Model, colon-delimited: version= a built-in model, path= a model file, name= the name in the report, disable_clip, enable_transform, &lt;feature&gt;.&lt;option&gt;=&lt;value&gt; overloads. Several models score in one pass (repeat the option; the filter separates them with \|). |
+| `--backend` | | `auto` \| `cpu` \| `cuda` \| `sycl` \| `hip` \| `metal` | `auto` | Backend: auto uses the available ones; any other value runs that backend alone and fails when it is not available. |
+| `--no_cuda` | | bool | `false` | Disable the CUDA backend. |
+| `--no_sycl` | | bool | `false` | Disable the SYCL (oneAPI) backend. |
+| `--no_hip` | | bool | `false` | Disable the HIP (ROCm) backend. |
+| `--no_metal` | | bool | `false` | Disable the Metal (Apple silicon) backend. |
+| `--feature` | | string | | Additional feature extractor, name[=key=value:...] (for example psnr or cambi=full_ref=true); several may be given (the filter separates them with \|). Mutually exclusive with the CTC presets. |
+| `--aom_ctc` | | `v1.0` \| `v2.0` \| `v3.0` \| `v4.0` \| `v5.0` \| `v6.0` \| `v7.0` | | AOM common test conditions preset: a fixed model and feature set. |
+| `--nflx_ctc` | | `v1.0` | | Netflix common test conditions preset: a fixed model and feature set. |
+| `--tiny-model`, `--tiny_model` | | string | | Tiny ONNX model to load alongside the classic models. |
+| `--tiny-device`, `--tiny_device` | | `auto` \| `cpu` \| `cuda` \| `openvino` \| `openvino-npu` \| `openvino-cpu` \| `openvino-gpu` \| `coreml` \| `coreml-ane` \| `coreml-gpu` \| `coreml-cpu` \| `rocm` | `auto` | ONNX Runtime execution provider of the tiny model. |
+| `--dnn-ep`, `--dnn_ep` | | `auto` \| `cpu` \| `cuda` \| `openvino` \| `openvino-npu` \| `openvino-cpu` \| `openvino-gpu` \| `coreml` \| `coreml-ane` \| `coreml-gpu` \| `coreml-cpu` \| `rocm` | | Alias of the tiny-model device under the ONNX Runtime name (execution provider); both set the same setting. |
+| `--tiny-threads`, `--tiny_threads` | | uint | | Intra-op threads of the CPU execution provider (0: the runtime's default). |
+| `--tiny-fp16`, `--tiny_fp16` | | bool | `false` | Request fp16 input and output where the execution provider supports it. |
+| `--tiny-model-verify`, `--tiny_model_verify` | | bool | `false` | Require a Sigstore bundle verification of the tiny model (cosign verify-blob) before it loads; a missing bundle, a missing cosign or a failed verification refuses the model. |
+| `--tiny-codec`, `--tiny_codec` | | string | | Encoder of the distorted clip, required by codec-aware tiny models (fr_regressor_v2/v3), which refuse to score without it. Must be in the model sidecar's encoder_vocab; the ffprobe names h264, hevc, av1, vp9 and vvc are accepted. |
+| `--tiny-preset`, `--tiny_preset` | | string | | Encoder preset (medium, slow, p4, 5, ...), read as the encoder defines it. Unset: ordinal 5 (medium). A model trained with one preset (fr_regressor_v3) ignores it and warns. |
+| `--tiny-crf`, `--tiny_crf` | | uint 0..63 | | CRF or QP used for the encode, normalised as the model sidecar declares. Required with the codec and preset. |
+| `--tiny-resize`, `--tiny_resize` | | `bilinear` \| `nearest` \| `bicubic` \| `disabled` | `disabled` | Resize filter for NCHW tiny models whose input size differs from the frame; disabled refuses the mismatch (-ERANGE). The three filters give scores about 2% apart: record the filter with the model. |
+| `--no-reference`, `--no_reference` | | bool | `false` | No-reference mode; needs a no-reference tiny model. The reference becomes a formality: only the distorted picture is scored. |
+| `--threads` | | uint | | Worker threads of the feature extractors, capped to the hardware threads (0: score in the calling thread). |
+| `--frame_cnt` | | uint >= 1 | | Score at most this many frames. |
+| `--frame_skip_ref` | | uint | | Skip this many frames at the start of the reference. |
+| `--frame_skip_dist` | | uint | | Skip this many frames at the start of the distorted video. |
+| `--no_prediction` | `-n` | bool | `false` | Extract features only; no model score. |
+| `--cpumask` | `-c` | uint | | Bitmask of CPU instruction sets the extractors must not use. |
+| `--gpumask` | | uint | | Bitmask of GPU operations the extractors must not use. |
+| `--sycl_device` | | uint | | SYCL GPU by index (unset: selected automatically). |
+| `--hip_device` | | uint | | HIP GPU by index (opt-in: HIP is off unless this or --backend hip is given). |
+| `--metal_device` | | uint | | Metal GPU by index (opt-in: Metal is off unless this or --backend metal is given). |
+| `--subsample` | | uint >= 1 | `1` | Score every n-th frame (1: every frame). |
+| `--precision` | | `legacy` \| `max` \| `full` \| `1` \| `2` \| `3` \| `4` \| `5` \| `6` \| `7` \| `8` \| `9` \| `10` \| `11` \| `12` \| `13` \| `14` \| `15` \| `16` \| `17` | `legacy` | Score precision: N (1 to 17) writes %.&lt;N&gt;g; max or full write %.17g (round-trip lossless); legacy writes %.6f (Netflix-compatible). The scoring server returns lossless scores unless asked otherwise. |
+| `--output` | `-o` | string | | Report file. |
+| `--xml`, `--json`, `--csv`, `--sub` | | `json` \| `xml` \| `csv` \| `sub` | `xml` | Report format; json and xml carry the backend receipt. |
+| `--provenance-sidecar` | | bool | `false` | Also write the provenance record to &lt;output&gt;.provenance.json; CSV and SUB reports carry it nowhere else (RC4 WP5). |
+| `--netflix-compat`, `--netflix_compat` | | bool | `false` | Restore the Netflix-upstream defaults: CPU backend, %.6f precision, vmaf_v0.6.1 model. |
+| `--quiet` | `-q` | bool | `false` | Disable the FPS meter when run in a terminal. |
+| `--version` | `-v` | bool | `false` | Print the version and exit. |
+| `--list-backends` | | bool | `false` | Print the scoring backends this binary was built with and which of them initialise here, as JSON, and exit (ADR-1874). |
+| `--help` | | bool | `false` | Print this message and exit. |
+| `--verify-provenance` | | string | | Re-run the configuration a JSON report records and compare every configuration field and score bit for bit; exits nonzero naming the first difference (RC4 WP5). |
+
+<!-- END GENERATED: vmafx-api cli options -->
+
 ## Input flags
 
 | Flag | Short | Argument | Required | Notes |
@@ -58,6 +133,7 @@ Without `--model`, the built-in `vmaf_v1.0.16_3d0h` model is loaded. Without
 | `--height` | `-h` | unsigned | **yes for `.yuv`** | Ignored for `.y4m`. |
 | `--pixel_format` | `-p` | `400` \| `420` \| `422` \| `444`, or a layout name | **yes for `.yuv`** | 420 covers the overwhelming majority of streamable content; `400` is luma only. A layout name reads a raw file in that layout, see [Raw input layouts](#raw-input-layouts). |
 | `--bitdepth` | `-b` | `8` to `16` | **yes for `.yuv`**, implied by a layout that fixes it | 10 and 12 bit require a 10-/12-bit aware model (e.g. `vmaf_b_v0.6.3` for banding sensitivity). Some extractors take only some depths: `psnr` every depth from 8 to 16, `float_psnr` and `ciede` 8, 10, 12 and 16, `psnr_hvs` up to 12. |
+| `--check-sample-range` | | none | no | Refuse a frame with a sample above $2^{\mathrm{bitdepth}} - 1$ (for example 1024 in a 10-bit `.yuv`) and stop with a non-zero exit status; the message names the picture, plane, row, column and value. Off by default. Underscore alias `--check_sample_range`. See [Sample range](../api/sample-range.md). |
 | `--rgb_matrix` | | `bt601` \| `bt709` \| `bt2020ncl` | **yes for `rgb`, `rgba`, `bgra`** | Y'CbCr matrix of the conversion; no default. |
 | `--rgb_range` | | `limited` \| `full` | **yes for RGB layouts** | Range of the R'G'B' samples; no default. |
 | `--rgb_transfer` | | `bt709` \| `srgb` \| `pq` \| `hlg` | **yes for RGB layouts** | Transfer of the R'G'B' samples; checked, not applied; no default. |
@@ -66,6 +142,12 @@ Without `--model`, the built-in `vmaf_v1.0.16_3d0h` model is loaded. Without
 If any of `--width`, `--height`, `--pixel_format`, `--bitdepth` is supplied,
 the input is treated as raw YUV and **all four** become mandatory. `vmaf` reads
 only `.y4m` and `.yuv`; decode other containers first.
+
+A raw `.yuv` file of 10 or 12 bits stores each sample in 16 bits, so it can
+hold values above $2^{\mathrm{bitdepth}} - 1$. Such input is invalid: the CPU
+extractors and
+their GPU twins may score it differently. `--check-sample-range` finds the
+first such sample.
 
 Odd frame dimensions (for example 1921x1081 or 19x19) are accepted for raw
 `.yuv` and `.y4m` inputs in 4:2:0 and 4:2:2. Chroma plane extents use ceiling
@@ -361,15 +443,19 @@ into the report.
 
 ### Backend receipt in JSON output
 
-A JSON report ends with two top-level keys that say where the features were
-computed ([ADR-1359](../adr/1359-cli-feature-backend-twin.md)):
+A JSON report ends with the score format, the provenance record of the run and
+two keys that say where the features were computed
+([ADR-1359](../adr/1359-cli-feature-backend-twin.md)); the library writes all
+of them ([ADR-2073](../adr/2073-vmafx-provenance-record.md)):
 
 ```json
-"backend_used": "sycl",
+"score_format": "%.17g",
+"provenance": {"abi_major":0,"abi_minor":1,"abi_patch":5,"active_backend":"sycl", ...},
 "feature_backends": [
   {"extractor": "ciede_sycl", "backend": "sycl"},
   {"extractor": "brisque", "backend": "cpu"}
-]
+],
+"backend_used": "sycl"
 ```
 
 - **`backend_used`** is `cuda`, `sycl`, `hip` or `metal` when at least one
@@ -380,10 +466,30 @@ computed ([ADR-1359](../adr/1359-cli-feature-backend-twin.md)):
   registration order, with the backend it ran on. It includes the extractors a
   model needs and reflects the CPU replacements made after the first frame, so
   a model feature that fell back to the CPU appears as a `cpu` entry.
+- **`provenance`** is the library's provenance record of the run: library,
+  ABI and build, device, options, frames, models with their SHA-256, the
+  producer of every feature, the command line, and the digests that let
+  `--verify-provenance` check the report. [Score provenance](provenance.md)
+  documents every field. The scoring server copies it into every response
+  ([scoring API contract](../server/api-contract.md)).
+- **`score_format`** is the printf format the scores were written with.
 
 A run mixed device twins and CPU extractors when `backend_used` names a device
-and `feature_backends` holds at least one `cpu` entry. XML, CSV and SUB output
-carry neither key.
+and `feature_backends` holds at least one `cpu` entry. XML reports carry the
+record as a `<provenance>` element; CSV and SUB reports carry none of these
+keys, and `--provenance-sidecar` writes the record next to them as
+`<output>.provenance.json`.
+
+### Verifying a report
+
+```bash
+vmaf --verify-provenance report.json
+```
+
+re-runs the command line a JSON report recorded and compares every
+configuration field and every score bit for bit; it exits 0 on a match, 1
+naming the first difference, and 2 when the check cannot run. See
+[Score provenance](provenance.md#quick-start).
 
 ### Score precision
 
@@ -428,6 +534,37 @@ runtime dispatch rules and which features have GPU or SIMD twins.
 | `--cpumask <bitmask>` (`-c`) | all ISAs enabled | Mask out specific CPU ISAs (for example force scalar, or disable AVX-512). Values are fork-internal; see `core/src/cpu.h`. |
 | `--gpumask <mask>` | GPU enabled | Not a per-op mask; see [`--gpumask`](#the-gpumask-flag). |
 | `--threads <N>` | `0` (serial) | Worker thread count; see [Threads](#threads). |
+
+### Which backends this binary can use
+
+`vmaf --list-backends` prints, as one JSON document on stdout, every backend
+the CLI knows (`cpu`, `cuda`, `sycl`, `hip`, `metal`, in that order) and exits
+0. It needs no input files and ignores the other options.
+
+```json
+{
+  "backends": [
+    {"name": "cpu", "compiled": true, "usable": true},
+    {"name": "cuda", "compiled": true, "usable": false, "init_status": -19},
+    {"name": "sycl", "compiled": false, "usable": false},
+    {"name": "hip", "compiled": false, "usable": false},
+    {"name": "metal", "compiled": false, "usable": false}
+  ]
+}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `compiled` | The backend is built into this binary. The `--help` text lists every backend name on every build, so it does not answer this. |
+| `usable` | The backend's state initialises on its default device (index 0) on this host: the same call a run with `--backend <name>` makes. Always `true` for `cpu`, never for a backend that is not compiled. |
+| `init_status` | Present when a compiled backend did not initialise: the negative errno its initialiser returned (for example `-19`, `-ENODEV`, when no device is found). |
+
+Each compiled GPU backend is initialised once and released, which can take up
+to about a second per backend. The library may log why an initialisation
+failed on stderr; stdout carries only the JSON. `vmaf-tune --score-backend`
+and `vmafx-tune --score-backend` read this report
+([score backends](vmaf-tune-score-backend.md),
+[ADR-1874](../adr/1874-vmaf-list-backends.md)).
 
 ### The gpumask flag
 
@@ -478,6 +615,36 @@ still contribute to memory use. See
 
 `--subsample` trades precision for speed. Pooled scores are still computed over
 the sampled subset, so keep it at 1 for final reports.
+
+## Input colorimetry
+
+```text
+--color_range_ref/_dist <limited|full|unknown>
+--color_primaries_ref/_dist <bt709|bt2020|unknown>
+--color_trc_ref/_dist <bt709|smpte2084|pq|unknown>
+--color_matrix_ref/_dist <bt709|bt2020nc|ictcp|unknown>
+```
+
+A raw `.yuv` or `.y4m` file carries no colorimetry, so each input is described
+separately: the `_ref` flags describe the reference, the `_dist` flags the
+distorted video. Give all four attributes of an input or none of them; a partly
+specified input is a usage error. `pq` is an alias of `smpte2084`.
+
+Only a model that declares a [`conversion_target`](../models/v1.md#model-declared-conversion-target)
+reads these flags: libvmaf then converts both inputs to the model's colorspace
+(and pixel format and bit depth, where the model pins them) before it extracts
+features, and refuses a run whose input colorimetry is missing
+(`libvmaf returned -22`, with a message naming the missing attributes). Models
+without a `conversion_target`, including every shipped VMAF model, ignore the
+flags and score the pictures as they are. The conversion needs a `vmaf` built
+with `-Denable_zimg=true` ([build flags](../development/build-flags.md)); without
+it a run that needs a conversion fails with `-ENOTSUP`.
+
+```bash
+vmaf -r ref.yuv -d dist.yuv -w 576 -h 324 -p 420 -b 10 -m path=hdr_model.json \
+  --color_range_ref limited --color_primaries_ref bt2020 --color_trc_ref pq --color_matrix_ref bt2020nc \
+  --color_range_dist limited --color_primaries_dist bt2020 --color_trc_dist pq --color_matrix_dist bt2020nc
+```
 
 ## Input read-ahead
 
@@ -613,6 +780,9 @@ sidecar `<stem>.json`. If the sidecar declares `quant_mode != "fp32"` (such as
 `"dynamic"`, `"static"` or `"qat"`), the runtime loads the quantised sibling
 `<stem>.int8.onnx` when it is present and valid.
 
+When `--tiny-model` names an explicit `.int8.onnx` path directly, the runtime loads
+that artifact directly without attempting to append a redundant `.int8` suffix.
+
 If the int8 artifact is missing, fails the op allowlist, or cannot be opened by
 the installed ONNX Runtime, the loader falls back to the fp32 baseline
 `<stem>.onnx` rather than failing the run (ADR-1032). The fallback is announced
@@ -738,6 +908,7 @@ certificate identity). See
 | `--quiet` | `-q` | Disable the FPS meter when run in a TTY. |
 | `--no_prediction` | `-n` | Skip final model prediction; extract features only. Useful for feeding raw features into a custom pool. |
 | `--netflix-compat` | | Restore Netflix-upstream legacy defaults: CPU backend, `%.6f` precision and the `vmaf_v0.6.1` default model. Underscore alias `--netflix_compat`. See [vmafx-cli.md](vmafx-cli.md). |
+| `--list-backends` | | Print the backends this binary was built with and which of them initialise here, as JSON on stdout, and exit 0; see [Which backends this binary can use](#which-backends-this-binary-can-use). |
 | `--version` | `-v` | Print the `libvmaf` version and git SHA to stderr and exit 0. |
 
 CUDA-initialization, luminance, SpEED and VIF diagnostics are complete,
@@ -804,11 +975,12 @@ On Linux and macOS the emitted bytes are unchanged. Reported upstream as
 
 | Code | Meaning |
 | --- | --- |
-| 0 | Success, or `--help` / `--version` invocation. |
+| 0 | Success, or `--help` / `--version` / `--list-backends` invocation. |
 | 1 | Any parse / I/O / runtime error. `vmaf` writes a diagnostic to stderr before exiting. |
 | 100 | Explicit `--backend <name>` requested but the backend is not compiled in or failed to initialise (ADR-0498, ADR-0543). |
 | 101 | No frames were decoded (empty or too-short input, or a `--frame_skip_*` value past end-of-stream). `vmaf` writes `no frames decoded ...` to stderr. |
 | 102 | An input stream failed to read (truncated file, unreadable media, I/O error). `vmaf` writes `problem while reading pictures` to stderr and writes **no** output file, so a partial score cannot be mistaken for a complete one (ADR-1262). |
+| 234 (also other values) | libvmaf failed to score a frame it had read: a feature extractor refused the frame or its options (for example `float_ms_ssim` on a picture below 176x176, or an unsupported viewing geometry). The exit status is the libvmaf error code modulo 256 on every platform, as a non-negative value (`-EINVAL` is 234; Windows does not report the raw 32-bit negative code). `vmaf` writes `problem scoring picture N: libvmaf returned E` to stderr, after the libvmaf message that names the extractor; before 2026-10 it wrote `problem reading pictures`, which read like an input failure. |
 
 Apart from these codes, `libvmaf` does not surface granular error codes at the
 process boundary: the specific `VMAF_ERR_*` code from the C API is logged to

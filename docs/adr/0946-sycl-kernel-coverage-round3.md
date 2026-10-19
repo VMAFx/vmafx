@@ -93,3 +93,12 @@ skip-on-no-device via `[skip: no SYCL device]` printf.
   `docs/research/0946-sycl-kernel-coverage-round3-2026-05-31.md`
 - Source: `req` — operator brief 2026-05-31 ("SYCL kernel coverage
   round 3 — extend beyond PRs #351 + #376").
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 85: `- ADR-0219 — CHUG re-extraction trusted-column invariant`:
+  Cites ADR-0219 for CHUG re-extraction; ADR-0219 is "motion3 GPU coverage on
+  Vulkan + CUDA + SYCL (3-frame window)". CHUG re-extraction is ADR-0510.

@@ -13,8 +13,8 @@
 #       ADRs (`0199-tiny-ai-netflix-training-corpus.md` →
 #       `0242-…`, etc.); slug filenames remain stable across that
 #       remap, so fragments survive the renumber without churn.
-#       Rows render oldest-first by ADR ID (matches the existing
-#       README order — ADR-0001 at the top, latest at the bottom).
+#       Rows render in landing order: the frozen _order.txt first, then
+#       every other fragment in the order it reached the branch (ADR-2197).
 #
 # Outputs (stdout): the rendered docs/adr/README.md body.
 #
@@ -43,13 +43,12 @@ ORDER_FILE="$FRAG_ROOT/_order.txt"
 
 render() {
   cat "$HEADER"
-  # Order is driven by _order.txt (frozen at migration time to preserve
-  # the existing README row order, which is commit-merge-order rather
-  # than strict numeric). New PRs append their slug to _order.txt — this
-  # is the only line both PRs collide on, and conflict resolution is
-  # trivial (concatenate both lines). Any fragment file not yet listed in
-  # _order.txt is emitted afterwards in lexical (numeric) order so
-  # forgotten manifest updates do not silently drop rows.
+  # Order (ADR-2197): _order.txt is the frozen list of the rows that existed
+  # when the index moved to fragments; it is never edited again. Every other
+  # fragment follows in the order it landed on the branch, which
+  # scripts/docs/fragment-order.py reads from history (the commit that first
+  # added the file). A pull request therefore adds one fragment file and names
+  # no position, so two pull requests never touch the same line.
   declare -A seen=()
   if [[ -f "$ORDER_FILE" ]]; then
     while IFS= read -r slug; do
@@ -66,14 +65,12 @@ render() {
       fi
     done <"$ORDER_FILE"
   fi
-  # Tail: any fragment not listed in the manifest, lexically sorted.
-  local frag slug
-  while IFS= read -r frag; do
-    slug="$(basename "$frag" .md)"
+  local name slug
+  while IFS= read -r name; do
+    slug="${name%.md}"
     [[ -n "${seen[$slug]:-}" ]] && continue
-    cat "$frag"
-  done < <(find "$FRAG_ROOT" -maxdepth 1 -type f -name '[0-9]*.md' \
-    ! -name '_*' | LC_ALL=C sort)
+    cat "$FRAG_ROOT/$name"
+  done < <(python3 "$SCRIPT_DIR/fragment-order.py" "$FRAG_ROOT" --glob '[0-9]*.md')
 }
 
 mode="render"
@@ -108,7 +105,7 @@ if [[ "$mode" == check ]]; then
   fi
   diff -u "$README" <(printf '%s\n' "$rendered") || [ "$?" -eq 1 ]
   printf '\ndocs/adr/README.md is out of sync with docs/adr/_index_fragments/.\n' >&2
-  printf 'Run: scripts/docs/concat-adr-index.sh --write\n' >&2
+  printf 'Run: make docs-render (the merge train and the release cut run it; a pull request does not carry it)\n' >&2
   exit 1
 fi
 

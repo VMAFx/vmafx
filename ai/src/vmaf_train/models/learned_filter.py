@@ -21,7 +21,7 @@ class _LearnedFilterHParams(TypedDict):
     lr: float
 
 
-class _ResBlock(nn.Module):
+class _ResBlock(nn.Module):  # type: ignore[misc]  # torch / Lightning are untyped for the mypy gate (--no-site-packages)
     def __init__(self, channels: int) -> None:
         super().__init__()
         self.block = nn.Sequential(
@@ -34,7 +34,7 @@ class _ResBlock(nn.Module):
         return x + self.block(x)
 
 
-class LearnedFilter(L.LightningModule):
+class LearnedFilter(L.LightningModule):  # type: ignore[misc]  # torch / Lightning are untyped for the mypy gate (--no-site-packages)
     """Frame → frame residual CNN (denoise/deblock/sharpen) for ffmpeg vmaf_pre filter."""
 
     @property
@@ -60,14 +60,14 @@ class LearnedFilter(L.LightningModule):
         return torch.clamp(x + residual, 0.0, 1.0)
 
     def training_step(self, batch: object, _idx: int) -> torch.Tensor:
-        deg, clean = batch  # type: ignore[misc]
+        deg, clean = cast("tuple[torch.Tensor, torch.Tensor]", batch)
         out = self(deg)
         loss = nn.functional.l1_loss(out, clean)
         self.log("train/l1", loss, prog_bar=True, on_epoch=True)
         return loss
 
     def validation_step(self, batch: object, _idx: int) -> None:
-        deg, clean = batch  # type: ignore[misc]
+        deg, clean = cast("tuple[torch.Tensor, torch.Tensor]", batch)
         out = self(deg)
         self.log("val/l1", nn.functional.l1_loss(out, clean), prog_bar=True, on_epoch=True)
 

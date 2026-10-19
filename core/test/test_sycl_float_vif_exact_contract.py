@@ -79,6 +79,9 @@ REPLAY = (
 HOST_ONLY = ("make_noise_variance", "make_statistic_params")
 
 
+TAP_SITES = 2  # places the host hands a scale's taps to a kernel
+
+
 def _code(source: str) -> str:
     """The source with its comments blanked, so prose cannot trip a check."""
     return COMMENT.sub(" ", source)
@@ -120,7 +123,7 @@ def _tap_failures(sources: dict[str, str]) -> list[str]:
     init = _function_body(twin, "init_vif_taps")
     if "vif_get_filter(state.taps[scale].tap, scale, (float)state.vif_kernelscale);" not in init:
         failures.append(f"{TWIN}: the taps no longer come from vif_get_filter()")
-    if twin.count(".taps = state.taps[scale],") != 2:
+    if twin.count(".taps = state.taps[scale],") != TAP_SITES:
         failures.append(f"{TWIN}: the filter and decimate launches must take the scale's taps")
     return failures
 

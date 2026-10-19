@@ -149,7 +149,7 @@ def _validate_payload(raw: bytes, source: str) -> dict[str, Any]:
     _validate_collisions(collisions, source)
     if not all(isinstance(key, str) and isinstance(value, str) for key, value in headings.items()):
         raise GateError(f"baseline {source} has an invalid heading exception entry")
-    if raw != _canonical_bytes(payload):
+    if raw.replace(b"\r\n", b"\n") != _canonical_bytes(payload):
         raise GateError(f"baseline {source} is not in deterministic generated form")
     return payload
 

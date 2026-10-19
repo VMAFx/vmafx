@@ -12,9 +12,11 @@ fails before it touches the library.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from . import typesys
 from .layout import by_value_order, layouts
-from .model import Api, Callback, Field, Function, Param, Struct, upper_snake
+from .model import Api, Callback, DefinitionError, Field, Function, Param, Struct, upper_snake
 from .python_runtime import CONTEXT_CLASS, LIBRARY_CLASS, RUNTIME
 
 CTYPES = {
@@ -27,6 +29,7 @@ CTYPES = {
     "uptr": "ctypes.c_size_t",
     "size": "ctypes.c_size_t",
     "ptr": "ctypes.c_void_p",
+    "cptr": "ctypes.c_void_p",
     "status": "ctypes.c_int32",
     "cstr": "ctypes.c_char_p",
 }
@@ -43,6 +46,7 @@ PYTYPES = {
     "cstr": "str | None",
 }
 CONTEXT = "VmafxContext"
+POINTERS = ("ptr", "cptr")  # untyped memory: no Python value
 LINE_LIMIT = 100  # black line length (pyproject.toml)
 
 
@@ -168,7 +172,7 @@ def _record_value(api: Api, fld: Field) -> tuple[str, str] | None:
         if fld.count:
             return f"tuple[{record}, ...]", f"tuple({record}.from_c(x) for x in {raw})"
         return record, f"{record}.from_c({raw})"
-    if kind != "scalar" or fld.type == "ptr":
+    if kind != "scalar" or fld.type in POINTERS:
         return None
     value = f"_text({raw})" if fld.type == "cstr" else raw
     if fld.count:
@@ -176,19 +180,36 @@ def _record_value(api: Api, fld: Field) -> tuple[str, str] | None:
     return PYTYPES[fld.type], value
 
 
-def _plain(api: Api, fields: list[Field]) -> bool:
-    """A record converts back to C when every field is a single non-pointer number."""
-    return all(
-        typesys.kind(api, f.type) == "scalar" and f.type not in ("cstr", "ptr") and not f.count
-        for f in fields
+def _number(api: Api, fld: Field) -> bool:
+    """A single non-pointer number."""
+    return (
+        typesys.kind(api, fld.type) == "scalar"
+        and fld.type not in ("cstr", *POINTERS)
+        and not fld.count
     )
 
 
-def _to_c(item: Struct, fields: list[Field]) -> list[str]:
+def _nested_numbers(api: Api, fld: Field) -> bool:
+    """A single struct of numbers (VmafxFrameDesc.color): its record converts back."""
+    if typesys.kind(api, fld.type) != "struct" or fld.count:
+        return False
+    inner = [f for f in api.struct(fld.type).fields if f.name != "struct_size"]
+    return all(_number(api, f) for f in inner)
+
+
+def _plain(api: Api, fields: list[Field]) -> bool:
+    """A record converts back to C when every field is a single non-pointer number
+    or a single struct of such numbers."""
+    return all(_number(api, f) or _nested_numbers(api, f) for f in fields)
+
+
+def _to_c(api: Api, item: Struct, fields: list[Field]) -> list[str]:
     lines = [f"\n    def to_c(self) -> {item.name}:\n", f"        raw = {item.name}()\n"]
     if item.sized:
         lines.append("        raw.struct_size = ctypes.sizeof(raw)\n")
-    lines += [f"        raw.{f.name} = self.{f.name}\n" for f in fields]
+    for f in fields:
+        value = f"self.{f.name}.to_c()" if _nested_numbers(api, f) else f"self.{f.name}"
+        lines.append(f"        raw.{f.name} = {value}\n")
     return [*lines, "        return raw\n"]
 
 
@@ -210,12 +231,31 @@ def _record_class(api: Api, item: Struct) -> str:
     # still converts back (VmafxContextConfig and its log callback).
     plain = [f for f, _ in kept]
     if _plain(api, plain):
-        lines += _to_c(item, plain)
+        lines += _to_c(api, item, plain)
     return "".join(lines)
 
 
 def _method_name(fn: Function) -> str:
-    return fn.name.removeprefix("vmafx_context_").removeprefix("vmafx_")
+    """The function's `python` name, else its C name without `vmafx_context_` / `vmafx_`."""
+    return fn.python or fn.name.removeprefix("vmafx_context_").removeprefix("vmafx_")
+
+
+def _library_method_name(fn: Function) -> str:
+    return fn.python or fn.name.removeprefix("vmafx_")
+
+
+def _refuse_collisions(cls: str, fns: list[Function], name_of: Callable[[Function], str]) -> None:
+    """Two functions on one class with one Python name would leave the first
+    unreachable (Python keeps the last definition): refuse the definition."""
+    seen: dict[str, str] = {}
+    for fn in fns:
+        name = name_of(fn)
+        if name in seen:
+            raise DefinitionError(
+                f"Python binding: {cls}.{name} would bind both {seen[name]} and {fn.name}; "
+                "give one of them a `python` name"
+            )
+        seen[name] = fn.name
 
 
 def _call_args(api: Api, fn: Function, first: str) -> tuple[list[str], list[str], str]:
@@ -258,7 +298,8 @@ def _method(api: Api, fn: Function) -> str:
     body = "".join(f"        {line}\n" for line in setup)
     body += py_call(f"status = self._lib.{fn.name}", args, "        ") + "\n"
     body += f'        _raise(self._lib, status, error, "{fn.name}")\n'
-    body += f"        return {result}\n"
+    if result != "None":  # ruff (RET501) refuses a bare `return None`
+        body += f"        return {result}\n"
     return f'    def {_method_name(fn)}(self{params}) -> {ret}:\n        """{fn.doc}"""\n' + body
 
 
@@ -267,7 +308,7 @@ def _bindable(api: Api, param: Param) -> bool:
     kind = typesys.kind(api, param.type)
     if param.mode == "error" or (param.mode == "out" and kind == "struct"):
         return True
-    return param.mode == "in" and kind == "scalar" and param.type != "ptr"
+    return param.mode == "in" and kind == "scalar" and param.type not in POINTERS
 
 
 def context_methods(api: Api) -> list[Function]:
@@ -305,7 +346,7 @@ def library_functions(api: Api) -> list[Function]:
     out = []
     for fn in api.functions:
         kinds = {typesys.kind(api, p.type) for p in fn.params}
-        if kinds - {"scalar"} or any(p.type == "ptr" for p in fn.params):
+        if kinds - {"scalar"} or any(p.type in POINTERS for p in fn.params):
             continue
         if fn.returns not in ("cstr", "void"):
             continue
@@ -325,8 +366,10 @@ def _library_method(api: Api, fn: Function) -> str:
     else:
         values = ", ".join(f"{p.name}.value" for p in outs) + ("," if len(outs) == 1 else "")
         ret, body = "tuple[int, ...]", body + f"        {call}\n        return ({values})\n"
-    name = fn.name.removeprefix("vmafx_")
-    return f'    def {name}(self{params}) -> {ret}:\n        """{fn.doc}"""\n' + body
+    return (
+        f'    def {_library_method_name(fn)}(self{params}) -> {ret}:\n        """{fn.doc}"""\n'
+        + body
+    )
 
 
 def module_text(api: Api) -> str:
@@ -337,6 +380,8 @@ def module_text(api: Api) -> str:
         parts.append(_struct_fields(api))
     parts += [_layout_table(api), _signature_table(api), RUNTIME]
     parts += [_record_class(api, item) for item in api.structs]
+    _refuse_collisions("Context", context_methods(api), _method_name)
+    _refuse_collisions("Library", library_functions(api), _library_method_name)
     methods = "\n".join(_method(api, fn) for fn in context_methods(api))
     parts.append(CONTEXT_CLASS + "\n" + methods)
     lib_methods = "\n".join(_library_method(api, fn) for fn in library_functions(api))

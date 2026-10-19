@@ -21,7 +21,7 @@ METAL_PARITY_TEST = REPO_ROOT / "core/test/test_metal_float_ms_ssim_parity.c"
 OPTION_SEMANTICS = REPO_ROOT / "core/src/feature/metal/float_ms_ssim_option_semantics.h"
 OPTION_SEMANTICS_TEST = REPO_ROOT / "core/test/test_metal_ms_ssim_option_semantics.c"
 MESON_TESTS = REPO_ROOT / "core/test/meson.build"
-METAL_AGENTS = REPO_ROOT / "core/src/feature/metal/AGENTS.md"
+METAL_AGENTS = REPO_ROOT / "core/src/feature/metal/AGENTS.d/option-table-sync.md"
 METRICS_DOC = REPO_ROOT / "docs/metrics/ms-ssim.md"
 RESEARCH_DOC = REPO_ROOT / "docs/research/2110-metal-ms-ssim-option-parity-2026-09-25.md"
 

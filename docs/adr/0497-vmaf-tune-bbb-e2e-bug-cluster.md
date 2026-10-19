@@ -131,3 +131,16 @@ over per-LOC PRs" rule in user memory).
   per-title ladder), ADR-0307 (default CRF sweep), ADR-0301
   (sample-clip encoding).
 - Source: `req` — verbatim PR brief in the agent dispatch message.
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 12:
+  `([report](./research/2026-05-17-vmaf-tune-bbb-e2e-bug-log.md))`: Markdown
+  link targets docs/research/2026-05-17-vmaf-tune-bbb-e2e-bug-log.md which
+  does not exist on master.
+- About line 130: `- Related: ADR-0322 (Phase B target-VMAF bisect), ADR-0295
+  (Phase E`: Cites ADR-0322 for Phase B bisect; ADR-0322 does not exist.
+  Actual ADR is ADR-0326. See ADR-0326 (vmaf-tune Phase B target-VMAF bisect).

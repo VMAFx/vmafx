@@ -286,8 +286,8 @@ static inline mu_message_t adm_twin_check(const AdmTwin *twin, const AdmTwinCase
 }
 
 /* The seven scores under an option's feature-name suffix, and the sums
- * `debug=true` adds. The CPU files the debug ratio `adm` without the suffix,
- * so option cases leave it out. */
+ * `debug=true` adds. The debug ratio `adm` is filed without the suffix on the
+ * CPU and on every twin (ADR-2056), so option cases end with it unsuffixed. */
 #define ADM_TWIN_SCORE_KEYS(suffix)                                                                \
     "adm2" suffix, "aim" suffix, "adm3" suffix, "adm_scale0" suffix, "adm_scale1" suffix,          \
         "adm_scale2" suffix, "adm_scale3" suffix
@@ -304,8 +304,8 @@ static const char *const ADM_TWIN_DEBUG_KEYS[] = {
     ADM_TWIN_SUM_KEYS(""),
 };
 #define ADM_TWIN_NUM_DEBUG_KEYS (sizeof(ADM_TWIN_DEBUG_KEYS) / sizeof(ADM_TWIN_DEBUG_KEYS[0]))
-/* The seven scores and the ten sums of an option case. */
-#define ADM_TWIN_NUM_OPTION_KEYS 17u
+/* The seven scores and the ten sums of an option case, then the unsuffixed `adm`. */
+#define ADM_TWIN_NUM_OPTION_KEYS 18u
 #define ADM_TWIN_NUM_SCORE_KEYS 7u
 
 /* Default options with `debug=true`: every output, the per-scale sums
@@ -409,21 +409,22 @@ static inline mu_message_t adm_twin_1080p_exact(const AdmTwin *twin)
 static inline mu_message_t adm_twin_gain_limit_exact(const AdmTwin *twin)
 {
     static const char *const keys[] = {ADM_TWIN_SCORE_KEYS("_egl_1.2"),
-                                       ADM_TWIN_SUM_KEYS("_egl_1.2")};
+                                       ADM_TWIN_SUM_KEYS("_egl_1.2"), "adm"};
     return adm_twin_option(twin, "float_adm egl=1.2", ADM_TWIN_CONTRAST, "adm_enhn_gain_limit",
                            "1.2", keys);
 }
 
 static inline mu_message_t adm_twin_bypass_cm_exact(const AdmTwin *twin)
 {
-    static const char *const keys[] = {ADM_TWIN_SCORE_KEYS("_bcm_1"), ADM_TWIN_SUM_KEYS("_bcm_1")};
+    static const char *const keys[] = {ADM_TWIN_SCORE_KEYS("_bcm_1"), ADM_TWIN_SUM_KEYS("_bcm_1"),
+                                       "adm"};
     return adm_twin_option(twin, "float_adm bcm=1", ADM_TWIN_NOISE, "adm_bypass_cm", "1", keys);
 }
 
 static inline mu_message_t adm_twin_skip_aim_scale_exact(const AdmTwin *twin)
 {
-    static const char *const keys[] = {ADM_TWIN_SCORE_KEYS("_sasc_1"),
-                                       ADM_TWIN_SUM_KEYS("_sasc_1")};
+    static const char *const keys[] = {ADM_TWIN_SCORE_KEYS("_sasc_1"), ADM_TWIN_SUM_KEYS("_sasc_1"),
+                                       "adm"};
     return adm_twin_option(twin, "float_adm sasc=1", ADM_TWIN_NOISE, "adm_skip_aim_scale", "1",
                            keys);
 }
@@ -432,7 +433,8 @@ static inline mu_message_t adm_twin_skip_aim_scale_exact(const AdmTwin *twin)
  * 1e-10 denominator, and its score is reported as 0. */
 static inline mu_message_t adm_twin_skip_scale0_exact(const AdmTwin *twin)
 {
-    static const char *const keys[] = {ADM_TWIN_SCORE_KEYS("_ssz"), ADM_TWIN_SUM_KEYS("_ssz")};
+    static const char *const keys[] = {ADM_TWIN_SCORE_KEYS("_ssz"), ADM_TWIN_SUM_KEYS("_ssz"),
+                                       "adm"};
     const AdmTwinCase c = {.what = "float_adm ssz",
                            .w = FIXTURE_W,
                            .h = FIXTURE_H,
@@ -455,7 +457,7 @@ static inline mu_message_t adm_twin_skip_scale0_exact(const AdmTwin *twin)
 static inline mu_message_t adm_twin_view_dist_exact(const AdmTwin *twin)
 {
     static const char *const keys[] = {ADM_TWIN_SCORE_KEYS("_nvd_1.5"),
-                                       ADM_TWIN_SUM_KEYS("_nvd_1.5")};
+                                       ADM_TWIN_SUM_KEYS("_nvd_1.5"), "adm"};
     return adm_twin_option(twin, "float_adm nvd=1.5", ADM_TWIN_NOISE, "adm_norm_view_dist", "1.5",
                            keys);
 }
@@ -465,9 +467,9 @@ static inline mu_message_t adm_twin_view_dist_exact(const AdmTwin *twin)
 static inline mu_message_t adm_twin_weight_overrides_exact(const AdmTwin *twin)
 {
     static const char *const f1[] = {ADM_TWIN_SCORE_KEYS("_f1s0_0.5"),
-                                     ADM_TWIN_SUM_KEYS("_f1s0_0.5")};
+                                     ADM_TWIN_SUM_KEYS("_f1s0_0.5"), "adm"};
     static const char *const f2[] = {ADM_TWIN_SCORE_KEYS("_f2s2_1.75"),
-                                     ADM_TWIN_SUM_KEYS("_f2s2_1.75")};
+                                     ADM_TWIN_SUM_KEYS("_f2s2_1.75"), "adm"};
     mu_message_t msg =
         adm_twin_option(twin, "float_adm f1s0=0.5", ADM_TWIN_NOISE, "adm_f1s0", "0.5", f1);
     if (msg)
@@ -480,14 +482,16 @@ static inline mu_message_t adm_twin_weight_overrides_exact(const AdmTwin *twin)
  * only in Barten mode), and it files the scores under the CPU's `scf` alias. */
 static inline mu_message_t adm_twin_csf_scale_is_a_watson_mode_noop(const AdmTwin *twin)
 {
-    static const char *const keys[] = {ADM_TWIN_SCORE_KEYS("_scf_2"), ADM_TWIN_SUM_KEYS("_scf_2")};
+    static const char *const keys[] = {ADM_TWIN_SCORE_KEYS("_scf_2"), ADM_TWIN_SUM_KEYS("_scf_2"),
+                                       "adm"};
     return adm_twin_option(twin, "float_adm scf=2", ADM_TWIN_NOISE, "adm_csf_scale", "2.0", keys);
 }
 
 /* adm_p_norm = 1: the terms are the samples themselves, as powf(x, 1) is. */
 static inline mu_message_t adm_twin_p_norm_one_exact(const AdmTwin *twin)
 {
-    static const char *const keys[] = {ADM_TWIN_SCORE_KEYS("_apn_1"), ADM_TWIN_SUM_KEYS("_apn_1")};
+    static const char *const keys[] = {ADM_TWIN_SCORE_KEYS("_apn_1"), ADM_TWIN_SUM_KEYS("_apn_1"),
+                                       "adm"};
     return adm_twin_option(twin, "float_adm apn=1", ADM_TWIN_NOISE, "adm_p_norm", "1.0", keys);
 }
 
@@ -535,7 +539,8 @@ static inline mu_message_t adm_twin_p_norm_reaches_kernel(const AdmTwin *twin)
  * 1e-10 of that, zeroes the denominator and reports adm2 = 1. */
 static inline mu_message_t adm_twin_small_sums_are_not_floored(const AdmTwin *twin)
 {
-    static const char *const keys[] = {ADM_TWIN_SCORE_KEYS("_nw_0"), ADM_TWIN_SUM_KEYS("_nw_0")};
+    static const char *const keys[] = {ADM_TWIN_SCORE_KEYS("_nw_0"), ADM_TWIN_SUM_KEYS("_nw_0"),
+                                       "adm"};
     const AdmTwinCase c = {.what = "float_adm isolated",
                            .w = 576u,
                            .h = 324u,

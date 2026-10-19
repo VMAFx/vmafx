@@ -54,7 +54,6 @@ registry cannot go stale.
 | `mcp` | `mcp-server/vmaf-mcp/tests/` | `MCP Smoke` | `pytest` with the dev lock (which carries the `eval` extra), the MCP build as `VMAF_BIN` and the golden YUVs | — |
 | `rc1-tester` | `tools/rc1-tester/tests/` | `RC1 Tester Report` | `pytest` with the package's dev lock | — |
 | `vmaf-tune` | `tools/vmaf-tune/tests/` | `Python Package Tests (vmaf-tune)` (its own job: it needs `MCP Smoke`) | `pytest` over the files `suite_registry.py list vmaf-tune` prints, with the package's dev lock, MCP Smoke's `vmaf` (artifact `vmaf-cli-mcp`) as `VMAF_BIN_FOR_TESTS` and the golden YUVs; a skip for a missing binary or missing YUVs fails the job | 4: `VMAF_TUNE_INTEGRATION=1` with ffmpeg/x265 (2; opt-in; the two-pass case fails until `T-VMAFTUNE-X265-TWO-PASS-CRF-2026-10-04` closes, PR #2020, ADR-1565), QSV hardware (1) and the BBB corpus (1) |
-| `vmaf-tune-train` | `tools/vmaf-tune/tests/test_predictor_train.py` | `Tiny AI` | `pytest` in the Tiny AI venv, the only one with torch (vmaf-tune's `train` extra, which its dev lock leaves out); the file path wins over the `vmaf-tune` directory, and any skip fails the step | — |
 | `dev-llm` | `dev-llm/tests/` | `Python Package Tests (dev-llm)` | `pytest` with the dev lock, which carries the `modelcard` extra | — |
 | `vmaf-roi-score` | `tools/vmaf-roi-score/tests/` | `Python Package Tests (vmaf-roi-score)` | `pytest` with the package's dev lock | — |
 | `go` | `api/`, `cmd/`, `internal/`, `pkg/` | `go vet + go test` | `go test ./...` against the CPU + ONNX Runtime libvmaf build | Individual tests skip when a tool they drive is absent |
@@ -90,6 +89,62 @@ The tooling suite's shell tests expect `git`, `bash`, `cc`, `readelf`,
 `patchelf`, `node` and `timeout` on `PATH`, as the hosted Ubuntu runner has.
 Docker is optional: the container-source test runs its Docker-backed cases
 only when `docker info` succeeds.
+
+## Meson suites of the core: `fast` and `timing`
+
+The `core` suite's Meson tests carry Meson suite labels of their own.
+`fast` is the pre-push gate (`make test-fast`) and the merge train's C gate.
+`timing` holds the checks of a wall-clock budget, which hold only when
+nothing else runs on the host. Today that is the live window harness's
+latency budget: a window whose frames are final per frame completes within
+two frame periods (33 ms at 60 fps) of the submit of its last frame
+(`test_vmafx_window_live_timing`).
+
+- **`fast` stays exact on any host load.** It runs the same harness with
+  `VMAFX_TEST_TIMING=0`: every window still equals an offline session bit
+  for bit, the textures the library holds stay within the in-flight bound
+  and no frame is copied through the host, but the wall-clock budget is
+  not asserted. `test_vmafx_live_pacing` checks the pacing and budget
+  arithmetic the harness uses (`core/test/vmafx_live_pacing.h`) on a
+  virtual clock: frames are due on an absolute schedule that an overrun
+  never shifts, a latency runs from the submit of the window's last frame,
+  and two frame periods are within the budget while one nanosecond more is
+  not. It refuses two planted pacing bugs (a pacer that waits one period
+  from now, and a latency taken from a window's first frame).
+- **`timing` runs alone.** Run it after the other suites, one test at a
+  time, on a host that does nothing else:
+
+  ```bash
+  make test-timing
+  python3 scripts/ci/run_meson_test.py -- -C build --suite=timing --num-processes 1
+  ```
+
+  The tests are `is_parallel: false`, so a full `meson test` run (the
+  `Ubuntu gcc` and `Linux Intel LLVM` legs) runs them with no other test
+  beside them on the job's runner. A merge train or a local gate runs the
+  `timing` suite as its own step after the build and the `fast` suite,
+  never next to a build or another gate.
+- **`timing` exists only in a plain optimised build.** Coverage counters
+  (`-Db_coverage=true`), a sanitizer (`-Db_sanitize=...`) or a build
+  without optimisation (`--buildtype=debug`, `-Doptimization=0` or `g`)
+  slow the code down, so a budget there measures the instrumentation, not
+  the code. Such a build compiles the harness with the budget off and
+  registers no `timing` test; its `fast` run keeps every other check. The
+  coverage and sanitizer jobs therefore run the harness without the
+  budget, and the release-built CPU legs, the merge train and
+  `make test-timing` on a default (release) build hold it.
+  `test_timing_suite_plain_builds` (`fast`) reads each build's Meson
+  introspection and fails if an instrumented build registers a `timing`
+  test or a plain optimised Linux build lacks
+  `test_vmafx_window_live_timing`. The condition is `vmafx_timing_build` in
+  `core/test/meson.build`.
+
+Nothing is loosened: the budget is the same 33 ms, held in the `timing`
+suite; the `fast` suite drops only the one assertion that depends on the
+host being idle (maintainer decision Q-325,
+`T-WINDOW-LIVE-LATENCY-UNDER-LOAD-2026-10-09`). A new check of a wall-clock
+bound goes to `timing` the same way, with its arithmetic tested on a virtual
+clock in `fast`.
 
 ## How a test finds the `vmaf` binary
 
@@ -157,7 +212,8 @@ A changed lock gives a new directory, so the next run rebuilds; delete the old
 ones by hand when disk matters (`ai` holds torch and is several GB). The
 editable packages are re-pointed at the checkout on every run, so one cache
 serves every worktree, and a per-venv file lock serialises two runs that share
-it. `vmaf-tune-train` runs in the venv of `ai` (`venv_of`), as in CI. The tests
+it. A suite with `venv_of` runs in another suite's venv, as in CI (no suite uses it
+since the predictor trainer moved into `ai`, ADR-1886). The tests
 run with `pytest -p no:cacheprovider -rs` and the per-test timeout CI uses,
 under a 900 s cap per suite (`--time-cap`).
 
@@ -170,8 +226,7 @@ in 5 to 8 minutes, so a change under `scripts/` is the slow case.
 A suite fails on a failed test, on a time-cap overrun and on a skip whose reason
 is a missing dependency (`could not import`, `No module named`, `not installed`)
 or a missing input the suite declares in `fail_on_skip`: the `vmaf` binary and
-the Netflix golden YUVs for `ai`, `mcp` and `vmaf-tune`, any skip for
-`vmaf-tune-train`. Pass the binary the train built with `--vmaf-bin` (or
+the Netflix golden YUVs for `ai`, `mcp` and `vmaf-tune`. Pass the binary the train built with `--vmaf-bin` (or
 `VMAF_BIN`); the YUVs are `python/test/resource/yuv`. Suites that need a build or
 a toolchain (`core`, `python-harness`, `go`, `rust`, `helm-chart`,
 `ffmpeg-patches`) carry a `not_local` reason; the runner prints `NOT RUN` for

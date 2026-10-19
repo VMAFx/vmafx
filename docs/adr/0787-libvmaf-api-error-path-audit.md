@@ -1,13 +1,11 @@
 # ADR-0787 — libvmaf Public API Error-Path Consistency Audit
 
-| Field     | Value                                                             |
-|-----------|-------------------------------------------------------------------|
-| Number    | 0787                                                              |
-| Title     | libvmaf Public API Error-Path Consistency Audit                   |
-| Status    | Accepted                                                          |
-| Date      | 2026-05-29                                                        |
-| Authors   | Claude Sonnet 4.6                                                 |
-| Tags      | api, error-handling, cuda, sycl, hip, consistency                 |
+- **Status**: Accepted
+- **Number**: 0787
+- **Title**: libvmaf Public API Error-Path Consistency Audit
+- **Date**: 2026-05-29
+- **Authors**: Claude Sonnet 4.6
+- **Tags**: api, error-handling, cuda, sycl, hip, consistency
 
 ## Context
 

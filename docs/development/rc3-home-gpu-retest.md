@@ -4,7 +4,7 @@
 `scripts/dev/rc3-home-gpu-retest.sh` runs, in one go, the verify-and-time
 commands that the open RC3 and RC8 rows of [`docs/state.md`](../state.md) carry
 for
-the home GPU box `ryzen-4090-arc`: an RTX 4090 (CUDA), an Arc A380 (SYCL over
+the home GPU box, a reference workstation: an RTX 4090 (CUDA), an Arc A380 (SYCL over
 Level Zero) and the Zen 5 integrated GPU, gfx1036 (HIP). Each row states what
 its twin must match and how to time it; the kit runs exactly those commands,
 compares the outputs, and writes one summary line per row.
@@ -180,7 +180,9 @@ runs can be compared honestly. For publishable numbers use
 
 `--out` holds:
 
-- `host.txt`: time, commit, load, the build and device of each backend.
+- `host.txt`: time, commit, load, the build and device of each backend, and
+  nvidia-smi's GPU list; when nvidia-smi fails, the line
+  `nvidia-smi failed: exit N, no GPU inventory` instead, and the run goes on.
 - `summary.md` and `summary.tsv`: one line per entry with its result
   (`PASS`, `FAIL`, `ERROR`, `SKIP` or `DRY-RUN`) and its key numbers.
 - `<ROW>/<backend>/log.txt`: every command with its output, and the JSON of

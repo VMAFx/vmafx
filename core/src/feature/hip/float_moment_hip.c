@@ -72,6 +72,7 @@
 /* HIP-to-errno translation                                            */
 /* ------------------------------------------------------------------ */
 
+#ifdef HAVE_HIPCC /* only the device-kernel build calls it */
 static int moment_hip_rc(hipError_t rc)
 {
     if (rc == hipSuccess)
@@ -91,6 +92,7 @@ static int moment_hip_rc(hipError_t rc)
         return -EIO;
     }
 }
+#endif /* HAVE_HIPCC */
 
 /* ------------------------------------------------------------------ */
 /* Private state                                                       */

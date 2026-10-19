@@ -218,3 +218,73 @@ creating call, so moving `core/test/test_pelorus_interop.c` from
 `fopen(path, "w")` to a descriptor opened `S_IRUSR | S_IWUSR` clears it — and
 that one was not a false positive at all: the old form measures 0666 under
 umask 000.
+
+## Addendum 2026-10-11 — a window of 30 check suites, a file with two bodies, and a path query without a sanitiser
+
+Triage of the 26 alerts open on master `0836e067d` (CodeQL 25, Scorecard 1):
+fifteen were fixed in code, three are declared exceptions, eight were false
+positives. Three of the findings add to the list above.
+
+### Scorecard's SAST check reads the first 30 check suites of a head
+
+Alert 6 (`SASTID`) read "0 commits out of 19 are checked with a SAST tool",
+although [ADR-1389](../adr/1389-codeql-actions-universal-pr-sast.md) runs
+`CodeQL (Actions)` on every pull request. Both are true. Scorecard v5.5.0 (the
+version `ossf/scorecard-action` v2.4.4 builds) asks GitHub for
+`checkSuites(first: 30)` of the last commit of each merged pull request
+(`checksToAnalyze = 30` in `clients/githubrepo/graphql.go`) and looks for a
+suite of `github-advanced-security` among them. The same query, run by hand
+over the last 30 commits of master:
+
+| | |
+| --- | --- |
+| commits with a merged pull request | 19 |
+| check suites on their last commit | 31 to 59 |
+| heads with a `github-advanced-security` suite among the first 30 | 0 |
+| heads with a completed `CodeQL` check run of that app (REST `commits/<sha>/check-runs`) | 19 |
+
+A pull request starts more than 30 workflows, each its own suite, and code
+scanning creates its suite when the first SARIF arrives, after them. The scan
+ran on every head; the check cannot see it. No workflow change short of
+starting fewer than 30 workflows per pull request moves that, so the alert was
+dismissed as a false positive with these numbers. The point for the next
+reader: a Scorecard result is a statement about what its query returned, and
+the query has a page size.
+
+### `cpp/unused-static-function` on a file compiled under two name maps
+
+Alerts 1528 to 1532 called five functions of `core/tools/cli_parse.cpp`
+unreachable. Each is called (lines 672, 756, 795, 846 and 1404), and the
+compiler agrees: GCC 16.2.1 with `-Werror=unused-function` accepts each of the
+three compilations of the file and rejects each once the call at line 1404 is
+removed. (`-fsyntax-only` does not run that warning: the first attempt at this
+check passed on the planted removal too.)
+
+What the five have in common is measured, the cause is not. Since
+[ADR-2094](../adr/2094-libvmaf-compat-library-split.md) the file is compiled
+by `vmaf` with `-DVMAF_PUBLIC_NAMES` and by `test_cli_parse` and
+`test_cli_parse_long_only_args` with the engine names, and the five are exactly
+its internal-linkage functions whose body names a libvmaf function that
+`core/src/vmafx/engine_names_gen.h` renames. The alerts appeared with the first
+analysis of master after that split. Three local CodeQL 2.27.1 databases that
+held only those three compilations (in parallel, `vmaf` first, the tests first)
+reported nothing, so the finding needs more of the build than the three
+translation units, and which part is not established. The two tests keep the
+engine names: `test_cli_parse.c` reads the option dictionaries through the
+engine's `vmaf_dictionary_get()`.
+
+### CodeQL's C/C++ path query has no path sanitiser
+
+`cpp/path-injection` (`Security/CWE/CWE-022/TaintedPath.ql`, cpp-queries 1.9.0)
+takes every `FlowSource` as a source, the environment and `argv` included, and
+its only barriers are a call that returns an arithmetic type and a variable
+with an upper-bounds check. No validation of a path string stops the flow. A
+finding therefore ends in one of two ways. Where the value only selects among
+names the program already has, compare it and use the program's own spelling:
+`test_compat_conformance` named its scratch files after the bytes of
+`VMAF_COMPAT_PLANT` and now takes the name from its table of plants, refusing
+any other value. Where the value named an output file, stop opening it:
+`test_vmafx_window_live` writes its windows to stdout, and the variable that
+named the file is a switch. What remains is a program whose purpose is to open
+the file it is given (`vmafx_score_contract`, the `vmaf` tool), which
+`SECURITY.md` places outside the trust boundary.

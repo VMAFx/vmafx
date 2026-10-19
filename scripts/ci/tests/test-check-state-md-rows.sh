@@ -311,6 +311,41 @@ expect "rows with no status token in the last cell pass" 0 "$tmp/nostatus.md"
 
 expect "a missing file is rc=2" 2 "$tmp/nope.md"
 
+# Code spans and brackets close on their line
+# (T-STATE-MD-UNPAIRED-CODE-SPAN-LINT-TIMEOUT-2026-10-06). markup_case writes a
+# one-row ledger; the control holds the shapes the ledger uses: a double-backtick
+# span around a backtick, an escaped backtick, a "[" inside a code span, an
+# escaped "\[", a link, and an unpaired backtick inside a fenced block, which is
+# literal text. Each mutation breaks one of them.
+markup_case() { # $1 file, $2 row, $3 line between the fences
+  {
+    printf '## Recently closed\n\n%s\n\n' "$2"
+    printf '%s\n%s\n%s\n' '```text' "$3" '```'
+  } >"$1"
+}
+tick='`'
+row_of() { # $1 frame name, $2 literal backtick, $3 indexed code, $4 opening bracket
+  printf '| **T-NU-2026-01-14** — the frame %s faulted; %s stays literal; %s and %s0, 1) and [guide](development/state-md-gates.md) | closed |' \
+    "$1" "$2" "$3" "$4"
+}
+frame="${tick}${tick} mod${tick}close ${tick}${tick}"
+indexed="${tick}a[i]${tick}"
+row_ok="$(row_of "$frame" "\\${tick}" "$indexed" '\[')"
+fenced="lldb: frame #0: mod${tick}close"
+markup_case "$tmp/markup-control.md" "$row_ok" "$fenced"
+expect "paired code spans, escapes, links and fenced text pass" 0 "$tmp/markup-control.md"
+markup_case "$tmp/markup-backtick.md" \
+  "$(row_of "${tick}mod${tick}close${tick}" 'nothing' "$indexed" '\[')" "$fenced"
+expect "an unpaired backtick run fails" 1 "$tmp/markup-backtick.md"
+markup_case "$tmp/markup-escape.md" "$(row_of "$frame" "$tick" "$indexed" '\[')" "$fenced"
+expect "an unescaped single backtick fails" 1 "$tmp/markup-escape.md"
+markup_case "$tmp/markup-bracket.md" "$(row_of "$frame" "\\${tick}" "$indexed" '[')" "$fenced"
+expect "an unclosed [ outside a code span fails" 1 "$tmp/markup-bracket.md"
+{
+  printf '## Recently closed\n\n%s\n\n%s\n' "$row_ok" "$fenced"
+} >"$tmp/markup-unfenced.md"
+expect "the same backtick outside a fence fails" 1 "$tmp/markup-unfenced.md"
+
 # the real file must be clean
 expect "docs/state.md is clean" 0 "$here/../../../docs/state.md"
 echo "all check-state-md-rows cases passed"

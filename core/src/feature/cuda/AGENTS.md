@@ -6,9 +6,9 @@ Edit AGENTS.d/_index.md or a page under AGENTS.d/, then run
 
 Generated index. Before editing: match every path you will touch against
 `Touching` in [Topic pages](#topic-pages) and read each matching page first; no
-match, no page. Text between here and the table binds every file of this
-directory. `Touching` paths: relative to this directory, leading `/` =
-repository root. New invariant: a page under `AGENTS.d/` ([how](../../../../docs/development/agents-index.md)).
+match, no page. Text between here and [Topic pages](#topic-pages) binds every
+file of this directory. `Touching` paths: relative to this directory, leading
+`/` = repository root. New invariant: new page under `AGENTS.d/` ([how](../../../../docs/development/agents-index.md)).
 
 Orientation for agents on per-feature CUDA kernels (host
 glue + `.cu` device code). Parent: [../AGENTS.md](../AGENTS.md). Backend
@@ -19,7 +19,7 @@ in [`../../cuda/AGENTS.md`](../../cuda/AGENTS.md).
 
 | Touching | Read first | Invariant |
 | --- | --- | --- |
-| `integer_adm_cuda.c`, `integer_adm_cuda.h` | [adm](AGENTS.d/adm.md) | Integer ADM options, CPU bits, negative rounding terms, tiny frame shifts, and int64 vertical sums. |
+| `integer_adm_cuda.c`, `integer_adm_cuda.h`, `integer_adm/adm_decouple_inline.cuh` | [adm](AGENTS.d/adm.md) | Integer ADM options, CPU bits, negative rounding terms, tiny frame shifts, and int64 vertical sums. |
 | `integer_cambi_cuda.c`, `integer_cambi_cuda.h` | [cambi](AGENTS.d/cambi.md) | Device-resident CAMBI TVI helper, single readback, and bit-exact CPU contract. |
 | `cuda_tile_index.h`, `integer_adm_cuda.c` | [channel-reads-unwind](AGENTS.d/channel-reads-unwind.md) | LDG channel reads, tile indexing padding clamping, and unwind helper teardown. |
 | `integer_ciede_cuda.c`, `integer_ciede_cuda.h` | [ciede](AGENTS.d/ciede.md) | ciede_cuda performs CPU arithmetic with libm apart. |
@@ -27,7 +27,7 @@ in [`../../cuda/AGENTS.md`](../../cuda/AGENTS.md).
 | `integer_adm_cuda.c`, `integer_ssim_cuda.c` | [error-handling](AGENTS.d/error-handling.md) | CUDA error paths must return mapped errno instead of literal error codes. |
 | `/scripts/ci/exact_twins.d/adm.cuda`, `/scripts/ci/twin-drift-check.sh` | [exact-twins](AGENTS.d/exact-twins.md) | All declared exact twin extractors in CUDA maintain bit-identical output with CPU. |
 | `float_adm_cuda.c`, `float_adm_cuda.h` | [float-adm](AGENTS.d/float-adm.md) | float_adm AIM/ADM3 scores, exact CPU bits, and kernel argument delivery. |
-| `float_motion_cuda.c`, `float_motion_cuda.h` | [float-motion](AGENTS.d/float-motion.md) | float_motion emits CPU motion3 and executes SAD in bit-exact CPU order. |
+| `float_motion_cuda.c`, `float_motion_cuda.h`, `float_motion/float_motion_score.cu` | [float-motion](AGENTS.d/float-motion.md) | float_motion emits CPU motion3 and executes SAD in bit-exact CPU order. |
 | `float_psnr_cuda.c`, `float_psnr_cuda.h`, `float_psnr/float_psnr_score.cu` | [float-psnr](AGENTS.d/float-psnr.md) | float_psnr_cuda matches CPU float_psnr bit for bit, past 2^53 units too. |
 | `float_ssim_cuda.h`, `ssim_cuda.c` | [float-ssim](AGENTS.d/float-ssim.md) | float_ssim sums in CPU raster order on host and reproduces CPU pipeline per scale. |
 | `float_vif_cuda.c`, `float_vif_cuda.h` | [float-vif](AGENTS.d/float-vif.md) | float_vif options must be kernel arguments and match CPU reference bits. |
@@ -35,9 +35,9 @@ in [`../../cuda/AGENTS.md`](../../cuda/AGENTS.md).
 | `integer_cambi_cuda.c`, `integer_adm_cuda.c` | [host-preprocessing-download](AGENTS.d/host-preprocessing-download.md) | Host-side preprocessing in submit callbacks must download GPU to host first. |
 | `integer_adm_cuda.c`, `integer_cambi_cuda.c` | [kernel-launch-params](AGENTS.d/kernel-launch-params.md) | cuLaunchKernel kernelParams must point to device-pointer value, not buffer struct. |
 | `integer_adm_cuda.c`, `integer_ssim_cuda.c` | [kernel-templates](AGENTS.d/kernel-templates.md) | Kernel templates mirror HIP, enforce extern C, mul24 ban, register caps, and LDG loads. |
-| `integer_adm_cuda.c`, `integer_cambi_cuda.c` | [module-lifetime](AGENTS.d/module-lifetime.md) | Every successfully loaded CUDA module has an owned handle and context. |
+| `integer_adm_cuda.c`, `integer_cambi_cuda.c` | [module-lifetime](AGENTS.d/module-lifetime.md) | Every successfully loaded CUDA module has owned handle and context. |
 | `integer_moment_cuda.c`, `integer_moment_cuda.h`, `integer_moment/moment_score.cu` | [moment](AGENTS.d/moment.md) | float_moment_cuda reproduces CPU float_moment bit for bit, past 2^53 units too. |
-| `integer_motion_cuda.c`, `integer_motion_v2_cuda.c`, `/core/test/test_cuda_motion_five_frame_window.c`, `/core/test/motion_five_frame_twin_parity.h` | [motion-five-frame-window](AGENTS.d/motion-five-frame-window.md) | motion_five_frame_window on CUDA twins = ring of three raw planes + CPU window function at flush; bit-identical. |
+| `integer_motion_cuda.c`, `integer_motion_v2_cuda.c`, `/core/test/test_cuda_motion_five_frame_window.c`, `/core/test/motion_five_frame_twin_parity.h` | [motion-five-frame-window](AGENTS.d/motion-five-frame-window.md) | CUDA five-frame window = ring of three raw planes + CPU window function per frame and at flush; bit-identical. |
 | `integer_motion_v2_cuda.c`, `integer_motion_v2_cuda.h` | [motion-v2](AGENTS.d/motion-v2.md) | Motion v2 CPU mirror contract and score emission parity. |
 | `integer_motion_cuda.c`, `integer_motion_cuda.h`, `integer_motion_sad_cuda.c` | [motion](AGENTS.d/motion.md) | Motion parity, dispatch bottleneck mitigation, SAD batch depth, and output sets. |
 | `integer_ms_ssim_cuda.c`, `integer_ms_ssim_cuda.h` | [ms-ssim](AGENTS.d/ms-ssim.md) | MS-SSIM exact CPU arithmetic per plane (enable_chroma too), option flags, and clip_db ceiling semantics. |
@@ -46,7 +46,7 @@ in [`../../cuda/AGENTS.md`](../../cuda/AGENTS.md).
 | `integer_psnr_hvs_cuda.c`, `integer_psnr_hvs_cuda.h` | [psnr-hvs](AGENTS.d/psnr-hvs.md) | PSNR-HVS participates in engine sync, honours enable_chroma, and matches CPU scores bit for bit. |
 | `integer_psnr_cuda.c`, `integer_psnr_cuda.h` | [psnr](AGENTS.d/psnr.md) | Integer PSNR honours enable_chroma parity and zeroes accumulators on picture streams. |
 | `integer_adm_cuda.c`, `integer_psnr_cuda.c` | [reductions](AGENTS.d/reductions.md) | CUDA reduce kernels use warp-reduce plus block-atomic additions. |
-| `speed_cuda_pipeline.c`, `speed_cuda_pipeline.h` | [speed](AGENTS.d/speed.md) | SpEED singular covariance, global matching, CPU-exact fp32, host tail for entropy and score. |
+| `speed_cuda_pipeline.c`, `speed_cuda_pipeline.h`, `speed/speed_score.cu` | [speed](AGENTS.d/speed.md) | SpEED singular covariance, global matching, CPU-exact fp32, host tail for entropy and score. |
 | `ssim_cuda.c`, `integer_ssim_cuda.c` | [ssim](AGENTS.d/ssim.md) | Integer SSIM CPU bits, distinct ssim vs integer_ssim features, and fmad-false flags. |
 | `ssimulacra2_cuda.c`, `ssimulacra2_cuda.h` | [ssimulacra2](AGENTS.d/ssimulacra2.md) | ssimulacra2_cuda is device-resident and computes bit-exact CPU scores. |
 | `integer_psnr_cuda.c`, `integer_ciede_cuda.c` | [twin-update-rules](AGENTS.d/twin-update-rules.md) | Cross-backend twin parity table and synchronised update requirements. |

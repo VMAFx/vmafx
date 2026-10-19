@@ -100,54 +100,7 @@ spec:
               containerPort: {{ .Values.node.metricsPort | default 9090 }}
               protocol: TCP
           env:
-            {{- with include "vmafx.nodeControllerAddr" . }}
-            # The node's controller client registers here and pulls jobs; unset
-            # (no controller) the node serves direct scoring only.
-            - name: VMAFX_CONTROLLER_ADDR
-              value: {{ . | quote }}
-            {{- end }}
-            {{- if .Values.node.controllerToken.secretName }}
-            # Bearer token (vmafx:node), re-read on every call (ADR-1524).
-            - name: VMAFX_CONTROLLER_TOKEN_FILE
-              value: {{ include "vmafx.controllerTokenPath" . | quote }}
-            {{- end }}
-            # The binary defaults grpc.listen to :50052 for standalone use.
-            # Pin it explicitly to deploy's configurable grpcPort so the
-            # ClusterIP Service and tcpSocket probes always follow chart values.
-            - name: VMAFX_GRPC_LISTEN
-              value: ":{{ .Values.node.grpcPort | default 50052 }}"
-            - name: VMAFX_NODE_ID
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.name
-            - name: VMAFX_BACKEND
-              value: {{ include "vmafx.backendEnvValue" . | quote }}
-            # Storage / scoring env vars folded in from the legacy
-            # templates/node-deployment.yaml (ADR-0719 rclone integration).
-            - name: VMAFX_STORAGE_MODE
-              value: {{ .Values.storage.mode | default "http-serve" | quote }}
-            {{- with include "vmafx.nodeMountRoot" . }}
-            - name: VMAFX_STORAGE_MOUNT_ROOT
-              value: {{ . | quote }}
-            {{- end }}
-            {{- if .Values.node.ebpf.enabled }}
-            # eBPF descriptor tracker (ADR-1539); the node stops at startup
-            # when the host cannot run it.
-            - name: VMAFX_EBPF_BYPASS
-              value: "1"
-            - name: VMAFX_EBPF_MOUNT_PREFIX
-              value: {{ .Values.node.ebpf.mountPrefix | quote }}
-            {{- end }}
-            {{- if .Values.storage.rclone.config }}
-            # Only with the rclone Secret mounted below; without it rclone uses
-            # its own defaults (on-the-fly remotes such as :s3,env_auth:).
-            - name: VMAFX_RCLONE_CONFIG
-              value: "/etc/vmafx/rclone.conf"
-            {{- end }}
-            - name: VMAFX_VMAF_BINARY
-              value: "/usr/local/bin/vmaf"
-            - name: VMAFX_MODEL_DIR
-              value: {{ .Values.persistence.models.mountPath | default "/usr/local/share/vmafx/model" | quote }}
+            {{- include "vmafx.env.node" . }}
             {{- range $k, $v := .Values.env }}
             - name: {{ $k | quote }}
               value: {{ $v | quote }}
@@ -173,11 +126,10 @@ spec:
               {{- toYaml $nodeResources.requests | nindent 14 }}
           securityContext:
             {{- include "vmafx.nodeSecurityContext" . | nindent 12 }}
-          # tcpSocket probes verify the gRPC listener is accepting connections.
-          # The node binary exposes no HTTP endpoint; httpGet on the old
-          # "metrics" port (9090) always returned ECONNREFUSED, leaving the
-          # pod permanently unready.  A tcpSocket probe on the gRPC port is
-          # the correct readiness signal: the listener is up iff gRPC is up.
+          # tcpSocket probes verify the gRPC listener is accepting connections
+          # (ADR-1094). The node also serves /metrics and its probe endpoints
+          # over HTTP on node.metricsPort (VMAFX_HTTP_ADDR); the probes stay
+          # on the gRPC listener, which is what the controller dispatches to.
           livenessProbe:
             tcpSocket:
               port: grpc
@@ -250,11 +202,9 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
 ---
-# ClusterIP Service for controller → node gRPC dispatch (ADR-0713).
-# The node binary exposes no HTTP metrics endpoint; the former "metrics"
-# Service on 9090 was referencing a phantom port (ECONNREFUSED).
-# When a Prometheus metrics endpoint is added to the node binary, add a
-# second Service on the metrics port and wire up the ServiceMonitor there.
+# ClusterIP Service for controller → node gRPC dispatch (ADR-0713) and the
+# node's /metrics page on node.metricsPort, which the node ServiceMonitor
+# scrapes (monitoring.components.node, ADR-2349).
 apiVersion: v1
 kind: Service
 metadata:

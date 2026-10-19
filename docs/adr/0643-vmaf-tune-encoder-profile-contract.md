@@ -1,44 +1,8 @@
 <!-- markdownlint-disable MD013 MD025 MD033 MD060 -->
-<!-- ADR-0643 stub — claimed by scripts/adr/next-free.sh --claim vmaf-tune-encoder-profile-contract on 2026-05-20T15:31:06Z -->
-<!-- Replace this file with the real ADR and rename to 0643-vmaf-tune-encoder-profile-contract.md before committing. -->
-<!-- To abandon this claim run: scripts/adr/next-free.sh --release 0643 -->
-
-# ADR-0643: <fill in title>
-
-- **Status**: Accepted
-- **Date**: 2026-05-20
-- **Deciders**: <fill in>
-- **Tags**: <fill in>
-
-## Context
-
-<fill in>
-
-## Decision
-
-<fill in>
-
-## Alternatives considered
-
-| Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
-| | | | |
-
-## Consequences
-
-- **Positive**: <fill in>
-- **Negative**: <fill in>
-- **Neutral / follow-ups**: <fill in>
-
-## References
-
-- See [ADR-0535](0535-adr-atomic-allocator.md) for the original allocator design.
-- See [ADR-0628](0628-adr-allocator-remote-aware.md) for the remote-aware extension.
-- Source: <req or Q<round>.<q>>
 
 # ADR-0643: vmaf-tune Reports Carry Encoder Profiles
 
-- **Status**: Accepted
+- **Status**: Accepted (status update 2026-10-06 below)
 - **Date**: 2026-05-20
 - **Deciders**: Lusoris
 - **Tags**: vmaf-tune, ffmpeg, docs, profile, cli
@@ -118,3 +82,13 @@ Verification command:
 ```bash
 git grep -n 'encode_profile' origin/master -- tools/vmaf-tune/src/vmaftune/cli.py
 ```
+
+## Status update 2026-10-06: The unfilled template block was removed
+
+Until this date the file began with an unfilled template block from the ADR
+number allocator (stub comments, the title `<fill in title>`, `<fill in>`
+sections), followed by this record. The block carried no decision and made the
+first heading, the Deciders line and the Tags line unreadable by tools; it was
+removed. The record itself is unchanged.
+
+The body above is unchanged.

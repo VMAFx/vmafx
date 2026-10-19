@@ -23,20 +23,25 @@ boolean values:
 ```
 
 The rule: `cpu` is always `true`, because it has no driver dependency.
-Every GPU backend is `true` if and only if the local `vmaf` binary lists a
-corresponding `--no_<backend>` disable flag in its `--help` output. If the
-`vmaf` binary is missing, `cpu` stays `true` and every GPU flag is `false`;
-no error is raised.
+Every GPU backend is `true` if and only if `vmaf --list-backends` reports it
+`usable`: compiled into the binary **and** its state initialises on this host.
+If the `vmaf` binary is missing, `cpu` stays `true` and every GPU flag is
+`false`; no error is raised. A `vmaf` that cannot print the report (older than
+ADR-1874) or prints something that is not a report is treated as CPU-only, and
+the server logs why.
 
 Both servers implement this probe: the Python server in `_probe_backends()`
-and the Go server (`cmd/vmafx-mcp`) in `probeBackends()`, with the same
-`--help` rule and the same per-binary caching.
+and the Go server (`cmd/vmafx-mcp`) in `probeBackends()`, which reads the
+report through `pkg/scorebackend`, with the same per-binary caching.
 
-### Why `--help`, not `--version`
+### Why `--list-backends`, not `--help` or `--version`
 
-The `--no_<backend>` flags are a stable contract: they are added at the
-same time as backend support, so flag presence is both sufficient and
-necessary for "compiled in". ADR-0509 locks the probe to that table.
+The `--help` text prints `--no_cuda`, `--no_sycl`, `--no_hip` and `--no_metal`
+on every build, so on a CPU-only build the old `--help` probe reported every GPU
+backend `true` and the backend allowlist admitted them (the run then failed
+with exit 100 instead of scoring). The report asks the binary's own backend
+initialisers, the calls a scoring run makes
+([ADR-1874](../adr/1874-vmaf-list-backends.md)).
 
 !!! note "History (2026-05)"
     The probe used to grep the output of `vmaf --version` for the substrings

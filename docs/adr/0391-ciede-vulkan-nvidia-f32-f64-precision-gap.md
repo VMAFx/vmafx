@@ -98,3 +98,12 @@ the Netflix golden gate is built around its current f32/f64 mix).
 - Source: `req` — "investigate this pre-existing places=4 violation
   on NVIDIA driver, root-cause it, and either ship a fix OR file it
   as a tracked Open bug"
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 54: `[docs/backends/vulkan.md](./backends/vulkan.md)`: Markdown
+  link targets non-existent file docs/backends/vulkan.md (overview was at
+  docs/backends/vulkan/overview.md).

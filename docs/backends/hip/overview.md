@@ -19,14 +19,14 @@ under [More HIP pages](#more-hip-pages).
 
 | Item | Value |
 |---|---|
-| ROCm | 7.0 or later builds; **10.0.0** is the version tested in CI, in the dev container and in the published GPU images (`build-config.env` `ROCM_VERSION`, [ADR-1225](../../adr/1225-rocm-10-therock-migration.md)) |
+| ROCm | 7.0 or later builds; **10.1.0** is the version tested in CI, in the dev container and in the published GPU images (`build-config.env` `ROCM_VERSION`, [ADR-1225](../../adr/1225-rocm-10-therock-migration.md)) |
 | Libraries | `libamdhip64` and `<hip/hip_runtime_api.h>`, found through the `hip-lang` package, `HIP_PATH`, or `/opt/rocm` |
 | Compiler | `hipcc` in `PATH` when `enable_hipcc=true` |
 | Hardware | An AMD GPU visible to ROCm; the default fat binary targets gfx90a, gfx1030, gfx1036 and gfx1100 |
 
 ROCm 10 has no apt channel. Since ROCm 7.14 AMD builds and releases through
 "TheRock", and `repo.radeon.com/rocm/apt/` ends at 7.2.4. VMAFx therefore
-installs ROCm from the digest-pinned `rocm/dev-ubuntu-26.04:10.0.0-full`
+installs ROCm from the digest-pinned `rocm/dev-ubuntu-26.04:10.1.0-full`
 container image. On a workstation, use your distribution's ROCm packages
 (any 7.0+ release builds) or the dev container. CI runs
 `scripts/ci/install-rocm-from-image.sh`, which streams the image's
@@ -291,10 +291,11 @@ Open items only; the ledger row ids are in
   checked on the host: ROCm 10.1 imports no external semaphore that could
   carry one (ROCm 7.2.4 aborts the process trying), so no HIP stream waits on
   or signals one (`T-HIP-ROCM-NO-SYNC-FILE-SEMAPHORE-2026-10-06`). OpenGL
-  textures import only from a GLX context on the device's GPU, and not at all
-  with ROCm 10.1, whose runtime maps a texture but cannot read it: the import
-  is refused naming the runtime (`T-HIP-ROCM10-GL-TEXTURE-READ-2026-10-06`;
-  ROCm 7.2.4 reads them). A HIP device has no frame pools.
+  textures are imported through EGL's dma-buf export from the current EGL
+  context, because the runtime's own GL interop cannot read a texture with
+  ROCm 10.1 ([ADR-2132](../../adr/2132-hip-gl-textures-through-egl-dmabuf.md));
+  a tiled export is copied on the GPU and needs
+  `VMAFX_IMPORT_ALLOW_COPY`. A HIP device has no frame pools.
 - **Six twins stage their own copy of the frame** instead of reading the
   shared planes: `integer_ms_ssim_hip`, `psnr_hvs_hip`, `cambi_hip`,
   `speed_chroma_hip`, `speed_temporal_hip` and `ssimulacra2_hip`
@@ -316,7 +317,7 @@ Open items only; the ledger row ids are in
 This is a platform defect, deferred as
 `T-HIP-GFX1036-DROPPED-DISPATCHES-2026-10-01`. On a gfx1036 (ROCm 7.2.4,
 Linux 7.2.8) a HIP stream now and then never runs a run of the commands it
-was given, roughly once per 10^4 frames, on master as well. A HIP twin then
+was given, roughly once per $10^{4}$ frames, on master as well. A HIP twin then
 reports a wrong score for that frame: `vif_hip` reports the sums of two frames
 when the memset of its accumulators is lost, or fails the run with
 `invalid ratio` when a scale's kernel is lost.

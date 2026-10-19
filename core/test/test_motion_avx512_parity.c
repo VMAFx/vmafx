@@ -547,12 +547,40 @@ static char *test_pipeline_16_neg_diff_bpc10(void)
 }
 
 /* -----------------------------------------------------------------------
- * sad_avx512 test.
+ * sad_avx512 tests.
  *
- * Allocates two VmafPictures via vmaf_picture_alloc (10-bit, 420) and
- * fills with random data.  Compares sad_avx512 vs. sad_scalar.
+ * Two 16-bit pictures (vmaf_picture_alloc, YUV400P), sad_avx512 against
+ * sad_scalar: random 10-bit samples, random 16-bit samples, and 16-bit
+ * samples that differ by 65535 in alternating directions. The last two failed
+ * while the vector loop took the difference in signed 16-bit lanes (65535 - 0
+ * gave 1); T-SIMD-SAD-AVX512-INT16-DIFFERENCE-2026-10-05.
  * ----------------------------------------------------------------------- */
-static char *test_sad_avx512(void)
+typedef enum { SAD_FILL_RANDOM, SAD_FILL_EXTREMES } SadFill;
+
+static void fill_sad_pictures(VmafPicture *pic_a, VmafPicture *pic_b, uint16_t mask, SadFill fill)
+{
+    uint32_t state_a = 0xCAFEBABEu;
+    uint32_t state_b = 0xDEADC0DEu;
+    uint16_t *a = (uint16_t *)pic_a->data[0];
+    uint16_t *b = (uint16_t *)pic_b->data[0];
+    const ptrdiff_t a_stride_u16 = pic_a->stride[0] / 2;
+    const ptrdiff_t b_stride_u16 = pic_b->stride[0] / 2;
+
+    for (unsigned i = 0; i < TEST_H; i++) {
+        for (unsigned j = 0; j < TEST_W; j++) {
+            uint16_t va = (uint16_t)(simd_test_xorshift32(&state_a) & mask);
+            uint16_t vb = (uint16_t)(simd_test_xorshift32(&state_b) & mask);
+            if (fill == SAD_FILL_EXTREMES) {
+                va = ((i + j) & 1u) ? mask : 0u;
+                vb = (uint16_t)(mask - va);
+            }
+            a[i * a_stride_u16 + j] = va;
+            b[i * b_stride_u16 + j] = vb;
+        }
+    }
+}
+
+static char *check_sad_avx512(unsigned bpc, SadFill fill, const char *label)
 {
     VmafPicture pic_a;
     VmafPicture pic_b;
@@ -560,43 +588,45 @@ static char *test_sad_avx512(void)
     memset(&pic_b, 0, sizeof(pic_b));
 
     /* vmaf_picture_alloc requires bpc in {8,10,12,16} */
-    if (vmaf_picture_alloc(&pic_a, VMAF_PIX_FMT_YUV400P, 10, TEST_W, TEST_H) != 0)
+    if (vmaf_picture_alloc(&pic_a, VMAF_PIX_FMT_YUV400P, bpc, TEST_W, TEST_H) != 0) {
         return "vmaf_picture_alloc failed for pic_a";
-    if (vmaf_picture_alloc(&pic_b, VMAF_PIX_FMT_YUV400P, 10, TEST_W, TEST_H) != 0) {
+    }
+    if (vmaf_picture_alloc(&pic_b, VMAF_PIX_FMT_YUV400P, bpc, TEST_W, TEST_H) != 0) {
         (void)vmaf_picture_unref(&pic_a);
         return "vmaf_picture_alloc failed for pic_b";
     }
-
-    uint32_t state_a = 0xCAFEBABEu;
-    uint32_t state_b = 0xDEADC0DEu;
-    uint16_t *a = (uint16_t *)pic_a.data[0];
-    uint16_t *b = (uint16_t *)pic_b.data[0];
-    const ptrdiff_t a_stride_u16 = pic_a.stride[0] / 2;
-    const ptrdiff_t b_stride_u16 = pic_b.stride[0] / 2;
-
-    for (unsigned i = 0; i < TEST_H; i++) {
-        for (unsigned j = 0; j < TEST_W; j++) {
-            a[i * a_stride_u16 + j] = (uint16_t)(simd_test_xorshift32(&state_a) & 0x3FFu);
-            b[i * b_stride_u16 + j] = (uint16_t)(simd_test_xorshift32(&state_b) & 0x3FFu);
-        }
-    }
+    fill_sad_pictures(&pic_a, &pic_b, (uint16_t)((1u << bpc) - 1u), fill);
 
     uint64_t sad_s = 0;
     uint64_t sad_v = 0;
     sad_scalar(&pic_a, &pic_b, &sad_s);
     sad_avx512(&pic_a, &pic_b, &sad_v);
 
-    (void)vmaf_picture_unref(&pic_a);
-    (void)vmaf_picture_unref(&pic_b);
-
+    const int unref_a = vmaf_picture_unref(&pic_a);
+    const int unref_b = vmaf_picture_unref(&pic_b);
+    if (unref_a != 0 || unref_b != 0) {
+        return "vmaf_picture_unref failed";
+    }
     if (sad_s != sad_v) {
-        (void)fprintf(stderr, "sad_avx512 FAIL: scalar=%llu avx512=%llu\n",
+        (void)fprintf(stderr, "sad_avx512 FAIL (%s): scalar=%llu avx512=%llu\n", label,
                       (unsigned long long)sad_s, (unsigned long long)sad_v);
         return "sad_avx512 diverges from scalar";
     }
     return NULL;
 }
 
+static char *test_sad_avx512(void)
+{
+    return check_sad_avx512(10, SAD_FILL_RANDOM, "bpc10 random");
+}
+static char *test_sad_avx512_16bit_random(void)
+{
+    return check_sad_avx512(16, SAD_FILL_RANDOM, "bpc16 random");
+}
+static char *test_sad_avx512_16bit_extremes(void)
+{
+    return check_sad_avx512(16, SAD_FILL_EXTREMES, "bpc16 0/65535");
+}
 /* -----------------------------------------------------------------------
  * y_convolution_8_avx512 test.
  * ----------------------------------------------------------------------- */
@@ -771,6 +801,8 @@ char *run_tests(void)
         MU_TEST(test_pipeline_16_bpc12),
         MU_TEST(test_pipeline_16_neg_diff_bpc10),
         MU_TEST(test_sad_avx512),
+        MU_TEST(test_sad_avx512_16bit_random),
+        MU_TEST(test_sad_avx512_16bit_extremes),
         MU_TEST(test_y_conv_8_avx512),
         MU_TEST(test_y_conv_16_bpc10),
         MU_TEST(test_y_conv_16_bpc12),

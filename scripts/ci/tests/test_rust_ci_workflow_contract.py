@@ -36,7 +36,7 @@ GIT = shutil.which("git") or "/usr/bin/git"
 
 AFFECTED_REQUIRED_WORKFLOWS = (
     "rust-ci.yml",
-    "doxygen-public-api.yml",
+    "docs.yml",
     "helm-chart.yml",
 )
 
@@ -227,8 +227,9 @@ class RustCIWorkflowContractTest(unittest.TestCase):
             with self.subTest(gate_job=gate_job):
                 gate = jobs[gate_job]
                 self.assertEqual(gate["name"], check_name)
-                self.assertEqual(gate["needs"], ["impact", work_job])
-                self.assertEqual(gate["if"], "always()")
+                # ADR-2169: the gate needs the tier and runs only in the tier that owns it.
+                self.assertEqual(gate["needs"], ["tier", "impact", work_job])
+                self.assertEqual(gate["if"], "always() && needs.tier.outputs.light == 'true'")
                 script = gate["steps"][0]["run"]
                 self.assertIn('if [ "$PLAN_RESULT" != success ]', script)
                 self.assertIn("true:success|false:skipped", script)
@@ -247,7 +248,7 @@ class RustCIWorkflowContractTest(unittest.TestCase):
         """Validate merge-base aware impact planning for stacked/non-master PRs."""
         with tempfile.TemporaryDirectory() as repo_dir, tempfile.TemporaryDirectory() as out_dir:
             env = {
-                **os.environ,
+                **{k: v for k, v in os.environ.items() if not k.startswith("GIT_")},
                 "GIT_AUTHOR_NAME": "t",
                 "GIT_AUTHOR_EMAIL": "t@t",
                 "GIT_COMMITTER_NAME": "t",

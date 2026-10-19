@@ -96,3 +96,12 @@ delta needs explaining.
   pulling clang and meson past the distro, and now gcc with them.
 - [ADR-1142](1142-whole-codebase-standards.md) — the ratchet this makes
   diagnosable.
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 26: `reported core/test/test_pooling_percentile.c: warnings 0 ->
+  1 (+1) while`: Path `core/test/test_pooling_percentile.c` does not exist on
+  origin/master; the actual test file is `core/test/test_pool_percentile.c.`.

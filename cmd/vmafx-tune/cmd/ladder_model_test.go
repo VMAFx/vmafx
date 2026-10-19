@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/VMAFx/vmafx/internal/execstub"
 	"github.com/VMAFx/vmafx/pkg/corpus"
 	"github.com/VMAFx/vmafx/pkg/encoder"
 )
@@ -47,10 +48,7 @@ done
 echo '<metric name="vmaf" min="90" max="93" mean="91.5" harmonic_mean="91.4"/>' > "$out"
 `
 	for name, body := range map[string]string{"ffmpeg": ffmpeg, "vmaf": vmaf} {
-		// #nosec G306 -- test fixture must be executable.
-		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o755); err != nil {
-			t.Fatalf("write fake %s: %v", name, err)
-		}
+		execstub.Write(t, filepath.Join(dir, name), []byte(body))
 	}
 	return dir, vmafLog
 }

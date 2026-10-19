@@ -1,0 +1,295 @@
+{
+  "@context": "https://openvex.dev/ns/v0.2.0",
+  "@id": "https://github.com/VMAFx/vmafx/blob/master/security/vex/torch.openvex.json",
+  "author": "VMAFx maintainers",
+  "role": "Project maintainer",
+  "timestamp": "2026-10-05T21:00:00Z",
+  "version": 1,
+  "statements": [
+    {
+      "vulnerability": {
+        "name": "PYSEC-2025-189",
+        "@id": "https://osv.dev/vulnerability/PYSEC-2025-189",
+        "aliases": [
+          "BIT-pytorch-2025-2148",
+          "CVE-2025-2148",
+          "GHSA-c678-jfcj-6jmf"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:pypi/vmaf-train",
+          "subcomponents": [
+            {
+              "@id": "pkg:pypi/torch@2.14.1"
+            }
+          ]
+        },
+        {
+          "@id": "pkg:pypi/vmaf-ensemble-training-kit",
+          "subcomponents": [
+            {
+              "@id": "pkg:pypi/torch@2.14.1"
+            }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The advisory concerns torch.ops.profiler._call_end_callbacks_on_jit_fut. No training code calls the PyTorch profiler or the TorchScript future callbacks: neither torch.profiler nor torch.jit appears in ai/ or tools/ensemble-training-kit/ (scripts/ci/check-torch-scope.py keeps torch out of every other package). The OSV record lists torch up to 2.6.0-cu124 as affected and names no fixed release; the locks pin torch 2.14.1."
+    },
+    {
+      "vulnerability": {
+        "name": "PYSEC-2025-190",
+        "@id": "https://osv.dev/vulnerability/PYSEC-2025-190",
+        "aliases": [
+          "BIT-pytorch-2025-2149",
+          "CVE-2025-2149",
+          "GHSA-x3gm-94wq-g975"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:pypi/vmaf-train",
+          "subcomponents": [
+            {
+              "@id": "pkg:pypi/torch@2.14.1"
+            }
+          ]
+        },
+        {
+          "@id": "pkg:pypi/vmaf-ensemble-training-kit",
+          "subcomponents": [
+            {
+              "@id": "pkg:pypi/torch@2.14.1"
+            }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The advisory concerns the eager-mode quantized Sigmoid module (torch.ao.nn.quantized). The training packages never build eager-quantized modules: post-training quantization runs in ONNX Runtime on the exported graph (ai/src/vmaf_train/quantize.py) and QAT uses torchao's pt2e flow. The OSV record lists torch up to 2.6.0-cu124 as affected and names no fixed release; the locks pin torch 2.14.1."
+    },
+    {
+      "vulnerability": {
+        "name": "PYSEC-2025-192",
+        "@id": "https://osv.dev/vulnerability/PYSEC-2025-192",
+        "aliases": [
+          "BIT-pytorch-2025-2998",
+          "CVE-2025-2998",
+          "GHSA-f4hp-rmr7-r7v8"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:pypi/vmaf-train",
+          "subcomponents": [
+            {
+              "@id": "pkg:pypi/torch@2.14.1"
+            }
+          ]
+        },
+        {
+          "@id": "pkg:pypi/vmaf-ensemble-training-kit",
+          "subcomponents": [
+            {
+              "@id": "pkg:pypi/torch@2.14.1"
+            }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The advisory concerns torch.nn.utils.rnn.pad_packed_sequence. The training packages train MLPs and convolutional networks; no code packs or pads RNN sequences. The OSV record lists torch up to 2.6.0-NA as affected and names no fixed release; the locks pin torch 2.14.1."
+    },
+    {
+      "vulnerability": {
+        "name": "PYSEC-2025-193",
+        "@id": "https://osv.dev/vulnerability/PYSEC-2025-193",
+        "aliases": [
+          "BIT-pytorch-2025-2999",
+          "CVE-2025-2999",
+          "GHSA-vgrw-7cvw-pwgx"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:pypi/vmaf-train",
+          "subcomponents": [
+            {
+              "@id": "pkg:pypi/torch@2.14.1"
+            }
+          ]
+        },
+        {
+          "@id": "pkg:pypi/vmaf-ensemble-training-kit",
+          "subcomponents": [
+            {
+              "@id": "pkg:pypi/torch@2.14.1"
+            }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The advisory concerns torch.nn.utils.rnn.unpack_sequence. The training packages contain no recurrent model and never call it. The OSV record lists torch up to 2.6.0-NA as affected and names no fixed release; the locks pin torch 2.14.1."
+    },
+    {
+      "vulnerability": {
+        "name": "PYSEC-2025-194",
+        "@id": "https://osv.dev/vulnerability/PYSEC-2025-194",
+        "aliases": [
+          "BIT-pytorch-2025-3000",
+          "CVE-2025-3000",
+          "GHSA-rrmf-rvhw-rf47"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:pypi/vmaf-train",
+          "subcomponents": [
+            {
+              "@id": "pkg:pypi/torch@2.14.1"
+            }
+          ]
+        },
+        {
+          "@id": "pkg:pypi/vmaf-ensemble-training-kit",
+          "subcomponents": [
+            {
+              "@id": "pkg:pypi/torch@2.14.1"
+            }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_cannot_be_controlled_by_adversary",
+      "impact_statement": "The advisory concerns torch.jit.script on crafted input. The training packages never script code (no torch.jit call in ai/ or tools/ensemble-training-kit/), and ONNX export goes through torch.export (vmaf_train.models.exports). Whatever a dependency scripts at import is its own shipped code, not input an adversary supplies. The OSV record lists torch up to 2.6.0-NA as affected and names no fixed release; the locks pin torch 2.14.1."
+    },
+    {
+      "vulnerability": {
+        "name": "PYSEC-2025-195",
+        "@id": "https://osv.dev/vulnerability/PYSEC-2025-195",
+        "aliases": [
+          "BIT-pytorch-2025-3001",
+          "CVE-2025-3001",
+          "GHSA-qfhq-4f3w-5fph"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:pypi/vmaf-train",
+          "subcomponents": [
+            {
+              "@id": "pkg:pypi/torch@2.14.1"
+            }
+          ]
+        },
+        {
+          "@id": "pkg:pypi/vmaf-ensemble-training-kit",
+          "subcomponents": [
+            {
+              "@id": "pkg:pypi/torch@2.14.1"
+            }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The advisory concerns torch.lstm_cell. The training packages contain no LSTM or other recurrent cell. The OSV record lists torch up to 2.6.0-NA as affected and names no fixed release; the locks pin torch 2.14.1."
+    },
+    {
+      "vulnerability": {
+        "name": "PYSEC-2025-196",
+        "@id": "https://osv.dev/vulnerability/PYSEC-2025-196",
+        "aliases": [
+          "BIT-pytorch-2025-3121",
+          "CVE-2025-3121"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:pypi/vmaf-train",
+          "subcomponents": [
+            {
+              "@id": "pkg:pypi/torch@2.14.1"
+            }
+          ]
+        },
+        {
+          "@id": "pkg:pypi/vmaf-ensemble-training-kit",
+          "subcomponents": [
+            {
+              "@id": "pkg:pypi/torch@2.14.1"
+            }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The advisory concerns torch.jit.jit_module_from_flatbuffer (loading TorchScript flatbuffer modules). The training packages never load TorchScript or flatbuffer modules; checkpoints load with torch.load and models leave as ONNX. The OSV record lists torch up to 2.6.0-NA as affected and names no fixed release; the locks pin torch 2.14.1."
+    },
+    {
+      "vulnerability": {
+        "name": "PYSEC-2025-197",
+        "@id": "https://osv.dev/vulnerability/PYSEC-2025-197",
+        "aliases": [
+          "BIT-pytorch-2025-3136",
+          "CVE-2025-3136"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:pypi/vmaf-train",
+          "subcomponents": [
+            {
+              "@id": "pkg:pypi/torch@2.14.1"
+            }
+          ]
+        },
+        {
+          "@id": "pkg:pypi/vmaf-ensemble-training-kit",
+          "subcomponents": [
+            {
+              "@id": "pkg:pypi/torch@2.14.1"
+            }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_cannot_be_controlled_by_adversary",
+      "impact_statement": "The advisory concerns calling torch.cuda.memory.caching_allocator_delete with a manipulated pointer. The training packages never call the caching allocator API; the allocator only receives pointers PyTorch allocated itself. The OSV record lists torch up to 2.6.0-NA as affected and names no fixed release; the locks pin torch 2.14.1."
+    },
+    {
+      "vulnerability": {
+        "name": "PYSEC-2025-210",
+        "@id": "https://osv.dev/vulnerability/PYSEC-2025-210",
+        "aliases": [
+          "BIT-pytorch-2025-63396",
+          "CVE-2025-63396"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:pypi/vmaf-train",
+          "subcomponents": [
+            {
+              "@id": "pkg:pypi/torch@2.14.1"
+            }
+          ]
+        },
+        {
+          "@id": "pkg:pypi/vmaf-ensemble-training-kit",
+          "subcomponents": [
+            {
+              "@id": "pkg:pypi/torch@2.14.1"
+            }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The advisory concerns torch.profiler.profile (PythonTracer) hanging when profiler.stop() is omitted. The training packages never start the PyTorch profiler, and no Lightning trainer is configured with a profiler. The OSV record lists torch up to 2.5.0-NA and 2.7.1-NA as affected and names no fixed release; the locks pin torch 2.14.1."
+    }
+  ]
+}

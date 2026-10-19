@@ -165,6 +165,26 @@ the stale Open row directly above it, and all status-token checks reported
 clean. The valid result is the tombstone in Open bugs plus the single
 authoritative row under `## Recently closed`.
 
+### Code spans and brackets close on their line
+
+Every line of `docs/state.md` outside a fenced block must pair each backtick
+run with a later run of the same length on that line (a code span) and close
+every `[` that is not inside a code span. The gate names the line and column of
+the first run or bracket that does not close.
+
+Most of the ledger is one long paragraph of rows, so one stray backtick
+re-pairs every code span after it in the rendered page, and a `[` left outside
+a span makes the GFM autolink-literal parser behind the Documentation
+Governance job walk back to it from every later URL candidate. One row with a
+debugger frame name in single backticks took the lint of this file from 4 s to
+over two minutes, past the job's 120 s budget per lint process
+(`T-STATE-MD-UNPAIRED-CODE-SPAN-LINT-TIMEOUT-2026-10-06`). To fix a hit:
+
+- write a backtick that belongs to the text inside a longer run, for example
+  ``` `` mod`close `` ``` for a debugger frame name that joins module and
+  function with a backtick;
+- put a `[` that has no `]` into a code span, or escape it as `\[`.
+
 ### Limits of the check
 
 The check is a floor on this class of drift, not a proof of its absence. It
@@ -205,7 +225,9 @@ Any of these:
 
 Either:
 
-1. The diff against `BASE_SHA..HEAD_SHA` includes
+1. The pull request's own diff, from the merge base of `BASE_SHA` and
+   `HEAD_SHA` to `HEAD_SHA` (what master changed since the branch forked
+   does not count), includes
    [`docs/state.md`](../state.md) (the row landed in the appropriate section:
    Open, Recently closed, Confirmed not-affected or Deferred) and none of the
    inserted lines carry a placeholder PR or commit reference
@@ -213,7 +235,9 @@ Either:
 2. The PR description contains `no state delta: REASON`, where REASON is any
    non-empty token that is not the literal placeholder `REASON`. Use this for
    pure `feat`, `refactor` and `infra` PRs that genuinely have no bug-status
-   impact.
+   impact. The pull request template keeps its example of the line inside an
+   HTML comment, which the gate strips, so an unedited template opts nothing
+   out; a placeholder left anywhere else does not void a real opt-out.
 
 ### Placeholder references
 
@@ -261,8 +285,9 @@ gh pr view 999 --json body -q .body \
 
 The companion fixture script
 [`scripts/ci/test-state-md-touch-check.sh`](../../scripts/ci/test-state-md-touch-check.sh)
-exercises the gate against 18 cases (5 primary, 3 regression, 10
-placeholder-ref). Run it after touching either script:
+exercises the gate against 22 cases (5 primary, 3 regression, 10
+placeholder-ref, 4 bodies built from the pull request template). The Tooling
+Tests job runs it; run it after touching either script or the template:
 
 ```bash
 bash scripts/ci/test-state-md-touch-check.sh

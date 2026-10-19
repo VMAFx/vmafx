@@ -1,0 +1,6 @@
+/* Copyright 2026 Lusoris
+ * SPDX-License-Identifier: EUPL-1.2
+ *
+ * auto-generated, do not edit (core/src/meson.build, RC4 WP5): the commit the
+ * library was built from, `git rev-parse HEAD`, or `unknown`. */
+#define VMAFX_BUILD_COMMIT "@VCS_TAG@"

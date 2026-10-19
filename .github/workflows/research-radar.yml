@@ -1,0 +1,71 @@
+# Weekly research radar (ADR-2171): collects what changed in the public sources
+# listed in docs/research/radar/sources.yaml and files one digest issue per week.
+# Deterministic: no model, no secret beyond the repository token. Triage of the
+# digest is done by an agent lane afterwards, not here (docs/research/radar/triage.md).
+name: Research Radar
+# Display name <= 30 characters (ADR-1227).
+
+on:
+  schedule:
+    # Mondays 06:00 UTC; the digest covers the seven days before the run.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "Window length in days (1 to 366)"
+        required: false
+        default: "7"
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: research-radar
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    name: Weekly digest
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.14.8"
+      - name: Install the tooling lock
+        env:
+          TMPDIR: ${{ runner.temp }}
+        run: |
+          python -m pip install --require-hashes -r requirements/locks/package-build.txt
+          python -m pip install --no-build-isolation --require-hashes \
+            -r requirements/locks/tooling-tests.txt
+      - name: Collect the digest
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WINDOW_DAYS: ${{ inputs.days || '7' }}
+        run: |
+          set -euo pipefail
+          python scripts/research/radar_collect.py \
+            --days "${WINDOW_DAYS}" --output "${RUNNER_TEMP}/digest.md" \
+            | tee "${RUNNER_TEMP}/verdict.txt"
+      - name: File the digest issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ ! -s "${RUNNER_TEMP}/digest.md" ]; then
+            echo "::notice::nothing changed in the watched sources; no issue filed"
+            exit 0
+          fi
+          title="$(head -n 1 "${RUNNER_TEMP}/digest.md" | sed 's/^# //')"
+          existing="$(gh issue list --repo "${GITHUB_REPOSITORY}" --state all \
+            --label research-radar --search "\"${title}\" in:title" \
+            --json number --jq '.[0].number // empty')"
+          if [ -n "${existing}" ]; then
+            echo "::notice::digest already filed as #${existing}"
+            exit 0
+          fi
+          gh issue create --repo "${GITHUB_REPOSITORY}" --title "${title}" \
+            --label research-radar --body-file "${RUNNER_TEMP}/digest.md"

@@ -96,3 +96,13 @@ results. If the SSIM gate proves flaky in CI, the per-test
 - Source: user direction "extend CUDA kernel test coverage beyond PR
   #351 (13 more CUDA kernels need parity tests)" — round-2 picks five
   highest-impact kernels (ADM, motion_v2, CAMBI, PSNR-HVS, SSIM)
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 94: `- ADR-0541 — VIF CPU-vs-CUDA parity test (round-0 prior
+  art)`: Cites ADR-0541 for VIF CPU-vs-CUDA parity test; ADR-0541 is "Pin
+  dev-MCP container Intel NEO + ROCm runtimes to versions matching the host
+  kernel".

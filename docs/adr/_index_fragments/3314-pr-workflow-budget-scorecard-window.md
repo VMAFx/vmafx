@@ -1,0 +1,1 @@
+| [ADR-3314](3314-pr-workflow-budget-scorecard-window.md) | Pull-request workflows stay inside Scorecard's 30-suite window: three single-lane workflows fold into existing ones, the label-gated lanes run through `workflow_call` from `pr-label-lanes.yml`, and `scripts/ci/pr_workflow_budget.py` fails above 27 | Accepted | ci, scorecard, security, github-actions |

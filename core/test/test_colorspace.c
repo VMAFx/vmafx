@@ -79,7 +79,7 @@ static int plane_is_near(const VmafPicture *pic, unsigned plane, uint8_t expecte
     return 1;
 }
 
-static char *test_colorspace_init_rejects_null_arguments()
+static char *test_colorspace_init_rejects_null_arguments(void)
 {
     VmafPicture src;
     int err = alloc_flat_picture(&src, VMAF_PIX_FMT_YUV420P, 16, 16, 126, 128);
@@ -107,7 +107,7 @@ static char *test_colorspace_init_rejects_null_arguments()
     return NULL;
 }
 
-static char *test_colorspace_init_requires_known_color_metadata()
+static char *test_colorspace_init_requires_known_color_metadata(void)
 {
     VmafPicture src;
     int err = vmaf_picture_alloc(&src, VMAF_PIX_FMT_YUV420P, 8, 16, 16);
@@ -132,7 +132,7 @@ static char *test_colorspace_init_requires_known_color_metadata()
     return NULL;
 }
 
-static char *test_colorspace_init_requires_known_target_color_metadata()
+static char *test_colorspace_init_requires_known_target_color_metadata(void)
 {
     VmafPicture src;
     int err = alloc_flat_picture(&src, VMAF_PIX_FMT_YUV420P, 16, 16, 126, 128);
@@ -162,7 +162,7 @@ static char *test_colorspace_init_requires_known_target_color_metadata()
 }
 
 // NOLINTNEXTLINE(readability-function-size): test scaffolding (ADR-0141 / ADR-0278) - one case per unsupported colour value and bit depth keeps the failing assertion identifiable; splitting hides it.
-static char *test_colorspace_init_rejects_unsupported_values()
+static char *test_colorspace_init_rejects_unsupported_values(void)
 {
     VmafPicture src;
     int err = alloc_flat_picture(&src, VMAF_PIX_FMT_YUV420P, 16, 16, 126, 128);
@@ -221,7 +221,7 @@ static char *test_colorspace_init_rejects_unsupported_values()
     return NULL;
 }
 
-static char *test_colorspace_close_requires_context()
+static char *test_colorspace_close_requires_context(void)
 {
     int err = vmaf_picture_convert_context_close(NULL);
     mu_assert("closing a NULL context should fail", err == -EINVAL);
@@ -230,7 +230,7 @@ static char *test_colorspace_close_requires_context()
 }
 
 // NOLINTNEXTLINE(readability-function-size): test scaffolding (ADR-0141 / ADR-0278) - one conversion, every plane checked in place; splitting hides the assertion that fired.
-static char *test_colorspace_convert_yuv420_to_yuv444()
+static char *test_colorspace_convert_yuv420_to_yuv444(void)
 {
     const unsigned w = 16;
     const unsigned h = 16;
@@ -276,7 +276,7 @@ static char *test_colorspace_convert_yuv420_to_yuv444()
 }
 
 // NOLINTNEXTLINE(readability-function-size): test scaffolding (ADR-0141 / ADR-0278) - one conversion, every plane checked in place; splitting hides the assertion that fired.
-static char *test_colorspace_convert_with_scaling()
+static char *test_colorspace_convert_with_scaling(void)
 {
     const unsigned src_w = 32;
     const unsigned src_h = 32;
@@ -327,7 +327,7 @@ static char *test_colorspace_convert_with_scaling()
 }
 
 // NOLINTNEXTLINE(readability-function-size): test scaffolding (ADR-0141 / ADR-0278) - one conversion, every plane checked in place; splitting hides the assertion that fired.
-static char *test_colorspace_context_converts_multiple_pictures()
+static char *test_colorspace_context_converts_multiple_pictures(void)
 {
     const unsigned w = 16;
     const unsigned h = 16;
@@ -377,7 +377,7 @@ static char *test_colorspace_context_converts_multiple_pictures()
 }
 
 // NOLINTNEXTLINE(readability-function-size): test scaffolding (ADR-0141 / ADR-0278) - one conversion, every plane checked in place; splitting hides the assertion that fired.
-static char *test_colorspace_convert_rejects_mismatched_source()
+static char *test_colorspace_convert_rejects_mismatched_source(void)
 {
     VmafPicture src;
     VmafPicture other_size;
@@ -422,7 +422,7 @@ static char *test_colorspace_convert_rejects_mismatched_source()
     return NULL;
 }
 
-char *run_tests()
+char *run_tests(void)
 {
     static const MuTest tests[] = {
         MU_TEST(test_colorspace_init_rejects_null_arguments),

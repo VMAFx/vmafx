@@ -189,6 +189,10 @@ fi
 # real binary so `rev-parse --verify origin/master` and friends still work.
 
 real_git="$(command -v git)"
+# The render-only path (ADR-3295) checks out the head commit to run
+# make docs-render-check; the sentinel names no commit, so the shim hands the
+# checkout the commit this validator runs on.
+head_rev="$("${real_git}" rev-parse --verify HEAD)"
 shim_dir="${tmpdir}/shim"
 mkdir -p "${shim_dir}"
 
@@ -198,6 +202,15 @@ set -euo pipefail
 if [ "\${1:-}" = "diff" ] && [ "\${2:-}" = "--name-only" ]; then
   cat -- "${tmpdir}/diff.txt"
   exit 0
+fi
+# The sentinel pair below has no merge base of its own; the gate diffs from
+# the merge base (pr-diff-base.sh), which the shim answers with the base.
+if [ "\${1:-}" = "merge-base" ] && [ "\${2:-}" = "validator-base" ] && [ "\${3:-}" = "validator-head" ]; then
+  echo validator-base
+  exit 0
+fi
+if [ "\${1:-}" = "worktree" ] && [ "\${2:-}" = "add" ] && [ "\${3:-}" = "--detach" ] && [ "\${5:-}" = "validator-head" ]; then
+  exec "${real_git}" worktree add --detach "\${4}" "${head_rev}"
 fi
 exec "${real_git}" "\$@"
 SHIM

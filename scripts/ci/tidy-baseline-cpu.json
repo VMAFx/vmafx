@@ -4,9 +4,33 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "cc_version": "gcc-15 (Ubuntu 15.2.0-16ubuntu1) 15.2.0",
-  "tus": 391,
+  "tus": 541,
   "measured_sources": [
+    "compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_stat.c",
+    "compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_std.c",
+    "compat/python-vmaf/matlab/strred/matlabPyrTools/MEX/convolve.c",
+    "compat/python-vmaf/matlab/strred/matlabPyrTools/MEX/corrDn.c",
+    "compat/python-vmaf/matlab/strred/matlabPyrTools/MEX/edges-orig.c",
+    "compat/python-vmaf/matlab/strred/matlabPyrTools/MEX/edges.c",
+    "compat/python-vmaf/matlab/strred/matlabPyrTools/MEX/histo.c",
+    "compat/python-vmaf/matlab/strred/matlabPyrTools/MEX/innerProd.c",
+    "compat/python-vmaf/matlab/strred/matlabPyrTools/MEX/pointOp.c",
+    "compat/python-vmaf/matlab/strred/matlabPyrTools/MEX/range2.c",
+    "compat/python-vmaf/matlab/strred/matlabPyrTools/MEX/upConv.c",
+    "compat/python-vmaf/matlab/strred/matlabPyrTools/MEX/wrap.c",
+    "core/src/compat/libvmaf/backend_absent_hip.c",
+    "core/src/compat/libvmaf/backend_absent_metal.c",
+    "core/src/compat/libvmaf/context.c",
+    "core/src/compat/libvmaf/dnn.c",
+    "core/src/compat/libvmaf/libvmaf_gen.c",
+    "core/src/compat/libvmaf/mcp.c",
+    "core/src/compat/libvmaf/model.c",
+    "core/src/compat/libvmaf/picture.c",
+    "core/src/compat/libvmaf/score.c",
+    "core/src/compat/libvmaf/status_errno_gen.c",
     "core/src/compat/path_utf8.c",
+    "core/src/conversion_context.c",
+    "core/src/conversion_policy.c",
     "core/src/cpu.cpp",
     "core/src/cuda/dispatch_strategy.c",
     "core/src/dict.cpp",
@@ -19,6 +43,7 @@
     "core/src/dnn/tensor_io.c",
     "core/src/feature/adm.c",
     "core/src/feature/adm_tools.c",
+    "core/src/feature/adm_view_dist.c",
     "core/src/feature/alias.c",
     "core/src/feature/brisque.c",
     "core/src/feature/cambi.c",
@@ -54,6 +79,7 @@
     "core/src/feature/iqa/math_utils.c",
     "core/src/feature/iqa/ssim_tools.c",
     "core/src/feature/luminance_tools.cpp",
+    "core/src/feature/metal/integer_adm_metal_host.c",
     "core/src/feature/mkdirp.cpp",
     "core/src/feature/moment.c",
     "core/src/feature/motion.c",
@@ -133,6 +159,7 @@
     "core/src/metadata_handler.cpp",
     "core/src/metal/stubs.c",
     "core/src/model.c",
+    "core/src/model_lifetime.c",
     "core/src/opt.cpp",
     "core/src/output.cpp",
     "core/src/pdjson.c",
@@ -140,6 +167,7 @@
     "core/src/picture_convert.c",
     "core/src/picture_pool.c",
     "core/src/picture_pool.cpp",
+    "core/src/picture_sample_range.c",
     "core/src/picture_v2.c",
     "core/src/predict.c",
     "core/src/read_json_model.cpp",
@@ -148,8 +176,47 @@
     "core/src/sycl/dispatch_strategy.cpp",
     "core/src/thread_locale.cpp",
     "core/src/thread_pool.c",
+    "core/src/vmafx/bridge.c",
+    "core/src/vmafx/context.c",
+    "core/src/vmafx/context_frames.c",
+    "core/src/vmafx/convert.c",
+    "core/src/vmafx/device.c",
+    "core/src/vmafx/device_context.c",
+    "core/src/vmafx/egl_export.c",
+    "core/src/vmafx/error.c",
+    "core/src/vmafx/exactness.c",
+    "core/src/vmafx/exactness_gen.c",
+    "core/src/vmafx/fence.c",
+    "core/src/vmafx/frame_host.c",
+    "core/src/vmafx/frame_import.c",
+    "core/src/vmafx/frame_import_admit.c",
+    "core/src/vmafx/frame_import_hooks.c",
+    "core/src/vmafx/frame_import_vulkan.c",
+    "core/src/vmafx/frame_pool.c",
+    "core/src/vmafx/mcp_server.c",
+    "core/src/vmafx/model.c",
+    "core/src/vmafx/options.c",
+    "core/src/vmafx/provenance.c",
+    "core/src/vmafx/provenance_build.c",
+    "core/src/vmafx/provenance_json.c",
+    "core/src/vmafx/provenance_render.c",
+    "core/src/vmafx/register.c",
+    "core/src/vmafx/release_events.c",
+    "core/src/vmafx/report.c",
+    "core/src/vmafx/report_verify.c",
+    "core/src/vmafx/rgb_convert.c",
+    "core/src/vmafx/score.c",
+    "core/src/vmafx/sha256.c",
+    "core/src/vmafx/sized.c",
+    "core/src/vmafx/status_gen.c",
+    "core/src/vmafx/submit.c",
+    "core/src/vmafx/sync_object.c",
+    "core/src/vmafx/tiny_model.c",
+    "core/src/vmafx/window.c",
+    "core/src/vmafx/window_clock.c",
     "core/src/x86/cpu.c",
     "core/test/barten_csf_cxx.cpp",
+    "core/test/compat_conformance_table_gen.c",
     "core/test/dnn/test_dnn_session_api.c",
     "core/test/dnn/test_ep_fp16.c",
     "core/test/dnn/test_mobilesal_run.c",
@@ -161,22 +228,29 @@
     "core/test/dnn/test_tiny_model_verify.c",
     "core/test/dnn/test_transnet_v2_run.c",
     "core/test/dnn/test_vmaf_use_tiny_model.c",
+    "core/test/metal_integer_adm_host_replay_kernels.cpp",
     "core/test/test.c",
+    "core/test/test_accumulator_bounds_16k.c",
     "core/test/test_adm_angle_flag.c",
     "core/test/test_adm_cm_row_rounding.c",
     "core/test/test_adm_coverage.c",
     "core/test/test_adm_csf.c",
     "core/test/test_adm_csf_representable.c",
     "core/test/test_adm_csf_tools_coverage.c",
+    "core/test/test_adm_decouple_recip.cpp",
+    "core/test/test_adm_decouple_recip_cpu.c",
     "core/test/test_adm_dwt2_x86.c",
     "core/test/test_adm_gain_limit.c",
     "core/test/test_adm_nonfinite_score.c",
+    "core/test/test_adm_view_merge.c",
     "core/test/test_async_extractor_thread_pool.c",
     "core/test/test_barten_csf.c",
     "core/test/test_barten_csf_coverage.c",
     "core/test/test_brisque.c",
     "core/test/test_cambi.c",
     "core/test/test_cambi_dispatch_invariance.c",
+    "core/test/test_cambi_full_ref_wide_source.c",
+    "core/test/test_cambi_heatmap_writers.c",
     "core/test/test_cambi_simd.c",
     "core/test/test_cambi_spatial_mask_simd.c",
     "core/test/test_cambi_stage_simd.c",
@@ -185,10 +259,17 @@
     "core/test/test_ciede_simd_parity.c",
     "core/test/test_ciede_upstream_products.c",
     "core/test/test_cjson.c",
+    "core/test/test_cli_exit_status.c",
+    "core/test/test_cli_option_table.cpp",
     "core/test/test_cli_parse.c",
     "core/test/test_cli_parse_long_only_args.c",
+    "core/test/test_collector_owns_mounted_model.c",
     "core/test/test_compat_clz.c",
+    "core/test/test_compat_conformance.c",
+    "core/test/test_compat_conformance_api.c",
+    "core/test/test_compat_conformance_scoring.c",
     "core/test/test_context.c",
+    "core/test/test_conversion_policy.c",
     "core/test/test_convolution_edge_small.c",
     "core/test/test_convolution_horizontal.c",
     "core/test/test_cpu.c",
@@ -203,11 +284,13 @@
     "core/test/test_feature_collector_coverage.c",
     "core/test/test_feature_extractor.c",
     "core/test/test_feature_isa_invariance.c",
+    "core/test/test_feature_score_fed_frame.c",
     "core/test/test_fex_ctx_vector.cpp",
     "core/test/test_fex_ctx_vector_public.cpp",
     "core/test/test_fex_pool_growth.c",
     "core/test/test_float_adm_coverage.c",
     "core/test/test_float_adm_csf_upstream.c",
+    "core/test/test_float_adm_debug_key_refusal.c",
     "core/test/test_float_adm_device_math.c",
     "core/test/test_float_adm_x86.c",
     "core/test/test_float_bits.c",
@@ -236,6 +319,7 @@
     "core/test/test_hip_wavefront_reduce.c",
     "core/test/test_integer_adm_aim_unclipped.c",
     "core/test/test_integer_adm_cm_budget.c",
+    "core/test/test_integer_adm_cm_row_unsigned.c",
     "core/test/test_integer_adm_cm_threshold.c",
     "core/test/test_integer_adm_dwt16_range.c",
     "core/test/test_integer_adm_min_dim.c",
@@ -243,6 +327,7 @@
     "core/test/test_integer_adm_simd.c",
     "core/test/test_integer_adm_simd_noise.c",
     "core/test/test_integer_adm_tiny_frames.c",
+    "core/test/test_integer_adm_view_dist.c",
     "core/test/test_integer_motion_coverage.c",
     "core/test/test_integer_motion_edge16_coverage.c",
     "core/test/test_integer_motion_v2_coverage.c",
@@ -251,6 +336,7 @@
     "core/test/test_integer_vif_avx2_stages.c",
     "core/test/test_integer_vif_avx512_stages.c",
     "core/test/test_integer_vif_log2.c",
+    "core/test/test_integer_vif_row_copy.c",
     "core/test/test_integer_vif_sv_sq.c",
     "core/test/test_iqa_convolve.c",
     "core/test/test_iqa_convolve_coverage.c",
@@ -258,6 +344,7 @@
     "core/test/test_iqa_ssim_sub_window.c",
     "core/test/test_locale_handling.c",
     "core/test/test_log.c",
+    "core/test/test_log_level_threads.c",
     "core/test/test_lpips.c",
     "core/test/test_luminance_tools.cpp",
     "core/test/test_mcp_compute_vmaf_allowlist.c",
@@ -280,6 +367,7 @@
     "core/test/test_metal_float_ssim_parity.c",
     "core/test/test_metal_float_vif_math.cpp",
     "core/test/test_metal_float_vif_parity.c",
+    "core/test/test_metal_integer_adm_host_replay.c",
     "core/test/test_metal_integer_adm_math.c",
     "core/test/test_metal_integer_adm_parity.c",
     "core/test/test_metal_integer_cambi_parity.c",
@@ -297,7 +385,9 @@
     "core/test/test_metal_iosurface_layout.c",
     "core/test/test_metal_motion_v2_parity.c",
     "core/test/test_metal_ms_ssim_option_semantics.c",
+    "core/test/test_metal_plane_index.c",
     "core/test/test_metal_portable.c",
+    "core/test/test_metal_psnr_hvs_math.c",
     "core/test/test_metal_soft_double.cpp",
     "core/test/test_metal_ssimulacra2_parity.c",
     "core/test/test_metal_twin_option_parity.c",
@@ -306,18 +396,22 @@
     "core/test/test_model.c",
     "core/test/test_model_collection_api.c",
     "core/test/test_model_collection_growth.c",
+    "core/test/test_model_collection_score_repeat.c",
     "core/test/test_model_feature_overload_ownership.c",
     "core/test/test_model_libsvm_dup_key.c",
     "core/test/test_model_registration_ownership.cpp",
     "core/test/test_moment_simd.c",
     "core/test/test_motion_avx512_parity.c",
+    "core/test/test_motion_blend.c",
     "core/test/test_motion_convolution_oob.c",
     "core/test/test_motion_five_frame_window.c",
     "core/test/test_motion_min_dim.c",
     "core/test/test_motion_v2_simd.c",
+    "core/test/test_motion_window_incremental.c",
     "core/test/test_ms_ssim_decimate.c",
     "core/test/test_ms_ssim_decimate_coverage.c",
     "core/test/test_niqe.c",
+    "core/test/test_odd_depths_float_psnr_ciede.c",
     "core/test/test_opt.c",
     "core/test/test_ordered_sum.c",
     "core/test/test_output.c",
@@ -325,15 +419,20 @@
     "core/test/test_path_utf8.c",
     "core/test/test_pdjson.c",
     "core/test/test_pdjson_stack_increment.c",
+    "core/test/test_pelorus_udu_wrap.c",
     "core/test/test_perceptual_weight.c",
     "core/test/test_pic_preallocation.c",
     "core/test/test_picture.c",
     "core/test/test_picture_convert_api.c",
     "core/test/test_picture_pool_error_paths.c",
     "core/test/test_picture_v2.c",
+    "core/test/test_picture_wrap_api.c",
+    "core/test/test_picture_wrap_integration.c",
     "core/test/test_pixel_format_edge_coverage.c",
     "core/test/test_pool_percentile.c",
     "core/test/test_predict.c",
+    "core/test/test_predict_rust_ops.c",
+    "core/test/test_prescaled_plane_int_index.c",
     "core/test/test_propagate_metadata.c",
     "core/test/test_psnr.c",
     "core/test/test_psnr_hvs_avx2.c",
@@ -344,13 +443,18 @@
     "core/test/test_psnr_uncapped.c",
     "core/test/test_pu21.c",
     "core/test/test_public_api_score.c",
+    "core/test/test_read_pictures_bpc.c",
+    "core/test/test_read_pictures_convert.c",
     "core/test/test_read_pictures_failure_ownership.c",
     "core/test/test_read_pictures_monotonic.c",
     "core/test/test_ref.c",
     "core/test/test_registration_partial_copy.cpp",
+    "core/test/test_sample_range_check.c",
     "core/test/test_score_pooled_eagain.c",
     "core/test/test_speed.c",
+    "core/test/test_speed_chroma.c",
     "core/test/test_speed_clamp_score.c",
+    "core/test/test_speed_cov_count_division.c",
     "core/test/test_speed_filter.c",
     "core/test/test_speed_frame_buffers.c",
     "core/test/test_speed_lanczos4_weights.c",
@@ -363,6 +467,7 @@
     "core/test/test_ssim_x86_simd.c",
     "core/test/test_ssimulacra2_coverage.c",
     "core/test/test_ssimulacra2_nonfinite.c",
+    "core/test/test_ssimulacra2_pixel_format.c",
     "core/test/test_ssimulacra2_simd.c",
     "core/test/test_svm_api.c",
     "core/test/test_svm_multiclass.c",
@@ -375,19 +480,59 @@
     "core/test/test_validate_pic_params_bpc.c",
     "core/test/test_version.c",
     "core/test/test_video_input_odd_dims.c",
+    "core/test/test_vif_bilinear.c",
     "core/test/test_vif_lifecycle.c",
     "core/test/test_vif_simd.c",
     "core/test/test_vif_skip_scale0.c",
+    "core/test/test_vif_tools.c",
     "core/test/test_vmaf_roi.c",
     "core/test/test_vmaf_roi_bounds.c",
+    "core/test/test_vmafx_abi_layout.c",
+    "core/test/test_vmafx_api_slice.c",
+    "core/test/test_vmafx_bitexact.c",
+    "core/test/test_vmafx_context.c",
+    "core/test/test_vmafx_exactness.c",
+    "core/test/test_vmafx_fence_kinds.c",
+    "core/test/test_vmafx_frame.c",
+    "core/test/test_vmafx_frame_input.c",
+    "core/test/test_vmafx_host_fence_wait.c",
+    "core/test/test_vmafx_import_api.c",
+    "core/test/test_vmafx_import_bitexact.c",
+    "core/test/test_vmafx_import_convert.c",
+    "core/test/test_vmafx_import_fence.c",
+    "core/test/test_vmafx_import_ffmpeg_oracle.c",
+    "core/test/test_vmafx_import_formats_cpu.c",
+    "core/test/test_vmafx_import_vulkan_api.c",
+    "core/test/test_vmafx_lifetime.c",
+    "core/test/test_vmafx_live_pacing.c",
+    "core/test/test_vmafx_log_routing.c",
+    "core/test/test_vmafx_mcp_absent.c",
+    "core/test/test_vmafx_model.c",
+    "core/test/test_vmafx_provenance.c",
+    "core/test/test_vmafx_provenance_json.c",
+    "core/test/test_vmafx_provenance_threads.c",
+    "core/test/test_vmafx_report.c",
+    "core/test/test_vmafx_rgb_convert.c",
+    "core/test/test_vmafx_score.c",
+    "core/test/test_vmafx_sha256.c",
+    "core/test/test_vmafx_window.c",
+    "core/test/test_vmafx_window_clock.c",
+    "core/test/test_vmafx_window_live.c",
+    "core/test/test_win32_pthread_timeout.c",
+    "core/test/test_x86_cpu_gate.c",
     "core/test/test_y4m_411_oob.c",
     "core/test/test_y4m_alloc_failure.c",
     "core/test/test_y_funque_plus.c",
+    "core/test/vmafx_score_contract.c",
+    "core/tools/cli_backends.cpp",
     "core/tools/cli_feature_backend.cpp",
     "core/tools/cli_parse.cpp",
+    "core/tools/cli_provenance.c",
     "core/tools/test/test_cli_feature_backend.c",
+    "core/tools/test/test_cli_provenance.c",
     "core/tools/test/test_vmaf_close_retry.c",
     "core/tools/test/test_vmaf_per_shot_input.c",
+    "core/tools/test/test_vmaf_vpl_decode_ceiling.c",
     "core/tools/vidinput.c",
     "core/tools/vmaf.cpp",
     "core/tools/vmaf_bench.c",
@@ -395,13 +540,24 @@
     "core/tools/vmaf_per_shot.c",
     "core/tools/vmaf_per_shot_input.c",
     "core/tools/vmaf_roi.c",
+    "core/tools/vmaf_vpl_core.c",
     "core/tools/y4m_input.c",
-    "core/tools/yuv_input.c"
+    "core/tools/yuv_input.c",
+    "ffmpeg-patches/test/fault_inject_libvmaf.c",
+    "scripts/dev/compat_abi_consumer.c",
+    "scripts/dev/compat_abi_plant.c",
+    "scripts/dev/upstream_parity_harness.c"
   ],
   "compile_failures": [],
-  "total_warnings": 0,
+  "total_warnings": 13,
   "total_nolint_uncited": 0,
-  "warnings": {},
+  "warnings": {
+    "compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_stat.c": 1,
+    "compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_std.c": 3,
+    "compat/python-vmaf/matlab/strred/matlabPyrTools/MEX/edges-orig.c": 2,
+    "compat/python-vmaf/matlab/strred/matlabPyrTools/MEX/edges.c": 6,
+    "compat/python-vmaf/matlab/strred/matlabPyrTools/MEX/pointOp.c": 1
+  },
   "nolint_uncited": {},
   "scoped_updates": [
     {
@@ -455,6 +611,924 @@
         }
       },
       "previous_baseline_sha256": "3aeb14e4d9d8f0af05173bc21b0e3da3b8ea497b8788c94b3e4bf1c24086a7b9"
+    },
+    {
+      "sources": [
+        "core/src/feature/metal/integer_adm_metal_host.c",
+        "core/src/model_lifetime.c",
+        "core/test/metal_integer_adm_host_replay_kernels.cpp",
+        "core/test/test_adm_decouple_recip.cpp",
+        "core/test/test_adm_decouple_recip_cpu.c",
+        "core/test/test_cambi_full_ref_wide_source.c",
+        "core/test/test_cambi_heatmap_writers.c",
+        "core/test/test_collector_owns_mounted_model.c",
+        "core/test/test_metal_integer_adm_host_replay.c",
+        "core/test/test_metal_psnr_hvs_math.c",
+        "core/test/test_motion_blend.c",
+        "core/test/test_speed_chroma.c",
+        "core/test/test_ssimulacra2_pixel_format.c",
+        "core/test/test_vif_bilinear.c",
+        "core/test/test_vif_tools.c",
+        "core/tools/cli_backends.cpp"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/src/feature/metal/integer_adm_metal_host.c",
+            "core/src/model_lifetime.c",
+            "core/test/metal_integer_adm_host_replay_kernels.cpp",
+            "core/test/test_adm_decouple_recip.cpp",
+            "core/test/test_adm_decouple_recip_cpu.c",
+            "core/test/test_cambi_full_ref_wide_source.c",
+            "core/test/test_cambi_heatmap_writers.c",
+            "core/test/test_collector_owns_mounted_model.c",
+            "core/test/test_metal_integer_adm_host_replay.c",
+            "core/test/test_metal_psnr_hvs_math.c",
+            "core/test/test_motion_blend.c",
+            "core/test/test_speed_chroma.c",
+            "core/test/test_ssimulacra2_pixel_format.c",
+            "core/test/test_vif_bilinear.c",
+            "core/test/test_vif_tools.c",
+            "core/tools/cli_backends.cpp"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "5090e228215b111b0497fee3e85b90b6e9a619630d34f0b8b3907fb21b13cb34"
+    },
+    {
+      "sources": [
+        "core/test/test_integer_adm_cm_row_unsigned.c",
+        "core/test/test_speed_cov_count_division.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/test/test_integer_adm_cm_row_unsigned.c",
+            "core/test/test_speed_cov_count_division.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "c7600cc5d8afe33cf8581140b8da54dac5f9b2407193e43b2139674fc3518e4a"
+    },
+    {
+      "sources": [
+        "core/test/test_log_level_threads.c",
+        "core/test/test_model_collection_score_repeat.c",
+        "core/test/test_prescaled_plane_int_index.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/test/test_log_level_threads.c",
+            "core/test/test_model_collection_score_repeat.c",
+            "core/test/test_prescaled_plane_int_index.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "68a02c5455e2eaec0daebb96e8202785f3e63eeb13fda4a15609984f89392c85"
+    },
+    {
+      "sources": [
+        "core/test/test_accumulator_bounds_16k.c",
+        "core/tools/test/test_vmaf_vpl_decode_ceiling.c",
+        "core/tools/vmaf_vpl_core.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/test/test_accumulator_bounds_16k.c",
+            "core/tools/test/test_vmaf_vpl_decode_ceiling.c",
+            "core/tools/vmaf_vpl_core.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "b9044d6437a18e6c0d14b6500315964984ecca67e725ec7dc8ebb9ff0b2563b5"
+    },
+    {
+      "sources": [
+        "core/src/picture_sample_range.c",
+        "core/test/test_sample_range_check.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/src/picture_sample_range.c",
+            "core/test/test_sample_range_check.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "2ba0d2d2c80e65e36ae0f82e11879f72d65bbc9b20c83ba0d6c1bdadc8ea358a"
+    },
+    {
+      "sources": [
+        "core/test/test_metal_plane_index.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/test/test_metal_plane_index.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "e038be12733c0f2d76ca824ff54dc29206e476f17663181f6141bf162e5fb011"
+    },
+    {
+      "sources": [
+        "core/src/feature/feature_extractor.cpp",
+        "core/src/feature/float_adm.c",
+        "core/src/fex_ctx_vector.cpp",
+        "core/test/test_float_adm_debug_key_refusal.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/test/test_float_adm_debug_key_refusal.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "1ea579265fbc51727aae23fc5947e5d8cc1b4abc056d0931be42e4746d662042"
+    },
+    {
+      "sources": [
+        "core/src/x86/cpu.c",
+        "core/test/test_x86_cpu_gate.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/test/test_x86_cpu_gate.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "1ea579265fbc51727aae23fc5947e5d8cc1b4abc056d0931be42e4746d662042"
+    },
+    {
+      "sources": [
+        "compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_stat.c",
+        "compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_std.c",
+        "compat/python-vmaf/matlab/strred/matlabPyrTools/MEX/edges.c",
+        "compat/python-vmaf/matlab/strred/matlabPyrTools/MEX/histo.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_std.c": {
+          "warnings": [
+            4,
+            3
+          ]
+        },
+        "compat/python-vmaf/matlab/strred/matlabPyrTools/MEX/histo.c": {
+          "warnings": [
+            1,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "d888d90785e7d2ed5184e9b768a129732856420e137ad7c0e226de59fab74748"
+    },
+    {
+      "sources": [
+        "core/test/test_cli_exit_status.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/test/test_cli_exit_status.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "e12b8f52ac3b668d1fb7cfc5415fbe6b137f1597af8a6a2d85d9f9a26b7413eb"
+    },
+    {
+      "sources": [
+        "core/src/libvmaf.c",
+        "core/test/test_feature_score_fed_frame.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/test/test_feature_score_fed_frame.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "e12b8f52ac3b668d1fb7cfc5415fbe6b137f1597af8a6a2d85d9f9a26b7413eb"
+    },
+    {
+      "sources": [
+        "core/src/conversion_context.c",
+        "core/src/conversion_policy.c",
+        "core/src/feature/cambi.c",
+        "core/src/libvmaf.c",
+        "core/src/picture_convert.c",
+        "core/src/picture_sample_range.c",
+        "core/src/read_json_model.cpp",
+        "core/test/test_cli_parse.c",
+        "core/test/test_conversion_policy.c",
+        "core/test/test_model.c",
+        "core/test/test_read_pictures_convert.c",
+        "core/tools/cli_parse.cpp",
+        "core/tools/vmaf.cpp"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/src/conversion_context.c",
+            "core/src/conversion_policy.c",
+            "core/test/test_conversion_policy.c",
+            "core/test/test_read_pictures_convert.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "b77673ba81dfdffc4a50e477b7a48c8028c0049fa3938e75bd7a6871efbc3d28"
+    },
+    {
+      "sources": [
+        "core/src/feature/feature_extractor.cpp",
+        "core/test/test_read_pictures_bpc.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/test/test_read_pictures_bpc.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "20d4783a034368045e55f07d9c3276317edcc2539ee72e78d13a8df23146dfda"
+    },
+    {
+      "sources": [
+        "core/src/libvmaf.c",
+        "core/src/vmafx/compat_libvmaf_gen.c",
+        "core/src/vmafx/context.c",
+        "core/src/vmafx/error.c",
+        "core/src/vmafx/status_gen.c",
+        "core/test/test_vmafx_abi_layout.c",
+        "core/test/test_vmafx_api_slice.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/src/vmafx/compat_libvmaf_gen.c",
+            "core/src/vmafx/context.c",
+            "core/src/vmafx/error.c",
+            "core/src/vmafx/status_gen.c",
+            "core/test/test_vmafx_abi_layout.c",
+            "core/test/test_vmafx_api_slice.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "6c72929411ec0a50d5dc3bcbc0078bf87c17700a1e700b4b6db0919d0ced0b25"
+    },
+    {
+      "sources": [
+        "core/src/feature/adm.c",
+        "core/src/feature/motion.c",
+        "core/src/feature/ms_ssim.c",
+        "core/src/feature/ssim.c",
+        "core/src/feature/vif.c",
+        "core/src/libvmaf.c",
+        "core/src/log.cpp",
+        "core/src/model.c",
+        "core/src/picture.c",
+        "core/src/vmafx/compat_libvmaf_gen.c",
+        "core/src/vmafx/context.c",
+        "core/src/vmafx/device.c",
+        "core/src/vmafx/error.c",
+        "core/src/vmafx/frame_host.c",
+        "core/src/vmafx/model.c",
+        "core/src/vmafx/options.c",
+        "core/src/vmafx/register.c",
+        "core/src/vmafx/score.c",
+        "core/src/vmafx/sha256.c",
+        "core/src/vmafx/sized.c",
+        "core/src/vmafx/status_gen.c",
+        "core/src/vmafx/submit.c",
+        "core/test/test_vmafx_abi_layout.c",
+        "core/test/test_vmafx_api_slice.c",
+        "core/test/test_vmafx_bitexact.c",
+        "core/test/test_vmafx_context.c",
+        "core/test/test_vmafx_frame.c",
+        "core/test/test_vmafx_lifetime.c",
+        "core/test/test_vmafx_log_routing.c",
+        "core/test/test_vmafx_model.c",
+        "core/test/test_vmafx_score.c",
+        "core/test/test_vmafx_sha256.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/src/vmafx/device.c",
+            "core/src/vmafx/frame_host.c",
+            "core/src/vmafx/model.c",
+            "core/src/vmafx/options.c",
+            "core/src/vmafx/register.c",
+            "core/src/vmafx/score.c",
+            "core/src/vmafx/sha256.c",
+            "core/src/vmafx/sized.c",
+            "core/src/vmafx/submit.c",
+            "core/test/test_vmafx_bitexact.c",
+            "core/test/test_vmafx_context.c",
+            "core/test/test_vmafx_frame.c",
+            "core/test/test_vmafx_lifetime.c",
+            "core/test/test_vmafx_log_routing.c",
+            "core/test/test_vmafx_model.c",
+            "core/test/test_vmafx_score.c",
+            "core/test/test_vmafx_sha256.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "677a0f69fb04f9af0879a333aec53d1471e7b4dc2378fd668a3d803d7f65cc05"
+    },
+    {
+      "sources": [
+        "core/src/vmafx/compat_libvmaf_gen.c",
+        "core/src/vmafx/context.c",
+        "core/src/vmafx/device.c",
+        "core/src/vmafx/device_context.c",
+        "core/src/vmafx/error.c",
+        "core/src/vmafx/fence.c",
+        "core/src/vmafx/frame_host.c",
+        "core/src/vmafx/frame_import.c",
+        "core/src/vmafx/frame_import_admit.c",
+        "core/src/vmafx/frame_import_hooks.c",
+        "core/src/vmafx/frame_pool.c",
+        "core/src/vmafx/status_gen.c",
+        "core/src/vmafx/submit.c",
+        "core/test/test_vmafx_abi_layout.c",
+        "core/test/test_vmafx_bitexact.c",
+        "core/test/test_vmafx_import_api.c",
+        "core/test/test_vmafx_import_bitexact.c",
+        "core/test/test_vmafx_import_fence.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/src/vmafx/device_context.c",
+            "core/src/vmafx/fence.c",
+            "core/src/vmafx/frame_import.c",
+            "core/src/vmafx/frame_import_admit.c",
+            "core/src/vmafx/frame_import_hooks.c",
+            "core/src/vmafx/frame_pool.c",
+            "core/test/test_vmafx_import_api.c",
+            "core/test/test_vmafx_import_bitexact.c",
+            "core/test/test_vmafx_import_fence.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "b00a715e504297cb496a6444da752fc5e7bfe4761e1df8f0f527db70a5fb8eaa"
+    },
+    {
+      "sources": [
+        "core/src/libvmaf.c",
+        "core/src/model_lifetime.c",
+        "core/src/predict.c",
+        "core/test/test_predict_rust_ops.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/test/test_predict_rust_ops.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "b00a715e504297cb496a6444da752fc5e7bfe4761e1df8f0f527db70a5fb8eaa"
+    },
+    {
+      "sources": [
+        "core/test/test_cli_option_table.cpp",
+        "core/test/vmafx_score_contract.c",
+        "core/tools/cli_parse.cpp",
+        "core/tools/cli_provenance.c",
+        "core/tools/test/test_cli_provenance.c",
+        "core/tools/vmaf.cpp"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/test/test_cli_option_table.cpp",
+            "core/test/vmafx_score_contract.c",
+            "core/tools/cli_provenance.c",
+            "core/tools/test/test_cli_provenance.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "e57a61e08e0fa4a702a5d7e2477a24fdc457edf37baea4a1a8698070cf758991"
+    },
+    {
+      "sources": [
+        "core/src/feature/feature_collector.cpp",
+        "core/src/feature/feature_extractor.cpp",
+        "core/src/libvmaf.c",
+        "core/src/model.c",
+        "core/src/model_lifetime.c",
+        "core/src/output.cpp",
+        "core/src/predict.c",
+        "core/src/vmafx/context.c",
+        "core/src/vmafx/exactness.c",
+        "core/src/vmafx/exactness_gen.c",
+        "core/src/vmafx/fence.c",
+        "core/src/vmafx/model.c",
+        "core/src/vmafx/provenance.c",
+        "core/src/vmafx/provenance_build.c",
+        "core/src/vmafx/provenance_json.c",
+        "core/src/vmafx/provenance_render.c",
+        "core/src/vmafx/report.c",
+        "core/src/vmafx/report_verify.c",
+        "core/src/vmafx/sha256.c",
+        "core/src/vmafx/status_gen.c",
+        "core/test/test_vmafx_abi_layout.c",
+        "core/test/test_vmafx_exactness.c",
+        "core/test/test_vmafx_provenance.c",
+        "core/test/test_vmafx_provenance_json.c",
+        "core/test/test_vmafx_provenance_threads.c",
+        "core/test/test_vmafx_report.c",
+        "core/test/test_vmafx_sha256.c",
+        "core/tools/cli_feature_backend.cpp",
+        "core/tools/cli_parse.cpp",
+        "core/tools/cli_provenance.c",
+        "core/tools/test/test_cli_feature_backend.c",
+        "core/tools/test/test_cli_provenance.c",
+        "core/tools/vmaf.cpp"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/src/vmafx/exactness.c",
+            "core/src/vmafx/exactness_gen.c",
+            "core/src/vmafx/provenance.c",
+            "core/src/vmafx/provenance_build.c",
+            "core/src/vmafx/provenance_json.c",
+            "core/src/vmafx/provenance_render.c",
+            "core/src/vmafx/report.c",
+            "core/src/vmafx/report_verify.c",
+            "core/test/test_vmafx_exactness.c",
+            "core/test/test_vmafx_provenance.c",
+            "core/test/test_vmafx_provenance_json.c",
+            "core/test/test_vmafx_provenance_threads.c",
+            "core/test/test_vmafx_report.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "a77e3118a43b0576722d80d2cf10549b1da9348627f07fef3f1c438edefa1c6c"
+    },
+    {
+      "sources": [
+        "core/src/compat/libvmaf/backend_absent_hip.c",
+        "core/src/compat/libvmaf/backend_absent_metal.c",
+        "core/src/compat/libvmaf/context.c",
+        "core/src/compat/libvmaf/dnn.c",
+        "core/src/compat/libvmaf/libvmaf_gen.c",
+        "core/src/compat/libvmaf/mcp.c",
+        "core/src/compat/libvmaf/model.c",
+        "core/src/compat/libvmaf/picture.c",
+        "core/src/compat/libvmaf/score.c",
+        "core/src/compat/libvmaf/status_errno_gen.c",
+        "core/src/conversion_context.c",
+        "core/src/libvmaf.c",
+        "core/src/vmafx/bridge.c",
+        "core/src/vmafx/context.c",
+        "core/src/vmafx/context_frames.c",
+        "core/src/vmafx/convert.c",
+        "core/src/vmafx/frame_host.c",
+        "core/src/vmafx/frame_pool.c",
+        "core/src/vmafx/mcp_server.c",
+        "core/src/vmafx/model.c",
+        "core/src/vmafx/submit.c",
+        "core/src/vmafx/tiny_model.c",
+        "core/test/compat_conformance_table_gen.c",
+        "core/test/test_compat_conformance.c",
+        "core/test/test_compat_conformance_api.c",
+        "core/test/test_compat_conformance_scoring.c",
+        "core/test/test_vmafx_abi_layout.c",
+        "core/test/test_vmafx_context.c",
+        "core/test/test_vmafx_frame.c",
+        "core/test/test_vmafx_frame_input.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/src/compat/libvmaf/backend_absent_hip.c",
+            "core/src/compat/libvmaf/backend_absent_metal.c",
+            "core/src/compat/libvmaf/context.c",
+            "core/src/compat/libvmaf/dnn.c",
+            "core/src/compat/libvmaf/libvmaf_gen.c",
+            "core/src/compat/libvmaf/mcp.c",
+            "core/src/compat/libvmaf/model.c",
+            "core/src/compat/libvmaf/picture.c",
+            "core/src/compat/libvmaf/score.c",
+            "core/src/compat/libvmaf/status_errno_gen.c",
+            "core/src/vmafx/bridge.c",
+            "core/src/vmafx/context_frames.c",
+            "core/src/vmafx/convert.c",
+            "core/src/vmafx/mcp_server.c",
+            "core/src/vmafx/tiny_model.c",
+            "core/test/compat_conformance_table_gen.c",
+            "core/test/test_compat_conformance.c",
+            "core/test/test_compat_conformance_api.c",
+            "core/test/test_compat_conformance_scoring.c",
+            "core/test/test_vmafx_frame_input.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "b40ed02781f3bd708fa286dd717a50b7801eba1e5c74c3982bcb40d25737aff6"
+    },
+    {
+      "sources": [
+        "core/src/libvmaf.c",
+        "core/src/predict.c",
+        "core/src/vmafx/context.c",
+        "core/src/vmafx/context_frames.c",
+        "core/src/vmafx/fence.c",
+        "core/src/vmafx/register.c",
+        "core/src/vmafx/report.c",
+        "core/src/vmafx/score.c",
+        "core/src/vmafx/submit.c",
+        "core/src/vmafx/tiny_model.c",
+        "core/src/vmafx/window.c",
+        "core/src/vmafx/window_clock.c",
+        "core/test/test_vmafx_abi_layout.c",
+        "core/test/test_vmafx_lifetime.c",
+        "core/test/test_vmafx_window.c",
+        "core/test/test_vmafx_window_clock.c",
+        "core/test/test_vmafx_window_live.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/src/vmafx/window.c",
+            "core/src/vmafx/window_clock.c",
+            "core/test/test_vmafx_window.c",
+            "core/test/test_vmafx_window_clock.c",
+            "core/test/test_vmafx_window_live.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "4f391c0e31b9bf676c83b333bf326139974a28dcf7687dc0f0a45c9c0ae63055"
+    },
+    {
+      "sources": [
+        "core/src/feature/integer_motion.c",
+        "core/src/feature/integer_motion_v2.c",
+        "core/src/libvmaf.c",
+        "core/src/vmafx/window.c",
+        "core/test/test_metal_integer_motion_parity.c",
+        "core/test/test_metal_motion_v2_parity.c",
+        "core/test/test_motion_window_incremental.c",
+        "core/test/test_score_pooled_eagain.c",
+        "core/test/test_vmafx_window.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/test/test_motion_window_incremental.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "fc6ba26ac23913e8ff1b15ea4902d8305cf9478a1ff728dc0e5ba0b9d2699bb3"
+    },
+    {
+      "sources": [
+        "core/test/test_vmafx_host_fence_wait.c",
+        "core/test/test_win32_pthread_timeout.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/test/test_vmafx_host_fence_wait.c",
+            "core/test/test_win32_pthread_timeout.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "acb40a23b25fc568b2d991a044014ad56ed7ef2055283e87f3459505bfa03ab2"
+    },
+    {
+      "sources": [
+        "core/test/test_vmafx_mcp_absent.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/test/test_vmafx_mcp_absent.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "b2cb33e39d82f7e7324765d0dfda58beb499cc4cdae404f389873dbd29ec5cbb"
+    },
+    {
+      "sources": [
+        "core/src/feature/integer_adm.c",
+        "core/src/fex_ctx_vector.cpp",
+        "core/test/test_adm_view_merge.c",
+        "core/test/test_integer_adm_view_dist.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/test/test_adm_view_merge.c",
+            "core/test/test_integer_adm_view_dist.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "90bfcfa1914249dc5bb87d831926d1c81212663f7b974afa060770405fefdcfd"
+    },
+    {
+      "sources": [
+        "core/src/feature/adm_view_dist.c",
+        "core/src/feature/integer_adm.c",
+        "core/test/test_adm_view_merge.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/src/feature/adm_view_dist.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "b955a21e86b4fd69cb2c89f49fc541de03528c434324e9c772da15dd722c99ca"
+    },
+    {
+      "sources": [
+        "core/src/feature/integer_motion.c",
+        "core/src/feature/integer_motion_v2.c",
+        "core/src/libvmaf.c",
+        "core/src/vmafx/window.c",
+        "core/test/test_metal_integer_motion_parity.c",
+        "core/test/test_metal_motion_v2_parity.c",
+        "core/test/test_motion_window_incremental.c",
+        "core/test/test_score_pooled_eagain.c",
+        "core/test/test_vmafx_window.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/test/test_motion_window_incremental.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "b955a21e86b4fd69cb2c89f49fc541de03528c434324e9c772da15dd722c99ca"
+    },
+    {
+      "sources": [
+        "core/test/test_vmafx_live_pacing.c",
+        "core/test/test_vmafx_window_live.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/test/test_vmafx_live_pacing.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "b955a21e86b4fd69cb2c89f49fc541de03528c434324e9c772da15dd722c99ca"
+    },
+    {
+      "sources": [
+        "core/src/libvmaf.c",
+        "core/src/vmafx/device.c",
+        "core/src/vmafx/device_context.c",
+        "core/src/vmafx/fence.c",
+        "core/src/vmafx/frame_import.c",
+        "core/src/vmafx/frame_import_admit.c",
+        "core/src/vmafx/frame_pool.c",
+        "core/src/vmafx/release_events.c",
+        "core/src/vmafx/submit.c",
+        "core/test/test_vmafx_fence_kinds.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/src/vmafx/release_events.c",
+            "core/test/test_vmafx_fence_kinds.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "22a4cfe2d46641b2fa618221f88fd50f2abf8e859f23908443fb8164bafdc492"
+    },
+    {
+      "sources": [
+        "core/src/feature/integer_vif.c",
+        "core/test/test_integer_vif_row_copy.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/test/test_integer_vif_row_copy.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "047ef1ff1424e30ec63c3c56dc2886abd264561c1a8b2d3437aa4463ae4f5d6e"
+    },
+    {
+      "sources": [
+        "core/src/vmafx/egl_export.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/src/vmafx/egl_export.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "573951d81d80cf2dcc2a1a411e1bb80f8a85f6e4f466ced4b156f13665acb77f"
+    },
+    {
+      "sources": [
+        "core/src/compat/libvmaf/picture.c",
+        "core/src/picture.c",
+        "core/src/vmafx/frame_host.c",
+        "core/test/compat_conformance_table_gen.c",
+        "core/test/test_compat_conformance_api.c",
+        "core/test/test_picture_wrap_api.c",
+        "core/test/test_picture_wrap_integration.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/test/test_picture_wrap_api.c",
+            "core/test/test_picture_wrap_integration.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "573951d81d80cf2dcc2a1a411e1bb80f8a85f6e4f466ced4b156f13665acb77f"
+    },
+    {
+      "sources": [
+        "core/src/vmafx/frame_import.c",
+        "core/test/test_vmafx_abi_layout.c",
+        "core/test/test_vmafx_import_bitexact.c",
+        "core/test/test_vmafx_import_convert.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/test/test_vmafx_import_convert.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "79ff9e2d44e8e6f784c908a3782d8c01384c054016b0855f47f797b9811f5959"
+    },
+    {
+      "sources": [
+        "core/src/libvmaf.c",
+        "core/src/vmafx/device.c",
+        "core/src/vmafx/device_context.c",
+        "core/src/vmafx/egl_export.c",
+        "core/src/vmafx/fence.c",
+        "core/src/vmafx/frame_import.c",
+        "core/src/vmafx/frame_import_admit.c",
+        "core/src/vmafx/frame_pool.c",
+        "core/src/vmafx/submit.c",
+        "core/src/vmafx/sync_object.c",
+        "core/test/test_vmafx_fence_kinds.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/src/vmafx/sync_object.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "2df1df109d54f770ed8d6d7ae4f2e5d5091fefa723d79078123116410e6aed58"
+    },
+    {
+      "sources": [
+        "core/src/vmafx/device.c",
+        "core/src/vmafx/fence.c",
+        "core/src/vmafx/frame_import.c",
+        "core/src/vmafx/frame_import_vulkan.c",
+        "core/src/vmafx/sync_object.c",
+        "core/test/test_vmafx_abi_layout.c",
+        "core/test/test_vmafx_fence_kinds.c",
+        "core/test/test_vmafx_import_vulkan_api.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/src/vmafx/frame_import_vulkan.c",
+            "core/test/test_vmafx_import_vulkan_api.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "f8886702794f8bbeaf5afbd7a7714891ecd91f5eb4f72f9d34626686b3e164da"
+    },
+    {
+      "sources": [
+        "ffmpeg-patches/test/fault_inject_libvmaf.c",
+        "scripts/dev/upstream_parity_harness.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "ffmpeg-patches/test/fault_inject_libvmaf.c",
+            "scripts/dev/upstream_parity_harness.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "495152f5813fcfccfcaca022c625631f05e0526e2642cd7d0c98314d3eafc744"
+    },
+    {
+      "sources": [
+        "scripts/dev/compat_abi_consumer.c",
+        "scripts/dev/compat_abi_plant.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "scripts/dev/compat_abi_consumer.c",
+            "scripts/dev/compat_abi_plant.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "f87e433402db68378ffe08216676ec1efae52f1859cdc3f4d855e0018d39d049"
+    },
+    {
+      "sources": [
+        "core/src/feature/perceptual_weight.c",
+        "core/test/test_pelorus_udu_wrap.c",
+        "core/test/test_perceptual_weight.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/test/test_pelorus_udu_wrap.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "d5ed04eb593aac57b5789d15037c67d14c2488f1f642bf700ce5dc68814d4a37"
+    },
+    {
+      "sources": [
+        "core/src/vmafx/rgb_convert.c",
+        "core/test/test_vmafx_import_ffmpeg_oracle.c",
+        "core/test/test_vmafx_import_formats_cpu.c",
+        "core/test/test_vmafx_rgb_convert.c",
+        "core/tools/cli_parse.cpp"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/src/vmafx/rgb_convert.c",
+            "core/test/test_vmafx_import_ffmpeg_oracle.c",
+            "core/test/test_vmafx_import_formats_cpu.c",
+            "core/test/test_vmafx_rgb_convert.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "370e25509b214d92d9a19790b6da36c9cebd2ae83cfb6f60ae7749785eb754eb"
+    },
+    {
+      "sources": [
+        "core/src/feature/feature_extractor.cpp",
+        "core/test/test_odd_depths_float_psnr_ciede.c",
+        "core/test/test_read_pictures_bpc.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/test/test_odd_depths_float_psnr_ciede.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "e50a338750f01bb1e61acde84b60bf66ab1f49e9fa8a5984903becf9d48798fa"
     }
   ]
 }

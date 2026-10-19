@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD041 MD060 -->
 # ADR-1496: The macOS tester bundle runs the parity gate's Metal cells and reports per state row what it measured
 
-- **Status**: Accepted
+- **Status**: Accepted (Superseded-in-part 2026-10-06 by [ADR-1707](1707-rc3-exit-without-outside-hardware.md) for the condition that every Metal row is closed before rc.3)
 - **Date**: 2026-10-03
 - **Deciders**: Lusoris
 - **Tags**: ci, metal, testing, parity, macos, fork-local

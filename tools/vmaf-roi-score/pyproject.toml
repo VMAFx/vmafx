@@ -5,7 +5,7 @@ name = "vmaf-roi-score"
 version = "0.0.1"
 description = "Region-of-interest VMAF score (Option C): saliency-weighted full-frame VMAF combo."
 readme = "README.md"
-requires-python = ">=3.10,<3.15"
+requires-python = ">=3.12,<3.15"
 license = "EUPL-1.2 AND BSD-2-Clause-Patent"
 license-files = ["LICENSES/*"]
 authors = [
@@ -14,11 +14,11 @@ authors = [
 dependencies = []
 
 [project.optional-dependencies]
-dev = ["pytest>=9.1.1", "ruff>=0.16.10"]
+dev = ["pytest>=9.1.1", "ruff>=0.17.0"]
 # Saliency mask materialisation needs onnxruntime + numpy at runtime.
 # Kept optional so the smoke tests (which mock subprocess + skip ORT) run
 # in a minimal environment.
-runtime = ["onnxruntime>=1.30.0", "numpy>=2.5.3"]
+runtime = ["onnxruntime>=1.31.0", "numpy>=2.5.3"]
 
 [project.scripts]
 vmaf-roi-score = "vmafroiscore.cli:main"
@@ -26,7 +26,7 @@ vmaf-roi-score = "vmafroiscore.cli:main"
 [project.urls]
 Homepage = "https://github.com/VMAFx/vmafx"
 Repository = "https://github.com/VMAFx/vmafx"
-Documentation = "https://vmafx.github.io/vmafx/"
+Documentation = "https://vmafx.dev/"
 Issues = "https://github.com/VMAFx/vmafx/issues"
 Changelog = "https://github.com/VMAFx/vmafx/blob/master/CHANGELOG.md"
 

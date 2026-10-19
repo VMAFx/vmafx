@@ -1,44 +1,8 @@
 <!-- markdownlint-disable MD013 MD025 MD033 MD060 -->
-<!-- ADR-0673 stub — claimed by scripts/adr/next-free.sh --claim saliency-materializer-batch-manifest on 2026-05-21T19:33:32Z -->
-<!-- Replace this file with the real ADR and rename to 0673-saliency-materializer-batch-manifest.md before committing. -->
-<!-- To abandon this claim run: scripts/adr/next-free.sh --release 0673 -->
-
-# ADR-0673: <fill in title>
-
-- **Status**: Accepted
-- **Date**: 2026-05-21
-- **Deciders**: <fill in>
-- **Tags**: <fill in>
-
-## Context
-
-<fill in>
-
-## Decision
-
-<fill in>
-
-## Alternatives considered
-
-| Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
-| | | | |
-
-## Consequences
-
-- **Positive**: <fill in>
-- **Negative**: <fill in>
-- **Neutral / follow-ups**: <fill in>
-
-## References
-
-- See [ADR-0535](0535-adr-atomic-allocator.md) for the original allocator design.
-- See [ADR-0628](0628-adr-allocator-remote-aware.md) for the remote-aware extension.
-- Source: <req or Q<round>.<q>>
 
 # ADR-0673: Saliency Materializer Batch Manifest
 
-- **Status**: Accepted
+- **Status**: Accepted (status update 2026-10-06 below)
 - **Date**: 2026-05-21
 - **Deciders**: Lusoris
 - **Tags**: ai, saliency, materializer, provenance, fork-local
@@ -117,3 +81,13 @@ Verification command:
 ```bash
 ls ai/scripts/batch_materialize_saliency_features.py ai/tests/test_batch_materialize_saliency_features.py
 ```
+
+## Status update 2026-10-06: The unfilled template block was removed
+
+Until this date the file began with an unfilled template block from the ADR
+number allocator (stub comments, the title `<fill in title>`, `<fill in>`
+sections), followed by this record. The block carried no decision and made the
+first heading, the Deciders line and the Tags line unreadable by tools; it was
+removed. The record itself is unchanged.
+
+The body above is unchanged.

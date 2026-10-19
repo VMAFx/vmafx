@@ -71,6 +71,22 @@ class ControllerAddress(unittest.TestCase):
         self.assertEqual(env["VMAFX_CONTROLLER_ADDR"], "vmafx-controller.vmafx:9090")
 
 
+class ModelDirectory(unittest.TestCase):
+    def test_image_models_without_a_models_volume(self) -> None:
+        # persistence.models.mountPath has a default even when no volume is
+        # mounted; a node pointed at it found no model and failed every job.
+        env = node_env("node.enabled=true")
+        self.assertEqual(env["VMAFX_MODEL_DIR"], "/usr/local/share/vmafx/model")
+
+    def test_models_volume_when_mounted(self) -> None:
+        env = node_env(
+            "node.enabled=true",
+            "persistence.models.enabled=true",
+            "persistence.models.mountPath=/srv/models",
+        )
+        self.assertEqual(env["VMAFX_MODEL_DIR"], "/srv/models")
+
+
 class NodeToControllerEgress(unittest.TestCase):
     def test_egress_to_controller_port(self) -> None:
         doc = policy("-allow-node-to-controller", "node.controllerAddr=ctrl:9090")

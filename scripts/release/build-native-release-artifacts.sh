@@ -86,22 +86,30 @@ require_checkout_is_github_sha() {
 }
 
 # actions/upload-artifact does not preserve symlinks. Materialize every Meson
-# link-chain name so the downloaded CLI's DT_NEEDED entry (libvmaf.so.MAJOR)
-# exists as a regular release asset.
-stage_libvmaf_chain() {
-  local -a libvmaf_chain
-  mapfile -d '' libvmaf_chain < <(
+# link-chain name so the downloaded CLI's DT_NEEDED entries (libvmaf.so.MAJOR
+# and libvmafx.so.MAJOR) exist as regular release assets. Since the library
+# split (ADR-2094) the CLI and the compat libvmaf.so.3 both need libvmafx.so.1,
+# so the bundle carries both chains.
+stage_library_chain() {
+  local name="$1"
+  local -a chain
+  mapfile -d '' chain < <(
     find build/src -maxdepth 1 \( -type f -o -type l \) \
-      -name 'libvmaf.so*' -print0 | LC_ALL=C sort -z
+      -name "$name.so*" -print0 | LC_ALL=C sort -z
   )
-  if [[ ${#libvmaf_chain[@]} -lt 3 ]]; then
-    echo "ERROR: incomplete Meson libvmaf SONAME chain" >&2
+  if [[ ${#chain[@]} -lt 3 ]]; then
+    echo "ERROR: incomplete Meson $name SONAME chain" >&2
     return 1
   fi
   local library
-  for library in "${libvmaf_chain[@]}"; do
+  for library in "${chain[@]}"; do
     cp -L -- "$library" "artifacts/$(basename -- "$library")"
   done
+}
+
+stage_libvmaf_chain() {
+  stage_library_chain libvmaf
+  stage_library_chain libvmafx
 }
 
 require_patchelf() {

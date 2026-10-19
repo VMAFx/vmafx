@@ -64,7 +64,7 @@ jobs:
     # Release events also fire for tester prereleases (tester-*, tester-windows-*);
     # only version tags (v*) belong to this workflow. Dependent jobs skip with it.
     if: github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions:
       contents: read
@@ -173,7 +173,7 @@ jobs:
   build-cpu:
     name: Publish CPU image
     needs: validate-release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     # amd64 + arm64 (QEMU): v1.0.0-rc.1's run was cancelled at 60 minutes
     # while still linking unit tests; the image now builds without them.
     timeout-minutes: 120
@@ -286,7 +286,7 @@ jobs:
             "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.push.outputs.digest }}"
 
       - name: Upload SBOM as workflow artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: sbom-cpu
           path: sbom-cpu.cdx.json
@@ -316,7 +316,7 @@ jobs:
   smoke-test:
     name: Smoke-test CPU image
     needs: build-cpu
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
       contents: read
@@ -375,7 +375,7 @@ jobs:
   build-cuda13:
     name: Publish CUDA 13 image
     needs: validate-release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 90
     environment: release-publish
     permissions:
@@ -507,7 +507,7 @@ jobs:
             "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.push.outputs.digest }}"
 
       - name: Upload SBOM as workflow artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: sbom-cuda13
           path: sbom-cuda13.cdx.json
@@ -519,7 +519,7 @@ jobs:
   build-rocm10:
     name: Publish ROCm 10 image
     needs: validate-release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 90
     environment: release-publish
     permissions:
@@ -651,7 +651,7 @@ jobs:
             "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.push.outputs.digest }}"
 
       - name: Upload SBOM as workflow artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: sbom-rocm10
           path: sbom-rocm10.cdx.json
@@ -665,7 +665,7 @@ jobs:
   build-oneapi2026:
     name: Publish oneAPI 2026 image
     needs: validate-release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 90
     environment: release-publish
     permissions:
@@ -802,7 +802,7 @@ jobs:
             "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.push.outputs.digest }}"
 
       - name: Upload SBOM as workflow artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: sbom-oneapi2026
           path: sbom-oneapi2026.cdx.json
@@ -817,7 +817,7 @@ jobs:
       - build-cuda13
       - build-rocm10
       - build-oneapi2026
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     permissions:
       contents: read
@@ -896,7 +896,7 @@ jobs:
   build-server:
     name: Publish MCP server image
     needs: validate-release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     # amd64 + arm64 (QEMU): v1.0.0-rc.1's run was cancelled at 60 minutes
     # while still linking unit tests; the image now builds without them.
     timeout-minutes: 120
@@ -1003,7 +1003,7 @@ jobs:
             "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.push.outputs.digest }}"
 
       - name: Upload SBOM as workflow artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: sbom-server
           path: sbom-server.cdx.json
@@ -1030,7 +1030,7 @@ jobs:
   smoke-server:
     name: Smoke-test MCP server image
     needs: build-server
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
       contents: read
@@ -1125,7 +1125,7 @@ jobs:
       - smoke-gpu
       - build-server
       - smoke-server
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
       - name: Check results

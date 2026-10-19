@@ -1308,12 +1308,6 @@ static FORCE_INLINE __m256i cm_block_avx2(const AdmCmCtx *c, int i, int j, __m25
     return thr;
 }
 
-/* Reinterpret a uint64 as the int64 with the same bits. */
-static FORCE_INLINE int64_t cm_as_int64(uint64_t v)
-{
-    return (v <= (uint64_t)INT64_MAX) ? (int64_t)v : (-(int64_t)(~v)) - 1;
-}
-
 /* The block that ends at the last column of the row, for the `tail` columns
  * the six-column blocks left over: they are its top lanes. */
 static FORCE_INLINE __m256i cm_tail_block_avx2(const AdmCmCtx *c, int i, int end_col, int tail,
@@ -1362,7 +1356,7 @@ static FORCE_INLINE __m256i cm_row_pass_avx2(const AdmCmCtx *c, int i, const Adm
  * row that reaches the first or the last column needs the mirrored
  * neighbourhood, and a row narrower than a block has no block to overlap:
  * both stay scalar. */
-static void cm_row_avx2(const AdmCmCtx *c, int i, const AdmCmBounds *bd, int64_t inner[3])
+static void cm_row_avx2(const AdmCmCtx *c, int i, const AdmCmBounds *bd, uint64_t inner[3])
 {
     const int cols = bd->end_col - bd->start_col;
     if (bd->left_edge || bd->right_edge || cols < 6) {
@@ -1381,7 +1375,7 @@ static void cm_row_avx2(const AdmCmCtx *c, int i, const AdmCmBounds *bd, int64_t
     for (int b = 0; b < 3; ++b) {
         /* Every lane of every block carries the bias, the idle ones too. */
         const uint64_t biased = hsum_epu64(_mm256_add_epi64(accum_lo[b], accum_hi[b]));
-        inner[b] += cm_as_int64(biased - (lanes * f->band[b].cub_bias));
+        inner[b] += biased - (lanes * f->band[b].cub_bias);
     }
 }
 
@@ -1398,7 +1392,7 @@ float adm_cm_avx2(AdmBuffer *buf, int w, int h, int src_stride, int csf_a_stride
     const CmFrameConsts frame = cm_frame_consts_avx2(&c);
     c.row_data = &frame;
 
-    int64_t accum[3] = {0, 0, 0};
+    uint64_t accum[3] = {0, 0, 0};
     adm_cm_rows(&c, &bd, cm_row_avx2, accum);
     return adm_cm_result(&c, &bd, accum, adm_noise_weight, adm_p_norm);
 }

@@ -21,9 +21,11 @@ important.
 
 ## What it computes
 
-```text
-roi_vmaf = (1 - w) * vmaf_full + w * vmaf_masked
-```
+$$
+\mathrm{vmaf}_{\mathrm{roi}} = (1 - w)\, \mathrm{vmaf}_{\mathrm{full}} + w\, \mathrm{vmaf}_{\mathrm{masked}}
+$$
+
+The output field is `roi_vmaf`.
 
 - `vmaf_full` — pooled VMAF on the full frame (standard libvmaf run).
 - `vmaf_masked` — pooled VMAF on a saliency-masked variant of the

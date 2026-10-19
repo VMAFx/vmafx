@@ -44,67 +44,71 @@
  *  core/test/test_cuda_device_resident_contract.py enforces that.
  */
 
-#include <stddef.h>
-#include <stdint.h>
+#include <cstddef>
+#include <cstdint>
 
+#include "cuda_device_ptr.cuh"
 #include "feature/cuda/speed/speed_cuda_params.h"
+
+namespace
+{
 
 #define SPEED_KN 25u         /* elements_in_block */
 #define SPEED_KMATRIX 625u   /* 25 x 25 */
 #define SPEED_KTRIANGLE 325u /* lower triangle incl. diagonal */
 
-static constexpr uint32_t kN = SPEED_KN;
-static constexpr uint32_t kMatrix = SPEED_KMATRIX;
-static constexpr uint32_t kTriangle = SPEED_KTRIANGLE;
-static constexpr uint32_t kBlock = SPEED_GPU_BLOCK;
-static constexpr uint32_t kMaxTaps = SPEED_GPU_MAX_TAPS;
-static constexpr uint32_t kLanczosTaps = SPEED_GPU_LANCZOS_TAPS;
-static constexpr uint32_t kDecimation = 16u;      /* 2^NUM_SCALES */
-static constexpr uint32_t kQrIterationCap = 500u; /* EIGENVALUE_MAX_ITERS */
-static constexpr uint32_t kMeanChunk = 16u;
-static constexpr float kPictureOffset = -128.0f; /* picture_copy() offset */
-static constexpr float kElementsF = 25.0f;       /* elements_in_block */
-static constexpr float kEpsHi = 0x1.0c6f7ap-20f; /* (float)EIGENVALUE_EPS */
-static constexpr float kEpsLo = 0x1.6bdb1ap-49f; /* EIGENVALUE_EPS - kEpsHi, exact */
+constexpr uint32_t kN = SPEED_KN;
+constexpr uint32_t kMatrix = SPEED_KMATRIX;
+constexpr uint32_t kTriangle = SPEED_KTRIANGLE;
+constexpr uint32_t kBlock = SPEED_GPU_BLOCK;
+constexpr uint32_t kMaxTaps = SPEED_GPU_MAX_TAPS;
+constexpr uint32_t kLanczosTaps = SPEED_GPU_LANCZOS_TAPS;
+constexpr uint32_t kDecimation = 16u;      /* 2^NUM_SCALES */
+constexpr uint32_t kQrIterationCap = 500u; /* EIGENVALUE_MAX_ITERS */
+constexpr uint32_t kMeanChunk = 16u;
+constexpr float kPictureOffset = -128.0f; /* picture_copy() offset */
+constexpr float kElementsF = 25.0f;       /* elements_in_block */
+constexpr float kEpsHi = 0x1.0c6f7ap-20f; /* (float)EIGENVALUE_EPS */
+constexpr float kEpsLo = 0x1.6bdb1ap-49f; /* EIGENVALUE_EPS - kEpsHi, exact */
 
 /* ------------------------------------------------------------------ */
 /* Round-to-nearest fp32 arithmetic (never contracted)                 */
 /* ------------------------------------------------------------------ */
 
-static __device__ __forceinline__ float rn_add(float a, float b)
+__device__ __forceinline__ float rn_add(float a, float b)
 {
     return __fadd_rn(a, b);
 }
 
-static __device__ __forceinline__ float rn_sub(float a, float b)
+__device__ __forceinline__ float rn_sub(float a, float b)
 {
     return __fsub_rn(a, b);
 }
 
-static __device__ __forceinline__ float rn_mul(float a, float b)
+__device__ __forceinline__ float rn_mul(float a, float b)
 {
     return __fmul_rn(a, b);
 }
 
-static __device__ __forceinline__ float rn_div(float a, float b)
+__device__ __forceinline__ float rn_div(float a, float b)
 {
     return __fdiv_rn(a, b);
 }
 
-static __device__ __forceinline__ float rn_sqrt(float x)
+__device__ __forceinline__ float rn_sqrt(float x)
 {
     return __fsqrt_rn(x);
 }
 
 /* Error-free transform only: `a * b + c` rounded once, used where the result
  * is exact (the low part of a product, a quotient's residual). */
-static __device__ __forceinline__ float exact_fma(float a, float b, float c)
+__device__ __forceinline__ float exact_fma(float a, float b, float c)
 {
     return __fmaf_rn(a, b, c);
 }
 
 /* create_givens()'s fp64 statement on the primitives above (ADR-1477). */
-#define SPEED_GIVENS_FUNC static __device__ __forceinline__
+#define SPEED_GIVENS_FUNC __device__ __forceinline__
 #define SPEED_GIVENS_SQRT(x) rn_sqrt(x)
 #define SPEED_GIVENS_DIV(a, b) rn_div((a), (b))
 #define SPEED_GIVENS_MUL(a, b) rn_mul((a), (b))
@@ -122,30 +126,41 @@ struct Ff {
     float lo;
 };
 
-static __device__ __forceinline__ Ff two_sum(float a, float b)
+/* An aggregate is filled field by field: nvcc's MSVC host frontend rejects
+ * designated initializers in device code (preflight --stage msvcism), and a
+ * constructor would make the members private by clang-tidy's rules. */
+__device__ __forceinline__ Ff make_ff(float hi, float lo)
+{
+    Ff pair;
+    pair.hi = hi;
+    pair.lo = lo;
+    return pair;
+}
+
+__device__ __forceinline__ Ff two_sum(float a, float b)
 {
     const float sum = rn_add(a, b);
     const float b_virtual = rn_sub(sum, a);
     const float a_virtual = rn_sub(sum, b_virtual);
     const float b_error = rn_sub(b, b_virtual);
     const float a_error = rn_sub(a, a_virtual);
-    return {sum, rn_add(a_error, b_error)};
+    return make_ff(sum, rn_add(a_error, b_error));
 }
 
-static __device__ __forceinline__ Ff quick_two_sum(float a, float b)
+__device__ __forceinline__ Ff quick_two_sum(float a, float b)
 {
     const float sum = rn_add(a, b);
     const float rebuilt = rn_sub(sum, a);
-    return {sum, rn_sub(b, rebuilt)};
+    return make_ff(sum, rn_sub(b, rebuilt));
 }
 
-static __device__ __forceinline__ Ff two_prod(float a, float b)
+__device__ __forceinline__ Ff two_prod(float a, float b)
 {
     const float product = rn_mul(a, b);
-    return {product, exact_fma(a, b, -product)};
+    return make_ff(product, exact_fma(a, b, -product));
 }
 
-static __device__ __forceinline__ Ff ff_add(Ff a, Ff b)
+__device__ __forceinline__ Ff ff_add(Ff a, Ff b)
 {
     const Ff high = two_sum(a.hi, b.hi);
     const Ff low = two_sum(a.lo, b.lo);
@@ -153,19 +168,34 @@ static __device__ __forceinline__ Ff ff_add(Ff a, Ff b)
     return quick_two_sum(first.hi, rn_add(low.lo, first.lo));
 }
 
-/* (hi + lo) / divisor, rounded once to fp32. */
-static __device__ __forceinline__ float ff_div_to_float(Ff value, float divisor)
+/* An element count as an exact fp32 pair: hi is the count rounded to fp32,
+ * lo the rest. lo is 0 up to 2^24 and exact above it (below 2^48). */
+__device__ __forceinline__ Ff count_ff(uint32_t count)
 {
-    const float quotient = rn_div(value.hi, divisor);
-    const float remainder = exact_fma(-quotient, divisor, value.hi);
-    const float correction = rn_div(rn_add(remainder, value.lo), divisor);
+    const float hi = static_cast<float>(count);
+    const float lo = static_cast<float>(static_cast<int64_t>(count) - static_cast<int64_t>(hi));
+    return make_ff(hi, lo);
+}
+
+/* (hi + lo) / (divisor.hi + divisor.lo), rounded to fp32. speed.c divides its
+ * accumulated sum by the exact size_t count; a count above 2^24 has no fp32 value,
+ * so its rest enters the remainder. With divisor.lo == 0 this is the one-float
+ * division bit for bit. */
+__device__ __forceinline__ float ff_div_to_float(Ff value, Ff divisor)
+{
+    const float quotient = rn_div(value.hi, divisor.hi);
+    float remainder = rn_add(exact_fma(-quotient, divisor.hi, value.hi), value.lo);
+    if (divisor.lo != 0.0f) {
+        remainder = rn_sub(remainder, rn_mul(quotient, divisor.lo));
+    }
+    const float correction = rn_div(remainder, divisor.hi);
     return rn_add(quotient, correction);
 }
 
 /* speed.c compares against EIGENVALUE_EPS = 1e-6, an fp64 constant, after
  * promoting the fp32 operands. `a < 1e-6 * s` is decided exactly here from
  * kEpsHi + kEpsLo == 1e-6 and two exact products. */
-static __device__ __forceinline__ bool below_eps_scaled(float a, float s)
+__device__ __forceinline__ bool below_eps_scaled(float a, float s)
 {
     const Ff major = two_prod(kEpsHi, s);
     const Ff minor = two_prod(kEpsLo, s);
@@ -178,7 +208,7 @@ static __device__ __forceinline__ bool below_eps_scaled(float a, float s)
 
 /* `x < 1e-6` with fp64 promotion: no fp32 value lies strictly between kEpsHi
  * and 1e-6, so this is `x <= kEpsHi`. */
-static __device__ __forceinline__ bool below_eps(float x)
+__device__ __forceinline__ bool below_eps(float x)
 {
     return x <= kEpsHi;
 }
@@ -188,7 +218,7 @@ static __device__ __forceinline__ bool below_eps(float x)
 /* ------------------------------------------------------------------ */
 
 /* convolution_reflect101(), convolution_internal.h. */
-static __device__ __forceinline__ uint32_t reflect101(int32_t index, uint32_t size)
+__device__ __forceinline__ uint32_t reflect101(int32_t index, uint32_t size)
 {
     const int32_t n = static_cast<int32_t>(size);
     if (n <= 1)
@@ -201,14 +231,14 @@ static __device__ __forceinline__ uint32_t reflect101(int32_t index, uint32_t si
 
 /* Whether every tap of a `2 * radius + 1` window around `centre` is inside
  * [0, size), so the reflect-101 fold can be skipped. */
-static __device__ __forceinline__ bool window_inside(int32_t centre, int32_t radius, uint32_t size)
+__device__ __forceinline__ bool window_inside(int32_t centre, int32_t radius, uint32_t size)
 {
     return centre >= radius && centre + radius < static_cast<int32_t>(size);
 }
 
 /* Plane index of tap `k` around `centre`. */
-static __device__ __forceinline__ uint32_t tap(int32_t centre, int32_t radius, uint32_t k,
-                                               uint32_t size, bool inside)
+__device__ __forceinline__ uint32_t tap(int32_t centre, int32_t radius, uint32_t k, uint32_t size,
+                                        bool inside)
 {
     const int32_t index = centre - radius + static_cast<int32_t>(k);
     return inside ? static_cast<uint32_t>(index) : reflect101(index, size);
@@ -216,8 +246,8 @@ static __device__ __forceinline__ uint32_t tap(int32_t centre, int32_t radius, u
 
 /* picture_copy(): 8-bit `(float)v + offset`, else `(float)v / scaler + offset`. */
 template <typename T>
-static __device__ __forceinline__ float picture_value(const T *__restrict__ plane, size_t offset,
-                                                      float scale)
+__device__ __forceinline__ float picture_value(const T *__restrict__ plane, size_t offset,
+                                               float scale)
 {
     const float sample = static_cast<float>(plane[offset]);
     if constexpr (sizeof(T) == 1u) {
@@ -234,7 +264,7 @@ template <typename T> class RawSource
 {
   public:
     __device__ explicit RawSource(const SpeedCudaFrameArgs &a)
-        : raw_(reinterpret_cast<const unsigned char *>(a.raw)), plane_bytes_(a.plane_bytes),
+        : raw_(VMAF_CUDA_DPTR(const unsigned char, a.raw)), plane_bytes_(a.plane_bytes),
           bindings_(a.bindings), width_(a.geometry.src_w), scale_(a.geometry.sample_scale)
     {
     }
@@ -289,7 +319,7 @@ class FloatSource
 
 /* `(y + 0.5) * ratio - 0.5`, evaluated by the reference in fp64 and rounded
  * once to fp32. Every intermediate below is exact. */
-static __device__ __forceinline__ float centre_coordinate(uint32_t index, float ratio)
+__device__ __forceinline__ float centre_coordinate(uint32_t index, float ratio)
 {
     const float centre = rn_add(static_cast<float>(index), 0.5f);
     const Ff scaled = two_prod(centre, ratio);
@@ -299,7 +329,7 @@ static __device__ __forceinline__ float centre_coordinate(uint32_t index, float 
 }
 
 /* mirror(), vif_tools.c (float arguments). */
-static __device__ __forceinline__ float mirror_coordinate(float i, float right)
+__device__ __forceinline__ float mirror_coordinate(float i, float right)
 {
     if (i < 0.0f)
         return -i;
@@ -309,8 +339,8 @@ static __device__ __forceinline__ float mirror_coordinate(float i, float right)
 }
 
 template <class Source>
-static __device__ float scale_bilinear(const Source &src, uint32_t ch, const SpeedGpuGeometry &g,
-                                       float x, float y)
+__device__ float scale_bilinear(const Source &src, uint32_t ch, const SpeedGpuGeometry &g, float x,
+                                float y)
 {
     const float right = static_cast<float>(g.src_w - 1u);
     const float bottom = static_cast<float>(g.src_h - 1u);
@@ -330,7 +360,7 @@ static __device__ float scale_bilinear(const Source &src, uint32_t ch, const Spe
 }
 
 /* bicubic_kernel(), vif_tools.c. */
-static __device__ __forceinline__ float bicubic_weight(float t)
+__device__ __forceinline__ float bicubic_weight(float t)
 {
     const float a = -0.75f;
     const float u = t < 0.0f ? -t : t;
@@ -350,8 +380,8 @@ static __device__ __forceinline__ float bicubic_weight(float t)
 }
 
 template <class Source>
-static __device__ float scale_bicubic(const Source &src, uint32_t ch, const SpeedGpuGeometry &g,
-                                      float x, float y)
+__device__ float scale_bicubic(const Source &src, uint32_t ch, const SpeedGpuGeometry &g, float x,
+                               float y)
 {
     const auto x0 = static_cast<int32_t>(floorf(x));
     const auto y0 = static_cast<int32_t>(floorf(y));
@@ -388,9 +418,9 @@ static __device__ float scale_bicubic(const Source &src, uint32_t ch, const Spee
  * routine (speed_internal_gpu_lanczos_weights()) and this kernel reads them:
  * `wx` are the nine taps of this output column, `wy` of this output row. */
 template <class Source>
-static __device__ float scale_lanczos(const Source &src, uint32_t ch, const SpeedGpuGeometry &g,
-                                      const float *__restrict__ wx, const float *__restrict__ wy,
-                                      float x, float y)
+__device__ float scale_lanczos(const Source &src, uint32_t ch, const SpeedGpuGeometry &g,
+                               const float *__restrict__ wx, const float *__restrict__ wy, float x,
+                               float y)
 {
     const auto x0 = static_cast<int32_t>(floorf(x));
     const auto y0 = static_cast<int32_t>(floorf(y));
@@ -416,9 +446,9 @@ static __device__ float scale_lanczos(const Source &src, uint32_t ch, const Spee
 /* `lanczos`: the host's weight table, SPEED_GPU_LANCZOS_TAPS per scaled
  * column and then per scaled row; read by the lanczos4 method only. */
 template <class Source>
-static __device__ float scale_sample(const Source &src, const SpeedGpuGeometry &g,
-                                     const float *__restrict__ lanczos, uint32_t ch, uint32_t y,
-                                     uint32_t x)
+__device__ float scale_sample(const Source &src, const SpeedGpuGeometry &g,
+                              const float *__restrict__ lanczos, uint32_t ch, uint32_t y,
+                              uint32_t x)
 {
     if (g.src_w == g.scaled_w && g.src_h == g.scaled_h)
         return src(ch, y, x);
@@ -443,13 +473,12 @@ static __device__ float scale_sample(const Source &src, const SpeedGpuGeometry &
 
 /* ------------------------------------------------------------------ */
 /* Anti-alias filter at the decimated sample points                    */
-/* x86: vif_filter1d_s() + vif_dec16_s(); else vif_filter1d_dec16_s()   */
+/* vif_filter1d_dec16_s() on every target (Netflix/vmaf ad42c532)       */
 /* ------------------------------------------------------------------ */
 
 template <class Source>
-static __device__ float antialias_at(const Source &src, const float *__restrict__ taps,
-                                     uint32_t width, uint32_t src_w, uint32_t src_h, uint32_t ch,
-                                     uint32_t i, uint32_t j)
+__device__ float antialias_at(const Source &src, const float *__restrict__ taps, uint32_t width,
+                              uint32_t src_w, uint32_t src_h, uint32_t ch, uint32_t i, uint32_t j)
 {
     const auto radius = static_cast<int32_t>(width / 2u);
     const auto row = static_cast<int32_t>(i * kDecimation);
@@ -474,9 +503,8 @@ static __device__ float antialias_at(const Source &src, const float *__restrict_
 /* filter_and_downscale() tail + compute_independent_term()            */
 /* ------------------------------------------------------------------ */
 
-static __device__ float lowpass_at(const float *__restrict__ plane, const float *__restrict__ taps,
-                                   uint32_t width, const SpeedGpuGeometry &g, uint32_t i,
-                                   uint32_t j)
+__device__ float lowpass_at(const float *__restrict__ plane, const float *__restrict__ taps,
+                            uint32_t width, const SpeedGpuGeometry &g, uint32_t i, uint32_t j)
 {
     const auto radius = static_cast<int32_t>(width / 2u);
     const auto row = static_cast<int32_t>(i);
@@ -504,8 +532,7 @@ static __device__ float lowpass_at(const float *__restrict__ plane, const float 
 /* One row of the sequential sum. The chunk's loads are independent of the
  * running sum, so issuing them together hides the memory latency; the adds
  * still happen one at a time in the reference order. */
-static __device__ __forceinline__ float add_row(float sum, const float *__restrict__ row,
-                                                uint32_t width)
+__device__ __forceinline__ float add_row(float sum, const float *__restrict__ row, uint32_t width)
 {
     uint32_t j = 0;
     for (; j + kMeanChunk <= width; j += kMeanChunk) {
@@ -514,8 +541,8 @@ static __device__ __forceinline__ float add_row(float sum, const float *__restri
         for (uint32_t k = 0; k < kMeanChunk; k++)
             chunk[k] = row[j + k];
 #pragma unroll
-        for (uint32_t k = 0; k < kMeanChunk; k++)
-            sum = rn_add(sum, chunk[k]);
+        for (const float value : chunk)
+            sum = rn_add(sum, value);
     }
     for (; j < width; j++)
         sum = rn_add(sum, row[j]);
@@ -529,7 +556,7 @@ static __device__ __forceinline__ float add_row(float sum, const float *__restri
 /* carried in fp32 pairs; the quotient is rounded once to fp32.        */
 /* ------------------------------------------------------------------ */
 
-static __device__ __forceinline__ void triangle_entry(uint32_t index, uint32_t &x, uint32_t &y)
+__device__ __forceinline__ void triangle_entry(uint32_t index, uint32_t &x, uint32_t &y)
 {
     uint32_t rest = index;
     x = 0u;
@@ -543,7 +570,7 @@ static __device__ __forceinline__ void triangle_entry(uint32_t index, uint32_t &
     y = rest;
 }
 
-static __device__ __forceinline__ Ff centred_product(float vx, float mx, float vy, float my)
+__device__ __forceinline__ Ff centred_product(float vx, float mx, float vy, float my)
 {
     const Ff dx = two_sum(vx, -mx);
     const Ff dy = two_sum(vy, -my);
@@ -551,28 +578,28 @@ static __device__ __forceinline__ Ff centred_product(float vx, float mx, float v
     const float cross1 = rn_mul(dx.hi, dy.lo);
     const float cross2 = rn_mul(dx.lo, dy.hi);
     const float cross = rn_add(cross1, cross2);
-    return {main.hi, rn_add(main.lo, cross)};
+    return make_ff(main.hi, rn_add(main.lo, cross));
 }
 
 /* Compensated accumulation of one term: the high parts are summed exactly,
  * every low-order part lands in `lo`; normalised once per thread. */
-static __device__ __forceinline__ Ff accumulate(Ff acc, Ff term)
+__device__ __forceinline__ Ff accumulate(Ff acc, Ff term)
 {
     const Ff high = two_sum(acc.hi, term.hi);
     const float low = rn_add(term.lo, high.lo);
-    return {high.hi, rn_add(acc.lo, low)};
+    return make_ff(high.hi, rn_add(acc.lo, low));
 }
 
-static __device__ Ff covariance_partial(const float *__restrict__ plane, const SpeedGpuGeometry &g,
-                                        uint32_t x, uint32_t y, float mx, float my, uint32_t lid,
-                                        uint32_t threads)
+__device__ Ff covariance_partial(const float *__restrict__ plane, const SpeedGpuGeometry &g,
+                                 uint32_t x, uint32_t y, float mx, float my, uint32_t lid,
+                                 uint32_t threads)
 {
     const uint32_t xr = x / kBlock;
     const uint32_t xc = x % kBlock;
     const uint32_t yr = y / kBlock;
     const uint32_t yc = y % kBlock;
     const uint32_t total = g.sub_w * g.sub_h;
-    Ff acc{0.0f, 0.0f};
+    Ff acc = make_ff(0.0f, 0.0f);
     for (uint32_t pos = lid; pos < total; pos += threads) {
         const uint32_t row = pos / g.sub_w;
         const uint32_t col = pos % g.sub_w;
@@ -588,9 +615,9 @@ static __device__ Ff covariance_partial(const float *__restrict__ plane, const S
 /* + implicit-shift QR), regularity, matrix_qr_decomposition()         */
 /* ------------------------------------------------------------------ */
 
-static constexpr uint32_t kSlmStride = 640u;
-static constexpr uint32_t kSlmVector = 32u;
-static constexpr uint32_t kSlmFloats = 6u * kSlmStride + 5u * kSlmVector;
+constexpr size_t kSlmStride = 640u;
+constexpr size_t kSlmVector = 32u;
+constexpr size_t kSlmFloats = 6u * kSlmStride + 5u * kSlmVector;
 
 struct Slm {
     float *a;   /* tridiagonalisation work */
@@ -606,7 +633,7 @@ struct Slm {
     float *scalar; /* [0] tau, [1] alpha, [2] norm, [3] regular, [4] capped, [5] s, [6] beta */
 };
 
-static __device__ __forceinline__ Slm slm_layout(float *base)
+__device__ __forceinline__ Slm slm_layout(float *base)
 {
     float *vectors = base + 6u * kSlmStride;
     Slm m;
@@ -624,19 +651,19 @@ static __device__ __forceinline__ Slm slm_layout(float *base)
     return m;
 }
 
-static __device__ __forceinline__ float sign_of(float x)
+__device__ __forceinline__ float sign_of(float x)
 {
     return x >= 0.0f ? 1.0f : -1.0f;
 }
 
 /* pythagoras(), speed.c. */
-static __device__ __forceinline__ float pythagoras(float x, float y)
+__device__ __forceinline__ float pythagoras(float x, float y)
 {
     return rn_sqrt(rn_add(rn_mul(x, x), rn_mul(y, y)));
 }
 
 /* compute_column_norm(), speed.c. */
-static __device__ float column_norm(const float *a, uint32_t col, uint32_t start)
+__device__ float column_norm(const float *a, uint32_t col, uint32_t start)
 {
     float norm = 0.0f;
     for (uint32_t r = start; r < kN; r++) {
@@ -650,7 +677,7 @@ static __device__ float column_norm(const float *a, uint32_t col, uint32_t start
  * stores tau, the column divisor s (0 when the column is left alone) and
  * beta. The column division itself is element-wise, so the block does it
  * (householder_scale). */
-static __device__ void householder_scalars(const Slm &m, uint32_t col, uint32_t start)
+__device__ void householder_scalars(const Slm &m, uint32_t col, uint32_t start)
 {
     m.scalar[0] = 0.0f;
     m.scalar[5] = 0.0f;
@@ -668,7 +695,7 @@ static __device__ void householder_scalars(const Slm &m, uint32_t col, uint32_t 
 
 /* `A[i][col] /= s` for the column, then `A[start][col] = beta`. `s` is read
  * after a barrier, so every thread takes the same branch. */
-static __device__ void householder_scale(const Slm &m, uint32_t col, uint32_t start)
+__device__ void householder_scale(const Slm &m, uint32_t col, uint32_t start)
 {
     const uint32_t lid = threadIdx.x;
     const float s = m.scalar[5];
@@ -683,7 +710,7 @@ static __device__ void householder_scale(const Slm &m, uint32_t col, uint32_t st
 }
 
 /* x = tau * A * v, then x += alpha * v (tridiagonal_multiply/_axpy). */
-static __device__ void tridiagonal_vectors(const Slm &m, uint32_t start, float tau)
+__device__ void tridiagonal_vectors(const Slm &m, uint32_t start, float tau)
 {
     const uint32_t lid = threadIdx.x;
     for (uint32_t r = start + lid; r < kN; r += blockDim.x) {
@@ -711,7 +738,7 @@ static __device__ void tridiagonal_vectors(const Slm &m, uint32_t start, float t
 }
 
 /* One step of convert_to_tridiagonal(), speed.c. */
-static __device__ void tridiagonal_step(const Slm &m, uint32_t i)
+__device__ void tridiagonal_step(const Slm &m, uint32_t i)
 {
     const uint32_t lid = threadIdx.x;
     const uint32_t start = i + 1u;
@@ -744,7 +771,7 @@ static __device__ void tridiagonal_step(const Slm &m, uint32_t i)
 }
 
 /* chop_small_elements(), speed.c. */
-static __device__ void chop_small(float *d, float *sd, uint32_t n)
+__device__ void chop_small(const float *d, float *sd, uint32_t n)
 {
     for (uint32_t i = 0; i + 1u < n; i++) {
         const float bound = rn_add(fabsf(d[i]), fabsf(d[i + 1u]));
@@ -754,7 +781,7 @@ static __device__ void chop_small(float *d, float *sd, uint32_t n)
 }
 
 /* trailing_eigenvalue(), speed.c. */
-static __device__ float trailing_eigenvalue(const float *d, const float *sd, uint32_t n)
+__device__ float trailing_eigenvalue(const float *d, const float *sd, uint32_t n)
 {
     const float ta = d[n - 2u];
     const float tb = d[n - 1u];
@@ -771,7 +798,7 @@ static __device__ float trailing_eigenvalue(const float *d, const float *sd, uin
 }
 
 /* create_givens(), speed.c. */
-static __device__ void create_givens(float a, float b, float &c, float &s)
+__device__ void create_givens(float a, float b, float &c, float &s)
 {
     if (b == 0.0f) {
         c = 1.0f;
@@ -793,8 +820,17 @@ struct Rotated {
     float ap;
 };
 
+__device__ __forceinline__ Rotated make_rotated(float ak, float bk, float ap)
+{
+    Rotated r;
+    r.ak = ak;
+    r.bk = bk;
+    r.ap = ap;
+    return r;
+}
+
 /* G' T G of qr_step_size2() / qr_step_general(), speed.c. */
-static __device__ __forceinline__ Rotated rotate(float c, float s, float ap, float bp, float aq)
+__device__ __forceinline__ Rotated rotate(float c, float s, float ap, float bp, float aq)
 {
     const float cap = rn_mul(c, ap);
     const float sbp = rn_mul(s, bp);
@@ -808,10 +844,10 @@ static __device__ __forceinline__ Rotated rotate(float c, float s, float ap, flo
     const float m2 = rn_mul(s, rn_add(sbp, caq));
     const float n1 = rn_mul(s, rn_add(sap, cbp));
     const float n2 = rn_mul(c, rn_add(sbp, caq));
-    return {rn_add(l1, l2), rn_sub(m1, m2), rn_add(n1, n2)};
+    return make_rotated(rn_add(l1, l2), rn_sub(m1, m2), rn_add(n1, n2));
 }
 
-static __device__ void qr_step_size2(float *d, float *sd, float x, float z)
+__device__ void qr_step_size2(float *d, float *sd, float x, float z)
 {
     float c = 0.0f;
     float s = 0.0f;
@@ -822,7 +858,7 @@ static __device__ void qr_step_size2(float *d, float *sd, float x, float z)
     d[1] = r.ap;
 }
 
-static __device__ void qr_step_general(float *d, float *sd, uint32_t n, float x, float z)
+__device__ void qr_step_general(float *d, float *sd, uint32_t n, float x, float z)
 {
     float bk = 0.0f;
     float zk = 0.0f;
@@ -859,7 +895,7 @@ static __device__ void qr_step_general(float *d, float *sd, uint32_t n, float x,
 }
 
 /* qr_step(), speed.c. */
-static __device__ void qr_step(float *d, float *sd, uint32_t n)
+__device__ void qr_step(float *d, float *sd, uint32_t n)
 {
     float mu = trailing_eigenvalue(d, sd, n);
     const float scale = rn_add(fabsf(d[0]), fabsf(sd[0]));
@@ -876,7 +912,7 @@ static __device__ void qr_step(float *d, float *sd, uint32_t n)
 
 /* compute_eigenvalues_tridiagonal(), speed.c. Returns whether the iteration
  * cap was reached. */
-static __device__ bool eigenvalues_tridiagonal(float *d, float *sd)
+__device__ bool eigenvalues_tridiagonal(float *d, float *sd)
 {
     chop_small(d, sd, kN);
     uint32_t b = kN - 1u;
@@ -899,7 +935,7 @@ static __device__ bool eigenvalues_tridiagonal(float *d, float *sd)
 }
 
 /* Tridiagonal QR on thread 0; eigenvalues, regularity and the cap flag. */
-static __device__ void eigen_serial(const Slm &m, float *eig)
+__device__ void eigen_serial(const Slm &m, float *eig)
 {
     for (uint32_t r = 0; r < kN; r++)
         m.d[r] = m.a[r * kN + r];
@@ -917,7 +953,7 @@ static __device__ void eigen_serial(const Slm &m, float *eig)
 }
 
 /* matrix_mul() with speed_matmul_scalar() accumulation order. */
-static __device__ void block_matmul(float *dst, const float *x, const float *y)
+__device__ void block_matmul(float *dst, const float *x, const float *y)
 {
     for (uint32_t idx = threadIdx.x; idx < kMatrix; idx += blockDim.x) {
         const uint32_t i = idx / kN;
@@ -931,7 +967,7 @@ static __device__ void block_matmul(float *dst, const float *x, const float *y)
 }
 
 /* vector_norm(), speed.c. */
-static __device__ float vector_norm(const float *v)
+__device__ float vector_norm(const float *v)
 {
     float sum = 0.0f;
     for (uint32_t i = 0; i < kN; i++)
@@ -940,7 +976,7 @@ static __device__ float vector_norm(const float *v)
 }
 
 /* matrix_minor() of the working matrix, then its k-th column into m.vec. */
-static __device__ void qr_minor_column(const Slm &m, uint32_t k)
+__device__ void qr_minor_column(const Slm &m, uint32_t k)
 {
     const uint32_t lid = threadIdx.x;
     for (uint32_t idx = lid; idx < kMatrix; idx += blockDim.x) {
@@ -958,7 +994,7 @@ static __device__ void qr_minor_column(const Slm &m, uint32_t k)
 /* One column of matrix_qr_decomposition(): minor, reflector vector and
  * I - 2 v v^T. Returns false when the reflector vanishes; the norm is read
  * after a barrier, so every thread returns the same value. */
-static __device__ bool qr_reflector(const Slm &m, uint32_t k)
+__device__ bool qr_reflector(const Slm &m, uint32_t k)
 {
     const uint32_t lid = threadIdx.x;
     qr_minor_column(m, k);
@@ -987,7 +1023,7 @@ static __device__ bool qr_reflector(const Slm &m, uint32_t k)
 
 /* matrix_qr_decomposition(), speed.c: leaves the accumulated reflector product
  * (the matrix solve_linear_system() multiplies B by) in m.q and R in m.t. */
-static __device__ void qr_decompose(Slm &m)
+__device__ void qr_decompose(Slm &m)
 {
     for (uint32_t idx = threadIdx.x; idx < kMatrix; idx += blockDim.x) {
         m.z[idx] = m.cov[idx];
@@ -1010,7 +1046,7 @@ static __device__ void qr_decompose(Slm &m)
 }
 
 /* solve_triangular_system()'s pivot rejection, speed.c. */
-static __device__ bool pivot_singular(const float *r)
+__device__ bool pivot_singular(const float *r)
 {
     bool singular = false;
     for (uint32_t i = 0; i < kN; i++) {
@@ -1020,12 +1056,11 @@ static __device__ bool pivot_singular(const float *r)
     return singular;
 }
 
-static __device__ void linalg_store(const SpeedCudaFrameArgs &a, const Slm &m, uint32_t ch,
-                                    bool regular)
+__device__ void linalg_store(const SpeedCudaFrameArgs &a, const Slm &m, uint32_t ch, bool regular)
 {
     const uint32_t lid = threadIdx.x;
-    float *qmat = reinterpret_cast<float *>(a.qmat) + static_cast<size_t>(ch) * kMatrix;
-    float *rmat = reinterpret_cast<float *>(a.rmat) + static_cast<size_t>(ch) * kMatrix;
+    float *qmat = VMAF_CUDA_DPTR(float, a.qmat) + static_cast<size_t>(ch) * kMatrix;
+    float *rmat = VMAF_CUDA_DPTR(float, a.rmat) + static_cast<size_t>(ch) * kMatrix;
     if (regular) {
         for (uint32_t idx = lid; idx < kMatrix; idx += blockDim.x) {
             qmat[idx] = m.q[idx];
@@ -1033,7 +1068,7 @@ static __device__ void linalg_store(const SpeedCudaFrameArgs &a, const Slm &m, u
         }
     }
     if (lid == 0u) {
-        int32_t *status = reinterpret_cast<int32_t *>(a.status) + static_cast<size_t>(ch) * 2u;
+        int32_t *status = VMAF_CUDA_DPTR(int32_t, a.status) + static_cast<size_t>(ch) * 2u;
         const bool singular = !regular || pivot_singular(m.t);
         status[0] = singular ? 1 : 0;
         status[1] = m.scalar[4] != 0.0f ? 1 : 0;
@@ -1045,9 +1080,9 @@ static __device__ void linalg_store(const SpeedCudaFrameArgs &a, const Slm &m, u
 /* compute_pointwise_product_and_division(), sum_columns()             */
 /* ------------------------------------------------------------------ */
 
-static __device__ void solve_block(const float *__restrict__ b, uint32_t stride,
-                                   const float *__restrict__ q, const float *__restrict__ r,
-                                   float *solution)
+__device__ void solve_block(const float *__restrict__ b, uint32_t stride,
+                            const float *__restrict__ q, const float *__restrict__ r,
+                            float *solution)
 {
     float y[kN];
     for (uint32_t i = 0; i < kN; i++) {
@@ -1069,6 +1104,8 @@ static __device__ void solve_block(const float *__restrict__ b, uint32_t stride,
 /* Kernels                                                             */
 /* ------------------------------------------------------------------ */
 
+} // namespace
+
 extern "C" {
 
 /* vif_scale_frame_s() of every channel: channels x scaled_h x scaled_w. */
@@ -1084,12 +1121,13 @@ __global__ void __launch_bounds__(SPEED_CUDA_PIXEL_THREADS)
     const size_t rest = idx % plane;
     const auto y = static_cast<uint32_t>(rest / g.scaled_w);
     const auto x = static_cast<uint32_t>(rest % g.scaled_w);
-    float *dst = reinterpret_cast<float *>(a.scaled);
-    const float *lanczos = reinterpret_cast<const float *>(a.lanczos);
-    if (g.bytes_per_sample == 2u)
+    float *dst = VMAF_CUDA_DPTR(float, a.scaled);
+    const float *lanczos = VMAF_CUDA_DPTR(const float, a.lanczos);
+    if (g.bytes_per_sample == 2u) {
         dst[idx] = scale_sample(RawSource<uint16_t>(a), g, lanczos, ch, y, x);
-    else
+    } else {
         dst[idx] = scale_sample(RawSource<uint8_t>(a), g, lanczos, ch, y, x);
+    }
 }
 
 /* Anti-alias filter at the decimated points of the raw planes (no prescale):
@@ -1106,15 +1144,16 @@ __global__ void __launch_bounds__(SPEED_CUDA_PIXEL_THREADS)
     const size_t rest = idx % plane;
     const auto i = static_cast<uint32_t>(rest / g.down_w);
     const auto j = static_cast<uint32_t>(rest % g.down_w);
-    const float *taps = reinterpret_cast<const float *>(a.taps);
-    float *dst = reinterpret_cast<float *>(a.down);
+    const float *taps = VMAF_CUDA_DPTR(const float, a.taps);
+    float *dst = VMAF_CUDA_DPTR(float, a.down);
     const uint32_t width = a.antialias_width;
-    if (g.bytes_per_sample == 2u)
+    if (g.bytes_per_sample == 2u) {
         dst[idx] =
             antialias_at(RawSource<uint16_t>(a), taps, width, g.scaled_w, g.scaled_h, ch, i, j);
-    else
+    } else {
         dst[idx] =
             antialias_at(RawSource<uint8_t>(a), taps, width, g.scaled_w, g.scaled_h, ch, i, j);
+    }
 }
 
 /* Anti-alias filter at the decimated points of the prescaled planes. */
@@ -1130,9 +1169,9 @@ __global__ void __launch_bounds__(SPEED_CUDA_PIXEL_THREADS)
     const size_t rest = idx % plane;
     const auto i = static_cast<uint32_t>(rest / g.down_w);
     const auto j = static_cast<uint32_t>(rest % g.down_w);
-    const FloatSource scaled(reinterpret_cast<const float *>(a.scaled), g.scaled_w, g.scaled_h);
-    float *dst = reinterpret_cast<float *>(a.down);
-    dst[idx] = antialias_at(scaled, reinterpret_cast<const float *>(a.taps), a.antialias_width,
+    const FloatSource scaled(VMAF_CUDA_DPTR(const float, a.scaled), g.scaled_w, g.scaled_h);
+    float *dst = VMAF_CUDA_DPTR(float, a.down);
+    dst[idx] = antialias_at(scaled, VMAF_CUDA_DPTR(const float, a.taps), a.antialias_width,
                             g.scaled_w, g.scaled_h, ch, i, j);
 }
 
@@ -1151,15 +1190,15 @@ __global__ void __launch_bounds__(SPEED_CUDA_PIXEL_THREADS)
     const auto i = static_cast<uint32_t>(rest / g.trunc_w);
     const auto j = static_cast<uint32_t>(rest % g.trunc_w);
     const float *plane =
-        reinterpret_cast<const float *>(a.down) + static_cast<size_t>(ch) * g.down_h * g.down_w;
-    const float *taps = reinterpret_cast<const float *>(a.taps) + kMaxTaps;
+        VMAF_CUDA_DPTR(const float, a.down) + static_cast<size_t>(ch) * g.down_h * g.down_w;
+    const float *taps = VMAF_CUDA_DPTR(const float, a.taps) + kMaxTaps;
     const float smooth = lowpass_at(plane, taps, a.lowpass_width, g, i, j);
     const float value = rn_sub(plane[static_cast<size_t>(i) * g.down_w + j], smooth);
-    reinterpret_cast<float *>(a.centered)[idx] = value;
+    VMAF_CUDA_DPTR(float, a.centered)[idx] = value;
     const uint32_t element = (i % kBlock) * kBlock + (j % kBlock);
     const uint32_t tile = (i / kBlock) * g.blocks_h + (j / kBlock);
     const size_t term_size = static_cast<size_t>(kN) * g.blocks;
-    float *indterm = reinterpret_cast<float *>(a.indterm);
+    float *indterm = VMAF_CUDA_DPTR(float, a.indterm);
     indterm[ch * term_size + static_cast<size_t>(element) * g.blocks + tile] = value;
 }
 
@@ -1173,15 +1212,15 @@ __global__ void __launch_bounds__(SPEED_CUDA_MEANS_THREADS)
         return;
     const uint32_t ch = idx / kN;
     const uint32_t element = idx % kN;
-    const float *plane = reinterpret_cast<const float *>(a.centered) +
-                         static_cast<size_t>(ch) * g.trunc_h * g.trunc_w;
+    const float *plane =
+        VMAF_CUDA_DPTR(const float, a.centered) + static_cast<size_t>(ch) * g.trunc_h * g.trunc_w;
     const uint32_t row0 = element / kBlock;
     const uint32_t col0 = element % kBlock;
     float sum = 0.0f;
     for (uint32_t i = 0; i < g.sub_h; i++)
         sum = add_row(sum, plane + static_cast<size_t>(row0 + i) * g.trunc_w + col0, g.sub_w);
     const auto count = static_cast<float>(g.sub_w * g.sub_h);
-    reinterpret_cast<float *>(a.means)[idx] = rn_div(sum, count);
+    VMAF_CUDA_DPTR(float, a.means)[idx] = rn_div(sum, count);
 }
 
 /* One block per (channel, lower-triangle entry); blockDim.x is a power of
@@ -1199,9 +1238,9 @@ __global__ void __launch_bounds__(SPEED_CUDA_COV_MAX_THREADS)
     triangle_entry(group % kTriangle, x, y);
     const uint32_t lid = threadIdx.x;
     const uint32_t threads = blockDim.x;
-    const float *plane = reinterpret_cast<const float *>(a.centered) +
-                         static_cast<size_t>(ch) * g.trunc_h * g.trunc_w;
-    const float *means = reinterpret_cast<const float *>(a.means) + static_cast<size_t>(ch) * kN;
+    const float *plane =
+        VMAF_CUDA_DPTR(const float, a.centered) + static_cast<size_t>(ch) * g.trunc_h * g.trunc_w;
+    const float *means = VMAF_CUDA_DPTR(const float, a.means) + static_cast<size_t>(ch) * kN;
     const Ff part = covariance_partial(plane, g, x, y, means[x], means[y], lid, threads);
     s_hi[lid] = part.hi;
     s_lo[lid] = part.lo;
@@ -1209,16 +1248,15 @@ __global__ void __launch_bounds__(SPEED_CUDA_COV_MAX_THREADS)
     for (uint32_t span = threads / 2u; span > 0u; span >>= 1u) {
         if (lid < span) {
             const Ff merged =
-                ff_add(Ff{s_hi[lid], s_lo[lid]}, Ff{s_hi[lid + span], s_lo[lid + span]});
+                ff_add(make_ff(s_hi[lid], s_lo[lid]), make_ff(s_hi[lid + span], s_lo[lid + span]));
             s_hi[lid] = merged.hi;
             s_lo[lid] = merged.lo;
         }
         __syncthreads();
     }
     if (lid == 0u) {
-        const auto count = static_cast<float>(g.sub_w * g.sub_h);
-        const float value = ff_div_to_float(Ff{s_hi[0], s_lo[0]}, count);
-        float *matrix = reinterpret_cast<float *>(a.cov) + static_cast<size_t>(ch) * kMatrix;
+        const float value = ff_div_to_float(make_ff(s_hi[0], s_lo[0]), count_ff(g.sub_w * g.sub_h));
+        float *matrix = VMAF_CUDA_DPTR(float, a.cov) + static_cast<size_t>(ch) * kMatrix;
         matrix[x * kN + y] = value;
         matrix[y * kN + x] = value;
     }
@@ -1234,7 +1272,7 @@ __global__ void __launch_bounds__(SPEED_CUDA_LINALG_THREADS)
     Slm m = slm_layout(slm);
     const uint32_t ch = blockIdx.x;
     const uint32_t lid = threadIdx.x;
-    const float *cov = reinterpret_cast<const float *>(a.cov) + static_cast<size_t>(ch) * kMatrix;
+    const float *cov = VMAF_CUDA_DPTR(const float, a.cov) + static_cast<size_t>(ch) * kMatrix;
     for (uint32_t idx = lid; idx < kMatrix; idx += blockDim.x) {
         m.a[idx] = cov[idx];
         m.cov[idx] = cov[idx];
@@ -1243,7 +1281,7 @@ __global__ void __launch_bounds__(SPEED_CUDA_LINALG_THREADS)
     for (uint32_t i = 0; i + 2u < kN; i++)
         tridiagonal_step(m, i);
     if (lid == 0u)
-        eigen_serial(m, reinterpret_cast<float *>(a.eig) + static_cast<size_t>(ch) * kN);
+        eigen_serial(m, VMAF_CUDA_DPTR(float, a.eig) + static_cast<size_t>(ch) * kN);
     __syncthreads();
     const bool regular = m.scalar[3] != 0.0f;
     if (regular)
@@ -1264,23 +1302,23 @@ __global__ void __launch_bounds__(SPEED_CUDA_SOLVE_THREADS)
         return;
     const uint32_t ch = idx / g.blocks;
     const uint32_t block = idx % g.blocks;
-    const float *b = reinterpret_cast<const float *>(a.indterm) +
-                     static_cast<size_t>(ch) * kN * g.blocks + block;
+    const float *b =
+        VMAF_CUDA_DPTR(const float, a.indterm) + static_cast<size_t>(ch) * kN * g.blocks + block;
     float solution[kN];
-    for (uint32_t k = 0; k < kN; k++)
-        solution[k] = 0.0f;
-    const int32_t *status = reinterpret_cast<const int32_t *>(a.status);
+    for (float &element : solution)
+        element = 0.0f;
+    const int32_t *status = VMAF_CUDA_DPTR(const int32_t, a.status);
     if (status[static_cast<size_t>(ch) * 2u] == 0) {
         const size_t matrix = static_cast<size_t>(ch) * kMatrix;
-        solve_block(b, g.blocks, reinterpret_cast<const float *>(a.qmat) + matrix,
-                    reinterpret_cast<const float *>(a.rmat) + matrix, solution);
+        solve_block(b, g.blocks, VMAF_CUDA_DPTR(const float, a.qmat) + matrix,
+                    VMAF_CUDA_DPTR(const float, a.rmat) + matrix, solution);
     }
     float variance = rn_div(rn_mul(solution[0], b[0]), kElementsF);
     for (uint32_t e = 1; e < kN; e++) {
         const float product = rn_mul(solution[e], b[static_cast<size_t>(e) * g.blocks]);
         variance = rn_add(variance, rn_div(product, kElementsF));
     }
-    reinterpret_cast<float *>(a.var)[idx] = variance;
+    VMAF_CUDA_DPTR(float, a.var)[idx] = variance;
 }
 
 } /* extern "C" */

@@ -35,14 +35,39 @@ nobody who could satisfy it and nothing merged for a week
 !!! note
     Remove the bypass as soon as a second maintainer can review.
 
+#### Bypass mode: pull request only
+
+The standard for a single-maintainer repository is bypass mode `pull_request`:
+the maintainer merges a pull request without an approval and cannot push to
+`master` outside one. The policy file declares that mode, and the ruleset asks
+for no approval, so a pull request lands at a clean merge state once its
+required checks pass
+([ADR-3313](../adr/3313-solo-ruleset-zero-reviews.md), superseding
+[ADR-3273](../adr/3273-solo-bypass-mode-dated-exception.md)). Generated files
+(changelog, ADR index, rebase notes) land through a render pull request, not by
+a direct push
+([ADR-3295](../adr/3295-render-only-pull-request.md)).
+
+The exception list holds no entry for the bypass mode. The security checker
+fails when the policy declares any other mode and the list has no unexpired
+entry of rule `solo-repository-bypass-mode` for the policy file, and it fails
+when such an entry is still listed while every mode is `pull_request`. This
+part needs no network:
+
+```bash
+python3 -B scripts/dev/tests/test_repository_security.py
+python3 scripts/ci/lint_exceptions.py check
+```
+
 ## One declaration of the ruleset
 
 The [policy file](../../.github/repository-security-policy.json) is the only
 declaration of the ruleset, and the drift checker compares it with the live one.
 It declares:
 
-- one approving review, with no code-owner review;
-- last-push approval;
+- no required approval and no code-owner review
+  ([ADR-3313](../adr/3313-solo-ruleset-zero-reviews.md));
+- no last-push approval;
 - the `Required Checks Aggregator` check;
 - no required signatures;
 - the single declared bypass actor.

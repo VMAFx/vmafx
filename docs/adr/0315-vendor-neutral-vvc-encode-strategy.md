@@ -169,3 +169,12 @@ operative in tree:
   observed (companion Research-0085 tracks the verification table).
 - Verification command:
   `ls tools/vmaf-tune/src/vmaftune/codec_adapters/vvenc.py`.
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 138: `ADR-0033 — prior HIP applicability survey for libvmaf
+  features.`: Cites ADR-0033 for prior HIP applicability survey, but ADR-0033
+  is CodeQL config relocation to .github/.

@@ -1,7 +1,7 @@
-<!-- markdownlint-disable MD060 -->
+<!-- markdownlint-disable MD060 MD013 -->
 # ADR-0321: `fr_regressor_v2_ensemble_v1` — full production flip (real ONNX + sidecars)
 
-- **Status**: Accepted
+- **Status**: Accepted (Superseded-in-part 2026-10-06 by [ADR-1105](1105-ensemble-v2-prod-flip-deferred-oneshot-retrain.md) for the smoke:false flip of fr_regressor_v2_ensemble_v1)
 - **Date**: 2026-05-06
 - **Deciders**: Lusoris
 - **Tags**: `ai`, `tinyai`, `models`, `registry`, `prod-flip`

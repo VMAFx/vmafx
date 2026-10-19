@@ -54,11 +54,52 @@ Update note on merge: final UID + container-scope seccompProfile set.
   must enumerate in `values.schema.json` under `allow` object properties.
   Never revert `additionalProperties: true` without ADR.
 
+## Generated values and schema (ADR-2350 D13)
+
+- `values.yaml` + `values.schema.json` generated from `[[chart]]` entries of
+  `api/vmafx-platform.toml` (`scripts/codegen/vmafx-api.py --write`). Never
+  hand-edit; generated-file conflict -> take one side, rerun generator at tip.
+  `values.yaml` byte for byte from entries (`lead` comments verbatim);
+  schema in one layout (fits in 100 columns -> one line).
+- Kubernetes-typed keys: `$ref` `k8s:<type>`; types from
+  `api/kubernetes/openapi-subset.json` (`scripts/codegen/k8s_openapi.py
+  --write`); release pinned in `build-config.env` (`K8S_SCHEMA_VERSION` =
+  last patch of minimum supported minor, digests per file). Raising minimum
+  minor -> bump pin + digests, regenerate subset and schema, rerun
+  `scripts/ci/tests/test_helm_values_schema.py`, update upgrade notes in
+  `docs/development/k8s-deployment.md`.
+- `VMAFX_*` env of every workload generated: `templates/_config.gen.tpl`
+  (`vmafx.env.<workload>`, `vmafx.backendEnvValue`) from `[[chart_env]]`,
+  `[[chart_workloads]]`, `[[chart_maps]]`. No other template or helper writes
+  any `VMAFX_*` entry; new entry / condition -> definition, regenerate. Entry
+  for binary that reads no such var refused (no escape). Server
+  Deployment / StatefulSet / Job: no generated entry, `env` only from
+  `.Values.env` (vmafx-server takes backend per request). Guard:
+  `scripts/ci/tests/test_helm_config_env.py`.
+- Licence (ADR-2673): embedded Kubernetes types = Apache-2.0 ->
+  `artifacthub.io/license: EUPL-1.2 AND Apache-2.0`;
+  `THIRD-PARTY-NOTICES.txt` (attribution + Apache-2.0 text) written by
+  `k8s_openapi.py --write`, ships in packaged chart. Never drop either while
+  schema embeds `io.k8s.*` types.
+- Guards: `test_vmafx_api_generated_current`, `test_k8s_openapi_subset_current`,
+  `test_helm_values_schema.py`, `check_licence_metadata.py`.
+
 ## Invariants (ADR-1058)
 
+- **Operator events cluster-wide, write-only (ADR-2647)**: own ClusterRole
+  (`*-operator-events`): `create`, `patch` on core `events`, nothing else.
+  Operator reconciles CRs in every namespace; event lands in object's
+  namespace. Namespace Role for events loses them outside release namespace.
+  Guard: `scripts/ci/tests/test_helm_service_accounts.py`.
 - **RBAC split**: ClusterRole (`*-operator-crds`) covers CRD resources only.
-  Namespaced resources (pods, events, leases) sit in namespace Role
+  Pods + leader-election leases sit in namespace Role
   (`*-operator-ns`). Never merge into single ClusterRole.
+- **Operator rules >= generated role (ADR-2350 D13)**: all three operator
+  roles together grant every rule of `config/rbac/role.yaml` (controller-gen
+  output of operator markers). Guard:
+  `scripts/ci/tests/test_helm_operator_rbac.py`.
+- **`crds/` generated**: `crd_generate.py --write` from
+  `api/vmafx-platform.toml`; only CRD tree. Never hand-edit.
 - **VmafxTenant only for the controller (ADR-1592, replaces ADR-1058's
   rule)**: no `vmafxtenants` rule in the operator ClusterRole (no tenant
   reconciler exists). Tenant-reader RoleBinding binds only
@@ -142,18 +183,43 @@ Pod template.
 
 ## Controller workload (ADR-1589)
 
-- `templates/controller.yaml`: replicas fixed 1, strategy `Recreate`
-  (SQLite queue); never add replicaCount or RollingUpdate. `/data` = queue
-  volume (`controller.persistence`). Selector + Service carry
-  `component: controller` (selector isolation check).
-- Auth env only via `vmafx.controllerAuthEnv`; server `deployment.yaml` gets
-  none. `auth-validate.yaml`: `auth.enabled` <-> `controller.enabled`;
+- `templates/controller.yaml`: shape from `vmafx.controllerStoreBackend`.
+  `sqlite`: replicas 1 (helper refuses more: two pods = two queues),
+  `Recreate`, `/data` claim (`controller.persistence`). `postgres`:
+  `controller.replicas`, RollingUpdate 0/1, no claim, no `/data`. Selector +
+  Service carry `component: controller` (selector isolation check).
+- Auth env only in generated `vmafx.env.controller` (`[[chart_env]]` with
+  `when`); server `deployment.yaml` gets none. `auth-validate.yaml`: `auth.enabled` <-> `controller.enabled`;
   `*vmafx-controller` `image.repository` refused; `controller.env` auth keys
   refused.
 - Nodes: `vmafx.nodeControllerAddr` (node.controllerAddr, else chart Service).
   Operator: controller addresses only with `controller.enabled`. Tokens:
   `vmafx.controllerTokenVolume` / `Mount` -> `VMAFX_CONTROLLER_TOKEN_FILE`.
 - Guard: `scripts/ci/tests/test_helm_controller_workload.py` (`helm-chart.yml`).
+
+## Controller job store (ADR-2350)
+
+- Store values: one key per setting, no derived copy (`values.yaml` +
+  `values.schema.json` generated from `[[chart]]`, see below).
+  Store env + DSN only in generated `vmafx.env.controller` /
+  `vmafx.env.migrate` (`[[chart_env]]`); lifetimes rendered only when set
+  (controller owns defaults). DSN: cnpg -> `<fullname>-db-app` key `uri`,
+  external -> `external.secretName` / `secretKey`.
+- `controller-database.yaml`: cnpg `Cluster` `<fullname>-db` fails render
+  without `postgresql.cnpg.io/v1` (operator = prerequisite, chart installs
+  no operator). Migration Job name = `<fullname>-controller-migrate-` + 8
+  hex of sha256 over `vmafx.controllerMigrationPod` (pod template
+  immutable): changed template -> new Job, same template -> no rerun. Job
+  label `component: migrate` (not `controller`: Service + PDB never
+  select Job pods).
+- `pdb.yaml`: controller PDB (maxUnavailable 1) iff replicas > 1,
+  independent of `podDisruptionBudget.enabled`. Spread default
+  (hostname, ScheduleAnyway) iff replicas > 1 and
+  `controller.topologySpreadConstraints` empty.
+- `allow-controller-to-database` selects `component In [controller,
+  migrate]`; cnpg -> pods `cnpg.io/cluster`, external -> `cidrs`.
+- Guards: `scripts/ci/tests/test_helm_controller_store.py`; E2E kuttl case
+  `02-controller-ha` (`test/e2e/AGENTS.md`).
 
 ## Node FUSE and eBPF (ADR-1593)
 
@@ -172,6 +238,26 @@ Pod template.
 - Mount root = `vmafx.nodeMountRoot`; emptyDir only outside `/tmp`
   (`vmafx.nodeMountRootVolume`).
 - Guard: `scripts/ci/tests/test_helm_node_fuse_ebpf.py` (`helm-chart.yml`).
+
+## Monitoring (ADR-2399)
+
+- Generated, never hand-edited: `templates/prometheusrule.yaml`,
+  `files/dashboards/*.json`, `values.yaml` block between
+  `# BEGIN obsgen monitoring settings` / `# END ...`. Source:
+  `pkg/observability/obsgen`; run `go run ./tools/obsgen -write`. Conflict:
+  take either side, regenerate.
+- Monitors only via `vmafx.monitor` (`_helpers.tpl`): ServiceMonitor for
+  server, controller, node; PodMonitor for operator (no Service). Every
+  ServiceMonitor excludes `vmafx.dev/headless` (StatefulSet headless Service
+  = double scrape); other namespace -> `namespaceSelector` on release
+  namespace. Server monitor keeps name `<fullname>`.
+- Node env `VMAFX_HTTP_ADDR` = `:node.metricsPort`; container port, Service,
+  NetworkPolicy, monitor follow same port.
+- `monitoring.slo` / `burnRates` / `alerts` schema entries mirror
+  `obsgen.Settings.Validate`; enum of `scoreLatencySeconds` =
+  `metricdef.RequestSecondsBuckets` (`TestChartSchemaMatchesSettings`).
+- Guard: `scripts/ci/tests/test_helm_observability.py` (`helm-chart.yml`,
+  needs helm + go + pinned promtool).
 
 ## Active GPU backends
 

@@ -21,8 +21,18 @@ Releases follow ordinary SemVer tags, `vX.Y.Z`:
 - `Y` changes for backward-compatible features.
 - `Z` changes for backward-compatible fixes.
 
-The fork's first release is `v1.0.0`. It is preceded by release
-candidates `v1.0.0-rc.N`; `v1.0.0-rc.1` and `v1.0.0-rc.2` are published.
+While the version is `0.x`, the public surfaces are not yet frozen: a breaking
+change raises the minor version, and a feature raises the minor version too
+(release-please's `bump-minor-pre-major`). `1.0.0` is the first stable release,
+the point from which the rules above hold in full.
+
+The fork's first release is `v0.1.0`
+([ADR-3292](../adr/3292-release-line-restart-0x.md)). The candidates
+`v1.0.0-rc.1` to `v1.0.0-rc.3` were published before the release line was
+restarted; their tags stay, and their releases are marked withdrawn. The
+first stable release, `v1.0.0`, will again be preceded by candidates, starting
+at `v1.0.0-rc.4`; the `0.x` minor releases have none.
+
 Netflix's tags (`v1.0.2` to `v3.2.1`) are not tags of this repository: the 26
 that had been copied into it were deleted on 2026-10-05 ([the record](inherited-tags.md),
 [ADR-1805](../adr/1805-delete-inherited-netflix-tags.md)). A `vX.Y.Z` tag you
@@ -31,58 +41,77 @@ tags. The 3.2.x baseline that used
 to be in the manifest was a source-version alignment with Netflix's
 SONAME, not a fork release.
 
-release-please runs in prerelease mode (`versioning: prerelease`,
-`prerelease-type: rc`, `release-please-config.json`), and
-`.release-please-manifest.json` holds the current candidate
-(`1.0.0-rc.2`). The final cut flips `prerelease` to `false` once the
-candidate sequence passes (see
-[Cutting a release from fragments](#cutting-a-release-from-fragments)).
-[ADR-1151](../adr/1151-vmafx-first-release-1-0-0.md) governs the first
-release and supersedes
-[ADR-1127](../adr/1127-single-semver-release-stream.md)'s "start at
-v3.2.1"; [ADR-1201](../adr/1201-release-candidates-before-1-0-0.md) adds
-the candidate channel.
+release-please uses `versioning: default` with `prerelease: false`,
+`bump-minor-pre-major: true` and `bump-patch-for-minor-pre-major: false`
+(`release-please-config.json`). `.release-please-manifest.json` still holds
+the last candidate, `1.0.0-rc.3`; the one-shot `release-as: "0.1.0"` moves the
+next release off the candidate line in one step, and the cut of `0.1.0`
+removes it (see [Cutting a release from fragments](#cutting-a-release-from-fragments)).
+[ADR-3292](../adr/3292-release-line-restart-0x.md) amends
+[ADR-1151](../adr/1151-vmafx-first-release-1-0-0.md) (first release),
+[ADR-1201](../adr/1201-release-candidates-before-1-0-0.md) and
+[ADR-1348](../adr/1348-release-candidate-prerelease-versioning.md)
+(candidates); [ADR-1127](../adr/1127-single-semver-release-stream.md) keeps
+the single SemVer stream.
 
 Example progression:
 
 ```text
-v1.0.0  # first VMAFx release
-v1.0.1  # patch release
-v1.1.0  # backward-compatible feature release
-v2.0.0  # incompatible public-surface release
+v0.1.0        # first VMAFx release
+v0.1.1        # fix release
+v0.2.0        # feature or breaking release while 0.x
+v1.0.0-rc.4   # first candidate of the first stable release
+v1.0.0        # first stable release
+v1.1.0        # backward-compatible feature release
+v2.0.0        # incompatible public-surface release
 ```
 
-## First-release candidate responsibilities
+## Release map
 
-[ADR-1341](../adr/1341-rc-correctness-benchmark-retrain-sequence.md)
-separates the first release into ordered evidence stages. The stage-to-tag
-map has been revised twice:
+[ADR-3292](../adr/3292-release-line-restart-0x.md) replaces the candidate map
+of [ADR-1341](../adr/1341-rc-correctness-benchmark-retrain-sequence.md),
+[ADR-1421](../adr/1421-rc3-rc8-candidate-map.md),
+[ADR-1490](../adr/1490-rc3-rc9-candidate-map-cpu-capability.md),
+[ADR-1868](../adr/1868-candidate-map-2026-10-05.md),
+[ADR-1880](../adr/1880-format-envelope-device-targets.md),
+[ADR-2001](../adr/2001-release-scope-1-0-and-roadmap-to-2-0.md) and
+[ADR-2342](../adr/2342-rc-map-amendment-2026-10.md) with plain `0.x` minor
+releases. The work those records assigned to each candidate keeps its order and
+its rules; only the version that ships it changed. Each version is a forge
+milestone, and the user-facing version of this map is
+[the roadmap](../roadmap.md).
 
-- [ADR-1421](../adr/1421-rc3-rc8-candidate-map.md) maps the stages to tags
-  and supersedes the candidate mapping of
-  [ADR-1352](../adr/1352-rc-phase-shift-plus-one.md), which had added the
-  stabilisation candidate after rc.1.
-- [ADR-1490](../adr/1490-rc3-rc9-candidate-map-cpu-capability.md) inserts
-  RC7 and moves the later candidates up by one, so each phase number
-  matches its tag.
-
-The user-facing version of this map is [the roadmap](../roadmap.md).
-
-### Candidate map
-
-| Candidate | Proves | Must not be used to claim |
+| Version | Content | Former label |
 | --- | --- | --- |
-| `v1.0.0-rc.1` (RC1) | Release-blocking correctness is closed or explicitly deferred, required checks pass on the exact head, and outside testers can run the bounded hardware-validation/report path | Final performance or production-trained model quality |
-| `v1.0.0-rc.2` (RC2) | The dependency and fix train since rc.1 meets the RC1 bar: no confirmed release blocker or untriaged `docs/state.md` row, required checks pass on the exact head, and the tester report path still works | Final performance or production-trained model quality |
-| `v1.0.0-rc.3` (RC3) | Twin exactness: every GPU and SIMD twin returns the CPU extractor's scores bit for bit or carries a measured tolerance recorded in an ADR, and no SYCL kernel uses scratch memory | Performance, or production-trained model quality |
-| `v1.0.0-rc.4` (RC4) | The whole `vmaf_v1.0.16_3d0h` path (cambi, speed_chroma, integer adm3, integer motion3, model prediction) runs in Rust, bit-identical to C, with the C ABI unchanged; a device-resident frame is scored through the import API with fences and no host copy of pixel data ([ADR-1829](../adr/1829-rc4-zero-copy-import.md)); the new VMAFx API and its generated surfaces, the VMAFx-named FFmpeg filters and provenance on every score pass with the golden-data gate run through the compatibility library ([ADR-1868](../adr/1868-candidate-map-2026-10-05.md)) | Performance, or production-trained model quality |
-| `v1.0.0-rc.5` (RC5) | One implementation per behaviour across GPU twins, host code and tools, with `libgpudispatch` extracted (it folds in the per-backend import code RC4 wrote); the new metrics (ΔE-ITP, PU21, NIQE, BRISQUE, Y-FUNQUE+, HDR-SSIM, HDR-MS-SSIM, XPSNR) and the Metal SpEED twins are written once on it, each twin exact or within a measured libm bound | Performance, or production-trained model quality |
-| `v1.0.0-rc.6` (RC6) | The checked-in GPU capability table matches the vendor toolchains (CI drift check), dispatch and kernel parameters read it, and every kernel, the RC5 twins included, passes the static audit for every target | Measured performance on any device |
-| `v1.0.0-rc.7` (RC7) | The checked-in CPU capability table matches the compile flags and runtime gates (CI drift check), no SIMD kernel contains an instruction outside the feature set its gate guarantees, and every dispatch level is bit-exact against scalar under emulation (details below the table) | Measured performance on any processor |
-| `v1.0.0-rc.8` (RC8) | Benchmarks, profiles, and tuning results are comparable, reproducible, and still numerically correct on the tested hardware; the training tooling is ready (data hygiene, evaluation tooling, HDR conversion checks) and the mini retrain passes every stage | Completion of the real retraining programme |
-| `v1.0.0-rc.9` (RC9) | The one-shot real retrain, started only when every precondition of #1246 holds, and its quality, provenance, registry, signing, and golden-data gates pass on the tuned tree | That no later repair candidate can be needed |
+| `0.1.0` | First release: the new VMAFx C API with its generated surfaces and the `libvmaf` compatibility library, device-frame import with fences, the VMAFx-named FFmpeg filters, provenance on every score, host input formats, the outside-hardware tester path, packaging and documentation | RC4 (#1723) |
+| `0.2.0` | Foundations, capability tables and benchmarks: deduplication and `libgpudispatch`, the GPU and CPU capability tables with their drift checks and format envelopes, benchmarks, profiling and tuning, training readiness, observability, the remaining twin-exactness rows | RC5-A, RC5-B, RC6, RC7, RC8, RC3 carry-over |
+| `0.3.0` | Rust core P1a | new |
+| `0.4.0` | Encoder feedback, embedding and platforms | 1.2 |
+| `0.5.0` | Rust core P1b | new |
+| `0.6.0` | Rust core P2 | new |
+| `0.7.0` | New metrics with exact twins | 1.3, RC5-C |
+| `0.8.0` | Metric A/B comparison, the best current mix and more training data | 1.4 |
+| `0.9.0` | The next model generation, the one-shot real retrain | 1.5, RC9 (#1246) |
+| `0.10.0` | Integrations, live quality and the cloud-native platform: the OBS Studio plugin (#2239), #2148, #2147, #2144, #2146, #2159, no-reference mode in the plugins (#2413), the live P.1204 monitor (#2417), AI-generated video scoring (#2418), WebRTC, streaming outputs, libVLC and cookbook recipes; the cloud-native platform (#2431) and the work of RC5-D | 1.1, RC5-D |
+| `0.11.0` | Breaking changes only: the `libvmaf.h` compatibility library removed (ADR-1852 D7), the rest of #1254 | 2.0 |
+| `1.0.0` | First stable release: Rust core P3 and a frozen public interface; candidates from `v1.0.0-rc.4` | new |
 
-### RC7 evidence in detail
+The candidates `v1.0.0-rc.1` (release-blocking correctness and the tester
+report path), `v1.0.0-rc.2` (stabilisation) and `v1.0.0-rc.3` (twin
+exactness) were published under the earlier map and are withdrawn; what they
+proved stays recorded in their release notes and in the records above.
+
+### After 1.0.0
+
+| Version | Content | Former label |
+| --- | --- | --- |
+| `1.1.0` | Rust core P4 and P5 | 1.2 |
+| `1.2.0` | The host C and C++ code removed | 3.0 |
+| `1.3.0` | Open subjective studies | 1.3 |
+
+### CPU capability evidence in detail
+
+The CPU capability table of `0.2.0` (formerly RC7) is held to this evidence:
 
 - The instruction audit is per function, for x86 and aarch64.
 - Emulation covers Intel SDE CPU models and qemu for aarch64 NEON and
@@ -90,15 +119,16 @@ The user-facing version of this map is [the roadmap](../roadmap.md).
 - Reports from real Xeon or Apple Silicon machines are extra evidence, not
   a requirement.
 
-### Rules for candidates
+### Rules for releases and candidates
 
-Candidate tags are immutable. RC1 to RC9 name the planned candidate for each
-responsibility; if a stage finds a correctness defect, land the fix and rerun
-the affected evidence before advancing. A later repair candidate may be cut
-without moving benchmark work into RC1 to RC7 or real training before RC8
-evidence is accepted. Speed that RC3 gives up for exactness is recorded as a
-tuning row and recovered in RC8, never traded back for a tolerance. The final
-`v1.0.0` follows accepted RC9 evidence.
+Tags are immutable, candidates included. If a release finds a correctness
+defect, land the fix and rerun the affected evidence before the next release.
+Benchmark and tuning claims start with `0.2.0`, and real training starts only
+in `0.9.0`, after the `0.2.0` training-readiness evidence is accepted. Speed
+given up for exactness is recorded as a tuning row and recovered in `0.2.0`
+(GPU) or in the Rust SIMD phases (CPU), never traded back for a tolerance.
+Candidates exist only for `1.0.0`; the final `v1.0.0` follows accepted
+evidence of its last candidate.
 
 Every report and acceptance record identifies:
 
@@ -107,9 +137,9 @@ Every report and acceptance record identifies:
 - commands, exit codes and raw logs.
 
 A green check or benchmark from a different head is not evidence for the
-candidate being evaluated.
+release being evaluated.
 
-Ordinary Renovate and version-update PRs are not frozen between candidates.
+Ordinary Renovate and version-update PRs are not frozen between releases.
 They merge under the same required checks, review, digest/pin policy and
 component-specific validation as any other change. Coordinated major SDK,
 toolchain and base-image updates keep their specialised validation. If one
@@ -126,10 +156,10 @@ These are two different numbers and only the first one moves at release time.
 
 | Number | Owner | Value today | Moves when |
 | --- | --- | --- | --- |
-| **Product version** | release-please | `1.0.0-rc.2` (the manifest value); `1.0.0` at final | Every release. Covers the `vX.Y.Z` tag, `core/meson.build`'s `project(version:)`, `compat/python-vmaf`, the three fork-local Python distributions (`ai/`, `dev-llm/`, `mcp-server/vmaf-mcp/`), and the Helm chart's `appVersion`. It does **not** reach `libvmaf.pc` — see ADR-1235. |
-| **ABI SONAME / interface version** | hand-maintained | `vmaf_soname_version = '3.0.0'` at `core/meson.build:38`, shipping `libvmaf.so.3` **and advertised as `libvmaf.pc`'s `Version:`** | Only on a C API change. **The 1.0.0 cut does not reset it.** |
+| **Product version** | release-please | `1.0.0-rc.3` (the manifest value); `0.1.0` at the first release | Every release. Covers the `vX.Y.Z` tag, `core/meson.build`'s `project(version:)`, `compat/python-vmaf`, the three fork-local Python distributions (`ai/`, `dev-llm/`, `mcp-server/vmaf-mcp/`), and the Helm chart's `appVersion`. It does **not** reach `libvmaf.pc` — see ADR-1235. |
+| **ABI SONAME / interface version** | hand-maintained | `vmaf_soname_version = '3.0.0'` at `core/meson.build:38`, shipping `libvmaf.so.3` **and advertised as `libvmaf.pc`'s `Version:`** | Only on a C API change. **No product release resets it.** |
 
-`libvmaf.so` keeps its 3.x SONAME while the product goes to 1.0.0, and
+`libvmaf.so` keeps its 3.x SONAME while the product is at 0.x, and
 `libvmaf.pc` advertises that same 3.x interface version rather than the
 product version. The coupling is deliberate and load-bearing:
 
@@ -137,7 +167,8 @@ product version. The coupling is deliberate and load-bearing:
 - the fork's own `ffmpeg-patches/` require `libvmaf >= 3.0.0` for the SYCL
   and DNN entry points.
 
-A `.pc` advertising `1.0.0` satisfies neither. That is how the first
+A `.pc` advertising the product version (`0.1.0`, or `1.0.0` later)
+satisfies neither. That is how the first
 release candidate failed the three FFmpeg lanes and `Docker Image Build`:
 
 ```text
@@ -176,8 +207,10 @@ graphically):
    whether a release is warranted. If so, it opens or updates one release PR
    that bumps the root manifest and every coordinated version marker.
 2. **Finalize the generated release PR.** After all other release changes are
-   merged, regenerate Unreleased and run the fragment rollover with the PR's
-   exact version and UTC date. Commit that result as the release PR's final
+   merged, run `make docs-render` (the rendered changelog, ADR index and
+   rebase notes are written when pull requests land, so this is normally
+   a no-op) and the fragment rollover with the PR's exact version and UTC
+   date. Commit that result as the release PR's final
    change. Any later fragment invalidates the cut and must be rolled again.
 3. **Merging the release PR** creates a draft GitHub release. It does not yet
    create the public release tag.
@@ -199,18 +232,16 @@ merge-release-flow
 ### What actually gates a release PR
 
 A release PR's diff is `.release-please-manifest.json` plus the coordinated
-version markers. Under the Required Checks Aggregator's absent-means-pass rule
-([ADR-0313](../adr/0313-ci-required-checks-aggregator.md)) that would let every
-path-routed build and test gate select nothing and still resolve green — correct
-for a doc-only PR, wrong for the one PR whose merge creates a release. Two
-things now prevent that:
+version markers. Such a PR runs in the `release-light` CI tier
+([ADR-2169](../adr/2169-ci-fewer-runs.md)), which owes only the tier's `always`
+names. Every owed name must report success on the head SHA
+([ADR-3293](../adr/3293-aggregator-owed-contexts-must-succeed.md)): a check that
+never reported, or that was skipped, fails the aggregator. The names the tier
+does not owe may be absent or skipped, and fail if they ran and failed.
 
-- `.release-please-manifest.json` and `release-please-config.json` are members
-  of the `c_core` selector in `.github/ci-impact.json`, so a release PR really
-  does select the C build and the Netflix golden gate.
-- The aggregator keeps a `mustReport` list — `Release Script Contract`,
-  `Netflix CPU Golden`, `Ubuntu gcc+DNN` — that fails instead of passing when a
-  check is *absent* on a `release-please--` head ref.
+`.release-please-manifest.json` and `release-please-config.json` are also
+members of the `c_core` selector in `.github/ci-impact.json`, so a release PR
+selects the C build and the Netflix golden gate.
 
 ### Release-bot identity
 
@@ -362,29 +393,34 @@ Release ([ADR-1356](../adr/1356-release-provenance-attest.md)).
 
 ### Native Linux release layout
 
-Download the CLI and the whole `libvmaf.so*` chain into one directory; the
-CLI finds its library next to itself. The native files attached by
-`supply-chain.yml` are currently Linux ELF artefacts.
+Download the CLI and the whole `libvmaf.so*` and `libvmafx.so*` chains into
+one directory; the CLI finds both libraries next to itself. The native files
+attached by `supply-chain.yml` are currently Linux ELF artefacts.
 
 #### Download
 
-Meson builds a three-name dynamic-library chain: `libvmaf.so`, its
-ABI SONAME such as `libvmaf.so.3`, and its ABI real name such as
-`libvmaf.so.3.0.0`. GitHub artifact and release downloads do not preserve
-symlinks, so the workflow publishes all three names as identical regular-file
-assets. Each name is hashed, inventoried in both native SBOMs, signed, and
-listed as a subject of the native build-provenance attestation.
+Meson builds a three-name dynamic-library chain for each of the two
+libraries: `libvmaf.so`, its ABI SONAME such as `libvmaf.so.3`, and its ABI
+real name such as `libvmaf.so.3.0.0`; and the same for `libvmafx`
+(`libvmafx.so`, `libvmafx.so.1`, `libvmafx.so.1.0.0`). Since the library split
+([ADR-2094](../adr/2094-libvmaf-compat-library-split.md)) the CLI and the
+compat `libvmaf.so.3` both need `libvmafx.so.1`. GitHub artifact and release
+downloads do not preserve symlinks, so the workflow publishes all six names as
+regular-file assets, identical within each chain. Each name is hashed,
+inventoried in both native SBOMs, signed, and listed as a subject of the
+native build-provenance attestation.
 
 Restore the raw CLI asset's executable bit after the download. The CLI's
 only RUNPATH entry is `$ORIGIN`,
-the directory the CLI itself sits in, so it loads `libvmaf.so.3` from there
+the directory the CLI itself sits in, so it loads `libvmaf.so.3` and
+`libvmafx.so.1` from there
 without `LD_LIBRARY_PATH`, from any working directory, as long as the files
 stay together:
 
 ```bash
 mkdir vmafx-linux && cd vmafx-linux
-gh release download v1.0.0 --repo VMAFx/vmafx \
-  --pattern vmaf --pattern 'libvmaf.so*'
+gh release download v0.1.0 --repo VMAFx/vmafx \
+  --pattern vmaf --pattern 'libvmaf.so*' --pattern 'libvmafx.so*'
 chmod +x vmaf
 ./vmaf --version
 readelf -d vmaf | grep RUNPATH   # Library runpath: [$ORIGIN]
@@ -449,7 +485,7 @@ artifacts. In short:
 
 | Concern | What happens |
 | --- | --- |
-| Where | `build-artifacts` in `.github/workflows/supply-chain.yml`, on `ubuntu-latest`. |
+| Where | `build-artifacts` in `.github/workflows/supply-chain.yml`, on `ubuntu-26.04`. |
 | How long | An uncached stage build took under a minute and the release compile under a minute on four workstation CPUs. The job has a 60-minute limit. No workstation or self-hosted runner has to be online. |
 | Compile | `scripts/release/build-native-release-artifacts.sh` inside the image. |
 | Rehearsal | The Dev Container PR gate builds the same stage with the same script on every container-affecting PR. |
@@ -549,24 +585,65 @@ a recovery run left `latest` pointing at the broken original digest.)
 
 `docs/adr/README.md` is the rendered index of every ADR in the fork. Its
 "Index" table is generated from per-ADR fragments under
-`docs/adr/_index_fragments/<slug>.md` plus an order manifest at
-`docs/adr/_index_fragments/_order.txt`. The renderer is
+`docs/adr/_index_fragments/<slug>.md`. The renderer is
 [`scripts/docs/concat-adr-index.sh`](../../scripts/docs/concat-adr-index.sh)
 (see [ADR-0221](../adr/0221-changelog-adr-fragment-pattern.md) for why the
-pattern exists).
+pattern exists and [ADR-2197](../adr/2197-render-generated-docs-at-landing.md)
+for who writes the render).
+
+### Rendered at landing, not in the pull request
+
+A pull request does **not** carry `CHANGELOG.md`, `docs/adr/README.md`,
+`docs/adr/by-tag/`, `docs/adr/titles.md`, `docs/research/titles.md` or the
+fragment block of `docs/rebase-notes.md`
+([ADR-2197](../adr/2197-render-generated-docs-at-landing.md)).
+`scripts/ci/deliverables-check.sh` refuses a pull request that edits one of
+them next to any other file. The outputs are written by one command,
+`make docs-render`:
+
+- **per landing batch:** after a batch lands, its render goes to master as its
+  own render-only pull request, `chore(docs): render generated changelog and
+  ADR index`
+  ([ADR-3295](../adr/3295-render-only-pull-request.md)).
+  The deliverables gate accepts a pull request whose diff touches only the
+  rendered files when `make docs-render-check` passes on its head commit; it
+  needs none of the other deliverables. When
+  master moves under it, rebase the branch and run `make docs-render` again;
+  never resolve a conflict in a rendered file by hand. It merges when the
+  forge reports it CLEAN, like every other pull request;
+- **at the release cut:** see
+  [Cutting a release from fragments](#cutting-a-release-from-fragments);
+- **by hand:** to see what the render will write, run it in a scratch
+  worktree; it is safe to run at any time and writes nothing else.
+
+`make docs-render-check` fails when a render is stale. The master push (the
+`Docs` job) runs `scripts/ci/check_render_on_master.py`
+([ADR-3295](../adr/3295-render-only-pull-request.md)):
+a current render passes; otherwise the last commit that touched a rendered
+file must pass `make docs-render-check` on its own tree (a hand edit or a
+stale render is red at any age), and the render owed since the first landing
+after it warns for up to 24 hours and turns master red after
+that. An ordinary pull request does not run it: `make docs-fragments-check`
+checks the fragments themselves (changelog sections, ADR index rows, rebase-note
+headings) and the outputs that stay in the pull request (exact-twin table,
+AGENTS indexes, charts, vendored assets).
+
+The render needs full history: the order of the index rows and of the rebase
+notes is the order the fragments landed on the branch, read by
+`scripts/docs/fragment-order.py`. A shallow clone fails loudly.
 
 ### Adding a new ADR
 
-**When adding a new ADR (the common case)** — write the fragment as part of
-the same PR and append its slug to `_order.txt`. The PR template's
-ADR-index checklist row covers this. Manual append is preferred over
-`--write` because it produces a one-line diff that reviewers can verify by
-eye and avoids touching unrelated rows.
+**When adding a new ADR (the common case)** — write the fragment
+`docs/adr/_index_fragments/<slug>.md` as part of the same PR, and nothing
+else: do not touch `README.md` or `_order.txt`. `_order.txt` is the frozen list
+of the rows that existed when the index moved to fragments; every other
+fragment follows it in landing order.
 
 ### Fixing drift
 
 **When fixing drift between fragments and `README.md` (this sweep's case)**
-— run `scripts/docs/concat-adr-index.sh --check` to capture the full diff,
+— run `make docs-render-check` to capture the full diff,
 then audit each row against the four drift classes:
 
 - **Silent loss** — fragment exists, README is missing the row.
@@ -590,8 +667,10 @@ the rebuilt branch and expect a clean exit.
 
 **Renumbered slugs.** When the dedup sweep referenced in the script's
 header comment renumbers an ADR (e.g. `0270-saliency-…` → `0286-saliency-…`),
-the fragment must be **renamed** to match the new slug — not duplicated. The
-`_order.txt` entry follows the same rename. The fragment body's
+the fragment must be **renamed** to match the new slug — not duplicated. A
+rename of a fragment listed in the frozen `_order.txt` changes that entry too;
+a rename of any other fragment moves its landing position, so rename in the
+commit that adds it. The fragment body's
 `[ADR-NNNN](NNNN-slug.md)` link must match the renumbered slug; mismatches
 silently render rows that point at non-existent ADR files. The
 fragment-vs-ADR-file slug audit is one line:
@@ -612,7 +691,7 @@ repo or in CI secrets.
 
 ### What is signed
 
-- **Release blobs** (`libvmaf.so*`, `vmaf`, `models.tar.gz`,
+- **Release blobs** (`libvmaf.so*`, `libvmafx.so*`, `vmaf`, `models.tar.gz`,
   `container-build-provenance.txt`, `THIRD_PARTY_NOTICES.txt`,
   `licenses.tar.gz`, optional `u2netp_mirror.{onnx,pth}`):
   cosign sign-blob bundles attached to the GitHub Release, plus one GitHub
@@ -670,9 +749,9 @@ and MCP wheel come from `supply-chain.yml`; the container images come from
 ```bash
 # The release tag to verify. v1.0.0-rc.1 and v1.0.0-rc.2 use the
 # slsa-verifier recipe further down.
-tag=v1.0.0
+tag=v0.1.0
 
-# Release blob. Every vmaf/libvmaf.so* asset has a matching FILE.bundle.
+# Release blob. Every vmaf/libvmaf.so*/libvmafx.so* asset has a matching FILE.bundle.
 cosign verify-blob --bundle vmaf.bundle vmaf \
   --certificate-identity \
     "https://github.com/VMAFx/vmafx/.github/workflows/supply-chain.yml@refs/tags/${tag}" \
@@ -699,7 +778,7 @@ gh attestation verify vmaf --repo VMAFx/vmafx \
 # provenance; pypi-attestations binds it to the expected source repository.
 pypi-attestations verify pypi \
   --repository https://github.com/VMAFx/vmafx \
-  pypi:vmaf_mcp-1.0.0-py3-none-any.whl
+  pypi:vmaf_mcp-0.1.0-py3-none-any.whl
 
 # Container image, cosign route. Replace DIGEST with the actual sha256 digest.
 cosign verify ghcr.io/vmafx/vmafx@sha256:DIGEST \
@@ -720,6 +799,56 @@ cosign verify ghcr.io/vmafx/vmafx-node@sha256:DIGEST \
 `supply-chain.yml` runs the provenance recipe above against the attached bundle
 for every subject before the bundle can reach the release, so a release whose
 provenance does not verify is never published.
+
+### Build provenance on release assets
+
+Every workflow that creates a GitHub release or publishes release assets
+attaches build-provenance bundles as `*.intoto.jsonl` files (ADR-3316). This
+satisfies the OpenSSF Scorecard Signed-Releases check requirement (scorecard
+v5.6.0), which scores a release 10 when a release asset name ends in
+`.intoto.jsonl` (compared to 8 for cryptographic signature bundles alone).
+
+The `.intoto.jsonl` asset contains the normalized single-line in-toto SLSA
+build-provenance attestation statement (`jq --compact-output . "$BUNDLE" > *.intoto.jsonl`).
+
+The following releases carry `.intoto.jsonl` provenance assets:
+
+- **Product releases** (`.github/workflows/supply-chain.yml`):
+  - `vmafx-build-provenance.intoto.jsonl` for native binaries (`vmaf`,
+    `libvmaf.so`, `libvmafx.so`), model archives, container provenance
+    statement, and licence archives.
+  - `vmaf-mcp-provenance.intoto.jsonl` for the MCP server Python wheel and
+    source distribution.
+- **macOS tester prereleases** (`.github/workflows/macos-tester-bundle.yml`):
+  - `vmafx-tester-macos-provenance.intoto.jsonl` for the macOS Apple silicon
+    tester tarballs.
+- **Windows tester prereleases** (`.github/workflows/windows-tester-bundle.yml`):
+  - `vmafx-tester-windows-provenance.intoto.jsonl` for the Windows x64 and
+    Arm64 zip bundles.
+
+Existing Sigstore bundles (`*.sigstore.json`) remain attached to every release
+and continue to be verified by the consumer recipes. The `.intoto.jsonl` assets
+supplement the Sigstore bundles rather than replacing them.
+
+#### Consumer verification of `.intoto.jsonl` provenance
+
+Consumers verify any downloaded release asset against its `.intoto.jsonl`
+bundle using the GitHub CLI (`gh`):
+
+```bash
+gh attestation verify <asset> \
+  --bundle <provenance>.intoto.jsonl \
+  --repo VMAFx/vmafx
+```
+
+For example, to verify the `vmaf` release binary against
+`vmafx-build-provenance.intoto.jsonl`:
+
+```bash
+gh attestation verify vmaf \
+  --bundle vmafx-build-provenance.intoto.jsonl \
+  --repo VMAFx/vmafx
+```
 
 v1.0.0-rc.1 and v1.0.0-rc.2 predate ADR-1356. They carry
 `slsa-github-generator` provenance as `vmafx-build-provenance.intoto.jsonl` and
@@ -795,7 +924,8 @@ fragments so existing release-train history is preserved.
 
 - **Always add a fragment, never edit `CHANGELOG.md` directly.** Drop a single
   Markdown bullet under `changelog.d/<section>/<topic>.md`. The fragment is
-  the source of truth; the rendered `CHANGELOG.md` is a build artefact.
+  the source of truth; the rendered `CHANGELOG.md` is a build artefact that a
+  pull request does not carry ([ADR-2197](../adr/2197-render-generated-docs-at-landing.md)).
 - **Filename convention:** lowercase kebab-case, optionally prefixed with the
   task ID (`T7-39-foo.md`) or ADR number (`adr-0312-deferral-retired.md`)
   for implicit lexical ordering within the section.
@@ -804,14 +934,19 @@ fragments so existing release-train history is preserved.
 
 ### When to regenerate (`--write`)
 
-Run `scripts/release/concat-changelog-fragments.sh --write` whenever:
+`make docs-render` writes the changelog with the other rendered outputs: it
+runs once per landing batch for the render-only pull request
+([ADR-3295](../adr/3295-render-only-pull-request.md))
+and at the release cut. You need it by hand only to preview a render, or to
+reconcile a skew:
 
-- The `--check` lane fails on CI (drift between fragments and the rendered
-  `Unreleased` block).
-- A merge has just landed several fragments that are not yet spliced into the
-  rendered block.
-- A drift-sweep PR is reconciling pre-existing skew (see
-  [the 2026-05-08 sweep](#changelog-drift-sweep-historical-context)).
+- `make docs-render-check` fails on a stale render; the master push runs it
+  through `scripts/ci/check_render_on_master.py`, which allows an owed render
+  for up to 24 hours.
+- Pre-existing skew (see
+  [the 2026-05-08 sweep](#changelog-drift-sweep-historical-context)) is
+  reconciled by a render-only pull request, not by a feature branch: a pull
+  request that carries a render next to any other file is refused.
 
 Never edit the rendered "Unreleased" block by hand to add new entries — those
 inline edits will be silently overwritten by the next regen.
@@ -841,8 +976,8 @@ the final manifest and version-marker updates.
 2. Render the final notes:
 
     ```bash
-    scripts/release/concat-changelog-fragments.sh --write
-    git commit -am 'docs(release): render final 1.0.0 notes'  # skip if nothing changed
+    make docs-render
+    git commit -am 'docs(release): render final 0.1.0 notes'  # skip if nothing changed
     ```
 
 3. Roll the fragments over into the versioned section. Replace the example
@@ -850,9 +985,9 @@ the final manifest and version-marker updates.
 
     ```bash
     scripts/release/rollover-changelog-fragments.sh \
-      --version 1.0.0 --date YYYY-MM-DD
+      --version 0.1.0 --date YYYY-MM-DD
     git add CHANGELOG.md changelog.d release-please-config.json docs/changelog-archive
-    git commit -m 'chore(release): cut 1.0.0 changelog'
+    git commit -m 'chore(release): cut 0.1.0 changelog'
     ```
 
 4. Push both commits, merge the release PR and publish the draft release.
@@ -877,33 +1012,94 @@ directory are exempt from it
 ([ADR-1345](../adr/1345-changelog-archive-large-file-exemption.md)).
 Nothing else in the directory is.
 
-#### Cutting a release candidate
+#### Before the cut: every tester leg green on the commit
 
-A release candidate is cut the same way, with its full version, for example
-`--version 1.0.0-rc.3`. The script accepts exactly the shapes the tag-time
-verifier accepts, `X.Y.Z` and `X.Y.Z-rc.N`. Each candidate gets its own
-`## [1.0.0-rc.3] - YYYY-MM-DD` section and
-`changelog.d/releases/1.0.0-rc.3.json` receipt.
+A pull request builds only the tester legs whose inputs it changed, and a master
+push skips a leg whose inputs did not change, so a leg can be red for days
+unseen (the x64 SYCL Windows zip was, from 2026-10-05 to the rc.3 publish run).
+Before you label the release pull request `autorelease: cut`, dispatch every leg
+at the commit the release is cut on (the release pull request's base, the head
+of `master`) with the **full SHA**, so the run title names its source:
 
-The one-shot `release-as` and `bootstrap-sha` fields are no longer in
-`release-please-config.json`. The rollover still deletes them if present,
-because the tag-time verifier refuses them at every tag, candidates
-included.
+```bash
+SHA=$(git rev-parse origin/master)
+for wf in windows-tester-bundle.yml macos-tester-bundle.yml docker-publish-tester.yml; do
+  gh workflow run "$wf" -R VMAFx/vmafx --ref master -f ref="$SHA"
+done
+```
 
-#### Numbering later candidates
+Then check them (the same script the cut pull request runs, see below):
 
-Later candidates are numbered automatically. The root package uses
+```bash
+GH_TOKEN=$(gh auth token) python3 scripts/release/check-candidate-legs.py --sha "$SHA"
+```
+
+It lists every leg of `scripts/release/candidate-legs.json` that is not
+`success` on that commit: skipped, absent and red all count as not green, and a
+dispatch titled `master` or a tag proves nothing about a commit. The `Release
+Script Contract` job runs the same check on a release pull request that carries
+the `autorelease: cut` label, against the pull request's base commit, so the cut
+cannot merge on an unseen or red leg
+([ADR-2198](../adr/2198-windows-sycl-leg-and-cut-check.md)). When `master` moves
+after the dispatch, dispatch again at the new head.
+
+#### The one-shot `release-as` of 0.1.0
+
+`release-please-config.json` carries `"release-as": "0.1.0"` on the root
+package for the first release only
+([ADR-3292](../adr/3292-release-line-restart-0x.md)). release-please applies
+it before it reads the commits, so it moves the manifest's `1.0.0-rc.3` to
+`0.1.0` in one step; without it, the default strategy would propose
+`1.1.0-rc.3`. The rollover of the `0.1.0` cut checks that `release-as`
+equals `--version` and deletes it, together with any `bootstrap-sha`, in the
+cut commit. That removal is required: left in place, `release-as` proposes
+`0.1.0` again on every later release and swallows every bump.
+
+Two checks hold it:
+
+- `scripts/release/check-one-shot-fields.sh`, run by the `Release Script
+  Contract` job of `rule-enforcement.yml`, refuses either field once the
+  manifest holds a final version, `0.x` included. It accepts a candidate
+  manifest only with `versioning: prerelease`
+  ([ADR-1348](../adr/1348-release-candidate-prerelease-versioning.md)) or,
+  for the restart, with `release-as` set.
+  `scripts/release/tests/test-check-one-shot-fields.sh` holds its verdicts.
+- `scripts/release/verify-release-version.sh` refuses both fields at every
+  tag, candidates included.
+
+To force a later version, use a `Release-As: X.Y.Z` commit footer; it applies
+to one release by itself.
+
+#### Numbering 0.x releases
+
+After `0.1.0` the root package uses `versioning: default` with
+`bump-minor-pre-major: true` and `bump-patch-for-minor-pre-major: false`: a
+fix on `0.1.0` gives `0.1.1`, and a feature or a breaking change gives `0.2.0`.
+The release PR stays open as a proposal; merge it when the release is due,
+and check its title before cutting it.
+
+#### Cutting the candidates of 1.0.0
+
+Only `1.0.0` has candidates, starting at `v1.0.0-rc.4` so that no tag of the
+withdrawn `rc.1` to `rc.3` is reused. Before the first of them, a pull request
+sets the root package back to `"versioning": "prerelease"` with
+`"prerelease": true` and `"release-as": "1.0.0-rc.4"`; the rollover deletes
+the `release-as` again in that cut. Later candidates are then numbered by
 release-please's `prerelease` versioning
 ([ADR-1348](../adr/1348-release-candidate-prerelease-versioning.md)): a fix,
-feature or breaking change on `1.0.0-rc.1` gives `1.0.0-rc.2`, and so on. The
-release PR stays open as a proposal; merge it only when the next candidate is
-due, and check its title before cutting it. For the final release, set
-`"prerelease": false`: the same strategy then proposes `1.0.0`.
+feature or breaking change on `1.0.0-rc.4` gives `1.0.0-rc.5`. For the final
+release, set `"prerelease": false`: the same strategy then proposes `1.0.0`.
+
+A candidate is cut the same way as a release, with its full version, for
+example `--version 1.0.0-rc.4`. The script accepts exactly the shapes the
+tag-time verifier accepts, `X.Y.Z` and `X.Y.Z-rc.N`. Each candidate gets its
+own `## [1.0.0-rc.4] - YYYY-MM-DD` section and
+`changelog.d/releases/1.0.0-rc.4.json` receipt.
 
 !!! note
-    With the earlier `versioning: default`, a fix on `1.0.0-rc.1` gave
-    `1.0.1-rc.1`. The Release Script Contract job now rejects that setting
-    while the manifest is a release candidate.
+    With `versioning: default` on a candidate manifest, a fix on `1.0.0-rc.1`
+    gave `1.0.1-rc.1`. `check-one-shot-fields.sh` rejects that setting on a
+    candidate manifest unless the one-shot `release-as` is set.
 
 How a candidate moves through the rest of the pipeline:
 
@@ -913,7 +1109,7 @@ How a candidate moves through the rest of the pipeline:
   stops the job for operator cleanup.
 - **Version strings.** A release build checked out at its tag reports the
   `git describe` form from `vmaf --version`, for example
-  `v1.0.0-rc.1-0-gd0f0e7e` or `v1.0.0-0-g8820048`.
+  `v1.0.0-rc.1-0-gd0f0e7e` or `v0.1.0-0-g8820048`.
   `scripts/release/verify-native-release-artifacts.sh` accepts exactly that
   form (distance 0) or the bare version, never a later commit.
 - **Python distributions.** Python tools name distributions by the PEP 440
@@ -1179,18 +1375,40 @@ Until 2026-10-05 the repository carried Netflix's tags, and
   and it offers no purge. Its `@v/<version>.zip` stays served for every cached
   version by explicit request.
 
-Until the proxy's `@latest` shows a fork version, pin an explicit version:
+The release line restarts at `v0.1.0`
+([ADR-3292](../adr/3292-release-line-restart-0x.md)), and its `go.mod`
+retracts every release candidate, each entry with its own reason:
 
-```bash
-go get github.com/VMAFx/vmafx@v1.0.0-rc.2
-go install github.com/VMAFx/vmafx/cmd/<tool>@v1.0.0-rc.2
+```text
+retract (
+    [v1.0.0-rc.1, v1.0.0-rc.2] // contained a stale root LICENSE-MIT; ...
+    v1.0.0-rc.3 // withdrawn: the release line restarts at v0.1.0 (...)
+)
 ```
 
-or bypass the proxy cache: `GOPROXY=direct go list -m -versions github.com/VMAFx/vmafx`.
-After `v1.0.0` exists, `go list -m -retracted -versions github.com/VMAFx/vmafx`
-shows retracted releases too; keep the `retract` directive for the release
-candidates in every later `go.mod`, because only the latest version's `go.mod`
-is read.
+Measured on 2026-10-12 with Go 1.27.1 against a scratch module proxy, the
+retraction holds only where Netflix's versions are absent:
+
+- Against a proxy that holds only the fork's versions (what
+  `GOPROXY=direct` sees since the tags were deleted, see above),
+  `go list -m -versions` prints `v0.1.0`, `@latest` resolves to
+  `v0.1.0`, `go list -m -retracted -versions` adds the three candidates, and
+  `go get` of a candidate prints the reason of its entry.
+- Through `proxy.golang.org`, which still serves the cached
+  `v3.0.0+incompatible`, the Go command reads retractions from that version's
+  `go.mod` (it has none): `@latest` stays `v3.0.0+incompatible`, the candidates
+  stay listed, and a candidate is fetched without a warning.
+
+Pin the release explicitly when you go through the public proxy:
+
+```bash
+go get github.com/VMAFx/vmafx@v0.1.0
+go install github.com/VMAFx/vmafx/cmd/<tool>@v0.1.0
+```
+
+or bypass the proxy cache: `GOPROXY=direct go get github.com/VMAFx/vmafx@latest`.
+Keep the `retract` block in every later `go.mod`: only the highest version's
+`go.mod` is read, so a release that drops it brings the candidates back.
 
 ## Release notes and the changelog archive (ADR-1233)
 
@@ -1200,6 +1418,13 @@ Two different surfaces, produced two different ways:
 | --- | --- | --- |
 | GitHub Release body | GitHub, from merged pull requests | Labels, via [`.github/release.yml`](../../.github/release.yml) |
 | `CHANGELOG.md` | `scripts/release/concat-changelog-fragments.sh`, from `changelog.d/` | `changelog.d/` subdirectory |
+
+The GitHub body has no slot for hand-written text. A statement the release
+must carry that no pull request title expresses, such as the rc.3 table of devices
+verified and not yet verified ([ADR-1707](../adr/1707-rc3-exit-without-outside-hardware.md)),
+lives in a `changelog.d/` fragment (so `CHANGELOG.md` has it) and the release
+publisher adds it to the release page with `gh release edit --notes-file`, keeping
+the generated body.
 
 Because GitHub groups the release body **by label**,
 [`.github/workflows/pr-type-label.yml`](../../.github/workflows/pr-type-label.yml)
@@ -1215,16 +1440,19 @@ prefix is mandatory, so the label should always be derivable.
 index linking to it:
 
 ```markdown
-## [1.0.0] - 2026-09-07
+## [1.0.0-rc.1] - 2026-09-27
 
-This release collects 2345 changelog entries.
+This release collects 2790 changelog entries.
 They are recorded in full, unedited, in
-[`docs/changelog-archive/1.0.0.md`](docs/changelog-archive/1.0.0.md) — too long to read inline here.
+[`docs/changelog-archive/1.0.0-rc.1.md`](docs/changelog-archive/1.0.0-rc.1.md) — too long to read inline here.
 
 | Section | Entries |
 | --- | --- |
-| Fixed | 1227 |
-| Changed | 559 |
+| Changed | 625 |
+| Added | 510 |
+| Removed | 14 |
+| Fixed | 1585 |
+| Security | 56 |
 ```
 
 Nothing is discarded: the archive is tracked, and the rollover receipt still

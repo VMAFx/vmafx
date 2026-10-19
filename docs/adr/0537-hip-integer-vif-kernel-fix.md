@@ -1,7 +1,7 @@
-<!-- markdownlint-disable MD060 -->
+<!-- markdownlint-disable MD060 MD013 -->
 # ADR-0537: HIP integer VIF kernel crash fix — filter upload, bounds, HtoD staging
 
-- **Status**: Accepted
+- **Status**: Accepted (Superseded-in-part 2026-10-06 by [ADR-0566](0566-hip-vif-per-feature-places4-gate.md) for the clause that places=3 is acceptable as a follow-up)
 - **Date**: 2026-05-18
 - **Deciders**: lusoris
 - **Tags**: `hip`, `gpu`, `kernel`, `vif`, `bug-fix`

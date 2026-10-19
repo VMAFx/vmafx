@@ -99,7 +99,7 @@ ADR-0125, ADR-0138 and ADR-0140. Feature-specific relaxations live in
 | `ssim` (fixed-point extractor) | `5e-5` | ADR-0564 (int64 moments, one double term per pixel). |
 | `float_ssim`, `float_ssim_lcs`, `float_ms_ssim`, `float_ms_ssim_lcs`, `float_ms_ssim_chroma`, `float_psnr`, `float_motion`, `float_vif`, `float_adm` | `5e-5` | ADR-0188, ADR-0192, ADR-0215, ADR-1382. |
 | `speed_chroma` (the three scores `speed_chroma_u`, `_v`, `_uv`), `speed_temporal` (the one score `speed_temporal`), for a twin that is not exact | `5e-5` | Places=4; the CUDA, HIP and SYCL twins are exact ([ADR-1477](../adr/1477-speed-upstream-double-math.md)). |
-| `psnr_hvs` (a twin that is not exact) | `5e-4` at 576x324 and below, `5e-4 x sqrt(N / N_576x324)` above | ADR-0191 (DCT plus per-block float reduction); ADR-1361 (area scaling). |
+| `psnr_hvs` (a twin that is not exact) | `5e-4` at 576x324 and below, $5 \times 10^{-4} \sqrt{N / N_{576 \times 324}}$ above | ADR-0191 (DCT plus per-block float reduction); ADR-1361 (area scaling). |
 | `ciede` (a twin that is not in the `1e-9` row) | `5e-3` | ADR-0187 (per-pixel pow, sqrt, sin, atan2). |
 | `ssimulacra2` | `5e-3` | ADR-0192 (XYB cube root plus IIR blur). |
 

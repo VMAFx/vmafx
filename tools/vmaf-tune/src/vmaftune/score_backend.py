@@ -3,19 +3,17 @@
 """Backend selection for the libvmaf CLI used by `vmaf-tune`.
 
 `vmaf` exposes a unified ``--backend NAME`` selector
-(values: ``auto|cpu|cuda|sycl|hip``) per ADR-0127 / ADR-0175 /
+(values: ``auto|cpu|cuda|sycl|hip|metal``) per ADR-0127 / ADR-0175 /
 ADR-0422 / ADR-0726 (Vulkan backend dropped 2026-05-28).
 The selector engages the GPU dispatch in libvmaf and gives a
 ~10-30x speedup on the score axis at 1080p relative to the CPU path.
 
-This module turns user intent (``--score-backend cuda|sycl|hip|cpu|auto``)
-into a concrete, validated choice by intersecting:
-
-1. What the **vmaf binary** advertises in its ``--help`` output (the
-   `--backend` line lists which values are recognised);
-2. What the **host hardware / runtime** actually offers, probed via
-   cheap external tools (``nvidia-smi``, ``sycl-ls``,
-   ``rocminfo`` / ``rocm-smi``) with conservative fallbacks.
+This module turns user intent (``--score-backend cuda|sycl|hip|metal|cpu|auto``)
+into a concrete, validated choice. Which backends are usable comes from the
+``vmaf`` binary itself: ``vmaf --list-backends`` (ADR-1874) reports, per
+backend, whether it was compiled in and whether its state initialises on this
+host. The Go twin (``pkg/scorebackend``) reads the same report, and both
+replay the shared cases in ``testdata/score_backend_selection.json``.
 
 Hard rules (per task spec):
 
@@ -23,8 +21,9 @@ Hard rules (per task spec):
   clear error. We never silently fall back when the user explicitly
   requested a backend.
 - Only ``auto`` walks the fallback chain. The default chain is
-  ``cuda -> sycl -> hip -> cpu``, picking the first that is both
-  binary-supported and hardware-available.
+  ``cuda -> sycl -> hip -> metal -> cpu``, picking the first usable one.
+  When the binary cannot report its backends, ``auto`` scores on ``cpu``
+  and logs a warning that names the reason.
 
 NRProxyBackend (ADR-0624 / ADR-0615)
 -------------------------------------
@@ -57,165 +56,90 @@ from typing import Any, NamedTuple
 
 _log = logging.getLogger(__name__)
 
-#: Backends the vmaf CLI accepts via ``--backend NAME``.
-ALL_BACKENDS: tuple[str, ...] = ("cpu", "cuda", "sycl", "hip")
+#: Backends ``vmaf --list-backends`` reports and ``--backend NAME`` accepts,
+#: in the report's order.
+ALL_BACKENDS: tuple[str, ...] = ("cpu", "cuda", "sycl", "hip", "metal")
 
-#: Default fallback chain for ``auto``. Native vendor backends are preferred
-#: in vendor-priority order on their respective silicon. CPU is the
-#: always-available floor.
-DEFAULT_FALLBACKS: tuple[str, ...] = ("cuda", "sycl", "hip", "cpu")
+#: Default fallback chain for ``auto``. Native GPU backends first, in the
+#: order the CLI lists them; CPU is the always-available floor.
+DEFAULT_FALLBACKS: tuple[str, ...] = ("cuda", "sycl", "hip", "metal", "cpu")
+
+#: Upper bound on one ``vmaf --list-backends`` run, which initialises every
+#: compiled GPU backend once.
+LIST_BACKENDS_TIMEOUT_S: int = 60
 
 
 class BackendUnavailableError(RuntimeError):
     """User explicitly requested a backend the host cannot provide.
 
     Raised when ``select_backend(prefer=X)`` is called with a
-    non-``auto`` ``X`` and either the local ``vmaf`` binary lacks
-    ``X`` support or the host hardware does not advertise it.
+    non-``auto`` ``X`` that the ``vmaf`` binary does not report as usable.
     Never raised by ``auto``-mode selection — that path falls back.
     """
 
 
-@dataclasses.dataclass(frozen=True)
-class BackendProbe:
-    """One probe outcome (per backend) used by `detect_available_backends`."""
-
-    name: str
-    binary_supports: bool
-    hardware_available: bool
-
-    @property
-    def usable(self) -> bool:
-        return self.binary_supports and self.hardware_available
+class BackendReportError(RuntimeError):
+    """``vmaf --list-backends`` could not be run or did not return a report."""
 
 
-def _vmaf_help(vmaf_bin: str, runner: object | None = None) -> str:
-    """Return the vmaf ``--help`` output (stderr+stdout joined).
+def parse_backend_report(text: str) -> dict[str, dict[str, Any]]:
+    """Rows of a ``vmaf --list-backends`` document, by backend name.
 
-    Returns empty string on any error so probe logic degrades to
-    "binary doesn't support GPU backends" rather than raising.
+    Raises `BackendReportError` when the text is not such a document.
+    Names this module does not know are kept; selection ignores them.
     """
-    runner_fn = runner or subprocess.run
-    if shutil.which(vmaf_bin) is None and "/" not in vmaf_bin:
-        return ""
     try:
-        completed = runner_fn(  # type: ignore[operator]
-            [vmaf_bin, "--help"],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return ""
-    out = getattr(completed, "stdout", "") or ""
-    err = getattr(completed, "stderr", "") or ""
-    return f"{out}\n{err}"
+        rows = json.loads(text)["backends"]
+    except (json.JSONDecodeError, KeyError, TypeError) as exc:
+        raise BackendReportError(f"not a backend report: {exc}") from exc
+    report: dict[str, dict[str, Any]] = {}
+    for row in rows if isinstance(rows, list) else ():
+        name = row.get("name") if isinstance(row, dict) else None
+        if not isinstance(name, str) or not isinstance(row.get("usable"), bool):
+            raise BackendReportError(f"malformed backend row: {row!r}")
+        report[name] = row
+    if not report:
+        raise BackendReportError("the backend report lists no backends")
+    return report
 
 
-def parse_supported_backends(help_text: str) -> frozenset[str]:
-    """Extract the backends the vmaf binary advertises from `--help`.
+def backend_report(vmaf_bin: str = "vmaf", runner: object | None = None) -> dict[str, dict]:
+    """Run ``vmaf --list-backends`` and return its rows by backend name.
 
-    The fork's CLI prints a line like::
+    Raises `BackendReportError` naming the binary and the reason when the
+    binary is missing, fails (a ``vmaf`` older than ADR-1874 rejects the
+    option) or prints something that is not a report.
 
-        --backend $name:              exclusive backend selector — auto|cpu|cuda|sycl|hip.
-
-    We parse the alternation (``a|b|c``) and intersect it with
-    `ALL_BACKENDS`. ``cpu`` is added unconditionally — every build
-    has a CPU path, even if the help line is missing.
-
-    Returns a frozenset for cheap membership tests.
+    A *runner* decides how the command runs, so the ``PATH`` lookup that names
+    a missing binary applies only without one: with it, the answer depended on
+    whether the host had a ``vmaf`` installed
+    (``T-VMAFTUNE-PROBE-RUNNER-READS-PATH-2026-10-06``).
     """
-    found: set[str] = {"cpu"}
-    for backend in ALL_BACKENDS:
-        # Look for the exact token surrounded by | or whitespace as
-        # a robust check; matches any of: auto|cpu|cuda|sycl|hip
-        # without false-positives on substrings (e.g. "cuda" inside
-        # a comment about CUDA).
-        for needle in (f"|{backend}|", f"|{backend}.", f"|{backend}\n", f"|{backend} "):
-            if needle in help_text:
-                found.add(backend)
-                break
-    return frozenset(found)
-
-
-def _probe_cuda(runner: object | None = None) -> bool:
-    """True if a CUDA device is reachable. Tries `nvidia-smi -L`."""
-    if shutil.which("nvidia-smi") is None:
-        return False
+    if runner is None and "/" not in vmaf_bin and shutil.which(vmaf_bin) is None:
+        raise BackendReportError(f"{vmaf_bin!r} is not on PATH")
     runner_fn = runner or subprocess.run
     try:
         completed = runner_fn(  # type: ignore[operator]
-            ["nvidia-smi", "-L"],
+            [vmaf_bin, "--list-backends"],
             capture_output=True,
             text=True,
             check=False,
-            timeout=5,
+            timeout=LIST_BACKENDS_TIMEOUT_S,
         )
-    except (OSError, subprocess.SubprocessError):
-        return False
-    rc = int(getattr(completed, "returncode", 1))
-    out = getattr(completed, "stdout", "") or ""
-    return rc == 0 and "GPU" in out
-
-
-def _probe_sycl(runner: object | None = None) -> bool:
-    """True if a SYCL device is reachable. Tries `sycl-ls`."""
-    if shutil.which("sycl-ls") is None:
-        return False
-    runner_fn = runner or subprocess.run
-    try:
-        completed = runner_fn(  # type: ignore[operator]
-            ["sycl-ls"],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=5,
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise BackendReportError(f"{vmaf_bin} --list-backends: {exc}") from exc
+    if int(getattr(completed, "returncode", 1)) != 0:
+        raise BackendReportError(
+            f"{vmaf_bin} --list-backends exited {getattr(completed, 'returncode', '?')} "
+            "(a vmaf older than ADR-1874 does not have the option)"
         )
-    except (OSError, subprocess.SubprocessError):
-        return False
-    rc = int(getattr(completed, "returncode", 1))
-    out = getattr(completed, "stdout", "") or ""
-    # sycl-ls prints one line per device, prefixed with bracketed
-    # backend tokens: "[opencl:gpu]", "[ext_oneapi_level_zero:gpu]", ...
-    return rc == 0 and "[" in out and ":gpu" in out.lower()
+    return parse_backend_report(getattr(completed, "stdout", "") or "")
 
 
-def _probe_hip(runner: object | None = None) -> bool:
-    """True if an AMD ROCm/HIP GPU is reachable."""
-    runner_fn = runner or subprocess.run
-    if shutil.which("rocminfo") is not None:
-        try:
-            completed = runner_fn(  # type: ignore[operator]
-                ["rocminfo"],
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=5,
-            )
-        except (OSError, subprocess.SubprocessError):
-            completed = None
-        if completed is not None:
-            rc = int(getattr(completed, "returncode", 1))
-            out = f"{getattr(completed, 'stdout', '') or ''}\n{getattr(completed, 'stderr', '') or ''}"
-            if rc == 0 and "gfx" in out.lower():
-                return True
-
-    if shutil.which("rocm-smi") is None:
-        return False
-    try:
-        completed = runner_fn(  # type: ignore[operator]
-            ["rocm-smi", "--showproductname"],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=5,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return False
-    rc = int(getattr(completed, "returncode", 1))
-    out = f"{getattr(completed, 'stdout', '') or ''}\n{getattr(completed, 'stderr', '') or ''}"
-    text_lower = out.lower()
-    return rc == 0 and ("gpu" in text_lower or "card series" in text_lower)
+def usable_backends(report: dict[str, dict[str, Any]]) -> list[str]:
+    """The usable backends of a report, in `ALL_BACKENDS` order; cpu always."""
+    usable = [b for b in ALL_BACKENDS if report.get(b, {}).get("usable") is True]
+    return usable if "cpu" in usable else ["cpu", *usable]
 
 
 def detect_available_backends(
@@ -225,22 +149,16 @@ def detect_available_backends(
 ) -> list[str]:
     """Return backends usable on this host, in `ALL_BACKENDS` order.
 
-    "Usable" means both:
-      - the local ``vmaf`` binary advertises ``--backend NAME`` support, and
-      - the corresponding hardware/runtime probe succeeds.
-
-    CPU is always present (every libvmaf build has a CPU path).
+    "Usable" is what ``vmaf --list-backends`` reports: compiled into the
+    binary and initialised on this host. When the report is unavailable the
+    result is ``["cpu"]`` and a warning names the reason.
     """
-    help_text = _vmaf_help(vmaf_bin, runner=runner)
-    supported = parse_supported_backends(help_text)
-
-    probes = {
-        "cpu": True,
-        "cuda": _probe_cuda(runner=runner) if "cuda" in supported else False,
-        "sycl": _probe_sycl(runner=runner) if "sycl" in supported else False,
-        "hip": _probe_hip(runner=runner) if "hip" in supported else False,
-    }
-    return [b for b in ALL_BACKENDS if b in supported and probes[b]]
+    try:
+        report = backend_report(vmaf_bin, runner=runner)
+    except BackendReportError as exc:
+        _log.warning("cannot read the vmaf backend report (%s); only cpu is usable", exc)
+        return ["cpu"]
+    return usable_backends(report)
 
 
 def select_backend(
@@ -254,22 +172,21 @@ def select_backend(
     """Pick a backend honouring user preference and host capability.
 
     - ``prefer="auto"`` walks ``fallbacks`` and returns the first
-      entry present in ``available``. ``cpu`` must be in the chain
-      (or in ``available``) to guarantee a result.
-    - Any other ``prefer`` value (``cpu``, ``cuda``, ``sycl``,
-      ``hip``) is honoured **strictly**: if it is not in
-      ``available``, raise `BackendUnavailableError`. Never
-      silently falls back — that would mask hardware/build mismatches
-      and lie to the operator about wall-clock expectations.
+      entry present in ``available``, or ``cpu`` when none is.
+    - Any other ``prefer`` value is honoured **strictly**: if it is not in
+      ``available``, raise `BackendUnavailableError`. Never silently falls
+      back — that would mask hardware/build mismatches and lie to the
+      operator about wall-clock expectations. ``cpu`` needs no report.
 
     ``available`` defaults to ``detect_available_backends(...)``;
     tests inject a literal list to keep the unit boundary tight.
     """
     if prefer not in {"auto", *ALL_BACKENDS}:
         raise ValueError(
-            f"unknown backend {prefer!r}; expected one of: " f"auto, {', '.join(ALL_BACKENDS)}"
+            f"unknown backend {prefer!r}; expected one of: auto, {', '.join(ALL_BACKENDS)}"
         )
-
+    if prefer == "cpu":
+        return "cpu"
     if available is None:
         available = detect_available_backends(vmaf_bin=vmaf_bin, runner=runner)
 
@@ -287,8 +204,8 @@ def select_backend(
     raise BackendUnavailableError(
         f"backend {prefer!r} requested but not available on this host "
         f"(available: {', '.join(available) or 'cpu'}). "
-        f"Check that the local vmaf binary was built with the matching "
-        f"backend support and the corresponding runtime/driver is installed."
+        f"Run `{vmaf_bin} --list-backends`: the backend must be compiled into "
+        f"the vmaf binary and initialise on this host."
     )
 
 

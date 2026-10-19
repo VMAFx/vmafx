@@ -14,18 +14,20 @@ Arc B580 (Xe2), an Arc Pro B60, and a UHD 770 (Xe-LP), all with Level Zero.
 `float_moment_sycl` now returns the CPU extractor's four moments bit for bit on
 every frame
 ([ADR-1497](../../adr/1497-float-moment-twins-cpu-sum-past-2-53.md)). The CPU
-adds the float squares into one `double` in raster order. Below 2^53 units of
-2^-16 that sum is exact and equal to the twin's integer sum, which covers every
+adds the float squares into one `double` in raster order. Below $2^{53}$ units of
+$2^{-16}$ that sum is exact and equal to the twin's integer sum, which covers every
 frame of up to 2 097 152 pixels and every 8-, 10- and 12-bit frame.
 
-On a larger 16-bit frame whose sum passes 2^53 the CPU rounds as it adds, and
+On a larger 16-bit frame whose sum passes $2^{53}$ the CPU rounds as it adds, and
 the twin used to round the exact sum once.
 
 It now forms the CPU's rounded sum: on such a frame four more kernels add each
-row exactly while the sum is at or below 2^53, then from integer increments of
+row exactly while the sum is at or below $2^{53}$, then from integer increments
+of
 the sum's last place, composed in pixel order and checked against the exact
 running sum, and term by term where a row crosses into the next binade
-(`core/src/feature/float_moment_sum.h`). Frames that cannot pass 2^53 run no new
+(`core/src/feature/float_moment_sum.h`). Frames that cannot pass $2^{53}$ run no
+new
 work.
 
 ### Measured agreement
@@ -37,10 +39,10 @@ whose four outputs are identical and the largest difference:
 | --- | --- | --- |
 | Full-range 16-bit noise 3840x2160, nine tenths near the peak, 16 frames | 0 of 16, 2.7e-7 | 16 of 16 |
 | The same at 7680x4320, 4 frames | 0 of 4, 5.1e-7 | 4 of 4 |
-| BBB 3840x2160 widened to 16 bits (shifted left by 8, times 257, full range with a dithered low byte), 32 frames each, 17 of them past 2^53 | 32 of 32 | 32 of 32 |
+| BBB 3840x2160 widened to 16 bits (shifted left by 8, times 257, full range with a dithered low byte), 32 frames each, 17 of them past $2^{53}$ | 32 of 32 | 32 of 32 |
 
 BBB was identical before as well: its widened samples have no bits below the
-sum's last place until 2^55, which a 3840x2160 frame cannot reach. The parity
+sum's last place until $2^{55}$, which a 3840x2160 frame cannot reach. The parity
 gate's `float_moment` cell reads 0 at tolerance 0 on the 16-bit 3840x2160
 noise (it failed there before).
 
@@ -51,8 +53,8 @@ of 5 interleaved runs at a load average of 4 to 5, before and after:
 
 | Input | Before | After |
 | --- | --- | --- |
-| Noise, every frame past 2^53 | 31.84 ms | 34.62 ms |
-| BBB full range, 17 of 32 frames past 2^53 | 32.05 ms | 33.02 ms |
+| Noise, every frame past $2^{53}$ | 31.84 ms | 34.62 ms |
+| BBB full range, 17 of 32 frames past $2^{53}$ | 32.05 ms | 33.02 ms |
 
 The four kernels use integers only and no scratch memory
 (`test_sycl_kernel_scratch`), and compile for every ahead-of-time target.
@@ -343,7 +345,7 @@ equal and the host's `log10` is Intel's in one build and glibc's in the
 other.
 
 At 16 bits the CPU's own sum is exact up to a mean squared error of
-2^37 / (width x height) on the 8-bit scale (a PSNR below 6 dB at 3840x2160).
+$2^{37}$ / (width x height) on the 8-bit scale (a PSNR below 6 dB at 3840x2160).
 Beyond it the CPU rounds as it adds the rows and the twin is within 7e-13 dB.
 
 ### Cost
@@ -366,7 +368,7 @@ ADR-1447 for the HIP twin). The CPU forms each sample's square in `float`
 before adding it. Up to 12 bits that is the integer square; at 16 bits it is
 the square rounded to 24 bits. The kernel added exact integer squares, so its
 second moments were the CPU's up to 12 bits and not at 16. It now adds the
-`float` square, an integer below 2^32, into the same `int64` sums.
+`float` square, an integer below $2^{32}$, into the same `int64` sums.
 
 A sweep of every SYCL twin on fixtures the parity gate does not use found it:
 the repository's 16-bit Netflix clip is 8-bit content shifted left, whose
@@ -382,9 +384,10 @@ identical and the largest difference:
 | BBB 3840x2160 widened to 16 bits, 8 frames | 0 of 8, 3.9e-5 | 8 of 8 |
 
 The sums are exact integers, and so is the CPU's running `double` sum while
-it is below 2^53 units of 2^-16. That covers every frame of up to 2 097 152
+it is below $2^{53}$ units of $2^{-16}$. That covers every frame of up to 2 097
+152
 pixels and every 8-, 10- and 12-bit frame. On a larger 16-bit frame whose
-sum of squares passes 2^53 the CPU rounds each further add, and the twin,
+sum of squares passes $2^{53}$ the CPU rounds each further add, and the twin,
 which rounds once, is within a derived bound of it (2.7e-7 measured on a
 2560x1440 frame, bound 6.6e-6). Since 2026-10-03 that range is bit-identical
 too
@@ -411,7 +414,7 @@ the CUDA twin and ADR-1445 for the HIP twin). Its fp32 planes were already
 the CPU's. Two things in the last stage were not:
 
 - `ssimulacra2.c` forms six terms per sample and channel in `double`. The
-  kernel formed each as a pair of `float` values, which is within about 2^-44
+  kernel formed each as a pair of `float` values, which is within about $2^{-44}$
   of the `double` and not equal to it
   ([fp64-less contract](developer-notes.md#fp64-less-device-contract-t7-17)). It
   now runs the
@@ -656,7 +659,7 @@ thirteen):
 | --- | ---: | ---: |
 | the linear Lab branch as `7.787 t + 16 / 116` (the CPU: `(24389 / 27 * t + 16) / 116`) | 1.12e-5 | 1.05e-6 |
 | the CPU's constants as `float` | 5.3e-7 | 6.7e-7 |
-| `x^2.4` from the device's `float` `pow` | 2.3e-7 | 5.9e-7 |
+| $x^{2.4}$ from the device's `float` `pow` | 2.3e-7 | 5.9e-7 |
 | the colour conversion arithmetic in `float` | 2.1e-7 | 2.1e-7 |
 | sums of 256 pixels in `float`, those in `double` | 2.0e-7 | 8.0e-8 |
 | the cube root from the device's `float` `cbrt` | 5.0e-8 | 3.8e-7 |
@@ -1028,7 +1031,8 @@ gate.
 ## float_ssim decimation on the device (2026-09-29)
 
 CPU `float_ssim` shrinks both pictures before it computes SSIM, by a factor
-it picks from the short side: `max(1, round(min(w, h) / 256))`, so 1 below
+it picks from the short side: $\max(1, \operatorname{round}(\min(w, h) / 256))$,
+so 1 below
 384 px, 2 at 853x480, 4 at 1920x1080 and 8 at 3840x2160. `scale=N` (2 to 10)
 forces the factor and `scale=1` turns it off. `float_ssim_sycl` used to
 implement only factor 1, so at 1080p and 4K the CPU extractor ran instead

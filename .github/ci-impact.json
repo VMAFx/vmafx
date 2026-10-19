@@ -9,6 +9,7 @@
     ".claude/",
     ".codex/",
     ".config/",
+    ".continue/",
     ".cursor/",
     ".devcontainer/",
     ".fleet/",
@@ -40,12 +41,14 @@
     "lua/",
     "mcp-server/",
     "model/",
+    "packaging/",
     "pkg/",
     "proto/",
     "python/",
     "requirements/",
     "resource/",
     "scripts/",
+    "security/",
     "test/",
     "testdata/",
     "tools/"
@@ -64,17 +67,22 @@
     ".gitleaks.toml",
     ".gosec.json",
     ".iwyu.imp",
+    ".mailmap",
     ".markdownlint.json",
     ".nvim.lua",
     ".pre-commit-config.yaml",
     ".release-please-manifest.json",
     ".semgrep.yml",
     ".semgrepignore",
+    ".spectral.yaml",
     ".standards-baseline.json",
     ".standards.lock",
     ".standards.yaml",
+    ".trivyignore.yaml",
     ".windsurfrules",
+    "ACCESSIBILITY.md",
     "AGENTS.md",
+    "AGENTS.readonly.md",
     "CHANGELOG.md",
     "CLAUDE.md",
     "CODE_OF_CONDUCT.md",
@@ -94,8 +102,11 @@
     "README.md",
     "REUSE.toml",
     "SECURITY.md",
+    "SPONSORS.md",
     "SUPPORT.md",
     "buf.gen.yaml",
+    "buf.yaml",
+    "clippy.toml",
     "deny.toml",
     "go.mod",
     "go.sum",
@@ -106,14 +117,25 @@
     "pyproject.toml",
     "release-please-config.json",
     "renovate.json",
+    "rust-toolchain.toml",
     "build-config.env",
-    "standards.sublime-project"
+    "standards.sublime-project",
+    ".mcp.json",
+    ".mcp.json.license",
+    "opencode.json",
+    "opencode.json.license"
   ],
   "full_patterns": [
     ".agents/*",
     ".agents/**",
     ".codex/*",
     ".codex/**",
+    ".continue/*",
+    ".continue/**",
+    ".mcp.json",
+    ".mcp.json.license",
+    "opencode.json",
+    "opencode.json.license",
     ".config/*",
     ".config/**",
     ".cursor/*",
@@ -125,7 +147,6 @@
     ".gemini/**",
     ".github/ci-impact.json",
     ".github/workflows/required-aggregator.yml",
-    ".github/workflows/scorecard-policy.yml",
     ".github/workflows/go-ci.yml",
     ".github/workflows/lint-and-format.yml",
     ".github/workflows/security-scans.yml",
@@ -136,7 +157,6 @@
     ".github/workflows/build.yml",
     ".github/workflows/dev-container-build.yml",
     ".github/workflows/docker-image.yml",
-    ".github/workflows/doxygen-public-api.yml",
     ".github/workflows/ffmpeg-integration.yml",
     ".github/workflows/helm-chart.yml",
     ".github/workflows/rust-ci.yml",
@@ -201,8 +221,11 @@
         "tools/**",
         "dev-llm/*",
         "dev-llm/**",
+        "packaging/*",
+        "packaging/**",
         "scripts/*.py",
         "scripts/**/*.py",
+        "security/**",
         "pyproject.toml",
         "noxfile.py",
         "requirements/*",
@@ -220,6 +243,8 @@
     "go": {
       "patterns": [
         "mcp-server/vmaf-mcp/tool-contract.json",
+        "scripts/ci/govulncheck-gate.py",
+        "security/vex/go.openvex.json",
         "cmd/*",
         "cmd/**",
         "pkg/*",
@@ -235,6 +260,7 @@
         "go.mod",
         "go.sum",
         "buf.gen.yaml",
+        "buf.yaml",
         "*.go",
         "**/*.go"
       ]
@@ -249,7 +275,18 @@
         "core/src/feature/rust/**",
         "Cargo.toml",
         "Cargo.lock",
-        "deny.toml"
+        "rust-toolchain.toml",
+        "deny.toml",
+        "core/src/rust/*",
+        "core/src/rust/**",
+        "clippy.toml",
+        "scripts/ci/rust_twin_diff.py",
+        "scripts/dev/rust-abi-header.sh",
+        "core/src/feature/feature_extractor.h",
+        "core/src/feature/feature_extractor.cpp",
+        "core/src/feature/tad_rust.c",
+        "core/src/feature/integer_psnr.c",
+        "core/src/feature/psnr_score.h"
       ]
     },
     "docs": {
@@ -321,6 +358,23 @@
         "scripts/release/build-native-release-artifacts.sh"
       ]
     },
+    "dev_container_inputs": {
+      "own_paths_only": true,
+      "patterns": [
+        ".dockerignore",
+        ".github/workflows/dev-container-build.yml",
+        "build-config.env",
+        "dev/*",
+        "dev/**",
+        "scripts/ci/build-dev-container-stage.sh",
+        "scripts/ci/check-compose-dri-writable.sh",
+        "scripts/ci/check-container-build.sh",
+        "scripts/ci/check-dev-container-build-secret.py",
+        "scripts/ci/docker-hub-mirror.sh",
+        "scripts/ci/free-runner-disk.sh",
+        "scripts/ci/install-cuda-toolkit.sh"
+      ]
+    },
     "doxygen": {
       "patterns": [
         "core/include/libvmaf/*",
@@ -332,9 +386,13 @@
       "patterns": [
         "deploy/helm/*",
         "deploy/helm/**",
+        "config/rbac/*",
         "scripts/ci/tests/test_check_helm_selector_isolation.py",
+        "scripts/ci/tests/test_helm_config_env.py",
         "scripts/ci/tests/test_helm_controller_auth.py",
-        "scripts/ci/tests/test_helm_node_contract.py"
+        "scripts/ci/tests/test_helm_node_contract.py",
+        "scripts/ci/tests/test_helm_operator_rbac.py",
+        "scripts/ci/tests/test_helm_values_schema.py"
       ]
     },
     "tester_image": {
@@ -372,12 +430,63 @@
         "tools/rc1-tester/image/sycl-runtime-windows.json"
       ]
     },
+    "windows_tester_zip_sycl": {
+      "own_paths_only": true,
+      "patterns": [
+        ".github/workflows/windows-tester-bundle.yml",
+        "scripts/ci/build-windows-tester-bundle.py",
+        "requirements/locks/windows-tester-zip.txt",
+        "scripts/ci/check-windows-bundle-imports.py",
+        "tools/rc1-tester/image/windows/*",
+        "tools/rc1-tester/image/windows/**",
+        "tools/rc1-tester/image/unit-tests-windows.txt",
+        "tools/rc1-tester/image/cuda-tests.txt",
+        "tools/rc1-tester/image/sycl-tests.txt",
+        "tools/rc1-tester/image/sycl-runtime-windows.json",
+        "tools/rc1-tester/image/sycl-rows.json",
+        "tools/rc1-tester/image/prepare_build.py",
+        "build-config.env",
+        "core/src/sycl/scratch_ratchet.txt"
+      ]
+    },
+    "windows_msvc_sycl": {
+      "own_paths_only": true,
+      "patterns": [
+        "core/*.c",
+        "core/*.h",
+        "core/*.cpp",
+        "core/*.inc",
+        "core/*.h.in",
+        "core/*meson.build",
+        "core/meson_options.txt",
+        ".github/workflows/libvmaf-build-matrix.yml",
+        "scripts/ci/werror-args.sh",
+        "scripts/ci/check_msvc_library_names.py",
+        "scripts/ci/run_meson_test.py",
+        "requirements/locks/build.txt"
+      ]
+    },
     "golden_harness": {
       "inherits": [
         "c_core",
         "python"
       ],
       "patterns": []
+    },
+    "build_work": {
+      "inherits": [
+        "c_core"
+      ],
+      "patterns": [
+        "python/*",
+        "python/**",
+        "compat/*",
+        "compat/**",
+        "requirements/locks/build.txt",
+        "requirements/locks/pytest-timeout.txt",
+        "requirements/locks/tox.txt",
+        "scripts/ci/prune-corrupt-fixtures.sh"
+      ]
     },
     "tiny_ai": {
       "inherits": [
@@ -387,19 +496,159 @@
       ],
       "patterns": []
     },
-    "python_lint": {
-      "inherits": [
-        "python",
-        "ai"
-      ],
-      "patterns": []
-    },
     "go_checks": {
       "inherits": [
         "go",
         "c_core"
       ],
       "patterns": []
+    },
+    "tidy_cuda": {
+      "own_paths_only": true,
+      "patterns": [
+        "core/src/cuda/*",
+        "core/src/cuda/**",
+        "core/src/dnn/*",
+        "core/src/dnn/**",
+        "core/src/feature/cuda/*",
+        "core/src/feature/cuda/**",
+        "core/src/hip/dispatch_strategy.c",
+        "core/src/log.c",
+        "core/test/*adm*",
+        "core/test/*cuda*",
+        "core/test/*gpu*",
+        "core/test/*vulkan*",
+        "core/test/dnn/*",
+        "core/test/dnn/**",
+        "scripts/ci/tidy-ratchet.py",
+        "scripts/dev/tidy-lane.sh",
+        "scripts/ci/write-compile-commands.py",
+        ".clang-tidy",
+        "Makefile",
+        ".github/workflows/lint-and-format.yml",
+        "scripts/ci/tidy-baseline-cuda.json",
+        "scripts/ci/gen-gpu-compile-commands.py"
+      ]
+    },
+    "tidy_hip": {
+      "own_paths_only": true,
+      "patterns": [
+        ".clang-tidy",
+        ".github/workflows/lint-and-format.yml",
+        "Makefile",
+        "core/src/dnn/*",
+        "core/src/dnn/**",
+        "core/src/feature/hip/*",
+        "core/src/feature/hip/**",
+        "core/src/hip/*",
+        "core/src/hip/**",
+        "core/src/log.c",
+        "core/test/*adm*",
+        "core/test/*gpu*",
+        "core/test/*hip*",
+        "core/test/*sycl*",
+        "core/test/*vulkan*",
+        "core/test/dnn/*",
+        "core/test/dnn/**",
+        "scripts/ci/clang-tidy-hip.sh",
+        "scripts/ci/gen-gpu-compile-commands.py",
+        "scripts/ci/tidy-baseline-hip.json",
+        "scripts/ci/tidy-ratchet.py",
+        "scripts/ci/write-compile-commands.py",
+        "scripts/dev/hip_dispatch_drop_probe.hip",
+        "scripts/dev/tidy-lane.sh"
+      ]
+    },
+    "tidy_sycl": {
+      "own_paths_only": true,
+      "patterns": [
+        "core/src/dnn/*",
+        "core/src/dnn/**",
+        "core/src/feature/sycl/*",
+        "core/src/feature/sycl/**",
+        "core/src/log.c",
+        "core/src/sycl/*",
+        "core/src/sycl/**",
+        "core/test/*adm*",
+        "core/test/*gpu*",
+        "core/test/*sycl*",
+        "core/test/*vulkan*",
+        "core/test/dnn/*",
+        "core/test/dnn/**",
+        "core/tools/vmaf_vpl*",
+        "scripts/ci/tidy-ratchet.py",
+        "scripts/dev/tidy-lane.sh",
+        "scripts/ci/write-compile-commands.py",
+        ".clang-tidy",
+        "Makefile",
+        ".github/workflows/lint-and-format.yml",
+        "scripts/ci/tidy-baseline-sycl.json",
+        "scripts/ci/gen-sycl-compile-commands.py",
+        "scripts/ci/clang-tidy-sycl.sh"
+      ]
+    },
+    "tidy_arm64": {
+      "own_paths_only": true,
+      "patterns": [
+        "build-aux/aarch64-linux-gnu*.ini",
+        "core/src/arm/*",
+        "core/src/arm/**",
+        "core/src/feature/arm64/*",
+        "core/src/feature/arm64/**",
+        "core/test/*arm64*",
+        "core/test/*neon*",
+        "core/test/*sve*",
+        "scripts/ci/tidy-ratchet.py",
+        "scripts/dev/tidy-lane.sh",
+        "scripts/ci/write-compile-commands.py",
+        ".clang-tidy",
+        "Makefile",
+        ".github/workflows/lint-and-format.yml",
+        "scripts/ci/tidy-baseline-arm64.json"
+      ]
+    },
+    "tidy_clang": {
+      "own_paths_only": true,
+      "patterns": [
+        "core/src/read_json_model.c",
+        "core/test/fuzz/*",
+        "core/test/fuzz/**",
+        "scripts/ci/tidy-ratchet.py",
+        "scripts/dev/tidy-lane.sh",
+        "scripts/ci/write-compile-commands.py",
+        ".clang-tidy",
+        "Makefile",
+        ".github/workflows/lint-and-format.yml",
+        "scripts/ci/tidy-baseline-clang.json"
+      ]
+    },
+    "tidy_metal": {
+      "own_paths_only": true,
+      "patterns": [
+        "core/src/feature/metal/*",
+        "core/src/feature/metal/**",
+        "core/src/metal/*",
+        "core/src/metal/**",
+        "core/test/*metal*",
+        "scripts/ci/tidy-ratchet.py",
+        "scripts/dev/tidy-lane.sh",
+        "scripts/ci/write-compile-commands.py",
+        ".clang-tidy",
+        "Makefile",
+        "scripts/ci/tidy-baseline-metal.json",
+        ".github/workflows/tidy-metal.yml"
+      ]
+    },
+    "upstream_consumers": {
+      "own_paths_only": true,
+      "patterns": [
+        "core/*",
+        "core/**",
+        "build-config.env",
+        "scripts/ci/upstream-*.sh",
+        "scripts/ci/upstream_consumer_scores.py",
+        ".github/workflows/ffmpeg-integration.yml"
+      ]
     }
   }
 }

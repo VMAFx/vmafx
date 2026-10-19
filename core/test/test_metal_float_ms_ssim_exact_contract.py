@@ -37,7 +37,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import test_metal_float_ssim_exact_contract as ssim_contract  # noqa: E402
+import test_metal_float_ssim_exact_contract as ssim_contract
 
 ROOT = ssim_contract.ROOT
 FEATURE_ROOT = ssim_contract.FEATURE_ROOT
@@ -154,6 +154,10 @@ LPF_METAL = re.compile(r"vmaf_mtl_msdec_lpf\[VMAF_MTL_MSDEC_TAPS\]\s*=\s*\{([^}]
 WANG = ("alphas", "betas", "gammas")
 
 
+LOW_PASS_TAPS = 9  # taps of the low-pass filter of ms_ssim_decimate.c
+WANG_SCALES = 5  # scales of the Wang weights
+
+
 def _sources() -> dict[str, str]:
     names = (KERNEL, HOST, MATH, TERMS, DECIMATE, REFERENCE, CPU_EXTRACTOR)
     sources = {name: (FEATURE_ROOT / name).read_text(encoding="utf-8") for name in names}
@@ -202,7 +206,7 @@ def _host_failures(host: str, cpu: str) -> list[str]:
 def _math_failures(math: str) -> list[str]:
     failures: list[str] = []
     code = _folded(math)
-    device = _folded(math.split(HOST_ONLY)[0])
+    device = _folded(math.split(HOST_ONLY, maxsplit=1)[0])
     for what, lines in MATH_STEPS.items():
         for line in lines:
             if re.sub(r"\s+", " ", line) not in code:
@@ -226,7 +230,7 @@ def _reference_failures(sources: dict[str, str]) -> list[str]:
         if line not in reference:
             failures.append(f"{REFERENCE}: no longer holds `{line}`; the twin mirrors it")
     taps = _numbers(sources[DECIMATE], LPF)
-    if len(taps) != 9 or taps != _numbers(sources[MATH], LPF_METAL):
+    if len(taps) != LOW_PASS_TAPS or taps != _numbers(sources[MATH], LPF_METAL):
         failures.append(f"{MATH}: the low-pass taps are not ms_ssim_decimate.c's")
     for name in WANG:
         cpu = re.findall(rf"g_{name}\[\]\s*=\s*\{{([^}}]*)\}}", _code(sources[REFERENCE]))
@@ -236,7 +240,7 @@ def _reference_failures(sources: dict[str, str]) -> list[str]:
             _code(sources[MATH]),
         )
         metal_taps = re.findall(r"\d\.\d+f", metal[0]) if metal else []
-        if len(cpu_taps) != 5 or cpu_taps != metal_taps:
+        if len(cpu_taps) != WANG_SCALES or cpu_taps != metal_taps:
             failures.append(f"{MATH}: the Wang {name} are not ms_ssim.c's")
     return failures
 
@@ -282,7 +286,9 @@ class FloatMsSsimMetalExactContract(unittest.TestCase):
         self._assert_detected(failures, "decimation tap is one fused multiply-add")
 
     def test_unfused_kernel_sum_is_detected(self) -> None:
-        failures = _appended(KERNEL, "\ninline float t(float acc, float x) { acc += x; return acc; }\n")
+        failures = _appended(
+            KERNEL, "\ninline float t(float acc, float x) { acc += x; return acc; }\n"
+        )
         self._assert_detected(failures, "unfused decimation sum")
 
     def test_one_pass_decimation_is_detected(self) -> None:
@@ -324,7 +330,9 @@ class FloatMsSsimMetalExactContract(unittest.TestCase):
         self._assert_detected(failures, "raster position of the region")
 
     def test_float_partials_on_the_host_are_detected(self) -> None:
-        failures = _appended(HOST, "\nstatic float p(const float *l_partials) { return l_partials[0]; }\n")
+        failures = _appended(
+            HOST, "\nstatic float p(const float *l_partials) { return l_partials[0]; }\n"
+        )
         self._assert_detected(failures, "float partials")
 
     def test_host_sum_of_a_part_is_detected(self) -> None:
@@ -336,9 +344,7 @@ class FloatMsSsimMetalExactContract(unittest.TestCase):
         self._assert_detected(failures, "raster order")
 
     def test_unrounded_mean_is_detected(self) -> None:
-        failures = _replaced(
-            MATH, "return (double)(float)(sum / pixels);", "return sum / pixels;"
-        )
+        failures = _replaced(MATH, "return (double)(float)(sum / pixels);", "return sum / pixels;")
         self._assert_detected(failures, "rounded to fp32")
 
     def test_plain_combine_is_detected(self) -> None:

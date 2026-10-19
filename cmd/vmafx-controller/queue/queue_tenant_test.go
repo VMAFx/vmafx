@@ -105,7 +105,7 @@ func TestReportResultOnlyByTheAssignedNode(t *testing.T) {
 		"never pulled":      report("node-1", pending, "node-1"),
 		"unknown job":       report("node-1", "nope"),
 	} {
-		if err := q.ReportResult(ctx, r); !errors.Is(err, queue.ErrNotAssigned) {
+		if _, err := q.ReportResult(ctx, r); !errors.Is(err, queue.ErrNotAssigned) {
 			t.Errorf("%s: err = %v, want ErrNotAssigned", name, err)
 		}
 		if q.MayReport(ctx, r) {
@@ -121,8 +121,13 @@ func TestReportResultOnlyByTheAssignedNode(t *testing.T) {
 		}
 	}
 	for attempt := range 2 {
-		if err := q.ReportResult(ctx, report("node-1", running)); err != nil {
+		finished, err := q.ReportResult(ctx, report("node-1", running))
+		if err != nil {
 			t.Fatalf("report %d by the assigned node: %v", attempt, err)
+		}
+		// Only the first report moves the job; the retry is idempotent.
+		if finished != (attempt == 0) {
+			t.Errorf("report %d finished the job = %v", attempt, finished)
 		}
 	}
 	if j, _ := q.Get(ctx, running); j.Status != queue.StatusCompleted || j.Score != 42 {
@@ -138,25 +143,25 @@ func TestOrphanedJobReportedByItsTenantOnly(t *testing.T) {
 
 	rival := report("b-node", orphan, "old-node")
 	rival.TenantID = "b"
-	if err := q.ReportResult(ctx, rival); !errors.Is(err, queue.ErrNotAssigned) {
+	if _, err := q.ReportResult(ctx, rival); !errors.Is(err, queue.ErrNotAssigned) {
 		t.Errorf("tenant b reporting tenant a's orphaned job: %v, want ErrNotAssigned", err)
 	}
 	foreign := report("new-node", other, "b-node")
-	if err := q.ReportResult(ctx, foreign); !errors.Is(err, queue.ErrNotAssigned) {
+	if _, err := q.ReportResult(ctx, foreign); !errors.Is(err, queue.ErrNotAssigned) {
 		t.Errorf("tenant a reporting tenant b's orphaned job: %v, want ErrNotAssigned", err)
 	}
 	if !q.MayReport(ctx, report("new-node", orphan, "old-node")) {
 		t.Error("MayReport refused a partial report of the tenant's orphaned job")
 	}
-	if err := q.ReportResult(ctx, report("new-node", orphan, "old-node")); err != nil {
-		t.Fatalf("the tenant's new session reporting the orphaned job: %v", err)
+	if finished, err := q.ReportResult(ctx, report("new-node", orphan, "old-node")); err != nil || !finished {
+		t.Fatalf("the tenant's new session reporting the orphaned job: %v, %v", finished, err)
 	}
 	j, _ := q.Get(ctx, orphan)
 	if j.Status != queue.StatusCompleted || j.Score != 42 || j.AssignedNode != "new-node" {
 		t.Errorf("adopted job: %s %v on %q, want completed 42 on new-node", j.Status, j.Score, j.AssignedNode)
 	}
-	if err := q.ReportResult(ctx, report("newer-node", orphan, "old-node", "new-node")); err != nil {
-		t.Errorf("a retry after the adoption by a later session: %v, want idempotent success", err)
+	if finished, err := q.ReportResult(ctx, report("newer-node", orphan, "old-node", "new-node")); err != nil || finished {
+		t.Errorf("a retry after the adoption by a later session: %v, %v; want idempotent success", finished, err)
 	}
 	if j, _ := q.Get(ctx, other); j.Status != queue.StatusRunning {
 		t.Errorf("tenant b's job after the refused reports: %s, want running", j.Status)

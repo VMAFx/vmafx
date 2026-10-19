@@ -3,10 +3,10 @@
 
 [project]
 name = "vmaf-train"
-version = "1.0.0-rc.2" # x-release-please-version
+version = "1.0.0-rc.3" # x-release-please-version
 description = "Train, export and register tiny perceptual-quality models for libvmaf."
 readme = "README.md"
-requires-python = ">=3.11,<3.15"
+requires-python = ">=3.12,<3.15"
 license = "EUPL-1.2 AND BSD-2-Clause-Patent"
 license-files = ["LICENSES/*"]
 authors = [
@@ -40,7 +40,7 @@ dependencies = [
   # together with an onnxruntime that reads the newer IR.
   "onnx>=1.22.0,<1.23",
   # Python runtime floor; the native libvmaf ORT library is installed separately.
-  "onnxruntime>=1.30.0,<2.0",
+  "onnxruntime>=1.31.0,<2.0",
   "onnxscript>=0.7.2",
   "numpy>=2.5.3,<3.0",
   "pandas>=3.0.6,<3.1",
@@ -48,9 +48,9 @@ dependencies = [
   "Pillow>=12.3.0,<14.0",
   "scipy>=1.18.1",
   "scikit-learn>=1.9.1",
-  "pydantic>=2.13.5",
+  "pydantic>=2.14.1",
   "pyyaml>=6.0.3",
-  "typer>=0.27.2",
+  "typer>=0.27.3",
   "rich>=15.0.0",
   "tqdm>=4.70.1",
   # PyTorch deprecated `torch.ao.quantization` wholesale in 2.14 and removes it
@@ -67,7 +67,7 @@ viz  = ["matplotlib>=3.11.2", "seaborn>=0.13.2"]
 dev  = [
   "pytest>=9.1.1",
   "pytest-timeout>=2.4.0",
-  "ruff>=0.16.10",
+  "ruff>=0.17.0",
   "mypy>=2.4.0",
   "types-PyYAML>=6.0.12.20260906",
   "pandas-stubs>=3.0.5.260914",
@@ -81,7 +81,7 @@ vmafx-train = "vmaf_train.cli:app"
 [project.urls]
 Homepage = "https://github.com/VMAFx/vmafx"
 Repository = "https://github.com/VMAFx/vmafx"
-Documentation = "https://vmafx.github.io/vmafx/ai/"
+Documentation = "https://vmafx.dev/ai/"
 Issues = "https://github.com/VMAFx/vmafx/issues"
 Changelog = "https://github.com/VMAFx/vmafx/blob/master/CHANGELOG.md"
 
@@ -113,7 +113,7 @@ markers = [
 
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "SIM", "RUF"]

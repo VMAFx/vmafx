@@ -83,3 +83,13 @@ continue to work.
 - Reported as part of the r5-python-async + r5-integration-boundaries
   review round.
 - Related: ADR-0608 (MCP tool surface), ADR-0988 (JSON serialisation).
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 85: `- Related: ADR-0608 (MCP tool surface), ADR-0988 (JSON
+  serialisation).`: ADR-0608 points to an unrelated topic
+  (0608-zed-editor-config.md: "Commit .zed/ project configuration for Zed
+  editor parity with .vscode/").

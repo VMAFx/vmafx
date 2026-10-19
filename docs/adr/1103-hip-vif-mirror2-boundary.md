@@ -1,13 +1,11 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-1103 — Fix integer_vif_hip boundary condition: clamp_i → mirror2_i
 
-| Field | Value |
-|---|---|
-| **Status** | Accepted |
-| **Date** | 2026-06-13 |
-| **Deciders** | lusoris |
-| **Tags** | hip, vif, parity, boundary, correctness, fork-local |
-| **Supersedes** | ADR-0566 §"clamp matches CPU within places=4" claim (now incorrect) |
+- **Status**: Accepted
+- **Date**: 2026-06-13
+- **Deciders**: lusoris
+- **Tags**: hip, vif, parity, boundary, correctness, fork-local
+- **Supersedes**: ADR-0566 §"clamp matches CPU within places=4" claim (now incorrect)
 
 ## Context
 

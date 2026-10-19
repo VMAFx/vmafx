@@ -1,16 +1,16 @@
 // Copyright 2026 Lusoris
 // SPDX-License-Identifier: EUPL-1.2
 
-// Package scorebackend is the Go port of the backend-selection half of
+// Package scorebackend picks the libvmaf scoring backend for a run; it is the
+// Go twin of the backend-selection half of
 // tools/vmaf-tune/src/vmaftune/score_backend.py.
 //
 // It answers one question: which libvmaf scoring backend (cpu / cuda / sycl /
-// hip) should this run use? "Usable" means both
-//
-//  1. the local vmaf binary advertises --backend NAME support in its --help
-//     output, and
-//  2. the corresponding hardware/runtime probe succeeds
-//     (nvidia-smi / sycl-ls / rocminfo|rocm-smi).
+// hip / metal) should this run use? Which backends are usable is not decided
+// here: `vmaf --list-backends` (ADR-1874) reports, per backend, whether it was
+// compiled into the binary and whether its state initialises on this host, and
+// Detect reads that report. Both selectors replay the shared cases in
+// testdata/score_backend_selection.json.
 //
 // prefer="auto" walks the fallback chain and returns the first usable entry;
 // any explicit preference is honoured strictly and fails with an
@@ -26,26 +26,29 @@ package scorebackend
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"log"
+	"os"
 	"os/exec"
 	"slices"
 	"strings"
 	"time"
 )
 
-// AllBackends lists the backends the vmaf CLI accepts via --backend NAME,
-// in the canonical order used for reporting.
-func AllBackends() []string { return []string{"cpu", "cuda", "sycl", "hip"} }
+// AllBackends lists the backends `vmaf --list-backends` reports and the vmaf
+// CLI accepts via --backend NAME, in the report's order.
+func AllBackends() []string { return []string{"cpu", "cuda", "sycl", "hip", "metal"} }
 
-// DefaultFallbacks is the fallback chain for prefer="auto". Native vendor
-// backends are preferred in vendor-priority order on their respective
-// silicon; cpu is the always-available floor.
-func DefaultFallbacks() []string { return []string{"cuda", "sycl", "hip", "cpu"} }
+// DefaultFallbacks is the fallback chain for prefer="auto": native GPU
+// backends in the order the CLI lists them, cpu as the always-available floor.
+func DefaultFallbacks() []string { return []string{"cuda", "sycl", "hip", "metal", "cpu"} }
 
-// probeTimeout bounds each hardware-probe subprocess. Mirrors the Python
-// `timeout=5` on every subprocess.run probe call.
-const probeTimeout = 5 * time.Second
+// probeTimeout bounds one `vmaf --list-backends` run, which initialises every
+// compiled GPU backend once. Mirrors LIST_BACKENDS_TIMEOUT_S in Python.
+const probeTimeout = 60 * time.Second
 
 // UnavailableError reports that the operator explicitly requested a backend
 // this host cannot provide. Selection never silently downgrades.
@@ -63,8 +66,8 @@ func (e *UnavailableError) Error() string {
 	}
 	return fmt.Sprintf(
 		"backend %q requested but not available on this host (available: %s). "+
-			"Check that the local vmaf binary was built with the matching backend "+
-			"support and the corresponding runtime/driver is installed.",
+			"Run `vmaf --list-backends`: the backend must be compiled into the vmaf "+
+			"binary and initialise on this host (runtime/driver installed).",
 		e.Requested, avail)
 }
 
@@ -89,6 +92,9 @@ type Options struct {
 	Run Runner
 	// LookPath overrides binary discovery. nil selects exec.LookPath.
 	LookPath func(string) (string, error)
+	// Warnings receives the warning Detect writes when the backend report
+	// is unavailable and only cpu is usable. nil selects os.Stderr.
+	Warnings io.Writer
 }
 
 func (o Options) vmafBin() string {
@@ -119,14 +125,20 @@ func (o Options) lookPath() func(string) (string, error) {
 	return o.LookPath
 }
 
+func (o Options) warnings() io.Writer {
+	if o.Warnings == nil {
+		return os.Stderr
+	}
+	return o.Warnings
+}
+
 // execRunner is the production Runner: it executes name with args under a
 // probeTimeout deadline and reports (stdout, stderr, exit==0).
 func execRunner(ctx context.Context, name string, args ...string) (string, string, bool) {
 	ctx, cancel := context.WithTimeout(ctx, probeTimeout)
 	defer cancel()
-	// #nosec G204 -- name/args are fixed probe literals chosen by this
-	// package (nvidia-smi, sycl-ls, rocminfo, rocm-smi) or the
-	// operator-configured vmaf binary. ctx enforces probeTimeout.
+	// #nosec G204 -- name is the operator-configured vmaf binary and args
+	// the fixed --list-backends literal. ctx enforces probeTimeout.
 	cmd := exec.CommandContext(ctx, name, args...)
 	var outBuf, errBuf strings.Builder
 	cmd.Stdout = &outBuf
@@ -138,40 +150,82 @@ func execRunner(ctx context.Context, name string, args ...string) (string, strin
 	return outBuf.String(), errBuf.String(), err == nil
 }
 
-// vmafHelp returns the vmaf --help output (stdout and stderr joined). Any
-// error degrades to an empty string so probe logic reads "binary doesn't
-// support GPU backends" instead of failing the run.
-func vmafHelp(ctx context.Context, opts Options) string {
+// BackendStatus is one row of the `vmaf --list-backends` report.
+type BackendStatus struct {
+	// Name is the --backend value.
+	Name string `json:"name"`
+	// Compiled is true when the backend is built into the binary.
+	Compiled bool `json:"compiled"`
+	// Usable is true when the backend's state initialised on this host.
+	Usable *bool `json:"usable"`
+	// InitStatus is the negative errno of a compiled backend that did not
+	// initialise; zero otherwise.
+	InitStatus int `json:"init_status,omitempty"`
+}
+
+// ParseReport reads a `vmaf --list-backends` document into its rows, keyed by
+// backend name. Names this package does not know are kept; selection ignores
+// them.
+func ParseReport(text string) (map[string]BackendStatus, error) {
+	var doc struct {
+		Backends []BackendStatus `json:"backends"`
+	}
+	if err := json.Unmarshal([]byte(text), &doc); err != nil {
+		return nil, fmt.Errorf("not a backend report: %w", err)
+	}
+	report := make(map[string]BackendStatus, len(doc.Backends))
+	for _, row := range doc.Backends {
+		if row.Name == "" || row.Usable == nil {
+			return nil, fmt.Errorf("malformed backend row %+v", row)
+		}
+		report[row.Name] = row
+	}
+	if len(report) == 0 {
+		return nil, errors.New("the backend report lists no backends")
+	}
+	return report, nil
+}
+
+// UsableBackends returns the usable backends of a report in AllBackends
+// order; cpu is always included.
+func UsableBackends(report map[string]BackendStatus) []string {
+	out := []string{"cpu"}
+	for _, name := range AllBackends()[1:] {
+		if row, ok := report[name]; ok && row.Usable != nil && *row.Usable {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
+// Report runs `vmaf --list-backends` and returns its rows by backend name.
+// The error names the binary and the reason when it is missing, fails (a
+// vmaf older than ADR-1874 rejects the option) or prints no report.
+func Report(ctx context.Context, opts Options) (map[string]BackendStatus, error) {
 	bin := opts.vmafBin()
 	if !strings.Contains(bin, "/") {
 		if _, err := opts.lookPath()(bin); err != nil {
-			return ""
+			return nil, fmt.Errorf("%q is not on PATH: %w", bin, err)
 		}
 	}
-	out, errOut, _ := opts.runner()(ctx, bin, "--help")
-	return out + "\n" + errOut
+	out, errOut, ok := opts.runner()(ctx, bin, "--list-backends")
+	if !ok {
+		return nil, fmt.Errorf("%s --list-backends failed (a vmaf older than ADR-1874 "+
+			"does not have the option): %s", bin, strings.TrimSpace(errOut))
+	}
+	return ParseReport(out)
 }
 
-// ParseSupportedBackends extracts the backends the vmaf binary advertises in
-// its --help text. The fork's CLI prints a line like
+// ParseSupportedBackends extracts the backends named in `vmaf --help`.
 //
-//	--backend $name:   exclusive backend selector — auto|cpu|cuda|sycl|hip.
-//
-// so each backend token is matched only when it is delimited by a leading '|'
-// and a trailing '|', '.', newline or space. That avoids false positives on
-// substrings (e.g. the word "cuda" inside a prose comment). "cpu" is always
-// present — every libvmaf build has a CPU path, even if the help line is
-// missing entirely.
+// Deprecated: the help text names every backend whatever the build, so the
+// result says nothing about the binary. Detect reads `vmaf --list-backends`
+// instead; use Report and UsableBackends.
 func ParseSupportedBackends(helpText string) map[string]bool {
 	found := map[string]bool{"cpu": true}
 	for _, backend := range AllBackends() {
-		for _, needle := range []string{
-			"|" + backend + "|",
-			"|" + backend + ".",
-			"|" + backend + "\n",
-			"|" + backend + " ",
-		} {
-			if strings.Contains(helpText, needle) {
+		for _, sep := range []string{"|", ".", "\n", " "} {
+			if strings.Contains(helpText, "|"+backend+sep) {
 				found[backend] = true
 				break
 			}
@@ -180,72 +234,17 @@ func ParseSupportedBackends(helpText string) map[string]bool {
 	return found
 }
 
-// probeCUDA reports whether a CUDA device is reachable, via `nvidia-smi -L`.
-func probeCUDA(ctx context.Context, opts Options) bool {
-	if _, err := opts.lookPath()("nvidia-smi"); err != nil {
-		return false
-	}
-	out, _, ok := opts.runner()(ctx, "nvidia-smi", "-L")
-	return ok && strings.Contains(out, "GPU")
-}
-
-// probeSYCL reports whether a SYCL GPU device is reachable, via `sycl-ls`.
-// sycl-ls prints one line per device prefixed with bracketed backend tokens:
-// "[opencl:gpu]", "[ext_oneapi_level_zero:gpu]", ...
-func probeSYCL(ctx context.Context, opts Options) bool {
-	if _, err := opts.lookPath()("sycl-ls"); err != nil {
-		return false
-	}
-	out, _, ok := opts.runner()(ctx, "sycl-ls")
-	return ok && strings.Contains(out, "[") && strings.Contains(strings.ToLower(out), ":gpu")
-}
-
-// probeHIP reports whether an AMD ROCm/HIP GPU is reachable. rocminfo is
-// tried first (it names the gfx target); rocm-smi is the fallback.
-func probeHIP(ctx context.Context, opts Options) bool {
-	look := opts.lookPath()
-	run := opts.runner()
-
-	if _, err := look("rocminfo"); err == nil {
-		out, errOut, ok := run(ctx, "rocminfo")
-		if ok && strings.Contains(strings.ToLower(out+"\n"+errOut), "gfx") {
-			return true
-		}
-	}
-
-	if _, err := look("rocm-smi"); err != nil {
-		return false
-	}
-	out, errOut, ok := run(ctx, "rocm-smi", "--showproductname")
-	if !ok {
-		return false
-	}
-	lower := strings.ToLower(out + "\n" + errOut)
-	return strings.Contains(lower, "gpu") || strings.Contains(lower, "card series")
-}
-
-// Detect returns the backends usable on this host, in AllBackends order.
+// Detect returns the backends usable on this host, in AllBackends order, as
+// `vmaf --list-backends` reports them. When the report is unavailable the
+// result is cpu alone and a warning naming the reason goes to opts.Warnings.
 func Detect(ctx context.Context, opts Options) []string {
-	supported := ParseSupportedBackends(vmafHelp(ctx, opts))
-
-	probes := map[string]bool{"cpu": true}
-	if supported["cuda"] {
-		probes["cuda"] = probeCUDA(ctx, opts)
+	report, err := Report(ctx, opts)
+	if err != nil {
+		log.New(opts.warnings(), "scorebackend: ", 0).Printf(
+			"cannot read the vmaf backend report (%v); only cpu is usable", err)
+		return []string{"cpu"}
 	}
-	if supported["sycl"] {
-		probes["sycl"] = probeSYCL(ctx, opts)
-	}
-	if supported["hip"] {
-		probes["hip"] = probeHIP(ctx, opts)
-	}
-
-	out := make([]string, 0, len(probes))
-	for _, b := range AllBackends() {
-		if supported[b] && probes[b] {
-			out = append(out, b)
-		}
-	}
-	return out
+	return UsableBackends(report)
 }
 
 // Select picks a backend honouring the operator preference and the host
@@ -254,9 +253,9 @@ func Detect(ctx context.Context, opts Options) []string {
 //   - prefer "auto" walks opts.Fallbacks and returns the first entry present
 //     in the available set. When nothing matches it returns "cpu", which is
 //     universally available even if every probe failed.
-//   - Any other prefer value (cpu / cuda / sycl / hip) is honoured strictly:
-//     if it is not available, an *UnavailableError is returned. Select never
-//     silently downgrades.
+//   - Any other prefer value (cpu / cuda / sycl / hip / metal) is honoured
+//     strictly: if it is not available, an *UnavailableError is returned.
+//     Select never silently downgrades. cpu needs no report.
 func Select(ctx context.Context, prefer string, opts Options) (string, error) {
 	if prefer != "auto" {
 		known := slices.Contains(AllBackends(), prefer)
@@ -264,6 +263,9 @@ func Select(ctx context.Context, prefer string, opts Options) (string, error) {
 			return "", fmt.Errorf("unknown backend %q; expected one of: auto, %s",
 				prefer, strings.Join(AllBackends(), ", "))
 		}
+	}
+	if prefer == "cpu" {
+		return "cpu", nil
 	}
 
 	available := opts.Available

@@ -56,13 +56,18 @@ means re-pointing every badge.
 
 Branch protection targets a single context: `Required Checks Aggregator` in
 [`.github/workflows/required-aggregator.yml`](../../.github/workflows/required-aggregator.yml).
-The aggregator's `required` array holds 89 check names. It declares both
-Scorecard event gates, then removes the non-applicable one, so a pull-request
-run evaluates 88 names, with only `Scorecard PR Gate` among the two. A run on a
-push also removes `Release Dry Run` (list `pullRequestOnly`, ADR-1687: its
-workflow has no push trigger) and evaluates 87. A name that no run reported is
-accepted unless it is in a must-report list of the aggregator (ADR-0313,
-ADR-1297).
+The aggregator's `required` array holds 98 check names. It declares both
+Scorecard event gates, then removes the non-applicable one, so every run
+evaluates 97 names. Every evaluated name must report success
+([ADR-3293](../adr/3293-aggregator-owed-contexts-must-succeed.md)): a name that
+no run reported, or that was skipped or neutral, fails the aggregator. Three
+exemptions are named in the script. Each lets a name stay absent or skipped,
+and none of them accepts a failure:
+
+- the names the run's CI tier does not owe (ADR-2169);
+- the 13 names of `pullRequestOnly` on a push or dispatch event, whose
+  workflows report only on a pull request (ADR-1687);
+- a hardware lane whose operator switch is off (ADR-1177, ADR-1319).
 
 A required name must be reported by exactly one job, because the aggregator
 keeps one check run per name, so two jobs sharing a name can mask each other's
@@ -112,6 +117,12 @@ column mirrors that array.
 | `libvmaf-build-matrix.yml` | new in ADR-1260 | `Windows ARM64 MSVC` | 18 | Yes |
 | `lint-and-format.yml` | `Clang-Tidy (Changed C/C++ Files)` | `Tidy Changed` | 12 | Yes |
 | `lint-and-format.yml` | `Clang-Tidy Ratchet (Whole Tree)` | `Tidy Ratchet` | 12 | Yes |
+| `lint-and-format.yml` | new in ADR-2796 | `Tidy Lane (cuda)` | 16 | Yes |
+| `lint-and-format.yml` | new in ADR-2796 | `Tidy Lane (hip)` | 15 | Yes |
+| `lint-and-format.yml` | new in ADR-2796 | `Tidy Lane (sycl)` | 16 | Yes |
+| `lint-and-format.yml` | new in ADR-2796 | `Tidy Lane (arm64)` | 17 | Yes |
+| `lint-and-format.yml` | new in ADR-2796 | `Tidy Lane (clang)` | 17 | Yes |
+| `tidy-metal.yml` | `Tidy Metal` made a required gate in ADR-2796 | `Tidy Metal` | 10 | Yes |
 | `lint-and-format.yml` | `Cppcheck (Whole Project)` | `Cppcheck` | 8 | Yes |
 | `lint-and-format.yml` | `Python Lint (Ruff + Black + mypy)` | `Python Lint` | 11 | Yes |
 | `lint-and-format.yml` | unchanged | `Docs` | 4 | Yes |
@@ -146,7 +157,7 @@ column mirrors that array.
 | `tests-and-quality-gates.yml` | `Coverage Gate — GPU Backends (Advisory)` | `Coverage GPU` | 12 | Yes |
 | `tests-and-quality-gates.yml` | `MCP Smoke (Embedded C + Python Server)` | `MCP Smoke` | 9 | Yes |
 | `go-ci.yml` | unchanged | `go vet + go test` | 16 | Yes |
-| `scorecard-policy.yml` | added after #1286 | `Scorecard PR Gate` | 17 | Yes |
+| `security-scans.yml` | added after #1286 (was `scorecard-policy.yml`) | `Scorecard PR Gate` | 17 | Yes |
 | `scorecard.yml` | added after #1286 | `Scorecard Master Gate` | 21 | Yes |
 | `sycl-parity.yml` | added after #1286 | `SYCL Parity (Arc A380)` | 22 | Yes |
 | `ffmpeg-patch-stack.yml` | added after #1286 | `FFmpeg Patch Stack` | 18 | Yes |
@@ -190,6 +201,7 @@ column mirrors that array.
 | `docker-publish-production.yml` | `Build + push MCP server image (amd64 + arm64)` | `Publish MCP server image` | 24 | No |
 | `docker-publish-production.yml` | `All production images published` | `Images published` | 16 | No |
 | `upstream-watcher.yml` | `FFmpeg av1_videotoolbox encoder` | `FFmpeg av1_videotoolbox` | 23 | No |
+| `research-radar.yml` | new in ADR-2171 | `Weekly digest` | 13 | No |
 | `dev-container-build.yml` | `Dev Container Build + Smoke Test` | `Dev Container Build` | 19 | Yes |
 | `docker-publish-tester.yml` | new in ADR-1687 | `Tester Image` | 12 | Yes |
 | `docker-publish-tester.yml` | `Validate source` (renamed in ADR-1687) | `Validate tester image source` | 28 | No |

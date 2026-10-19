@@ -46,6 +46,20 @@ int vmaf_sycl_dmabuf_import(VmafSyclState *state, int fd, size_t size, void **pt
 void vmaf_sycl_dmabuf_free(VmafSyclState *state, void *ptr);
 
 /**
+ * vmaf_sycl_dmabuf_import() on the context and device of a SYCL queue
+ * (`queue_ptr`, a sycl::queue *) instead of a state's primary queue: the
+ * VMAFx dma-buf import (ADR-2091) imports on its device's library queue.
+ * @return 0 on success, -EINVAL, -EIO, or -ENOSYS on Windows.
+ */
+int vmaf_sycl_dmabuf_import_queue(void *queue_ptr, int fd, size_t size, void **ptr);
+
+/**
+ * Free a pointer returned by vmaf_sycl_dmabuf_import_queue() on the same
+ * queue's context.
+ */
+void vmaf_sycl_dmabuf_free_queue(void *queue_ptr, void *ptr);
+
+/**
  * Import a VA surface Y-plane into the SYCL shared frame buffers.
  *
  * Primary path (zero-copy): exports the VA surface as a DRM PRIME2

@@ -114,8 +114,15 @@ ffmpeg -f rawvideo -s 1920x1080 -pix_fmt yuv420p -i clip.yuv \
     -c:v libx264 -crf 23 -qpfile clip.qpfile.txt clip.mp4
 ```
 
-x264 has honoured per-macroblock QP deltas since r2390. The patch passes
-`-qpfile <path>` to `x264_param_parse(... "qpfile", path)`.
+libx264 has no `qpfile` parameter (the x264 command line reads the file
+itself), so `-x264-params qpfile=...` is refused by libx264 and FFmpeg only
+warns `Error parsing option`. The patch reads the file in the encoder wrapper
+and gives each input frame's per-macroblock deltas to x264 as `quant_offsets`,
+the channel FFmpeg's region-of-interest side data uses. x264 adds them to
+its adaptive quantization, so `aq-mode` must not be 0 (the `ultrafast`
+preset sets it to 0; the encoder then fails to open and says so), and the file's
+block grid must be the video's macroblock grid. The per-frame type and
+baseline QP of a record are not used: only the deltas.
 
 ### libsvtav1: full ROI bridge (SVT-AV1 1.6.0 or newer)
 
@@ -345,12 +352,14 @@ the suggested value.
 You are running unpatched FFmpeg. Re-apply the patch series and rebuild;
 see [Prerequisites](#prerequisites).
 
-### `libx264: failed to load qpfile=... (x264 ret=-1)`
+### `libx264: cannot read qpfile ...`, `... needs adaptive quantization`, `... macroblocks`
 
-Either the file does not exist or its format does not match x264's
-qpfile reader. Compare it against the format shown at the start of Hook
-1: a header line per frame, then one row of block deltas per block row.
-There is no validator command.
+The file does not exist or is not in the format shown at the start of Hook
+1 (a header line per frame, then one row of block deltas per block row);
+the preset or `-x264-params` sets `aq-mode=0` (`ultrafast` does); or the
+file's block grid is not the video's macroblock grid (width and height
+divided by 16, rounded up). The message names which. There is no validator
+command.
 
 ### `libsvtav1: qpfile=... parsed but SVT-AV1 < 1.6.0 lacks the ROI ABI`
 
@@ -360,11 +369,29 @@ the meantime `vmaf-tune recommend-saliency --encoder libsvtav1
 --saliency-aware` drives SVT-AV1 through its own
 `-svtav1-params qp-file=...` option instead.
 
-## Other changes in the series: strict failure behaviour (patch 0019)
+## Other changes in the build: the shared FFmpeg fix series
 
-Patch 0019 is unrelated to vmaf-tune. It makes failures exposed by the
-warning-clean `n9.0.2` build observable instead of truncating data or
-continuing after an error:
+Every VMAFx FFmpeg build applies the shared FFmpeg fix series before the
+patches of this repository
+([FFmpeg patch automation](../development/ffmpeg-patch-automation.md#shared-ffmpeg-fix-series)).
+It is unrelated to vmaf-tune, and three of its patches change how FFmpeg
+behaves:
+
+- On a Vulkan device with a single queue family, a hardware frame is no longer
+  released to `VK_QUEUE_FAMILY_IGNORED` by a filter or codec barrier
+  (`libavutil/vulkan.c`); the frame stays owned by its queue family.
+- `hevc_nvenc` with `udu_sei=1` no longer stops the encode with "Failed locking
+  bitstream buffer: out of memory" when a picture's user data unregistered SEI
+  is large: a payload that does not fit NVENC's 1024-byte limit for non-VCL
+  NAL units is not written, with a warning.
+- `h264_nvenc` and `hevc_nvenc` do not write a user data unregistered SEI that
+  NVENC would write truncated and undecodable (payloads dominated by zero
+  bytes); the first one is a warning.
+
+Its diagnostics patch (patch 0019 of this repository's series before the
+switch to the shared series) makes failures exposed by the warning-clean
+`n9.0.2` build observable instead of truncating data or continuing after an
+error:
 
 - Malformed AAC SBR, RV60 block geometry, and WMA channel metadata return
   an invalid-data error. A file that previously reached undefined or

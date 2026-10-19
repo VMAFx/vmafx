@@ -55,6 +55,7 @@ BUG_098_STRICT_CONTEXTS = {
     "FFmpeg Ubuntu gcc",
     "FFmpeg macOS clang",
     "FFmpeg SYCL",
+    "FFmpeg Windows MSVC",
     "Docker Image Build",
     "Dev Container Build",
     "vmafx-sys CI",
@@ -98,6 +99,7 @@ BUG_098_GATE_DEPENDENCIES = {
         "FFmpeg macOS clang work",
     ],
     "FFmpeg SYCL": ["Plan FFmpeg impact", "FFmpeg SYCL work"],
+    "FFmpeg Windows MSVC": ["Plan FFmpeg impact", "FFmpeg Windows MSVC work"],
     "Docker Image Build": ["Plan Docker image impact", "Docker Image Build work"],
     "Dev Container Build": ["Plan dev-container impact", "Dev Container Build work"],
     "vmafx-sys CI": ["Plan Rust impact", "vmafx-sys CI work"],
@@ -158,6 +160,19 @@ ADR_1528_STRICT_CONTEXTS = {
 # workflows. `Release Dry Run` has no push trigger; the aggregator drops it from a
 # run that is not a pull request (scripts/ci/tests/test_required_release_legs.py).
 ADR_1687_STRICT_CONTEXTS = {"Tester Image", "Windows Tester Zip", "Release Dry Run"}
+# ADR-2440: praetor's locked workflow listens for ready_for_review since the pin 7458a220e1c9.
+ADR_2440_STRICT_CONTEXTS = {"Go API Compatibility"}
+# ADR-2784: praetor's REUSE workflow (reuse.yml) has the same shape since the pin 3a766f2d56ad.
+ADR_2784_STRICT_CONTEXTS = {"REUSE lint"}
+# ADR-2796: the clang-tidy lanes; every leg always starts and the planner skips only its work.
+ADR_2796_STRICT_CONTEXTS = {
+    "Tidy Lane (cuda)",
+    "Tidy Lane (hip)",
+    "Tidy Lane (sycl)",
+    "Tidy Lane (arm64)",
+    "Tidy Lane (clang)",
+    "Tidy Metal",
+}
 
 # GitHub's activity types for a bare `pull_request:` trigger.
 PULL_REQUEST_DEFAULT_TYPES = frozenset({"opened", "synchronize", "reopened"})
@@ -189,8 +204,12 @@ def strict_context_producers(strict: set[str]) -> dict[str, list[str]]:
     for path in sorted((ROOT / ".github" / "workflows").glob("*.yml")):
         text = path.read_text(encoding="utf-8")
         for name in strict:
-            # Matrix legs spell `Name (Leg)` as `Name (${{ matrix.name }})`.
-            spellings = {name, re.sub(r"\([^()]*\)$", "(${{ matrix.name }})", name)}
+            # Matrix legs spell `Name (Leg)` as `Name (${{ matrix.name }})`, or with the
+            # `lane` key of the clang-tidy lanes (ADR-2796).
+            spellings = {name} | {
+                re.sub(r"\([^()]*\)$", f"(${{{{ matrix.{key} }}}})", name)
+                for key in ("name", "lane")
+            }
             if any(re.search(rf"(?m)^    name: {re.escape(s)}[ \t]*$", text) for s in spellings):
                 producers[name].append(path.name)
     return producers
@@ -227,7 +246,8 @@ const target = 'Dev Container Build';
 const baseline = input.required.filter(name => name !== target).map(completed);
 const noise = Array.from({length: 100 - baseline.length}, (_, i) => completed(`noise-${i}`));
 const github = {rest: {
-  actions: {getWorkflowRun: async () => ({data: {created_at: new Date(origin).toISOString()}})},
+  actions: {getWorkflowRun: async () => ({data: {created_at: new Date(origin).toISOString()}}),
+    listWorkflowRunsForRepo: async () => ({data: {workflow_runs: []}})},
   checks: {listForRef: async ({page = 1}) => {
     if (input.mode === 'pagination') {
       return {data: {check_runs: page === 1 ? baseline.concat(noise) :
@@ -310,7 +330,10 @@ class HissReplayContractTests(unittest.TestCase):
             | ADR_1342_STRICT_CONTEXTS
             | ADR_1474_STRICT_CONTEXTS
             | ADR_1528_STRICT_CONTEXTS
-            | ADR_1687_STRICT_CONTEXTS,
+            | ADR_1687_STRICT_CONTEXTS
+            | ADR_2440_STRICT_CONTEXTS
+            | ADR_2784_STRICT_CONTEXTS
+            | ADR_2796_STRICT_CONTEXTS,
         )
         self.assertTrue(strict >= STRICT_CONTEXTS)
         self.assertTrue(strict <= required)

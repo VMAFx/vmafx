@@ -36,9 +36,8 @@ from scripts.ci.required_aggregator_harness import run_required_aggregator  # no
 SYCL_CHECK_NAME = "Tidy SYCL"
 SYCL_JOB_ID = "clang-tidy-sycl"
 SYCL_HOOK_ID = "test-sycl-tidy-workflow-contract"
-ACTIVE_JOB_CONDITION = (
-    "github.event_name != 'pull_request' || github.event.pull_request.draft == false"
-)
+# ADR-2169: the draft gate lives in the tier job; the light tier owns this job.
+ACTIVE_JOB_CONDITION = "needs.tier.outputs.light == 'true'"
 
 EXPECTED_FILE_PATTERNS = (
     "core/src/sycl/*.cpp",
@@ -346,10 +345,7 @@ class SyclTidyWorkflowContractTest(unittest.TestCase):
     def test_mutation_constant_false_job_guards_fail_contract(self) -> None:
         workflow_text = (WORKFLOWS_DIR / "lint-and-format.yml").read_text(encoding="utf-8")
         job_block = extract_job_block(workflow_text, SYCL_JOB_ID)
-        active_guard = (
-            "    if: github.event_name != 'pull_request' || "
-            "github.event.pull_request.draft == false\n"
-        )
+        active_guard = f"    if: {ACTIVE_JOB_CONDITION}\n"
         false_guards = (
             "false",
             "( false )",
@@ -376,9 +372,7 @@ class SyclTidyWorkflowContractTest(unittest.TestCase):
     def test_mutation_historical_compound_false_job_guards_fail_contract(self) -> None:
         workflow_text = (WORKFLOWS_DIR / "lint-and-format.yml").read_text(encoding="utf-8")
         job_block = extract_job_block(workflow_text, SYCL_JOB_ID)
-        active_expression = (
-            "github.event_name != 'pull_request' || " "github.event.pull_request.draft == false"
-        )
+        active_expression = ACTIVE_JOB_CONDITION
         active_guard = f"    if: {active_expression}\n"
         # ADR-0623 records the first form verbatim. The remaining cases pin
         # equivalent false conjunctions on both sides and under Actions wrappers.
@@ -426,7 +420,7 @@ class SyclTidyWorkflowContractTest(unittest.TestCase):
         workflow_text = (WORKFLOWS_DIR / "lint-and-format.yml").read_text(encoding="utf-8")
         job_block = extract_job_block(workflow_text, SYCL_JOB_ID)
         active_guard = f"    if: {ACTIVE_JOB_CONDITION}\n"
-        changed_literal = ACTIVE_JOB_CONDITION.replace("pull_request", "pull_ request", 1)
+        changed_literal = ACTIVE_JOB_CONDITION.replace("'true'", "'tr ue'", 1)
         mutated_job = job_block.replace(active_guard, f"    if: {changed_literal}\n", 1)
         self.assertNotEqual(job_block, mutated_job)
 

@@ -15,8 +15,14 @@
  * RC4 WP3: before a frame is counted, both inputs must live in the same
  * memory and every registered extractor must be able to read it there
  * (admission, frame_import_admit.c).
+ *
+ * ADR-2094: each pair's colour (a frame's VmafxFrameDesc.color, else the
+ * context's default) goes to the engine's conversion state before the engine
+ * reads the pair; another colour after the first converted pair is
+ * VMAFX_E_BUSY, and the pair is not counted.
  */
 
+#include <assert.h>
 #include <limits.h>
 #include <stdint.h>
 #include <string.h>
@@ -28,6 +34,9 @@
 #include "config.h"
 #ifdef HAVE_CUDA
 #include "cuda/vmafx_cuda.h"
+#endif
+#ifdef HAVE_SYCL
+#include "sycl/vmafx_sycl.h"
 #endif
 #ifdef HAVE_HIP
 #include "hip/vmafx_hip.h"
@@ -109,6 +118,52 @@ static VmafxStatus admit_pair(const VmafxReport *report, const VmafxContext *con
     return vmafx_admit_frame(report, context, reference);
 }
 
+/* The colour of input `input` (0 reference, 1 distorted): the frame's own,
+ * or the context's default for a frame that carries none. */
+static const VmafxColor *frame_color(const VmafxContext *context, const VmafxFrame *frame,
+                                     unsigned input)
+{
+    const VmafxColor *const c = &frame->color;
+    const bool none = c->range == VMAFX_COLOR_RANGE_UNKNOWN &&
+                      c->primaries == VMAFX_COLOR_PRIMARIES_UNKNOWN &&
+                      c->trc == VMAFX_COLOR_TRC_UNKNOWN && c->matrix == VMAFX_COLOR_MATRIX_UNKNOWN;
+    return none ? &context->default_color[input] : c;
+}
+
+/* Hand the pair's colour to the engine's conversion state (ADR-2093). */
+static VmafxStatus hand_pair_color(const VmafxReport *report, const VmafxContext *context,
+                                   const VmafxFrame *reference, const VmafxFrame *distorted,
+                                   uint64_t index)
+{
+    const VmafColor ref = vmafx_engine_color(frame_color(context, reference, 0));
+    const VmafColor dist = vmafx_engine_color(frame_color(context, distorted, 1));
+    const VmafLogSink *const previous = vmafx_engine_enter(context);
+    const int err = vmaf_engine_set_pair_colorimetry(context->engine, &ref, &dist);
+    vmafx_engine_leave(context, previous);
+    if (err) {
+        return VMAFX_FAIL(report, vmafx_status_from_errno(err), err, VMAFX_SUBJECT_FRAME, "index",
+                          "the colour of frame %llu is not the colour the model's "
+                          "conversion_target converted the first pair from (%d)",
+                          (unsigned long long)index, err);
+    }
+    return VMAFX_OK;
+}
+
+/* Every check of a pair before the engine reads it: the first failure. */
+static VmafxStatus prepare_pair(const VmafxReport *report, const VmafxContext *context,
+                                const VmafxFrame *reference, const VmafxFrame *distorted,
+                                const VmafxFrameDesc desc[2], uint64_t index)
+{
+    VmafxStatus status = check_submit(report, context, &desc[0], &desc[1], index);
+    if (status == VMAFX_OK) {
+        status = admit_pair(report, context, reference, distorted);
+    }
+    if (status == VMAFX_OK) {
+        status = hand_pair_color(report, context, reference, distorted, index);
+    }
+    return status;
+}
+
 /* The planted early-release defect (test switch): signal the frames' release
  * fences when the submit returns, while the engine may still hold them. */
 static void signal_release_early(VmafxFrame *reference, VmafxFrame *distorted)
@@ -122,6 +177,11 @@ static void signal_release_early(VmafxFrame *reference, VmafxFrame *distorted)
 #ifdef HAVE_CUDA
         if (frames[i]->residency == VMAFX_BACKEND_CUDA) {
             vmafx_cuda_release_early(frames[i]); /* its CUDA_EVENT release fences */
+        }
+#endif
+#ifdef HAVE_SYCL
+        if (frames[i]->residency == VMAFX_BACKEND_SYCL) {
+            vmafx_sycl_release_early(frames[i]); /* its SYCL_EVENT release fences */
         }
 #endif
 #ifdef HAVE_HIP
@@ -145,7 +205,7 @@ static int engine_read(VmafxContext *context, VmafxFrame *reference, VmafxFrame 
     }
     const VmafLogSink *const previous = vmafx_engine_enter(context);
     const int err = vmaf_engine_read_pictures(context->engine, ref, dist, (unsigned)index);
-    vmafx_engine_leave(previous);
+    vmafx_engine_leave(context, previous);
     if (early) {
         signal_release_early(reference, distorted);
         vmafx_frame_unref(reference);
@@ -186,18 +246,15 @@ VmafxStatus vmafx_submit(VmafxContext *context, VmafxFrame *reference, VmafxFram
         return VMAFX_FAIL(&report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_FRAME, "distorted",
                           "the same frame as both inputs needs two references (vmafx_frame_ref)");
     }
-    const VmafxFrameDesc ref_desc = picture_desc(&ref);
-    const VmafxFrameDesc dist_desc = picture_desc(&dist);
-    VmafxStatus status = check_submit(&report, context, &ref_desc, &dist_desc, index);
-    if (status == VMAFX_OK) {
-        status = admit_pair(&report, context, reference, distorted);
-    }
+    const VmafxFrameDesc desc[2] = {picture_desc(&ref), picture_desc(&dist)};
+    const VmafxStatus status = prepare_pair(&report, context, reference, distorted, desc, index);
     if (status != VMAFX_OK) {
         drop_pictures(&ref, &dist);
         return status;
     }
+    assert(same_geometry(&desc[0], &desc[1]));
     if (!context->have_frame) {
-        context->first_desc = ref_desc;
+        context->first_desc = desc[0];
         context->have_frame = true;
     }
     context->last_index = index;
@@ -207,6 +264,7 @@ VmafxStatus vmafx_submit(VmafxContext *context, VmafxFrame *reference, VmafxFram
                           "the engine could not score frame %llu (%d)", (unsigned long long)index,
                           err);
     }
+    vmafx_windows_note_index(context, index); /* RC4 WP4: windows this frame made final */
     return VMAFX_OK;
 }
 
@@ -217,17 +275,19 @@ VmafxStatus vmafx_flush(VmafxContext *context, VmafxError **error)
         return VMAFX_FAIL(&report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_PARAMETER, "context",
                           "NULL argument");
     }
+    assert(context->engine); /* vmafx_context_create() fails without one */
     if (vmaf_engine_is_flushed(context->engine)) {
         return VMAFX_FAIL(&report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_CONTEXT, "context",
                           "the context was flushed already");
     }
     const VmafLogSink *const previous = vmafx_engine_enter(context);
     const int err = vmaf_engine_read_pictures(context->engine, NULL, NULL, 0);
-    vmafx_engine_leave(previous);
+    vmafx_engine_leave(context, previous);
     if (err) {
         return VMAFX_FAIL(&report, vmafx_status_from_errno(err), err, VMAFX_SUBJECT_CONTEXT,
                           "context", "flush failed (%d)", err);
     }
+    vmafx_windows_note_flush(context); /* RC4 WP4: every open window completes */
     return VMAFX_OK;
 }
 

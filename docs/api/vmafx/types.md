@@ -23,6 +23,7 @@ Status codes, shared enumerations and the export macros.
 | `VMAFX_E_INTERNAL` | -9 | `-EIO` | 0.1 | Engine error without a more specific status; the error carries the engine's errno. |
 | `VMAFX_E_TIMEOUT` | -10 | `-ETIMEDOUT` | 0.1 | A fence was not signalled within the time the caller allowed; the error names the fence (RC4 WP3). |
 | `VMAFX_E_ABI` | -11 | `-EINVAL` | 0.1 | A struct_size below the size the struct had when it was introduced; the error names the struct. |
+| `VMAFX_E_MISMATCH` | -12 | `-EBADMSG` | 0.1 | A report does not match its provenance digest or its re-run; the error's subject names the first field that differs and its message both values (vmafx_report_verify(), RC4 WP5). Added in ABI 0.1.5. |
 
 ## `VmafxLogLevel`
 
@@ -98,42 +99,6 @@ Pooling method of a pooled score (values equal enum VmafPoolingMethod). Since 0.
 | `VMAFX_POOL_PERC10` | 7 | 0.1 |
 | `VMAFX_POOL_PERC20` | 8 | 0.1 |
 
-## `VmafxColorMatrix`
-
-The Y'CbCr matrix an RGB frame is converted with (ADR-2146). Only the matrices the library converts exactly are accepted; the others are declared so a caller's value is refused by name. Added in ABI 0.1.6. Since 0.1.
-
-| Constant | Value | Since |
-| --- | --- | --- |
-| `VMAFX_COLOR_MATRIX_UNSPECIFIED` | 0 | 0.1 |
-| `VMAFX_COLOR_MATRIX_BT601` | 1 | 0.1 |
-| `VMAFX_COLOR_MATRIX_BT709` | 2 | 0.1 |
-| `VMAFX_COLOR_MATRIX_BT2020_NCL` | 3 | 0.1 |
-| `VMAFX_COLOR_MATRIX_BT2020_CL` | 4 | 0.1 |
-| `VMAFX_COLOR_MATRIX_ICTCP` | 5 | 0.1 |
-
-## `VmafxColorRange`
-
-Code-value range of the samples of a signal (ADR-2146). Added in ABI 0.1.6. Since 0.1.
-
-| Constant | Value | Since |
-| --- | --- | --- |
-| `VMAFX_COLOR_RANGE_UNSPECIFIED` | 0 | 0.1 |
-| `VMAFX_COLOR_RANGE_LIMITED` | 1 | 0.1 |
-| `VMAFX_COLOR_RANGE_FULL` | 2 | 0.1 |
-
-## `VmafxColorTransfer`
-
-Transfer characteristic of the non-linear R'G'B' samples of an RGB frame (ADR-2146). The conversion applies the matrix to the code values as an encoder does; the transfer is part of the statement of what the signal is and is checked, not applied. Added in ABI 0.1.6. Since 0.1.
-
-| Constant | Value | Since |
-| --- | --- | --- |
-| `VMAFX_COLOR_TRANSFER_UNSPECIFIED` | 0 | 0.1 |
-| `VMAFX_COLOR_TRANSFER_BT709` | 1 | 0.1 |
-| `VMAFX_COLOR_TRANSFER_SRGB` | 2 | 0.1 |
-| `VMAFX_COLOR_TRANSFER_SMPTE2084` | 3 | 0.1 |
-| `VMAFX_COLOR_TRANSFER_HLG` | 4 | 0.1 |
-| `VMAFX_COLOR_TRANSFER_LINEAR` | 5 | 0.1 |
-
 ## Handles and callbacks
 
 | Type | Since | Description |
@@ -143,6 +108,16 @@ Transfer characteristic of the non-linear R'G'B' samples of an RGB frame (ADR-21
 
 ```c
 typedef void (*VmafxLogCallback)(uint32_t level, const char *message, void *user);
+```
+
+## Functions
+
+| Function | Since | Description |
+| --- | --- | --- |
+| `vmafx_backend_name` | 0.1 | Lower-case name of a VmafxBackend (`cpu`, `cuda`, `sycl`, `metal`, `hip`), `unknown` for another value; a static string. Added in ABI 0.1.6. |
+
+```c
+VMAFX_EXPORT const char *vmafx_backend_name(uint32_t backend);
 ```
 
 Back to the [reference index](reference.md).

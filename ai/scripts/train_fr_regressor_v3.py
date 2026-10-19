@@ -73,6 +73,7 @@ from typing import Any
 
 from aiutils.file_utils import sha256
 from aiutils.run_manifest import build_run_provenance, write_manifest_json
+from vmaf_train.registry import write_registry_json
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT_PATH = Path(__file__).resolve()
@@ -669,7 +670,7 @@ def _upsert_v3_registry_row(registry_path: Path, row: dict[str, Any]) -> None:
     models.append(row)
     models.sort(key=lambda e: e.get("id", ""))
     registry["models"] = models
-    registry_path.write_text(json.dumps(registry, indent=2, sort_keys=True) + "\n")
+    write_registry_json(registry_path, registry)
 
 
 def write_sidecar_and_registry(

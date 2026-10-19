@@ -11,10 +11,21 @@ checkout writes the hook repository's tree into the worktree's index. The
 ``pre-commit install-hooks`` with the commit's git variables unset before
 ``run`` / ``hook-impl``.
 
+pre-commit 4.7.0 strips the git variables from its own ``npm install`` (its
+pull request 3774), so the block is now the second barrier. A pre-commit that
+runs npm with the commit's environment, as every release before 4.7.0 did, is
+modelled by a ``pre-commit`` wrapper first on PATH: on its first call it runs
+``npm install -g git+file://<hook repo>`` with the environment it was given,
+then hands over to the real framework.
+
 These tests take the real ``run`` scripts from ``lefthook.yml`` and execute them
 as a genuine ``pre-commit`` hook of a linked worktree, so git itself exports the
-variable. The negative case removes the ``install-hooks`` line (a mutation of
-the shipped block) and must pollute the index; the positive case must not.
+variable. pre-commit 4.7.0 runs that ``npm install`` without the git variables
+itself (pre-commit/pre-commit#3774), so a framework of that version no longer
+shows the defect. The negative case therefore plants the install step of
+pre-commit 4.6 directly: run with the commit's git variables it must pollute the
+index, and behind the shipped block's ``env -u`` prefix it must not. The
+positive cases run the shipped block and must leave the index alone.
 """
 
 from __future__ import annotations
@@ -43,7 +54,12 @@ EXPECTED = [".pre-commit-config.yaml", "f1", "f2", "f3", "f4", "new.txt"]
 def framework_block(stage: str) -> str:
     """Return the shipped ``framework-hooks`` run script of a lefthook stage."""
     config = yaml.safe_load((ROOT / "lefthook.yml").read_text())
-    return str(config[stage]["commands"]["framework-hooks"]["run"])
+    run = str(config[stage]["commands"]["framework-hooks"]["run"]).strip()
+    match = re.match(r"^bash\s+([^\s]+)", run)
+    if match:
+        script = (ROOT / match.group(1)).read_text()
+        return f"stage={stage}\n" + script
+    return run
 
 
 class InstallHooksEnvTests(unittest.TestCase):
@@ -82,6 +98,7 @@ class InstallHooksEnvTests(unittest.TestCase):
         )
         self.git("add", ".", cwd=self.hook_repo)
         self.commit("test: hook", cwd=self.hook_repo)
+        self.install_leaky_framework()
         revision = self.git("rev-parse", "HEAD", cwd=self.hook_repo).stdout.strip()
         self.main = self.base / "main"
         self.main.mkdir()
@@ -96,6 +113,30 @@ class InstallHooksEnvTests(unittest.TestCase):
         self.commit("test: fixture", cwd=self.main)
         self.worktree = self.base / "worktree"
         self.git("worktree", "add", "-b", "feature", str(self.worktree), cwd=self.main)
+
+    def install_leaky_framework(self) -> None:
+        """Put a pre-commit first on PATH that installs node hooks with the caller's git env."""
+        real = shutil.which("pre-commit", path=self.env.get("PATH"))
+        self.assertIsNotNone(real)
+        stub_dir = self.base / "stub-bin"
+        stub_dir.mkdir()
+        stub = stub_dir / "pre-commit"
+        stub.write_text(
+            "#!/bin/sh\n"
+            'marker="$LEAKY_NPM_PREFIX/.installed"\n'
+            'if [ ! -e "$marker" ]; then\n'
+            '  npm install --allow-git=root --install-links -g --prefix "$LEAKY_NPM_PREFIX" "$LEAKY_HOOK_URL" >/dev/null 2>&1 || exit 1\n'
+            '  : > "$marker"\n'
+            "fi\n"
+            f'exec "{real}" "$@"\n'
+        )
+        stub.chmod(0o755)
+        (self.base / "npm-prefix").mkdir()
+        self.env.update(
+            PATH=f"{stub_dir}{os.pathsep}{self.env.get('PATH', '')}",
+            LEAKY_NPM_PREFIX=str(self.base / "npm-prefix"),
+            LEAKY_HOOK_URL="git+" + self.hook_repo.as_uri(),
+        )
 
     def git(self, *args: str, cwd: Path, check: bool = True) -> TextCommandResult:
         return self.sh("git", "-C", str(cwd), *args, check=check)
@@ -142,19 +183,30 @@ class InstallHooksEnvTests(unittest.TestCase):
         log = Path(self.env["HOOK_TEST_LOG"])
         return log.is_file() and "ran" in log.read_text()
 
-    def test_negative_without_install_hooks_the_index_is_polluted(self) -> None:
-        mutated = re.sub(
-            rf"^.*{re.escape(UNSET)}.*install-hooks.*\n",
-            "",
-            framework_block("pre-commit"),
-            flags=re.M,
+    def npm_install_block(self, prefix: str) -> str:
+        """Return the ``npm install`` of a node hook as pre-commit 4.6 ran it."""
+        log = self.base / "npm.log"
+        return (
+            f'cd "{self.hook_repo}" && {prefix}env NPM_CONFIG_PREFIX="{self.base / "npm-env"}" '
+            f'npm install --allow-git=root --install-links -g --cache "{self.base / "npm-cache"}" '
+            f'"git+{self.hook_repo.as_uri()}" > "{log}" 2>&1 || {{ cat "{log}" >&2; exit 1; }}'
         )
-        self.assertNotIn(" install-hooks ||", mutated)
-        _, tracked = self.commit_with_block((mutated), self.worktree)
+
+    def test_negative_npm_install_with_the_commits_git_env_pollutes_the_index(self) -> None:
+        returncode, tracked = self.commit_with_block(self.npm_install_block(""), self.worktree)
+        self.assertNotEqual(returncode, 0)
         self.assertNotEqual(
             sorted(tracked), EXPECTED,
-            "the mutated block must reproduce the defect, else this test proves nothing",
+            "the planted install must reproduce the defect, else this test proves nothing",
         )  # fmt: skip
+
+    def test_positive_npm_install_behind_the_shipped_prefix_keeps_the_index(self) -> None:
+        self.assertIn(f'{UNSET} "$fw" install-hooks', framework_block("pre-commit"))
+        returncode, tracked = self.commit_with_block(
+            self.npm_install_block(UNSET + " "), self.worktree
+        )
+        self.assertEqual(returncode, 0)
+        self.assertEqual(sorted(tracked), EXPECTED)
 
     def test_positive_shipped_block_leaves_the_index_alone(self) -> None:
         returncode, tracked = self.commit_with_block((framework_block("pre-commit")), self.worktree)
@@ -171,7 +223,7 @@ class InstallHooksEnvTests(unittest.TestCase):
     def test_both_stages_install_before_they_run_and_fail_closed(self) -> None:
         for stage, runner in (("pre-commit", '"$fw" run'), ("pre-push", '"$fw" hook-impl')):
             block = framework_block(stage)
-            install = f'{UNSET} "$fw" install-hooks || exit 1;'
+            install = f'{UNSET} "$fw" install-hooks || exit 1'
             self.assertIn(install, block, stage)
             self.assertLess(block.index(install), block.index(runner), stage)
             self.assertIn("pre-commit is missing", block, stage)

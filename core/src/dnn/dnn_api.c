@@ -80,18 +80,25 @@ static int resolve_load_path(const VmafDnnSession *s, const char *onnx_path, siz
     if (!s->has_sidecar || s->meta.quant_mode == VMAF_QUANT_FP32)
         return 0;
 
+    static const char kInt8Suffix[] = ".int8.onnx";
+    static const char kOnnxSuffix[] = ".onnx";
     const size_t plen = strlen(onnx_path);
-    const char *suffix = ".onnx";
-    const size_t suffix_len = 5u;
+    const size_t int8_len = sizeof(kInt8Suffix) - 1u;
+    const size_t onnx_len = sizeof(kOnnxSuffix) - 1u;
+
+    /* The caller already named the int8 graph — nothing to derive. */
+    if (plen >= int8_len && strcmp(onnx_path + plen - int8_len, kInt8Suffix) == 0)
+        return 0;
+
     const size_t base_len =
-        (plen >= suffix_len && strcmp(onnx_path + plen - suffix_len, suffix) == 0) ?
-            plen - suffix_len :
+        (plen >= onnx_len && strcmp(onnx_path + plen - onnx_len, kOnnxSuffix) == 0) ?
+            plen - onnx_len :
             plen;
-    if (base_len + sizeof(".int8.onnx") > int8_buf_sz)
+    if (base_len + sizeof(kInt8Suffix) > int8_buf_sz)
         return -ENAMETOOLONG;
 
     memcpy(int8_buf, onnx_path, base_len);
-    memcpy(int8_buf + base_len, ".int8.onnx", sizeof(".int8.onnx"));
+    memcpy(int8_buf + base_len, kInt8Suffix, sizeof(kInt8Suffix));
 
     const int rc = vmaf_dnn_validate_onnx(int8_buf, max_bytes);
     if (rc < 0) {

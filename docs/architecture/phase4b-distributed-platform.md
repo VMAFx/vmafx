@@ -10,7 +10,11 @@ implementation-status sections follow.
     The controller, node, operator and server binaries are implemented under
     `cmd/` and documented under [docs/server/](../server/controller.md). The
     umbrella [ADR-0709](../adr/0709-vmafx-phase4b-distributed-platform.md)
-    itself still carries the status `Proposed`. The
+    is `Accepted` (status update of 2026-10-06).
+    [ADR-2350](../adr/2350-cloud-native-platform.md) replaces the
+    controller's SQLite queue with PostgreSQL and moves the platform core
+    (stateless replicas, queue-driven scaling, generated CRDs and protobuf)
+    into RC4; the pages below change as each part ships. The
     [implementation status](#implementation-status) table lists each sweep
     step.
 
@@ -93,7 +97,7 @@ as done when its code or artefact exists on `master`.
 | 4b.4 | ffmpeg latest + `ffmpeg-patches/` bundled in node image | Phase 4b.2 | Done (`docker/Dockerfile.node`, ADR-0717) |
 | 4b.5 | rclone integration (node distroless layer + mount lifecycle) | Phase 4b.2 | Done (rclone stage in `docker/Dockerfile.node`; executor wiring per [ADR-1526](../adr/1526-node-storage-streamed-inputs.md)) |
 | 4b.6 | eBPF research digest + ONE concrete optimization | Phase 4b.2 (baseline measurement) | Research done ([Research-0733](../research/0733-vmafx-ebpf-optimization-target.md)); descriptor tracker wired, opt-in ([ADR-1539](../adr/1539-node-ebpf-tracker-wiring.md)); no read path bypassed yet |
-| 4b.7 | Sidecar training v1 (Python sidecar + triple-capture API) | Phase 4b.2 + Phase 4b.3 | Helm template present (`sidecar-trainer.yaml`) |
+| 4b.7 | Sidecar training v1 (Python sidecar + triple-capture API) | Phase 4b.2 + Phase 4b.3 | Python sidecar present; not deployed by the chart ([sidecar guide](../ai/sidecar-online-training.md#kubernetes-status)) |
 | 4b.8 | C ABI break + ffmpeg-patches update | Phase 4b.4 | Open; tracked by ADR-0709 |
 | 4b.9 | Native build sunset (Docker + Helm only release artifacts) | Phase 4b.8 | Open; tracked by ADR-0709 |
 

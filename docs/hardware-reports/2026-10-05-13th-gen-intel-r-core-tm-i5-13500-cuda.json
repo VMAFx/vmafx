@@ -1,0 +1,2769 @@
+{
+  "schema_version": "3",
+  "tool": {
+    "name": "vmaf-tester-report",
+    "version": "0.1.0"
+  },
+  "generated_utc": "2026-10-05T12:27:51Z",
+  "image": {
+    "kind": "container-image",
+    "source_commit": "854bf047e458bc97ac0da39e5c11e14029652a0f",
+    "source_ref": "854bf047e458bc97ac0da39e5c11e14029652a0f",
+    "recipe_commit": "854bf047e458bc97ac0da39e5c11e14029652a0f",
+    "built_by_workflow": true,
+    "image_arch": "x86_64",
+    "compiler": "gcc (Debian 14.2.0-19) 14.2.0",
+    "libc": "ldd (Debian GLIBC 2.41-12+deb13u4) 2.41",
+    "base_image": "debian:13-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a",
+    "tag": "v1.0.0-rc.2-411-g854bf047e-tester-cuda",
+    "gpu_backend": "cuda",
+    "digest": null,
+    "vmaf_version": "1.0.0-rc.2",
+    "vmaf_sha256": "22534207155c6de3fa9ec8a2be80d67a9cee3220c7d8e8499171c3153394e6ab",
+    "libvmaf_sha256": "7f06a0128268786ba959cf8e3b225750b241c58dd54359b44c93e38e69dfa9a3",
+    "files_match_build": true,
+    "python": "3.13.5"
+  },
+  "host": {
+    "platform": "linux",
+    "machine": "x86_64",
+    "kernel_release": "7.0.0-34-generic",
+    "in_container": false,
+    "cpu_model": "13th Gen Intel(R) Core(TM) i5-13500",
+    "cpuinfo": {
+      "cpu family": "6",
+      "model": "191",
+      "model name": "13th Gen Intel(R) Core(TM) i5-13500",
+      "stepping": "2",
+      "vendor_id": "GenuineIntel"
+    },
+    "cpu_features": [
+      "3dnowprefetch",
+      "abm",
+      "acpi",
+      "adx",
+      "aes",
+      "aperfmperf",
+      "apic",
+      "arat",
+      "arch_capabilities",
+      "arch_lbr",
+      "arch_perfmon",
+      "art",
+      "avx",
+      "avx2",
+      "avx_vnni",
+      "bmi1",
+      "bmi2",
+      "bts",
+      "clflush",
+      "clflushopt",
+      "clwb",
+      "cmov",
+      "constant_tsc",
+      "cpuid",
+      "cpuid_fault",
+      "cx16",
+      "cx8",
+      "de",
+      "ds_cpl",
+      "dtes64",
+      "dtherm",
+      "dts",
+      "epb",
+      "ept",
+      "ept_ad",
+      "erms",
+      "est",
+      "f16c",
+      "flexpriority",
+      "flush_l1d",
+      "fma",
+      "fpu",
+      "fsgsbase",
+      "fsrm",
+      "fxsr",
+      "gfni",
+      "hfi",
+      "ht",
+      "hwp",
+      "hwp_act_window",
+      "hwp_epp",
+      "hwp_notify",
+      "hwp_pkg_req",
+      "ibpb",
+      "ibrs",
+      "ibrs_enhanced",
+      "ibt",
+      "ida",
+      "intel_pt",
+      "invpcid",
+      "lahf_lm",
+      "lm",
+      "mca",
+      "mce",
+      "md_clear",
+      "mmx",
+      "monitor",
+      "movbe",
+      "movdir64b",
+      "movdiri",
+      "msr",
+      "mtrr",
+      "nonstop_tsc",
+      "nopl",
+      "nx",
+      "ospke",
+      "pae",
+      "pat",
+      "pbe",
+      "pcid",
+      "pclmulqdq",
+      "pconfig",
+      "pdcm",
+      "pdpe1gb",
+      "pebs",
+      "pge",
+      "pku",
+      "pln",
+      "pni",
+      "popcnt",
+      "pse",
+      "pse36",
+      "pts",
+      "rdpid",
+      "rdrand",
+      "rdseed",
+      "rdtscp",
+      "rep_good",
+      "sdbg",
+      "sep",
+      "serialize",
+      "sha_ni",
+      "smap",
+      "smep",
+      "smx",
+      "split_lock_detect",
+      "ss",
+      "ssbd",
+      "sse",
+      "sse2",
+      "sse4_1",
+      "sse4_2",
+      "ssse3",
+      "stibp",
+      "syscall",
+      "tm",
+      "tm2",
+      "tpr_shadow",
+      "tsc",
+      "tsc_adjust",
+      "tsc_deadline_timer",
+      "tsc_known_freq",
+      "umip",
+      "user_shstk",
+      "vaes",
+      "vme",
+      "vmx",
+      "vnmi",
+      "vpclmulqdq",
+      "vpid",
+      "waitpkg",
+      "x2apic",
+      "xgetbv1",
+      "xsave",
+      "xsavec",
+      "xsaveopt",
+      "xsaves",
+      "xtopology",
+      "xtpr"
+    ],
+    "hwcap": null,
+    "hwcap2": null,
+    "sve_in_hwcap": false,
+    "dispatch_flags": ["sse2", "ssse3", "sse4.1", "avx2"],
+    "dispatch_flags_source": "mirror of core/src/arm/cpu.c and core/src/x86/cpu.c rules",
+    "logical_cores": 20
+  },
+  "dispatch_equivalence": {
+    "status": "identical",
+    "fixtures": [
+      {
+        "fixture": "netflix_normal_576x324",
+        "metrics": 76,
+        "values": 3648,
+        "differing_values": 0,
+        "differing_metrics": 0,
+        "details": [],
+        "details_truncated": 0
+      },
+      {
+        "fixture": "netflix_checkerboard_1px_1080p",
+        "metrics": 76,
+        "values": 228,
+        "differing_values": 0,
+        "differing_metrics": 0,
+        "details": [],
+        "details_truncated": 0
+      },
+      {
+        "fixture": "netflix_checkerboard_10px_1080p",
+        "metrics": 76,
+        "values": 228,
+        "differing_values": 0,
+        "differing_metrics": 0,
+        "details": [],
+        "details_truncated": 0
+      },
+      {
+        "fixture": "netflix_normal_576x324_10bit",
+        "metrics": 76,
+        "values": 228,
+        "differing_values": 0,
+        "differing_metrics": 0,
+        "details": [],
+        "details_truncated": 0
+      }
+    ]
+  },
+  "reference_equivalence": {
+    "status": "identical",
+    "own_arch_scalar": {
+      "file": "x86_64-scalar.json",
+      "generated_with_flags": [],
+      "comparable": true,
+      "gating": true,
+      "status": "identical",
+      "fixtures": [
+        {
+          "fixture": "netflix_normal_576x324",
+          "metrics": 76,
+          "values": 3648,
+          "differing_values": 0,
+          "differing_metrics": 0,
+          "details": [],
+          "details_truncated": 0
+        },
+        {
+          "fixture": "netflix_checkerboard_1px_1080p",
+          "metrics": 76,
+          "values": 228,
+          "differing_values": 0,
+          "differing_metrics": 0,
+          "details": [],
+          "details_truncated": 0
+        },
+        {
+          "fixture": "netflix_checkerboard_10px_1080p",
+          "metrics": 76,
+          "values": 228,
+          "differing_values": 0,
+          "differing_metrics": 0,
+          "details": [],
+          "details_truncated": 0
+        },
+        {
+          "fixture": "netflix_normal_576x324_10bit",
+          "metrics": 76,
+          "values": 228,
+          "differing_values": 0,
+          "differing_metrics": 0,
+          "details": [],
+          "details_truncated": 0
+        }
+      ]
+    },
+    "own_arch_default": {
+      "file": "x86_64-default.json",
+      "generated_with_flags": ["avx2", "avx512", "sse2", "sse4.1", "ssse3"],
+      "comparable": false,
+      "gating": false,
+      "status": "identical",
+      "fixtures": [
+        {
+          "fixture": "netflix_normal_576x324",
+          "metrics": 76,
+          "values": 3648,
+          "differing_values": 0,
+          "differing_metrics": 0,
+          "details": [],
+          "details_truncated": 0
+        },
+        {
+          "fixture": "netflix_checkerboard_1px_1080p",
+          "metrics": 76,
+          "values": 228,
+          "differing_values": 0,
+          "differing_metrics": 0,
+          "details": [],
+          "details_truncated": 0
+        },
+        {
+          "fixture": "netflix_checkerboard_10px_1080p",
+          "metrics": 76,
+          "values": 228,
+          "differing_values": 0,
+          "differing_metrics": 0,
+          "details": [],
+          "details_truncated": 0
+        },
+        {
+          "fixture": "netflix_normal_576x324_10bit",
+          "metrics": 76,
+          "values": 228,
+          "differing_values": 0,
+          "differing_metrics": 0,
+          "details": [],
+          "details_truncated": 0
+        }
+      ]
+    }
+  },
+  "metal_equivalence": {
+    "status": "not_applicable"
+  },
+  "metal_gate": {
+    "status": "not_applicable"
+  },
+  "unit_tests": {
+    "status": "pass",
+    "reason": null,
+    "total": 37,
+    "passed": 37,
+    "failed": 0,
+    "skipped": 0,
+    "failures": [],
+    "results": {
+      "test_adm_cm_row_rounding": "pass",
+      "test_adm_dwt2_x86": "pass",
+      "test_cambi_dispatch_invariance": "pass",
+      "test_cambi_simd": "pass",
+      "test_cambi_spatial_mask_simd": "pass",
+      "test_cambi_stage_simd": "pass",
+      "test_ciede_simd_parity": "pass",
+      "test_cpu": "pass",
+      "test_feature_extractor": "pass",
+      "test_feature_isa_invariance": "pass",
+      "test_float_adm_x86": "pass",
+      "test_float_motion_sad": "pass",
+      "test_integer_adm_aim_unclipped": "pass",
+      "test_integer_adm_cm_threshold": "pass",
+      "test_integer_adm_simd": "pass",
+      "test_integer_adm_simd_noise": "pass",
+      "test_integer_ssim_simd": "pass",
+      "test_integer_vif_avx2_stages": "pass",
+      "test_integer_vif_avx512_stages": "pass",
+      "test_integer_vif_log2": "pass",
+      "test_iqa_convolve": "pass",
+      "test_moment_simd": "pass",
+      "test_motion_avx512_parity": "pass",
+      "test_motion_v2_simd": "pass",
+      "test_ms_ssim_decimate": "pass",
+      "test_ordered_sum": "pass",
+      "test_predict": "pass",
+      "test_psnr_hvs_avx2": "pass",
+      "test_psnr_hvs_dispatch_invariance": "pass",
+      "test_psnr_hvs_score": "pass",
+      "test_psnr_hvs_simd": "pass",
+      "test_speed": "pass",
+      "test_speed_simd": "pass",
+      "test_ssim_x86_simd": "pass",
+      "test_ssimulacra2_simd": "pass",
+      "test_version": "pass",
+      "test_vif_simd": "pass"
+    }
+  },
+  "golden_gate": {
+    "status": "not_applicable",
+    "total": 0,
+    "passed": 0,
+    "failed": 0,
+    "skipped": 0,
+    "failures": [],
+    "reason": "the CUDA image carries no Python test stack; the CPU tester image runs the Netflix golden gate"
+  },
+  "metal_rows": {
+    "status": "not_applicable",
+    "rows": []
+  },
+  "gpu": {
+    "backend": "cuda",
+    "access": {
+      "device_nodes": [
+        {
+          "node": "nvidia-modeset",
+          "accessible": true
+        },
+        {
+          "node": "nvidia-uvm",
+          "accessible": true
+        },
+        {
+          "node": "nvidia-uvm-tools",
+          "accessible": true
+        },
+        {
+          "node": "nvidia0",
+          "accessible": true
+        },
+        {
+          "node": "nvidiactl",
+          "accessible": true
+        }
+      ],
+      "dxg_present": false,
+      "dxg_accessible": false,
+      "wsl_libcuda_present": false,
+      "groups": [0],
+      "path": "nvidia",
+      "cuda_driver": {
+        "driver_cuda_version": "13.4",
+        "status": "ok"
+      }
+    },
+    "runtime": {
+      "driver_cuda_version": "13.4",
+      "build_cuda_version": "13.4"
+    },
+    "status": "pass",
+    "devices": [
+      {
+        "index": 0,
+        "selector": {
+          "CUDA_DEVICE_ORDER": "PCI_BUS_ID",
+          "CUDA_VISIBLE_DEVICES": "0"
+        },
+        "facts": {
+          "clock_mhz": 1470,
+          "compute_capability": "8.6",
+          "family": "ampere",
+          "index": 0,
+          "integrated": false,
+          "memory_bytes": 6141509632,
+          "multiprocessors": 18,
+          "name": "NVIDIA GeForce RTX 3050",
+          "supported": true,
+          "code_path": "cubin sm_86"
+        },
+        "device_lines": [],
+        "twins": {
+          "status": "identical",
+          "fixtures": [
+            {
+              "fixture": "netflix_normal_576x324",
+              "metrics": 76,
+              "values": 3648,
+              "differing_values": 0,
+              "differing_metrics": 0,
+              "details": [],
+              "details_truncated": 0,
+              "extractors_on_device": [
+                "adm_cuda",
+                "cambi_cuda",
+                "ciede_cuda",
+                "float_adm_cuda",
+                "float_moment_cuda",
+                "float_motion_cuda",
+                "float_ms_ssim_cuda",
+                "float_psnr_cuda",
+                "float_ssim_cuda",
+                "float_vif_cuda",
+                "integer_ssim_cuda",
+                "motion_cuda",
+                "motion_v2_cuda",
+                "psnr_cuda",
+                "psnr_hvs_cuda",
+                "speed_chroma_cuda",
+                "speed_temporal_cuda",
+                "ssimulacra2_cuda",
+                "vif_cuda"
+              ],
+              "extractors_on_cpu": [
+                "brisque",
+                "delta_e_itp",
+                "niqe",
+                "pu21",
+                "y_funque_plus"
+              ]
+            },
+            {
+              "fixture": "netflix_checkerboard_1px_1080p",
+              "metrics": 76,
+              "values": 228,
+              "differing_values": 0,
+              "differing_metrics": 0,
+              "details": [],
+              "details_truncated": 0,
+              "extractors_on_device": [
+                "adm_cuda",
+                "cambi_cuda",
+                "ciede_cuda",
+                "float_adm_cuda",
+                "float_moment_cuda",
+                "float_motion_cuda",
+                "float_ms_ssim_cuda",
+                "float_psnr_cuda",
+                "float_ssim_cuda",
+                "float_vif_cuda",
+                "integer_ssim_cuda",
+                "motion_cuda",
+                "motion_v2_cuda",
+                "psnr_cuda",
+                "psnr_hvs_cuda",
+                "speed_chroma_cuda",
+                "speed_temporal_cuda",
+                "ssimulacra2_cuda",
+                "vif_cuda"
+              ],
+              "extractors_on_cpu": [
+                "brisque",
+                "delta_e_itp",
+                "niqe",
+                "pu21",
+                "y_funque_plus"
+              ]
+            },
+            {
+              "fixture": "netflix_checkerboard_10px_1080p",
+              "metrics": 76,
+              "values": 228,
+              "differing_values": 0,
+              "differing_metrics": 0,
+              "details": [],
+              "details_truncated": 0,
+              "extractors_on_device": [
+                "adm_cuda",
+                "cambi_cuda",
+                "ciede_cuda",
+                "float_adm_cuda",
+                "float_moment_cuda",
+                "float_motion_cuda",
+                "float_ms_ssim_cuda",
+                "float_psnr_cuda",
+                "float_ssim_cuda",
+                "float_vif_cuda",
+                "integer_ssim_cuda",
+                "motion_cuda",
+                "motion_v2_cuda",
+                "psnr_cuda",
+                "psnr_hvs_cuda",
+                "speed_chroma_cuda",
+                "speed_temporal_cuda",
+                "ssimulacra2_cuda",
+                "vif_cuda"
+              ],
+              "extractors_on_cpu": [
+                "brisque",
+                "delta_e_itp",
+                "niqe",
+                "pu21",
+                "y_funque_plus"
+              ]
+            },
+            {
+              "fixture": "netflix_normal_576x324_10bit",
+              "metrics": 76,
+              "values": 228,
+              "differing_values": 0,
+              "differing_metrics": 0,
+              "details": [],
+              "details_truncated": 0,
+              "extractors_on_device": [
+                "adm_cuda",
+                "cambi_cuda",
+                "ciede_cuda",
+                "float_adm_cuda",
+                "float_moment_cuda",
+                "float_motion_cuda",
+                "float_ms_ssim_cuda",
+                "float_psnr_cuda",
+                "float_ssim_cuda",
+                "float_vif_cuda",
+                "integer_ssim_cuda",
+                "motion_cuda",
+                "motion_v2_cuda",
+                "psnr_cuda",
+                "psnr_hvs_cuda",
+                "speed_chroma_cuda",
+                "speed_temporal_cuda",
+                "ssimulacra2_cuda",
+                "vif_cuda"
+              ],
+              "extractors_on_cpu": [
+                "brisque",
+                "delta_e_itp",
+                "niqe",
+                "pu21",
+                "y_funque_plus"
+              ]
+            }
+          ],
+          "features": [
+            {
+              "feature": "adm",
+              "bound": "0",
+              "source": "exact:ADR-1397",
+              "status": "identical",
+              "values": 285,
+              "differing_values": 0,
+              "max_abs_diff": "0"
+            },
+            {
+              "feature": "cambi",
+              "bound": "0",
+              "source": "exact:ADR-1397",
+              "status": "identical",
+              "values": 57,
+              "differing_values": 0,
+              "max_abs_diff": "0"
+            },
+            {
+              "feature": "ciede",
+              "bound": "1.0000000000000001e-09",
+              "source": "libm:ADR-1426",
+              "status": "identical",
+              "values": 57,
+              "differing_values": 0,
+              "max_abs_diff": "0"
+            },
+            {
+              "feature": "float_adm",
+              "bound": "0",
+              "source": "exact:ADR-1397",
+              "status": "identical",
+              "values": 285,
+              "differing_values": 0,
+              "max_abs_diff": "0"
+            },
+            {
+              "feature": "float_moment",
+              "bound": "0",
+              "source": "exact:ADR-1397",
+              "status": "identical",
+              "values": 228,
+              "differing_values": 0,
+              "max_abs_diff": "0"
+            },
+            {
+              "feature": "float_motion",
+              "bound": "0",
+              "source": "exact:ADR-1397",
+              "status": "identical",
+              "values": 171,
+              "differing_values": 0,
+              "max_abs_diff": "0"
+            },
+            {
+              "feature": "float_ms_ssim",
+              "bound": "0",
+              "source": "exact:ADR-1397",
+              "status": "identical",
+              "values": 57,
+              "differing_values": 0,
+              "max_abs_diff": "0"
+            },
+            {
+              "feature": "float_ms_ssim_chroma",
+              "bound": "0",
+              "source": "exact:ADR-1397",
+              "status": "gate_only",
+              "values": 0,
+              "differing_values": 0
+            },
+            {
+              "feature": "float_ms_ssim_lcs",
+              "bound": "0",
+              "source": "exact:ADR-1397",
+              "status": "gate_only",
+              "values": 0,
+              "differing_values": 0
+            },
+            {
+              "feature": "float_psnr",
+              "bound": "0",
+              "source": "exact:ADR-1397",
+              "status": "identical",
+              "values": 57,
+              "differing_values": 0,
+              "max_abs_diff": "0"
+            },
+            {
+              "feature": "float_ssim",
+              "bound": "0",
+              "source": "exact:ADR-1397",
+              "status": "identical",
+              "values": 57,
+              "differing_values": 0,
+              "max_abs_diff": "0"
+            },
+            {
+              "feature": "float_ssim_lcs",
+              "bound": "0",
+              "source": "exact:ADR-1397",
+              "status": "gate_only",
+              "values": 0,
+              "differing_values": 0
+            },
+            {
+              "feature": "float_vif",
+              "bound": "0",
+              "source": "exact:ADR-1397",
+              "status": "identical",
+              "values": 228,
+              "differing_values": 0,
+              "max_abs_diff": "0"
+            },
+            {
+              "feature": "motion",
+              "bound": "0",
+              "source": "exact:ADR-1397",
+              "status": "identical",
+              "values": 171,
+              "differing_values": 0,
+              "max_abs_diff": "0"
+            },
+            {
+              "feature": "motion_debug",
+              "bound": "0",
+              "source": "exact:ADR-1397",
+              "status": "gate_only",
+              "values": 0,
+              "differing_values": 0
+            },
+            {
+              "feature": "motion_mffw",
+              "bound": "0",
+              "source": "exact:ADR-1397",
+              "status": "gate_only",
+              "values": 0,
+              "differing_values": 0
+            },
+            {
+              "feature": "motion_v2",
+              "bound": "0",
+              "source": "exact:ADR-1397",
+              "status": "identical",
+              "values": 114,
+              "differing_values": 0,
+              "max_abs_diff": "0"
+            },
+            {
+              "feature": "motion_v2_mffw",
+              "bound": "0",
+              "source": "exact:ADR-1397",
+              "status": "gate_only",
+              "values": 0,
+              "differing_values": 0
+            },
+            {
+              "feature": "psnr",
+              "bound": "0",
+              "source": "exact:ADR-1397",
+              "status": "identical",
+              "values": 171,
+              "differing_values": 0,
+              "max_abs_diff": "0"
+            },
+            {
+              "feature": "psnr_hvs",
+              "bound": "0",
+              "source": "exact:ADR-1397",
+              "status": "identical",
+              "values": 228,
+              "differing_values": 0,
+              "max_abs_diff": "0"
+            },
+            {
+              "feature": "speed_chroma",
+              "bound": "0",
+              "source": "exact:ADR-1397",
+              "status": "identical",
+              "values": 171,
+              "differing_values": 0,
+              "max_abs_diff": "0"
+            },
+            {
+              "feature": "speed_temporal",
+              "bound": "0",
+              "source": "exact:ADR-1397",
+              "status": "identical",
+              "values": 57,
+              "differing_values": 0,
+              "max_abs_diff": "0"
+            },
+            {
+              "feature": "ssim",
+              "bound": "0",
+              "source": "exact:ADR-1397",
+              "status": "identical",
+              "values": 57,
+              "differing_values": 0,
+              "max_abs_diff": "0"
+            },
+            {
+              "feature": "ssimulacra2",
+              "bound": "0",
+              "source": "exact:ADR-1397",
+              "status": "identical",
+              "values": 57,
+              "differing_values": 0,
+              "max_abs_diff": "0"
+            },
+            {
+              "feature": "vif",
+              "bound": "0",
+              "source": "exact:ADR-1397",
+              "status": "identical",
+              "values": 228,
+              "differing_values": 0,
+              "max_abs_diff": "0"
+            }
+          ]
+        },
+        "gate": {
+          "status": "pass",
+          "fixtures": [
+            {
+              "fixture": "netflix_normal_576x324",
+              "left_out": [],
+              "exit_code": 0,
+              "cells": [
+                {
+                  "feature": "adm",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 48,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "cambi",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 48,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "ciede",
+                  "status": "OK",
+                  "tolerance": "1.0000000000000001e-09",
+                  "tolerance_source": "libm:ADR-1426",
+                  "frames": 48,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_adm",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 48,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_moment",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 48,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_motion",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 48,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_ms_ssim",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 48,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_ms_ssim_chroma",
+                  "status": "SKIP",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 0,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": "chroma 288x162 below the 176-pixel minimum of float_ms_ssim_chroma; run it on a pair whose chroma planes clear it"
+                },
+                {
+                  "feature": "float_ms_ssim_lcs",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 48,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_psnr",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 48,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_ssim",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 48,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_ssim_lcs",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 48,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_vif",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 48,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "motion",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 48,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "motion_debug",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 48,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "motion_mffw",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 48,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "motion_v2",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 48,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "motion_v2_mffw",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 48,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "psnr",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 48,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "psnr_hvs",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 48,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "speed_chroma",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 48,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "speed_temporal",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 48,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "ssim",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 48,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "ssimulacra2",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 48,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "vif",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 48,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                }
+              ]
+            },
+            {
+              "fixture": "netflix_checkerboard_1px_1080p",
+              "left_out": [],
+              "exit_code": 0,
+              "cells": [
+                {
+                  "feature": "adm",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "cambi",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "ciede",
+                  "status": "OK",
+                  "tolerance": "1.0000000000000001e-09",
+                  "tolerance_source": "libm:ADR-1426",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_adm",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_moment",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_motion",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_ms_ssim",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_ms_ssim_chroma",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_ms_ssim_lcs",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_psnr",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_ssim",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_ssim_lcs",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_vif",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "motion",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "motion_debug",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "motion_mffw",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "motion_v2",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "motion_v2_mffw",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "psnr",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "psnr_hvs",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "speed_chroma",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "speed_temporal",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "ssim",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "ssimulacra2",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "vif",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                }
+              ]
+            },
+            {
+              "fixture": "netflix_checkerboard_10px_1080p",
+              "left_out": [],
+              "exit_code": 0,
+              "cells": [
+                {
+                  "feature": "adm",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "cambi",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "ciede",
+                  "status": "OK",
+                  "tolerance": "1.0000000000000001e-09",
+                  "tolerance_source": "libm:ADR-1426",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_adm",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_moment",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_motion",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_ms_ssim",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_ms_ssim_chroma",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_ms_ssim_lcs",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_psnr",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_ssim",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_ssim_lcs",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_vif",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "motion",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "motion_debug",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "motion_mffw",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "motion_v2",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "motion_v2_mffw",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "psnr",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "psnr_hvs",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "speed_chroma",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "speed_temporal",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "ssim",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "ssimulacra2",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "vif",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                }
+              ]
+            },
+            {
+              "fixture": "netflix_normal_576x324_10bit",
+              "left_out": [],
+              "exit_code": 0,
+              "cells": [
+                {
+                  "feature": "adm",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "cambi",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "ciede",
+                  "status": "OK",
+                  "tolerance": "1.0000000000000001e-09",
+                  "tolerance_source": "libm:ADR-1426",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_adm",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_moment",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_motion",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_ms_ssim",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_ms_ssim_chroma",
+                  "status": "SKIP",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 0,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": "chroma 288x162 below the 176-pixel minimum of float_ms_ssim_chroma; run it on a pair whose chroma planes clear it"
+                },
+                {
+                  "feature": "float_ms_ssim_lcs",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_psnr",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_ssim",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_ssim_lcs",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "float_vif",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "motion",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "motion_debug",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "motion_mffw",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "motion_v2",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "motion_v2_mffw",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "psnr",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "psnr_hvs",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "speed_chroma",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "speed_temporal",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "ssim",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "ssimulacra2",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                },
+                {
+                  "feature": "vif",
+                  "status": "OK",
+                  "tolerance": "0",
+                  "tolerance_source": "exact:ADR-1397",
+                  "frames": 3,
+                  "max_abs_diff": "0",
+                  "mismatches": 0,
+                  "note": ""
+                }
+              ]
+            }
+          ]
+        },
+        "device_tests": {
+          "status": "pass",
+          "reason": null,
+          "total": 66,
+          "passed": 66,
+          "failed": 0,
+          "skipped": 0,
+          "failures": [],
+          "results": {
+            "test_cuda_adm_parity": "pass",
+            "test_cuda_adm_parity_large": "pass",
+            "test_cuda_adm_small_border": "pass",
+            "test_cuda_adm_tiny_frames": "pass",
+            "test_cuda_adm_wide_rounding": "pass",
+            "test_cuda_arch_floor": "pass",
+            "test_cuda_buffer_alloc_oom": "pass",
+            "test_cuda_cambi_parity": "pass",
+            "test_cuda_cambi_parity_large": "pass",
+            "test_cuda_ciede_parity": "pass",
+            "test_cuda_ciede_parity_large": "pass",
+            "test_cuda_device_input_host_extractors": "pass",
+            "test_cuda_exact_twins": "pass",
+            "test_cuda_float_adm_parity": "pass",
+            "test_cuda_float_adm_parity_large": "pass",
+            "test_cuda_float_moment_parity": "pass",
+            "test_cuda_float_moment_parity_large": "pass",
+            "test_cuda_float_motion_parity": "pass",
+            "test_cuda_float_motion_parity_large": "pass",
+            "test_cuda_float_ms_ssim_order": "pass",
+            "test_cuda_float_ms_ssim_parity": "pass",
+            "test_cuda_float_ms_ssim_parity_large": "pass",
+            "test_cuda_float_psnr_parity": "pass",
+            "test_cuda_float_psnr_parity_large": "pass",
+            "test_cuda_float_ssim_decimate": "pass",
+            "test_cuda_float_ssim_order": "pass",
+            "test_cuda_float_ssim_parity": "pass",
+            "test_cuda_float_ssim_parity_large": "pass",
+            "test_cuda_float_vif_parity": "pass",
+            "test_cuda_float_vif_parity_large": "pass",
+            "test_cuda_motion3_parity": "pass",
+            "test_cuda_motion3_parity_large": "pass",
+            "test_cuda_motion_five_frame_window": "pass",
+            "test_cuda_motion_sad_score": "pass",
+            "test_cuda_motion_tiny_frames": "pass",
+            "test_cuda_motion_v2_parity": "pass",
+            "test_cuda_motion_v2_parity_large": "pass",
+            "test_cuda_multi_instance": "pass",
+            "test_cuda_oom_pictures_released": "pass",
+            "test_cuda_pic_preallocation": "pass",
+            "test_cuda_preallocation_leak": "pass",
+            "test_cuda_psnr_hvs_parity": "pass",
+            "test_cuda_psnr_hvs_parity_large": "pass",
+            "test_cuda_psnr_parity": "pass",
+            "test_cuda_psnr_parity_10bit": "pass",
+            "test_cuda_psnr_parity_large": "pass",
+            "test_cuda_speed_chroma_parity": "pass",
+            "test_cuda_speed_chroma_smoke": "pass",
+            "test_cuda_speed_lanczos4_parity": "pass",
+            "test_cuda_speed_singular_parity": "pass",
+            "test_cuda_speed_temporal_parity": "pass",
+            "test_cuda_speed_temporal_parity_1080p": "pass",
+            "test_cuda_speed_temporal_smoke": "pass",
+            "test_cuda_ssim_parity": "pass",
+            "test_cuda_ssim_parity_large": "pass",
+            "test_cuda_ssimulacra2_parity": "pass",
+            "test_cuda_ssimulacra2_parity_large": "pass",
+            "test_cuda_twin_option_parity": "pass",
+            "test_cuda_vif_log2_table": "pass",
+            "test_cuda_vif_min_dim": "pass",
+            "test_gpu_picture_pool": "pass",
+            "test_integer_vif_cpu_cuda_parity": "pass",
+            "test_libvmaf_cuda_only_no_host": "pass",
+            "test_vmaf_cuda_gpumask": "pass",
+            "test_vmaf_cuda_threads": "pass",
+            "test_vmaf_feature_backend_cuda": "pass"
+          },
+          "left_out": [
+            {
+              "name": "test_cuda_parity_gate_default_run",
+              "reason": "Python test of the source tree; device-free, runs in CI"
+            }
+          ]
+        },
+        "audits": {},
+        "status": "pass",
+        "rows": {
+          "status": "pass",
+          "counts": {
+            "pass": 1,
+            "fail": 0,
+            "not_measured": 0,
+            "not_applicable": 3
+          },
+          "rows": [
+            {
+              "id": "T-CUDA-TWINS-OTHER-ARCHITECTURES-2026-10-03",
+              "part": "Ampere (compute capability 8.0 to 8.7: A100, RTX 30xx, RTX A-series; cubins sm_80 and sm_86): open",
+              "verdict": "pass",
+              "evidence": [
+                {
+                  "kind": "test",
+                  "test": "test_cuda_exact_twins",
+                  "result": "pass"
+                },
+                {
+                  "kind": "test",
+                  "test": "test_cuda_adm_parity",
+                  "result": "pass"
+                },
+                {
+                  "kind": "test",
+                  "test": "test_cuda_float_adm_parity",
+                  "result": "pass"
+                },
+                {
+                  "kind": "test",
+                  "test": "test_cuda_float_vif_parity",
+                  "result": "pass"
+                },
+                {
+                  "kind": "test",
+                  "test": "test_cuda_vif_log2_table",
+                  "result": "pass"
+                },
+                {
+                  "kind": "test",
+                  "test": "test_cuda_ssimulacra2_parity",
+                  "result": "pass"
+                },
+                {
+                  "kind": "test",
+                  "test": "test_cuda_ciede_parity",
+                  "result": "pass"
+                },
+                {
+                  "kind": "test",
+                  "test": "test_cuda_psnr_hvs_parity",
+                  "result": "pass"
+                },
+                {
+                  "kind": "test",
+                  "test": "test_cuda_float_ssim_order",
+                  "result": "pass"
+                },
+                {
+                  "kind": "test",
+                  "test": "test_cuda_float_ms_ssim_order",
+                  "result": "pass"
+                },
+                {
+                  "kind": "test",
+                  "test": "test_cuda_float_motion_parity",
+                  "result": "pass"
+                },
+                {
+                  "kind": "test",
+                  "test": "test_cuda_float_moment_parity",
+                  "result": "pass"
+                },
+                {
+                  "kind": "test",
+                  "test": "test_cuda_float_psnr_parity",
+                  "result": "pass"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_normal_576x324",
+                  "feature": "adm",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_checkerboard_1px_1080p",
+                  "feature": "adm",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_checkerboard_10px_1080p",
+                  "feature": "adm",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_normal_576x324_10bit",
+                  "feature": "adm",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_normal_576x324",
+                  "feature": "cambi",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_checkerboard_1px_1080p",
+                  "feature": "cambi",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_checkerboard_10px_1080p",
+                  "feature": "cambi",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_normal_576x324_10bit",
+                  "feature": "cambi",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_normal_576x324",
+                  "feature": "ciede",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_checkerboard_1px_1080p",
+                  "feature": "ciede",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_checkerboard_10px_1080p",
+                  "feature": "ciede",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_normal_576x324_10bit",
+                  "feature": "ciede",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_normal_576x324",
+                  "feature": "float_adm",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_checkerboard_1px_1080p",
+                  "feature": "float_adm",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_checkerboard_10px_1080p",
+                  "feature": "float_adm",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_normal_576x324_10bit",
+                  "feature": "float_adm",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_normal_576x324",
+                  "feature": "float_moment",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_checkerboard_1px_1080p",
+                  "feature": "float_moment",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_checkerboard_10px_1080p",
+                  "feature": "float_moment",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_normal_576x324_10bit",
+                  "feature": "float_moment",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_normal_576x324",
+                  "feature": "float_motion",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_checkerboard_1px_1080p",
+                  "feature": "float_motion",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_checkerboard_10px_1080p",
+                  "feature": "float_motion",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_normal_576x324_10bit",
+                  "feature": "float_motion",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_normal_576x324",
+                  "feature": "float_ms_ssim",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_checkerboard_1px_1080p",
+                  "feature": "float_ms_ssim",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_checkerboard_10px_1080p",
+                  "feature": "float_ms_ssim",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_normal_576x324_10bit",
+                  "feature": "float_ms_ssim",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_checkerboard_1px_1080p",
+                  "feature": "float_ms_ssim_chroma",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_checkerboard_10px_1080p",
+                  "feature": "float_ms_ssim_chroma",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_normal_576x324",
+                  "feature": "float_ms_ssim_lcs",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_checkerboard_1px_1080p",
+                  "feature": "float_ms_ssim_lcs",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_checkerboard_10px_1080p",
+                  "feature": "float_ms_ssim_lcs",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_normal_576x324_10bit",
+                  "feature": "float_ms_ssim_lcs",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_normal_576x324",
+                  "feature": "float_psnr",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_checkerboard_1px_1080p",
+                  "feature": "float_psnr",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_checkerboard_10px_1080p",
+                  "feature": "float_psnr",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_normal_576x324_10bit",
+                  "feature": "float_psnr",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_normal_576x324",
+                  "feature": "float_ssim",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_checkerboard_1px_1080p",
+                  "feature": "float_ssim",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_checkerboard_10px_1080p",
+                  "feature": "float_ssim",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_normal_576x324_10bit",
+                  "feature": "float_ssim",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_normal_576x324",
+                  "feature": "float_ssim_lcs",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_checkerboard_1px_1080p",
+                  "feature": "float_ssim_lcs",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_checkerboard_10px_1080p",
+                  "feature": "float_ssim_lcs",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_normal_576x324_10bit",
+                  "feature": "float_ssim_lcs",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_normal_576x324",
+                  "feature": "float_vif",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_checkerboard_1px_1080p",
+                  "feature": "float_vif",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_checkerboard_10px_1080p",
+                  "feature": "float_vif",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_normal_576x324_10bit",
+                  "feature": "float_vif",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_normal_576x324",
+                  "feature": "motion",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_checkerboard_1px_1080p",
+                  "feature": "motion",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_checkerboard_10px_1080p",
+                  "feature": "motion",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_normal_576x324_10bit",
+                  "feature": "motion",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_normal_576x324",
+                  "feature": "motion_debug",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_checkerboard_1px_1080p",
+                  "feature": "motion_debug",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_checkerboard_10px_1080p",
+                  "feature": "motion_debug",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_normal_576x324_10bit",
+                  "feature": "motion_debug",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_normal_576x324",
+                  "feature": "motion_mffw",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_checkerboard_1px_1080p",
+                  "feature": "motion_mffw",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_checkerboard_10px_1080p",
+                  "feature": "motion_mffw",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_normal_576x324_10bit",
+                  "feature": "motion_mffw",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_normal_576x324",
+                  "feature": "motion_v2",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_checkerboard_1px_1080p",
+                  "feature": "motion_v2",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_checkerboard_10px_1080p",
+                  "feature": "motion_v2",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_normal_576x324_10bit",
+                  "feature": "motion_v2",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_normal_576x324",
+                  "feature": "motion_v2_mffw",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_checkerboard_1px_1080p",
+                  "feature": "motion_v2_mffw",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_checkerboard_10px_1080p",
+                  "feature": "motion_v2_mffw",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_normal_576x324_10bit",
+                  "feature": "motion_v2_mffw",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_normal_576x324",
+                  "feature": "psnr",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_checkerboard_1px_1080p",
+                  "feature": "psnr",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_checkerboard_10px_1080p",
+                  "feature": "psnr",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_normal_576x324_10bit",
+                  "feature": "psnr",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_normal_576x324",
+                  "feature": "psnr_hvs",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_checkerboard_1px_1080p",
+                  "feature": "psnr_hvs",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_checkerboard_10px_1080p",
+                  "feature": "psnr_hvs",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_normal_576x324_10bit",
+                  "feature": "psnr_hvs",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_normal_576x324",
+                  "feature": "speed_chroma",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_checkerboard_1px_1080p",
+                  "feature": "speed_chroma",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_checkerboard_10px_1080p",
+                  "feature": "speed_chroma",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_normal_576x324_10bit",
+                  "feature": "speed_chroma",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_normal_576x324",
+                  "feature": "speed_temporal",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_checkerboard_1px_1080p",
+                  "feature": "speed_temporal",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_checkerboard_10px_1080p",
+                  "feature": "speed_temporal",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_normal_576x324_10bit",
+                  "feature": "speed_temporal",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_normal_576x324",
+                  "feature": "ssim",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_checkerboard_1px_1080p",
+                  "feature": "ssim",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_checkerboard_10px_1080p",
+                  "feature": "ssim",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_normal_576x324_10bit",
+                  "feature": "ssim",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_normal_576x324",
+                  "feature": "ssimulacra2",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_checkerboard_1px_1080p",
+                  "feature": "ssimulacra2",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_checkerboard_10px_1080p",
+                  "feature": "ssimulacra2",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_normal_576x324_10bit",
+                  "feature": "ssimulacra2",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_normal_576x324",
+                  "feature": "vif",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_checkerboard_1px_1080p",
+                  "feature": "vif",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_checkerboard_10px_1080p",
+                  "feature": "vif",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                },
+                {
+                  "kind": "gate",
+                  "fixture": "netflix_normal_576x324_10bit",
+                  "feature": "vif",
+                  "result": "OK",
+                  "max_abs_diff": "0"
+                }
+              ]
+            },
+            {
+              "id": "T-CUDA-TWINS-OTHER-ARCHITECTURES-2026-10-03",
+              "part": "Hopper (9.0: H100, H200; cubin sm_90): open",
+              "verdict": "not_applicable",
+              "evidence": []
+            },
+            {
+              "id": "T-CUDA-TWINS-OTHER-ARCHITECTURES-2026-10-03",
+              "part": "Blackwell (10.x, 11.0 and 12.x: B200, RTX 50xx, Jetson Thor, DGX Spark; cubins sm_100 and sm_120, PTX compute_80 for 11.0): open",
+              "verdict": "not_applicable",
+              "evidence": []
+            },
+            {
+              "id": "T-CUDA-TWINS-OTHER-ARCHITECTURES-2026-10-03",
+              "part": "Ada (8.9: RTX 40xx): measured on an RTX 4090 on 2026-10-03; a run repeats it",
+              "verdict": "not_applicable",
+              "evidence": []
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "not_exercised": [
+    {
+      "item": "tiny-AI / ONNX Runtime",
+      "reason": "built with -Denable_dnn=disabled"
+    },
+    {
+      "item": "Metal",
+      "reason": "needs macOS; this is a Linux container with no Metal device"
+    },
+    {
+      "item": "SYCL and HIP twins",
+      "reason": "this image is the CUDA build"
+    },
+    {
+      "item": "NEON and SVE2 kernels",
+      "reason": "not applicable on x86_64"
+    },
+    {
+      "item": "AVX-512 kernels",
+      "reason": "this CPU does not report AVX-512"
+    },
+    {
+      "item": "golden check",
+      "reason": "the CUDA image carries no Python test stack; the CPU tester image runs the Netflix golden gate"
+    },
+    {
+      "item": "CUDA test test_cuda_parity_gate_default_run",
+      "reason": "Python test of the source tree; device-free, runs in CI"
+    },
+    {
+      "item": "CUDA twins with options in the default-option run",
+      "reason": "measured by the gate only: float_ms_ssim_chroma, float_ms_ssim_lcs, float_ssim_lcs, motion_debug, motion_mffw, motion_v2_mffw"
+    }
+  ],
+  "verdict": "pass",
+  "failed_checks": [],
+  "note": "",
+  "report_sha256": "a9ad3e7f853e39494b9151389635215f5a9c2b306b1c829ead1c03e63412cd87"
+}

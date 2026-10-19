@@ -93,3 +93,13 @@ file-by-file as files are touched under ADR-0141, not tree-wide.
   `core/src/predict.c`, `core/src/feature/feature_collector.c`,
   `core/src/read_json_model.cpp`) — the first ADR-0141 pass over these
   upstream-mirror TUs.
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 18: `the first PR that reworks an upstream-mirror C file
+  (core/src/libvmaf.c, core/src/predict.c, core/src/feature/`: Path
+  `core/src/feature/feature_collector.c` does not exist on origin/master (the
+  file is `core/src/feature/feature_collector.cpp`).

@@ -2,22 +2,16 @@
 # SPDX-License-Identifier: EUPL-1.2
 """Coverage push for vmaftune.score_backend — gaps identified by inspection.
 
-Covers branches not exercised by the existing test_score_backend.py:
+Covers branches not exercised by the existing test_score_backend.py
+(backend detection reads ``vmaf --list-backends`` since ADR-1874; its
+tests live there):
 
-* :func:`_vmaf_help` — binary not on PATH, OSError from runner.
-* :func:`_probe_cuda` — nvidia-smi missing, runner raises OSError,
-  rc=0 but no GPU string.
-* :func:`_probe_sycl` — sycl-ls missing, runner raises OSError,
-  rc=0 but no bracket/gpu string.
-* :func:`_probe_hip` — rocminfo rc=0 + gfx, rocminfo raises,
-  rocm-smi path with card series, no tool available.
 * :class:`NRProxyBackend` — ``calibrated_vmaf_score`` clipping,
   ``is_far_from_target``, ``nr_implied_direction``,
   ``_resolve_sidecar_float`` from JSON, default-field resolution,
   ``clear_cache``, ``_luma_plane_bytes`` + ``_chroma_plane_bytes`` +
   ``_frame_bytes`` helpers for every pix_fmt.
 * :func:`_load_ort_session` error paths — missing model file.
-* ``BackendProbe.usable`` property.
 """
 
 from __future__ import annotations
@@ -25,7 +19,6 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from unittest import mock
 
 import pytest
 
@@ -36,226 +29,12 @@ from vmaftune.score_backend import (
     NR_PROXY_DEFAULT_CALIBRATION_INTERCEPT,
     NR_PROXY_DEFAULT_CALIBRATION_SLOPE,
     NR_PROXY_DEFAULT_DELTA_FAST,
-    BackendProbe,
     NRProxyBackend,
     NRProxyBackendError,
     _chroma_plane_bytes,
     _frame_bytes,
     _luma_plane_bytes,
-    _probe_cuda,
-    _probe_hip,
-    _probe_sycl,
-    _vmaf_help,
 )
-
-# ---------------------------------------------------------------------------
-# BackendProbe.usable
-# ---------------------------------------------------------------------------
-
-
-class TestBackendProbeUsable:
-    def test_both_true_is_usable(self) -> None:
-        probe = BackendProbe("cuda", binary_supports=True, hardware_available=True)
-        assert probe.usable is True
-
-    def test_binary_false_not_usable(self) -> None:
-        probe = BackendProbe("cuda", binary_supports=False, hardware_available=True)
-        assert probe.usable is False
-
-    def test_hardware_false_not_usable(self) -> None:
-        probe = BackendProbe("cuda", binary_supports=True, hardware_available=False)
-        assert probe.usable is False
-
-    def test_both_false_not_usable(self) -> None:
-        probe = BackendProbe("cpu", binary_supports=False, hardware_available=False)
-        assert probe.usable is False
-
-
-# ---------------------------------------------------------------------------
-# _vmaf_help
-# ---------------------------------------------------------------------------
-
-
-class TestVmafHelp:
-    def test_binary_not_on_path_returns_empty(self) -> None:
-        with mock.patch("vmaftune.score_backend.shutil.which", return_value=None):
-            result = _vmaf_help("vmaf_not_here")
-        assert result == ""
-
-    def test_os_error_returns_empty(self) -> None:
-        def bad_runner(cmd, **kw):
-            raise OSError("no such file")
-
-        with mock.patch("vmaftune.score_backend.shutil.which", return_value="/usr/bin/vmaf"):
-            result = _vmaf_help("vmaf", runner=bad_runner)
-        assert result == ""
-
-    def test_success_returns_combined_output(self) -> None:
-        def ok_runner(cmd, **kw):
-            return type(
-                "R",
-                (),
-                {"returncode": 0, "stdout": "Usage: vmaf\n", "stderr": "--backend auto|cpu\n"},
-            )()
-
-        with mock.patch("vmaftune.score_backend.shutil.which", return_value="/usr/bin/vmaf"):
-            result = _vmaf_help("vmaf", runner=ok_runner)
-        assert "Usage" in result
-        assert "--backend" in result
-
-    def test_absolute_path_skips_which_check(self) -> None:
-        """When vmaf_bin contains '/', shutil.which is not consulted."""
-
-        def ok_runner(cmd, **kw):
-            return type("R", (), {"returncode": 0, "stdout": "OK", "stderr": ""})()
-
-        # No mock.patch for shutil.which — the function must call runner directly
-        with mock.patch("vmaftune.score_backend.shutil.which", return_value=None):
-            result = _vmaf_help("/usr/local/bin/vmaf", runner=ok_runner)
-        assert "OK" in result
-
-
-# ---------------------------------------------------------------------------
-# _probe_cuda
-# ---------------------------------------------------------------------------
-
-
-class TestProbeCuda:
-    def test_nvidia_smi_not_on_path_returns_false(self) -> None:
-        with mock.patch("vmaftune.score_backend.shutil.which", return_value=None):
-            assert _probe_cuda() is False
-
-    def test_os_error_returns_false(self) -> None:
-        def bad_runner(cmd, **kw):
-            raise OSError("driver error")
-
-        with mock.patch("vmaftune.score_backend.shutil.which", return_value="/usr/bin/nvidia-smi"):
-            assert _probe_cuda(runner=bad_runner) is False
-
-    def test_rc_nonzero_returns_false(self) -> None:
-        def fail_runner(cmd, **kw):
-            return type("R", (), {"returncode": 1, "stdout": "GPU 0\n", "stderr": ""})()
-
-        with mock.patch("vmaftune.score_backend.shutil.which", return_value="/usr/bin/nvidia-smi"):
-            assert _probe_cuda(runner=fail_runner) is False
-
-    def test_rc_zero_no_gpu_string_returns_false(self) -> None:
-        def runner(cmd, **kw):
-            return type("R", (), {"returncode": 0, "stdout": "no devices found\n", "stderr": ""})()
-
-        with mock.patch("vmaftune.score_backend.shutil.which", return_value="/usr/bin/nvidia-smi"):
-            assert _probe_cuda(runner=runner) is False
-
-    def test_rc_zero_with_gpu_string_returns_true(self) -> None:
-        def runner(cmd, **kw):
-            return type(
-                "R",
-                (),
-                {"returncode": 0, "stdout": "GPU 0: NVIDIA RTX 4090\n", "stderr": ""},
-            )()
-
-        with mock.patch("vmaftune.score_backend.shutil.which", return_value="/usr/bin/nvidia-smi"):
-            assert _probe_cuda(runner=runner) is True
-
-
-# ---------------------------------------------------------------------------
-# _probe_sycl
-# ---------------------------------------------------------------------------
-
-
-class TestProbeSycl:
-    def test_sycl_ls_not_on_path_returns_false(self) -> None:
-        with mock.patch("vmaftune.score_backend.shutil.which", return_value=None):
-            assert _probe_sycl() is False
-
-    def test_os_error_returns_false(self) -> None:
-        def bad_runner(cmd, **kw):
-            raise OSError("no sycl-ls")
-
-        with mock.patch("vmaftune.score_backend.shutil.which", return_value="/usr/bin/sycl-ls"):
-            assert _probe_sycl(runner=bad_runner) is False
-
-    def test_rc_zero_no_gpu_device_returns_false(self) -> None:
-        def runner(cmd, **kw):
-            return type("R", (), {"returncode": 0, "stdout": "[opencl:cpu:0]\n", "stderr": ""})()
-
-        with mock.patch("vmaftune.score_backend.shutil.which", return_value="/usr/bin/sycl-ls"):
-            assert _probe_sycl(runner=runner) is False
-
-    def test_rc_zero_with_gpu_device_returns_true(self) -> None:
-        def runner(cmd, **kw):
-            return type(
-                "R",
-                (),
-                {
-                    "returncode": 0,
-                    "stdout": "[ext_oneapi_level_zero:gpu:0] Intel Arc A770\n",
-                    "stderr": "",
-                },
-            )()
-
-        with mock.patch("vmaftune.score_backend.shutil.which", return_value="/usr/bin/sycl-ls"):
-            assert _probe_sycl(runner=runner) is True
-
-
-# ---------------------------------------------------------------------------
-# _probe_hip
-# ---------------------------------------------------------------------------
-
-
-class TestProbeHip:
-    def test_no_tools_returns_false(self) -> None:
-        with mock.patch("vmaftune.score_backend.shutil.which", return_value=None):
-            assert _probe_hip() is False
-
-    def test_rocminfo_os_error_falls_through_to_rocm_smi(self) -> None:
-        call_count = {"n": 0}
-
-        def runner(cmd, **kw):
-            call_count["n"] += 1
-            if cmd[0] == "rocminfo":
-                raise OSError("no rocminfo")
-            # rocm-smi path
-            return type(
-                "R",
-                (),
-                {
-                    "returncode": 0,
-                    "stdout": "GPU[0] : Card series: AMD Radeon RX 7900\n",
-                    "stderr": "",
-                },
-            )()
-
-        def fake_which(binary):
-            return f"/usr/bin/{binary}" if binary in {"rocminfo", "rocm-smi"} else None
-
-        with mock.patch("vmaftune.score_backend.shutil.which", side_effect=fake_which):
-            result = _probe_hip(runner=runner)
-        assert result is True
-
-    def test_rocminfo_success_with_gfx_string(self) -> None:
-        def runner(cmd, **kw):
-            return type("R", (), {"returncode": 0, "stdout": "Name:    gfx1100\n", "stderr": ""})()
-
-        with mock.patch(
-            "vmaftune.score_backend.shutil.which",
-            side_effect=lambda b: f"/usr/bin/{b}" if b == "rocminfo" else None,
-        ):
-            assert _probe_hip(runner=runner) is True
-
-    def test_rocminfo_rc_nonzero_no_gfx_falls_through(self) -> None:
-        def runner(cmd, **kw):
-            if cmd[0] == "rocminfo":
-                return type("R", (), {"returncode": 1, "stdout": "", "stderr": ""})()
-            # rocm-smi not present
-            raise OSError
-
-        with mock.patch(
-            "vmaftune.score_backend.shutil.which",
-            side_effect=lambda b: "/usr/bin/rocminfo" if b == "rocminfo" else None,
-        ):
-            assert _probe_hip(runner=runner) is False
-
 
 # ---------------------------------------------------------------------------
 # Pixel-format byte helpers

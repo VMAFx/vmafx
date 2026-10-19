@@ -1,0 +1,5 @@
+# DCO rollout cutoff (ADR-2462, Q-201). One UTC timestamp, ISO 8601.
+# A pull request created before it is grandfathered by scripts/ci/check-dco.py;
+# one created at or after it needs a sign-off on every commit. Set it to the
+# time the check lands. CONTRIBUTING.md states the date.
+2026-10-09T00:00:00Z

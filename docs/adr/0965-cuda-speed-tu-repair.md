@@ -80,3 +80,13 @@ ADR-0964.
 - ADR-0214 — cross-backend parity tolerance (places=4).
 - `core/src/cuda/cuda_helper.cuh` — `CHECK_CUDA_GOTO` / `CHECK_CUDA_RETURN`
   definitions.
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 47: `core/src/feature/feature_extractor.c (under #if HAVE_CUDA),
+  and add`: `core/src/feature/feature_extractor.c` does not exist on
+  origin/master; the file was renamed to
+  `core/src/feature/feature_extractor.cpp` by ADR-0772.

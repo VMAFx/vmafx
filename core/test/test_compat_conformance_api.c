@@ -1,0 +1,661 @@
+/**
+ *
+ *  Copyright 2026 Lusoris
+ *
+ * SPDX-License-Identifier: EUPL-1.2
+ */
+
+/*
+ * Conformance scenarios of the libvmaf compat library (RC4 WP6) that need no
+ * YUV files: contexts, dictionaries, models and collections, pictures, their
+ * v2 form and wrapped pictures (with one short psnr run), conversion,
+ * perceptual weighting, tiny AI, the HIP / Metal
+ * functions of a build without them, and the MCP server. Each call's result
+ * and outputs go to the trace; test_compat_conformance.c compares the trace
+ * of the old libvmaf with the compat library's.
+ */
+
+#include <errno.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+
+#include "compat_conformance_trace.h"
+
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` and the
+ * required Windows builds compile this TU with cl.exe (C2065). ADR-1138. */
+
+#define PATH_TEXT 1024
+#define MODEL_FEATURE_PROBE 32u  /* past every built-in model's feature count */
+#define BUILTIN_VERSIONS_MAX 64u /* HISS-02 bound of the built-in model walk */
+#define BACKEND_HANDLE_PROBE 8
+
+static const char *model_file(char *buf, const char *name)
+{
+    const int n = snprintf(buf, PATH_TEXT, "%s/%s", VMAFX_TEST_MODEL_DIR, name);
+    if (n < 0 || n >= PATH_TEXT) {
+        buf[0] = '\0'; /* no such file: both sides trace the refusal */
+    }
+    return buf;
+}
+
+static VmafConfiguration quiet_config(void)
+{
+    VmafConfiguration cfg;
+    memset(&cfg, 0, sizeof(cfg));
+    cfg.log_level = VMAF_LOG_LEVEL_NONE;
+    return cfg;
+}
+
+/* ---- Contexts ---------------------------------------------------------------- */
+
+void scenario_lifecycle(const VmafCompatApi *api, Trace *t)
+{
+    VmafContext *vmaf = NULL;
+    trace(t, "init(NULL) %d", api->init(NULL, quiet_config()));
+    const int err = api->init(&vmaf, quiet_config());
+    trace(t, "init %d context %d", err, vmaf != NULL);
+    trace(t, "version %s", trace_str(api->version()));
+    trace(t, "close(NULL) %d", api->close(NULL));
+    trace(t, "close %d", api->close(vmaf));
+}
+
+/* ---- Dictionaries ------------------------------------------------------------ */
+
+void scenario_dictionary(const VmafCompatApi *api, Trace *t)
+{
+    VmafFeatureDictionary *dict = NULL;
+    trace(t, "set number %d", api->feature_dictionary_set(&dict, "enable_chroma", "1"));
+    trace(t, "set text %d", api->feature_dictionary_set(&dict, "name", "value"));
+    trace(t, "set again %d", api->feature_dictionary_set(&dict, "enable_chroma", "0"));
+    trace(t, "set NULL dict %d", api->feature_dictionary_set(NULL, "a", "b"));
+    const int freed = api->feature_dictionary_free(&dict);
+    trace(t, "free %d emptied %d", freed, dict == NULL);
+    trace(t, "free empty %d", api->feature_dictionary_free(&dict));
+    trace(t, "free NULL %d", api->feature_dictionary_free(NULL));
+}
+
+/* ---- Models ------------------------------------------------------------------ */
+
+static void trace_features(const VmafCompatApi *api, Trace *t, const VmafModel *model)
+{
+    const unsigned n = api->model_feature_count(model);
+    trace(t, "feature count %u", n);
+    for (unsigned i = 0; i <= n && i < MODEL_FEATURE_PROBE; i++) {
+        trace(t, "feature %u %s", i, trace_str(api->model_feature_name(model, i)));
+    }
+}
+
+static void overload(const VmafCompatApi *api, Trace *t, VmafModel *model)
+{
+    VmafFeatureDictionary *opts = NULL;
+    trace(t, "set adm %d", api->feature_dictionary_set(&opts, "adm_enhn_gain_limit", "1.2"));
+    trace(t, "overload adm %d", api->model_feature_overload(model, "adm", opts));
+    /* An extractor the model reads no feature of (the vmaf command line passes
+     * cambi options to every model). */
+    VmafFeatureDictionary *unused = NULL;
+    trace(t, "set cambi %d", api->feature_dictionary_set(&unused, "enc_width", "576"));
+    trace(t, "overload cambi %d", api->model_feature_overload(model, "cambi", unused));
+    trace(t, "overload NULL opts %d", api->model_feature_overload(model, "adm", NULL));
+    trace(t, "overload NULL model %d", api->model_feature_overload(NULL, "adm", NULL));
+}
+
+static void builtin_versions(const VmafCompatApi *api, Trace *t)
+{
+    const char *version = NULL;
+    const void *cursor = api->model_version_next(NULL, &version);
+    for (unsigned i = 0; cursor && i < BUILTIN_VERSIONS_MAX; i++) {
+        trace(t, "builtin %s", trace_str(version));
+        cursor = api->model_version_next(cursor, &version);
+    }
+    trace(t, "after the last %s", trace_str(version));
+    trace(t, "default %s", trace_str(api->default_model_version()));
+}
+
+void scenario_models(const VmafCompatApi *api, Trace *t)
+{
+    char path[PATH_TEXT];
+    VmafModelConfig cfg = {.name = "conformance", .flags = VMAF_MODEL_FLAGS_DEFAULT};
+    VmafModel *model = NULL;
+    trace(t, "load NULL version %d", api->model_load(&model, &cfg, NULL));
+    trace(t, "load unknown %d", api->model_load(&model, &cfg, "no_such_model"));
+    trace(t, "load %d", api->model_load(&model, &cfg, "vmaf_v0.6.1"));
+    trace_features(api, t, model);
+    overload(api, t, model);
+    api->model_destroy(model);
+    model = NULL;
+    trace(t, "load path %d",
+          api->model_load_from_path(&model, &cfg, model_file(path, "vmaf_v0.6.1neg.json")));
+    trace_features(api, t, model);
+    api->model_destroy(model);
+    model = NULL;
+    trace(t, "load missing path %d",
+          api->model_load_from_path(&model, &cfg, model_file(path, "missing.json")));
+    trace(t, "count NULL %u", api->model_feature_count(NULL));
+    trace(t, "name NULL %s", trace_str(api->model_feature_name(NULL, 0)));
+    api->model_destroy(NULL);
+    builtin_versions(api, t);
+}
+
+static void trace_collection(const VmafCompatApi *api, Trace *t, VmafModel *model,
+                             VmafModelCollection *collection)
+{
+    trace(t, "collection %d lead %d", collection != NULL, model != NULL);
+    if (!collection || !model) {
+        return;
+    }
+    trace_features(api, t, model);
+    VmafFeatureDictionary *opts = NULL;
+    trace(t, "set vif %d", api->feature_dictionary_set(&opts, "vif_enhn_gain_limit", "1.1"));
+    trace(t, "collection overload %d",
+          api->model_collection_feature_overload(model, &collection, "vif", opts));
+    VmafFeatureDictionary *unused = NULL;
+    trace(t, "set cambi %d", api->feature_dictionary_set(&unused, "enc_bitdepth", "8"));
+    trace(t, "collection overload cambi %d",
+          api->model_collection_feature_overload(model, &collection, "cambi", unused));
+    trace(t, "collection overload NULL %d",
+          api->model_collection_feature_overload(model, NULL, "vif", NULL));
+    api->model_destroy(model);
+    api->model_collection_destroy(collection);
+}
+
+void scenario_collections(const VmafCompatApi *api, Trace *t)
+{
+    char path[PATH_TEXT];
+    VmafModelConfig cfg = {.name = "set", .flags = VMAF_MODEL_FLAGS_DEFAULT};
+    VmafModel *model = NULL;
+    VmafModelCollection *collection = NULL;
+    trace(t, "collection unknown %d",
+          api->model_collection_load(&model, &collection, &cfg, "no_such_set"));
+    trace(t, "collection NULL version %d",
+          api->model_collection_load(&model, &collection, &cfg, NULL));
+    trace(t, "collection load %d",
+          api->model_collection_load(&model, &collection, &cfg, "vmaf_b_v0.6.3"));
+    trace_collection(api, t, model, collection);
+    model = NULL;
+    collection = NULL;
+    trace(t, "collection path %d",
+          api->model_collection_load_from_path(&model, &collection, &cfg,
+                                               model_file(path, "vmaf_b_v0.6.3.json")));
+    trace_collection(api, t, model, collection);
+    api->model_collection_destroy(NULL);
+}
+
+/* ---- Pictures ---------------------------------------------------------------- */
+
+static void trace_picture(Trace *t, const char *what, const VmafPicture *pic)
+{
+    trace(t, "%s fmt %d bpc %u w %u/%u/%u h %u/%u/%u stride %td/%td/%td data %d%d%d ref %d", what,
+          (int)pic->pix_fmt, pic->bpc, pic->w[0], pic->w[1], pic->w[2], pic->h[0], pic->h[1],
+          pic->h[2], pic->stride[0], pic->stride[1], pic->stride[2], pic->data[0] != NULL,
+          pic->data[1] != NULL, pic->data[2] != NULL, pic->ref != NULL);
+}
+
+static void picture_allocs(const VmafCompatApi *api, Trace *t)
+{
+    VmafPicture pic;
+    memset(&pic, 0, sizeof(pic));
+    trace(t, "alloc NULL %d", api->picture_alloc(NULL, VMAF_PIX_FMT_YUV420P, 8, 64, 48));
+    trace(t, "alloc no format %d", api->picture_alloc(&pic, VMAF_PIX_FMT_UNKNOWN, 8, 64, 48));
+    trace(t, "alloc 7 bit %d", api->picture_alloc(&pic, VMAF_PIX_FMT_YUV420P, 7, 64, 48));
+    trace(t, "alloc 0 wide %d", api->picture_alloc(&pic, VMAF_PIX_FMT_YUV420P, 8, 0, 48));
+    static const enum VmafPixelFormat formats[] = {VMAF_PIX_FMT_YUV420P, VMAF_PIX_FMT_YUV422P,
+                                                   VMAF_PIX_FMT_YUV444P, VMAF_PIX_FMT_YUV400P};
+    for (unsigned i = 0; i < 4u; i++) {
+        trace(t, "alloc %d", api->picture_alloc(&pic, formats[i], 8u + 2u * i, 65, 37));
+        trace_picture(t, "picture", &pic);
+        trace(t, "unref %d", api->picture_unref(&pic));
+        trace_picture(t, "after unref", &pic);
+    }
+    trace(t, "unref again %d", api->picture_unref(&pic));
+    trace(t, "unref NULL %d", api->picture_unref(NULL));
+}
+
+static void trace_picture2(Trace *t, const char *what, const VmafPicture2 *pic)
+{
+    trace(t, "%s fmt %d bpc %u w %u h %u stride %td data %d ref %d backend %d handle %d", what,
+          (int)pic->pix_fmt, pic->bpc, pic->w[0], pic->h[0], pic->stride[0], pic->data[0] != NULL,
+          pic->ref != NULL, (int)pic->backend, pic->backend_handle != 0);
+}
+
+static void picture_v2(const VmafCompatApi *api, Trace *t)
+{
+    VmafPicture2 two;
+    VmafPicture one;
+    memset(&two, 0, sizeof(two));
+    memset(&one, 0, sizeof(one));
+    trace(t, "alloc2 NULL %d", api->picture2_alloc(NULL, VMAF_PIX_FMT_YUV420P, 8, 32, 32));
+    trace(t, "alloc2 %d", api->picture2_alloc(&two, VMAF_PIX_FMT_YUV444P, 10, 33, 17));
+    trace_picture2(t, "picture2", &two);
+    trace(t, "v2 to v1 %d", api->picture_v2_to_v1(&two, &one));
+    trace_picture(t, "v1 of v2", &one);
+    trace(t, "unref2 %d", api->picture2_unref(&two));
+    trace_picture2(t, "after unref2", &two);
+    trace(t, "v1 to v2 %d", api->picture_v1_to_v2(&one, &two));
+    trace_picture2(t, "v2 of v1", &two);
+    trace(t, "unref v1 %d", api->picture_unref(&one));
+    trace(t, "unref2 %d", api->picture2_unref(&two));
+    trace(t, "unref2 again %d", api->picture2_unref(&two));
+    trace(t, "unref2 NULL %d", api->picture2_unref(NULL));
+    trace(t, "v1 to v2 NULL %d no ref %d", api->picture_v1_to_v2(NULL, &two),
+          api->picture_v1_to_v2(&one, &two));
+    trace(t, "v2 to v1 NULL %d no ref %d", api->picture_v2_to_v1(NULL, &one),
+          api->picture_v2_to_v1(&two, &one));
+    for (int b = -1; b < BACKEND_HANDLE_PROBE; b++) {
+        /* Values past the enum on purpose: both sides must refuse them alike. */
+        /* NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange) -- ADR-1080 */
+        const VmafBackendHandle handle = (VmafBackendHandle)b;
+        trace(t, "handle name %d %s", b, trace_str(api->backend_handle_name(handle)));
+    }
+}
+
+/* ---- Wrapped pictures (Netflix/vmaf 700124a4c, ADR-2949) ---------------------- */
+
+#define WRAP_W 65u /* odd: the chroma extents are rounded up (ADR-1483) */
+#define WRAP_H 37u
+#define WRAP_BYTES (WRAP_W * WRAP_H * 2u * 3u) /* three full 16-bit planes */
+
+/* What the release callback of a wrapped picture saw. */
+typedef struct WrapRecord {
+    unsigned calls;
+    VmafPicture seen;
+} WrapRecord;
+
+static int wrap_record(VmafPicture *pic, void *cookie)
+{
+    WrapRecord *const r = cookie;
+    r->calls++;
+    r->seen = *pic;
+    return -1; /* ignored by both sides */
+}
+
+/* Tight planes of a WRAP_W x WRAP_H picture in `buf`; no chroma for YUV400P. */
+static VmafPictureWrapped wrap_planes(uint8_t *buf, enum VmafPixelFormat fmt, unsigned bpc,
+                                      WrapRecord *record)
+{
+    VmafPictureWrapped w;
+    memset(&w, 0, sizeof(w));
+    w.pix_fmt = fmt;
+    w.bpc = bpc;
+    w.w = WRAP_W;
+    w.h = WRAP_H;
+    const unsigned bytes = bpc > 8u ? 2u : 1u;
+    const unsigned cw = fmt == VMAF_PIX_FMT_YUV444P ? WRAP_W : (WRAP_W + 1u) / 2u;
+    const unsigned ch = fmt == VMAF_PIX_FMT_YUV420P ? (WRAP_H + 1u) / 2u : WRAP_H;
+    w.data[0] = buf;
+    w.stride[0] = (ptrdiff_t)WRAP_W * (ptrdiff_t)bytes;
+    if (fmt != VMAF_PIX_FMT_YUV400P) {
+        w.data[1] = buf + ((size_t)WRAP_W * bytes * WRAP_H);
+        w.stride[1] = w.stride[2] = (ptrdiff_t)cw * (ptrdiff_t)bytes;
+        w.data[2] = (uint8_t *)w.data[1] + ((size_t)cw * bytes * ch);
+    }
+    w.cookie = record;
+    w.release_picture = record ? wrap_record : NULL;
+    return w;
+}
+
+/* Byte offset of a plane in `buf`, -1 for none. */
+static long plane_offset(const void *plane, const uint8_t *buf)
+{
+    return plane ? (long)((const uint8_t *)plane - buf) : -1L;
+}
+
+static void trace_wrapped(Trace *t, const char *what, const VmafPicture *pic, const uint8_t *buf)
+{
+    trace(t, "%s fmt %d bpc %u w %u/%u/%u h %u/%u/%u stride %td/%td/%td at %ld/%ld/%ld", what,
+          (int)pic->pix_fmt, pic->bpc, pic->w[0], pic->w[1], pic->w[2], pic->h[0], pic->h[1],
+          pic->h[2], pic->stride[0], pic->stride[1], pic->stride[2],
+          plane_offset(pic->data[0], buf), plane_offset(pic->data[1], buf),
+          plane_offset(pic->data[2], buf));
+}
+
+/* One refused wrap: its error, whether `pic` stayed as it was, no release. */
+static void wrap_refused(const VmafCompatApi *api, Trace *t, const char *what,
+                         const VmafPictureWrapped *w)
+{
+    VmafPicture pic;
+    VmafPicture before;
+    memset(&pic, 0x5a, sizeof(pic));
+    memcpy(&before, &pic, sizeof(before));
+    WrapRecord *const record = w->cookie;
+    const int err = api->picture_wrap(&pic, *w);
+    trace(t, "wrap %s %d untouched %d released %u", what, err,
+          memcmp(&pic, &before, sizeof(pic)) == 0, record ? record->calls : 0u);
+}
+
+static void wrap_refusals(const VmafCompatApi *api, Trace *t, uint8_t *buf)
+{
+    WrapRecord record = {0};
+    const VmafPictureWrapped good = wrap_planes(buf, VMAF_PIX_FMT_YUV420P, 8, &record);
+    trace(t, "wrap NULL %d", api->picture_wrap(NULL, good));
+    VmafPictureWrapped w = good;
+    w.pix_fmt = VMAF_PIX_FMT_UNKNOWN;
+    wrap_refused(api, t, "no format", &w);
+    /* A value past the enum on purpose: both sides must refuse it alike. */
+    /* NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange) -- ADR-1080 */
+    w.pix_fmt = (enum VmafPixelFormat)(VMAF_PIX_FMT_YUV400P + 1);
+    wrap_refused(api, t, "format past the enum", &w);
+    static const unsigned depths[] = {7u, 17u};
+    for (unsigned i = 0; i < 2u; i++) {
+        w = good;
+        w.bpc = depths[i];
+        wrap_refused(api, t, i ? "17 bit" : "7 bit", &w);
+    }
+    w = good;
+    w.w = 0;
+    wrap_refused(api, t, "0 wide", &w);
+    w = good;
+    w.h = 0;
+    wrap_refused(api, t, "0 tall", &w);
+    w = good;
+    w.data[1] = NULL;
+    wrap_refused(api, t, "no chroma", &w);
+    w = good;
+    w.stride[0] = -w.stride[0];
+    wrap_refused(api, t, "negative stride", &w);
+    w = good;
+    w.stride[1] = (ptrdiff_t)(WRAP_W / 2u); /* upstream's rounded-down chroma row */
+    wrap_refused(api, t, "short chroma stride", &w);
+}
+
+/* Every format, 8 to 16 bits: the picture, then what its release saw. */
+static void wrap_formats(const VmafCompatApi *api, Trace *t, uint8_t *buf)
+{
+    static const enum VmafPixelFormat formats[] = {VMAF_PIX_FMT_YUV420P, VMAF_PIX_FMT_YUV422P,
+                                                   VMAF_PIX_FMT_YUV444P, VMAF_PIX_FMT_YUV400P};
+    for (unsigned i = 0; i < 5u; i++) {
+        WrapRecord record = {0};
+        const unsigned bpc = i < 4u ? 8u + (2u * i) : 16u;
+        VmafPicture pic;
+        memset(&pic, 0, sizeof(pic));
+        trace(t, "wrap %d",
+              api->picture_wrap(&pic, wrap_planes(buf, formats[i % 4u], bpc, &record)));
+        trace_wrapped(t, "wrapped", &pic, buf);
+        trace(t, "released before unref %u", record.calls);
+        trace(t, "unref %d released %u", api->picture_unref(&pic), record.calls);
+        trace_wrapped(t, "release saw", &record.seen, buf);
+    }
+    VmafPicture pic;
+    memset(&pic, 0, sizeof(pic));
+    trace(t, "wrap without release %d",
+          api->picture_wrap(&pic, wrap_planes(buf, VMAF_PIX_FMT_YUV420P, 8, NULL)));
+    trace(t, "unref %d", api->picture_unref(&pic));
+}
+
+/* Two wrapped pairs through a context: psnr of each, every release by close. */
+static void wrap_scored(const VmafCompatApi *api, Trace *t, uint8_t *ref, uint8_t *dist)
+{
+    for (unsigned i = 0; i < WRAP_BYTES; i++) {
+        ref[i] = (uint8_t)((i * 7u) & 0xffu);
+        dist[i] = (uint8_t)(((i * 7u) + (i % 5u)) & 0xffu);
+    }
+    VmafContext *vmaf = NULL;
+    trace(t, "init %d", api->init(&vmaf, quiet_config()));
+    trace(t, "use psnr %d", api->use_feature(vmaf, "psnr", NULL));
+    WrapRecord record = {0};
+    for (unsigned i = 0; i < 2u; i++) {
+        VmafPicture r;
+        VmafPicture d;
+        const int a = api->picture_wrap(&r, wrap_planes(ref, VMAF_PIX_FMT_YUV420P, 8, &record));
+        const int b =
+            api->picture_wrap(&d, wrap_planes(dist + i, VMAF_PIX_FMT_YUV420P, 8, &record));
+        trace(t, "wrap pair %u %d %d read %d", i, a, b, api->read_pictures(vmaf, &r, &d, i));
+    }
+    trace(t, "flush %d", api->read_pictures(vmaf, NULL, NULL, 0));
+    for (unsigned i = 0; i < 2u; i++) {
+        double score = 0.0;
+        const int err = api->feature_score_at_index(vmaf, "psnr_y", &score, i);
+        trace(t, "psnr_y %u %d %a", i, err, score);
+    }
+    trace(t, "close %d released %u", api->close(vmaf), record.calls);
+}
+
+static void picture_wraps(const VmafCompatApi *api, Trace *t)
+{
+    /* The planes of one picture, and of a pair with one byte to spare. */
+    static uint8_t buf[WRAP_BYTES];
+    static uint8_t dist[WRAP_BYTES + 1u];
+    wrap_refusals(api, t, buf);
+    wrap_formats(api, t, buf);
+    wrap_scored(api, t, buf, dist);
+}
+
+void scenario_pictures(const VmafCompatApi *api, Trace *t)
+{
+    picture_allocs(api, t);
+    picture_v2(api, t);
+    picture_wraps(api, t);
+}
+
+/* ---- Conversion (#2140) -------------------------------------------------------- */
+
+void scenario_conversion(const VmafCompatApi *api, Trace *t)
+{
+    VmafPicture src;
+    VmafPicture dst;
+    memset(&dst, 0, sizeof(dst));
+    trace(t, "alloc %d", api->picture_alloc(&src, VMAF_PIX_FMT_YUV420P, 8, 64, 48));
+    const VmafColor color = {VMAF_COLOR_RANGE_LIMITED, VMAF_COLOR_PRIMARIES_BT709,
+                             VMAF_COLOR_TRC_BT709, VMAF_COLOR_MATRIX_BT709};
+    const VmafPictureConvertTarget target = {VMAF_PIX_FMT_YUV444P,  10, 32, 24, color,
+                                             VMAF_RESAMPLE_BILINEAR};
+    VmafPictureConvertContext *ctx = NULL;
+    trace(t, "convert init NULL %d",
+          api->picture_convert_context_init_with_color(NULL, &src, &color, &target));
+    const int err = api->picture_convert_context_init_with_color(&ctx, &src, &color, &target);
+    trace(t, "convert init %d", err);
+    trace(t, "convert %d", api->picture_convert(ctx, &dst, &src));
+    trace_picture(t, "converted", &dst);
+    if (dst.ref) {
+        trace(t, "unref converted %d", api->picture_unref(&dst));
+    }
+    trace(t, "convert NULL %d", api->picture_convert(NULL, NULL, NULL));
+    trace(t, "close %d", api->picture_convert_context_close(err ? NULL : ctx));
+    trace(t, "close NULL %d", api->picture_convert_context_close(NULL));
+    trace(t, "unref %d", api->picture_unref(&src));
+}
+
+/* ---- Perceptual weighting (ADR-1118) ---------------------------------------------- */
+
+void scenario_perceptual(const VmafCompatApi *api, Trace *t)
+{
+    VmafContext *vmaf = NULL;
+    trace(t, "init %d", api->init(&vmaf, quiet_config()));
+    static const uint8_t garbage[] = {0x50, 0x4c, 0x52, 0x53, 0, 0, 0, 0};
+    trace(t, "enable %d", api->set_perceptual_weight_enabled(vmaf, 1));
+    trace(t, "enable NULL %d", api->set_perceptual_weight_enabled(NULL, 1));
+    trace(t, "strength %d", api->set_perceptual_weight_strength(vmaf, 0.75));
+    trace(t, "strength negative %d", api->set_perceptual_weight_strength(vmaf, -1.0));
+    trace(t, "strength NULL %d", api->set_perceptual_weight_strength(NULL, 0.5));
+    trace(t, "sidedata garbage %d",
+          api->set_perceptual_sidedata(vmaf, garbage, sizeof(garbage), 0));
+    trace(t, "sidedata NULL blob %d", api->set_perceptual_sidedata(vmaf, NULL, 0, 0));
+    trace(t, "sidedata NULL %d", api->set_perceptual_sidedata(NULL, garbage, 8, 0));
+    trace(t, "disable %d", api->set_perceptual_weight_enabled(vmaf, 0));
+    trace(t, "close %d", api->close(vmaf));
+}
+
+/* ---- Tiny AI ------------------------------------------------------------------------ */
+
+#define TINY_LUMA8_SAMPLES 49u /* 7x7, the largest 8-bit plane tiny_runs() names */
+
+/* A session on the 4x4 smoke model (model/tiny/smoke_v0.onnx, NCHW
+ * [1,1,4,4]): every run form, outputs as %a. Without tiny-AI support every
+ * call is -ENOSYS on both sides. */
+static void tiny_runs(const VmafCompatApi *api, Trace *t, VmafDnnSession *sess)
+{
+    /* The 8-bit planes hold the largest run below, 7x7: the library reads the
+     * plane it is told about, and may write one of the same size. */
+    uint8_t in8[TINY_LUMA8_SAMPLES];
+    uint8_t out8[TINY_LUMA8_SAMPLES] = {0};
+    uint16_t in16[16];
+    uint16_t out16[16] = {0};
+    float in_f[16];
+    float out_f[16] = {0};
+    for (unsigned i = 0; i < TINY_LUMA8_SAMPLES; i++) {
+        in8[i] = (uint8_t)(i * 13u);
+    }
+    for (unsigned i = 0; i < 16u; i++) {
+        in16[i] = (uint16_t)(i * 61u);
+        in_f[i] = (float)i / 16.0f;
+    }
+    trace(t, "run8 %d", api->dnn_session_run_luma8(sess, in8, 4, 4, 4, out8, 4));
+    for (unsigned i = 0; i < 16u; i++) {
+        trace(t, "out8 %u %u", i, out8[i]);
+    }
+    trace(t, "run8 7x7 %d", api->dnn_session_run_luma8(sess, in8, 7, 7, 7, out8, 7));
+    trace(t, "run16 %d", api->dnn_session_run_plane16(sess, in16, 8, 4, 4, 10, out16, 8));
+    trace(t, "out16 %u %u", out16[0], out16[15]);
+    const int64_t shape[4] = {1, 1, 4, 4};
+    const VmafDnnInput input = {NULL, in_f, shape, 4};
+    VmafDnnOutput output = {NULL, out_f, 16, 0};
+    trace(t, "run %d", api->dnn_session_run(sess, &input, 1, &output, 1));
+    trace(t, "written %zu %a %a", output.written, (double)out_f[0], (double)out_f[15]);
+    trace(t, "ep %s", trace_str(api->dnn_session_attached_ep(sess)));
+}
+
+static void tiny_sessions(const VmafCompatApi *api, Trace *t)
+{
+    VmafDnnSession *sess = NULL;
+    const VmafDnnConfig cfg = {VMAF_DNN_DEVICE_CPU, 0, 1, false};
+    uint8_t plane8[16] = {0};
+    uint16_t plane16[16] = {0};
+    trace(t, "open missing %d", api->dnn_session_open(&sess, "/nonexistent/model.onnx", &cfg));
+    trace(t, "open NULL %d", api->dnn_session_open(NULL, NULL, NULL));
+    trace(t, "run8 NULL %d", api->dnn_session_run_luma8(NULL, plane8, 4, 4, 4, plane8, 4));
+    trace(t, "run16 NULL %d", api->dnn_session_run_plane16(NULL, plane16, 8, 4, 4, 10, plane16, 8));
+    trace(t, "run NULL %d", api->dnn_session_run(NULL, NULL, 0, NULL, 0));
+    trace(t, "ep NULL %s", trace_str(api->dnn_session_attached_ep(NULL)));
+    api->dnn_session_close(NULL);
+    char path[PATH_TEXT];
+    const int err = api->dnn_session_open(&sess, model_file(path, "tiny/smoke_v0.onnx"), &cfg);
+    trace(t, "open smoke %d session %d", err, sess != NULL);
+    if (!err) {
+        tiny_runs(api, t, sess);
+        api->dnn_session_close(sess);
+    }
+    trace(t, "verify NULL %d", api->dnn_verify_signature(NULL, NULL));
+    trace(t, "verify missing %d", api->dnn_verify_signature("/nonexistent/model.onnx", NULL));
+}
+
+void scenario_tiny_ai(const VmafCompatApi *api, Trace *t)
+{
+    VmafContext *vmaf = NULL;
+    trace(t, "init %d", api->init(&vmaf, quiet_config()));
+    trace(t, "dnn available %d", api->dnn_available());
+    trace(t, "use missing %d", api->use_tiny_model(vmaf, "/nonexistent/model.onnx", NULL));
+    char path[PATH_TEXT];
+    trace(t, "use smoke %d",
+          api->use_tiny_model(vmaf, model_file(path, "tiny/smoke_v0.onnx"), NULL));
+    trace(t, "use NULL %d", api->use_tiny_model(NULL, NULL, NULL));
+    trace(t, "codec %d", api->dnn_set_codec_context(vmaf, "libx264", "medium", 23));
+    trace(t, "codec NULL %d", api->dnn_set_codec_context(NULL, NULL, NULL, 0));
+    trace(t, "codec aware %d NULL %d", api->dnn_is_codec_aware(vmaf),
+          api->dnn_is_codec_aware(NULL));
+    trace(t, "resize %d", api->dnn_set_resize_mode(vmaf, VMAF_DNN_RESIZE_BILINEAR));
+    /* NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange) -- ADR-1080 */
+    const VmafDnnResizeMode bad_mode = (VmafDnnResizeMode)99;
+    trace(t, "resize bad %d", api->dnn_set_resize_mode(vmaf, bad_mode));
+    trace(t, "resize NULL %d", api->dnn_set_resize_mode(NULL, VMAF_DNN_RESIZE_DISABLED));
+    tiny_sessions(api, t);
+    trace(t, "close %d", api->close(vmaf));
+}
+
+/* ---- HIP / Metal in a build without them ----------------------------------------------- */
+
+#if !VMAFX_ENGINE_EXPORTS_HIP || !VMAFX_ENGINE_EXPORTS_METAL
+/* A state pointer that is not NULL, to see the absent backend clear it; the
+ * functions never dereference it. */
+static unsigned char not_a_state;
+#endif
+
+#if !VMAFX_ENGINE_EXPORTS_HIP
+static void hip_absent(const VmafCompatApi *api, Trace *t)
+{
+    VmafHipState *state = (VmafHipState *)&not_a_state;
+    const VmafHipConfiguration cfg = {-1, 0};
+    trace(t, "hip available %d", api->hip_available());
+    const int err = api->hip_state_init(&state, cfg);
+    trace(t, "hip init %d cleared %d", err, state == NULL);
+    trace(t, "hip init NULL %d", api->hip_state_init(NULL, cfg));
+    trace(t, "hip import %d", api->hip_import_state(NULL, NULL));
+    state = (VmafHipState *)&not_a_state;
+    api->hip_state_free(&state);
+    trace(t, "hip free cleared %d", state == NULL);
+    api->hip_state_free(NULL);
+    trace(t, "hip list %d", api->hip_list_devices());
+}
+#endif
+
+#if !VMAFX_ENGINE_EXPORTS_METAL
+static void metal_absent(const VmafCompatApi *api, Trace *t)
+{
+    VmafMetalState *state = (VmafMetalState *)&not_a_state;
+    VmafMetalConfiguration cfg;
+    VmafMetalExternalHandles handles;
+    memset(&cfg, 0, sizeof(cfg));
+    memset(&handles, 0, sizeof(handles));
+    trace(t, "metal available %d", api->metal_available());
+    const int err = api->metal_state_init(&state, cfg);
+    trace(t, "metal init %d cleared %d", err, state == NULL);
+    trace(t, "metal import %d", api->metal_import_state(NULL, NULL));
+    state = (VmafMetalState *)&not_a_state;
+    api->metal_state_free(&state);
+    trace(t, "metal free cleared %d", state == NULL);
+    trace(t, "metal list %d", api->metal_list_devices());
+    trace(t, "metal external %d", api->metal_state_init_external(&state, handles));
+    trace(t, "metal picture %d", api->metal_picture_import(NULL, 0, 0, 16, 16, 8, 1, 0));
+    trace(t, "metal wait %d", api->metal_wait_compute(NULL));
+    trace(t, "metal read %d", api->metal_read_imported_pictures(NULL, 0));
+}
+#endif
+
+void scenario_absent_backends(const VmafCompatApi *api, Trace *t)
+{
+#if !VMAFX_ENGINE_EXPORTS_HIP
+    hip_absent(api, t);
+#endif
+#if !VMAFX_ENGINE_EXPORTS_METAL
+    metal_absent(api, t);
+#endif
+    (void)api;
+    (void)t;
+}
+
+/* ---- The embedded MCP server (builds with -Denable_mcp=true) ---------------------------- */
+
+void scenario_mcp(const VmafCompatApi *api, Trace *t)
+{
+#if VMAFX_BUILD_MCP
+    VmafContext *vmaf = NULL;
+    trace(t, "init %d", api->init(&vmaf, quiet_config()));
+    trace(t, "mcp available %d", api->mcp_available());
+    for (int transport = 0; transport < 4; transport++) {
+        /* 3 is past the enum on purpose: both sides must report it unavailable. */
+        /* NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange) -- ADR-1080 */
+        const VmafMcpTransport which = (VmafMcpTransport)transport;
+        trace(t, "transport %d %d", transport, api->mcp_transport_available(which));
+    }
+    VmafMcpServer *server = NULL;
+    trace(t, "mcp init NULL %d", api->mcp_init(NULL, vmaf, NULL));
+    trace(t, "mcp init %d", api->mcp_init(&server, vmaf, NULL));
+    const VmafMcpUdsConfig uds = {NULL};
+    const VmafMcpStdioConfig stdio = {-1, -1};
+    VmafMcpSseConfig sse = {.port = 0, .path = ""};
+    trace(t, "uds NULL path %d", api->mcp_start_uds(server, &uds));
+    trace(t, "stdio bad fds %d", api->mcp_start_stdio(server, &stdio));
+    trace(t, "sse empty path %d", api->mcp_start_sse(server, &sse));
+    trace(t, "stop %d stop NULL %d", api->mcp_stop(server), api->mcp_stop(NULL));
+    api->mcp_close(&server);
+    trace(t, "closed %d", server == NULL);
+    api->mcp_close(NULL);
+    trace(t, "close %d", api->close(vmaf));
+#else
+    (void)api;
+    (void)t;
+#endif
+}
+
+/* NOLINTEND(modernize-use-nullptr) */

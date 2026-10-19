@@ -48,7 +48,8 @@ Per frame, on the distorted luma plane only:
 1. **MSCN (scale 1)** — compute the mean-subtracted contrast-normalized
    coefficients via a separable 7-tap Gaussian (sigma = 7/6, `lw = 3`) with a
    `nearest` (clamp-to-edge) boundary and an additive `C = 1` stabiliser:
-   `mscn = (luma - mu) / (sigma + 1)`. The convolutions run in float64; the
+   $\mathrm{mscn} = (\mathrm{luma} - \mu) / (\sigma + 1)$. The convolutions run
+   in float64; the
    resulting map is rounded to float32 (harness parity).
 2. **MSCN (scale 2)** — bicubic-downscale the integer luma by 2
    (PIL-compatible Catmull-Rom, `a = -0.5`, output rounded to float32) and
@@ -60,8 +61,11 @@ Per frame, on the distorted luma plane only:
 4. **Pooling** — average the per-patch vectors to a sample mean and compute
    their unbiased (ddof = 1) covariance.
 5. **Distance** — the score is the Mahalanobis distance
-   `sqrt(Xᵀ · pinv((cov_pris + cov_sample)/2) · X)` where `X = mu_sample -
-   mu_pris` and `pinv` is the symmetric pseudo-inverse (scipy default cutoff
+   $\sqrt{X^{\mathsf T} \, \mathrm{pinv}(\bar{C}) \, X}$ with
+   $\bar{C} = (\mathrm{cov}_{\mathrm{pris}} +
+   \mathrm{cov}_{\mathrm{sample}}) / 2$,
+   where $X = \mu_{\mathrm{sample}} - \mu_{\mathrm{pris}}$ and `pinv` is the
+   symmetric pseudo-inverse (scipy default cutoff
    `rtol = 36 · ε`).
 
 ### Fork-specific divergences (load-bearing)

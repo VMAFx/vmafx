@@ -3,7 +3,8 @@
 //
 // cmd/vmafx-server/grpc_server.go — gRPC server implementation for VMAFX.
 //
-// Implements the VmafxScoring service defined in proto/vmafx.proto.
+// Implements the VmafxScoring service defined in proto/vmafx/v1/vmafx.proto
+// (generated from api/vmafx-platform.toml, ADR-2350).
 // The server delegates to pkg/libvmaf for actual scoring and pkg/observability
 // for Prometheus instrumentation.
 //
@@ -20,7 +21,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"maps"
 	"runtime/debug"
 	"time"
 
@@ -39,6 +39,9 @@ type grpcServer struct {
 	vmafxv1.UnimplementedVmafxScoringServer
 	scorer  *libvmaf.Scorer
 	metrics *observability.Metrics
+	// streams records the ScoreStream sessions; nil in tests that build the
+	// server without it (records nothing).
+	streams *scoringservice.StreamMetrics
 	log     *slog.Logger
 	// limiter caps concurrent in-flight Scorer.Score calls to prevent
 	// unbounded subprocess forking under load (unauthenticated DoS fix).
@@ -73,10 +76,10 @@ func (s *grpcServer) Score(ctx context.Context, req *vmafxv1.ScoreRequest) (*vma
 	s.metrics.ScoreRequests.Inc()
 	start := time.Now()
 
-	s.log.Info("grpc Score request",
+	observability.RPCLogger(ctx, s.log, "Score").Info("grpc Score request",
 		"reference", req.GetReference(),
 		"distorted", req.GetDistorted(),
-		"model", req.GetModel(),
+		observability.FieldModel, req.GetModel(),
 	)
 
 	if req.GetReference() == "" || req.GetDistorted() == "" {
@@ -99,28 +102,27 @@ func (s *grpcServer) Score(ctx context.Context, req *vmafxv1.ScoreRequest) (*vma
 		defer s.limiter.Release()
 	}
 
-	// Pass the gRPC handler context so a client disconnect or RPC
-	// deadline tears down the vmaf subprocess via exec.CommandContext.
-	// Fixes T-LIBVMAF-SCORE-NEEDS-CTX-2026-05-31.
-	score, features, err := s.scorer.Score(ctx, req.GetReference(), req.GetDistorted(), req.GetModel())
-	elapsed := time.Since(start).Seconds()
-	s.metrics.ScoreDuration.Observe(elapsed)
-
+	resp, err := s.scoreWithOptions(ctx, req)
+	elapsed := time.Since(start)
+	s.metrics.ScoreDuration.Observe(elapsed.Seconds())
+	log := observability.RPCLogger(ctx, s.log, "Score")
 	if err != nil {
 		s.metrics.ScoreErrors.Inc()
-		s.log.Error("grpc Score failed", "error", err, "duration_s", elapsed)
-		return nil, status.Errorf(codes.Internal, "scoring failed: %v", err)
+		log.Error("grpc Score failed", observability.FieldModel, req.GetModel(),
+			observability.Seconds(elapsed), observability.FieldError, err)
+		return nil, err
 	}
+	s.metrics.ObserveScore("", req.GetModel(), resp.GetScore())
+	log.Info("grpc Score completed", observability.FieldModel, resp.GetProvenance().GetModel(),
+		observability.FieldBackend, resp.GetProvenance().GetBackendUsed(),
+		"score", fmt.Sprintf("%.4f", resp.GetScore()), observability.Seconds(elapsed))
+	return resp, nil
+}
 
-	// Convert map[string]float64 → map[string]float64 (proto uses float64 doubles).
-	protoFeatures := make(map[string]float64, len(features))
-	maps.Copy(protoFeatures, features)
-
-	s.log.Info("grpc Score completed", "score", fmt.Sprintf("%.4f", score), "duration_s", elapsed)
-	return &vmafxv1.ScoreResponse{
-		Score:    score,
-		Features: protoFeatures,
-	}, nil
+// scoreWithOptions runs one request through runScore (score_options.go), the
+// one scoring path gRPC Score, POST /v1/score and the REST adapter share.
+func (s *grpcServer) scoreWithOptions(ctx context.Context, req *vmafxv1.ScoreRequest) (*vmafxv1.ScoreResponse, error) {
+	return runScore(ctx, s.scorer, req)
 }
 
 // Health implements VmafxScoring.Health.
@@ -131,7 +133,7 @@ func (s *grpcServer) Health(_ context.Context, _ *vmafxv1.HealthRequest) (*vmafx
 
 // ScoreStream implements VmafxScoring.ScoreStream (ADR-0933 Phase 2).
 //
-// The bidirectional contract (proto/vmafx.proto):
+// The bidirectional contract (proto/vmafx/v1/vmafx.proto):
 //
 //   - The client sends exactly one StreamConfig as the opening message, then a
 //     sequence of FramePair messages with strictly increasing frame_index from
@@ -157,6 +159,8 @@ func (s *grpcServer) ScoreStream(stream vmafxv1.VmafxScoring_ScoreStreamServer) 
 	ctx := stream.Context()
 	s.metrics.ScoreRequests.Inc()
 	start := time.Now()
+	session := s.streams.Begin()
+	defer func() { session.End(retErr) }()
 	s.log.Info("grpc ScoreStream request received (ADR-0933)")
 
 	cfg, scorerCfg, err := s.acceptStreamConfig(stream)
@@ -189,24 +193,42 @@ func (s *grpcServer) ScoreStream(stream vmafxv1.VmafxScoring_ScoreStreamServer) 
 		"frame_size_bytes", scorer.FrameSize(),
 	)
 
-	if ingestErr := s.ingestFrames(ctx, stream, scorer); ingestErr != nil {
+	if ingestErr := s.ingestFrames(ctx, stream, scorer, session); ingestErr != nil {
 		return ingestErr
 	}
 
-	// Flush + harvest per-frame and pooled scores.
-	result, err := scorer.Finish(ctx)
+	result, provenance, err := s.harvestStream(ctx, scorer, cfg.GetModel())
 	if err != nil {
-		s.metrics.ScoreErrors.Inc()
-		s.log.Error("grpc ScoreStream: finish failed", "error", err)
-		return streamScorerStatus(err)
+		return err
 	}
+	s.metrics.ObserveScore("", cfg.GetModel(), result.Score)
 
 	if sendErr := s.sendFrameScores(ctx, stream, result.Frames); sendErr != nil {
 		return sendErr
 	}
 
 	// Terminal AggregateScore.
-	return s.sendAggregate(stream, result, time.Since(start))
+	return s.sendAggregate(stream, result, provenance, time.Since(start))
+}
+
+// harvestStream flushes the stream and harvests the per-frame and pooled
+// scores and the provenance of the in-process context (#2155).
+func (s *grpcServer) harvestStream(
+	ctx context.Context, scorer *libvmaf.StreamScorer, model string,
+) (*libvmaf.StreamResult, *vmafxv1.ScoreProvenance, error) {
+	result, err := scorer.Finish(ctx)
+	if err != nil {
+		s.metrics.ScoreErrors.Inc()
+		s.log.Error("grpc ScoreStream: finish failed", observability.FieldError, err)
+		return nil, nil, streamScorerStatus(err)
+	}
+	provenance, err := streamProvenance(scorer, model)
+	if err != nil {
+		s.metrics.ScoreErrors.Inc()
+		s.log.Error("grpc ScoreStream: provenance failed", observability.FieldError, err)
+		return nil, nil, status.Errorf(codes.Internal, "scoring provenance: %v", err)
+	}
+	return result, provenance, nil
 }
 
 // closeStreamScorer closes scorer with the request-scoped retry contract and
@@ -262,6 +284,7 @@ func (s *grpcServer) acquireStreamSlot(ctx context.Context) (func(), error) {
 func (s *grpcServer) sendAggregate(
 	stream vmafxv1.VmafxScoring_ScoreStreamServer,
 	result *libvmaf.StreamResult,
+	provenance *vmafxv1.ScoreProvenance,
 	elapsed time.Duration,
 ) error {
 	s.metrics.ScoreDuration.Observe(elapsed.Seconds())
@@ -272,6 +295,7 @@ func (s *grpcServer) sendAggregate(
 				Score:           result.Score,
 				Features:        result.Features,
 				ElapsedMs:       libvmaf.SafeUint64(elapsed.Milliseconds()),
+				Provenance:      provenance,
 			},
 		},
 	}); sendErr != nil {
@@ -349,6 +373,7 @@ func (s *grpcServer) ingestFrames(
 	ctx context.Context,
 	stream vmafxv1.VmafxScoring_ScoreStreamServer,
 	scorer *libvmaf.StreamScorer,
+	session *scoringservice.StreamSession,
 ) error {
 	halfClosed := false
 	for !halfClosed && ctx.Err() == nil {
@@ -376,6 +401,7 @@ func (s *grpcServer) ingestFrames(
 			s.metrics.ScoreErrors.Inc()
 			return streamScorerStatus(pushErr)
 		}
+		session.Frame()
 	}
 	if !halfClosed {
 		return status.FromContextError(ctx.Err()).Err()

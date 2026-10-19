@@ -51,7 +51,8 @@ def test_render_table_for_empty_comparisons() -> None:
     """``render_table`` for a report with no comparisons emits the CPU-only hint (line 145)."""
     report = CrossBackendReport(model=Path("m.onnx"), atol=1e-3)
     rendered = render_table(report)
-    assert "no alternate providers available" in rendered
+    assert "no alternate provider ran" in rendered
+    assert "FAIL: no output was compared" in rendered
 
 
 def test_render_table_includes_missing_providers_tail() -> None:

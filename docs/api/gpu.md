@@ -36,7 +36,7 @@ Registered feature extractors per backend, from the extractor registry:
 
 !!! note "Toolchain minimums"
     HIP needs ROCm 7.0 or newer (`core/meson_options.txt`); the shipped
-    toolchain is ROCm 10.0.0 (`build-config.env`).
+    toolchain is ROCm 10.1.0 (`build-config.env`).
 
 ## Ownership at a glance
 
@@ -350,7 +350,7 @@ int  vmaf_sycl_import_d3d11_surface(VmafSyclState *state, void *d3d11_device,
 | --- | --- | --- |
 | `vmaf_sycl_dmabuf_import` | Primitive: turns a DMA-BUF fd into a SYCL device pointer through Level Zero external memory. | Caller keeps the fd. Free the pointer with `vmaf_sycl_dmabuf_free` (`NULL` is a no-op). |
 | `vmaf_sycl_import_va_surface` | Convenience wrapper over dmabuf for a VA-API decode feed. Preferred on Linux. | Imports the luma plane only (see the zero-copy path above for what that can score). Falls back to `vaGetImage` plus a host-to-device copy when the DRM-PRIME export fails (older Mesa, proprietary drivers). `bpc` is 8 or 10. |
-| `vmaf_sycl_upload_plane` | Platform-agnostic escape hatch: copies a Y plane from host memory with a row pitch. | Use when nothing better works, or as a benchmark baseline. |
+| `vmaf_sycl_upload_plane` | Platform-agnostic escape hatch: copies a Y plane from host memory with a row pitch. | Returns once the copy has completed, so the caller may free or reuse the source and the next `vmaf_read_pictures_sycl()` reads the uploaded plane. Before 2026-10-05 it returned with the copy still in flight, and a 3840x2160 frame scored the wrong pixels. Use when nothing better works, or as a benchmark baseline. |
 | `vmaf_sycl_import_d3d11_surface` | Windows: copies the decoded texture into a staging texture, maps it and uploads the plane through `vmaf_sycl_upload_plane`. | Implemented in `core/src/sycl/d3d11_import.cpp`. `-EINVAL` for NULL arguments, zero size, `bpc` other than 8 or 10, or a texture smaller than `w` by `h`; `-EIO` when the map fails. |
 
 Every import takes `is_ref` (non-zero: reference buffer, otherwise

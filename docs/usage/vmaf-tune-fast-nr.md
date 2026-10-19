@@ -67,8 +67,8 @@ fast-nr: bisect done — FR calls 3 total, 4 saved (57%)
 
 `δ_fast` is the VMAF-unit half-width of the "uncertainty zone".  The raw
 `nr_metric_v1` output is first mapped as
-`NR_VMAF = calibration_slope × NR_raw + calibration_intercept`.  When
-`|NR_VMAF − target| > δ_fast` the FR call is skipped.  When within the zone
+$\mathrm{NR\_VMAF} = \mathrm{calibration\_slope} \cdot \mathrm{NR}_{\mathrm{raw}} + \mathrm{calibration\_intercept}$.  When
+$\lvert \mathrm{NR\_VMAF} - \mathrm{target} \rvert > \delta_{\mathrm{fast}}$ the FR call is skipped.  When within the zone
 the FR call is paid.
 
 The default value (8.0 VMAF) comes from the ADR-0615 design target and is

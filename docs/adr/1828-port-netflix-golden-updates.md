@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-1828: Netflix's own golden-assertion updates are ported verbatim from upstream
 
-- **Status**: Proposed
+- **Status**: Accepted (status update 2026-10-06 below)
 - **Date**: 2026-10-05
 - **Deciders**: lusoris (maintainer popup answer, 2026-10-05)
 - **Tags**: tests, golden-data, upstream-port, agents, fork-local
@@ -69,3 +69,13 @@ the commit's own value (a later upstream commit), the tip is taken.
 - Measurement: `/home/kilian/.cache/vmafx-rc3-handoff/prompts/golden-stop-measurement.md`
   (summary in the PR body).
 - [ADR-0024](0024-netflix-golden-preserved.md), [ADR-1487](1487-upstream-parity-policy-and-guard.md).
+
+## Status update 2026-10-06: Accepted
+
+The decision was applied while this record still said Proposed. Checked on
+`origin/master` `fd8b8c93b`: #2141 (`2faa124a9`, 2026-10-05) ported Netflix's
+own golden-assertion re-records verbatim, and the rule text carrying the
+exception is in `AGENTS.md` section 8, `docs/development/agent-hard-rules.md`
+and the pull request template.
+
+The body above is unchanged.

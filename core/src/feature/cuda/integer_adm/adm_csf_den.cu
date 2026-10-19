@@ -47,6 +47,8 @@
 #define ADM_CSF_DEN_THREADS 128
 #define ADM_CSF_DEN_WARPS (ADM_CSF_DEN_THREADS / VMAF_CUDA_THREADS_PER_WARP)
 
+namespace
+{
 /* adm_csf_den_fold(): the row total of the block, rounded once and added to
  * the band accumulator. Every thread of the block must call this, because it
  * synchronises the block. */
@@ -62,8 +64,8 @@ __device__ __forceinline__ void adm_csf_den_fold_row(uint64_cu thread_sum, uint3
 
     if (threadIdx.x == 0) {
         uint64_cu row_total = 0;
-        for (int w_idx = 0; w_idx < ADM_CSF_DEN_WARPS; ++w_idx) {
-            row_total += warp_sums[w_idx];
+        for (const uint64_cu warp_sum : warp_sums) {
+            row_total += warp_sum;
         }
         atomicAdd(reinterpret_cast<uint64_cu *>(band_accum),
                   (uint64_cu)adm_csf_den_round_row_total(row_total, add_shift_accum, shift_accum));
@@ -85,6 +87,7 @@ __device__ __forceinline__ const Sample *adm_csf_den_row(const Band &src, int to
         return src.band_d + offset;
     }
 }
+} // namespace
 
 extern "C" {
 

@@ -1,0 +1,1 @@
+| [ADR-0867](0867-precommit-semgrep-serial-execution.md) | Tombstone: run the semgrep-local pre-commit hook serially; written on 2026-10-06 for a number that is cited but had no file. | Accepted | tombstone, ci, pre-commit, semgrep |

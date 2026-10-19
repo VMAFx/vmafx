@@ -47,10 +47,8 @@ import "C"
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/VMAFx/vmafx/pkg/cliopt"
 	"github.com/VMAFx/vmafx/pkg/model"
 	"log/slog"
 	"os"
@@ -122,40 +120,19 @@ func (s *Scorer) Score(ctx context.Context, ref, dis, modelName string) (float64
 // selection in place, as Score does. The node's controller client uses it so
 // a job scheduled for a backend runs on that backend or fails.
 func (s *Scorer) ScoreOnBackend(ctx context.Context, ref, dis, modelName, backend string) (float64, map[string]float64, error) {
-	if ctx == nil {
-		// Defensive: callers should pass a real context, but nil ctx would
-		// otherwise panic inside exec.CommandContext.
-		ctx = context.Background()
-	}
-	if modelName == "" {
-		modelName = model.DefaultVersion
-	}
-
-	// Honour an already-cancelled context up-front so we don't allocate temp
-	// files / fork a subprocess only to immediately tear them down.
-	if err := ctx.Err(); err != nil {
-		return 0, nil, fmt.Errorf("libvmaf: context cancelled before Score: %w", err)
-	}
-
-	// Locate the model file.
-	modelPath, err := s.resolveModel(modelName)
+	result, err := s.Run(ctx, Request{Reference: ref, Distorted: dis, Model: modelName, Args: backendArgs(backend)})
 	if err != nil {
 		return 0, nil, err
 	}
+	return result.Score, result.Features, nil
+}
 
-	out, removeOut, err := scoreOutputFile()
-	if err != nil {
-		return 0, nil, err
+// backendArgs is `--backend <name>` for a named backend, nothing for "".
+func backendArgs(backend string) []string {
+	if backend == "" {
+		return nil
 	}
-	defer removeOut()
-
-	runCtx, cancel := context.WithTimeout(ctx, scoreBudget(ctx.Deadline()))
-	defer cancel()
-
-	if err := s.runScoreBinary(runCtx, scoreArgv(ref, dis, modelPath, out, backend)); err != nil {
-		return 0, nil, err
-	}
-	return parseOutput(out)
+	return []string{"--backend", backend}
 }
 
 // scoreOutputFile creates the temp file the CLI writes its JSON to and returns
@@ -190,22 +167,10 @@ func scoreBudget(deadline time.Time, ok bool) time.Duration {
 }
 
 // scoreArgv builds the vmaf CLI argument vector for one (ref, dis) pair,
-// writing JSON output to outPath. A non-empty backend adds `--backend`.
-//
-// ADR-1190: the CLI splits option strings on ":" and "=", so a model path
-// containing either has to be escaped or it is truncated/rejected.
+// writing JSON output to outPath. A non-empty backend adds `--backend`. It is
+// runArgv without options (one argument-vector builder, HISS-19).
 func scoreArgv(ref, dis, modelPath, outPath, backend string) []string {
-	argv := []string{
-		"-r", ref,
-		"-d", dis,
-		"-m", "path=" + cliopt.EscapeValue(modelPath),
-		"-o", outPath,
-		"--json",
-	}
-	if backend != "" {
-		argv = append(argv, "--backend", backend)
-	}
-	return argv
+	return runArgv(Request{Reference: ref, Distorted: dis, Args: backendArgs(backend)}, modelPath, outPath)
 }
 
 // runScoreBinary runs the vmaf CLI once and maps its failure modes onto Go
@@ -313,51 +278,12 @@ func modelFamilyDir(name string) string {
 	}
 }
 
-// vmafJSONOutput represents the relevant subset of the vmaf CLI JSON output.
-type vmafJSONOutput struct {
-	Frames []struct {
-		Metrics map[string]float64 `json:"metrics"`
-	} `json:"frames"`
-	PooledMetrics struct {
-		VMAF struct {
-			Mean float64 `json:"mean"`
-		} `json:"vmaf"`
-		// Additional per-feature pooled values — arbitrary keys.
-		// We capture them via a second pass below.
-	} `json:"pooled_metrics"`
-	AggregateMetrics map[string]struct {
-		Mean float64 `json:"mean"`
-	} `json:"aggregate_metrics"`
-}
-
 // parseOutput reads the vmaf JSON output file and returns the aggregate score
-// and per-feature map.
+// and per-feature map (parseReport without the provenance).
 func parseOutput(path string) (float64, map[string]float64, error) {
-	data, err := os.ReadFile(path) //nolint:gosec // path is our own tmpfile
+	result, err := parseReport(path)
 	if err != nil {
-		return 0, nil, fmt.Errorf("libvmaf: read output file: %w", err)
+		return 0, nil, err
 	}
-
-	// The vmaf JSON schema uses "pooled_metrics" for aggregate statistics.
-	// Parse as a generic map to handle arbitrary feature keys.
-	var raw struct {
-		PooledMetrics map[string]struct {
-			Mean float64 `json:"mean"`
-		} `json:"pooled_metrics"`
-	}
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return 0, nil, fmt.Errorf("libvmaf: parse JSON output: %w", err)
-	}
-
-	features := make(map[string]float64, len(raw.PooledMetrics))
-	for k, v := range raw.PooledMetrics {
-		features[strings.ToLower(k)] = v.Mean
-	}
-
-	score, ok := features["vmaf"]
-	if !ok {
-		return 0, nil, fmt.Errorf("libvmaf: 'vmaf' key not found in pooled_metrics; output: %s", string(data))
-	}
-
-	return score, features, nil
+	return result.Score, result.Features, nil
 }

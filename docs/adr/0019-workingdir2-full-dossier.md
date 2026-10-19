@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-0019: .workingdir2 is the full planning dossier
 
-- **Status**: Superseded by ADR-1277
+- **Status**: Superseded by [ADR-1277](1277-workingdir-contract-cleanup.md)
 - **Date**: 2026-04-17
 - **Deciders**: Lusoris
 - **Tags**: workspace, planning, docs

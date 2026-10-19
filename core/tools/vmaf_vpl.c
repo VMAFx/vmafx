@@ -52,6 +52,7 @@
 #include <va/va_drmcommon.h>
 
 #include <vpl/mfx.h>
+#include "vmaf_vpl_core.h"
 
 #include "libvmaf/picture.h"
 #include "libvmaf/libvmaf.h"
@@ -121,16 +122,8 @@ typedef struct {
     FILE *fp;
 } VplDecoder;
 
-/* Wall-clock ceiling handed to MFXVideoCORE_SyncOperation, in milliseconds. */
-#define VPL_SYNC_TIMEOUT_MS 60000
-
-/* Back-off between DecodeFrameAsync retries when the device reports busy or
- * asks for another surface, in microseconds. */
-#define VPL_DECODE_RETRY_US 1000
-
-/* Retry ceiling for one vpl_decode_frame() call: VPL_SYNC_TIMEOUT_MS of
- * VPL_DECODE_RETRY_US back-offs. See vpl_decode_frame() for the argument. */
-#define VPL_DECODE_MAX_ATTEMPTS ((VPL_SYNC_TIMEOUT_MS * 1000u) / VPL_DECODE_RETRY_US)
+/* Ceilings and retry timings (VPL_SYNC_TIMEOUT_MS, VPL_DECODE_RETRY_US,
+ * VPL_DECODE_MAX_ATTEMPTS) are provided by vmaf_vpl_core.h. */
 
 static void vpl_cleanup_gpu(VplDecoder *dec)
 {
@@ -408,56 +401,91 @@ static int vpl_publish_surface(VplDecoder *dec, mfxSyncPoint sync, mfxFrameSurfa
  * it forever; now the tool reports it and gives up. Not yet exercised on real
  * Intel hardware: see ADR-1287 and docs/state.md.
  */
+typedef struct {
+    VplDecoder *dec;
+    VASurfaceID *out_surface;
+    mfxFrameSurface1 **out_held_surf;
+} VplRealDecodeContext;
+
+static size_t real_get_bitstream_length(void *ctx)
+{
+    const VplRealDecodeContext *c = (const VplRealDecodeContext *)ctx;
+    return c->dec->bs.DataLength;
+}
+
+static size_t real_get_buffer_size(void *ctx)
+{
+    const VplRealDecodeContext *c = (const VplRealDecodeContext *)ctx;
+    return c->dec->bs_buf_size;
+}
+
+static int real_is_eof(void *ctx)
+{
+    const VplRealDecodeContext *c = (const VplRealDecodeContext *)ctx;
+    return c->dec->eof;
+}
+
+static int real_refill(void *ctx)
+{
+    VplRealDecodeContext *c = (VplRealDecodeContext *)ctx;
+    return vpl_read_bitstream(c->dec);
+}
+
+static mfxStatus real_decode_async(void *ctx, int passing_null, mfxFrameSurface1 **out_surf,
+                                   mfxSyncPoint *out_sync)
+{
+    VplRealDecodeContext *c = (VplRealDecodeContext *)ctx;
+    return MFXVideoDECODE_DecodeFrameAsync(c->dec->session, passing_null ? NULL : &c->dec->bs, NULL,
+                                           out_surf, out_sync);
+}
+
+static int real_publish(void *ctx, mfxSyncPoint sync, mfxFrameSurface1 *out_surf)
+{
+    VplRealDecodeContext *c = (VplRealDecodeContext *)ctx;
+    return vpl_publish_surface(c->dec, sync, out_surf, c->out_surface, c->out_held_surf);
+}
+
+static void real_backoff(void *ctx, unsigned usec)
+{
+    (void)ctx;
+    usleep(usec);
+}
+
+static void real_log_error(void *ctx, const char *msg, int code)
+{
+    (void)ctx;
+    (void)fprintf(stderr, "%s: %d\n", msg, code);
+}
+
+static void real_log_exhaustion(void *ctx, unsigned attempts)
+{
+    (void)ctx;
+    (void)fprintf(stderr, "DecodeFrameAsync yielded no frame after %u attempts\n", attempts);
+}
+
+static const VplDecodeDriver g_vpl_real_driver = {
+    .get_bitstream_length = real_get_bitstream_length,
+    .get_buffer_size = real_get_buffer_size,
+    .is_eof = real_is_eof,
+    .refill_bitstream = real_refill,
+    .decode_async = real_decode_async,
+    .publish_surface = real_publish,
+    .backoff = real_backoff,
+    .log_error = real_log_error,
+    .log_exhaustion = real_log_exhaustion,
+};
+
 static int vpl_decode_frame(VplDecoder *dec, VASurfaceID *out_surface,
                             mfxFrameSurface1 **out_held_surf)
 {
-    mfxStatus sts;
-    mfxSyncPoint sync = NULL;
-    mfxFrameSurface1 *out_surf = NULL;
-
     *out_held_surf = NULL;
-
-    for (unsigned attempt = 0; attempt < VPL_DECODE_MAX_ATTEMPTS; attempt++) {
-        /* Refill bitstream if needed */
-        if (dec->bs.DataLength < dec->bs_buf_size / 2 && !dec->eof) {
-            vpl_read_bitstream(dec);
-        }
-
-        int passing_null = (dec->bs.DataLength == 0 && dec->eof);
-        sts = MFXVideoDECODE_DecodeFrameAsync(dec->session, passing_null ? NULL : &dec->bs,
-                                              NULL, /* internal allocation */
-                                              &out_surf, &sync);
-
-        if (sts == MFX_ERR_NONE && sync) {
-            /* Got a frame — sync and return */
-            return vpl_publish_surface(dec, sync, out_surf, out_surface, out_held_surf);
-        }
-
-        if (sts == MFX_ERR_MORE_DATA) {
-            if (passing_null)
-                return 1; /* drain call returned no data → truly done */
-            continue;     /* consumed input or need more — loop to drain */
-        }
-
-        if (sts == MFX_ERR_MORE_SURFACE || sts == MFX_WRN_DEVICE_BUSY) {
-            /* Wait a bit and retry */
-            usleep(VPL_DECODE_RETRY_US);
-            continue;
-        }
-
-        if (sts < 0) {
-            (void)fprintf(stderr, "DecodeFrameAsync failed: %d\n", sts);
-            return -1;
-        }
-
-        /* Other warnings — retry */
-        if (!sync)
-            continue;
-    }
-
-    (void)fprintf(stderr, "DecodeFrameAsync yielded no frame after %u attempts\n",
-                  (unsigned)VPL_DECODE_MAX_ATTEMPTS);
-    return -1;
+    VplRealDecodeContext ctx = {
+        .dec = dec,
+        .out_surface = out_surface,
+        .out_held_surf = out_held_surf,
+    };
+    return vpl_decode_frame_loop(&ctx, &g_vpl_real_driver, VPL_DECODE_MAX_ATTEMPTS,
+                                 VPL_DECODE_RETRY_US);
 }
 
 static void vpl_release_surface(mfxFrameSurface1 *surf)

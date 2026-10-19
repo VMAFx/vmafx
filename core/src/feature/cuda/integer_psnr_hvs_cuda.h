@@ -23,6 +23,7 @@
  * checks. */
 #define PSNR_HVS_TERMS 64
 
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no `using`. ADR-1138. */
 typedef struct PsnrHvsHeader {
     uint32_t plane_offsets[PSNR_HVS_NUM_PLANES];
     uint32_t total_terms;
@@ -49,6 +50,7 @@ typedef struct PsnrHvsKernelArgs {
     int wide;
     int _pad;
 } PsnrHvsKernelArgs;
+/* NOLINTEND(modernize-use-using) */
 
 extern const unsigned char psnr_hvs_score_ptx[];
 

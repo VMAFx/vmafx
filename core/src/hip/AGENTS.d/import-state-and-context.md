@@ -46,19 +46,19 @@ invariant: vmaf_hip_import_state lives in libvmaf.c and HIP state lifetime is ca
 
 ## Device selection (ADR-1523)
 
-- **`vmaf_hip_context_new()` selects the device it is given.** It checks the
+- **`vmaf_hip_context_new()` selects device it is given.** It checks
   index against `vmaf_hip_device_count()` (`-EINVAL` outside `[0, count)`,
   `-ENODEV` with no device) and calls `hipSetDevice()`. Every HIP twin passes
   `fex->hip_device_index`, which `set_fex_hip_device()` in `libvmaf.c` fills
-  from the imported state for every extractor context, flagged or not. A new
-  twin passes the same field; a literal index is a regression
+  from imported state for every extractor context, flagged or not. new
+  twin passes same field; literal index is regression
   (`test_hip_device_index_contract`).
-- **The state's device is rebound before a frame's twins run and before the
+- **state's device is rebound before frame's twins run and before
   flush** (`vmaf_hip_state_bind()` in `read_pictures_hip_frame_begin()` and
-  `flush_context()`). HIP binds the device to the calling thread; without the
-  rebind a caller that scores on another thread lands on device 0.
-- **`vmaf_hip_device_count()` is a count only when the runtime answers.**
-  `hipErrorNoDevice` is 0; any other failure is a negative errno, and
+  `flush_context()`). HIP binds device to calling thread; without
+  rebind caller that scores on another thread lands on device 0.
+- **`vmaf_hip_device_count()` is count only when runtime answers.**
+  `hipErrorNoDevice` is 0; any other failure is negative errno, and
   `vmaf_hip_list_devices()` / `vmaf_hip_state_init()` pass it on. Do not
   bring back "return 0 on error". `test_hip_device_selection` checks all of
-  it against a stubbed runtime on any host.
+  it against stubbed runtime on any host.

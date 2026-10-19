@@ -1,0 +1,62 @@
+name: CI tier
+
+# ADR-2169 — the one place that decides which tier of the suite an event owes.
+# Every workflow with a `pull_request` trigger calls this workflow as its first
+# job (`tier`) and gates its other jobs on the outputs:
+#
+#   needs.tier.outputs.light == 'true'   light-tier jobs: lint, format, the fast suite, the governance gates
+#   needs.tier.outputs.full  == 'true'   full-tier jobs: the platform / GPU / coverage / container / FFmpeg lanes
+#
+# The definition is .github/ci-tier.json and the decision is scripts/ci/ci_tier.py;
+# the Required Checks Aggregator reads the same definition. This file has no
+# trigger of its own, so it never runs by itself.
+on:
+  workflow_call:
+    outputs:
+      tier:
+        description: full | light | release-light
+        value: ${{ jobs.tier.outputs.tier }}
+      light:
+        description: "'true' when light-tier jobs run"
+        value: ${{ jobs.tier.outputs.light }}
+      full:
+        description: "'true' when full-tier jobs run"
+        value: ${{ jobs.tier.outputs.full }}
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  tier:
+    name: Decide the CI tier
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    outputs:
+      tier: ${{ steps.tier.outputs.tier }}
+      light: ${{ steps.tier.outputs.light }}
+      full: ${{ steps.tier.outputs.full }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+          # The decision needs the definition, the script and what it calls.
+          sparse-checkout: |
+            .github/ci-tier.json
+            release-please-config.json
+            scripts/ci/ci_tier.py
+            scripts/ci/release-pr-exempt.sh
+            scripts/lib
+          sparse-checkout-cone-mode: false
+      - name: Decide the tier (ADR-2169)
+        id: tier
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_AUTHOR_TYPE: ${{ github.event.pull_request.user.type }}
+          PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/ci/ci_tier.py --github-output "$GITHUB_OUTPUT"

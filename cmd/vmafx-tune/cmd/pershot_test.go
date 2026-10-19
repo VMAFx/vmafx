@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/VMAFx/vmafx/internal/execstub"
 )
 
 // buildPerShotBinary builds vmafx-tune-go into a temp dir and returns its path.
@@ -196,9 +198,7 @@ func TestPerShot_planSchemaWithStubPredicateBinaries(t *testing.T) {
 	writeStub := func(name, body string) string {
 		t.Helper()
 		p := filepath.Join(stubDir, name)
-		if err := os.WriteFile(p, []byte("#!/bin/sh\n"+body), 0o700); err != nil { //nolint:gosec // test stub must be executable
-			t.Fatalf("write stub %s: %v", name, err)
-		}
+		execstub.Write(t, p, []byte("#!/bin/sh\n"+body))
 		return p
 	}
 

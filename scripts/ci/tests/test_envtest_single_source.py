@@ -17,6 +17,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
+from scripts.lib.renovate_regex import to_python
 from scripts.lib.safe_subprocess import TextCommandResult
 from scripts.lib.safe_subprocess import run as run_command
 
@@ -32,6 +33,11 @@ BASH = shutil.which("bash") or "/bin/bash"
 MAKE = shutil.which("make") or "/usr/bin/make"
 
 
+@unittest.skipUnless(
+    os.name == "posix",
+    "HISS-21: the fixture replaces PATH with os.defpath plus shebang stubs and runs the "
+    "Makefile's sh recipes; the Linux Pre-Commit job in lint-and-format.yml runs it",
+)
 class EnvtestSingleSource(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory(prefix="envtest fixture ")
@@ -225,7 +231,7 @@ if not os.environ.get("EMPTY_ASSETS"):print(os.environ["ASSET_PATH"])
         manager = managers[0]
         self.assertEqual(manager["datasourceTemplate"], "go")
         self.assertEqual(manager["managerFilePatterns"], ["/^build-config\\.env$/"])
-        pattern = manager["matchStrings"][0].replace("(?<currentValue>", "(?P<currentValue>")
+        pattern = to_python(manager["matchStrings"][0])
         found = re.search(pattern, (ROOT / "build-config.env").read_text())
         self.assertIsNotNone(found)
         assert found is not None

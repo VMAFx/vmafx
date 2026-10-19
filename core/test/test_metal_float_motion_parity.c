@@ -65,6 +65,9 @@
 #define MAX_KEYS 3u
 #define MAX_OPTS 3u
 #define NAME_LEN 96u
+/* A key is "<base>_<suffix>": the longest base ("motion2" / "motion3", 7 bytes), an underscore and
+ * a suffix of up to NAME_LEN - 1 bytes, so it cannot be truncated. */
+#define KEY_LEN (NAME_LEN + 16u)
 
 typedef enum FixtureKind {
     FIXTURE_TEXTURE, /* texture that moves a few samples a frame */
@@ -374,10 +377,10 @@ static char *option_case(const Fixture *fx, const char *const *opts, const char 
                          bool nonzero)
 {
     static const char *const bases[MAX_KEYS] = {"motion", "motion2", "motion3"};
-    char names[MAX_KEYS][NAME_LEN];
+    char names[MAX_KEYS][KEY_LEN];
     Scenario sc = {{NULL}, 6u, nonzero, {NULL}};
     for (unsigned i = 0; i < MAX_KEYS; i++) {
-        (void)snprintf(names[i], NAME_LEN, "%s_%s", bases[i], suffix);
+        (void)snprintf(names[i], KEY_LEN, "%s_%s", bases[i], suffix);
         sc.keys[i] = names[i];
     }
     for (unsigned i = 0; i < (2u * MAX_OPTS) && opts[i] != NULL; i++) {

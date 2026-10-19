@@ -13,7 +13,7 @@ with the image ([licensing](../licensing.md)).
     `pkg/storage` is implemented and unit-tested, but no non-test code under
     `cmd/` calls it. Today `vmafx-node` passes the `reference` and `distorted`
     fields of a `ScoreRequest` straight to the scorer, and those fields are
-    absolute paths (`proto/vmafx.proto`), so remote URIs are **not** resolved.
+    absolute paths (`proto/vmafx/v1/vmafx.proto`), so remote URIs are **not** resolved.
     The sections below describe the package's behaviour and the intended job
     flow. The Helm chart already exports `VMAFX_STORAGE_MODE` to the node, but
     no

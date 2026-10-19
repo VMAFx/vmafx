@@ -103,6 +103,7 @@
 /* HIP-to-errno translation                                            */
 /* ------------------------------------------------------------------ */
 
+#ifdef HAVE_HIPCC /* only the device-kernel build calls it */
 static int ms_ssim_hip_rc(hipError_t rc)
 {
     if (rc == hipSuccess)
@@ -122,6 +123,7 @@ static int ms_ssim_hip_rc(hipError_t rc)
         return -EIO;
     }
 }
+#endif /* HAVE_HIPCC */
 
 /* ------------------------------------------------------------------ */
 /* Private state                                                       */
@@ -247,11 +249,13 @@ static const VmafOption options[] = {
 };
 
 /* float_ms_ssim.c's feature name of each plane. */
+#ifdef HAVE_HIPCC /* only the device-kernel build calls it */
 static const char *const ms_ssim_plane_names[MS_SSIM_MAX_PLANES] = {
     "float_ms_ssim",
     "float_ms_ssim_cb",
     "float_ms_ssim_cr",
 };
+#endif /* HAVE_HIPCC */
 
 /* ------------------------------------------------------------------ */
 /* Dimension helpers (extracted to keep init under 60 lines)          */

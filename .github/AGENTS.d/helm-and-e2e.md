@@ -5,16 +5,21 @@ paths:
   - .github/workflows/e2e-k8s.yml
 invariant: ORT/Helm version+SHA together; E2E targets; kuttl outcome checked; downloads bounded; diagnostics not silenced.
 ---
+<!-- markdownlint-disable MD013 -->
 # ONNX Runtime and Helm versions, digests, and E2E contract
 
 ## ONNX Runtime release version and digest stay coupled
 
-Linux all-backends row in [`workflows/build.yml`](../workflows/build.yml)
-downloads ONNX Runtime into `RUNNER_TEMP`, verifies release asset's SHA-256,
-only then extracts it with `sudo`. Keep `ORT_VERSION` and `ORT_SHA256`
-updated together from official GitHub release asset metadata. Never pipe
-retrying `curl` transfer directly into `tar`: retries require file-backed
-output, and privileged extraction must not see unverified bytes.
+All sites downloading ONNX Runtime C/C++ release archives—[`dev/Containerfile`](../../dev/Containerfile),
+[`workflows/go-ci.yml`](../workflows/go-ci.yml), [`workflows/build.yml`](../workflows/build.yml),
+[`workflows/libvmaf-build-matrix.yml`](../workflows/libvmaf-build-matrix.yml), and
+[`workflows/tests-and-quality-gates.yml`](../workflows/tests-and-quality-gates.yml) (CPU and GPU legs)—pair
+`ORT_VERSION` with pinned `ORT_SHA256`, verifying download with `sha256sum --check --strict`
+before extraction. In `tests-and-quality-gates.yml`, cached GPU archive re-verifies every run,
+purging cache file on mismatch. Static checker `scripts/ci/check_ort_tarball_pins.py`
+verifies digest presence, extraction order, cross-site consistency across all sites (ADR-3334).
+Never pipe retrying `curl` transfer directly into `tar`: retries require file-backed
+output; privileged extraction never touches unverified bytes.
 
 ## Helm workflow version and digest stay coupled
 
@@ -43,7 +48,7 @@ replace it with health-only or reconciler behavior that production code does
 not implement. Keep workflow and `docs/k8s/integration-tests.md` aligned.
 Dependency-free `scripts/ci/test_e2e_runtime_contract.py` runs once, in
 always-on Tooling Tests (tooling suite, ADR-1568); never move it solely
-behind E2E schedule/label gate or back into a workflow step. Cluster job
+behind E2E schedule/label gate or back into workflow step. Cluster job
 writes `VMAFX_E2E_KUBECONFIG` and `KUBECONFIG` to
 same new file below `RUNNER_TEMP`; every Kubernetes step must first prove
 exact `kind-${KIND_CLUSTER_NAME}` context and loopback API server. Teardown
@@ -52,8 +57,8 @@ must fail visibly if that identity guard cannot prove exact named cluster.
 ## Downloads bounded, diagnostics never silenced (HISS-02, HISS-07)
 
 Every `curl` of `e2e-k8s.yml`'s tool installs carries `--connect-timeout 20
---max-time 300` next to its retries; never drop the deadline. The diagnostics
-step runs each command through `diag()`, which prints a `::warning::` on
+--max-time 300` next to its retries; never drop deadline. diagnostics
+step runs each command through `diag()`, which prints `::warning::` on
 failure and continues; never return to `|| true` or `2>/dev/null`, which hid
-the failures. Helm-chart workflow runs `test_helm_controller_workload.py`
-and renders the selector check with `controller.enabled` (ADR-1589).
+failures. Helm-chart workflow runs `test_helm_controller_workload.py`
+and renders selector check with `controller.enabled` (ADR-1589).

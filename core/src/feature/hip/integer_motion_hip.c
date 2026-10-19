@@ -134,6 +134,9 @@ typedef struct MotionStateHip {
     double motion_max_val;
 
     VmafDictionary *feature_name_dict;
+    /* motion2 / motion3 of the five-frame window, derived as the SAD scores
+     * come in (ADR-2090). */
+    VmafMotionWindowState window_state;
 } MotionStateHip;
 
 /* Compact layout: clang-format would put every field on its own line and push
@@ -423,6 +426,7 @@ static int msh_init_force_zero(VmafFeatureExtractor *fex, MotionStateHip *s)
     fex->submit = submit_force_zero;
     fex->collect = collect_force_zero;
     fex->flush = NULL;
+    fex->advance = NULL;
     return msh_release_device(s);
 }
 
@@ -524,7 +528,7 @@ static int msh_emit_prev_frame(MotionStateHip *s, VmafFeatureCollector *feature_
 /* A frame without an earlier frame to difference against (frame 0; frame 1
  * too with the five-frame window): the SAD score and the debug score are 0.
  * The three-frame twin writes motion2 of frame 0 here; with the five-frame
- * window flush() writes motion2 of every frame. */
+ * window advance_fex_hip() and flush() write motion2 of every frame. */
 static int msh_emit_no_sad(MotionStateHip *s, VmafFeatureCollector *feature_collector,
                            unsigned index)
 {
@@ -548,11 +552,9 @@ static int msh_emit_no_sad(MotionStateHip *s, VmafFeatureCollector *feature_coll
     return e;
 }
 
-/* motion2 and motion3 of every frame with the five-frame window, derived
- * from the stored SAD scores by the CPU extractor's own function
- * (integer_motion.c::vmaf_motion_window_flush(), ADR-1478): the scores are
- * the CPU's whenever the SADs are (ADR-1491). */
-static int msh_flush_window(MotionStateHip *s, VmafFeatureCollector *feature_collector)
+/* The five-frame window of this twin's options, on its state: the CPU
+ * extractor's (integer_motion.c, motion_window.h). */
+static VmafMotionWindow msh_window_of(MotionStateHip *s)
 {
     const VmafMotionWindow window = {
         .sad_feature = "VMAF_integer_feature_motion_sad_score",
@@ -563,10 +565,40 @@ static int msh_flush_window(MotionStateHip *s, VmafFeatureCollector *feature_col
         .motion_max_val = s->motion_max_val,
         .motion_five_frame_window = true,
         .motion_moving_average = s->motion_moving_average,
+        .state = &s->window_state,
     };
+    return window;
+}
+
+/* motion2 and motion3 of the frames no advance derived, with the five-frame
+ * window, from the stored SAD scores by the CPU extractor's own function
+ * (integer_motion.c::vmaf_motion_window_flush(), ADR-1478): the scores are
+ * the CPU's whenever the SADs are (ADR-1491). */
+static int msh_flush_window(MotionStateHip *s, VmafFeatureCollector *feature_collector)
+{
+    const VmafMotionWindow window = msh_window_of(s);
     return vmaf_motion_window_flush(feature_collector, s->feature_name_dict, &window);
 }
 #endif /* HAVE_HIPCC */
+
+/* ADR-2090: motion2 / motion3 of the frames whose five-frame window the SAD
+ * scores collected so far complete (vmaf_motion_window_advance()). The
+ * three-frame path emits its own scores in collect(); motion_force_zero
+ * writes every score in collect() and clears this callback. */
+static int advance_fex_hip(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector)
+{
+#ifndef HAVE_HIPCC
+    (void)fex;
+    (void)feature_collector;
+    return 0;
+#else
+    MotionStateHip *s = fex->priv;
+    if (!s->motion_five_frame_window || s->feature_name_dict == NULL)
+        return 0;
+    const VmafMotionWindow window = msh_window_of(s);
+    return vmaf_motion_window_advance(feature_collector, s->feature_name_dict, &window);
+#endif /* HAVE_HIPCC */
+}
 
 static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
                            VmafFeatureCollector *feature_collector)
@@ -604,7 +636,8 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
                                                      motion_clip_hip(s, s->score), index);
     }
     /* The three-frame twin emits motion2 / motion3 of frame index - 1 now;
-     * with the five-frame window flush() derives them for every frame. */
+     * with the five-frame window advance_fex_hip() derives them once their
+     * window is complete and flush() the rest (ADR-2090). */
     if (!s->motion_five_frame_window)
         e |= msh_emit_prev_frame(s, feature_collector, index, score_prev);
     return e;
@@ -680,6 +713,7 @@ VmafFeatureExtractor vmaf_fex_integer_motion_hip = {
     .submit = submit_fex_hip,
     .collect = collect_fex_hip,
     .flush = flush_fex_hip,
+    .advance = advance_fex_hip,
     .close = close_fex_hip,
     .options = options,
     .priv_size = sizeof(MotionStateHip),

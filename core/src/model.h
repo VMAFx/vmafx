@@ -26,12 +26,14 @@
 #else
 #include <limits.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stddef.h>
 #endif
 #include <pthread.h>
 
 #include "dict.h"
 #include "libvmaf/model.h"
+#include "libvmaf/picture.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -109,6 +111,14 @@ struct VmafModel {
         } knots;
         bool out_lte_in, out_gte_in;
     } score_transform;
+    /* Optional `conversion_target` block of the model file (Netflix/vmaf
+     * 1ddf81607). pix_fmt UNKNOWN / bpc 0 mean "keep the source picture's". */
+    struct {
+        bool enabled;
+        VmafColor color;
+        enum VmafPixelFormat pix_fmt;
+        unsigned bpc;
+    } conversion_target;
     struct svm_model *svm;
     // Pre-allocated prediction state (populated lazily, reused per frame)
     struct svm_node *predict_nodes; // n_features + 1 entries
@@ -123,6 +133,27 @@ struct VmafModel {
      * one owner, the caller). vmaf_model_destroy() drops one owner and frees the
      * model with the last. */
     struct VmafRef *owners;
+    /* Rust predictor (RC4 lane P, ADR-1713): state 0 = not decided, 1 =
+     * `rust_predict` ready, 2 = the C predictor runs (VMAF_FEATURE_IMPL is not
+     * `rust`, or a WARNING said why). `rust_predict` is the handle the installed
+     * `VmafRustPredictOps` table (predict.h) created; `predict_raw` is the
+     * `n_features` raw-score scratch of the Rust path. All three are set under
+     * predict_cache_lock; the pointers stay NULL unless VMAF_FEATURE_IMPL=rust. */
+    int rust_predict_state;
+    void *rust_predict;
+    double *predict_raw;
+    /* RC4 WP5 (#2142): where the model came from, for the provenance record.
+     * Set by the loaders (vmaf_model_load*(), vmaf_model_collection_load*(),
+     * the VMAFx loaders); NULL / empty on a model built otherwise. */
+    char *source;        /* built-in version, or the path of the file */
+    char sha256[65];     /* hex SHA-256 of the bytes as loaded */
+    uint64_t load_flags; /* VmafModelConfig.flags at load */
+    char *overrides;     /* `<extractor>.<key>=<value>` joined by ':' */
+    /* RC4 WP6 (ADR-1852 D3): the VmafxModel that wraps this model, so the
+     * libvmaf compat layer maps the handle it gave out back to the VMAFx
+     * object (vmafx_model_from_libvmaf()); NULL for a model no VmafxModel
+     * wraps. */
+    void *api_owner;
 };
 
 struct VmafModelCollection {
@@ -130,6 +161,7 @@ struct VmafModelCollection {
     unsigned cnt, size;
     enum VmafModelType type;
     const char *name;
+    void *api_owner; /* the VmafxModelSet that wraps it (RC4 WP6), or NULL */
 };
 
 char *vmaf_model_generate_name(VmafModelConfig *cfg);
@@ -144,6 +176,20 @@ int vmaf_model_collection_append(VmafModelCollection **model_collection, VmafMod
  * the bytes vmaf_model_load() parses (ADR-1852: the VMAFx API hashes them).
  * Returns 0, -ENOENT for an unknown version, or -EINVAL. */
 int vmaf_model_builtin_data(const char *version, const char **data, size_t *len);
+
+/* RC4 WP5: record `source` (copied), the SHA-256 of `data[0..len)` (NULL
+ * data: of the file at `source`) and `flags` on `model`. 0, -ENOMEM, or the
+ * negative errno of reading the file. */
+int vmaf_model_stamp(VmafModel *model, const char *source, const void *data, size_t len,
+                     uint64_t flags);
+
+/* After a load that returned `err`: stamp `*model` and every member of
+ * `*collection` (NULL for a single model) with vmaf_model_stamp() and the
+ * load's flags. A stamp failure releases what the load returned, NULLs the
+ * out-parameters and is returned; `err` is returned unchanged. */
+int vmaf_model_stamp_loaded(int err, VmafModel **model, VmafModelCollection **collection,
+                            const VmafModelConfig *cfg, const char *source, const void *data,
+                            size_t len);
 
 #ifdef __cplusplus
 } /* extern "C" */

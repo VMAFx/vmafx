@@ -47,3 +47,13 @@ after the `score = num / den` computation in each backend's collect path.
 - Parity audit: `.workingdir/feature-option-parity-audit-2026-05-16.md`.
 - Related: ADR-0485 (MS-SSIM enable_db parity), ADR-0526 (aiutils dedup).
 - req: "pick smallest unaddressed gap" (user session instruction 2026-05-17).
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 48: `- Related: ADR-0485 (MS-SSIM enable_db parity), ADR-0526
+  (aiutils dedup).`: Cites ADR-0485 as MS-SSIM parity and ADR-0526 as aiutils
+  dedup; ADR-0485 is `VMAF_LIFECYCLE_ZERO` and ADR-0526 is MS-SSIM SYCL
+  `enable_lcs.`.

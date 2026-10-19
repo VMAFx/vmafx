@@ -1,11 +1,9 @@
 # ADR-1077 — vmaf-tune corner cases: parse_versions + compare preset
 
-| Field      | Value                             |
-|------------|-----------------------------------|
-| ADR number | 1077                              |
-| Status     | Accepted                          |
-| Date       | 2026-06-06                        |
-| Author     | r14 parallel investigation agent  |
+- **Status**: Accepted
+- **ADR number**: 1077
+- **Date**: 2026-06-06
+- **Author**: r14 parallel investigation agent
 
 ## Context
 
@@ -89,3 +87,13 @@ fix and matches what every adapter treats as its canonical mid-point.
   `wf_bc4c515b-e0f-6` parallel audit.
 - Related: ADR-0237 (codec adapter registry), ADR-0542 (CRF-sweep mode),
   ADR-0498 (probe-encoder-version follow-up chain).
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 90: `- Related: ADR-0237 (codec adapter registry), ADR-0542
+  (CRF-sweep mode), ADR-0498 (probe-encoder-version follo`: ADR-0542 points to
+  an unrelated topic (0542-dev-container-full-gpu-plumbing.md: "Full GPU
+  backend plumbing in the dev-mcp container").

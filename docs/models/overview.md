@@ -272,3 +272,32 @@ For runtime details, see [tiny-AI inference](../ai/inference.md). For the
 registry schema, signatures, and model identity checks, see
 [model-registry.md](../ai/model-registry.md). For path, size, operator, and
 signature hardening, see [security.md](../ai/security.md).
+
+## Rust prediction (experimental)
+
+A build with `-Denable_rust_features=true` can run the prediction step of the
+`vmaf_v1.0.16*` models in Rust instead of C. Select it per process with the
+environment variable (unset or `c` keeps the C predictor, the default):
+
+```bash
+VMAF_FEATURE_IMPL=rust vmaf --reference ref.yuv --distorted dis.yuv \
+     --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
+     --model version=vmaf_v1.0.16_3d0h --precision max
+```
+
+What moves to Rust: feature normalisation, the chroma correction of the v1
+models, the nu-SVR evaluation (RBF kernel, plus the linear and polynomial
+kernels), denormalisation, the finite check, the polynomial and
+piecewise-linear score transform and the clip. Model loading, the feature
+extractors and the pooling stay as they are. The Rust predictor returns the C
+predictor's score bit for bit; `scripts/ci/rust_twin_diff.py --models` runs both
+and fails on any difference at `--precision max`.
+
+Log lines say which predictor ran: an INFO line `model <name>: Rust prediction`
+names every model that runs in Rust. A model the Rust predictor does not
+implement (a classification SVM, a precomputed or sigmoid kernel) runs on the C
+predictor with a WARNING that names the model and ends in `running the C
+predictor`; so does every model when the build has no Rust predictor
+(`-Denable_rust_features=false`). A value of `VMAF_FEATURE_IMPL` other than `c`
+or `rust` is an error. The design is in
+[Rust extractor framework](../development/rust-extractor-framework.md).

@@ -38,6 +38,7 @@
 #include <stdio.h>
 
 #include "test.h"
+#include "float_bits.h"
 
 #include "feature/integer_vif.h"
 #include "feature/integer_vif_sv_sq.h"
@@ -452,14 +453,15 @@ static char *check_gain_limit(double limit)
 {
     const VmafMtlGainLimit g = vmaf_mtl_ivif_make_gain_limit(limit);
     const double value = ldexp((double)g.value.mant, g.value.exp);
-    const int is_integer = limit == floor(limit);
-    mu_assert("the limit's fp64 parts are not the limit", value == limit);
+    const int is_integer = vmaf_test_identical_f64(limit, floor(limit));
+    mu_assert("the limit's fp64 parts are not the limit", vmaf_test_identical_f64(value, limit));
     mu_assert("the limit's significand is not normalised",
               g.value.mant >= (UINT64_C(1) << 52) && g.value.mant < (UINT64_C(1) << 53));
     mu_assert("the limit's integer form is wrong",
               g.integer == (is_integer ? (uint32_t)limit : 0u));
     mu_assert("the limit's fp32 pair is not the limit",
-              g.hi == (float)limit && fabs((double)g.hi + (double)g.lo - limit) <= 1.0e-13 * limit);
+              vmaf_test_identical_f32(g.hi, (float)limit) &&
+                  fabs((double)g.hi + (double)g.lo - limit) <= 1.0e-13 * limit);
     return NULL;
 }
 

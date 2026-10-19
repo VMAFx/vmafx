@@ -57,9 +57,7 @@ FP64_TERMS = (
 PAIR_ARITHMETIC = re.compile(r"\b(?:two_sum|two_prod|quick_two_sum|ff_add|ff_mul|ff_div)\s*\(")
 CONTRACTION_OFF = "#pragma clang fp contract(off)"
 # A lane's pixels are consecutive in raster order, and so are the lanes.
-LANE_PIXEL = (
-    "const size_t i = (size_t)chunk * SS2H_CHUNK_PIXELS + (size_t)lane * SS2H_CHUNK_RUN + j;"
-)
+LANE_PIXEL = "const size_t i = (size_t)chunk * kChunkPixels + (size_t)lane * SS2H_CHUNK_RUN + j;"
 # Lanes are composed with their neighbour, lower lane first.
 ADJACENT_PAIR = (
     "if ((lane & (2u * step - 1u)) == 0u) {",
@@ -72,10 +70,10 @@ WALK_STEP = "vmaf_ordsum_add_chunk(sum, (int)plan[slot], u)"
 # The fallback adds the chunk's terms in pixel order into the running sum.
 TERM_SLOT = "terms_of_chunk[lane * SS2H_CHUNK_RUN + j] = terms[k];"
 TERM_LOOP = (
-    "for (unsigned i = 0; i < SS2H_CHUNK_PIXELS; i++) {",
-    "sum += terms_of_chunk[i];",
+    "for (size_t i = 0; i < kChunkPixels; i++) {",
+    "state->sum += terms_of_chunk[i];",
 )
-TOTAL_STORE = "a.totals[(size_t)c * SS2H_SUMS + k] = sum;"
+TOTAL_STORE = "a.totals[(size_t)c * SS2H_SUMS + k] = state.sum;"
 # The tree sum may only feed the plan.
 TREE_STORE = "double *out = a.chunk_sums + ((size_t)c * a.chunks + chunk) * SS2H_SUMS;"
 LAUNCHES = ("s->func_chunk_sums", "s->func_chunk_plan", "s->func_chunk_units", "s->func_totals")
@@ -238,8 +236,8 @@ class Ssimulacra2HipExactContract(unittest.TestCase):
     def test_reordered_fallback_is_detected(self) -> None:
         failures = self._edited(
             KERNEL,
-            "for (unsigned i = 0; i < SS2H_CHUNK_PIXELS; i++) {",
-            "for (unsigned i = SS2H_CHUNK_PIXELS; i-- > 0u;) {",
+            "for (size_t i = 0; i < kChunkPixels; i++) {",
+            "for (size_t i = kChunkPixels; i-- > 0u;) {",
         )
         self.assertTrue(any("pixel order" in item for item in failures), failures)
 

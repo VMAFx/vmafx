@@ -32,6 +32,7 @@
 #include "cuda_helper.cuh"
 #include "common.h"
 #include "cuda/float_psnr_cuda.h"
+#include "cuda_device_ptr.cuh"
 
 #define FPSNR_WARPS (FPSNR_BX * FPSNR_BY / 32u)
 
@@ -66,8 +67,8 @@ __device__ __forceinline__ unsigned long long fpsnr_block_sum(unsigned long long
     unsigned long long total = 0ull;
     if (lid == 0u) {
 #pragma unroll
-        for (unsigned i = 0; i < FPSNR_WARPS; i++)
-            total += s_warps[i];
+        for (const unsigned long long warp_sum : s_warps)
+            total += warp_sum;
     }
     return total;
 }
@@ -79,20 +80,20 @@ __device__ __forceinline__ void
 fpsnr_block(const uint8_t *__restrict__ ref, const uint8_t *__restrict__ dis, ptrdiff_t ref_stride,
             ptrdiff_t dis_stride, VmafCudaBuffer partials, unsigned width, unsigned height)
 {
-    const int x = blockIdx.x * blockDim.x + threadIdx.x;
-    const int y = blockIdx.y * blockDim.y + threadIdx.y;
+    const unsigned x = blockIdx.x * blockDim.x + threadIdx.x;
+    const unsigned y = blockIdx.y * blockDim.y + threadIdx.y;
 
     unsigned long long my_noise = 0ull;
-    if (x < (int)width && y < (int)height) {
-        const T rv = reinterpret_cast<const T *>(ref + y * ref_stride)[x];
-        const T dv = reinterpret_cast<const T *>(dis + y * dis_stride)[x];
+    if (x < width && y < height) {
+        const T rv = reinterpret_cast<const T *>(ref + static_cast<ptrdiff_t>(y) * ref_stride)[x];
+        const T dv = reinterpret_cast<const T *>(dis + static_cast<ptrdiff_t>(y) * dis_stride)[x];
         my_noise = fpsnr_square(rv, dv);
     }
 
     const unsigned long long total = fpsnr_block_sum(my_noise);
     if (threadIdx.x == 0u && threadIdx.y == 0u) {
         const unsigned block_idx = blockIdx.y * gridDim.x + blockIdx.x;
-        reinterpret_cast<unsigned long long *>(partials.data)[block_idx] = total;
+        VMAF_CUDA_DPTR(unsigned long long, partials.data)[block_idx] = total;
     }
 }
 

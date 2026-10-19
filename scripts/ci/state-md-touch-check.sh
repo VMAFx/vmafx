@@ -52,6 +52,8 @@ fi
 _state_md_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/ci/pr-body-input.sh
 . "${_state_md_dir}/pr-body-input.sh"
+# shellcheck source=scripts/ci/pr-diff-base.sh
+. "${_state_md_dir}/pr-diff-base.sh"
 
 if [ -n "${PR_BODY:-}" ]; then
   body_src="env"
@@ -93,9 +95,10 @@ printf '%s' "${PR_BODY}" |
 # ---------- 2. Locate diff base ----------
 
 if [ -n "${BASE_SHA:-}" ] && [ -n "${HEAD_SHA:-}" ]; then
-  diff_base="${BASE_SHA}"
+  # From the merge base, never from BASE_SHA itself: see pr-diff-base.sh.
+  diff_base="$(pr_diff_base "${BASE_SHA}" "${HEAD_SHA}" state-md-touch-check)" || exit 2
   diff_head="${HEAD_SHA}"
-  diff_src="env (BASE_SHA..HEAD_SHA)"
+  diff_src="env (merge base of BASE_SHA and HEAD_SHA..HEAD_SHA)"
 else
   if ! git rev-parse --verify origin/master >/dev/null 2>&1; then
     echo "state-md-touch-check: origin/master not found; run 'git fetch origin master' first." >&2
@@ -274,15 +277,15 @@ fi
 
 # 4b. Explicit opt-out sentinel in the PR body. Format:
 #       no state delta: <REASON>
-# REASON must be non-empty AND not the literal placeholder
-# "REASON" — that's template instructional text leaking through
-# (the HTML-comment instances are already stripped above; this
-# guards the example inside the checkbox row itself). We require
-# at least one *lowercase* alphanumeric/punctuation token after
-# the colon, which a copy-pasted "REASON" placeholder fails by
-# being all-caps.
-if grep -qiE 'no state delta:[[:space:]]*[^[:space:].]+' "$tmp_body" &&
-  ! grep -qE 'no state delta:[[:space:]]*REASON([[:space:].]|$)' "$tmp_body"; then
+# At least one opt-out must give a reason other than the literal
+# placeholder "REASON", which is template instructional text leaking
+# through (the HTML-comment instances are already stripped above). A
+# placeholder elsewhere in the body does not void a real opt-out. The
+# matches are captured first and searched from a here-string, never
+# through a pipe whose writer pipefail would report when the reader
+# stops early.
+optouts="$(grep -oiE 'no state delta:[[:space:]]*[^[:space:].]+' "$tmp_body" || [ "$?" -eq 1 ])"
+if [ -n "$optouts" ] && grep -qvE ':[[:space:]]*REASON$' <<<"$optouts"; then
   echo "state-md-touch-check: PASS — opt-out 'no state delta: ...' present."
   exit 0
 fi

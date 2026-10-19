@@ -49,8 +49,22 @@ static unsigned sample8(unsigned plane, unsigned row, unsigned col, bool distort
     return v;
 }
 
-/* A 4:2:0 picture of `bpc` bits whose samples are the 8-bit sample times 2^(bpc - 8) plus a
- * fraction that only a deeper picture has: `extra` less than 2^(bpc - 8). */
+/* Row `row` of plane `p`: the 8-bit sample times 2^(bpc - 8). */
+static void fill_row(VmafPicture *pic, unsigned p, unsigned row, unsigned bpc, bool distorted)
+{
+    uint8_t *const line8 = (uint8_t *)pic->data[p] + (size_t)row * pic->stride[p];
+    uint16_t *const line = (uint16_t *)line8;
+    for (unsigned col = 0; col < pic->w[p]; col++) {
+        const unsigned v = sample8(p, row, col, distorted) << (bpc > 8u ? bpc - 8u : 0u);
+        if (bpc > 8u) {
+            line[col] = (uint16_t)v;
+        } else {
+            line8[col] = (uint8_t)v;
+        }
+    }
+}
+
+/* A 4:2:0 picture of `bpc` bits whose samples are the 8-bit sample times 2^(bpc - 8). */
 static int make_picture(VmafPicture *pic, unsigned bpc, bool distorted)
 {
     const int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, bpc, W, H);
@@ -59,17 +73,7 @@ static int make_picture(VmafPicture *pic, unsigned bpc, bool distorted)
     }
     for (unsigned p = 0; p < 3u; p++) {
         for (unsigned row = 0; row < pic->h[p]; row++) {
-            uint16_t *const line =
-                (uint16_t *)((uint8_t *)pic->data[p] + (size_t)row * pic->stride[p]);
-            uint8_t *const line8 = (uint8_t *)pic->data[p] + (size_t)row * pic->stride[p];
-            for (unsigned col = 0; col < pic->w[p]; col++) {
-                const unsigned v = sample8(p, row, col, distorted) << (bpc > 8u ? bpc - 8u : 0u);
-                if (bpc > 8u) {
-                    line[col] = (uint16_t)v;
-                } else {
-                    line8[col] = (uint8_t)v;
-                }
-            }
+            fill_row(pic, p, row, bpc, distorted);
         }
     }
     return 0;

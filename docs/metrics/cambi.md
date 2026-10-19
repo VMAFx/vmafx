@@ -85,7 +85,7 @@ example `--feature cambi=window_size=50:topk=0.5`.
 | `eotf` | none | string | `bt1886` | `bt1886`, `pq` | EOTF used to compute the visibility thresholds. |
 | `cambi_eotf` | `ceot` | string | `bt1886` | `bt1886`, `pq` | Same as `eotf`; takes precedence when both are set. |
 | `full_ref` | none | bool | `false` | n/a | Run CAMBI as a full-reference metric: output the per-frame difference between the encoded and source images as well as the existing no-reference score. Not a command-line flag; pass it as `--feature cambi=full_ref=true`. |
-| `enc_width`, `enc_height` | `encw`, `ench` | int | 0 | 180 to 7680, 150 to 7680 | Encoding/processing resolution to compute the banding score, useful when scaling was applied to the input prior to the computation of metrics. |
+| `enc_width`, `enc_height` | `encw`, `ench` | int | 0 | 144 to 7680 (both) | Encoding/processing resolution to compute the banding score, useful when scaling was applied to the input prior to the computation of metrics. |
 | `enc_bitdepth` | `encbd` | int | 0 | 6 to 16 | Encoding bit depth. |
 | `src_width`, `src_height` | `srcw`, `srch` | int | 0 | 320 to 7680, 200 to 4320 | Encoding/processing resolution of the reference image; only used if `full_ref=true`. |
 | `cambi_high_res_speedup` | `hrs` | int | 0 | 1080, 1440, 2160 or 0 | Speed up by downsampling post spatial mask for resolutions at or above the given height. Some loss of accuracy is expected. 0 means not applied. |
@@ -373,6 +373,85 @@ filter, [Research-2062](../research/2062-cambi-spatial-mask-simd.md)):
 | mask row, GCC build | 275 µs | 164 µs (1.68x) | 122 µs (2.26x) |
 | mask row, Clang build | 251 µs | 167 µs (1.51x) | 121 µs (2.08x) |
 
+## Rust twin
+
+A build with `-Denable_rust_features=true` also registers `cambi_rust`, a Rust
+port of the CPU extractor (RC4, [ADR-1713](../adr/1713-rc4-rust-extractor-framework.md)).
+It follows the scalar C path of `core/src/feature/cambi.c` statement by
+statement and returns the C extractor's scores bit for bit. The C extractor
+stays the default.
+
+```bash
+# Name the twin: always runs the Rust code.
+build/tools/vmaf --reference ref.yuv --distorted dis.yuv \
+    --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
+    --feature cambi_rust --no_prediction --output /dev/stdout --json
+
+# Or switch every extractor that has a Rust twin, models included.
+VMAF_FEATURE_IMPL=rust build/tools/vmaf ... --feature cambi
+```
+
+The JSON `feature_backends` array names `cambi_rust` when the Rust code ran.
+How the Rust path is built and selected, and how the fallback to C works, is in
+[the Rust extractor framework guide](../development/rust-extractor-framework.md#build-and-run-the-rust-path).
+The twin reads the same option table as `cambi` (names, aliases, defaults and
+ranges), so the [Options](#options) above apply unchanged and the emitted
+feature names are the same. Every option is implemented except
+`heatmaps_path`: the twin refuses it at init with "cambi_rust: heatmaps_path is
+not implemented; use the C extractor".
+
+Per-frame scores equal the C extractor's at `--precision max`, compared as
+IEEE doubles, on every fixture and option set the RC4 harness derives
+(`scripts/ci/rust_twin_diff.py --feature cambi`): the default options and the
+options every `vmaf_v1.0.16` model sets
+(`cambi_high_res_speedup=1080:cambi_vis_lum_threshold=0.06:cambi_max_val=17`).
+
+| Fixture | Frames | Default options | `vmaf_v1.0.16` options |
+| --- | --- | --- | --- |
+| Netflix `src01_hrc00` / `src01_hrc01`, 576x324 8-bit | 48 | 48 of 48 identical | 48 of 48 identical |
+| Checkerboard 1-px, 1920x1080 8-bit | 3 | 3 of 3 identical | 3 of 3 identical |
+| Checkerboard 10-px, 1920x1080 8-bit | 3 | 3 of 3 identical | 3 of 3 identical |
+| Sparks, 480x270 10-bit | 5 | 5 of 5 identical | 5 of 5 identical |
+| BBB, 3840x2160 8-bit | 200 | 200 of 200 identical | 200 of 200 identical |
+
+A wider sweep on the Netflix and sparks pairs (`max_log_contrast` 0 to 5,
+`enc_width` / `enc_height` resizing, `enc_bitdepth`, `full_ref` with and
+without a resized source, `topk`, `cambi_topk`, `tvi_threshold`, both EOTFs,
+`window_size` 15 to 127, `cambi_vis_lum_threshold` up to 20, `cambi_max_val`)
+and on the 1080p and 4K pairs (every `cambi_high_res_speedup` tier, resizing,
+`full_ref`) was identical on all 68 cells. With
+`cambi_vis_lum_threshold=300` both refuse init (empty value band).
+
+One configuration differs, because of a defect in the C extractor:
+`full_ref=true` with 10-bit input and `src_width` / `src_height` larger than
+the picture. There the C copies the distorted plane with the input's stride
+into a wider buffer and shifts its rows
+(`T-CAMBI-10BIT-FULLREF-WIDE-SOURCE-ROWS-2026-10-05` in
+[the state ledger](../state.md)); the twin copies row by row, which is what the
+C will do once that row is fixed.
+
+The twin is the scalar C path in Rust, so it is slower than the C extractor's
+SIMD dispatch. CPU milliseconds per frame (user plus system time of the `vmaf`
+process, `(t(N) - t(2)) / (N - 2)`, median of 3, one extraction thread; Ryzen 9
+9950X3D, GCC 16 build with `-Denable_rust_features=true`, host under load):
+
+| Fixture | Options | C, default dispatch (AVX-512) | C, scalar (`--cpumask 65535`) | `cambi_rust` |
+| --- | --- | --- | --- | --- |
+| 576x324, 48 frames | default | 0.95 | 1.72 | 2.63 |
+| 576x324, 48 frames | `vmaf_v1.0.16` | 0.93 | 1.71 | 2.67 |
+| 3840x2160, 50 frames | default | 47.64 | 94.26 | 139.02 |
+| 3840x2160, 50 frames | `vmaf_v1.0.16` | 29.48 | 54.20 | 63.29 |
+
+Speed is not part of the RC4 contract; tuning belongs to the benchmark
+candidate.
+
+`core/test/test_rust_cambi_kernels.c` (Meson suite `rust`) compares the
+stages the fixtures reach only for a few option values with the C functions
+value by value: all 4226 entries of the reciprocal table, the TVI and
+visibility tables for both EOTFs, every `max_log_contrast` and a sweep of
+thresholds, the adjusted window and spatial-mask index over 361 frame sizes,
+and the resize walk.
+
 ## GPU twins
 
 CAMBI has CUDA, SYCL and HIP twins that compute every stage on the device, and
@@ -462,7 +541,7 @@ The arithmetic is the SYCL twin's:
 
 - The c-values keep `cambi.c`'s column histograms and reciprocal table.
 - Top-K pooling sums the largest `topk` fraction exactly as an integer in units
-  of 2^-24.
+  of $2^{-24}$.
 - The score therefore equals `--backend cpu` to the last bit whenever the CPU's
   own `double` sum of those values is exact, and otherwise differs by that
   sum's rounding. On a synthetic, heavily banded 3840x2160 clip that was at
@@ -506,8 +585,8 @@ How the device matches `cambi.c`:
   with the same reciprocal table (`vmaf_cambi_reciprocal_lut()`).
 - **Top-K pooling.** `cambi.c` averages the largest `topk` fraction of c-values
   after a quick-select, summing in `double`. The device finds the same set with
-  a radix select and sums it exactly, as an integer in units of 2^-24 (every
-  non-zero c-value is at least 0.5 and below 2^14).
+  a radix select and sums it exactly, as an integer in units of $2^{-24}$ (every
+  non-zero c-value is at least 0.5 and below $2^{14}$).
 - **Agreement.** The two agree to the last bit whenever the CPU's own sum is
   exact. On frames with a very large banded area the CPU's sum rounds and the
   scores differ in the last few digits: at most 2.2e-15 over 50 frames of Big

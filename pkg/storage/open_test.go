@@ -15,6 +15,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/VMAFx/vmafx/internal/execstub"
 )
 
 // TestParseMode accepts exactly the three implemented modes.
@@ -59,9 +61,7 @@ func withFUSE(t *testing.T, present bool) {
 	if err := os.WriteFile(fuseDevice, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "fusermount3"), []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
-		t.Fatal(err)
-	}
+	execstub.Write(t, filepath.Join(dir, "fusermount3"), []byte("#!/bin/sh\nexit 0\n"))
 }
 
 // TestOpen_AutoResolvesAndLogs: auto becomes mount with FUSE and http-serve
@@ -129,9 +129,7 @@ func TestFUSEMountStorage_UsesMountRoot(t *testing.T) {
 	t.Parallel()
 	bin := filepath.Join(t.TempDir(), "rclone")
 	script := "#!/bin/sh\n# argv: mount <remote> <dir> ...\nmkdir -p \"$3\" && : > \"$3/ref.y4m\"\n"
-	if err := os.WriteFile(bin, []byte(script), 0o700); err != nil {
-		t.Fatal(err)
-	}
+	execstub.Write(t, bin, []byte(script))
 	root := t.TempDir()
 	s := New(Config{Mode: ModeMount, RcloneBin: bin, MountRoot: root, Log: slog.New(slog.DiscardHandler)})
 	got, cleanup, err := s.Prepare(context.Background(), "remote:bucket/ref.y4m")

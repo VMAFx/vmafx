@@ -214,9 +214,9 @@ static const VmafOption options[] = {
                  "maximum value allowed; larger values will be clipped to this value",
                  cambi_max_val, VMAF_OPT_TYPE_DOUBLE, d, DEFAULT_CAMBI_MAX_VAL, 0.0, 1000.0,
                  VMAF_OPT_FLAG_FEATURE_PARAM, "cmxv"),
-    CAMBI_OPTION("enc_width", "Encoding width", enc_width, VMAF_OPT_TYPE_INT, i, 0, 180, 7680,
+    CAMBI_OPTION("enc_width", "Encoding width", enc_width, VMAF_OPT_TYPE_INT, i, 0, 144, 7680,
                  VMAF_OPT_FLAG_FEATURE_PARAM, "encw"),
-    CAMBI_OPTION("enc_height", "Encoding height", enc_height, VMAF_OPT_TYPE_INT, i, 0, 150, 7680,
+    CAMBI_OPTION("enc_height", "Encoding height", enc_height, VMAF_OPT_TYPE_INT, i, 0, 144, 7680,
                  VMAF_OPT_FLAG_FEATURE_PARAM, "ench"),
     CAMBI_OPTION("enc_bitdepth", "Encoding bitdepth", enc_bitdepth, VMAF_OPT_TYPE_INT, i, 0, 6, 16,
                  VMAF_OPT_FLAG_FEATURE_PARAM, "encbd"),
@@ -821,8 +821,8 @@ static void decimate_generic_uint8_and_convert_to_10b(const VmafPicture *pic, Vm
     float ratio_x = (float)in_w / out_w;
     float ratio_y = (float)in_h / out_h;
 
-    float start_x = ratio_x / 2 - 0.5;
-    float start_y = ratio_y / 2 - 0.5;
+    float start_x = (float)(ratio_x / 2 - 0.5);
+    float start_y = (float)(ratio_y / 2 - 0.5);
 
     float y = start_y;
     for (unsigned i = 0; i < out_h; i++) {
@@ -861,8 +861,8 @@ static void decimate_generic_9b_and_convert_to_10b(const VmafPicture *pic, VmafP
     float ratio_x = (float)in_w / out_w;
     float ratio_y = (float)in_h / out_h;
 
-    float start_x = ratio_x / 2 - 0.5;
-    float start_y = ratio_y / 2 - 0.5;
+    float start_x = (float)(ratio_x / 2 - 0.5);
+    float start_y = (float)(ratio_y / 2 - 0.5);
 
     float y = start_y;
     for (unsigned i = 0; i < out_h; i++) {
@@ -926,8 +926,8 @@ static void decimate_generic_uint16_and_convert_to_10b(const VmafPicture *pic, V
     float ratio_x = (float)in_w / out_w;
     float ratio_y = (float)in_h / out_h;
 
-    float start_x = ratio_x / 2 - 0.5;
-    float start_y = ratio_y / 2 - 0.5;
+    float start_x = (float)(ratio_x / 2 - 0.5);
+    float start_y = (float)(ratio_y / 2 - 0.5);
 
     float y = start_y;
     for (unsigned i = 0; i < out_h; i++) {
@@ -964,7 +964,7 @@ static void anti_dithering_filter(VmafPicture *pic, unsigned width, unsigned hei
     }
 #endif
     uint16_t *data = pic->data[0];
-    int stride = pic->stride[0] >> 1;
+    int stride = (int)(pic->stride[0] >> 1);
 
     for (unsigned i = 0; i < height - 1; i++) {
         for (unsigned j = 0; j < width - 1; j++) {
@@ -1205,7 +1205,7 @@ static void get_spatial_mask_for_index(const VmafPicture *image, VmafPicture *ma
     for (int i = 0; i < pad_size; i++) {
         bool deriv_valid = (i < height);
         if (deriv_valid) {
-            derivative_callback(image_data, derivative_buffer, width, height, i, stride);
+            derivative_callback(image_data, derivative_buffer, width, height, i, (int)stride);
         }
         int curr_row = i + pad_size + 1;
         compute_dp_row_callback(&dp[(ptrdiff_t)curr_row * dp_width],
@@ -1222,7 +1222,7 @@ static void get_spatial_mask_for_index(const VmafPicture *image, VmafPicture *ma
     for (int i = pad_size; i < height + pad_size; i++) {
         bool deriv_valid = (i < height);
         if (deriv_valid) {
-            derivative_callback(image_data, derivative_buffer, width, height, i, stride);
+            derivative_callback(image_data, derivative_buffer, width, height, i, (int)stride);
         }
         compute_dp_row_callback(&dp[(ptrdiff_t)curr_row * dp_width],
                                 &dp[(ptrdiff_t)prev_row * dp_width], derivative_buffer, width,
@@ -1510,7 +1510,7 @@ static void quick_select(float *arr, int n, int k)
 static double spatial_pooling(float *c_values, double topk, unsigned width, unsigned height)
 {
     int num_elements = height * width;
-    int topk_num_elements = clip(topk * num_elements, 1, num_elements);
+    int topk_num_elements = clip((int)(topk * num_elements), 1, num_elements);
     quick_select(c_values, num_elements, topk_num_elements);
     return average_topk_elements(c_values, topk_num_elements);
 }
@@ -1554,7 +1554,7 @@ static int dump_c_values(FILE *heatmaps_files[], const float *c_values, int widt
             to_write[j] = (uint16_t)(scaling_value * c_values[i * width + j]);
         }
         ptrdiff_t offset = ((ptrdiff_t)frame * height + i) * width * sizeof(uint16_t);
-        (void)fseek(file, offset, SEEK_SET);
+        (void)fseek(file, (long)offset, SEEK_SET);
         (void)fwrite((void *)to_write, sizeof(uint16_t), width, file);
     }
     free(to_write);
@@ -1848,7 +1848,7 @@ int vmaf_cambi_check_window_fits_lut(uint16_t enc_window, uint16_t src_window)
 void vmaf_cambi_resize_source_indices(unsigned in_len, unsigned out_len, uint32_t *indices)
 {
     float ratio = (float)in_len / out_len;
-    float start = ratio / 2 - 0.5;
+    float start = (float)(ratio / 2 - 0.5);
     float pos = start;
     for (unsigned i = 0; i < out_len; i++) {
         indices[i] = (uint32_t)(int)lroundf(pos);

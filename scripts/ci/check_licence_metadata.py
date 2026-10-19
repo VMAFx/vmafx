@@ -109,9 +109,12 @@ HATCH_SELECTION_KEYS = {"include", "exclude", "only-include", "packages", "sourc
 SETUPTOOLS_BACKENDS = ("setuptools.build_meta", "setuptools.build_meta:__legacy__")
 # Cargo keys that change which files a crate holds, or add a licence file.
 CARGO_SELECTION_KEYS = ("include", "exclude", "license-file")
+# `artifacthub.io/license`, quoted or not: one SPDX identifier, or an AND
+# expression of them where the chart's files carry several (ADR-2673).
 CHART_LICENCE = re.compile(
-    r"^[ \t]+artifacthub\.io/license:[ \t]*[\"']?([^\"'\s#]+)[\"']?[ \t]*(?:#.*)?$", re.MULTILINE
+    r"^[ \t]+artifacthub\.io/license:[ \t]*([\"']?)([^\"'#\n]*?)\1[ \t]*(?:#.*)?$", re.MULTILINE
 )
+SPDX_AND_EXPRESSION = re.compile(r"[A-Za-z0-9][A-Za-z0-9.+-]*(?: AND [A-Za-z0-9][A-Za-z0-9.+-]*)*")
 # Largest Chart.yaml read from a subchart archive, and where it sits in one
 # (`<chart name>/Chart.yaml`).
 MAX_CHART_BYTES = 1 << 20
@@ -536,9 +539,12 @@ def cargo_package_problems(root: Path, manifest: Path) -> list[str]:
 
 
 def chart_licence(text: str) -> str | None:
-    """The chart's `artifacthub.io/license` annotation, or None unless exactly one."""
-    found = CHART_LICENCE.findall(text)
-    return found[0] if len(found) == 1 else None
+    """The chart's `artifacthub.io/license` annotation, or None unless exactly one
+    that is an SPDX identifier or an AND expression of identifiers."""
+    found: list[str] = [value.strip() for _, value in CHART_LICENCE.findall(text)]
+    if len(found) != 1 or not SPDX_AND_EXPRESSION.fullmatch(found[0]):
+        return None
+    return found[0]
 
 
 def _subchart_licence(archive: Path) -> str | None:
@@ -577,7 +583,8 @@ def _subchart_problems(root: Path, archives: set[Path]) -> list[str]:
 
 def helm_chart_problems(root: Path, chart: Path) -> list[str]:
     """The chart's own files (its subcharts are packages of their own) against its
-    `artifacthub.io/license`, a single SPDX identifier by Artifact Hub's rule."""
+    `artifacthub.io/license`: one SPDX identifier, as Artifact Hub asks, or an AND
+    expression when the chart's files carry several licences (ADR-2673)."""
     chart_dir = chart.parent.resolve()
     if (chart_dir / ".helmignore").exists():
         raise ModelError(f"{chart_dir}/.helmignore changes what the chart ships; model it")

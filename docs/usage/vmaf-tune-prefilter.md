@@ -87,7 +87,7 @@ positive `--width` and `--height`.
 | `--time-budget-s` | `600` | Soft wall-clock cap for the Optuna loop. |
 | `--seed` | `0` | TPE sampler seed, for a reproducible search. |
 | `--smoke` | off | Synthetic deband and CRF surface; no ffmpeg, Vulkan or GPU. |
-| `--score-backend` | `auto` | Probe-score backend: `auto`, `cpu`, `cuda`, `sycl` or `hip`. See [score backends](vmaf-tune-score-backend.md). |
+| `--score-backend` | `auto` | Probe-score backend: `auto`, `cpu`, `cuda`, `sycl`, `hip` or `metal`. See [score backends](vmaf-tune-score-backend.md). |
 | `--ffmpeg-bin`, `--vmaf-bin` | `ffmpeg`, `vmaf` | Tool paths. |
 | `--vmaf-model` | `vmaf_v1.0.16_3d0h` | libvmaf model for the probe scores. |
 | `--neg` | off | Use the VMAF NEG model variant. |

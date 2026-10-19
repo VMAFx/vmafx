@@ -1,0 +1,1 @@
+| [ADR-3313](3313-solo-ruleset-zero-reviews.md) | The master ruleset asks for no approving review and no last-push approval, and the maintainer's bypass is at mode `pull_request`; `.github/repository-security-policy.json` declares the live ruleset field for field and the bypass-mode exception entry is removed. Supersedes ADR-3273. | Accepted | security, governance, ci |

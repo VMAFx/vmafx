@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD060 -->
 # ADR-0613: Dynamic Optimizer — Joint Shot-Boundary + CRF Co-Optimisation
 
-- **Status**: Proposed
+- **Status**: Proposed (status update 2026-10-06 below)
 - **Date**: 2026-05-19
 - **Deciders**: lusoris
 - **Tags**: `ai`, `planning`, `vmaf-tune`
@@ -74,3 +74,12 @@ Total estimate: 4–5 days (excluding P4).
 - arXiv:2408.01932 — Durbha & Bovik, 2024 (retrieved 2026-05-19).
 - `tools/vmaf-tune/src/vmaftune/per_shot.py`, `bisect.py`.
 - Source: per user direction (roadmap planning session 2026-05-19).
+
+## Status update 2026-10-06: Proposed, scheduled for 1.4
+
+The decision is not implemented and stays Proposed. It is scheduled for the
+1.4 milestone ("Metric A/B, best mix & more data") as the optimizer; the
+tracking issue is [#2261](https://github.com/VMAFx/vmafx/issues/2261). The
+module this record names does not exist on `origin/master` `fd8b8c93b`.
+
+The body above is unchanged.

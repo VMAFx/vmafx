@@ -32,6 +32,7 @@
 #include "cuda_helper.cuh"
 #include "cuda/integer_psnr_cuda.h"
 #include "common.h"
+#include "cuda_device_ptr.cuh"
 
 namespace
 {
@@ -111,7 +112,7 @@ __global__ void calculate_psnr_kernel_8bpc(const VmafPicture ref, const VmafPict
                                            unsigned plane)
 {
     add_block_sse(thread_sse<uint8_t>(ref, dis, width, height, plane),
-                  reinterpret_cast<unsigned long long *>(sse.data));
+                  VMAF_CUDA_DPTR(unsigned long long, sse.data));
 }
 
 /* ADR-1215: `plane` selects the Y/Cb/Cr plane exactly as in the 8-bpc kernel.
@@ -124,7 +125,7 @@ __global__ void calculate_psnr_kernel_16bpc(const VmafPicture ref, const VmafPic
                                             unsigned plane)
 {
     add_block_sse(thread_sse<uint16_t>(ref, dis, width, height, plane),
-                  reinterpret_cast<unsigned long long *>(sse.data));
+                  VMAF_CUDA_DPTR(unsigned long long, sse.data));
 }
 
 } /* extern "C" */

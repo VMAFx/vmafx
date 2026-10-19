@@ -91,3 +91,16 @@ column-store output; that is out of scope for this ADR.
   execution).
 - `req`: per user direction in agent task brief 2026-05-16, Phase F execute
   scaffolding.
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 87: `- ADR-0325: vmaf-tune auto Phase F decision tree.`: ADR-0325
+  points to an unrelated topic (0325-konvid-150k-corpus-ingestion.md:
+  "KonViD-150k corpus ingestion").
+- About line 88: `- ADR-0364: Phase F adaptive recipe and confidence-aware
+  tuning.`: ADR-0364 points to an unrelated topic
+  (0364-saliency-student-v2-resize-decoder.md: "`saliency_student_v2` —
+  Resize-decoder ablation on the v1 recipe").

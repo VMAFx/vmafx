@@ -30,10 +30,6 @@
 #include "adm_options.h"
 #include "adm_tools.h"
 
-#ifndef M_PI
-#define M_PI 3.1415926535897932384626433832795028841971693993751
-#endif
-
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
 
@@ -45,10 +41,10 @@
 #endif
 #define DIVS(n, d) ((n) / (d))
 
-static const float dwt2_db2_coeffs_lo_s[4] = {0.482962913144690, 0.836516303737469,
-                                              0.224143868041857, -0.129409522550921};
-static const float dwt2_db2_coeffs_hi_s[4] = {-0.129409522550921, -0.224143868041857,
-                                              0.836516303737469, -0.482962913144690};
+static const float dwt2_db2_coeffs_lo_s[4] = {0.482962913144690f, 0.836516303737469f,
+                                              0.224143868041857f, -0.129409522550921f};
+static const float dwt2_db2_coeffs_hi_s[4] = {-0.129409522550921f, -0.224143868041857f,
+                                              0.836516303737469f, -0.482962913144690f};
 
 static const double dwt2_db2_coeffs_lo_d[4] = {0.482962913144690, 0.836516303737469,
                                                0.224143868041857, -0.129409522550921};
@@ -65,7 +61,7 @@ static const double dwt2_db2_coeffs_hi_d[4] = {-0.129409522550921, -0.2241438680
 
 static float get_noise_constant(int w, int h, double weight, double adm_p_norm)
 {
-    return powf(w * h * weight, 1.0f / adm_p_norm);
+    return powf((float)(w * h * weight), (float)(1.0f / adm_p_norm));
 }
 
 /* ------------------------------------------------------------------------- */
@@ -130,10 +126,10 @@ static void adm_csf_factor_overrides_s(int scale, double f1s0, double f1s1, doub
         f2 = f2s3;
     }
     if (f1 >= 0) {
-        *factor1 = f1;
+        *factor1 = (float)f1;
     }
     if (f2 >= 0) {
-        *factor2 = f2;
+        *factor2 = (float)f2;
     }
 }
 
@@ -190,7 +186,7 @@ float adm_pool_bands_s(const float accum[3], int region_w, int region_h, double 
                        double adm_p_norm)
 {
     const float noise_c = get_noise_constant(region_w, region_h, adm_noise_weight, adm_p_norm);
-    const float inv_p = 1.0f / adm_p_norm;
+    const float inv_p = (float)(1.0f / adm_p_norm);
     const float scale_h = powf(accum[0], inv_p) + noise_c;
     const float scale_v = powf(accum[1], inv_p) + noise_c;
     const float scale_d = powf(accum[2], inv_p) + noise_c;
@@ -228,15 +224,15 @@ float adm_sum_cube_s(const float *x, int w, int h, int stride, double border_fac
             if (adm_p_norm == 3.0) {
                 accum_inner += (double)val * val * val;
             } else {
-                accum_inner += powf(val, adm_p_norm);
+                accum_inner += powf(val, (float)adm_p_norm);
             }
         }
 
         accum += accum_inner;
     }
 
-    return powf((float)accum, 1.0f / adm_p_norm) +
-           powf((b.bottom - b.top) * (b.right - b.left) / 32.0f, 1.0f / adm_p_norm);
+    return powf((float)accum, (float)(1.0f / adm_p_norm)) +
+           powf((b.bottom - b.top) * (b.right - b.left) / 32.0f, (float)(1.0f / adm_p_norm));
 }
 
 /* Fast-path: p_norm == 3.0 (default). No powf(), no branch in inner loop.
@@ -327,10 +323,10 @@ static inline float adm_decouple_band_s(float o, float t, float eps, int angle_f
     float rst = k * o;
 
     if (angle_flag && (rst > 0.0)) {
-        rst = MIN(rst * adm_enhn_gain_limit, t);
+        rst = (float)(MIN(rst * adm_enhn_gain_limit, t));
     }
     if (angle_flag && (rst < 0.0)) {
-        rst = MAX(rst * adm_enhn_gain_limit, t);
+        rst = (float)(MAX(rst * adm_enhn_gain_limit, t));
     }
     return rst;
 }
@@ -339,7 +335,7 @@ static inline float adm_decouple_band_s(float o, float t, float eps, int angle_f
  * compares with. */
 float adm_decouple_cos_1deg_sq_s(void)
 {
-    return cos(1.0 * M_PI / 180.0) * cos(1.0 * M_PI / 180.0);
+    return (float)(cos(1.0 * M_PI / 180.0) * cos(1.0 * M_PI / 180.0));
 }
 
 void adm_decouple_s(const adm_dwt_band_t_s *ref, const adm_dwt_band_t_s *dis,
@@ -348,7 +344,7 @@ void adm_decouple_s(const adm_dwt_band_t_s *ref, const adm_dwt_band_t_s *dis,
                     double border_factor, double adm_enhn_gain_limit)
 {
     const float cos_1deg_sq = adm_decouple_cos_1deg_sq_s();
-    const float eps = 1e-30;
+    const float eps = 1e-30f;
 
     const int ref_px_stride = ref_stride / sizeof(float);
     const int dis_px_stride = dis_stride / sizeof(float);
@@ -412,7 +408,7 @@ void adm_csf_plane_s(const float *src_ptr, float *dst_ptr, float *flt_ptr, int w
         for (int j = 0; j < w; ++j) {
             const float dst_val = factor * src_ptr[src_offset + j];
             dst_ptr[dst_offset + j] = dst_val;
-            flt_ptr[dst_offset + j] = FLOAT_ONE_BY_30 * fabsf(dst_val);
+            flt_ptr[dst_offset + j] = (float)(FLOAT_ONE_BY_30 * fabsf(dst_val));
         }
     }
 }
@@ -513,9 +509,9 @@ float adm_csf_den_scale_s(const adm_dwt_band_t_s *src, int orig_h, int scale, in
                 inner[1] += abs_csf_o_val_v * abs_csf_o_val_v * abs_csf_o_val_v;
                 inner[2] += abs_csf_o_val_d * abs_csf_o_val_d * abs_csf_o_val_d;
             } else {
-                inner[0] += powf(abs_csf_o_val_h, adm_p_norm);
-                inner[1] += powf(abs_csf_o_val_v, adm_p_norm);
-                inner[2] += powf(abs_csf_o_val_d, adm_p_norm);
+                inner[0] += powf(abs_csf_o_val_h, (float)adm_p_norm);
+                inner[1] += powf(abs_csf_o_val_v, (float)adm_p_norm);
+                inner[2] += powf(abs_csf_o_val_d, (float)adm_p_norm);
             }
         }
         adm_fold3_s(inner, accum);
@@ -603,7 +599,7 @@ static inline float adm_cm_thresh3x3_s(const float *const *angles, const float *
         sum += flt_m1[j];
         sum += flt_m1[j_p1];
         sum += flt_0[j_m1];
-        sum += FLOAT_ONE_BY_15 * fabsf(src_ptr[j]);
+        sum = (float)(sum + (FLOAT_ONE_BY_15 * fabsf(src_ptr[j])));
         sum += flt_0[j_p1];
         sum += flt_p1[j_m1];
         sum += flt_p1[j];
@@ -653,9 +649,9 @@ static inline void adm_cm_accum_px_s(const AdmCmCtxS *c, int i, int j, float inn
         inner[1] += (xv * xv * xv);
         inner[2] += (xd * xd * xd);
     } else {
-        inner[0] += powf(xh, c->adm_p_norm);
-        inner[1] += powf(xv, c->adm_p_norm);
-        inner[2] += powf(xd, c->adm_p_norm);
+        inner[0] += powf(xh, (float)c->adm_p_norm);
+        inner[1] += powf(xv, (float)c->adm_p_norm);
+        inner[2] += powf(xd, (float)c->adm_p_norm);
     }
 }
 

@@ -143,7 +143,7 @@ static int run_parse_expect_usage_error(int argc, char **argv, const char *needl
     return 0;
 }
 
-static char *test_threads_invalid_optarg_does_not_assert()
+static char *test_threads_invalid_optarg_does_not_assert(void)
 {
     char *argv[] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--threads", "abc"};
     const int argc = (int)(sizeof(argv) / sizeof(argv[0]));
@@ -152,7 +152,7 @@ static char *test_threads_invalid_optarg_does_not_assert()
     return NULL;
 }
 
-static char *test_subsample_invalid_optarg_does_not_assert()
+static char *test_subsample_invalid_optarg_does_not_assert(void)
 {
     char *argv[] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--subsample", "xyz"};
     const int argc = (int)(sizeof(argv) / sizeof(argv[0]));
@@ -161,7 +161,7 @@ static char *test_subsample_invalid_optarg_does_not_assert()
     return NULL;
 }
 
-static char *test_cpumask_invalid_optarg_does_not_assert()
+static char *test_cpumask_invalid_optarg_does_not_assert(void)
 {
     char *argv[] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--cpumask", "qqq"};
     const int argc = (int)(sizeof(argv) / sizeof(argv[0]));
@@ -176,7 +176,7 @@ static char *test_cpumask_invalid_optarg_does_not_assert()
  * `--threads`). This is the exact shape PR #408's fuzzer
  * surfaced; promoting the file to the corpus protects the
  * fuzzer path, this case protects the C unit-test path. */
-static char *test_threads_abbrev_does_not_assert()
+static char *test_threads_abbrev_does_not_assert(void)
 {
     char *argv[] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--th=foosoxe"};
     const int argc = (int)(sizeof(argv) / sizeof(argv[0]));
@@ -189,7 +189,7 @@ static char *test_threads_abbrev_does_not_assert()
  * Before the fix, strtoul("-1") returned ULONG_MAX (unsigned wrapping) and the
  * '*end == 0' check passed, so --frame_cnt -1 silently set frame_cnt = UINT_MAX.
  * The fix adds an explicit leading-'-' guard before strtoul. */
-static char *test_frame_cnt_negative_is_rejected()
+static char *test_frame_cnt_negative_is_rejected(void)
 {
     char *argv[] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--frame_cnt", "-1"};
     const int argc = (int)(sizeof(argv) / sizeof(argv[0]));
@@ -199,7 +199,7 @@ static char *test_frame_cnt_negative_is_rejected()
     return NULL;
 }
 
-static char *test_frame_skip_ref_negative_is_rejected()
+static char *test_frame_skip_ref_negative_is_rejected(void)
 {
     char *argv[] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--frame_skip_ref", "-5"};
     const int argc = (int)(sizeof(argv) / sizeof(argv[0]));
@@ -208,7 +208,7 @@ static char *test_frame_skip_ref_negative_is_rejected()
     return NULL;
 }
 
-static char *test_frame_skip_dist_negative_is_rejected()
+static char *test_frame_skip_dist_negative_is_rejected(void)
 {
     char *argv[] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--frame_skip_dist", "-1"};
     const int argc = (int)(sizeof(argv) / sizeof(argv[0]));
@@ -220,7 +220,7 @@ static char *test_frame_skip_dist_negative_is_rejected()
 /* ADR-1088: parse_unsigned must reject values that overflow uint32.
  * On 64-bit hosts, strtoul("5000000000") = 5000000000 which is > UINT_MAX;
  * the overflow check ul > UINT_MAX catches it and emits a usage error. */
-static char *test_frame_cnt_overflow_is_rejected()
+static char *test_frame_cnt_overflow_is_rejected(void)
 {
     /* 5 * 10^9 exceeds UINT_MAX (4294967295) on any platform. */
     char *argv[] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--frame_cnt", "5000000000"};
@@ -230,7 +230,7 @@ static char *test_frame_cnt_overflow_is_rejected()
     return NULL;
 }
 
-static char *test_threads_negative_is_rejected()
+static char *test_threads_negative_is_rejected(void)
 {
     char *argv[] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--threads", "-1"};
     const int argc = (int)(sizeof(argv) / sizeof(argv[0]));
@@ -239,7 +239,7 @@ static char *test_threads_negative_is_rejected()
     return NULL;
 }
 
-static char *test_aom_ctc_invalid_optarg_usage_error()
+static char *test_aom_ctc_invalid_optarg_usage_error(void)
 {
     char *argv[] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--aom_ctc", "bogus_v99"};
     const int argc = (int)(sizeof(argv) / sizeof(argv[0]));
@@ -248,7 +248,7 @@ static char *test_aom_ctc_invalid_optarg_usage_error()
     return NULL;
 }
 
-static char *test_missing_reference_usage_error()
+static char *test_missing_reference_usage_error(void)
 {
     char *argv[] = {"vmaf", "-d", "dis.y4m"};
     const int argc = (int)(sizeof(argv) / sizeof(argv[0]));
@@ -258,7 +258,7 @@ static char *test_missing_reference_usage_error()
     return NULL;
 }
 
-static char *test_bad_feature_option_usage_error()
+static char *test_bad_feature_option_usage_error(void)
 {
     char *argv[] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--feature", "psnr=bad"};
     const int argc = (int)(sizeof(argv) / sizeof(argv[0]));
@@ -268,7 +268,7 @@ static char *test_bad_feature_option_usage_error()
     return NULL;
 }
 
-static char *test_invalid_bitdepth_usage_error()
+static char *test_invalid_bitdepth_usage_error(void)
 {
     char *argv[] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "-m", "path=version=vmaf_v0.6.1",
                     "-b",   "17"};
@@ -280,7 +280,7 @@ static char *test_invalid_bitdepth_usage_error()
     return NULL;
 }
 
-char *run_tests()
+char *run_tests(void)
 {
     static const MuTest tests[] = {
         MU_TEST(test_threads_invalid_optarg_does_not_assert),

@@ -171,9 +171,21 @@ class GrantOutsideTheHeader(unittest.TestCase):
         self.assertEqual(len(REL.header_prose_blocks(lines)), 1)
 
     def test_the_shipped_sync_script_is_not_rewritten(self) -> None:
+        """The Pelorus sync script writes the fixture's header below its own.
+
+        Until ADR-2817 that template carried Pelorus's BSD+Patent grant, which
+        test_a_header_template_further_down_is_left_alone now pins with a
+        constructed file; since Pelorus v0.3.0 it carries the EUPL-1.2 tag.
+        Either way the rewrite leaves it alone.
+        """
         path = ROOT / "sync-pelorus-interop.sh"
         text = path.read_text(encoding="utf-8")
-        self.assertIn("BSD+Patent", text, "the mirrored header template is gone")
+        lines = text.splitlines()
+        templates = [i for i, line in enumerate(lines) if "Copyright 2026 Lusoris" in line]
+        self.assertTrue(
+            [i for i in templates if i >= REL.HEADER_SCAN],
+            "the mirrored header template is gone",
+        )
         self.assertEqual(rewrite(text, "scripts/sync-pelorus-interop.sh"), text)
 
 
@@ -183,8 +195,10 @@ class Candidates(unittest.TestCase):
             "scripts/ci/exact_twins.d/adm.hip",
             "scripts/ci/exact_twins.d/float_ssim.sycl",
             "tools/figures/mkdocs_hook.py",
-            "tools/figures/dist/player.js",
+            "tools/figures/player/player.js",
             ".config/agent/hooks/block_evasion.py",
+            ".config/lefthook/engine.sh",
+            ".config/lefthook/python.sh",
             ".codex/agents/c-reviewer.toml",
         ):
             with self.subTest(path=path):
@@ -195,6 +209,7 @@ class Candidates(unittest.TestCase):
             "scripts/ci/cross_backend_calibration.py",
             "core/src/feature/hip/integer_adm_hip.c",
             ".config/agent/hooks/other_hook.py",
+            ".config/lefthook/other.sh",
             "tools/vmaf-tune/src/vmaftune/cli.py",
             ".codex/config.toml",
             "core/src/feature/rust/tad/Cargo.toml",
@@ -426,6 +441,48 @@ class FullHistory(unittest.TestCase):
         ):
             with self.assertRaises(SystemExit):
                 REL.require_full_history(Path())
+
+
+class AiToolCopyright(unittest.TestCase):
+    """ADR-0861: copyright lines name the project holder only."""
+
+    def test_owner_only_notice_passes(self) -> None:
+        """Positive: a file with only Copyright 2026 Lusoris passes."""
+        src = f"# Copyright 2026 Lusoris\n# {TAG} EUPL-1.2\n"
+        self.assertEqual(REL.check_ai_copyright(src), [])
+
+    def test_planted_ai_copyright_fails(self) -> None:
+        """Negative: a planted # Copyright 2026 Claude (Anthropic) line fails."""
+        src = (
+            "#!/usr/bin/env bash\n"
+            "# Copyright 2026 Lusoris\n"
+            "# Copyright 2026 Claude (Anthropic)\n"
+            f"# {TAG} BSD-2-Clause-Patent\n"
+        )
+        violations = REL.check_ai_copyright(src, "scripts/test.sh")
+        self.assertTrue(violations)
+        self.assertIn("scripts/test.sh:3", violations[0])
+        self.assertIn("ADR-0861", violations[0])
+        self.assertIn("Claude", violations[0])
+
+    def test_dual_owner_and_ai_copyright_fails(self) -> None:
+        """Negative: // Copyright 2026 Lusoris and Claude (Anthropic) fails."""
+        src = "// Copyright 2026 Lusoris and Claude (Anthropic)\n" f"// {TAG} BSD-2-Clause-Patent\n"
+        violations = REL.check_ai_copyright(src, "test.go")
+        self.assertTrue(violations)
+        self.assertIn("test.go:1", violations[0])
+        self.assertIn("ADR-0861", violations[0])
+        self.assertIn("Claude", violations[0])
+
+    def test_tool_mention_outside_copyright_line_passes(self) -> None:
+        """Boundary: the word Claude outside a copyright line does not fail."""
+        src = (
+            "#!/usr/bin/env bash\n"
+            "# Tested with Claude for regressions.\n"
+            "# Copyright 2026 Lusoris\n"
+            f"# {TAG} EUPL-1.2\n"
+        )
+        self.assertEqual(REL.check_ai_copyright(src), [])
 
 
 if __name__ == "__main__":

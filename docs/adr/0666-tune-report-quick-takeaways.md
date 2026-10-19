@@ -1,44 +1,8 @@
 <!-- markdownlint-disable MD013 MD025 MD033 MD060 -->
-<!-- ADR-0666 stub — claimed by scripts/adr/next-free.sh --claim tune-report-quick-takeaways on 2026-05-21T17:02:37Z -->
-<!-- Replace this file with the real ADR and rename to 0666-tune-report-quick-takeaways.md before committing. -->
-<!-- To abandon this claim run: scripts/adr/next-free.sh --release 0666 -->
-
-# ADR-0666: <fill in title>
-
-- **Status**: Accepted
-- **Date**: 2026-05-21
-- **Deciders**: <fill in>
-- **Tags**: <fill in>
-
-## Context
-
-<fill in>
-
-## Decision
-
-<fill in>
-
-## Alternatives considered
-
-| Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
-| | | | |
-
-## Consequences
-
-- **Positive**: <fill in>
-- **Negative**: <fill in>
-- **Neutral / follow-ups**: <fill in>
-
-## References
-
-- See [ADR-0535](0535-adr-atomic-allocator.md) for the original allocator design.
-- See [ADR-0628](0628-adr-allocator-remote-aware.md) for the remote-aware extension.
-- Source: <req or Q<round>.<q>>
 
 # ADR-0666: vmaf-tune report quick takeaways
 
-- **Status**: Accepted
+- **Status**: Accepted (status update 2026-10-06 below)
 - **Date**: 2026-05-21
 - **Deciders**: Lusoris maintainers
 - **Tags**: vmaf-tune, reports, ux, encoder-profile
@@ -97,3 +61,13 @@ Verification command:
 ```bash
 git grep -n 'Quick takeaways' origin/master -- tools/vmaf-tune/src/vmaftune/report.py
 ```
+
+## Status update 2026-10-06: The unfilled template block was removed
+
+Until this date the file began with an unfilled template block from the ADR
+number allocator (stub comments, the title `<fill in title>`, `<fill in>`
+sections), followed by this record. The block carried no decision and made the
+first heading, the Deciders line and the Tags line unreadable by tools; it was
+removed. The record itself is unchanged.
+
+The body above is unchanged.

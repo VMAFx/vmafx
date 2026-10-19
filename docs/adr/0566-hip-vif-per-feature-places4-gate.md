@@ -1,13 +1,11 @@
-<!-- markdownlint-disable MD060 -->
+<!-- markdownlint-disable MD060 MD013 -->
 # ADR-0566 — HIP VIF per-feature parity gate: places=4 (supersedes ADR-0537 §follow-up)
 
-| Field | Value |
-|---|---|
-| **Status** | Accepted |
-| **Date** | 2026-05-18 |
-| **Deciders** | lusoris, Claude (Anthropic) |
-| **Tags** | hip, vif, parity, gate, svm, correctness, fork-local |
-| **Supersedes** | ADR-0537 (the "places=3 acceptable as follow-up" clause only) |
+- **Status**: Accepted (Superseded-in-part 2026-10-06 by [ADR-1103](1103-hip-vif-mirror2-boundary.md) for the claim that the clamp matches the CPU within places=4)
+- **Date**: 2026-05-18
+- **Deciders**: lusoris, Claude (Anthropic)
+- **Tags**: hip, vif, parity, gate, svm, correctness, fork-local
+- **Supersedes**: ADR-0537 (the "places=3 acceptable as follow-up" clause only)
 
 ## Context
 

@@ -1,0 +1,32 @@
+{
+  "name": "winget manifest schemas",
+  "version": "1.12.0",
+  "source": "https://github.com/microsoft/winget-cli/archive/3d9083c062c1e7a7086e05becb414d4e005e4ab6.tar.gz",
+  "source_sha256": "198d94c1361b4877cb66ac0ff2e66044f82ad2383f9035bbb381af532c01215a",
+  "license": "MIT",
+  "license_file": "LICENSE",
+  "fetched": "2026-10-15",
+  "changes": "CRLF line endings converted to LF (the repository's .gitattributes stores text with LF); no other change",
+  "files": {
+    "manifest.version.1.12.0.json": {
+      "from": "schemas/JSON/manifests/v1.12.0/manifest.version.1.12.0.json",
+      "from_sha256": "94b693be43f8525452c8bba742b0b29437e6e1a31ee786f25adec9ffe97f933d",
+      "sha256": "0cdf9c17a0d19221a3612980c95a47d120c4ce532157177aa6af4368a8a78273"
+    },
+    "manifest.defaultLocale.1.12.0.json": {
+      "from": "schemas/JSON/manifests/v1.12.0/manifest.defaultLocale.1.12.0.json",
+      "from_sha256": "27d1b85e392ba675837380bfb198deb0fa9d846414d8d5f463291a9448016455",
+      "sha256": "b87eaa2252daf0bc9b2d495a3f7f5547b8b36236bdcc0543cf9f7403bd56707e"
+    },
+    "manifest.installer.1.12.0.json": {
+      "from": "schemas/JSON/manifests/v1.12.0/manifest.installer.1.12.0.json",
+      "from_sha256": "a6af78b4f558492aed74cacf090433efcfee58ae932690b97c76ff4e3b15efab",
+      "sha256": "47de5aefdea4e7ccbc8ab4e32e8230671300054bd4f688cd7ca8bdebf459f006"
+    },
+    "LICENSE": {
+      "from": "LICENSE",
+      "from_sha256": "dea9265341829002e2c23a7372393eb2ed6e26085fb623f38a4ba0af833f30a6",
+      "sha256": "27ebda9d51f0a56b7e281ccd8230a27236dcb51c05f64b07869ecf6e965d68b0"
+    }
+  }
+}

@@ -101,8 +101,8 @@ Have hardware the project does not own? Run the
 <!-- markdownlint-disable MD013 MD033 -->
 <figure class="vx-chart" markdown>
 
-![Status of 25 features on CUDA, SYCL, HIP and Metal: 72 twins exact, 3 within a libm bound, 25 not declared.](assets/charts/twin-exactness.light.svg#only-light){ .vx-chart__static width="452" height="591" }
-![Status of 25 features on CUDA, SYCL, HIP and Metal: 72 twins exact, 3 within a libm bound, 25 not declared.](assets/charts/twin-exactness.dark.svg#only-dark){ .vx-chart__static width="452" height="591" }
+![Status of 25 features on CUDA, SYCL, HIP and Metal: 90 twins exact, 3 within a libm bound, 7 not declared.](assets/charts/twin-exactness.light.svg#only-light){ .vx-chart__static width="452" height="591" }
+![Status of 25 features on CUDA, SYCL, HIP and Metal: 90 twins exact, 3 within a libm bound, 7 not declared.](assets/charts/twin-exactness.dark.svg#only-dark){ .vx-chart__static width="452" height="591" }
 
 <figcaption markdown>Source: the fragments in `scripts/ci/exact_twins.d/` and `LIBM_TWINS` in `scripts/ci/cross_backend_calibration.py`. An exact twin returns the CPU extractor's bits (=) and is compared with tolerance 0; a libm-bound twin differs only through the math library, within the stated bound (≤); a dash means no twin of that backend is declared either way.</figcaption>
 
@@ -116,27 +116,27 @@ Have hardware the project does not own? Run the
 | `adm` | exact | exact | exact | not declared |
 | `cambi` | exact | exact | exact | not declared |
 | `ciede` | libm bound (≤ 1e-09) | libm bound (≤ 1e-09) | libm bound (≤ 1e-09) | not declared |
-| `float_adm` | exact | exact | exact | not declared |
-| `float_moment` | exact | exact | exact | not declared |
-| `float_motion` | exact | exact | exact | not declared |
-| `float_ms_ssim` | exact | exact | exact | not declared |
-| `float_ms_ssim_chroma` | exact | exact | exact | not declared |
-| `float_ms_ssim_lcs` | exact | exact | exact | not declared |
-| `float_psnr` | exact | exact | exact | not declared |
-| `float_ssim` | exact | exact | exact | not declared |
-| `float_ssim_lcs` | exact | exact | exact | not declared |
-| `float_vif` | exact | exact | exact | not declared |
-| `motion` | exact | exact | exact | not declared |
-| `motion_debug` | exact | exact | exact | not declared |
-| `motion_mffw` | exact | exact | exact | not declared |
-| `motion_v2` | exact | exact | exact | not declared |
-| `motion_v2_mffw` | exact | exact | exact | not declared |
-| `psnr` | exact | exact | exact | not declared |
+| `float_adm` | exact | exact | exact | exact |
+| `float_moment` | exact | exact | exact | exact |
+| `float_motion` | exact | exact | exact | exact |
+| `float_ms_ssim` | exact | exact | exact | exact |
+| `float_ms_ssim_chroma` | exact | exact | exact | exact |
+| `float_ms_ssim_lcs` | exact | exact | exact | exact |
+| `float_psnr` | exact | exact | exact | exact |
+| `float_ssim` | exact | exact | exact | exact |
+| `float_ssim_lcs` | exact | exact | exact | exact |
+| `float_vif` | exact | exact | exact | exact |
+| `motion` | exact | exact | exact | exact |
+| `motion_debug` | exact | exact | exact | exact |
+| `motion_mffw` | exact | exact | exact | exact |
+| `motion_v2` | exact | exact | exact | exact |
+| `motion_v2_mffw` | exact | exact | exact | exact |
+| `psnr` | exact | exact | exact | exact |
 | `psnr_hvs` | exact | exact | exact | not declared |
 | `speed_chroma` | exact | exact | exact | not declared |
 | `speed_temporal` | exact | exact | exact | not declared |
-| `ssim` | exact | exact | exact | not declared |
-| `ssimulacra2` | exact | exact | exact | not declared |
+| `ssim` | exact | exact | exact | exact |
+| `ssimulacra2` | exact | exact | exact | exact |
 | `vif` | exact | exact | exact | not declared |
 
 </details>

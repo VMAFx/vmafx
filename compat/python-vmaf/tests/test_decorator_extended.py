@@ -539,6 +539,78 @@ class TestCacheKeyStabilityAndCollision:
         assert compute(1) == 2
         assert os.path.exists(cache_file)
 
+    def test_persist_to_file_touches_cache_only_under_file_lock(self, monkeypatch, tmp_path):
+        """Every open and replace of the cache file happens while the cross-process lock is held.
+
+        On Windows an open that overlaps a peer's ``os.replace`` of the file fails
+        with a sharing violation (PermissionError 13), and the replace fails while
+        a peer holds the file open, so one unlocked read races every writer.
+        """
+        import builtins
+        import contextlib
+        import json
+
+        cache_file = str(tmp_path / "locked_reads.json")
+        with open(cache_file, "wt", encoding="utf-8") as fh:
+            json.dump({}, fh)
+        lock_path = os.path.abspath(f"{cache_file}.lock")
+        held = [0]
+        unlocked = []
+        real_lock = decorator_module._file_lock
+        real_open = builtins.open
+        real_replace = os.replace
+
+        @contextlib.contextmanager
+        def tracking_lock(path):
+            with real_lock(path):
+                hit = int(os.path.abspath(path) == lock_path)
+                held[0] += hit
+                try:
+                    yield
+                finally:
+                    held[0] -= hit
+
+        def tracking_open(file, *args, **kwargs):
+            if file == cache_file and not held[0]:
+                unlocked.append("open")
+            return real_open(file, *args, **kwargs)
+
+        def tracking_replace(src, dst, *args, **kwargs):
+            if dst == cache_file and not held[0]:
+                unlocked.append("replace")
+            return real_replace(src, dst, *args, **kwargs)
+
+        monkeypatch.setattr(decorator_module, "_file_lock", tracking_lock)
+        monkeypatch.setattr(decorator_module, "open", tracking_open, raising=False)
+        monkeypatch.setattr(decorator_module.os, "replace", tracking_replace)
+
+        @persist_to_file(cache_file)
+        def compute(item):
+            return item * 3
+
+        assert compute(1) == 3
+        assert compute(2) == 6
+        assert unlocked == []
+
+    def test_persist_to_file_corrupt_cache_at_call_time_raises_without_overwrite(self, tmp_path):
+        """A cache file that turns unreadable after decoration is reported, never overwritten.
+
+        Overwriting it with the in-memory cache would drop every entry a peer
+        process had written.
+        """
+        import pytest
+
+        cache_file = tmp_path / "corrupt_later.json"
+
+        @persist_to_file(str(cache_file))
+        def compute(item):
+            return item
+
+        cache_file.write_text("{not json", encoding="utf-8")
+        with pytest.raises(decorator_module.PersistCacheError, match="unreadable cache file"):
+            compute(1)
+        assert cache_file.read_text(encoding="utf-8") == "{not json"
+
     def test_file_lock_uses_windows_byte_range_backend(self, monkeypatch, tmp_path):
         """The Windows fallback must lock and unlock byte zero through msvcrt."""
 

@@ -3,7 +3,7 @@ paths:
   - core/src/feature/hip/integer_ms_ssim_hip.c
   - core/src/feature/hip/integer_ms_ssim_hip.h
   - core/src/feature/hip/integer_ms_ssim/ms_ssim_score.hip
-invariant: MS-SSIM vertical LCS terms must be double, clip_db is treated as a ceiling, and enable_chroma scores every plane.
+invariant: MS-SSIM vertical LCS terms must be double, clip_db is treated as ceiling, and enable_chroma scores every plane.
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # ms_ssim_vert_lcs kernel and host terms must both be `double` (ADR-1071)
@@ -58,24 +58,24 @@ never binds, variant passes against unfixed twin.
 ## enable_chroma = CPU's per-plane pipeline (2026-10-03)
 
 `T-MS-SSIM-GPU-CHROMA-OPTION-DRIFT-2026-09-06`. Was: option accepted,
-`n_planes = 1u` on both sides of a dead branch, `_cb` / `_cr` silently missing
-(wrong output, not a fallback). Now, rebase-sensitive:
+`n_planes = 1u` on both sides of dead branch, `_cb` / `_cr` silently missing
+(wrong output, not fallback). Now, rebase-sensitive:
 
 - Option table = `float_ms_ssim.c`'s four; option kept (HISS-14), never
   removed. `provided_features` = `float_ms_ssim`, `_cb`, `_cr`.
 - Per plane (`MsSsimPlaneHip`): own dimensions, scale geometry, pyramid,
   pinned level 0 (`h_ref` / `h_cmp`, uploaded straight into pyramid level 0),
-  terms and pinned terms. Shared: the five horizontal planes (luma-sized, one
-  stream). Kernels, `ms_ssim_hip_scale_sums()` and `ms_ssim_arith.h` = the
+  terms and pinned terms. Shared: five horizontal planes (luma-sized, one
+  stream). Kernels, `ms_ssim_hip_scale_sums()` and `ms_ssim_arith.h` =
   luma path; no chroma copy.
 - Plane count and chroma size from `../metal/float_ms_ssim_option_semantics.h`
   (`vmaf_metal_ms_ssim_active_planes()`, `_plane_dimensions()`): YUV400P =
   luma only; every scored plane >= 176 px (4:2:0 needs 351x351 luma) or init
-  refuses with the CPU's message.
-- Every plane validated and prepared before the first emit; chroma uses
-  luma's `max_db`; `enable_lcs` = luma means only, as the CPU.
+  refuses with CPU's message.
+- Every plane validated and prepared before first emit; chroma uses
+  luma's `max_db`; `enable_lcs` = luma means only, as CPU.
 - Guards: `test_hip_ms_ssim_parity` (chroma `==` on 4:2:0 odd size, 4:2:2 10
-  bit, 4:4:4; refusal and YUV400P verdicts; fails on the old code with a
+  bit, 4:4:4; refusal and YUV400P verdicts; fails on old code with
   missing key), `test_hip_exact_twins` (chroma row),
   `test_hip_twin_option_parity` (option table),
   `test_hip_kernel_source_contract.py` (planted `n_planes = 1u`, luma-only

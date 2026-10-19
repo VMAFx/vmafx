@@ -59,7 +59,7 @@ explanations are in the notes below the table.
 | Feature | NEON | SVE2 | Notes |
 |---------|------|------|-------|
 | `vif` | yes | no | matches the AVX2 path bit for bit |
-| `adm` | yes | no | matches the AVX2 path bit for bit |
+| `adm` | yes | no | scalar bits at every stage, see note 6 |
 | `motion` | yes | no | fixed-point legacy `motion` |
 | `motion_v2` | yes | no | pipelined fused-blur variant |
 | `float_moment` | yes | yes | scalar bits, see note 1 |
@@ -94,10 +94,21 @@ explanations are in the notes below the table.
    (`speed_cov_row_neon`) uses one lane per covariance sum and is
    bit-identical to scalar
    ([ADR-1459](../../adr/1459-speed-cov-kernel-exact.md)). The anti-alias
-   filter stays scalar C and is evaluated only at the samples the 16x
-   decimation keeps (`vif_filter1d_dec16_s()`, Netflix/vmaf `76ea5f03`).
+   filter stays scalar C on aarch64 and is evaluated only at the samples the
+   16x decimation keeps (`vif_filter1d_dec16_s()`, Netflix/vmaf `76ea5f03`;
+   x86 runs the same function with an AVX2 vertical pass, `9cb9479f`).
    Upstream's NEON covariance kernel (`15297286`) is not used: it splits one
    sum over eight lanes and does not return the scalar's bits.
+6. `adm` (integer): NEON runs the 8-bit scale-0 DWT, the DWT of scales 1 to
+   3, the decouple of every scale and the contrast masking of every scale
+   (Netflix/vmaf `9e48141b`, `8bc5a5c6a`, `b41d2340a`). Each returns the
+   scalar kernel's bits. The scale 1-3 decouple vectorises an enhancement
+   gain limit of 1 (the `neg` models) and runs the scalar kernel at other
+   limits. The contrast masking runs the scalar kernel when the CSF weights
+   need the wide fixed-point range (`adm_csf_mode` 1, Barten), as on x86.
+   The masking threshold keeps the scale-0 centre tap in int32 and forms the
+   excess in int64 ([ADR-1402](../../adr/1402-adm-cm-centre-tap-int32.md)),
+   where upstream's NEON narrows the tap to int16.
 
 ## Bit-exactness
 
@@ -111,9 +122,10 @@ cross-architecture correctness check.
 |---------|----------|-------|--------------|
 | `psnr_hvs` | ADR-0160 | `test_psnr_hvs_dispatch_invariance`, `test_psnr_hvs_neon` | the first scores the extractor with NEON and with every flag masked and compares the four outputs bit for bit; the second compares the integer DCT alone. The masking threshold uses the scalar's `float` product ([`psnr_hvs`](../../metrics/psnr-hvs.md#cpu-instruction-sets)) |
 | `ssimulacra2` | ADR-0161, 0162, 0163, 0213 | cross-file `build-aux/aarch64-linux-gnu-sve2.ini` under `qemu-aarch64-static -cpu max` | cross-host determinism via `vmaf_ss2_cbrtf` and the sRGB-EOTF LUT; the SVE2 TU is locked to a fixed 4-lane predicate (`svwhilelt_b32(0, 4)`) so its arithmetic order matches NEON at any runtime vector length |
-| `float_moment` | ADR-1500 | `core/test/test_moment_simd.c` (asserts `==`) | each sample, or its float square, is added into one `double` in raster order, as the scalar loop and the x86 kernels do, so a 16-bit frame whose sum of squares passes 2^53 units gets the scalar's bits |
+| `float_moment` | ADR-1500 | `core/test/test_moment_simd.c` (asserts `==`) | each sample, or its float square, is added into one `double` in raster order, as the scalar loop and the x86 kernels do, so a 16-bit frame whose sum of squares passes $2^{53}$ units gets the scalar's bits |
 | `ms_ssim_decimate` | ADR-0125 | decimate tests | per-lane `vfmaq_n_f32` with broadcast coefficients matches the scalar `fmaf` chain exactly |
 | `speed_chroma` / `speed_temporal` | ADR-1459 | `core/test/test_speed_simd.c` | every covariance sum of the NEON row kernel has the bits of `compute_cov_kernel_scalar()`; run under `qemu-aarch64` with GCC and with clang |
+| `adm` (integer) | ADR-1402, ADR-1413, ADR-1167 | `core/test/test_integer_adm_simd.c`, `core/test/test_adm_dwt2_neon.c` | every vector kernel against the scalar kernels of `integer_adm_kernels.h`: contrast masking of every scale on fills that reach negative thresholds and saturating excesses, decouple at gain limits 1 to 100, DWT of every scale on full-range samples with a guard band; integer lanes widened where the scalar widens, rows folded once (ADR-1167); run under `qemu-aarch64` with GCC and with clang |
 
 Notes on running these:
 
@@ -146,7 +158,7 @@ not change.
 
 | Job | Runner | What it checks |
 |-----|--------|----------------|
-| `Ubuntu ARM clang` ([`libvmaf-build-matrix.yml`][libvmaf-build-matrix]) | `ubuntu-24.04-arm`, clang | the full unit-test and tox suite on real aarch64 hardware, not qemu |
+| `Ubuntu ARM clang` ([`libvmaf-build-matrix.yml`][libvmaf-build-matrix]) | `ubuntu-26.04-arm`, clang | the full unit-test and tox suite on real aarch64 hardware, not qemu |
 | `Windows ARM64 MSVC` (same workflow) | `windows-11-vs2026-arm` | NEON tree built natively with the ARM64-hosted MSVC toolset, meson `fast` suite ([ADR-1260](../../adr/1260-windows-arm64-cpu-lane.md)); advisory |
 
 [libvmaf-build-matrix]: ../../../.github/workflows/libvmaf-build-matrix.yml
@@ -239,7 +251,7 @@ configures anything.
 
 Until 2026-10-03 the `float_moment` NEON and SVE2 kernels added in lanes and
 differed from the scalar function on 16-bit frames whose sum of squares
-passes 2^53 units (ADR-1500).
+passes $2^{53}$ units (ADR-1500).
 
 ### 2026-10-02: FP contraction (ADR-1461)
 

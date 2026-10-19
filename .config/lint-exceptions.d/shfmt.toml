@@ -1,0 +1,13 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
+# Declared exceptions to shfmt (`-i 2 -ci`). Format and rules: scripts/ci/lint_exceptions.py.
+# One file per entry; an entry stops holding on `expires`. The `exclude` of the shfmt hook in
+# .pre-commit-config.yaml, the SHFMT_FILES list of the Makefile and the shell branch of
+# scripts/githooks/pre-commit.sh name the same files (scripts/ci/tests/test_shfmt_scope.py
+# keeps the four in step).
+
+[[exception]]
+path = ".config/lefthook/python.sh"
+reason = "Praetor's Python launcher, written by `praetorctl adopt` at engine train 32a35c8fb947. Adoption refreshes it only while it is one of praetor's own texts; a formatted copy is kept as the repository's file and stops following the engine pin (ADR-3272). The launcher is not shfmt-clean (trailing comment alignment; cordanaLLM/praetor issue 1441, open); remove the entry with the engine pin that carries the fix. Category D (120 days)."
+expires = 2027-02-15

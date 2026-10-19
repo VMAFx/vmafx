@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-0667: vmaf-tune score backend native priority
 
-- **Status**: Accepted
+- **Status**: Accepted (Superseded-in-part 2026-10-05 by [ADR-1874](1874-vmaf-list-backends.md): availability comes from `vmaf --list-backends`, and `auto` adds `metal` before `cpu`)
 - **Date**: 2026-05-21
 - **Deciders**: Lusoris
 - **Tags**: vmaf-tune, gpu, cuda, sycl, hip, vulkan, fork-local

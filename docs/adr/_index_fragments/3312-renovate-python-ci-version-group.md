@@ -1,0 +1,1 @@
+| [ADR-3312](3312-renovate-python-ci-version-group.md) | One Renovate regex manager owns the CI Python interpreter (`PYTHON_CI_VERSION` in `build-config.env` plus every workflow `python-version:` pin) as one group; the github-actions manager's copy is disabled; updates stay below 3.15.0 during the 1.0.0 freeze | Accepted | ci, renovate, python, supply-chain |

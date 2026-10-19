@@ -94,3 +94,13 @@ not just file presence. Specifically:
 - Reverted PR: [#1237](https://github.com/VMAFx/vmafx/pull/1237)
 - Related ADRs: [ADR-0024](0024-netflix-golden-preserved.md) (Netflix golden gate)
 - Source: req (user investigation 2026-05-17 — "Investigate integer-VIF first")
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 59: `The pre-commit hook
+  [check-fixture-md5](././scripts/ci/check-fixture-md5.sh) is out-of-scope`:
+  Markdown link points to scripts/ci/check-fixture-md5.sh which was never
+  committed and does not exist on master.

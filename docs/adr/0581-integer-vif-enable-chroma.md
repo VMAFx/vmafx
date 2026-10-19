@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-0581: Add `enable_chroma` option to `integer_vif`
 
-- **Status**: Accepted
+- **Status**: Accepted (refined by [ADR-0597](0597-integer-vif-luma-only-clarification.md): `integer_vif` is luma-only on every backend, so `enable_chroma` is a documented no-op on CUDA)
 - **Date**: 2026-05-16
 - **Deciders**: lusoris
 - **Tags**: `feature`, `vif`, `chroma`

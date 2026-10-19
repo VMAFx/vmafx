@@ -1352,12 +1352,29 @@ void enqueue_scale(sycl::queue &q, const Ssimu2StateSycl *s, int scale)
     }
 }
 
-void enqueue_frame(sycl::queue &q, const Ssimu2StateSycl *s)
+/* The raw planes of both pictures into d_raw: uploaded from the pinned
+ * staging submit() packed, or, for frames of the VMAFx API on this device,
+ * copied on the device (ADR-2091; the frame's planes are never read on the
+ * host). 0, or -EIO when a device copy could not be enqueued. */
+int enqueue_raw(sycl::queue &q, const Ssimu2StateSycl *s, const VmafPicture *const pics[2],
+                bool device)
 {
     for (unsigned img = 0; img < SS2S_IMAGES; img++) {
-        for (unsigned p = 0; p < SS2S_CHANNELS; p++)
-            q.memcpy(s->d_raw[img][p], s->h_raw[img][p], s->row_bytes[p] * s->plane_h[p]);
+        for (unsigned p = 0; p < SS2S_CHANNELS; p++) {
+            const size_t row = s->row_bytes[p];
+            if (!device) {
+                q.memcpy(s->d_raw[img][p], s->h_raw[img][p], row * s->plane_h[p]);
+            } else if (vmaf_sycl_picture_read_plane(pics[img], p, &q, s->d_raw[img][p], row, row,
+                                                    s->plane_h[p], nullptr) != 0) {
+                return -EIO;
+            }
+        }
     }
+    return 0;
+}
+
+void enqueue_frame(sycl::queue &q, const Ssimu2StateSycl *s)
+{
     enqueue_linear_rgb(q, s);
     for (int scale = 0; scale < s->num_scales; scale++)
         enqueue_scale(q, s, scale);
@@ -1581,11 +1598,15 @@ int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture
     if (!ss2s_picture_matches(s, ref_pic) || !ss2s_picture_matches(s, dist_pic))
         return -EINVAL;
     const VmafPicture *const pics[SS2S_IMAGES] = {ref_pic, dist_pic};
-    for (unsigned img = 0; img < SS2S_IMAGES; img++) {
+    const bool device =
+        vmaf_sycl_picture_on_device(ref_pic) || vmaf_sycl_picture_on_device(dist_pic);
+    for (unsigned img = 0; img < SS2S_IMAGES && !device; img++) {
         for (unsigned p = 0; p < SS2S_CHANNELS; p++)
             ss2s_stage_plane(pics[img], p, s->h_raw[img][p], s->row_bytes[p], s->plane_h[p]);
     }
     try {
+        if (enqueue_raw(*qptr, s, pics, device) != 0)
+            return -EIO;
         enqueue_frame(*qptr, s);
     } catch (const sycl::exception &e) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "ssimulacra2_sycl: submit failed: %s\n", e.what());

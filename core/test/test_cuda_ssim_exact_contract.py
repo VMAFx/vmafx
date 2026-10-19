@@ -71,7 +71,9 @@ def _host_failures(host: str) -> list[str]:
     code = _code(host)
     for piece in HOST_SUM:
         if piece not in code:
-            failures.append(f"{HOST}: issim_frame_sum() is not one double in raster order ({piece})")
+            failures.append(
+                f"{HOST}: issim_frame_sum() is not one double in raster order ({piece})"
+            )
     if HOST_CALL not in code:
         failures.append(f"{HOST}: collect no longer adds the whole term plane")
     if READBACK not in code:
@@ -96,13 +98,17 @@ class IntegerSsimCudaExactContract(unittest.TestCase):
             "\ndouble r(double warp_ssim) {"
             " return warp_ssim + __shfl_down_sync(0xffffffffu, warp_ssim, 16); }\n"
         )
-        self.assertTrue(any("reduced on the device" in item for item in _contract_failures(sources)))
+        self.assertTrue(
+            any("reduced on the device" in item for item in _contract_failures(sources))
+        )
 
     def test_block_partial_array_is_detected(self) -> None:
         # The pre-ADR-1424 `s_ssim`.
         sources = _sources()
         sources[KERNEL] += "\nvoid f(void) { __shared__ double s_ssim[4]; (void)s_ssim; }\n"
-        self.assertTrue(any("reduced on the device" in item for item in _contract_failures(sources)))
+        self.assertTrue(
+            any("reduced on the device" in item for item in _contract_failures(sources))
+        )
 
     def test_unstored_term_is_detected(self) -> None:
         sources = _sources()
@@ -117,9 +123,11 @@ class IntegerSsimCudaExactContract(unittest.TestCase):
     def test_host_sum_of_block_partials_is_detected(self) -> None:
         # The pre-ADR-1424 collect_fex_cuda().
         sources = _sources()
-        sources[HOST] = sources[HOST].replace(
-            HOST_CALL, "issim_frame_sum(terms, (size_t)s->block_count);", 1
-        ).replace(READBACK, "(size_t)s->block_count * sizeof(double)", 1)
+        sources[HOST] = (
+            sources[HOST]
+            .replace(HOST_CALL, "issim_frame_sum(terms, (size_t)s->block_count);", 1)
+            .replace(READBACK, "(size_t)s->block_count * sizeof(double)", 1)
+        )
         failures = _contract_failures(sources)
         self.assertTrue(any("whole term plane" in item for item in failures))
         self.assertTrue(any("per-block partial sums" in item for item in failures))

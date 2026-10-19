@@ -2,7 +2,6 @@ VMAFX has been installed. Release: {{ .Release.Name }}
 
 WORKLOAD TYPE: {{ .Values.workload }}
 GPU VENDOR:    {{ .Values.gpu.vendor }}{{ if .Values.gpu.enabled }} (enabled, count={{ .Values.gpu.count }}){{ else }} (disabled){{ end }}
-BACKEND:       {{ include "vmafx.backendEnvValue" . }}
 
 {{- if eq .Values.workload "Deployment" }}
 ----------------------------------------------------------------------

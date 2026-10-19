@@ -66,12 +66,21 @@ MSVC_ROOT = "C:/Visual Studio/VC/Tools/MSVC/14.99"
 SDK_ROOT = "C:/Windows Kits/10/Include/10.0.26100.0"
 
 
-def _fixture_responses(compiler: Path, vswhere: str) -> dict[str, str]:
+BUILD_COMPILER = "C:/Visual Studio/VC/Tools/MSVC/14.51/bin/HostX64/x64/cl.exe"
+
+
+def _selected(compiler: Path, vswhere: str, build_msvc: str) -> str:
+    if build_msvc:
+        return build_msvc
+    return DISCOVERED_COMPILER if vswhere == "found" else str(compiler)
+
+
+def _fixture_responses(compiler: Path, vswhere: str, build_msvc: str = "") -> dict[str, str]:
     """Canned PowerShell answers for one discovery case."""
     return {
         "vswhere": vswhere,
         "discovered": DISCOVERED_COMPILER,
-        "selected": DISCOVERED_COMPILER if vswhere == "found" else str(compiler),
+        "selected": _selected(compiler, vswhere, build_msvc),
         "msvc_root": MSVC_ROOT,
         "sdk_root": SDK_ROOT,
     }
@@ -90,6 +99,8 @@ def _write_powershell_stub(binary_dir: Path) -> None:
             cfg = json.loads((Path(__file__).parents[1] / 'responses.json').read_text())
             command = sys.argv[-1]
             if 'vswhere.exe' in command:
+                if cfg['vswhere'] == 'forbidden':
+                    sys.exit('searched for a compiler although the build compiles with MSVC')
                 if cfg['vswhere'] == 'error':
                     sys.exit(1)
                 if cfg['vswhere'] == 'found':
@@ -120,8 +131,13 @@ def _write_cross_file(root: Path) -> Path:
     return cross
 
 
-def _write_project(root: Path, expected_compiler: str) -> None:
-    """Write the tiny Meson project that runs the shipped discovery block."""
+def _write_project(root: Path, expected_compiler: str, build_msvc: str = "") -> None:
+    """Write the tiny Meson project that runs the shipped discovery block.
+
+    ``nvcc_build_msvc`` is what core/src/meson.build derives from the build's
+    C++ compiler when that compiler is MSVC; a project without languages cannot
+    hold a compiler object, so the fixture sets the variable directly.
+    """
     checks = (
         f"assert(cl_path == {expected_compiler}, 'wrong compiler selected')\n"
         "assert(nvcc_ccbin_flags == ['--allow-unsupported-compiler', '-ccbin', cl_path])\n"
@@ -132,12 +148,17 @@ def _write_project(root: Path, expected_compiler: str) -> None:
         f"  '-I', '{SDK_ROOT}/um'])\n"
     )
     (root / "meson.build").write_text(
-        "project('windows-cuda-discovery')\n" + discovery_block() + checks,
+        "project('windows-cuda-discovery')\n"
+        + f"nvcc_build_msvc = '{build_msvc}'\n"
+        + discovery_block()
+        + checks,
         encoding="utf-8",
     )
 
 
-def _build_fixture(root: Path, *, vswhere: str, path_compiler: bool) -> tuple[Path, Path]:
+def _build_fixture(
+    root: Path, *, vswhere: str, path_compiler: bool, build_msvc: str = ""
+) -> tuple[Path, Path]:
     """Materialise one discovery case under ``root``.
 
     Returns the stub binary directory and the cross file.
@@ -148,15 +169,18 @@ def _build_fixture(root: Path, *, vswhere: str, path_compiler: bool) -> tuple[Pa
     if path_compiler:
         compiler.write_text(f"#!{sys.executable}\n", encoding="utf-8")
         compiler.chmod(0o700)
-    responses = _fixture_responses(compiler, vswhere)
+    responses = _fixture_responses(compiler, vswhere, build_msvc)
     (root / "responses.json").write_text(json.dumps(responses), encoding="utf-8")
     _write_powershell_stub(binary_dir)
     # The compiler selected by the branch is checked against the exact
     # executable found by Meson, including the PATH fallback.
-    expected_compiler = (
-        f"'{DISCOVERED_COMPILER}'" if vswhere == "found" else "find_program('cl').full_path()"
-    )
-    _write_project(root, expected_compiler)
+    if build_msvc:
+        expected_compiler = f"'{build_msvc}'"
+    elif vswhere == "found":
+        expected_compiler = f"'{DISCOVERED_COMPILER}'"
+    else:
+        expected_compiler = "find_program('cl').full_path()"
+    _write_project(root, expected_compiler, build_msvc)
     return binary_dir, _write_cross_file(root)
 
 
@@ -187,12 +211,41 @@ def _run_meson(root: Path, binary_dir: Path, cross: Path) -> subprocess.Complete
 
 
 class WindowsCudaCompilerDiscovery(unittest.TestCase):
-    def configure(self, *, vswhere: str, path_compiler: bool) -> subprocess.CompletedProcess[str]:
+    def configure(
+        self, *, vswhere: str, path_compiler: bool, build_msvc: str = ""
+    ) -> subprocess.CompletedProcess[str]:
         self.assertTrue(MESON_COMMAND, "Meson is required for this configure regression")
         with tempfile.TemporaryDirectory(prefix="vmafx-windows-discovery-") as temporary:
             root = Path(temporary)
-            binary_dir, cross = _build_fixture(root, vswhere=vswhere, path_compiler=path_compiler)
+            binary_dir, cross = _build_fixture(
+                root, vswhere=vswhere, path_compiler=path_compiler, build_msvc=build_msvc
+            )
             return _run_meson(root, binary_dir, cross)
+
+    def test_build_msvc_is_the_nvcc_host_compiler(self) -> None:
+        """The build compiles C++ with MSVC: nvcc gets that cl.exe and no search runs.
+
+        A second toolset compiles the host half of every .cu against another STL
+        (T-WINDOWS-NVCC-CCBIN-OLDEST-TOOLSET-2026-10-06).
+        """
+        result = self.configure(vswhere="forbidden", path_compiler=True, build_msvc=BUILD_COMPILER)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_build_msvc_comes_from_the_cpp_compiler(self) -> None:
+        source = SOURCE.read_text(encoding="utf-8")
+        marker = source.index("# default C compiler. Use vswhere + powershell")
+        derivation = source[
+            marker : source.index("        if host_machine.system() == 'windows'", marker)
+        ]
+        self.assertIn("if cxx.get_id() == 'msvc'", derivation)
+        self.assertIn("nvcc_build_msvc = find_program(cxx.cmd_array()[0]).full_path()", derivation)
+
+    def test_search_takes_the_newest_toolset(self) -> None:
+        """The first cl.exe of a recursive walk was the oldest toolset (14.29 in VS 18)."""
+        block = discovery_block()
+        self.assertNotIn("-Recurse -Filter cl.exe", block)
+        self.assertIn("Sort-Object { [version]$_.Name } -Descending", block)
+        self.assertIn('Join-Path $_.FullName "bin/HostX64/x64/cl.exe"', block)
 
     def test_vswhere_success(self) -> None:
         result = self.configure(vswhere="found", path_compiler=False)

@@ -75,3 +75,13 @@ Refactor all 8 SPEED and CAMBI translation units and headers to 0 clang-tidy war
 - ADR-1135: CI twin-drift gate (`scripts/ci/twin-drift-check.sh`).
 - ADR-1138: C translation units keep `NULL` (`modernize-use-nullptr` scoping).
 - Maintainer mandate: "we still have upstream code that isnt reworked to our standards -> do it, nothing is save anymore as long as the goldens pass" (2026-09-02).
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 74: `- ADR-0278: Cross-TU registry pattern for feature
+  extractors.`: ADR-0278 points to an unrelated topic
+  (0278-t7-5-nolint-sweep.md: "T7-5 NOLINT-sweep closeout — citation
+  normalisation across libvmaf").

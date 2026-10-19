@@ -78,14 +78,14 @@ class CompileCommandsExportTest(unittest.TestCase):
         self.ninja.write_text(source, encoding="utf-8")
         self.ninja.chmod(0o755)
 
-    def run_export(self) -> ExportResult:
+    def run_export(self, *extra: str) -> ExportResult:
         stdout = io.StringIO()
         stderr = io.StringIO()
         main = EXPORT_MAIN
         if not callable(main):
             self.fail("exporter main is not callable")
         with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
-            returncode = main(["--build-dir", str(self.build), "--ninja", str(self.ninja)])
+            returncode = main(["--build-dir", str(self.build), "--ninja", str(self.ninja), *extra])
         return ExportResult(returncode, stdout.getvalue(), stderr.getvalue())
 
     def calls(self) -> list[list[str]]:
@@ -115,6 +115,73 @@ class CompileCommandsExportTest(unittest.TestCase):
         )
         self.assertNotIn("CUSTOM_COMMAND", calls[1])
         self.assertNotIn("cpp_LINKER", calls[1])
+
+    def test_objective_c_rules_are_exported_when_the_project_declares_them(self) -> None:
+        self.rules += ["objc_COMPILER", "objcpp_COMPILER"]
+        self.write_ninja()
+        self.assertEqual(self.run_export().returncode, 0)
+        self.assertEqual(
+            self.calls()[1][-6:],
+            ["-t", "compdb", "c_COMPILER", "cpp_COMPILER", "objc_COMPILER", "objcpp_COMPILER"],
+        )
+
+    def test_arguments_export_removes_shell_quoting_once(self) -> None:
+        quoted = "cc '-DDIR=\"/abs/model dir\"' -c ../source.c -o source.c.o"
+        self.entries[0]["command"] = quoted  # type: ignore[index]
+        self.write_ninja()
+        result = self.run_export("--arguments")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        written = json.loads((self.build / "compile_commands.json").read_text())
+        self.assertNotIn("command", written[0])
+        self.assertEqual(
+            written[0]["arguments"],
+            ["cc", '-DDIR="/abs/model dir"', "-c", "../source.c", "-o", "source.c.o"],
+        )
+        self.assertEqual(written[0]["output"], "source.c.o")
+        # An entry Ninja already wrote as argv passes through unchanged.
+        self.assertEqual(written[1], self.entries[1])  # type: ignore[index]
+
+    def test_default_export_keeps_the_shell_command(self) -> None:
+        self.assertEqual(self.run_export().returncode, 0)
+        written = json.loads((self.build / "compile_commands.json").read_text())
+        self.assertEqual(written[0]["command"], "cc -c ../source.c -o source.c.o")
+        self.assertNotIn("arguments", written[0])
+
+    def test_werror_is_dropped_from_every_entry_and_nothing_else(self) -> None:
+        # A gated build (ADR-2828) compiles with -Werror; the analysers read the database without
+        # it. -Werror=<warning> and every other flag stay, in both entry forms and on --arguments.
+        self.entries[0]["command"] = (  # type: ignore[index]
+            "cc -Werror -Wall -Werror=format -c ../source.c -o source.c.o -Werror"
+        )
+        self.entries[1]["arguments"] = [  # type: ignore[index]
+            "c++",
+            "-Werror",
+            "-c",
+            "../source.cpp",
+            "-o",
+            "source.cpp.o",
+        ]
+        self.write_ninja()
+        for extra in ((), ("--arguments",)):
+            with self.subTest(extra=extra):
+                self.assertEqual(self.run_export(*extra).returncode, 0)
+                written = json.loads((self.build / "compile_commands.json").read_text())
+                first = written[0].get("command") or " ".join(written[0]["arguments"])
+                self.assertEqual(first, "cc -Wall -Werror=format -c ../source.c -o source.c.o")
+                self.assertEqual(
+                    written[1]["arguments"], ["c++", "-c", "../source.cpp", "-o", "source.cpp.o"]
+                )
+
+    def test_unsplittable_command_preserves_existing_database(self) -> None:
+        self.entries[0]["command"] = "cc '-DDIR=unterminated -c ../source.c"  # type: ignore[index]
+        self.write_ninja()
+        database = self.build / "compile_commands.json"
+        original = b'[{"existing": "valid"}]\n'
+        database.write_bytes(original)
+        result = self.run_export("--arguments")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("compile entry 0 command is not shell-splittable", result.stderr)
+        self.assertEqual(database.read_bytes(), original)
 
     def test_missing_manifest_preserves_existing_database(self) -> None:
         (self.build / "build.ninja").unlink()
@@ -164,9 +231,15 @@ class CompileCommandsExportTest(unittest.TestCase):
         metal = (ROOT / ".github/workflows/tidy-metal.yml").read_text(encoding="utf-8")
         invocation = "scripts/ci/write-compile-commands.py"
         self.assertEqual(makefile.count(invocation), 3)
-        self.assertEqual(workflow.count(invocation), 4)
-        self.assertEqual(nightly.count(invocation), 1)
+        self.assertEqual(workflow.count(invocation), 3)
+        self.assertEqual(nightly.count(invocation), 0)
         self.assertEqual(metal.count(invocation), 1)
+        # The hosted cpu ratchet jobs reach the exporter through the Makefile's
+        # tidy-ratchet target (T-TIDY-RATCHET-UNMEASURED-AS-CLEAN-2026-10-06).
+        tidy_ratchet_target = makefile.split("\ntidy-ratchet:", 1)[1].split("\n\n", 1)[0]
+        self.assertIn(invocation, tidy_ratchet_target)
+        for text in (workflow, nightly):
+            self.assertIn("make tidy-ratchet LANE=cpu", text)
         lint_target = makefile.split("lint-c:", 1)[1].split("# ADR-1142", 1)[0]
         self.assertLess(
             lint_target.index(invocation), lint_target.index("scripts/ci/lint-configured.py")

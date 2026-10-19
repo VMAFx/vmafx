@@ -7,9 +7,11 @@ invariant: clang-tidy beyond 18 requires llvm.sh archive setup; cc.find_library 
 
 ## `clang-tidy-<N>` always needs the apt.llvm.org repo
 
-Ubuntu 24.04 (`ubuntu-latest` / `ubuntu-24.04`) ships **clang-tidy-18** at
-most. Every job installing newer `clang-tidy-<N>` must add LLVM
-archive first:
+Ubuntu 24.04 (`ubuntu-24.04`; `ubuntu-latest` until rollout from 2026-10-19)
+ships **clang-tidy-18** at most. `ubuntu-26.04` image 20260927.149.1 ships
+clang-tidy 20, 21, 22 (actions/runner-images `Ubuntu2604-Readme.md`, read
+2026-10-11); image set moves, so rule stays. Every job installing newer
+`clang-tidy-<N>` must add LLVM archive first:
 
 ```yaml
 wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh

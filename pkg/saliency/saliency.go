@@ -758,8 +758,12 @@ func unsupportedEncoder(encoder string) error {
 func ExtraParamsFor(encoder, sidecarPath string) []string {
 	switch encoder {
 	case "libx264":
-		// x264 takes the path through the opaque encoder-params channel.
-		return []string{"-x264-params", "qpfile=" + sidecarPath}
+		// libx264 has no qpfile parameter (that is a feature of the x264
+		// command line): the fork's patch stack (patch 0007) exposes the
+		// shared top-level -qpfile AVOption and feeds the offsets through
+		// x264's quant_offsets. Stock FFmpeg refuses the option, so the
+		// encode fails instead of running without the ROI.
+		return []string{"-qpfile", sidecarPath}
 	case "libaom-av1":
 		// The fork's patch stack exposes a shared top-level -qpfile AVOption.
 		return []string{"-qpfile", sidecarPath}

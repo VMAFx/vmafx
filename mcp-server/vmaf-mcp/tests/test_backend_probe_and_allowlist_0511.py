@@ -23,6 +23,7 @@ B. Default allowlist excluded the container-side absolute path
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 
 import pytest
@@ -30,12 +31,24 @@ import pytest
 from vmaf_mcp import server as srv
 
 # ---------------------------------------------------------------------------
-# Bug A — backend probe parses --help, not --version
+# Bug A — backend probe reads --list-backends (ADR-1874), not --version or --help
 # ---------------------------------------------------------------------------
+
+
+def _report(**usable: bool) -> str:
+    """A ``vmaf --list-backends`` document; ``usable`` maps backend -> usable."""
+    rows = [{"name": "cpu", "compiled": True, "usable": True}]
+    for name in ("cuda", "sycl", "hip", "metal"):
+        rows.append(
+            {"name": name, "compiled": usable.get(name, False), "usable": usable.get(name, False)}
+        )
+    return json.dumps({"backends": rows})
 
 
 def _stub_help(stdout: str):
     class _Result:
+        returncode = 0
+
         def __init__(self) -> None:
             self.stdout = stdout
             self.stderr = ""
@@ -46,95 +59,64 @@ def _stub_help(stdout: str):
     return _runner
 
 
-def test_probe_backends_picks_cuda_from_help_when_version_silent(
+def test_probe_backends_reads_list_backends_report(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Bug A: even when ``--version`` says nothing about CUDA, a
-    ``--help`` output containing ``--no_cuda`` must yield CUDA=True."""
+    """Bug A: the probe asks ``--list-backends``, so it sees CUDA although the
+    ``--version`` banner says nothing about GPU backends."""
     fake = tmp_path / "vmaf"
     fake.write_text("#!/bin/sh\nexit 0\n")
     fake.chmod(0o755)
     srv._BACKEND_PROBE_CACHE.pop(str(fake), None)
 
-    # The historical bug was masked by --version being terse; assert
-    # _probe_backends does NOT consult --version. We stub subprocess.run
-    # to always return a --help blob with --no_cuda listed; if the impl
-    # were still calling --version we would see CUDA missing.
-    monkeypatch.setattr(
-        srv.subprocess,
-        "run",
-        _stub_help(
-            "Usage: vmaf [options]\n"
-            "  --no_cuda    disable CUDA backend\n"
-            "  --no_hip     disable HIP backend\n"
-        ),
-    )
+    argv_seen: list[list[str]] = []
+    runner = _stub_help(_report(cuda=True, hip=True))
+
+    def _run(argv, *args, **kwargs):
+        argv_seen.append(list(argv))
+        return runner(argv, *args, **kwargs)
+
+    monkeypatch.setattr(srv.subprocess, "run", _run)
     backends = srv._probe_backends(fake)
-    assert "cuda" in backends, backends
-    assert "hip" in backends, backends
-    assert "cpu" in backends, "CPU must always be present"
-    # Backends NOT advertised in --help must be absent.
-    assert "sycl" not in backends, backends
-    assert "metal" not in backends, backends
+    assert argv_seen == [[str(fake), "--list-backends"]], argv_seen
+    assert backends == frozenset({"cpu", "cuda", "hip"}), backends
 
 
-def test_probe_backends_is_cached_per_binary_path(
+def test_probe_backends_ignores_help_text_naming_every_backend(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Bug A follow-up: the probe must cache its result so the
-    server does not fork a vmaf subprocess on every vmaf_score call."""
+    """T-MCP-BACKENDS-FROM-HELP-TEXT-2026-10-05: ``--help`` lists ``--no_<backend>``
+    on every build. A CPU-only build must report no GPU backend."""
+    fake = tmp_path / "vmaf"
+    fake.write_text("#!/bin/sh\nexit 0\n")
+    fake.chmod(0o755)
+    srv._BACKEND_PROBE_CACHE.pop(str(fake), None)
+    help_text = "--no_cuda\n--no_sycl\n--no_hip\n--no_metal\n"
+
+    def _run(argv, *args, **kwargs):
+        text = _report() if "--list-backends" in argv else help_text
+        return _stub_help(text)(argv, *args, **kwargs)
+
+    monkeypatch.setattr(srv.subprocess, "run", _run)
+    assert srv._probe_backends(fake) == frozenset({"cpu"})
+
+
+def test_probe_backends_without_report_is_cpu_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A vmaf older than ADR-1874 rejects ``--list-backends``: CPU-only, cached."""
     fake = tmp_path / "vmaf"
     fake.write_text("#!/bin/sh\nexit 0\n")
     fake.chmod(0o755)
     srv._BACKEND_PROBE_CACHE.pop(str(fake), None)
 
-    call_count = {"n": 0}
+    class _Failed:
+        returncode = 2
+        stdout = ""
+        stderr = "unrecognized option '--list-backends'"
 
-    class _Result:
-        stdout = "--no_cuda    disable CUDA\n"
-        stderr = ""
-
-    def _runner(*_args, **_kwargs):
-        call_count["n"] += 1
-        return _Result()
-
-    monkeypatch.setattr(srv.subprocess, "run", _runner)
-    first = srv._probe_backends(fake)
-    second = srv._probe_backends(fake)
-    third = srv._probe_backends(fake)
-    assert first == second == third
-    assert call_count["n"] == 1, (
-        f"_probe_backends forked {call_count['n']} subprocesses; " "must cache after the first call"
-    )
-
-
-def test_list_backends_reports_cuda_true_when_help_advertises_it(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Bug A end-to-end: ``_list_backends`` must surface CUDA=True
-    when the local vmaf advertises ``--no_cuda`` in --help, even on
-    a host whose --version banner omits the word "CUDA"."""
-    fake = tmp_path / "vmaf"
-    fake.write_text("#!/bin/sh\nexit 0\n")
-    fake.chmod(0o755)
-    srv._BACKEND_PROBE_CACHE.pop(str(fake), None)
-    monkeypatch.setattr(srv, "_vmaf_binary", lambda: fake)
-    monkeypatch.setattr(
-        srv.subprocess,
-        "run",
-        _stub_help(
-            "Usage: vmaf [options]\n"
-            "  --no_cuda    disable CUDA backend\n"
-            "  --no_sycl    disable SYCL backend\n"
-        ),
-    )
-
-    result = asyncio.run(srv._list_backends())
-    assert result["cpu"] is True
-    assert result["cuda"] is True, f"Bug A regression: {result}"
-    assert result["sycl"] is True, result
-    assert result["hip"] is False, result
-    assert result["metal"] is False, result
+    monkeypatch.setattr(srv.subprocess, "run", lambda *_a, **_k: _Failed())
+    assert srv._probe_backends(fake) == frozenset({"cpu"})
 
 
 # ---------------------------------------------------------------------------
@@ -217,7 +199,8 @@ def test_probe_backends_async_no_toctou_concurrent_waiters(
     call_count = {"n": 0}
 
     class _SlowResult:
-        stdout = "--no_cuda    disable CUDA\n"
+        stdout = '{"backends": [{"name": "cuda", "compiled": true, "usable": true}]}'
+        returncode = 0
         stderr = ""
 
     def _slow_runner(*_args, **_kwargs):

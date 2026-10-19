@@ -1,6 +1,6 @@
 # ADR-0272: `fr_regressor_v2` codec-aware scaffold (Phase B prereq)
 
-- **Status**: Accepted
+- **Status**: Superseded by [ADR-0291](0291-fr-regressor-v2-prod-ship.md)
 - **Date**: 2026-05-03
 - **Deciders**: Lusoris
 - **Tags**: `ai`, `dnn`, `tiny-ai`, `fr-regressor`, `codec-aware`,

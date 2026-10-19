@@ -3,7 +3,7 @@
 
 // Package bootstrap centralises the golusoris fx composition shared by every
 // vmafx binary (ADR-1119). Each binary's main() starts from [Base] and adds
-// its own server modules (golusoris.HTTP / grpc.Module / k8s/operator) plus
+// its own server modules ([HTTP] / grpc.Module / k8s/operator) plus
 // its domain providers. Wiring the common stanza here keeps the composition
 // root identical across cmd/vmafx-{server,controller,node,operator,mcp,tune}.
 //
@@ -22,8 +22,13 @@ import (
 	"os"
 	"strings"
 
-	"github.com/golusoris/golusoris"
+	"github.com/golusoris/golusoris/core/clock"
 	"github.com/golusoris/golusoris/core/config"
+	"github.com/golusoris/golusoris/core/id"
+	"github.com/golusoris/golusoris/core/log"
+	"github.com/golusoris/golusoris/core/validate"
+	"github.com/golusoris/golusoris/httpx/router"
+	"github.com/golusoris/golusoris/httpx/server"
 	"github.com/golusoris/golusoris/otel"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.uber.org/fx"
@@ -42,11 +47,35 @@ const otelServiceNameEnv = "OTEL_SERVICE_NAME"
 // service.name from (VMAFX_OTEL_SERVICE_NAME under the vmafx env prefix).
 const otelServiceNameKey = "otel.service.name"
 
+// Core is the part of golusoris.Core vmafx uses: config (koanf; binaries
+// override the env prefix to "VMAFX_" via fx.Replace(config.Options{...}) per
+// ADR-1119), structured slog logging, clock, id and validate. golusoris.Core
+// also wires core/crypto (argon2id password hashing, AES-GCM), which no vmafx
+// binary uses. The modules are composed here rather than taken from the
+// golusoris root package, because importing that package links every module it
+// bundles into every binary: notify pulled go-mail and its NTLM support
+// (golang.org/x/crypto/md4), crypto pulled argon2id (golang.org/x/crypto/argon2).
+var Core = fx.Module(
+	"golusoris.core",
+	config.Module,
+	log.Module,
+	clock.Module,
+	id.Module,
+	validate.Module,
+)
+
+// HTTP is golusoris.HTTP (chi router + *http.Server with slow-loris guards, body
+// limits and graceful shutdown), composed from its two modules for the same
+// reason as [Core].
+var HTTP = fx.Module(
+	"golusoris.http",
+	router.Module,
+	server.Module,
+)
+
 // Base is the module set every vmafx service shares:
 //
-//   - golusoris.Core — config (koanf; binaries override the env prefix to
-//     "VMAFX_" via fx.Replace(config.Options{...}) per ADR-1119), structured
-//     slog logging, clock, id, validate, crypto.
+//   - [Core] — config, slog logging, clock, id, validate.
 //   - otel.Module — OpenTelemetry tracer/meter/logger over OTLP/gRPC; a silent
 //     no-op when no exporter endpoint is configured (ADR-0782 "best-effort and
 //     non-blocking"). Its otel.Options are completed by withServiceIdentity.
@@ -56,13 +85,19 @@ const otelServiceNameKey = "otel.service.name"
 //     build metadata read from runtime/debug, beyond golusoris' ldflags string.
 //
 // It deliberately does NOT include a server module: a binary picks
-// golusoris.HTTP, grpc.Module, and/or k8s/operator as appropriate. Binaries
-// that wire golusoris.HTTP add [HTTPTracing] next to it.
+// [HTTP], grpc.Module, and/or k8s/operator as appropriate. Binaries
+// that wire [HTTP] add [HTTPTracing] next to it.
 var Base = fx.Options(
-	golusoris.Core,
+	Core,
 	otel.Module,
 	fx.Supply(version.Get()),
 	fx.Decorate(withServiceIdentity),
+	// fx builds a provider only when something depends on it, and the
+	// services take nothing from otel.Module: without this invoke the OTLP
+	// exporters were never built and no span, metric or log left a binary
+	// (T-OTEL-PROVIDERS-NEVER-CONSTRUCTED-2026-10-07). The providers install
+	// themselves globally; the invoke only makes fx construct them.
+	fx.Invoke(func(*otel.Providers) {}),
 )
 
 // withServiceIdentity is the root-scope fx decorator that completes golusoris's
@@ -95,13 +130,13 @@ func withServiceIdentity(o otel.Options, cfg *config.Config, v version.Info) ote
 	return o
 }
 
-// HTTPTracing wraps the http.Handler golusoris.HTTP serves (the chi router
+// HTTPTracing wraps the http.Handler [HTTP] serves (the chi router
 // provided by httpx/router.Module) in the upstream otelhttp server middleware
 // via [TraceHTTPHandler], so every HTTP route gets a server span named
 // "<METHOD> <path>" carrying the standard http.* attributes, parented to any
 // inbound W3C traceparent. This closes the ADR-0782 follow-up ("wrap the HTTP
 // mux with otelhttp.NewHandler") for the fx binaries. Add it to a composition
-// root alongside golusoris.HTTP; it is a no-op on graphs without an
+// root alongside [HTTP]; it is a no-op on graphs without an
 // http.Handler consumer and so is kept out of [Base] rather than forcing an
 // unused decoration onto gRPC-only binaries.
 var HTTPTracing = fx.Decorate(TraceHTTPHandler)

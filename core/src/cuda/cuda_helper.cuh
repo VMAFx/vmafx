@@ -122,17 +122,28 @@ static inline int vmaf_cuda_result_to_errno(int cu_err_code)
 #ifdef DEVICE_CODE
 namespace
 {
-__forceinline__ __device__ int64_t warp_reduce(int64_t x)
+using uint64_cu = unsigned long long int;
+
+/* Warp sum of non-negative 64-bit terms whose total may pass INT64_MAX. Every
+ * lane of the warp must call it: the shuffles take the full mask. */
+__forceinline__ __device__ uint64_cu warp_reduce_u64(uint64_cu x)
 {
 #pragma unroll
     for (int i = 16; i > 0; i >>= 1) {
-        x += int64_t(__shfl_down_sync(0xffffffff, x & 0xffffffff, i)) |
-             int64_t(__shfl_down_sync(0xffffffff, x >> 32, i) << 32);
+        x += __shfl_down_sync(0xffffffff, x, i);
     }
     return x;
 }
 
-typedef unsigned long long int uint64_cu;
+/* Warp sum of signed 64-bit terms, under the same calling rule. The words add
+ * modulo 2^64 as unsigned values, which is the signed sum whenever that sum
+ * fits int64. The former form shuffled two halves and shifted a negative high
+ * word left, undefined before C++20 (T-CUDA-WARP-REDUCE-UB-2026-10-05). */
+__forceinline__ __device__ int64_t warp_reduce(int64_t x)
+{
+    return static_cast<int64_t>(warp_reduce_u64(static_cast<uint64_cu>(x)));
+}
+
 __forceinline__ __device__ int64_t atomicAdd_int64(int64_t *address, int64_t val)
 {
     return atomicAdd(reinterpret_cast<uint64_cu *>(address), static_cast<uint64_cu>(val));

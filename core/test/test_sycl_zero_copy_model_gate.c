@@ -47,6 +47,12 @@
 #define GATE_W 576u
 #define GATE_H 324u
 #define GATE_FRAMES 3u
+#define MAX_FRAMES 8u
+
+/* The geometry and length of the runs; the upload-ordering case widens them. */
+static unsigned g_w = GATE_W;
+static unsigned g_h = GATE_H;
+static unsigned g_frames = GATE_FRAMES;
 
 static uint8_t luma(unsigned row, unsigned col, unsigned frame, unsigned salt)
 {
@@ -56,7 +62,7 @@ static uint8_t luma(unsigned row, unsigned col, unsigned frame, unsigned salt)
 
 static int fill_frame(VmafPicture *pic, unsigned frame, unsigned salt)
 {
-    const int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, 8u, GATE_W, GATE_H);
+    const int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, 8u, g_w, g_h);
     if (err) {
         return err;
     }
@@ -98,7 +104,7 @@ static int open_gate(Gate *g, VmafSyclState *state, const char *model, const cha
     const VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_ERROR};
     int err = vmaf_init(&g->vmaf, cfg);
     err = err ? err : vmaf_sycl_import_state(g->vmaf, state);
-    err = err ? err : vmaf_sycl_init_frame_buffers(g->vmaf, GATE_W, GATE_H, 8u);
+    err = err ? err : vmaf_sycl_init_frame_buffers(g->vmaf, g_w, g_h, 8u);
     if (!err && model) {
         VmafModelConfig mcfg = {.name = "vmaf", .flags = VMAF_MODEL_FLAGS_DEFAULT};
         err = vmaf_model_load(&g->model, &mcfg, model);
@@ -133,14 +139,12 @@ static int read_zero_copy(Gate *g, unsigned frame)
     if (err) {
         return err;
     }
-    err = vmaf_sycl_upload_plane(g->state, ref.data[0], (unsigned)ref.stride[0], 1, GATE_W, GATE_H,
-                                 8u);
+    /* No wait of our own: vmaf_read_pictures_sycl() must order the compute
+     * after the uploads (T-SYCL-UPLOAD-PLANE-NO-COMPUTE-FENCE-2026-10-05). */
+    err = vmaf_sycl_upload_plane(g->state, ref.data[0], (unsigned)ref.stride[0], 1, g_w, g_h, 8u);
     err = err ? err :
-                vmaf_sycl_upload_plane(g->state, dist.data[0], (unsigned)dist.stride[0], 0, GATE_W,
-                                       GATE_H, 8u);
-    /* vmaf_sycl_upload_plane() enqueues on the copy queue; wait for it here
-     * so the test measures the admission, not the upload ordering. */
-    err = err ? err : vmaf_sycl_wait_copy_queue(g->state);
+                vmaf_sycl_upload_plane(g->state, dist.data[0], (unsigned)dist.stride[0], 0, g_w,
+                                       g_h, 8u);
     err = err ? err : vmaf_read_pictures_sycl(g->vmaf, frame);
     const int unref_ref = vmaf_picture_unref(&ref);
     const int unref_dist = vmaf_picture_unref(&dist);
@@ -218,7 +222,7 @@ static int open_plain(VmafContext **vmaf, VmafModel **model, const Spec *spec)
 static int read_scores(VmafContext *vmaf, VmafModel *model, const Spec *spec, double *out)
 {
     int err = 0;
-    for (unsigned f = 0u; !err && f < GATE_FRAMES; f++) {
+    for (unsigned f = 0u; !err && f < g_frames; f++) {
         err = model ? vmaf_score_at_index(vmaf, model, &out[f], f) :
                       vmaf_feature_score_at_index(vmaf, spec->score, &out[f], f);
     }
@@ -231,7 +235,7 @@ static int cpu_scores(const Spec *spec, double *out)
     VmafContext *vmaf = NULL;
     VmafModel *model = NULL;
     int err = open_plain(&vmaf, &model, spec);
-    for (unsigned f = 0u; !err && f < GATE_FRAMES; f++) {
+    for (unsigned f = 0u; !err && f < g_frames; f++) {
         VmafPicture ref;
         VmafPicture dist;
         err = fill_frame(&ref, f, 0u);
@@ -252,7 +256,7 @@ static int zero_copy_scores(VmafSyclState *state, const Spec *spec, double *out)
 {
     Gate g;
     int err = open_gate(&g, state, spec->model, spec->feature, spec->key, spec->val);
-    for (unsigned f = 0u; !err && f < GATE_FRAMES; f++) {
+    for (unsigned f = 0u; !err && f < g_frames; f++) {
         err = read_zero_copy(&g, f);
     }
     err = err ? err : vmaf_flush_sycl(g.vmaf);
@@ -264,14 +268,14 @@ static int zero_copy_scores(VmafSyclState *state, const Spec *spec, double *out)
 /* The zero-copy scores of `zc` equal the CPU scores of `cpu`, frame by frame. */
 static int same_as_cpu(VmafSyclState *state, const Spec *zc, const Spec *cpu)
 {
-    double a[GATE_FRAMES] = {0};
-    double b[GATE_FRAMES] = {0};
+    double a[MAX_FRAMES] = {0};
+    double b[MAX_FRAMES] = {0};
     if (zero_copy_scores(state, zc, a) != 0 || cpu_scores(cpu, b) != 0) {
         (void)fprintf(stderr, "%s: a run failed\n", zc->model ? zc->model : zc->feature);
         return 0;
     }
     int same = 1;
-    for (unsigned f = 0u; f < GATE_FRAMES; f++) {
+    for (unsigned f = 0u; f < g_frames; f++) {
         (void)fprintf(stderr, "%s frame %u: cpu %.17g zero-copy %.17g\n",
                       zc->model ? zc->model : zc->feature, f, b[f], a[f]);
         same = same && (a[f] == b[f]);
@@ -321,12 +325,39 @@ static char *test_admitted_twins_run_and_match_cpu(void)
     return NULL;
 }
 
+/* vmaf_sycl_upload_plane() copies on the copy queue and the compute that
+ * reads the shared frame runs on another queue. 3840x2160 frames that change
+ * every frame, read right after the upload with no wait of the caller's own:
+ * psnr_y equals the CPU's on every frame only if the compute is ordered after
+ * the copy (T-SYCL-UPLOAD-PLANE-NO-COMPUTE-FENCE-2026-10-05). */
+static char *test_upload_plane_orders_compute(void)
+{
+    VmafSyclState *state = NULL;
+    if (open_state(&state)) {
+        return NULL;
+    }
+    const Spec zc = {
+        .feature = "psnr_sycl", .key = "enable_chroma", .val = "false", .score = "psnr_y"};
+    const Spec cpu = {.feature = "psnr", .key = "enable_chroma", .val = "false", .score = "psnr_y"};
+    g_w = 3840u;
+    g_h = 2160u;
+    g_frames = MAX_FRAMES;
+    const int same = same_as_cpu(state, &zc, &cpu);
+    g_w = GATE_W;
+    g_h = GATE_H;
+    g_frames = GATE_FRAMES;
+    vmaf_sycl_state_free(&state);
+    mu_assert("psnr_y after vmaf_sycl_upload_plane() is the CPU's on every 4K frame", same);
+    return NULL;
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_default_model_refused);
     mu_run_test(test_host_picture_features_refused);
     mu_run_test(test_luma_model_runs_and_matches_cpu);
     mu_run_test(test_admitted_twins_run_and_match_cpu);
+    mu_run_test(test_upload_plane_orders_compute);
     return NULL;
 }
 

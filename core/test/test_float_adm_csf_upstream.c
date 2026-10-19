@@ -47,10 +47,6 @@
 #include "barten_csf_cxx.h"
 #include "feature/adm_tools.h"
 
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
-
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
  * documented /std:clatest C23 feature set does not include `nullptr` while the
@@ -186,8 +182,8 @@ static float quant_step_form(int lambda, int theta, double view_dist, int displa
         const double temp = log10(pow(2.0, lambda + 1) * params->f0 * params->g[theta] / r);
         return (float)(2.0 * params->a * pow(10.0, params->k * temp * temp) / amplitude);
     }
-    const float r = view_dist * display_height * M_PI / 180.0;
-    const float temp = log10(pow(2.0, lambda + 1) * params->f0 * params->g[theta] / r);
+    const float r = (float)(view_dist * display_height * M_PI / 180.0);
+    const float temp = (float)log10(pow(2.0, lambda + 1) * params->f0 * params->g[theta] / r);
     const float exponent = params->k * temp * temp;
     return (float)(2.0 * params->a * pow(10.0, (double)exponent) / amplitude);
 }

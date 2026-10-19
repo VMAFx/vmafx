@@ -18,7 +18,7 @@ see the [CLI reference](../usage/cli.md#backend-selection).
 | aarch64 CPU | NEON / SVE2 | on by default (`enable_asm`) | `--backend cpu`, `--cpumask` | none | scalar bits for the contracted features | [ARM](arm/overview.md) |
 | NVIDIA GPU | CUDA | `meson setup build core -Denable_cuda=true` | `--backend cuda`, `--no_cuda` | CUDA toolkit 13.4.2 (`nvcc`) | 24 of 25 gate features bit-identical to the CPU; `ciede` bounded at 1e-9 | [CUDA](cuda/overview.md) |
 | Intel GPU (Arc, Xe iGPU, Battlemage) | SYCL | `meson setup build core -Denable_sycl=true` | `--backend sycl`, `--sycl_device N`, `--no_sycl` | oneAPI DPC++ 2026.1 (`icpx`), Level Zero 1.34.0, `ocloc` | 24 of 25 gate features bit-identical; `ciede` bounded at 1e-9 | [SYCL](sycl/overview.md) |
-| AMD GPU | HIP | `meson setup build core -Denable_hip=true -Denable_hipcc=true` | `--backend hip`, `--hip_device N`, `--no_hip` | ROCm 10.0.0 (`hipcc`) | 19 registered extractors; 24 of 25 gate features bit-identical; `ciede` bounded at 1e-9 | [HIP](hip/overview.md) |
+| AMD GPU | HIP | `meson setup build core -Denable_hip=true -Denable_hipcc=true` | `--backend hip`, `--hip_device N`, `--no_hip` | ROCm 10.1.0 (`hipcc`) | 19 registered extractors; 24 of 25 gate features bit-identical; `ciede` bounded at 1e-9 | [HIP](hip/overview.md) |
 | Apple Silicon | Metal | `-Denable_metal=auto` (default; probes on macOS) | `--backend metal`, `--metal_device N`, `--no_metal` | Xcode / Metal.framework | 17 registered, parity-tested kernels; SpEED is the one gap; no exactness declared yet | [Metal](metal/index.md) |
 
 Versions come from `build-config.env` (`CUDA_VERSION`, `ONEAPI_VERSION`,
@@ -37,8 +37,8 @@ the cross-backend parity gate; "bit-identical" is defined under
 <!-- markdownlint-disable MD013 MD033 -->
 <figure class="vx-chart" markdown>
 
-![Status of 25 features on CUDA, SYCL, HIP and Metal: 72 twins exact, 3 within a libm bound, 25 not declared.](../assets/charts/twin-exactness.light.svg#only-light){ .vx-chart__static width="452" height="591" }
-![Status of 25 features on CUDA, SYCL, HIP and Metal: 72 twins exact, 3 within a libm bound, 25 not declared.](../assets/charts/twin-exactness.dark.svg#only-dark){ .vx-chart__static width="452" height="591" }
+![Status of 25 features on CUDA, SYCL, HIP and Metal: 90 twins exact, 3 within a libm bound, 7 not declared.](../assets/charts/twin-exactness.light.svg#only-light){ .vx-chart__static width="452" height="591" }
+![Status of 25 features on CUDA, SYCL, HIP and Metal: 90 twins exact, 3 within a libm bound, 7 not declared.](../assets/charts/twin-exactness.dark.svg#only-dark){ .vx-chart__static width="452" height="591" }
 
 <figcaption markdown>Source: the fragments in `scripts/ci/exact_twins.d/` and `LIBM_TWINS` in `scripts/ci/cross_backend_calibration.py`. An exact twin returns the CPU extractor's bits (=) and is compared with tolerance 0; a libm-bound twin differs only through the math library, within the stated bound (≤); a dash means no twin of that backend is declared either way.</figcaption>
 
@@ -52,27 +52,27 @@ the cross-backend parity gate; "bit-identical" is defined under
 | `adm` | exact | exact | exact | not declared |
 | `cambi` | exact | exact | exact | not declared |
 | `ciede` | libm bound (≤ 1e-09) | libm bound (≤ 1e-09) | libm bound (≤ 1e-09) | not declared |
-| `float_adm` | exact | exact | exact | not declared |
-| `float_moment` | exact | exact | exact | not declared |
-| `float_motion` | exact | exact | exact | not declared |
-| `float_ms_ssim` | exact | exact | exact | not declared |
-| `float_ms_ssim_chroma` | exact | exact | exact | not declared |
-| `float_ms_ssim_lcs` | exact | exact | exact | not declared |
-| `float_psnr` | exact | exact | exact | not declared |
-| `float_ssim` | exact | exact | exact | not declared |
-| `float_ssim_lcs` | exact | exact | exact | not declared |
-| `float_vif` | exact | exact | exact | not declared |
-| `motion` | exact | exact | exact | not declared |
-| `motion_debug` | exact | exact | exact | not declared |
-| `motion_mffw` | exact | exact | exact | not declared |
-| `motion_v2` | exact | exact | exact | not declared |
-| `motion_v2_mffw` | exact | exact | exact | not declared |
-| `psnr` | exact | exact | exact | not declared |
+| `float_adm` | exact | exact | exact | exact |
+| `float_moment` | exact | exact | exact | exact |
+| `float_motion` | exact | exact | exact | exact |
+| `float_ms_ssim` | exact | exact | exact | exact |
+| `float_ms_ssim_chroma` | exact | exact | exact | exact |
+| `float_ms_ssim_lcs` | exact | exact | exact | exact |
+| `float_psnr` | exact | exact | exact | exact |
+| `float_ssim` | exact | exact | exact | exact |
+| `float_ssim_lcs` | exact | exact | exact | exact |
+| `float_vif` | exact | exact | exact | exact |
+| `motion` | exact | exact | exact | exact |
+| `motion_debug` | exact | exact | exact | exact |
+| `motion_mffw` | exact | exact | exact | exact |
+| `motion_v2` | exact | exact | exact | exact |
+| `motion_v2_mffw` | exact | exact | exact | exact |
+| `psnr` | exact | exact | exact | exact |
 | `psnr_hvs` | exact | exact | exact | not declared |
 | `speed_chroma` | exact | exact | exact | not declared |
 | `speed_temporal` | exact | exact | exact | not declared |
-| `ssim` | exact | exact | exact | not declared |
-| `ssimulacra2` | exact | exact | exact | not declared |
+| `ssim` | exact | exact | exact | exact |
+| `ssimulacra2` | exact | exact | exact | exact |
 | `vif` | exact | exact | exact | not declared |
 
 </details>
@@ -233,7 +233,7 @@ Not every feature has every twin. The coverage matrix is in
 Several extractors change behaviour with picture size, so a parity test that
 pins one fixture cannot see the whole contract. Rules to keep in mind:
 
-- The shared SSIM / MS-SSIM auto-scale is `max(1, round(min(w, h) / 256))`,
+- The shared SSIM / MS-SSIM auto-scale is $\max(1, \operatorname{round}(\min(w, h) / 256))$,
   which is always `1` below `min(w, h) = 384`.
 - The ADM border crop is `(int)(dim * 0.1 - 0.5)`, which is `0` only for band
   dimensions `<= 14`; a zero crop pulls the first and last row and column into

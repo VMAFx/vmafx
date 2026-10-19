@@ -13,7 +13,7 @@ import enum
 import os
 from dataclasses import dataclass
 
-ABI_VERSION = (0, 1, 6)
+ABI_VERSION = (0, 1, 11)
 
 
 class Status(enum.IntEnum):
@@ -32,6 +32,7 @@ class Status(enum.IntEnum):
     E_INTERNAL = -9
     E_TIMEOUT = -10
     E_ABI = -11
+    E_MISMATCH = -12
 
 
 class LogLevel(enum.IntEnum):
@@ -118,36 +119,6 @@ class SubjectKind(enum.IntEnum):
     FENCE = 12
 
 
-class ColorMatrix(enum.IntEnum):
-    """VmafxColorMatrix."""
-
-    UNSPECIFIED = 0
-    BT601 = 1
-    BT709 = 2
-    BT2020_NCL = 3
-    BT2020_CL = 4
-    ICTCP = 5
-
-
-class ColorRange(enum.IntEnum):
-    """VmafxColorRange."""
-
-    UNSPECIFIED = 0
-    LIMITED = 1
-    FULL = 2
-
-
-class ColorTransfer(enum.IntEnum):
-    """VmafxColorTransfer."""
-
-    UNSPECIFIED = 0
-    BT709 = 1
-    SRGB = 2
-    SMPTE2084 = 3
-    HLG = 4
-    LINEAR = 5
-
-
 class MemoryKind(enum.IntEnum):
     """VmafxMemoryKind."""
 
@@ -160,6 +131,7 @@ class MemoryKind(enum.IntEnum):
     METAL_TEXTURE = 6
     WIN32_SHARED = 7
     GL_TEXTURE = 8
+    VULKAN = 9
 
 
 class FenceKind(enum.IntEnum):
@@ -174,6 +146,134 @@ class FenceKind(enum.IntEnum):
     METAL_SHARED_EVENT = 6
     WIN32_SHARED = 7
     GL_SYNC = 8
+    VULKAN_SEMAPHORE = 9
+
+
+class VulkanHandleType(enum.IntEnum):
+    """VmafxVulkanHandleType."""
+
+    NONE = 0
+    OPAQUE_FD = 1
+    OPAQUE_WIN32 = 2
+    OPAQUE_WIN32_KMT = 4
+    DMA_BUF = 512
+
+
+class VulkanTiling(enum.IntEnum):
+    """VmafxVulkanTiling."""
+
+    OPTIMAL = 0
+    LINEAR = 1
+    DRM_FORMAT_MODIFIER = 1000158000
+
+
+class FeatureSource(enum.IntEnum):
+    """VmafxFeatureSource."""
+
+    UNKNOWN = 0
+    EXTRACTOR = 1
+    IMPORTED = 2
+    MODEL = 3
+
+
+class ReportFormat(enum.IntEnum):
+    """VmafxReportFormat."""
+
+    XML = 1
+    JSON = 2
+    CSV = 3
+    SUB = 4
+
+
+class WindowTarget(enum.IntEnum):
+    """VmafxWindowTarget."""
+
+    NONE = 0
+    MODEL = 1
+    MODEL_SET = 2
+    FEATURE = 3
+
+
+class ColorRange(enum.IntEnum):
+    """VmafxColorRange."""
+
+    UNKNOWN = 0
+    LIMITED = 1
+    FULL = 2
+
+
+class ColorPrimaries(enum.IntEnum):
+    """VmafxColorPrimaries."""
+
+    UNKNOWN = 0
+    BT709 = 1
+    BT2020 = 2
+    SMPTE432 = 3
+
+
+class ColorTransfer(enum.IntEnum):
+    """VmafxColorTransfer."""
+
+    UNKNOWN = 0
+    BT709 = 1
+    SMPTE2084 = 2
+    SRGB = 3
+    HLG = 4
+    LINEAR = 5
+
+
+class ColorMatrix(enum.IntEnum):
+    """VmafxColorMatrix."""
+
+    UNKNOWN = 0
+    BT709 = 1
+    BT2020_NCL = 2
+    ICTCP = 3
+    BT601 = 4
+    BT2020_CL = 5
+
+
+class ResampleFilter(enum.IntEnum):
+    """VmafxResampleFilter."""
+
+    DEFAULT = 0
+    BILINEAR = 1
+    BICUBIC = 2
+    LANCZOS = 3
+
+
+class DnnDevice(enum.IntEnum):
+    """VmafxDnnDevice."""
+
+    AUTO = 0
+    CPU = 1
+    CUDA = 2
+    OPENVINO = 3
+    ROCM = 4
+    COREML = 5
+    COREML_ANE = 6
+    COREML_GPU = 7
+    COREML_CPU = 8
+    OPENVINO_NPU = 9
+    OPENVINO_CPU = 10
+    OPENVINO_GPU = 11
+
+
+class DnnResize(enum.IntEnum):
+    """VmafxDnnResize."""
+
+    DISABLED = 0
+    BILINEAR = 1
+    NEAREST = 2
+    BICUBIC = 3
+
+
+class McpTransport(enum.IntEnum):
+    """VmafxMcpTransport."""
+
+    SSE = 0
+    UDS = 1
+    STDIO = 2
 
 
 class ModelFlags(enum.IntFlag):
@@ -190,10 +290,53 @@ class ImportFlags(enum.IntFlag):
     ALLOW_COPY = 1
 
 
+class VulkanFlags(enum.IntFlag):
+    """VmafxVulkanFlags bits."""
+
+    DEDICATED = 1
+
+
 class DeviceFlags(enum.IntFlag):
     """VmafxDeviceFlags bits."""
 
     PROFILING = 1
+
+
+class ReportFlags(enum.IntFlag):
+    """VmafxReportFlags bits."""
+
+    PROVENANCE_SIDECAR = 1
+
+
+class ProvenanceJsonFlags(enum.IntFlag):
+    """VmafxProvenanceJsonFlags bits."""
+
+    CANONICAL = 1
+
+
+class PoolMask(enum.IntFlag):
+    """VmafxPoolMask bits."""
+
+    _MIN = 2
+    _MAX = 4
+    _MEAN = 8
+    _HARMONIC_MEAN = 16
+    _MEDIAN = 32
+    _PERC5 = 64
+    _PERC10 = 128
+    _PERC20 = 256
+
+
+class WindowFlags(enum.IntFlag):
+    """VmafxWindowFlags bits."""
+
+    PARTIAL = 1
+
+
+class DnnFlags(enum.IntFlag):
+    """VmafxDnnFlags bits."""
+
+    FP16_IO = 1
 
 
 class VmafxContextConfig(ctypes.Structure):
@@ -202,6 +345,18 @@ class VmafxContextConfig(ctypes.Structure):
 
 class VmafxProvenance(ctypes.Structure):
     """C struct VmafxProvenance."""
+
+
+class VmafxModelProvenance(ctypes.Structure):
+    """C struct VmafxModelProvenance."""
+
+
+class VmafxFeatureProvenance(ctypes.Structure):
+    """C struct VmafxFeatureProvenance."""
+
+
+class VmafxAnnotation(ctypes.Structure):
+    """C struct VmafxAnnotation."""
 
 
 class VmafxExtractorInfo(ctypes.Structure):
@@ -260,10 +415,67 @@ class VmafxModelSetScore(ctypes.Structure):
     """C struct VmafxModelSetScore."""
 
 
+class VmafxWindowRequest(ctypes.Structure):
+    """C struct VmafxWindowRequest."""
+
+
+class VmafxWindowResult(ctypes.Structure):
+    """C struct VmafxWindowResult."""
+
+
+class VmafxWindowClockConfig(ctypes.Structure):
+    """C struct VmafxWindowClockConfig."""
+
+
+class VmafxWindowSpan(ctypes.Structure):
+    """C struct VmafxWindowSpan."""
+
+
+class VmafxColor(ctypes.Structure):
+    """C struct VmafxColor."""
+
+
+class VmafxConvertDesc(ctypes.Structure):
+    """C struct VmafxConvertDesc."""
+
+
+class VmafxDnnConfig(ctypes.Structure):
+    """C struct VmafxDnnConfig."""
+
+
+class VmafxDnnInput(ctypes.Structure):
+    """C struct VmafxDnnInput."""
+
+
+class VmafxDnnOutput(ctypes.Structure):
+    """C struct VmafxDnnOutput."""
+
+
+class VmafxMcpConfig(ctypes.Structure):
+    """C struct VmafxMcpConfig."""
+
+
+class VmafxMcpSseConfig(ctypes.Structure):
+    """C struct VmafxMcpSseConfig."""
+
+
+class VmafxMcpUdsConfig(ctypes.Structure):
+    """C struct VmafxMcpUdsConfig."""
+
+
+class VmafxMcpStdioConfig(ctypes.Structure):
+    """C struct VmafxMcpStdioConfig."""
+
+
 VmafxLogCallback = ctypes.CFUNCTYPE(None, ctypes.c_uint32, ctypes.c_char_p, ctypes.c_void_p)
 
 
 VmafxFrameReleaseCallback = ctypes.CFUNCTYPE(None, ctypes.c_void_p)
+
+
+VmafxWindowCallback = ctypes.CFUNCTYPE(
+    None, ctypes.c_void_p, ctypes.POINTER(VmafxWindowResult), ctypes.c_void_p
+)
 
 
 VmafxContextConfig._fields_ = (
@@ -286,6 +498,61 @@ VmafxProvenance._fields_ = (
     ("active_backend", ctypes.c_uint32),
     ("n_extractors", ctypes.c_uint32),
     ("version", ctypes.c_char_p),
+    ("commit", ctypes.c_char_p),
+    ("build_id", ctypes.c_char_p),
+    ("compiler", ctypes.c_char_p),
+    ("build_flags", ctypes.c_char_p),
+    ("fp_policy", ctypes.c_char_p),
+    ("backends", ctypes.c_char_p),
+    ("rust_twins", ctypes.c_uint32),
+    ("simd", ctypes.c_char_p),
+    ("device_index", ctypes.c_int32),
+    ("device_name", ctypes.c_char_p),
+    ("device_runtime", ctypes.c_char_p),
+    ("n_threads", ctypes.c_uint32),
+    ("n_subsample", ctypes.c_uint32),
+    ("cpumask", ctypes.c_uint64),
+    ("gpumask", ctypes.c_uint64),
+    ("frame_width", ctypes.c_uint32),
+    ("frame_height", ctypes.c_uint32),
+    ("pix_fmt", ctypes.c_uint32),
+    ("bpc", ctypes.c_uint32),
+    ("n_frames", ctypes.c_uint64),
+    ("n_models", ctypes.c_uint32),
+    ("n_features", ctypes.c_uint32),
+    ("n_annotations", ctypes.c_uint32),
+    ("encode_record", ctypes.c_char_p),
+    ("scores_digest", ctypes.c_char_p),
+    ("elapsed_ns", ctypes.c_uint64),
+    ("digest", ctypes.c_char_p),
+)
+
+VmafxModelProvenance._fields_ = (
+    ("struct_size", ctypes.c_uint32),
+    ("name", ctypes.c_char_p),
+    ("version", ctypes.c_char_p),
+    ("sha256", ctypes.c_char_p),
+    ("flags", ctypes.c_uint64),
+    ("overrides", ctypes.c_char_p),
+)
+
+VmafxFeatureProvenance._fields_ = (
+    ("struct_size", ctypes.c_uint32),
+    ("feature", ctypes.c_char_p),
+    ("extractor", ctypes.c_char_p),
+    ("implementation", ctypes.c_char_p),
+    ("backend", ctypes.c_uint32),
+    ("device", ctypes.c_char_p),
+    ("runtime", ctypes.c_char_p),
+    ("options", ctypes.c_char_p),
+    ("exactness", ctypes.c_char_p),
+    ("source", ctypes.c_uint32),
+)
+
+VmafxAnnotation._fields_ = (
+    ("struct_size", ctypes.c_uint32),
+    ("key", ctypes.c_char_p),
+    ("value", ctypes.c_char_p),
 )
 
 VmafxExtractorInfo._fields_ = (
@@ -327,6 +594,7 @@ VmafxDeviceInfo._fields_ = (
     ("fence_kinds", ctypes.c_uint32),
     ("total_memory", ctypes.c_uint64),
     ("name", ctypes.c_char_p),
+    ("pci", ctypes.c_uint32 * 4),
 )
 
 VmafxFence._fields_ = (
@@ -361,6 +629,11 @@ VmafxFrameImport._fields_ = (
     ("flags", ctypes.c_uint32),
     ("release", VmafxFrameReleaseCallback),
     ("user", ctypes.c_void_p),
+    ("acquire_more", VmafxFence * 2),
+    ("vulkan_handle_type", ctypes.c_uint32),
+    ("vulkan_tiling", ctypes.c_uint32),
+    ("vulkan_flags", ctypes.c_uint32),
+    ("vulkan_pci", ctypes.c_uint32 * 4),
     ("rgb_matrix", ctypes.c_uint32),
     ("rgb_range", ctypes.c_uint32),
     ("rgb_transfer", ctypes.c_uint32),
@@ -374,14 +647,6 @@ VmafxModelConfig._fields_ = (
     ("log_level", ctypes.c_uint32),
     ("log_callback", VmafxLogCallback),
     ("log_user", ctypes.c_void_p),
-)
-
-VmafxFrameDesc._fields_ = (
-    ("struct_size", ctypes.c_uint32),
-    ("pix_fmt", ctypes.c_uint32),
-    ("bpc", ctypes.c_uint32),
-    ("w", ctypes.c_uint32),
-    ("h", ctypes.c_uint32),
 )
 
 VmafxHostPlanes._fields_ = (
@@ -424,6 +689,130 @@ VmafxModelSetScore._fields_ = (
     ("name", ctypes.c_char_p),
 )
 
+VmafxWindowRequest._fields_ = (
+    ("struct_size", ctypes.c_uint32),
+    ("target", ctypes.c_uint32),
+    ("pool_mask", ctypes.c_uint32),
+    ("first", ctypes.c_uint64),
+    ("last", ctypes.c_uint64),
+    ("model", ctypes.c_void_p),
+    ("model_set", ctypes.c_void_p),
+    ("feature", ctypes.c_char_p),
+    ("on_complete", VmafxWindowCallback),
+    ("user", ctypes.c_void_p),
+)
+
+VmafxWindowResult._fields_ = (
+    ("struct_size", ctypes.c_uint32),
+    ("status", ctypes.c_int32),
+    ("flags", ctypes.c_uint32),
+    ("target", ctypes.c_uint32),
+    ("pool_mask", ctypes.c_uint32),
+    ("first", ctypes.c_uint64),
+    ("last", ctypes.c_uint64),
+    ("n_frames", ctypes.c_uint64),
+    ("n_scored", ctypes.c_uint64),
+    ("value", ctypes.c_double * 9),
+    ("stddev", ctypes.c_double * 9),
+    ("ci95_lo", ctypes.c_double * 9),
+    ("ci95_hi", ctypes.c_double * 9),
+    ("name", ctypes.c_char_p),
+)
+
+VmafxWindowClockConfig._fields_ = (
+    ("struct_size", ctypes.c_uint32),
+    ("n_stats", ctypes.c_double),
+    ("n_stats_frames", ctypes.c_uint64),
+)
+
+VmafxWindowSpan._fields_ = (
+    ("struct_size", ctypes.c_uint32),
+    ("flags", ctypes.c_uint32),
+    ("window", ctypes.c_uint64),
+    ("first", ctypes.c_uint64),
+    ("last", ctypes.c_uint64),
+    ("n_frames", ctypes.c_uint64),
+    ("start_ns", ctypes.c_int64),
+    ("end_ns", ctypes.c_int64),
+)
+
+VmafxColor._fields_ = (
+    ("range", ctypes.c_uint32),
+    ("primaries", ctypes.c_uint32),
+    ("trc", ctypes.c_uint32),
+    ("matrix", ctypes.c_uint32),
+)
+
+VmafxFrameDesc._fields_ = (
+    ("struct_size", ctypes.c_uint32),
+    ("pix_fmt", ctypes.c_uint32),
+    ("bpc", ctypes.c_uint32),
+    ("w", ctypes.c_uint32),
+    ("h", ctypes.c_uint32),
+    ("color", VmafxColor),
+)
+
+VmafxConvertDesc._fields_ = (
+    ("struct_size", ctypes.c_uint32),
+    ("src_pix_fmt", ctypes.c_uint32),
+    ("src_bpc", ctypes.c_uint32),
+    ("src_w", ctypes.c_uint32),
+    ("src_h", ctypes.c_uint32),
+    ("src_color", VmafxColor),
+    ("dst_pix_fmt", ctypes.c_uint32),
+    ("dst_bpc", ctypes.c_uint32),
+    ("dst_w", ctypes.c_uint32),
+    ("dst_h", ctypes.c_uint32),
+    ("dst_color", VmafxColor),
+    ("filter", ctypes.c_uint32),
+)
+
+VmafxDnnConfig._fields_ = (
+    ("struct_size", ctypes.c_uint32),
+    ("device", ctypes.c_uint32),
+    ("device_index", ctypes.c_int32),
+    ("threads", ctypes.c_int32),
+    ("flags", ctypes.c_uint32),
+)
+
+VmafxDnnInput._fields_ = (
+    ("name", ctypes.c_char_p),
+    ("data", ctypes.c_void_p),
+    ("shape", ctypes.c_void_p),
+    ("rank", ctypes.c_size_t),
+)
+
+VmafxDnnOutput._fields_ = (
+    ("name", ctypes.c_char_p),
+    ("data", ctypes.c_void_p),
+    ("capacity", ctypes.c_size_t),
+    ("written", ctypes.c_size_t),
+)
+
+VmafxMcpConfig._fields_ = (
+    ("struct_size", ctypes.c_uint32),
+    ("queue_depth", ctypes.c_uint32),
+    ("max_drain_per_frame", ctypes.c_uint32),
+    ("user_agent", ctypes.c_char_p),
+)
+
+VmafxMcpSseConfig._fields_ = (
+    ("struct_size", ctypes.c_uint32),
+    ("port", ctypes.c_uint32),
+    ("path", ctypes.c_char_p),
+)
+
+VmafxMcpUdsConfig._fields_ = (
+    ("struct_size", ctypes.c_uint32),
+    ("path", ctypes.c_char_p),
+)
+
+VmafxMcpStdioConfig._fields_ = (
+    ("struct_size", ctypes.c_uint32),
+    ("fd_in", ctypes.c_int32),
+    ("fd_out", ctypes.c_int32),
+)
+
 
 LAYOUT = {
     VmafxContextConfig: (
@@ -441,7 +830,7 @@ LAYOUT = {
         ),
     ),
     VmafxProvenance: (
-        32,
+        216,
         (
             ("struct_size", 0),
             ("abi_major", 4),
@@ -450,6 +839,67 @@ LAYOUT = {
             ("active_backend", 16),
             ("n_extractors", 20),
             ("version", 24),
+            ("commit", 32),
+            ("build_id", 40),
+            ("compiler", 48),
+            ("build_flags", 56),
+            ("fp_policy", 64),
+            ("backends", 72),
+            ("rust_twins", 80),
+            ("simd", 88),
+            ("device_index", 96),
+            ("device_name", 104),
+            ("device_runtime", 112),
+            ("n_threads", 120),
+            ("n_subsample", 124),
+            ("cpumask", 128),
+            ("gpumask", 136),
+            ("frame_width", 144),
+            ("frame_height", 148),
+            ("pix_fmt", 152),
+            ("bpc", 156),
+            ("n_frames", 160),
+            ("n_models", 168),
+            ("n_features", 172),
+            ("n_annotations", 176),
+            ("encode_record", 184),
+            ("scores_digest", 192),
+            ("elapsed_ns", 200),
+            ("digest", 208),
+        ),
+    ),
+    VmafxModelProvenance: (
+        48,
+        (
+            ("struct_size", 0),
+            ("name", 8),
+            ("version", 16),
+            ("sha256", 24),
+            ("flags", 32),
+            ("overrides", 40),
+        ),
+    ),
+    VmafxFeatureProvenance: (
+        80,
+        (
+            ("struct_size", 0),
+            ("feature", 8),
+            ("extractor", 16),
+            ("implementation", 24),
+            ("backend", 32),
+            ("device", 40),
+            ("runtime", 48),
+            ("options", 56),
+            ("exactness", 64),
+            ("source", 72),
+        ),
+    ),
+    VmafxAnnotation: (
+        24,
+        (
+            ("struct_size", 0),
+            ("key", 8),
+            ("value", 16),
         ),
     ),
     VmafxExtractorInfo: (
@@ -491,7 +941,7 @@ LAYOUT = {
         ),
     ),
     VmafxDeviceInfo: (
-        40,
+        56,
         (
             ("struct_size", 0),
             ("backend", 4),
@@ -501,6 +951,7 @@ LAYOUT = {
             ("fence_kinds", 20),
             ("total_memory", 24),
             ("name", 32),
+            ("pci", 40),
         ),
     ),
     VmafxFence: (
@@ -527,7 +978,7 @@ LAYOUT = {
         ),
     ),
     VmafxFrameImport: (
-        248,
+        344,
         (
             ("struct_size", 0),
             ("memory", 4),
@@ -541,10 +992,15 @@ LAYOUT = {
             ("flags", 208),
             ("release", 216),
             ("user", 224),
-            ("rgb_matrix", 232),
-            ("rgb_range", 236),
-            ("rgb_transfer", 240),
-            ("rgb_out_range", 244),
+            ("acquire_more", 232),
+            ("vulkan_handle_type", 296),
+            ("vulkan_tiling", 300),
+            ("vulkan_flags", 304),
+            ("vulkan_pci", 308),
+            ("rgb_matrix", 324),
+            ("rgb_range", 328),
+            ("rgb_transfer", 332),
+            ("rgb_out_range", 336),
         ),
     ),
     VmafxModelConfig: (
@@ -559,13 +1015,14 @@ LAYOUT = {
         ),
     ),
     VmafxFrameDesc: (
-        20,
+        36,
         (
             ("struct_size", 0),
             ("pix_fmt", 4),
             ("bpc", 8),
             ("w", 12),
             ("h", 16),
+            ("color", 20),
         ),
     ),
     VmafxHostPlanes: (
@@ -614,6 +1071,147 @@ LAYOUT = {
             ("ci95_lo", 40),
             ("ci95_hi", 48),
             ("name", 56),
+        ),
+    ),
+    VmafxWindowRequest: (
+        72,
+        (
+            ("struct_size", 0),
+            ("target", 4),
+            ("pool_mask", 8),
+            ("first", 16),
+            ("last", 24),
+            ("model", 32),
+            ("model_set", 40),
+            ("feature", 48),
+            ("on_complete", 56),
+            ("user", 64),
+        ),
+    ),
+    VmafxWindowResult: (
+        352,
+        (
+            ("struct_size", 0),
+            ("status", 4),
+            ("flags", 8),
+            ("target", 12),
+            ("pool_mask", 16),
+            ("first", 24),
+            ("last", 32),
+            ("n_frames", 40),
+            ("n_scored", 48),
+            ("value", 56),
+            ("stddev", 128),
+            ("ci95_lo", 200),
+            ("ci95_hi", 272),
+            ("name", 344),
+        ),
+    ),
+    VmafxWindowClockConfig: (
+        24,
+        (
+            ("struct_size", 0),
+            ("n_stats", 8),
+            ("n_stats_frames", 16),
+        ),
+    ),
+    VmafxWindowSpan: (
+        56,
+        (
+            ("struct_size", 0),
+            ("flags", 4),
+            ("window", 8),
+            ("first", 16),
+            ("last", 24),
+            ("n_frames", 32),
+            ("start_ns", 40),
+            ("end_ns", 48),
+        ),
+    ),
+    VmafxColor: (
+        16,
+        (
+            ("range", 0),
+            ("primaries", 4),
+            ("trc", 8),
+            ("matrix", 12),
+        ),
+    ),
+    VmafxConvertDesc: (
+        72,
+        (
+            ("struct_size", 0),
+            ("src_pix_fmt", 4),
+            ("src_bpc", 8),
+            ("src_w", 12),
+            ("src_h", 16),
+            ("src_color", 20),
+            ("dst_pix_fmt", 36),
+            ("dst_bpc", 40),
+            ("dst_w", 44),
+            ("dst_h", 48),
+            ("dst_color", 52),
+            ("filter", 68),
+        ),
+    ),
+    VmafxDnnConfig: (
+        20,
+        (
+            ("struct_size", 0),
+            ("device", 4),
+            ("device_index", 8),
+            ("threads", 12),
+            ("flags", 16),
+        ),
+    ),
+    VmafxDnnInput: (
+        32,
+        (
+            ("name", 0),
+            ("data", 8),
+            ("shape", 16),
+            ("rank", 24),
+        ),
+    ),
+    VmafxDnnOutput: (
+        32,
+        (
+            ("name", 0),
+            ("data", 8),
+            ("capacity", 16),
+            ("written", 24),
+        ),
+    ),
+    VmafxMcpConfig: (
+        24,
+        (
+            ("struct_size", 0),
+            ("queue_depth", 4),
+            ("max_drain_per_frame", 8),
+            ("user_agent", 16),
+        ),
+    ),
+    VmafxMcpSseConfig: (
+        16,
+        (
+            ("struct_size", 0),
+            ("port", 4),
+            ("path", 8),
+        ),
+    ),
+    VmafxMcpUdsConfig: (
+        16,
+        (
+            ("struct_size", 0),
+            ("path", 8),
+        ),
+    ),
+    VmafxMcpStdioConfig: (
+        12,
+        (
+            ("struct_size", 0),
+            ("fd_in", 4),
+            ("fd_out", 8),
         ),
     ),
 }
@@ -913,6 +1511,14 @@ SIGNATURES = {
             ctypes.POINTER(ctypes.c_void_p),
         ),
     ),
+    "vmafx_frame_signal_on_release": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.POINTER(VmafxFence),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
     "vmafx_fence_create": (
         ctypes.c_int32,
         (
@@ -1150,11 +1756,426 @@ SIGNATURES = {
             ctypes.POINTER(ctypes.c_void_p),
         ),
     ),
+    "vmafx_context_model_provenance": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.c_uint32,
+            ctypes.POINTER(VmafxModelProvenance),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_context_feature_provenance": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.c_uint32,
+            ctypes.POINTER(VmafxFeatureProvenance),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_feature_provenance": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.c_char_p,
+            ctypes.POINTER(VmafxFeatureProvenance),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_context_annotate": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.c_char_p,
+            ctypes.c_char_p,
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_context_annotation": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.c_uint32,
+            ctypes.POINTER(VmafxAnnotation),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_context_set_encode_record": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.c_char_p,
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_context_provenance_json": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.c_uint32,
+            ctypes.POINTER(ctypes.c_char_p),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_report_write": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.c_char_p,
+            ctypes.c_uint32,
+            ctypes.c_uint32,
+            ctypes.c_char_p,
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_report_open": (
+        ctypes.c_int32,
+        (
+            ctypes.c_char_p,
+            ctypes.POINTER(ctypes.c_void_p),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_report_close": (
+        None,
+        (ctypes.c_void_p,),
+    ),
+    "vmafx_report_field": (
+        ctypes.c_char_p,
+        (
+            ctypes.c_void_p,
+            ctypes.c_char_p,
+        ),
+    ),
+    "vmafx_report_verify": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_window_submit": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.POINTER(VmafxWindowRequest),
+            ctypes.POINTER(ctypes.c_void_p),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_window_poll": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.POINTER(VmafxWindowResult),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_window_wait": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.c_uint64,
+            ctypes.POINTER(VmafxWindowResult),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_window_release": (
+        None,
+        (ctypes.c_void_p,),
+    ),
+    "vmafx_context_max_in_flight": (
+        ctypes.c_uint32,
+        (ctypes.c_void_p,),
+    ),
+    "vmafx_window_clock_create": (
+        ctypes.c_int32,
+        (
+            ctypes.POINTER(VmafxWindowClockConfig),
+            ctypes.POINTER(ctypes.c_void_p),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_window_clock_frame": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.c_uint64,
+            ctypes.c_int64,
+            ctypes.POINTER(VmafxWindowSpan),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_window_clock_finish": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.POINTER(VmafxWindowSpan),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_window_clock_destroy": (
+        None,
+        (ctypes.c_void_p,),
+    ),
     "vmafx_context_from_libvmaf": (
         ctypes.c_void_p,
         (ctypes.c_void_p,),
     ),
     "vmafx_context_libvmaf_handle": (
+        ctypes.c_void_p,
+        (ctypes.c_void_p,),
+    ),
+    "vmafx_backend_name": (
+        ctypes.c_char_p,
+        (ctypes.c_uint32,),
+    ),
+    "vmafx_context_backend": (
+        ctypes.c_uint32,
+        (ctypes.c_void_p,),
+    ),
+    "vmafx_context_preallocate": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.POINTER(VmafxFrameDesc),
+            ctypes.c_uint32,
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_context_acquire_frame": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.POINTER(ctypes.c_void_p),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_context_attach_sidedata": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.c_uint64,
+            ctypes.c_void_p,
+            ctypes.c_size_t,
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_context_set_default_color": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.POINTER(VmafxColor),
+            ctypes.POINTER(VmafxColor),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_frame_converter_create": (
+        ctypes.c_int32,
+        (
+            ctypes.POINTER(VmafxConvertDesc),
+            ctypes.POINTER(ctypes.c_void_p),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_frame_convert": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.POINTER(ctypes.c_void_p),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_frame_converter_destroy": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_dnn_available": (
+        ctypes.c_uint32,
+        (),
+    ),
+    "vmafx_context_use_tiny_model": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.c_char_p,
+            ctypes.POINTER(VmafxDnnConfig),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_context_set_codec_context": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.c_char_p,
+            ctypes.c_char_p,
+            ctypes.c_int32,
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_context_is_codec_aware": (
+        ctypes.c_uint32,
+        (ctypes.c_void_p,),
+    ),
+    "vmafx_context_set_tiny_resize": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.c_uint32,
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_dnn_session_open": (
+        ctypes.c_int32,
+        (
+            ctypes.c_char_p,
+            ctypes.POINTER(VmafxDnnConfig),
+            ctypes.POINTER(ctypes.c_void_p),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_dnn_session_run_luma8": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.c_size_t,
+            ctypes.c_uint32,
+            ctypes.c_uint32,
+            ctypes.c_void_p,
+            ctypes.c_size_t,
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_dnn_session_run_plane16": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.c_size_t,
+            ctypes.c_uint32,
+            ctypes.c_uint32,
+            ctypes.c_uint32,
+            ctypes.c_void_p,
+            ctypes.c_size_t,
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_dnn_session_run": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.POINTER(VmafxDnnInput),
+            ctypes.c_size_t,
+            ctypes.POINTER(VmafxDnnOutput),
+            ctypes.c_size_t,
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_dnn_session_close": (
+        None,
+        (ctypes.c_void_p,),
+    ),
+    "vmafx_dnn_session_runtime_device": (
+        ctypes.c_char_p,
+        (ctypes.c_void_p,),
+    ),
+    "vmafx_dnn_verify_signature": (
+        ctypes.c_int32,
+        (
+            ctypes.c_char_p,
+            ctypes.c_char_p,
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_mcp_available": (
+        ctypes.c_uint32,
+        (),
+    ),
+    "vmafx_mcp_transport_available": (
+        ctypes.c_uint32,
+        (ctypes.c_uint32,),
+    ),
+    "vmafx_mcp_server_create": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.POINTER(VmafxMcpConfig),
+            ctypes.POINTER(ctypes.c_void_p),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_mcp_start_sse": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.POINTER(VmafxMcpSseConfig),
+            ctypes.POINTER(ctypes.c_uint32),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_mcp_start_uds": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.POINTER(VmafxMcpUdsConfig),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_mcp_start_stdio": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.POINTER(VmafxMcpStdioConfig),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_mcp_stop": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_mcp_server_destroy": (
+        None,
+        (ctypes.c_void_p,),
+    ),
+    "vmafx_frame_from_picture": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.POINTER(ctypes.c_void_p),
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_frame_to_picture": (
+        ctypes.c_int32,
+        (
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.POINTER(ctypes.c_void_p),
+        ),
+    ),
+    "vmafx_model_from_libvmaf": (
+        ctypes.c_void_p,
+        (ctypes.c_void_p,),
+    ),
+    "vmafx_model_libvmaf_handle": (
+        ctypes.c_void_p,
+        (ctypes.c_void_p,),
+    ),
+    "vmafx_model_set_from_libvmaf": (
+        ctypes.c_void_p,
+        (ctypes.c_void_p,),
+    ),
+    "vmafx_model_set_libvmaf_handle": (
         ctypes.c_void_p,
         (ctypes.c_void_p,),
     ),
@@ -1264,6 +2285,33 @@ class Provenance:
     active_backend: int
     n_extractors: int
     version: str | None
+    commit: str | None
+    build_id: str | None
+    compiler: str | None
+    build_flags: str | None
+    fp_policy: str | None
+    backends: str | None
+    rust_twins: int
+    simd: str | None
+    device_index: int
+    device_name: str | None
+    device_runtime: str | None
+    n_threads: int
+    n_subsample: int
+    cpumask: int
+    gpumask: int
+    frame_width: int
+    frame_height: int
+    pix_fmt: int
+    bpc: int
+    n_frames: int
+    n_models: int
+    n_features: int
+    n_annotations: int
+    encode_record: str | None
+    scores_digest: str | None
+    elapsed_ns: int
+    digest: str | None
 
     @classmethod
     def from_c(cls, raw: VmafxProvenance) -> Provenance:
@@ -1274,6 +2322,98 @@ class Provenance:
             active_backend=raw.active_backend,
             n_extractors=raw.n_extractors,
             version=_text(raw.version),
+            commit=_text(raw.commit),
+            build_id=_text(raw.build_id),
+            compiler=_text(raw.compiler),
+            build_flags=_text(raw.build_flags),
+            fp_policy=_text(raw.fp_policy),
+            backends=_text(raw.backends),
+            rust_twins=raw.rust_twins,
+            simd=_text(raw.simd),
+            device_index=raw.device_index,
+            device_name=_text(raw.device_name),
+            device_runtime=_text(raw.device_runtime),
+            n_threads=raw.n_threads,
+            n_subsample=raw.n_subsample,
+            cpumask=raw.cpumask,
+            gpumask=raw.gpumask,
+            frame_width=raw.frame_width,
+            frame_height=raw.frame_height,
+            pix_fmt=raw.pix_fmt,
+            bpc=raw.bpc,
+            n_frames=raw.n_frames,
+            n_models=raw.n_models,
+            n_features=raw.n_features,
+            n_annotations=raw.n_annotations,
+            encode_record=_text(raw.encode_record),
+            scores_digest=_text(raw.scores_digest),
+            elapsed_ns=raw.elapsed_ns,
+            digest=_text(raw.digest),
+        )
+
+
+@dataclass(frozen=True)
+class ModelProvenance:
+    """One mounted model (#2142). Strings live as long as the context. Added in ABI 0.1.5."""
+
+    name: str | None
+    version: str | None
+    sha256: str | None
+    flags: int
+    overrides: str | None
+
+    @classmethod
+    def from_c(cls, raw: VmafxModelProvenance) -> ModelProvenance:
+        return cls(
+            name=_text(raw.name),
+            version=_text(raw.version),
+            sha256=_text(raw.sha256),
+            flags=raw.flags,
+            overrides=_text(raw.overrides),
+        )
+
+
+@dataclass(frozen=True)
+class FeatureProvenance:
+    """How the scores of one feature are made (#2142). Strings live as long as the context. Added in ABI 0.1.5."""
+
+    feature: str | None
+    extractor: str | None
+    implementation: str | None
+    backend: int
+    device: str | None
+    runtime: str | None
+    options: str | None
+    exactness: str | None
+    source: int
+
+    @classmethod
+    def from_c(cls, raw: VmafxFeatureProvenance) -> FeatureProvenance:
+        return cls(
+            feature=_text(raw.feature),
+            extractor=_text(raw.extractor),
+            implementation=_text(raw.implementation),
+            backend=raw.backend,
+            device=_text(raw.device),
+            runtime=_text(raw.runtime),
+            options=_text(raw.options),
+            exactness=_text(raw.exactness),
+            source=raw.source,
+        )
+
+
+@dataclass(frozen=True)
+class Annotation:
+    """One caller annotation of the provenance record (vmafx_context_annotate()). Strings live as long as the context. Added in ABI 0.1.5."""
+
+    key: str | None
+    value: str | None
+
+    @classmethod
+    def from_c(cls, raw: VmafxAnnotation) -> Annotation:
+        return cls(
+            key=_text(raw.key),
+            value=_text(raw.value),
         )
 
 
@@ -1360,6 +2500,7 @@ class DeviceInfo:
     fence_kinds: int
     total_memory: int
     name: str | None
+    pci: tuple[int, ...]
 
     @classmethod
     def from_c(cls, raw: VmafxDeviceInfo) -> DeviceInfo:
@@ -1371,6 +2512,7 @@ class DeviceInfo:
             fence_kinds=raw.fence_kinds,
             total_memory=raw.total_memory,
             name=_text(raw.name),
+            pci=tuple(raw.pci),
         )
 
 
@@ -1454,6 +2596,11 @@ class FrameImport:
     plane: tuple[ImportPlane, ...]
     acquire: Fence
     flags: int
+    acquire_more: tuple[Fence, ...]
+    vulkan_handle_type: int
+    vulkan_tiling: int
+    vulkan_flags: int
+    vulkan_pci: tuple[int, ...]
     rgb_matrix: int
     rgb_range: int
     rgb_transfer: int
@@ -1471,6 +2618,11 @@ class FrameImport:
             plane=tuple(ImportPlane.from_c(x) for x in raw.plane),
             acquire=Fence.from_c(raw.acquire),
             flags=raw.flags,
+            acquire_more=tuple(Fence.from_c(x) for x in raw.acquire_more),
+            vulkan_handle_type=raw.vulkan_handle_type,
+            vulkan_tiling=raw.vulkan_tiling,
+            vulkan_flags=raw.vulkan_flags,
+            vulkan_pci=tuple(raw.vulkan_pci),
             rgb_matrix=raw.rgb_matrix,
             rgb_range=raw.rgb_range,
             rgb_transfer=raw.rgb_transfer,
@@ -1497,12 +2649,13 @@ class ModelConfig:
 
 @dataclass(frozen=True)
 class FrameDesc:
-    """Geometry of a frame. Initialise with VMAFX_FRAME_DESC_INIT."""
+    """Geometry and colour of a frame. Initialise with VMAFX_FRAME_DESC_INIT."""
 
     pix_fmt: int
     bpc: int
     w: int
     h: int
+    color: Color
 
     @classmethod
     def from_c(cls, raw: VmafxFrameDesc) -> FrameDesc:
@@ -1511,6 +2664,7 @@ class FrameDesc:
             bpc=raw.bpc,
             w=raw.w,
             h=raw.h,
+            color=Color.from_c(raw.color),
         )
 
     def to_c(self) -> VmafxFrameDesc:
@@ -1520,6 +2674,7 @@ class FrameDesc:
         raw.bpc = self.bpc
         raw.w = self.w
         raw.h = self.h
+        raw.color = self.color.to_c()
         return raw
 
 
@@ -1607,6 +2762,326 @@ class ModelSetScore:
         )
 
 
+@dataclass(frozen=True)
+class WindowRequest:
+    """A window to pool. Initialise with VMAFX_WINDOW_REQUEST_INIT. Added in ABI 0.1.8."""
+
+    target: int
+    pool_mask: int
+    first: int
+    last: int
+    feature: str | None
+
+    @classmethod
+    def from_c(cls, raw: VmafxWindowRequest) -> WindowRequest:
+        return cls(
+            target=raw.target,
+            pool_mask=raw.pool_mask,
+            first=raw.first,
+            last=raw.last,
+            feature=_text(raw.feature),
+        )
+
+
+@dataclass(frozen=True)
+class WindowResult:
+    """The scores of a completed window. Each value is the synchronous call's (vmafx_score_pooled(), vmafx_feature_score_pooled(), vmafx_score_pooled_model_set()) over frames `first` to `first + n_frames - 1`, bit for bit: both run one pooling implementation. Initialise with VMAFX_WINDOW_RESULT_INIT. Added in ABI 0.1.8."""
+
+    status: int
+    flags: int
+    target: int
+    pool_mask: int
+    first: int
+    last: int
+    n_frames: int
+    n_scored: int
+    value: tuple[float, ...]
+    stddev: tuple[float, ...]
+    ci95_lo: tuple[float, ...]
+    ci95_hi: tuple[float, ...]
+    name: str | None
+
+    @classmethod
+    def from_c(cls, raw: VmafxWindowResult) -> WindowResult:
+        return cls(
+            status=raw.status,
+            flags=raw.flags,
+            target=raw.target,
+            pool_mask=raw.pool_mask,
+            first=raw.first,
+            last=raw.last,
+            n_frames=raw.n_frames,
+            n_scored=raw.n_scored,
+            value=tuple(raw.value),
+            stddev=tuple(raw.stddev),
+            ci95_lo=tuple(raw.ci95_lo),
+            ci95_hi=tuple(raw.ci95_hi),
+            name=_text(raw.name),
+        )
+
+
+@dataclass(frozen=True)
+class WindowClockConfig:
+    """Window length of a VmafxWindowClock: exactly one of the two is set, as the `window` option group's `n_stats` and `n_stats_frames` (#2138). Initialise with VMAFX_WINDOW_CLOCK_CONFIG_INIT. Added in ABI 0.1.8."""
+
+    n_stats: float
+    n_stats_frames: int
+
+    @classmethod
+    def from_c(cls, raw: VmafxWindowClockConfig) -> WindowClockConfig:
+        return cls(
+            n_stats=raw.n_stats,
+            n_stats_frames=raw.n_stats_frames,
+        )
+
+    def to_c(self) -> VmafxWindowClockConfig:
+        raw = VmafxWindowClockConfig()
+        raw.struct_size = ctypes.sizeof(raw)
+        raw.n_stats = self.n_stats
+        raw.n_stats_frames = self.n_stats_frames
+        return raw
+
+
+@dataclass(frozen=True)
+class WindowSpan:
+    """One window of a stream as a VmafxWindowClock cut it: submit `first` to `last` with vmafx_window_submit(). Initialise with VMAFX_WINDOW_SPAN_INIT. Added in ABI 0.1.8."""
+
+    flags: int
+    window: int
+    first: int
+    last: int
+    n_frames: int
+    start_ns: int
+    end_ns: int
+
+    @classmethod
+    def from_c(cls, raw: VmafxWindowSpan) -> WindowSpan:
+        return cls(
+            flags=raw.flags,
+            window=raw.window,
+            first=raw.first,
+            last=raw.last,
+            n_frames=raw.n_frames,
+            start_ns=raw.start_ns,
+            end_ns=raw.end_ns,
+        )
+
+    def to_c(self) -> VmafxWindowSpan:
+        raw = VmafxWindowSpan()
+        raw.struct_size = ctypes.sizeof(raw)
+        raw.flags = self.flags
+        raw.window = self.window
+        raw.first = self.first
+        raw.last = self.last
+        raw.n_frames = self.n_frames
+        raw.start_ns = self.start_ns
+        raw.end_ns = self.end_ns
+        return raw
+
+
+@dataclass(frozen=True)
+class Color:
+    """Colour description of a frame; embedded by value, so it never grows. Added in ABI 0.1.6."""
+
+    range: int
+    primaries: int
+    trc: int
+    matrix: int
+
+    @classmethod
+    def from_c(cls, raw: VmafxColor) -> Color:
+        return cls(
+            range=raw.range,
+            primaries=raw.primaries,
+            trc=raw.trc,
+            matrix=raw.matrix,
+        )
+
+    def to_c(self) -> VmafxColor:
+        raw = VmafxColor()
+        raw.range = self.range
+        raw.primaries = self.primaries
+        raw.trc = self.trc
+        raw.matrix = self.matrix
+        return raw
+
+
+@dataclass(frozen=True)
+class ConvertDesc:
+    """What a frame converter reads and writes. Initialise with VMAFX_CONVERT_DESC_INIT. Added in ABI 0.1.6."""
+
+    src_pix_fmt: int
+    src_bpc: int
+    src_w: int
+    src_h: int
+    src_color: Color
+    dst_pix_fmt: int
+    dst_bpc: int
+    dst_w: int
+    dst_h: int
+    dst_color: Color
+    filter: int
+
+    @classmethod
+    def from_c(cls, raw: VmafxConvertDesc) -> ConvertDesc:
+        return cls(
+            src_pix_fmt=raw.src_pix_fmt,
+            src_bpc=raw.src_bpc,
+            src_w=raw.src_w,
+            src_h=raw.src_h,
+            src_color=Color.from_c(raw.src_color),
+            dst_pix_fmt=raw.dst_pix_fmt,
+            dst_bpc=raw.dst_bpc,
+            dst_w=raw.dst_w,
+            dst_h=raw.dst_h,
+            dst_color=Color.from_c(raw.dst_color),
+            filter=raw.filter,
+        )
+
+    def to_c(self) -> VmafxConvertDesc:
+        raw = VmafxConvertDesc()
+        raw.struct_size = ctypes.sizeof(raw)
+        raw.src_pix_fmt = self.src_pix_fmt
+        raw.src_bpc = self.src_bpc
+        raw.src_w = self.src_w
+        raw.src_h = self.src_h
+        raw.src_color = self.src_color.to_c()
+        raw.dst_pix_fmt = self.dst_pix_fmt
+        raw.dst_bpc = self.dst_bpc
+        raw.dst_w = self.dst_w
+        raw.dst_h = self.dst_h
+        raw.dst_color = self.dst_color.to_c()
+        raw.filter = self.filter
+        return raw
+
+
+@dataclass(frozen=True)
+class DnnConfig:
+    """How to open a tiny-AI session. Initialise with VMAFX_DNN_CONFIG_INIT. Added in ABI 0.1.6."""
+
+    device: int
+    device_index: int
+    threads: int
+    flags: int
+
+    @classmethod
+    def from_c(cls, raw: VmafxDnnConfig) -> DnnConfig:
+        return cls(
+            device=raw.device,
+            device_index=raw.device_index,
+            threads=raw.threads,
+            flags=raw.flags,
+        )
+
+    def to_c(self) -> VmafxDnnConfig:
+        raw = VmafxDnnConfig()
+        raw.struct_size = ctypes.sizeof(raw)
+        raw.device = self.device
+        raw.device_index = self.device_index
+        raw.threads = self.threads
+        raw.flags = self.flags
+        return raw
+
+
+@dataclass(frozen=True)
+class DnnInput:
+    """One named input tensor of vmafx_dnn_session_run(), float32 in row-major order; the layout of a libvmaf VmafDnnInput, never grows. Added in ABI 0.1.6."""
+
+    name: str | None
+    rank: int
+
+    @classmethod
+    def from_c(cls, raw: VmafxDnnInput) -> DnnInput:
+        return cls(
+            name=_text(raw.name),
+            rank=raw.rank,
+        )
+
+
+@dataclass(frozen=True)
+class DnnOutput:
+    """One named output tensor of vmafx_dnn_session_run(); the layout of a libvmaf VmafDnnOutput, never grows. Added in ABI 0.1.6."""
+
+    name: str | None
+    capacity: int
+    written: int
+
+    @classmethod
+    def from_c(cls, raw: VmafxDnnOutput) -> DnnOutput:
+        return cls(
+            name=_text(raw.name),
+            capacity=raw.capacity,
+            written=raw.written,
+        )
+
+
+@dataclass(frozen=True)
+class McpConfig:
+    """How to create an MCP server. Initialise with VMAFX_MCP_CONFIG_INIT. Added in ABI 0.1.6."""
+
+    queue_depth: int
+    max_drain_per_frame: int
+    user_agent: str | None
+
+    @classmethod
+    def from_c(cls, raw: VmafxMcpConfig) -> McpConfig:
+        return cls(
+            queue_depth=raw.queue_depth,
+            max_drain_per_frame=raw.max_drain_per_frame,
+            user_agent=_text(raw.user_agent),
+        )
+
+
+@dataclass(frozen=True)
+class McpSseConfig:
+    """The SSE transport. Initialise with VMAFX_MCP_SSE_CONFIG_INIT. Added in ABI 0.1.6."""
+
+    port: int
+    path: str | None
+
+    @classmethod
+    def from_c(cls, raw: VmafxMcpSseConfig) -> McpSseConfig:
+        return cls(
+            port=raw.port,
+            path=_text(raw.path),
+        )
+
+
+@dataclass(frozen=True)
+class McpUdsConfig:
+    """The Unix domain socket transport. Initialise with VMAFX_MCP_UDS_CONFIG_INIT. Added in ABI 0.1.6."""
+
+    path: str | None
+
+    @classmethod
+    def from_c(cls, raw: VmafxMcpUdsConfig) -> McpUdsConfig:
+        return cls(
+            path=_text(raw.path),
+        )
+
+
+@dataclass(frozen=True)
+class McpStdioConfig:
+    """The file-descriptor transport. Initialise with VMAFX_MCP_STDIO_CONFIG_INIT. Added in ABI 0.1.6."""
+
+    fd_in: int
+    fd_out: int
+
+    @classmethod
+    def from_c(cls, raw: VmafxMcpStdioConfig) -> McpStdioConfig:
+        return cls(
+            fd_in=raw.fd_in,
+            fd_out=raw.fd_out,
+        )
+
+    def to_c(self) -> VmafxMcpStdioConfig:
+        raw = VmafxMcpStdioConfig()
+        raw.struct_size = ctypes.sizeof(raw)
+        raw.fd_in = self.fd_in
+        raw.fd_out = self.fd_out
+        return raw
+
+
 class Context:
     """A VmafxContext; close it with close() or a with-block."""
 
@@ -1673,13 +3148,12 @@ class Context:
         return Score.from_c(out)
 
     def set_option(self, key: str, value: str) -> None:
-        """Set a context option: `perceptual_weight` (`0` / `1`) or `perceptual_weight_strength` (a finite number >= 0). VMAFX_E_NOTFOUND names an unknown key, VMAFX_E_INVALID a value the key refuses."""
+        """Set a context option: `perceptual_weight` (`0` / `1`), `perceptual_weight_strength` (a finite number >= 0) or `check_sample_range` (`0` / `1`; since ABI 0.1.6: refuse a frame pair with a sample above 2^bpc - 1 with VMAFX_E_INVALID, naming its plane, row, column and value; off by default; a device frame cannot be scanned and is VMAFX_E_NOTSUP). VMAFX_E_NOTFOUND names an unknown key, VMAFX_E_INVALID a value the key refuses."""
         error = ctypes.c_void_p()
         status = self._lib.vmafx_context_set_option(
             self._handle, key.encode(), value.encode(), ctypes.byref(error)
         )
         _raise(self._lib, status, error, "vmafx_context_set_option")
-        return None
 
     def import_score(self, feature: str, index: int, value: float) -> None:
         """Record `value` as the score of `feature` at frame `index`, computed outside the library."""
@@ -1688,14 +3162,12 @@ class Context:
             self._handle, feature.encode(), index, value, ctypes.byref(error)
         )
         _raise(self._lib, status, error, "vmafx_context_import_score")
-        return None
 
     def flush(self) -> None:
         """Finish every submitted frame; scores of the last frames (motion) become final. A context is flushed once; a second flush or a submit after it is VMAFX_E_INVALID."""
         error = ctypes.c_void_p()
         status = self._lib.vmafx_flush(self._handle, ctypes.byref(error))
         _raise(self._lib, status, error, "vmafx_flush")
-        return None
 
     def feature_score_pooled(self, feature: str, pool: int, first: int, last: int) -> PooledScore:
         """Scores of `feature` pooled as vmafx_score_pooled() does."""
@@ -1713,6 +3185,88 @@ class Context:
         )
         _raise(self._lib, status, error, "vmafx_feature_score_pooled")
         return PooledScore.from_c(out)
+
+    def model_provenance(self, index: int) -> ModelProvenance:
+        """Describe mounted model `index` (models of vmafx_context_use_model() and vmafx_context_use_model_set(), and models mounted through the libvmaf API), in mount order; VMAFX_E_NOTFOUND past the last one. Added in ABI 0.1.5."""
+        out = VmafxModelProvenance()
+        out.struct_size = ctypes.sizeof(out)
+        error = ctypes.c_void_p()
+        status = self._lib.vmafx_context_model_provenance(
+            self._handle, index, ctypes.byref(out), ctypes.byref(error)
+        )
+        _raise(self._lib, status, error, "vmafx_context_model_provenance")
+        return ModelProvenance.from_c(out)
+
+    def feature_provenance_at(self, index: int) -> FeatureProvenance:
+        """Describe feature `index` of the context, features in byte order of their names; VMAFX_E_NOTFOUND past the last one. Added in ABI 0.1.5."""
+        out = VmafxFeatureProvenance()
+        out.struct_size = ctypes.sizeof(out)
+        error = ctypes.c_void_p()
+        status = self._lib.vmafx_context_feature_provenance(
+            self._handle, index, ctypes.byref(out), ctypes.byref(error)
+        )
+        _raise(self._lib, status, error, "vmafx_context_feature_provenance")
+        return FeatureProvenance.from_c(out)
+
+    def feature_provenance(self, feature: str) -> FeatureProvenance:
+        """Describe the feature named `feature` (as the scores carry it, option-decorated names included); VMAFX_E_NOTFOUND when the context has no score of it. Added in ABI 0.1.5."""
+        out = VmafxFeatureProvenance()
+        out.struct_size = ctypes.sizeof(out)
+        error = ctypes.c_void_p()
+        status = self._lib.vmafx_feature_provenance(
+            self._handle, feature.encode(), ctypes.byref(out), ctypes.byref(error)
+        )
+        _raise(self._lib, status, error, "vmafx_feature_provenance")
+        return FeatureProvenance.from_c(out)
+
+    def annotate(self, key: str, value: str) -> None:
+        """Add `key` = `value` (both copied) to the context's provenance record, for what only the caller knows: the inputs, the command line. A key may repeat; annotations keep their order. VMAFX_E_INVALID names a key outside 1 to 64 characters of `a-z`, `0-9` and `_`, VMAFX_E_RANGE a value over 4096 bytes or the 257th annotation. Added in ABI 0.1.5."""
+        error = ctypes.c_void_p()
+        status = self._lib.vmafx_context_annotate(
+            self._handle, key.encode(), value.encode(), ctypes.byref(error)
+        )
+        _raise(self._lib, status, error, "vmafx_context_annotate")
+
+    def annotation(self, index: int) -> Annotation:
+        """Annotation `index` of the context, in the order added; VMAFX_E_NOTFOUND past the last one. Added in ABI 0.1.5."""
+        out = VmafxAnnotation()
+        out.struct_size = ctypes.sizeof(out)
+        error = ctypes.c_void_p()
+        status = self._lib.vmafx_context_annotation(
+            self._handle, index, ctypes.byref(out), ctypes.byref(error)
+        )
+        _raise(self._lib, status, error, "vmafx_context_annotation")
+        return Annotation.from_c(out)
+
+    def set_encode_record(self, record: str) -> None:
+        """Record the digest of the encode record of the distorted input (VMAFx/pelorus#81): `sha256:` and 64 lower-case hex digits, copied; NULL or empty clears it. VMAFX_E_INVALID names any other form. Added in ABI 0.1.5."""
+        error = ctypes.c_void_p()
+        status = self._lib.vmafx_context_set_encode_record(
+            self._handle, record.encode(), ctypes.byref(error)
+        )
+        _raise(self._lib, status, error, "vmafx_context_set_encode_record")
+
+    def report_write(self, path: str, format: int, flags: int, score_format: str) -> None:
+        """Write the context's scores to `path` in `format` (VmafxReportFormat), numbers with `score_format` (a printf format of one double; NULL: `%.6f`). JSON and XML carry the provenance record; CSV and SUB keep their columns. `flags` (VmafxReportFlags) may also ask for a `<path>.provenance.json` sidecar. Added in ABI 0.1.5."""
+        error = ctypes.c_void_p()
+        status = self._lib.vmafx_report_write(
+            self._handle, path.encode(), format, flags, score_format.encode(), ctypes.byref(error)
+        )
+        _raise(self._lib, status, error, "vmafx_report_write")
+
+    def set_codec_context(self, codec: str, preset: str, crf: int) -> None:
+        """The encoder `codec` (may be NULL), its `preset` (may be NULL) and `crf` that a codec-aware tiny model attached to the context reads. Added in ABI 0.1.6."""
+        error = ctypes.c_void_p()
+        status = self._lib.vmafx_context_set_codec_context(
+            self._handle, codec.encode(), preset.encode(), crf, ctypes.byref(error)
+        )
+        _raise(self._lib, status, error, "vmafx_context_set_codec_context")
+
+    def set_tiny_resize(self, mode: int) -> None:
+        """How frames are resized to the fixed input shape of the attached tiny model (VmafxDnnResize). Added in ABI 0.1.6."""
+        error = ctypes.c_void_p()
+        status = self._lib.vmafx_context_set_tiny_resize(self._handle, mode, ctypes.byref(error))
+        _raise(self._lib, status, error, "vmafx_context_set_tiny_resize")
 
 
 class Library:
@@ -1753,6 +3307,10 @@ class Library:
     def model_default_version(self) -> str | None:
         """Version of the default model (`vmaf_v1.0.16_3d0h`)."""
         return _text(self._lib.vmafx_model_default_version())
+
+    def backend_name(self, backend: int) -> str | None:
+        """Lower-case name of a VmafxBackend (`cpu`, `cuda`, `sycl`, `metal`, `hip`), `unknown` for another value; a static string. Added in ABI 0.1.6."""
+        return _text(self._lib.vmafx_backend_name(backend))
 
 
 _check_layout()

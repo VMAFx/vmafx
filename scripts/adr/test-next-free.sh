@@ -45,9 +45,16 @@ _cleanup() {
   for s in "${_STUBS_TO_CLEAN[@]+"${_STUBS_TO_CLEAN[@]}"}"; do
     rm -f "${s}"
   done
-  # Remove the lock directory if we left it behind.
-  _repo_key="$(printf '%s' "${REPO_ROOT}" | tr '/' '_')"
-  if [ -d "/tmp/vmaf_adr_claim_lock_${_repo_key}" ]; then rmdir "/tmp/vmaf_adr_claim_lock_${_repo_key}"; fi
+  # Remove the lock directory if we left it behind; next-free.sh keys it on the
+  # absolute common .git directory.
+  local _lock
+  _lock="/tmp/vmaf_adr_claim_lock_$(cd "$(git -C "${REPO_ROOT}" rev-parse --git-common-dir)" && pwd -P | tr '/' '_')"
+  if [ -d "${_lock}" ]; then
+    rm -f "${_lock}/owner"
+    if ! rmdir "${_lock}" 2>/dev/null; then
+      printf 'note: lock %s not removed\n' "${_lock}" >&2
+    fi
+  fi
 }
 trap '_cleanup' EXIT INT TERM
 

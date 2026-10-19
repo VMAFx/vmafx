@@ -39,7 +39,7 @@ fuzz_vidinput_sources = [
 
 fuzz_y4m_input = executable('fuzz_y4m_input',
     ['fuzz_y4m_input.c'] + fuzz_vidinput_sources,
-    include_directories : [libvmaf_inc, test_inc, include_directories('../../tools/')],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../../tools/', '../../src/')],
     c_args : fuzz_flags + compat_cflags,
     link_args : fuzz_flags,
 )
@@ -49,7 +49,7 @@ fuzz_y4m_input = executable('fuzz_y4m_input',
 # compile time and lets the fuzzer vary only the frame body bytes.
 fuzz_yuv_input = executable('fuzz_yuv_input',
     ['fuzz_yuv_input.c'] + fuzz_vidinput_sources,
-    include_directories : [libvmaf_inc, test_inc, include_directories('../../tools/')],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../../tools/', '../../src/')],
     c_args : fuzz_flags + compat_cflags,
     link_args : fuzz_flags,
 )
@@ -59,17 +59,15 @@ fuzz_yuv_input = executable('fuzz_yuv_input',
 # `-Wl,--wrap=exit` so the harness can intercept `usage()`'s `exit(1)`
 # via a `__wrap_exit` longjmp shim instead of terminating the fuzzer
 # process. See fuzz_cli_parse.c for the longjmp / setjmp contract.
-fuzz_cli_parse_link_target = (get_option('default_library') == 'both'
-    ? libvmaf.get_shared_lib()
-    : libvmaf)
+fuzz_cli_parse_link_target = libvmaf_public_libs
 
 fuzz_cli_parse = executable('fuzz_cli_parse',
     ['fuzz_cli_parse.c', '../../tools/cli_parse.cpp'],
     include_directories : [libvmaf_inc, test_inc, vmaf_include,
                            include_directories('../../tools/')],
     dependencies : [getopt_dependency],
-    c_args : fuzz_flags + compat_cflags,
-    cpp_args : fuzz_flags + compat_cflags,
+    c_args : fuzz_flags + compat_cflags + vmaf_public_name_args,
+    cpp_args : fuzz_flags + compat_cflags + vmaf_public_name_args,
     link_args : fuzz_flags + ['-Wl,--wrap=exit'],
     link_with : fuzz_cli_parse_link_target,
 )
@@ -94,7 +92,7 @@ fuzz_json_model = executable('fuzz_json_model',
      '../../src/log.c',
      json_model_c_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../../src')],
-    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    link_with : vmaf_test_link,
     c_args : fuzz_flags + compat_cflags,
     cpp_args : fuzz_flags,
     link_args : fuzz_flags,

@@ -27,11 +27,11 @@
  *  subsampling per pixel format (Research-0094).
  */
 
-#include <errno.h>
-#include <float.h>
-#include <stddef.h>
-#include <stdint.h>
-#include <string.h>
+#include <cerrno>
+#include <cfloat>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
@@ -52,15 +52,15 @@ extern "C" {
 #include "../../metal/kernel_template.h"
 }
 
-extern "C" {
-extern const unsigned char libvmaf_metallib_start[] __asm("section$start$__TEXT$__metallib");
-extern const unsigned char libvmaf_metallib_end[]   __asm("section$end$__TEXT$__metallib");
-}
+#include "../../metal/objc_handle.h"
+
 
 #define PSNR_NUM_PLANES 3U
 #define PSNR_BLOCK 16U
 
-typedef struct IntegerPsnrStateMetal {
+namespace {
+
+using IntegerPsnrStateMetal = struct IntegerPsnrStateMetal {
     VmafMetalKernelLifecycle lc;
     /* One exact uint64 SSE per threadgroup, per active plane. */
     VmafMetalKernelBuffer rb[PSNR_NUM_PLANES];
@@ -88,11 +88,14 @@ typedef struct IntegerPsnrStateMetal {
     bool uncapped;
 
     /* `enable_apsnr` totals across frames, published by flush(). */
-    uint64_t apsnr_sse[PSNR_NUM_PLANES];
+    VmafPsnrClipSse apsnr_sse[PSNR_NUM_PLANES];
     uint64_t apsnr_n_pixels[PSNR_NUM_PLANES];
 
     VmafDictionary *feature_name_dict;
-} IntegerPsnrStateMetal;
+};
+} // namespace
+
+namespace {
 
 /* The CPU integer_psnr.c table: same names, defaults, ranges and flags. */
 static const VmafOption options[] = {
@@ -101,35 +104,35 @@ static const VmafOption options[] = {
         .help = "enable calculation for chroma channels",
         .offset = offsetof(IntegerPsnrStateMetal, enable_chroma),
         .type = VMAF_OPT_TYPE_BOOL,
-        .default_val.b = true,
+        .default_val = {.b = true},
     },
     {
         .name = "enable_mse",
         .help = "enable MSE calculation",
         .offset = offsetof(IntegerPsnrStateMetal, enable_mse),
         .type = VMAF_OPT_TYPE_BOOL,
-        .default_val.b = false,
+        .default_val = {.b = false},
     },
     {
         .name = "enable_apsnr",
         .help = "enable APSNR calculation",
         .offset = offsetof(IntegerPsnrStateMetal, enable_apsnr),
         .type = VMAF_OPT_TYPE_BOOL,
-        .default_val.b = false,
+        .default_val = {.b = false},
     },
     {
         .name = "reduced_hbd_peak",
         .help = "reduce hbd peak value to align with scaled 8-bit content",
         .offset = offsetof(IntegerPsnrStateMetal, reduced_hbd_peak),
         .type = VMAF_OPT_TYPE_BOOL,
-        .default_val.b = false,
+        .default_val = {.b = false},
     },
     {
         .name = "min_sse",
         .help = "constrain the minimum possible sse",
         .offset = offsetof(IntegerPsnrStateMetal, min_sse),
         .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = 0.0,
+        .default_val = {.d = 0.0},
         .min = 0.0,
         .max = DBL_MAX,
     },
@@ -139,44 +142,36 @@ static const VmafOption options[] = {
                 "(an all-zero SSE still reports psnr_max)",
         .offset = offsetof(IntegerPsnrStateMetal, uncapped),
         .type = VMAF_OPT_TYPE_BOOL,
-        .default_val.b = false,
+        .default_val = {.b = false},
     },
-    {0}};
+    {.name=nullptr}};
 
-static const char *const psnr_name[PSNR_NUM_PLANES] = {"psnr_y", "psnr_cb", "psnr_cr"};
-static const char *const mse_name[PSNR_NUM_PLANES] = {"mse_y", "mse_cb", "mse_cr"};
-static const char *const apsnr_name[PSNR_NUM_PLANES] = {"apsnr_y", "apsnr_cb", "apsnr_cr"};
+const char *const psnr_name[PSNR_NUM_PLANES] = {"psnr_y", "psnr_cb", "psnr_cr"};
+const char *const mse_name[PSNR_NUM_PLANES] = {"mse_y", "mse_cb", "mse_cr"};
+const char *const apsnr_name[PSNR_NUM_PLANES] = {"apsnr_y", "apsnr_cb", "apsnr_cr"};
 
 /* Threadgroups (and SSE slots) of plane p. */
-static size_t psnr_metal_groups(const IntegerPsnrStateMetal *s, unsigned p)
+size_t psnr_metal_groups(const IntegerPsnrStateMetal *s, unsigned p)
 {
     const size_t gx = (s->width[p] + PSNR_BLOCK - 1U) / PSNR_BLOCK;
     const size_t gy = (s->height[p] + PSNR_BLOCK - 1U) / PSNR_BLOCK;
     return gx * gy;
 }
 
-static int build_pipelines(IntegerPsnrStateMetal *s, id<MTLDevice> device)
+int build_pipelines(IntegerPsnrStateMetal *s, id<MTLDevice> device)
 {
-    const size_t blob_size = (size_t)(libvmaf_metallib_end - libvmaf_metallib_start);
-    if (blob_size == 0) { return -ENODEV; }
-
-    dispatch_data_t data = dispatch_data_create(
-        libvmaf_metallib_start, blob_size,
-        dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0),
-        DISPATCH_DATA_DESTRUCTOR_DEFAULT);
-    if (data == NULL) { return -ENOMEM; }
-
+    int load_rc = 0;
+    id<MTLLibrary> const lib = vmaf_metal_library_load(device, &load_rc);
+    if (lib == nil) { return load_rc; }
     NSError *err = nil;
-    id<MTLLibrary> lib = [device newLibraryWithData:data error:&err];
-    if (lib == nil) { return -ENODEV; }
 
-    id<MTLFunction> fn8  = [lib newFunctionWithName:@"integer_psnr_kernel_8bpc"];
-    id<MTLFunction> fn16 = [lib newFunctionWithName:@"integer_psnr_kernel_16bpc"];
+    id<MTLFunction> const fn8  = [lib newFunctionWithName:@"integer_psnr_kernel_8bpc"];
+    id<MTLFunction> const fn16 = [lib newFunctionWithName:@"integer_psnr_kernel_16bpc"];
     if (fn8 == nil || fn16 == nil) { return -ENODEV; }
 
-    id<MTLComputePipelineState> pso8 =
+    id<MTLComputePipelineState> const pso8 =
         [device newComputePipelineStateWithFunction:fn8 error:&err];
-    id<MTLComputePipelineState> pso16 =
+    id<MTLComputePipelineState> const pso16 =
         [device newComputePipelineStateWithFunction:fn16 error:&err];
     if (pso8 == nil || pso16 == nil) { return -ENODEV; }
 
@@ -185,17 +180,17 @@ static int build_pipelines(IntegerPsnrStateMetal *s, id<MTLDevice> device)
     return 0;
 }
 
-static int psnr_metal_load_pipelines(IntegerPsnrStateMetal *s)
+int psnr_metal_load_pipelines(IntegerPsnrStateMetal *s)
 {
-    void *dh = vmaf_metal_context_device_handle(s->ctx);
-    if (dh == NULL) { return -ENODEV; }
+    const void *const dh = vmaf_metal_context_device_handle(s->ctx);
+    if (dh == nullptr) { return -ENODEV; }
     return build_pipelines(s, (__bridge id<MTLDevice>)dh);
 }
 
 /* Per-plane geometry, as CPU integer_psnr.c::init derives it: YUV400, and
  * enable_chroma=false on any other format, use luma only; chroma takes the
  * ceiling of the subsampled size (Research-0094). */
-static void psnr_metal_init_geometry(IntegerPsnrStateMetal *s, enum VmafPixelFormat pix_fmt,
+void psnr_metal_init_geometry(IntegerPsnrStateMetal *s, enum VmafPixelFormat pix_fmt,
                                      unsigned w, unsigned h)
 {
     s->width[0] = w;
@@ -212,14 +207,15 @@ static void psnr_metal_init_geometry(IntegerPsnrStateMetal *s, enum VmafPixelFor
 /* Peak, per-plane psnr_max and empty APSNR totals, as CPU integer_psnr.c::init
  * derives them (psnr_score.h). Inactive planes keep the default ceiling: a
  * zero plane size would turn a min_sse ceiling into -inf, and nothing reads it. */
-static void psnr_metal_init_scores(IntegerPsnrStateMetal *s, unsigned bpc)
+void psnr_metal_init_scores(IntegerPsnrStateMetal *s, unsigned bpc)
 {
     s->bpc = bpc;
     s->peak = vmaf_psnr_peak(bpc, s->reduced_hbd_peak);
     for (unsigned p = 0; p < PSNR_NUM_PLANES; p++) {
         const double min_sse = (p < s->n_planes) ? s->min_sse : 0.0;
         s->psnr_max[p] = vmaf_psnr_max(bpc, s->peak, min_sse, s->width[p], s->height[p]);
-        s->apsnr_sse[p] = 0U;
+        s->apsnr_sse[p].lo = 0u;
+        s->apsnr_sse[p].hi = 0u;
         s->apsnr_n_pixels[p] = 0U;
     }
 }
@@ -227,31 +223,31 @@ static void psnr_metal_init_scores(IntegerPsnrStateMetal *s, unsigned bpc)
 /* Tear down everything init() may have set up; every step tolerates a handle
  * that was never created, so this serves a failed init() and close(). Returns
  * the first error but releases everything. */
-static int psnr_metal_release(IntegerPsnrStateMetal *s)
+int psnr_metal_release(IntegerPsnrStateMetal *s)
 {
     int rc = vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
-    if (s->pso_16bpc != NULL) {
+    if (s->pso_16bpc != nullptr) {
         (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_16bpc;
-        s->pso_16bpc = NULL;
+        s->pso_16bpc = nullptr;
     }
-    if (s->pso_8bpc != NULL) {
+    if (s->pso_8bpc != nullptr) {
         (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_8bpc;
-        s->pso_8bpc = NULL;
+        s->pso_8bpc = nullptr;
     }
-    for (unsigned p = 0; p < PSNR_NUM_PLANES; p++) {
-        const int e = vmaf_metal_kernel_buffer_free(&s->rb[p], s->ctx);
+    for (auto & p : s->rb) {
+        const int e = vmaf_metal_kernel_buffer_free(&p, s->ctx);
         if (e != 0 && rc == 0) { rc = e; }
     }
-    if (s->feature_name_dict != NULL) {
+    if (s->feature_name_dict != nullptr) {
         const int d = vmaf_dictionary_free(&s->feature_name_dict);
         if (d != 0 && rc == 0) { rc = d; }
     }
     vmaf_metal_context_destroy(s->ctx);
-    s->ctx = NULL;
+    s->ctx = nullptr;
     return rc;
 }
 
-static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
+int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
                           unsigned bpc, unsigned w, unsigned h)
 {
     IntegerPsnrStateMetal *s = (IntegerPsnrStateMetal *)fex->priv;
@@ -272,7 +268,7 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
     if (err == 0) {
         s->feature_name_dict =
             vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-        if (s->feature_name_dict == NULL) { err = -ENOMEM; }
+        if (s->feature_name_dict == nullptr) { err = -ENOMEM; }
     }
     if (err != 0) {
         (void)psnr_metal_release(s);
@@ -282,11 +278,11 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
 
 /* Plane p of `pic`, packed (row pitch = width * bytes per sample), in a new
  * Shared buffer; nil when the allocation fails. */
-static id<MTLBuffer> psnr_metal_upload_plane(const IntegerPsnrStateMetal *s, id<MTLDevice> device,
+id<MTLBuffer> psnr_metal_upload_plane(const IntegerPsnrStateMetal *s, id<MTLDevice> device,
                                              const VmafPicture *pic, unsigned p)
 {
     const size_t row_bytes = (size_t)s->width[p] * (s->bpc <= 8U ? 1U : 2U);
-    id<MTLBuffer> buf = [device newBufferWithLength:row_bytes * s->height[p]
+    id<MTLBuffer> const buf = [device newBufferWithLength:row_bytes * s->height[p]
                                             options:MTLResourceStorageModeShared];
     if (buf == nil) { return nil; }
     uint8_t *dst = (uint8_t *)[buf contents];
@@ -298,17 +294,17 @@ static id<MTLBuffer> psnr_metal_upload_plane(const IntegerPsnrStateMetal *s, id<
 }
 
 /* One plane's SSE kernel; every threadgroup writes its slot of rb[p]. */
-static int dispatch_plane(IntegerPsnrStateMetal *s, id<MTLDevice> device,
+int dispatch_plane(IntegerPsnrStateMetal *s, id<MTLDevice> device,
                           id<MTLCommandQueue> queue, id<MTLComputePipelineState> pso,
                           const VmafPicture *ref_pic, const VmafPicture *dis_pic, unsigned p)
 {
-    id<MTLBuffer> ref_buf = psnr_metal_upload_plane(s, device, ref_pic, p);
-    id<MTLBuffer> dis_buf = psnr_metal_upload_plane(s, device, dis_pic, p);
+    id<MTLBuffer> const ref_buf = psnr_metal_upload_plane(s, device, ref_pic, p);
+    id<MTLBuffer> const dis_buf = psnr_metal_upload_plane(s, device, dis_pic, p);
     if (ref_buf == nil || dis_buf == nil) { return -ENOMEM; }
 
-    id<MTLCommandBuffer> cmd = [queue commandBuffer];
+    id<MTLCommandBuffer> const cmd = [queue commandBuffer];
     if (cmd == nil) { return -ENOMEM; }
-    id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
+    id<MTLComputeCommandEncoder> const enc = [cmd computeCommandEncoder];
     if (enc == nil) { return -ENOMEM; }
 
     const uint32_t row_bytes = (uint32_t)(s->width[p] * (s->bpc <= 8U ? 1U : 2U));
@@ -317,7 +313,7 @@ static int dispatch_plane(IntegerPsnrStateMetal *s, id<MTLDevice> device,
     [enc setComputePipelineState:pso];
     [enc setBuffer:ref_buf offset:0 atIndex:0];
     [enc setBuffer:dis_buf offset:0 atIndex:1];
-    [enc setBuffer:(__bridge id<MTLBuffer>)(void *)s->rb[p].buffer offset:0 atIndex:2];
+    [enc setBuffer:vmaf_metal::borrow<id<MTLBuffer>>(s->rb[p].buffer) offset:0 atIndex:2];
     [enc setBytes:strides length:sizeof(strides) atIndex:3];
     [enc setBytes:dim length:sizeof(dim) atIndex:4];
 
@@ -332,7 +328,7 @@ static int dispatch_plane(IntegerPsnrStateMetal *s, id<MTLDevice> device,
     return ([cmd status] == MTLCommandBufferStatusCompleted) ? 0 : -EIO;
 }
 
-static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
+int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
                             VmafPicture *ref_pic_90, VmafPicture *dist_pic,
                             VmafPicture *dist_pic_90, unsigned index)
 {
@@ -341,13 +337,13 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     (void)index;
     IntegerPsnrStateMetal *s = (IntegerPsnrStateMetal *)fex->priv;
 
-    void *dh = vmaf_metal_context_device_handle(s->ctx);
-    void *qh = vmaf_metal_context_queue_handle(s->ctx);
-    if (dh == NULL || qh == NULL) { return -ENODEV; }
+    const void *const dh = vmaf_metal_context_device_handle(s->ctx);
+    const void *const qh = vmaf_metal_context_queue_handle(s->ctx);
+    if (dh == nullptr || qh == nullptr) { return -ENODEV; }
 
-    id<MTLDevice> device = (__bridge id<MTLDevice>)dh;
-    id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)qh;
-    id<MTLComputePipelineState> pso = (s->bpc <= 8U)
+    id<MTLDevice> const device = (__bridge id<MTLDevice>)dh;
+    id<MTLCommandQueue> const queue = (__bridge id<MTLCommandQueue>)qh;
+    id<MTLComputePipelineState> const pso = (s->bpc <= 8U)
         ? (__bridge id<MTLComputePipelineState>)s->pso_8bpc
         : (__bridge id<MTLComputePipelineState>)s->pso_16bpc;
 
@@ -360,10 +356,10 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
 
 /* The plane's SSE: the threadgroup sums added in uint64, an exact integer
  * whatever the order, as the CPU's row sums are. */
-static int psnr_metal_plane_sse(const IntegerPsnrStateMetal *s, unsigned p, uint64_t *sse)
+int psnr_metal_plane_sse(const IntegerPsnrStateMetal *s, unsigned p, uint64_t *sse)
 {
     const uint64_t *parts = (const uint64_t *)s->rb[p].host_view;
-    if (parts == NULL) { return -EIO; }
+    if (parts == nullptr) { return -EIO; }
     const size_t n = psnr_metal_groups(s, p);
     uint64_t sum = 0U;
     for (size_t i = 0; i < n; i++) {
@@ -376,14 +372,14 @@ static int psnr_metal_plane_sse(const IntegerPsnrStateMetal *s, unsigned p, uint
 /* Score one plane in CPU order (integer_psnr.c::psnr / psnr_hbd): `psnr_*`,
  * then `mse_*` when `enable_mse` is set. `enable_apsnr` folds the SSE into
  * the clip totals that flush_fex_metal() publishes. */
-static int psnr_metal_emit_plane(IntegerPsnrStateMetal *s, unsigned p, unsigned index,
+int psnr_metal_emit_plane(IntegerPsnrStateMetal *s, unsigned p, unsigned index,
                                  VmafFeatureCollector *feature_collector)
 {
     uint64_t sse = 0U;
     int err = psnr_metal_plane_sse(s, p, &sse);
     if (err != 0) { return err; }
     if (s->enable_apsnr) {
-        s->apsnr_sse[p] += sse;
+        vmaf_psnr_clip_sse_add(&s->apsnr_sse[p], sse);
         s->apsnr_n_pixels[p] += (uint64_t)s->height[p] * s->width[p];
     }
     const double mse = ((double)sse) / (s->width[p] * s->height[p]);
@@ -398,7 +394,7 @@ static int psnr_metal_emit_plane(IntegerPsnrStateMetal *s, unsigned p, unsigned 
     return err;
 }
 
-static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
+int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
                              VmafFeatureCollector *feature_collector)
 {
     IntegerPsnrStateMetal *s = (IntegerPsnrStateMetal *)fex->priv;
@@ -413,7 +409,7 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
  * CPU integer_psnr.c::flush publishes it. libvmaf collects the last pending
  * frame of a Metal extractor before it flushes (flush_context_serial()), so
  * the totals are complete. */
-static int flush_fex_metal(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector)
+int flush_fex_metal(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector)
 {
     const IntegerPsnrStateMetal *s = (const IntegerPsnrStateMetal *)fex->priv;
     int err = 0;
@@ -427,12 +423,13 @@ static int flush_fex_metal(VmafFeatureExtractor *fex, VmafFeatureCollector *feat
     return (err < 0) ? err : !err;
 }
 
-static int close_fex_metal(VmafFeatureExtractor *fex)
+int close_fex_metal(VmafFeatureExtractor *fex)
 {
     return psnr_metal_release((IntegerPsnrStateMetal *)fex->priv);
 }
 
-static const char *provided_features[] = {"psnr_y", "psnr_cb", "psnr_cr", NULL};
+static const char *provided_features[] = {"psnr_y", "psnr_cb", "psnr_cr", nullptr};
+} // namespace
 
 extern "C" {
 /* Registered via extern in feature_extractor.c's feature_extractor_list[];
@@ -443,16 +440,16 @@ extern "C" {
 VmafFeatureExtractor vmaf_fex_integer_psnr_metal = {
     .name              = "integer_psnr_metal",
     .init              = init_fex_metal,
-    .submit            = submit_fex_metal,
-    .collect           = collect_fex_metal,
     .flush             = flush_fex_metal,
     .close             = close_fex_metal,
+    .submit            = submit_fex_metal,
+    .collect           = collect_fex_metal,
     .options           = options,
     .priv_size         = sizeof(IntegerPsnrStateMetal),
-    .provided_features = provided_features,
     /* TEMPORAL like CPU integer_psnr.c: with --subsample N > 1 every frame
      * still reaches collect(), so the enable_apsnr totals cover the clip. */
     .flags             = VMAF_FEATURE_EXTRACTOR_METAL | VMAF_FEATURE_EXTRACTOR_TEMPORAL,
+    .provided_features = provided_features,
     .chars = {
         .n_dispatches_per_frame = PSNR_NUM_PLANES,
         .is_reduction_only      = true,

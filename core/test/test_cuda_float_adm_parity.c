@@ -316,8 +316,8 @@ static char *check_case(const Case *c, double tol, double *cpu_out)
 }
 
 /* The seven scores under an option's feature-name suffix, and the sums
- * `debug=true` adds. The CPU files the debug ratio `adm` without the suffix,
- * so option cases leave it out. */
+ * `debug=true` adds. The debug ratio `adm` is filed without the suffix on the
+ * CPU and on the twin (ADR-2056), so option cases end with it unsuffixed. */
 #define SCORE_KEYS(suffix)                                                                         \
     "adm2" suffix, "aim" suffix, "adm3" suffix, "adm_scale0" suffix, "adm_scale1" suffix,          \
         "adm_scale2" suffix, "adm_scale3" suffix
@@ -340,7 +340,7 @@ static const char *const DEBUG_KEYS[] = {
 #define NUM_DEBUG_KEYS (sizeof(DEBUG_KEYS) / sizeof(DEBUG_KEYS[0]))
 
 #define OPTION_KEYS(name, suffix)                                                                  \
-    static const char *const name[] = {SCORE_KEYS(suffix), SUM_KEYS(suffix)}
+    static const char *const name[] = {SCORE_KEYS(suffix), SUM_KEYS(suffix), "adm"}
 OPTION_KEYS(EGL_KEYS, "_egl_1.2");
 OPTION_KEYS(BCM_KEYS, "_bcm_1");
 OPTION_KEYS(NW_KEYS, "_nw_0");

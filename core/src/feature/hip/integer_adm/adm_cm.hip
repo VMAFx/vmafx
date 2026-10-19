@@ -427,7 +427,7 @@ __device__ __forceinline__ void
 s0_cm_accumulate(const hip_adm_dwt_band_t *ref, const hip_adm_dwt_band_t *dis,
                  const uint32_t *i_rfactor, double adm_enhn_gain_limit, int band, int y, int x,
                  int end_row, int src_stride, const int32_t (&thr)[rows_per_thread],
-                 const S0CmShifts &sh, int64_t (&accum_row)[rows_per_thread])
+                 const S0CmShifts &sh, uint64_cu (&accum_row)[rows_per_thread])
 {
     for (int row = 0; row < rows_per_thread; ++row) {
         int16_t sb = 0;
@@ -437,18 +437,19 @@ s0_cm_accumulate(const hip_adm_dwt_band_t *ref, const hip_adm_dwt_band_t *dis,
         }
         const int32_t accum_thread = adm_cm_excess_s0(int32_t(i_rfactor[blockIdx.z] * sb), thr[row],
                                                       (uint32_t)sh.shift_sub_block);
-        accum_row[row] += s0_cm_cube(accum_thread, sh);
+        accum_row[row] += (uint64_cu)s0_cm_cube(accum_thread, sh);
     }
 }
 
 /* Reduce each output row across the 32 threads of a block row, then add the
- * row total (rounded by shift_inner_accum) into the band accumulator. */
+ * row total (rounded by shift_inner_accum) into the band accumulator. Summed
+ * unsigned: a scale-0 row can pass INT64_MAX (adm_cm_round_row_total_s0()). */
 template <int rows_per_thread>
 __device__ __forceinline__ void
-s0_cm_block_reduce(const int64_t (&accum_row)[rows_per_thread], int y, int end_row,
+s0_cm_block_reduce(const uint64_cu (&accum_row)[rows_per_thread], int y, int end_row,
                    int64_t *accum_band, uint32_t shift_inner_accum, uint32_t add_shift_inner_accum)
 {
-    __shared__ int64_t s_row[4][32];
+    __shared__ uint64_cu s_row[4][32];
     for (int row = 0; row < rows_per_thread; ++row) {
         s_row[threadIdx.y][threadIdx.x] = accum_row[row];
         __syncthreads();
@@ -459,10 +460,10 @@ s0_cm_block_reduce(const int64_t (&accum_row)[rows_per_thread], int y, int end_r
             __syncthreads();
         }
         if (threadIdx.x == 0 && (y + row) < end_row) {
-            const int64_t row_total = s_row[threadIdx.y][0];
-            const int64_t shifted =
-                adm_cm_round_row_total(row_total, add_shift_inner_accum, shift_inner_accum);
-            atomicAdd((uint64_cu *)accum_band, (uint64_cu)shifted);
+            const uint64_cu row_total = s_row[threadIdx.y][0];
+            const uint64_cu shifted =
+                adm_cm_round_row_total_s0(row_total, add_shift_inner_accum, shift_inner_accum);
+            atomicAdd((uint64_cu *)accum_band, shifted);
         }
     }
 }
@@ -496,7 +497,7 @@ adm_cm_line_kernel_body(const AdmBufferHip *__restrict__ buf_ptr, int h, int w, 
 
     const S0CmShifts sh = s0_cm_shifts(ws, band2);
 
-    int64_t accum_row[rows_per_thread] = {0};
+    uint64_cu accum_row[rows_per_thread] = {0};
 
     for (int x = start_col + (int)threadIdx.x; x < end_col; x += (int)blockDim.x) {
         /* ADR-1210's asymmetric rule, as the CPU's adm_cm_thresh(): x - 1 mirrors
@@ -704,7 +705,7 @@ adm_cm_aim_line_kernel_body(const AdmBufferHip *__restrict__ buf_ptr, int h, int
     const int band = (int)blockIdx.z;
     const S0CmShifts sh = s0_cm_shifts(ws, band);
 
-    int64_t accum_row[rows_per_thread] = {0};
+    uint64_cu accum_row[rows_per_thread] = {0};
     for (int x = start_col + (int)threadIdx.x; x < end_col; x += (int)blockDim.x) {
         /* ADR-1210's asymmetric edge rule, as in the DLM kernel. */
         const int pos_x[3] = {abs(x - 1), x, min(x + 1, w - 1)};
@@ -716,8 +717,8 @@ adm_cm_aim_line_kernel_body(const AdmBufferHip *__restrict__ buf_ptr, int h, int
                                        s0_aim_signal(ref, dis, (y + row) * src_stride + x, band,
                                                      params.i_rfactor, egl) :
                                        0;
-            accum_row[row] +=
-                s0_cm_cube(adm_cm_excess_s0(signal, thr[row], (uint32_t)sh.shift_sub_block), sh);
+            accum_row[row] += (uint64_cu)s0_cm_cube(
+                adm_cm_excess_s0(signal, thr[row], (uint32_t)sh.shift_sub_block), sh);
         }
     }
     s0_cm_block_reduce<rows_per_thread>(accum_row, y, end_row, &accum_global[band],

@@ -1,6 +1,7 @@
+<!-- markdownlint-disable MD013 -->
 # ADR-0179: float_moment SIMD parity (AVX2 + NEON)
 
-- **Status**: Accepted
+- **Status**: Accepted (Superseded-in-part 2026-10-06 by [ADR-1500](1500-arm-float-moment-scalar-order.md) for the MOMENT_REL_TOL tolerance contract of the SIMD float_moment kernels)
 - **Date**: 2026-04-26
 - **Deciders**: Lusoris
 - **Tags**: simd, x86, arm64, feature-extractor, fork-local

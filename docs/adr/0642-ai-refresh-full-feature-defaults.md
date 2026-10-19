@@ -50,3 +50,12 @@ training tables to be rebuilt through `ai/scripts/combine_full_feature_parquets.
 - [ADR-0362](0362-k150k-corpus-integration.md) — existing K150K full-feature precedent.
 - Source: `req` — "i wasnt talking about chug only, we bugfixed so many things, all our ai things must be stale"
 - Source: `req` — "so all, netflix, regressors, encoders etc... everything we did so far needs updates"
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 48: `- ADR-0026 — full-feature table motivation.`: ADR-0026
+  points to an unrelated topic (0026-workspace-relocated-under-python.md:
+  "Relocate Python harness workspace under python/vmaf/").

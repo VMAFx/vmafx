@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD018 -->
 # ADR-0256: Vulkan submit-side template + fence pool + descriptor pre-alloc
 
-- Status: Accepted
+- **Status**: Accepted
 - Date: 2026-05-02
 - Tags: vulkan, perf, kernel-template
 - Supersedes: —
@@ -168,3 +168,18 @@ Risk:
 - req: user direction 2026-05-02 to bundle DEDUP-25 + VK-1 + VK-4
   into one cohesive PR to avoid cross-PR merge conflicts on the
   shared submit path.
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 20:
+  `[docs/development/vulkan-dedup-profile-2026-05-02.md](./development/vulkan-dedup-profile-2026-05-02.md)`:
+  Cited profile document does not exist on master.
+- About line 164: `Template ADR: [ADR-0221](0246-gpu-kernel-template.md)`:
+  Link text cites ADR-0221 for GPU kernel template, but ADR-0221 is changelog
+  fragment pattern; GPU kernel template is ADR-0246.
+- About line 166: `ADR-0235 v2 async pending-fence ring (import path) — left
+  unchanged by this PR.`: Cites ADR-0235 for async pending-fence ring, but
+  ADR-0235 is codec-aware FR regressor; async pending-fence ring is ADR-0251.

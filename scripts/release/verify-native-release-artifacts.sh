@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Verify that staged Linux release artifacts form a runnable ELF bundle.
 #
-# The bundle is one flat directory: the vmaf CLI next to every libvmaf chain
-# name. The CLI must find libvmaf through its own RUNPATH, exactly `$ORIGIN`,
-# so the dependency check and the version run below set no LD_LIBRARY_PATH.
+# The bundle is one flat directory: the vmaf CLI next to every name of the
+# libvmaf and libvmafx chains. The CLI must find both libraries through its
+# own RUNPATH, exactly `$ORIGIN`, so the dependency check and the version run
+# below set no LD_LIBRARY_PATH.
 #
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
@@ -46,55 +47,79 @@ done
 
 artifact_dir="$(realpath -- "$artifact_dir")"
 cli="$artifact_dir/vmaf"
-unversioned_library="$artifact_dir/libvmaf.so"
 container_provenance="$artifact_dir/container-build-provenance.txt"
 
 [[ -f "$cli" && ! -L "$cli" ]] || die "vmaf must be a regular staged file"
 [[ -x "$cli" ]] || die "vmaf is not executable: $cli"
-[[ -s "$unversioned_library" && ! -L "$unversioned_library" ]] ||
-  die "libvmaf.so must be a non-empty regular staged file"
 [[ -s "$container_provenance" && ! -L "$container_provenance" ]] ||
   die "staged container-build provenance is missing, empty, or a symlink"
 
-mapfile -t sonames < <(
-  LC_ALL=C readelf --dynamic -- "$unversioned_library" |
-    sed -n 's/.*(SONAME).*\[\([^]]*\)\].*/\1/p'
-)
-if [[ ${#sonames[@]} -ne 1 ]]; then
-  die "libvmaf.so must declare exactly one ELF SONAME"
-fi
-soname="${sonames[0]}"
-if [[ ! "$soname" =~ ^libvmaf\.so\.(0|[1-9][0-9]*)$ ]]; then
-  die "unexpected libvmaf SONAME: $soname"
-fi
-soname_library="$artifact_dir/$soname"
-[[ -s "$soname_library" && ! -L "$soname_library" ]] ||
-  die "staged SONAME file is missing, empty, or a symlink: $soname"
+# verify_chain NAME: NAME.so, its one SONAME NAME.so.MAJOR and the real name
+# NAME.so.MAJOR.MINOR.PATCH are staged as non-empty regular files with
+# identical bytes. Leaves the SONAME in $chain_soname and its staged path in
+# $chain_soname_library. The bundle carries two chains since the library split
+# (ADR-2094): the compat libvmaf.so.3 and libvmafx.so.1, which the CLI and
+# libvmaf.so.3 both need.
+verify_chain() {
+  local name="$1"
+  local unversioned_library="$artifact_dir/$name.so"
+  [[ -s "$unversioned_library" && ! -L "$unversioned_library" ]] ||
+    die "$name.so must be a non-empty regular staged file"
 
-shopt -s nullglob
-realname_candidates=("$artifact_dir"/libvmaf.so.*.*.*)
-shopt -u nullglob
-realname_libraries=()
-for candidate in "${realname_candidates[@]}"; do
-  candidate_name="$(basename -- "$candidate")"
-  if [[ "$candidate_name" =~ ^libvmaf\.so\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
-    realname_libraries+=("$candidate")
+  local -a sonames
+  mapfile -t sonames < <(
+    LC_ALL=C readelf --dynamic -- "$unversioned_library" |
+      sed -n 's/.*(SONAME).*\[\([^]]*\)\].*/\1/p'
+  )
+  if [[ ${#sonames[@]} -ne 1 ]]; then
+    die "$name.so must declare exactly one ELF SONAME"
   fi
-done
-if [[ ${#realname_libraries[@]} -ne 1 ]]; then
-  die "expected exactly one staged libvmaf.so.ABI_MAJOR.ABI_MINOR.ABI_PATCH real name"
-fi
-realname_library="${realname_libraries[0]}"
-[[ -s "$realname_library" && ! -L "$realname_library" ]] ||
-  die "staged libvmaf real-name file is empty or a symlink"
+  local soname="${sonames[0]}"
+  if [[ ! "$soname" =~ ^${name}\.so\.(0|[1-9][0-9]*)$ ]]; then
+    die "unexpected $name SONAME: $soname"
+  fi
+  local soname_library="$artifact_dir/$soname"
+  [[ -s "$soname_library" && ! -L "$soname_library" ]] ||
+    die "staged SONAME file is missing, empty, or a symlink: $soname"
 
-reference_hash="$(sha256sum -- "$unversioned_library" | cut -d' ' -f1)"
-for library in "$soname_library" "$realname_library"; do
-  library_hash="$(sha256sum -- "$library" | cut -d' ' -f1)"
-  if [[ "$library_hash" != "$reference_hash" ]]; then
-    die "staged libvmaf link-chain names do not contain identical bytes"
+  local -a realname_candidates realname_libraries=()
+  shopt -s nullglob
+  realname_candidates=("$artifact_dir/$name".so.*.*.*)
+  shopt -u nullglob
+  local candidate candidate_name
+  for candidate in "${realname_candidates[@]}"; do
+    candidate_name="$(basename -- "$candidate")"
+    if [[ "$candidate_name" =~ ^${name}\.so\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+      realname_libraries+=("$candidate")
+    fi
+  done
+  if [[ ${#realname_libraries[@]} -ne 1 ]]; then
+    die "expected exactly one staged $name.so.ABI_MAJOR.ABI_MINOR.ABI_PATCH real name"
   fi
-done
+  local realname_library="${realname_libraries[0]}"
+  [[ -s "$realname_library" && ! -L "$realname_library" ]] ||
+    die "staged $name real-name file is empty or a symlink"
+
+  local reference_hash library library_hash
+  reference_hash="$(sha256sum -- "$unversioned_library" | cut -d' ' -f1)"
+  for library in "$soname_library" "$realname_library"; do
+    library_hash="$(sha256sum -- "$library" | cut -d' ' -f1)"
+    if [[ "$library_hash" != "$reference_hash" ]]; then
+      die "staged $name link-chain names do not contain identical bytes"
+    fi
+  done
+  chain_soname="$soname"
+  chain_soname_library="$soname_library"
+}
+
+chain_soname=''
+chain_soname_library=''
+verify_chain libvmaf
+soname="$chain_soname"
+soname_library="$chain_soname_library"
+verify_chain libvmafx
+engine_soname="$chain_soname"
+engine_soname_library="$chain_soname_library"
 
 if ! cli_dynamic="$(readelf --dynamic -- "$cli")"; then
   die "cannot read the ELF dynamic section of vmaf"
@@ -103,14 +128,16 @@ mapfile -t needed_libraries < <(
   printf '%s\n' "$cli_dynamic" |
     sed -n 's/.*(NEEDED).*\[\([^]]*\)\].*/\1/p'
 )
-soname_needed=false
-for needed_library in "${needed_libraries[@]}"; do
-  if [[ "$needed_library" == "$soname" ]]; then
-    soname_needed=true
-    break
-  fi
+for required_soname in "$soname" "$engine_soname"; do
+  soname_needed=false
+  for needed_library in "${needed_libraries[@]}"; do
+    if [[ "$needed_library" == "$required_soname" ]]; then
+      soname_needed=true
+      break
+    fi
+  done
+  [[ "$soname_needed" == true ]] || die "vmaf does not declare $required_soname as a dependency"
 done
-[[ "$soname_needed" == true ]] || die "vmaf does not declare $soname as a dependency"
 
 # The loader searches DT_RUNPATH for the CLI's direct dependencies, so the
 # bundle needs exactly one entry, `$ORIGIN`, and no DT_RPATH (which the loader
@@ -141,18 +168,22 @@ if ! ldd_output="$(
   printf '%s\n' "$ldd_output" >&2
   die "vmaf dependency resolution failed in the clean environment"
 fi
-mapfile -t resolved_libraries < <(
-  printf '%s\n' "$ldd_output" |
-    awk -v soname="$soname" '$1 == soname && $2 == "=>" { print $3 }'
-)
-if [[ ${#resolved_libraries[@]} -ne 1 ]]; then
-  printf '%s\n' "$ldd_output" >&2
-  die "clean dependency resolution did not resolve exactly one $soname"
-fi
-resolved_library="$(realpath -- "${resolved_libraries[0]}")"
-if [[ "$resolved_library" != "$soname_library" ]]; then
-  die "$soname resolved outside the staged artifact directory: $resolved_library"
-fi
+for required_soname in "$soname" "$engine_soname"; do
+  staged_library="$soname_library"
+  [[ "$required_soname" == "$soname" ]] || staged_library="$engine_soname_library"
+  mapfile -t resolved_libraries < <(
+    printf '%s\n' "$ldd_output" |
+      awk -v soname="$required_soname" '$1 == soname && $2 == "=>" { print $3 }'
+  )
+  if [[ ${#resolved_libraries[@]} -ne 1 ]]; then
+    printf '%s\n' "$ldd_output" >&2
+    die "clean dependency resolution did not resolve exactly one $required_soname"
+  fi
+  resolved_library="$(realpath -- "${resolved_libraries[0]}")"
+  if [[ "$resolved_library" != "$staged_library" ]]; then
+    die "$required_soname resolved outside the staged artifact directory: $resolved_library"
+  fi
+done
 
 if ! version_output="$(env -i PATH=/usr/bin:/bin "$cli" --version 2>&1)"; then
   printf '%s\n' "$version_output" >&2
@@ -178,5 +209,5 @@ else
   die "staged vmaf reported '$version_output', expected '$expected_version' or '${describe_prefix}<commit>'"
 fi
 
-printf 'Verified Linux release runtime %s (%s: %s) with materialized %s chain and RUNPATH %s.\n' \
-  "$expected_version" "$reported_form" "$version_output" "$soname" "$expected_runpath"
+printf 'Verified Linux release runtime %s (%s: %s) with materialized %s and %s chains and RUNPATH %s.\n' \
+  "$expected_version" "$reported_form" "$version_output" "$soname" "$engine_soname" "$expected_runpath"

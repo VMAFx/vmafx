@@ -1,5 +1,5 @@
 project('libvmaf', ['c', 'cpp'],
-    version : '1.0.0-rc.2', # x-release-please-version
+    version : '1.0.0-rc.3', # x-release-please-version
     default_options : [
                        'warning_level=2',
                        'buildtype=release',
@@ -40,6 +40,11 @@ vmaf_api_version_array    = vmaf_soname_version.split('.')
 vmaf_api_version_major    = vmaf_api_version_array[0]
 vmaf_api_version_minor    = vmaf_api_version_array[1]
 vmaf_api_version_revision = vmaf_api_version_array[2]
+# libvmafx.so.1 (ADR-1852 decision D2, RC4 WP6): the engine and the VMAFx API,
+# its own number line; the ABI 1.0.0 freezes at the v1.0.0 tag. libvmaf.so.3
+# above is the libvmaf compat library linked against it.
+vmafx_soname_version      = '1.0.0'
+vmafx_soversion           = '1'
 
 libvmaf_src_root = meson.current_source_dir()
 cc = meson.get_compiler('c')
@@ -57,11 +62,17 @@ if not cxx.compiles(cxx_std_probe, name: 'std::expected in selected C++ standard
 endif
 
 # Platform feature macros used by individual compiler checks below. Meson's
-# MSVC-like C compiler backend validates c_std but currently emits no
-# corresponding /std flag, so keep that platform spelling narrowly scoped to
-# that backend, feature probes included; non-MSVC compilers use Meson's
-# built-in c_std/cpp_std options exclusively.
+# MSVC-like C compiler backend stops at /std:c17, so keep the newest-C
+# spelling narrowly scoped to that backend, feature probes included;
+# non-MSVC compilers use Meson's built-in c_std/cpp_std options exclusively.
+# On cl.exe configure with -Dc_std=none: Meson then emits no /std flag of its
+# own and cl does not print D9025 ("overriding /std:c17 with /std:clatest") for
+# every C translation unit. The Windows CI legs do.
 test_args = []
+# The math-constant define of the host (Windows only, below). Project
+# arguments do not reach the SYCL translation units, which icpx compiles in
+# custom targets: core/src/meson.build adds this list to their command lines.
+vmaf_math_constant_args = []
 if cc.get_argument_syntax() == 'msvc'
     add_project_arguments('/std:clatest', language: 'c')
     test_args += '/std:clatest'
@@ -72,6 +83,16 @@ if host_machine.system() == 'linux'
 elif host_machine.system() == 'darwin'
     test_args += '-D_DARWIN_C_SOURCE'
     add_project_arguments('-D_DARWIN_C_SOURCE', language: ['c', 'cpp'])
+elif host_machine.system() == 'windows'
+    # M_PI, M_E and the other math constants (Netflix/vmaf 4e150067b). The MSVC
+    # C runtime defines them only under _USE_MATH_DEFINES, and MinGW-w64's
+    # <math.h> hides them under __STRICT_ANSI__ (set by -std=c23) unless it is
+    # defined. On the command line it precedes every <math.h> include, so no
+    # translation unit keeps a copy of the constants. Linux takes them from
+    # _GNU_SOURCE, macOS from _DARWIN_C_SOURCE.
+    vmaf_math_constant_args = ['-D_USE_MATH_DEFINES']
+    test_args += vmaf_math_constant_args
+    add_project_arguments(vmaf_math_constant_args, language: ['c', 'cpp'])
 endif
 
 # Header checks

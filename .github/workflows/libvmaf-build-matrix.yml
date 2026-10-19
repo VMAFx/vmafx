@@ -10,16 +10,10 @@ on:
     # ADR-0331 — `ready_for_review` lets the per-job draft gate fire
     # CI when a draft PR is promoted to ready-for-review.
     types: [opened, synchronize, reopened, ready_for_review]
-    # ADR-0341 / Research-0089 §3.2: skip the full 18-cell build matrix
-    # when only documentation paths change. The Required Checks
-    # Aggregator (ADR-0313) treats "workflow not reported" as
-    # path-filter-skipped/acceptable, so paths-ignore at the trigger
-    # level does NOT break branch protection. Mirrors the path-filter
-    # structure introduced in ADR-0317 on docker-image.yml and
-    # ffmpeg-integration.yml. Conservative deny-list — anything not
-    # listed here (core/, meson.build, meson_options.txt,
-    # subprojects/, python/, ai/, mcp-server/, model/, testdata/,
-    # .github/workflows/, ...) still fires the matrix.
+    # No trigger-level paths-ignore: every required job of this workflow
+    # must report on every pull request (ADR-3293), and each job selects
+    # its own work through the CI tier and the impact planner (ADR-2169,
+    # ADR-1140). ADR-0341's docs-only paths-ignore no longer exists.
   workflow_dispatch:
 
 permissions:
@@ -28,16 +22,54 @@ permissions:
 # Ported from the now-deleted windows.yml (ADR-0115). Cancels superseded
 # runs on the same ref so a force-push doesn't queue duplicate matrix runs.
 concurrency:
-  group: libvmaf-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: libvmaf-${{ github.workflow }}-${{ github.ref == 'refs/heads/master' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
 
 env:
   DEBIAN_FRONTEND: noninteractive
 
 jobs:
+  tier:
+    name: CI tier (Builds)
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/ci-tier.yml
+
+  # ADR-3279: plans whether a light-tier pull request owes the Windows MSVC+SYCL
+  # leg of `windows-gpu-build` (selector `windows_msvc_sycl` of
+  # .github/ci-impact.json: C, C++ and Meson files under core/, and the leg's
+  # own inputs).
+  impact:
+    needs: tier
+    if: needs.tier.outputs.light == 'true'
+    name: Plan MSVC leg impact
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      msvc-sycl: ${{ steps.impact.outputs.windows_msvc_sycl }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Plan CI impact (ADR-1140)
+        id: impact
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python3 scripts/ci/plan-ci-impact.py --event "$EVENT_NAME" \
+            --base "$BASE_SHA" --head "$HEAD_SHA" --github-output "$GITHUB_OUTPUT"
+
   # ===== Linux / macOS / ARM builds =====
   libvmaf-build:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    needs: tier
+    if: needs.tier.outputs.light == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -48,26 +80,34 @@ jobs:
           # `+DNN` siblings were gated, so the plain gcc/clang/ARM/static legs
           # could be red while the merge button stayed green.
           # required-aggregator
-          - os: ubuntu-latest
+          - os: ubuntu-26.04
             CC: ccache gcc-14
             CXX: ccache g++-14
+            werror: true
             name: Ubuntu gcc
+            tier: full
           # required-aggregator
-          - os: ubuntu-latest
+          - os: ubuntu-26.04
             CC: ccache clang-22
             CXX: ccache clang++-22
+            werror: true
             name: Ubuntu clang
+            tier: full
           # required-aggregator
           - os: macos-latest
             CC: ccache clang
             CXX: ccache clang++
             meson_extra: -Denable_metal=disabled
+            werror: true
             name: macOS clang
+            tier: full
           # required-aggregator
           - os: ubuntu-26.04-arm
             CC: ccache clang-22
             CXX: ccache clang++-22
+            werror: true
             name: Ubuntu ARM clang
+            tier: full
 
           # --- DNN-enabled builds (ADR-0120) ---
           # Build with -Denable_dnn=enabled across compiler/OS combinations
@@ -82,26 +122,32 @@ jobs:
           # acted on that claim. A Homebrew ORT bump that breaks ABI is a
           # supply-chain pinning problem, not a reason the leg cannot gate.
           # required-aggregator
-          - os: ubuntu-latest
+          - os: ubuntu-26.04
             CC: ccache gcc-14
             CXX: ccache g++-14
             dnn: true
             meson_extra: -Denable_dnn=enabled
+            werror: true
             name: Ubuntu gcc+DNN
+            tier: light
           # required-aggregator
-          - os: ubuntu-latest
+          - os: ubuntu-26.04
             CC: ccache clang-22
             CXX: ccache clang++-22
             dnn: true
             meson_extra: -Denable_dnn=enabled
+            werror: true
             name: Ubuntu clang+DNN
+            tier: light
           # required-aggregator
           - os: macos-latest
             CC: ccache clang
             CXX: ccache clang++
             dnn: true
             meson_extra: -Denable_dnn=enabled -Denable_metal=disabled
+            werror: true
             name: macOS clang+DNN
+            tier: full
 
           # --- Vulkan backend removed (ADR-0726) ---
           # The Vulkan backend was removed in ADR-0726; the Ubuntu Vulkan
@@ -121,40 +167,45 @@ jobs:
           # Vulkan-on-lavapipe-less-CI pattern from ADR-0175). See
           # ADR-0212 §"Status update 2026-05-09: CI lane enabled".
           # required-aggregator
-          - os: ubuntu-latest
+          - os: ubuntu-26.04
             CC: ccache gcc-14
             CXX: ccache g++-14
             hip: true
             meson_extra: -Denable_hip=true
+            werror: true
             name: Ubuntu HIP
+            tier: full
 
-          # --- Metal T8-1 scaffold (ADR-0361) ---
-          # Stub-only build — every Metal entry point returns -ENOSYS
-          # until the runtime PR (T8-1b) lands. macos-latest ships the
-          # Metal SDK as part of the system framework set
-          # (`/System/Library/Frameworks/Metal.framework` is guaranteed
-          # to exist), so the scaffold's
+          # --- Metal backend (ADR-0361 scaffold, ADR-0420 runtime) ---
+          # Builds the Metal runtime and every `.metal` kernel with
+          # `-Denable_metal=enabled`. macos-latest ships the Metal SDK as part
+          # of the system framework set (`/System/Library/Frameworks/
+          # Metal.framework` is guaranteed to exist), so the
           # `dependency('Metal', required: false)` /
-          # `dependency('MetalKit', required: false)` probes resolve
-          # cleanly. The smoke test runs (no real GPU work needed —
-          # every assertion checks the -ENOSYS / -EINVAL contract).
+          # `dependency('MetalKit', required: false)` probes resolve. A hosted
+          # runner has no GPU worth scoring on: the tests that need a device
+          # skip, the rest check the -ENOSYS / -EINVAL / -ENODEV contracts.
           # Apple Silicon (M1+ / GPU Family Apple 7+) is the runtime
-          # target; the scaffold lane builds on whichever macos-latest
-          # arch GitHub provides today (Apple Silicon as of 2026).
+          # target; the lane builds on whichever macos-latest arch GitHub
+          # provides today (Apple Silicon as of 2026).
           # required-aggregator
           - os: macos-latest
             CC: ccache clang
             CXX: ccache clang++
             meson_extra: -Denable_metal=enabled
+            werror: true
             name: macOS Metal
+            tier: full
 
           # --- Static library builds ---
           # required-aggregator
-          - os: ubuntu-latest
+          - os: ubuntu-26.04
             CC: ccache gcc-14
             CXX: ccache g++-14
             meson_extra: --default-library static
+            werror: true
             name: Ubuntu gcc static
+            tier: full
           # T7-CI-DEDUP — `Build — Ubuntu SYCL Static` removed. The
           # dynamic-link `Build — Ubuntu SYCL` lane below already
           # proves the icx / icpx + meson contract for the SYCL
@@ -164,43 +215,51 @@ jobs:
           # CUDA Static lane stays because it exercises a distinct
           # NVCC-static interaction not covered by the dynamic build.
           # required-aggregator
-          - os: ubuntu-latest
+          - os: ubuntu-26.04
             CC: ccache gcc-14
             CXX: ccache g++-14
             cuda: true
             meson_extra: --default-library static -Denable_cuda=true -Denable_nvcc=true
+            werror: true
             name: Ubuntu CUDA static
+            tier: full
 
           # --- SYCL build (icpx for both host + SYCL sources so the device
           #     image is registered at the .so link step; see post-T7-8
           #     SYCL revival in core/src/meson.build) ---
           # required-aggregator
-          - os: ubuntu-latest
+          - os: ubuntu-26.04
             CC: icx
             CXX: icpx
             sycl: true
             meson_extra: -Denable_sycl=true -Db_lto=false
+            werror: true
             name: Ubuntu SYCL
+            tier: full
 
           # --- CUDA build (gcc + nvcc) ---
           # required-aggregator
-          - os: ubuntu-latest
+          - os: ubuntu-26.04
             CC: ccache gcc-14
             CXX: ccache g++-14
             cuda: true
             meson_extra: -Denable_cuda=true -Denable_nvcc=true
+            werror: true
             name: Ubuntu CUDA
+            tier: full
 
           # --- SYCL + CUDA combined (icpx host so SYCL link works; nvcc
           #     handles the CUDA TUs separately via -Denable_nvcc=true) ---
           # required-aggregator
-          - os: ubuntu-latest
+          - os: ubuntu-26.04
             CC: icx
             CXX: icpx
             sycl: true
             cuda: true
             meson_extra: -Denable_sycl=true -Denable_cuda=true -Denable_nvcc=true -Db_lto=false
+            werror: true
             name: Ubuntu SYCL+CUDA
+            tier: full
 
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
@@ -214,9 +273,29 @@ jobs:
       CC: ${{ matrix.CC }}
       CXX: ${{ matrix.CXX }}
     steps:
+      # ADR-2169 — the tier owes this leg or not. A leg of the full tier on a
+      # light-tier pull request does no work (it runs on the master push and on
+      # a `ci: full` pull request); the leg stays a job because a matrix cannot
+      # be filtered per leg at job level, but it costs one short step.
+      - name: Decide whether this leg runs in the tier (ADR-2169)
+        id: leg
+        env:
+          LEG_TIER: ${{ matrix.tier }}
+          TIER_FULL: ${{ needs.tier.outputs.full }}
+        run: |
+          if [ "$LEG_TIER" = light ] || [ "$TIER_FULL" = true ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::full-tier leg not run on this pull request (ADR-2169): it runs on the master push; add the label 'ci: full' to run it here"
+          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
-          fetch-depth: 0
+          # A leg the tier does not owe takes a shallow checkout and stops there.
+          # A leg that runs needs the tags: `git describe` names the version
+          # `vmaf -v` prints (core/include/meson.build). Not `run && 0 || 1`:
+          # 0 is falsy in an expression, so that form always gave 1.
+          fetch-depth: ${{ steps.leg.outputs.run != 'true' && 1 || 0 }}
 
       # ---------- ccache persistence (Research-0089 §3.1) ----------
       # Linux + macOS build legs all wrap their host compiler in `ccache`
@@ -237,6 +316,7 @@ jobs:
       # — "C++ - ccache" example.
       - name: Plan CI impact (ADR-1140)
         id: impact
+        if: steps.leg.outputs.run == 'true'
         env:
           EVENT_NAME: ${{ github.event_name }}
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
@@ -245,7 +325,7 @@ jobs:
           python3 scripts/ci/plan-ci-impact.py --event "$EVENT_NAME" \
             --base "$BASE_SHA" --head "$HEAD_SHA" --github-output "$GITHUB_OUTPUT"
       - name: Not impacted — libvmaf build leg skipped by plan
-        if: steps.impact.outputs.c_core != 'true'
+        if: steps.leg.outputs.run == 'true' && steps.impact.outputs.c_core != 'true'
         env:
           MODE: ${{ steps.impact.outputs.mode }}
           REASON: ${{ steps.impact.outputs.reason }}
@@ -331,6 +411,7 @@ jobs:
         if: ${{ (matrix.dnn && startsWith(matrix.os, 'ubuntu')) && steps.impact.outputs.c_core == 'true' }}
         env:
           ORT_VERSION: "1.22.0"
+          ORT_SHA256: "8344d55f93d5bc5021ce342db50f62079daf39aaafb5d311a451846228be49b3"
         run: |
           set -euo pipefail
           ort_name="onnxruntime-linux-x64-${ORT_VERSION}.tgz"
@@ -339,6 +420,8 @@ jobs:
           curl -fSL --retry 5 --retry-delay 5 --retry-all-errors --remove-on-error \
             --output "${ort_archive}" \
             "${ort_url}"
+          printf '%s  %s\n' "${ORT_SHA256}" "${ort_archive}" \
+            | sha256sum --check --strict
           sudo tar -xzf "${ort_archive}" -C /opt/
           sudo ln -sfn "/opt/onnxruntime-linux-x64-${ORT_VERSION}" /opt/onnxruntime
           sudo install -d /usr/local/lib/pkgconfig
@@ -413,7 +496,8 @@ jobs:
           set -a; . ./build-config.env; set +a
           git clone --depth=1 --branch "v${LEVEL_ZERO_VERSION}" \
             https://github.com/oneapi-src/level-zero.git /tmp/level-zero
-          cmake -S /tmp/level-zero -B /tmp/level-zero/build -DCMAKE_INSTALL_PREFIX=/usr
+          cmake -S /tmp/level-zero -B /tmp/level-zero/build -DCMAKE_INSTALL_PREFIX=/usr \
+            -DCMAKE_COMPILE_WARNING_AS_ERROR=ON
           cmake --build /tmp/level-zero/build -j"$(nproc)"
           sudo cmake --install /tmp/level-zero/build
           rm -rf /tmp/level-zero
@@ -446,8 +530,8 @@ jobs:
       - name: Install nv-codec-headers
         if: ${{ (matrix.cuda) && steps.impact.outputs.c_core == 'true' }}
         run: |
-          git clone --depth=1 https://code.ffmpeg.org/FFmpeg/nv-codec-headers
-          cd nv-codec-headers && sudo make install && cd .. && rm -rf nv-codec-headers
+          bash scripts/ci/fetch-nv-codec-headers.sh "$RUNNER_TEMP/nv-codec-headers"
+          sudo make -C "$RUNNER_TEMP/nv-codec-headers" install
 
       - name: Install base deps for CUDA-only builds
         if: ${{ (matrix.cuda && !matrix.sycl) && steps.impact.outputs.c_core == 'true' }}
@@ -456,16 +540,16 @@ jobs:
           sudo -E apt-get -yq install ccache ninja-build nasm gcc g++
 
       # ---------- ROCm / HIP toolchain (T7-10b) ----------
-      # ROCm 10.0.0 has no apt channel. Since ROCm 7.14 AMD builds and
+      # ROCm 10 has no apt channel. Since ROCm 7.14 AMD builds and
       # releases through "TheRock"; repo.radeon.com/rocm/apt/ tops out at
-      # 7.2.4 (its own `latest` resolves there, and apt/7.14 and apt/10.0.0
-      # both 404), the manylinux channel stops at rocm-rel-7.2.4, and the
-      # TheRock wheel index carries only 7.14.0 alphas. The official
-      # container image is the only stable, digest-pinnable ROCm 10.0.0
-      # artifact -- see ADR-1225.
+      # 7.2.4 (its own `latest` resolves there, and apt/7.14, apt/10.0.0
+      # and apt/10.1.0 all 404), the manylinux channel stops at
+      # rocm-rel-7.2.4, and the TheRock wheel index carries only 7.14.0
+      # alphas. The official container image is the only stable,
+      # digest-pinnable ROCm 10 artifact -- see ADR-1225.
       #
-      # `docker pull` is not viable here: the image is 8.2 GB compressed /
-      # 29 GB extracted and this leg already carries the CUDA toolkit and
+      # `docker pull` is not viable here: the image is 8.9 GB compressed /
+      # 31 GB extracted and this leg already carries the CUDA toolkit and
       # oneAPI on the same runner. `install-rocm-from-image.sh` instead
       # streams each layer blob from the registry straight into tar,
       # extracting only /opt/rocm and skipping the math libraries libvmaf
@@ -523,10 +607,14 @@ jobs:
           if [ "${{ matrix.sycl }}" = "true" ]; then
             source /opt/intel/oneapi/setvars.sh
           fi
+          # ADR-2170: a leg that prints no warnings (`werror: true` in its row) makes them errors.
+          # shellcheck disable=SC2046  # the helper prints one option per line, split on purpose
           meson setup core core/build --buildtype release \
             --prefix "$PWD/install" \
             -Denable_float=true \
-            ${{ matrix.meson_extra }}
+            ${{ matrix.meson_extra }} \
+            -Dwerror=true \
+            $(scripts/ci/werror-args.sh "${{ matrix.werror }}")
 
       - name: Build libvmaf
         if: steps.impact.outputs.c_core == 'true'
@@ -548,7 +636,17 @@ jobs:
       # Verify pkgconfig for static linking
       - name: Verify static pkgconfig
         if: ${{ (contains(matrix.meson_extra, 'static')) && steps.impact.outputs.c_core == 'true' }}
+        env:
+          # ADR-2828: both static rows build with this compiler. Naming it here
+          # lets the build-warnings gate read the smoke compile; the first
+          # command fails when a row's compiler stops agreeing.
+          CC: ccache gcc-14
+          ROW_CC: ${{ matrix.CC }}
         run: |
+          if [ "$ROW_CC" != "$CC" ]; then
+            echo "::error::static row builds with '$ROW_CC'; update CC of this step to match"
+            exit 1
+          fi
           export PKG_CONFIG_PATH=$PWD/install/lib/pkgconfig:$PWD/install/lib/x86_64-linux-gnu/pkgconfig
           echo "=== libvmaf.pc ==="
           cat "$PWD/install/lib/pkgconfig/libvmaf.pc" || cat "$PWD/install/lib/x86_64-linux-gnu/pkgconfig/libvmaf.pc"
@@ -588,7 +686,7 @@ jobs:
           # rather than relying on unquoted word splitting.
           read -ra pc_cflags <<< "$(pkg-config --cflags libvmaf)"
           read -ra pc_libs <<< "$(pkg-config --static --libs libvmaf)"
-          ${CC:-cc} /tmp/pc_static_smoke.c "${pc_cflags[@]}" "${pc_libs[@]}" \
+          $CC -Wall -Wextra -Werror /tmp/pc_static_smoke.c "${pc_cflags[@]}" "${pc_libs[@]}" \
              -o /tmp/pc_static_smoke
           echo "static link OK"
 
@@ -607,6 +705,13 @@ jobs:
           sudo "$(command -v python3)" scripts/ci/run_meson_test.py
           --meson-executable "$(command -v meson)" --
           -C core/build --suite=dnn --print-errorlogs
+
+      - name: Prefetch Go modules for the suite
+        if: ${{ (!matrix.sycl && !matrix.cuda && !matrix.hip) && steps.impact.outputs.c_core == 'true' }}
+        # The suite's Go-running tests find their modules in the cache: the
+        # download happens here, retried, and fails here when it cannot succeed
+        # (scripts/ci/prefetch_go_modules.py, as the user the suite runs as).
+        run: sudo "$(command -v python3)" scripts/ci/prefetch_go_modules.py
 
       # CPU-only: full test suite + tox.
       - name: Run tests
@@ -672,8 +777,12 @@ jobs:
         # never repaired and the test fails with "no frames decoded". The
         # success()-gated save below stops new poisoning; this heals caches
         # already poisoned, which otherwise need a manual cache deletion.
+        # --restore-tracked: the cache also carries the files git tracks under
+        # python/test/resource in the revision of the run that saved it; a
+        # restore-keys hit writes them over this checkout, so they are put
+        # back to the commit's (T-CI-FIXTURE-CACHE-STALE-TRACKED-2026-10-06).
         if: ${{ ((startsWith(matrix.os, 'ubuntu') && !matrix.sycl && !matrix.cuda && !matrix.hip) || matrix.os == 'macos-latest') && steps.impact.outputs.c_core == 'true' }}
-        run: bash scripts/ci/prune-corrupt-fixtures.sh python/test/resource
+        run: bash scripts/ci/prune-corrupt-fixtures.sh --restore-tracked python/test/resource
 
       - name: Run tox tests (ubuntu)
         if: ${{ (startsWith(matrix.os, 'ubuntu') && !matrix.sycl && !matrix.cuda && !matrix.hip) && steps.impact.outputs.c_core == 'true' }}
@@ -738,7 +847,7 @@ jobs:
       # ---------- Artifacts ----------
       - name: Upload vmaf binary
         if: ${{ (!contains(matrix.meson_extra, 'static')) && steps.impact.outputs.c_core == 'true' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: ${{ matrix.name }}-vmaf
           path: ./install/bin/vmaf
@@ -752,7 +861,8 @@ jobs:
   # Job key renamed `build` → `windows` and display name set to Title Case
   # per ADR-0116. Migrated from deprecated MINGW64 to UCRT64 (ADR-1387).
   windows:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    needs: tier
+    if: needs.tier.outputs.full == 'true'
     name: ${{ matrix.name }}
     runs-on: windows-2025
     timeout-minutes: 45
@@ -797,6 +907,8 @@ jobs:
             ${{ matrix.MINGW_PACKAGE_PREFIX }}-gcc
             ${{ matrix.MINGW_PACKAGE_PREFIX }}-meson
             ${{ matrix.MINGW_PACKAGE_PREFIX }}-ninja
+            ${{ matrix.MINGW_PACKAGE_PREFIX }}-python
+            ${{ matrix.MINGW_PACKAGE_PREFIX }}-python-yaml
             vim make diffutils
           update: true
           path-type: inherit
@@ -806,9 +918,13 @@ jobs:
 
       - name: Configure vmaf
         run: |
+          # ADR-2170: this leg prints no warnings, so they are errors.
+          # shellcheck disable=SC2046  # the helper prints one option per line, split on purpose
           meson setup core core/build --buildtype release \
             --default-library static --prefix "$MINGW_PREFIX" \
-            -Denable_cuda=false -Denable_sycl=false -Denable_float=true
+            -Denable_cuda=false -Denable_sycl=false -Denable_float=true \
+            -Dwerror=true \
+            $(bash scripts/ci/werror-args.sh true)
 
       - name: Build vmaf
         run: meson install -C core/build
@@ -822,6 +938,12 @@ jobs:
       # execute here. This reads the emitted code instead of running it.
       - name: Check Win64 stack alignment
         run: python3 scripts/ci/check-win64-stack-alignment.py core/build
+
+      - name: Prefetch Go modules for the suite
+        # The suite's Go-running tests find their modules in the cache: the
+        # download happens here, retried, and fails here when it cannot succeed
+        # (scripts/ci/prefetch_go_modules.py, as the user the suite runs as).
+        run: python3 scripts/ci/prefetch_go_modules.py
 
       - name: Test vmaf
         # --print-errorlogs surfaces the failing test's stdout/stderr
@@ -842,7 +964,7 @@ jobs:
           echo "path=$(cygpath -m "$PWD/artifact/vmaf.exe")" >> "$GITHUB_OUTPUT"
 
       - name: Upload vmaf.exe artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: ${{ matrix.msystem }}-vmaf
           path: ${{ steps.stage.outputs.path }}
@@ -873,14 +995,19 @@ jobs:
   # `intel-oneapi-basekit` (not on the community feed); neither
   # works on `windows-2025`. Pinned to oneAPI 2025.3.0.372 to
   # lag the Linux SYCL leg, which now follows ONEAPI_APT_PACKAGE.
-  # Both legs additionally inject `/experimental:c11atomics` into
+  # The CUDA leg additionally injects `/experimental:c11atomics` into
   # `CFLAGS` / `CXXFLAGS` because libvmaf uses C11 atomics that
-  # MSVC's `<stdatomic.h>` refuses without that flag.
+  # MSVC's `<stdatomic.h>` refuses without that flag; icx-cl (SYCL leg)
+  # uses its own `<stdatomic.h>` and does not take it.
   #
   # The two job names are pinned to required status checks on master
   # immediately after merge (see ADR-0121 §Consequences).
   windows-gpu-build:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    needs: [tier, impact]
+    # ADR-3279: the full tier runs both rows. On the light tier the job starts when
+    # the planner selects the SYCL row, and also when the planner itself failed
+    # (fail closed); the CUDA row then stops at its first step.
+    if: ${{ !cancelled() && (needs.tier.outputs.full == 'true' || needs.impact.result == 'failure' || (needs.impact.result == 'success' && needs.impact.outputs.msvc-sycl == 'true')) }}
     name: ${{ matrix.name }}
     runs-on: windows-2025
     timeout-minutes: 60
@@ -895,25 +1022,53 @@ jobs:
           # static` at line 387. Also lets the vmaf CLI pick the static
           # archive via core/tools/meson.build:26 without the
           # get_shared_lib() branch.
+          # ADR-2170: this leg prints no warnings, so cl.exe, link.exe and nvcc make them
+          # errors. The SYCL row (icx-cl) is not at zero yet: docs/development/ci.md.
+          # -Db_lto=false: with the project default b_lto=true every one of the
+          # about 360 test programs links with /LTCG against the /GL objects of
+          # the static libraries, 32 to 52 minutes of a 60-minute job. The
+          # Windows bundles build without LTO (build-windows-tester-bundle.py)
+          # and ADR-1172 leaves the override to CI.
           # required-aggregator
           - backend: cuda
-            meson_extra: --default-library=static -Denable_cuda=true -Denable_nvcc=true -Denable_sycl=false
+            meson_extra: --default-library=static -Denable_cuda=true -Denable_nvcc=true -Denable_sycl=false -Db_lto=false
+            tier: full
+            werror: msvc
             name: Windows MSVC+CUDA
           # required-aggregator
           - backend: sycl
             meson_extra: --default-library=static -Denable_cuda=false -Denable_sycl=true
+            tier: light
+            werror: msvc
             name: Windows MSVC+SYCL
     steps:
+      - name: Decide whether this leg runs in the tier (ADR-2169, ADR-3279)
+        id: leg
+        shell: bash
+        env:
+          LEG_TIER: ${{ matrix.tier }}
+          TIER_FULL: ${{ needs.tier.outputs.full }}
+        run: |
+          if [ "$LEG_TIER" = light ] || [ "$TIER_FULL" = true ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::full-tier leg not run on this pull request (ADR-2169): it runs on the master push; add the label 'ci: full' to run it here"
+          fi
+      # Unconditional: the checkout-ordering gate accepts no checkout behind an
+      # `if`. A row the tier does not owe stops after this shallow checkout.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 1
 
       - name: Setup python
+        if: steps.leg.outputs.run == 'true'
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: '3.14.8'
 
       - name: Install meson and ninja
+        if: steps.leg.outputs.run == 'true'
         run: python -m pip install --require-hashes -r requirements/locks/build.txt
 
       # ---------- MSVC dev environment ----------
@@ -925,6 +1080,7 @@ jobs:
       # (Node.js 24) per ADR-0635. Same vcvarsall.bat semantics;
       # no inputs required — defaults to amd64.
       - name: Setup MSVC dev environment
+        if: steps.leg.outputs.run == 'true'
         uses: TheMrMilchmann/setup-msvc-dev@368ef7d1ee4d1171b31d4a7f67f4d954f903f5a9  # v4.1.0
         with:
           arch: x64
@@ -937,12 +1093,12 @@ jobs:
       # is gone. Bumped 13.0.0 -> 13.2.0 per ADR-0603, 13.2.0 -> 13.3.1 per
       # ADR-1223; build-config.env has moved on since (Renovate-driven).
       - name: Install CUDA toolkit (windows)
-        if: matrix.backend == 'cuda'
+        if: steps.leg.outputs.run == 'true' && matrix.backend == 'cuda'
         shell: pwsh
         run: pwsh -File scripts/ci/install-cuda-toolkit.ps1
 
       - name: Install Intel oneAPI (windows)
-        if: matrix.backend == 'sycl'
+        if: steps.leg.outputs.run == 'true' && matrix.backend == 'sycl'
         shell: cmd
         env:
           WINDOWS_BASEKIT_URL: https://registrationcenter-download.intel.com/akdlm/IRC_NAS/1f18901e-877d-469d-a41a-a10f11b39336/intel-oneapi-base-toolkit-2025.3.0.372_offline.exe
@@ -958,20 +1114,20 @@ jobs:
 
       # ---------- nv-codec-headers (CUDA leg only) ----------
       # libvmaf's CUDA path includes `<ffnvcodec/dynlink_cuda.h>`
-      # (see core/src/meson.build §324). The Linux CUDA leg
-      # installs this via `git clone … && make install`. On
-      # Windows there's no `make install` story, but the package
-      # is header-only — clone, copy the `include/ffnvcodec/`
-      # tree into a known prefix, and append that prefix to the
-      # `INCLUDE` env so `cl.exe` picks it up.
+      # (see core/src/meson.build §324). Both legs fetch the commit
+      # build-config.env pins with scripts/ci/fetch-nv-codec-headers.sh.
+      # The Linux leg runs `make install`; on Windows the package is
+      # header-only, so copy `include/ffnvcodec/` into a known prefix
+      # and append that prefix to `INCLUDE` so `cl.exe` picks it up.
       - name: Install nv-codec-headers (windows)
-        if: matrix.backend == 'cuda'
-        shell: cmd
+        if: steps.leg.outputs.run == 'true' && matrix.backend == 'cuda'
+        shell: bash
         run: |
-          git clone --depth=1 https://code.ffmpeg.org/FFmpeg/nv-codec-headers nv-codec-headers
-          mkdir nvcodec-prefix\include\ffnvcodec
-          copy nv-codec-headers\include\ffnvcodec\*.h nvcodec-prefix\include\ffnvcodec\
-          echo INCLUDE=%CD%\nvcodec-prefix\include;%INCLUDE%>>%GITHUB_ENV%
+          headers="$(cygpath -u "$RUNNER_TEMP")/nv-codec-headers"
+          bash scripts/ci/fetch-nv-codec-headers.sh "$headers"
+          mkdir -p nvcodec-prefix/include
+          cp -r "$headers/include/ffnvcodec" nvcodec-prefix/include/
+          echo "INCLUDE=$(cygpath -w "$PWD/nvcodec-prefix/include");${INCLUDE-}" >> "$GITHUB_ENV"
 
       # ---------- Strip ccache from PATH (Windows) ----------
       # `windows-2025` ships `C:\Strawberry\c\bin\ccache.exe` on
@@ -982,12 +1138,23 @@ jobs:
       # meson's wrap decision). Rename the binary so meson can't
       # find it.
       - name: Disable ccache wrap (windows)
-        if: runner.os == 'Windows'
+        if: steps.leg.outputs.run == 'true' && runner.os == 'Windows'
         shell: pwsh
         run: |
           $p = 'C:\Strawberry\c\bin\ccache.exe'
           if (Test-Path $p) { Rename-Item -Path $p -NewName 'ccache.exe.disabled' }
           Write-Host "ccache binary disabled"
+
+      # ADR-2170: the configure steps run under cmd, so the one helper that turns warnings
+      # into errors runs here and hands its arguments over. A row without `werror` gets none.
+      - name: Warnings-as-errors arguments
+        if: steps.leg.outputs.run == 'true'
+        id: werror
+        shell: bash
+        run: |
+          args="$(bash scripts/ci/werror-args.sh "${{ matrix.werror }}")"
+          echo "werror arguments: ${args:-none}"
+          echo "args=${args//$'\n'/ }" >> "$GITHUB_OUTPUT"
 
       # ---------- Build ----------
       # CFLAGS/CXXFLAGS carry `/experimental:c11atomics` — without
@@ -995,16 +1162,17 @@ jobs:
       # support is not enabled" (libvmaf uses C11 atomics; meson's
       # compiler check rejects the toolchain otherwise).
       - name: Configure libvmaf (CUDA)
-        if: matrix.backend == 'cuda'
+        if: steps.leg.outputs.run == 'true' && matrix.backend == 'cuda'
         shell: cmd
         env:
           CFLAGS: /experimental:c11atomics
           CXXFLAGS: /experimental:c11atomics
         run: |
-          meson setup core core\build --buildtype release ^
+          meson setup core core\build -Dwerror=true --buildtype release ^
             --prefix %CD%\install ^
+            -Dc_std=none ^
             -Denable_float=true ^
-            ${{ matrix.meson_extra }}
+            ${{ matrix.meson_extra }} ${{ steps.werror.outputs.args }}
 
       # ---------- Level Zero loader (SYCL leg only) ----------
       # core/src/meson.build:492 calls
@@ -1018,7 +1186,7 @@ jobs:
       # quick-build recipe; pin to v1.18.5 to match the version the
       # Linux Ubuntu 26.04 runners install via apt.
       - name: Install Level Zero loader (windows)
-        if: matrix.backend == 'sycl'
+        if: steps.leg.outputs.run == 'true' && matrix.backend == 'sycl'
         shell: cmd
         run: |
           REM Level Zero pin. This leg runs under cmd and cannot source
@@ -1026,42 +1194,49 @@ jobs:
           REM and checked against the config by
           REM scripts/ci/check-base-image-single-source.sh (ADR-1231).
           git clone --depth=1 --branch v1.34.0 https://github.com/oneapi-src/level-zero level-zero-src
-          cmake -S level-zero-src -B level-zero-src\build -DCMAKE_INSTALL_PREFIX=%CD%\level-zero-prefix -DCMAKE_BUILD_TYPE=Release
+          cmake -S level-zero-src -B level-zero-src\build -DCMAKE_INSTALL_PREFIX=%CD%\level-zero-prefix -DCMAKE_BUILD_TYPE=Release -DCMAKE_COMPILE_WARNING_AS_ERROR=ON
           cmake --build level-zero-src\build --config Release --target install
           echo INCLUDE=%CD%\level-zero-prefix\include;%INCLUDE%>>%GITHUB_ENV%
           echo LIB=%CD%\level-zero-prefix\lib;%LIB%>>%GITHUB_ENV%
 
       # Pin `c++latest` because the fork's C++ sources require C++23
       # `std::expected`, while icx-cl under MSVC ABI mode advertises the
-      # Microsoft-style c++14/c++17/c++20/c++latest option set.
+      # Microsoft-style c++14/c++17/c++20/c++latest option set. No
+      # `/experimental:c11atomics` here: icx-cl compiles C11 atomics with its
+      # own <stdatomic.h> and reported the option as unused on every compile.
       - name: Configure libvmaf (SYCL)
-        if: matrix.backend == 'sycl'
+        if: steps.leg.outputs.run == 'true' && matrix.backend == 'sycl'
         shell: cmd
-        env:
-          CFLAGS: /experimental:c11atomics
-          CXXFLAGS: /experimental:c11atomics
         run: |
           call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat"
           set CC=icx-cl
           set CXX=icx-cl
-          meson setup core core\build --buildtype release ^
+          meson setup core core\build -Dwerror=true --buildtype release ^
             --prefix %CD%\install ^
             -Denable_float=true ^
             -Dcpp_std=c++latest ^
-            ${{ matrix.meson_extra }}
+            ${{ matrix.meson_extra }} ${{ steps.werror.outputs.args }}
 
       - name: Build libvmaf (CUDA)
-        if: matrix.backend == 'cuda'
+        if: steps.leg.outputs.run == 'true' && matrix.backend == 'cuda'
         shell: cmd
         run: |
           ninja -v -C core\build install
 
       - name: Build libvmaf (SYCL)
-        if: matrix.backend == 'sycl'
+        if: steps.leg.outputs.run == 'true' && matrix.backend == 'sycl'
         shell: cmd
         run: |
           call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat"
           ninja -v -C core\build install
+
+      # Q-299 (Netflix/vmaf 3b4dd350e): a static MSVC build installs vmaf.lib
+      # and vmafx.lib, the files link.exe opens for -lvmaf / -lvmafx, and the
+      # pkg-config files that name them.
+      - name: Check installed library names (MSVC)
+        if: steps.leg.outputs.run == 'true'
+        shell: cmd
+        run: python scripts\ci\check_msvc_library_names.py --prefix install --meson-log core\build\meson-logs\meson-log.txt
 
       # windows-2025 has no GPU, so no kernel runs here. Whether the linked
       # programs registered their SYCL device images needs none:
@@ -1071,7 +1246,7 @@ jobs:
       # this build-only leg stayed green. ze_loader.dll comes from the
       # Level Zero prefix built above.
       - name: Check SYCL device-image registration (SYCL leg only)
-        if: matrix.backend == 'sycl'
+        if: steps.leg.outputs.run == 'true' && matrix.backend == 'sycl'
         shell: cmd
         run: |
           call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat"
@@ -1111,7 +1286,8 @@ jobs:
   # only probed under `cpu_family().startswith('x86')` in
   # core/src/meson.build, so nothing is missing for ARM64.
   windows-arm64:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    needs: tier
+    if: needs.tier.outputs.full == 'true'
     # required-aggregator
     name: Windows ARM64 MSVC
     runs-on: windows-11-vs2026-arm
@@ -1119,7 +1295,10 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
-          fetch-depth: 1
+          # Full history: test_vmafx_api_abi_append_only and test_crd_compat of
+          # the fast suite compare with the merge base of HEAD and origin/master
+          # and skip (77) without it (scripts/ci/tests/test_meson_suite_checkout_history.py).
+          fetch-depth: 0
 
       # actions/python-versions publishes win32/arm64 builds of 3.14.7
       # (versions-manifest.json, checked 2026-09-19): same pin as the
@@ -1154,6 +1333,16 @@ jobs:
           where cl.exe
           cl.exe 2>&1 | findstr /i /C:"for ARM64"
 
+      # ADR-2170: this leg prints no warnings, so cl.exe and link.exe make
+      # them errors. The configure step runs under cmd; the helper runs here.
+      - name: Warnings-as-errors arguments
+        id: werror
+        shell: bash
+        run: |
+          args="$(bash scripts/ci/werror-args.sh msvc)"
+          echo "werror arguments: ${args:-none}"
+          echo "args=${args//$'\n'/ }" >> "$GITHUB_OUTPUT"
+
       # `/experimental:c11atomics` as on every MSVC leg (see the
       # windows-gpu-build comment). `enable_asm` stays at its default,
       # which on aarch64 means the NEON translation units.
@@ -1163,15 +1352,20 @@ jobs:
           CFLAGS: /experimental:c11atomics
           CXXFLAGS: /experimental:c11atomics
         run: |
-          meson setup core core\build --buildtype release ^
+          meson setup core core\build -Dwerror=true --buildtype release ^
             --prefix %CD%\install ^
             --default-library=static ^
+            -Dc_std=none ^
             -Denable_cuda=false -Denable_sycl=false ^
-            -Denable_float=true
+            -Denable_float=true ${{ steps.werror.outputs.args }}
 
       - name: Build libvmaf
         shell: cmd
         run: ninja -v -C core\build install
+
+      - name: Check installed library names (MSVC)
+        shell: cmd
+        run: python scripts\ci\check_msvc_library_names.py --prefix install --meson-log core\build\meson-logs\meson-log.txt
 
       # The PE header's Machine field must read 0xAA64 (ARM64). An x64
       # binary would still run here under emulation and pass the tests,
@@ -1187,6 +1381,13 @@ jobs:
           }
           "vmaf.exe machine field 0x{0:X4} (ARM64)" -f $machine
 
+      - name: Prefetch Go modules for the suite
+        # The suite's Go-running tests find their modules in the cache: the
+        # download happens here, retried, and fails here when it cannot succeed
+        # (scripts/ci/prefetch_go_modules.py, as the user the suite runs as).
+        shell: cmd
+        run: python scripts\ci\prefetch_go_modules.py
+
       # The MinGW UCRT64 lane runs the whole suite; this lane starts with
       # `fast`. --print-errorlogs mirrors that lane so a failing test's
       # output lands in the CI log instead of only in testlog.txt.
@@ -1197,7 +1398,7 @@ jobs:
           -C core\build --suite fast --print-errorlogs
 
       - name: Upload vmaf.exe artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: windows-arm64-msvc-vmaf
           path: install\bin\vmaf.exe

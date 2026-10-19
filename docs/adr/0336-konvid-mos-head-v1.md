@@ -145,3 +145,12 @@ clears the gate.
 [PR #440]: https://github.com/VMAFx/vmafx/pull/440
 [PR #447]: https://github.com/VMAFx/vmafx/pull/447
 [Research-0086]: ../research/0086-konvid-150k-corpus-feasibility.md
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 39: `([fr_regressor_v2_ensemble](fr_regressor_v2_ensemble_v1) /
+  [fr_regressor_v3](0323-fr-regressor-v3-train-and-re`: Relative link target
+  `fr_regressor_v2_ensemble_v1` does not exist on master.

@@ -50,6 +50,8 @@ set -euo pipefail
 _deliverables_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/ci/pr-body-input.sh
 . "${_deliverables_dir}/pr-body-input.sh"
+# shellcheck source=scripts/ci/pr-diff-base.sh
+. "${_deliverables_dir}/pr-diff-base.sh"
 
 if [ -n "${PR_BODY+x}" ]; then
   # Set — even to the empty string — is an answer: the caller named this
@@ -103,16 +105,19 @@ fi
 # leading backslash survives into the body, breaking the regex
 # with spurious backslash-space separators between tokens.
 tmp_body="$(mktemp)"
-trap 'rm -f "$tmp_body" "${tmp_diff:-}"' EXIT
+# render_wt is the detached worktree of a render-only pull request (2a').
+render_wt=""
+trap 'rm -f "$tmp_body" "${tmp_diff:-}"; if [ -n "$render_wt" ]; then git worktree remove --force "$render_wt" >/dev/null 2>&1; rm -rf "$render_wt"; git worktree prune >/dev/null 2>&1; fi' EXIT
 # shellcheck disable=SC1003  # the trailing \\ is a tr-recognised escape for a literal backslash
 printf '%s' "${PR_BODY}" | tr -d '`*_\\' >"$tmp_body"
 
 # ---------- 2. Locate diff base ----------
 
 if [ -n "${BASE_SHA:-}" ] && [ -n "${HEAD_SHA:-}" ]; then
-  diff_base="${BASE_SHA}"
+  # From the merge base, never from BASE_SHA itself: see pr-diff-base.sh.
+  diff_base="$(pr_diff_base "${BASE_SHA}" "${HEAD_SHA}" deliverables-check)" || exit 2
   diff_head="${HEAD_SHA}"
-  diff_src="env (BASE_SHA..HEAD_SHA)"
+  diff_src="env (merge base of BASE_SHA and HEAD_SHA..HEAD_SHA)"
 else
   if ! git rev-parse --verify origin/master >/dev/null 2>&1; then
     echo "deliverables-check: origin/master not found; run 'git fetch origin master' first." >&2
@@ -128,6 +133,123 @@ git diff --name-only "${diff_base}..${diff_head}" >"$tmp_diff"
 
 echo "deliverables-check: PR body from ${body_src}, diff from ${diff_src}"
 echo ""
+
+# ---------- 2a. Rendered files are not part of a pull request (ADR-2197) ----------
+#
+# CHANGELOG.md, the ADR index and its tag and title pages, and the fragment
+# block of docs/rebase-notes.md are rendered from fragment files when the pull
+# requests land (`make docs-render`), in one render-only pull request per batch
+# (2a', ADR-3295) and at the release cut. Any other pull request that edits one
+# of them adds the shared line two pull requests collide on, which is what the
+# fragments exist to avoid. The
+# release pull request (a bot) is exempt: its workflow does not run this gate.
+rendered_paths='^(CHANGELOG\.md|docs/adr/README\.md|docs/adr/titles\.md|docs/research/titles\.md|docs/adr/by-tag/.*|docs/adr/_index_fragments/_order\.txt|docs/rebase-notes\.md)$'
+order_path='^docs/adr/_index_fragments/_order\.txt$'
+
+# ---------- 2a'. Render-only pull request (ADR-3295) ----------
+#
+# The render itself lands as a pull request: master takes no direct push
+# (ADR-3295 amends ADR-2197). A diff that touches rendered paths and nothing
+# else is accepted when its head passes `make docs-render-check`, run in a
+# detached worktree of the head commit so the job's working tree cannot stand
+# in for it. Such a pull request owes no other deliverable. _order.txt is
+# frozen and never rendered, so it is refused below even alone; a rendered
+# file next to any other file is refused below too.
+if [ -s "$tmp_diff" ] && ! grep -qE "${order_path}" "$tmp_diff" &&
+  ! grep -qvE "${rendered_paths}" "$tmp_diff"; then
+  render_wt="$(mktemp -d)"
+  rmdir "$render_wt"
+  if ! git worktree add --detach "$render_wt" "$diff_head" >/dev/null 2>&1; then
+    echo "::error title=ADR-3295 render-only pull request::cannot check out ${diff_head} to run make docs-render-check."
+    exit 2
+  fi
+  # A git hook (pre-push) exports GIT_DIR, GIT_INDEX_FILE and the other
+  # repository-local variables of the checkout it runs in; inherited, they
+  # point the worktree's git commands at that checkout's index, and
+  # scripts/docs/fragment-order.py returns another landing order.
+  git_env_unset=()
+  while IFS= read -r git_var; do
+    git_env_unset+=(-u "$git_var")
+  done < <(git rev-parse --local-env-vars)
+  if ! env "${git_env_unset[@]}" make -s -C "$render_wt" docs-render-check; then
+    echo "::error title=ADR-3295 render-only pull request::the head does not pass make docs-render-check: a render-only pull request carries exactly what 'make docs-render' writes from the fragments on its base, nothing edited by hand."
+    echo "  Rebase on origin/master, run 'make docs-render', commit the result and nothing else."
+    exit 1
+  fi
+  echo "deliverables-check: render-only pull request (ADR-3295); make docs-render-check passed on ${diff_head}"
+  exit 0
+fi
+
+if grep -nE "${rendered_paths}" "$tmp_diff" >/dev/null; then
+  while IFS= read -r path; do
+    echo "::error file=${path},title=ADR-2197 rendered file::${path} is rendered when pull requests land; a pull request adds fragments (changelog.d/<section>/*.md, docs/adr/_index_fragments/<slug>.md, docs/rebase-notes.d/<slug>.md) and leaves it alone."
+  done < <(grep -E "${rendered_paths}" "$tmp_diff")
+  echo "  Drop the edit (git checkout origin/master -- <path>); 'make docs-render' shows what the render will write."
+  echo "  See docs/development/release.md and ADR-2197."
+  exit 1
+fi
+
+# ---------- 2c. Small-PR track (ADR-2461) ----------
+#
+# A pull request that carries the marker `small PR (ADR-2461)` waives the
+# research digest, decision matrix, AGENTS.md note and rebase note, but only if
+# the diff shows it qualifies: at most 100 changed lines (changelog and
+# rebase-note fragments, ADR index fragments and lock files not counted), one
+# top-level directory (docs/ and changelog.d/ do not count beside another), and
+# no path that signals a surface, a numeric change or an ADR. The reproducer and
+# the changelog fragment stay required. A marker on a pull request that does not
+# qualify is refused, never ignored. Without the marker nothing here runs.
+small_marker='small PR (ADR-2461)'
+small_max_lines=100
+small_uncounted='^(changelog\.d/|docs/rebase-notes\.d/|docs/adr/_index_fragments/|requirements/locks/)|(^|/)(go\.sum|Cargo\.lock|package-lock\.json|pnpm-lock\.yaml|poetry\.lock|uv\.lock)$|\.lock$'
+small_forbidden='^(core/src/|core/include/|core/tools/|core/meson_options\.txt$|python/test/|ffmpeg-patches/)'
+small_ok=0
+
+small_pr_problems() {
+  local added removed path total=0 dirs="" top
+  while IFS=$'\t' read -r added removed path; do
+    [ -n "$path" ] || continue
+    if printf '%s\n' "$path" | grep -qE "${small_forbidden}"; then
+      echo "touches ${path}, which signals a surface or numeric change"
+    fi
+    if printf '%s\n' "$path" | grep -qE "${small_uncounted}"; then
+      continue
+    fi
+    if [ "$added" = "-" ] || [ "$removed" = "-" ]; then
+      echo "changes a binary file (${path}), which cannot be counted"
+      continue
+    fi
+    total=$((total + added + removed))
+    top="${path%%/*}"
+    case "$top" in docs | changelog.d) ;; *) dirs="${dirs}${top}"$'\n' ;; esac
+  done < <(git diff --no-renames --numstat "${diff_base}..${diff_head}")
+  if [ "$total" -gt "$small_max_lines" ]; then
+    echo "changes ${total} lines, more than ${small_max_lines}"
+  fi
+  if [ "$(printf '%s' "$dirs" | sort -u | grep -c .)" -gt 1 ]; then
+    echo "touches more than one top-level directory ($(printf '%s' "$dirs" | sort -u | paste -sd, -))"
+  fi
+  while IFS= read -r path; do
+    case "$path" in
+      docs/adr/[0-9][0-9][0-9][0-9]-*.md) echo "${path} adds an ADR" ;;
+    esac
+  done < <(git diff --no-renames --diff-filter=A --name-only "${diff_base}..${diff_head}")
+}
+
+if grep -qiF -- "${small_marker}" "$tmp_body"; then
+  small_problems="$(small_pr_problems)"
+  if [ -n "$small_problems" ]; then
+    while IFS= read -r problem; do
+      echo "::error title=ADR-2461 small PR::${problem}; the small PR (ADR-2461) marker does not apply."
+    done <<<"$small_problems"
+    echo "  Drop the marker and address all six deliverables, or shrink the change."
+    echo "  See docs/adr/2461-small-pr-deliverables-track.md."
+    exit 1
+  fi
+  small_ok=1
+  echo "deliverables-check: small PR track (ADR-2461): the diff qualifies; digest, decision matrix, AGENTS.md note and rebase note are waived."
+  echo ""
+fi
 
 # ---------- 2b. Anti-pattern detection (prose bullet form) ----------
 #
@@ -168,6 +290,14 @@ items=(
 
 fail=0
 for item in "${items[@]}"; do
+  if [ "$small_ok" -eq 1 ]; then
+    case "${item}" in
+      "Research digest" | "Decision matrix" | "AGENTS.md invariant note" | "Rebase note")
+        echo "OK (small PR track): ${item}"
+        continue
+        ;;
+    esac
+  fi
   # Look for either a ticked checkbox mentioning the item, or
   # an "opt-out" line per ADR-0108. Checkboxes use `- [x]`.
   # Opt-outs take the form `no <thing> needed: <reason>` or
@@ -216,20 +346,19 @@ if grep -qiE -- '- \[x\].*Research digest' "$tmp_body"; then
   fi
 fi
 
-# CHANGELOG entry — if ticked, expect either a new fragment file
-# under changelog.d/<section>/ (preferred, ADR-0221) OR a hand
-# edit to CHANGELOG.md itself (legacy fallback during migration).
+# CHANGELOG entry — if ticked, expect a new fragment file under
+# changelog.d/<section>/ (ADR-0221; CHANGELOG.md itself is rendered, ADR-2197).
 if grep -qiE -- '- \[x\].*CHANGELOG' "$tmp_body"; then
-  if ! grep -qE '^(CHANGELOG\.md|changelog\.d/[^/]+/.*\.md)$' "$tmp_diff"; then
-    echo "::error title=ADR-0108 CHANGELOG::Checkbox ticked but neither CHANGELOG.md nor a new changelog.d/<section>/*.md fragment is in this PR (see ADR-0221)."
+  if ! grep -qE '^changelog\.d/[^/]+/.*\.md$' "$tmp_diff"; then
+    echo "::error title=ADR-0108 CHANGELOG::Checkbox ticked but no changelog.d/<section>/*.md fragment is in this PR (see ADR-0221, ADR-2197)."
     fail=1
   fi
 fi
 
-# Rebase note — if ticked, expect docs/rebase-notes.md in diff
+# Rebase note — if ticked, expect a fragment under docs/rebase-notes.d/
 if grep -qiE -- '- \[x\].*Rebase note' "$tmp_body"; then
-  if ! grep -qE '^docs/rebase-notes\.md$' "$tmp_diff"; then
-    echo "::error title=ADR-0108 rebase note::Checkbox ticked but docs/rebase-notes.md is not in this PR."
+  if ! grep -qE '^docs/rebase-notes\.d/[^/_][^/]*\.md$' "$tmp_diff"; then
+    echo "::error title=ADR-0108 rebase note::Checkbox ticked but no docs/rebase-notes.d/<slug>.md fragment is in this PR (ADR-2197)."
     echo "  Hint: untick the box AND write 'no rebase impact: <reason>' for the opt-out."
     fail=1
   fi

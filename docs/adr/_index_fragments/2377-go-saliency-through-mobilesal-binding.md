@@ -1,0 +1,1 @@
+| [ADR-2377](2377-go-saliency-through-mobilesal-binding.md) | Go `vmafx-tune` saliency inference uses the core's MobileSal extractor through the RC4 Go binding (work package 7); no cgo ONNX Runtime binding in the tool and no tensor transport for `vmafx-ort-runner`; `pkg/saliency` keeps its pre- and post-processing | Accepted | saliency, vmaf-tune, go, onnx, rc5, tooling |

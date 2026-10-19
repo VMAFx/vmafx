@@ -1,4 +1,4 @@
-- **AYUV, UYVY and V210 host input, RGB with a stated matrix (RC4 WP13, ADR-2145, ADR-2146, ABI 0.1.6).**
+- **AYUV, UYVY and V210 host input, RGB with a stated matrix (RC4 WP13, ADR-2145, ADR-2146, ABI 0.1.11).**
   `vmafx_frame_import()` takes `VMAFX_PIXEL_FORMAT_AYUV`, `UYVY422` and `V210` next to the other
   semi-planar and packed layouts, and `RGB`, `RGBA` and `BGRA` (8 to 16 bits) converted to Y'CbCr in
   64-bit integers (BT.601, BT.709, BT.2020 NCL) with a matrix, range and transfer the caller states in

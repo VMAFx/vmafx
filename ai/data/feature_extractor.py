@@ -216,10 +216,20 @@ def _extractors_for(metrics: tuple[str, ...]) -> list[str]:
     return seen
 
 
+# libvmaf emits no ``integer_motion`` key: the first-order motion score of the
+# ``motion`` extractor is reported as ``VMAF_integer_feature_motion_sad_score``.
+# Without this alias the ``motion`` column of FULL_FEATURES was NaN in every row
+# of every extracted corpus (ADR-1898).
+_METRIC_KEY_ALIASES: dict[str, str] = {"motion": "VMAF_integer_feature_motion_sad_score"}
+
+
 def _lookup(metrics: dict, name: str):
     """libvmaf may emit ``integer_<name>`` for fixed-point kernels."""
     if name in metrics:
         return metrics[name]
+    alias = _METRIC_KEY_ALIASES.get(name)
+    if alias is not None and metrics.get(alias) is not None:
+        return metrics[alias]
     val = metrics.get(f"integer_{name}")
     if val is not None:
         return val

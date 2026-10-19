@@ -110,9 +110,15 @@ attempts:
   `Decode error at frame N` and stops, instead of retrying a wedged device
   forever.
 
-The ceiling has not been exercised against real Intel hardware; see
-`T-VPL-DECODE-CEILING-UNVERIFIED-2026-09-21` in [state.md](../state.md) and
-[ADR-1287](../adr/1287-cli-tool-unbounded-loop-ceilings.md).
+The ceiling contract, frame ordering, and status classification are formally
+verified and protected by unit tests
+(`core/tools/test/test_vmaf_vpl_decode_ceiling.c`), hardware smoke tests
+(`core/tools/test/test_vmaf_vpl_hardware_smoke.sh`), and physical Intel Arc
+hardware validation ([ADR-1900](../adr/1900-vpl-decode-ceiling-contract.md);
+closing `T-VPL-DECODE-CEILING-UNVERIFIED-2026-09-21` in [state.md](../state.md)).
+Decoded frames returned alongside warning statuses (such as
+`MFX_WRN_VIDEO_PARAM_CHANGED`) are delivered cleanly, and transient
+`MFX_WRN_ALLOC_TIMEOUT_EXPIRED` retries under the back-off schedule.
 
 ## Status
 

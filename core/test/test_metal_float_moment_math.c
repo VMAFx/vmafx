@@ -34,6 +34,7 @@
 #include <string.h>
 
 #include "test.h"
+#include "float_bits.h"
 
 #include "feature/metal/metal_float_moment_math.h"
 #include "feature/moment.h"
@@ -96,7 +97,7 @@ static void compare_squares(const float *f, unsigned bpc, unsigned n, unsigned *
         double cpu = -1.0;
         const int err = compute_2nd_moment(&f[v], 1, 1, (int)sizeof(float), &cpu);
         const vmaf_mtl_u32 term = vmaf_mtl_moment_float_square(v);
-        if (err != 0 || (double)term != cpu * s2) {
+        if (err != 0 || !vmaf_test_identical_f64((double)term, cpu * s2)) {
             (*bad)++;
         }
         if ((uint64_t)term != (uint64_t)v * (uint64_t)v) {
@@ -215,9 +216,9 @@ static char *check_frame(const MomentFrame *c, int *exact_differs)
     free(f);
     mu_assert("allocation failed", allocated);
     mu_assert("the CPU's moment functions failed", err == 0);
-    *exact_differs = twin[2] != cpu2;
-    mu_assert("the twin's first moment is not moment.c's", twin[0] == cpu1);
-    mu_assert("the twin's second moment is not moment.c's", twin[1] == cpu2);
+    *exact_differs = !vmaf_test_identical_f64(twin[2], cpu2);
+    mu_assert("the twin's first moment is not moment.c's", vmaf_test_identical_f64(twin[0], cpu1));
+    mu_assert("the twin's second moment is not moment.c's", vmaf_test_identical_f64(twin[1], cpu2));
     return NULL;
 }
 

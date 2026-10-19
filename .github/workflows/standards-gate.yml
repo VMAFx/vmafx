@@ -19,8 +19,8 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
 
 concurrency:
-  group: standards-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: standards-${{ github.workflow }}-${{ github.ref == 'refs/heads/master' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
 
 # Least-privilege default for the whole workflow (ADR-0875).
 permissions:
@@ -28,14 +28,27 @@ permissions:
 
 env:
   # Exact engine used to record the baseline and replay HISS evidence.
-  PRAETOR_REF: 0af07a733e6534269b435cea185da4d1df7aba0c
+  PRAETOR_REF: c565cba50b57a6d6cfa628a0f424d6c9f9a9e569
 
 # ADR-1506 — `Go API Compatibility` is the job of praetor-api.yml, a file
 # praetor locks byte for byte, so its required-aggregator marker lives here.
 # required-aggregator-job: Go API Compatibility
+# ADR-2784 — `REUSE lint` is the job of reuse.yml, which praetor writes; its
+# marker lives here beside the other praetor job's.
+# required-aggregator-job: REUSE lint
 
 jobs:
+  tier:
+    name: CI tier (Standards)
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/ci-tier.yml
+
   standards:
+    needs: tier
+    if: needs.tier.outputs.light == 'true'
     # required-aggregator: Standards & Invariant Verification Gate
     name: Standards & Invariant Verification Gate
     runs-on: ubuntu-26.04
@@ -103,6 +116,8 @@ jobs:
   # required-aggregator: HISS Replay Evidence (macOS)
   # required-aggregator: HISS Replay Evidence (Windows)
   hiss-replay-platforms:
+    needs: tier
+    if: needs.tier.outputs.light == 'true'
     name: HISS Replay Evidence (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
@@ -137,3 +152,65 @@ jobs:
 
       - name: Replay HISS enforcement evidence
         run: standardsctl hiss coverage --verify
+
+  windows-hooks:
+    needs: tier
+    if: needs.tier.outputs.full == 'true'
+    name: Windows Lefthook Pre-Commit
+    runs-on: windows-2025
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: '3.14.8'
+
+      - name: Install pinned praetorctl
+        run: |
+          go install "github.com/cordanaLLM/praetor/cmd/standardsctl@${PRAETOR_REF}"
+          gobin="$(cygpath -u "$(go env GOPATH)/bin")"
+          cp "$gobin/standardsctl.exe" "$gobin/praetorctl.exe"
+          echo "$gobin" >> "$GITHUB_PATH"
+
+      - name: Install lefthook
+        run: |
+          go install github.com/evilmartians/lefthook/v2@v2.1.14
+          gobin="$(cygpath -u "$(go env GOPATH)/bin")"
+          echo "$gobin" >> "$GITHUB_PATH"
+
+      - name: Test lefthook pre-commit in a scratch clone
+        run: |
+          git -c core.autocrlf=false clone --shared . "$RUNNER_TEMP/scratch"
+          # A clone maps the checkout's local branches to origin/*. A pull-request
+          # checkout is a detached merge commit with no local master, so the
+          # always-run hooks that resolve origin/master failed on every PR. Copy the
+          # checkout's remote-tracking refs into the scratch clone.
+          git -C "$RUNNER_TEMP/scratch" fetch --no-tags "$PWD" "+refs/remotes/origin/*:refs/remotes/origin/*"
+          cd "$RUNNER_TEMP/scratch" || exit 1
+          git config user.name "CI Worker"
+          git config user.email "ci@example.invalid"
+          python -m venv .venv
+          cp .venv/Scripts/python.exe .venv/Scripts/python3.exe
+          .venv/Scripts/python -m pip install --require-hashes -r requirements/locks/pre-commit.txt
+          lefthook install
+          # Install the pinned engine once before the parallel hooks start. On a cold
+          # cache every hook ran install_pinned, and one hook's rename replaced the
+          # binary another hook was executing (exit 126 busy / 127 missing).
+          sh .config/lefthook/engine.sh --print-path
+          touch test_scratch.txt
+          git add test_scratch.txt
+          lefthook run pre-commit --no-auto-install

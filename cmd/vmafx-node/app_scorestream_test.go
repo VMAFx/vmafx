@@ -79,6 +79,7 @@ func TestAppScoreStreamEndToEnd(t *testing.T) {
 	t.Setenv("VMAFX_VMAF_BINARY", "/bin/true")
 	t.Setenv("VMAFX_MODEL_DIR", modelDir)
 	t.Setenv("VMAFX_GRPC_LISTEN", addr)
+	t.Setenv("VMAFX_HTTP_ADDR", freeLoopbackAddr(t))
 	t.Setenv("VMAFX_LOG_LEVEL", "error")
 	t.Setenv("VMAFX_FFMPEG_BIN", "/bin/true")
 	t.Setenv("VMAFX_SIDECAR_SOCKET", filepath.Join(t.TempDir(), "sidecar.sock"))

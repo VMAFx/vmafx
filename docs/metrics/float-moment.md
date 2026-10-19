@@ -20,7 +20,7 @@ Output metrics:
   squares).
 
 **Output range** — for 8-bit luma, `[0, 255]` for the first moment and
-`[0, 65 025]` for the second; scales with `2^bpc - 1`.
+`[0, 65 025]` for the second; scales with $2^{\mathrm{bpc}} - 1$.
 
 **Input formats** — YUV 4:2:0 / 4:2:2 / 4:4:4, 8 / 10 / 12 / 16 bpc. Y plane
 only.
@@ -60,7 +60,7 @@ The CPU squares each sample in fp32, which rounds above 12 bits.
 fp32 square as an integer.
 
 On a 16-bit frame of more than 2 097 152 pixels the sum of squares can pass
-2^53 units, and from there the CPU's own `double` rounds as it adds. Since
+$2^{53}$ units, and from there the CPU's own `double` rounds as it adds. Since
 [ADR-1497](../adr/1497-float-moment-twins-cpu-sum-past-2-53.md) the twins form
 that rounded sum on the device and equal the CPU extractor at 8, 10, 12 and
 16 bits on every frame.

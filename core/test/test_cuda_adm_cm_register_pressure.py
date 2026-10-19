@@ -19,6 +19,12 @@ RESOURCE_PATTERN = re.compile(
     r"Function\s+([a-zA-Z0-9_]+):\s*\n\s*REG:(\d+)\s+STACK:(\d+)\s+SHARED:(\d+)\s+LOCAL:(\d+)"
 )
 
+# Registers per thread, at most, for every architecture of the fatbin. The blanket budget is
+# ADR-1226's 208; a kernel listed in KERNEL_BUDGETS has its own measured budget instead, and the
+# ADR that sets it names the reason (ADR-2134: the exact 64-bit scale-0 angle-flag sums).
+DEFAULT_REGISTER_BUDGET = 208
+KERNEL_BUDGETS = {"adm_cm_aim_line_kernel_4": 209}
+
 EXPECTED_KERNELS = {
     "adm_cm_aim_line_kernel_2",
     "adm_cm_aim_line_kernel_4",
@@ -33,7 +39,7 @@ def dump_fatbin_resources(fatbin_path: Path) -> str:
     cuobjdump = shutil.which("cuobjdump")
     if not cuobjdump:
         raise unittest.SkipTest("cuobjdump executable not found in PATH")
-    res = subprocess.run(
+    res = subprocess.run(  # noqa: S603 -- cuobjdump resolved by shutil.which, fixed argv
         [cuobjdump, "-res-usage", str(fatbin_path)],
         capture_output=True,
         text=True,
@@ -66,10 +72,11 @@ def verify_kernel_metrics(
         0,
         f"Kernel {fn_name} has {local} B local spill in {fatbin_path} (expected 0)",
     )
+    budget = KERNEL_BUDGETS.get(fn_name, DEFAULT_REGISTER_BUDGET)
     tc.assertLessEqual(
         reg,
-        208,
-        f"Kernel {fn_name} uses {reg} registers (expected <= 208)",
+        budget,
+        f"Kernel {fn_name} uses {reg} registers (expected <= {budget})",
     )
 
 
@@ -98,6 +105,10 @@ class TestCudaAdmCmRegisterPressure(unittest.TestCase):
             found_kernels.add(fn_name)
             verify_kernel_metrics(self, fn_name, reg_s, stack_s, local_s, fatbin_path)
 
+        self.assertTrue(
+            set(KERNEL_BUDGETS) <= EXPECTED_KERNELS,
+            "a per-kernel budget names a kernel the test does not expect",
+        )
         self.assertTrue(
             EXPECTED_KERNELS.issubset(found_kernels),
             f"Expected kernels {EXPECTED_KERNELS} but found {found_kernels}",

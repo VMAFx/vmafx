@@ -47,12 +47,12 @@ static int isclose(float a, float b, float rel)
  * and the test fails. */
 static float reference_adm_native_csf(int lambda, double view_dist, int display_height, int theta)
 {
-    float r = view_dist * display_height * M_PI / 180.0;
-    float spatial_frequency = r / pow(2, lambda + 1);
+    float r = (float)(view_dist * display_height * M_PI / 180.0);
+    float spatial_frequency = (float)(r / pow(2, lambda + 1));
     if (theta == 45) {
-        spatial_frequency /= 0.7;
+        spatial_frequency = (float)(spatial_frequency / 0.7);
     }
-    return (0.31 + 0.69 * spatial_frequency) * exp(-0.29 * spatial_frequency);
+    return (float)((0.31 + 0.69 * spatial_frequency) * exp(-0.29 * spatial_frequency));
 }
 
 /* ------------------------------------------------------------------ */

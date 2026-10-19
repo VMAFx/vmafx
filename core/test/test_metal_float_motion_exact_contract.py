@@ -41,7 +41,7 @@ MATH_PIECES = (
     "return scaled + -128.0f;",
     "const vmaf_mtl_i32 period = 2 * (size - 1);",
     "return (m < size) ? m : period - m;",
-    "const float product = t.w[r] * win.v[r * VMAF_MTL_FM_TAPS + c];",
+    "const float product = t.w[r] * win->v[r * VMAF_MTL_FM_TAPS + c];",
     "accum += product;",
     "const float product = t.w[c] * col[c];",
     "blurred += product;",
@@ -58,7 +58,7 @@ MATH_PIECES = (
 # the CPU's order from the transposed plane.
 KERNEL_PIECES = (
     '#include "metal_float_motion_math.h"',
-    "vmaf_mtl_fm_blur(vmaf_mtl_fm_taps(args.filter_size), win)",
+    "vmaf_mtl_fm_blur(vmaf_mtl_fm_taps(args.filter_size), &win)",
     "diff[vmaf_mtl_fm_diff_index(gid.x, gid.y, args.width)] = "
     "vmaf_mtl_fm_abs_diff(blurred, prev_blur[off]);",
     "diff[vmaf_mtl_fm_diff_index(gid.x, gid.y, args.scaled_width)] = "
@@ -80,7 +80,7 @@ HOST_PIECES = (
     "(vmaf_mtl_u32)s->motion_filter_size",
     "threadsPerThreadgroup:MTLSizeMake(VMAF_MTL_FM_ROW_GROUP, 1, 1)",
     "s->n_planes = FMM_MAX_PLANES;",
-    "for (unsigned c = 0u; c < s->n_planes && err == 0; c++) {",
+    "for (unsigned c = 0u; c < s->n_planes && c < FMM_MAX_PLANES && err == 0; c++) {",
 )
 # CPU options the twin does not take yet: none, its table is the CPU's.
 OPTIONS_NOT_YET: tuple[str, ...] = ()
@@ -189,7 +189,9 @@ def host_failures(src: dict[str, str]) -> list[str]:
 
 def option_names(source: str) -> list[str]:
     """The names of an extractor's option table, in its order."""
-    block = re.search(r"static const VmafOption options\[\] = \{(.*?)\{\s*0\s*\}", source, re.S)
+    block = re.search(
+        r"static const VmafOption options\[\] = \{(.*?)\{\s*(?:0|nullptr)?\s*\}", source, re.S
+    )
     return re.findall(r'\.name\s*=\s*"(\w+)"', block.group(1)) if block else []
 
 
@@ -310,9 +312,9 @@ class MetalFloatMotionExactContract(unittest.TestCase):
     def test_fused_blur_tap_is_detected(self) -> None:
         src = planted(
             MATH,
-            "            const float product = t.w[r] * win.v[r * VMAF_MTL_FM_TAPS + c];\n"
+            "            const float product = t.w[r] * win->v[r * VMAF_MTL_FM_TAPS + c];\n"
             "            accum += product;",
-            "            accum = VMAF_MTL_FMA(t.w[r], win.v[r * VMAF_MTL_FM_TAPS + c], accum);",
+            "            accum = VMAF_MTL_FMA(t.w[r], win->v[r * VMAF_MTL_FM_TAPS + c], accum);",
         )
         self.assert_detected(src, "fused multiply-add")
 
@@ -374,7 +376,7 @@ class MetalFloatMotionExactContract(unittest.TestCase):
         src = planted(
             HOST,
             "fm_metal_append(s, feature_collector, feature_name, 0.0, 0u)",
-            "fm_metal_append(s, feature_collector, \"VMAF_feature_motion2_score\", 0.0, 0u)",
+            'fm_metal_append(s, feature_collector, "VMAF_feature_motion2_score", 0.0, 0u)',
         )
         self.assert_detected(src, "a one-frame run emits no motion3")
 
@@ -389,8 +391,8 @@ class MetalFloatMotionExactContract(unittest.TestCase):
     def test_unprovided_motion3_is_detected(self) -> None:
         src = planted(
             HOST,
-            '"VMAF_feature_motion2_score", "VMAF_feature_motion3_score", NULL',
-            '"VMAF_feature_motion2_score", NULL',
+            '"VMAF_feature_motion2_score", "VMAF_feature_motion3_score", nullptr',
+            '"VMAF_feature_motion2_score", nullptr',
         )
         self.assert_detected(src, "provides no motion3")
 

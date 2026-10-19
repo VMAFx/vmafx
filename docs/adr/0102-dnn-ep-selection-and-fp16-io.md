@@ -114,3 +114,16 @@ hosts without hardware fp16.
 - [ONNX Runtime C API — execution providers](https://onnxruntime.ai/docs/execution-providers/)
 - [ADR-0040](decisions-log.md) — multi-input DNN session API (the same `VmafDnnConfig` this ADR extends)
 - [ADR-0042 / ADR-0100](decisions-log.md) — docs-in-same-PR rules (this PR updates `docs/api/dnn.md` accordingly)
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 115: `[ADR-0040](decisions-log.md) — multi-input DNN session API
+  (the same VmafDnnConfig this ADR extends)`: Targets
+  docs/adr/decisions-log.md, which does not exist on origin/master (removed
+  during per-file ADR migration).
+- About line 116: `[ADR-0042 / ADR-0100](decisions-log.md) — docs-in-same-PR
+  rules (this PR updates docs/api/dnn.md accordingly)`: Targets
+  docs/adr/decisions-log.md, which does not exist on origin/master.

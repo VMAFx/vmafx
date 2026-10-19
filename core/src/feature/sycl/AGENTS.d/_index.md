@@ -14,7 +14,7 @@ feature/sycl/
 ```
 
 All TUs compiled with `icpx` (Intel oneAPI) — build line
-under [`../../meson.build`](../../../meson.build) adds `-fsycl` and the SYCL
+under [`../../meson.build`](../../../meson.build) adds `-fsycl` and SYCL
 strict FP line (`sycl_strict_fp_args`, ADR-1367) for every per-kernel TU.
 
 ## Ground rules
@@ -29,13 +29,13 @@ strict FP line (`sycl_strict_fp_args`, ADR-1367) for every per-kernel TU.
 
 ## Twin-update rules
 
-When a SYCL TU has a live CUDA, HIP, or Metal twin, user-visible behavior and
-numeric fixes must be reviewed across those twins in the same PR. Vulkan was
-removed in ADR-0726 and is not a live twin. The complete CUDA mapping lives in
-[`../cuda/AGENTS.md`](../../cuda/AGENTS.md). The cross-backend parity gate at
+When SYCL TU has live CUDA, HIP, or Metal twin, user-visible behavior and
+numeric fixes must be reviewed across those twins in same PR. Vulkan was
+removed in ADR-0726 and is not live twin. complete CUDA mapping lives in
+[`../cuda/AGENTS.md`](../../cuda/AGENTS.md). cross-backend parity gate at
 `places=4`
 ([`scripts/ci/cross_backend_parity_gate.py`](../../../../../scripts/ci/cross_backend_parity_gate.py),
-ADR-0214) catches drift only after a full GPU run; it does not replace that
+ADR-0214) catches drift only after full GPU run; it does not replace that
 source review.
 
 ## Rebase-sensitive invariants

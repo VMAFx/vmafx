@@ -24,12 +24,17 @@
 #include <string.h>
 #include <math.h>
 
+#include "mu_table.h"
 #include "test.h"
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/model.h"
+#include "compat/crt_portable.h"
 #include "config.h"
 #include "thread_locale.h"
+#include "dict.h"
 #include "feature/feature_collector.h"
+#include "feature/feature_name.h"
+#include "opt.h"
 #include "output.h"
 #include "read_json_model.h"
 
@@ -48,7 +53,9 @@ static int locale_available(const char *locale_name)
     char old_locale_buf[256];
     const char *old_locale = setlocale(LC_ALL, NULL);
     if (old_locale) {
-        strncpy(old_locale_buf, old_locale, sizeof(old_locale_buf) - 1);
+        const size_t old_len = strnlen(old_locale, sizeof(old_locale_buf) - 1);
+        memcpy(old_locale_buf, old_locale, old_len);
+        old_locale_buf[old_len] = '\0';
         old_locale_buf[sizeof(old_locale_buf) - 1] = '\0';
     } else {
         old_locale_buf[0] = '\0';
@@ -200,7 +207,7 @@ static char *test_output_xml_with_comma_locale(void)
 
     (void)setlocale(LC_ALL, french);
 
-    FILE *tmpf = tmpfile();
+    FILE *tmpf = vmaf_tmpfile_portable();
     mu_assert("tmpfile creation failed", tmpf != NULL);
 
     err = vmaf_write_output_xml(vmaf, fc, tmpf, 1, 1920, 1080, 24.0, 1, NULL);
@@ -250,7 +257,7 @@ static char *test_output_json_with_comma_locale(void)
 
     (void)setlocale(LC_ALL, italian);
 
-    FILE *tmpf = tmpfile();
+    FILE *tmpf = vmaf_tmpfile_portable();
     mu_assert("tmpfile creation failed", tmpf != NULL);
 
     err = vmaf_write_output_json(vmaf, fc, tmpf, 1, 24.0, 1, NULL);
@@ -290,7 +297,7 @@ static char *test_output_csv_with_comma_locale(void)
 
     (void)setlocale(LC_ALL, spanish);
 
-    FILE *tmpf = tmpfile();
+    FILE *tmpf = vmaf_tmpfile_portable();
     mu_assert("tmpfile creation failed", tmpf != NULL);
 
     err = vmaf_write_output_csv(fc, tmpf, 1, NULL);
@@ -343,7 +350,7 @@ static char *test_model_parse_with_comma_locale(void)
         .flags = VMAF_MODEL_FLAGS_DEFAULT,
     };
 
-    int err = vmaf_read_json_model_from_buffer(&model, &cfg, model_json, strlen(model_json));
+    int err = vmaf_read_json_model_from_buffer(&model, &cfg, model_json, (int)strlen(model_json));
     mu_assert("vmaf_read_json_model_from_buffer should succeed", !err);
     mu_assert("model should not be NULL", model != NULL);
 
@@ -358,6 +365,125 @@ static char *test_model_parse_with_comma_locale(void)
     vmaf_model_destroy(model);
     (void)setlocale(LC_ALL, "C");
 
+    return NULL;
+}
+
+/* A decimal-comma locale, or NULL when the host has none. */
+static const char *comma_locale(void)
+{
+    const char *name = get_available_locale("de_DE.UTF-8", "de_DE.utf8");
+    return name ? name : get_available_locale("fr_FR.UTF-8", "fr_FR.utf8");
+}
+
+typedef struct {
+    double d;
+} DoubleTarget;
+
+/* Feature options read "0.7" as 0.7 whatever the caller's numeric locale:
+ * strtod() of a decimal-comma locale stops at the period, and the option
+ * was refused (-EINVAL), so a model whose features take fractional options
+ * (vmaf_v1.0.16_3d0h) could not be used.
+ * T-OPTION-NUMBERS-CALLER-LOCALE-2026-10-06. */
+static char *test_option_double_with_comma_locale(void)
+{
+    const char *locale = comma_locale();
+    if (!locale) {
+        (void)fprintf(stderr, "Skipping test: no decimal-comma locale available\n");
+        return NULL;
+    }
+    const VmafOption opt = {.name = "x",
+                            .offset = 0,
+                            .type = VMAF_OPT_TYPE_DOUBLE,
+                            .default_val.d = 1.0,
+                            .min = 0.0,
+                            .max = 10.0};
+    DoubleTarget target = {0.0};
+    (void)setlocale(LC_ALL, locale);
+    const int err = vmaf_option_set(&opt, &target, "0.7");
+    char buffer[16];
+    (void)snprintf(buffer, sizeof(buffer), "%.1f", 0.5);
+    (void)setlocale(LC_ALL, "C");
+    mu_assert("the caller's locale stays active", strchr(buffer, ',') != NULL);
+    mu_assert("0.7 is read as 0.7 under a decimal-comma locale", err == 0 && target.d == 0.7);
+    return NULL;
+}
+
+/* The feature dictionary normalises "0.7" to "0.7", not to "0" (strtod()
+ * stopped at the period) or "0,7" (%g of a decimal-comma locale). */
+static char *test_dictionary_number_with_comma_locale(void)
+{
+    const char *locale = comma_locale();
+    if (!locale) {
+        (void)fprintf(stderr, "Skipping test: no decimal-comma locale available\n");
+        return NULL;
+    }
+    VmafDictionary *dict = NULL;
+    (void)setlocale(LC_ALL, locale);
+    const int err = vmaf_dictionary_set(&dict, "nw", "0.02", VMAF_DICT_NORMALIZE_NUMERICAL_VALUES);
+    (void)setlocale(LC_ALL, "C");
+    const VmafDictionaryEntry *entry = err ? NULL : vmaf_dictionary_get(&dict, "nw", 0);
+    const int same = entry && strcmp(entry->val, "0.02") == 0;
+    (void)vmaf_dictionary_free(&dict);
+    mu_assert("0.02 stays 0.02 under a decimal-comma locale", same);
+    return NULL;
+}
+
+typedef struct {
+    double strength;
+} NamedTarget;
+
+/* A fractional option names its feature with the period, as the models read
+ * it, also under a decimal-comma locale ("x_strength_0.7", not "0,7"). */
+static char *test_feature_name_with_comma_locale(void)
+{
+    const char *locale = comma_locale();
+    if (!locale) {
+        (void)fprintf(stderr, "Skipping test: no decimal-comma locale available\n");
+        return NULL;
+    }
+    static const VmafOption opts[] = {
+        {.name = "strength",
+         .offset = 0,
+         .type = VMAF_OPT_TYPE_DOUBLE,
+         .default_val.d = 1.0,
+         .min = 0.0,
+         .max = 10.0,
+         .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
+        {0},
+    };
+    const NamedTarget target = {0.7};
+    (void)setlocale(LC_ALL, locale);
+    char *name = vmaf_feature_name_from_options("x", opts, &target);
+    (void)setlocale(LC_ALL, "C");
+    const int same = name && strcmp(name, "x_strength_0.7") == 0;
+    free(name);
+    mu_assert("the feature name carries 0.7 with a period", same);
+    return NULL;
+}
+
+/* End to end: the features of the default model register under a
+ * decimal-comma locale. */
+static char *test_model_features_with_comma_locale(void)
+{
+    const char *locale = comma_locale();
+    if (!locale) {
+        (void)fprintf(stderr, "Skipping test: no decimal-comma locale available\n");
+        return NULL;
+    }
+    VmafContext *vmaf = NULL;
+    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    VmafModel *model = NULL;
+    VmafModelConfig model_cfg = {.name = "vmaf", .flags = VMAF_MODEL_FLAGS_DEFAULT};
+    (void)setlocale(LC_ALL, locale);
+    int err = vmaf_init(&vmaf, cfg);
+    if (!err)
+        err = vmaf_model_load(&model, &model_cfg, VMAF_DEFAULT_MODEL_VERSION);
+    if (!err)
+        err = vmaf_use_features_from_model(vmaf, model);
+    (void)setlocale(LC_ALL, "C");
+    (void)vmaf_close(vmaf);
+    vmaf_model_destroy(model);
+    mu_assert("the default model's features register under a decimal-comma locale", err == 0);
     return NULL;
 }
 
@@ -381,19 +507,23 @@ static char *test_windows_locale_handling(void)
 
 char *run_tests(void)
 {
-    mu_run_test(test_locale_abstraction_basic);
-    mu_run_test(test_output_xml_with_comma_locale);
-    mu_run_test(test_output_json_with_comma_locale);
-    mu_run_test(test_output_csv_with_comma_locale);
-    mu_run_test(test_model_parse_with_comma_locale);
-
+    static const MuTest tests[] = {
+        MU_TEST(test_locale_abstraction_basic),
+        MU_TEST(test_output_xml_with_comma_locale),
+        MU_TEST(test_output_json_with_comma_locale),
+        MU_TEST(test_output_csv_with_comma_locale),
+        MU_TEST(test_model_parse_with_comma_locale),
+        MU_TEST(test_option_double_with_comma_locale),
+        MU_TEST(test_dictionary_number_with_comma_locale),
+        MU_TEST(test_feature_name_with_comma_locale),
+        MU_TEST(test_model_features_with_comma_locale),
 #ifdef HAVE_USELOCALE
-    mu_run_test(test_uselocale_available);
+        MU_TEST(test_uselocale_available),
 #elif defined(_WIN32)
-    mu_run_test(test_windows_locale_handling);
+        MU_TEST(test_windows_locale_handling),
 #endif
-
-    return NULL;
+    };
+    return mu_run_table(tests, MU_TABLE_LEN(tests));
 }
 
 /* NOLINTEND(modernize-use-nullptr) */

@@ -3,6 +3,8 @@ paths:
   - core/src/feature/psnr.c
   - core/src/feature/psnr.h
   - core/src/feature/float_psnr.c
+  - core/src/feature/integer_psnr.c
+  - core/src/feature/psnr_score.h
 invariant: PSNR bucket lint shape, cross-backend enable_chroma parity, and uncapped options.
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
@@ -73,3 +75,14 @@ Two upstream-parity quirks are preserved on purpose: `float_psnr` leaves its
 buffers to extractor teardown when bit depth is unsupported, and `ciede`
 reports `-EINVAL` rather than `-ENOMEM` for same case. Both matched old label
 ladders. Fixing either is behavioural change and needs own commit plus test.
+
+- **APSNR clip SSE = 128 bits** (T-PSNR-APSNR-CLIP-SSE-UINT64-WRAP-2026-10-05).
+  `apsnr` sums every frame's SSE of a plane into `VmafPsnrClipSse`
+  (`psnr_score.h`: `vmaf_psnr_clip_sse_add()` carries into `hi`), on the CPU
+  and in the CUDA, HIP, SYCL and Metal hosts. Frame SSE < 2^62, clip sum is
+  not: a plain `uint64_t` wrapped at frame 33 of 16K, 16 bit, max diff.
+  `vmaf_psnr_aggregate()` reads `(double)lo` while `hi == 0`, so old clips keep
+  their bits. Never bring back `uint64_t apsnr_sse` / `+= sse`. Guards:
+  `test_integer_psnr_coverage` (`test_psnr_apsnr_clip_sse_past_two_pow_64`),
+  `test_{cuda,hip}_kernel_source_contract.py`,
+  `test_metal_integer_psnr_exact_contract.py`.

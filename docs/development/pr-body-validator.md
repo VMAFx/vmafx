@@ -204,6 +204,10 @@ re-regression is reported as a hang instead of becoming one.
      `pull_request.draft == false` predicate),
    - the PR is the machine-generated release-please PR (ADR-1151; needs
      `gh` metadata, the public-page fallback never exempts),
+   - the PR is a strictly dependency-only bot PR, such as a Renovate update of
+     `go.mod` and `go.sum` (ADR-1152: `scripts/ci/classify-dependency-pr.sh`
+     with the author, head ref and changed files CI passes it; needs `gh`
+     metadata, the public-page fallback never exempts),
    - the PR body is empty (CI will catch it),
    - `origin/master` is missing locally (run `git fetch origin master`).
 5. Otherwise computes

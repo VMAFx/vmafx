@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: EUPL-1.2
+# Copyright 2026 Lusoris
+#
+# Grafana dashboard provider of the Compose example: the generated dashboards
+# of deploy/grafana/dashboards, mounted read-only, in folder VMAFx.
+apiVersion: 1
+providers:
+  - name: vmafx
+    folder: VMAFx
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards/vmafx

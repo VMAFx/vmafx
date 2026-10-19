@@ -108,8 +108,8 @@ static void ref_variance(SsimPlanes *p, int n)
     for (int i = 0; i < n; ++i) {
         p->ref_sigma[i] -= p->ref_mu[i] * p->ref_mu[i];
         p->cmp_sigma[i] -= p->cmp_mu[i] * p->cmp_mu[i];
-        p->ref_sigma[i] = REF_MAX(0.0, p->ref_sigma[i]);
-        p->cmp_sigma[i] = REF_MAX(0.0, p->cmp_sigma[i]);
+        p->ref_sigma[i] = (float)REF_MAX(0.0, p->ref_sigma[i]);
+        p->cmp_sigma[i] = (float)REF_MAX(0.0, p->cmp_sigma[i]);
         p->sigma_both[i] -= p->ref_mu[i] * p->cmp_mu[i];
     }
 }

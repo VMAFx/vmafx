@@ -129,7 +129,7 @@ static inline float fadm_host_from_bits(uint32_t bits)
 /* ------------------------------------------------------------------ */
 
 /* The DWT bands of one scale and the four CSF buffers derived from them. */
-typedef struct FloatAdmGpuBands {
+struct FloatAdmGpuBands {
     uint64_t ref_band; /* float, 4 sub-bands */
     uint64_t dis_band; /* float, 4 sub-bands */
     uint64_t csf_a;    /* float, 3 sub-bands: rfactor * decouple_a */
@@ -140,16 +140,22 @@ typedef struct FloatAdmGpuBands {
     int32_t half_h;
     int32_t buf_stride;
     float rfactor[FADM_BANDS];
-} FloatAdmGpuBands;
+};
+#ifndef __cplusplus
+typedef struct FloatAdmGpuBands FloatAdmGpuBands;
+#endif
 
-typedef struct FloatAdmGpuDecoupleArgs {
+struct FloatAdmGpuDecoupleArgs {
     FloatAdmGpuBands bands;
     double adm_enhn_gain_limit; /* fp64, like the reference's argument */
     float cos_1deg_sq;
     uint32_t pad_;
-} FloatAdmGpuDecoupleArgs;
+};
+#ifndef __cplusplus
+typedef struct FloatAdmGpuDecoupleArgs FloatAdmGpuDecoupleArgs;
+#endif
 
-typedef struct FloatAdmGpuTermArgs {
+struct FloatAdmGpuTermArgs {
     FloatAdmGpuBands bands;
     uint64_t terms; /* float, see fadm_term_index() */
     int32_t left;   /* the reduced region, adm_border_s() */
@@ -160,14 +166,20 @@ typedef struct FloatAdmGpuTermArgs {
     uint32_t is_cube;   /* adm_p_norm == 3.0 */
     uint32_t bypass_cm; /* adm_bypass_cm: no masking threshold */
     uint32_t reserved;
-} FloatAdmGpuTermArgs;
+};
+#ifndef __cplusplus
+typedef struct FloatAdmGpuTermArgs FloatAdmGpuTermArgs;
+#endif
 
-typedef struct FloatAdmGpuRowArgs {
+struct FloatAdmGpuRowArgs {
     uint64_t terms; /* float, see fadm_term_index() */
     uint64_t rows;  /* float, FADM_TERM_SLOTS x region_h, see fadm_row_index() */
     uint32_t region_w;
     uint32_t region_h;
-} FloatAdmGpuRowArgs;
+};
+#ifndef __cplusplus
+typedef struct FloatAdmGpuRowArgs FloatAdmGpuRowArgs;
+#endif
 
 /* ------------------------------------------------------------------ */
 /* Layout.                                                              */
@@ -263,12 +275,15 @@ FADM_HD float fadm_csf_flt(float csf)
 /* What the decouple kernel stores for one band sample: the CSF-weighted
  * additive (a = t - rst) and restored (r = rst) signals, each with its
  * filtered magnitude. */
-typedef struct FloatAdmCsfSample {
+struct FloatAdmCsfSample {
     float csf_a;
     float csf_fa;
     float csf_r;
     float csf_fr;
-} FloatAdmCsfSample;
+};
+#ifndef __cplusplus
+typedef struct FloatAdmCsfSample FloatAdmCsfSample;
+#endif
 
 /* adm_decouple_s() and both adm_csf_s() calls of compute_adm() for band
  * `band` of one sample. */

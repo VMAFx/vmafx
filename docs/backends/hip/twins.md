@@ -25,7 +25,7 @@ registered extractor names are in the overview.
 - **`float_psnr_hip`**: the CPU's float (ref-dis)² per pixel, added as an
   exact integer per block of 256 pixels of one row. The host adds each row's
   exact sum into a `double` in row order, as the CPU does. The score is the
-  CPU's bit for bit at 8 to 16 bits, past 2^53 units too
+  CPU's bit for bit at 8 to 16 bits, past $2^{53}$ units too
   ([ADR-1440](../../adr/1440-hip-float-psnr-exact-block-sums.md),
   [ADR-1499](../../adr/1499-float-psnr-twins-cpu-row-order.md); see
   [PSNR](../../metrics/psnr.md#float_psnr)). Emits `float_psnr`.
@@ -69,7 +69,9 @@ registered extractor names are in the overview.
   `VMAF_integer_feature_motion2_v2_score`.
 - **`integer_motion_hip`**: raw-pixel ping-pong (`pix[2]`) and the shared
   diff-first SAD kernel of `motion_v2_hip` (`integer_motion_sad_hip.c`), so
-  the SAD is the CPU `motion`'s: `sum |blur(prev - cur)|`, rounded after each
+  the SAD is the CPU `motion`'s:
+  $\sum \lvert \mathrm{blur}(\mathrm{prev} - \mathrm{cur}) \rvert$, rounded
+  after each
   pass (ADR-1377). Host-side `motion2` / `motion3` and the debug `motion`
   score go through the CPU's `motion_fps_weight` / `motion_max_val` clip.
   Emits `VMAF_integer_feature_motion2_score` and
@@ -567,20 +569,22 @@ the difference. If you stored 16-bit `float_moment_hip` second moments,
 re-run them.
 
 Before ADR-1497 one range was not bit-identical. The CPU adds the squares
-into a `double`, which holds the sum exactly up to 2^53 in units of 2^-16. A
+into a `double`, which holds the sum exactly up to $2^{53}$ in units of
+$2^{-16}$. A
 frame of up to 2 097 152 pixels (1920x1080 has 2 073 600) cannot reach that,
 and neither can any frame at 8, 10 or 12 bits.
 
-A larger 16-bit frame whose second moment times its pixel count reaches 2^37
+A larger 16-bit frame whose second moment times its pixel count reaches $2^{37}$
 does reach it. From there the CPU's sum rounds as it goes, and the twin,
 which added exactly, could differ from it by at most
-`(pixels - 2^21 + 1) / pixels * 2^(e - 69) + 2^-37` (`e` is 53 or 54 up to
+$\dfrac{\mathrm{pixels} - 2^{21} + 1}{\mathrm{pixels}} \cdot 2^{e - 69} + 2^{-37}$
+(`e` is 53 or 54 up to
 3840x2160; 2.3e-5 at 3840x2160 with every sample near the peak).
 
 Measured then: 2.7e-7 on a 2560x1440 frame with a tenth of its samples below
 4096, 1.2e-7 on full-range 3840x2160 noise, and 0 on the 17 frames of the
 16-bit BBB 3840x2160 fixture that are in that range. Since 2026-10-03 that
-range is bit-identical too (see [Past 2^53 units](#past-253-units)).
+range is bit-identical too (see [Past $2^{53}$ units](#past-253-units)).
 
 The change costs nothing measurable: 1.94 and 2.02 ms per 16-bit 1920x1080
 frame before and after, 11.1 and 10.6 ms per 16-bit 3840x2160 frame (medians
@@ -601,20 +605,20 @@ python3 scripts/ci/cross_backend_parity_gate.py --vmaf-binary build-hip/tools/vm
 `float_moment_hip` now returns the CPU extractor's four moments bit for bit
 on every frame
 ([ADR-1497](../../adr/1497-float-moment-twins-cpu-sum-past-2-53.md)).
-The CPU adds the float squares into one `double` in raster order. Below 2^53
-units of 2^-16 that sum is exact and equal to the twin's integer sum, which
+The CPU adds the float squares into one `double` in raster order. Below $2^{53}$
+units of $2^{-16}$ that sum is exact and equal to the twin's integer sum, which
 covers every frame of up to 2 097 152 pixels and every 8-, 10- and 12-bit
-frame. On a larger 16-bit frame whose sum passes 2^53 the CPU rounds as it
+frame. On a larger 16-bit frame whose sum passes $2^{53}$ the CPU rounds as it
 adds, and the twin used to round the exact sum once.
 
 It now forms the CPU's
 rounded sum: on such a frame four more kernels add each row exactly while the
-sum is at or below 2^53, then from integer increments of the sum's last
+sum is at or below $2^{53}$, then from integer increments of the sum's last
 place, composed in pixel order and checked against the exact running sum,
 and term by term where a row crosses into the next binade
 (`core/src/feature/float_moment_sum.h`).
 
-Frames that cannot pass 2^53 run no
+Frames that cannot pass $2^{53}$ run no
 new work.
 
 Measured on a gfx1036 at `--precision max` against `--backend cpu`, frames
@@ -624,10 +628,10 @@ whose four outputs are identical and the largest difference:
 |---|---|---|
 | Full-range 16-bit noise 3840x2160, nine tenths near the peak, 16 frames | 0 of 16, 2.7e-7 | 16 of 16 |
 | The same at 7680x4320, 4 frames | 0 of 4, 5.1e-7 | 4 of 4 |
-| BBB 3840x2160 widened to 16 bits (shifted left by 8, times 257, full range with a dithered low byte), 32 frames each, 17 of them past 2^53 | 32 of 32 | 32 of 32 |
+| BBB 3840x2160 widened to 16 bits (shifted left by 8, times 257, full range with a dithered low byte), 32 frames each, 17 of them past $2^{53}$ | 32 of 32 | 32 of 32 |
 
 BBB was identical before as well: its widened samples have no bits below the
-sum's last place until 2^55, which a 3840x2160 frame cannot reach. The parity
+sum's last place until $2^{55}$, which a 3840x2160 frame cannot reach. The parity
 gate's `float_moment` cell reads 0 at tolerance 0 on the 16-bit 3840x2160
 noise (it failed there before).
 
@@ -636,8 +640,8 @@ of 5 interleaved runs at a load average of 4 to 5, before and after:
 
 | Input | Before | After |
 |---|---|---|
-| Noise, every frame past 2^53 | 18.40 ms | 25.62 ms |
-| BBB full range, 17 of 32 frames past 2^53 | 18.37 ms | 21.28 ms |
+| Noise, every frame past $2^{53}$ | 18.40 ms | 25.62 ms |
+| BBB full range, 17 of 32 frames past $2^{53}$ | 18.37 ms | 21.28 ms |
 
 The added time is the row-increment kernel on the two compute units of the
 gfx1036: `T-GPU-FLOAT-MOMENT-EXACT-SUM-COST-2026-10-03` (RC8).
@@ -924,7 +928,7 @@ on an identical 1x1 frame of zeros, 159.55 dB on a flat 3x3 frame of 51
 the CPU's own luminance, contrast and structure types, adds the windows in
 the CPU's raster order and rounds the frame mean to fp32 like the CPU. On
 some identical frames the CPU's fp32 arithmetic
-leaves 1 - 2^-24, which is 72.247 dB, and the twin reports the same instead
+leaves 1 - $2^{-24}$, which is 72.247 dB, and the twin reports the same instead
 of a forced `+inf`.
 
 ### Other CPU behaviours
@@ -1056,7 +1060,8 @@ sums and the frame sum.
 ### Decimation at 1080p and 4K
 
 The CPU `float_ssim` decimates both planes before SSIM by
-`max(1, round(min(w, h) / 256))`: 1 below 384 px, 4 at 1920x1080, 8 at
+$\max(1, \operatorname{round}(\min(w, h) / 256))$: 1 below 384 px, 4 at
+1920x1080, 8 at
 3840x2160; the `scale` option forces the factor. `float_ssim_hip` used to
 implement scale 1 only, so at 1080p and 4K `--backend hip --feature float_ssim`
 and models computed the feature on the CPU and printed

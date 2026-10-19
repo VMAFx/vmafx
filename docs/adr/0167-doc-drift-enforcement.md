@@ -181,3 +181,12 @@ Pre-existing PRs do not retroactively trigger.
 - `req` — user direction 2026-04-25: "do this now as well" (after
   reviewing the audit findings + diagnosis of why the existing
   workflow missed them).
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 96: `| core/include/libvmaf_cuda.h, libvmaf_sycl.h |
+  docs/api/gpu.md |`: Header paths directly under core/include/ do not exist;
+  public headers are placed under core/include/libvmaf/.

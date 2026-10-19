@@ -120,7 +120,7 @@ float_motion_blur(const device uchar *ref [[buffer(0)]], device float *cur_blur 
                 tile[(lid2.y + r) * VMAF_MTL_FM_TILE + lid2.x + c];
         }
     }
-    const float blurred = vmaf_mtl_fm_blur(vmaf_mtl_fm_taps(args.filter_size), win);
+    const float blurred = vmaf_mtl_fm_blur(vmaf_mtl_fm_taps(args.filter_size), &win);
     const uint off = gid.y * args.width + gid.x;
     cur_blur[off] = blurred;
     if (args.compute_sad != 0u) {

@@ -20,6 +20,7 @@
 #include <assert.h>
 #include <errno.h>
 #include <math.h>
+#include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -363,6 +364,77 @@ static int predict_init_feature_vectors(VmafModel *model, VmafFeatureCollector *
     return 0;
 }
 
+/* ADR-1713: the Rust predictor's table. vmaf_rust_predict_install() installs it
+ * at vmaf_init() in a build with -Denable_rust_features=true; NULL = the C
+ * predictor. Plain NULL initialisation: ATOMIC_VAR_INIT is deprecated (C17)
+ * and absent from MSVC's <stdatomic.h>. */
+static _Atomic(const struct VmafRustPredictOps *) rust_predict_ops = NULL;
+
+void vmaf_predict_install_rust_ops(const struct VmafRustPredictOps *ops)
+{
+    atomic_store_explicit(&rust_predict_ops, ops, memory_order_release);
+}
+
+static const struct VmafRustPredictOps *predict_rust_ops(void)
+{
+    return atomic_load_explicit(&rust_predict_ops, memory_order_acquire);
+}
+
+void vmaf_rust_predict_destroy(VmafModel *model)
+{
+    if (!model || !model->rust_predict)
+        return;
+    const struct VmafRustPredictOps *ops = predict_rust_ops();
+    if (ops)
+        ops->destroy(model->rust_predict);
+    model->rust_predict = NULL;
+}
+
+/* The C predictor runs for this model; the WARNING names the model and why
+ * (no silent fallback). */
+static int predict_keep_c(VmafModel *model, const char *reason)
+{
+    vmaf_log(VMAF_LOG_LEVEL_WARNING, "model %s: %s, running the C predictor\n", model->name,
+             reason);
+    model->rust_predict_state = 2;
+    return 0;
+}
+
+/* Rust predictor (RC4 lane P, ADR-1713): with VMAF_FEATURE_IMPL=rust the
+ * prediction after the score gather runs in `vmafx-predict` through the
+ * installed table. Without a table (a build without Rust) or for a model the
+ * Rust predictor does not implement, the C predictor runs and a WARNING says
+ * so. The mode is read once per process, so the outcome is kept per model.
+ * Called under predict_cache_lock. */
+static int predict_init_rust(VmafModel *model)
+{
+    if (model->rust_predict_state != 0)
+        return 0;
+    const int requested = vmaf_feature_impl_rust_requested();
+    if (requested < 0)
+        return requested;
+    if (requested == 0) {
+        model->rust_predict_state = 2;
+        return 0;
+    }
+    assert(model->n_features > 0);
+    const struct VmafRustPredictOps *ops = predict_rust_ops();
+    if (!ops)
+        return predict_keep_c(model, "this build has no Rust predictor");
+    if (!model->predict_raw)
+        model->predict_raw = (double *)calloc(model->n_features, sizeof(double));
+    if (!model->predict_raw)
+        return -ENOMEM;
+    const int err = ops->create(model, &model->rust_predict);
+    if (err == -ENOTSUP)
+        return predict_keep_c(model, "no Rust implementation of its prediction");
+    if (err)
+        return err;
+    model->rust_predict_state = 1;
+    vmaf_log(VMAF_LOG_LEVEL_INFO, "model %s: Rust prediction\n", model->name);
+    return 0;
+}
+
 /* Round-5 race fix (finding #3): serialise the three lazy-init blocks with
  * model->predict_cache_lock (initialised in vmaf_read_json_model()).  The lock
  * is held only during the one-time init, not during SVM inference. */
@@ -383,10 +455,13 @@ static int predict_fill_caches(VmafModel *model, VmafFeatureCollector *feature_c
             return -ENOMEM;
     }
 
-    if (!model->predict_feature_vectors)
-        return predict_init_feature_vectors(model, feature_collector);
+    if (!model->predict_feature_vectors) {
+        const int err = predict_init_feature_vectors(model, feature_collector);
+        if (err)
+            return err;
+    }
 
-    return 0;
+    return predict_init_rust(model);
 }
 
 static int predict_ensure_caches(VmafModel *model, VmafFeatureCollector *feature_collector)
@@ -477,6 +552,74 @@ static int predict_build_svm_nodes(VmafModel *model, VmafFeatureCollector *featu
     return 0;
 }
 
+/* The C predictor after the score gather: normalise into SVM nodes, svm_predict,
+ * denormalise, validate, transform, clip. */
+static int predict_compute_c(VmafModel *model, VmafFeatureCollector *feature_collector,
+                             unsigned index, bool propagate_metadata, enum VmafModelFlags flags,
+                             double *prediction)
+{
+    int err = predict_build_svm_nodes(model, feature_collector, index, propagate_metadata);
+    if (err)
+        return err;
+
+    *prediction = svm_predict(model->svm, model->predict_nodes);
+
+    err = denormalize(model, prediction);
+    if (err)
+        return err;
+
+    err = predict_validate_finite(*prediction, index, "model score");
+    if (err)
+        return err;
+
+    err = transform(model, prediction, flags, index);
+    if (err)
+        return err;
+
+    clip(model, prediction, flags);
+    return 0;
+}
+
+/* The same steps in Rust: the raw scores come from the collector exactly as
+ * predict_build_svm_nodes() reads them. */
+static int predict_compute_rust(VmafModel *model, VmafFeatureCollector *feature_collector,
+                                unsigned index, bool propagate_metadata, enum VmafModelFlags flags,
+                                double *prediction)
+{
+    const struct VmafRustPredictOps *ops = predict_rust_ops();
+    if (!ops)
+        return -EINVAL;
+    for (unsigned i = 0; i < model->n_features; i++) {
+        const int err = predict_load_feature_score(model, feature_collector, i, index,
+                                                   propagate_metadata, &model->predict_raw[i]);
+        if (err)
+            return err;
+    }
+    return ops->predict(model, model->rust_predict, model->predict_raw, flags, model->predict_nodes,
+                        index, prediction);
+}
+
+int vmaf_predict_inputs_written(VmafModel *model, VmafFeatureCollector *feature_collector,
+                                unsigned index)
+{
+    if (!model)
+        return -EINVAL;
+    if (!feature_collector)
+        return -EINVAL;
+
+    int err = predict_ensure_caches(model, feature_collector);
+    for (unsigned i = 0; i < model->n_features && !err; i++) {
+        double feature_score = 0.0;
+        err = vmaf_feature_collector_get_score(feature_collector, model->predict_feature_names[i],
+                                               &feature_score, index);
+        /* -EINVAL: the feature has no vector yet, or none reaching `index`:
+         * not written yet, as far as the collector can tell. */
+        if (err == -EINVAL)
+            err = -EAGAIN;
+    }
+    return err;
+}
+
 int vmaf_predict_score_at_index(VmafModel *model, VmafFeatureCollector *feature_collector,
                                 unsigned index, double *vmaf_score, bool write_prediction,
                                 bool propagate_metadata, enum VmafModelFlags flags)
@@ -492,28 +635,20 @@ int vmaf_predict_score_at_index(VmafModel *model, VmafFeatureCollector *feature_
     if (err)
         return err;
 
-    err = predict_build_svm_nodes(model, feature_collector, index, propagate_metadata);
+    double prediction;
+    if (model->rust_predict_state == 1) {
+        err = predict_compute_rust(model, feature_collector, index, propagate_metadata, flags,
+                                   &prediction);
+    } else {
+        err = predict_compute_c(model, feature_collector, index, propagate_metadata, flags,
+                                &prediction);
+    }
     if (err)
         return err;
-
-    double prediction = svm_predict(model->svm, model->predict_nodes);
-
-    err = denormalize(model, &prediction);
-    if (err)
-        return err;
-
-    err = predict_validate_finite(prediction, index, "model score");
-    if (err)
-        return err;
-
-    err = transform(model, &prediction, flags, index);
-    if (err)
-        return err;
-
-    clip(model, &prediction, flags);
 
     if (write_prediction) {
-        err = vmaf_feature_collector_append(feature_collector, model->name, prediction, index);
+        err = vmaf_feature_collector_append_from(feature_collector, model->name, prediction, index,
+                                                 VMAF_FEATURE_SOURCE_MODEL, model->name);
         if (err)
             return err;
     }
@@ -628,19 +763,24 @@ static int bootstrap_append_named_scores(const VmafModelCollection *model_collec
 
     int err = 0;
     (void)snprintf(name, name_sz, "%s%s", model_collection->name, BOOTSTRAP_SUFFIX_BAGGING);
-    err |= vmaf_feature_collector_append(feature_collector, name, score->bootstrap.bagging_score,
-                                         index);
+    err |= vmaf_feature_collector_append_from(feature_collector, name,
+                                              score->bootstrap.bagging_score, index,
+                                              VMAF_FEATURE_SOURCE_MODEL, model_collection->name);
 
     (void)snprintf(name, name_sz, "%s%s", model_collection->name, BOOTSTRAP_SUFFIX_STDDEV);
-    err |= vmaf_feature_collector_append(feature_collector, name, score->bootstrap.stddev, index);
+    err |=
+        vmaf_feature_collector_append_from(feature_collector, name, score->bootstrap.stddev, index,
+                                           VMAF_FEATURE_SOURCE_MODEL, model_collection->name);
 
     (void)snprintf(name, name_sz, "%s%s", model_collection->name, BOOTSTRAP_SUFFIX_CI_LO);
-    err |=
-        vmaf_feature_collector_append(feature_collector, name, score->bootstrap.ci.p95.lo, index);
+    err |= vmaf_feature_collector_append_from(feature_collector, name, score->bootstrap.ci.p95.lo,
+                                              index, VMAF_FEATURE_SOURCE_MODEL,
+                                              model_collection->name);
 
     (void)snprintf(name, name_sz, "%s%s", model_collection->name, BOOTSTRAP_SUFFIX_CI_HI);
-    err |=
-        vmaf_feature_collector_append(feature_collector, name, score->bootstrap.ci.p95.hi, index);
+    err |= vmaf_feature_collector_append_from(feature_collector, name, score->bootstrap.ci.p95.hi,
+                                              index, VMAF_FEATURE_SOURCE_MODEL,
+                                              model_collection->name);
 
     free(name);
     return err;

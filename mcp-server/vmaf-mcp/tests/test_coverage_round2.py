@@ -30,7 +30,7 @@ server.py — residual helpers untouched by PR #305 / PR #346:
 - ``_run_vmaf_score`` non-zero-exit raise.
 - ``_run_vmaf_score`` explicit-backend-not-advertised raise (Bug #1 echo).
 - ``_run_vmaf_score_encoded`` integration via stubbed ``_run_vmaf_score``.
-- ``_load_vlm`` returns None when transformers/torch absent.
+- ``_load_vlm`` returns None when onnxruntime-genai is absent.
 - ``_vmaf_version`` --version timeout fall-through.
 - ``_call_tool`` success-path dispatch for the under-exercised tools
   (``list_backends``, ``vmaf_version``, ``list_extractors``, ``describe_model``,
@@ -806,26 +806,29 @@ def test_run_vmaf_score_encoded_raises_when_ffprobe_missing(
 
 
 def test_load_vlm_returns_none_when_dependencies_absent(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Lines 542-546: when ``torch`` / ``transformers`` can't be imported the
-    helper must return None (signalling "VLM unavailable" to callers).
-    """
+    """When ``onnxruntime_genai`` can't be imported the helper returns None
+    (signalling "VLM unavailable" to callers) and keeps the reason."""
     # Reset the cached state so the import is exercised this call.
     monkeypatch.setitem(srv._vlm_state, "loaded", False)
     monkeypatch.setitem(srv._vlm_state, "pipeline", None)
     monkeypatch.setitem(srv._vlm_state, "model_id", None)
+    monkeypatch.setitem(srv._vlm_state, "reason", None)
+    (tmp_path / "genai_config.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setenv("VMAF_MCP_VLM_MODEL", str(tmp_path))
 
     real_import = __builtins__["__import__"] if isinstance(__builtins__, dict) else __import__
 
     def fake_import(name: str, *args: Any, **kwargs: Any) -> Any:
-        if name in {"torch", "transformers"}:
+        if name == "onnxruntime_genai":
             raise ImportError(f"simulated absence of {name}")
         return real_import(name, *args, **kwargs)
 
     monkeypatch.setattr("builtins.__import__", fake_import)
     assert srv._load_vlm() is None
-    # Subsequent calls hit the cached-state short-circuit (line 538-539).
+    assert srv._vlm_state["reason"] == "onnxruntime-genai is not installed"
+    # Subsequent calls hit the cached-state short-circuit.
     assert srv._load_vlm() is None
 
 

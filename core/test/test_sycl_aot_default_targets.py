@@ -164,7 +164,9 @@ def run(build_dir: Path, jobs: int) -> int:
         failures = measured_size_failures(ocloc, targets, workdir)
         configured = configured_targets(found[0][2])
         if set(targets) <= set(configured):
-            print(f"the build compiled its {len(found)} SYCL translation units for the default list")
+            print(
+                f"the build compiled its {len(found)} SYCL translation units for the default list"
+            )
         else:
             failures += compile_failures(build_dir, targets, jobs, workdir)
     for failure in failures:

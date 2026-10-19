@@ -53,7 +53,7 @@ Per frame, on the luma plane only (chroma ignored), all in double precision:
 2. **2x bicubic downscale** — OpenCV `INTER_CUBIC`: the Keys cubic kernel with
    `a = -0.75`, source coordinate `2i + 0.5`, `BORDER_REPLICATE` edges. This is
    the dominant cross-host parity component and is ported bit-faithfully.
-3. **Crop** — to a multiple of `2^levels` computed from the **original**
+3. **Crop** — to a multiple of $2^{\mathrm{levels}}$ computed from the **original**
    pre-resize dimensions: `w_crop = (orig_w >> (levels+1)) << levels`
    (`levels = 2`, so the cropped extent is a multiple of 4).
 4. **2-level Haar DWT** — pywt `'periodization'` convention. Each level
@@ -65,19 +65,24 @@ Per frame, on the luma plane only (chroma ignored), all in double precision:
    to 8 dp.
 6. **MS-SSIM atom (cov pooling)** — per scale, the luminance term comes from the
    approx subband and the contrast/structure terms from the detail-subband
-   energy; the per-pixel SSIM map is pooled as `std(map) / mean(map)`; scales
+   energy; the per-pixel SSIM map is pooled as
+   $\mathrm{std}(\mathrm{map}) / \mathrm{mean}(\mathrm{map})$; scales
    combine with exponents `[0.0448, 0.2856]` (sign-preserving power). `C1 =
    1e-4`, `C2 = 9e-4`.
 7. **DLM atom (scale 2)** — on the last detail level, in four stages:
     - *Decouple:* split the distortion into restored and additive parts
-      (psi-angle mask `< 1°`, `k = clip(dis/(ref+eps), 0, 1)`).
+      (psi-angle mask `< 1°`,
+      $k = \operatorname{clip}(\mathrm{dis} / (\mathrm{ref} + \varepsilon), 0, 1)$).
     - *Mask:* apply a 3×3 contrast mask (`/30`).
     - *Pool:* pool each subband's masked energy with cube-root pooling after a
-      `0.2`-border crop. `dlm = (num + 1e-4) / (den + 1e-4)`.
-    - *Asymmetry:* the numerator pools `rest^3` **without** abs while the
+      `0.2`-border crop.
+      $\mathrm{dlm} = (\mathrm{num} + 10^{-4}) / (\mathrm{den} + 10^{-4})$.
+    - *Asymmetry:* the numerator pools $\mathrm{rest}^3$ **without** abs while the
       denominator pools the reference detail **with** abs. This is an upstream
       asymmetry and is reproduced exactly.
-8. **MAD-Ref atom (scale 2)** — `mean(|A2_ref[t] - A2_ref[t-1]|)`; `0` on the
+8. **MAD-Ref atom (scale 2)** —
+   $\mathrm{mean}\left(\lvert A2_{\mathrm{ref}}[t] - A2_{\mathrm{ref}}[t-1] \rvert\right)$;
+   `0` on the
    first frame. This makes the extractor temporal.
 
 ## Inputs and backends

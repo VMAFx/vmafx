@@ -1,0 +1,1 @@
+| [ADR-3286](3286-arc-runners-fork-guard.md) | The `runs-on` selector of every job that can use the `arc-runners` pool adds the head-repository condition, so a pull request from a fork always runs on the hosted fallback; `ArcForkGuardContract` admits only that form. | Accepted | ci, security, infra |

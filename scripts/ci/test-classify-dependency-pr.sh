@@ -18,11 +18,8 @@
 set -euo pipefail
 
 # Real-Git cases must not inherit the hook caller's repository or config.
-while IFS= read -r fixture_git_variable; do
-  unset "$fixture_git_variable"
-done < <(compgen -A variable GIT_)
-unset fixture_git_variable
-export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null
+# shellcheck source=/dev/null
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/../lib/clean-git-env.sh"
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 classifier="${repo_root}/scripts/ci/classify-dependency-pr.sh"
@@ -75,6 +72,7 @@ Dockerfile
 dev/Containerfile
 docker/dev/ubuntu-26.04.Dockerfile
 .github/workflows/ci.yml
+.github/actions/image-licence-artifacts/action.yml
 changelog.d/dependencies/torch.md
 DIFF
 expect_exit "dependency-only path set is exempt" 0 "renovate[bot]" "renovate/all" "${work}/case1_dep_only.diff"
@@ -230,8 +228,6 @@ mkdir -p "${repo}/deploy/helm/vmafx" "${repo}/core/src/feature"
 (
   cd "${repo}" || exit 1
   git init -q .
-  git config user.email t@example.com
-  git config user.name t
   echo "image: v1" >deploy/helm/vmafx/values.yaml
   echo "int x;" >core/src/feature/seed.c
   git add -A && git commit -qm base
@@ -279,8 +275,6 @@ mkdir -p "${repo21}/python"
 (
   cd "${repo21}" || exit 1
   git init -q .
-  git config user.email t@example.com
-  git config user.name t
   printf 'numpy>=2.5.2\n' >python/requirements.txt
   printf 'setup(install_requires=["numpy>=2.5.2"])\n' >python/setup.py
   git add -A && git commit -qm base
@@ -312,8 +306,6 @@ mkdir -p "${repo22}/python" "${repo22}/core/src"
 (
   cd "${repo22}" || exit 1
   git init -q .
-  git config user.email t@example.com
-  git config user.name t
   printf 'setup(install_requires=["numpy>=2.5.2"])\n' >python/setup.py
   printf 'int x;\n' >core/src/thing.c
   git add -A && git commit -qm base
@@ -421,6 +413,30 @@ Makefile
 DIFF
 expect_exit "human author editing the root Makefile is NOT exempt" 1 "developer" \
   "feat/make-target" "${work}/case35_human_makefile.diff"
+
+# ADR-3318 pins the Rust toolchain in the root rust-toolchain.toml and
+# Renovate bumps it with the workflows and Cargo manifests (PR #2795).
+cat >"${work}/case36_pr2795_rust_toolchain.diff" <<'DIFF'
+.github/workflows/rust-ci.yml
+Cargo.toml
+build-config.env
+core/src/rust/Cargo.toml
+rust-toolchain.toml
+DIFF
+expect_exit "PR #2795 fixture (root rust-toolchain.toml pin) is exempt" 0 "app/renovate" \
+  "renovate/rust-toolchain" "${work}/case36_pr2795_rust_toolchain.diff"
+
+cat >"${work}/case37_nested_rust_toolchain.diff" <<'DIFF'
+core/src/rust/rust-toolchain.toml
+DIFF
+expect_exit "nested rust-toolchain.toml is NOT exempt" 1 "renovate[bot]" \
+  "renovate/lookalike-toolchain" "${work}/case37_nested_rust_toolchain.diff"
+
+cat >"${work}/case38_human_rust_toolchain.diff" <<'DIFF'
+rust-toolchain.toml
+DIFF
+expect_exit "human author editing rust-toolchain.toml is NOT exempt" 1 "developer" \
+  "feat/toolchain" "${work}/case38_human_rust_toolchain.diff"
 
 echo ""
 echo "test-classify-dependency-pr: ${pass_count} passed, ${fail_count} failed"

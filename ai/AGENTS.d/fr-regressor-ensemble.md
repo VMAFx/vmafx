@@ -7,7 +7,7 @@ paths:
 invariant: N=5 deep ensemble; registry flips smoke false only when all seeds pass PLCC >= 0.95 and spread <= 0.005.
 ---
 <!-- markdownlint-disable MD013 MD060 -->
-# `fr_regressor_v2_ensemble_v1` — probabilistic head (ADR-0279)
+# `fr_regressor_v2_ensemble_v1` — probabilistic head (ADR-0393)
 
 Probabilistic successor to codec-aware
 `fr_regressor_v2` = deep ensemble of N=5 v2 members trained under

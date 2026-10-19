@@ -92,6 +92,7 @@ typedef struct VmafDnnConfig {
  *
  * @note Thread safety: Safe to call from any thread.
  */
+VMAF_DEPRECATED("use vmafx_dnn_available")
 VMAF_EXPORT int vmaf_dnn_available(void);
 
 /**
@@ -119,6 +120,7 @@ VMAF_EXPORT int vmaf_dnn_available(void);
  * @note Thread safety: Not thread-safe. Call before vmaf_read_pictures() on the
  *               same context.
  */
+VMAF_DEPRECATED("use vmafx_context_use_tiny_model")
 VMAF_EXPORT int vmaf_use_tiny_model(VmafContext *ctx, const char *onnx_path,
                                     const VmafDnnConfig *cfg);
 
@@ -168,6 +170,7 @@ VMAF_EXPORT int vmaf_use_tiny_model(VmafContext *ctx, const char *onnx_path,
  * @note Thread safety: Not thread-safe. Call before the first vmaf_read_pictures()
  *               on the same context.
  */
+VMAF_DEPRECATED("use vmafx_context_set_codec_context")
 VMAF_EXPORT int vmaf_dnn_set_codec_context(VmafContext *ctx, const char *codec_name,
                                            const char *preset, int crf);
 
@@ -186,6 +189,7 @@ VMAF_EXPORT int vmaf_dnn_set_codec_context(VmafContext *ctx, const char *codec_n
  *
  * @note Thread safety: Safe to call before vmaf_read_pictures() on the same context.
  */
+VMAF_DEPRECATED("use vmafx_context_is_codec_aware")
 VMAF_EXPORT int vmaf_dnn_is_codec_aware(const VmafContext *ctx);
 
 /**
@@ -241,6 +245,7 @@ typedef enum VmafDnnResizeMode {
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per driver thread.
  */
+VMAF_DEPRECATED("use vmafx_context_set_tiny_resize")
 VMAF_EXPORT int vmaf_dnn_set_resize_mode(VmafContext *ctx, VmafDnnResizeMode mode);
 
 /**
@@ -269,6 +274,7 @@ typedef struct VmafDnnSession VmafDnnSession;
  * @note Thread safety: Not thread-safe. Each session handle must be owned by one
  *               thread at a time; create one session per thread for concurrency.
  */
+VMAF_DEPRECATED("use vmafx_dnn_session_open")
 VMAF_EXPORT int vmaf_dnn_session_open(VmafDnnSession **out, const char *onnx_path,
                                       const VmafDnnConfig *cfg);
 
@@ -292,6 +298,7 @@ VMAF_EXPORT int vmaf_dnn_session_open(VmafDnnSession **out, const char *onnx_pat
  * @note Thread safety: Not thread-safe. Each session must be owned by one thread
  *               at a time.
  */
+VMAF_DEPRECATED("use vmafx_dnn_session_run_luma8")
 VMAF_EXPORT int vmaf_dnn_session_run_luma8(VmafDnnSession *sess, const uint8_t *in,
                                            size_t in_stride, int w, int h, uint8_t *out,
                                            size_t out_stride);
@@ -323,6 +330,7 @@ VMAF_EXPORT int vmaf_dnn_session_run_luma8(VmafDnnSession *sess, const uint8_t *
  * @note Thread safety: Not thread-safe. Each session must be owned by one thread
  *               at a time.
  */
+VMAF_DEPRECATED("use vmafx_dnn_session_run_plane16")
 VMAF_EXPORT int vmaf_dnn_session_run_plane16(VmafDnnSession *sess, const uint16_t *in,
                                              size_t in_stride, int w, int h, int bpc, uint16_t *out,
                                              size_t out_stride);
@@ -378,6 +386,7 @@ typedef struct VmafDnnOutput {
  * @note Thread safety: Not thread-safe. Each session must be owned by one thread
  *               at a time.
  */
+VMAF_DEPRECATED("use vmafx_dnn_session_run")
 VMAF_EXPORT int vmaf_dnn_session_run(VmafDnnSession *sess, const VmafDnnInput *inputs,
                                      size_t n_inputs, VmafDnnOutput *outputs, size_t n_outputs);
 
@@ -392,6 +401,7 @@ VMAF_EXPORT int vmaf_dnn_session_run(VmafDnnSession *sess, const VmafDnnInput *i
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
+VMAF_DEPRECATED("use vmafx_dnn_session_close")
 VMAF_EXPORT void vmaf_dnn_session_close(VmafDnnSession *sess);
 
 /**
@@ -410,6 +420,7 @@ VMAF_EXPORT void vmaf_dnn_session_close(VmafDnnSession *sess);
  * @note Thread safety: Safe to call from any thread once the session is open and
  *               no concurrent inference is in flight on that session.
  */
+VMAF_DEPRECATED("use vmafx_dnn_session_runtime_device")
 VMAF_EXPORT const char *vmaf_dnn_session_attached_ep(VmafDnnSession *sess);
 
 /**
@@ -434,6 +445,7 @@ VMAF_EXPORT const char *vmaf_dnn_session_attached_ep(VmafDnnSession *sess);
  *
  * @note Thread safety: Safe to call from any thread; uses no shared mutable state.
  */
+VMAF_DEPRECATED("use vmafx_dnn_verify_signature")
 VMAF_EXPORT int vmaf_dnn_verify_signature(const char *onnx_path, const char *registry_path);
 
 #ifdef __cplusplus

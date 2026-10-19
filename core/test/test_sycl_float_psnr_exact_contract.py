@@ -46,9 +46,7 @@ GROUP_SUM = (
     "partials[workgroup_index] = total;",
 )
 LOCAL_SUMS = "sycl::local_accessor<uint64_t, 1> const s_partials("
-READBACK = (
-    "q.memcpy(s->h_partials, s->d_partials, (size_t)s->wg_count * sizeof(uint64_t));"
-)
+READBACK = "q.memcpy(s->h_partials, s->d_partials, (size_t)s->wg_count * sizeof(uint64_t));"
 HOST_SUM = (
     "const double total = vmaf_float_psnr_row_noise(s->h_partials, s->height, s->wg_count_x);",
     "const double noise = (total / (scaler * scaler)) / n_pix;",
@@ -162,7 +160,9 @@ class FloatPsnrSyclExactContract(unittest.TestCase):
         self._assert_detected(failures, "not an integer sum")
 
     def test_float_group_total_is_detected(self) -> None:
-        failures = self._edited("twin", "        uint64_t total = 0u;", "        float total = 0.0f;")
+        failures = self._edited(
+            "twin", "        uint64_t total = 0u;", "        float total = 0.0f;"
+        )
         self._assert_detected(failures, "added in floating point")
 
     def test_frame_total_instead_of_rows_is_detected(self) -> None:

@@ -261,7 +261,8 @@ def sycl_bundle(root: Path) -> None:
                  make_pe(0x8664, ["ur_win_proxy_loader.dll", "vcruntime140.dll"]))  # fmt: skip
         write_pe(root, f"{directory}/ur_win_proxy_loader.dll", make_pe(0x8664, ["ucrtbase.dll"]))
         write_pe(root, f"{directory}/ur_loader.dll", make_pe(0x8664, ["msvcp140.dll"]))
-        write_pe(root, f"{directory}/ze_loader.dll", make_pe(0x8664, ["kernel32.dll"]))
+        write_pe(root, f"{directory}/ze_loader.dll",
+                 make_pe(0x8664, ["kernel32.dll", "cfgmgr32.dll"]))  # fmt: skip
         write_pe(root, f"{directory}/vcruntime140.dll", make_pe(0x8664, ["kernel32.dll"]))
         write_pe(root, f"{directory}/msvcp140.dll", make_pe(0x8664, ["vcruntime140.dll"]))
 
@@ -273,6 +274,17 @@ def test_a_md_bundle_passes_with_its_runtime_beside_each_program(tmp_path: Path)
                                "--loaded-at-run-time", "ur_loader.dll"]) == 0  # fmt: skip
     # The same tree is refused by the /MT check of the CPU and CUDA zips.
     assert any("imports the runtime DLL" in p for p in imports_check.check(tmp_path, "x64"))
+
+
+def test_cfgmgr32_is_a_windows_dll_and_an_unknown_one_is_not(tmp_path: Path) -> None:
+    """The Level Zero loader imports cfgmgr32.dll (System32); an unknown DLL still fails."""
+    sycl_bundle(tmp_path)
+    assert imports_check.check(tmp_path, "x64", "md", ("ur_loader.dll",)) == []
+    write_pe(tmp_path, "tests/ze_loader.dll", make_pe(0x8664, ["kernel32.dll", "libvendor.dll"]))
+    assert (
+        "tests/ze_loader.dll: imports libvendor.dll, neither part of Windows nor in its directory"
+        in imports_check.check(tmp_path, "x64", "md", ("ur_loader.dll",))
+    )
 
 
 def test_a_md_bundle_refuses_a_missing_or_unused_dll(tmp_path: Path) -> None:

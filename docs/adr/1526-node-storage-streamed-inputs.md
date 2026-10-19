@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-1526: vmafx-node reads job sources through pkg/storage and streams http-served inputs into the vmaf CLI through pipes
 
-- **Status**: Accepted
+- **Status**: Accepted (partially superseded by [ADR-2350](2350-cloud-native-platform.md) for rclone as the default input path (presigned object URLs by default, rclone opt-in))
 - **Date**: 2026-10-04
 - **Deciders**: maintainer, agent
 - **Tags**: go, node, storage, rclone, helm, phase4b, fork-local

@@ -1,0 +1,76 @@
+# SPDX-License-Identifier: EUPL-1.2
+# Copyright 2026 Lusoris
+#
+# test/e2e/controller-ha/values.yaml — chart values of the controller
+# failover case (kuttl case 02-controller-ha, ADR-2350): two controller
+# replicas on the PostgreSQL store (a one-instance CloudNativePG Cluster),
+# one CPU node, the exact e2e-test images, and requests and limits small
+# enough for a kind cluster on a shared host.
+#
+# The scoring root is the driver's fixture server: the nodes stream the
+# inputs from it, and it holds every stream after the first frame until
+# the scenario has killed a node and a controller.
+
+image:
+  tag: e2e-test
+  pullPolicy: Never
+
+# The server workload is not part of this case.
+deployment:
+  replicaCount: 0
+
+gpu:
+  vendor: cpu
+
+controller:
+  enabled: true
+  replicas: 2
+  image:
+    tag: e2e-test
+    pullPolicy: Never
+  store:
+    backend: postgres
+    leaseTTL: 30s
+    sessionTTL: 45s
+    sweepInterval: 2s
+    backoffBase: 1s
+    backoffMax: 5s
+    postgresql:
+      mode: cnpg
+      cnpg:
+        instances: 1
+        storage:
+          size: 1Gi
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+node:
+  enabled: true
+  replicaCount: 1
+  image:
+    tag: e2e-test
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+
+auth:
+  enabled: true
+  disabled: true
+  scoringRoots:
+    - http://vmafx-e2e-driver:8080/fixtures

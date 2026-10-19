@@ -1,0 +1,2 @@
+adr: ADR-1496, ADR-1498
+evidence: Apple M4 Pro (macOS 26.6), macOS tester bundle built from 860050c3f, outside-tester report #2118 (docs/hardware-reports/2026-10-05-apple-m4-pro.json): the parity gate's metal cell, held exact at --precision max, is 0 on the Netflix 576x324 pair at 8 and 10 bit and both 1080p checkerboards (48 + 3 + 3 + 3 frames); test_metal_integer_ssim_parity == on 16 of 16 cases (8 to 16 bit, odd, tiny and one-pixel frames, 1080p, enable_db, inverted at 8 and 16 bit, identical frames).

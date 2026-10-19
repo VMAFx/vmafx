@@ -128,3 +128,14 @@ concatenation is deterministic.
 - Related PRs: lands after #332.
 - Source: `req` — direct user direction to wire the linter into
   `make lint` + pre-commit + CI after PR #332's sweep.
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 10: `ADR-0864 (PR #332) tuned .markdownlint.json for the fork's
+  prose-heavy docs corpus`: Cites nonexistent ADR-0864 for tuning
+  .markdownlint.json. ADR-0864 does not exist on origin/master. See ADR-0866
+  and ADR-0980 (markdownlint configuration tune and first sweep; ADR-0864 is a
+  retired number in scripts/ci/source-adr-citations.json).

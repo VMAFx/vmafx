@@ -327,3 +327,46 @@ void convolution_f32_avx_xy_s(const float *RESTRICT filter, int filter_width,
 
     convolution_f32_avx_horizontal(filter, filter_width, tmp, dst, width, height, dst_stride);
 }
+
+/* Netflix/vmaf 9cb9479f: the vertical pass of its convolution_f32_avx_dec16_s()
+ * at one retained row. The fork keeps the decimated horizontal pass in
+ * vif_tools.c (one scalar implementation for every target), so only the row
+ * combination is vectorised here. Each lane is one output column: the
+ * products are added in tap order to a sum that starts at zero, the order of
+ * the scalar vertical pass, so every lane holds the scalar's bits. The tail
+ * uses masked loads and stores, so nothing past `width` is read or written. */
+void convolution_f32_avx_rows_s(const float *RESTRICT filter, int filter_width,
+                                const float *const *RESTRICT rows, float *RESTRICT dst, int width)
+{
+    __m256 f[MAX_FWIDTH_AVX_CONV];
+
+    for (int k = 0; k < filter_width; k++) {
+        f[k] = _mm256_broadcast_ss(filter + k);
+    }
+
+    const int full_count = vmaf_floorn(width, AVX_STEP);
+    for (int j = 0; j < full_count; j += AVX_STEP) {
+        __m256 sum = _mm256_setzero_ps();
+
+        for (int k = 0; k < filter_width; k++) {
+            __m256 g = _mm256_loadu_ps(rows[k] + j);
+            g = _mm256_mul_ps(f[k], g);
+            sum = _mm256_add_ps(sum, g);
+        }
+
+        _mm256_storeu_ps(dst + j, sum);
+    }
+
+    const int remaining = width - full_count;
+    if (remaining > 0) {
+        const __m256i mask = _mm256_cmpgt_epi32(_mm256_set1_epi32(remaining),
+                                                _mm256_setr_epi32(0, 1, 2, 3, 4, 5, 6, 7));
+        __m256 sum = _mm256_setzero_ps();
+        for (int k = 0; k < filter_width; k++) {
+            __m256 g = _mm256_maskload_ps(rows[k] + full_count, mask);
+            g = _mm256_mul_ps(f[k], g);
+            sum = _mm256_add_ps(sum, g);
+        }
+        _mm256_maskstore_ps(dst + full_count, mask, sum);
+    }
+}

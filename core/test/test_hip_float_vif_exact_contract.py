@@ -53,6 +53,9 @@ HOST_ROW_SUM = (
 KERNEL_CALLS = ("fvif_pixel_statistic(", "fvif_row_sum(", "fvif_tap(")
 
 
+TAP_SITES = 2  # places the host hands a scale's taps to a kernel
+
+
 def _code(source: str) -> str:
     """The source with its comments blanked, so prose cannot trip a check."""
     return COMMENT.sub(" ", source)
@@ -86,7 +89,7 @@ def _host_failures(sources: dict[str, str]) -> list[str]:
     failures: list[str] = []
     if not re.search(r"\bvif_get_filter\(\s*filter\s*,", host):
         failures.append(f"{HOST}: the taps no longer come from vif_get_filter()")
-    if host.count(".taps = s->taps[scale],") != 2:
+    if host.count(".taps = s->taps[scale],") != TAP_SITES:
         failures.append(f"{HOST}: a launch no longer hands the scale's taps to the kernel")
     if ".vif_sigma_nsq = s->vif_sigma_nsq," not in host:
         failures.append(f"{HOST}: vif_sigma_nsq is narrowed before it reaches the kernel")

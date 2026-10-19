@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "description": "The tester legs that must be green on the exact head of a release candidate before it is cut (ADR-2198). scripts/release/check-candidate-legs.py reads it; scripts/release/tests/test_check_candidate_legs.py pins every job name to the workflow that defines it. A leg that is skipped, missing or red is not green: a master push or a pull request skips a leg whose inputs did not change.",
+  "workflows": [
+    {
+      "file": "windows-tester-bundle.yml",
+      "jobs": [
+        "Build and test the zip (Windows x64)",
+        "Build and test the zip (Windows arm64)",
+        "Build and test the zip (Windows x64-cuda)",
+        "Build and test the zip (Windows x64-sycl)",
+        "Verify the zip and write its SBOM (Windows x64)",
+        "Verify the zip and write its SBOM (Windows arm64)",
+        "Verify the zip and write its SBOM (Windows x64-cuda)",
+        "Verify the zip and write its SBOM (Windows x64-sycl)"
+      ]
+    },
+    {
+      "file": "macos-tester-bundle.yml",
+      "jobs": [
+        "Build and test the bundle (macOS arm64)"
+      ]
+    },
+    {
+      "file": "docker-publish-tester.yml",
+      "jobs": [
+        "x86_64 reference scores",
+        "Build and test (amd64)",
+        "Build and test (arm64)",
+        "Build and test the Intel GPU image (amd64)",
+        "Build and test the NVIDIA GPU image (amd64)",
+        "Build and test the AMD GPU image (amd64)"
+      ]
+    }
+  ]
+}

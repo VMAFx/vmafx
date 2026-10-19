@@ -8,7 +8,7 @@ from __future__ import annotations
 from . import ctext
 from .headers import HeaderPlan, plan
 from .layout import layouts
-from .model import Api, Deprecation, Struct, version_text
+from .model import Api, Compat, Deprecation, Struct, version_text
 
 DOCS_DIR = "docs/api/vmafx/"
 GENERATED = (
@@ -162,10 +162,70 @@ def header_page(api: Api, item: HeaderPlan) -> str:
 
 
 def _compat(api: Api) -> list[str]:
-    out = ["## libvmaf compatibility shims", "", "| libvmaf function | Header | Kind | Calls |"]
-    out.append("| --- | --- | --- | --- |")
-    out += [f"| `{c.name}` | `{c.header}` | {c.kind} | `{c.target}` |" for c in api.compats]
-    return [*out, ""]
+    if not api.compats:
+        return []
+    return [
+        "## libvmaf functions",
+        "",
+        f"The {len(api.compats)} functions of the libvmaf headers and the VMAFx calls each one",
+        "is written on: [libvmaf migration table](compat.md).",
+        "",
+    ]
+
+
+COMPAT_KIND_TEXT = {
+    "shim": "generated shim",
+    "glue": "generated glue",
+    "manual": "hand-written",
+    "engine": "engine (exception)",
+}
+
+
+def _compat_where(item: Compat) -> str:
+    """Which library defines the function in which build."""
+    if item.kind == "engine":
+        return f"libvmafx.so.1 in builds with {item.engine_with}; until {item.until}"
+    if item.engine_with:
+        return (
+            f"libvmaf.so.3 in builds without {item.engine_with}; with it, libvmafx.so.1"
+            f" until {item.until}"
+        )
+    if item.when:
+        return f"libvmaf.so.3 in builds with {item.when}"
+    return "libvmaf.so.3"
+
+
+def _compat_row(item: Compat) -> str:
+    calls = ", ".join(f"`{c}`" for c in item.calls) or f"`{item.target}`"
+    note = f" {item.note}." if item.note else ""
+    return (
+        f"| `{item.name}` | `{item.header}` | {calls} | {COMPAT_KIND_TEXT[item.kind]} |"
+        f" {_cell(_compat_where(item))}.{_cell(note)} |"
+    )
+
+
+def compat_text(api: Api) -> str:
+    """The migration table: every libvmaf function and what it is built on."""
+    counts = {kind: sum(c.kind == kind for c in api.compats) for kind in COMPAT_KIND_TEXT}
+    summary = ", ".join(f"{n} {COMPAT_KIND_TEXT[k]}" for k, n in counts.items() if n)
+    lines = [
+        GENERATED + "# libvmaf migration table (generated)",
+        "",
+        f"Every function of the libvmaf headers ({len(api.compats)}: {summary}) and the VMAFx",
+        "calls it is written on. `libvmaf.so.3` defines them on the exported `vmafx_*`",
+        "functions of `libvmafx.so.1` and links nothing else; a function marked engine",
+        "(exception) keeps the engine's own definition in `libvmafx.so.1` while its backend",
+        "is built, until the lane named in the last column lands. The",
+        "[VMAFx API page](index.md#migrating-from-libvmafh) explains the layout, the",
+        "deprecation warnings and the few deliberate differences.",
+        "",
+        "| libvmaf function | Header | VMAFx calls | Kind | Library |",
+        "| --- | --- | --- | --- | --- |",
+        *[_compat_row(c) for c in api.compats],
+        "",
+        "Back to the [reference index](reference.md).",
+    ]
+    return "\n".join(lines) + "\n"
 
 
 def index_text(api: Api) -> str:
@@ -194,4 +254,6 @@ def pages(api: Api) -> list[tuple[str, str]]:
     """(path, text) of every reference page, the index first."""
     out = [(f"{DOCS_DIR}reference.md", index_text(api))]
     out += [(page_path(item), header_page(api, item)) for item in plan(api)]
+    if api.compats:
+        out.append((f"{DOCS_DIR}compat.md", compat_text(api)))
     return out

@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: EUPL-1.2
+# Copyright 2026 Lusoris
+#
+# Kill a controller replica and the node of a running job mid-job; every job
+# must complete, each by exactly one attempt, and the killed job by a second
+# one (test/e2e/controller-ha/driver).
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+metadata:
+  name: failover-mid-job
+commands:
+  - command: bash ../../controller-ha/run-driver.sh vmafx-ha
+    timeout: 960

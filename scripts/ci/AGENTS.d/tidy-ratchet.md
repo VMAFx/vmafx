@@ -10,7 +10,11 @@ paths:
   - scripts/ci/clang-tidy-hip.sh
   - scripts/dev/tidy-lane.sh
   - .clang-tidy
+  - scripts/ci/praetor_tidy_coverage.py
+  - scripts/ci/tests/test_praetor_tidy_coverage.py
+  - .config/lint-exceptions.d/HISS-11.toml
 invariant: Baselines only via `make tidy-lane-write` (dev container); counts only decrease; `HeaderFilterRegex` starts `(^|/)`.
+area: tidy
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # tidy-ratchet.py invariants (ADR-1142)
@@ -32,6 +36,11 @@ invariant: Baselines only via `make tidy-lane-write` (dev container); counts onl
   `paths:` filter or custom early-skip probe to job.
 - `clang-diagnostic-error` in any TU = measurement failure (exit 4), never
   zero. Build (generated headers) before measuring.
+- Baseline `measured_sources` TU missing from measurement = "not measured"
+  (exit 4, file named), never 0 and never "tighten"
+  (`T-TIDY-RATCHET-UNMEASURED-AS-CLEAN-2026-10-06`: hosted job lacked MEX
+  compile commands + libvpl, measured 424 of 438, asked to tighten 5 MEX
+  files). New TU outside baseline = fine.
 - **cpu / cuda / hip / sycl / arm64 measured in dev container only (ADR-1471).**
   `make tidy-lane LANE=<lane|all>` checks, `make tidy-lane-write` rewrites
   baseline (`scripts/dev/tidy-lane.sh`: checkout tar-streamed into throwaway
@@ -51,10 +60,12 @@ invariant: Baselines only via `make tidy-lane-write` (dev container); counts onl
   lower header counts and never extends `measured_sources`; header cleanup
   or new TU -> full `make tidy-lane-write`.
 - Lane configuration = one definition: `TIDY_RATCHET_COMPILERS_<lane>` +
-  `TIDY_RATCHET_SETUP_<lane>` in `Makefile`, consumed by
-  `make tidy-ratchet-build`. cpu == hosted job's `meson setup` line
-  (`-Denable_dnn=disabled`: runner has no ORT, container has);
-  `tests/test_tidy_lane_container.py` compares both lines and clang-tidy
+  `TIDY_RATCHET_SETUP_<lane>` + `TIDY_RATCHET_COMPDB_<lane>` in `Makefile`,
+  consumed by `make tidy-ratchet-build` / `make tidy-ratchet`. Hosted cpu
+  jobs (`Tidy Ratchet`, nightly `clang-tidy-full`) run those two targets, never
+  own `meson setup` or direct `tidy-ratchet.py`; both install `libvpl-dev`
+  (dev container: same package). `-Denable_dnn=disabled`: runner lacks ORT,
+  container ships ORT. `tests/test_tidy_lane_container.py` pins both jobs and clang-tidy
   major (`CLANG_TIDY_MAJOR` in `tidy-lane.sh` vs `llvm.sh 22`). GPU lanes keep
   device compiler on (`-Denable_nvcc=true`, `-Denable_hipcc=true`,
   `-Denable_sycl=true`) and `-Denable_dnn=enabled`; never back to stubs.
@@ -68,7 +79,11 @@ invariant: Baselines only via `make tidy-lane-write` (dev container); counts onl
   headers call `__builtin_amdgcn_is_invocable`, stock LLVM 22 stops with
   "builtin functions must be directly called". Host TUs stay on
   `CLANG_TIDY_BIN`; `--version` = that one. Missing ROCm tool -> `error:`
-  line, exit 127 (TU unusable, not clean).
+  line, exit 127 (TU unusable, not clean). `.hip` gets
+  `--extra-arg=--cuda-host-only`: clang-tidy analyses driver's first job;
+  ROCm 10.0 (LLVM 23) = host job first, ROCm 10.1 (LLVM 24) = device job
+  first -> lane silently measured device AST (+23 in four headers). Keep the
+  pin; a ROCm bump re-measures the hip lane against 10.x before landing.
 - Self-test prints nothing: `report()` / `main()` print `::error::` under
   Actions; uncaptured, fixture `a.c` became annotation on hosted job. Use
   `_captured()`; `SelfTestOutput` reruns module with `GITHUB_ACTIONS` on and
@@ -104,6 +119,13 @@ invariant: Baselines only via `make tidy-lane-write` (dev container); counts onl
   around measurement/replacement, fail on unreadable NOLINT inputs. Diagnostic
   `--only` run is not full comparison. Keep failure/zero-tightening cases in
   `tests/test_tidy_scoped_write.py`; never make CI's full lane use `--only`.
+  Scoped write also drops entries (`warnings`, `nolint_uncited`,
+  `measured_sources`) of files absent from the tree (Q-309), prints each,
+  records `dropped_deleted_files`; an existing-but-unmeasured file keeps its
+  entry and fails closed (exit 4). Never make the drop depend on the
+  measurement or on existence-by-name guess; rename = old dropped, new
+  measured via `--only`. `measured-sources.txt` follows via
+  `praetor_tidy_coverage.py --write`.
 - Promoted clang-tidy checks (`-warnings-as-errors`) remain counted debt. Only
   recognized promotion exit/summary may bypass nonzero-tool-exit guard;
   parse/compile failures still invalidate that measurement. Reports retain
@@ -135,3 +157,28 @@ CPU baseline = `make tidy-lane-write LANE=cpu` (dev container; equals CI's
 `tidy-ratchet-cpu` artifact), never a host run. GPU lanes:
 `make tidy-lane-write LANE=<cuda|hip|sycl>`; not required contexts, nightly on
 workstation ([measuring lanes](../../../docs/development/tidy-lanes.md)).
+
+## Praetor `exceptions:` block ([ADR-2153](../../../docs/adr/2153-praetor-pin-04cc813.md), [ADR-2321](../../../docs/adr/2321-praetor-pin-afb739ed.md))
+
+- Praetor reads one `exceptions:` key in `.standards.yaml`. Block between
+  `BEGIN` / `END generated` markers = output of
+  `python3 scripts/ci/praetor_tidy_coverage.py --write`; hook
+  `check-praetor-tidy-coverage` fails stale block. Never edit block by hand.
+- Sources, one each (HISS-19): tidy coverage entries from baselines'
+  `measured_sources` + `.config/lint-exceptions.d/clang-tidy-coverage.toml`;
+  HISS-11 entries (declared SLSA gap) from
+  `.config/lint-exceptions.d/HISS-11.toml`, HISS-10 entries (workflows
+  whose lanes build-warnings gate reads as ungated, ADR-2784) from
+  `HISS-10.toml` (`PRAETOR_RULES`). New praetor
+  rule = add it to `PRAETOR_RULES` + case in
+  `scripts/ci/tests/test_praetor_tidy_coverage.py`.
+- Rendered expiry = earlier of entry's date and `PRAETOR_EXPIRY_CAP`
+  (praetor refuses more than 90 days out). Renew cap with entries.
+- HISS-10 entry path = one workflow; entry excuses every failing lane of it.
+  Gate reads werror only as literal on command, never `werror-args.sh`
+  output. List empty since ADR-2828: every lane spells switch. New lane
+  spells switch too; entry only for lane not yet gateable; stale entry fails
+  audit.
+- HISS-11 entry path = workflow `praetorctl audit` failure line names. Entry
+  for other workflow, or with no gap left, fails audit as stale: remove it
+  when release workflows reach declared level.

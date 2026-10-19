@@ -9,7 +9,8 @@
 static double block_mean(const double *xVal, int colLen, int i, int j)
 {
     double mean = 0;
-    int iB, jB;
+    int iB;
+    int jB;
 
     for (iB = i; iB < i + 16; iB++) {
         for (jB = j; jB < j + 16; jB++) {
@@ -26,8 +27,14 @@ static void block_moments(const double *xVal, int colLen, int i, int j, double *
                           double *outSkw, double *outKrt)
 {
     double mean = block_mean(xVal, colLen, i, j);
-    double stdev, skw, krt, stmp, tmp, tmp1;
-    int iB, jB;
+    double stdev;
+    double skw;
+    double krt;
+    double stmp;
+    double tmp;
+    double tmp1;
+    int iB;
+    int jB;
 
     stdev = 0;
     skw = 0;
@@ -61,7 +68,7 @@ static void block_moments(const double *xVal, int colLen, int i, int j, double *
     *outKrt = krt;
 }
 
-void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
+void mexFunction(int /* nlhs */, mxArray *plhs[], int /* nrhs */, const mxArray *prhs[])
 {
     /* We have input of one double type matrix*/
     /* this function calculates the local mean, std, skewness, and kurtosis*/
@@ -71,10 +78,19 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
 
     /*Declarations*/
     mxArray *xData;
-    double *xVal, *outStd, *outSkw, *outKrt;
-    double stdev, skw, krt;
-    int i, j, iB, jB;
-    int rowLen, colLen;
+    double *xVal;
+    double *outStd;
+    double *outSkw;
+    double *outKrt;
+    double stdev;
+    double skw;
+    double krt;
+    int i;
+    int j;
+    int iB;
+    int jB;
+    int rowLen;
+    int colLen;
 
     /*Copy input pointer x*/
     xData = prhs[0];
@@ -111,6 +127,4 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
             }
         }
     }
-
-    return;
 }

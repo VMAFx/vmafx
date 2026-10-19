@@ -14,11 +14,7 @@ server.py
 - ``_eval_model_on_split`` — features parquet missing 'mos' column.
 - ``_eval_model_on_split`` — missing feature columns error.
 - ``_eval_model_on_split`` — too-few-samples (< 2) error.
-- ``_describe_image_with_vlm`` — non-list return path from pipe.
-- ``_describe_image_with_vlm`` — list of non-dict return path.
-- ``_describe_image_with_vlm`` — list of dict with generated_text key.
-- ``_describe_image_with_vlm`` — list of dict with text key fallback.
-- ``_describe_image_with_vlm`` — TypeError fallback (no prompt= kwarg).
+- ``_describe_image_with_vlm`` — loaded describer output, unconfigured note.
 - ``_extract_frame_png`` — success path (mocked ffmpeg process).
 - ``_run_benchmark`` — FileNotFoundError when bench_all.sh absent.
 - ``_run_benchmark`` — non-zero rc + empty output emits error key.
@@ -174,15 +170,23 @@ def test_probe_backends_os_error_returns_cpu_only(monkeypatch, tmp_path):
     assert result == frozenset({"cpu"})
 
 
-def test_probe_backends_parses_hip_metal_flags(monkeypatch, tmp_path):
-    """When --help output contains '--no_hip' and '--no_metal', both are included.
+def test_probe_backends_parses_hip_metal_rows(monkeypatch, tmp_path):
+    """When the report lists hip and metal usable, both are included.
     Vulkan was removed per ADR-0726 and is no longer probed."""
     fake_vmaf = tmp_path / "vmaf"
     fake_vmaf.write_bytes(b"")
     fake_vmaf.chmod(0o755)
 
     r = MagicMock()
-    r.stdout = "--no_cuda\n--no_sycl\n--no_hip\n--no_metal\n"
+    r.returncode = 0
+    r.stdout = (
+        '{"backends": [{"name": "cpu", "compiled": true, "usable": true},'
+        ' {"name": "cuda", "compiled": true, "usable": true},'
+        ' {"name": "sycl", "compiled": true, "usable": true},'
+        ' {"name": "hip", "compiled": true, "usable": true},'
+        ' {"name": "metal", "compiled": true, "usable": true},'
+        ' {"name": "vulkan", "compiled": true, "usable": true}]}'
+    )
     r.stderr = ""
 
     monkeypatch.setattr(srv.subprocess, "run", lambda *_a, **_k: r)
@@ -204,7 +208,8 @@ def test_probe_backends_returns_cached_on_second_call(monkeypatch, tmp_path):
     def counting_run(*_a, **_k):
         call_count.append(1)
         r = MagicMock()
-        r.stdout = "--no_cuda\n"
+        r.returncode = 0
+        r.stdout = '{"backends": [{"name": "cuda", "compiled": true, "usable": true}]}'
         r.stderr = ""
         return r
 
@@ -329,79 +334,35 @@ def test_pick_worst_frames_empty_frames_list():
 
 
 # ---------------------------------------------------------------------------
-# _describe_image_with_vlm — non-list return paths
+# _describe_image_with_vlm — loaded describer
 # ---------------------------------------------------------------------------
 
 
-def test_describe_image_with_vlm_returns_string_when_pipe_returns_string(monkeypatch):
-    """When the VLM pipeline returns a plain string (not a list), the function
-    must return that string stripped."""
-    # Prime the state so _load_vlm skips the import step.
+def test_describe_image_with_vlm_strips_the_describer_output(monkeypatch):
+    """A loaded describer's text is returned stripped, for the image path given."""
+    seen: list[str] = []
+
+    def describe(path: str) -> str:
+        seen.append(path)
+        return "  compression artefact \n"
+
     monkeypatch.setitem(srv._vlm_state, "loaded", True)
-    monkeypatch.setitem(srv._vlm_state, "pipeline", lambda _path, **_kw: "compression artefact")
+    monkeypatch.setitem(srv._vlm_state, "pipeline", describe)
     monkeypatch.setitem(srv._vlm_state, "model_id", "test-model")
 
     result = srv._describe_image_with_vlm(Path("/tmp/fake.png"))
     assert result == "compression artefact"
+    assert seen == ["/tmp/fake.png"]
 
 
-def test_describe_image_with_vlm_list_of_non_dict(monkeypatch):
-    """When the VLM pipeline returns a list of strings, the result is str-ified."""
-    monkeypatch.setitem(srv._vlm_state, "loaded", True)
-    monkeypatch.setitem(srv._vlm_state, "pipeline", lambda _path, **_kw: ["noise in the image"])
-    monkeypatch.setitem(srv._vlm_state, "model_id", "test-model")
-
+def test_describe_image_with_vlm_unconfigured_names_the_variable(monkeypatch):
+    """No VMAF_MCP_VLM_MODEL: metadata-only, and the note says which variable."""
+    monkeypatch.setitem(srv._vlm_state, "loaded", False)
+    monkeypatch.setitem(srv._vlm_state, "pipeline", None)
+    monkeypatch.setitem(srv._vlm_state, "model_id", None)
+    monkeypatch.delenv("VMAF_MCP_VLM_MODEL", raising=False)
     result = srv._describe_image_with_vlm(Path("/tmp/fake.png"))
-    # The list contains strings, not dicts — so the isinstance(out[0], dict)
-    # branch is False, and str(out) is returned.
-    assert isinstance(result, str)
-    assert len(result) > 0
-
-
-def test_describe_image_with_vlm_list_of_dict_generated_text(monkeypatch):
-    """List[dict] with 'generated_text' key uses that value."""
-    monkeypatch.setitem(srv._vlm_state, "loaded", True)
-    monkeypatch.setitem(
-        srv._vlm_state, "pipeline", lambda _p, **_kw: [{"generated_text": "blocking artefact"}]
-    )
-    monkeypatch.setitem(srv._vlm_state, "model_id", "test-model")
-
-    result = srv._describe_image_with_vlm(Path("/tmp/fake.png"))
-    assert result == "blocking artefact"
-
-
-def test_describe_image_with_vlm_list_of_dict_text_key_fallback(monkeypatch):
-    """List[dict] with 'text' key uses that value when 'generated_text' absent."""
-    monkeypatch.setitem(srv._vlm_state, "loaded", True)
-    monkeypatch.setitem(srv._vlm_state, "pipeline", lambda _p, **_kw: [{"text": "banding visible"}])
-    monkeypatch.setitem(srv._vlm_state, "model_id", "test-model")
-
-    result = srv._describe_image_with_vlm(Path("/tmp/fake.png"))
-    assert result == "banding visible"
-
-
-def test_describe_image_with_vlm_type_error_fallback(monkeypatch):
-    """When the pipeline raises TypeError on prompt= kwarg, the function retries
-    without it (older transformers compatibility branch)."""
-    call_log: list[dict] = []
-
-    def fake_pipe(path_str: str, **kwargs: Any) -> Any:
-        call_log.append({"path": path_str, "kwargs": dict(kwargs)})
-        if "prompt" in kwargs:
-            raise TypeError("unexpected keyword argument 'prompt'")
-        # Second call (without prompt) succeeds.
-        return [{"generated_text": "retry succeeded"}]
-
-    monkeypatch.setitem(srv._vlm_state, "loaded", True)
-    monkeypatch.setitem(srv._vlm_state, "pipeline", fake_pipe)
-    monkeypatch.setitem(srv._vlm_state, "model_id", "legacy-model")
-
-    result = srv._describe_image_with_vlm(Path("/tmp/fake.png"))
-    assert result == "retry succeeded"
-    # First call included prompt=, second did not.
-    assert len(call_log) == 2
-    assert "prompt" in call_log[0]["kwargs"]
-    assert "prompt" not in call_log[1]["kwargs"]
+    assert "VLM unavailable: VMAF_MCP_VLM_MODEL is not set" in result
 
 
 # ---------------------------------------------------------------------------
@@ -829,9 +790,9 @@ def test_allowed_roots_includes_workspace_path(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_vmaf_score_bitdepth_schema_is_integer_with_enum():
-    """The vmaf_score inputSchema must enumerate bitdepth as integers and
-    include the standard {8, 10, 12} subset at minimum."""
+def test_vmaf_score_bitdepth_schema_is_integer_range():
+    """The vmaf_score inputSchema must declare bitdepth as an integer from 8
+    to 16, the range the input format table reads (ADR-2145)."""
     import anyio
 
     async def get():
@@ -842,15 +803,13 @@ def test_vmaf_score_bitdepth_schema_is_integer_with_enum():
     schema = by_name["vmaf_score"].input_schema
     bitdepth_schema = schema["properties"]["bitdepth"]
     assert bitdepth_schema["type"] == "integer"
-    enum_set = set(bitdepth_schema["enum"])
-    # {8, 10, 12} are always required; 16 may or may not be present.
-    assert {8, 10, 12}.issubset(
-        enum_set
-    ), f"bitdepth enum must include at least {{8,10,12}}, got {bitdepth_schema['enum']}"
+    assert bitdepth_schema["minimum"] == 8
+    assert bitdepth_schema["maximum"] == 16
 
 
 def test_vmaf_score_pixfmt_schema_enumerates_valid_values():
-    """The vmaf_score inputSchema must enumerate pixfmt as ['420','422','444']."""
+    """The vmaf_score inputSchema must enumerate the planar layouts and the
+    layouts of the input format table, and nothing outside them."""
     import anyio
 
     async def get():
@@ -860,7 +819,10 @@ def test_vmaf_score_pixfmt_schema_enumerates_valid_values():
     by_name = {t.name: t for t in tools}
     schema = by_name["vmaf_score"].input_schema
     pixfmt_schema = schema["properties"]["pixfmt"]
-    assert set(pixfmt_schema["enum"]) == {"420", "422", "444"}
+    enum_set = set(pixfmt_schema["enum"])
+    assert {"400", "420", "422", "444", "nv12", "p010", "rgb"}.issubset(enum_set)
+    assert "411" not in enum_set
+    assert len(pixfmt_schema["enum"]) == len(enum_set)
 
 
 def test_list_tools_returns_tool_names():

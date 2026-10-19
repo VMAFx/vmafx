@@ -46,10 +46,14 @@ RUNTIME_PREFIXES = ("vcruntime", "msvcp", "ucrtbase", "api-ms-win-crt-", "concrt
                     "vccorlib", "msvcr")  # fmt: skip
 # DLLs of Windows itself (System32), which every Windows 10 and later carries. API sets
 # (api-ms-win-*, ext-ms-win-*) resolve inside Windows and are accepted by prefix.
+# cfgmgr32.dll (the Configuration Manager, CM_Get_Device_IDW and others) is System32
+# since Windows 2000: Microsoft Learn, "CM_Get_Device_IDW function (cfgmgr32.h)",
+# Requirements: Library Cfgmgr32.lib, DLL CfgMgr32.dll. The Level Zero loader of the
+# SYCL zip imports it (run 37594655522).
 SYSTEM_DLLS = frozenset(
     {
-        "advapi32.dll", "bcrypt.dll", "bcryptprimitives.dll", "comctl32.dll", "comdlg32.dll",
-        "crypt32.dll", "dbghelp.dll", "gdi32.dll", "imm32.dll", "iphlpapi.dll",
+        "advapi32.dll", "bcrypt.dll", "bcryptprimitives.dll", "cfgmgr32.dll", "comctl32.dll",
+        "comdlg32.dll", "crypt32.dll", "dbghelp.dll", "gdi32.dll", "imm32.dll", "iphlpapi.dll",
         "kernel32.dll", "kernelbase.dll", "mpr.dll", "msvcrt.dll", "mswsock.dll",
         "ncrypt.dll", "netapi32.dll", "ntdll.dll", "ole32.dll", "oleaut32.dll", "powrprof.dll",
         "propsys.dll", "psapi.dll", "rpcrt4.dll", "secur32.dll", "setupapi.dll",

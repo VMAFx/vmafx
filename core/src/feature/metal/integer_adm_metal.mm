@@ -27,12 +27,12 @@
  *  every other Metal feature extractor.
  */
 
-#include <errno.h>
-#include <math.h>
-#include <stdbool.h>
-#include <stddef.h>
-#include <stdint.h>
-#include <string.h>
+#include <cerrno>
+#include <cmath>
+
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
@@ -55,15 +55,16 @@ extern "C" {
 #include "../../metal/kernel_template.h"
 #include "../adm_csf_fixed_point.h"
 #include "../adm_options.h"
+#include "../adm_view_dist.h"
 #include "../nonfinite_score.h"
 }
 
-extern "C" {
-extern const unsigned char libvmaf_metallib_start[] __asm("section$start$__TEXT$__metallib");
-extern const unsigned char libvmaf_metallib_end[]   __asm("section$end$__TEXT$__metallib");
-}
+#include "../../metal/objc_handle.h"
 
-typedef struct IntegerAdmStateMetal {
+
+namespace {
+
+using IntegerAdmStateMetal = struct IntegerAdmStateMetal {
     VmafMetalKernelLifecycle lc;
     VmafMetalContext *ctx;
 
@@ -80,6 +81,7 @@ typedef struct IntegerAdmStateMetal {
     void *csf_a;
     void *csf_f;
     void *accum[IADM_METAL_NUM_SCALES]; /* reduction slots, vmaf_mtl_iadm_accum_word() */
+    void *accum_x[IADM_METAL_NUM_SCALES]; /* the second viewing distance's (ADR-2795) */
 
     IadmMetalGeometry geom;
 
@@ -87,6 +89,9 @@ typedef struct IntegerAdmStateMetal {
     bool debug;
     double adm_enhn_gain_limit;
     double adm_norm_view_dist;
+    /* A second viewing distance evaluated on the same DWT (Netflix/vmaf
+     * cffd5b77d, ADR-2795); 0 = none. */
+    double adm_norm_view_dist_extra;
     int adm_ref_display_height;
     int adm_csf_mode;
     double adm_csf_scale;
@@ -100,7 +105,10 @@ typedef struct IntegerAdmStateMetal {
 
     unsigned index;
     VmafDictionary *feature_name_dict;
-} IntegerAdmStateMetal;
+};
+} // namespace
+
+namespace {
 
 /* Options mirror integer_adm.c EXACTLY (names, aliases, defaults, ranges). */
 static const VmafOption options[] = {
@@ -110,8 +118,8 @@ static const VmafOption options[] = {
      .type = VMAF_OPT_TYPE_BOOL,
      .default_val = {.b = false}},
     {.name = "adm_csf_scale",
-     .alias = "scf",
      .help = "scale coefficient for the horizontal & vertical direction terms of CSF",
+     .alias = "scf",
      .offset = offsetof(IntegerAdmStateMetal, adm_csf_scale),
      .type = VMAF_OPT_TYPE_DOUBLE,
      .default_val = {.d = DEFAULT_ADM_CSF_SCALE},
@@ -119,8 +127,8 @@ static const VmafOption options[] = {
      .max = 50.0,
      .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
     {.name = "adm_csf_diag_scale",
-     .alias = "scfd",
      .help = "scale coefficient for the diagonal direction term of CSF",
+     .alias = "scfd",
      .offset = offsetof(IntegerAdmStateMetal, adm_csf_diag_scale),
      .type = VMAF_OPT_TYPE_DOUBLE,
      .default_val = {.d = DEFAULT_ADM_CSF_DIAG_SCALE},
@@ -128,8 +136,8 @@ static const VmafOption options[] = {
      .max = 50.0,
      .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
     {.name = "adm_dlm_weight",
-     .alias = "dlmw",
      .help = "linear weighting between DLM and AIM; 1 corresponds to DLM-only",
+     .alias = "dlmw",
      .offset = offsetof(IntegerAdmStateMetal, adm_dlm_weight),
      .type = VMAF_OPT_TYPE_DOUBLE,
      .default_val = {.d = 0.5},
@@ -137,9 +145,9 @@ static const VmafOption options[] = {
      .max = 1.0,
      .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
     {.name = "adm_enhn_gain_limit",
-     .alias = "egl",
      .help = "enhancement gain imposed on adm, must be >= 1.0, "
              "where 1.0 means the gain is completely disabled",
+     .alias = "egl",
      .offset = offsetof(IntegerAdmStateMetal, adm_enhn_gain_limit),
      .type = VMAF_OPT_TYPE_DOUBLE,
      .default_val = {.d = DEFAULT_ADM_ENHN_GAIN_LIMIT},
@@ -147,17 +155,28 @@ static const VmafOption options[] = {
      .max = DEFAULT_ADM_ENHN_GAIN_LIMIT,
      .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
     {.name = "adm_norm_view_dist",
-     .alias = "nvd",
      .help = "normalized viewing distance = viewing distance / ref display's physical height",
+     .alias = "nvd",
      .offset = offsetof(IntegerAdmStateMetal, adm_norm_view_dist),
      .type = VMAF_OPT_TYPE_DOUBLE,
      .default_val = {.d = DEFAULT_ADM_NORM_VIEW_DIST},
      .min = 0.75,
      .max = 24.0,
      .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
+    /* Not a feature parameter: the scores of this distance are filed under
+     * the names its own `adm_norm_view_dist` would give them. */
+    {.name = "adm_norm_view_dist_extra",
+     .help = "second normalized viewing distance; when > 0, ADM is also evaluated at it "
+             "from the same DWT, and its scores carry that distance's nvd suffix",
+     .alias = "nvde",
+     .offset = offsetof(IntegerAdmStateMetal, adm_norm_view_dist_extra),
+     .type = VMAF_OPT_TYPE_DOUBLE,
+     .default_val = {.d = 0.0},
+     .min = 0.0,
+     .max = 24.0},
     {.name = "adm_ref_display_height",
-     .alias = "rdh",
      .help = "reference display height in pixels",
+     .alias = "rdh",
      .offset = offsetof(IntegerAdmStateMetal, adm_ref_display_height),
      .type = VMAF_OPT_TYPE_INT,
      .default_val = {.i = DEFAULT_ADM_REF_DISPLAY_HEIGHT},
@@ -165,8 +184,8 @@ static const VmafOption options[] = {
      .max = 4320,
      .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
     {.name = "adm_csf_mode",
-     .alias = "csf",
      .help = "contrast sensitivity function",
+     .alias = "csf",
      .offset = offsetof(IntegerAdmStateMetal, adm_csf_mode),
      .type = VMAF_OPT_TYPE_INT,
      .default_val = {.i = DEFAULT_ADM_CSF_MODE},
@@ -174,8 +193,8 @@ static const VmafOption options[] = {
      .max = 3,
      .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
     {.name = "adm_noise_weight",
-     .alias = "nw",
      .help = "noise weight",
+     .alias = "nw",
      .offset = offsetof(IntegerAdmStateMetal, adm_noise_weight),
      .type = VMAF_OPT_TYPE_DOUBLE,
      .default_val = {.d = DEFAULT_ADM_NOISE_WEIGHT},
@@ -188,15 +207,15 @@ static const VmafOption options[] = {
      .type = VMAF_OPT_TYPE_BOOL,
      .default_val = {.b = false}},
     {.name = "adm_skip_scale0",
-     .alias = "ssz",
      .help = "skip the calculation of scale 0",
+     .alias = "ssz",
      .offset = offsetof(IntegerAdmStateMetal, adm_skip_scale0),
      .type = VMAF_OPT_TYPE_BOOL,
      .default_val = {.b = false},
      .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
     {.name = "adm_min_val",
-     .alias = "min",
      .help = "minimum value allowed; lower values will be clipped to this value",
+     .alias = "min",
      .offset = offsetof(IntegerAdmStateMetal, adm_min_val),
      .type = VMAF_OPT_TYPE_DOUBLE,
      .default_val = {.d = DEFAULT_ADM_MIN_VAL},
@@ -204,24 +223,31 @@ static const VmafOption options[] = {
      .max = 1.0,
      .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
     {.name = "adm_p_norm",
-     .alias = "apn",
      .help = "p-norm exponent for fixed-point ADM contrast-measure finalisation",
+     .alias = "apn",
      .offset = offsetof(IntegerAdmStateMetal, adm_p_norm),
      .type = VMAF_OPT_TYPE_DOUBLE,
      .default_val = {.d = 3.0},
      .min = 1.0,
      .max = 20.0,
      .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
-    {0},
+    {.name=nullptr},
 };
 
-/* The options as integer_adm_metal_host.c reads them. */
-static IadmMetalOptions iadm_options(const IntegerAdmStateMetal *s)
+/* Viewing distances one frame is evaluated at (ADR-2795). */
+unsigned iadm_views(const IntegerAdmStateMetal *s)
+{
+    return (s->adm_norm_view_dist_extra > 0.0) ? 2u : 1u;
+}
+
+/* The options as integer_adm_metal_host.c reads them, at the viewing distance
+ * of `view` (0: adm_norm_view_dist, 1: adm_norm_view_dist_extra). */
+IadmMetalOptions iadm_options(const IntegerAdmStateMetal *s, unsigned view)
 {
     IadmMetalOptions o;
     memset(&o, 0, sizeof(o));
     o.adm_enhn_gain_limit = s->adm_enhn_gain_limit;
-    o.adm_norm_view_dist = s->adm_norm_view_dist;
+    o.adm_norm_view_dist = view ? s->adm_norm_view_dist_extra : s->adm_norm_view_dist;
     o.adm_csf_scale = s->adm_csf_scale;
     o.adm_csf_diag_scale = s->adm_csf_diag_scale;
     o.adm_noise_weight = s->adm_noise_weight;
@@ -235,56 +261,50 @@ static IadmMetalOptions iadm_options(const IntegerAdmStateMetal *s)
     return o;
 }
 
-static int build_pipelines(IntegerAdmStateMetal *s, id<MTLDevice> device)
+int build_pipelines(IntegerAdmStateMetal *s, id<MTLDevice> device)
 {
-    const size_t blob_size = (size_t)(libvmaf_metallib_end - libvmaf_metallib_start);
-    if (blob_size == 0) { return -ENODEV; }
-
-    dispatch_data_t data = dispatch_data_create(
-        libvmaf_metallib_start, blob_size,
-        dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0),
-        DISPATCH_DATA_DESTRUCTOR_DEFAULT);
-    if (data == NULL) { return -ENOMEM; }
-
+    int load_rc = 0;
+    id<MTLLibrary> const lib = vmaf_metal_library_load(device, &load_rc);
+    if (lib == nil) { return load_rc; }
     NSError *err = nil;
-    id<MTLLibrary> lib = [device newLibraryWithData:data error:&err];
-    if (lib == nil) { return -ENODEV; }
 
     for (int k = 0; k < IADM_METAL_KERNEL_COUNT; ++k) {
         const char *name = iadm_metal_kernel_name((IadmMetalKernel)k);
-        id<MTLFunction> fn = [lib newFunctionWithName:[NSString stringWithUTF8String:name]];
+        NSString *const fn_name = [NSString stringWithUTF8String:name];
+        id<MTLFunction> const fn = (fn_name != nil) ? [lib newFunctionWithName:fn_name] : nil;
         if (fn == nil) { return -ENODEV; }
-        id<MTLComputePipelineState> pso = [device newComputePipelineStateWithFunction:fn error:&err];
+        id<MTLComputePipelineState> const pso = [device newComputePipelineStateWithFunction:fn error:&err];
         if (pso == nil) { return -ENODEV; }
         s->pso[k] = (__bridge_retained void *)pso;
     }
     return 0;
 }
 
-static void release_psos(IntegerAdmStateMetal *s)
+void release_psos(IntegerAdmStateMetal *s)
 {
-    for (int k = 0; k < IADM_METAL_KERNEL_COUNT; ++k) {
-        if (s->pso[k]) {
-            (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso[k];
-            s->pso[k] = NULL;
+    for (auto & k : s->pso) {
+        if (k) {
+            (void)(__bridge_transfer id<MTLComputePipelineState>)k;
+            k = nullptr;
         }
     }
 }
 
-static void release_buffer(void **slot)
+void release_buffer(void **slot)
 {
     if (*slot) {
         (void)(__bridge_transfer id<MTLBuffer>)(*slot);
-        *slot = NULL;
+        *slot = nullptr;
     }
 }
 
-static void release_buffers(IntegerAdmStateMetal *s)
+void release_buffers(IntegerAdmStateMetal *s)
 {
     for (int i = 0; i < IADM_METAL_NUM_SCALES; ++i) {
         release_buffer(&s->ref_band[i]);
         release_buffer(&s->dis_band[i]);
         release_buffer(&s->accum[i]);
+        release_buffer(&s->accum_x[i]);
     }
     release_buffer(&s->src_ref);
     release_buffer(&s->src_dis);
@@ -294,16 +314,16 @@ static void release_buffers(IntegerAdmStateMetal *s)
     release_buffer(&s->csf_f);
 }
 
-static int new_buffer(id<MTLDevice> device, size_t bytes, void **slot)
+int new_buffer(id<MTLDevice> device, size_t bytes, void **slot)
 {
-    id<MTLBuffer> b = [device newBufferWithLength:bytes options:MTLResourceStorageModeShared];
+    id<MTLBuffer> const b = [device newBufferWithLength:bytes options:MTLResourceStorageModeShared];
     if (b == nil) { return -ENOMEM; }
     *slot = (__bridge_retained void *)b;
     return 0;
 }
 
 /* Every device buffer at the size integer_adm_metal_host.c gives it. */
-static int alloc_buffers(IntegerAdmStateMetal *s, id<MTLDevice> device)
+int alloc_buffers(IntegerAdmStateMetal *s, id<MTLDevice> device)
 {
     const IadmMetalGeometry *g = &s->geom;
     const size_t source = iadm_metal_buffer_bytes(g, IADM_METAL_BUF_SOURCE, 0);
@@ -321,30 +341,33 @@ static int alloc_buffers(IntegerAdmStateMetal *s, id<MTLDevice> device)
         err = new_buffer(device, band, &s->ref_band[scale]);
         if (err == 0) { err = new_buffer(device, band, &s->dis_band[scale]); }
         if (err == 0) { err = new_buffer(device, accum, &s->accum[scale]); }
+        if (err == 0 && iadm_views(s) > 1u) {
+            err = new_buffer(device, accum, &s->accum_x[scale]);
+        }
     }
     return err;
 }
 
-static int init_device_state(IntegerAdmStateMetal *s)
+int init_device_state(IntegerAdmStateMetal *s)
 {
-    void *dh = vmaf_metal_context_device_handle(s->ctx);
-    if (dh == NULL) { return -ENODEV; }
-    id<MTLDevice> device = (__bridge id<MTLDevice>)dh;
+    const void *const dh = vmaf_metal_context_device_handle(s->ctx);
+    if (dh == nullptr) { return -ENODEV; }
+    id<MTLDevice> const device = (__bridge id<MTLDevice>)dh;
     int err = alloc_buffers(s, device);
     if (err == 0) { err = build_pipelines(s, device); }
     return err;
 }
 
-static void teardown_device_state(IntegerAdmStateMetal *s)
+void teardown_device_state(IntegerAdmStateMetal *s)
 {
     release_psos(s);
     release_buffers(s);
     (void)vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
     vmaf_metal_context_destroy(s->ctx);
-    s->ctx = NULL;
+    s->ctx = nullptr;
 }
 
-static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
+int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                           unsigned w, unsigned h)
 {
     (void)pix_fmt;
@@ -352,10 +375,12 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
 
     int err = adm_frame_size_check("integer_adm_metal", w, h);
     if (err != 0) { return err; }
-    /* The CPU's CSF configuration check (adm_csf_check_scale() per scale),
-     * before any device work. */
-    const IadmMetalOptions o = iadm_options(s);
-    err = iadm_metal_check_options(&o);
+    /* The CPU's CSF configuration check (adm_csf_check_scale() per scale), at
+     * every viewing distance, before any device work. */
+    for (unsigned v = 0; v < iadm_views(s) && err == 0; ++v) {
+        const IadmMetalOptions o = iadm_options(s, v);
+        err = iadm_metal_check_options(&o);
+    }
     if (err != 0) { return err; }
     iadm_metal_geometry(&s->geom, w, h, bpc);
 
@@ -364,20 +389,27 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
     err = vmaf_metal_kernel_lifecycle_init(&s->lc, s->ctx);
     if (err != 0) {
         vmaf_metal_context_destroy(s->ctx);
-        s->ctx = NULL;
+        s->ctx = nullptr;
         return err;
     }
     err = init_device_state(s);
     if (err == 0) {
         s->feature_name_dict =
             vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-        if (s->feature_name_dict == NULL) { err = -ENOMEM; }
+        if (s->feature_name_dict == nullptr) { err = -ENOMEM; }
     }
-    if (err != 0) { teardown_device_state(s); }
+    if (err == 0) {
+        /* The second viewing distance's names (ADR-2795). */
+        err = vmaf_adm_extend_name_dict(fex, &s->feature_name_dict);
+    }
+    if (err != 0) {
+        if (s->feature_name_dict) { (void)vmaf_dictionary_free(&s->feature_name_dict); }
+        teardown_device_state(s);
+    }
     return err;
 }
 
-static void fill_raw_plane(VmafPicture *pic, id<MTLBuffer> dst, unsigned w, unsigned h, unsigned bpc)
+void fill_raw_plane(VmafPicture *pic, id<MTLBuffer> dst, unsigned w, unsigned h, unsigned bpc)
 {
     const size_t bpp = (bpc <= 8u) ? 1u : 2u;
     const size_t row_bytes = (size_t)w * bpp;
@@ -388,14 +420,15 @@ static void fill_raw_plane(VmafPicture *pic, id<MTLBuffer> dst, unsigned w, unsi
     }
 }
 
-static void bind_buffer(id<MTLComputeCommandEncoder> enc, void *buffer, NSUInteger index)
+void bind_buffer(id<MTLComputeCommandEncoder> enc, void *buffer, NSUInteger index)
 {
     [enc setBuffer:(__bridge id<MTLBuffer>)buffer offset:0 atIndex:index];
 }
 
-/* The buffers of `entry` at the indices integer_adm.metal declares. */
-static void bind_stage_buffers(IntegerAdmStateMetal *s, id<MTLComputeCommandEncoder> enc,
-                               IadmMetalKernel entry, int scale)
+/* The buffers of `entry` at the indices integer_adm.metal declares; `accum`
+ * is the reduction buffer of the viewing distance being encoded. */
+void bind_stage_buffers(IntegerAdmStateMetal *s, id<MTLComputeCommandEncoder> enc,
+                               IadmMetalKernel entry, int scale, void *accum)
 {
     switch (entry) {
     case IADM_METAL_DWT_VERT_8BPC:
@@ -407,8 +440,10 @@ static void bind_stage_buffers(IntegerAdmStateMetal *s, id<MTLComputeCommandEnco
         break;
     case IADM_METAL_DWT_VERT_S1:
     case IADM_METAL_DWT_VERT_S123:
-        bind_buffer(enc, s->ref_band[scale - 1], 6);
-        bind_buffer(enc, s->dis_band[scale - 1], 7);
+        if (scale > 0) {
+            bind_buffer(enc, s->ref_band[scale - 1], 6);
+            bind_buffer(enc, s->dis_band[scale - 1], 7);
+        }
         bind_buffer(enc, s->dwt_tmp_ref, 2);
         bind_buffer(enc, s->dwt_tmp_dis, 3);
         break;
@@ -431,26 +466,26 @@ static void bind_stage_buffers(IntegerAdmStateMetal *s, id<MTLComputeCommandEnco
         bind_buffer(enc, s->ref_band[scale], 0);
         bind_buffer(enc, s->dis_band[scale], 1);
         bind_buffer(enc, s->csf_f, 3);
-        bind_buffer(enc, s->accum[scale], 8);
+        bind_buffer(enc, accum, 8);
         break;
     case IADM_METAL_AIM_CM_S0:
     case IADM_METAL_AIM_CM_S123:
         bind_buffer(enc, s->ref_band[scale], 0);
         bind_buffer(enc, s->dis_band[scale], 1);
-        bind_buffer(enc, s->accum[scale], 8);
+        bind_buffer(enc, accum, 8);
         break;
     default:
         break;
     }
 }
 
-static void encode_stage(IntegerAdmStateMetal *s, id<MTLCommandBuffer> cmd,
+void encode_stage(IntegerAdmStateMetal *s, id<MTLCommandBuffer> cmd,
                          const IadmMetalStage *stage, int scale, const IadmDims *d,
-                         const IadmCsf *c)
+                         const IadmCsf *c, void *accum)
 {
-    id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
+    id<MTLComputeCommandEncoder> const enc = [cmd computeCommandEncoder];
     [enc setComputePipelineState:(__bridge id<MTLComputePipelineState>)s->pso[stage->entry]];
-    bind_stage_buffers(s, enc, stage->entry, scale);
+    bind_stage_buffers(s, enc, stage->entry, scale, accum);
     [enc setBytes:d length:sizeof(*d) atIndex:4];
     [enc setBytes:c length:sizeof(*c) atIndex:5];
     [enc dispatchThreadgroups:MTLSizeMake(stage->groups[0], stage->groups[1], stage->groups[2])
@@ -460,17 +495,22 @@ static void encode_stage(IntegerAdmStateMetal *s, id<MTLCommandBuffer> cmd,
 }
 
 /* Zero the reduction slots (a skipped stage must contribute 0). */
-static void zero_accumulators(IntegerAdmStateMetal *s, id<MTLCommandBuffer> cmd)
+void zero_accumulators(IntegerAdmStateMetal *s, id<MTLCommandBuffer> cmd)
 {
-    id<MTLBlitCommandEncoder> blit = [cmd blitCommandEncoder];
+    id<MTLBlitCommandEncoder> const blit = [cmd blitCommandEncoder];
     for (int scale = 0; scale < IADM_METAL_NUM_SCALES; ++scale) {
         const size_t bytes = iadm_metal_buffer_bytes(&s->geom, IADM_METAL_BUF_ACCUM, scale);
         [blit fillBuffer:(__bridge id<MTLBuffer>)s->accum[scale] range:NSMakeRange(0, bytes) value:0];
+        if (s->accum_x[scale]) {
+            [blit fillBuffer:(__bridge id<MTLBuffer>)s->accum_x[scale]
+                       range:NSMakeRange(0, bytes)
+                       value:0];
+        }
     }
     [blit endEncoding];
 }
 
-static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
+int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
                             VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
 {
     (void)ref_pic_90;
@@ -478,28 +518,35 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vma
     IntegerAdmStateMetal *s = (IntegerAdmStateMetal *)fex->priv;
     s->index = index;
 
-    void *dh = vmaf_metal_context_device_handle(s->ctx);
-    void *qh = vmaf_metal_context_queue_handle(s->ctx);
-    if (dh == NULL || qh == NULL) { return -ENODEV; }
-    id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)qh;
+    const void *const dh = vmaf_metal_context_device_handle(s->ctx);
+    const void *const qh = vmaf_metal_context_queue_handle(s->ctx);
+    if (dh == nullptr || qh == nullptr) { return -ENODEV; }
+    id<MTLCommandQueue> const queue = (__bridge id<MTLCommandQueue>)qh;
 
     fill_raw_plane(ref_pic, (__bridge id<MTLBuffer>)s->src_ref, s->geom.w, s->geom.h, s->geom.bpc);
     fill_raw_plane(dist_pic, (__bridge id<MTLBuffer>)s->src_dis, s->geom.w, s->geom.h,
                    s->geom.bpc);
 
-    id<MTLCommandBuffer> cmd = [queue commandBuffer];
+    id<MTLCommandBuffer> const cmd = [queue commandBuffer];
     if (cmd == nil) { return -ENOMEM; }
     zero_accumulators(s, cmd);
 
-    const IadmMetalOptions o = iadm_options(s);
+    /* Each scale's DWT once, then the decouple, CSF and reductions per
+     * viewing distance, each into its own buffers (ADR-2795). The encoders
+     * run in order, and a distance's stages write only csf_a, csf_f and its
+     * reduction buffer, so the next distance reads the bands the DWT left. */
     for (int scale = 0; scale < IADM_METAL_NUM_SCALES; ++scale) {
-        IadmDims d;
-        IadmCsf c;
-        iadm_metal_uniforms(&o, &s->geom, scale, &d, &c);
-        IadmMetalStage stages[IADM_METAL_MAX_STAGES];
-        const unsigned count = iadm_metal_stages(&o, &s->geom, scale, stages);
-        for (unsigned i = 0; i < count; ++i) {
-            encode_stage(s, cmd, &stages[i], scale, &d, &c);
+        for (unsigned v = 0; v < iadm_views(s); ++v) {
+            const IadmMetalOptions o = iadm_options(s, v);
+            IadmDims d;
+            IadmCsf c;
+            iadm_metal_uniforms(&o, &s->geom, scale, &d, &c);
+            IadmMetalStage stages[IADM_METAL_MAX_STAGES];
+            const unsigned count = iadm_metal_view_stages(&o, &s->geom, scale, v, stages);
+            void *const accum = v ? s->accum_x[scale] : s->accum[scale];
+            for (unsigned i = 0; i < count; ++i) {
+                encode_stage(s, cmd, &stages[i], scale, &d, &c, accum);
+            }
         }
     }
 
@@ -509,49 +556,58 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vma
 }
 
 static int emit_scores(IntegerAdmStateMetal *s, VmafFeatureCollector *fc, const IadmMetalScores *r,
-                       unsigned index)
+                       unsigned index, unsigned view)
 {
-    VmafNamedScore values[18] = {
-        {"VMAF_integer_feature_adm2_score", r->score},
-        {"VMAF_integer_feature_aim_score", r->score_aim},
-        {"VMAF_integer_feature_adm3_score", r->score_adm3},
-        {"integer_adm_scale0", r->scale_scores[0]},
-        {"integer_adm_scale1", r->scale_scores[1]},
-        {"integer_adm_scale2", r->scale_scores[2]},
-        {"integer_adm_scale3", r->scale_scores[3]},
+    /* View 1 files the second distance's seven scores under the keys the
+     * dictionary maps to that distance's names (ADR-2795); the debug scores
+     * are the first distance's only, as on the CPU. */
+    const char *const *names = view ? vmaf_adm_extra_view_keys : vmaf_adm_view_names;
+    const double view_values[VMAF_ADM_VIEW_SCORE_COUNT] = {
+        r->score,           r->score_aim,       r->score_adm3,      r->scale_scores[0],
+        r->scale_scores[1], r->scale_scores[2], r->scale_scores[3],
     };
-    size_t value_count = 7u;
-    if (s->debug) {
+    VmafNamedScore values[18] = {};
+    for (size_t i = 0u; i < VMAF_ADM_VIEW_SCORE_COUNT; ++i) {
+        values[i] = VmafNamedScore{.name=names[i], .value=view_values[i]};
+    }
+    size_t value_count = VMAF_ADM_VIEW_SCORE_COUNT;
+    if (s->debug && view == 0u) {
         static const char *const debug_names[8] = {
             "integer_adm_num_scale0", "integer_adm_den_scale0", "integer_adm_num_scale1",
             "integer_adm_den_scale1", "integer_adm_num_scale2", "integer_adm_den_scale2",
             "integer_adm_num_scale3", "integer_adm_den_scale3"};
-        values[value_count++] = VmafNamedScore{"integer_adm", r->score};
-        values[value_count++] = VmafNamedScore{"integer_adm_num", r->score_num};
-        values[value_count++] = VmafNamedScore{"integer_adm_den", r->score_den};
+        values[value_count++] = VmafNamedScore{.name="integer_adm", .value=r->score};
+        values[value_count++] = VmafNamedScore{.name="integer_adm_num", .value=r->score_num};
+        values[value_count++] = VmafNamedScore{.name="integer_adm_den", .value=r->score_den};
         for (size_t i = 0u; i < 8u; ++i)
-            values[value_count++] = VmafNamedScore{debug_names[i], r->scores[i]};
+            values[value_count++] = VmafNamedScore{.name=debug_names[i], .value=r->scores[i]};
     }
     return vmaf_feature_emit_finite_scores(fc, s->feature_name_dict, "integer_adm_metal", values,
                                            value_count, index);
 }
 
-static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index, VmafFeatureCollector *fc)
+int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index, VmafFeatureCollector *fc)
 {
     IntegerAdmStateMetal *s = (IntegerAdmStateMetal *)fex->priv;
 
-    const uint32_t *accum[IADM_METAL_NUM_SCALES];
-    for (int scale = 0; scale < IADM_METAL_NUM_SCALES; ++scale) {
-        accum[scale] = (const uint32_t *)[(__bridge id<MTLBuffer>)s->accum[scale] contents];
+    /* Every viewing distance's scores, the first distance's first, as the
+     * CPU files them. */
+    int err = 0;
+    for (unsigned v = 0; v < iadm_views(s) && err == 0; ++v) {
+        const uint32_t *accum[IADM_METAL_NUM_SCALES];
+        for (int scale = 0; scale < IADM_METAL_NUM_SCALES; ++scale) {
+            const void *const buf = v ? s->accum_x[scale] : s->accum[scale];
+            accum[scale] = (const uint32_t *)[(__bridge id<MTLBuffer>)buf contents];
+        }
+        const IadmMetalOptions o = iadm_options(s, v);
+        IadmMetalScores r;
+        err = iadm_metal_scores(&o, &s->geom, accum, index, &r);
+        if (err == 0) { err = emit_scores(s, fc, &r, index, v); }
     }
-    const IadmMetalOptions o = iadm_options(s);
-    IadmMetalScores r;
-    const int err = iadm_metal_scores(&o, &s->geom, accum, index, &r);
-    if (err) { return err; }
-    return emit_scores(s, fc, &r, index);
+    return err;
 }
 
-static int close_fex_metal(VmafFeatureExtractor *fex)
+int close_fex_metal(VmafFeatureExtractor *fex)
 {
     IntegerAdmStateMetal *s = (IntegerAdmStateMetal *)fex->priv;
     int rc = vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
@@ -560,12 +616,12 @@ static int close_fex_metal(VmafFeatureExtractor *fex)
     release_buffers(s);
 
     if (s->feature_name_dict) {
-        int err = vmaf_dictionary_free(&s->feature_name_dict);
+        int const err = vmaf_dictionary_free(&s->feature_name_dict);
         if (err != 0 && rc == 0) { rc = err; }
     }
     if (s->ctx) {
         vmaf_metal_context_destroy(s->ctx);
-        s->ctx = NULL;
+        s->ctx = nullptr;
     }
     return rc;
 }
@@ -592,7 +648,8 @@ static const char *provided_features[] = {"VMAF_integer_feature_adm2_score",
                                           "integer_adm_den_scale2",
                                           "integer_adm_num_scale3",
                                           "integer_adm_den_scale3",
-                                          NULL};
+                                          nullptr};
+} // namespace
 
 extern "C" {
 /* Registered via extern in feature_extractor.c's feature_extractor_list[];
@@ -603,14 +660,16 @@ extern "C" {
 VmafFeatureExtractor vmaf_fex_integer_adm_metal = {
     .name              = "integer_adm_metal",
     .init              = init_fex_metal,
+    .flush             = nullptr,
+    .close             = close_fex_metal,
     .submit            = submit_fex_metal,
     .collect           = collect_fex_metal,
-    .flush             = NULL,
-    .close             = close_fex_metal,
     .options           = options,
     .priv_size         = sizeof(IntegerAdmStateMetal),
-    .provided_features = provided_features,
     .flags             = VMAF_FEATURE_EXTRACTOR_METAL,
+    .provided_features = provided_features,
+    .merge             = vmaf_adm_merge_view_dist,
+    .extend_name_dict  = vmaf_adm_extend_name_dict,
     .chars = {
         .n_dispatches_per_frame = 6 * IADM_METAL_NUM_SCALES,
         .is_reduction_only      = false,

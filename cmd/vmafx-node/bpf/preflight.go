@@ -1,6 +1,8 @@
 // Copyright 2026 Lusoris
 // SPDX-License-Identifier: EUPL-1.2
 
+//go:build linux
+
 // preflight.go — host checks run before the loader makes any BPF syscall, so a
 // node that cannot run the tracker stops with the reason instead of a raw
 // EPERM or verifier error (ADR-1539).

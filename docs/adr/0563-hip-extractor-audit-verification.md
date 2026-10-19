@@ -125,3 +125,13 @@ ground truth until contradicted.
 - ADR-0539: integer_adm real kernels (PR #1307); float_vif stub removal (PR #1305); ssimulacra2_blur `-ffp-contract=off` (PR #1306); integer_moment HSACO registration (PR #1304)
 - State.md entries: T-HIP-INTEGER-ADM-KERNELS-REAL-2026-05-18, T-HIP-FLOAT-VIF-STUB-REMOVAL-2026-05-18, T-HIP-SSIMULACRA2-BLUR-FMAD-2026-05-18, T-HIP-INTEGER-MOMENT-HSACO-UNRESOLVED-2026-05-18
 - `req`: user task "verify the OTHER 9 — find which are also already-real (audit was stale), which are genuinely still scaffold, and port the high-value ones"
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 123: `- ADR-0536: Weak HSACO stubs (now empty per ADR-0539)`:
+  ADR-0536 points to an unrelated topic
+  (0536-per-shot-bitrate-predicate-chain.md: "Per-shot predicate threads
+  `bitrate_kbps` through bitrate-ladder pipeline").

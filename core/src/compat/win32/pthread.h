@@ -8,8 +8,9 @@
 /*
  * Minimal pthread shim for Windows MSVC builds.
  *
- * Maps the pthread subset used by libvmaf (mutex / cond / thread create+join+
- * detach) onto Win32 SRWLOCK + CONDITION_VARIABLE + _beginthreadex. Activated
+ * Maps the pthread subset used by libvmaf (mutex / cond, timed wait included /
+ * once / thread create+join+detach) onto Win32 SRWLOCK + CONDITION_VARIABLE +
+ * INIT_ONCE + _beginthreadex. Activated
  * by libvmaf/meson.build when cc.check_header('pthread.h') fails — i.e. on
  * MSVC / clang-cl, where the platform ships no pthread.h. MinGW provides its
  * own pthread.h (winpthreads) and resolves it ahead of this shim.
@@ -35,7 +36,11 @@
 #include <windows.h>
 #include <process.h>
 #include <errno.h>
+#include <stdint.h>
 #include <stdlib.h>
+#include <time.h>
+
+#include "pthread_timeout.h"
 
 typedef HANDLE pthread_t;
 typedef SRWLOCK pthread_mutex_t;
@@ -46,6 +51,17 @@ typedef void *pthread_condattr_t;
 
 #define PTHREAD_MUTEX_INITIALIZER SRWLOCK_INIT
 #define PTHREAD_COND_INITIALIZER CONDITION_VARIABLE_INIT
+
+/* The SYCL device pass compiles this header for a SPIR-V target, which has no calling
+ * conventions: clang ignores __stdcall there and warns (-Wignored-attributes). The host pass
+ * keeps the Win32 convention the OS entry points need. */
+#if defined(__SYCL_DEVICE_ONLY__)
+#define VMAF_W32_CALLBACK
+#define VMAF_W32_STDCALL
+#else
+#define VMAF_W32_CALLBACK CALLBACK
+#define VMAF_W32_STDCALL __stdcall
+#endif
 
 /* pthread_once — maps to Win32 INIT_ONCE / InitOnceExecuteOnce.
  * Used by iqa/ssim_tools.c (ADR-0871), float_ssim.c / float_ms_ssim.c,
@@ -61,7 +77,7 @@ typedef struct vmaf_w32_pthread_once_ctx {
     void (*fn)(void);
 } vmaf_w32_pthread_once_ctx_t;
 
-static BOOL CALLBACK vmaf_w32_pthread_once_cb(PINIT_ONCE once, PVOID param, PVOID *ctx)
+static BOOL VMAF_W32_CALLBACK vmaf_w32_pthread_once_cb(PINIT_ONCE once, PVOID param, PVOID *ctx)
 {
     (void)once;
     (void)ctx;
@@ -80,7 +96,7 @@ typedef struct vmaf_w32_pthread_trampoline {
     void *arg;
 } vmaf_w32_pthread_trampoline_t;
 
-static unsigned __stdcall vmaf_w32_pthread_runner(void *raw)
+static unsigned VMAF_W32_STDCALL vmaf_w32_pthread_runner(void *raw)
 {
     vmaf_w32_pthread_trampoline_t local = *(vmaf_w32_pthread_trampoline_t *)raw;
     free(raw);
@@ -170,6 +186,48 @@ static inline int pthread_cond_destroy(pthread_cond_t *cond)
 static inline int pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mutex)
 {
     return SleepConditionVariableSRW(cond, mutex, INFINITE, 0) ? 0 : EINVAL;
+}
+
+/* The current time of the clock a condition variable without attributes
+ * measures its deadline against: CLOCK_REALTIME, which is TIME_UTC. */
+static inline int vmaf_w32_realtime(struct timespec *now)
+{
+    return (timespec_get(now, TIME_UTC) == TIME_UTC) ? 0 : EINVAL;
+}
+
+/*
+ * POSIX timed wait over SleepConditionVariableSRW(). `abstime` is absolute on
+ * CLOCK_REALTIME, the clock of a condition variable without attributes (the
+ * only kind this shim creates); it is turned into a relative timeout rounded
+ * up to milliseconds. Returns 0 on a wake, spurious ones included, as POSIX
+ * allows: the caller re-checks its predicate and waits again. Returns
+ * ETIMEDOUT only once the clock has passed `abstime`; a wait that Win32 ends
+ * early (or that the cap of vmaf_w32_timeout_ms() cut short) returns 0. The
+ * mutex is held again on every return but EINVAL for bad arguments.
+ */
+static inline int pthread_cond_timedwait(pthread_cond_t *cond, pthread_mutex_t *mutex,
+                                         const struct timespec *abstime)
+{
+    struct timespec now;
+    if (!cond || !mutex || !abstime || abstime->tv_nsec < 0 ||
+        abstime->tv_nsec >= VMAF_W32_NS_PER_S || vmaf_w32_realtime(&now) != 0) {
+        return EINVAL;
+    }
+    const uint32_t ms = vmaf_w32_timeout_ms(abstime->tv_sec, abstime->tv_nsec, now.tv_sec,
+                                            now.tv_nsec, INFINITE - 1u);
+    if (ms == 0u) {
+        return ETIMEDOUT;
+    }
+    if (SleepConditionVariableSRW(cond, mutex, (DWORD)ms, 0)) {
+        return 0;
+    }
+    if (GetLastError() != ERROR_TIMEOUT || vmaf_w32_realtime(&now) != 0) {
+        return EINVAL;
+    }
+    return (vmaf_w32_timeout_ms(abstime->tv_sec, abstime->tv_nsec, now.tv_sec, now.tv_nsec,
+                                INFINITE - 1u) == 0u) ?
+               ETIMEDOUT :
+               0;
 }
 
 static inline int pthread_cond_signal(pthread_cond_t *cond)

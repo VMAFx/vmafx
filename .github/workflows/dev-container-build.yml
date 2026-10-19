@@ -14,6 +14,13 @@
 # the Debian 13 `release-build` stage and runs the release compile in it
 # exactly as supply-chain.yml's `build-artifacts` does.
 #
+# Own-input lane (ADR-3338): on the full tier (master push, `ci: full`) the
+# broad `dev_container` selector picks the work; on a light-tier pull request
+# the narrow `dev_container_inputs` selector does, so a change to dev/,
+# .dockerignore, build-config.env or a script the build job calls builds the
+# image before it lands. The core, Python, AI, Go and shell sources the image
+# also copies are left to the full tier and the master push.
+#
 # No image is pushed — this is a pure build-verification gate.
 
 name: Dev Container
@@ -30,15 +37,26 @@ permissions:
   contents: read
 
 concurrency:
-  group: dev-container-build-${{ github.ref }}
-  cancel-in-progress: true
+  group: dev-container-build-${{ github.ref == 'refs/heads/master' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
 
 jobs:
+  tier:
+    name: CI tier (Dev Container)
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/ci-tier.yml
+
   impact:
+    needs: tier
+    if: needs.tier.outputs.light == 'true'
     name: Plan dev-container impact
     runs-on: ubuntu-26.04
     outputs:
-      selected: ${{ steps.impact.outputs.dev_container }}
+      selected: ${{ steps.pick.outputs.selected }}
+      reason: ${{ steps.pick.outputs.reason }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -53,6 +71,27 @@ jobs:
         run: |
           python3 scripts/ci/plan-ci-impact.py --event "$EVENT_NAME" \
             --base "$BASE_SHA" --head "$HEAD_SHA" --github-output "$GITHUB_OUTPUT"
+      # ADR-3338: the full tier owes the broad selector, the light tier only the
+      # image's own inputs. Picked in shell: an expression treats 'false' as true.
+      - name: Pick the selector of this tier
+        id: pick
+        env:
+          FULL: ${{ needs.tier.outputs.full }}
+          BROAD: ${{ steps.impact.outputs.dev_container }}
+          NARROW: ${{ steps.impact.outputs.dev_container_inputs }}
+        run: |
+          if [ "$FULL" = true ]; then
+            selected="$BROAD" selector=dev_container
+          else
+            selected="$NARROW" selector=dev_container_inputs
+          fi
+          case "$selected" in
+            true) reason="selected by $selector" ;;
+            false) reason="not selected: $selector matched no changed path; the full selector runs on the master push" ;;
+            *) echo "::error::planner gave $selector='$selected'"; exit 1 ;;
+          esac
+          echo "$reason"
+          { echo "selected=$selected"; echo "reason=$reason"; } >> "$GITHUB_OUTPUT"
 
   dev-container-build-work:
     needs: impact
@@ -63,7 +102,7 @@ jobs:
     # comes out of must not be allowed to stop building silently. The workflow
     # always reports its gate; the planner selects this work for container inputs.
     name: Dev Container Build work
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     # GPU SDK downloads (CUDA keyring, oneAPI, ROCm) + multi-stage build can
     # take up to 45 min on a cold runner, and the release rehearsal adds a
     # CPU-only release compile; set a generous ceiling.
@@ -78,6 +117,16 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
+
+      # The container build pulls its Docker Hub bases (ubuntu:26.04,
+      # debian:13-slim, golang, the docker/dockerfile frontend) anonymously and
+      # hit the pull limit (run 37989639889). The daemon, and BuildKit through
+      # the daemon's registry-mirrors, now pull them through mirror.gcr.io by
+      # the same digests (rocm/dev-ubuntu-26.04 included: its pinned manifest
+      # and all eight blobs answer 200 there). An image the mirror lacks falls
+      # back to Docker Hub.
+      - name: Pull Docker Hub images through mirror.gcr.io
+        run: bash scripts/ci/docker-hub-mirror.sh
 
       # Regression guard for PR #707 / ADR-0529: assert that every /dev/dri
       # bind-mount in docker-compose.yml is writable (read_only: false).
@@ -134,6 +183,12 @@ jobs:
       # `build-artifacts` (supply-chain.yml, ADR-1346), which builds the
       # `release-build` stage; the release rehearsal below builds that stage
       # too.
+      # The ubuntu-26.04 image leaves too little root disk for this build
+      # (`No space left on device`, master run 38153818052); the preinstalled
+      # SDKs no step uses make room for it.
+      - name: Free runner disk for the image build
+        run: bash scripts/ci/free-runner-disk.sh
+
       - name: Build dev container (up to libvmaf-build stage)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -233,8 +288,8 @@ jobs:
           done
 
   dev-container-build:
-    needs: [impact, dev-container-build-work]
-    if: always()
+    needs: [tier, impact, dev-container-build-work]
+    if: always() && needs.tier.outputs.light == 'true'
     # required-aggregator
     name: Dev Container Build
     runs-on: ubuntu-26.04
@@ -243,6 +298,7 @@ jobs:
         env:
           PLAN_RESULT: ${{ needs.impact.result }}
           SELECTED: ${{ needs.impact.outputs.selected }}
+          REASON: ${{ needs.impact.outputs.reason }}
           WORK_RESULT: ${{ needs.dev-container-build-work.result }}
         run: |
           if [ "$PLAN_RESULT" != success ]; then
@@ -253,3 +309,6 @@ jobs:
             true:success|false:skipped) ;;
             *) echo "::error::invalid dev-container gate state selected=$SELECTED work=$WORK_RESULT"; exit 1 ;;
           esac
+          if [ "$SELECTED" = false ]; then
+            echo "::notice::Dev Container Build skipped, ${REASON:-no reason given}"
+          fi

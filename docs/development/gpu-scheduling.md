@@ -62,8 +62,9 @@ for the resource names it advertises.
 ## Backend selection
 
 Set `gpu.vendor` to the physical GPU vendor. The chart requests that vendor's
-device-plugin resource and sets `VMAFX_BACKEND` to `cuda`, `hip`, `sycl`, or
-`cpu` accordingly.
+device-plugin resource and sets each node's `VMAFX_BACKEND` to `cuda`, `hip`,
+`sycl`, or `cpu` accordingly. The scoring server takes its backend from each
+request's `backend` score option.
 
 The Vulkan backend was removed in
 [ADR-0726](../adr/0726-drop-vulkan-backend.md).
@@ -187,17 +188,20 @@ what the device-plugin expects.
 
 ### GPU pod is running but VMAFX uses CPU
 
-Check that `VMAFX_BACKEND` is set correctly:
+On a node, check that `VMAFX_BACKEND` is set correctly:
 
 ```bash
-kubectl exec -n vmafx deploy/vmafx -- env | grep VMAFX_BACKEND
+kubectl exec -n vmafx deploy/vmafx-node -- env | grep VMAFX_BACKEND
 ```
+
+The scoring server runs the backend a request names in its `backend` score
+option; a request without one runs the `vmaf` CLI's default.
 
 If the value is `cpu` but `gpu.vendor` is set to a GPU vendor, verify the
 device was actually allocated:
 
 ```bash
-kubectl exec -n vmafx deploy/vmafx -- ls /dev/dri/
+kubectl exec -n vmafx deploy/vmafx-node -- ls /dev/dri/
 ```
 
 ### Checking node GPU feature labels

@@ -478,6 +478,11 @@ static const MftBackend mft_backend = {
     .open = metal_twin_open,
     .import = metal_twin_import,
     .close = metal_twin_close,
+    /* ADR-2090: a Metal twin's SAD is collected in the next read (its
+     * double buffer), so frame i is final one read after the frame after
+     * it; the CPU stand-in of the self-test is final earlier. */
+    .lag_motion = 2u,
+    .lag_motion_v2 = 2u,
 };
 
 static unsigned window_failed_cases(unsigned bpc)

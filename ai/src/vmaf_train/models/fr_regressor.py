@@ -27,7 +27,7 @@ class _FRRegressorHParams(TypedDict):
     num_codecs: int
 
 
-class FRRegressor(L.LightningModule):
+class FRRegressor(L.LightningModule):  # type: ignore[misc]  # torch / Lightning are untyped for the mypy gate (--no-site-packages)
     """Tiny MLP over precomputed libvmaf feature vectors (adm, vif, motion, ...).
 
     When @c emit_variance is True, the model outputs ``(N, 2)`` — column
@@ -116,9 +116,9 @@ class FRRegressor(L.LightningModule):
         """Accept (x, y) or (x, codec, y) tuples. Codec-blind callers
         keep the v1 2-tuple shape; codec-aware datamodules emit 3-tuples."""
         if len(batch) == 3:  # type: ignore[arg-type]
-            x, codec, y = batch  # type: ignore[misc]
+            x, codec, y = cast("tuple[torch.Tensor, torch.Tensor, torch.Tensor]", batch)
             return x, y, codec
-        x, y = batch  # type: ignore[misc]
+        x, y = cast("tuple[torch.Tensor, torch.Tensor]", batch)
         return x, y, None
 
     def _loss(self, batch: object) -> tuple[torch.Tensor, torch.Tensor | None]:

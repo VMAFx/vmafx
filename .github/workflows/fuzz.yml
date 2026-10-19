@@ -100,7 +100,7 @@ jobs:
           wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
           chmod +x /tmp/llvm.sh
           sudo /tmp/llvm.sh 22
-          sudo pip3 install --break-system-packages --require-hashes \
+          sudo pip3 install --break-system-packages --ignore-installed --require-hashes \
             -r requirements/locks/build.txt
 
       - name: Configure (clang + ASan + libFuzzer)
@@ -109,6 +109,7 @@ jobs:
           # harnesses (ADR-0882): they compile parser sources directly,
           # and ASan + LTO together discard module-dtor sections on the
           # larger source set, producing a linker error.
+          # shellcheck disable=SC2046  # the helper prints one option per line, split on purpose
           meson setup build-fuzz core \
               --buildtype=debug \
               -Db_sanitize=address \
@@ -117,6 +118,8 @@ jobs:
               -Dfuzz=true \
               -Denable_cuda=false \
               -Denable_sycl=false \
+              -Dwerror=true \
+              $(scripts/ci/werror-args.sh true)
 
       - name: Build harness
         run: ninja -C build-fuzz test/fuzz/${{ matrix.target }}
@@ -143,7 +146,7 @@ jobs:
 
       - name: Upload crash artefacts
         if: steps.run.outputs.fuzz_exit != '0'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: ${{ matrix.target }}-crashes-${{ github.run_id }}
           path: |

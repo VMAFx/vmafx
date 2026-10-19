@@ -119,3 +119,11 @@ all four `ALLOC_HOST` / `FREE_HOST` macro call sites in both TUs in
 same PR. See `core/src/cuda/cuda_helper.cuh` for macro contract and
 `core/src/cuda/picture_cuda.c` / `core/src/cuda/common.c` for
 canonical usage of these members across codebase.
+
+## The prescaled plane limit is part of the shared geometry
+
+`speed_internal_init_dimensions()` refuses an allocation plane past the `int`
+index of `vif_tools.c` (`vif_plane_fits_int_index()`), as `speed.c`'s own
+`speed_init_dimensions()` does. Every SpEED device twin takes its geometry
+from this function, so they refuse the same option combinations as the CPU
+(T-PRESCALED-PLANE-INT-INDEX-2026-10-05).

@@ -56,15 +56,15 @@ REFERENCE_LINES = (
     "return pow(x, 2.4);",
     "return pow(c, 1.0 / 3.0);",
     "if (c > 10. / 255.) {",
-    "float hue_angle = atan2(x, y);",
-    "const float c1 = sqrt(square(color_1.a) + square(color_1.b));",
-    "sin(degrees_to_radians(60.0 * exp(-(degrees * degrees))));",
+    "float hue_angle = (float)atan2(x, y);",
+    "const float c1 = (float)sqrt(square(color_1.a) + square(color_1.b));",
+    "sin(degrees_to_radians((float)(60.0 * exp(-(degrees * degrees))))));",
     # Upstream's two float products (Netflix/vmaf libvmaf/src/feature/ciede.c:224-225
     # and :235-236; the squares are products since ADR-1467). ADR-1476. The
     # explicit (double) converts the product's result, as upstream's implicit
     # promotion does; an operand is never cast.
-    "const float delta_upcase_h_prime = 2.0 * sqrt((double)(c_prime_1 * c_prime_2)) * sin(delta_h_prime / 2.0);",
-    "return sqrt(square(lightness) + square(chroma) + square(hue) + (double)(r_sub_t * chroma * hue));",
+    "const float delta_upcase_h_prime = (float)(2.0 * sqrt((double)(c_prime_1 * c_prime_2)) * sin(delta_h_prime / 2.0));",
+    "return (float)(sqrt(square(lightness) + square(chroma) + square(hue) + (double)(r_sub_t * chroma * hue)));",
     "de00_sum += ciede2000(",
     "const double score = 45. - 20. * log10(de00_sum / (ref_pic->w[0] * ref_pic->h[0]));",
 )

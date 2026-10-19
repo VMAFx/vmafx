@@ -118,9 +118,10 @@ $(NINJA): $(VENV_PIP)
 # Provision the lint / format toolchain into the project venv. Versions are
 # kept identical to .pre-commit-config.yaml so the local gate and the CI hooks
 # cannot disagree about what counts as a violation.
-RUFF_VERSION  := 0.16.10
-BLACK_VERSION := 26.10.0
+RUFF_VERSION  := 0.17.1
+BLACK_VERSION := 26.10.1
 
+.PHONY: mini-retrain mini-retrain-test
 .PHONY: lint-tools
 lint-tools: $(VENV_PIP)
 	$(VENV_PIP) install --quiet --require-hashes -r requirements/locks/dev-linters.txt
@@ -139,14 +140,14 @@ cythonize-deps: $(VENV_PIP)
 # Fork-specific targets (lusoris). The upstream targets above are preserved as-is.
 # ============================================================================
 
-.PHONY: lint lint-c lint-py lint-sh lint-md lint-go lint-actions tidy-ratchet tidy-ratchet-write \
+.PHONY: govulncheck lint lint-c lint-py lint-sh lint-md lint-go lint-actions tidy-ratchet tidy-ratchet-write \
 	tidy-ratchet-build tidy-lane tidy-lane-write \
 	base-images-sync cuda-pin-sync python-deps-sync \
-	python-locks-check python-locks-write \
+	python-locks-check python-locks-write python-floors-check \
 	preflight \
 	format format-check sec sbom \
-        test-netflix-golden test-netflix-golden-arm64 test-sanitizers test-fast install-hooks hooks-install help \
-        upstream-parity upstream-parity-full \
+        test-netflix-golden test-netflix-golden-arm64 test-sanitizers test-fast test-timing install-hooks hooks-install help \
+        upstream-parity upstream-parity-full compat-abi-parity compat-abi-parity-plant \
         coverage coverage-html coverage-check assertion-density pr-check ffmpeg-input-contract \
         silent-revert-check
 
@@ -171,39 +172,123 @@ python-locks-check:
 python-locks-write:
 	@python3 scripts/ci/check_python_dependency_locks.py write
 
-# Go security scan (gosec). Skips generated files by default; surfaces every
-# G* finding outside the gen/ tree. Source of truth for the gate added by
-# the gosec-findings-fix sweep — keep the touched-file rule honest.
+python-floors-check:
+	@python3 scripts/ci/check_python_floors.py
+
+# Symbol-level Go vulnerability scan with the OpenVEX statements of
+# security/vex/go.openvex.json (docs/development/dependency-advisories.md).
+# Needs network access; nothing is linked, so no libvmaf build.
+govulncheck:
+	python3 scripts/ci/govulncheck-gate.py
+
+# Grafana dashboard-linter --strict over the generated dashboards
+# (deploy/grafana/dashboards, ADR-2349): the pinned release from
+# build-config.env, sha256-checked. Regenerate them first with
+# `go run ./tools/obsgen -write`.
+.PHONY: lint-dashboards
+lint-dashboards:
+	bash scripts/ci/lint-dashboards.sh
+
+# promtool check + unit tests of the generated rule file
+# (deploy/prometheus/vmafx-rules.yaml, ADR-2349); pinned release, sha256-checked.
+.PHONY: check-prometheus-rules
+check-prometheus-rules:
+	bash scripts/ci/check-prometheus-rules.sh
+
+# Compose observability example: start the stack, send traffic, check every
+# component is scraped, the rules are healthy, every dashboard query returns
+# data, Grafana is provisioned and traces reach Tempo (ADR-2349). Needs docker
+# and the VMAFx images (scripts/ci/observability-compose-smoke.sh --build
+# builds them from the checkout).
+.PHONY: observability-compose-smoke
+observability-compose-smoke:
+	bash scripts/ci/observability-compose-smoke.sh
+
+# Go security scan (gosec): the one definition of the gate, run by `make lint`
+# and by the gosec step of .github/workflows/go-ci.yml. Every G* finding fails.
+# -exclude-generated: generated protobuf code (gen/) carries G103
+# (unsafe.Slice) and G115 (int -> uint32 cgo casts) by design.
+# -exclude-dir=.config/hiss/testdata: the HISS rule engine's own fixtures,
+# whose planted defects (HISS-07 drops an os.Remove error, HISS-09
+# reinterprets &b[0] through unsafe.Pointer) are the evidence the standards
+# gate replays. The Go tool skips them (a directory starting with "." and one
+# named testdata); gosec walks the filesystem and needs to be told
+# (T-LINT-SCOPE-HISS-FIXTURES-2026-09-22).
 lint-go:
-	$(call require-tool,gosec,go install github.com/securego/gosec/v2/cmd/gosec@v2.29.0)
+	$(call require-tool,gosec,go install github.com/securego/gosec/v2/cmd/gosec@v2.29.1-0.20260914113419-9e8e5d91f2f3)
 	@echo "--- gosec (exclude-generated) ---"
-	@gosec -exclude-generated -quiet ./...
+	@gosec -exclude-generated -exclude-dir=.config/hiss/testdata -quiet ./...
 
 # GitHub Actions lint. actionlint validates every workflow under
 # .github/workflows/ against .github/actionlint.yaml; actionlint cannot read a
-# composite action, so scripts/ci/check_composite_actions.py checks those.
+# composite action, so scripts/ci/check_composite_actions.py checks those;
+# scripts/ci/check_hosted_runner_labels.py checks which hosted Ubuntu image
+# every job names (ADR-3251); scripts/ci/pr_workflow_budget.py holds the
+# number of pull-request workflows inside the Scorecard check-suite window;
+# scripts/ci/check_release_provenance_assets.py checks that release workflows
+# upload build provenance (.intoto.jsonl) assets.
 lint-actions:
 	$(call require-tool,actionlint,go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12)
 	@echo "--- actionlint (.github/workflows) ---"
-	@actionlint
+	@python3 scripts/ci/run_actionlint.py
 	@echo "--- composite actions (.github/actions): structure + shellcheck ---"
 	@python3 scripts/ci/check_composite_actions.py
+	@echo "--- hosted runner labels (.github/workflows): explicit image, dated fallbacks ---"
+	@python3 scripts/ci/check_hosted_runner_labels.py
+	@echo "--- pull-request workflow budget (.github/workflows): Scorecard check-suite window ---"
+	@python3 scripts/ci/pr_workflow_budget.py
+	@echo "--- release provenance assets (.github/workflows): OpenSSF Scorecard 10 ---"
+	@python3 scripts/ci/check_release_provenance_assets.py
 
-# Fragment-tree drift check (ADR-0221). Verifies CHANGELOG.md and
-# docs/adr/README.md are in sync with fragments, ADR tag pages match sources,
-# the exact-twin table matches scripts/ci/exact_twins.d/ (ADR-1428), and every
-# AGENTS.md next to an AGENTS.d/ matches its topic pages (ADR-1454), the
-# documentation charts match their specs, data and renders, and every vendored
-# docs asset matches the hashes in its vendor.json (ADR-1508).
-docs-fragments-check:
+.PHONY: docs-render docs-render-check
+
+# Generated documentation that a pull request does not carry (ADR-2197). A pull
+# request adds fragments (changelog.d/, docs/adr/_index_fragments/,
+# docs/rebase-notes.d/) and the ADR files themselves; these outputs are
+# rendered from them when the pull requests land:
+#   CHANGELOG.md, docs/adr/README.md, docs/adr/by-tag/, docs/adr/titles.md,
+#   docs/research/titles.md and the fragment block of docs/rebase-notes.md.
+# `make docs-render` writes them. Once per landing batch the result lands as a
+# render-only pull request, "chore(docs): render generated changelog and ADR
+# index" (ADR-3295); the release cut runs it too (docs/development/release.md).
+# `make docs-render-check` fails when a render is stale: deliverables-check.sh
+# runs it on a render-only pull request's head, and the master push runs it
+# through scripts/ci/check_render_on_master.py (owed render bounded at 24 h).
+docs-render:
+	@bash scripts/release/concat-changelog-fragments.sh --write
+	@bash scripts/docs/concat-adr-index.sh --write
+	@bash scripts/docs/generate-adr-by-tag.sh --write
+	@python3 scripts/docs/generate-record-titles.py --write
+	@bash scripts/docs/concat-rebase-notes.sh --write
+
+docs-render-check:
 	@echo "--- changelog.d/ vs CHANGELOG.md ---"
 	@bash scripts/release/concat-changelog-fragments.sh --check
 	@echo "--- docs/adr/_index_fragments/ vs docs/adr/README.md ---"
 	@bash scripts/docs/concat-adr-index.sh --check
 	@bash scripts/docs/generate-adr-by-tag.sh --check
 	@python3 scripts/docs/generate-record-titles.py --check
+	@echo "--- docs/rebase-notes.d/ vs docs/rebase-notes.md ---"
+	@bash scripts/docs/concat-rebase-notes.sh --check
+
+# Fragment-tree check (ADR-0221, ADR-2197). Verifies the fragments themselves
+# (changelog sections, ADR index rows, rebase-note headings) but not the
+# rendered outputs above: a pull request does not carry them. It also verifies
+# the exact-twin table matches scripts/ci/exact_twins.d/ (ADR-1428), every
+# AGENTS.md next to an AGENTS.d/ matches its topic pages (ADR-1454), the
+# documentation charts match their specs, data and renders, and every vendored
+# docs asset matches the hashes in its vendor.json (ADR-1508).
+docs-fragments-check:
+	@echo "--- changelog.d/ fragments ---"
+	@bash scripts/release/concat-changelog-fragments.sh --lint
+	@echo "--- docs/adr/_index_fragments/ rows ---"
+	@python3 scripts/docs/check-adr-index.py
+	@echo "--- docs/rebase-notes.d/ fragments ---"
+	@bash scripts/docs/concat-rebase-notes.sh --lint
 	@echo "--- scripts/ci/exact_twins.d/ vs docs/development/cross-backend-exact-twins.md ---"
 	@python3 scripts/docs/generate-exact-twins.py --check
+	@echo "--- scripts/ci/exact_twins.d/ vs core/src/vmafx/exactness_gen.c (ADR-2073) ---"
+	@python3 scripts/codegen/vmafx_exactness.py --check
 	@echo "--- scripts/ci/upstream_parity.d/ vs docs/development/upstream-parity-allowlist.md ---"
 	@python3 scripts/docs/generate-upstream-parity-allowlist.py --check
 	@echo "--- */AGENTS.d/ vs */AGENTS.md ---"
@@ -212,20 +297,21 @@ docs-fragments-check:
 	@python3 scripts/ci/check-hardware-reports.py
 	@echo "--- docs/charts/ vs their renders and data (ADR-1508) ---"
 	@python3 scripts/docs/generate-charts.py --check
+	@echo "--- docs/credits.yaml vs docs/credits.md and the repository (ADR-2485) ---"
+	@python3 scripts/docs/generate-credits.py --check
+	@python3 scripts/docs/check-credits.py
 	@echo "--- docs/**/vendor.json (vendored fonts and scripts vs their hashes) ---"
 	@python3 scripts/docs/check_vendored_assets.py
 
 # Regenerate consolidated outputs from fragments (ADR-0221).
-docs-fragments-write:
-	@bash scripts/release/concat-changelog-fragments.sh --write
-	@bash scripts/docs/concat-adr-index.sh --write
-	@bash scripts/docs/generate-adr-by-tag.sh --write
-	@python3 scripts/docs/generate-record-titles.py --write
+docs-fragments-write: docs-render
 	@python3 scripts/docs/generate-exact-twins.py --write
+	@python3 scripts/codegen/vmafx_exactness.py --write
 	@python3 scripts/docs/generate-upstream-parity-allowlist.py --write
 	@python3 scripts/docs/agents_index.py --write
 	@python3 scripts/docs/generate-hardware-reports.py --write
 	@python3 scripts/docs/generate-charts.py --write
+	@python3 scripts/docs/generate-credits.py --write
 
 # Analyze only this Meson profile, retaining all configured command variants.
 # Backend-specific clang-tidy options can be supplied with repeated
@@ -290,10 +376,13 @@ CLANG_TIDY_BIN ?= clang-tidy
 export CLANG_TIDY_BIN
 
 # What each lane configures (ADR-1471): one definition, used by
-# `tidy-ratchet-build` in the container and repeated for cpu by the hosted
-# `Tidy Ratchet` job (scripts/ci/tests/test_tidy_lane_container.py keeps the two
-# the same). cpu is the hosted configuration: gcc-15, no GPU backend and no
-# ONNX Runtime (the hosted runner has none, the container does). The GPU lanes
+# `tidy-ratchet-build` and `tidy-ratchet` in the container and, for cpu, by the
+# hosted `Tidy Ratchet` job and the nightly full scan, which run the same two
+# targets (scripts/ci/tests/test_tidy_lane_container.py pins them). cpu is the
+# hosted configuration: gcc-15, no GPU backend and no ONNX Runtime (the hosted
+# runner has none, the container does); both install libvpl-dev.
+# -Db_lto=false everywhere: the project default renders as GCC's -flto=4
+# (ADR-1172), which clang, and so clang-tidy, rejects. The GPU lanes
 # turn their compiler on (nvcc, hipcc, icpx) so the device bodies are parsed,
 # not the -ENOSYS stubs, and enable ONNX Runtime so the DNN bodies are too. sycl
 # compiles SPIR-V only (no ahead-of-time targets): the device list changes
@@ -311,7 +400,7 @@ TIDY_RATCHET_COMPILERS_arm64 :=
 # two lines and passes the --select list of the Metal host sources.
 TIDY_RATCHET_COMPILERS_metal := CC=clang CXX=clang++
 TIDY_RATCHET_SETUP_metal := -Denable_metal=enabled -Denable_cuda=false -Denable_sycl=false \
-	-Denable_dnn=disabled -Db_lto=false
+	-Denable_dnn=disabled -Db_lto=false -Dwerror=true
 TIDY_RATCHET_SETUP_cpu := -Denable_cuda=false -Denable_sycl=false \
 	-Denable_dnn=disabled -Denable_mcp=true -Denable_mcp_sse=enabled \
 	-Denable_mcp_uds=true -Denable_mcp_stdio=true -Db_lto=false
@@ -340,8 +429,11 @@ TIDY_RATCHET_EXTRA_arm64 := --extra-arg=--target=$(AARCH64_TARGET) \
 # translation units out of compile_commands.json: write-compile-commands.py
 # exports only the native c/cpp_COMPILER rules, so without this second pass the
 # cuda and hip lanes measure the host files only and the sycl lane measures zero
-# SYCL feature TUs, recording an empty backend in its baseline.
-TIDY_RATCHET_COMPDB_cpu :=
+# SYCL feature TUs, recording an empty backend in its baseline. The `cpu` lane adds
+# the MATLAB MEX sources, which meson never builds and which need the stub headers
+# of scripts/ci/lint-stubs/matlab/ (T-TIDY-MATLAB-MEX-UNMEASURED-2026-09-22).
+TIDY_RATCHET_COMPDB_cpu := $(PYTHON_INTERPRETER) scripts/ci/gen-mex-compile-commands.py \
+	"$(TIDY_RATCHET_BUILD_DIR)"
 TIDY_RATCHET_COMPDB_clang :=
 TIDY_RATCHET_COMPDB_cuda := $(PYTHON_INTERPRETER) scripts/ci/gen-gpu-compile-commands.py \
 	"$(TIDY_RATCHET_BUILD_DIR)"
@@ -412,9 +504,9 @@ preflight:
 lint-py:
 	@scripts/ci/check-python-requirements-single-source.sh
 	$(call require-tool,ruff,make lint-tools)
-	ruff check python/ ai/ scripts/ tools/rc1-tester/
+	ruff check .
 	$(call require-tool,black,make lint-tools)
-	black --check python/ ai/ scripts/ tools/rc1-tester/
+	black --check .
 # mypy is advisory (leading `-`): it currently reports ~295 module-resolution
 # errors ("duplicate module", "adding __init__.py somewhere") that stop it
 # before it type-checks anything real. That is a mypy-configuration gap
@@ -433,6 +525,7 @@ lint-sh: ffmpeg-input-contract
 	@scripts/ci/check-default-model-single-source.sh
 	@scripts/ci/check-vcs-version-not-bare-sha.sh
 	@bash scripts/ci/tests/test-check-vcs-version-not-bare-sha.sh
+	@bash scripts/ci/tests/test-preflight-msvcism.sh
 	@scripts/ci/test-prune-corrupt-fixtures.sh
 	@bash scripts/dev/test-cleanup-agent-state.sh
 	@scripts/ci/check-no-tracked-venv.sh
@@ -480,26 +573,32 @@ lint-md:
 # fragments only borrow the `.hip` extension; the Pelorus mirror is filtered out.
 CLANG_FORMAT_FILES = git ls-files '*.c' '*.h' '*.cpp' '*.hpp' '*.cu' '*.cuh' '*.hip' '*.metal' \
 	| grep -v '^subprojects/' | grep -v '^core/test/data/' | grep -v '^scripts/ci/exact_twins\.d/' \
+	| grep -v '^core/src/rust/include/' \
 	| python3 scripts/ci/pelorus_mirror.py filter
+
+# Shell files `make format` and `make format-check` hand to shfmt: every tracked `.sh`
+# but the declared exceptions (.config/lint-exceptions.d/shfmt.toml), as the shfmt hook
+# of .pre-commit-config.yaml reads them.
+SHFMT_FILES = python3 scripts/ci/lint_exceptions.py filter shfmt -- $$(git ls-files '*.sh')
 
 # Formatters — writes changes.
 format:
 	@command -v clang-format >/dev/null && \
 	 clang-format -i $$($(CLANG_FORMAT_FILES)) || true
-	@command -v black >/dev/null && black python/ ai/ scripts/ tools/rc1-tester/ 2>/dev/null || true
-	@command -v ruff >/dev/null && ruff check --fix-only --quiet python/ ai/ scripts/ tools/rc1-tester/ || true
-	@command -v shfmt >/dev/null && shfmt -w -i 2 -ci $$(git ls-files '*.sh') || true
+	@command -v black >/dev/null && black . 2>/dev/null || true
+	@command -v ruff >/dev/null && ruff check --fix-only --quiet . || true
+	@command -v shfmt >/dev/null && shfmt -w -i 2 -ci $$($(SHFMT_FILES)) || true
 
 # Formatters — check-only (CI gate, no writes).
 format-check:
 	$(call require-tool,clang-format,your package manager, e.g. pacman -S clang)
 	clang-format --dry-run --Werror $$($(CLANG_FORMAT_FILES))
 	$(call require-tool,black,make lint-tools)
-	black --check python/ ai/ scripts/ tools/rc1-tester/
+	black --check .
 	$(call require-tool,ruff,make lint-tools)
-	ruff check --select I python/ ai/ scripts/ tools/rc1-tester/
+	ruff check --select I .
 	$(call require-tool,shfmt,go install mvdan.cc/sh/v3/cmd/shfmt@latest)
-	shfmt -d -i 2 -ci $$(git ls-files '*.sh')
+	shfmt -d -i 2 -ci $$($(SHFMT_FILES))
 
 # Security scan (semgrep custom + CERT-C + CWE Top 25).
 sec:
@@ -534,6 +633,17 @@ test-netflix-golden: build-golden
 	    echo "       install: .venv/bin/pip install pytest (see docs/development/languages.md)"; exit 1; }
 	CUDA_VISIBLE_DEVICES="" VMAF_FORCE_BACKEND=cpu VMAF_BUILD_DIR="$(CURDIR)/$(GOLDEN_BUILD_DIR)" PYTHONPATH=$(CURDIR)/python python3 -m pytest \
 	    $(GOLDEN_PYTEST_ARGS)
+
+# The retrain tooling end to end on a generated corpus (docs/ai/retrain-runbook-1246.md, ADR-1898).
+# Needs a built vmaf CLI (VMAF_BIN or build/tools/vmaf) and the ai/ venv (torch, onnxruntime).
+#   make mini-retrain [MINI_RETRAIN_DIR=runs/mini] [VMAF_BIN=build/tools/vmaf]
+MINI_RETRAIN_DIR ?= runs/mini
+mini-retrain:
+	python3 ai/scripts/mini_retrain.py run --run-dir "$(MINI_RETRAIN_DIR)" \
+	    --vmaf-bin "$(or $(VMAF_BIN),build/tools/vmaf)"
+
+mini-retrain-test:
+	python3 -m pytest ai/e2e -v --timeout=900
 
 # The test suites a change affects, in cached hash-locked venvs (docs/development/test-suites.md).
 #   make test-affected BASE=origin/master HEAD=HEAD [VMAF_BIN=build/tools/vmaf]
@@ -582,7 +692,21 @@ upstream-parity-full:
 	python3 scripts/dev/upstream_parity.py --container $(UPSTREAM_PARITY_IMAGE) --mode full \
 	    --heap-check --jobs $(UPSTREAM_PARITY_JOBS) $(UPSTREAM_PARITY_ARGS)
 
+compat-abi-parity:
+	python3 scripts/dev/upstream_parity.py --container $(UPSTREAM_PARITY_IMAGE) --mode probe \
+	    --abi --jobs $(UPSTREAM_PARITY_JOBS) $(UPSTREAM_PARITY_ARGS)
+
+# The plant must fail with exit 1 (a difference); exit 2 (cannot run) is no proof.
+compat-abi-parity-plant:
+	python3 scripts/dev/upstream_parity.py --container $(UPSTREAM_PARITY_IMAGE) --mode probe \
+	    --abi --plant --jobs $(UPSTREAM_PARITY_JOBS) $(UPSTREAM_PARITY_ARGS); \
+	    status=$$?; test "$$status" -eq 1 || { echo "plant: expected exit 1, got $$status" >&2; exit 1; }
+
 # Sanitizer build (ASan + UBSan) — used by CI and `/build-vmaf --sanitizers`.
+# The suite's timeouts are sized for an uninstrumented build; a sanitizer or
+# gcov run multiplies them (docs/development/ci.md, "Sanitizer legs"), as the
+# CI legs do.
+INSTRUMENTED_TEST_TIMEOUT_MULTIPLIER := 3
 test-sanitizers:
 	@mkdir -p build-san
 	meson setup build-san $(LIBVMAF_DIR) --buildtype=debug \
@@ -593,11 +717,19 @@ test-sanitizers:
 	    -Db_sanitize=address,undefined \
 	    -Denable_cuda=false -Denable_sycl=false
 	ninja -C build-san
-	$(PYTHON_INTERPRETER) scripts/ci/run_meson_test.py -- -C build-san --print-errorlogs
+	$(PYTHON_INTERPRETER) scripts/ci/run_meson_test.py -- -C build-san --print-errorlogs \
+	    --timeout-multiplier $(INSTRUMENTED_TEST_TIMEOUT_MULTIPLIER)
 
-test-fast: build
+# test-fast: the pre-push gate. test-timing: the wall-clock budgets (the live
+# window harness's two frame periods), one test at a time, alone on an idle
+# host, after the other suites (docs/development/test-suites.md, maintainer
+# decision Q-325). One runner call serves both.
+MESON_SUITE_ARGS_test-fast := --suite=fast
+MESON_SUITE_ARGS_test-timing := --suite=timing --num-processes 1 --print-errorlogs
+
+test-fast test-timing: build
 	PATH="$(VIRTUAL_ENV_ABS):$$PATH" "$(VENV_PYTHON)" scripts/ci/run_meson_test.py \
-	    --meson-executable "$(MESON_EXEC)" -- -C $(BUILD_DIR) --suite=fast
+	    --meson-executable "$(MESON_EXEC)" -- -C $(BUILD_DIR) $(MESON_SUITE_ARGS_$@)
 
 # ============================================================================
 # Coverage gate (docs/principles.md §3 — ≥70% overall, ≥85% security-critical)
@@ -628,7 +760,8 @@ coverage:
 	    -Dc_args=-fprofile-update=atomic -Dcpp_args=-fprofile-update=atomic
 	ninja -C $(COVERAGE_DIR)
 	$(PYTHON_INTERPRETER) scripts/ci/run_meson_test.py -- \
-	    -C $(COVERAGE_DIR) --print-errorlogs --num-processes 1
+	    -C $(COVERAGE_DIR) --print-errorlogs --num-processes 1 \
+	    --timeout-multiplier $(INSTRUMENTED_TEST_TIMEOUT_MULTIPLIER)
 	@echo "--- gathering coverage ---"
 	gcovr --root . \
 	    --filter 'core/src/.*' \
@@ -759,13 +892,13 @@ node-bpf:
 
 go-build: node-bpf
 	@command -v go >/dev/null || { echo "go not found — install the version declared by go.mod (https://go.dev/dl/)"; exit 1; }
-	CGO_LDFLAGS="-L$(CURDIR)/core/build-cpu/src -lvmaf -lm" \
+	CGO_LDFLAGS="-L$(CURDIR)/core/build-cpu/src -lvmaf -lvmafx -lm" \
 	LD_LIBRARY_PATH="$(CURDIR)/core/build-cpu/src$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}" \
 	go build ./...
 
 go-test: node-bpf
 	@command -v go >/dev/null || { echo "go not found — install the version declared by go.mod (https://go.dev/dl/)"; exit 1; }
-	CGO_LDFLAGS="-L$(CURDIR)/core/build-cpu/src -lvmaf -lm" \
+	CGO_LDFLAGS="-L$(CURDIR)/core/build-cpu/src -lvmaf -lvmafx -lm" \
 	LD_LIBRARY_PATH="$(CURDIR)/core/build-cpu/src$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}" \
 	go test ./...
 
@@ -786,7 +919,7 @@ go-fix-check:
 
 go-ort-runner:
 	@command -v go >/dev/null || { echo "go not found — install the version declared by go.mod (https://go.dev/dl/)"; exit 1; }
-	CGO_LDFLAGS="-L$(CURDIR)/core/build-cpu/src -lvmaf -lm" \
+	CGO_LDFLAGS="-L$(CURDIR)/core/build-cpu/src -lvmaf -lvmafx -lm" \
 	LD_LIBRARY_PATH="$(CURDIR)/core/build-cpu/src$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}" \
 	go build -o vmafx-ort-runner ./cmd/vmafx-ort-runner
 
@@ -841,7 +974,7 @@ help:
 	@echo "  make lint             — configured C/C++ + Python, shell, Markdown, Go and docs checks"
 	@echo "  make lint-c           — tracked native sources in BUILD_DIR (LINT_JOBS=4; receipts under build)"
 	@echo "  make lint-md          — markdownlint-cli2 on changed *.md (MDLINT_SCOPE=all for full tree, ADR-0866)"
-	@echo "  make lint-actions     — actionlint on .github/workflows/ against .github/actionlint.yaml"
+	@echo "  make lint-actions     — actionlint on .github/workflows/, composite actions, hosted runner labels"
 	@echo "  make format           — clang-format + black + ruff + shfmt (writes)"
 	@echo "  make format-check     — same, no writes (CI gate)"
 	@echo "  make sec              — semgrep (CERT-C + CWE + fork rules)"
@@ -854,6 +987,7 @@ help:
 	@echo "  make upstream-parity-full — the same over every fixture, option variant and model"
 	@echo "  make test-sanitizers  — ASan + UBSan build + run"
 	@echo "  make test-fast        — meson --suite=fast (pre-push gate)"
+	@echo "  make test-timing      — meson --suite=timing, one test at a time (run alone on an idle host)"
 	@echo "  make coverage         — gcov/gcovr line coverage report"
 	@echo "  make coverage-html    — render HTML coverage report"
 	@echo "  make coverage-check   — enforce the local floors (37% overall / 85% critical)"
@@ -895,6 +1029,25 @@ hiss-coverage:
 
 dedupe-check:
 	@standardsctl dedupe scan .
+
+# Documentation site (mkdocs.yml writes build-docs/site). docs-build is the
+# strict build the docs workflow and the pre-push MkDocs gate run; docs-serve
+# is the live preview while editing under docs/.
+.PHONY: docs-build docs-serve
+docs-build:
+	@command -v mkdocs >/dev/null || { echo "mkdocs not found: pip install -r docs/requirements.txt"; exit 1; }
+	mkdocs build --strict
+	$(MAKE) docs-math-check
+
+# Compiles every formula of the built site with the vendored KaTeX in strict
+# mode (ADR-2705); needs Node.js and fails, never skips, without it.
+.PHONY: docs-math-check
+docs-math-check:
+	@python3 scripts/docs/check_math.py --site build-docs/site
+
+docs-serve:
+	@command -v mkdocs >/dev/null || { echo "mkdocs not found: pip install -r docs/requirements.txt"; exit 1; }
+	mkdocs serve
 
 # BEGIN praetor documentation gate
 .PHONY: docs-lint docs-figures

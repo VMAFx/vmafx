@@ -16,7 +16,7 @@ from pathlib import Path
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE / "src"))
 
-from vmafroiscore.cli import main  # noqa: E402
+from vmafroiscore.cli import main
 
 if __name__ == "__main__":
     raise SystemExit(main())

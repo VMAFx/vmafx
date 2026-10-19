@@ -34,11 +34,11 @@
  *      synchronisation while the slow path wrote them. (ADR-1068.)
  *    - EnvRow is a proper aggregate with a constructor guard.
  */
+#include "compat/crt_portable.h"
 #include "gpu_dispatch_env.h"
 
 #include <array>
 #include <atomic>
-#include <cstdlib> /* std::getenv */
 #include <mutex>
 #include <optional>
 #include <string>
@@ -89,7 +89,7 @@ const char *snapshot_into_slot(EnvRow *slot, std::string_view key, const char *v
      * vmaf_gpu_dispatch_env_get callers, not hypothetical concurrent setenv
      * from user code. */
     /* NOLINTNEXTLINE(concurrency-mt-unsafe) — ADR-0488 contract above. */
-    const char *const val = std::getenv(var_name);
+    const char *const val = vmaf_getenv_portable(var_name);
     std::optional<std::string> snapshot{};
     try {
         if (val)
@@ -158,7 +158,7 @@ extern "C" {
         /* Table exhausted — fall back to a raw getenv.  Should never
          * happen in production (8 slots, at most 4 backends).
          * NOLINTNEXTLINE(concurrency-mt-unsafe) — ADR-0488 caller-contract. */
-        return std::getenv(var_name);
+        return vmaf_getenv_portable(var_name);
     }
 
     return snapshot_into_slot(slot, key, var_name);

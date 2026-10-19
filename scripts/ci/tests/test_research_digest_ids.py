@@ -64,6 +64,7 @@ class ResearchDigestIdTests(unittest.TestCase):
         path.write_text(
             f"{heading or f'# Research-{number}: fixture'}\n\nFixture.\n",
             encoding="utf-8",
+            newline="\n",
         )
         return path
 
@@ -99,6 +100,7 @@ class ResearchDigestIdTests(unittest.TestCase):
         self.baseline.write_text(
             json.dumps(payload, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
+            newline="\n",
         )
 
     def _commit_trusted_baseline(self) -> str:
@@ -106,7 +108,7 @@ class ResearchDigestIdTests(unittest.TestCase):
         self._digest("1000-beta.md")
         self._write_payload_direct()
         checker_marker = self.root / "scripts/ci/check-research-digest-ids.py"
-        checker_marker.write_text("# trusted checker marker\n", encoding="utf-8")
+        checker_marker.write_text("# trusted checker marker\n", encoding="utf-8", newline="\n")
         return self._commit("trusted baseline")
 
     def _run_main(self, *args: str) -> tuple[int, str]:
@@ -189,7 +191,7 @@ class ResearchDigestIdTests(unittest.TestCase):
     def test_h1_filename_mismatch_fails_closed(self) -> None:
         path = self._digest("1000-alpha.md")
         self._write_baseline()
-        path.write_text("# Research-1001: wrong ID\n", encoding="utf-8")
+        path.write_text("# Research-1001: wrong ID\n", encoding="utf-8", newline="\n")
 
         errors = CHECKER.audit_repository(self.root, self.baseline)
         self.assertEqual(len(errors), 1)
@@ -226,7 +228,7 @@ class ResearchDigestIdTests(unittest.TestCase):
         with self.assertRaisesRegex(CHECKER.GateError, "adds collision members"):
             CHECKER.write_baseline(self.root, self.baseline, authority)
 
-        path.write_text("# Research-1001: wrong ID\n", encoding="utf-8")
+        path.write_text("# Research-1001: wrong ID\n", encoding="utf-8", newline="\n")
         with self.assertRaisesRegex(CHECKER.GateError, "adds or changes a non-canonical H1"):
             CHECKER.write_baseline(self.root, self.baseline, authority)
 
@@ -260,6 +262,7 @@ class ResearchDigestIdTests(unittest.TestCase):
         self.baseline.write_text(
             json.dumps(payload, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
+            newline="\n",
         )
 
         result, output = self._run_main("--trusted-ref", trusted)
@@ -283,7 +286,7 @@ class ResearchDigestIdTests(unittest.TestCase):
         self._digest("1000-alpha.md")
         checker_marker = self.root / "scripts/ci/check-research-digest-ids.py"
         checker_marker.parent.mkdir(parents=True, exist_ok=True)
-        checker_marker.write_text("# trusted checker marker\n", encoding="utf-8")
+        checker_marker.write_text("# trusted checker marker\n", encoding="utf-8", newline="\n")
         trusted = self._commit("checker without baseline")
         self._write_payload_direct()
 
@@ -338,7 +341,7 @@ class ResearchDigestIdTests(unittest.TestCase):
         self._commit("pre-ratchet tree")
         checker_marker = self.root / "scripts/ci/check-research-digest-ids.py"
         checker_marker.parent.mkdir(parents=True, exist_ok=True)
-        checker_marker.write_text("# trusted checker marker\n", encoding="utf-8")
+        checker_marker.write_text("# trusted checker marker\n", encoding="utf-8", newline="\n")
         checker_revision = self._commit("checker present")
 
         result, output = self._run_main("--bootstrap-from-ref", checker_revision)

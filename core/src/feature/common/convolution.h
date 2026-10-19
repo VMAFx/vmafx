@@ -65,6 +65,16 @@ void convolution_f32_avx_xy_s(const float *filter, int filter_width, const float
                               const float *src2, float *dst, float *tmp, int width, int height,
                               int src1_stride, int src2_stride, int dst_stride);
 
+/* One output row of the vertical pass: dst[j] = sum over k of
+ * filter[k] * rows[k][j], k from 0 to filter_width - 1, each product rounded
+ * before it is added (no contraction, ADR-1461). The caller resolves the
+ * mirrored source rows; filter_width <= MAX_FWIDTH_AVX_CONV. No alignment
+ * requirement: reads and writes stop at width. Same bits as the scalar
+ * vertical pass of vif_filter1d_s() (Netflix/vmaf 9cb9479f, the vertical half
+ * of its convolution_f32_avx_dec16_s()). */
+void convolution_f32_avx_rows_s(const float *filter, int filter_width, const float *const *rows,
+                                float *dst, int width);
+
 /* AVX-512F paths (512-bit, 16 floats per FMA). ADR-0504.
  * Results are NOT bit-identical to the AVX2 paths (wider FMA tree changes
  * rounding at the ULP level) but are numerically equivalent within the

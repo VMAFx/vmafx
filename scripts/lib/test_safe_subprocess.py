@@ -15,6 +15,7 @@ import time
 import unittest
 from pathlib import Path
 from typing import Any, cast
+from unittest import mock
 
 from scripts.lib.safe_subprocess import (
     MAX_ARG_BYTES,
@@ -25,6 +26,7 @@ from scripts.lib.safe_subprocess import (
     CommandValidationError,
     run,
     run_async,
+    signal_process_group,
 )
 
 PYTHON = str(Path(sys.executable).resolve(strict=True))
@@ -172,6 +174,41 @@ class SafeSubprocessTests(unittest.TestCase):
     os.name == "posix" and Path("/proc").is_dir(),
     "process-group cancellation assertion requires procfs and POSIX signals",
 )
+class SignalTargetTests(unittest.TestCase):
+    """The group-signal guard; ``os.killpg`` is a recorder here, so no signal is ever sent."""
+
+    def test_refuses_targets_that_are_not_a_child_group(self) -> None:
+        refused: list[object] = [
+            0,
+            1,
+            -1,
+            True,
+            2.0,
+            "5",
+            None,
+            mock.MagicMock(),
+            mock.MagicMock().pid,
+        ]
+        refused.append(os.getpgrp())
+        with mock.patch("os.killpg") as killpg:
+            for target in refused:
+                with self.subTest(target=repr(target)), self.assertRaises(ValueError):
+                    signal_process_group(target, signal.SIGKILL)
+        killpg.assert_not_called()
+
+    def test_signals_a_child_group(self) -> None:
+        target = os.getpgrp() + 1 if os.getpgrp() > 1 else 2
+        with mock.patch("os.killpg") as killpg:
+            self.assertTrue(signal_process_group(target, signal.SIGTERM))
+        killpg.assert_called_once_with(target, signal.SIGTERM)
+
+    def test_vanished_group_is_reported_not_raised(self) -> None:
+        target = os.getpgrp() + 1 if os.getpgrp() > 1 else 2
+        with mock.patch("os.killpg", side_effect=ProcessLookupError) as killpg:
+            self.assertFalse(signal_process_group(target, signal.SIGKILL))
+        killpg.assert_called_once_with(target, signal.SIGKILL)
+
+
 class SafeSubprocessAsyncTests(unittest.IsolatedAsyncioTestCase):
     async def test_cancellation_terminates_process_group_and_reaps_leader(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -218,8 +255,7 @@ class SafeSubprocessAsyncTests(unittest.IsolatedAsyncioTestCase):
                     )
             finally:
                 if leader_pid is not None:
-                    with contextlib.suppress(ProcessLookupError):
-                        os.killpg(leader_pid, signal.SIGKILL)
+                    signal_process_group(leader_pid, signal.SIGKILL)
                 if not task.done():
                     task.cancel()
                     with contextlib.suppress(asyncio.CancelledError):

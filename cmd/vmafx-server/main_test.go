@@ -26,6 +26,8 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/VMAFx/vmafx/internal/execstub"
+	"github.com/VMAFx/vmafx/internal/oteltest"
 	"github.com/VMAFx/vmafx/pkg/libvmaf"
 	"github.com/VMAFx/vmafx/pkg/observability"
 )
@@ -37,12 +39,17 @@ import (
 // vmafGoldenJSON is a canned vmaf CLI JSON output representing the Netflix
 // golden pair (src01_hrc00_576x324 ↔ src01_hrc01_576x324, VMAF ≈ 76.6683).
 const vmafGoldenJSON = `{
+  "version": "v1.0.0-rc.4-test",
   "pooled_metrics": {
     "vmaf":       {"mean": 76.6683},
     "vif_scale0": {"mean": 0.8912},
     "adm2":       {"mean": 0.9876},
     "motion2":    {"mean": 2.3456}
-  }
+  },
+  "backend_used": "cpu",
+  "feature_backends": [{"extractor": "adm", "backend": "cpu"}],
+  "provenance": {"abi_major": 0, "abi_minor": 1, "abi_patch": 4, "active_backend": "cpu",
+                 "n_extractors": 3, "version": "v1.0.0-rc.4-test"}
 }`
 
 // writeVmafStub writes a shell-script stub that emits a canned JSON payload
@@ -64,9 +71,7 @@ fi
 exit 0
 `
 	p := filepath.Join(dir, "vmaf")
-	if err := os.WriteFile(p, []byte(script), 0o700); err != nil {
-		t.Fatalf("writeVmafStub: %v", err)
-	}
+	execstub.Write(t, p, []byte(script))
 	return p
 }
 
@@ -91,7 +96,7 @@ func newTestHTTPServer(t *testing.T) (*httpServer, *prometheus.Registry) {
 		t.Fatalf("libvmaf.New: %v", err)
 	}
 	reg := prometheus.NewRegistry()
-	metrics := observability.NewMetrics(reg)
+	metrics := oteltest.Metrics(t, reg)
 	log := observability.NewLogger("ERROR") // suppress noise in tests
 	grpc := newGRPCServer(scorer, metrics, log)
 	return newHTTPServer(scorer, metrics, reg, log, grpc), reg
@@ -146,7 +151,7 @@ func TestReadyEndpoint(t *testing.T) {
 // TestReadyEndpointNotReady verifies that /readyz returns 503 when scorer is nil.
 func TestReadyEndpointNotReady(t *testing.T) {
 	reg := prometheus.NewRegistry()
-	metrics := observability.NewMetrics(reg)
+	metrics := oteltest.Metrics(t, reg)
 	log := observability.NewLogger("ERROR")
 	hs := newHTTPServer(nil, metrics, reg, log, nil) // nil scorer + nil grpc → not ready
 	mux := http.NewServeMux()

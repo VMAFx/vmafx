@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD060 -->
 # ADR-0954: Host-only unit test for shared GPU dispatch runtime
 
-- **Status**: Accepted
+- **Status**: Accepted (status update 2026-10-06 below)
 - **Date**: 2026-05-31
 - **Deciders**: Lusoris
 - **Tags**: `test`, `gpu`, `cuda`, `hip`, `sycl`, `runtime`
@@ -101,3 +101,16 @@ on every CI matrix lane that builds tests.
 - Reproducer: `meson test -C build-cpu test_gpu_dispatch_runtime`.
 - Source: `req` (user instruction to push test coverage on backend
   runtime files in `core/src/{cuda,sycl,hip}/`, excluding kernels).
+
+## Status update 2026-10-06: The HIP dispatch strategy file was removed
+
+Decision 4 lists `core/src/hip/dispatch_strategy.c`, a stub that returns 0 for
+every input. That file, its header and the `VMAF_HIP_DISPATCH` variable were
+removed on 2026-10-04 by #2030 (`6b339d6f7`, "read VMAF_CUDA_DISPATCH at
+extractor init and remove the unwired VMAF_HIP_DISPATCH"), because nothing
+consulted the variable. The host-only test now compiles the CUDA and SYCL
+dispatch strategies (`core/test/meson.build`, `test_gpu_dispatch_runtime`);
+the HIP part of this decision no longer applies. The rest of the decision (a
+host-only unit test for the shared dispatch runtime) is unchanged.
+
+The body above is unchanged.

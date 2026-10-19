@@ -48,6 +48,12 @@
  * give integral products and never showed it, so this case scores a picture
  * whose contrast the distorted copy doubles, at limits of 1.2 and 1.5.
  *
+ * Rows past INT64_MAX (T-ADM-CM-SCALE0-ROW-INT64-OVERFLOW-2026-10-05): the
+ * picture of adm_cm_row_overflow_frame.h, compared with itself, drives one
+ * scale-0 contrast-masking row past INT64_MAX at the default weights. The
+ * CPU and every twin summed the row in int64 and the frame failed; they sum
+ * it unsigned now, and the twins return the scalar CPU's scores on it at 8
+ * and 16 bits.
  * The size-rejection test calls init() directly and needs no device. The
  * viewing-geometry rejection uses a real backend state because it pins the
  * public first-frame contract for CSF modes 1 and 2. The parity tests score
@@ -63,6 +69,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "adm_cm_row_overflow_frame.h"
 #include "mu_table.h"
 #include "test.h"
 
@@ -233,6 +240,19 @@ static uint16_t enhanced_sample(unsigned row, unsigned col, int distorted)
 {
     const int noise = (int)(position_hash(row, col, 0) >> 26) - 32;
     return (uint16_t)(128 + (distorted ? 2 * noise : noise));
+}
+
+/* The picture of adm_cm_row_overflow_frame.h; the same for both pictures. */
+static uint16_t row_overflow_8_sample(unsigned row, unsigned col, int distorted)
+{
+    (void)distorted;
+    return adm_row_overflow_sample(row, col, 255u);
+}
+
+static uint16_t row_overflow_16_sample(unsigned row, unsigned col, int distorted)
+{
+    (void)distorted;
+    return adm_row_overflow_sample(row, col, 65535u);
 }
 
 /* One content family of the parity tests. */
@@ -485,6 +505,20 @@ static const Content ISOLATED_PATCHES = {
     "GPU integer ADM differs from scalar CPU by more than 1e-4 on isolated patches",
 };
 
+static const Content ROW_OVERFLOW_8 = {
+    row_overflow_8_sample,
+    8u,
+    "GPU integer ADM differs from scalar CPU on a scale-0 row past INT64_MAX (8 bit)",
+};
+
+static const Content ROW_OVERFLOW_16 = {
+    row_overflow_16_sample,
+    16u,
+    "GPU integer ADM differs from scalar CPU on a scale-0 row past INT64_MAX (16 bit)",
+};
+
+static const Geometry ROW_OVERFLOW_GEOMETRY[] = {{ADM_ROW_OVERFLOW_W, ADM_ROW_OVERFLOW_H}};
+
 static const Content ENHANCED_CONTRAST = {
     enhanced_sample,
     8u,
@@ -574,6 +608,13 @@ static char *test_gpu_adm_bright_16bit_parity(void)
 static char *test_gpu_adm_isolated_patch_parity(void)
 {
     return check_parity_list(PATCHES, NUM_PATCHES, &ISOLATED_PATCHES);
+}
+
+static char *test_gpu_adm_row_past_int64_max_parity(void)
+{
+    char *msg = check_parity_list(ROW_OVERFLOW_GEOMETRY, 1u, &ROW_OVERFLOW_8);
+    return (msg || mu_skipped) ? msg :
+                                 check_parity_list(ROW_OVERFLOW_GEOMETRY, 1u, &ROW_OVERFLOW_16);
 }
 
 static char *test_gpu_adm_csf_modes_parity(void)
@@ -754,6 +795,7 @@ char *run_tests(void)
         MU_TEST(test_gpu_adm_full_range_noise_parity),
         MU_TEST(test_gpu_adm_bright_16bit_parity),
         MU_TEST(test_gpu_adm_isolated_patch_parity),
+        MU_TEST(test_gpu_adm_row_past_int64_max_parity),
         MU_TEST(test_gpu_adm_csf_modes_parity),
         MU_TEST(test_gpu_adm_fractional_gain_limit_parity),
     };

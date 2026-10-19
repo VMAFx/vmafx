@@ -16,6 +16,7 @@
 
 #include "mu_table.h"
 #include "test.h"
+#include "float_bits.h"
 
 #include "libvmaf/dnn.h"
 #include "libvmaf/feature.h"
@@ -140,7 +141,7 @@ static char *expect_cut_flags(const Clip *clip)
         missing += vmaf_feature_score_at_index(ctx, "shot_boundary", &flag, t) != 0;
         missing += vmaf_feature_score_at_index(ctx, "shot_boundary_probability", &prob, t) != 0;
         const double want = (shot_of(clip, t + 1u) != shot_of(clip, t)) ? 1.0 : 0.0;
-        wrong += flag != want;
+        wrong += vmaf_test_identical_f64(flag, want) ? 0u : 1u;
     }
     (void)vmaf_close(ctx);
     mu_assert("ADR-1527: every frame carries both shot-boundary features", missing == 0u);

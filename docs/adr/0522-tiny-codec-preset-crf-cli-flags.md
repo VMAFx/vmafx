@@ -155,3 +155,12 @@ Concrete pieces:
   `PRESET_ORDINAL`, `CRF_MAX`, `_row_to_features`).
 - Sidecar: `model/tiny/fr_regressor_v2.json` (`encoder_vocab`,
   `encoder_vocab_version`, `codec_block_layout`).
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 84: `- **Tests** (core/test/dnn/test_codec_block.c + test_cli.sh
+  extension):`: Cites test file `core/test/dnn/test_codec_block.c` which does
+  not exist on master (tests were placed in `test_model_loader.c`).

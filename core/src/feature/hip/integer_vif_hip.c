@@ -119,8 +119,8 @@ typedef struct VifStateHip {
     VmafHipPlaneSource planes;
 
     /* The half-resolution planes inside data_buf that scales 1..3 read: the
-     * same addresses as buf.ref / buf.dis, which the kernels take as
-     * uintptr_t, kept as pointers for the host-side launches. */
+     * same addresses as buf.ref / buf.dis, kept as void pointers for
+     * the host-side launches. */
     void *rd_ref;
     void *rd_dis;
 #endif /* HAVE_HIPCC */
@@ -429,10 +429,10 @@ static void vif_hip_layout_planes(VifStateHip *s, size_t rd_size, unsigned h)
     VifBufferHip *buf = &s->buf;
     uint8_t *ptr = (uint8_t *)s->data_buf;
     s->rd_ref = ptr;
-    buf->ref = (uintptr_t)ptr;
+    buf->ref = (uint16_t *)ptr;
     ptr += rd_size;
     s->rd_dis = ptr;
-    buf->dis = (uintptr_t)ptr;
+    buf->dis = (uint16_t *)ptr;
     ptr += rd_size;
 
     const size_t plane_16 = (size_t)h * (size_t)buf->stride_16;

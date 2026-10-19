@@ -65,11 +65,14 @@ make install
 ```
 
 The fork-added options, filters and GPU selectors on this page need FFmpeg
-patched with the fork's series, `ffmpeg-patches/0001` to `0020` listed in
-`ffmpeg-patches/series.txt`, applied in order to a clean `n9.0.2` checkout:
+patched with the fork's series, the patches listed in
+`ffmpeg-patches/series.txt`, applied in order to a clean `n9.0.2` checkout
+after the shared FFmpeg fix series
+([what it changes](../development/ffmpeg-patch-automation.md#shared-ffmpeg-fix-series)):
 
 ```bash
 cd /path/to/ffmpeg && git checkout n9.0.2
+/path/to/vmaf/scripts/ci/ffmpeg-shared-series.sh apply .
 while IFS= read -r patch; do
     case "$patch" in ""|\#*) continue ;; esac
     git am --3way "/path/to/vmaf/ffmpeg-patches/$patch" || exit 1
@@ -167,6 +170,54 @@ more complex filters, and the
 | `libvmaf_tune` | `0008` | `--enable-libvmaf` | CPU; recommends a CRF for the next encode pass |
 | `vmaf_pre` | `0002` | `--enable-libvmaf` (libvmaf 3.0.0+ with DNN) | Learned pre-filter (ONNX) |
 
+## `vmafx` filter option table
+
+The `vmafx` filter replaces the `vmaf`-named filters in the 1.0.0 series
+(RC4, [ADR-1852](../adr/1852-vmafx-api-redesign.md)); its options are
+generated from the option groups of `core/api/vmafx.toml` into
+`ffmpeg-patches/src/vf_vmafx_options.h`, the table the filter compiles. The
+filter itself lands in a later RC4 change; until then this table is the
+contract it implements, and the `libvmaf` filter below is what the patched
+FFmpeg builds today. Upstream option names (`n_threads`, `n_subsample`) stay
+accepted as aliases.
+
+<!-- BEGIN GENERATED: vmafx-api vmafx filter options (scripts/codegen/vmafx-api.py) -->
+
+| Option | Aliases | Value | Default | Description |
+| --- | --- | --- | --- | --- |
+| `model` | | string | library default (`VMAF_DEFAULT_MODEL_VERSION`) | Model, colon-delimited: version= a built-in model, path= a model file, name= the name in the report, disable_clip, enable_transform, &lt;feature&gt;.&lt;option&gt;=&lt;value&gt; overloads. Several models score in one pass (repeat the option; the filter separates them with \|). |
+| `backend` | | `auto` \| `cpu` \| `cuda` \| `sycl` \| `hip` \| `metal` | `auto` | Backend: auto uses the available ones; any other value runs that backend alone and fails when it is not available. |
+| `feature` | | string | | Additional feature extractor, name[=key=value:...] (for example psnr or cambi=full_ref=true); several may be given (the filter separates them with \|). Mutually exclusive with the CTC presets. |
+| `tiny_model` | | string | | Tiny ONNX model to load alongside the classic models. |
+| `tiny_device` | | `auto` \| `cpu` \| `cuda` \| `openvino` \| `openvino-npu` \| `openvino-cpu` \| `openvino-gpu` \| `coreml` \| `coreml-ane` \| `coreml-gpu` \| `coreml-cpu` \| `rocm` | `auto` | ONNX Runtime execution provider of the tiny model. |
+| `tiny_threads` | | uint | | Intra-op threads of the CPU execution provider (0: the runtime's default). |
+| `tiny_fp16` | | bool | `false` | Request fp16 input and output where the execution provider supports it. |
+| `threads` | `n_threads` | uint | | Worker threads of the feature extractors, capped to the hardware threads (0: score in the calling thread). |
+| `cpumask` | | uint | | Bitmask of CPU instruction sets the extractors must not use. |
+| `gpumask` | | uint | | Bitmask of GPU operations the extractors must not use. |
+| `device` | | string | `auto` | GPU of the selected backend: auto, or a device index. Needs a GPU backend that selects devices by index (sycl, hip, metal). |
+| `subsample` | `n_subsample` | uint >= 1 | `1` | Score every n-th frame (1: every frame). |
+| `log_path` | | string | | Report file. |
+| `log_fmt` | | `json` \| `xml` \| `csv` \| `sub` | `json` | Report format; json and xml carry the backend receipt. |
+| `view_distance` | | float 3..24 | | Viewing distance in display heights (ADM adm_norm_view_dist). Unset: the model's value. The ADM extractor's default CSF refuses a distance below 3 (it accepts 0.75 with other CSF modes, which these options do not set). |
+| `display_height` | | uint >= 1 | | Height of the reference display in pixels (ADM adm_ref_display_height). Unset: the model's value. |
+| `target_width` | | uint | `0` | Width of the target display the distorted video is scaled to (0: no scaling). Reserved: device-targeted scoring lands in RC5; only the default is accepted. |
+| `target_height` | | uint | `0` | Height of the target display the distorted video is scaled to (0: no scaling). Reserved: device-targeted scoring lands in RC5; only the default is accepted. |
+| `target_scaling` | | `none` \| `bilinear` \| `bicubic` \| `lanczos` | `none` | Scaling filter towards the target display. Reserved: device-targeted scoring lands in RC5; only the default is accepted. |
+| `pool` | | `min` \| `max` \| `mean` \| `harmonic_mean` \| `median` \| `perc5` \| `perc10` \| `perc20` | `mean` | Pool methods of the final score and of the windows. |
+| `n_stats` | | float >= 0 | `0.0` | Window length in seconds (0: no windows). |
+| `n_stats_frames` | | uint | `0` | Window length in frames (0: no windows); exclusive with n_stats. |
+| `stats_out` | | `log` \| `metadata` \| `file` | `log` | Where window statistics go. |
+| `stats_path` | | string | | NDJSON file of the window statistics, one object per window. |
+| `score_fmt` | | string | `%.6f` | printf format of the scores (%.17g is lossless). |
+| `provenance` | | `log` \| `report` | `log+report` | Print the provenance record at init (log) and embed it in the report (report). |
+| `metadata` | | bool | `false` | Attach per-frame scores to the frames as lavfi.vmafx.&lt;metric&gt; metadata (delays output by the retention depth). |
+| `profile` | | bool | `false` | Log the device timing breakdown at uninit. |
+| `import` | | `auto` \| `device` \| `host` | `auto` | auto imports hardware frames without a copy and uploads software frames; device refuses software frames; host downloads hardware frames (logged once with the reason). |
+| `perceptual_weight` | | bool | `false` | Weight the scores with the perceptual side data of the frames. |
+
+<!-- END GENERATED: vmafx-api vmafx filter options -->
+
 ## `libvmaf` filter option reference
 
 The `libvmaf` filter ships with FFmpeg (source:
@@ -197,7 +248,27 @@ These options exist on every vmaf filter (`libvmaf`, `libvmaf_sycl`,
 | `gpumask` | integer bitmask | `0` (all enabled) | Disable GPU dispatch: `1` disables CUDA (patch `0014`). |
 
 The filter publishes the final pooled score to FFmpeg's log as
-`VMAF score: <mean>`; the structured log at `log_path` is authoritative.
+`VMAF score: <mean>`; the structured log at `log_path` is authoritative. After
+an error it publishes neither; see
+[When a frame cannot be scored](#when-a-frame-cannot-be-scored).
+
+### Input colour tags and HDR models
+
+A model file may declare a `conversion_target` (see
+[model files](../models/v1.md#model-declared-conversion-target)). For such a
+model the `libvmaf` filter (and the software path of `libvmaf_sycl`) reads the
+colour properties of the first frame of each input (range, primaries, transfer
+and matrix) and hands them to libvmaf, which converts both inputs to the
+model's colorspace before scoring. Tag untagged files with `setparams` or
+`-color_primaries`, `-color_trc`, `-colorspace` and `-color_range` on the
+input. An input whose four properties are not all ones libvmaf knows (range
+`tv` or `pc`; primaries `bt709`, `bt2020` or `smpte432`; transfer `bt709` or
+`smpte2084`; matrix `bt709`, `bt2020nc` or `ictcp`) is left unspecified: a model
+without a `conversion_target`, which is every shipped model, scores exactly as
+before, and a model with one fails with an error naming the missing
+attributes. The conversion needs a libvmaf built with `-Denable_zimg=true`, and
+it runs on host frames: the `libvmaf_cuda` and `libvmaf_metal` filters and the
+SYCL zero-copy path score device frames and refuse such a model.
 
 ### Pooling
 
@@ -221,6 +292,38 @@ falls back to `mean`, as upstream does.
 (see [ADR-0119](../adr/0119-cli-precision-default-revert.md) and
 [precision.md](precision.md)). The `VMAF score: <mean>` line in FFmpeg's own
 log is formatted by the filter and is not affected.
+
+### When a frame cannot be scored
+
+If the filter cannot copy a frame or hand it to libvmaf, it stops. The log
+shows one error naming the frame and the error, and FFmpeg exits non-zero:
+
+```text
+[Parsed_libvmaf_0] libvmaf: vmaf_read_pictures of frame 4 failed (Input/output error); the filter stops
+[Parsed_libvmaf_0] libvmaf: no pooled score: the filter stopped on the error above
+```
+
+The filter then prints no `VMAF score:` line and writes no `log_path` report.
+Upstream FFmpeg pools the frames read before the error and prints their score.
+This fork does not (patch `0021`,
+[ADR-1768](../adr/1768-ffmpeg-libvmaf-no-score-after-error.md)): that score
+covers fewer frames than were decoded, and when the pooling itself fails
+upstream prints a meaningless value.
+
+Two related cases behave the same way:
+
+- **The end-of-stream flush fails.** The filter logs
+  `flushing libvmaf after frame <n> failed (<error>); no pooled score` and
+  prints no score and no report. The flush runs while the filter graph is torn
+  down, when the filter can no longer change FFmpeg's exit status, so this run
+  can exit 0. Check for the score line or the report file, not only the exit
+  status.
+- **One model's pooled score fails.** That model gets no `VMAF score:` line,
+  and no report is written.
+
+`libvmaf_cuda` follows the same rules. `libvmaf_sycl` and `libvmaf_metal` stop
+the same way
+([ADR-1761](../adr/1761-sycl-filter-import-retry-then-fail.md)).
 
 ### Feature option syntax
 
@@ -278,7 +381,13 @@ variance maps) travels on the distorted frame as an unregistered SEI
 default and golden-isolated: weighting engages only when it is `1` **and** a
 valid Pelorus blob is present. Standard scoring, including the Netflix golden
 pairs that carry no side-data, is byte-identical to upstream. A foreign or
-absent SEI is ignored and the frame is scored unweighted. Pair it with a
+absent SEI is ignored and the frame is scored unweighted. The filter reads
+every user-data SEI entry of a frame, not only the first, and accepts the
+Pelorus blob form and the zero-free carrier form that `h264_nvenc` and
+`hevc_nvenc` write from Pelorus ABI 1.5. Either form is also read when
+`libx265` has put its own SEI UUID in front of it; any other outer UUID leaves
+the frame unweighted ([ADR-3340](../adr/3340-pelorus-udu-x265-wrap.md)). A
+corrupt carrier leaves the frame unweighted and logs a warning. Pair it with a
 Pelorus-enabled producer that emits the interop blob; the C API is in
 [`docs/api/perceptual-weight.md`](../api/perceptual-weight.md).
 
@@ -342,7 +451,11 @@ memory. It is not zero-copy: the filter copies each decoded frame device to devi
 libvmaf's own picture pool ([ADR-1685](../adr/1685-post-1-0-embedding-zero-copy-milestone.md);
 importing the decoder's frame without that copy is post-1.0 work). It needs
 libvmaf built with `-Denable_cuda=true` and FFmpeg configured with
-`--enable-libvmaf-cuda` (patch `0010`).
+`--enable-libvmaf-cuda` (patch `0010`). Its frames must be `yuv420p` or
+`yuv444p16` on the device, not the `nv12` that NVDEC outputs, so convert with
+`scale_cuda=format=yuv420p` first. A frame it cannot copy or read stops it
+with no pooled score, as for `libvmaf`
+([When a frame cannot be scored](#when-a-frame-cannot-be-scored)).
 
 ### `libvmaf_metal`
 
@@ -422,7 +535,7 @@ ffmpeg -i distorted.mp4 -i reference.mp4 \
 ```bash
 ffmpeg -hwaccel cuda -hwaccel_output_format cuda -i distorted.mp4 \
        -hwaccel cuda -hwaccel_output_format cuda -i reference.mp4 \
-       -filter_complex "[0:v][1:v]libvmaf_cuda=log_fmt=json:log_path=/dev/stdout" \
+       -filter_complex "[0:v]scale_cuda=format=yuv420p[d];[1:v]scale_cuda=format=yuv420p[r];[d][r]libvmaf_cuda=log_fmt=json:log_path=/dev/stdout" \
        -f null -
 ```
 
@@ -482,7 +595,7 @@ device-to-device copy per frame into libvmaf's pool, see
 ```bash
 ffmpeg -hwaccel cuda -hwaccel_output_format cuda -i distorted.mp4 \
        -hwaccel cuda -hwaccel_output_format cuda -i reference.mp4 \
-       -filter_complex "[0:v][1:v]libvmaf_cuda=log_fmt=json:log_path=/dev/stdout" \
+       -filter_complex "[0:v]scale_cuda=format=yuv420p[d];[1:v]scale_cuda=format=yuv420p[r];[d][r]libvmaf_cuda=log_fmt=json:log_path=/dev/stdout" \
        -f null -
 ```
 

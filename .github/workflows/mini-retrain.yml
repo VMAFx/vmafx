@@ -1,0 +1,78 @@
+name: mini-retrain
+
+# The retrain tooling end to end on a generated corpus (ADR-1898, issue #1246).
+# Runs nightly and on demand; pull requests that touch ai/ run the same tests in
+# the required Tiny AI job. A red run means a stage of the one-shot retrain would have stopped: extraction,
+# feature checks, combination, training, export, validation, registry or gate.
+
+on:
+  schedule:
+    - cron: "17 5 * * *"  # 05:17 UTC, after the nightly bisect
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mini-retrain-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mini-retrain:
+    name: Mini Retrain nightly
+    runs-on: ubuntu-26.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build nasm pkg-config python3-pip python3-venv
+          sudo pip3 install --break-system-packages --ignore-installed --quiet --require-hashes \
+            -r requirements/locks/build.txt
+
+      - name: Build the vmaf CLI (CPU, no DNN)
+        run: |
+          # shellcheck disable=SC2046  # the helper prints one option per line, split on purpose
+          meson setup build core -Denable_cuda=false -Denable_sycl=false --buildtype=release \
+            -Dwerror=true $(scripts/ci/werror-args.sh true)
+          ninja -C build tools/vmaf
+
+      - name: Install the training stack (hash-locked)
+        env:
+          TMPDIR: ${{ runner.temp }}
+        run: |
+          venv="${RUNNER_TEMP}/mini-retrain-venv"
+          python3 -m venv "${venv}"
+          "${venv}/bin/pip" install --require-hashes -r requirements/locks/package-build.txt
+          "${venv}/bin/pip" install --require-hashes -r ai/requirements-dev-lock.txt
+          "${venv}/bin/pip" install --no-deps --no-build-isolation -e ai
+
+      - name: Unit tests of the stage runner and the checks
+        run: |
+          "${RUNNER_TEMP}/mini-retrain-venv/bin/pytest" \
+            ai/tests/test_pipeline.py ai/tests/test_retrain_checks.py \
+            ai/tests/test_mini_corpus.py -q --timeout=120
+
+      - name: Mini retrain end to end
+        env:
+          VMAF_BIN: ${{ github.workspace }}/build/tools/vmaf
+          VMAFX_CONTAINER_IMAGE_ID: github-hosted-ubuntu-26.04
+        run: |
+          "${RUNNER_TEMP}/mini-retrain-venv/bin/pytest" ai/e2e -v -rs \
+            --timeout=900 --timeout-method=signal \
+            --basetemp="${RUNNER_TEMP}/mini-retrain-runs"
+
+      - name: Keep the stage manifests and the gate report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: mini-retrain-manifests
+          path: |
+            ${{ runner.temp }}/mini-retrain-runs/**/stages/*.json
+            ${{ runner.temp }}/mini-retrain-runs/**/reports/*.json
+          if-no-files-found: warn
+          retention-days: 14

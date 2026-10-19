@@ -47,7 +47,6 @@ A Go port of the same subcommands is described in
     | `fast` | Optuna | the TPE search of [`fast`](vmaf-tune-fast-path.md) |
     | `report` | matplotlib | the charts of [`report`](vmaf-tune-report.md); without it the report renders its tables and a placeholder per chart |
     | `onnx` | ONNX Runtime | ONNX inference: the `fast` proxy, the per-shot predictor and the saliency models |
-    | `train` | PyTorch | predictor training (`vmaftune.predictor_train`) |
     | `dev` | pytest, ruff, Optuna, matplotlib, ONNX Runtime | running the test suite (see [Tests](#tests)) |
 
 `vmaf-tune --version` prints the package version.

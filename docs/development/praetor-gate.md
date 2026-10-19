@@ -33,12 +33,29 @@ The locked files are:
 - the `# BEGIN praetor documentation gate` block in the `Makefile`;
 - the `# BEGIN praetor managed attributes` block in `.gitattributes`.
 
+Three more files are praetor's text without being locked:
+`.config/lefthook/engine.sh`, `.config/praetor/engine.mk` and
+`.config/agent/hooks/block_evasion.py`. `praetorctl adopt` writes them and
+`audit` does not read them. At a pin move `adopt` refreshes each one only
+while it is still one of praetor's own texts. An edited copy is kept as the
+repository's file and stops following the pin. So none of them is edited,
+formatted or given a licence header here:
+
+- shfmt skips the launcher through a dated exception in
+  `.config/lint-exceptions.d/shfmt.toml`
+  ([cordanaLLM/praetor#1282](https://github.com/cordanaLLM/praetor/issues/1282));
+- the launcher and `block_evasion.py` have dated exceptions in
+  `.config/lint-exceptions.d/spdx.toml`, and the default annotation of
+  `REUSE.toml` labels them
+  ([cordanaLLM/praetor#1281](https://github.com/cordanaLLM/praetor/issues/1281)).
+
 Consequences worth knowing:
 
 - The workflow keeps praetor's name, which is two characters over the
   30-character budget in [CI job display names](ci-job-names.md).
-- `.gitignore` re-includes `tools/figures/dist/`, which the repository-wide
-  `dist/` rule would otherwise hide from a checkout that audit then fails on.
+- Praetor ships its figure player bundle under `tools/figures/player/`, which
+  audit hashes; the repository-wide `dist/` ignore rule no longer covers it, so
+  `.gitignore` carries no re-include for it.
 - The repository's own black, ruff and markdownlint pre-commit hooks skip
   `tools/figures/`, since a rewrite there fails the audit
   ([cordanaLLM/praetor#578](https://github.com/cordanaLLM/praetor/issues/578)).
@@ -83,9 +100,21 @@ defaults under praetor's configuration, tables included.
 
 `PRAETOR_REF` in
 [`standards-gate.yml`](../../.github/workflows/standards-gate.yml)
-names the praetor commit that CI installs with `go install`. The same engine has
-to run in your hooks: lefthook calls whatever `praetorctl` is first on `PATH`,
-not the pin. Check yours before you commit or push:
+names the praetor commit that CI installs with `go install`. The hooks run the
+same engine. The governance jobs of `lefthook.yml`,
+`scripts/git-hooks/hiss-audit.sh` and `scripts/githooks/state-sync.sh` call
+praetor's launcher, `sh .config/lefthook/engine.sh <arguments>`. It reads the
+pin from the workflow and runs the engine installed for that pin under
+`${XDG_CACHE_HOME:-$HOME/.cache}/praetor/engine/<pin>`.
+
+The first hook after a pin move installs the engine with `go install`. That
+needs the Go toolchain and the network, and is bounded by
+`PRAETOR_ENGINE_INSTALL_TIMEOUT` seconds (default 300). An unreadable pin, two
+different pins or a failed install end the hook: the launcher does not fall
+back to an engine on `PATH`.
+
+`make verify-all` and a `praetorctl` command you type still run the engine on
+`PATH`. Check that one before you rely on its result:
 
 ```bash
 praetorctl version   # prints the first 12 hex digits of PRAETOR_REF
@@ -146,10 +175,11 @@ Three rules hold the move together:
 - **Update the README governance block by hand if audit says it is stale.** The
   line `<n> recorded infractions; audit forbids growth.` must equal
   `total_infractions` in `.standards-baseline.json`.
-- **Move every hook engine at the same time, and rebase.** The two engines do
-  not read each other's trees. A branch moves by rebasing onto the merged pin
-  and switching `PATH` to the new engine. Measured on the move to
-  `6c772713a133`:
+- **Bring every branch to the merged pin.** The two engines do not read each
+  other's trees. The hooks follow the pin of the tree they run in through the
+  launcher, so a branch moves by taking the merged pin from `master`. An
+  engine on `PATH` that you call yourself has to move with it. Measured on
+  the move to `6c772713a133`:
   - the new engine fails `compile-context --verify`, `audit` and
     `hiss coverage --verify` on a branch at the old pin (register block, 244
     entries the old baseline does not record, a renamed HISS-01 catalog
@@ -167,9 +197,195 @@ permissions and the last workflow runs from GitHub, which takes about 40
 seconds here against 2 seconds offline, so the hooks pass `--offline` when the
 engine has the flag. CI and `make verify-all` keep the forge read.
 
+The script calls the launcher, so the audit is the pinned engine's. Without
+the launcher the hook ends with status 127 and no engine runs.
+
 ### The current pin
 
-The pin is `0af07a733e65`
+The pin is `6622361940dc`
+([ADR-3285](../adr/3285-praetor-pin-66223619.md)), four praetor commits after
+`9bf502ec6ce5`. Against `9bf502ec6ce5` it changes this here:
+
+- **Register skills.** `adhd-format`, `caveman` and `social-text` under
+  `.agents/skills/` and `.claude/skills/` are praetor's text at the pin,
+  wrapped so they pass markdownlint's default rules; what they say is
+  unchanged.
+- **Not in effect here yet.** Praetor's commit-message and pull-request checks
+  now refuse a closing keyword that would close someone else's pull request.
+  No gate of this repository runs those checks.
+- **Not adopted.** As at the pin before, the pre-tool hook entries `adopt`
+  writes into the agent settings, and `.config/lefthook/python.sh`, which this
+  repository's `lefthook.yml` does not call.
+
+Audit's warnings are the same 143 with both engines.
+
+The pin before was `9bf502ec6ce5`
+([ADR-3272](../adr/3272-praetor-pin-9bf502ec-engine-launcher.md)), three
+praetor commits after `4ae6247c57d2`. Against `4ae6247c57d2` it changed this
+here:
+
+- **Hook launcher.** `.config/lefthook/engine.sh` and
+  `.config/praetor/engine.mk` are new, written by `praetorctl adopt`. The
+  seven governance jobs of `lefthook.yml`, `scripts/git-hooks/hiss-audit.sh`
+  and `scripts/githooks/state-sync.sh` call the launcher. They no longer look
+  for an engine on `PATH` or build one with `go run`, so a newer workstation
+  engine cannot refuse commits at an older pin again
+  (`T-HOOKS-ENGINE-FROM-PATH-2026-10-11` in [state](../state.md)).
+- **Refreshed praetor files.** `tools/figures/checks.mjs`,
+  `tools/markdownlint/verify.mjs`,
+  `tools/markdownlint/no-private-scratch-links.mjs` and
+  `.config/agent/hooks/block_evasion.py` are praetor's text at the pin.
+- **Two dated exceptions.** The launcher is not as shfmt writes it, and
+  neither it nor `block_evasion.py` carries a licence line (see
+  [Files praetor owns](#files-praetor-owns)). Both exceptions expire on
+  2026-12-31. `block_evasion.py` passes ruff as praetor ships it, so its ruff
+  exception is removed.
+- **Not adopted.** `adopt` also writes pre-tool hook entries into
+  `.claude/settings.json`, `.codex/hooks.json` and `.gemini/settings.json`.
+  They land in a change of their own after this one.
+- **Not wired.** The root `Makefile` does not include `engine.mk`, and its
+  governance targets call `standardsctl` from `PATH`
+  ([cordanaLLM/praetor#1231](https://github.com/cordanaLLM/praetor/issues/1231)).
+
+Audit's warnings are the same 143 with both engines.
+
+The pin before was `4ae6247c57d2`
+([ADR-3240](../adr/3240-praetor-pin-4ae6247c.md)), 28 praetor commits after
+`d141862c430b`. It was the engine the workstation's hooks already ran, and it
+refused every commit at the old pin. Against `d141862c430b` it changed this
+here:
+
+- **Read-only context.** `praetorctl compile-context` writes a seventh file
+  from `AGENTS.md`, `AGENTS.readonly.md`, for agents that run without write
+  access: steps that change files, state or history are dropped, prohibitions
+  are kept. `--verify` compares it like the other compiled files, so it is LF
+  in every checkout (`.gitattributes`,
+  `scripts/ci/tests/test_praetor_hashed_files_lf.py`), and
+  `tools/markdownlint/verify.mjs` leaves it out as it leaves out the others.
+- **Gate assets.** `tools/markdownlint/package.json` and its lock file carry
+  js-yaml 5.4.3, `praetor-docs.yml` a newer setup-node, and `praetor-api.yml`
+  sets `GOTOOLCHAIN: auto`. Both workflows also start on `merge_group`; this
+  repository has no merge queue, so that trigger does not fire.
+- **Register skills.** `adhd-format`, `caveman` and `social-text` under
+  `.agents/skills/` and `.claude/skills/` name the work they are adapted from
+  and each carries that work's `LICENSE`; `social-text` gains rules for line
+  breaks and lists.
+- **Agent hook script.** `.config/agent/hooks/block_evasion.py` is praetor's
+  text with four CodeQL findings fixed.
+- **Not adopted.** `adopt` also writes a `PreToolUse` entry into
+  `.claude/settings.json` and `.codex/hooks.json` that calls
+  `praetorctl hook <client> pre-tool` before every tool call. Agent settings
+  change on the operator's decision only, which was open at that pin.
+
+Audit's warnings were the same 143 with both engines. The hooks still ran the
+engine on `PATH` at that pin: praetor's launcher was not yet written for a
+repository that keeps its own `lefthook.yml`
+([cordanaLLM/praetor#1172](https://github.com/cordanaLLM/praetor/issues/1172)).
+
+The pin before that was `d141862c430b`
+([ADR-3061](../adr/3061-praetor-pin-d141862c.md)). Against `3a766f2d56ad` it
+changed one file here, `tools/apicompat/gate/main.go`. The API gate no longer
+installs go-apidiff as `module@version`. It writes a small build module that
+requires go-apidiff at the same commit and `golang.org/x/tools` v0.51.0
+exactly, and builds the checker there. Go 1.27.2 writes export data version 5.
+The x/tools v0.49.0 that go-apidiff requires reads up to version 4, so the
+checker read every package as empty, and the gate's canary failed the
+`Go API Compatibility` check on every pull request once setup-go's `stable`
+resolved to 1.27.2 ([cordanaLLM/praetor#1051](https://github.com/cordanaLLM/praetor/pull/1051)).
+`praetor-api.yml` still installs Go as `stable`, which is praetor's template
+text ([cordanaLLM/praetor#1037](https://github.com/cordanaLLM/praetor/issues/1037)).
+The engine's audit added one advisory warning, about the missing cache-band
+markers in `AGENTS.md`.
+
+The pin before that was `3a766f2d56ad`
+([ADR-2784](../adr/2784-praetor-pin-3a766f2d.md)). Against `7458a220e1c9` it
+changed four things here:
+
+- **REUSE gates.** Because the root carries `REUSE.toml` and `LICENSES/`,
+  `adopt` writes `.github/workflows/reuse.yml`, and audit checks that no
+  `REUSE.toml` annotation is shadowed by a later one and that `LICENSE` holds
+  the text of the declared licence (`LICENSES/EUPL-1.2.txt`) with no second
+  root file named like a licence. Both checks pass. The `REUSE lint` job of
+  `reuse.yml` is the one CI run of `reuse lint`: it is required through the
+  aggregator (marker in `standards-gate.yml`), the Pre-Commit job skips its
+  `reuse-lint` hook, and the commit hook and `make lint` keep it locally.
+  `reuse.yml` is not byte-locked: praetor keeps an edited copy, so its two
+  actions are pinned to commits here where praetor writes tags
+  ([cordanaLLM/praetor#899](https://github.com/cordanaLLM/praetor/issues/899)).
+  A planted file naming a licence without a text in `LICENSES/` fails it; a
+  file without any SPDX line is covered by the `REUSE.toml` default and fails
+  `scripts/ci/check-copyright.sh` instead.
+- **Build-warnings gate (HISS-10).** Audit fails a CI lane that compiles C,
+  C++, Rust or Go without its toolchain's warnings-as-errors form. It reads
+  the form only as a literal on the command (`--werror` or `-Dwerror=true` on
+  `meson setup`, `-Werror` in `CGO_CFLAGS`, `RUSTFLAGS: -D warnings`), and
+  not what `$(scripts/ci/werror-args.sh ...)`, a step output or a matrix value
+  prints. Since [ADR-2828](../adr/2828-ci-werror-every-lane.md) every one of
+  the 50 lanes it reads spells its switch that way and builds warning-free
+  ([CI](ci.md#warnings-are-errors-adr-2170-adr-2828)); the 16 workflow entries
+  ADR-2784 declared in `.config/lint-exceptions.d/HISS-10.toml` are gone. A
+  lane that cannot be gated yet would take an entry there, which
+  `scripts/ci/praetor_tidy_coverage.py` copies into `.standards.yaml`
+  ([tidy lanes](tidy-lanes.md#praetors-copy-of-the-same-facts)). Praetor is
+  asked to read a declared wrapper script
+  ([cordanaLLM/praetor#924](https://github.com/cordanaLLM/praetor/issues/924)).
+- **Workflow trigger report (HISS-18).** Audit warns, without failing, about
+  136 jobs in 28 workflows that skip a draft at job level or wait on a job
+  that does. It recommends a failing first step instead, while this
+  repository's tier design skips drafts at job level and lets the aggregator
+  fail them ([ADR-2169](../adr/2169-ci-fewer-runs.md)). Three warnings name
+  jobs that never run on a pull request
+  ([cordanaLLM/praetor#922](https://github.com/cordanaLLM/praetor/issues/922)).
+- **Engine-written files.** The managed workflows name `shell: bash` on their
+  draft step; the API gate program is gofumpt-formatted and gains
+  `tools/apicompat/gate/placeholder.go`; the figure-engine hook and notes are
+  reformatted. All are regenerated by the engine.
+
+An engine at this pin also writes an optional kind on bug-ledger rows, which
+older engines refuse; move every engine that reads the shared ledger before
+using `praetorctl state bug add --kind`.
+
+The pin before was `7458a220e1c9`
+([ADR-2440](../adr/2440-praetor-pin-7458a220.md)). Against `afb739ed81f3` it
+changed three things here:
+
+- The emitted `praetor-api.yml` and `praetor-docs.yml` push only on `master`,
+  listen for `ready_for_review` and stop a draft pull request with a failing
+  first step. The engine regenerates them, so audit still locks them byte for
+  byte, and `push_branch_exceptions` in `.github/ci-tier.json` is empty
+  ([CI routing](ci.md)). The jobs still start on a draft, so they stay in
+  `untiered_jobs`.
+- Audit fails when `core.hooksPath` leaves the managed hooks directory. A
+  throwaway clone made with `git clone -c core.hooksPath=...` persists the
+  value and fails it; pass `-c` on each command instead.
+- The caveman article count ignores model names such as `A380`.
+
+The pin before was `afb739ed81f3`
+([ADR-2321](../adr/2321-praetor-pin-afb739ed.md)). Against its predecessor it
+adds five checks this repository had to meet:
+
+| Check | What it asks here | Where it is met |
+| --- | --- | --- |
+| Caveman lint of every tracked nested `AGENTS.md` | the internal register in 72 files | the converted files and `AGENTS.d/` pages ([text register](#what-the-text-register-checks)) |
+| HISS-11 SLSA level, declared against measured | Level 3 declared by the `native-gpu-systems` profile and the `security:high` facet; the workflows reach Level 2 | a declared gap for `.github/workflows/docker-publish-operator-node.yml` in `.config/lint-exceptions.d/HISS-11.toml`, rendered into `.standards.yaml` ([tidy-lanes](tidy-lanes.md#praetors-copy-of-the-same-facts)); expires 2027-01-04 |
+| Stale `.paperclip/rules.md` and harness rows | the harness praetor synthesises for the declared forge | `.paperclip/harness.json` and `rules.md` regenerated by `praetorctl adopt` in a throwaway copy (see the warning above) |
+| Register skills | the register block names a skill only when `.agents/skills/` carries it | `compile-context` re-spliced the block without skill names |
+| Markdown gate lock | `katex` overridden to 0.19.0, Node 22.12.0 or later | `tools/markdownlint/` regenerated by the engine |
+
+The pre-commit hook must come from a known runner (lefthook here), and the Go
+vulnerability gate (`praetorctl security govuln`) passes with the existing
+OpenVEX document `security/vex/go.openvex.json`. The live branch-protection
+comparison does not run, because `adoption.decline` lists `branch-ruleset`.
+
+The pin before was `04cc813ff054`
+([ADR-2153](../adr/2153-praetor-pin-04cc813.md)): the documentation gate's
+lint time budget (`documentation.lint_timeout_seconds: 240` in
+`.standards.yaml`, measured maximum of a lint child 11.4 s on this
+repository), line-ending-neutral digests, and a clang-tidy translation-unit
+coverage gate whose inputs are rendered from the repository's own tidy lists
+([tidy-lanes](tidy-lanes.md#praetors-copy-of-the-same-facts)).
+
+The pin before that was `0af07a733e65`
 ([ADR-1506](../adr/1506-praetor-pin-move-markdownlint-braces.md)).
 It dropped `markdownlint-cli2` and the `braces` chain from the gate's lock, and
 added praetor's `Go API Compatibility` workflow
@@ -180,8 +396,11 @@ requires.
   2026-10-03).
 - The workflow has no path filter, so a pull request without a Go change still
   reports and the comparison passes.
-- It is not in `strictMustReport`, because praetor's locked file does not run on
-  `ready_for_review`.
+- It is in `strictMustReport` since the pin `7458a220e1c9`
+  ([ADR-2440](../adr/2440-praetor-pin-7458a220.md)). Before, praetor's locked
+  file did not run on `ready_for_review`, so a draft that became ready kept the
+  result of its last push; now it is re-run. `test_go_api_compat_required.py`
+  holds the list entry.
 - Audit locks the workflow byte for byte, so its
   `# required-aggregator-job: Go API Compatibility` marker sits in
   `standards-gate.yml`; `scripts/ci/check-aggregator-names.sh` fails when no job
@@ -198,12 +417,19 @@ only what it can read as a file:
 
 | Text | Checked by | Gate |
 | --- | --- | --- |
-| Root `AGENTS.md` and the compiled vendor files | `praetorctl compile-context --verify`, `praetorctl audit` | blocks |
+| Root `AGENTS.md`, the compiled vendor files and `AGENTS.readonly.md` | `praetorctl compile-context --verify`, `praetorctl audit` | blocks |
+| Every tracked nested `AGENTS.md` (72 files) | the same commands | blocks |
 | Canonical personas under `.agents/agents/` | the same commands | blocks |
-| `.paperclip/harness.json` strings (`register.sources`) | `praetorctl audit` | blocks |
-| The 70 nested `AGENTS.md` files, `.claude/` skills, agents and workflows | `praetorctl caveman check --kind=context <file>` | none; run it by hand |
+| `.paperclip/harness.json` strings (`register.sources`) and `.paperclip/rules.md` | `praetorctl audit` | blocks |
+| `AGENTS.d/` topic pages (they render into the nested `AGENTS.md` files), `.claude/` skills, agents and workflows | `praetorctl caveman check --kind=context <file>` | none; run it by hand |
 | `.workingdir` ledger text, briefs, PR bodies, commit bodies | nothing | none |
 
-The nested `AGENTS.md` files are not linted by the gate, so no baseline covers
-them. `praetorctl caveman check --kind=context` fails 39 of them today, mostly
-on article density. A converted file passes the same command.
+Since the pin `afb739ed81f3` the gate lints the nested `AGENTS.md` files as
+context, with no baseline. The move to that pin converted the 19 nested files
+and 195 `AGENTS.d/` pages that failed `praetorctl caveman check --kind=context`
+(article density, sentences over 30 prose words, hedges), so every page passes
+the same command as well ([agents index](agents-index.md#add-a-page)).
+
+The register block names no skill. Praetor names the `social-text` and
+`caveman` skills only in a repository that carries them under
+`.agents/skills/`, and this repository ignores that directory.

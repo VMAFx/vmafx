@@ -94,3 +94,15 @@ change required there.
 - ADR-0608 (MCP P1 surface).
 - ADR-0634 (MCP probe_backend/vmaf_version/vmaf_score_encoded).
 - Run `26111506574` — master CI run showing the five failures.
+
+## Errata 2026-10-06
+
+The ADR audit of 2026-10-06 found the references below wrong. The body above
+is unchanged; read the corrections here.
+
+- About line 84: `agent's work left this partially prepared (ADR-0636 stub).`:
+  Cites nonexistent ADR-0636. ADR-0636 does not exist on master. ADR-0636 now
+  has a short tombstone record.
+- About line 94: `- ADR-0608 (MCP P1 surface).`: ADR-0608 points to an
+  unrelated topic (0608-zed-editor-project-config.md: "Commit .zed/ project
+  configuration for Zed editor"). The MCP P1 surface was ADR-0638.

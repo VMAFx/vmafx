@@ -2,22 +2,12 @@
  *
  *  Copyright 2026 Lusoris
  *
- *     Licensed under the BSD+Patent License (the "License");
- *     you may not use this file except in compliance with the License.
- *     You may obtain a copy of the License at
- *
- *         https://opensource.org/licenses/BSDplusPatent
- *
- *     Unless required by applicable law or agreed to in writing, software
- *     distributed under the License is distributed on an "AS IS" BASIS,
- *     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *     See the License for the specific language governing permissions and
- *     limitations under the License.
- *
+ * SPDX-FileCopyrightText: 2026 Lusoris
+ * SPDX-License-Identifier: EUPL-1.2
  */
 
 /*
- * VENDORED FROM VMAFx/pelorus@42cb17106a2d3fae7790754f7cd8c6e1fbe6fa7f — DO NOT EDIT.
+ * VENDORED FROM VMAFx/pelorus@33b4a625cad64a7e9ca14f6db06eb91ba8f56663 — DO NOT EDIT.
  * Append-only ABI; single
  * source of truth is pelorus. Re-sync via scripts/sync-pelorus-interop.sh.
  * See docs/adr/1113-vendor-pelorus-interop-abi.md.
@@ -44,9 +34,15 @@
  *
  * The CSV path is UTF-8 on every platform (ADR-0149). On Windows the narrow CRT
  * decodes a path through the process ANSI code page, so the one open goes
- * through open_utf8(), which widens to UTF-16 for _wfopen; the only extra
+ * through open_utf8(), which widens to UTF-16 for _wfsopen; the only extra
  * dependency is kernel32 (MultiByteToWideChar), which every Windows link has.
  */
+
+/* NOLINTBEGIN(modernize-use-nullptr): this C translation unit is built as C23
+ * by vmafx, where clang-tidy also proposes the `nullptr` keyword, but MSVC's C
+ * mode has no `nullptr` (C2065); the Windows builds compile it with cl.exe.
+ * The NULL macro stays. Same decision as vmafx ADR-1138
+ * (docs/adr/1138-c-translation-units-keep-null.md in VMAFx/vmafx). */
 
 #include "libvmaf/pelorus/interop.h"
 
@@ -60,6 +56,7 @@
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
+#include <share.h>
 #include <wchar.h>
 #include <windows.h>
 #endif
@@ -386,7 +383,8 @@ static pel_result utf8_to_wide(const char *path, wchar_t **out)
  * POSIX: a literal fopen(path, mode). The kernel takes a path as bytes, so this
  * is byte-for-byte the pre-ADR-0149 behaviour (a non-UTF-8 byte name still
  * opens). Windows: the narrow CRT would decode the bytes through the ANSI code
- * page, so the path is widened strictly and opened with _wfopen. No \\?\ prefix
+ * page, so the path is widened strictly and opened with _wfsopen (_SH_DENYNO: the
+ * sharing _wfopen gives, without its C4996 deprecation). No \\?\ prefix
  * is added: a caller that needs an extended-length path passes one.
  *
  * Every failure of the open itself maps to PEL_ERR_ABSENT (the pre-ADR-0149
@@ -407,7 +405,7 @@ static pel_result open_utf8(const char *path, const char *mode, FILE **out)
     if (rc != PEL_OK) {
         return rc; /* nothing was allocated: utf8_to_wide frees on its failures */
     }
-    *out = _wfopen(wpath, wmode);
+    *out = _wfsopen(wpath, wmode, _SH_DENYNO);
     open_errno = errno;
     free(wpath); /* the one allocation, released before any return below */
     errno = open_errno;
@@ -584,3 +582,5 @@ pel_result pel_qp_report_from_x265_frames(const PelorusX265Frame *frames, size_t
 
     return PEL_OK;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

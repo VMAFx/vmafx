@@ -101,7 +101,10 @@ def gated_extractors() -> dict[str, set[str]]:
 def uncovered(twins: dict[str, set[str]], gated: dict[str, set[str]]) -> list[str]:
     """Registered twins of a gated backend that are no gate feature's extractor."""
     return sorted(
-        name for backend, names in twins.items() if backend in gated for name in names - gated[backend]
+        name
+        for backend, names in twins.items()
+        if backend in gated
+        for name in names - gated[backend]
     )
 
 

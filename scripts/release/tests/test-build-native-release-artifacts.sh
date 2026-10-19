@@ -20,6 +20,10 @@
 
 set -euo pipefail
 
+# Drop the git hook environment and the fixture identity (see the helper).
+# shellcheck source=/dev/null
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/../../lib/clean-git-env.sh"
+
 for tool in cc patchelf readelf; do
   if ! command -v "$tool" >/dev/null; then
     printf 'ERROR: %s is required to run these tests\n' "$tool" >&2
@@ -63,22 +67,32 @@ printf '%s|CCACHE_DISABLE=%s|SOURCE_DATE_EPOCH=%s\n' \
 [ "$1" = compile ] || exit 0
 [ "${STUB_MESON_MODE:-ok}" = fail ] && exit 42
 mkdir -p build/src build/tools
-printf 'int vmafx_fixture(void) { return 321; }\n' >build/libvmaf.c
+# Both chains of the library split (ADR-2094): the compat libvmaf.so.3 and
+# the CLI need libvmafx.so.1.
+printf 'int vmafx_engine_fixture(void) { return 7; }\n' >build/libvmafx.c
+printf '%s\n' 'int vmafx_engine_fixture(void);' \
+  'int vmafx_fixture(void) { return 314 + vmafx_engine_fixture(); }' >build/libvmaf.c
 printf '%s\n' '#include <stdio.h>' '#include <string.h>' \
   'int vmafx_fixture(void);' \
+  'int vmafx_engine_fixture(void);' \
   'int main(int argc, char **argv) {' \
-  '    if (argc == 2 && strcmp(argv[1], "--version") == 0 && vmafx_fixture() == 321) {' \
+  '    if (argc == 2 && strcmp(argv[1], "--version") == 0 && vmafx_fixture() == 321' \
+  '        && vmafx_engine_fixture() == 7) {' \
   '        puts("3.2.1");' \
   '        return 0;' \
   '    }' \
   '    return 1;' \
   '}' >build/vmaf.c
-cc -fPIC -shared -Wl,-soname,libvmaf.so.3 -o build/src/libvmaf.so.3.0.0 build/libvmaf.c
+cc -fPIC -shared -Wl,-soname,libvmafx.so.1 -o build/src/libvmafx.so.1.0.0 build/libvmafx.c
+ln -s libvmafx.so.1.0.0 build/src/libvmafx.so.1
+[ "${STUB_MESON_MODE:-ok}" = short-engine-chain ] || ln -s libvmafx.so.1 build/src/libvmafx.so
+cc -fPIC -shared -Wl,-soname,libvmaf.so.3 -o build/src/libvmaf.so.3.0.0 build/libvmaf.c \
+  -Lbuild/src -l:libvmafx.so.1.0.0 -Wl,--enable-new-dtags -Wl,-rpath,'$ORIGIN'
 ln -s libvmaf.so.3.0.0 build/src/libvmaf.so.3
 [ "${STUB_MESON_MODE:-ok}" = short-chain ] || ln -s libvmaf.so.3 build/src/libvmaf.so
 # Meson links the build-tree CLI with RUNPATH $ORIGIN/../src, as the
 # v1.0.0-rc.1 asset still carried; the release script must rewrite it.
-cc -o build/tools/vmaf build/vmaf.c -Lbuild/src -l:libvmaf.so.3.0.0 \
+cc -o build/tools/vmaf build/vmaf.c -Lbuild/src -l:libvmaf.so.3.0.0 -l:libvmafx.so.1.0.0 \
   -Wl,--enable-new-dtags -Wl,-rpath,'$ORIGIN/../src'
 STUB
 chmod +x "$stub_bin/meson"
@@ -216,7 +230,8 @@ gzip_xfl_is() { [[ "$(od -An -tu1 -j8 -N1 -- "$1" | tr -d ' ')" == "$2" ]]; }
 good="$scratch/good"
 new_repo "$good"
 check 'container build exits 0' expect_status 0 "$good" "$marker" 3.2.1
-for name in libvmaf.so libvmaf.so.3 libvmaf.so.3.0.0 vmaf models.tar.gz \
+for name in libvmaf.so libvmaf.so.3 libvmaf.so.3.0.0 libvmafx.so libvmafx.so.1 \
+  libvmafx.so.1.0.0 vmaf models.tar.gz \
   container-build-provenance.txt THIRD_PARTY_NOTICES.txt licenses.tar.gz; do
   check "stages $name as a regular non-empty file" regular_nonempty "$good/artifacts/$name"
 done
@@ -259,7 +274,7 @@ check 'staged vmaf stays executable after the RUNPATH rewrite' test -x "$good/ar
 check 'staged vmaf runs next to its library with no LD_LIBRARY_PATH' \
   runs_without_library_path "$good/artifacts/vmaf"
 check 'the verifier confirms the RUNPATH' grep -qF \
-  "chain and RUNPATH $origin." "$good/run.log"
+  "chains and RUNPATH $origin." "$good/run.log"
 
 failing_patchelf="$scratch/failing-patchelf-run"
 new_repo "$failing_patchelf"
@@ -362,6 +377,15 @@ check 'incomplete SONAME chain exits 1' expect_status 1 "$short" "$marker" 3.2.1
 unset STUB_MESON_MODE
 check 'incomplete SONAME chain is named' grep -q \
   'incomplete Meson libvmaf SONAME chain' "$short/run.log"
+
+short_engine="$scratch/short-engine-chain"
+new_repo "$short_engine"
+STUB_MESON_MODE="short-engine-chain"
+export STUB_MESON_MODE
+check 'incomplete libvmafx SONAME chain exits 1' expect_status 1 "$short_engine" "$marker" 3.2.1
+unset STUB_MESON_MODE
+check 'incomplete libvmafx SONAME chain is named' grep -q \
+  'incomplete Meson libvmafx SONAME chain' "$short_engine/run.log"
 
 # --- negative: invocation errors ---
 usage="$scratch/usage"

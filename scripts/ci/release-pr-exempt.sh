@@ -53,6 +53,8 @@
 
 set -euo pipefail
 
+_release_exempt_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+
 head_ref="${HEAD_REF:-}"
 pr_author="${PR_AUTHOR:-}"
 pr_author_type="${PR_AUTHOR_TYPE:-}"
@@ -197,9 +199,16 @@ collect_changed_paths() {
       git fetch --no-tags origin "${head_sha}" 2>/dev/null ||
       echo "warning: could not fetch ${head_sha}; the diff may be incomplete" >&2
     local diff_base
-    diff_base="$(git merge-base "${base_sha}" "${head_sha}" 2>/dev/null || printf '%s' "${base_sha}")"
-    git diff --name-only "${diff_base}..${head_sha}" 2>/dev/null ||
-      echo "warning: git diff ${diff_base}..${head_sha} failed" >&2
+    # Sourced here, not at the top: the tier workflows run this script from a
+    # sparse checkout and pass DIFF_FILE, so they never reach this branch.
+    # shellcheck source=scripts/ci/pr-diff-base.sh
+    . "${_release_exempt_dir}/pr-diff-base.sh"
+    # Without a merge base no path is listed, so the gates stay armed; the
+    # diff is never taken from base_sha itself (pr-diff-base.sh).
+    if diff_base="$(pr_diff_base "${base_sha}" "${head_sha}" release-pr-exempt)"; then
+      git diff --name-only "${diff_base}..${head_sha}" 2>/dev/null ||
+        echo "warning: git diff ${diff_base}..${head_sha} failed" >&2
+    fi
   elif git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     if git rev-parse --verify origin/master >/dev/null 2>&1; then
       local diff_base
