@@ -46,4 +46,28 @@ static inline int conversion_target_model_write(const char *path)
     return written && closed ? 0 : -EIO;
 }
 
+#define CONVERSION_TARGET_DISPLAY_MODEL_JSON                                                       \
+    "{\"model_dict\": {"                                                                           \
+    "\"conversion_target\": {\"colorspace\": {\"range\": \"limited\", \"primaries\": "             \
+    "\"bt709\", \"trc\": \"bt709\", \"matrix\": \"bt709\"}, "                                      \
+    "\"resolution\": {\"display\": 1080}}, "                                                       \
+    "\"model_type\": \"LIBSVMNUSVR\", \"norm_type\": \"linear_rescale\", "                         \
+    "\"score_clip\": [0.0, 100.0], "                                                               \
+    "\"feature_names\": [\"VMAF_integer_feature_vif_scale0_score\"], "                             \
+    "\"slopes\": [1.0, 1.0], \"intercepts\": [0.0, 0.0], "                                         \
+    "\"model\": \"svm_type nu_svr\\nkernel_type rbf\\ngamma 0.5\\nnr_class 2\\ntotal_sv 1\\n"      \
+    "rho -1\\nSV\\n1 1:0.5 \\n\"}}"
+
+/* Write the display-scaled model to `path`: 0, or -EIO. */
+static inline int conversion_target_display_model_write(const char *path)
+{
+    FILE *const out = vmaf_test_fopen(path, "wb");
+    if (!out) {
+        return -EIO;
+    }
+    const bool written = fputs(CONVERSION_TARGET_DISPLAY_MODEL_JSON, out) >= 0;
+    const bool closed = fclose(out) == 0;
+    return written && closed ? 0 : -EIO;
+}
+
 #endif /* VMAF_TEST_CONVERSION_TARGET_MODEL_H */

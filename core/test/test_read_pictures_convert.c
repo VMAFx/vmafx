@@ -507,6 +507,58 @@ static char *test_target_display_scales_source(void)
     return NULL;
 }
 
+/* score one frame whose distorted picture is dist_w x dist_h */
+static int run_dist_size(const char *target_block, unsigned dist_w, unsigned dist_h)
+{
+    VmafContext *vmaf;
+    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    int err = vmaf_init(&vmaf, cfg);
+    if (err)
+        return err;
+    VmafModel *model = NULL;
+    err = load_model(&model, target_block);
+    err = err ? err : vmaf_use_features_from_model(vmaf, model);
+    /* Fork adaptation (ADR-1822): the colorimetry goes to the context */
+    err = err ? err : vmaf_set_input_colorimetry(vmaf, &pq_ictcp_color, &pq_ictcp_color);
+
+    VmafPicture ref;
+    VmafPicture dist;
+    bool have_pics = false;
+    err = err ? err : vmaf_picture_alloc(&ref, VMAF_PIX_FMT_YUV420P, BPC, W, H);
+    const bool have_ref = !err;
+    if (have_ref) {
+        err = vmaf_picture_alloc(&dist, VMAF_PIX_FMT_YUV420P, BPC, dist_w, dist_h);
+        if (err)
+            err = vmaf_picture_unref(&ref) ? -EIO : err;
+        have_pics = !err;
+    }
+    if (have_pics) {
+        fill_picture(&ref, 0, 0);
+        fill_picture(&dist, 0, 20);
+        /* the context owns both pictures whatever the result (ADR-1431) */
+        err = vmaf_read_pictures(vmaf, &ref, &dist, 0);
+    }
+    if (model)
+        vmaf_model_destroy(model);
+    const int close_err = vmaf_close(vmaf);
+    return err ? err : close_err;
+}
+
+static char *test_target_display_scales_different_sized_inputs(void)
+{
+    /* the reference is 256x144; both are scaled to 1920x1080 */
+    mu_assert("a half-size distorted picture of the same aspect ratio should "
+              "be scaled to the size the reference scales to",
+              !run_dist_size(target_1080, W / 2, H / 2));
+    mu_assert("a distorted picture with a different aspect ratio should be "
+              "rejected",
+              run_dist_size(target_1080, W / 2, H) == -EINVAL);
+    mu_assert("different sizes without a display resolution should be rejected",
+              run_dist_size(target_color_only, W / 2, H / 2) == -EINVAL);
+
+    return NULL;
+}
+
 static char *test_models_with_different_displays_cannot_share_a_run(void)
 {
     VmafContext *vmaf;
@@ -555,6 +607,7 @@ char *run_tests(void)
     mu_run_test(test_models_must_share_a_conversion_target);
 #ifdef HAVE_ZIMG
     mu_run_test(test_target_display_scales_source);
+    mu_run_test(test_target_display_scales_different_sized_inputs);
     mu_run_test(test_models_with_different_displays_cannot_share_a_run);
 #endif
     return NULL;
