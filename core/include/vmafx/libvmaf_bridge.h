@@ -31,6 +31,10 @@
 extern "C" {
 #endif
 
+/* NOLINTBEGIN(modernize-use-using,performance-enum-size): public C header included by C
+ * and C++ translation units; C has no `using`, and C has no fixed enum underlying type
+ * across the required toolchains (ADR-1470). ADR-1138. */
+
 /**
  * The VmafxContext a libvmaf handle is bound to, or NULL.
  * @since 0.1
@@ -87,6 +91,8 @@ VMAFX_EXPORT VmafxModelSet *vmafx_model_set_from_libvmaf(VmafModelCollection *co
  * @since 0.1
  */
 VMAFX_EXPORT VmafModelCollection *vmafx_model_set_libvmaf_handle(VmafxModelSet *set);
+
+/* NOLINTEND(modernize-use-using,performance-enum-size) */
 
 #ifdef __cplusplus
 }

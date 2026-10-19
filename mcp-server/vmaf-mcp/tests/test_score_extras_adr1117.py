@@ -248,7 +248,7 @@ def test_extras_validation_rejects_bad_inputs(args: dict, match: str) -> None:
                 "width": 64,
                 "height": 64,
                 "pixfmt": "420",
-                "bitdepth": 14,
+                "bitdepth": 17,
             },
             "invalid bitdepth",
         ),

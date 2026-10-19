@@ -27,6 +27,10 @@
 extern "C" {
 #endif
 
+/* NOLINTBEGIN(modernize-use-using,performance-enum-size): public C header included by C
+ * and C++ translation units; C has no `using`, and C has no fixed enum underlying type
+ * across the required toolchains (ADR-1470). ADR-1138. */
+
 /**
  * One scoring session.
  * @since 0.1
@@ -345,6 +349,8 @@ VMAFX_EXPORT VmafxStatus vmafx_context_set_default_color(VmafxContext *context,
                                                          const VmafxColor *reference,
                                                          const VmafxColor *distorted,
                                                          VmafxError **error);
+
+/* NOLINTEND(modernize-use-using,performance-enum-size) */
 
 #ifdef __cplusplus
 }
