@@ -147,6 +147,7 @@
       "name": "tooling",
       "paths": [
         "dev/scripts/",
+        "gstreamer/test/",
         "scripts/",
         "testdata/",
         "tools/ensemble-training-kit/tests/",
