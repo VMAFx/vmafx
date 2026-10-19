@@ -154,6 +154,149 @@ def _add_neg_flag(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_pix_fmt_and_framerate_args(parser: argparse.ArgumentParser) -> None:
+    """Add standard raw-video pixel format and framerate arguments."""
+    parser.add_argument("--pix-fmt", default="yuv420p", help="ffmpeg pix_fmt (default yuv420p)")
+    parser.add_argument("--framerate", type=float, default=24.0, help="reference framerate")
+
+
+def _add_crf_bounds_args(parser: argparse.ArgumentParser) -> None:
+    """Add optional lower and upper CRF search bounds."""
+    parser.add_argument("--crf-min", type=int, default=None, help="inclusive lower CRF bound")
+    parser.add_argument("--crf-max", type=int, default=None, help="inclusive upper CRF bound")
+
+
+def _add_reference_src_arg(parser: argparse.ArgumentParser) -> None:
+    """Add the mandatory --src reference video argument."""
+    parser.add_argument(
+        "--src",
+        type=Path,
+        required=True,
+        help="reference video (raw YUV or any FFmpeg-readable container)",
+    )
+
+
+def _add_registered_encoder_arg(parser: argparse.ArgumentParser) -> None:
+    """Add the registered codec adapter --encoder argument."""
+    parser.add_argument(
+        "--encoder",
+        default="libx264",
+        choices=list(known_codecs()),
+        help="codec adapter (default libx264; any registered adapter is accepted)",
+    )
+
+
+def _add_ffmpeg_bin_arg(parser: argparse.ArgumentParser) -> None:
+    """Add the standard --ffmpeg-bin argument with path help."""
+    parser.add_argument(
+        "--ffmpeg-bin",
+        default="ffmpeg",
+        help="path to the ffmpeg binary (default ffmpeg on PATH)",
+    )
+
+
+def _add_per_shot_bin_arg(parser: argparse.ArgumentParser) -> None:
+    """Add the standard --per-shot-bin argument."""
+    parser.add_argument(
+        "--per-shot-bin",
+        default="vmaf-perShot",
+        help="path to the vmaf-perShot binary (default vmaf-perShot on PATH)",
+    )
+
+
+def _add_ffmpeg_vmaf_bins(parser: argparse.ArgumentParser) -> None:
+    """Add default --ffmpeg-bin and --vmaf-bin flags without help text."""
+    parser.add_argument("--ffmpeg-bin", default="ffmpeg")
+    parser.add_argument("--vmaf-bin", default="vmaf")
+
+
+def _add_raw_dimensions_required_args(parser: argparse.ArgumentParser) -> None:
+    """Add required integer --width and --height flags."""
+    parser.add_argument("--width", type=int, required=True)
+    parser.add_argument("--height", type=int, required=True)
+
+
+def _add_dimensions_optional_args(parser: argparse.ArgumentParser) -> None:
+    """Add optional integer --width and --height flags."""
+    parser.add_argument("--width", type=int, default=None)
+    parser.add_argument("--height", type=int, default=None)
+
+
+def _add_target_vmaf_93_arg(parser: argparse.ArgumentParser) -> None:
+    """Add --target-vmaf with default 93.0."""
+    parser.add_argument(
+        "--target-vmaf",
+        type=float,
+        default=93.0,
+        help="target pooled-mean VMAF (default 93)",
+    )
+
+
+def _add_target_vmaf_scale_arg(parser: argparse.ArgumentParser) -> None:
+    """Add mandatory --target-vmaf for standard VMAF [0, 100] scale."""
+    parser.add_argument(
+        "--target-vmaf",
+        type=float,
+        required=True,
+        help="quality target on the standard VMAF [0, 100] scale",
+    )
+
+
+def _add_default_vmaf_model_arg(parser: argparse.ArgumentParser) -> None:
+    """Add --vmaf-model flag defaulting to the fork default model."""
+    parser.add_argument(
+        "--vmaf-model",
+        default=DEFAULT_MODEL,
+        help="vmaf model version string (default: the fork default model)",
+    )
+
+
+def _add_recommendation_output_arg(parser: argparse.ArgumentParser) -> None:
+    """Add --output flag for recommendation payload JSON destination."""
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help="JSON destination for the recommendation payload (default: stdout)",
+    )
+
+
+def _add_json_sidecar_flag(parser: argparse.ArgumentParser) -> None:
+    """Add --json-sidecar flag for report/compare JSON output."""
+    parser.add_argument(
+        "--json-sidecar",
+        action="store_true",
+        help="when emitting html or markdown, also write <output>.json sidecar with data.to_dict()",
+    )
+
+
+def _add_report_output_dest_arg(parser: argparse.ArgumentParser) -> None:
+    """Add --output flag for report destination (stdout default)."""
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help="report destination (default: stdout)",
+    )
+
+
+def _add_raw_pix_fmt_framerate_args(parser: argparse.ArgumentParser) -> None:
+    """Add default --pix-fmt and --framerate flags without help text."""
+    parser.add_argument("--pix-fmt", default="yuv420p")
+    parser.add_argument("--framerate", type=float, default=24.0)
+
+
+def _add_sidecar_features_crf_args(parser: argparse.ArgumentParser) -> None:
+    """Add required --features-json and --crf flags for sidecar observation."""
+    parser.add_argument("--features-json", type=Path, required=True)
+    parser.add_argument("--crf", type=int, required=True)
+
+
+def _add_sidecar_json_flag(parser: argparse.ArgumentParser) -> None:
+    """Add --json flag for machine-readable output in sidecar subcommands."""
+    parser.add_argument("--json", action="store_true", help="emit machine-readable JSON")
+
+
 def _stamp_tracked_default_sentinels(args: argparse.Namespace) -> None:
     """Stamp ``_<dest>_was_default = True`` for every ``_TrackedDefaultAction``.
 
@@ -183,10 +326,8 @@ def _add_corpus_source_args(corpus: argparse.ArgumentParser) -> None:
         required=True,
         help="raw YUV reference (repeat for multiple sources)",
     )
-    corpus.add_argument("--width", type=int, required=True)
-    corpus.add_argument("--height", type=int, required=True)
-    corpus.add_argument("--pix-fmt", default="yuv420p", help="ffmpeg pix_fmt (default yuv420p)")
-    corpus.add_argument("--framerate", type=float, default=24.0, help="reference framerate")
+    _add_raw_dimensions_required_args(corpus)
+    _add_pix_fmt_and_framerate_args(corpus)
     corpus.add_argument(
         "--duration",
         type=float,
@@ -197,12 +338,7 @@ def _add_corpus_source_args(corpus: argparse.ArgumentParser) -> None:
 
 def _add_corpus_grid_args(corpus: argparse.ArgumentParser) -> None:
     """Add codec-grid and output arguments for ``corpus``."""
-    corpus.add_argument(
-        "--encoder",
-        default="libx264",
-        choices=list(known_codecs()),
-        help="codec adapter (default libx264; any registered adapter is accepted)",
-    )
+    _add_registered_encoder_arg(corpus)
     corpus.add_argument(
         "--preset",
         action="append",
@@ -257,8 +393,7 @@ def _two_pass_encoders() -> tuple[str, ...]:
 
 def _add_corpus_runtime_args(corpus: argparse.ArgumentParser) -> None:
     """Add executable, backend, and search-strategy arguments."""
-    corpus.add_argument("--ffmpeg-bin", default="ffmpeg")
-    corpus.add_argument("--vmaf-bin", default="vmaf")
+    _add_ffmpeg_vmaf_bins(corpus)
     corpus.add_argument(
         "--score-backend",
         default="auto",
@@ -369,12 +504,7 @@ def _add_predict_model_args(predict: argparse.ArgumentParser) -> None:
         choices=list(known_codecs()),
         help="codec adapter (default libx264)",
     )
-    predict.add_argument(
-        "--target-vmaf",
-        type=float,
-        default=93.0,
-        help="target pooled-mean VMAF (default 93)",
-    )
+    _add_target_vmaf_93_arg(predict)
     predict.add_argument(
         "--validate-k",
         type=int,
@@ -411,16 +541,8 @@ def _add_predict_runtime_args(predict: argparse.ArgumentParser) -> None:
         default=None,
         help="path to predictor_<codec>.onnx (default: analytical fallback)",
     )
-    predict.add_argument(
-        "--per-shot-bin",
-        default="vmaf-perShot",
-        help="path to the vmaf-perShot binary (default vmaf-perShot on PATH)",
-    )
-    predict.add_argument(
-        "--ffmpeg-bin",
-        default="ffmpeg",
-        help="path to the ffmpeg binary (default ffmpeg on PATH)",
-    )
+    _add_per_shot_bin_arg(predict)
+    _add_ffmpeg_bin_arg(predict)
     predict.add_argument(
         "--ffprobe-bin",
         default="ffprobe",
@@ -503,12 +625,7 @@ def _add_predict_subparser(sub: argparse._SubParsersAction) -> None:
 
 def _add_per_shot_source_args(per_shot: argparse.ArgumentParser) -> None:
     """Add source geometry and quality target arguments."""
-    per_shot.add_argument(
-        "--src",
-        type=Path,
-        required=True,
-        help="reference video (raw YUV or any FFmpeg-readable container)",
-    )
+    _add_reference_src_arg(per_shot)
     per_shot.add_argument(
         "--width",
         type=int,
@@ -544,12 +661,7 @@ def _add_per_shot_source_args(per_shot: argparse.ArgumentParser) -> None:
         default=92.0,
         help="target pooled-mean VMAF for the per-shot predicate (default 92)",
     )
-    per_shot.add_argument(
-        "--encoder",
-        default="libx264",
-        choices=list(known_codecs()),
-        help="codec adapter (default libx264; any registered adapter is accepted)",
-    )
+    _add_registered_encoder_arg(per_shot)
     per_shot.add_argument(
         "--bitdepth",
         type=int,
@@ -591,20 +703,12 @@ def _add_per_shot_detection_args(per_shot: argparse.ArgumentParser) -> None:
             "to 0 to disable; default 2.0. ADR-0513."
         ),
     )
-    per_shot.add_argument(
-        "--per-shot-bin",
-        default="vmaf-perShot",
-        help="path to the vmaf-perShot binary (default vmaf-perShot on PATH)",
-    )
+    _add_per_shot_bin_arg(per_shot)
 
 
 def _add_per_shot_search_args(per_shot: argparse.ArgumentParser) -> None:
     """Add encode-and-score search arguments."""
-    per_shot.add_argument(
-        "--ffmpeg-bin",
-        default="ffmpeg",
-        help="path to the ffmpeg binary (default ffmpeg on PATH)",
-    )
+    _add_ffmpeg_bin_arg(per_shot)
     per_shot.add_argument(
         "--vmaf-bin",
         default="vmaf",
@@ -615,8 +719,7 @@ def _add_per_shot_search_args(per_shot: argparse.ArgumentParser) -> None:
         default=None,
         help="codec preset forwarded to the per-shot bisect backend",
     )
-    per_shot.add_argument("--crf-min", type=int, default=None, help="inclusive lower CRF bound")
-    per_shot.add_argument("--crf-max", type=int, default=None, help="inclusive upper CRF bound")
+    _add_crf_bounds_args(per_shot)
     per_shot.add_argument(
         "--max-iterations",
         type=int,
@@ -741,10 +844,8 @@ def _add_per_shot_subparser(sub: argparse._SubParsersAction) -> None:
 def _add_saliency_source_args(rec_sal: argparse.ArgumentParser) -> None:
     """Add source, codec, and clip-length arguments for saliency tuning."""
     rec_sal.add_argument("--src", type=Path, required=True, help="raw YUV reference")
-    rec_sal.add_argument("--width", type=int, required=True)
-    rec_sal.add_argument("--height", type=int, required=True)
-    rec_sal.add_argument("--pix-fmt", default="yuv420p")
-    rec_sal.add_argument("--framerate", type=float, default=24.0)
+    _add_raw_dimensions_required_args(rec_sal)
+    _add_raw_pix_fmt_framerate_args(rec_sal)
     rec_sal.add_argument(
         "--encoder",
         default="libx264",
@@ -1046,12 +1147,7 @@ def _add_ladder_subparser(sub: argparse._SubParsersAction) -> None:
 
 def _add_compare_source_args(compare: argparse.ArgumentParser) -> None:
     """Add compare source and legacy single-target arguments."""
-    compare.add_argument(
-        "--src",
-        type=Path,
-        required=True,
-        help="reference video (raw YUV or any FFmpeg-readable container)",
-    )
+    _add_reference_src_arg(compare)
     compare.add_argument(
         "--target-vmaf",
         type=float,
@@ -1135,17 +1231,8 @@ def _add_compare_output_args(compare: argparse.ArgumentParser) -> None:
         default=None,
         help="override thread-pool size (default: len(encoders))",
     )
-    compare.add_argument(
-        "--output",
-        type=Path,
-        default=None,
-        help="report destination (default: stdout)",
-    )
-    compare.add_argument(
-        "--json-sidecar",
-        action="store_true",
-        help="when emitting html or markdown, also write <output>.json sidecar with data.to_dict()",
-    )
+    _add_report_output_dest_arg(compare)
+    _add_json_sidecar_flag(compare)
 
 
 def _add_compare_geometry_args(compare: argparse.ArgumentParser) -> None:
@@ -1201,8 +1288,7 @@ def _add_compare_search_args(compare: argparse.ArgumentParser) -> None:
             "the same preset level; omit it to accept the per-adapter default."
         ),
     )
-    compare.add_argument("--crf-min", type=int, default=None, help="inclusive lower CRF bound")
-    compare.add_argument("--crf-max", type=int, default=None, help="inclusive upper CRF bound")
+    _add_crf_bounds_args(compare)
     compare.add_argument(
         "--max-iterations",
         type=int,
@@ -1367,12 +1453,7 @@ def _add_auto_plan_args(auto: argparse.ArgumentParser) -> None:
             "required unless --smoke, and always with --execute"
         ),
     )
-    auto.add_argument(
-        "--target-vmaf",
-        type=float,
-        default=93.0,
-        help="target pooled-mean VMAF (default 93)",
-    )
+    _add_target_vmaf_93_arg(auto)
     auto.add_argument(
         "--max-budget-bitrate",
         type=float,
@@ -1562,11 +1643,7 @@ def _add_report_output_args(report: argparse.ArgumentParser) -> None:
         "--ffmpeg-bin", default="", help="ffmpeg binary to record in encoder profile"
     )
     report.add_argument("--vmaf-bin", default="", help="vmaf binary to record in encoder profile")
-    report.add_argument(
-        "--json-sidecar",
-        action="store_true",
-        help="when emitting html or markdown, also write <output>.json sidecar with data.to_dict()",
-    )
+    _add_json_sidecar_flag(report)
 
 
 def _add_report_subparser(sub: argparse._SubParsersAction) -> None:
@@ -1619,8 +1696,7 @@ def _add_encode_profile_runtime_args(encode_profile: argparse.ArgumentParser) ->
     encode_profile.add_argument("--preset", default=None, help="override the stored/default preset")
     encode_profile.add_argument("--pix-fmt", default=None, help="override raw-source pixel format")
     encode_profile.add_argument("--framerate", type=float, default=None)
-    encode_profile.add_argument("--width", type=int, default=None)
-    encode_profile.add_argument("--height", type=int, default=None)
+    _add_dimensions_optional_args(encode_profile)
     encode_profile.add_argument("--duration", type=float, default=None)
     encode_profile.add_argument(
         "--source-kind",
@@ -1721,9 +1797,7 @@ def _add_benchmark_subparser(sub: argparse._SubParsersAction) -> None:
         choices=("markdown", "json", "csv"),
         help="report format (default markdown)",
     )
-    benchmark.add_argument(
-        "--output", type=Path, default=None, help="report destination (default: stdout)"
-    )
+    _add_report_output_dest_arg(benchmark)
 
 
 def _add_fast_subparser(sub: argparse._SubParsersAction) -> None:
@@ -1834,31 +1908,29 @@ def _add_sidecar_args(p: argparse.ArgumentParser) -> None:
 
     status = sub.add_parser("status", help="print sidecar state metadata")
     _add_sidecar_common_args(status)
-    status.add_argument("--json", action="store_true", help="emit machine-readable JSON")
+    _add_sidecar_json_flag(status)
 
     predict = sub.add_parser(
         "predict",
         help="predict VMAF with the sidecar correction folded in",
     )
     _add_sidecar_common_args(predict)
-    predict.add_argument("--features-json", type=Path, required=True)
-    predict.add_argument("--crf", type=int, required=True)
-    predict.add_argument("--json", action="store_true", help="emit machine-readable JSON")
+    _add_sidecar_features_crf_args(predict)
+    _add_sidecar_json_flag(predict)
 
     record = sub.add_parser(
         "record",
         help="record one observed encode result into the sidecar fit",
     )
     _add_sidecar_common_args(record)
-    record.add_argument("--features-json", type=Path, required=True)
-    record.add_argument("--crf", type=int, required=True)
+    _add_sidecar_features_crf_args(record)
     record.add_argument("--observed-vmaf", type=float, required=True)
     record.add_argument(
         "--no-persist",
         action="store_true",
         help="update in memory only; mainly useful for tests",
     )
-    record.add_argument("--json", action="store_true", help="emit machine-readable JSON")
+    _add_sidecar_json_flag(record)
 
     batch = sub.add_parser(
         "batch-record",
@@ -1866,7 +1938,7 @@ def _add_sidecar_args(p: argparse.ArgumentParser) -> None:
     )
     _add_sidecar_common_args(batch)
     batch.add_argument("--captures-jsonl", type=Path, required=True)
-    batch.add_argument("--json", action="store_true", help="emit machine-readable JSON")
+    _add_sidecar_json_flag(batch)
 
 
 def _add_coarse_to_fine_flags(p: argparse.ArgumentParser) -> None:
@@ -1916,10 +1988,8 @@ def _add_coarse_to_fine_flags(p: argparse.ArgumentParser) -> None:
 def _add_recommend_source_args(p: argparse.ArgumentParser) -> None:
     """Add optional source geometry and grid selectors."""
     p.add_argument("--source", type=Path, action="append", default=None)
-    p.add_argument("--width", type=int, default=None)
-    p.add_argument("--height", type=int, default=None)
-    p.add_argument("--pix-fmt", default="yuv420p")
-    p.add_argument("--framerate", type=float, default=24.0)
+    _add_dimensions_optional_args(p)
+    _add_raw_pix_fmt_framerate_args(p)
     p.add_argument("--duration", type=float, default=0.0)
     p.add_argument("--encoder", default="libx264", choices=list(known_codecs()))
     p.add_argument("--preset", action="append", default=None)
@@ -1948,8 +2018,7 @@ def _add_recommend_execution_args(p: argparse.ArgumentParser) -> None:
         ),
     )
     _add_neg_flag(p)
-    p.add_argument("--ffmpeg-bin", default="ffmpeg")
-    p.add_argument("--vmaf-bin", default="vmaf")
+    _add_ffmpeg_vmaf_bins(p)
     p.add_argument(
         "--score-backend",
         default="auto",
@@ -4463,18 +4532,12 @@ def _add_fast_source_args(parser: argparse.ArgumentParser) -> None:
         default=0,
         help="raw-YUV reference height (required when ``--src`` is a raw YUV)",
     )
-    parser.add_argument("--pix-fmt", default="yuv420p", help="ffmpeg pix_fmt (default yuv420p)")
-    parser.add_argument("--framerate", type=float, default=24.0, help="reference framerate")
+    _add_pix_fmt_and_framerate_args(parser)
 
 
 def _add_fast_target_args(parser: argparse.ArgumentParser) -> None:
     """Add fast-path quality and encoder flags."""
-    parser.add_argument(
-        "--target-vmaf",
-        type=float,
-        required=True,
-        help="quality target on the standard VMAF [0, 100] scale",
-    )
+    _add_target_vmaf_scale_arg(parser)
     parser.add_argument(
         "--encoder",
         default="libx264",
@@ -4568,33 +4631,20 @@ def _add_fast_runtime_args(parser: argparse.ArgumentParser) -> None:
             "cuda > sycl > hip > cpu). See ``vmaf-tune corpus --help``."
         ),
     )
-    parser.add_argument(
-        "--ffmpeg-bin",
-        default="ffmpeg",
-        help="path to the ffmpeg binary (default ffmpeg on PATH)",
-    )
+    _add_ffmpeg_bin_arg(parser)
     parser.add_argument(
         "--vmaf-bin",
         default="vmaf",
         help="path to the libvmaf CLI binary (default vmaf on PATH)",
     )
-    parser.add_argument(
-        "--vmaf-model",
-        default=DEFAULT_MODEL,
-        help="vmaf model version string (default: the fork default model)",
-    )
+    _add_default_vmaf_model_arg(parser)
     parser.add_argument(
         "--encode-dir",
         type=Path,
         default=Path(".workingdir/cache/vmafx-tune/fast"),
         help="scratch dir for probe + verify encodes (default .workingdir/cache/vmafx-tune/fast, gitignored)",
     )
-    parser.add_argument(
-        "--output",
-        type=Path,
-        default=None,
-        help="JSON destination for the recommendation payload (default: stdout)",
-    )
+    _add_recommendation_output_arg(parser)
 
 
 def _add_fast_args(parser: argparse.ArgumentParser) -> None:
@@ -4972,8 +5022,7 @@ def _add_prefilter_source_args(parser: argparse.ArgumentParser) -> None:
         default=0,
         help="raw-YUV reference height (required for the live loop on raw YUV)",
     )
-    parser.add_argument("--pix-fmt", default="yuv420p", help="ffmpeg pix_fmt (default yuv420p)")
-    parser.add_argument("--framerate", type=float, default=24.0, help="reference framerate")
+    _add_pix_fmt_and_framerate_args(parser)
     parser.add_argument(
         "--duration",
         dest="duration_s",
@@ -4990,12 +5039,7 @@ def _add_prefilter_source_args(parser: argparse.ArgumentParser) -> None:
 
 def _add_prefilter_target_args(parser: argparse.ArgumentParser) -> None:
     """Add prefilter quality, encoder, and filter flags."""
-    parser.add_argument(
-        "--target-vmaf",
-        type=float,
-        required=True,
-        help="quality target on the standard VMAF [0, 100] scale",
-    )
+    _add_target_vmaf_scale_arg(parser)
     parser.add_argument(
         "--encoder",
         default="libx264",
@@ -5086,11 +5130,7 @@ def _add_prefilter_runtime_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--vmaf-bin", default="vmaf", help="libvmaf CLI binary (default vmaf on PATH)"
     )
-    parser.add_argument(
-        "--vmaf-model",
-        default=DEFAULT_MODEL,
-        help="vmaf model version string (default: the fork default model)",
-    )
+    _add_default_vmaf_model_arg(parser)
     _add_neg_flag(parser)
     parser.add_argument(
         "--encode-dir",
@@ -5098,12 +5138,7 @@ def _add_prefilter_runtime_args(parser: argparse.ArgumentParser) -> None:
         default=Path(".workingdir/cache/vmafx-tune/prefilter"),
         help="scratch dir for probe encodes (default .workingdir/cache/vmafx-tune/prefilter, gitignored)",
     )
-    parser.add_argument(
-        "--output",
-        type=Path,
-        default=None,
-        help="JSON destination for the recommendation payload (default: stdout)",
-    )
+    _add_recommendation_output_arg(parser)
 
 
 def _add_prefilter_args(parser: argparse.ArgumentParser) -> None:

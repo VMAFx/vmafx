@@ -64,7 +64,7 @@ jobs:
           # --enable-libvmaf against the freshly installed library, which is
           # the consumer contract agent hard rule 11 exists to protect.
           #
-          # Dated fallback (ADR-3251), ends 2026-10-25: .config/lint-exceptions.d/hosted-runner-label.toml
+          # Dated fallback (ADR-3251), ends 2026-10-29: .config/lint-exceptions.d/hosted-runner-label.toml
           - os: ubuntu-24.04
             CC: gcc
             CXX: g++
@@ -155,7 +155,7 @@ jobs:
     # ADR-1297 — required. Build-only FFmpeg with the SYCL patch applied; no
     # other leg links that patch-stack surface.
     name: FFmpeg SYCL work
-    # Dated fallback (ADR-3251), ends 2026-10-25: .config/lint-exceptions.d/hosted-runner-label.toml
+    # Dated fallback (ADR-3251), ends 2026-10-29: .config/lint-exceptions.d/hosted-runner-label.toml
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:

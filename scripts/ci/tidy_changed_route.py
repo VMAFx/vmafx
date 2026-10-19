@@ -12,10 +12,12 @@ command in the database is linted. A changed non-header without one is
 deferred to the clang-tidy lane whose ``measured_sources``
 (``scripts/ci/tidy-baseline-<lane>.json``) lists it, and that lane is named; if
 no lane lists it, the job fails and names the file. A changed header is
-linted on its own, as before, unless none of the translation units that
-include it (directly or through other headers) has a command in the
-database: it is then deferred, the same way, to a lane that measures one of
-those units, or fails. A file (or every unit including a header) that no
+linted on its own when a C++ unit includes it; a C-only header (every
+unit that includes it, directly or through other headers, is C) is linted
+through those units that have a command, since clang-tidy would parse it on
+its own with a command borrowed from a C++ unit. When none of the including
+units has a command in the database, the header is deferred, the same way,
+to a lane that measures one of those units, or fails. A file (or every unit including a header) that no
 lane can read and that holds a live entry of the declared exception list
 ``.config/lint-exceptions.d/clang-tidy-coverage.toml`` (ADR-1762; reason and
 expiry, ``scripts/ci/lint_exceptions.py``) is skipped naming the entry; an
@@ -170,8 +172,15 @@ def route_changed(
                 graph if graph is not None else includers(root, lint_exceptions.tracked_files(root))
             )
             units = including_units(path, graph)
-            if not units or units & commands:
+            if not units or (any(u.endswith(CXX_SUFFIXES) for u in units) and units & commands):
                 lint.append(path)
+                continue
+            through = sorted(units & commands)
+            if through:
+                report.append(
+                    f"tidy-changed: {path} is C-only: linted through {', '.join(through)}"
+                )
+                lint.extend(through)
                 continue
         deferred, line = defer(path, units, lanes, excepted)
         report.append(line)

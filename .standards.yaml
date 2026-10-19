@@ -212,6 +212,54 @@ exceptions:
     reason: "Windows-only test (built only for host_machine.system() == 'windows'); no Linux or macOS compile database has an entry. Needs a Windows lane with clang-tidy."
     expires: "2027-01-04"
   - rule: clang-tidy-coverage
+    path: "ffmpeg-patches/src/ffmpeg_dec_hwaccel.c"
+    reason: "Category A (stated interval 14 days, from 2026-10-18; past 2026-10-31 so the expiry stays outside the candidate window that test_check_tidy_coverage.py guards): no clang-tidy lane compiles this out-of-core source yet; the gstreamer and ffmpeg-patches/src lane is VMAFx/vmafx#2860, which removes this entry."
+    expires: "2026-11-01"
+  - rule: clang-tidy-coverage
+    path: "ffmpeg-patches/src/vf_vmafx.c"
+    reason: "Category A (stated interval 14 days, from 2026-10-18; past 2026-10-31 so the expiry stays outside the candidate window that test_check_tidy_coverage.py guards): no clang-tidy lane compiles this out-of-core source yet; the gstreamer and ffmpeg-patches/src lane is VMAFx/vmafx#2860, which removes this entry."
+    expires: "2026-11-01"
+  - rule: clang-tidy-coverage
+    path: "ffmpeg-patches/src/vf_vmafx_pre.c"
+    reason: "Category A (stated interval 14 days, from 2026-10-18; past 2026-10-31 so the expiry stays outside the candidate window that test_check_tidy_coverage.py guards): no clang-tidy lane compiles this out-of-core source yet; the gstreamer and ffmpeg-patches/src lane is VMAFx/vmafx#2860, which removes this entry."
+    expires: "2026-11-01"
+  - rule: clang-tidy-coverage
+    path: "gstreamer/src/gstvmafx.c"
+    reason: "Category A (stated interval 14 days, from 2026-10-18; past 2026-10-31 so the expiry stays outside the candidate window that test_check_tidy_coverage.py guards): no clang-tidy lane compiles this out-of-core source yet; the gstreamer and ffmpeg-patches/src lane is VMAFx/vmafx#2860, which removes this entry."
+    expires: "2026-11-01"
+  - rule: clang-tidy-coverage
+    path: "gstreamer/src/gstvmafx_caps.c"
+    reason: "Category A (stated interval 14 days, from 2026-10-18; past 2026-10-31 so the expiry stays outside the candidate window that test_check_tidy_coverage.py guards): no clang-tidy lane compiles this out-of-core source yet; the gstreamer and ffmpeg-patches/src lane is VMAFx/vmafx#2860, which removes this entry."
+    expires: "2026-11-01"
+  - rule: clang-tidy-coverage
+    path: "gstreamer/src/gstvmafx_cuda.c"
+    reason: "Category A (stated interval 14 days, from 2026-10-18; past 2026-10-31 so the expiry stays outside the candidate window that test_check_tidy_coverage.py guards): no clang-tidy lane compiles this out-of-core source yet; the gstreamer and ffmpeg-patches/src lane is VMAFx/vmafx#2860, which removes this entry."
+    expires: "2026-11-01"
+  - rule: clang-tidy-coverage
+    path: "gstreamer/src/gstvmafx_frame.c"
+    reason: "Category A (stated interval 14 days, from 2026-10-18; past 2026-10-31 so the expiry stays outside the candidate window that test_check_tidy_coverage.py guards): no clang-tidy lane compiles this out-of-core source yet; the gstreamer and ffmpeg-patches/src lane is VMAFx/vmafx#2860, which removes this entry."
+    expires: "2026-11-01"
+  - rule: clang-tidy-coverage
+    path: "gstreamer/src/gstvmafx_opts.c"
+    reason: "Category A (stated interval 14 days, from 2026-10-18; past 2026-10-31 so the expiry stays outside the candidate window that test_check_tidy_coverage.py guards): no clang-tidy lane compiles this out-of-core source yet; the gstreamer and ffmpeg-patches/src lane is VMAFx/vmafx#2860, which removes this entry."
+    expires: "2026-11-01"
+  - rule: clang-tidy-coverage
+    path: "gstreamer/src/gstvmafx_out.c"
+    reason: "Category A (stated interval 14 days, from 2026-10-18; past 2026-10-31 so the expiry stays outside the candidate window that test_check_tidy_coverage.py guards): no clang-tidy lane compiles this out-of-core source yet; the gstreamer and ffmpeg-patches/src lane is VMAFx/vmafx#2860, which removes this entry."
+    expires: "2026-11-01"
+  - rule: clang-tidy-coverage
+    path: "gstreamer/src/gstvmafx_run.c"
+    reason: "Category A (stated interval 14 days, from 2026-10-18; past 2026-10-31 so the expiry stays outside the candidate window that test_check_tidy_coverage.py guards): no clang-tidy lane compiles this out-of-core source yet; the gstreamer and ffmpeg-patches/src lane is VMAFx/vmafx#2860, which removes this entry."
+    expires: "2026-11-01"
+  - rule: clang-tidy-coverage
+    path: "gstreamer/src/gstvmafx_util.c"
+    reason: "Category A (stated interval 14 days, from 2026-10-18; past 2026-10-31 so the expiry stays outside the candidate window that test_check_tidy_coverage.py guards): no clang-tidy lane compiles this out-of-core source yet; the gstreamer and ffmpeg-patches/src lane is VMAFx/vmafx#2860, which removes this entry."
+    expires: "2026-11-01"
+  - rule: clang-tidy-coverage
+    path: "gstreamer/src/gstvmafx_windows.c"
+    reason: "Category A (stated interval 14 days, from 2026-10-18; past 2026-10-31 so the expiry stays outside the candidate window that test_check_tidy_coverage.py guards): no clang-tidy lane compiles this out-of-core source yet; the gstreamer and ffmpeg-patches/src lane is VMAFx/vmafx#2860, which removes this entry."
+    expires: "2026-11-01"
+  - rule: clang-tidy-coverage
     path: "scripts/ci/exact_twins.d/adm.hip"
     reason: "Parity-gate data fragment that borrows the .hip extension (ADR-1428): one line of fields, no C or HIP source, nothing for clang-tidy to read."
     expires: "2027-01-04"

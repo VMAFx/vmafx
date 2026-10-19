@@ -30,3 +30,7 @@
 0020-libvmaf-honor-retryable-close-ownership.patch
 0021-libvmaf-print-no-pooled-score-after-a-mid-run-error.patch
 0022-libvmaf-declare-the-input-colorimetry-from-the-AVFrame-properties.patch
+0023-add-vmafx-filter.patch
+0024-add-vmafx-pre-filter.patch
+0025-add-vmafx-profile-cli-glue.patch
+0026-fftools-loopback-decoder-hwaccel.patch

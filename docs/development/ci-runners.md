@@ -88,19 +88,17 @@ Two cases name another versioned image:
 | The job's subject is the older image. Today: `verify-native-artifacts` in `supply-chain.yml` runs on `ubuntu-24.04`, the oldest hosted image that loads the native Linux bundle ([ADR-1354](../adr/1354-native-bundle-release-track.md)). | `COMPATIBILITY_TARGETS` in `scripts/ci/check_hosted_runner_labels.py`, with the record that says why | when the record changes |
 | The job fails on `ubuntu-26.04` and needs time. | one entry per job in `.config/lint-exceptions.d/hosted-runner-label.toml`: workflow file, job, label, reason, end date | at most 90 days after it is written |
 
-Three jobs carry a dated fallback to `ubuntu-24.04` today:
+Two jobs carry a dated fallback to `ubuntu-24.04` today:
 
 | Workflow | Job | What fails on `ubuntu-26.04` | Ends |
 | --- | --- | --- | --- |
-| `dev-container-build.yml` | `dev-container-build-work` | The image build stops with `No space left on device`; the job needs a disk clean-up step first. | 2026-10-25 |
-| `ffmpeg-integration.yml` | `ffmpeg-work` (the `FFmpeg Ubuntu gcc` row) | The image's gcc prints warnings in FFmpeg's own sources (`-Wstringop-overflow` in `libavcodec/vvc/intra_template.c`, redefined `av_popcount` in `libavutil/x86/intmath.h`), and the zero-warning gate stops the build. | 2026-10-25 |
-| `ffmpeg-integration.yml` | `ffmpeg-sycl-work` | The same FFmpeg warnings. | 2026-10-25 |
+| `ffmpeg-integration.yml` | `ffmpeg-work` (the `FFmpeg Ubuntu gcc` row) | The image's gcc prints warnings in FFmpeg's own sources (`-Wstringop-overflow` in `libavcodec/vvc/intra_template.c`, redefined `av_popcount` in `libavutil/x86/intmath.h`), and the zero-warning gate stops the build. | 2026-10-29 |
+| `ffmpeg-integration.yml` | `ffmpeg-sycl-work` | The same FFmpeg warnings. | 2026-10-29 |
 
-The open rows `T-CI-DEV-CONTAINER-DISK-UBUNTU-2604-2026-10-11` and
-`T-CI-FFMPEG-WARNINGS-UBUNTU-2604-2026-10-11` of [state](../state.md) track
-the fixes. A job goes back to `ubuntu-26.04` in the pull request that removes
-its entry; the check fails on an entry whose job no longer names the older
-image.
+The open row `T-CI-FFMPEG-WARNINGS-UBUNTU-2604-2026-10-11` of
+[state](../state.md) tracks the fix. A job goes back to `ubuntu-26.04` in the
+pull request that removes its entry; the check fails on an entry whose job no
+longer names the older image.
 
 `check-hosted-runner-labels` refuses every other label; `make lint-actions` runs
 it after actionlint. The entry format and the cases the check covers are in

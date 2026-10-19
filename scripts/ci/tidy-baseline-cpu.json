@@ -4,7 +4,7 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "cc_version": "gcc-15 (Ubuntu 15.2.0-16ubuntu1) 15.2.0",
-  "tus": 536,
+  "tus": 538,
   "measured_sources": [
     "compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_stat.c",
     "compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_std.c",
@@ -207,6 +207,7 @@
     "core/src/vmafx/score.c",
     "core/src/vmafx/sha256.c",
     "core/src/vmafx/sized.c",
+    "core/src/vmafx/spec.c",
     "core/src/vmafx/status_gen.c",
     "core/src/vmafx/submit.c",
     "core/src/vmafx/sync_object.c",
@@ -510,6 +511,7 @@
     "core/test/test_vmafx_report.c",
     "core/test/test_vmafx_score.c",
     "core/test/test_vmafx_sha256.c",
+    "core/test/test_vmafx_spec.c",
     "core/test/test_vmafx_window.c",
     "core/test/test_vmafx_window_clock.c",
     "core/test/test_vmafx_window_live.c",
@@ -1487,6 +1489,22 @@
         }
       },
       "previous_baseline_sha256": "d5ed04eb593aac57b5789d15037c67d14c2488f1f642bf700ce5dc68814d4a37"
+    },
+    {
+      "sources": [
+        "core/src/vmafx/spec.c",
+        "core/test/test_vmafx_spec.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/src/vmafx/spec.c",
+            "core/test/test_vmafx_spec.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "370e25509b214d92d9a19790b6da36c9cebd2ae83cfb6f60ae7749785eb754eb"
     }
   ]
 }
