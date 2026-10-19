@@ -64,6 +64,11 @@ type Metrics struct {
 	HealthRequests prometheus.Counter
 	// ReadyRequests counts /readyz calls.
 	ReadyRequests prometheus.Counter
+	// ScoreDuration tracks scoring latency in seconds.
+	//
+	// Deprecated: use ObserveScoreDuration, which attaches the request's
+	// trace as an exemplar; this observer records the same series without one.
+	ScoreDuration prometheus.Observer
 
 	duration Histogram
 	quality  Histogram
@@ -117,6 +122,7 @@ func NewMetrics(reg prometheus.Registerer) (*Metrics, error) {
 		ScoreErrors:    counters[1].vec.WithLabelValues(),
 		HealthRequests: counters[2].vec.WithLabelValues(),
 		ReadyRequests:  counters[3].vec.WithLabelValues(),
+		ScoreDuration:  duration.vec.WithLabelValues(),
 		duration:       duration,
 		quality:        quality,
 	}, nil
