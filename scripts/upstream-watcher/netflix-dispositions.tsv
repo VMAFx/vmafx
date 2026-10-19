@@ -1,0 +1,45 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+#
+# Netflix/vmaf upstream commit dispositions.
+# Format: <full 40-hex sha>\t<state>\t<reference>
+# States: ported, in-fork, not-applicable
+# Reference: fork PR (#NNNN), fork commit sha, or one-line reason.
+
+3e1385bed675f350feb6b4122cc5d180e35937ae	in-fork	#2642
+a8f536b9ada29172a0e0a2a9fe3733825ce916e8	in-fork	#2638
+03981a80ef5039173646dcd5783988c5c0eaf0a2	in-fork	#2121
+4e150067b8ab0c0ab6a41d3ebb59ae4065ef09a6	in-fork	#2638
+3b4dd350e89254d9bda7d4a7ff4b676898509665	in-fork	#2641
+0497a0f299706b3124241f6ffc7fffc81d5665eb	in-fork	#2140
+8bc5a5c6a6b7c679e550c9ac8eee186dce59d207	in-fork	#2635
+b41d2340a881c69682efb08fbffd0856485c57b9	in-fork	#2635
+ed61076b2ee41c9a2cb25d0ed95339bd22d0b057	in-fork	#2300
+1ddf81607bb50f73e2c90db062e838a2b028170b	in-fork	#2300
+a6c0ba6d54fff311baa680e3be238e418afa114b	in-fork	#2300
+130569c453ec751f2c2dff4745b0ca048c4e3a13	in-fork	#2300
+efe90c8b87de1e348274d9c101664866b6d5c419	in-fork	#2300
+5c3f4fb9074eecbf888f529f5601bf69d142913d	in-fork	#2300
+4f3f71b688931a1d439870cdeccea955ea4bf496	in-fork	#2300
+33e5f0aca905e8679c4d5ad4e31b059fa7725ff0	in-fork	#2646
+cffd5b77d98a05435ca695a438d92b2bc3bfbf94	in-fork	#2646
+ad42c5320ea8c15c8853cc00a0feed37e04d47a0	in-fork	#2632
+9cb9479f26ae16fa9f70aa87c4fb54a0e44a2d2a	in-fork	#2632
+4068ee3b5e40486f9c852c3013fa3f49fc1af35e	in-fork	#2111
+9f4bd165f502b45e952b602b41eb087535747268	in-fork	#2668
+700124a4cc354ac555b49fe14e71e6d27af73a35	in-fork	#2675
+e59f6a33dec20b2a8faebed9ea91b30b1b5b2f93	in-fork	#2300 (6275c6f1a)
+229f2478ab53ae0fd6b07328802294ba15fd0cdd	in-fork	#548 (e955691c1), 3283a6123
+ca2a2a111d5017aa4aad7ccb735f9813eb9cb062	ported	#2869 (e942409a1)
+0b9462873f9b36ccb3770587dbbf43aef4c786ec	not-applicable	VmafPicture has no color field (ADR-1822)
+bcd6e6159ce57977c2d1b95d369fa58a1bfd993d	not-applicable	native Win32 shim core/src/compat/win32/pthread.h (ADR-2751)
+b3cfb3d75d3ee8bad4eec6064ba0589f5940adbb	in-fork	#2393 (17070a9e0), core/src/meson.build
+f3592f56e100a042976a89eef2fe6627ad8d8b2d	in-fork	#57 (5253af06f), core/src/feature/mkdirp.cpp
+08e326fdef4ee364e93a52962f1cf57764fe14da	in-fork	#57 (5253af06f)
+e545870facdd9440d25b91e3468164531208489f	not-applicable	compat/msvc/stdatomic.h removed (c66e4780f); MSVC native stdatomic
+7437f3d9a6e82df1b9e071294b8f3c04d8e8e1cb	in-fork	#57 (5253af06f), #1223 (71da046db)
+e2f8b24ab030a9f9b311ba36a79de2a453625ec1	not-applicable	pthreads submodule docs (ADR-2751); docs/getting-started/building-on-windows.md
+5079124ea51e99f543589a3c5675ba41fa6311ff	not-applicable	fork MSVC matrix in libvmaf-build-matrix.yml (ADR-2751)
+8618ba5cde09740acbad5480224b3e8a735b609d	in-fork	#57 (5253af06f)
+a2660554e630607fc187cb2ddd3b5ddcd892048e	in-fork	#57 (5253af06f); winpthreads part not-applicable (ADR-2751)
+7388bd6fc2b0ea0b991abc9a5959b9b9f145310f	in-fork	#1223 (71da046db, ADR-1166)
