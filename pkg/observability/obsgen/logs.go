@@ -4,7 +4,6 @@
 package obsgen
 
 import (
-	"github.com/grafana/grafana-foundation-sdk/go/cog"
 	"github.com/grafana/grafana-foundation-sdk/go/common"
 	"github.com/grafana/grafana-foundation-sdk/go/dashboard"
 	"github.com/grafana/grafana-foundation-sdk/go/logs"
@@ -27,7 +26,7 @@ const (
 )
 
 func lokiRef() common.DataSourceRef {
-	return common.DataSourceRef{Type: cog.ToPtr("loki"), Uid: cog.ToPtr("${" + lokiDatasourceVar + "}")}
+	return common.DataSourceRef{Type: new("loki"), Uid: new("${" + lokiDatasourceVar + "}")}
 }
 
 func logQuery(expr, legend string) *loki.DataqueryBuilder {
@@ -50,14 +49,14 @@ func logsDashboard() *dashboard.DashboardBuilder {
 		WithVariable(dashboard.NewQueryVariableBuilder("service").
 			Label("Service").
 			Datasource(lokiRef()).
-			Query(dashboard.StringOrMap{String: cog.ToPtr("label_values(service_name)")}).
+			Query(dashboard.StringOrMap{String: new("label_values(service_name)")}).
 			Regex("/^vmafx-.*/").
 			Refresh(dashboard.VariableRefreshOnTimeRangeChanged).
 			Multi(true).
 			IncludeAll(true).
 			AllValue("vmafx-.+")).
 		WithVariable(dashboard.NewTextBoxVariableBuilder("trace_id").Label("Trace ID").
-			DefaultValue(dashboard.StringOrMap{String: cog.ToPtr("")})).
+			DefaultValue(dashboard.StringOrMap{String: new("")})).
 		Link(dashboard.NewDashboardLinkBuilder("VMAFx dashboards").
 			Type(dashboard.DashboardLinkTypeDashboards).Tags([]string{tag}).AsDropdown(true).IncludeVars(true).KeepTime(true))
 	return withRows(b, []row{
