@@ -430,52 +430,56 @@ static VmafxStatus submit_sized(VmafxContext *context, const VmafxFrameDesc *des
 }
 
 /* A 64x64 reference with a 32x32 and a 48x48 distorted frame. */
-typedef struct DisplaySizes {
+typedef struct DisplayFrames {
     VmafxFrameDesc ref;
     VmafxFrameDesc dist;
     VmafxFrameDesc dist48;
     uint8_t ref_data[6144];
     uint8_t dist_data[1536];
     uint8_t dist48_data[3456];
-} DisplaySizes;
+} DisplayFrames;
 
-static void display_sizes_fill(DisplaySizes *sizes)
+static void display_frames_fill(DisplayFrames *f)
 {
-    sizes->ref = vt_desc(VMAFX_PIXEL_FORMAT_YUV420P, 8, 64, 64);
-    sizes->dist = vt_desc(VMAFX_PIXEL_FORMAT_YUV420P, 8, 32, 32);
-    sizes->dist48 = vt_desc(VMAFX_PIXEL_FORMAT_YUV420P, 8, 48, 48);
-    vt_fill(&sizes->ref, sizes->ref_data, 0);
-    vt_fill(&sizes->dist, sizes->dist_data, 1);
-    vt_fill(&sizes->dist48, sizes->dist48_data, 2);
+    f->ref = vt_desc(VMAFX_PIXEL_FORMAT_YUV420P, 8, 64, 64);
+    f->dist = vt_desc(VMAFX_PIXEL_FORMAT_YUV420P, 8, 32, 32);
+    f->dist48 = vt_desc(VMAFX_PIXEL_FORMAT_YUV420P, 8, 48, 48);
+    vt_fill(&f->ref, f->ref_data, 0);
+    vt_fill(&f->dist, f->dist_data, 1);
+    vt_fill(&f->dist48, f->dist48_data, 2);
 }
 
 #ifndef HAVE_ZIMG
 /* The scaling is a zimg conversion; without zimg the engine refuses it. */
-#define DISPLAY_SIZES_RELEASED 2u
-static char *display_sizes_submit(VmafxContext *context, DisplaySizes *sizes, unsigned *released)
+static char *display_scaling_checks(VmafxContext *context, DisplayFrames *f)
 {
+    unsigned released = 0;
     VmafxError *error = NULL;
     mu_assert("without zimg the scaling is refused",
-              submit_sized(context, &sizes->ref, sizes->ref_data, &sizes->dist, sizes->dist_data, 0,
-                           released, &error) == VMAFX_E_NOTSUP &&
+              submit_sized(context, &f->ref, f->ref_data, &f->dist, f->dist_data, 0, &released,
+                           &error) == VMAFX_E_NOTSUP &&
                   vt_failed(&error, VMAFX_E_NOTSUP, "index", VMAFX_SUBJECT_FRAME));
+    mu_assert("destroy", vmafx_context_destroy(context, NULL) == VMAFX_OK);
+    mu_assert("both frames released", released == 2u);
     return NULL;
 }
 #else
-#define DISPLAY_SIZES_RELEASED 6u
-static char *display_sizes_submit(VmafxContext *context, DisplaySizes *sizes, unsigned *released)
+static char *display_scaling_checks(VmafxContext *context, DisplayFrames *f)
 {
+    unsigned released = 0;
     VmafxError *error = NULL;
     mu_assert("submit 0 (64x64 ref, 32x32 dist)",
-              submit_sized(context, &sizes->ref, sizes->ref_data, &sizes->dist, sizes->dist_data, 0,
-                           released, NULL) == VMAFX_OK);
-    mu_assert("submit 1 (same sizes)",
-              submit_sized(context, &sizes->ref, sizes->ref_data, &sizes->dist, sizes->dist_data, 1,
-                           released, NULL) == VMAFX_OK);
+              submit_sized(context, &f->ref, f->ref_data, &f->dist, f->dist_data, 0, &released,
+                           NULL) == VMAFX_OK);
+    mu_assert("submit 1 (same sizes)", submit_sized(context, &f->ref, f->ref_data, &f->dist,
+                                                    f->dist_data, 1, &released, NULL) == VMAFX_OK);
     mu_assert("submit 2 (48x48 dist differs from first)",
-              submit_sized(context, &sizes->ref, sizes->ref_data, &sizes->dist48,
-                           sizes->dist48_data, 2, released, &error) == VMAFX_E_INVALID &&
+              submit_sized(context, &f->ref, f->ref_data, &f->dist48, f->dist48_data, 2, &released,
+                           &error) == VMAFX_E_INVALID &&
                   vt_failed(&error, VMAFX_E_INVALID, "distorted", VMAFX_SUBJECT_FRAME));
+
+    mu_assert("destroy", vmafx_context_destroy(context, NULL) == VMAFX_OK);
+    mu_assert("every frame released", released == 6u);
     return NULL;
 }
 #endif
@@ -484,13 +488,9 @@ static char *test_submit_display_scales_different_sizes(void)
 {
     VmafxContext *context = display_context(DISPLAY_MODEL_FILE);
     mu_assert("context", context != NULL);
-    DisplaySizes sizes;
-    display_sizes_fill(&sizes);
-    unsigned released = 0;
-    mu_assert_msg(display_sizes_submit(context, &sizes, &released));
-    mu_assert("destroy", vmafx_context_destroy(context, NULL) == VMAFX_OK);
-    mu_assert("every frame released", released == DISPLAY_SIZES_RELEASED);
-    return NULL;
+    DisplayFrames frames;
+    display_frames_fill(&frames);
+    return display_scaling_checks(context, &frames);
 }
 
 /* ---- Retention (ADR-1478) -------------------------------------------------------------------- */

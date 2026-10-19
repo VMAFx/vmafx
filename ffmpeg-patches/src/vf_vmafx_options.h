@@ -22,8 +22,8 @@
  * filter (libavfilter/vf_vmafx.c), after libavutil/opt.h.
  */
 
-#ifndef VMAFX_VF_VMAFX_OPTIONS_H
-#define VMAFX_VF_VMAFX_OPTIONS_H
+#ifndef AVFILTER_VMAFX_OPTIONS_H
+#define AVFILTER_VMAFX_OPTIONS_H
 
 #include <float.h>
 #include <limits.h>
@@ -149,4 +149,4 @@
 #define VMAFX_OPT_IMPORT_MODE_VALUES {"auto", "device", "host"}
 // clang-format on
 
-#endif /* VMAFX_VF_VMAFX_OPTIONS_H */
+#endif /* AVFILTER_VMAFX_OPTIONS_H */
