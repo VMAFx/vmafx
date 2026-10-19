@@ -2952,7 +2952,7 @@ index 0000000000000000000000000000000000000000..b6a5037ba1ec53b6c764268c1931cf5a
 +};
 diff --git a/libavfilter/vf_vmafx_options.h b/libavfilter/vf_vmafx_options.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..b762bd0dab323b55fbae41c379478b4088d3b25b
+index 0000000000000000000000000000000000000000..93f6bf7dffce26dcc74b6b10fa6a8bf8c90e7c50
 --- /dev/null
 +++ b/libavfilter/vf_vmafx_options.h
 @@ -0,0 +1,152 @@
@@ -2980,8 +2980,8 @@ index 0000000000000000000000000000000000000000..b762bd0dab323b55fbae41c379478b40
 + * filter (libavfilter/vf_vmafx.c), after libavutil/opt.h.
 + */
 +
-+#ifndef VMAFX_VF_VMAFX_OPTIONS_H
-+#define VMAFX_VF_VMAFX_OPTIONS_H
++#ifndef AVFILTER_VMAFX_OPTIONS_H
++#define AVFILTER_VMAFX_OPTIONS_H
 +
 +#include <float.h>
 +#include <limits.h>
@@ -3107,4 +3107,4 @@ index 0000000000000000000000000000000000000000..b762bd0dab323b55fbae41c379478b40
 +#define VMAFX_OPT_IMPORT_MODE_VALUES {"auto", "device", "host"}
 +// clang-format on
 +
-+#endif /* VMAFX_VF_VMAFX_OPTIONS_H */
++#endif /* AVFILTER_VMAFX_OPTIONS_H */
