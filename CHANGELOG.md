@@ -1404,6 +1404,12 @@
   update brings ruff 0.17.0, semgrep 1.180.0, tox 4.65.4 and onnxruntime 1.31.0.
 
 
+- **`PRE_MIGRATION_EPIC.md` follows its tracked issues.** The five task
+  checkboxes now link issues #1444 to #1448 and show their state (four closed
+  on 2026-10-07, task 3 open in #1446), and every `Depends-On` names the real
+  issue instead of the placeholders `#1` to `#4`.
+
+
 - **Tracked text names no development host.** Measurements and examples in the
   documentation, tests and comments now say "a reference workstation" instead
   of a machine's host name, use placeholders (`<nvidia-bdf>`, `<arc-bdf>`) or
