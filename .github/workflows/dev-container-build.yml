@@ -102,8 +102,7 @@ jobs:
     # comes out of must not be allowed to stop building silently. The workflow
     # always reports its gate; the planner selects this work for container inputs.
     name: Dev Container Build work
-    # Dated fallback (ADR-3251), ends 2026-10-25: .config/lint-exceptions.d/hosted-runner-label.toml
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     # GPU SDK downloads (CUDA keyring, oneAPI, ROCm) + multi-stage build can
     # take up to 45 min on a cold runner, and the release rehearsal adds a
     # CPU-only release compile; set a generous ceiling.
@@ -184,6 +183,12 @@ jobs:
       # `build-artifacts` (supply-chain.yml, ADR-1346), which builds the
       # `release-build` stage; the release rehearsal below builds that stage
       # too.
+      # The ubuntu-26.04 image leaves too little root disk for this build
+      # (`No space left on device`, master run 38153818052); the preinstalled
+      # SDKs no step uses make room for it.
+      - name: Free runner disk for the image build
+        run: bash scripts/ci/free-runner-disk.sh
+
       - name: Build dev container (up to libvmaf-build stage)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

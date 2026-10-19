@@ -42,9 +42,7 @@ script comment lines not read.
 - Fallback entry keys: `path`, `job`, `label`, `reason`, `expires`. One entry
   per job of workflow file; same file + job twice = duplicate (`PART_KEYS`
   in `scripts/ci/lint_exceptions.py`, this rule only).
-- Fallbacks today, label `ubuntu-24.04`, end 2026-10-25:
-  `dev-container-build-work` (`dev-container-build.yml`): disk full on 26.04,
-  row `T-CI-DEV-CONTAINER-DISK-UBUNTU-2604-2026-10-11`; `ffmpeg-work` +
+- Fallbacks today, label `ubuntu-24.04`, end 2026-10-29: `ffmpeg-work` +
   `ffmpeg-sycl-work` (`ffmpeg-integration.yml`): FFmpeg source warnings with
   26.04 gcc, row `T-CI-FFMPEG-WARNINGS-UBUNTU-2604-2026-10-11`.
 - Job fixed on 26.04: label back + entry out, same PR. Stale entry fails check.

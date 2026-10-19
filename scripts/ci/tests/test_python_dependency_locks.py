@@ -1357,6 +1357,43 @@ jobs:
         self.assertEqual(len(findings), 1)
         self.assertIn("consumes repo-local editable target '.'", findings[0])
 
+    def test_precheckout_non_pip_dash_c_accepted(self) -> None:
+        # -c is jq's and bash's own flag, not a pip constraint file.
+        text = """
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Compact JSON
+        run: echo "$PAYLOAD" | jq -c . > out.json
+      - name: Shell
+        run: bash -c "echo ok" && grep -c x -r .
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+"""
+        findings = self.checker.scan_workflow_checkout_ordering(
+            Path(".github/workflows/test.yml"), text, root=ROOT
+        )
+        self.assertEqual(findings, [])
+
+    def test_precheckout_pip_tool_constraint_rejected(self) -> None:
+        # A pip-like tool other than pip install still reads its -r / -c file.
+        text = """
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sync
+        run: echo start && uv pip sync -c requirements/locks/build.txt requirements/locks/build.txt
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+"""
+        findings = self.checker.scan_workflow_checkout_ordering(
+            Path(".github/workflows/test.yml"), text, root=ROOT
+        )
+        self.assertEqual(len(findings), 1)
+        self.assertIn(
+            "consumes repo-local requirements file 'requirements/locks/build.txt'", findings[0]
+        )
+
     def test_precheckout_local_action_rejected(self) -> None:
         text = """
 jobs:
