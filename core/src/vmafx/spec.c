@@ -65,12 +65,12 @@ static char *spec_split(char **s, char sep)
     if (!token) {
         return NULL;
     }
-    for (size_t i = 0; i < SPEC_MAX_BYTES && token[i] != '\0'; i++) {
-        if (token[i] == '\\' && spec_escapable(token[i + 1u])) {
-            i++;
-            continue;
-        }
-        if (token[i] == sep) {
+    size_t step = 1u;
+    for (size_t i = 0; i < SPEC_MAX_BYTES && token[i] != '\0'; i += step) {
+        /* An escape pair is stepped over whole; its second byte is never a
+         * separator. */
+        step = (token[i] == '\\' && spec_escapable(token[i + 1u])) ? 2u : 1u;
+        if (step == 1u && token[i] == sep) {
             token[i] = '\0';
             *s = token + i + 1u;
             return token;
@@ -87,11 +87,11 @@ static void spec_unescape(char *s)
         return;
     }
     char *w = s;
-    for (size_t r = 0; r < SPEC_MAX_BYTES && s[r] != '\0'; r++) {
-        if (s[r] == '\\' && spec_escapable(s[r + 1u])) {
-            r++;
-        }
-        *w = s[r];
+    size_t step = 1u;
+    for (size_t r = 0; r < SPEC_MAX_BYTES && s[r] != '\0'; r += step) {
+        /* An escape pair writes its second byte only. */
+        step = (s[r] == '\\' && spec_escapable(s[r + 1u])) ? 2u : 1u;
+        *w = s[r + step - 1u];
         w++;
     }
     *w = '\0';
