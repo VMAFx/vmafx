@@ -988,7 +988,8 @@ static char *test_ptlr_one(int yuv_matrix, unsigned bpc, unsigned uw_div, unsign
      * (compiled without -mfma) is not guaranteed to be correctly
      * single-rounded, so scalar-vs-AVX2 / scalar-vs-AVX-512
      * bit-exactness fails on Windows MinGW64 CI even after the
-     * ADR-0891 FMA unification. Skip the whole test there for now;
+     * ADR-0891 FMA unification. Skip the case there (exit 77, meson
+     * SKIP; tracked in VMAFx/vmafx issue 2886).
      * Linux/macOS libm fmaf() is correctly rounded and the test runs
      * fine on those hosts. Mirrors the existing skip in
      * core/test/test_ms_ssim_decimate.c (see TODO(ms-ssim-mingw)).
@@ -1000,6 +1001,7 @@ static char *test_ptlr_one(int yuv_matrix, unsigned bpc, unsigned uw_div, unsign
     (void)uh_div;
     (void)fprintf(stderr, "skipping: Windows libm fmaf not bit-exact with hw FMA "
                           "(see TODO(ssimulacra2-ptlr-mingw))\n");
+    mu_skipped = 1;
     return NULL;
 #else
     return run_ptlr_case(yuv_matrix, bpc, uw_div, uh_div);
