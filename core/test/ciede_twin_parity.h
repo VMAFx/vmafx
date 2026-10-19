@@ -214,7 +214,7 @@ static inline mu_message_t ciede_twin_odd_depths(const CiedeTwin *twin)
 {
     static const unsigned depths[] = {9u, 11u, 13u, 14u, 15u};
     for (size_t k = 0; k < sizeof(depths) / sizeof(depths[0]); k++) {
-        const mu_message_t msg = ciede_twin_bit_depth(twin, depths[k]);
+        mu_message_t msg = ciede_twin_bit_depth(twin, depths[k]);
         if (msg) {
             return msg;
         }
