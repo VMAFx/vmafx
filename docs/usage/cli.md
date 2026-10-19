@@ -64,6 +64,10 @@ list from the same source.
 | `--distorted` | `-d` | string | | Distorted video, in the same form as the reference. |
 | `--width` | `-w` | uint >= 1 | | Width of raw .yuv input in pixels. |
 | `--height` | `-h` | uint >= 1 | | Height of raw .yuv input in pixels. |
+| `--width_ref` | | uint >= 1 | | Width of the raw .yuv reference in pixels, if it differs from --width. Only models that scale their inputs accept different sizes. |
+| `--width_dist` | | uint >= 1 | | Width of the raw .yuv distorted video in pixels, if it differs from --width. Only models that scale their inputs accept different sizes. |
+| `--height_ref` | | uint >= 1 | | Height of the raw .yuv reference in pixels, if it differs from --height. Only models that scale their inputs accept different sizes. |
+| `--height_dist` | | uint >= 1 | | Height of the raw .yuv distorted video in pixels, if it differs from --height. Only models that scale their inputs accept different sizes. |
 | `--pixel_format` | `-p` | `400` \| `420` \| `422` \| `444` \| `nv12` \| `nv16` \| `nv24` \| `p010` \| `p016` \| `p210` \| `p216` \| `p410` \| `p416` \| `yuyv422` \| `uyvy422` \| `v210` \| `y210` \| `y212` \| `xv30` \| `xv36` \| `vuyx` \| `ayuv` \| `yuv444p16msb` \| `rgb` \| `rgba` \| `bgra` | | Layout of raw .yuv input: 400 (luma only), 420, 422 or 444 planar, or a layout of the input format table (semi-planar, packed, or RGB converted to Y'CbCr with the rgb_* statement, ADR-2145, ADR-2146). |
 | `--bitdepth` | `-b` | uint 8..16 | | Bits per sample of raw .yuv input, 8 to 16 (implied by a layout that fixes it). |
 | `--check-sample-range`, `--check_sample_range` | | bool | `false` | Refuse a frame with a sample above 2^bpc - 1 and name the plane, row, column and value (ADR-1918). |
@@ -133,6 +137,10 @@ list from the same source.
 | `--height` | `-h` | unsigned | **yes for `.yuv`** | Ignored for `.y4m`. |
 | `--pixel_format` | `-p` | `400` \| `420` \| `422` \| `444`, or a layout name | **yes for `.yuv`** | 420 covers the overwhelming majority of streamable content; `400` is luma only. A layout name reads a raw file in that layout, see [Raw input layouts](#raw-input-layouts). |
 | `--bitdepth` | `-b` | `8` to `16` | **yes for `.yuv`**, implied by a layout that fixes it | 10 and 12 bit require a 10-/12-bit aware model (e.g. `vmaf_b_v0.6.3` for banding sensitivity). Some extractors take only some depths: `psnr` every depth from 8 to 16, `float_psnr` and `ciede` 8, 10, 12 and 16, `psnr_hvs` up to 12. |
+| `--width_ref` | | unsigned | no | Reference width in pixels (defaults to `--width`). |
+| `--height_ref` | | unsigned | no | Reference height in pixels (defaults to `--height`). |
+| `--width_dist` | | unsigned | no | Distorted video width in pixels (defaults to `--width`). |
+| `--height_dist` | | unsigned | no | Distorted video height in pixels (defaults to `--height`). |
 | `--check-sample-range` | | none | no | Refuse a frame with a sample above $2^{\mathrm{bitdepth}} - 1$ (for example 1024 in a 10-bit `.yuv`) and stop with a non-zero exit status; the message names the picture, plane, row, column and value. Off by default. Underscore alias `--check_sample_range`. See [Sample range](../api/sample-range.md). |
 | `--rgb_matrix` | | `bt601` \| `bt709` \| `bt2020ncl` | **yes for `rgb`, `rgba`, `bgra`** | Y'CbCr matrix of the conversion; no default. |
 | `--rgb_range` | | `limited` \| `full` | **yes for RGB layouts** | Range of the R'G'B' samples; no default. |
@@ -142,6 +150,14 @@ list from the same source.
 If any of `--width`, `--height`, `--pixel_format`, `--bitdepth` is supplied,
 the input is treated as raw YUV and **all four** become mandatory. `vmaf` reads
 only `.y4m` and `.yuv`; decode other containers first.
+
+When raw `.yuv` inputs have different dimensions, use `--width_ref`,
+`--height_ref`, `--width_dist`, and `--height_dist` to set per-input geometries.
+Each per-input size flag defaults to `--width` or `--height` when omitted.
+Inputs of different sizes require a model declaring
+`conversion_target.resolution.display` (see
+[Model-declared conversion target](../models/v1.md#model-declared-conversion-target));
+without display scaling, mismatched dimensions are refused.
 
 A raw `.yuv` file of 10 or 12 bits stores each sample in 16 bits, so it can
 hold values above $2^{\mathrm{bitdepth}} - 1$. Such input is invalid: the CPU

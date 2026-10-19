@@ -330,25 +330,57 @@ static char *test_submit_index_refusals(void)
     return with_clip(submit_index_refusals);
 }
 
-static char *submit_geometry_named(Clip *clip)
+/* The pair itself: another format is refused, another size reaches the engine. */
+static char *geometry_pair_named(Clip *clip)
+{
+    VmafxContext *context = vt_psnr_context();
+    const VmafxFrameDesc deep = vt_desc(VMAFX_PIXEL_FORMAT_YUV420P, 10, 64, 64);
+    const VmafxFrameDesc small = vt_desc(VMAFX_PIXEL_FORMAT_YUV420P, 8, 64, 64);
+    VmafxFrame *other = NULL;
+    mu_assert("deep", vmafx_frame_create_host(NULL, &deep, &other, NULL) == VMAFX_OK);
+    VmafxError *error = NULL;
+    mu_assert("pair format differs",
+              vmafx_submit(context, clip_frame(clip, true, 0), other, 0, &error) ==
+                      VMAFX_E_INVALID &&
+                  vt_failed(&error, VMAFX_E_INVALID, "distorted", VMAFX_SUBJECT_FRAME));
+    /* Another size passes the submit (Netflix/vmaf 94f3ff0dd8); the engine
+     * refuses it when no model scales its inputs. */
+    mu_assert("small", vmafx_frame_create_host(NULL, &small, &other, NULL) == VMAFX_OK);
+    mu_assert("pair size differs, no scaling",
+              vmafx_submit(context, clip_frame(clip, true, 0), other, 0, &error) ==
+                      VMAFX_E_INVALID &&
+                  vt_failed(&error, VMAFX_E_INVALID, "index", VMAFX_SUBJECT_FRAME));
+    mu_assert("destroy", vmafx_context_destroy(context, NULL) == VMAFX_OK);
+    return NULL;
+}
+
+/* Later pairs: each side must keep the geometry of the first frame. */
+static char *geometry_first_frame_named(Clip *clip)
 {
     VmafxContext *context = vt_psnr_context();
     const VmafxFrameDesc small = vt_desc(VMAFX_PIXEL_FORMAT_YUV420P, 8, 64, 64);
     VmafxFrame *other = NULL;
-    mu_assert("other", vmafx_frame_create_host(NULL, &small, &other, NULL) == VMAFX_OK);
     VmafxError *error = NULL;
-    mu_assert("pair differs",
-              vmafx_submit(context, clip_frame(clip, true, 0), other, 0, &error) ==
+    mu_assert("first", submit_index(context, clip, 0, 0, NULL) == VMAFX_OK);
+    mu_assert("small", vmafx_frame_create_host(NULL, &small, &other, NULL) == VMAFX_OK);
+    mu_assert("distorted differs from the first frame",
+              vmafx_submit(context, clip_frame(clip, true, 1), other, 1, &error) ==
                       VMAFX_E_INVALID &&
                   vt_failed(&error, VMAFX_E_INVALID, "distorted", VMAFX_SUBJECT_FRAME));
-    mu_assert("first", submit_index(context, clip, 0, 0, NULL) == VMAFX_OK);
-    mu_assert("other", vmafx_frame_create_host(NULL, &small, &other, NULL) == VMAFX_OK);
+    mu_assert("small", vmafx_frame_create_host(NULL, &small, &other, NULL) == VMAFX_OK);
     VmafxFrame *other2 = vmafx_frame_ref(other);
-    mu_assert("differs from the first frame",
-              vmafx_submit(context, other, other2, 1, &error) == VMAFX_E_INVALID &&
+    mu_assert("reference differs from the first frame",
+              vmafx_submit(context, other, other2, 2, &error) == VMAFX_E_INVALID &&
                   vt_failed(&error, VMAFX_E_INVALID, "reference", VMAFX_SUBJECT_FRAME));
     mu_assert("destroy", vmafx_context_destroy(context, NULL) == VMAFX_OK);
-    mu_assert("all released", clip->released == 3);
+    return NULL;
+}
+
+static char *submit_geometry_named(Clip *clip)
+{
+    mu_assert_msg(geometry_pair_named(clip));
+    mu_assert_msg(geometry_first_frame_named(clip));
+    mu_assert("all released", clip->released == 5);
     return NULL;
 }
 

@@ -226,11 +226,11 @@ VMAFX_EXPORT uint32_t vmafx_context_frame_retention(const VmafxContext *context)
 /**
  * Score frame `index` from `reference` and `distorted`. Consumes one reference of each frame on
  * every path, failures included (the same frame as both inputs needs two); a frame submitted to
- * several contexts needs one reference per submit and is never copied. Indices increase strictly
- * and every frame keeps the first frame's geometry. The distorted frame has the reference's
- * geometry, unless a model's `conversion_target` names a display resolution: the inputs may then
- * differ in size, each keeps its own first frame's geometry, and both are scaled to a common size
- * before scoring.
+ * several contexts needs one reference per submit and is never copied. Indices increase strictly;
+ * the distorted input may differ in size from the reference but keeps its pixel format and bit
+ * depth, and each input keeps its own first frame's geometry. Inputs of different sizes are scored
+ * only when a model's `conversion_target` names a display resolution, which scales both to a common
+ * size before scoring.
  * @since 0.1
  */
 VMAFX_EXPORT VmafxStatus vmafx_submit(VmafxContext *context, VmafxFrame *reference,

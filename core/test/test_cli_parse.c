@@ -1262,6 +1262,85 @@ static char *run_color_tests(void)
     return NULL;
 }
 
+/* Netflix/vmaf 94f3ff0dd8: --width_ref / --height_ref / --width_dist /
+ * --height_dist size each raw input and default to --width / --height. */
+static char *test_input_sizes_default_to_width_and_height(void)
+{
+    char *argv[] = {"vmaf", "-r", "ref.yuv", "-d",  "dis.yuv", "-w", "16",
+                    "-h",   "8",  "-p",      "420", "-b",      "8"};
+    const int argc = sizeof(argv) / sizeof(argv[0]);
+    CLISettings settings;
+    optind = 1;
+    cli_parse(argc, argv, &settings);
+    mu_assert("cli_parse: the reference size should default to -w/-h",
+              settings.width_ref == 16 && settings.height_ref == 8);
+    mu_assert("cli_parse: the distorted size should default to -w/-h",
+              settings.width_dist == 16 && settings.height_dist == 8);
+    mu_assert("cli_free must release every option dictionary", release_parsed(&settings) == 0);
+    return NULL;
+}
+
+static char *test_input_sizes_can_differ(void)
+{
+    char *argv[] = {"vmaf", "-r",           "ref.yuv", "-d",           "dis.yuv", "--width_ref",
+                    "32",   "--height_ref", "16",      "--width_dist", "16",      "--height_dist",
+                    "8",    "-p",           "420",     "-b",           "8"};
+    const int argc = sizeof(argv) / sizeof(argv[0]);
+    CLISettings settings;
+    optind = 1;
+    cli_parse(argc, argv, &settings);
+    mu_assert("cli_parse: the reference size should be parsed",
+              settings.width_ref == 32 && settings.height_ref == 16);
+    mu_assert("cli_parse: the distorted size should be parsed",
+              settings.width_dist == 16 && settings.height_dist == 8);
+    mu_assert("cli_free must release every option dictionary", release_parsed(&settings) == 0);
+    return NULL;
+}
+
+static char *test_input_size_overrides_one_input(void)
+{
+    char *argv[] = {"vmaf",         "-r", "ref.yuv",       "-d", "dis.yuv", "-w",  "32", "-h", "16",
+                    "--width_dist", "16", "--height_dist", "8",  "-p",      "420", "-b", "8"};
+    const int argc = sizeof(argv) / sizeof(argv[0]);
+    CLISettings settings;
+    optind = 1;
+    cli_parse(argc, argv, &settings);
+    mu_assert("cli_parse: the reference should keep -w/-h",
+              settings.width_ref == 32 && settings.height_ref == 16);
+    mu_assert("cli_parse: the distorted size should override -w/-h",
+              settings.width_dist == 16 && settings.height_dist == 8);
+    mu_assert("cli_free must release every option dictionary", release_parsed(&settings) == 0);
+    return NULL;
+}
+
+/* fork boundary case: 1x1 is the smallest size the options accept */
+static char *test_input_sizes_accept_one_pixel(void)
+{
+    char *argv[] = {"vmaf", "-r",           "ref.yuv", "-d",           "dis.yuv", "--width_ref",
+                    "1",    "--height_ref", "1",       "--width_dist", "1",       "--height_dist",
+                    "1",    "-p",           "444",     "-b",           "8"};
+    const int argc = sizeof(argv) / sizeof(argv[0]);
+    CLISettings settings;
+    optind = 1;
+    cli_parse(argc, argv, &settings);
+    mu_assert("cli_parse: 1x1 inputs should be accepted",
+              settings.width_ref == 1 && settings.height_ref == 1 && settings.width_dist == 1 &&
+                  settings.height_dist == 1);
+    mu_assert("cli_parse: --width/-h should stay unset",
+              settings.width == 0 && settings.height == 0);
+    mu_assert("cli_free must release every option dictionary", release_parsed(&settings) == 0);
+    return NULL;
+}
+
+static char *run_input_size_tests(void)
+{
+    mu_run_test(test_input_sizes_default_to_width_and_height);
+    mu_run_test(test_input_sizes_can_differ);
+    mu_run_test(test_input_size_overrides_one_input);
+    mu_run_test(test_input_sizes_accept_one_pixel);
+    return NULL;
+}
+
 char *run_tests(void)
 {
     char *result = run_aom_ctc_tests();
@@ -1289,6 +1368,9 @@ char *run_tests(void)
     if (result)
         return result;
     result = run_color_tests();
+    if (result)
+        return result;
+    result = run_input_size_tests();
     if (result)
         return result;
     return NULL;
