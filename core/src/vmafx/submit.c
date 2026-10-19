@@ -65,6 +65,11 @@ static bool same_geometry(const VmafxFrameDesc *a, const VmafxFrameDesc *b)
     return a->pix_fmt == b->pix_fmt && a->bpc == b->bpc && a->w == b->w && a->h == b->h;
 }
 
+static bool same_format(const VmafxFrameDesc *a, const VmafxFrameDesc *b)
+{
+    return a->pix_fmt == b->pix_fmt && a->bpc == b->bpc;
+}
+
 static VmafxStatus geometry_failure(const VmafxReport *report, const char *subject,
                                     const VmafxFrameDesc *got, const VmafxFrameDesc *want,
                                     const char *want_name)
@@ -89,23 +94,23 @@ static VmafxStatus check_submit(const VmafxReport *report, const VmafxContext *c
         return VMAFX_FAIL(report, VMAFX_E_RANGE, 0, VMAFX_SUBJECT_FRAME, "index",
                           "frame index %llu exceeds %u", (unsigned long long)index, UINT_MAX);
     }
-    if (context->have_frame && index <= context->last_index) {
-        return VMAFX_FAIL(report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_FRAME, "index",
-                          "frame index %llu does not follow %llu; indices increase strictly",
-                          (unsigned long long)index, (unsigned long long)context->last_index);
-    }
-    /* Models that scale to a display resolution take inputs of different
-     * sizes; the engine's conversion checks the pair (Netflix/vmaf cf9a6ec51b). */
-    const bool scales = vmaf_engine_display_resolution(context->engine) != 0u;
-    if (!scales && !same_geometry(dist, ref)) {
+    if (!same_format(dist, ref)) {
         return geometry_failure(report, "distorted", dist, ref, "the reference");
     }
-    if (context->have_frame && !same_geometry(ref, &context->first_desc)) {
-        return geometry_failure(report, "reference", ref, &context->first_desc, "the first frame");
-    }
-    if (context->have_frame && !same_geometry(dist, &context->first_dist_desc)) {
-        return geometry_failure(report, "distorted", dist, &context->first_dist_desc,
-                                "the first distorted frame");
+    if (context->have_frame) {
+        if (index <= context->last_index) {
+            return VMAFX_FAIL(report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_FRAME, "index",
+                              "frame index %llu does not follow %llu; indices increase strictly",
+                              (unsigned long long)index, (unsigned long long)context->last_index);
+        }
+        if (!same_geometry(ref, &context->first_desc[0])) {
+            return geometry_failure(report, "reference", ref, &context->first_desc[0],
+                                    "the first frame");
+        }
+        if (!same_geometry(dist, &context->first_desc[1])) {
+            return geometry_failure(report, "distorted", dist, &context->first_desc[1],
+                                    "the first frame");
+        }
     }
     return VMAFX_OK;
 }
@@ -259,9 +264,10 @@ VmafxStatus vmafx_submit(VmafxContext *context, VmafxFrame *reference, VmafxFram
         drop_pictures(&ref, &dist);
         return status;
     }
+    assert(same_format(&desc[0], &desc[1]));
     if (!context->have_frame) {
-        context->first_desc = desc[0];
-        context->first_dist_desc = desc[1];
+        context->first_desc[0] = desc[0];
+        context->first_desc[1] = desc[1];
         context->have_frame = true;
     }
     context->last_index = index;

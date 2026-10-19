@@ -1019,6 +1019,16 @@ void parse_nflx_ctc(CLISettings *const settings, const char *const optarg, const
     usage(app, "bad nflx_ctc version \"%s\"", optarg);
 }
 
+[[nodiscard]] static unsigned parse_dimension(const char *const optarg, const int option,
+                                              const char *const option_name, const char *const app)
+{
+    const unsigned val = parse_unsigned(optarg, option, app);
+    if (val == 0) {
+        usage(app, "--%s must be > 0", option_name);
+    }
+    return val;
+}
+
 void handle_video_input_flag(const int o, const char *const optarg, const char *const app,
                              CLISettings *const settings)
 {
@@ -1030,11 +1040,27 @@ void handle_video_input_flag(const int o, const char *const optarg, const char *
         settings->path_dist = const_cast<char *>(optarg);
         break;
     case 'w':
-        settings->width = parse_unsigned(optarg, 'w', app);
+        settings->width = parse_dimension(optarg, 'w', "width", app);
         settings->use_yuv = true;
         break;
     case 'h':
-        settings->height = parse_unsigned(optarg, 'h', app);
+        settings->height = parse_dimension(optarg, 'h', "height", app);
+        settings->use_yuv = true;
+        break;
+    case ARG_WIDTH_REF:
+        settings->width_ref = parse_dimension(optarg, ARG_WIDTH_REF, "width_ref", app);
+        settings->use_yuv = true;
+        break;
+    case ARG_WIDTH_DIST:
+        settings->width_dist = parse_dimension(optarg, ARG_WIDTH_DIST, "width_dist", app);
+        settings->use_yuv = true;
+        break;
+    case ARG_HEIGHT_REF:
+        settings->height_ref = parse_dimension(optarg, ARG_HEIGHT_REF, "height_ref", app);
+        settings->use_yuv = true;
+        break;
+    case ARG_HEIGHT_DIST:
+        settings->height_dist = parse_dimension(optarg, ARG_HEIGHT_DIST, "height_dist", app);
         settings->use_yuv = true;
         break;
     case 'p':
@@ -1238,6 +1264,18 @@ void apply_backend_settings(const char *const app, CLISettings *const settings)
     }
 }
 
+static void default_yuv_sizes(CLISettings *const settings)
+{
+    if (settings->width_ref == 0)
+        settings->width_ref = settings->width;
+    if (settings->height_ref == 0)
+        settings->height_ref = settings->height;
+    if (settings->width_dist == 0)
+        settings->width_dist = settings->width;
+    if (settings->height_dist == 0)
+        settings->height_dist = settings->height;
+}
+
 /* A layout of the import table holds the bit depths of its row. */
 static void validate_layout_depth(const char *const app, const CLISettings *const settings)
 {
@@ -1283,21 +1321,17 @@ static void validate_rgb_statement(const char *const app, const CLISettings *con
     }
 }
 
-static void validate_yuv_settings(const char *const app, const CLISettings *const settings)
+static void validate_yuv_settings(const char *const app, CLISettings *const settings)
 {
     if (!settings->use_yuv) {
         return;
     }
-    if (settings->width == 0 && (settings->height || settings->pix_fmt || settings->bitdepth)) {
-        usage(app, "--width must be > 0");
-    }
-    if (settings->height == 0 && (settings->width || settings->pix_fmt || settings->bitdepth)) {
-        usage(app, "--height must be > 0");
-    }
-    if (!(settings->width && settings->height && settings->pix_fmt && settings->bitdepth)) {
+    default_yuv_sizes(settings);
+    if (!(settings->width_ref && settings->height_ref && settings->width_dist &&
+          settings->height_dist && settings->pix_fmt && settings->bitdepth)) {
         usage(app, "The following options are required for .yuv input:\n"
-                   "  --width/-w\n"
-                   "  --height/-h\n"
+                   "  --width/-w, or --width_ref and --width_dist\n"
+                   "  --height/-h, or --height_ref and --height_dist\n"
                    "  --pixel_format/-p\n"
                    "  --bitdepth/-b (implied by most layouts)\n");
     }
@@ -1456,6 +1490,10 @@ bool handle_primary_cli_opt(const int o, const char *const optarg, const char *c
     case 'd':
     case 'w':
     case 'h':
+    case ARG_WIDTH_REF:
+    case ARG_WIDTH_DIST:
+    case ARG_HEIGHT_REF:
+    case ARG_HEIGHT_DIST:
     case 'p':
     case 'b':
     case 'o':

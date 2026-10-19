@@ -31,7 +31,7 @@
 [api]
 name = "vmafx"
 schema = 2
-abi_version = "0.1.12"
+abi_version = "0.1.13"
 export_macro = "VMAFX_EXPORT"
 # Export / deprecation macros, VmafxStatus and the status codes live here.
 base_header = "vmafx/types.h"
@@ -1217,7 +1217,7 @@ name = "vmafx_submit"
 header = "vmafx/context.h"
 since = "0.1"
 returns = "status"
-doc = "Score frame `index` from `reference` and `distorted`. Consumes one reference of each frame on every path, failures included (the same frame as both inputs needs two); a frame submitted to several contexts needs one reference per submit and is never copied. Indices increase strictly and every frame keeps the first frame's geometry. The distorted frame has the reference's geometry, unless a model's `conversion_target` names a display resolution: the inputs may then differ in size, each keeps its own first frame's geometry, and both are scaled to a common size before scoring."
+doc = "Score frame `index` from `reference` and `distorted`. Consumes one reference of each frame on every path, failures included (the same frame as both inputs needs two); a frame submitted to several contexts needs one reference per submit and is never copied. Indices increase strictly; the distorted input may differ in size from the reference but keeps its pixel format and bit depth, and each input keeps its own first frame's geometry. Inputs of different sizes are scored only when a model's `conversion_target` names a display resolution, which scales both to a common size before scoring."
 params = [
   { name = "context", type = "VmafxContext", pass = "in" },
   { name = "reference", type = "VmafxFrame", pass = "in" },
@@ -4614,6 +4614,38 @@ mcp = "height"
 mcp_required = true
 proto = { field = 2 }
 argv = "core"
+
+[[option_groups.options]]
+name = "width_ref"
+type = "uint"
+range = [1]
+doc = "Width of the raw .yuv reference in pixels, if it differs from --width. Only models that scale their inputs accept different sizes."
+surfaces = ["cli"]
+cli = ["--width_ref"]
+
+[[option_groups.options]]
+name = "width_dist"
+type = "uint"
+range = [1]
+doc = "Width of the raw .yuv distorted video in pixels, if it differs from --width. Only models that scale their inputs accept different sizes."
+surfaces = ["cli"]
+cli = ["--width_dist"]
+
+[[option_groups.options]]
+name = "height_ref"
+type = "uint"
+range = [1]
+doc = "Height of the raw .yuv reference in pixels, if it differs from --height. Only models that scale their inputs accept different sizes."
+surfaces = ["cli"]
+cli = ["--height_ref"]
+
+[[option_groups.options]]
+name = "height_dist"
+type = "uint"
+range = [1]
+doc = "Height of the raw .yuv distorted video in pixels, if it differs from --height. Only models that scale their inputs accept different sizes."
+surfaces = ["cli"]
+cli = ["--height_dist"]
 
 [[option_groups.options]]
 name = "pixel_format"
