@@ -8,6 +8,193 @@ search:
 # Rebase notes
 
 <!-- rebase-notes:fragments:begin (rendered from docs/rebase-notes.d/; do not edit) -->
+## CodeQL C/C++ build pinned to C++23 (2026-10-19)
+
+`fix/codeql-cli-notes`, [ADR-3355](adr/3355-codeql-cpp-extractor-cxx23.md). The `codeql-cpp`
+job of `.github/workflows/security-scans.yml` passes `-Dcpp_std=c++23` to `meson setup`; a
+sync or rebase of that workflow keeps the option, and
+`scripts/ci/test_security_workflow_contract.py` fails without it. Move it to `c++26` only when
+CodeQL lists C++26 as supported.
+
+## Upstream port 94f3ff0dd8: reference and distorted inputs of different sizes (2026-10-19)
+
+Port of Netflix/vmaf `94f3ff0dd8`. The CLI takes `--width_ref` / `--height_ref` and `--width_dist` / `--height_dist` next to `--width` / `--height` (`core/tools/cli_parse.cpp`, `default_yuv_sizes()`), and `core/tools/vmaf.cpp` opens each raw input with its own size. The options are generated from `core/api/vmafx.toml`; on a conflict in `core/tools/cli_options.gen.inc` or the first table of `docs/usage/cli.md` take either side and run `python3 scripts/codegen/vmafx-api.py --write`. Fork-only: `vmafx_submit()` (`core/src/vmafx/submit.c`) checks format and bit depth across the pair and each input against its own first frame (`first_desc[2]`), and leaves the size check to the engine. `test_cli_input_sizes`, `test_cli_parse` and `test_vmafx_frame` guard it.
+
+## Praetor 4ae64cb2 and clang-tidy data paths (2026-10-19)
+
+`.standards.yaml` declares `scripts/ci/exact_twins.d` under
+`clang_tidy.data_paths`; `scripts/ci/praetor_tidy_coverage.py` writes no
+exception for a unit below `DATA_PREFIX`. A new parity-gate fragment needs no
+exception entry. The exceptions block between the generated markers is still
+written only by `praetor_tidy_coverage.py --write` from
+`.config/lint-exceptions.d/`; the `release-token` entry lives in
+`.config/lint-exceptions.d/release-token.toml` and expires on 2026-10-29.
+No score, C API or build change.
+
+## Upstream port cf9a6ec51b: picture size check after display-resolution scaling (2026-10-19)
+
+Port of Netflix/vmaf `cf9a6ec51b`. `core/src/libvmaf.c` (upstream-mirror): `validate_pic_params()` calls `validate_pic_size()`, which logs the reference and distorted sizes before returning `-EINVAL`; the check runs after a model's display resolution has scaled different-sized inputs (`core/src/conversion_policy.c`, `conversion_context.c`). A sync takes upstream's side of the size check's meaning and keeps the fork's helper and its log text. Fork-only: the per-input geometry in `core/src/vmafx/submit.c`, which leaves the size check to the engine since the port of `94f3ff0dd8`. `test_conversion_policy`, `test_read_pictures_convert` and `test_vmafx_frame` guard it.
+
+## Daily Netflix/vmaf unported commit watcher (2026-10-19)
+
+- `.github/workflows/upstream-watcher.yml`: added `netflix-unported` job running
+  daily at 08:00 UTC. It polls upstream Netflix/vmaf `master` against the
+  recorded parity head in `docs/development/known-upstream-bugs.md`, filtering
+  out commits recorded in `scripts/upstream-watcher/netflix-dispositions.tsv`.
+- `scripts/upstream-watcher/check_netflix_unported.py`: CLI driver that resolves
+  the parity pin via `scripts/ci/upstream_parity_pin.py`, lists unported
+  non-merge commits in chronological order, strips trailing PR suffixes, and
+  returns JSON or plain text.
+- `scripts/upstream-watcher/netflix-dispositions.tsv`: tracked ledger recording
+  the disposition (`ported`, `in-fork`, or `not-applicable`) and reference
+  for upstream commits.
+
+## Windows spec test and vmafx filter header guard (2026-10-19)
+
+- `scripts/codegen/vmafx_api/emit_ffmpeg_options.py` writes the guard
+  `AVFILTER_VMAFX_OPTIONS_H`, the name FFmpeg's `fate-source`
+  check derives from `libavfilter/vf_vmafx_options.h`. Regenerate
+  `ffmpeg-patches/src/vf_vmafx_options.h` and refresh patch `0023` with
+  `python3 scripts/ci/ffmpeg_patch_stack.py --refresh` rather than merging by
+  hand; `HeaderGuards` in `scripts/ci/test_ffmpeg_patch_stack.py` checks every
+  header a patch adds.
+- `core/test/test_vmafx_spec.c` escapes `VMAFX_TEST_MODEL_DIR` with
+  `spec_escape()` before using it in a spec. Fork-only, nothing upstream.
+
+## Netflix/vmaf ca2a2a111d: scale same-size inputs to a model's display resolution (2026-10-19)
+
+- `core/src/conversion_policy.c`: `vmaf_conversion_policy_scale()` is
+  upstream's scaling arithmetic; `picture_matches()` keeps the fork's
+  `(pic, pic_color, target)` signature (ADR-1822) and compares the pinned size.
+  **On sync**: take upstream's arithmetic, keep the colour argument.
+- `core/src/conversion_context.{c,h}`: the state carries `display_resolution`;
+  upstream keeps it in the convert struct of `libvmaf.c`. **On sync**: port
+  changes to that struct here, not into `core/src/libvmaf.c`.
+- `core/src/read_json_model.cpp` and `read_json_model.c` both parse
+  `resolution`. **On sync**: change both together.
+
+## Input format table, RGB conversion and raw CLI layouts (2026-10-07)
+
+`rc4/api-wp13-input-formats` ([ADR-2145](adr/2145-vmafx-input-format-table.md), [ADR-2146](adr/2146-vmafx-rgb-input-explicit-matrix.md)). Fork-only: the import layout table is generated (`core/src/vmafx/import_layouts_gen.h`, never edit; on a conflict take either side and run `python3 scripts/codegen/vmafx-api.py --write`), `import_layout.h`, `rgb_math.h`, `rgb_convert.{h,c}`, the generated coefficient table, and the CLI's raw reader. Upstream-mirror files touched: `core/tools/yuv_input.c`, `y4m_input.c`, `vidinput.{c,h}`, `cli_parse.{cpp,h}` and `vmaf.cpp` (the raw layouts, `PF_400`, the `--rgb_*` flags); a sync keeps the fork's `raw_input_open()` meaning of `pix_fmt` (1 to 4 planar, from 16 a `VmafxPixelFormat` layout) and the table-driven y4m `420pN` / `422pN` / `444pN` / `monoN` setup. `core/src/feature/integer_psnr.c`: `extract()` takes every depth 8 to 16. When the stack rebases onto master, `--rgb_*` should be re-pointed at master's `--color_*_ref/_dist` input colorimetry (its `VmafColor` has no BT.601); the statement fields of `VmafxFrameImport` stay.
+
+## The `vmafx` filter's pairing contract (2026-10-07)
+## The `vmafx` filter's pairing contract (`rc4/api-wp15-ffmpeg-audit`)
+
+RC4 WP15 ([ADR-2165](adr/2165-vmafx-filter-pairing-contract.md)) changes
+`ffmpeg-patches/src/vf_vmafx.c` (the source of patch `0021`, refreshed with
+`python3 scripts/ci/ffmpeg_patch_stack.py --refresh`), the `contract`
+subcommand of `ffmpeg-patches/test/vmafx_filter_check.py` and the section
+"Pairing the two inputs" of `docs/usage/ffmpeg.md`.
+
+Invariants a rebase keeps:
+
+- `vmafx_preinit()` and `vmafx_tune_preinit()` wrap the generated
+  `*_framesync_preinit()` and set `eof_action=pass` and `repeatlast=0`; FFmpeg
+  applies user options after `preinit`, so a user's `eof_action=repeat:repeatlast=1`
+  still wins. An upstream change to `FRAMESYNC_AUXILIARY_FUNCS` keeps the wrapper.
+- A main frame without a reference frame goes through `send_or_hold()` with
+  `VMAFX_NOT_SCORED`, so it stays in order behind frames `metadata=1` holds;
+  the unscored count is logged at uninit.
+- `finish_stream()` and `uninit()` call `vmafx_flush()` only when a pair was
+  submitted (`frame_cnt`), and `write_report()` writes nothing otherwise.
+- `report_path_check()` runs at `init()`; the library still writes the report.
+
+No score, public C API or option change beyond the framesync defaults. No
+rebase impact on the `libvmaf*` patches.
+
+## VMAFx FFmpeg filters and the loopback-decoder hwaccel patch (2026-10-18)
+
+WP9 ([ADR-2125](adr/2125-vmafx-ffmpeg-gstreamer-filters.md)) adds four
+patches to the FFmpeg series: `ffmpeg-patches/0021-add-vmafx-filter.patch`
+(`vmafx` and `vmafx_tune`), `0022-add-vmafx-pre-filter.patch` (`vmafx_pre`),
+`0023-add-vmafx-profile-cli-glue.patch` (`-vmafx-profile`) and
+`0024-fftools-loopback-decoder-hwaccel.patch` (`-hwaccel*` before `-dec`).
+Files added: the sources under `ffmpeg-patches/src/` (`vf_vmafx.c`,
+`vf_vmafx_pre.c`, `vf_vmafx_options.h`, `ffmpeg_dec_hwaccel.c`), the check
+`ffmpeg-patches/test/vmafx_filter_check.py`, the GStreamer element under
+`gstreamer/`, and `core/src/vmafx/spec.c` (`vmafx_model_load_spec()` and
+`vmafx_context_use_feature_spec()`).
+
+Invariants a rebase keeps:
+
+- The sources under `ffmpeg-patches/src/` are the truth. Each patch carries a
+  copy; `python3 scripts/ci/ffmpeg_patch_stack.py --refresh` amends the owning
+  patch from the source, and `--check` replays the series. Never edit the
+  copy inside a patch by hand.
+- `ffmpeg-patches/src/vf_vmafx_options.h` and the option table in
+  `docs/usage/ffmpeg.md` are generated from `core/api/vmafx.toml`
+  (`scripts/codegen/vmafx-api.py --write`); on a conflict take either side and
+  regenerate.
+- Host frames are wrapped on the CPU device (`host_wrap()` calls
+  `vmafx_frame_wrap_host()` with no device, in `vf_vmafx.c`), whatever device
+  the context scores on; software frames are wrapped without a copy.
+- The refusals stay refusals: a frame the library cannot import fails the graph
+  naming the backend, and a fixed-size frame pool smaller than
+  `vmafx_context_max_in_flight() + 1` is refused before any frame. A
+  silent fallback to the host is a regression.
+- Vulkan frames (`vk_*()` in `vf_vmafx.c`, under `CONFIG_VULKAN`) are copied
+  on the GPU into the filter's own pool of exportable per-plane frames and
+  imported on the device at the Vulkan device's PCI location (request
+  WP3-vulkan-1, ADR-2152). The filter loads its Vulkan functions through the
+  device's `get_proc_addr` and fetches its queue with `vkGetDeviceQueue2()`
+  and the device's `queue_flags`; FFmpeg's `vulkan.o` helpers are not linked,
+  so the filter's objects stay buildable without `--enable-vulkan`.
+- A device frame returns to its producer only after its release fence: the
+  CUDA release event, the copies' timelines on CUDA, or a HOST release fence
+  that `box_release_resources()` waits on (DRM PRIME, Vulkan on SYCL and HIP).
+- Patch `0024` is carried by the fork only (decision Q-048). When an FFmpeg
+  release changes `fftools/ffmpeg_dec.c` or `ffmpeg_demux.c`, the patch is
+  refreshed, not dropped.
+- The `libvmaf*` patches `0001` to `0020` are untouched until WP10.
+
+`vmafx_filter_check.py` (`parity`, `windows`, `provenance`, `refusal`, `pool`,
+`legacy`, `e2e`) guards the behaviour on a device; the generated-table drift
+check guards the options. No score or public C API impact beyond the spec
+functions of ABI 0.1.11.
+
+## Praetor pin c565cba50b57 (2026-10-19)
+
+`chore/praetor-refresh-c565cba5`. A rebase or sync keeps `PRAETOR_REF` at `c565cba50b57...` in
+`.github/workflows/standards-gate.yml`. The engine's HISS-01 scan flags a one-line `goto` that is
+not a forward jump to the function's cleanup label: a sync that brings a backward `goto`, or one to
+a label that is not a cleanup path, fixes it or records a dated exception.
+
+## FFmpeg HIP hwdec watcher reads the contents API (2026-10-18)
+
+- `.github/workflows/upstream-ffmpeg-hip-hwdec-watcher.yml` counts its two signals from
+  `repos/FFmpeg/FFmpeg/contents/libavutil` and `.../libavutil/hwcontext.h`; no `search/code` call.
+- `test_no_workflow_uses_code_search` in `scripts/ci/tests/test_upstream_watch_count.py` refuses a
+  code-search call or hint in any watcher workflow.
+- No rebase impact beyond this workflow and its test.
+
+## Upstream watchers honour a stated retry delay (2026-10-18)
+
+- `scripts/ci/upstream_watch_count.sh` parses "try again in N s" from a failed `gh api` reply and
+  sleeps that delay, bounded per retry (`UPSTREAM_WATCH_MAX_WAIT_S`) and in total
+  (`UPSTREAM_WATCH_TOTAL_WAIT_S`); three attempts, then it fails closed.
+- `scripts/ci/tests/test_upstream_watch_count.py` covers the stated delay, three 429s, and both bounds.
+- No rebase impact beyond these two `scripts/ci/` files.
+
+## HIP keeps refusing Vulkan OPTIMAL images (2026-10-18)
+
+- ADR-3353 records that a HIP device refuses Vulkan frames with OPTIMAL
+  tiling (`desc.vulkan_tiling`). No code changes. **On sync**: keep the
+  refusal in `core/src/hip/import_frame.c` and do not add a
+  `hipExternalMemoryGetMappedMipmappedArray()` route (see
+  `core/src/hip/AGENTS.d/vulkan-optimal-refusal.md`).
+- No rebase impact on Netflix code: the Vulkan import is fork-only.
+
+## Praetor pin 019b879ec691, HISS-21 fixtures and the gitleaks `-m` rule (2026-10-18)
+
+`chore/praetor-refresh-019b879e`. A rebase or sync keeps `PRAETOR_REF` at `019b879ec691...` in
+`.github/workflows/standards-gate.yml`. `.gitattributes` keeps the `-text` lines for the 21 pinned
+fixtures above the `praetor managed attributes` block, which must stay last; a new fixture that a
+test pins by bytes needs its own line there. The Gitleaks step of
+`.github/workflows/security-scans.yml` keeps `-m` in its `--log-opts` (the engine's audit refuses
+a history scan without it, and `scripts/ci/tests/test_gitleaks_scan_scope.py` pins it).
+`.github/ci-impact.json` routes `.mcp.json.license` and `opencode.json.license` with the files they
+describe. The hook bundle's `_kill_bounded` keeps its guard before `os.killpg`.
+
 ## SYCL lane waits on and signals Vulkan timelines on its queue (2026-10-18)
 
 - `core/src/sycl/import_frame.c`, `import_fence.c`, `vmafx_sycl_rt.{h,cpp}`:
