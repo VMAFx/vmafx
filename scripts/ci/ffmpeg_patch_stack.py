@@ -42,6 +42,16 @@ SHARED_SERIES_KEYS = (
 )
 SHARED_SERIES_SCRIPT = Path(__file__).with_name("ffmpeg-shared-series.sh")
 SHARED_SERIES_SECONDS = 600
+# Files the series carries whose source of truth is ffmpeg-patches/src/ (RC4
+# WP9): FFmpeg path -> file under ffmpeg-patches/src/. The one patch that adds
+# or changes the path gets the source's bytes at replay; --check then sees a
+# stale patch as drift and --refresh rewrites it. One patch owns each path.
+SOURCES = {
+    "libavfilter/vf_vmafx.c": "vf_vmafx.c",
+    "libavfilter/vf_vmafx_options.h": "vf_vmafx_options.h",
+    "libavfilter/vf_vmafx_pre.c": "vf_vmafx_pre.c",
+    "fftools/ffmpeg_dec_hwaccel.c": "ffmpeg_dec_hwaccel.c",
+}
 
 
 def stable_version(tag: str) -> tuple[int, int, int]:
@@ -363,6 +373,34 @@ class SourceCache:
         return commit, origin
 
 
+def sync_sources(repo: Path, replay: Replay, name: str, owners: dict[str, str]) -> None:
+    """Give the patch just applied the bytes of every source file it touches."""
+    touched = replay.git("diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD").split()
+    synced = []
+    for path in touched:
+        source = SOURCES.get(path)
+        if source is None:
+            continue
+        if path in owners:
+            raise ValueError(f"{path}: changed by {owners[path]} and {name}; one patch owns it")
+        owners[path] = name
+        content = (repo / "ffmpeg-patches" / "src" / source).read_bytes()
+        target = replay.checkout / path
+        if target.read_bytes() != content:
+            target.write_bytes(content)
+            synced.append(path)
+    if synced:
+        replay.git("add", "--", *synced)
+        replay.git("commit", "--quiet", "--amend", "--no-edit")
+
+
+def check_sources_owned(repo: Path, owners: dict[str, str]) -> None:
+    """Every source file present under ffmpeg-patches/src/ belongs to a patch."""
+    for path, source in SOURCES.items():
+        if (repo / "ffmpeg-patches" / "src" / source).is_file() and path not in owners:
+            raise ValueError(f"ffmpeg-patches/src/{source}: no patch in series.txt adds {path}")
+
+
 def mirrors(repo: Path, remote: str, tag: str) -> dict[Path, bytes]:
     """Generate the unavoidable Docker ARG defaults from the shared owner."""
     changed = {}
@@ -501,9 +539,12 @@ def apply_stack(
         replay.apply_shared_series(repo)
     shared_count = len(replay.git("rev-list", f"{base}..HEAD").splitlines())
     receipt.update({"shared_series": shared or "none", "shared_patch_count": shared_count})
+    owners: dict[str, str] = {}
     for name in names:
         receipt["applying"] = name
         replay.git("am", "--3way", str(repo / "ffmpeg-patches" / name))
+        sync_sources(repo, replay, name, owners)
+    check_sources_owned(repo, owners)
     return shared, shared_count
 
 
