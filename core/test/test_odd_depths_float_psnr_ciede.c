@@ -26,6 +26,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "float_bits.h"
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/picture.h"
 #include "mu_table.h"
@@ -127,7 +128,7 @@ static char *test_ciede_odd_depths(void)
     for (size_t k = 0; k < sizeof(odd_depths) / sizeof(odd_depths[0]); k++) {
         const double got = score_of("ciede", odd_depths[k], false);
         mu_assert("ciede scores this depth", isfinite(got));
-        mu_assert("ciede equals the same samples at 16 bits", got == want);
+        mu_assert("ciede equals the same samples at 16 bits", vmaf_test_identical_f64(got, want));
         const double same = score_of("ciede", odd_depths[k], true);
         mu_assert("identical pictures: no colour difference (45 - 20 log10(0) = +inf)",
                   isinf(same) && same > 0.0);
@@ -154,7 +155,7 @@ static char *test_float_psnr_odd_depths(void)
         }
         mu_assert("float_psnr = 10 log10(peak^2 / noise)", fabs(got - want) < 1e-9);
         mu_assert("identical pictures report the ceiling 6 b + 12",
-                  score_of("float_psnr", b, true) == 6.0 * (double)b + 12.0);
+                  vmaf_test_identical_f64(score_of("float_psnr", b, true), 6.0 * (double)b + 12.0));
     }
     return NULL;
 }
