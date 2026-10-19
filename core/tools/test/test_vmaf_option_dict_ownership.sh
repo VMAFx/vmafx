@@ -87,8 +87,9 @@ run_case missing-input error "could not open file" \
   -r "${WORK}/missing.yuv" -d "${WORK}/missing.yuv" -w 64 -h 64 -p 420 -b 8 \
   --feature "${FEATURE_OPTS}" --model "path=${MODEL_DIR}/vmaf_v0.6.1.json:${OVERLOAD}"
 
-# 2. Mismatched dimensions: the same stop, from the geometry check.
-run_case mismatched-dimensions error "dimensions do not match: 64x64, 64x32" \
+# 2. Mismatched dimensions without a scaling model: the same stop, from the
+#    engine's picture size check.
+run_case mismatched-dimensions error "(64x64) and distorted (64x32) pictures must be the same size" \
   -r "${WORK}/ref64.y4m" -d "${WORK}/dist32.y4m" \
   --feature "${FEATURE_OPTS}" --model "path=${MODEL_DIR}/vmaf_v0.6.1.json:${OVERLOAD}"
 

@@ -5237,11 +5237,6 @@ bool vmaf_engine_is_flushed(const VmafContext *vmaf)
     return vmaf && vmaf->flushed;
 }
 
-unsigned vmaf_engine_display_resolution(const VmafContext *vmaf)
-{
-    return vmaf ? vmaf->convert.display_resolution : 0u;
-}
-
 unsigned vmaf_engine_thread_count(const VmafContext *vmaf)
 {
     return vmaf ? vmaf->cfg.n_threads : 0u;
