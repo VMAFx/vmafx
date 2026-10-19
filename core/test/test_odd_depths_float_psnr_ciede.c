@@ -82,7 +82,10 @@ static int make_picture(VmafPicture *pic, unsigned bpc, bool distorted)
 /* The picture of `bpc` bits and the same samples as a 16-bit picture. */
 static int make_pair_at(VmafPicture *ref, VmafPicture *dist, unsigned bpc)
 {
-    return make_picture(ref, bpc, false) | make_picture(dist, bpc, true);
+    const int err = make_picture(ref, bpc, false);
+    if (err != 0)
+        return err;
+    return make_picture(dist, bpc, true);
 }
 
 /* The score of feature `name` of one frame of `bpc` bits; NaN on an error. */
