@@ -9389,6 +9389,18 @@ test('test_speed_frame_buffers', test_speed_frame_buffers, suite : ['fast'])
 test('test_speed_qa', test_speed_qa, suite : ['fast'])
 test('test_luminance_tools', test_luminance_tools, suite : ['fast'])
 test('test_cli_parse', test_cli_parse, suite : ['fast'])
+test(
+    'test_cli_input_sizes',
+    import('python').find_installation(),
+    args : [
+        files('test_cli_input_sizes.py'),
+        vmaf,
+        meson.project_source_root() / '..' / 'python' / 'test' / 'resource' / 'yuv',
+        meson.project_source_root() / '..' / 'model',
+    ],
+    suite : ['fast'],
+    timeout : 300,
+)
 test('test_cli_exit_status', test_cli_exit_status, suite : ['fast'])
 test('test_spinner', test_spinner, suite : ['fast'])
 if host_machine.system() != 'windows'

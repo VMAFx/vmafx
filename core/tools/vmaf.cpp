@@ -258,11 +258,10 @@ namespace
     video_input_get_info(vid1, &info1);
     video_input_get_info(vid2, &info2);
 
-    if ((info1.frame_w != info2.frame_w) || (info1.frame_h != info2.frame_h)) {
-        (void)fprintf(stderr, "dimensions do not match: %dx%d, %dx%d\n", info1.frame_w,
-                      info1.frame_h, info2.frame_w, info2.frame_h);
-        err_cnt++;
-    }
+    /*
+     * Different sizes are not checked here: libvmaf rejects them unless the
+     * models scale their inputs, which it can only tell once they are loaded.
+     */
 
     if (info1.pixel_fmt != info2.pixel_fmt) {
         (void)fprintf(stderr, "pixel formats do not match: %d, %d\n", info1.pixel_fmt,
@@ -406,14 +405,23 @@ void copy_picture_data(VmafPicture *pic, video_input_ycbcr ycbcr, const video_in
 namespace
 {
 
-[[nodiscard]] int fetch_picture(VmafContext *vmaf, video_input *vid, VmafPicture *pic, int depth)
+/* The picture pool holds pictures of the reference's size. A picture of any
+ * other size is allocated on its own (`pooled` false). */
+[[nodiscard]] int fetch_picture(VmafContext *vmaf, video_input *vid, VmafPicture *pic, int depth,
+                                bool pooled)
 {
     int ret;
     video_input_info info;
 
     video_input_get_info(vid, &info);
 
-    ret = vmaf_fetch_preallocated_picture(vmaf, pic);
+    if (pooled) {
+        ret = vmaf_fetch_preallocated_picture(vmaf, pic);
+    } else {
+        ret = vmaf_picture_alloc(pic, pix_fmt_map(info.pixel_fmt), static_cast<unsigned>(depth),
+                                 static_cast<unsigned>(info.pic_w),
+                                 static_cast<unsigned>(info.pic_h));
+    }
     if (ret) {
         (void)fprintf(stderr, "problem fetching picture from pool.\n");
         return -1;
@@ -653,11 +661,12 @@ namespace
 /* Open a raw .yuv input: the planar frame of --pixel_format or its layout (NV12, P010, V210,
  * RGBA ...), with the statement of an RGB layout (ADR-2145, ADR-2146). On a failure after the
  * reader opened, it closes the reader and the file (`*file` is null then). */
-[[nodiscard]] int open_raw_input(video_input *vid, FILE **file, const CLISettings *c)
+[[nodiscard]] int open_raw_input(video_input *vid, FILE **file, const CLISettings *c, unsigned w,
+                                 unsigned h)
 {
     const int pix_fmt =
         c->input_layout ? static_cast<int>(c->input_layout) : static_cast<int>(c->pix_fmt);
-    int err = raw_input_open(vid, *file, c->width, c->height, pix_fmt, c->bitdepth);
+    int err = raw_input_open(vid, *file, w, h, pix_fmt, c->bitdepth);
     if (err || !c->input_layout || !c->rgb_matrix)
         return err;
     err = raw_input_set_rgb(vid, c->rgb_matrix, c->rgb_range, c->rgb_transfer, c->rgb_out_range);
@@ -675,7 +684,7 @@ namespace
     int err;
 
     if (c->use_yuv) {
-        err = open_raw_input(vid_ref, file_ref, c);
+        err = open_raw_input(vid_ref, file_ref, c, c->width_ref, c->height_ref);
     } else {
         err = video_input_open(vid_ref, *file_ref);
     }
@@ -690,7 +699,7 @@ namespace
     *file_ref = nullptr; /* ownership transferred to vid_ref */
 
     if (c->use_yuv) {
-        err = open_raw_input(vid_dist, file_dist, c);
+        err = open_raw_input(vid_dist, file_dist, c, c->width_dist, c->height_dist);
     } else {
         err = video_input_open(vid_dist, *file_dist);
     }
@@ -1223,21 +1232,33 @@ namespace
 namespace
 {
 
+/* Whether the distorted pictures fit the pool, which holds pictures of the
+ * reference's size. */
+[[nodiscard]] bool dist_fits_pool(video_input *vid_ref, video_input *vid_dist)
+{
+    video_input_info info;
+    video_input_info info_dist;
+    video_input_get_info(vid_ref, &info);
+    video_input_get_info(vid_dist, &info_dist);
+    return info_dist.pic_w == info.pic_w && info_dist.pic_h == info.pic_h;
+}
+
 void skip_initial_frames(VmafContext *vmaf, video_input *vid_ref, video_input *vid_dist,
                          const CLISettings *c, int common_bitdepth)
 {
     VmafPicture pic_ref_skip;
     VmafPicture pic_dist_skip;
+    const bool dist_pooled = dist_fits_pool(vid_ref, vid_dist);
 
     for (unsigned i = 0; i < c->frame_skip_ref; i++) {
-        if (fetch_picture(vmaf, vid_ref, &pic_ref_skip, common_bitdepth))
+        if (fetch_picture(vmaf, vid_ref, &pic_ref_skip, common_bitdepth, true))
             break;
         if (vmaf_picture_unref(&pic_ref_skip))
             (void)fprintf(stderr, "\nproblem during vmaf_picture_unref (skip ref)\n");
     }
 
     for (unsigned i = 0; i < c->frame_skip_dist; i++) {
-        if (fetch_picture(vmaf, vid_dist, &pic_dist_skip, common_bitdepth))
+        if (fetch_picture(vmaf, vid_dist, &pic_dist_skip, common_bitdepth, dist_pooled))
             break;
         if (vmaf_picture_unref(&pic_dist_skip))
             (void)fprintf(stderr, "\nproblem during vmaf_picture_unref (skip dist)\n");
@@ -1533,8 +1554,8 @@ namespace
 class FrameReader
 {
   public:
-    FrameReader(VmafContext *vmaf, video_input *vid, int depth, unsigned limit)
-        : vmaf_(vmaf), vid_(vid), depth_(depth), limit_(limit)
+    FrameReader(VmafContext *vmaf, video_input *vid, int depth, bool pooled, unsigned limit)
+        : vmaf_(vmaf), vid_(vid), depth_(depth), pooled_(pooled), limit_(limit)
     {
     }
     FrameReader(const FrameReader &) = delete;
@@ -1560,6 +1581,7 @@ class FrameReader
     VmafContext *vmaf_;
     video_input *vid_;
     int depth_;
+    bool pooled_; /* false: pictures are allocated on their own */
     unsigned limit_;
     bool threaded_ = false; /* scoring thread only */
     std::mutex lock_;
@@ -1598,7 +1620,7 @@ void FrameReader::produce()
         if (!wait_for_free_slot())
             break;
         FetchedFrame frame = {.pic = {}, .ret = 0};
-        frame.ret = fetch_picture(vmaf_, vid_, &frame.pic, depth_);
+        frame.ret = fetch_picture(vmaf_, vid_, &frame.pic, depth_, pooled_);
         if (!publish(frame) || frame.ret != 0)
             break;
     }
@@ -1661,7 +1683,7 @@ int FrameReader::next(VmafPicture *pic)
 {
     assert(pic != nullptr);
     if (!threaded_)
-        return fetch_picture(vmaf_, vid_, pic, depth_);
+        return fetch_picture(vmaf_, vid_, pic, depth_, pooled_);
     FetchedFrame frame = {.pic = {}, .ret = 1};
     {
         std::unique_lock<std::mutex> lock(lock_);
@@ -1905,8 +1927,8 @@ FrameLoopResult run_frame_loop(VmafContext *vmaf, video_input *vid_ref, video_in
                                const CLISettings *c, int common_bitdepth, int istty, bool readahead)
 {
     const unsigned limit = c->frame_cnt ? c->frame_cnt : UINT_MAX;
-    FrameReader ref(vmaf, vid_ref, common_bitdepth, limit);
-    FrameReader dist(vmaf, vid_dist, common_bitdepth, limit);
+    FrameReader ref(vmaf, vid_ref, common_bitdepth, true, limit);
+    FrameReader dist(vmaf, vid_dist, common_bitdepth, dist_fits_pool(vid_ref, vid_dist), limit);
     if (readahead) {
         ref.start();
         dist.start();
