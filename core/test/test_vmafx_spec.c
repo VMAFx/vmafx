@@ -62,6 +62,26 @@ static bool model_refused(const char *spec, VmafxStatus status, const char *subj
     return got == status && model == NULL && vt_failed(&error, status, subject, kind);
 }
 
+/* `src` (an array of `src_size` bytes) with a backslash before every `:`, `=` and
+ * backslash, as a spec value: a Windows model directory such as `D:/a/...` holds a
+ * colon. False when `dst` is short. */
+static bool spec_escape(char *dst, size_t n, const char *src, size_t src_size)
+{
+    size_t at = 0;
+    for (size_t i = 0; i < src_size && src[i] != '\0'; i++) {
+        if (strchr(":=\\", src[i]) != NULL) {
+            if (at + 1 >= n)
+                return false;
+            dst[at++] = '\\';
+        }
+        if (at + 1 >= n)
+            return false;
+        dst[at++] = src[i];
+    }
+    dst[at] = '\0';
+    return true;
+}
+
 static char *test_model_spec_forms(void)
 {
     VmafxModel *def = NULL;
@@ -72,10 +92,6 @@ static char *test_model_spec_forms(void)
     vmafx_model_unref(def);
     mu_assert("empty: the default model", model_is(spec_model(""), "vmaf", hash));
     mu_assert("version", model_is(spec_model("version=vmaf_v0.6.1"), "vmaf", SHA256_VMAF_V061));
-    char spec[4200];
-    (void)snprintf(spec, sizeof(spec), "path=%s/vmaf_v0.6.1.json:name=file_model",
-                   VMAFX_TEST_MODEL_DIR);
-    mu_assert("path and name", model_is(spec_model(spec), "file_model", SHA256_VMAF_V061));
     mu_assert("flags without and with a value",
               model_is(spec_model("version=vmaf_v0.6.1:disable_clip:enable_transform=true"), "vmaf",
                        SHA256_VMAF_V061));
@@ -92,8 +108,16 @@ static char *test_model_spec_forms(void)
 
 static char *test_model_spec_escapes(void)
 {
+    char dir[4200];
+    mu_assert("model directory",
+              spec_escape(dir, sizeof(dir), VMAFX_TEST_MODEL_DIR, sizeof(VMAFX_TEST_MODEL_DIR)));
+    char spec[8500];
+    (void)snprintf(spec, sizeof(spec), "path=%s/vmaf_v0.6.1.json:name=file_model", dir);
+    mu_assert("path and name", model_is(spec_model(spec), "file_model", SHA256_VMAF_V061));
     mu_assert("escaped colon and equals in a name",
               model_is(spec_model("version=vmaf_v0.6.1:name=a\\:b\\=c"), "a:b=c", NULL));
+    mu_assert("an unescaped drive colon splits the path",
+              model_refused("path=D:/m.json", VMAFX_E_INVALID, "/m.json", VMAFX_SUBJECT_OPTION));
     mu_assert("a backslash before anything else is data",
               model_is(spec_model("version=vmaf_v0.6.1:name=C\\models"), "C\\models", NULL));
     return NULL;
