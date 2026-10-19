@@ -103,8 +103,10 @@ typedef struct {
     unsigned frame_skip_ref;
     unsigned frame_skip_dist;
     unsigned frame_cnt;
+    /* the _ref and _dist sizes default to width and height */
     unsigned width;
     unsigned height;
+    unsigned width_ref, height_ref, width_dist, height_dist;
     enum VmafPixelFormat pix_fmt;
     unsigned bitdepth;
     VmafColor color_ref, color_dist; /* ed61076b2; all four attributes or none */

@@ -216,9 +216,11 @@ Frames are refcounted. Host frames live on the CPU device:
 
 `vmafx_submit(context, reference, distorted, index, error)` consumes one
 reference of each frame on every path, failures included. Indices increase
-strictly and every frame keeps the first frame's geometry; a mismatch is
-refused naming `reference` or `distorted`. One frame can be scored by several
-contexts with different options without a second decode or a copy: take one
+strictly. The distorted frame may have another size than the reference, with
+the same pixel format and bit depth; each input keeps its own first frame's
+geometry, and a mismatch is refused naming `reference` or `distorted`. One
+frame can be scored by several contexts with different options without a
+second decode or a copy: take one
 more reference per context with `vmafx_frame_ref()` and submit it to each.
 The same frame as both inputs of one submit needs two references.
 `vmafx_flush()` finishes the stream; the scores that read a later frame
