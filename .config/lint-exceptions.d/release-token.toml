@@ -1,0 +1,15 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
+# Declared release-token gaps (praetor release-token, docs/guides/release-token.md in praetor): a
+# workflow whose release-please steps do not take their token directly from an unconditional
+# actions/create-github-app-token step. Format and rules: scripts/ci/lint_exceptions.py.
+# scripts/ci/praetor_tidy_coverage.py copies each entry into the `exceptions:` block of
+# .standards.yaml. Praetor accepts category C only, expiring at most 10 days after `entered`.
+
+[[exception]]
+path = ".github/workflows/release-please.yml"
+category = "C"
+entered = 2026-10-19
+expires = 2026-10-29
+reason = "Category C. Both release-please steps take the token of the 'Resolve the release-bot token' step, which passes the release-bot App installation token or, without App credentials, the RELEASE_BOT_TOKEN fallback (ADR-1151, ADR-1171). The gate wants the App token step unconditional and passed directly, which drops the fallback; that rework is a pending controller decision (vmafx-release-token-app-only)."

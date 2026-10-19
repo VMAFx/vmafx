@@ -111,7 +111,7 @@ const EXCLUDE_LINE = new RegExp(`^exclude_docs${S}*:${S}*['"]?([^'"#\\n]*?)['"]?
 const FENCE_LINE = new RegExp(`^(${S}*)(\`{3,}|~{3,})${S}*([^${WS}\`{]*)(${ANY}*)$`);
 /** A figure slug: lowercase kebab-case, the name of docs/figures/<slug>.ts and of its outputs. */
 export const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-const MARKER = /<!-- figure:([a-z0-9-]+) -->\n([\s\S]*?)<!-- \/figure -->/g;
+const MARKER = new RegExp(`<!-- figure:([a-z0-9-]+) -->\\n([\\s\\S]*?)<!-- \\/figure -->`, 'g');
 const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\/-]/g, '\\$&');
 /** The slots of a figure's JSON `html` (SLOTS and markup in core.mjs). */
 const SLOT = new RegExp(Object.values(SLOTS).map(escapeRegExp).join('|'), 'g');
