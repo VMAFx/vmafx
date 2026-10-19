@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1394), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1401), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5276,6 +5276,10 @@ Every ADR, one heading each (1394), so the site search finds an ADR by its title
 
 [2094-libvmaf-compat-library-split](2094-libvmaf-compat-library-split.md)
 
+## ADR-2125: The VMAFx FFmpeg filters and GStreamer element follow their frames, refuse what they cannot score, and parse specs in the library
+
+[2125-vmafx-ffmpeg-gstreamer-filters](2125-vmafx-ffmpeg-gstreamer-filters.md)
+
 ## ADR-2126: Declare the single-maintainer gaps of OpenSSF Scorecard's Code-Review and Branch-Protection checks as exceptions
 
 [2126-scorecard-single-maintainer-exceptions](2126-scorecard-single-maintainer-exceptions.md)
@@ -5292,6 +5296,14 @@ Every ADR, one heading each (1394), so the site search finds an ADR by its title
 
 [2134-cuda-adm-cm-aim-register-budget-angle-flag](2134-cuda-adm-cm-aim-register-budget-angle-flag.md)
 
+## ADR-2145: One input format table generates the import layouts, the FFmpeg and GStreamer lists and the CLI names; AYUV, UYVY and V210 join the layouts
+
+[2145-vmafx-input-format-table](2145-vmafx-input-format-table.md)
+
+## ADR-2146: RGB, RGBA and BGRA input is converted to Y'CbCr in integers with a matrix, range and transfer the caller states, and refused by name without them
+
+[2146-vmafx-rgb-input-explicit-matrix](2146-vmafx-rgb-input-explicit-matrix.md)
+
 ## ADR-2152: VMAFx imports Vulkan frames on CUDA, SYCL and HIP: one memory kind and one semaphore fence kind, opaque memory on CUDA and the dma-buf route elsewhere
 
 [2152-vmafx-vulkan-frame-import](2152-vmafx-vulkan-frame-import.md)
@@ -5299,6 +5311,10 @@ Every ADR, one heading each (1394), so the site search finds an ADR by its title
 ## ADR-2153: Move the praetor pin to 04cc813ff054 for the documentation lint budget and the tidy coverage gate
 
 [2153-praetor-pin-04cc813](2153-praetor-pin-04cc813.md)
+
+## ADR-2165: The `vmafx` filter scores only frames it can pair, and reports what it cannot
+
+[2165-vmafx-filter-pairing-contract](2165-vmafx-filter-pairing-contract.md)
 
 ## ADR-2167: `-qpfile` on libx264 applies its offsets through `quant_offsets`
 
@@ -5587,3 +5603,15 @@ Every ADR, one heading each (1394), so the site search finds an ADR by its title
 ## ADR-3352: A SYCL device waits on and signals Vulkan timeline semaphores on its queue
 
 [3352-sycl-vulkan-timeline-on-queue](3352-sycl-vulkan-timeline-on-queue.md)
+
+## ADR-3353: HIP devices keep refusing Vulkan images with OPTIMAL tiling
+
+[3353-hip-keeps-refusing-vulkan-optimal](3353-hip-keeps-refusing-vulkan-optimal.md)
+
+## ADR-3354: A daily watcher files one issue per Netflix commit without a disposition
+
+[3354-netflix-unported-commit-watcher](3354-netflix-unported-commit-watcher.md)
+
+## ADR-3355: CodeQL analyses the C/C++ build as C++23
+
+[3355-codeql-cpp-extractor-cxx23](3355-codeql-cpp-extractor-cxx23.md)
