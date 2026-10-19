@@ -35,7 +35,7 @@ reader had no `p9`, `p14` or `p16` tag).
    and `docs/usage/pixel-formats.md`. A drift check regenerates all of them; a
    planted extra row fails it. Tests verify the names against FFmpeg's
    `-pix_fmts`, `libavutil/pixfmt.h` and GStreamer's format list when installed.
-3. **New layouts (ABI 0.1.11, additive).** `AYUV` (bytes A Y Cb Cr, FFmpeg
+3. **New layouts (ABI 0.1.12, additive).** `AYUV` (bytes A Y Cb Cr, FFmpeg
    `ayuv`), `UYVY422` (Cb Y0 Cr Y1), `V210` (ten-bit samples, six pixels in four
    little-endian words, FFmpeg has no pixel format for it; its row is the group
    of 16 bytes, padding as the producer likes). AYUV and UYVY are table rows
@@ -73,7 +73,7 @@ reader had no `p9`, `p14` or `p16` tag).
   (`test_vmafx_import_ffmpeg_oracle`) and bit for bit through the scoring cells
   (`test_vmafx_import_formats_cpu`); the filter and element lists are
   generated; the CLI reads what the API reads.
-- **Negative**: ABI 0.1.11; every format row needs a device test before it
+- **Negative**: ABI 0.1.12; every format row needs a device test before it
   lists a device.
 - **Neutral / follow-ups**: V210 and the other new rows on SYCL and Metal;
   FFmpeg has no V210 pixel format, so the filter does not list it.

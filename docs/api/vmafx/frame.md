@@ -203,10 +203,10 @@ A frame the producer already holds in memory a device reads (design section 2.7)
 | `vulkan_tiling` | `uint32_t vulkan_tiling` | 300 | 0.1 | VULKAN memory: the tiling of the images (LINEAR for buffers). Added in ABI 0.1.10. Values: `VmafxVulkanTiling`. |
 | `vulkan_flags` | `uint32_t vulkan_flags` | 304 | 0.1 | VULKAN memory: properties of the memory objects. Added in ABI 0.1.10. Bits: `VmafxVulkanFlags`. |
 | `vulkan_pci` | `uint32_t vulkan_pci[4]` | 308 | 0.1 | VULKAN memory: PCI domain, bus, device and function of the producer's VkPhysicalDevice (VK_EXT_pci_bus_info). Memory of another GPU than the device's is refused naming `desc.vulkan_pci`, never read across devices. Added in ABI 0.1.10. |
-| `rgb_matrix` | `uint32_t rgb_matrix` | 324 | 0.1 | RGB, RGBA and BGRA only (ignored for every other layout): the matrix of the Y'CbCr the frame is converted to. UNSPECIFIED is refused naming this field; nothing is guessed (ADR-2146). Added in ABI 0.1.11. Values: `VmafxColorMatrix`. |
-| `rgb_range` | `uint32_t rgb_range` | 328 | 0.1 | RGB layouts only: the range of the R'G'B' samples. Added in ABI 0.1.11. Values: `VmafxColorRange`. |
-| `rgb_transfer` | `uint32_t rgb_transfer` | 332 | 0.1 | RGB layouts only: the transfer characteristic of the R'G'B' samples. Added in ABI 0.1.11. Values: `VmafxColorTransfer`. |
-| `rgb_out_range` | `uint32_t rgb_out_range` | 336 | 0.1 | RGB layouts only: the range of the Y'CbCr frame made; LIMITED is the range the VMAF models are trained on. Added in ABI 0.1.11. Values: `VmafxColorRange`. |
+| `rgb_matrix` | `uint32_t rgb_matrix` | 324 | 0.1 | RGB, RGBA and BGRA only (ignored for every other layout): the matrix of the Y'CbCr the frame is converted to. UNSPECIFIED is refused naming this field; nothing is guessed (ADR-2146). Added in ABI 0.1.12. Values: `VmafxColorMatrix`. |
+| `rgb_range` | `uint32_t rgb_range` | 328 | 0.1 | RGB layouts only: the range of the R'G'B' samples. Added in ABI 0.1.12. Values: `VmafxColorRange`. |
+| `rgb_transfer` | `uint32_t rgb_transfer` | 332 | 0.1 | RGB layouts only: the transfer characteristic of the R'G'B' samples. Added in ABI 0.1.12. Values: `VmafxColorTransfer`. |
+| `rgb_out_range` | `uint32_t rgb_out_range` | 336 | 0.1 | RGB layouts only: the range of the Y'CbCr frame made; LIMITED is the range the VMAF models are trained on. Added in ABI 0.1.12. Values: `VmafxColorRange`. |
 
 Initialise with `VMAFX_FRAME_IMPORT_INIT`.
 
