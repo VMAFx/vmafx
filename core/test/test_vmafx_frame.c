@@ -429,12 +429,22 @@ static char *test_submit_display_scales_different_sizes(void)
     vt_fill(&desc_dist48, dist48_data, 2);
 
     unsigned released = 0;
+    VmafxError *error = NULL;
+#ifndef HAVE_ZIMG
+    /* The scaling is a zimg conversion; without zimg the engine refuses it. */
+    mu_assert("without zimg the scaling is refused",
+              submit_sized(context, &desc_ref, ref_data, &desc_dist, dist_data, 0, &released,
+                           &error) == VMAFX_E_NOTSUP &&
+                  vt_failed(&error, VMAFX_E_NOTSUP, "index", VMAFX_SUBJECT_FRAME));
+    mu_assert("destroy", vmafx_context_destroy(context, NULL) == VMAFX_OK);
+    mu_assert("both frames released", released == 2u);
+    return NULL;
+#endif
     mu_assert("submit 0 (64x64 ref, 32x32 dist)",
               submit_sized(context, &desc_ref, ref_data, &desc_dist, dist_data, 0, &released,
                            NULL) == VMAFX_OK);
     mu_assert("submit 1 (same sizes)", submit_sized(context, &desc_ref, ref_data, &desc_dist,
                                                     dist_data, 1, &released, NULL) == VMAFX_OK);
-    VmafxError *error = NULL;
     mu_assert("submit 2 (48x48 dist differs from first)",
               submit_sized(context, &desc_ref, ref_data, &desc_dist48, dist48_data, 2, &released,
                            &error) == VMAFX_E_INVALID &&

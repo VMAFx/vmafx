@@ -1877,7 +1877,7 @@ foreach vmafx_public_test : ['test_vmafx_model', 'test_vmafx_frame', 'test_vmafx
         ['test.c', vmafx_public_test + '.c'],
         include_directories : [libvmaf_inc, test_inc],
         link_with : libvmaf_public_link,
-        c_args : vmafx_test_dirs + vmaf_public_name_args,
+        c_args : vmafx_test_dirs + vmaf_public_name_args + zimg_defines,
         dependencies : [pthread_dependency, thread_lib, gpu_all_deps],
     )
     test(vmafx_public_test, vmafx_public_exe, suite : ['fast'])
