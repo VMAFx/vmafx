@@ -33,11 +33,19 @@ def clean_git_environment() -> dict[str, str]:
     return environment
 
 
-@pytest.fixture(autouse=True)
-def _isolate_git(monkeypatch: pytest.MonkeyPatch) -> None:
+SAVED_GIT_ENVIRONMENT: dict[str, str] = {}
+
+
+def setup_module() -> None:
     """Keep a hook's GIT_* away from the script's own git calls."""
     for key in [key for key in os.environ if key.startswith("GIT_")]:
-        monkeypatch.delenv(key)
+        SAVED_GIT_ENVIRONMENT[key] = os.environ.pop(key)
+
+
+def teardown_module() -> None:
+    """Give the caller's GIT_* back."""
+    os.environ.update(SAVED_GIT_ENVIRONMENT)
+    SAVED_GIT_ENVIRONMENT.clear()
 
 
 def git_cmd(repo: Path, *args: str) -> str:
@@ -153,47 +161,44 @@ def test_boundary_merge_commit_and_pin_not_listed(
     assert merge_sha not in out
 
 
-@pytest.mark.parametrize(
-    "ledger_content,expected_error",
-    [
-        (
-            "1111111111111111111111111111111111111111\tported\t#1\n"
-            "1111111111111111111111111111111111111111\tported\t#2\n",
-            "duplicate commit sha",
-        ),
-        (
-            "123badsha\tported\t#1\n",
-            "invalid commit sha",
-        ),
-        (
-            "1111111111111111111111111111111111111111\tinvalid-state\t#1\n",
-            "unknown state",
-        ),
-        (
-            "1111111111111111111111111111111111111111\tported\t   \n",
-            "empty reference",
-        ),
-        (
-            "1111111111111111111111111111111111111111\tported\n",
-            "expected 3 tab-separated columns",
-        ),
-    ],
-)
-def test_ledger_refusals(
-    tmp_path: Path,
-    ledger_content: str,
-    expected_error: str,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """Ledger refusals: duplicate, bad sha, unknown state, empty ref -> exit 2."""
-    repo, _ = init_repo(tmp_path)
-    ledger = repo / "ledger.tsv"
-    ledger.write_text(ledger_content, encoding="utf-8")
+LEDGER_REFUSALS: list[tuple[str, str]] = [
+    (
+        "1111111111111111111111111111111111111111\tported\t#1\n"
+        "1111111111111111111111111111111111111111\tported\t#2\n",
+        "duplicate commit sha",
+    ),
+    (
+        "123badsha\tported\t#1\n",
+        "invalid commit sha",
+    ),
+    (
+        "1111111111111111111111111111111111111111\tinvalid-state\t#1\n",
+        "unknown state",
+    ),
+    (
+        "1111111111111111111111111111111111111111\tported\t   \n",
+        "empty reference",
+    ),
+    (
+        "1111111111111111111111111111111111111111\tported\n",
+        "expected 3 tab-separated columns",
+    ),
+]
 
-    code = main(["--repo", str(repo), "--upstream-ref", "HEAD", "--ledger", str(ledger)])
-    _, err = capsys.readouterr()
-    assert code == EXIT_ERROR
-    assert expected_error in err
+
+def test_ledger_refusals(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Ledger refusals: duplicate, bad sha, unknown state, empty ref -> exit 2."""
+    for index, (ledger_content, expected_error) in enumerate(LEDGER_REFUSALS):
+        case_dir = tmp_path / f"case{index}"
+        case_dir.mkdir()
+        repo, _ = init_repo(case_dir)
+        ledger = repo / "ledger.tsv"
+        ledger.write_text(ledger_content, encoding="utf-8")
+
+        code = main(["--repo", str(repo), "--upstream-ref", "HEAD", "--ledger", str(ledger)])
+        _, err = capsys.readouterr()
+        assert code == EXIT_ERROR, expected_error
+        assert expected_error in err
 
 
 def test_planted_sha_not_in_range_accepted_and_unrecorded_reported(
