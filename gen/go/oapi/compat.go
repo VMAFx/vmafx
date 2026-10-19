@@ -6,19 +6,17 @@
 //
 // ADR-0797: vmafx-server OpenAPI REST contract. HISS-14: the Go API of the
 // stubs only grows. bitdepth was an enum of 8, 10, 12 and 16 and is now the
-// range 8 to 16, so the generator dropped the enum type; without the bitdepth
-// enum the precision constants lost their type-name prefix.
+// range 8 to 16, so the generator emits no enum type; the spec names the
+// field's type with x-go-type (go_type in core/api/vmafx.toml) and this file
+// declares it. Without the bitdepth enum the precision constants lost their
+// type-name prefix.
 
 package oapi
 
-// ScoreOptionsBitdepth is a bit depth of raw .yuv input.
-//
-// Deprecated: ScoreOptions.Bitdepth is an *int32 in the range 8 to 16.
+// ScoreOptionsBitdepth is a bit depth of raw .yuv input, 8 to 16.
 type ScoreOptionsBitdepth int32
 
-// Bit depths of the former bitdepth enum.
-//
-// Deprecated: ScoreOptions.Bitdepth takes any value from 8 to 16.
+// Bit depths of the former bitdepth enum; every value from 8 to 16 is valid.
 const (
 	ScoreOptionsBitdepthN10 ScoreOptionsBitdepth = 10
 	ScoreOptionsBitdepthN12 ScoreOptionsBitdepth = 12
@@ -27,8 +25,6 @@ const (
 )
 
 // Valid reports whether e is a bit depth the API accepts, 8 to 16.
-//
-// Deprecated: check ScoreOptions.Bitdepth against the range 8 to 16.
 func (e ScoreOptionsBitdepth) Valid() bool {
 	return e >= 8 && e <= 16
 }

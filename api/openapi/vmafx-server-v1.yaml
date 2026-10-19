@@ -214,6 +214,7 @@ components:
           minimum: 8
           maximum: 16
           format: "int32"
+          x-go-type: "ScoreOptionsBitdepth"
           description: "Bits per sample of raw .yuv input, 8 to 16 (implied by a layout that fixes it)."
         disable_clip:
           type: "boolean"

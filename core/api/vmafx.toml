@@ -4604,6 +4604,7 @@ name = "bitdepth"
 type = "uint"
 range = [8, 16]
 doc = "Bits per sample of raw .yuv input, 8 to 16 (implied by a layout that fixes it)."
+go_type = "ScoreOptionsBitdepth"
 cli = ["--bitdepth"]
 cli_short = "b"
 mcp = "bitdepth"

@@ -289,6 +289,7 @@ class Option:
     mcp_required: bool = False
     argv: McpArgv | None = None
     reserved: str = ""  # accepted only at its default; the reason names when it lands
+    go_type: str = ""  # REST Go stub type of the field (`x-go-type`), kept for a published name
 
     def default_on(self, surface: str) -> object:
         """The default a surface documents; a surface override wins."""
