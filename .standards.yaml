@@ -43,6 +43,9 @@ clang_tidy:
   lanes:
     - name: "measured"
       files: ".config/clang-tidy/measured-sources.txt"
+  # Parity-gate data fragments named *.hip (ADR-1428): one line of fields, no source.
+  data_paths:
+    - "scripts/ci/exact_twins.d"
 documentation:
   max_files: 8192
   max_file_bytes: 4194304
@@ -83,6 +86,12 @@ exceptions:
     path: ".github/workflows/docker-publish-operator-node.yml"
     reason: "SLSA Build Level 2 measured against the Level 3 the native-gpu-systems profile and security:high facet declare: the publish job signs provenance over image digests that build jobs uploaded, not inside a reusable workflow that builds and attests. Level 3 needs that restructuring (T-SLSA-RELEASE-PROVENANCE-LEVEL-2-2026-10-07)."
     expires: "2027-01-04"
+  - rule: release-token
+    path: ".github/workflows/release-please.yml"
+    category: "C"
+    entered: "2026-10-19"
+    reason: "Category C. Both release-please steps take the token of the 'Resolve the release-bot token' step, which passes the release-bot App installation token or, without App credentials, the RELEASE_BOT_TOKEN fallback (ADR-1151, ADR-1171). The gate wants the App token step unconditional and passed directly, which drops the fallback; that rework is a pending controller decision (vmafx-release-token-app-only)."
+    expires: "2026-10-29"
   - rule: clang-tidy-coverage
     path: ".config/hiss/testdata/HISS-01/c/gap/direct-recursion.c"
     reason: "HISS rule-engine fixture: the planted defect is the fixture (a gets() call, a 76-line function, a goto); a clean file would stop proving the rule. Replayed by the standards gate, never built."
@@ -263,100 +272,4 @@ exceptions:
     path: "gstreamer/src/gstvmafx_windows.c"
     reason: "Category A (stated interval 14 days, from 2026-10-18; past 2026-10-31 so the expiry stays outside the candidate window that test_check_tidy_coverage.py guards): no clang-tidy lane compiles this out-of-core source yet; the gstreamer and ffmpeg-patches/src lane is VMAFx/vmafx#2860, which removes this entry."
     expires: "2026-11-01"
-  - rule: clang-tidy-coverage
-    path: "scripts/ci/exact_twins.d/adm.hip"
-    reason: "Parity-gate data fragment that borrows the .hip extension (ADR-1428): one line of fields, no C or HIP source, nothing for clang-tidy to read."
-    expires: "2027-01-04"
-  - rule: clang-tidy-coverage
-    path: "scripts/ci/exact_twins.d/cambi.hip"
-    reason: "Parity-gate data fragment that borrows the .hip extension (ADR-1428): one line of fields, no C or HIP source, nothing for clang-tidy to read."
-    expires: "2027-01-04"
-  - rule: clang-tidy-coverage
-    path: "scripts/ci/exact_twins.d/float_adm.hip"
-    reason: "Parity-gate data fragment that borrows the .hip extension (ADR-1428): one line of fields, no C or HIP source, nothing for clang-tidy to read."
-    expires: "2027-01-04"
-  - rule: clang-tidy-coverage
-    path: "scripts/ci/exact_twins.d/float_moment.hip"
-    reason: "Parity-gate data fragment that borrows the .hip extension (ADR-1428): one line of fields, no C or HIP source, nothing for clang-tidy to read."
-    expires: "2027-01-04"
-  - rule: clang-tidy-coverage
-    path: "scripts/ci/exact_twins.d/float_motion.hip"
-    reason: "Parity-gate data fragment that borrows the .hip extension (ADR-1428): one line of fields, no C or HIP source, nothing for clang-tidy to read."
-    expires: "2027-01-04"
-  - rule: clang-tidy-coverage
-    path: "scripts/ci/exact_twins.d/float_ms_ssim.hip"
-    reason: "Parity-gate data fragment that borrows the .hip extension (ADR-1428): one line of fields, no C or HIP source, nothing for clang-tidy to read."
-    expires: "2027-01-04"
-  - rule: clang-tidy-coverage
-    path: "scripts/ci/exact_twins.d/float_ms_ssim_chroma.hip"
-    reason: "Parity-gate data fragment that borrows the .hip extension (ADR-1428): one line of fields, no C or HIP source, nothing for clang-tidy to read."
-    expires: "2027-01-04"
-  - rule: clang-tidy-coverage
-    path: "scripts/ci/exact_twins.d/float_ms_ssim_lcs.hip"
-    reason: "Parity-gate data fragment that borrows the .hip extension (ADR-1428): one line of fields, no C or HIP source, nothing for clang-tidy to read."
-    expires: "2027-01-04"
-  - rule: clang-tidy-coverage
-    path: "scripts/ci/exact_twins.d/float_psnr.hip"
-    reason: "Parity-gate data fragment that borrows the .hip extension (ADR-1428): one line of fields, no C or HIP source, nothing for clang-tidy to read."
-    expires: "2027-01-04"
-  - rule: clang-tidy-coverage
-    path: "scripts/ci/exact_twins.d/float_ssim.hip"
-    reason: "Parity-gate data fragment that borrows the .hip extension (ADR-1428): one line of fields, no C or HIP source, nothing for clang-tidy to read."
-    expires: "2027-01-04"
-  - rule: clang-tidy-coverage
-    path: "scripts/ci/exact_twins.d/float_ssim_lcs.hip"
-    reason: "Parity-gate data fragment that borrows the .hip extension (ADR-1428): one line of fields, no C or HIP source, nothing for clang-tidy to read."
-    expires: "2027-01-04"
-  - rule: clang-tidy-coverage
-    path: "scripts/ci/exact_twins.d/float_vif.hip"
-    reason: "Parity-gate data fragment that borrows the .hip extension (ADR-1428): one line of fields, no C or HIP source, nothing for clang-tidy to read."
-    expires: "2027-01-04"
-  - rule: clang-tidy-coverage
-    path: "scripts/ci/exact_twins.d/motion.hip"
-    reason: "Parity-gate data fragment that borrows the .hip extension (ADR-1428): one line of fields, no C or HIP source, nothing for clang-tidy to read."
-    expires: "2027-01-04"
-  - rule: clang-tidy-coverage
-    path: "scripts/ci/exact_twins.d/motion_debug.hip"
-    reason: "Parity-gate data fragment that borrows the .hip extension (ADR-1428): one line of fields, no C or HIP source, nothing for clang-tidy to read."
-    expires: "2027-01-04"
-  - rule: clang-tidy-coverage
-    path: "scripts/ci/exact_twins.d/motion_mffw.hip"
-    reason: "Parity-gate data fragment that borrows the .hip extension (ADR-1428): one line of fields, no C or HIP source, nothing for clang-tidy to read."
-    expires: "2027-01-04"
-  - rule: clang-tidy-coverage
-    path: "scripts/ci/exact_twins.d/motion_v2.hip"
-    reason: "Parity-gate data fragment that borrows the .hip extension (ADR-1428): one line of fields, no C or HIP source, nothing for clang-tidy to read."
-    expires: "2027-01-04"
-  - rule: clang-tidy-coverage
-    path: "scripts/ci/exact_twins.d/motion_v2_mffw.hip"
-    reason: "Parity-gate data fragment that borrows the .hip extension (ADR-1428): one line of fields, no C or HIP source, nothing for clang-tidy to read."
-    expires: "2027-01-04"
-  - rule: clang-tidy-coverage
-    path: "scripts/ci/exact_twins.d/psnr.hip"
-    reason: "Parity-gate data fragment that borrows the .hip extension (ADR-1428): one line of fields, no C or HIP source, nothing for clang-tidy to read."
-    expires: "2027-01-04"
-  - rule: clang-tidy-coverage
-    path: "scripts/ci/exact_twins.d/psnr_hvs.hip"
-    reason: "Parity-gate data fragment that borrows the .hip extension (ADR-1428): one line of fields, no C or HIP source, nothing for clang-tidy to read."
-    expires: "2027-01-04"
-  - rule: clang-tidy-coverage
-    path: "scripts/ci/exact_twins.d/speed_chroma.hip"
-    reason: "Parity-gate data fragment that borrows the .hip extension (ADR-1428): one line of fields, no C or HIP source, nothing for clang-tidy to read."
-    expires: "2027-01-04"
-  - rule: clang-tidy-coverage
-    path: "scripts/ci/exact_twins.d/speed_temporal.hip"
-    reason: "Parity-gate data fragment that borrows the .hip extension (ADR-1428): one line of fields, no C or HIP source, nothing for clang-tidy to read."
-    expires: "2027-01-04"
-  - rule: clang-tidy-coverage
-    path: "scripts/ci/exact_twins.d/ssim.hip"
-    reason: "Parity-gate data fragment that borrows the .hip extension (ADR-1428): one line of fields, no C or HIP source, nothing for clang-tidy to read."
-    expires: "2027-01-04"
-  - rule: clang-tidy-coverage
-    path: "scripts/ci/exact_twins.d/ssimulacra2.hip"
-    reason: "Parity-gate data fragment that borrows the .hip extension (ADR-1428): one line of fields, no C or HIP source, nothing for clang-tidy to read."
-    expires: "2027-01-04"
-  - rule: clang-tidy-coverage
-    path: "scripts/ci/exact_twins.d/vif.hip"
-    reason: "Parity-gate data fragment that borrows the .hip extension (ADR-1428): one line of fields, no C or HIP source, nothing for clang-tidy to read."
-    expires: "2027-01-04"
 # END generated by scripts/ci/praetor_tidy_coverage.py
