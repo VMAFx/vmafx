@@ -118,6 +118,10 @@ struct VmafModel {
         VmafColor color;
         enum VmafPixelFormat pix_fmt;
         unsigned bpc;
+        /* short side both pictures are scaled to, so 1080 means 1920x1080 or
+         * 1080x1920 by source orientation; 0 means "keep the source's"
+         * (Netflix/vmaf ca2a2a111d) */
+        unsigned display_resolution;
     } conversion_target;
     struct svm_model *svm;
     // Pre-allocated prediction state (populated lazily, reused per frame)

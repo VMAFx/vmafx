@@ -50,13 +50,9 @@
  * `pix_fmt` / `bpc` when the model pins them (UNKNOWN / 0 otherwise, meaning
  * "keep each picture's own"). `*needs_conversion` is true unless both `ref`
  * and `dist` already match the target. `ref` and `dist` are allowed to
- * differ from each other: each is converted to the same target. The caller
- * is responsible for `target->w`/`h`/`resample_filter`.
- *
- * NOTE: a resolution-mismatch policy (deciding `target->w`/`h` when
- * reference and distorted differ) is expected to land here too once
- * that's in scope, rather than in a separate module - hence
- * `conversion_policy` rather than `colorspace_policy`.
+ * differ from each other: each is converted to the same target. The size
+ * (`target->w`/`h`/`resample_filter`) is left to
+ * vmaf_conversion_policy_scale(); w/h 0 keep each picture's own.
  */
 int vmaf_conversion_policy_target(const VmafPicture *ref, const VmafColor *ref_color,
                                   const VmafPicture *dist, const VmafColor *dist_color,
@@ -68,7 +64,7 @@ bool vmaf_conversion_policy_color_equal(const VmafColor *a, const VmafColor *b);
 
 /**
  * True when `pic` already matches `target`: same color, and the same pixel
- * format and bit depth wherever `target` pins them.
+ * format, bit depth and size wherever `target` pins them.
  */
 bool vmaf_conversion_policy_picture_matches(const VmafPicture *pic, const VmafColor *pic_color,
                                             const VmafPictureConvertTarget *target);
@@ -76,5 +72,22 @@ bool vmaf_conversion_policy_picture_matches(const VmafPicture *pic, const VmafCo
 /** True when two targets are the same in color, pixel format and bit depth. */
 bool vmaf_conversion_policy_target_equal(const VmafPictureConvertTarget *a,
                                          const VmafPictureConvertTarget *b);
+
+/**
+ * Set the size of `target` so both pictures are scaled to a model's display
+ * resolution (Netflix/vmaf ca2a2a111d). `display_resolution` is the short
+ * side: 1080 means 1920x1080 or 1080x1920 by the source's orientation.
+ *
+ * `ref` and `dist` must be the same size; -EINVAL (logged) otherwise. A source
+ * whose short side already equals `display_resolution` keeps its dimensions
+ * exactly and leaves `*needs_conversion` as it was. Otherwise the long side
+ * keeps the source's aspect ratio, rounded to the nearest even number,
+ * upscaling is bicubic and downscaling lanczos, and `*needs_conversion` is set
+ * to true. A long side over 4 * `display_resolution` is -EINVAL (logged).
+ * NULL arguments and `display_resolution` 0 are -EINVAL.
+ */
+int vmaf_conversion_policy_scale(const VmafPicture *ref, const VmafPicture *dist,
+                                 unsigned display_resolution, bool *needs_conversion,
+                                 VmafPictureConvertTarget *target);
 
 #endif /* VMAF_SRC_CONVERSION_POLICY_H_ */
