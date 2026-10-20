@@ -8,6 +8,32 @@ search:
 # Rebase notes
 
 <!-- rebase-notes:fragments:begin (rendered from docs/rebase-notes.d/; do not edit) -->
+## Release workflows take only the App token (2026-10-19)
+
+- `.github/workflows/release-please.yml`, `macos-tester-bundle.yml`,
+  `windows-tester-bundle.yml`: the mint step (`id: app-token`) has no `if:`,
+  and every release write reads `steps.app-token.outputs.token` directly
+  ([ADR-3356](../adr/3356-release-token-app-only.md)). Fork-only workflows,
+  nothing upstream to merge. **On rebase**: do not bring back the `creds`
+  step, the token-resolving step or a `RELEASE_BOT_TOKEN` fallback; praetor's
+  release-token audit fails on any of them.
+
+## float_psnr and ciede at every depth (2026-10-19)
+
+`rc4/api-wp13-odd-depths` ([ADR-2164](adr/2164-vmafx-odd-bit-depths-float-psnr-ciede.md)). Upstream-mirror files touched: `core/src/feature/float_psnr.c` (peak and ceiling by formula), `ciede.c` (the depth cases) and `picture_copy.cpp` (divisor `2^(bpc - 8)` above 8 bits); a sync keeps the fork's forms. The CUDA, HIP and SYCL `float_psnr` twins and the HIP `ciede` constant table change with them; keep the CPU extractor and its twins in one change. `refuse_unscaled_bpc()` in `feature_extractor.cpp` refuses 9, 11, 13, 14 and 15 bits for the device twins of the `picture_copy()` families only; lift it per twin once measured.
+
+## Model conversion target: assumed colour for untagged input (2026-10-19)
+
+- Port of Netflix/vmaf `272c596770` (`assumed_color_if_untagged`). Upstream
+  sets `VmafPicture::color` of both pictures in `vmaf_read_pictures()`; the
+  fork has no colour on the picture (ADR-1822) and resolves the assumed colour
+  into local copies inside `vmaf_conversion_state_convert()`
+  (`core/src/conversion_context.c`). **On sync**: keep the fork's side of the
+  hunks in `libvmaf.c` and `conversion_context.c`; take upstream's policy
+  logic into `vmaf_conversion_policy_assume_color()`, which works on colours.
+- The model parser change is in both `read_json_model.cpp` and
+  `read_json_model.c` through `parse_color_object()`.
+
 ## CodeQL C/C++ build pinned to C++23 (2026-10-19)
 
 `fix/codeql-cli-notes`, [ADR-3355](adr/3355-codeql-cpp-extractor-cxx23.md). The `codeql-cpp`
