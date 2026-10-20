@@ -976,18 +976,21 @@ int consult_cuda_dispatch(const VmafFeatureExtractor *fex, unsigned w, unsigned 
 #endif
 }
 
-/* The float extractors that normalise samples the way picture_copy() does, on every
- * backend: picture_copy() and the device twins that mirror it scale 10, 12 and 16-bit
- * samples only and treat any other depth above 8 as 8-bit bytes, so these extractors
- * returned wrong scores for 9, 11, 13, 14 and 15-bit pictures without an error. They
- * refuse those depths by name until the normaliser handles every depth
- * (T-ODD-BIT-DEPTHS-SILENT-WRONG-FLOAT-SCORES-2026-10-07). Other extractors keep their
+/* The device twins of the float extractors that normalise samples the way picture_copy()
+ * does. picture_copy() scales every depth from 8 to 16 bits (ADR-2164), so the CPU
+ * extractors score 9, 11, 13, 14 and 15-bit pictures; the CUDA, SYCL, HIP and Metal twins
+ * read the words themselves and were never compared with the CPU at those depths, so they
+ * refuse them by name until they are
+ * (T-FLOAT-EXTRACTORS-ODD-DEPTH-TWINS-UNMEASURED-2026-10-07). Other extractors keep their
  * own depth checks; psnr_hvs, for one, scores 9 and 11 bits correctly. */
 int refuse_unscaled_bpc(const VmafFeatureExtractor *fex, unsigned bpc)
 {
     static const char *const kFamilies[] = {"float_ssim", "float_ms_ssim", "float_adm", "float_vif",
                                             "float_motion"};
-    if (bpc == 8U || bpc == 10U || bpc == 12U || bpc == 16U || !fex->name)
+    constexpr uint64_t kDeviceFlags = VMAF_FEATURE_EXTRACTOR_CUDA | VMAF_FEATURE_EXTRACTOR_SYCL |
+                                      VMAF_FEATURE_EXTRACTOR_HIP | VMAF_FEATURE_EXTRACTOR_METAL;
+    if (bpc == 8U || bpc == 10U || bpc == 12U || bpc == 16U || !fex->name ||
+        (fex->flags & kDeviceFlags) == 0U)
         return 0;
     for (const char *family : kFamilies) {
         const size_t n = std::strlen(family);

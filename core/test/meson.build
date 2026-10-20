@@ -3927,6 +3927,17 @@ endif
 
 # (end of ciede / float_adm group)
 
+# ADR-2164 — float_psnr and ciede at 9, 11, 13, 14 and 15 bits (refused before),
+# against the same samples at 16 bits and the peak written out.
+test_odd_depths_float_psnr_ciede = executable('test_odd_depths_float_psnr_ciede',
+    ['test.c', 'test_odd_depths_float_psnr_ciede.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    c_args : vmaf_cflags_common,
+    link_with : vmaf_test_link,
+    dependencies : [math_lib, pthread_dependency, gpu_all_deps],
+)
+test('test_odd_depths_float_psnr_ciede', test_odd_depths_float_psnr_ciede, suite : ['fast'])
+
 # ADR-1499 — feature/float_psnr_rows.h, the float_psnr twins' form of the
 # CPU's sum of its rows past 2^53 units, fed with host-made segment sums and
 # compared bit for bit with the CPU float_psnr extractor on the cases of
@@ -6239,11 +6250,11 @@ test_read_pictures_monotonic = executable('test_read_pictures_monotonic',
 )
 test('test_read_pictures_monotonic', test_read_pictures_monotonic, suite : ['fast'])
 
-# T-ODD-BIT-DEPTHS-SILENT-WRONG-FLOAT-SCORES-2026-10-07 — vmaf_read_pictures() refuses picture
-# depths for the float extractor families that do not scale them (9, 11, 13, 14, 15).
+# T-ODD-BIT-DEPTHS-SILENT-WRONG-FLOAT-SCORES-2026-10-07 — the float extractor families score every
+# depth on the CPU (ADR-2164); their device twins refuse 9, 11, 13, 14 and 15 bits.
 test_read_pictures_bpc = executable('test_read_pictures_bpc',
     ['test.c', 'test_read_pictures_bpc.c'],
-    include_directories : [libvmaf_inc, test_inc],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : vmaf_test_link,
     dependencies: [pthread_dependency, thread_lib],
 )
