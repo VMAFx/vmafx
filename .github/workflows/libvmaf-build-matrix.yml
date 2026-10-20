@@ -942,7 +942,7 @@ jobs:
         # 45 minutes (master 190eea419, 2026-10-20: 39 minutes in this step).
         # The script prints its wall time and slowest files.
         timeout-minutes: 15
-        run: sleep 1200 && python3 scripts/ci/check-win64-stack-alignment.py core/build
+        run: python3 scripts/ci/check-win64-stack-alignment.py core/build
 
       - name: Prefetch Go modules for the suite
         # The suite's Go-running tests find their modules in the cache: the
