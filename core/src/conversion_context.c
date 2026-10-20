@@ -88,13 +88,42 @@ static int swap_converted(VmafPicture *ref, VmafPicture *ref_converted, VmafPict
     return err;
 }
 
+/* Upstream's libvmaf.c writes the assumed color into both pictures; the fork
+ * resolves it into the caller's copies of the declared colors (ADR-1822). */
+static int resolve_input_colors(VmafConversionState *state, VmafColor *ref_color,
+                                VmafColor *dist_color)
+{
+    *ref_color = state->ref_color;
+    *dist_color = state->dist_color;
+    if (!state->has_assumed_color)
+        return 0;
+    bool applied = false;
+    int err =
+        vmaf_conversion_policy_assume_color(ref_color, dist_color, &state->assumed_color, &applied);
+    if (err)
+        return err;
+    if (applied && !state->warned_assumed) {
+        vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                 "the reference and distorted pictures have no colorimetry "
+                 "set; assuming the one the model declares for untagged input "
+                 "(assumed_color_if_untagged)\n");
+        state->warned_assumed = true;
+    }
+    return 0;
+}
+
 int vmaf_conversion_state_convert(VmafConversionState *state, VmafPicture *ref, VmafPicture *dist)
 {
+    VmafColor ref_color;
+    VmafColor dist_color;
+    int err = resolve_input_colors(state, &ref_color, &dist_color);
+    if (err)
+        return err;
     bool needs_conversion = false;
     VmafPictureConvertTarget target = {0};
-    int err = vmaf_conversion_policy_target(ref, &state->ref_color, dist, &state->dist_color,
-                                            state->have_target ? &state->target : NULL,
-                                            &needs_conversion, &target);
+    err = vmaf_conversion_policy_target(ref, &ref_color, dist, &dist_color,
+                                        state->have_target ? &state->target : NULL,
+                                        &needs_conversion, &target);
     if (err)
         return err;
     VmafPictureConvertTarget dist_target = target;
@@ -109,10 +138,10 @@ int vmaf_conversion_state_convert(VmafConversionState *state, VmafPicture *ref, 
 
     VmafPicture ref_converted = {0};
     VmafPicture dist_converted = {0};
-    err = convert_picture(&state->ref, ref, &state->ref_color, &target, &ref_converted);
+    err = convert_picture(&state->ref, ref, &ref_color, &target, &ref_converted);
     if (err)
         return err;
-    err = convert_picture(&state->dist, dist, &state->dist_color, &dist_target, &dist_converted);
+    err = convert_picture(&state->dist, dist, &dist_color, &dist_target, &dist_converted);
     if (err) {
         if (ref_converted.priv)
             err = release_picture(&ref_converted, err);
@@ -128,6 +157,19 @@ static int register_mismatch(const VmafModel *model)
              "already in use; all models in a run must share one\n",
              model->name);
     return -EINVAL;
+}
+
+/* the registered target, display size and assumed color equal the model's */
+static bool same_conversion(const VmafConversionState *state,
+                            const VmafPictureConvertTarget *model_target, const VmafModel *model)
+{
+    if (!vmaf_conversion_policy_target_equal(&state->target, model_target) ||
+        state->display_resolution != model->conversion_target.display_resolution ||
+        state->has_assumed_color != model->conversion_target.has_assumed_color)
+        return false;
+    return !state->has_assumed_color ||
+           vmaf_conversion_policy_color_equal(&state->assumed_color,
+                                              &model->conversion_target.assumed_color);
 }
 
 /* All models in a run share one set of pictures, so they must agree on the
@@ -148,13 +190,13 @@ int vmaf_conversion_state_register_model(VmafConversionState *state, const VmafM
         .bpc = model->conversion_target.bpc,
         .color = model->conversion_target.color,
     };
-    if (state->have_target &&
-        (!vmaf_conversion_policy_target_equal(&state->target, &model_target) ||
-         state->display_resolution != model->conversion_target.display_resolution))
+    if (state->have_target && !same_conversion(state, &model_target, model))
         return register_mismatch(model);
     state->have_target = true;
     state->target = model_target;
     state->display_resolution = model->conversion_target.display_resolution;
+    state->has_assumed_color = model->conversion_target.has_assumed_color;
+    state->assumed_color = model->conversion_target.assumed_color;
     state->n_models_with_target++;
     return 0;
 }
