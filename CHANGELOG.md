@@ -2587,6 +2587,13 @@
   2026-10-26; GO-2026-5932 until 2027-02-13.
 
 
+- **The Python hash locks are regenerated with uv 0.13.1.** Every lock still pins `aiohttp` 3.14.5,
+  but the repository dependency graph kept listing 3.14.3 from an older parse, so Dependabot alerts
+  for the `aiohttp` advisories fixed in 3.14.4 and 3.14.5 stayed open. The refresh rewrites each lock
+  from its manifest entry and moves eleven transitive pins forward (among them `certifi`, `starlette`,
+  `setuptools`, `filelock` and `virtualenv`); `mcp` stays at 1.29.0 under its declared exception.
+
+
 - **The OpenSSF Scorecard gate now trusts Scorecard v5.6.0 (`61e84743`) run by
   `ossf/scorecard-action` v2.5.0 (`fa7117db`)**, which pulls its image from
   `ghcr.io`; the earlier action pulled from the retired `gcr.io` registry.
