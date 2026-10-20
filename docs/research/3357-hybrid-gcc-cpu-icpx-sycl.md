@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD041 MD060 -->
-# Research-1714: GCC (C) + icpx (C++ / SYCL) container toolchain
+# Research-3357: GCC (C) + icpx (C++ / SYCL) container toolchain
 
-Companion digest for [ADR-1714](../adr/1714-hybrid-gcc-cpu-icpx-sycl.md).
+Companion digest for [ADR-3357](../adr/3357-hybrid-gcc-cpu-icpx-sycl.md).
 
 The measurements below up to "Reproducer" were taken on master `42fb501cc`,
 before [ADR-1461](../adr/1461-strict-fp-every-translation-unit.md) and
@@ -20,7 +20,7 @@ with an Intel Arc A380 (`--device /dev/dri`). Reference: a plain GCC build
 metrics), `--precision=max`, `--cpumask 48` (AVX2) and `63` (scalar). SYCL
 builds use `-Dsycl_icpx_aot_targets=` (JIT) because the image has no ocloc;
 `Containerfile.vmafx` installs ocloc and builds AOT. (`Containerfile.vmafx`:
-[ADR-1715](../adr/1715-vmafx-sycl-ffmpeg-container.md).)
+[ADR-3358](../adr/3358-vmafx-sycl-ffmpeg-container.md).)
 
 ## icx build vs GCC (before)
 

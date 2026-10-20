@@ -9,7 +9,7 @@ ADR-1403 the CUDA device policy: the one flag list every CUDA fatbin gets,
 with no per-kernel copy or exception, and since ADR-1461 the project-wide
 floor: the host policy is a project argument, no target turns contraction back
 on after it, and the compile commands of the build this test runs in end on
-the strict flag for every C and C++ translation unit; since ADR-1714 a mixed
+the strict flag for every C and C++ translation unit; since ADR-3357 a mixed
 toolchain (CC=gcc CXX=icpx) gives the C++ units icpx's strict spelling too,
 and each unit is checked against its own language's compiler.
 """
@@ -64,7 +64,7 @@ LIBM_MATRIX: dict[tuple[str, str], tuple[list[str], list[str]]] = {
 # flag, so icpx does not report `-ffp-contract=off` as overriding `-fp-model=precise`.
 ICX_RESET = ["-fno-fast-math", "-fcomplex-arithmetic=full"]
 
-# ADR-1714: a mixed toolchain gives the C++ units icpx's strict spelling too.
+# ADR-3357: a mixed toolchain gives the C++ units icpx's strict spelling too.
 MIXED_CPP_POLICY_BEGIN = "# BEGIN VMAF C++ strict FP policy for mixed toolchains"
 MIXED_CPP_POLICY_END = "# END VMAF C++ strict FP policy for mixed toolchains"
 MIXED_CPP_PROJECT_ARGUMENT = (
@@ -265,7 +265,7 @@ def _command_fp_failure(command: str, compiler_id: str) -> str:
         return f"{wanted} is missing"
     if flags[-1] != wanted:
         return f"{flags[-1]} follows {wanted}"
-    # ADR-1714: icx / icpx default to the fast model; contraction off alone
+    # ADR-3357: icx / icpx default to the fast model; contraction off alone
     # leaves reassociation and approximate division on.
     if compiler_id == "intel-llvm" and "-fp-model=precise" not in flags:
         return "-fp-model=precise is missing"
@@ -279,7 +279,7 @@ def _build_fp_failures(build_root: Path, source_root: Path) -> list[str] | None:
     if not database.is_file() or not compilers.is_file():
         return None
     host = json.loads(compilers.read_text(encoding="utf-8"))["host"]
-    # ADR-1714: each translation unit is checked against its own language's
+    # ADR-3357: each translation unit is checked against its own language's
     # compiler; a mixed toolchain (CC=gcc CXX=icpx) has two.
     c_id = host["c"]["id"]
     cpp_id = host.get("cpp", {}).get("id", c_id)
@@ -611,7 +611,7 @@ class StrictFpCompilerArgsTest(unittest.TestCase):
 
     @unittest.skipUnless(MESON_COMMAND, "Meson is not installed")
     def test_mixed_toolchain_cpp_policy_executes_per_compiler_pair(self) -> None:
-        # ADR-1714: (C id, C++ id) -> the extra C++ project arguments.
+        # ADR-3357: (C id, C++ id) -> the extra C++ project arguments.
         policy = _marked_block(
             MIXED_CPP_POLICY_BEGIN, MIXED_CPP_POLICY_END, "mixed-toolchain C++ strict FP"
         )
@@ -634,7 +634,7 @@ class StrictFpCompilerArgsTest(unittest.TestCase):
                 _meson_setup(self, f"{c_id}/{cpp_id}", fixture)
 
     def test_mixed_toolchain_cpp_policy_is_a_project_argument(self) -> None:
-        # ADR-1714: after the ADR-1461 floor, above the first target, once.
+        # ADR-3357: after the ADR-1461 floor, above the first target, once.
         code = _meson_code(SOURCE_MESON.read_text(encoding="utf-8"))
         first_target = FIRST_TARGET.search(code)
         assert first_target is not None

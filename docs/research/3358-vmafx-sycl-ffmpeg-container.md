@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD041 MD060 -->
-# Research-1715: porting `Containerfile.vmafx` onto master
+# Research-3358: porting `Containerfile.vmafx` onto master
 
-Companion digest for [ADR-1715](../adr/1715-vmafx-sycl-ffmpeg-container.md).
+Companion digest for [ADR-3358](../adr/3358-vmafx-sycl-ffmpeg-container.md).
 Host: NAS with a Xeon D-2143IT and an Intel Arc A380, rootless podman.
 
 ## What had to change against the old branch's file

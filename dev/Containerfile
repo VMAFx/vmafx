@@ -831,10 +831,10 @@ USER vmaf
 # enabled by -march=native, causing SpEED and CPU extractor scores to drift from
 # default builds.
 #
-# Hybrid toolchain (ADR-1714): CPU C code is built by GCC,
+# Hybrid toolchain (ADR-3357): CPU C code is built by GCC,
 # C++ and the SYCL kernels by icpx. b_lto stays false: GCC LTO objects cannot
 # go through the icpx link. glibc libm comes from ADR-1495's link policy, the
-# strict FP model for icpx's C++ from ADR-1461 / ADR-1714's project arguments.
+# strict FP model for icpx's C++ from ADR-1461 / ADR-3357's project arguments.
 # CUDA/HIP host C is GCC-built too.
 RUN --mount=type=cache,target=/home/vmaf/.cache/ccache,sharing=locked,uid=2000,gid=2000,id=ccache-dev-mcp-vmaf \
     export CCACHE_DIR=/home/vmaf/.cache/ccache CARGO_HOME=/home/vmaf/.cargo \

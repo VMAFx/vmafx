@@ -125,7 +125,7 @@ if vmaf_x86_isa_unix_flags_ok
     vmaf_x86_avx512_isa_args = ['-mavx512f', '-mavx512dq', '-mavx512bw', '-mavx512cd', '-mavx512vl']
 endif
 
-# ADR-1714: the policy above keys on the C compiler. A mixed toolchain
+# ADR-3357: the policy above keys on the C compiler. A mixed toolchain
 # (CC=gcc CXX=icpx: the dev container and Containerfile.vmafx) would give the
 # C++ translation units icpx compiles GCC's spelling only, and leave them in
 # icpx's default fast model (reassociation, approximate division). They take

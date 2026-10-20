@@ -1,5 +1,5 @@
 <!-- markdownlint-disable MD013 MD041 MD060 -->
-# ADR-1715: `Containerfile.vmafx` — a self-contained SYCL + patched-ffmpeg image with a build-time golden gate
+# ADR-3358: `Containerfile.vmafx` — a self-contained SYCL + patched-ffmpeg image with a build-time golden gate
 
 - **Status**: Accepted
 - **Date**: 2026-10-01
@@ -31,7 +31,7 @@ Intel GPU host needed a smaller image that builds from public inputs only.
    libvmaf (SYCL only, AOT via the pinned ocloc for the option's default
    target list, Xe2 included since
    [ADR-1468](1468-sycl-sub-group-sizes-every-aot-target.md), toolchain per
-   [ADR-1714](1714-hybrid-gcc-cpu-icpx-sycl.md)), then FFmpeg at `FFMPEG_TAG`
+   [ADR-3357](3357-hybrid-gcc-cpu-icpx-sycl.md)), then FFmpeg at `FFMPEG_TAG`
    (the tag `ffmpeg-patches/series.txt` is written against, checked out with
    `scripts/ci/checkout-annotated-tag.sh`) with every patch applied, then runs
    the CPU golden tests. A failing golden assertion fails the image build.
@@ -85,10 +85,12 @@ Netflix reference table (CPU and SYCL vs the Netflix values).
 
 ## References
 
+- Draft PR #2216 (Tualua) carried this record as ADR-1715; the rework renumbered it
+  with `scripts/adr/next-free.sh --claim` because the open draft still holds that number.
 - 2026-10-01 popup: port `Containerfile.vmafx` and the test harness onto the
   new branch from master.
-- Research digest: [`docs/research/1715-vmafx-sycl-ffmpeg-container.md`](../research/1715-vmafx-sycl-ffmpeg-container.md).
-- [ADR-1714](1714-hybrid-gcc-cpu-icpx-sycl.md), [ADR-1368](1368-oneapi-release-image-debian13.md),
+- Research digest: [`docs/research/3358-vmafx-sycl-ffmpeg-container.md`](../research/3358-vmafx-sycl-ffmpeg-container.md).
+- [ADR-3357](3357-hybrid-gcc-cpu-icpx-sycl.md), [ADR-1368](1368-oneapi-release-image-debian13.md),
   [ADR-1360](1360-sycl-aot-compile-time-device-codegen.md), [ADR-0541](0541-dev-container-sycl-hip-runtime-fix.md).
 - Originally drafted as ADR-1441; renumbered to 1503 on the rebase onto
   master `b01ffe42d`, where 1441 had been taken, and to 1562 on the

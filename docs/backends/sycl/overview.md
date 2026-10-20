@@ -115,7 +115,7 @@ required: GCC LTO objects cannot go through the icpx link. With SYCL on, the
 test executables link as C++, because the SYCL link arguments (`-fsycl`, the
 AOT targets) are accepted only by the icpx driver. SYCL results are the same
 with either C compiler. See
-[ADR-1714](../../adr/1714-hybrid-gcc-cpu-icpx-sycl.md).
+[ADR-3357](../../adr/3357-hybrid-gcc-cpu-icpx-sycl.md).
 
 ## Run
 

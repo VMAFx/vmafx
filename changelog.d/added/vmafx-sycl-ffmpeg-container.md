@@ -6,4 +6,4 @@
   from `build-config.env`. `scripts/test/run-all-tests.sh` runs the GPU suites
   against the built image and `scripts/test/reference_report.py` prints CPU
   and SYCL scores next to the Netflix reference values
-  ([ADR-1715](docs/adr/1715-vmafx-sycl-ffmpeg-container.md)).
+  ([ADR-3358](docs/adr/3358-vmafx-sycl-ffmpeg-container.md)).

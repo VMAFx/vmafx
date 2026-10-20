@@ -2,7 +2,7 @@ if not get_option('enable_tests')
     subdir_done()
 endif
 
-# Hybrid toolchains (CC=gcc CXX=icpx, ADR-1714): every
+# Hybrid toolchains (CC=gcc CXX=icpx, ADR-3357): every
 # test links sycl_dependency, whose link args carry -fsycl and the AOT
 # target flags. Only the SYCL C++ driver accepts them, so with SYCL on,
 # link tests as C++. Every new test executable must pass these kwargs.
@@ -81,7 +81,7 @@ test('test_strict_fp_compiler_args',
     timeout : 90,
 )
 
-# ADR-1714: with SYCL on every test executable links as C++; this reads the
+# ADR-3357: with SYCL on every test executable links as C++; this reads the
 # file and fails on an executable() that passes neither test_link_kwargs nor
 # its own link_language.
 test('test_test_link_kwargs_contract',

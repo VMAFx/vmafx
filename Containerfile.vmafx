@@ -7,13 +7,13 @@
 # ffmpeg-patches/series.txt applied (`--enable-libvmaf-sycl`), targeting
 # Intel Arc/Xe via Level Zero.
 #
-# Test image, not a published release image (ADR-1715,
+# Test image, not a published release image (ADR-3358,
 # docs/development/docker-production.md): no SBOM, source export or notice
 # set is produced, so never push a build of it to a registry. The published
 # images are docker/Dockerfile.production and docker/Dockerfile.production-gpu.
 # Base-image policy (built from ubuntu:26.04 and the pinned Intel stack, no
 # locally tagged bootstrap image), FFmpeg included and SYCL-only scope: see
-# ADR-1715. CUDA/HIP/DNN backends are compiled out (`-Denable_cuda=false -Denable_dnn=disabled`; `enable_hip`
+# ADR-3358. CUDA/HIP/DNN backends are compiled out (`-Denable_cuda=false -Denable_dnn=disabled`; `enable_hip`
 # defaults false).
 #
 # ── 3 stages ────────────────────────────────────────────────────────────────
@@ -200,11 +200,11 @@ WORKDIR /src/vmafx
 # ---- libvmaf (SYCL-only). CC_LD=lld is load-bearing — GNU ld fails on
 # liblog_cpp23.a (static archive without an index). DNN off (no onnxruntime
 # dependency; -Denable_dnn=disabled).
-# Hybrid toolchain (ADR-1714): CPU C code is built by GCC,
+# Hybrid toolchain (ADR-3357): CPU C code is built by GCC,
 # C++ and the SYCL kernels by icpx. b_lto=false because GCC LTO objects cannot
 # go through the icpx/lld link. glibc libm (not Intel's libimf) comes from
 # ADR-1495's link policy and icpx's strict FP model for C++ from the
-# ADR-1461 / ADR-1714 project arguments, so neither needs an option here.
+# ADR-1461 / ADR-3357 project arguments, so neither needs an option here.
 # AOT targets: the option's default list, Xe2 (lnl-m, bmg-g21, bmg-g31)
 # included: every kernel requires a sub-group size Xe2 accepts (ADR-1468,
 # #1842).
@@ -351,7 +351,7 @@ ENV UR_L0_USE_IMMEDIATE_COMMANDLISTS=0
 
 RUN ldconfig
 
-# ---- Golden self-check (ADR-1715) ------------------------------------------
+# ---- Golden self-check (ADR-3358) ------------------------------------------
 # A LEAN reference-pair verifier so operators can confirm the DEPLOYED binary
 # reproduces the Netflix golden scores on their own hardware, WITHOUT shipping
 # the ~10 GB build toolchain / pytest harness. The prod binary already passed
@@ -388,7 +388,7 @@ COPY --from=build \
 # hadolint ignore=SC2016
 RUN printf '%s\n' \
     '#!/bin/sh' \
-    '# Golden reference-pair self-check for the deployed vmaf binary (ADR-1715).' \
+    '# Golden reference-pair self-check for the deployed vmaf binary (ADR-3358).' \
     'export VMAF_BIN="${VMAF_BIN:-/usr/local/bin/vmaf}"' \
     'export YUV_DIR="${YUV_DIR:-/opt/vmaf-selftest/yuv}"' \
     '# No Arc device attached -> CPU-only golden table (skip cross-backend).' \

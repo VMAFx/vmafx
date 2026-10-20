@@ -275,7 +275,7 @@ podman run --rm --device /dev/dri -v "$PWD:/work" vmafx-sycl-test:latest \
 `scripts/test/reference_report.py` (also inside the image as
 `/opt/vmaf-selftest/reference_report.py`) prints the CPU and SYCL scores of the
 Netflix test pairs next to the Netflix reference values. See
-[ADR-1715](../adr/1715-vmafx-sycl-ffmpeg-container.md).
+[ADR-3358](../adr/3358-vmafx-sycl-ffmpeg-container.md).
 
 ## MCP server variant
 

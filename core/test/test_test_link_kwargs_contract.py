@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: EUPL-1.2
 """Every test executable links as C++ when SYCL is on.
 
-ADR-1714. `sycl_dependency` carries `-fsycl` and the AOT target flags in its
+ADR-3357. `sycl_dependency` carries `-fsycl` and the AOT target flags in its
 link arguments, which only the icpx driver accepts. With `CC=gcc CXX=icpx`
 (the dev container and `Containerfile.vmafx`) a C-only test linked by GCC
 fails with `unrecognized command-line option '-fsycl'`. `core/test/meson.build`

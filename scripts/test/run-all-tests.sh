@@ -36,7 +36,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # The test matrix runs INSIDE the image and needs meson / python / the source
 # tree / the meson build dir — all of which live in Containerfile.vmafx's
-# `build` STAGE, not the lean `prod` stage (ADR-1715). So this harness builds
+# `build` STAGE, not the lean `prod` stage (ADR-3358). So this harness builds
 # and runs `--target build`, tagged `:build`, and leaves the deployment image
 # `vmafx-sycl-test:latest` (the default `prod` target) alone. Operators
 # verify the lean prod image separately via its baked `vmaf-selftest`.

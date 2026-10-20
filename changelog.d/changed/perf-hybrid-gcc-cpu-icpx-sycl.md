@@ -8,4 +8,4 @@
   with SYCL enabled the test executables link as C++. CPU scores are those of
   a GCC build, and the single-threaded CPU path is 5-11 % faster than an icx
   build at 1080p (`vmaf_v0.6.1`, `vmaf_float_v0.6.1`, `cambi`)
-  ([ADR-1714](docs/adr/1714-hybrid-gcc-cpu-icpx-sycl.md)).
+  ([ADR-3357](docs/adr/3357-hybrid-gcc-cpu-icpx-sycl.md)).

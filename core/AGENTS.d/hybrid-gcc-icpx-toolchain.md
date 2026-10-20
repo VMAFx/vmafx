@@ -6,11 +6,11 @@ paths:
 invariant: CC=gcc CXX=icpx builds give icpx C++ the strict spelling and link SYCL-on tests as C++.
 ---
 <!-- markdownlint-disable MD013 MD060 -->
-# Hybrid GCC C + icpx C++ / SYCL toolchain (ADR-1714)
+# Hybrid GCC C + icpx C++ / SYCL toolchain (ADR-3357)
 
 ## Rebase-sensitive invariants
 
-- **C++ strict spelling under a mixed toolchain (ADR-1714)**: ADR-1461's
+- **C++ strict spelling under a mixed toolchain (ADR-3357)**: ADR-1461's
   policy block keys on `cc.get_id()`. With `CC=gcc CXX=icpx` (the dev
   container and `Containerfile.vmafx`) C++ would get GCC's
   `-ffp-contract=off` only and stay in icpx's default fast model. The
