@@ -14,12 +14,12 @@ from __future__ import annotations
 
 import io
 import tempfile
+import tomllib
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
 from typing import Any
 
-import tomllib
 from support import ROOT
 from vmafx_api import cli, emit_config
 from vmafx_api.config import compound_keys, env_of, parse_config

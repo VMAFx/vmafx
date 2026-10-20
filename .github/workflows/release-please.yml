@@ -40,93 +40,18 @@ jobs:
       # sat `BLOCKED` behind an admin bypass. An App installation token is a
       # distinct actor, so pushes and PRs it makes trigger CI normally.
       #
-      # The App and its two secrets are a maintainer action (see
-      # docs/development/release.md). Until they exist there is never a
-      # fallback to `GITHUB_TOKEN` (that would recreate the un-runnable
-      # release PR). ADR-1171: on the `push` trigger the missing credentials
-      # are a *warning* and the job ends idle-green — a red run on every
-      # master push hid real failures and made "master fully green"
-      # unreachable; on `workflow_dispatch` an operator asked for a release
-      # step, so the missing credentials are an *error*.
-      - name: Check release-bot App credentials
-        id: creds
-        env:
-          RELEASE_BOT_APP_ID: ${{ secrets.RELEASE_BOT_APP_ID }}
-          RELEASE_BOT_PRIVATE_KEY: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
-          RELEASE_BOT_TOKEN: ${{ secrets.RELEASE_BOT_TOKEN }}
-          EVENT_NAME: ${{ github.event_name }}
-        run: |
-          set -euo pipefail
-          # Two acceptable identities, both of which are NOT the default
-          # GITHUB_TOKEN -- that is the whole point (ADR-1151): a PR opened by
-          # GITHUB_TOKEN never receives check runs, so it can never satisfy
-          # branch protection. The App is preferred because its installation
-          # token is short-lived and scoped to this repository; a PAT is
-          # accepted as a fallback so the pipeline is not blocked on an action
-          # that has no API path (App registration is browser-only, its private
-          # key downloadable once at creation).
-          missing=()
-          [[ -n "${RELEASE_BOT_APP_ID}" ]] || missing+=("RELEASE_BOT_APP_ID")
-          [[ -n "${RELEASE_BOT_PRIVATE_KEY}" ]] || missing+=("RELEASE_BOT_PRIVATE_KEY")
-          if [[ ${#missing[@]} -eq 0 ]]; then
-            echo "present=true" >> "$GITHUB_OUTPUT"
-            echo "mode=app" >> "$GITHUB_OUTPUT"
-            echo "release-bot App credentials present."
-            exit 0
-          fi
-          if [[ -n "${RELEASE_BOT_TOKEN}" ]]; then
-            echo "present=true" >> "$GITHUB_OUTPUT"
-            echo "mode=pat" >> "$GITHUB_OUTPUT"
-            echo "::notice title=release-bot identity::App credentials absent;"\
-                 "using RELEASE_BOT_TOKEN. Works, but a PAT is broader-scoped"\
-                 "and longer-lived than an App installation token -- prefer the"\
-                 "App when it exists (docs/development/release.md)."
-            exit 0
-          fi
-          echo "present=false" >> "$GITHUB_OUTPUT"
-          echo "mode=none" >> "$GITHUB_OUTPUT"
-          level=warning
-          [[ "${EVENT_NAME}" == "workflow_dispatch" ]] && level=error
-          echo "::${level} title=ADR-1151 release-bot credentials missing::${missing[*]}"
-          echo "release-please must run as the release-bot GitHub App, not as" >&2
-          echo "GITHUB_TOKEN: PRs opened by GITHUB_TOKEN never receive check" >&2
-          echo "runs, so the release PR can never satisfy branch protection." >&2
-          echo "" >&2
-          echo "Create the App (Contents + Pull requests: read/write, installed" >&2
-          echo "on VMAFx/vmafx) and add the repository secrets:" >&2
-          printf '  - %s\n' "${missing[@]}" >&2
-          echo "See docs/development/release.md, section 'Release-bot identity'." >&2
-          if [[ "${level}" == "error" ]]; then
-            exit 1
-          fi
-          echo "Pipeline idle: no release PR is opened or updated until the" >&2
-          echo "credentials exist (ADR-1171)." >&2
-
+      # The App installation token is the only identity (ADR-1151 follow-up
+      # note of 2026-10-19): the step runs on every event and its token goes
+      # straight into both release-please steps. There is no personal access
+      # token fallback and no idle-green path; missing App secrets fail the
+      # run, which is what praetor's release-token audit requires. Maintainer
+      # steps: docs/development/release.md, section 'Release-bot identity'.
       - name: Mint the release-bot installation token
-        if: steps.creds.outputs.mode == 'app'
         id: app-token
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510  # v3.3.0
         with:
           app-id: ${{ secrets.RELEASE_BOT_APP_ID }}
           private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
-      # One place that decides which identity the rest of the job speaks as,
-      # so no downstream step has to know which mode is active.
-      - name: Resolve the release-bot token
-        if: steps.creds.outputs.present == 'true'
-        id: token
-        env:
-          APP_TOKEN: ${{ steps.app-token.outputs.token }}
-          PAT: ${{ secrets.RELEASE_BOT_TOKEN }}
-          MODE: ${{ steps.creds.outputs.mode }}
-        run: |
-          set -euo pipefail
-          if [[ "$MODE" == "app" ]]; then
-            printf '::add-mask::%s\n' "$APP_TOKEN"
-            echo "token=$APP_TOKEN" >> "$GITHUB_OUTPUT"
-          else
-            printf '::add-mask::%s\n' "$PAT"
-            echo "token=$PAT" >> "$GITHUB_OUTPUT"
-          fi
 
       # While one release draft waits at the human publication gate, both
       # release-please phases below stay paused (ADR-1127). The tag filter must
@@ -137,10 +62,9 @@ jobs:
       # the regex is inlined; scripts/release/tests/test-release-please-draft-gate.sh
       # extracts this step and proves both accept the same tags.
       - name: Detect an unpublished release or release-candidate draft
-        if: steps.creds.outputs.present == 'true'
         id: draft
         env:
-          GH_TOKEN: ${{ steps.token.outputs.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         # Explicit, so fail-closed (-e, pipefail) never rests on the runner default.
         shell: bash
         run: |
@@ -171,10 +95,9 @@ jobs:
           fi
 
       - name: Detect a hand-finished release PR frozen for merge
-        if: steps.creds.outputs.present == 'true'
         id: cut
         env:
-          GH_TOKEN: ${{ steps.token.outputs.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           # release-please force-recreates `release-please--branches--...` on
           # every push to master: the branch always carries exactly one commit,
@@ -209,20 +132,17 @@ jobs:
       # that second phase can fail on an invalid previous_tag. Split the phases:
       # a successful release creation suppresses the PR-only invocation below.
       - name: Create draft release after a completed release PR
-        if: >-
-          steps.creds.outputs.present == 'true' &&
-          steps.draft.outputs.exists != 'true'
+        if: steps.draft.outputs.exists != 'true'
         uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7  # v5.0.0
         id: release
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
-          token: ${{ steps.token.outputs.token }}
+          token: ${{ steps.app-token.outputs.token }}
           skip-github-pull-request: true
 
       - name: Open or update the release PR
         if: >-
-          steps.creds.outputs.present == 'true' &&
           steps.draft.outputs.exists != 'true' &&
           steps.cut.outputs.frozen != 'true' &&
           steps.release.outputs.release_created != 'true'
@@ -230,7 +150,7 @@ jobs:
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
-          token: ${{ steps.token.outputs.token }}
+          token: ${{ steps.app-token.outputs.token }}
           skip-github-release: true
 
       - name: Dump outputs
@@ -252,11 +172,3 @@ jobs:
         run: |
           echo "Draft ${{ steps.draft.outputs.tag }} is awaiting authenticated publication."
           echo "Release creation and next-PR generation remain paused."
-
-      - name: Report the idle pipeline
-        if: steps.creds.outputs.present != 'true'
-        run: |
-          echo "release-please is idle: the release-bot App credentials are not"
-          echo "configured, so no release PR was opened or updated (ADR-1171)."
-          echo "Nothing was created with GITHUB_TOKEN. See docs/development/release.md,"
-          echo "section 'Release-bot identity', for the maintainer steps."

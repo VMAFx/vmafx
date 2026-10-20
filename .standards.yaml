@@ -86,12 +86,6 @@ exceptions:
     path: ".github/workflows/docker-publish-operator-node.yml"
     reason: "SLSA Build Level 2 measured against the Level 3 the native-gpu-systems profile and security:high facet declare: the publish job signs provenance over image digests that build jobs uploaded, not inside a reusable workflow that builds and attests. Level 3 needs that restructuring (T-SLSA-RELEASE-PROVENANCE-LEVEL-2-2026-10-07)."
     expires: "2027-01-04"
-  - rule: release-token
-    path: ".github/workflows/release-please.yml"
-    category: "C"
-    entered: "2026-10-19"
-    reason: "Category C. Both release-please steps take the token of the 'Resolve the release-bot token' step, which passes the release-bot App installation token or, without App credentials, the RELEASE_BOT_TOKEN fallback (ADR-1151, ADR-1171). The gate wants the App token step unconditional and passed directly, which drops the fallback; that rework is a pending controller decision (vmafx-release-token-app-only)."
-    expires: "2026-10-29"
   - rule: clang-tidy-coverage
     path: ".config/hiss/testdata/HISS-01/c/gap/direct-recursion.c"
     reason: "HISS rule-engine fixture: the planted defect is the fixture (a gets() call, a 76-line function, a goto); a clean file would stop proving the rule. Replayed by the standards gate, never built."
