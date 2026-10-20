@@ -937,6 +937,11 @@ jobs:
       # because the runner's CPU has no AVX-512, so the AVX-512 kernels never
       # execute here. This reads the emitted code instead of running it.
       - name: Check Win64 stack alignment
+        # The scan takes about 6 minutes. A limit of its own stops a stalled
+        # scan here, with this step named, instead of letting it eat the job's
+        # 45 minutes (master 190eea419, 2026-10-20: 39 minutes in this step).
+        # The script prints its wall time and slowest files.
+        timeout-minutes: 15
         run: python3 scripts/ci/check-win64-stack-alignment.py core/build
 
       - name: Prefetch Go modules for the suite
