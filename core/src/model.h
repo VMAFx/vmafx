@@ -122,6 +122,10 @@ struct VmafModel {
          * 1080x1920 by source orientation; 0 means "keep the source's"
          * (Netflix/vmaf ca2a2a111d) */
         unsigned display_resolution;
+        /* the colorimetry to assume for a picture with none set; only SDR
+         * models declare one (Netflix/vmaf 272c596770) */
+        bool has_assumed_color;
+        VmafColor assumed_color;
     } conversion_target;
     struct svm_model *svm;
     // Pre-allocated prediction state (populated lazily, reused per frame)

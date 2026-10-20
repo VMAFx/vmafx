@@ -172,6 +172,17 @@
   of layouts and what NVDEC and the Intel and AMD VAAPI decoders emit.
 
 
+- **AYUV, UYVY and V210 host input, RGB with a stated matrix (RC4 WP13, ADR-2145, ADR-2146, ABI 0.1.12).**
+  `vmafx_frame_import()` takes `VMAFX_PIXEL_FORMAT_AYUV`, `UYVY422` and `V210` next to the other
+  semi-planar and packed layouts, and `RGB`, `RGBA` and `BGRA` (8 to 16 bits) converted to Y'CbCr in
+  64-bit integers (BT.601, BT.709, BT.2020 NCL) with a matrix, range and transfer the caller states in
+  the new `rgb_matrix`, `rgb_range`, `rgb_transfer` and `rgb_out_range` fields; without them the import
+  is refused naming the field. The CPU, CUDA and HIP conversions return the same integers. One table
+  (`[[pixel_formats]]` of `core/api/vmafx.toml`) generates the import layouts, the FFmpeg and GStreamer
+  format lists (`core/api/generated/`) and [the pixel format page](docs/usage/pixel-formats.md). See
+  [Importing a frame](docs/api/vmafx/index.md#importing-a-frame).
+
+
 - **libvmaf is a compat library on the VMAFx API (RC4 WP6).** The engine and
   the VMAFx API ship as `libvmafx.so.1` (pkg-config `libvmafx`), which exports
   `vmafx_*` symbols only; `libvmaf.so.3` keeps the libvmaf API and is written
@@ -314,6 +325,21 @@
   pinned in `build-config.env`.
 
 
+- **The CLI accepts per-input raw video dimensions via separate reference and
+  distorted size flags (Netflix/vmaf `94f3ff0dd8`).** Flags `--width_ref`,
+  `--height_ref`, `--width_dist`, and `--height_dist` allow scoring raw inputs
+  with differing resolutions under models that declare a display conversion
+  target ([CLI usage](docs/usage/cli.md)).
+
+
+- **`vmaf` reads raw files in the layouts of the import table (RC4 WP13, ADR-2145, ADR-2146).**
+  `--pixel_format` takes `400` and the layout names (`nv12`, `p010`, `yuyv422`, `uyvy422`, `v210`,
+  `ayuv`, `xv30`, `rgba` ...), `--bitdepth` any depth from 8 to 16, and the `--rgb_matrix`,
+  `--rgb_range`, `--rgb_transfer` and `--rgb_out_range` flags state an RGB input (each missing one is
+  named; nothing is assumed). The y4m reader takes `C420p9` ... `C444p16` and `Cmono9` ... `Cmono16`.
+  See [Raw input layouts](docs/usage/cli.md#raw-input-layouts).
+
+
 - Added `ACCESSIBILITY.md` (commitment, scope, known limitations, how to report
   a barrier), an accessibility issue form and the `accessibility` label, a
   "Your first contribution" and "What to expect" section in `CONTRIBUTING.md`,
@@ -345,6 +371,21 @@
   queue. `/readyz` answers not ready while the database is unreachable or its
   schema is older than the controller needs. The SQLite queue stays the
   default.
+
+
+- **A model with a display resolution scores inputs of different sizes
+  (Netflix/vmaf `cf9a6ec51b`).** When `conversion_target.resolution.display` is
+  set, the reference and the distorted input may differ in size; both are scaled
+  to the size the reference scales to, and inputs of a different orientation or
+  aspect ratio are rejected
+  ([Model-declared conversion target](docs/models/v1.md#model-declared-conversion-target)).
+
+
+- **A model's conversion target can name a display resolution (Netflix/vmaf
+  `ca2a2a111d`).** `conversion_target.resolution.display` (`1080` or `2160`)
+  scales both inputs so their short side equals the display resolution, keeping
+  orientation and aspect ratio, before scoring
+  ([Model-declared conversion target](docs/models/v1.md#model-declared-conversion-target)).
 
 
 - Added the credits page `docs/credits.md`, rendered from the curated list
@@ -391,6 +432,20 @@
   ([FFmpeg with MSVC](docs/getting-started/building-on-windows.md#ffmpeg-with-msvc)).
 
 
+- **A native `vmafx` GStreamer element on the VMAFx API (RC4, #2236).** The
+  element in `gstreamer/` (a standalone Meson project) scores a distorted video
+  against a reference with two sink pads, `reference` and `distorted`, and
+  passes the distorted frames on. It takes system memory without a copy and
+  CUDA memory without a download (device pointers imported on the producer's
+  stream, with acquire and release fences); its properties are generated from
+  the option table the FFmpeg `vmafx` filter uses; Vulkan images from GStreamer's Vulkan decoders are copied once on the GPU into exportable images and imported on the VMAFx device of the same GPU (CUDA, SYCL or HIP; never across GPUs); it reports `n_stats` windows
+  from the library's window clock, per-frame scores, the provenance record and
+  an end-of-stream summary as element messages, and writes the CLI's report. On
+  the golden pair, both checkerboards and 20 frames of the 4K clip its report
+  equals the `vmaf` CLI's bit for bit on the CPU and on CUDA
+  (`gstreamer/test/run.sh`). See `docs/usage/gstreamer.md`.
+
+
 - **The Helm chart runs vmafx-controller as several replicas on PostgreSQL
   ([ADR-2350](docs/adr/2350-cloud-native-platform.md)).**
   `controller.store.backend: postgres` with `controller.replicas` renders a
@@ -420,6 +475,15 @@
   digests, library versions, lock digest, container id and resource use; a killed run resumes from the
   manifests; a missing or corrupt input stops the run with the stage name before anything runs. The
   Tiny AI job runs it for changes under `ai/`, and a nightly workflow runs it too. See the runbook section 13.
+
+
+- **Daily Netflix/vmaf unported-commit watcher.** A daily CI workflow
+  (`.github/workflows/upstream-watcher.yml`) detects commits on Netflix/vmaf
+  `master` after the fork's recorded parity pin that have no disposition in
+  `scripts/upstream-watcher/netflix-dispositions.tsv`, and opens deduplicated
+  tracking issues for fork triage. The companion script
+  `scripts/upstream-watcher/check_netflix_unported.py` enables local checking
+  ([Upstream watchers](docs/development/upstream-watchers.md)).
 
 
 - **Observability: alerts, recording rules and runbooks (RC4, ADR-2349,
@@ -712,6 +776,53 @@
   [API generation](docs/development/api-generation.md).
 
 
+- **FFmpeg `vmafx` filter (RC4 WP9, ADR-2125).** Patch `0023` adds the `vmafx`
+  filter, the FFmpeg filter of the VMAFx API (`./configure --enable-libvmafx`,
+  `libvmafx >= 1.0.0`; it can be built next to `--enable-libvmaf`). It scores
+  one or several named models plus extra features in one pass, pools over
+  `n_stats` windows, attaches per-frame scores as `lavfi.vmafx.<model>`
+  metadata, embeds the provenance record, and follows its frames to their
+  device: CUDA frames are imported without a copy on CUDA, VAAPI frames mapped
+  to DRM PRIME on SYCL (Intel) or HIP (AMD), the 4:2:2 / 4:4:4 semi-planar,
+  packed and MSB-aligned layouts are taken as well, Vulkan frames (FFmpeg's
+  Vulkan decoder, `libplacebo`) are copied once on the GPU and scored on the
+  CUDA, SYCL or HIP device of the same GPU, software frames score on
+  the CPU, and a frame it cannot import fails the graph naming the backend and
+  the extractor instead of passing unscored. `vmafx_tune` (patch `0023`) and
+  `vmafx_pre` (patch `0024`) are the VMAFx names of `libvmaf_tune` and
+  `vmaf_pre` and give the same results (`vmafx_tune` defaults to the library's
+  default model); `-vmafx-profile` (patch `0025`) is the VMAFx name of
+  `-vmaf-profile`. The `libvmaf*` filters stay until their retirement. See
+  [using VMAF with FFmpeg](docs/usage/ffmpeg.md#the-vmafx-filter).
+- **Hardware decoding for loopback decoders in FFmpeg (RC4 WP9, ADR-2125).**
+  Patch `0026` lets `-hwaccel`, `-hwaccel_device` and `-hwaccel_output_format`
+  precede `-dec`, so an encoder's output decodes on the GPU and reaches the
+  `vmafx` filter as device frames: encode, decode and score in one command
+  (#2138). The patch is carried by the fork only. See
+  [encode and score in one command](docs/usage/ffmpeg.md#encode-and-score-in-one-command).
+- **`vmafx` refuses a frame pool it would exhaust (RC4 WP9, ADR-2125).** A
+  fixed-size hardware frame pool (VAAPI, QSV, D3D11, D3D12, DXVA2) smaller than
+  the frames the filter holds is refused before the first frame with the size
+  it needs and the option that sets it, instead of failing mid-stream after a
+  partial score. See [frame pools](docs/usage/ffmpeg.md#frame-pools).
+
+
+- **Model and feature specification strings in the VMAFx API (RC4 WP9, ABI 0.1.11).**
+  `vmafx_model_load_spec()` loads the model a string such as
+  `version=vmaf_v0.6.1:name=vmaf:disable_clip` or
+  `path=model.json` names (keys `version`, `path`,
+  `name`, `disable_clip`, `enable_transform` and `<extractor>.<option>=<value>`
+  overrides; a backslash escapes the next `:`, `=`, `.` or backslash; an empty
+  string is the default model), and `vmafx_context_use_feature_spec()`
+  registers the extractor a string such as `psnr` or `cambi=full_ref=true`
+  (or upstream FFmpeg's `name=psnr`) names. An item that is not understood
+  returns `VMAFX_E_INVALID` naming it, and a string over 4096 bytes or more
+  than 64 items `VMAFX_E_RANGE`. The FFmpeg `vmafx` filter and the GStreamer
+  `vmafx` element spell their `model` and `feature` options with them, so one
+  string means the same thing on every surface. See
+  [the model API](docs/api/vmafx/model.md).
+
+
 ### Changed
 
 - **The `actionlint` hook and `make lint-actions` cannot hang
@@ -1002,6 +1113,14 @@
   arithmetic as `picture_copy()`); host frames are read as before.
 
 
+- **HIP devices keep refusing Vulkan images with OPTIMAL tiling
+  ([ADR-3353](docs/adr/3353-hip-keeps-refusing-vulkan-optimal.md)).** The
+  refusal (naming `desc.vulkan_tiling`) is now a recorded decision, not an open
+  gap: ROCm reads the memory of such an image as a linear image while RADV
+  tiles it, and the CUDA-style array import faulted on a gfx1036 GPU. Export
+  buffers, LINEAR images or linear DRM-modifier images for a HIP device.
+
+
 - **Every hosted Linux CI job names its image by version (ADR-3251).** GitHub moves the
   `ubuntu-latest` label from Ubuntu 24.04 to 26.04 in a rollout from 2026-10-19 to 2026-11-19. The
   63 jobs and the one runner-pool fallback that still named the floating label now name
@@ -1242,9 +1361,32 @@
   no longer names skills the repository does not carry. The HISS baseline stays at 0.
 
 
+- **The praetor pin moves to `019b879ec691`.** `praetorctl adopt` adds the hash-pinned REUSE
+  requirements, the secrets gate folder, the figures ESLint entry and licence sidecars for
+  `.mcp.json` and `opencode.json`. The Gitleaks history scan reads the diff of merge commits
+  (`--log-opts="-m --full-history HEAD"`), and 21 fixtures that tests pin by bytes keep their
+  checked-in bytes on every platform (`-text` in `.gitattributes`).
+
+
 - **The praetor pin moves to `32a35c8fb947`.** The hook bundle refuses to signal a process group
   of 1 or less, `praetorctl adopt` adds the Python launcher `.config/lefthook/python.sh` and
   praetor's Codex pre-tool hook, and the adopted `.gemini/` and `opencode.json` files are tracked.
+
+
+- **Standards gate on praetor `4ae64cb2`.** The gate pins praetor `4ae64cb27`,
+  which reads `clang_tidy.data_paths`: `.standards.yaml` declares
+  `scripts/ci/exact_twins.d` there, so the 24 parity-gate fragments named
+  `*.hip` (ADR-1428) leave the clang-tidy exception list. Lint exceptions in
+  `.config/lint-exceptions.d/` can carry a `category` and an `entered` date,
+  which `scripts/ci/praetor_tidy_coverage.py --write` renders; the release
+  workflow's token fallback is listed as a category C `release-token`
+  exception until its rework is decided.
+
+
+- **The praetor pin moves to `c565cba50b57`.** `praetorctl adopt` changes no tracked file. The
+  engine's HISS-01 scan now reports one-line `goto` statements; the 33 in the tree, all in the Metal
+  extractors under `core/src/feature/metal/`, jump forward to their function's cleanup label, so no
+  code changes and no exception is added.
 
 
 - **Praetor's text-register skills are installed and tracked.** `social-text`, `caveman` and
@@ -1260,6 +1402,19 @@
   caller's environment. The `env -u` line of
   `scripts/git-hooks/framework-hooks.sh` stays as the second barrier. The same
   update brings ruff 0.17.0, semgrep 1.180.0, tox 4.65.4 and onnxruntime 1.31.0.
+
+
+- **`PRE_MIGRATION_EPIC.md` follows its tracked issues.** The five task
+  checkboxes now link issues #1444 to #1448 and show their state (four closed
+  on 2026-10-07, task 3 open in #1446), and every `Depends-On` names the real
+  issue instead of the placeholders `#1` to `#4`.
+
+
+- **Tracked text names no development host.** Measurements and examples in the
+  documentation, tests and comments now say "a reference workstation" instead
+  of a machine's host name, use placeholders (`<nvidia-bdf>`, `<arc-bdf>`) or
+  invented PCI addresses instead of a real machine's, and leave out process
+  ids, uptimes and reboot history. No behaviour changes.
 
 
 - **Python package floors match dependency resolutions ([ADR-3335](docs/adr/3335-python-floors-match-dependencies.md)).**
@@ -1481,6 +1636,14 @@
 - **The hosted tidy lanes retry the dev container pull.** `scripts/ci/pull-dev-image.sh` gives the login and the pull of the digest-pinned image four bounded attempts before the lane fails with an error naming the image, so a single DNS timeout on `ghcr.io` no longer fails a nightly lane (#2792).
 
 
+- **`vmaf-tune` subcommands declare their shared flags through one helper
+  each.** `--src`, `--encoder`, `--pix-fmt`, `--framerate`, the CRF bounds,
+  the binary paths and the frame dimensions are added by helpers in
+  `tools/vmaf-tune/src/vmaftune/cli.py` instead of being repeated per
+  subcommand; every flag's name, default, type, choices and help text is
+  unchanged.
+
+
 - **Window scores are checked on imported device frames.** The CUDA, SYCL and
   HIP import bit-exactness tests open windows on the imported context before
   any frame is submitted and require each completed window to equal the
@@ -1683,6 +1846,12 @@
   Found on the way: the tiny-AI scenario of `test_compat_conformance` passed planes of 16 samples to a 7x7 run of `vmaf_dnn_session_run_luma8()`, a read past its stack buffer that an ASan build with ONNX Runtime reported; the planes hold 49 samples now.
 
 
+- CI: the CodeQL C/C++ analysis builds the tree as C++23. The extractor read
+  `-std=c++26` as C++17 and reported 16 alerts in `core/tools/cli_parse.cpp`
+  on globals and unused statics that do not exist
+  ([ADR-3355](docs/adr/3355-codeql-cpp-extractor-cxx23.md)).
+
+
 - CI: CodeQL C/C++ and Python now analyse on every pull request and push, as
   CodeQL Actions already did. A pull request that skipped one of them got a
   neutral `CodeQL` check ("configuration not found"), which the required-checks
@@ -1726,6 +1895,14 @@
   pictures, so a CUDA picture with another pitch (a frame imported where its
   producer holds it) scored wrong VIF values; it now uses each picture's
   stride.
+
+
+- CI: the `Dev Container Build work` job runs on `ubuntu-26.04` again. A new
+  step, `scripts/ci/free-runner-disk.sh`, removes the preinstalled SDKs no step
+  uses before the image build, which ran out of disk on that image. The two
+  FFmpeg build jobs keep their `ubuntu-24.04` fallback until 2026-10-29: no
+  release of the shared FFmpeg fix series removes the compiler warnings yet
+  ([CI runners](docs/development/ci-runners.md)).
 
 
 - **The dev container builds again: ClangBuildAnalyzer is configured with the Ninja generator.** The `build-deps` stage of `dev/Containerfile` installs `ninja-build` but no make program, so CMake's default "Unix Makefiles" generator stopped the ClangBuildAnalyzer build of ADR-3336 and every dev image build failed. The configure now passes `-G Ninja`, and `scripts/ci/tests/test_dev_image_build_stages.py` refuses a CMake configure without a generator in that stage.
@@ -1855,6 +2032,13 @@
   follows `node.metricsPort` (`VMAFX_HTTP_ADDR`).
 
 
+- CI: the FFmpeg HIP hwdec watcher reads the FFmpeg mirror through the contents API instead of
+  code search. Code search is throttled for the workflow token, and dispatch run 39160669868 still
+  failed on a `search/code` 429 after three attempts with the stated-delay wait. The watcher now
+  lists `libavutil/` for `hwcontext_hip.{c,h}` and decodes `libavutil/hwcontext.h` for an
+  `AV_HWDEVICE_TYPE_HIP` or `_ROCM` variant (`T-HIP-WATCHER-CODE-SEARCH-429-2026-10-18`).
+
+
 - **The Windows icx-cl (SYCL) build no longer reports the C runtime's deprecated calls.** The tiny-AI model-path lookup and the model loader read the environment through `vmaf_getenv_portable()`, the tiny-model sidecar copies a feature name with `VMAF_STRDUP`, and the tests open files through `vmaf_fopen_utf8()` and temporary files through the new `vmaf_tmpfile_portable()` (`tmpfile_s()` under MSVC and icx-cl). A model path read from `VMAF_*_MODEL_PATH` is now copied into a buffer the extractor owns, so the loader's own environment read cannot overwrite it on Windows; a path longer than 4095 bytes is refused with a log line. No score changes. The Windows SYCL leg no longer passes `/experimental:c11atomics` to icx-cl, which ignored it, and `UNUSED_FUNCTION` marks the function for clang-cl and icx-cl too.
 
 
@@ -1886,6 +2070,12 @@
   (`vmafx_build_info.h`, `vmafx_build_commit.h`) had no entry in the licence
   manifest. Both are listed now, and a test fails when a new generated header
   lacks one.
+
+
+- CI: the Python lock checker no longer refuses a step before `actions/checkout` that runs
+  `jq -c`, `bash -c` or another tool's own `-c` / `-r` / `-e` flag; it reads those flags as a
+  requirements file or an editable target only in a pip-like command
+  (`T-LOCK-CHECKER-DASH-C-FALSE-POSITIVE-2026-10-18`).
 
 
 - Build: libvmaf compiles on macOS again. `feature_collector.h` included C++ standard headers
@@ -2058,6 +2248,12 @@
   the guard (#2847).
 
 
+- **The `psnr` extractor scores 9, 11, 13, 14 and 15 bits (RC4 WP13).** It refused every depth but 8, 10,
+  12 and 16 with `-EINVAL` (the CLI printed "problem reading pictures"), although the engine reads 8 to 16;
+  the raw and y4m inputs of those depths now reach it. `float_psnr` and `ciede` still take 8, 10, 12 and
+  16 only and `psnr_hvs` up to 12 (`docs/state.md`).
+
+
 - **The RC3 home GPU retest kit survives a failing `nvidia-smi`.** `scripts/dev/rc3-home-gpu-retest.sh`
   wrote nvidia-smi's GPU list into `host.txt` as the last command of an `&&` list under `set -e`, so a
   failing nvidia-smi (exit 18 after a driver update that leaves the kernel module and the library at
@@ -2186,6 +2382,14 @@
   `scripts/lib/drop-git-env.sh`.
 
 
+- CI: the `Tidy Changed` job now lints a changed C-only header (one that
+  only C translation units include) through the including units that have a
+  compile command in the CPU build, as the `Tidy SYCL` job already does.
+  Linted on its own, such a header borrowed a C++ unit's command without the
+  unit's include paths and failed with `file not found` and undeclared
+  identifiers (`scripts/ci/tidy_changed_route.py`).
+
+
 - **Tests: the `timing` suite exists only in a plain optimised build.**
   Coverage counters, a sanitizer or a build without optimisation slow the
   code down, so the live window harness's 33 ms budget there measured the
@@ -2217,6 +2421,15 @@
   accepts `yuv420p` and `yuv444p16` only).
 
 
+- CI: the upstream watchers wait out the delay a GitHub search rate limit states. In run 39123672700
+  the FFmpeg HIP hwdec watcher failed on a `search/code` 429 asking to "try again in 84 s" after two
+  backoff steps of 15 s and 30 s. `scripts/ci/upstream_watch_count.sh` now sleeps the stated delay
+  (rounded up, plus 1 s) when it is longer than the backoff step, makes three attempts, refuses a
+  stated delay above `UPSTREAM_WATCH_MAX_WAIT_S` (default 120 s) or a total wait above
+  `UPSTREAM_WATCH_TOTAL_WAIT_S` (default 300 s), and still fails closed when the attempts run out
+  (`T-UPSTREAM-WATCH-RETRY-DELAY-2026-10-18`).
+
+
 - CI: upstream watcher workflows fail closed on GitHub search API rate limits. In run 38142503890,
   `gh api search/code` rate-limit errors were swallowed by `|| echo 0`, printing JSON that broke
   comparison logic and nearly created a false upstream-merged tracking issue. All count queries now
@@ -2235,6 +2448,24 @@
 - **A VMAFx error names a long path in full.** `VmafxError` kept 95 bytes of
   its subject, so a model file whose path was longer was named by a cut-off
   path; subjects now keep 1023 bytes and messages 1023.
+
+
+- **The `vmafx` FFmpeg filter no longer scores a reference frame that does not
+  belong to the main frame, and no longer fails a run that scored nothing
+  ([ADR-2165](docs/adr/2165-vmafx-filter-pairing-contract.md)).** FFmpeg's
+  framesync repeats the last frame of a reference that ends early: 24
+  reference frames under 48 main frames scored 89.659227 where the paired
+  frames score 96.580028, with no message. The filter now defaults to
+  `eof_action=pass` and `repeatlast=0`, passes main frames without a reference
+  frame on unscored and says how many, warns when the two inputs differ in
+  frame rate or when pairs lie more than half a frame apart, and names the
+  input order at init. A filter with no scored pair (`enable=` off, empty
+  input) used to end the command with exit 187 (`vmafx_flush` on an empty
+  context); it now succeeds and writes no report. A `log_path` that cannot be
+  written fails at configuration instead of after the last frame. The old
+  behaviour is `eof_action=repeat:repeatlast=1`. Checked by
+  `ffmpeg-patches/test/vmafx_filter_check.py contract` (six of seven checks
+  failed on the previous head).
 
 
 - Rust bindings: `vmafx-sys`'s build script now refuses a libvmaf header that
@@ -2257,6 +2488,15 @@
   `vmafx_model_hash()` than on Linux and macOS (and than `sha256sum` of the
   published file). The model JSON files now check out with LF on every
   platform.
+
+
+- Windows builds: the VMAFx model-spec test escapes the colon of a drive-letter
+  model directory before putting it in a spec, and the FFmpeg `vmafx` filter's
+  generated `vf_vmafx_options.h` uses the guard name `AVFILTER_VMAFX_OPTIONS_H`
+  that FFmpeg's `fate-source` check requires
+  ([FFmpeg patch automation](docs/development/ffmpeg-patch-automation.md)).
+  `scripts/ci/test_ffmpeg_patch_stack.py` refuses a header the series adds with
+  any other guard.
 
 
 - **The Windows SYCL tester zip passes its import check.** `cfgmgr32.dll`, which the Level Zero loader imports, is a System32 DLL and is now accepted by `scripts/ci/check-windows-bundle-imports.py`; an unknown DLL is still refused. The x64-sycl leg failed on it, so no rc.3 Windows zip was published.

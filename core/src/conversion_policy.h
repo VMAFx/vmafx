@@ -59,6 +59,21 @@ int vmaf_conversion_policy_target(const VmafPicture *ref, const VmafColor *ref_c
                                   const VmafPictureConvertTarget *model_target,
                                   bool *needs_conversion, VmafPictureConvertTarget *target);
 
+/**
+ * Give `*ref_color` and `*dist_color` the color `assumed` when neither has any
+ * of range, primaries, trc and matrix set, and set `*assumed_applied` to true
+ * (Netflix/vmaf 272c596770). When both are tagged, nothing changes. When
+ * exactly one is fully untagged, return -EINVAL (logged): both inputs come
+ * from the same pipeline, so one tagged and one not is a mistake. A color with
+ * only some of the attributes set is left alone, so
+ * vmaf_conversion_policy_target() reports it as an error. Fork adaptation
+ * (ADR-1822): upstream takes the two pictures and edits `VmafPicture::color`;
+ * the fork's pictures carry no color, so this takes the colors the caller
+ * declared with vmaf_set_input_colorimetry().
+ */
+int vmaf_conversion_policy_assume_color(VmafColor *ref_color, VmafColor *dist_color,
+                                        const VmafColor *assumed, bool *assumed_applied);
+
 /** True when all of `a`'s color attributes equal `b`'s. */
 bool vmaf_conversion_policy_color_equal(const VmafColor *a, const VmafColor *b);
 

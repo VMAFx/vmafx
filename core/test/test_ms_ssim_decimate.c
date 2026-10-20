@@ -226,13 +226,14 @@ char *run_tests(void)
      * TODO(ms-ssim-mingw): scalar fmaf() on MinGW-w64's libm (compiled
      * without -mfma) is not guaranteed to be correctly single-rounded,
      * so scalar-vs-AVX2 bit-exactness fails on Windows MinGW64 CI. Skip
-     * the whole test there for now; tracked as a follow-up after the
-     * parent PR lands. Linux/macOS libm are correctly rounded and the
-     * test runs there.
+     * the whole test there (exit 77, meson SKIP); tracked in VMAFx/vmafx
+     * issue 2886. Linux/macOS libm are correctly rounded and the test
+     * runs there.
      */
 #if defined(_WIN32) || defined(__MINGW32__) || defined(__MINGW64__)
     (void)fprintf(stderr, "skipping: Windows libm fmaf not bit-exact with hw FMA "
                           "(see TODO(ms-ssim-mingw))\n");
+    mu_skipped = 1;
     return NULL;
 #else
 #if ARCH_X86

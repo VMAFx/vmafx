@@ -166,8 +166,14 @@ jobs:
           # placing the build-root outside $GITHUB_WORKSPACE ensures generated
           # build artifacts are not classified as project source (ADR-1222, Alert 1279 / historical 1278).
           # shellcheck disable=SC2046  # the helper prints one option per line, split on purpose
+          # cpp_std=c++23: the CodeQL C++ extractor reads -std=c++26 as C++17
+          # (std_version 201703 in its diagnostics), misparses the C++26 standard
+          # headers and reports globals, unused statics and hidden names that do
+          # not exist (16 alerts in core/tools/cli_parse.cpp). C++23 is the newest
+          # standard it parses and the second entry of core/meson.build's list.
+          # ADR-3355.
           meson setup "${{ runner.temp }}/build" core -Denable_cuda=false -Denable_sycl=false \
-            -Dwerror=true $(scripts/ci/werror-args.sh true)
+            -Dcpp_std=c++23 -Dwerror=true $(scripts/ci/werror-args.sh true)
       - uses: github/codeql-action/init@24c54180a607b1449ed407dd24f251e4e9147c8d  # v4.38.3
         with:
           languages: cpp

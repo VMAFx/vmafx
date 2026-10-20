@@ -154,14 +154,14 @@ def test_synthesise_uniform_mask_rejects_bad_args():
         synthesise_uniform_mask(0, 3, fill=0.5)
 
 
-def test_apply_saliency_mask_materialises_yuv420p(tmp_path: Path):
-    ref = tmp_path / "ref.yuv"
-    dis = tmp_path / "dis.yuv"
-    out = tmp_path / "masked.yuv"
-
-    # 4x4 yuv420p: Y has 16 bytes, U/V have 4 bytes each.
-    ref.write_bytes(bytes([10] * 16 + [20] * 4 + [30] * 4))
-    dis.write_bytes(bytes([110] * 16 + [120] * 4 + [130] * 4))
+def _apply_mask_4x4(
+    tmp_path: Path,
+    ref: Path,
+    dis: Path,
+    out: Path,
+    pix_fmt: str,
+) -> Path:
+    """Apply a 4x4 vertical-split saliency mask to `ref` and `dis` into `out`."""
 
     def _mask(_rgb: bytes, width: int, height: int):
         assert width == 4
@@ -173,20 +173,32 @@ def test_apply_saliency_mask_materialises_yuv420p(tmp_path: Path):
             [0.0, 0.0, 1.0, 1.0],
         ]
 
-    apply_saliency_mask(
+    return apply_saliency_mask(
         MaskRequest(
             reference=ref,
             distorted=dis,
             output=out,
             width=4,
             height=4,
-            pix_fmt="yuv420p",
+            pix_fmt=pix_fmt,
             saliency_model=tmp_path / "unused.onnx",
             threshold=0.5,
             fade=0.0,
         ),
         inference=_mask,
     )
+
+
+def test_apply_saliency_mask_materialises_yuv420p(tmp_path: Path):
+    ref = tmp_path / "ref.yuv"
+    dis = tmp_path / "dis.yuv"
+    out = tmp_path / "masked.yuv"
+
+    # 4x4 yuv420p: Y has 16 bytes, U/V have 4 bytes each.
+    ref.write_bytes(bytes([10] * 16 + [20] * 4 + [30] * 4))
+    dis.write_bytes(bytes([110] * 16 + [120] * 4 + [130] * 4))
+
+    _apply_mask_4x4(tmp_path, ref, dis, out, "yuv420p")
 
     data = out.read_bytes()
     assert data[:16] == bytes([10, 10, 110, 110] * 4)
@@ -206,30 +218,7 @@ def test_apply_saliency_mask_materialises_yuv420p10le(tmp_path: Path):
     ref.write_bytes(_le16([64] * 16 + [256] * 4 + [384] * 4))
     dis.write_bytes(_le16([940] * 16 + [768] * 4 + [896] * 4))
 
-    def _mask(_rgb: bytes, width: int, height: int):
-        assert width == 4
-        assert height == 4
-        return [
-            [0.0, 0.0, 1.0, 1.0],
-            [0.0, 0.0, 1.0, 1.0],
-            [0.0, 0.0, 1.0, 1.0],
-            [0.0, 0.0, 1.0, 1.0],
-        ]
-
-    apply_saliency_mask(
-        MaskRequest(
-            reference=ref,
-            distorted=dis,
-            output=out,
-            width=4,
-            height=4,
-            pix_fmt="yuv420p10le",
-            saliency_model=tmp_path / "unused.onnx",
-            threshold=0.5,
-            fade=0.0,
-        ),
-        inference=_mask,
-    )
+    _apply_mask_4x4(tmp_path, ref, dis, out, "yuv420p10le")
 
     samples = [
         int.from_bytes(out.read_bytes()[idx : idx + 2], "little")

@@ -4,7 +4,7 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "cc_version": "gcc-15 (Ubuntu 15.2.0-16ubuntu1) 15.2.0",
-  "tus": 542,
+  "tus": 543,
   "measured_sources": [
     "compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_stat.c",
     "compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_std.c",
@@ -412,6 +412,7 @@
     "core/test/test_ms_ssim_decimate.c",
     "core/test/test_ms_ssim_decimate_coverage.c",
     "core/test/test_niqe.c",
+    "core/test/test_odd_depths_float_psnr_ciede.c",
     "core/test/test_opt.c",
     "core/test/test_ordered_sum.c",
     "core/test/test_output.c",
@@ -1530,6 +1531,20 @@
         }
       },
       "previous_baseline_sha256": "3bc3cb8aea28654a524b45c775be8e7b6e4a182c2bb7827764bea6db166c3d88"
+    },
+    {
+      "sources": [
+        "core/test/test_odd_depths_float_psnr_ciede.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/test/test_odd_depths_float_psnr_ciede.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "b2bc54bbc07166b6bf89248ce8e844233a84e5aedaff92b90d66a6291f985b80"
     }
   ]
 }

@@ -700,6 +700,7 @@ core/test/test_motion_window_incremental.c
 core/test/test_ms_ssim_decimate.c
 core/test/test_ms_ssim_decimate_coverage.c
 core/test/test_niqe.c
+core/test/test_odd_depths_float_psnr_ciede.c
 core/test/test_opt.c
 core/test/test_ordered_sum.c
 core/test/test_output.c
