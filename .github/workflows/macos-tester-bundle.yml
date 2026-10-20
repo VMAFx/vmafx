@@ -285,29 +285,11 @@ jobs:
       # Creating the tag of a commit that is behind master (and so may differ
       # in .github/workflows/) is refused for the job token, which cannot hold
       # the `workflows` permission: HTTP 403 on POST /releases. Only this step
-      # speaks as the release-bot identity of release-please.yml (App when its
-      # secrets exist, else the PAT, else it fails); every other step keeps the
-      # job token. Maintainer notes: docs/development/tester-image.md.
-      - name: Choose the release-bot identity
-        id: creds
-        env:
-          RELEASE_BOT_APP_ID: ${{ secrets.RELEASE_BOT_APP_ID }}
-          RELEASE_BOT_PRIVATE_KEY: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
-          RELEASE_BOT_TOKEN: ${{ secrets.RELEASE_BOT_TOKEN }}
-        run: |
-          set -euo pipefail
-          if [[ -n "$RELEASE_BOT_APP_ID" && -n "$RELEASE_BOT_PRIVATE_KEY" ]]; then
-            echo "mode=app" >> "$GITHUB_OUTPUT"
-          elif [[ -n "$RELEASE_BOT_TOKEN" ]]; then
-            echo "mode=pat" >> "$GITHUB_OUTPUT"
-          else
-            echo "ERROR: no release-bot identity: set RELEASE_BOT_APP_ID and" >&2
-            echo "RELEASE_BOT_PRIVATE_KEY (preferred) or RELEASE_BOT_TOKEN;" >&2
-            echo "see docs/development/release.md, 'Release-bot identity'." >&2
-            exit 1
-          fi
+      # speaks as the release-bot identity of release-please.yml, the App
+      # installation token (missing App secrets fail the step); every other
+      # step keeps the job token. Maintainer notes:
+      # docs/development/tester-image.md.
       - name: Mint the release-bot installation token
-        if: steps.creds.outputs.mode == 'app'
         id: app-token
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510  # v3.3.0
         with:
@@ -315,24 +297,13 @@ jobs:
           private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
       - name: Create the tester prerelease
         env:
-          APP_TOKEN: ${{ steps.app-token.outputs.token }}
-          PAT: ${{ secrets.RELEASE_BOT_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           RELEASE_TAG: ${{ needs.validate.outputs.release-tag }}
           SOURCE_SHA: ${{ needs.validate.outputs.source-sha }}
           DESCRIBE: ${{ needs.validate.outputs.describe }}
         run: |
           set -euo pipefail
-          if [[ -n "$APP_TOKEN" ]]; then
-            GH_TOKEN="$APP_TOKEN"
-            identity="release-bot GitHub App installation token"
-          elif [[ -n "$PAT" ]]; then
-            GH_TOKEN="$PAT"
-            identity="RELEASE_BOT_TOKEN (personal access token)"
-          else
-            echo "ERROR: the identity step passed but no token reached this step" >&2
-            exit 1
-          fi
-          export GH_TOKEN
+          identity="release-bot GitHub App installation token"
           echo "creating $RELEASE_TAG as: $identity" | tee -a "$GITHUB_STEP_SUMMARY"
           {
             echo "Tester bundle for macOS on Apple silicon. **Not a product release.**"
