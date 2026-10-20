@@ -13,8 +13,6 @@
       "prerelease": false,
       "bump-minor-pre-major": true,
       "bump-patch-for-minor-pre-major": false,
-      "release-as": "0.1.0",
-      "_comment_release_as": "ADR-3292 / ADR-1151: one-shot. Moves the next release off the 1.0.0-rc.3 candidate line to 0.1.0 (release-please applies release-as before it reads the commits). scripts/release/rollover-changelog-fragments.sh deletes this field and this comment in the release-merge pull request; check-one-shot-fields.sh fails once the manifest is final and either survives.",
       "draft": true,
       "changelog-sections": [
         {

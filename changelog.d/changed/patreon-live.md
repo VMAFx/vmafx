@@ -1,1 +1,0 @@
-- **Patreon is live.** The euro tiers (€5, €25, €100, €500) are on <https://www.patreon.com/Lusoris>; `.github/FUNDING.yml`, `SPONSORS.md`, `README.md`, `GOVERNANCE.md` and "Support VMAFx" link it instead of saying it is coming (ADR-2689).
