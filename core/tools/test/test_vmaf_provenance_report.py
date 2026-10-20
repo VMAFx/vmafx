@@ -28,12 +28,11 @@ import json
 import struct
 import sys
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 from typing import Any, ClassVar
 from xml.etree import ElementTree
-
-import tomllib
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from provenance_fixture import MODEL, score

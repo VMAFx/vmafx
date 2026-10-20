@@ -9,9 +9,8 @@ whole (types, headers, versions, uniqueness).
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import tomllib
+from pathlib import Path
 
 from .entries import Entry, deprecation, need, python_name, since_of, version, where_of
 from .model import (
