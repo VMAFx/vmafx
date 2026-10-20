@@ -2322,6 +2322,12 @@
   curl's in-pipe retry and retries the full download-decompression-tar pipeline.
 
 
+- **Ruff now targets Python 3.14, the version the tooling requires.** The root `pyproject.toml`
+  declared `requires-python = ">=3.14"` but told ruff to target Python 3.10, so ruff treated the
+  standard-library `tomllib` as a third-party package and sorted its import into the wrong block in
+  26 scripts and tests. The target is `py314` and the imports are re-sorted.
+
+
 - **CI: three jobs that fail on the `ubuntu-26.04` image run on `ubuntu-24.04` again until
   2026-10-25 (ADR-3251).** Since every hosted Linux job names `ubuntu-26.04`, the dev
   container build ran out of disk space and the FFmpeg gcc and SYCL builds stopped at the
