@@ -43,3 +43,6 @@ e2f8b24ab030a9f9b311ba36a79de2a453625ec1	not-applicable	pthreads submodule docs 
 8618ba5cde09740acbad5480224b3e8a735b609d	in-fork	#57 (5253af06f)
 a2660554e630607fc187cb2ddd3b5ddcd892048e	in-fork	#57 (5253af06f); winpthreads part not-applicable (ADR-2751)
 7388bd6fc2b0ea0b991abc9a5959b9b9f145310f	in-fork	#1223 (71da046db, ADR-1166)
+cf9a6ec51bd0aa9e6a6e062ff6302d5d7669b603	ported	#2871 (524ea630e)
+94f3ff0dd8d0062e39b27d0eadfc57457022b663	ported	#2874 (3697b7727)
+272c5967701017b90a0ebcff24205e59dbba6421	ported	port/272c596770 (colour resolved on the context, ADR-1822)
