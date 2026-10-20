@@ -29,6 +29,23 @@ CODEQL_JOBS = {
     "codeql-python": "python",
     "codeql-actions": "actions",
 }
+# The CodeQL C++ extractor reads -std=c++26 as C++17 and misparses the C++26
+# standard headers into alerts on code that does not exist (ADR-3355). The
+# analysed build pins the newest standard it parses.
+CODEQL_CPP_STD = "c++23"
+
+
+def cpp_std_problems(job: str) -> list[str]:
+    """Return why the CodeQL C/C++ build is not on CODEQL_CPP_STD, or []."""
+    setups = re.findall(r"meson setup (?:[^\n]*\\\n)*[^\n]*", job)
+    if not setups:
+        return ["no meson setup in the job"]
+    problems = []
+    for setup in setups:
+        stds = re.findall(r"-Dcpp_std=(\S+)", setup)
+        if stds != [CODEQL_CPP_STD]:
+            problems.append(f"meson setup sets cpp_std {stds or 'not at all'}")
+    return problems
 
 
 def codeql_job_problems(job: str, language: str) -> list[str]:
@@ -95,6 +112,20 @@ class SecurityWorkflowContractTest(unittest.TestCase):
         self.assertIn('meson compile -C "${{ runner.temp }}/build"', job)
         self.assertNotIn("working-directory: core", job)
         self.assertNotIn("meson setup build", job)
+
+    def test_cpp_build_uses_a_standard_codeql_parses(self) -> None:
+        workflow = SECURITY_WORKFLOW.read_text(encoding="utf-8")
+        job = self._job_block(workflow, "codeql-cpp")
+        self.assertEqual(cpp_std_problems(job), [])
+
+    def test_cpp_std_gate_refuses_the_project_default(self) -> None:
+        workflow = SECURITY_WORKFLOW.read_text(encoding="utf-8")
+        job = self._job_block(workflow, "codeql-cpp")
+        dropped = job.replace(f" -Dcpp_std={CODEQL_CPP_STD}", "")
+        self.assertNotEqual(dropped, job)
+        self.assertEqual(cpp_std_problems(dropped), ["meson setup sets cpp_std not at all"])
+        newer = job.replace(f"-Dcpp_std={CODEQL_CPP_STD}", "-Dcpp_std=c++26")
+        self.assertEqual(cpp_std_problems(newer), ["meson setup sets cpp_std ['c++26']"])
 
     def test_codeql_analyses_every_language_on_every_event(self) -> None:
         workflow = SECURITY_WORKFLOW.read_text(encoding="utf-8")

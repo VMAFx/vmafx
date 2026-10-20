@@ -37,5 +37,14 @@ invariant: Convert to model's conversion_target on host; input colour lives on c
   (`SCALE_ASPECT_TOLERANCE`). `validate_pic_size()` in `libvmaf.c` runs after
   conversion and keeps the same-size rule for runs without a display. `picture_matches()` compares the pinned size;
   `register_model()` treats a different display as a different target.
+- `assumed_color_if_untagged` (Netflix/vmaf `272c596770`): upstream writes
+  the assumed colour into both `VmafPicture::color`; the fork resolves it into
+  local copies of the state colours (`resolve_input_colors()` in
+  `conversion_context.c`) and never into a picture or the state. Only a pair
+  with both colours all-unknown takes it (`vmaf_conversion_policy_assume_color()`);
+  one tagged input against an untagged one is `-EINVAL`, a partly tagged pair
+  falls through to the policy's own rejection. `same_conversion()` treats a
+  different assumed colour as a different target. Parsed through the shared
+  `parse_color_object()` in both readers.
 - Guards: `test_conversion_policy`, `test_model`, `test_read_pictures_convert`
   (conversions need `-Denable_zimg=true`).

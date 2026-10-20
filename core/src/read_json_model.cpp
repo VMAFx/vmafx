@@ -677,7 +677,8 @@ int parse_conversion_target_bit_depth(json_stream *s, VmafModel *model)
     return 0;
 }
 
-int parse_conversion_target_colorspace(json_stream *s, VmafModel *model)
+/* a colorspace object that sets all four attributes, into `*out` */
+int parse_color_object(json_stream *s, VmafColor *out)
 {
     if (json_next(s) != JSON_OBJECT)
         return -EINVAL;
@@ -686,7 +687,23 @@ int parse_conversion_target_colorspace(json_stream *s, VmafModel *model)
     if (err)
         return err;
     json_skip_until(s, JSON_OBJECT_END);
-    model->conversion_target.color = color;
+    *out = color;
+    return 0;
+}
+
+int parse_conversion_target_colorspace(json_stream *s, VmafModel *model)
+{
+    return parse_color_object(s, &model->conversion_target.color);
+}
+
+/* "assumed_color_if_untagged": the colorspace of an input with none set
+ * (Netflix/vmaf 272c596770) */
+int parse_conversion_target_assumed_color(json_stream *s, VmafModel *model)
+{
+    const int err = parse_color_object(s, &model->conversion_target.assumed_color);
+    if (err)
+        return err;
+    model->conversion_target.has_assumed_color = true;
     return 0;
 }
 
@@ -750,6 +767,8 @@ int parse_conversion_target_entry(json_stream *s, VmafModel *model, const char *
         return parse_conversion_target_bit_depth(s, model);
     if (!strcmp(key, "resolution"))
         return parse_conversion_target_resolution(s, model);
+    if (!strcmp(key, "assumed_color_if_untagged"))
+        return parse_conversion_target_assumed_color(s, model);
     json_skip(s);
     return 0;
 }
