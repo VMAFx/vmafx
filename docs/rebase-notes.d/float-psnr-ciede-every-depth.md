@@ -1,0 +1,3 @@
+## float_psnr and ciede at every depth (2026-10-19)
+
+`rc4/api-wp13-odd-depths` ([ADR-2164](adr/2164-vmafx-odd-bit-depths-float-psnr-ciede.md)). Upstream-mirror files touched: `core/src/feature/float_psnr.c` (peak and ceiling by formula), `ciede.c` (the depth cases) and `picture_copy.cpp` (divisor `2^(bpc - 8)` above 8 bits); a sync keeps the fork's forms. The CUDA, HIP and SYCL `float_psnr` twins and the HIP `ciede` constant table change with them; keep the CPU extractor and its twins in one change. `refuse_unscaled_bpc()` in `feature_extractor.cpp` refuses 9, 11, 13, 14 and 15 bits for the device twins of the `picture_copy()` families only; lift it per twin once measured.
