@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1401), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1403), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5312,6 +5312,10 @@ Every ADR, one heading each (1401), so the site search finds an ADR by its title
 
 [2153-praetor-pin-04cc813](2153-praetor-pin-04cc813.md)
 
+## ADR-2164: float\_psnr and ciede take every depth the engine reads (8 to 16 bits); psnr\_hvs stays at 12
+
+[2164-vmafx-odd-bit-depths-float-psnr-ciede](2164-vmafx-odd-bit-depths-float-psnr-ciede.md)
+
 ## ADR-2165: The `vmafx` filter scores only frames it can pair, and reports what it cannot
 
 [2165-vmafx-filter-pairing-contract](2165-vmafx-filter-pairing-contract.md)
@@ -5615,3 +5619,7 @@ Every ADR, one heading each (1401), so the site search finds an ADR by its title
 ## ADR-3355: CodeQL analyses the C/C++ build as C++23
 
 [3355-codeql-cpp-extractor-cxx23](3355-codeql-cpp-extractor-cxx23.md)
+
+## ADR-3356: Release workflows authenticate only with the release-bot App token
+
+[3356-release-token-app-only](3356-release-token-app-only.md)
