@@ -41,12 +41,11 @@ import re
 import runpy
 import sys
 import tarfile
+import tomllib
 import types
 from pathlib import Path
 from typing import Any
 from unittest import mock
-
-import tomllib
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))

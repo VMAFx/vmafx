@@ -37,10 +37,10 @@ from __future__ import annotations
 import datetime as dt
 import re
 import sys
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
-import tomllib
 import yaml  # type: ignore[import-untyped]  # no PyYAML stubs in the hook environment
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))

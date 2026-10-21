@@ -23,9 +23,8 @@ from __future__ import annotations
 
 import datetime
 import re
-from pathlib import Path
-
 import tomllib
+from pathlib import Path
 
 from scripts.docs.credits_lib import (
     OWN_LICENSES,

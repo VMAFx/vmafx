@@ -477,6 +477,14 @@
   Tiny AI job runs it for changes under `ai/`, and a nightly workflow runs it too. See the runbook section 13.
 
 
+- **A model's `conversion_target` can name a colour for untagged input (Netflix/vmaf `272c596770`).**
+  With `assumed_color_if_untagged`, a reference and distorted pair without any
+  colorimetry is scored as if both carried that colour, with one warning in
+  the log; a partly tagged pair, or one tagged input against an untagged one,
+  is still rejected
+  ([Model-declared conversion target](docs/models/v1.md#model-declared-conversion-target)).
+
+
 - **Daily Netflix/vmaf unported-commit watcher.** A daily CI workflow
   (`.github/workflows/upstream-watcher.yml`) detects commits on Netflix/vmaf
   `master` after the fork's recorded parity pin that have no disposition in
@@ -1488,6 +1496,13 @@
   0.10.0 and the functions go in 0.11.0. No expiry date changed.
 
 
+- **Release workflows use only the release-bot App token** ([ADR-3356](docs/adr/3356-release-token-app-only.md)):
+  `release-please.yml` and the macOS and Windows tester-bundle workflows mint
+  the App installation token unconditionally and no longer fall back to the
+  `RELEASE_BOT_TOKEN` personal access token. Without the App secrets a run now
+  fails at the mint step instead of finishing green with a warning.
+
+
 - **A pull request no longer carries the rendered changelog, ADR index or rebase
   notes ([ADR-2197](docs/adr/2197-render-generated-docs-at-landing.md)).** It
   adds fragments: `changelog.d/<section>/*.md`,
@@ -1826,6 +1841,13 @@
   breaks system packages without it (`--user` installs are exempt).
 
 
+- CI: `Check Win64 stack alignment` in the `Windows UCRT64` job stops after 15 minutes
+  instead of using up the job's 45. On master `190eea419` the step ran for 39 minutes
+  (about 6 on the run before), and the job ended as cancelled. The check now prints its
+  wall time and its three slowest files (`.github/workflows/libvmaf-build-matrix.yml`,
+  `scripts/ci/check-win64-stack-alignment.py`).
+
+
 - **Renovate's Rust toolchain bump passes the deliverables gate again.**
   `scripts/ci/classify-dependency-pr.sh` treats the root `rust-toolchain.toml`
   (ADR-3318) as a dependency pin, so a bot pull request that only moves the
@@ -1981,12 +2003,28 @@
   `scripts/ci/test_git_fixture_isolation.py` fails when it stops doing so.
 
 
+- **`float_psnr` and `ciede` score 9, 11, 13, 14 and 15 bits; the CPU `float_*` extractors read them correctly (ADR-2164).**
+  `float_psnr` and `ciede` refused those depths (and, with CUDA, HIP and SYCL twins, so did the `float_psnr`
+  twins); `picture_copy()` read them as 8-bit bytes, so `float_ssim`, `float_ms_ssim`, `float_adm`,
+  `float_vif` and `float_motion` returned wrong scores without an error. `psnr_hvs` above 12 bits stays
+  refused. The Metal `float_psnr` refuses the new depths by name until it has run on an Apple device, and the device
+  twins of `float_ssim`, `float_ms_ssim`, `float_adm`, `float_vif` and `float_motion` refuse them until
+  they are compared with the CPU there.
+
+
 - **`motion` was NaN in every row of every extracted feature table.** libvmaf emits no
   `integer_motion` key; the first-order motion score is `VMAF_integer_feature_motion_sad_score`.
   `ai/data/feature_extractor.py` now reads it, so the `motion` column of `FULL_FEATURES` holds values.
   Tables extracted before this change carry an all-NaN `motion` column and the `verify_features` stage of
   the mini retrain refuses them. `extract_full_features.py` also gains `--assume-dims WxH` for corpora
   that are not 1920x1080.
+
+
+- CI: the `go vet + go test` job fetches the Go module graph and installs `gosec` through
+  `scripts/ci/go-fetch-retry.sh`, which runs the command at most three times with a growing pause.
+  A transient `INTERNAL_ERROR` from the Go module proxy had failed master `a9e3fe2d8` in
+  `Install gosec`; `go.sum` and the pinned version still verify every module, so a retry changes no
+  result.
 
 
 - Go tests: `TestScoringKeepaliveOutlastsFrameworkGrace` no longer fails at
@@ -2320,6 +2358,12 @@
   status registry (#1251).
 
 
+- Setup: `scripts/setup/ubuntu.sh` installs its packages when run as root.
+  With no `sudo` prefix, `DEBIAN_FRONTEND=noninteractive` became the command
+  name and the install stopped with "command not found"; the variable now goes
+  through `env`. The header names the 26.04 codename correctly (Resolute).
+
+
 - **A stale private-state lock no longer stops every commit hook.** `scripts/githooks/state-sync.sh`
   records its owner (process id and boot id) in its lock. A lock whose owner ran in an earlier boot or
   no longer runs, or an ownerless lock older than two minutes, is taken over with a log line; before,
@@ -2541,6 +2585,13 @@
   hook `check-lint-exceptions`) fails on a missing or expired date. GHSA-84m7-p3x7-pcfv
   (`mcp` 1.29.0, reached only through `semgrep` in the tooling-test lock) is declared until
   2026-10-26; GO-2026-5932 until 2027-02-13.
+
+
+- **The Python hash locks are regenerated with uv 0.13.1.** Every lock still pins `aiohttp` 3.14.5,
+  but the repository dependency graph kept listing 3.14.3 from an older parse, so Dependabot alerts
+  for the `aiohttp` advisories fixed in 3.14.4 and 3.14.5 stayed open. The refresh rewrites each lock
+  from its manifest entry and moves eleven transitive pins forward (among them `certifi`, `starlette`,
+  `setuptools`, `filelock` and `virtualenv`); `mcp` stays at 1.29.0 under its declared exception.
 
 
 - **The OpenSSF Scorecard gate now trusts Scorecard v5.6.0 (`61e84743`) run by

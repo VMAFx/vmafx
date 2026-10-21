@@ -7,10 +7,9 @@ from __future__ import annotations
 import os
 import subprocess
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
-
-import tomllib
 
 ROOT = Path(__file__).resolve().parents[3]
 CHECK_SCRIPT = ROOT / "scripts/ci/check-copyright.sh"
