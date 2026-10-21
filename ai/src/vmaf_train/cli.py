@@ -15,7 +15,7 @@ from __future__ import annotations
 import sys
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import typer
 from rich.console import Console
@@ -26,6 +26,9 @@ if str(REPO_ROOT / "ai" / "src") not in sys.path:
     sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
 
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
+
+if TYPE_CHECKING:
+    from .train import TrainConfig
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 console = Console()
@@ -85,16 +88,15 @@ def extract_features_cmd(
     console.print(f"[green]Wrote features to {out}[/green]")
 
 
-@app.command("fit")
-def fit_cmd(
-    config: Path = typer.Option(..., exists=True, dir_okay=False, help="YAML config path"),
-    cache: Path | None = typer.Option(None, help="Override features cache (.parquet / .npz)"),
-    output: Path | None = typer.Option(None, help="Override output run directory"),
-    epochs: int | None = typer.Option(None),
-    seed: int | None = typer.Option(None),
-) -> None:
-    """Train a model from a YAML config."""
-    from .train import load_config, train
+def _load_overridden_config(
+    config: Path,
+    cache: Path | None,
+    output: Path | None,
+    epochs: int | None,
+    seed: int | None,
+) -> TrainConfig:
+    """Load train config from path applying optional CLI overrides."""
+    from .train import load_config
 
     overrides: dict[str, object] = {}
     if cache is not None:
@@ -106,7 +108,21 @@ def fit_cmd(
     if seed is not None:
         overrides["seed"] = seed
 
-    cfg = load_config(config, overrides=overrides)
+    return load_config(config, overrides=overrides)
+
+
+@app.command("fit")
+def fit_cmd(
+    config: Path = typer.Option(..., exists=True, dir_okay=False, help="YAML config path"),
+    cache: Path | None = typer.Option(None, help="Override features cache (.parquet / .npz)"),
+    output: Path | None = typer.Option(None, help="Override output run directory"),
+    epochs: int | None = typer.Option(None),
+    seed: int | None = typer.Option(None),
+) -> None:
+    """Train a model from a YAML config."""
+    from .train import train
+
+    cfg = _load_overridden_config(config, cache, output, epochs, seed)
     ckpt = train(cfg)
     console.print(f"[green]Training done. Last checkpoint: {ckpt}[/green]")
 
@@ -211,24 +227,13 @@ def tune_cmd(
     seed: int | None = typer.Option(None, help="Override base seed"),
 ) -> None:
     """Run an Optuna sweep over model_args from a base YAML config."""
-    from .train import load_config
     from .tune import sweep
 
     specs = _parse_tune_param_specs(list(param or []))
     if not specs:
         raise typer.BadParameter("at least one --param search spec is required")
 
-    overrides: dict[str, object] = {}
-    if cache is not None:
-        overrides["cache"] = str(cache)
-    if output is not None:
-        overrides["output"] = str(output)
-    if epochs is not None:
-        overrides["epochs"] = epochs
-    if seed is not None:
-        overrides["seed"] = seed
-
-    cfg = load_config(config, overrides=overrides)
+    cfg = _load_overridden_config(config, cache, output, epochs, seed)
     try:
         study = sweep(
             cfg,
