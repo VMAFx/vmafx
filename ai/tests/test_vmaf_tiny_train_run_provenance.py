@@ -95,7 +95,7 @@ def _run_main(
     argv: list[str],
 ) -> int:
     monkeypatch.setattr(sys, "argv", argv)
-    return module.main()
+    return int(module.main())
 
 
 @pytest.mark.parametrize(
