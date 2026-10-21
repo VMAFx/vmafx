@@ -615,6 +615,63 @@ def test_download_refuses_a_wrong_hash(tmp_path: Path, monkeypatch) -> None:
     assert not (tmp_path / "x").exists()
 
 
+def http_error(code: int, retry_after: str | None = None):
+    headers = {} if retry_after is None else {"Retry-After": retry_after}
+    return lic.urllib.error.HTTPError("https://example.invalid/x", code, "x", headers, None)
+
+
+def scripted_urlopen(monkeypatch, outcomes: list) -> tuple[list, list]:
+    """urlopen() that raises or returns the next outcome; records calls and sleeps."""
+    calls, sleeps = [], []
+
+    def urlopen(*_args, **_kwargs):
+        calls.append(1)
+        outcome = outcomes.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    monkeypatch.setattr(lic.urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(lic.time, "sleep", sleeps.append)
+    return calls, sleeps
+
+
+def test_open_url_asks_again_after_a_rate_limit(monkeypatch) -> None:
+    calls, sleeps = scripted_urlopen(monkeypatch, [http_error(429, "7"), http_error(503), "ok"])
+    assert lic.open_url("https://example.invalid/x") == "ok"
+    assert len(calls) == 3
+    assert sleeps == [7.0, 4.0]
+
+
+def test_open_url_backs_off_when_retry_after_is_a_date(monkeypatch) -> None:
+    date = "Wed, 21 Oct 2026 07:28:00 GMT"
+    calls, sleeps = scripted_urlopen(monkeypatch, [http_error(502, date), http_error(504), "ok"])
+    assert lic.open_url("https://example.invalid/x") == "ok"
+    assert len(calls) == 3
+    assert sleeps == [2.0, 4.0]
+
+
+def test_open_url_fails_at_once_on_a_client_error(monkeypatch) -> None:
+    calls, sleeps = scripted_urlopen(monkeypatch, [http_error(404), "ok"])
+    with pytest.raises(lic.urllib.error.HTTPError) as raised:
+        lic.open_url("https://example.invalid/x")
+    assert raised.value.code == 404
+    raised.value.close()
+    assert len(calls) == 1
+    assert sleeps == []
+
+
+def test_open_url_gives_up_after_the_last_attempt(monkeypatch) -> None:
+    errors = [http_error(429, "3600") for _ in range(lic.HTTP_ATTEMPTS)]
+    calls, sleeps = scripted_urlopen(monkeypatch, errors)
+    with pytest.raises(lic.urllib.error.HTTPError) as raised:
+        lic.open_url("https://example.invalid/x")
+    assert raised.value.code == 429
+    raised.value.close()
+    assert len(calls) == lic.HTTP_ATTEMPTS
+    assert sleeps == [float(lic.HTTP_MAX_WAIT)] * (lic.HTTP_ATTEMPTS - 1)
+
+
 def source_repo(tmp: Path) -> tuple[Path, str]:
     """A local git repository with one commit (the test stand-in for TheRock)."""
     repo = tmp / "upstream"
