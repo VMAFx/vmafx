@@ -18,7 +18,6 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
-from ai.data import feature_extractor as fe_mod
 from ai.data import scores as scores_mod
 
 # ---------------------------------------------------------------------------
@@ -141,7 +140,7 @@ def test_run_vmaf_score_default_passes_version_arg(
         out_path.write_text(json.dumps({"frames": [], "pooled_metrics": {}}))
         return subprocess.CompletedProcess(cmd, returncode=0, stdout="", stderr="")
 
-    with patch.object(fe_mod.subprocess, "run", side_effect=fake_run):
+    with patch("ai.data.feature_extractor.subprocess.run", side_effect=fake_run):
         scores_mod._run_vmaf_score(
             fake_binary,
             ref,
@@ -181,7 +180,7 @@ def test_run_vmaf_score_composes_argv(tmp_path: Path) -> None:
         out_path.write_text(json.dumps({"frames": [], "pooled_metrics": {}}))
         return subprocess.CompletedProcess(cmd, returncode=0, stdout="", stderr="")
 
-    with patch.object(fe_mod.subprocess, "run", side_effect=fake_run):
+    with patch("ai.data.feature_extractor.subprocess.run", side_effect=fake_run):
         doc = scores_mod._run_vmaf_score(
             fake_binary,
             ref,
@@ -223,7 +222,7 @@ def test_run_vmaf_score_cleans_up_output_on_subprocess_failure(tmp_path: Path) -
         raise subprocess.CalledProcessError(returncode=2, cmd=cmd)
 
     with (
-        patch.object(fe_mod.subprocess, "run", side_effect=fake_run),
+        patch("ai.data.feature_extractor.subprocess.run", side_effect=fake_run),
         pytest.raises(subprocess.CalledProcessError),
     ):
         scores_mod._run_vmaf_score(
