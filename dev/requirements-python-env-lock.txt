@@ -1,6 +1,6 @@
 # VMAFx hash lock; regenerate with: make python-locks-write
-# vmafx-uv-version: 0.13.1
-# vmafx-input-sha256: 5e4cd48f075ab470014f355f8926448167337248134532f27cb2cfa3dcebb39a
+# vmafx-uv-version: 0.13.4
+# vmafx-input-sha256: 685b43b44a1ca535ebd568585b1792f6ffccb60d64eb64e500853d87c743fcd1
 # vmafx-inputs: python/pyproject.toml, python/requirements.txt, ai/pyproject.toml, tools/vmaf-tune/pyproject.toml, requirements/locks/dev-container.in
 aiohappyeyeballs==2.7.1 \
     --hash=sha256:065665c041c42a5938ed220bdcd7230f22527fbec085e1853d2402c8a3615d9d \
@@ -1716,9 +1716,9 @@ onnx==1.22.0 \
     #   vmaf-train (ai/pyproject.toml)
     #   onnx-ir
     #   onnxscript
-onnx-ir==1.0.0 \
-    --hash=sha256:9e261f25fde8da9612ae5cb43b3b374d5ff469c04af0363cad588b2bb000b812 \
-    --hash=sha256:e578f0d608d3062866b48223616eb2d10a6d6d01f8b8faac596129034f483cc7
+onnx-ir==1.1.0 \
+    --hash=sha256:76cc313a788c073b75271c1b6abb172aaf90fcc6335ed40f9f3238b2064a2fa3 \
+    --hash=sha256:b72176de575d820ec26864d17270d58ef886a7cf64db7649d15fcc3d5ae2a8ee
     # via onnxscript
 onnxruntime==1.31.0 \
     --hash=sha256:09d56445c1753e66e0912de69d3f0184016ad9a191dcd6925bf5dd570d2bfbe5 \
@@ -1763,6 +1763,7 @@ packaging==26.3 \
     #   lazy-loader
     #   lightning-utilities
     #   matplotlib
+    #   onnx-ir
     #   onnxruntime
     #   onnxscript
     #   optuna
@@ -2791,9 +2792,9 @@ setupmeta==3.9.0 \
     --hash=sha256:464498e35aeab28aa8c27bd0283530fb69696358723a5e7157cdb11255e1abc7 \
     --hash=sha256:c1719697ac8407dd84018f5699121cdb4ec70bde28263b665a35e36f108aac29
     # via sureal
-setuptools==84.2.0 \
-    --hash=sha256:6f445ca2ce864605f81e223f262b4c94ffcb9a4a63473bae0ed7be5aab0291da \
-    --hash=sha256:8cc107ac7a403105dc8d6477664171f36135fab26adf8b5e0edaebc313f39b21
+setuptools==84.2.1 \
+    --hash=sha256:3ff8b3b5492a0aa66960f4419365a86b84e013070d4313e4d4a6894f5d64d6bc \
+    --hash=sha256:ca140b45d5325a9478f880e351484f62fef15f336462e449ca0c03c873d589c2
     # via
     #   setupmeta
     #   torch

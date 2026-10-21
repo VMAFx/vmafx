@@ -1,5 +1,5 @@
 # VMAFx hash lock; regenerate with: make python-locks-write
-# vmafx-uv-version: 0.13.1
+# vmafx-uv-version: 0.13.4
 # vmafx-input-sha256: f83f78e648e5128dd413c1c0cf94815d6bbe11a049828b956e0003c577962d98
 # vmafx-inputs: requirements/locks/nox.in
 argcomplete==3.7.2 \
@@ -59,7 +59,7 @@ python-discovery==1.6.4 \
     # via
     #   nox
     #   virtualenv
-virtualenv==21.14.11 \
-    --hash=sha256:593052d8477ea8c55a842387ce111bd08c72618f0c1133c302cafe335e570a57 \
-    --hash=sha256:b319f8590a84e5de5f8f2c803ecd2237e9bc0ffa7c1e875e3169c107cecb7454
+virtualenv==21.14.12 \
+    --hash=sha256:7820aeaef23f1f59a96458edfc7f9d3deac937155718de15f1c9a64471e15551 \
+    --hash=sha256:bbcfb78e36c22ad70c6917c4aecb5e63477d3c138e9f88c946f320e31859c76a
     # via nox
