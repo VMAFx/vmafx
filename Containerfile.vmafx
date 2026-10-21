@@ -98,8 +98,7 @@ COPY scripts/ci/install-intel-ocloc.sh /tmp/vmafx/scripts/ci/install-intel-ocloc
 COPY dev/scripts/fetch-intel-neo.py /tmp/vmafx/dev/scripts/fetch-intel-neo.py
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update \
-    && bash /tmp/vmafx/scripts/ci/install-intel-ocloc.sh --components runtime /tmp/vmafx
+    bash /tmp/vmafx/scripts/ci/install-intel-ocloc.sh --components runtime /tmp/vmafx
 
 # DG2/Arc A-series: disable Level-Zero immediate command lists (the default
 # is Xe2-tuned and regresses DG2). Same fix carried by the prior single-stage
@@ -121,8 +120,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # the same pinned LEVEL_ZERO_VERSION as the runtime loader above.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update \
-    && bash /tmp/vmafx/scripts/ci/install-intel-ocloc.sh --components build /tmp/vmafx
+    bash /tmp/vmafx/scripts/ci/install-intel-ocloc.sh --components build /tmp/vmafx
 
 # ---- Intel oneAPI apt repo + compiler (icx/icpx/lld) -----------------------
 # `intel-basekit` (not a slimmer compiler-only package): proven in
@@ -229,6 +227,7 @@ RUN mkdir -p /usr/local/include/libvmaf \
 ARG FFMPEG_TAG=n9.0.2
 ARG FFMPEG_REMOTE=https://github.com/FFmpeg/FFmpeg.git
 COPY scripts/ci/checkout-annotated-tag.sh /tmp/vmafx/scripts/ci/checkout-annotated-tag.sh
+COPY scripts/ci/ffmpeg-shared-series.sh /tmp/vmafx/scripts/ci/ffmpeg-shared-series.sh
 COPY ffmpeg-patches/ /src/vmafx/ffmpeg-patches/
 RUN git config --global user.email build@local \
  && git config --global user.name build \
@@ -236,6 +235,10 @@ RUN git config --global user.email build@local \
         "${FFMPEG_REMOTE}" "${FFMPEG_TAG}" /src/ffmpeg-src
 
 WORKDIR /src/ffmpeg-src
+# The shared FFmpeg fix series first (ADR-3143; verified against
+# build-config.env by the script), then ffmpeg-patches/series.txt in order.
+RUN FFMPEG_FIX_SERIES_CACHE=none BUILD_CONFIG=/tmp/vmafx/build-config.env \
+    bash /tmp/vmafx/scripts/ci/ffmpeg-shared-series.sh apply --method am /src/ffmpeg-src
 RUN while IFS= read -r l; do \
       case "$l" in ''|\#*) continue;; esac; \
       git am --3way "/src/vmafx/ffmpeg-patches/$l" \
@@ -398,6 +401,10 @@ RUN printf '%s\n' \
     'exec python3 /opt/vmaf-selftest/reference_report.py "$@"' \
     > /usr/local/bin/vmaf-selftest \
  && chmod +x /usr/local/bin/vmaf-selftest
+
+# Run as a non-root user, as the published images do (ADR-0878); the render
+# node is reached through the caller's groups (--group-add keep-groups).
+USER 65532:65532
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD vmaf --version || exit 1

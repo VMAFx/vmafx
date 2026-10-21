@@ -4103,6 +4103,7 @@ test_odd_depths_float_psnr_ciede = executable('test_odd_depths_float_psnr_ciede'
     c_args : vmaf_cflags_common,
     link_with : vmaf_test_link,
     dependencies : [math_lib, pthread_dependency, gpu_all_deps],
+    kwargs : test_link_kwargs,
 )
 test('test_odd_depths_float_psnr_ciede', test_odd_depths_float_psnr_ciede, suite : ['fast'])
 
