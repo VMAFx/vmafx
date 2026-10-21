@@ -2322,6 +2322,12 @@
   curl's in-pipe retry and retries the full download-decompression-tar pipeline.
 
 
+- **Ruff now targets Python 3.14, the version the tooling requires.** The root `pyproject.toml`
+  declared `requires-python = ">=3.14"` but told ruff to target Python 3.10, so ruff treated the
+  standard-library `tomllib` as a third-party package and sorted its import into the wrong block in
+  26 scripts and tests. The target is `py314` and the imports are re-sorted.
+
+
 - **CI: three jobs that fail on the `ubuntu-26.04` image run on `ubuntu-24.04` again until
   2026-10-25 (ADR-3251).** Since every hosted Linux job names `ubuntu-26.04`, the dev
   container build ran out of disk space and the FFmpeg gcc and SYCL builds stopped at the
@@ -2560,6 +2566,12 @@
   pull request from a branch of this repository; a fork's pull request runs on `ubuntu-26.04`
   whatever `ARC_RUNNERS_ENABLED` says. The `Tooling Tests` check refuses any other form of the
   selector ([ADR-3286](../../docs/adr/3286-arc-runners-fork-guard.md)).
+
+
+- **The Go toolchain moves from 1.27.2 to 1.27.3** for GO-2026-6809 (`crypto/x509`). `go.mod`
+  declares `go 1.27.3`, and the release, development and observability images build on the
+  `golang:1.27-trixie` digest that carries Go 1.27.3. `govulncheck ./...` reached
+  `crypto/x509.Verify` under Go 1.27.2; it now reports no reachable vulnerable symbol.
 
 
 - **`golang.org/x/net` moves from v0.59.0 to v0.60.0 and the Go toolchain from 1.27.1 to 1.27.2**
