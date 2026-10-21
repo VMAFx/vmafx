@@ -9,7 +9,9 @@ ADR-1403 the CUDA device policy: the one flag list every CUDA fatbin gets,
 with no per-kernel copy or exception, and since ADR-1461 the project-wide
 floor: the host policy is a project argument, no target turns contraction back
 on after it, and the compile commands of the build this test runs in end on
-the strict flag for every C and C++ translation unit.
+the strict flag for every C and C++ translation unit; since ADR-3357 a mixed
+toolchain (CC=gcc CXX=icpx) gives the C++ units icpx's strict spelling too,
+and each unit is checked against its own language's compiler.
 """
 
 from __future__ import annotations
@@ -58,6 +60,26 @@ LIBM_MATRIX: dict[tuple[str, str], tuple[list[str], list[str]]] = {
     ("msvc", "msvc"): ([], []),
 }
 
+# ADR-2170: `-fno-fast-math -fcomplex-arithmetic=full` sit between the model and the contraction
+# flag, so icpx does not report `-ffp-contract=off` as overriding `-fp-model=precise`.
+ICX_RESET = ["-fno-fast-math", "-fcomplex-arithmetic=full"]
+
+# ADR-3357: a mixed toolchain gives the C++ units icpx's strict spelling too.
+MIXED_CPP_POLICY_BEGIN = "# BEGIN VMAF C++ strict FP policy for mixed toolchains"
+MIXED_CPP_POLICY_END = "# END VMAF C++ strict FP policy for mixed toolchains"
+MIXED_CPP_PROJECT_ARGUMENT = (
+    "add_project_arguments(vmaf_cpp_mixed_strict_fp_args, language : 'cpp')"
+)
+MIXED_CPP_MATRIX: dict[tuple[str, str], list[str]] = {
+    ("gcc", "intel-llvm"): ["-fp-model=precise", *ICX_RESET, "-ffp-contract=off"],
+    ("clang", "intel-llvm"): ["-fp-model=precise", *ICX_RESET, "-ffp-contract=off"],
+    ("intel-llvm", "intel-llvm"): [],
+    ("intel-llvm", "gcc"): [],
+    ("gcc", "gcc"): [],
+    ("clang", "clang"): [],
+    ("msvc", "msvc"): [],
+}
+
 # ADR-1403: device compiler -> (enable_nvcc, host strict args, the list every
 # fatbin takes). nvcc: its host pass on the C library's model, then no FMA
 # contraction on the device. clang's CUDA driver has no --fmad and no
@@ -84,9 +106,6 @@ CUDA_FP_FLAG_WORDS = ("fmad", "ffp-contract", "fp:", "fast_math", "fast-math", "
 # -fp-model=precise implies -ffp-contract=on), then correctly rounded fp32
 # division and square root. AdaptiveCpp accepts only contraction-off.
 SYCL_PREC = ["-foffload-fp32-prec-div", "-foffload-fp32-prec-sqrt"]
-# ADR-2170: `-fno-fast-math -fcomplex-arithmetic=full` sit between the model and the contraction
-# flag, so icpx does not report `-ffp-contract=off` as overriding `-fp-model=precise`.
-ICX_RESET = ["-fno-fast-math", "-fcomplex-arithmetic=full"]
 SYCL_MATRIX = {
     "icpx": (False, ["-fp-model=precise", *ICX_RESET, "-ffp-contract=off", *SYCL_PREC], SYCL_PREC),
     "acpp": (True, ["-ffp-contract=off"], []),
@@ -246,6 +265,10 @@ def _command_fp_failure(command: str, compiler_id: str) -> str:
         return f"{wanted} is missing"
     if flags[-1] != wanted:
         return f"{flags[-1]} follows {wanted}"
+    # ADR-3357: icx / icpx default to the fast model; contraction off alone
+    # leaves reassociation and approximate division on.
+    if compiler_id == "intel-llvm" and "-fp-model=precise" not in flags:
+        return "-fp-model=precise is missing"
     return ""
 
 
@@ -255,8 +278,12 @@ def _build_fp_failures(build_root: Path, source_root: Path) -> list[str] | None:
     compilers = build_root / "meson-info" / "intro-compilers.json"
     if not database.is_file() or not compilers.is_file():
         return None
-    compiler_id = json.loads(compilers.read_text(encoding="utf-8"))["host"]["c"]["id"]
-    if compiler_id not in STRICT_LAST_FLAG:
+    host = json.loads(compilers.read_text(encoding="utf-8"))["host"]
+    # ADR-3357: each translation unit is checked against its own language's
+    # compiler; a mixed toolchain (CC=gcc CXX=icpx) has two.
+    c_id = host["c"]["id"]
+    cpp_id = host.get("cpp", {}).get("id", c_id)
+    if c_id not in STRICT_LAST_FLAG or cpp_id not in STRICT_LAST_FLAG:
         return None
     failures: list[str] = []
     checked = 0
@@ -266,7 +293,7 @@ def _build_fp_failures(build_root: Path, source_root: Path) -> list[str] | None:
             continue
         command = entry.get("command") or " ".join(entry.get("arguments", []))
         checked += 1
-        why = _command_fp_failure(command, compiler_id)
+        why = _command_fp_failure(command, c_id if source.suffix == ".c" else cpp_id)
         if why:
             try:
                 shown = source.relative_to(source_root)
@@ -529,6 +556,7 @@ class StrictFpCompilerArgsTest(unittest.TestCase):
             ("intel-llvm", "-fp-model=precise -ffp-contract=off -fp-model=precise", "follows"),
             ("intel-llvm-cl", "/clang:-ffp-contract=off /fp:precise", "follows"),
             ("intel-llvm-cl", "/fp:precise /Qfma-", "is missing"),
+            ("intel-llvm", "-ffp-contract=off", "-fp-model=precise is missing"),
             ("clang-cl", "-ffp-contract=off", "is missing"),
         ):
             with self.subTest(compiler_id=compiler_id, flags=flags):
@@ -580,6 +608,39 @@ class StrictFpCompilerArgsTest(unittest.TestCase):
                     )
                 )
                 _meson_setup(self, f"{c_id}/{cpp_id}", fixture)
+
+    @unittest.skipUnless(MESON_COMMAND, "Meson is not installed")
+    def test_mixed_toolchain_cpp_policy_executes_per_compiler_pair(self) -> None:
+        # ADR-3357: (C id, C++ id) -> the extra C++ project arguments.
+        policy = _marked_block(
+            MIXED_CPP_POLICY_BEGIN, MIXED_CPP_POLICY_END, "mixed-toolchain C++ strict FP"
+        )
+        policy = policy.replace("cxx.get_id()", "mixed_fixture_cpp_id").replace(
+            "_strict_fp_compiler_id", "mixed_fixture_c_id"
+        )
+        for (c_id, cpp_id), cpp_args in MIXED_CPP_MATRIX.items():
+            with self.subTest(c_id=c_id, cpp_id=cpp_id):
+                fixture = "\n".join(
+                    (
+                        f"project('mixed-cpp-{c_id}-{cpp_id}')",
+                        f"mixed_fixture_c_id = '{c_id}'",
+                        f"mixed_fixture_cpp_id = '{cpp_id}'",
+                        policy,
+                        f"assert(vmaf_cpp_mixed_strict_fp_args == {_meson_list(cpp_args)},",
+                        f"       'wrong mixed-toolchain C++ arguments for {c_id}/{cpp_id}')",
+                        "",
+                    )
+                )
+                _meson_setup(self, f"{c_id}/{cpp_id}", fixture)
+
+    def test_mixed_toolchain_cpp_policy_is_a_project_argument(self) -> None:
+        # ADR-3357: after the ADR-1461 floor, above the first target, once.
+        code = _meson_code(SOURCE_MESON.read_text(encoding="utf-8"))
+        first_target = FIRST_TARGET.search(code)
+        assert first_target is not None
+        self.assertEqual(code.count(MIXED_CPP_PROJECT_ARGUMENT), 1)
+        self.assertLess(code.index(PROJECT_ARGUMENT), code.index(MIXED_CPP_PROJECT_ARGUMENT))
+        self.assertLess(code.index(MIXED_CPP_PROJECT_ARGUMENT), first_target.start())
 
     def test_host_libm_link_policy_reaches_every_link(self) -> None:
         # ADR-1495: project link arguments, once each, after the policy and

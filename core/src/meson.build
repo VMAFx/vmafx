@@ -125,6 +125,23 @@ if vmaf_x86_isa_unix_flags_ok
     vmaf_x86_avx512_isa_args = ['-mavx512f', '-mavx512dq', '-mavx512bw', '-mavx512cd', '-mavx512vl']
 endif
 
+# ADR-3357: the policy above keys on the C compiler. A mixed toolchain
+# (CC=gcc CXX=icpx: the dev container and Containerfile.vmafx) would give the
+# C++ translation units icpx compiles GCC's spelling only, and leave them in
+# icpx's default fast model (reassociation, approximate division). They take
+# the list an icx build gives them, spelled as the policy above spells it
+# (ADR-2170: precise first, `-fno-fast-math -fcomplex-arithmetic=full`, then
+# contraction off, so icpx reports no -Woverriding-option). Above the first
+# build target, as above.
+# BEGIN VMAF C++ strict FP policy for mixed toolchains
+vmaf_cpp_mixed_strict_fp_args = []
+if cxx.get_id() == 'intel-llvm' and _strict_fp_compiler_id != 'intel-llvm'
+    vmaf_cpp_mixed_strict_fp_args = ['-fp-model=precise', '-fno-fast-math',
+        '-fcomplex-arithmetic=full', '-ffp-contract=off']
+endif
+# END VMAF C++ strict FP policy for mixed toolchains
+add_project_arguments(vmaf_cpp_mixed_strict_fp_args, language : 'cpp')
+
 # ADR-1495: the host math functions (log10, pow, powf, log2f, exp, log and
 # the others libvmaf calls) come from the C library's libm in every build, so
 # an icx build returns a GCC build's scores. The Intel driver links its own

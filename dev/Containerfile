@@ -830,9 +830,15 @@ USER vmaf
 # to the reference binary build. Intel icx contracts multiply-adds when FMA is
 # enabled by -march=native, causing SpEED and CPU extractor scores to drift from
 # default builds.
+#
+# Hybrid toolchain (ADR-3357): CPU C code is built by GCC,
+# C++ and the SYCL kernels by icpx. b_lto stays false: GCC LTO objects cannot
+# go through the icpx link. glibc libm comes from ADR-1495's link policy, the
+# strict FP model for icpx's C++ from ADR-1461 / ADR-3357's project arguments.
+# CUDA/HIP host C is GCC-built too.
 RUN --mount=type=cache,target=/home/vmaf/.cache/ccache,sharing=locked,uid=2000,gid=2000,id=ccache-dev-mcp-vmaf \
     export CCACHE_DIR=/home/vmaf/.cache/ccache CARGO_HOME=/home/vmaf/.cargo \
-    && CC=icx CXX=icpx meson setup core/build core \
+    && CC=gcc CXX=icpx meson setup core/build core \
         -Denable_cuda=true \
         -Denable_sycl=true \
         -Denable_hip=true \
