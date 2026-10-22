@@ -8,6 +8,59 @@ search:
 # Rebase notes
 
 <!-- rebase-notes:fragments:begin (rendered from docs/rebase-notes.d/; do not edit) -->
+
+## ADR-3359 — SYCL primary queue on immediate command lists (2026-10-02)
+
+`pr/sycl-zerocopy-hardening`, [ADR-3359](adr/3359-sycl-primary-queue-immediate-cmdlist.md);
+row `T-SYCL-ZEROCOPY-IMPORT-DROPPED-2026-10-02` in [state.md](state.md).
+
+- `core/src/sycl/common.cpp::sycl_queue_props()` adds
+  `sycl::ext::intel::property::queue::immediate_command_list` (under
+  `SYCL_EXT_INTEL_QUEUE_IMMEDIATE_COMMAND_LIST`) to the primary queue in both
+  the profiling and the plain form. The VA import in `dmabuf_import.cpp` must
+  stay on that queue (`vmaf_sycl_get_queue_ptr()`): a separate immediate
+  import-only queue next to a batched primary queue still drops the import.
+- A rebase that restructures queue creation (another adapter, a queue pool, a
+  merge with the copy or combined queue) keeps the property on the queue the
+  imports are made against and `vmaf_sycl_queue_wait()` waits on, and re-runs
+  `scripts/test/zerocopy-e2e.sh --stage 1 --repeat 10 --cases cambi,vif,model-vmaf_v0.6.1`
+  at 8 and 10 bit under `UR_L0_USE_IMMEDIATE_COMMANDLISTS=0` (0 differing runs).
+- No Netflix golden-data, public API or FFmpeg patch impact.
+
+## SYCL zero-copy hardening: twin routing, timing log, e2e harness (2026-10-05)
+
+`pr/sycl-zerocopy-hardening`, [ADR-3360](adr/3360-sycl-filter-twin-routing.md)
+(and ADR-3359 above); ported from the Tualua fork's zero-copy work without its
+chroma import, which is post-1.0 ([ADR-1685](adr/1685-post-1-0-embedding-zero-copy-milestone.md)).
+
+- `ffmpeg-patches/0005-libvmaf-add-libvmaf-sycl-filter.patch`:
+  `use_feature_sycl()` / `use_feature()` and `route_twins` route `feature=`
+  names through `vmaf_feature_backend_twin()`; `config_props_sycl()` refuses
+  QSV `sw_format`s other than NV12 / P010. A refresh of the series keeps both;
+  `ffmpeg-patches/test/check-sycl-feature-routing.sh` fails otherwise. The
+  import-failure branch keeps master's retry-then-fail form
+  ([ADR-1761](adr/1761-sycl-filter-import-retry-then-fail.md)).
+- `core/src/sycl/common.cpp`: `vmaf_sycl_print_timing()` uses `vmaf_log` at
+  INFO (`core/src/sycl/AGENTS.md`).
+- `scripts/test/zerocopy-e2e.sh`, `zerocopy_e2e_compare.py`: stage 1 is the set
+  ADR-1688 admits on the luma-only path. A change to
+  `reads_shared_luma_only()` answers moves cases between stages in
+  `PARITY_STAGE`; the e2e legs never use `-frames:v` / `-t`.
+- No Netflix golden-data or public C API impact.
+
+## Hybrid GCC CPU and icpx SYCL toolchain (2026-10-19)
+
+- `core/src/meson.build` keeps the `BEGIN/END VMAF C++ strict FP policy for
+  mixed toolchains` block above the first build target, with the ADR-2170
+  icx spelling (`-fp-model=precise -fno-fast-math -fcomplex-arithmetic=full
+  -ffp-contract=off`); `core/test/test_strict_fp_compiler_args.py` executes
+  it for every C and C++ compiler pair.
+- Every `executable()` in `core/test/meson.build` passes
+  `kwargs : test_link_kwargs` or sets `link_language` itself, so a C test
+  links through icpx when SYCL is on;
+  `core/test/test_test_link_kwargs_contract.py` refuses one that does not.
+  Fork-only, nothing upstream.
+
 ## Release workflows take only the App token (2026-10-19)
 
 - `.github/workflows/release-please.yml`, `macos-tester-bundle.yml`,
