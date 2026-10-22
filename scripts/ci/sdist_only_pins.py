@@ -25,12 +25,12 @@ import os
 import re
 import sys
 import tarfile
+import tomllib
 import urllib.request
 import zipfile
 from pathlib import Path
 from typing import Any
 
-import tomllib
 from packaging import markers, tags, utils
 
 RECORD = Path("scripts/ci/sdist_only_pins.json")

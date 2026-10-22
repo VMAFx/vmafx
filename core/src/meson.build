@@ -125,6 +125,23 @@ if vmaf_x86_isa_unix_flags_ok
     vmaf_x86_avx512_isa_args = ['-mavx512f', '-mavx512dq', '-mavx512bw', '-mavx512cd', '-mavx512vl']
 endif
 
+# ADR-3357: the policy above keys on the C compiler. A mixed toolchain
+# (CC=gcc CXX=icpx: the dev container and Containerfile.vmafx) would give the
+# C++ translation units icpx compiles GCC's spelling only, and leave them in
+# icpx's default fast model (reassociation, approximate division). They take
+# the list an icx build gives them, spelled as the policy above spells it
+# (ADR-2170: precise first, `-fno-fast-math -fcomplex-arithmetic=full`, then
+# contraction off, so icpx reports no -Woverriding-option). Above the first
+# build target, as above.
+# BEGIN VMAF C++ strict FP policy for mixed toolchains
+vmaf_cpp_mixed_strict_fp_args = []
+if cxx.get_id() == 'intel-llvm' and _strict_fp_compiler_id != 'intel-llvm'
+    vmaf_cpp_mixed_strict_fp_args = ['-fp-model=precise', '-fno-fast-math',
+        '-fcomplex-arithmetic=full', '-ffp-contract=off']
+endif
+# END VMAF C++ strict FP policy for mixed toolchains
+add_project_arguments(vmaf_cpp_mixed_strict_fp_args, language : 'cpp')
+
 # ADR-1495: the host math functions (log10, pow, powf, log2f, exp, log and
 # the others libvmaf calls) come from the C library's libm in every build, so
 # an icx build returns a GCC build's scores. The Intel driver links its own
@@ -573,7 +590,7 @@ if is_hipcc_enabled and is_hip_enabled
         # ADR-1409: float_motion's row sums in the CPU's order, shared by the
         # kernels and the device-free test.
         'feature/hip/float_motion/float_motion_rows.h',
-        # Its host half includes the backend-neutral row-sum tail.
+        # The kernel takes its bit-depth scaler, the host half its row-sum tail.
         'feature/float_motion_sad.h',
         'feature/hip/float_vif_hip.h',
         'feature/float_vif_gpu_common.h',
@@ -582,6 +599,8 @@ if is_hipcc_enabled and is_hip_enabled
         'feature/ssimulacra2_eotf_lut.h',
         # ADR-1445: the fp64 terms' split helper and the ordered sums.
         'feature/ssimulacra2_score.h',
+        'feature/ssimulacra2_weights.h',
+        'feature/ssimulacra2_gaussian.h',
         'feature/ordered_sum.h',
         # ADR-1497: the CPU's second-moment sum past 2^53 units.
         'feature/float_moment_sum.h',
@@ -589,6 +608,7 @@ if is_hipcc_enabled and is_hip_enabled
         'feature/hip/float_adm_hip.h',
         # ADR-1458: the float_adm arithmetic, shared with the CUDA twin.
         'feature/float_adm_gpu_common.h',
+        'feature/adm_float_reference.h',
         'feature/hip/float_adm/float_adm_hip_math.h',
         'feature/hip/integer_cambi_hip.h',
         'feature/hip/integer_cambi/cambi_hip_device.h',
@@ -1833,6 +1853,7 @@ if is_cuda_enabled
         'feature/cuda/integer_psnr_hvs_cuda.h',
         'feature/cuda/float_psnr_cuda.h',
         'feature/cuda/float_motion_cuda.h',
+        'feature/float_motion_sad.h',
         'feature/cuda/float_vif_cuda.h',
         'feature/cuda/float_vif/float_vif_device.h',
         'feature/float_vif_gpu_common.h',
@@ -1840,12 +1861,15 @@ if is_cuda_enabled
         'feature/ssimulacra2_eotf_lut.h',
         'feature/ssimulacra2_math.h',
         'feature/ssimulacra2_score.h',
+        'feature/ssimulacra2_weights.h',
+        'feature/ssimulacra2_gaussian.h',
         'feature/ordered_sum.h',
         'feature/float_moment_sum.h',
         'feature/float_moment_sum_gpu.h',
         'feature/cuda/float_adm_cuda.h',
         'feature/cuda/float_adm/float_adm_device.h',
         'feature/float_adm_gpu_common.h',
+        'feature/adm_float_reference.h',
         'feature/cuda/integer_cambi_cuda.h',
         'feature/cuda/speed_chroma_cuda.h',
         'feature/cuda/speed_temporal_cuda.h',

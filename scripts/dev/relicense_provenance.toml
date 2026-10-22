@@ -327,6 +327,10 @@ from = ["netflix-speed"]
 from = ["netflix-speed"]
 [ports."core/src/feature/ssimulacra2.c"]
 from = ["libjxl"]  # "scalar C port of the libjxl reference implementation"
+[ports."core/src/feature/ssimulacra2_gaussian.h"]
+from = ["libjxl"]  # CreateRecursiveGaussian moved out of ssimulacra2.c
+[ports."core/src/feature/ssimulacra2_weights.h"]
+from = ["libjxl"]  # kWeights of tools/ssimulacra2.cc moved out of ssimulacra2.c
 
 # GPU helper headers whose family names more origins than the code they hold.
 # A family is a default for a kernel file; each of these reproduces one named

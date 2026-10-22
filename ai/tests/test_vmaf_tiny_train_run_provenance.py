@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -67,6 +68,36 @@ def _assert_common_provenance(
     assert provenance["outputs"]["stats_target"] == str(stats)
 
 
+def _train_argv(
+    script: str,
+    inputs: list[str],
+    ckpt: Path | str,
+    stats: Path | str,
+    *,
+    extra: Sequence[str] = (),
+) -> list[str]:
+    return [
+        script,
+        *inputs,
+        *extra,
+        "--out-ckpt",
+        str(ckpt),
+        "--out-stats",
+        str(stats),
+        "--epochs",
+        "0",
+    ]
+
+
+def _run_main(
+    module: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    argv: list[str],
+) -> int:
+    monkeypatch.setattr(sys, "argv", argv)
+    return int(module.main())
+
+
 @pytest.mark.parametrize(
     ("module", "script_name"),
     [
@@ -85,20 +116,14 @@ def test_vmaf_tiny_single_parquet_train_stats_record_run_provenance(
     ckpt = tmp_path / "model.pt"
     stats = tmp_path / "stats.json"
     _write_feature_parquet(parquet)
-    argv = [
+    argv = _train_argv(
         script_name,
-        "--parquet",
-        str(parquet),
-        "--out-ckpt",
-        str(ckpt),
-        "--out-stats",
-        str(stats),
-        "--epochs",
-        "0",
-    ]
-    monkeypatch.setattr(sys, "argv", argv)
+        ["--parquet", str(parquet)],
+        ckpt,
+        stats,
+    )
 
-    assert module.main() == 0
+    assert _run_main(module, monkeypatch, argv) == 0
 
     payload = json.loads(stats.read_text(encoding="utf-8"))
     _assert_common_provenance(payload, script_name=script_name, argv=argv, ckpt=ckpt, stats=stats)
@@ -116,22 +141,14 @@ def test_vmaf_tiny_v5_train_stats_record_run_provenance(
     stats = tmp_path / "stats.json"
     _write_feature_parquet(base, corpus="base")
     _write_feature_parquet(extra, corpus="ugc")
-    argv = [
+    argv = _train_argv(
         "train_vmaf_tiny_v5.py",
-        "--parquet-base",
-        str(base),
-        "--parquet-extra",
-        str(extra),
-        "--out-ckpt",
-        str(ckpt),
-        "--out-stats",
-        str(stats),
-        "--epochs",
-        "0",
-    ]
-    monkeypatch.setattr(sys, "argv", argv)
+        ["--parquet-base", str(base), "--parquet-extra", str(extra)],
+        ckpt,
+        stats,
+    )
 
-    assert train_v5.main() == 0
+    assert _run_main(train_v5, monkeypatch, argv) == 0
 
     payload = json.loads(stats.read_text(encoding="utf-8"))
     _assert_common_provenance(
@@ -155,22 +172,14 @@ def test_vmaf_tiny_v5_refuses_conflicting_teacher_models(
     extra = tmp_path / "extra.parquet"
     _write_feature_parquet(base, corpus="base", teacher_model="vmaf_v1.0.16_3d0h")
     _write_feature_parquet(extra, corpus="ugc", teacher_model="vmaf_v0.6.1")
-    argv = [
+    argv = _train_argv(
         "train_vmaf_tiny_v5.py",
-        "--parquet-base",
-        str(base),
-        "--parquet-extra",
-        str(extra),
-        "--out-ckpt",
-        str(tmp_path / "m.pt"),
-        "--out-stats",
-        str(tmp_path / "s.json"),
-        "--epochs",
-        "0",
-    ]
-    monkeypatch.setattr(sys, "argv", argv)
+        ["--parquet-base", str(base), "--parquet-extra", str(extra)],
+        tmp_path / "m.pt",
+        tmp_path / "s.json",
+    )
     with pytest.raises(SystemExit, match="conflicting teacher models"):
-        train_v5.main()
+        _run_main(train_v5, monkeypatch, argv)
 
 
 def test_vmaf_tiny_v5_accepts_legacy_with_assume_teacher(
@@ -183,22 +192,13 @@ def test_vmaf_tiny_v5_accepts_legacy_with_assume_teacher(
     _write_feature_parquet(extra, corpus="ugc", teacher_model=None)
     ckpt = tmp_path / "model.pt"
     stats = tmp_path / "stats.json"
-    argv = [
+    argv = _train_argv(
         "train_vmaf_tiny_v5.py",
-        "--parquet-base",
-        str(base),
-        "--parquet-extra",
-        str(extra),
-        "--assume-teacher",
-        "vmaf_v0.6.1",
-        "--out-ckpt",
-        str(ckpt),
-        "--out-stats",
-        str(stats),
-        "--epochs",
-        "0",
-    ]
-    monkeypatch.setattr(sys, "argv", argv)
-    assert train_v5.main() == 0
+        ["--parquet-base", str(base), "--parquet-extra", str(extra)],
+        ckpt,
+        stats,
+        extra=["--assume-teacher", "vmaf_v0.6.1"],
+    )
+    assert _run_main(train_v5, monkeypatch, argv) == 0
     payload = json.loads(stats.read_text(encoding="utf-8"))
     assert payload["teacher_model"] == "vmaf_v0.6.1"

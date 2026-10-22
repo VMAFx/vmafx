@@ -3,7 +3,6 @@
 # SPDX-License-Identifier: EUPL-1.2
 """Check source-driven ADR generation without modifying the caller's repo."""
 
-import os
 import shutil
 import sys
 import tempfile
@@ -12,6 +11,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
+from scripts.docs.tests.fixture_repo import git_init
 from scripts.lib.safe_subprocess import CommandResult
 from scripts.lib.safe_subprocess import run as run_command
 
@@ -21,21 +21,6 @@ ADR_NAV = [
     "- Template: adr/0000-template.md",
     "- By tag: adr/by-tag/index.md",
 ]
-
-
-def git_init(root: Path) -> None:
-    """Make the fixture a repository: the fragment order is read from its history."""
-    git = shutil.which("git")
-    assert git is not None, "git is required by the generator fixture"
-    run_command(
-        (git, "init", "-q", str(root)),
-        allowed_executables=(git,),
-        # Without the hook's GIT_DIR: the fixture, not the caller's repository.
-        env={key: value for key, value in os.environ.items() if not key.startswith("GIT_")},
-        capture_output=True,
-        check=True,
-        timeout_seconds=60,
-    )
 
 
 def adr_nav_entries(mkdocs_text: str) -> list[str]:

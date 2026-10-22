@@ -48,7 +48,9 @@
 #include "cuda/ssimulacra2_cuda.h"
 #include "cuda_helper.cuh"
 #include "feature/ssimulacra2_pixel_format.h"
+#include "feature/ssimulacra2_gaussian.h"
 #include "feature/ssimulacra2_score.h"
+#include "feature/ssimulacra2_weights.h"
 #include "picture.h"
 #include "picture_cuda.h"
 
@@ -68,118 +70,6 @@ enum yuv_matrix_c {
     SS2C_MATRIX_BT601_LIMITED = 1,
     SS2C_MATRIX_BT709_FULL = 2,
     SS2C_MATRIX_BT601_FULL = 3,
-};
-
-/* libjxl 108 pooling weights — bit-identical to ssimulacra2.c::kWeights. */
-static const double g_weights[108] = {
-    0.0,
-    0.0007376606707406586,
-    0.0,
-    0.0,
-    0.0007793481682867309,
-    0.0,
-    0.0,
-    0.0004371155730107379,
-    0.0,
-    1.1041726426657346,
-    0.00066284834129271,
-    0.00015231632783718752,
-    0.0,
-    0.0016406437456599754,
-    0.0,
-    1.8422455520539298,
-    11.441172603757666,
-    0.0,
-    0.0007989109436015163,
-    0.000176816438078653,
-    0.0,
-    1.8787594979546387,
-    10.94906990605142,
-    0.0,
-    0.0007289346991508072,
-    0.9677937080626833,
-    0.0,
-    0.00014003424285435884,
-    0.9981766977854967,
-    0.00031949755934435053,
-    0.0004550992113792063,
-    0.0,
-    0.0,
-    0.0013648766163243398,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    7.466890328078848,
-    0.0,
-    17.445833984131262,
-    0.0006235601634041466,
-    0.0,
-    0.0,
-    6.683678146179332,
-    0.00037724407979611296,
-    1.027889937768264,
-    225.20515300849274,
-    0.0,
-    0.0,
-    19.213238186143016,
-    0.0011401524586618361,
-    0.001237755635509985,
-    176.39317598450694,
-    0.0,
-    0.0,
-    24.43300999870476,
-    0.28520802612117757,
-    0.0004485436923833408,
-    0.0,
-    0.0,
-    0.0,
-    34.77906344483772,
-    44.835625328877896,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0008680556573291698,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0005313191874358747,
-    0.0,
-    0.00016533814161379112,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0004179171803251336,
-    0.0017290828234722833,
-    0.0,
-    0.0020827005846636437,
-    0.0,
-    0.0,
-    8.826982764996862,
-    23.19243343998926,
-    0.0,
-    95.1080498811086,
-    0.9863978034400682,
-    0.9834382792465353,
-    0.0012286405048278493,
-    171.2667255897307,
-    0.9807858872435379,
-    0.0,
-    0.0,
-    0.0,
-    0.0005130064588990679,
-    0.0,
-    0.00010854057858411537,
 };
 
 typedef struct Ssimu2StateCuda {
@@ -250,62 +140,15 @@ static const VmafOption options[] = {
  * create_recursive_gaussian in ssimulacra2.c.                        */
 /* ------------------------------------------------------------------ */
 
-/* Verbatim port of the libjxl Charalampidis 2016 derivation; per
- * ADR-0141 carve-out, splitting the linear-system solve would
- * obscure the scalar-diff audit trail. */
+/* Setup recursive Gaussian coefficients via shared ssimu2_compute_gaussian_coeffs(). */
 static void ss2c_setup_gaussian(Ssimu2StateCuda *s, double sigma)
 {
-    const double radius = round(3.2795 * sigma + 0.2546);
-    const double pi_div_2r = SS2C_PI / (2.0 * radius);
-    const double omega[3] = {pi_div_2r, 3.0 * pi_div_2r, 5.0 * pi_div_2r};
-
-    const double p1 = +1.0 / tan(0.5 * omega[0]);
-    const double p3 = -1.0 / tan(0.5 * omega[1]);
-    const double p5 = +1.0 / tan(0.5 * omega[2]);
-    const double r1 = +p1 * p1 / sin(omega[0]);
-    const double r3 = -p3 * p3 / sin(omega[1]);
-    const double r5 = +p5 * p5 / sin(omega[2]);
-
-    const double neg_half_sigma2 = -0.5 * sigma * sigma;
-    const double recip_r = 1.0 / radius;
-    double rho[3];
-    for (int i = 0; i < 3; i++)
-        rho[i] = exp(neg_half_sigma2 * omega[i] * omega[i]) * recip_r;
-
-    const double D13 = p1 * r3 - r1 * p3;
-    const double D35 = p3 * r5 - r3 * p5;
-    const double D51 = p5 * r1 - r5 * p1;
-    const double recip_d13 = 1.0 / D13;
-    const double zeta_15 = D35 * recip_d13;
-    const double zeta_35 = D51 * recip_d13;
-
-    const double A[3][3] = {{p1, p3, p5}, {r1, r3, r5}, {zeta_15, zeta_35, 1.0}};
-    const double gamma[3] = {1.0, radius * radius - sigma * sigma,
-                             zeta_15 * rho[0] + zeta_35 * rho[1] + rho[2]};
-    const double det_A = A[0][0] * (A[1][1] * A[2][2] - A[1][2] * A[2][1]) -
-                         A[0][1] * (A[1][0] * A[2][2] - A[1][2] * A[2][0]) +
-                         A[0][2] * (A[1][0] * A[2][1] - A[1][1] * A[2][0]);
-    const double inv_det = 1.0 / det_A;
-
-    double beta[3];
-    for (int col = 0; col < 3; col++) {
-        double M[3][3];
-        for (int i = 0; i < 3; i++) {
-            for (int j = 0; j < 3; j++)
-                M[i][j] = A[i][j];
-        }
-        for (int i = 0; i < 3; i++)
-            M[i][col] = gamma[i];
-        beta[col] = (M[0][0] * (M[1][1] * M[2][2] - M[1][2] * M[2][1]) -
-                     M[0][1] * (M[1][0] * M[2][2] - M[1][2] * M[2][0]) +
-                     M[0][2] * (M[1][0] * M[2][1] - M[1][1] * M[2][0])) *
-                    inv_det;
-    }
-
-    s->rg_radius = (int)radius;
+    Ssimu2GaussianCoeffs coeffs;
+    ssimu2_compute_gaussian_coeffs(sigma, &coeffs);
+    s->rg_radius = coeffs.radius;
     for (int i = 0; i < 3; i++) {
-        s->rg_n2[i] = (float)(-beta[i] * cos(omega[i] * (radius + 1.0)));
-        s->rg_d1[i] = (float)(-2.0 * cos(omega[i]));
+        s->rg_n2[i] = coeffs.n2[i];
+        s->rg_d1[i] = coeffs.d1[i];
     }
 }
 
@@ -401,9 +244,9 @@ static double ss2c_pool_score(const double avg_ssim[6][6], const double avg_ed[6
                 const double s_term = scale < num_scales ? avg_ssim[scale][c * 2 + n] : 0.0;
                 const double r_term = scale < num_scales ? avg_ed[scale][c * 4 + n] : 0.0;
                 const double b_term = scale < num_scales ? avg_ed[scale][c * 4 + n + 2] : 0.0;
-                ssim += g_weights[i++] * fabs(s_term);
-                ssim += g_weights[i++] * fabs(r_term);
-                ssim += g_weights[i++] * fabs(b_term);
+                ssim += kWeights[i++] * fabs(s_term);
+                ssim += kWeights[i++] * fabs(r_term);
+                ssim += kWeights[i++] * fabs(b_term);
             }
         }
     }

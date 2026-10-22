@@ -48,6 +48,8 @@ wrapper-output schema, and [`README.md`](README.md) for operator usage.
   Load-bearing for `monkeypatch.setattr(compare.subprocess, "run", ...)`
   pattern in `test_main_emits_table_with_stubbed_wrappers`. Do not restore
   default-arg binding `runner: SubprocessRunner = subprocess.run`.
+- **Wrappers source shared helpers.** Every wrapper sources `lib/common.sh`
+  for argument parsing, binary validation, and output normalisation.
 
 ## Adding a new competitor
 

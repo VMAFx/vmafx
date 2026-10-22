@@ -17,9 +17,9 @@ the same scoring path, recommends a CRF for the next pass. Built with
  doc/filters.texi               |  151 ++
  libavfilter/Makefile           |    2 +
  libavfilter/allfilters.c       |    2 +
- libavfilter/vf_vmafx.c         | 2696 ++++++++++++++++++++++++++++++++
+ libavfilter/vf_vmafx.c         | 2694 ++++++++++++++++++++++++++++++++
  libavfilter/vf_vmafx_options.h |  152 ++
- 6 files changed, 3008 insertions(+)
+ 6 files changed, 3006 insertions(+)
  create mode 100644 libavfilter/vf_vmafx.c
  create mode 100644 libavfilter/vf_vmafx_options.h
 
@@ -250,10 +250,10 @@ index 75e598b530bb0a60f3e94098e6c8d25ed9fd9513..83727b0c8fd2ac6f3499128b9edf0a20
  extern const FFFilter ff_vf_w3fdif;
 diff --git a/libavfilter/vf_vmafx.c b/libavfilter/vf_vmafx.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..b6a5037ba1ec53b6c764268c1931cf5a57cb6ea2
+index 0000000000000000000000000000000000000000..dc09c9be44e592a050f8194cf2a9799285732fa7
 --- /dev/null
 +++ b/libavfilter/vf_vmafx.c
-@@ -0,0 +1,2696 @@
+@@ -0,0 +1,2694 @@
 +/*
 + * Copyright 2026 Lusoris
 + *
@@ -726,6 +726,22 @@ index 0000000000000000000000000000000000000000..b6a5037ba1ec53b6c764268c1931cf5a
 +    box_drop(b);
 +}
 +
++#if CONFIG_CUDA || CONFIG_LIBDRM
++/* Release fence on OK, unref *out on failure, box_after_import(b, status). */
++static VmafxStatus import_finish(VmafxStatus status, VmafxFrame **out, VmafxFenceKind kind,
++                                 ReleaseBox *b, VmafxError **error)
++{
++    if (status == VMAFX_OK)
++        status = vmafx_frame_release_fence(*out, kind, &b->fence, error);
++    if (status != VMAFX_OK && *out) {
++        vmafx_frame_unref(*out); /* runs box_release() */
++        *out = NULL;
++    }
++    box_after_import(b, status);
++    return status;
++}
++#endif /* CONFIG_CUDA || CONFIG_LIBDRM */
++
 +static VmafxStatus host_import(VMAFXContext *s, const AVFrame *frame, uint32_t layout, uint32_t bpc,
 +                               ReleaseBox *b, const char *input, VmafxFrame **out,
 +                               VmafxError **error)
@@ -933,18 +949,31 @@ index 0000000000000000000000000000000000000000..b6a5037ba1ec53b6c764268c1931cf5a
 +    if (ret >= 0)
 +        status = vmafx_context_import_frame(s->context, s->vdev, &imp, input, out, &error);
 +    cuda_event_destroy(hw, event); /* the import took what it needs */
-+    if (status == VMAFX_OK)
-+        status = vmafx_frame_release_fence(*out, VMAFX_FENCE_CUDA_EVENT, &b->fence, &error);
-+    if (status != VMAFX_OK && *out) {
-+        vmafx_frame_unref(*out); /* runs box_release() */
-+        *out = NULL;
-+    }
-+    box_after_import(b, status);
++    status = import_finish(status, out, VMAFX_FENCE_CUDA_EVENT, b, &error);
 +    if (status == VMAFX_OK)
 +        return 0;
 +    return ret < 0 ? ret : vmafx_fail(ctx, status, error, "vmafx_context_import_frame");
 +}
 +#endif /* CONFIG_CUDA */
++
++/* Open a VMAFx device for the slot's backend, parsing `device` as auto or index. */
++static int device_create_from_option(AVFilterContext *ctx, const char *what)
++{
++    VMAFXContext *s = ctx->priv;
++    VmafxDeviceDesc desc = VMAFX_DEVICE_DESC_INIT;
++    desc.backend = s->slot->backend;
++    char *end = NULL;
++    const long index = !s->device || !strcmp(s->device, "auto") ? -1 : strtol(s->device, &end, 10);
++    if (end && (*end || index < 0 || index > INT32_MAX)) {
++        av_log(ctx, AV_LOG_ERROR, "vmafx: device=%s is not auto or a device index\n", s->device);
++        return AVERROR(EINVAL);
++    }
++    desc.index = (int32_t)index;
++    desc.flags = s->profile ? VMAFX_DEVICE_PROFILING : 0;
++    VmafxError *error = NULL;
++    const VmafxStatus st = vmafx_device_create(&desc, &s->vdev, &error);
++    return st == VMAFX_OK ? 0 : vmafx_fail(ctx, st, error, what);
++}
 +
 +/* ---- DRM PRIME frames (SYCL, HIP) --------------------------------------------- */
 +
@@ -975,21 +1004,8 @@ index 0000000000000000000000000000000000000000..b6a5037ba1ec53b6c764268c1931cf5a
 + * (auto: the backend's first GPU). */
 +static int drm_open(AVFilterContext *ctx, AVBufferRef *frames)
 +{
-+    VMAFXContext *s = ctx->priv;
-+    VmafxDeviceDesc desc = VMAFX_DEVICE_DESC_INIT;
-+    desc.backend = s->slot->backend;
-+    char *end = NULL;
-+    const long index = !s->device || !strcmp(s->device, "auto") ? -1 : strtol(s->device, &end, 10);
-+    if (end && (*end || index < 0 || index > INT32_MAX)) {
-+        av_log(ctx, AV_LOG_ERROR, "vmafx: device=%s is not auto or a device index\n", s->device);
-+        return AVERROR(EINVAL);
-+    }
-+    desc.index = (int32_t)index;
-+    desc.flags = s->profile ? VMAFX_DEVICE_PROFILING : 0;
 +    (void)frames;
-+    VmafxError *error = NULL;
-+    const VmafxStatus status = vmafx_device_create(&desc, &s->vdev, &error);
-+    return status == VMAFX_OK ? 0 : vmafx_fail(ctx, status, error, "vmafx_device_create(drm)");
++    return device_create_from_option(ctx, "vmafx_device_create(drm)");
 +}
 +
 +/* A DRM PRIME frame imported as dma-bufs without a copy: one plane of the
@@ -1035,13 +1051,7 @@ index 0000000000000000000000000000000000000000..b6a5037ba1ec53b6c764268c1931cf5a
 +    VmafxStatus status = vmafx_context_import_frame(s->context, s->vdev, &imp, input, out, &error);
 +    /* The surface goes back to its pool (a decoder writes it again) only
 +     * after the device read it: box_release() waits on this fence. */
-+    if (status == VMAFX_OK)
-+        status = vmafx_frame_release_fence(*out, VMAFX_FENCE_HOST, &b->fence, &error);
-+    if (status != VMAFX_OK && *out) {
-+        vmafx_frame_unref(*out); /* runs box_release() */
-+        *out = NULL;
-+    }
-+    box_after_import(b, status);
++    status = import_finish(status, out, VMAFX_FENCE_HOST, b, &error);
 +    return status == VMAFX_OK ? 0 : vmafx_fail(ctx, status, error, "vmafx_context_import_frame");
 +}
 +#endif /* CONFIG_LIBDRM */
@@ -2295,19 +2305,7 @@ index 0000000000000000000000000000000000000000..b6a5037ba1ec53b6c764268c1931cf5a
 +        }
 +        return s->slot->open(ctx, frames);
 +    }
-+    VmafxDeviceDesc desc = VMAFX_DEVICE_DESC_INIT;
-+    desc.backend = s->slot->backend;
-+    char *end = NULL;
-+    const long index = !s->device || !strcmp(s->device, "auto") ? -1 : strtol(s->device, &end, 10);
-+    if (end && (*end || index < 0 || index > INT32_MAX)) {
-+        av_log(ctx, AV_LOG_ERROR, "vmafx: device=%s is not auto or a device index\n", s->device);
-+        return AVERROR(EINVAL);
-+    }
-+    desc.index = (int32_t)index;
-+    desc.flags = s->profile ? VMAFX_DEVICE_PROFILING : 0;
-+    VmafxError *error = NULL;
-+    const VmafxStatus st = vmafx_device_create(&desc, &s->vdev, &error);
-+    return st == VMAFX_OK ? 0 : vmafx_fail(ctx, st, error, "vmafx_device_create");
++    return device_create_from_option(ctx, "vmafx_device_create");
 +}
 +
 +static int open_windows(AVFilterContext *ctx)

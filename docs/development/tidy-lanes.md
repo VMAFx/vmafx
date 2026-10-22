@@ -250,9 +250,9 @@ exact-twin fragments ([ADR-1428](../adr/1428-exact-twins-fragments.md)), files n
 `<feature>.<backend>`, which praetor read as HIP sources by their `.hip` suffix. Praetor skips a
 file under a declared data path and the script renders no entry for one; any other file with such
 a suffix still needs a lane or an exception. The same pin adds the rule `release-token` to
-`PRAETOR_RULES`, and the script now copies an entry's `category` and `entered` date into the block
-(`.config/lint-exceptions.d/release-token.toml`, category C, for the token fallback of
-`.github/workflows/release-please.yml`).
+`PRAETOR_RULES`, and the script now copies an entry's `category` and `entered` date into the block.
+The release workflows pass that audit without an exception since
+[ADR-3356](../adr/3356-release-token-app-only.md).
 
 | Group | Read by | Why the rest is excepted |
 | --- | --- | --- |

@@ -23,6 +23,9 @@ mitigation: each external competitor lives in its own
 - reads the binary's output, **re-shapes** it into the harness JSON schema;
 - writes the normalised `output.json` to the path given by `--out`.
 
+Shared wrapper CLI parsing, binary validation, and schema normalisation
+logic live in `lib/common.sh`.
+
 No GPL'd code is vendored, linked, or copied into this fork. Side-by-side
 benchmarking is fine because the fork only invokes the binary as a
 subprocess and reads its (factual) numerical output. Per

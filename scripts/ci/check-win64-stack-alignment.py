@@ -36,6 +36,7 @@ import argparse
 import re
 import shutil
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -139,6 +140,17 @@ def iter_targets(roots: list[Path]) -> list[Path]:
     return targets
 
 
+def timing_summary(durations: list[tuple[Path, float]], total: float, top: int = 3) -> str:
+    """One line with the scan's wall time and its slowest files.
+
+    The CI step has its own time limit; when a run comes close to it, this line
+    shows whether one file or the whole scan got slower.
+    """
+    slowest = sorted(durations, key=lambda item: item[1], reverse=True)[:top]
+    parts = ", ".join(f"{path} {seconds:.1f} s" for path, seconds in slowest)
+    return f"scan took {total:.1f} s; slowest: {parts or 'none'}"
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -160,14 +172,19 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     findings: list[tuple[Path, str, str]] = []
+    durations: list[tuple[Path, float]] = []
+    scan_start = time.monotonic()
     for target in targets:
+        file_start = time.monotonic()
         text = _disassemble(objdump, target)
+        durations.append((target, time.monotonic() - file_start))
         if not text:
             continue
         findings.extend((target, fn, insn) for fn, insn in scan_disassembly(text))
 
     if not args.quiet:
         print(f"scanned {len(targets)} file(s) with {objdump}")
+        print(timing_summary(durations, time.monotonic() - scan_start))
 
     if findings:
         print(

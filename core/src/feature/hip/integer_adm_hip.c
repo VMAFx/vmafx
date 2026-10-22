@@ -243,47 +243,6 @@ static void adm_hip_rfactors(double adm_norm_view_dist, int adm_ref_display_heig
 /* Score conclusion: the CPU's result routines on the CPU's contexts    */
 /* ------------------------------------------------------------------ */
 
-/* The numerator of one scale from its three band accumulators: the CPU's
- * adm_cm_result() / i4_adm_cm_result() on the CPU's own context. The context
- * initialisers only take addresses inside the buffer they are given, so an
- * empty one stands in for the host planes this twin does not have. */
-static float adm_hip_cm_scale_result(const AdmStateHip *s, double nvd, const int64_t accum[3],
-                                     int w, int h, int scale, double noise_weight)
-{
-    AdmBuffer no_planes;
-    memset(&no_planes, 0, sizeof(no_planes));
-    const AdmCmBounds bd = adm_cm_bounds(w, h);
-    if (scale == 0) {
-        AdmCmCtx c;
-        adm_cm_ctx_init(&c, &no_planes, w, h, 0, 0, nvd, s->adm_ref_display_height, s->adm_csf_mode,
-                        s->adm_csf_scale, s->adm_csf_diag_scale, false);
-        /* The device sums modulo 2^64 into int64 storage; the scale-0 sum is
-         * unsigned (adm_cm_round_row_total_s0()). */
-        const uint64_t s0_accum[3] = {(uint64_t)accum[0], (uint64_t)accum[1], (uint64_t)accum[2]};
-        return adm_cm_result(&c, &bd, s0_accum, noise_weight, s->adm_p_norm);
-    }
-    I4AdmCmCtx c;
-    i4_adm_cm_ctx_init(&c, &no_planes, w, h, 0, 0, scale, nvd, s->adm_ref_display_height,
-                       s->adm_csf_mode, s->adm_csf_scale, s->adm_csf_diag_scale, false);
-    return i4_adm_cm_result(&c, &bd, accum, noise_weight, s->adm_p_norm);
-}
-
-/* The denominator of one scale: adm_csf_den_result() / i4_adm_csf_den_result(). */
-static float adm_hip_csf_den_scale_result(const AdmStateHip *s, double nvd, const uint64_t accum[3],
-                                          int w, int h, int scale)
-{
-    if (scale == 0) {
-        AdmDenCtx c;
-        adm_csf_den_ctx_init(&c, w, h, nvd, s->adm_ref_display_height, s->adm_csf_mode,
-                             s->adm_csf_scale, s->adm_csf_diag_scale);
-        return adm_csf_den_result(&c, accum, s->adm_noise_weight);
-    }
-    I4AdmDenCtx c;
-    i4_adm_csf_den_ctx_init(&c, scale, w, h, nvd, s->adm_ref_display_height, s->adm_csf_mode,
-                            s->adm_csf_scale, s->adm_csf_diag_scale);
-    return i4_adm_csf_den_result(&c, accum, s->adm_noise_weight);
-}
-
 /* ------------------------------------------------------------------ */
 /* write_scores — host-side, mirror of CUDA twin                       */
 /* ------------------------------------------------------------------ */
@@ -325,10 +284,13 @@ static void adm_hip_scale_scores(const AdmStateHip *s, unsigned view, unsigned w
         float num_scale = 0.0f;
         float den_scale = (float)1e-10;
         if (scale != 0u || !s->adm_skip_scale0) {
-            num_scale = adm_hip_cm_scale_result(s, nvd, &adm_cm[band0], (int)w, (int)h, (int)scale,
-                                                s->adm_noise_weight);
-            den_scale =
-                adm_hip_csf_den_scale_result(s, nvd, &adm_csf[band0], (int)w, (int)h, (int)scale);
+            num_scale =
+                adm_cm_scale_result(nvd, &adm_cm[band0], (int)w, (int)h, (int)scale,
+                                    s->adm_noise_weight, s->adm_ref_display_height, s->adm_csf_mode,
+                                    s->adm_csf_scale, s->adm_csf_diag_scale, s->adm_p_norm);
+            den_scale = adm_csf_den_scale_result(
+                nvd, &adm_csf[band0], (int)w, (int)h, (int)scale, s->adm_ref_display_height,
+                s->adm_csf_mode, s->adm_csf_scale, s->adm_csf_diag_scale, s->adm_noise_weight);
         }
 
         *num += num_scale;
@@ -354,8 +316,9 @@ static double adm_hip_aim_num(const AdmStateHip *s, unsigned view, unsigned w, u
         h = (h + 1) / 2;
         if (scale == 0u && s->adm_skip_scale0)
             continue;
-        aim_num += adm_hip_cm_scale_result(s, nvd, &adm_aim_cm[(size_t)scale * 3u], (int)w, (int)h,
-                                           (int)scale, 0.0);
+        aim_num += adm_cm_scale_result(nvd, &adm_aim_cm[(size_t)scale * 3u], (int)w, (int)h,
+                                       (int)scale, 0.0, s->adm_ref_display_height, s->adm_csf_mode,
+                                       s->adm_csf_scale, s->adm_csf_diag_scale, s->adm_p_norm);
     }
     return aim_num;
 }

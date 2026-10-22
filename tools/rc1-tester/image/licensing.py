@@ -44,6 +44,7 @@ import shutil
 import struct
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -58,6 +59,11 @@ HEADER_BYTES = 6000
 MAX_FILES = 400_000
 MAX_DOWNLOAD = 512 * 1024 * 1024
 TIMEOUT = 300
+# A host that answers 429 or a 5xx gateway error is asked again, at most this often,
+# after its Retry-After (capped) or a doubling wait; any other error fails at once.
+HTTP_ATTEMPTS = 5
+HTTP_RETRY_STATUS = frozenset({429, 502, 503, 504})
+HTTP_MAX_WAIT = 60
 # Spelled in two parts so that REUSE tooling does not read these patterns as tags.
 SPDX_TAG = "SPDX-" + "License-Identifier:"
 COPYRIGHT_TAG = "SPDX-" + "FileCopyrightText:"
@@ -1165,11 +1171,35 @@ def source_list(args: argparse.Namespace, manifest: dict) -> list[str]:
             + go_source_lines(ctx, manifest))  # fmt: skip
 
 
-def download(url: str, destination: Path, sha256: str | None) -> None:
+def retry_wait(error: urllib.error.HTTPError, attempt: int) -> float:
+    """Seconds to wait before asking again: the host's Retry-After when it gives a
+    number of seconds, else 2, 4, 8, ...; never more than HTTP_MAX_WAIT."""
+    header = (error.headers or {}).get("Retry-After", "")
+    wait = float(header) if header.strip().isdigit() else float(2 ** (attempt + 1))
+    return min(wait, HTTP_MAX_WAIT)
+
+
+def open_url(url: str):
+    """urlopen() that asks again after a rate limit or a gateway error, a bounded
+    number of times (the CI image builds share one address with many jobs)."""
     request = urllib.request.Request(url, headers={"User-Agent": "vmafx-licensing"})
+    for attempt in range(HTTP_ATTEMPTS):
+        try:
+            return urllib.request.urlopen(request, timeout=TIMEOUT)
+        except urllib.error.HTTPError as error:
+            if error.code not in HTTP_RETRY_STATUS or attempt == HTTP_ATTEMPTS - 1:
+                raise
+            wait = retry_wait(error, attempt)
+            error.close()
+            print(f"licensing: {url}: HTTP {error.code}, again in {wait:.0f} s", file=sys.stderr)
+            time.sleep(wait)
+    raise LicensingError(f"{url}: no attempt made")
+
+
+def download(url: str, destination: Path, sha256: str | None) -> None:
     digest = hashlib.sha256()
     with (
-        urllib.request.urlopen(request, timeout=TIMEOUT) as response,
+        open_url(url) as response,
         destination.open("wb") as out,
     ):
         for _ in range(MAX_DOWNLOAD // 65536 + 1):
@@ -1189,7 +1219,7 @@ def snapshot_fetch(spec: str, out: Path) -> None:
     """Debian source package files of an exact version from snapshot.debian.org."""
     name, version = spec.split("=", 1)
     api = f"https://snapshot.debian.org/mr/package/{name}/{version}/srcfiles?fileinfo=1"
-    with urllib.request.urlopen(api, timeout=TIMEOUT) as response:
+    with open_url(api) as response:
         info = json.load(response)
     for entry in info.get("result", []):
         digest = entry["hash"]
@@ -1208,8 +1238,7 @@ LAUNCHPAD_ARCHIVE = "https://api.launchpad.net/1.0/ubuntu/+archive/primary"
 
 
 def json_get(url: str) -> dict | list:
-    request = urllib.request.Request(url, headers={"User-Agent": "vmafx-licensing"})
-    with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
+    with open_url(url) as response:
         return json.load(response)
 
 

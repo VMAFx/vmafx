@@ -20,10 +20,9 @@ from __future__ import annotations
 import argparse
 import difflib
 import sys
+import tomllib
 from collections.abc import Callable
 from pathlib import Path
-
-import tomllib
 
 from . import (
     abi_check,

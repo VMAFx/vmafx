@@ -39,10 +39,9 @@ import os
 import shutil
 import subprocess
 import sys
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
-
-import tomllib
 
 ROOT = Path(__file__).resolve().parents[2]
 LIST_DIR = Path(".config/lint-exceptions.d")

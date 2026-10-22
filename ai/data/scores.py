@@ -15,17 +15,14 @@ results land in the ``vmaf-tiny-ai`` cache (JSON of
 
 from __future__ import annotations
 
-import json
 import os
-import subprocess
 import sys
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 
-from .feature_extractor import _ensure_binary, default_vmaf_binary
+from .feature_extractor import _ensure_binary, _run_vmaf_json, default_vmaf_binary
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _VMAFTUNE_SRC = _REPO_ROOT / "tools" / "vmaf-tune" / "src"
@@ -140,33 +137,17 @@ def _run_vmaf_score(
         resolved = resolve_teacher_model(model)
         model_arg = resolved.arg
 
-    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tf:
-        out_path = Path(tf.name)
-    try:
-        cmd = [
-            str(binary),
-            "-r",
-            str(ref),
-            "-d",
-            str(dis),
-            "-w",
-            str(width),
-            "-h",
-            str(height),
-            "-p",
-            pix_fmt,
-            "-b",
-            str(bitdepth),
-            "--json",
-            "-o",
-            str(out_path),
-            "-m",
-            model_arg,
-        ]
-        subprocess.run(cmd, check=True, capture_output=True, text=True)
-        return json.loads(out_path.read_text())
-    finally:
-        out_path.unlink(missing_ok=True)
+    return _run_vmaf_json(
+        binary,
+        ref,
+        dis,
+        width,
+        height,
+        pix_fmt=pix_fmt,
+        bitdepth=bitdepth,
+        features=(),
+        extra_args=("-m", model_arg),
+    )
 
 
 def teacher_scores(

@@ -69,23 +69,24 @@ PAIR_PIECES = (
     "VMAF_FF_INLINE float div_rn(float a, float b) { return a / b; }",
 )
 KERNEL_INCLUDE = '#include "feature/hip/integer_ciede/ciede_hip_math.h"'
-# One set of ciede.c's constants per bit depth, in the order of the host's
-# CIEDE_HIP_DEPTH_* indices.
+# One set of ciede.c's constants per bit depth the engine reads, 8 to 16: entry
+# `bpc - 8`, the host's ciede_hip_depth_index() (ADR-2145).
 KERNEL_CONSTANTS = (
-    "static constexpr vmaf_hip_ciede::Constants kCiedeConstants[4] = { "
-    "vmaf_hip_ciede::make_constants(8u), vmaf_hip_ciede::make_constants(10u), "
-    "vmaf_hip_ciede::make_constants(12u), vmaf_hip_ciede::make_constants(16u), };"
+    "static constexpr vmaf_hip_ciede::Constants kCiedeConstants[9] = { "
+    "vmaf_hip_ciede::make_constants(8u), vmaf_hip_ciede::make_constants(9u), "
+    "vmaf_hip_ciede::make_constants(10u), vmaf_hip_ciede::make_constants(11u), "
+    "vmaf_hip_ciede::make_constants(12u), vmaf_hip_ciede::make_constants(13u), "
+    "vmaf_hip_ciede::make_constants(14u), vmaf_hip_ciede::make_constants(15u), "
+    "vmaf_hip_ciede::make_constants(16u), };"
 )
 HOST_DEPTHS = (
-    "#define CIEDE_HIP_DEPTH_8 0u",
-    "#define CIEDE_HIP_DEPTH_10 1u",
-    "#define CIEDE_HIP_DEPTH_12 2u",
-    "#define CIEDE_HIP_DEPTH_16 3u",
+    "#define CIEDE_HIP_DEPTH_NONE 9u",
+    "return bpc >= 8u && bpc <= 16u ? bpc - 8u : CIEDE_HIP_DEPTH_NONE;",
     "unsigned depth = ciede_hip_depth_index(s->bpc);",
 )
 TERM_STORE = (
-    "terms[(size_t)y * width + x] = vmaf_hip_ciede::pixel(ciede_samples<Sample>(ref, x, y, cx, cy), "
-    "ciede_samples<Sample>(dis, x, y, cx, cy), kCiedeConstants[depth & 3u], tables);"
+    "terms[(size_t)y * width + x] = vmaf_hip_ciede::pixel( ciede_samples<Sample>(ref, x, y, cx, cy), "
+    "ciede_samples<Sample>(dis, x, y, cx, cy), kCiedeConstants[depth > 8u ? 8u : depth], tables);"
 )
 HOST_INCLUDE = '#include "ciede_frame_sum.h"'
 HOST_CALL = "ciede_frame_sum((const float *)s->rb.host_pinned, (size_t)s->frame_w * s->frame_h);"
@@ -228,8 +229,8 @@ class CiedeHipExactContract(unittest.TestCase):
     def test_reordered_constants_are_detected(self) -> None:
         failures = self._edited(
             KERNEL,
-            "    vmaf_hip_ciede::make_constants(10u),\n    vmaf_hip_ciede::make_constants(12u),",
-            "    vmaf_hip_ciede::make_constants(12u),\n    vmaf_hip_ciede::make_constants(10u),",
+            "vmaf_hip_ciede::make_constants(10u), vmaf_hip_ciede::make_constants(11u),",
+            "vmaf_hip_ciede::make_constants(11u), vmaf_hip_ciede::make_constants(10u),",
         )
         self._detects(failures, "constants are not ciede.c's")
 

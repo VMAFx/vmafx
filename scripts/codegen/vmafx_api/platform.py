@@ -16,12 +16,11 @@ from __future__ import annotations
 
 import json
 import re
+import tomllib
 from collections.abc import Hashable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-
-import tomllib
 
 from .chart import Chart, parse_chart
 from .config import Config, parse_config

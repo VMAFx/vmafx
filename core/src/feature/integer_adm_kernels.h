@@ -44,6 +44,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "adm_angle_flag.h"
 #include "adm_cm_accumulator.h"
@@ -1265,6 +1266,51 @@ static inline void i4_adm_cm_rows(const I4AdmCmCtx *c, const AdmCmBounds *bd,
         i4_adm_cm_row(c, c->h - 1, bd, inner);
     }
     adm_cm_fold(inner, accum, c->add_shift_inner_accum, c->shift_inner_accum);
+}
+
+/* The numerator of one scale from its three band accumulators: the CPU's
+ * adm_cm_result() / i4_adm_cm_result() on the CPU's own context. The context
+ * initialisers only take addresses inside the buffer they are given, so an
+ * empty one stands in for the host planes this twin does not have. */
+static inline float adm_cm_scale_result(double nvd, const int64_t accum[3], int w, int h, int scale,
+                                        double noise_weight, int adm_ref_display_height,
+                                        int adm_csf_mode, double adm_csf_scale,
+                                        double adm_csf_diag_scale, double adm_p_norm)
+{
+    AdmBuffer no_planes;
+    memset(&no_planes, 0, sizeof(no_planes));
+    const AdmCmBounds bd = adm_cm_bounds(w, h);
+    if (scale == 0) {
+        AdmCmCtx c;
+        adm_cm_ctx_init(&c, &no_planes, w, h, 0, 0, nvd, adm_ref_display_height, adm_csf_mode,
+                        adm_csf_scale, adm_csf_diag_scale, false);
+        /* The device sums modulo 2^64 into int64 storage; the scale-0 sum is
+         * unsigned (adm_cm_round_row_total_s0()). */
+        const uint64_t s0_accum[3] = {(uint64_t)accum[0], (uint64_t)accum[1], (uint64_t)accum[2]};
+        return adm_cm_result(&c, &bd, s0_accum, noise_weight, adm_p_norm);
+    }
+    I4AdmCmCtx c;
+    i4_adm_cm_ctx_init(&c, &no_planes, w, h, 0, 0, scale, nvd, adm_ref_display_height, adm_csf_mode,
+                       adm_csf_scale, adm_csf_diag_scale, false);
+    return i4_adm_cm_result(&c, &bd, accum, noise_weight, adm_p_norm);
+}
+
+/* The denominator of one scale: adm_csf_den_result() / i4_adm_csf_den_result(). */
+static inline float adm_csf_den_scale_result(double nvd, const uint64_t accum[3], int w, int h,
+                                             int scale, int adm_ref_display_height,
+                                             int adm_csf_mode, double adm_csf_scale,
+                                             double adm_csf_diag_scale, double adm_noise_weight)
+{
+    if (scale == 0) {
+        AdmDenCtx c;
+        adm_csf_den_ctx_init(&c, w, h, nvd, adm_ref_display_height, adm_csf_mode, adm_csf_scale,
+                             adm_csf_diag_scale);
+        return adm_csf_den_result(&c, accum, adm_noise_weight);
+    }
+    I4AdmDenCtx c;
+    i4_adm_csf_den_ctx_init(&c, scale, w, h, nvd, adm_ref_display_height, adm_csf_mode,
+                            adm_csf_scale, adm_csf_diag_scale);
+    return i4_adm_csf_den_result(&c, accum, adm_noise_weight);
 }
 
 /* ------------------------------------------------------------------------- */

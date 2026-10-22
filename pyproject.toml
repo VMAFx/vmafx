@@ -40,7 +40,7 @@ extend-exclude = '''
 
 [tool.ruff]
 line-length = 100
-target-version = "py310"
+target-version = "py314"
 # Every Python file is read. The files below are the declared exceptions of
 # .config/lint-exceptions.d/ruff.toml (a reason and an expiry each); keep the two in step
 # (scripts/ci/tests/test_python_format_scope.py).
