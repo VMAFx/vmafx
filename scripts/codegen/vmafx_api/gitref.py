@@ -15,9 +15,8 @@ import io
 import shutil
 import subprocess
 import tarfile
-from pathlib import Path
-
 import tomllib
+from pathlib import Path
 
 from .loader import parse
 from .model import Api

@@ -791,16 +791,6 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     return fadm_submit_download(fex, s, cu_f, pic_stream);
 }
 
-/* FloatAdmPooled - what the per-scale pooling loop produces: compute_adm()'s
- * `scores`, `num`, `den`, `aim_num` and `aim_den`. */
-typedef struct FloatAdmPooled {
-    double scores[8];
-    double score_num;
-    double score_den;
-    double aim_num;
-    double aim_den;
-} FloatAdmPooled;
-
 /* FloatAdmFinal - the headline scores, plus the numerator and denominator
  * after the numden_limit floor (the debug features report the floored
  * values, so they have to survive the split). */
@@ -821,37 +811,8 @@ typedef struct FloatAdmFinal {
  */
 static void fadm_pool_scales(const FloatAdmStateCuda *s, FloatAdmPooled *o)
 {
-    o->score_num = 0.0;
-    o->score_den = 0.0;
-    o->aim_num = 0.0;
-    o->aim_den = 0.0;
-    for (int scale = 0; scale < FADM_SCALES; scale++) {
-        const AdmBorderS *r = &s->region[scale];
-        const int region_w = r->right - r->left;
-        const int region_h = r->bottom - r->top;
-        const float *rows = s->rows_host + s->row_offset[scale];
-        float accum[FADM_TERM_SLOTS];
-        for (unsigned slot = 0u; slot < FADM_TERM_SLOTS; slot++) {
-            accum[slot] = fadm_fold_rows(rows + fadm_row_index(slot, 0u, (uint32_t)region_h),
-                                         (uint32_t)region_h);
-        }
-
-        const float den_scale = adm_pool_bands_s(accum + FADM_SLOT_DEN, region_w, region_h,
-                                                 s->adm_noise_weight, s->adm_p_norm);
-        const float num_scale = adm_pool_bands_s(accum + FADM_SLOT_CM, region_w, region_h,
-                                                 s->adm_noise_weight, s->adm_p_norm);
-        const float aim_num_scale =
-            adm_pool_bands_s(accum + FADM_SLOT_AIM, region_w, region_h, 0.0, s->adm_p_norm);
-
-        o->score_num += num_scale;
-        o->score_den += den_scale;
-        if (s->adm_skip_aim_scale != scale) {
-            o->aim_den += den_scale;
-            o->aim_num += aim_num_scale;
-        }
-        o->scores[2 * scale + 0] = num_scale;
-        o->scores[2 * scale + 1] = den_scale;
-    }
+    fadm_pool_scales_common(s->region, s->row_offset, s->rows_host, s->adm_noise_weight,
+                            s->adm_p_norm, s->adm_skip_aim_scale, o);
 }
 
 /* fadm_final_scores - numden floor, adm2, AIM and ADM3, as compute_adm() and

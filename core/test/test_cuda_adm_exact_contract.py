@@ -46,10 +46,10 @@ LOCAL_COPY = re.compile(
     re.M,
 )
 CPU_RESULTS = (
-    "adm_cm_result(&c, &bd, s0_accum, noise_weight, s->adm_p_norm)",
-    "i4_adm_cm_result(&c, &bd, accum, noise_weight, s->adm_p_norm)",
-    "adm_csf_den_result(&c, accum, s->adm_noise_weight)",
-    "i4_adm_csf_den_result(&c, accum, s->adm_noise_weight)",
+    "adm_cm_result(&c, &bd, s0_accum, noise_weight, adm_p_norm)",
+    "i4_adm_cm_result(&c, &bd, accum, noise_weight, adm_p_norm)",
+    "adm_csf_den_result(&c, accum, adm_noise_weight)",
+    "i4_adm_csf_den_result(&c, accum, adm_noise_weight)",
 )
 # The viewing distance is an argument since the twin evaluates one or two
 # distances per frame (ADR-2795): the launch and the result take the same one.
@@ -98,15 +98,20 @@ def _host_failures(sources: dict[str, str]) -> list[str]:
     failures: list[str] = []
     code = _code(sources[HOST])
     flat = _flat(sources[HOST])
+    flat_kernels = _flat(sources[CPU_KERNELS])
     if CPU_HEADER_INCLUDE not in code:
         failures.append(f"{HOST}: the CPU's integer_adm_kernels.h is no longer included")
     for match in LOCAL_COPY.finditer(code):
         failures.append(f"{HOST}: local copy of {match.group(1)}() next to the CPU's routine")
+    if not _calls(flat, "adm_cm_scale_result(") or not _calls(flat, "adm_csf_den_scale_result("):
+        failures.append(
+            f"{HOST}: a scale is no longer concluded through the shared result routines"
+        )
     for call in CPU_RESULTS:
-        if not _calls(flat, call):
+        if not _calls(flat_kernels, call):
             failures.append(f"{HOST}: a scale is no longer concluded by {call.split('(')[0]}()")
     for call in CPU_DEN_CONTEXTS:
-        if _calls(flat, call) < MIN_CALLS:
+        if _calls(flat, call) + _calls(flat_kernels, call) < MIN_CALLS:
             failures.append(
                 f"{HOST}: {call.split('(')[0]}() no longer feeds both the launch and the result"
             )
@@ -177,8 +182,8 @@ class AdmCudaExactContract(unittest.TestCase):
     def test_own_conclusion_is_detected(self) -> None:
         # The pre-ADR-1416 conclude_adm_csf_den().
         sources = _sources()
-        sources[HOST] = sources[HOST].replace(
-            "return adm_csf_den_result(&c, accum, s->adm_noise_weight);",
+        sources[CPU_KERNELS] = sources[CPU_KERNELS].replace(
+            "return adm_csf_den_result(&c, accum, adm_noise_weight);",
             "return conclude_adm_csf_den(accum, h, w, scale);",
             1,
         )

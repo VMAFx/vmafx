@@ -13,10 +13,10 @@ default note column.
 from __future__ import annotations
 
 import json
+import tomllib
 import unittest
 from typing import Any
 
-import tomllib
 import yaml  # type: ignore[import-untyped]
 from support import ROOT
 from vmafx_api import emit_chart

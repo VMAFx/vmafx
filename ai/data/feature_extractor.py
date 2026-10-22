@@ -25,6 +25,7 @@ import json
 import os
 import subprocess
 import tempfile
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -207,7 +208,7 @@ def _ensure_binary(binary: Path) -> None:
         )
 
 
-def _extractors_for(metrics: tuple[str, ...]) -> list[str]:
+def _extractors_for(metrics: Sequence[str]) -> list[str]:
     seen: list[str] = []
     for m in metrics:
         ex = _METRIC_TO_EXTRACTOR.get(m, m)
@@ -249,9 +250,10 @@ def _run_vmaf_json(
     *,
     pix_fmt: str = "420",
     bitdepth: int = 8,
-    features: tuple[str, ...] = DEFAULT_FEATURES,
-    extra_args: tuple[str, ...] = (),
+    features: Sequence[str] = DEFAULT_FEATURES,
+    extra_args: Sequence[str] = (),
 ) -> dict:
+    """Invoke the ``vmaf`` binary in JSON mode and parse the resulting document."""
     feat_args: list[str] = []
     for f in _extractors_for(features):
         feat_args += ["--feature", f]

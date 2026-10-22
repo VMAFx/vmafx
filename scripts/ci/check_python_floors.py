@@ -17,10 +17,9 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import tomllib
 from collections.abc import Sequence
 from pathlib import Path
-
-import tomllib
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 

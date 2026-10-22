@@ -17,11 +17,11 @@ import os
 import re
 import shutil
 import subprocess
+import tomllib
 import unittest
 from pathlib import Path
 from typing import Any, cast
 
-import tomllib
 import yaml  # type: ignore[import-untyped]  # PyYAML ships no stubs in the hook env, as in scripts/ci/check-helm-selector-isolation.py
 
 ROOT = Path(__file__).resolve().parents[3]

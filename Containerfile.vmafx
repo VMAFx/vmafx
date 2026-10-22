@@ -1,0 +1,413 @@
+# syntax=docker/dockerfile:1.25@sha256:0adf442eae370b6087e08edc7c50b552d80ddf261576f4ebd6421006b2461f12
+# SPDX-License-Identifier: EUPL-1.2
+# Copyright 2026 Lusoris
+#
+# Containerfile.vmafx — self-contained 3-stage build of THIS branch's VMAFx
+# fork: libvmaf (SYCL-only) + ffmpeg (FFMPEG_TAG, n9.0.2) with the fork's
+# ffmpeg-patches/series.txt applied (`--enable-libvmaf-sycl`), targeting
+# Intel Arc/Xe via Level Zero.
+#
+# Test image, not a published release image (ADR-3358,
+# docs/development/docker-production.md): no SBOM, source export or notice
+# set is produced, so never push a build of it to a registry. The published
+# images are docker/Dockerfile.production and docker/Dockerfile.production-gpu.
+# Base-image policy (built from ubuntu:26.04 and the pinned Intel stack, no
+# locally tagged bootstrap image), FFmpeg included and SYCL-only scope: see
+# ADR-3358. CUDA/HIP/DNN backends are compiled out (`-Denable_cuda=false -Denable_dnn=disabled`; `enable_hip`
+# defaults false).
+#
+# ── 3 stages ────────────────────────────────────────────────────────────────
+#   1. runtime — ubuntu:26.04 + the Intel GPU runtime stack (NEO
+#      compute-runtime, Level-Zero loader, VA-API/oneVPL runtime). Base for
+#      both `build` and `prod`; carries NO oneAPI compiler/SDK.
+#   2. build   — runtime + oneAPI compiler (icx/icpx/lld, via `intel-basekit`)
+#      + meson/ninja/cmake + ffmpeg build deps + the Netflix golden-gate
+#      Python stack. Builds libvmaf (SYCL, AOT-compiled), then ffmpeg (FFMPEG_TAG)
+#      with ffmpeg-patches/series.txt applied, then runs the CPU golden gate
+#      as a build-time test GATE — the build FAILS if it fails. Never runs
+#      SYCL/GPU tests here: BuildKit's sandbox has no /dev/dri.
+#   3. prod    — runtime + the installed vmaf/ffmpeg binaries, libvmaf.so +
+#      headers, and the MINIMAL oneAPI SYCL runtime .so's they dynamically
+#      link (curated via `ldd` against the stage-2 build, NOT the ~10 GB
+#      `intel-basekit` tree it was built with — that stays in `build` only).
+#
+# ── Build ───────────────────────────────────────────────────────────────────
+#   podman build -t vmafx-sycl-test:latest -f Containerfile.vmafx .
+#
+# ── Run (CPU-only; no device passthrough needed) ────────────────────────────
+#   podman run --rm vmafx-sycl-test:latest --version
+#
+# ── Run with the Arc GPU (SYCL backend) ─────────────────────────────────────
+#   podman run --rm --device /dev/dri/renderD128 --group-add keep-groups \
+#     vmafx-sycl-test:latest --backend sycl -r ref.yuv -d dis.yuv \
+#     --width W --height H --pixel_format 420 --bitdepth 8
+#
+#   podman run --rm --device /dev/dri/renderD128 --group-add keep-groups \
+#     --entrypoint ffmpeg vmafx-sycl-test:latest -hide_banner -filters \
+#     | grep -i libvmaf   # shows both `libvmaf` and `libvmaf_sycl`
+#
+# ── Run-time SYCL/GPU parity tests (CANNOT run at `docker build` time — no
+#    /dev/dri in the BuildKit sandbox; run them post-build with the device
+#    attached, against the intermediate `build` stage which still carries
+#    the meson build tree) ────────────────────────────────────────────────
+#   podman build --target build -t vmafx-sycl-test:build -f Containerfile.vmafx .
+#   podman run --rm --device /dev/dri/renderD128 --group-add keep-groups \
+#     --entrypoint bash vmafx-sycl-test:build -c \
+#     'cd /src/vmafx && meson test -C build test_sycl_float_adm_parity --print-errorlogs'
+#   scripts/test/run-all-tests.sh automates the full C/GOLDEN/MATERIAL matrix
+#   (GPU attached only to its [C] section) against the `prod`-tagged image.
+
+# =============================================================================
+# Stage 1 — runtime (shared base for `build` and `prod`; no oneAPI compiler)
+# =============================================================================
+FROM ubuntu:26.04@sha256:53958ec7b67c2c9355df922dd08dbf0360611f8c3cdb656875e81873db9ffdba AS runtime
+
+LABEL org.opencontainers.image.title="vmafx"
+LABEL org.opencontainers.image.description="VMAFx fork: libvmaf (SYCL) + ffmpeg with the fork patches, Intel Arc/Xe"
+LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
+# FFmpeg is configured --enable-gpl --enable-version3, so the image as a
+# whole is GPL-3.0-or-later; the fork code is EUPL-1.2, Netflix code
+# BSD-2-Clause-Patent.
+LABEL org.opencontainers.image.licenses="EUPL-1.2 AND BSD-2-Clause-Patent AND GPL-3.0-or-later"
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Intel GPU compute stack — NEO Level Zero driver, OpenCL ICD, gmmlib, IGC,
+# ocloc and the Level Zero loader — at the versions pinned in build-config.env
+# (INTEL_NEO_VERSION, LEVEL_ZERO_VERSION), installed by the same script the
+# oneAPI release image and CI use (scripts/ci/install-intel-ocloc.sh, which
+# checks every deb against the release's SHA-256 sums; ADR-1368). Pinned GitHub
+# releases, not the Intel apt repo, which trails the kernel i915/xe UAPI
+# (ADR-0541). One pin for the AOT compiler and the driver: libvmaf's SYCL
+# images are compiled ahead of time by this ocloc (ADR-1360) and run on this
+# driver.
+# VA-API (iHD driver) and oneVPL: libvpl2 is only the dispatcher; libmfx-gen1.2
+# is the Intel GPU runtime it loads. Without it every QSV decoder/encoder
+# fails with "Error creating a MFX session: -9", which breaks the
+# libvmaf_sycl zero-copy path this image exists to test.
+# hadolint ignore=DL3008,DL3009
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates curl gnupg python3 \
+        libgomp1 zlib1g \
+        libva2 libva-drm2 intel-media-va-driver-non-free libvpl2 libmfx-gen1.2 \
+        libdav1d7
+COPY build-config.env /tmp/vmafx/build-config.env
+COPY scripts/ci/install-intel-ocloc.sh /tmp/vmafx/scripts/ci/install-intel-ocloc.sh
+COPY dev/scripts/fetch-intel-neo.py /tmp/vmafx/dev/scripts/fetch-intel-neo.py
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    bash /tmp/vmafx/scripts/ci/install-intel-ocloc.sh --components runtime /tmp/vmafx
+
+# DG2/Arc A-series: disable Level-Zero immediate command lists (the default
+# is Xe2-tuned and regresses DG2). Same fix carried by the prior single-stage
+# Containerfile.vmafx.
+ENV UR_L0_USE_IMMEDIATE_COMMANDLISTS=0
+
+# =============================================================================
+# Stage 2 — build (compiles libvmaf + ffmpeg; CPU golden gate; curates the
+#            minimal oneAPI runtime .so set stage 3 copies out)
+# =============================================================================
+FROM runtime AS build
+
+ARG DEBIAN_FRONTEND=noninteractive
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+# Level Zero dev package (libze_loader.so symlink + level_zero/*.h headers):
+# libvmaf's meson `cc.find_library('ze_loader', required: true)` and the SYCL
+# VA-import TUs need them at compile time. The `build` set adds libze-dev at
+# the same pinned LEVEL_ZERO_VERSION as the runtime loader above.
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    bash /tmp/vmafx/scripts/ci/install-intel-ocloc.sh --components build /tmp/vmafx
+
+# ---- Intel oneAPI apt repo + compiler (icx/icpx/lld) -----------------------
+# `intel-basekit` (not a slimmer compiler-only package): proven in
+# dev/Containerfile to bring icx/icpx, lld, the SYCL runtime, and the
+# umf/tcm/tbb component dirs together without missing-dependency surprises.
+# The ~10 GB it installs never leaves this stage — stage 3 copies out only
+# the specific .so's `ldd` says vmaf/ffmpeg/libvmaf actually link (below).
+RUN curl -fsSL https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \
+        | gpg --dearmor \
+        | tee /usr/share/keyrings/intel-sw-products.gpg > /dev/null \
+    && printf 'deb [signed-by=/usr/share/keyrings/intel-sw-products.gpg] https://apt.repos.intel.com/oneapi all main\n' \
+        > /etc/apt/sources.list.d/intel-oneapi.list
+
+# hadolint ignore=DL3008,DL3009
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
+        intel-basekit \
+        meson ninja-build cmake pkg-config nasm git \
+        build-essential zlib1g-dev \
+        libdav1d-dev libva-dev libvpl-dev \
+        python3 python3-pip python3-venv \
+    && if ! dpkg -l intel-basekit 2>/dev/null | grep -q "^ii"; then \
+        echo "FATAL: intel-basekit was not installed"; exit 1; fi
+
+ENV ONEAPI_ROOT=/opt/intel/oneapi
+ENV DPCPP_ROOT=${ONEAPI_ROOT}/compiler/latest
+# lld ships in the oneAPI compiler's sub-bin (not on PATH by default); add it
+# so meson's linker probe + `-fuse-ld=lld` resolve it.
+ENV PATH=${DPCPP_ROOT}/bin:${DPCPP_ROOT}/bin/compiler:${PATH}
+ENV LD_LIBRARY_PATH=${DPCPP_ROOT}/lib:${ONEAPI_ROOT}/umf/latest/lib:${ONEAPI_ROOT}/tcm/latest/lib:${ONEAPI_ROOT}/tbb/latest/lib:${LD_LIBRARY_PATH}
+
+# Netflix golden-gate Python stack — the repo's hash lock for the test
+# environment (python/requirements-test-lock.txt: python/requirements.txt,
+# which pins libsvm-official over the abandoned `libsvm` PyPI package, plus
+# pytest; `make python-locks-write` regenerates it). --require-hashes as the
+# check-python-dependency-locks hook requires. Copy ONLY the lock first so
+# this layer stays cached across source edits.
+# The lock keeps its repo path: the hook accepts only the lock outputs and the
+# install aliases recorded in requirements/locks/manifest.json.
+# --ignore-installed: apt's meson pulls python3-packaging, which ships no pip
+# RECORD file, so pip cannot uninstall it to put the locked version in place
+# ("uninstall-no-record-file"); install the locked versions over it instead.
+WORKDIR /tmp/vmafx-pylock
+COPY python/requirements-test-lock.txt python/requirements-test-lock.txt
+RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed \
+        --require-hashes -r python/requirements-test-lock.txt
+
+# `xxd` — REQUIRED for the default built-in VMAF models. core/src/meson.build's
+# `built_in_models` embed does `find_program('xxd', required: false)` and
+# SILENTLY skips the JSON-model `xxd -i` custom_target when xxd is absent, so
+# `VMAF_BUILT_IN_MODELS` stays 0 and `vmaf` without `-m` errors "at least one
+# model is required" (breaking the golden gate's use_default_built_in_model
+# test). Not pulled in by intel-basekit / build-essential on ubuntu:26.04.
+# Dedicated late RUN so a fix here doesn't invalidate the ~10 GB basekit layer.
+# hadolint ignore=DL3008,DL3009
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends xxd \
+ && if ! command -v xxd >/dev/null; then echo "FATAL: xxd not installed"; exit 1; fi
+
+# ---- libvmaf build inputs: the source tree (core/, ADR-0700) + the JSON
+# models (model/, referenced as `../../model/` from core/src/meson.build).
+# SCOPED copies (NOT `COPY .`) so editing tests / docs / CI scripts does not
+# invalidate the expensive libvmaf + ffmpeg layers below — only a change under
+# core/ or model/ rebuilds them. (`COPY .` for the rest lands just before the
+# golden gate, keeping the builds cached across test/harness edits.)
+COPY core/  /src/vmafx/core/
+COPY model/ /src/vmafx/model/
+# core/test/meson.build find_program()s this one repo-root script at configure
+# time; copying only it keeps unrelated scripts/ edits out of this layer's key.
+COPY scripts/ci/check-msvc-clz-shim.sh /src/vmafx/scripts/ci/check-msvc-clz-shim.sh
+WORKDIR /src/vmafx
+
+# ---- libvmaf (SYCL-only). CC_LD=lld is load-bearing — GNU ld fails on
+# liblog_cpp23.a (static archive without an index). DNN off (no onnxruntime
+# dependency; -Denable_dnn=disabled).
+# Hybrid toolchain (ADR-3357): CPU C code is built by GCC,
+# C++ and the SYCL kernels by icpx. b_lto=false because GCC LTO objects cannot
+# go through the icpx/lld link. glibc libm (not Intel's libimf) comes from
+# ADR-1495's link policy and icpx's strict FP model for C++ from the
+# ADR-1461 / ADR-3357 project arguments, so neither needs an option here.
+# AOT targets: the option's default list, Xe2 (lnl-m, bmg-g21, bmg-g31)
+# included: every kernel requires a sub-group size Xe2 accepts (ADR-1468,
+# #1842).
+RUN CC=gcc CXX=icpx CC_LD=lld CXX_LD=lld \
+    meson setup build core \
+        -Denable_cuda=false -Denable_sycl=true -Denable_dnn=disabled \
+        --buildtype=release \
+        -Db_lto=false \
+ && ninja -C build \
+ && ninja -C build install && ldconfig
+
+# libvmaf headers at the path ffmpeg's `check_pkg_config libvmaf` configure
+# probe expects (meson's own header install layout doesn't match it 1:1).
+RUN mkdir -p /usr/local/include/libvmaf \
+ && find /src/vmafx -path '*include/libvmaf/*.h' -exec cp -n {} /usr/local/include/libvmaf/ \;
+
+# ---- ffmpeg (FFMPEG_TAG) + the fork's ffmpeg-patches/series.txt -----------
+# ffmpeg-patch inputs, scoped: a change under ffmpeg-patches/ rebuilds ffmpeg
+# (+ golden) but not the libvmaf layer above.
+# Same tag and checkout helper as dev/Containerfile: series.txt is written
+# against this tag (rule 14).
+ARG FFMPEG_TAG=n9.0.2
+ARG FFMPEG_REMOTE=https://github.com/FFmpeg/FFmpeg.git
+COPY scripts/ci/checkout-annotated-tag.sh /tmp/vmafx/scripts/ci/checkout-annotated-tag.sh
+COPY scripts/ci/ffmpeg-shared-series.sh /tmp/vmafx/scripts/ci/ffmpeg-shared-series.sh
+COPY ffmpeg-patches/ /src/vmafx/ffmpeg-patches/
+RUN git config --global user.email build@local \
+ && git config --global user.name build \
+ && bash /tmp/vmafx/scripts/ci/checkout-annotated-tag.sh \
+        "${FFMPEG_REMOTE}" "${FFMPEG_TAG}" /src/ffmpeg-src
+
+WORKDIR /src/ffmpeg-src
+# The shared FFmpeg fix series first (ADR-3143; verified against
+# build-config.env by the script), then ffmpeg-patches/series.txt in order.
+RUN FFMPEG_FIX_SERIES_CACHE=none BUILD_CONFIG=/tmp/vmafx/build-config.env \
+    bash /tmp/vmafx/scripts/ci/ffmpeg-shared-series.sh apply --method am /src/ffmpeg-src
+RUN while IFS= read -r l; do \
+      case "$l" in ''|\#*) continue;; esac; \
+      git am --3way "/src/vmafx/ffmpeg-patches/$l" \
+        || { echo "PATCH FAILED: $l"; git am --abort; exit 1; }; \
+    done < /src/vmafx/ffmpeg-patches/series.txt
+
+# --enable-libvmaf-sycl is the fork's ffmpeg-patches/0003+0005 selector +
+# filter; --disable-filter=vmaf_pre drops the fork's tiny-model patch surface
+# (0002) — no tiny-AI model in this SYCL-only image. PKG_CONFIG_PATH covers
+# both /usr/local (libvmaf.pc, installed above) and the Debian multiarch
+# pkgconfig dir (dav1d.pc, vpl.pc from the apt -dev packages).
+RUN PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/usr/local/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/pkgconfig \
+    ./configure \
+        --enable-gpl --enable-version3 \
+        --enable-libvmaf --enable-libdav1d --enable-vaapi --enable-libvpl \
+        --enable-libvmaf-sycl \
+        --disable-filter=vmaf_pre --disable-doc --disable-debug \
+ && make -j"$(nproc)" \
+ && make install && ldconfig \
+ && /usr/local/bin/ffmpeg -version | head -3 \
+ && /usr/local/bin/ffmpeg -hide_banner -filters 2>&1 | grep -i libvmaf
+
+# ---- CPU golden gate (build-time GATE — no /dev/dri here; NEVER run
+# test_sycl_* in this stage). Mirrors scripts/test/run-all-tests.sh
+# [GOLDEN]'s plumbing: a `--cpumask 16` vmaf shim (belt-and-suspenders
+# against AVX-512-VBMI SIGILL on hosts without it; the root cause, an unused
+# -mavx512vbmi, is already gone from the AVX-512 build flags) wired through VMAFEXEC_PATH. A non-zero exit here
+# FAILS the build.
+#
+# Everything else (python/ test harness, compat/ packages, scripts/) lands
+# HERE, after the cached libvmaf + ffmpeg layers — so a change to a test, a
+# doc, or a CI script re-runs ONLY the golden gate (~6 min), not the ~20 min
+# full build. `.dockerignore` keeps the context small; `build*/` is excluded
+# so this does not clobber the meson build tree created above.
+COPY . /src/vmafx
+WORKDIR /src/vmafx
+RUN bash scripts/test/fetch-test-yuvs.sh \
+ && ln -sfn ../build core/build \
+ && printf '#!/bin/sh\nexec /src/vmafx/build/tools/vmaf --cpumask 16 "$@"\n' > /tmp/vmaf-shim \
+ && chmod +x /tmp/vmaf-shim \
+ && printf 'VMAFEXEC_PATH = "/tmp/vmaf-shim"\n' > compat/vmaf/externals.py \
+ && PYTHONPATH=/src/vmafx/python python3 -m pytest \
+        python/test/quality_runner_test.py \
+        python/test/feature_extractor_test.py \
+        python/test/vmafexec_test.py \
+        python/test/vmafexec_feature_extractor_test.py \
+        python/test/result_test.py \
+        -m 'not slow' -q -rfE -o cache_dir=/tmp/pytest-cache
+
+# ---- Curate the minimal oneAPI SYCL runtime .so set for stage 3 -----------
+# Resolved via `ldd /usr/local/bin/vmaf` + `ldd /usr/local/bin/ffmpeg` +
+# `ldd /usr/local/lib/libvmaf.so.3` against a real build off this same base:
+# libimf/libintlc/libirc/libirng/libsvml/libsycl (icx runtime math + the
+# SYCL runtime itself) + libur_loader + its level-zero/opencl adapters (the
+# Unified Runtime dispatch layer SYCL uses to reach the Level-Zero ICD in
+# the `runtime` stage), plus the umf/tcm/tbb component dirs those adapters
+# dlopen() at load time (libumf.so.1, libhwloc.so.15, libtbb.so.12 — see
+# dev/Containerfile's ONEAPI_ROOT/{umf,tcm,tbb}/latest/lib comments). This
+# is a curated few dozen MB, not the ~1.3 GB compiler/latest/lib tree (which
+# also carries the JIT compiler, ONNX Runtime, OpenMP offload runtime, and
+# the clang toolchain binaries — none needed: this build is SYCL AOT and
+# DNN-disabled, so nothing here JIT-compiles a kernel or loads ONNX Runtime
+# at run time).
+RUN mkdir -p /opt/oneapi-min/compiler/latest/lib \
+             /opt/oneapi-min/umf/latest/lib \
+             /opt/oneapi-min/tcm/latest/lib \
+             /opt/oneapi-min/tbb/latest/lib \
+ && cp -a /opt/intel/oneapi/compiler/latest/lib/libimf.so* \
+          /opt/intel/oneapi/compiler/latest/lib/libintlc.so* \
+          /opt/intel/oneapi/compiler/latest/lib/libirc.so* \
+          /opt/intel/oneapi/compiler/latest/lib/libirng.so* \
+          /opt/intel/oneapi/compiler/latest/lib/libsvml.so* \
+          /opt/intel/oneapi/compiler/latest/lib/libsycl.so* \
+          /opt/intel/oneapi/compiler/latest/lib/libur_loader.so* \
+          /opt/intel/oneapi/compiler/latest/lib/libur_adapter_level_zero.so* \
+          /opt/intel/oneapi/compiler/latest/lib/libur_adapter_level_zero_v2.so* \
+          /opt/intel/oneapi/compiler/latest/lib/libur_adapter_opencl.so* \
+          /opt/oneapi-min/compiler/latest/lib/ \
+ && cp -a /opt/intel/oneapi/umf/latest/lib/. /opt/oneapi-min/umf/latest/lib/ \
+ && cp -a /opt/intel/oneapi/tcm/latest/lib/. /opt/oneapi-min/tcm/latest/lib/ \
+ && cp -a /opt/intel/oneapi/tbb/latest/lib/. /opt/oneapi-min/tbb/latest/lib/
+
+# =============================================================================
+# Stage 3 — prod (runtime + installed vmaf/ffmpeg + the curated SYCL .so set)
+# =============================================================================
+FROM runtime AS prod
+
+# libvmaf + CLI tools (vmaf, vmaf-perShot, vmaf_roi — the `install: true`
+# targets in core/tools/meson.build) + headers.
+# meson's default libdir on Debian/Ubuntu is the multiarch triplet
+# (lib/x86_64-linux-gnu), NOT a flat lib/. Source from there; flatten into
+# /usr/local/lib/ (on the runtime ld.so path + LD_LIBRARY_PATH below) so no
+# extra multiarch search dir is needed. The .pc is dev-only (nothing in prod
+# compiles against libvmaf) but shipped for completeness.
+COPY --from=build /usr/local/lib/x86_64-linux-gnu/libvmaf.so* /usr/local/lib/
+COPY --from=build /usr/local/lib/x86_64-linux-gnu/pkgconfig/libvmaf.pc /usr/local/lib/pkgconfig/
+COPY --from=build /usr/local/include/libvmaf/ /usr/local/include/libvmaf/
+COPY --from=build /usr/local/bin/vmaf* /usr/local/bin/
+
+# ffmpeg + ffprobe (built with --enable-libvmaf-sycl above).
+COPY --from=build /usr/local/bin/ffmpeg /usr/local/bin/ffmpeg
+COPY --from=build /usr/local/bin/ffprobe /usr/local/bin/ffprobe
+
+# Minimal oneAPI SYCL runtime, curated in stage 2 (see the comment there).
+COPY --from=build /opt/oneapi-min/ /opt/intel/oneapi/
+
+ENV ONEAPI_ROOT=/opt/intel/oneapi
+ENV PATH=/usr/local/bin:${PATH}
+ENV LD_LIBRARY_PATH=${ONEAPI_ROOT}/compiler/latest/lib:${ONEAPI_ROOT}/umf/latest/lib:${ONEAPI_ROOT}/tcm/latest/lib:${ONEAPI_ROOT}/tbb/latest/lib:/usr/local/lib:${LD_LIBRARY_PATH}
+# DG2/Arc A-series: disable Level-Zero immediate command lists (inherited
+# from `runtime`, restated here for clarity — this is the image users run).
+ENV UR_L0_USE_IMMEDIATE_COMMANDLISTS=0
+
+RUN ldconfig
+
+# ---- Golden self-check (ADR-3358) ------------------------------------------
+# A LEAN reference-pair verifier so operators can confirm the DEPLOYED binary
+# reproduces the Netflix golden scores on their own hardware, WITHOUT shipping
+# the ~10 GB build toolchain / pytest harness. The prod binary already passed
+# the full 271-assertion CPU golden gate at BUILD time (build stage); this is
+# the trust-but-verify re-check of the shipped artifact. `reference_report.py`
+# runs the 3 canonical Netflix pairs (src01 + the two checkerboard shifts,
+# baked below) through `vmaf` and prints reference / actual / delta / verdict,
+# plus a CPU-vs-SYCL cross-backend table when a GPU is attached (auto-skipped,
+# CPU-only, otherwise):
+#
+#   podman run --rm --device /dev/dri/renderD128 --group-add keep-groups \
+#     --entrypoint vmaf-selftest vmafx-sycl-test:latest
+#
+# The cross-backend table runs when any /dev/dri/renderD* node is present;
+# RENDER_NODE=<path> names one explicitly.
+#
+# hadolint ignore=DL3008,DL3009
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends python3 \
+ && if ! command -v python3 >/dev/null; then echo "FATAL: python3 not installed"; exit 1; fi
+COPY --from=build /src/vmafx/scripts/test/reference_report.py /opt/vmaf-selftest/reference_report.py
+# The 5 Netflix golden YUV fixtures (fetched + MD5-verified in the build stage;
+# excluded from the build CONTEXT by .dockerignore's `*.yuv`, so sourced from
+# the build image, not the context). ~30 MB; makes the self-check offline.
+COPY --from=build \
+     /src/vmafx/python/test/resource/yuv/src01_hrc00_576x324.yuv \
+     /src/vmafx/python/test/resource/yuv/src01_hrc01_576x324.yuv \
+     /src/vmafx/python/test/resource/yuv/checkerboard_1920_1080_10_3_0_0.yuv \
+     /src/vmafx/python/test/resource/yuv/checkerboard_1920_1080_10_3_1_0.yuv \
+     /src/vmafx/python/test/resource/yuv/checkerboard_1920_1080_10_3_10_0.yuv \
+     /opt/vmaf-selftest/yuv/
+# The script's lines are written literally; they expand when it runs.
+# hadolint ignore=SC2016
+RUN printf '%s\n' \
+    '#!/bin/sh' \
+    '# Golden reference-pair self-check for the deployed vmaf binary (ADR-3358).' \
+    'export VMAF_BIN="${VMAF_BIN:-/usr/local/bin/vmaf}"' \
+    'export YUV_DIR="${YUV_DIR:-/opt/vmaf-selftest/yuv}"' \
+    '# No Arc device attached -> CPU-only golden table (skip cross-backend).' \
+    'node="${RENDER_NODE:-}"' \
+    'if [ -z "$node" ]; then for n in /dev/dri/renderD*; do [ -e "$n" ] && node="$n" && break; done; fi' \
+    '[ -n "$node" ] && [ -e "$node" ] || export REPORT_NO_SYCL=1' \
+    'exec python3 /opt/vmaf-selftest/reference_report.py "$@"' \
+    > /usr/local/bin/vmaf-selftest \
+ && chmod +x /usr/local/bin/vmaf-selftest
+
+# Run as a non-root user, as the published images do (ADR-0878); the render
+# node is reached through the caller's groups (--group-add keep-groups).
+USER 65532:65532
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD vmaf --version || exit 1
+
+ENTRYPOINT ["vmaf"]
+CMD ["--help"]

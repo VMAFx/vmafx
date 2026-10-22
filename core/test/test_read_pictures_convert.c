@@ -416,6 +416,58 @@ static char *test_untagged_source_with_target_is_rejected(void)
     return NULL;
 }
 
+/* the target colorspace, with the same colorspace assumed for untagged input
+ * (Netflix/vmaf 272c596770) */
+static const char *target_assumed_ictcp = "\"conversion_target\": {" COLORSPACE_ICTCP ", "
+                                          "\"assumed_color_if_untagged\": {\"range\": \"limited\", "
+                                          "\"primaries\": \"bt2020\", \"trc\": \"smpte2084\", "
+                                          "\"matrix\": \"ictcp\"}}, ";
+
+static char *test_untagged_source_uses_the_assumed_color(void)
+{
+    double assumed;
+    double tagged;
+    mu_assert("an untagged source should be accepted when the model assumes a color",
+              !run(target_assumed_ictcp, NULL, NULL, &assumed));
+    mu_assert("the tagged run failed",
+              !run(target_assumed_ictcp, &pq_ictcp_color, &pq_ictcp_color, &tagged));
+    mu_assert("an untagged source should score as if tagged with the assumed color",
+              vmaf_test_identical_f64(assumed, tagged));
+
+    VmafColor partial = pq_bt2020nc_color;
+    partial.matrix = VMAF_COLOR_MATRIX_UNKNOWN;
+    double score;
+    mu_assert("a partly tagged source should still be rejected",
+              run(target_assumed_ictcp, &partial, &partial, &score) == -EINVAL);
+    mu_assert("a tagged reference with an untagged distorted picture should be rejected",
+              run(target_assumed_ictcp, &pq_ictcp_color, NULL, &score) == -EINVAL);
+    mu_assert("an untagged reference with a tagged distorted picture should be rejected",
+              run(target_assumed_ictcp, NULL, &pq_ictcp_color, &score) == -EINVAL);
+
+    return NULL;
+}
+
+static char *test_models_with_different_assumed_colors_cannot_share_a_run(void)
+{
+    VmafContext *vmaf;
+    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    int err = vmaf_init(&vmaf, cfg);
+    mu_assert("problem during vmaf_init", !err);
+
+    VmafModel *plain;
+    VmafModel *assumed;
+    mu_assert("load plain model", !load_model(&plain, target_color_only));
+    mu_assert("load assuming model", !load_model(&assumed, target_assumed_ictcp));
+    mu_assert("first model should register", !vmaf_use_features_from_model(vmaf, plain));
+    mu_assert("a model that assumes a color cannot share a run with one that does not",
+              vmaf_use_features_from_model(vmaf, assumed) == -EINVAL);
+
+    vmaf_model_destroy(plain);
+    vmaf_model_destroy(assumed);
+    vmaf_close(vmaf);
+    return NULL;
+}
+
 static char *test_models_must_share_a_conversion_target(void)
 {
     VmafContext *vmaf;
@@ -487,7 +539,103 @@ static char *test_set_input_colorimetry_is_busy_after_conversion(void)
 }
 #endif
 
-char *run_tests(void)
+#ifdef HAVE_ZIMG
+/* the target colorspace, scaled to a 1080-line display */
+static const char *target_1080 = "\"conversion_target\": {" COLORSPACE_ICTCP ", "
+                                 "\"resolution\": {\"display\": 1080}}, ";
+
+static char *test_target_display_scales_source(void)
+{
+    /* the synthetic frames are 256x144, already in the target colorspace */
+    double unscaled;
+    double scaled;
+    mu_assert("unscaled run failed",
+              !run(target_color_only, &pq_ictcp_color, &pq_ictcp_color, &unscaled));
+    mu_assert("scaled run failed", !run(target_1080, &pq_ictcp_color, &pq_ictcp_color, &scaled));
+    mu_assert("a source below the display size should be upscaled, but the "
+              "score matches the unscaled pictures",
+              unscaled != scaled);
+
+    return NULL;
+}
+
+/* score one frame whose distorted picture is dist_w x dist_h */
+static int run_dist_size(const char *target_block, unsigned dist_w, unsigned dist_h)
+{
+    VmafContext *vmaf;
+    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    int err = vmaf_init(&vmaf, cfg);
+    if (err)
+        return err;
+    VmafModel *model = NULL;
+    err = load_model(&model, target_block);
+    err = err ? err : vmaf_use_features_from_model(vmaf, model);
+    /* Fork adaptation (ADR-1822): the colorimetry goes to the context */
+    err = err ? err : vmaf_set_input_colorimetry(vmaf, &pq_ictcp_color, &pq_ictcp_color);
+
+    VmafPicture ref;
+    VmafPicture dist;
+    bool have_pics = false;
+    err = err ? err : vmaf_picture_alloc(&ref, VMAF_PIX_FMT_YUV420P, BPC, W, H);
+    const bool have_ref = !err;
+    if (have_ref) {
+        err = vmaf_picture_alloc(&dist, VMAF_PIX_FMT_YUV420P, BPC, dist_w, dist_h);
+        if (err)
+            err = vmaf_picture_unref(&ref) ? -EIO : err;
+        have_pics = !err;
+    }
+    if (have_pics) {
+        fill_picture(&ref, 0, 0);
+        fill_picture(&dist, 0, 20);
+        /* the context owns both pictures whatever the result (ADR-1431) */
+        err = vmaf_read_pictures(vmaf, &ref, &dist, 0);
+    }
+    if (model)
+        vmaf_model_destroy(model);
+    const int close_err = vmaf_close(vmaf);
+    return err ? err : close_err;
+}
+
+static char *test_target_display_scales_different_sized_inputs(void)
+{
+    /* the reference is 256x144; both are scaled to 1920x1080 */
+    mu_assert("a half-size distorted picture of the same aspect ratio should "
+              "be scaled to the size the reference scales to",
+              !run_dist_size(target_1080, W / 2, H / 2));
+    mu_assert("a distorted picture with a different aspect ratio should be "
+              "rejected",
+              run_dist_size(target_1080, W / 2, H) == -EINVAL);
+    mu_assert("different sizes without a display resolution should be rejected",
+              run_dist_size(target_color_only, W / 2, H / 2) == -EINVAL);
+
+    return NULL;
+}
+
+static char *test_models_with_different_displays_cannot_share_a_run(void)
+{
+    VmafContext *vmaf;
+    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    int err = vmaf_init(&vmaf, cfg);
+    mu_assert("problem during vmaf_init", !err);
+
+    VmafModel *unscaled;
+
+    VmafModel *scaled;
+    mu_assert("load unscaled model", !load_model(&unscaled, target_color_only));
+    mu_assert("load scaled model", !load_model(&scaled, target_1080));
+
+    mu_assert("first model should register", !vmaf_use_features_from_model(vmaf, unscaled));
+    mu_assert("a model with a different display cannot share a run",
+              vmaf_use_features_from_model(vmaf, scaled) == -EINVAL);
+
+    vmaf_model_destroy(unscaled);
+    vmaf_model_destroy(scaled);
+    vmaf_close(vmaf);
+    return NULL;
+}
+#endif
+
+static char *run_conversion_tests(void)
 {
     mu_run_test(test_set_input_colorimetry_contract);
 #ifdef HAVE_ZIMG
@@ -500,16 +648,50 @@ char *run_tests(void)
 #else
     mu_run_test(test_conversion_without_zimg_is_an_error);
 #endif
+    return NULL;
+}
+
+static char *run_target_format_tests(void)
+{
     mu_run_test(test_source_matching_target_is_not_converted);
     mu_run_test(test_source_matching_pinned_format_is_not_converted);
 #ifdef HAVE_ZIMG
     mu_run_test(test_target_pixel_format_is_applied);
     mu_run_test(test_target_bit_depth_converts_without_error);
+#endif
+    return NULL;
+}
+
+static char *run_model_target_tests(void)
+{
+#ifdef HAVE_ZIMG
     mu_run_test(test_models_with_different_formats_cannot_share_a_run);
 #endif
     mu_run_test(test_untagged_source_with_target_is_rejected);
     mu_run_test(test_models_must_share_a_conversion_target);
+    mu_run_test(test_untagged_source_uses_the_assumed_color);
+    mu_run_test(test_models_with_different_assumed_colors_cannot_share_a_run);
     return NULL;
+}
+
+static char *run_display_tests(void)
+{
+#ifdef HAVE_ZIMG
+    mu_run_test(test_target_display_scales_source);
+    mu_run_test(test_target_display_scales_different_sized_inputs);
+    mu_run_test(test_models_with_different_displays_cannot_share_a_run);
+#endif
+    return NULL;
+}
+
+char *run_tests(void)
+{
+    char *result = run_conversion_tests();
+    if (!result)
+        result = run_target_format_tests();
+    if (!result)
+        result = run_model_target_tests();
+    return result ? result : run_display_tests();
 }
 
 /* NOLINTEND(modernize-use-nullptr) */

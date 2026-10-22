@@ -245,8 +245,8 @@ selects the C build and the Netflix golden gate.
 
 ### Release-bot identity
 
-`release-please.yml` authenticates as a GitHub App (or, as a fallback, a
-personal access token), never as `GITHUB_TOKEN`.
+`release-please.yml` authenticates as a GitHub App installation token, never
+as `GITHUB_TOKEN` and never as a personal access token.
 
 #### Why
 
@@ -256,53 +256,39 @@ It is why release PRs used to land as `action_required` with zero jobs: the
 sole required context could never report and the PR sat `BLOCKED` behind an
 admin bypass.
 
-Every step in the job (both release-please invocations and both read-only
-`gh api` probes) uses the token resolved by the `Resolve the release-bot
-token` step. The job's own `GITHUB_TOKEN` keeps the workflow default
-`contents: read` and holds no write scope at all.
+The first step, `Mint the release-bot installation token`
+(`actions/create-github-app-token`), runs on every event. Every later step
+in the job (both release-please invocations and both read-only `gh api`
+probes) uses its output `steps.app-token.outputs.token` directly. The job's
+own `GITHUB_TOKEN` keeps the workflow default `contents: read` and holds no
+write scope at all.
 
-#### Identity modes
+#### One identity, no fallback
 
-Two identities are accepted, in this order; the third row is the
-no-credentials state:
+| Credential | Behaviour |
+| --- | --- |
+| `RELEASE_BOT_APP_ID` + `RELEASE_BOT_PRIVATE_KEY` | Minted per run, short-lived, scoped to this repository, masked by the action. |
+| Missing or broken App secrets | The mint step fails and the run is red, on `push` and on `workflow_dispatch` alike. |
 
-| Mode | Credential | When it is used |
-| --- | --- | --- |
-| `app` | `RELEASE_BOT_APP_ID` + `RELEASE_BOT_PRIVATE_KEY` | Preferred. Minted per run by `actions/create-github-app-token`, short-lived, scoped to this repository. |
-| `pat` | `RELEASE_BOT_TOKEN` | Fallback when the App secrets are absent. Needs `repo` + `workflow`. |
-| `none` | — | Pipeline stays idle: warning on `push`, error on `workflow_dispatch` (ADR-1171). |
+The earlier personal access token fallback (`RELEASE_BOT_TOKEN`) and the
+idle-green run without credentials (ADR-1171) are gone (ADR-1151 follow-up
+note of 2026-10-19). A fallback token is broader-scoped and longer-lived than
+an App installation token, and praetor's release-token audit refuses a
+release-please token that is anything but the App step's output. A red run
+is the signal that the App secrets need repair, which is a maintainer act.
 
-!!! note
-    Prefer the App. A PAT is broader-scoped and longer-lived than an App
-    installation token, and it carries whatever scopes its owner granted
-    rather than only the two this workflow needs (Contents, Pull requests).
-    The PAT path exists because registering a GitHub App has no API path:
-    it is a browser flow and its private key is downloadable only once, at
-    creation, so requiring the App made the whole release pipeline block on
-    a manual step. Swap to the App when it exists and delete the PAT secret.
-
-The same identity, resolved the same way (App, else PAT, else a failing step that
-names the missing secrets), creates the tag and release of the macOS tester bundle
-in `macos-tester-bundle.yml`: the job token cannot create the tag of a commit that
-differs from master's tree in `.github/workflows/`. Only that one step uses it
+The same App token creates the tag and release of the macOS and Windows
+tester bundles (`macos-tester-bundle.yml`, `windows-tester-bundle.yml`): the
+job token cannot create the tag of a commit that differs from master's tree
+in `.github/workflows/`. Only that one step uses it
 ([tester maintainer notes](tester-image.md)).
-
-Whichever mode is active, the resolved token is masked with `::add-mask::`
-before it reaches any later step.
 
 #### One-time App setup
 
 !!! warning
-    One-time maintainer setup. Until the credentials exist the workflow
-    never falls back to `GITHUB_TOKEN`, because that would recreate an
-    unmergeable release PR.
-
-Without credentials:
-
-- On every push to `master` the first step emits a warning annotation and
-  skips every write step, so the run ends green and idle.
-- On a manual `workflow_dispatch` the missing credentials are an error and
-  the run fails, because an operator asked for a release step (ADR-1171).
+    One-time maintainer setup. Without the credentials every run fails at
+    the mint step; the workflow never falls back to `GITHUB_TOKEN`, because
+    that would recreate an unmergeable release PR.
 
 `scripts/release/check-release-bot-secrets.sh` checks the two secret names
 locally and is part of the `/prep-release` dry run, so a release cannot be
@@ -318,9 +304,10 @@ attempted without the identity. To set it up:
      `-----BEGIN…`/`-----END…` lines.
 
 The installation token is minted per run and revoked when the job ends;
-there is no long-lived credential and nothing to rotate on a schedule. A
-personal access token would also work mechanically but ties the release
-stream to one human's account and expires; see ADR-1151's alternatives.
+there is no long-lived credential and nothing to rotate on a schedule. The
+workflows accept no personal access token: one would tie the release stream
+to one human's account and expire
+([ADR-3356](../adr/3356-release-token-app-only.md)).
 
 ### Process gates on the release PR
 

@@ -27,6 +27,10 @@
 extern "C" {
 #endif
 
+/* NOLINTBEGIN(modernize-use-using,performance-enum-size): public C header included by C
+ * and C++ translation units; C has no `using`, and C has no fixed enum underlying type
+ * across the required toolchains (ADR-1470). ADR-1138. */
+
 /**
  * One scoring session.
  * @since 0.1
@@ -222,8 +226,11 @@ VMAFX_EXPORT uint32_t vmafx_context_frame_retention(const VmafxContext *context)
 /**
  * Score frame `index` from `reference` and `distorted`. Consumes one reference of each frame on
  * every path, failures included (the same frame as both inputs needs two); a frame submitted to
- * several contexts needs one reference per submit and is never copied. Indices increase strictly
- * and every frame keeps the first frame's geometry.
+ * several contexts needs one reference per submit and is never copied. Indices increase strictly;
+ * the distorted input may differ in size from the reference but keeps its pixel format and bit
+ * depth, and each input keeps its own first frame's geometry. Inputs of different sizes are scored
+ * only when a model's `conversion_target` names a display resolution, which scales both to a common
+ * size before scoring.
  * @since 0.1
  */
 VMAFX_EXPORT VmafxStatus vmafx_submit(VmafxContext *context, VmafxFrame *reference,
@@ -345,6 +352,8 @@ VMAFX_EXPORT VmafxStatus vmafx_context_set_default_color(VmafxContext *context,
                                                          const VmafxColor *reference,
                                                          const VmafxColor *distorted,
                                                          VmafxError **error);
+
+/* NOLINTEND(modernize-use-using,performance-enum-size) */
 
 #ifdef __cplusplus
 }

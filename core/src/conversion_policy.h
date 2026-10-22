@@ -50,25 +50,36 @@
  * `pix_fmt` / `bpc` when the model pins them (UNKNOWN / 0 otherwise, meaning
  * "keep each picture's own"). `*needs_conversion` is true unless both `ref`
  * and `dist` already match the target. `ref` and `dist` are allowed to
- * differ from each other: each is converted to the same target. The caller
- * is responsible for `target->w`/`h`/`resample_filter`.
- *
- * NOTE: a resolution-mismatch policy (deciding `target->w`/`h` when
- * reference and distorted differ) is expected to land here too once
- * that's in scope, rather than in a separate module - hence
- * `conversion_policy` rather than `colorspace_policy`.
+ * differ from each other: each is converted to the same target. The size
+ * (`target->w`/`h`/`resample_filter`) is left to
+ * vmaf_conversion_policy_scale(); w/h 0 keep each picture's own.
  */
 int vmaf_conversion_policy_target(const VmafPicture *ref, const VmafColor *ref_color,
                                   const VmafPicture *dist, const VmafColor *dist_color,
                                   const VmafPictureConvertTarget *model_target,
                                   bool *needs_conversion, VmafPictureConvertTarget *target);
 
+/**
+ * Give `*ref_color` and `*dist_color` the color `assumed` when neither has any
+ * of range, primaries, trc and matrix set, and set `*assumed_applied` to true
+ * (Netflix/vmaf 272c596770). When both are tagged, nothing changes. When
+ * exactly one is fully untagged, return -EINVAL (logged): both inputs come
+ * from the same pipeline, so one tagged and one not is a mistake. A color with
+ * only some of the attributes set is left alone, so
+ * vmaf_conversion_policy_target() reports it as an error. Fork adaptation
+ * (ADR-1822): upstream takes the two pictures and edits `VmafPicture::color`;
+ * the fork's pictures carry no color, so this takes the colors the caller
+ * declared with vmaf_set_input_colorimetry().
+ */
+int vmaf_conversion_policy_assume_color(VmafColor *ref_color, VmafColor *dist_color,
+                                        const VmafColor *assumed, bool *assumed_applied);
+
 /** True when all of `a`'s color attributes equal `b`'s. */
 bool vmaf_conversion_policy_color_equal(const VmafColor *a, const VmafColor *b);
 
 /**
  * True when `pic` already matches `target`: same color, and the same pixel
- * format and bit depth wherever `target` pins them.
+ * format, bit depth and size wherever `target` pins them.
  */
 bool vmaf_conversion_policy_picture_matches(const VmafPicture *pic, const VmafColor *pic_color,
                                             const VmafPictureConvertTarget *target);
@@ -76,5 +87,29 @@ bool vmaf_conversion_policy_picture_matches(const VmafPicture *pic, const VmafCo
 /** True when two targets are the same in color, pixel format and bit depth. */
 bool vmaf_conversion_policy_target_equal(const VmafPictureConvertTarget *a,
                                          const VmafPictureConvertTarget *b);
+
+/**
+ * Set the sizes of `ref_target` and `dist_target` so both pictures are scaled
+ * to a model's display resolution (Netflix/vmaf ca2a2a111d, cf9a6ec51b).
+ * `display_resolution` is the short side: 1080 means 1920x1080 or 1080x1920 by
+ * the source's orientation.
+ *
+ * `ref` and `dist` may differ in size. Both are scaled to the size the
+ * reference scales to; they must have the same orientation (a square matches
+ * either) and their scaled sizes may differ by at most 2 pixels per side, the
+ * rounding of the long side to an even number. Otherwise -EINVAL (logged).
+ * A source whose short side already equals `display_resolution` keeps its
+ * dimensions. The long side keeps the source's aspect ratio, rounded to the
+ * nearest even number; a long side over 4 * `display_resolution` is -EINVAL
+ * (logged). `*dist_target` is set to `*ref_target` with the common size; each
+ * target's filter is none for a picture already at that size, bicubic to
+ * upscale and lanczos to downscale. `*needs_conversion` is set to true when
+ * either picture is not at the common size and left as it was otherwise.
+ * NULL arguments and `display_resolution` 0 are -EINVAL.
+ */
+int vmaf_conversion_policy_scale(const VmafPicture *ref, const VmafPicture *dist,
+                                 unsigned display_resolution, bool *needs_conversion,
+                                 VmafPictureConvertTarget *ref_target,
+                                 VmafPictureConvertTarget *dist_target);
 
 #endif /* VMAF_SRC_CONVERSION_POLICY_H_ */

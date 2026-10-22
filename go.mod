@@ -1,6 +1,6 @@
 module github.com/VMAFx/vmafx
 
-go 1.27.2
+go 1.27.3
 
 retract (
 	v1.0.0-rc.3 // withdrawn: the release line restarts at v0.1.0 (docs/adr/3292-release-line-restart-0x.md)

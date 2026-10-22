@@ -130,6 +130,7 @@ EXPECTED_RUNNER_PATHS = {
     Path("scripts/dev/rc3-home-gpu-retest.sh"): ("scripts/ci/run_meson_test.py",),
     Path("scripts/setup/ubuntu.sh"): ("scripts/ci/run_meson_test.py",),
     Path("scripts/sync-pelorus-interop.sh"): ("scripts/ci/run_meson_test.py",),
+    Path("scripts/test/run-all-tests.sh"): ("scripts/ci/run_meson_test.py",),
 }
 
 RUNNER_SCRIPT_BASENAME = "run_meson_test.py"

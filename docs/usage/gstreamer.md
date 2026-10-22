@@ -25,7 +25,7 @@ gst-inspect-1.0 vmafx
 
 For a CUDA-capable element, configure the library with
 `-Denable_cuda=true -Denable_nvcc=true` and point `meson setup build-gst` at
-that build; `-Dcuda=disabled` leaves CUDA memory out, `-Dtoolkit_root=<dir>`
+that build; `-Dcuda=disabled` leaves CUDA memory out, `-Dvulkan=disabled` Vulkan images, `-Dtoolkit_root=<dir>`
 names a CUDA toolkit outside `/opt/cuda`, `/usr/local/cuda` and `/usr`.
 `gstreamer/test/run.sh` builds both variants and runs the tests; it exits 77
 when the GStreamer development files are missing.
@@ -207,6 +207,45 @@ mapping.
 | `conf-interval` | not available in this release |
 | the `samples-selected` signal | none; read the messages |
 
+## Vulkan frames {#vulkan}
+
+GStreamer's Vulkan decoders (`vulkanh264device1dec`, `vulkanh265device1dec`;
+the digit is the GPU) and `vulkanupload` output `memory:VulkanImage`. The
+element scores those on the VMAFx device of the same GPU: `backend=auto` takes
+the backend of the GPU's vendor (CUDA for NVIDIA, HIP for AMD, SYCL for Intel),
+and a backend with no device at the frames' PCI location is refused naming it,
+so a frame is never read across GPUs.
+
+```bash
+gst-launch-1.0 -m \
+  filesrc location=ref.h264  ! h264parse ! vulkanh264device1dec ! "video/x-raw(memory:VulkanImage)" ! v.reference \
+  filesrc location=dist.h264 ! h264parse ! vulkanh264device1dec ! "video/x-raw(memory:VulkanImage)" ! v.distorted \
+  vmafx name=v model=version=vmaf_v0.6.1 log-path=score.json ! fakesink
+```
+
+How it works, because GStreamer's Vulkan memory cannot be exported (it is
+allocated without export information, and the decoders write one multi-plane
+image): the element offers the Vulkan elements upstream of it a Vulkan device
+of its own (they ask downstream for a `gst.vulkan.device` context), made with
+`VK_KHR_external_memory_fd`, one per sink pad. Each frame is copied once on the
+GPU into a slot of the pad's pool of exportable per-plane images, on the thread
+of the element upstream, the copy is waited for on the host, and the slot is
+imported as `VMAFX_MEMORY_VULKAN`; its HOST release fence says when the slot may
+be written again. Consequences: the Vulkan element must be linked to the pad
+directly (or through pass-through elements), so that its context query reaches
+this element; frames from a Vulkan device made by someone else are refused
+(`cannot export memory`); and the copy is a GPU copy, not a download:
+`host-copy-frames` stays 0.
+
+`gstreamer/test/test_gst_vmafx_parity.py` (`VulkanFrames`) scores 48 H.264
+frames decoded by the GPU and compares every value with the CLI of the same
+backend on the same frames decoded in software: equal on CUDA (RTX 4090,
+`vulkanh264device1dec`) and HIP (gfx1036, RADV `vulkanh264device1dec`); on SYCL
+(Arc A380, which has no Vulkan decoder here) with `vulkanupload` as the source.
+`vulkanupload` of GStreamer 1.28 can write the next frame into its staging buffer
+before the copy of the previous one ran, so the test throttles after it; a
+decoder has no such race.
+
 ## Scoring while encoding {#encode-time}
 
 Put the encoder and decoder inside the pipeline and score the decoded frames
@@ -227,16 +266,20 @@ offset, so the window times are shifted by it and nothing else differs.
 
 ## Limits {#limits}
 
-- Backends: CPU and CUDA. `backend=sycl`, `hip` and `metal` fail at start
-  naming the backend; each comes with its import lane.
-- Memory: system memory and CUDA memory are imported. `GLMemory` (what
-  `nvh264dec` offers next to CUDA memory, and VA decoders' second output) and
-  `VulkanImage` (`vulkanh264dec`) are in the pad caps so that they negotiate to
-  a refusal that names the memory (`pad distorted: format NV12 in GLMemory: not
-  imported yet`) instead of a silent download through a converter; each waits
-  for its import lane (GL interop on CUDA and SYCL, the Vulkan import memory
-  kind). On AMD, negotiate DMABuf instead of GL. VA and DMA-buf, D3D11 and
-  Metal-backed memory are not imported yet.
+- Backends: CPU, CUDA, SYCL and HIP (a build of the library has the ones it was
+  built with). `backend=metal` fails at start naming the backend. System memory
+  scores on any of them (the library uploads it); CUDA memory only on CUDA;
+  Vulkan frames on the backend of their GPU.
+- Memory: system memory, CUDA memory and Vulkan images are imported.
+  `GLMemory` (what `nvh264dec` offers next to CUDA memory) is in the pad caps so
+  that it negotiates to a refusal that names the memory (`pad distorted: format
+  NV12 in GLMemory: not imported yet`) instead of a silent download through a
+  converter; it waits for the GL import. On AMD, negotiate DMABuf instead of GL.
+  DMABuf, VAMemory, D3D11 and Metal-backed memory are not imported yet: a VA
+  decoder (`vah264dec`) negotiates system memory with this element, so its
+  frames are downloaded by the decoder, not by the element (scores equal the
+  CLI's on the same frames; measured with `LIBVA_DRIVER_NAME=radeonsi` on the
+  gfx1036).
 - Dolby Vision profile 5 sources need converting outside the pipeline before
   scoring: VMAFx reads and applies no RPU data
   ([ADR-1685](../adr/1685-post-1-0-embedding-zero-copy-milestone.md)).

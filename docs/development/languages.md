@@ -46,7 +46,7 @@ brew install llvm
 `vmafx-operator`, `vmafx-ort-runner`, `vmafx-server`, `vmafx-tune`) and `pkg/`
 
 **Required version:** the exact version declared by `go.mod` (currently Go
-1.27.2). CI reads the same file through `actions/setup-go`.
+1.27.3). CI reads the same file through `actions/setup-go`.
 
 **Install:**
 

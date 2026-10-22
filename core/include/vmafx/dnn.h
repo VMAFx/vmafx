@@ -25,6 +25,10 @@
 extern "C" {
 #endif
 
+/* NOLINTBEGIN(modernize-use-using,performance-enum-size): public C header included by C
+ * and C++ translation units; C has no `using`, and C has no fixed enum underlying type
+ * across the required toolchains (ADR-1470). ADR-1138. */
+
 /**
  * Inference device of a tiny-AI session (values equal VmafDnnDevice). Added in ABI 0.1.6.
  * @since 0.1
@@ -242,6 +246,8 @@ VMAFX_EXPORT const char *vmafx_dnn_session_runtime_device(VmafxDnnSession *sessi
  */
 VMAFX_EXPORT VmafxStatus vmafx_dnn_verify_signature(const char *onnx_path,
                                                     const char *registry_path, VmafxError **error);
+
+/* NOLINTEND(modernize-use-using,performance-enum-size) */
 
 #ifdef __cplusplus
 }

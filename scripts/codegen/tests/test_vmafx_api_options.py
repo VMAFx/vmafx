@@ -150,6 +150,9 @@ class RulesTest(unittest.TestCase):
             ({"mcp_required": True}, "window", 0, "needs the mcp surface"),
             ({"default": ["log", "pipe"]}, "window", 1, "list of its values"),
             ({"range": [5, 1]}, "pool", 1, "minimum is above its maximum"),
+            ({"go_type": "lowerCase"}, "input", 1, "`go_type` names an exported Go type"),
+            ({"go_type": "Bad_Name"}, "input", 1, "`go_type` names an exported Go type"),
+            ({"go_type": "Name"}, "input", 4, "`go_type` names an exported Go type"),
         )
         for change, group, index, text in cases:
             with self.subTest(change=change):
@@ -273,12 +276,19 @@ class OpenApiEmitterTest(unittest.TestCase):
         schemas = emit_openapi.schemas(api())
         self.assertEqual(schemas["ScoreOptions"]["properties"]["bitdepth"]["enum"], [8, 10])
         self.assertEqual(schemas["ScoreOptions"]["properties"]["feature"]["type"], "array")
+        self.assertNotIn("x-go-type", schemas["ScoreOptions"]["properties"]["bitdepth"])
         self.assertEqual(
             schemas["WindowResult"]["properties"]["value"]["items"]["format"], "double"
         )
         text = emit_openapi.components_text(api())
         self.assertIn('components:\n  schemas:\n    ScoreOptions:\n      type: "object"', text)
         self.assertIn("          enum:\n            - 8\n            - 10", text)
+
+    def test_go_type(self) -> None:
+        doc = copy.deepcopy(fixture())
+        entry(doc["option_groups"], "input")["options"][1]["go_type"] = "ScoreOptionsBitdepth"
+        bitdepth = emit_openapi.schemas(parse(doc))["ScoreOptions"]["properties"]["bitdepth"]
+        self.assertEqual(bitdepth["x-go-type"], "ScoreOptionsBitdepth")
 
 
 class FfmpegEmitterTest(unittest.TestCase):

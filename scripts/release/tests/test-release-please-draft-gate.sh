@@ -27,20 +27,8 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "$SCRIPT_DIR/../../.." && pwd)"
 WORKFLOW="$REPO_ROOT/.github/workflows/release-please.yml"
 VERIFY="$REPO_ROOT/scripts/release/verify-release-version.sh"
-scratch="$(mktemp -d)"
-trap 'rm -rf "$scratch"' EXIT INT TERM
-pass=0
-fail=0
-
-ok() {
-  printf 'PASS: %s\n' "$1"
-  pass=$((pass + 1))
-}
-
-bad() {
-  printf 'FAIL: %s\n' "$1" >&2
-  fail=$((fail + 1))
-}
+# shellcheck source=scripts/release/tests/lib.sh
+. "$SCRIPT_DIR/lib.sh"
 
 # --- extraction + structural checks (4) -------------------------------------
 python3 - "$WORKFLOW" "$scratch/step.sh" "$scratch/filter.jq" <<'PY'

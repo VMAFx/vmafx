@@ -15,15 +15,13 @@ from __future__ import annotations
 
 import importlib.util
 import json
-import sys
 from pathlib import Path
 
 import pytest
 
+import ai.data.scores  # noqa: F401  # populates sys.path with tools/vmaf-tune/src
+
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_VMAFTUNE_SRC = _REPO_ROOT / "tools" / "vmaf-tune" / "src"
-if str(_VMAFTUNE_SRC) not in sys.path:
-    sys.path.insert(0, str(_VMAFTUNE_SRC))
 
 from vmaftune import CORPUS_ROW_KEYS  # noqa: E402
 

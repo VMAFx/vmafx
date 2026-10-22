@@ -385,6 +385,7 @@ int err = vmaf_set_input_colorimetry(vmaf, &pq, &pq);   /* ref, dist; NULL = uns
 | --- | --- |
 | model without `conversion_target` | pass-through; the colour is ignored |
 | target and both inputs fully specified | each picture not already matching is converted; the others are passed on |
+| target with `assumed_color_if_untagged` and both inputs unspecified | both are treated as the assumed colour, with one warning in the log |
 | target and an input unspecified or partly specified | `-EINVAL`, the log names the missing attributes |
 | models of one run with different targets (or some with, some without) | `vmaf_use_features_from_model()` returns `-EINVAL` |
 | target but no zimg in the build, a picture in device memory, or the SYCL zero-copy entry point `vmaf_read_pictures_sycl()` | `-ENOTSUP` |

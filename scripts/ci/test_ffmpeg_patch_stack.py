@@ -6,6 +6,7 @@
 import importlib.util
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -531,6 +532,57 @@ class SharedSeriesReplay(RealReplay):
         self.assertIn(
             "add integration", (self.output / "patches/0001-integration.patch").read_text()
         )
+
+
+def ffmpeg_guard(path: str) -> str:
+    """The inclusion guard FFmpeg's tests/fate/source-check.sh requires of `path`."""
+    macro = re.sub(r"[^A-Za-z0-9]+", "_", re.sub(r"^lib", "", path))
+    for infix in ("_af_", "_vf_", "_avf_", "_vaf_"):
+        macro = macro.replace(infix, "_", 1)
+    return macro.upper()
+
+
+def added_headers(patch_text: str) -> dict[str, list[str]]:
+    """FFmpeg path -> added lines of every header a patch creates."""
+    headers: dict[str, list[str]] = {}
+    for chunk in patch_text.split("\ndiff --git a/")[1:]:
+        path = chunk.split(" ", 1)[0]
+        if path.endswith(".h") and "\nnew file mode" in chunk.split("\n@@", 1)[0]:
+            headers[path] = [line[1:] for line in chunk.splitlines() if line.startswith("+")]
+    return headers
+
+
+def missing_guards(headers: dict[str, list[str]]) -> list[str]:
+    return [path for path, lines in headers.items() if f"#define {ffmpeg_guard(path)}" not in lines]
+
+
+class HeaderGuards(unittest.TestCase):
+    """fate-source fails on a header the series adds without FFmpeg's guard name."""
+
+    PATCHES = Path(__file__).resolve().parents[2] / "ffmpeg-patches"
+
+    def test_guard_names_follow_fate_source(self) -> None:
+        self.assertEqual(ffmpeg_guard("libavfilter/vf_vmafx_options.h"), "AVFILTER_VMAFX_OPTIONS_H")
+        self.assertEqual(ffmpeg_guard("fftools/ffmpeg_qpfile.h"), "FFTOOLS_FFMPEG_QPFILE_H")
+
+    def test_another_guard_is_refused(self) -> None:
+        patch_text = (
+            "x\ndiff --git a/libavfilter/vf_x.h b/libavfilter/vf_x.h\nnew file mode 100644\n"
+            "@@ -0,0 +1,2 @@\n+#ifndef VMAFX_VF_X_H\n+#define VMAFX_VF_X_H\n"
+        )
+        self.assertEqual(missing_guards(added_headers(patch_text)), ["libavfilter/vf_x.h"])
+
+    def test_every_added_header_has_the_ffmpeg_guard(self) -> None:
+        series = (self.PATCHES / "series.txt").read_text(encoding="utf-8").splitlines()
+        names = [line.strip() for line in series if line.strip() and not line.startswith("#")]
+        headers: dict[str, list[str]] = {}
+        for name in names:
+            headers.update(added_headers((self.PATCHES / name).read_text(encoding="utf-8")))
+        for path, source in STACK.SOURCES.items():
+            if path.endswith(".h"):
+                headers[path] = (self.PATCHES / "src" / source).read_text().splitlines()
+        self.assertIn("libavfilter/vf_vmafx_options.h", headers)
+        self.assertEqual(missing_guards(headers), [])
 
 
 if __name__ == "__main__":
