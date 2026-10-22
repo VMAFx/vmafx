@@ -18,10 +18,10 @@ colour tags, scores exactly as before.
  1 file changed, 63 insertions(+)
 
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
-index a74f4122c29dd2e761d4d1371070199d98b328ae..eed3eb7dcaafb16abd6006b0ac14a5b502733919 100644
+index ca69ca411510571d5d90a6dfc68e5cb9f692bd1b..9655e2b47245bc09df44d3f68f9826917565475d 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
-@@ -148,6 +148,7 @@ typedef struct LIBVMAFContext {
+@@ -149,6 +149,7 @@ typedef struct LIBVMAFContext {
      unsigned model_cnt;
      unsigned frame_cnt;
      unsigned bpc;
@@ -29,7 +29,7 @@ index a74f4122c29dd2e761d4d1371070199d98b328ae..eed3eb7dcaafb16abd6006b0ac14a5b5
  #if CONFIG_LIBVMAF_CUDA_FILTER
      VmafCudaState *cu_state;
      AVBufferRef *cuda_hw_frames_ref;
-@@ -328,6 +329,62 @@ static int stop_on_frame(AVFilterContext *ctx, LIBVMAFContext *s, AVFrame **dist
+@@ -329,6 +330,62 @@ static int stop_on_frame(AVFilterContext *ctx, LIBVMAFContext *s, AVFrame **dist
      return ret;
  }
  
@@ -92,7 +92,7 @@ index a74f4122c29dd2e761d4d1371070199d98b328ae..eed3eb7dcaafb16abd6006b0ac14a5b5
  static int do_vmaf(FFFrameSync *fs)
  {
      AVFilterContext *ctx = fs->parent;
-@@ -345,6 +402,10 @@ static int do_vmaf(FFFrameSync *fs)
+@@ -346,6 +403,10 @@ static int do_vmaf(FFFrameSync *fs)
          av_frame_free(&dist);
          return AVERROR(EINVAL);
      }
@@ -103,7 +103,7 @@ index a74f4122c29dd2e761d4d1371070199d98b328ae..eed3eb7dcaafb16abd6006b0ac14a5b5
  
      if (dist->color_range != ref->color_range) {
          av_log(ctx, AV_LOG_WARNING, "distorted and reference "
-@@ -1509,6 +1570,8 @@ static int do_vmaf_sycl(FFFrameSync *fs)
+@@ -1567,6 +1628,8 @@ static int do_vmaf_sycl(FFFrameSync *fs)
          s->frame_cnt++;
      } else {
          // Software path: YUV420P / YUV420P10LE frames — copy via vmaf_picture_alloc.

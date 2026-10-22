@@ -137,3 +137,14 @@ export UR_L0_USE_IMMEDIATE_COMMANDLISTS=0
 ```
 
 Xe2 / Battlemage users should keep the default (immediate command lists on).
+
+One queue is exempt. libvmaf creates its primary SYCL queue, the one that
+imports QSV / VA-API surfaces for the `libvmaf_sycl` zero-copy path, with
+immediate command lists whatever this variable says
+([ADR-3359](../../adr/3359-sycl-primary-queue-immediate-cmdlist.md)). With batched
+command lists an Arc A380 (compute-runtime 26.35) silently dropped the
+per-frame surface import from a random frame on, so zero-copy scores were
+computed on stale frames and differed from run to run. The copy queue, the
+graph queue and the per-extractor queues still follow the variable. The
+property is a DPC++ extension: another SYCL implementation builds without it,
+and a backend other than Level Zero ignores it.

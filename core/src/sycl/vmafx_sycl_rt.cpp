@@ -46,6 +46,7 @@
 #include "dmabuf_import.h"
 #include "log.h"
 #include "picture.h"
+#include "queue_props.h"
 #include "vmafx_sycl_rt.h"
 
 /* GPUs whose names the enumeration keeps for the process (HISS-02). */
@@ -163,15 +164,8 @@ bool &omit_immediate()
 
 sycl::property_list library_queue_props(bool *immediate)
 {
-#ifdef SYCL_EXT_INTEL_QUEUE_IMMEDIATE_COMMAND_LIST
-    if (!omit_immediate()) {
-        *immediate = true;
-        return sycl::property_list{sycl::property::queue::in_order{},
-                                   sycl::ext::intel::property::queue::immediate_command_list{}};
-    }
-#endif
-    *immediate = false;
-    return sycl::property_list{sycl::property::queue::in_order{}};
+    *immediate = VMAF_SYCL_HAVE_IMMEDIATE_CMDLIST != 0 && !omit_immediate();
+    return vmaf_sycl_in_order_props(false, *immediate);
 }
 
 /* ---- Kernels ---------------------------------------------------------------------- */

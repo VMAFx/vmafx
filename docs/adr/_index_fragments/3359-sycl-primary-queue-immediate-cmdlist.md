@@ -1,0 +1,1 @@
+| [ADR-3359](3359-sycl-primary-queue-immediate-cmdlist.md) | The SYCL primary queue, which runs the VA-surface import, uses `immediate_command_list`: under batched Level Zero command lists the per-frame DMA-BUF import/free made the driver silently drop the import, freezing zero-copy input | Accepted | sycl, zero-copy, level-zero, correctness, driver-workaround, fork-local |

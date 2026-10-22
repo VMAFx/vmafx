@@ -165,7 +165,7 @@ sycl/
   `import_pool.c`; C++ half = `vmafx_sycl_rt.{h,cpp}` (C ABI, catches every
   exception). C files build into library target; `.cpp` in `sycl_sources`.
 - One in-order library queue per device with `immediate_command_list`
-  (draft PR #2217's ADR-1763 precaution; `vmafx_sycl_rt_test_omit_immediate()`
+  (ADR-3359, `queue_props.h`; `vmafx_sycl_rt_test_omit_immediate()`
   and `VMAFX_TEST_SYCL_OMIT_IMMEDIATE=1` exist for re-evaluating it). Engine
   states of contexts on device live in its SYCL context
   (`vmaf_sycl_state_init_queue()`); `sycl_state_create()` = only place
@@ -299,6 +299,27 @@ sycl/
   `integer_motion2_mau`. Test code querying
   `vmaf_feature_score_at_index` must use aliased name, not raw name.
   (ADR-1099)
+
+- **Primary queue stays on immediate command lists (ADR-3359).**
+  `sycl_queue_props()` in `common.cpp` adds
+  `sycl::ext::intel::property::queue::immediate_command_list` to the primary
+  queue through `vmaf_sycl_in_order_props()` (`queue_props.h`, the one
+  spelling, shared with `library_queue_props()`), which
+  runs the VA import in `dmabuf_import.cpp`. Reason: with
+  `UR_L0_USE_IMMEDIATE_COMMANDLISTS=0` an Arc A380 (compute-runtime 26.35)
+  on i915 silently drops the import from a random frame on once the per-frame
+  DMA-BUF import reuses the freed import's GPU address; zero-copy scores go
+  stale, no error. Moving the import to its own immediate queue does NOT fix
+  it (the primary queue's mode matters). **On rebase / refactor**: keep the
+  property on the queue `vmaf_sycl_get_queue_ptr()` returns, and keep the
+  import on that queue. Remove only after a driver fix, re-tested with
+  `scripts/test/zerocopy-e2e.sh --stage 1 --repeat 10 --cases cambi` under
+  `UR_L0_USE_IMMEDIATE_COMMANDLISTS=0` with the property removed (must show
+  `PASS`, 0 of 10 runs differing, 8 and 10 bit).
+
+- **`vmaf_sycl_print_timing()` logs through `vmaf_log` at INFO.** Every
+  SYCL flush calls it, so it must follow the caller's log level (FFmpeg
+  maps `-loglevel` to it). Do not turn it back into `fprintf(stderr, ...)`.
 
 ## Rebase-sensitive invariants per kernel
 
