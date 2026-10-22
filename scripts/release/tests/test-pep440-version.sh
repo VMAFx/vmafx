@@ -21,20 +21,8 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "$SCRIPT_DIR/../../.." && pwd)"
 CONVERT="$SCRIPT_DIR/../pep440-version.sh"
 WORKFLOW="$REPO_ROOT/.github/workflows/supply-chain.yml"
-scratch="$(mktemp -d)"
-trap 'rm -rf "$scratch"' EXIT INT TERM
-pass=0
-fail=0
-
-ok() {
-  printf 'PASS: %s\n' "$1"
-  pass=$((pass + 1))
-}
-
-bad() {
-  printf 'FAIL: %s\n' "$1" >&2
-  fail=$((fail + 1))
-}
+# shellcheck source=scripts/release/tests/lib.sh
+. "$SCRIPT_DIR/lib.sh"
 
 # --- Converter: accepted shapes ----------------------------------------------
 

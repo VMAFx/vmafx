@@ -14,8 +14,6 @@ from __future__ import annotations
 import datetime
 import importlib.util
 import io
-import os
-import shutil
 import sys
 import tempfile
 import unittest
@@ -28,7 +26,7 @@ sys.path.insert(0, str(ROOT))
 
 from scripts.docs import credits_checks as checks  # noqa: E402
 from scripts.docs import credits_lib as lib  # noqa: E402
-from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
+from scripts.docs.tests.fixture_repo import git_init  # noqa: E402
 
 TODAY = datetime.date(2026, 10, 8)
 PAGE = """# Credits
@@ -84,17 +82,7 @@ class Fixture(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory(prefix="vmafx-credits-")
         self.addCleanup(self._tmp.cleanup)
         self.root = Path(self._tmp.name)
-        git = shutil.which("git")
-        assert git is not None
-        run_command(
-            (git, "init", "-q", str(self.root)),
-            allowed_executables=(git,),
-            # Without the hook's GIT_DIR: the fixture, not the caller's repository.
-            env={key: value for key, value in os.environ.items() if not key.startswith("GIT_")},
-            capture_output=True,
-            check=True,
-            timeout_seconds=60,
-        )
+        git_init(self.root)
         self.put("core/a.c", "/* Copyright 2016 Netflix, Inc. */\n")
         self.put("LICENSES/EUPL-1.2.txt", "text\n")
         self.put("LICENSES/BSD-2-Clause-Patent.txt", "text\n")

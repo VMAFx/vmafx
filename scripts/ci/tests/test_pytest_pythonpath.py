@@ -19,10 +19,9 @@ import os
 import subprocess
 import sys
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
-
-import tomllib
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 

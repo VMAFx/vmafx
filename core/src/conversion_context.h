@@ -38,10 +38,17 @@ typedef struct VmafConversionState {
     VmafPictureConvertContext *dist;
     bool have_target;
     VmafPictureConvertTarget target;
+    /* short side the models scale both inputs to; 0 keeps the source size */
+    unsigned display_resolution;
     unsigned n_models_with_target;
     unsigned n_models_without_target;
     VmafColor ref_color;
     VmafColor dist_color;
+    /* colorimetry the models assume for untagged inputs (Netflix/vmaf
+     * 272c596770); the declared ref_color / dist_color stay as set */
+    bool has_assumed_color;
+    VmafColor assumed_color;
+    bool warned_assumed;
 } VmafConversionState;
 
 /**

@@ -20,10 +20,9 @@ from __future__ import annotations
 import argparse
 import difflib
 import sys
+import tomllib
 from collections.abc import Callable
 from pathlib import Path
-
-import tomllib
 
 from . import (
     abi_check,
@@ -37,6 +36,7 @@ from . import (
     emit_conformance,
     emit_docs,
     emit_ffmpeg_options,
+    emit_formats,
     emit_kube_types,
     emit_layout_test,
     emit_mcp,
@@ -45,6 +45,7 @@ from . import (
     emit_platform_proto,
     emit_proto,
     emit_python,
+    emit_rgb,
     emit_symbols,
     gitref,
 )
@@ -131,6 +132,8 @@ def render(api: Api, root: Path | None = None, platform: Platform | None = None)
             files.update(emit_config.files(platform.config))
             if root is not None:
                 files.update(emit_config.pages(platform.config, root))
+    files.update(dict(emit_formats.outputs(api)))
+    files.update(dict(emit_rgb.outputs(api)))
     return files
 
 

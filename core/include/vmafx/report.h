@@ -25,6 +25,10 @@
 extern "C" {
 #endif
 
+/* NOLINTBEGIN(modernize-use-using,performance-enum-size): public C header included by C
+ * and C++ translation units; C has no `using`, and C has no fixed enum underlying type
+ * across the required toolchains (ADR-1470). ADR-1138. */
+
 /**
  * Format of a report (values equal enum VmafOutputFormat). Added in ABI 0.1.5.
  * @since 0.1
@@ -100,6 +104,8 @@ VMAFX_EXPORT const char *vmafx_report_field(const VmafxReportFile *file, const c
  */
 VMAFX_EXPORT VmafxStatus vmafx_report_verify(const VmafxReportFile *recorded,
                                              const VmafxReportFile *rerun, VmafxError **error);
+
+/* NOLINTEND(modernize-use-using,performance-enum-size) */
 
 #ifdef __cplusplus
 }

@@ -210,19 +210,8 @@ def check_model(
     max_loop_trip_count: int = MAX_LOOP_TRIP_COUNT,
 ) -> AllowlistReport:
     """Walk @p onnx_path and compare its ops against libvmaf's allowlist."""
-    if allowed is None:
-        allowed = load_allowlist()
     model = onnx.load(str(onnx_path))
-    used = frozenset(_collect_op_types(model.graph))
-    loop_violations = tuple(
-        _collect_loop_violations(model.graph, max_trip_count=max_loop_trip_count)
-    )
-    return AllowlistReport(
-        allowed=allowed,
-        used=used,
-        forbidden=frozenset(op for op in used if op not in allowed),
-        loop_violations=loop_violations,
-    )
+    return check_graph(model, allowed, max_loop_trip_count)
 
 
 def check_graph(

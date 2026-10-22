@@ -39,9 +39,13 @@ type ScoreOptions struct {
 	Width *uint32 `protobuf:"varint,1,opt,name=width,proto3,oneof" json:"width,omitempty"`
 	// Height of raw .yuv input in pixels.
 	Height *uint32 `protobuf:"varint,2,opt,name=height,proto3,oneof" json:"height,omitempty"`
-	// Chroma subsampling of raw .yuv input. One of: 420, 422, 444.
+	// Layout of raw .yuv input: 400 (luma only), 420, 422 or 444 planar, or a layout of the input
+	// format table (semi-planar, packed, or RGB converted to Y'CbCr with the rgb_* statement,
+	// ADR-2145, ADR-2146). One of: 400, 420, 422, 444, nv12, nv16, nv24, p010, p016, p210, p216,
+	// p410, p416, yuyv422, uyvy422, v210, y210, y212, xv30, xv36, vuyx, ayuv, yuv444p16msb, rgb,
+	// rgba, bgra.
 	PixelFormat *string `protobuf:"bytes,3,opt,name=pixel_format,json=pixelFormat,proto3,oneof" json:"pixel_format,omitempty"`
-	// Bits per sample of raw .yuv input. One of: 8, 10, 12, 16.
+	// Bits per sample of raw .yuv input, 8 to 16 (implied by a layout that fixes it).
 	Bitdepth *uint32 `protobuf:"varint,4,opt,name=bitdepth,proto3,oneof" json:"bitdepth,omitempty"`
 	// Do not clip the model score to [0, 100] (the model's disable_clip). Unset: false.
 	DisableClip *bool `protobuf:"varint,10,opt,name=disable_clip,json=disableClip,proto3,oneof" json:"disable_clip,omitempty"`

@@ -76,16 +76,12 @@ void picture_copy_hbd(float *dst, std::ptrdiff_t dst_stride, VmafPicture *src, i
 void picture_copy(float *dst, ptrdiff_t dst_stride, VmafPicture *src, int offset, unsigned bpc,
                   int channel)
 {
-    if (bpc == 10U) {
-        picture_copy_hbd(dst, dst_stride, src, offset, 4.0f, channel);
-        return;
-    }
-    if (bpc == 12U) {
-        picture_copy_hbd(dst, dst_stride, src, offset, 16.0f, channel);
-        return;
-    }
-    if (bpc == 16U) {
-        picture_copy_hbd(dst, dst_stride, src, offset, 256.0f, channel);
+    if (bpc > 8U && bpc <= 16U) {
+        /* The 8-bit scale of every depth the engine reads: the divisor is 2^(bpc - 8) (4, 16 and
+         * 256 at 10, 12 and 16 bits as before). 9, 11, 13, 14 and 15 bits fell through to the
+         * 8-bit loop below and read 16-bit words as bytes (ADR-2145). */
+        picture_copy_hbd(dst, dst_stride, src, offset, static_cast<float>(1U << (bpc - 8U)),
+                         channel);
         return;
     }
 

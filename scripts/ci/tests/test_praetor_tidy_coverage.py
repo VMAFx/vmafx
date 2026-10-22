@@ -79,7 +79,8 @@ class PraetorTidyCoverageTests(unittest.TestCase):
         self.assertEqual(lanes, "src/a.c\n")
         manifest = (self.repo.root / ".standards.yaml").read_text()
         self.assertIn('path: "src/win32.c"', manifest)
-        self.assertIn('path: "scripts/ci/exact_twins.d/adm.hip"', manifest)
+        # data fragments are declared under clang_tidy.data_paths, not excused one by one
+        self.assertNotIn('path: "scripts/ci/exact_twins.d/adm.hip"', manifest)
         self.assertNotIn('path: "src/a.c"', manifest)
         # the declared date is past praetor's 90-day window, so it is cut to the cap
         self.assertNotIn("2027-06-30", manifest)
@@ -125,6 +126,25 @@ class PraetorTidyCoverageTests(unittest.TestCase):
                     f'    reason: "{reason}"\n    expires: "2027-01-04"\n',
                     manifest,
                 )
+
+    def test_a_release_token_entry_carries_its_category_and_entry_date(self) -> None:
+        workflow = self.repo.root / ".github/workflows/release.yml"
+        workflow.parent.mkdir(parents=True)
+        workflow.write_text("on: push\n")
+        (self.repo.root / ".config/lint-exceptions.d/release-token.toml").write_text(
+            '[[exception]]\npath = ".github/workflows/release.yml"\ncategory = "C"\n'
+            'entered = 2026-10-19\nexpires = 2026-10-29\nreason = "token fallback"\n'
+        )
+        self.assertEqual(self.repo.run("--check").returncode, 1)
+        self.repo.run("--write")
+        manifest = (self.repo.root / ".standards.yaml").read_text()
+        self.assertIn(
+            '  - rule: release-token\n    path: ".github/workflows/release.yml"\n'
+            '    category: "C"\n    entered: "2026-10-19"\n'
+            '    reason: "token fallback"\n    expires: "2026-10-29"\n',
+            manifest,
+        )
+        self.assertEqual(self.repo.run("--check").returncode, 0)
 
     def test_an_entry_of_another_rule_stays_out_of_the_block(self) -> None:
         (self.repo.root / ".config/lint-exceptions.d/black.toml").write_text(

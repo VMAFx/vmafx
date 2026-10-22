@@ -325,6 +325,27 @@ template <int vpt> struct VifHoriSums {
     uint32_t dis_rd[vpt / 2];
 };
 
+/* Single-tap update of the five main horizontal accumulators. */
+template <int vpt>
+__device__ __forceinline__ void vif_hori_acc_tap(VifHoriSums<vpt> &s, const VifHoriTile &t, int off,
+                                                 int si, uint16_t fcoeff)
+{
+    s.mu1[off] += fcoeff * t.mu1[si];
+    s.mu2[off] += fcoeff * t.mu2[si];
+    s.ref_tmp[off] += fcoeff * (uint64_t)t.ref[si];
+    s.dis_tmp[off] += fcoeff * (uint64_t)t.dis[si];
+    s.ref_dis_tmp[off] += fcoeff * (uint64_t)t.ref_dis[si];
+}
+
+/* Single-tap update of the two reduced-filter horizontal accumulators. */
+template <int vpt>
+__device__ __forceinline__ void vif_hori_acc_rd_tap(VifHoriSums<vpt> &s, const VifHoriTile &t,
+                                                    int off, int si, uint32_t fcoeff_rd)
+{
+    s.ref_rd[off / 2] += fcoeff_rd * t.ref_convol[si];
+    s.dis_rd[off / 2] += fcoeff_rd * t.dis_convol[si];
+}
+
 /* Interior path, centre tap (unpaired).  smem[smem_base + off + fj] holds the
  * value at image column (x_start + off - half_fw + fj) after mirror-clamping. */
 template <int vpt, int fwidth, int fwidth_rd>
@@ -337,19 +358,14 @@ __device__ __forceinline__ void vif_hori_center_tap(VifHoriSums<vpt> &s, const V
 #pragma unroll
     for (int off = 0; off < vpt; ++off) {
         const int si = smem_base + off + half_fw;
-        s.mu1[off] += fcoeff * t.mu1[si];
-        s.mu2[off] += fcoeff * t.mu2[si];
-        s.ref_tmp[off] += fcoeff * (uint64_t)t.ref[si];
-        s.dis_tmp[off] += fcoeff * (uint64_t)t.dis[si];
-        s.ref_dis_tmp[off] += fcoeff * (uint64_t)t.ref_dis[si];
+        vif_hori_acc_tap<vpt>(s, t, off, si, fcoeff);
     }
     if (fwidth_rd > 0) {
         const uint32_t fcoeff_rd = filt_rd[fwidth_rd / 2];
 #pragma unroll
         for (int off = 0; off < vpt; off += 2) {
             const int si = smem_base + off + half_fw;
-            s.ref_rd[off / 2] += fcoeff_rd * t.ref_convol[si];
-            s.dis_rd[off / 2] += fcoeff_rd * t.dis_convol[si];
+            vif_hori_acc_rd_tap<vpt>(s, t, off, si, fcoeff_rd);
         }
     }
 }
@@ -399,16 +415,11 @@ __device__ __forceinline__ void vif_hori_border_tap(VifHoriSums<vpt> &s, const V
 {
     constexpr int rd_start = (fwidth - fwidth_rd) / 2;
     const uint16_t fcoeff = filt[fj];
-    s.mu1[off] += fcoeff * t.mu1[si];
-    s.mu2[off] += fcoeff * t.mu2[si];
-    s.ref_tmp[off] += fcoeff * (uint64_t)t.ref[si];
-    s.dis_tmp[off] += fcoeff * (uint64_t)t.dis[si];
-    s.ref_dis_tmp[off] += fcoeff * (uint64_t)t.ref_dis[si];
+    vif_hori_acc_tap<vpt>(s, t, off, si, fcoeff);
 
     if (fj >= rd_start && fj < (fwidth - rd_start) && fwidth_rd > 0 && off % 2 == 0) {
         const uint32_t fcoeff_rd = filt_rd[fj - rd_start];
-        s.ref_rd[off / 2] += fcoeff_rd * t.ref_convol[si];
-        s.dis_rd[off / 2] += fcoeff_rd * t.dis_convol[si];
+        vif_hori_acc_rd_tap<vpt>(s, t, off, si, fcoeff_rd);
     }
 }
 

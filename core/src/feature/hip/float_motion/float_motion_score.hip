@@ -63,6 +63,10 @@
 
 #include "../hip_tile_index.h"
 #include "float_motion_rows.h"
+/* The bit-depth scaler of picture_copy(), shared with the CUDA and SYCL twins;
+ * the header's row-sum tail stays a host function. */
+#define VMAF_FLOAT_MOTION_FUNC static __device__ __forceinline__
+#include "feature/float_motion_sad.h"
 
 #define FM_BX 16
 #define FM_BY 16
@@ -209,14 +213,7 @@ __global__ void float_motion_hip_kernel_16bpc(const uint8_t *__restrict__ ref, p
                                               unsigned height, unsigned bpc, unsigned filter_size,
                                               unsigned compute_sad)
 {
-    float scaler = 1.0f;
-    if (bpc == 10u) {
-        scaler = 4.0f;
-    } else if (bpc == 12u) {
-        scaler = 16.0f;
-    } else if (bpc == 16u) {
-        scaler = 256.0f;
-    }
+    const float scaler = vmaf_float_motion_scaler(bpc);
     fm_blur<uint16_t>(ref, ref_stride, cur_blur, prev_blur, diff, width, height, 1.0f / scaler,
                       filter_size, compute_sad);
 }

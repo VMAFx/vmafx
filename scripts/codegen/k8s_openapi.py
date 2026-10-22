@@ -31,11 +31,10 @@ import argparse
 import hashlib
 import json
 import sys
+import tomllib
 import urllib.request
 from pathlib import Path
 from typing import Any
-
-import tomllib
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 

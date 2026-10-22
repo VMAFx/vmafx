@@ -17,18 +17,9 @@
  *  one-frame run, as float_motion.c emits it
  *  (T-GPU-FLOAT-MOTION3-MISSING-2026-09-30).
  *
- *  Numerical contract (ADR-1367, ADR-1409, ADR-1411). Both steps are the CPU's
- *  arithmetic, so the twin returns the CPU extractor's score bit for bit:
- *   - the blur is convolution_f32_c_s(): each tap one rounded fp32 multiply
- *     and one rounded fp32 add, taps in order, vertical pass then
- *     horizontal. The TU builds with contraction off, so nothing is fused.
- *   - the SAD is compute_motion_simd(): float_sad_line() adds the absolute
- *     differences of one row, left to right, into one fp32 accumulator, and
- *     the rows are added top to bottom into another. The result depends on
- *     that order (at 1920x1080 it is up to 1.4e-4 from the exact sum), so
- *     the row kernel runs one work-item per row over the whole row and the
- *     host adds the rows (feature/float_motion_sad.h). A per-group partial
- *     sum, which this file used to produce, cannot give that value.
+ *  Numerical contract (ADR-1367, ADR-1409, ADR-1411): the translation unit is
+ *  built with contraction off (ADR-1367), so nothing is fused. See
+ *  feature/float_motion_sad.h.
  */
 
 #include <sycl/sycl.hpp>
@@ -140,14 +131,7 @@ static inline int dev_mirror_fm(int idx, int sup)
 
 static inline float fm_inv_scaler(unsigned bpc)
 {
-    float scaler = 1.0f;
-    if (bpc == 10) {
-        scaler = 4.0f;
-    } else if (bpc == 12) {
-        scaler = 16.0f;
-    } else if (bpc == 16) {
-        scaler = 256.0f;
-    }
+    const float scaler = vmaf_float_motion_scaler(bpc);
     return 1.0f / scaler;
 }
 

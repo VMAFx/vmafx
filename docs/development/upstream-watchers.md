@@ -1,30 +1,85 @@
 <!-- markdownlint-disable MD060 -->
 # Upstream watchers
 
-Four workflows poll upstream weekly and open a tracking issue when a feature the
-fork is waiting for lands. This page is the operator-facing reference: what is
-watched, how the polling works and how to add a watcher.
+Four workflows poll upstream, daily or weekly, and open a tracking issue when a
+feature the fork is waiting for lands or when a Netflix/vmaf commit has no
+recorded disposition. This
+page is the operator-facing reference: what is watched, how the polling works
+and how to add a watcher.
 
 The fork depends on a handful of features that are not yet present in the
 upstream projects it sits on top of (FFmpeg, Netflix/vmaf, ONNX Runtime, ...).
 Rather than block work on them indefinitely or build a bespoke fork-side
 replacement, the fork ships **placeholder adapters** that register today but
 stay inactive until the upstream feature lands. Each is paired with an
-**upstream watcher** that polls the relevant upstream tree on a weekly cron and
+**upstream watcher** that polls the relevant upstream tree on a regular cron and
 opens a GitHub tracking issue the moment the feature appears.
 
 ## Currently watched
 
 | Workflow | Cadence (UTC) | Upstream signal | Placeholder or deferral | ADR |
 |---|---|---|---|---|
-| `upstream-watcher.yml` (runs `scripts/upstream-watcher/check_ffmpeg_av1_videotoolbox.sh`) | Mondays 08:00 | `AV_CODEC_ID_AV1` in `libavcodec/videotoolboxenc.c` on `git.ffmpeg.org/ffmpeg.git` `master` | `tools/vmaf-tune/src/vmaftune/codec_adapters/av1_videotoolbox.py` | [ADR-0339](../adr/0339-av1-videotoolbox-placeholder-adapter.md) |
+| `upstream-watcher.yml` (runs `scripts/upstream-watcher/check_ffmpeg_av1_videotoolbox.sh`) | Daily 08:00 | `AV_CODEC_ID_AV1` in `libavcodec/videotoolboxenc.c` on `git.ffmpeg.org/ffmpeg.git` `master` | `tools/vmaf-tune/src/vmaftune/codec_adapters/av1_videotoolbox.py` | [ADR-0339](../adr/0339-av1-videotoolbox-placeholder-adapter.md) |
+| `upstream-watcher.yml` (runs `scripts/upstream-watcher/check_netflix_unported.py`) | Daily 08:00 | Commits on `Netflix/vmaf` `master` after parity pin without a ledger entry | Netflix parity pin ([`known-upstream-bugs.md`](known-upstream-bugs.md)) | [ADR-3354](../adr/3354-netflix-unported-commit-watcher.md) |
 | `upstream-ffmpeg-hip-hwdec-watcher.yml` | Sundays 06:30 | `hwcontext_hip.{c,h}` under `libavutil/`, or an `AV_HWDEVICE_TYPE_HIP` / `_ROCM` enum variant in `libavutil/hwcontext.h`, read through the contents API of the FFmpeg mirror | `T-FFMPEG-HIP-FILTER-DEFERRED` row in `docs/state.md` | [ADR-0448](../adr/0448-active-upstream-monitoring-discipline.md) |
 | `upstream-netflix-645-hdr-model-watcher.yml` | Sundays 06:15 | Netflix/vmaf#645 activity, or a `vmaf_hdr_*.json` file under `Netflix/vmaf:model/` | the HDR-VMAF model port deferral | [ADR-0448](../adr/0448-active-upstream-monitoring-discipline.md) |
 | `upstream-netflix-955-watcher.yml` | Sundays 06:00 | Netflix/vmaf#1494 merging (it closes #955) | the Netflix#955 `i4_adm_cm` deferral row | [ADR-0448](../adr/0448-active-upstream-monitoring-discipline.md) |
 
-Only the first watcher has a detection script under `scripts/upstream-watcher/`;
+The two `upstream-watcher.yml` jobs run detection scripts under `scripts/upstream-watcher/`;
 the other three are workflow-only (the poll is inline in the workflow, using
 `gh api`).
+
+## Netflix unported commits watcher
+
+The `netflix-unported` job in `.github/workflows/upstream-watcher.yml` polls
+`Netflix/vmaf` `master` daily and opens a deduplicated tracking issue for each
+commit that has landed upstream after the fork's recorded parity pin without a
+recorded disposition.
+
+### What it reads
+
+- **Parity pin**: the `## Upstream head the fork is at parity with` heading
+  in [`known-upstream-bugs.md`](known-upstream-bugs.md), parsed by
+  `scripts/ci/upstream_parity_pin.py`.
+- **Upstream commit history**: `git rev-list --no-merges <pin>..<ref>`
+  over `master` of `https://github.com/Netflix/vmaf.git`.
+- **Dispositions ledger**: the tracked TSV file
+  `scripts/upstream-watcher/netflix-dispositions.tsv`.
+
+### How to dispose a commit
+
+When the watcher files a tracking issue, or a local run reports a commit:
+
+1. **Ported**: port the commit with `/port-upstream-commit` (or adapt it
+   by hand) and add a `ported` row in the same pull request:
+   `<full-40-hex-sha>`, tab, `ported`, tab, `#<fork-pr-number>`.
+2. **In-fork**: the fork already implements the change; add an `in-fork`
+   row naming the fork pull request or commit.
+3. **Not applicable**: the change does not apply to the fork (another
+   architecture, a dependency the fork does not use, a reverted change);
+   add a `not-applicable` row with a one-line reason.
+4. **Advance the parity head**: once every commit of an unbroken run from
+   the pin has a row, move the pin heading in
+   [`known-upstream-bugs.md`](known-upstream-bugs.md) forward.
+
+### Exit codes
+
+- `0`: at least one upstream commit has no row.
+- `1`: every commit in the range has a row.
+- `2`: infrastructure or ledger error (missing upstream ref, invalid ledger
+  row, or a pin that is not an ancestor of the upstream ref). The workflow
+  job fails on this status, and when an issue search or creation fails.
+
+### Running locally
+
+Run the detection script directly from the repository root:
+
+```bash
+python3 scripts/upstream-watcher/check_netflix_unported.py
+```
+
+Pass `--json` to output structured JSON data, or `--upstream-ref <ref>` to evaluate
+against a specific branch or commit.
 
 ## How the pattern works
 
@@ -46,7 +101,7 @@ A script-based watcher has three moving parts:
    sync pulls a recent enough upstream build, with no extra code
    change inside the adapter.
 3. **CI watcher workflow** at `.github/workflows/upstream-watcher.yml`.
-   Weekly cron (Mondays 08:00 UTC) that invokes every detection
+   Daily cron (08:00 UTC) that invokes every detection
    script and opens a GitHub tracking issue (de-duplicated by
    exact title) when one returns "feature present". The
    tracking issue carries the activation checklist.
@@ -114,6 +169,6 @@ the safety net.
 
 | Failure | What happens | Cost |
 |---|---|---|
-| Network failure during `git ls-remote` or partial clone (exit 2 from the script) | The workflow logs a `::warning::` and continues without opening a tracking issue. A subsequent weekly run retries. | One missed week. |
+| Network failure during `git ls-remote` or partial clone (exit 2 from the script) | The FFmpeg job logs a `::warning::` and continues without opening a tracking issue; the Netflix commit job fails. The next daily run retries. | One missed day. |
 | Sentinel false-positive (upstream adds the sentinel string in a comment, doc, or an unrelated context) | The tracking issue opens, a maintainer triages, and the script's sentinel is tightened in a follow-up PR. | One false-positive issue, not a silent miss. |
 | Sentinel false-negative (upstream lands the feature using a different identifier) | The activation PR notices when a developer checks manually before the watcher does. The tracking ADR's "Activation checklist" item that asks "verify the watcher fired" exists for this case; close the loop by updating the sentinel in the activation PR. | A delayed detection. |

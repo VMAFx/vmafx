@@ -2,7 +2,7 @@
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
 
-# Ubuntu 26.04 LTS (Plucky) — also works on 24.04 LTS, 22.04 LTS, Debian 12, Mint 21.
+# Ubuntu 26.04 LTS (Resolute) — also works on 24.04 LTS, 22.04 LTS, Debian 12, Mint 21.
 # Installs the build toolchain, Python dev deps, and (optionally) CUDA / oneAPI.
 set -euo pipefail
 
@@ -20,7 +20,10 @@ SUDO="$(need_sudo)"
 
 echo "=== Ubuntu/Debian setup for vmaf fork ==="
 $SUDO apt-get update
-$SUDO DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+# `$SUDO VAR=value cmd` breaks when $SUDO is empty (running as root): bash
+# picks out assignments before expanding $SUDO, so VAR=value becomes the
+# command name. Pass the variable through `env` instead.
+$SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
   build-essential clang clang-tidy clang-format cppcheck \
   ninja-build nasm pkg-config xxd \
   python3 python3-pip python3-venv \

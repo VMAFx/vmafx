@@ -192,8 +192,8 @@ def header_text(api: Api) -> str:
     entries = [line for o in options for line in _entries(o)]
     parts = [
         LICENCE.format(spdx="SPDX-" + "License-Identifier: LGPL-2.1-or-later") + BANNER,
-        "#ifndef VMAFX_VF_VMAFX_OPTIONS_H",
-        "#define VMAFX_VF_VMAFX_OPTIONS_H",
+        "#ifndef AVFILTER_VMAFX_OPTIONS_H",
+        "#define AVFILTER_VMAFX_OPTIONS_H",
         "",
         "#include <float.h>",
         "#include <limits.h>",
@@ -208,6 +208,6 @@ def header_text(api: Api) -> str:
         *_value_lists(options),
         "// clang-format on",
         "",
-        "#endif /* VMAFX_VF_VMAFX_OPTIONS_H */",
+        "#endif /* AVFILTER_VMAFX_OPTIONS_H */",
     ]
     return "\n".join(parts) + "\n"

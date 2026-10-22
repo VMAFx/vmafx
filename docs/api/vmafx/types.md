@@ -76,6 +76,12 @@ Planar pixel layout of a frame (values equal enum VmafPixelFormat). Since 0.1.
 | `VMAFX_PIXEL_FORMAT_VUYX` | 29 | 0.1 |
 | `VMAFX_PIXEL_FORMAT_XV36` | 30 | 0.1 |
 | `VMAFX_PIXEL_FORMAT_YUV444P_MSB` | 31 | 0.1 |
+| `VMAFX_PIXEL_FORMAT_AYUV` | 32 | 0.1 |
+| `VMAFX_PIXEL_FORMAT_UYVY422` | 33 | 0.1 |
+| `VMAFX_PIXEL_FORMAT_V210` | 34 | 0.1 |
+| `VMAFX_PIXEL_FORMAT_RGB` | 35 | 0.1 |
+| `VMAFX_PIXEL_FORMAT_RGBA` | 36 | 0.1 |
+| `VMAFX_PIXEL_FORMAT_BGRA` | 37 | 0.1 |
 
 ## `VmafxPool`
 

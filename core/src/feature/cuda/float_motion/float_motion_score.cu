@@ -12,23 +12,16 @@
  *      horizontal pass, mirror padding `2 * (sup - 1) - idx`.
  *   3. Frame > 0: sum of absolute differences against the previous blur.
  *
- *  Numerical contract (ADR-1403, ADR-1409). Both steps are the CPU's
- *  arithmetic, so the twin returns the CPU extractor's score bit for bit:
- *   - the blur is convolution_f32_c_s(): each tap one rounded fp32 multiply
- *     and one rounded fp32 add, taps in order. The fatbin builds with
- *     --fmad=false, so nothing is fused.
- *   - the SAD is compute_motion_simd(): float_sad_line() adds the absolute
- *     differences of one row, left to right, into one fp32 accumulator, and
- *     the rows are added top to bottom into another. The result depends on
- *     that order (at 1920x1080 it is up to 1.4e-4 from the exact sum), so
- *     float_motion_row_sad runs one thread per row over the whole row, and
- *     the host adds the rows (feature/float_motion_sad.h). A per-block
- *     partial sum, which this file used to produce, cannot give that value.
+ *  Numerical contract (ADR-1403, ADR-1409): the fatbin builds with
+ *  --fmad=false, so nothing is fused. See feature/float_motion_sad.h.
  */
 
 #include "cuda_helper.cuh"
 #include "common.h"
 #include "cuda/cuda_tile_index.h"
+
+#define VMAF_FLOAT_MOTION_FUNC static __device__ __forceinline__
+#include "feature/float_motion_sad.h"
 
 #define FM_BX 16
 #define FM_BY 16
@@ -149,14 +142,7 @@ __global__ void float_motion_kernel_16bpc(const uint8_t *__restrict__ ref, ptrdi
                                           unsigned height, unsigned bpc)
 {
     __shared__ float s_tile[FM_TILE_H][FM_TILE_W];
-    float scaler = 1.0f;
-    if (bpc == 10) {
-        scaler = 4.0f;
-    } else if (bpc == 12) {
-        scaler = 16.0f;
-    } else if (bpc == 16) {
-        scaler = 256.0f;
-    }
+    const float scaler = vmaf_float_motion_scaler(bpc);
     FmSample16 sample;
     sample.plane = ref;
     sample.stride = ref_stride;

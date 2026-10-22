@@ -75,8 +75,8 @@ func TestCheckRefusesValuesTheDefinitionRefuses(t *testing.T) {
 		value           any
 		want            string
 	}{
-		{"pixel_format", "mcp", "422p", "invalid pixfmt 422p: must be one of 420|422|444"},
-		{"bitdepth", "proto", uint64(14), "invalid bitdepth 14: must be one of 8|10|12|16"},
+		{"pixel_format", "mcp", "422p", "invalid pixfmt 422p: must be one of 400|420|422|444|nv12"},
+		{"bitdepth", "proto", uint64(17), "invalid bitdepth 17: must be <= 16"},
 		{"tiny_crf", "mcp", float64(64), "invalid tiny_crf 64: must be <= 63"},
 		{"width", "proto", uint64(0), "invalid width 0: must be >= 1"},
 		{"threads", "mcp", float64(1.5), "expected an integer"},

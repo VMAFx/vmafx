@@ -24,6 +24,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -245,6 +246,44 @@ class Locale(Fixture):
         self.assertTrue(out.is_file())
 
 
+class VaDecode(Fixture):
+    """A VA decoder (GST_VMAFX_VA_DRIVER names the libva driver, for example radeonsi)."""
+
+    driver = os.environ.get("GST_VMAFX_VA_DRIVER")
+
+    def test_va_decoded_frames_equal_the_cli(self):
+        if not self.driver or shutil.which("ffmpeg") is None:
+            self.skipTest("GST_VMAFX_VA_DRIVER or ffmpeg missing")
+        r, d = self.pair("src01_hrc00_576x324.yuv", "src01_hrc01_576x324.yuv", 576, 324, None)
+        files = {}
+        for name, src, crf in (("ref", r, 12), ("dist", d, 32)):
+            raw = f"-f rawvideo -pix_fmt yuv420p -s 576x324 -r 24 -i {src}"
+            h264, yuv = self.dir / f"va_{name}.h264", self.dir / f"va_{name}.yuv"
+            for cmd in (
+                f"ffmpeg -loglevel error -y {raw} -c:v libx264 -crf {crf} -f h264 {h264}",
+                f"ffmpeg -loglevel error -y -i {h264} -pix_fmt yuv420p -f rawvideo {yuv}",
+            ):
+                self.assertEqual(run(cmd.split(), timeout=300).returncode, 0, cmd)
+            files[name] = (h264, yuv)
+        env = dict(self.env, LIBVA_DRIVER_NAME=self.driver)
+        env["GST_REGISTRY"] = str(self.dir / "va-registry.bin")
+        out = self.dir / "va.json"
+        pipeline = (
+            f"filesrc location={files['ref'][0]} ! h264parse ! vah264dec ! v.reference "
+            f"filesrc location={files['dist'][0]} ! h264parse ! vah264dec ! v.distorted "
+            f"vmafx name=v model=version={MODEL} log-path={out} score-fmt=%.17g "
+            f"pool={POOL_CLI} ! fakesink"
+        )
+        done = run(["gst-launch-1.0", "-q", *pipeline.split()], env)
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        cli = cli_run(self.cli, files["ref"][1], files["dist"][1], 576, 324, self.dir / "va-c.json")
+        n, worst, same = compare(json.loads(out.read_text(encoding="utf-8")), cli)
+        TABLE.append(
+            f"| va decode ({self.driver}) | cpu | 48 | {n} | {'yes' if same else 'NO'} | {worst:.3g} |"
+        )
+        self.assertTrue(same, f"max abs diff {worst}")
+
+
 class Windows(Fixture):
     def run_windows(self, knob: str):
         r, d = self.pair("src01_hrc00_576x324.yuv", "src01_hrc01_576x324.yuv", 576, 324, None)
@@ -346,6 +385,113 @@ class Refusals(Fixture):
         done = self.launch("score-fmt=%d")
         self.assertNotEqual(done.returncode, 0)
         self.assertIn("score-fmt", done.stdout + done.stderr)
+
+
+class VulkanFrames(Fixture):
+    """Vulkan frames (GStreamer's Vulkan decoders and uploader) scored on the GPU they live on.
+
+    One lane per run: GST_VMAFX_VK_LANE (cuda, sycl or hip), GST_VMAFX_VK_PLUGIN_DIR,
+    VMAFX_VK_LIB_DIR, VMAF_VK_CLI (the lane's library build), GST_VMAFX_VK_SOURCE (the Vulkan
+    decoder element of the GPU, for example vulkanh264device1dec, or `upload` for a GPU without a
+    decoder), GST_VMAFX_VK_LOCK (the device lock file). The frames are H.264 decoded by the GPU (or
+    uploaded raw); the same frames decoded in software are scored by the lane's CLI.
+    """
+
+    lane = os.environ.get("GST_VMAFX_VK_LANE")
+    plugin_dir = env_path("GST_VMAFX_VK_PLUGIN_DIR")
+    lib_dir = env_path("VMAFX_VK_LIB_DIR")
+    cli = env_path("VMAF_VK_CLI")
+    source = os.environ.get("GST_VMAFX_VK_SOURCE", "")
+    lock = os.environ.get("GST_VMAFX_VK_LOCK", "")
+
+    @classmethod
+    def setUpClass(cls):
+        if not (cls.lane and cls.plugin_dir and cls.lib_dir and cls.cli and cls.source):
+            raise unittest.SkipTest("the GST_VMAFX_VK_* lane variables are not set")
+        if shutil.which("ffmpeg") is None:
+            raise unittest.SkipTest("ffmpeg is needed to make and decode the bitstreams")
+        super().setUpClass()
+        cls.env = gst_env(cls.plugin_dir, cls.lib_dir)
+
+    def locked(self, cmd):
+        prefix = ["flock", self.lock, "timeout", "300"] if self.lock else ["timeout", "300"]
+        return run([*prefix, *[str(c) for c in cmd]], self.env, timeout=420)
+
+    def make_streams(self, ref: Path, dist: Path):
+        """(reference, distorted) elementary streams and their software-decoded yuv."""
+        out = {}
+        for name, src, crf in (("ref", ref, 12), ("dist", dist, 32)):
+            raw = f"-f rawvideo -pix_fmt yuv420p -s 576x324 -r 24 -i {src}"
+            h264, yuv = self.dir / f"vk_{name}.h264", self.dir / f"vk_{name}.yuv"
+            enc = f"ffmpeg -loglevel error -y {raw} -c:v libx264 -crf {crf} -f h264 {h264}"
+            dec = f"ffmpeg -loglevel error -y -i {h264} -pix_fmt yuv420p -f rawvideo {yuv}"
+            for cmd in (enc, dec):
+                self.assertEqual(run(cmd.split(), timeout=300).returncode, 0, cmd)
+            out[name] = (h264, yuv)
+        return out
+
+    def branch(self, kind: str, files: dict, pad: str) -> str:
+        # `identity sleep-time` after vulkanupload: while the GPU is cold, vulkanupload (GStreamer
+        # 1.28) still copies a frame into its image when the next one is written into the staging
+        # buffer, and the first frames carry the content of the next ones (measured on the A380:
+        # the slot of pts 0 held frame 1). A producer that waits for its copy has no such race.
+        vk = "video/x-raw(memory:VulkanImage)"
+        if self.source == "upload":
+            return (
+                f"filesrc location={files[kind][1]} ! rawvideoparse format=i420 width=576 "
+                f"height=324 framerate=24/1 ! videoconvert ! video/x-raw,format=NV12 "
+                f"! vulkanupload ! {vk} ! identity sleep-time=20000 ! {vk} ! v.{pad}"
+            )
+        return f"filesrc location={files[kind][0]} ! h264parse ! {self.source} ! {vk} ! v.{pad}"
+
+    def run_element_cell(self, files: dict, out: Path):
+        pipeline = (
+            f"{self.branch('ref', files, 'reference')} {self.branch('dist', files, 'distorted')} "
+            f"vmafx name=v model=version={MODEL} log-path={out} score-fmt=%.17g "
+            f"pool={POOL_CLI} ! fakesink"
+        )
+        done = self.locked(["gst-launch-1.0", "-m", *pipeline.split()])
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertRegex(done.stdout, r"host-copy-frames=\(guint64\)0")
+        return json.loads(out.read_text(encoding="utf-8"))
+
+    def test_vulkan_frames_equal_the_cli(self):
+        r, d = self.pair("src01_hrc00_576x324.yuv", "src01_hrc01_576x324.yuv", 576, 324, None)
+        files = self.make_streams(r, d)
+        cli_out = self.dir / f"vk-cli-{self.lane}.json"
+        cmd = [self.cli, "-r", files["ref"][1], "-d", files["dist"][1], "-w", 576, "-h", 324]
+        cmd += ["-p", "420", "-b", "8", "--model", f"version={MODEL}", "--precision", "max"]
+        cmd += ["--json", "-o", cli_out, "-q", "--backend", self.lane]
+        cli_done = self.locked(cmd)
+        self.assertEqual(cli_done.returncode, 0, cli_done.stdout + cli_done.stderr)
+        cli = json.loads(cli_out.read_text(encoding="utf-8"))
+        # The gfx1036 drops a run of a stream's commands now and then
+        # (T-HIP-GFX1036-DROPPED-DISPATCHES-2026-10-01): a cell that differs is run again there
+        # and the attempts are printed; a defect differs in every attempt.
+        attempts = 4 if self.lane == "hip" else 1
+        for attempt in range(1, attempts + 1):
+            element = self.run_element_cell(files, self.dir / f"vk-{self.lane}-{attempt}.json")
+            n, worst, same = compare(element, cli, ("min", "max", "mean", "harmonic_mean"))
+            if same:
+                break
+        TABLE.append(
+            f"| vulkan {self.source} | {self.lane} vs cli | 48 | {n} | {'yes' if same else 'NO'} "
+            f"(attempt {attempt} of {attempts}) | {worst:.3g} |"
+        )
+        self.assertTrue(same, f"max abs diff {worst} in all {attempts} attempts")
+
+    def test_other_gpu_refused_by_name(self):
+        """A backend with no device on the frames' GPU is refused naming it, never read across."""
+        other = {"cuda": "hip", "hip": "cuda", "sycl": "cuda"}[self.lane]
+        r, d = self.pair("src01_hrc00_576x324.yuv", "src01_hrc01_576x324.yuv", 576, 324, None)
+        files = self.make_streams(r, d)
+        pipeline = (
+            f"{self.branch('ref', files, 'reference')} {self.branch('dist', files, 'distorted')} "
+            f"vmafx name=v backend={other} ! fakesink"
+        )
+        done = self.locked(["gst-launch-1.0", "-q", *pipeline.split()])
+        self.assertNotEqual(done.returncode, 0)
+        self.assertRegex(done.stdout + done.stderr, rf"backend {other}|never read across")
 
 
 class Cuda(Fixture):

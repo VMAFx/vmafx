@@ -17,7 +17,7 @@ into lock files (`requirements/locks/*.txt`, `*/*-lock.txt`).
 The central authority is `requirements/locks/manifest.json`, which pairs every
 lock file with its source files and compilation arguments using a reviewed,
 pinned
-version of `uv` (`0.13.1`).
+version of `uv` (`0.13.4`).
 
 The manifest validates every path it names:
 
@@ -41,7 +41,7 @@ The manifest validates every path it names:
 Input manifests (.in, pyproject.toml)
          │
          ▼
-uv pip compile (pinned uv 0.13.1) ───► Manifest Writer (make python-locks-write)
+uv pip compile (pinned uv 0.13.4) ───► Manifest Writer (make python-locks-write)
          │
          ▼
 Committed hash-lock files (*.txt, *-lock.txt)

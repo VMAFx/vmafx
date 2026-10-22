@@ -26,11 +26,10 @@ import re
 import shutil
 import subprocess
 import sys
+import tomllib
 from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any
-
-import tomllib
 
 #: Distributions that are torch or pull it in.
 TORCH_FAMILY = frozenset(
