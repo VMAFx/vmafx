@@ -1040,3 +1040,29 @@ later step of the job was skipped, and the four Python coverage shards reported
 first earlier step that did not succeed (`shard 1/4 outcome was skipped: step
 Meson-unit-suite outcome was failure`), and `scripts/ci/test_fail_closed_ci.py`
 runs that step's script against planted outcomes.
+
+## Apt archive cache
+
+The `MCP Smoke` and `Tiny AI` jobs in `tests-and-quality-gates.yml` cache downloaded
+`.deb` package archives across workflow runs so that slow package mirror downloads
+do not eat into the 20-minute apt step cap.
+
+The cache uses `actions/cache/restore` before the install step and
+`actions/cache/save` after the install step:
+
+- **Cache path**: `${{ runner.temp }}/apt-archives`
+- **Cache key**: `apt-<os>-<arch>-<job>-<hash of the package list>`, from
+  `runner.os`, `runner.arch` and `hashFiles()`,
+  where `<job>` is `mcp-smoke` (`.github/apt/mcp-smoke.txt`) or `tiny-ai`
+  (`.github/apt/tiny-ai.txt`).
+
+**How to bust**: edit the corresponding job's package list file under
+`.github/apt/<job>.txt`. Because the cache key includes the hash of the package
+list file, any package addition, removal, or comment modification computes a fresh
+hash and fetches clean package archives from the mirrors.
+
+Cache keys are immutable: when the mirror publishes a newer version of a
+listed package, apt downloads it and the cached copy is no longer used, so
+the hit rate falls until the list is next edited. `APT::Keep-Downloaded-Packages`
+is set in the step's apt configuration so the install leaves the archives in
+`/var/cache/apt/archives` to copy back.
