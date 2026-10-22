@@ -471,9 +471,12 @@ jobs:
     # required-aggregator
     name: Tiny AI
     runs-on: ubuntu-26.04
-    # Measured max 31 min on successful runs (2026-10-22); the limit keeps
-    # at least 1.25 times that.
-    timeout-minutes: 45
+    # The limit is the apt step's 20-minute cap plus 1.25 times the longest
+    # healthy run of the other steps: 27.4 min over 38 successful jobs
+    # (2026-10-22), 20 + 34.3 = 54.3. A 45-minute limit left the build too
+    # little after a slow mirror. scripts/ci/check_job_timeout_budget.py holds
+    # every job limit at or above its step caps' sum (ADR-3367).
+    timeout-minutes: 55
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -954,10 +957,13 @@ jobs:
     # required-aggregator
     name: MCP Smoke
     runs-on: ubuntu-26.04
-    # A 12-minute limit cancelled a green run on master (6fd838262). Measured
-    # max 24 min on successful runs (2026-10-22), most of it the libvmaf
-    # build; the limit keeps at least 1.25 times that.
-    timeout-minutes: 35
+    # The limit is the apt step's 20-minute cap plus 1.25 times the longest
+    # healthy run of the other steps, most of it the libvmaf build: 22.1 min
+    # over 44 successful jobs (2026-10-22), 20 + 27.6 = 47.6, rounded up to
+    # Tiny AI's 55. A 35-minute limit cancelled job 119986586497 in the build
+    # after a 19m59s apt step. scripts/ci/check_job_timeout_budget.py holds
+    # every job limit at or above its step caps' sum (ADR-3367).
+    timeout-minutes: 55
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
