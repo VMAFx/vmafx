@@ -92,6 +92,20 @@ entries:
   - core/src/pdjson.c
   - core/src/pdjson.h
   note: Streaming JSON parser for model files.
+- id: contribution-dmitry-popovich
+  name: Dmitry Popovich's SYCL build and container work
+  url: https://github.com/VMAFx/vmafx/pull/2216
+  kind: code
+  relation: adapted
+  license: EUPL-1.2
+  paths:
+  - Containerfile.vmafx
+  - docs/adr/3357-hybrid-gcc-cpu-icpx-sycl.md
+  - docs/adr/3358-vmafx-sycl-ffmpeg-container.md
+  evidence:
+  - docs/adr/3357-hybrid-gcc-cpu-icpx-sycl.md
+  - docs/adr/3358-vmafx-sycl-ffmpeg-container.md
+  note: Dmitry Popovich (@Tualua) designed the hybrid GCC and icpx build and the SYCL plus FFmpeg image in PR 2216; the project reworked them into PR 2883 and PR 2891.
 - id: libsvm
   name: libsvm
   url: https://github.com/cjlin1/libsvm
