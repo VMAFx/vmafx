@@ -590,7 +590,7 @@ if is_hipcc_enabled and is_hip_enabled
         # ADR-1409: float_motion's row sums in the CPU's order, shared by the
         # kernels and the device-free test.
         'feature/hip/float_motion/float_motion_rows.h',
-        # Its host half includes the backend-neutral row-sum tail.
+        # The kernel takes its bit-depth scaler, the host half its row-sum tail.
         'feature/float_motion_sad.h',
         'feature/hip/float_vif_hip.h',
         'feature/float_vif_gpu_common.h',
@@ -1850,6 +1850,7 @@ if is_cuda_enabled
         'feature/cuda/integer_psnr_hvs_cuda.h',
         'feature/cuda/float_psnr_cuda.h',
         'feature/cuda/float_motion_cuda.h',
+        'feature/float_motion_sad.h',
         'feature/cuda/float_vif_cuda.h',
         'feature/cuda/float_vif/float_vif_device.h',
         'feature/float_vif_gpu_common.h',

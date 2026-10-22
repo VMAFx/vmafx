@@ -93,6 +93,17 @@ static char *test_empty_plane_is_nan(void)
     return NULL;
 }
 
+static char *test_float_motion_scaler(void)
+{
+    mu_assert("bpc 8 scaler must be 1.0", vmaf_float_motion_scaler(8u) == 1.0f);
+    mu_assert("bpc 10 scaler must be 4.0", vmaf_float_motion_scaler(10u) == 4.0f);
+    mu_assert("bpc 12 scaler must be 16.0", vmaf_float_motion_scaler(12u) == 16.0f);
+    mu_assert("bpc 16 scaler must be 256.0", vmaf_float_motion_scaler(16u) == 256.0f);
+    mu_assert("default scaler must be 1.0", vmaf_float_motion_scaler(0u) == 1.0f);
+    mu_assert("unknown bpc scaler must be 1.0", vmaf_float_motion_scaler(14u) == 1.0f);
+    return NULL;
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_sum_is_one_running_float);
@@ -100,6 +111,7 @@ char *run_tests(void)
     mu_run_test(test_division_is_float);
     mu_run_test(test_single_pixel);
     mu_run_test(test_empty_plane_is_nan);
+    mu_run_test(test_float_motion_scaler);
     return NULL;
 }
 
