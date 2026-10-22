@@ -19,7 +19,7 @@ and the flag spellings of the three oldest ports differ from Python (see
 ## Build
 
 Go 1.27 or newer is required (`GO_VERSION` in `build-config.env`; `go.mod`
-declares `go 1.27.2`).
+declares `go 1.27.3`).
 
 ```bash
 go build -o vmafx-tune-go ./cmd/vmafx-tune

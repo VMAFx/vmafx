@@ -5,14 +5,16 @@
  * SPDX-License-Identifier: EUPL-1.2
  */
 
-/* The float extractors that normalise samples like picture_copy() refuse picture bit
- * depths they do not scale. picture_copy() and the device twins that mirror it handled
- * 10, 12 and 16 bits only and read every other depth above 8 as 8-bit bytes, so
- * float_ssim, float_ms_ssim, float_adm, float_vif and float_motion returned wrong scores
- * for 9, 11, 13, 14 and 15-bit pictures without an error
- * (T-ODD-BIT-DEPTHS-SILENT-WRONG-FLOAT-SCORES-2026-10-07). This test pins the refusal
- * for every family at every unsupported depth, the accepted depths, and that an
- * extractor which scores odd depths correctly (psnr_hvs at 9 and 11 bits) still does. */
+/* The float extractors that normalise samples like picture_copy() score every picture
+ * bit depth from 8 to 16 on the CPU, and their device twins refuse the depths they were
+ * never measured at. picture_copy() handled 10, 12 and 16 bits only and read every other
+ * depth above 8 as 8-bit bytes, so float_ssim, float_ms_ssim, float_adm, float_vif and
+ * float_motion returned wrong scores for 9, 11, 13, 14 and 15-bit pictures without an
+ * error (T-ODD-BIT-DEPTHS-SILENT-WRONG-FLOAT-SCORES-2026-10-07); ADR-2164 fixed the
+ * normaliser, and the twins stay refused until they are compared with the CPU there
+ * (T-FLOAT-EXTRACTORS-ODD-DEPTH-TWINS-UNMEASURED-2026-10-07). This test pins both for
+ * every family at every odd depth, the even depths, and that an extractor which scores
+ * odd depths correctly (psnr_hvs at 9 and 11 bits) still does. */
 
 #include "test.h"
 
@@ -22,6 +24,7 @@
  * required Windows build compiles this TU with cl.exe, and this file mirrors
  * the C spelling of the surface it exercises. ADR-1138. */
 
+#include "feature/feature_extractor.h"
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/picture.h"
 
@@ -73,15 +76,46 @@ static int submit_at_bpc(const char *feature, unsigned bpc)
 static const char *const kFamilies[] = {"float_ssim", "float_ms_ssim", "float_adm", "float_vif",
                                         "float_motion"};
 
-static char *test_float_families_refuse_unscaled_depths(void)
+static const unsigned kOddDepths[] = {9U, 11U, 13U, 14U, 15U};
+
+static char *test_float_families_score_odd_depths_on_cpu(void)
 {
-    static const unsigned kRefused[] = {9U, 11U, 13U, 14U, 15U};
     for (size_t f = 0; f < sizeof(kFamilies) / sizeof(kFamilies[0]); f++) {
-        for (size_t i = 0; i < sizeof(kRefused) / sizeof(kRefused[0]); i++) {
-            mu_assert("a float extractor accepted a depth it does not scale",
-                      submit_at_bpc(kFamilies[f], kRefused[i]) == -EINVAL);
+        for (size_t i = 0; i < sizeof(kOddDepths) / sizeof(kOddDepths[0]); i++) {
+            mu_assert("a CPU float extractor refused a depth picture_copy() scales",
+                      submit_at_bpc(kFamilies[f], kOddDepths[i]) == 0);
         }
     }
+    return NULL;
+}
+
+/* Initialises a context of a stand-in extractor named `name` with `flags` at `bpc`. */
+static int init_stand_in(const char *name, uint64_t flags, unsigned bpc)
+{
+    const VmafFeatureExtractor fex = {.name = name, .flags = flags};
+    VmafFeatureExtractorContext *ctx = NULL;
+    if (vmaf_feature_extractor_context_create(&ctx, &fex, NULL) != 0)
+        return 1;
+    const int err =
+        vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, bpc, FRAME_SIZE, FRAME_SIZE);
+    return vmaf_feature_extractor_context_destroy(ctx) != 0 ? 2 : err;
+}
+
+static char *test_device_twins_refuse_odd_depths(void)
+{
+    static const char *const kTwins[] = {"float_ssim_cuda", "float_ms_ssim_sycl", "float_adm_hip",
+                                         "float_vif_metal", "float_motion_cuda"};
+    static const uint64_t kFlags[] = {VMAF_FEATURE_EXTRACTOR_CUDA, VMAF_FEATURE_EXTRACTOR_SYCL,
+                                      VMAF_FEATURE_EXTRACTOR_HIP, VMAF_FEATURE_EXTRACTOR_METAL,
+                                      VMAF_FEATURE_EXTRACTOR_CUDA};
+    for (size_t f = 0; f < sizeof(kTwins) / sizeof(kTwins[0]); f++) {
+        for (size_t i = 0; i < sizeof(kOddDepths) / sizeof(kOddDepths[0]); i++) {
+            mu_assert("a device twin accepted a depth it was not measured at",
+                      init_stand_in(kTwins[f], kFlags[f], kOddDepths[i]) == -EINVAL);
+        }
+        mu_assert("a device twin refused 10 bits", init_stand_in(kTwins[f], kFlags[f], 10U) == 0);
+    }
+    mu_assert("a CPU stand-in refused 9 bits", init_stand_in("float_ssim", 0U, 9U) == 0);
     return NULL;
 }
 
@@ -106,7 +140,8 @@ static char *test_other_extractors_keep_odd_depths(void)
 
 char *run_tests(void)
 {
-    mu_run_test(test_float_families_refuse_unscaled_depths);
+    mu_run_test(test_float_families_score_odd_depths_on_cpu);
+    mu_run_test(test_device_twins_refuse_odd_depths);
     mu_run_test(test_float_families_accept_scaled_depths);
     mu_run_test(test_other_extractors_keep_odd_depths);
     return NULL;

@@ -443,7 +443,7 @@ func TestVmafScoreRejectsInvalidCoreParams(t *testing.T) {
 			args: map[string]any{
 				"ref": dummyPath, "dis": dummyPath,
 				"width": float64(64), "height": float64(64),
-				"pixfmt": "420", "bitdepth": float64(14),
+				"pixfmt": "420", "bitdepth": float64(17),
 			},
 			wantErr: "invalid bitdepth",
 		},

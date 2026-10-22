@@ -103,11 +103,23 @@ typedef struct {
     unsigned frame_skip_ref;
     unsigned frame_skip_dist;
     unsigned frame_cnt;
+    /* the _ref and _dist sizes default to width and height */
     unsigned width;
     unsigned height;
-    enum VmafPixelFormat pix_fmt;
+    unsigned width_ref, height_ref, width_dist, height_dist;
+    enum VmafPixelFormat
+        pix_fmt; /* the planar frame the input makes: 4:2:0, 4:2:2, 4:4:4 or 4:0:0 */
     unsigned bitdepth;
     VmafColor color_ref, color_dist; /* ed61076b2; all four attributes or none */
+    /* VmafxPixelFormat of a raw input that is not planar (NV12, P010, YUYV422, V210, RGBA ...,
+     * the layouts of core/api/vmafx.toml); 0: the planar frame of `pix_fmt` (ADR-2145). */
+    unsigned input_layout;
+    /* RGB layouts (ADR-2146): VmafxColorMatrix, VmafxColorRange (of the R'G'B' samples),
+     * VmafxColorTransfer and VmafxColorRange (of the Y'CbCr frame made); 0: not stated. */
+    unsigned rgb_matrix;
+    unsigned rgb_range;
+    unsigned rgb_transfer;
+    unsigned rgb_out_range;
     enum VmafOutputFormat output_fmt;
     unsigned model_cnt;
     unsigned feature_cnt;

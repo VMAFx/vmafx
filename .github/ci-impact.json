@@ -90,6 +90,7 @@
     "CONTRIBUTING.md",
     "Cargo.lock",
     "Cargo.toml",
+    "Containerfile.vmafx",
     "Dockerfile",
     "Dockerfile.ffmpeg",
     "Dockerfile.go-server",

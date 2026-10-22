@@ -58,12 +58,12 @@ from __future__ import annotations
 import re
 import shutil
 import sys
-from pathlib import Path
 
 # tomllib sorts here rather than with the stdlib imports above because ruff is still
 # configured with `target-version = "py310"`, where tomllib did not yet exist. That pin
 # is the drift ADR-1282 deliberately left alone; move this import up when it is raised.
 import tomllib
+from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 

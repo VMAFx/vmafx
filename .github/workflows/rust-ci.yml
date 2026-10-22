@@ -113,7 +113,7 @@ jobs:
           sudo ldconfig
 
       - name: Set up the pinned Rust toolchain
-        uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249  # stable
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec  # stable
         with:
           # Pinned by commit SHA, so the action cannot infer the toolchain from
           # its git ref — `toolchain` must be given explicitly or setup fails

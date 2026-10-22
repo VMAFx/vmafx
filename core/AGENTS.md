@@ -72,6 +72,7 @@ core/
 | `src/fex_ctx_vector.cpp`, `src/fex_ctx_vector.h` | [feature-context-and-registration](AGENTS.d/feature-context-and-registration.md) | Feature context registration compares option keys for deduplication and manages option-copy lifecycle. |
 | `src/cuda/common.h`, `src/sycl/common.h` | [gpu-backends-and-parity](AGENTS.d/gpu-backends-and-parity.md) | GPU-parity matrix gates cross-backend consistency; HIP follows scaffolding; icpx wraps SYCL tidy. |
 | `src/meson.build`, `test/test_icx_system_libm.py` | [host-libm-link-policy](AGENTS.d/host-libm-link-policy.md) | Every icx / icpx link gets -no-intel-lib=libimf; host math comes from glibc libm. |
+| `src/meson.build`, `test/meson.build`, `/dev/Containerfile` | [hybrid-gcc-icpx-toolchain](AGENTS.d/hybrid-gcc-icpx-toolchain.md) | CC=gcc CXX=icpx builds give icpx C++ the strict spelling and link SYCL-on tests as C++. |
 | `src/mcp/mcp.c`, `src/mcp/mcp_internal.h` | [mcp-runtime](AGENTS.d/mcp-runtime.md) | Embedded MCP runtime conforms to ADR-0209 transport contract and lifecycle. |
 | `meson.build`, `/scripts/ci/run_meson_test.py` | [meson-build-and-environment](AGENTS.d/meson-build-and-environment.md) | Meson strips secret tokens from test environment, pins version >= 1.4.0, and tracks SYCL headers. |
 | `src/feature/motion.c`, `src/feature/ms_ssim.c`, `src/feature/speed.c` | [metric-contracts-motion-and-speed](AGENTS.d/metric-contracts-motion-and-speed.md) | MS-SSIM honors enable_lcs; float_motion surfaces extra options; SpEED singular is non-fatal. |

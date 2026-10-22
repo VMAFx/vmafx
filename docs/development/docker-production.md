@@ -240,6 +240,43 @@ docker run --rm \
     smoke test check the adapters with `ldd`; a forced `--backend sycl` score
     is the only check that exercises the device.
 
+## SYCL + FFmpeg test image (`Containerfile.vmafx`)
+
+`Containerfile.vmafx` at the repository root builds a separate image for
+testing the SYCL backend and the fork's FFmpeg filters (`libvmaf_sycl`,
+QSV / VA-API zero-copy) on an Intel GPU host. It is not one of the published
+release images above.
+
+```bash
+podman build -f Containerfile.vmafx -t vmafx-sycl-test:latest .
+```
+
+The build compiles libvmaf (SYCL, GCC for the CPU C code, see
+[SYCL — choosing the C compiler](../backends/sycl/overview.md#choosing-the-c-compiler)),
+then FFmpeg at the tag `ffmpeg-patches/series.txt` targets with every patch
+applied, then runs the Netflix CPU golden tests. A failing golden test fails
+the build. The Intel GPU driver stack comes from the versions pinned in
+`build-config.env`, the same as the oneAPI release image.
+
+GPU tests cannot run during the build (no `/dev/dri`). Run them against the
+built image:
+
+```bash
+# CPU golden tests, the meson unit suites (SYCL ones need the GPU) and the
+# Netflix reference table, with the GPU passed through:
+bash scripts/test/run-all-tests.sh
+
+# Score a pair on the GPU:
+podman run --rm --device /dev/dri -v "$PWD:/work" vmafx-sycl-test:latest \
+    --backend sycl -r /work/ref.yuv -d /work/dis.yuv \
+    --width 1920 --height 1080 --pixel_format 420 --bitdepth 8
+```
+
+`scripts/test/reference_report.py` (also inside the image as
+`/opt/vmaf-selftest/reference_report.py`) prints the CPU and SYCL scores of the
+Netflix test pairs next to the Netflix reference values. See
+[ADR-3358](../adr/3358-vmafx-sycl-ffmpeg-container.md).
+
 ## MCP server variant
 
 The `-server` tag starts the Python `vmaf-mcp` JSON-RPC server on port 8080

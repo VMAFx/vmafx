@@ -107,3 +107,19 @@ def test_realignment_does_not_leak_into_the_next_function():
     """A realigned frame must not excuse the function that follows it."""
     findings = gate.scan_disassembly(REALIGNED + BROKEN)
     assert len(findings) == EXPECTED_BROKEN_FINDINGS, findings
+
+
+def test_timing_summary_names_the_slowest_files_first():
+    line = gate.timing_summary(
+        [(Path("a.o"), 0.5), (Path("b.exe"), 12.0), (Path("c.o"), 3.0), (Path("d.o"), 0.1)],
+        15.6,
+    )
+    assert line == "scan took 15.6 s; slowest: b.exe 12.0 s, c.o 3.0 s, a.o 0.5 s"
+
+
+def test_timing_summary_with_fewer_files_than_the_top():
+    assert gate.timing_summary([(Path("a.o"), 1.25)], 1.25) == "scan took 1.2 s; slowest: a.o 1.2 s"
+
+
+def test_timing_summary_without_files():
+    assert gate.timing_summary([], 0.0) == "scan took 0.0 s; slowest: none"

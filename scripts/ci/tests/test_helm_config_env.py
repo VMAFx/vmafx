@@ -21,11 +21,11 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 from typing import Any
 
-import tomllib
 import yaml  # type: ignore[import-untyped]
 
 ROOT = Path(__file__).resolve().parents[3]

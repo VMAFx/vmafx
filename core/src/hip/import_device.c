@@ -260,6 +260,9 @@ static VmafxStatus open_kernels(const VmafxReport *report, VmafxHipDevice *dev)
     if (rc == hipSuccess) {
         rc = hipModuleGetFunction(&k->gather, k->module, "vmafx_import_gather");
     }
+    if (rc == hipSuccess) {
+        rc = hipModuleGetFunction(&k->rgb, k->module, "vmafx_import_rgb");
+    }
     return rc == hipSuccess ?
                VMAFX_OK :
                vmafx_hip_failed(report, rc, VMAFX_SUBJECT_DEVICE, "device", "hipModuleLoadData");

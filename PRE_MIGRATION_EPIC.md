@@ -6,16 +6,23 @@
 
 ## Pre-Migration Tasks
 
-- [ ] **Task 1**: [TASK 1/5] Invariant & Complexity Hygiene: VMAFx/vmafx
-- [ ] **Task 2**: [TASK 2/5] Decoupling & Config Externalization: VMAFx/vmafx
-  - *Prerequisites*: Depends-On: VMAFx/vmafx#1
-- [ ] **Task 3**: [TASK 3/5] Framework Dependency Substitution: VMAFx/vmafx
-  - *Prerequisites*: Depends-On: VMAFx/vmafx#2
-- [ ] **Task 4**: [TASK 4/5] Gated Verification & Ed25519 Receipt: VMAFx/vmafx
-  - *Prerequisites*: Depends-On: VMAFx/vmafx#3
-- [ ] **Task 5**: [TASK 5/5] Full Praetor Activation & Governance Lockdown:
-  VMAFx/vmafx
-  - *Prerequisites*: Depends-On: VMAFx/vmafx#4
+Each task is a tracked issue; the issue state is authoritative
+([ADR-1249](docs/adr/1249-praetor-governance-adoption.md)).
+
+- [x] **Task 1**: [TASK 1/5] Invariant & Complexity Hygiene: VMAFx/vmafx#1444
+  (closed 2026-10-07)
+- [x] **Task 2**: [TASK 2/5] Decoupling & Config Externalization: VMAFx/vmafx#1445
+  (closed 2026-10-07)
+  - *Prerequisites*: Depends-On: VMAFx/vmafx#1444
+- [ ] **Task 3**: [TASK 3/5] Framework Dependency Substitution: VMAFx/vmafx#1446
+  (open)
+  - *Prerequisites*: Depends-On: VMAFx/vmafx#1445
+- [x] **Task 4**: [TASK 4/5] Gated Verification & Ed25519 Receipt: VMAFx/vmafx#1447
+  (closed 2026-10-07)
+  - *Prerequisites*: Depends-On: VMAFx/vmafx#1446
+- [x] **Task 5**: [TASK 5/5] Full Praetor Activation & Governance Lockdown:
+  VMAFx/vmafx#1448 (closed 2026-10-07)
+  - *Prerequisites*: Depends-On: VMAFx/vmafx#1447
 
 ## Execution Directives
 
@@ -40,7 +47,7 @@
 ### Issue 2: [TASK 2/5] Decoupling & Config Externalization: VMAFx/vmafx
 
 **Labels**: `task, architecture, decoupling`
-**Depends-On**: `VMAFx/vmafx#1`
+**Depends-On**: `VMAFx/vmafx#1444`
 
 #### Scope (task 2)
 
@@ -51,7 +58,7 @@
 ### Issue 3: [TASK 3/5] Framework Dependency Substitution: VMAFx/vmafx
 
 **Labels**: `task, dependencies, migration`
-**Depends-On**: `VMAFx/vmafx#2`
+**Depends-On**: `VMAFx/vmafx#1445`
 
 #### Scope (task 3)
 
@@ -63,7 +70,7 @@
 ### Issue 4: [TASK 4/5] Gated Verification & Ed25519 Receipt: VMAFx/vmafx
 
 **Labels**: `task, verification, gating`
-**Depends-On**: `VMAFx/vmafx#3`
+**Depends-On**: `VMAFx/vmafx#1446`
 
 #### Scope (task 4)
 
@@ -74,7 +81,7 @@
 ### Issue 5: [TASK 5/5] Full Praetor Activation & Governance Lockdown: VMAFx/vmafx
 
 **Labels**: `task, activation, governance`
-**Depends-On**: `VMAFx/vmafx#4`
+**Depends-On**: `VMAFx/vmafx#1447`
 
 #### Scope (task 5)
 

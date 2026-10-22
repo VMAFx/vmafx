@@ -22,8 +22,8 @@ invariant: ciede_hip performs CPU arithmetic in fp32 pairs with libm residual ha
   fp64 statements = 318 ms per 1080p frame (17x), never merged.
 - Kernel `integer_ciede/ciede_score.hip` (built `-std=c++20`,
   `hip_kernel_extra_args`): one thread per pixel, float stored at raster
-  position, no reduction. Constants = `constexpr kCiedeConstants[4]` (8, 10,
-  12, 16 bit), host passes index `ciede_hip_depth_index()`; tables =
+  position, no reduction. Constants = `constexpr kCiedeConstants[9]` (8 to 16
+  bit, entry `bpc - 8`), host passes index `ciede_hip_depth_index()`; tables =
   module constants.
 - Host: readback one float per pixel, `ciede_frame_sum()`
   (`../ciede_frame_sum.h`, shared with CUDA + SYCL hosts) raster order into

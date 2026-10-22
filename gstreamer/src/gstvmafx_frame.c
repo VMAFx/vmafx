@@ -102,6 +102,9 @@ VmafxStatus gst_vmafx_frame_make(GstVmafx *self, GstVmafxRt *rt, GstBuffer *buff
                                  VmafxFrame **out, gchar **error)
 {
     g_assert(self != NULL && rt != NULL && buffer != NULL && out != NULL && error != NULL);
+    if (rt->mem == GST_VMAFX_MEM_VULKAN) {
+        return gst_vmafx_vulkan_import(self, rt, buffer, pad, out, error);
+    }
     if (rt->mem == GST_VMAFX_MEM_CUDA && self->opts.import_mode != GST_VMAFX_IMPORT_HOST) {
         return gst_vmafx_cuda_import(self, rt, buffer, pad, out, error);
     }

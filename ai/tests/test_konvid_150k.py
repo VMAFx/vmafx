@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from _corpus_download_fakes import fake_curl
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SCRIPT_PATH = _REPO_ROOT / "ai" / "scripts" / "konvid_150k_to_corpus_jsonl.py"
@@ -164,23 +165,7 @@ class _FakeRunner:
                 args=cmd, returncode=0, stdout=self.ffprobe_payload, stderr=""
             )
         if argv0.endswith("curl"):
-            # ``--output <path>`` is the dest; URL is the last positional.
-            output_path: str | None = None
-            for i, tok in enumerate(cmd):
-                if tok == "--output" and i + 1 < len(cmd):
-                    output_path = cmd[i + 1]
-                    break
-            assert output_path is not None
-            target_name = Path(output_path).name.removesuffix(".part")
-            self.download_attempts.append(target_name)
-            if target_name in self.download_failures:
-                return subprocess.CompletedProcess(
-                    args=cmd, returncode=22, stdout="", stderr="HTTP 404 Not Found"
-                )
-            # Write a deterministic non-empty payload to the .part file.
-            Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-            Path(output_path).write_bytes(f"downloaded:{target_name}".encode("utf-8"))
-            return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+            return fake_curl(cmd, self.download_attempts, self.download_failures)
         raise AssertionError(f"unexpected runner invocation: {cmd!r}")
 
 

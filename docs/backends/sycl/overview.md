@@ -91,6 +91,32 @@ The options that shape a SYCL build:
     build's too. The option applies to the host link only; the device code
     and its math libraries do not change.
 
+### Choosing the C compiler
+
+The SYCL kernels are C++ and need `icpx`. The CPU feature code is C and can be
+built by either `icx` or GCC:
+
+```bash
+# GCC for C, icpx for C++ and SYCL (what dev/Containerfile and Containerfile.vmafx use):
+CC=gcc CXX=icpx CC_LD=lld CXX_LD=lld meson setup build core \
+    -Denable_sycl=true -Db_lto=false
+
+# icx for C as well (what CI and the release images use):
+CC=icx CXX=icpx CC_LD=lld CXX_LD=lld meson setup build core -Denable_sycl=true
+```
+
+Both return the same CPU scores: the strict floating-point policy applies to
+every C and C++ translation unit
+([ADR-1461](../../adr/1461-strict-fp-every-translation-unit.md); with GCC for C
+the C++ files compiled by `icpx` take icpx's strict spelling,
+`-fp-model=precise -ffp-contract=off`), and every icx / icpx link uses glibc's
+`libm` (see the note above). `-Db_lto=false` is
+required: GCC LTO objects cannot go through the icpx link. With SYCL on, the
+test executables link as C++, because the SYCL link arguments (`-fsycl`, the
+AOT targets) are accepted only by the icpx driver. SYCL results are the same
+with either C compiler. See
+[ADR-3357](../../adr/3357-hybrid-gcc-cpu-icpx-sycl.md).
+
 ## Run
 
 ```bash
@@ -143,6 +169,28 @@ run.
 A model's feature list resolves the same way, so the default model
 `vmaf_v1.0.16_3d0h` runs its VIF, ADM, motion and CAMBI features on the
 device.
+
+### Known issue: `LD_BIND_NOW=1` crashes SYCL builds
+
+Do not run a SYCL build of `vmaf`, or a program that loads such a `libvmaf`,
+with `LD_BIND_NOW=1` in the environment. It exits with a segmentation fault
+before printing anything, and glibc reports
+``Relink `.../libimf.so' with `.../libm.so.6' for IFUNC symbol `cosf'``.
+The defect is in Intel's oneAPI runtime, not in libvmaf: the SYCL runtime
+loads Intel's `libimf.so`, which uses functions of glibc's `libm.so.6` without
+listing it as a dependency, so binding every symbol at load time relocates it
+too early. Intel's own `sycl-ls` crashes the same way. Without `LD_BIND_NOW`
+everything runs. The fork does not patch Intel's binaries (the Intel EULA does
+not allow modifying them) and waits for a fixed oneAPI release
+(`T-SYCL-LD-BIND-NOW-LIBIMF-IFUNC-2026-10-03` in
+[`state.md`](../../state.md)).
+
+!!! warning "Do not use `LD_PRELOAD=libimf.so` as a workaround"
+    Preloading `libimf.so` avoids the crash, but a preloaded library comes
+    first in symbol lookup: all 30 math references of `libvmaf` and `vmaf`
+    (`log2f`, `pow`, `powf`, `exp`, `log10`, ...) then bind to Intel's library
+    instead of glibc's, and CPU feature scores change. That is the
+    configuration [ADR-1495](../../adr/1495-icx-system-libm.md) removed.
 
 ## Environment variables
 

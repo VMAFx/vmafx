@@ -30,10 +30,10 @@ import re
 import subprocess
 import sys
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 
-import tomllib
 from meson_cc import take_cc, take_value
 
 TIMEOUT = 120  # seconds per compile (HISS-02)

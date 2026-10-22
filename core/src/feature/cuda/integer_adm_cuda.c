@@ -298,6 +298,48 @@ static int adm_dwt2_16_device(AdmStateCuda *s, const uint16_t *d_picture,
     return 0;
 }
 
+static inline void adm_csf_border_region(int w, int h, int *left, int *top, int *right, int *bottom)
+{
+    /* The computation of the score is not required for the regions
+       which lie outside the frame borders */
+    *left = (int)(w * (float)(ADM_BORDER_FACTOR)-0.5f - 1); // -1 for filter tap
+    *top = (int)(h * (float)(ADM_BORDER_FACTOR)-0.5f - 1);
+    *right = w - *left + 2; // +2 for filter tap
+    *bottom = h - *top + 2;
+
+    if (*left < 0) {
+        *left = 0;
+    }
+    if (*right > w) {
+        *right = w;
+    }
+    if (*top < 0) {
+        *top = 0;
+    }
+    if (*bottom > h) {
+        *bottom = h;
+    }
+
+    // align left side to ensure that all memory accesses start at a multiple of 16 bytes.
+    // this will do a little bit more work than originally requested, though the result is unchanged.
+    *left = *left & ~3;
+}
+
+static inline int adm_csf_launch_kernel(CUfunction func, int left, int right, int top, int bottom,
+                                        void **args, CudaFunctions *cu_f, CUstream c_stream)
+{
+    const int cols_per_thread = 4;
+    const int rows_per_thread = 1;
+    const int BLOCKX = 32;
+    const int BLOCKY = 4;
+
+    CHECK_CUDA_RETURN(cu_f,
+                      cuLaunchKernel(func, DIV_ROUND_UP(right - left, BLOCKX * cols_per_thread),
+                                     DIV_ROUND_UP(bottom - top, BLOCKY * rows_per_thread), 3,
+                                     BLOCKX, BLOCKY, 1, 0, c_stream, args, NULL));
+    return 0;
+}
+
 static int adm_csf_device(AdmStateCuda *s, AdmBufferCuda *buf, int w, int h, int stride,
                           AdmFixedParametersCuda *p, CudaFunctions *cu_f, CUstream c_stream)
 {
@@ -309,41 +351,15 @@ static int adm_csf_device(AdmStateCuda *s, AdmBufferCuda *buf, int w, int h, int
     // ensure that the stride is a multiple of 4 so that each row starts 16 byte aligned.
     assert(stride % 4 == 0);
 
-    /* The computation of the score is not required for the regions
-       which lie outside the frame borders */
-    int left = (int)(w * (float)(ADM_BORDER_FACTOR)-0.5f - 1); // -1 for filter tap
-    int top = (int)(h * (float)(ADM_BORDER_FACTOR)-0.5f - 1);
-    int right = w - left + 2; // +2 for filter tap
-    int bottom = h - top + 2;
-
-    if (left < 0) {
-        left = 0;
-    }
-    if (right > w) {
-        right = w;
-    }
-    if (top < 0) {
-        top = 0;
-    }
-    if (bottom > h) {
-        bottom = h;
-    }
-
-    // align left side to ensure that all memory accesses start at a multiple of 16 bytes.
-    // this will do a little bit more work than originally requested, though the result is unchanged.
-    left = left & ~3;
-
-    const int cols_per_thread = 4;
-    const int rows_per_thread = 1;
-    const int BLOCKX = 32;
-    const int BLOCKY = 4;
+    int left;
+    int top;
+    int right;
+    int bottom;
+    adm_csf_border_region(w, h, &left, &top, &right, &bottom);
 
     void *args[] = {buf, &top, &bottom, &left, &right, &stride, p};
-    CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_adm_csf_kernel_1_4,
-                                           DIV_ROUND_UP(right - left, BLOCKX * cols_per_thread),
-                                           DIV_ROUND_UP(bottom - top, BLOCKY * rows_per_thread), 3,
-                                           BLOCKX, BLOCKY, 1, 0, c_stream, args, NULL));
-    return 0;
+    return adm_csf_launch_kernel(s->func_adm_csf_kernel_1_4, left, right, top, bottom, args, cu_f,
+                                 c_stream);
 }
 
 static int i4_adm_csf_device(AdmStateCuda *s, AdmBufferCuda *buf, int scale, int w, int h,
@@ -358,41 +374,15 @@ static int i4_adm_csf_device(AdmStateCuda *s, AdmBufferCuda *buf, int scale, int
     // ensure that the stride is a multiple of 4 so that each row starts 16 byte aligned.
     assert(stride % 4 == 0);
 
-    /* The computation of the score is not required for the regions
-       which lie outside the frame borders */
-    int left = (int)(w * (float)(ADM_BORDER_FACTOR)-0.5f - 1); // -1 for filter tap
-    int top = (int)(h * (float)(ADM_BORDER_FACTOR)-0.5f - 1);
-    int right = w - left + 2; // +2 for filter tap
-    int bottom = h - top + 2;
-
-    if (left < 0) {
-        left = 0;
-    }
-    if (right > w) {
-        right = w;
-    }
-    if (top < 0) {
-        top = 0;
-    }
-    if (bottom > h) {
-        bottom = h;
-    }
-
-    // align left side to ensure that all memory accesses start at a multiple of 16 bytes.
-    // this will do a little bit more work than originally requested, though the result is unchanged.
-    left = left & ~3;
-
-    const int cols_per_thread = 4;
-    const int rows_per_thread = 1;
-    const int BLOCKX = 32;
-    const int BLOCKY = 4;
+    int left;
+    int top;
+    int right;
+    int bottom;
+    adm_csf_border_region(w, h, &left, &top, &right, &bottom);
 
     void *args[] = {buf, &scale, &top, &bottom, &left, &right, &stride, p};
-    CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_i4_adm_csf_kernel_1_4,
-                                           DIV_ROUND_UP(right - left, BLOCKX * cols_per_thread),
-                                           DIV_ROUND_UP(bottom - top, BLOCKY * rows_per_thread), 3,
-                                           BLOCKX, BLOCKY, 1, 0, c_stream, args, NULL));
-    return 0;
+    return adm_csf_launch_kernel(s->func_i4_adm_csf_kernel_1_4, left, right, top, bottom, args,
+                                 cu_f, c_stream);
 }
 
 /* Launch geometry of the denominator kernels: one block per row of the border
@@ -706,47 +696,6 @@ static int adm_cm_aim_device(AdmStateCuda *s, AdmBufferCuda *buf, int w, int h, 
     return 0;
 }
 
-/* The numerator of one scale from its three band accumulators: the CPU's
- * adm_cm_result() / i4_adm_cm_result() on the CPU's own context. The context
- * initialisers only take addresses inside the buffer they are given, so an
- * empty one stands in for the host planes this twin does not have. */
-static float adm_cm_scale_result(const AdmStateCuda *s, double nvd, const int64_t accum[3], int w,
-                                 int h, int scale, double noise_weight)
-{
-    AdmBuffer no_planes;
-    memset(&no_planes, 0, sizeof(no_planes));
-    const AdmCmBounds bd = adm_cm_bounds(w, h);
-    if (scale == 0) {
-        AdmCmCtx c;
-        adm_cm_ctx_init(&c, &no_planes, w, h, 0, 0, nvd, s->adm_ref_display_height, s->adm_csf_mode,
-                        s->adm_csf_scale, s->adm_csf_diag_scale, false);
-        /* The device sums modulo 2^64 into int64 storage; the scale-0 sum is
-         * unsigned (adm_cm_round_row_total_s0()). */
-        const uint64_t s0_accum[3] = {(uint64_t)accum[0], (uint64_t)accum[1], (uint64_t)accum[2]};
-        return adm_cm_result(&c, &bd, s0_accum, noise_weight, s->adm_p_norm);
-    }
-    I4AdmCmCtx c;
-    i4_adm_cm_ctx_init(&c, &no_planes, w, h, 0, 0, scale, nvd, s->adm_ref_display_height,
-                       s->adm_csf_mode, s->adm_csf_scale, s->adm_csf_diag_scale, false);
-    return i4_adm_cm_result(&c, &bd, accum, noise_weight, s->adm_p_norm);
-}
-
-/* The denominator of one scale: adm_csf_den_result() / i4_adm_csf_den_result(). */
-static float adm_csf_den_scale_result(const AdmStateCuda *s, double nvd, const uint64_t accum[3],
-                                      int w, int h, int scale)
-{
-    if (scale == 0) {
-        AdmDenCtx c;
-        adm_csf_den_ctx_init(&c, w, h, nvd, s->adm_ref_display_height, s->adm_csf_mode,
-                             s->adm_csf_scale, s->adm_csf_diag_scale);
-        return adm_csf_den_result(&c, accum, s->adm_noise_weight);
-    }
-    I4AdmDenCtx c;
-    i4_adm_csf_den_ctx_init(&c, scale, w, h, nvd, s->adm_ref_display_height, s->adm_csf_mode,
-                            s->adm_csf_scale, s->adm_csf_diag_scale);
-    return i4_adm_csf_den_result(&c, accum, s->adm_noise_weight);
-}
-
 static const VmafOption options_cuda[] = {
     {
         .name = "debug",
@@ -943,10 +892,13 @@ static void adm_dlm_terms(const AdmStateCuda *s, unsigned view, unsigned w, unsi
         float num_scale = 0.0f;
         float den_scale = (float)1e-10;
         if (scale != 0u || !s->adm_skip_scale0) {
-            num_scale = adm_cm_scale_result(s, nvd, &adm_cm[slot], (int)w, (int)h, (int)scale,
-                                            s->adm_noise_weight);
-            den_scale =
-                adm_csf_den_scale_result(s, nvd, &adm_csf[slot], (int)w, (int)h, (int)scale);
+            num_scale =
+                adm_cm_scale_result(nvd, &adm_cm[slot], (int)w, (int)h, (int)scale,
+                                    s->adm_noise_weight, s->adm_ref_display_height, s->adm_csf_mode,
+                                    s->adm_csf_scale, s->adm_csf_diag_scale, s->adm_p_norm);
+            den_scale = adm_csf_den_scale_result(
+                nvd, &adm_csf[slot], (int)w, (int)h, (int)scale, s->adm_ref_display_height,
+                s->adm_csf_mode, s->adm_csf_scale, s->adm_csf_diag_scale, s->adm_noise_weight);
         }
 
         t->num += num_scale;
@@ -970,8 +922,10 @@ static double adm_aim_num(const AdmStateCuda *s, unsigned view, unsigned w, unsi
         w = (w + 1) / 2;
         h = (h + 1) / 2;
         /* noise_weight = 0 for AIM, as integer_adm.c passes it. */
-        const float aim_num_scale = adm_cm_scale_result(s, nvd, &adm_aim_cm[(size_t)scale * 3],
-                                                        (int)w, (int)h, (int)scale, 0.0);
+        const float aim_num_scale =
+            adm_cm_scale_result(nvd, &adm_aim_cm[(size_t)scale * 3], (int)w, (int)h, (int)scale,
+                                0.0, s->adm_ref_display_height, s->adm_csf_mode, s->adm_csf_scale,
+                                s->adm_csf_diag_scale, s->adm_p_norm);
         if (scale == 0u && s->adm_skip_scale0) {
             continue;
         }

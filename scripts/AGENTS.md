@@ -16,7 +16,6 @@ scripts/
   release/          # ADR-0221 CHANGELOG.md fragment concatenation
   setup/            # OS/distro setup dispatcher + per-distro scripts
   gen_smoke_onnx.py                  # tiny-AI smoke fixture generator (deterministic)
-  gen_mobilesal_placeholder_onnx.py  # MobileSal placeholder fixture (T6-2a, ADR-0218)
   gen_ssimulacra2_eotf_lut.py        # sRGB EOTF LUT generator
   run_unittests.sh                   # legacy Python test runner (upstream-mirror)
   test-matrix.sh                     # local docker-matrix harness
@@ -204,7 +203,9 @@ from it, it imports `map_links` / `render` from the generator. Both tested in
 ### `gen_smoke_onnx.py` and `gen_*_onnx.py` are deterministic
 
 Fixture-generation scripts must produce byte-identical output
-on re-run. Shipped `model/tiny/smoke_v0.onnx` and
+on re-run. The placeholder-model generators (`mobilesal`,
+`dists_sq`) live in `ai/scripts/` only; no copy returns here.
+Shipped `model/tiny/smoke_v0.onnx` and
 `model/tiny/mobilesal.onnx` checked-in, sha256-pinned in
 `model/tiny/registry.json`, verified by C-side loader
 (`core/src/dnn/model_loader.c`). Non-deterministic regen breaks

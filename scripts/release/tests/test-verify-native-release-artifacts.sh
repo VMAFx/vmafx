@@ -8,22 +8,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 VERIFY="$SCRIPT_DIR/../verify-native-release-artifacts.sh"
-scratch="$(mktemp -d)"
-trap 'rm -rf "$scratch"' EXIT INT TERM
-pass=0
-fail=0
-
-check() {
-  local description="$1"
-  shift
-  if "$@"; then
-    printf 'PASS: %s\n' "$description"
-    pass=$((pass + 1))
-  else
-    printf 'FAIL: %s\n' "$description" >&2
-    fail=$((fail + 1))
-  fi
-}
+# shellcheck source=scripts/release/tests/lib.sh
+. "$SCRIPT_DIR/lib.sh"
 
 expect_rejected() {
   local root="$1"

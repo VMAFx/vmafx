@@ -23,6 +23,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "conversion_target_model.h"
 #include "mu_table.h"
 #include "test.h"
 #include "vmafx/vmafx.h"
@@ -329,31 +330,167 @@ static char *test_submit_index_refusals(void)
     return with_clip(submit_index_refusals);
 }
 
-static char *submit_geometry_named(Clip *clip)
+/* The pair itself: another format is refused, another size reaches the engine. */
+static char *geometry_pair_named(Clip *clip)
+{
+    VmafxContext *context = vt_psnr_context();
+    const VmafxFrameDesc deep = vt_desc(VMAFX_PIXEL_FORMAT_YUV420P, 10, 64, 64);
+    const VmafxFrameDesc small = vt_desc(VMAFX_PIXEL_FORMAT_YUV420P, 8, 64, 64);
+    VmafxFrame *other = NULL;
+    mu_assert("deep", vmafx_frame_create_host(NULL, &deep, &other, NULL) == VMAFX_OK);
+    VmafxError *error = NULL;
+    mu_assert("pair format differs",
+              vmafx_submit(context, clip_frame(clip, true, 0), other, 0, &error) ==
+                      VMAFX_E_INVALID &&
+                  vt_failed(&error, VMAFX_E_INVALID, "distorted", VMAFX_SUBJECT_FRAME));
+    /* Another size passes the submit (Netflix/vmaf 94f3ff0dd8); the engine
+     * refuses it when no model scales its inputs. */
+    mu_assert("small", vmafx_frame_create_host(NULL, &small, &other, NULL) == VMAFX_OK);
+    mu_assert("pair size differs, no scaling",
+              vmafx_submit(context, clip_frame(clip, true, 0), other, 0, &error) ==
+                      VMAFX_E_INVALID &&
+                  vt_failed(&error, VMAFX_E_INVALID, "index", VMAFX_SUBJECT_FRAME));
+    mu_assert("destroy", vmafx_context_destroy(context, NULL) == VMAFX_OK);
+    return NULL;
+}
+
+/* Later pairs: each side must keep the geometry of the first frame. */
+static char *geometry_first_frame_named(Clip *clip)
 {
     VmafxContext *context = vt_psnr_context();
     const VmafxFrameDesc small = vt_desc(VMAFX_PIXEL_FORMAT_YUV420P, 8, 64, 64);
     VmafxFrame *other = NULL;
-    mu_assert("other", vmafx_frame_create_host(NULL, &small, &other, NULL) == VMAFX_OK);
     VmafxError *error = NULL;
-    mu_assert("pair differs",
-              vmafx_submit(context, clip_frame(clip, true, 0), other, 0, &error) ==
+    mu_assert("first", submit_index(context, clip, 0, 0, NULL) == VMAFX_OK);
+    mu_assert("small", vmafx_frame_create_host(NULL, &small, &other, NULL) == VMAFX_OK);
+    mu_assert("distorted differs from the first frame",
+              vmafx_submit(context, clip_frame(clip, true, 1), other, 1, &error) ==
                       VMAFX_E_INVALID &&
                   vt_failed(&error, VMAFX_E_INVALID, "distorted", VMAFX_SUBJECT_FRAME));
-    mu_assert("first", submit_index(context, clip, 0, 0, NULL) == VMAFX_OK);
-    mu_assert("other", vmafx_frame_create_host(NULL, &small, &other, NULL) == VMAFX_OK);
+    mu_assert("small", vmafx_frame_create_host(NULL, &small, &other, NULL) == VMAFX_OK);
     VmafxFrame *other2 = vmafx_frame_ref(other);
-    mu_assert("differs from the first frame",
-              vmafx_submit(context, other, other2, 1, &error) == VMAFX_E_INVALID &&
+    mu_assert("reference differs from the first frame",
+              vmafx_submit(context, other, other2, 2, &error) == VMAFX_E_INVALID &&
                   vt_failed(&error, VMAFX_E_INVALID, "reference", VMAFX_SUBJECT_FRAME));
     mu_assert("destroy", vmafx_context_destroy(context, NULL) == VMAFX_OK);
-    mu_assert("all released", clip->released == 3);
+    return NULL;
+}
+
+static char *submit_geometry_named(Clip *clip)
+{
+    mu_assert_msg(geometry_pair_named(clip));
+    mu_assert_msg(geometry_first_frame_named(clip));
+    mu_assert("all released", clip->released == 5);
     return NULL;
 }
 
 static char *test_submit_geometry_named(void)
 {
     return with_clip(submit_geometry_named);
+}
+
+#define DISPLAY_MODEL_FILE "test_vmafx_frame_display_model.json"
+
+/* A context scoring the display-scaled conversion-target model. */
+static VmafxContext *display_context(const char *path)
+{
+    VmafxModel *model = NULL;
+    const int written = conversion_target_display_model_write(path);
+    const VmafxStatus loaded =
+        written == 0 ? vmafx_model_load_file(NULL, path, &model, NULL) : VMAFX_E_IO;
+    const bool removed = written == 0 && remove(path) == 0;
+    VmafxContext *context = NULL;
+    if (removed && loaded == VMAFX_OK && vmafx_context_create(NULL, &context, NULL) == VMAFX_OK) {
+        static const VmafxColor sdr = {VMAFX_COLOR_RANGE_LIMITED, VMAFX_COLOR_PRIMARIES_BT709,
+                                       VMAFX_COLOR_TRC_BT709, VMAFX_COLOR_MATRIX_BT709};
+        if (vmafx_context_use_model(context, model, NULL) != VMAFX_OK ||
+            vmafx_context_set_default_color(context, &sdr, &sdr, NULL) != VMAFX_OK) {
+            (void)vmafx_context_destroy(context, NULL);
+            context = NULL;
+        }
+    }
+    vmafx_model_unref(model);
+    return context;
+}
+
+/* Wraps one reference and one distorted frame and submits them at index. */
+static VmafxStatus submit_sized(VmafxContext *context, const VmafxFrameDesc *desc_ref,
+                                uint8_t *ref_data, const VmafxFrameDesc *desc_dist,
+                                uint8_t *dist_data, uint64_t index, unsigned *released,
+                                VmafxError **error)
+{
+    VmafxFrame *ref = vt_wrap_frame(desc_ref, ref_data, released);
+    VmafxFrame *dist = vt_wrap_frame(desc_dist, dist_data, released);
+    if (ref == NULL || dist == NULL) {
+        vmafx_frame_unref(ref);
+        vmafx_frame_unref(dist);
+        return VMAFX_E_NOMEM;
+    }
+    return vmafx_submit(context, ref, dist, index, error);
+}
+
+/* A 64x64 reference with a 32x32 and a 48x48 distorted frame. */
+typedef struct DisplayFrames {
+    VmafxFrameDesc ref;
+    VmafxFrameDesc dist;
+    VmafxFrameDesc dist48;
+    uint8_t ref_data[6144];
+    uint8_t dist_data[1536];
+    uint8_t dist48_data[3456];
+} DisplayFrames;
+
+static void display_frames_fill(DisplayFrames *f)
+{
+    f->ref = vt_desc(VMAFX_PIXEL_FORMAT_YUV420P, 8, 64, 64);
+    f->dist = vt_desc(VMAFX_PIXEL_FORMAT_YUV420P, 8, 32, 32);
+    f->dist48 = vt_desc(VMAFX_PIXEL_FORMAT_YUV420P, 8, 48, 48);
+    vt_fill(&f->ref, f->ref_data, 0);
+    vt_fill(&f->dist, f->dist_data, 1);
+    vt_fill(&f->dist48, f->dist48_data, 2);
+}
+
+#ifndef HAVE_ZIMG
+/* The scaling is a zimg conversion; without zimg the engine refuses it. */
+static char *display_scaling_checks(VmafxContext *context, DisplayFrames *f)
+{
+    unsigned released = 0;
+    VmafxError *error = NULL;
+    mu_assert("without zimg the scaling is refused",
+              submit_sized(context, &f->ref, f->ref_data, &f->dist, f->dist_data, 0, &released,
+                           &error) == VMAFX_E_NOTSUP &&
+                  vt_failed(&error, VMAFX_E_NOTSUP, "index", VMAFX_SUBJECT_FRAME));
+    mu_assert("destroy", vmafx_context_destroy(context, NULL) == VMAFX_OK);
+    mu_assert("both frames released", released == 2u);
+    return NULL;
+}
+#else
+static char *display_scaling_checks(VmafxContext *context, DisplayFrames *f)
+{
+    unsigned released = 0;
+    VmafxError *error = NULL;
+    mu_assert("submit 0 (64x64 ref, 32x32 dist)",
+              submit_sized(context, &f->ref, f->ref_data, &f->dist, f->dist_data, 0, &released,
+                           NULL) == VMAFX_OK);
+    mu_assert("submit 1 (same sizes)", submit_sized(context, &f->ref, f->ref_data, &f->dist,
+                                                    f->dist_data, 1, &released, NULL) == VMAFX_OK);
+    mu_assert("submit 2 (48x48 dist differs from first)",
+              submit_sized(context, &f->ref, f->ref_data, &f->dist48, f->dist48_data, 2, &released,
+                           &error) == VMAFX_E_INVALID &&
+                  vt_failed(&error, VMAFX_E_INVALID, "distorted", VMAFX_SUBJECT_FRAME));
+
+    mu_assert("destroy", vmafx_context_destroy(context, NULL) == VMAFX_OK);
+    mu_assert("every frame released", released == 6u);
+    return NULL;
+}
+#endif
+
+static char *test_submit_display_scales_different_sizes(void)
+{
+    VmafxContext *context = display_context(DISPLAY_MODEL_FILE);
+    mu_assert("context", context != NULL);
+    DisplayFrames frames;
+    display_frames_fill(&frames);
+    return display_scaling_checks(context, &frames);
 }
 
 /* ---- Retention (ADR-1478) -------------------------------------------------------------------- */
@@ -505,12 +642,19 @@ static char *test_one_frame_two_contexts(void)
 char *run_tests(void)
 {
     static const MuTest tests[] = {
-        MU_TEST(test_device_skeleton),           MU_TEST(test_create_host_geometry),
-        MU_TEST(test_create_host_failures),      MU_TEST(test_wrap_host),
-        MU_TEST(test_wrap_host_failures),        MU_TEST(test_frame_planes_failures),
-        MU_TEST(test_submit_and_flush),          MU_TEST(test_submit_null_arguments),
-        MU_TEST(test_submit_index_refusals),     MU_TEST(test_submit_geometry_named),
-        MU_TEST(test_retention_keeps_n_minus_2), MU_TEST(test_one_frame_two_contexts),
+        MU_TEST(test_device_skeleton),
+        MU_TEST(test_create_host_geometry),
+        MU_TEST(test_create_host_failures),
+        MU_TEST(test_wrap_host),
+        MU_TEST(test_wrap_host_failures),
+        MU_TEST(test_frame_planes_failures),
+        MU_TEST(test_submit_and_flush),
+        MU_TEST(test_submit_null_arguments),
+        MU_TEST(test_submit_index_refusals),
+        MU_TEST(test_submit_geometry_named),
+        MU_TEST(test_submit_display_scales_different_sizes),
+        MU_TEST(test_retention_keeps_n_minus_2),
+        MU_TEST(test_one_frame_two_contexts),
     };
     return mu_run_table(tests, MU_TABLE_LEN(tests));
 }

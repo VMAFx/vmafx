@@ -217,7 +217,7 @@ described under
 | Header | Symbols | Purpose |
 | --- | --- | --- |
 | [`libvmaf.h`](../../core/include/libvmaf/libvmaf.h) | `VmafContext`, `VmafConfiguration`, lifecycle and scoring functions | Main entry point; includes `feature.h`, `model.h`, `picture.h`. |
-| [`picture.h`](../../core/include/libvmaf/picture.h) | `VmafPicture`, `VmafPixelFormat`, alloc and unref | Per-frame pixel container. [Pictures](pictures.md). |
+| [`picture.h`](../../core/include/libvmaf/picture.h) | `VmafPicture`, `VmafPixelFormat`, alloc and unref, colour enums | Per-frame pixel container. [Pictures](pictures.md). The transfer enum also names sRGB, HLG and linear light, the matrix enum BT.601 and BT.2020 constant luminance; they describe RGB input, and the converter refuses the ones it does not implement ([pixel formats](../usage/pixel-formats.md)). |
 | [`picture_v2.h`](../../core/include/libvmaf/picture_v2.h) | `VmafPicture2`, `VmafBackendHandle`, converters | Picture with explicit backend state. [Pictures](pictures.md#picture-v2-picture_v2h). |
 | [`feature.h`](../../core/include/libvmaf/feature.h) | `VmafFeatureDictionary` | Options for a feature extractor. [Models and features](models-and-features.md). |
 | [`model.h`](../../core/include/libvmaf/model.h) | `VmafModel`, `VmafModelConfig`, `VmafModelCollection*`, `VmafModelKind` | SVM model, bootstrap collection, default version. |

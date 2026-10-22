@@ -161,12 +161,18 @@ static char *test_ciede_1080p(void)
     return ciede_twin_1080p(&twin);
 }
 
+static char *test_ciede_odd_depths(void)
+{
+    return ciede_twin_odd_depths(&twin);
+}
+
 static char *run_bit_depth_cases(void)
 {
     mu_run_test(test_ciede_8bit);
     mu_run_test(test_ciede_10bit);
     mu_run_test(test_ciede_12bit);
     mu_run_test(test_ciede_16bit);
+    mu_run_test(test_ciede_odd_depths);
     return NULL;
 }
 
