@@ -226,6 +226,8 @@ lint-go:
 # scripts/ci/check_hosted_runner_labels.py checks which hosted Ubuntu image
 # every job names (ADR-3251); scripts/ci/pr_workflow_budget.py holds the
 # number of pull-request workflows inside the Scorecard check-suite window;
+# scripts/ci/check_job_timeout_budget.py holds every job's time limit at or
+# above the sum of its step limits (ADR-3367);
 # scripts/ci/check_release_provenance_assets.py checks that release workflows
 # upload build provenance (.intoto.jsonl) assets.
 lint-actions:
@@ -238,6 +240,8 @@ lint-actions:
 	@python3 scripts/ci/check_hosted_runner_labels.py
 	@echo "--- pull-request workflow budget (.github/workflows): Scorecard check-suite window ---"
 	@python3 scripts/ci/pr_workflow_budget.py
+	@echo "--- job time limits (.github/workflows): job limit covers its step caps ---"
+	@python3 scripts/ci/check_job_timeout_budget.py
 	@echo "--- release provenance assets (.github/workflows): OpenSSF Scorecard 10 ---"
 	@python3 scripts/ci/check_release_provenance_assets.py
 

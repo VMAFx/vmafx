@@ -936,6 +936,39 @@ The last 40 and 100 master runs across all workflows showed no other flaky test
 or build failure; the only other master failure was the `release-please` token
 permissions, tracked in #1289.
 
+## Job time limits cover their step limits (ADR-3367)
+
+A step's `timeout-minutes` only holds when its job can run that long. On
+2026-10-22 the `MCP Smoke` job had a 35-minute limit and its `Install build
+deps` step a 20-minute one: a slow package mirror took 19 minutes 59 seconds,
+inside the step's limit, and the job reached its own limit in the libvmaf build
+and was cancelled (job 119986586497). `Tiny AI` had the same shape at 45
+minutes.
+
+Size a job's limit as the sum of its step limits plus 1.25 times the longest
+healthy run of its other steps, measured on successful jobs:
+
+| Job | Step limits | Longest healthy run of the other steps | Limit |
+| --- | --- | --- | --- |
+| `Tiny AI` | 20 (apt) | 27.4 min, 38 jobs | 55 |
+| `MCP Smoke` | 20 (apt) | 22.1 min, 44 jobs | 55 |
+
+`scripts/ci/check_job_timeout_budget.py` reads every workflow under
+`.github/workflows/` and fails when a job's `timeout-minutes` is below the sum
+of its steps' `timeout-minutes`. A job without a limit counts as GitHub's 360
+minutes; a limit written as an expression cannot be checked and fails the run.
+It runs in `make lint-actions` and as the `check-job-timeout-budget`
+pre-commit hook; `scripts/ci/tests/test_check_job_timeout_budget.py` plants a
+job below its step sum and checks that it is refused.
+
+```bash
+python3 scripts/ci/check_job_timeout_budget.py
+python3 scripts/ci/tests/test_check_job_timeout_budget.py
+```
+
+The check sees only the step limits. The 1.25 margin for the uncapped steps is
+the author's measurement, written in the comment above each job's limit.
+
 ## Downloads and timeouts in test jobs (2026-10-10)
 
 Three failures on `master` on 2026-10-10 had one shape: a required job failed
