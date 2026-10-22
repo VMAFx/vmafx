@@ -24,7 +24,7 @@ dev = [
   "pytest-asyncio>=1.4.0",
   "pytest-aiohttp>=1.1.1",
   "prometheus-client>=0.26.0",
-  "ruff>=0.17.0",
+  "ruff>=0.17.1",
   "mypy>=2.4.0",
   # The `eval` extra below: without it 16 tests skip (eval_model_on_split,
   # compare_models), so the dev environment carries it.
@@ -59,7 +59,7 @@ eval = [
 # metadata. torch must not appear in any group of this package
 # (scripts/ci/check-torch-scope.py).
 vlm = [
-  "onnxruntime-genai>=0.17.1",
+  "onnxruntime-genai>=0.18.0",
 ]
 
 [project.scripts]
