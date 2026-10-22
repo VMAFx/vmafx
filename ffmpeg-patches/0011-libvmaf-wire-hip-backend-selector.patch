@@ -86,7 +86,7 @@ index 992ccaf9860c356bce018d9c00499b1240dfb063..46973b60e1128fdf60f5236c0666fbe9
                               check_pkg_config libvmaf_cuda "libvmaf >= 2.0.0" libvmaf/libvmaf_cuda.h vmaf_cuda_state_init
  enabled libvmaf_sycl      && require_pkg_config libvmaf "libvmaf >= 3.0.0" libvmaf.h vmaf_init &&
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
-index 0a3b617d19f6a6b47fdd8acb91ab67cd3ac1cc54..9cc436553974c1391ab975ca30ca203501d18a6e 100644
+index 47293219b420010f4c460bc37002ea8c2148c22a..37bf5786411aac4e68c02e716484ff48139b97a2 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
 @@ -69,6 +69,10 @@
@@ -100,7 +100,7 @@ index 0a3b617d19f6a6b47fdd8acb91ab67cd3ac1cc54..9cc436553974c1391ab975ca30ca2035
  typedef struct LIBVMAFContext {
      const AVClass *class;
      FFFrameSync fs;
-@@ -103,6 +107,10 @@ typedef struct LIBVMAFContext {
+@@ -104,6 +108,10 @@ typedef struct LIBVMAFContext {
      VmafCudaState *cu_state;            /* owned by the libvmaf filter when cuda=1 */
      int            cuda_pool_initialised;  /* lazy: geometry isn't known until first frame */
  #endif
@@ -111,7 +111,7 @@ index 0a3b617d19f6a6b47fdd8acb91ab67cd3ac1cc54..9cc436553974c1391ab975ca30ca2035
  
      VmafContext *vmaf;
      VmafModel **model;
-@@ -133,6 +141,7 @@ static const AVOption libvmaf_options[] = {
+@@ -134,6 +142,7 @@ static const AVOption libvmaf_options[] = {
      {"sycl_profile", "Enable SYCL queue profiling.",                                    OFFSET(sycl_profile),    AV_OPT_TYPE_BOOL,   {.i64=0},      0, 1,        FLAGS},
      {"vulkan_device","Vulkan device index (-1 = disabled, 0+ = device index).",         OFFSET(vulkan_device),   AV_OPT_TYPE_INT,    {.i64=-1},    -1, INT_MAX,  FLAGS},
      {"cuda",         "Enable the CUDA backend on the primary device (software AVFrame input).", OFFSET(cuda),    AV_OPT_TYPE_BOOL,   {.i64=0},      0, 1,        FLAGS},
@@ -119,7 +119,7 @@ index 0a3b617d19f6a6b47fdd8acb91ab67cd3ac1cc54..9cc436553974c1391ab975ca30ca2035
      { NULL }
  };
  
-@@ -653,6 +662,35 @@ static av_cold int init(AVFilterContext *ctx)
+@@ -711,6 +720,35 @@ static av_cold int init(AVFilterContext *ctx)
  #endif
      }
  
@@ -155,7 +155,7 @@ index 0a3b617d19f6a6b47fdd8acb91ab67cd3ac1cc54..9cc436553974c1391ab975ca30ca2035
      err = parse_models(ctx);
      if (err)
          return err;
-@@ -896,6 +934,13 @@ clean_up:
+@@ -954,6 +992,13 @@ clean_up:
          s->cu_state = NULL;
      }
  #endif

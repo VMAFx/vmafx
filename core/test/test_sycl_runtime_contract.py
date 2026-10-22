@@ -202,9 +202,9 @@ class SyclRuntimeContract(unittest.TestCase):
     def test_queue_member_moved_down_is_detected(self) -> None:
         failures = _replaced(
             COMMON,
-            "    sycl::queue queue;      // primary queue (legacy, misc ops)\n",
+            "    sycl::queue queue;      // primary queue: VA import, misc ops; immediate cmdlists (ADR-3359)\n",
             "    void *first = nullptr;\n"
-            "    sycl::queue queue;      // primary queue (legacy, misc ops)\n",
+            "    sycl::queue queue;      // primary queue: VA import, misc ops; immediate cmdlists (ADR-3359)\n",
         )
         self._detected(failures, "not the first members")
 

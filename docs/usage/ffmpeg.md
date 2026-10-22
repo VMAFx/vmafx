@@ -157,6 +157,27 @@ The expected output is:
 [libvmaf @ 0x7fb5b672bc00] VMAF score: 51.017497
 ```
 
+### Score exactly N frames {#score-exactly-n-frames}
+
+To score only the first N frames, trim **both inputs** to N frames:
+
+```bash
+ffmpeg -i dis.mp4 -i ref.mp4 \
+    -lavfi "[0:v]trim=end_frame=200[d];[1:v]trim=end_frame=200[r];[d][r]libvmaf=log_fmt=json:log_path=out.json" \
+    -f null -
+```
+
+Do not cut the run with the output options `-frames:v N` or `-t`. FFmpeg
+enforces them after the filtergraph, and the filter only learns that the output
+has closed some time later. A `libvmaf` filter scores every pair it filters, so
+it can score pairs that `ffmpeg` then drops: with `-frames:v 20` the Netflix
+576x324 pair scored 21 frames in 7 of 12 runs with `libvmaf` and 4 of 12 with
+`libvmaf_sycl`, and with `-t 1` (24 frames) 25 in every run, with either filter.
+It is FFmpeg's behaviour (n9.0.2), the same for every `libvmaf*` filter in this
+series and upstream's `libvmaf`. `trim` on both inputs, or running to the end of
+the input, gives exactly N in every run. `trim` also works on QSV frames, so the
+zero-copy `libvmaf_sycl` pipeline can be trimmed the same way.
+
 See [FFmpeg's guide to libvmaf](https://ffmpeg.org/ffmpeg-filters.html#libvmaf),
 the [FFmpeg Filtering Guide](https://trac.ffmpeg.org/wiki/FilteringGuide) for
 more complex filters, and the
@@ -943,6 +964,46 @@ score always covers every decoded frame
 surfaces are imported with that input's own VA display. The two decoders may
 therefore run on two VA devices: their surfaces are no longer read through the
 other input's display, which used to give a wrong score without an error.
+
+#### How `feature=` names are resolved in `libvmaf_sycl`
+
+Every `feature=` name is looked up through `vmaf_feature_backend_twin()`, as the
+`vmaf` CLI does, so `feature=name=vif|name=cambi` runs `vif_sycl` and
+`cambi_sycl` on both input paths
+([ADR-3360](../adr/3360-sycl-filter-twin-routing.md)). The filter logs the
+choice at info level:
+
+```text
+libvmaf_sycl: feature 'psnr' -> psnr_sycl
+```
+
+A feature without a usable SYCL twin (the twin cannot honour one of its options,
+cannot run this frame size or bit depth, there is no SYCL device, or the
+extractor has no twin, for example `niqe`) behaves differently on the two input
+paths:
+
+| Input | Behaviour | Message |
+| --- | --- | --- |
+| QSV zero-copy | The filter fails to configure and `ffmpeg` exits non-zero: zero-copy frames never reach host memory, so a CPU extractor cannot run. | `libvmaf_sycl: feature 'niqe' cannot run on zero-copy input: no SYCL twin` |
+| Software (host upload) | The feature is computed on the CPU and the run continues. | `libvmaf_sycl: warning: feature 'niqe': no SYCL twin; computing it on the CPU` |
+
+The reason is one of `no SYCL twin`,
+`SYCL twin <twin> cannot honour option '<option>'`,
+`SYCL twin <twin> cannot run <w>x<h> <bpc>-bit pictures with these options`,
+`no SYCL device` or `twin lookup failed (error <n>)`.
+
+A twin that exists but needs chroma or host frames is refused at the first
+zero-copy frame under its own name, as described above. For example
+`feature=name=psnr` on QSV input logs `feature 'psnr' -> psnr_sycl`, then
+`vmaf_read_pictures_sycl: feature extractor "psnr_sycl" needs host pictures
+...` and the filter's message; `feature=name=psnr\:enable_chroma=false` runs.
+
+QSV zero-copy accepts NV12 and P010 surfaces only. Any other `sw_format` fails
+at configuration with `libvmaf_sycl: QSV zero-copy supports NV12 and P010
+surfaces only, got <format>`.
+
+The SYCL timing summary (`[vmaf-sycl] timing: ...`) is a libvmaf info message:
+it appears from `-loglevel info` up and not at `-loglevel warning` or below.
 
 ### `libvmaf_cuda`
 
