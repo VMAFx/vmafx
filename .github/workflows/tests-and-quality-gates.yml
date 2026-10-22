@@ -495,11 +495,14 @@ jobs:
         run: echo "::notice::tiny_ai not impacted (mode=$MODE reason=$REASON) — Tiny AI satisfied without running (ADR-1140)"
       - name: Install build deps
         if: steps.impact.outputs.tiny_ai == 'true'
-        # Measured max 191 s on successful runs (2026-10-22).
-        timeout-minutes: 8
+        # Measured max 191 s on fast mirrors, 11m51s on a slow one (2026-10-22);
+        # 20 min is at least 1.25x the slowest healthy run.
+        timeout-minutes: 20
         run: |
-          # A stalled mirror hung this step for 11m51s on #2217 (2026-10-22);
-          # the step limit and apt's own retries fail or recover it fast.
+          # Slow mirror downloads took up to 11m51s on healthy runs (#2217,
+          # 2026-10-22); an 8-minute limit cancelled jobs 119820120253,
+          # 119824997083, 119828883252 and 119836022519 mid-download.
+          # apt's retries and 30 s timeouts below end a real stall.
           printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' \
             | sudo tee /etc/apt/apt.conf.d/80ci-retries >/dev/null
           sudo apt-get update
@@ -932,11 +935,14 @@ jobs:
           submodules: recursive
 
       - name: Install build deps
-        # Measured max 57 s on successful runs (2026-10-22).
-        timeout-minutes: 8
+        # Measured max 57 s on fast mirrors, 11m51s on a slow one (2026-10-22);
+        # 20 min is at least 1.25x the slowest healthy run.
+        timeout-minutes: 20
         run: |
-          # A stalled mirror hung this step for 11m51s on #2217 (2026-10-22);
-          # the step limit and apt's own retries fail or recover it fast.
+          # Slow mirror downloads took up to 11m51s on healthy runs (#2217,
+          # 2026-10-22); an 8-minute limit cancelled jobs 119820120253,
+          # 119824997083, 119828883252 and 119836022519 mid-download.
+          # apt's retries and 30 s timeouts below end a real stall.
           printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' \
             | sudo tee /etc/apt/apt.conf.d/80ci-retries >/dev/null
           sudo apt-get update
