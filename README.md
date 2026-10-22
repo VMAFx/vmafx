@@ -130,7 +130,7 @@ See [GPU and SIMD backends](docs/backends/index.md) for feature coverage per
 backend and the tolerances the gate enforces.
 
 ```mermaid
-%%{init: {'theme': 'base', 'themeVariables': {'fontFamily': 'ui-sans-serif, Segoe UI, Helvetica, Arial, sans-serif', 'fontSize': '15px', 'primaryColor': '#111a35', 'primaryTextColor': '#e2e8f0', 'primaryBorderColor': '#3b82f6', 'lineColor': '#3b82f6', 'edgeLabelBackground': '#111a35', 'tertiaryColor': '#0b1020'}}}%%
+%%{init: {"theme": "base", "themeVariables": {"fontSize": "15px", "primaryColor": "#111a35", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#3b82f6", "lineColor": "#3b82f6", "edgeLabelBackground": "#111a35"}}}%%
 flowchart TD
     opts["Options<br/>--backend · --model · --feature"]:::input
     feats["Features to compute<br/>named by the model or the CLI"]:::step
