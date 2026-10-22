@@ -36,10 +36,12 @@ Exceptions — direct stream writes are correct in these cases:
 - CLI tools under `core/tools/` — stdout score / JSON output is
   contract.
 - Pull-style "print on request" SYCL APIs
-  (`vmaf_sycl_list_devices`, `vmaf_sycl_print_timing`,
-  `vmaf_sycl_profiling_print`) — stream IS function's contract;
-  routing through callback would silently drop output for callers
-  without installed callback at matching level.
+  (`vmaf_sycl_list_devices`, `vmaf_sycl_profiling_print`) — stream IS
+  function's contract; routing through callback would silently drop
+  output for callers without installed callback at matching level.
+  `vmaf_sycl_print_timing` is NOT one: every SYCL flush calls it, so its
+  summary goes through `vmaf_log(VMAF_LOG_LEVEL_INFO, ...)` and follows
+  the caller's log level (FFmpeg `-loglevel error` silences it).
 - Vendored libsvm (`core/src/svm.cpp`) and upstream-mirror feature
   extractors (`feature/vif.c`, `feature/adm.c`, etc.) — leave as-is to
   preserve upstream-sync semantics; route only if touching PR has

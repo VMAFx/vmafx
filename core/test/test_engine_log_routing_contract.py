@@ -61,7 +61,7 @@ EXCEPTIONS = {
         "RC4 WP5: vmafx_report_write() replaces it",
     ),
     "sycl/common.cpp": (
-        16,
+        15,
         "SYCL device listing and profiling print APIs and upload timing traces; no "
         "VMAFx context attaches a SYCL device before WP3",
         "RC4 WP3 SYCL lane",
