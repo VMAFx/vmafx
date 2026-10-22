@@ -22,10 +22,10 @@ filters follow the same rule (VMAFx ADR-1761).
  1 file changed, 62 insertions(+), 30 deletions(-)
 
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
-index fc4c9a4ae3c659c33c5214b0e3612560a7a4df4b..a74f4122c29dd2e761d4d1371070199d98b328ae 100644
+index 53df86320ca454d4d0d4b3c50fd184b573398827..ca69ca411510571d5d90a6dfc68e5cb9f692bd1b 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
-@@ -313,6 +313,21 @@ static int copy_picture_data(LIBVMAFContext *s, AVFrame *src, VmafPicture *dst,
+@@ -314,6 +314,21 @@ static int copy_picture_data(LIBVMAFContext *s, AVFrame *src, VmafPicture *dst,
      return 0;
  }
  
@@ -47,7 +47,7 @@ index fc4c9a4ae3c659c33c5214b0e3612560a7a4df4b..a74f4122c29dd2e761d4d1371070199d
  static int do_vmaf(FFFrameSync *fs)
  {
      AVFilterContext *ctx = fs->parent;
-@@ -326,6 +341,10 @@ static int do_vmaf(FFFrameSync *fs)
+@@ -327,6 +342,10 @@ static int do_vmaf(FFFrameSync *fs)
          return ret;
      if (ctx->is_disabled || !ref)
          return ff_filter_frame(ctx->outputs[0], dist);
@@ -58,7 +58,7 @@ index fc4c9a4ae3c659c33c5214b0e3612560a7a4df4b..a74f4122c29dd2e761d4d1371070199d
  
      if (dist->color_range != ref->color_range) {
          av_log(ctx, AV_LOG_WARNING, "distorted and reference "
-@@ -335,16 +354,15 @@ static int do_vmaf(FFFrameSync *fs)
+@@ -336,16 +355,15 @@ static int do_vmaf(FFFrameSync *fs)
      }
  
      err = copy_picture_data(s, ref, &pic_ref, s->bpc);
@@ -80,7 +80,7 @@ index fc4c9a4ae3c659c33c5214b0e3612560a7a4df4b..a74f4122c29dd2e761d4d1371070199d
      }
  
      /* Pelorus perceptual weighting (libvmaf ADR-1118): when the operator
-@@ -394,11 +412,10 @@ static int do_vmaf(FFFrameSync *fs)
+@@ -395,11 +413,10 @@ static int do_vmaf(FFFrameSync *fs)
          }
      }
  
@@ -96,7 +96,7 @@ index fc4c9a4ae3c659c33c5214b0e3612560a7a4df4b..a74f4122c29dd2e761d4d1371070199d
  
      return ff_filter_frame(ctx->outputs[0], dist);
  }
-@@ -1020,20 +1037,34 @@ static av_cold void uninit(AVFilterContext *ctx)
+@@ -1078,20 +1095,34 @@ static av_cold void uninit(AVFilterContext *ctx)
  
      if (!s->frame_cnt)
          goto clean_up;
@@ -137,7 +137,7 @@ index fc4c9a4ae3c659c33c5214b0e3612560a7a4df4b..a74f4122c29dd2e761d4d1371070199d
          }
  
          av_log(ctx, AV_LOG_INFO, "VMAF score: %f\n", vmaf_score);
-@@ -1283,26 +1314,27 @@ static int do_vmaf_cuda(FFFrameSync* fs)
+@@ -1341,26 +1372,27 @@ static int do_vmaf_cuda(FFFrameSync* fs)
          return err;
      if (ctx->is_disabled || !ref)
          return ff_filter_frame(ctx->outputs[0], dist);

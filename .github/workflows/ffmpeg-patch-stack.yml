@@ -43,6 +43,16 @@ jobs:
       - name: Enforce FFmpeg input contract
         run: make ffmpeg-input-contract
 
+      - name: Install pytest for the zero-copy comparator tests
+        run: |
+          python3 -m venv "$RUNNER_TEMP/zc-venv"
+          "$RUNNER_TEMP/zc-venv/bin/python" -m pip install --require-hashes \
+            -r requirements/locks/pytest-timeout.txt
+          echo "$RUNNER_TEMP/zc-venv/bin" >> "$GITHUB_PATH"
+
+      - name: Enforce SYCL zero-copy routing and e2e comparator contracts
+        run: make sycl-zerocopy-contract
+
       - name: Plan CI impact (ADR-1140)
         id: impact
         env:

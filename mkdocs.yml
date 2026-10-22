@@ -462,6 +462,7 @@ nav:
       - Engineering principles: principles.md
       - Build flags: development/build-flags.md
       - Container base images: development/base-images.md
+      - SYCL zero-copy testing: development/sycl-zerocopy-testing.md
       - Preflight (local CI gate): development/preflight.md
       - Default model: development/default-model.md
       - Release: development/release.md
