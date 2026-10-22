@@ -44,71 +44,18 @@ out=""
 fps="24"
 pixfmt="yuv420p"
 
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --ref)
-      ref="$2"
-      shift 2
-      ;;
-    --dis)
-      dis="$2"
-      shift 2
-      ;;
-    --width)
-      width="$2"
-      shift 2
-      ;;
-    --height)
-      height="$2"
-      shift 2
-      ;;
-    --out)
-      out="$2"
-      shift 2
-      ;;
-    --fps)
-      fps="$2"
-      shift 2
-      ;;
-    --pixfmt)
-      pixfmt="$2"
-      shift 2
-      ;;
-    -h | --help)
-      usage
-      exit 0
-      ;;
-    *)
-      echo "unknown arg: $1" >&2
-      usage
-      exit 2
-      ;;
-  esac
-done
+# shellcheck source=tools/external-bench/lib/common.sh
+# shellcheck disable=SC1091
+. "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
 
-for v in ref dis width height out; do
-  if [[ -z "${!v}" ]]; then
-    echo "missing required --$v" >&2
-    usage
-    exit 2
-  fi
-done
+parse_wrapper_args 0 "$@"
+validate_required_args ref dis width height out
 
-bin="${EXTERNAL_BENCH_X264_PVMAF:-}"
-if [[ -z "$bin" ]]; then
-  cat >&2 <<'EOF'
-EXTERNAL_BENCH_X264_PVMAF is not set.
-
-This wrapper does not vendor x264-pVMAF (GPL-2.0). Install it
+require_external_binary EXTERNAL_BENCH_X264_PVMAF \
+  "This wrapper does not vendor x264-pVMAF (GPL-2.0). Install it
 yourself and point the env var at the binary; see the comment block
-at the top of this file.
-EOF
-  exit 3
-fi
-if [[ ! -x "$bin" ]]; then
-  echo "EXTERNAL_BENCH_X264_PVMAF=$bin is not executable" >&2
-  exit 3
-fi
+at the top of this file."
+bin="$EXTERNAL_BENCH_X264_PVMAF"
 
 # The harness's compare.py overrides this whole script with a stubbed
 # subprocess in unit tests, so the exact CLI shape below only has to
@@ -131,34 +78,4 @@ trap 'rm -f "$tmp_out"' EXIT
   --fps "$fps" \
   --json "$tmp_out"
 
-# Normalise to the harness schema. We delegate to a small Python
-# helper because shell JSON munging is brittle and the schema lives
-# alongside compare.py.
-python3 - "$tmp_out" "$out" "x264-pvmaf" <<'PY'
-import json, sys, pathlib
-src = pathlib.Path(sys.argv[1])
-dst = pathlib.Path(sys.argv[2])
-competitor = sys.argv[3]
-
-raw = json.loads(src.read_text()) if src.stat().st_size else {}
-frames_in = raw.get("frames", [])
-frames = []
-for i, f in enumerate(frames_in):
-    frames.append({
-        "frame_idx": int(f.get("frame", f.get("idx", i))),
-        "predicted_vmaf_or_mos": float(f.get("predicted_vmaf",
-                                              f.get("vmaf", 0.0))),
-        "runtime_ms": float(f.get("runtime_ms", 0.0)),
-    })
-summary = {
-    "competitor": competitor,
-    "plcc": float(raw.get("plcc", 0.0)),
-    "srocc": float(raw.get("srocc", 0.0)),
-    "rmse": float(raw.get("rmse", 0.0)),
-    "runtime_total_ms": float(raw.get("runtime_total_ms",
-                                      sum(f["runtime_ms"] for f in frames))),
-    "params": int(raw.get("params", 0)),
-    "gflops": float(raw.get("gflops", 0.0)),
-}
-dst.write_text(json.dumps({"frames": frames, "summary": summary}, indent=2))
-PY
+normalise_output "$tmp_out" "$out" "x264-pvmaf" "vmaf"
