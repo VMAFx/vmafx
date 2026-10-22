@@ -10,7 +10,8 @@ test keeps them removed. The same holds for the eight further stubs that had
 no implementation behind them (a LOSO evaluator, a benchmark, corpus
 converters, trainers). The two placeholder-model generators
 (``gen_dists_sq_placeholder_onnx.py``, ``gen_mobilesal_placeholder_onnx.py``)
-are implemented and must rebuild the committed ONNX files byte for byte.
+are implemented and must rebuild the committed ONNX files byte for byte,
+and they exist once: the older copies under ``scripts/`` are removed.
 """
 
 from __future__ import annotations
@@ -62,6 +63,13 @@ def test_scripts_directory_is_populated() -> None:
 
 def test_removed_stubs_stay_removed() -> None:
     assert [n for n in REMOVED if (SCRIPTS / n).exists()] == []
+
+
+def test_placeholder_generators_have_one_copy() -> None:
+    """The generators live in ``ai/scripts/`` only; a second copy under
+    ``scripts/`` rewrote ``model/tiny/registry.json`` with fields dropped."""
+    top = REPO_ROOT / "scripts"
+    assert [n for n in GENERATORS if (top / n).exists()] == []
 
 
 def test_quantize_entry_point_is_the_cli_command() -> None:
