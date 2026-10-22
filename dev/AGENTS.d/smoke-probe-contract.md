@@ -2,7 +2,9 @@
 paths:
   - dev/scripts/smoke-probe-loop.sh
   - dev/scripts/test-smoke-probe-loop.sh
-invariant: Exclusive backend selector and backend_used check; Go vmafx-mcp over stdio; stable JSON keys; paired tests.
+  - dev/scripts/dev-mcp-probe.sh
+  - dev/docker-compose.yml
+invariant: Exclusive backend selector, backend_used check; Go vmafx-mcp stdio; stable keys; failed sub-check exits 1; paired tests.
 ---
 <!-- markdownlint-disable MD013 -->
 # Smoke-probe contract (Research-2083)
@@ -32,3 +34,16 @@ schema is rebased:
    close-before-response race. It covers healthy path, error strings
    containing JSON metacharacters/control bytes, and backend receipt
    mismatch.
+5. Failed sub-check fails probe: `run_probe` returns 1, `--once` exits 1,
+   `FAILED sub-checks:` names each one; record written either way. Never
+   restore `exit 0` after `run_probe`. `PROBE_BACKENDS` (default
+   `cpu cuda sycl hip`) = declared host backends; left-out backend not run,
+   entry `"probed": false`, no error. Unknown name exits 2.
+6. `--healthy` = compose healthcheck of `smoke-probe-cron`: newest record
+   younger than 2 intervals + 300 s, no error. No record = unhealthy.
+7. `_mcp_call` sets `VMAF_MCP_ALLOW` to `${TESTDATA}` plus caller's value
+   for probe's own `vmafx-mcp` process only: server in container starts in
+   `/build/vmaf`, no repository root, golden pair otherwise refused. Never
+   widen `pkg/libvmaf/paths.go` roots or image/compose `VMAF_MCP_ALLOW` for
+   probe. MCP `isError` text lands in record after
+   `invalid vmaf_score response:`.

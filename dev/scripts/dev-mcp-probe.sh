@@ -35,9 +35,12 @@ mkdir -p "${OUTPUT_DIR}"
 
 echo "[dev-mcp-probe] Running smoke probe at ${TS}…"
 
+# The probe exits 1 when a sub-check failed; the record is written either way,
+# so show it before passing the status on.
+status=0
 docker exec "${CONTAINER}" /workspace/dev/scripts/smoke-probe-loop.sh \
   --once \
-  --output "/probes/probe-${TS}.json"
+  --output "/probes/probe-${TS}.json" || status=$?
 
 echo "[dev-mcp-probe] Probe written to ${OUTPUT_FILE}"
 if command -v jq &>/dev/null; then
@@ -45,3 +48,7 @@ if command -v jq &>/dev/null; then
 else
   cat "${OUTPUT_FILE}"
 fi
+if [[ "${status}" -ne 0 ]]; then
+  echo "[dev-mcp-probe] FAILED: the probe exited ${status}; see the errors in the record above" >&2
+fi
+exit "${status}"
