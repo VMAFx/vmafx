@@ -471,7 +471,9 @@ jobs:
     # required-aggregator
     name: Tiny AI
     runs-on: ubuntu-26.04
-    timeout-minutes: 35
+    # Measured max 31 min on successful runs (2026-10-22); the limit keeps
+    # at least 1.25 times that.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -493,7 +495,13 @@ jobs:
         run: echo "::notice::tiny_ai not impacted (mode=$MODE reason=$REASON) — Tiny AI satisfied without running (ADR-1140)"
       - name: Install build deps
         if: steps.impact.outputs.tiny_ai == 'true'
+        # Measured max 191 s on successful runs (2026-10-22).
+        timeout-minutes: 8
         run: |
+          # A stalled mirror hung this step for 11m51s on #2217 (2026-10-22);
+          # the step limit and apt's own retries fail or recover it fast.
+          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' \
+            | sudo tee /etc/apt/apt.conf.d/80ci-retries >/dev/null
           sudo apt-get update
           # ffmpeg: test_chug_extract_features_smoke.py encodes its clips with
           # it (ADR-1528: it skipped in CI on every run without it).
@@ -914,17 +922,23 @@ jobs:
     # required-aggregator
     name: MCP Smoke
     runs-on: ubuntu-26.04
-    # Most runs take 11 minutes, almost all of it the libvmaf build, so a
-    # 12-minute limit cancelled a green run on master (6fd838262). Keep about
-    # twice the observed maximum.
-    timeout-minutes: 25
+    # A 12-minute limit cancelled a green run on master (6fd838262). Measured
+    # max 24 min on successful runs (2026-10-22), most of it the libvmaf
+    # build; the limit keeps at least 1.25 times that.
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           submodules: recursive
 
       - name: Install build deps
+        # Measured max 57 s on successful runs (2026-10-22).
+        timeout-minutes: 8
         run: |
+          # A stalled mirror hung this step for 11m51s on #2217 (2026-10-22);
+          # the step limit and apt's own retries fail or recover it fast.
+          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' \
+            | sudo tee /etc/apt/apt.conf.d/80ci-retries >/dev/null
           sudo apt-get update
           # libav*-dev pulled in for parity with the netflix-golden /
           # vulkan-vif-cross-backend lanes — keeps the libvmaf build
