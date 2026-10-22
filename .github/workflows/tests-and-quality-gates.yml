@@ -510,6 +510,7 @@ jobs:
           key: apt-${{ runner.os }}-${{ runner.arch }}-tiny-ai-${{ hashFiles('.github/apt/tiny-ai.txt') }}
 
       - name: Install build deps
+        id: apt-install
         if: steps.impact.outputs.tiny_ai == 'true'
         # Measured max 191 s on fast mirrors, 11m51s on a slow one (2026-10-22);
         # 20 min is at least 1.25x the slowest healthy run.
@@ -537,10 +538,12 @@ jobs:
             -r requirements/locks/build.txt
 
       - name: Save apt archives
-        # always() and cache-hit != 'true': saves downloaded .deb packages even
-        # if a later step fails, so subsequent runs on the branch or PR benefit
-        # from the cached archives without re-downloading.
-        if: ${{ always() && steps.impact.outputs.tiny_ai == 'true' && steps.apt-cache.outputs.cache-hit != 'true' }}
+        # Saves only after the install step succeeded: an install cut off by its
+        # timeout leaves the archive directory empty, and an empty entry under
+        # this immutable key would be restored as a hit on every later run
+        # (an empty 200-byte entry was saved this way on 2026-10-22). Runs even
+        # when a later step fails, so the next run skips the download.
+        if: ${{ !cancelled() && steps.apt-install.outcome == 'success' && steps.apt-cache.outputs.cache-hit != 'true' }}
         timeout-minutes: 5
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
@@ -982,6 +985,7 @@ jobs:
           key: apt-${{ runner.os }}-${{ runner.arch }}-mcp-smoke-${{ hashFiles('.github/apt/mcp-smoke.txt') }}
 
       - name: Install build deps
+        id: apt-install
         # Measured max 57 s on fast mirrors, 11m51s on a slow one (2026-10-22);
         # 20 min is at least 1.25x the slowest healthy run.
         timeout-minutes: 20
@@ -1008,10 +1012,12 @@ jobs:
             -r requirements/locks/build.txt
 
       - name: Save apt archives
-        # always() and cache-hit != 'true': saves downloaded .deb packages even
-        # if a later step fails, so subsequent runs on the branch or PR benefit
-        # from the cached archives without re-downloading.
-        if: ${{ always() && steps.apt-cache.outputs.cache-hit != 'true' }}
+        # Saves only after the install step succeeded: an install cut off by its
+        # timeout leaves the archive directory empty, and an empty entry under
+        # this immutable key would be restored as a hit on every later run
+        # (an empty 200-byte entry was saved this way on 2026-10-22). Runs even
+        # when a later step fails, so the next run skips the download.
+        if: ${{ !cancelled() && steps.apt-install.outcome == 'success' && steps.apt-cache.outputs.cache-hit != 'true' }}
         timeout-minutes: 5
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:

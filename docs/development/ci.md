@@ -1081,7 +1081,10 @@ The `MCP Smoke` and `Tiny AI` jobs in `tests-and-quality-gates.yml` cache downlo
 do not eat into the 20-minute apt step cap.
 
 The cache uses `actions/cache/restore` before the install step and
-`actions/cache/save` after the install step:
+`actions/cache/save` after the install step. The save runs only when the install
+step succeeded: an install cut off by its timeout leaves the archive directory
+empty, and an empty entry under the immutable key would be restored as a hit on
+every later run:
 
 - **Cache path**: `${{ runner.temp }}/apt-archives`
 - **Cache key**: `apt-<os>-<arch>-<job>-<hash of the package list>`, from
