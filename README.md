@@ -5,21 +5,45 @@
      wraps at 80. -->
 <div align="center">
 
-  <img src="docs/assets/vmafx-readme-banner.svg" alt="VMAFx — perceptual video quality assessment, GPU-accelerated and SIMD-tuned" width="100%" />
+  <img src="docs/assets/vmafx-readme-banner.svg" alt="VMAFx — perceptual video quality assessment, GPU-accelerated and SIMD-tuned" height="120" />
+
+  <!-- README-STANDARD badge block: one group, fixed order (docs/README-STANDARD.md) -->
+  <!-- 1 release/version -->
+  [![Release](https://img.shields.io/github/v/release/VMAFx/vmafx?sort=semver&style=for-the-badge&label=release&color=3b82f6&labelColor=111a35)](https://github.com/VMAFx/vmafx/releases)
+  <!-- 2 CI/build -->
+  [![Tests](https://img.shields.io/github/actions/workflow/status/VMAFx/vmafx/tests-and-quality-gates.yml?branch=master&event=push&style=for-the-badge&label=Tests&logo=githubactions&logoColor=white&labelColor=111a35)](https://github.com/VMAFx/vmafx/actions/workflows/tests-and-quality-gates.yml)
+  [![Builds](https://img.shields.io/github/actions/workflow/status/VMAFx/vmafx/libvmaf-build-matrix.yml?branch=master&event=push&style=for-the-badge&label=Builds&logo=githubactions&logoColor=white&labelColor=111a35)](https://github.com/VMAFx/vmafx/actions/workflows/libvmaf-build-matrix.yml)
+  [![Lint](https://img.shields.io/github/actions/workflow/status/VMAFx/vmafx/lint-and-format.yml?branch=master&event=push&style=for-the-badge&label=Lint&logo=githubactions&logoColor=white&labelColor=111a35)](https://github.com/VMAFx/vmafx/actions/workflows/lint-and-format.yml)
+  [![FFmpeg](https://img.shields.io/github/actions/workflow/status/VMAFx/vmafx/ffmpeg-integration.yml?branch=master&event=push&style=for-the-badge&label=FFmpeg&logo=githubactions&logoColor=white&labelColor=111a35)](https://github.com/VMAFx/vmafx/actions/workflows/ffmpeg-integration.yml)
+  [![Go](https://img.shields.io/github/actions/workflow/status/VMAFx/vmafx/go-ci.yml?branch=master&event=push&style=for-the-badge&label=Go&logo=githubactions&logoColor=white&labelColor=111a35)](https://github.com/VMAFx/vmafx/actions/workflows/go-ci.yml)
+  [![Rust](https://img.shields.io/github/actions/workflow/status/VMAFx/vmafx/rust-ci.yml?branch=master&event=push&style=for-the-badge&label=Rust&logo=githubactions&logoColor=white&labelColor=111a35)](https://github.com/VMAFx/vmafx/actions/workflows/rust-ci.yml)
+  <!-- 3 security/scorecard -->
+  [![Security](https://img.shields.io/github/actions/workflow/status/VMAFx/vmafx/security-scans.yml?branch=master&event=push&style=for-the-badge&label=Security&logo=githubactions&logoColor=white&labelColor=111a35)](https://github.com/VMAFx/vmafx/actions/workflows/security-scans.yml)
+  [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/VMAFx/vmafx/badge?style=for-the-badge)](https://scorecard.dev/viewer/?uri=github.com/VMAFx/vmafx)
+  [![OpenSSF Best Practices](https://img.shields.io/cii/level/14549?style=for-the-badge&label=OpenSSF%20Best%20Practices&labelColor=111a35)](https://www.bestpractices.dev/projects/14549)
+  <!-- 4 standards -->
+  [![HISS-21](https://img.shields.io/badge/Standards-HISS--21-06b6d4?style=for-the-badge&logo=nasa&labelColor=111a35)](AGENTS.md)
+  [![Power of 10](https://img.shields.io/badge/NASA_JPL-Power_of_10-3b82f6?style=for-the-badge&logo=nasa&labelColor=111a35)](docs/principles.md)
+  [![Conventional Commits](https://img.shields.io/badge/Commits-Conventional-8b5cf6?style=for-the-badge&logo=conventionalcommits&logoColor=white&labelColor=111a35)](CONTRIBUTING.md)
+  <!-- 5 licence -->
+  [![License](https://img.shields.io/badge/License-EUPL--1.2_·_BSD--2--Clause--Patent-3b82f6?style=for-the-badge&labelColor=111a35)](docs/adr/1250-eupl-fork-relicense.md)
+  <!-- 6 support -->
+  [![GitHub Sponsors](https://img.shields.io/badge/Sponsor-GitHub-8b5cf6?style=for-the-badge&logo=githubsponsors&logoColor=white&labelColor=111a35)](https://github.com/sponsors/lusoris)
+  [![Ko-fi](https://img.shields.io/badge/Support-Ko--fi-8b5cf6?style=for-the-badge&logo=kofi&logoColor=white&labelColor=111a35)](https://ko-fi.com/lusoris)
 
   **Perceptual video quality assessment — GPU-accelerated, SIMD-tuned, numerically exact**
 
   *A fork of [Netflix/vmaf](https://github.com/Netflix/vmaf) that keeps the reference scores byte-for-byte*
 
-  VMAFx is a perceptual video quality assessment (VMAF) library and `vmaf`
-  command-line tool. It adds CUDA, SYCL, HIP and Metal backends and AVX2,
-  AVX-512, NEON and SVE2 SIMD paths, each checked against the CPU scores, and
-  keeps Netflix's reference scores as a required CI gate. It also ships ONNX
-  tiny models, an MCP server and FFmpeg filters.
-
-  **[📖 Full documentation](https://vmafx.dev/)** · [Documentation source](docs/index.md)
-
 </div>
+
+VMAFx is a perceptual video quality assessment (VMAF) library and `vmaf`
+command-line tool. It adds CUDA, SYCL, HIP and Metal backends and AVX2,
+AVX-512, NEON and SVE2 SIMD paths, each checked against the CPU scores, and
+keeps Netflix's reference scores as a required CI gate. It also ships ONNX
+tiny models, an MCP server and FFmpeg filters.
+
+**[📖 Full documentation](https://vmafx.dev/)** · [Documentation source](docs/index.md)
 
 ---
 
@@ -37,43 +61,6 @@ measured against scores that never move.
 | **Model surface** | `.json` / `.pkl` | plus ONNX tiny models with a signed registry |
 | **Integrations** | FFmpeg filter | FFmpeg, an MCP server, a Kubernetes operator, Go and Rust bindings |
 | **Numerical contract** | — | cross-backend parity is a gate, not a promise |
-
-## 📊 Project status
-
-<div align="center">
-
-  [![Tests](https://img.shields.io/github/actions/workflow/status/VMAFx/vmafx/tests-and-quality-gates.yml?branch=master&event=push&style=for-the-badge&label=Tests&logo=githubactions&logoColor=white)](https://github.com/VMAFx/vmafx/actions/workflows/tests-and-quality-gates.yml)
-  [![Builds](https://img.shields.io/github/actions/workflow/status/VMAFx/vmafx/libvmaf-build-matrix.yml?branch=master&event=push&style=for-the-badge&label=Builds&logo=githubactions&logoColor=white)](https://github.com/VMAFx/vmafx/actions/workflows/libvmaf-build-matrix.yml)
-  [![Lint](https://img.shields.io/github/actions/workflow/status/VMAFx/vmafx/lint-and-format.yml?branch=master&event=push&style=for-the-badge&label=Lint&logo=githubactions&logoColor=white)](https://github.com/VMAFx/vmafx/actions/workflows/lint-and-format.yml)
-  [![Security](https://img.shields.io/github/actions/workflow/status/VMAFx/vmafx/security-scans.yml?branch=master&event=push&style=for-the-badge&label=Security&logo=githubactions&logoColor=white)](https://github.com/VMAFx/vmafx/actions/workflows/security-scans.yml)
-  [![FFmpeg](https://img.shields.io/github/actions/workflow/status/VMAFx/vmafx/ffmpeg-integration.yml?branch=master&event=push&style=for-the-badge&label=FFmpeg&logo=githubactions&logoColor=white)](https://github.com/VMAFx/vmafx/actions/workflows/ffmpeg-integration.yml)
-  [![Go](https://img.shields.io/github/actions/workflow/status/VMAFx/vmafx/go-ci.yml?branch=master&event=push&style=for-the-badge&label=Go&logo=githubactions&logoColor=white)](https://github.com/VMAFx/vmafx/actions/workflows/go-ci.yml)
-  [![Rust](https://img.shields.io/github/actions/workflow/status/VMAFx/vmafx/rust-ci.yml?branch=master&event=push&style=for-the-badge&label=Rust&logo=githubactions&logoColor=white)](https://github.com/VMAFx/vmafx/actions/workflows/rust-ci.yml)
-
-  [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/VMAFx/vmafx/badge?style=for-the-badge)](https://scorecard.dev/viewer/?uri=github.com/VMAFx/vmafx)
-  [![OpenSSF Best Practices](https://img.shields.io/cii/level/14549?style=for-the-badge&label=OpenSSF%20Best%20Practices)](https://www.bestpractices.dev/projects/14549)
-  [![HISS-21](https://img.shields.io/badge/Standards-HISS--21-06B6D4?style=for-the-badge&logo=nasa)](AGENTS.md)
-  [![Power of 10](https://img.shields.io/badge/NASA_JPL-Power_of_10-0B3D91?style=for-the-badge&logo=nasa)](docs/principles.md)
-  [![Conventional Commits](https://img.shields.io/badge/Commits-Conventional-FE5196?style=for-the-badge&logo=conventionalcommits&logoColor=white)](CONTRIBUTING.md)
-
-  [![C23](https://img.shields.io/badge/C-23-00599C?style=for-the-badge&logo=c&logoColor=white)](docs/principles.md)
-  [![C++23](https://img.shields.io/badge/C%2B%2B-23-00599C?style=for-the-badge&logo=cplusplus&logoColor=white)](docs/principles.md)
-  [![Go](https://img.shields.io/badge/Go-1.27-00ADD8?style=for-the-badge&logo=go&logoColor=white)](go.mod)
-  [![Rust](https://img.shields.io/badge/Rust-2024-000000?style=for-the-badge&logo=rust&logoColor=white)](bindings/rust/vmafx-sys/Cargo.toml)
-  [![Python](https://img.shields.io/badge/Python-3.14%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](pyproject.toml)
-
-  [![CUDA](https://img.shields.io/badge/CUDA-13.4-76B900?style=for-the-badge&logo=nvidia&logoColor=white)](docs/backends/cuda/overview.md)
-  [![ROCm](https://img.shields.io/badge/ROCm-10.0-ED1C24?style=for-the-badge&logo=amd&logoColor=white)](docs/backends/hip/overview.md)
-  [![oneAPI](https://img.shields.io/badge/SYCL-oneAPI-0071C5?style=for-the-badge&logo=intel&logoColor=white)](docs/backends/sycl/overview.md)
-  [![Metal](https://img.shields.io/badge/Metal-Apple_Silicon-000000?style=for-the-badge&logo=apple&logoColor=white)](docs/backends/metal/index.md)
-  [![SIMD](https://img.shields.io/badge/SIMD-AVX2_·_AVX--512_·_NEON_·_SVE2-8B5CF6?style=for-the-badge)](docs/backends/index.md)
-
-  [![Release](https://img.shields.io/github/v/release/VMAFx/vmafx?sort=semver&style=for-the-badge&label=release&color=3b82f6)](https://github.com/VMAFx/vmafx/releases)
-  [![FFmpeg](https://img.shields.io/badge/FFmpeg-n9.0.2-007808?style=for-the-badge&logo=ffmpeg&logoColor=white)](docs/usage/ffmpeg.md)
-  [![License](https://img.shields.io/badge/License-EUPL--1.2_·_BSD--2--Clause--Patent-blue.svg?style=for-the-badge)](docs/adr/1250-eupl-fork-relicense.md)
-  [![Ko-fi](https://img.shields.io/badge/Support-Ko--fi-FF5E5B?style=for-the-badge&logo=kofi&logoColor=white)](https://ko-fi.com/lusoris)
-
-</div>
 
 ## 🚀 Get started
 
@@ -116,6 +103,17 @@ and output options. For compressed inputs such as MP4, use
 
 ## 🧩 Backends at a glance
 
+[![C23](https://img.shields.io/badge/C-23-3b82f6?style=flat-square&labelColor=111a35)](docs/principles.md)
+[![C++23](https://img.shields.io/badge/C%2B%2B-23-3b82f6?style=flat-square&labelColor=111a35)](docs/principles.md)
+[![Go](https://img.shields.io/badge/Go-1.27-06b6d4?style=flat-square&labelColor=111a35)](go.mod)
+[![Rust](https://img.shields.io/badge/Rust-2024-8b5cf6?style=flat-square&labelColor=111a35)](bindings/rust/vmafx-sys/Cargo.toml)
+[![Python](https://img.shields.io/badge/Python-3.14%2B-3b82f6?style=flat-square&labelColor=111a35)](pyproject.toml)
+[![CUDA](https://img.shields.io/badge/CUDA-13.4-06b6d4?style=flat-square&labelColor=111a35)](docs/backends/cuda/overview.md)
+[![ROCm](https://img.shields.io/badge/ROCm-10.1-06b6d4?style=flat-square&labelColor=111a35)](docs/backends/hip/overview.md)
+[![SYCL](https://img.shields.io/badge/SYCL-oneAPI-06b6d4?style=flat-square&labelColor=111a35)](docs/backends/sycl/overview.md)
+[![Metal](https://img.shields.io/badge/Metal-Apple_Silicon-06b6d4?style=flat-square&labelColor=111a35)](docs/backends/metal/index.md)
+[![FFmpeg](https://img.shields.io/badge/FFmpeg-n9.0.2-8b5cf6?style=flat-square&labelColor=111a35)](docs/usage/ffmpeg.md)
+
 Every GPU-backed feature extractor has at least one device twin, and each twin
 is held to the CPU reference by the cross-backend parity gate. The coverage
 matrix below distinguishes those extractors from CPU-only metrics.
@@ -131,7 +129,28 @@ matrix below distinguishes those extractors from CPU-only metrics.
 See [GPU and SIMD backends](docs/backends/index.md) for feature coverage per
 backend and the tolerances the gate enforces.
 
-![Backend dispatch: a requested feature runs on the device twin of the chosen backend when one fits, else on the CPU with its best SIMD path](docs/assets/figures/backend-dispatch.static.svg)
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': {'fontFamily': 'ui-sans-serif, Segoe UI, Helvetica, Arial, sans-serif', 'fontSize': '15px', 'primaryColor': '#111a35', 'primaryTextColor': '#e2e8f0', 'primaryBorderColor': '#3b82f6', 'lineColor': '#3b82f6', 'edgeLabelBackground': '#111a35', 'tertiaryColor': '#0b1020'}}}%%
+flowchart TD
+    opts["Options<br/>--backend · --model · --feature"]:::input
+    feats["Features to compute<br/>named by the model or the CLI"]:::step
+    reg["Extractor registry<br/>feature name + backend flag"]:::step
+    twin{"Device twin for this<br/>feature and frame size?"}:::decide
+    gpu["GPU twin<br/>CUDA · SYCL · HIP · Metal"]:::gpu
+    cpu["CPU extractor<br/>AVX-512 · AVX2 · NEON · SVE2 · C"]:::cpu
+    opts --> feats --> reg --> twin
+    twin -- yes --> gpu
+    twin -- no --> cpu
+    classDef input fill:#0b1020,stroke:#06b6d4,stroke-width:2px,color:#e2e8f0
+    classDef step fill:#111a35,stroke:#3b82f6,stroke-width:2px,color:#e2e8f0
+    classDef decide fill:#111a35,stroke:#8b5cf6,stroke-width:2px,color:#e2e8f0
+    classDef gpu fill:#06b6d4,stroke:#0b1020,stroke-width:2px,color:#0b1020
+    classDef cpu fill:#8b5cf6,stroke:#0b1020,stroke-width:2px,color:#f8fafc
+```
+
+Backends you disable (`--no_cuda` and the like) leave the candidate list first.
+With `--backend NAME`, a missing or failing backend is an error, never a silent
+fallback to the CPU.
 
 ## 📚 Guides and reference
 
@@ -178,7 +197,7 @@ test time. Sponsors are thanked by tier in
 [SPONSORS.md](SPONSORS.md); [Support VMAFx](docs/support-vmafx.md) explains
 what it pays for.
 
-## 📈 Project status
+## 📈 Roadmap and releases
 
 - [Roadmap and release goals](docs/roadmap.md)
 - [Releases and downloads](https://github.com/VMAFx/vmafx/releases)
