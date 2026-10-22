@@ -18,7 +18,7 @@ dependencies = []
 # tests/ with no failure and no skip for a missing package.
 dev = [
   "pytest>=9.1.1",
-  "ruff>=0.17.0",
+  "ruff>=0.17.1",
   "optuna>=5.0.0",
   "matplotlib>=3.10.9",
   "onnxruntime>=1.23",

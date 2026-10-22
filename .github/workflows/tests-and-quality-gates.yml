@@ -471,9 +471,12 @@ jobs:
     # required-aggregator
     name: Tiny AI
     runs-on: ubuntu-26.04
-    # Measured max 31 min on successful runs (2026-10-22); the limit keeps
-    # at least 1.25 times that.
-    timeout-minutes: 45
+    # The limit is the apt step's 20-minute cap plus 1.25 times the longest
+    # healthy run of the other steps: 27.4 min over 38 successful jobs
+    # (2026-10-22), 20 + 34.3 = 54.3. A 45-minute limit left the build too
+    # little after a slow mirror. scripts/ci/check_job_timeout_budget.py holds
+    # every job limit at or above its step caps' sum (ADR-3367).
+    timeout-minutes: 55
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -493,7 +496,21 @@ jobs:
           MODE: ${{ steps.impact.outputs.mode }}
           REASON: ${{ steps.impact.outputs.reason }}
         run: echo "::notice::tiny_ai not impacted (mode=$MODE reason=$REASON) — Tiny AI satisfied without running (ADR-1140)"
+      - name: Restore apt archives
+        id: apt-cache
+        # Restore-only; the save is split out below and gated on always().
+        # Caches downloaded .deb archives so a slow package mirror does not eat
+        # into the apt step's timeout. Keyed on runner OS, arch, job, and the
+        # hash of the job's apt package list under .github/apt/tiny-ai.txt.
+        if: steps.impact.outputs.tiny_ai == 'true'
+        timeout-minutes: 5
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ${{ runner.temp }}/apt-archives
+          key: apt-${{ runner.os }}-${{ runner.arch }}-tiny-ai-${{ hashFiles('.github/apt/tiny-ai.txt') }}
+
       - name: Install build deps
+        id: apt-install
         if: steps.impact.outputs.tiny_ai == 'true'
         # Measured max 191 s on fast mirrors, 11m51s on a slow one (2026-10-22);
         # 20 min is at least 1.25x the slowest healthy run.
@@ -503,17 +520,35 @@ jobs:
           # 2026-10-22); an 8-minute limit cancelled jobs 119820120253,
           # 119824997083, 119828883252 and 119836022519 mid-download.
           # apt's retries and 30 s timeouts below end a real stall.
-          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' \
+          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nAPT::Keep-Downloaded-Packages "true";\n' \
             | sudo tee /etc/apt/apt.conf.d/80ci-retries >/dev/null
           sudo apt-get update
-          # ffmpeg: test_chug_extract_features_smoke.py encodes its clips with
-          # it (ADR-1528: it skipped in CI on every run without it).
-          sudo apt-get install -y ninja-build nasm pkg-config \
-            python3-pip python3-venv ffmpeg
+          mkdir -p "${RUNNER_TEMP}/apt-archives"
+          if compgen -G "${RUNNER_TEMP}/apt-archives/*.deb" >/dev/null; then
+            sudo cp -f "${RUNNER_TEMP}/apt-archives"/*.deb /var/cache/apt/archives/
+          fi
+          grep -v '^#' .github/apt/tiny-ai.txt | xargs sudo apt-get install -y
+          if compgen -G "/var/cache/apt/archives/*.deb" >/dev/null; then
+            sudo cp -f /var/cache/apt/archives/*.deb "${RUNNER_TEMP}/apt-archives/"
+            sudo chown -R "$(id -u):$(id -g)" "${RUNNER_TEMP}/apt-archives"
+          fi
           # meson from PyPI: Ubuntu 24.04 ships meson 1.3.2, which predates `c23`
           # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
           sudo pip3 install --break-system-packages --ignore-installed --quiet --require-hashes \
             -r requirements/locks/build.txt
+
+      - name: Save apt archives
+        # Saves only after the install step succeeded: an install cut off by its
+        # timeout leaves the archive directory empty, and an empty entry under
+        # this immutable key would be restored as a hit on every later run
+        # (an empty 200-byte entry was saved this way on 2026-10-22). Runs even
+        # when a later step fails, so the next run skips the download.
+        if: ${{ !cancelled() && steps.apt-install.outcome == 'success' && steps.apt-cache.outputs.cache-hit != 'true' }}
+        timeout-minutes: 5
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ${{ runner.temp }}/apt-archives
+          key: apt-${{ runner.os }}-${{ runner.arch }}-tiny-ai-${{ hashFiles('.github/apt/tiny-ai.txt') }}
       - name: Install ONNX Runtime (CPU)
         if: steps.impact.outputs.tiny_ai == 'true'
         env:
@@ -925,16 +960,32 @@ jobs:
     # required-aggregator
     name: MCP Smoke
     runs-on: ubuntu-26.04
-    # A 12-minute limit cancelled a green run on master (6fd838262). Measured
-    # max 24 min on successful runs (2026-10-22), most of it the libvmaf
-    # build; the limit keeps at least 1.25 times that.
-    timeout-minutes: 35
+    # The limit is the apt step's 20-minute cap plus 1.25 times the longest
+    # healthy run of the other steps, most of it the libvmaf build: 22.1 min
+    # over 44 successful jobs (2026-10-22), 20 + 27.6 = 47.6, rounded up to
+    # Tiny AI's 55. A 35-minute limit cancelled job 119986586497 in the build
+    # after a 19m59s apt step. scripts/ci/check_job_timeout_budget.py holds
+    # every job limit at or above its step caps' sum (ADR-3367).
+    timeout-minutes: 55
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           submodules: recursive
 
+      - name: Restore apt archives
+        id: apt-cache
+        # Restore-only; the save is split out below and gated on always().
+        # Caches downloaded .deb archives so a slow package mirror does not eat
+        # into the apt step's timeout. Keyed on runner OS, arch, job, and the
+        # hash of the job's apt package list under .github/apt/mcp-smoke.txt.
+        timeout-minutes: 5
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ${{ runner.temp }}/apt-archives
+          key: apt-${{ runner.os }}-${{ runner.arch }}-mcp-smoke-${{ hashFiles('.github/apt/mcp-smoke.txt') }}
+
       - name: Install build deps
+        id: apt-install
         # Measured max 57 s on fast mirrors, 11m51s on a slow one (2026-10-22);
         # 20 min is at least 1.25x the slowest healthy run.
         timeout-minutes: 20
@@ -943,20 +994,35 @@ jobs:
           # 2026-10-22); an 8-minute limit cancelled jobs 119820120253,
           # 119824997083, 119828883252 and 119836022519 mid-download.
           # apt's retries and 30 s timeouts below end a real stall.
-          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' \
+          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nAPT::Keep-Downloaded-Packages "true";\n' \
             | sudo tee /etc/apt/apt.conf.d/80ci-retries >/dev/null
           sudo apt-get update
-          # libav*-dev pulled in for parity with the netflix-golden /
-          # vulkan-vif-cross-backend lanes — keeps the libvmaf build
-          # graph identical so the MCP smoke exercises the same
-          # configuration the rest of the matrix sees.
-          sudo apt-get install -y ninja-build nasm pkg-config \
-            python3-pip python3-venv \
-            libavcodec-dev libavformat-dev libavutil-dev libswscale-dev
+          mkdir -p "${RUNNER_TEMP}/apt-archives"
+          if compgen -G "${RUNNER_TEMP}/apt-archives/*.deb" >/dev/null; then
+            sudo cp -f "${RUNNER_TEMP}/apt-archives"/*.deb /var/cache/apt/archives/
+          fi
+          grep -v '^#' .github/apt/mcp-smoke.txt | xargs sudo apt-get install -y
+          if compgen -G "/var/cache/apt/archives/*.deb" >/dev/null; then
+            sudo cp -f /var/cache/apt/archives/*.deb "${RUNNER_TEMP}/apt-archives/"
+            sudo chown -R "$(id -u):$(id -g)" "${RUNNER_TEMP}/apt-archives"
+          fi
           # meson from PyPI: Ubuntu 24.04 ships meson 1.3.2, which predates `c23`
           # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
           sudo pip3 install --break-system-packages --ignore-installed --quiet --require-hashes \
             -r requirements/locks/build.txt
+
+      - name: Save apt archives
+        # Saves only after the install step succeeded: an install cut off by its
+        # timeout leaves the archive directory empty, and an empty entry under
+        # this immutable key would be restored as a hit on every later run
+        # (an empty 200-byte entry was saved this way on 2026-10-22). Runs even
+        # when a later step fails, so the next run skips the download.
+        if: ${{ !cancelled() && steps.apt-install.outcome == 'success' && steps.apt-cache.outputs.cache-hit != 'true' }}
+        timeout-minutes: 5
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ${{ runner.temp }}/apt-archives
+          key: apt-${{ runner.os }}-${{ runner.arch }}-mcp-smoke-${{ hashFiles('.github/apt/mcp-smoke.txt') }}
 
       - name: Build libvmaf (full MCP transport matrix)
         # Mirrors the local-lint configuration documented in

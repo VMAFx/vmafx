@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: EUPL-1.2
+# Copyright 2026 Lusoris
+#
+# Apt packages for the MCP Smoke (mcp-smoke) CI job.
+# One package per line; comments starting with # are ignored.
+
+ninja-build
+nasm
+pkg-config
+python3-pip
+python3-venv
+
+# libav*-dev pulled in for parity with the netflix-golden /
+# vulkan-vif-cross-backend lanes — keeps the libvmaf build
+# graph identical so the MCP smoke exercises the same
+# configuration the rest of the matrix sees.
+libavcodec-dev
+libavformat-dev
+libavutil-dev
+libswscale-dev
