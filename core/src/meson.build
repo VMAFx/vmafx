@@ -599,6 +599,8 @@ if is_hipcc_enabled and is_hip_enabled
         'feature/ssimulacra2_eotf_lut.h',
         # ADR-1445: the fp64 terms' split helper and the ordered sums.
         'feature/ssimulacra2_score.h',
+        'feature/ssimulacra2_weights.h',
+        'feature/ssimulacra2_gaussian.h',
         'feature/ordered_sum.h',
         # ADR-1497: the CPU's second-moment sum past 2^53 units.
         'feature/float_moment_sum.h',
@@ -606,6 +608,7 @@ if is_hipcc_enabled and is_hip_enabled
         'feature/hip/float_adm_hip.h',
         # ADR-1458: the float_adm arithmetic, shared with the CUDA twin.
         'feature/float_adm_gpu_common.h',
+        'feature/adm_float_reference.h',
         'feature/hip/float_adm/float_adm_hip_math.h',
         'feature/hip/integer_cambi_hip.h',
         'feature/hip/integer_cambi/cambi_hip_device.h',
@@ -1858,12 +1861,15 @@ if is_cuda_enabled
         'feature/ssimulacra2_eotf_lut.h',
         'feature/ssimulacra2_math.h',
         'feature/ssimulacra2_score.h',
+        'feature/ssimulacra2_weights.h',
+        'feature/ssimulacra2_gaussian.h',
         'feature/ordered_sum.h',
         'feature/float_moment_sum.h',
         'feature/float_moment_sum_gpu.h',
         'feature/cuda/float_adm_cuda.h',
         'feature/cuda/float_adm/float_adm_device.h',
         'feature/float_adm_gpu_common.h',
+        'feature/adm_float_reference.h',
         'feature/cuda/integer_cambi_cuda.h',
         'feature/cuda/speed_chroma_cuda.h',
         'feature/cuda/speed_temporal_cuda.h',

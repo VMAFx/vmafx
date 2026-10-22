@@ -40,6 +40,7 @@ SRC_ROOT = ROOT / "core" / "src"
 HOST = "feature/hip/float_adm_hip.c"
 KERNEL = "feature/hip/float_adm/float_adm_score.hip"
 SPELLING = "feature/hip/float_adm/float_adm_hip_math.h"
+SHARED = "feature/float_adm_gpu_common.h"
 BUILD = "meson.build"
 
 COMMENT = re.compile(r"/\*.*?\*/|//[^\n]*", re.S)
@@ -68,7 +69,7 @@ def _code(source: str) -> str:
 def _sources() -> dict[str, str]:
     return {
         name: (SRC_ROOT / name).read_text(encoding="utf-8")
-        for name in (HOST, KERNEL, SPELLING, BUILD)
+        for name in (HOST, KERNEL, SPELLING, SHARED, BUILD)
     }
 
 
@@ -128,15 +129,17 @@ def _kernel_failures(sources: dict[str, str]) -> list[str]:
 
 def _host_failures(sources: dict[str, str]) -> list[str]:
     host = _code(sources[HOST])
+    shared = _code(sources[SHARED])
     failures: list[str] = []
     for call in (
         "adm_csf_rfactor_s(",
         "adm_border_s(",
-        "adm_pool_bands_s(",
         "adm_decouple_cos_1deg_sq_s()",
     ):
         if call not in host:
             failures.append(f"{HOST}: {call.rstrip('()')}() is no longer the reference's routine")
+    if "adm_pool_bands_s(" not in host and "adm_pool_bands_s(" not in shared:
+        failures.append(f"{HOST}: adm_pool_bands_s() is no longer the reference's routine")
     if re.search(r"\bdwt_quant_step\b|\bpow\s*\(\s*10\.0|\blog10\s*\(", host):
         failures.append(f"{HOST}: the CSF weights are derived by a copy of dwt_quant_step()")
     if re.search(r"\bpowf\s*\(", host):
@@ -145,7 +148,7 @@ def _host_failures(sources: dict[str, str]) -> list[str]:
         failures.append(f"{HOST}: adm_enhn_gain_limit is narrowed before it reaches the kernel")
     if HOST_COSINE not in host:
         failures.append(f"{HOST}: cos^2 is not the reference's adm_decouple_cos_1deg_sq_s()")
-    if not re.search(r"accum\[slot\] = fadm_fold_rows\(", host):
+    if not re.search(r"accum\[slot\] = fadm_fold_rows\(", host + " " + shared):
         failures.append(f"{HOST}: the rows are no longer added by fadm_fold_rows()")
     if re.search(r"\+=\s*\(double\)", host):
         failures.append(f"{HOST}: the host adds device partials in fp64")

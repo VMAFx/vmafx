@@ -146,7 +146,8 @@ def _reduction_failures(sources: dict[str, str]) -> list[str]:
     if not re.search(r"\bfadm_row_sum\(", kernel):
         failures.append(f"{KERNEL}: the row-sum kernel no longer calls fadm_row_sum()")
     host = _code(sources[HOST])
-    if not re.search(r"accum\[slot\] = fadm_fold_rows\(", host):
+    device_common = _code(sources[DEVICE])
+    if not re.search(r"accum\[slot\] = fadm_fold_rows\(", host + " " + device_common):
         failures.append(f"{HOST}: the rows are no longer added by fadm_fold_rows()")
     if re.search(r"\+=\s*\(double\)", host):
         failures.append(f"{HOST}: the host adds device partials in fp64")
@@ -156,9 +157,12 @@ def _reduction_failures(sources: dict[str, str]) -> list[str]:
 def _reference_failures(sources: dict[str, str]) -> list[str]:
     failures: list[str] = []
     host = _code(sources[HOST])
-    for call in ("adm_csf_rfactor_s(", "adm_border_s(", "adm_pool_bands_s("):
+    device_common = _code(sources[DEVICE])
+    for call in ("adm_csf_rfactor_s(", "adm_border_s("):
         if call not in host:
             failures.append(f"{HOST}: {call[:-1]}() is no longer the reference's routine")
+    if "adm_pool_bands_s(" not in host and "adm_pool_bands_s(" not in device_common:
+        failures.append(f"{HOST}: adm_pool_bands_s() is no longer the reference's routine")
     if re.search(r"\bdwt_quant_step\b|\bpow\s*\(\s*10\.0", host):
         failures.append(f"{HOST}: the CSF weights are derived by a copy of dwt_quant_step()")
     if re.search(r"\bpowf\s*\(", host):
