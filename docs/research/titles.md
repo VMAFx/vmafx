@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # Research digest titles
 
-Every research digest, one heading each (804), so the site search finds a digest by its title; digest bodies are not in the search index ([ADR-1512](../adr/1512-docs-search-user-pages-only.md)).
+Every research digest, one heading each (807), so the site search finds a digest by its title; digest bodies are not in the search index ([ADR-1512](../adr/1512-docs-search-user-pages-only.md)).
 
 ## Research-0001: Cache shape for `bisect-model-quality` nightly
 
@@ -2707,6 +2707,18 @@ Every research digest, one heading each (804), so the site search finds a digest
 ## Research-2480: Stale-lock recovery for the ADR number allocator
 
 [2480-adr-allocator-stale-lock](2480-adr-allocator-stale-lock.md)
+
+## Research-3357: GCC (C) + icpx (C++ / SYCL) container toolchain
+
+[3357-hybrid-gcc-cpu-icpx-sycl](3357-hybrid-gcc-cpu-icpx-sycl.md)
+
+## Research-3358: porting `Containerfile.vmafx` onto master
+
+[3358-vmafx-sycl-ffmpeg-container](3358-vmafx-sycl-ffmpeg-container.md)
+
+## Research-3359: SYCL zero-copy hardening on the luma-only path
+
+[3359-sycl-zerocopy-hardening](3359-sycl-zerocopy-hardening.md)
 
 ## ADR-0108 Six-Deliverables Compliance Audit — 2026-05-29
 
