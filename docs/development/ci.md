@@ -1093,6 +1093,13 @@ The cache covers all eight apt-installing jobs in the workflow:
 | `mcp-smoke` | MCP Smoke | `.github/apt/mcp-smoke.txt` | 20 min | 55 min |
 | `coverage` | Coverage Gate | `.github/apt/coverage.txt` | 35 min | 120 min |
 
+Apt-installing jobs in other workflow files use the same cache, one pull
+request per workflow file:
+
+| Workflow | Job | Package list | Apt step cap | Job limit |
+| --- | --- | --- | --- | --- |
+| `go-ci.yml` | `go-ci` | `.github/apt/go-ci.txt` | 9 min | 90 min |
+
 ### Timeout budgeting rule
 
 Timeouts follow ADR-3367 and the sizing rule:

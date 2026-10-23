@@ -49,7 +49,6 @@ UNCAPPED_APT_EXCEPTIONS: dict[str, datetime.date] = {
         "docs.yml",
         "doxygen-public-api.yml",
         "fuzz.yml",
-        "go-ci.yml",
         "lint-and-format.yml",
         "mini-retrain.yml",
         "nightly.yml",
