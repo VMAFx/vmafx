@@ -42,9 +42,7 @@ GITHUB_DEFAULT_JOB_MINUTES = 360
 # Workflow files whose apt steps get their caps in one follow-up pull request
 # each (ledger vmafx-coverage-apt-cache). Category B, entered 2026-10-23,
 # expiry entry date plus 3 days. Remove a line when its file is capped.
-UNCAPPED_APT_EXCEPTIONS: dict[str, datetime.date] = {
-    name: datetime.date(2026, 10, 26) for name in ("published-rc-licence-companions.yml",)
-}
+UNCAPPED_APT_EXCEPTIONS: dict[str, datetime.date] = {}
 
 
 class LimitError(ValueError):

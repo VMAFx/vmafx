@@ -1114,6 +1114,11 @@ request per workflow file:
 | `sanitizers.yml` | `tsan` | `.github/apt/sanitizers-base.txt` + `.github/apt/sanitizers-llvm.txt` | 5 min | 35 min |
 | `security-scans.yml` | `codeql-cpp` | `.github/apt/codeql-cpp.txt` | 5 min | 55 min |
 
+`published-rc-licence-companions.yml` installs its packages inside the
+release builder container, so it has no archive cache; its "Fetch the
+corresponding source" step is capped at 48 min (measured max 37.7 min) inside
+the 240-minute job limit.
+
 ### Timeout budgeting rule
 
 Timeouts follow ADR-3367 and the sizing rule:
