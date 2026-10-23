@@ -71,8 +71,8 @@ jobs:
     # required-aggregator
     name: Sanitizers ASan+UBSan
     runs-on: ubuntu-26.04
-    # Measured max 12.6m (2026-10-23); 30 min covers step caps (5+5+5) plus 1.25x 11.9m rest.
-    timeout-minutes: 30
+    # Measured max 12.6m (2026-10-23); 35 min covers step caps (10+5+5) plus 1.25x 11.9m rest.
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -109,8 +109,9 @@ jobs:
       - name: Install deps
         id: apt-install
         if: steps.impact.outputs.c_core == 'true'
-        # Measured max 0.7m (2026-10-23); 5 min is at least 1.25x (floor 5m).
-        timeout-minutes: 5
+        # llvm.sh steps measured max 5.7m over the jobs that run it (2026-10-23; a
+        # Tidy Ratchet run passed 5.2m); 10 min is at least 1.25x the slowest.
+        timeout-minutes: 10
         run: |
           printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nAPT::Keep-Downloaded-Packages "true";\n' \
             | sudo tee /etc/apt/apt.conf.d/80ci-retries >/dev/null
@@ -251,8 +252,8 @@ jobs:
       || github.event_name == 'workflow_dispatch'
     name: Sanitizers TSan
     runs-on: ubuntu-26.04
-    # Measured max 17.0m (2026-10-23); 35 min covers step caps (5+5+5) plus 1.25x 13.4m rest.
-    timeout-minutes: 35
+    # Measured max 17.0m (2026-10-23); 40 min covers step caps (10+5+5) plus 1.25x 13.4m rest.
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -289,8 +290,9 @@ jobs:
       - name: Install deps
         id: apt-install
         if: steps.impact.outputs.c_core == 'true'
-        # Measured max 3.6m (2026-10-23); 5 min is at least 1.25x (floor 5m).
-        timeout-minutes: 5
+        # llvm.sh steps measured max 5.7m over the jobs that run it (2026-10-23; a
+        # Tidy Ratchet run passed 5.2m); 10 min is at least 1.25x the slowest.
+        timeout-minutes: 10
         run: |
           printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nAPT::Keep-Downloaded-Packages "true";\n' \
             | sudo tee /etc/apt/apt.conf.d/80ci-retries >/dev/null
@@ -416,8 +418,8 @@ jobs:
       || github.event_name == 'workflow_dispatch'
     name: Fuzz ${{ matrix.target }}
     runs-on: ubuntu-26.04
-    # Measured max 26.1m (2026-10-23); 50 min covers step caps (5+5+5) plus 1.25x 25.3m rest.
-    timeout-minutes: 50
+    # Measured max 26.1m (2026-10-23); 55 min covers step caps (10+5+5) plus 1.25x 25.3m rest.
+    timeout-minutes: 55
     strategy:
       fail-fast: false
       matrix:
@@ -452,8 +454,9 @@ jobs:
 
       - name: Install build dependencies
         id: apt-install
-        # Measured max 0.8m (2026-10-23); 5 min is at least 1.25x (floor 5m).
-        timeout-minutes: 5
+        # llvm.sh steps measured max 5.7m over the jobs that run it (2026-10-23; a
+        # Tidy Ratchet run passed 5.2m); 10 min is at least 1.25x the slowest.
+        timeout-minutes: 10
         run: |
           printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nAPT::Keep-Downloaded-Packages "true";\n' \
             | sudo tee /etc/apt/apt.conf.d/80ci-retries >/dev/null

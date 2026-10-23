@@ -129,7 +129,7 @@ jobs:
     # required-aggregator
     name: Tidy Changed
     runs-on: ubuntu-26.04
-    timeout-minutes: 25
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -195,8 +195,9 @@ jobs:
       - name: Install deps
         id: apt-install
         if: steps.cpp-changes.outputs.any == 'true'
-        # Measured max 2.6m (2026-10-23); 5 min is at least 1.25x the slowest healthy run.
-        timeout-minutes: 5
+        # llvm.sh steps measured max 5.7m over the jobs that run it (2026-10-23; a
+        # Tidy Ratchet run passed 5.2m); 10 min is at least 1.25x the slowest.
+        timeout-minutes: 10
         run: |
           printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nAPT::Keep-Downloaded-Packages "true";\n' \
             | sudo tee /etc/apt/apt.conf.d/80ci-retries >/dev/null
@@ -502,7 +503,7 @@ jobs:
     # required-aggregator
     name: Tidy Ratchet
     runs-on: ubuntu-26.04
-    timeout-minutes: 45
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -542,8 +543,9 @@ jobs:
       - name: Install deps
         id: apt-install
         if: steps.impact.outputs.c_core == 'true'
-        # Measured max 3.7m (2026-10-23); 5 min is at least 1.25x the slowest healthy run.
-        timeout-minutes: 5
+        # llvm.sh steps measured max 5.7m over the jobs that run it (2026-10-23; a
+        # Tidy Ratchet run passed 5.2m); 10 min is at least 1.25x the slowest.
+        timeout-minutes: 10
         run: |
           printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nAPT::Keep-Downloaded-Packages "true";\n' \
             | sudo tee /etc/apt/apt.conf.d/80ci-retries >/dev/null
@@ -702,7 +704,7 @@ jobs:
     # required-aggregator
     name: Tidy SYCL
     runs-on: ubuntu-26.04
-    timeout-minutes: 40
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -785,8 +787,9 @@ jobs:
       - name: Install oneAPI DPC++ compiler + clang-tidy
         id: apt-install
         if: steps.detect.outputs.files != ''
-        # Measured max 3.4m (2026-10-23); 5 min is at least 1.25x the slowest healthy run.
-        timeout-minutes: 5
+        # llvm.sh steps measured max 5.7m over the jobs that run it (2026-10-23; a
+        # Tidy Ratchet run passed 5.2m); 10 min is at least 1.25x the slowest.
+        timeout-minutes: 10
         run: |
           printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nAPT::Keep-Downloaded-Packages "true";\n' \
             | sudo tee /etc/apt/apt.conf.d/80ci-retries >/dev/null
