@@ -46,7 +46,6 @@ UNCAPPED_APT_EXCEPTIONS: dict[str, datetime.date] = {
     name: datetime.date(2026, 10, 26)
     for name in (
         "fuzz.yml",
-        "lint-and-format.yml",
         "mini-retrain.yml",
         "nightly.yml",
         "published-rc-licence-companions.yml",
