@@ -1,4 +1,3 @@
-
 ## ADR-3359 — SYCL primary queue on immediate command lists (2026-10-02)
 
 `pr/sycl-zerocopy-hardening`, [ADR-3359](adr/3359-sycl-primary-queue-immediate-cmdlist.md);

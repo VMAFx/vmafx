@@ -36,9 +36,17 @@ fragments() {
 lint() {
   local name rc=0 first
   while IFS= read -r name; do
-    first="$(awk 'NF { print; exit }' "$FRAG_ROOT/$name")"
+    # Line 1 itself, not the first non-empty line: a leading blank line renders as a
+    # second blank line after the previous fragment (MD012), and the hooks then refuse
+    # the render commit, so the render falls behind master (2026-10-23).
+    first="$(head -n 1 "$FRAG_ROOT/$name")"
     if [[ "$first" != '## '* ]]; then
-      printf 'rebase-notes fragment %s must start with a "## <title> (<date>)" heading\n' "$name" >&2
+      printf 'rebase-notes fragment %s must start with a "## <title> (<date>)" heading on line 1\n' "$name" >&2
+      rc=1
+    fi
+    # The same for a trailing blank line: the render adds the one blank line between entries.
+    if [[ "$(tail -n 1 "$FRAG_ROOT/$name")" =~ ^[[:space:]]*$ ]]; then
+      printf 'rebase-notes fragment %s must not end with a blank line\n' "$name" >&2
       rc=1
     fi
   done < <(find "$FRAG_ROOT" -maxdepth 1 -type f -name '*.md' ! -name '_*' -printf '%f\n' | LC_ALL=C sort)
