@@ -1099,6 +1099,7 @@ request per workflow file:
 | Workflow | Job | Package list | Apt step cap | Job limit |
 | --- | --- | --- | --- | --- |
 | `build.yml` | `build-work` (Ubuntu legs) | `.github/apt/build-linux.txt` | 26 min | 80 min |
+| `go-ci.yml` | `go-ci` | `.github/apt/go-ci.txt` | 9 min | 90 min |
 | `rust-ci.yml` | `rust-vmafx-sys-work` | `.github/apt/rust-vmafx-sys.txt` | 16 min | 30 min |
 | `security-scans.yml` | `codeql-cpp` | `.github/apt/codeql-cpp.txt` | 5 min | 55 min |
 
