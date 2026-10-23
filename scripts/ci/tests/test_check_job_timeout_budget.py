@@ -23,6 +23,7 @@ import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import check_job_timeout_budget as budget  # the module under test, one directory up
@@ -113,12 +114,14 @@ class JobTimeoutBudgetTest(unittest.TestCase):
         )
 
     def test_apt_exception_holds_until_expiry_only(self) -> None:
+        # A stand-in entry: the real list shrinks with each capped file.
         doc = {"jobs": {"b": {"steps": [{"name": "deps", "run": "apt-get install -y x"}]}}}
-        expiry = budget.UNCAPPED_APT_EXCEPTIONS["build.yml"]
-        self.assertEqual(budget.job_findings("build.yml", doc, expiry), [])
-        late = expiry + datetime.timedelta(days=1)
-        self.assertEqual(len(budget.job_findings("build.yml", doc, late)), 1)
-        self.assertEqual(len(budget.job_findings("other.yml", doc, expiry)), 1)
+        expiry = datetime.date(2026, 10, 26)
+        with mock.patch.dict(budget.UNCAPPED_APT_EXCEPTIONS, {"listed.yml": expiry}):
+            self.assertEqual(budget.job_findings("listed.yml", doc, expiry), [])
+            late = expiry + datetime.timedelta(days=1)
+            self.assertEqual(len(budget.job_findings("listed.yml", doc, late)), 1)
+            self.assertEqual(len(budget.job_findings("other.yml", doc, expiry)), 1)
 
     def test_unreadable_workflow_exits_2(self) -> None:
         self.assertEqual(self.run_on("jobs: [unclosed\n"), 2)
