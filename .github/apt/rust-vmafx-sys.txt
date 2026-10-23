@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: EUPL-1.2
+# Copyright 2026 Lusoris
+#
+# Apt packages for the vmafx-sys CI work (rust-vmafx-sys-work) job in rust-ci.yml.
+# One package per line; comments starting with # are ignored.
+
+ninja-build
+nasm
+libssl-dev
+clang
+libclang-dev
+pkg-config
