@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: EUPL-1.2
+# Copyright 2026 Lusoris
+#
+# Apt packages for the Python Package Tests (vmaf-tune) (vmaf-tune-tests) CI job.
+# One package per line; comments starting with # are ignored.
+
+# The two real-x265 integration tests (test_codec_adapter_x265.py,
+# test_codec_adapter_x265_two_pass.py; ADR-1565) encode with the
+# distribution ffmpeg, which links libx265 (ffmpeg 8.0.1 on 26.04).
+ffmpeg

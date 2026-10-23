@@ -8,12 +8,15 @@ Negative: the planted job of 2026-10-22's shape with its limit below the step
 sum fails with exit 1; a job without a limit whose steps pass GitHub's 360
 minutes fails; an expression or a negative limit exits 2; an unreadable
 workflow exits 2.
-Boundary: a limit equal to the step sum passes; steps without a cap add
+Negative: an apt-get install step without its own cap fails with exit 1, the
+planted 2026-10-23 Coverage Gate shape; an expired exception no longer exempts.
+Boundary: an unexpired exception exempts its file only; a limit equal to the step sum passes; steps without a cap add
 nothing; a reusable-workflow call job (no steps) is skipped.
 """
 
 from __future__ import annotations
 
+import datetime
 import io
 import sys
 import tempfile
@@ -89,6 +92,33 @@ class JobTimeoutBudgetTest(unittest.TestCase):
     def test_reusable_workflow_call_is_skipped(self) -> None:
         text = "on: push\njobs:\n  a:\n    uses: ./.github/workflows/x.yml\n"
         self.assertEqual(self.run_on(text), 0)
+
+    def test_planted_uncapped_apt_step_is_refused(self) -> None:
+        # The 2026-10-23 Coverage Gate: libcudart12 fetched for 30 minutes in an uncapped step.
+        text = job("75", "", "") + "      - run: sudo apt-get install -y libcudart12\n"
+        self.assertEqual(self.run_on(text), 1)
+
+    def test_capped_apt_step_passes(self) -> None:
+        text = (
+            job("75", "")
+            + "      - run: sudo apt-get install -y libcudart12\n        timeout-minutes: 35\n"
+        )
+        self.assertEqual(self.run_on(text), 0)
+
+    def test_uncapped_apt_finding_names_the_step(self) -> None:
+        doc = {"jobs": {"cov": {"steps": [{"name": "deps", "run": "apt-get install -y x"}]}}}
+        self.assertEqual(
+            budget.job_findings("w.yml", doc),
+            ["w.yml: job cov, deps: apt-get install step has no timeout-minutes"],
+        )
+
+    def test_apt_exception_holds_until_expiry_only(self) -> None:
+        doc = {"jobs": {"b": {"steps": [{"name": "deps", "run": "apt-get install -y x"}]}}}
+        expiry = budget.UNCAPPED_APT_EXCEPTIONS["build.yml"]
+        self.assertEqual(budget.job_findings("build.yml", doc, expiry), [])
+        late = expiry + datetime.timedelta(days=1)
+        self.assertEqual(len(budget.job_findings("build.yml", doc, late)), 1)
+        self.assertEqual(len(budget.job_findings("other.yml", doc, expiry)), 1)
 
     def test_unreadable_workflow_exits_2(self) -> None:
         self.assertEqual(self.run_on("jobs: [unclosed\n"), 2)
