@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: EUPL-1.2
+# Copyright 2026 Lusoris
+#
+# Apt packages for the Tooling Tests (tooling-tests) CI job.
+# One package per line; comments starting with # are ignored.
+
+# test_cppcheck_posix_model.py drives the distribution's cppcheck, the
+# one the Cppcheck job installs.
+cppcheck

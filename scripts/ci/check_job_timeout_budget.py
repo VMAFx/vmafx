@@ -15,6 +15,12 @@ adds the ``timeout-minutes`` of its steps and fails when the job's own
 checked and fails closed. Size a job limit as the step caps plus 1.25 times
 the measured longest healthy run of the uncapped steps (ADR-3367).
 
+A step that runs ``apt-get install`` without its own ``timeout-minutes`` is a
+finding too: on 2026-10-23 an uncapped install of ``libcudart12`` took 30
+minutes on a slow mirror and the Coverage Gate hit its job limit. A workflow
+file listed in ``UNCAPPED_APT_EXCEPTIONS`` is exempt from that rule until its
+expiry date; past it, the file fails like one without an exception.
+
 Exit 0 when every job holds, 1 on a job below its step sum, 2 on a workflow
 it cannot read or a limit it cannot evaluate.
 """
@@ -22,6 +28,7 @@ it cannot read or a limit it cannot evaluate.
 from __future__ import annotations
 
 import argparse
+import datetime
 import sys
 from pathlib import Path
 from typing import Any
@@ -31,6 +38,27 @@ import yaml  # type: ignore[import-untyped]  # no PyYAML stubs in the hook envir
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW_DIR = ROOT / ".github" / "workflows"
 GITHUB_DEFAULT_JOB_MINUTES = 360
+
+# Workflow files whose apt steps get their caps in one follow-up pull request
+# each (ledger vmafx-coverage-apt-cache). Category B, entered 2026-10-23,
+# expiry entry date plus 3 days. Remove a line when its file is capped.
+UNCAPPED_APT_EXCEPTIONS: dict[str, datetime.date] = {
+    name: datetime.date(2026, 10, 26)
+    for name in (
+        "build.yml",
+        "docs.yml",
+        "doxygen-public-api.yml",
+        "fuzz.yml",
+        "go-ci.yml",
+        "lint-and-format.yml",
+        "mini-retrain.yml",
+        "nightly.yml",
+        "published-rc-licence-companions.yml",
+        "rust-ci.yml",
+        "sanitizers.yml",
+        "security-scans.yml",
+    )
+}
 
 
 class LimitError(ValueError):
@@ -44,8 +72,21 @@ def minutes(value: Any, where: str) -> int:
     return value
 
 
-def job_findings(workflow: str, doc: Any) -> list[str]:
-    """One line per job of a parsed workflow whose limit is below its step sum."""
+def runs_apt_install(step: dict[str, Any]) -> bool:
+    """True when a step's shell script installs apt packages."""
+    run = step.get("run")
+    return isinstance(run, str) and "apt-get install" in run
+
+
+def apt_exempt(workflow: str, today: datetime.date) -> bool:
+    """True while ``workflow`` holds an unexpired uncapped-apt exception."""
+    expiry = UNCAPPED_APT_EXCEPTIONS.get(workflow)
+    return expiry is not None and today <= expiry
+
+
+def job_findings(workflow: str, doc: Any, today: datetime.date | None = None) -> list[str]:
+    """One line per job below its step sum and per uncapped apt install step."""
+    exempt = apt_exempt(workflow, today or datetime.date.today())
     findings: list[str] = []
     jobs = doc.get("jobs") if isinstance(doc, dict) else None
     if not isinstance(jobs, dict):
@@ -57,9 +98,13 @@ def job_findings(workflow: str, doc: Any) -> list[str]:
         limit = minutes(job.get("timeout-minutes", GITHUB_DEFAULT_JOB_MINUTES), where)
         step_sum = 0
         for index, step in enumerate(job["steps"]):
-            if isinstance(step, dict) and "timeout-minutes" in step:
-                name = step.get("name", f"step {index}")
+            if not isinstance(step, dict):
+                continue
+            name = step.get("name", f"step {index}")
+            if "timeout-minutes" in step:
                 step_sum += minutes(step["timeout-minutes"], f"{where}, {name}")
+            elif runs_apt_install(step) and not exempt:
+                findings.append(f"{where}, {name}: apt-get install step has no timeout-minutes")
         if limit < step_sum:
             findings.append(
                 f"{where}: timeout-minutes {limit} is below its step caps' sum {step_sum}"
@@ -93,8 +138,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"check_job_timeout_budget: {line}", file=sys.stderr)
     if findings:
         print(
-            "check_job_timeout_budget: raise the job limit to the step caps plus 1.25 times"
-            " the measured longest healthy run of the other steps",
+            "check_job_timeout_budget: cap each apt step at 1.25 times its slowest measured"
+            " run; raise the job limit to the step caps plus 1.25 times the measured"
+            " longest healthy run of the other steps",
             file=sys.stderr,
         )
         return 1

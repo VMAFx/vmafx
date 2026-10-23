@@ -1076,9 +1076,36 @@ runs that step's script against planted outcomes.
 
 ## Apt archive cache
 
-The `MCP Smoke` and `Tiny AI` jobs in `tests-and-quality-gates.yml` cache downloaded
-`.deb` package archives across workflow runs so that slow package mirror downloads
-do not eat into the 20-minute apt step cap.
+Every job in `tests-and-quality-gates.yml` that runs `apt-get install` caches
+downloaded `.deb` package archives across workflow runs so that slow package
+mirror downloads do not eat into the apt step cap or trip the job limit.
+
+The cache covers all eight apt-installing jobs in the workflow:
+
+| Job | Name in workflow | Package list | Apt step cap | Job limit |
+| --- | --- | --- | --- | --- |
+| `netflix-golden` | Netflix CPU Golden | `.github/apt/netflix-golden.txt` | 28 min | 85 min |
+| `compat-abi-parity` | Compat ABI Parity | `.github/apt/compat-abi-parity.txt` | 10 min | 45 min |
+| `sanitizers` | Sanitizers (${{ matrix.sanitizer }}) | `.github/apt/sanitizers.txt` | 10 min | 30 min |
+| `dnn` | Tiny AI | `.github/apt/tiny-ai.txt` | 20 min | 55 min |
+| `tooling-tests` | Tooling Tests | `.github/apt/tooling-tests.txt` | 10 min | 35 min |
+| `vmaf-tune-tests` | Python Package Tests (vmaf-tune) | `.github/apt/vmaf-tune-tests.txt` | 20 min | 35 min |
+| `mcp-smoke` | MCP Smoke | `.github/apt/mcp-smoke.txt` | 20 min | 55 min |
+| `coverage` | Coverage Gate | `.github/apt/coverage.txt` | 35 min | 120 min |
+
+### Timeout budgeting rule
+
+Timeouts follow ADR-3367 and the sizing rule:
+
+- **Step cap**: `cap >= 1.25x measured slowest apt step` (each restore and save
+  step also has a 5-minute cap).
+- **Job limit**: `job limit >= sum of step caps + 1.25x the rest`, where "the
+  rest" is the longest measured healthy run of the uncapped steps.
+
+`scripts/ci/check_job_timeout_budget.py` checks that every apt install step is
+capped and that every job limit covers the sum of its step caps.
+
+### Cache mechanism
 
 The cache uses `actions/cache/restore` before the install step and
 `actions/cache/save` after the install step. The save runs only when the install
@@ -1089,8 +1116,7 @@ every later run:
 - **Cache path**: `${{ runner.temp }}/apt-archives`
 - **Cache key**: `apt-<os>-<arch>-<job>-<hash of the package list>`, from
   `runner.os`, `runner.arch` and `hashFiles()`,
-  where `<job>` is `mcp-smoke` (`.github/apt/mcp-smoke.txt`) or `tiny-ai`
-  (`.github/apt/tiny-ai.txt`).
+  where `<job>` is the job identifier matching `.github/apt/<job>.txt`.
 
 **How to bust**: edit the corresponding job's package list file under
 `.github/apt/<job>.txt`. Because the cache key includes the hash of the package

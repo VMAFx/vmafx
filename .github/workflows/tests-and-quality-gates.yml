@@ -50,7 +50,8 @@ jobs:
     # required-aggregator
     name: Netflix CPU Golden
     runs-on: ubuntu-26.04
-    timeout-minutes: 45
+    # Measured max 42.4m (2026-10-23); step caps sum 80 (5+28+5+22+20), limit 85 covers sum plus 1.25x rest.
+    timeout-minutes: 85
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -72,8 +73,24 @@ jobs:
           MODE: ${{ steps.impact.outputs.mode }}
           REASON: ${{ steps.impact.outputs.reason }}
         run: echo "::notice::golden_harness not impacted (mode=$MODE reason=$REASON) — Netflix CPU Golden Tests satisfied without running (ADR-1140)"
-      - name: Install build deps
+      - name: Restore apt archives
+        id: apt-cache
+        # Restore-only; the save below runs only after a successful install.
+        # Caches downloaded .deb archives so a slow package mirror does not eat
+        # into the apt step's timeout. Keyed on runner OS, arch, job, and the
+        # hash of the job's apt package list under .github/apt/netflix-golden.txt.
         if: steps.impact.outputs.golden_harness == 'true'
+        timeout-minutes: 5
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ${{ runner.temp }}/apt-archives
+          key: apt-${{ runner.os }}-${{ runner.arch }}-netflix-golden-${{ hashFiles('.github/apt/netflix-golden.txt') }}
+
+      - name: Install build deps
+        id: apt-install
+        if: steps.impact.outputs.golden_harness == 'true'
+        # Measured max 21.8m (2026-10-23); 28 min is at least 1.25x the slowest healthy run.
+        timeout-minutes: 28
         env:
           # pip unpacks every wheel it downloads into $TMPDIR before it
           # installs it, so the staging area — not just the install target —
@@ -83,10 +100,18 @@ jobs:
           # RUNNER_TEMP is on the runner's disk and is emptied per job.
           TMPDIR: ${{ runner.temp }}
         run: |
+          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nAPT::Keep-Downloaded-Packages "true";\n' \
+            | sudo tee /etc/apt/apt.conf.d/80ci-retries >/dev/null
           sudo apt-get update
-          sudo apt-get install -y ninja-build nasm pkg-config \
-            libavcodec-dev libavformat-dev libavutil-dev libswscale-dev \
-            python3-pip
+          mkdir -p "${RUNNER_TEMP}/apt-archives"
+          if compgen -G "${RUNNER_TEMP}/apt-archives/*.deb" >/dev/null; then
+            sudo cp -f "${RUNNER_TEMP}/apt-archives"/*.deb /var/cache/apt/archives/
+          fi
+          grep -v '^#' .github/apt/netflix-golden.txt | xargs sudo apt-get install -y
+          if compgen -G "/var/cache/apt/archives/*.deb" >/dev/null; then
+            sudo cp -f /var/cache/apt/archives/*.deb "${RUNNER_TEMP}/apt-archives/"
+            sudo chown -R "$(id -u):$(id -g)" "${RUNNER_TEMP}/apt-archives"
+          fi
           # meson from PyPI: Ubuntu 24.04 ships meson 1.3.2, which predates `c23`
           # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
           sudo pip3 install --break-system-packages --ignore-installed --quiet --require-hashes \
@@ -95,6 +120,19 @@ jobs:
             -r requirements/locks/package-build.txt
           python3 -m pip install --user --no-build-isolation --require-hashes \
             -r python/requirements-test-lock.txt
+
+      - name: Save apt archives
+        # Saves only after the install step succeeded: an install cut off by its
+        # timeout leaves the archive directory empty, and an empty entry under
+        # this immutable key would be restored as a hit on every later run
+        # (an empty 200-byte entry was saved this way on 2026-10-22). Runs even
+        # when a later step fails, so the next run skips the download.
+        if: ${{ !cancelled() && steps.apt-install.outcome == 'success' && steps.apt-cache.outputs.cache-hit != 'true' }}
+        timeout-minutes: 5
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ${{ runner.temp }}/apt-archives
+          key: apt-${{ runner.os }}-${{ runner.arch }}-netflix-golden-${{ hashFiles('.github/apt/netflix-golden.txt') }}
 
       - name: Build (CPU, release)
         if: steps.impact.outputs.golden_harness == 'true'
@@ -221,15 +259,54 @@ jobs:
           REASON: ${{ steps.impact.outputs.reason }}
         run: echo "::notice::golden_harness not impacted (mode=$MODE reason=$REASON) — Compat ABI Parity satisfied without running (ADR-1140)"
 
-      - name: Install build deps
+      - name: Restore apt archives
+        id: apt-cache
+        # Restore-only; the save below runs only after a successful install.
+        # Caches downloaded .deb archives so a slow package mirror does not eat
+        # into the apt step's timeout. Keyed on runner OS, arch, job, and the
+        # hash of the job's apt package list under .github/apt/compat-abi-parity.txt.
         if: steps.impact.outputs.golden_harness == 'true'
+        timeout-minutes: 5
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ${{ runner.temp }}/apt-archives
+          key: apt-${{ runner.os }}-${{ runner.arch }}-compat-abi-parity-${{ hashFiles('.github/apt/compat-abi-parity.txt') }}
+
+      - name: Install build deps
+        id: apt-install
+        if: steps.impact.outputs.golden_harness == 'true'
+        # Measured max 1.0m (2026-10-23); 10 min is at least 1.25x the slowest healthy run.
+        timeout-minutes: 10
         env:
           TMPDIR: ${{ runner.temp }}
         run: |
+          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nAPT::Keep-Downloaded-Packages "true";\n' \
+            | sudo tee /etc/apt/apt.conf.d/80ci-retries >/dev/null
           sudo apt-get update
-          sudo apt-get install -y ninja-build nasm pkg-config python3-pip
+          mkdir -p "${RUNNER_TEMP}/apt-archives"
+          if compgen -G "${RUNNER_TEMP}/apt-archives/*.deb" >/dev/null; then
+            sudo cp -f "${RUNNER_TEMP}/apt-archives"/*.deb /var/cache/apt/archives/
+          fi
+          grep -v '^#' .github/apt/compat-abi-parity.txt | xargs sudo apt-get install -y
+          if compgen -G "/var/cache/apt/archives/*.deb" >/dev/null; then
+            sudo cp -f /var/cache/apt/archives/*.deb "${RUNNER_TEMP}/apt-archives/"
+            sudo chown -R "$(id -u):$(id -g)" "${RUNNER_TEMP}/apt-archives"
+          fi
           sudo pip3 install --break-system-packages --ignore-installed --quiet --require-hashes \
             -r requirements/locks/build.txt
+
+      - name: Save apt archives
+        # Saves only after the install step succeeded: an install cut off by its
+        # timeout leaves the archive directory empty, and an empty entry under
+        # this immutable key would be restored as a hit on every later run
+        # (an empty 200-byte entry was saved this way on 2026-10-22). Runs even
+        # when a later step fails, so the next run skips the download.
+        if: ${{ !cancelled() && steps.apt-install.outcome == 'success' && steps.apt-cache.outputs.cache-hit != 'true' }}
+        timeout-minutes: 5
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ${{ runner.temp }}/apt-archives
+          key: apt-${{ runner.os }}-${{ runner.arch }}-compat-abi-parity-${{ hashFiles('.github/apt/compat-abi-parity.txt') }}
 
       - name: Restore Netflix vmaf_resource fixtures
         if: steps.impact.outputs.golden_harness == 'true'
@@ -289,7 +366,8 @@ jobs:
     # variable to false and re-trigger CI to fall back instantly. A pull
     # request from a fork never reaches the pool (ADR-3286).
     runs-on: ${{ vars.ARC_RUNNERS_ENABLED == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'arc-runners' || 'ubuntu-26.04' }}
-    timeout-minutes: 25
+    # Measured max 19.0m (2026-10-23); 30 min is at least 1.25x the slowest healthy run.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -313,32 +391,63 @@ jobs:
           MODE: ${{ steps.impact.outputs.mode }}
           REASON: ${{ steps.impact.outputs.reason }}
         run: echo "::notice::c_core not impacted (mode=$MODE reason=$REASON) — Sanitizers satisfied without running (ADR-1140)"
-      - name: Install deps
+      - name: Restore apt archives
+        id: apt-cache
+        # Restore-only; the save below runs only after a successful install.
+        # Caches downloaded .deb archives so a slow package mirror does not eat
+        # into the apt step's timeout. Keyed on runner OS, arch, job, and the
+        # hash of the job's apt package list under .github/apt/sanitizers.txt.
         if: steps.impact.outputs.c_core == 'true'
+        timeout-minutes: 5
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ${{ runner.temp }}/apt-archives
+          key: apt-${{ runner.os }}-${{ runner.arch }}-sanitizers-${{ hashFiles('.github/apt/sanitizers.txt') }}
+
+      - name: Install deps
+        id: apt-install
+        if: steps.impact.outputs.c_core == 'true'
+        # Measured max 4.6m (2026-10-23); 10 min is at least 1.25x the slowest healthy run.
+        timeout-minutes: 10
         run: |
-          sudo apt-get update
-          # lld-22 keeps the linker in the same LLVM major as the
-          # apt.llvm.org clang-22 installed below; ld.bfd/gold pulls in
-          # a system-wide LLVM 16 gold plugin that can't read clang-22 LTO
-          # bitcode (Unknown attribute kind 91 in LLVM 16 reader). Using lld
-          # keeps the linker in the same LLVM major as the compiler.
-          # libclang-rt-22-dev ships the ASan/UBSan/TSan runtime libraries
-          # (libclang_rt.asan.a etc.); without it clang-22 emits instrumented
-          # code but lld-22 can't resolve __asan_*/__ubsan_* symbols.
-          sudo apt-get install -y ninja-build nasm
+          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nAPT::Keep-Downloaded-Packages "true";\n' \
+            | sudo tee /etc/apt/apt.conf.d/80ci-retries >/dev/null
           # LLVM 22 from apt.llvm.org: the ubuntu-24.04 image tops out at
           # clang 18.1.3, which accepts -std=c++26 but ships a libstdc++
           # without std::expected, so core/src/dict.cpp fails to build
           # (ADR-0692 moved the tree to C23 + C++26). Take the toolchain
-          # forward rather than degrading the standard.
+          # forward rather than degrading the standard. llvm.sh adds the
+          # repo and runs its own apt-get update.
           wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
           chmod +x /tmp/llvm.sh
           sudo /tmp/llvm.sh 22
-          sudo apt-get install -y clang-tools-22 libclang-rt-22-dev lld-22
+          sudo apt-get update
+          mkdir -p "${RUNNER_TEMP}/apt-archives"
+          if compgen -G "${RUNNER_TEMP}/apt-archives/*.deb" >/dev/null; then
+            sudo cp -f "${RUNNER_TEMP}/apt-archives"/*.deb /var/cache/apt/archives/
+          fi
+          grep -v '^#' .github/apt/sanitizers.txt | xargs sudo apt-get install -y
+          if compgen -G "/var/cache/apt/archives/*.deb" >/dev/null; then
+            sudo cp -f /var/cache/apt/archives/*.deb "${RUNNER_TEMP}/apt-archives/"
+            sudo chown -R "$(id -u):$(id -g)" "${RUNNER_TEMP}/apt-archives"
+          fi
           # meson from PyPI: Ubuntu 24.04 ships meson 1.3.2, which predates `c23`
           # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
           sudo pip3 install --break-system-packages --ignore-installed --quiet --require-hashes \
             -r requirements/locks/build.txt
+
+      - name: Save apt archives
+        # Saves only after the install step succeeded: an install cut off by its
+        # timeout leaves the archive directory empty, and an empty entry under
+        # this immutable key would be restored as a hit on every later run
+        # (an empty 200-byte entry was saved this way on 2026-10-22). Runs even
+        # when a later step fails, so the next run skips the download.
+        if: ${{ !cancelled() && steps.apt-install.outcome == 'success' && steps.apt-cache.outputs.cache-hit != 'true' }}
+        timeout-minutes: 5
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ${{ runner.temp }}/apt-archives
+          key: apt-${{ runner.os }}-${{ runner.arch }}-sanitizers-${{ hashFiles('.github/apt/sanitizers.txt') }}
       - name: Build with ${{ matrix.sanitizer }} sanitizer
         if: steps.impact.outputs.c_core == 'true'
         # ADR-0347: under UBSan, suppress the `function` check via
@@ -498,7 +607,7 @@ jobs:
         run: echo "::notice::tiny_ai not impacted (mode=$MODE reason=$REASON) — Tiny AI satisfied without running (ADR-1140)"
       - name: Restore apt archives
         id: apt-cache
-        # Restore-only; the save is split out below and gated on always().
+        # Restore-only; the save below runs only after a successful install.
         # Caches downloaded .deb archives so a slow package mirror does not eat
         # into the apt step's timeout. Keyed on runner OS, arch, job, and the
         # hash of the job's apt package list under .github/apt/tiny-ai.txt.
@@ -708,7 +817,8 @@ jobs:
     # required-aggregator
     name: Tooling Tests
     runs-on: ubuntu-26.04
-    timeout-minutes: 30
+    # Measured max 23.2m (2026-10-23); 35 min is at least 1.25x the slowest healthy run.
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -724,7 +834,22 @@ jobs:
           python-version: "3.14.8"
       - name: Every test file belongs to a suite that a required check runs
         run: python scripts/ci/suite_registry.py check
+      - name: Restore apt archives
+        id: apt-cache
+        # Restore-only; the save below runs only after a successful install.
+        # Caches downloaded .deb archives so a slow package mirror does not eat
+        # into the apt step's timeout. Keyed on runner OS, arch, job, and the
+        # hash of the job's apt package list under .github/apt/tooling-tests.txt.
+        timeout-minutes: 5
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ${{ runner.temp }}/apt-archives
+          key: apt-${{ runner.os }}-${{ runner.arch }}-tooling-tests-${{ hashFiles('.github/apt/tooling-tests.txt') }}
+
       - name: Install the tooling test lock and cppcheck
+        id: apt-install
+        # Measured max 4.8m (2026-10-23); 10 min is at least 1.25x the slowest healthy run.
+        timeout-minutes: 10
         # package-build first: the docs half of the lock has sdists that build
         # without isolation (the Docs job installs the docs lock the same way).
         # test_cppcheck_posix_model.py drives the distribution's cppcheck, the
@@ -732,11 +857,34 @@ jobs:
         env:
           TMPDIR: ${{ runner.temp }}
         run: |
+          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nAPT::Keep-Downloaded-Packages "true";\n' \
+            | sudo tee /etc/apt/apt.conf.d/80ci-retries >/dev/null
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends cppcheck
+          mkdir -p "${RUNNER_TEMP}/apt-archives"
+          if compgen -G "${RUNNER_TEMP}/apt-archives/*.deb" >/dev/null; then
+            sudo cp -f "${RUNNER_TEMP}/apt-archives"/*.deb /var/cache/apt/archives/
+          fi
+          grep -v '^#' .github/apt/tooling-tests.txt | xargs sudo apt-get install -y --no-install-recommends
+          if compgen -G "/var/cache/apt/archives/*.deb" >/dev/null; then
+            sudo cp -f /var/cache/apt/archives/*.deb "${RUNNER_TEMP}/apt-archives/"
+            sudo chown -R "$(id -u):$(id -g)" "${RUNNER_TEMP}/apt-archives"
+          fi
           python -m pip install --require-hashes -r requirements/locks/package-build.txt
           python -m pip install --no-build-isolation --require-hashes \
             -r requirements/locks/tooling-tests.txt
+
+      - name: Save apt archives
+        # Saves only after the install step succeeded: an install cut off by its
+        # timeout leaves the archive directory empty, and an empty entry under
+        # this immutable key would be restored as a hit on every later run
+        # (an empty 200-byte entry was saved this way on 2026-10-22). Runs even
+        # when a later step fails, so the next run skips the download.
+        if: ${{ !cancelled() && steps.apt-install.outcome == 'success' && steps.apt-cache.outputs.cache-hit != 'true' }}
+        timeout-minutes: 5
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ${{ runner.temp }}/apt-archives
+          key: apt-${{ runner.os }}-${{ runner.arch }}-tooling-tests-${{ hashFiles('.github/apt/tooling-tests.txt') }}
       - name: Run the tooling suite
         # The lock installs clang-format at the pre-commit hook's pin; naming it
         # makes the API generator's format test fail instead of skip when the
@@ -846,7 +994,8 @@ jobs:
     # required-aggregator
     name: Python Package Tests (vmaf-tune)
     runs-on: ubuntu-26.04
-    timeout-minutes: 20
+    # Sized as step caps (5+20+5 = 30) plus 1.25x measured 2.2m uncapped run (2026-10-23); 35 min covers sum.
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -891,15 +1040,54 @@ jobs:
         run: |
           tar -C "${RUNNER_TEMP}/vmaf-cli" -xf "${RUNNER_TEMP}/vmaf-cli/vmaf-cli.tar"
           "${RUNNER_TEMP}/vmaf-cli/tools/vmaf" --version
-      - name: Install ffmpeg with libx265
+      - name: Restore apt archives
+        id: apt-cache
+        # Restore-only; the save below runs only after a successful install.
+        # Caches downloaded .deb archives so a slow package mirror does not eat
+        # into the apt step's timeout. Keyed on runner OS, arch, job, and the
+        # hash of the job's apt package list under .github/apt/vmaf-tune-tests.txt.
         if: steps.impact.outputs.python == 'true'
+        timeout-minutes: 5
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ${{ runner.temp }}/apt-archives
+          key: apt-${{ runner.os }}-${{ runner.arch }}-vmaf-tune-tests-${{ hashFiles('.github/apt/vmaf-tune-tests.txt') }}
+
+      - name: Install ffmpeg with libx265
+        id: apt-install
+        if: steps.impact.outputs.python == 'true'
+        # Measured max 15.1m (2026-10-23); 20 min is at least 1.25x the slowest healthy run.
+        timeout-minutes: 20
         # The two real-x265 integration tests (test_codec_adapter_x265.py,
         # test_codec_adapter_x265_two_pass.py; ADR-1565) encode with the
         # distribution ffmpeg, which links libx265 (ffmpeg 8.0.1 on 26.04).
         run: |
+          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nAPT::Keep-Downloaded-Packages "true";\n' \
+            | sudo tee /etc/apt/apt.conf.d/80ci-retries >/dev/null
           sudo apt-get update
-          sudo apt-get install -y ffmpeg
+          mkdir -p "${RUNNER_TEMP}/apt-archives"
+          if compgen -G "${RUNNER_TEMP}/apt-archives/*.deb" >/dev/null; then
+            sudo cp -f "${RUNNER_TEMP}/apt-archives"/*.deb /var/cache/apt/archives/
+          fi
+          grep -v '^#' .github/apt/vmaf-tune-tests.txt | xargs sudo apt-get install -y
+          if compgen -G "/var/cache/apt/archives/*.deb" >/dev/null; then
+            sudo cp -f /var/cache/apt/archives/*.deb "${RUNNER_TEMP}/apt-archives/"
+            sudo chown -R "$(id -u):$(id -g)" "${RUNNER_TEMP}/apt-archives"
+          fi
           ffmpeg -hide_banner -encoders | grep -E '^ V.* libx265 '
+
+      - name: Save apt archives
+        # Saves only after the install step succeeded: an install cut off by its
+        # timeout leaves the archive directory empty, and an empty entry under
+        # this immutable key would be restored as a hit on every later run
+        # (an empty 200-byte entry was saved this way on 2026-10-22). Runs even
+        # when a later step fails, so the next run skips the download.
+        if: ${{ !cancelled() && steps.apt-install.outcome == 'success' && steps.apt-cache.outputs.cache-hit != 'true' }}
+        timeout-minutes: 5
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ${{ runner.temp }}/apt-archives
+          key: apt-${{ runner.os }}-${{ runner.arch }}-vmaf-tune-tests-${{ hashFiles('.github/apt/vmaf-tune-tests.txt') }}
       - name: Fetch the Netflix golden YUV fixtures
         if: steps.impact.outputs.python == 'true'
         run: bash scripts/test/fetch-test-yuvs.sh
@@ -974,7 +1162,7 @@ jobs:
 
       - name: Restore apt archives
         id: apt-cache
-        # Restore-only; the save is split out below and gated on always().
+        # Restore-only; the save below runs only after a successful install.
         # Caches downloaded .deb archives so a slow package mirror does not eat
         # into the apt step's timeout. Keyed on runner OS, arch, job, and the
         # hash of the job's apt package list under .github/apt/mcp-smoke.txt.
@@ -1141,7 +1329,8 @@ jobs:
     # together on master 777647fc0) and the rest of the job (apt + pip, the
     # gcov build, the meson unit suite, gcovr; ~5.5 minutes) leave room for a
     # runner 1.5x slower than that measurement.
-    timeout-minutes: 75
+    # Sized as step caps (5+35+5+10 = 55) plus 1.25x measured 57m uncapped run (2026-10-23); 120 min covers sum.
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -1161,9 +1350,24 @@ jobs:
           MODE: ${{ steps.impact.outputs.mode }}
           REASON: ${{ steps.impact.outputs.reason }}
         run: echo "::notice::golden_harness not impacted (mode=$MODE reason=$REASON) — Coverage Gate satisfied without running (ADR-1140)"
-      - name: Install deps
-        id: coverage_install_deps
+      - name: Restore apt archives
+        id: apt-cache
+        # Restore-only; the save below runs only after a successful install.
+        # Caches downloaded .deb archives so a slow package mirror does not eat
+        # into the apt step's timeout. Keyed on runner OS, arch, job, and the
+        # hash of the job's apt package list under .github/apt/coverage.txt.
         if: steps.impact.outputs.golden_harness == 'true'
+        timeout-minutes: 5
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ${{ runner.temp }}/apt-archives
+          key: apt-${{ runner.os }}-${{ runner.arch }}-coverage-${{ hashFiles('.github/apt/coverage.txt') }}
+
+      - name: Install deps
+        id: apt-install
+        if: steps.impact.outputs.golden_harness == 'true'
+        # Measured max 30m21s slow fetch (2026-10-23); 35 min is at least 1.25x.
+        timeout-minutes: 35
         run: |
           # The hosted runner ships pre-provisioned Microsoft/Azure apt
           # sources (packages.microsoft.com) that intermittently 403 /
@@ -1173,9 +1377,18 @@ jobs:
           # rm -f succeeds when a pattern matches nothing.
           sudo rm -f /etc/apt/sources.list.d/*microsoft* \
                      /etc/apt/sources.list.d/*azure*
+          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nAPT::Keep-Downloaded-Packages "true";\n' \
+            | sudo tee /etc/apt/apt.conf.d/80ci-retries >/dev/null
           sudo apt-get update
-          sudo apt-get install -y ninja-build nasm pkg-config gcc \
-            python3-pip
+          mkdir -p "${RUNNER_TEMP}/apt-archives"
+          if compgen -G "${RUNNER_TEMP}/apt-archives/*.deb" >/dev/null; then
+            sudo cp -f "${RUNNER_TEMP}/apt-archives"/*.deb /var/cache/apt/archives/
+          fi
+          grep -v '^#' .github/apt/coverage.txt | xargs sudo apt-get install -y
+          if compgen -G "/var/cache/apt/archives/*.deb" >/dev/null; then
+            sudo cp -f /var/cache/apt/archives/*.deb "${RUNNER_TEMP}/apt-archives/"
+            sudo chown -R "$(id -u):$(id -g)" "${RUNNER_TEMP}/apt-archives"
+          fi
           # meson from PyPI: Ubuntu 24.04 ships meson 1.3.2, which predates `c23`
           # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
           sudo pip3 install --break-system-packages --ignore-installed --quiet --require-hashes \
@@ -1201,6 +1414,20 @@ jobs:
           # (python/tox.ini commands_pre); cy_test.py imports it. Without it
           # the suite ignored cy_test.py since #18 (ADR-1528).
           python3 -m pip install --user --no-deps --no-build-isolation -e python
+
+      - name: Save apt archives
+        # Saves only after the install step succeeded: an install cut off by its
+        # timeout leaves the archive directory empty, and an empty entry under
+        # this immutable key would be restored as a hit on every later run
+        # (an empty 200-byte entry was saved this way on 2026-10-22). Runs even
+        # when a later step fails, so the next run skips the download.
+        if: ${{ !cancelled() && steps.apt-install.outcome == 'success' && steps.apt-cache.outputs.cache-hit != 'true' }}
+        timeout-minutes: 5
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ${{ runner.temp }}/apt-archives
+          key: apt-${{ runner.os }}-${{ runner.arch }}-coverage-${{ hashFiles('.github/apt/coverage.txt') }}
+
       # Cache the ORT GPU .tgz so we don't re-download ~150 MB from
       # github.com/microsoft/onnxruntime/releases on every Coverage Gate
       # run. Key is purely the ORT version pinned in the env block of the
@@ -1218,13 +1445,15 @@ jobs:
       - name: Install ONNX Runtime (GPU build, CPU + CUDA EPs)
         id: coverage_install_ort
         if: steps.impact.outputs.golden_harness == 'true'
+        # Measured max 1.3m (2026-10-23); 10 min cap covers tarball download and setup at 1.25x.
+        timeout-minutes: 10
         # The GPU .tgz bundles CPU + CUDA + TensorRT execution providers in
         # one package. We install it (instead of the smaller CPU-only build)
         # so the coverage gate can also exercise the CUDA EP-attach success
         # arms in ort_backend.c — which on a CPU-only ORT remained
         # unreachable per ADR-0112. CUDA EP attach only requires the CUDA
-        # *runtime* library to load (no actual GPU driver), which is why we
-        # `apt install libcudart12` below. CreateSession then fails because
+        # *runtime* library to load (no actual GPU driver), which is why
+        # libcudart12 is installed above. CreateSession then fails because
         # there's no real GPU on a hosted runner; vmaf_ort_open's two-stage
         # fallback (ADR-0113) catches that and retries with CPU-only
         # session_options, so existing tests stay green while the EP-attach
@@ -1236,7 +1465,9 @@ jobs:
           set -euo pipefail
           # CUDA 12.x runtime — user-space libs only, no driver. Lets ORT
           # dlopen libonnxruntime_providers_cuda.so → libcudart.so.12.
-          sudo apt-get install -y libcudart12 || sudo apt-get install -y nvidia-cuda-toolkit
+          # libcudart12 is cached in the apt step; fall back to nvidia-cuda-toolkit
+          # only if libcudart12 was not installed.
+          dpkg -s libcudart12 >/dev/null 2>&1 || sudo apt-get install -y nvidia-cuda-toolkit
           # Reuse cached tarball if present (cache hit), otherwise fetch
           # and populate the cache for the next run.
           mkdir -p "${RUNNER_TEMP}/ort-cache"
@@ -1464,7 +1695,7 @@ jobs:
           # that step (run 39006126494: the meson suite timed out and the
           # shards only reported "skipped").
           EARLIER_OUTCOMES: >-
-            Install-deps=${{ steps.coverage_install_deps.outcome }}
+            Install-deps=${{ steps.apt-install.outcome }}
             Install-ONNX-Runtime=${{ steps.coverage_install_ort.outcome }}
             Build-with-gcov=${{ steps.coverage_build.outcome }}
             Prefetch-Go-modules=${{ steps.coverage_prefetch_go.outcome }}
