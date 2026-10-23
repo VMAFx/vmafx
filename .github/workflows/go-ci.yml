@@ -144,7 +144,7 @@ jobs:
         # this immutable key would be restored as a hit on every later run
         # (an empty 200-byte entry was saved this way on 2026-10-22). Runs even
         # when a later step fails, so the next run skips the download.
-        if: ${{ steps.impact.outputs.go_checks == 'true' && !cancelled() && steps.apt-install.outcome == 'success' && steps.apt-cache.outputs.cache-hit != 'true' }}
+        if: steps.impact.outputs.go_checks == 'true' && !cancelled() && steps.apt-install.outcome == 'success' && steps.apt-cache.outputs.cache-hit != 'true'
         timeout-minutes: 5
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
