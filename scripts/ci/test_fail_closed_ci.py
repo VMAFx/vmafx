@@ -231,7 +231,7 @@ class FailClosedCIContract(unittest.TestCase):
 
         sanitizers_wf = (WORKFLOWS / "sanitizers.yml").read_text(encoding="utf-8")
         sanitizer_fuzz_job = workflow_job(sanitizers_wf, "fuzz-nightly")
-        self.assertRegex(sanitizer_fuzz_job, r"(?m)^    timeout-minutes: 30\s*$")
+        self.assertRegex(sanitizer_fuzz_job, r"(?m)^    timeout-minutes: 50\s*$")
 
     def test_semgrep_advisory_preserves_failure_outcome(self) -> None:
         workflow = (WORKFLOWS / "security-scans.yml").read_text(encoding="utf-8")

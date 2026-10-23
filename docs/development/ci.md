@@ -1100,6 +1100,9 @@ request per workflow file:
 | --- | --- | --- | --- | --- |
 | `build.yml` | `build-work` (Ubuntu legs) | `.github/apt/build-linux.txt` | 26 min | 80 min |
 | `rust-ci.yml` | `rust-vmafx-sys-work` | `.github/apt/rust-vmafx-sys.txt` | 16 min | 30 min |
+| `sanitizers.yml` | `asan-ubsan` | `.github/apt/sanitizers-base.txt` + `.github/apt/sanitizers-llvm.txt` | 5 min | 30 min |
+| `sanitizers.yml` | `fuzz-nightly` | `.github/apt/fuzz-nightly.txt` | 5 min | 50 min |
+| `sanitizers.yml` | `tsan` | `.github/apt/sanitizers-base.txt` + `.github/apt/sanitizers-llvm.txt` | 5 min | 35 min |
 
 ### Timeout budgeting rule
 
