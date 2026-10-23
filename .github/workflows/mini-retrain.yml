@@ -21,18 +21,57 @@ jobs:
   mini-retrain:
     name: Mini Retrain nightly
     runs-on: ubuntu-26.04
+    # Step caps 15 min plus 1.25x the longest measured healthy job (6.8m,
+    # 2026-10-23) sums to 24 min <= 40 min; cap kept at 40 min.
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
 
+      - name: Restore apt archives
+        id: apt-cache
+        # Restore-only; the save below runs only after a successful install.
+        # Caches downloaded .deb archives so a slow package mirror does not eat
+        # into the apt step's timeout. Keyed on runner OS, arch, job, and the
+        # hash of the job's apt package list under .github/apt/mini-retrain.txt.
+        timeout-minutes: 5
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ${{ runner.temp }}/apt-archives
+          key: apt-${{ runner.os }}-${{ runner.arch }}-mini-retrain-${{ hashFiles('.github/apt/mini-retrain.txt') }}
+
       - name: Install build deps
+        id: apt-install
+        # Measured max 0.4m (2026-10-23); 5 min is at least 1.25x the slowest healthy run.
+        timeout-minutes: 5
         run: |
+          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nAPT::Keep-Downloaded-Packages "true";\n' \
+            | sudo tee /etc/apt/apt.conf.d/80ci-retries >/dev/null
           sudo apt-get update
-          sudo apt-get install -y ninja-build nasm pkg-config python3-pip python3-venv
+          mkdir -p "${RUNNER_TEMP}/apt-archives"
+          if compgen -G "${RUNNER_TEMP}/apt-archives/*.deb" >/dev/null; then
+            sudo cp -f "${RUNNER_TEMP}/apt-archives"/*.deb /var/cache/apt/archives/
+          fi
+          grep -v '^#' .github/apt/mini-retrain.txt | xargs sudo apt-get install -y
+          if compgen -G "/var/cache/apt/archives/*.deb" >/dev/null; then
+            sudo cp -f /var/cache/apt/archives/*.deb "${RUNNER_TEMP}/apt-archives/"
+            sudo chown -R "$(id -u):$(id -g)" "${RUNNER_TEMP}/apt-archives"
+          fi
           sudo pip3 install --break-system-packages --ignore-installed --quiet --require-hashes \
             -r requirements/locks/build.txt
+
+      - name: Save apt archives
+        # Saves only after the install step succeeded: an install cut off by its
+        # timeout leaves the archive directory empty, and an empty entry under
+        # this immutable key would be restored as a hit on every later run.
+        # Runs even when a later step fails, so the next run skips the download.
+        if: ${{ !cancelled() && steps.apt-install.outcome == 'success' && steps.apt-cache.outputs.cache-hit != 'true' }}
+        timeout-minutes: 5
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ${{ runner.temp }}/apt-archives
+          key: apt-${{ runner.os }}-${{ runner.arch }}-mini-retrain-${{ hashFiles('.github/apt/mini-retrain.txt') }}
 
       - name: Build the vmaf CLI (CPU, no DNN)
         run: |
