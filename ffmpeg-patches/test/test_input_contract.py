@@ -167,7 +167,10 @@ docker run --gpus all -e NVIDIA_DRIVER_CAPABILITIES=compute,video \\
             encoding="utf-8",
         )
 
-    def _assert_docker_reversal_fails(self) -> None:
+    def _assert_docker_pad_order(self, title: str, run_line: str) -> None:
+        self._write_docker_run(title, run_line)
+        result = self.run_checker()
+        self.assertEqual(result.returncode, 0, result.stderr)
         self.mutate(
             "docs/usage/docker.md",
             "-i /files/distorted.y4m \\\n    -i /files/reference.y4m",
@@ -379,13 +382,10 @@ docker run --gpus all -e NVIDIA_DRIVER_CAPABILITIES=compute,video \\
         self.assert_fails_with("reversed VMAF pads")
 
     def test_registry_port_qualified_image(self) -> None:
-        self._write_docker_run(
+        self._assert_docker_pad_order(
             "Registry Port Qualified",
             "docker run --rm localhost:5000/vmaf:latest \\",
         )
-        result = self.run_checker()
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self._assert_docker_reversal_fails()
 
     def test_name_vmaf_with_arbitrary_image_ignored(self) -> None:
         self._write_docker_run(
@@ -398,13 +398,10 @@ docker run --gpus all -e NVIDIA_DRIVER_CAPABILITIES=compute,video \\
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_explicit_ffmpeg_on_arbitrary_image(self) -> None:
-        self._write_docker_run(
+        self._assert_docker_pad_order(
             "Explicit entrypoint on arbitrary image",
             "docker run --rm --entrypoint ffmpeg ubuntu:22.04 \\",
         )
-        result = self.run_checker()
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self._assert_docker_reversal_fails()
 
     def test_non_ffmpeg_entrypoint_override_rejected(self) -> None:
         self._write_docker_run(
