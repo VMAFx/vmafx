@@ -227,7 +227,7 @@ class FailClosedCIContract(unittest.TestCase):
     def test_fuzz_workflows_have_adequate_timeout_budget(self) -> None:
         fuzz_wf = (WORKFLOWS / "fuzz.yml").read_text(encoding="utf-8")
         fuzz_job = workflow_job(fuzz_wf, "fuzz")
-        self.assertRegex(fuzz_job, r"(?m)^    timeout-minutes: 30\s*$")
+        self.assertRegex(fuzz_job, r"(?m)^    timeout-minutes: 40\s*$")
 
         sanitizers_wf = (WORKFLOWS / "sanitizers.yml").read_text(encoding="utf-8")
         sanitizer_fuzz_job = workflow_job(sanitizers_wf, "fuzz-nightly")
