@@ -1100,6 +1100,7 @@ request per workflow file:
 | --- | --- | --- | --- | --- |
 | `build.yml` | `build-work` (Ubuntu legs) | `.github/apt/build-linux.txt` | 26 min | 80 min |
 | `docs.yml` | `doxygen-work` | `.github/apt/doxygen-work.txt` | 5 min | 20 min |
+| `fuzz.yml` | `fuzz` | `.github/apt/fuzz.txt` | 5 min | 40 min |
 | `go-ci.yml` | `go-ci` | `.github/apt/go-ci.txt` | 9 min | 90 min |
 | `lint-and-format.yml` | `cppcheck` | `.github/apt/cppcheck.txt` | 5 min | 45 min |
 | `lint-and-format.yml` | `clang-tidy` | `.github/apt/tidy-changed.txt` | 5 min | 25 min |

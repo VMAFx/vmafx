@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: EUPL-1.2
+# Copyright 2026 Lusoris
+#
+# Apt packages for the Fuzz (fuzz) CI job in fuzz.yml.
+# One package per line; comments starting with # are ignored.
+
+ninja-build
+python3-pip
+pkg-config
+nasm
+xxd
