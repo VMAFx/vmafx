@@ -1101,6 +1101,10 @@ request per workflow file:
 | `build.yml` | `build-work` (Ubuntu legs) | `.github/apt/build-linux.txt` | 26 min | 80 min |
 | `docs.yml` | `doxygen-work` | `.github/apt/doxygen-work.txt` | 5 min | 20 min |
 | `go-ci.yml` | `go-ci` | `.github/apt/go-ci.txt` | 9 min | 90 min |
+| `lint-and-format.yml` | `cppcheck` | `.github/apt/cppcheck.txt` | 5 min | 45 min |
+| `lint-and-format.yml` | `clang-tidy` | `.github/apt/tidy-changed.txt` | 5 min | 25 min |
+| `lint-and-format.yml` | `clang-tidy-ratchet` | `.github/apt/tidy-ratchet.txt` | 5 min | 45 min |
+| `lint-and-format.yml` | `clang-tidy-sycl` | `.github/apt/tidy-sycl.txt` | 5 min | 40 min |
 | `rust-ci.yml` | `rust-vmafx-sys-work` | `.github/apt/rust-vmafx-sys.txt` | 16 min | 30 min |
 | `sanitizers.yml` | `asan-ubsan` | `.github/apt/sanitizers-base.txt` + `.github/apt/sanitizers-llvm.txt` | 5 min | 30 min |
 | `sanitizers.yml` | `fuzz-nightly` | `.github/apt/fuzz-nightly.txt` | 5 min | 50 min |

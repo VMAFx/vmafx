@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: EUPL-1.2
+# Copyright 2026 Lusoris
+#
+# Apt packages for the Cppcheck (cppcheck) job in lint-and-format.yml.
+# One package per line; comments starting with # are ignored.
+
+cppcheck
+ninja-build
+nasm
