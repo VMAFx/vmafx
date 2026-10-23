@@ -45,7 +45,6 @@ GITHUB_DEFAULT_JOB_MINUTES = 360
 UNCAPPED_APT_EXCEPTIONS: dict[str, datetime.date] = {
     name: datetime.date(2026, 10, 26)
     for name in (
-        "build.yml",
         "docs.yml",
         "doxygen-public-api.yml",
         "fuzz.yml",
@@ -53,7 +52,6 @@ UNCAPPED_APT_EXCEPTIONS: dict[str, datetime.date] = {
         "mini-retrain.yml",
         "nightly.yml",
         "published-rc-licence-companions.yml",
-        "rust-ci.yml",
         "sanitizers.yml",
         "security-scans.yml",
     )

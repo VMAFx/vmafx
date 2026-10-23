@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: EUPL-1.2
+# Copyright 2026 Lusoris
+#
+# Apt packages for the build-work job in build.yml.
+# One package per line; comments starting with # are ignored.
+
+ccache
+ninja-build
+nasm
+libomp-dev
+pkg-config
+gcc
+g++
+libavcodec-dev
+libavformat-dev
+libavutil-dev
+libswscale-dev
+python3-pip
