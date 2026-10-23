@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1407), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1409), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5639,3 +5639,11 @@ Every ADR, one heading each (1407), so the site search finds an ADR by its title
 ## ADR-3360: The `libvmaf_sycl` filter routes `feature=` names to their SYCL twins
 
 [3360-sycl-filter-twin-routing](3360-sycl-filter-twin-routing.md)
+
+## ADR-3366: One README presentation standard, with VMAFx as the reference example
+
+[3366-readme-presentation-standard](3366-readme-presentation-standard.md)
+
+## ADR-3367: Workflow job time limits cover the sum of their step limits
+
+[3367-job-timeout-covers-step-caps](3367-job-timeout-covers-step-caps.md)

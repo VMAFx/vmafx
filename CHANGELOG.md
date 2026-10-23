@@ -911,6 +911,119 @@
   `_corpus_download_fakes.py`.
 
 
+<!-- markdownlint-disable MD041 -->
+- **Every job in `tests-and-quality-gates.yml` running `apt-get install` now caches package archives.**
+  Package lists are declared per job in `.github/apt/` files, and each install
+  step has a timeout cap sized at or above 1.25 times its slowest measured run.
+  Job timeout limits cover the sum of their step caps so slow mirrors cannot
+  trigger job cancellation.
+
+
+- **The `MCP Smoke` and `Tiny AI` jobs now cache apt package archives (.deb files).**
+  Package lists are declared per job in `.github/apt/mcp-smoke.txt` and
+  `.github/apt/tiny-ai.txt`, and restored archives are copied into
+  `/var/cache/apt/archives` before install so slow package mirrors no longer
+  eat into the apt step's 20-minute timeout (`.github/workflows/tests-and-quality-gates.yml`).
+
+
+<!-- markdownlint-disable MD041 -->
+- **The Linux base dependency install in `build.yml` now caches apt package archives.**
+  Base packages are declared in `.github/apt/build-linux.txt`, and each `apt-get install` step carries a timeout cap sized at or above 1.25 times its slowest measured run.
+  The `build-work` job timeout limit is raised to 80 minutes to cover step caps and uncapped step headroom.
+
+
+<!-- markdownlint-disable MD041 -->
+- **The `Doxygen Public API work` job in `docs.yml` now caches apt package archives and caps its apt install step.**
+  Package requirements are declared in `.github/apt/doxygen-work.txt`, and the install step has a 5-minute timeout cap sized at 1.25 times its slowest measured run.
+  The job timeout limit is raised from 10 to 20 minutes to cover the step caps sum and uncapped step headroom.
+
+
+<!-- markdownlint-disable MD041 -->
+- **The `fuzz` job in `fuzz.yml` now caches apt package archives and caps its apt install step.**
+  Package requirements are declared in `.github/apt/fuzz.txt`, and the install step has a 5-minute timeout cap sized at 1.25 times its slowest measured run.
+  The job timeout limit is raised from 30 to 40 minutes to cover the step caps sum and uncapped step headroom.
+
+
+<!-- markdownlint-disable MD041 -->
+- **The `go-ci` job in `go-ci.yml` now caches apt package archives and caps its install step.**
+  Package lists are declared in `.github/apt/go-ci.txt`, and restored `.deb`
+  archives are copied into `/var/cache/apt/archives` before install to prevent
+  slow package mirrors from triggering job cancellations. The apt install step
+  is capped at 9 minutes and the job timeout is set to 90 minutes.
+
+
+<!-- markdownlint-disable MD041 -->
+- **Apt installation steps in `lint-and-format.yml` now cache package archives and carry per-step timeout caps.**
+  Package requirements for `clang-tidy`, `clang-tidy-ratchet`, `clang-tidy-sycl`, and `cppcheck` are declared under `.github/apt/` with 5-minute install caps sized at 1.25 times measured runs.
+  The `cppcheck` job limit is raised to 45 minutes to absorb step caps and execution variance, preventing slow mirror stalls.
+
+
+<!-- markdownlint-disable MD041 -->
+- **The `Mini Retrain nightly` job in `mini-retrain.yml` now caches apt package archives and caps its apt install step.**
+  Package requirements are declared in `.github/apt/mini-retrain.txt`, and the install step has a 5-minute timeout cap sized at 1.25 times its slowest measured run.
+  The job timeout limit stays at 40 minutes, covering the step caps sum and uncapped step headroom.
+
+
+<!-- markdownlint-disable MD041 -->
+- **The `Full clang-tidy scan` job in `nightly.yml` now caches apt package archives and caps its apt install step.**
+  Package requirements are declared in `.github/apt/clang-tidy-full.txt`, and the install step has a 5-minute timeout cap sized at 1.25 times its slowest measured run.
+  The job timeout limit remains 60 minutes, which covers the step caps sum and uncapped step headroom.
+
+
+<!-- markdownlint-disable MD041 -->
+- **The `companion` job in `published-rc-licence-companions.yml` now caps its apt install step.**
+  The "Fetch the corresponding source" step carries a 48-minute timeout cap sized at 1.25 times its slowest measured run (37.7m on 2026-10-23).
+  No apt archive cache is used because package installation runs inside the release builder container rather than on the runner; the 240-minute job limit covers the step cap and uncapped step headroom.
+
+
+<!-- markdownlint-disable MD041 -->
+- **The `vmafx-sys CI work` job in `rust-ci.yml` now caches apt package archives and caps its apt install step.**
+  Package requirements are declared in `.github/apt/rust-vmafx-sys.txt`, and
+  the install step has a 16-minute timeout cap sized at 1.25 times its slowest
+  measured run. Restored archives prevent slow package mirrors from stalling
+  the workflow.
+
+
+<!-- markdownlint-disable MD041 -->
+- **The sanitizers workflow (`sanitizers.yml`) now caches apt package archives and caps every apt install step.**
+  Package requirements are declared in `.github/apt/sanitizers-base.txt`, `.github/apt/sanitizers-llvm.txt`, and `.github/apt/fuzz-nightly.txt`.
+  Each install step carries a 5-minute timeout cap, and the nightly fuzz job limit is raised to 50 minutes to maintain headroom over measured runs.
+
+
+<!-- markdownlint-disable MD041 -->
+- **The `CodeQL (C/C++)` job in `security-scans.yml` now caches apt package archives and caps its apt install step.**
+  Package requirements are declared in `.github/apt/codeql-cpp.txt`, and the configure step has a 5-minute timeout cap sized at 1.25 times its slowest measured run.
+  The job timeout limit is raised from 35 to 55 minutes to cover the step caps sum and uncapped step headroom.
+
+
+- **The `Install build deps` step of `MCP Smoke` and `Tiny AI` no longer cancels
+  healthy runs on a slow package mirror.** Its limit rises from 8 to 20 minutes,
+  at least 1.25 times the slowest healthy run measured on 2026-10-22 (11 minutes
+  51 seconds); apt's retries and 30-second timeouts still end a real stall
+  (`.github/workflows/tests-and-quality-gates.yml`).
+
+
+- **The `Dev Container Build` job no longer times out on a slow but healthy
+  run.** Its limit rises from 75 to 90 minutes, at least 1.25 times the longest
+  of 12 successful runs measured on 2026-10-22 (69.1 minutes). A run that was
+  still compiling FFmpeg had been cancelled at 75 minutes
+  (`.github/workflows/dev-container-build.yml`).
+
+
+- **`MCP Smoke` and `Tiny AI` no longer cancel a healthy run after a slow
+  package mirror.** Their job limits rise to 55 minutes, the apt step's 20
+  minutes plus 1.25 times the longest healthy build measured on 2026-10-22, and
+  `scripts/ci/check_job_timeout_budget.py` now fails any workflow job whose
+  limit is below the sum of its step limits (ADR-3367,
+  `.github/workflows/tests-and-quality-gates.yml`).
+
+
+<!-- markdownlint-disable MD041 -->
+- **CI steps that install LLVM through `llvm.sh` now have a 10-minute limit.**
+  The 5-minute limit set with the apt archive cache cut off a `Tidy Ratchet` run on `master` (5.2 minutes); the slowest healthy run of such a step measured 5.7 minutes.
+  The jobs holding these steps keep their headroom: `Tidy Changed`, `Tidy Ratchet`, `Tidy SYCL`, `fuzz` and the three sanitizer jobs gain 5 minutes each.
+
+
 - **The `MCP Smoke` and `Tiny AI` jobs no longer time out on a slow but healthy
   run.** Their limits rise to 35 and 45 minutes, at least 1.25 times the longest
   successful run measured on 2026-10-22 (24 and 31 minutes). Each job's
@@ -1548,6 +1661,16 @@
   section, quick start scores the tracked 576x324 pair with its expected output,
   Contribute links good-first-issue and help-wanted lists; `.standards.yaml`
   records the repository description, https homepage and topics (#2751).
+
+
+- **The README follows one presentation standard
+  ([ADR-3366](docs/adr/3366-readme-presentation-standard.md)).** The banner is
+  a 120-pixel strip, the status badges sit in one block under it in the order
+  release, CI, security, standards, licence, support, toolchain versions moved
+  to a compact row under "Backends at a glance", and the backend-dispatch
+  diagram is a Mermaid chart in the project palette that GitHub draws at the
+  column's width. The rules are in
+  [`docs/README-STANDARD.md`](docs/README-STANDARD.md).
 
 
 - **The plan for reference-exact extractors is written down.**
@@ -2410,6 +2533,14 @@
   failing nvidia-smi (exit 18 after a driver update that leaves the kernel module and the library at
   different versions) ended every run, `--dry-run` included. The kit now writes
   `nvidia-smi failed: exit N, no GPU inventory` into `host.txt` and goes on.
+
+
+- Docs tooling: `scripts/docs/concat-rebase-notes.sh --lint` now requires a
+  rebase-notes fragment to start with its `## <title> (<date>)` heading on
+  line 1 and to end without a blank line. A fragment with a blank first line
+  passed the old check, rendered a double blank line into
+  `docs/rebase-notes.md` and made the hooks refuse every render commit, so
+  master owed its render past the 24-hour bound.
 
 
 - Build: the production CUDA and ROCm images build again. The CUDA image compiled against nv-codec-headers one release behind the dev image, without the `cuArray3DGetDescriptor` the device-frame import calls; it now uses `n13.1.15.0`, pinned once in `build-config.env` (`NV_CODEC_HEADERS_TAG`, `NV_CODEC_HEADERS_COMMIT`). `meson setup` with CUDA enabled stops with a message when the installed headers are older. The image licence scan now finds the `import_convert` kernels under `core/src/cuda` and `core/src/hip`.
