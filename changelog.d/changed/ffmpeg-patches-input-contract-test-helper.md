@@ -1,0 +1,1 @@
+- **Consolidated repeated Docker pad-order checks into `_assert_docker_pad_order`.** `test_registry_port_qualified_image` and `test_explicit_ffmpeg_on_arbitrary_image` in `ffmpeg-patches/test/test_input_contract.py` call the shared helper for fixture creation, baseline verification, and reversed pad mutation assertions (HISS-19).
