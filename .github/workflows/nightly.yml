@@ -59,24 +59,60 @@ jobs:
   clang-tidy-full:
     name: Full clang-tidy scan
     runs-on: ubuntu-26.04
+    # Measured max 21.1m (2026-10-23); 60 min unchanged (step caps 15 + 1.25x 21.1m = 42 <= 60).
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Restore apt archives
+        id: apt-cache
+        # Restore-only; the save below runs only after a successful install.
+        # Caches downloaded .deb archives so a slow package mirror does not eat
+        # into the apt step's timeout. Keyed on runner OS, arch, job, and the
+        # hash of the job's apt package list under .github/apt/clang-tidy-full.txt.
+        timeout-minutes: 5
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ${{ runner.temp }}/apt-archives
+          key: apt-${{ runner.os }}-${{ runner.arch }}-clang-tidy-full-${{ hashFiles('.github/apt/clang-tidy-full.txt') }}
+
       - name: Install dependencies
+        id: apt-install
+        # Measured max 2.3m (2026-10-23); 5 min is at least 1.25x the slowest healthy run.
+        timeout-minutes: 5
         run: |
-          sudo apt-get update
+          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nAPT::Keep-Downloaded-Packages "true";\n' \
+            | sudo tee /etc/apt/apt.conf.d/80ci-retries >/dev/null
           # Keep this toolchain identical to the required CPU tidy-ratchet
           # lane. Ubuntu runner images do not all publish gcc-15 directly.
           sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
-          sudo apt-get update
-          # libvpl-dev as in the required Tidy Ratchet job: the dev container
-          # that writes the baseline has it.
-          sudo apt-get install -y gcc-15 g++-15 ninja-build nasm jq libvpl-dev
           wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
           chmod +x /tmp/llvm.sh
           sudo /tmp/llvm.sh 22
-          sudo apt-get install -y clang-tidy-22
+          sudo apt-get update
+          mkdir -p "${RUNNER_TEMP}/apt-archives"
+          if compgen -G "${RUNNER_TEMP}/apt-archives/*.deb" >/dev/null; then
+            sudo cp -f "${RUNNER_TEMP}/apt-archives"/*.deb /var/cache/apt/archives/
+          fi
+          grep -v '^#' .github/apt/clang-tidy-full.txt | xargs sudo apt-get install -y
+          if compgen -G "/var/cache/apt/archives/*.deb" >/dev/null; then
+            sudo cp -f /var/cache/apt/archives/*.deb "${RUNNER_TEMP}/apt-archives/"
+            sudo chown -R "$(id -u):$(id -g)" "${RUNNER_TEMP}/apt-archives"
+          fi
           /usr/bin/clang-tidy-22 --version | grep -F 'LLVM version 22.'
+
+      - name: Save apt archives
+        # Saves only after the install step succeeded: an install cut off by its
+        # timeout leaves the archive directory empty, and an empty entry under
+        # this immutable key would be restored as a hit on every later run.
+        # Runs even when a later step fails, so the next run skips the download.
+        if: ${{ !cancelled() && steps.apt-install.outcome == 'success' && steps.apt-cache.outputs.cache-hit != 'true' }}
+        timeout-minutes: 5
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ${{ runner.temp }}/apt-archives
+          key: apt-${{ runner.os }}-${{ runner.arch }}-clang-tidy-full-${{ hashFiles('.github/apt/clang-tidy-full.txt') }}
+
       - name: Build the cpu lane (compile_commands.json + generated headers)
         # The lane's one definition is the Makefile's (ADR-1471), which the
         # required Tidy Ratchet job and scripts/dev/tidy-lane.sh run too.

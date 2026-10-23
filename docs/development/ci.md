@@ -1107,6 +1107,7 @@ request per workflow file:
 | `lint-and-format.yml` | `clang-tidy-ratchet` | `.github/apt/tidy-ratchet.txt` | 5 min | 45 min |
 | `lint-and-format.yml` | `clang-tidy-sycl` | `.github/apt/tidy-sycl.txt` | 5 min | 40 min |
 | `mini-retrain.yml` | `mini-retrain` | `.github/apt/mini-retrain.txt` | 5 min | 40 min |
+| `nightly.yml` | `clang-tidy-full` | `.github/apt/clang-tidy-full.txt` | 5 min | 60 min |
 | `rust-ci.yml` | `rust-vmafx-sys-work` | `.github/apt/rust-vmafx-sys.txt` | 16 min | 30 min |
 | `sanitizers.yml` | `asan-ubsan` | `.github/apt/sanitizers-base.txt` + `.github/apt/sanitizers-llvm.txt` | 5 min | 30 min |
 | `sanitizers.yml` | `fuzz-nightly` | `.github/apt/fuzz-nightly.txt` | 5 min | 50 min |
