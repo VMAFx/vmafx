@@ -969,6 +969,14 @@ python3 scripts/ci/tests/test_check_job_timeout_budget.py
 The check sees only the step limits. The 1.25 margin for the uncapped steps is
 the author's measurement, written in the comment above each job's limit.
 
+Steps that run `llvm.sh` download their compiler from apt.llvm.org, which the
+apt archive cache does not hold, so they take a common 10-minute limit: the
+slowest measured healthy run was 5.7 minutes (`libvmaf-build-matrix.yml`, 142
+runs), and on 2026-10-23 a `Tidy Ratchet` install took 5.2 minutes and hit the
+5-minute limit it had then (job 120415869295). The jobs holding such a step
+(`Tidy Changed`, `Tidy Ratchet`, `Tidy SYCL`, `fuzz`, the three sanitizer jobs)
+gained the same 5 minutes; `clang-tidy-full` already had the headroom.
+
 ## Downloads and timeouts in test jobs (2026-10-10)
 
 Three failures on `master` on 2026-10-10 had one shape: a required job failed

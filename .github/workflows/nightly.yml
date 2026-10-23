@@ -59,7 +59,7 @@ jobs:
   clang-tidy-full:
     name: Full clang-tidy scan
     runs-on: ubuntu-26.04
-    # Measured max 21.1m (2026-10-23); 60 min unchanged (step caps 15 + 1.25x 21.1m = 42 <= 60).
+    # Measured max 21.1m (2026-10-23); 60 min unchanged (step caps 20 + 1.25x 21.1m = 47 <= 60).
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -78,8 +78,9 @@ jobs:
 
       - name: Install dependencies
         id: apt-install
-        # Measured max 2.3m (2026-10-23); 5 min is at least 1.25x the slowest healthy run.
-        timeout-minutes: 5
+        # llvm.sh steps measured max 5.7m over the jobs that run it (2026-10-23; a
+        # Tidy Ratchet run passed 5.2m); 10 min is at least 1.25x the slowest.
+        timeout-minutes: 10
         run: |
           printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nAPT::Keep-Downloaded-Packages "true";\n' \
             | sudo tee /etc/apt/apt.conf.d/80ci-retries >/dev/null

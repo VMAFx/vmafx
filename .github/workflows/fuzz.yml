@@ -40,9 +40,9 @@ jobs:
   fuzz:
     name: ${{ matrix.target }}
     runs-on: ubuntu-26.04
-    # Step caps 15 min plus 1.25x the longest measured healthy job (19.2m,
+    # Step caps 20 min plus 1.25x the longest measured healthy job (19.2m,
     # 2026-10-23), rounded up.
-    timeout-minutes: 40
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -66,8 +66,8 @@ jobs:
             corpus: core/test/fuzz/dnn_sidecar_corpus
     env:
       # Per-target wall-clock seconds. Each matrix target has its own job;
-      # the 40-minute job timeout (raised from 30; step caps 15 min plus
-      # 1.25x longest measured healthy job 19.2m = 39, rounded up) provides
+      # the 45-minute job timeout (raised from 30; step caps 20 min plus
+      # 1.25x longest measured healthy job 19.2m = 44, rounded up) provides
       # headroom for apt.llvm.org Clang 22 installation plus full libvmaf
       # ASan compilation on fuzz_cli_parse under runner IO jitter.
       # Operators wanting a deeper run can dispatch the workflow manually
@@ -101,8 +101,9 @@ jobs:
 
       - name: Install build dependencies
         id: apt-install
-        # Measured max 1.5m (2026-10-23); 5 min is at least 1.25x the slowest healthy run.
-        timeout-minutes: 5
+        # llvm.sh steps measured max 5.7m over the jobs that run it (2026-10-23; a
+        # Tidy Ratchet run passed 5.2m); 10 min is at least 1.25x the slowest.
+        timeout-minutes: 10
         run: |
           printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nAPT::Keep-Downloaded-Packages "true";\n' \
             | sudo tee /etc/apt/apt.conf.d/80ci-retries >/dev/null
