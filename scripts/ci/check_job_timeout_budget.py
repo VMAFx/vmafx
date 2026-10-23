@@ -52,7 +52,6 @@ UNCAPPED_APT_EXCEPTIONS: dict[str, datetime.date] = {
         "mini-retrain.yml",
         "nightly.yml",
         "published-rc-licence-companions.yml",
-        "sanitizers.yml",
     )
 }
 

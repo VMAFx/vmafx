@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: EUPL-1.2
+# Copyright 2026 Lusoris
+#
+# LLVM apt packages for the asan-ubsan and tsan jobs in sanitizers.yml.
+# One package per line; comments starting with # are ignored.
+
+# lld-22 keeps the linker in the same LLVM major as the
+# apt.llvm.org clang-22 installed below; ld.bfd/gold pulls in
+# a system-wide LLVM 16 gold plugin that can't read clang-22 LTO
+# bitcode (Unknown attribute kind 91 in LLVM 16 reader). Using lld
+# keeps the linker in the same LLVM major as the compiler.
+# libclang-rt-22-dev ships the ASan/UBSan/TSan runtime libraries
+# (libclang_rt.asan.a etc.); without it clang-22 emits instrumented
+# code but lld-22 can't resolve __asan_*/__ubsan_* symbols.
+clang-tools-22
+libclang-rt-22-dev
+lld-22
