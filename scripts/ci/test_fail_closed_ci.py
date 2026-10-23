@@ -194,7 +194,13 @@ class FailClosedCIContract(unittest.TestCase):
         self.assertIn("ppa:ubuntu-toolchain-r/test", tidy_job)
         self.assertIn("https://apt.llvm.org/llvm.sh", tidy_job)
         self.assertIn("sudo /tmp/llvm.sh 22", tidy_job)
-        self.assertIn("sudo apt-get install -y clang-tidy-22", tidy_job)
+        # The packages come from the job's apt list (apt archive cache).
+        self.assertIn(
+            "grep -v '^#' .github/apt/clang-tidy-full.txt | xargs sudo apt-get install -y",
+            tidy_job,
+        )
+        apt_list = (ROOT / ".github/apt/clang-tidy-full.txt").read_text(encoding="utf-8")
+        self.assertIn("clang-tidy-22", apt_list.splitlines())
         # The job runs the cpu lane's Makefile targets, as the required job and
         # the dev container do (T-TIDY-RATCHET-UNMEASURED-AS-CLEAN-2026-10-06):
         # gcc-15, no LTO and the hashed build requirements come from there.

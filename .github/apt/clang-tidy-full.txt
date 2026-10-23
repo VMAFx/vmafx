@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: EUPL-1.2
+# Copyright 2026 Lusoris
+#
+# Apt packages for the Full clang-tidy scan (clang-tidy-full) CI job in nightly.yml.
+# One package per line; comments starting with # are ignored.
+
+gcc-15
+g++-15
+ninja-build
+nasm
+jq
+# libvpl-dev as in the required Tidy Ratchet job: the dev container that
+# writes the baseline has it.
+libvpl-dev
+clang-tidy-22
