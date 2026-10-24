@@ -41,6 +41,7 @@ DOCKERFILES = (
 PRODUCTION = ".github/workflows/docker-publish-production.yml"
 OPERATOR_NODE = ".github/workflows/docker-publish-operator-node.yml"
 SYCL_RUNTIME = "tools/rc1-tester/image/sycl-runtime.json"
+ONEAPI_BUILD = "scripts/ci/build-oneapi-libvmaf.sh"
 SCORE_CHECK = "jq -e '.pooled_metrics.vmaf.mean'"
 
 
@@ -98,9 +99,13 @@ def validate(texts: dict[str, str]) -> None:
     ):
         if snippet not in oneapi:
             raise AssertionError(f"final-oneapi2026 lacks {snippet!r}")
-    staging = "prepare_build.py intel-runtime \\\n        tools/rc1-tester/image/sycl-runtime.json"
-    if staging not in gpu_stages["builder-oneapi2026"][1]:
-        raise AssertionError("builder-oneapi2026 does not stage the runtime files of sycl-runtime.json")
+    # The builder stages the runtime through the shared oneAPI build script
+    # (HISS-19, ADR-3371); the script holds the staging command.
+    if "RUN bash scripts/ci/build-oneapi-libvmaf.sh" not in gpu_stages["builder-oneapi2026"][1]:
+        raise AssertionError("builder-oneapi2026 does not run scripts/ci/build-oneapi-libvmaf.sh")
+    staging = "prepare_build.py intel-runtime \\\n  tools/rc1-tester/image/sycl-runtime.json"
+    if staging not in texts[ONEAPI_BUILD]:
+        raise AssertionError("build-oneapi-libvmaf.sh does not stage the runtime files of sycl-runtime.json")
     spec = json.loads(texts[SYCL_RUNTIME])
     if not any("libumf.so.1" in c["names"] for c in spec["components"]):
         raise AssertionError(f"{SYCL_RUNTIME} does not ship UMF, which the adapters load")
@@ -187,7 +192,7 @@ def expect_rejected(name: str, texts: dict[str, str]) -> None:
 
 texts = {
     path: (root / path).read_text(encoding="utf-8")
-    for path in (*DOCKERFILES, PRODUCTION, OPERATOR_NODE, "build-config.env", SYCL_RUNTIME)
+    for path in (*DOCKERFILES, PRODUCTION, OPERATOR_NODE, "build-config.env", SYCL_RUNTIME, ONEAPI_BUILD)
 }
 validate(texts)
 
@@ -227,6 +232,18 @@ unstaged["docker/Dockerfile.production-gpu"] = unstaged["docker/Dockerfile.produ
     "COPY --from=builder-oneapi2026 /stage/lib/intel/ /usr/local/lib/intel/\n", ""
 )
 expect_rejected("a oneAPI image without the staged SYCL runtime", unstaged)
+
+unscripted = deepcopy(texts)
+unscripted["docker/Dockerfile.production-gpu"] = unscripted["docker/Dockerfile.production-gpu"].replace(
+    "RUN bash scripts/ci/build-oneapi-libvmaf.sh\n", "", 1
+)
+expect_rejected("a oneAPI builder that skips the shared build script", unscripted)
+
+script_unstaged = deepcopy(texts)
+script_unstaged[ONEAPI_BUILD] = script_unstaged[ONEAPI_BUILD].replace(
+    "tools/rc1-tester/image/sycl-runtime.json", "", 1
+)
+expect_rejected("a shared oneAPI build script that stages no SYCL runtime", script_unstaged)
 
 old_driver = deepcopy(texts)
 old_driver["docker/Dockerfile.production-gpu"] = old_driver[

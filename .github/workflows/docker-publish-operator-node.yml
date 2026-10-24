@@ -1575,6 +1575,7 @@ jobs:
       - publish-server
       - publish-controller
       - publish-node
+      - publish-node-sycl
     runs-on: ubuntu-26.04
     timeout-minutes: 15
     permissions:
@@ -1616,6 +1617,11 @@ jobs:
               "https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-operator-node.yml@${GITHUB_REF}" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             "${{ env.REGISTRY }}/${{ env.NODE_IMAGE }}@${{ needs.publish-node.outputs.digest }}"
+          cosign verify \
+            --certificate-identity \
+              "https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-operator-node.yml@${GITHUB_REF}" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            "${{ env.REGISTRY }}/${{ env.NODE_IMAGE }}@${{ needs.publish-node-sycl.outputs.digest }}"
 
       - name: Verify vmafx-server multi-architecture manifest
         run: |
