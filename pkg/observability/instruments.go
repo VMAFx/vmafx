@@ -4,10 +4,14 @@
 package observability
 
 import (
+	"context"
 	"fmt"
+	"net/http"
 	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/VMAFx/vmafx/pkg/observability/metricdef"
 )
@@ -64,6 +68,35 @@ func (h Histogram) Observe(v float64, labels ...string) {
 	}
 }
 
+// ObserveContext records v like Observe and, when ctx carries a sampled span,
+// attaches the span's trace id as an exemplar (trace_id), so a latency panel
+// opens the trace of a slow request. /metrics serves exemplars in the
+// OpenMetrics format (MetricsHandler).
+func (h Histogram) ObserveContext(ctx context.Context, v float64, labels ...string) {
+	if h.vec == nil {
+		return
+	}
+	o := h.vec.WithLabelValues(h.bound.values(labels)...)
+	sc := trace.SpanContextFromContext(ctx)
+	eo, ok := o.(prometheus.ExemplarObserver)
+	if !ok || !sc.IsSampled() {
+		o.Observe(v)
+		return
+	}
+	eo.ObserveWithExemplar(v, prometheus.Labels{ExemplarTraceID: sc.TraceID().String()})
+}
+
+// ExemplarTraceID is the exemplar label that holds the trace id; Grafana's
+// exemplar link to the trace backend matches on it.
+const ExemplarTraceID = "trace_id"
+
+// MetricsHandler serves reg on /metrics, in the OpenMetrics format when the
+// scraper asks for it, so exemplars reach Prometheus (ADR-1014: every service
+// serves its own registry).
+func MetricsHandler(reg *prometheus.Registry) http.Handler {
+	return promhttp.HandlerFor(reg, promhttp.HandlerOpts{EnableOpenMetrics: true})
+}
+
 // NewCounter registers f, a counter family, on reg.
 func NewCounter(reg prometheus.Registerer, f metricdef.Family) (Counter, error) {
 	if err := checkKind(f, metricdef.Counter); err != nil {
@@ -72,6 +105,9 @@ func NewCounter(reg prometheus.Registerer, f metricdef.Family) (Counter, error) 
 	vec := prometheus.NewCounterVec(prometheus.CounterOpts{Name: f.Name, Help: f.Help}, f.LabelNames())
 	if err := reg.Register(vec); err != nil {
 		return Counter{}, fmt.Errorf("observability: register %s: %w", f.Name, err)
+	}
+	if len(f.Labels) == 0 {
+		vec.WithLabelValues() // an unlabelled family serves its series from the start, at 0
 	}
 	return Counter{vec: vec, bound: newBounder(f)}, nil
 }
@@ -89,6 +125,9 @@ func NewGauge(reg prometheus.Registerer, f metricdef.Family) (Gauge, error) {
 	if err := reg.Register(vec); err != nil {
 		return Gauge{}, fmt.Errorf("observability: register %s: %w", f.Name, err)
 	}
+	if len(f.Labels) == 0 {
+		vec.WithLabelValues()
+	}
 	return Gauge{vec: vec, bound: newBounder(f)}, nil
 }
 
@@ -102,6 +141,9 @@ func NewHistogram(reg prometheus.Registerer, f metricdef.Family) (Histogram, err
 	}, f.LabelNames())
 	if err := reg.Register(vec); err != nil {
 		return Histogram{}, fmt.Errorf("observability: register %s: %w", f.Name, err)
+	}
+	if len(f.Labels) == 0 {
+		vec.WithLabelValues()
 	}
 	return Histogram{vec: vec, bound: newBounder(f)}, nil
 }

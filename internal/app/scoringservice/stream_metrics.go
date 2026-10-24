@@ -51,17 +51,19 @@ func NewStreamMetrics(reg prometheus.Registerer) (*StreamMetrics, error) {
 // StreamSession records one ScoreStream session from Begin to End.
 type StreamSession struct {
 	m     *StreamMetrics
+	ctx   context.Context
 	start time.Time
 }
 
-// Begin counts a session that opened. A nil receiver (a handler built
-// without metrics in a test) returns a session that records nothing.
-func (m *StreamMetrics) Begin() *StreamSession {
+// Begin counts a session that opened; ctx is the session's call, whose trace
+// becomes the duration's exemplar. A nil receiver (a handler built without
+// metrics in a test) returns a session that records nothing.
+func (m *StreamMetrics) Begin(ctx context.Context) *StreamSession {
 	if m == nil {
 		return &StreamSession{}
 	}
 	m.open.Add(1)
-	return &StreamSession{m: m, start: time.Now()}
+	return &StreamSession{m: m, ctx: ctx, start: time.Now()}
 }
 
 // Frame counts one frame pair the session received.
@@ -80,7 +82,7 @@ func (s *StreamSession) End(err error) {
 	}
 	s.m.open.Add(-1)
 	s.m.finished.Inc(streamOutcome(err))
-	s.m.duration.Observe(time.Since(s.start).Seconds())
+	s.m.duration.ObserveContext(s.ctx, time.Since(s.start).Seconds())
 }
 
 func streamOutcome(err error) string {

@@ -7,9 +7,13 @@ Fleet-wide invariants: [cmd/AGENTS.md](../../../cmd/AGENTS.md).
 
 ## Rebase-sensitive invariants
 
-1. **`Base` = `Core + otel.Module + fx.Supply(version.Get()) +
-   fx.Decorate(withServiceIdentity) + fx.Invoke(func(*otel.Providers) {})`,
-   in that shape.** Invoke builds providers: fx builds provider only for
+1. **`Base` = `Core + otel.Module + otel.ModuleWithSlogBridge +
+   fx.Supply(version.Get()) + fx.Decorate(withServiceIdentity) +
+   fx.Invoke(func(*otel.Providers) {})`, in that shape.** Slog bridge =
+   Q-110 log path (OTLP into Loki, trace/span on every record);
+   `logs_test.go` covers bridge for injected `*slog.Logger` (golusoris#617)
+   and `trace_id`/`span_id` on stdout lines (#618); never weaken those
+   tests, bump golusoris. Invoke builds providers: fx builds provider only for
    dependant; no service takes `*otel.Providers`; without invoke no binary
    exported anything (`TestBase_ConstructsProvidersNobodyRequests`).
    `otel.Module` = only OTel initialiser in tree. `withServiceIdentity` = root-scope
