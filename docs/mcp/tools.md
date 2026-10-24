@@ -1207,6 +1207,8 @@ Enqueue a scoring job and return its ID.
 | `distorted` | string (absolute worker-side path) | yes | — | |
 | `model` | string | no | — | Omit to let the controller apply its own default. |
 | `backend` | `"auto" \| "cpu" \| "cuda" \| "sycl" \| "hip" \| "metal"` | no | `"auto"` | Node capability the scheduler must match. `auto` is spelled as the empty string on the wire. |
+| `window_start` | string (seconds, e.g. `"12.5"`) | no | — | Start of the scored window. A windowed job decodes both inputs through the node's ffmpeg; see [container inputs](../server/node.md#container-inputs). |
+| `window_duration` | string (seconds, above zero) | no | — | Length of the scored window. Omit to score to the end of the shorter input. A malformed value is refused with `InvalidArgument`. |
 
 ```json
 {
