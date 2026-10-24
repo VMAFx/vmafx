@@ -58,6 +58,7 @@ jobs:
     # structural reason to leave the binding ungated.
     name: vmafx-sys CI work
     runs-on: ubuntu-26.04
+    # Measured max 15.1m (2026-10-23); step caps sum 26 (5+16+5), limit 30 covers sum plus 1.25x rest.
     timeout-minutes: 30
     env:
       # ADR-2828: a rustc warning fails every cargo step of the job (build, test,
@@ -69,7 +70,22 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Restore apt archives
+        id: apt-cache
+        # Restore-only; the save below runs only after a successful install.
+        # Caches downloaded .deb archives so a slow package mirror does not eat
+        # into the apt step's timeout. Keyed on runner OS, arch, job, and the
+        # hash of the job's apt package list under .github/apt/rust-vmafx-sys.txt.
+        timeout-minutes: 5
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ${{ runner.temp }}/apt-archives
+          key: apt-${{ runner.os }}-${{ runner.arch }}-rust-vmafx-sys-${{ hashFiles('.github/apt/rust-vmafx-sys.txt') }}
+
       - name: Install build dependencies
+        id: apt-install
+        # Measured max 12.7m (2026-10-23); 16 min is at least 1.25x the slowest healthy run.
+        timeout-minutes: 16
         run: |
           # Drop the hosted runner's pre-provisioned Microsoft/Azure apt
           # sources before updating; they intermittently 403 and fail
@@ -77,14 +93,35 @@ jobs:
           # rm -f succeeds when a pattern matches nothing.
           sudo rm -f /etc/apt/sources.list.d/*microsoft* \
                      /etc/apt/sources.list.d/*azure*
-          sudo apt-get update -q
-          sudo apt-get install -y --no-install-recommends \
-            ninja-build nasm libssl-dev \
-            clang libclang-dev pkg-config
+          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nAPT::Keep-Downloaded-Packages "true";\n' \
+            | sudo tee /etc/apt/apt.conf.d/80ci-retries >/dev/null
+          sudo apt-get update
+          mkdir -p "${RUNNER_TEMP}/apt-archives"
+          if compgen -G "${RUNNER_TEMP}/apt-archives/*.deb" >/dev/null; then
+            sudo cp -f "${RUNNER_TEMP}/apt-archives"/*.deb /var/cache/apt/archives/
+          fi
+          grep -v '^#' .github/apt/rust-vmafx-sys.txt | xargs sudo apt-get install -y --no-install-recommends
+          if compgen -G "/var/cache/apt/archives/*.deb" >/dev/null; then
+            sudo cp -f /var/cache/apt/archives/*.deb "${RUNNER_TEMP}/apt-archives/"
+            sudo chown -R "$(id -u):$(id -g)" "${RUNNER_TEMP}/apt-archives"
+          fi
           # meson from PyPI: Ubuntu 24.04 ships meson 1.3.2, which predates `c23`
           # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
           sudo pip3 install --break-system-packages --ignore-installed --quiet --require-hashes \
             -r requirements/locks/build.txt
+
+      - name: Save apt archives
+        # Saves only after the install step succeeded: an install cut off by its
+        # timeout leaves the archive directory empty, and an empty entry under
+        # this immutable key would be restored as a hit on every later run
+        # (an empty 200-byte entry was saved this way on 2026-10-22). Runs even
+        # when a later step fails, so the next run skips the download.
+        if: ${{ !cancelled() && steps.apt-install.outcome == 'success' && steps.apt-cache.outputs.cache-hit != 'true' }}
+        timeout-minutes: 5
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ${{ runner.temp }}/apt-archives
+          key: apt-${{ runner.os }}-${{ runner.arch }}-rust-vmafx-sys-${{ hashFiles('.github/apt/rust-vmafx-sys.txt') }}
 
       - name: Build and install libvmaf (CPU only)
         run: |
@@ -124,7 +161,7 @@ jobs:
           components: rustfmt, clippy
 
       - name: Cache Rust artifacts
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6  # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0  # v2.9.3
 
       - name: Cargo fmt check (both workspaces)
         run: |

@@ -7,55 +7,27 @@ __copyright__ = "Copyright 2016-2020, Netflix, Inc."
 __license__ = "BSD+Patent"
 
 
-class YuvReader(object):
+_BASE_UV_MULTIPLIERS = (
+    ("yuv420p", (0.5, 0.5)),
+    ("yuv422p", (0.5, 1.0)),
+    ("yuv444p", (1.0, 1.0)),
+    ("gray", (0.0, 0.0)),
+)
 
-    SUPPORTED_YUV_8BIT_TYPES = [
-        "yuv420p",
-        "yuv422p",
-        "yuv444p",
-        "gray",
-    ]
 
-    SUPPORTED_YUV_10BIT_LE_TYPES = [
-        "yuv420p10le",
-        "yuv422p10le",
-        "yuv444p10le",
-        "gray10le",
-    ]
+def _supported_yuv_types(suffix=""):
+    return [f"{fmt}{suffix}" for fmt, _ in _BASE_UV_MULTIPLIERS]
 
-    SUPPORTED_YUV_12BIT_LE_TYPES = [
-        "yuv420p12le",
-        "yuv422p12le",
-        "yuv444p12le",
-        "gray12le",
-    ]
 
-    SUPPORTED_YUV_16BIT_LE_TYPES = [
-        "yuv420p16le",
-        "yuv422p16le",
-        "yuv444p16le",
-        "gray16le",
-    ]
+def _uv_multipliers_dict(*suffixes):
+    return {f"{fmt}{suffix}": mult for suffix in suffixes for fmt, mult in _BASE_UV_MULTIPLIERS}
 
-    # ex: for yuv420p, the width and height of U/V is 0.5x, 0.5x of Y
-    UV_WIDTH_HEIGHT_MULTIPLIERS_DICT = {
-        "yuv420p": (0.5, 0.5),
-        "yuv422p": (0.5, 1.0),
-        "yuv444p": (1.0, 1.0),
-        "gray": (0.0, 0.0),
-        "yuv420p10le": (0.5, 0.5),
-        "yuv422p10le": (0.5, 1.0),
-        "yuv444p10le": (1.0, 1.0),
-        "gray10le": (0.0, 0.0),
-        "yuv420p12le": (0.5, 0.5),
-        "yuv422p12le": (0.5, 1.0),
-        "yuv444p12le": (1.0, 1.0),
-        "gray12le": (0.0, 0.0),
-        "yuv420p16le": (0.5, 0.5),
-        "yuv422p16le": (0.5, 1.0),
-        "yuv444p16le": (1.0, 1.0),
-        "gray16le": (0.0, 0.0),
-    }
+
+class _YuvIoBase(object):
+
+    SUPPORTED_YUV_8BIT_TYPES = _supported_yuv_types()
+    SUPPORTED_YUV_10BIT_LE_TYPES = _supported_yuv_types("10le")
+    FILE_MODE = "rb"
 
     def __init__(self, filepath, width, height, yuv_type):
 
@@ -66,19 +38,36 @@ class YuvReader(object):
 
         self._asserts()
 
-        self.file = open(self.filepath, "rb")
+        self.file = open(self.filepath, self.FILE_MODE)
 
     def close(self):
         self.file.close()
 
-    # make YuvReader withable, e.g.:
-    # with YuvReader(...) as yuv_reader:
-    #     ...
     def __enter__(self):
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
         self.close()
+
+    def _is_8bit(self):
+        return self.yuv_type in self.SUPPORTED_YUV_8BIT_TYPES
+
+    def _is_10bitle(self):
+        return self.yuv_type in self.SUPPORTED_YUV_10BIT_LE_TYPES
+
+    def _get_uv_width_height_multiplier(self):
+        self._assert_yuv_type()
+        return self.UV_WIDTH_HEIGHT_MULTIPLIERS_DICT[self.yuv_type]
+
+
+class YuvReader(_YuvIoBase):
+
+    SUPPORTED_YUV_12BIT_LE_TYPES = _supported_yuv_types("12le")
+    SUPPORTED_YUV_16BIT_LE_TYPES = _supported_yuv_types("16le")
+
+    # ex: for yuv420p, the width and height of U/V is 0.5x, 0.5x of Y
+    UV_WIDTH_HEIGHT_MULTIPLIERS_DICT = _uv_multipliers_dict("", "10le", "12le", "16le")
+    FILE_MODE = "rb"
 
     # make YuvReader iterable, e.g.:
     # for y, u, v in yuv_reader:
@@ -123,10 +112,6 @@ class YuvReader(object):
 
         return int(num_frms)
 
-    def _get_uv_width_height_multiplier(self):
-        self._assert_yuv_type()
-        return self.UV_WIDTH_HEIGHT_MULTIPLIERS_DICT[self.yuv_type]
-
     def _assert_yuv_type(self):
         assert (
             self.yuv_type in self.SUPPORTED_YUV_8BIT_TYPES
@@ -148,12 +133,6 @@ class YuvReader(object):
 
         # assert file size: if consists of integer number of frames
         assert isinstance(self.num_frms, int)
-
-    def _is_8bit(self):
-        return self.yuv_type in self.SUPPORTED_YUV_8BIT_TYPES
-
-    def _is_10bitle(self):
-        return self.yuv_type in self.SUPPORTED_YUV_10BIT_LE_TYPES
 
     def _is_12bitle(self):
         return self.yuv_type in self.SUPPORTED_YUV_12BIT_LE_TYPES

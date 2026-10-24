@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: EUPL-1.2
+# Copyright 2026 Lusoris
+#
+# Apt packages for the Netflix CPU Golden (netflix-golden) CI job.
+# One package per line; comments starting with # are ignored.
+
+ninja-build
+nasm
+pkg-config
+libavcodec-dev
+libavformat-dev
+libavutil-dev
+libswscale-dev
+python3-pip

@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: EUPL-1.2
+# Copyright 2026 Lusoris
+#
+# Apt packages for the Mini Retrain nightly (mini-retrain) CI job in mini-retrain.yml.
+# One package per line; comments starting with # are ignored.
+
+ninja-build
+nasm
+pkg-config
+python3-pip
+python3-venv

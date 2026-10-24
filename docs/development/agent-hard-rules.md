@@ -78,8 +78,9 @@ line budget. Changing a rule here changes it for every agent.
    `changelog.d/<section>/<topic>.md` — `CHANGELOG.md` itself is rendered
    at landing (ADR-0221, ADR-2197) and a PR does not carry it;
    (f) a rebase note as one fragment file `docs/rebase-notes.d/<slug>.md`
-   (starting with its `## <title> (<date>)` heading; `docs/rebase-notes.md`
-   is rendered from them, ADR-2197) or
+   (starting with its `## <title> (<date>)` heading on line 1, with no
+   blank first or last line; `docs/rebase-notes.md` is rendered from them,
+   ADR-2197) or
    `no rebase impact: REASON`. *Fork-local* means anything not a verbatim
    port of upstream Netflix/vmaf code; pure upstream syncs and
    `port-upstream-commit` PRs are exempt. The PR template

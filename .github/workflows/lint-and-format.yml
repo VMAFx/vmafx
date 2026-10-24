@@ -129,7 +129,7 @@ jobs:
     # required-aggregator
     name: Tidy Changed
     runs-on: ubuntu-26.04
-    timeout-minutes: 25
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -179,10 +179,28 @@ jobs:
           else
             echo "any=true" >> "$GITHUB_OUTPUT"
           fi
-      - name: Install deps
+      - name: Restore apt archives
+        id: apt-cache
+        # Restore-only; the save below runs only after a successful install.
+        # Caches downloaded .deb archives so a slow package mirror does not eat
+        # into the apt step's timeout. Keyed on runner OS, arch, job, and the
+        # hash of the job's apt package list under .github/apt/tidy-changed.txt.
         if: steps.cpp-changes.outputs.any == 'true'
+        timeout-minutes: 5
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ${{ runner.temp }}/apt-archives
+          key: apt-${{ runner.os }}-${{ runner.arch }}-tidy-changed-${{ hashFiles('.github/apt/tidy-changed.txt') }}
+
+      - name: Install deps
+        id: apt-install
+        if: steps.cpp-changes.outputs.any == 'true'
+        # llvm.sh steps measured max 5.7m over the jobs that run it (2026-10-23; a
+        # Tidy Ratchet run passed 5.2m); 10 min is at least 1.25x the slowest.
+        timeout-minutes: 10
         run: |
-          sudo apt-get update
+          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nAPT::Keep-Downloaded-Packages "true";\n' \
+            | sudo tee /etc/apt/apt.conf.d/80ci-retries >/dev/null
           # gcc from ubuntu-toolchain-r/test for the same reason clang comes
           # from apt.llvm.org and meson from PyPI: the ubuntu-24.04 image's
           # newest gcc is 14, and the tree targets C23 / C++26 (ADR-0692).
@@ -193,16 +211,22 @@ jobs:
           # developer's box makes a ratchet delta unreproducible locally, which
           # is exactly how ADR-1230 came about.
           sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
-          sudo apt-get update
-          sudo apt-get install -y gcc-15 g++-15 ninja-build nasm \
-            jq parallel
           # clang-tidy from apt.llvm.org: the ubuntu-24.04 image tops out at
           # clang 18, whose libstdc++ has no std::expected, so it cannot even
           # parse core/src/dict.cpp since ADR-0692 moved the tree to C++26.
           wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
           chmod +x /tmp/llvm.sh
           sudo /tmp/llvm.sh 22
-          sudo apt-get install -y clang-tidy-22
+          sudo apt-get update
+          mkdir -p "${RUNNER_TEMP}/apt-archives"
+          if compgen -G "${RUNNER_TEMP}/apt-archives/*.deb" >/dev/null; then
+            sudo cp -f "${RUNNER_TEMP}/apt-archives"/*.deb /var/cache/apt/archives/
+          fi
+          grep -v '^#' .github/apt/tidy-changed.txt | xargs sudo apt-get install -y
+          if compgen -G "/var/cache/apt/archives/*.deb" >/dev/null; then
+            sudo cp -f /var/cache/apt/archives/*.deb "${RUNNER_TEMP}/apt-archives/"
+            sudo chown -R "$(id -u):$(id -g)" "${RUNNER_TEMP}/apt-archives"
+          fi
           # meson from PyPI: Ubuntu 24.04 ships meson 1.3.2, which predates `c23`
           # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
           sudo pip3 install --break-system-packages --ignore-installed --quiet --require-hashes \
@@ -212,6 +236,19 @@ jobs:
           # the same priority can leave `clang-tidy` resolving to v18, which
           # cannot parse the tree's C++26 `std::expected` use.
           /usr/bin/clang-tidy-22 --version | grep -F 'LLVM version 22.'
+
+      - name: Save apt archives
+        # Saves only after the install step succeeded: an install cut off by its
+        # timeout leaves the archive directory empty, and an empty entry under
+        # this immutable key would be restored as a hit on every later run
+        # (an empty 200-byte entry was saved this way on 2026-10-22). Runs even
+        # when a later step fails, so the next run skips the download.
+        if: steps.cpp-changes.outputs.any == 'true' && !cancelled() && steps.apt-install.outcome == 'success' && steps.apt-cache.outputs.cache-hit != 'true'
+        timeout-minutes: 5
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ${{ runner.temp }}/apt-archives
+          key: apt-${{ runner.os }}-${{ runner.arch }}-tidy-changed-${{ hashFiles('.github/apt/tidy-changed.txt') }}
       - name: Generate compile_commands.json
         if: steps.cpp-changes.outputs.any == 'true'
         run: |
@@ -466,7 +503,7 @@ jobs:
     # required-aggregator
     name: Tidy Ratchet
     runs-on: ubuntu-26.04
-    timeout-minutes: 45
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -490,24 +527,62 @@ jobs:
           MODE: ${{ steps.impact.outputs.mode }}
           REASON: ${{ steps.impact.outputs.reason }}
         run: echo "::notice::c_core not impacted (mode=$MODE reason=$REASON) — Tidy Ratchet satisfied without running (ADR-1140)"
-      - name: Install deps
+      - name: Restore apt archives
+        id: apt-cache
+        # Restore-only; the save below runs only after a successful install.
+        # Caches downloaded .deb archives so a slow package mirror does not eat
+        # into the apt step's timeout. Keyed on runner OS, arch, job, and the
+        # hash of the job's apt package list under .github/apt/tidy-ratchet.txt.
         if: steps.impact.outputs.c_core == 'true'
+        timeout-minutes: 5
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ${{ runner.temp }}/apt-archives
+          key: apt-${{ runner.os }}-${{ runner.arch }}-tidy-ratchet-${{ hashFiles('.github/apt/tidy-ratchet.txt') }}
+
+      - name: Install deps
+        id: apt-install
+        if: steps.impact.outputs.c_core == 'true'
+        # llvm.sh steps measured max 5.7m over the jobs that run it (2026-10-23; a
+        # Tidy Ratchet run passed 5.2m); 10 min is at least 1.25x the slowest.
+        timeout-minutes: 10
         run: |
-          sudo apt-get update
+          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nAPT::Keep-Downloaded-Packages "true";\n' \
+            | sudo tee /etc/apt/apt.conf.d/80ci-retries >/dev/null
           # See the ADR-1230 note on the changed-files lane above: gcc moves
           # forward with clang and meson rather than staying at the distro's.
           sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
+          wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
+          chmod +x /tmp/llvm.sh
+          sudo /tmp/llvm.sh 22
           sudo apt-get update
+          mkdir -p "${RUNNER_TEMP}/apt-archives"
+          if compgen -G "${RUNNER_TEMP}/apt-archives/*.deb" >/dev/null; then
+            sudo cp -f "${RUNNER_TEMP}/apt-archives"/*.deb /var/cache/apt/archives/
+          fi
           # libvpl-dev: the dev container that writes the baseline has it, and
           # with it Meson builds test_vmaf_vpl_decode_ceiling and vmaf_vpl_core.c,
           # two translation units of the baseline. The ratchet fails on a
           # baseline translation unit this build does not measure.
-          sudo apt-get install -y gcc-15 g++-15 ninja-build nasm jq libvpl-dev
-          wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
-          chmod +x /tmp/llvm.sh
-          sudo /tmp/llvm.sh 22
-          sudo apt-get install -y clang-tidy-22
+          grep -v '^#' .github/apt/tidy-ratchet.txt | xargs sudo apt-get install -y
+          if compgen -G "/var/cache/apt/archives/*.deb" >/dev/null; then
+            sudo cp -f /var/cache/apt/archives/*.deb "${RUNNER_TEMP}/apt-archives/"
+            sudo chown -R "$(id -u):$(id -g)" "${RUNNER_TEMP}/apt-archives"
+          fi
           /usr/bin/clang-tidy-22 --version | grep -F 'LLVM version 22.'
+
+      - name: Save apt archives
+        # Saves only after the install step succeeded: an install cut off by its
+        # timeout leaves the archive directory empty, and an empty entry under
+        # this immutable key would be restored as a hit on every later run
+        # (an empty 200-byte entry was saved this way on 2026-10-22). Runs even
+        # when a later step fails, so the next run skips the download.
+        if: steps.impact.outputs.c_core == 'true' && !cancelled() && steps.apt-install.outcome == 'success' && steps.apt-cache.outputs.cache-hit != 'true'
+        timeout-minutes: 5
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ${{ runner.temp }}/apt-archives
+          key: apt-${{ runner.os }}-${{ runner.arch }}-tidy-ratchet-${{ hashFiles('.github/apt/tidy-ratchet.txt') }}
       - name: Build (compile_commands.json + generated headers)
         if: steps.impact.outputs.c_core == 'true'
         run: |
@@ -527,8 +602,14 @@ jobs:
             CLANG_TIDY_BIN=/usr/bin/clang-tidy-22 \
             TIDY_RATCHET_ARGS="--jobs $(nproc) --report tidy-ratchet-cpu.json"
       - name: Upload measurement (commit it as the new baseline when the ratchet asks)
-        if: ${{ (always()) && steps.impact.outputs.c_core == 'true' }}
+        if: ${{ ((always()) && steps.impact.outputs.c_core == 'true') && env.GITEA_ACTIONS != 'true' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: tidy-ratchet-cpu
+          path: tidy-ratchet-cpu.json
+      - name: Upload measurement (commit it as the new baseline when the ratchet asks) (Gitea)
+        if: ${{ ((always()) && steps.impact.outputs.c_core == 'true') && env.GITEA_ACTIONS == 'true' }}
+        uses: actions/upload-artifact@c6a366c94c3e0affe28c06c8df20a878f24da3cf  # v3.2.2
         with:
           name: tidy-ratchet-cpu
           path: tidy-ratchet-cpu.json
@@ -593,8 +674,15 @@ jobs:
           lane: ${{ matrix.lane }}
           token: ${{ secrets.GITHUB_TOKEN }}
       - name: Upload measurement and log
-        if: ${{ always() && steps.impact.outputs[format('tidy_{0}', matrix.lane)] == 'true' }}
+        if: ${{ (always() && steps.impact.outputs[format('tidy_{0}', matrix.lane)] == 'true') && env.GITEA_ACTIONS != 'true' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: tidy-lane-${{ matrix.lane }}
+          path: ${{ runner.temp }}/tidy-lane
+          if-no-files-found: ignore
+      - name: Upload measurement and log (Gitea)
+        if: ${{ (always() && steps.impact.outputs[format('tidy_{0}', matrix.lane)] == 'true') && env.GITEA_ACTIONS == 'true' }}
+        uses: actions/upload-artifact@c6a366c94c3e0affe28c06c8df20a878f24da3cf  # v3.2.2
         with:
           name: tidy-lane-${{ matrix.lane }}
           path: ${{ runner.temp }}/tidy-lane
@@ -629,7 +717,7 @@ jobs:
     # required-aggregator
     name: Tidy SYCL
     runs-on: ubuntu-26.04
-    timeout-minutes: 40
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -696,9 +784,28 @@ jobs:
           if [ -z "$files" ]; then
             echo "no SYCL files changed — skipping job body"
           fi
-      - name: Install oneAPI DPC++ compiler + clang-tidy
+      - name: Restore apt archives
+        id: apt-cache
+        # Restore-only; the save below runs only after a successful install.
+        # Caches downloaded .deb archives so a slow package mirror does not eat
+        # into the apt step's timeout. Keyed on runner OS, arch, job, and the
+        # hash of the job's apt package list under .github/apt/tidy-sycl.txt.
         if: steps.detect.outputs.files != ''
+        timeout-minutes: 5
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ${{ runner.temp }}/apt-archives
+          key: apt-${{ runner.os }}-${{ runner.arch }}-tidy-sycl-${{ hashFiles('.github/apt/tidy-sycl.txt') }}
+
+      - name: Install oneAPI DPC++ compiler + clang-tidy
+        id: apt-install
+        if: steps.detect.outputs.files != ''
+        # llvm.sh steps measured max 5.7m over the jobs that run it (2026-10-23; a
+        # Tidy Ratchet run passed 5.2m); 10 min is at least 1.25x the slowest.
+        timeout-minutes: 10
         run: |
+          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nAPT::Keep-Downloaded-Packages "true";\n' \
+            | sudo tee /etc/apt/apt.conf.d/80ci-retries >/dev/null
           # Minimal oneAPI install — only the DPC++/C++ compiler component.
           # The full base toolkit (~3 GiB) is unnecessary; we only need
           # <sycl/sycl.hpp> on disk for clang-tidy path resolution.
@@ -709,7 +816,19 @@ jobs:
           echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] \
             https://apt.repos.intel.com/oneapi all main" \
             | sudo tee /etc/apt/sources.list.d/oneAPI.list
+          # clang-tidy-22 is NOT in the Ubuntu 24.04 archive — the image tops
+          # out at clang-tidy-18 — so it has to come from apt.llvm.org, exactly
+          # as the CPU `clang-tidy` and `clang-tidy-ratchet` jobs above already
+          # do. Without this the apt install aborts with "Unable to locate
+          # package clang-tidy-22" and this job can never execute.
+          wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
+          chmod +x /tmp/llvm.sh
+          sudo /tmp/llvm.sh 22
           sudo apt-get update
+          mkdir -p "${RUNNER_TEMP}/apt-archives"
+          if compgen -G "${RUNNER_TEMP}/apt-archives/*.deb" >/dev/null; then
+            sudo cp -f "${RUNNER_TEMP}/apt-archives"/*.deb /var/cache/apt/archives/
+          fi
           # libze-dev is the Level Zero loader *development* package.
           # core/src/meson.build calls cc.find_library('ze_loader'), which
           # emits a literal `-lze_loader`; ld resolves that against the
@@ -721,24 +840,29 @@ jobs:
           # meson setup, and -lze_loader still fails without libze-dev.
           # Package name is release-specific: `libze-dev` on 24.04 noble
           # (universe, already enabled); `level-zero-dev` does NOT exist there.
-          sudo apt-get install -y \
-            intel-oneapi-compiler-dpcpp-cpp \
-            libze-dev \
-            ninja-build nasm jq parallel
-          # clang-tidy-22 is NOT in the Ubuntu 24.04 archive — the image tops
-          # out at clang-tidy-18 — so it has to come from apt.llvm.org, exactly
-          # as the CPU `clang-tidy` and `clang-tidy-ratchet` jobs above already
-          # do. Without this the apt install aborts with "Unable to locate
-          # package clang-tidy-22" and this job can never execute.
-          wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
-          chmod +x /tmp/llvm.sh
-          sudo /tmp/llvm.sh 22
-          sudo apt-get install -y clang-tidy-22
+          grep -v '^#' .github/apt/tidy-sycl.txt | xargs sudo apt-get install -y
+          if compgen -G "/var/cache/apt/archives/*.deb" >/dev/null; then
+            sudo cp -f /var/cache/apt/archives/*.deb "${RUNNER_TEMP}/apt-archives/"
+            sudo chown -R "$(id -u):$(id -g)" "${RUNNER_TEMP}/apt-archives"
+          fi
           # meson from PyPI: Ubuntu 24.04 ships meson 1.3.2, which predates `c23`
           # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
           sudo pip3 install --break-system-packages --ignore-installed --quiet --require-hashes \
             -r requirements/locks/build.txt
           /usr/bin/clang-tidy-22 --version | grep -F 'LLVM version 22.'
+
+      - name: Save apt archives
+        # Saves only after the install step succeeded: an install cut off by its
+        # timeout leaves the archive directory empty, and an empty entry under
+        # this immutable key would be restored as a hit on every later run
+        # (an empty 200-byte entry was saved this way on 2026-10-22). Runs even
+        # when a later step fails, so the next run skips the download.
+        if: steps.detect.outputs.files != '' && !cancelled() && steps.apt-install.outcome == 'success' && steps.apt-cache.outputs.cache-hit != 'true'
+        timeout-minutes: 5
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ${{ runner.temp }}/apt-archives
+          key: apt-${{ runner.os }}-${{ runner.arch }}-tidy-sycl-${{ hashFiles('.github/apt/tidy-sycl.txt') }}
       - name: Generate SYCL compile_commands.json
         if: steps.detect.outputs.files != ''
         run: |
@@ -814,12 +938,8 @@ jobs:
     # ARC pool is degraded, flip the var off and re-trigger CI. A pull
     # request from a fork never reaches the pool (ADR-3286).
     runs-on: ${{ vars.ARC_RUNNERS_ENABLED == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'arc-runners' || 'ubuntu-26.04' }}
-    # Bumped 15→30 min on 2026-05-09: GitHub-hosted runner queue
-    # saturation pushed Cppcheck past 15 min on ~all PRs and master.
-    # Last green run on master took 5 min; the new ceiling absorbs
-    # the slow-runner case without forcing a retry-loop on an already
-    # saturated queue.
-    timeout-minutes: 30
+    # Measured max 25.1m (2026-10-23); 45 min covers step caps (5+5+5) plus 1.25x 24m rest (45m).
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -840,14 +960,54 @@ jobs:
           MODE: ${{ steps.impact.outputs.mode }}
           REASON: ${{ steps.impact.outputs.reason }}
         run: echo "::notice::c_core not impacted (mode=$MODE reason=$REASON) — Cppcheck (Whole Project) satisfied without running (ADR-1140)"
-      - name: Install
+      - name: Restore apt archives
+        id: apt-cache
+        # Restore-only; the save below runs only after a successful install.
+        # Caches downloaded .deb archives so a slow package mirror does not eat
+        # into the apt step's timeout. Keyed on runner OS, arch, job, and the
+        # hash of the job's apt package list under .github/apt/cppcheck.txt.
         if: steps.impact.outputs.c_core == 'true'
+        timeout-minutes: 5
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ${{ runner.temp }}/apt-archives
+          key: apt-${{ runner.os }}-${{ runner.arch }}-cppcheck-${{ hashFiles('.github/apt/cppcheck.txt') }}
+
+      - name: Install
+        id: apt-install
+        if: steps.impact.outputs.c_core == 'true'
+        # Measured max 1.1m (2026-10-23); 5 min is at least 1.25x the slowest healthy run.
+        timeout-minutes: 5
         run: |
-          sudo apt-get update && sudo apt-get install -y cppcheck ninja-build nasm
+          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nAPT::Keep-Downloaded-Packages "true";\n' \
+            | sudo tee /etc/apt/apt.conf.d/80ci-retries >/dev/null
+          sudo apt-get update
+          mkdir -p "${RUNNER_TEMP}/apt-archives"
+          if compgen -G "${RUNNER_TEMP}/apt-archives/*.deb" >/dev/null; then
+            sudo cp -f "${RUNNER_TEMP}/apt-archives"/*.deb /var/cache/apt/archives/
+          fi
+          grep -v '^#' .github/apt/cppcheck.txt | xargs sudo apt-get install -y
+          if compgen -G "/var/cache/apt/archives/*.deb" >/dev/null; then
+            sudo cp -f /var/cache/apt/archives/*.deb "${RUNNER_TEMP}/apt-archives/"
+            sudo chown -R "$(id -u):$(id -g)" "${RUNNER_TEMP}/apt-archives"
+          fi
           # meson from PyPI: Ubuntu 24.04 ships meson 1.3.2, which predates `c23`
           # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
           sudo pip3 install --break-system-packages --ignore-installed --quiet --require-hashes \
             -r requirements/locks/build.txt
+
+      - name: Save apt archives
+        # Saves only after the install step succeeded: an install cut off by its
+        # timeout leaves the archive directory empty, and an empty entry under
+        # this immutable key would be restored as a hit on every later run
+        # (an empty 200-byte entry was saved this way on 2026-10-22). Runs even
+        # when a later step fails, so the next run skips the download.
+        if: steps.impact.outputs.c_core == 'true' && !cancelled() && steps.apt-install.outcome == 'success' && steps.apt-cache.outputs.cache-hit != 'true'
+        timeout-minutes: 5
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ${{ runner.temp }}/apt-archives
+          key: apt-${{ runner.os }}-${{ runner.arch }}-cppcheck-${{ hashFiles('.github/apt/cppcheck.txt') }}
       - name: Generate compile_commands
         if: steps.impact.outputs.c_core == 'true'
         run: |
@@ -877,7 +1037,13 @@ jobs:
             --error-exitcode=1 \
             --xml --output-file=cppcheck-report.xml 2>&1
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
-        if: ${{ (always()) && steps.impact.outputs.c_core == 'true' }}
+        if: ${{ ((always()) && steps.impact.outputs.c_core == 'true') && env.GITEA_ACTIONS != 'true' }}
+        with:
+          name: cppcheck-report
+          path: cppcheck-report.xml
+      - name: Upload artifact (Gitea)
+        if: ${{ ((always()) && steps.impact.outputs.c_core == 'true') && env.GITEA_ACTIONS == 'true' }}
+        uses: actions/upload-artifact@c6a366c94c3e0affe28c06c8df20a878f24da3cf  # v3.2.2
         with:
           name: cppcheck-report
           path: cppcheck-report.xml

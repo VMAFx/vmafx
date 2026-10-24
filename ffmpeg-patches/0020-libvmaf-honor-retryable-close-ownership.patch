@@ -16,10 +16,10 @@ expire during retryable teardown.
  2 files changed, 82 insertions(+), 19 deletions(-)
 
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
-index 95eddba09d00e3d4013f8632116baec913f86b79..fc4c9a4ae3c659c33c5214b0e3612560a7a4df4b 100644
+index 82179b30907f91fcdd35b140be243a91c23d3c7d..53df86320ca454d4d0d4b3c50fd184b573398827 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
-@@ -150,6 +150,7 @@ typedef struct LIBVMAFContext {
+@@ -151,6 +151,7 @@ typedef struct LIBVMAFContext {
      unsigned bpc;
  #if CONFIG_LIBVMAF_CUDA_FILTER
      VmafCudaState *cu_state;
@@ -27,7 +27,7 @@ index 95eddba09d00e3d4013f8632116baec913f86b79..fc4c9a4ae3c659c33c5214b0e3612560
  #endif
  } LIBVMAFContext;
  
-@@ -183,6 +184,31 @@ static const AVOption libvmaf_options[] = {
+@@ -184,6 +185,31 @@ static const AVOption libvmaf_options[] = {
  
  FRAMESYNC_DEFINE_CLASS(libvmaf, LIBVMAFContext, fs);
  
@@ -59,7 +59,7 @@ index 95eddba09d00e3d4013f8632116baec913f86b79..fc4c9a4ae3c659c33c5214b0e3612560
  static enum VmafPixelFormat pix_fmt_map(enum AVPixelFormat av_pix_fmt)
  {
      switch (av_pix_fmt) {
-@@ -1021,6 +1047,9 @@ static av_cold void uninit(AVFilterContext *ctx)
+@@ -1079,6 +1105,9 @@ static av_cold void uninit(AVFilterContext *ctx)
      }
  
  clean_up:
@@ -69,7 +69,7 @@ index 95eddba09d00e3d4013f8632116baec913f86b79..fc4c9a4ae3c659c33c5214b0e3612560
      if (s->model) {
          for (unsigned i = 0; i < s->model_cnt; i++) {
              if (s->model[i])
-@@ -1029,9 +1058,6 @@ clean_up:
+@@ -1087,9 +1116,6 @@ clean_up:
          av_free(s->model);
      }
  
@@ -79,7 +79,7 @@ index 95eddba09d00e3d4013f8632116baec913f86b79..fc4c9a4ae3c659c33c5214b0e3612560
  #if CONFIG_LIBVMAF_SYCL
      if (s->sycl_state) {
          vmaf_sycl_state_free(&s->sycl_state);
-@@ -1046,13 +1072,17 @@ clean_up:
+@@ -1104,13 +1130,17 @@ clean_up:
      }
  #endif
  
@@ -98,7 +98,7 @@ index 95eddba09d00e3d4013f8632116baec913f86b79..fc4c9a4ae3c659c33c5214b0e3612560
  #if CONFIG_LIBVMAF_HIP
      if (s->hip_state) {
          vmaf_hip_state_free(&s->hip_state);
-@@ -1125,7 +1155,15 @@ static int config_props_cuda(AVFilterLink *outlink)
+@@ -1183,7 +1213,15 @@ static int config_props_cuda(AVFilterLink *outlink)
      LIBVMAFContext *s = ctx->priv;
      AVFilterLink *inlink = ctx->inputs[0];
      FilterLink      *inl = ff_filter_link(inlink);
@@ -115,7 +115,7 @@ index 95eddba09d00e3d4013f8632116baec913f86b79..fc4c9a4ae3c659c33c5214b0e3612560
      AVCUDADeviceContext *device_hwctx = frames_ctx->device_ctx->hwctx;
      CUcontext cu_ctx = device_hwctx->cuda_ctx;
      const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(frames_ctx->sw_format);
-@@ -1557,6 +1595,9 @@ static av_cold void uninit_sycl(AVFilterContext *ctx)
+@@ -1615,6 +1653,9 @@ static av_cold void uninit_sycl(AVFilterContext *ctx)
      }
  
  clean_up:
@@ -125,7 +125,7 @@ index 95eddba09d00e3d4013f8632116baec913f86b79..fc4c9a4ae3c659c33c5214b0e3612560
      if (s->model) {
          for (unsigned i = 0; i < s->model_cnt; i++) {
              if (s->model[i])
-@@ -1565,12 +1606,7 @@ clean_up:
+@@ -1623,12 +1664,7 @@ clean_up:
          av_free(s->model);
      }
  
@@ -139,7 +139,7 @@ index 95eddba09d00e3d4013f8632116baec913f86b79..fc4c9a4ae3c659c33c5214b0e3612560
      if (s->sycl_state) {
          vmaf_sycl_state_free(&s->sycl_state);
          s->sycl_state = NULL;
-@@ -1877,6 +1913,9 @@ static av_cold void uninit_vulkan(AVFilterContext *ctx)
+@@ -1942,6 +1978,9 @@ static av_cold void uninit_vulkan(AVFilterContext *ctx)
                                        s->score_fmt);
  
  clean_up:
@@ -149,7 +149,7 @@ index 95eddba09d00e3d4013f8632116baec913f86b79..fc4c9a4ae3c659c33c5214b0e3612560
      if (s->model) {
          for (unsigned i = 0; i < s->model_cnt; i++) {
              if (s->model[i])
-@@ -1885,8 +1924,6 @@ clean_up:
+@@ -1950,8 +1989,6 @@ clean_up:
          av_free(s->model);
      }
  
@@ -158,7 +158,7 @@ index 95eddba09d00e3d4013f8632116baec913f86b79..fc4c9a4ae3c659c33c5214b0e3612560
      if (s->vulkan_state)
          vmaf_vulkan_state_free(&s->vulkan_state);
  }
-@@ -2220,6 +2257,9 @@ static av_cold void uninit_metal(AVFilterContext *ctx)
+@@ -2285,6 +2322,9 @@ static av_cold void uninit_metal(AVFilterContext *ctx)
                                        s->score_fmt);
  
  clean_up:
@@ -168,7 +168,7 @@ index 95eddba09d00e3d4013f8632116baec913f86b79..fc4c9a4ae3c659c33c5214b0e3612560
      if (s->model) {
          for (unsigned i = 0; i < s->model_cnt; i++) {
              if (s->model[i])
-@@ -2228,8 +2268,6 @@ clean_up:
+@@ -2293,8 +2333,6 @@ clean_up:
          av_free(s->model);
      }
  

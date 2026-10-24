@@ -139,7 +139,8 @@ jobs:
 
     name: ${{ matrix.check_name }} work
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 75
+    # Measured max 52.4m (2026-10-23); 80 min covers step caps (5+26+5) plus 1.25x 32m rest (76m).
+    timeout-minutes: 80
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -204,13 +205,50 @@ jobs:
         run: python -m pytest compat/vmaf/tests/test_decorator_extended.py -v
 
       # ── Linux base deps ──────────────────────────────────────────────
-      - name: Install base deps (Linux)
+      - name: Restore apt archives
+        id: apt-cache
+        # Restore-only; the save below runs only after a successful install.
+        # Caches downloaded .deb archives so a slow package mirror does not eat
+        # into the apt step's timeout. Keyed on runner OS, arch, job, matrix OS,
+        # and the hash of the job's apt package list under .github/apt/build-linux.txt.
         if: startsWith(matrix.os, 'ubuntu')
+        timeout-minutes: 5
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ${{ runner.temp }}/apt-archives
+          key: apt-${{ runner.os }}-${{ runner.arch }}-build-linux-${{ matrix.os }}-${{ hashFiles('.github/apt/build-linux.txt') }}
+
+      - name: Install base deps (Linux)
+        id: apt-install
+        if: startsWith(matrix.os, 'ubuntu')
+        # Measured max 20.4m (2026-10-23); 26 min is at least 1.25x the slowest healthy run.
+        timeout-minutes: 26
         run: |
+          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nAPT::Keep-Downloaded-Packages "true";\n' \
+            | sudo tee /etc/apt/apt.conf.d/80ci-retries >/dev/null
           sudo apt-get update
-          sudo apt-get install -y ccache ninja-build nasm libomp-dev \
-            pkg-config gcc g++ libavcodec-dev libavformat-dev \
-            libavutil-dev libswscale-dev python3-pip
+          mkdir -p "${RUNNER_TEMP}/apt-archives"
+          if compgen -G "${RUNNER_TEMP}/apt-archives/*.deb" >/dev/null; then
+            sudo cp -f "${RUNNER_TEMP}/apt-archives"/*.deb /var/cache/apt/archives/
+          fi
+          grep -v '^#' .github/apt/build-linux.txt | xargs sudo apt-get install -y
+          if compgen -G "/var/cache/apt/archives/*.deb" >/dev/null; then
+            sudo cp -f /var/cache/apt/archives/*.deb "${RUNNER_TEMP}/apt-archives/"
+            sudo chown -R "$(id -u):$(id -g)" "${RUNNER_TEMP}/apt-archives"
+          fi
+
+      - name: Save apt archives
+        # Saves only after the install step succeeded: an install cut off by its
+        # timeout leaves the archive directory empty, and an empty entry under
+        # this immutable key would be restored as a hit on every later run
+        # (an empty 200-byte entry was saved this way on 2026-10-22). Runs even
+        # when a later step fails, so the next run skips the download.
+        if: ${{ !cancelled() && startsWith(matrix.os, 'ubuntu') && steps.apt-install.outcome == 'success' && steps.apt-cache.outputs.cache-hit != 'true' }}
+        timeout-minutes: 5
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ${{ runner.temp }}/apt-archives
+          key: apt-${{ runner.os }}-${{ runner.arch }}-build-linux-${{ matrix.os }}-${{ hashFiles('.github/apt/build-linux.txt') }}
 
       # ── macOS base deps ──────────────────────────────────────────────
       - name: Install base deps (macOS)
@@ -280,6 +318,8 @@ jobs:
       # Same pinned recipe as the retired SYCL legs — icpx 2025.3 + Level Zero v1.29.0.
       - name: Install Intel oneAPI (Linux)
         if: matrix.sycl && startsWith(matrix.os, 'ubuntu')
+        # Measured max 7.9m (2026-10-23); 10 min is at least 1.25x the slowest healthy run.
+        timeout-minutes: 10
         env:
           CC: gcc
           CXX: g++
@@ -322,6 +362,8 @@ jobs:
 
       - name: Install base deps for CUDA leg (Linux)
         if: matrix.cuda && !matrix.sycl && startsWith(matrix.os, 'ubuntu')
+        # Not measured (2026-10-23); 10 min cap covers package install at 1.25x.
+        timeout-minutes: 10
         run: sudo -E apt-get -yq install ccache ninja-build nasm gcc g++
 
       # Vulkan SDK install + cache steps removed per ADR-0726
@@ -348,6 +390,8 @@ jobs:
       # comparable to the apt install it replaces.
       - name: Install ROCm / HIP toolchain (Linux)
         if: matrix.hip && startsWith(matrix.os, 'ubuntu')
+        # Measured max 1.5m (2026-10-23); 5 min is at least 1.25x the slowest healthy run.
+        timeout-minutes: 5
         run: |
           sudo apt-get update
           sudo -E apt-get -yq install --no-install-recommends jq
@@ -650,15 +694,28 @@ jobs:
 
       # ── Artifact ──────────────────────────────────────────────────────
       - name: Upload vmaf binary (Linux + macOS)
-        if: "!matrix.windows"
+        if: ${{ (!matrix.windows) && env.GITEA_ACTIONS != 'true' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: ${{ matrix.check_name }}-vmaf
+          path: ./install/bin/vmaf
+      - name: Upload vmaf binary (Linux + macOS) (Gitea)
+        if: ${{ (!matrix.windows) && env.GITEA_ACTIONS == 'true' }}
+        uses: actions/upload-artifact@c6a366c94c3e0affe28c06c8df20a878f24da3cf  # v3.2.2
         with:
           name: ${{ matrix.check_name }}-vmaf
           path: ./install/bin/vmaf
 
       - name: Upload vmaf.exe artifact (Windows)
-        if: matrix.windows
+        if: ${{ (matrix.windows) && env.GITEA_ACTIONS != 'true' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: windows-msvc-cuda-vmaf
+          path: install/bin/vmaf.exe
+          if-no-files-found: warn
+      - name: Upload vmaf.exe artifact (Windows) (Gitea)
+        if: ${{ (matrix.windows) && env.GITEA_ACTIONS == 'true' }}
+        uses: actions/upload-artifact@c6a366c94c3e0affe28c06c8df20a878f24da3cf  # v3.2.2
         with:
           name: windows-msvc-cuda-vmaf
           path: install/bin/vmaf.exe

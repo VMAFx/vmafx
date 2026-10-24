@@ -388,6 +388,11 @@
   ([Model-declared conversion target](docs/models/v1.md#model-declared-conversion-target)).
 
 
+- Credited Dmitry Popovich on the credits page for the hybrid GCC and icpx
+  build and the SYCL plus FFmpeg container image, which he contributed in
+  PR #2216 and the project reworked in PR #2883 and PR #2891.
+
+
 - Added the credits page `docs/credits.md`, rendered from the curated list
   `docs/credits.yaml`: every third-party project, vendored file, model, dataset,
   paper, tool, action, image and font VMAFx ships, adapts or uses, with its
@@ -831,6 +836,17 @@
   [the model API](docs/api/vmafx/model.md).
 
 
+- **`Containerfile.vmafx`: a SYCL + FFmpeg test image with a build-time
+  golden gate.** It builds libvmaf (SYCL), FFmpeg at the tag
+  `ffmpeg-patches/series.txt` targets with every patch (including the
+  `libvmaf_sycl` filter), and runs the Netflix CPU golden tests while it
+  builds; a failing golden test fails the build. The Intel GPU stack comes
+  from `build-config.env`. `scripts/test/run-all-tests.sh` runs the GPU suites
+  against the built image and `scripts/test/reference_report.py` prints CPU
+  and SYCL scores next to the Netflix reference values
+  ([ADR-3358](docs/adr/3358-vmafx-sycl-ffmpeg-container.md)).
+
+
 ### Changed
 
 - **The `actionlint` hook and `make lint-actions` cannot hang
@@ -879,6 +895,142 @@
   which left a long session too little room to work after a context
   compaction. The page stays binding: read the section for the files you touch
   before a rebase, an upstream sync or a conflict resolution.
+
+
+- **Unify `vmaf` JSON CLI invocation across `ai.data`.** `ai.data.scores._run_vmaf_score`
+  now reuses `ai.data.feature_extractor._run_vmaf_json` rather than maintaining a
+  duplicate `subprocess.run` execution and JSON output cleanup helper; argv ordering,
+  error handling, and return contracts remain unchanged.
+
+
+- **Deduplicate training argv/runner and fake download helpers in `ai/tests`.**
+  Argv building and invocation across
+  `test_vmaf_tiny_train_run_provenance.py` are consolidated into `_train_argv`
+  and `_run_main`, and identical fake curl download branches in
+  `test_konvid_150k.py` and `test_lsvq.py` share `fake_curl` from
+  `_corpus_download_fakes.py`.
+
+
+<!-- markdownlint-disable MD041 -->
+- **Every job in `tests-and-quality-gates.yml` running `apt-get install` now caches package archives.**
+  Package lists are declared per job in `.github/apt/` files, and each install
+  step has a timeout cap sized at or above 1.25 times its slowest measured run.
+  Job timeout limits cover the sum of their step caps so slow mirrors cannot
+  trigger job cancellation.
+
+
+- **The `MCP Smoke` and `Tiny AI` jobs now cache apt package archives (.deb files).**
+  Package lists are declared per job in `.github/apt/mcp-smoke.txt` and
+  `.github/apt/tiny-ai.txt`, and restored archives are copied into
+  `/var/cache/apt/archives` before install so slow package mirrors no longer
+  eat into the apt step's 20-minute timeout (`.github/workflows/tests-and-quality-gates.yml`).
+
+
+<!-- markdownlint-disable MD041 -->
+- **The Linux base dependency install in `build.yml` now caches apt package archives.**
+  Base packages are declared in `.github/apt/build-linux.txt`, and each `apt-get install` step carries a timeout cap sized at or above 1.25 times its slowest measured run.
+  The `build-work` job timeout limit is raised to 80 minutes to cover step caps and uncapped step headroom.
+
+
+<!-- markdownlint-disable MD041 -->
+- **The `Doxygen Public API work` job in `docs.yml` now caches apt package archives and caps its apt install step.**
+  Package requirements are declared in `.github/apt/doxygen-work.txt`, and the install step has a 5-minute timeout cap sized at 1.25 times its slowest measured run.
+  The job timeout limit is raised from 10 to 20 minutes to cover the step caps sum and uncapped step headroom.
+
+
+<!-- markdownlint-disable MD041 -->
+- **The `fuzz` job in `fuzz.yml` now caches apt package archives and caps its apt install step.**
+  Package requirements are declared in `.github/apt/fuzz.txt`, and the install step has a 5-minute timeout cap sized at 1.25 times its slowest measured run.
+  The job timeout limit is raised from 30 to 40 minutes to cover the step caps sum and uncapped step headroom.
+
+
+<!-- markdownlint-disable MD041 -->
+- **The `go-ci` job in `go-ci.yml` now caches apt package archives and caps its install step.**
+  Package lists are declared in `.github/apt/go-ci.txt`, and restored `.deb`
+  archives are copied into `/var/cache/apt/archives` before install to prevent
+  slow package mirrors from triggering job cancellations. The apt install step
+  is capped at 9 minutes and the job timeout is set to 90 minutes.
+
+
+<!-- markdownlint-disable MD041 -->
+- **Apt installation steps in `lint-and-format.yml` now cache package archives and carry per-step timeout caps.**
+  Package requirements for `clang-tidy`, `clang-tidy-ratchet`, `clang-tidy-sycl`, and `cppcheck` are declared under `.github/apt/` with 5-minute install caps sized at 1.25 times measured runs.
+  The `cppcheck` job limit is raised to 45 minutes to absorb step caps and execution variance, preventing slow mirror stalls.
+
+
+<!-- markdownlint-disable MD041 -->
+- **The `Mini Retrain nightly` job in `mini-retrain.yml` now caches apt package archives and caps its apt install step.**
+  Package requirements are declared in `.github/apt/mini-retrain.txt`, and the install step has a 5-minute timeout cap sized at 1.25 times its slowest measured run.
+  The job timeout limit stays at 40 minutes, covering the step caps sum and uncapped step headroom.
+
+
+<!-- markdownlint-disable MD041 -->
+- **The `Full clang-tidy scan` job in `nightly.yml` now caches apt package archives and caps its apt install step.**
+  Package requirements are declared in `.github/apt/clang-tidy-full.txt`, and the install step has a 5-minute timeout cap sized at 1.25 times its slowest measured run.
+  The job timeout limit remains 60 minutes, which covers the step caps sum and uncapped step headroom.
+
+
+<!-- markdownlint-disable MD041 -->
+- **The `companion` job in `published-rc-licence-companions.yml` now caps its apt install step.**
+  The "Fetch the corresponding source" step carries a 48-minute timeout cap sized at 1.25 times its slowest measured run (37.7m on 2026-10-23).
+  No apt archive cache is used because package installation runs inside the release builder container rather than on the runner; the 240-minute job limit covers the step cap and uncapped step headroom.
+
+
+<!-- markdownlint-disable MD041 -->
+- **The `vmafx-sys CI work` job in `rust-ci.yml` now caches apt package archives and caps its apt install step.**
+  Package requirements are declared in `.github/apt/rust-vmafx-sys.txt`, and
+  the install step has a 16-minute timeout cap sized at 1.25 times its slowest
+  measured run. Restored archives prevent slow package mirrors from stalling
+  the workflow.
+
+
+<!-- markdownlint-disable MD041 -->
+- **The sanitizers workflow (`sanitizers.yml`) now caches apt package archives and caps every apt install step.**
+  Package requirements are declared in `.github/apt/sanitizers-base.txt`, `.github/apt/sanitizers-llvm.txt`, and `.github/apt/fuzz-nightly.txt`.
+  Each install step carries a 5-minute timeout cap, and the nightly fuzz job limit is raised to 50 minutes to maintain headroom over measured runs.
+
+
+<!-- markdownlint-disable MD041 -->
+- **The `CodeQL (C/C++)` job in `security-scans.yml` now caches apt package archives and caps its apt install step.**
+  Package requirements are declared in `.github/apt/codeql-cpp.txt`, and the configure step has a 5-minute timeout cap sized at 1.25 times its slowest measured run.
+  The job timeout limit is raised from 35 to 55 minutes to cover the step caps sum and uncapped step headroom.
+
+
+- **The `Install build deps` step of `MCP Smoke` and `Tiny AI` no longer cancels
+  healthy runs on a slow package mirror.** Its limit rises from 8 to 20 minutes,
+  at least 1.25 times the slowest healthy run measured on 2026-10-22 (11 minutes
+  51 seconds); apt's retries and 30-second timeouts still end a real stall
+  (`.github/workflows/tests-and-quality-gates.yml`).
+
+
+- **The `Dev Container Build` job no longer times out on a slow but healthy
+  run.** Its limit rises from 75 to 90 minutes, at least 1.25 times the longest
+  of 12 successful runs measured on 2026-10-22 (69.1 minutes). A run that was
+  still compiling FFmpeg had been cancelled at 75 minutes
+  (`.github/workflows/dev-container-build.yml`).
+
+
+- **`MCP Smoke` and `Tiny AI` no longer cancel a healthy run after a slow
+  package mirror.** Their job limits rise to 55 minutes, the apt step's 20
+  minutes plus 1.25 times the longest healthy build measured on 2026-10-22, and
+  `scripts/ci/check_job_timeout_budget.py` now fails any workflow job whose
+  limit is below the sum of its step limits (ADR-3367,
+  `.github/workflows/tests-and-quality-gates.yml`).
+
+
+<!-- markdownlint-disable MD041 -->
+- **CI steps that install LLVM through `llvm.sh` now have a 10-minute limit.**
+  The 5-minute limit set with the apt archive cache cut off a `Tidy Ratchet` run on `master` (5.2 minutes); the slowest healthy run of such a step measured 5.7 minutes.
+  The jobs holding these steps keep their headroom: `Tidy Changed`, `Tidy Ratchet`, `Tidy SYCL`, `fuzz` and the three sanitizer jobs gain 5 minutes each.
+
+
+- **The `MCP Smoke` and `Tiny AI` jobs no longer time out on a slow but healthy
+  run.** Their limits rise to 35 and 45 minutes, at least 1.25 times the longest
+  successful run measured on 2026-10-22 (24 and 31 minutes). Each job's
+  `Install build deps` step now has its own 8-minute limit, and apt retries a
+  failed download three times with a 30-second connection and data timeout, so a
+  stalled package mirror fails or recovers within minutes instead of using up the
+  whole job (`.github/workflows/tests-and-quality-gates.yml`).
 
 
 - **CI runs the tier a pull request owes, not the whole suite on every push
@@ -945,12 +1097,23 @@
   [ADR-3337](docs/adr/3337-praetor-pin-320b058d-test-timeout.md) is removed.
 
 
+- **ADM and SSIMULACRA 2 host conclusions are shared between the CUDA and HIP twins.** The
+  SSIMULACRA 2 pooling weights and recursive Gaussian coefficients, the integer ADM per-scale
+  results and the float ADM per-scale pooling now have one implementation each, in shared headers
+  used by the CPU extractor and both twins. Internal refactor: scores are unchanged.
+
+
 - **Imported CUDA frames are measured to be scored in place.** On an RTX
   4090, frames handed to `vmafx_frame_import()` score bit for bit as host
   uploads on every exact CUDA twin, a skipped or early fence fails the fence
   test, and Nsight Systems shows no memory copy on the import path. The
   device-to-device luma copies six CUDA twins make for every frame, imported
   or uploaded, are tracked in `docs/state.md` for the tuning phase.
+
+
+- The CUDA `integer_vif` horizontal filter updates its main and reduced-filter
+  accumulators through shared inline helpers in `filter1d.cu`, deduping centre
+  and border tap logic (HISS-19); scores and compiled SASS are unchanged.
 
 
 - `Dev Container Build` runs on light-tier pull requests that change the image's own inputs (`dev/**`, `.dockerignore`, `build-config.env`, the workflow and its build scripts); other light pull requests pass it with a notice naming the reason, and the full tier and the master push keep building the image for every input it copies (ADR-3338).
@@ -974,11 +1137,21 @@
   See [Writing math](docs/development/docs-site-design.md#writing-math).
 
 
+- **The docs test suites share one disposable-repository helper.**
+  `scripts/docs/tests/test_generators.py` and `test_credits.py` call
+  `git_init()` from `scripts/docs/tests/fixture_repo.py` instead of each
+  running `git init` with the caller's `GIT_*` variables stripped inline
+  (HISS-19).
+
+
 - **Extra compilation-database entries bring three hand-built sources into clang-tidy coverage.**
   `scripts/ci/gen-mex-compile-commands.py` now provides entries for the LD_PRELOAD fault injector
   and the upstream parity harness, and `scripts/ci/gen-gpu-compile-commands.py` adds the
   standalone HIP dropped-dispatch probe for the HIP lane, retiring their clang-tidy coverage
   exceptions.
+
+
+- **External competitor wrappers share CLI parsing and schema normalisation through `lib/common.sh`.** `tools/external-bench/{fork-fr-regressor,fork-nr-metric,x264-pvmaf,dover-mobile}/run.sh` source the shared library for argument parsing, required flag validation, external binary checks, and schema output normalisation (HISS-19); wrapper options, outputs, and exit codes remain byte-identical.
 
 
 - **FFmpeg builds apply shared fix series `v0.2.0`.** `build-config.env` pins
@@ -987,6 +1160,14 @@
   10- and 12-bit Vulkan frames, the Vulkan export query's format list, a CPU
   wait before mapping RADV frames to DRM, and Vulkan queue de-phasing. See
   [FFmpeg patch automation](docs/development/ffmpeg-patch-automation.md).
+
+
+- **The FFmpeg guide says how to score exactly N frames.** Cutting a run with
+  the output options `-frames:v N` or `-t` lets any `libvmaf*` filter score one
+  more pair than `ffmpeg` outputs (FFmpeg n9.0.2 applies them after the
+  filtergraph; measured in 4 to 7 of 12 runs with `-frames:v`, every run with
+  `-t`). Trim both inputs with `trim=end_frame=N` instead
+  ([Score exactly N frames](docs/usage/ffmpeg.md#score-exactly-n-frames)).
 
 
 - **FFmpeg builds take FFmpeg's own fixes from the shared fix series.** Every VMAFx FFmpeg build
@@ -999,6 +1180,11 @@
   with `udu_sei=1` drops a user data SEI over NVENC's 1024-byte non-VCL limit with a warning instead
   of failing the encode; `h264_nvenc` and `hevc_nvenc` drop a user data SEI that NVENC would write
   truncated. To apply the series by hand: `scripts/ci/ffmpeg-shared-series.sh apply TREE`.
+
+
+- The CUDA, SYCL and HIP `float_motion` twins take their bit-depth scaler from
+  one helper, `vmaf_float_motion_scaler()` in `core/src/feature/float_motion_sad.h`,
+  instead of three copies; scores are unchanged.
 
 
 - **`float_vif_hip` runs for `float_vif` under `--backend hip` by default
@@ -1244,6 +1430,19 @@
 - **The vendored Pelorus interop mirror moves to Pelorus v0.3.0 and is EUPL-1.2 ([ADR-2817](docs/adr/2817-pelorus-v030-eupl-repin.md)).** `scripts/sync-pelorus-interop.sh` pins the v0.3.0 tag's commit `e2e4040311a4`; the ten mirrored files (`core/include/libvmaf/pelorus/`, `core/src/interop/pelorus_*.c`, `core/test/test_pelorus_interop.c`) now name `EUPL-1.2` in their `SPDX-License-Identifier` line, so `REUSE.toml` drops their BSD-2-Clause-Patent annotation, the ten per-file SPDX exceptions are gone and the credits page lists EUPL-1.2. The sync script now stops when a pinned source declares any other licence. The interop ABI stays 1.3: the parser is unchanged, `interop.h` only gains unit and range comments, and the conformance fixture checks the privacy of the files it creates on the open descriptor. `test_perceptual_weight` gains two R4 cases, a newer producer's longer banding section and an older producer's shorter one.
 
 
+- **The dev and SYCL + FFmpeg containers build the CPU code with GCC.**
+  `dev/Containerfile` and `Containerfile.vmafx` configure libvmaf with
+  `CC=gcc CXX=icpx` and `-Db_lto=false`; the SYCL kernels and the other C++
+  code stay with icpx. When the C++ compiler is icpx and the C compiler is
+  not, every C++ translation unit now gets icpx's strict floating-point
+  options (`-fp-model=precise -fno-fast-math -fcomplex-arithmetic=full
+  -ffp-contract=off`), as in an all-icx build, and
+  with SYCL enabled the test executables link as C++. CPU scores are those of
+  a GCC build, and the single-threaded CPU path is 5-11 % faster than an icx
+  build at 1080p (`vmaf_v0.6.1`, `vmaf_float_v0.6.1`, `cambi`)
+  ([ADR-3357](docs/adr/3357-hybrid-gcc-cpu-icpx-sycl.md)).
+
+
 - **The pictures guide states what a caller-set colour does now that upstream
   moved `VmafPicture.color` to the end of the struct
   ([ADR-1822](docs/adr/1822-additive-picture-convert.md)).** Source that sets
@@ -1251,6 +1450,12 @@
   upstream's header has its colour ignored, and the colour is given through
   `vmaf_set_input_colorimetry()` or the `src_color` argument;
   `test_picture_no_color_member` holds the compile-time refusal.
+
+
+- **Tiny-AI placeholder generators**: the MobileSal and DISTS-sq placeholder
+  ONNX generators exist once, under `ai/scripts/`; the older copies under
+  `scripts/`, which rewrote `model/tiny/registry.json` without some of its
+  fields, are removed.
 
 
 - **The Go binaries' environment, its documentation and the chart's
@@ -1458,6 +1663,16 @@
   records the repository description, https homepage and topics (#2751).
 
 
+- **The README follows one presentation standard
+  ([ADR-3366](docs/adr/3366-readme-presentation-standard.md)).** The banner is
+  a 120-pixel strip, the status badges sit in one block under it in the order
+  release, CI, security, standards, licence, support, toolchain versions moved
+  to a compact row under "Backends at a glance", and the backend-dispatch
+  diagram is a Mermaid chart in the project palette that GitHub draws at the
+  column's width. The rules are in
+  [`docs/README-STANDARD.md`](docs/README-STANDARD.md).
+
+
 - **The plan for reference-exact extractors is written down.**
   [ADR-2343](docs/adr/2343-reference-exact-default-compat-mode.md) records that RC7 proves every
   extractor against its original implementation, that the default becomes reference-exact with
@@ -1651,12 +1866,25 @@
 - **The hosted tidy lanes retry the dev container pull.** `scripts/ci/pull-dev-image.sh` gives the login and the pull of the digest-pinned image four bounded attempts before the lane fails with an error naming the image, so a single DNS timeout on `ghcr.io` no longer fails a nightly lane (#2792).
 
 
+- **`vmaf-train fit` and `vmaf-train tune` apply their config overrides in one
+  place.** `ai/src/vmaf_train/cli.py` loads the YAML config with the
+  `--cache`, `--output`, `--epochs` and `--seed` overrides through one helper,
+  and `op_allowlist.check_model()` loads the ONNX file and delegates to
+  `check_graph()` (HISS-19). Options and output are unchanged.
+
+
 - **`vmaf-tune` subcommands declare their shared flags through one helper
   each.** `--src`, `--encoder`, `--pix-fmt`, `--framerate`, the CRF bounds,
   the binary paths and the frame dimensions are added by helpers in
   `tools/vmaf-tune/src/vmaftune/cli.py` instead of being repeated per
   subcommand; every flag's name, default, type, choices and help text is
   unchanged.
+
+
+- **FFmpeg `vf_vmafx` shares device open and import finishing helpers.**
+  `ffmpeg-patches/src/vf_vmafx.c` extracts `device_create_from_option()` for DRM and
+  software-GPU device setup and `import_finish()` for CUDA and DRM release fences
+  (HISS-19 dedupe item `ffmpeg-patches-src-1`). Behavior and error logging are unchanged.
 
 
 - **Window scores are checked on imported device frames.** The CUDA, SYCL and
@@ -2103,6 +2331,14 @@
   intercept and slope.
 
 
+- Container images: the licence-text fetch of the release images
+  (`tools/rc1-tester/image/licensing.py`) asks a host again after an HTTP 429
+  or a 502/503/504 answer, up to five attempts, waiting the host's
+  `Retry-After` (at most 60 s) or 2, 4, 8 s. A rate limit from a text host no
+  longer fails the AMD GPU image build; any other HTTP error still fails at
+  once.
+
+
 - **Container images build again.** Every image that builds libvmaf stopped
   at its licence scan because two headers the build generates
   (`vmafx_build_info.h`, `vmafx_build_commit.h`) had no entry in the licence
@@ -2299,6 +2535,14 @@
   `nvidia-smi failed: exit N, no GPU inventory` into `host.txt` and goes on.
 
 
+- Docs tooling: `scripts/docs/concat-rebase-notes.sh --lint` now requires a
+  rebase-notes fragment to start with its `## <title> (<date>)` heading on
+  line 1 and to end without a blank line. A fragment with a blank first line
+  passed the old check, rendered a double blank line into
+  `docs/rebase-notes.md` and made the hooks refuse every render commit, so
+  master owed its render past the 24-hour bound.
+
+
 - Build: the production CUDA and ROCm images build again. The CUDA image compiled against nv-codec-headers one release behind the dev image, without the `cuArray3DGetDescriptor` the device-frame import calls; it now uses `n13.1.15.0`, pinned once in `build-config.env` (`NV_CODEC_HEADERS_TAG`, `NV_CODEC_HEADERS_COMMIT`). `meson setup` with CUDA enabled stops with a message when the installed headers are older. The image licence scan now finds the `import_convert` kernels under `core/src/cuda` and `core/src/hip`.
 
 
@@ -2394,6 +2638,21 @@
   open on every driver.
 
 
+- **FFmpeg's `libvmaf_sycl` runs `feature=` names on their SYCL twins.** The
+  filter registered each name as written, so `feature=name=psnr` ran the CPU
+  extractor on software input and was refused on QSV zero-copy input even
+  where its twin runs there. It now resolves names through
+  `vmaf_feature_backend_twin()`, as the `vmaf` CLI does: on zero-copy input a
+  feature without a usable twin fails at configuration and names the reason,
+  on software input the filter warns and computes it on the CPU. QSV zero-copy
+  accepts NV12 and P010 surfaces only and names any other format
+  ([ADR-3360](docs/adr/3360-sycl-filter-twin-routing.md);
+  [Using VMAF with FFmpeg](docs/usage/ffmpeg.md#how-feature-names-are-resolved-in-libvmaf_sycl)).
+  `scripts/test/zerocopy-e2e.sh` checks the zero-copy path against host upload
+  and the CPU on an Intel GPU
+  ([SYCL zero-copy testing](docs/development/sycl-zerocopy-testing.md)).
+
+
 - **SYCL: `speed_chroma` and `speed_temporal` no longer differ from the CPU by
   one fp32 step on a cancelling covariance entry
   ([ADR-2690](docs/adr/2690-sycl-speed-covariance-fast-exact.md)).** The
@@ -2409,11 +2668,40 @@
   share the old design and are not verified.
 
 
+- **The SYCL timing summary follows the log level.** Every SYCL flush printed
+  `[vmaf-sycl] timing: ...` straight to stderr, so FFmpeg's `libvmaf_sycl`
+  filter showed it even at `-loglevel error`. It now goes through libvmaf's
+  logger at the info level: FFmpeg prints it from `-loglevel info` up, and the
+  `vmaf` CLI still prints it by default, now with the `libvmaf INFO` prefix
+  every other libvmaf message carries. `vmaf_sycl_profiling_print()`
+  (`VMAF_SYCL_PROFILE=1`) keeps writing to stderr.
+
+
 - **The Windows SYCL build compiles again.** Since the math constants come
   from `<math.h>` (#2638), the SYCL feature sources need `_USE_MATH_DEFINES`
   on Windows, which the project-wide argument did not reach: icpx compiles
   them in custom targets. Both SYCL argument lists now carry the define, and
   `test_sycl_math_constants_contract.py` keeps every icpx compile line on it.
+
+
+- **SYCL zero-copy scores no longer drift from run to run under batched
+  command lists.** With `UR_L0_USE_IMMEDIATE_COMMANDLISTS=0`, the setting the
+  SYCL bundling page recommends for Arc A-series GPUs, FFmpeg's `libvmaf_sycl`
+  on QSV-decoded input stopped importing new frames from a random frame on in
+  3 to 7 of every 10 runs on an Arc A380 (compute-runtime 26.35). The driver
+  silently dropped the per-frame surface import once each frame's DMA-BUF import
+  was mapped at the GPU address the previous frame's import had just freed, so
+  every extractor scored two stale frames; `cambi` showed it as a frozen pair
+  of values and differed from host upload by up to 2.3. libvmaf now creates its
+  primary SYCL queue, which runs the import, with immediate command lists
+  whatever the variable says; the other queues still follow it. Zero-copy
+  `cambi`, `vif` and `vmaf_v0.6.1` now equal host upload in 10 of 10 runs on
+  the Netflix pair and the 1080p checkerboard at 8 and 10 bit, at unchanged
+  1080p throughput. `scripts/test/zerocopy-e2e.sh --repeat N` repeats the
+  zero-copy leg and fails on any differing run (ADR-3359,
+  `T-SYCL-ZEROCOPY-IMPORT-DROPPED-2026-10-02`;
+  [SYCL bundling](docs/backends/sycl/bundling.md),
+  [SYCL zero-copy testing](docs/development/sycl-zerocopy-testing.md)).
 
 
 - Tests: a test script that builds a scratch git repository no longer writes into
@@ -2627,6 +2915,15 @@
   with every pull-request parameter the forge reports (ADR-3313, superseding ADR-3273). The bypass-mode
   exception entry is removed; `scripts/dev/check_repository_security.py` still fails on another mode without
   an unexpired entry and on a stale entry. The Scorecard Master Gate no longer fails on policy drift.
+
+
+- **The Python hash locks are regenerated with uv 0.13.4.** uv 0.13.1 is affected by the critical
+  advisory GHSA-hq85-5cpj-mr62 (Dependabot alerts 19 and 20, fixed in 0.13.4). The tooling-test pin
+  and `uv_version` in `requirements/locks/manifest.json` move together, every lock is rewritten from
+  its manifest entry (`make python-locks-write`), which moves six transitive pins forward
+  (`setuptools`, `virtualenv`, `onnx-ir`, `httpx2`, `httpcore2`, `pydantic-settings`), and the
+  `ai` package floor for Pillow rises to 13.0.0. `mcp` stays at 1.29.0 under its declared
+  exception: `semgrep` 1.182.0, the newest release, still pins it exactly.
 
 ## [1.0.0-rc.3] - 2026-10-07
 

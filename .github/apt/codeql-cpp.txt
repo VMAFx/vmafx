@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: EUPL-1.2
+# Copyright 2026 Lusoris
+#
+# Apt packages for the CodeQL (C/C++) (codeql-cpp) CI job in security-scans.yml.
+# One package per line; comments starting with # are ignored.
+
+ninja-build
+nasm

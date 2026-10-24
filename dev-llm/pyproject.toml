@@ -19,7 +19,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=9.1.1", "ruff>=0.17.0", "mypy>=2.4.0"]
+dev = ["pytest>=9.1.1", "ruff>=0.17.1", "mypy>=2.4.0"]
 # `vmaf-dev-llm modelcard` reads the ONNX graph and, with --features, scores the
 # model on a parquet split. Its development lock includes this extra so the
 # fact-collector tests run instead of skipping.
@@ -34,8 +34,8 @@ modelcard = [
   "scipy>=1.18.1",
 ]
 cloud = [
-  "anthropic>=1.13.0",
-  "openai>=3.29.0",
+  "anthropic>=1.15.0",
+  "openai>=3.35.1",
 ]
 
 [project.scripts]

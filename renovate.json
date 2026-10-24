@@ -425,6 +425,18 @@
       "draftPR": false
     },
     {
+      "description": "ADR-3368: the Gitea twins of the artifact steps keep upload-artifact and download-artifact at v3, the last version Gitea serves; v4 and later refuse every server that is not GitHub. The v7 and v8 pins of the same actions update as usual.",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchPackageNames": [
+        "actions/upload-artifact",
+        "actions/download-artifact"
+      ],
+      "matchCurrentValue": "/^v3\\./",
+      "allowedVersions": "<4"
+    },
+    {
       "description": "ADR-3318: the built-in rust-toolchain manager would move rust-toolchain.toml alone; the Rust toolchain custom manager owns that channel together with RUST_VERSION, both workspaces' rust-version and the Rust workflow's toolchain input.",
       "matchManagers": [
         "rust-toolchain"

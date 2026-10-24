@@ -84,11 +84,12 @@ class ScorecardWorkflowTests(unittest.TestCase):
         self.assertIn("ref: ${{ github.sha }}", gate)
         self.assertIn("EXPECTED_SHA: ${{ github.sha }}", gate)
         self.assertIn("EXPECTED_REPOSITORY: ${{ github.repository }}", gate)
+        # Upload, its Gitea v3 twin (ADR-3368) and the download.
         self.assertEqual(
             workflow.count(
                 "name: scorecard-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}"
             ),
-            2,
+            3,
         )
         self.assertIn("scorecard_gate.py master", gate)
         self.assertIn("digest-mismatch: error", gate)
@@ -115,7 +116,8 @@ class ScorecardWorkflowTests(unittest.TestCase):
         self.assertNotIn("download-artifact", workflow)
         self.assertIn('run: test "$IS_DRAFT" = false', workflow)
         self.assertIn(
-            "if: ${{ always() && github.event.pull_request.draft == false }}",
+            "if: ${{ (always() && github.event.pull_request.draft == false)"
+            " && env.GITEA_ACTIONS != 'true' }}",
             workflow,
         )
         self.assertIn("if-no-files-found: error", workflow)
@@ -323,7 +325,11 @@ class SupersededMasterRunTests(unittest.TestCase):
         self.assertEqual(
             gate_step("Verify live repository protection")["if"], "${{ !cancelled() }}"
         )
-        self.assertEqual(gate_step("Preserve gate receipt")["if"], "always()")
+        # ADR-3368 guards the v7 upload off Gitea; the condition inside stays always().
+        self.assertEqual(
+            gate_step("Preserve gate receipt")["if"],
+            "${{ (always()) && env.GITEA_ACTIONS != 'true' }}",
+        )
 
     @unittest.skipUnless(os.name == "posix" and shutil.which("bash"), "the step is a bash script")
     def test_only_the_superseded_exit_cancels_the_run(self) -> None:

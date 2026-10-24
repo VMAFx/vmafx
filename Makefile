@@ -149,6 +149,7 @@ cythonize-deps: $(VENV_PIP)
         test-netflix-golden test-netflix-golden-arm64 test-sanitizers test-fast test-timing install-hooks hooks-install help \
         upstream-parity upstream-parity-full compat-abi-parity compat-abi-parity-plant \
         coverage coverage-html coverage-check assertion-density pr-check ffmpeg-input-contract \
+        sycl-zerocopy-contract \
         silent-revert-check
 
 # Top-level lint — runs every analyzer we own. Uses the meson compile_commands.json.
@@ -225,8 +226,12 @@ lint-go:
 # scripts/ci/check_hosted_runner_labels.py checks which hosted Ubuntu image
 # every job names (ADR-3251); scripts/ci/pr_workflow_budget.py holds the
 # number of pull-request workflows inside the Scorecard check-suite window;
+# scripts/ci/check_job_timeout_budget.py holds every job's time limit at or
+# above the sum of its step limits (ADR-3367);
 # scripts/ci/check_release_provenance_assets.py checks that release workflows
-# upload build provenance (.intoto.jsonl) assets.
+# upload build provenance (.intoto.jsonl) assets;
+# scripts/ci/check_gitea_artifact_steps.py checks that every artifact step has
+# a Gitea path (ADR-3368).
 lint-actions:
 	$(call require-tool,actionlint,go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12)
 	@echo "--- actionlint (.github/workflows) ---"
@@ -237,8 +242,12 @@ lint-actions:
 	@python3 scripts/ci/check_hosted_runner_labels.py
 	@echo "--- pull-request workflow budget (.github/workflows): Scorecard check-suite window ---"
 	@python3 scripts/ci/pr_workflow_budget.py
+	@echo "--- job time limits (.github/workflows): job limit covers its step caps ---"
+	@python3 scripts/ci/check_job_timeout_budget.py
 	@echo "--- release provenance assets (.github/workflows): OpenSSF Scorecard 10 ---"
 	@python3 scripts/ci/check_release_provenance_assets.py
+	@echo "--- artifact steps (.github): v3 twin or named skip on Gitea ---"
+	@python3 scripts/ci/check_gitea_artifact_steps.py
 
 .PHONY: docs-render docs-render-check
 
@@ -518,6 +527,15 @@ lint-py:
 ffmpeg-input-contract:
 	bash ffmpeg-patches/test/check-input-contract.sh
 	python3 -m unittest discover -s ffmpeg-patches/test -p 'test_input_contract.py' -v
+
+# Device-free contracts of the libvmaf_sycl zero-copy work: the patch-text
+# routing check and the comparator of scripts/test/zerocopy-e2e.sh. The e2e harness
+# itself needs an Intel GPU and runs only in the SYCL container
+# (docs/development/sycl-zerocopy-testing.md); these two run anywhere.
+sycl-zerocopy-contract:
+	$(call require-tool,pytest,install the hash-locked pytest of requirements/locks/pytest-timeout.txt into a venv)
+	bash ffmpeg-patches/test/check-sycl-feature-routing.sh
+	pytest -p no:cacheprovider -q scripts/test/test_zerocopy_e2e_compare.py
 
 lint-sh: ffmpeg-input-contract
 	$(call require-tool,shellcheck,your package manager, e.g. pacman -S shellcheck)

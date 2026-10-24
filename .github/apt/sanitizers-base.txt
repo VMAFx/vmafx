@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: EUPL-1.2
+# Copyright 2026 Lusoris
+#
+# Base apt packages for the asan-ubsan and tsan jobs in sanitizers.yml.
+# One package per line; comments starting with # are ignored.
+
+ninja-build
+nasm
+ccache
