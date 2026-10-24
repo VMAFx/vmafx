@@ -229,7 +229,9 @@ lint-go:
 # scripts/ci/check_job_timeout_budget.py holds every job's time limit at or
 # above the sum of its step limits (ADR-3367);
 # scripts/ci/check_release_provenance_assets.py checks that release workflows
-# upload build provenance (.intoto.jsonl) assets.
+# upload build provenance (.intoto.jsonl) assets;
+# scripts/ci/check_gitea_artifact_steps.py checks that every artifact step has
+# a Gitea path (ADR-3368).
 lint-actions:
 	$(call require-tool,actionlint,go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12)
 	@echo "--- actionlint (.github/workflows) ---"
@@ -244,6 +246,8 @@ lint-actions:
 	@python3 scripts/ci/check_job_timeout_budget.py
 	@echo "--- release provenance assets (.github/workflows): OpenSSF Scorecard 10 ---"
 	@python3 scripts/ci/check_release_provenance_assets.py
+	@echo "--- artifact steps (.github): v3 twin or named skip on Gitea ---"
+	@python3 scripts/ci/check_gitea_artifact_steps.py
 
 .PHONY: docs-render docs-render-check
 
