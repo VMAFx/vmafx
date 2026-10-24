@@ -56,7 +56,7 @@ tox==4.65.5 \
     --hash=sha256:17baefa138f8f4c6a552f6afc136008e7bce11a94f4b8e47c87b22dd33fc80f8 \
     --hash=sha256:9b7296cc43f358736665afecb9154b04309e500c1ebe6aafe86632211b8cad41
     # via -r requirements/locks/tox.in
-virtualenv==21.14.12 \
-    --hash=sha256:7820aeaef23f1f59a96458edfc7f9d3deac937155718de15f1c9a64471e15551 \
-    --hash=sha256:bbcfb78e36c22ad70c6917c4aecb5e63477d3c138e9f88c946f320e31859c76a
+virtualenv==21.14.13 \
+    --hash=sha256:5fbb04138a4861580b78ba9110d529a26bc48fcc93c8ec36bc0202eeed96a788 \
+    --hash=sha256:de5307ba4b9a0001d9c8ea02832d38f63ca432880f416c1bface61c4323fd905
     # via tox
