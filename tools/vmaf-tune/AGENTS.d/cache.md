@@ -2,6 +2,8 @@
 paths:
   - tools/vmaf-tune/src/vmaftune/cache.py
   - tools/vmaf-tune/tests/test_cache.py
+  - tools/vmaf-tune/src/vmaftune/fingerprint.py
+  - tools/vmaf-tune/tests/test_fingerprint.py
 invariant: Cache key fields are load-bearing; cache content stays opaque and parsed through domain model.
 ---
 <!-- markdownlint-disable MD024 -->
@@ -30,4 +32,19 @@ invariant: Cache key fields are load-bearing; cache content stays opaque and par
   row is canonical record, cache is sidecar. Cache hit must
   produce row that is bit-identical to cache miss (modulo
   `run_id`, `timestamp` and `encode_path`, which stays empty unless
-  `--keep-encodes`); `test_corpus_hit_row_equals_miss_row` pins it.
+  `--keep-encodes`); `test_corpus_hit_row_equals_miss_row` pins this.
+- **Near-duplicate reuse: opt-in, refuses by default
+  ([ADR-3372](../../../docs/adr/3372-perceptual-video-fingerprint.md)).**
+  Exact `cache_key()` lookup runs first and stays unchanged. Only
+  `--near-dup-reuse` consults `fingerprints/` sidecars, through
+  `params_key()` (every key field except `src_sha256`). `fingerprint.match()`
+  accepts only after whole refusal ladder: duration within
+  max(0.5 s, 0.5%) with same DAR and PAR, >= 30 frames of PDQ quality
+  >= 50 per side, each of three segments (10/50/85%) >= 85% frames
+  matched at Hamming <= 31 within +-1 s. Constants live at top of
+  `fingerprint.py`; loosening one needs superseding ADR. Reused row
+  records matched source hash and segment ratios. Missing `pdqhash`
+  fails with extra name, never silent exact-only fallback.
+  `test_fingerprint.py` holds planted negative (same first MiB,
+  different content -> refused) and planted positive (re-encode ->
+  matched).

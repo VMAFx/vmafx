@@ -116,6 +116,8 @@ rm -rf ~/.cache/vmaf-tune
   cells the cache stores.
 - [`vmaf-tune-codec-adapters.md`](vmaf-tune-codec-adapters.md) — the adapters
   that `adapter_version` refers to.
+- [`vmaf-tune-near-dup.md`](vmaf-tune-near-dup.md) — perceptual video
+  fingerprinting for near-duplicate cache reuse.
 - [ADR-0298](../adr/0298-vmaf-tune-cache.md) — design decision.
 - [Research-0086](../research/0086-usage-doc-coverage-audit-2026-05-08.md) —
   audit that triggered this page.
