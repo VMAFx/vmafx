@@ -1,2 +1,2 @@
 # Local Python test orchestrator.
-nox==2026.8.17
+nox==2026.10.20
