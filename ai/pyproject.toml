@@ -42,7 +42,7 @@ dependencies = [
   # Python runtime floor; the native libvmaf ORT library is installed separately.
   "onnxruntime>=1.31.0,<2.0",
   "onnxscript>=0.7.2",
-  "numpy>=2.5.3,<3.0",
+  "numpy>=2.5.4,<3.0",
   "pandas>=3.0.6,<3.1",
   "pyarrow>=25.0.1",
   "Pillow>=13.0.0,<14.0",
