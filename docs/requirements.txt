@@ -2,5 +2,5 @@ mkdocs>=1.6.1,<2
 mkdocs-material>=9.7.7,<10
 mkdocs-minify-plugin>=0.8
 vl-convert-python==1.9.0.post1
-setuptools>=84.0.0
+setuptools>=84.1.0
 wheel>=0.48.0
