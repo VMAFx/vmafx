@@ -23,7 +23,7 @@ dependencies = [
   # together with an onnxruntime that reads the newer IR.
   "onnx>=1.22.0,<1.23",
   "onnxruntime>=1.31.0,<2.0",
-  "numpy>=2.5.3,<3.0",
+  "numpy>=2.5.4,<3.0",
   "pandas>=3.0.6,<3.1",
   "scipy>=1.18.1",
   "scikit-learn>=1.9.1",
