@@ -125,6 +125,7 @@
         "scripts/ci/tests/test_helm_config_env.py",
         "scripts/ci/tests/test_helm_controller_auth.py",
         "scripts/ci/tests/test_helm_controller_workload.py",
+        "scripts/ci/tests/test_helm_mcp.py",
         "scripts/ci/tests/test_helm_node_contract.py",
         "scripts/ci/tests/test_helm_node_fuse_ebpf.py",
         "scripts/ci/tests/test_helm_observability.py",
