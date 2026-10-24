@@ -219,3 +219,10 @@ ADR-1539), fail closed.
     Tests inject reader (`newNodeMetrics`); never run real `nvidia-smi` in
     contract test. Stream sessions via `scoringservice.StreamMetrics`
     (`provideStreamMetrics`, set on handler in register invoke).
+
+18. **Container inputs** (`executor_inputs.go`, `pkg/y4mdecode`, ADR-3370):
+    input not `.y4m`/`.yuv`, or any window set -> ffmpeg (`VMAFX_FFMPEG_BIN`)
+    to Y4M pipe -> `ScoreReaders`; no temp file. Scoring-root check on source
+    path BEFORE decode (outside root + traversal refused). Raw `.yuv` never
+    decoded. ffmpeg stderr capped 4 KiB. Guards:
+    `executor_container_test.go`, `pkg/y4mdecode/y4mdecode_test.go`.

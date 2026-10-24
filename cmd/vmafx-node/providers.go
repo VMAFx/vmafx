@@ -136,7 +136,9 @@ func provideExecutor(scorer *libvmaf.Scorer, cfg *config.Config, log *slog.Logge
 	if err != nil {
 		return nil, err
 	}
-	return NewExecutorWithStorage(scorer, nil, store, backend, log), nil
+	e := NewExecutorWithStorage(scorer, nil, store, backend, log)
+	e.ffmpeg = ffmpegBinary(cfg)
+	return e, nil
 }
 
 // provideFeedbackClient constructs the online-training sidecar feedback client

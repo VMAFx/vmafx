@@ -718,12 +718,16 @@ test('test_cuda_float_psnr_exact_contract',
 # ADR-2146 — the RGB conversion's arithmetic (rgb_math.h) is shared by the CPU
 # reference, nvcc, hipcc and the SYCL kernels: freestanding, integer only, no
 # run-time array index (ADR-1395). Device-free; the device checks are
-# test_vmafx_import_cuda_formats and test_vmafx_import_hip_formats.
+# test_vmafx_import_cuda_formats and test_vmafx_import_hip_formats. It runs the host
+# C and C++ compilers, so it runs alone: 6.2-14.4 s in seven clean Windows ARM64
+# runs, 61 s (timed out) on master 3b139a6b4 beside the Go generator tests. The
+# limit is 2x the slowest clean run.
 test('test_vmafx_rgb_math_contract',
     import('python').find_installation(),
     args : files('test_vmafx_rgb_math_contract.py'),
     suite : ['fast'],
-    timeout : 60,
+    is_parallel : false,
+    timeout : 28,
 )
 
 # ADR-1462 — vif_cuda reads the CPU's log2 table from a global of its kernel
@@ -804,12 +808,16 @@ test('test_agent_pages_contract',
 
 # Help strings, header comments, option descriptions, CI comments and the perf-gate
 # page are pinned to the code they describe (docs audit 2026-10-03/04). Compiles
-# one small C++ TU with the host compiler to run the SYCL dispatch-strategy advice.
+# one small C++ TU with the host compiler to run the SYCL dispatch-strategy advice,
+# so it runs alone: 10.7-23.0 s in seven clean Windows ARM64 runs, 112.5 s on
+# master 3b139a6b4 beside the Go generator tests. The limit is 2x the slowest
+# clean run.
 test('test_stale_text_contract',
     import('python').find_installation(),
     args : files('test_stale_text_contract.py'),
     suite : ['fast'],
-    timeout : 120,
+    is_parallel : false,
+    timeout : 46,
 )
 
 # A default scale=0 is only executable by the GPU float-SSIM twins while the
