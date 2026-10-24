@@ -3209,9 +3209,10 @@
     {
      "id": "vmafx-binaries",
      "kind": "build",
-     "name": "VMAFx: vmafx-node, the vmaf command, libvmaf and libvmafx",
+     "name": "VMAFx: vmafx-node, vmafx-mcp, the vmaf command, libvmaf and libvmafx",
      "paths": [
       "usr/local/bin/vmafx-node",
+      "usr/local/bin/vmafx-mcp",
       "usr/local/bin/vmaf",
       "usr/local/lib/libvmaf.so*",
       "usr/local/lib/libvmafx.so*",
@@ -3360,9 +3361,10 @@
     {
      "id": "go-modules",
      "kind": "go-binary",
-     "name": "Go modules linked into vmafx-node and rclone",
+     "name": "Go modules linked into vmafx-node, vmafx-mcp and rclone",
      "paths": [
       "usr/local/bin/vmafx-node",
+      "usr/local/bin/vmafx-mcp",
       "usr/local/bin/rclone"
      ],
      "notes": [
