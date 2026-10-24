@@ -554,6 +554,97 @@ spec:
 {{- end }}
 
 # ----------------------------------------------------------------------------
+# Allow rule: clients -> MCP server (streamable HTTP on mcp.httpPort). An empty
+# fromPodSelector admits every pod of the release namespace.
+# ----------------------------------------------------------------------------
+{{- if and .Values.mcp.enabled .Values.networkPolicy.allow.mcpIngress.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullName }}-allow-mcp-ingress
+  namespace: {{ $ns }}
+  labels:
+    {{- include "vmafx.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mcp
+spec:
+  podSelector:
+    matchLabels:
+      {{- $selector | nindent 6 }}
+      app.kubernetes.io/component: mcp
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            {{- with .Values.networkPolicy.allow.mcpIngress.fromPodSelector }}
+            matchLabels:
+              {{- toYaml . | nindent 14 }}
+            {{- else }} {}
+            {{- end }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.mcp.httpPort }}
+{{- end }}
+
+# ----------------------------------------------------------------------------
+# Allow rule: MCP server -> controller gRPC (the Client API), egress from the
+# MCP pods and ingress on the controller pods.
+# ----------------------------------------------------------------------------
+{{- if and .Values.mcp.enabled .Values.controller.enabled .Values.networkPolicy.allow.mcpToController.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullName }}-allow-mcp-to-controller
+  namespace: {{ $ns }}
+  labels:
+    {{- include "vmafx.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mcp
+spec:
+  podSelector:
+    matchLabels:
+      {{- $selector | nindent 6 }}
+      app.kubernetes.io/component: mcp
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- $selector | nindent 14 }}
+              app.kubernetes.io/component: controller
+      ports:
+        - protocol: TCP
+          port: {{ .Values.controller.grpcPort }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullName }}-allow-controller-from-mcp
+  namespace: {{ $ns }}
+  labels:
+    {{- include "vmafx.labels" . | nindent 4 }}
+    app.kubernetes.io/component: controller
+spec:
+  podSelector:
+    matchLabels:
+      {{- $selector | nindent 6 }}
+      app.kubernetes.io/component: controller
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- $selector | nindent 14 }}
+              app.kubernetes.io/component: mcp
+      ports:
+        - protocol: TCP
+          port: {{ .Values.controller.grpcPort }}
+{{- end }}
+
+# ----------------------------------------------------------------------------
 # Allow rule: DNS egress.  Every VMAFX pod must be able to resolve names
 # via the cluster DNS service (CoreDNS / kube-dns in `kube-system`).
 # ----------------------------------------------------------------------------

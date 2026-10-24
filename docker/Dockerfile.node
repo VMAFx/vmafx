@@ -58,13 +58,13 @@ ARG VMAFX_VERSION=dev
 # every container base in this repository. These defaults are mirrors kept in
 # sync by scripts/ci/check-base-image-single-source.sh; edit the config, not
 # these lines, then run `make base-images-sync`.
-ARG RELEASE_BUILDER_BASE="debian:13-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f"
+ARG RELEASE_BUILDER_BASE="debian:13-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad"
 ARG RELEASE_GO_BASE="golang:1.27-trixie@sha256:604106102d33b1084e37ca08adf98ac0813624ae8595bd0d7f3965ecebded09c"
 ARG RELEASE_PYTHON_BASE="python:3.14-slim@sha256:a2b82f3c48559aa0a8446d9af49826b6e2b2016f4cd2afabfe6013ec53729170"
 ARG RELEASE_RUNTIME_CC="gcr.io/distroless/cc-debian13:nonroot@sha256:e792ab3d241a468a4fd7519ddbbebe66b49b5f365771716ea688ad40b6c6f1c2"
 ARG CUDA_RUNTIME="ubuntu:26.04@sha256:c098726dd9b9733f3e885f8de0ef375206a311b0a317eadc40d347b1115fb944"
 ARG ROCM_RUNTIME="rocm/dev-ubuntu-26.04:10.1.0-full@sha256:4f5ed1bf6532a4b9920400401b0ad0f706af356dae61e40afefbfd6c8073f0ce"
-ARG ONEAPI_RUNTIME="debian:13-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f"
+ARG ONEAPI_RUNTIME="debian:13-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad"
 
 # Vendor runtime libraries as named stages: a digest-pinned
 # `COPY --from=<image>` is a base-image pin that no FROM-oriented search
@@ -373,7 +373,7 @@ COPY --chmod=0755 scripts/ci/record-copied-debian-libs.sh /usr/local/bin/record-
 RUN record-copied-debian-libs /tmp/ffmpeg-origins.txt /ffmpeg-install/copied-packages /usr/local/lib
 
 # ---------------------------------------------------------------------------
-# Stage 4 — go-builder: compile the vmafx-node Go binary
+# Stage 4 — go-builder: compile the vmafx-node and vmafx-mcp Go binaries
 # ---------------------------------------------------------------------------
 FROM ${RELEASE_GO_BASE} AS go-builder
 
@@ -417,11 +417,18 @@ RUN CGO_ENABLED=${CGO_ENABLED} \
         -trimpath \
         -ldflags "-s -w -X github.com/VMAFx/vmafx/pkg/version.version=${VMAFX_VERSION}" \
         -o /out/vmafx-node \
-        ./cmd/vmafx-node
+        ./cmd/vmafx-node \
+    && CGO_ENABLED=${CGO_ENABLED} \
+    CGO_LDFLAGS="-L/usr/local/lib -lvmaf -lvmafx -lm" \
+    go build \
+        -trimpath \
+        -ldflags "-s -w -X github.com/VMAFx/vmafx/pkg/version.version=${VMAFX_VERSION}" \
+        -o /out/vmafx-mcp \
+        ./cmd/vmafx-mcp
 
 # The licences of the Go programs (ADR-1513): our own Go files merged into the
-# C library's scan, and the licence and notice files of every module vmafx-node
-# and rclone link, read from their build information.
+# C library's scan, and the licence and notice files of every module vmafx-node,
+# vmafx-mcp and rclone link, read from their build information.
 COPY --from=rclone-bin /usr/local/bin/rclone /out/rclone
 COPY --from=vmaf-builder /licence-inputs/vmafx-sources.json /tmp/vmaf-sources.json
 # hadolint ignore=DL3008
@@ -430,10 +437,10 @@ RUN apt-get update \
     && apt-get clean \
     && mkdir /licence-inputs \
     && python3 tools/rc1-tester/image/licensing.py scan-go --repo /src \
-        --package ./cmd/vmafx-node --merge /tmp/vmaf-sources.json \
+        --package ./cmd/vmafx-node --package ./cmd/vmafx-mcp --merge /tmp/vmaf-sources.json \
         --out /licence-inputs/vmafx-sources.json \
     && python3 tools/rc1-tester/image/licensing.py go-licences \
-        --binary /out/vmafx-node --binary /out/rclone --out /licence-inputs/go
+        --binary /out/vmafx-node --binary /out/vmafx-mcp --binary /out/rclone --out /licence-inputs/go
 
 # ---------------------------------------------------------------------------
 # Stage 5 — runtime-base: Debian 13 glibc runtime foundation
@@ -484,6 +491,8 @@ COPY --from=ffmpeg-builder-cpu /ffmpeg-install/licenses/ /usr/local/share/vmafx/
 COPY --from=ffmpeg-deps-base /usr/local/share/vmafx/svt-av1/ /usr/local/share/vmafx/svt-av1/
 
 COPY --from=go-builder /out/vmafx-node /usr/local/bin/vmafx-node
+# The MCP server the chart's mcp component runs (command vmafx-mcp).
+COPY --from=go-builder /out/vmafx-mcp /usr/local/bin/vmafx-mcp
 
 # ---------------------------------------------------------------------------
 # node-notices: written on a copy of the distroless tree, which has no
@@ -580,6 +589,8 @@ COPY --from=ffmpeg-builder-cpu /ffmpeg-install/runtime-libs/ /usr/local/lib/
 COPY --from=cuda-runtime-libs /usr/local/cuda/lib64/libcudart.so* /usr/local/lib/
 
 COPY --from=go-builder /out/vmafx-node /usr/local/bin/vmafx-node
+# The MCP server the chart's mcp component runs (command vmafx-mcp).
+COPY --from=go-builder /out/vmafx-mcp /usr/local/bin/vmafx-mcp
 
 ENV VMAFX_BACKEND=cuda
 
@@ -640,6 +651,8 @@ COPY --from=rocm-runtime-libs \
 ENV LD_LIBRARY_PATH="/usr/local/lib:/opt/rocm/lib"
 
 COPY --from=go-builder /out/vmafx-node /usr/local/bin/vmafx-node
+# The MCP server the chart's mcp component runs (command vmafx-mcp).
+COPY --from=go-builder /out/vmafx-mcp /usr/local/bin/vmafx-mcp
 
 ENV VMAFX_BACKEND=hip
 
@@ -664,6 +677,8 @@ COPY --from=oneapi-runtime-libs /opt/intel/oneapi/redist/lib/libsycl.so*   /usr/
 COPY --from=oneapi-runtime-libs /opt/intel/oneapi/redist/lib/libOpenCL.so* /usr/local/lib/
 
 COPY --from=go-builder /out/vmafx-node /usr/local/bin/vmafx-node
+# The MCP server the chart's mcp component runs (command vmafx-mcp).
+COPY --from=go-builder /out/vmafx-mcp /usr/local/bin/vmafx-mcp
 
 ENV VMAFX_BACKEND=sycl
 

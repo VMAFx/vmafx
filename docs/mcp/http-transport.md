@@ -311,6 +311,10 @@ and `/readyz` (`livenessProbe` / `readinessProbe` in
 `deploy/helm/vmafx/values.yaml`) and ships a `ServiceMonitor` for Prometheus
 scraping. The chart does not set `VMAFX_PORT`.
 
+The Go MCP server `vmafx-mcp` is a separate chart component: `mcp.enabled`
+deploys it from the node image with its own token, see
+[MCP server in the Kubernetes guide](../development/k8s-deployment.md#mcp-server).
+
 ---
 
 ## See also

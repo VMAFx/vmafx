@@ -220,3 +220,40 @@ vmafx.env.node — the vmafx-node container (templates/node.yaml).
             - name: VMAFX_MODEL_DIR
               value: {{ ternary .Values.persistence.models.mountPath "/usr/local/share/vmafx/model" .Values.persistence.models.enabled | quote }}
 {{- end }}
+
+{{/*
+vmafx.env.mcp — the vmafx-mcp container (templates/mcp.yaml).
+*/}}
+{{- define "vmafx.env.mcp" }}
+            - name: VMAFX_MCP_TRANSPORT
+              value: "http"
+            - name: VMAFX_MCP_HTTP_ADDR
+              value: {{ printf ":%v" .Values.mcp.httpPort | quote }}
+            # All interfaces: the Service and its NetworkPolicy bound who reaches the port.
+            - name: VMAFX_MCP_HTTP_BIND
+              value: "0.0.0.0"
+{{- if .Values.mcp.auth.token.secretName }}
+            - name: VMAFX_MCP_HTTP_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.mcp.auth.token.secretName | quote }}
+                  key: {{ .Values.mcp.auth.token.key | default "token" | quote }}
+{{- end }}
+{{- if and .Values.mcp.auth.noAuth (not .Values.mcp.auth.token.secretName) }}
+            # Only with auth.noAuth=true and no token Secret (templates/mcp-validate.yaml).
+            - name: VMAFX_MCP_HTTP_NO_AUTH
+              value: "1"
+{{- end }}
+{{- if .Values.controller.enabled }}
+            # The chart's controller gRPC port (submit_job, get_job, cancel_job, list_jobs).
+            - name: VMAFX_CONTROLLER_ADDR
+              value: {{ printf "%s:%v" (include "vmafx.controllerHost" .) .Values.controller.grpcPort | quote }}
+{{- end }}
+{{- if .Values.mcp.controllerToken.secretName }}
+            - name: VMAFX_CONTROLLER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.mcp.controllerToken.secretName | quote }}
+                  key: {{ .Values.mcp.controllerToken.key | default "token" | quote }}
+{{- end }}
+{{- end }}

@@ -152,6 +152,23 @@ node package. Override via .Values.node.image.repository / .Values.node.image.ta
 {{- end }}
 
 {{/*
+vmafx.mcpImage — mcp.image when its repository is set, else the node image
+(vmafx.nodeImage), which ships the vmafx-mcp binary. An empty mcp.image.tag
+follows the node image tag.
+*/}}
+{{- define "vmafx.mcpImage" -}}
+{{- if .Values.mcp.image.repository -}}
+{{- $tag := .Values.mcp.image.tag | default (.Values.node.image.tag | default (include "vmafx.releaseImageTag" .)) -}}
+{{- printf "%s:%s" .Values.mcp.image.repository $tag -}}
+{{- else if .Values.mcp.image.tag -}}
+{{- $repo := .Values.node.image.repository | default (printf "%s-node" .Values.image.repository) -}}
+{{- printf "%s:%s" $repo .Values.mcp.image.tag -}}
+{{- else -}}
+{{- include "vmafx.nodeImage" . -}}
+{{- end -}}
+{{- end }}
+
+{{/*
 vmafx.tenantSource — "kubernetes" when the controller reads its tenants from
 VmafxTenant resources (auth.tenantSource, implied by a non-empty auth.tenants),
 else "". ADR-1519.

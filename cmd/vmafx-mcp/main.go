@@ -61,6 +61,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -69,6 +70,7 @@ import (
 	"github.com/golusoris/golusoris/core/config"
 
 	"github.com/VMAFx/vmafx/internal/app/bootstrap"
+	buildversion "github.com/VMAFx/vmafx/pkg/version"
 )
 
 const (
@@ -91,7 +93,18 @@ const (
 	defaultStdioSessionTimeout = 24 * time.Hour
 )
 
+// isVersionRequest keeps the release-image smoke path independent of the fx
+// graph and its transport lifecycle; stdout carries only the version string.
+func isVersionRequest(args []string) bool {
+	return len(args) == 2 && args[1] == "--version"
+}
+
 func main() {
+	if isVersionRequest(os.Args) {
+		fmt.Println(buildversion.Version())
+		return
+	}
+
 	fx.New(
 		// golusoris foundation: config + log + clock + id + validate + crypto,
 		// the OTel module, and the build-version supply (ADR-1119). bootstrap.Base
