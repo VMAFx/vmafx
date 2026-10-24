@@ -438,9 +438,13 @@ class WorkChains(unittest.TestCase):
 
     def test_windows_verify_implies_its_build(self) -> None:
         jobs = yaml.safe_load((WORKFLOWS / "windows-tester-bundle.yml").read_text())["jobs"]
-        last = jobs["build"]["steps"][-1]
+        # The upload runs on every outcome: off Gitea the v4+ step, on Gitea its v3 twin
+        # (ADR-3368); together their conditions cover every run.
+        last, twin = jobs["build"]["steps"][-2:]
         self.assertTrue(last.get("uses", "").startswith("actions/upload-artifact@"))
-        self.assertNotIn("if", last)
+        self.assertEqual(last["if"], "${{ env.GITEA_ACTIONS != 'true' }}")
+        self.assertEqual(twin["if"], "${{ env.GITEA_ACTIONS == 'true' }}")
+        self.assertEqual(twin["with"], last["with"])
         self.assertEqual(last["with"]["if-no-files-found"], "error")
         self.assertEqual(jobs["verify"]["needs"], ["validate", "build"])
         self.assertIn("needs.validate.result == 'success'", jobs["verify"]["if"])
