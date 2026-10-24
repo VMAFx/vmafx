@@ -103,9 +103,16 @@ type ScoringParams struct {
 	// Optional backend hint: "cuda", "sycl", "hip", "cpu". The scheduler uses this to match a
 	// node with the required capability. Empty string means the scheduler may assign any
 	// available node.
-	Backend       string `protobuf:"bytes,4,opt,name=backend,proto3" json:"backend,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Backend string `protobuf:"bytes,4,opt,name=backend,proto3" json:"backend,omitempty"`
+	// Optional start of the scored window, in seconds from the beginning of both inputs (a
+	// decimal number such as "12.5"). Empty scores from the first frame. A windowed job decodes
+	// both inputs through the node's ffmpeg.
+	WindowStart string `protobuf:"bytes,5,opt,name=window_start,json=windowStart,proto3" json:"window_start,omitempty"`
+	// Optional length of the scored window, in seconds (a decimal number above zero). Empty
+	// scores to the end of the shorter input. A window that holds no frame fails the job.
+	WindowDuration string `protobuf:"bytes,6,opt,name=window_duration,json=windowDuration,proto3" json:"window_duration,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *ScoringParams) Reset() {
@@ -162,6 +169,20 @@ func (x *ScoringParams) GetModel() string {
 func (x *ScoringParams) GetBackend() string {
 	if x != nil {
 		return x.Backend
+	}
+	return ""
+}
+
+func (x *ScoringParams) GetWindowStart() string {
+	if x != nil {
+		return x.WindowStart
+	}
+	return ""
+}
+
+func (x *ScoringParams) GetWindowDuration() string {
+	if x != nil {
+		return x.WindowDuration
 	}
 	return ""
 }
@@ -1158,12 +1179,14 @@ var File_vmafx_controller_v1_controller_proto protoreflect.FileDescriptor
 
 const file_vmafx_controller_v1_controller_proto_rawDesc = "" +
 	"\n" +
-	"$vmafx/controller/v1/controller.proto\x12\x13vmafx.controller.v1\"{\n" +
+	"$vmafx/controller/v1/controller.proto\x12\x13vmafx.controller.v1\"\xc7\x01\n" +
 	"\rScoringParams\x12\x1c\n" +
 	"\treference\x18\x01 \x01(\tR\treference\x12\x1c\n" +
 	"\tdistorted\x18\x02 \x01(\tR\tdistorted\x12\x14\n" +
 	"\x05model\x18\x03 \x01(\tR\x05model\x12\x18\n" +
-	"\abackend\x18\x04 \x01(\tR\abackend\"\xf3\x02\n" +
+	"\abackend\x18\x04 \x01(\tR\abackend\x12!\n" +
+	"\fwindow_start\x18\x05 \x01(\tR\vwindowStart\x12'\n" +
+	"\x0fwindow_duration\x18\x06 \x01(\tR\x0ewindowDuration\"\xf3\x02\n" +
 	"\x03Job\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x126\n" +
 	"\x06status\x18\x02 \x01(\x0e2\x1e.vmafx.controller.v1.JobStatusR\x06status\x12<\n" +

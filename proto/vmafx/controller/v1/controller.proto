@@ -78,6 +78,15 @@ message ScoringParams {
   // node with the required capability. Empty string means the scheduler may assign any
   // available node.
   string backend = 4;
+
+  // Optional start of the scored window, in seconds from the beginning of both inputs (a
+  // decimal number such as "12.5"). Empty scores from the first frame. A windowed job decodes
+  // both inputs through the node's ffmpeg.
+  string window_start = 5;
+
+  // Optional length of the scored window, in seconds (a decimal number above zero). Empty
+  // scores to the end of the shorter input. A window that holds no frame fails the job.
+  string window_duration = 6;
 }
 
 // Job represents a scoring work item managed by the controller.

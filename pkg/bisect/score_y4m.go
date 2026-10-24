@@ -31,6 +31,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/VMAFx/vmafx/pkg/y4mdecode"
 )
 
 // Y4MScoreParams configures a Y4MScorer.
@@ -200,17 +202,13 @@ func (s *Y4MScorer) decode(src, tag string, width, height int) (string, error) {
 // Y4M file dst, through the scale filter when width and height are positive.
 // "-strict -1" lets the yuv4mpegpipe muxer write high-bit-depth formats.
 func Y4MDecodeArgv(src, dst string, width, height int) []string {
-	argv := []string{"-y", "-hide_banner", "-loglevel", "error", "-i", src}
-	if width > 0 && height > 0 {
-		argv = append(argv, "-vf", ScaleFilter(width, height))
-	}
-	return append(argv, "-f", "yuv4mpegpipe", "-strict", "-1", dst)
+	return y4mdecode.Argv(src, dst, width, height, y4mdecode.Window{})
 }
 
 // ScaleFilter is the ffmpeg filter both legs of a scaled score use: the encode
 // (EncodeExtraArgs) and the reference decode, so they share one scaler.
 func ScaleFilter(width, height int) string {
-	return "scale=" + strconv.Itoa(width) + ":" + strconv.Itoa(height)
+	return y4mdecode.ScaleFilter(width, height)
 }
 
 // isY4M reports whether path names a Y4M file by its extension.

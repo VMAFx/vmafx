@@ -546,21 +546,9 @@ func registerVplTool(reg *toolRegistrar) {
 	}, handleVmafVpl)
 }
 
-// registerJobSubmissionTools wires the controller job submission and lookup tools.
-func registerJobSubmissionTools(reg *toolRegistrar) {
-	// ── Phase-4b gRPC control-plane bridge (#1240 item c, ADR-1173) ─────
-	// Go-only tools: the Python server has no gRPC stack by design. Targets
-	// come from the environment (VMAFX_CONTROLLER_ADDR / VMAFX_SERVER_ADDR),
-	// never from tool arguments.
-
-	reg.add(&mcp.Tool{
-		Name: "submit_job",
-		Description: "Enqueue a scoring job on the vmafx-controller (Phase-4b control " +
-			"plane) and return its job ID. Paths are resolved by the worker node " +
-			"against its shared mount, not by this server, so they must be " +
-			"absolute worker-side paths. Target host comes from " +
-			"VMAFX_CONTROLLER_ADDR (default localhost:9090). ADR-0711 / ADR-1173.",
-	}, schemaObj{
+// submitJobSchema is the input schema of the submit_job tool.
+func submitJobSchema() schemaObj {
+	return schemaObj{
 		"type":     "object",
 		"required": []string{"reference", "distorted"},
 		"properties": schemaObj{
@@ -583,8 +571,36 @@ func registerJobSubmissionTools(reg *toolRegistrar) {
 				"description": "Backend capability the scheduler must match on a node. " +
 					"'auto' lets the scheduler pick any node.",
 			},
+			"window_start": schemaObj{
+				"type": "string",
+				"description": "Start of the scored window in seconds (e.g. \"12.5\"). " +
+					"Omit to score from the first frame. A windowed job decodes both " +
+					"inputs through the node's ffmpeg.",
+			},
+			"window_duration": schemaObj{
+				"type": "string",
+				"description": "Length of the scored window in seconds, above zero. " +
+					"Omit to score to the end of the shorter input.",
+			},
 		},
-	}, handleSubmitJob)
+	}
+}
+
+// registerJobSubmissionTools wires the controller job submission and lookup tools.
+func registerJobSubmissionTools(reg *toolRegistrar) {
+	// ── Phase-4b gRPC control-plane bridge (#1240 item c, ADR-1173) ─────
+	// Go-only tools: the Python server has no gRPC stack by design. Targets
+	// come from the environment (VMAFX_CONTROLLER_ADDR / VMAFX_SERVER_ADDR),
+	// never from tool arguments.
+
+	reg.add(&mcp.Tool{
+		Name: "submit_job",
+		Description: "Enqueue a scoring job on the vmafx-controller (Phase-4b control " +
+			"plane) and return its job ID. Paths are resolved by the worker node " +
+			"against its shared mount, not by this server, so they must be " +
+			"absolute worker-side paths. Target host comes from " +
+			"VMAFX_CONTROLLER_ADDR (default localhost:9090). ADR-0711 / ADR-1173.",
+	}, submitJobSchema(), handleSubmitJob)
 
 	reg.add(&mcp.Tool{
 		Name: "get_job",

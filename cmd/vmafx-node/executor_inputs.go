@@ -10,6 +10,12 @@
 // the vmaf CLI as files. When either input is a URL, both are streamed into
 // the CLI through pipes (libvmaf.Scorer.ScoreReaders): nothing is written to
 // the node's disk, and a stream that breaks fails the job.
+//
+// The CLI reads only Y4M and raw YUV. Any other input (a library's .mkv or
+// .mp4), and every input of a job with a time window, is decoded by the
+// node's ffmpeg to a Y4M stream through pkg/y4mdecode and piped in the same
+// way, again without a temporary file. The scoring-root check above runs on
+// the source path before any decode.
 
 package main
 
@@ -20,11 +26,14 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	controllerv1 "github.com/VMAFx/vmafx/gen/go/controller"
 	"github.com/VMAFx/vmafx/pkg/scoringscope"
 	"github.com/VMAFx/vmafx/pkg/storage"
+	"github.com/VMAFx/vmafx/pkg/y4mdecode"
 )
 
 // inputHeaderTimeout bounds the wait for the response headers of a streamed
@@ -57,20 +66,39 @@ func (e *Executor) scoreJob(ctx context.Context, job *controllerv1.Job) (float64
 		return 0, nil, fmt.Errorf("prepare distorted %q: %w", disSrc, err)
 	}
 	defer disDone()
+	window, err := y4mdecode.ParseWindow(sp.GetWindowStart(), sp.GetWindowDuration())
+	if err != nil {
+		return 0, nil, err
+	}
 	backend := jobBackend(sp, e.backend)
-	if !storage.IsHTTP(ref) && !storage.IsHTTP(dis) {
+	decode := y4mdecode.NeedsDecode(ref, window) || y4mdecode.NeedsDecode(dis, window)
+	if !decode && !storage.IsHTTP(ref) && !storage.IsHTTP(dis) {
 		return e.scorer.ScoreOnBackend(ctx, ref, dis, sp.GetModel(), backend)
 	}
-	refIn, err := openInput(ctx, ref)
+	refIn, err := e.openScored(ctx, ref, decode, window)
 	if err != nil {
 		return 0, nil, fmt.Errorf("open reference: %w", err)
 	}
-	disIn, err := openInput(ctx, dis)
+	disIn, err := e.openScored(ctx, dis, decode, window)
 	if err != nil {
 		closeInput(e.log, refIn)
 		return 0, nil, fmt.Errorf("open distorted: %w", err)
 	}
 	return e.scorer.ScoreReaders(ctx, refIn, disIn, sp.GetModel(), backend)
+}
+
+// openScored opens one prepared input for ScoreReaders: decoded to Y4M by
+// ffmpeg when the job decodes (both legs then share the window), else as is.
+// ffmpeg reads a local path or an http(s) URL itself. A raw .yuv carries no
+// geometry ffmpeg could read, so it is refused rather than misdecoded.
+func (e *Executor) openScored(ctx context.Context, input string, decode bool, w y4mdecode.Window) (io.ReadCloser, error) {
+	if !decode {
+		return openInput(ctx, input)
+	}
+	if strings.EqualFold(filepath.Ext(input), ".yuv") {
+		return nil, fmt.Errorf("%s: a raw .yuv input cannot be decoded or windowed; use .y4m or a container", filepath.Base(input))
+	}
+	return y4mdecode.Open(ctx, e.ffmpeg, input, w)
 }
 
 // scopedSources admits the job's inputs under the scoring roots the
