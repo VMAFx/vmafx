@@ -656,7 +656,7 @@ fields = [
 # ---------------------------------------------------------------------------
 
 [chart_root]
-schema_order = ["nameOverride", "fullnameOverride", "operator", "controller", "image", "imagePullSecrets", "workload", "deployment", "job", "statefulSet", "service", "ingress", "gpu", "resources", "env", "envFrom", "config", "persistence", "serviceAccount", "podAnnotations", "podSecurityContext", "securityContext", "affinity", "tolerations", "nodeSelector", "topologySpreadConstraints", "terminationGracePeriodSeconds", "livenessProbe", "readinessProbe", "monitoring", "pushgateway", "storage", "node", "podDisruptionBudget", "networkPolicy", "auth", "otelCollector"]
+schema_order = ["nameOverride", "fullnameOverride", "operator", "mcp", "controller", "image", "imagePullSecrets", "workload", "deployment", "job", "statefulSet", "service", "ingress", "gpu", "resources", "env", "envFrom", "config", "persistence", "serviceAccount", "podAnnotations", "podSecurityContext", "securityContext", "affinity", "tolerations", "nodeSelector", "topologySpreadConstraints", "terminationGracePeriodSeconds", "livenessProbe", "readinessProbe", "monitoring", "pushgateway", "storage", "node", "podDisruptionBudget", "networkPolicy", "auth", "otelCollector"]
 
 [chart_root.schema]
 "$schema" = "https://json-schema.org/draft/2020-12/schema"
@@ -885,6 +885,159 @@ value = ""
 [[chart]]
 path = "operator.controllerToken.key"
 value = "token"
+
+[[chart]]
+path = "mcp"
+lead = '''
+
+# ---------------------------------------------------------------------------
+# MCP — vmafx-mcp over streamable HTTP (docs/mcp/index.md)
+# A thin client of the controller's Client API (submit_job, get_job, ...).
+# It runs from the vmafx-node image, which ships the vmafx-mcp binary.
+# Enabling it requires auth: a token Secret, or auth.noAuth=true on purpose.
+# ---------------------------------------------------------------------------
+'''
+
+[chart.schema]
+type = "object"
+additionalProperties = false
+
+[[chart]]
+path = "mcp.enabled"
+lead = '''
+  # Set to true to deploy the vmafx-mcp Deployment and Service.
+'''
+value = false
+
+[chart.schema]
+type = "boolean"
+
+[[chart]]
+path = "mcp.replicaCount"
+value = 1
+
+[chart.schema]
+type = "integer"
+minimum = 0
+
+[[chart]]
+path = "mcp.image"
+lead = '''
+  # Empty repository: the node image (node.image), started with the
+  # command vmafx-mcp. Every node image variant ships the binary.
+'''
+
+[chart.schema]
+"$ref" = "#/$defs/imageSpec"
+
+[[chart]]
+path = "mcp.image.repository"
+value = ""
+
+[[chart]]
+path = "mcp.image.tag"
+value = ""
+note = "Defaults to the node image tag when empty."
+note_column = 18
+
+[[chart]]
+path = "mcp.image.pullPolicy"
+value = "IfNotPresent"
+
+[[chart]]
+path = "mcp.httpPort"
+lead = '''
+  # Port of the streamable HTTP transport (VMAFX_MCP_HTTP_ADDR) and the Service.
+'''
+value = 3000
+
+[chart.schema]
+type = "integer"
+minimum = 1
+maximum = 65535
+
+[[chart]]
+path = "mcp.auth"
+lead = '''
+  # auth — the bearer token every MCP request must carry
+  # (VMAFX_MCP_HTTP_TOKEN). The chart refuses mcp.enabled without
+  # auth.token.secretName unless auth.noAuth is true, which disables
+  # authentication (VMAFX_MCP_HTTP_NO_AUTH=1) for a trusted network only.
+'''
+
+[chart.schema]
+type = "object"
+additionalProperties = false
+
+[[chart]]
+path = "mcp.auth.token"
+
+[chart.schema]
+"$ref" = "#/$defs/tokenSecretSpec"
+
+[[chart]]
+path = "mcp.auth.token.secretName"
+value = ""
+
+[[chart]]
+path = "mcp.auth.token.key"
+value = "token"
+
+[[chart]]
+path = "mcp.auth.noAuth"
+value = false
+
+[chart.schema]
+type = "boolean"
+
+[[chart]]
+path = "mcp.controllerToken"
+lead = '''
+  # controllerToken — Secret holding the bearer token the MCP server sends on
+  # every controller RPC (VMAFX_CONTROLLER_TOKEN). Needed when the
+  # controller verifies tokens; its scopes bound what MCP clients can do.
+'''
+
+[chart.schema]
+"$ref" = "#/$defs/tokenSecretSpec"
+
+[[chart]]
+path = "mcp.controllerToken.secretName"
+value = ""
+
+[[chart]]
+path = "mcp.controllerToken.key"
+value = "token"
+
+[[chart]]
+path = "mcp.resources"
+
+[chart.schema]
+"$ref" = "#/$defs/resourceSpec"
+
+[[chart]]
+path = "mcp.resources.limits"
+
+[[chart]]
+path = "mcp.resources.limits.cpu"
+value = "500m"
+quoted = true
+
+[[chart]]
+path = "mcp.resources.limits.memory"
+value = "256Mi"
+
+[[chart]]
+path = "mcp.resources.requests"
+
+[[chart]]
+path = "mcp.resources.requests.cpu"
+value = "50m"
+quoted = true
+
+[[chart]]
+path = "mcp.resources.requests.memory"
+value = "64Mi"
 
 [[chart]]
 path = "controller"
@@ -2096,7 +2249,7 @@ lead = '''
   # Allow rule scaffolding.  Each entry is rendered into the matching
   # NetworkPolicy spec block; leave empty to suppress that flow.
 '''
-schema_order = ["controllerToNode", "nodeToController", "controllerIngress", "operatorToController", "controllerToDatabase", "controllerToIdentityProvider", "nodeEgressObjectStore", "operatorToApiserver", "serverToApiserver", "nodeMetrics", "metricsScrape", "dns"]
+schema_order = ["controllerToNode", "nodeToController", "controllerIngress", "operatorToController", "mcpIngress", "mcpToController", "controllerToDatabase", "controllerToIdentityProvider", "nodeEgressObjectStore", "operatorToApiserver", "serverToApiserver", "nodeMetrics", "metricsScrape", "dns"]
 
 [chart.schema]
 type = "object"
@@ -2220,6 +2373,51 @@ description = "Egress from the operator to the controller (GetJob, /healthz)."
 
 [[chart]]
 path = "networkPolicy.allow.operatorToController.enabled"
+value = true
+
+[chart.schema]
+type = "boolean"
+
+[[chart]]
+path = "networkPolicy.allow.mcpIngress"
+lead = '''
+    # clients → MCP server: ingress to mcp.httpPort (mcp.enabled). Empty
+    # fromPodSelector admits every pod of the release namespace.
+'''
+
+[chart.schema]
+type = "object"
+additionalProperties = false
+description = "Ingress to the MCP server's HTTP port (mcp.enabled)."
+
+[[chart]]
+path = "networkPolicy.allow.mcpIngress.enabled"
+value = true
+
+[chart.schema]
+type = "boolean"
+
+[[chart]]
+path = "networkPolicy.allow.mcpIngress.fromPodSelector"
+value = {}
+
+[chart.schema]
+type = "object"
+additionalProperties = true
+
+[[chart]]
+path = "networkPolicy.allow.mcpToController"
+lead = '''
+    # MCP server → controller gRPC (mcp.enabled and controller.enabled).
+'''
+
+[chart.schema]
+type = "object"
+additionalProperties = false
+description = "Egress from the MCP server to the controller's gRPC port."
+
+[[chart]]
+path = "networkPolicy.allow.mcpToController.enabled"
 value = true
 
 [chart.schema]
@@ -4936,6 +5134,11 @@ name = "node"
 indent = 12
 doc = "the vmafx-node container (templates/node.yaml)."
 
+[[chart_workloads]]
+name = "mcp"
+indent = 12
+doc = "the vmafx-mcp container (templates/mcp.yaml)."
+
 [[chart_env]]
 env = "VMAFX_HTTP_ADDR"
 workloads = ["controller"]
@@ -5187,3 +5390,45 @@ comment = '''
 # The models volume when it is mounted, else the models the node
 # image ships (persistence.models.mountPath always has a value).'''
 value = '{{ ternary .Values.persistence.models.mountPath "/usr/local/share/vmafx/model" .Values.persistence.models.enabled | quote }}'
+
+[[chart_env]]
+env = "VMAFX_MCP_TRANSPORT"
+workloads = ["mcp"]
+value = '"http"'
+
+[[chart_env]]
+env = "VMAFX_MCP_HTTP_ADDR"
+workloads = ["mcp"]
+value = '{{ printf ":%v" .Values.mcp.httpPort | quote }}'
+
+[[chart_env]]
+env = "VMAFX_MCP_HTTP_BIND"
+workloads = ["mcp"]
+comment = "# All interfaces: the Service and its NetworkPolicy bound who reaches the port."
+value = '"0.0.0.0"'
+
+[[chart_env]]
+env = "VMAFX_MCP_HTTP_TOKEN"
+workloads = ["mcp"]
+when = ".Values.mcp.auth.token.secretName"
+secret_ref = { name = '{{ .Values.mcp.auth.token.secretName | quote }}', key = '{{ .Values.mcp.auth.token.key | default "token" | quote }}' }
+
+[[chart_env]]
+env = "VMAFX_MCP_HTTP_NO_AUTH"
+workloads = ["mcp"]
+comment = "# Only with auth.noAuth=true and no token Secret (templates/mcp-validate.yaml)."
+when = "and .Values.mcp.auth.noAuth (not .Values.mcp.auth.token.secretName)"
+value = '"1"'
+
+[[chart_env]]
+env = "VMAFX_CONTROLLER_ADDR"
+workloads = ["mcp"]
+comment = "# The chart's controller gRPC port (submit_job, get_job, cancel_job, list_jobs)."
+when = ".Values.controller.enabled"
+value = '{{ printf "%s:%v" (include "vmafx.controllerHost" .) .Values.controller.grpcPort | quote }}'
+
+[[chart_env]]
+env = "VMAFX_CONTROLLER_TOKEN"
+workloads = ["mcp"]
+when = ".Values.mcp.controllerToken.secretName"
+secret_ref = { name = '{{ .Values.mcp.controllerToken.secretName | quote }}', key = '{{ .Values.mcp.controllerToken.key | default "token" | quote }}' }

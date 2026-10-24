@@ -301,3 +301,16 @@ scheduling docs on rebase.
   `node.grpcPort`; no fixed 50051.
 - Guard: `scripts/ci/tests/test_helm_node_contract.py` (`GpuResource`,
   `ControllerToNodePort`).
+
+## Invariants (ADR-3369)
+
+- MCP component = `templates/mcp.yaml` (Deployment + Service, component `mcp`),
+  image via `vmafx.mcpImage` only: empty `mcp.image.repository` -> node image,
+  command `vmafx-mcp`. Every Dockerfile.node target ships `/usr/local/bin/vmafx-mcp`.
+- `templates/mcp-validate.yaml`: `mcp.enabled` without
+  `mcp.auth.token.secretName` and without `mcp.auth.noAuth` fails render. Never
+  default noAuth true.
+- NetworkPolicies `allow-mcp-ingress`, `allow-mcp-to-controller`,
+  `allow-controller-from-mcp`; keys `networkPolicy.allow.mcpIngress` /
+  `mcpToController`.
+- Guard: `scripts/ci/tests/test_helm_mcp.py` (helm-chart workflow).
