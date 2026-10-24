@@ -169,7 +169,20 @@ jobs:
           cp ../sources.list "sources-${ARTIFACT}.list"
           cp ../source-image/sources/SOURCES.txt "SOURCES-${ARTIFACT}.txt"
 
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+      - if: ${{ env.GITEA_ACTIONS != 'true' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: published-rc-${{ inputs.release }}-${{ matrix.artifact }}
+          path: |
+            ${{ env.WORK }}/notices/THIRD_PARTY_NOTICES-*.txt
+            ${{ env.WORK }}/notices/sources-*.list
+            ${{ env.WORK }}/notices/SOURCES-*.txt
+            ${{ env.WORK }}/licenses-*.tar.gz
+          if-no-files-found: error
+          retention-days: 90
+      - name: Upload artifact (Gitea)
+        if: ${{ env.GITEA_ACTIONS == 'true' }}
+        uses: actions/upload-artifact@c6a366c94c3e0affe28c06c8df20a878f24da3cf  # v3.2.2
         with:
           name: published-rc-${{ inputs.release }}-${{ matrix.artifact }}
           path: |
@@ -252,7 +265,18 @@ jobs:
             --release "$RELEASE" --assets "$WORK/assets" --work "$WORK"
           tar -czf "$WORK/licenses-native.tar.gz" -C "$WORK/notices" native models
 
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+      - if: ${{ env.GITEA_ACTIONS != 'true' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: published-rc-${{ inputs.release }}-native
+          path: |
+            ${{ env.WORK }}/notices/THIRD_PARTY_NOTICES-*.txt
+            ${{ env.WORK }}/licenses-native.tar.gz
+          if-no-files-found: error
+          retention-days: 90
+      - name: Upload artifact (Gitea)
+        if: ${{ env.GITEA_ACTIONS == 'true' }}
+        uses: actions/upload-artifact@c6a366c94c3e0affe28c06c8df20a878f24da3cf  # v3.2.2
         with:
           name: published-rc-${{ inputs.release }}-native
           path: |

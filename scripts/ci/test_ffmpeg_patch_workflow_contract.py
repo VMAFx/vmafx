@@ -222,7 +222,7 @@ class FFmpegWorkflowContract(unittest.TestCase):
         self.assertIn("proposed-refresh.patch", record)
         self.assertIn("source-revision.txt", record)
         self.assertIn("worktree-status.txt", record)
-        self.assertIn("if: always()", upload)
+        self.assertIn("if: ${{ (always()) && env.GITEA_ACTIONS != 'true' }}", upload)
         self.assertIn("if-no-files-found: error", upload)
         self.assertIn("retention-days: 14", upload)
 

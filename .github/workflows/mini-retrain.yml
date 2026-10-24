@@ -106,8 +106,18 @@ jobs:
             --basetemp="${RUNNER_TEMP}/mini-retrain-runs"
 
       - name: Keep the stage manifests and the gate report
-        if: always()
+        if: ${{ (always()) && env.GITEA_ACTIONS != 'true' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: mini-retrain-manifests
+          path: |
+            ${{ runner.temp }}/mini-retrain-runs/**/stages/*.json
+            ${{ runner.temp }}/mini-retrain-runs/**/reports/*.json
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Keep the stage manifests and the gate report (Gitea)
+        if: ${{ (always()) && env.GITEA_ACTIONS == 'true' }}
+        uses: actions/upload-artifact@c6a366c94c3e0affe28c06c8df20a878f24da3cf  # v3.2.2
         with:
           name: mini-retrain-manifests
           path: |

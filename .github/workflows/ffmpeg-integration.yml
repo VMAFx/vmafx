@@ -400,8 +400,18 @@ jobs:
           bash ffmpeg-patches/test/build-and-run.sh
 
       - name: Upload FFmpeg logs on failure
-        if: failure()
+        if: ${{ (failure()) && env.GITEA_ACTIONS != 'true' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: ffmpeg-msvc-logs
+          path: |
+            ${{ runner.temp }}/ffmpeg/ffbuild/config.log
+            ${{ runner.temp }}/ffmpeg/vmafx-build.log
+            ${{ runner.temp }}/ffmpeg/vmafx-score/
+          if-no-files-found: warn
+      - name: Upload FFmpeg logs on failure (Gitea)
+        if: ${{ (failure()) && env.GITEA_ACTIONS == 'true' }}
+        uses: actions/upload-artifact@c6a366c94c3e0affe28c06c8df20a878f24da3cf  # v3.2.2
         with:
           name: ffmpeg-msvc-logs
           path: |
@@ -606,8 +616,17 @@ jobs:
           scripts/ci/upstream-gstreamer-compat.sh "${args[@]}"
 
       - name: Upload score files
-        if: failure()
+        if: ${{ (failure()) && env.GITEA_ACTIONS != 'true' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: upstream-consumer-scores
+          path: |
+            ${{ runner.temp }}/consumers/*.json
+            ${{ runner.temp }}/consumers/*.log
+          if-no-files-found: ignore
+      - name: Upload score files (Gitea)
+        if: ${{ (failure()) && env.GITEA_ACTIONS == 'true' }}
+        uses: actions/upload-artifact@c6a366c94c3e0affe28c06c8df20a878f24da3cf  # v3.2.2
         with:
           name: upstream-consumer-scores
           path: |
