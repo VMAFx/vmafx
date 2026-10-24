@@ -438,6 +438,23 @@ DIFF
 expect_exit "human author editing rust-toolchain.toml is NOT exempt" 1 "developer" \
   "feat/toolchain" "${work}/case38_human_rust_toolchain.diff"
 
+# Case 36: Renovate digest PR #2906 touching the root Containerfile.vmafx -> exempt
+cat >"${work}/case36_pr2906.diff" <<'DIFF'
+Containerfile.vmafx
+Dockerfile.go-server
+build-config.env
+dev/Containerfile
+docker/Dockerfile.node
+DIFF
+expect_exit "PR #2906 fixture (root Containerfile.vmafx) is exempt" 0 "renovate[bot]" \
+  "renovate/docker-digests" "${work}/case36_pr2906.diff"
+
+cat >"${work}/case37_containerfile_lookalike.diff" <<'DIFF'
+core/src/Containerfiles.c
+DIFF
+expect_exit "Containerfile look-alike source is NOT exempt" 1 "renovate[bot]" \
+  "renovate/lookalike-containerfile" "${work}/case37_containerfile_lookalike.diff"
+
 echo ""
 echo "test-classify-dependency-pr: ${pass_count} passed, ${fail_count} failed"
 

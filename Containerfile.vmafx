@@ -60,7 +60,7 @@
 # =============================================================================
 # Stage 1 — runtime (shared base for `build` and `prod`; no oneAPI compiler)
 # =============================================================================
-FROM ubuntu:26.04@sha256:53958ec7b67c2c9355df922dd08dbf0360611f8c3cdb656875e81873db9ffdba AS runtime
+FROM ubuntu:26.04@sha256:c098726dd9b9733f3e885f8de0ef375206a311b0a317eadc40d347b1115fb944 AS runtime
 
 LABEL org.opencontainers.image.title="vmafx"
 LABEL org.opencontainers.image.description="VMAFx fork: libvmaf (SYCL) + ffmpeg with the fork patches, Intel Arc/Xe"

@@ -113,6 +113,14 @@ func query(expr, legend string) *prometheus.DataqueryBuilder {
 	return prometheus.NewDataqueryBuilder().Datasource(promRef()).Expr(expr).LegendFormat(legend).Range()
 }
 
+// queryExemplars is a range target that also shows the series' exemplars: each
+// point links the trace of one observation (Prometheus needs
+// --enable-feature=exemplar-storage, Grafana an exemplar trace link on the
+// data source).
+func queryExemplars(expr, legend string) *prometheus.DataqueryBuilder {
+	return query(expr, legend).Exemplar(true)
+}
+
 // instant is one Prometheus target evaluated at the end of the range.
 func instant(expr, legend string) *prometheus.DataqueryBuilder {
 	return prometheus.NewDataqueryBuilder().Datasource(promRef()).Expr(expr).LegendFormat(legend).Instant()
