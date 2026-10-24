@@ -230,6 +230,9 @@ func scoringParamsFromArgs(args map[string]any) (*controllerv1.ScoringParams, er
 		// unset model is forwarded as-is rather than pinned here.
 		Model:   strArg(args, "model", ""),
 		Backend: backend,
+		// The controller refuses a window it cannot parse (InvalidArgument).
+		WindowStart:    strArg(args, "window_start", ""),
+		WindowDuration: strArg(args, "window_duration", ""),
 	}, nil
 }
 

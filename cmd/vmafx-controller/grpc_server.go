@@ -37,6 +37,7 @@ import (
 	controllerv1 "github.com/VMAFx/vmafx/gen/go/controller"
 	"github.com/VMAFx/vmafx/pkg/libvmaf"
 	"github.com/VMAFx/vmafx/pkg/observability"
+	"github.com/VMAFx/vmafx/pkg/y4mdecode"
 )
 
 // ---------------------------------------------------------------------------
@@ -152,6 +153,10 @@ func (c *controllerServer) SubmitJob(ctx context.Context, req *controllerv1.Subm
 	if sp.GetReference() == "" || sp.GetDistorted() == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "reference and distorted paths are required")
 	}
+	// A window the node could not decode fails here, not on a node.
+	if _, err := y4mdecode.ParseWindow(sp.GetWindowStart(), sp.GetWindowDuration()); err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "%v", err)
+	}
 	// Extract tenant_id from the auth context (ADR-0794).
 	tenantID, err := callerTenant(ctx)
 	if err != nil {
@@ -172,6 +177,7 @@ func (c *controllerServer) SubmitJob(ctx context.Context, req *controllerv1.Subm
 
 	id, err := c.backend.Submit(spanCtx, tenantID, backend.Scoring{
 		Reference: sp.GetReference(), Distorted: sp.GetDistorted(), Model: sp.GetModel(), Backend: sp.GetBackend(),
+		WindowStart: sp.GetWindowStart(), WindowDuration: sp.GetWindowDuration(),
 	})
 	if err != nil {
 		spanErr = err
@@ -441,6 +447,9 @@ func jobToProto(j *backend.Job) *controllerv1.Job {
 			Distorted: j.Scoring.Distorted,
 			Model:     j.Scoring.Model,
 			Backend:   j.Scoring.Backend,
+			// The node decodes and seeks a windowed job (ADR-3370).
+			WindowStart:    j.Scoring.WindowStart,
+			WindowDuration: j.Scoring.WindowDuration,
 		},
 		AssignedNode: j.AssignedNode,
 		Error:        j.Error,
