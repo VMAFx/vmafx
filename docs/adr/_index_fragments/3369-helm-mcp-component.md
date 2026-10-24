@@ -1,0 +1,1 @@
+| [ADR-3369](3369-helm-mcp-component.md) | The Helm chart gains an `mcp` component (off by default) that runs `vmafx-mcp` from the node image, refuses `mcp.enabled` without a token Secret or explicit `mcp.auth.noAuth`, and renders its NetworkPolicies; every node image ships the binary; Intel xe stays a device plugin resource | Accepted | helm, kubernetes, mcp, docker |

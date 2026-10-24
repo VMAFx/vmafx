@@ -48,6 +48,47 @@ operator:
     key: token
 
 # ---------------------------------------------------------------------------
+# MCP — vmafx-mcp over streamable HTTP (docs/mcp/index.md)
+# A thin client of the controller's Client API (submit_job, get_job, ...).
+# It runs from the vmafx-node image, which ships the vmafx-mcp binary.
+# Enabling it requires auth: a token Secret, or auth.noAuth=true on purpose.
+# ---------------------------------------------------------------------------
+mcp:
+  # Set to true to deploy the vmafx-mcp Deployment and Service.
+  enabled: false
+  replicaCount: 1
+  # Empty repository: the node image (node.image), started with the
+  # command vmafx-mcp. Every node image variant ships the binary.
+  image:
+    repository: ""
+    tag: ""       # Defaults to the node image tag when empty.
+    pullPolicy: IfNotPresent
+  # Port of the streamable HTTP transport (VMAFX_MCP_HTTP_ADDR) and the Service.
+  httpPort: 3000
+  # auth — the bearer token every MCP request must carry
+  # (VMAFX_MCP_HTTP_TOKEN). The chart refuses mcp.enabled without
+  # auth.token.secretName unless auth.noAuth is true, which disables
+  # authentication (VMAFX_MCP_HTTP_NO_AUTH=1) for a trusted network only.
+  auth:
+    token:
+      secretName: ""
+      key: token
+    noAuth: false
+  # controllerToken — Secret holding the bearer token the MCP server sends on
+  # every controller RPC (VMAFX_CONTROLLER_TOKEN). Needed when the
+  # controller verifies tokens; its scopes bound what MCP clients can do.
+  controllerToken:
+    secretName: ""
+    key: token
+  resources:
+    limits:
+      cpu: "500m"
+      memory: 256Mi
+    requests:
+      cpu: "50m"
+      memory: 64Mi
+
+# ---------------------------------------------------------------------------
 # Controller — vmafx-controller: job queue, node API, auth gateway (ADR-1589)
 # ---------------------------------------------------------------------------
 # With controller.store.backend sqlite (the default) the job queue is an
@@ -430,6 +471,14 @@ networkPolicy:
       fromPodSelector: {}
     # operator → controller (GetJob polls, /healthz probes; controller.enabled).
     operatorToController:
+      enabled: true
+    # clients → MCP server: ingress to mcp.httpPort (mcp.enabled). Empty
+    # fromPodSelector admits every pod of the release namespace.
+    mcpIngress:
+      enabled: true
+      fromPodSelector: {}
+    # MCP server → controller gRPC (mcp.enabled and controller.enabled).
+    mcpToController:
       enabled: true
     # controller → identity providers: JWKS fetches over HTTPS while auth is on
     # (auth.enabled and not auth.disabled). Tighten cidrs to your providers.
