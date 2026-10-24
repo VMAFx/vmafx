@@ -50,6 +50,10 @@ type Scoring struct {
 	Distorted string `json:"distorted"`
 	Model     string `json:"model"`
 	Backend   string `json:"backend"`
+	// WindowStart and WindowDuration are the optional scored window in
+	// decimal seconds; empty scores the whole input.
+	WindowStart    string `json:"window_start,omitempty"`
+	WindowDuration string `json:"window_duration,omitempty"`
 }
 
 // Job is a snapshot of one job.

@@ -1,0 +1,1 @@
+| [ADR-3370](3370-node-container-decode.md) | The node decodes every input that is not `.y4m` / `.yuv`, or that has a time window, with its ffmpeg into a Y4M pipe (`pkg/y4mdecode`, no temp file); `ScoringParams.window_start` / `window_duration` pick a sample; the scoring-root check stays on the source path | Accepted | node, server, ffmpeg, platform |
