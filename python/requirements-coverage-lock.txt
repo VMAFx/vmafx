@@ -1,6 +1,6 @@
 # VMAFx hash lock; regenerate with: make python-locks-write
 # vmafx-uv-version: 0.13.4
-# vmafx-input-sha256: 243c1394decc9c18033ed1596fdf4871aa378af4b3658898963d19be6afd8bb4
+# vmafx-input-sha256: 31d9f6a4af39328aaa209679190970f6b6ef7eee6aa3be78585bce8dd2c32fdd
 # vmafx-inputs: python/pyproject.toml, python/requirements.txt, python/test/requirements.txt, python/requirements-coverage.in
 cloudpickle==3.1.2 \
     --hash=sha256:7fda9eb655c9c230dab534f1983763de5835249750e85fbcef43aaa30a9a2414 \
@@ -316,9 +316,9 @@ fonttools==4.67.0 \
     --hash=sha256:fcb9743140419410161acfe7ec205fb0a8a703acfccb85b586becb5a97c047c9 \
     --hash=sha256:fd79e36c2968e9fc3e1b082f2ba7dc63ae88a161a3d8ceaa0746b906455f3617
     # via matplotlib
-gcovr==8.6 \
-    --hash=sha256:b2e7042abca9321cadbab8a06eb34d19f801b831557b28cdc30a029313de8b9e \
-    --hash=sha256:dbf9d87c38042752ad6f530aa8210427e22b526611bb7b7bfed0e81977d1f1ef
+gcovr==8.7 \
+    --hash=sha256:2a68612c5981c388537f2e236c231a5d788b8bd9e406d13ced662c97b17e9784 \
+    --hash=sha256:cfb9b2c373cc5be4b1cbe53250a5e4446fe6d4723c6900d3f41aa83540c8ddc8
     # via -r python/requirements-coverage.in
 h5py==3.16.0 \
     --hash=sha256:099f2525c9dcf28de366970a5fb34879aab20491589fa89ce2863a84218bb524 \
@@ -1471,9 +1471,9 @@ setupmeta==3.9.0 \
     --hash=sha256:464498e35aeab28aa8c27bd0283530fb69696358723a5e7157cdb11255e1abc7 \
     --hash=sha256:c1719697ac8407dd84018f5699121cdb4ec70bde28263b665a35e36f108aac29
     # via sureal
-setuptools==84.1.0 \
-    --hash=sha256:23657205b63d4d31395ab917815247f694aafad28cd21316bf5fd45a51048ea0 \
-    --hash=sha256:5231689c6ac8156cd155cfb98c3fd6fb252c3e7e9bd3d78b64d3c55f132624c9
+setuptools==84.2.1 \
+    --hash=sha256:3ff8b3b5492a0aa66960f4419365a86b84e013070d4313e4d4a6894f5d64d6bc \
+    --hash=sha256:ca140b45d5325a9478f880e351484f62fef15f336462e449ca0c03c873d589c2
     # via
     #   -r python/requirements-coverage.in
     #   setupmeta

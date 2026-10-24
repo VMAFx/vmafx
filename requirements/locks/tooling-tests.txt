@@ -1,6 +1,6 @@
 # VMAFx hash lock; regenerate with: make python-locks-write
 # vmafx-uv-version: 0.13.4
-# vmafx-input-sha256: ca8343a2425af34f2433c398c39893d0e6f9309b8d8ac7fc3d424cb2f621e774
+# vmafx-input-sha256: 68352903cf9cc3ef921a3f9c677ca508a4af0f57b90a5bbcae7ce2c8141d58a6
 # vmafx-inputs: requirements/locks/tooling-tests.in, docs/requirements.txt
 annotated-types==0.8.0 \
     --hash=sha256:13b2beaad985e05e2d6407ee4c4f35590b11f8d693a258a561055cac8f64cab7 \
@@ -1644,15 +1644,15 @@ semantic-version==2.10.0 \
     --hash=sha256:bdabb6d336998cbb378d4b9db3a4b56a1e3235701dc05ea2690d9a997ed5041c \
     --hash=sha256:de78a3b8e0feda74cabc54aab2da702113e33ac9d9eb9d2389bcf1f58b7d9177
     # via semgrep
-semgrep==1.180.0 \
-    --hash=sha256:14aee785d0bc9656027a33fca7f97e88e089dbc6c7ed3df47f454b0584b0a3d0 \
-    --hash=sha256:16db2e2706ab814a975eeec25debfad49abba846b7c513d88e041447152f8447 \
-    --hash=sha256:1bab359e562f0af00217f9f827531c2e1375499b8559c90bed9690007e82565d \
-    --hash=sha256:9c61070eaa7de785a8318e1d00de6c9151efa660cc3e58c3e2ffd6f5e6180af7 \
-    --hash=sha256:b403865e64f5ba0691630adf9bc13592cc38830726d4a114960d7e2d3fb21fc6 \
-    --hash=sha256:cba06f64b10e5ec86a0b3a9757cfdfdf3ce6c2bbdb5e98762aa2a4b0a296f8ca \
-    --hash=sha256:d19b447b5d49c435dda099fd5f9d96ec7822e98a8ea6df16630f4f0596ed27ed \
-    --hash=sha256:f074dcfd6a56095fde32c354af27ef0cce6d15607bef42fa50964dd7042b667d
+semgrep==1.182.0 \
+    --hash=sha256:02cbad24b4409b5b85df11aea123f6cf74232858db570b1d28dce0e6109004a0 \
+    --hash=sha256:19a82868830389c039bb71bfc0aeebb28385e5b65740120710eff050324ad14f \
+    --hash=sha256:56f609a26dfba5e16428485f120f671e216ae3d3329697e8cf0075fb8a17c10a \
+    --hash=sha256:6263233c3f2e7b05c2d89b1de7408e91c0238014ab67bb68746c0c452d33b828 \
+    --hash=sha256:675e69cbc71827a36eb490745d3d56c846c356b70072933c5513587a684767b0 \
+    --hash=sha256:9e18507d94cea45ceeabec8c9ce51be155e32ed7ea8323ccbbb396ea2518394f \
+    --hash=sha256:d1cc11b4662175d62c0296c6e4944483104a9ede26ae1a3c1723abab234815ce \
+    --hash=sha256:e20485948f87a7a8e5ef099bb0ef80beae8c5f53a19d55de94e89c516eb9f731
     # via -r requirements/locks/tooling-tests.in
 setuptools==84.2.1 \
     --hash=sha256:3ff8b3b5492a0aa66960f4419365a86b84e013070d4313e4d4a6894f5d64d6bc \
@@ -1662,9 +1662,9 @@ six==1.17.0 \
     --hash=sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274 \
     --hash=sha256:ff70335d468e7eb6ec65b95b99d3a2836546063f63acc5171de367e834932a81
     # via python-dateutil
-sse-starlette==3.5.0 \
-    --hash=sha256:3e6e1070df3f0f5d9cea81496de92dbb72f6721871d99748ece67441dd8b7997 \
-    --hash=sha256:75de713aa8a9441513cc283220826da079d982770965b951e9437720e8bafdb2
+sse-starlette==3.5.1 \
+    --hash=sha256:a6cdcfec47b952911b1d99a7b8056429b5984039b875bf6575174220364b551f \
+    --hash=sha256:dbb1461cd53c1e284537c3ddcf92f54f24178519a3f1e335e49e5283993db0f7
     # via mcp
 starlette==1.9.0 \
     --hash=sha256:3d931de246ed870e35ce605974440816ef895e592f255d1396cfdf191d4c4318 \
