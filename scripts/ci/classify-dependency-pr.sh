@@ -169,6 +169,7 @@ is_dependency_manifest_name() {
       requirements*.txt | constraints*.txt | \
       requirements*.in | \
       Dockerfile* | *.Dockerfile | \
+      Containerfile | Containerfile.* | \
       Chart.yaml | Chart.lock | \
       docker-compose.y*ml | docker-compose.*.y*ml | compose.y*ml)
       return 0

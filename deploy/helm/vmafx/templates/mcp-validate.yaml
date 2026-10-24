@@ -1,0 +1,14 @@
+{{- /*
+SPDX-License-Identifier: EUPL-1.2
+Copyright 2026 Lusoris
+
+deploy/helm/vmafx/templates/mcp-validate.yaml
+Renders nothing. Refuses an MCP server that would accept unauthenticated
+requests by accident: mcp.enabled needs mcp.auth.token.secretName, or
+mcp.auth.noAuth: true as an explicit choice for a trusted network.
+*/ -}}
+{{- if .Values.mcp.enabled }}
+{{- if and (not .Values.mcp.auth.token.secretName) (not .Values.mcp.auth.noAuth) }}
+{{- fail "mcp.enabled needs auth: set mcp.auth.token.secretName to a Secret holding the bearer token, or mcp.auth.noAuth: true to run without authentication on a trusted network" }}
+{{- end }}
+{{- end }}

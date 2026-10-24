@@ -27,6 +27,26 @@
         "controllerToken": {"$ref": "#/$defs/tokenSecretSpec"}
       }
     },
+    "mcp": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "replicaCount": {"type": "integer", "minimum": 0},
+        "image": {"$ref": "#/$defs/imageSpec"},
+        "httpPort": {"type": "integer", "minimum": 1, "maximum": 65535},
+        "auth": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "token": {"$ref": "#/$defs/tokenSecretSpec"},
+            "noAuth": {"type": "boolean"}
+          }
+        },
+        "controllerToken": {"$ref": "#/$defs/tokenSecretSpec"},
+        "resources": {"$ref": "#/$defs/resourceSpec"}
+      }
+    },
     "controller": {
       "type": "object",
       "additionalProperties": false,
@@ -587,6 +607,21 @@
               "type": "object",
               "additionalProperties": false,
               "description": "Egress from the operator to the controller (GetJob, /healthz).",
+              "properties": {"enabled": {"type": "boolean"}}
+            },
+            "mcpIngress": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "Ingress to the MCP server's HTTP port (mcp.enabled).",
+              "properties": {
+                "enabled": {"type": "boolean"},
+                "fromPodSelector": {"type": "object", "additionalProperties": true}
+              }
+            },
+            "mcpToController": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "Egress from the MCP server to the controller's gRPC port.",
               "properties": {"enabled": {"type": "boolean"}}
             },
             "controllerToDatabase": {

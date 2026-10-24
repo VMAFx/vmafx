@@ -141,6 +141,11 @@ jobs:
       - name: Controller workload renders
         run: python3 -B -m unittest discover -s scripts/ci/tests -p 'test_helm_controller_workload.py' -v
 
+      # The MCP component: vmafx-mcp on the node image, token or explicit
+      # noAuth (refused otherwise), NetworkPolicies; Intel xe by resource only.
+      - name: MCP component renders
+        run: python3 -B -m unittest discover -s scripts/ci/tests -p 'test_helm_mcp.py' -v
+
       # ADR-1592: only the controller's own service account reads VmafxTenants.
       # ADR-2647: the operator writes events in every namespace, nothing else.
       - name: Service accounts and tenant RBAC
@@ -197,6 +202,8 @@ jobs:
               --set operator.enabled=true \
               --set node.enabled=true \
               --set controller.enabled=true \
+              --set mcp.enabled=true \
+              --set mcp.auth.noAuth=true \
               --set auth.enabled=true \
               --set auth.disabled=true \
               --set podDisruptionBudget.enabled=true > "$rendered"
