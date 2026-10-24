@@ -43,7 +43,7 @@ func TestStreamSessionCounts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := m.Begin()
+	s := m.Begin(context.Background())
 	s.Frame()
 	s.Frame()
 	if open := gatherValue(t, reg, metricdef.StreamSessions.Name); open != 1 {
@@ -60,7 +60,7 @@ func TestStreamSessionCounts(t *testing.T) {
 		t.Errorf("finished = %v, want 1", failed)
 	}
 	var none *StreamMetrics
-	n := none.Begin()
+	n := none.Begin(context.Background())
 	n.Frame()
 	n.End(nil)
 }

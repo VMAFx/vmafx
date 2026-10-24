@@ -48,7 +48,7 @@ func TestNodeServesEveryFamilyItEmits(t *testing.T) {
 		m.jobStarted()
 		m.jobDone("cuda", jobErr, time.Second)
 	}
-	session := streams.Begin()
+	session := streams.Begin(context.Background())
 	session.Frame()
 	session.End(nil)
 	fams, err := reg.Gather()
