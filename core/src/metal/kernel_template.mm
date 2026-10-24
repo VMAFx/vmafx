@@ -111,23 +111,10 @@ int vmaf_metal_kernel_buffer_alloc(VmafMetalKernelBuffer *buf, VmafMetalContext 
     VMAF_LIFECYCLE_ZERO(buf);
     buf->bytes = bytes;
 
-    if (ctx == nullptr) {
-        return -EINVAL;
-    }
-    if (bytes == 0) {
-        return -EINVAL;
-    }
-
-    const void *const device_handle = vmaf_metal_context_device_handle(ctx);
-    if (device_handle == nullptr) {
-        return -ENODEV;
-    }
-    id<MTLDevice> const device = (__bridge id<MTLDevice>)device_handle;
-
-    id<MTLBuffer> const b = [device newBufferWithLength:bytes
-                                          options:MTLResourceStorageModeShared];
+    int rc = 0;
+    id<MTLBuffer> const b = vmaf_metal_shared_buffer_alloc(ctx, bytes, &rc);
     if (b == nil) {
-        return -ENOMEM;
+        return rc;
     }
     buf->buffer    = retain_to_slot(b);
     buf->host_view = [b contents];

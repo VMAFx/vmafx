@@ -21,10 +21,14 @@
 #endif
 
 #include <bit>
+#include <cerrno>
+#include <cstddef>
 #include <cstdint>
 
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
+
+#include "common.h"
 
 namespace vmaf_metal
 {
@@ -54,6 +58,39 @@ inline id transfer(uintptr_t slot)
 }
 
 } /* namespace vmaf_metal */
+
+/**
+ * Allocate a `MTLResourceStorageModeShared` buffer of `bytes` on `ctx`'s device;
+ * nil with *rc = -EINVAL / -ENODEV / -ENOMEM on failure.
+ */
+static inline id<MTLBuffer> vmaf_metal_shared_buffer_alloc(VmafMetalContext *ctx, size_t bytes,
+                                                           int *rc)
+{
+    if (ctx == nullptr) {
+        *rc = -EINVAL;
+        return nil;
+    }
+    if (bytes == 0) {
+        *rc = -EINVAL;
+        return nil;
+    }
+
+    const void *const device_handle = vmaf_metal_context_device_handle(ctx);
+    if (device_handle == nullptr) {
+        *rc = -ENODEV;
+        return nil;
+    }
+    id<MTLDevice> const device = (__bridge id<MTLDevice>)device_handle;
+
+    id<MTLBuffer> const buf = [device newBufferWithLength:bytes
+                                                  options:MTLResourceStorageModeShared];
+    if (buf == nil) {
+        *rc = -ENOMEM;
+        return nil;
+    }
+    *rc = 0;
+    return buf;
+}
 
 /** The embedded `metallib` as an `MTLLibrary`; nil with *rc = -ENODEV / -ENOMEM on failure. */
 id<MTLLibrary> vmaf_metal_library_load(id<MTLDevice> device, int *rc);

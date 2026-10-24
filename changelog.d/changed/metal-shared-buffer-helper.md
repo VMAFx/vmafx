@@ -1,0 +1,1 @@
+- Consolidate duplicated shared-storage Metal buffer allocation in `core/src/metal/picture_metal.mm` and `core/src/metal/kernel_template.mm` into `vmaf_metal_shared_buffer_alloc()` in `core/src/metal/objc_handle.h`.

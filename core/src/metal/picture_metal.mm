@@ -22,6 +22,8 @@
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
 
+#include "objc_handle.h"
+
 extern "C" {
 #include "common.h"
 #include "picture_metal.h"
@@ -29,23 +31,14 @@ extern "C" {
 
 int vmaf_metal_picture_alloc(VmafMetalContext *ctx, void **out, size_t size)
 {
-    if (ctx == nullptr || out == nullptr) {
-        return -EINVAL;
-    }
-    if (size == 0) {
+    if (out == nullptr) {
         return -EINVAL;
     }
 
-    const void *const device_handle = vmaf_metal_context_device_handle(ctx);
-    if (device_handle == nullptr) {
-        return -ENODEV;
-    }
-    id<MTLDevice> const device = (__bridge id<MTLDevice>)device_handle;
-
-    id<MTLBuffer> const buf = [device newBufferWithLength:size
-                                            options:MTLResourceStorageModeShared];
+    int rc = 0;
+    id<MTLBuffer> const buf = vmaf_metal_shared_buffer_alloc(ctx, size, &rc);
     if (buf == nil) {
-        return -ENOMEM;
+        return rc;
     }
 
     /* Bridge-retain into the C-side `void *` so the buffer survives
