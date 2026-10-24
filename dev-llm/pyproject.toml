@@ -34,7 +34,7 @@ modelcard = [
   "scipy>=1.18.1",
 ]
 cloud = [
-  "anthropic>=1.15.0",
+  "anthropic>=2.0.0",
   "openai>=3.35.1",
 ]
 
