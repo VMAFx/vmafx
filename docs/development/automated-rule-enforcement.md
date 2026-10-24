@@ -123,7 +123,8 @@ The allowed surfaces are:
 - `package.json`, `go.mod`, `Cargo.toml`, `pyproject.toml`,
   `requirements*.txt`;
 - the root `build-config.env`;
-- `Dockerfile*`, `dev/Containerfile`, `docker/**`, `docker-compose*.yml`;
+- `Dockerfile*`, `Containerfile` / `Containerfile.*` (any directory),
+  `dev/Containerfile`, `docker/**`, `docker-compose*.yml`;
 - `deploy/helm/**`, `Chart.yaml`, `Chart.lock`;
 - `.pre-commit-config.yaml`, `.github/workflows/**`, `changelog.d/**`.
 
