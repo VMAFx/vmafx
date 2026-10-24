@@ -718,12 +718,14 @@ test('test_cuda_float_psnr_exact_contract',
 # ADR-2146 — the RGB conversion's arithmetic (rgb_math.h) is shared by the CPU
 # reference, nvcc, hipcc and the SYCL kernels: freestanding, integer only, no
 # run-time array index (ADR-1395). Device-free; the device checks are
-# test_vmafx_import_cuda_formats and test_vmafx_import_hip_formats.
+# test_vmafx_import_cuda_formats and test_vmafx_import_hip_formats. It runs the host
+# C and C++ compilers: 6-14 s on the Windows ARM64 runner, over 60 s on master
+# 3b139a6b4 while the Go generator tests ran beside it, so the limit is 240 s.
 test('test_vmafx_rgb_math_contract',
     import('python').find_installation(),
     args : files('test_vmafx_rgb_math_contract.py'),
     suite : ['fast'],
-    timeout : 60,
+    timeout : 240,
 )
 
 # ADR-1462 — vif_cuda reads the CPU's log2 table from a global of its kernel
@@ -805,11 +807,13 @@ test('test_agent_pages_contract',
 # Help strings, header comments, option descriptions, CI comments and the perf-gate
 # page are pinned to the code they describe (docs audit 2026-10-03/04). Compiles
 # one small C++ TU with the host compiler to run the SYCL dispatch-strategy advice.
+# 11 s on the Windows ARM64 runner, 112.5 s on master 3b139a6b4 beside the Go
+# generator tests, so the limit is 300 s.
 test('test_stale_text_contract',
     import('python').find_installation(),
     args : files('test_stale_text_contract.py'),
     suite : ['fast'],
-    timeout : 120,
+    timeout : 300,
 )
 
 # A default scale=0 is only executable by the GPU float-SSIM twins while the
