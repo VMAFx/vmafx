@@ -72,7 +72,7 @@ components by reference (`"from"` + `rewrite`), never copies. ROCm targets =
 
 ## Go service and node licence gate (ADR-1514)
 
-`Dockerfile.operator`, `Dockerfile.go-server`, `Dockerfile.node` (`node-cpu`):
+`Dockerfile.operator`, `Dockerfile.go-server`, `Dockerfile.node` (`node-cpu`, `node-sycl`):
 final target copies receipt of licence-check stage; go-builder runs
 `licensing.py scan-go` + `go-licences`; `*source-export` built per platform in
 build jobs, merged to `<image>:<tag>-source` by composite action. Node: FFmpeg
@@ -89,6 +89,10 @@ lib closure at Debian paths (`fusermount3` clears env: no LD_LIBRARY_PATH) ->
 `fuse-tools`. No `mount`/`umount` -> every mount fails where `/etc/mtab`
 exists (Docker always). Guards: `test-docker-image-runtime-contract.sh`,
 publish smoke mount.
+
+## Node SYCL image builder invariant (ADR-3371)
+
+`node-sycl` libvmaf comes from shared oneAPI script (`scripts/ci/build-oneapi-libvmaf.sh`), never `vmaf-builder`. `vmaf-builder` compiles with `-Denable_sycl=false`; copying from `vmaf-builder` causes silent CPU fallback defect. `node-sycl-assembled` copies libvmaf, libvmafx, vmaf, `/stage/lib/intel/`, and `/stage/licenses/` from `builder-oneapi2026`. `production-node-sycl-image` validates runtime and licence receipt.
 
 ## oneAPI production image (ADR-1368, ADR-1517)
 

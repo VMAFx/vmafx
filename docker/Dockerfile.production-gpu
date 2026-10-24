@@ -248,18 +248,9 @@ COPY . .
 # The SYCL runtime files libvmaf loads, from this compiler's installation and
 # its credist.txt (the Redistributables of the Intel EULA for Developer Tools,
 # 2.1.D), go to the image with their licence texts; the compiler stays here.
-RUN CC=icx CXX=icpx meson setup build core --buildtype=release --strip -Db_lto=false \
-        -Denable_cuda=false -Denable_sycl=true -Denable_hip=false \
-        -Denable_dnn=disabled -Denable_docs=false -Denable_tests=false \
-    && nice -n 10 ninja -C build -j"${VMAF_BUILD_JOBS}"
-RUN mkdir -p /dist/lib /dist/bin /dist/model /licence-inputs \
-    && find build/src -maxdepth 1 \( -name 'libvmaf.so*' -o -name 'libvmafx.so*' \) -not -type d -exec cp -a {} /dist/lib/ \; \
-    && cp build/tools/vmaf /dist/bin/ \
-    && cp -r model/. /dist/model/ \
-    && python3 tools/rc1-tester/image/prepare_build.py intel-runtime \
-        tools/rc1-tester/image/sycl-runtime.json /opt/intel/oneapi /stage \
-    && python3 tools/rc1-tester/image/licensing.py scan-build --build build --repo /src \
-        --out /licence-inputs/vmafx-sources.json
+# Meson setup, compilation, staging, and licence scanning run via the shared
+# build script (HISS-19, ADR-3371).
+RUN bash scripts/ci/build-oneapi-libvmaf.sh
 
 # (ADR-0726: Vulkan backend removed; builder-vulkan stage deleted)
 

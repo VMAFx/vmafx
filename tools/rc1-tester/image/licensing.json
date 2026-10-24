@@ -3447,6 +3447,86 @@
     }
    ]
   },
+  "production-node-sycl-image": {
+   "title": "the VMAFx worker node image with Intel oneAPI SYCL runtime (vmafx-node)",
+   "licence_root": "usr/local/share/vmafx/licenses",
+   "source_offer": "the image ghcr.io/vmafx/vmafx-node:{tag}-sycl-source in the same registry package, published with this image (Debian source packages of every installed package at the installed version, and the module zips of the copyleft Go modules under go/, every module of rclone, FFmpeg as compiled under ffmpeg/, and the Debian sources of the copied libraries); SOURCES.txt inside it is the index.",
+   "rewrite": {
+    "opt/vmafx/licenses/": "usr/local/share/vmafx/licenses/",
+    "opt/vmafx/lib/": "usr/local/lib/"
+   },
+   "components": [
+    {
+     "from": "production-node-image",
+     "id": "vmafx-binaries",
+     "name": "VMAFx: vmafx-node, vmafx-mcp, the vmaf command, libvmaf and libvmafx (SYCL build)"
+    },
+    {
+     "from": "production-node-image",
+     "id": "brisque-live-model"
+    },
+    {
+     "from": "production-node-image",
+     "id": "vmafx-models"
+    },
+    {
+     "from": "production-node-image",
+     "id": "ffmpeg"
+    },
+    {
+     "from": "production-node-image",
+     "id": "svt-av1"
+    },
+    {
+     "from": "production-node-image",
+     "id": "copied-debian-libraries"
+    },
+    {
+     "from": "production-node-image",
+     "id": "fuse-tools"
+    },
+    {
+     "from": "production-node-image",
+     "id": "go-modules"
+    },
+    {
+     "from": "production-node-image",
+     "id": "rclone"
+    },
+    {
+     "from": "production-node-image",
+     "id": "build-records"
+    },
+    {
+     "from": "sycl-image",
+     "id": "intel-oneapi-dpcpp-runtime"
+    },
+    {
+     "from": "sycl-image",
+     "id": "intel-oneapi-umf"
+    },
+    {
+     "from": "sycl-image",
+     "id": "intel-oneapi-tcm-hwloc"
+    },
+    {
+     "from": "sycl-image",
+     "id": "intel-gpu-stack"
+    },
+    {
+     "from": "production-node-image",
+     "id": "debian-packages"
+    },
+    {
+     "from": "production-node-image",
+     "id": "system-state"
+    },
+    {
+     "from": "production-node-image",
+     "id": "notices"
+    }
+   ]
+  },
   "production-cuda-image": {
    "title": "the VMAFx production NVIDIA GPU image (vmaf command, CUDA)",
    "licence_root": "usr/local/share/vmafx/licenses",

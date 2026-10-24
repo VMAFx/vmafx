@@ -333,3 +333,36 @@ def test_the_release_files_carry_checked_notices() -> None:
         assert f"sbom-path: sbom/{sbom}" in workflow
     records = lic.load_manifest()["artifacts"]
     assert {"release-native", "release-models"} <= records.keys()
+
+
+def test_production_node_sycl_image_shares_runtime_and_node_components() -> None:
+    """production-node-sycl-image shares the oneAPI SYCL runtime components and the
+    Intel GPU user-mode stack from sycl-image and the worker node components from production-node-image (ADR-3371).
+    """
+    raw = json.loads((_IMAGE / "licensing.json").read_text())["artifacts"]
+    assert "production-node-sycl-image" in raw
+    sycl_node = raw["production-node-sycl-image"]
+    shared_sycl = {c["id"] for c in sycl_node["components"] if c.get("from") == "sycl-image"}
+    assert shared_sycl == {
+        "intel-oneapi-dpcpp-runtime",
+        "intel-oneapi-umf",
+        "intel-oneapi-tcm-hwloc",
+        "intel-gpu-stack",
+    }
+    shared_node = {
+        c["id"] for c in sycl_node["components"] if c.get("from") == "production-node-image"
+    }
+    for required in (
+        "vmafx-binaries",
+        "ffmpeg",
+        "svt-av1",
+        "go-modules",
+        "rclone",
+        "build-records",
+    ):
+        assert required in shared_node, f"missing {required} in shared_node"
+
+    expanded = lic.load_manifest()["artifacts"]
+    assert "production-node-sycl-image" in expanded
+    text = json.dumps(expanded["production-node-sycl-image"]["components"])
+    assert "opt/vmafx/" not in text
