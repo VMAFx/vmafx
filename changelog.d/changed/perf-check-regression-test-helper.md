@@ -1,0 +1,1 @@
+- **Consolidate duplicated CLI test harness boilerplate in `scripts/perf/test_check_regression.py`.** Payload serialization and `check_regression.main` CLI invocation across regression, advisory, and baseline-skip tests are consolidated into the `_run_main` helper (HISS-19).

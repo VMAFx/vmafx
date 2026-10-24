@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: EUPL-1.2
+# Copyright 2026 Lusoris
+#
+# Apt packages for the Doxygen Public API work (doxygen-work) CI job in docs.yml.
+# One package per line; comments starting with # are ignored.
+
+doxygen

@@ -162,6 +162,45 @@ CUDA is off in this lane. CUDA 13.3.1 shipped no `windows-arm64` packages and
 release in `build-config.env`, and a CUDA-on-WoA leg is not part of this lane
 today.
 
+## Gitea mirror runner: artifact steps
+
+The workflows also run on a Gitea mirror through Gitea's act runner. From v4
+on, `actions/upload-artifact` and `actions/download-artifact` refuse every
+server that is not github.com, `*.ghe.com` or `*.localhost`, so such a step
+failed on Gitea with `GHESNotSupportedError`. Gitea serves the v3 artifact
+protocol, and the act runner sets `GITEA_ACTIONS=true` in every job
+([ADR-3368](../adr/3368-gitea-artifact-path.md)).
+
+Every artifact step therefore comes as a pair:
+
+```yaml
+- name: Upload log
+  if: ${{ (always()) && env.GITEA_ACTIONS != 'true' }}
+  uses: actions/upload-artifact@<v7 pin>
+  with: {name: log, path: build/log.txt}
+- name: Upload log (Gitea)
+  if: ${{ (always()) && env.GITEA_ACTIONS == 'true' }}
+  uses: actions/upload-artifact@<v3 pin>
+  with: {name: log, path: build/log.txt}
+```
+
+The Gitea twin keeps the step's condition and its `with:` inputs. A download
+that needs an input v3 does not have (`pattern`, `merge-multiple`) cannot run
+on Gitea; its twin is a `run:` step that prints a warning naming the missing
+inputs, so the skip shows in the job log. On github.com every twin is skipped.
+
+`scripts/ci/check_gitea_artifact_steps.py` refuses an unguarded step, a
+missing or mismatched twin, a skip where v3 would do and a v3 pin outside a
+twin; it runs in `make lint-actions` and as the `check-gitea-artifact-steps`
+pre-commit hook. Add a new artifact step with the v4+ pin only and run:
+
+```bash
+python3 scripts/ci/check_gitea_artifact_steps.py --write
+```
+
+which adds the guard and the twin in place. Renovate keeps the v3 pins below
+v4 (`renovate.json`, ADR-3368).
+
 ## What lives in the cluster
 
 Outside the scope of this repository:

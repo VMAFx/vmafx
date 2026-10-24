@@ -186,7 +186,11 @@ class FailClosedCIContract(unittest.TestCase):
         self.assertIn("bash testdata/bench_all.sh", benchmark)
         self.assertNotIn("|| true", executable_body(benchmark))
         upload = workflow.split("name: nightly-benchmark-results", maxsplit=1)[0]
-        self.assertRegex(upload, r"(?m)^        if: always\(\)\s*$")
+        # ADR-3368 guards the v7 upload off Gitea; the condition inside stays always().
+        self.assertRegex(
+            upload,
+            r"(?m)^        if: \$\{\{ \(always\(\)\) && env\.GITEA_ACTIONS != 'true' \}\}\s*$",
+        )
 
     def test_nightly_clang_tidy_configuration_and_toolchain(self) -> None:
         workflow = (WORKFLOWS / "nightly.yml").read_text(encoding="utf-8")
@@ -194,7 +198,13 @@ class FailClosedCIContract(unittest.TestCase):
         self.assertIn("ppa:ubuntu-toolchain-r/test", tidy_job)
         self.assertIn("https://apt.llvm.org/llvm.sh", tidy_job)
         self.assertIn("sudo /tmp/llvm.sh 22", tidy_job)
-        self.assertIn("sudo apt-get install -y clang-tidy-22", tidy_job)
+        # The packages come from the job's apt list (apt archive cache).
+        self.assertIn(
+            "grep -v '^#' .github/apt/clang-tidy-full.txt | xargs sudo apt-get install -y",
+            tidy_job,
+        )
+        apt_list = (ROOT / ".github/apt/clang-tidy-full.txt").read_text(encoding="utf-8")
+        self.assertIn("clang-tidy-22", apt_list.splitlines())
         # The job runs the cpu lane's Makefile targets, as the required job and
         # the dev container do (T-TIDY-RATCHET-UNMEASURED-AS-CLEAN-2026-10-06):
         # gcc-15, no LTO and the hashed build requirements come from there.
@@ -227,11 +237,11 @@ class FailClosedCIContract(unittest.TestCase):
     def test_fuzz_workflows_have_adequate_timeout_budget(self) -> None:
         fuzz_wf = (WORKFLOWS / "fuzz.yml").read_text(encoding="utf-8")
         fuzz_job = workflow_job(fuzz_wf, "fuzz")
-        self.assertRegex(fuzz_job, r"(?m)^    timeout-minutes: 30\s*$")
+        self.assertRegex(fuzz_job, r"(?m)^    timeout-minutes: 45\s*$")
 
         sanitizers_wf = (WORKFLOWS / "sanitizers.yml").read_text(encoding="utf-8")
         sanitizer_fuzz_job = workflow_job(sanitizers_wf, "fuzz-nightly")
-        self.assertRegex(sanitizer_fuzz_job, r"(?m)^    timeout-minutes: 30\s*$")
+        self.assertRegex(sanitizer_fuzz_job, r"(?m)^    timeout-minutes: 55\s*$")
 
     def test_semgrep_advisory_preserves_failure_outcome(self) -> None:
         workflow = (WORKFLOWS / "security-scans.yml").read_text(encoding="utf-8")

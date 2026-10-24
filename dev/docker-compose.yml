@@ -256,6 +256,19 @@ services:
       <<: *common-env
       PROBE_INTERVAL_SECONDS: "900"  # 15 minutes
       PROBE_OUTPUT_DIR: /probes
+      # The backends this host has; every one named must score. On a host
+      # without one of the devices: PROBE_BACKENDS="cpu cuda" docker compose ...
+      PROBE_BACKENDS: "${PROBE_BACKENDS:-cpu cuda sycl hip}"
+
+    # Healthy means: the newest record in /probes is recent and every
+    # sub-check in it passed. The image default (`vmaf --version`) reported
+    # healthy while every probe failed, and while no probe ran at all.
+    healthcheck:
+      test: ["CMD", "/workspace/dev/scripts/smoke-probe-loop.sh", "--healthy"]
+      interval: 60s
+      timeout: 15s
+      retries: 1
+      start_period: 300s
 
     volumes:
       - type: bind

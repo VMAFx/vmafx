@@ -145,7 +145,7 @@ repos:
       - id: shellcheck
 
   - repo: https://github.com/DavidAnson/markdownlint-cli2
-    rev: v0.23.3
+    rev: v0.24.0
     hooks:
       # ADR-0866 — wire markdownlint-cli2 into pre-commit. pass_filenames
       # is true (the default) so only staged *.md files are linted; the
@@ -738,6 +738,20 @@ repos:
         files: '^(scripts/ci/(check_composite_actions\.py|tests/test_check_composite_actions\.py)|\.pre-commit-config\.yaml)$'
         pass_filenames: false
 
+      - id: check-gitea-artifact-steps
+        name: Every artifact step has a Gitea twin or a named skip
+        entry: python3 scripts/ci/check_gitea_artifact_steps.py
+        language: system
+        files: '^(\.github/(workflows|actions)/|scripts/ci/check_gitea_artifact_steps\.py$)'
+        pass_filenames: false
+
+      - id: test-check-gitea-artifact-steps
+        name: Gitea artifact-step check keeps positive, negative and boundary cases
+        entry: python3 scripts/ci/tests/test_check_gitea_artifact_steps.py
+        language: system
+        files: '^(scripts/ci/(check_gitea_artifact_steps\.py|tests/test_check_gitea_artifact_steps\.py)|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+
       - id: check-hosted-runner-labels
         name: Workflow jobs name an explicit hosted Ubuntu image, an older one only with a dated fallback
         entry: python3 scripts/ci/check_hosted_runner_labels.py
@@ -764,6 +778,20 @@ repos:
         entry: python3 scripts/ci/tests/test_pr_workflow_budget.py
         language: system
         files: '^(\.github/workflows/|scripts/ci/(pr_workflow_budget\.py|tests/test_pr_workflow_budget\.py)|\.pre-commit-config\.yaml$)'
+        pass_filenames: false
+
+      - id: check-job-timeout-budget
+        name: Every workflow job's time limit covers the sum of its step limits
+        entry: python3 scripts/ci/check_job_timeout_budget.py
+        language: system
+        files: '^(\.github/workflows/|scripts/ci/check_job_timeout_budget\.py$)'
+        pass_filenames: false
+
+      - id: test-check-job-timeout-budget
+        name: Job time-limit budget keeps positive, negative and boundary cases
+        entry: python3 scripts/ci/tests/test_check_job_timeout_budget.py
+        language: system
+        files: '^(\.github/workflows/|scripts/ci/(check_job_timeout_budget\.py|tests/test_check_job_timeout_budget\.py)|\.pre-commit-config\.yaml$)'
         pass_filenames: false
 
       - id: check-release-provenance-assets
@@ -1014,7 +1042,7 @@ repos:
         # hook would fail with `Executable 'semgrep' not found` on
         # every CI run.
         language: python
-        additional_dependencies: ["semgrep>=1.181.0,<2.0"]
+        additional_dependencies: ["semgrep>=1.182.0,<2.0"]
         require_serial: true
         types_or: [c, c++, cuda, python]
         # Paths this hook skips: (a) upstream vendored subprojects,
@@ -1052,7 +1080,7 @@ repos:
         # Same isolated semgrep environment and serial execution as above.
         entry: python3 -m unittest discover -s scripts/ci/tests -p test_semgrep_vendored_scope.py
         language: python
-        additional_dependencies: ["semgrep>=1.181.0,<2.0"]
+        additional_dependencies: ["semgrep>=1.182.0,<2.0"]
         require_serial: true
         files: '^(\.semgrep\.yml|\.semgrepignore|\.pre-commit-config\.yaml|scripts/ci/tests/test_semgrep_vendored_scope\.py|core/src/pdjson\.(c|h)|core/src/mcp/3rdparty/.*)$'
         pass_filenames: false
@@ -1107,6 +1135,18 @@ repos:
         entry: make ffmpeg-input-contract
         language: system
         files: '^(docs/|ffmpeg-patches/|Makefile$|\.github/workflows/ffmpeg-patch-stack\.yml$|\.pre-commit-config\.yaml$)'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
+
+      - id: sycl-zerocopy-contract
+        name: libvmaf_sycl zero-copy routing and e2e comparator contracts
+        # pytest comes from pre-commit's own environment (as rc1-tester-report-tests),
+        # so the hook runs without a developer-installed pytest; CI runs the same
+        # checks through `make sycl-zerocopy-contract` with the hash-locked pytest.
+        entry: bash -c 'bash ffmpeg-patches/test/check-sycl-feature-routing.sh && python -m pytest -p no:cacheprovider -q scripts/test/test_zerocopy_e2e_compare.py'
+        language: python
+        additional_dependencies: [pytest==9.1.1]
+        files: '^(ffmpeg-patches/(0005-[^/]*\.patch|test/check-sycl-feature-routing\.sh)|scripts/test/(zerocopy[-_]e2e[^/]*|test_zerocopy_e2e_compare\.py)|scripts/ci/cross_backend_parity_gate\.py|Makefile$|\.github/workflows/ffmpeg-patch-stack\.yml$|\.pre-commit-config\.yaml$)'
         pass_filenames: false
         stages: [pre-commit, pre-push]
 

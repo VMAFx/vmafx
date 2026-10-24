@@ -106,7 +106,7 @@ index ac7f3f4d849ceeaa5fadd773e1f4999bd1cd96c3..102fd55c38821b98c5a760019b6feda0
  extern const FFFilter ff_vf_limiter;
  extern const FFFilter ff_vf_loop;
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
-index 3cce4ed2b5c44b98cbef1174ef977f34d7ed3557..f06ddce2b97d7e644cfc8c5aa4eceaed73552bd7 100644
+index bb79da9a174208a6435e16c65370d66511808da7..8a5c0d90d4f43d40f99d1c6067462fc7f9b7ecbf 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
 @@ -61,6 +61,12 @@
@@ -122,7 +122,7 @@ index 3cce4ed2b5c44b98cbef1174ef977f34d7ed3557..f06ddce2b97d7e644cfc8c5aa4eceaed
  typedef struct LIBVMAFContext {
      const AVClass *class;
      FFFrameSync fs;
-@@ -1467,3 +1473,282 @@ const FFFilter ff_vf_libvmaf_sycl = {
+@@ -1532,3 +1538,282 @@ const FFFilter ff_vf_libvmaf_sycl = {
      .flags_internal = FF_FILTER_FLAG_HWFRAME_AWARE,
  };
  #endif

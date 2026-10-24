@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1403), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1409), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5623,3 +5623,27 @@ Every ADR, one heading each (1403), so the site search finds an ADR by its title
 ## ADR-3356: Release workflows authenticate only with the release-bot App token
 
 [3356-release-token-app-only](3356-release-token-app-only.md)
+
+## ADR-3357: The dev and SYCL+ffmpeg containers build CPU C code with GCC and SYCL with icpx
+
+[3357-hybrid-gcc-cpu-icpx-sycl](3357-hybrid-gcc-cpu-icpx-sycl.md)
+
+## ADR-3358: `Containerfile.vmafx` — a self-contained SYCL + patched-ffmpeg image with a build-time golden gate
+
+[3358-vmafx-sycl-ffmpeg-container](3358-vmafx-sycl-ffmpeg-container.md)
+
+## ADR-3359: The SYCL primary queue, which runs the VA-surface import, uses immediate command lists
+
+[3359-sycl-primary-queue-immediate-cmdlist](3359-sycl-primary-queue-immediate-cmdlist.md)
+
+## ADR-3360: The `libvmaf_sycl` filter routes `feature=` names to their SYCL twins
+
+[3360-sycl-filter-twin-routing](3360-sycl-filter-twin-routing.md)
+
+## ADR-3366: One README presentation standard, with VMAFx as the reference example
+
+[3366-readme-presentation-standard](3366-readme-presentation-standard.md)
+
+## ADR-3367: Workflow job time limits cover the sum of their step limits
+
+[3367-job-timeout-covers-step-caps](3367-job-timeout-covers-step-caps.md)

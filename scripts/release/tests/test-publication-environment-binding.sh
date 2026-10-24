@@ -192,13 +192,15 @@ def validate_provenance_job(relative_path: str, job: str, block: str) -> None:
 def validate_attachment(block: str) -> None:
     _, steps_text = block.split("\n    steps:\n", maxsplit=1)
     step_count = len(re.findall(r"(?m)^      - ", steps_text))
-    if step_count != 3:
+    # Download, its Gitea twin (ADR-3368), the asset check, the release upload.
+    if step_count != 4:
         raise AssertionError(
-            f"supply-chain.yml attachment job must have exactly 3 steps, got {step_count}"
+            f"supply-chain.yml attachment job must have exactly 4 steps, got {step_count}"
         )
-    if block.count("actions/download-artifact@") != 1:
+    if block.count("actions/download-artifact@") != 2:
         raise AssertionError(
-            "supply-chain.yml attachment job must use download-artifact exactly once"
+            "supply-chain.yml attachment job must use download-artifact exactly twice "
+            "(the download and its Gitea twin)"
         )
     if block.count("softprops/action-gh-release@") != 1:
         raise AssertionError(
@@ -222,16 +224,31 @@ def validate_attachment(block: str) -> None:
 
     download_matches = list(
         re.finditer(
-        r"(?ms)^      - uses: actions/download-artifact@[a-f0-9]{40}.*?"
+        r"(?ms)^      - if: \$\{\{ env\.GITEA_ACTIONS != 'true' \}\}\n"
+        r"        uses: actions/download-artifact@[a-f0-9]{40}.*?"
         r"(?=^      - |\Z)",
         block,
         )
     )
     if len(download_matches) != 1:
         raise AssertionError(
-            "supply-chain.yml attachment job must have one artifact download"
+            "supply-chain.yml attachment job must have one artifact download off Gitea"
         )
     download = download_matches[0].group(0)
+    twin_match = re.search(
+        r"(?ms)^      - name: Download artifact \(Gitea\)\n"
+        r"        if: \$\{\{ env\.GITEA_ACTIONS == 'true' \}\}\n"
+        r"        uses: actions/download-artifact@a9bc5e6ef2cb54c177f32aa5726adaa15e7e2d59.*?"
+        r"(?=^      - |\Z)",
+        block,
+    )
+    if twin_match is None or twin_match.start() != download_matches[0].end():
+        raise AssertionError(
+            "supply-chain.yml attachment download has no v3 Gitea twin right after it"
+        )
+    with_lines = lambda text: [ln for ln in text.splitlines() if ln.startswith("        with:")]
+    if with_lines(twin_match.group(0)) != with_lines(download):
+        raise AssertionError("supply-chain.yml Gitea twin downloads other inputs")
     if not (
         "          path: dist/\n" in download
         or re.search(r"(?m)^        with: \{ path: dist/ \}$", download)
@@ -257,8 +274,8 @@ def validate_attachment(block: str) -> None:
     if require_step_match is None or len(release_step_matches) != 1:
         raise AssertionError("supply-chain.yml attachment steps are not parseable")
     if not (
-        download_matches[0].start()
-        < require_step_match.start()
+        twin_match.end()
+        <= require_step_match.start()
         < release_step_matches[0].start()
     ):
         raise AssertionError("supply-chain.yml attachment steps are out of order")

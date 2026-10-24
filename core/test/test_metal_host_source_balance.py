@@ -57,6 +57,61 @@ def metal_host_files(root: Path) -> list[Path]:
     return sorted(p for sub in SOURCES for p in (root / sub).glob("*.mm"))
 
 
+SHARED_BUFFER_STEPS = (
+    "if (ctx == nullptr)",
+    "*rc = -EINVAL;",
+    "if (bytes == 0)",
+    "vmaf_metal_context_device_handle(ctx)",
+    "if (device_handle == nullptr)",
+    "*rc = -ENODEV;",
+    "(__bridge id<MTLDevice>)device_handle",
+    "newBufferWithLength:bytes",
+    "MTLResourceStorageModeShared",
+    "if (buf == nil)",
+    "*rc = -ENOMEM;",
+    "*rc = 0;",
+    "return buf;",
+)
+
+
+def extract_function_body(code: str, name: str) -> str:
+    match = re.search(rf"\b{re.escape(name)}\s*\([^)]*\)\s*\{{", code)
+    if not match:
+        return ""
+    pos = match.end()
+    depth = 1
+    while pos < len(code) and depth > 0:
+        depth += {"{": 1, "}": -1}.get(code[pos], 0)
+        pos += 1
+    return code[match.start() : pos]
+
+
+def shared_buffer_helper_errors(
+    objc_handle: str, picture_mm: str, kernel_template_mm: str
+) -> list[str]:
+    helper = extract_function_body(code_of(objc_handle), "vmaf_metal_shared_buffer_alloc")
+    if not helper:
+        return ["objc_handle.h: missing vmaf_metal_shared_buffer_alloc"]
+    errors = []
+    cursor = 0
+    for step in SHARED_BUFFER_STEPS:
+        idx = helper.find(step, cursor)
+        if idx < 0:
+            errors.append(f"objc_handle.h: missing or out-of-order '{step}'")
+        else:
+            cursor = idx + len(step)
+    for filename, src, fn_name in (
+        ("picture_metal.mm", picture_mm, "vmaf_metal_picture_alloc"),
+        ("kernel_template.mm", kernel_template_mm, "vmaf_metal_kernel_buffer_alloc"),
+    ):
+        body = extract_function_body(code_of(src), fn_name)
+        if "vmaf_metal_shared_buffer_alloc(" not in body:
+            errors.append(f"{filename}: {fn_name} does not call vmaf_metal_shared_buffer_alloc")
+        if "newBufferWithLength:" in body or "vmaf_metal_context_device_handle(" in body:
+            errors.append(f"{filename}: {fn_name} duplicates shared buffer allocation")
+    return errors
+
+
 class MetalHostSourceBalance(unittest.TestCase):
     def test_every_metal_host_file_balances(self) -> None:
         files = metal_host_files(CORE)
@@ -77,6 +132,39 @@ class MetalHostSourceBalance(unittest.TestCase):
     def test_braces_in_comments_and_literals_do_not_count(self) -> None:
         text = "int f() { /* { */ const char *s = \"}\"; char c = '{'; return 0; } // }\n"
         self.assertEqual(balance_errors("y.mm", text), [])
+
+    def test_shared_buffer_helper_consolidates_picture_and_kernel_alloc(self) -> None:
+        metal_dir = CORE / "src" / "metal"
+        self.assertEqual(
+            shared_buffer_helper_errors(
+                (metal_dir / "objc_handle.h").read_text("utf-8"),
+                (metal_dir / "picture_metal.mm").read_text("utf-8"),
+                (metal_dir / "kernel_template.mm").read_text("utf-8"),
+            ),
+            [],
+        )
+
+    def test_shared_buffer_helper_contract_rejects_drift_or_duplication(self) -> None:
+        metal_dir = CORE / "src" / "metal"
+        objc_handle = (metal_dir / "objc_handle.h").read_text("utf-8")
+        picture_mm = (metal_dir / "picture_metal.mm").read_text("utf-8")
+        kernel_mm = (metal_dir / "kernel_template.mm").read_text("utf-8")
+        broken_helper = objc_handle.replace("*rc = -ENODEV;", "*rc = -EINVAL;", 1)
+        self.assertIn(
+            "objc_handle.h: missing or out-of-order '*rc = -ENODEV;'",
+            shared_buffer_helper_errors(broken_helper, picture_mm, kernel_mm),
+        )
+        duplicated_caller = picture_mm.replace(
+            "vmaf_metal_shared_buffer_alloc(ctx, size, &rc)",
+            "[device newBufferWithLength:size options:MTLResourceStorageModeShared]",
+        )
+        self.assertEqual(
+            shared_buffer_helper_errors(objc_handle, duplicated_caller, kernel_mm),
+            [
+                "picture_metal.mm: vmaf_metal_picture_alloc does not call vmaf_metal_shared_buffer_alloc",
+                "picture_metal.mm: vmaf_metal_picture_alloc duplicates shared buffer allocation",
+            ],
+        )
 
 
 if __name__ == "__main__":

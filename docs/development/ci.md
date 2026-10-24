@@ -936,6 +936,47 @@ The last 40 and 100 master runs across all workflows showed no other flaky test
 or build failure; the only other master failure was the `release-please` token
 permissions, tracked in #1289.
 
+## Job time limits cover their step limits (ADR-3367)
+
+A step's `timeout-minutes` only holds when its job can run that long. On
+2026-10-22 the `MCP Smoke` job had a 35-minute limit and its `Install build
+deps` step a 20-minute one: a slow package mirror took 19 minutes 59 seconds,
+inside the step's limit, and the job reached its own limit in the libvmaf build
+and was cancelled (job 119986586497). `Tiny AI` had the same shape at 45
+minutes.
+
+Size a job's limit as the sum of its step limits plus 1.25 times the longest
+healthy run of its other steps, measured on successful jobs:
+
+| Job | Step limits | Longest healthy run of the other steps | Limit |
+| --- | --- | --- | --- |
+| `Tiny AI` | 20 (apt) | 27.4 min, 38 jobs | 55 |
+| `MCP Smoke` | 20 (apt) | 22.1 min, 44 jobs | 55 |
+
+`scripts/ci/check_job_timeout_budget.py` reads every workflow under
+`.github/workflows/` and fails when a job's `timeout-minutes` is below the sum
+of its steps' `timeout-minutes`. A job without a limit counts as GitHub's 360
+minutes; a limit written as an expression cannot be checked and fails the run.
+It runs in `make lint-actions` and as the `check-job-timeout-budget`
+pre-commit hook; `scripts/ci/tests/test_check_job_timeout_budget.py` plants a
+job below its step sum and checks that it is refused.
+
+```bash
+python3 scripts/ci/check_job_timeout_budget.py
+python3 scripts/ci/tests/test_check_job_timeout_budget.py
+```
+
+The check sees only the step limits. The 1.25 margin for the uncapped steps is
+the author's measurement, written in the comment above each job's limit.
+
+Steps that run `llvm.sh` download their compiler from apt.llvm.org, which the
+apt archive cache does not hold, so they take a common 10-minute limit: the
+slowest measured healthy run was 5.7 minutes (`libvmaf-build-matrix.yml`, 142
+runs), and on 2026-10-23 a `Tidy Ratchet` install took 5.2 minutes and hit the
+5-minute limit it had then (job 120415869295). The jobs holding such a step
+(`Tidy Changed`, `Tidy Ratchet`, `Tidy SYCL`, `fuzz`, the three sanitizer jobs)
+gained the same 5 minutes; `clang-tidy-full` already had the headroom.
+
 ## Downloads and timeouts in test jobs (2026-10-10)
 
 Three failures on `master` on 2026-10-10 had one shape: a required job failed
@@ -1040,3 +1081,84 @@ later step of the job was skipped, and the four Python coverage shards reported
 first earlier step that did not succeed (`shard 1/4 outcome was skipped: step
 Meson-unit-suite outcome was failure`), and `scripts/ci/test_fail_closed_ci.py`
 runs that step's script against planted outcomes.
+
+## Apt archive cache
+
+Every job in `tests-and-quality-gates.yml` that runs `apt-get install` caches
+downloaded `.deb` package archives across workflow runs so that slow package
+mirror downloads do not eat into the apt step cap or trip the job limit.
+
+The cache covers all eight apt-installing jobs in the workflow:
+
+| Job | Name in workflow | Package list | Apt step cap | Job limit |
+| --- | --- | --- | --- | --- |
+| `netflix-golden` | Netflix CPU Golden | `.github/apt/netflix-golden.txt` | 28 min | 85 min |
+| `compat-abi-parity` | Compat ABI Parity | `.github/apt/compat-abi-parity.txt` | 10 min | 45 min |
+| `sanitizers` | Sanitizers (${{ matrix.sanitizer }}) | `.github/apt/sanitizers.txt` | 10 min | 30 min |
+| `dnn` | Tiny AI | `.github/apt/tiny-ai.txt` | 20 min | 55 min |
+| `tooling-tests` | Tooling Tests | `.github/apt/tooling-tests.txt` | 10 min | 35 min |
+| `vmaf-tune-tests` | Python Package Tests (vmaf-tune) | `.github/apt/vmaf-tune-tests.txt` | 20 min | 35 min |
+| `mcp-smoke` | MCP Smoke | `.github/apt/mcp-smoke.txt` | 20 min | 55 min |
+| `coverage` | Coverage Gate | `.github/apt/coverage.txt` | 35 min | 120 min |
+
+Apt-installing jobs in other workflow files use the same cache, one pull
+request per workflow file:
+
+| Workflow | Job | Package list | Apt step cap | Job limit |
+| --- | --- | --- | --- | --- |
+| `build.yml` | `build-work` (Ubuntu legs) | `.github/apt/build-linux.txt` | 26 min | 80 min |
+| `docs.yml` | `doxygen-work` | `.github/apt/doxygen-work.txt` | 5 min | 20 min |
+| `fuzz.yml` | `fuzz` | `.github/apt/fuzz.txt` | 5 min | 40 min |
+| `go-ci.yml` | `go-ci` | `.github/apt/go-ci.txt` | 9 min | 90 min |
+| `lint-and-format.yml` | `cppcheck` | `.github/apt/cppcheck.txt` | 5 min | 45 min |
+| `lint-and-format.yml` | `clang-tidy` | `.github/apt/tidy-changed.txt` | 5 min | 25 min |
+| `lint-and-format.yml` | `clang-tidy-ratchet` | `.github/apt/tidy-ratchet.txt` | 5 min | 45 min |
+| `lint-and-format.yml` | `clang-tidy-sycl` | `.github/apt/tidy-sycl.txt` | 5 min | 40 min |
+| `mini-retrain.yml` | `mini-retrain` | `.github/apt/mini-retrain.txt` | 5 min | 40 min |
+| `nightly.yml` | `clang-tidy-full` | `.github/apt/clang-tidy-full.txt` | 5 min | 60 min |
+| `rust-ci.yml` | `rust-vmafx-sys-work` | `.github/apt/rust-vmafx-sys.txt` | 16 min | 30 min |
+| `sanitizers.yml` | `asan-ubsan` | `.github/apt/sanitizers-base.txt` + `.github/apt/sanitizers-llvm.txt` | 5 min | 30 min |
+| `sanitizers.yml` | `fuzz-nightly` | `.github/apt/fuzz-nightly.txt` | 5 min | 50 min |
+| `sanitizers.yml` | `tsan` | `.github/apt/sanitizers-base.txt` + `.github/apt/sanitizers-llvm.txt` | 5 min | 35 min |
+| `security-scans.yml` | `codeql-cpp` | `.github/apt/codeql-cpp.txt` | 5 min | 55 min |
+
+`published-rc-licence-companions.yml` installs its packages inside the
+release builder container, so it has no archive cache; its "Fetch the
+corresponding source" step is capped at 48 min (measured max 37.7 min) inside
+the 240-minute job limit.
+
+### Timeout budgeting rule
+
+Timeouts follow ADR-3367 and the sizing rule:
+
+- **Step cap**: `cap >= 1.25x measured slowest apt step` (each restore and save
+  step also has a 5-minute cap).
+- **Job limit**: `job limit >= sum of step caps + 1.25x the rest`, where "the
+  rest" is the longest measured healthy run of the uncapped steps.
+
+`scripts/ci/check_job_timeout_budget.py` checks that every apt install step is
+capped and that every job limit covers the sum of its step caps.
+
+### Cache mechanism
+
+The cache uses `actions/cache/restore` before the install step and
+`actions/cache/save` after the install step. The save runs only when the install
+step succeeded: an install cut off by its timeout leaves the archive directory
+empty, and an empty entry under the immutable key would be restored as a hit on
+every later run:
+
+- **Cache path**: `${{ runner.temp }}/apt-archives`
+- **Cache key**: `apt-<os>-<arch>-<job>-<hash of the package list>`, from
+  `runner.os`, `runner.arch` and `hashFiles()`,
+  where `<job>` is the job identifier matching `.github/apt/<job>.txt`.
+
+**How to bust**: edit the corresponding job's package list file under
+`.github/apt/<job>.txt`. Because the cache key includes the hash of the package
+list file, any package addition, removal, or comment modification computes a fresh
+hash and fetches clean package archives from the mirrors.
+
+Cache keys are immutable: when the mirror publishes a newer version of a
+listed package, apt downloads it and the cached copy is no longer used, so
+the hit rate falls until the list is next edited. `APT::Keep-Downloaded-Packages`
+is set in the step's apt configuration so the install leaves the archives in
+`/var/cache/apt/archives` to copy back.

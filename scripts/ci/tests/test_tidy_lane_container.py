@@ -113,9 +113,15 @@ class LaneConfiguration(unittest.TestCase):
         self.assertIn("libvpl-dev", CONTAINERFILE.read_text(encoding="utf-8"))
         for workflow, job_id in HOSTED_CPU_JOBS:
             with self.subTest(job=job_id):
-                self.assertRegex(
-                    job_text(workflow, job_id), r"apt-get install -y [^\n]*\blibvpl-dev\b"
-                )
+                job = job_text(workflow, job_id)
+                apt_list = re.search(r"\.github/apt/([a-zA-Z0-9_-]+\.txt)", job)
+                if apt_list:
+                    packages = (ROOT / ".github/apt" / apt_list.group(1)).read_text(
+                        encoding="utf-8"
+                    )
+                    self.assertRegex(packages, r"(?m)^\s*libvpl-dev\s*$")
+                else:
+                    self.assertRegex(job, r"apt-get install -y [^\n]*\blibvpl-dev\b")
 
     def test_cpu_lane_adds_the_mex_compile_commands(self) -> None:
         self.assertIn("scripts/ci/gen-mex-compile-commands.py", variable("TIDY_RATCHET_COMPDB_cpu"))

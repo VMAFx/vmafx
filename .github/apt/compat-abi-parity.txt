@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: EUPL-1.2
+# Copyright 2026 Lusoris
+#
+# Apt packages for the Compat ABI Parity (compat-abi-parity) CI job.
+# One package per line; comments starting with # are ignored.
+
+ninja-build
+nasm
+pkg-config
+python3-pip

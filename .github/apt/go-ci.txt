@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: EUPL-1.2
+# Copyright 2026 Lusoris
+#
+# Apt packages for the go-ci (go vet + go test) job in go-ci.yml.
+# One package per line; comments starting with # are ignored.
+
+ninja-build
+pkg-config
+nasm
+
+# rclone and fuse3: pkg/storage and the node's end-to-end tests run
+# rclone serve http and a real rclone FUSE mount (ADR-1526).
+rclone
+fuse3

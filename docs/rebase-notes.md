@@ -8,6 +8,202 @@ search:
 # Rebase notes
 
 <!-- rebase-notes:fragments:begin (rendered from docs/rebase-notes.d/; do not edit) -->
+## llvm.sh install steps capped at 10 minutes (2026-10-23)
+
+- Every apt step that runs `llvm.sh` (`lint-and-format.yml` Tidy Changed / Tidy Ratchet / Tidy SYCL, `fuzz.yml`, `nightly.yml` clang-tidy-full, `sanitizers.yml` asan-ubsan / tsan / fuzz-nightly) carries `timeout-minutes: 10`: llvm.sh downloads from apt.llvm.org outside the archive cache; measured max 5.7m (libvmaf-build-matrix, 142 runs), a Tidy Ratchet run timed out at the earlier 5-minute cap after 5.2m (job 120415869295).
+- The job limits of those jobs rose by 5 minutes, except `clang-tidy-full` (60 already covers 20 + 1.25x 21.1m).
+- **On sync**: keep the 10-minute cap on any step that calls `llvm.sh`; `python3 scripts/ci/check_job_timeout_budget.py` must stay green.
+
+## Apt step cap for published-rc-licence-companions.yml (2026-10-23)
+
+- The "Fetch the corresponding source" step in `published-rc-licence-companions.yml` carries a `timeout-minutes: 48` cap, sized at least 1.25x the slowest measured healthy run of 37.7m (2026-10-23).
+- No runner apt archive cache is configured: package installation runs inside `docker run` of the release builder container, not on the runner.
+- The `companion` job limit remains 240 minutes, covering the 48-minute step cap plus 1.25x the rest of the job.
+- `published-rc-licence-companions.yml` leaves the uncapped-apt exception list in `scripts/ci/check_job_timeout_budget.py`.
+
+## Apt archive cache for nightly.yml (2026-10-23)
+
+- The `Full clang-tidy scan` (`clang-tidy-full`) job in `nightly.yml` caches `.deb` package archives in `${{ runner.temp }}/apt-archives` keyed on OS, architecture, job identifier, and the hash of `.github/apt/clang-tidy-full.txt`.
+- The install step carries a `timeout-minutes: 5` cap (sized at least 1.25x the slowest measured healthy run of 2.3m), with restore and save steps capped at 5 minutes. The job timeout limit remains unchanged at 60 minutes, covering the step caps sum (15) plus 1.25x the longest measured job (21.1m).
+- `nightly.yml` leaves the uncapped-apt exception list of `check_job_timeout_budget.py`.
+- **On sync**: edit package lists in `.github/apt/clang-tidy-full.txt` rather than inlining apt package names in `nightly.yml`; modifying the package list automatically computes a fresh hash and busts the cache.
+
+## Apt archive cache for mini-retrain.yml (2026-10-23)
+
+- The `Mini Retrain nightly` (`mini-retrain`) job in `mini-retrain.yml` caches `.deb` package archives in `${{ runner.temp }}/apt-archives` keyed on OS, architecture, job identifier, and the hash of `.github/apt/mini-retrain.txt`.
+- The install step carries a `timeout-minutes: 5` cap (sized at least 1.25x the slowest measured healthy run of 0.4m), with restore and save steps capped at 5 minutes. The job timeout limit remains at 40 minutes, covering the step caps sum (15) plus 1.25x the longest measured job (6.8m = 24 <= 40).
+- `mini-retrain.yml` leaves the uncapped-apt exception list in `scripts/ci/check_job_timeout_budget.py`.
+- **On sync**: edit package lists in `.github/apt/mini-retrain.txt` rather than inlining apt package names in `mini-retrain.yml`; modifying the package list automatically computes a fresh hash and busts the cache.
+
+## Apt archive cache for fuzz.yml (2026-10-23)
+
+- The `fuzz` job in `fuzz.yml` caches `.deb` package archives in `${{ runner.temp }}/apt-archives` keyed on OS, architecture, job identifier, and the hash of `.github/apt/fuzz.txt`.
+- The install step carries a `timeout-minutes: 5` cap (sized at least 1.25x the slowest measured healthy run of 1.5m), with restore and save steps capped at 5 minutes. The job timeout limit is raised from 30 to 40 minutes to cover the step caps sum (15) plus 1.25x the longest measured healthy job (19.2m = 39, rounded up).
+- `fuzz.yml` leaves the uncapped-apt exception list of `scripts/ci/check_job_timeout_budget.py`.
+- **On sync**: edit package lists in `.github/apt/fuzz.txt` rather than inlining apt package names in `fuzz.yml`; modifying the package list automatically computes a fresh hash and busts the cache.
+
+## Apt archive cache for lint-and-format.yml (2026-10-23)
+
+- The `clang-tidy`, `clang-tidy-ratchet`, `clang-tidy-sycl`, and `cppcheck` jobs in `lint-and-format.yml` cache `.deb` package archives in `${{ runner.temp }}/apt-archives` keyed on runner OS, runner architecture, job key, and package list hash.
+- Package requirements are declared in `.github/apt/tidy-changed.txt`, `.github/apt/tidy-ratchet.txt`, `.github/apt/tidy-sycl.txt`, and `.github/apt/cppcheck.txt`.
+- Each apt install step is capped with `timeout-minutes: 5` (at least 1.25x slowest measured run), and restore and save cache steps are capped at 5 minutes each.
+- Job timeout limit for `cppcheck` is increased from 30 to 45 minutes to cover the 15-minute step cap sum plus 1.25x the measured uncapped steps (24m). Limits for `clang-tidy` (25m), `clang-tidy-ratchet` (45m), and `clang-tidy-sycl` (40m) stay unchanged.
+- Restored archives are copied into `/var/cache/apt/archives` before `apt-get install`, and downloaded archives are copied back to the cache directory after install.
+- **On sync**: edit package lists under `.github/apt/` rather than inlining apt package names in `lint-and-format.yml`; modifying a list file automatically computes a fresh hash and busts the cache.
+
+## Apt archive cache for docs.yml (2026-10-23)
+
+- The `Doxygen Public API work` (`doxygen-work`) job in `docs.yml` caches `.deb` package archives in `${{ runner.temp }}/apt-archives` keyed on OS, architecture, job identifier, and the hash of `.github/apt/doxygen-work.txt`.
+- The install step carries a `timeout-minutes: 5` cap (sized at least 1.25x the slowest measured healthy run of 3.4m), with restore and save steps capped at 5 minutes. The job timeout limit is raised from 10 to 20 minutes to cover the step caps sum (15) plus 1.25x the longest measured job (3.7m).
+- The stale `doxygen-public-api.yml` entry leaves the uncapped-apt exception list: that workflow was folded into `docs.yml`.
+- **On sync**: edit package lists in `.github/apt/doxygen-work.txt` rather than inlining apt package names in `docs.yml`; modifying the package list automatically computes a fresh hash and busts the cache.
+
+## Apt archive cache for sanitizers.yml (2026-10-23)
+
+- The `asan-ubsan`, `tsan`, and `fuzz-nightly` jobs in `sanitizers.yml` cache `.deb` package archives in `${{ runner.temp }}/apt-archives`.
+- `asan-ubsan` and `tsan` cache keys are keyed on runner OS, architecture, job keypart `sanitizers`, and the hash of both `.github/apt/sanitizers-base.txt` and `.github/apt/sanitizers-llvm.txt`.
+- `fuzz-nightly` cache key is keyed on runner OS, architecture, job keypart `fuzz-nightly`, and the hash of `.github/apt/fuzz-nightly.txt`.
+- Every `apt-get install` step carries a 5-minute timeout cap (measured max 0.7m for `asan-ubsan`, 3.6m for `tsan`, 0.8m for `fuzz-nightly`, floor 5m at 1.25x), with restore and save steps capped at 5 minutes each.
+- Job timeout limits: `asan-ubsan` stays at 30 minutes (covering step caps sum 15 plus 1.25x 11.9m rest = 30), `tsan` stays at 35 minutes (covering step caps sum 15 plus 1.25x 13.4m rest = 32), and `fuzz-nightly` increases from 30 to 50 minutes (covering step caps sum 15 plus 1.25x 25.3m rest = 47).
+- Restored archives are copied into `/var/cache/apt/archives` before `apt-get install`, and downloaded archives are copied back to `${{ runner.temp }}/apt-archives` after install.
+- **On sync**: edit package lists under `.github/apt/sanitizers-base.txt`, `.github/apt/sanitizers-llvm.txt`, and `.github/apt/fuzz-nightly.txt` rather than inlining package names in `sanitizers.yml`; modifying the package list automatically computes a fresh hash and busts the cache.
+
+## Apt archive cache for security-scans.yml (2026-10-23)
+
+- The `CodeQL (C/C++)` (`codeql-cpp`) job in `security-scans.yml` caches `.deb` package archives in `${{ runner.temp }}/apt-archives` keyed on OS, architecture, job identifier, and the hash of `.github/apt/codeql-cpp.txt`.
+- The configure step carries a `timeout-minutes: 5` cap (sized at least 1.25x the slowest measured healthy run of 0.7m), with restore and save steps capped at 5 minutes. The job timeout limit is raised from 35 to 55 minutes to cover the step caps sum (15) plus 1.25x the measured uncapped steps (31.2m).
+- Restored archives are copied into `/var/cache/apt/archives` before `apt-get install`, and newly downloaded archives are copied back to the cache directory after install.
+- **On sync**: edit package lists in `.github/apt/codeql-cpp.txt` rather than inlining apt package names in `security-scans.yml`; modifying the package list automatically computes a fresh hash and busts the cache.
+
+## Apt archive cache for go-ci.yml (2026-10-23)
+
+- The `go-ci` job in `go-ci.yml` caches `.deb` package archives in
+  `${{ runner.temp }}/apt-archives` keyed on OS, architecture, job identifier,
+  and the hash of `.github/apt/go-ci.txt`.
+- The apt install step has a `timeout-minutes` cap of 9 (at least 1.25x the
+  slowest measured healthy run of 6.6m), and the job limit is set to 90
+  minutes to cover the step caps sum (5+9+5 = 19) plus 1.25x the 47m rest
+  (`scripts/ci/check_job_timeout_budget.py`).
+- Restored archives are copied into `/var/cache/apt/archives` before
+  `apt-get install`, and downloaded archives are copied back to the cache
+  directory after install.
+- **On sync**: edit package lists under `.github/apt/go-ci.txt` rather than
+  inlining package names in workflow `apt-get install` commands; modifying the
+  package list automatically computes a fresh hash and busts the cache.
+
+## Apt archive cache for rust-ci.yml (2026-10-23)
+
+- The `vmafx-sys CI work` (`rust-vmafx-sys-work`) job in `rust-ci.yml` caches
+  `.deb` package archives in `${{ runner.temp }}/apt-archives` keyed on OS,
+  architecture, job identifier, and the hash of `.github/apt/rust-vmafx-sys.txt`.
+- The apt install step has a `timeout-minutes: 16` cap (sized at least 1.25x
+  the slowest measured healthy run of 12.7m), with restore and save steps capped
+  at 5 minutes. The job timeout limit stays at 30 minutes, covering the step cap
+  sum (26) plus 1.25x the measured uncapped steps.
+- Restored archives are copied into `/var/cache/apt/archives` before
+  `apt-get install`, and downloaded archives are copied back to the cache
+  directory after install.
+- **On sync**: edit package lists in `.github/apt/rust-vmafx-sys.txt` rather than
+  inlining apt package names in `rust-ci.yml`; modifying the package list
+  automatically computes a fresh hash and busts the cache.
+
+## Apt archive cache for build.yml (2026-10-23)
+
+- The Linux base dependency step in `build.yml` (`build-work` job) caches `.deb` package archives in `${{ runner.temp }}/apt-archives` keyed on OS, runner architecture, job name, matrix OS, and the hash of `.github/apt/build-linux.txt`.
+- Every `apt-get install` step in `build.yml` carries a `timeout-minutes` cap sized at or above 1.25 times its slowest measured healthy run ("Install base deps (Linux)" at 26m, "Install Intel oneAPI (Linux)" at 10m, "Install ROCm / HIP toolchain (Linux)" at 5m, "Install base deps for CUDA leg (Linux)" at 10m).
+- The `build-work` job limit is raised from 75 to 80 minutes to cover the sum of its step caps plus 1.25 times the measured duration of uncapped steps (`scripts/ci/check_job_timeout_budget.py`).
+- Restored archives are copied into `/var/cache/apt/archives` before `apt-get install`, and newly downloaded archives are copied back to `${{ runner.temp }}/apt-archives` after install.
+- **On sync**: edit package lists under `.github/apt/build-linux.txt` rather than inlining package names in workflow `apt-get install` commands; modifying the package list automatically computes a fresh hash and busts the cache.
+
+## Apt archive cache for every apt job (2026-10-23)
+
+- All jobs in `tests-and-quality-gates.yml` that run `apt-get install`
+  (`netflix-golden`, `compat-abi-parity`, `sanitizers`, `dnn`, `tooling-tests`,
+  `vmaf-tune-tests`, `mcp-smoke`, `coverage`) cache `.deb` package archives in
+  `${{ runner.temp }}/apt-archives` keyed on OS, architecture, job identifier,
+  and the hash of `.github/apt/<job>.txt`.
+- Every apt install step has a `timeout-minutes` cap (sized at least 1.25x the
+  slowest measured healthy run), and each job limit is sized to cover the sum
+  of its step caps plus 1.25x the measured uncapped steps
+  (`scripts/ci/check_job_timeout_budget.py`).
+- Restored archives are copied into `/var/cache/apt/archives` before
+  `apt-get install`, and downloaded archives are copied back to the cache
+  directory after install.
+  **On sync**: edit package lists under `.github/apt/<job>.txt` rather than
+  inlining package names in workflow `apt-get install` commands; modifying the
+  package list automatically computes a fresh hash and busts the cache.
+
+## Apt archive cache (2026-10-22)
+
+- `MCP Smoke` and `Tiny AI` in `tests-and-quality-gates.yml` cache `.deb`
+  package archives in `${{ runner.temp }}/apt-archives` keyed on OS,
+  architecture, job identifier, and the hash of `.github/apt/<job>.txt`.
+- Restored archives are copied into `/var/cache/apt/archives` before `apt-get install`,
+  and downloaded archives are copied back to the cache directory after install.
+  **On sync**: edit package lists in `.github/apt/mcp-smoke.txt` and
+  `.github/apt/tiny-ai.txt` rather than inlining apt package names in the
+  workflow file; modifying the package list automatically busts the cache key.
+
+## Job time limits cover their step limits (2026-10-22)
+
+- `MCP Smoke` and `Tiny AI` in `tests-and-quality-gates.yml` have 55-minute
+  job limits; the comment above each names the measurement.
+  **On sync**: a step `timeout-minutes` raise raises its job's limit in the
+  same change; `scripts/ci/check_job_timeout_budget.py` (ADR-3367) fails
+  otherwise.
+
+## ADR-3359 — SYCL primary queue on immediate command lists (2026-10-02)
+
+`pr/sycl-zerocopy-hardening`, [ADR-3359](adr/3359-sycl-primary-queue-immediate-cmdlist.md);
+row `T-SYCL-ZEROCOPY-IMPORT-DROPPED-2026-10-02` in [state.md](state.md).
+
+- `core/src/sycl/common.cpp::sycl_queue_props()` adds
+  `sycl::ext::intel::property::queue::immediate_command_list` (under
+  `SYCL_EXT_INTEL_QUEUE_IMMEDIATE_COMMAND_LIST`) to the primary queue in both
+  the profiling and the plain form. The VA import in `dmabuf_import.cpp` must
+  stay on that queue (`vmaf_sycl_get_queue_ptr()`): a separate immediate
+  import-only queue next to a batched primary queue still drops the import.
+- A rebase that restructures queue creation (another adapter, a queue pool, a
+  merge with the copy or combined queue) keeps the property on the queue the
+  imports are made against and `vmaf_sycl_queue_wait()` waits on, and re-runs
+  `scripts/test/zerocopy-e2e.sh --stage 1 --repeat 10 --cases cambi,vif,model-vmaf_v0.6.1`
+  at 8 and 10 bit under `UR_L0_USE_IMMEDIATE_COMMANDLISTS=0` (0 differing runs).
+- No Netflix golden-data, public API or FFmpeg patch impact.
+
+## SYCL zero-copy hardening: twin routing, timing log, e2e harness (2026-10-05)
+
+`pr/sycl-zerocopy-hardening`, [ADR-3360](adr/3360-sycl-filter-twin-routing.md)
+(and ADR-3359 above); ported from the Tualua fork's zero-copy work without its
+chroma import, which is post-1.0 ([ADR-1685](adr/1685-post-1-0-embedding-zero-copy-milestone.md)).
+
+- `ffmpeg-patches/0005-libvmaf-add-libvmaf-sycl-filter.patch`:
+  `use_feature_sycl()` / `use_feature()` and `route_twins` route `feature=`
+  names through `vmaf_feature_backend_twin()`; `config_props_sycl()` refuses
+  QSV `sw_format`s other than NV12 / P010. A refresh of the series keeps both;
+  `ffmpeg-patches/test/check-sycl-feature-routing.sh` fails otherwise. The
+  import-failure branch keeps master's retry-then-fail form
+  ([ADR-1761](adr/1761-sycl-filter-import-retry-then-fail.md)).
+- `core/src/sycl/common.cpp`: `vmaf_sycl_print_timing()` uses `vmaf_log` at
+  INFO (`core/src/sycl/AGENTS.md`).
+- `scripts/test/zerocopy-e2e.sh`, `zerocopy_e2e_compare.py`: stage 1 is the set
+  ADR-1688 admits on the luma-only path. A change to
+  `reads_shared_luma_only()` answers moves cases between stages in
+  `PARITY_STAGE`; the e2e legs never use `-frames:v` / `-t`.
+- No Netflix golden-data or public C API impact.
+
+## Hybrid GCC CPU and icpx SYCL toolchain (2026-10-19)
+
+- `core/src/meson.build` keeps the `BEGIN/END VMAF C++ strict FP policy for
+  mixed toolchains` block above the first build target, with the ADR-2170
+  icx spelling (`-fp-model=precise -fno-fast-math -fcomplex-arithmetic=full
+  -ffp-contract=off`); `core/test/test_strict_fp_compiler_args.py` executes
+  it for every C and C++ compiler pair.
+- Every `executable()` in `core/test/meson.build` passes
+  `kwargs : test_link_kwargs` or sets `link_language` itself, so a C test
+  links through icpx when SYCL is on;
+  `core/test/test_test_link_kwargs_contract.py` refuses one that does not.
+  Fork-only, nothing upstream.
+
 ## Release workflows take only the App token (2026-10-19)
 
 - `.github/workflows/release-please.yml`, `macos-tester-bundle.yml`,

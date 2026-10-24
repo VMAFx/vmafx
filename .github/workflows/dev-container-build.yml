@@ -103,10 +103,11 @@ jobs:
     # always reports its gate; the planner selects this work for container inputs.
     name: Dev Container Build work
     runs-on: ubuntu-26.04
-    # GPU SDK downloads (CUDA keyring, oneAPI, ROCm) + multi-stage build can
-    # take up to 45 min on a cold runner, and the release rehearsal adds a
-    # CPU-only release compile; set a generous ceiling.
-    timeout-minutes: 75
+    # GPU SDK downloads (CUDA keyring, oneAPI, ROCm), the multi-stage build and
+    # the release rehearsal took up to 69.1 min on 12 successful runs
+    # (measured 2026-10-22); a 75-minute limit cancelled a healthy run still
+    # compiling FFmpeg. The limit keeps at least 1.25 times that maximum.
+    timeout-minutes: 90
 
     steps:
       # No persisted credentials: nothing here pushes or fetches, and the

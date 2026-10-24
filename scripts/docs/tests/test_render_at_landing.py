@@ -217,6 +217,23 @@ class RebaseNotes(Fixture):
                 self.assertEqual(result.returncode, 1)
                 self.assertIn("bad.md", result.stderr)
 
+    def test_a_fragment_with_a_blank_edge_line_is_refused(self) -> None:
+        # A blank first or last line renders as a double blank line (MD012); the hooks
+        # refused the render commit and master owed its render past the 24 h bound
+        # (2026-10-23, fragment of #2217).
+        for name, body in (
+            ("lead.md", "\n## Lead (2026-01-01)\n\nbody\n"),
+            ("trail.md", "## Trail (2026-01-01)\n\nbody\n\n"),
+        ):
+            with self.subTest(name=name):
+                path = self.root / "docs/rebase-notes.d" / name
+                path.write_text(body)
+                result = shell(self.root, "concat-rebase-notes.sh", "--lint")
+                self.assertEqual(result.returncode, 1)
+                self.assertIn(name, result.stderr)
+                path.unlink()
+        self.assertEqual(shell(self.root, "concat-rebase-notes.sh", "--lint").returncode, 0)
+
     def test_lint_does_not_read_the_rendered_file(self) -> None:
         """A pull request runs --lint on a tree whose docs/rebase-notes.md is not rendered."""
         self.land("a.md", "## A (2026-01-01)\n\nbody\n")

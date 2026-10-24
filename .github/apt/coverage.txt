@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: EUPL-1.2
+# Copyright 2026 Lusoris
+#
+# Apt packages for the Coverage Gate (coverage) CI job.
+# One package per line; comments starting with # are ignored.
+
+ninja-build
+nasm
+pkg-config
+gcc
+python3-pip
+
+# CUDA 12.x runtime — user-space libs only, no driver. Lets ORT
+# dlopen libonnxruntime_providers_cuda.so → libcudart.so.12.
+libcudart12

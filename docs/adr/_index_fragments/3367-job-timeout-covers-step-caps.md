@@ -1,0 +1,1 @@
+| [ADR-3367](3367-job-timeout-covers-step-caps.md) | Every workflow job's `timeout-minutes` covers the sum of its step limits; `MCP Smoke` and `Tiny AI` rise to 55 minutes (apt step 20 + 1.25 x measured build) and `scripts/ci/check_job_timeout_budget.py` refuses a job below its step sum | Accepted | ci, github-actions, timeouts |

@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: EUPL-1.2
+# Copyright 2026 Lusoris
+#
+# Apt packages for the Tiny AI (dnn) CI job.
+# One package per line; comments starting with # are ignored.
+
+ninja-build
+nasm
+pkg-config
+python3-pip
+python3-venv
+
+# ffmpeg: test_chug_extract_features_smoke.py encodes its clips with
+# it (ADR-1528: it skipped in CI on every run without it).
+ffmpeg
