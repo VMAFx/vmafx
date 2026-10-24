@@ -143,7 +143,7 @@ A controller job's `reference` and `distorted` can be:
 | http(s) URL | `https://media.example/ref.y4m` | Streamed, in every mode; no rclone |
 | rclone remote | `s3://bucket/ref.y4m`, `rclone://prod:bucket/ref.y4m`, `remote:path/ref.y4m` | Through rclone, as `VMAFX_STORAGE_MODE` says |
 
-The scorer reads Y4M, so a source must be a Y4M clip.
+A source can be a Y4M clip, a raw `.yuv` file, or any container ffmpeg reads (`.mkv`, `.mp4`, ...); see [Container inputs](#container-inputs).
 
 `VMAFX_STORAGE_MODE` picks how rclone remotes are read
 ([ADR-1526](../adr/1526-node-storage-streamed-inputs.md)):
@@ -193,6 +193,35 @@ docker run --device /dev/fuse \
   `--security-opt apparmor=unconfined`, or a profile that allows FUSE mounts.
 
 Kubernetes: set `node.fuse` in the Helm chart ([Kubernetes deployment](#kubernetes-deployment)).
+
+## Container inputs {#container-inputs}
+
+An input that is not `.y4m` or `.yuv` is decoded by the node's ffmpeg into a
+Y4M pipe and scored as it arrives; nothing is written to the node's disk
+([ADR-3370](../adr/3370-node-container-decode.md)). `VMAFX_FFMPEG_BIN` names
+the binary (default `ffmpeg`, which the published image carries).
+
+A job can score a part of the clip with two `scoring` fields, both seconds as
+decimal strings:
+
+| Field | Meaning | Rule |
+| --- | --- | --- |
+| `window_start` | Where the sample starts | zero or above |
+| `window_duration` | How long the sample is | above zero |
+
+With a window, ffmpeg seeks to the start and decodes only the sample, so a
+10 s sample of a long film decodes 10 s. A window also applies to a `.y4m`
+input (it is then decoded too). A raw `.yuv` input cannot be decoded or
+windowed and is refused.
+
+The scoring-root check runs on the source path before any decode: an input
+outside the tenant's scoring roots, or a path that climbs out of them, is
+refused without starting ffmpeg. Failures name the cause:
+
+- A file that is not media: `y4mdecode: decode "<name>" failed: ...` with
+  ffmpeg's message (at most 4 KiB).
+- A window past the end of the clip: the job fails with `no frame`.
+- A zero or negative duration: refused before the decode.
 
 ## Configuration (12-factor env vars)
 

@@ -60,6 +60,8 @@ type Executor struct {
 	store   storage.Storage
 	backend string
 	log     *slog.Logger
+	// ffmpeg decodes container and windowed inputs to Y4M (pkg/y4mdecode).
+	ffmpeg string
 }
 
 // NewExecutor creates an Executor.
@@ -78,6 +80,7 @@ func NewExecutor(scorer *libvmaf.Scorer, aiReg *ai.Registry, backend string, log
 		store:   &storage.LocalStorage{},
 		backend: backend,
 		log:     log,
+		ffmpeg:  "ffmpeg",
 	}
 }
 

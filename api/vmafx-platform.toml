@@ -223,6 +223,8 @@ fields = [
   { name = "distorted", type = "string", number = 2, doc = "Distorted video, under the same rule as reference." },
   { name = "model", type = "string", number = 3, doc = "Optional VMAF model name (e.g. \"vmaf_v0.6.1\"). Defaults to vmaf_v1.0.16_3d0h." },
   { name = "backend", type = "string", number = 4, doc = "Optional backend hint: \"cuda\", \"sycl\", \"hip\", \"cpu\". The scheduler uses this to match a node with the required capability. Empty string means the scheduler may assign any available node." },
+  { name = "window_start", type = "string", number = 5, doc = "Optional start of the scored window, in seconds from the beginning of both inputs (a decimal number such as \"12.5\"). Empty scores from the first frame. A windowed job decodes both inputs through the node's ffmpeg." },
+  { name = "window_duration", type = "string", number = 6, doc = "Optional length of the scored window, in seconds (a decimal number above zero). Empty scores to the end of the shorter input. A window that holds no frame fails the job." },
 ]
 
 [[enums]]
