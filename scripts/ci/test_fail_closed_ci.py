@@ -186,7 +186,11 @@ class FailClosedCIContract(unittest.TestCase):
         self.assertIn("bash testdata/bench_all.sh", benchmark)
         self.assertNotIn("|| true", executable_body(benchmark))
         upload = workflow.split("name: nightly-benchmark-results", maxsplit=1)[0]
-        self.assertRegex(upload, r"(?m)^        if: always\(\)\s*$")
+        # ADR-3368 guards the v7 upload off Gitea; the condition inside stays always().
+        self.assertRegex(
+            upload,
+            r"(?m)^        if: \$\{\{ \(always\(\)\) && env\.GITEA_ACTIONS != 'true' \}\}\s*$",
+        )
 
     def test_nightly_clang_tidy_configuration_and_toolchain(self) -> None:
         workflow = (WORKFLOWS / "nightly.yml").read_text(encoding="utf-8")

@@ -846,8 +846,14 @@ jobs:
 
       # ---------- Artifacts ----------
       - name: Upload vmaf binary
-        if: ${{ (!contains(matrix.meson_extra, 'static')) && steps.impact.outputs.c_core == 'true' }}
+        if: ${{ ((!contains(matrix.meson_extra, 'static')) && steps.impact.outputs.c_core == 'true') && env.GITEA_ACTIONS != 'true' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: ${{ matrix.name }}-vmaf
+          path: ./install/bin/vmaf
+      - name: Upload vmaf binary (Gitea)
+        if: ${{ ((!contains(matrix.meson_extra, 'static')) && steps.impact.outputs.c_core == 'true') && env.GITEA_ACTIONS == 'true' }}
+        uses: actions/upload-artifact@c6a366c94c3e0affe28c06c8df20a878f24da3cf  # v3.2.2
         with:
           name: ${{ matrix.name }}-vmaf
           path: ./install/bin/vmaf
@@ -969,7 +975,15 @@ jobs:
           echo "path=$(cygpath -m "$PWD/artifact/vmaf.exe")" >> "$GITHUB_OUTPUT"
 
       - name: Upload vmaf.exe artifact
+        if: ${{ env.GITEA_ACTIONS != 'true' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: ${{ matrix.msystem }}-vmaf
+          path: ${{ steps.stage.outputs.path }}
+          if-no-files-found: error
+      - name: Upload vmaf.exe artifact (Gitea)
+        if: ${{ env.GITEA_ACTIONS == 'true' }}
+        uses: actions/upload-artifact@c6a366c94c3e0affe28c06c8df20a878f24da3cf  # v3.2.2
         with:
           name: ${{ matrix.msystem }}-vmaf
           path: ${{ steps.stage.outputs.path }}
@@ -1403,7 +1417,15 @@ jobs:
           -C core\build --suite fast --print-errorlogs
 
       - name: Upload vmaf.exe artifact
+        if: ${{ env.GITEA_ACTIONS != 'true' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: windows-arm64-msvc-vmaf
+          path: install\bin\vmaf.exe
+          if-no-files-found: error
+      - name: Upload vmaf.exe artifact (Gitea)
+        if: ${{ env.GITEA_ACTIONS == 'true' }}
+        uses: actions/upload-artifact@c6a366c94c3e0affe28c06c8df20a878f24da3cf  # v3.2.2
         with:
           name: windows-arm64-msvc-vmaf
           path: install\bin\vmaf.exe

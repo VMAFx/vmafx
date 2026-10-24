@@ -1,0 +1,1 @@
+| [ADR-3368](3368-gitea-artifact-path.md) | Every `upload-artifact` / `download-artifact` step runs off Gitea only and is followed by a Gitea twin on the v3 pin (or a `::warning::` skip naming the inputs v3 lacks); `scripts/ci/check_gitea_artifact_steps.py` refuses an unpaired step and Renovate holds the v3 pins below v4 | Accepted | ci, github-actions, gitea |
