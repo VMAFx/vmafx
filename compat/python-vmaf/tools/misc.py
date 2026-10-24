@@ -645,30 +645,20 @@ def find_linear_function_parameters(p1, p2):
     """
     Find parameters of a linear function connecting first_point and second_point
 
-    >>> try:
-    ...     find_linear_function_parameters((1, 1), (0, 0))
-    ... except AssertionError as exc:
-    ...     print(str(exc).splitlines()[0])
+    >>> def _check_err(p1, p2):
+    ...     try:
+    ...         find_linear_function_parameters(p1, p2)
+    ...     except AssertionError as exc:
+    ...         print(str(exc).splitlines()[0])
+    >>> _check_err((1, 1), (0, 0))
     first_point coordinates need to be smaller or equal to second_point coordinates
-    >>> try:
-    ...     find_linear_function_parameters((0, 1), (0, 0))
-    ... except AssertionError as exc:
-    ...     print(str(exc).splitlines()[0])
+    >>> _check_err((0, 1), (0, 0))
     first_point coordinates need to be smaller or equal to second_point coordinates
-    >>> try:
-    ...     find_linear_function_parameters((1, 0), (0, 0))
-    ... except AssertionError as exc:
-    ...     print(str(exc).splitlines()[0])
+    >>> _check_err((1, 0), (0, 0))
     first_point coordinates need to be smaller or equal to second_point coordinates
-    >>> try:
-    ...     find_linear_function_parameters((50.0, 30.0), (50.0, 100.0))
-    ... except AssertionError as exc:
-    ...     print(str(exc).splitlines()[0])
+    >>> _check_err((50.0, 30.0), (50.0, 100.0))
     first_point and second_point cannot lie on a horizontal or vertical line
-    >>> try:
-    ...     find_linear_function_parameters((50.0, 30.0), (100.0, 30.0))
-    ... except AssertionError as exc:
-    ...     print(str(exc).splitlines()[0])
+    >>> _check_err((50.0, 30.0), (100.0, 30.0))
     first_point and second_point cannot lie on a horizontal or vertical line
     >>> find_linear_function_parameters((50.0, 20.0), (110.0, 110.0))
     (1.5, -55.0)

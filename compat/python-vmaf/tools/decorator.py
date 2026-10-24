@@ -139,6 +139,14 @@ def _write_json_cache_atomic(file_path, data):
         raise
 
 
+def _cache_key(func, args) -> str:
+    """Return the SHA-256 memoization cache key for ``func(*args)``."""
+    raw_key = (str(func.__name__) + str(args)).encode()
+    # SHA-256 used as a collision-resistant memoization cache key.
+    # usedforsecurity=False explicitly marks this non-security use for restricted/FIPS builds.
+    return hashlib.sha256(raw_key, usedforsecurity=False).hexdigest()
+
+
 def persist(original_func):
     """
     Cache returned value of function in a function. Useful when calling functions
@@ -150,10 +158,7 @@ def persist(original_func):
     lock = threading.RLock()
 
     def new_func(*args):
-        raw_key = (str(original_func.__name__) + str(args)).encode()
-        # SHA-256 used as a collision-resistant memoization cache key.
-        # usedforsecurity=False explicitly marks this non-security use for restricted/FIPS builds.
-        h = hashlib.sha256(raw_key, usedforsecurity=False).hexdigest()
+        h = _cache_key(original_func, args)
         with lock:
             if h in cache:
                 return cache[h]
@@ -243,10 +248,7 @@ def persist_to_file(file_name):
             cache = _read_json_cache(file_name)
 
         def new_func(*args):
-            raw_key = (str(original_func.__name__) + str(args)).encode()
-            # SHA-256 used as a collision-resistant memoization cache key.
-            # usedforsecurity=False explicitly marks this non-security use for restricted/FIPS builds.
-            h = hashlib.sha256(raw_key, usedforsecurity=False).hexdigest()
+            h = _cache_key(original_func, args)
 
             with lock:
                 if h in cache:
@@ -277,10 +279,7 @@ def persist_to_dir(dir_name):
         lock = threading.RLock()
 
         def new_func(*args):
-            raw_key = (str(original_func.__name__) + str(args)).encode()
-            # SHA-256 used as a collision-resistant memoization cache filename.
-            # usedforsecurity=False explicitly marks this non-security use for restricted/FIPS builds.
-            h = hashlib.sha256(raw_key, usedforsecurity=False).hexdigest()
+            h = _cache_key(original_func, args)
             file_name = os.path.join(dir_name, h)
 
             if os.path.exists(file_name):

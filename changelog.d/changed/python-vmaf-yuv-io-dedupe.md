@@ -1,0 +1,1 @@
+- Consolidated duplicated YUV format tables and file lifecycle helpers from `compat/python-vmaf/tools/reader.py` and `writer.py` into `_YuvIoBase`, and extracted local helpers for repeated blocks in `decorator.py`, `misc.py`, and `plot.py`.

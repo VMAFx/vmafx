@@ -23,14 +23,17 @@ def get_pdf(data, num_bins=20):
     return pdf, bin_centres
 
 
+def _extract_slice_data(df, key, slice_name, slice_val):
+    if isinstance(slice_val, (list, tuple)):
+        return df.loc[df[slice_name].isin(slice_val)][key].tolist()
+    return df.loc[df[slice_name] == slice_val][key].tolist()
+
+
 def plot_distribution(plot_type, df, key, slice_name, slices, colors=None, ax=None):
     if colors is None:
         colors = [None for _ in slices]
     for slice, color in zip(slices, colors):
-        if isinstance(slice, (list, tuple)):
-            data = df.loc[df[slice_name].isin(slice)][key].tolist()
-        else:
-            data = df.loc[df[slice_name] == slice][key].tolist()
+        data = _extract_slice_data(df, key, slice_name, slice)
         if plot_type == "cdf":
             ys, xs = get_cdf(data)
             plt.ylabel("CDF")
@@ -65,18 +68,12 @@ def plot_distribution_fit(
     if collate_data:
         data = []
         for slice in slices:
-            if isinstance(slice, (list, tuple)):
-                data += df.loc[df[slice_name].isin(slice)][key].tolist()
-            else:
-                data += df.loc[df[slice_name] == slice][key].tolist()
+            data += _extract_slice_data(df, key, slice_name, slice)
         _plot_distribution_fit(ax, data, distribution_fcn, plot_type, "", colors[0], **kwargs)
 
     else:
         for slice, color in zip(slices, colors):
-            if isinstance(slice, (list, tuple)):
-                data = df.loc[df[slice_name].isin(slice)][key].tolist()
-            else:
-                data = df.loc[df[slice_name] == slice][key].tolist()
+            data = _extract_slice_data(df, key, slice_name, slice)
             _plot_distribution_fit(ax, data, distribution_fcn, plot_type, slice, color, **kwargs)
 
 
