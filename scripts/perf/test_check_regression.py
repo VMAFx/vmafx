@@ -143,19 +143,31 @@ def test_real_committed_baseline_loads_cleanly() -> None:
     assert indexed, "committed baseline produced no indexable cells"
 
 
+def _run_main(
+    tmp_path: Path,
+    baseline: dict[str, Any],
+    current: dict[str, Any],
+    *extra_args: str,
+) -> int:
+    """Serialize baseline and current payloads to tmp_path and invoke main()."""
+    baseline_path = tmp_path / "baseline.json"
+    current_path = tmp_path / "current.json"
+    baseline_path.write_text(json.dumps(baseline), encoding="utf-8")
+    current_path.write_text(json.dumps(current), encoding="utf-8")
+    return int(
+        check_regression.main(
+            ["--baseline", str(baseline_path), "--current", str(current_path), *extra_args]
+        )
+    )
+
+
 def test_main_exits_nonzero_on_regression(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     baseline = _baseline_payload()
     current = deepcopy(baseline)
     current["runs"][0]["median_ms"] = 200  # 100% regression
-    baseline_path = tmp_path / "baseline.json"
-    current_path = tmp_path / "current.json"
-    baseline_path.write_text(json.dumps(baseline), encoding="utf-8")
-    current_path.write_text(json.dumps(current), encoding="utf-8")
-    exit_code = check_regression.main(
-        ["--baseline", str(baseline_path), "--current", str(current_path)]
-    )
+    exit_code = _run_main(tmp_path, baseline, current)
     assert exit_code == 1
     captured = capsys.readouterr()
     assert "REGRESSIONS" in captured.out
@@ -164,13 +176,7 @@ def test_main_exits_nonzero_on_regression(
 def test_main_exits_zero_on_clean_run(tmp_path: Path) -> None:
     baseline = _baseline_payload()
     current = deepcopy(baseline)
-    baseline_path = tmp_path / "baseline.json"
-    current_path = tmp_path / "current.json"
-    baseline_path.write_text(json.dumps(baseline), encoding="utf-8")
-    current_path.write_text(json.dumps(current), encoding="utf-8")
-    exit_code = check_regression.main(
-        ["--baseline", str(baseline_path), "--current", str(current_path)]
-    )
+    exit_code = _run_main(tmp_path, baseline, current)
     assert exit_code == 0
 
 
@@ -184,19 +190,7 @@ def test_advisory_flag_exits_zero_despite_regressions(
     baseline = _baseline_payload()
     current = deepcopy(baseline)
     current["runs"][0]["median_ms"] = 500  # severe regression
-    baseline_path = tmp_path / "baseline.json"
-    current_path = tmp_path / "current.json"
-    baseline_path.write_text(json.dumps(baseline), encoding="utf-8")
-    current_path.write_text(json.dumps(current), encoding="utf-8")
-    exit_code = check_regression.main(
-        [
-            "--baseline",
-            str(baseline_path),
-            "--current",
-            str(current_path),
-            "--advisory",
-        ]
-    )
+    exit_code = _run_main(tmp_path, baseline, current, "--advisory")
     assert exit_code == 0
     captured = capsys.readouterr()
     # Report is still printed
@@ -234,19 +228,7 @@ def test_skip_if_no_baseline_exits_zero_on_empty_baseline(tmp_path: Path) -> Non
         ],
     }
     current = deepcopy(baseline)
-    baseline_path = tmp_path / "baseline.json"
-    current_path = tmp_path / "current.json"
-    baseline_path.write_text(json.dumps(baseline), encoding="utf-8")
-    current_path.write_text(json.dumps(current), encoding="utf-8")
-    exit_code = check_regression.main(
-        [
-            "--baseline",
-            str(baseline_path),
-            "--current",
-            str(current_path),
-            "--skip-if-no-baseline",
-        ]
-    )
+    exit_code = _run_main(tmp_path, baseline, current, "--skip-if-no-baseline")
     assert exit_code == 0
 
 
@@ -257,19 +239,7 @@ def test_skip_if_no_baseline_proceeds_when_baseline_has_ok_cells(
     baseline = _baseline_payload()
     current = deepcopy(baseline)
     current["runs"][0]["median_ms"] = 500  # regression
-    baseline_path = tmp_path / "baseline.json"
-    current_path = tmp_path / "current.json"
-    baseline_path.write_text(json.dumps(baseline), encoding="utf-8")
-    current_path.write_text(json.dumps(current), encoding="utf-8")
-    exit_code = check_regression.main(
-        [
-            "--baseline",
-            str(baseline_path),
-            "--current",
-            str(current_path),
-            "--skip-if-no-baseline",
-        ]
-    )
+    exit_code = _run_main(tmp_path, baseline, current, "--skip-if-no-baseline")
     # Baseline has ok cells -> comparison runs -> regression found -> exit 1
     assert exit_code == 1
 
