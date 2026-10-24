@@ -161,6 +161,60 @@ helm upgrade --install vmafx-mcp deploy/helm/vmafx/ \
 
 Each pod gets a dedicated `1Gi` PVC at `/var/lib/vmafx`.
 
+## MCP server {#mcp-server}
+
+`mcp.enabled` (default `false`) deploys `vmafx-mcp`, the Go MCP server that
+MCP hosts talk to over streamable HTTP, as a Deployment and Service
+`<fullname>-mcp` (component label `mcp`, ADR-3369). It is a thin client of
+the controller's Client API: with `controller.enabled` it reaches the
+chart's controller on `controller.grpcPort` (`VMAFX_CONTROLLER_ADDR`).
+This component is separate from the `workload=StatefulSet` scoring server
+above.
+
+The pod runs the node image (`node.image`) with the command `vmafx-mcp`;
+every node image variant ships the binary, so no other image is needed. Set
+`mcp.image.repository` (and `mcp.image.tag`) to run another image.
+
+The chart refuses `mcp.enabled` without authentication. Give it a Secret
+holding the bearer token every MCP request must carry, or set
+`mcp.auth.noAuth=true` to turn authentication off on a trusted network:
+
+```bash
+kubectl create secret generic vmafx-mcp-token -n vmafx-prod \
+  --from-literal=token="$(openssl rand -hex 32)"
+helm upgrade --install vmafx deploy/helm/vmafx/ -n vmafx-prod \
+  --set controller.enabled=true --set auth.enabled=true ... \
+  --set mcp.enabled=true \
+  --set mcp.auth.token.secretName=vmafx-mcp-token \
+  --set mcp.controllerToken.secretName=vmafx-mcp-controller-token
+```
+
+| Value | Default | Effect |
+|-------|---------|--------|
+| `mcp.enabled` | `false` | Render the Deployment and Service. |
+| `mcp.replicaCount` | `1` | Replicas of the MCP server. |
+| `mcp.image.repository` / `tag` | empty | Empty: the node image and its tag. |
+| `mcp.httpPort` | `3000` | Container and Service port (`VMAFX_MCP_HTTP_ADDR`). |
+| `mcp.auth.token.secretName` / `key` | empty / `token` | Bearer token MCP clients send (`VMAFX_MCP_HTTP_TOKEN`). |
+| `mcp.auth.noAuth` | `false` | `true` without a token Secret sets `VMAFX_MCP_HTTP_NO_AUTH=1`. |
+| `mcp.controllerToken.secretName` / `key` | empty / `token` | Token the server sends on every controller RPC (`VMAFX_CONTROLLER_TOKEN`); its scopes bound what MCP clients can do. |
+
+Without either `mcp.auth` setting the render fails with
+`mcp.enabled needs auth: ...`. The probes are TCP checks on the HTTP port,
+since `vmafx-mcp` serves no health path. `vmafx-mcp --version` prints the
+build version, which checks an image without a controller:
+
+```bash
+docker run --rm --entrypoint vmafx-mcp ghcr.io/vmafx/vmafx-node:<tag> --version
+```
+
+Node pods on Intel GPUs with the xe kernel driver request the device
+plugin resource `gpu.intel.com/xe` (`--set gpu.vendor=intel --set
+gpu.intelDriver=xe`, see the [GPU vendor matrix](#gpu-vendor-matrix)); the
+chart names no device file or node. The MCP pod requests no GPU.
+
+See the [MCP server guide](../mcp/index.md) for the tools it serves.
+
 ## Controller, nodes and operator {#controller}
 
 `controller.enabled` deploys `vmafx-controller`, the job queue, node API and
@@ -673,6 +727,9 @@ controller, `allow-controller-to-apiserver` only with a tenant registry):
 | `allow-operator-to-apiserver`   | egress    | `0.0.0.0/0` (apiserver Service IP is not selectable by a NetworkPolicy peer) | `443`, `6443` | controller-runtime list/watch traffic for the `vmafx-operator`. |
 | `allow-controller-to-apiserver` | egress    | `0.0.0.0/0` (same reason)                       | `443`, `6443`       | The controller listing `VmafxTenant` resources; rendered with `auth.enabled` and `auth.tenants` / `auth.tenantSource: kubernetes` (values key `serverToApiserver`). |
 | `allow-node-metrics-ingress`    | ingress   | any in-namespace pod (or a narrower `fromPodSelector`) | `9090` | Prometheus scraping of the vmafx-node metrics endpoint. Tighten `networkPolicy.allow.nodeMetrics.fromPodSelector` to `{app.kubernetes.io/name: prometheus}` in production. |
+| `allow-mcp-ingress`             | ingress   | every pod in the release namespace (`mcpIngress.fromPodSelector` narrows) | `mcp.httpPort` (3000) | MCP clients reach `vmafx-mcp`; rendered with `mcp.enabled`. |
+| `allow-mcp-to-controller`       | egress    | the chart's controller pods                     | `controller.grpcPort` | The MCP server's Client API calls; rendered with `mcp.enabled` and `controller.enabled`. |
+| `allow-controller-from-mcp`     | ingress   | the chart's MCP pods                            | `controller.grpcPort` | The controller side of the same flow. |
 | `allow-dns-egress`              | egress    | `kube-system` / CoreDNS pods                    | `53/udp`, `53/tcp`  | Cluster DNS resolution — required for the other allow-rules to function. |
 
 Override knobs live under `networkPolicy.allow.*` in `values.yaml`; each
