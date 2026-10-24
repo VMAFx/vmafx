@@ -2,8 +2,8 @@
 -r test/requirements.txt
 pytest==9.1.1
 pytest-timeout==2.4.0
-gcovr==8.6
-setuptools==84.0.0
+gcovr==8.7
+setuptools==84.2.1
 wheel==0.48.0
 cython==3.3.0
 packaging==26.3
