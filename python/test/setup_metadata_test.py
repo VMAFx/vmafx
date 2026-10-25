@@ -47,9 +47,10 @@ BUILD_BACKEND_LOCKS = (
 # 24.04 ships in /usr/lib/python3/dist-packages. Both must be excluded by the
 # declared floor, or `setup.py` aborts before it can report a version.
 PRE_PEP639_SETUPTOOLS = ("76.1.0", "68.1.2")
-# Releases affected by PYSEC-2025-49 (fixed in 78.1.1) and PYSEC-2026-3447
-# (fixed in 83.0.0). The declared floor must exclude them as well.
-VULNERABLE_SETUPTOOLS = ("78.1.0", "82.9.0")
+# Releases affected by PYSEC-2025-49 (fixed in 78.1.1), PYSEC-2026-3447
+# (fixed in 83.0.0) and GHSA-xmj3-9gf7-h52w (fixed in 84.1.0). The declared
+# floor must exclude them as well.
+VULNERABLE_SETUPTOOLS = ("78.1.0", "82.9.0", "84.0.0")
 
 # The licence-metadata gate of ADR-1560 / ADR-1699 holds the model of what each
 # package ships and reads licences with the licence tool of ADR-1503 / ADR-1513
