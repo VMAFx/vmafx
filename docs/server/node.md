@@ -411,7 +411,7 @@ the eBPF descriptor tracker on top of this
 | `node-cpu` | `vX.Y.Z` (amd64 + arm64) | distroless Debian 13 |
 | `node-cuda` | not yet published | Debian 13 runtime + CUDA libraries copied from the pinned CUDA image |
 | `node-rocm` | not yet published | Debian 13 runtime + ROCm libraries copied from the pinned ROCm image |
-| `node-sycl` | not yet published | Debian 13 runtime + oneAPI runtime libraries |
+| `node-sycl` | `vX.Y.Z-sycl` (amd64 only) | Debian 13 runtime + oneAPI runtime and Level Zero loader ([ADR-3371](../adr/3371-node-sycl-image.md)) |
 
 The pinned toolkit versions live in `build-config.env` (`CUDA_VERSION`,
 `ROCM_VERSION`, `ONEAPI_VERSION`) and are consumed by
@@ -419,9 +419,60 @@ The pinned toolkit versions live in `build-config.env` (`CUDA_VERSION`,
 current release track uses CUDA 13.4.2 and ROCm 10.1.0 libraries, which are
 copied out of Ubuntu 26.04 based images, and oneAPI 2026.1.
 
-The release workflow currently publishes only `node-cpu`. All targets use the
+The release workflow publishes `node-cpu` (multi-arch amd64 + arm64) and
+`node-sycl` (`vX.Y.Z-sycl`, amd64 only). All targets use the
 same native-architecture FFmpeg dependency collector, so arm64 stages resolve
 `aarch64-linux-gnu` libraries rather than copying an amd64-only path.
+
+### SYCL node execution and device requirements
+
+`node-sycl` ships with `ENV VMAFX_BACKEND=sycl`. Its `libvmaf` is the oneAPI
+build of `scripts/ci/build-oneapi-libvmaf.sh`, the same script the production
+oneAPI image runs. Besides the oneAPI runtime libraries, UMF and hwloc
+(`tools/rc1-tester/image/sycl-runtime.json`), it carries Intel's GPU user-mode
+stack from `install-intel-ocloc.sh --components runtime`: the Level Zero loader
+(`libze1`), the Level Zero GPU driver (`libze-intel-gpu1`), IGC
+(`intel-igc-core-2`) and gmmlib (`libigdgmm12`). Without them, SYCL finds no
+device. The image has no OpenCL ICD. During the build, the image's `ldd` check
+fails on any of those libraries that cannot be resolved. The image's licence
+notices list each package under the `intel-gpu-stack` component.
+
+To check the image on a host with an Intel GPU, list the SYCL devices it sees:
+
+```bash
+docker run --rm --device /dev/dri \
+  --group-add "$(stat -c %g /dev/dri/renderD128)" \
+  --entrypoint /usr/local/bin/vmaf \
+  ghcr.io/vmafx/vmafx-node:vX.Y.Z-sycl --backend sycl --list-backends
+```
+
+The process runs as the distroless `nonroot` user, so it needs the group that
+owns the render node. That group's ID differs between hosts, so read it from
+the device node. `--group-add keep-groups` only works in rootless Podman:
+
+```bash
+docker run --rm \
+  --device /dev/dri \
+  --group-add "$(stat -c %g /dev/dri/renderD128)" \
+  -p 50052:50052 \
+  ghcr.io/vmafx/vmafx-node:vX.Y.Z-sycl
+```
+
+In Kubernetes, request the GPU from the Intel device plugin and add the render
+node's group at pod level (`supplementalGroups` belongs in the pod
+`securityContext`, not the container's):
+
+```yaml
+spec:
+  securityContext:
+    supplementalGroups: [992]          # the GID of /dev/dri/renderD* on the node
+  containers:
+    - name: vmafx-node
+      image: ghcr.io/vmafx/vmafx-node:vX.Y.Z-sycl
+      resources:
+        limits:
+          gpu.intel.com/i915: "1"      # or gpu.intel.com/xe
+```
 
 The release workflow builds each architecture on a native GitHub runner
 (amd64 on `ubuntu-26.04`, arm64 on `ubuntu-26.04-arm`), then merges the two
