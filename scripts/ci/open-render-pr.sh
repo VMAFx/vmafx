@@ -11,22 +11,31 @@
 # opens the pull request when none is open and arms auto-merge, so the forge
 # merges it once every required check is green and it is up to date.
 #
+# An open pull request on RENDER_BRANCH is only considered this workflow's PR
+# when it is same-repository and authored by the App (app/${APP_SLUG} or
+# ${APP_SLUG}[bot]), ignoring foreign or fork branches of the same name.
+#
 # A branch whose parent is already the master tip is left alone: re-pushing it
-# would only restart its checks. With RENDER_DUE=false (master's render is
-# current, for instance after a render landed by hand) an open render pull
-# request of this workflow is closed instead. Inputs (environment): GH_TOKEN
-# (App installation token), APP_SLUG, GITHUB_REPOSITORY, RENDER_BRANCH,
-# RENDER_DUE, OWED_SINCE.
+# would only restart its checks, but auto-merge is armed idempotently. With
+# RENDER_DUE=false (master's render is current, for instance after a render
+# landed by hand) an open render pull request of this workflow is closed instead.
+# Inputs (environment): GH_TOKEN (App installation token), APP_SLUG,
+# GITHUB_REPOSITORY, RENDER_BRANCH, RENDER_DUE, RUNNER_TEMP, OWED_SINCE.
 set -euo pipefail
 
 : "${GH_TOKEN:?}" "${APP_SLUG:?}" "${GITHUB_REPOSITORY:?}" "${RENDER_BRANCH:?}"
-: "${RENDER_DUE:?}" "${OWED_SINCE:=}"
+: "${RENDER_DUE:?}" "${RUNNER_TEMP:?}" "${OWED_SINCE:=}"
 rendered=(CHANGELOG.md docs/adr/README.md docs/adr/titles.md docs/research/titles.md
   docs/adr/by-tag docs/rebase-notes.md)
 
+find_open_pr() {
+  gh pr list --repo "$GITHUB_REPOSITORY" --head "$RENDER_BRANCH" \
+    --state open --json number,author,isCrossRepository \
+    --jq "[.[] | select((.author.login == \"app/${APP_SLUG}\" or .author.login == \"${APP_SLUG}[bot]\") and .isCrossRepository == false)][0].number // empty"
+}
+
 base="$(git rev-parse HEAD)"
-open_pr="$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$RENDER_BRANCH" \
-  --state open --json number --jq '.[0].number // empty')"
+open_pr="$(find_open_pr)"
 if [[ "$RENDER_DUE" != true ]]; then
   if [[ -n "$open_pr" ]]; then
     gh pr close --repo "$GITHUB_REPOSITORY" --delete-branch "$open_pr" \
@@ -41,12 +50,13 @@ if [[ -n "$open_pr" ]]; then
     --jq '.commit.parents[0].sha')"
 fi
 if [[ "$parent" == "$base" && -n "$open_pr" ]]; then
+  gh pr merge --repo "$GITHUB_REPOSITORY" --auto --squash "$open_pr"
   echo "render pull request #$open_pr is already rendered at ${base:0:12}"
   exit 0
 fi
 
 make -s docs-render
-if git diff --quiet -- "${rendered[@]}"; then
+if [[ -z "$(git status --porcelain --untracked-files=all -- "${rendered[@]}")" ]]; then
   echo "make docs-render changed nothing at ${base:0:12}"
   exit 0
 fi
@@ -84,8 +94,7 @@ if [[ -z "$open_pr" ]]; then
   } >"$body"
   gh pr create --repo "$GITHUB_REPOSITORY" --base master --head "$RENDER_BRANCH" \
     --title "chore(docs): render generated changelog and ADR index" --body-file "$body"
-  open_pr="$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$RENDER_BRANCH" \
-    --state open --json number --jq '.[0].number')"
+  open_pr="$(find_open_pr)"
 fi
 gh pr merge --repo "$GITHUB_REPOSITORY" --auto --squash "$open_pr"
 echo "render pull request #$open_pr rendered at ${base:0:12}, auto-merge armed"
