@@ -332,8 +332,7 @@ declare the single-maintainer gaps that OpenSSF Scorecard reports (alerts 1 and
 dismissal cites the entry.
 
 The `dependency-advisory` entries are not file standards either: each names the lock file of an open
-Dependabot alert that no reachable version of the dependency fixes (for example `mcp` 1.29.0, pinned exactly by
-`semgrep`), with the reason the vulnerable code path is not reached and a short expiry. The alert stays open; the
+Dependabot alert that no reachable version of the dependency fixes, with the reason the vulnerable code path is not reached and a short expiry. The alert stays open; the
 entry is deleted when the update that closes it lands.
 
 Entries today: ten files of the Pelorus mirror (`spdx`, until the line exists in
