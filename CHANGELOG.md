@@ -794,6 +794,15 @@
   [Vulkan frames](docs/api/vmafx/index.md#vulkan-frames).
 
 
+- **vmaf-tune introduces content-aware video classification ([ADR-0618](docs/adr/0618-content-aware-classifier.md), [ADR-3374](docs/adr/3374-vmaf-tune-classifier-vision-fails-by-name.md)).**
+  `vmaf-tune classify` extracts ITU-T P.910 spatial information (SI) and temporal
+  information (TI) via FFmpeg `siti`, probes container geometry and dynamic range
+  (HDR/SDR), and stratifies motion/detail into named classes. Optional genre
+  classification hooks into local OpenAI-compatible VLM endpoints (loopback/RFC1918),
+  strictly failing by name on missing or unsupported vision endpoints without silent
+  fallback to `unknown` ([usage](docs/usage/vmaf-tune-classifier.md)).
+
+
 - **vmaf-tune supports perceptual video fingerprinting for near-duplicate result reuse ([ADR-3372](docs/adr/3372-perceptual-video-fingerprint.md)).**
   `--near-dup-reuse` on `vmaf-tune corpus` and `recommend` enables a secondary
   cache lookup on an exact source hash miss using PDQ perceptual video
@@ -2633,6 +2642,12 @@
   another checkout's history and returned another landing order, and the ADR index of a head that
   `make docs-render-check` accepts on its own was refused. The check now runs with those variables
   unset.
+
+
+- CI: the scheduled render pull request opener (`scripts/ci/open-render-pr.sh`) acts only on a
+  same-repository pull request the release-bot App opened, re-arms auto-merge when the branch is
+  already rendered at the master tip, commits a render that adds only new files, and refuses to
+  start without `RUNNER_TEMP` (ADR-3373).
 
 
 - **The roadmap rows of 1.1 and 1.3 list the issues that are in those milestones.**
