@@ -15,7 +15,15 @@ window bounded and the last render exact:
 3. The first first-parent commit after it starts the owed render. Older than
    the bound (24 hours by default): red. Within it: green with a warning.
 
+With ``--open-after-hours H`` the script judges nothing and decides instead
+whether the scheduled render workflow (``.github/workflows/docs-render-pr.yml``,
+ADR-3373) opens or refreshes the render pull request: it prints
+``open=true`` once a render has been owed for H hours or more (or no commit
+carries a render), ``open=false`` otherwise, and ``owed_since=<sha>``, and
+exits 0.
+
 Usage: check_render_on_master.py [--root DIR] [--bound-hours H] [--now EPOCH]
+       [--open-after-hours H]
 """
 
 from __future__ import annotations
@@ -170,18 +178,58 @@ def judge(root: Path, now: float, bound_hours: float) -> Verdict:
     return Verdict(verdict.status, (output, *verdict.lines))
 
 
+def owed_age_hours(root: Path, now: float) -> tuple[str, float] | None:
+    """The first commit of the owed render and its age in hours, or None when
+    the render at HEAD is current. With no render commit at all the owed render
+    starts at the root commit."""
+    passed, _ = render_check(root)
+    if passed:
+        return None
+    render = last_render_commit(root)
+    if render:
+        first = first_commit_after(root, render)
+    else:
+        out = git(root, "log", "--first-parent", "--reverse", "--format=%H %ct", "HEAD")
+        root_sha, root_stamp = out.splitlines()[0].split()
+        first = (root_sha, int(root_stamp))
+    if first is None:
+        return (render, float("inf"))
+    sha, stamp = first
+    return sha, (now - stamp) / 3600.0
+
+
+def decide_pull_request(root: Path, now: float, open_after_hours: float) -> Verdict:
+    """Whether the scheduled render workflow opens or refreshes the render pull
+    request (ADR-3373): once the owed render is `open_after_hours` old."""
+    owed = owed_age_hours(root, now)
+    if owed is None:
+        return Verdict(0, ("open=false", "owed_since="))
+    sha, age = owed
+    decision = "true" if age >= open_after_hours else "false"
+    return Verdict(0, (f"open={decision}", f"owed_since={sha}", f"owed_hours={age:.1f}"))
+
+
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--root", type=Path, default=REPO_ROOT)
     parser.add_argument("--bound-hours", type=float, default=DEFAULT_BOUND_HOURS)
     parser.add_argument("--now", type=float, default=None, help="epoch seconds (tests)")
+    parser.add_argument(
+        "--open-after-hours",
+        type=float,
+        default=None,
+        help="decide whether to open the render pull request instead of judging (ADR-3373)",
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: list[str]) -> int:
     args = parse_args(argv)
     now = time.time() if args.now is None else args.now
-    verdict = judge(args.root.resolve(), now, args.bound_hours)
+    if args.open_after_hours is not None:
+        verdict = decide_pull_request(args.root.resolve(), now, args.open_after_hours)
+    else:
+        verdict = judge(args.root.resolve(), now, args.bound_hours)
     for line in verdict.lines:
         if line:
             print(line)
