@@ -1,0 +1,1 @@
+| [ADR-3374](3374-vmaf-tune-classifier-vision-fails-by-name.md) | `vmaf-tune` content classifier extracts ITU-T P.910 SI/TI and metadata; genre tagging via local VLM hook fails by name rather than falling back to unknown; frames strictly loopback/RFC1918; genre labels include lawful adult | Proposed | vmaf-tune, ai, planning |
