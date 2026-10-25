@@ -1852,6 +1852,37 @@ def _add_sidecar_subparser(sub: argparse._SubParsersAction) -> None:
     _add_sidecar_args(sidecar)
 
 
+def _add_classify_subparser(sub: argparse._SubParsersAction) -> None:
+    """Wire ``vmaf-tune classify`` onto the subparser group (ADR-0618, ADR-3374)."""
+    classify_p = sub.add_parser(
+        "classify",
+        help="classify video content complexity, dynamic range, and optional genre",
+    )
+    classify_p.add_argument("src", type=Path, help="path to source video file")
+    classify_p.add_argument(
+        "--genre",
+        action="store_true",
+        default=False,
+        help="classify genre via local VLM endpoint (fails by name if unavailable)",
+    )
+    classify_p.add_argument(
+        "--vlm-url",
+        default=None,
+        help="OpenAI-compatible VLM endpoint URL (loopback/RFC1918 only)",
+    )
+    classify_p.add_argument(
+        "--vlm-model",
+        default=None,
+        help="model identifier served by --vlm-url (required with --vlm-url)",
+    )
+    classify_p.add_argument(
+        "--json",
+        action="store_true",
+        default=False,
+        help="emit strict JSON to stdout",
+    )
+
+
 def _register_subparsers(sub: argparse._SubParsersAction) -> None:
     """Register every public vmaf-tune subcommand in canonical order."""
     _add_corpus_subparser(sub)
@@ -1868,6 +1899,7 @@ def _register_subparsers(sub: argparse._SubParsersAction) -> None:
     _add_report_subparser(sub)
     _add_encode_profile_subparser(sub)
     _add_sidecar_subparser(sub)
+    _add_classify_subparser(sub)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -5920,6 +5952,53 @@ def _run_encode_profile(args: argparse.Namespace) -> int:
     return int(result.exit_status)
 
 
+def _print_classify_summary(source: Path, tags: Any) -> None:
+    """Print human-readable summary of classification tags."""
+    hdr_label = tags.hdr.transfer if tags.hdr else "SDR"
+    genre_label = tags.genre if tags.genre is not None else f"not-run ({tags.genre_source})"
+    res = f"{tags.resolution[0]}x{tags.resolution[1]}"
+    sys.stdout.write(
+        f"Source: {source.name}\n"
+        f"Resolution: {res} @ {tags.fps:.2f} fps ({tags.duration:.2f}s)\n"
+        f"Dynamic range: {hdr_label}\n"
+        f"Spatial Information (SI): mean={tags.si_mean:.2f}, p95={tags.si_p95:.2f} (detail: {tags.detail_class})\n"
+        f"Temporal Information (TI): mean={tags.ti_mean:.2f}, p95={tags.ti_p95:.2f} (motion: {tags.motion_class})\n"
+        f"Genre: {genre_label}\n"
+    )
+
+
+def _run_classify(args: argparse.Namespace) -> int:
+    """Execute ``vmaf-tune classify`` subcommand (ADR-0618, ADR-3374)."""
+    from .classify import OpenAICompatVlm, VisionBackendUnavailable, classify
+    from .jsonio import dumps_strict
+
+    vlm = None
+    if args.vlm_url:
+        if not args.vlm_model:
+            sys.stderr.write("vmaf-tune classify: error: --vlm-url requires --vlm-model\n")
+            return 2
+        try:
+            vlm = OpenAICompatVlm(args.vlm_url, args.vlm_model)
+        except ValueError as exc:
+            sys.stderr.write(f"vmaf-tune classify: error: {exc}\n")
+            return 2
+
+    try:
+        tags = classify(args.src, genre=args.genre, vlm=vlm)
+    except VisionBackendUnavailable as exc:
+        sys.stderr.write(f"vmaf-tune classify: error: {exc}\n")
+        return 1
+    except (FileNotFoundError, RuntimeError, ValueError) as exc:
+        sys.stderr.write(f"vmaf-tune classify: error: {exc}\n")
+        return 1
+
+    if args.json:
+        sys.stdout.write(dumps_strict(tags.to_dict()) + "\n")
+    else:
+        _print_classify_summary(args.src, tags)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
@@ -5956,6 +6035,8 @@ def main(argv: list[str] | None = None) -> int:
         return _run_report(args)
     if args.cmd == "encode-profile":
         return _run_encode_profile(args)
+    if args.cmd == "classify":
+        return _run_classify(args)
     parser.print_help()
     return 2
 

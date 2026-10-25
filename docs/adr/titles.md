@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1415), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1416), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5671,3 +5671,7 @@ Every ADR, one heading each (1415), so the site search finds an ADR by its title
 ## ADR-3373: A scheduled workflow opens the render pull request
 
 [3373-scheduled-render-pull-request](3373-scheduled-render-pull-request.md)
+
+## ADR-3374: Content-Aware Classifier with Fail-by-Name Vision Backend
+
+[3374-vmaf-tune-classifier-vision-fails-by-name](3374-vmaf-tune-classifier-vision-fails-by-name.md)
