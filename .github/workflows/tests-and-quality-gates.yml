@@ -790,7 +790,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
           python-version: "3.14.9"
       - name: Install locked RC1 tester package
@@ -836,7 +836,7 @@ jobs:
           # test.
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
           python-version: "3.14.9"
       - name: Every test file belongs to a suite that a required check runs
@@ -948,7 +948,7 @@ jobs:
           REASON: ${{ steps.impact.outputs.reason }}
           SUITE: ${{ matrix.name }}
         run: echo "::notice::python not impacted (mode=$MODE reason=$REASON) — Python Package Tests ($SUITE) satisfied without running (ADR-1140)"
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         if: steps.impact.outputs.python == 'true'
         with:
           python-version: "3.14.9"
@@ -1023,7 +1023,7 @@ jobs:
           MODE: ${{ steps.impact.outputs.mode }}
           REASON: ${{ steps.impact.outputs.reason }}
         run: echo "::notice::python not impacted (mode=$MODE reason=$REASON) — Python Package Tests (vmaf-tune) satisfied without running (ADR-1140)"
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         if: steps.impact.outputs.python == 'true'
         with:
           python-version: "3.14.9"
