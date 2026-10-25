@@ -30,6 +30,12 @@ guarded path tells a guard that was scoped away apart from a harness that
 found nothing at all. The last two tests scan the real files, so a future
 re-vendor — or a banned call reintroduced into an upstream-mirror source —
 fails here even before the hook sees the staged file.
+
+Semgrep comes from outside the repository's Python locks: the `semgrep-local`
+hook's isolated environment when it is on PATH, otherwise the image the
+required `Semgrep` CI job pins in `.github/workflows/security-scans.yml`, run
+through Docker without network. Semgrep pins its own dependencies exactly, and
+a lock that carried it carried their advisories with it (ADR-3375).
 """
 
 from __future__ import annotations
@@ -74,6 +80,10 @@ REAL_ORIGIN_EXEMPT = (
     "core/tools/cli_parse.cpp",
 )
 MATLAB_MEX = "compat/python-vmaf/matlab"
+SECURITY_WORKFLOW = ROOT / ".github/workflows/security-scans.yml"
+SEMGREP_IMAGE = re.compile(
+    r"^\s+image:\s*(?P<image>\S*/semgrep/semgrep:\S*@sha256:[0-9a-f]{64})\s*$", re.MULTILINE
+)
 PLANTED = """\
 #include <stdio.h>
 #include <string.h>
@@ -90,15 +100,40 @@ PLANTED_CALLS = 3
 
 class SemgrepVendoredScope(unittest.TestCase):
     def setUp(self) -> None:
-        binary = shutil.which("semgrep")
-        if binary is None:
-            raise RuntimeError("semgrep is required for the vendored-scope guard contract")
-        self.semgrep = binary
+        self.semgrep = shutil.which("semgrep")
+        self.docker = None if self.semgrep else shutil.which("docker")
+        if self.semgrep is None and self.docker is None:
+            raise RuntimeError(
+                "the vendored-scope guard contract needs semgrep on PATH (the semgrep-local "
+                "hook's environment) or Docker to run the pinned Semgrep image"
+            )
+
+    def semgrep_argv(self, cwd: Path) -> tuple[list[str], str]:
+        """Return the command prefix that runs Semgrep in `cwd`, and its executable."""
+        if self.semgrep is not None:
+            return [self.semgrep], self.semgrep
+        assert self.docker is not None
+        images = SEMGREP_IMAGE.findall(SECURITY_WORKFLOW.read_text(encoding="utf-8"))
+        self.assertEqual(
+            len(images), 1, f"expected one pinned Semgrep image in {SECURITY_WORKFLOW}"
+        )
+        prefix = [
+            self.docker,
+            "run",
+            "--rm",
+            "--network=none",
+            f"--volume={cwd}:/src:ro",
+            "--workdir=/src",
+            images[0],
+            "semgrep",
+        ]
+        return prefix, self.docker
 
     def scan(self, project: Path, targets: list[str]) -> dict[str, int]:
         """Return banned-call findings per path, using the production rule file."""
+        prefix, executable = self.semgrep_argv(project)
         argv = [
-            self.semgrep,
+            *prefix,
             "scan",
             "--config=.semgrep.yml",
             "--json",
@@ -115,7 +150,7 @@ class SemgrepVendoredScope(unittest.TestCase):
         ]
         proc = run_command(
             argv,
-            allowed_executables=(self.semgrep,),
+            allowed_executables=(executable,),
             cwd=project,
             capture_output=True,
             text=True,
