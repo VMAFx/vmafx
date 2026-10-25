@@ -512,6 +512,16 @@
 - **The scoring node takes container inputs and a time window**: `.mkv`, `.mp4` and other inputs ffmpeg reads are decoded by the node's ffmpeg into a Y4M pipe and scored, with no temp file; the new job fields `window_start` and `window_duration` score a sample without decoding the whole clip ([ADR-3370](docs/adr/3370-node-container-decode.md)).
 
 
+- **`ghcr.io/vmafx/vmafx-node:<tag>-sycl` scores on Intel GPUs (ADR-3371).**
+  The `node-sycl` image now carries a oneAPI build of `libvmaf` from the shared
+  `scripts/ci/build-oneapi-libvmaf.sh` (the script the production oneAPI image
+  runs), the oneAPI runtime libraries and Intel's GPU user-mode stack (Level
+  Zero loader and driver, IGC, gmmlib). Before, it set `VMAFX_BACKEND=sycl`
+  over a CPU-only build. The amd64 image is published with its licence
+  notices (`production-node-sycl-image`), a CycloneDX SBOM, a cosign
+  signature and provenance.
+
+
 - **Observability: alerts, recording rules and runbooks (RC4, ADR-2349,
   #2430).** `deploy/prometheus/vmafx-rules.yaml` is generated from the metric
   definition: recording rules for the job failure, Score error and slow Score
@@ -2664,6 +2674,12 @@
   of the dynamic symbol table with `--exclude-libs` (GNU ld, lld). The Rust
   build also needs no network any more: TAD's unused build-time cbindgen
   dependency is gone and cargo runs `--offline --locked`.
+
+
+- CI: an hourly workflow (`docs-render-pr.yml`) now opens the render-only pull request for
+  `CHANGELOG.md`, the ADR index and the rebase notes once a render has been owed on master for
+  6 hours, and arms auto-merge. Until now nothing opened it, and master went red on the 24-hour
+  render bound twice in two days (ADR-3373).
 
 
 - `vmafx-server` no longer cuts a `Score` or `ScoreStream` RPC that runs

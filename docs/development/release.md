@@ -597,7 +597,16 @@ them next to any other file. The outputs are written by one command,
   needs none of the other deliverables. When
   master moves under it, rebase the branch and run `make docs-render` again;
   never resolve a conflict in a rendered file by hand. It merges when the
-  forge reports it CLEAN, like every other pull request;
+  forge reports it CLEAN, like every other pull request. Nobody has to open it:
+  the hourly `docs-render-pr` workflow runs
+  `scripts/ci/check_render_on_master.py --open-after-hours 6`, and once a
+  render has been owed on master for 6 hours `scripts/ci/open-render-pr.sh`
+  renders the master tip on branch `chore/docs-render-auto`, opens the pull
+  request as the release bot and arms auto-merge; when master moves it renders
+  again, and when master's render is current it closes its own pull request
+  ([ADR-3373](../adr/3373-scheduled-render-pull-request.md)). To run it at
+  once: `gh workflow run docs-render-pr.yml`. To see what it would decide:
+  `python3 scripts/ci/check_render_on_master.py --open-after-hours 6`;
 - **at the release cut:** see
   [Cutting a release from fragments](#cutting-a-release-from-fragments);
 - **by hand:** to see what the render will write, run it in a scratch

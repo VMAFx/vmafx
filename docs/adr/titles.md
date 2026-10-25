@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1413), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1415), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5660,6 +5660,14 @@ Every ADR, one heading each (1413), so the site search finds an ADR by its title
 
 [3370-node-container-decode](3370-node-container-decode.md)
 
+## ADR-3371: Real SYCL runtime and shared oneAPI build script for `vmafx-node-sycl`
+
+[3371-node-sycl-image](3371-node-sycl-image.md)
+
 ## ADR-3372: Perceptual video fingerprint for near-duplicate result reuse
 
 [3372-perceptual-video-fingerprint](3372-perceptual-video-fingerprint.md)
+
+## ADR-3373: A scheduled workflow opens the render pull request
+
+[3373-scheduled-render-pull-request](3373-scheduled-render-pull-request.md)

@@ -1,0 +1,68 @@
+name: docs-render-pr
+
+# Scheduled render pull request (ADR-3373, follow-up of ADR-3295).
+# The master-push Docs job is red once a render has been owed for 24 hours;
+# every render pull request before this workflow was opened by hand, and master
+# went red twice when nobody did. Every hour this workflow asks
+# scripts/ci/check_render_on_master.py whether a render has been owed for
+# OPEN_AFTER_HOURS or more and, if so, opens or refreshes the render-only pull
+# request as the release-bot App (a pull request opened with GITHUB_TOKEN gets
+# no check runs, ADR-1151) and arms auto-merge, so the forge merges it once its
+# required checks pass, well inside the bound.
+
+on:
+  schedule:
+    - cron: "23 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-render-pr
+  cancel-in-progress: false
+
+env:
+  RENDER_BRANCH: chore/docs-render-auto
+  OPEN_AFTER_HOURS: "6"
+
+jobs:
+  render:
+    name: Open the render pull request
+    if: github.repository == 'VMAFx/vmafx'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: master
+          persist-credentials: false
+          # The owed time is read from first-parent history.
+          fetch-depth: 0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.14.9"
+      - name: Install the documentation checks' imports
+        run: pip install --require-hashes -r requirements/locks/docs-check.txt
+      - name: Decide whether the render pull request is due
+        id: decide
+        run: python3 scripts/ci/check_render_on_master.py --open-after-hours "$OPEN_AFTER_HOURS" | tee -a "$GITHUB_OUTPUT"
+      # Due: a render owed for OPEN_AFTER_HOURS opens or refreshes the pull
+      # request. Current (owed_since empty): an open render pull request of
+      # this workflow is closed. Owed for less: nothing to do yet.
+      - name: Mint the release-bot installation token
+        if: steps.decide.outputs.open == 'true' || steps.decide.outputs.owed_since == ''
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510  # v3.3.0
+        with:
+          app-id: ${{ secrets.RELEASE_BOT_APP_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+      - name: Render, push and open the pull request
+        if: steps.decide.outputs.open == 'true' || steps.decide.outputs.owed_since == ''
+        env:
+          RENDER_DUE: ${{ steps.decide.outputs.open }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+          OWED_SINCE: ${{ steps.decide.outputs.owed_since }}
+        shell: bash
+        run: bash scripts/ci/open-render-pr.sh

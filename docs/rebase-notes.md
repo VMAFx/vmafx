@@ -8,6 +8,36 @@ search:
 # Rebase notes
 
 <!-- rebase-notes:fragments:begin (rendered from docs/rebase-notes.d/; do not edit) -->
+## Scheduled render pull request (2026-10-25)
+
+- `.github/workflows/docs-render-pr.yml` (new) and `scripts/ci/open-render-pr.sh` (new) open the
+  ADR-3295 render-only pull request from branch `chore/docs-render-auto`
+  ([ADR-3373](adr/3373-scheduled-render-pull-request.md)).
+- `scripts/ci/check_render_on_master.py` gains `--open-after-hours`, which prints
+  `open=`, `owed_since=` and `owed_hours=` lines for the workflow; without the flag it behaves as
+  before.
+- No upstream file is touched; an upstream sync has nothing to keep.
+
+## Node SYCL image (2026-10-24)
+
+- `docker/Dockerfile.node`: Added `builder-oneapi2026` stage invoking
+  `scripts/ci/build-oneapi-libvmaf.sh` and removed ad-hoc runtime stages.
+  `node-sycl-assembled` copies libvmaf, libvmafx, vmaf, `/stage/lib/intel/`,
+  and `/stage/licenses/` from `builder-oneapi2026`. Added licence check, notices,
+  source fetch, and export stages. Final target `node-sycl` sets
+  `ENV VMAFX_BACKEND=sycl` and `LD_LIBRARY_PATH="/usr/local/lib:/usr/local/lib/intel"`.
+- `docker/Dockerfile.production-gpu`: Refactored stage `builder-oneapi2026` to
+  delegate Meson configuration, ninja build, and staging to
+  `scripts/ci/build-oneapi-libvmaf.sh`.
+- `scripts/ci/build-oneapi-libvmaf.sh`: Shared oneAPI build script compiling
+  libvmaf with `-Denable_sycl=true`, staging files per
+  `tools/rc1-tester/image/sycl-runtime.json`, and running licence scans.
+- `tools/rc1-tester/image/licensing.json`: Added `production-node-sycl-image`
+  component combining `production-node-image` and SYCL runtime components.
+- `.github/workflows/docker-publish-operator-node.yml`: Added `publish-node-sycl`
+  job publishing `ghcr.io/vmafx/vmafx-node:<tag>-sycl` for amd64 with cosign
+  attestations and licence artifacts.
+
 ## Perceptual video fingerprint for near-duplicate result reuse in vmaf-tune (2026-10-24)
 
 - `tools/vmaf-tune/src/vmaftune/fingerprint.py`: implements PDQ frame sampling
