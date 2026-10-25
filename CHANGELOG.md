@@ -467,6 +467,16 @@
   [job store and replicas](docs/development/k8s-deployment.md#controller-store)).
 
 
+- **Helm chart MCP component (ADR-3369).** `mcp.enabled=true` deploys the
+  Go MCP server `vmafx-mcp` as a Deployment and Service from the node image
+  (every node image now ships the binary), connected to the chart's
+  controller. The chart refuses the setting without a bearer token Secret
+  (`mcp.auth.token.secretName`) unless `mcp.auth.noAuth=true` is set on
+  purpose, and renders NetworkPolicies for MCP ingress and MCP to
+  controller. `vmafx-mcp --version` prints the build version. See
+  [the Kubernetes deployment guide](docs/development/k8s-deployment.md#mcp-server).
+
+
 - **The ADR-2478 host C exception list exists
   ([ADR-2478](docs/adr/2478-rust-core-migration.md)).** `.config/lint-exceptions.d/host-c-cpp.toml`
   names the host C files that stay C on the way to 3.0, each with owner, re-evaluation
@@ -497,6 +507,9 @@
   tracking issues for fork triage. The companion script
   `scripts/upstream-watcher/check_netflix_unported.py` enables local checking
   ([Upstream watchers](docs/development/upstream-watchers.md)).
+
+
+- **The scoring node takes container inputs and a time window**: `.mkv`, `.mp4` and other inputs ffmpeg reads are decoded by the node's ffmpeg into a Y4M pipe and scored, with no temp file; the new job fields `window_start` and `window_duration` score a sample without decoding the whole clip ([ADR-3370](docs/adr/3370-node-container-decode.md)).
 
 
 - **Observability: alerts, recording rules and runbooks (RC4, ADR-2349,
@@ -560,6 +573,18 @@
   `networkPolicy.allow.metricsScrape` admits the scrape. The burn-rate alerts
   state their threshold as `(factor * (1 - objective))`. See
   [monitoring on Kubernetes](docs/observability/kubernetes.md).
+
+
+- **Observability: logs over OTLP, a Logs dashboard and latency exemplars
+  (RC4, ADR-2349, #2430).** Every Go service bridges its slog records to the
+  OpenTelemetry collector (golusoris's slog bridge in `bootstrap.Base`), so
+  logs reach Loki with the trace and span of their context. The Score request
+  and ScoreStream session latencies carry the trace of a sampled request as an
+  exemplar, and every `/metrics` page serves OpenMetrics. A generated Logs
+  dashboard (volume per level, errors, the lines of one trace) and a
+  provisioning file linking the Prometheus, Tempo and Loki data sources
+  (exemplar to trace, trace to logs, log to trace) ship under
+  `deploy/grafana/`. See [logs](docs/development/observability.md#logs).
 
 
 - **Observability: one metric definition, node `/metrics`, queue and quality
@@ -757,6 +782,16 @@
   Vulkan semaphores and the producer had to hand over a `sync_file` and wait
   for a host release fence. See
   [Vulkan frames](docs/api/vmafx/index.md#vulkan-frames).
+
+
+- **vmaf-tune supports perceptual video fingerprinting for near-duplicate result reuse ([ADR-3372](docs/adr/3372-perceptual-video-fingerprint.md)).**
+  `--near-dup-reuse` on `vmaf-tune corpus` and `recommend` enables a secondary
+  cache lookup on an exact source hash miss using PDQ perceptual video
+  fingerprinting (optional extra `vmaf-tune[fingerprint]`). Sources sharing the
+  same encode parameters reuse cached results when duration, aspect ratio,
+  frame counts (>= 30 valid frames), and three temporal segments (10%, 50%, 85%)
+  meet published thresholds, with optional `--near-dup-verify` spot checking
+  against drift ([usage](docs/usage/vmaf-tune-near-dup.md)).
 
 
 - **Preview of the VMAFx C API, generated from one definition (RC4,
@@ -1162,6 +1197,9 @@
   [FFmpeg patch automation](docs/development/ffmpeg-patch-automation.md).
 
 
+- **Consolidated repeated Docker pad-order checks into `_assert_docker_pad_order`.** `test_registry_port_qualified_image` and `test_explicit_ffmpeg_on_arbitrary_image` in `ffmpeg-patches/test/test_input_contract.py` call the shared helper for fixture creation, baseline verification, and reversed pad mutation assertions (HISS-19).
+
+
 - **The FFmpeg guide says how to score exactly N frames.** Cutting a run with
   the output options `-frames:v N` or `-t` lets any `libvmaf*` filter score one
   more pair than `ffmpeg` outputs (FFmpeg n9.0.2 applies them after the
@@ -1195,6 +1233,14 @@
   extractor. Build with `-Denable_float_vif_hip_autodispatch=false` for the
   old behaviour, where the twin runs only as `--feature float_vif_hip`. See
   [`enable_float_vif_hip_autodispatch`](docs/development/build-flags.md#enable_float_vif_hip_autodispatch).
+
+
+- **Every hosted-runner disk cleanup calls `scripts/ci/free-runner-disk.sh`.**
+  The clang-tidy lane action, the three production GPU image jobs, the tester
+  image job and the published licence companions no longer carry their own
+  copy of the directory list; `scripts/ci/tests/test_free_runner_disk.py`
+  fails when a workflow or action under `.github/` removes one of the listed
+  directories itself.
 
 
 - **The route for Go saliency inference is decided.** [ADR-2377](docs/adr/2377-go-saliency-through-mobilesal-binding.md)
@@ -1338,6 +1384,9 @@
   tests) are gone. Scores are unchanged: the copies held the same double.
 
 
+- Consolidate duplicated shared-storage Metal buffer allocation in `core/src/metal/picture_metal.mm` and `core/src/metal/kernel_template.mm` into `vmaf_metal_shared_buffer_alloc()` in `core/src/metal/objc_handle.h`.
+
+
 - **`motion2` / `motion3` are final one frame after their frame, not at the
   flush (RC4, ADR-2090).** The integer motion extractors (`motion`,
   `motion_v2`) and every GPU twin that derived `motion2` / `motion3` at the
@@ -1428,6 +1477,9 @@
 
 
 - **The vendored Pelorus interop mirror moves to Pelorus v0.3.0 and is EUPL-1.2 ([ADR-2817](docs/adr/2817-pelorus-v030-eupl-repin.md)).** `scripts/sync-pelorus-interop.sh` pins the v0.3.0 tag's commit `e2e4040311a4`; the ten mirrored files (`core/include/libvmaf/pelorus/`, `core/src/interop/pelorus_*.c`, `core/test/test_pelorus_interop.c`) now name `EUPL-1.2` in their `SPDX-License-Identifier` line, so `REUSE.toml` drops their BSD-2-Clause-Patent annotation, the ten per-file SPDX exceptions are gone and the credits page lists EUPL-1.2. The sync script now stops when a pinned source declares any other licence. The interop ABI stays 1.3: the parser is unchanged, `interop.h` only gains unit and range comments, and the conformance fixture checks the privacy of the files it creates on the open descriptor. `test_perceptual_weight` gains two R4 cases, a newer producer's longer banding section and an older producer's shorter one.
+
+
+- **Consolidate duplicated CLI test harness boilerplate in `scripts/perf/test_check_regression.py`.** Payload serialization and `check_regression.main` CLI invocation across regression, advisory, and baseline-skip tests are consolidated into the `_run_main` helper (HISS-19).
 
 
 - **The dev and SYCL + FFmpeg containers build the CPU code with GCC.**
@@ -1638,6 +1690,9 @@
   Tool targets (`[tool.ruff] target-version`) follow the package floors. The
   automated check `scripts/ci/check_python_floors.py` (`make python-floors-check`)
   verifies each package at its floor.
+
+
+- Consolidated duplicated YUV format tables and file lifecycle helpers from `compat/python-vmaf/tools/reader.py` and `writer.py` into `_YuvIoBase`, and extracted local helpers for repeated blocks in `decorator.py`, `misc.py`, and `plot.py`.
 
 
 - **The roadmap and release pages list the full RC4 and RC5 scope.**
@@ -2076,6 +2131,12 @@
   `scripts/ci/check-win64-stack-alignment.py`).
 
 
+- The dependency pull request classifier treats `Containerfile` and
+  `Containerfile.*` in any directory as container manifests, as it already
+  treats `Dockerfile*`, so a Renovate digest bump of the root
+  `Containerfile.vmafx` no longer fails the deliverables checklist.
+
+
 - **Renovate's Rust toolchain bump passes the deliverables gate again.**
   `scripts/ci/classify-dependency-pr.sh` treats the root `rust-toolchain.toml`
   (ADR-3318) as a dependency pin, so a bot pull request that only moves the
@@ -2246,6 +2307,16 @@
   Tables extracted before this change carry an all-NaN `motion` column and the `verify_features` stage of
   the mini retrain refuses them. `extract_full_features.py` also gains `--assume-dims WxH` for corpora
   that are not 1920x1080.
+
+
+- CI: artifact steps no longer fail on the Gitea mirror with
+  `GHESNotSupportedError`. Each `upload-artifact` / `download-artifact` step
+  runs off Gitea only and has a Gitea twin on v3, the artifact protocol Gitea
+  serves; a download that needs inputs v3 lacks prints a warning naming them
+  instead. `scripts/ci/check_gitea_artifact_steps.py` (in `make lint-actions`
+  and pre-commit) refuses an unpaired step
+  ([ci-runners](docs/development/ci-runners.md#gitea-mirror-runner-artifact-steps),
+  ADR-3368).
 
 
 - CI: the `go vet + go test` job fetches the Go module graph and installs `gosec` through
@@ -2814,6 +2885,14 @@
   ([Rust guide](docs/development/rust.md#an-older-install-under-the-prefix), #2786).
 
 
+- **Two host-compiler contract tests no longer time out on Windows ARM64.**
+  `test_vmafx_rgb_math_contract` timed out at 61 s on the Windows ARM64 MSVC
+  job and `test_stale_text_contract` took 112.5 s, because the Go generator
+  tests ran beside them on the same cores; seven clean runs took 6.2-14.4 s and
+  10.7-23.0 s. Both now run alone (`is_parallel : false`), with limits of 2x
+  the slowest clean run (28 s and 46 s), so a real slowdown still fails.
+
+
 - **ci**: the Windows Lefthook Pre-Commit job installs the pinned praetor
   engine once before the hooks run in parallel; parallel first-use installs
   replaced the binary another hook was running and failed the job at random
@@ -2924,6 +3003,12 @@
   (`setuptools`, `virtualenv`, `onnx-ir`, `httpx2`, `httpcore2`, `pydantic-settings`), and the
   `ai` package floor for Pillow rises to 13.0.0. `mcp` stays at 1.29.0 under its declared
   exception: `semgrep` 1.182.0, the newest release, still pins it exactly.
+
+
+- **The Python hash locks are regenerated with uv 0.13.5.** The tooling-test pin and `uv_version`
+  in `requirements/locks/manifest.json` move together with the Renovate patch update (ruff 0.17.2,
+  semgrep 1.182.1, uv 0.13.5); every lock is rewritten from its manifest entry
+  (`make python-locks-write`), which also moves the transitive `starlette` pin to 1.10.0.
 
 ## [1.0.0-rc.3] - 2026-10-07
 

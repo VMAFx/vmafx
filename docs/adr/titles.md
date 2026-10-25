@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1409), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1413), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5647,3 +5647,19 @@ Every ADR, one heading each (1409), so the site search finds an ADR by its title
 ## ADR-3367: Workflow job time limits cover the sum of their step limits
 
 [3367-job-timeout-covers-step-caps](3367-job-timeout-covers-step-caps.md)
+
+## ADR-3368: Every artifact step has a Gitea twin or a named skip
+
+[3368-gitea-artifact-path](3368-gitea-artifact-path.md)
+
+## ADR-3369: The Helm chart deploys vmafx-mcp from the node image
+
+[3369-helm-mcp-component](3369-helm-mcp-component.md)
+
+## ADR-3370: The node decodes container inputs through ffmpeg into a Y4M pipe
+
+[3370-node-container-decode](3370-node-container-decode.md)
+
+## ADR-3372: Perceptual video fingerprint for near-duplicate result reuse
+
+[3372-perceptual-video-fingerprint](3372-perceptual-video-fingerprint.md)
