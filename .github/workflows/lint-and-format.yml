@@ -64,7 +64,7 @@ jobs:
           persist-credentials: false
       - name: Verify Pelorus mirror and shared conformance fixture
         run: scripts/sync-pelorus-interop.sh "${GITHUB_WORKSPACE}/.ci/pelorus"
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
           python-version: "3.14.9"
       - name: MSVC-hostile constructs in the changed files
@@ -1073,7 +1073,7 @@ jobs:
           # the same files at their merge base in a disposable worktree.
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
           python-version: "3.14.9"
       - name: Install mypy checker
@@ -1106,7 +1106,7 @@ jobs:
           # bytes, not pointer files.
           lfs: true
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
           python-version: "3.14.9"
       - name: Install jsonschema
@@ -1138,7 +1138,7 @@ jobs:
           # `push && 0 || 1`: 0 is falsy in an expression, so that form
           # always gave 1 and the render check found a shallow history.
           fetch-depth: ${{ github.event_name != 'push' && 1 || 0 }}
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
           python-version: "3.14.9"
       - name: Install the documentation checks' imports
@@ -1268,7 +1268,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
           python-version: "3.14.9"
       # ADR-1699 — the root licence files and every package manifest's licence
