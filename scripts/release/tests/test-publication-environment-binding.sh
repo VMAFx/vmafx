@@ -52,6 +52,8 @@ VERIFY_TARGETS = {
         '${{ needs.publish-controller.outputs.digest }}"',
         '"${{ env.REGISTRY }}/${{ env.NODE_IMAGE }}@'
         '${{ needs.publish-node.outputs.digest }}"',
+        '"${{ env.REGISTRY }}/${{ env.NODE_IMAGE }}@'
+        '${{ needs.publish-node-sycl.outputs.digest }}"',
     ),
 }
 
