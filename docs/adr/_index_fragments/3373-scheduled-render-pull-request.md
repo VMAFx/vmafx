@@ -1,0 +1,1 @@
+| [ADR-3373](3373-scheduled-render-pull-request.md) | An hourly workflow (`docs-render-pr.yml`) opens or refreshes the render-only pull request once a render has been owed on master for 6 hours, as the release-bot App with a matching sign-off, and arms auto-merge so it lands at CLEAN inside the 24-hour bound; amends ADR-3295 | Accepted | ci, docs, release, process |
