@@ -201,7 +201,7 @@ class OpenRenderPrTest(unittest.TestCase):
             return []
         return [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines() if line]
 
-    def set_prs(self, prs: list[dict]) -> None:
+    def set_prs(self, prs: list[dict[str, object]]) -> None:
         (self.state_dir / "prs.json").write_text(json.dumps(prs), encoding="utf-8")
 
     def run_script(
