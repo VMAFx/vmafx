@@ -8,6 +8,110 @@ search:
 # Rebase notes
 
 <!-- rebase-notes:fragments:begin (rendered from docs/rebase-notes.d/; do not edit) -->
+## Scheduled render pull request (2026-10-25)
+
+- `.github/workflows/docs-render-pr.yml` (new) and `scripts/ci/open-render-pr.sh` (new) open the
+  ADR-3295 render-only pull request from branch `chore/docs-render-auto`
+  ([ADR-3373](adr/3373-scheduled-render-pull-request.md)).
+- `scripts/ci/check_render_on_master.py` gains `--open-after-hours`, which prints
+  `open=`, `owed_since=` and `owed_hours=` lines for the workflow; without the flag it behaves as
+  before.
+- No upstream file is touched; an upstream sync has nothing to keep.
+
+## Node SYCL image (2026-10-24)
+
+- `docker/Dockerfile.node`: Added `builder-oneapi2026` stage invoking
+  `scripts/ci/build-oneapi-libvmaf.sh` and removed ad-hoc runtime stages.
+  `node-sycl-assembled` copies libvmaf, libvmafx, vmaf, `/stage/lib/intel/`,
+  and `/stage/licenses/` from `builder-oneapi2026`. Added licence check, notices,
+  source fetch, and export stages. Final target `node-sycl` sets
+  `ENV VMAFX_BACKEND=sycl` and `LD_LIBRARY_PATH="/usr/local/lib:/usr/local/lib/intel"`.
+- `docker/Dockerfile.production-gpu`: Refactored stage `builder-oneapi2026` to
+  delegate Meson configuration, ninja build, and staging to
+  `scripts/ci/build-oneapi-libvmaf.sh`.
+- `scripts/ci/build-oneapi-libvmaf.sh`: Shared oneAPI build script compiling
+  libvmaf with `-Denable_sycl=true`, staging files per
+  `tools/rc1-tester/image/sycl-runtime.json`, and running licence scans.
+- `tools/rc1-tester/image/licensing.json`: Added `production-node-sycl-image`
+  component combining `production-node-image` and SYCL runtime components.
+- `.github/workflows/docker-publish-operator-node.yml`: Added `publish-node-sycl`
+  job publishing `ghcr.io/vmafx/vmafx-node:<tag>-sycl` for amd64 with cosign
+  attestations and licence artifacts.
+
+## Perceptual video fingerprint for near-duplicate result reuse in vmaf-tune (2026-10-24)
+
+- `tools/vmaf-tune/src/vmaftune/fingerprint.py`: implements PDQ frame sampling
+  at 1 fps via FFmpeg, Hamming distance matching (<= 31), quality filtering
+  (>= 50), metadata extraction, and ADR-3372 refusal ladder evaluation.
+- `tools/vmaf-tune/src/vmaftune/cache.py`: secondary lookup `get_near_duplicate()`
+  on exact miss using `params_key` and fingerprint sidecars under `fingerprints/`.
+- `tools/vmaf-tune/src/vmaftune/corpus.py`: wire `--near-dup-reuse` and
+  `--near-dup-verify` options into corpus sweep, record match provenance on
+  cache hit rows, and run 1-second VMAF spot checks.
+- `tools/vmaf-tune/src/vmaftune/cli.py`: expose `--near-dup-reuse` and
+  `--near-dup-verify` flags on `corpus` and `recommend` subcommands.
+- `tools/vmaf-tune/pyproject.toml`: add optional extra `fingerprint = ["pdqhash>=0.2.8", "numpy"]`
+  and include `pdqhash>=0.2.8` under `dev` extra.
+- `tools/vmaf-tune/tests/test_fingerprint.py`: full test suite covering positive,
+  negative, boundary conditions, planted negative 1 MB collision, and cache
+  integration.
+- **On sync**: keep fork's near-duplicate caching and perceptual fingerprinting
+  implementation.
+
+## Node container decode (2026-10-24)
+
+`cmd/vmafx-node/executor_inputs.go::openScored` decodes non-Y4M inputs and windowed inputs through `pkg/y4mdecode` after the scoring-root check on the source path. A rebase keeps the check before the decode and the pipe (no temp file). `ScoringParams` fields 5 and 6 (`window_start`, `window_duration`) are taken; regenerate `gen/go/controller` from the proto, never hand-merge it. No upstream Netflix file is touched.
+
+## Helm chart MCP component (2026-10-24)
+
+- `deploy/helm/vmafx/values.yaml`, `values.schema.json` and
+  `templates/_config.gen.tpl` stay generated from `api/vmafx-platform.toml`;
+  on a conflict take either side and run
+  `python3 scripts/codegen/vmafx-api.py --write`.
+- `templates/mcp-validate.yaml` refuses `mcp.enabled` without a token Secret
+  or `mcp.auth.noAuth`; keep it with `scripts/ci/tests/test_helm_mcp.py`.
+- `docker/Dockerfile.node` builds `vmafx-mcp` in the go-builder stage and every
+  node target copies it; the licence inventory lists it.
+
+## Observability: logs over OTLP and latency exemplars (2026-10-07)
+
+`rc4/obs-4-logs-traces`, [ADR-2349](adr/2349-observability-package.md), #2430.
+
+- `internal/app/bootstrap.Base` carries `otel.ModuleWithSlogBridge`; keep it
+  when golusoris changes its otel module (golusoris#617 moves the bridge onto
+  the injected `*slog.Logger`).
+- Every `/metrics` mount uses `observability.MetricsHandler` (OpenMetrics,
+  exemplars); `Metrics.ScoreDuration` became `ObserveScoreDuration(ctx, s)`,
+  and `StreamMetrics.Begin` takes the call's context.
+- `deploy/grafana/provisioning/datasources/vmafx.yaml` and
+  `deploy/grafana/dashboards/vmafx-logs.json` are generated: regenerate, never
+  merge by hand.
+- No score, FFmpeg patch or C API impact.
+
+## Artifact steps carry a Gitea twin (2026-10-24)
+
+- Every `actions/upload-artifact` / `actions/download-artifact` step under
+  `.github/` has `if: ... env.GITEA_ACTIONS != 'true'` and is followed by its
+  Gitea twin (v3 pin, same inputs, or a `::warning::` skip). Netflix's
+  workflows have no twin. **On sync**: a workflow taken from upstream runs
+  `python3 scripts/ci/check_gitea_artifact_steps.py --write` before commit;
+  never delete a twin or drop the guard (ADR-3368).
+- `renovate.json` holds the `v3` pins below v4; keep the rule when merging
+  Renovate config.
+
+## python-vmaf YUV reader and writer share one base (2026-10-24)
+
+- `compat/python-vmaf/tools/reader.py` and `writer.py` mirror Netflix's
+  `python/vmaf/tools/reader.py` and `writer.py`. The fork moved their format
+  tables, file open and close, and the bit-depth helpers into `_YuvIoBase`
+  in `reader.py`, which `YuvWriter` imports. When an upstream sync changes
+  a format list or the `__init__` of either class, apply the change to
+  `_BASE_UV_MULTIPLIERS`, `_YuvIoBase` or the subclass suffix lists. Do not
+  restore the two full copies.
+- `decorator.py` builds every memoization key with `_cache_key()`, and
+  `plot.py` selects slices with `_extract_slice_data()`. Upstream changes
+  to the key or the slice selection go into those helpers.
+
 ## llvm.sh install steps capped at 10 minutes (2026-10-23)
 
 - Every apt step that runs `llvm.sh` (`lint-and-format.yml` Tidy Changed / Tidy Ratchet / Tidy SYCL, `fuzz.yml`, `nightly.yml` clang-tidy-full, `sanitizers.yml` asan-ubsan / tsan / fuzz-nightly) carries `timeout-minutes: 10`: llvm.sh downloads from apt.llvm.org outside the archive cache; measured max 5.7m (libvmaf-build-matrix, 142 runs), a Tidy Ratchet run timed out at the earlier 5-minute cap after 5.2m (job 120415869295).
