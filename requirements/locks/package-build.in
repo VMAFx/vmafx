@@ -2,6 +2,7 @@
 build==1.6.1
 hatchling==1.32.4
 editables==0.6
+# setuptools 84.1.0 or later: GHSA-xmj3-9gf7-h52w.
 setuptools==84.2.1
 poetry-core==2.5.0
 wheel==0.48.0
