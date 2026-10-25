@@ -1,0 +1,1 @@
+| [ADR-3375](3375-semgrep-outside-python-locks.md) | Semgrep leaves every Python lock: the vendored-scope test runs it from the hook environment or the digest-pinned image of the `Semgrep` job (Docker, no network), so `mcp` and `opentelemetry-api` leave the tooling-tests lock and their advisory exceptions go | Accepted | ci, security, supply-chain, python |
