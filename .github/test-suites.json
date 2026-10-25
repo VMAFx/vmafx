@@ -150,6 +150,7 @@
         "dev/scripts/",
         "gstreamer/test/",
         "scripts/",
+        "scripts/upstream-watcher/tests/test_ensure_label.py",
         "testdata/",
         "tools/ensemble-training-kit/tests/",
         "tools/external-bench/tests/"

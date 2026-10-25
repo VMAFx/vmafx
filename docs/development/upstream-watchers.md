@@ -53,11 +53,15 @@ When the watcher files a tracking issue, or a local run reports a commit:
 1. **Ported**: port the commit with `/port-upstream-commit` (or adapt it
    by hand) and add a `ported` row in the same pull request:
    `<full-40-hex-sha>`, tab, `ported`, tab, `#<fork-pr-number>`.
+   Example: `f712fa7564fe49b12991d83920b83573af2ae063` (`Ubuntu gcc zimg`
+   matrix row in `libvmaf-build-matrix.yml`).
 2. **In-fork**: the fork already implements the change; add an `in-fork`
    row naming the fork pull request or commit.
 3. **Not applicable**: the change does not apply to the fork (another
    architecture, a dependency the fork does not use, a reverted change);
    add a `not-applicable` row with a one-line reason.
+   Example: `5a50df8afbdf8c8852dc39d942fb7e3b4dcb0488` (fork CI has no gcc-9
+   leg; `libvmaf-build-matrix.yml` builds gcc-14/clang-22 on ubuntu-26.04).
 4. **Advance the parity head**: once every commit of an unbroken run from
    the pin has a row, move the pin heading in
    [`known-upstream-bugs.md`](known-upstream-bugs.md) forward.
@@ -105,10 +109,28 @@ A script-based watcher has three moving parts:
    script and opens a GitHub tracking issue (de-duplicated by
    exact title) when one returns "feature present". The
    tracking issue carries the activation checklist.
+   Before filing the issue, the workflow calls
+   `scripts/upstream-watcher/ensure_label.sh` to create the
+   `upstream-blocked` label idempotently (color `#e99695`, description
+   "Waiting on an upstream change") with `--force`, ensuring a missing label
+   never halts issue creation.
 
 The other three watchers skip the script: each is its own workflow file whose
 `poll` job queries upstream with `gh api` and opens or updates its tracking
 issue directly.
+
+### Scheduled-failure guard
+
+If a scheduled run of `upstream-watcher.yml` fails (for example, on an unhandled
+script exit code, malformed ledger, or network error during commit checks), the
+`scheduled-failure` guard job runs:
+
+- Condition: a scheduled run in which at least one watcher job failed
+  (`always()`, `github.event_name == 'schedule'` and a `failure` result in
+  `needs`).
+- Action: calls `scripts/ci/scheduled-failure-issue.sh` to create or comment
+  on the open issue titled "Upstream watcher failed on schedule", recording
+  the failed jobs and the run URL.
 
 ### Feature states
 
