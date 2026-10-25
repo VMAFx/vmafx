@@ -14,6 +14,7 @@ fragments fails at any age.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -24,6 +25,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 CHECK = ROOT / "scripts" / "ci" / "check_render_on_master.py"
 WORKFLOW = ROOT / ".github" / "workflows" / "lint-and-format.yml"
+RENDER_PR_WORKFLOW = ROOT / ".github" / "workflows" / "docs-render-pr.yml"
+RENDER_PR_SCRIPT = ROOT / "scripts" / "ci" / "open-render-pr.sh"
 GIT = shutil.which("git") or "/usr/bin/git"
 NOW = 1_800_000_000
 HOUR = 3600
@@ -73,10 +76,10 @@ class RenderOnMasterTest(unittest.TestCase):
         self.git("add", "-A")
         self.git("commit", "-q", "-m", "change", date=f"@{int(NOW - age_h * HOUR)} +0000")
 
-    def check(self) -> subprocess.CompletedProcess[str]:
+    def check(self, *extra: str) -> subprocess.CompletedProcess[str]:
         env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
         return subprocess.run(  # noqa: S603 -- fixed argv, no shell, check under test
-            [sys.executable, str(CHECK), "--root", str(self.repo), "--now", str(NOW)],
+            [sys.executable, str(CHECK), "--root", str(self.repo), "--now", str(NOW), *extra],
             env=env,
             capture_output=True,
             text=True,
@@ -134,12 +137,66 @@ class RenderOnMasterTest(unittest.TestCase):
         self.commit({"Makefile": MAKEFILE, "changelog.d/fixed/a.md": "- fixed a\n"}, age_h=1)
         self.assert_status(self.check(), 1, "no commit of HEAD carries a render")
 
+    # --- the scheduled render pull request (ADR-3373) --------------------
+
+    def decide(self) -> dict[str, str]:
+        res = self.check("--open-after-hours", "6")
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        return dict(line.split("=", 1) for line in res.stdout.splitlines())
+
+    def test_current_render_opens_nothing(self) -> None:
+        self.assertEqual(self.decide(), {"open": "false", "owed_since": ""})
+
+    def test_render_owed_briefly_opens_nothing_yet(self) -> None:
+        self.commit({"changelog.d/fixed/b.md": "- fixed b\n"}, age_h=2)
+        verdict = self.decide()
+        self.assertEqual(verdict["open"], "false")
+        self.assertNotEqual(verdict["owed_since"], "")
+
+    def test_render_owed_past_the_threshold_opens_the_pull_request(self) -> None:
+        # Planted case: no render ran for 7 hours. The decision opens the render
+        # pull request 18 hours before the master-push check turns red.
+        self.commit({"changelog.d/fixed/b.md": "- fixed b\n"}, age_h=7)
+        first = self.git("rev-parse", "HEAD").strip()
+        self.commit({"changelog.d/fixed/c.md": "- fixed c\n"}, age_h=1)
+        verdict = self.decide()
+        self.assertEqual(verdict["open"], "true")
+        self.assertEqual(verdict["owed_since"], first)
+        self.assertEqual(verdict["owed_hours"], "7.0")
+
+    def test_render_owed_past_the_bound_opens_the_pull_request(self) -> None:
+        self.commit({"changelog.d/fixed/b.md": "- fixed b\n"}, age_h=30)
+        self.assertEqual(self.decide()["open"], "true")
+
 
 class RenderOnMasterWiringTest(unittest.TestCase):
     def test_master_push_step_runs_the_check(self) -> None:
         text = WORKFLOW.read_text()
         self.assertIn("python3 scripts/ci/check_render_on_master.py", text)
         self.assertNotIn("run: make docs-render-check\n", text)
+
+    def test_render_pull_request_runs_on_a_schedule(self) -> None:
+        # Every render before ADR-3373 was opened by hand; without a scheduled
+        # opener, master goes red 24 hours after a landing nobody rendered.
+        text = RENDER_PR_WORKFLOW.read_text()
+        self.assertRegex(text, r"(?m)^  schedule:\n    - cron: ")
+        self.assertIn("check_render_on_master.py --open-after-hours", text)
+        hours = re.search(r'OPEN_AFTER_HOURS: "(\d+)"', text)
+        if hours is None:
+            self.fail("docs-render-pr.yml sets no OPEN_AFTER_HOURS")
+        # Leave room inside the 24-hour bound for checks and auto-merge.
+        self.assertLessEqual(int(hours.group(1)), 12)
+        # A pull request opened with GITHUB_TOKEN gets no check runs (ADR-1151).
+        self.assertIn("actions/create-github-app-token@", text)
+        self.assertIn("run: bash scripts/ci/open-render-pr.sh", text)
+
+    def test_render_pull_request_carries_rendered_paths_only(self) -> None:
+        script = RENDER_PR_SCRIPT.read_text()
+        self.assertIn("make -s docs-render", script)
+        self.assertIn("gh pr merge", script)
+        self.assertIn("--auto", script)
+        self.assertIn("Signed-off-by:", script)
+        self.assertIn("wrote outside the rendered paths", script)
 
 
 if __name__ == "__main__":
