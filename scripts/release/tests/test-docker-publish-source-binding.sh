@@ -85,7 +85,7 @@ SOURCE_REVISION_LABEL = (
 
 
 def job_block(jobs_text: str, job_prefix: str) -> str:
-    """Return the body of the single job whose name starts with job_prefix."""
+    """Return the body of the job named job_prefix, else of the single job whose name starts with it."""
     matches = list(
         re.finditer(
             rf"(?ms)^  ({re.escape(job_prefix)}[a-z0-9-]*):\n(.*?)(?=^  [a-z0-9-]+:\n|\Z)",
@@ -94,6 +94,9 @@ def job_block(jobs_text: str, job_prefix: str) -> str:
     )
     if not matches:
         raise AssertionError(f"missing job matching {job_prefix}*")
+    exact = [m for m in matches if m.group(1) == job_prefix]
+    if exact:
+        return exact[0].group(2)
     if len(matches) > 1:
         found = ", ".join(m.group(1) for m in matches)
         raise AssertionError(f"{job_prefix}* is ambiguous: matched {found}")

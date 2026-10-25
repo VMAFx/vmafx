@@ -64,7 +64,14 @@ ARG RELEASE_PYTHON_BASE="python:3.14-slim@sha256:a2b82f3c48559aa0a8446d9af49826b
 ARG RELEASE_RUNTIME_CC="gcr.io/distroless/cc-debian13:nonroot@sha256:e792ab3d241a468a4fd7519ddbbebe66b49b5f365771716ea688ad40b6c6f1c2"
 ARG CUDA_RUNTIME="ubuntu:26.04@sha256:c098726dd9b9733f3e885f8de0ef375206a311b0a317eadc40d347b1115fb944"
 ARG ROCM_RUNTIME="rocm/dev-ubuntu-26.04:10.1.0-full@sha256:4f5ed1bf6532a4b9920400401b0ad0f706af356dae61e40afefbfd6c8073f0ce"
-ARG ONEAPI_RUNTIME="debian:13-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad"
+ARG ONEAPI_BUILDER="debian:13-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad"
+
+# The oneAPI builder installs one immutable, checksum-verified Meson wheel
+# rather than floating on PyPI.
+FROM scratch AS meson-wheel
+ADD --checksum=sha256:71f133147fa0fcfe8f4df49fa1045771064947834538409e5d97b3613aac8b4e \
+    https://files.pythonhosted.org/packages/07/68/b0117422eb0a46d9d8d9e328f0c5b5c835179bfc058688bca35c90c89eba/meson-1.12.0-py3-none-any.whl \
+    /meson-1.12.0-py3-none-any.whl
 
 # Vendor runtime libraries as named stages: a digest-pinned
 # `COPY --from=<image>` is a base-image pin that no FROM-oriented search
@@ -74,14 +81,6 @@ COPY build-config.env scripts/ci/install-cuda-toolkit.sh /tmp/
 RUN /tmp/install-cuda-toolkit.sh --mode=runtime /tmp \
     && rm -rf /tmp/install-cuda-toolkit.sh /tmp/build-config.env /var/lib/apt/lists/*
 FROM ${ROCM_RUNTIME} AS rocm-runtime-libs
-# ONEAPI_RUNTIME is the release track's Debian 13; Intel's SYCL runtime comes
-# from its apt repository at the build-config.env pin (ADR-1368), the same
-# installer the oneAPI production image's final stage runs.
-FROM ${ONEAPI_RUNTIME} AS oneapi-runtime-libs
-COPY build-config.env /tmp/vmafx/build-config.env
-COPY scripts/ci/install-intel-oneapi.sh /tmp/vmafx/scripts/ci/install-intel-oneapi.sh
-RUN bash /tmp/vmafx/scripts/ci/install-intel-oneapi.sh --mode=runtime /tmp/vmafx \
-    && rm -rf /tmp/vmafx /var/lib/apt/lists/*
 # rclone (ADR-0719) from its release's module source: `go install` verifies
 # every module against the checksum database, so the -source image can hold the
 # exact source the binary was built from (LGPL-3.0 cloudsoda/sddl, MPL-2.0
@@ -112,6 +111,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends fuse3 mount \
     && rm -rf /var/lib/apt/lists/*
 COPY --chmod=0755 scripts/ci/record-copied-debian-libs.sh /usr/local/bin/record-copied-debian-libs
+# hadolint ignore=SC2086
 RUN programs="/usr/bin/fusermount3 /usr/bin/mount /usr/bin/umount" \
     && for program in ${programs}; do printf '%s /usr/bin\n' "${program}" >> /tmp/fuse-origins.txt; done \
     && ldd ${programs} > /tmp/fuse-ldd.txt \
@@ -407,6 +407,7 @@ RUN go mod download
 
 # The eBPF object and its bpf2go binding (cmd/vmafx-node/bpf) are generated, not
 # committed: the build would fail on a missing embed without them (ADR-1622).
+# hadolint ignore=DL3059
 RUN ./scripts/dev/gen-node-bpf.sh --require-pin
 
 # Keep module download independently cacheable from source compilation.
@@ -431,7 +432,9 @@ RUN CGO_ENABLED=${CGO_ENABLED} \
 # vmafx-mcp and rclone link, read from their build information.
 COPY --from=rclone-bin /usr/local/bin/rclone /out/rclone
 COPY --from=vmaf-builder /licence-inputs/vmafx-sources.json /tmp/vmaf-sources.json
-# hadolint ignore=DL3008
+# go-builder is the base of go-licences-sycl; neither stage ships, so the apt
+# lists stay (DL3009).
+# hadolint ignore=DL3008,DL3009
 RUN apt-get update \
     && apt-get install -y --no-install-recommends python3 \
     && apt-get clean \
@@ -662,23 +665,217 @@ USER nonroot:nonroot
 ENTRYPOINT ["/usr/local/bin/vmafx-node"]
 
 # ---------------------------------------------------------------------------
+# Stage — builder-oneapi2026: compile libvmaf with oneAPI SYCL (ADR-1368, ADR-3371)
+# ---------------------------------------------------------------------------
+FROM ${ONEAPI_BUILDER} AS builder-oneapi2026
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG VMAF_BUILD_JOBS=4
+ARG MESON_VERSION=1.12.0
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+# hadolint ignore=DL3008,DL3009
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        ccache \
+        curl \
+        gcc \
+        g++ \
+        gpg \
+        nasm \
+        ninja-build \
+        pkg-config \
+        python3-pip \
+        xxd \
+        zstd
+
+RUN --mount=type=bind,from=meson-wheel,source=/meson-1.12.0-py3-none-any.whl,target=/tmp/meson-1.12.0-py3-none-any.whl \
+    python3 -m pip install --break-system-packages --ignore-installed --no-cache-dir --no-deps \
+        /tmp/meson-1.12.0-py3-none-any.whl \
+    && test "$(meson --version)" = "${MESON_VERSION}"
+
+COPY build-config.env /tmp/vmafx/build-config.env
+COPY scripts/ci/install-intel-oneapi.sh scripts/ci/install-intel-ocloc.sh /tmp/vmafx/scripts/ci/
+COPY dev/scripts/fetch-intel-neo.py /tmp/vmafx/dev/scripts/fetch-intel-neo.py
+# hadolint ignore=DL3008
+RUN --mount=type=secret,id=github_token,env=GITHUB_TOKEN,required=false \
+    --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    bash /tmp/vmafx/scripts/ci/install-intel-oneapi.sh --mode=builder /tmp/vmafx \
+    && bash /tmp/vmafx/scripts/ci/install-intel-ocloc.sh --components build /tmp/vmafx \
+    && rm -rf /tmp/vmafx
+
+ENV ONEAPI_ROOT=/opt/intel/oneapi
+ENV PATH="${ONEAPI_ROOT}/compiler/latest/bin:${PATH}"
+
+WORKDIR /src
+COPY . .
+
+RUN bash scripts/ci/build-oneapi-libvmaf.sh
+
+# The licences of the SYCL image: the Go programs' scan merged into the scan of
+# the oneAPI build of the C library, not the CPU build's (ADR-1513, ADR-3371).
+FROM go-builder AS go-licences-sycl
+COPY --from=builder-oneapi2026 /licence-inputs/vmafx-sources.json /tmp/vmaf-sycl-sources.json
+RUN mkdir /licence-inputs-sycl \
+    && python3 tools/rc1-tester/image/licensing.py scan-go --repo /src \
+        --package ./cmd/vmafx-node --package ./cmd/vmafx-mcp --merge /tmp/vmaf-sycl-sources.json \
+        --out /licence-inputs-sycl/vmafx-sources.json \
+    && cp -a /licence-inputs/go /licence-inputs-sycl/go
+
+# ---------------------------------------------------------------------------
+# intel-gpu-runtime-libs: the Intel GPU user-mode stack (Level Zero loader and
+# GPU driver, IGC, gmmlib) the production oneAPI image installs, exported with
+# its dpkg records for the distroless tree, which has no dpkg (ADR-3371). The
+# Unified Runtime adapters SYCL loads at device discovery need it; without it
+# SYCL reports no device. The md5sums lists are written from each package's
+# file list: gmmlib's package ships none, and licensing reads ownership from
+# them.
+# ---------------------------------------------------------------------------
+FROM ${ONEAPI_BUILDER} AS intel-gpu-runtime-libs
+ARG DEBIAN_FRONTEND=noninteractive
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+COPY build-config.env /tmp/vmafx/build-config.env
+COPY scripts/ci/install-intel-ocloc.sh /tmp/vmafx/scripts/ci/install-intel-ocloc.sh
+COPY dev/scripts/fetch-intel-neo.py /tmp/vmafx/dev/scripts/fetch-intel-neo.py
+# The installer runs in /tmp/vmafx: its `ocloc query` writes a file into the
+# working directory. Only /out leaves this stage.
+# hadolint ignore=DL3003,DL3008,DL3009
+RUN --mount=type=secret,id=github_token,env=GITHUB_TOKEN,required=false \
+    apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates python3 \
+    && cd /tmp/vmafx \
+    && bash /tmp/vmafx/scripts/ci/install-intel-ocloc.sh --components runtime /tmp/vmafx \
+    && dpkg --purge intel-ocloc intel-opencl-icd intel-igc-opencl-2 ocl-icd-libopencl1 \
+    && mkdir -p /out/var/lib/dpkg/status.d \
+    && for pkg in libze-intel-gpu1 intel-igc-core-2 libigdgmm12 libze1; do \
+        dpkg-query -s "${pkg}" > "/out/var/lib/dpkg/status.d/${pkg}" || exit 1; \
+        dpkg-query -L "${pkg}" | while read -r path; do \
+            if [ -f "${path}" ] || [ -L "${path}" ]; then cp -a --parents "${path}" /out || exit 1; fi; \
+            if [ -f "${path}" ] && [ ! -L "${path}" ]; then md5sum "${path}" | sed 's|  /|  |'; fi; \
+        done > "/out/var/lib/dpkg/status.d/${pkg}.md5sums" || exit 1; \
+        test -s "/out/var/lib/dpkg/status.d/${pkg}.md5sums" || exit 1; \
+    done \
+    && test -e /out/usr/lib/x86_64-linux-gnu/libze_loader.so.1 \
+    && test -e /out/usr/lib/x86_64-linux-gnu/libze_intel_gpu.so.1
+
+# ---------------------------------------------------------------------------
 # Stage 9 (target: node-sycl) — Intel oneAPI 2026 node worker (SYCL scoring)
 # ---------------------------------------------------------------------------
-FROM runtime-base AS node-sycl
+FROM node-assembled AS node-sycl-assembled
 
-COPY --from=ffmpeg-builder-cpu /ffmpeg-install/bin/ffmpeg   /usr/local/bin/ffmpeg
-COPY --from=ffmpeg-builder-cpu /ffmpeg-install/bin/ffprobe  /usr/local/bin/ffprobe
-COPY --from=ffmpeg-builder-cpu /ffmpeg-install/lib/libav*.so*  /usr/local/lib/
-COPY --from=ffmpeg-builder-cpu /ffmpeg-install/lib/libsw*.so*  /usr/local/lib/
-COPY --from=ffmpeg-builder-cpu /ffmpeg-install/runtime-libs/ /usr/local/lib/
+# The Intel GPU user-mode stack and its dpkg records (ADR-3371)
+COPY --from=intel-gpu-runtime-libs /out/ /
 
-# Intel oneAPI SYCL + Level Zero runtime
-COPY --from=oneapi-runtime-libs /opt/intel/oneapi/redist/lib/libsycl.so*   /usr/local/lib/
-COPY --from=oneapi-runtime-libs /opt/intel/oneapi/redist/lib/libOpenCL.so* /usr/local/lib/
+# The oneAPI SYCL build of libvmaf, CLI, and Intel SYCL runtime files (ADR-3371)
+COPY --from=builder-oneapi2026 /dist/lib/   /usr/local/lib/
+COPY --from=builder-oneapi2026 /dist/bin/vmaf /usr/local/bin/vmaf
+COPY --from=builder-oneapi2026 /stage/lib/intel/ /usr/local/lib/intel/
+COPY --from=builder-oneapi2026 /stage/licenses/ /usr/local/share/vmafx/licenses/
 
-COPY --from=go-builder /out/vmafx-node /usr/local/bin/vmafx-node
-# The MCP server the chart's mcp component runs (command vmafx-mcp).
-COPY --from=go-builder /out/vmafx-mcp /usr/local/bin/vmafx-mcp
+ENV LD_LIBRARY_PATH="/usr/local/lib:/usr/local/lib/intel"
+ENV VMAFX_BACKEND=sycl
+
+# ---------------------------------------------------------------------------
+# node-sycl-licence-texts: the recorded licence texts of the Intel GPU stack that
+# are not in the repository, pinned by URL and SHA-256 in licensing.json
+# ---------------------------------------------------------------------------
+FROM ${RELEASE_PYTHON_BASE} AS node-sycl-licence-texts
+RUN --mount=type=bind,source=tools/rc1-tester/image,target=/licensing \
+    python3 /licensing/licensing.py fetch-texts --artifact production-node-sycl-image --python-version none \
+        --out /texts
+
+# ---------------------------------------------------------------------------
+# node-sycl-notices: written on a copy of the distroless tree
+# ---------------------------------------------------------------------------
+FROM ${RELEASE_PYTHON_BASE} AS node-sycl-notices
+COPY --from=node-sycl-assembled / /rootfs
+ARG VMAFX_SOURCE_COMMIT=unknown
+ARG VMAFX_IMAGE_TAG=unknown
+RUN --mount=type=bind,source=tools/rc1-tester/image,target=/repo/tools/rc1-tester/image \
+    --mount=type=bind,source=REUSE.toml,target=/repo/REUSE.toml \
+    --mount=type=bind,source=NOTICE,target=/repo/NOTICE \
+    --mount=type=bind,source=LICENSES,target=/repo/LICENSES \
+    --mount=type=bind,source=model/other_models/NOTICE-brisque,target=/repo/model/other_models/NOTICE-brisque \
+    --mount=type=bind,from=go-licences-sycl,source=/licence-inputs-sycl,target=/licence-inputs \
+    --mount=type=bind,from=node-sycl-licence-texts,source=/texts,target=/texts \
+    python3 /repo/tools/rc1-tester/image/licensing.py notices --artifact production-node-sycl-image \
+        --root /rootfs --repo /repo --build-scan /licence-inputs/vmafx-sources.json --texts /texts \
+        --go-licences /licence-inputs/go \
+        --source-commit "${VMAFX_SOURCE_COMMIT}" --tag "${VMAFX_IMAGE_TAG}"
+
+FROM node-sycl-assembled AS node-sycl-with-notices
+COPY --from=node-sycl-notices /rootfs/usr/local/share/vmafx/licenses /usr/local/share/vmafx/licenses
+
+# ---------------------------------------------------------------------------
+# node-sycl-runtime-check: the distroless tree has no shell, so the Unified
+# Runtime adapters, the vmaf command and the libraries are resolved on a copy
+# with the image's library path; an unresolved dependency fails the build, as
+# do missing GPU-stack licence texts (the production oneAPI image's check)
+# ---------------------------------------------------------------------------
+FROM ${ONEAPI_BUILDER} AS node-sycl-runtime-check
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+RUN --mount=type=bind,from=node-sycl-with-notices,target=/rootfs \
+    test -f /rootfs/usr/local/share/vmafx/licenses/texts/level-zero-1.34.0-LICENSE.txt \
+    && test -f /rootfs/usr/local/share/vmafx/licenses/texts/igc-2.41.5-LICENSE.md \
+    && export LD_LIBRARY_PATH=/rootfs/usr/local/lib:/rootfs/usr/local/lib/intel:/rootfs/usr/lib/x86_64-linux-gnu:/rootfs/usr/local/lib/igc2 \
+    && for binary in /rootfs/usr/local/lib/intel/libur_adapter_*.so.0 \
+            /rootfs/usr/lib/x86_64-linux-gnu/libze_intel_gpu.so.1 \
+            /rootfs/usr/local/bin/vmaf /rootfs/usr/local/lib/libvmaf.so.* /rootfs/usr/local/lib/libvmafx.so.*; do \
+        if ldd "${binary}" | grep 'not found'; then \
+            echo "unresolved dependency in ${binary}" >&2; exit 1; \
+        fi; \
+    done \
+    && touch /runtime-check.ok
+
+# ---------------------------------------------------------------------------
+# node-sycl-licence-check: every file of the image has a recorded licence
+# ---------------------------------------------------------------------------
+FROM ${RELEASE_PYTHON_BASE} AS node-sycl-licence-check
+RUN --mount=type=bind,from=node-sycl-with-notices,target=/rootfs \
+    --mount=type=bind,source=tools/rc1-tester/image,target=/repo/tools/rc1-tester/image \
+    --mount=type=bind,source=REUSE.toml,target=/repo/REUSE.toml \
+    --mount=type=bind,source=NOTICE,target=/repo/NOTICE \
+    --mount=type=bind,source=LICENSES,target=/repo/LICENSES \
+    --mount=type=bind,source=model/other_models/NOTICE-brisque,target=/repo/model/other_models/NOTICE-brisque \
+    --mount=type=bind,from=go-licences-sycl,source=/licence-inputs-sycl,target=/licence-inputs \
+    mkdir /out \
+    && python3 /repo/tools/rc1-tester/image/licensing.py check --artifact production-node-sycl-image \
+        --root /rootfs --repo /repo --build-scan /licence-inputs/vmafx-sources.json \
+        --python-version none --receipt /out/licence-check.json
+
+# ---------------------------------------------------------------------------
+# node-sycl-source-export: corresponding source for node-sycl
+# ---------------------------------------------------------------------------
+FROM ${RELEASE_PYTHON_BASE} AS node-sycl-source-fetch
+# Only /sources leaves this stage, so its package lists need no cleanup.
+# hadolint ignore=DL3009
+RUN --mount=type=bind,from=node-sycl-with-notices,target=/rootfs \
+    --mount=type=bind,source=tools/rc1-tester/image,target=/repo/tools/rc1-tester/image \
+    sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/debian.sources \
+    && apt-get update \
+    && python3 /repo/tools/rc1-tester/image/licensing.py sources --artifact production-node-sycl-image \
+        --root /rootfs --repo /repo --out /sources.list \
+    && python3 /repo/tools/rc1-tester/image/licensing.py fetch-sources --list /sources.list \
+        --out /sources
+COPY --from=ffmpeg-builder-cpu /ffmpeg-source/ /sources/ffmpeg/
+
+FROM scratch AS node-sycl-source-export
+COPY --from=node-sycl-source-fetch /sources /sources
+
+# ---------------------------------------------------------------------------
+# Final node-sycl target
+# ---------------------------------------------------------------------------
+FROM node-sycl-with-notices AS node-sycl
+
+COPY --from=node-sycl-licence-check /out/licence-check.json /usr/local/share/vmafx/licence-check.json
+# Orders the runtime check into every node-sycl build; the marker itself is not shipped.
+RUN --mount=type=bind,from=node-sycl-runtime-check,source=/runtime-check.ok,target=/tmp/runtime-check.ok \
+    ["/usr/local/bin/vmaf", "--version"]
 
 ENV VMAFX_BACKEND=sycl
 
