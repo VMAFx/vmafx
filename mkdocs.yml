@@ -272,6 +272,7 @@ nav:
               - Score backend: usage/vmaf-tune-score-backend.md
               - FFmpeg wiring: usage/vmaf-tune-ffmpeg.md
               - Cache: usage/vmaf-tune-cache.md
+              - Near-duplicate reuse: usage/vmaf-tune-near-dup.md
               - Scratch directory: usage/vmaf-tune-workdir.md
               - Go port (vmafx-tune): usage/vmafx-tune-go.md
           - Per-shot scoring: usage/vmaf-perShot.md

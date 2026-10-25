@@ -1,6 +1,6 @@
 # VMAFx hash lock; regenerate with: make python-locks-write
 # vmafx-uv-version: 0.13.5
-# vmafx-input-sha256: 4f79ccbdab11a9f0d9514b5f020fb6975c366bf274af7f04b4a037938a076e04
+# vmafx-input-sha256: 981d8f0e0f8458982b0069ce26675196464b33451bfdb299346aedc55d6f9c10
 # vmafx-inputs: tools/vmaf-tune/pyproject.toml, requirements/locks/package-build.in
 alembic==1.20.1 \
     --hash=sha256:83490def1f723413db5096591f7609ac52544805be93849170088ed04f5a2e0b \
@@ -689,6 +689,17 @@ pathspec==1.1.1 \
     --hash=sha256:17db5ecd524104a120e173814c90367a96a98d07c45b2e10c2f3919fff91bf5a \
     --hash=sha256:a00ce642f577bf7f473932318056212bc4f8bfdf53128c78bbd5af0b9b20b189
     # via hatchling
+pdqhash==0.2.8 \
+    --hash=sha256:01e615089a7a22067627e97c383e371d6db363aca9587f4080a6e43cb6228fff \
+    --hash=sha256:13f106595b566677b0a125d96c6910fd1f1bbf2e86aae3a36ca8e0ed67ded02c \
+    --hash=sha256:5459e57ae2c432429bc2ee1077cd2973a0c24d491f54777d5b4bf249bef35f48 \
+    --hash=sha256:a7b3a626413bad245e3cdd815a4d644a68736982c4b9eb130b52d74dcb48f8e5 \
+    --hash=sha256:b3f892a767708eb63a7b3498e23582a34890a0f2a31833d28fd16c355e1f0d4d \
+    --hash=sha256:e7f50d8382a8850917a77232e00bc649b63db8e018423e6175842a226b01fad8 \
+    --hash=sha256:eb9a9de36745937ce3e481a02ce933fe907c84e0b1748c9dfea52c12ca5c1e35 \
+    --hash=sha256:fa49dfeb82b1549318bd3743ae112e4a1feb3dfeb8a6bb859d7f0cbdc5b7c0be \
+    --hash=sha256:fe082d83432583eaf7938fade50ec14e2ecc597b648dbca3419703b7a36f07f0
+    # via vmaf-tune (tools/vmaf-tune/pyproject.toml)
 pillow==13.0.0 \
     --hash=sha256:02464da86f561f410e13b061ec37c3068a9cb557a095494157742d07b3c24a27 \
     --hash=sha256:04a63720f79e22fd54d897c233a68314c50ca0603360f54ce2bd5db8f0f43782 \

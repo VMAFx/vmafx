@@ -1,0 +1,1 @@
+| [ADR-3372](3372-perceptual-video-fingerprint.md) | `vmaf-tune` reuses a cached result for a near-duplicate source through PDQ frame hashes at 1 fps (Hamming ≤ 31, quality ≥ 50), only after a duration and aspect check, 30 valid frames and an 85 % match in three segments; any failed step is a refusal; this replaces ADR-0618's first-megabyte key | Proposed | vmaf-tune, cache, ai |
