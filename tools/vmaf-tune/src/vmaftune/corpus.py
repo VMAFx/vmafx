@@ -27,6 +27,7 @@ import json
 import logging
 import math
 import os
+import subprocess
 import sys
 import threading
 import uuid
@@ -73,6 +74,9 @@ if TYPE_CHECKING:
     from .encode import EncodeResult
 
 _LOG = logging.getLogger(__name__)
+
+# Largest |VMAF| difference the 1 s spot check accepts (ADR-3372).
+NEAR_DUP_SPOT_MAX_DELTA = 1.5
 
 # Suffixes the vmaf CLI accepts as raw YUV without a prior ffmpeg decode
 # step. ADR-0499 / BBB e2e v3 Bug #V3-B: ``.y4m`` was previously listed
@@ -449,6 +453,9 @@ class CorpusOptions:
     # already exists in cache_dir. Default off; there is no CLI flag.
     cache_enabled: bool = False
     cache_dir: Path | None = None
+    # Near-duplicate result reuse via perceptual video fingerprint (ADR-3372)
+    near_dup_reuse: bool = False
+    near_dup_verify: bool = False
     # Resolution-aware model selection (ADR-0289): when True, iter_rows
     # scores with the model vmaftune.resolution.select_vmaf_model_version
     # picks from the encode height (vmaf_v1.0.16_1d5h_2160 at 2160 lines
@@ -649,6 +656,7 @@ class _Sweep:
     # version the encode-cache key carries ("" without a cache).
     score_model: str = ""
     ffmpeg_version: str = ""
+    fingerprint: Any | None = None
 
 
 def _open_tune_cache(
@@ -663,7 +671,13 @@ def _open_tune_cache(
     and a warning says so: a key without it would survive an ffmpeg
     rebuild.
     """
-    if not (opts.cache_enabled and opts.cache_dir is not None):
+    cache_enabled = opts.cache_enabled or opts.near_dup_reuse
+    cache_dir = opts.cache_dir
+    if opts.near_dup_reuse and cache_dir is None:
+        from .cache import default_cache_dir
+
+        cache_dir = default_cache_dir()
+    if not (cache_enabled and cache_dir is not None):
         return None, ""
     from .cache import TuneCache
     from .encode import probe_ffmpeg_version
@@ -676,7 +690,7 @@ def _open_tune_cache(
             opts.ffmpeg_bin,
         )
         return None, ""
-    return TuneCache(path=opts.cache_dir), version
+    return TuneCache(path=cache_dir), version
 
 
 def _sweep_score_model(
@@ -777,6 +791,31 @@ def _decode_reference_leg(
     )
 
 
+def _compute_sweep_fingerprint(
+    opts: CorpusOptions,
+    tune_cache: Any,
+    source: Path,
+) -> Any | None:
+    """Compute near-dup perceptual fingerprint for a sweep source if enabled."""
+    if not (opts.near_dup_reuse and tune_cache is not None and source.exists()):
+        return None
+    from .fingerprint import compute_fingerprint
+
+    try:
+        return compute_fingerprint(
+            source,
+            ffmpeg_bin=opts.ffmpeg_bin,
+            ffprobe_bin=opts.ffprobe_bin,
+        )
+    except (ImportError, OSError, RuntimeError, ValueError) as exc:
+        _LOG.warning(
+            "vmaf-tune: near-dup fingerprint computation failed for %s: %s",
+            source,
+            exc,
+        )
+        return None
+
+
 def _prepare_sweep(
     job: CorpusJob,
     opts: CorpusOptions,
@@ -811,6 +850,8 @@ def _prepare_sweep(
     score_model = _sweep_score_model(job, opts, hdr_info, warned)
 
     decoded_reference, ref_decode_rc = _decode_job_reference(job, opts)
+    fingerprint = _compute_sweep_fingerprint(opts, tune_cache, job.source)
+
     return _Sweep(
         job=job,
         opts=opts,
@@ -831,6 +872,7 @@ def _prepare_sweep(
         ref_decode_rc=ref_decode_rc,
         score_model=score_model,
         ffmpeg_version=ffmpeg_version,
+        fingerprint=fingerprint,
     )
 
 
@@ -893,16 +935,14 @@ def _cell_row(
     return row
 
 
-def _cell_cache_key(sweep: _Sweep, preset: str, crf: int) -> str:
-    """Return the encode-cache key of one cell (ADR-0298, cache key version 2).
+def _cell_params(sweep: _Sweep, preset: str, crf: int) -> dict[str, Any]:
+    """Return the trial inputs of one cell except the source hash.
 
     Every input that changes the encode or the score is in it: the
     adapter and ffmpeg versions, the pass count, the sample-clip window,
     the geometry and duration, the extra encoder argv (HDR signalling,
     rung scale), the score model and backend.
     """
-    from .cache import cache_key
-
     job, opts = sweep.job, sweep.opts
     two_pass = opts.two_pass and getattr(sweep.adapter, "supports_two_pass", False)
     settings = {
@@ -917,18 +957,68 @@ def _cell_cache_key(sweep: _Sweep, preset: str, crf: int) -> str:
         "vmaf_model": sweep.score_model,
         "score_backend": opts.score_backend or "",
     }
-    return cache_key(
-        src_sha256=sweep.src_hash,
-        encoder=opts.encoder,
-        preset=preset,
-        crf=crf,
-        adapter_version=str(getattr(sweep.adapter, "adapter_version", "")),
-        ffmpeg_version=sweep.ffmpeg_version,
-        passes=2 if two_pass else 1,
-        sample_clip_seconds=sweep.clip_seconds,
-        sample_clip_start_s=sweep.start_s,
-        settings=settings,
+    return {
+        "encoder": opts.encoder,
+        "preset": preset,
+        "crf": crf,
+        "adapter_version": str(getattr(sweep.adapter, "adapter_version", "")),
+        "ffmpeg_version": sweep.ffmpeg_version,
+        "passes": 2 if two_pass else 1,
+        "sample_clip_seconds": sweep.clip_seconds,
+        "sample_clip_start_s": sweep.start_s,
+        "settings": settings,
+    }
+
+
+def _cell_cache_key(sweep: _Sweep, preset: str, crf: int) -> str:
+    """Return the encode-cache key of one cell (ADR-0298, cache key version 2)."""
+    from .cache import cache_key
+
+    return cache_key(src_sha256=sweep.src_hash, **_cell_params(sweep, preset, crf))
+
+
+def _cell_params_key(sweep: _Sweep, preset: str, crf: int) -> str:
+    """Return the near-duplicate index key of one cell: the cache key without the source (ADR-3372)."""
+    from .cache import params_key
+
+    return params_key(**_cell_params(sweep, preset, crf))
+
+
+def _verify_near_dup_spot(sweep: _Sweep, cached: CachedResult) -> bool:
+    """Spot-check 1 second of query source against cached encode (ADR-3372).
+
+    Refuses near-duplicate reuse if |vmaf_spot - vmaf_cached| > NEAR_DUP_SPOT_MAX_DELTA.
+    """
+    if not (cached.artifact_path and cached.artifact_path.exists()):
+        return False
+    from .score import ScoreRequest, run_score
+
+    job = sweep.job
+    opts = sweep.opts
+    fps = float(job.framerate) if float(job.framerate) > 0.0 else 24.0
+    frame_cnt = max(1, int(fps))
+
+    score_req = ScoreRequest(
+        reference=job.source,
+        distorted=cached.artifact_path,
+        width=int(job.width),
+        height=int(job.height),
+        pix_fmt=job.pix_fmt,
+        frame_skip_ref=0,
+        frame_cnt=frame_cnt,
+        duration_s=1.0,
     )
+    try:
+        spot_res = run_score(
+            score_req,
+            vmaf_bin=opts.vmaf_bin,
+            backend=opts.score_backend,
+        )
+        delta = abs(float(spot_res.vmaf_score) - float(cached.vmaf_score))
+        return delta <= NEAR_DUP_SPOT_MAX_DELTA
+    except (OSError, subprocess.SubprocessError, ValueError) as exc:
+        _LOG.warning("vmaf-tune: near-dup spot verify failed: %s", exc)
+        return False
 
 
 def _cached_row(sweep: _Sweep, preset: str, crf: int) -> dict[str, Any] | None:
@@ -940,9 +1030,25 @@ def _cached_row(sweep: _Sweep, preset: str, crf: int) -> dict[str, Any] | None:
     if sweep.tune_cache is None or not sweep.src_hash:
         return None
     cached = sweep.tune_cache.get(_cell_cache_key(sweep, preset, crf))
-    if cached is None or cached.row is None:
-        return None
-    return _cache_hit_row(sweep, cached)
+    if cached is not None and cached.row is not None:
+        return _cache_hit_row(sweep, cached)
+
+    # Secondary lookup: near-duplicate perceptual fingerprint (ADR-3372)
+    if sweep.opts.near_dup_reuse and sweep.fingerprint is not None:
+        pkey = _cell_params_key(sweep, preset, crf)
+        hit = sweep.tune_cache.get_near_duplicate(sweep.fingerprint, pkey)
+        if hit is not None:
+            cached_res, record = hit
+            if cached_res.row is not None:
+                if sweep.opts.near_dup_verify and not _verify_near_dup_spot(sweep, cached_res):
+                    _LOG.info(
+                        "vmaf-tune: near-dup verify rejected match for %s against %s",
+                        sweep.job.source,
+                        record.matched_src_sha256,
+                    )
+                    return None
+                return _cache_hit_row(sweep, cached_res)
+    return None
 
 
 # Provenance columns a cache hit stamps afresh; every other column is
@@ -963,6 +1069,10 @@ def _cache_hit_row(sweep: _Sweep, cached: CachedResult) -> dict[str, Any]:
         "encode_path": str(cached.artifact_path) if sweep.opts.keep_encodes else "",
     }
     stored = dict(cached.row or {})
+    if cached.near_dup is not None:
+        stored["near_dup_match"] = True
+        stored["near_dup_matched_src_sha256"] = cached.near_dup.matched_src_sha256
+        stored["near_dup_segment_ratios"] = list(cached.near_dup.segment_ratios)
     return {key: fresh.get(key, stored.get(key, math.nan)) for key in _row_key_order(stored)}
 
 
@@ -1218,6 +1328,8 @@ def _cache_put(
 
     stored_row = {k: v for k, v in row.items() if k not in _CACHE_PROVENANCE_KEYS}
     try:
+        fp = sweep.fingerprint if sweep.opts.near_dup_reuse else None
+        pkey = _cell_params_key(sweep, preset, crf) if sweep.opts.near_dup_reuse else None
         sweep.tune_cache.put(
             _cell_cache_key(sweep, preset, crf),
             CachedResult(
@@ -1233,6 +1345,9 @@ def _cache_put(
                 row=stored_row,
             ),
             artifact_path=out,
+            fingerprint=fp,
+            params_key=pkey,
+            src_sha256=sweep.src_hash,
         )
     except (OSError, ValueError, TypeError) as exc:
         _LOG.warning("vmaf-tune: encode cache put failed for %s: %s", out.name, exc)

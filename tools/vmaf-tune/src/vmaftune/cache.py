@@ -75,6 +75,15 @@ DEFAULT_SIZE_BYTES = 10 * 1024 * 1024 * 1024  # 10 GiB
 
 
 @dataclasses.dataclass(frozen=True)
+class NearDupRecord:
+    """Provenance record when a result is reused from a near-duplicate match (ADR-3372)."""
+
+    matched_src_sha256: str
+    segment_ratios: tuple[float, float, float]
+    matched_key: str = ""
+
+
+@dataclasses.dataclass(frozen=True)
 class CachedResult:
     """The parsed tuple a hit returns alongside the artifact path.
 
@@ -96,6 +105,8 @@ class CachedResult:
     # (``run_id``, ``timestamp``, ``encode_path``); a hit replays it so
     # the hit row equals the miss row. ``None`` when the entry has none.
     row: Mapping[str, Any] | None = None
+    # ADR-3372 near-duplicate match record when reused via perceptual fingerprint
+    near_dup: NearDupRecord | None = None
 
 
 def _xdg_cache_home() -> Path:
@@ -109,6 +120,42 @@ def _xdg_cache_home() -> Path:
 def default_cache_dir() -> Path:
     """``$XDG_CACHE_HOME/vmaf-tune`` (or ``~/.cache/vmaf-tune``)."""
     return _xdg_cache_home() / "vmaf-tune"
+
+
+def _trial_digest(label: str, identity: Mapping[str, Any], params: Mapping[str, Any]) -> str:
+    """Validate trial parameters and return the SHA-256 of their canonical JSON.
+
+    ``identity`` holds the text fields that must be non-empty (the source
+    hash for :func:`cache_key`, nothing more for :func:`params_key`).
+    """
+    texts = {
+        **identity,
+        "encoder": params["encoder"],
+        "preset": params["preset"],
+        "adapter_version": params["adapter_version"],
+        "ffmpeg_version": params["ffmpeg_version"],
+    }
+    for name, value in texts.items():
+        if not value:
+            raise ValueError(f"{label} requires non-empty {name}")
+    passes = params["passes"]
+    if passes not in (1, 2):
+        raise ValueError(f"{label}: passes must be 1 or 2, got {passes}")
+    payload = {
+        "v": CACHE_VERSION,
+        **identity,
+        "encoder": params["encoder"],
+        "preset": params["preset"],
+        "crf": int(params["crf"]),
+        "adapter_version": params["adapter_version"],
+        "ffmpeg_version": params["ffmpeg_version"],
+        "passes": int(passes),
+        "sample_clip_seconds": float(params["sample_clip_seconds"]),
+        "sample_clip_start_s": float(params["sample_clip_start_s"]),
+        "settings": dict(params["settings"] or {}),
+    }
+    blob = json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
 def cache_key(
@@ -134,32 +181,48 @@ def cache_key(
     canonical JSON (``sort_keys=True``, ``separators=(",", ":")``) so
     the digest is stable across Python versions and dict orderings.
     """
-    for name, value in (
-        ("src_sha256", src_sha256),
-        ("encoder", encoder),
-        ("preset", preset),
-        ("adapter_version", adapter_version),
-        ("ffmpeg_version", ffmpeg_version),
-    ):
-        if not value:
-            raise ValueError(f"cache_key requires non-empty {name}")
-    if passes not in (1, 2):
-        raise ValueError(f"cache_key: passes must be 1 or 2, got {passes}")
-    payload = {
-        "v": CACHE_VERSION,
-        "src_sha256": src_sha256,
+    params = {
         "encoder": encoder,
         "preset": preset,
-        "crf": int(crf),
+        "crf": crf,
         "adapter_version": adapter_version,
         "ffmpeg_version": ffmpeg_version,
-        "passes": int(passes),
-        "sample_clip_seconds": float(sample_clip_seconds),
-        "sample_clip_start_s": float(sample_clip_start_s),
-        "settings": dict(settings or {}),
+        "passes": passes,
+        "sample_clip_seconds": sample_clip_seconds,
+        "sample_clip_start_s": sample_clip_start_s,
+        "settings": settings,
     }
-    blob = json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False)
-    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+    return _trial_digest("cache_key", {"src_sha256": src_sha256}, params)
+
+
+def params_key(
+    *,
+    encoder: str,
+    preset: str,
+    crf: int,
+    adapter_version: str,
+    ffmpeg_version: str,
+    passes: int = 1,
+    sample_clip_seconds: float = 0.0,
+    sample_clip_start_s: float = 0.0,
+    settings: Mapping[str, Any] | None = None,
+) -> str:
+    """Return the digest of :func:`cache_key`'s inputs without the source hash (ADR-3372).
+
+    The secondary index key for near-duplicate fingerprint reuse.
+    """
+    params = {
+        "encoder": encoder,
+        "preset": preset,
+        "crf": crf,
+        "adapter_version": adapter_version,
+        "ffmpeg_version": ffmpeg_version,
+        "passes": passes,
+        "sample_clip_seconds": sample_clip_seconds,
+        "sample_clip_start_s": sample_clip_start_s,
+        "settings": settings,
+    }
+    return _trial_digest("params_key", {}, params)
 
 
 def _row_to_meta(row: Mapping[str, Any]) -> list[list[Any]]:
@@ -204,6 +267,7 @@ class TuneCache:
     INDEX_NAME = "__index__.json"
     META_DIR = "meta"
     BLOB_DIR = "blobs"
+    FINGERPRINT_DIR = "fingerprints"
 
     def __init__(
         self,
@@ -216,6 +280,7 @@ class TuneCache:
         self.path.mkdir(parents=True, exist_ok=True)
         (self.path / self.META_DIR).mkdir(exist_ok=True)
         (self.path / self.BLOB_DIR).mkdir(exist_ok=True)
+        (self.path / self.FINGERPRINT_DIR).mkdir(exist_ok=True)
         self._index_cache: dict[str, float] | None = None
         self._index_dirty = False
 
@@ -261,6 +326,9 @@ class TuneCache:
     def _blob_path(self, key: str) -> Path:
         return self.path / self.BLOB_DIR / f"{key}.bin"
 
+    def _fp_path(self, key: str) -> Path:
+        return self.path / self.FINGERPRINT_DIR / f"{key}.json"
+
     # -- public API --------------------------------------------------
 
     def get(self, key: str) -> CachedResult | None:
@@ -305,12 +373,17 @@ class TuneCache:
         key: str,
         result: CachedResult,
         artifact_path: Path,
+        *,
+        fingerprint: Any | None = None,
+        params_key: str | None = None,
+        src_sha256: str | None = None,
     ) -> CachedResult:
         """Store ``artifact_path`` + parsed ``result`` under ``key``.
 
         The artifact is copied (not moved) so callers retain ownership
         of the original. Returns a refreshed ``CachedResult`` whose
-        ``artifact_path`` points at the cached copy.
+        ``artifact_path`` points at the cached copy. When ``fingerprint``
+        is provided, a sidecar JSON is stored alongside for near-dup reuse.
         """
         if not artifact_path.exists():
             raise FileNotFoundError(f"artifact missing: {artifact_path}")
@@ -337,6 +410,15 @@ class TuneCache:
             payload["row"] = _row_to_meta(result.row)
         write_json_strict(meta, payload, indent=None, trailing_newline=False)
 
+        if fingerprint is not None:
+            fp_raw = fingerprint.to_dict() if hasattr(fingerprint, "to_dict") else fingerprint
+            fp_payload = {
+                "src_sha256": str(src_sha256 or ""),
+                "params_key": str(params_key or ""),
+                "fingerprint": fp_raw,
+            }
+            write_json_strict(self._fp_path(key), fp_payload, indent=None, trailing_newline=False)
+
         index = self._read_index()
         index[key] = time.time()
         self._index_dirty = True
@@ -361,7 +443,7 @@ class TuneCache:
     def total_bytes(self) -> int:
         """Sum of meta + blob bytes across all entries."""
         total = 0
-        for sub in (self.META_DIR, self.BLOB_DIR):
+        for sub in (self.META_DIR, self.BLOB_DIR, self.FINGERPRINT_DIR):
             d = self.path / sub
             if not d.exists():
                 continue
@@ -404,9 +486,62 @@ class TuneCache:
         return evicted
 
     def _drop(self, key: str) -> None:
-        for p in (self._meta_path(key), self._blob_path(key)):
+        for p in (self._meta_path(key), self._blob_path(key), self._fp_path(key)):
             with contextlib.suppress(OSError):
                 p.unlink()
+
+    def get_near_duplicate(
+        self,
+        fingerprint: Any,
+        params_key_str: str,
+    ) -> tuple[CachedResult, NearDupRecord] | None:
+        """Find cached result for near-duplicate source matching fingerprint and params_key."""
+        from .fingerprint import VideoFingerprint, match
+
+        query_fp = (
+            fingerprint
+            if isinstance(fingerprint, VideoFingerprint)
+            else VideoFingerprint.from_dict(fingerprint)
+        )
+        fp_dir = self.path / self.FINGERPRINT_DIR
+        if not fp_dir.exists():
+            return None
+
+        index = self._read_index()
+        keys_sorted = sorted(self.keys(), key=lambda k: index.get(k, 0.0), reverse=True)
+
+        for candidate_key in keys_sorted:
+            fp_path = self._fp_path(candidate_key)
+            if not fp_path.exists():
+                continue
+            try:
+                with fp_path.open("r", encoding="utf-8") as fh:
+                    entry = json.load(fh)
+            except (OSError, json.JSONDecodeError):
+                continue
+            if not isinstance(entry, dict) or entry.get("params_key") != params_key_str:
+                continue
+
+            raw_fp = entry.get("fingerprint")
+            if not isinstance(raw_fp, dict):
+                continue
+            try:
+                candidate_fp = VideoFingerprint.from_dict(raw_fp)
+            except (KeyError, TypeError, ValueError):
+                continue
+
+            match_res = match(query_fp, candidate_fp)
+            if match_res.accepted:
+                cached = self.get(candidate_key)
+                if cached is not None:
+                    record = NearDupRecord(
+                        matched_src_sha256=str(entry.get("src_sha256", "")),
+                        segment_ratios=match_res.segment_ratios,
+                        matched_key=candidate_key,
+                    )
+                    cached_with_record = dataclasses.replace(cached, near_dup=record)
+                    return cached_with_record, record
+        return None
 
     # -- ergonomic helpers used by `corpus.py` -----------------------
 
@@ -427,7 +562,9 @@ __all__ = [
     "CACHE_VERSION",
     "DEFAULT_SIZE_BYTES",
     "CachedResult",
+    "NearDupRecord",
     "TuneCache",
     "cache_key",
     "default_cache_dir",
+    "params_key",
 ]

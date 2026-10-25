@@ -435,6 +435,18 @@ def _add_corpus_runtime_args(corpus: argparse.ArgumentParser) -> None:
             "diverse content. See ADR-0301."
         ),
     )
+    corpus.add_argument(
+        "--near-dup-reuse",
+        action="store_true",
+        default=False,
+        help="reuse cached results for near-duplicate sources via perceptual video fingerprint (ADR-3372)",
+    )
+    corpus.add_argument(
+        "--near-dup-verify",
+        action="store_true",
+        default=False,
+        help="verify near-duplicate match with a 1-second VMAF spot check; refuse if delta > 1.5 VMAF points",
+    )
     _add_coarse_to_fine_flags(corpus)
 
 
@@ -2037,6 +2049,18 @@ def _add_recommend_execution_args(p: argparse.ArgumentParser) -> None:
             "support it. Default off; see `vmaf-tune corpus --help`."
         ),
     )
+    p.add_argument(
+        "--near-dup-reuse",
+        action="store_true",
+        default=False,
+        help="reuse cached results for near-duplicate sources via perceptual video fingerprint (ADR-3372)",
+    )
+    p.add_argument(
+        "--near-dup-verify",
+        action="store_true",
+        default=False,
+        help="verify near-duplicate match with a 1-second VMAF spot check; refuse if delta > 1.5 VMAF points",
+    )
     _add_coarse_to_fine_flags(p)
     _add_recommend_uncertainty_flags(p)
 
@@ -2146,6 +2170,8 @@ def _build_opts(args: argparse.Namespace) -> CorpusOptions:
         hdr_mode=getattr(args, "hdr_mode", "auto"),
         ffprobe_bin=getattr(args, "ffprobe_bin", "ffprobe"),
         two_pass=getattr(args, "two_pass", False),
+        near_dup_reuse=bool(getattr(args, "near_dup_reuse", False)),
+        near_dup_verify=bool(getattr(args, "near_dup_verify", False)),
         # ADR-0289: an explicit --vmaf-model scores every row with it;
         # without one the height rule picks the model per row.
         resolution_aware=explicit_model is None,
