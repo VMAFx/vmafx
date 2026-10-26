@@ -8,6 +8,29 @@ search:
 # Rebase notes
 
 <!-- rebase-notes:fragments:begin (rendered from docs/rebase-notes.d/; do not edit) -->
+## Upstream watcher label creation and failure guard (2026-10-25)
+
+- `scripts/upstream-watcher/ensure_label.sh` ensures `upstream-blocked` exists
+  before `upstream-watcher.yml` opens tracking issues, avoiding failures when the
+  label is missing.
+- `scripts/ci/scheduled-failure-issue.sh` generalizes scheduled failure issue
+  reporting (comment on open issue with the same title or create); `tidy-drift-issue.sh`
+  is now a thin wrapper over it.
+- `upstream-watcher.yml` adds the `scheduled-failure` guard job to notify maintainers
+  when scheduled runs fail.
+- Netflix upstream commits `5a50df8af` (`not-applicable`) and `f712fa756` (`ported`)
+  are disposed; `f712fa756` ports the `Ubuntu gcc zimg` matrix build to
+  `libvmaf-build-matrix.yml` and `required-aggregator.yml`.
+
+## Semgrep outside the Python locks (2026-10-25)
+
+Fork-only. `requirements/locks/tooling-tests.in` must not regain `semgrep`; the vendored-scope
+test reads the Semgrep image from `.github/workflows/security-scans.yml` and needs exactly one
+digest-pinned `semgrep/semgrep` image line there. The `mcp` entry of
+`.config/lint-exceptions.d/dependency-advisory.toml` and the GHSA-84m7 block of
+`osv-scanner.toml` are gone; an upstream sync has nothing to merge here
+([ADR-3375](../adr/3375-semgrep-outside-python-locks.md)).
+
 ## Content-aware video classification in vmaf-tune (2026-10-25)
 
 - `tools/vmaf-tune/src/vmaftune/classify.py`: implements `ContentTags` frozen

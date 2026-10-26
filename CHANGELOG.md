@@ -2095,6 +2095,13 @@
   installs the pinned release.
 
 
+- **The root `pyproject.toml` explains why black targets Python 3.10.** Black's target is the
+  oldest interpreter any package of the tree supports, not the root `requires-python`: a 3.14
+  target writes `except A, B:` clauses that the packages supporting Python 3.10 to 3.13 cannot
+  parse. The change also resubmits the root dependency graph, which still listed setuptools
+  84.0.0 and 84.2.0 after every manifest moved to 84.2.1.
+
+
 - CI: the `build.yml` legs (`Linux Intel LLVM`, `macOS Clang+Metal`,
   `Windows MSVC+CUDA (full)`) now run when a pull request changes files under
   `python/` or `compat/`, their lock files or the fixture prune script. They
@@ -2870,6 +2877,13 @@
   (`T-UPSTREAM-WATCH-RETRY-DELAY-2026-10-18`).
 
 
+- **The upstream-watcher workflow creates its tracking label before filing issues.**
+  `upstream-watcher.yml` failed when `upstream-blocked` was missing from the repository.
+  Both jobs now call `scripts/upstream-watcher/ensure_label.sh` to ensure the label
+  exists idempotently, and a new `scheduled-failure` guard job reports scheduled runs
+  that fail using `scripts/ci/scheduled-failure-issue.sh`.
+
+
 - CI: upstream watcher workflows fail closed on GitHub search API rate limits. In run 38142503890,
   `gh api search/code` rate-limit errors were swallowed by `|| echo 0`, printing JSON that broke
   comparison logic and nearly created a false upstream-merged tracking issue. All count queries now
@@ -3010,6 +3024,19 @@
   Reports from the previously reviewed v5.5.0 (`c395761d`) are refused, and a
   new test fails when a workflow's action pin and the gate's pin differ. The
   check weights and risk levels are unchanged between the two versions.
+
+
+- **Semgrep no longer comes from a Python lock.** `semgrep` pinned `mcp` 1.29.0 and
+  `opentelemetry-api` 1.37 exactly, so their advisories stayed open against
+  `requirements/locks/tooling-tests.txt`. The vendored-scope test now runs Semgrep from the
+  pre-commit hook's environment or the digest-pinned image of the `Semgrep` CI job, both
+  packages leave the lock, and the declared `mcp` exception and its osv-scanner ignore are
+  removed ([ADR-3375](../docs/adr/3375-semgrep-outside-python-locks.md)).
+
+
+- **Build-system floor of the Python package is raised to setuptools 84.1.0.** This excludes
+  releases affected by GHSA-xmj3-9gf7-h52w. Hash-locked build inputs already pin
+  setuptools 84.2.1.
 
 
 - **The maintainer's ruleset bypass at mode `always` is now a declared exception with an end date.**

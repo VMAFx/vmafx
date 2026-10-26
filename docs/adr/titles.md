@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1416), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1417), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5675,3 +5675,7 @@ Every ADR, one heading each (1416), so the site search finds an ADR by its title
 ## ADR-3374: Content-Aware Classifier with Fail-by-Name Vision Backend
 
 [3374-vmaf-tune-classifier-vision-fails-by-name](3374-vmaf-tune-classifier-vision-fails-by-name.md)
+
+## ADR-3375: Semgrep runs outside the repository's Python locks
+
+[3375-semgrep-outside-python-locks](3375-semgrep-outside-python-locks.md)
