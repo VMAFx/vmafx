@@ -4,7 +4,7 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "cc_version": "gcc-15 (Ubuntu 15.2.0-16ubuntu1) 15.2.0",
-  "tus": 543,
+  "tus": 544,
   "measured_sources": [
     "compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_stat.c",
     "compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_std.c",
@@ -275,6 +275,7 @@
     "core/test/test_convolution_horizontal.c",
     "core/test/test_cpu.c",
     "core/test/test_cuda_adm_dwt2_rows.c",
+    "core/test/test_default_model_minimum_input.c",
     "core/test/test_delta_e_itp.c",
     "core/test/test_dict.cpp",
     "core/test/test_dists.c",
@@ -1545,6 +1546,20 @@
         }
       },
       "previous_baseline_sha256": "b2bc54bbc07166b6bf89248ce8e844233a84e5aedaff92b90d66a6291f985b80"
+    },
+    {
+      "sources": [
+        "core/test/test_default_model_minimum_input.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/test/test_default_model_minimum_input.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "8486547dc08f2d8ec53f7ee930be25ec66b7c9bf4f9a110fc64d155d5517ca30"
     }
   ]
 }

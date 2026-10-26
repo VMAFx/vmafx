@@ -48,6 +48,49 @@ Without `--model`, the built-in `vmaf_v1.0.16_3d0h` model is loaded. Without
     576x324 test pair the pooled VMAF moves from `76.667831` to `82.816060`.
     See [models/v1.md](../models/v1.md) for the v1 model family.
 
+### Minimum input size
+
+The default model `vmaf_v1.0.16_3d0h`
+([ADR-1169](../adr/1169-default-model-v1-0-16.md)) reads two features with a
+size limit:
+
+| Feature | Limit | Defined in |
+|---|---|---|
+| [CAMBI](../metrics/cambi.md#frame-sizes) | width or height at least 216 | `CAMBI_MIN_WIDTH_HEIGHT`, `core/src/feature/cambi_internal.h` |
+| `speed_chroma` | chroma width and height at least 80 (luma 160x160 for 4:2:0) | `SPEED_INTERNAL_MIN_DIMENSION`, `core/src/feature/feature_dimensions.h` |
+
+For 4:2:0 input the smallest accepted sizes are 216x160 and 160x216. A smaller
+input is refused before scoring; for 160x120 the CLI prints:
+
+```text
+error: model 'vmaf_v1.0.16_3d0h' requires feature 'cambi', which needs width or height >= 216; got 160x120. Pass --model explicitly to use a different model.
+```
+
+and for 216x158 it names `speed_chroma` (`needs chroma width and height >= 80;
+got 108x79`). A library caller gets `-EINVAL` from `vmaf_read_pictures()` on
+the first frame.
+
+To score a smaller input, either:
+
+1. Scale the reference and the distorted video to at least 216x160 with the
+   same scaler:
+
+   ```shell
+   ffmpeg -f rawvideo -pix_fmt yuv420p -s 160x120 -i ref.yuv \
+     -vf scale=216:160:flags=bicubic -f rawvideo ref_216x160.yuv
+   ffmpeg -f rawvideo -pix_fmt yuv420p -s 160x120 -i dist.yuv \
+     -vf scale=216:160:flags=bicubic -f rawvideo dist_216x160.yuv
+   vmaf --reference ref_216x160.yuv --distorted dist_216x160.yuv \
+     -w 216 -h 160 -p 420 -b 8
+   ```
+
+2. Pick a model without these features explicitly:
+
+   ```shell
+   vmaf --reference ref.yuv --distorted dist.yuv -w 160 -h 120 -p 420 -b 8 \
+     --model version=vmaf_v0.6.1
+   ```
+
 ## Option reference
 
 Every option of `vmaf`, generated from the API definition

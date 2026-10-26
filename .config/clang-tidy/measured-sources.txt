@@ -503,6 +503,7 @@ core/test/test_cuda_ssimulacra2_parity.c
 core/test/test_cuda_twin_option_parity.c
 core/test/test_cuda_vif_log2_table.c
 core/test/test_cuda_vif_min_dim.c
+core/test/test_default_model_minimum_input.c
 core/test/test_delta_e_itp.c
 core/test/test_dict.cpp
 core/test/test_dists.c

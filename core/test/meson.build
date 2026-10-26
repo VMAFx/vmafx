@@ -2216,6 +2216,19 @@ if host_machine.system() == 'linux' and get_option('default_library') != 'shared
     test('test_collector_owns_mounted_model', test_collector_owns_mounted_model, suite : ['fast'])
 endif
 
+# Default model vmaf_v1.0.16_3d0h minimum input dimensions gate: CAMBI requires
+# at least one dimension >= 216. Rejects 160x120 and 215x215, accepts 216x160
+# and 160x216; 216x158 is refused by the speed_chroma limit.
+test_default_model_minimum_input = executable('test_default_model_minimum_input',
+    ['test.c', 'test_default_model_minimum_input.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
+    link_with : vmaf_test_link,
+    c_args : [vmaf_cflags_common],
+    dependencies : [math_lib, pthread_dependency, thread_lib],
+    kwargs : test_link_kwargs,
+)
+test('test_default_model_minimum_input', test_default_model_minimum_input, suite : ['fast'])
+
 # T-MODEL-COLLECTION-GROWTH-FAILURE-UNTESTED-2026-10-01: a failed growth of the
 # model array must leave the collection intact (the fix of Netflix/vmaf PR
 # #1590, which the fork already carries). `-Wl,--wrap=realloc` fails one chosen
