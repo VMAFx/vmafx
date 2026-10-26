@@ -24,10 +24,15 @@
  * in C++ translation units, and libc++ (the Xcode SDK) rejects the std::byte
  * templates that header declares when they land inside C linkage ("templates
  * must have C++ linkage"). Every included header carries its own guard. */
+#ifdef __cplusplus
+#include <cerrno>
+#include <ctime>
+#else
 #include <errno.h>
-#include <pthread.h>
 #include <stdbool.h>
 #include <time.h>
+#endif
+#include <pthread.h>
 
 #include "dict.h"
 #include "model.h"
@@ -92,6 +97,9 @@ typedef struct VmafFeatureCollector {
     struct {
         clock_t begin, end;
     } timer;
+    struct {
+        struct timespec begin, end;
+    } wall_timer;
     pthread_mutex_t lock;
     /* Set to true under lock inside vmaf_feature_collector_destroy() before
      * the final unlock.  All public entry points that acquire lock must test

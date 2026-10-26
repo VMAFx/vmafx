@@ -310,13 +310,13 @@ static char *test_xml_einval_guards(void)
 
     VmafFeatureCollector *fc = vmaf_feature_collector_get(vmaf);
 
-    err = vmaf_write_output_xml(NULL, fc, f, 0, 64, 64, 30.0, 1, NULL);
+    err = vmaf_write_output_xml(NULL, fc, f, 0, 64, 64, 30.0, 30.0, 1, NULL);
     mu_assert("xml: NULL vmaf must return -EINVAL", err == -EINVAL);
 
-    err = vmaf_write_output_xml(vmaf, NULL, f, 0, 64, 64, 30.0, 1, NULL);
+    err = vmaf_write_output_xml(vmaf, NULL, f, 0, 64, 64, 30.0, 30.0, 1, NULL);
     mu_assert("xml: NULL fc must return -EINVAL", err == -EINVAL);
 
-    err = vmaf_write_output_xml(vmaf, fc, NULL, 0, 64, 64, 30.0, 1, NULL);
+    err = vmaf_write_output_xml(vmaf, fc, NULL, 0, 64, 64, 30.0, 30.0, 1, NULL);
     mu_assert("xml: NULL outfile must return -EINVAL", err == -EINVAL);
 
     teardown(vmaf, f, NULL);
@@ -361,6 +361,7 @@ static char *check_xml_basic_structure(const char *out)
     mu_assert("xml: missing <params qualityWidth=\"640\"",
               strstr(out, "<params qualityWidth=\"640\""));
     mu_assert("xml: missing <fyi fps=\"29.97\"", strstr(out, "<fyi fps=\"29.97\""));
+    mu_assert("xml: missing wall_fps=\"60.00\" inside <fyi", strstr(out, "wall_fps=\"60.00\""));
     mu_assert("xml: missing <frames>", strstr(out, "<frames>"));
     mu_assert("xml: missing </frames>", strstr(out, "</frames>"));
     return NULL;
@@ -413,7 +414,7 @@ static char *test_xml_basic(void)
 
     err = vmaf_write_output_xml(vmaf, fc, f, /*subsample=*/0,
                                 /*width=*/640, /*height=*/360, /*fps=*/29.97,
-                                /*pic_cnt=*/2, /*score_format=*/NULL);
+                                /*wall_fps=*/60.00, /*pic_cnt=*/2, /*score_format=*/NULL);
     mu_assert("xml: writer returned non-zero", !err);
 
     char *out = slurp(f);
@@ -429,6 +430,9 @@ static char *check_json_basic_structure(const char *out)
     /* Top-level scalar fields. */
     mu_assert("json: missing \"version\"", strstr(out, "\"version\":"));
     mu_assert("json: missing \"fps\": 24.00", strstr(out, "\"fps\": 24.00"));
+    mu_assert("json: missing \"wall_fps\": 30.00", strstr(out, "\"wall_fps\": 30.00"));
+    mu_assert("json: \"wall_fps\" must directly follow \"fps\"",
+              strstr(out, "\"fps\": 24.00,\n  \"wall_fps\": 30.00,") != NULL);
     /* Frames array. */
     mu_assert("json: missing \"frames\":", strstr(out, "\"frames\":"));
     mu_assert("json: missing \"frameNum\"", strstr(out, "\"frameNum\":"));
@@ -499,7 +503,7 @@ static char *test_json_basic_and_format(void)
 
     /* Use "%.17g" — the round-trip lossless ADR-0119 format. */
     err = vmaf_write_output_json(vmaf, fc, f, /*subsample=*/0,
-                                 /*fps=*/24.0, /*pic_cnt=*/2, "%.17g");
+                                 /*fps=*/24.0, /*wall_fps=*/30.0, /*pic_cnt=*/2, "%.17g");
     mu_assert("json: writer returned non-zero", !err);
 
     char *out = slurp(f);
@@ -514,6 +518,8 @@ static char *check_json_nan_inf_output(const char *out)
 {
     /* fps null branch (FP_NAN). */
     mu_assert("json: NaN fps must serialize as \"fps\": null", strstr(out, "\"fps\": null"));
+    mu_assert("json: NaN wall_fps must serialize as \"wall_fps\": null",
+              strstr(out, "\"wall_fps\": null"));
     /* Frame metric NaN -> per-feature null. */
     mu_assert("json: NaN frame metric must serialize as null", strstr(out, "\"feat_nan\": null"));
     /* Aggregate +Inf -> null. */
@@ -549,7 +555,7 @@ static char *test_json_nan_and_inf(void)
 
     /* fps=NaN -> top-level "fps": null branch in vmaf_write_output_json. */
     err = vmaf_write_output_json(vmaf, fc, f, /*subsample=*/0,
-                                 /*fps=*/NAN, /*pic_cnt=*/1, NULL);
+                                 /*fps=*/NAN, /*wall_fps=*/NAN, /*pic_cnt=*/1, NULL);
     mu_assert("json: writer returned non-zero", !err);
 
     char *out = slurp(f);
@@ -563,6 +569,9 @@ static char *test_json_nan_and_inf(void)
 static char *check_json_empty_collector_output(const char *out)
 {
     mu_assert("json: empty collector still emits skeleton open '{'", out[0] == '{');
+    mu_assert("json: 0.0 fps must serialize as \"fps\": 0.00", strstr(out, "\"fps\": 0.00"));
+    mu_assert("json: 0.0 wall_fps must serialize as \"wall_fps\": 0.00",
+              strstr(out, "\"wall_fps\": 0.00"));
     mu_assert("json: empty collector emits frames block", strstr(out, "\"frames\":"));
     mu_assert("json: empty collector emits pooled_metrics block",
               strstr(out, "\"pooled_metrics\":"));
@@ -585,7 +594,7 @@ static char *test_json_empty_collector(void)
     mu_assert("tmpfile failed", f);
 
     err = vmaf_write_output_json(vmaf, vmaf_feature_collector_get(vmaf), f, /*subsample=*/0,
-                                 /*fps=*/30.0, /*pic_cnt=*/0, NULL);
+                                 /*fps=*/0.0, /*wall_fps=*/0.0, /*pic_cnt=*/0, NULL);
     mu_assert("json: writer returned non-zero on empty collector", !err);
 
     char *out = slurp(f);
@@ -789,6 +798,8 @@ static char *check_pic_cnt_zero_json(const char *out)
     mu_assert("JSON pc0: missing frames block", strstr(out, "\"frames\":"));
     mu_assert("JSON pc0: missing feat_injected in output", strstr(out, "feat_injected"));
     mu_assert("JSON pc0: missing pooled_metrics block", strstr(out, "\"pooled_metrics\":"));
+    mu_assert("JSON pc0: missing fps 0.00", strstr(out, "\"fps\": 0.00"));
+    mu_assert("JSON pc0: missing wall_fps 0.00", strstr(out, "\"wall_fps\": 0.00"));
     return NULL;
 }
 
@@ -812,6 +823,7 @@ static char *check_pic_cnt_zero_xml(const char *out)
 {
     mu_assert("XML pc0: missing <VMAF> root", strstr(out, "<VMAF"));
     mu_assert("XML pc0: missing pooled_metrics block", strstr(out, "<pooled_metrics>"));
+    mu_assert("XML pc0: missing fyi wall_fps 0.00", strstr(out, "wall_fps=\"0.00\""));
     return NULL;
 }
 
@@ -862,6 +874,74 @@ static char *test_write_output_pic_cnt_zero(void)
     return NULL;
 }
 
+static VmafFeatureCollector *wall_fps_fixture(VmafContext **vmaf)
+{
+    VmafConfiguration cfg = {0};
+    if (vmaf_init(vmaf, cfg) != 0) {
+        return NULL;
+    }
+    VmafFeatureCollector *fc = vmaf_feature_collector_get(*vmaf);
+    if (fc == NULL) {
+        return NULL;
+    }
+    /* 10 s CPU time against 1 s wall time. */
+    fc->timer.begin = 0;
+    fc->timer.end = (clock_t)(10 * CLOCKS_PER_SEC);
+    fc->wall_timer.begin.tv_sec = 100;
+    fc->wall_timer.begin.tv_nsec = 0;
+    fc->wall_timer.end.tv_sec = 101;
+    fc->wall_timer.end.tv_nsec = 0;
+    return fc;
+}
+
+static char *test_output_wall_fps_zero_guards(void)
+{
+    VmafContext *vmaf = NULL;
+    VmafFeatureCollector *fc = wall_fps_fixture(&vmaf);
+    mu_assert("wall_fps fixture failed", fc != NULL);
+
+    /* Boundary: pic_cnt == 0 -> both helpers return 0.0 */
+    vmaf_context_set_pic_cnt_for_test(vmaf, 0);
+    mu_assert("fps must be 0.0 when pic_cnt == 0", vmaf_output_fps_for_test(vmaf) == 0.0);
+    mu_assert("wall_fps must be 0.0 when pic_cnt == 0", vmaf_output_wall_fps_for_test(vmaf) == 0.0);
+
+    /* Boundary: elapsed == 0 -> both helpers return 0.0 */
+    vmaf_context_set_pic_cnt_for_test(vmaf, 10);
+    fc->timer.end = fc->timer.begin;
+    fc->wall_timer.end = fc->wall_timer.begin;
+    mu_assert("fps must be 0.0 when timer elapsed is 0", vmaf_output_fps_for_test(vmaf) == 0.0);
+    mu_assert("wall_fps must be 0.0 when wall_timer elapsed is 0",
+              vmaf_output_wall_fps_for_test(vmaf) == 0.0);
+
+    (void)vmaf_close(vmaf);
+    return NULL;
+}
+
+static char *test_output_wall_fps_divergence(void)
+{
+    VmafContext *vmaf = NULL;
+    VmafFeatureCollector *fc = wall_fps_fixture(&vmaf);
+    mu_assert("wall_fps fixture failed", fc != NULL);
+
+    /* 10 frames over 10 CPU seconds vs 1 wall second: wall_fps is not
+     * derived from CPU time. */
+    vmaf_context_set_pic_cnt_for_test(vmaf, 10);
+    const double cpu_fps = vmaf_output_fps_for_test(vmaf);
+    const double wall_fps = vmaf_output_wall_fps_for_test(vmaf);
+
+    mu_assert("cpu_fps must be 1.0 (10 frames / 10s CPU)", fabs(cpu_fps - 1.0) < 1e-6);
+    mu_assert("wall_fps must be 10.0 (10 frames / 1s wall)", fabs(wall_fps - 10.0) < 1e-6);
+    mu_assert("wall_fps must not equal cpu_fps", fabs(wall_fps - cpu_fps) > 1.0);
+
+    /* Boundary: wall timer end < begin (backward clock) */
+    fc->wall_timer.end.tv_sec = 99;
+    mu_assert("wall_fps must be 0.0 when elapsed_sec < 0",
+              vmaf_output_wall_fps_for_test(vmaf) == 0.0);
+
+    (void)vmaf_close(vmaf);
+    return NULL;
+}
+
 static char *run_output_tests_part1(void)
 {
     mu_run_test(test_csv_basic);
@@ -879,10 +959,17 @@ static char *run_output_tests_part2(void)
     mu_run_test(test_json_nan_and_inf);
     mu_run_test(test_json_empty_collector);
     mu_run_test(test_vmaf_version);
+    return NULL;
+}
+
+static char *run_output_tests_part3(void)
+{
     mu_run_test(test_write_output_json_path);
     mu_run_test(test_write_output_utf8_path);
     mu_run_test(test_write_output_with_format_custom);
     mu_run_test(test_write_output_pic_cnt_zero);
+    mu_run_test(test_output_wall_fps_zero_guards);
+    mu_run_test(test_output_wall_fps_divergence);
     return NULL;
 }
 
@@ -891,7 +978,10 @@ char *run_tests(void)
     char *msg = run_output_tests_part1();
     if (msg)
         return msg;
-    return run_output_tests_part2();
+    msg = run_output_tests_part2();
+    if (msg)
+        return msg;
+    return run_output_tests_part3();
 }
 
 /* NOLINTEND(modernize-use-nullptr) */

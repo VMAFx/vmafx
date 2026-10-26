@@ -210,7 +210,7 @@ static char *test_output_xml_with_comma_locale(void)
     FILE *tmpf = vmaf_tmpfile_portable();
     mu_assert("tmpfile creation failed", tmpf != NULL);
 
-    err = vmaf_write_output_xml(vmaf, fc, tmpf, 1, 1920, 1080, 24.0, 1, NULL);
+    err = vmaf_write_output_xml(vmaf, fc, tmpf, 1, 1920, 1080, 24.0, 24.0, 1, NULL);
     mu_assert("vmaf_write_output_xml failed", !err);
 
     char output[4096];
@@ -260,7 +260,7 @@ static char *test_output_json_with_comma_locale(void)
     FILE *tmpf = vmaf_tmpfile_portable();
     mu_assert("tmpfile creation failed", tmpf != NULL);
 
-    err = vmaf_write_output_json(vmaf, fc, tmpf, 1, 24.0, 1, NULL);
+    err = vmaf_write_output_json(vmaf, fc, tmpf, 1, 24.0, 24.0, 1, NULL);
     mu_assert("vmaf_write_output_json failed", !err);
 
     char output[4096];

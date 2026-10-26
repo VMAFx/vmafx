@@ -5328,18 +5328,30 @@ static double output_fps(const VmafContext *vmaf)
     return (double)vmaf->pic_cnt / ((double)timer_elapsed / (double)CLOCKS_PER_SEC);
 }
 
+static double output_wall_fps(const VmafContext *vmaf)
+{
+    const double elapsed_sec = (double)(vmaf->feature_collector->wall_timer.end.tv_sec -
+                                        vmaf->feature_collector->wall_timer.begin.tv_sec) +
+                               (double)(vmaf->feature_collector->wall_timer.end.tv_nsec -
+                                        vmaf->feature_collector->wall_timer.begin.tv_nsec) *
+                                   1e-9;
+    if (vmaf->pic_cnt == 0 || elapsed_sec <= 0.0)
+        return 0.0;
+    return (double)vmaf->pic_cnt / elapsed_sec;
+}
+
 /* Route to the writer for `fmt`; -EINVAL for an unknown format. */
 static int output_write(VmafContext *vmaf, enum VmafOutputFormat fmt, FILE *outfile, double fps,
-                        const char *score_format)
+                        double wall_fps, const char *score_format)
 {
     switch (fmt) {
     case VMAF_OUTPUT_FORMAT_XML:
         return vmaf_write_output_xml(vmaf, vmaf->feature_collector, outfile, vmaf->cfg.n_subsample,
-                                     vmaf->pic_params.w, vmaf->pic_params.h, fps, vmaf->pic_cnt,
-                                     score_format);
+                                     vmaf->pic_params.w, vmaf->pic_params.h, fps, wall_fps,
+                                     vmaf->pic_cnt, score_format);
     case VMAF_OUTPUT_FORMAT_JSON:
         return vmaf_write_output_json(vmaf, vmaf->feature_collector, outfile, vmaf->cfg.n_subsample,
-                                      fps, vmaf->pic_cnt, score_format);
+                                      fps, wall_fps, vmaf->pic_cnt, score_format);
     case VMAF_OUTPUT_FORMAT_CSV:
         return vmaf_write_output_csv(vmaf->feature_collector, outfile, vmaf->cfg.n_subsample,
                                      score_format);
@@ -5380,7 +5392,7 @@ int vmaf_write_output_with_format(VmafContext *vmaf, const char *output_path,
     if (!outfile)
         return -EIO;
 
-    ret = output_write(vmaf, fmt, outfile, output_fps(vmaf), score_format);
+    ret = output_write(vmaf, fmt, outfile, output_fps(vmaf), output_wall_fps(vmaf), score_format);
 
     if (fclose(outfile) != 0 && ret == 0)
         ret = -EIO;
@@ -5425,6 +5437,22 @@ int vmaf_context_flush_threaded_for_test(VmafContext *vmaf)
 int vmaf_context_flush_for_test(VmafContext *vmaf)
 {
     return vmaf ? flush_context(vmaf) : -EINVAL;
+}
+
+double vmaf_output_fps_for_test(const VmafContext *vmaf)
+{
+    return vmaf ? output_fps(vmaf) : 0.0;
+}
+
+double vmaf_output_wall_fps_for_test(const VmafContext *vmaf)
+{
+    return vmaf ? output_wall_fps(vmaf) : 0.0;
+}
+
+void vmaf_context_set_pic_cnt_for_test(VmafContext *vmaf, unsigned pic_cnt)
+{
+    if (vmaf)
+        vmaf->pic_cnt = pic_cnt;
 }
 
 int vmaf_backend_twin_verdict_for_test(const VmafFeatureExtractor *twin, const VmafDictionary *opts,

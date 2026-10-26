@@ -21,15 +21,24 @@
 #define VMAF_SRC_OUTPUT_H_
 
 #ifdef __cplusplus
+#include <cstdio>
+#else
+#include <stdio.h>
+#endif
+
+#include "feature/feature_collector.h"
+#include "libvmaf/libvmaf.h"
+
+#ifdef __cplusplus
 extern "C" {
 #endif
 
 int vmaf_write_output_xml(VmafContext *vmaf, VmafFeatureCollector *fc, FILE *outfile,
                           unsigned subsample, unsigned width, unsigned height, double fps,
-                          unsigned pic_cnt, const char *score_format);
+                          double wall_fps, unsigned pic_cnt, const char *score_format);
 
 int vmaf_write_output_json(VmafContext *vmaf, VmafFeatureCollector *fc, FILE *outfile,
-                           unsigned subsample, double fps, unsigned pic_cnt,
+                           unsigned subsample, double fps, double wall_fps, unsigned pic_cnt,
                            const char *score_format);
 
 int vmaf_write_output_csv(VmafFeatureCollector *fc, FILE *outfile, unsigned subsample,

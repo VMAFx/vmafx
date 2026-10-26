@@ -633,6 +633,7 @@ static bool environment(const char *path)
     static const char *const exact[] = {
         "version",
         "fps",
+        "wall_fps",
         "provenance.version",
         "provenance.commit",
         "provenance.build_id",

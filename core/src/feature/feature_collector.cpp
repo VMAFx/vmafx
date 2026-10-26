@@ -17,6 +17,7 @@
  *
  */
 
+#include <chrono>
 #include <cerrno>
 #include <cstdint>
 #include <pthread.h>
@@ -728,6 +729,20 @@ void feature_collector_dispatch_metadata(VmafFeatureCollector *feature_collector
     }
 }
 
+struct timespec wall_clock_now()
+{
+    using namespace std::chrono;
+    const auto now = steady_clock::now().time_since_epoch();
+    const auto s = duration_cast<seconds>(now);
+    const auto ns = duration_cast<nanoseconds>(now - s);
+    struct timespec ts;
+    ts.tv_sec = static_cast<time_t>(s.count());
+    ts.tv_nsec = static_cast<long>(ns.count());
+    if (ts.tv_sec == 0 && ts.tv_nsec == 0)
+        ts.tv_nsec = 1;
+    return ts;
+}
+
 } // namespace
 
 int vmaf_feature_collector_append(VmafFeatureCollector *feature_collector, const char *feature_name,
@@ -746,6 +761,8 @@ int vmaf_feature_collector_append(VmafFeatureCollector *feature_collector, const
 
     if (!feature_collector->timer.begin)
         feature_collector->timer.begin = clock();
+    if (!feature_collector->wall_timer.begin.tv_sec && !feature_collector->wall_timer.begin.tv_nsec)
+        feature_collector->wall_timer.begin = wall_clock_now();
 
     FeatureVector *feature_vector = nullptr;
     int err = feature_collector_ensure_vector(feature_collector, feature_name, &feature_vector);
@@ -755,6 +772,7 @@ int vmaf_feature_collector_append(VmafFeatureCollector *feature_collector, const
         feature_collector_dispatch_metadata(feature_collector, feature_name, picture_index, score);
 
     feature_collector->timer.end = clock();
+    feature_collector->wall_timer.end = wall_clock_now();
     pthread_mutex_unlock(&(feature_collector->lock));
     return err;
 }
