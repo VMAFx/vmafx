@@ -286,7 +286,8 @@ void xml_write_provenance(VmafContext *vmaf, FILE *outfile)
 
 [[nodiscard]] int vmaf_write_output_xml(VmafContext *vmaf, VmafFeatureCollector *fc, FILE *outfile,
                                         unsigned subsample, unsigned width, unsigned height,
-                                        double fps, unsigned pic_cnt, const char *score_format)
+                                        double fps, double wall_fps, unsigned pic_cnt,
+                                        const char *score_format)
 {
     if (!vmaf)
         return -EINVAL;
@@ -302,7 +303,7 @@ void xml_write_provenance(VmafContext *vmaf, FILE *outfile)
     (void)std::fprintf(outfile, "<VMAF version=\"%s\">\n", vmaf_version());
     (void)std::fprintf(outfile, "  <params qualityWidth=\"%u\" qualityHeight=\"%u\" />\n", width,
                        height);
-    (void)std::fprintf(outfile, "  <fyi fps=\"%.2f\" />\n", fps);
+    (void)std::fprintf(outfile, "  <fyi fps=\"%.2f\" wall_fps=\"%.2f\" />\n", fps, wall_fps);
 
     xml_write_frames(fc, outfile, subsample, sf);
     xml_write_pooled_and_aggregate(vmaf, fc, outfile, pic_cnt, sf);
@@ -493,8 +494,8 @@ void json_write_provenance(VmafContext *vmaf, FILE *outfile, const char *sf)
 } // namespace
 
 [[nodiscard]] int vmaf_write_output_json(VmafContext *vmaf, VmafFeatureCollector *fc, FILE *outfile,
-                                         unsigned subsample, double fps, unsigned pic_cnt,
-                                         const char *score_format)
+                                         unsigned subsample, double fps, double wall_fps,
+                                         unsigned pic_cnt, const char *score_format)
 {
     /* ADR-0602: mirror the vmaf_write_output_xml NULL guards so the JSON
      * writer is equally defensive.  vmaf and fc are both dereferenced by the
@@ -522,6 +523,18 @@ void json_write_provenance(VmafContext *vmaf, FILE *outfile, const char *sf)
     case FP_NAN:
     default:
         (void)std::fprintf(outfile, "  \"fps\": null,\n");
+        break;
+    }
+    switch (std::fpclassify(wall_fps)) {
+    case FP_NORMAL:
+    case FP_ZERO:
+    case FP_SUBNORMAL:
+        (void)std::fprintf(outfile, "  \"wall_fps\": %.2f,\n", wall_fps);
+        break;
+    case FP_INFINITE:
+    case FP_NAN:
+    default:
+        (void)std::fprintf(outfile, "  \"wall_fps\": null,\n");
         break;
     }
 

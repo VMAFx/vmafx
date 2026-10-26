@@ -1070,7 +1070,7 @@ shown are those of the Netflix pair):
 ```xml
 <VMAF version="<version>">
   <params qualityWidth="576" qualityHeight="324" />
-  <fyi fps="..." />
+  <fyi fps="..." wall_fps="..." />
   <frames>
     <frame frameNum="0" integer_adm2="0.962084" ... psnr_y="34.760779" ... vmaf="83.856284" />
     ...
@@ -1081,6 +1081,14 @@ shown are those of the Netflix pair):
   </pooled_metrics>
 </VMAF>
 ```
+
+In report outputs (XML `<fyi>` and JSON root fields `"fps"` and `"wall_fps"`):
+
+- `fps`: pictures per CPU second (process CPU time summed across all
+  worker threads, inherited from upstream Netflix/vmaf). On multi-threaded
+  runs it reflects summed CPU time, not elapsed wall time.
+- `wall_fps`: pictures per wall-clock second, measured with a monotonic
+  timer. Use this field for throughput and speed comparisons.
 
 With `--precision max` the pooled mean prints as `76.667831491355784`. Without
 `--model version=vmaf_v0.6.1`, the default model gives a pooled mean of

@@ -50,6 +50,9 @@ bool vmaf_context_is_flushed(const VmafContext *vmaf);
 bool vmaf_context_has_thread_pool(const VmafContext *vmaf);
 int vmaf_context_flush_threaded_for_test(VmafContext *vmaf);
 int vmaf_context_flush_for_test(VmafContext *vmaf);
+double vmaf_output_fps_for_test(const VmafContext *vmaf);
+double vmaf_output_wall_fps_for_test(const VmafContext *vmaf);
+void vmaf_context_set_pic_cnt_for_test(VmafContext *vmaf, unsigned pic_cnt);
 
 /*
  * Test accessors for ADR-1359 device-twin lookup, gpumask gating,
