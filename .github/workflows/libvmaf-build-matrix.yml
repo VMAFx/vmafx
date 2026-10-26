@@ -88,6 +88,15 @@ jobs:
             tier: full
           # required-aggregator
           - os: ubuntu-26.04
+            CC: ccache gcc-14
+            CXX: ccache g++-14
+            werror: true
+            zimg: true
+            meson_extra: -Denable_zimg=true
+            name: Ubuntu gcc zimg
+            tier: full
+          # required-aggregator
+          - os: ubuntu-26.04
             CC: ccache clang-22
             CXX: ccache clang++-22
             werror: true
@@ -378,6 +387,9 @@ jobs:
           *gcc)      sudo -E apt-get -yq install gcc g++ ;;
           *clang)    sudo -E apt-get -yq install clang ;;
           esac
+          if [ "${{ matrix.zimg }}" = "true" ]; then
+            sudo -E apt-get -yq install libzimg-dev
+          fi
 
       - name: Install dependencies (mac)
         if: ${{ (matrix.os == 'macos-latest') && steps.impact.outputs.c_core == 'true' }}

@@ -101,7 +101,8 @@ lane reads ([ADR-2796](../adr/2796-hosted-tidy-all-lanes.md)):
 - **Nightly sweep.** `nightly.yml` measures the `cpu` lane and every lane above
   without routing, and `tidy-metal.yml` runs nightly. A failing sweep opens or
   updates the one issue "Tidy ratchet drift on master"
-  (`scripts/ci/tidy-drift-issue.sh`), with the failed lanes and the run link.
+  (`scripts/ci/tidy-drift-issue.sh`, a thin wrapper around
+  `scripts/ci/scheduled-failure-issue.sh`), with the failed lanes and the run link.
 - **Fixing a red lane.** Fix the code, then tighten the baseline through the
   write command ([scoped write](#tighten-selected-files-with-a-scoped-write),
   `make tidy-lane-write`); never edit a baseline by hand.

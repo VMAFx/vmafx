@@ -49,6 +49,13 @@ jobs:
             exit 0   # do not fail the workflow on transient network issues
           fi
 
+      - name: Ensure upstream-blocked label exists
+        if: steps.probe.outputs.exit_code == '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          scripts/upstream-watcher/ensure_label.sh "$GITHUB_REPOSITORY" "upstream-blocked" "e99695" "Waiting on an upstream change"
+
       - name: Open tracking issue (if encoder landed)
         if: steps.probe.outputs.exit_code == '0'
         env:
@@ -136,6 +143,13 @@ jobs:
             exit "${STATUS}"
           fi
 
+      - name: Ensure upstream-blocked label exists
+        if: steps.probe.outputs.status == 'unported'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          scripts/upstream-watcher/ensure_label.sh "$GITHUB_REPOSITORY" "upstream-blocked" "e99695" "Waiting on an upstream change"
+
       - name: Open tracking issues for unported commits
         if: steps.probe.outputs.status == 'unported'
         env:
@@ -222,3 +236,29 @@ jobs:
           if failed:
               sys.exit(f"tracking issues not filed for: {' '.join(failed)}")
           EOF
+
+  scheduled-failure:
+    name: Report upstream-watcher failure
+    needs: [ffmpeg-av1-videotoolbox, netflix-unported]
+    if: always() && github.event_name == 'schedule' && contains(needs.*.result, 'failure')
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+      actions: read
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Open or update tracking issue on failure
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          bash scripts/ci/scheduled-failure-issue.sh \
+            "$GITHUB_REPOSITORY" \
+            "$GITHUB_RUN_ID" \
+            "Upstream watcher failed on schedule" \
+            "See docs/development/upstream-watchers.md."

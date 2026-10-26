@@ -1,7 +1,9 @@
 ---
 paths:
   - scripts/ci/tidy-drift-issue.sh
+  - scripts/ci/scheduled-failure-issue.sh
   - scripts/ci/tests/test_tidy_drift_issue.py
+  - scripts/ci/tests/test_scheduled_failure_issue.py
   - scripts/ci/tests/test_tidy_lanes_hosted_contract.py
 invariant: Every tidy lane is a required, path-routed check that says when it did not measure; nightly sweep keeps one drift issue.
 area: tidy
@@ -17,5 +19,5 @@ Selectors `tidy_<lane>` in `.github/ci-impact.json` are `own_paths_only`; a lane
 file only that lane measures must match its selector
 (`test_ci_impact.py::TidyLaneRouting`). A skipped leg prints "NOT measured"; the
 nightly sweep (`nightly.yml`) runs all lanes and opens/updates one issue via
-`tidy-drift-issue.sh`. Contract: `tests/test_tidy_lanes_hosted_contract.py`.
+`tidy-drift-issue.sh` (a wrapper over `scheduled-failure-issue.sh`). Contract: `tests/test_tidy_lanes_hosted_contract.py`.
 Bump the image digest with the baselines after a `dev/Containerfile` change.

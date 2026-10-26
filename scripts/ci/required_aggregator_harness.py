@@ -38,9 +38,10 @@ const github = {rest: {
     getWorkflowRun: async () => ({data: {created_at: new Date(now).toISOString()}}),
     listWorkflowRunsForRepo: async () => ({data: {workflow_runs: input.workflowRuns || []}}),
   },
-  checks: {listForRef: async () => {
-    listings += 1;
-    return {data: {check_runs: listings > 1 && laterChecks.length ? laterChecks : checks}};
+  checks: {listForRef: async ({page = 1, per_page: perPage = 30} = {}) => {
+    if (page === 1) listings += 1;
+    const all = listings > 1 && laterChecks.length ? laterChecks : checks;
+    return {data: {check_runs: all.slice((page - 1) * perPage, page * perPage)}};
   }},
 }};
 const eventName = input.event || 'pull_request';
