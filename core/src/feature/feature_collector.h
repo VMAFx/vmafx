@@ -24,10 +24,15 @@
  * in C++ translation units, and libc++ (the Xcode SDK) rejects the std::byte
  * templates that header declares when they land inside C linkage ("templates
  * must have C++ linkage"). Every included header carries its own guard. */
+#ifdef __cplusplus
+#include <cerrno>
+#include <ctime>
+#else
 #include <errno.h>
-#include <pthread.h>
 #include <stdbool.h>
 #include <time.h>
+#endif
+#include <pthread.h>
 
 #include "dict.h"
 #include "model.h"

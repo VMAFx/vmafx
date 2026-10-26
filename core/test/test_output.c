@@ -874,29 +874,38 @@ static char *test_write_output_pic_cnt_zero(void)
     return NULL;
 }
 
-static char *test_output_wall_fps_not_cpu_time(void)
+static VmafFeatureCollector *wall_fps_fixture(VmafContext **vmaf)
 {
-    VmafContext *vmaf = NULL;
     VmafConfiguration cfg = {0};
-    int err = vmaf_init(&vmaf, cfg);
-    mu_assert("vmaf_init failed", !err);
-
-    VmafFeatureCollector *fc = vmaf_feature_collector_get(vmaf);
-    mu_assert("vmaf_feature_collector_get failed", fc != NULL);
-
-    /* 1. Boundary: pic_cnt == 0 -> both helpers return 0.0 */
-    vmaf_context_set_pic_cnt_for_test(vmaf, 0);
+    if (vmaf_init(vmaf, cfg) != 0) {
+        return NULL;
+    }
+    VmafFeatureCollector *fc = vmaf_feature_collector_get(*vmaf);
+    if (fc == NULL) {
+        return NULL;
+    }
+    /* 10 s CPU time against 1 s wall time. */
     fc->timer.begin = 0;
     fc->timer.end = (clock_t)(10 * CLOCKS_PER_SEC);
     fc->wall_timer.begin.tv_sec = 100;
     fc->wall_timer.begin.tv_nsec = 0;
     fc->wall_timer.end.tv_sec = 101;
     fc->wall_timer.end.tv_nsec = 0;
+    return fc;
+}
 
+static char *test_output_wall_fps_zero_guards(void)
+{
+    VmafContext *vmaf = NULL;
+    VmafFeatureCollector *fc = wall_fps_fixture(&vmaf);
+    mu_assert("wall_fps fixture failed", fc != NULL);
+
+    /* Boundary: pic_cnt == 0 -> both helpers return 0.0 */
+    vmaf_context_set_pic_cnt_for_test(vmaf, 0);
     mu_assert("fps must be 0.0 when pic_cnt == 0", vmaf_output_fps_for_test(vmaf) == 0.0);
     mu_assert("wall_fps must be 0.0 when pic_cnt == 0", vmaf_output_wall_fps_for_test(vmaf) == 0.0);
 
-    /* 2. Boundary: elapsed == 0 -> both helpers return 0.0 */
+    /* Boundary: elapsed == 0 -> both helpers return 0.0 */
     vmaf_context_set_pic_cnt_for_test(vmaf, 10);
     fc->timer.end = fc->timer.begin;
     fc->wall_timer.end = fc->wall_timer.begin;
@@ -904,15 +913,19 @@ static char *test_output_wall_fps_not_cpu_time(void)
     mu_assert("wall_fps must be 0.0 when wall_timer elapsed is 0",
               vmaf_output_wall_fps_for_test(vmaf) == 0.0);
 
-    /* 3. Non-zero divergence: 10 frames over 10 CPU seconds vs 1 wall second.
-     * Demonstrates wall_fps is not derived from CPU time. */
-    fc->timer.begin = 0;
-    fc->timer.end = (clock_t)(10 * CLOCKS_PER_SEC); /* 10 s CPU time -> 1 fps */
-    fc->wall_timer.begin.tv_sec = 100;
-    fc->wall_timer.begin.tv_nsec = 0;
-    fc->wall_timer.end.tv_sec = 101;
-    fc->wall_timer.end.tv_nsec = 0; /* 1 s wall time -> 10 fps */
+    (void)vmaf_close(vmaf);
+    return NULL;
+}
 
+static char *test_output_wall_fps_divergence(void)
+{
+    VmafContext *vmaf = NULL;
+    VmafFeatureCollector *fc = wall_fps_fixture(&vmaf);
+    mu_assert("wall_fps fixture failed", fc != NULL);
+
+    /* 10 frames over 10 CPU seconds vs 1 wall second: wall_fps is not
+     * derived from CPU time. */
+    vmaf_context_set_pic_cnt_for_test(vmaf, 10);
     const double cpu_fps = vmaf_output_fps_for_test(vmaf);
     const double wall_fps = vmaf_output_wall_fps_for_test(vmaf);
 
@@ -920,7 +933,7 @@ static char *test_output_wall_fps_not_cpu_time(void)
     mu_assert("wall_fps must be 10.0 (10 frames / 1s wall)", fabs(wall_fps - 10.0) < 1e-6);
     mu_assert("wall_fps must not equal cpu_fps", fabs(wall_fps - cpu_fps) > 1.0);
 
-    /* 4. Boundary: wall timer end < begin (backward clock) */
+    /* Boundary: wall timer end < begin (backward clock) */
     fc->wall_timer.end.tv_sec = 99;
     mu_assert("wall_fps must be 0.0 when elapsed_sec < 0",
               vmaf_output_wall_fps_for_test(vmaf) == 0.0);
@@ -946,11 +959,17 @@ static char *run_output_tests_part2(void)
     mu_run_test(test_json_nan_and_inf);
     mu_run_test(test_json_empty_collector);
     mu_run_test(test_vmaf_version);
+    return NULL;
+}
+
+static char *run_output_tests_part3(void)
+{
     mu_run_test(test_write_output_json_path);
     mu_run_test(test_write_output_utf8_path);
     mu_run_test(test_write_output_with_format_custom);
     mu_run_test(test_write_output_pic_cnt_zero);
-    mu_run_test(test_output_wall_fps_not_cpu_time);
+    mu_run_test(test_output_wall_fps_zero_guards);
+    mu_run_test(test_output_wall_fps_divergence);
     return NULL;
 }
 
@@ -959,7 +978,10 @@ char *run_tests(void)
     char *msg = run_output_tests_part1();
     if (msg)
         return msg;
-    return run_output_tests_part2();
+    msg = run_output_tests_part2();
+    if (msg)
+        return msg;
+    return run_output_tests_part3();
 }
 
 /* NOLINTEND(modernize-use-nullptr) */

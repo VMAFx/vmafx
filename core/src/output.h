@@ -21,6 +21,15 @@
 #define VMAF_SRC_OUTPUT_H_
 
 #ifdef __cplusplus
+#include <cstdio>
+#else
+#include <stdio.h>
+#endif
+
+#include "feature/feature_collector.h"
+#include "libvmaf/libvmaf.h"
+
+#ifdef __cplusplus
 extern "C" {
 #endif
 
