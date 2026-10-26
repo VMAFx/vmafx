@@ -1,0 +1,1 @@
+| [ADR-3378](3378-encode-job-api.md) | Encode-job API: one video stream in, a verified video-only stream plus provenance out; quality goal only (target score, relative size cap, allowed codecs), keep-original verdict; eight phased slices, each with a planted test | Accepted | api, vmaf-tune, platform, encode, hdr |
