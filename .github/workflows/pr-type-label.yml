@@ -6,10 +6,15 @@
 # work under "Other changes". The Conventional-Commit prefix is already
 # mandatory here (the commit-msg hook enforces it), so the type is derivable and
 # nobody has to remember to label anything. ADR-1233.
+#
+# Trigger is `pull_request`, not `pull_request_target`: GitHub's default Actions
+# event policy blocks `pull_request_target` on public repositories from
+# 2026-12-02. A fork pull request gets a read-only token under `pull_request`,
+# so the job skips it with a notice naming the label to add by hand.
 name: PR type label
 
 on:
-  pull_request_target:
+  pull_request:
     # ADR-2169: no `synchronize`. The label comes from the pull request title,
     # which a push does not change; `edited` covers a title change.
     types: [opened, edited, reopened]
@@ -33,8 +38,15 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_BODY: ${{ github.event.pull_request.body }}
           REPO: ${{ github.repository }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
         run: |
           set -euo pipefail
+
+          # A fork pull request has a read-only token here; name the label instead.
+          if [ "$HEAD_REPO" != "$REPO" ]; then
+            echo "::notice::fork pull request: a maintainer adds the type:* label for the title prefix by hand"
+            exit 0
+          fi
 
           # `type(scope)!: subject` -> type, and note the breaking-change bang.
           type="${PR_TITLE%%(*}"

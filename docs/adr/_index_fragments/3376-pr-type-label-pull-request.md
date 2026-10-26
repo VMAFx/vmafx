@@ -1,0 +1,1 @@
+| [ADR-3376](3376-pr-type-label-pull-request.md) | The PR type labeller runs on `pull_request` instead of `pull_request_target`, which GitHub's default event policy blocks on public repositories from 2026-12-02; fork pull requests get a notice and a maintainer adds the label | Accepted | ci, security, release |
