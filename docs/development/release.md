@@ -1426,7 +1426,9 @@ Because GitHub groups the release body **by label**,
 [`.github/workflows/pr-type-label.yml`](../../.github/workflows/pr-type-label.yml)
 derives a `type:*` label from each PR's Conventional-Commit prefix. If a release
 body shows a large "Other changes" section, that labeler is not running — the
-prefix is mandatory, so the label should always be derivable.
+prefix is mandatory, so the label should always be derivable. A pull request
+from a fork is the exception: the workflow runs on `pull_request`, whose token
+is read-only for a fork, so it leaves a notice and a maintainer adds the label.
 
 ### Archiving an oversized release section
 

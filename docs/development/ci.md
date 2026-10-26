@@ -79,7 +79,7 @@ required and which ADR owns it, see
 | [`praetor-docs.yml`](../../.github/workflows/praetor-docs.yml) | Praetor's Documentation Governance gate for the `docs:seo-portal` facet; praetor-managed, not required. See [Praetor gate](praetor-gate.md). |
 | [`praetor-api.yml`](../../.github/workflows/praetor-api.yml) | Praetor's `Go API Compatibility` gate (`go-apidiff` over every Go module; no path filter). Praetor-managed; required through the aggregator (ADR-1506), its marker sits in `standards-gate.yml`. |
 | [`reuse.yml`](../../.github/workflows/reuse.yml) | Praetor's `REUSE lint` gate (`reuse lint` over the whole tree; no path filter), the one CI run of `reuse lint`. Written by praetor, its actions pinned to commits here; required through the aggregator (ADR-2784), its marker sits in `standards-gate.yml`. See [Praetor gate](praetor-gate.md#the-current-pin). |
-| [`pr-type-label.yml`](../../.github/workflows/pr-type-label.yml) | Derives a `type:*` label from the Conventional-Commit prefix of the PR. |
+| [`pr-type-label.yml`](../../.github/workflows/pr-type-label.yml) | Derives a `type:*` label from the Conventional-Commit prefix of the PR. Runs on `pull_request`; a fork PR gets a notice and a maintainer adds the label by hand. |
 
 ### Scheduled, release and watcher workflows
 

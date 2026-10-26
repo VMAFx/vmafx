@@ -97,7 +97,7 @@
     {
       "workflow": "pr-type-label.yml",
       "job": "label",
-      "reason": "pull_request_target label job: one API call, writes a label, runs no repository code. It does not run on synchronize.",
+      "reason": "pull_request label job: one API call, writes a label, runs no repository code, skips fork pull requests (read-only token). It does not run on synchronize.",
       "expires": "2027-12-31"
     },
     {
