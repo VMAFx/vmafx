@@ -28,7 +28,7 @@ and its tracking issue, and moves into the release that now ships it.
 | 0.7.0 | [0.7.0](https://github.com/VMAFx/vmafx/milestone/4) | New metrics with exact twins: the RC5 metric package ([#2496](https://github.com/VMAFx/vmafx/issues/2496)), [#2165](https://github.com/VMAFx/vmafx/issues/2165), [#2167](https://github.com/VMAFx/vmafx/issues/2167), the artefact detectors ([#2272](https://github.com/VMAFx/vmafx/issues/2272)), ST-GREED ([#2394](https://github.com/VMAFx/vmafx/issues/2394)), picks from [#2168](https://github.com/VMAFx/vmafx/issues/2168); our own no-reference models ([#2415](https://github.com/VMAFx/vmafx/issues/2415)) and foveated scoring ([#2419](https://github.com/VMAFx/vmafx/issues/2419)) |
 | 0.8.0 | [0.8.0](https://github.com/VMAFx/vmafx/milestone/8) | Metric A/B comparison, the best current mix and more training data: [#2240](https://github.com/VMAFx/vmafx/issues/2240), [#2241](https://github.com/VMAFx/vmafx/issues/2241) |
 | 0.9.0 | [0.9.0](https://github.com/VMAFx/vmafx/milestone/9) | The next model generation: the RC9 retraining ([#1246](https://github.com/VMAFx/vmafx/issues/1246)) and [#2242](https://github.com/VMAFx/vmafx/issues/2242) |
-| 0.10.0 | [0.10.0](https://github.com/VMAFx/vmafx/milestone/2) | Integrations, live quality and cloud-native: the OBS Studio plugin ([#2239](https://github.com/VMAFx/vmafx/issues/2239)), no-reference mode in the plugins ([#2413](https://github.com/VMAFx/vmafx/issues/2413)), the live P.1204 monitor ([#2417](https://github.com/VMAFx/vmafx/issues/2417)), AI-generated video scoring ([#2418](https://github.com/VMAFx/vmafx/issues/2418)), the cloud-native platform ([#2431](https://github.com/VMAFx/vmafx/issues/2431)) with containers, Helm and operator ([#2497](https://github.com/VMAFx/vmafx/issues/2497)), and the rest of the milestone |
+| 0.10.0 | [0.10.0](https://github.com/VMAFx/vmafx/milestone/2) | Integrations, live quality and cloud-native: the OBS Studio plugin ([#2239](https://github.com/VMAFx/vmafx/issues/2239)), no-reference mode in the plugins ([#2413](https://github.com/VMAFx/vmafx/issues/2413)), the live P.1204 monitor ([#2417](https://github.com/VMAFx/vmafx/issues/2417)), AI-generated video scoring ([#2418](https://github.com/VMAFx/vmafx/issues/2418)), the cloud-native platform ([#2431](https://github.com/VMAFx/vmafx/issues/2431)) with containers, Helm and operator ([#2497](https://github.com/VMAFx/vmafx/issues/2497)), the encode job on the platform API ([ADR-3378](adr/3378-encode-job-api.md): one video stream in, a verified video stream out, `auto` only; slices [#2986](https://github.com/VMAFx/vmafx/issues/2986) to [#2993](https://github.com/VMAFx/vmafx/issues/2993)), and the rest of the milestone |
 | 0.11.0 | [0.11.0](https://github.com/VMAFx/vmafx/milestone/5) | Breaking changes only: the `libvmaf.h` compatibility library removed ([ADR-1852](adr/1852-vmafx-api-redesign.md)), the rest of [#1254](https://github.com/VMAFx/vmafx/issues/1254) |
 | 1.0.0 | [1.0.0](https://github.com/VMAFx/vmafx/milestone/13) | First stable: Rust P3, CLI, tools, MCP server, ONNX Runtime host and host glue ([#2576](https://github.com/VMAFx/vmafx/issues/2576), [#2581](https://github.com/VMAFx/vmafx/issues/2581)), and a frozen interface; candidates from `v1.0.0-rc.4` |
 | 1.1.0 | [1.1.0](https://github.com/VMAFx/vmafx/milestone/14) | Rust P4 and P5: GPU host runtimes and the kernel verdict per backend ([#2577](https://github.com/VMAFx/vmafx/issues/2577), [#2578](https://github.com/VMAFx/vmafx/issues/2578)) |
@@ -42,13 +42,15 @@ major one. [ADR-3292](adr/3292-release-line-restart-0x.md) supersedes the
 candidate maps of ADR-1341, ADR-1421, ADR-1490, ADR-1868, ADR-1880, ADR-2001
 and ADR-2342; the stage content and the ordering rules below are theirs.
 
-Two milestones are deliberately **rolling** rather than tied to a release:
+Three milestones are deliberately **rolling** rather than tied to a release:
 
 - [Models & benchmarks](https://github.com/VMAFx/vmafx/milestone/6) — retraining
   cadence, benchmark baselines, corpus work.
 - [Code health & deduplication](https://github.com/VMAFx/vmafx/milestone/7) —
   the
   fork adds and changes a lot, so slimming it is recurring work, not a one-off.
+- [Research and upstream watch](https://github.com/VMAFx/vmafx/milestone/19) —
+  research digests and watching Netflix/vmaf, FFmpeg and comparable tools.
 
 ## How the stages are ordered
 
@@ -161,7 +163,8 @@ Also in RC4 since 2026-10-05 (ADR-1868): provenance on every score
   ([#2430](https://github.com/VMAFx/vmafx/issues/2430)); Linux arm64 and
   older-glibc binaries and the package-manager channels
   ([#2437](https://github.com/VMAFx/vmafx/issues/2437)); the cloud-native
-  platform ([#2431](https://github.com/VMAFx/vmafx/issues/2431)): state out of
+  platform ([#2431](https://github.com/VMAFx/vmafx/issues/2431), now in
+  0.10.0): state out of
   the processes (PostgreSQL, a job queue, a two-tier cache, object storage, OCI
   artifacts), scaling on queue depth, and CRDs, proto, OpenAPI and the Helm
   schema generated from the definition; conformance of SVT Encore's VMAF
@@ -201,7 +204,8 @@ Also in RC4 since 2026-10-05 (ADR-1868): provenance on every score
   Helm chart and a kind plus kuttl test setup
   ([#1252](https://github.com/VMAFx/vmafx/issues/1252)); the operator, the
   controller / node split and the GPU pool arbiter in `libgpudispatch`
-  ([#1253](https://github.com/VMAFx/vmafx/issues/1253)). Since 2026-10-07
+  ([#1253](https://github.com/VMAFx/vmafx/issues/1253)); both now in 0.10.0.
+  Since 2026-10-07
   ([ADR-2342](adr/2342-rc-map-amendment-2026-10.md)) the tool consolidation
   also carries live alignment of two feeds with timecode
   ([#2354](https://github.com/VMAFx/vmafx/issues/2354)), interlaced video
