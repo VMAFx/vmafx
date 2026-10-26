@@ -411,6 +411,14 @@
   `docs/development/dco.md` and ADR-2462.
 
 
+- **Minimum input size of the default model `vmaf_v1.0.16_3d0h` documented and tested.**
+  The model reads CAMBI (width or height at least 216) and `speed_chroma` (chroma width and
+  height at least 80), so the smallest 4:2:0 inputs it scores are 216x160 and 160x216. The
+  [CLI usage page](docs/usage/cli.md#minimum-input-size) gives the refusal messages and two
+  caller recipes (scale both inputs, or pick `vmaf_v0.6.1`); `test_default_model_minimum_input`
+  holds the library's `-EINVAL` refusal and the accepted sizes.
+
+
 - **Dev container ships pinned `rr` and `ClangBuildAnalyzer` diagnostic tools (ADR-3336).** `rr` (Ubuntu 26.04 package `5.9.0-5`) enables deterministic reverse debugging (`rr record` / `rr replay`), and `ClangBuildAnalyzer` (v1.6.0) analyzes `-ftime-trace` build profiles to identify compilation bottlenecks. Both versions are pinned in `dev/Containerfile`; `scripts/ci/check_ort_tarball_pins.py` checks that the ClangBuildAnalyzer download is SHA-256 verified before extraction (ADR-3334, ADR-3336). See the dev-container guide for usage.
 
 
@@ -899,6 +907,15 @@
   against the built image and `scripts/test/reference_report.py` prints CPU
   and SYCL scores next to the Netflix reference values
   ([ADR-3358](docs/adr/3358-vmafx-sycl-ffmpeg-container.md)).
+
+
+- **Reports carry wall-clock throughput next to `fps` (ADR-3377).** The JSON
+  report adds `"wall_fps"` after `"fps"` and the XML report adds a `wall_fps`
+  attribute to `<fyi>`. `fps` stays as before: pictures per second of process
+  CPU time summed over all threads, so a run with `--threads 8` reports a value
+  several times below its real throughput. `wall_fps` is pictures per second of
+  elapsed time from a monotonic clock
+  ([output fields](docs/usage/cli.md)).
 
 
 ### Changed
@@ -1575,6 +1592,14 @@
   (`vmafx/v1/vmafx.proto`, `vmafx/controller/v1/controller.proto`).
 
 
+- **The pull-request type labeller runs on `pull_request`
+  ([ADR-3376](docs/adr/3376-pr-type-label-pull-request.md)).** GitHub's default
+  Actions event policy blocks `pull_request_target` on public repositories from
+  2026-12-02, so `pr-type-label.yml` no longer uses it. A pull request from a
+  fork gets a read-only token there: the job leaves a notice and a maintainer
+  adds the `type:*` label by hand.
+
+
 - **Fewer pull-request workflows, held under a budget (ADR-3314).**
   OpenSSF Scorecard reads only the first 30 check suites of a commit, and 31
   pull-request workflows pushed CodeQL out of that window, so the SAST check
@@ -1837,6 +1862,13 @@
 - **Update `github.com/riverqueue/river` to `v0.49.0`.** Updates the River queue
   module along with its `riverdriver`, `riverdriver/riverpgxv5`, `rivershared`,
   and `rivertype` subpackages in `go.mod` and `go.sum`.
+
+
+- **Roadmap lists the encode job and the research milestone.** `docs/roadmap.md`
+  now names the encode job on the platform API
+  ([ADR-3378](docs/adr/3378-encode-job-api.md), issues #2986 to #2993) in the
+  0.10.0 release, lists the rolling "Research and upstream watch" milestone, and
+  marks the cloud-native items of the old RC4 and RC5 stages as moved to 0.10.0.
 
 
 - **Rust replaces the host-side C and C++ by 3.0 ([ADR-2478](docs/adr/2478-rust-core-migration.md)).** The public C ABI stays and is exported from Rust; the C implementation of each layer is the differential oracle until it is deleted; native GPU device sources and C-only host glue stay on an exception list. The C++23 core item of the 2.0 plan is superseded. Phases, milestones 2.1 to 2.5 and 3.0, and the epic [#2567](https://github.com/VMAFx/vmafx/issues/2567) are in the [roadmap](docs/roadmap.md). No code path changes.
