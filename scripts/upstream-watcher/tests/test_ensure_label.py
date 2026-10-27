@@ -23,6 +23,14 @@ case "$1 $2" in
     fi
     exit 0
     ;;
+  "label list")
+    reads=$(( $(cat "$STUB_READS" 2>/dev/null || echo 0) + 1 ))
+    printf '%s' "$reads" > "$STUB_READS"
+    if [ "$reads" -gt "${STUB_HIDDEN_READS:-0}" ]; then
+      printf '%s\n' "$STUB_LISTED"
+    fi
+    exit 0
+    ;;
   *) echo "unexpected: $*" >&2; exit 9 ;;
 esac
 """
@@ -42,12 +50,18 @@ class EnsureLabelTest(unittest.TestCase):
         self,
         *args: str,
         fail_create: bool = False,
+        hidden_reads: int = 0,
+        listed: str = "upstream-blocked",
     ) -> subprocess.CompletedProcess[str]:
         env = {
             **os.environ,
             "UPSTREAM_WATCHER_GH": str(self.stub),
             "STUB_LOG": str(self.log),
             "STUB_FAIL_CREATE": "1" if fail_create else "0",
+            "STUB_READS": str(self.log.with_name("reads")),
+            "STUB_HIDDEN_READS": str(hidden_reads),
+            "STUB_LISTED": listed,
+            "UPSTREAM_WATCHER_LABEL_WAIT": "0",
         }
         return subprocess.run(  # noqa: S603 - fixed argv: bash, the script under test
             ["bash", str(SCRIPT), *args],  # noqa: S607
@@ -69,7 +83,8 @@ class EnsureLabelTest(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         calls = self.calls()
-        self.assertEqual(len(calls), 1)
+        self.assertEqual(len(calls), 2)
+        self.assertIn("label list", calls[1])
         self.assertIn("label create upstream-blocked", calls[0])
         self.assertIn("--repo VMAFx/vmafx", calls[0])
         self.assertIn("--color e99695", calls[0])
@@ -87,6 +102,30 @@ class EnsureLabelTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("upstream-blocked", result.stderr)
         self.assertIn("could not be created", result.stderr)
+
+    def test_waits_until_a_new_label_is_listed(self) -> None:
+        result = self.run_script(
+            "VMAFx/vmafx",
+            "upstream-blocked",
+            "e99695",
+            "Waiting on an upstream change",
+            hidden_reads=3,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(sum("label list" in c for c in self.calls()), 4)
+
+    def test_fails_naming_a_label_that_is_never_listed(self) -> None:
+        result = self.run_script(
+            "VMAFx/vmafx",
+            "upstream-blocked",
+            "e99695",
+            "Waiting on an upstream change",
+            listed="upstream-blocked-other",
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("label upstream-blocked", result.stderr)
+        self.assertIn("is not listed after 10 reads", result.stderr)
+        self.assertEqual(sum("label list" in c for c in self.calls()), 10)
 
     def test_rejects_missing_or_malformed_arguments(self) -> None:
         test_cases = (
