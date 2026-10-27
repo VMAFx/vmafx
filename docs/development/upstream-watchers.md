@@ -113,7 +113,10 @@ A script-based watcher has three moving parts:
    `scripts/upstream-watcher/ensure_label.sh` to create the
    `upstream-blocked` label idempotently (color `#e99695`, description
    "Waiting on an upstream change") with `--force`, ensuring a missing label
-   never halts issue creation.
+   never halts issue creation. The script then reads the label list until the
+   label appears (at most 10 reads, 3 seconds apart), because a label created a
+   moment earlier can still be unknown to `gh issue create --label`; a label
+   that never appears fails the step with an error naming it.
 
 The other three watchers skip the script: each is its own workflow file whose
 `poll` job queries upstream with `gh api` and opens or updates its tracking
