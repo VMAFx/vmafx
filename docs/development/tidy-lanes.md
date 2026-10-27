@@ -13,7 +13,7 @@ one place: the dev container
 
 ```bash
 make tidy-lane LANE=cpu          # compare with the committed baseline
-make tidy-lane LANE=all          # cpu, clang, cuda, hip, sycl and arm64, one after the other
+make tidy-lane LANE=all          # cpu, clang, cuda, hip, sycl, arm64 and integrations, one after the other
 make tidy-lane-write LANE=hip    # rewrite scripts/ci/tidy-baseline-hip.json
 ```
 

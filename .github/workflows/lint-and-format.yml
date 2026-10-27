@@ -626,7 +626,8 @@ jobs:
     # is `Tidy Metal` (tidy-metal.yml, a macOS runner). A leg that did not run
     # prints why and the lane it skipped: a skipped lane is never reported as
     # clean (HISS-18). The toolchains (nvcc, hipcc, icpx, the aarch64 cross
-    # compiler) come from the dev container, pinned by digest in
+    # compiler, the GStreamer and FFmpeg build dependencies of the integrations
+    # lane, #2860) come from the dev container, pinned by digest in
     # .github/actions/tidy-lane/action.yml; bump the digest in the pull request
     # that re-measures the baselines after a dev/Containerfile change
     # (docs/development/tidy-ratchet.md, "Hosted lanes").
@@ -635,6 +636,7 @@ jobs:
     # required-aggregator: Tidy Lane (sycl)
     # required-aggregator: Tidy Lane (arm64)
     # required-aggregator: Tidy Lane (clang)
+    # required-aggregator: Tidy Lane (integrations)
     name: Tidy Lane (${{ matrix.lane }})
     runs-on: ubuntu-26.04
     timeout-minutes: 120
@@ -644,7 +646,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        lane: [cuda, hip, sycl, arm64, clang]
+        lane: [cuda, hip, sycl, arm64, clang, integrations]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:

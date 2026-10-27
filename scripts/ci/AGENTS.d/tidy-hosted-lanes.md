@@ -12,7 +12,7 @@ area: tidy
 # Hosted tidy lanes (ADR-2796, Q-315)
 
 Every lane is a required, path-routed check: `Tidy Ratchet` (cpu), `Tidy Lane
-(<lane>)` for cuda/hip/sycl/arm64/clang (matrix job `clang-tidy-lanes` in
+(<lane>)` for cuda/hip/sycl/arm64/clang/integrations (matrix job `clang-tidy-lanes` in
 `lint-and-format.yml`, dev container pinned by digest in
 `.github/actions/tidy-lane/action.yml`), `Tidy Metal` (`tidy-metal.yml`).
 Selectors `tidy_<lane>` in `.github/ci-impact.json` are `own_paths_only`; a lane

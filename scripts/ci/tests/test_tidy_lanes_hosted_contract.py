@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parents[3]
 WORKFLOWS = ROOT / ".github/workflows"
 ACTION = ROOT / ".github/actions/tidy-lane/action.yml"
 IMPACT = ROOT / ".github/ci-impact.json"
-LANES = ("cuda", "hip", "sycl", "arm64", "clang")
+LANES = ("cuda", "hip", "sycl", "arm64", "clang", "integrations")
 LISTS = 2  # `required` and `strictMustReport`
 DIGEST = re.compile(r"^ghcr\.io/vmafx/vmafx-dev-mcp@sha256:[0-9a-f]{64}$")
 
@@ -134,7 +134,9 @@ class HostedTidyLanes(unittest.TestCase):
             ),
             "the matrix loses a lane": (
                 0,
-                lint.replace("lane: [cuda, hip, sycl, arm64, clang]", "lane: [cuda, hip]", 1),
+                lint.replace(
+                    "lane: [cuda, hip, sycl, arm64, clang, integrations]", "lane: [cuda, hip]", 1
+                ),
                 "matrix",
             ),
             "the image floats": (
@@ -144,7 +146,9 @@ class HostedTidyLanes(unittest.TestCase):
             ),
             "the sweep loses a lane": (
                 1,
-                nightly.replace("lane: [cuda, hip, sycl, arm64, clang]", "lane: [cuda]", 1),
+                nightly.replace(
+                    "lane: [cuda, hip, sycl, arm64, clang, integrations]", "lane: [cuda]", 1
+                ),
                 "sweep",
             ),
             "the gate job is renamed": (

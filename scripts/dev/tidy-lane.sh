@@ -19,7 +19,8 @@
 # rewritten baseline back.
 #
 # Usage:
-#   scripts/dev/tidy-lane.sh [options] LANE...   LANE: cpu clang cuda hip sycl arm64 all
+#   scripts/dev/tidy-lane.sh [options] LANE...
+#     LANE: cpu clang cuda hip sycl arm64 integrations all
 #
 # Options:
 #   --write        rewrite the lane's baseline from the measurement
@@ -53,11 +54,15 @@ CLANG_TIDY_BIN_PATH="${TIDY_LANE_CLANG_TIDY:-/usr/bin/clang-tidy-${CLANG_TIDY_MA
 LLVM_APT_SIGNER_URL="https://apt.llvm.org/llvm-snapshot.gpg.key"
 LLVM_APT_SIGNER_SHA256="8b2a587ffd672c4687e7581dad4b2f6c1bb2ad6b480cd9771ba2ff48e0b8c75d"
 
-ALL_LANES="cpu clang cuda hip sycl arm64"
+ALL_LANES="cpu clang cuda hip sycl arm64 integrations"
 # The arm64 lane's cross toolchain, from the image's own distribution: the
 # compilers the cross file names, the C library they link against, and the
 # emulator meson runs its compiler sanity check with.
 CROSS_PACKAGES="gcc-aarch64-linux-gnu g++-aarch64-linux-gnu libc6-dev-arm64-cross qemu-user"
+# The integrations lane's GStreamer development files (the element and its CUDA
+# and Vulkan inputs), the xkbcommon files gstreamer-vulkan-1.0.pc requires, the
+# Vulkan headers and libdrm, from the image's own distribution.
+GSTREAMER_PACKAGES="libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgstreamer-plugins-bad1.0-dev libxkbcommon-dev libxkbcommon-x11-dev libvulkan-dev libdrm-dev"
 WORK="${TIDY_LANE_WORK:-/tmp/vmafx-tidy}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -77,14 +82,14 @@ die() {
 }
 
 usage() {
-  sed -n '5,41p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  sed -n '5,42p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 }
 
 add_lane() {
   case "$1" in
     all) LANES="$ALL_LANES" ;;
-    cpu | clang | cuda | hip | sycl | arm64) LANES="${LANES:+$LANES }$1" ;;
-    *) die "unknown lane '$1' (cpu, clang, cuda, hip, sycl, arm64, all)" 5 ;;
+    cpu | clang | cuda | hip | sycl | arm64 | integrations) LANES="${LANES:+$LANES }$1" ;;
+    *) die "unknown lane '$1' (cpu, clang, cuda, hip, sycl, arm64, integrations, all)" 5 ;;
   esac
 }
 
@@ -122,7 +127,7 @@ parse_args() {
     esac
     shift
   done
-  [ -n "$LANES" ] || die "no lane given (cpu, clang, cuda, hip, sycl, arm64, all)" 5
+  [ -n "$LANES" ] || die "no lane given (cpu, clang, cuda, hip, sycl, arm64, integrations, all)" 5
   case "$JOBS" in
     '' | *[!0-9]* | 0) die "--jobs needs a positive integer, got '$JOBS'" 5 ;;
   esac
@@ -246,11 +251,30 @@ ensure_cross_toolchain() {
   have_cross_toolchain || die "the aarch64 cross toolchain did not install"
 }
 
+have_gstreamer_dev() {
+  pkg-config --exists gstreamer-video-1.0 gstreamer-cuda-1.0 gstreamer-vulkan-1.0 &&
+    [ -f /usr/include/vulkan/vulkan.h ]
+}
+
+# The integrations lane builds the GStreamer element with its CUDA and Vulkan
+# inputs, so it needs GStreamer's development files and the Vulkan headers. An
+# image that carries them skips the download.
+ensure_gstreamer_dev() {
+  have_gstreamer_dev && return 0
+  DEBIAN_FRONTEND=noninteractive apt-get update -qq
+  # shellcheck disable=SC2086  # a fixed list of package names
+  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+    $GSTREAMER_PACKAGES >/dev/null
+  have_gstreamer_dev || die "the GStreamer development files did not install"
+}
+
 # The sycl lane configures with icx / icpx, which need oneAPI's environment;
-# the arm64 lane needs its cross toolchain and the clang lane its compiler.
+# the arm64 lane needs its cross toolchain, the clang lane its compiler and
+# the integrations lane GStreamer's development files.
 lane_environment() {
   [ "$1" != arm64 ] || ensure_cross_toolchain
   [ "$1" != clang ] || ensure_clang_compiler
+  [ "$1" != integrations ] || ensure_gstreamer_dev
   [ "$1" = sycl ] || return 0
   set +u
   # shellcheck disable=SC1091  # provided by the image

@@ -1,0 +1,39 @@
+{
+  "schema": 1,
+  "lane": "integrations",
+  "generator": "scripts/ci/tidy-ratchet.py",
+  "clang_tidy_version": "22.1.8",
+  "cc_version": "gcc-15 (Ubuntu 15.2.0-16ubuntu1) 15.2.0",
+  "tus": 13,
+  "measured_sources": [
+    "ffmpeg-patches/src/ffmpeg_dec_hwaccel.c",
+    "ffmpeg-patches/src/vf_vmafx.c",
+    "ffmpeg-patches/src/vf_vmafx_pre.c",
+    "gstreamer/src/gstvmafx.c",
+    "gstreamer/src/gstvmafx_caps.c",
+    "gstreamer/src/gstvmafx_cuda.c",
+    "gstreamer/src/gstvmafx_frame.c",
+    "gstreamer/src/gstvmafx_opts.c",
+    "gstreamer/src/gstvmafx_out.c",
+    "gstreamer/src/gstvmafx_run.c",
+    "gstreamer/src/gstvmafx_util.c",
+    "gstreamer/src/gstvmafx_vulkan.c",
+    "gstreamer/src/gstvmafx_windows.c"
+  ],
+  "compile_failures": [],
+  "total_warnings": 101,
+  "total_nolint_uncited": 0,
+  "warnings": {
+    "ffmpeg-patches/src/ffmpeg_dec_hwaccel.c": 2,
+    "ffmpeg-patches/src/vf_vmafx.c": 50,
+    "ffmpeg-patches/src/vf_vmafx_pre.c": 5,
+    "gstreamer/src/gstvmafx.c": 22,
+    "gstreamer/src/gstvmafx_cuda.c": 4,
+    "gstreamer/src/gstvmafx_frame.c": 1,
+    "gstreamer/src/gstvmafx_out.c": 2,
+    "gstreamer/src/gstvmafx_run.c": 2,
+    "gstreamer/src/gstvmafx_vulkan.c": 8,
+    "gstreamer/src/gstvmafx_windows.c": 5
+  },
+  "nolint_uncited": {}
+}

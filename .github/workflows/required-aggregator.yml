@@ -131,6 +131,7 @@ jobs:
               'Tidy Lane (sycl)',
               'Tidy Lane (arm64)',
               'Tidy Lane (clang)',
+              'Tidy Lane (integrations)',
               'Tidy Metal',
               'Cppcheck',
               'Dependency Review',
@@ -384,6 +385,7 @@ jobs:
               'Tidy Lane (sycl)',
               'Tidy Lane (arm64)',
               'Tidy Lane (clang)',
+              'Tidy Lane (integrations)',
               'Tidy Metal',
               'Windows ARM64 MSVC',
               // ADR-2440 — the locked praetor workflow reports on every pull request
