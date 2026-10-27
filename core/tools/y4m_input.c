@@ -773,9 +773,74 @@ static int y4m_read_plane_rows(FILE *const fin, uint8_t *dst, const size_t row_b
     return 0;
 }
 
+/* One plane of a frame y4m_input_fetch_frame() decoded, each sample shifted
+ * left by `shift` into the 16-bit plane of the picture. */
+static int y4m_upshift_plane(const struct video_input_plane *const src, const int depth,
+                             const unsigned shift, VmafPicture *const pic, const unsigned i)
+{
+    if (src->width < pic->w[i] || src->height < pic->h[i])
+        return -1;
+    const size_t in_bytes = depth > 8 ? 2u : 1u;
+    for (unsigned row = 0; row < pic->h[i]; row++) {
+        const uint8_t *in = src->data + ((size_t)row * (size_t)src->stride);
+        uint8_t *out = (uint8_t *)pic->data[i] + ((size_t)row * (size_t)pic->stride[i]);
+        for (unsigned col = 0; col < pic->w[i]; col++) {
+            uint16_t v = in[(size_t)col * in_bytes];
+            if (in_bytes == 2u)
+                (void)memcpy(&v, in + ((size_t)col * 2u), sizeof(v));
+            const uint16_t shifted = (uint16_t)(v << shift);
+            (void)memcpy(out + ((size_t)col * 2u), &shifted, sizeof(shifted));
+        }
+    }
+    return 0;
+}
+
+/* y4m_input_fetch_frame() points each plane at the padded frame's origin;
+ * move it to the visible picture and give it the picture's size. */
+static void y4m_visible_planes(const y4m_input *const y4m, video_input_ycbcr ycbcr)
+{
+    const size_t xstride = y4m->depth > 8 ? 2u : 1u;
+    for (unsigned i = 0; i < 3; i++) {
+        const int dec_h = i ? y4m->dst_c_dec_h : 1;
+        const int dec_v = i ? y4m->dst_c_dec_v : 1;
+        const size_t x0 = (size_t)(y4m->pic_x / dec_h);
+        const size_t y0 = (size_t)(y4m->pic_y / dec_v);
+        ycbcr[i].data += (y0 * ycbcr[i].stride) + (x0 * xstride);
+        ycbcr[i].width = (uint32_t)((y4m->pic_w + dec_h - 1) / dec_h);
+        ycbcr[i].height = (uint32_t)((y4m->pic_h + dec_v - 1) / dec_v);
+    }
+}
+
+/* A stream shallower than the picture reads shifted left to the picture's
+ * depth (Netflix/vmaf PR 1682); a deeper stream, or an 8-bit picture, is
+ * refused. */
+static int y4m_fetch_upshifted(y4m_input *const y4m, FILE *const fin, VmafPicture *const pic)
+{
+    if (y4m->depth > (int)pic->bpc || pic->bpc <= 8) {
+        (void)fprintf(stderr, "unsupported y4m bitdepth conversion\n");
+        return -1;
+    }
+    video_input_ycbcr ycbcr;
+    const int rc = y4m_input_fetch_frame(y4m, fin, ycbcr, NULL);
+    if (rc <= 0)
+        return rc;
+    y4m_visible_planes(y4m, ycbcr);
+    const unsigned shift = pic->bpc - (unsigned)y4m->depth;
+    for (unsigned i = 0; i < 3; i++) {
+        if (y4m_upshift_plane(&ycbcr[i], y4m->depth, shift, pic, i) < 0) {
+            (void)fprintf(stderr, "y4m frame smaller than the picture\n");
+            return -1;
+        }
+    }
+    return 1;
+}
+
 static int y4m_fetch_into_vmaf_picture(y4m_input *const y4m, FILE *const fin,
                                        VmafPicture *const pic)
 {
+    if (y4m->depth != (int)pic->bpc)
+        return y4m_fetch_upshifted(y4m, fin, pic);
+
     if (y4m->convert != y4m_convert_null) {
         (void)fprintf(stderr, "y4m format requires conversion; direct read not supported.\n");
         return -1;
