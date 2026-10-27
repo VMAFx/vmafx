@@ -80,6 +80,7 @@ struct VmafxSyclRt {
     int32_t index;
     bool immediate;
     char name[VMAFX_SYCL_NAME_BYTES];
+    char runtime[VMAFX_SYCL_NAME_BYTES];
 };
 
 struct VmafxSyclFrameRt {
@@ -137,6 +138,41 @@ const char *kept_name(int32_t index, const sycl::device &dev)
         (void)std::snprintf(name, VMAFX_SYCL_NAME_BYTES, "%s", n.c_str());
     }
     return name;
+}
+
+/* "<platform> <driver version>" of `dev` into `out`; "unknown" when the
+ * runtime throws or the text does not fit. */
+void format_runtime(const sycl::device &dev, char *out, size_t size)
+{
+    try {
+        const std::string plat = dev.get_platform().get_info<sycl::info::platform::name>();
+        const std::string drv = dev.get_info<sycl::info::device::driver_version>();
+        const int n = std::snprintf(out, size, "%s %s", plat.c_str(), drv.c_str());
+        if (n < 0 || (size_t)n >= size) {
+            (void)std::snprintf(out, size, "unknown");
+        }
+    } catch (const std::exception &) {
+        (void)std::snprintf(out, size, "unknown");
+    }
+}
+
+/* Runtime strings of the devices, kept for the process (VmafxDeviceInfo.runtime). */
+char (&device_runtimes()) [VMAFX_SYCL_MAX_DEVICES][VMAFX_SYCL_NAME_BYTES] {
+    static char runtimes[VMAFX_SYCL_MAX_DEVICES][VMAFX_SYCL_NAME_BYTES];
+    return runtimes;
+}
+
+const char *kept_runtime(int32_t index, const sycl::device &dev)
+{
+    if (index < 0 || index >= VMAFX_SYCL_MAX_DEVICES) {
+        return "unknown";
+    }
+    const std::scoped_lock hold(names_lock());
+    char *const rt = device_runtimes()[index];
+    if (rt[0] == '\0') {
+        format_runtime(dev, rt, VMAFX_SYCL_NAME_BYTES);
+    }
+    return rt[0] != '\0' ? rt : "unknown";
 }
 
 /* The PCI bus id of `dev` ("dddd:bb:dd.f", the Intel device-info
@@ -504,6 +540,7 @@ extern "C" int vmafx_sycl_rt_open(int32_t index, uintptr_t external_queue, Vmafx
         rt->memory = dev.get_info<sycl::info::device::global_mem_size>();
         (void)std::snprintf(rt->name, sizeof(rt->name), "%s",
                             dev.get_info<sycl::info::device::name>().c_str());
+        format_runtime(dev, rt->runtime, sizeof(rt->runtime));
         *out = rt;
         return 0;
     } catch (const std::exception &e) {
@@ -540,6 +577,25 @@ extern "C" int32_t vmafx_sycl_rt_index(const VmafxSyclRt *rt)
 extern "C" const char *vmafx_sycl_rt_name(const VmafxSyclRt *rt)
 {
     return rt->name;
+}
+
+extern "C" const char *vmafx_sycl_rt_runtime(const VmafxSyclRt *rt)
+{
+    return rt && rt->runtime[0] != '\0' ? rt->runtime : "unknown";
+}
+
+extern "C" const char *vmafx_sycl_rt_runtime_at(int32_t index)
+{
+    try {
+        const std::vector<sycl::device> gpus = level_zero_gpus();
+        if (index < 0 ||
+            std::cmp_greater_equal(index, std::min<size_t>(gpus.size(), VMAFX_SYCL_MAX_DEVICES))) {
+            return "unknown";
+        }
+        return kept_runtime(index, gpus[(size_t)index]);
+    } catch (const std::exception &) {
+        return "unknown";
+    }
 }
 
 extern "C" uint64_t vmafx_sycl_rt_memory(const VmafxSyclRt *rt)

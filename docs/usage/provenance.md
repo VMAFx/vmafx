@@ -86,6 +86,13 @@ by group:
 | Encode | `encode_record`: the digest of the encode record of the distorted input ([VMAFx/pelorus#81](https://github.com/VMAFx/pelorus/issues/81)), empty until a producer sets it |
 | Digests | `scores_digest`, `digest`; `elapsed_ns` is timing and not digested |
 
+`device_runtime` (and the `runtime` field of feature extractors on the device)
+records the driver and runtime version as reported by each backend:
+`x86_64`-style host architecture on CPU, `cuda driver X.Y runtime X.Y` on CUDA,
+`<platform-name> <driver-version>` on SYCL, `hip driver X.Y runtime X.Y` on HIP,
+and Darwin kernel version or `metal` on Metal. If a backend cannot query its
+runtime or driver version, it falls back safely to `unknown`.
+
 `exactness` says how a feature's scores relate to the CPU extractor's:
 `cpu-reference` (the CPU extractor itself), `exact` (a twin declared
 bit-identical in `scripts/ci/exact_twins.d`), `libm-bounded <bound>` (differs
