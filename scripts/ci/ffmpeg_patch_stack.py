@@ -484,6 +484,7 @@ class Receipt(TypedDict, total=False):
     target_source: str
     cache: str
     patched_tree: str
+    kept_tree: str
     changed: list[str]
     status: str
     error: str
@@ -559,8 +560,39 @@ def unpinned_release(shared: str, target_tag: str, current_tag: str, output: Pat
     )
 
 
+def keep_patched_tree(checkout: Path, destination: Path) -> None:
+    """Copy the patched FFmpeg checkout, without its Git data, to a new directory.
+
+    The integrations tidy lane compiles and measures the fork's FFmpeg sources
+    in this tree (ADR-2796 lane list, issue #2860); it refuses an existing
+    destination rather than mixing two trees.
+    """
+    if destination.exists():
+        raise ValueError(f"{destination}: --keep-tree destination exists")
+    shutil.copytree(checkout, destination, symlinks=True, ignore=shutil.ignore_patterns(".git"))
+
+
+def settle_updates(repo: Path, updates: dict[Path, bytes], refresh: bool, receipt: Receipt) -> None:
+    """Write the rendered patch and configuration mirrors, or fail on drift in check mode."""
+    changed = [
+        str(path.relative_to(repo)) for path, data in updates.items() if path.read_bytes() != data
+    ]
+    receipt.update({"changed": changed, "status": "refreshed" if refresh else "checked"})
+    if refresh:
+        replace_files(updates)
+    elif changed:
+        raise ValueError(
+            "patch/configuration drift; run python3 scripts/ci/ffmpeg_patch_stack.py --refresh"
+        )
+
+
 def maintain(
-    repo: Path, output: Path, refresh: bool, latest: bool, cache_dir: Path | None = None
+    repo: Path,
+    output: Path,
+    refresh: bool,
+    latest: bool,
+    cache_dir: Path | None = None,
+    keep_tree: Path | None = None,
 ) -> Receipt:
     receipt: Receipt = {}
     output.mkdir(parents=True, exist_ok=True)
@@ -589,6 +621,9 @@ def maintain(
                     "patched_tree": replay.git("rev-parse", "HEAD^{tree}").strip(),
                 }
             )
+            if keep_tree is not None:
+                keep_patched_tree(replay.checkout, keep_tree)
+                receipt["kept_tree"] = str(keep_tree)
             commits = replay.git("rev-list", "--reverse", f"{target}..HEAD").splitlines()
             if len(commits) != shared_count + len(names):
                 raise ValueError(
@@ -601,18 +636,7 @@ def maintain(
             updates.update(mirrors(repo, remote, target_tag))
             config = repo / "build-config.env"
             updates[config] = pinned_config(config.read_text(), target_tag, target).encode()
-            changed = [
-                str(path.relative_to(repo))
-                for path, data in updates.items()
-                if path.read_bytes() != data
-            ]
-            receipt.update({"changed": changed, "status": "refreshed" if refresh else "checked"})
-            if refresh:
-                replace_files(updates)
-            elif changed:
-                raise ValueError(
-                    "patch/configuration drift; run python3 scripts/ci/ffmpeg_patch_stack.py --refresh"
-                )
+            settle_updates(repo, updates, refresh, receipt)
     except (KeyError, ValueError, RuntimeError, OSError, CommandTimedOut) as error:
         receipt.update({"status": "failed", "error": str(error)})
         raise
@@ -647,13 +671,25 @@ def main() -> int:
     parser.add_argument(
         "--output-dir", type=Path, help="retain logs, candidate patches and exact upstream receipt"
     )
+    parser.add_argument(
+        "--keep-tree",
+        type=Path,
+        help="copy the patched FFmpeg source tree (no .git) to this new directory",
+    )
     args = parser.parse_args()
     if args.latest and not args.refresh:
         parser.error("--latest requires --refresh")
     repo = Path(__file__).resolve().parents[2]
     output = args.output_dir or Path(tempfile.mkdtemp(prefix="vmafx-ffmpeg-report-"))
     try:
-        result = maintain(repo, output.resolve(), args.refresh, args.latest, args.cache_dir)
+        result = maintain(
+            repo,
+            output.resolve(),
+            args.refresh,
+            args.latest,
+            args.cache_dir,
+            args.keep_tree.resolve() if args.keep_tree else None,
+        )
     except (KeyError, ValueError, RuntimeError, OSError, CommandTimedOut) as error:
         print(f"FFmpeg patch stack FAILED: {error}\nDiagnostics: {output}")
         return 1

@@ -335,13 +335,13 @@ lint-c: $(BUILD_DIR) $(MESON) $(NINJA)
 	$(PYTHON_INTERPRETER) scripts/ci/lint-configured.py --build-dir "$(BUILD_DIR)" \
 	    --jobs "$(LINT_JOBS)" $(LINT_CONFIGURED_ARGS)
 
-# ADR-1142 — whole-tree clang-tidy debt ratchet. LANE=cpu|clang|cuda|sycl|hip|arm64
+# ADR-1142 — whole-tree clang-tidy debt ratchet. LANE=cpu|clang|cuda|sycl|hip|arm64|integrations
 # (default cpu). `tidy-ratchet` measures a build dir that is configured for the
 # lane (TIDY_RATCHET_BUILD_DIR, default $(BUILD_DIR)) and compares it with
 # scripts/ci/tidy-baseline-$(LANE).json; `tidy-ratchet-write` rewrites that
 # baseline — commit it in the same PR; never hand-edit a baseline.
 #
-# Where a lane is measured (ADR-1471): the five baselines are defined against
+# Where a lane is measured (ADR-1471): the container lanes' baselines are defined against
 # the Ubuntu 26.04 dev container, not against the machine you sit at. `make tidy-lane LANE=<lane>` copies this checkout into a
 # throwaway container of the dev image, configures the lane there with its real
 # toolchain (`tidy-ratchet-build` below) and runs this target inside it;
@@ -398,12 +398,19 @@ export CLANG_TIDY_BIN
 # backend arguments that the lint database drops anyway. arm64 cross-compiles
 # with the distribution's aarch64 gcc; the second cross file names Ubuntu's
 # `qemu-aarch64` where the first names `qemu-aarch64-static`.
+# integrations measures the sources that are not part of the core build
+# (#2860): the GStreamer plugin under gstreamer/ and the FFmpeg filter sources
+# under ffmpeg-patches/src/. It builds the core like cpu (the plugin and the
+# filters link libvmafx), then TIDY_RATCHET_POSTBUILD_integrations builds the
+# plugin and the patched FFmpeg objects with their CUDA, Vulkan and libdrm
+# bodies on, and its --select list measures those two trees only.
 TIDY_RATCHET_COMPILERS_cpu := CC=gcc-15 CXX=g++-15
 TIDY_RATCHET_COMPILERS_clang := CC=clang-22 CXX=clang++-22
 TIDY_RATCHET_COMPILERS_cuda := CC=gcc-15 CXX=g++-15
 TIDY_RATCHET_COMPILERS_hip := CC=gcc-15 CXX=g++-15
 TIDY_RATCHET_COMPILERS_sycl := CC=icx CXX=icpx
 TIDY_RATCHET_COMPILERS_arm64 :=
+TIDY_RATCHET_COMPILERS_integrations := CC=gcc-15 CXX=g++-15
 # The metal lane is the one lane with no container: Apple's SDK exists on a
 # macOS host only. The `Tidy Metal` workflow (tidy-metal.yml) repeats these
 # two lines and passes the --select list of the Metal host sources.
@@ -425,6 +432,8 @@ TIDY_RATCHET_SETUP_sycl := -Denable_sycl=true -Dsycl_icpx_aot_targets= \
 TIDY_RATCHET_SETUP_arm64 := --cross-file build-aux/aarch64-linux-gnu.ini \
 	--cross-file build-aux/aarch64-linux-gnu-qemu-user.ini \
 	-Denable_cuda=false -Denable_sycl=false -Denable_dnn=disabled -Db_lto=false
+TIDY_RATCHET_SETUP_integrations := -Denable_cuda=false -Denable_sycl=false \
+	-Denable_dnn=disabled -Db_lto=false
 TIDY_RATCHET_EXTRA_cpu :=
 TIDY_RATCHET_EXTRA_clang := --select core/test/fuzz/ --select core/src/read_json_model.c
 TIDY_RATCHET_EXTRA_cuda := --extra-arg=--cuda-host-only --extra-arg=-nocudalib
@@ -433,6 +442,7 @@ TIDY_RATCHET_EXTRA_hip := --clang-tidy $(CURDIR)/scripts/ci/clang-tidy-hip.sh \
 TIDY_RATCHET_EXTRA_sycl := --clang-tidy $(CURDIR)/scripts/ci/clang-tidy-sycl.sh
 TIDY_RATCHET_EXTRA_arm64 := --extra-arg=--target=$(AARCH64_TARGET) \
 	--extra-arg=--sysroot=$(AARCH64_SYSROOT)
+TIDY_RATCHET_EXTRA_integrations := --select gstreamer/ --select ffmpeg-patches/src/
 
 # nvcc, hipcc and icpx compile through meson custom targets, which leaves their
 # translation units out of compile_commands.json: write-compile-commands.py
@@ -451,6 +461,13 @@ TIDY_RATCHET_COMPDB_hip := $(PYTHON_INTERPRETER) scripts/ci/gen-gpu-compile-comm
 TIDY_RATCHET_COMPDB_sycl := $(PYTHON_INTERPRETER) scripts/ci/gen-sycl-compile-commands.py \
 	"$(TIDY_RATCHET_BUILD_DIR)"
 TIDY_RATCHET_COMPDB_arm64 :=
+# integrations merges the plugin's own compile database and the FFmpeg filter
+# compile lines its build hook logged (scripts/ci/tidy-integrations-build.sh).
+TIDY_RATCHET_COMPDB_integrations := $(PYTHON_INTERPRETER) \
+	scripts/ci/gen-integrations-compile-commands.py "$(TIDY_RATCHET_BUILD_DIR)"
+# A lane that measures sources outside the core build builds them after it.
+TIDY_RATCHET_POSTBUILD_integrations := scripts/ci/tidy-integrations-build.sh \
+	"$(TIDY_RATCHET_BUILD_DIR)" "$(TIDY_RATCHET_JOBS)"
 
 # Configure and build a lane's build dir: compile_commands.json plus the
 # generated headers the translation units include.
@@ -459,8 +476,9 @@ tidy-ratchet-build: $(MESON) $(NINJA)
 	    "$(TIDY_RATCHET_BUILD_DIR)" "$(LIBVMAF_DIR)" $(TIDY_RATCHET_SETUP_$(LANE))
 	PATH="$(VIRTUAL_ENV_ABS):$$PATH" "$(NINJA_EXEC)" -C "$(TIDY_RATCHET_BUILD_DIR)" \
 	    -j "$(TIDY_RATCHET_JOBS)"
+	$(TIDY_RATCHET_POSTBUILD_$(LANE))
 
-# Measure LANE (cpu, cuda, hip, sycl, arm64 or all) in a throwaway dev container;
+# Measure LANE (cpu, clang, cuda, hip, sycl, arm64, integrations or all) in a throwaway dev container;
 # TIDY_LANE_ARGS passes --image / --jobs / --out to scripts/dev/tidy-lane.sh.
 tidy-lane:
 	scripts/dev/tidy-lane.sh $(TIDY_LANE_ARGS) $(LANE)

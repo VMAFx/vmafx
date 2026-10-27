@@ -335,6 +335,37 @@
       ],
       "evidence": "^merged blob 4984a8d97 == blob at 7408ba6cd$",
       "reason": "ADR-2828 removes .config/lint-exceptions.d/HISS-10.toml as all build lanes are gated directly. In the generated scripts/ci/AGENTS-tidy.md index, removing HISS-10.toml from the tidy-ratchet row leaves the generated table byte-identical to its blob at 7408ba6cd before 860900145 added HISS-10.toml."
+    },
+    {
+      "adr": "ADR-3379",
+      "kind": "reverse-hunk",
+      "undoes": "bfa15add7e6490dcfab6c3e5613239949b8539c5",
+      "evidence": "^\\s*(?:\\[\\[exception\\]\\]|- rule: clang-tidy-coverage|path\\s*[=:]\\s*\"(?:gstreamer|ffmpeg-patches)/src/[A-Za-z0-9_.]+\\.c\"|expires\\s*[=:]\\s*\"?2026-11-01\"?|reason\\s*[=:]\\s*\"Category A \\(stated interval 14 days, from 2026-10-18;.*the gstreamer and ffmpeg-patches/src lane is VMAFx/vmafx#2860, which removes this entry\\.\")\\s*$",
+      "reason": "ADR-3379 (#2860) adds the `integrations` clang-tidy lane, which builds and measures the GStreamer plugin and the ffmpeg-patches/src sources; the Category A clang-tidy-coverage exceptions that bfa15add7 added for those files said in their own reason that #2860 removes them, and test_check_tidy_coverage.py now refuses an exception for a measured file.",
+      "paths": [
+        ".config/lint-exceptions.d/clang-tidy-coverage.toml",
+        ".standards.yaml"
+      ]
+    },
+    {
+      "adr": "ADR-3379",
+      "kind": "reverse-hunk",
+      "undoes": "37d9fec93058038101e43e334584659e427898f5",
+      "evidence": "^\\s*(?:\\[\\[exception\\]\\]|- rule: clang-tidy-coverage|path\\s*[=:]\\s*\"(?:gstreamer|ffmpeg-patches)/src/[A-Za-z0-9_.]+\\.c\"|expires\\s*[=:]\\s*\"?2026-11-01\"?|reason\\s*[=:]\\s*\"Category A \\(stated interval 14 days, from 2026-10-18;.*the gstreamer and ffmpeg-patches/src lane is VMAFx/vmafx#2860, which removes this entry\\.\")\\s*$",
+      "reason": "ADR-3379 (#2860) adds the `integrations` clang-tidy lane, which builds and measures the GStreamer plugin and the ffmpeg-patches/src sources; the Category A clang-tidy-coverage exceptions that 37d9fec93 added for those files said in their own reason that #2860 removes them, and test_check_tidy_coverage.py now refuses an exception for a measured file.",
+      "paths": [
+        ".config/lint-exceptions.d/clang-tidy-coverage.toml",
+        ".standards.yaml"
+      ]
+    },
+    {
+      "adr": "ADR-3379",
+      "kind": "rewind",
+      "evidence": "^merged blob 55083b3f6 == blob at ab45b33e7$",
+      "reason": "The same removal seen by the other detector. bfa15add7 (#2370) and 37d9fec93 (#2346) were the only changes clang-tidy-coverage.toml had since ab45b33e7, and both only added the Category A exceptions for the GStreamer plugin and ffmpeg-patches/src sources. ADR-3379's integrations lane measures those files, so the exceptions are retired and the file is byte-identical to that older blob; no other exception goes back.",
+      "paths": [
+        ".config/lint-exceptions.d/clang-tidy-coverage.toml"
+      ]
     }
   ]
 }

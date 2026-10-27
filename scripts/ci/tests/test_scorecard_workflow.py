@@ -235,7 +235,8 @@ const checks = input.checks.map(c => ({...c, status: 'completed', started_at: ne
 const github = {rest: {
  actions: {getWorkflowRun: async () => ({data: {created_at: new Date(now).toISOString()}}),
   listWorkflowRunsForRepo: async () => ({data: {workflow_runs: []}})},
- checks: {listForRef: async () => ({data: {check_runs: checks}})}
+ checks: {listForRef: async ({page, per_page}) =>
+  ({data: {check_runs: checks.slice((page - 1) * per_page, page * per_page)}})}
 }};
 const context = {eventName: input.event, sha: 'abc', repo: {owner:'test',repo:'test'},
  payload: {pull_request: {head:{ref:'fix/example',sha:'abc'}}}};

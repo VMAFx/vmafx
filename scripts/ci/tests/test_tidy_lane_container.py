@@ -36,7 +36,7 @@ HIP_WRAPPER = ROOT / "scripts/ci/clang-tidy-hip.sh"
 WORKFLOW = ROOT / ".github/workflows/lint-and-format.yml"
 NIGHTLY = ROOT / ".github/workflows/nightly.yml"
 CONTAINERFILE = ROOT / "dev/Containerfile"
-CONTAINER_LANES = ("cpu", "clang", "cuda", "hip", "sycl", "arm64")
+CONTAINER_LANES = ("cpu", "clang", "cuda", "hip", "sycl", "arm64", "integrations")
 
 # The entry point is a bash script that drives docker and GNU tar: it runs on
 # the Linux workstation that has the dev image. Elsewhere its cases are skipped
@@ -319,11 +319,12 @@ class HostSide(unittest.TestCase):
         self.assertFalse([name for name in sent if "ignored.o" in name or ".git/" in name])
         self.assertEqual(self._calls()[-1], "rm -f fakecid")
 
-    def test_all_runs_the_six_container_lanes(self) -> None:
+    def test_all_runs_the_seven_container_lanes(self) -> None:
         self.assertEqual(self._run("all").returncode, 0)
         create = next(call for call in self._calls() if call.startswith("create "))
         self.assertTrue(
-            create.endswith("--in-container --jobs 8 cpu clang cuda hip sycl arm64"), create
+            create.endswith("--in-container --jobs 8 cpu clang cuda hip sycl arm64 integrations"),
+            create,
         )
 
     def test_ratchet_exit_code_is_the_scripts(self) -> None:

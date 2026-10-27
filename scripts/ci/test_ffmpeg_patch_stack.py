@@ -134,6 +134,23 @@ class RealReplay(unittest.TestCase):
         STACK.maintain(self.repo, self.output, True, False)
         self.assertEqual(self.contents(), before)
 
+    def test_keep_tree_copies_the_patched_sources_without_git(self) -> None:
+        STACK.maintain(self.repo, self.output, True, False)
+        kept = self.root / "kept"
+        result = STACK.maintain(self.repo, self.output, False, False, keep_tree=kept)
+        self.assertEqual(result["kept_tree"], str(kept))
+        self.assertEqual((kept / "sample").read_text(), "patched\n")
+        self.assertFalse((kept / ".git").exists())
+
+    def test_keep_tree_refuses_an_existing_destination(self) -> None:
+        STACK.maintain(self.repo, self.output, True, False)
+        kept = self.root / "kept"
+        kept.mkdir()
+        (kept / "stale").write_text("old\n")
+        with self.assertRaisesRegex(ValueError, "destination exists"):
+            STACK.maintain(self.repo, self.output, False, False, keep_tree=kept)
+        self.assertEqual(sorted(path.name for path in kept.iterdir()), ["stale"])
+
     def test_source_file_is_the_patch_content(self) -> None:
         # RC4 WP9: ffmpeg-patches/src/ holds the source of a file a patch adds.
         sources = {"sample": "sample.c"}

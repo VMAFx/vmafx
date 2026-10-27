@@ -4,10 +4,11 @@ name: Measure a clang-tidy ratchet lane
 description: >-
   Pull the pinned dev container and run scripts/dev/tidy-lane.sh for one lane
   against its committed baseline (ADR-2796, ADR-1471). The container carries the
-  toolchains the lane needs (nvcc, hipcc, icpx, the aarch64 cross compiler).
+  toolchains the lane needs (nvcc, hipcc, icpx, the aarch64 cross compiler, the
+  FFmpeg and GStreamer build dependencies).
 inputs:
   lane:
-    description: cuda, hip, sycl, arm64 or clang
+    description: cuda, hip, sycl, arm64, clang or integrations
     required: true
   image:
     description: >-

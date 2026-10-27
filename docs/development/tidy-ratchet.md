@@ -55,7 +55,12 @@ Each lane has its own compile database and baseline. The numbers are the
 | `arm64` | NEON and SVE2 tree | Dev container with the aarch64 cross compiler and `qemu-user` | Yes (`Tidy Lane (arm64)`, path-routed) | `tidy-baseline-arm64.json` | 0 |
 
 The `clang` lane (the fuzz targets and `read_json_model.c` built with clang) is
-required as `Tidy Lane (clang)`, and the macOS `metal` lane (the Objective-C++
+required as `Tidy Lane (clang)`; the `integrations` lane (the GStreamer
+element under `gstreamer/src/` and the FFmpeg filter sources under
+`ffmpeg-patches/src/`, compiled against the patched FFmpeg tree,
+`tidy-baseline-integrations.json`,
+[ADR-3379](../adr/3379-tidy-integrations-lane.md)) as
+`Tidy Lane (integrations)`; and the macOS `metal` lane (the Objective-C++
 host code and the Metal-only tests, `tidy-baseline-metal.json`) as `Tidy Metal`.
 The `.metal` shader sources have no clang-tidy language mode and are on the
 exception list. Measure a lane with `make tidy-lane LANE=<lane>`; see
@@ -70,7 +75,7 @@ lane reads ([ADR-2796](../adr/2796-hosted-tidy-all-lanes.md)):
 | Lane | Required context | Where it runs | Selector (`.github/ci-impact.json`) |
 | --- | --- | --- | --- |
 | `cpu` | `Tidy Ratchet` | the runner, `lint-and-format.yml` | `c_core` |
-| `cuda`, `hip`, `sycl`, `arm64`, `clang` | `Tidy Lane (<lane>)` | the digest-pinned dev container, `lint-and-format.yml` | `tidy_<lane>` |
+| `cuda`, `hip`, `sycl`, `arm64`, `clang`, `integrations` | `Tidy Lane (<lane>)` | the digest-pinned dev container, `lint-and-format.yml` | `tidy_<lane>` |
 | `metal` | `Tidy Metal` | a macOS runner, `tidy-metal.yml` | `tidy_metal` |
 
 - **Routing.** Each `tidy_<lane>` selector is `own_paths_only`

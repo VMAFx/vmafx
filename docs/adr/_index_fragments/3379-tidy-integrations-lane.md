@@ -1,0 +1,1 @@
+| [ADR-3379](3379-tidy-integrations-lane.md) | The `integrations` clang-tidy lane measures the GStreamer element and the FFmpeg filter sources in `ffmpeg-patches/src/` from their own builds in the dev container, hosted as `Tidy Lane (integrations)` and routed by `tidy_integrations`; extends ADR-2796 | Accepted | ci, lint, gstreamer, ffmpeg |

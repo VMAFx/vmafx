@@ -856,7 +856,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--lane",
         default="cpu",
-        help="baseline lane name (cpu, clang, cuda, sycl, hip, arm64, metal)",
+        help="baseline lane name (cpu, clang, cuda, sycl, hip, arm64, metal, integrations)",
     )
     parser.add_argument("--build-dir", default="build", type=Path)
     parser.add_argument("--repo-root", default=".", type=Path)

@@ -626,6 +626,29 @@
         "scripts/ci/tidy-baseline-clang.json"
       ]
     },
+    "tidy_integrations": {
+      "own_paths_only": true,
+      "patterns": [
+        "gstreamer/meson.build",
+        "gstreamer/meson_options.txt",
+        "gstreamer/src/*",
+        "gstreamer/src/**",
+        "ffmpeg-patches/series.txt",
+        "ffmpeg-patches/*.patch",
+        "ffmpeg-patches/src/*",
+        "build-config.env",
+        "scripts/ci/tidy-ratchet.py",
+        "scripts/dev/tidy-lane.sh",
+        "scripts/ci/write-compile-commands.py",
+        ".clang-tidy",
+        "Makefile",
+        ".github/workflows/lint-and-format.yml",
+        "scripts/ci/tidy-baseline-integrations.json",
+        "scripts/ci/gen-integrations-compile-commands.py",
+        "scripts/ci/tidy-integrations-build.sh",
+        "scripts/ci/ffmpeg_patch_stack.py"
+      ]
+    },
     "tidy_metal": {
       "own_paths_only": true,
       "patterns": [

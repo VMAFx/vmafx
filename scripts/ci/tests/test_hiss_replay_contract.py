@@ -171,6 +171,7 @@ ADR_2796_STRICT_CONTEXTS = {
     "Tidy Lane (sycl)",
     "Tidy Lane (arm64)",
     "Tidy Lane (clang)",
+    "Tidy Lane (integrations)",
     "Tidy Metal",
 }
 
