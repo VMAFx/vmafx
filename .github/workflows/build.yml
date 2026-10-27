@@ -743,8 +743,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           # Judge this leg's own job: the matrix job's aggregate result covers every leg.
-          gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs?per_page=100" --paginate \
-            | python3 scripts/ci/gate_leg_result.py --job "Linux Intel LLVM work"
+          python3 scripts/ci/gate_leg_result.py --job "Linux Intel LLVM work" --fetch
 
   macos-clang-metal-gate:
     needs: [tier, impact, build-work]
@@ -768,8 +767,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           # Judge this leg's own job: the matrix job's aggregate result covers every leg.
-          gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs?per_page=100" --paginate \
-            | python3 scripts/ci/gate_leg_result.py --job "macOS Clang+Metal work"
+          python3 scripts/ci/gate_leg_result.py --job "macOS Clang+Metal work" --fetch
 
   windows-msvc-cuda-full-gate:
     needs: [tier, impact, build-work]
@@ -793,5 +791,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           # Judge this leg's own job: the matrix job's aggregate result covers every leg.
-          gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs?per_page=100" --paginate \
-            | python3 scripts/ci/gate_leg_result.py --job "Windows MSVC+CUDA (full) work"
+          python3 scripts/ci/gate_leg_result.py --job "Windows MSVC+CUDA (full) work" --fetch
