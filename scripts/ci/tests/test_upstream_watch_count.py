@@ -18,7 +18,6 @@ WORKFLOWS_DIR = REPO_ROOT / ".github" / "workflows"
 
 WORKFLOW_FILES = (
     WORKFLOWS_DIR / "upstream-ffmpeg-hip-hwdec-watcher.yml",
-    WORKFLOWS_DIR / "upstream-netflix-645-hdr-model-watcher.yml",
     WORKFLOWS_DIR / "upstream-netflix-955-watcher.yml",
 )
 
@@ -217,10 +216,6 @@ exit 0
         ffmpeg_content = WORKFLOW_FILES[0].read_text(encoding="utf-8")
         self.assertIn("FILES_HIT=$(scripts/ci/upstream_watch_count.sh", ffmpeg_content)
         self.assertIn("ENUM_HIT=$(scripts/ci/upstream_watch_count.sh", ffmpeg_content)
-
-        netflix_645_content = WORKFLOW_FILES[1].read_text(encoding="utf-8")
-        self.assertIn("MODEL_HIT=$(scripts/ci/upstream_watch_count.sh", netflix_645_content)
-        self.assertNotIn('|| echo ""', netflix_645_content)
 
     def test_no_workflow_uses_code_search(self) -> None:
         """Code search is throttled for the workflow token; the watchers read the contents API."""

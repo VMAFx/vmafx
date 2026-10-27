@@ -21,6 +21,7 @@ sys.path.insert(0, str(_HERE.parent / "src"))
 
 from vmaftune.hdr import (
     HDR_MODEL_FILENAME,
+    HDR_V118_MODEL_RELPATH,
     HdrInfo,
     detect_hdr,
     hdr_codec_args,
@@ -391,6 +392,39 @@ def test_select_hdr_vmaf_model_does_not_warn_when_canonical_present(
         select_hdr_vmaf_model(tmp_path, transfer="pq")
     warns = [r for r in caplog.records if "HDR VMAF model unavailable" in r.message]
     assert warns == []
+
+
+def _write_v118(base: Path) -> Path:
+    target = base / HDR_V118_MODEL_RELPATH
+    target.parent.mkdir(parents=True)
+    target.write_text("{}")
+    return target
+
+
+def test_select_hdr_vmaf_model_finds_shipped_v118_for_pq(tmp_path: Path):
+    target = _write_v118(tmp_path)
+    assert select_hdr_vmaf_model(tmp_path, transfer="pq") == target
+    assert select_hdr_vmaf_model(tmp_path) == target
+
+
+def test_select_hdr_vmaf_model_v118_not_used_for_hlg(tmp_path: Path):
+    # v1.1.8 is PQ-trained; HLG without a vmaf_hdr_*.json gets None.
+    _write_v118(tmp_path)
+    reset_hdr_model_warning()
+    assert select_hdr_vmaf_model(tmp_path, transfer="hlg") is None
+
+
+def test_select_hdr_vmaf_model_canonical_beats_v118(tmp_path: Path):
+    _write_v118(tmp_path)
+    canonical = tmp_path / HDR_MODEL_FILENAME
+    canonical.write_text("{}")
+    assert select_hdr_vmaf_model(tmp_path, transfer="pq") == canonical
+
+
+def test_repo_model_tree_resolves_v118():
+    repo_model = Path(__file__).resolve().parents[3] / "model"
+    found = select_hdr_vmaf_model(repo_model, transfer="pq")
+    assert found == repo_model / HDR_V118_MODEL_RELPATH
 
 
 def test_select_hdr_vmaf_model_legacy_call_without_transfer_still_works(tmp_path: Path):

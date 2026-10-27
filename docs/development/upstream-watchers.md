@@ -22,11 +22,10 @@ opens a GitHub tracking issue the moment the feature appears.
 | `upstream-watcher.yml` (runs `scripts/upstream-watcher/check_ffmpeg_av1_videotoolbox.sh`) | Daily 08:00 | `AV_CODEC_ID_AV1` in `libavcodec/videotoolboxenc.c` on `git.ffmpeg.org/ffmpeg.git` `master` | `tools/vmaf-tune/src/vmaftune/codec_adapters/av1_videotoolbox.py` | [ADR-0339](../adr/0339-av1-videotoolbox-placeholder-adapter.md) |
 | `upstream-watcher.yml` (runs `scripts/upstream-watcher/check_netflix_unported.py`) | Daily 08:00 | Commits on `Netflix/vmaf` `master` after parity pin without a ledger entry | Netflix parity pin ([`known-upstream-bugs.md`](known-upstream-bugs.md)) | [ADR-3354](../adr/3354-netflix-unported-commit-watcher.md) |
 | `upstream-ffmpeg-hip-hwdec-watcher.yml` | Sundays 06:30 | `hwcontext_hip.{c,h}` under `libavutil/`, or an `AV_HWDEVICE_TYPE_HIP` / `_ROCM` enum variant in `libavutil/hwcontext.h`, read through the contents API of the FFmpeg mirror | `T-FFMPEG-HIP-FILTER-DEFERRED` row in `docs/state.md` | [ADR-0448](../adr/0448-active-upstream-monitoring-discipline.md) |
-| `upstream-netflix-645-hdr-model-watcher.yml` | Sundays 06:15 | Netflix/vmaf#645 activity, or a `vmaf_hdr_*.json` file under `Netflix/vmaf:model/` | the HDR-VMAF model port deferral | [ADR-0448](../adr/0448-active-upstream-monitoring-discipline.md) |
 | `upstream-netflix-955-watcher.yml` | Sundays 06:00 | Netflix/vmaf#1494 merging (it closes #955) | the Netflix#955 `i4_adm_cm` deferral row | [ADR-0448](../adr/0448-active-upstream-monitoring-discipline.md) |
 
 The two `upstream-watcher.yml` jobs run detection scripts under `scripts/upstream-watcher/`;
-the other three are workflow-only (the poll is inline in the workflow, using
+the other two are workflow-only (the poll is inline in the workflow, using
 `gh api`).
 
 ## Netflix unported commits watcher
@@ -118,7 +117,7 @@ A script-based watcher has three moving parts:
    moment earlier can still be unknown to `gh issue create --label`; a label
    that never appears fails the step with an error naming it.
 
-The other three watchers skip the script: each is its own workflow file whose
+The other two watchers skip the script: each is its own workflow file whose
 `poll` job queries upstream with `gh api` and opens or updates its tracking
 issue directly.
 
