@@ -997,3 +997,23 @@ Reports from outside the project's own hosts are listed on the
   reason says which and names the missing `docker run` option (see
   [E](#e-amd-gpu-image-linux)).
 - Anything that stops before a report is printed — send the terminal output in an issue.
+
+## What the report says executed
+
+The report does not trust the processor flags alone. For every dispatch fixture
+the tester runs `vmaf` once with the default CPU mask and once masked to scalar,
+and reads the SIMD level the library itself reports in its provenance record.
+The `executed_dispatch` section shows both levels and one status:
+
+| Status | Meaning | Verdict |
+| --- | --- | --- |
+| `match` | The default run used the level the host flags allow and the masked run was scalar. | pass |
+| `mismatch` | The library ran another level than expected. | fail (`executed_dispatch`) |
+| `not_reported` | The library wrote no provenance record, so nothing can be checked. | fail |
+| `not_run` | The dispatch check was skipped. | incomplete |
+
+The `library` section names the library pair (`libvmaf.so.3`, the compatibility
+library, or `libvmafx.so.1`), the provenance digest and the conformance mode
+(`not_reported` until the library records one). Reports from either library
+pair validate. Older reports (schema 1 to 3) stay valid. Decision:
+[ADR-3381](../adr/3381-rc1-tester-executed-dispatch.md).
