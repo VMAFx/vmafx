@@ -1240,12 +1240,8 @@ static const struct {
      2160},
 };
 
-static char *check_hdr_v118_target(const VmafModel *model, unsigned display)
+static char *check_hdr_v118_color(const VmafModel *model)
 {
-    mu_assert("v1.1.8 model should declare a conversion target", model->conversion_target.enabled);
-    mu_assert("v1.1.8 target should be 4:2:0",
-              model->conversion_target.pix_fmt == VMAF_PIX_FMT_YUV420P);
-    mu_assert("v1.1.8 target should be 16-bit", model->conversion_target.bpc == 16);
     mu_assert("v1.1.8 target range",
               model->conversion_target.color.range == VMAF_COLOR_RANGE_LIMITED);
     mu_assert("v1.1.8 target primaries",
@@ -1253,9 +1249,18 @@ static char *check_hdr_v118_target(const VmafModel *model, unsigned display)
     mu_assert("v1.1.8 target trc", model->conversion_target.color.trc == VMAF_COLOR_TRC_SMPTE2084);
     mu_assert("v1.1.8 target matrix",
               model->conversion_target.color.matrix == VMAF_COLOR_MATRIX_ICTCP);
+    return NULL;
+}
+
+static char *check_hdr_v118_target(const VmafModel *model, unsigned display)
+{
+    mu_assert("v1.1.8 model should declare a conversion target", model->conversion_target.enabled);
+    mu_assert("v1.1.8 target should be 4:2:0",
+              model->conversion_target.pix_fmt == VMAF_PIX_FMT_YUV420P);
+    mu_assert("v1.1.8 target should be 16-bit", model->conversion_target.bpc == 16);
     mu_assert("v1.1.8 target display resolution",
               model->conversion_target.display_resolution == display);
-    return NULL;
+    return check_hdr_v118_color(model);
 }
 
 static char *test_shipped_hdr_v118_models_declare_yuv420p16le_target(void)
