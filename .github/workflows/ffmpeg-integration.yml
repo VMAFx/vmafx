@@ -442,8 +442,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           # Judge this leg's own job: the matrix job's aggregate result covers every leg.
-          gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs?per_page=100" --paginate \
-            | python3 scripts/ci/gate_leg_result.py --job "FFmpeg Ubuntu gcc work"
+          python3 scripts/ci/gate_leg_result.py --job "FFmpeg Ubuntu gcc work" --fetch
 
   ffmpeg-macos-gate:
     needs: [tier, impact, ffmpeg-work]
@@ -467,8 +466,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           # Judge this leg's own job: the matrix job's aggregate result covers every leg.
-          gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs?per_page=100" --paginate \
-            | python3 scripts/ci/gate_leg_result.py --job "FFmpeg macOS clang work"
+          python3 scripts/ci/gate_leg_result.py --job "FFmpeg macOS clang work" --fetch
 
   ffmpeg-sycl-gate:
     needs: [tier, impact, ffmpeg-sycl-work]
