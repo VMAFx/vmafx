@@ -649,6 +649,24 @@
         "scripts/ci/ffmpeg_patch_stack.py"
       ]
     },
+    "tidy_rust": {
+      "own_paths_only": true,
+      "patterns": [
+        "core/src/rust/*",
+        "core/src/rust/**",
+        "core/src/feature/tad_rust.c",
+        "core/test/test_*rust*",
+        "build-config.env",
+        "rust-toolchain.toml",
+        "scripts/ci/tidy-ratchet.py",
+        "scripts/dev/tidy-lane.sh",
+        "scripts/ci/write-compile-commands.py",
+        ".clang-tidy",
+        "Makefile",
+        ".github/workflows/lint-and-format.yml",
+        "scripts/ci/tidy-baseline-rust.json"
+      ]
+    },
     "tidy_metal": {
       "own_paths_only": true,
       "patterns": [

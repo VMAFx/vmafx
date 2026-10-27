@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "lane": "rust",
+  "generator": "scripts/ci/tidy-ratchet.py",
+  "clang_tidy_version": "22.1.8",
+  "cc_version": "gcc-15 (Ubuntu 15.2.0-16ubuntu1) 15.2.0",
+  "tus": 9,
+  "measured_sources": [
+    "core/src/feature/tad_rust.c",
+    "core/src/rust/shim/rust_predict.c",
+    "core/src/rust/shim/rust_twins.cpp",
+    "core/test/test_rust_abi_layout.c",
+    "core/test/test_rust_cambi_kernels.c",
+    "core/test/test_rust_motion_window_incremental.c",
+    "core/test/test_rust_predict.c",
+    "core/test/test_rust_twin_registry.c",
+    "core/test/test_tad_rust.c"
+  ],
+  "compile_failures": [],
+  "total_warnings": 32,
+  "total_nolint_uncited": 0,
+  "warnings": {
+    "core/src/rust/include/vmafx_rs.h": 13,
+    "core/src/rust/include/vmafx_rs_predict.h": 1,
+    "core/src/rust/shim/rust_predict.c": 1,
+    "core/src/rust/shim/rust_twins.cpp": 7,
+    "core/test/test_rust_cambi_kernels.c": 3,
+    "core/test/test_rust_predict.c": 5,
+    "core/test/test_rust_twin_registry.c": 2
+  },
+  "nolint_uncited": {}
+}

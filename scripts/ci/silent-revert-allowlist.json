@@ -366,6 +366,61 @@
       "paths": [
         ".config/lint-exceptions.d/clang-tidy-coverage.toml"
       ]
+    },
+    {
+      "adr": "ADR-3380",
+      "kind": "reverse-hunk",
+      "undoes": "ccf7ccfec3d929e83e7d97af4f8656bce6b2198d",
+      "evidence": "^\\s*(?:\\[\\[exception\\]\\]|- rule: clang-tidy-coverage|path\\s*[=:]\\s*\"core/(?:src/rust/shim/rust_[a-z_]+\\.(?:c|cpp)|src/feature/tad_rust\\.c|test/test_(?:tad_)?rust[a-z_]*\\.c)\"|expires\\s*[=:]\\s*\"?2026-12-31\"?|reason\\s*[=:]\\s*\"Built only with -Denable_rust_features=true, which needs cargo.*Needs a Rust-enabled lane\\.\")\\s*$",
+      "reason": "ADR-3380 (#2880) adds the `rust` clang-tidy lane, which builds with -Denable_rust_features=true and measures the Rust shims, tad_rust.c and the Rust tests; the clang-tidy-coverage exceptions that ccf7ccfec added for those files said in their own reason that a Rust-enabled lane is needed, and test_check_tidy_coverage.py now refuses an exception for a measured file.",
+      "paths": [
+        ".config/lint-exceptions.d/clang-tidy-coverage.toml",
+        ".standards.yaml"
+      ]
+    },
+    {
+      "adr": "ADR-3380",
+      "kind": "reverse-hunk",
+      "undoes": "059f018644da1157ec8e431fee85a710a1c434c1",
+      "evidence": "^\\s*(?:\\[\\[exception\\]\\]|- rule: clang-tidy-coverage|path\\s*[=:]\\s*\"core/(?:src/rust/shim/rust_[a-z_]+\\.(?:c|cpp)|src/feature/tad_rust\\.c|test/test_(?:tad_)?rust[a-z_]*\\.c)\"|expires\\s*[=:]\\s*\"?2026-12-31\"?|reason\\s*[=:]\\s*\"Built only with -Denable_rust_features=true, which needs cargo.*Needs a Rust-enabled lane\\.\")\\s*$",
+      "reason": "ADR-3380 (#2880) adds the `rust` clang-tidy lane, which builds with -Denable_rust_features=true and measures the Rust shims, tad_rust.c and the Rust tests; the clang-tidy-coverage exceptions that 059f01864 added for those files said in their own reason that a Rust-enabled lane is needed, and test_check_tidy_coverage.py now refuses an exception for a measured file.",
+      "paths": [
+        ".config/lint-exceptions.d/clang-tidy-coverage.toml",
+        ".standards.yaml"
+      ]
+    },
+    {
+      "adr": "ADR-3380",
+      "kind": "reverse-hunk",
+      "undoes": "14b0514a093d25da5d9743eae1359b3994268732",
+      "evidence": "^\\s*(?:\\[\\[exception\\]\\]|- rule: clang-tidy-coverage|path\\s*[=:]\\s*\"core/(?:src/rust/shim/rust_[a-z_]+\\.(?:c|cpp)|src/feature/tad_rust\\.c|test/test_(?:tad_)?rust[a-z_]*\\.c)\"|expires\\s*[=:]\\s*\"?2026-12-31\"?|reason\\s*[=:]\\s*\"Built only with -Denable_rust_features=true, which needs cargo.*Needs a Rust-enabled lane\\.\")\\s*$",
+      "reason": "ADR-3380 (#2880) adds the `rust` clang-tidy lane, which builds with -Denable_rust_features=true and measures the Rust shims, tad_rust.c and the Rust tests; the clang-tidy-coverage exceptions that 14b0514a0 added for those files said in their own reason that a Rust-enabled lane is needed, and test_check_tidy_coverage.py now refuses an exception for a measured file.",
+      "paths": [
+        ".config/lint-exceptions.d/clang-tidy-coverage.toml",
+        ".standards.yaml"
+      ]
+    },
+    {
+      "adr": "ADR-3380",
+      "kind": "reverse-hunk",
+      "undoes": "e584c79a691cd5528688f719502f317684bcc31d",
+      "evidence": "^\\s*(?:\\[\\[exception\\]\\]|- rule: clang-tidy-coverage|path\\s*[=:]\\s*\"core/(?:src/rust/shim/rust_[a-z_]+\\.(?:c|cpp)|src/feature/tad_rust\\.c|test/test_(?:tad_)?rust[a-z_]*\\.c)\"|expires\\s*[=:]\\s*\"?2026-12-31\"?|reason\\s*[=:]\\s*\"Built only with -Denable_rust_features=true, which needs cargo.*Needs a Rust-enabled lane\\.\")\\s*$",
+      "reason": "ADR-3380 (#2880) adds the `rust` clang-tidy lane, which builds with -Denable_rust_features=true and measures the Rust shims, tad_rust.c and the Rust tests; the clang-tidy-coverage exceptions that e584c79a6 added for those files said in their own reason that a Rust-enabled lane is needed, and test_check_tidy_coverage.py now refuses an exception for a measured file.",
+      "paths": [
+        ".config/lint-exceptions.d/clang-tidy-coverage.toml",
+        ".standards.yaml"
+      ]
+    },
+    {
+      "adr": "ADR-3380",
+      "kind": "reverse-hunk",
+      "undoes": "7a3a7d0e9f30773b5f8fd8cb2cb52da30da7caf3",
+      "evidence": "^\\s*(?:\\[\\[exception\\]\\]|- rule: clang-tidy-coverage|path\\s*[=:]\\s*\"core/(?:src/rust/shim/rust_[a-z_]+\\.(?:c|cpp)|src/feature/tad_rust\\.c|test/test_(?:tad_)?rust[a-z_]*\\.c)\"|expires\\s*[=:]\\s*\"?2026-12-31\"?|reason\\s*[=:]\\s*\"Built only with -Denable_rust_features=true, which needs cargo.*Needs a Rust-enabled lane\\.\")\\s*$",
+      "reason": "ADR-3380 (#2880) adds the `rust` clang-tidy lane, which builds with -Denable_rust_features=true and measures the Rust shims, tad_rust.c and the Rust tests; the clang-tidy-coverage exceptions that 7a3a7d0e9 added for those files said in their own reason that a Rust-enabled lane is needed, and test_check_tidy_coverage.py now refuses an exception for a measured file.",
+      "paths": [
+        ".config/lint-exceptions.d/clang-tidy-coverage.toml",
+        ".standards.yaml"
+      ]
     }
   ]
 }

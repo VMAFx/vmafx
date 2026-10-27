@@ -60,7 +60,11 @@ element under `gstreamer/src/` and the FFmpeg filter sources under
 `ffmpeg-patches/src/`, compiled against the patched FFmpeg tree,
 `tidy-baseline-integrations.json`,
 [ADR-3379](../adr/3379-tidy-integrations-lane.md)) as
-`Tidy Lane (integrations)`; and the macOS `metal` lane (the Objective-C++
+`Tidy Lane (integrations)`; the `rust` lane (the C and C++ sources built only
+with `-Denable_rust_features=true`: the Rust shims under `core/src/rust/`,
+`tad_rust.c` and their tests, with the pinned Rust toolchain installed in the
+container, `tidy-baseline-rust.json`,
+[ADR-3380](../adr/3380-tidy-rust-lane.md)) as `Tidy Lane (rust)`; and the macOS `metal` lane (the Objective-C++
 host code and the Metal-only tests, `tidy-baseline-metal.json`) as `Tidy Metal`.
 The `.metal` shader sources have no clang-tidy language mode and are on the
 exception list. Measure a lane with `make tidy-lane LANE=<lane>`; see
@@ -75,7 +79,7 @@ lane reads ([ADR-2796](../adr/2796-hosted-tidy-all-lanes.md)):
 | Lane | Required context | Where it runs | Selector (`.github/ci-impact.json`) |
 | --- | --- | --- | --- |
 | `cpu` | `Tidy Ratchet` | the runner, `lint-and-format.yml` | `c_core` |
-| `cuda`, `hip`, `sycl`, `arm64`, `clang`, `integrations` | `Tidy Lane (<lane>)` | the digest-pinned dev container, `lint-and-format.yml` | `tidy_<lane>` |
+| `cuda`, `hip`, `sycl`, `arm64`, `clang`, `integrations`, `rust` | `Tidy Lane (<lane>)` | the digest-pinned dev container, `lint-and-format.yml` | `tidy_<lane>` |
 | `metal` | `Tidy Metal` | a macOS runner, `tidy-metal.yml` | `tidy_metal` |
 
 - **Routing.** Each `tidy_<lane>` selector is `own_paths_only`

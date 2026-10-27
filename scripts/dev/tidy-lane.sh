@@ -20,7 +20,7 @@
 #
 # Usage:
 #   scripts/dev/tidy-lane.sh [options] LANE...
-#     LANE: cpu clang cuda hip sycl arm64 integrations all
+#     LANE: cpu clang cuda hip sycl arm64 integrations rust all
 #
 # Options:
 #   --write        rewrite the lane's baseline from the measurement
@@ -54,7 +54,7 @@ CLANG_TIDY_BIN_PATH="${TIDY_LANE_CLANG_TIDY:-/usr/bin/clang-tidy-${CLANG_TIDY_MA
 LLVM_APT_SIGNER_URL="https://apt.llvm.org/llvm-snapshot.gpg.key"
 LLVM_APT_SIGNER_SHA256="8b2a587ffd672c4687e7581dad4b2f6c1bb2ad6b480cd9771ba2ff48e0b8c75d"
 
-ALL_LANES="cpu clang cuda hip sycl arm64 integrations"
+ALL_LANES="cpu clang cuda hip sycl arm64 integrations rust"
 # The arm64 lane's cross toolchain, from the image's own distribution: the
 # compilers the cross file names, the C library they link against, and the
 # emulator meson runs its compiler sanity check with.
@@ -63,6 +63,9 @@ CROSS_PACKAGES="gcc-aarch64-linux-gnu g++-aarch64-linux-gnu libc6-dev-arm64-cros
 # and Vulkan inputs), the xkbcommon files gstreamer-vulkan-1.0.pc requires, the
 # Vulkan headers and libdrm, from the image's own distribution.
 GSTREAMER_PACKAGES="libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgstreamer-plugins-bad1.0-dev libxkbcommon-dev libxkbcommon-x11-dev libvulkan-dev libdrm-dev"
+# The rust lane's toolchain: rustup from the image's own distribution, and the
+# toolchain build-config.env pins (RUST_VERSION) under this prefix.
+RUST_PREFIX=/opt/vmafx-rust
 WORK="${TIDY_LANE_WORK:-/tmp/vmafx-tidy}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -88,8 +91,8 @@ usage() {
 add_lane() {
   case "$1" in
     all) LANES="$ALL_LANES" ;;
-    cpu | clang | cuda | hip | sycl | arm64 | integrations) LANES="${LANES:+$LANES }$1" ;;
-    *) die "unknown lane '$1' (cpu, clang, cuda, hip, sycl, arm64, integrations, all)" 5 ;;
+    cpu | clang | cuda | hip | sycl | arm64 | integrations | rust) LANES="${LANES:+$LANES }$1" ;;
+    *) die "unknown lane '$1' (cpu, clang, cuda, hip, sycl, arm64, integrations, rust, all)" 5 ;;
   esac
 }
 
@@ -127,7 +130,7 @@ parse_args() {
     esac
     shift
   done
-  [ -n "$LANES" ] || die "no lane given (cpu, clang, cuda, hip, sycl, arm64, integrations, all)" 5
+  [ -n "$LANES" ] || die "no lane given (cpu, clang, cuda, hip, sycl, arm64, integrations, rust, all)" 5
   case "$JOBS" in
     '' | *[!0-9]* | 0) die "--jobs needs a positive integer, got '$JOBS'" 5 ;;
   esac
@@ -268,13 +271,45 @@ ensure_gstreamer_dev() {
   have_gstreamer_dev || die "the GStreamer development files did not install"
 }
 
+# The Rust toolchain build-config.env pins, read from the copied checkout.
+pinned_rust_version() {
+  sed -n 's/^RUST_VERSION="\([0-9.]*\)"$/\1/p' "$WORK/src/build-config.env"
+}
+
+have_rust_toolchain() {
+  local version="$1"
+  cargo --version 2>/dev/null | grep -qF "cargo $version " &&
+    rustc --version 2>/dev/null | grep -qF "rustc $version "
+}
+
+# The rust lane configures with -Denable_rust_features=true, whose meson step
+# runs cargo (offline: every crate of core/src/rust is a path crate). rustup
+# comes from the image's distribution and installs the pinned toolchain; an
+# image that already carries that toolchain skips the download.
+ensure_rust_toolchain() {
+  local version
+  version="$(pinned_rust_version)"
+  [ -n "$version" ] || die "build-config.env names no RUST_VERSION"
+  export RUSTUP_HOME="$RUST_PREFIX/rustup" CARGO_HOME="$RUST_PREFIX/cargo"
+  export PATH="$CARGO_HOME/bin:$PATH" RUSTUP_TOOLCHAIN="$version"
+  have_rust_toolchain "$version" && return 0
+  if ! command -v rustup >/dev/null; then
+    DEBIAN_FRONTEND=noninteractive apt-get update -qq
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+      rustup >/dev/null
+  fi
+  rustup toolchain install "$version" --profile minimal >/dev/null
+  have_rust_toolchain "$version" || die "the Rust $version toolchain did not install"
+}
+
 # The sycl lane configures with icx / icpx, which need oneAPI's environment;
-# the arm64 lane needs its cross toolchain, the clang lane its compiler and
-# the integrations lane GStreamer's development files.
+# the arm64 lane needs its cross toolchain, the clang lane its compiler, the
+# integrations lane GStreamer's development files and the rust lane cargo.
 lane_environment() {
   [ "$1" != arm64 ] || ensure_cross_toolchain
   [ "$1" != clang ] || ensure_clang_compiler
   [ "$1" != integrations ] || ensure_gstreamer_dev
+  [ "$1" != rust ] || ensure_rust_toolchain
   [ "$1" = sycl ] || return 0
   set +u
   # shellcheck disable=SC1091  # provided by the image
