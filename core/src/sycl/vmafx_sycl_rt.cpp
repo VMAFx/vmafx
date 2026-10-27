@@ -148,7 +148,7 @@ void format_runtime(const sycl::device &dev, char *out, size_t size)
         const std::string plat = dev.get_platform().get_info<sycl::info::platform::name>();
         const std::string drv = dev.get_info<sycl::info::device::driver_version>();
         const int n = std::snprintf(out, size, "%s %s", plat.c_str(), drv.c_str());
-        if (n < 0 || (size_t)n >= size) {
+        if (n < 0 || std::cmp_greater_equal(n, size)) {
             (void)std::snprintf(out, size, "unknown");
         }
     } catch (const std::exception &) {
