@@ -945,6 +945,58 @@ if built_in_models_enabled
             )
         endforeach
 
+        # HDR default (3H, matching the SDR default's 3H convention), plus the
+        # 5H phone, 2160p and 1.5H 4K variants.
+        hdr_model_dir = '../../model/hdr_vmaf_v1.1.8/'
+        hdr_model_files = [
+            'hdr_vmaf_v1.1.8_3d0h.json',
+            'hdr_vmaf_v1.1.8_3d0h_2160.json',
+            'hdr_vmaf_v1.1.8_5d0h.json',
+            'hdr_vmaf_v1.1.8_1d5h_2160.json',
+        ]
+        foreach model_file : hdr_model_files
+            if xdd_supports_n
+                command = [xxd, '-i', '-n', 'src_@PLAINNAME@', '@INPUT@', '@OUTPUT@']
+            else
+                command = [xxd, '-i', '@INPUT@', '@OUTPUT@']
+            endif
+            json_model_c_sources += custom_target(
+                  model_file,
+                  output : '@PLAINNAME@.c',
+                  input : configure_file(
+                    input : hdr_model_dir + model_file,
+                    output : model_file,
+                    copy: true
+                  ),
+                  command : command,
+            )
+        endforeach
+
+        hdr_hfr_model_dir = '../../model/hdr_vmaf_v1.1.8_hfr/'
+        hdr_hfr_model_files = [
+            'hdr_vmaf_v1.1.8_hfr_3d0h.json',
+            'hdr_vmaf_v1.1.8_hfr_3d0h_2160.json',
+            'hdr_vmaf_v1.1.8_hfr_5d0h.json',
+            'hdr_vmaf_v1.1.8_hfr_1d5h_2160.json',
+        ]
+        foreach model_file : hdr_hfr_model_files
+            if xdd_supports_n
+                command = [xxd, '-i', '-n', 'src_@PLAINNAME@', '@INPUT@', '@OUTPUT@']
+            else
+                command = [xxd, '-i', '@INPUT@', '@OUTPUT@']
+            endif
+            json_model_c_sources += custom_target(
+                  model_file,
+                  output : '@PLAINNAME@.c',
+                  input : configure_file(
+                    input : hdr_hfr_model_dir + model_file,
+                    output : model_file,
+                    copy: true
+                  ),
+                  command : command,
+            )
+        endforeach
+
         # BRISQUE allmodel embed (ADR-1115). Same xxd pipeline as the JSON
         # models above; the model carries no .json extension so it is handled
         # separately. xxd's -n sanitiser maps "src_brisque_live.model" to the
