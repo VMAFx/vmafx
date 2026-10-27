@@ -627,7 +627,7 @@ static int parse_colorspace_entry(json_stream *s, const char *key, VmafColor *co
     return 0;
 }
 
-static int parse_colorspace(json_stream *s, VmafColor *color)
+static int parse_colorspace(json_stream *s, VmafColor *color, const char *context)
 {
     while (json_peek(s) != JSON_OBJECT_END && !json_get_error(s)) {
         if (json_next(s) != JSON_STRING)
@@ -636,8 +636,12 @@ static int parse_colorspace(json_stream *s, VmafColor *color)
         const int r = parse_colorspace_entry(s, key, color);
         if (r < 0)
             return r;
-        if (r == 0)
-            json_skip(s);
+        if (r == 0) {
+            /* as in conversion_target, a key we do not know is an error */
+            vmaf_log(VMAF_LOG_LEVEL_ERROR, "unknown key \"%s\" in conversion_target %s\n", key,
+                     context);
+            return -EINVAL;
+        }
     }
 
     /* a conversion target must pin down all four attributes */
@@ -678,12 +682,12 @@ static int parse_conversion_target_bit_depth(json_stream *s, VmafModel *model)
 }
 
 /* a colorspace object that sets all four attributes, into `*out` */
-static int parse_color_object(json_stream *s, VmafColor *out)
+static int parse_color_object(json_stream *s, VmafColor *out, const char *context)
 {
     if (json_next(s) != JSON_OBJECT)
         return -EINVAL;
     VmafColor color = {0};
-    const int err = parse_colorspace(s, &color);
+    const int err = parse_colorspace(s, &color, context);
     if (err)
         return err;
     json_skip_until(s, JSON_OBJECT_END);
@@ -693,14 +697,15 @@ static int parse_color_object(json_stream *s, VmafColor *out)
 
 static int parse_conversion_target_colorspace(json_stream *s, VmafModel *model)
 {
-    return parse_color_object(s, &model->conversion_target.color);
+    return parse_color_object(s, &model->conversion_target.color, "colorspace");
 }
 
 /* "assumed_color_if_untagged": the colorspace of an input with none set
  * (Netflix/vmaf 272c596770) */
 static int parse_conversion_target_assumed_color(json_stream *s, VmafModel *model)
 {
-    const int err = parse_color_object(s, &model->conversion_target.assumed_color);
+    const int err =
+        parse_color_object(s, &model->conversion_target.assumed_color, "assumed_color_if_untagged");
     if (err)
         return err;
     model->conversion_target.has_assumed_color = true;
@@ -769,8 +774,13 @@ static int parse_conversion_target_entry(json_stream *s, VmafModel *model, const
         return parse_conversion_target_resolution(s, model);
     if (!strcmp(key, "assumed_color_if_untagged"))
         return parse_conversion_target_assumed_color(s, model);
-    json_skip(s);
-    return 0;
+    /*
+     * An unknown key is an error rather than skipped: a misspelled
+     * pixel_format or bit_depth, or a field from a newer model, would
+     * otherwise silently drop part of the conversion and change scores.
+     */
+    vmaf_log(VMAF_LOG_LEVEL_ERROR, "unknown key \"%s\" in conversion_target\n", key);
+    return -EINVAL;
 }
 
 static int parse_conversion_target(json_stream *s, VmafModel *model)
