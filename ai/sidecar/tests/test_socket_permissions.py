@@ -337,10 +337,16 @@ class TestSocketPermissionsAndOwnership:
         assert stat.S_IMODE(os.stat(sock_path).st_mode) == 0o666
 
         stale_identity = os.lstat(sock_path)
+        # A second link keeps the stale inode allocated; without it the file
+        # system may give its number to the new socket (seen on ext4 in CI).
+        stale_hold = tmp_path / "stale-hold.sock"
+        os.link(sock_path, stale_hold)
         with self._running_server(sock_path):
             st = os.stat(sock_path)
             assert stat.S_IMODE(st.st_mode) == 0o600
             assert (st.st_dev, st.st_ino) != (stale_identity.st_dev, stale_identity.st_ino)
+        held = os.lstat(stale_hold)
+        assert (held.st_dev, held.st_ino) == (stale_identity.st_dev, stale_identity.st_ino)
 
     def test_server_refuses_regular_file_without_removing_it(self, tmp_path: pathlib.Path) -> None:
         """A configured socket path must never authorize deletion of an ordinary file."""
