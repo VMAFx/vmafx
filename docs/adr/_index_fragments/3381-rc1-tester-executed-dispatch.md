@@ -1,0 +1,1 @@
+| [ADR-3381](3381-rc1-tester-executed-dispatch.md) | The tester report (schema 4) states the SIMD level the library reported per fixture, the library pair, provenance digest and conformance mode; a mismatch or a silent library fails the verdict | Accepted | rc1-tester, tester, provenance, docs |

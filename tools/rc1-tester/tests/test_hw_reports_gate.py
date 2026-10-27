@@ -295,3 +295,57 @@ def test_gpu_statuses_must_follow_from_the_measurements(tmp_path: Path) -> None:
     lying_verdict["gpu"] = honest["gpu"]
     write(tmp_path, GOOD_NAME, rehash(lying_verdict))
     assert run(tmp_path) == 1  # verdict pass with a failing GPU section
+
+
+# ---- schema 4: library identity and the executed dispatch level ----------------------------
+
+
+def library_block(pair: str = "libvmaf.so.3") -> dict:
+    return {"pair": pair, "pair_source": "NEEDED names in the vmaf binary's dynamic string table",
+            "version": "1.0.0", "commit": "abc1234", "build_id": "b1", "abi": "1.0.2",
+            "provenance_digest": "d" * 64, "conformance_mode": "not_reported"}  # fmt: skip
+
+
+def executed_section(status: str = "match") -> dict:
+    return {"status": status, "reported": "neon",
+            "reported_source": "host dispatch_flags (mirror of the library's CPU rules)",
+            "fixtures": [{"fixture": "f", "default_simd": "neon", "scalar_simd": "scalar",
+                          "status": status}]}  # fmt: skip
+
+
+def v4_report(pair: str = "libvmaf.so.3", executed: dict | None = None, **sections) -> dict:
+    report = good_gpu_report()
+    report["schema_version"] = "4"
+    report["library"] = library_block(pair)
+    report["executed_dispatch"] = executed or executed_section()
+    report.update(sections)
+    return rehash(report)
+
+
+@pytest.mark.parametrize("pair", ["libvmaf.so.3", "libvmafx.so.1", "unknown"])
+def test_schema_4_reports_of_both_library_pairs_validate(tmp_path: Path, pair: str) -> None:
+    write(tmp_path, GOOD_NAME, v4_report(pair))
+    assert run(tmp_path) == 0
+
+
+def test_schema_4_needs_its_sections_and_known_values(tmp_path: Path) -> None:
+    report = v4_report()
+    del report["library"]
+    write(tmp_path, GOOD_NAME, rehash(report))
+    assert run(tmp_path) == 1
+    report = v4_report()
+    del report["executed_dispatch"]
+    write(tmp_path, GOOD_NAME, rehash(report))
+    assert run(tmp_path) == 1
+    write(tmp_path, GOOD_NAME, v4_report("libvmaf.so.2"))  # a pair no release ships
+    assert run(tmp_path) == 1
+
+
+def test_a_mismatched_executed_level_cannot_pass(tmp_path: Path) -> None:
+    for status in ("mismatch", "not_reported"):
+        write(tmp_path, GOOD_NAME, v4_report(executed=executed_section(status)))
+        assert run(tmp_path) == 1
+    failing = v4_report(executed=executed_section("mismatch"), verdict="fail",
+                        failed_checks=["executed_dispatch"])  # fmt: skip
+    write(tmp_path, GOOD_NAME, failing)
+    assert run(tmp_path) == 0  # an honest failing report is accepted as a record

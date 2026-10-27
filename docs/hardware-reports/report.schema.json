@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/VMAFx/vmafx/docs/hardware-reports/report.schema.json",
-  "title": "VMAFx tester report, schema versions 1 to 3",
+  "title": "VMAFx tester report, schema versions 1 to 4",
   "description": "Written by vmaf-tester-report (tools/rc1-tester/src/vmaf_rc1_tester/hw_report.py). Checked by scripts/ci/check-hardware-reports.py.",
   "type": "object",
   "additionalProperties": false,
@@ -27,9 +27,10 @@
       "enum": [
         "1",
         "2",
-        "3"
+        "3",
+        "4"
       ],
-      "description": "2 adds metal_gate, metal_rows and per-case unit verdicts (ADR-1496); 3 adds the backend-neutral gpu section and per-test results (the Intel GPU image); older reports stay valid."
+      "description": "2 adds metal_gate, metal_rows and per-case unit verdicts (ADR-1496); 3 adds the backend-neutral gpu section and per-test results (the Intel GPU image); older reports stay valid. 4 adds library (library pair, provenance digest, conformance mode) and executed_dispatch (the SIMD level the library reported, checked against the host's expectation) and the optional per-cell executed object."
     },
     "tool": {
       "type": "object",
@@ -386,6 +387,127 @@
           }
         }
       }
+    },
+    "library": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "pair",
+        "pair_source",
+        "provenance_digest",
+        "conformance_mode"
+      ],
+      "properties": {
+        "pair": {
+          "enum": [
+            "libvmafx.so.1",
+            "libvmaf.so.3",
+            "unknown"
+          ]
+        },
+        "pair_source": {
+          "type": "string"
+        },
+        "version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "commit": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "build_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "abi": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "provenance_digest": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "conformance_mode": {
+          "enum": [
+            "reference-exact",
+            "netflix-compat",
+            "not_reported"
+          ]
+        }
+      }
+    },
+    "executed_dispatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "fixtures"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "match",
+            "mismatch",
+            "not_reported",
+            "not_run"
+          ]
+        },
+        "reported": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reported_source": {
+          "type": "string"
+        },
+        "fixtures": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "fixture",
+              "status"
+            ],
+            "properties": {
+              "fixture": {
+                "type": "string"
+              },
+              "default_simd": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "scalar_simd": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "status": {
+                "enum": [
+                  "match",
+                  "mismatch",
+                  "not_reported",
+                  "not_run"
+                ]
+              }
+            }
+          }
+        }
+      }
     }
   },
   "$defs": {
@@ -474,6 +596,9 @@
           "items": {
             "type": "string"
           }
+        },
+        "executed": {
+          "type": "object"
         }
       },
       "additionalProperties": false
@@ -1154,6 +1279,24 @@
           "metal_gate",
           "metal_rows",
           "gpu"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "schema_version": {
+            "const": "4"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "metal_gate",
+          "metal_rows",
+          "gpu",
+          "library",
+          "executed_dispatch"
         ]
       }
     }
