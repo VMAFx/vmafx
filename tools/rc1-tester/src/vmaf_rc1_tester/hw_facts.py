@@ -54,8 +54,40 @@ X86_FLAG_SOURCES = {
     "sse2": ("sse2",),
     "ssse3": ("ssse3",),
     "sse4.1": ("sse4_1",),
-    "avx2": ("avx2",),
-    "avx512": ("avx512f", "avx512bw", "avx512vl", "avx512dq", "avx512cd"),
+    # core/src/x86/cpu.c: the AVX2 level also needs FMA and BMI1/BMI2 (ADR-2055); the
+    # AVX-512 levels chain after it, and ICL adds IFMA and the ecx 0x5f42 set.
+    "avx2": ("avx2", "fma", "bmi1", "bmi2"),
+    "avx512": (
+        "avx2",
+        "fma",
+        "bmi1",
+        "bmi2",
+        "avx512f",
+        "avx512bw",
+        "avx512vl",
+        "avx512dq",
+        "avx512cd",
+    ),
+    "avx512icl": (
+        "avx2",
+        "fma",
+        "bmi1",
+        "bmi2",
+        "avx512f",
+        "avx512bw",
+        "avx512vl",
+        "avx512dq",
+        "avx512cd",
+        "avx512ifma",
+        "avx512vbmi",
+        "avx512_vbmi2",
+        "gfni",
+        "vaes",
+        "vpclmulqdq",
+        "avx512_vnni",
+        "avx512_bitalg",
+        "avx512_vpopcntdq",
+    ),
 }
 
 

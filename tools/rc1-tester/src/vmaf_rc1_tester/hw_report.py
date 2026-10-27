@@ -23,6 +23,7 @@ from typing import Any
 
 from . import __version__
 from .hw_cuda import CUDA
+from .hw_dispatch import executed_dispatch, library_block
 from .hw_equiv import run_dispatch_equivalence
 from .hw_facts import collect_host_facts, read_build_info, vmaf_binary
 from .hw_gate import run_metal_gate
@@ -37,8 +38,9 @@ from .hw_sycl import SYCL
 from .safe_process import run_bounded
 
 # 2: the Metal gate and the state-row map (ADR-1496). 3: the backend-neutral GPU
-# section (hw_gpu.py; the SYCL, CUDA and HIP images' measurements).
-SCHEMA_VERSION = "3"
+# section (hw_gpu.py; the SYCL, CUDA and HIP images' measurements). 4: the library
+# pair and the dispatch level the library reports it executed (hw_dispatch.py).
+SCHEMA_VERSION = "4"
 DEFAULT_ROOT = "/opt/vmafx"
 CHECKS = ("dispatch", "reference", "metal", "gate", "unit", "golden", "gpu")
 # The GPU backends an image can carry, by the name in image/build-info.json.
@@ -196,6 +198,7 @@ PASSING = {
     "unit_tests": ("pass",),
     "golden_gate": ("pass", "not_applicable"),
     "gpu": ("pass", "no_device", "not_applicable"),
+    "executed_dispatch": ("match",),
 }
 CHECK_KEYS = {
     "dispatch": "dispatch_equivalence",
@@ -206,6 +209,9 @@ CHECK_KEYS = {
     "golden": "golden_gate",
     "gpu": "gpu",
 }
+# Schema 4: the level the library reports it executed is part of the dispatch check; a
+# report of an older schema has no such section.
+EXECUTED_CHECK = ("dispatch", "executed_dispatch")
 
 
 def verdict_of(report: Mapping[str, Any], skipped: Sequence[str]) -> tuple[str, list[str]]:
@@ -215,6 +221,9 @@ def verdict_of(report: Mapping[str, Any], skipped: Sequence[str]) -> tuple[str, 
         for check, key in CHECK_KEYS.items()
         if check not in skipped and report[key]["status"] not in PASSING[key]
     ]
+    check, key = EXECUTED_CHECK
+    if check not in skipped and key in report and report[key]["status"] not in PASSING[key]:
+        failed.append(key)
     if not report["image"]["files_match_build"]:
         failed.append("image_files_match_build")
     if failed:
@@ -357,11 +366,26 @@ def build_report(args: argparse.Namespace) -> dict[str, Any]:
         report["metal_gate"],
     )  # fmt: skip
     report["gpu"] = _gpu_section(args, root, raw_scores["cpu"], skipped, not_applicable)
+    report["library"] = library_block(vmaf_binary(root), report["dispatch_equivalence"])
+    report["executed_dispatch"] = executed_dispatch(
+        report["dispatch_equivalence"], host["dispatch_flags"]
+    )
     report["not_exercised"] = not_exercised(report, skipped, not_applicable)
     report["verdict"], report["failed_checks"] = verdict_of(report, skipped)
     report["note"] = args.note
     report["report_sha256"] = report_digest(report)
     return report
+
+
+def _executed_line(report: Mapping[str, Any]) -> str:
+    executed = report["executed_dispatch"]
+    library = report["library"]
+    level = executed.get("reported")
+    detail = f" (host flags select {level})" if level else ""
+    return (
+        f"executed dispatch: {executed['status']}{detail}; "
+        f"library {library['pair']}, conformance {library['conformance_mode']}"
+    )
 
 
 def _rows_line(rows: Mapping[str, Any]) -> str:
@@ -393,6 +417,7 @@ def summarize(report: Mapping[str, Any]) -> str:
         f"vmaf-tester-report: verdict {report['verdict']}",
         f"cpu: {host['cpu_model']} ({host['machine']}); dispatch: {', '.join(host['dispatch_flags']) or 'none'}",
         f"dispatch equivalence: {report['dispatch_equivalence']['status']}",
+        _executed_line(report),
         f"reference equivalence: {report['reference_equivalence']['status']}",
         f"metal equivalence: {report['metal_equivalence']['status']}",
         f"metal parity gate: {report['metal_gate']['status']}",
