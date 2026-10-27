@@ -46,7 +46,7 @@ ff_configure_args() {
     --enable-swscale --enable-swresample --enable-demuxer=rawvideo \
     --enable-decoder=rawvideo --enable-encoder=wrapped_avframe,rawvideo \
     --enable-muxer=null --enable-protocol=file \
-    --enable-filter=libvmaf,scale,format,null,nullsink,trim,setpts --enable-libvmaf
+    --enable-filter=libvmaf,scale,format,null,nullsink,trim,setpts,split --enable-libvmaf
 }
 
 ff_fetch() {
@@ -141,6 +141,67 @@ ff_cpu_leg() {
   fi
 }
 
+# SVT Encore leg (#2364): Encore (github.com/svt/encore, EUPL-1.2, read at
+# master 8dd7c596c51a) builds its libvmaf graph in CommandBuilder.vmafParams()
+# from the Vmaf profile fields feature, model, threads, subsample and
+# refFilters. Each case below is one profile option set in that graph shape,
+# scored with --prefix and compared with the CLI given the same models,
+# features and subsampling.
+ff_encore_graph() {
+  local out="$1" opts="$2" ref_filters="$3"
+  local cut="trim=end_frame=$FRAMES,setpts=PTS-STARTPTS"
+  local ref="${cut},${ref_filters:+$ref_filters,}setpts=PTS-STARTPTS,split=2"
+  echo "sws_flags=bicubic;[1:v]${ref}[r1][r2];[0:v]${cut}[d0];[d0][r1]scale=rw:rh,setpts=PTS-STARTPTS[ds];[ds][r2]libvmaf=log_fmt=json:log_path=${out}${opts:+:$opts}"
+}
+
+# ff_encore_case NAME LIBVMAF_OPTS REF_FILTERS [vmaf CLI args...]
+ff_encore_case() {
+  local name="$1" opts="$2" ref_filters="$3" bin="$FF_ROOT/build/ffmpeg" out
+  shift 3
+  out="$WORK/encore-$name.json"
+  echo "== encore profile case: $name"
+  ff_score "$bin" "$PREFIX" "$out" "$(ff_encore_graph "$out" "$opts" "$ref_filters")"
+  uc_cli_scores "$PREFIX" "$WORK/encore-$name-cli.json" "$@"
+  ff_compare "$out" "$WORK/encore-$name-cli.json" "ffmpeg+encore-$name" "vmaf-cli"
+}
+
+# A libvmaf option the filter does not know must stop ffmpeg and be named in
+# its log; a filter that ignored it would score a profile it was not given.
+ff_encore_unknown_option() {
+  local bin="$FF_ROOT/build/ffmpeg" out="$WORK/encore-unknown.json" log
+  log="$out.run.log"
+  if LD_LIBRARY_PATH="$(uc_ldpath "$PREFIX")" timeout 300 "$bin" \
+    -hide_banner -nostdin -loglevel info \
+    -f rawvideo -pix_fmt yuv420p -video_size "$SIZE" -i "$DIST_YUV" \
+    -f rawvideo -pix_fmt yuv420p -video_size "$SIZE" -i "$REF_YUV" \
+    -lavfi "$(ff_encore_graph "$out" "n_threads=1:vmafx_no_such_option=1" "")" \
+    -an -f null - >"$log" 2>&1; then
+    echo "FAIL: ffmpeg accepted the unknown libvmaf option (see $log)" >&2
+    STATUS=1
+  elif ! grep -q "vmafx_no_such_option" "$log"; then
+    echo "FAIL: ffmpeg refused the unknown option without naming it (see $log)" >&2
+    STATUS=1
+  else
+    echo "== encore unknown option refused by name"
+  fi
+}
+
+ff_encore_leg() {
+  # Encore's own test profile: feature name=psnr, two models with escaped
+  # names, threads 4.
+  local models='version=vmaf_4k_v0.6.1\\:name=vmaf4k|version=vmaf_v0.6.1\\:name=vmaf'
+  ff_encore_case default "n_threads=1" ""
+  ff_encore_case feature "n_threads=1:feature=name=psnr" "" --feature psnr
+  ff_encore_case models "model=$models:n_threads=1" "" \
+    --model version=vmaf_4k_v0.6.1:name=vmaf4k
+  ff_encore_case threads "n_threads=4" ""
+  ff_encore_case subsample "n_threads=1:n_subsample=2" "" --subsample 2
+  ff_encore_case ref-filters "n_threads=1" "format=yuv420p"
+  ff_encore_case profile "model=$models:feature=name=psnr:n_threads=4" "" \
+    --model version=vmaf_4k_v0.6.1:name=vmaf4k --feature psnr
+  ff_encore_unknown_option
+}
+
 # CUDA leg: only when the host can run it; otherwise a stated skip, never a pass.
 ff_cuda_skip_reason() {
   [ -f "$PREFIX/include/libvmaf/libvmaf_cuda.h" ] ||
@@ -196,6 +257,11 @@ ff_cuda_leg() {
 ff_fetch
 ff_build build
 ff_cpu_leg
+if [ "$AGAINST_CLI" -eq 1 ]; then
+  ff_encore_leg
+else
+  echo "SKIP: SVT Encore profile cases need --against-cli (each case is compared with the CLI)"
+fi
 if [ "$CUDA" -eq 1 ]; then
   ff_cuda_leg
 fi

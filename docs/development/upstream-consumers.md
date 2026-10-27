@@ -75,14 +75,28 @@ outside the path `glib-2.0.pc` names).
 **FFmpeg** (`scripts/ci/upstream-ffmpeg-compat.sh`). Clones `FFMPEG_TAG` of
 `FFMPEG_REMOTE` from `build-config.env` (shallow, no patch applied) and
 configures a minimal build: `--disable-everything`, the `libvmaf`, `scale`,
-`format`, `trim` and `setpts` filters, the `rawvideo` demuxer and decoder, the
-`null` muxer, the `file` protocol and `--enable-libvmaf`; only `ffmpeg` is
-built. The distorted video is input 0 and the reference input 1, which is the
-order of the filter's pads (`main`, then `reference`, in
+`format`, `trim`, `setpts` and `split` filters, the `rawvideo` demuxer and
+decoder, the `null` muxer, the `file` protocol and `--enable-libvmaf`; only
+`ffmpeg` is built. The distorted video is input 0 and the reference input 1,
+which is the order of the filter's pads (`main`, then `reference`, in
 `libavfilter/vf_libvmaf.c`). Each input is cut to `--frames` frames by `trim`
 before the filter: stopping the output with `-frames:v` ends the run at a
-scheduling-dependent point, and the last frame's motion score depends on
-whether a following frame reached the filter.
+scheduling-dependent point, and the last frame's motion score depends on whether
+a following frame reached the filter.
+
+With `--against-cli` the FFmpeg script also runs the **SVT Encore** cases.
+[Encore](https://github.com/svt/encore) (SVT's open-source transcoding service,
+EUPL-1.2; read at commit `8dd7c596c51a`) builds its `libvmaf` graph in
+`CommandBuilder.vmafParams()`: the reference passes through the profile's
+filters, `setpts=PTS-STARTPTS` and `split=2`, the distorted video is scaled to
+the reference size with `sws_flags=bicubic`, and the filter gets `log_fmt=json`
+plus the profile's `model`, `feature`, `n_threads` and `n_subsample`. The
+script builds that graph once per option set (default, `feature=name=psnr`, two
+models joined by `|` with `\\:`-escaped names (the graph parser removes one
+backslash), `n_threads=4`, `n_subsample=2`, reference filters, and the full
+test profile), compares each result with the CLI given the same models,
+features and subsampling, and checks that an unknown filter option fails with
+its name in the log.
 
 **GStreamer** (`scripts/ci/upstream-gstreamer-compat.sh`). Sparse-clones
 `subprojects/gst-plugins-bad` of tag `GST_PLUGINS_BAD_VERSION` from the
