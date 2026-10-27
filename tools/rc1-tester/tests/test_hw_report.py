@@ -50,7 +50,8 @@ def test_arm_flags_neon_always_sve2_on_hwcap2_bit1() -> None:
 
 
 def test_x86_avx512_needs_every_listed_flag() -> None:
-    base = {"sse2", "ssse3", "sse4_1", "avx2", "avx512f", "avx512bw", "avx512vl", "avx512dq"}
+    base = {"sse2", "ssse3", "sse4_1", "avx2", "fma", "bmi1", "bmi2",
+            "avx512f", "avx512bw", "avx512vl", "avx512dq"}  # fmt: skip
     assert "avx512" not in hw_facts.x86_dispatch_flags(base)
     assert "avx512" in hw_facts.x86_dispatch_flags(base | {"avx512cd"})
 

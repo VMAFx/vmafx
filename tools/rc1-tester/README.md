@@ -110,3 +110,15 @@ python3 -m ruff check tools/rc1-tester
 python3 -m black --check tools/rc1-tester
 nox -s rc1_tester
 ```
+
+## What the report says executed
+
+Since report schema 4 the report does not take the dispatch level from the host's
+CPU flags alone. `executed_dispatch` holds, per dispatch fixture, the SIMD level
+the library wrote into its provenance record for the default run and for the
+scalar-masked run, and compares it with the level the host flags allow. Status
+`match` passes; `mismatch` and `not_reported` (the library wrote no provenance)
+fail the verdict with the check name `executed_dispatch`. `library` names the
+library pair (`libvmaf.so.3` compat or `libvmafx.so.1`), the provenance digest
+and the conformance mode (`not_reported` until the library records one). Reports
+of schema 1 to 3 stay valid. See [ADR-3381](../../docs/adr/3381-rc1-tester-executed-dispatch.md).

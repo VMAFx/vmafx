@@ -98,6 +98,8 @@ def verdict_errors(report: dict[str, Any]) -> list[str]:
         and report["golden_gate"]["status"] in ("pass", "not_applicable")
         # Schema 3: the GPU section of a GPU image.
         and report.get("gpu", {"status": "not_applicable"})["status"] in GPU_FINE
+        # Schema 4: the library's reported SIMD level matches the expectation.
+        and report.get("executed_dispatch", {"status": "match"})["status"] == "match"
         and report["image"]["files_match_build"]
     )
     if verdict == "pass" and not all_good:
