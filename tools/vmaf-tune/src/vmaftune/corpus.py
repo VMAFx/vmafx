@@ -567,21 +567,21 @@ def _resolve_hdr_score_model(
     Returns a string passable to :class:`ScoreRequest.model`. When
     ``info`` is None the SDR model is used unchanged. When ``info`` is
     set we look for an HDR model JSON shipped under ``model/``; if
-    none is present we warn once per corpus run and fall back to the
-    SDR model — see ADR-0300 (HDR-VMAF model port is a backlog item).
+    none is present (HLG: the shipped HDR-VMAF v1.1.8 models are PQ)
+    we warn once per corpus run and fall back to the SDR model (ADR-0300).
     The ``warned`` list is a one-element mutable flag so the warning
     fires exactly once per ``iter_rows`` invocation rather than per
     cell.
     """
     if info is None:
         return sdr_model
-    hdr_model = select_hdr_vmaf_model()
+    hdr_model = select_hdr_vmaf_model(transfer=info.transfer)
     if hdr_model is not None:
         return f"path={hdr_model}"
     if not warned[0]:
         _LOG.warning(
             "vmaf-tune: HDR source detected (transfer=%s) but no HDR VMAF "
-            "model is shipped; scoring against SDR model %r — scores will "
+            "model matches it; scoring against SDR model %r — scores will "
             "trend low for high-luminance regions (see ADR-0300)",
             info.transfer,
             sdr_model,
