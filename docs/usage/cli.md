@@ -37,8 +37,10 @@ vmaf \
   --output scores.xml
 ```
 
-Without `--model`, the built-in `vmaf_v1.0.16_3d0h` model is loaded. Without
-`--xml|--json|--csv|--sub`, the output format is XML.
+Without `--model`, the built-in `vmaf_v1.0.16_3d0h` model is loaded (when both
+inputs specify the PQ transfer characteristic, the CLI defaults to
+`hdr_vmaf_v1.1.8_3d0h` instead). Without `--xml|--json|--csv|--sub`, the output
+format is XML.
 
 !!! warning "The default model differs from upstream Netflix"
     Upstream Netflix defaults to `vmaf_v0.6.1`; this fork defaults to

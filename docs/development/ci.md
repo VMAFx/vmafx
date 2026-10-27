@@ -100,7 +100,6 @@ required and which ADR owns it, see
 | [`macos-tester-bundle.yml`](../../.github/workflows/macos-tester-bundle.yml) | Builds, tests, attests and publishes the macOS arm64 tester bundle. |
 | [`upstream-watcher.yml`](../../.github/workflows/upstream-watcher.yml) | Polls FFmpeg master for upstream-blocked features ([upstream watchers](upstream-watchers.md)). |
 | [`upstream-ffmpeg-hip-hwdec-watcher.yml`](../../.github/workflows/upstream-ffmpeg-hip-hwdec-watcher.yml) | Weekly watch for an FFmpeg ROCm/HIP hwdec context type (ADR-0448). |
-| [`upstream-netflix-645-hdr-model-watcher.yml`](../../.github/workflows/upstream-netflix-645-hdr-model-watcher.yml) | Watches Netflix/vmaf#645 and the upstream HDR model (ADR-0448). |
 | [`upstream-netflix-955-watcher.yml`](../../.github/workflows/upstream-netflix-955-watcher.yml) | Watches Netflix/vmaf#1494, the upstream fix for #955 (ADR-0448). |
 | [`research-radar.yml`](../../.github/workflows/research-radar.yml) | Weekly digest of changes in the public video-quality sources of the [research radar](../research/radar/README.md) ([ADR-2171](../adr/2171-research-radar.md)). |
 
