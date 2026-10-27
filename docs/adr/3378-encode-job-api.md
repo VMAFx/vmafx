@@ -2,7 +2,7 @@
 
 # ADR-3378: Encode-job API: one video stream in, a verified video stream out, auto first
 
-- **Status**: Accepted
+- **Status**: Superseded by [ADR-3382](3382-encode-service-leaves-vmafx.md)
 - **Date**: 2026-10-26
 - **Deciders**: Lusoris
 - **Tags**: api, vmaf-tune, platform, encode, hdr
