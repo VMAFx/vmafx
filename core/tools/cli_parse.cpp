@@ -1357,12 +1357,25 @@ void validate_cli_settings(const char *const app, CLISettings *const settings)
 
     if (settings->model_cnt == 0 && !settings->no_prediction) {
 #if VMAF_BUILT_IN_MODELS
+        /*
+         * If both inputs are described as HDR (via the raw yuv/y4m
+         * --color_* flags) and no model was given, default to the HDR
+         * model. An explicitly chosen model is used as is: an SDR model
+         * ignores the color flags, so pairing it with HDR inputs is the
+         * caller's responsibility.
+         */
+        const bool ref_color_set = color_all_set(&settings->color_ref);
+        const bool dist_color_set = color_all_set(&settings->color_dist);
+        const bool is_hdr = ref_color_set && dist_color_set &&
+                            settings->color_ref.trc == VMAF_COLOR_TRC_SMPTE2084 &&
+                            settings->color_dist.trc == VMAF_COLOR_TRC_SMPTE2084;
         const CLIModelConfig cfg = {
             .path = nullptr,
             .version =
-                settings->netflix_compat ?
-                    VMAF_NETFLIX_COMPAT_MODEL_VERSION :
-                    VMAF_DEFAULT_MODEL_VERSION, /* vmaf-model-pin: Netflix upstream compat restores v0.6.1 default model */
+                is_hdr ? "hdr_vmaf_v1.1.8_3d0h" :
+                         /* vmaf-model-pin: Netflix upstream compat restores v0.6.1 default model */
+                         (settings->netflix_compat ? VMAF_NETFLIX_COMPAT_MODEL_VERSION :
+                                                     VMAF_DEFAULT_MODEL_VERSION),
             .cfg = {.name = "vmaf", .flags = VMAF_MODEL_FLAGS_DEFAULT},
             .feature_overload = {},
             .overload_cnt = 0,

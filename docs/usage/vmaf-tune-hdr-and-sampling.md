@@ -89,22 +89,22 @@ An encoder that is not in the table (for example `h264_nvenc`,
 `libvpx-vp9` or `av1_videotoolbox`) gets no HDR flags, and a warning is
 logged. The row's `hdr_*` fields still record the detection result.
 
-### HDR-VMAF scoring is deferred
+### HDR-VMAF scoring
 
-!!! warning "HDR sources are scored with the SDR model"
-    `vmaftune.hdr.select_hdr_vmaf_model()` looks for an HDR-trained model
-    in `model/`: first `vmaf_hdr_v0.6.1.json`, then any
-    `vmaf_hdr_*.json`. The project ships none (`model/` holds only
-    `vmaf_hdr_model_card.md`), so HDR sources are scored against the SDR
-    model. A one-time warning is logged per corpus run. The resulting
-    `vmaf_score` values trend low for high-luminance regions and are not
-    comparable with SDR scores.
+`vmaftune.hdr.select_hdr_vmaf_model()` picks the model for an HDR
+source from `model/`, in this order:
 
-Netflix publishes the HDR model in a research bundle outside its public
-repository, and a project-local licence review gates shipping it
-([ADR-0300](../adr/0300-vmaf-tune-hdr-aware.md)). Drop a licensed copy at
-`model/vmaf_hdr_v0.6.1.json` and the harness picks it up with no code
-change.
+1. `vmaf_hdr_v0.6.1.json`, if you drop a licensed copy there;
+2. for PQ sources, `hdr_vmaf_v1.1.8/hdr_vmaf_v1.1.8_3d0h.json`, Netflix's
+   HDR-VMAF v1.1.8 model that ships with VMAFx (see
+   [VMAF v1 models](../models/v1.md));
+3. any other `vmaf_hdr_*.json`.
+
+The v1.1.8 models are trained on PQ content only. HLG sources therefore
+find no HDR model unless you add one, and are scored against the SDR
+model with a one-time warning per corpus run. Those `vmaf_score` values
+trend low for high-luminance regions and are not comparable with SDR
+scores ([ADR-0300](../adr/0300-vmaf-tune-hdr-aware.md)).
 
 ## Clip sampling
 
