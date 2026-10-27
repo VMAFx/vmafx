@@ -725,6 +725,10 @@ static FILE *open_heatmap_file(const char *path, bool truncate)
 #ifdef _WIN32
         (void)_close(hfd);
 #else
+        /* POSIX leaves the descriptor open when fdopen() fails, so closing it here is
+         * required.  cppcheck's posix.cfg lists fdopen as a deallocator of the fd
+         * unconditionally and reads this as a second free. */
+        /* cppcheck-suppress doubleFree ; see the note above */
         (void)close(hfd);
 #endif
     }
