@@ -97,6 +97,54 @@ class Judge(unittest.TestCase):
         self.assertEqual(glr.main(["--job", "A work", "--jobs-file", str(path)]), 1)
 
 
+def jobs_text(status: str, conclusion: str | None) -> str:
+    own = {"name": "A work", "status": status, "conclusion": conclusion}
+    return json.dumps({"jobs": [own, job("B work", "failure")]})
+
+
+class Settle(unittest.TestCase):
+    """The jobs API lags: the own job can read unfinished after it finished."""
+
+    def settle(self, texts: list[str], attempts: int = 4) -> tuple[list[dict[str, Any]], int]:
+        reads = iter(texts)
+        sleeps: list[float] = []
+        jobs = glr.read_settled_jobs("A work", lambda: next(reads), attempts, 10.0, sleeps.append)
+        return jobs, len(sleeps)
+
+    def test_unfinished_then_success_passes_after_a_reread(self) -> None:
+        texts = [jobs_text("in_progress", None), jobs_text("completed", "success")]
+        jobs, sleeps = self.settle(texts)
+        self.assertEqual(sleeps, 1)
+        self.assertIsNone(glr.judge("success", "true", "A work", jobs))
+
+    def test_unfinished_on_every_read_fails_naming_the_job(self) -> None:
+        jobs, sleeps = self.settle([jobs_text("in_progress", None)] * 4)
+        self.assertEqual(sleeps, 3)
+        reason = glr.judge("success", "true", "A work", jobs)
+        self.assertIsNotNone(reason)
+        self.assertIn("'A work'", reason or "")
+
+    def test_completed_failure_is_not_reread(self) -> None:
+        jobs, sleeps = self.settle([jobs_text("completed", "failure")])
+        self.assertEqual(sleeps, 0)
+        self.assertIsNotNone(glr.judge("success", "true", "A work", jobs))
+
+    def test_absent_job_is_not_reread(self) -> None:
+        jobs, sleeps = self.settle([json.dumps({"jobs": [job("B work", "success")]})])
+        self.assertEqual(sleeps, 0)
+        self.assertIsNotNone(glr.judge("success", "true", "A work", jobs))
+
+    def test_out_of_range_attempts_is_an_error_exit(self) -> None:
+        self.assertEqual(glr.main(["--job", "A work", "--fetch", "--attempts", "0"]), 1)
+
+    def test_fetch_without_run_context_is_an_error_exit(self) -> None:
+        for key in ("GITHUB_REPOSITORY", "GITHUB_RUN_ID"):
+            self.addCleanup(os.environ.__setitem__, key, os.environ.get(key, ""))
+            os.environ.pop(key, None)
+        os.environ.update(PLAN_RESULT="success", SELECTED="true")
+        self.assertEqual(glr.main(["--job", "A work", "--fetch", "--attempts", "1"]), 1)
+
+
 def aggregate_readers(workflow: dict[str, Any]) -> dict[str, list[str]]:
     """Map each matrix job to the gate jobs that read its aggregate result."""
     jobs = workflow.get("jobs", {})
@@ -137,6 +185,12 @@ class WorkflowContract(unittest.TestCase):
                 self.assertEqual(
                     (body.get("permissions") or {}).get("actions"), "read", (path.name, name)
                 )
+
+    def test_every_gate_script_call_rereads_an_unfinished_leg(self) -> None:
+        for path in sorted(WORKFLOWS.glob("*.yml")):
+            text = path.read_text(encoding="utf-8")
+            for line in re.findall(r".*gate_leg_result\.py --job .*", text):
+                self.assertIn("--fetch", line, path.name)
 
 
 if __name__ == "__main__":

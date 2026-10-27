@@ -291,7 +291,11 @@ name of their own `<check name> work` job. It reads the run's jobs
 (`gh api repos/<repo>/actions/runs/<id>/jobs --paginate`, which needs
 `actions: read`) and passes when the planner succeeded and either the leg was
 selected and concluded `success`, or it was not selected and is absent or
-`skipped`. A missing, unfinished or ambiguous own job fails. A new gate on a
+`skipped`. A missing, unfinished or ambiguous own job fails. The gates pass
+`--fetch`, so the script reads the jobs itself: the jobs API can report a leg
+that has finished without a conclusion for a few seconds, so while the own job
+reads unfinished the script reads again, at most `--attempts` times (default 7)
+`--interval` seconds apart (default 10), and only then fails. A new gate on a
 shared matrix does the same; `scripts/ci/tests/test_gate_leg_result.py` fails
 on two gates that read one matrix job's aggregate.
 
