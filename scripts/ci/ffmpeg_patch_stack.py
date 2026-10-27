@@ -484,6 +484,7 @@ class Receipt(TypedDict, total=False):
     target_source: str
     cache: str
     patched_tree: str
+    kept_tree: str
     changed: list[str]
     status: str
     error: str
