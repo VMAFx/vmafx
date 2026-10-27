@@ -368,6 +368,73 @@ static int allocate_tmp(VmafPictureConvertContext *c)
     return c->tmp ? 0 : -ENOMEM;
 }
 
+/* Names of the colour values for the DEBUG line of a new conversion
+ * (Netflix/vmaf PR 1710); upstream names these values and no others. */
+static const char *range_name(enum VmafColorRange v)
+{
+    switch (v) {
+    case VMAF_COLOR_RANGE_LIMITED:
+        return "limited";
+    case VMAF_COLOR_RANGE_FULL:
+        return "full";
+    default:
+        return "unknown";
+    }
+}
+
+static const char *primaries_name(enum VmafColorPrimaries v)
+{
+    switch (v) {
+    case VMAF_COLOR_PRIMARIES_BT709:
+        return "bt709";
+    case VMAF_COLOR_PRIMARIES_BT2020:
+        return "bt2020";
+    case VMAF_COLOR_PRIMARIES_SMPTE432:
+        return "smpte432";
+    default:
+        return "unknown";
+    }
+}
+
+static const char *trc_name(enum VmafColorTransferCharacteristic v)
+{
+    switch (v) {
+    case VMAF_COLOR_TRC_BT709:
+        return "bt709";
+    case VMAF_COLOR_TRC_SMPTE2084:
+        return "smpte2084";
+    default:
+        return "unknown";
+    }
+}
+
+static const char *matrix_name(enum VmafColorMatrixCoefficients v)
+{
+    switch (v) {
+    case VMAF_COLOR_MATRIX_BT709:
+        return "bt709";
+    case VMAF_COLOR_MATRIX_BT2020_NCL:
+        return "bt2020_ncl";
+    case VMAF_COLOR_MATRIX_ICTCP:
+        return "ictcp";
+    default:
+        return "unknown";
+    }
+}
+
+static void log_conversion(const VmafPicture *src, const VmafColor *src_color,
+                           const VmafPictureConvertTarget *target)
+{
+    vmaf_log(VMAF_LOG_LEVEL_DEBUG,
+             "picture conversion: %ux%u %ubpc %s/%s/%s/%s -> %ux%u %ubpc %s/%s/%s/%s "
+             "(range/primaries/trc/matrix)\n",
+             src->w[0], src->h[0], src->bpc, range_name(src_color->range),
+             primaries_name(src_color->primaries), trc_name(src_color->trc),
+             matrix_name(src_color->matrix), target->w, target->h, target->bpc,
+             range_name(target->color.range), primaries_name(target->color.primaries),
+             trc_name(target->color.trc), matrix_name(target->color.matrix));
+}
+
 int vmaf_picture_convert_context_init_with_color(VmafPictureConvertContext **ctx,
                                                  const VmafPicture *src, const VmafColor *src_color,
                                                  const VmafPictureConvertTarget *target)
@@ -396,6 +463,7 @@ int vmaf_picture_convert_context_init_with_color(VmafPictureConvertContext **ctx
         context_free(c);
         return err;
     }
+    log_conversion(src, src_color, &c->target);
     *ctx = c;
     return 0;
 }
