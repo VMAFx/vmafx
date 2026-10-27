@@ -17,6 +17,7 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+from .hw_dispatch import provenance_facts
 from .safe_process import run_bounded
 
 # Every extractor registered on the CPU backend that runs on a plain YUV pair.
@@ -169,6 +170,7 @@ def run_fixture_meta(
         "feature_backends": document.get("feature_backends", []),
         "device_lines": [line for line in (result.stderr or "").splitlines()
                          if "using device" in line][:4],
+        "provenance": provenance_facts(document),
     }  # fmt: skip
     return parse_scores(text), meta
 
@@ -254,6 +256,24 @@ def status_of(cells: Sequence[Mapping[str, Any]]) -> str:
     return "differing" if any(c["differing_values"] for c in cells) else "identical"
 
 
+def executed_levels(
+    default_meta: Mapping[str, Any], scalar_meta: Mapping[str, Any]
+) -> dict[str, Any]:
+    """What the library says it executed in the default and the scalar-masked run
+    (its provenance record, ADR-2073); empty when it gave none."""
+    default = default_meta.get("provenance")
+    scalar = scalar_meta.get("provenance")
+    if not default or not scalar:
+        return {}
+    executed: dict[str, Any] = {"default_simd": default["simd"], "scalar_simd": scalar["simd"]}
+    for key, name in (("digest", "provenance_digest"), ("version", "version"),
+                      ("commit", "commit"), ("build_id", "build_id"), ("abi", "abi"),
+                      ("conformance_mode", "conformance_mode")):  # fmt: skip
+        if key in default:
+            executed[name] = default[key]
+    return executed
+
+
 def run_dispatch_equivalence(
     vmaf: str,
     fixtures: Sequence[Mapping[str, Any]],
@@ -267,10 +287,10 @@ def run_dispatch_equivalence(
     for fixture in fixtures:
         cell: dict[str, Any] = {"fixture": fixture["id"]}
         try:
-            default = run_fixture(
+            default, default_meta = run_fixture_meta(
                 vmaf, fixture, None, timeout_seconds=timeout_seconds, runner=runner
             )
-            scalar = run_fixture(
+            scalar, scalar_meta = run_fixture_meta(
                 vmaf, fixture, SCALAR_CPUMASK, timeout_seconds=timeout_seconds, runner=runner
             )
         except (FixtureRunError, TimeoutError, RuntimeError, ValueError) as error:
@@ -278,5 +298,6 @@ def run_dispatch_equivalence(
         else:
             raw[str(fixture["id"])] = (default, scalar)
             cell.update(compare_scores(default, scalar))
+            cell["executed"] = executed_levels(default_meta, scalar_meta)
         cells.append(cell)
     return {"status": status_of(cells), "fixtures": cells}, raw
