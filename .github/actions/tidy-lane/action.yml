@@ -8,7 +8,7 @@ description: >-
   FFmpeg and GStreamer build dependencies).
 inputs:
   lane:
-    description: cuda, hip, sycl, arm64, clang or integrations
+    description: cuda, hip, sycl, arm64, clang, integrations or rust
     required: true
   image:
     description: >-

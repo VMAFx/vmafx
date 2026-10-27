@@ -36,7 +36,7 @@ HIP_WRAPPER = ROOT / "scripts/ci/clang-tidy-hip.sh"
 WORKFLOW = ROOT / ".github/workflows/lint-and-format.yml"
 NIGHTLY = ROOT / ".github/workflows/nightly.yml"
 CONTAINERFILE = ROOT / "dev/Containerfile"
-CONTAINER_LANES = ("cpu", "clang", "cuda", "hip", "sycl", "arm64", "integrations")
+CONTAINER_LANES = ("cpu", "clang", "cuda", "hip", "sycl", "arm64", "integrations", "rust")
 
 # The entry point is a bash script that drives docker and GNU tar: it runs on
 # the Linux workstation that has the dev image. Elsewhere its cases are skipped
@@ -323,7 +323,9 @@ class HostSide(unittest.TestCase):
         self.assertEqual(self._run("all").returncode, 0)
         create = next(call for call in self._calls() if call.startswith("create "))
         self.assertTrue(
-            create.endswith("--in-container --jobs 8 cpu clang cuda hip sycl arm64 integrations"),
+            create.endswith(
+                "--in-container --jobs 8 cpu clang cuda hip sycl arm64 integrations rust"
+            ),
             create,
         )
 

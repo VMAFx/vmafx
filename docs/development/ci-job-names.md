@@ -123,6 +123,7 @@ column mirrors that array.
 | `lint-and-format.yml` | new in ADR-2796 | `Tidy Lane (arm64)` | 17 | Yes |
 | `lint-and-format.yml` | new in ADR-2796 | `Tidy Lane (clang)` | 17 | Yes |
 | `lint-and-format.yml` | new in ADR-3379 | `Tidy Lane (integrations)` | 24 | Yes |
+| `lint-and-format.yml` | new in ADR-3380 | `Tidy Lane (rust)` | 16 | Yes |
 | `tidy-metal.yml` | `Tidy Metal` made a required gate in ADR-2796 | `Tidy Metal` | 10 | Yes |
 | `lint-and-format.yml` | `Cppcheck (Whole Project)` | `Cppcheck` | 8 | Yes |
 | `lint-and-format.yml` | `Python Lint (Ruff + Black + mypy)` | `Python Lint` | 11 | Yes |

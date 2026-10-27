@@ -246,6 +246,7 @@ core/src/feature/sycl/speed_sycl_host.cpp
 core/src/feature/sycl/speed_sycl_pipeline.cpp
 core/src/feature/sycl/speed_temporal_sycl.cpp
 core/src/feature/sycl/ssimulacra2_sycl.cpp
+core/src/feature/tad_rust.c
 core/src/feature/third_party/xiph/psnr_hvs.c
 core/src/feature/transnet_v2.c
 core/src/feature/vif.c
@@ -335,6 +336,8 @@ core/src/predict.c
 core/src/read_json_model.c
 core/src/read_json_model.cpp
 core/src/ref.cpp
+core/src/rust/shim/rust_predict.c
+core/src/rust/shim/rust_twins.cpp
 core/src/svm.cpp
 core/src/sycl/common.cpp
 core/src/sycl/d3d11_import.cpp
@@ -741,6 +744,11 @@ core/test/test_read_pictures_failure_ownership.c
 core/test/test_read_pictures_monotonic.c
 core/test/test_ref.c
 core/test/test_registration_partial_copy.cpp
+core/test/test_rust_abi_layout.c
+core/test/test_rust_cambi_kernels.c
+core/test/test_rust_motion_window_incremental.c
+core/test/test_rust_predict.c
+core/test/test_rust_twin_registry.c
 core/test/test_sample_range_check.c
 core/test/test_score_pooled_eagain.c
 core/test/test_speed.c
@@ -822,6 +830,7 @@ core/test/test_sycl_vif_min_dim.c
 core/test/test_sycl_vif_parity.c
 core/test/test_sycl_zero_copy_admission.c
 core/test/test_sycl_zero_copy_model_gate.c
+core/test/test_tad_rust.c
 core/test/test_thread_pool.c
 core/test/test_thread_pool_backpressure.c
 core/test/test_thread_safety_batch.c

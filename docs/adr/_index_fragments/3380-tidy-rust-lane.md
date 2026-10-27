@@ -1,0 +1,1 @@
+| [ADR-3380](3380-tidy-rust-lane.md) | The `rust` clang-tidy lane measures the C and C++ sources built only with `-Denable_rust_features=true`, with the pinned Rust toolchain installed in the dev container, hosted as `Tidy Lane (rust)` and routed by `tidy_rust`; extends ADR-2796 | Accepted | ci, lint, rust |

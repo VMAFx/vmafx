@@ -337,6 +337,7 @@ the selectors declared in `.github/ci-impact.json`. There are 27 selectors:
 | `tidy_arm64` | `core/src/feature/arm64/`, `core/src/arm/`, the NEON and SVE tests, the aarch64 cross files, the same lane infrastructure; own paths only | `Tidy Lane (arm64)` |
 | `tidy_clang` | `core/test/fuzz/`, `core/src/read_json_model.c`, the same lane infrastructure; own paths only | `Tidy Lane (clang)` |
 | `tidy_integrations` | `gstreamer/`, `ffmpeg-patches/src/`, `ffmpeg-patches/series.txt` and its patches, `build-config.env`, the same lane infrastructure; own paths only ([ADR-3379](../adr/3379-tidy-integrations-lane.md)) | `Tidy Lane (integrations)` |
+| `tidy_rust` | `core/src/rust/`, `core/src/feature/tad_rust.c`, the `core/test/test_*rust*` tests, `build-config.env`, `rust-toolchain.toml`, the same lane infrastructure; own paths only ([ADR-3380](../adr/3380-tidy-rust-lane.md)) | `Tidy Lane (rust)` |
 | `tidy_metal` | `core/src/metal/`, `core/src/feature/metal/`, the Metal tests, `tidy-metal.yml`, the ratchet and the Metal baseline; own paths only | `Tidy Metal` |
 | `rust` | `bindings/`, `Cargo.*`, `core/src/feature/rust/` | Rust CI (path-filtered, not required) |
 | `shell` | `*.sh` | Not required, still path-filtered |
@@ -365,7 +366,7 @@ One declared exception ([ADR-1700](../adr/1700-tester-selectors-own-paths-only.m
 a selector with `"own_paths_only": true` is not set by the fallback itself. When
 the changed paths are known, it is true only if one of them matches its own
 patterns; when they are not (a dispatch, a schedule, a diff that could not be
-read), it stays true. Only the tester selectors and the seven `tidy_<lane>`
+read), it stays true. Only the tester selectors and the eight `tidy_<lane>`
 selectors carry it ([ADR-2796](../adr/2796-hosted-tidy-all-lanes.md)), it
 needs patterns and no `inherits`, and `test_ci_impact.py` fails on any other use.
 A change under `scripts/ci/` alone therefore runs every other gate and neither
@@ -644,7 +645,8 @@ and a cleaner file must tighten it in the same PR. The required context is
 `Tidy Ratchet` (the `cpu` lane). Every other lane is a required, path-routed
 check as well ([ADR-2796](../adr/2796-hosted-tidy-all-lanes.md)):
 `Tidy Lane (cuda)`, `Tidy Lane (hip)`, `Tidy Lane (sycl)`,
-`Tidy Lane (arm64)`, `Tidy Lane (clang)` and `Tidy Lane (integrations)`
+`Tidy Lane (arm64)`, `Tidy Lane (clang)`, `Tidy Lane (integrations)` and
+`Tidy Lane (rust)`
 (legs of one job in `lint-and-format.yml`, measured in the pinned dev
 container) and `Tidy Metal` (`tidy-metal.yml`, a macOS runner). Each starts
 on every pull request and

@@ -404,6 +404,11 @@ export CLANG_TIDY_BIN
 # filters link libvmafx), then TIDY_RATCHET_POSTBUILD_integrations builds the
 # plugin and the patched FFmpeg objects with their CUDA, Vulkan and libdrm
 # bodies on, and its --select list measures those two trees only.
+# rust measures the C and C++ sources built only with -Denable_rust_features=true
+# (#2880): the Rust shim, the TAD wrapper and the suite `rust` tests. It builds
+# the cpu configuration with the Rust core on (scripts/dev/tidy-lane.sh installs
+# the toolchain build-config.env pins) and its --select list measures those
+# sources only; the cpu lane measures everything else of the same build.
 TIDY_RATCHET_COMPILERS_cpu := CC=gcc-15 CXX=g++-15
 TIDY_RATCHET_COMPILERS_clang := CC=clang-22 CXX=clang++-22
 TIDY_RATCHET_COMPILERS_cuda := CC=gcc-15 CXX=g++-15
@@ -411,6 +416,7 @@ TIDY_RATCHET_COMPILERS_hip := CC=gcc-15 CXX=g++-15
 TIDY_RATCHET_COMPILERS_sycl := CC=icx CXX=icpx
 TIDY_RATCHET_COMPILERS_arm64 :=
 TIDY_RATCHET_COMPILERS_integrations := CC=gcc-15 CXX=g++-15
+TIDY_RATCHET_COMPILERS_rust := CC=gcc-15 CXX=g++-15
 # The metal lane is the one lane with no container: Apple's SDK exists on a
 # macOS host only. The `Tidy Metal` workflow (tidy-metal.yml) repeats these
 # two lines and passes the --select list of the Metal host sources.
@@ -434,6 +440,8 @@ TIDY_RATCHET_SETUP_arm64 := --cross-file build-aux/aarch64-linux-gnu.ini \
 	-Denable_cuda=false -Denable_sycl=false -Denable_dnn=disabled -Db_lto=false
 TIDY_RATCHET_SETUP_integrations := -Denable_cuda=false -Denable_sycl=false \
 	-Denable_dnn=disabled -Db_lto=false
+TIDY_RATCHET_SETUP_rust := -Denable_cuda=false -Denable_sycl=false \
+	-Denable_dnn=disabled -Denable_rust_features=true -Db_lto=false
 TIDY_RATCHET_EXTRA_cpu :=
 TIDY_RATCHET_EXTRA_clang := --select core/test/fuzz/ --select core/src/read_json_model.c
 TIDY_RATCHET_EXTRA_cuda := --extra-arg=--cuda-host-only --extra-arg=-nocudalib
@@ -443,6 +451,11 @@ TIDY_RATCHET_EXTRA_sycl := --clang-tidy $(CURDIR)/scripts/ci/clang-tidy-sycl.sh
 TIDY_RATCHET_EXTRA_arm64 := --extra-arg=--target=$(AARCH64_TARGET) \
 	--extra-arg=--sysroot=$(AARCH64_SYSROOT)
 TIDY_RATCHET_EXTRA_integrations := --select gstreamer/ --select ffmpeg-patches/src/
+TIDY_RATCHET_EXTRA_rust := --select core/src/rust/ --select core/src/feature/tad_rust.c \
+	--select core/test/test_tad_rust.c --select core/test/test_rust_predict.c \
+	--select core/test/test_rust_abi_layout.c --select core/test/test_rust_twin_registry.c \
+	--select core/test/test_rust_cambi_kernels.c \
+	--select core/test/test_rust_motion_window_incremental.c
 
 # nvcc, hipcc and icpx compile through meson custom targets, which leaves their
 # translation units out of compile_commands.json: write-compile-commands.py
@@ -461,6 +474,7 @@ TIDY_RATCHET_COMPDB_hip := $(PYTHON_INTERPRETER) scripts/ci/gen-gpu-compile-comm
 TIDY_RATCHET_COMPDB_sycl := $(PYTHON_INTERPRETER) scripts/ci/gen-sycl-compile-commands.py \
 	"$(TIDY_RATCHET_BUILD_DIR)"
 TIDY_RATCHET_COMPDB_arm64 :=
+TIDY_RATCHET_COMPDB_rust :=
 # integrations merges the plugin's own compile database and the FFmpeg filter
 # compile lines its build hook logged (scripts/ci/tidy-integrations-build.sh).
 TIDY_RATCHET_COMPDB_integrations := $(PYTHON_INTERPRETER) \
@@ -478,7 +492,7 @@ tidy-ratchet-build: $(MESON) $(NINJA)
 	    -j "$(TIDY_RATCHET_JOBS)"
 	$(TIDY_RATCHET_POSTBUILD_$(LANE))
 
-# Measure LANE (cpu, clang, cuda, hip, sycl, arm64, integrations or all) in a throwaway dev container;
+# Measure LANE (cpu, clang, cuda, hip, sycl, arm64, integrations, rust or all) in a throwaway dev container;
 # TIDY_LANE_ARGS passes --image / --jobs / --out to scripts/dev/tidy-lane.sh.
 tidy-lane:
 	scripts/dev/tidy-lane.sh $(TIDY_LANE_ARGS) $(LANE)

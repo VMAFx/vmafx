@@ -149,54 +149,9 @@ reason = "Metal Shading Language kernel. clang-tidy reads the languages the clan
 expires = 2027-03-31
 
 [[exception]]
-path = "core/src/feature/tad_rust.c"
-reason = "Built only with -Denable_rust_features=true, which needs cargo and cbindgen; the dev image has neither, so no lane configures it. Needs a Rust-enabled lane."
-expires = 2026-12-31
-
-[[exception]]
-path = "core/src/rust/shim/rust_predict.c"
-reason = "Built only with -Denable_rust_features=true, which needs cargo; the dev image has no Rust toolchain yet (ADR-1713 follow-up: a pinned toolchain in dev/Containerfile), so no lane configures it. Needs a Rust-enabled lane."
-expires = 2026-12-31
-
-[[exception]]
-path = "core/src/rust/shim/rust_twins.cpp"
-reason = "Built only with -Denable_rust_features=true, which needs cargo; the dev image has no Rust toolchain yet (ADR-1713 follow-up: a pinned toolchain in dev/Containerfile), so no lane configures it. Needs a Rust-enabled lane."
-expires = 2026-12-31
-
-[[exception]]
 path = "core/test/test_sycl_cuda_serial_upload_lifetime.c"
 reason = "Built only when -Denable_cuda=true and -Denable_sycl=true together (the regression is the SYCL upload wait on CUDA's serial host-picture path); builds compile it with both backends (.github/workflows/libvmaf-build-matrix.yml:259, tests-and-quality-gates.yml:1400) but no tidy lane (Makefile TIDY_RATCHET_SETUP_cuda / _sycl) enables both; fix = a cuda+sycl tidy lane. Re-reviewed 2026-10-15. Category D (120 days)."
 expires = 2027-02-12
-
-[[exception]]
-path = "core/test/test_tad_rust.c"
-reason = "Built only with -Denable_rust_features=true, which needs cargo and cbindgen; the dev image has neither, so no lane configures it. Needs a Rust-enabled lane."
-expires = 2026-12-31
-
-[[exception]]
-path = "core/test/test_rust_abi_layout.c"
-reason = "Built only with -Denable_rust_features=true, which needs cargo; the dev image has no Rust toolchain yet (ADR-1713 follow-up: a pinned toolchain in dev/Containerfile), so no lane configures it. Needs a Rust-enabled lane."
-expires = 2026-12-31
-
-[[exception]]
-path = "core/test/test_rust_predict.c"
-reason = "Built only with -Denable_rust_features=true, which needs cargo; the dev image has no Rust toolchain yet (ADR-1713 follow-up: a pinned toolchain in dev/Containerfile), so no lane configures it. Needs a Rust-enabled lane."
-expires = 2026-12-31
-
-[[exception]]
-path = "core/test/test_rust_twin_registry.c"
-reason = "Built only with -Denable_rust_features=true, which needs cargo; the dev image has no Rust toolchain yet (ADR-1713 follow-up: a pinned toolchain in dev/Containerfile), so no lane configures it. Needs a Rust-enabled lane."
-expires = 2026-12-31
-
-[[exception]]
-path = "core/test/test_rust_cambi_kernels.c"
-reason = "Built only with -Denable_rust_features=true, which needs cargo; the dev image has no Rust toolchain yet (ADR-1713 follow-up: a pinned toolchain in dev/Containerfile), so no lane configures it. Needs a Rust-enabled lane."
-expires = 2026-12-31
-
-[[exception]]
-path = "core/test/test_rust_motion_window_incremental.c"
-reason = "Built only with -Denable_rust_features=true, which needs cargo; the dev image has no Rust toolchain yet (ADR-1713 follow-up: a pinned toolchain in dev/Containerfile), so no lane configures it. Needs a Rust-enabled lane."
-expires = 2026-12-31
 
 [[exception]]
 path = "core/tools/compat/win32/getopt.c"

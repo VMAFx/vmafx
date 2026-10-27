@@ -137,7 +137,7 @@ planner = _load_planner()
 
 
 # ADR-1700: the selectors that the full-mode fallback does not set by itself.
-TIDY_LANES = ("cuda", "hip", "sycl", "arm64", "clang", "integrations", "metal")
+TIDY_LANES = ("cuda", "hip", "sycl", "arm64", "clang", "integrations", "rust", "metal")
 TIDY_SELECTORS = {f"tidy_{lane}" for lane in TIDY_LANES}
 TESTER_SELECTORS = {"tester_image", "windows_tester_zip", "windows_tester_zip_sycl"}
 # ADR-3279: the MSVC leg a light-tier pull request owes when it touches core C or C++.
