@@ -1,0 +1,1 @@
+| [ADR-3382](3382-encode-service-leaves-vmafx.md) | The encode service (ADR-3378) leaves VMAFx for its own repository vidiko/torcul, which calls VMAFx in process through the `libvmafx.so.1` C ABI; issues #2986 to #2993 moved there | Accepted | api, platform, encode, governance |
