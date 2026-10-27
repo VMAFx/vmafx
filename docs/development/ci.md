@@ -268,6 +268,33 @@ The aggregator side is `test_ci_aggregator_tier.py`, the decision is
 `test_ci_tier.py`, and the escalation is `test_ci_escalate.py`, all in
 `scripts/ci/tests/`.
 
+### Pre-Commit scope (HISS-18)
+
+The required `Pre-Commit` context of `lint-and-format.yml` checks a pull
+request on its own diff and the whole tree everywhere else.
+`scripts/ci/precommit_scope.py` picks the arguments and prints the reason:
+
+| Event | Command | Why |
+| --- | --- | --- |
+| `pull_request` | `pre-commit run --from-ref <base sha> --to-ref HEAD` | each hook sees only the files the pull request changes, so a documentation-only change skips the C, Go and Rust hooks |
+| push to master, release tag, schedule, dispatch | `pre-commit run --all-files` | the whole tree is re-proved after every landing |
+| pull request with no usable base sha | `pre-commit run --all-files` | fail closed |
+
+The job always runs and reports under the same name, so the required
+aggregator is unaffected; only the hook selection narrows. The heavy build
+matrices were already off a light-tier pull request (the tier above) or behind
+the impact planner (ADR-1140). Reproduce locally:
+
+```bash
+python3 scripts/ci/precommit_scope.py --event pull_request \
+  --base-sha "$(git merge-base origin/master HEAD)" --print
+python3 -m pytest scripts/ci/tests/test_precommit_scope.py
+```
+
+`test_precommit_scope.py` covers the decision, the workflow (the job calls
+the script and keeps no literal `--all-files`; a planted copy with the old
+step must fail) and the routing of a pull request against a master push.
+
 ### Renovate
 
 [`renovate.json`](../../renovate.json) runs in a weekly window (Monday before 6am,
