@@ -1223,6 +1223,133 @@ static char *test_model_conversion_target_rejects_bad_assumed_color(void)
     return NULL;
 }
 
+static const struct {
+    const char *version;
+    const char *path;
+    unsigned display;
+} hdr_v118_models[] = {
+    {"hdr_vmaf_v1.1.8_3d0h", "hdr_vmaf_v1.1.8/hdr_vmaf_v1.1.8_3d0h.json", 1080},
+    {"hdr_vmaf_v1.1.8_3d0h_2160", "hdr_vmaf_v1.1.8/hdr_vmaf_v1.1.8_3d0h_2160.json", 2160},
+    {"hdr_vmaf_v1.1.8_5d0h", "hdr_vmaf_v1.1.8/hdr_vmaf_v1.1.8_5d0h.json", 1080},
+    {"hdr_vmaf_v1.1.8_1d5h_2160", "hdr_vmaf_v1.1.8/hdr_vmaf_v1.1.8_1d5h_2160.json", 2160},
+    {"hdr_vmaf_v1.1.8_hfr_3d0h", "hdr_vmaf_v1.1.8_hfr/hdr_vmaf_v1.1.8_hfr_3d0h.json", 1080},
+    {"hdr_vmaf_v1.1.8_hfr_3d0h_2160", "hdr_vmaf_v1.1.8_hfr/hdr_vmaf_v1.1.8_hfr_3d0h_2160.json",
+     2160},
+    {"hdr_vmaf_v1.1.8_hfr_5d0h", "hdr_vmaf_v1.1.8_hfr/hdr_vmaf_v1.1.8_hfr_5d0h.json", 1080},
+    {"hdr_vmaf_v1.1.8_hfr_1d5h_2160", "hdr_vmaf_v1.1.8_hfr/hdr_vmaf_v1.1.8_hfr_1d5h_2160.json",
+     2160},
+};
+
+static char *check_hdr_v118_color(const VmafModel *model)
+{
+    mu_assert("v1.1.8 target range",
+              model->conversion_target.color.range == VMAF_COLOR_RANGE_LIMITED);
+    mu_assert("v1.1.8 target primaries",
+              model->conversion_target.color.primaries == VMAF_COLOR_PRIMARIES_BT2020);
+    mu_assert("v1.1.8 target trc", model->conversion_target.color.trc == VMAF_COLOR_TRC_SMPTE2084);
+    mu_assert("v1.1.8 target matrix",
+              model->conversion_target.color.matrix == VMAF_COLOR_MATRIX_ICTCP);
+    return NULL;
+}
+
+static char *check_hdr_v118_target(const VmafModel *model, unsigned display)
+{
+    mu_assert("v1.1.8 model should declare a conversion target", model->conversion_target.enabled);
+    mu_assert("v1.1.8 target should be 4:2:0",
+              model->conversion_target.pix_fmt == VMAF_PIX_FMT_YUV420P);
+    mu_assert("v1.1.8 target should be 16-bit", model->conversion_target.bpc == 16);
+    mu_assert("v1.1.8 target display resolution",
+              model->conversion_target.display_resolution == display);
+    return check_hdr_v118_color(model);
+}
+
+static char *test_shipped_hdr_v118_models_declare_yuv420p16le_target(void)
+{
+    for (unsigned i = 0; i < sizeof(hdr_v118_models) / sizeof(*hdr_v118_models); i++) {
+        char path[512];
+        const int path_len =
+            snprintf(path, sizeof(path), "%s%s", JSON_MODEL_PATH, hdr_v118_models[i].path);
+        mu_assert("the path fits its buffer", path_len > 0 && (size_t)path_len < sizeof(path));
+        VmafModel *model = NULL;
+        VmafModelConfig cfg = {0};
+        int err = vmaf_model_load_from_path(&model, &cfg, path);
+        mu_assert("problem loading shipped v1.1.8 model from path", !err);
+        char *msg = check_hdr_v118_target(model, hdr_v118_models[i].display);
+        vmaf_model_destroy(model);
+        if (msg)
+            return msg;
+
+#if VMAF_BUILT_IN_MODELS
+        VmafModelConfig built_in_cfg = {0};
+        err = vmaf_model_load(&model, &built_in_cfg, hdr_v118_models[i].version);
+        mu_assert("problem loading built-in v1.1.8 model", !err);
+        msg = check_hdr_v118_target(model, hdr_v118_models[i].display);
+        vmaf_model_destroy(model);
+        if (msg)
+            return msg;
+#endif
+    }
+    return NULL;
+}
+
+static char *test_model_conversion_target_rejects_unknown_key(void)
+{
+    const char *colorspace = "\"colorspace\": {\"range\": \"limited\", \"primaries\": \"bt2020\", "
+                             "\"trc\": \"smpte2084\", \"matrix\": \"ictcp\"}";
+    const char *extra[] = {
+        /* misspellings that would otherwise skip the conversion */
+        "\"bit-depth\": 16",
+        "\"pix_fmt\": \"420\"",
+        /* a field this libvmaf does not know */
+        "\"future_field\": {\"x\": \"y\"}",
+    };
+
+    for (unsigned i = 0; i < sizeof(extra) / sizeof(*extra); i++) {
+        char block[512];
+        const int block_len = snprintf(block, sizeof(block), "\"conversion_target\": {%s, %s}, ",
+                                       colorspace, extra[i]);
+        mu_assert("the block fits its buffer", block_len > 0 && (size_t)block_len < sizeof(block));
+        VmafModel *model = NULL;
+        int err = load_model_with_block(&model, block);
+        if (model)
+            vmaf_model_destroy(model);
+        mu_assert("an unknown conversion_target key should be rejected", err);
+    }
+
+    return NULL;
+}
+
+static char *test_model_conversion_target_rejects_unknown_colorspace_key(void)
+{
+    VmafModel *model = NULL;
+    int err = load_model_with_block(
+        &model, "\"conversion_target\": {\"colorspace\": {\"range\": \"limited\", "
+                "\"primaries\": \"bt2020\", \"trc\": \"smpte2084\", "
+                "\"matrix\": \"ictcp\", \"transfer\": \"pq\"}}, ");
+    if (model)
+        vmaf_model_destroy(model);
+    mu_assert("an unknown colorspace key should be rejected", err);
+
+    return NULL;
+}
+
+static char *test_model_conversion_target_rejects_unknown_assumed_color_key(void)
+{
+    VmafModel *model = NULL;
+    int err = load_model_with_block(
+        &model, "\"conversion_target\": {\"colorspace\": {\"range\": \"limited\", "
+                "\"primaries\": \"bt709\", \"trc\": \"bt709\", "
+                "\"matrix\": \"bt709\"}, \"assumed_color_if_untagged\": "
+                "{\"range\": \"full\", \"primaries\": \"smpte432\", "
+                "\"trc\": \"bt709\", \"matrix\": \"bt709\", "
+                "\"transfer\": \"pq\"}}, ");
+    if (model)
+        vmaf_model_destroy(model);
+    mu_assert("an unknown assumed_color_if_untagged key should be rejected", err);
+
+    return NULL;
+}
+
 /* parse_score_transform: p2 bad type → -EINVAL (line 240). */
 static char *test_json_model_score_transform_p2_bad_type(void)
 {
@@ -1890,6 +2017,10 @@ static const MuTest model_api_tests[] = {
     MU_TEST(test_model_conversion_target_rejects_bad_resolution),
     MU_TEST(test_model_conversion_target_assumed_color),
     MU_TEST(test_model_conversion_target_rejects_bad_assumed_color),
+    MU_TEST(test_shipped_hdr_v118_models_declare_yuv420p16le_target),
+    MU_TEST(test_model_conversion_target_rejects_unknown_key),
+    MU_TEST(test_model_conversion_target_rejects_unknown_colorspace_key),
+    MU_TEST(test_model_conversion_target_rejects_unknown_assumed_color_key),
 };
 
 /* JSON model and model-collection loading, from a path and from a buffer. */
