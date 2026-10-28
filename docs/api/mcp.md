@@ -1,6 +1,11 @@
 <!-- markdownlint-disable MD060 -->
 # Embedded MCP server: `libvmaf_mcp.h`
 
+!!! warning "Deprecated: `libvmaf.h` compatibility API"
+    This page documents the compatibility library `libvmaf.so.3`. New code
+    uses the [VMAFx API](vmafx/index.md); the [migration table](vmafx/compat.md)
+    names the successor of every function.
+
 Use this API to run an MCP (Model Context Protocol) server inside your
 process, bound to a `VmafContext`. An embedding host, such as an editor
 plugin or a measurement-orchestration daemon, can then drive it over
