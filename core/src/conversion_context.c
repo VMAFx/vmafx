@@ -133,8 +133,15 @@ int vmaf_conversion_state_convert(VmafConversionState *state, VmafPicture *ref, 
         if (err)
             return err;
     }
-    if (!needs_conversion)
+    if (!needs_conversion) {
+        if (!state->logged_no_conversion) {
+            vmaf_log(VMAF_LOG_LEVEL_DEBUG,
+                     "picture conversion: none needed (pictures already match the model's "
+                     "conversion target, or the model declares none)\n");
+            state->logged_no_conversion = true;
+        }
         return 0;
+    }
 
     VmafPicture ref_converted = {0};
     VmafPicture dist_converted = {0};

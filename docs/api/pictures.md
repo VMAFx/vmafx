@@ -395,6 +395,18 @@ int err = vmaf_set_input_colorimetry(vmaf, &pq, &pq);   /* ref, dist; NULL = uns
 converted, because the zimg context is built from it. As for any error of
 `vmaf_read_pictures()`, the context releases the pictures it was given.
 
+At log level `DEBUG` the conversion says what it did (Netflix/vmaf PR 1710):
+
+- a run whose pictures need no conversion, because they already match the
+  target or the model declares none, logs one line for the whole run:
+  `picture conversion: none needed (...)`;
+- each conversion context logs one line when it is created, with source and
+  target as size, bit depth and range/primaries/transfer/matrix, for example
+  `picture conversion: 16x16 8bpc limited/bt709/bt709/bt709 -> 16x16 8bpc ...`.
+
+Neither line reaches a sink at `INFO` or above. `core/test/test_picture_convert_log.c`
+checks both lines and their level.
+
 On the VMAFx API a frame carries its own colour in `VmafxFrameDesc.color`, and
 `vmafx_context_set_default_color()`, which `vmaf_set_input_colorimetry()` calls,
 gives the colour of the frames that carry none; see
