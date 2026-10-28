@@ -161,7 +161,7 @@ fallback to the CPU.
 | Select hardware and check feature coverage | [GPU and SIMD backends](docs/backends/index.md) |
 | Choose metrics and extractor options | [Feature reference](docs/metrics/features.md) |
 | Choose a scoring model | [Models](docs/models/overview.md) |
-| Embed libvmaf in an application | [C API](docs/api/index.md) |
+| Embed VMAFx in an application | [VMAFx C API](docs/api/vmafx/index.md); existing `libvmaf.h` callers: [compatibility API](docs/api/index.md) |
 | Train and run ONNX quality models | [Tiny AI](docs/ai/index.md) |
 | Connect scoring tools through MCP | [MCP servers](docs/mcp/index.md) |
 
