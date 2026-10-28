@@ -178,6 +178,52 @@ static char *test_built_in_model(void)
     vmaf_model_destroy(model_file);
     return NULL;
 }
+
+/* Number of features of `model` whose options set motion_force_zero; -1 when
+ * one sets it to anything but "true". */
+static int count_motion_force_zero(VmafModel *model)
+{
+    int count = 0;
+    for (unsigned i = 0; i < model->n_features; i++) {
+        const VmafDictionaryEntry *entry =
+            vmaf_dictionary_get(&(model->feature[i].opts_dict), "motion_force_zero", 0);
+        if (!entry)
+            continue;
+        if (!entry->val || strcmp(entry->val, "true") != 0)
+            return -1;
+        count++;
+    }
+    return count;
+}
+
+static char *test_built_in_model_still(void)
+{
+    VmafModel *model_still = NULL;
+    VmafModelConfig cfg = {0};
+    int err = vmaf_model_load(&model_still, &cfg, "vmaf_v0.6.1still");
+    mu_assert("problem during vmaf_model_load for still model", !err);
+
+    VmafModel *model_file = NULL;
+    VmafModelConfig cfg_file = {0};
+    err =
+        vmaf_model_load_from_path(&model_file, &cfg_file, JSON_MODEL_PATH "vmaf_v0.6.1still.json");
+    mu_assert("problem during vmaf_model_load_from_path for still model", !err);
+    mu_assert("parsed buffer/file still models do not match",
+              !model_compare(model_still, model_file));
+    mu_assert("expected exactly one feature with motion_force_zero=true",
+              count_motion_force_zero(model_still) == 1);
+
+    VmafModel *model_base = NULL;
+    err = vmaf_model_load(&model_base, &cfg, "vmaf_v0.6.1");
+    mu_assert("problem during vmaf_model_load for base model", !err);
+    mu_assert("base model must not have motion_force_zero",
+              count_motion_force_zero(model_base) == 0);
+
+    vmaf_model_destroy(model_still);
+    vmaf_model_destroy(model_file);
+    vmaf_model_destroy(model_base);
+    return NULL;
+}
 #endif
 
 /* Regression for fix/core-lifecycle-memory-audit:
@@ -2001,6 +2047,7 @@ static const MuTest model_api_tests[] = {
     MU_TEST(test_json_model),
 #if VMAF_BUILT_IN_MODELS
     MU_TEST(test_built_in_model),
+    MU_TEST(test_built_in_model_still),
 #endif
     MU_TEST(test_model_load_and_destroy),
     MU_TEST(test_model_load_rejects_null_version),
