@@ -59,22 +59,25 @@ static void capture_line(enum VmafLogLevel level, const char *message, void *use
         capture->detail++;
 }
 
-/* The thread sink outlives every frame that installs it: the log keeps the
- * pointer in a thread-local until the caller restores the previous sink. */
-static VmafLogSink capture_sink = {.deliver = capture_line};
+/* The thread sink and the counts it writes outlive every frame that installs
+ * it: the log keeps the sink pointer in a thread-local until the caller
+ * restores the previous sink, so neither may live on a caller's stack. */
+static LogCapture capture_counts;
+static VmafLogSink capture_sink = {.deliver = capture_line, .user = &capture_counts};
 
-static const VmafLogSink *install_capture(LogCapture *capture, enum VmafLogLevel level)
+static const VmafLogSink *install_capture(enum VmafLogLevel level)
 {
-    capture_sink.user = capture;
+    memset(&capture_counts, 0, sizeof(capture_counts));
     capture_sink.level = level;
     return vmaf_log_swap_thread_sink(&capture_sink);
 }
 
-/* Puts the previous sink back and records whether the capture sink was the
- * one installed and the previous one is current again. */
+/* Puts the previous sink back, copies the counts out and records whether the
+ * capture sink was the one installed and the previous one is current again. */
 static void restore_capture(LogCapture *capture, const VmafLogSink *previous)
 {
     const VmafLogSink *installed = vmaf_log_swap_thread_sink(previous);
+    *capture = capture_counts;
     capture->restored = installed == &capture_sink && vmaf_log_thread_sink() == previous;
 }
 
@@ -95,7 +98,7 @@ static NoConversionRun run_no_conversion(enum VmafLogLevel level)
     VmafPicture dist;
     memset(&ref, 0, sizeof(ref));
     memset(&dist, 0, sizeof(dist));
-    const VmafLogSink *previous = install_capture(&r.capture, level);
+    const VmafLogSink *previous = install_capture(level);
     r.first_rc = vmaf_conversion_state_convert(&state, &ref, &dist);
     r.second_rc = vmaf_conversion_state_convert(&state, &ref, &dist);
     restore_capture(&r.capture, previous);
@@ -156,7 +159,7 @@ static RegisterRun run_register(const VmafModel *first, const VmafModel *second)
     memset(&r, 0, sizeof(r));
     VmafConversionState state;
     memset(&state, 0, sizeof(state));
-    const VmafLogSink *previous = install_capture(&r.capture, VMAF_LOG_LEVEL_ERROR);
+    const VmafLogSink *previous = install_capture(VMAF_LOG_LEVEL_ERROR);
     r.first_rc = vmaf_conversion_state_register_model(&state, first);
     r.second_rc = vmaf_conversion_state_register_model(&state, second);
     restore_capture(&r.capture, previous);
@@ -241,7 +244,7 @@ static ContextRun run_context_init(enum VmafLogLevel level)
     if (r.alloc_rc)
         return r;
     VmafPictureConvertContext *ctx = NULL;
-    const VmafLogSink *previous = install_capture(&r.capture, level);
+    const VmafLogSink *previous = install_capture(level);
     r.init_rc = vmaf_picture_convert_context_init_with_color(&ctx, &src, &color, &target);
     restore_capture(&r.capture, previous);
     r.close_rc = ctx ? vmaf_picture_convert_context_close(ctx) : 0;
