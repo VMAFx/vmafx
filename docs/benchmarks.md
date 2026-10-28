@@ -320,8 +320,8 @@ baselines above come from `testdata/bench_backends.py` (see
 
     ```bash
     ffmpeg -y -i /tmp/bbb4k.mp4 -frames:v 200 -c:v libx264 -crf 35 -preset veryfast \
-        -pix_fmt yuv420p -s 3840x2160 -f rawvideo - \
-        | ffmpeg -y -f rawvideo -pix_fmt yuv420p -s 3840x2160 -i - \
+        -pix_fmt yuv420p -s 3840x2160 -f h264 - \
+        | ffmpeg -y -f h264 -i - \
             -pix_fmt yuv420p -s 3840x2160 testdata/bbb/dis_3840x2160_200f.yuv
     ```
 
