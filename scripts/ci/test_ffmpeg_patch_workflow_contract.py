@@ -255,10 +255,12 @@ class FFmpegWorkflowContract(unittest.TestCase):
 
     def test_broad_ci_precommit_does_not_duplicate_network_replay(self) -> None:
         lint = LINT_WORKFLOW.read_text(encoding="utf-8")
-        step = _step(lint, "Run pre-commit on all files")
+        step = _step(lint, "Run pre-commit on the diff (pull request) or the whole tree")
         self.assertIn("SKIP: ffmpeg-patches-apply-check", step)
-        self.assertIn("pre-commit run", step)
-        self.assertIn("--all-files", step)
+        self.assertIn("scripts/ci/precommit_scope.py", step)
+        scope = (ROOT / "scripts/ci/precommit_scope.py").read_text(encoding="utf-8")
+        self.assertIn('"pre-commit", "run"', scope)
+        self.assertIn('"--all-files"', scope)
         self.assertNotIn("SKIP:", self.workflow)
 
     def test_impact_routing_covers_inputs_and_skips_docs(self) -> None:
