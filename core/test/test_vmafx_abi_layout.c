@@ -153,7 +153,7 @@ _Static_assert(offsetof(VmafxDeviceDesc, flags) == 12, "VmafxDeviceDesc.flags of
 _Static_assert(offsetof(VmafxDeviceDesc, external) == 16, "VmafxDeviceDesc.external offset");
 _Static_assert(sizeof(vmafx_layout_probe_VmafxDeviceDesc.external) == 16,
                "VmafxDeviceDesc.external holds 2 elements");
-_Static_assert(sizeof(VmafxDeviceInfo) == 56, "VmafxDeviceInfo size");
+_Static_assert(sizeof(VmafxDeviceInfo) == 64, "VmafxDeviceInfo size");
 _Static_assert(_Alignof(VmafxDeviceInfo) == 8, "VmafxDeviceInfo alignment");
 _Static_assert(offsetof(VmafxDeviceInfo, struct_size) == 0, "VmafxDeviceInfo.struct_size offset");
 _Static_assert(offsetof(VmafxDeviceInfo, backend) == 4, "VmafxDeviceInfo.backend offset");
@@ -168,6 +168,7 @@ _Static_assert(offsetof(VmafxDeviceInfo, name) == 32, "VmafxDeviceInfo.name offs
 _Static_assert(offsetof(VmafxDeviceInfo, pci) == 40, "VmafxDeviceInfo.pci offset");
 _Static_assert(sizeof(vmafx_layout_probe_VmafxDeviceInfo.pci) == 16,
                "VmafxDeviceInfo.pci holds 4 elements");
+_Static_assert(offsetof(VmafxDeviceInfo, runtime) == 56, "VmafxDeviceInfo.runtime offset");
 _Static_assert(sizeof(VmafxFence) == 32, "VmafxFence size");
 _Static_assert(_Alignof(VmafxFence) == 8, "VmafxFence alignment");
 _Static_assert(offsetof(VmafxFence, struct_size) == 0, "VmafxFence.struct_size offset");
@@ -587,6 +588,6 @@ _Static_assert(VMAFX_DNN_FP16_IO == 0x1u, "VMAFX_DNN_FP16_IO");
 int main(void)
 {
     (void)printf("vmafx ABI layout: %d structs, %d fields, %d constants match the definition\n", 32,
-                 239, 173);
+                 240, 173);
     return 0;
 }

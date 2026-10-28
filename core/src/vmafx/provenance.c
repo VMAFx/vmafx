@@ -131,14 +131,16 @@ void vmafx_provenance_device(const VmafxContext *context, VmafxProvenanceDevice 
         return;
     }
     /* A device backend: the attached VMAFx device names itself; a state the
-     * caller imported through the libvmaf API is the caller's own device. The
-     * runtime version comes with the backend lanes of RC4 WP3. */
+     * caller imported through the libvmaf API is the caller's own device. */
     out->runtime = "unknown";
     VmafxDeviceInfo info = VMAFX_DEVICE_INFO_INIT;
     if (context->device && vmafx_device_describe(context->device, &info, NULL) == VMAFX_OK &&
         info.name) {
         out->index = context->device->index;
         out->name = info.name;
+        if (info.runtime) {
+            out->runtime = info.runtime;
+        }
         return;
     }
     out->index = -1;

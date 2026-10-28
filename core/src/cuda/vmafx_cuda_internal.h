@@ -30,12 +30,14 @@
 
 /* A driver entry point the nv-codec-headers table does not load. */
 typedef CUresult(CUDAAPI *VmafxCuDeviceTotalMem)(size_t *bytes, CUdevice dev);
+typedef CUresult(CUDAAPI *VmafxCuDriverGetVersion)(int *driverVersion);
 
 /* The process's CUDA driver: loaded and initialised once, never unloaded. */
 typedef struct VmafxCudaDriver {
-    CudaFunctions *f;                   /* NULL when the library did not load */
-    CUresult init;                      /* cuInit(0) */
-    VmafxCuDeviceTotalMem total_memory; /* cuDeviceTotalMem_v2, or NULL */
+    CudaFunctions *f;                       /* NULL when the library did not load */
+    CUresult init;                          /* cuInit(0) */
+    VmafxCuDeviceTotalMem total_memory;     /* cuDeviceTotalMem_v2, or NULL */
+    VmafxCuDriverGetVersion driver_version; /* cuDriverGetVersion, or NULL */
 } VmafxCudaDriver;
 
 /* The driver, or NULL when it cannot be loaded or initialised. */
