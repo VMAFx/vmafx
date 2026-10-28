@@ -7,6 +7,16 @@
       ],
       "command": "praetorctl",
       "type": "stdio"
+    },
+    "vmafx-dev": {
+      "args": [
+        "exec",
+        "-i",
+        "vmaf-dev-mcp",
+        "vmafx-mcp"
+      ],
+      "command": "docker",
+      "type": "stdio"
     }
   }
 }
