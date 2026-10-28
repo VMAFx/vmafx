@@ -32,7 +32,7 @@ def python_pairs(text: str) -> set[tuple[str, int]]:
     return {
         ("VMAFX_" + node.targets[0].id, ast.literal_eval(node.value))
         for node in status.body
-        if isinstance(node, ast.Assign)
+        if isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Name)
     }
 
 
