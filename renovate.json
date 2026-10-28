@@ -11,9 +11,10 @@
     "before 6am on Monday"
   ],
   "rebaseWhen": "conflicted",
+  "updateNotScheduled": false,
   "timezone": "Europe/Vienna",
   "prHourlyLimit": 0,
-  "prConcurrentLimit": 3,
+  "prConcurrentLimit": 2,
   "rangeStrategy": "bump",
   "commitMessagePrefix": "chore(deps):",
   "branchPrefix": "renovate/",
@@ -715,7 +716,7 @@
     ]
   },
   "draftPR": true,
-  "branchConcurrentLimit": 5,
+  "branchConcurrentLimit": 3,
   "dependencyDashboard": true,
   "customDatasources": {
     "nvidia-cuda-redist": {
