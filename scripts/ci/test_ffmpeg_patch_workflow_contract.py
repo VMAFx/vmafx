@@ -26,6 +26,7 @@ INTEGRATION_WORKFLOW = ROOT / ".github/workflows/ffmpeg-integration.yml"
 SMOKE_SCRIPT = ROOT / "ffmpeg-patches/test/build-and-run.sh"
 HOOKS = ROOT / ".pre-commit-config.yaml"
 LINT_WORKFLOW = ROOT / ".github/workflows/lint-and-format.yml"
+AGGREGATOR = ROOT / ".github/workflows/required-aggregator.yml"
 BASH = shutil.which("bash") or "/bin/bash"
 
 
@@ -50,6 +51,38 @@ def _run(step: str) -> str:
     """Read the literal shell block used by a step."""
     body = step.split("        run: |\n", maxsplit=1)[1]
     return "\n".join(line[10:] for line in body.splitlines() if line.startswith("          "))
+
+
+FILTER_CHECKS = ("parity", "windows", "contract", "provenance")
+
+
+def _filter_job_findings(workflow: str, aggregator: str) -> list[str]:
+    """What the required vmafx filter job lacks; empty when it builds and runs every check."""
+    try:
+        job = _job(workflow, "filter")
+    except ValueError:
+        return ["no filter job"]
+    findings: list[str] = []
+    header = job.split("    steps:\n", maxsplit=1)[0]
+    for line in (
+        "    # required-aggregator\n",
+        "    name: FFmpeg vmafx Filter\n",
+        "    needs: tier\n",
+    ):
+        if line not in header:
+            findings.append(f"filter job header lacks {line.strip()!r}")
+    if "'FFmpeg vmafx Filter'," not in aggregator:
+        findings.append("aggregator does not require FFmpeg vmafx Filter")
+    build = _run(_step(job, "Build FFmpeg with the vmafx filter"))
+    for needle in ("--enable-libvmafx", "CONFIG_VMAFX_FILTER 1", "--keep-tree"):
+        if needle not in build:
+            findings.append(f"filter build lacks {needle}")
+    _, found, rest = _run(_step(job, "Check the vmafx filter against the CLI")).partition(
+        "for check in "
+    )
+    checks = rest.split(";", 1)[0].split() if found else []
+    findings += [f"filter check {name} not run" for name in FILTER_CHECKS if name not in checks]
+    return findings
 
 
 def _load_planner() -> ModuleType:
@@ -207,7 +240,7 @@ class FFmpegWorkflowContract(unittest.TestCase):
         self.assertNotRegex(self.workflow, r"(?m)^\s+(?:contents|pull-requests): write")
         self.assertNotIn("continue-on-error", self.workflow)
         self.assertNotRegex(self.workflow, r"git\s+(?:push|tag)|gh\s+pr\s+create")
-        self.assertEqual(self.workflow.count("persist-credentials: false"), 2)
+        self.assertEqual(self.workflow.count("persist-credentials: false"), 3)
         self.assertIn(
             "${{ github.event_name }}-"
             "${{ github.ref == 'refs/heads/master' && github.sha || github.ref }}",
@@ -329,6 +362,34 @@ class FFmpegWorkflowContract(unittest.TestCase):
                     "injected replay conflict",
                     (directory / output / "workflow-command.log").read_text(encoding="utf-8"),
                 )
+
+    def test_vmafx_filter_job_builds_and_checks_the_filter(self) -> None:
+        # Issue #2475: the vmafx filter is built against libvmafx and checked against the CLI.
+        aggregator = AGGREGATOR.read_text(encoding="utf-8")
+        self.assertEqual(_filter_job_findings(self.workflow, aggregator), [])
+
+    def test_vmafx_filter_job_check_refuses_planted_gaps(self) -> None:
+        aggregator = AGGREGATOR.read_text(encoding="utf-8")
+        planted = {
+            "dropped check": (
+                self.workflow.replace("parity windows contract provenance", "parity windows"),
+                aggregator,
+                ["filter check contract not run", "filter check provenance not run"],
+            ),
+            "not required": (
+                self.workflow,
+                aggregator.replace("'FFmpeg vmafx Filter',", ""),
+                ["aggregator does not require FFmpeg vmafx Filter"],
+            ),
+            "no libvmafx": (
+                self.workflow.replace("--enable-libvmafx --disable-filter", "--disable-filter"),
+                aggregator,
+                ["filter build lacks --enable-libvmafx"],
+            ),
+        }
+        for case, (workflow, required, expected) in planted.items():
+            with self.subTest(case=case):
+                self.assertEqual(_filter_job_findings(workflow, required), expected)
 
 
 class SharedFixSeriesContract(unittest.TestCase):
