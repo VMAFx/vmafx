@@ -1,5 +1,10 @@
 # Context lifecycle: init, score, close
 
+!!! warning "Deprecated: `libvmaf.h` compatibility API"
+    This page documents the compatibility library `libvmaf.so.3`. New code
+    uses the [VMAFx API](vmafx/index.md); the [migration table](vmafx/compat.md)
+    names the successor of every function.
+
 Use this page for the order of calls that scores a video pair with libvmaf
 and for the contract of each call: ownership, errors, thread-safety and ABI
 status. A complete program is on the [overview page](index.md#minimal-program).
