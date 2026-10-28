@@ -46,7 +46,7 @@ ff_configure_args() {
     --enable-swscale --enable-swresample --enable-demuxer=rawvideo \
     --enable-decoder=rawvideo --enable-encoder=wrapped_avframe,rawvideo \
     --enable-muxer=null --enable-protocol=file \
-    --enable-filter=libvmaf,scale,format,null,nullsink,trim,setpts --enable-libvmaf
+    --enable-filter=libvmaf,scale,format,null,nullsink,trim,setpts,split --enable-libvmaf
 }
 
 ff_fetch() {
@@ -108,6 +108,29 @@ ff_score() {
   uc_check_loaded "$prefix" "$log"
 }
 
+# ff_score_refused BIN OUT_JSON FILTER_GRAPH NAME: the graph must make ffmpeg
+# fail, with NAME in its log; a run that scores, or fails without naming it,
+# fails the job.
+ff_score_refused() {
+  local bin="$1" out="$2" graph="$3" name="$4" log rc=0
+  log="$out.run.log"
+  rm -f "$out"
+  LD_LIBRARY_PATH="$(uc_ldpath "$PREFIX")" timeout 300 "$bin" \
+    -hide_banner -nostdin -loglevel info \
+    -f rawvideo -pix_fmt yuv420p -video_size "$SIZE" -i "$DIST_YUV" \
+    -f rawvideo -pix_fmt yuv420p -video_size "$SIZE" -i "$REF_YUV" \
+    -lavfi "$graph" -an -f null - >"$log" 2>&1 || rc=$?
+  if [ "$rc" -eq 0 ]; then
+    echo "FAIL: ffmpeg scored a graph it must refuse ($name, see $log)"
+    STATUS=1
+  elif ! grep -qF -- "$name" "$log"; then
+    echo "FAIL: ffmpeg refused the graph without naming $name (see $log)"
+    STATUS=1
+  else
+    echo "== refused as expected: $name"
+  fi
+}
+
 # ff_compare A B LABEL_A LABEL_B: compare and fold the result into STATUS.
 ff_compare() {
   local rc=0
@@ -139,6 +162,42 @@ ff_cpu_leg() {
     uc_cli_scores "$PREFIX" "$WORK/cli-prefix.json"
     ff_compare "$out" "$WORK/cli-prefix.json" "ffmpeg" "vmaf-cli"
   fi
+}
+
+# ff_encore_case LABEL MODEL FEATURE THREADS SUBSAMPLE REF_FILTERS -- CLI ARGS...:
+# score the graph SVT Encore builds for these options and compare it with the
+# CLI given the same options.
+ff_encore_case() {
+  local label="$1" out cli
+  out="$WORK/encore-$label.json"
+  cli="$WORK/encore-$label-cli.json"
+  ff_score "$FF_ROOT/build/ffmpeg" "$PREFIX" "$out" \
+    "$(uc_encore_graph "$out" "$2" "$3" "$4" "$5" "$6")"
+  shift 7
+  uc_cli_run "$PREFIX" "$cli" "$@"
+  ff_compare "$out" "$cli" "encore-$label" "vmaf-cli"
+}
+
+# SVT Encore leg (#2364): the filter strings Encore generates for each VMAF
+# option it exposes, scored with the stock filter and compared with the CLI.
+# Encore's source commit is named in docs/development/upstream-consumers.md.
+ff_encore_leg() {
+  local v061="version=vmaf_v0.6.1" bad="$WORK/encore-refused.json"
+  echo "== SVT Encore filter strings against the vmaf CLI of --prefix"
+  ff_encore_case defaults "" "" "" "" "" -- --model "$v061"
+  ff_encore_case features "" "name=psnr|name=float_ssim" "" "" "" -- \
+    --model "$v061" --feature psnr --feature float_ssim
+  ff_encore_case models \
+    'version=vmaf_4k_v0.6.1\\:name=vmaf4k|version=vmaf_v0.6.1\\:name=vmaf' "" "" "" "" -- \
+    --model version=vmaf_4k_v0.6.1:name=vmaf4k --model version=vmaf_v0.6.1:name=vmaf
+  ff_encore_case threads "" "" 4 2 "" -- --model "$v061" --threads 4 --subsample 2
+  ff_encore_case reffilters "" "" "" "" format=yuv420p -- --model "$v061"
+  ff_score_refused "$FF_ROOT/build/ffmpeg" "$bad" \
+    "$(uc_encore_graph "$bad" "" "name=encore_no_such_feature" "" "" "")" \
+    encore_no_such_feature
+  ff_score_refused "$FF_ROOT/build/ffmpeg" "$bad" \
+    "$(uc_encore_graph "$bad" "version=encore_no_such_model" "" "" "" "")" \
+    encore_no_such_model
 }
 
 # CUDA leg: only when the host can run it; otherwise a stated skip, never a pass.
@@ -196,6 +255,9 @@ ff_cuda_leg() {
 ff_fetch
 ff_build build
 ff_cpu_leg
+if [ "$AGAINST_CLI" -eq 1 ]; then
+  ff_encore_leg
+fi
 if [ "$CUDA" -eq 1 ]; then
   ff_cuda_leg
 fi

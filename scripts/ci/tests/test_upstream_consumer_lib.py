@@ -121,5 +121,56 @@ class FFmpegGraphTests(unittest.TestCase):
         self.assertNotIn("[r][d]libvmaf=", graph)
 
 
+def _encore(*args: str) -> subprocess.CompletedProcess[str]:
+    """uc_encore_graph OUT MODEL FEATURE THREADS SUBSAMPLE REF with FRAMES=3."""
+    assert BASH is not None
+    script = f'. "{LIB}" && uc_defaults && FRAMES=3 && uc_encore_graph "$@"'
+    # A fixed script over arguments this test chose; no user input.
+    return subprocess.run(  # noqa: S603
+        [BASH, "-c", script, "uc-test", *args],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=TIMEOUT,
+    )
+
+
+@unittest.skipIf(BASH is None, "bash not found")
+class EncoreGraphTests(unittest.TestCase):
+    """The graph SVT Encore builds (CommandBuilder.kt, vmafParams), #2364."""
+
+    CUT = "trim=end_frame=3,setpts=PTS-STARTPTS"
+
+    def test_defaults_name_only_the_log(self) -> None:
+        graph = _encore("o.json", "", "", "", "", "").stdout.strip()
+        self.assertEqual(
+            graph,
+            f"sws_flags=bicubic;[1:v]{self.CUT},setpts=PTS-STARTPTS,split=2[r1][r2];"
+            f"[0:v]{self.CUT}[d];[d][r1]scale=rw:rh,setpts=PTS-STARTPTS[ds];"
+            "[ds][r2]libvmaf=log_fmt=json:log_path=o.json",
+        )
+
+    def test_options_follow_encores_order(self) -> None:
+        graph = _encore(
+            "o.json", r"version=vmaf_v0.6.1\:name=vmaf", "name=psnr|name=float_ssim", "4", "2", ""
+        ).stdout.strip()
+        self.assertTrue(
+            graph.endswith(
+                r"libvmaf=log_fmt=json:log_path=o.json:model=version=vmaf_v0.6.1\:name=vmaf"
+                ":feature=name=psnr|name=float_ssim:n_threads=4:n_subsample=2"
+            ),
+            graph,
+        )
+
+    def test_ref_filters_go_before_the_split(self) -> None:
+        graph = _encore("o.json", "", "", "", "", "format=yuv420p").stdout
+        self.assertIn(f"[1:v]{self.CUT},format=yuv420p,setpts=PTS-STARTPTS,split=2", graph)
+
+    def test_planted_reorder_is_seen(self) -> None:
+        graph = _encore("o.json", "", "name=psnr", "4", "", "").stdout
+        self.assertNotIn("n_threads=4:feature=", graph)
+        self.assertLess(graph.index(":feature="), graph.index(":n_threads="))
+
+
 if __name__ == "__main__":
     unittest.main()

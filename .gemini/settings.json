@@ -6,6 +6,15 @@
         "serve"
       ],
       "command": "praetorctl"
+    },
+    "vmafx-dev": {
+      "args": [
+        "exec",
+        "-i",
+        "vmaf-dev-mcp",
+        "vmafx-mcp"
+      ],
+      "command": "docker"
     }
   },
   "hooks": {
