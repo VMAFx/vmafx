@@ -144,5 +144,6 @@ and how close each one is to the CPU scores.
 
 - [CLI reference](../usage/cli.md): every option, with examples.
 - [FFmpeg](../usage/ffmpeg.md): score inside an FFmpeg pipeline.
-- [C API](../api/index.md): embed `libvmaf` in an application.
+- [VMAFx C API](../api/vmafx/index.md): embed VMAFx in an application
+  (existing `libvmaf.h` callers: the [compatibility API](../api/index.md)).
 - [Python library](../usage/python.md): the Python harness.
