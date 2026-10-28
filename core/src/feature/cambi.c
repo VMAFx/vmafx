@@ -657,7 +657,7 @@ static HeatmapsPathRef *heatmaps_paths = NULL;
 static int heatmaps_path_ref_locked(const char *path, bool *first)
 {
     HeatmapsPathRef *ref = heatmaps_paths;
-    while (ref && strcmp(ref->path, path))
+    while (ref && strcmp(ref->path, path) != 0)
         ref = ref->next;
     *first = !ref;
     if (!ref) {
@@ -681,7 +681,7 @@ static int heatmaps_path_ref_locked(const char *path, bool *first)
 static void heatmaps_path_unref_locked(const char *path)
 {
     HeatmapsPathRef **ref = &heatmaps_paths;
-    while (*ref && strcmp((*ref)->path, path))
+    while (*ref && strcmp((*ref)->path, path) != 0)
         ref = &(*ref)->next;
     if (*ref && !--(*ref)->ref_cnt) {
         HeatmapsPathRef *unused = *ref;
