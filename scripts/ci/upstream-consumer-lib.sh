@@ -235,6 +235,29 @@ uc_ffmpeg_graph() {
   echo "[0:v]${cut}[d];[1:v]${cut}[r];[d][r]libvmaf=log_fmt=json:log_path=$1:n_threads=1"
 }
 
+# uc_encore_graph OUT_JSON MODEL FEATURE THREADS SUBSAMPLE REF_FILTERS: the
+# filter graph SVT Encore builds for a VMAF analysis (CommandBuilder.kt,
+# vmafParams, at the commit named in docs/development/upstream-consumers.md),
+# with the same FRAMES cut on both inputs as uc_ffmpeg_graph. Encore runs the
+# reference through REF_FILTERS, setpts and split=2, scales the distorted video
+# to the reference size with `scale=rw:rh` under `sws_flags=bicubic`, and passes
+# its options to libvmaf in this order: log_fmt, log_path, model, feature,
+# n_threads, n_subsample. An empty argument leaves that option out, as Encore
+# does for an unset one. MODEL and FEATURE are passed as Encore writes them,
+# `|` between entries and `\:` inside an entry.
+uc_encore_graph() {
+  local out="$1" model="$2" feature="$3" threads="$4" subsample="$5" ref="$6"
+  local cut="trim=end_frame=$FRAMES,setpts=PTS-STARTPTS" opts
+  opts="log_fmt=json:log_path=$out"
+  [ -z "$model" ] || opts="$opts:model=$model"
+  [ -z "$feature" ] || opts="$opts:feature=$feature"
+  [ -z "$threads" ] || opts="$opts:n_threads=$threads"
+  [ -z "$subsample" ] || opts="$opts:n_subsample=$subsample"
+  [ -z "$ref" ] || ref="$ref,"
+  printf '%s' "sws_flags=bicubic;[1:v]${cut},${ref}setpts=PTS-STARTPTS,split=2[r1][r2];"
+  printf '%s\n' "[0:v]${cut}[d];[d][r1]scale=rw:rh,setpts=PTS-STARTPTS[ds];[ds][r2]libvmaf=$opts"
+}
+
 # uc_compare A B LABEL_A LABEL_B [extra comparator args]: exact-text
 # comparison of every frame metric and pooled metric; returns 0/1/2.
 uc_compare() {
@@ -243,14 +266,22 @@ uc_compare() {
   python3 "$UC_SCRIPT_PY" "$a" "$b" --label-a "$la" --label-b "$lb" --pooled "$@"
 }
 
-# uc_cli_scores PREFIX OUT [extra vmaf args...]: score with the CLI.
-uc_cli_scores() {
+# uc_cli_run PREFIX OUT [vmaf args...]: score FRAMES frames with the CLI; the
+# caller names the model and the thread count.
+uc_cli_run() {
   local prefix="$1" out="$2"
   shift 2
   [ -x "$prefix/bin/vmaf" ] || uc_die "no $prefix/bin/vmaf for --against-cli"
   LD_LIBRARY_PATH="$(uc_ldpath "$prefix")" timeout 300 "$prefix/bin/vmaf" \
     -r "$REF_YUV" -d "$DIST_YUV" -w "$SIZE_W" -h "$SIZE_H" -p 420 -b 8 \
-    --model version=vmaf_v0.6.1 --frame_cnt "$FRAMES" --threads 1 \
-    --json -o "$out" "$@" >"$out.log" 2>&1 ||
+    --frame_cnt "$FRAMES" --json -o "$out" "$@" >"$out.log" 2>&1 ||
     uc_die "vmaf CLI failed (see $out.log)"
+}
+
+# uc_cli_scores PREFIX OUT [extra vmaf args...]: score with the CLI, with the
+# model and thread count uc_ffmpeg_graph uses.
+uc_cli_scores() {
+  local prefix="$1" out="$2"
+  shift 2
+  uc_cli_run "$prefix" "$out" --model version=vmaf_v0.6.1 --threads 1 "$@"
 }
