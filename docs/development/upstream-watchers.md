@@ -132,7 +132,11 @@ script exit code, malformed ledger, or network error during commit checks), the
   `needs`).
 - Action: calls `scripts/ci/scheduled-failure-issue.sh` to create or comment
   on the open issue titled "Upstream watcher failed on schedule", recording
-  the failed jobs and the run URL.
+  the failed jobs and the run URL. The jobs API can list a failed job some
+  seconds after the run's `needs` already report it, so the script reads the
+  jobs up to six times, ten seconds apart (`SCHEDULED_FAILURE_WAIT` sets the
+  interval). When no failed job appears it prints a notice and exits 0 without
+  writing an issue, so the reporter never turns the run red a second time.
 
 ### Feature states
 
