@@ -39,6 +39,7 @@ typedef struct LogCapture {
     int conversion;
     int detail;
     int mismatch;
+    bool restored;
 } LogCapture;
 
 static void capture_line(enum VmafLogLevel level, const char *message, void *user)
@@ -69,6 +70,14 @@ static const VmafLogSink *install_capture(LogCapture *capture, enum VmafLogLevel
     return vmaf_log_swap_thread_sink(&capture_sink);
 }
 
+/* Puts the previous sink back and records whether the capture sink was the
+ * one installed and the previous one is current again. */
+static void restore_capture(LogCapture *capture, const VmafLogSink *previous)
+{
+    const VmafLogSink *installed = vmaf_log_swap_thread_sink(previous);
+    capture->restored = installed == &capture_sink && vmaf_log_thread_sink() == previous;
+}
+
 typedef struct NoConversionRun {
     int first_rc;
     int second_rc;
@@ -89,7 +98,7 @@ static NoConversionRun run_no_conversion(enum VmafLogLevel level)
     const VmafLogSink *previous = install_capture(&r.capture, level);
     r.first_rc = vmaf_conversion_state_convert(&state, &ref, &dist);
     r.second_rc = vmaf_conversion_state_convert(&state, &ref, &dist);
-    (void)vmaf_log_swap_thread_sink(previous);
+    restore_capture(&r.capture, previous);
     vmaf_conversion_state_close(&state);
     return r;
 }
@@ -101,6 +110,7 @@ static char *test_no_conversion_logs_once(void)
               r.first_rc == 0 && r.second_rc == 0);
     mu_assert("two frames without conversion must log exactly one DEBUG line",
               r.capture.none_needed == 1);
+    mu_assert("the previous log sink must be current again", r.capture.restored);
     return NULL;
 }
 
@@ -110,6 +120,7 @@ static char *test_no_conversion_silent_at_info(void)
     mu_assert("a run without a conversion target must convert nothing",
               r.first_rc == 0 && r.second_rc == 0);
     mu_assert("a sink at INFO must not receive the DEBUG line", r.capture.none_needed == 0);
+    mu_assert("the previous log sink must be current again", r.capture.restored);
     return NULL;
 }
 
@@ -148,7 +159,7 @@ static RegisterRun run_register(const VmafModel *first, const VmafModel *second)
     const VmafLogSink *previous = install_capture(&r.capture, VMAF_LOG_LEVEL_ERROR);
     r.first_rc = vmaf_conversion_state_register_model(&state, first);
     r.second_rc = vmaf_conversion_state_register_model(&state, second);
-    (void)vmaf_log_swap_thread_sink(previous);
+    restore_capture(&r.capture, previous);
     vmaf_conversion_state_close(&state);
     return r;
 }
@@ -161,6 +172,7 @@ static char *test_register_target_then_none_refused(void)
     mu_assert("the first model must register", r.first_rc == 0);
     mu_assert("a model without a target after one with must be refused", r.second_rc == -EINVAL);
     mu_assert("the refusal must log one ERROR line", r.capture.mismatch == 1);
+    mu_assert("the previous log sink must be current again", r.capture.restored);
     return NULL;
 }
 
@@ -172,6 +184,7 @@ static char *test_register_none_then_target_refused(void)
     mu_assert("the first model must register", r.first_rc == 0);
     mu_assert("a model with a target after one without must be refused", r.second_rc == -EINVAL);
     mu_assert("the refusal must log one ERROR line", r.capture.mismatch == 1);
+    mu_assert("the previous log sink must be current again", r.capture.restored);
     return NULL;
 }
 
@@ -183,6 +196,7 @@ static char *test_register_different_targets_refused(void)
     mu_assert("the first model must register", r.first_rc == 0);
     mu_assert("a model with another target must be refused", r.second_rc == -EINVAL);
     mu_assert("the refusal must log one ERROR line", r.capture.mismatch == 1);
+    mu_assert("the previous log sink must be current again", r.capture.restored);
     return NULL;
 }
 
@@ -193,6 +207,7 @@ static char *test_register_same_target_accepted(void)
     const RegisterRun r = run_register(&a, &b);
     mu_assert("two models with one target must both register", r.first_rc == 0 && r.second_rc == 0);
     mu_assert("an accepted model must log no ERROR line", r.capture.mismatch == 0);
+    mu_assert("the previous log sink must be current again", r.capture.restored);
     return NULL;
 }
 
@@ -228,7 +243,7 @@ static ContextRun run_context_init(enum VmafLogLevel level)
     VmafPictureConvertContext *ctx = NULL;
     const VmafLogSink *previous = install_capture(&r.capture, level);
     r.init_rc = vmaf_picture_convert_context_init_with_color(&ctx, &src, &color, &target);
-    (void)vmaf_log_swap_thread_sink(previous);
+    restore_capture(&r.capture, previous);
     r.close_rc = ctx ? vmaf_picture_convert_context_close(ctx) : 0;
     r.unref_rc = vmaf_picture_unref(&src);
     return r;
@@ -242,6 +257,7 @@ static char *test_context_logs_source_and_target(void)
     mu_assert("closing the context or the picture failed", r.close_rc == 0 && r.unref_rc == 0);
     mu_assert("a new context must log exactly one DEBUG line", r.capture.conversion == 1);
     mu_assert("the DEBUG line must name the source and the target", r.capture.detail == 1);
+    mu_assert("the previous log sink must be current again", r.capture.restored);
     return NULL;
 }
 
@@ -250,6 +266,7 @@ static char *test_context_silent_at_info(void)
     const ContextRun r = run_context_init(VMAF_LOG_LEVEL_INFO);
     mu_assert("the conversion context could not be created", r.alloc_rc == 0 && r.init_rc == 0);
     mu_assert("a sink at INFO must not receive the DEBUG line", r.capture.conversion == 0);
+    mu_assert("the previous log sink must be current again", r.capture.restored);
     return NULL;
 }
 #endif
