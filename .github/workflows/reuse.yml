@@ -17,6 +17,12 @@ name: REUSE
 permissions:
   contents: read
 
+# A newer push to a pull request supersedes the older run; master runs stay
+# apart per commit (ADR-1673).
+concurrency:
+  group: reuse-${{ github.workflow }}-${{ github.ref == 'refs/heads/master' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
+
 jobs:
   reuse:
     name: REUSE lint

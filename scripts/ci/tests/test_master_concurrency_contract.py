@@ -53,6 +53,19 @@ SERIALISED: dict[tuple[str, str], str] = {
     ),
 }
 
+# Workflow -> why a pull request run of it carries no workflow-level block that
+# supersedes the older run of the same pull request.
+UNSUPERSEDED: dict[str, str] = {
+    "docs.yml": (
+        "per-job blocks instead (ADR-1294, ADR-1297): the build jobs supersede, the "
+        "Pages deploy job must never be cancelled mid-write"
+    ),
+    "pr-label-lanes.yml": (
+        "each called lane keeps its own group, and the same group at both levels "
+        "would deadlock the caller and the callee"
+    ),
+}
+
 TOKEN = re.compile(r"\s*(\|\||&&|==|!=|'[^']*'|[A-Za-z_][A-Za-z0-9_.]*|\()")
 
 
@@ -222,6 +235,41 @@ def pull_request_findings(
     return problems
 
 
+PR_EVENTS = ("pull_request", "pull_request_target", "merge_group")
+
+
+def unsuperseded_findings(
+    workflows: dict[str, dict[Any, Any]], listed: dict[str, str]
+) -> list[str]:
+    """Every pull-request workflow cancels its older run, or says why it cannot."""
+    problems: list[str] = []
+    for name, workflow in sorted(workflows.items()):
+        if not any(event in triggers(workflow) for event in PR_EVENTS):
+            if name in listed:
+                problems.append(f"{name} is listed as unsuperseded but has no PR trigger")
+            continue
+        block = concurrency_blocks(workflow).get("workflow")
+        superseding = False
+        if block is not None:
+            block = normalise(block)
+            same = render(block["group"], pr_push("a" * 40)) == render(
+                block["group"], pr_push("b" * 40)
+            )
+            cancel = render(block["cancel-in-progress"], pr_push("a" * 40))
+            superseding = same and cancel in (True, "true")
+        if name in listed:
+            if superseding:
+                problems.append(f"{name} is listed as unsuperseded but supersedes PR runs")
+        elif not superseding:
+            problems.append(
+                f"{name} has no workflow-level concurrency block that cancels the older "
+                "run of the same pull request"
+            )
+    for name in sorted(set(listed) - set(workflows)):
+        problems.append(f"{name} is listed as unsuperseded but does not exist")
+    return problems
+
+
 def load_all() -> dict[str, dict[Any, Any]]:
     return {
         path.name: yaml.safe_load(path.read_text(encoding="utf-8"))
@@ -254,6 +302,9 @@ class RepositoryWorkflows(unittest.TestCase):
 
     def test_pull_requests_still_supersede_older_runs(self) -> None:
         self.assertEqual(pull_request_findings(load_all(), SERIALISED), [])
+
+    def test_every_pull_request_workflow_supersedes_older_runs(self) -> None:
+        self.assertEqual(unsuperseded_findings(load_all(), UNSUPERSEDED), [])
 
     def test_aggregator_is_sha_scoped_on_master(self) -> None:
         block = load_all()["required-aggregator.yml"]["concurrency"]
@@ -337,6 +388,32 @@ class Contract(unittest.TestCase):
     def test_pull_request_policy_kept_by_the_fix(self) -> None:
         flow = wf({"push": None, "pull_request": None}, NEW)
         self.assertEqual(pull_request_findings({"x.yml": flow}, {}), [])
+
+    def test_negative_pr_workflow_without_block_is_refused(self) -> None:
+        flow = wf({"pull_request": None})
+        self.assertEqual(len(unsuperseded_findings({"x.yml": flow}, {})), 1)
+
+    def test_negative_pr_workflow_without_cancel_is_refused(self) -> None:
+        block = {"group": NEW["group"], "cancel-in-progress": False}
+        flow = wf({"pull_request": None}, block)
+        self.assertEqual(len(unsuperseded_findings({"x.yml": flow}, {})), 1)
+
+    def test_positive_pr_workflow_with_superseding_block(self) -> None:
+        flow = wf({"pull_request": None, "push": None}, NEW)
+        self.assertEqual(unsuperseded_findings({"x.yml": flow}, {}), [])
+
+    def test_boundary_listed_pr_workflow_without_block(self) -> None:
+        flow = wf({"pull_request": None})
+        self.assertEqual(unsuperseded_findings({"x.yml": flow}, {"x.yml": "why"}), [])
+
+    def test_boundary_schedule_only_needs_no_block(self) -> None:
+        flow = wf({"schedule": [{"cron": "0 0 * * *"}]})
+        self.assertEqual(unsuperseded_findings({"x.yml": flow}, {}), [])
+
+    def test_stale_unsuperseded_entries_are_refused(self) -> None:
+        superseding = wf({"pull_request": None}, NEW)
+        self.assertEqual(len(unsuperseded_findings({"x.yml": superseding}, {"x.yml": "y"})), 1)
+        self.assertEqual(len(unsuperseded_findings({}, {"gone.yml": "y"})), 1)
 
     def test_evaluator_short_circuit_semantics(self) -> None:
         ctx = {"a": "1", "b": ""}
