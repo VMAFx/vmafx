@@ -312,6 +312,8 @@ static VmafxDeviceInfo cpu_info(uint32_t flags)
     for (uint32_t i = 0; i < 4u; i++) {
         info.pci[i] = UINT32_MAX; /* the CPU has no PCI location */
     }
+    const VmafxBuildInfo *const build = vmafx_build_info();
+    info.runtime = build && build->arch ? build->arch : "unknown";
     return info;
 }
 
@@ -357,6 +359,9 @@ VmafxStatus vmafx_device_info(uint32_t backend, int32_t index, VmafxDeviceInfo *
     if (backend != VMAFX_BACKEND_CPU) {
         VmafxDeviceInfo info = VMAFX_DEVICE_INFO_INIT;
         status = lane_info(&report, backend, index, &info);
+        if (!info.runtime) {
+            info.runtime = "unknown";
+        }
         return status == VMAFX_OK ?
                    vmafx_write_sized(&report, out, &info, (uint32_t)sizeof(info), "out") :
                    status;
@@ -393,6 +398,9 @@ VmafxStatus vmafx_device_describe(const VmafxDevice *device, VmafxDeviceInfo *ou
         vmafx_hip_device_describe(device, &info);
     }
 #endif
+    if (!info.runtime) {
+        info.runtime = "unknown";
+    }
     assert(info.backend == device->backend);
     return vmafx_write_sized(&report, out, &info, (uint32_t)sizeof(info), "out");
 }

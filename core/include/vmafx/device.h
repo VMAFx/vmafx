@@ -110,6 +110,11 @@ struct VmafxDeviceInfo {
      * ABI 0.1.10.
      */
     uint32_t pci[4];
+    /**
+     * Runtime and driver version of the device as its runtime reports it (`x86_64`-style arch for
+     * the CPU). Added in ABI 0.1.14.
+     */
+    const char *runtime;
 };
 
 /** Initialiser that sets `struct_size`; every other field is zero. */
