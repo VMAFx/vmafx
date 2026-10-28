@@ -33,7 +33,7 @@ func TestQSVRateControlProbeAndCache(t *testing.T) {
 			}
 			device := fmt.Sprintf("/dev/dri/test-%s", t.Name())
 			var wg sync.WaitGroup
-			for i := 0; i < 16; i++ {
+			for range 16 {
 				wg.Go(func() {
 					result, err := ProbeQSVRateControl(context.Background(), device, "h264_qsv", "ffmpeg", run)
 					if err != nil {

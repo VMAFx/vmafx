@@ -51,7 +51,7 @@ func TestQSVEncoderAutomaticProbe(t *testing.T) {
 				}
 				return corpus.RunResult{}
 			}}
-			for i := 0; i < 2; i++ {
+			for range 2 {
 				result, err := enc.Encode("in.mkv", params)
 				if err != nil {
 					t.Fatal(err)
