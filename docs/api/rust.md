@@ -78,11 +78,11 @@ there is no fallback to unrelated system headers. The
 only `x86_64-unknown-linux-gnu`. See also the
 [docs.rs build environment documentation](https://docs.rs/about/builds#detecting-docsrs).
 
-This mode currently requires the source checkout. The explicit Cargo
-`include` list ships crate sources, tests, examples and README, and omits
-native builds, video fixtures and the out-of-crate C headers. Preparing those
-headers for a standalone registry upload is separate publication work;
-an extracted crate alone cannot use this docs.rs mode yet.
+This mode currently requires the source checkout. The crate uses Cargo's
+default packaging, which does not include the C headers under `core/`,
+because they lie outside the crate directory. Preparing those headers for a
+standalone registry upload is separate publication work; an extracted crate
+alone cannot use this docs.rs mode yet.
 
 ## Version policy
 

@@ -38,7 +38,8 @@ Parent: [../../../AGENTS.md](../../../AGENTS.md). Established by
   library required together; absence -> `vmafx-sys: libvmaf not found` with
   searched prefixes. `DOCS_RS` set -> tree headers via `CARGO_MANIFEST_DIR`,
   refuse missing header, emit no link directives. Keep stale-header check,
-  allowlist, package `include` list; pure policy tests in `tests/library_search.rs`.
+  allowlist; default Cargo packaging (no `include`/`exclude`/`license-file`:
+  licence check refuses them); pure policy tests in `tests/library_search.rs`.
 - **Test data paths**: integration tests and examples resolve YUV/model paths
   relative to `VMAFX_REPO` (or auto-detected from `CARGO_MANIFEST_DIR`). Never
   hardcode absolute paths into test source.
