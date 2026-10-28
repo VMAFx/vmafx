@@ -994,11 +994,16 @@ struct MeasuredTwin {
 int refuse_unscaled_bpc(const VmafFeatureExtractor *fex, unsigned bpc)
 {
     static const MeasuredTwin kMeasured[] = {
-        {"float_psnr_cuda", 15U}, {"float_psnr_sycl", 15U},
-        {"float_psnr_hip", 15U},  {"ciede_cuda", 15U},
-        {"ciede_sycl", 15U},      {"ciede_hip", 15U},
-        {"psnr_hvs_cuda", 11U},   {"psnr_hvs_sycl", 11U},
-        {"psnr_hvs_hip", 11U},    {"integer_psnr_hvs_metal", 11U},
+        {.name = "float_psnr_cuda", .max_bpc = 15U},
+        {.name = "float_psnr_sycl", .max_bpc = 15U},
+        {.name = "float_psnr_hip", .max_bpc = 15U},
+        {.name = "ciede_cuda", .max_bpc = 15U},
+        {.name = "ciede_sycl", .max_bpc = 15U},
+        {.name = "ciede_hip", .max_bpc = 15U},
+        {.name = "psnr_hvs_cuda", .max_bpc = 11U},
+        {.name = "psnr_hvs_sycl", .max_bpc = 11U},
+        {.name = "psnr_hvs_hip", .max_bpc = 11U},
+        {.name = "integer_psnr_hvs_metal", .max_bpc = 11U},
     };
     constexpr uint64_t kDeviceFlags = VMAF_FEATURE_EXTRACTOR_CUDA | VMAF_FEATURE_EXTRACTOR_SYCL |
                                       VMAF_FEATURE_EXTRACTOR_HIP | VMAF_FEATURE_EXTRACTOR_METAL;
