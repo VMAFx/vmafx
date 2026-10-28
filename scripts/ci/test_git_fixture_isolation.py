@@ -780,7 +780,7 @@ class GitFixtureIsolation(unittest.TestCase):
             self.assertIsNotNone(re.search(pattern, path), path)
         workflow = (ROOT / ".github/workflows/lint-and-format.yml").read_text()
         self.assertIn("name: Pre-Commit", workflow)
-        self.assertIn("pre-commit run --show-diff-on-failure --color=always --all-files", workflow)
+        self.assertIn("scripts/ci/precommit_scope.py", workflow)
 
 
 if __name__ == "__main__":

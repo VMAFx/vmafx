@@ -121,3 +121,10 @@ area: gates
   cut needs green on exact commit. Leg added to Windows matrix, tester image or macOS bundle
   goes in list (`test_check_candidate_legs.py` pins names). Three tester workflows keep
   `run-name` carrying dispatched source: check accepts dispatch only when title holds full SHA.
+
+- **Pre-Commit job is diff-scoped on pull requests (HISS-18).**
+  `lint-and-format.yml` `pre-commit` runs `scripts/ci/precommit_scope.py`:
+  `--from-ref <base sha> --to-ref HEAD` on a pull request, `--all-files` on
+  every other event or a malformed base. Keep the job always-running (required
+  context `Pre-Commit`); never add a workflow-level `paths:`.
+  `tests/test_precommit_scope.py` plants the old unconditional step.
