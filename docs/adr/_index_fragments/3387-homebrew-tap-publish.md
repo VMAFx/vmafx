@@ -1,0 +1,1 @@
+| [ADR-3387](3387-homebrew-tap-publish.md) | The release job opens a pull request with the generated Homebrew formula on `Vidiko/homebrew-tap` for every final version, through the release-bot app; candidates are not published to the tap. | Accepted | release, packaging, supply-chain, ci |

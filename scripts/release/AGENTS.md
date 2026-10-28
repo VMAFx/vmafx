@@ -350,3 +350,15 @@ per-channel index. Never hand-write a channel recipe beside it. Linter script
 images digest-pinned; brew runs `--network=none`. Test coverage:
 `scripts/release/tests/test_distribution.py` (vendored winget schemas,
 no-GPU + all-backend boundaries).
+
+## publish_homebrew_tap.py + `homebrew-tap` job (ADR-3387, #2319)
+
+Tap formula = `distribution.py homebrew` output (tap REUSE header + generated
+formula); digest from the archive `distribution.py source-url` prints, never a
+second URL spelling. Script opens a pull request only (branch
+`vmafx-<version>`, contents-API commit with `Signed-off-by:`; tap CI refuses a
+commit without it); never push to tap default branch. Dry run default,
+`--apply` in the job. Final versions only (job `if`). Token = release-bot app,
+owner `Vidiko`, repo `homebrew-tap`. Test coverage:
+`scripts/release/tests/test_publish_homebrew_tap.py` (fake transport, no
+network).
