@@ -132,7 +132,7 @@ compiled with floating-point contraction on any compiler
 
 1. [Score your first pair](first-score.md) and read the output.
 2. [Choose a backend](../backends/index.md) for your hardware.
-3. Use the [CLI reference](../usage/cli.md), the [C API](../api/index.md) or
+3. Use the [CLI reference](../usage/cli.md), the [VMAFx C API](../api/vmafx/index.md) or
    the [FFmpeg filter](../usage/ffmpeg.md).
 4. To report results from hardware the project does not own, use the
    [tester image](../usage/tester-image.md).

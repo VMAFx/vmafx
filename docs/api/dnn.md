@@ -1,6 +1,11 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # DNN session API — `libvmaf/dnn.h`
 
+!!! warning "Deprecated: `libvmaf.h` compatibility API"
+    This page documents the compatibility library `libvmaf.so.3`. New code
+    uses the [VMAFx API](vmafx/index.md); the [migration table](vmafx/compat.md)
+    names the successor of every function.
+
 The DNN surface in
 [`core/include/libvmaf/dnn.h`](../../core/include/libvmaf/dnn.h)
 lets callers load and run tiny ONNX models from C, either attached to a
