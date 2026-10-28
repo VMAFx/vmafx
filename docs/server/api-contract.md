@@ -30,9 +30,11 @@ meson test -C build test_vmafx_score_contract   # suite: contract
 ```
 
 It runs each request through the `vmaf` binary of the build, the C API
-(`build/test/vmafx_score_contract`), gRPC `Score` and `POST /v1/score`, and
-fails unless all four report the same score and the same library version and
-ABI. It skips, with the reason, when Go or the fixtures are missing; a
+(`build/test/vmafx_score_contract`), gRPC `Score`, `POST /v1/score` and the
+final `AggregateScore` of gRPC `ScoreStream`, and fails unless every surface
+reports the same score and the same library version and ABI. `ScoreStream`
+takes every frame (its `StreamConfig` has no subsample option), so it answers
+the two cases without subsampling. It skips, with the reason, when Go or the fixtures are missing; a
 skipped run is never reported as a pass.
 
 ## Requests
@@ -97,6 +99,11 @@ Every scoring response carries `provenance`: the gRPC `ScoreResponse`, the
 
 A server whose `vmaf` binary does not report the provenance record (a binary
 older than this contract) fails the request instead of answering without it.
+
+Provenance belongs to scores of a whole request. The per-frame `FrameScore`
+messages of `ScoreStream` carry no provenance; the stream's final
+`AggregateScore` carries it for every frame before it. The health and
+readiness responses and error responses carry none.
 
 ## Compatibility
 

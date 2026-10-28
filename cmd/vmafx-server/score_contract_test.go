@@ -101,6 +101,8 @@ type surfaceResult struct {
 func TestScoreContract(t *testing.T) {
 	env := loadContractEnv(t)
 	server, rest := contractServers(t, env)
+	stream, stopStream := startStreamTestServer(t, env.models)
+	defer stopStream()
 	for _, tc := range contractCases {
 		t.Run(tc.name, func(t *testing.T) {
 			results := map[string]surfaceResult{
@@ -108,6 +110,11 @@ func TestScoreContract(t *testing.T) {
 				"capi": runContractCAPI(t, env, tc),
 				"grpc": runContractGRPC(t, server, env, tc),
 				"rest": runContractREST(t, rest, env, tc),
+			}
+			// StreamConfig carries no subsample option; the stream surface takes
+			// every frame, so it answers the cases that do too.
+			if tc.subsample == 0 {
+				results["stream"] = runContractStream(t, stream, env, tc)
 			}
 			want := results["cli"]
 			for surface, got := range results {
@@ -258,6 +265,100 @@ func runContractREST(t *testing.T, rest *httptest.Server, env contractEnv, tc co
 		t.Fatalf("decode %s: %v", raw, err)
 	}
 	return responseResult(t, decoded)
+}
+
+// runContractStream sends the case's frames over ScoreStream and returns the
+// terminal aggregate's score and provenance.
+func runContractStream(t *testing.T, client vmafxv1.VmafxScoringClient, env contractEnv,
+	tc contractCase) surfaceResult {
+	t.Helper()
+	ref, err := os.ReadFile(filepath.Join(env.yuv, contractRef))
+	if err != nil {
+		t.Fatalf("read reference: %v", err)
+	}
+	dis, err := os.ReadFile(filepath.Join(env.yuv, contractDis))
+	if err != nil {
+		t.Fatalf("read distorted: %v", err)
+	}
+	const frameSize = contractWidth*contractHeight + 2*(contractWidth/2)*(contractHeight/2)
+	if len(ref) != len(dis) || len(ref)%frameSize != 0 {
+		t.Fatalf("inputs of %d and %d bytes are not whole %d-byte frames", len(ref), len(dis), frameSize)
+	}
+	frames := len(ref) / frameSize
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+	stream, err := client.ScoreStream(ctx)
+	if err != nil {
+		t.Fatalf("ScoreStream open: %v", err)
+	}
+	if err := stream.Send(&vmafxv1.ScoreStreamRequest{Payload: &vmafxv1.ScoreStreamRequest_Config{
+		Config: &vmafxv1.StreamConfig{
+			Width: contractWidth, Height: contractHeight, Model: tc.model,
+			PixelFormat: vmafxv1.PixelFormat_PIXEL_FORMAT_YUV420P, FrameCountHint: uint32(frames),
+		},
+	}}); err != nil {
+		t.Fatalf("send config: %v", err)
+	}
+	sendErr := make(chan error, 1)
+	go func() {
+		for i := range frames {
+			lo, hi := i*frameSize, (i+1)*frameSize
+			pair := &vmafxv1.FramePair{FrameIndex: uint32(i), RawReference: ref[lo:hi], RawDistorted: dis[lo:hi]}
+			if err := stream.Send(&vmafxv1.ScoreStreamRequest{
+				Payload: &vmafxv1.ScoreStreamRequest_FramePair{FramePair: pair},
+			}); err != nil {
+				sendErr <- err
+				return
+			}
+		}
+		sendErr <- stream.CloseSend()
+	}()
+	aggregate := streamAggregate(t, stream, frames)
+	if err := <-sendErr; err != nil {
+		t.Fatalf("send frames: %v", err)
+	}
+	return aggregateResult(t, aggregate, frames)
+}
+
+// streamAggregate reads the response stream up to one past its contract
+// (frames FrameScores and one AggregateScore) and returns the aggregate.
+func streamAggregate(t *testing.T, stream vmafxv1.VmafxScoring_ScoreStreamClient,
+	frames int) *vmafxv1.AggregateScore {
+	t.Helper()
+	var aggregate *vmafxv1.AggregateScore
+	for range frames + 2 {
+		resp, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatalf("Recv: %v", err)
+		}
+		if resp.GetAggregate() != nil {
+			if aggregate != nil {
+				t.Fatal("received more than one Aggregate")
+			}
+			aggregate = resp.GetAggregate()
+		}
+	}
+	if aggregate == nil {
+		t.Fatal("stream ended without an Aggregate")
+	}
+	return aggregate
+}
+
+func aggregateResult(t *testing.T, aggregate *vmafxv1.AggregateScore, frames int) surfaceResult {
+	t.Helper()
+	if int(aggregate.GetFramesProcessed()) != frames {
+		t.Errorf("stream processed %d frames, sent %d", aggregate.GetFramesProcessed(), frames)
+	}
+	if aggregate.GetProvenance().GetPrecision() != "max" {
+		t.Errorf("stream precision %q, want max", aggregate.GetProvenance().GetPrecision())
+	}
+	lib := aggregate.GetProvenance().GetLibrary()
+	return surfaceResult{
+		aggregate.GetScore(), lib.GetVersion(), [3]uint32{lib.GetAbiMajor(), lib.GetAbiMinor(), lib.GetAbiPatch()},
+	}
 }
 
 func responseResult(t *testing.T, resp *vmafxv1.ScoreResponse) surfaceResult {
