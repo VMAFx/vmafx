@@ -635,6 +635,14 @@ CLI of the same build. Every subcommand takes `--ffmpeg`, `--vmaf` and
 `--libdir` and exits 0 on success, 1 on a failure and 77 when a fixture is
 missing.
 
+CI builds FFmpeg with the patch series and `--enable-libvmafx` on every pull
+request that touches the C core, the patches or the workflows, and runs
+`parity`, `windows`, `contract` and `provenance` on the Netflix 576x324 pair
+against the CLI of the same build: the required check `FFmpeg vmafx Filter` in
+`.github/workflows/ffmpeg-patch-stack.yml`. A missing fixture (exit 77) fails
+that job. The GPU, VAAPI and Vulkan subcommands need a device and run on a
+workstation only.
+
 | Subcommand | Checks | Needs |
 | --- | --- | --- |
 | `parity` | Every per-frame, pooled and aggregate value of the filter's JSON report equals the CLI's, as the same double. `--backend cuda` and `cuda-host` compare against `vmaf --backend cuda`. | CPU; CUDA for the two GPU forms |
