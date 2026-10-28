@@ -49,6 +49,8 @@ typedef struct VmafConversionState {
     bool has_assumed_color;
     VmafColor assumed_color;
     bool warned_assumed;
+    /* the one DEBUG line for a run whose pictures need no conversion is out */
+    bool logged_no_conversion;
 } VmafConversionState;
 
 /**
