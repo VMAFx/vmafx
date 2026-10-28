@@ -37,6 +37,7 @@ from . import (
     emit_docs,
     emit_ffmpeg_options,
     emit_formats,
+    emit_go,
     emit_kube_types,
     emit_layout_test,
     emit_mcp,
@@ -46,6 +47,7 @@ from . import (
     emit_proto,
     emit_python,
     emit_rgb,
+    emit_rust,
     emit_symbols,
     gitref,
 )
@@ -74,6 +76,8 @@ FIXED_OUTPUTS: tuple[tuple[str, Renderer], ...] = (
     ("core/src/libvmaf_symbols.txt", emit_symbols.compat_symbol_list),
     ("core/test/test_vmafx_abi_layout.c", emit_layout_test.layout_test_source),
     ("bindings/python/vmafx/_api.py", emit_python.module_text),
+    ("pkg/vmafx/status_gen.go", emit_go.status_text),
+    ("bindings/rust/vmafx/src/status_gen.rs", emit_rust.status_text),
 )
 
 

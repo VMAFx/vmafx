@@ -150,6 +150,7 @@
         "dev/scripts/",
         "gstreamer/test/",
         "scripts/",
+        "scripts/codegen/tests/test_vmafx_api_status_bindings.py",
         "scripts/upstream-watcher/tests/test_ensure_label.py",
         "testdata/",
         "tools/ensemble-training-kit/tests/",
