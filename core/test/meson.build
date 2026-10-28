@@ -1593,6 +1593,7 @@ vmafx_static_link = vmaf_test_link
 vmafx_test_dirs = [
     '-DVMAFX_TEST_MODEL_DIR="' + (meson.project_source_root() / '..' / 'model') + '"',
     '-DVMAFX_TEST_YUV_DIR="' + (meson.project_source_root() / '..' / 'python' / 'test' / 'resource' / 'yuv') + '"',
+    '-DVMAFX_TEST_ARCH="' + host_machine.cpu_family() + '"',
 ]
 
 # RC4 WP6 (ADR-1852 design section 2.11): conformance of the libvmaf compat

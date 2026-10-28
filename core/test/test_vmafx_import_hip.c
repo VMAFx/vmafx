@@ -97,8 +97,9 @@ static char *test_device_info(void)
                             (1u << VMAFX_MEMORY_VULKAN);
     mu_assert("fields", info.backend == VMAFX_BACKEND_HIP && info.index == 0 && info.flags == 0u &&
                             info.total_memory > 0u && info.name && info.name[0] != '\0' &&
-                            info.fence_kinds == fences && info.memory_kinds == memory &&
-                            info.pci[1] != UINT32_MAX);
+                            info.runtime && info.runtime[0] != '\0' &&
+                            strcmp(info.runtime, "unknown") != 0 && info.fence_kinds == fences &&
+                            info.memory_kinds == memory && info.pci[1] != UINT32_MAX);
     VmafxError *error = NULL;
     mu_assert("past the last",
               vmafx_device_info(VMAFX_BACKEND_HIP, (int32_t)count, &info, &error) ==
@@ -107,7 +108,9 @@ static char *test_device_info(void)
     VmafxDeviceInfo described = VMAFX_DEVICE_INFO_INIT;
     mu_assert("describe", vmafx_device_describe(gpu.device, &described, NULL) == VMAFX_OK &&
                               described.backend == VMAFX_BACKEND_HIP && described.index == 0 &&
-                              !strcmp(described.name, info.name));
+                              !strcmp(described.name, info.name) && described.runtime &&
+                              described.runtime[0] != '\0' &&
+                              strcmp(described.runtime, "unknown") != 0);
     return NULL;
 }
 
@@ -166,7 +169,9 @@ static char *test_device_external(void)
     mu_assert("create", vmafx_device_create(&desc, &device, NULL) == VMAFX_OK);
     VmafxDeviceInfo info = VMAFX_DEVICE_INFO_INIT;
     mu_assert("describe", vmafx_device_describe(device, &info, NULL) == VMAFX_OK &&
-                              info.backend == VMAFX_BACKEND_HIP && info.index == -1);
+                              info.backend == VMAFX_BACKEND_HIP && info.index == -1 &&
+                              info.runtime && info.runtime[0] != '\0' &&
+                              strcmp(info.runtime, "unknown") != 0);
     VmafxContext *const context = vc_cell_context(device, &vc_cells[17]); /* psnr */
     mu_assert("context on it", context != NULL);
     mu_assert("destroy", vmafx_context_destroy(context, NULL) == VMAFX_OK);
