@@ -55,6 +55,7 @@ line is `PASS` or `FAIL`.
 | `--frames N` | Frames to score. Default 3. |
 | `--work DIR` | Cache and scratch directory. Default `${TMPDIR:-/tmp}/upstream-consumers`. Source trees and builds are reused when the pin and the prefix are unchanged. |
 | `--ref FILE`, `--dist FILE`, `--size WxH` | Raw yuv420p 8-bit inputs. Default: the repository's `src01_hrc00_576x324.yuv` and `src01_hrc01_576x324.yuv`. |
+| `--planted-defect` | GStreamer script only, needs `--reference-prefix`: appends a digit to the first per-frame `self` score of the `--prefix` side of the first case and passes only when the comparison reports that difference (exit 0 with `PASS: the planted defect was detected`). It proves the comparison can fail. |
 | `--cuda` | FFmpeg script only: also run the upstream `libvmaf_cuda` filter. Prints `SKIP: <reason>` when the library has no CUDA, the host has no GPU runtime or `ffnvcodec` is missing; a skip is never reported as a pass. The GStreamer script prints a skip: the upstream element has no CUDA path. |
 
 Environment: `UPSTREAM_CONSUMER_JOBS` (build parallelism, default 4) and
@@ -97,6 +98,28 @@ one. The element names its model `self`, so its score is called `self`; the
 comparison maps that one name to `vmaf` (printed as a note) and still compares
 every value as exact text.
 
+The plugin is compiled once, against the headers of `--reference-prefix` when
+one is given (else `--prefix`), and that one binary runs on both libraries.
+With Netflix's libvmaf as the reference this is the pairing a distribution
+ships: gst-plugins-bad built against the stock `libvmaf.h`, run on this fork's
+`libvmaf.so.3`. The reverse pairing (a binary built against this fork's
+headers, run on Netflix's library) is not supported: upstream's `VmafPicture`
+has a trailing `color` member and is 16 bytes larger
+([pictures](../api/pictures.md)).
+
+The script scores every option of the upstream element, one case each:
+`results-format` `json`, `xml` and `csv`; `psnr`, `ssim` and `ms-ssim` in each
+format; `pool-method` `min`, `max`, `mean` and `harmonic_mean`; `subsample=2`;
+`disable-clip`; `enable-transform`; `phone-model`; `conf-interval` (with the
+bootstrap model `vmaf_b_v0.6.3`, which it requires); `threads=4`; and
+`frame-message`. XML and CSV files are compared with the same exact-text
+rules as JSON (`--format` of the comparator).
+
+Every scoring run sets `LC_ALL=C`. Netflix's libvmaf prints numbers with the
+locale's decimal separator, so under a locale such as `de_DE.UTF-8` its JSON
+report holds `0,962084` and cannot be parsed; this fork's writers ignore the
+locale.
+
 **Comparison** (`scripts/ci/upstream_consumer_scores.py`). Reads the JSON that
 all three tools write through `vmaf_write_output()`, keeps every number as the
 literal text of the file, and compares every frame, every metric and the
@@ -114,8 +137,13 @@ The `consumers` job of `.github/workflows/ffmpeg-integration.yml` (the
 requests from forks and pull requests labelled `ci: full`; an own pull request
 at the light tier skips it. It builds the CPU
 library at the pull request head and, on a pull request, at the base commit,
-then runs both scripts with `--against-cli` and `--reference-prefix`. Score
-files and logs are uploaded when the job fails. The GPU leg (`--cuda`) needs a
+then runs both scripts with `--against-cli` and `--reference-prefix`. It also
+builds Netflix's libvmaf at the upstream commit the fork records itself at
+parity with (`scripts/ci/upstream_parity_pin.py`) and runs the GStreamer script
+twice more against it: once with `--against-cli` (every case must be
+identical on both libraries) and once with `--planted-defect` (the job fails
+when the changed score goes unnoticed). Score files and logs are uploaded when
+the job fails. The GPU leg (`--cuda`) needs a
 CUDA host and is not part of this job.
 
 ### How the pins move
