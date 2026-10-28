@@ -121,6 +121,8 @@ int vmafx_sycl_rt_open(int32_t index, uintptr_t external_queue, VmafxSyclRt **ou
 void vmafx_sycl_rt_close(VmafxSyclRt *rt);
 int32_t vmafx_sycl_rt_index(const VmafxSyclRt *rt);
 const char *vmafx_sycl_rt_name(const VmafxSyclRt *rt);
+const char *vmafx_sycl_rt_runtime(const VmafxSyclRt *rt);
+const char *vmafx_sycl_rt_runtime_at(int32_t index);
 uint64_t vmafx_sycl_rt_memory(const VmafxSyclRt *rt);
 /* The PCI bus id of the library queue's device ("" when unknown). */
 void vmafx_sycl_rt_device_bus_id(const VmafxSyclRt *rt, char bus[VMAFX_SYCL_BUS_ID_SIZE]);
