@@ -758,6 +758,17 @@ and wraps this repo's `libvmaf` C API. Options follow the filter name inside an
 libvmaf=model=version=vmaf_v0.6.1:log_path=/dev/stdout:log_fmt=json:n_threads=4
 ```
 
+### Tools that build `libvmaf` filter strings
+
+[SVT Encore](https://github.com/svt/encore)'s VMAF profile options (`model`,
+`feature`, `n_threads`, `n_subsample` and reference filters) run unchanged on
+`libvmaf.so.3` and give the `vmaf` CLI's scores exactly; the
+[upstream consumer check](../development/upstream-consumers.md#what-each-script-does)
+runs Encore's filter strings at a pinned Encore commit. Write model lists as
+Encore's profiles do, with each colon inside a model escaped as `\\:`, for
+example `model=version=vmaf_4k_v0.6.1\\:name=vmaf4k|version=vmaf_v0.6.1\\:name=vmaf`
+when the string reaches FFmpeg without a shell.
+
 ### Common options
 
 These options exist on every vmaf filter (`libvmaf`, `libvmaf_sycl`,
