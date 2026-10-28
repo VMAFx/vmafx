@@ -124,6 +124,64 @@ static uint64_t device_memory(int32_t index)
     return hipDeviceTotalMem(&bytes, index) == hipSuccess ? (uint64_t)bytes : 0u;
 }
 
+static void format_hip_version(int ver, int *major, int *minor)
+{
+    if (ver >= 10000000) {
+        *major = ver / 10000000;
+        *minor = (ver % 10000000) / 100000;
+    } else if (ver > 0) {
+        *major = ver / 1000;
+        *minor = (ver % 1000) / 10;
+    } else {
+        *major = 0;
+        *minor = 0;
+    }
+}
+
+static char device_runtimes[VMAFX_HIP_MAX_DEVICES][64];
+
+static const char *hip_device_runtime(int32_t index)
+{
+    if (index < 0 || index >= VMAFX_HIP_MAX_DEVICES) {
+        return "unknown";
+    }
+    (void)pthread_mutex_lock(&names_lock);
+    char *const rt = device_runtimes[index];
+    if (rt[0] == '\0') {
+        int drv_ver = 0;
+        int rt_ver = 0;
+        const hipError_t err_drv = hipDriverGetVersion(&drv_ver);
+        const hipError_t err_rt = hipRuntimeGetVersion(&rt_ver);
+        if (err_drv == hipSuccess && err_rt == hipSuccess) {
+            int drv_maj = 0;
+            int drv_min = 0;
+            int rt_maj = 0;
+            int rt_min = 0;
+            format_hip_version(drv_ver, &drv_maj, &drv_min);
+            format_hip_version(rt_ver, &rt_maj, &rt_min);
+            const int n = snprintf(rt, sizeof(device_runtimes[0]), "hip driver %d.%d runtime %d.%d",
+                                   drv_maj, drv_min, rt_maj, rt_min);
+            if (n < 0 || (size_t)n >= sizeof(device_runtimes[0])) {
+                (void)snprintf(rt, sizeof(device_runtimes[0]), "unknown");
+            }
+        } else if (err_rt == hipSuccess) {
+            int rt_maj = 0;
+            int rt_min = 0;
+            format_hip_version(rt_ver, &rt_maj, &rt_min);
+            (void)snprintf(rt, sizeof(device_runtimes[0]), "hip runtime %d.%d", rt_maj, rt_min);
+        } else if (err_drv == hipSuccess) {
+            int drv_maj = 0;
+            int drv_min = 0;
+            format_hip_version(drv_ver, &drv_maj, &drv_min);
+            (void)snprintf(rt, sizeof(device_runtimes[0]), "hip driver %d.%d", drv_maj, drv_min);
+        } else {
+            (void)snprintf(rt, sizeof(device_runtimes[0]), "unknown");
+        }
+    }
+    (void)pthread_mutex_unlock(&names_lock);
+    return rt[0] != '\0' ? rt : "unknown";
+}
+
 /* PCI location of HIP device `index` (UINT32_MAX in each when unknown). */
 static void device_pci(int32_t index, uint32_t pci[4])
 {
@@ -155,6 +213,7 @@ static VmafxDeviceInfo hip_info(int32_t index, int32_t reported, uint32_t flags)
 #endif
     info.total_memory = device_memory(index);
     info.name = device_name(index);
+    info.runtime = hip_device_runtime(index);
     device_pci(index, info.pci);
     return info;
 }
