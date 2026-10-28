@@ -1215,6 +1215,20 @@ test_picture_convert_api = executable('test_picture_convert_api',
 )
 test('test_picture_convert_api', test_picture_convert_api, suite : ['fast'])
 
+# Netflix/vmaf PR 1710: the DEBUG lines of picture conversion (one per run
+# without conversion; source and target per context in zimg builds).
+test_picture_convert_log = executable('test_picture_convert_log',
+    ['test.c', 'test_picture_convert_log.c', '../src/conversion_context.c',
+     '../src/conversion_policy.c', '../src/picture_sample_range.c'],
+    objects : log_cpp23_test_objects,
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : [picture_convert_lib, test_picture_lib],
+    c_args : picture_convert_test_args,
+    dependencies : [stdatomic_dependency, pthread_dependency, thread_lib, zimg_dependency, gpu_all_deps],
+    kwargs : test_link_kwargs,
+)
+test('test_picture_convert_log', test_picture_convert_log, suite : ['fast'])
+
 # ADR-1822 status 2026-10-15 (Netflix/vmaf 0b94628): upstream's VmafPicture
 # ends in `VmafColor color`; ours has no colour member, so a caller that sets
 # one does not compile (a binary built on upstream's header cannot be detected).

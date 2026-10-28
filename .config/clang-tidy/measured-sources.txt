@@ -717,6 +717,7 @@ core/test/test_perceptual_weight.c
 core/test/test_pic_preallocation.c
 core/test/test_picture.c
 core/test/test_picture_convert_api.c
+core/test/test_picture_convert_log.c
 core/test/test_picture_pool_error_paths.c
 core/test/test_picture_v2.c
 core/test/test_picture_wrap_api.c
