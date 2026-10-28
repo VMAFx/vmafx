@@ -1540,6 +1540,33 @@ test('test_libvmaf_deprecation',
     timeout : 120,
 )
 
+# Issue 2436: compile extracted C code samples from public documentation
+# against public headers.
+test('test_api_doc_samples',
+    import('python').find_installation(),
+    args : [files('test_api_doc_samples.py')] + vmaf_test_cc_args + [
+            '--cc-syntax=' + cc.get_argument_syntax(), '--cc-id=' + cc.get_id(),
+            meson.project_source_root() / 'include',
+            meson.project_build_root() / 'include',
+            meson.project_source_root() / '..' / 'docs',
+            meson.project_source_root() / '..' / 'scripts' / 'docs' / 'check_api_doc_samples.py'],
+    depends : [rev_target],
+    suite : ['fast'],
+    timeout : 120,
+)
+
+# Issue 2436: every exported vmafx_* symbol is named in the user documentation.
+test('test_api_doc_reachability',
+    import('python').find_installation(),
+    args : [meson.project_source_root() / '..' / 'scripts' / 'docs' / 'check_api_doc_reachability.py',
+            '--symbols', meson.project_source_root() / 'src' / 'vmafx_symbols.txt',
+            '--docs-dirs', meson.project_source_root() / '..' / 'docs' / 'api',
+            meson.project_source_root() / '..' / 'docs' / 'getting-started',
+            meson.project_source_root() / '..' / 'docs' / 'usage'],
+    suite : ['fast'],
+    timeout : 60,
+)
+
 # RC4 WP8 / #2155: the scoring contract. vmafx_score_contract is the C API leg
 # (not a test itself); run_score_contract.py runs the Go contract test of
 # cmd/vmafx-server against this build: the same requests through the CLI, the
