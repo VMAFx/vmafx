@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1420), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1424), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5691,3 +5691,19 @@ Every ADR, one heading each (1420), so the site search finds an ADR by its title
 ## ADR-3378: Encode-job API: one video stream in, a verified video stream out, auto first
 
 [3378-encode-job-api](3378-encode-job-api.md)
+
+## ADR-3379: The `integrations` tidy lane measures the GStreamer element and the FFmpeg filter sources
+
+[3379-tidy-integrations-lane](3379-tidy-integrations-lane.md)
+
+## ADR-3380: The `rust` tidy lane measures the sources built with `enable_rust_features`
+
+[3380-tidy-rust-lane](3380-tidy-rust-lane.md)
+
+## ADR-3381: The tester report states what executed (schema 4)
+
+[3381-rc1-tester-executed-dispatch](3381-rc1-tester-executed-dispatch.md)
+
+## ADR-3382: The encode service leaves VMAFx for its own repository, torcul
+
+[3382-encode-service-leaves-vmafx](3382-encode-service-leaves-vmafx.md)
