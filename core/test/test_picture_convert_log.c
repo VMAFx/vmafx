@@ -9,9 +9,12 @@
  * The DEBUG lines of picture conversion (Netflix/vmaf PR 1710): a run whose
  * pictures need no conversion logs one "none needed" line, however many frames
  * it converts, and a conversion context logs its source and target once at
- * creation (zimg builds). A sink at INFO receives neither line.
+ * creation (zimg builds). A sink at INFO receives neither line. Models that
+ * disagree on the conversion target are refused with one ERROR line naming the
+ * model.
  */
 
+#include <errno.h>
 #include <stdbool.h>
 #include <string.h>
 
@@ -29,15 +32,20 @@
 #define CONVERSION_PREFIX "picture conversion: "
 #define CONVERSION_DETAIL "16x16 8bpc limited/bt709/bt709/bt709 -> 16x16 8bpc"
 
+#define MISMATCH_TEXT "has a different conversion target"
+
 typedef struct LogCapture {
     int none_needed;
     int conversion;
     int detail;
+    int mismatch;
 } LogCapture;
 
 static void capture_line(enum VmafLogLevel level, const char *message, void *user)
 {
     LogCapture *capture = user;
+    if (level == VMAF_LOG_LEVEL_ERROR && strstr(message, MISMATCH_TEXT) != NULL)
+        capture->mismatch++;
     if (level != VMAF_LOG_LEVEL_DEBUG)
         return;
     if (strncmp(message, NONE_NEEDED_PREFIX, strlen(NONE_NEEDED_PREFIX)) == 0) {
@@ -48,6 +56,17 @@ static void capture_line(enum VmafLogLevel level, const char *message, void *use
         capture->conversion++;
     if (strstr(message, CONVERSION_DETAIL) != NULL)
         capture->detail++;
+}
+
+/* The thread sink outlives every frame that installs it: the log keeps the
+ * pointer in a thread-local until the caller restores the previous sink. */
+static VmafLogSink capture_sink = {.deliver = capture_line};
+
+static const VmafLogSink *install_capture(LogCapture *capture, enum VmafLogLevel level)
+{
+    capture_sink.user = capture;
+    capture_sink.level = level;
+    return vmaf_log_swap_thread_sink(&capture_sink);
 }
 
 typedef struct NoConversionRun {
@@ -61,14 +80,13 @@ static NoConversionRun run_no_conversion(enum VmafLogLevel level)
 {
     NoConversionRun r;
     memset(&r, 0, sizeof(r));
-    const VmafLogSink sink = {.deliver = capture_line, .user = &r.capture, .level = level};
     VmafConversionState state;
     memset(&state, 0, sizeof(state));
     VmafPicture ref;
     VmafPicture dist;
     memset(&ref, 0, sizeof(ref));
     memset(&dist, 0, sizeof(dist));
-    const VmafLogSink *previous = vmaf_log_swap_thread_sink(&sink);
+    const VmafLogSink *previous = install_capture(&r.capture, level);
     r.first_rc = vmaf_conversion_state_convert(&state, &ref, &dist);
     r.second_rc = vmaf_conversion_state_convert(&state, &ref, &dist);
     (void)vmaf_log_swap_thread_sink(previous);
@@ -95,6 +113,89 @@ static char *test_no_conversion_silent_at_info(void)
     return NULL;
 }
 
+typedef struct RegisterRun {
+    int first_rc;
+    int second_rc;
+    LogCapture capture;
+} RegisterRun;
+
+/* A model that declares a 4:4:4 8-bit BT.709 target, or none when `enabled` is
+ * false; `bpc` tells two targets apart. */
+static VmafModel target_model(bool enabled, unsigned bpc)
+{
+    VmafModel model;
+    memset(&model, 0, sizeof(model));
+    static char with_name[] = "with_target";
+    static char without_name[] = "without_target";
+    model.name = enabled ? with_name : without_name;
+    model.conversion_target.enabled = enabled;
+    model.conversion_target.pix_fmt = VMAF_PIX_FMT_YUV444P;
+    model.conversion_target.bpc = bpc;
+    model.conversion_target.color.range = VMAF_COLOR_RANGE_LIMITED;
+    model.conversion_target.color.primaries = VMAF_COLOR_PRIMARIES_BT709;
+    model.conversion_target.color.trc = VMAF_COLOR_TRC_BT709;
+    model.conversion_target.color.matrix = VMAF_COLOR_MATRIX_BT709;
+    return model;
+}
+
+/* Register `first`, then `second`, on one state, logged at ERROR. */
+static RegisterRun run_register(const VmafModel *first, const VmafModel *second)
+{
+    RegisterRun r;
+    memset(&r, 0, sizeof(r));
+    VmafConversionState state;
+    memset(&state, 0, sizeof(state));
+    const VmafLogSink *previous = install_capture(&r.capture, VMAF_LOG_LEVEL_ERROR);
+    r.first_rc = vmaf_conversion_state_register_model(&state, first);
+    r.second_rc = vmaf_conversion_state_register_model(&state, second);
+    (void)vmaf_log_swap_thread_sink(previous);
+    vmaf_conversion_state_close(&state);
+    return r;
+}
+
+static char *test_register_target_then_none_refused(void)
+{
+    const VmafModel with = target_model(true, 8);
+    const VmafModel without = target_model(false, 8);
+    const RegisterRun r = run_register(&with, &without);
+    mu_assert("the first model must register", r.first_rc == 0);
+    mu_assert("a model without a target after one with must be refused", r.second_rc == -EINVAL);
+    mu_assert("the refusal must log one ERROR line", r.capture.mismatch == 1);
+    return NULL;
+}
+
+static char *test_register_none_then_target_refused(void)
+{
+    const VmafModel without = target_model(false, 8);
+    const VmafModel with = target_model(true, 8);
+    const RegisterRun r = run_register(&without, &with);
+    mu_assert("the first model must register", r.first_rc == 0);
+    mu_assert("a model with a target after one without must be refused", r.second_rc == -EINVAL);
+    mu_assert("the refusal must log one ERROR line", r.capture.mismatch == 1);
+    return NULL;
+}
+
+static char *test_register_different_targets_refused(void)
+{
+    const VmafModel eight = target_model(true, 8);
+    const VmafModel ten = target_model(true, 10);
+    const RegisterRun r = run_register(&eight, &ten);
+    mu_assert("the first model must register", r.first_rc == 0);
+    mu_assert("a model with another target must be refused", r.second_rc == -EINVAL);
+    mu_assert("the refusal must log one ERROR line", r.capture.mismatch == 1);
+    return NULL;
+}
+
+static char *test_register_same_target_accepted(void)
+{
+    const VmafModel a = target_model(true, 8);
+    const VmafModel b = target_model(true, 8);
+    const RegisterRun r = run_register(&a, &b);
+    mu_assert("two models with one target must both register", r.first_rc == 0 && r.second_rc == 0);
+    mu_assert("an accepted model must log no ERROR line", r.capture.mismatch == 0);
+    return NULL;
+}
+
 #ifdef HAVE_ZIMG
 typedef struct ContextRun {
     int alloc_rc;
@@ -109,7 +210,6 @@ static ContextRun run_context_init(enum VmafLogLevel level)
 {
     ContextRun r;
     memset(&r, 0, sizeof(r));
-    const VmafLogSink sink = {.deliver = capture_line, .user = &r.capture, .level = level};
     const VmafColor color = {
         .range = VMAF_COLOR_RANGE_LIMITED,
         .primaries = VMAF_COLOR_PRIMARIES_BT709,
@@ -126,7 +226,7 @@ static ContextRun run_context_init(enum VmafLogLevel level)
     if (r.alloc_rc)
         return r;
     VmafPictureConvertContext *ctx = NULL;
-    const VmafLogSink *previous = vmaf_log_swap_thread_sink(&sink);
+    const VmafLogSink *previous = install_capture(&r.capture, level);
     r.init_rc = vmaf_picture_convert_context_init_with_color(&ctx, &src, &color, &target);
     (void)vmaf_log_swap_thread_sink(previous);
     r.close_rc = ctx ? vmaf_picture_convert_context_close(ctx) : 0;
@@ -158,6 +258,10 @@ char *run_tests(void)
 {
     mu_run_test(test_no_conversion_logs_once);
     mu_run_test(test_no_conversion_silent_at_info);
+    mu_run_test(test_register_target_then_none_refused);
+    mu_run_test(test_register_none_then_target_refused);
+    mu_run_test(test_register_different_targets_refused);
+    mu_run_test(test_register_same_target_accepted);
 #ifdef HAVE_ZIMG
     mu_run_test(test_context_logs_source_and_target);
     mu_run_test(test_context_silent_at_info);
