@@ -76,14 +76,30 @@ outside the path `glib-2.0.pc` names).
 **FFmpeg** (`scripts/ci/upstream-ffmpeg-compat.sh`). Clones `FFMPEG_TAG` of
 `FFMPEG_REMOTE` from `build-config.env` (shallow, no patch applied) and
 configures a minimal build: `--disable-everything`, the `libvmaf`, `scale`,
-`format`, `trim` and `setpts` filters, the `rawvideo` demuxer and decoder, the
-`null` muxer, the `file` protocol and `--enable-libvmaf`; only `ffmpeg` is
-built. The distorted video is input 0 and the reference input 1, which is the
-order of the filter's pads (`main`, then `reference`, in
+`format`, `split`, `trim` and `setpts` filters, the `rawvideo` demuxer and
+decoder, the `null` muxer, the `file` protocol and `--enable-libvmaf`; only
+`ffmpeg` is built. The distorted video is input 0 and the reference input 1,
+which is the order of the filter's pads (`main`, then `reference`, in
 `libavfilter/vf_libvmaf.c`). Each input is cut to `--frames` frames by `trim`
 before the filter: stopping the output with `-frames:v` ends the run at a
-scheduling-dependent point, and the last frame's motion score depends on
-whether a following frame reached the filter.
+scheduling-dependent point, and the last frame's motion score depends on whether
+a following frame reached the filter.
+
+With `--against-cli` the FFmpeg script also runs the filter graphs that
+[SVT Encore](https://github.com/svt/encore) builds for its VMAF profile
+options (`ff_encore_leg`), read from Encore's `CommandBuilder.kt` at the
+pinned commit `8dd7c596c51a8c31bae805e31ff0969564f68229` (EUPL-1.2):
+`sws_flags=bicubic`, the reference split in two, the distorted input scaled to
+the reference (`scale=rw:rh`), then
+`libvmaf=log_fmt=json:log_path=...` with `model`, `feature`, `n_threads` and
+`n_subsample` appended in Encore's order and omitted when unset.
+`uc_encore_graph` in `scripts/ci/upstream-consumer-lib.sh` writes the graph.
+Five cases (defaults, two features, two models with Encore's `\\:` escape,
+four threads with subsample 2, a reference filter) must give the CLI's JSON
+exactly, and an unknown feature or model must stop FFmpeg with an error naming
+it. Tests: `python3 -m pytest scripts/ci/tests/test_upstream_consumer_lib.py`.
+When the pin moves, re-read `vmafParams` and the graph assembly in
+`CommandBuilder.kt` and update `uc_encore_graph` with it.
 
 **GStreamer** (`scripts/ci/upstream-gstreamer-compat.sh`). Sparse-clones
 `subprojects/gst-plugins-bad` of tag `GST_PLUGINS_BAD_VERSION` from the

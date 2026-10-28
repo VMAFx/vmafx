@@ -8,6 +8,16 @@
         "serve"
       ],
       "type": "local"
+    },
+    "vmafx-dev": {
+      "command": [
+        "docker",
+        "exec",
+        "-i",
+        "vmaf-dev-mcp",
+        "vmafx-mcp"
+      ],
+      "type": "local"
     }
   }
 }
