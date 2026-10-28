@@ -20,6 +20,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/VMAFx/vmafx/pkg/corpus"
 )
 
 // defaultEncodeTimeout is the upper bound on a single ffmpeg encode
@@ -95,6 +97,12 @@ type EncodeParams struct {
 	// verify encodes land at the deterministic, operator-inspectable
 	// paths the Python vmaf-tune fast subcommand writes.
 	OutputPath string
+
+	// Runner is the existing corpus FFmpeg runner seam; nil uses ExecRunner.
+	Runner corpus.Runner
+
+	// VAAPIDevice selects the QSV render node; empty follows discovery.
+	VAAPIDevice string
 }
 
 // EncodeResult holds the outcome of a single encode.
@@ -118,6 +126,11 @@ type EncodeResult struct {
 	// bit_rate) read this — the fast path does, mirroring the Python
 	// encode.bitrate_kbps contract.
 	OutputSizeBytes int64
+
+	// QSVRateControl and its reason record the actual encoding policy.
+	QSVRateControl       string            `json:"qsv_rate_control,omitempty"`
+	QSVRateControlReason string            `json:"qsv_rate_control_reason,omitempty"`
+	Provenance           map[string]string `json:"provenance,omitempty"`
 }
 
 // Encoder abstracts a single software video encoder.
@@ -253,6 +266,10 @@ func runEncodeArgv(
 	}
 
 	argv := buildFFmpegArgv(bin, src, outPath, params, codecArgs)
+	run := params.Runner
+	if run == nil {
+		run = corpus.ExecRunner
+	}
 
 	ctx := context.Background()
 	cancel := func() {}
@@ -260,22 +277,50 @@ func runEncodeArgv(
 		ctx, cancel = context.WithTimeout(ctx, to)
 	}
 	defer cancel()
+	argv, mode, err := prepareQSVRateControl(ctx, params, codec, argv, run)
+	if err != nil {
+		return EncodeResult{}, err
+	}
+	metadata := qsvEncodeMetadata(mode)
 
 	t0 := time.Now()
-	// #nosec G204 -- argv[0] is ffmpegBin (operator-configured via
-	// EncodeParams); argv[1:] mixes fixed flags with `src` (validated by the
-	// caller / `pkg/storage` mount path), integer CRF, and the os.CreateTemp
-	// output path. ctx enforces encodeTimeout().
-	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
-	// Capture stderr for version extraction; stdout is discarded.
-	stderrBytes, runErr := cmd.CombinedOutput()
+	stderrBytes, runErr := execEncode(ctx, params.Runner, run, argv)
 	elapsed := time.Since(t0)
 
 	if runErr != nil {
-		return EncodeResult{}, failedEncodeError(
+		return metadata, failedEncodeError(
 			ctx, params, codec, outPath, stderrBytes, runErr)
 	}
+	return finishEncodeResult(metadata, outPath, bin, codec, stderrBytes, elapsed), nil
+}
 
+// execEncode runs the ffmpeg argv, through exec when no runner was injected
+// and through the injected corpus runner otherwise, and returns the combined
+// output with the run's error.
+func execEncode(
+	ctx context.Context, injected, run corpus.Runner, argv []string,
+) ([]byte, error) {
+	if injected == nil {
+		// #nosec G204 -- argv[0] is ffmpegBin (operator-configured via
+		// EncodeParams); argv[1:] mixes fixed flags with `src` (validated by
+		// the caller / `pkg/storage` mount path), integer CRF, and the
+		// os.CreateTemp output path. ctx enforces encodeTimeout().
+		cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+		return cmd.CombinedOutput()
+	}
+	completed := run(ctx, argv)
+	out := []byte(completed.Stderr + completed.Stdout)
+	if completed.ReturnCode != 0 {
+		return out, fmt.Errorf("FFmpeg exit status %d", completed.ReturnCode)
+	}
+	return out, nil
+}
+
+// finishEncodeResult fills the measured fields of a successful encode.
+func finishEncodeResult(
+	metadata EncodeResult, outPath, bin, codec string,
+	stderrBytes []byte, elapsed time.Duration,
+) EncodeResult {
 	bitrateKbps := probeBitrateKbps(outPath, bin)
 	version := extractEncoderVersion(string(stderrBytes), codec)
 
@@ -286,13 +331,12 @@ func runEncodeArgv(
 		sizeBytes = info.Size()
 	}
 
-	return EncodeResult{
-		OutputPath:      outPath,
-		BitratekBps:     bitrateKbps,
-		EncoderVersion:  version,
-		EncodeTimeMS:    float64(elapsed.Milliseconds()),
-		OutputSizeBytes: sizeBytes,
-	}, nil
+	metadata.OutputPath = outPath
+	metadata.BitratekBps = bitrateKbps
+	metadata.EncoderVersion = version
+	metadata.EncodeTimeMS = float64(elapsed.Milliseconds())
+	metadata.OutputSizeBytes = sizeBytes
+	return metadata
 }
 
 // prepareOutputPath resolves where the encode lands.

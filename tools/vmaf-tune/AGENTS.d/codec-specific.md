@@ -84,3 +84,11 @@ invariant: QSV shares _qsv_common; VideoToolbox shares _videotoolbox_common; AMF
   contributors with macOS + VideoToolbox available locally
   (ProRes additionally requires M1 Pro / Max / Ultra or later —
   Intel Macs with T2 do not have ProRes hardware block).
+
+- **QSV rate control probe (#3108).** Runtime ICQ first; failed eight-frame
+  probe -> `-q:v` same validated 1..51 value. Cache per render node + encoder +
+  FFmpeg runtime; thread-safe; injected existing runner.
+  `VMAFTUNE_QSV_RATE_CONTROL=auto|icq|cqp`; explicit overrides skip probe.
+  JSON and provenance: `qsv_rate_control=icq|cqp-fallback`, fallback reason mandatory.
+  QSV `adapter_version=4` both registries. Pure argv builders stay ICQ by
+  default; runtime selects mode before encode.

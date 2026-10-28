@@ -298,3 +298,41 @@ ffmpeg -hide_banner -encoders | grep -E "(nvenc|qsv|amf|videotoolbox)"
   [0601](../adr/0601-vmaftune-qsv-amf-hw-init-and-probe-fix.md) and
   [0641](../adr/0641-dev-container-encoder-probe-hardening.md) device
   init and probes.
+
+## QSV rate control probe
+
+Intel Quick Sync Video (QSV) uses ICQ (`-global_quality N`) as its preferred
+quality control. Before encoding, the Python tuner probes eight synthetic
+`testsrc2` frames at 320×240 through the selected render node and encoder,
+discarding the output with `-f null`. A successful probe keeps ICQ. A failed
+probe selects CQP (`-q:v N`) with the same quality value; both modes accept
+1–51. CQP and ICQ can produce different bitstreams and quality, so compare
+results within the recorded mode.
+
+`VMAFTUNE_QSV_RATE_CONTROL=auto` is the default. Set it to `icq` to force ICQ or
+`cqp` to force CQP and skip the probe. An invalid value fails explicitly. For
+example:
+
+```bash
+VMAFTUNE_QSV_RATE_CONTROL=cqp vmaf-tune corpus --help
+```
+
+Automatic results are cached for the process lifetime by resolved render node,
+encoder and FFmpeg binary. Concurrent requests share one probe. A new process
+probes again; a different FFmpeg binary has a separate cache entry.
+
+Python corpus and compare JSON rows add `qsv_rate_control` (`"icq"` or
+`"cqp-fallback"`), `qsv_rate_control_reason`, and the same entries inside
+`provenance`. Forced CQP is also named `"cqp-fallback"`, with reason
+`"VMAFTUNE_QSV_RATE_CONTROL=cqp"`. A probe failure reason includes its exit
+status or execution error. Existing canonical corpus columns and schema version
+remain unchanged; these are optional additive fields. QSV adapter version 4
+invalidates prior adapter cache entries, and encode-cache keys distinguish
+rate-control mode and render node.
+
+The fallback addresses runtimes where ICQ fails even though default QSV encoding
+works. On an Intel Arc A380 with `intel-media-driver` 26.3.5 the probe fails
+with `Invalid FrameType:0`, and `vmaf-tune corpus` with `h264_qsv`, `hevc_qsv`
+and `av1_qsv` completes through the CQP fallback, every row reporting
+`qsv_rate_control=cqp-fallback` (measured 2026-10-28; see [the state
+tracker](../state.md)).

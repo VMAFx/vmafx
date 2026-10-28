@@ -1,0 +1,3 @@
+## QSV ICQ probe and named CQP fallback (2026-10-28)
+
+Keep Intel Quick Sync Video (QSV) quality control as `-global_quality` in pure command builders. Runtime Python encode and Go encoder/corpus paths use one process-cached ICQ probe per resolved render node, encoder and FFmpeg binary. Failed probes replace only the quality flag with `-q:v`, retaining the validated 1–51 value. Preserve the injectable runner, concurrency guard, `VMAFTUNE_QSV_RATE_CONTROL` override, optional JSON/provenance fields and QSV adapter version 4 in both registries. Never erase the fallback reason or infer ICQ from the adapter's default quality-knob metadata. Hardware validation remains open until the Arc A380 tuner sweep succeeds.
