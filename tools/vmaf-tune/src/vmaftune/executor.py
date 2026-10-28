@@ -647,7 +647,7 @@ def _saliency_was_applied(original_req: EncodeRequest, enc: EncodeResult) -> boo
         return True
     # The encoder-parameter options also carry HDR SEI and pass control: only
     # the keys the saliency augment helpers write mark an ROI.
-    roi_keys = ("zones=", "qp-file=", "ROIFile=")
+    roi_keys = ("zones=",)
     return any(
         flag in CODEC_PARAM_FLAGS and any(key in value for key in roi_keys)
         for flag, value in itertools.pairwise(augmented_params)

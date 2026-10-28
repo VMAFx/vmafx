@@ -50,9 +50,11 @@ const (
 const (
 	// X264MBSide is the x264 macroblock side, fixed by the codec.
 	X264MBSide = 16
-	// SVTAV1SBSide is SVT-AV1's super-block side.
+	// SVTAV1SBSide is the legacy super-block side. No encoder path uses it
+	// since ADR-3386; retained for API stability.
 	SVTAV1SBSide = 64
-	// VVenCCTUSide is VVC's coding-tree-unit side at 1080p and above.
+	// VVenCCTUSide is the legacy CTU side. No encoder path uses it since
+	// ADR-3386; retained for API stability.
 	VVenCCTUSide = 64
 )
 
@@ -573,21 +575,14 @@ func X264QPFile(blockOffsets [][]int, durationFrames int) string {
 	return sb.String()
 }
 
-// SVTAV1QPOffsetMap renders SVT-AV1's --qp-file: space-separated rows of
-// super-block offsets, one block per frame, frames separated by a blank line.
-//
-// Format reference: SVT-AV1 Source/App/EncApp/EbAppConfig.c read_qp_map_file
-// at tag v2.1.0.
+// SVTAV1QPOffsetMap renders the legacy space-separated super-block grid.
+// No encoder path uses it since ADR-3386; retained for API stability.
 func SVTAV1QPOffsetMap(blockOffsets [][]int, durationFrames int) string {
 	return framesJoined(blockOffsets, durationFrames, " ")
 }
 
-// VVenCROICSV renders VVenC's --roi map: comma-separated rows of CTU offsets,
-// frames separated by a blank line. Positive delta lowers quality, negative
-// raises it — the same convention ToQPMap uses.
-//
-// Format reference: VVenC source/Lib/apputils/VVEncAppCfg.cpp parseROIFile at
-// tag v1.14.0.
+// VVenCROICSV renders the legacy comma-separated CTU grid.
+// No encoder path uses it since ADR-3386; retained for API stability.
 func VVenCROICSV(blockOffsets [][]int, durationFrames int) string {
 	return framesJoined(blockOffsets, durationFrames, ",")
 }
@@ -665,7 +660,7 @@ type Augment struct {
 // supportedEncoders is the ROI dispatch table, sorted for a stable error
 // message.
 var supportedEncoders = []string{
-	"libaom-av1", "libsvtav1", "libvvenc", "libx264", "libx265",
+	"libaom-av1", "libsvtav1", "libx264", "libx265",
 }
 
 // SupportedEncoders returns the codecs with a saliency ROI dispatch.
@@ -677,47 +672,23 @@ func SupportedEncoders() []string {
 
 // BuildAugment produces the per-codec ROI wiring from a per-pixel QP map.
 //
-// Each encoder reduces the pixel map to its own native ROI granularity:
-// 16x16 macroblocks for x264 and the patched libaom bridge, a spatial mean
-// for x265 zones, 64x64 super-blocks for SVT-AV1, 64x64 CTUs for VVenC.
+// x264, the patched libaom bridge and the patched SVT-AV1 bridge consume
+// 16x16 macroblocks; x265 zones use their spatial mean. libvvenc has no
+// measured ROI channel and is refused (ADR-3386).
 func BuildAugment(encoder string, qpMap []int, width, height, durationFrames int) (Augment, error) {
 	switch encoder {
-	case "libx264", "libaom-av1", "libx265":
+	case "libx264", "libaom-av1", "libx265", "libsvtav1":
 		return buildMacroblockAugment(encoder, qpMap, width, height, durationFrames)
-
-	case "libsvtav1":
-		blocks, err := ReduceToBlocks(qpMap, width, height, SVTAV1SBSide)
-		if err != nil {
-			return Augment{}, err
-		}
-		return Augment{
-			SidecarBody:   SVTAV1QPOffsetMap(blocks, durationFrames),
-			SidecarSuffix: ".svtav1-qpmap.txt",
-		}, nil
-
-	case "libvvenc":
-		blocks, err := ReduceToBlocks(qpMap, width, height, VVenCCTUSide)
-		if err != nil {
-			return Augment{}, err
-		}
-		return Augment{
-			SidecarBody:   VVenCROICSV(blocks, durationFrames),
-			SidecarSuffix: ".vvenc-roi.csv",
-		}, nil
-
 	default:
 		return Augment{}, unsupportedEncoder(encoder)
 	}
 }
 
-// buildMacroblockAugment covers the three encoders that consume a 16x16
-// macroblock grid, so the reduction is shared and only the carrier differs.
-//
-// x264 and libaom-av1 both take the x264-style qpfile: the fork's FFmpeg patch
-// stack teaches libaom-av1 to map each macroblock delta onto libaom's
-// mode-info grid and segment-QP table, though the path arrives through a
-// top-level -qpfile AVOption rather than an opaque encoder-params key. x265
-// takes the same blocks as a zones= parameter instead of a sidecar.
+// buildMacroblockAugment shares the 16x16 reduction across four encoders.
+// x264, libaom-av1 and libsvtav1 take an x264-style qpfile through patch
+// 0007's top-level -qpfile AVOption. The SVT-AV1 bridge maps the macroblocks
+// to 64x64 super-blocks with at most eight segment QPs (ADR-3386).
+// x265 takes the spatial mean as a zones= parameter instead of a sidecar.
 func buildMacroblockAugment(
 	encoder string, qpMap []int, width, height, durationFrames int,
 ) (Augment, error) {
@@ -735,6 +706,11 @@ func buildMacroblockAugment(
 		return Augment{
 			SidecarBody:   X264QPFile(blocks, durationFrames),
 			SidecarSuffix: ".libaom-qpfile.txt",
+		}, nil
+	case "libsvtav1":
+		return Augment{
+			SidecarBody:   X264QPFile(blocks, durationFrames),
+			SidecarSuffix: ".svtav1-qpfile.txt",
 		}, nil
 	case "libx265":
 		zones := X265ZonesArg(blocks, durationFrames)
@@ -768,13 +744,10 @@ func ExtraParamsFor(encoder, sidecarPath string) []string {
 		// The fork's patch stack exposes a shared top-level -qpfile AVOption.
 		return []string{"-qpfile", sidecarPath}
 	case "libsvtav1":
-		// FFmpeg's libsvtav1 wrapper forwards opaque key=value pairs to
-		// EbConfig via svt_av1_enc_set_parameter; qp-file is the documented
-		// SVT-AV1 config name (EbAppConfig.c v2.1.0).
-		return []string{"-svtav1-params", "qp-file=" + sidecarPath}
-	case "libvvenc":
-		// ROIFile is defined in VVEncAppCfg.h at tag v1.14.0.
-		return []string{"-vvenc-params", "ROIFile=" + sidecarPath}
+		// Patch 0007 exposes the shared -qpfile ROI bridge (ADR-3386).
+		// Stock FFmpeg refuses -qpfile, so the encode fails instead of
+		// silently dropping the map as -svtav1-params qp-file= did.
+		return []string{"-qpfile", sidecarPath}
 	default:
 		return nil
 	}
