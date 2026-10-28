@@ -304,6 +304,8 @@ nav:
       - VMAFx API (preview): api/vmafx/index.md
       - VMAFx window scores: api/vmafx/windows.md
       - VMAFx device frames: api/vmafx/device-frames.md
+      - Errors: api/vmafx/errors.md
+      - Versioning and the ABI: api/vmafx/versioning.md
       - VMAFx API reference (generated): api/vmafx/reference.md
       - libvmaf migration table (generated): api/vmafx/compat.md
   - Metrics and models:
