@@ -45,7 +45,7 @@ def test_positive_versioned_exports() -> None:
     checker.check_symbol_versions(exports, definitions, EXPECTED)
 
 
-@pytest.mark.parametrize("suffix", ["", "@@WRONG_NODE", "@WRONG_NODE"])
+@pytest.mark.parametrize("suffix", ["", "@@WRONG_NODE", "@WRONG_NODE"])  # type: ignore[untyped-decorator]  # pytest is untyped for the mypy gate (--no-site-packages)
 def test_unversioned_or_wrong_node_fails(suffix: str) -> None:
     mutated = SYMBOLS.replace(f"{SYMBOL}@@{NODE}", f"{SYMBOL}{suffix}")
     with pytest.raises(checker.LayoutError, match="exported in"):
@@ -63,7 +63,7 @@ def test_node_in_needs_does_not_count_as_definition() -> None:
         )
 
 
-@pytest.mark.parametrize(
+@pytest.mark.parametrize(  # type: ignore[untyped-decorator]  # pytest is untyped for the mypy gate (--no-site-packages)
     "text",
     [
         "",
@@ -76,7 +76,7 @@ def test_missing_version_definitions_fail(text: str) -> None:
         checker.parse_version_definitions(text)
 
 
-@pytest.mark.parametrize(
+@pytest.mark.parametrize(  # type: ignore[untyped-decorator]  # pytest is untyped for the mypy gate (--no-site-packages)
     "text",
     [
         "",
@@ -116,7 +116,7 @@ def test_soname_positive() -> None:
     )
 
 
-@pytest.mark.parametrize(
+@pytest.mark.parametrize(  # type: ignore[untyped-decorator]  # pytest is untyped for the mypy gate (--no-site-packages)
     "text",
     [
         "",
@@ -129,7 +129,7 @@ def test_missing_or_duplicate_soname_fails(text: str) -> None:
         checker.parse_soname(text)
 
 
-@pytest.mark.parametrize(
+@pytest.mark.parametrize(  # type: ignore[untyped-decorator]  # pytest is untyped for the mypy gate (--no-site-packages)
     "text",
     [
         "Requires: libvmafx",
@@ -142,7 +142,7 @@ def test_pkg_config_dependency_positive(text: str) -> None:
     assert checker.requires_vmafx(text)
 
 
-@pytest.mark.parametrize(
+@pytest.mark.parametrize(  # type: ignore[untyped-decorator]  # pytest is untyped for the mypy gate (--no-site-packages)
     "text",
     [
         "",

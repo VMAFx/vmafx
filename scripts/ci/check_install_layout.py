@@ -63,7 +63,7 @@ def run(argv: list[str], env: dict[str, str] | None = None) -> str:
 
 def parse_soname(text: str) -> str:
     """Read the unique DT_SONAME from readelf -d output."""
-    names = re.findall(r"\(SONAME\)\s+Library soname:\s*\[([^\]]+)\]", text)
+    names: list[str] = re.findall(r"\(SONAME\)\s+Library soname:\s*\[([^\]]+)\]", text)
     require(len(names) == 1, "expected exactly one ELF SONAME")
     return names[0]
 
@@ -130,7 +130,8 @@ def expected_sonames() -> dict[str, str]:
     for package in ("libvmafx", "libvmaf"):
         variable = package.removeprefix("lib") + "_soname_version"
         match = re.search(rf"^{variable}\s*=\s*'([\d.]+)'", source, re.MULTILINE)
-        require(match is not None, f"Meson does not declare {variable}")
+        if match is None:
+            raise LayoutError(f"Meson does not declare {variable}")
         major = match[1].split(".")[0]
         names[package] = f"{package}.so.{major}"
     return names
