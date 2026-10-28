@@ -274,6 +274,8 @@ shorter `struct_size`; its frames carry no colour.
 A producer that already holds a frame in memory a device can read, a decoder
 for example, hands it over with `vmafx_frame_import()` instead of copying it
 into a host frame ([ADR-1929](../../adr/1929-vmafx-device-frames-fences.md)).
+See the [device frames guide](device-frames.md) for descriptor setup, fence
+ownership, retention depth and per-backend rules.
 Every build imports host memory on the CPU device; a build with the CUDA
 backend imports CUDA device memory, CUDA arrays and OpenGL textures on CUDA
 devices ([CUDA devices](#cuda-devices) below), a build with the SYCL backend
