@@ -41,7 +41,7 @@ func prepareQSVRateControl(ctx context.Context, params EncodeParams, codec strin
 func qsvEncodeMetadata(mode hwdevice.QSVRateControl) EncodeResult {
 	result := EncodeResult{QSVRateControl: mode.Mode, QSVRateControlReason: mode.Reason}
 	if mode.Mode != "" {
-		result.Provenance = map[string]string{"qsv_rate_control": mode.Mode, "qsv_rate_control_reason": mode.Reason}
+		result.Provenance = &EncodeProvenance{QSVRateControl: mode.Mode, QSVRateControlReason: mode.Reason}
 	}
 	return result
 }

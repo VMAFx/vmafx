@@ -130,7 +130,14 @@ type EncodeResult struct {
 	// QSVRateControl and its reason record the actual encoding policy.
 	QSVRateControl       string            `json:"qsv_rate_control,omitempty"`
 	QSVRateControlReason string            `json:"qsv_rate_control_reason,omitempty"`
-	Provenance           map[string]string `json:"provenance,omitempty"`
+	Provenance           *EncodeProvenance `json:"provenance,omitempty"`
+}
+
+// EncodeProvenance repeats the encoding policy inside the provenance record.
+// It is a pointer to a struct, not a map, so EncodeResult stays comparable.
+type EncodeProvenance struct {
+	QSVRateControl       string `json:"qsv_rate_control,omitempty"`
+	QSVRateControlReason string `json:"qsv_rate_control_reason,omitempty"`
 }
 
 // Encoder abstracts a single software video encoder.

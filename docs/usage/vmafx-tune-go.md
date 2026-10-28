@@ -1803,6 +1803,6 @@ Intel Quick Sync Video (QSV) encodes prefer ICQ through `-global_quality N`. The
 VMAFTUNE_QSV_RATE_CONTROL=cqp vmafx-tune-go corpus --help
 ```
 
-`encoder.EncodeResult` exposes `QSVRateControl`, `QSVRateControlReason` and `Provenance`. Corpus JSON rows add `qsv_rate_control` (`"icq"` or `"cqp-fallback"`), `qsv_rate_control_reason`, and matching entries inside `provenance`. Forced CQP records the environment override as its reason. Automatic fallback records the failed probe status and diagnostic. These optional fields preserve the canonical schema-v3 columns. The codec registry's QSV adapter version is 4.
+`encoder.EncodeResult` exposes `QSVRateControl`, `QSVRateControlReason` and `Provenance` (an `*encoder.EncodeProvenance`, nil when the encoder is not QSV, so `EncodeResult` stays comparable). Corpus JSON rows add `qsv_rate_control` (`"icq"` or `"cqp-fallback"`), `qsv_rate_control_reason`, and matching entries inside `provenance`. Forced CQP records the environment override as its reason. Automatic fallback records the failed probe status and diagnostic. These optional fields preserve the canonical schema-v3 columns. The codec registry's QSV adapter version is 4.
 
 CQP and ICQ may produce different bitstreams and scores; use the recorded mode when comparing runs. The Arc A380 tuner sweep is still pending; see [the state tracker](../state.md).

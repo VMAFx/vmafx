@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/VMAFx/vmafx/pkg/corpus"
+	"github.com/VMAFx/vmafx/pkg/hwdevice"
 )
 
 func TestQSVEncoderNamesForcedFallback(t *testing.T) {
@@ -30,7 +31,7 @@ func TestQSVEncoderNamesForcedFallback(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if calls != 1 || result.QSVRateControl != "cqp-fallback" || result.QSVRateControlReason == "" || result.Provenance["qsv_rate_control"] != "cqp-fallback" {
+			if calls != 1 || result.QSVRateControl != "cqp-fallback" || result.QSVRateControlReason == "" || result.Provenance == nil || result.Provenance.QSVRateControl != "cqp-fallback" {
 				t.Fatalf("calls=%d result=%+v", calls, result)
 			}
 		})
@@ -78,7 +79,17 @@ func TestFailedQSVEncodeRetainsFallback(t *testing.T) {
 	if err == nil {
 		t.Fatal("failed encode accepted")
 	}
-	if result.QSVRateControl != "cqp-fallback" || result.Provenance["qsv_rate_control_reason"] == "" {
+	if result.QSVRateControl != "cqp-fallback" || result.Provenance == nil || result.Provenance.QSVRateControlReason == "" {
 		t.Fatalf("result=%+v", result)
+	}
+}
+
+// TestEncodeResultComparable keeps EncodeResult usable with ==, which the Go
+// API compatibility gate treats as part of the public API.
+func TestEncodeResultComparable(t *testing.T) {
+	a := qsvEncodeMetadata(hwdevice.QSVRateControl{Mode: "icq"})
+	b := a
+	if a != b {
+		t.Fatal("copies of an EncodeResult compare unequal")
 	}
 }
