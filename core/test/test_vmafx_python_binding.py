@@ -19,6 +19,7 @@ import inspect
 import os
 import unittest
 
+import vmafx as package
 from vmafx import _api as vmafx
 
 
@@ -43,6 +44,17 @@ class BindingTest(unittest.TestCase):
         by_name = inspect.signature(vmafx.Context.feature_provenance).parameters
         self.assertIn("index", by_index)
         self.assertIn("feature", by_name)
+
+    def test_package_exports_what_the_bindings_guide_uses(self) -> None:
+        # docs/api/vmafx/bindings.md imports these from the package itself.
+        for name in ("Library", "Pool", "PooledScore", "VmafxError", "VmafxPending"):
+            self.assertIs(getattr(package, name), getattr(vmafx, name), name)
+            self.assertIn(name, package.__all__)
+        with self.library.context() as context:
+            context.import_score("external", 0, 1.5)
+            pooled = context.feature_score_pooled("external", package.Pool.MEAN, 0, 0)
+        self.assertIsInstance(pooled, package.PooledScore)
+        self.assertEqual(pooled.value, 1.5)
 
     def test_version_and_abi(self) -> None:
         self.assertTrue(self.library.version_string())

@@ -978,7 +978,7 @@ it when they are, with the same values bit for bit.
   `vmafx_version_string()` and extractor names for the whole process.
 
 On Linux every `vmafx_*` function carries the symbol version of the ABI minor
-that introduced it (`nm -D libvmaf.so` shows `vmafx_context_create@@VMAFX_0.1`),
+that introduced it (`nm -D libvmafx.so.1` shows `vmafx_context_create@@VMAFX_0.1`),
 so a program built against a newer minor fails to load against an older
 library instead of failing at its first call. The `vmaf_*` functions keep their
 unversioned symbols.
@@ -991,18 +991,21 @@ library you name; there is no search fallback:
 ```python
 from vmafx import Library, Pool
 
-lib = Library("/usr/local/lib/libvmaf.so.3")   # or set VMAFX_LIBRARY
+lib = Library("/usr/local/lib/libvmafx.so.1")   # or set VMAFX_LIBRARY
 with lib.context() as context:
     context.import_score("external", 0, 1.5)
     print(lib.version_string(), context.feature_score_pooled("external", Pool.MEAN, 0, 0))
 ```
 
-A failed call raises `vmafx.VmafxError` with `status`, `message`, `subject`
-and `errno`; `VMAFX_PENDING` raises its subclass `VmafxPending`. The module
-checks its struct layouts against the definition when it is imported. The
-binding wraps the calls with plain arguments; the rest are reachable through
-`Library.raw` until the generated language bindings land. The package sits
-in `bindings/python/vmafx/` in the source tree.
+Load `libvmafx.so.1`, not the compatibility library `libvmaf.so.3`, which
+does not export the `vmafx_*` functions. A failed call raises
+`vmafx.VmafxError` with `function`, `status`, `message`, `subject` and
+`errno`; `VMAFX_PENDING` raises its subclass `VmafxPending`. The module checks
+its struct layouts against the definition when it is imported. The binding
+wraps the calls with plain arguments; the rest are reachable through
+`Library.raw`. The package sits in `bindings/python/vmafx/` in the source
+tree. [Language bindings](bindings.md) covers the Python binding in full and
+says what exists for Rust and Go.
 
 ## Migrating from libvmaf.h
 
