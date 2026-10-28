@@ -17,7 +17,9 @@ SCRIPT = Path(__file__).resolve().parents[1] / "scheduled-failure-issue.sh"
 STUB = """#!/usr/bin/env bash
 printf '%s\\n' "$*" >> "$STUB_LOG"
 case "$1 $2" in
-  "api repos/"*) printf '%s' "$STUB_JOBS" ;;
+  "api repos/"*)
+    reads=$(grep -c '^api repos/' "$STUB_LOG")
+    if [ "$reads" -gt "${STUB_EMPTY_READS:-0}" ]; then printf '%s' "$STUB_JOBS"; fi ;;
   "issue list") printf '%s' "$STUB_EXISTING" ;;
   "issue create" | "issue comment") ;;
   *) echo "unexpected: $*" >&2; exit 9 ;;
@@ -48,6 +50,7 @@ class ScheduledFailureIssueTest(unittest.TestCase):
             "STUB_LOG": str(self.log),
             "STUB_JOBS": jobs,
             "STUB_EXISTING": existing,
+            "SCHEDULED_FAILURE_WAIT": "0",
         }
         if env_override:
             env.update(env_override)
@@ -87,11 +90,22 @@ class ScheduledFailureIssueTest(unittest.TestCase):
         self.assertEqual(len(comments), 1)
         self.assertFalse([c for c in self.calls() if c.startswith("issue create")])
 
-    def test_refuses_a_run_with_no_failed_job_and_writes_nothing(self) -> None:
+    def api_reads(self) -> int:
+        return len([c for c in self.calls() if c.startswith("api repos/")])
+
+    def test_a_run_with_no_failed_job_exits_zero_with_a_notice(self) -> None:
         result = self.run_script("", "")
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("no failed job", result.stderr)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("no failed job", result.stdout)
+        self.assertEqual(self.api_reads(), 6)
         self.assertFalse([c for c in self.calls() if c.startswith("issue ")])
+
+    def test_a_failed_job_the_api_lists_late_is_still_reported(self) -> None:
+        result = self.run_script("netflix-unported", "", env_override={"STUB_EMPTY_READS": "2"})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.api_reads(), 3)
+        self.assertEqual(len([c for c in self.calls() if c.startswith("issue create")]), 1)
+        self.assertNotIn("no failed job", result.stdout)
 
     def test_custom_title_appears(self) -> None:
         custom_title = "Custom Scheduled Task Failed"
