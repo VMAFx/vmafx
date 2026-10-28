@@ -984,6 +984,9 @@ so a program built against a newer minor fails to load against an older
 library instead of failing at its first call. The `vmaf_*` functions keep their
 unversioned symbols.
 
+For in-depth guides, see [Errors](errors.md) and
+[Versioning and the ABI](versioning.md).
+
 ## Python
 
 The generated binding uses only the standard library (`ctypes`) and loads the
