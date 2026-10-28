@@ -18,6 +18,7 @@ the upstream Netflix default). VMAF v1 is documented in
 | 4K TV | 4K at 1.5H | `vmaf_4k_v0.6.1` | `model/vmaf_4k_v0.6.1.json` |
 | Compare encoders (NEG) | 1080p HDTV at 3H | `vmaf_v0.6.1neg` | `model/vmaf_v0.6.1neg.json` |
 | Compare encoders (NEG) | 4K at 1.5H | `vmaf_4k_v0.6.1neg` | `model/vmaf_4k_v0.6.1neg.json` |
+| Still images / single frames | 1080p HDTV at 3H | `vmaf_v0.6.1still` | `model/vmaf_v0.6.1still.json` |
 | Confidence interval | 1080p HDTV at 3H | `vmaf_b_v0.6.3` | `model/vmaf_b_v0.6.3.json` |
 | v1 phone, 4K, HFR | see [VMAF v1](v1.md) | `vmaf_v1.0.16_*` | `model/vmaf_v1.0.16/`, `model/vmaf_v1.0.16_hfr/` |
 
@@ -62,6 +63,7 @@ default), so it can be selected by `version=` without a file path
 | `vmaf_v0.6.1` | v0, 1080p HDTV at 3H; the upstream default and the `--netflix-compat` model. |
 | `vmaf_4k_v0.6.1` | v0, 4K TV at 1.5H. |
 | `vmaf_v0.6.1neg` | v0, 1080p, No Enhancement Gain. |
+| `vmaf_v0.6.1still` | Same as `vmaf_v0.6.1` with motion forced to 0, for still images / single-frame scoring; upstream Netflix/vmaf PR 1391. |
 | `vmaf_4k_v0.6.1neg` | v0, 4K, No Enhancement Gain. |
 | `vmaf_b_v0.6.3` | v0, bootstrap model with a confidence interval ([confidence interval](../metrics/confidence-interval.md)). |
 | `vmaf_float_v0.6.1` | v0, floating-point feature variant of `vmaf_v0.6.1`. |

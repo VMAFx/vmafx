@@ -45,6 +45,7 @@ class TidyDriftIssue(unittest.TestCase):
             "STUB_LOG": str(self.log),
             "STUB_JOBS": jobs,
             "STUB_EXISTING": existing,
+            "SCHEDULED_FAILURE_WAIT": "0",
         }
         return subprocess.run(  # noqa: S603 - fixed argv: bash, the script under test, test args
             ["bash", str(SCRIPT), *(args or ("VMAFx/vmafx", "12345"))],  # noqa: S607
@@ -73,10 +74,10 @@ class TidyDriftIssue(unittest.TestCase):
         self.assertEqual(len(comments), 1)
         self.assertFalse([c for c in self.calls() if c.startswith("issue create")])
 
-    def test_refuses_a_run_with_no_failed_job_and_writes_nothing(self) -> None:
+    def test_a_run_with_no_failed_job_notes_it_and_writes_nothing(self) -> None:
         result = self.run_script("", "")
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("no failed job", result.stderr)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("no failed job", result.stdout)
         self.assertFalse([c for c in self.calls() if c.startswith("issue ")])
 
     def test_rejects_malformed_arguments(self) -> None:

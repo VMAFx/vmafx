@@ -112,16 +112,22 @@ jobs:
         run: |
           ids="$(python scripts/ci/suite_registry.py precommit-skip)"
           echo "ids=${ids}" >> "${GITHUB_OUTPUT}"
-      - name: Run pre-commit on all files
+      - name: Run pre-commit on the diff (pull request) or the whole tree
+        # HISS-18: a pull request is checked on the files it changes
+        # (`--from-ref <base sha> --to-ref HEAD`); master pushes, release tags,
+        # schedule and dispatch keep `--all-files`. scripts/ci/precommit_scope.py
+        # decides and prints the reason; test_precommit_scope.py proves it.
         # The independent FFmpeg Patch Stack job owns network replay and
-        # ADR-1140 routing; --all-files here would replay on docs-only PRs.
+        # ADR-1140 routing; a full run here would replay on docs-only PRs.
         # It also runs `make ffmpeg-input-contract` on every pull request,
         # so the hook of that name is skipped here as well (ADR-1568), the
         # Licence Provenance job runs check-licence-metadata (ADR-1699), and
         # the REUSE lint job of reuse.yml runs reuse-lint (ADR-2784).
         env:
           SKIP: ffmpeg-patches-apply-check,ffmpeg-input-contract,check-licence-metadata,reuse-lint,${{ steps.test-hooks.outputs.ids }}
-        run: pre-commit run --show-diff-on-failure --color=always --all-files
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: python scripts/ci/precommit_scope.py --event "${EVENT}" --base-sha "${BASE_SHA}"
 
   clang-tidy:
     needs: tier
