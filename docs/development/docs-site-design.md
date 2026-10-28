@@ -367,6 +367,18 @@ pre-push MkDocs hook runs it on the temporary build.
 `scripts/docs/tests/test_check_math.py` holds it to its contract, including a
 planted broken formula that must fail the check.
 
+### Check compiled C code blocks
+
+C code examples marked with an `<!-- compile -->` comment line immediately
+preceding an opening `c` code fence are extracted and built as part of the
+`fast` Meson test suite by `test_docs_compile_blocks`
+(`core/test/test_docs_compile_blocks.py`). The test compiles each block against
+the project headers with `-std=c11 -Wall -Wextra -Werror -fsyntax-only`:
+
+```bash
+python3 core/test/test_docs_compile_blocks.py --include core/include
+```
+
 ### Update KaTeX
 
 Download the tarball named in a new `source` of

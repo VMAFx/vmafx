@@ -1449,6 +1449,26 @@ test('test_vmafx_api_generated_current',
     suite : ['fast'],
 )
 
+# Fenced C blocks with a <!-- compile --> marker in documentation are extracted
+# and compiled against headers under include/ (#2436). Skips with 77 on MSVC.
+test('test_docs_compile_blocks',
+    import('python').find_installation(),
+    args : [files('test_docs_compile_blocks.py'),
+            '--docs', meson.project_source_root() / '..' / 'docs',
+            '--include', meson.project_source_root() / 'include'],
+    env : ['VMAF_DOCS_CC=' + ' '.join(meson.get_compiler('c').cmd_array())],
+    suite : ['fast'],
+    timeout : 120,
+)
+
+test('test_docs_compile_blocks_self_test',
+    import('python').find_installation(),
+    args : [files('test_docs_compile_blocks.py'), '--self-test'],
+    env : ['VMAF_DOCS_CC=' + ' '.join(meson.get_compiler('c').cmd_array())],
+    suite : ['fast'],
+    timeout : 120,
+)
+
 # The definition must be an append-only successor of the one at the merge base
 # with origin/master (HISS-14). Exits 77 (skipped, reason printed) without git,
 # without that ref (shallow CI clones), or when the merge base has no definition.
