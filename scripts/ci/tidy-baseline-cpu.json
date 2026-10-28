@@ -4,7 +4,7 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "cc_version": "gcc-15 (Ubuntu 15.2.0-16ubuntu1) 15.2.0",
-  "tus": 545,
+  "tus": 546,
   "measured_sources": [
     "compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_stat.c",
     "compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_std.c",
@@ -426,6 +426,7 @@
     "core/test/test_pic_preallocation.c",
     "core/test/test_picture.c",
     "core/test/test_picture_convert_api.c",
+    "core/test/test_picture_convert_log.c",
     "core/test/test_picture_pool_error_paths.c",
     "core/test/test_picture_v2.c",
     "core/test/test_picture_wrap_api.c",
@@ -1564,6 +1565,20 @@
     },
     {
       "sources": [
+        "core/test/test_picture_convert_log.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/test/test_picture_convert_log.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "54fd4880220f6063c72152945bb89dac9b986f26061d2aac61bdf0febed0b81e"
+    },
+    {
+      "sources": [
         "core/test/test_y4m_mixed_depth.c",
         "core/tools/y4m_input.c"
       ],
@@ -1575,7 +1590,7 @@
           ]
         }
       },
-      "previous_baseline_sha256": "54fd4880220f6063c72152945bb89dac9b986f26061d2aac61bdf0febed0b81e"
+      "previous_baseline_sha256": "6aeebcfd52cd38fe2df345ea3002258a361deec94dd0cbd2c12fb8be87a8edcc"
     }
   ]
 }
