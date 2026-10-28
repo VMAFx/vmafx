@@ -102,7 +102,7 @@ def test_boundary(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     doc = docs_api / "boundary.md"
     doc.write_text(
         "# Boundary Cases\n\n"
-        "Link to duplicate heading -1 slug: [Second](dup.md#duplicate-title-1)\n"
+        "Link to repeated heading slug: [Second](dup.md#duplicate-title_1)\n"
         "Ignored scheme http: [HTTP](http://example.com)\n"
         "Ignored scheme https: [HTTPS](https://example.com)\n"
         "Ignored scheme mailto: [Mail](mailto:user@example.com)\n\n"
@@ -120,6 +120,22 @@ def test_boundary(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     assert rc == EXIT_SUCCESS
     out, _ = capsys.readouterr()
     assert "4 links checked in 1 files" in out
+
+
+def test_duplicate_heading_hyphen_suffix_refused(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Verify a repeated heading is not reachable as "-1", which mkdocs never emits."""
+    docs_api = tmp_path / "docs" / "api"
+    docs_api.mkdir(parents=True)
+    (docs_api / "dup.md").write_text("## Same\n\n## Same\n", encoding="utf-8")
+    doc = docs_api / "index.md"
+    doc.write_text("[Second](dup.md#same-1)\n", encoding="utf-8")
+
+    rc = main(["--root", str(tmp_path), str(doc)])
+    assert rc == EXIT_FINDINGS
+    out, _ = capsys.readouterr()
+    assert "missing anchor dup.md#same-1" in out
 
 
 def test_unreadable_input(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

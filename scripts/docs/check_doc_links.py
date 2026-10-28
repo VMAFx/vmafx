@@ -78,16 +78,17 @@ def extract_anchors(path: Path) -> set[str]:
 
     slug_counts: dict[str, int] = {}
     for line in masked.splitlines():
-        match = re.match(r"^[ ]{0,3}#{1,6}\s+(.*?)(?:\s+#+)?$", line)
-        if not match:
+        heading_match = re.match(r"^[ ]{0,3}#{1,6}\s+(.*?)(?:\s+#+)?$", line)
+        if not heading_match:
             continue
-        heading = re.sub(r"\{#[^}]+\}", "", match.group(1)).strip()
+        heading = re.sub(r"\{#[^}]+\}", "", heading_match.group(1)).strip()
         slug = slugify(heading)
         if not slug:
             continue
         count = slug_counts.get(slug, 0)
         slug_counts[slug] = count + 1
-        unique_slug = slug if count == 0 else f"{slug}-{count}"
+        # python-markdown's toc extension numbers a repeated id with "_N".
+        unique_slug = slug if count == 0 else f"{slug}_{count}"
         anchors.add(unique_slug)
     return anchors
 
