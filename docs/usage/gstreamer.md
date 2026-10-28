@@ -135,6 +135,11 @@ Properties are generated from the option table of the library
 `subsample`. Set the properties before the element starts; a value that names
 nothing fails the start.
 
+`gstreamer/test/test_gst_vmafx_properties.py` holds the element's own property
+list and the table below to the definition: an extra or a missing property, in
+the element or in this table, fails the test (`gstreamer/test/run.sh` runs the
+element half; the table half runs in the `Tooling Tests` suite).
+
 | Property | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `model` | string | unset | Model, colon-delimited: version= a built-in model, path= a model file, name= the name in the report, disable_clip, enable_transform, `<feature>.<option>=<value>` overloads. Several models score in one pass (separate them with `\|`). (default: the library default, VMAF_DEFAULT_MODEL_VERSION) |
