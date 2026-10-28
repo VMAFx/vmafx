@@ -110,11 +110,15 @@ The `vmaf_pre` filter of `ffmpeg-patches/0002` loads this model through its
 
 ```bash
 ffmpeg \
-  -i dist.yuv -i ref.yuv \
+  -f rawvideo -pix_fmt yuv420p -video_size 1920x1080 -i dist.yuv \
+  -f rawvideo -pix_fmt yuv420p -video_size 1920x1080 -i ref.yuv \
   -filter_complex '[0:v]vmaf_pre=model=model/tiny/learned_filter_v1.onnx[d];
                    [d][1:v]libvmaf' \
   -f null -
 ```
+
+Raw `.yuv` files carry no geometry: give FFmpeg the pixel format and the
+frame size of your clips (1920x1080 4:2:0 above), or it refuses the input.
 
 The filter applies the model to the distorted stream's luma before VMAF
 scoring, enabling a learned pre-processing step upstream of the feature
