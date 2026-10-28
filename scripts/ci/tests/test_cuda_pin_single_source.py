@@ -355,7 +355,7 @@ class CudaPinCoverage(unittest.TestCase):
         self.assertIn("test_install_cuda_toolkit.py", body)
         self.assertIn(r"install-cuda-toolkit\.sh", body)
         workflow = (ROOT / ".github/workflows/lint-and-format.yml").read_text(encoding="utf-8")
-        self.assertIn("pre-commit run --show-diff-on-failure --color=always --all-files", workflow)
+        self.assertIn("scripts/ci/precommit_scope.py", workflow)
 
     def test_every_matchstring_hits_a_real_line_in_the_tree(self) -> None:
         """A manager whose regex matches nothing is wiring that does nothing."""
