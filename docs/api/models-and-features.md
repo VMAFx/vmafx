@@ -94,10 +94,13 @@ Typical built-in names:
 | Family | Versions |
 | --- | --- |
 | Default (fork) | `vmaf_v1.0.16_3d0h`, `vmaf_v1.0.16_3d0h_2160`, `vmaf_v1.0.16_5d0h`, `vmaf_v1.0.16_1d5h_2160`, and the `vmaf_v1.0.16_hfr_*` variants |
-| Netflix-compatible | `vmaf_v0.6.1`, `vmaf_v0.6.1neg`, `vmaf_b_v0.6.3`, `vmaf_4k_v0.6.1`, `vmaf_4k_v0.6.1neg` |
+| Netflix-compatible | `vmaf_v0.6.1`, `vmaf_v0.6.1neg`, `vmaf_v0.6.1still`, `vmaf_b_v0.6.3`, `vmaf_4k_v0.6.1`, `vmaf_4k_v0.6.1neg` |
 | Float-precision variants | `vmaf_float_*` equivalents |
 
 See [the CLI models section](../usage/cli.md#models) for when to pick which.
+`vmaf_v0.6.1still` is `vmaf_v0.6.1` with motion forced to 0
+(`motion_force_zero`), for still images and single-frame scoring; it
+comes from upstream Netflix/vmaf PR 1391.
 
 External JSON models loaded by `vmaf_model_load_from_path()` allocate
 `feature_names`, `slopes`, `intercepts`, `feature_opts_dicts` and the
