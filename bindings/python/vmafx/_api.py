@@ -13,7 +13,7 @@ import enum
 import os
 from dataclasses import dataclass
 
-ABI_VERSION = (0, 1, 13)
+ABI_VERSION = (0, 1, 14)
 
 
 class Status(enum.IntEnum):
@@ -595,6 +595,7 @@ VmafxDeviceInfo._fields_ = (
     ("total_memory", ctypes.c_uint64),
     ("name", ctypes.c_char_p),
     ("pci", ctypes.c_uint32 * 4),
+    ("runtime", ctypes.c_char_p),
 )
 
 VmafxFence._fields_ = (
@@ -941,7 +942,7 @@ LAYOUT = {
         ),
     ),
     VmafxDeviceInfo: (
-        56,
+        64,
         (
             ("struct_size", 0),
             ("backend", 4),
@@ -952,6 +953,7 @@ LAYOUT = {
             ("total_memory", 24),
             ("name", 32),
             ("pci", 40),
+            ("runtime", 56),
         ),
     ),
     VmafxFence: (
@@ -2518,6 +2520,7 @@ class DeviceInfo:
     total_memory: int
     name: str | None
     pci: tuple[int, ...]
+    runtime: str | None
 
     @classmethod
     def from_c(cls, raw: VmafxDeviceInfo) -> DeviceInfo:
@@ -2530,6 +2533,7 @@ class DeviceInfo:
             total_memory=raw.total_memory,
             name=_text(raw.name),
             pci=tuple(raw.pci),
+            runtime=_text(raw.runtime),
         )
 
 

@@ -31,7 +31,7 @@
 [api]
 name = "vmafx"
 schema = 2
-abi_version = "0.1.13"
+abi_version = "0.1.14"
 export_macro = "VMAFX_EXPORT"
 # Export / deprecation macros, VmafxStatus and the status codes live here.
 base_header = "vmafx/types.h"
@@ -767,6 +767,7 @@ fields = [
   { name = "total_memory", type = "u64", doc = "Bytes of device memory; 0 when the backend does not report it (the CPU)." },
   { name = "name", type = "cstr", doc = "Name of the device as its runtime reports it (`cpu` for the CPU)." },
   { name = "pci", type = "u32", count = 4, doc = "PCI domain, bus, device and function of the device (a producer on the same GPU has the same, VK_EXT_pci_bus_info); UINT32_MAX in each when the backend reports none (the CPU). Added in ABI 0.1.10." },
+  { name = "runtime", type = "cstr", doc = "Runtime and driver version of the device as its runtime reports it (`x86_64`-style arch for the CPU). Added in ABI 0.1.14." },
 ]
 
 [[structs]]
