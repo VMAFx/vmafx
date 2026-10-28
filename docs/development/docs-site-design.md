@@ -394,6 +394,30 @@ holds the committed files to the recorded SHA-256 values. KaTeX is MIT
 licensed; its licence text sits in the same directory and `REUSE.toml` records
 the copyright.
 
+## C API samples that compile
+
+A C sample on a documentation page can be held to the installed headers. Put
+`<!-- compile -->` on the line before the opening fence of a C block; the
+sample must include the headers it uses. The Meson test `test_api_doc_samples`
+(`core/test/test_api_doc_samples.py`, suite `fast`) extracts every marked
+sample with `scripts/docs/check_api_doc_samples.py` and compiles it
+syntax-only against `core/include/` and the build's generated headers, so a
+renamed or removed function fails the build's tests:
+
+```bash
+python3 scripts/docs/check_api_doc_samples.py --list
+python3 scripts/ci/run_meson_test.py -- -C build test_api_doc_samples
+```
+
+A marked sample without an `#include` is refused. Unmarked blocks are not
+compiled, so fragments and pseudo-code stay as they are.
+
+`test_api_doc_reachability` runs `scripts/docs/check_api_doc_reachability.py`:
+every symbol of `core/src/vmafx_symbols.txt` must appear as a whole word under
+`docs/api/`, `docs/getting-started/` or `docs/usage/`, and the test names each
+symbol that does not. A new exported `vmafx_*` function therefore ships with
+its documentation (issue 2436).
+
 ## Typography and contrast, measured
 
 Measured on a strict build in headless Chromium at 1440 px, in both schemes,

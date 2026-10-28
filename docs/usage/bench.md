@@ -59,9 +59,13 @@ Generate them from Big Buck Bunny (or any clip):
 
 ```shell
 ffmpeg -i bbb.mp4 -frames:v 48 -vf scale=1920:1080 -pix_fmt yuv420p /tmp/vmaf_test/ref_1920x1080.yuv
-ffmpeg -i bbb.mp4 -frames:v 48 -vf scale=1920:1080 -pix_fmt yuv420p -c:v rawvideo \
-       -x264-params crf=28 /tmp/vmaf_test/dis_1920x1080.yuv
+ffmpeg -i bbb.mp4 -frames:v 48 -vf scale=1920:1080 -pix_fmt yuv420p -c:v libx264 -crf 28 -f h264 - \
+  | ffmpeg -f h264 -i - -pix_fmt yuv420p /tmp/vmaf_test/dis_1920x1080.yuv
 ```
+
+The distorted clip goes through a real libx264 encode and back to raw YUV: writing
+`-c:v rawvideo` with `-x264-params` encodes nothing, FFmpeg ignores the option, and the
+"distorted" file is byte for byte the reference.
 
 `vmaf_bench` does not download anything. The repository's
 `testdata/ref_576x324_48f.yuv` and `dis_576x324_48f.yuv` can be copied in under
