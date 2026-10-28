@@ -1,6 +1,11 @@
 <!-- markdownlint-disable MD013 -->
 # GPU backends C API
 
+!!! warning "Deprecated: `libvmaf.h` compatibility API"
+    This page documents the compatibility library `libvmaf.so.3`. New code
+    uses the [VMAFx API](vmafx/index.md); the [migration table](vmafx/compat.md)
+    names the successor of every function.
+
 Use this page to add a GPU backend to a libvmaf context from C. Each
 backend (CUDA, SYCL, HIP, Metal) adds a small header on top of
 [`libvmaf.h`](index.md): a state object, device selection, and
