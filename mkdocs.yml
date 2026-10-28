@@ -303,6 +303,7 @@ nav:
       - vmaftune.predictor: api/predictor.md
       - VMAFx API (preview): api/vmafx/index.md
       - VMAFx window scores: api/vmafx/windows.md
+      - VMAFx device frames: api/vmafx/device-frames.md
       - Errors: api/vmafx/errors.md
       - Versioning and the ABI: api/vmafx/versioning.md
       - VMAFx API reference (generated): api/vmafx/reference.md
