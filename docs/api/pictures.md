@@ -1,5 +1,10 @@
 # Pictures: allocation, ownership and pools
 
+!!! warning "Deprecated: `libvmaf.h` compatibility API"
+    This page documents the compatibility library `libvmaf.so.3`. New code
+    uses the [VMAFx API](vmafx/index.md); the [migration table](vmafx/compat.md)
+    names the successor of every function.
+
 Use this page to create `VmafPicture` frames, hand them to a context and
 know who frees what. Declarations are in
 [`picture.h`](../../core/include/libvmaf/picture.h) and
