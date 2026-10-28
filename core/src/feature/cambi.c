@@ -32,6 +32,7 @@
 
 #include "cambi_internal.h"
 #include "common/macros.h"
+#include "compat/crt_portable.h"
 #include "compat/path_utf8.h"
 #include "cpu.h"
 #include "feature_collector.h"
@@ -663,7 +664,7 @@ static int heatmaps_path_ref_locked(const char *path, bool *first)
         ref = malloc(sizeof(*ref));
         if (!ref)
             return -ENOMEM;
-        ref->path = strdup(path);
+        ref->path = VMAF_STRDUP(path);
         if (!ref->path) {
             free(ref);
             return -ENOMEM;
