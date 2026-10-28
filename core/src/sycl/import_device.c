@@ -61,8 +61,8 @@ VmafxStatus vmafx_sycl_device_count(const VmafxReport *report, uint32_t *count)
  * SYCL_EVENT, SYNC_FILE, GL_SYNC and VULKAN_SEMAPHORE (timeline, up to three
  * per frame) acquire fences, returns HOST and SYCL_EVENT release fences and
  * signals the producer's Vulkan timeline semaphores at release (Linux). */
-static VmafxDeviceInfo sycl_info(int32_t index, uint32_t flags, const char *name, uint64_t memory,
-                                 const uint32_t pci[4])
+static VmafxDeviceInfo sycl_info(int32_t index, uint32_t flags, const char *name,
+                                 const char *runtime, uint64_t memory, const uint32_t pci[4])
 {
     VmafxDeviceInfo info = VMAFX_DEVICE_INFO_INIT;
     info.backend = VMAFX_BACKEND_SYCL;
@@ -79,6 +79,7 @@ static VmafxDeviceInfo sycl_info(int32_t index, uint32_t flags, const char *name
 #endif
     info.total_memory = memory;
     info.name = name;
+    info.runtime = runtime ? runtime : "unknown";
     memcpy(info.pci, pci, sizeof(info.pci));
     return info;
 }
@@ -106,7 +107,8 @@ VmafxStatus vmafx_sycl_device_info(const VmafxReport *report, int32_t index, Vma
     }
     uint32_t pci[4];
     vmafx_parse_pci_bus_id(bus[0] != '\0' ? bus : NULL, pci);
-    *info = sycl_info(at, 0u, name, memory, pci);
+    const char *const runtime = vmafx_sycl_rt_runtime_at(at);
+    *info = sycl_info(at, 0u, name, runtime, memory, pci);
     return VMAFX_OK;
 }
 
@@ -186,7 +188,7 @@ void vmafx_sycl_device_describe(const VmafxDevice *device, VmafxDeviceInfo *info
     vmafx_sycl_rt_device_bus_id(dev->rt, bus);
     vmafx_parse_pci_bus_id(bus[0] != '\0' ? bus : NULL, pci);
     *info = sycl_info(vmafx_sycl_rt_index(dev->rt), device->flags, vmafx_sycl_rt_name(dev->rt),
-                      vmafx_sycl_rt_memory(dev->rt), pci);
+                      vmafx_sycl_rt_runtime(dev->rt), vmafx_sycl_rt_memory(dev->rt), pci);
 }
 
 /* ---- Contexts ------------------------------------------------------------------- */

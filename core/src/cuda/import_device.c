@@ -71,6 +71,9 @@ static void driver_load(void)
      * (dlsym / GetProcAddress hand a function back as an object pointer). */
     const void *const total_memory = driver_symbol(f, "cuDeviceTotalMem_v2");
     memcpy((void *)&driver.total_memory, (const void *)&total_memory, sizeof(driver.total_memory));
+    const void *const driver_version = driver_symbol(f, "cuDriverGetVersion");
+    memcpy((void *)&driver.driver_version, (const void *)&driver_version,
+           sizeof(driver.driver_version));
     driver.f = f;
 }
 
@@ -178,6 +181,32 @@ static uint64_t device_memory(const VmafxCudaDriver *drv, CUdevice dev)
     return (uint64_t)bytes;
 }
 
+static const char *cuda_runtime(const VmafxCudaDriver *drv)
+{
+    static char str[64];
+    static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
+    if (!drv || !drv->driver_version) {
+        return "unknown";
+    }
+    (void)pthread_mutex_lock(&lock);
+    if (str[0] == '\0') {
+        int ver = 0;
+        const CUresult res = drv->driver_version(&ver);
+        if (res == CUDA_SUCCESS && ver > 0) {
+            const int major = ver / 1000;
+            const int minor = (ver % 1000) / 10;
+            const int n = snprintf(str, sizeof(str), "cuda driver %d.%d", major, minor);
+            if (n < 0 || (size_t)n >= sizeof(str)) {
+                (void)snprintf(str, sizeof(str), "unknown");
+            }
+        } else {
+            (void)snprintf(str, sizeof(str), "unknown");
+        }
+    }
+    (void)pthread_mutex_unlock(&lock);
+    return str[0] != '\0' ? str : "unknown";
+}
+
 /* What a CUDA device imports: device pointers, CUDA arrays (copied only
  * when allowed, converted when semi-planar), GL textures and Vulkan memory;
  * it waits on NONE, HOST, CUDA_EVENT, GL_SYNC and VULKAN_SEMAPHORE acquire
@@ -197,6 +226,7 @@ static VmafxDeviceInfo cuda_info(const VmafxCudaDriver *drv, CUdevice dev, int32
                        (1u << VMAFX_FENCE_VULKAN_SEMAPHORE);
     info.total_memory = device_memory(drv, dev);
     info.name = device_name(drv, dev);
+    info.runtime = cuda_runtime(drv);
     vmafx_cuda_device_pci(drv, dev, info.pci);
     return info;
 }

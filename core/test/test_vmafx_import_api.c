@@ -24,6 +24,10 @@
 #include "vmafx_import_test_util.h"
 #include "vmafx_test_util.h"
 
+#ifndef VMAFX_TEST_ARCH
+#define VMAFX_TEST_ARCH ""
+#endif
+
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
  * documented /std:clatest C23 feature set does not include `nullptr` and the
@@ -67,7 +71,8 @@ static bool is_cpu_info(const VmafxDeviceInfo *info)
 {
     const uint32_t fences = (1u << VMAFX_FENCE_NONE) | (1u << VMAFX_FENCE_HOST);
     return info->backend == VMAFX_BACKEND_CPU && info->index == 0 && info->flags == 0u &&
-           info->name && !strcmp(info->name, "cpu") &&
+           info->name && !strcmp(info->name, "cpu") && info->runtime &&
+           !strcmp(info->runtime, VMAFX_TEST_ARCH) &&
            info->memory_kinds == (1u << VMAFX_MEMORY_HOST) && info->fence_kinds == fences;
 }
 
@@ -89,6 +94,21 @@ static char *test_device_info(void)
                                  old.backend == VMAFX_BACKEND_CPU && old.memory_kinds == 0u &&
                                  old.name == NULL);
     mu_assert("NULL out", vmafx_device_info(VMAFX_BACKEND_CPU, 0, NULL, NULL) == VMAFX_E_INVALID);
+    return NULL;
+}
+
+/* Marks a runtime field the library must leave alone. */
+static const char k_untouched[] = "untouched";
+
+/* A pre-0.1.14 caller's VmafxDeviceInfo does not receive runtime. */
+static char *test_device_info_pre_runtime(void)
+{
+    VmafxDeviceInfo pre14_info = VMAFX_DEVICE_INFO_INIT;
+    pre14_info.struct_size = (uint32_t)offsetof(VmafxDeviceInfo, runtime);
+    pre14_info.runtime = k_untouched;
+    mu_assert("info pre-0.1.14",
+              vmafx_device_info(VMAFX_BACKEND_CPU, 0, &pre14_info, NULL) == VMAFX_OK);
+    mu_assert("info pre-0.1.14 runtime untouched", pre14_info.runtime == k_untouched);
     return NULL;
 }
 
@@ -120,9 +140,17 @@ static char *test_device_desc_old_size(void)
     mu_assert("0.1.1 desc", vmafx_device_create(&desc, &device, NULL) == VMAFX_OK);
     VmafxDeviceInfo info = VMAFX_DEVICE_INFO_INIT;
     const VmafxStatus described = vmafx_device_describe(device, &info, NULL);
-    vmafx_device_unref(device);
     mu_assert("describe", described == VMAFX_OK);
     mu_assert("described", is_cpu_info(&info));
+
+    /* Pre-0.1.14 struct_size does not receive runtime. */
+    VmafxDeviceInfo pre14 = VMAFX_DEVICE_INFO_INIT;
+    pre14.struct_size = (uint32_t)offsetof(VmafxDeviceInfo, runtime);
+    pre14.runtime = k_untouched;
+    const VmafxStatus desc_pre14 = vmafx_device_describe(device, &pre14, NULL);
+    vmafx_device_unref(device);
+    mu_assert("pre-0.1.14 describe", desc_pre14 == VMAFX_OK);
+    mu_assert("pre-0.1.14 runtime untouched", pre14.runtime == k_untouched);
     return NULL;
 }
 
@@ -695,6 +723,7 @@ char *run_tests(void)
     static const MuTest tests[] = {
         MU_TEST(test_device_count),
         MU_TEST(test_device_info),
+        MU_TEST(test_device_info_pre_runtime),
         MU_TEST(test_device_desc_flags),
         MU_TEST(test_device_desc_old_size),
         MU_TEST(test_device_profile),
