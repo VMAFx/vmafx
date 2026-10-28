@@ -8,6 +8,63 @@ search:
 # Rebase notes
 
 <!-- rebase-notes:fragments:begin (rendered from docs/rebase-notes.d/; do not edit) -->
+## Device runtime and driver version in provenance records (2026-10-27)
+
+`feat/provenance-device-runtime`, issue #2142.
+
+Additive public ABI 0.1.14 extension adding `const char *runtime` to `struct VmafxDeviceInfo`
+and populating `device_runtime` in provenance records across CPU and GPU backends.
+No upstream-mirrored files are modified; all changes are contained within fork-added
+`core/src/vmafx/`, `core/src/{cuda,hip,sycl}/`, `core/api/vmafx.toml`, and generated API bindings.
+
+## Pre-Commit CI job scoped to the pull request diff (2026-10-27)
+
+- Fork-only CI change: the `pre-commit` job of `lint-and-format.yml` calls
+  `scripts/ci/precommit_scope.py` instead of `pre-commit run --all-files`.
+  Nothing upstream (Netflix) has these files; no rebase impact beyond keeping
+  the fork's side of that step.
+
+## Built-in vmaf_v0.6.1still model (2026-10-28)
+
+- Ported from upstream PR 1391 (head `d8bac1ef0d5a`).
+- `model/vmaf_v0.6.1still.json` is verbatim upstream.
+- Registration in `core/src/model.c` and `core/src/meson.build`.
+- When upstream merges 1391, a sync takes upstream's side; no conflict expected beyond list placement.
+
+## Picture conversion DEBUG lines, Netflix/vmaf PR 1710 (2026-10-27)
+
+- `core/src/conversion_context.{c,h}`: `logged_no_conversion`, one
+  `none needed` line per conversion state. `core/src/picture_convert.c`:
+  `log_conversion()` and the colour name helpers (zimg builds only).
+  `core/test/test_picture_convert_log.c` checks both lines and their level.
+- Ported from the open Netflix/vmaf PR 1710 before it landed; the fork logs
+  from its own conversion state, not from upstream's `libvmaf.c`.
+- **On sync**: when PR 1710 lands upstream, take upstream's message wording,
+  keep the once-per-state flag and the test, and move the test's expected
+  prefixes to the new wording.
+
+## rc1-tester executed dispatch, report schema 4 (2026-10-27)
+
+no rebase impact: tester-only (`tools/rc1-tester`, report schema, gate); no Netflix code touched.
+
+## Tidy lane `rust` for the sources built with `enable_rust_features` (2026-10-27)
+
+- `scripts/dev/tidy-lane.sh`: the `rust` lane installs the toolchain pinned by
+  `RUST_VERSION` in `build-config.env` under `/opt/vmafx-rust`. Fork-only.
+- A new C or C++ unit built only with `-Denable_rust_features=true` needs its
+  path in `TIDY_RATCHET_EXTRA_rust` in the `Makefile`, or the coverage check fails.
+- No upstream file is touched; nothing to merge from Netflix/vmaf.
+
+## Tidy lane `integrations` for the GStreamer element and FFmpeg sources (2026-10-27)
+
+- `scripts/ci/tidy-integrations-build.sh`, `scripts/ci/gen-integrations-compile-commands.py`
+  (new): build the element and the patched FFmpeg tree next to the core
+  build and add their compile lines to the lane's database. Fork-only.
+- `scripts/ci/ffmpeg_patch_stack.py`: `--keep-tree DIR` keeps the replayed tree.
+- A new `.c` file under `ffmpeg-patches/src/` needs a `FFMPEG_UNITS` row in the
+  generator and an object in the build script, or the lane fails.
+- No upstream file is touched; nothing to merge from Netflix/vmaf.
+
 ## Wall-clock fps in report output (2026-10-26)
 
 `fix/wall-clock-fps` (ADR-3377). Adds monotonic wall-clock FPS (`wall_fps`)
