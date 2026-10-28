@@ -976,33 +976,44 @@ int consult_cuda_dispatch(const VmafFeatureExtractor *fex, unsigned w, unsigned 
 #endif
 }
 
-/* The device twins of the float extractors that normalise samples the way picture_copy()
- * does. picture_copy() scales every depth from 8 to 16 bits (ADR-2164), so the CPU
- * extractors score 9, 11, 13, 14 and 15-bit pictures; the CUDA, SYCL, HIP and Metal twins
- * read the words themselves and were never compared with the CPU at those depths, so they
- * refuse them by name until they are
- * (T-FLOAT-EXTRACTORS-ODD-DEPTH-TWINS-UNMEASURED-2026-10-07). Other extractors keep their
- * own depth checks; psnr_hvs, for one, scores 9 and 11 bits correctly. */
+/* Device twins at picture bit depths other than 8, 10, 12 and 16. picture_copy() scales
+ * every depth from 8 to 16 bits (ADR-2164), so the CPU extractors score 9, 11, 13, 14 and
+ * 15-bit pictures; a CUDA, SYCL, HIP or Metal twin reads the words itself, and several
+ * scale only the depths they were written for: the float_moment twins divide by 4, 16 or
+ * 256 and by 1 at every other depth, where the CPU divides by 2^(bpc - 8). A twin is
+ * refused at those depths unless its parity test compares it with the CPU there (#2476,
+ * ADR-3383): the float_psnr and ciede twins of CUDA, SYCL and HIP at every odd depth
+ * (float_psnr_twin_odd_depths_exact(), ciede_twin_odd_depths()), and the psnr_hvs twins
+ * up to 11 bits (hvs_twin_every_depth_identical(), 9 to 12 bits). A twin joins the table,
+ * by its exact name, in the pull request that adds the depths to its parity test. */
+struct MeasuredTwin {
+    const char *name;
+    unsigned max_bpc;
+};
+
 int refuse_unscaled_bpc(const VmafFeatureExtractor *fex, unsigned bpc)
 {
-    static const char *const kFamilies[] = {"float_ssim", "float_ms_ssim", "float_adm", "float_vif",
-                                            "float_motion"};
+    static const MeasuredTwin kMeasured[] = {
+        {"float_psnr_cuda", 15U}, {"float_psnr_sycl", 15U},
+        {"float_psnr_hip", 15U},  {"ciede_cuda", 15U},
+        {"ciede_sycl", 15U},      {"ciede_hip", 15U},
+        {"psnr_hvs_cuda", 11U},   {"psnr_hvs_sycl", 11U},
+        {"psnr_hvs_hip", 11U},    {"integer_psnr_hvs_metal", 11U},
+    };
     constexpr uint64_t kDeviceFlags = VMAF_FEATURE_EXTRACTOR_CUDA | VMAF_FEATURE_EXTRACTOR_SYCL |
                                       VMAF_FEATURE_EXTRACTOR_HIP | VMAF_FEATURE_EXTRACTOR_METAL;
-    if (bpc == 8U || bpc == 10U || bpc == 12U || bpc == 16U || !fex->name ||
-        (fex->flags & kDeviceFlags) == 0U)
+    if (bpc == 8U || bpc == 10U || bpc == 12U || bpc == 16U || (fex->flags & kDeviceFlags) == 0U)
         return 0;
-    for (const char *family : kFamilies) {
-        const size_t n = std::strlen(family);
-        if (std::strncmp(fex->name, family, n) == 0 &&
-            (fex->name[n] == '\0' || fex->name[n] == '_')) {
-            vmaf_log(VMAF_LOG_LEVEL_ERROR,
-                     "%s: picture bit depth %u is not supported: use 8, 10, 12 or 16 bits\n",
-                     fex->name, bpc);
-            return -EINVAL;
-        }
+    const char *name = fex->name ? fex->name : "(unnamed)";
+    for (const MeasuredTwin &twin : kMeasured) {
+        if (fex->name != nullptr && std::strcmp(fex->name, twin.name) == 0 && bpc <= twin.max_bpc)
+            return 0;
     }
-    return 0;
+    vmaf_log(VMAF_LOG_LEVEL_ERROR,
+             "%s: picture bit depth %u is not supported on this backend: use 8, 10, 12 or 16 "
+             "bits, or the CPU extractor\n",
+             name, bpc);
+    return -EINVAL;
 }
 
 } // namespace
