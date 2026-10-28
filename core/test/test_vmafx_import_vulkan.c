@@ -52,7 +52,9 @@ static char *test_device_info(void)
         return NULL;
     }
     VmafxDeviceInfo info = VMAFX_DEVICE_INFO_INIT;
-    mu_assert("describe", vmafx_device_describe(gpu.device, &info, NULL) == VMAFX_OK);
+    mu_assert("describe", vmafx_device_describe(gpu.device, &info, NULL) == VMAFX_OK &&
+                              info.runtime && info.runtime[0] != '\0' &&
+                              strcmp(info.runtime, "unknown") != 0);
     mu_assert("Vulkan memory", (info.memory_kinds & (1u << VMAFX_MEMORY_VULKAN)) != 0u);
     mu_assert("Vulkan semaphores on the device only where the device waits on them",
               ((info.fence_kinds >> VMAFX_FENCE_VULKAN_SEMAPHORE) & 1u) ==
@@ -64,7 +66,8 @@ static char *test_device_info(void)
     VmafxDeviceInfo by_index = VMAFX_DEVICE_INFO_INIT;
     mu_assert("enumeration agrees",
               vmafx_device_info(VMAFX_VK_LANE, 0, &by_index, NULL) == VMAFX_OK &&
-                  memcmp(by_index.pci, info.pci, sizeof(info.pci)) == 0);
+                  memcmp(by_index.pci, info.pci, sizeof(info.pci)) == 0 && by_index.runtime &&
+                  by_index.runtime[0] != '\0' && strcmp(by_index.runtime, "unknown") != 0);
     return NULL;
 }
 
