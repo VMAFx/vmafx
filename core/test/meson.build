@@ -1217,10 +1217,16 @@ test('test_picture_convert_api', test_picture_convert_api, suite : ['fast'])
 
 # Netflix/vmaf PR 1710: the DEBUG lines of picture conversion (one per run
 # without conversion; source and target per context in zimg builds).
+# The conversion sources are libvmafx's own objects, compiled once
+# (ADR-1003): a second compile of conversion_context.c gave CodeQL a copy
+# whose static helpers it reported unreachable (code-scanning alerts 1589,
+# 1590).
 test_picture_convert_log = executable('test_picture_convert_log',
-    ['test.c', 'test_picture_convert_log.c', '../src/conversion_context.c',
-     '../src/conversion_policy.c', '../src/picture_sample_range.c'],
-    objects : log_cpp23_test_objects,
+    ['test.c', 'test_picture_convert_log.c'],
+    objects : [log_cpp23_test_objects,
+               libvmafx.extract_objects(src_dir + 'conversion_context.c',
+                                        src_dir + 'conversion_policy.c',
+                                        src_dir + 'picture_sample_range.c')],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : [picture_convert_lib, test_picture_lib],
     c_args : picture_convert_test_args,
