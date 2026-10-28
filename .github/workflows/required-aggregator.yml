@@ -183,6 +183,7 @@ jobs:
               // master push, where there is no pull request to sign off.
               'DCO Sign-off',
               'FFmpeg Patch Stack',
+              'FFmpeg vmafx Filter',
               'ADR Collision Guard',
               'Release Script Contract',
 
