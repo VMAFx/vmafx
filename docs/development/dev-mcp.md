@@ -158,6 +158,29 @@ VMAFX_CORPUS_DIR=/srv/corpus/vmafx ./dev/scripts/dev-mcp-up.sh
 To list the registered feature extractors, call the MCP tool
 `list_extractors` (the manual probe below does this for you).
 
+### Coding-agent clients
+
+The repository wires the container's MCP server as `vmafx-dev` for every
+coding client that reads a project MCP file: `.mcp.json` (Claude Code),
+`opencode.json` (opencode) and `.gemini/settings.json` (Gemini CLI and
+Antigravity). Each entry runs the same command:
+
+```bash
+docker exec -i vmaf-dev-mcp vmafx-mcp
+```
+
+Codex reads MCP servers only from the user configuration; add the same
+command there with
+`codex mcp add vmafx-dev -- docker exec -i vmaf-dev-mcp vmafx-mcp`.
+
+The server only answers while the `vmaf-dev-mcp` container runs, so start it
+first with `./dev/scripts/dev-mcp-up.sh`. Without it, the client reports the
+server as failed to start, and the other servers of the file keep working.
+Use its tools (`vmaf_score`, `list_backends`, `probe_backend`,
+`run_benchmark`, ...) for build checks, scores and reproductions instead of
+hand-run shell commands; the workspace mount is read-only, so the server
+scores and probes the checkout without changing it.
+
 ## How to manually probe
 
 Run a single smoke probe outside the cron cycle:

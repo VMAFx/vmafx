@@ -635,6 +635,14 @@ CLI of the same build. Every subcommand takes `--ffmpeg`, `--vmaf` and
 `--libdir` and exits 0 on success, 1 on a failure and 77 when a fixture is
 missing.
 
+CI builds FFmpeg with the patch series and `--enable-libvmafx` on every pull
+request that touches the C core, the patches or the workflows, and runs
+`parity`, `windows`, `contract` and `provenance` on the Netflix 576x324 pair
+against the CLI of the same build: the required check `FFmpeg vmafx Filter` in
+`.github/workflows/ffmpeg-patch-stack.yml`. A missing fixture (exit 77) fails
+that job. The GPU, VAAPI and Vulkan subcommands need a device and run on a
+workstation only.
+
 | Subcommand | Checks | Needs |
 | --- | --- | --- |
 | `parity` | Every per-frame, pooled and aggregate value of the filter's JSON report equals the CLI's, as the same double. `--backend cuda` and `cuda-host` compare against `vmaf --backend cuda`. | CPU; CUDA for the two GPU forms |
@@ -749,6 +757,17 @@ and wraps this repo's `libvmaf` C API. Options follow the filter name inside an
 ```text
 libvmaf=model=version=vmaf_v0.6.1:log_path=/dev/stdout:log_fmt=json:n_threads=4
 ```
+
+### Tools that build `libvmaf` filter strings
+
+[SVT Encore](https://github.com/svt/encore)'s VMAF profile options (`model`,
+`feature`, `n_threads`, `n_subsample` and reference filters) run unchanged on
+`libvmaf.so.3` and give the `vmaf` CLI's scores exactly; the
+[upstream consumer check](../development/upstream-consumers.md#what-each-script-does)
+runs Encore's filter strings at a pinned Encore commit. Write model lists as
+Encore's profiles do, with each colon inside a model escaped as `\\:`, for
+example `model=version=vmaf_4k_v0.6.1\\:name=vmaf4k|version=vmaf_v0.6.1\\:name=vmaf`
+when the string reaches FFmpeg without a shell.
 
 ### Common options
 
