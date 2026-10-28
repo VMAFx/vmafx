@@ -303,7 +303,22 @@ nav:
       - vmaftune.predictor: api/predictor.md
       - VMAFx API (preview): api/vmafx/index.md
       - VMAFx window scores: api/vmafx/windows.md
-      - VMAFx API reference (generated): api/vmafx/reference.md
+      - VMAFx API reference (generated):
+          - api/vmafx/reference.md
+          - "vmafx/vmafx.h": api/vmafx/vmafx.md
+          - "vmafx/version.h": api/vmafx/version.md
+          - "vmafx/types.h": api/vmafx/types.md
+          - "vmafx/error.h": api/vmafx/error.md
+          - "vmafx/context.h": api/vmafx/context.md
+          - "vmafx/device.h": api/vmafx/device.md
+          - "vmafx/frame.h": api/vmafx/frame.md
+          - "vmafx/model.h": api/vmafx/model.md
+          - "vmafx/score.h": api/vmafx/score.md
+          - "vmafx/provenance.h": api/vmafx/provenance.md
+          - "vmafx/report.h": api/vmafx/report.md
+          - "vmafx/dnn.h": api/vmafx/dnn.md
+          - "vmafx/mcp.h": api/vmafx/mcp.md
+          - "vmafx/libvmaf_bridge.h": api/vmafx/libvmaf_bridge.md
       - libvmaf migration table (generated): api/vmafx/compat.md
   - Metrics and models:
       - Feature index: metrics/features.md

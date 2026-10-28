@@ -232,6 +232,13 @@ A new ADR therefore needs no `mkdocs.yml` edit.
 `scripts/docs/tests/test_generators.py` holds the three entries
 (`test_adr_navigation_is_collapsed`).
 
+The VMAFx C API reference is the other way round: under `C API`, the entry
+`VMAFx API reference (generated)` lists the reference index and every page
+`scripts/codegen/vmafx-api.py` writes, one per header, so each header has a
+place in the sidebar. A new header therefore needs one `mkdocs.yml` line;
+`scripts/codegen/tests/test_vmafx_api_docs_nav.py` fails naming every
+generated page the navigation does not list (issue 2436).
+
 ## Search
 
 The site search indexes user pages only
