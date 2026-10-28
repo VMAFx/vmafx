@@ -459,6 +459,17 @@
   (`gstreamer/test/run.sh`). See `docs/usage/gstreamer.md`.
 
 
+- **Netflix HDR-VMAF v1.1.8 models ship and are built in (upstream
+  `74f930d17d`).** `hdr_vmaf_v1.1.8_3d0h`, `_3d0h_2160`, `_5d0h`,
+  `_1d5h_2160` and their high frame rate variants load from
+  `model/hdr_vmaf_v1.1.8*/` or by version. The `vmaf` CLI scores two PQ
+  inputs with `hdr_vmaf_v1.1.8_3d0h` when no `--model` is given, a model's
+  `conversion_target` with an unknown key is refused, and `vmaf-tune`
+  resolves PQ sources to the shipped model (HLG still falls back to SDR)
+  ([v1 models](docs/models/v1.md),
+  [vmaf-tune HDR scoring](docs/usage/vmaf-tune-hdr-and-sampling.md#hdr-vmaf-scoring)).
+
+
 - **The Helm chart runs vmafx-controller as several replicas on PostgreSQL
   ([ADR-2350](docs/adr/2350-cloud-native-platform.md)).**
   `controller.store.backend: postgres` with `controller.replicas` renders a
@@ -651,6 +662,13 @@
   [the dashboard tour](docs/observability/dashboards.md#slo-report).
 
 
+- **Picture conversion logs at DEBUG (Netflix/vmaf PR 1710).** A run whose
+  pictures need no conversion logs one `picture conversion: none needed` line,
+  and each conversion context logs its source and target (size, bit depth,
+  range, primaries, transfer, matrix) when it is created; see
+  [pictures](docs/api/pictures.md#converting-to-a-models-conversion-target).
+
+
 - **`vmaf_picture_wrap()`: score frames you already hold, without a copy
   (Netflix/vmaf `700124a4c`).** A `VmafPicture` can now sit on planes the
   caller owns, such as a decoder's frame; a callback reports when libvmaf no
@@ -658,6 +676,19 @@
   odd chroma planes up, as `vmaf_picture_alloc()` does, and refuses a size of
   0, a NULL plane or a stride shorter than a row with `-EINVAL`
   ([Wrap your own planes](docs/api/pictures.md#wrap-your-own-planes-vmaf_picture_wrap)).
+
+
+- **Device runtime and driver version in provenance records (#2142).**
+  `VmafxDeviceInfo` appends `const char *runtime` (ABI 0.1.14), reporting the
+  underlying runtime and driver version per backend rather than placeholder
+  values: the host architecture on CPU (`x86_64`, `aarch64`), `cuda driver X.Y runtime X.Y`
+  on CUDA, `<platform-name> <driver-version>` on SYCL, `hip driver X.Y runtime X.Y` on HIP,
+  and Darwin kernel version or `metal` on Metal. Provenance records copy `info.runtime`
+  into `device_runtime` and feature extractor records, falling back to `unknown` only
+  when the backend runtime is unavailable.
+
+
+- **The tester report states what executed (ADR-3381).** Report schema 4 adds `executed_dispatch` (the SIMD level the library reported for the default and the scalar-masked run of each fixture, checked against the host's expectation; a mismatch or a silent library fails the verdict), and `library` (library pair `libvmafx.so.1` or `libvmaf.so.3`, provenance digest, conformance mode). Schema 1 to 3 reports stay valid. The host flag table now follows the library's CPU rules (AVX2 needs FMA and BMI; `avx512icl` added).
 
 
 - **Rust integer ADM extractor (`adm_rust`)**: builds configured with
@@ -802,6 +833,21 @@
   [Vulkan frames](docs/api/vmafx/index.md#vulkan-frames).
 
 
+- **clang-tidy measures the GStreamer element and the FFmpeg filter sources (ADR-3379).**
+  A new tidy lane, `integrations`, builds `gstreamer/` and the patched FFmpeg
+  tree in the dev container and runs the ratchet on `gstreamer/src/*.c` and
+  `ffmpeg-patches/src/*.c`; it is the required check `Tidy Lane (integrations)`,
+  routed by its own paths, and part of the nightly sweep (#2860).
+
+
+- **clang-tidy measures the sources built with `enable_rust_features` (ADR-3380).**
+  A new tidy lane, `rust`, installs the pinned Rust toolchain in the dev
+  container, configures the core with `-Denable_rust_features=true` and runs the
+  ratchet on the Rust shims, `tad_rust.c` and their tests; it is the required
+  check `Tidy Lane (rust)`, routed by its own paths, and part of the nightly
+  sweep (#2880).
+
+
 - **vmaf-tune introduces content-aware video classification ([ADR-0618](docs/adr/0618-content-aware-classifier.md), [ADR-3374](docs/adr/3374-vmaf-tune-classifier-vision-fails-by-name.md)).**
   `vmaf-tune classify` extracts ITU-T P.910 spatial information (SI) and temporal
   information (TI) via FFmpeg `siti`, probes container geometry and dynamic range
@@ -819,6 +865,20 @@
   frame counts (>= 30 valid frames), and three temporal segments (10%, 50%, 85%)
   meet published thresholds, with optional `--near-dup-verify` spot checking
   against drift ([usage](docs/usage/vmaf-tune-near-dup.md)).
+
+
+- **Built-in `vmaf_v0.6.1still` model for still images and single-frame scoring
+  (Netflix/vmaf PR 1391).** Same as `vmaf_v0.6.1` with motion forced to 0
+  ([Built-in models](docs/models/overview.md#built-in-models)).
+
+
+- **Errors and versioning guides for the VMAFx C API (issue 2436).** Two new
+  pages explain how a call reports failure (status code, the optional
+  `VmafxError`, its subject and errno, the message that reaches the log when
+  no error object is passed) and how the ABI evolves (`since`, symbol version
+  nodes, `struct_size`, deprecation and the runtime version check)
+  ([Errors](docs/api/vmafx/errors.md),
+  [Versioning and the ABI](docs/api/vmafx/versioning.md)).
 
 
 - **Preview of the VMAFx C API, generated from one definition (RC4,
@@ -1220,6 +1280,14 @@
   and the upstream parity harness, and `scripts/ci/gen-gpu-compile-commands.py` adds the
   standalone HIP dropped-dispatch probe for the HIP lane, retiring their clang-tidy coverage
   exceptions.
+
+
+- **The encode service moved to its own repository
+  ([ADR-3382](docs/adr/3382-encode-service-leaves-vmafx.md)).** The encode-job
+  API of ADR-3378 (now superseded) is developed in
+  [vidiko/torcul](https://github.com/vidiko/torcul), which calls VMAFx for
+  scoring through the `libvmafx.so.1` C ABI; issues #2986 to #2993 continue
+  there.
 
 
 - **External competitor wrappers share CLI parsing and schema normalisation through `lib/common.sh`.** `tools/external-bench/{fork-fr-regressor,fork-nr-metric,x264-pvmaf,dover-mobile}/run.sh` source the shared library for argument parsing, required flag validation, external binary checks, and schema output normalisation (HISS-19); wrapper options, outputs, and exit codes remain byte-identical.
@@ -1717,6 +1785,15 @@
   checkboxes now link issues #1444 to #1448 and show their state (four closed
   on 2026-10-07, task 3 open in #1446), and every `Depends-On` names the real
   issue instead of the placeholders `#1` to `#4`.
+
+
+- **The `Pre-Commit` CI job checks a pull request on its own diff
+  (HISS-18).** `scripts/ci/precommit_scope.py` runs
+  `pre-commit run --from-ref <base sha> --to-ref HEAD` on pull requests and
+  keeps `--all-files` for master pushes, release tags, schedule and dispatch,
+  so a documentation-only pull request no longer runs every hook over the whole
+  tree. The required context still reports. See
+  [CI](docs/development/ci.md#pre-commit-scope-hiss-18).
 
 
 - **Tracked text names no development host.** Measurements and examples in the
@@ -2367,6 +2444,12 @@
   that are not 1920x1080.
 
 
+- CI: the gates that judge their own matrix leg read the run's jobs again while their leg still
+  reads unfinished, instead of failing at once. The jobs API had reported the finished
+  `FFmpeg Ubuntu gcc work` leg without a conclusion for a few seconds and failed master
+  `baeb82e6f` (`T-CI-GATE-JOBS-API-LAG-2026-10-27`).
+
+
 - CI: artifact steps no longer fail on the Gitea mirror with
   `GHESNotSupportedError`. Each `upload-artifact` / `download-artifact` step
   runs off Gitea only and has a Gitea twin on v3, the artifact protocol Gitea
@@ -2730,6 +2813,11 @@
   dependency is gone and cargo runs `--offline --locked`.
 
 
+- CI: the scheduled-failure reporter re-reads a run's jobs while the API has not listed the failed
+  job yet, and exits 0 with a notice instead of failing when none appears; upstream-watcher run
+  40515965410 had turned red a second time (`T-SCHEDULED-FAILURE-NO-FAILED-JOB-2026-10-27`).
+
+
 - CI: an hourly workflow (`docs-render-pr.yml`) now opens the render-only pull request for
   `CHANGELOG.md`, the ADR index and the rebase notes once a render has been owed on master for
   6 hours, and arms auto-merge. Until now nothing opened it, and master went red on the 24-hour
@@ -2753,6 +2841,12 @@
   With no `sudo` prefix, `DEBIAN_FRONTEND=noninteractive` became the command
   name and the install stopped with "command not found"; the variable now goes
   through `env`. The header names the 26.04 codename correctly (Resolute).
+
+
+- Tests: the sidecar test that replaces a stale socket no longer fails at
+  random on ext4. It now keeps a second link to the stale socket, so the file
+  system cannot give its inode number to the server's new socket
+  (`ai/sidecar/tests/test_socket_permissions.py`).
 
 
 - **A stale private-state lock no longer stops every commit hook.** `scripts/githooks/state-sync.sh`
@@ -2909,6 +3003,13 @@
   (`T-UPSTREAM-WATCH-RETRY-DELAY-2026-10-18`).
 
 
+- **The upstream-watcher workflow waits until a new label is usable.**
+  A label created moments before could still be unknown to `gh issue create`, which
+  failed the 2026-10-27 scheduled run. `scripts/upstream-watcher/ensure_label.sh` now
+  reads the label list after creating the label, up to 10 times, and fails naming the
+  label when it never appears.
+
+
 - **The upstream-watcher workflow creates its tracking label before filing issues.**
   `upstream-watcher.yml` failed when `upstream-blocked` was missing from the repository.
   Both jobs now call `scripts/upstream-watcher/ensure_label.sh` to ensure the label
@@ -3024,6 +3125,13 @@
   `mime/multipart`). `go.mod` declares `go 1.27.2`, and the release and development images build on
   the `golang:1.27-trixie` digest that carries Go 1.27.2. `govulncheck ./...` reached the vulnerable
   symbols from the controller, the tune executor, `pkg/libvmaf` and `tools/obssmoke`; it now reports none.
+
+
+- **`golang.org/x/net` moves from v0.61.0 to v0.62.0** for GO-2026-6860 (quadratic time when the
+  `html` parser coalesces text nodes) and GO-2026-6866 (`html` rendering of raw text that did not
+  check every ancestor namespace transition). `scripts/ci/govulncheck-gate.py` failed on both
+  advisories, which have no `not_affected` statement; with v0.62.0 it reports no finding for
+  `golang.org/x/net`.
 
 
 - **Open advisory GHSA-84m7-p3x7-pcfv (`mcp` 1.29.0) is declared, not dismissed.** `mcp` reaches
