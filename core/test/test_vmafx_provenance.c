@@ -28,6 +28,10 @@
 #include "vmafx/vmafx.h"
 #include "vmafx_test_util.h"
 
+#ifndef VMAFX_TEST_ARCH
+#define VMAFX_TEST_ARCH ""
+#endif
+
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
  * documented /std:clatest C23 feature set does not include `nullptr` and the
@@ -168,7 +172,7 @@ static bool abi_matches(const VmafxProvenance *rec)
 static bool cpu_device(const VmafxProvenance *rec)
 {
     return rec->active_backend == VMAFX_BACKEND_CPU && rec->device_index == 0 &&
-           same(rec->device_name, "cpu");
+           same(rec->device_name, "cpu") && same(rec->device_runtime, VMAFX_TEST_ARCH);
 }
 
 static bool frames_match(const VmafxProvenance *rec)
