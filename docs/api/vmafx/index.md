@@ -45,6 +45,7 @@ every function, struct field and constant.
 
 ## Score two videos
 
+<!-- compile -->
 ```c
 #include <stdio.h>
 #include <string.h>
