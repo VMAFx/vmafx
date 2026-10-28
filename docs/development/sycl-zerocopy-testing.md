@@ -69,6 +69,9 @@ needs chroma, so the first frame is refused
 ([ADR-1688](../adr/1688-sycl-zero-copy-luma-only-admission.md)) with
 `vmaf_read_pictures_sycl: feature extractor "psnr_sycl" needs host pictures
 ...` and the filter's hint to use `hwdownload`, and `ffmpeg` exits non-zero.
+Use `hwdownload,format=nv12` for 8-bit input or `hwdownload,format=p010le`
+for 10-bit: these match driver download surfaces, whereas planar YUV download
+formats are not portable across VAAPI drivers.
 The same command without `feature=name=psnr` prints a VMAF score, and
 `feature=name=niqe` (no SYCL twin) fails at configuration with
 `libvmaf_sycl: feature 'niqe' cannot run on zero-copy input: no SYCL twin`.
