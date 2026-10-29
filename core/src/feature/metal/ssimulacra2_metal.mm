@@ -388,9 +388,55 @@ inline float ss2m_read_plane(const VmafPicture *pic, int plane, int x, int y)
     return (float)row[sx];
 }
 
+/* YUV -> RGB constants of ssimulacra2.c::yuv_matrix_coeffs, with the same
+ * float expressions, so the per-pixel arithmetic below keeps every rounding. */
+struct Ss2mYuvCoeffs {
+    float cr_r;
+    float cb_b;
+    float cb_g;
+    float cr_g;
+    float y_scale;
+    float c_scale;
+    float y_off;
+    float c_off;
+};
+
+Ss2mYuvCoeffs ss2m_yuv_coeffs(int yuv_matrix)
+{
+    float kr = 0.299f;
+    float kg = 0.587f;
+    float kb = 0.114f;
+    int limited = 1;
+    switch (yuv_matrix) {
+    case SS2M_MATRIX_BT709_FULL:
+        limited = 0;
+        /* fall through */
+    case SS2M_MATRIX_BT709_LIMITED:
+        kr = 0.2126f;
+        kg = 0.7152f;
+        kb = 0.0722f;
+        break;
+    case SS2M_MATRIX_BT601_FULL:
+        limited = 0;
+        break;
+    case SS2M_MATRIX_BT601_LIMITED:
+    default:
+        break;
+    }
+    Ss2mYuvCoeffs c;
+    c.cr_r = 2.0f * (1.0f - kr);
+    c.cb_b = 2.0f * (1.0f - kb);
+    c.cb_g = -(2.0f * kb * (1.0f - kb)) / kg;
+    c.cr_g = -(2.0f * kr * (1.0f - kr)) / kg;
+    c.y_scale = limited ? (255.0f / 219.0f) : 1.0f;
+    c.c_scale = limited ? (255.0f / 224.0f) : 1.0f;
+    c.y_off = limited ? (16.0f / 255.0f) : 0.0f;
+    c.c_off = 0.5f;
+    return c;
+}
+
 /* Verbatim port of ssimulacra2.c::picture_to_linear_rgb: line-for-line
- * scalar-diff parity (ADR-0141 §2 load-bearing invariant).
- * NOLINTNEXTLINE(readability-function-size,google-readability-function-size) */
+ * scalar-diff parity (ADR-0141 §2 load-bearing invariant). */
 void ss2m_picture_to_linear_rgb(const Ssimu2StateMetal *s, const VmafPicture *pic, float *out)
 {
     const unsigned w = s->width;
@@ -402,47 +448,16 @@ void ss2m_picture_to_linear_rgb(const Ssimu2StateMetal *s, const VmafPicture *pi
 
     const float peak = (float)((1u << s->bpc) - 1u);
     const float inv_peak = 1.0f / peak;
-
-    float kr;
-    float kg;
-    float kb;
-    int limited = 1;
-    switch (s->yuv_matrix) {
-    case SS2M_MATRIX_BT709_FULL:
-        limited = 0;
-        /* fall through */
-    case SS2M_MATRIX_BT709_LIMITED:
-        kr = 0.2126f;
-        kg = 0.7152f;
-        kb = 0.0722f;
-        break;
-    case SS2M_MATRIX_BT601_FULL:
-        limited = 0;
-        /* fall through */
-    case SS2M_MATRIX_BT601_LIMITED:
-    default:
-        kr = 0.299f;
-        kg = 0.587f;
-        kb = 0.114f;
-        break;
-    }
-    const float cr_r = 2.0f * (1.0f - kr);
-    const float cb_b = 2.0f * (1.0f - kb);
-    const float cb_g = -(2.0f * kb * (1.0f - kb)) / kg;
-    const float cr_g = -(2.0f * kr * (1.0f - kr)) / kg;
-    const float y_scale = limited ? (255.0f / 219.0f) : 1.0f;
-    const float c_scale = limited ? (255.0f / 224.0f) : 1.0f;
-    const float y_off = limited ? (16.0f / 255.0f) : 0.0f;
-    const float c_off = 0.5f;
+    const Ss2mYuvCoeffs k = ss2m_yuv_coeffs(s->yuv_matrix);
 
     for (unsigned y = 0; y < h; y++) {
         for (unsigned x = 0; x < w; x++) {
             float const Y = ss2m_read_plane(pic, 0, (int)x, (int)y) * inv_peak;
             float const U = ss2m_read_plane(pic, 1, (int)x, (int)y) * inv_peak;
             float const V = ss2m_read_plane(pic, 2, (int)x, (int)y) * inv_peak;
-            float const Yn = (Y - y_off) * y_scale;
-            float const Un = (U - c_off) * c_scale;
-            float const Vn = (V - c_off) * c_scale;
+            float const Yn = (Y - k.y_off) * k.y_scale;
+            float const Un = (U - k.c_off) * k.c_scale;
+            float const Vn = (V - k.c_off) * k.c_scale;
             /* ADR-0891 FMA unification: the AVX2 / AVX-512 / NEON / SVE2
              * kernels and their scalar tails all use a single-rounded
              * fused multiply-add here. This copy was missed when ADR-0891
@@ -453,10 +468,10 @@ void ss2m_picture_to_linear_rgb(const Ssimu2StateMetal *s, const VmafPicture *pi
              * 4-norm pooling amplifies the survivors), so that 1 ULP grew
              * into a 2.6e-3 score delta. Keep these three lines
              * fmaf()-based and in this exact order. See ADR-1205. */
-            float R = fmaf(cr_r, Vn, Yn);
-            float G = fmaf(cb_g, Un, Yn);
-            G = fmaf(cr_g, Vn, G);
-            float B = fmaf(cb_b, Un, Yn);
+            float R = fmaf(k.cr_r, Vn, Yn);
+            float G = fmaf(k.cb_g, Un, Yn);
+            G = fmaf(k.cr_g, Vn, G);
+            float B = fmaf(k.cb_b, Un, Yn);
             R = ss2m_clampf(R, 0.0f, 1.0f);
             G = ss2m_clampf(G, 0.0f, 1.0f);
             B = ss2m_clampf(B, 0.0f, 1.0f);
@@ -745,15 +760,29 @@ int alloc_host_buffers(Ssimu2StateMetal *s)
 
 /* The device buffers and the pipelines; *stage says where the caller unwinds from:
  * 1 no device, 2 the buffers failed, 3 a pipeline failed. */
-int init_device_resources(Ssimu2StateMetal *s, int *stage)
+int init_device_resources(Ssimu2StateMetal *s)
 {
     const void *const dh = vmaf_metal_context_device_handle(s->ctx);
-    if (dh == nullptr) { *stage = 1; return -ENODEV; }
+    if (dh == nullptr) { return -ENODEV; }
     id<MTLDevice> const device = (__bridge id<MTLDevice>)dh;
-    int err = ss2m_alloc_device_buffers(s, device);
-    if (err != 0) { *stage = 2; return err; }
-    err = build_pipelines(s, device);
-    *stage = (err != 0) ? 3 : 0;
+    const int err = ss2m_alloc_device_buffers(s, device);
+    if (err != 0) { return err; }
+    return build_pipelines(s, device);
+}
+
+/* Release what init_fex_metal created, in reverse order, and return err. Every
+ * release is a no-op on a slot that was never filled, since priv starts
+ * zeroed, so each failure point unwinds through this one path. */
+static int unwind_init_fex_metal(Ssimu2StateMetal *s, int err)
+{
+    if (s->pso_blur_v) { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_blur_v; s->pso_blur_v = nullptr; }
+    if (s->pso_blur_h) { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_blur_h; s->pso_blur_h = nullptr; }
+    if (s->pso_mul3)   { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_mul3;   s->pso_mul3   = nullptr; }
+    ss2m_release_device_buffers(s);
+    (void)vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
+    vmaf_metal_context_destroy(s->ctx);
+    s->ctx = nullptr;
+    free_host_buffers(s);
     return err;
 }
 
@@ -779,38 +808,18 @@ int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsi
     if (err != 0) { return err; }
 
     err = vmaf_metal_context_new(&s->ctx, 0);
-    if (err != 0) { goto fail_host; }
+    if (err != 0) { return unwind_init_fex_metal(s, err); }
 
     err = vmaf_metal_kernel_lifecycle_init(&s->lc, s->ctx);
-    if (err != 0) { goto fail_ctx; }
+    if (err != 0) { return unwind_init_fex_metal(s, err); }
 
-    {
-        int stage = 0;
-        err = init_device_resources(s, &stage);
-        if (stage == 1) { goto fail_lc; }
-        if (stage == 2) { goto fail_bufs; }
-        if (stage == 3) { goto fail_pso; }
-    }
+    err = init_device_resources(s);
+    if (err != 0) { return unwind_init_fex_metal(s, err); }
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (s->feature_name_dict == nullptr) { err = -ENOMEM; goto fail_pso; }
+    if (s->feature_name_dict == nullptr) { err = -ENOMEM; return unwind_init_fex_metal(s, err); }
     return 0;
-
-fail_pso:
-    if (s->pso_blur_v) { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_blur_v; s->pso_blur_v = nullptr; }
-    if (s->pso_blur_h) { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_blur_h; s->pso_blur_h = nullptr; }
-    if (s->pso_mul3)   { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_mul3;   s->pso_mul3   = nullptr; }
-fail_bufs:
-    ss2m_release_device_buffers(s);
-fail_lc:
-    (void)vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
-fail_ctx:
-    vmaf_metal_context_destroy(s->ctx);
-    s->ctx = nullptr;
-fail_host:
-    free_host_buffers(s);
-    return err;
 }
 
 /* Dispatch one ssimulacra2_mul3 (a*b -> out) for the current scale. */
@@ -918,9 +927,33 @@ int ss2m_run_scale_gpu(Ssimu2StateMetal *s, id<MTLCommandQueue> queue, unsigned 
     return 0;
 }
 
+/* Host combine for one scale: reads the GPU outputs directly (unified memory). */
+void ss2m_combine_scale(Ssimu2StateMetal *s, unsigned cw, unsigned ch, int scale,
+                        const float *ref_xyb_host, const float *dis_xyb_host)
+{
+    const float *h_mu1 = (const float *)[(__bridge id<MTLBuffer>)s->buf_mean_ref contents];
+    const float *h_mu2 = (const float *)[(__bridge id<MTLBuffer>)s->buf_mean_dis contents];
+    const float *h_s11 = (const float *)[(__bridge id<MTLBuffer>)s->buf_s11 contents];
+    const float *h_s22 = (const float *)[(__bridge id<MTLBuffer>)s->buf_s22 contents];
+    const float *h_s12 = (const float *)[(__bridge id<MTLBuffer>)s->buf_s12 contents];
+    ss2m_host_combine(s, cw, ch, h_mu1, h_mu2, h_s11, h_s22, h_s12, ref_xyb_host, dis_xyb_host,
+                      s->accum_ssim[scale], s->accum_ed[scale]);
+}
+
+/* Halve one 3-plane linear-RGB frame: downsample into `scratch`, then copy
+ * each nw x nh plane back to the start of its plane in `lin`. */
+void ss2m_downsample_in_place(float *lin, float *scratch, unsigned cw, unsigned ch, unsigned nw,
+                              unsigned nh, size_t plane_full)
+{
+    ss2m_downsample_2x2(lin, cw, ch, scratch, nw, nh, plane_full);
+    for (int c = 0; c < 3; c++) {
+        memcpy(lin + (size_t)c * plane_full, scratch + (size_t)c * plane_full,
+               (size_t)nw * (size_t)nh * sizeof(float));
+    }
+}
+
 /* submit: orchestrate the per-scale pyramid. Mirrors the CPU/CUDA
- * extract loop step-by-step (ADR-0141).
- * NOLINTNEXTLINE(readability-function-size,google-readability-function-size) */
+ * extract loop step-by-step (ADR-0141). */
 int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
                             VmafPicture *ref_pic_90, VmafPicture *dist_pic,
                             VmafPicture *dist_pic_90, unsigned index)
@@ -961,31 +994,14 @@ int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
         int const err = ss2m_run_scale_gpu(s, queue, cw, ch);
         if (err != 0) { return err; }
 
-        /* Host combine — reads GPU outputs directly (unified memory). */
-        const float *h_mu1 = (const float *)[(__bridge id<MTLBuffer>)s->buf_mean_ref contents];
-        const float *h_mu2 = (const float *)[(__bridge id<MTLBuffer>)s->buf_mean_dis contents];
-        const float *h_s11 = (const float *)[(__bridge id<MTLBuffer>)s->buf_s11 contents];
-        const float *h_s22 = (const float *)[(__bridge id<MTLBuffer>)s->buf_s22 contents];
-        const float *h_s12 = (const float *)[(__bridge id<MTLBuffer>)s->buf_s12 contents];
-        ss2m_host_combine(s, cw, ch, h_mu1, h_mu2, h_s11, h_s22, h_s12, ref_xyb_host, dis_xyb_host,
-                          s->accum_ssim[scale], s->accum_ed[scale]);
+        ss2m_combine_scale(s, cw, ch, scale, ref_xyb_host, dis_xyb_host);
         s->accum_completed++;
 
         if (scale + 1 < SS2M_NUM_SCALES) {
             const unsigned nw = (cw + 1) / 2;
             const unsigned nh = (ch + 1) / 2;
-            ss2m_downsample_2x2(s->h_ref_lin, cw, ch, s->h_ref_lin_ds, nw, nh, plane_full);
-            for (int c = 0; c < 3; c++) {
-                memcpy(s->h_ref_lin + (size_t)c * plane_full,
-                       s->h_ref_lin_ds + (size_t)c * plane_full,
-                       (size_t)nw * (size_t)nh * sizeof(float));
-            }
-            ss2m_downsample_2x2(s->h_dis_lin, cw, ch, s->h_dis_lin_ds, nw, nh, plane_full);
-            for (int c = 0; c < 3; c++) {
-                memcpy(s->h_dis_lin + (size_t)c * plane_full,
-                       s->h_dis_lin_ds + (size_t)c * plane_full,
-                       (size_t)nw * (size_t)nh * sizeof(float));
-            }
+            ss2m_downsample_in_place(s->h_ref_lin, s->h_ref_lin_ds, cw, ch, nw, nh, plane_full);
+            ss2m_downsample_in_place(s->h_dis_lin, s->h_dis_lin_ds, cw, ch, nw, nh, plane_full);
             cw = nw;
             ch = nh;
         }
