@@ -749,7 +749,7 @@
         "version": "1",
         "probe_preset": "veryfast",
         "probe_quality": 35,
-        "supports_qpfile": false,
+        "supports_qpfile": true,
         "supports_encoder_stats": false,
         "supports_two_pass": false,
         "two_pass_abr_at_pass1_bitrate": false
