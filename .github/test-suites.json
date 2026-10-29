@@ -150,6 +150,7 @@
         "dev/scripts/",
         "gstreamer/test/",
         "scripts/",
+        "scripts/codegen/tests/test_vmafx_api_status_bindings.py",
         "scripts/upstream-watcher/tests/test_ensure_label.py",
         "testdata/",
         "tools/ensemble-training-kit/tests/",
@@ -159,7 +160,7 @@
       "source_paths": ["requirements/locks/", "packaging/", ".github/test-suites.json", "LICENSE", "NOTICE", "LICENSES/", "REUSE.toml"],
       "install": {"python": "3.14", "locks": ["requirements/locks/package-build.txt", "requirements/locks/tooling-tests.txt"]},
       "pytest": {"timeout": 300, "method": "signal"},
-      "runs": "scripts/ci/suite_registry.py run tooling: one pytest run over every Python test file, then every shell test file with bash"
+      "runs": "scripts/ci/suite_registry.py run tooling: one pytest run over every Python test file, then every shell test file with bash; scripts/ci/tests/test_check_install_layout.py belongs here via scripts/: parser fixtures always run, real installed-SDK smoke requires VMAF_BUILD_DIR"
     }
   ],
   "not_tests": [

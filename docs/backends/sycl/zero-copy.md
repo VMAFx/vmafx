@@ -50,8 +50,11 @@ feature extractor before it counts a frame
 So `vmaf_v0.6.1` runs zero-copy and gives the CPU's per-frame scores. The
 default model `vmaf_v1.0.16_3d0h` does not run zero-copy: the first frame
 fails with a libvmaf error that names `speed_chroma_sycl`. With FFmpeg, score it
-through the bridge below (`hwdownload,format=nv12` and the `libvmaf` filter's
+through the bridge below (`hwdownload,format=nv12` for 8-bit or
+`hwdownload,format=p010le` for 10-bit, and the `libvmaf` filter's
 `sycl_device` option).
+Drivers expose NV12 / P010 download surfaces; planar YUV download formats
+are not portable across VAAPI drivers.
 
 Measured on an Arc A380 (xe driver, FFmpeg n9.0.2 with the series, QSV decode
 of the Netflix 576x324 pair as H.264) before the check existed:

@@ -1063,6 +1063,9 @@ JSON payload is still written first, so a wrapper script can read
   exactly as the Python `vmaf-tune` builds every QSV encode. The render node is
   `VMAFTUNE_VAAPI_DEVICE`, else the first Intel render node, else
   `/dev/dri/renderD128`.
+  The upload format follows output depth: `nv12` for 8-bit, `p010le` for
+  `p010le` / `yuv420p10le` output or `-profile:v main10`, including HDR args.
+  An output `-pix_fmt` in extra parameters overrides the source format.
 - Hardware encoders (NVENC / QSV / AMF) reject sources below roughly 320x240.
   A profile built from a smaller clip fails at the encoder.
 - `av1_videotoolbox` is a placeholder: upstream FFmpeg ships no such encoder,
@@ -1789,3 +1792,17 @@ the aliases are still imported by the sidecar.
   scoring backends.
 - [vmafx-ort-runner.md](vmafx-ort-runner.md) and
   [vmaf-perShot.md](vmaf-perShot.md): the two helper binaries.
+
+## QSV rate control probe
+
+Intel Quick Sync Video (QSV) encodes prefer ICQ through `-global_quality N`. The Go encoder and corpus runner share a process cache of eight-frame synthetic ICQ probes, keyed by resolved render node, encoder and FFmpeg binary. Each probe uses `testsrc2` at 320×240, a QSV upload, and `-f null`, with a 30-second timeout. A failed probe selects CQP through `-q:v N`, preserving the quality value and the validated range 1–51.
+
+`VMAFTUNE_QSV_RATE_CONTROL=auto` probes automatically. `icq` forces ICQ and `cqp` forces CQP; both overrides skip probing. Other values fail explicitly. The render node still follows `VMAFTUNE_VAAPI_DEVICE` and normal device discovery. Example:
+
+```bash
+VMAFTUNE_QSV_RATE_CONTROL=cqp vmafx-tune-go corpus --help
+```
+
+`encoder.EncodeResult` exposes `QSVRateControl`, `QSVRateControlReason` and `Provenance` (an `*encoder.EncodeProvenance`, nil when the encoder is not QSV, so `EncodeResult` stays comparable). Corpus JSON rows add `qsv_rate_control` (`"icq"` or `"cqp-fallback"`), `qsv_rate_control_reason`, and matching entries inside `provenance`. Forced CQP records the environment override as its reason. Automatic fallback records the failed probe status and diagnostic. These optional fields preserve the canonical schema-v3 columns. The codec registry's QSV adapter version is 4.
+
+CQP and ICQ may produce different bitstreams and scores; use the recorded mode when comparing runs. The Arc A380 tuner sweep is still pending; see [the state tracker](../state.md).

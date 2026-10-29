@@ -1,0 +1,1 @@
+- Generate Go and Rust status tables from the same API definition as Python, with Go error sentinels and Rust checked conversion from raw codes.

@@ -20,6 +20,7 @@ deprecated in favour of their VMAFx successors: the warnings are opt-in in
 | [GPU backends](gpu.md) | `libvmaf_cuda.h`, `libvmaf_sycl.h`, `libvmaf_hip.h`, `libvmaf_metal.h` |
 | [DNN sessions](dnn.md) | `libvmaf/dnn.h`, the tiny-AI ONNX session |
 | [Embedded MCP server](mcp.md) | `libvmaf_mcp.h` |
+| [Rust installation and versions](rust.md) | Native library discovery, docs.rs mode and crate version policy |
 | [Rust close and retry](rust-context-close.md) | Retry-safe ownership in the Rust wrappers |
 | [Perceptual weighting](perceptual-weight.md) | `perceptual_weight.h` |
 
