@@ -105,6 +105,8 @@ class RecommendResult:
     adapter: str = ""
     runtime_variant: str = ""
     ffmpeg_bin: str = ""
+    qsv_rate_control: str = ""
+    qsv_rate_control_reason: str = ""
 
     def to_row(self, target_vmaf: float) -> dict[str, Any]:
         row: dict[str, Any] = {
@@ -125,6 +127,13 @@ class RecommendResult:
         # actually populated samples — keeps v1 CSV / single-target
         # JSON exporters unchanged and lets v2 readers detect "old
         # v2-without-samples" by the key's absence.
+        if self.qsv_rate_control:
+            row["qsv_rate_control"] = self.qsv_rate_control
+            row["qsv_rate_control_reason"] = self.qsv_rate_control_reason
+            row["provenance"] = {
+                "qsv_rate_control": self.qsv_rate_control,
+                "qsv_rate_control_reason": self.qsv_rate_control_reason,
+            }
         if self.bisect_samples:
             row["bisect_samples"] = [dict(s) for s in self.bisect_samples]
         return row
@@ -163,16 +172,25 @@ def _apply_row_metadata(
     row_metadata: RowMetadataFn | None,
 ) -> RecommendResult:
     """Attach compare-row provenance for CLI runtime variants."""
-    if row_metadata is None:
-        return result
-    meta = dict(row_metadata(codec))
-    return dataclasses.replace(
-        result,
-        codec=codec,
-        adapter=meta.get("adapter", result.adapter),
-        runtime_variant=meta.get("runtime_variant", result.runtime_variant),
-        ffmpeg_bin=meta.get("ffmpeg_bin", result.ffmpeg_bin),
-    )
+    if row_metadata is not None:
+        meta = dict(row_metadata(codec))
+        result = dataclasses.replace(
+            result,
+            codec=codec,
+            adapter=meta.get("adapter", result.adapter),
+            runtime_variant=meta.get("runtime_variant", result.runtime_variant),
+            ffmpeg_bin=meta.get("ffmpeg_bin", result.ffmpeg_bin),
+        )
+    adapter = result.adapter or parse_encoder_runtime_token(codec).adapter
+    if adapter.endswith("_qsv"):
+        from .codec_adapters._qsv_common import cached_qsv_rate_control
+
+        mode = cached_qsv_rate_control(adapter, result.ffmpeg_bin or "ffmpeg")
+        if mode is not None:
+            result = dataclasses.replace(
+                result, qsv_rate_control=mode.mode, qsv_rate_control_reason=mode.reason
+            )
+    return result
 
 
 def _default_predicate(codec: str, src: Path, target_vmaf: float) -> RecommendResult:
@@ -722,6 +740,13 @@ def _probe_hw_dummy_encode(
     import subprocess
 
     argv = _hw_probe_argv(ffmpeg_bin, adapter_encoder, vaapi_device)
+    if adapter_encoder.endswith("_qsv"):
+        from .codec_adapters._qsv_common import qsv_rate_control
+
+        mode = qsv_rate_control(
+            adapter_encoder, ffmpeg_bin=ffmpeg_bin, vaapi_device=vaapi_device, runner=run
+        )
+        argv[-3:-3] = [mode.knob, "23"]
     try:
         probe = run(argv)
     except (FileNotFoundError, subprocess.TimeoutExpired) as exc:

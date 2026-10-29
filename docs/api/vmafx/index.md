@@ -1077,3 +1077,23 @@ symbol version, until the matching RC4 device-frame work lands (the
 through `pkg-config --libs libvmaf` as before. In a build without HIP or
 Metal, their functions are compat functions that report the backend as
 absent, as libvmaf's stubs did.
+
+A program can move off these functions now; each task has one VMAFx
+successor on every backend ([migration table](compat.md), per function):
+
+| Task | libvmaf (CUDA / SYCL / HIP / Metal) | VMAFx |
+| --- | --- | --- |
+| Find a device | `vmaf_sycl_list_devices()`, `vmaf_hip_list_devices()`, `vmaf_metal_list_devices()`, `vmaf_*_available()` | `vmafx_device_count()` and `vmafx_device_info()` ([Devices](#devices)) |
+| Open a device | `vmaf_cuda_state_init()`, `vmaf_sycl_state_init()`, `vmaf_hip_state_init()`, `vmaf_metal_state_init()` | `vmafx_device_create()` with `desc.backend` and `desc.index`, or your runtime objects in `desc.external` |
+| Score on it | `vmaf_*_import_state()` | `vmafx_context_use_device()`, before the features are registered |
+| Close it | `vmaf_*_state_free()` | `vmafx_device_unref()`; contexts and frames hold their own references |
+| Preallocate frames | `vmaf_cuda_preallocate_pictures()`, `vmaf_sycl_preallocate_pictures()`, `vmaf_sycl_init_frame_buffers()` | `vmafx_frame_pool_create()` on the device ([Frame pools](#frame-pools)) |
+| Take a frame to fill | `vmaf_cuda_fetch_preallocated_picture()`, `vmaf_sycl_picture_fetch()`, `vmaf_sycl_get_frame_buffers()` | `vmafx_frame_pool_acquire()`, then `vmafx_frame_planes()` for the plane addresses; `vmafx_frame_to_picture()` while the rest of the program still takes a `VmafPicture` |
+| Hand over decoder output | `vmaf_sycl_dmabuf_import()`, `vmaf_sycl_import_va_surface()`, `vmaf_sycl_import_d3d11_surface()`, `vmaf_sycl_upload_plane()` | `vmafx_context_import_frame()` / `vmafx_frame_import()` with the plane memory and an acquire fence ([Importing a frame](#importing-a-frame)); `vmafx_frame_unref()` in place of `vmaf_sycl_dmabuf_free()` |
+| Score and finish | `vmaf_read_pictures_sycl()`, `vmaf_flush_sycl()` | `vmafx_submit()` and `vmafx_flush()`, as for host frames |
+| Know when a frame is free | `vmaf_sycl_wait_compute()` | The frame's release fence: `vmafx_frame_release_fence()` and `vmafx_fence_wait()`, or the import's `release` callback ([Fences](#fences)) |
+| Profile kernels | `vmaf_sycl_profiling_enable()` / `_disable()`, `vmaf_sycl_profiling_print()` / `_get_string()` | `VMAFX_DEVICE_PROFILING` in `desc.flags`, then `vmafx_device_profile()` (refused on a SYCL device: see [SYCL devices](#sycl-devices)) |
+
+The descriptor fields of each backend, what it imports without a copy and
+which fences it takes are in [CUDA devices](#cuda-devices),
+[HIP devices](#hip-devices) and [SYCL devices](#sycl-devices).

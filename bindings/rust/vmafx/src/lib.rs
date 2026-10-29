@@ -80,12 +80,14 @@ mod error;
 mod model;
 mod picture;
 mod score;
+pub mod status_gen;
 
 pub use context::{Context, ContextBuilder, ContextCloseError, LogLevel};
 pub use error::{Error, Result};
 pub use model::Model;
 pub use picture::{Picture, PixelFormat};
 pub use score::{PoolingMethod, Score};
+pub use status_gen::Status;
 
 /// Return the version string of the libvmaf the crate was linked against.
 ///

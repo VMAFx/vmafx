@@ -415,6 +415,30 @@ Adding a top-level directory or file? Add it to `known_prefixes` or
 fails otherwise, because an unknown path would silently force `full` mode on
 every PR that touches it.
 
+## Pull-request runs and Renovate
+
+A newer push to a pull request cancels the runs of the older push, and Renovate
+does not start rebase waves outside its schedule
+([ADR-3384](../adr/3384-ci-queue-burst-renovate-schedule.md)).
+
+- Every workflow with a `pull_request`, `pull_request_target` or `merge_group`
+  trigger carries a workflow-level `concurrency` block whose group is the same
+  for every push of one pull request and whose `cancel-in-progress` is true off
+  master (the block under "Master push runs" below). A workflow that cannot
+  carry one is listed in `UNSUPERSEDED` of
+  `scripts/ci/tests/test_master_concurrency_contract.py` with its reason; today
+  `docs.yml` (per-job groups, the Pages deploy is never cancelled) and
+  `pr-label-lanes.yml` (its called workflows keep their own groups).
+- `renovate.json` sets `updateNotScheduled: false`: Renovate opens and rebases
+  its branches only in its Monday schedule, at most two pull requests and three
+  branches at once. Ticking a pull request's rebase box on the dependency
+  dashboard still rebases it at once.
+- Check locally:
+
+  ```bash
+  python3 -m pytest scripts/ci/tests/test_master_concurrency_contract.py
+  ```
+
 ## Master push runs
 
 Master commits land every few minutes through a local merge train. A push to
