@@ -242,6 +242,16 @@ The upstream names and defaults in this table are documented on the [GStreamer g
 | `ref_sink`, `dist_sink` pads | `reference`, `distorted` |
 | Reference video output; `VMAF` bus structure | Distorted video output; separate `vmafx-frame`, `vmafx-window`, `vmafx-summary`, `vmafx-provenance` structures |
 
+Pipelines that keep upstream's `vmaf` element keep working: a gst-plugins-bad
+build against the stock `libvmaf.h` loads this project's `libvmaf.so.3`
+compatibility library and produces the same scores, value for value, in every
+output format and with every property above. CI holds this on each library
+change ([upstream consumers](../development/upstream-consumers.md)). The
+compatibility library follows the timeline of
+[ADR-1852](../adr/1852-vmafx-api-redesign.md) decision D7: available in 1.0,
+the `vmafx` element is the default from 1.1, and `libvmaf.so.3` is removed in
+2.0. Move to `vmafx` before 2.0.
+
 The feature-spec examples are also used in the [FFmpeg property migration guide](ffmpeg.md); library logging is routed by [`gst_vmafx_log_callback`](../../gstreamer/src/gstvmafx_util.c). Only upstream properties listed on the cited page are mapped here.
 
 ## Limits and diagnostics {#limits}

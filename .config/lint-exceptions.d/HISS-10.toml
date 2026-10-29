@@ -1,0 +1,15 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
+# Declared build-warnings gaps (praetor HISS-10): CI lanes that compile with Meson without
+# warnings as errors. Format and rules: scripts/ci/lint_exceptions.py.
+# scripts/ci/praetor_tidy_coverage.py copies each entry into the `exceptions:` block of
+# .standards.yaml, where praetor reads it; praetor accepts an expiry at most 90 days out. The path
+# is the workflow the gate's failure line names.
+
+[[exception]]
+path = ".github/workflows/ffmpeg-integration.yml"
+category = "A"
+entered = 2026-10-28
+reason = "Category A, interval to the stated expiry. The consumers job builds Netflix's read-only libvmaf at the upstream parity pin as the reference library for the upstream GStreamer element (issue 2237); with -Dwerror=true that tree fails on 19 gcc warnings of its own (11 maybe-uninitialized, 6 discarded-qualifiers, 2 unused-variable). The fork does not patch the reference tree. Ends when praetor's log-scan gate for vendored trees (praetor issue 825) lands or the pin moves past the warnings."
+expires = 2027-01-04

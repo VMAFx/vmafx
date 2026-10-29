@@ -18,6 +18,7 @@ A request scores the same pair the same way through every VMAFx surface:
 | C API | `vmafx_context_create()` with `VmafxContextConfig`, then frames and `vmafx_score_pooled()` |
 | gRPC `Score` | `ScoreRequest` with `ScoreOptions` |
 | `POST /v1/score` | the same `ScoreRequest` in JSON, with the proto field names |
+| gRPC `ScoreStream` | a `StreamConfig` with the size, pixel format and model, then the frames as `FramePair` messages; the final `AggregateScore` holds the pooled score |
 
 The server returns lossless scores (`precision` `max`, `%.17g`) unless the
 request asks for another precision, so the score it returns is the double
@@ -30,9 +31,10 @@ meson test -C build test_vmafx_score_contract   # suite: contract
 ```
 
 It runs each request through the `vmaf` binary of the build, the C API
-(`build/test/vmafx_score_contract`), gRPC `Score` and `POST /v1/score`, and
-fails unless all four report the same score and the same library version and
-ABI. It skips, with the reason, when Go or the fixtures are missing; a
+(`build/test/vmafx_score_contract`), gRPC `Score`, `POST /v1/score` and gRPC
+`ScoreStream`, and fails unless every surface reports the same score and the
+same library version and ABI. `StreamConfig` has no subsampling field, so the
+every-third-frame request runs through the other four surfaces only. It skips, with the reason, when Go or the fixtures are missing; a
 skipped run is never reported as a pass.
 
 ## Requests
@@ -85,6 +87,14 @@ build that ran):
 
 Every scoring response carries `provenance`: the gRPC `ScoreResponse`, the
 `POST /v1/score` body and the final `AggregateScore` of `ScoreStream`.
+
+Messages that carry no pooled score have no provenance of their own:
+
+| Message | Why it has no provenance |
+| --- | --- |
+| `FrameScore` (per-frame `ScoreStream` messages) | The stream's final `AggregateScore` carries the record for every frame of the stream |
+| gRPC `Health`, `GET /v1/health`, `GET /v1/ready` | Probes report the server's state, not a score |
+| `ErrorResponse` and gRPC error statuses | A failed request produced no score to describe |
 
 | Field | Meaning |
 | --- | --- |

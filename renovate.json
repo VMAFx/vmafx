@@ -454,6 +454,17 @@
       ],
       "groupName": "Rust toolchain",
       "automerge": false
+    },
+    {
+      "description": "praetor-managed engine: updates arrive in one coordinated adoption pull request",
+      "matchPackageNames": [
+        "github.com/cordanaLLM/praetor",
+        "github.com/cordanaLLM/praetor/**",
+        "github.com/cordanaLLM/praetor/cmd/standardsctl",
+        "cordanaLLM/praetor",
+        "cordanaLLM/praetor/**"
+      ],
+      "enabled": false
     }
   ],
   "customManagers": [
