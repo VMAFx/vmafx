@@ -17,10 +17,10 @@ the feature macro rather than tying availability to a fork version.
  2 files changed, 7 insertions(+), 1 deletion(-)
 
 diff --git a/doc/filters.texi b/doc/filters.texi
-index 3534c87c9be9374db14189a28324cf95efc4b576..f3131824804ac8a1b21c864e9d0eca3aecbfb7a4 100644
+index 9ebe763b81e117e042d557ce723a8a2e837eb9b6..de6ded8994a401c515c652f52e64553853658d4b 100644
 --- a/doc/filters.texi
 +++ b/doc/filters.texi
-@@ -17470,7 +17470,11 @@ Set the format of the log file (xml, json, csv, or sub).
+@@ -17664,7 +17664,11 @@ Set the format of the log file (xml, json, csv, or sub).
  
  @item pool
  Set the pool method to be used for computing vmaf.
