@@ -35,6 +35,7 @@ from . import (
     emit_config,
     emit_conformance,
     emit_docs,
+    emit_encoders,
     emit_ffmpeg_options,
     emit_formats,
     emit_go,
@@ -51,6 +52,8 @@ from . import (
     emit_symbols,
     gitref,
 )
+from .encoders import DEFINITION as ENCODERS_DEFINITION
+from .encoders import load as load_encoders
 from .headers import plan
 from .loader import load
 from .model import Api, DefinitionError
@@ -138,6 +141,8 @@ def render(api: Api, root: Path | None = None, platform: Platform | None = None)
                 files.update(emit_config.pages(platform.config, root))
     files.update(dict(emit_formats.outputs(api)))
     files.update(dict(emit_rgb.outputs(api)))
+    if root is not None and (root / ENCODERS_DEFINITION).exists():
+        files.update(emit_encoders.files(load_encoders(root / ENCODERS_DEFINITION)))
     return files
 
 
@@ -170,11 +175,13 @@ def check(root: Path, files: dict[str, str]) -> int:
     if stale:
         print(
             f"{len(stale)} generated file(s) differ from {DEFINITION} or "
-            f"{PLATFORM_DEFINITION}: {', '.join(stale)}"
+            f"{PLATFORM_DEFINITION} or {ENCODERS_DEFINITION}: {', '.join(stale)}"
         )
         print("Run: python3 scripts/codegen/vmafx-api.py --write (never edit generated files)")
         return 1
-    print(f"{len(files)} generated files match {DEFINITION} and {PLATFORM_DEFINITION}")
+    print(
+        f"{len(files)} generated files match {DEFINITION}, {PLATFORM_DEFINITION} and {ENCODERS_DEFINITION}"
+    )
     return 0
 
 
