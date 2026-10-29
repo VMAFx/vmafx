@@ -116,6 +116,8 @@ class EncodeResult:
     exit_status: int
     stderr_tail: str
     encoder_stats: tuple[PerFrameStats, ...] = ()
+    qsv_rate_control: str = ""
+    qsv_rate_control_reason: str = ""
 
 
 def _legacy_codec_args(encoder: str, preset: str, quality: int) -> list[str]:
@@ -554,6 +556,45 @@ def _parse_encoder_version(stderr: str, encoder: str) -> str:
     return _hw_encoder_version(encoder)
 
 
+def _apply_qsv_rate_control(req: EncodeRequest, cmd: list, ffmpeg_bin: str, runner_fn):
+    """Probe the QSV rate control once per device and swap the knob in ``cmd``.
+
+    Returns the empty mode for non-QSV encoders, leaving ``cmd`` unchanged.
+    """
+    from .codec_adapters._qsv_common import QsvRateControl, qsv_rate_control
+
+    if not req.encoder.endswith("_qsv"):
+        return QsvRateControl("")
+
+    # Adapt the existing injected subprocess seam to the probe runner.
+    def probe_run(argv):
+        return runner_fn(argv, capture_output=True, text=True, check=False, timeout=30)
+
+    rc_mode = qsv_rate_control(
+        req.encoder,
+        vaapi_device=req.vaapi_device,
+        ffmpeg_bin=ffmpeg_bin,
+        runner=probe_run,
+    )
+    cmd[cmd.index("-global_quality")] = rc_mode.knob
+    return rc_mode
+
+
+def _encode_output_size(req: EncodeRequest, rc: int) -> int:
+    """Byte size of the encode ``req`` produced, 0 when it failed.
+
+    Pass 1 of a 2-pass encode writes only the stats file; the encoded
+    bitstream is discarded via -f null - and req.output is not produced.
+    Skip the size probe for pass 1 to avoid spurious zeros tripping
+    callers that interpret a zero-size on a non-pass-1 encode as failure.
+    """
+    if rc == 0 and req.pass_number != 1 and req.output.exists():
+        return req.output.stat().st_size
+    if rc == 0 and req.pass1_output is not None and req.pass1_output.exists():
+        return req.pass1_output.stat().st_size
+    return 0
+
+
 def run_encode(
     req: EncodeRequest,
     *,
@@ -570,6 +611,7 @@ def run_encode(
     """
     cmd = build_ffmpeg_command(req, ffmpeg_bin=ffmpeg_bin)
     runner_fn = encoder_runner or runner or subprocess.run
+    rc_mode = _apply_qsv_rate_control(req, cmd, ffmpeg_bin, runner_fn)
     started = time.monotonic()
     completed = runner_fn(  # type: ignore[operator]
         cmd, capture_output=True, text=True, check=False
@@ -579,17 +621,7 @@ def run_encode(
     stderr = getattr(completed, "stderr", "") or ""
     rc = int(getattr(completed, "returncode", 1))
 
-    size = 0
-    # Pass 1 of a 2-pass encode writes only the stats file; the
-    # encoded bitstream is discarded via -f null - and req.output is
-    # not produced. Skip the size probe for pass 1 to avoid spurious
-    # zeros tripping callers that interpret a zero-size on a non-pass-1
-    # encode as failure.
-    if rc == 0 and req.pass_number != 1 and req.output.exists():
-        size = req.output.stat().st_size
-    elif rc == 0 and req.pass1_output is not None and req.pass1_output.exists():
-        size = req.pass1_output.stat().st_size
-
+    size = _encode_output_size(req, rc)
     ffmpeg_v, encoder_v = parse_versions(stderr, encoder=req.encoder)
     # ADR-0498 follow-up #7: when the encode succeeded but the per-
     # encoder banner didn't appear in the captured stderr (modern
@@ -611,6 +643,8 @@ def run_encode(
         ffmpeg_version=ffmpeg_v,
         exit_status=rc,
         stderr_tail=_tail(stderr, n=2048),
+        qsv_rate_control=rc_mode.mode,
+        qsv_rate_control_reason=rc_mode.reason,
     )
 
 

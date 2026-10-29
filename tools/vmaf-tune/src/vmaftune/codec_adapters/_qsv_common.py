@@ -3,7 +3,7 @@
 """Shared helpers for Intel QSV codec adapters.
 
 The three QSV encoders (`h264_qsv`, `hevc_qsv`, `av1_qsv`) share the
-same preset vocabulary and the same ICQ-mode quality knob
+same preset vocabulary and the same preferred ICQ quality knob
 (`global_quality`). This module factors that shared shape out so each
 codec adapter is a thin dataclass that pins only what differs (encoder
 name, hardware-availability matrix).
@@ -27,9 +27,11 @@ from __future__ import annotations
 
 import dataclasses
 import itertools
+import os
 import shutil
 import subprocess
-from collections.abc import Sequence
+import threading
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from ..hw_devices import AUTO_VAAPI_DEVICE, resolve_vaapi_device
@@ -55,6 +57,102 @@ QSV_QUALITY_DEFAULT: int = 23
 # The 8-bit filter that moves system-memory frames into QSV surfaces;
 # qsv_upload_filter selects the depth-aware form (ADR-0601).
 QSV_UPLOAD_FILTER: str = "format=nv12,hwupload=extra_hw_frames=64"
+
+
+@dataclasses.dataclass(frozen=True)
+class QsvRateControl:
+    """Selected QSV mode and the reason for an explicit CQP fallback."""
+
+    mode: str = "icq"
+    reason: str = ""
+
+    @property
+    def knob(self) -> str:
+        return "-q:v" if self.mode == "cqp-fallback" else "-global_quality"
+
+
+_QSV_RC_CACHE: dict[tuple[str, str, str], QsvRateControl] = {}
+_QSV_RC_LOCK = threading.Lock()
+
+
+def qsv_rate_control(
+    encoder: str,
+    *,
+    vaapi_device: str = AUTO_VAAPI_DEVICE,
+    ffmpeg_bin: str = "ffmpeg",
+    runner: Callable[..., object] | None = None,
+) -> QsvRateControl:
+    """Probe ICQ once per render node, encoder and FFmpeg runtime.
+
+    Reuse the compare probe runner; overrides bypass the cache and probe.
+    Serialising cache misses also prevents duplicate concurrent probes.
+    """
+    override = os.environ.get("VMAFTUNE_QSV_RATE_CONTROL", "auto")
+    if override not in ("auto", "icq", "cqp"):
+        raise ValueError("VMAFTUNE_QSV_RATE_CONTROL must be auto, icq or cqp")
+    if override != "auto":
+        return QsvRateControl(
+            "icq" if override == "icq" else "cqp-fallback",
+            "" if override == "icq" else "VMAFTUNE_QSV_RATE_CONTROL=cqp",
+        )
+    device = str(Path(resolve_vaapi_device(vaapi_device)).resolve())
+    key = (device, encoder, ffmpeg_bin)
+    from ..compare import _default_probe_runner, _probe_stdout_text
+
+    run = runner or _default_probe_runner
+    with _QSV_RC_LOCK:
+        if key not in _QSV_RC_CACHE:
+            argv = _qsv_icq_probe_args(ffmpeg_bin, device, encoder)
+            try:
+                result = run(argv)
+                rc = int(getattr(result, "returncode", -1))
+                output = _probe_stdout_text(result) or str(getattr(result, "stderr", ""))
+                reason = "" if rc == 0 else f"ICQ probe failed (rc={rc}): {output[-1024:]}"
+            except (OSError, subprocess.SubprocessError) as exc:
+                reason = f"ICQ probe failed: {exc}"
+            _QSV_RC_CACHE[key] = QsvRateControl("cqp-fallback" if reason else "icq", reason)
+        return _QSV_RC_CACHE[key]
+
+
+def _qsv_icq_probe_args(ffmpeg_bin: str, device: str, encoder: str) -> list[str]:
+    """Build the bounded ICQ smoke encode; no input files or output artifact."""
+    argv = [ffmpeg_bin, "-hide_banner", "-loglevel", "error"]
+    argv += qsv_device_init_args(device)
+    argv += [
+        "-f",
+        "lavfi",
+        "-i",
+        "testsrc2=size=320x240:rate=24",
+        "-frames:v",
+        "8",
+        "-vf",
+        QSV_UPLOAD_FILTER,
+        "-c:v",
+        encoder,
+        "-preset",
+        "veryfast",
+        "-global_quality",
+        "23",
+        "-f",
+        "null",
+        "-",
+    ]
+    return argv
+
+
+def cached_qsv_rate_control(encoder: str, ffmpeg_bin: str = "ffmpeg") -> QsvRateControl | None:
+    """Read metadata without starting a probe (compare row rendering)."""
+    if not encoder.endswith("_qsv"):
+        return None
+    override = os.environ.get("VMAFTUNE_QSV_RATE_CONTROL", "auto")
+    if override in ("icq", "cqp"):
+        return QsvRateControl(
+            "icq" if override == "icq" else "cqp-fallback",
+            "" if override == "icq" else "VMAFTUNE_QSV_RATE_CONTROL=cqp",
+        )
+    device = str(Path(resolve_vaapi_device()).resolve())
+    with _QSV_RC_LOCK:
+        return _QSV_RC_CACHE.get((device, encoder, ffmpeg_bin))
 
 
 def qsv_upload_filter(pix_fmt: str = "", extra_params: Sequence[str] = ()) -> str:
@@ -189,7 +287,8 @@ class BaseQsvAdapter:
     encoder: str = "h264_qsv"
     # Cache-key component (ADR-0298): bump when the argv, presets or range
     # change. "3": the upload surface format follows the requested output depth.
-    adapter_version: str = "3"
+    # "4": runtime ICQ probe with named CQP fallback.
+    adapter_version: str = "4"
     quality_knob: str = "global_quality"
     quality_range: tuple[int, int] = QSV_QUALITY_RANGE
     quality_default: int = QSV_QUALITY_DEFAULT
@@ -226,19 +325,24 @@ class BaseQsvAdapter:
         preset_to_qsv(preset)
         validate_global_quality(quality)
 
-    def ffmpeg_codec_args(self, preset: str, quality: int) -> list[str]:
+    def ffmpeg_codec_args(
+        self, preset: str, quality: int, *, rate_control: str = "icq"
+    ) -> list[str]:
         """FFmpeg argv slice for ICQ-mode QSV encode.
 
-        QSV's quality knob is ``-global_quality`` (not ``-crf``); the
-        preset vocabulary maps identity-style onto FFmpeg's QSV bridge
-        names per :func:`preset_to_qsv`.
+        ICQ retains ``-global_quality``; an explicit ``cqp-fallback``
+        selection uses ``-q:v`` with the same validated quality value.
+        Runtime probing belongs to the encode driver, keeping this builder pure.
         """
+        self.validate(preset, quality)
+        if rate_control not in ("icq", "cqp-fallback"):
+            raise ValueError(f"unknown QSV rate control {rate_control!r}")
         return [
             "-c:v",
             self.encoder,
             "-preset",
             preset_to_qsv(preset),
-            "-global_quality",
+            QsvRateControl(rate_control).knob,
             str(quality),
         ]
 
@@ -291,14 +395,7 @@ class BaseQsvAdapter:
 
     def probe_args(self) -> list[str]:
         """Predictor probe-encode argv: QSV ``veryfast`` preset, fixed ICQ."""
-        return [
-            "-c:v",
-            self.encoder,
-            "-preset",
-            preset_to_qsv(self.probe_preset),
-            "-global_quality",
-            str(self.probe_quality),
-        ]
+        return self.ffmpeg_codec_args(self.probe_preset, self.probe_quality)
 
     def hw_pre_input_args(self, vaapi_device: str = AUTO_VAAPI_DEVICE) -> list[str]:
         """Pre-input device argv of every encode (:func:`qsv_device_init_args`)."""
