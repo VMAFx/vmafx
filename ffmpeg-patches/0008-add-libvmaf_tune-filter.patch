@@ -33,10 +33,10 @@ ADR: docs/adr/0312-ffmpeg-patches-vmaf-tune-integration.md
  create mode 100644 libavfilter/vf_libvmaf_tune.c
 
 diff --git a/configure b/configure
-index 272760dfa83540608d3d1c9b3ee24727c6247c37..051be41257c98139dc4f59c6089fefc1575526d8 100755
+index 01c8286d4ad8566faca55b312fe89295097ed842..dacce8d856276726532f9e5ef492f04364b5ed5f 100755
 --- a/configure
 +++ b/configure
-@@ -4303,6 +4303,7 @@ libvmaf_cuda_filter_deps="libvmaf libvmaf_cuda ffnvcodec"
+@@ -4309,6 +4309,7 @@ libvmaf_cuda_filter_deps="libvmaf libvmaf_cuda ffnvcodec"
  libvmaf_sycl_filter_deps="libvmaf libvmaf_sycl libvpl"
  libvmaf_vulkan_filter_deps="libvmaf libvmaf_vulkan vulkan"
  vmaf_pre_filter_deps="libvmaf"
@@ -45,10 +45,10 @@ index 272760dfa83540608d3d1c9b3ee24727c6247c37..051be41257c98139dc4f59c6089fefc1
  zoompan_filter_deps="swscale"
  zscale_filter_deps="libzimg const_nan"
 diff --git a/libavfilter/Makefile b/libavfilter/Makefile
-index 96d39b18e3fb2f88b47dcef563cef710b6fd0e6c..3b20788df758b060847768e731718024b4a75a49 100644
+index bbbe62432bff9ae656030c7602e21f91adfba6d9..bce78de2a1768ecf0d39b1e7f7def55530600724 100644
 --- a/libavfilter/Makefile
 +++ b/libavfilter/Makefile
-@@ -573,6 +573,7 @@ OBJS-$(CONFIG_VIF_FILTER)                    += vf_vif.o framesync.o
+@@ -586,6 +586,7 @@ OBJS-$(CONFIG_VIF_FILTER)                    += vf_vif.o framesync.o
  OBJS-$(CONFIG_VIGNETTE_FILTER)               += vf_vignette.o
  OBJS-$(CONFIG_VMAFMOTION_FILTER)             += vf_vmafmotion.o framesync.o
  OBJS-$(CONFIG_VMAF_PRE_FILTER)               += vf_vmaf_pre.o
@@ -57,10 +57,10 @@ index 96d39b18e3fb2f88b47dcef563cef710b6fd0e6c..3b20788df758b060847768e731718024
  OBJS-$(CONFIG_FRC_AMF_FILTER)                += vf_frc_amf.o vf_amf_common.o
  OBJS-$(CONFIG_VPP_QSV_FILTER)                += vf_vpp_qsv.o
 diff --git a/libavfilter/allfilters.c b/libavfilter/allfilters.c
-index 102fd55c38821b98c5a760019b6feda0f64fb5b8..9bd3aa0163aa8ef1a95897dfab1b75246b132595 100644
+index 4ee8c10bc4ad7f791a2d442d8f3a28a68515db5f..1d322ad5a9abc07739407442880a5b6c835cef7b 100644
 --- a/libavfilter/allfilters.c
 +++ b/libavfilter/allfilters.c
-@@ -352,6 +352,7 @@ extern const FFFilter ff_vf_libvmaf;
+@@ -357,6 +357,7 @@ extern const FFFilter ff_vf_libvmaf;
  extern const FFFilter ff_vf_libvmaf_cuda;
  extern const FFFilter ff_vf_libvmaf_sycl;
  extern const FFFilter ff_vf_libvmaf_vulkan;

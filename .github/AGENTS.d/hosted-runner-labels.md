@@ -4,7 +4,6 @@ paths:
   - .github/actionlint.yaml
   - scripts/ci/check_hosted_runner_labels.py
   - scripts/ci/tests/test_hosted_runner_labels.py
-  - .config/lint-exceptions.d/hosted-runner-label.toml
 invariant: Hosted Linux jobs name `ubuntu-26.04` / `ubuntu-26.04-arm`; no floating label; older image needs declaration.
 ---
 # Hosted Linux runner labels
@@ -42,9 +41,9 @@ script comment lines not read.
 - Fallback entry keys: `path`, `job`, `label`, `reason`, `expires`. One entry
   per job of workflow file; same file + job twice = duplicate (`PART_KEYS`
   in `scripts/ci/lint_exceptions.py`, this rule only).
-- Fallbacks today, label `ubuntu-24.04`, end 2026-10-29: `ffmpeg-work` +
-  `ffmpeg-sycl-work` (`ffmpeg-integration.yml`): FFmpeg source warnings with
-  26.04 gcc, row `T-CI-FFMPEG-WARNINGS-UBUNTU-2604-2026-10-11`.
+- Fallbacks today: none. `ffmpeg-work` + `ffmpeg-sycl-work` ended with fix
+  series v0.5.0 (row `T-CI-FFMPEG-WARNINGS-UBUNTU-2604-2026-10-11`); the file
+  does not exist.
 - Job fixed on 26.04: label back + entry out, same PR. Stale entry fails check.
 - Remove fallback file with last entry. Do not keep empty file.
 - Expired fallback, stale fallback, fallback naming floating label: each fails

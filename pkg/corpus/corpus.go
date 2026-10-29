@@ -684,6 +684,11 @@ type rowInput struct {
 // buildRow assembles one schema-v3 corpus row.
 func buildRow(in rowInput) map[string]any {
 	row := baseRow(in)
+	if in.Enc.QSVRateControl != "" {
+		row["qsv_rate_control"] = in.Enc.QSVRateControl
+		row["qsv_rate_control_reason"] = in.Enc.QSVRateControlReason
+		row["provenance"] = map[string]string{"qsv_rate_control": in.Enc.QSVRateControl, "qsv_rate_control_reason": in.Enc.QSVRateControlReason}
+	}
 	addCanonicalFeatures(row, in.Score)
 	for key, value := range AggregateStats(in.Enc.EncoderStats) {
 		row[key] = value

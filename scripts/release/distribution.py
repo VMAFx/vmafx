@@ -364,6 +364,26 @@ def generate(manifest: dict[str, Any], version: str, digests: dict[str, str]) ->
     return files
 
 
+# The tap is a REUSE repository: its formula carries the tap's own licence header. The tags
+# are joined here so this file holds one licence declaration of its own.
+TAP_HEADER = (
+    "# SPDX-"
+    "FileCopyrightText: 2026 Lusoris <lusoris@pm.me>\n"
+    "# SPDX-"
+    "License-Identifier: EUPL-1.2\n"
+)
+TAP_FORMULA = Path("Formula") / "vmafx.rb"
+
+
+def tap_formula(manifest: dict[str, Any], version: str, sha256: str) -> str:
+    """The formula as the Homebrew tap stores it: the generated formula below the tap header."""
+    if not VERSION.match(version):
+        raise DistributionError(f"version {version!r} is not MAJOR.MINOR.PATCH[-PRE]")
+    if not SHA256.match(sha256):
+        raise DistributionError("--source-sha256 needs 64 lowercase hex digits")
+    return TAP_HEADER + homebrew_formula(manifest, version, sha256)
+
+
 # -------------------------------------------------------------------------------- main
 
 
@@ -377,6 +397,12 @@ def main(argv: list[str] | None = None) -> int:
     writer.add_argument("--source-sha256", required=True)
     writer.add_argument("--winget-sha256", required=True)
     writer.add_argument("--out", type=Path, required=True)
+    tap = commands.add_parser("homebrew", help="write the tap's Formula/vmafx.rb")
+    tap.add_argument("--version", required=True)
+    tap.add_argument("--source-sha256", required=True)
+    tap.add_argument("--out", type=Path, required=True)
+    url = commands.add_parser("source-url", help="print the source archive URL of a version")
+    url.add_argument("--version", required=True)
     args = parser.parse_args(argv)
     try:
         manifest = load(args.root)
@@ -386,8 +412,17 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"distribution: {problem}", file=sys.stderr)
             print(f"distribution: {len(problems)} problem(s) in {MANIFEST}")
             return 1 if problems else 0
-        digests = {"source": args.source_sha256, "winget": args.winget_sha256}
-        for path, text in generate(manifest, args.version, digests).items():
+        if args.command == "source-url":
+            if not VERSION.match(args.version):
+                raise DistributionError(f"version {args.version!r} is not MAJOR.MINOR.PATCH[-PRE]")
+            print(source_url(manifest, args.version))
+            return 0
+        if args.command == "homebrew":
+            files = {TAP_FORMULA: tap_formula(manifest, args.version, args.source_sha256)}
+        else:
+            digests = {"source": args.source_sha256, "winget": args.winget_sha256}
+            files = {Path(p): t for p, t in generate(manifest, args.version, digests).items()}
+        for path, text in files.items():
             target = args.out / path
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(text, encoding="utf-8")
