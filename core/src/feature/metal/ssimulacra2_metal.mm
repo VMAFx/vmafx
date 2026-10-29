@@ -401,13 +401,13 @@ struct Ss2mYuvCoeffs {
     float c_off;
 };
 
-Ss2mYuvCoeffs ss2m_yuv_coeffs(int yuv_matrix)
+Ss2mYuvCoeffs ss2m_yuv_coeffs(const Ssimu2StateMetal *s)
 {
     float kr = 0.299f;
     float kg = 0.587f;
     float kb = 0.114f;
     int limited = 1;
-    switch (yuv_matrix) {
+    switch (s->yuv_matrix) {
     case SS2M_MATRIX_BT709_FULL:
         limited = 0;
         /* fall through */
@@ -448,7 +448,7 @@ void ss2m_picture_to_linear_rgb(const Ssimu2StateMetal *s, const VmafPicture *pi
 
     const float peak = (float)((1u << s->bpc) - 1u);
     const float inv_peak = 1.0f / peak;
-    const Ss2mYuvCoeffs k = ss2m_yuv_coeffs(s->yuv_matrix);
+    const Ss2mYuvCoeffs k = ss2m_yuv_coeffs(s);
 
     for (unsigned y = 0; y < h; y++) {
         for (unsigned x = 0; x < w; x++) {
