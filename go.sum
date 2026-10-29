@@ -133,8 +133,8 @@ github.com/fxamacker/cbor/v2 v2.9.6 h1:NHZPxuUjJXQjX9itA785y/5NKSlI4HQ+S7noZsmI7
 github.com/fxamacker/cbor/v2 v2.9.6/go.mod h1:4EaZp6ClVunETjQ4GHmGNzysDK91Lr+r6Yz6tJqzVCw=
 github.com/gabriel-vasile/mimetype v1.4.16 h1:5izNFuvA37st1dDRAcA7TtmngBmRgiIPDmTtiEvjx1E=
 github.com/gabriel-vasile/mimetype v1.4.16/go.mod h1:3oFFwxX8kTklZwzIl2aQEDZT0lKY8xH92ST88bAwba4=
-github.com/getkin/kin-openapi v0.151.0 h1:p8NIstL53h620DnlO9R4pR4QRkEzJ3jbw9flb4kc1hg=
-github.com/getkin/kin-openapi v0.151.0/go.mod h1:1+BHDzstro+P5CKtPy1X4PfofnFgmRe6uvMy9+r9fKY=
+github.com/getkin/kin-openapi v0.152.0 h1:XRVo77lMRyOGMHf1paMu9lxX3wzuQDZeprssZJnz/x8=
+github.com/getkin/kin-openapi v0.152.0/go.mod h1:1+BHDzstro+P5CKtPy1X4PfofnFgmRe6uvMy9+r9fKY=
 github.com/gkampitakis/ciinfo v0.3.4 h1:5eBSibVuSMbb/H6Elc0IIEFbkzCJi3lm94n0+U7Z0KY=
 github.com/gkampitakis/ciinfo v0.3.4/go.mod h1:1NIwaOcFChN4fa/B0hEBdAb6npDlFL8Bwx4dfRLRqAo=
 github.com/gkampitakis/go-snaps v0.5.23 h1:okh5QR48zpUjpWtu65AtqxdCY8huJq+dEDuUzd1PuKg=
@@ -213,10 +213,10 @@ github.com/golang-migrate/migrate/v4 v4.20.1 h1:2N/ToVTKrKl58ynBpgeVJ4In7VcLCjWT
 github.com/golang-migrate/migrate/v4 v4.20.1/go.mod h1:DDPgKVb4ovSWc4FwSPfV2Uz1160f4XBiTHTrAJtljmM=
 github.com/golang/protobuf v1.5.4 h1:i7eJL8qZTpSEXOPTxNKhASYpMn+8e5Q6AdndVa1dWek=
 github.com/golang/protobuf v1.5.4/go.mod h1:lnTiLA8Wa4RWRcIUkrtSVa5nRhsEGBg48fD6rSs7xps=
-github.com/golusoris/golusoris v0.19.0 h1:KOzuion7kOEajBdAmBTy2odRYELXQpji1JYVrUfl++4=
-github.com/golusoris/golusoris v0.19.0/go.mod h1:MD9sSoFpwOljvvcWwPAZlFdIoVqwsXbQKUmr3C7f0bU=
-github.com/golusoris/golusoris/core v0.12.0 h1:nsvxTGebXVc7Lkd9HNNb9xJjNWxSCqMwmyevCWkfbjU=
-github.com/golusoris/golusoris/core v0.12.0/go.mod h1:/3hKagMPJaXaUIdljHXUQwLlPvqH0iJVRuzx33Wvx1U=
+github.com/golusoris/golusoris v0.20.0 h1:bw2FTdIT948NLUXc50ipzcfK1diCbI5e0mC164FAdyM=
+github.com/golusoris/golusoris v0.20.0/go.mod h1:71BKJYihr4GZcMDqtb6/WPpthwjXTFI149uwWEcZ3Yg=
+github.com/golusoris/golusoris/core v0.12.1 h1:3vF0NhNDHV18bm8QXPRDjETH2cERaGIk2XcMzS5l5GY=
+github.com/golusoris/golusoris/core v0.12.1/go.mod h1:jMQVCAC6wD8cykf28iCmb/NB56kP9YCeg46f5Zf5kJQ=
 github.com/google/cel-go v0.29.2 h1:ZtDxkeiMmz0mxbKDYiNkE5Lk7V5edMRcaaDf2jX002k=
 github.com/google/cel-go v0.29.2/go.mod h1:X0bD6iVNR8pkROSOoHVdgTkzmRcosof7WQqCD6wcMc8=
 github.com/google/gnostic-models v0.7.1 h1:SisTfuFKJSKM5CPZkffwi6coztzzeYUhc3v4yxLWH8c=
