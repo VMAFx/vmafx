@@ -240,7 +240,7 @@ def test_crf_range_defaults_to_encoder_absolute_range():
         **_kwargs(),
     )
     assert result.ok is True
-    # libx264 absolute range hi = 51 (see _ABSOLUTE_CRF_RANGE_BY_NAME).
+    # libx264 absolute range hi = 51 (registry absolute_range, ADR-3388).
     assert result.best_crf == 51
 
 

@@ -13,7 +13,10 @@
 // The Python original is nineteen dataclasses across a package; the Go port
 // collapses them into one data-driven table because every adapter differs
 // only in (a) the flag names, (b) the preset mapping and (c) whether the
-// preset token is emitted at all. Behaviour matches the Python argv for
+// preset token is emitted at all. The codec facts (quality knob and window,
+// presets, probe settings, capability flags) come from the encoder registry
+// (api/vmafx-encoders.toml, ADR-3388), which the Python adapters read too;
+// this file keeps only the argv shape. Behaviour matches the Python argv for
 // every registered codec — see codecadapter_test.go, whose golden table is
 // transcribed from a live dump of the Python registry.
 package codecadapter
@@ -23,6 +26,8 @@ import (
 	"maps"
 	"slices"
 	"strconv"
+
+	"github.com/VMAFx/vmafx/pkg/encoderregistry"
 )
 
 // QualityFlagStyle selects how the adapter emits its quality knob.
@@ -119,40 +124,6 @@ type Adapter struct {
 	availableFn func() bool
 }
 
-// swPresets is the nine-name libx264 mnemonic table.
-var swPresets = []string{
-	"ultrafast", "superfast", "veryfast", "faster", "fast",
-	"medium", "slow", "slower", "veryslow",
-}
-
-// x265Presets adds "placebo" on top of the x264 nine.
-var x265Presets = []string{
-	"ultrafast", "superfast", "veryfast", "faster", "fast",
-	"medium", "slow", "slower", "veryslow", "placebo",
-}
-
-// hwPresets is the ten-name hardware-encoder mnemonic table (NVENC / AMF).
-var hwPresets = []string{
-	"ultrafast", "superfast", "veryfast", "faster", "fast",
-	"medium", "slow", "slower", "slowest", "placebo",
-}
-
-// aomPresets is the libaom / VVenC / libvpx slow-to-fast ordering.
-var aomPresets = []string{
-	"placebo", "slowest", "slower", "slow", "medium",
-	"fast", "faster", "veryfast", "superfast", "ultrafast",
-}
-
-// qsvPresets is the seven-name Intel QSV table (no ultrafast/superfast).
-var qsvPresets = []string{
-	"veryslow", "slower", "slow", "medium", "fast", "faster", "veryfast",
-}
-
-// svtPresets is SVT-AV1's eight-name table.
-var svtPresets = []string{
-	"placebo", "slowest", "slower", "slow", "medium", "fast", "faster", "veryfast",
-}
-
 // nvencPresetMap collapses the ten mnemonics onto NVENC's p1..p7.
 var nvencPresetMap = map[string]string{
 	"ultrafast": "p1", "superfast": "p1", "veryfast": "p1",
@@ -221,9 +192,7 @@ var registry = map[string]*Adapter{}
 // nvenc builds one NVENC-family adapter.
 func nvenc(name string) *Adapter {
 	return &Adapter{
-		Name: name, Encoder: name, QualityKnob: "cq",
-		QualityRange: [2]int{15, 40}, QualityDefault: 23, InvertQuality: true,
-		Presets: hwPresets, ProbePreset: "ultrafast", ProbeQuality: 28,
+		Name: name, Encoder: name,
 		qualityStyle: StyleSingleFlag, qualityFlag: "-cq",
 		presetStyle: PresetFlagValue, presetFlag: "-preset", presetMap: nvencPresetMap,
 	}
@@ -232,9 +201,7 @@ func nvenc(name string) *Adapter {
 // amf builds one AMD AMF-family adapter.
 func amf(name string) *Adapter {
 	return &Adapter{
-		Name: name, Encoder: name, QualityKnob: "qp",
-		QualityRange: [2]int{15, 40}, QualityDefault: 23, InvertQuality: true,
-		Presets: hwPresets, ProbePreset: "ultrafast", ProbeQuality: 28,
+		Name: name, Encoder: name,
 		qualityStyle: StyleAMFQP,
 		presetStyle:  PresetAMFQuality, presetMap: amfQualityMap,
 	}
@@ -243,10 +210,7 @@ func amf(name string) *Adapter {
 // qsvAdapter builds one Intel QSV-family adapter.
 func qsvAdapter(name string) *Adapter {
 	return &Adapter{
-		Name: name, Encoder: name, QualityKnob: "global_quality",
-		AdapterVersion: "4", // "3": upload follows output depth; "4": runtime ICQ probe with named CQP fallback.
-		QualityRange:   [2]int{1, 51}, QualityDefault: 23, InvertQuality: true,
-		Presets: qsvPresets, ProbePreset: "veryfast", ProbeQuality: 23,
+		Name: name, Encoder: name,
 		qualityStyle: StyleSingleFlag, qualityFlag: "-global_quality",
 		presetStyle: PresetFlagValue, presetFlag: "-preset",
 	}
@@ -255,13 +219,7 @@ func qsvAdapter(name string) *Adapter {
 // videotoolbox builds one Apple VideoToolbox adapter.
 func videotoolbox(name string) *Adapter {
 	return &Adapter{
-		// Both h264_ and hevc_videotoolbox carry adapter_version 1 in the
-		// Python registry; prores_ and av1_videotoolbox are literals with their
-		// own values and do not come through this helper.
-		AdapterVersion: "1",
-		Name:           name, Encoder: name, QualityKnob: "q:v",
-		QualityRange: [2]int{0, 100}, QualityDefault: 50, InvertQuality: false,
-		Presets: swPresets, ProbePreset: "ultrafast", ProbeQuality: 60,
+		Name: name, Encoder: name,
 		qualityStyle: StyleSingleFlag, qualityFlag: "-q:v",
 		presetStyle: PresetRealtime, presetMap: vtRealtimeMap,
 	}
@@ -269,11 +227,7 @@ func videotoolbox(name string) *Adapter {
 
 func libx264Adapter() *Adapter {
 	return &Adapter{
-		Name: "libx264", Encoder: "libx264", QualityKnob: "crf",
-		QualityRange: [2]int{0, 51}, QualityDefault: 23, InvertQuality: true,
-		Presets: swPresets, AdapterVersion: "2",
-		ProbePreset: "ultrafast", ProbeQuality: 28,
-		SupportsQPFile: true, SupportsEncoderStats: true, SupportsTwoPass: true,
+		Name: "libx264", Encoder: "libx264",
 		qualityStyle: StyleSingleFlag, qualityFlag: "-crf",
 		presetStyle: PresetFlagValue, presetFlag: "-preset",
 	}
@@ -281,10 +235,7 @@ func libx264Adapter() *Adapter {
 
 func libx265Adapter() *Adapter {
 	return &Adapter{
-		Name: "libx265", Encoder: "libx265", QualityKnob: "crf",
-		QualityRange: [2]int{15, 40}, QualityDefault: 28, InvertQuality: true,
-		Presets: x265Presets, AdapterVersion: "2", ProbePreset: "ultrafast", ProbeQuality: 28,
-		SupportsEncoderStats: true, SupportsTwoPass: true, TwoPassABRAtPass1Bitrate: true,
+		Name: "libx265", Encoder: "libx265",
 		twoPassStyle: TwoPassX265Params,
 		qualityStyle: StyleSingleFlag, qualityFlag: "-crf",
 		presetStyle: PresetFlagValue, presetFlag: "-preset",
@@ -293,10 +244,7 @@ func libx265Adapter() *Adapter {
 
 func libaomAV1Adapter() *Adapter {
 	return &Adapter{
-		Name: "libaom-av1", Encoder: "libaom-av1", QualityKnob: "crf",
-		QualityRange: [2]int{0, 63}, QualityDefault: 35, InvertQuality: true,
-		Presets: aomPresets, ProbePreset: "ultrafast", ProbeQuality: 35,
-		SupportsQPFile: true, SupportsTwoPass: true,
+		Name: "libaom-av1", Encoder: "libaom-av1",
 		qualityStyle: StyleSingleFlag, qualityFlag: "-crf",
 		presetStyle: PresetFlagValue, presetFlag: "-cpu-used", presetMap: aomCPUUsedMap,
 	}
@@ -304,10 +252,7 @@ func libaomAV1Adapter() *Adapter {
 
 func proResVideoToolboxAdapter() *Adapter {
 	return &Adapter{
-		Name: "prores_videotoolbox", Encoder: "prores_videotoolbox", AdapterVersion: "1",
-		QualityKnob: "profile:v", QualityRange: [2]int{0, 5}, QualityDefault: 3,
-		InvertQuality: false, Presets: swPresets,
-		ProbePreset: "ultrafast", ProbeQuality: 0,
+		Name: "prores_videotoolbox", Encoder: "prores_videotoolbox",
 		qualityStyle: StyleProResProfile, proresProfiles: proresProfileNames,
 		presetStyle: PresetRealtime, presetMap: vtRealtimeMap,
 	}
@@ -316,9 +261,6 @@ func proResVideoToolboxAdapter() *Adapter {
 func av1VideoToolboxAdapter() *Adapter {
 	return &Adapter{
 		Name: "av1_videotoolbox", Encoder: "av1_videotoolbox",
-		AdapterVersion: "0-placeholder", QualityKnob: "q:v",
-		QualityRange: [2]int{0, 100}, QualityDefault: 50, InvertQuality: false,
-		Presets: swPresets, ProbePreset: "ultrafast", ProbeQuality: 60,
 		qualityStyle: StyleSingleFlag, qualityFlag: "-q:v",
 		presetStyle: PresetRealtime, presetMap: vtRealtimeMap,
 		unavailable: "av1_videotoolbox awaiting upstream FFmpeg encoder support — see ADR-0339",
@@ -328,20 +270,15 @@ func av1VideoToolboxAdapter() *Adapter {
 
 func libvvencAdapter() *Adapter {
 	return &Adapter{
-		Name: "libvvenc", Encoder: "libvvenc", AdapterVersion: "2", QualityKnob: "qp",
-		QualityRange: [2]int{17, 50}, QualityDefault: 32, InvertQuality: true,
-		Presets: aomPresets, ProbePreset: "faster", ProbeQuality: 32,
-		SupportsTwoPass: true,
-		qualityStyle:    StyleSingleFlag, qualityFlag: "-qp",
+		Name: "libvvenc", Encoder: "libvvenc",
+		qualityStyle: StyleSingleFlag, qualityFlag: "-qp",
 		presetStyle: PresetFlagValue, presetFlag: "-preset", presetMap: vvencPresetMap,
 	}
 }
 
 func libsvtAV1Adapter() *Adapter {
 	return &Adapter{
-		Name: "libsvtav1", Encoder: "libsvtav1", QualityKnob: "crf",
-		QualityRange: [2]int{20, 50}, QualityDefault: 35, InvertQuality: true,
-		Presets: svtPresets, ProbePreset: "veryfast", ProbeQuality: 35,
+		Name: "libsvtav1", Encoder: "libsvtav1",
 		qualityStyle: StyleSingleFlag, qualityFlag: "-crf",
 		presetStyle: PresetFlagValue, presetFlag: "-preset", presetMap: svtPresetMap,
 	}
@@ -349,11 +286,8 @@ func libsvtAV1Adapter() *Adapter {
 
 func libvpxVP9Adapter() *Adapter {
 	return &Adapter{
-		Name: "libvpx-vp9", Encoder: "libvpx-vp9", AdapterVersion: "1", QualityKnob: "crf",
-		QualityRange: [2]int{0, 63}, QualityDefault: 32, InvertQuality: true,
-		Presets: aomPresets, ProbePreset: "ultrafast", ProbeQuality: 32,
-		SupportsTwoPass: true,
-		qualityStyle:    StyleSingleFlag, qualityFlag: "-crf",
+		Name: "libvpx-vp9", Encoder: "libvpx-vp9",
+		qualityStyle: StyleSingleFlag, qualityFlag: "-crf",
 		presetStyle: PresetVPXDeadline, presetMap: vpxCPUUsedMap,
 		qualityTail: []string{"-b:v", "0"}, extraParams: []string{"-row-mt", "1"},
 	}
@@ -365,10 +299,48 @@ func init() {
 	registerAdapters(additionalAdapters())
 }
 
+// errRegistry records the first adapter the encoder registry could not
+// fill; Get returns it so a broken registry fails by name, never silently.
+var errRegistry error
+
 func registerAdapters(adapters []*Adapter) {
 	for _, adapter := range adapters {
+		if err := fillFromRegistry(adapter); err != nil {
+			if errRegistry == nil {
+				errRegistry = err
+			}
+			continue
+		}
 		registry[adapter.Name] = adapter
 	}
+}
+
+// fillFromRegistry copies the codec facts (quality knob and window, presets,
+// probe settings, capability flags) from the adapter's encoder-registry row
+// (api/vmafx-encoders.toml, ADR-3388). The constructors above carry only the
+// argv shape; the Python vmaf-tune reads the same facts from the same file.
+func fillFromRegistry(a *Adapter) error {
+	row, err := encoderregistry.Lookup(a.Name)
+	if err != nil {
+		return err
+	}
+	spec := row.Adapter
+	if spec == nil {
+		return fmt.Errorf("codecadapter: registry row %q is %s, not implemented", a.Name, row.Status)
+	}
+	a.QualityKnob = spec.Knob
+	a.QualityRange = spec.QualityRange
+	a.QualityDefault = spec.QualityDefault
+	a.InvertQuality = spec.InvertQuality
+	a.Presets = slices.Clone(spec.Presets)
+	a.AdapterVersion = spec.Version
+	a.ProbePreset = spec.ProbePreset
+	a.ProbeQuality = spec.ProbeQuality
+	a.SupportsQPFile = spec.SupportsQPFile
+	a.SupportsEncoderStats = spec.SupportsEncoderStats
+	a.SupportsTwoPass = spec.SupportsTwoPass
+	a.TwoPassABRAtPass1Bitrate = spec.TwoPassABRAtPass1Bitrate
+	return nil
 }
 
 func softwareAdapters() []*Adapter {
@@ -392,6 +364,9 @@ func additionalAdapters() []*Adapter {
 
 // Get returns the adapter registered under name.
 func Get(name string) (*Adapter, error) {
+	if errRegistry != nil {
+		return nil, errRegistry
+	}
 	a, ok := registry[name]
 	if !ok {
 		return nil, fmt.Errorf("unknown codec %q; known codecs: %v", name, Known())

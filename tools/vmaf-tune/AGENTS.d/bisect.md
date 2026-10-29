@@ -22,7 +22,7 @@ invariant: Bisect assumes monotone VMAF; default targets 94,96,97,98; PredicateF
 - **Bisect default search window is encoder's absolute CRF range
   (ADR-0538), not adapter's `quality_range`.** When
   `bisect_target_vmaf` is called with `crf_range=None` it consults
-  `_ABSOLUTE_CRF_RANGE_BY_NAME` in `bisect.py` to pick encoder's
+  registry `absolute_range` (ADR-3388, `api/vmafx-encoders.toml`) to pick encoder's
   accepted bounds: `libx264 / libx265 -> (0, 51)`,
   `libvpx-vp9 / libaom-av1 / libsvtav1 -> (0, 63)`. This is wider
   than perceptually-informative `adapter.quality_range` (e.g.

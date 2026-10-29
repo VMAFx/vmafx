@@ -1,0 +1,549 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+#
+# The encoder registry (ADR-3388): every video encoder VMAFx knows about.
+# scripts/codegen/vmafx-api.py reads this file and writes
+# pkg/encoderregistry/registry.gen.json, its byte-identical copy in
+# tools/vmaf-tune/src/vmaftune/codec_adapters/, and docs/usage/encoder-registry.md.
+# An `implemented` row carries an [encoders.adapter] table that the Go
+# pkg/encoder and pkg/codecadapter and the Python vmaf-tune adapters read;
+# every other row is a gap with its licence class and the date its upstream
+# state was checked. Field rules: scripts/codegen/vmafx_api/encoders.py.
+
+format_version = 1
+
+[[encoders]]
+id = "av1_amf"
+family = "av1"
+paradigm = "classic"
+class = "delivery"
+status = "implemented"
+interface = "ffmpeg"
+ffmpeg_encoder = "av1_amf"
+hardware = "amf"
+licence_class = "unknown"
+maintenance = "unknown"
+upstream = ""
+checked = "2026-10-29"
+use_cases = ["vod-ladder"]
+surfaces = ["go", "python"]
+
+[encoders.adapter]
+knob = "qp"
+quality_range = [15, 40]
+absolute_range = [15, 40]
+quality_default = 23
+invert_quality = true
+presets = ["ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "slowest", "placebo"]
+preset_style = "amf-quality"
+version = "2"
+probe_preset = "ultrafast"
+probe_quality = 28
+
+[[encoders]]
+id = "av1_nvenc"
+family = "av1"
+paradigm = "classic"
+class = "delivery"
+status = "implemented"
+interface = "ffmpeg"
+ffmpeg_encoder = "av1_nvenc"
+hardware = "nvenc"
+licence_class = "unknown"
+maintenance = "unknown"
+upstream = ""
+checked = "2026-10-29"
+use_cases = ["vod-ladder"]
+surfaces = ["go", "python"]
+
+[encoders.adapter]
+knob = "cq"
+quality_range = [15, 40]
+absolute_range = [15, 40]
+quality_default = 23
+invert_quality = true
+presets = ["ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "slowest", "placebo"]
+preset_style = "nvenc"
+version = "1"
+probe_preset = "ultrafast"
+probe_quality = 28
+
+[[encoders]]
+id = "av1_qsv"
+family = "av1"
+paradigm = "classic"
+class = "delivery"
+status = "implemented"
+interface = "ffmpeg"
+ffmpeg_encoder = "av1_qsv"
+hardware = "qsv"
+licence_class = "unknown"
+maintenance = "unknown"
+upstream = ""
+checked = "2026-10-29"
+use_cases = ["vod-ladder"]
+surfaces = ["go", "python"]
+
+[encoders.adapter]
+knob = "global_quality"
+quality_range = [1, 51]
+absolute_range = [1, 51]
+quality_default = 23
+invert_quality = true
+presets = ["veryslow", "slower", "slow", "medium", "fast", "faster", "veryfast"]
+preset_style = "verbatim"
+version = "4"
+probe_preset = "veryfast"
+probe_quality = 23
+
+[[encoders]]
+id = "av1_videotoolbox"
+family = "av1"
+paradigm = "classic"
+class = "delivery"
+status = "implemented"
+interface = "ffmpeg"
+ffmpeg_encoder = "av1_videotoolbox"
+hardware = "videotoolbox"
+licence_class = "unknown"
+maintenance = "unknown"
+upstream = ""
+checked = "2026-10-29"
+use_cases = ["vod-ladder"]
+surfaces = ["go", "python"]
+
+[encoders.adapter]
+knob = "q:v"
+quality_range = [0, 100]
+absolute_range = [0, 100]
+quality_default = 50
+invert_quality = false
+presets = ["ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow"]
+preset_style = "realtime"
+version = "0-placeholder"
+probe_preset = "ultrafast"
+probe_quality = 60
+
+[[encoders]]
+id = "h264_amf"
+family = "h264"
+paradigm = "classic"
+class = "delivery"
+status = "implemented"
+interface = "ffmpeg"
+ffmpeg_encoder = "h264_amf"
+hardware = "amf"
+licence_class = "unknown"
+maintenance = "unknown"
+upstream = ""
+checked = "2026-10-29"
+use_cases = ["vod-ladder"]
+surfaces = ["go", "python"]
+
+[encoders.adapter]
+knob = "qp"
+quality_range = [15, 40]
+absolute_range = [15, 40]
+quality_default = 23
+invert_quality = true
+presets = ["ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "slowest", "placebo"]
+preset_style = "amf-quality"
+version = "2"
+probe_preset = "ultrafast"
+probe_quality = 28
+
+[[encoders]]
+id = "h264_nvenc"
+family = "h264"
+paradigm = "classic"
+class = "delivery"
+status = "implemented"
+interface = "ffmpeg"
+ffmpeg_encoder = "h264_nvenc"
+hardware = "nvenc"
+licence_class = "unknown"
+maintenance = "unknown"
+upstream = ""
+checked = "2026-10-29"
+use_cases = ["vod-ladder"]
+surfaces = ["go", "python"]
+
+[encoders.adapter]
+knob = "cq"
+quality_range = [15, 40]
+absolute_range = [15, 40]
+quality_default = 23
+invert_quality = true
+presets = ["ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "slowest", "placebo"]
+preset_style = "nvenc"
+version = "1"
+probe_preset = "ultrafast"
+probe_quality = 28
+
+[[encoders]]
+id = "h264_qsv"
+family = "h264"
+paradigm = "classic"
+class = "delivery"
+status = "implemented"
+interface = "ffmpeg"
+ffmpeg_encoder = "h264_qsv"
+hardware = "qsv"
+licence_class = "unknown"
+maintenance = "unknown"
+upstream = ""
+checked = "2026-10-29"
+use_cases = ["vod-ladder"]
+surfaces = ["go", "python"]
+
+[encoders.adapter]
+knob = "global_quality"
+quality_range = [1, 51]
+absolute_range = [1, 51]
+quality_default = 23
+invert_quality = true
+presets = ["veryslow", "slower", "slow", "medium", "fast", "faster", "veryfast"]
+preset_style = "verbatim"
+version = "4"
+probe_preset = "veryfast"
+probe_quality = 23
+
+[[encoders]]
+id = "h264_videotoolbox"
+family = "h264"
+paradigm = "classic"
+class = "delivery"
+status = "implemented"
+interface = "ffmpeg"
+ffmpeg_encoder = "h264_videotoolbox"
+hardware = "videotoolbox"
+licence_class = "unknown"
+maintenance = "unknown"
+upstream = ""
+checked = "2026-10-29"
+use_cases = ["vod-ladder"]
+surfaces = ["go", "python"]
+
+[encoders.adapter]
+knob = "q:v"
+quality_range = [0, 100]
+absolute_range = [0, 100]
+quality_default = 50
+invert_quality = false
+presets = ["ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow"]
+preset_style = "realtime"
+version = "1"
+probe_preset = "ultrafast"
+probe_quality = 60
+
+[[encoders]]
+id = "hevc_amf"
+family = "hevc"
+paradigm = "classic"
+class = "delivery"
+status = "implemented"
+interface = "ffmpeg"
+ffmpeg_encoder = "hevc_amf"
+hardware = "amf"
+licence_class = "unknown"
+maintenance = "unknown"
+upstream = ""
+checked = "2026-10-29"
+use_cases = ["vod-ladder"]
+surfaces = ["go", "python"]
+
+[encoders.adapter]
+knob = "qp"
+quality_range = [15, 40]
+absolute_range = [15, 40]
+quality_default = 23
+invert_quality = true
+presets = ["ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "slowest", "placebo"]
+preset_style = "amf-quality"
+version = "2"
+probe_preset = "ultrafast"
+probe_quality = 28
+
+[[encoders]]
+id = "hevc_nvenc"
+family = "hevc"
+paradigm = "classic"
+class = "delivery"
+status = "implemented"
+interface = "ffmpeg"
+ffmpeg_encoder = "hevc_nvenc"
+hardware = "nvenc"
+licence_class = "unknown"
+maintenance = "unknown"
+upstream = ""
+checked = "2026-10-29"
+use_cases = ["vod-ladder"]
+surfaces = ["go", "python"]
+
+[encoders.adapter]
+knob = "cq"
+quality_range = [15, 40]
+absolute_range = [15, 40]
+quality_default = 23
+invert_quality = true
+presets = ["ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "slowest", "placebo"]
+preset_style = "nvenc"
+version = "1"
+probe_preset = "ultrafast"
+probe_quality = 28
+
+[[encoders]]
+id = "hevc_qsv"
+family = "hevc"
+paradigm = "classic"
+class = "delivery"
+status = "implemented"
+interface = "ffmpeg"
+ffmpeg_encoder = "hevc_qsv"
+hardware = "qsv"
+licence_class = "unknown"
+maintenance = "unknown"
+upstream = ""
+checked = "2026-10-29"
+use_cases = ["vod-ladder"]
+surfaces = ["go", "python"]
+
+[encoders.adapter]
+knob = "global_quality"
+quality_range = [1, 51]
+absolute_range = [1, 51]
+quality_default = 23
+invert_quality = true
+presets = ["veryslow", "slower", "slow", "medium", "fast", "faster", "veryfast"]
+preset_style = "verbatim"
+version = "4"
+probe_preset = "veryfast"
+probe_quality = 23
+
+[[encoders]]
+id = "hevc_videotoolbox"
+family = "hevc"
+paradigm = "classic"
+class = "delivery"
+status = "implemented"
+interface = "ffmpeg"
+ffmpeg_encoder = "hevc_videotoolbox"
+hardware = "videotoolbox"
+licence_class = "unknown"
+maintenance = "unknown"
+upstream = ""
+checked = "2026-10-29"
+use_cases = ["vod-ladder"]
+surfaces = ["go", "python"]
+
+[encoders.adapter]
+knob = "q:v"
+quality_range = [0, 100]
+absolute_range = [0, 100]
+quality_default = 50
+invert_quality = false
+presets = ["ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow"]
+preset_style = "realtime"
+version = "1"
+probe_preset = "ultrafast"
+probe_quality = 60
+
+[[encoders]]
+id = "libaom-av1"
+family = "av1"
+paradigm = "classic"
+class = "delivery"
+status = "implemented"
+interface = "ffmpeg"
+ffmpeg_encoder = "libaom-av1"
+licence_class = "unknown"
+maintenance = "unknown"
+upstream = ""
+checked = "2026-10-29"
+use_cases = ["vod-ladder"]
+surfaces = ["go", "python"]
+
+[encoders.adapter]
+knob = "crf"
+quality_range = [0, 63]
+absolute_range = [0, 63]
+quality_default = 35
+invert_quality = true
+presets = ["placebo", "slowest", "slower", "slow", "medium", "fast", "faster", "veryfast", "superfast", "ultrafast"]
+preset_style = "libaom-cpu-used"
+version = "1"
+probe_preset = "ultrafast"
+probe_quality = 35
+supports_qpfile = true
+supports_two_pass = true
+
+[[encoders]]
+id = "libsvtav1"
+family = "av1"
+paradigm = "classic"
+class = "delivery"
+status = "implemented"
+interface = "ffmpeg"
+ffmpeg_encoder = "libsvtav1"
+licence_class = "unknown"
+maintenance = "unknown"
+upstream = ""
+checked = "2026-10-29"
+use_cases = ["vod-ladder"]
+surfaces = ["go", "python"]
+
+[encoders.adapter]
+knob = "crf"
+quality_range = [20, 50]
+absolute_range = [0, 63]
+quality_default = 35
+invert_quality = true
+presets = ["placebo", "slowest", "slower", "slow", "medium", "fast", "faster", "veryfast"]
+preset_style = "svtav1"
+version = "1"
+probe_preset = "veryfast"
+probe_quality = 35
+
+[[encoders]]
+id = "libvpx-vp9"
+family = "vp9"
+paradigm = "classic"
+class = "delivery"
+status = "implemented"
+interface = "ffmpeg"
+ffmpeg_encoder = "libvpx-vp9"
+licence_class = "unknown"
+maintenance = "unknown"
+upstream = ""
+checked = "2026-10-29"
+use_cases = ["vod-ladder"]
+surfaces = ["go", "python"]
+
+[encoders.adapter]
+knob = "crf"
+quality_range = [0, 63]
+absolute_range = [0, 63]
+quality_default = 32
+invert_quality = true
+presets = ["placebo", "slowest", "slower", "slow", "medium", "fast", "faster", "veryfast", "superfast", "ultrafast"]
+preset_style = "vpx-cpu-used"
+version = "1"
+probe_preset = "ultrafast"
+probe_quality = 32
+supports_two_pass = true
+
+[[encoders]]
+id = "libvvenc"
+family = "vvc"
+paradigm = "classic"
+class = "delivery"
+status = "implemented"
+interface = "ffmpeg"
+ffmpeg_encoder = "libvvenc"
+licence_class = "unknown"
+maintenance = "unknown"
+upstream = ""
+checked = "2026-10-29"
+use_cases = ["vod-ladder"]
+surfaces = ["go", "python"]
+
+[encoders.adapter]
+knob = "qp"
+quality_range = [17, 50]
+absolute_range = [17, 50]
+quality_default = 32
+invert_quality = true
+presets = ["placebo", "slowest", "slower", "slow", "medium", "fast", "faster", "veryfast", "superfast", "ultrafast"]
+preset_style = "vvenc"
+version = "2"
+probe_preset = "faster"
+probe_quality = 32
+supports_two_pass = true
+
+[[encoders]]
+id = "libx264"
+family = "h264"
+paradigm = "classic"
+class = "delivery"
+status = "implemented"
+interface = "ffmpeg"
+ffmpeg_encoder = "libx264"
+licence_class = "unknown"
+maintenance = "unknown"
+upstream = ""
+checked = "2026-10-29"
+use_cases = ["vod-ladder"]
+surfaces = ["go", "python"]
+
+[encoders.adapter]
+knob = "crf"
+quality_range = [0, 51]
+absolute_range = [0, 51]
+quality_default = 23
+invert_quality = true
+presets = ["ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow"]
+preset_style = "verbatim"
+version = "2"
+probe_preset = "ultrafast"
+probe_quality = 28
+supports_qpfile = true
+supports_encoder_stats = true
+supports_two_pass = true
+
+[[encoders]]
+id = "libx265"
+family = "hevc"
+paradigm = "classic"
+class = "delivery"
+status = "implemented"
+interface = "ffmpeg"
+ffmpeg_encoder = "libx265"
+licence_class = "unknown"
+maintenance = "unknown"
+upstream = ""
+checked = "2026-10-29"
+use_cases = ["vod-ladder"]
+surfaces = ["go", "python"]
+
+[encoders.adapter]
+knob = "crf"
+quality_range = [15, 40]
+absolute_range = [0, 51]
+quality_default = 28
+invert_quality = true
+presets = ["ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow", "placebo"]
+preset_style = "verbatim"
+version = "2"
+probe_preset = "ultrafast"
+probe_quality = 28
+supports_encoder_stats = true
+supports_two_pass = true
+two_pass_abr_at_pass1_bitrate = true
+
+[[encoders]]
+id = "prores_videotoolbox"
+family = "prores"
+paradigm = "classic"
+class = "mezzanine"
+status = "implemented"
+interface = "ffmpeg"
+ffmpeg_encoder = "prores_videotoolbox"
+hardware = "videotoolbox"
+licence_class = "unknown"
+maintenance = "unknown"
+upstream = ""
+checked = "2026-10-29"
+use_cases = ["vod-ladder"]
+surfaces = ["go", "python"]
+
+[encoders.adapter]
+knob = "profile:v"
+quality_range = [0, 5]
+absolute_range = [0, 5]
+quality_default = 3
+invert_quality = false
+presets = ["ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow"]
+preset_style = "realtime"
+version = "1"
+probe_preset = "ultrafast"
+probe_quality = 0
