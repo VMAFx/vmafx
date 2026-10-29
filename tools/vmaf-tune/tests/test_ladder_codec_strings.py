@@ -148,6 +148,12 @@ def test_probe_argv_uses_the_adapter_argv_and_the_qsv_chain(tmp_path):
     assert "format=nv12,hwupload=extra_hw_frames=64" in qsv
 
 
+@pytest.mark.parametrize("pix_fmt", ["p010le", "yuv420p10le"])
+def test_qsv_codec_string_probe_preserves_10bit_depth(tmp_path, pix_fmt):
+    argv = probe_argv("hevc_qsv", "medium", 23, 1280, 720, 24.0, pix_fmt, tmp_path / "p.mp4")
+    assert argv[argv.index("-vf") + 1] == "format=p010le,hwupload=extra_hw_frames=64"
+
+
 def test_probe_failure_is_an_error(tmp_path):
     class _Done:
         returncode, stdout, stderr = 1, "", "Unknown encoder 'h264_amf'\n"

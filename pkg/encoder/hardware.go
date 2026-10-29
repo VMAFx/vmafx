@@ -112,9 +112,10 @@ func (e HEVCQSVEncoder) Encode(src string, params EncodeParams) (EncodeResult, e
 // into ExtraArgs, which placed -init_hw_device after "-c:v" where ffmpeg
 // rejects it. Keep the split.
 func injectQSVInitChain(params EncodeParams) EncodeParams {
-	deviceChain := hwdevice.QSVInitArgs(hwdevice.ResolveVAAPIDevice(""))
+	deviceChain := hwdevice.QSVInitArgs(hwdevice.ResolveVAAPIDevice(params.VAAPIDevice))
 	params.InputArgs = append(deviceChain, params.InputArgs...)
-	params.ExtraArgs = hwdevice.AppendVideoFilter(params.ExtraArgs, hwdevice.UploadFilter)
+	upload := hwdevice.QSVUploadFilter("", params.ExtraArgs)
+	params.ExtraArgs = hwdevice.AppendVideoFilter(params.ExtraArgs, upload)
 	return params
 }
 
