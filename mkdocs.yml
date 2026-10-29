@@ -310,6 +310,7 @@ nav:
       - Errors: api/vmafx/errors.md
       - Status codes (Python, Go, Rust): api/vmafx/status-codes.md
       - Versioning and the ABI: api/vmafx/versioning.md
+      - VMAFx language bindings: api/vmafx/bindings.md
       - VMAFx API reference (generated):
           - api/vmafx/reference.md
           - "vmafx/vmafx.h": api/vmafx/vmafx.md
