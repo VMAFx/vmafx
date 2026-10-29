@@ -94,7 +94,8 @@ VMAFX_REPO=$(git rev-parse --show-toplevel) \
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `LIBVMAF_PREFIX` | `/usr/local` | Install prefix used by `build.rs` to find headers and the shared library. A header that lacks a libvmaf name the crates use stops the build with its path and the missing names ([Rust guide](../../../docs/development/rust.md#an-older-install-under-the-prefix)). |
+| `LIBVMAF_PREFIX` | unset | First install prefix, followed by `/usr/local` and `/usr`; each must contain both headers and a linkable library. A stale header still stops the build ([Rust installation guide](../../../docs/api/rust.md)). |
+| `DOCS_RS` | unset | When set, use checkout headers from `core/include/libvmaf/` and omit native linking; missing checkout headers fail explicitly. |
 | `VMAFX_REPO` | auto-detected | Repository root; used by tests and examples to resolve YUV and model paths. |
 | `VMAFX_YUV_REF` | `<repo>/python/test/resource/yuv/src01_hrc00_576x324.yuv` | Override reference YUV. |
 | `VMAFX_YUV_DIST` | `<repo>/python/test/resource/yuv/src01_hrc01_576x324.yuv` | Override distorted YUV. |

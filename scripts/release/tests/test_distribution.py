@@ -166,5 +166,64 @@ class GenerateTests(unittest.TestCase):
             distribution.generate(manifest(), "1.0.0", {"source": "a" * 63, "winget": "b" * 64})
 
 
+class TapFormulaTests(unittest.TestCase):
+    def test_tap_formula_is_header_plus_formula(self) -> None:
+        text = distribution.tap_formula(manifest(), "1.2.3", "c" * 64)
+        self.assertTrue(text.startswith(distribution.TAP_HEADER))
+        body = text[len(distribution.TAP_HEADER) :]
+        self.assertEqual(body, distribution.homebrew_formula(manifest(), "1.2.3", "c" * 64))
+        self.assertIn("v1.2.3.tar.gz", text)
+        self.assertIn("c" * 64, text)
+
+    def test_tap_formula_refuses_bad_digest_and_version(self) -> None:
+        with self.assertRaises(distribution.DistributionError):
+            distribution.tap_formula(manifest(), "1.2.3", "C" * 64)
+        with self.assertRaises(distribution.DistributionError):
+            distribution.tap_formula(manifest(), "1.2", "c" * 64)
+
+    def test_prerelease_version_boundary(self) -> None:
+        text = distribution.tap_formula(manifest(), "1.0.0-rc.3", "d" * 64)
+        self.assertIn("v1.0.0-rc.3.tar.gz", text)
+
+    def test_main_homebrew_writes_only_the_tap_formula(self) -> None:
+        with tempfile.TemporaryDirectory() as out, contextlib.redirect_stdout(io.StringIO()):
+            rc = distribution.main(["--root", str(ROOT), "homebrew", "--version", "1.2.3",
+                                    "--source-sha256", "e" * 64, "--out", out])  # fmt: skip
+            self.assertEqual(rc, 0)
+            written = sorted(str(p.relative_to(out)) for p in Path(out).rglob("*") if p.is_file())
+            self.assertEqual(written, ["Formula/vmafx.rb"])
+            text = (Path(out) / "Formula/vmafx.rb").read_text(encoding="utf-8")
+            self.assertTrue(text.startswith(distribution.TAP_HEADER))
+
+    def test_main_homebrew_bad_digest_exits_2(self) -> None:
+        with tempfile.TemporaryDirectory() as out, contextlib.redirect_stderr(io.StringIO()):
+            rc = distribution.main(["--root", str(ROOT), "homebrew", "--version", "1.2.3",
+                                    "--source-sha256", "x", "--out", out])  # fmt: skip
+            self.assertEqual(rc, 2)
+            self.assertFalse(any(Path(out).iterdir()))
+
+    def test_main_source_url_prints_tag_archive(self) -> None:
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            rc = distribution.main(["--root", str(ROOT), "source-url", "--version", "1.2.3"])
+        self.assertEqual(rc, 0)
+        self.assertEqual(out.getvalue().strip(),
+                         "https://github.com/VMAFx/vmafx/archive/refs/tags/v1.2.3.tar.gz")  # fmt: skip
+
+    def test_main_source_url_prerelease_boundary(self) -> None:
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            rc = distribution.main(["--root", str(ROOT), "source-url", "--version", "1.0.0-rc.4"])
+        self.assertEqual(rc, 0)
+        self.assertTrue(out.getvalue().strip().endswith("/v1.0.0-rc.4.tar.gz"))
+
+    def test_main_source_url_refuses_bad_version(self) -> None:
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+            rc = distribution.main(["--root", str(ROOT), "source-url", "--version", "v1.2"])
+        self.assertEqual(rc, 2)
+        self.assertEqual(out.getvalue(), "")
+
+
 if __name__ == "__main__":
     unittest.main()

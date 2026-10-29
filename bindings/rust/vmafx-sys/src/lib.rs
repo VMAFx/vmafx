@@ -10,11 +10,13 @@
 
 // Re-export everything from the generated bindings at the crate root so
 // existing callers continue to work without a path change.
+// Generated C Doxygen examples are not Rust code (also why doctest is disabled).
 #[allow(
     non_camel_case_types,
     non_snake_case,
     non_upper_case_globals,
-    clippy::all
+    clippy::all,
+    rustdoc::invalid_rust_codeblocks
 )]
 mod bindings {
     include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
