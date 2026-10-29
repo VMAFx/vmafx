@@ -28,12 +28,15 @@ without colliding with a number already claimed by another agent or branch.
     mv docs/adr/${N}-my-topic-slug.md.stub docs/adr/${N}-my-topic-slug.md
     ```
 
-4. Create the one-row index fragment and register its order:
+4. Create the one-row index fragment:
 
     ```bash
     $EDITOR docs/adr/_index_fragments/${N}-my-topic-slug.md
-    printf '%s\n' "${N}-my-topic-slug" >> docs/adr/_index_fragments/_order.txt
     ```
+
+    Do not edit `docs/adr/_index_fragments/_order.txt`. It is a frozen list of
+    the fragments that existed before ADR-2197; a new fragment takes its place
+    from landing order (`scripts/docs/fragment-order.py`).
 
 5. Regenerate and check all source-owned metadata:
 
@@ -42,17 +45,22 @@ without colliding with a number already claimed by another agent or branch.
     make docs-fragments-check
     ```
 
-6. Check what the regeneration changed, then stage the ADR, the fragment and the
-   generated outputs:
+6. Check what the regeneration changed, then stage the ADR and the fragment:
 
     ```bash
     git status --short
     git add docs/adr/${N}-my-topic-slug.md \
-      docs/adr/_index_fragments/${N}-my-topic-slug.md \
-      docs/adr/_index_fragments/_order.txt docs/adr/README.md \
-      docs/adr/by-tag/ CHANGELOG.md
+      docs/adr/_index_fragments/${N}-my-topic-slug.md
     git commit -m "docs(adr): ADR-${N} my topic slug"
     ```
+
+    `make docs-fragments-write` runs `make docs-render` first, which rewrites
+    `docs/adr/README.md`, `docs/adr/by-tag/`, `docs/adr/titles.md`,
+    `docs/research/titles.md`,
+    `CHANGELOG.md` and `docs/rebase-notes.md`. Leave those unstaged and restore
+    them with `git restore`: they are rendered when pull requests land, and
+    `scripts/ci/deliverables-check.sh` refuses a pull request that carries them
+    (ADR-2197, ADR-3295).
 
     `make docs-fragments-write` also regenerates the exact-twins table, the
     upstream-parity allowlist, the agents index and the hardware reports, so an

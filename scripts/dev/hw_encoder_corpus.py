@@ -35,6 +35,10 @@ from pathlib import Path
 from typing import Any, TextIO
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools/vmaf-tune/src"))
+
+from vmaftune.codec_adapters._qsv_common import qsv_upload_filter
+from vmaftune.encode import with_upload_filter
 
 from scripts.lib.safe_subprocess import TextCommandResult
 from scripts.lib.safe_subprocess import run as run_command
@@ -152,7 +156,10 @@ def encode_hw(
         "-i",
         str(source),
     ]
-    cmd += _encoder_args(encoder, cq) + (extra or []) + [str(out_mp4)]
+    output_args = extra or []
+    if encoder.endswith("_qsv"):
+        output_args = with_upload_filter(output_args, qsv_upload_filter(pix_fmt, output_args))
+    cmd += _encoder_args(encoder, cq) + output_args + [str(out_mp4)]
 
     t0 = time.monotonic()
     p = run_command(

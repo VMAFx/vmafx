@@ -56,7 +56,7 @@ stack applied; applies cleanly.
  2 files changed, 50 insertions(+)
 
 diff --git a/configure b/configure
-index 992ccaf9860c356bce018d9c00499b1240dfb063..46973b60e1128fdf60f5236c0666fbe9ce7a3a71 100755
+index 80af7c9159caa9b07e9628997e642e371c64e136..ddae5f7a5069e0f597cd30c3e025643453a692ac 100755
 --- a/configure
 +++ b/configure
 @@ -294,6 +294,7 @@ External library support:
@@ -75,7 +75,7 @@ index 992ccaf9860c356bce018d9c00499b1240dfb063..46973b60e1128fdf60f5236c0666fbe9
      libvmaf_cuda
      libvmaf_sycl
      libvmaf_vulkan
-@@ -7466,6 +7468,9 @@ enabled libuavs3d         && require_pkg_config libuavs3d "uavs3d >= 1.1.41" uav
+@@ -7472,6 +7474,9 @@ enabled libuavs3d         && require_pkg_config libuavs3d "uavs3d >= 1.1.41" uav
  enabled libv4l2           && require_pkg_config libv4l2 libv4l2 libv4l2.h v4l2_ioctl
  enabled libvidstab        && require_pkg_config libvidstab "vidstab >= 0.98" vid.stab/libvidstab.h vsMotionDetectInit
  enabled libvmaf           && require_pkg_config libvmaf "libvmaf >= 2.0.0" libvmaf.h vmaf_init

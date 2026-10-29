@@ -506,6 +506,14 @@ class SharedSeriesReplay(RealReplay):
         config.write_text(text.replace(digest, "0" * 64))
         self.assert_refused(RuntimeError, "build-config.env pins")
 
+    def test_tarball_not_listed_in_sha256sums_is_refused(self) -> None:
+        # Planted defect: the pin matches the tarball but the release's SHA256SUMS lists another.
+        sums = self.root / "shared-series" / "SHA256SUMS"
+        sums.write_text(f"{'0' * 64}  ffmpeg-patches-{shared_series.TAG}.tar.gz\n")
+        self.assert_refused(RuntimeError, "SHA256SUMS of .* lists 0{64}")
+        sums.write_text("")
+        self.assert_refused(RuntimeError, "lists nothing")
+
     def test_series_for_another_ffmpeg_is_refused(self) -> None:
         self.pin_series("n9.9.9", self.pin)
         self.assert_refused(RuntimeError, "targets n9.9.9")

@@ -79,3 +79,29 @@ func TestNeedsQSVChain(t *testing.T) {
 		}
 	}
 }
+
+func TestQSVUploadFilter(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name, pixFmt, surface string
+		extra                 []string
+	}{
+		{"8-bit", "yuv420p", "nv12", nil},
+		{"8-bit profile", "nv12", "nv12", []string{"-profile:v", "main"}},
+		{"p010", "p010le", "p010le", nil},
+		{"planar 10-bit", "yuv420p10le", "p010le", nil},
+		{"explicit planar 10-bit", "yuv420p", "p010le", []string{"-pix_fmt", "yuv420p10le"}},
+		{"explicit p010", "yuv420p", "p010le", []string{"-pix_fmt", "p010le"}},
+		{"main10", "yuv420p", "p010le", []string{"-profile:v", "main10"}},
+		{"8-bit output override", "yuv420p10le", "nv12", []string{"-pix_fmt", "yuv420p"}},
+		{"unrelated main10", "yuv420p", "nv12", []string{"-metadata", "main10"}},
+		{"dangling flag", "yuv420p", "nv12", []string{"-pix_fmt"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			want := "format=" + tc.surface + ",hwupload=extra_hw_frames=64"
+			if got := QSVUploadFilter(tc.pixFmt, tc.extra); got != want {
+				t.Errorf("QSVUploadFilter(%q, %v) = %q, want %q", tc.pixFmt, tc.extra, got, want)
+			}
+		})
+	}
+}
