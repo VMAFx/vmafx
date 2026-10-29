@@ -247,7 +247,9 @@ def test_run_encode_passes_codec_correct_argv_to_subprocess(
         pytest.xfail("av1_videotoolbox raises Av1VideoToolboxUnavailableError (ADR-0339)")
     captured: dict[str, list[str]] = {}
 
-    def fake_runner(cmd: list[str], capture_output: bool, text: bool, check: bool) -> Any:
+    def fake_runner(cmd: list[str], capture_output: bool, text: bool, check: bool, **kwargs) -> Any:
+        if "lavfi" in cmd:
+            return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
         # Capture only the first call — the actual encode argv. The
         # encoder-version probe (``ffmpeg -version``) may fire as a second
         # call for codecs in ``_VERSION_PROBE_PATTERNS`` (ADR-0498 follow-
