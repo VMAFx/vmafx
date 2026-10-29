@@ -20,6 +20,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <math.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -31,6 +32,7 @@
 
 #include "cambi_internal.h"
 #include "common/macros.h"
+#include "compat/crt_portable.h"
 #include "compat/path_utf8.h"
 #include "cpu.h"
 #include "feature_collector.h"
@@ -634,9 +636,134 @@ static int alloc_cambi_buffers(CambiState *s, int alloc_w, int alloc_h, int num_
     return 0;
 }
 
+/*
+ * With n_threads > 1 the feature extractor pool creates its cambi contexts
+ * lazily, after earlier contexts may already have written heatmap frames. All
+ * contexts with the same heatmaps_path share the heatmap files, so only the
+ * first one to open them truncates; the others open them for update (ported
+ * from Netflix/vmaf PR 1707). The registry is touched at init and close only.
+ */
+typedef struct HeatmapsPathRef {
+    char *path;
+    unsigned ref_cnt;
+    struct HeatmapsPathRef *next;
+} HeatmapsPathRef;
+
+static pthread_mutex_t heatmaps_lock = PTHREAD_MUTEX_INITIALIZER;
+static HeatmapsPathRef *heatmaps_paths = NULL;
+
+/* Caller holds heatmaps_lock. Takes one reference on `path`; `*first` tells
+ * whether no other context holds it. */
+static int heatmaps_path_ref_locked(const char *path, bool *first)
+{
+    HeatmapsPathRef *ref = heatmaps_paths;
+    while (ref && strcmp(ref->path, path) != 0)
+        ref = ref->next;
+    *first = !ref;
+    if (!ref) {
+        ref = malloc(sizeof(*ref));
+        if (!ref)
+            return -ENOMEM;
+        ref->path = VMAF_STRDUP(path);
+        if (!ref->path) {
+            free(ref);
+            return -ENOMEM;
+        }
+        ref->ref_cnt = 0;
+        ref->next = heatmaps_paths;
+        heatmaps_paths = ref;
+    }
+    ref->ref_cnt++;
+    return 0;
+}
+
+/* Caller holds heatmaps_lock. Drops one reference on `path`. */
+static void heatmaps_path_unref_locked(const char *path)
+{
+    HeatmapsPathRef **ref = &heatmaps_paths;
+    while (*ref && strcmp((*ref)->path, path) != 0)
+        ref = &(*ref)->next;
+    if (*ref && !--(*ref)->ref_cnt) {
+        HeatmapsPathRef *unused = *ref;
+        *ref = unused->next;
+        free(unused->path);
+        free(unused);
+    }
+}
+
+static void heatmaps_path_unref(const char *path)
+{
+    (void)pthread_mutex_lock(&heatmaps_lock);
+    heatmaps_path_unref_locked(path);
+    (void)pthread_mutex_unlock(&heatmaps_lock);
+}
+
+static void close_open_heatmap_files(FILE *heatmaps_files[NUM_SCALES])
+{
+    for (int scale = 0; scale < NUM_SCALES; scale++) {
+        if (heatmaps_files[scale])
+            (void)fclose(heatmaps_files[scale]);
+        heatmaps_files[scale] = NULL;
+    }
+}
+
+/* Open the heatmap file of one scale; truncate it only when `truncate`. */
+static FILE *open_heatmap_file(const char *path, bool truncate)
+{
+    int flags = O_WRONLY | O_CREAT | (truncate ? O_TRUNC : 0);
+#ifdef _WIN32
+    flags |= O_BINARY;
+#endif
+    int hfd = vmaf_open_utf8(path, flags, 0644);
+    if (hfd < 0)
+        return NULL;
+#ifdef _WIN32
+    FILE *file = _fdopen(hfd, "wb");
+#else
+    FILE *file = fdopen(hfd, "w");
+#endif
+    if (!file) {
+#ifdef _WIN32
+        (void)_close(hfd);
+#else
+        /* POSIX leaves the descriptor open when fdopen() fails, so closing it here is
+         * required.  cppcheck's posix.cfg lists fdopen as a deallocator of the fd
+         * unconditionally and reads this as a second free. */
+        /* cppcheck-suppress doubleFree ; see the note above */
+        (void)close(hfd);
+#endif
+    }
+    return file;
+}
+
+/* Caller holds heatmaps_lock and a reference on `heatmaps_path`. */
+static int open_heatmap_scales(const char *heatmaps_path, unsigned enc_width, unsigned enc_height,
+                               bool truncate, FILE *heatmaps_files[NUM_SCALES])
+{
+    char path[1024] = {0};
+    int scaled_w = enc_width;
+    int scaled_h = enc_height;
+    for (int scale = 0; scale < NUM_SCALES; scale++) {
+        int snp_ret = snprintf(path, sizeof(path), "%s%ccambi_heatmap_scale_%d_%dx%d_16b.gray",
+                               heatmaps_path, PATH_SEPARATOR, scale, scaled_w, scaled_h);
+        if (snp_ret < 0 || (size_t)snp_ret >= sizeof(path))
+            return -ENAMETOOLONG;
+        heatmaps_files[scale] = open_heatmap_file(path, truncate);
+        if (!heatmaps_files[scale]) {
+            vmaf_log(VMAF_LOG_LEVEL_ERROR, "cambi: could not open heatmaps_path: %s\n", path);
+            return -EINVAL;
+        }
+        scaled_w = (scaled_w + 1) >> 1;
+        scaled_h = (scaled_h + 1) >> 1;
+    }
+    return 0;
+}
+
 /* One 16-bit .gray file per scale under `heatmaps_path` (none when it is
  * NULL), named for the encode size halved per scale. Shared with the GPU
- * twins through vmaf_cambi_open_heatmaps(). */
+ * twins through vmaf_cambi_open_heatmaps(). On success the context holds one
+ * reference on the path (exactly while heatmaps_files[0] is set); on failure
+ * every file it opened is closed and it holds none. */
 static int open_heatmaps(const char *heatmaps_path, unsigned enc_width, unsigned enc_height,
                          FILE *heatmaps_files[NUM_SCALES])
 {
@@ -647,51 +774,31 @@ static int open_heatmaps(const char *heatmaps_path, unsigned enc_width, unsigned
     if (mkdir_err)
         return -EINVAL;
 
-    char path[1024] = {0};
-    int scaled_w = enc_width;
-    int scaled_h = enc_height;
-    for (int scale = 0; scale < NUM_SCALES; scale++) {
-        int snp_ret = snprintf(path, sizeof(path), "%s%ccambi_heatmap_scale_%d_%dx%d_16b.gray",
-                               heatmaps_path, PATH_SEPARATOR, scale, scaled_w, scaled_h);
-        if (snp_ret < 0 || (size_t)snp_ret >= sizeof(path))
-            return -ENAMETOOLONG;
-
-#ifdef _WIN32
-        int hfd = vmaf_open_utf8(path, O_WRONLY | O_CREAT | O_TRUNC | O_BINARY, 0644);
-#else
-        int hfd = vmaf_open_utf8(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-#endif
-        if (hfd < 0) {
-            vmaf_log(VMAF_LOG_LEVEL_ERROR, "cambi: could not open heatmaps_path: %s\n", path);
-            return -EINVAL;
+    bool first = false;
+    (void)pthread_mutex_lock(&heatmaps_lock);
+    int err = heatmaps_path_ref_locked(heatmaps_path, &first);
+    if (!err) {
+        err = open_heatmap_scales(heatmaps_path, enc_width, enc_height, first, heatmaps_files);
+        if (err) {
+            close_open_heatmap_files(heatmaps_files);
+            heatmaps_path_unref_locked(heatmaps_path);
         }
-#ifdef _WIN32
-        heatmaps_files[scale] = _fdopen(hfd, "wb");
-#else
-        heatmaps_files[scale] = fdopen(hfd, "w");
-#endif
-        if (!heatmaps_files[scale]) {
-            vmaf_log(VMAF_LOG_LEVEL_ERROR, "cambi: could not open heatmaps_path: %s\n", path);
-#ifdef _WIN32
-            (void)_close(hfd);
-#else
-            (void)close(hfd);
-#endif
-            return -EINVAL;
-        }
-        scaled_w = (scaled_w + 1) >> 1;
-        scaled_h = (scaled_h + 1) >> 1;
     }
-    return 0;
+    (void)pthread_mutex_unlock(&heatmaps_lock);
+    return err;
 }
 
 /* Close every open heatmap file and clear its slot; -EIO when a close fails
  * (the buffered rows of that file are lost). NULL slots are skipped: a partial
  * init() failure may close before every scale's file was opened, and
- * fclose(NULL) is undefined. */
-static int close_heatmap_files(FILE *heatmaps_files[NUM_SCALES])
+ * fclose(NULL) is undefined. A context that opened its files drops its
+ * reference on `heatmaps_path`; a second close finds the slots empty and
+ * drops nothing. */
+static int close_heatmap_files(const char *heatmaps_path, FILE *heatmaps_files[NUM_SCALES])
 {
     int err = 0;
+    if (heatmaps_path && heatmaps_files[0])
+        heatmaps_path_unref(heatmaps_path);
     for (int scale = 0; scale < NUM_SCALES; scale++) {
         if (heatmaps_files[scale] && fclose(heatmaps_files[scale]) && !err)
             err = -EIO;
@@ -1728,7 +1835,7 @@ static int close_cambi(VmafFeatureExtractor *fex)
     aligned_free(s->buffers.derivative_buffer);
 
     /* Every slot is NULL without heatmaps_path (fex->priv is zeroed). */
-    const int heatmaps_err = vmaf_cambi_close_heatmaps(s->heatmaps_files);
+    const int heatmaps_err = vmaf_cambi_close_heatmaps(s->heatmaps_path, s->heatmaps_files);
     if (heatmaps_err && !err)
         err = heatmaps_err;
 
@@ -1991,9 +2098,9 @@ int vmaf_cambi_dump_c_values(FILE *files[VMAF_CAMBI_NUM_SCALES], const float *c_
                          diff_weights, frame);
 }
 
-int vmaf_cambi_close_heatmaps(FILE *files[VMAF_CAMBI_NUM_SCALES])
+int vmaf_cambi_close_heatmaps(const char *path, FILE *files[VMAF_CAMBI_NUM_SCALES])
 {
-    return close_heatmap_files(files);
+    return close_heatmap_files(path, files);
 }
 
 /* ----- internal test trampolines (narrowly exposed for in-tree unit tests) ----- */
@@ -2145,7 +2252,7 @@ int vmaf_cambi_test_open_heatmaps(char *path, unsigned enc_width, unsigned enc_h
 {
     FILE *files[NUM_SCALES] = {NULL};
     const int err = open_heatmaps(path, enc_width, enc_height, files);
-    const int close_err = close_heatmap_files(files);
+    const int close_err = close_heatmap_files(path, files);
     return err ? err : close_err;
 }
 

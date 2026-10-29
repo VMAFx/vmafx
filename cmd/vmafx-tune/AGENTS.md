@@ -231,7 +231,8 @@ during migration; see Stage roadmap in
     `injectQSVInitChain`; Python `vmaftune.encode.build_ffmpeg_command`):
     `-init_hw_device vaapi=va:<node> -init_hw_device qsv=qsv_dev@va
     -filter_hw_device qsv_dev` before first `-i`, and
-    `format=nv12,hwupload=extra_hw_frames=64` appended to request's own
+    `format=nv12,hwupload=extra_hw_frames=64` (8-bit) or
+    `format=p010le,hwupload=extra_hw_frames=64` (10-bit) appended to request's own
     `-vf` chain (ADR-0601). filter device is QSV device: with
     `-filter_hw_device va` upload produced `vaapi` frames and filter
     graph failed before encoder opened. render node resolves through
@@ -239,6 +240,10 @@ during migration; see Stage roadmap in
     Intel node, `/dev/dri/renderD128`), Python resolver's order. Change
     chain in both implementations at once; `encode-profile --dry-run`
     argv must stay identical to Python's.
+    Upload follows output depth: `hwdevice.QSVUploadFilter` / Python
+    `_qsv_common.qsv_upload_filter`; output `-pix_fmt` overrides source format,
+    `p010le`, `yuv420p10le`, or `-profile:v main10` selects P010, HDR args included.
+    Legacy upload constants stay NV12.
 
 25. **AMF adapters emit constant-QP block once** (`pkg/codecadapter`):
     Python AMF `extra_params()` no longer repeats `-quality/-rc/

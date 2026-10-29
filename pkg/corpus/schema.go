@@ -111,3 +111,7 @@ func buildRowKeys() []string {
 	keys = append(keys, EncoderStatsColumns...)
 	return keys
 }
+
+// OptionalQSVRowKeys are additive metadata on QSV rows. Canonical schema-v3
+// columns and their positional order remain unchanged for existing readers.
+var OptionalQSVRowKeys = []string{"qsv_rate_control", "qsv_rate_control_reason", "provenance"}

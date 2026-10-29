@@ -143,6 +143,11 @@ A Vulkan producer without export support fails with `the Vulkan device of these 
 
 These are all element-defined properties, including aliases. Names, defaults and ranges come from the [shared option table](../../ffmpeg-patches/src/vf_vmafx_options.h), generated from [`core/api/vmafx.toml`](../../core/api/vmafx.toml). [`gst_vmafx_opts_install` / `make_pspec`](../../gstreamer/src/gstvmafx_opts.c) replace `_` with `-` and expose named enums and flag sets as **strings**, not GObject enum/flags types. Set properties before scoring (`GST_PARAM_MUTABLE_READY`). Inherited GStreamer properties are outside this table; inspect the installed element for them.
 
+`gstreamer/test/test_gst_vmafx_properties.py` holds the element's own property
+list and the table below to the definition: an extra or a missing property, in
+the element or in this table, fails the test (`gstreamer/test/run.sh` runs the
+element half; the table half runs in the `Tooling Tests` suite).
+
 `I64` below means `0..9223372036854775807` (`INT64_MAX`); string properties with no default show `NULL`. Named values also accept integers in their table range; flag sets combine tokens with `+` (or use `0` for an empty set). Runtime checks can reject a value within its declared property range ([parser](../../gstreamer/src/gstvmafx_opts.c), [session validation](../../gstreamer/src/gstvmafx_run.c)).
 
 | Property | GObject type | Default | Allowed values / use |
