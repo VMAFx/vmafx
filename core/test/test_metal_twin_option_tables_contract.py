@@ -116,7 +116,7 @@ EXECUTED = {
         "err = vmaf_cambi_open_heatmaps(s->heatmaps_path, (unsigned)s->enc_width,",
         "const int err = vmaf_cambi_dump_c_values(s->heatmaps_files, s->buffers.c_values,",
         "const unsigned *heatmap_frame = (s->heatmaps_path != nullptr) ? &index : nullptr;",
-        "const int heatmaps = vmaf_cambi_close_heatmaps(s->heatmaps_files);",
+        "const int heatmaps = vmaf_cambi_close_heatmaps(s->heatmaps_path, s->heatmaps_files);",
     ),
 }
 # A local copy of a CPU cambi helper (the window divisor, the mask index).
@@ -132,7 +132,7 @@ REFERENCE_LINES = {
         "return MAX(0, dist_score - src_score);",
         "return open_heatmaps(path, enc_width, enc_height, files);",
         "return dump_c_values(files, c_values, width, height, scale, window_size, num_diffs,",
-        "return close_heatmap_files(files);",
+        "return close_heatmap_files(path, files);",
     ),
 }
 

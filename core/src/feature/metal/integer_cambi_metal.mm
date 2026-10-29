@@ -597,7 +597,7 @@ int cambi_metal_release(IntegerCambiStateMetal *s)
         }
     }
     release_host_buffers(s);
-    const int heatmaps = vmaf_cambi_close_heatmaps(s->heatmaps_files);
+    const int heatmaps = vmaf_cambi_close_heatmaps(s->heatmaps_path, s->heatmaps_files);
     if (heatmaps != 0 && rc == 0) { rc = heatmaps; }
     if (s->feature_name_dict != nullptr) {
         const int e = vmaf_dictionary_free(&s->feature_name_dict);

@@ -148,10 +148,10 @@ static HeatmapRoundTrip run_heatmap_round_trip(const char *directory)
     HeatmapRoundTrip r;
     r.open_rc = vmaf_cambi_open_heatmaps(directory, HEATMAP_ENC_SIDE, HEATMAP_ENC_SIDE, files);
     r.dump_rc = r.open_rc ? r.open_rc : write_heatmap_frames(files);
-    r.closed = vmaf_cambi_close_heatmaps(files) == 0;
+    r.closed = vmaf_cambi_close_heatmaps(directory, files) == 0;
     for (int scale = 0; scale < VMAF_CAMBI_NUM_SCALES; scale++)
         r.closed = r.closed && files[scale] == NULL;
-    r.closed = r.closed && vmaf_cambi_close_heatmaps(files) == 0;
+    r.closed = r.closed && vmaf_cambi_close_heatmaps(directory, files) == 0;
     r.matches = heatmap_file_matches(directory);
     r.removed = remove_heatmap_directory(directory);
     return r;
@@ -181,7 +181,8 @@ static char *test_heatmap_writers_without_path(void)
     for (int scale = 0; scale < VMAF_CAMBI_NUM_SCALES; scale++)
         none = none && files[scale] == NULL;
     mu_assert("no heatmaps_path must succeed and open nothing", rc == 0 && none);
-    mu_assert("closing unopened heatmaps must succeed", vmaf_cambi_close_heatmaps(files) == 0);
+    mu_assert("closing unopened heatmaps must succeed",
+              vmaf_cambi_close_heatmaps(NULL, files) == 0);
     return NULL;
 }
 
@@ -200,7 +201,7 @@ static char *test_heatmap_writers_bad_path(void)
     const int closed = fclose(file) == 0;
     FILE *files[VMAF_CAMBI_NUM_SCALES] = {NULL};
     const int open_rc = vmaf_cambi_open_heatmaps(path, 216, 216, files);
-    const int close_rc = vmaf_cambi_close_heatmaps(files);
+    const int close_rc = vmaf_cambi_close_heatmaps(path, files);
     const int removed = vmaf_remove_utf8(blocker) == 0;
     mu_assert("could not close or remove the blocking file", closed && removed);
     mu_assert("a heatmaps_path under a regular file must be refused", open_rc == -EINVAL);
@@ -208,8 +209,67 @@ static char *test_heatmap_writers_bad_path(void)
     return NULL;
 }
 
+static int flush_heatmap_files(FILE *files[VMAF_CAMBI_NUM_SCALES])
+{
+    int ok = 1;
+    for (int scale = 0; scale < VMAF_CAMBI_NUM_SCALES; scale++)
+        ok = files[scale] != NULL && fflush(files[scale]) == 0 && ok;
+    return ok;
+}
+
+typedef struct HeatmapSharedPath {
+    int first_ok;
+    int second_open_rc;
+    int closed;
+    int kept;
+    int reopen_truncates;
+    int removed;
+} HeatmapSharedPath;
+
+/* Context A writes and flushes; context B opens the same directory while A is
+ * open and must not truncate A's samples. Once both closed, the next open
+ * starts a new run and truncates again (Netflix/vmaf PR 1707). */
+static HeatmapSharedPath run_heatmap_shared_path(const char *directory)
+{
+    FILE *first[VMAF_CAMBI_NUM_SCALES] = {NULL};
+    FILE *second[VMAF_CAMBI_NUM_SCALES] = {NULL};
+    FILE *third[VMAF_CAMBI_NUM_SCALES] = {NULL};
+    HeatmapSharedPath r;
+    r.first_ok =
+        vmaf_cambi_open_heatmaps(directory, HEATMAP_ENC_SIDE, HEATMAP_ENC_SIDE, first) == 0 &&
+        write_heatmap_frames(first) == 0 && flush_heatmap_files(first);
+    r.second_open_rc =
+        vmaf_cambi_open_heatmaps(directory, HEATMAP_ENC_SIDE, HEATMAP_ENC_SIDE, second);
+    r.closed = vmaf_cambi_close_heatmaps(directory, first) == 0;
+    r.closed = vmaf_cambi_close_heatmaps(directory, second) == 0 && r.closed;
+    r.kept = heatmap_file_matches(directory);
+    r.reopen_truncates =
+        vmaf_cambi_open_heatmaps(directory, HEATMAP_ENC_SIDE, HEATMAP_ENC_SIDE, third) == 0;
+    r.reopen_truncates = vmaf_cambi_close_heatmaps(directory, third) == 0 && r.reopen_truncates &&
+                         !heatmap_file_matches(directory);
+    r.removed = remove_heatmap_directory(directory);
+    return r;
+}
+
+static char *test_heatmap_writers_shared_path(void)
+{
+    char directory[256];
+    const int len =
+        snprintf(directory, sizeof(directory), "vmaf_cambi_heatmap_shared_%lu", process_id());
+    mu_assert("heatmap directory path overflow", len > 0 && (size_t)len < sizeof(directory));
+    const HeatmapSharedPath r = run_heatmap_shared_path(directory);
+    mu_assert("the first context could not open, write or flush", r.first_ok);
+    mu_assert("the second context could not open the shared path", r.second_open_rc == 0);
+    mu_assert("closing the two contexts failed", r.closed);
+    mu_assert("the second open truncated the first context's samples", r.kept);
+    mu_assert("an open after every context closed must truncate again", r.reopen_truncates);
+    mu_assert("the heatmap files or directory could not be removed", r.removed);
+    return NULL;
+}
+
 char *run_tests(void)
 {
+    mu_run_test(test_heatmap_writers_shared_path);
     mu_run_test(test_heatmap_writers_round_trip);
     mu_run_test(test_heatmap_writers_without_path);
     mu_run_test(test_heatmap_writers_bad_path);
