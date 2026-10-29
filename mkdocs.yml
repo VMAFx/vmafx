@@ -233,6 +233,7 @@ nav:
       - FFmpeg: usage/ffmpeg.md
       - GStreamer: usage/gstreamer.md
       - Input pixel formats: usage/pixel-formats.md
+      - Encoder registry: usage/encoder-registry.md
       - Python library: usage/python.md
       - Go module and versions: usage/go.md
       - MATLAB: usage/matlab.md

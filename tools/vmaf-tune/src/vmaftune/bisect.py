@@ -57,6 +57,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from .codec_adapters import get_adapter
+from .codec_adapters import registry as encoder_registry
 from .defaultmodel import DEFAULT_MODEL
 from .encode import EncodeRequest, bitrate_kbps, run_encode
 from .score import VMAF_RAW_SUFFIXES, ScoreRequest, maybe_decode_distorted, run_score
@@ -107,35 +108,20 @@ _VMAF_VALID_FLOOR: float = 0.0
 _VMAF_VALID_CEIL: float = 100.0
 
 
-# ADR-0538 — Encoder-absolute CRF ranges per codec, used as the bisect
-# search window when the caller passes ``crf_range=None``. These are the
-# bounds the encoder will accept at the FFmpeg CLI, NOT the
-# perceptually-informative window adapters expose via
-# :attr:`CodecAdapter.quality_range`. The premium-archival defaults
-# (``--target-vmafs 94,96,97,98``) frequently require CRFs below the
-# informative window — e.g. libsvtav1's ``quality_range = (20, 50)`` is
-# too tight to ever reach VMAF 97. The bisect therefore searches the
-# absolute range so high targets are reachable, and falls back to the
-# adapter's ``quality_range`` when no override exists for the codec.
+# ADR-0538 — the bisect search window when the caller passes
+# ``crf_range=None`` is the encoder's absolute quality range: the bounds
+# the encoder accepts at the FFmpeg CLI, NOT the perceptually-informative
+# window adapters expose via :attr:`CodecAdapter.quality_range`. The
+# premium-archival defaults (``--target-vmafs 94,96,97,98``) frequently
+# require CRFs below the informative window — e.g. libsvtav1's
+# ``quality_range = (20, 50)`` is too tight to ever reach VMAF 97.
 #
-# Sources (see docs/research/2026-05-18-premium-vmaf-bisect.md):
-#   libx264, libx265 : ``-crf 0..51`` (man x264; FFmpeg encoder doc)
-#   libvpx-vp9       : ``-crf 0..63`` (FFmpeg encoder doc)
-#   libaom-av1       : ``-crf 0..63`` (FFmpeg encoder doc)
-#   libsvtav1        : ``-crf 0..63`` (matches adapter.crf_min/crf_max)
-#
-# Hardware encoders (NVENC / AMF / QSV / VideoToolbox) and VVenC are
-# omitted from this table; their adapters either expose narrower native
-# quality ranges (CQ / QP scales that don't map to 0..63) or refuse
-# CRF 0 by design. For those codecs we fall back to the adapter's
-# ``quality_range`` until per-codec validation rules land.
-_ABSOLUTE_CRF_RANGE_BY_NAME: dict[str, tuple[int, int]] = {
-    "libx264": (0, 51),
-    "libx265": (0, 51),
-    "libvpx-vp9": (0, 63),
-    "libaom-av1": (0, 63),
-    "libsvtav1": (0, 63),
-}
+# The absolute ranges live in the encoder registry (ADR-3388,
+# ``api/vmafx-encoders.toml`` ``absolute_range``), shared with the Go
+# ``pkg/encoder``; sources are in
+# docs/research/2026-05-18-premium-vmaf-bisect.md. Hardware encoders and
+# VVenC carry an absolute range equal to their quality window there,
+# since their CQ / QP scales refuse CRF 0 by design.
 
 
 def _workdir_parent() -> Path | None:
@@ -282,8 +268,8 @@ def _absolute_crf_range(adapter: object) -> tuple[int, int]:
 
     Prefer (in order):
 
-    1. The codec-name lookup in :data:`_ABSOLUTE_CRF_RANGE_BY_NAME`
-       (curated per-codec encoder limits, see module docstring above).
+    1. The encoder registry's ``absolute_range`` for the codec name
+       (ADR-3388; curated per-codec encoder limits, see comment above).
     2. The adapter's own ``crf_min`` / ``crf_max`` attributes when both
        are present (libsvtav1 exposes these as the encoder absolute
        limits, distinct from the informative ``quality_range``).
@@ -295,7 +281,7 @@ def _absolute_crf_range(adapter: object) -> tuple[int, int]:
     window behaviour pass ``crf_range=adapter.quality_range`` directly.
     """
     name = getattr(adapter, "name", "")
-    table = _ABSOLUTE_CRF_RANGE_BY_NAME.get(str(name))
+    table = encoder_registry.absolute_range(str(name))
     if table is not None:
         return table
     crf_min = getattr(adapter, "crf_min", None)
