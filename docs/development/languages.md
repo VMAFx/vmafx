@@ -1,8 +1,8 @@
 <!-- markdownlint-disable MD013 MD060 -->
-# Languages used in VMAFX
+# Languages used in VMAFx
 
 Use this page to find which language a part of the tree is written in, which
-toolchain version it needs and which CI workflow checks it. VMAFX is a
+toolchain version it needs and where to find its verification policy. VMAFx is a
 multi-language project; each section below follows the same shape: where the
 language is used, the minimum version, how to install it and how to verify it.
 
@@ -10,11 +10,11 @@ language is used, the minimum version, how to install it and how to verify it.
 |---|---|---|---|
 | C / C++23 | `core/` | GCC 13 or Clang 17 | `lint-and-format.yml` |
 | Go | `cmd/`, `pkg/` | `go` directive of `go.mod` | `go-ci.yml` |
-| Rust | `bindings/rust/`, `core/src/feature/rust/` | stable | `rust-ci.yml` |
+| Rust | `bindings/rust/`, `core/src/rust/` | workspace `rust-version` | `rust-ci.yml` |
 | Python | `ai/`, `tools/`, `mcp-server/`, `python/`, `scripts/` | per package, see [Python](#python-ml-training-and-dev-scripts) | `lint-and-format.yml`, `tests-and-quality-gates.yml` |
 | GPU kernels | `core/src/feature/{cuda,sycl,hip,metal}/` | vendor SDK, see backend guides | `libvmaf-build-matrix.yml` |
 
-See [docs/principles.md §8](../principles.md#8-multi-language-policy-adr-0702)
+See [docs/principles.md §8](../principles.md#8-languages)
 for
 the policy constraints that govern which language is used for which role.
 
@@ -116,12 +116,14 @@ non-mutating `go fix -diff ./...` check and rejects any remaining patch. The
 default invocation covers the host Go package graph (CI: Linux/amd64 with
 cgo); platform- or tag-exclusive files need a matching qualified invocation.
 
-## Rust — FFI bindings + feature-extractor pilots
+## Rust — FFI bindings and engine crates
 
 **Used in:** `bindings/rust/vmafx-sys` and `bindings/rust/vmafx` (FFI
-bindings crates), `core/src/feature/rust/` (optional pilot feature extractors)
+bindings crates), `core/src/rust/` (engine and feature extractors), plus
+`core/src/feature/rust/tad/` (pilot)
 
-**Minimum version:** Rust stable (≥ 1.80 recommended; latest stable preferred)
+**Required version:** `rust-version` in `Cargo.toml` and
+`core/src/rust/Cargo.toml`; `build-config.env` pins the CI toolchain.
 
 **Install:**
 
@@ -134,7 +136,7 @@ rustup update stable
 **Verify:**
 
 ```bash
-rustc --version   # must be stable
+rustc --version   # must match rust-toolchain.toml
 cargo --version
 ```
 
@@ -145,9 +147,10 @@ cargo check --all   # or: make rust-build
 cargo test --all    # or: make rust-test
 ```
 
-The Rust workspace manifest is at `Cargo.toml` in the repo root. Its members
-are `bindings/rust/vmafx-sys`, `bindings/rust/vmafx` and
-`core/src/feature/rust/tad`.
+The root `Cargo.toml` workspace contains `bindings/rust/vmafx-sys` and
+`bindings/rust/vmafx`. The engine and TAD pilot belong to the separate
+`core/src/rust/Cargo.toml` workspace; run its tests with
+`cargo test --manifest-path core/src/rust/Cargo.toml --workspace`.
 
 ## Python: ML training and dev scripts
 
@@ -215,14 +218,9 @@ See the backend-specific guides:
 - [Vulkan removal notice](../backends/vulkan/overview.md)
 - [Metal](../backends/metal/index.md)
 
-## CI toolchain matrix
+## Verification policy
 
-| Language | CI gate | Workflow file |
-|---|---|---|
-| C / C++23 | clang-tidy, cppcheck, credential-safe Meson test runner | `.github/workflows/lint-and-format.yml` |
-| Go | `go fix -diff ./...` + `go vet ./...` + `go test ./...` | `.github/workflows/go-ci.yml` |
-| Rust | `cargo fmt --all` + `cargo clippy --workspace` + `cargo test --workspace --all-features` | `.github/workflows/rust-ci.yml` |
-| Python | ruff (pre-commit hooks) + mypy delta gate + pytest | `.github/workflows/lint-and-format.yml` (Python Lint), `.github/workflows/tests-and-quality-gates.yml` (pytest; which job runs which suite: [test suites](test-suites.md)) |
+[Engineering principles §8](../principles.md#8-languages) owns the per-language format, lint and test commands, safety requirements and missing gates. [The applicability matrix](../principles.md#9-applicability-matrix) maps the strict rules to each shipped language. This page owns toolchain setup; use the principles when checking a change.
 
 ## References
 
@@ -231,7 +229,7 @@ See the backend-specific guides:
 - [ADR-0686](../adr/0686-vmafx-rebrand-aggressive-modernization.md) — parent
   rebrand
   umbrella
-- [docs/principles.md §8](../principles.md#8-multi-language-policy-adr-0702) —
+- [docs/principles.md §8](../principles.md#8-languages) —
   policy constraints
 
 ## History
