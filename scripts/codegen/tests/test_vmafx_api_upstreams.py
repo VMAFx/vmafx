@@ -74,7 +74,8 @@ def stub(pages: dict[str, bytes], allcodecs: bytes = ALLCODECS) -> upstreams.Fet
 
 
 def verdicts(reg: encoders.Registry, pages: dict[str, bytes]) -> list[upstreams.Finding]:
-    return upstreams.check(reg, stub(pages), TODAY)
+    found: list[upstreams.Finding] = upstreams.check(reg, stub(pages), TODAY)
+    return found
 
 
 class Positive(unittest.TestCase):

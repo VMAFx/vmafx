@@ -35,7 +35,8 @@ def fetch(url: str) -> bytes:
     if token and url.startswith("https://api.github.com/"):
         request.add_header("Authorization", f"Bearer {token}")
     with urllib.request.urlopen(request, timeout=TIMEOUT_S) as response:  # noqa: S310 (https only)
-        return response.read()
+        body: bytes = response.read()
+    return body
 
 
 def main() -> int:
