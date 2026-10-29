@@ -115,10 +115,11 @@ int score(const unsigned char *const *ref, const unsigned char *const *dist, uns
 }
 ```
 
-Build against an installed tree with `pkg-config --cflags --libs libvmaf`;
-in this preview the API lives in the same library as `libvmaf.h`. RC4 splits
-it as ADR-1852 decides: `libvmafx.so.1` (pkg-config `libvmafx`) with
-`libvmaf.so.3` as a thin compatibility library on top.
+Build against an installed tree with `pkg-config --cflags --libs libvmafx`;
+the API lives in `libvmafx.so.1`, and `libvmaf.so.3` is the thin
+compatibility library on top of it (ADR-1852). For a complete program that
+reads two YUV files, scores them and prints the provenance record, see
+[Getting started with the C API](getting-started.md).
 
 ## Contexts and logging
 
