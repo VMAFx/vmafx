@@ -49,7 +49,7 @@ stack applied; no upstream hunks rebased.
  2 files changed, 90 insertions(+), 1 deletion(-)
 
 diff --git a/configure b/configure
-index 051be41257c98139dc4f59c6089fefc1575526d8..992ccaf9860c356bce018d9c00499b1240dfb063 100755
+index dacce8d856276726532f9e5ef492f04364b5ed5f..80af7c9159caa9b07e9628997e642e371c64e136 100755
 --- a/configure
 +++ b/configure
 @@ -294,6 +294,7 @@ External library support:
@@ -68,7 +68,7 @@ index 051be41257c98139dc4f59c6089fefc1575526d8..992ccaf9860c356bce018d9c00499b12
      libvmaf_sycl
      libvmaf_vulkan
      libvorbis
-@@ -7464,11 +7466,13 @@ enabled libuavs3d         && require_pkg_config libuavs3d "uavs3d >= 1.1.41" uav
+@@ -7470,11 +7472,13 @@ enabled libuavs3d         && require_pkg_config libuavs3d "uavs3d >= 1.1.41" uav
  enabled libv4l2           && require_pkg_config libv4l2 libv4l2 libv4l2.h v4l2_ioctl
  enabled libvidstab        && require_pkg_config libvidstab "vidstab >= 0.98" vid.stab/libvidstab.h vsMotionDetectInit
  enabled libvmaf           && require_pkg_config libvmaf "libvmaf >= 2.0.0" libvmaf.h vmaf_init

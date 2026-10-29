@@ -62,7 +62,7 @@ baseline).
  4 files changed, 525 insertions(+), 1 deletion(-)
 
 diff --git a/configure b/configure
-index f804911e5b4f4df75754af3e7672236a21dd3033..144b458cab359fc271d96402bb16ecc51d79e3b0 100755
+index cac71e915ad0b0d4b1028f28d485152f9ec84913..1539cfc500cef06124db6088a485cd5ef073eea2 100755
 --- a/configure
 +++ b/configure
 @@ -294,6 +294,7 @@ External library support:
@@ -81,7 +81,7 @@ index f804911e5b4f4df75754af3e7672236a21dd3033..144b458cab359fc271d96402bb16ecc5
      libvorbis
      libvpx
      libvvenc
-@@ -4296,6 +4298,7 @@ vidstabdetect_filter_deps="libvidstab"
+@@ -4302,6 +4304,7 @@ vidstabdetect_filter_deps="libvidstab"
  vidstabtransform_filter_deps="libvidstab"
  libvmaf_filter_deps="libvmaf"
  libvmaf_cuda_filter_deps="libvmaf libvmaf_cuda ffnvcodec"
@@ -89,7 +89,7 @@ index f804911e5b4f4df75754af3e7672236a21dd3033..144b458cab359fc271d96402bb16ecc5
  vmaf_pre_filter_deps="libvmaf"
  zmq_filter_deps="libzmq"
  zoompan_filter_deps="swscale"
-@@ -7458,6 +7461,8 @@ enabled libv4l2           && require_pkg_config libv4l2 libv4l2 libv4l2.h v4l2_i
+@@ -7464,6 +7467,8 @@ enabled libv4l2           && require_pkg_config libv4l2 libv4l2 libv4l2.h v4l2_i
  enabled libvidstab        && require_pkg_config libvidstab "vidstab >= 0.98" vid.stab/libvidstab.h vsMotionDetectInit
  enabled libvmaf           && require_pkg_config libvmaf "libvmaf >= 2.0.0" libvmaf.h vmaf_init
  enabled libvmaf           && check_pkg_config libvmaf_cuda "libvmaf >= 2.0.0" libvmaf_cuda.h vmaf_cuda_state_init
@@ -99,10 +99,10 @@ index f804911e5b4f4df75754af3e7672236a21dd3033..144b458cab359fc271d96402bb16ecc5
  enabled libvmaf           && check_pkg_config libvmaf_vulkan "libvmaf >= 3.0.0" libvmaf/libvmaf_vulkan.h vmaf_vulkan_state_init
  enabled vmaf_pre_filter   && require_pkg_config libvmaf_dnn "libvmaf >= 3.0.0" libvmaf/dnn.h vmaf_dnn_session_open
 diff --git a/libavfilter/Makefile b/libavfilter/Makefile
-index f29e468f82c741fdf9fb0d0b024eff76739f28b4..5e27bfc66c8d4e631964e28bd32f1f7b78bf9e2e 100644
+index 8a2d757c063326c4128d21506096ebacd9921a5b..fb01aea7be4c6d9814a1dfa32bda18f368d37594 100644
 --- a/libavfilter/Makefile
 +++ b/libavfilter/Makefile
-@@ -376,6 +376,7 @@ OBJS-$(CONFIG_LENSFUN_FILTER)                += vf_lensfun.o
+@@ -384,6 +384,7 @@ OBJS-$(CONFIG_LENSFUN_FILTER)                += vf_lensfun.o
  OBJS-$(CONFIG_LIBPLACEBO_FILTER)             += vf_libplacebo.o vulkan.o vulkan_filter.o
  OBJS-$(CONFIG_LIBVMAF_FILTER)                += vf_libvmaf.o framesync.o
  OBJS-$(CONFIG_LIBVMAF_CUDA_FILTER)           += vf_libvmaf.o framesync.o
@@ -111,10 +111,10 @@ index f29e468f82c741fdf9fb0d0b024eff76739f28b4..5e27bfc66c8d4e631964e28bd32f1f7b
  OBJS-$(CONFIG_LIMITER_FILTER)                += vf_limiter.o
  OBJS-$(CONFIG_LOOP_FILTER)                   += f_loop.o
 diff --git a/libavfilter/allfilters.c b/libavfilter/allfilters.c
-index 71723329049141015ec849b51635004675df0ac6..ac7f3f4d849ceeaa5fadd773e1f4999bd1cd96c3 100644
+index a6d316a37c0ea61a6f47e34ee6ff215975aa3c34..e66b43cb54cb5f94e20a96093557bef59038c737 100644
 --- a/libavfilter/allfilters.c
 +++ b/libavfilter/allfilters.c
-@@ -350,6 +350,7 @@ extern const FFFilter ff_vf_lensfun;
+@@ -355,6 +355,7 @@ extern const FFFilter ff_vf_lensfun;
  extern const FFFilter ff_vf_libplacebo;
  extern const FFFilter ff_vf_libvmaf;
  extern const FFFilter ff_vf_libvmaf_cuda;

@@ -124,6 +124,13 @@
   [device frames and fences](docs/api/vmafx/index.md#device-frames-and-fences).
 
 
+- **Documentation C samples compile, and every exported `vmafx_*` symbol is
+  documented (issue 2436).** A C sample marked `<!-- compile -->` is compiled
+  against the public headers by the Meson test `test_api_doc_samples`, and
+  `test_api_doc_reachability` fails on an exported symbol no user page names
+  ([C API samples that compile](docs/development/docs-site-design.md#c-api-samples-that-compile)).
+
+
 - **VMAFx frame colour and the sample range check (VMAFx API 0.1.6).** A
   frame carries its colour in `VmafxFrameDesc.color`, and
   `vmafx_context_set_default_color()` gives the colour of the frames that
@@ -422,6 +429,13 @@
 - **Dev container ships pinned `rr` and `ClangBuildAnalyzer` diagnostic tools (ADR-3336).** `rr` (Ubuntu 26.04 package `5.9.0-5`) enables deterministic reverse debugging (`rr record` / `rr replay`), and `ClangBuildAnalyzer` (v1.6.0) analyzes `-ftime-trace` build profiles to identify compilation bottlenecks. Both versions are pinned in `dev/Containerfile`; `scripts/ci/check_ort_tarball_pins.py` checks that the ClangBuildAnalyzer download is SHA-256 verified before extraction (ADR-3334, ADR-3336). See the dev-container guide for usage.
 
 
+- **Coding-agent clients reach the dev container's MCP server.** The project
+  files `.mcp.json`, `opencode.json` and `.gemini/settings.json` wire
+  `vmafx-dev` (`docker exec -i vmaf-dev-mcp vmafx-mcp`), so Claude Code,
+  opencode, Gemini CLI and Antigravity can score, probe and benchmark through
+  the container; see the dev-MCP guide for Codex and the start step.
+
+
 - **One distribution manifest for every artifact and channel (ADR-3317, #2314).**
   `packaging/manifest.toml` lists each shipped artifact once (files, platform,
   ABI, backends, licence, signing, SBOM, producing job) and each channel by the
@@ -430,6 +444,9 @@
   index per channel; `distribution.py check` fails CI when a channel names an
   artifact no pipeline builds or a licence differs from the licensing record
   ([Distribution manifest](docs/development/distribution.md)).
+
+
+- **SVT Encore filter strings in the upstream consumer check (#2364).** `scripts/ci/upstream-ffmpeg-compat.sh --against-cli` runs the `libvmaf` filter graphs SVT Encore builds for its VMAF profile options (model, feature, threads, subsample, reference filters; Encore pinned at `8dd7c596`) on upstream FFmpeg with `libvmaf.so.3` and requires the vmaf CLI's JSON exactly; an unknown feature or model must be refused.
 
 
 - **The patched FFmpeg is built with MSVC against `vmaf.lib` on every change
@@ -443,6 +460,29 @@
   `ffmpeg-patches/test/build-and-run.sh` takes `FFMPEG_TOOLCHAIN=msvc`,
   `FFMPEG_JOBS`, `SMOKE_FATE` and `VMAF_SCORE_CHECK`
   ([FFmpeg with MSVC](docs/getting-started/building-on-windows.md#ffmpeg-with-msvc)).
+
+
+- **CI builds and checks the `vmafx` FFmpeg filter (#2475).** The required
+  check `FFmpeg vmafx Filter` builds FFmpeg with `--enable-libvmafx` and
+  compares the filter's report with the `vmaf` CLI (`parity`, `windows`,
+  `contract`, `provenance`) on every pull request that touches the core, the
+  patches or the workflows
+  ([Checking a vmafx build](docs/usage/ffmpeg.md#checking-a-vmafx-build)).
+
+
+- **The `vmafx` GStreamer element's properties are tested against the API definition (#2474).**
+  `gstreamer/test/test_gst_vmafx_properties.py` compares the properties the
+  element installs, and the property table of the GStreamer user page, with the
+  options of `core/api/vmafx.toml`; a planted extra or missing property fails.
+
+
+<!-- Copyright 2026 Lusoris -->
+<!-- SPDX-License-Identifier: EUPL-1.2 -->
+<!-- markdownlint-disable MD041 -->
+
+- Document the native `vmafx` GStreamer element: build, properties, input
+  caps, pipelines, messages, provenance, upstream migration and limitations
+  (#2236).
 
 
 - **A native `vmafx` GStreamer element on the VMAFx API (RC4, #2236).** The
@@ -500,6 +540,9 @@
   ([ADR-2478](docs/adr/2478-rust-core-migration.md)).** `.config/lint-exceptions.d/host-c-cpp.toml`
   names the host C files that stay C on the way to 3.0, each with owner, re-evaluation
   trigger and category; its first entries are the ten pelorus interop mirror files.
+
+
+- Add `make install-layout-check` to verify the staged Linux SDK's libraries, SONAMEs, headers, pkg-config dependency, engine symbol versions, and two compiled C consumers, with an unversioned-symbol negative control.
 
 
 - **Mini retrain and a resumable stage runner for the retrain tooling** (ADR-1898, issue #1246).
@@ -872,6 +915,14 @@
   ([Built-in models](docs/models/overview.md#built-in-models)).
 
 
+- **Device-frames guide for the VMAFx C API (issue 2436).** A new page
+  explains how GPU decoder frames reach the library without a host copy:
+  `vmafx_frame_import()`, the memory kinds and fence kinds each backend
+  accepts (CUDA, HIP, SYCL, Vulkan import), what Metal supports today, the
+  release fence and the failures a refusal reports
+  ([Device frames](docs/api/vmafx/device-frames.md)).
+
+
 - **Errors and versioning guides for the VMAFx C API (issue 2436).** Two new
   pages explain how a call reports failure (status code, the optional
   `VmafxError`, its subject and errno, the message that reaches the log when
@@ -1162,6 +1213,13 @@
   failed download three times with a 30-second connection and data timeout, so a
   stalled package mirror fails or recovers within minutes instead of using up the
   whole job (`.github/workflows/tests-and-quality-gates.yml`).
+
+
+- **CI queue**: Renovate now rebases its open pull requests only inside its
+  weekly schedule and runs at most two pull requests at once, and every
+  pull-request workflow cancels its older runs on a newer push; a master push
+  no longer fills the runner queue with a rebase wave
+  ([ADR-3384](../docs/adr/3384-ci-queue-burst-renovate-schedule.md)).
 
 
 - **CI runs the tier a pull request owes, not the whole suite on every push
@@ -1796,6 +1854,9 @@
   [CI](docs/development/ci.md#pre-commit-scope-hiss-18).
 
 
+- **Engineering principles now map strict rules to every shipped language.** [The language policy](docs/principles.md#8-languages) identifies existing checks and missing enforcement, updates the generated RC4 API boundary and aligns revision approval with the single-maintainer policy. [ADR-3385](docs/adr/3385-principles-per-language-matrix.md) records this documentation-only first slice of #2438; gate implementation follows separately.
+
+
 - **Tracked text names no development host.** Measurements and examples in the
   documentation, tests and comments now say "a reference workstation" instead
   of a machine's host name, use placeholders (`<nvidia-bdf>`, `<arc-bdf>`) or
@@ -2064,6 +2125,13 @@
   unchanged.
 
 
+- **Documentation entry points lead to the VMAFx C API (issue 2436).** The
+  README, the getting-started guide and the first-score page link the
+  [VMAFx API](docs/api/vmafx/index.md) first, and every `libvmaf.h` topic page
+  carries a deprecation notice that points to the
+  [migration table](docs/api/vmafx/compat.md).
+
+
 - **FFmpeg `vf_vmafx` shares device open and import finishing helpers.**
   `ffmpeg-patches/src/vf_vmafx.c` extracts `device_create_from_option()` for DRM and
   software-GPU device setup and `import_finish()` for CUDA and DRM release fences
@@ -2180,6 +2248,12 @@
   wait for the lock is 60 s instead of 10 s (`VMAF_ADR_LOCK_WAIT_S`), and the
   timeout message names the holder
   ([adr-workflow](docs/development/adr-workflow.md#why-use-claim)).
+
+
+- ADR workflow guide: step 4 no longer tells contributors to append to the
+  frozen `docs/adr/_index_fragments/_order.txt`, and step 6 no longer stages the
+  rendered index, tag and title pages or `CHANGELOG.md`, which a pull request
+  must not carry ([adr-workflow](docs/development/adr-workflow.md)).
 
 
 - CI: the required-checks aggregator of a master push no longer reads the check runs of a scheduled
@@ -2360,6 +2434,9 @@
   a command now runs it and exits with its status; a start without one still stays up for
   `docker exec`. The `smoke-probe-cron` compose service now runs its probe loop.
   `docs/development/dev-mcp.md` shows the one-shot forms.
+
+
+- Documentation: the FFmpeg commands that make the distorted test clips in `docs/benchmarks.md` and `docs/usage/bench.md` encode with libx264 again (one piped raw video into a decoder that expected raw frames and failed, the other wrote a copy of the reference), and the `vmaf_pre` example of `docs/ai/models/learned_filter_v1.md` gives raw inputs their pixel format and size (#2477).
 
 
 - **The documentation site names `https://vmafx.dev/` as its address.** The
@@ -2635,6 +2712,15 @@
   when the fetched commit is not the pin or lacks the loader header.
 
 
+- **Device twins refuse unmeasured odd bit depths
+  ([ADR-3383](../docs/adr/3383-odd-depth-twin-allow-list.md), #2476).** A CUDA,
+  SYCL, HIP or Metal extractor at 9, 11, 13, 14 or 15 bits now returns `-EINVAL`
+  by name unless its parity test carries that depth: the CUDA, SYCL and HIP
+  `float_psnr` and `ciede` twins up to 15 bits, the `psnr_hvs` twins up to 11
+  bits. Before, twins outside the five `picture_copy()` families were accepted
+  unmeasured, and the `float_moment` twins returned unscaled moments there.
+
+
 - **Traces, metrics and logs leave the services when an OTLP endpoint is
   set.** `vmafx-server`, `vmafx-controller`, `vmafx-node`, `vmafx-operator`
   and `vmafx-mcp` never built their OpenTelemetry exporters, so nothing was
@@ -2671,6 +2757,21 @@
   turned the `Windows MSVC+CUDA (full)` lane on `master` red. A cache file that cannot
   be read when a call adds an entry now raises `PersistCacheError` instead of being
   overwritten (`compat/python-vmaf/tools/decorator.py`).
+
+
+- Build: `test_picture_convert_log` links libvmafx's own objects for
+  `conversion_context.c`, `conversion_policy.c` and `picture_sample_range.c`
+  instead of compiling the three sources a second time. The second compile made
+  CodeQL report two used static helpers of `conversion_context.c` as unreachable
+  (code-scanning alerts 1589 and 1590).
+
+
+- Tests: `test_picture_convert_log` installs its capture sink from static storage, so the
+  thread-local sink pointer never holds the address of a returned stack frame (CodeQL
+  `cpp/stack-address-escape`, `core/src/log.cpp`). Four new cases cover
+  `vmaf_conversion_state_register_model()`: a model whose conversion target differs from the
+  registered one is refused with `-EINVAL` and one ERROR line naming it, an equal target is
+  accepted.
 
 
 - **The pre-push PR-body check skips a dependency-only bot PR, as CI's
@@ -2738,6 +2839,9 @@
   12 and 16 with `-EINVAL` (the CLI printed "problem reading pictures"), although the engine reads 8 to 16;
   the raw and y4m inputs of those depths now reach it. `float_psnr` and `ciede` still take 8, 10, 12 and
   16 only and `psnr_hvs` up to 12 (`docs/state.md`).
+
+
+- **QSV and VAAPI pixel formats follow the output depth.** The Go and Python QSV encode chains upload `p010le` frames when the output is 10-bit (`-pix_fmt p010le` / `yuv420p10le` or `-profile:v main10`) and `nv12` otherwise; before, a 10-bit HDR encode uploaded 8-bit `nv12` frames. The VAAPI examples download `nv12` or `p010le` instead of the unsupported `yuv420p`. The QSV adapter cache version moves to 3 (#2477 P4-7, P4-12).
 
 
 - **The RC3 home GPU retest kit survives a failing `nvidia-smi`.** `scripts/dev/rc3-home-gpu-retest.sh`

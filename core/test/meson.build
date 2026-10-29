@@ -1217,10 +1217,16 @@ test('test_picture_convert_api', test_picture_convert_api, suite : ['fast'])
 
 # Netflix/vmaf PR 1710: the DEBUG lines of picture conversion (one per run
 # without conversion; source and target per context in zimg builds).
+# The conversion sources are libvmafx's own objects, compiled once
+# (ADR-1003): a second compile of conversion_context.c gave CodeQL a copy
+# whose static helpers it reported unreachable (code-scanning alerts 1589,
+# 1590).
 test_picture_convert_log = executable('test_picture_convert_log',
-    ['test.c', 'test_picture_convert_log.c', '../src/conversion_context.c',
-     '../src/conversion_policy.c', '../src/picture_sample_range.c'],
-    objects : log_cpp23_test_objects,
+    ['test.c', 'test_picture_convert_log.c'],
+    objects : [log_cpp23_test_objects,
+               libvmafx.extract_objects(src_dir + 'conversion_context.c',
+                                        src_dir + 'conversion_policy.c',
+                                        src_dir + 'picture_sample_range.c')],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : [picture_convert_lib, test_picture_lib],
     c_args : picture_convert_test_args,
@@ -3131,6 +3137,19 @@ if host_machine.system() != 'windows'
     # fmemopen, so gated off Windows alongside test_y4m_411_oob.
     test_video_input_odd_dims = executable('test_video_input_odd_dims',
         ['test.c', 'test_video_input_odd_dims.c', '../tools/vidinput.c', '../tools/y4m_input.c',
+         '../tools/yuv_input.c'],
+        include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), include_directories('../tools/')],
+        link_with : vmaf_test_link,
+        c_args : [compat_cflags],
+        dependencies: [pthread_dependency, sycl_dependency],
+        kwargs : test_link_kwargs,
+    )
+
+    # Netflix/vmaf PR 1682: a y4m stream shallower than the picture reads
+    # into it left-shifted to the picture's depth through the direct reader;
+    # a deeper stream or an 8-bit picture is refused. fmemopen, so POSIX only.
+    test_y4m_mixed_depth = executable('test_y4m_mixed_depth',
+        ['test.c', 'test_y4m_mixed_depth.c', '../tools/vidinput.c', '../tools/y4m_input.c',
          '../tools/yuv_input.c'],
         include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), include_directories('../tools/')],
         link_with : vmaf_test_link,
@@ -9919,6 +9938,7 @@ test('test_spinner', test_spinner, suite : ['fast'])
 if host_machine.system() != 'windows'
     test('test_y4m_411_oob', test_y4m_411_oob, suite : ['fast'])
     test('test_video_input_odd_dims', test_video_input_odd_dims, suite : ['fast'])
+    test('test_y4m_mixed_depth', test_y4m_mixed_depth, suite : ['fast'])
     test('test_cli_parse_long_only_args', test_cli_parse_long_only_args, suite : ['fast'])
     test('test_y4m_alloc_failure', test_y4m_alloc_failure, suite : ['fast'])
 endif
