@@ -63,9 +63,7 @@ jobs:
           # ADR-1297 — both rows are required checks. They build FFmpeg n8.1
           # --enable-libvmaf against the freshly installed library, which is
           # the consumer contract agent hard rule 11 exists to protect.
-          #
-          # Dated fallback (ADR-3251), ends 2026-10-29: .config/lint-exceptions.d/hosted-runner-label.toml
-          - os: ubuntu-24.04
+          - os: ubuntu-26.04
             CC: gcc
             CXX: g++
             check_name: FFmpeg Ubuntu gcc
@@ -90,7 +88,7 @@ jobs:
       - name: Install meson and ninja
         run: python -m pip install --require-hashes -r requirements/locks/build.txt
       - name: Install dependencies (ubuntu)
-        if: matrix.os == 'ubuntu-24.04'
+        if: matrix.os == 'ubuntu-26.04'
         run: |
           sudo apt-get update
           sudo -E apt-get -yq install ninja-build gcc nasm
@@ -155,8 +153,7 @@ jobs:
     # ADR-1297 — required. Build-only FFmpeg with the SYCL patch applied; no
     # other leg links that patch-stack surface.
     name: FFmpeg SYCL work
-    # Dated fallback (ADR-3251), ends 2026-10-29: .config/lint-exceptions.d/hosted-runner-label.toml
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 60
     env:
       CC: gcc

@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1424), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1427), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5707,3 +5707,15 @@ Every ADR, one heading each (1424), so the site search finds an ADR by its title
 ## ADR-3382: The encode service leaves VMAFx for its own repository, torcul
 
 [3382-encode-service-leaves-vmafx](3382-encode-service-leaves-vmafx.md)
+
+## ADR-3383: Device twins take odd bit depths only from a measured allow-list
+
+[3383-odd-depth-twin-allow-list](3383-odd-depth-twin-allow-list.md)
+
+## ADR-3384: Renovate updates inside its schedule; pull-request runs supersede
+
+[3384-ci-queue-burst-renovate-schedule](3384-ci-queue-burst-renovate-schedule.md)
+
+## ADR-3385: Map engineering principles to every shipped language
+
+[3385-principles-per-language-matrix](3385-principles-per-language-matrix.md)

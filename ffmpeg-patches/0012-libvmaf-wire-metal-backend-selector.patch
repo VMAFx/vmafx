@@ -66,7 +66,7 @@ applied; applies cleanly.
  2 files changed, 50 insertions(+)
 
 diff --git a/configure b/configure
-index 46973b60e1128fdf60f5236c0666fbe9ce7a3a71..fc8cab818ef59faeb3c4ffbcfbaac504a4ff5ee4 100755
+index ddae5f7a5069e0f597cd30c3e025643453a692ac..f7701494f3ed5e0b6c908a773f745c4e5908f0f7 100755
 --- a/configure
 +++ b/configure
 @@ -295,6 +295,7 @@ External library support:
@@ -85,7 +85,7 @@ index 46973b60e1128fdf60f5236c0666fbe9ce7a3a71..fc8cab818ef59faeb3c4ffbcfbaac504
      libvmaf_cuda
      libvmaf_sycl
      libvmaf_vulkan
-@@ -7471,6 +7473,9 @@ enabled libvmaf           && require_pkg_config libvmaf "libvmaf >= 2.0.0" libvm
+@@ -7477,6 +7479,9 @@ enabled libvmaf           && require_pkg_config libvmaf "libvmaf >= 2.0.0" libvm
  enabled libvmaf_hip       && require_pkg_config libvmaf "libvmaf >= 3.0.0" libvmaf.h vmaf_init &&
                               check_pkg_config libvmaf_hip "libvmaf >= 3.0.0" libvmaf/libvmaf_hip.h vmaf_hip_state_init
  enabled libvmaf           && check_pkg_config libvmaf_hip "libvmaf >= 3.0.0" libvmaf/libvmaf_hip.h vmaf_hip_state_init

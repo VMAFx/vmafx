@@ -516,6 +516,7 @@ nav:
       - Self-hosted runner: development/self-hosted-runner.md
       - Agent dispatch: development/agent-dispatch.md
       - Agent hard rules: development/agent-hard-rules.md
+      - Agent reference: development/agent-reference.md
       - Agent worktree discipline: development/agent-worktree-discipline.md
       - Rebase-sensitive invariants: development/rebase-sensitive-invariants.md
       - Automated rule enforcement: development/automated-rule-enforcement.md

@@ -101,181 +101,74 @@ make verify-all
 # AGENTS.md — VMAFx
 
 > **CORRECT REPO: `VMAFx/vmafx` (active) — NOT `lusoris/vmaf` (archived)**
-> Fork renamed + transferred. All new work, PRs, gh commands -> `VMAFx/vmafx`.
-> Session start, before any `gh` command: `gh repo set-default VMAFx/vmafx`.
+> Fork renamed + transferred. All work, PRs, gh commands -> `VMAFx/vmafx`. Session start: `gh repo set-default VMAFx/vmafx`.
 
 ## GLOBAL PROJECT RULES (TOP PRIORITY)
 
-Two rules. Scope: ALL agents, ALL tools, ALL commits, no exception. Override everything else in this file.
-
-1. **NEVER modify Netflix golden-data assertions** (`python/test/` `assertAlmostEqual` values).
-   Numerical-correctness ground truth. Scores drift -> fix code, not assertions.
-   Sole exception: port Netflix upstream update verbatim (value + places as upstream, never fork-invented) after measuring on fork CPU build ([ADR-1828](docs/adr/1828-port-netflix-golden-updates.md)).
-2. **EVERY user-discoverable surface gets human-readable documentation in the same PR** as the code.
-   No docs = unmergeable PR. ADRs, code comments: no substitute.
-
-Audience: any coding agent (Cursor, Copilot, Aider, Continue, Cody, Codeium, etc.).
-[CLAUDE.md](CLAUDE.md) = compiled projection of this file, never edited by hand. Claude Code–specific tooling (skills, hooks, agents): `.claude/`.
+1. NEVER modify Netflix golden-data assertions (`python/test/` `assertAlmostEqual`). Exception: verbatim upstream port ([ADR-1828](docs/adr/1828-port-netflix-golden-updates.md)).
+2. EVERY user-discoverable surface gets human-readable documentation in same PR.
 
 ## 1. What this repo is
 
 - Fork of [Netflix/vmaf](https://github.com/Netflix/vmaf): perceptual video quality assessment.
-- Additions over upstream: SYCL / CUDA / HIP GPU backends (runtime-selected); AVX2/AVX-512/NEON SIMD; tiny-AI surface (ONNX Runtime; `ai/`, `core/src/dnn/`); MCP server (`mcp-server/vmaf-mcp/`).
-- `--precision` CLI flag: default `%.6f` Netflix-compat; `--precision=max` opts in to `%.17g` IEEE-754 round-trip lossless. ADR-0119 supersedes ADR-0006.
-- License: per-file `SPDX-License-Identifier` authoritative ([ADR-1250](docs/adr/1250-eupl-fork-relicense.md)). Netflix / other inherited code keeps its terms: BSD-2-Clause-Patent, upstream license preserved ([NOTICE](NOTICE)). Fork-authored code: EUPL-1.2 ([LICENSE](LICENSE)). Root licence files fixed ([ADR-1699](docs/adr/1699-root-licence-files-eupl.md)): no other root licence file.
-- Default branch: `master`. Upstream tracked as remote `upstream`.
+- Additions: GPU backends (SYCL/CUDA/HIP runtime-selected), AVX2/AVX-512/NEON SIMD, tiny-AI (ONNX Runtime; `ai/`, `core/src/dnn/`), MCP server (`mcp-server/vmaf-mcp/`).
+- CLI `--precision`: default `%.6f` (Netflix-compat), `--precision=max` opts in to `%.17g` IEEE-754 round-trip lossless ([ADR-0119](docs/adr/0119-cli-precision-default-revert.md)).
+- Licence: per-file `SPDX-License-Identifier` authoritative; fork EUPL-1.2 ([ADR-1250](docs/adr/1250-eupl-fork-relicense.md)), inherited BSD-2-Clause-Patent; default branch `master`, remote `upstream`.
 
-## 2. Build
-
-Meson + Ninja, not CMake. Run from repo root; Meson source dir = `core/`.
+## 2. Build, test, lint
 
 ```text
 meson setup build core [-Denable_cuda=true|false] [-Denable_sycl=true|false]
 ninja -C build
+python3 scripts/ci/run_meson_test.py -- -C build [--suite=fast]
+make test
+make test-netflix-golden
+make preflight     # CI compiler matrix locally before push
+make lint
+make format        # writes
+make format-check  # dry-run
 ```
 
-- CPU configuration: [source-build guide](docs/getting-started/index.md#build-from-source-any-platform). SDK setup + GPU configurations: [backend guides](docs/backends/index.md).
-- Skill shortcut: `/build-vmaf --backend=cpu|cuda|sycl|all`.
-- IDE: clangd / VS Code C/C++ extension read `${workspaceFolder}/build/` ([`.vscode/c_cpp_properties.json`](.vscode/c_cpp_properties.json)). Configure it with every backend toolchain present; else `compile_commands.json` lacks CUDA / SYCL include paths -> "undeclared identifier" on every backend file. Vulkan removed (ADR-0726): `volk.h` / `vk_mem_alloc.h` no longer needed. See [docs/development/ide-setup.md](docs/development/ide-setup.md).
+- Build guide: [docs/getting-started/index.md#build-from-source-any-platform](docs/getting-started/index.md#build-from-source-any-platform)
+- Backend guides: [docs/backends/index.md](docs/backends/index.md)
 
-## 3. Test
+## 3. Coding standards
 
-```text
-python3 scripts/ci/run_meson_test.py -- -C build              # unit tests
-python3 scripts/ci/run_meson_test.py -- -C build --suite=fast # fast subset
-make test                               # full + ASan + UBSan
-make test-netflix-golden                # Netflix CPU golden-data gate (see §8)
-```
+- Read [docs/principles.md](docs/principles.md) before writing C. Conforms to NASA/JPL Power of 10, JPL C, CERT C/C++, MISRA subset; K&R 4-space, 100 cols.
+- Banned: `gets`, `strcpy`, `strcat`, `sprintf`, `strtok`, `atoi`, `atof`, `rand`, `system`.
+- Every non-void return checked, handled; casting to `(void)` does not handle error.
 
-## 4. Lint / format
+## 4. Netflix golden gate
 
-```text
-make preflight     # CI compiler matrix locally: clang, sanitizers, MSVC-hostile constructs, tidy, cppcheck
-make lint          # configured native + Python, shell, Markdown, Go and docs checks
-make format        # clang-format + black + ruff (writes)
-make format-check  # dry-run (CI / pre-commit)
-```
+- Three reference CPU pairs = numerical ground truth. Never modify assertions in `python/test/` except verbatim upstream ports.
+- Isolated build profile runs via `make test-netflix-golden`; full detail: [docs/development/agent-reference.md#netflix-golden-data-gate](docs/development/agent-reference.md#netflix-golden-data-gate).
 
-`make preflight` before push: `make lint` builds with one compiler, misses portability breaks (ADR-1234). Skills: `/format-all`, `/lint-all`.
+## 5. Snapshots
 
-## 5. Repository layout
+- `testdata/scores_cpu_*.json`, `testdata/netflix_benchmark_results.json` = fork snapshots (not golden data).
+- Intentional numeric change -> regenerate via `/regen-snapshots` with commit justification.
 
-Former [CLAUDE.md §5](CLAUDE.md) layout, merged here:
+## 6. Upstream sync
 
-- `core/` — C library + build root (was `libvmaf/`, ADR-0700); `core/include/libvmaf/` public C API headers; `core/test/` C unit tests
-- `core/src/` — C engine: metric engine, feature extractors
-- `core/src/{cuda,sycl,dnn}/` — GPU / DNN backends: CUDA runtime (picture, dispatch), SYCL runtime (queue, USM, dmabuf), ONNX Runtime integration
-- `core/src/feature/{x86,arm64,cuda,sycl}/` — per-platform feature implementations: AVX2 / AVX-512, NEON, CUDA kernels, SYCL kernels
-- `core/tools/` — `vmaf` CLI (`vmaf.cpp`, `cli_parse.cpp`, `vmafx` symlink / Windows exe) + `vmaf_bench`
-- `compat/python-vmaf/` — Python harness package (was `python/vmaf/`, ADR-0700)
-- `python/vmaf/` + `python/test/` — Python shim re-exporting `compat/python-vmaf/` + tests (golden-data here)
-- `ai/` — PyTorch + Lightning tiny-model training
-- `mcp-server/` — MCP JSON-RPC server (`mcp-server/vmaf-mcp/`, Python)
-- `model/` — VMAF models (.json / .pkl / .onnx)
-- `testdata/` — fork-added YUV + snapshot JSONs
-- `dev/` — dev-MCP Docker container (`Containerfile`, `docker-compose.yml`, `scripts/`)
-- `docs/` — all documentation, upstream-mirrored + fork-added; `docs/principles.md` — canonical engineering standards
-- `.claude/` — Claude Code config: skills, agents, hooks
-- `.workingdir/` — private session state, bounded cache, local evidence, and
-  recovery material (gitignored); never use it as public documentation authority
-- `.corpus/` — local datasets, extracted media, reusable encodes, and derived
-  feature tables (gitignored); do not mix corpora into `.workingdir/`
-- Public documentation links only to tracked files. It may show either local
-  root as a command example, but must never hyperlink into an ignored directory.
+- Remote setup: `git remote add --no-tags upstream https://github.com/Netflix/vmaf.git`; sync via skills `sync-upstream` or `port-upstream-commit`.
 
-## 6. Coding standards
+## 7. Release
 
-Read [docs/principles.md](docs/principles.md) before writing C. All C code conforms to:
+- `release-please` triggers on pushes to `master`. 0.x line restarted at `0.1.0` ([ADR-3292](docs/adr/3292-release-line-restart-0x.md)); pre-1.0 breaking = minor bump; release candidates only for 1.0.0.
+- Milestone map: [docs/development/release.md#release-map](docs/development/release.md#release-map).
+- Stage definitions and gate rules: [docs/development/agent-reference.md#release-stages](docs/development/agent-reference.md#release-stages).
 
-- NASA/JPL Power of 10 (enforced by `.clang-tidy`)
-- JPL Institutional Coding Standard for C (applicable subset)
-- SEI CERT C & CERT C++ (mandatory)
-- MISRA C:2012 (informative subset)
+## 8. Hard rules and invariants
 
-Banned functions, pointer/loop/alloc restrictions, exact `.clang-tidy` checks codifying them: [docs/principles.md](docs/principles.md). Banned: `gets`, `strcpy`, `strcat`, `sprintf`, `strtok`, `atoi`, `atof`, `rand`, `system` (§1.2 rule 30). Every non-void return value must be checked and handled; casting it to `void` does not handle an error.
+- Binding hard rules: read before first commit. Invariants page: read relevant section before rebase, upstream sync, conflict resolution, or editing cited files.
+- [Agent hard rules](docs/development/agent-hard-rules.md) — golden gate, branch/commit rules, same-PR docs, license headers, state tracking.
+- [Worktree discipline](docs/development/agent-worktree-discipline.md) — isolated agent worktrees, host guard.
+- [Rebase-sensitive invariants](docs/development/rebase-sensitive-invariants.md) — index preserved across upstream sync and rebase.
 
-Style: K&R, 4-space indent, 100-char line budget (see `.clang-format`).
+## 9. Reference documentation
 
-## 7. Conventional entry points for common tasks
+- Full reference material: [docs/development/agent-reference.md](docs/development/agent-reference.md) (repository layout, skills table, golden detail, release stages).
 
-Each workflow = Claude skill under `.claude/skills/`. Agents without slash-command routing: read matching `SKILL.md`, follow steps by hand.
+## 10. Interaction style
 
-| Task                              | See                                               |
-|-----------------------------------|---------------------------------------------------|
-| Build against a backend           | `.claude/skills/build-vmaf/SKILL.md`              |
-| Build ffmpeg w/ libvmaf patches   | `.claude/skills/build-ffmpeg-with-vmaf/SKILL.md`  |
-| Refresh ffmpeg-patches/ series    | `.claude/skills/refresh-ffmpeg-patches/SKILL.md`  |
-| Add new GPU backend               | `.claude/skills/add-gpu-backend/SKILL.md`         |
-| Add SIMD path                     | `.claude/skills/add-simd-path/SKILL.md`           |
-| Add feature extractor             | `.claude/skills/add-feature-extractor/SKILL.md`   |
-| Add a model                       | `.claude/skills/add-model/SKILL.md`               |
-| Add/audit AI run manifest         | `.claude/skills/ai-run-manifest/SKILL.md`         |
-| Cross-backend numeric diff        | `.claude/skills/cross-backend-diff/SKILL.md`      |
-| Validate scores (per-backend ULP) | `.claude/skills/validate-scores/SKILL.md`         |
-| Run Netflix bench harness         | `.claude/skills/run-netflix-bench/SKILL.md`       |
-| Profile a hot path                | `.claude/skills/profile-hotpath/SKILL.md`         |
-| Bisect a code regression          | `.claude/skills/bisect-regression/SKILL.md`       |
-| Bisect ONNX checkpoint quality    | `.claude/skills/bisect-model-quality/SKILL.md`    |
-| Port upstream commit              | `.claude/skills/port-upstream-commit/SKILL.md`    |
-| Sync with upstream master         | `.claude/skills/sync-upstream/SKILL.md`           |
-| Regenerate test snapshots         | `.claude/skills/regen-snapshots/SKILL.md`         |
-| Regenerate Doxygen / Sphinx docs  | `.claude/skills/regen-docs/SKILL.md`              |
-| Format all (clang-format / black) | `.claude/skills/format-all/SKILL.md`              |
-| Lint all (clang-tidy / cppcheck)  | `.claude/skills/lint-all/SKILL.md`                |
-| Local-LLM commit-msg draft        | `.claude/skills/dev-llm-commitmsg/SKILL.md`       |
-| Local-LLM Doxygen docgen          | `.claude/skills/dev-llm-docgen/SKILL.md`          |
-| Local-LLM tiny-AI model card      | `.claude/skills/dev-llm-modelcard/SKILL.md`       |
-| Local-LLM file review             | `.claude/skills/dev-llm-review/SKILL.md`          |
-| Release dry-run                   | `.claude/skills/prep-release/SKILL.md`            |
-
-## 8. Netflix golden-data gate — never modify (except verbatim upstream port)
-
-Three Netflix-authored CPU reference test pairs = numerical-correctness ground truth:
-
-1. **Normal** — `src01_hrc00_576x324.yuv` ↔ `src01_hrc01_576x324.yuv`
-2. **Checkerboard 1-px** — `checkerboard_1920_1080_10_3_0_0.yuv` ↔ `..._1_0.yuv`
-3. **Checkerboard 10-px** — `checkerboard_1920_1080_10_3_0_0.yuv` ↔ `..._10_0.yuv`
-
-- YUV files: `python/test/resource/yuv/`.
-- Golden-score assertions: hardcoded `assertAlmostEqual(...)` calls in `python/test/` (`quality_runner_test.py`, `vmafexec_test.py`, `vmafexec_feature_extractor_test.py`, `feature_extractor_test.py`, `result_test.py`).
-- **Never modified by any PR** except verbatim port of Netflix upstream update ([ADR-1828](docs/adr/1828-port-netflix-golden-updates.md)): measure first, port value + places exact, no fork-invented value. Run in CI as required status check.
-- **Isolated build profile ([ADR-1317](docs/adr/1317-golden-gate-build-isolation.md))**: `make test-netflix-golden` uses dedicated `GOLDEN_BUILD_DIR ?= core/build-golden` compiled via `scripts/ci/setup-golden-build.sh` enforcing `gcc` or `clang` and passes `VMAF_BUILD_DIR` to Python tests. This isolates the gate from developer builds configured with oneAPI ICX, which exhibit floating-point contraction drift on float-motion and float-VIF convolutions.
-- Fork-added tests: separate files + directories.
-
-## 9. Snapshot regeneration
-
-`testdata/scores_cpu_*.json` + `testdata/netflix_benchmark_results.json` = fork-added GPU/SIMD snapshots, NOT Netflix golden data. Intentional numerical change -> regenerate them (`/regen-snapshots`), justification in commit message. Unjustified changes in these files: rejected in review.
-
-## 10. Upstream sync
-
-`git remote add --no-tags upstream https://github.com/Netflix/vmaf.git` (once), then `.claude/skills/sync-upstream/SKILL.md` -> sync PR. Single commits: `port-upstream-commit`.
-
-## 11. Release
-
-- `release-please`, triggered by pushes to `master`.
-- One ordinary SemVer stream (`vMAJOR.MINOR.PATCH`), independent of Netflix release cadence (ADR-1127 supersedes ADR-0011). Root release aligns release-owned Python packages + Helm `appVersion`.
-- Signing: keyless, Sigstore / GitHub OIDC. Local dry-run: `/prep-release`.
-- Release line restarts at `0.1.0` (ADR-3292, 2026-10-12): `v1.0.0-rc.1`..`rc.3` withdrawn; first release `0.1.0` via one-shot `release-as` (removed in release-merge PR; `scripts/release/check-one-shot-fields.sh` gate); then plain `0.x` minors, no candidates, breaking = minor bump (`bump-minor-pre-major`); candidates only for `1.0.0`, from `v1.0.0-rc.4`. SONAMEs independent of product version. Go: root `go.mod` retracts rc.1-rc.3; proxy `@latest` still v3.0.0+incompatible (Netflix cache) -> consumers pin `@v0.1.0`.
-- Release map (ADR-3292; forge milestone in brackets): 0.1.0 [#1] = RC4 package + packaging; 0.2.0 [#17] = RC5 dedup/tool consolidation/device targets, RC6, RC7, RC8, observability, RC3 carry-over; 0.3.0 [#10] = Rust P1a (+P0b-P0e); 0.4.0 [#3] = encoder feedback, embedding, platforms; 0.5.0 [#11] = P1b; 0.6.0 [#12] = P2; 0.7.0 [#4] = new metrics (+RC5-C #2496); 0.8.0 [#8] = metric A/B; 0.9.0 [#9] = next model generation + RC9 retrain (#1246); 1.0.0 [#13] = first stable: Rust P3 (#2576, #2581) + frozen interface; 1.1 [#2] = integrations, live quality, cloud-native (#2431, RC5-D #2497); 1.2 [#14] = P4+P5; 1.3 [#16] = open subjective studies; 2.0 [#5] = breaking only (`libvmaf.h` compat removed, ADR-1852 D7; #1254 rest); 3.0 [#15] = host C/C++ removed (#2579). Rolling [#6, #7]: models + benchmarks, code health.
-- Stage content, stage names kept (ADR-1341; candidate map ADR-1421, numbering from RC7 on replaced by ADR-1490, scope folded 2026-10-05 by ADR-1868, format envelope + device targets ADR-1880, cloud-native + GStreamer + post-1.0 map ADR-2001; supersedes ADR-1352 map): RC1 (withdrawn rc.1) = release-blocking correctness + outside-hardware report path; RC2 (withdrawn rc.2) = stabilisation/repair (dependency + fix train, RC1 exit bar, no benchmark claim); RC3 (withdrawn rc.3, carry-over 0.2.0) = twin exactness (every GPU/SIMD twin bit-identical to CPU extractor or measured tolerance + ADR, 8K cells included; no SYCL kernel uses scratch memory; integer-overflow audit every extractor + twin at 8K/16K x 16-bit; #1721); RC4 = first full Rust metric (whole `vmaf_v1.0.16_3d0h` path bit-identical to C, C ABI unchanged, GPU twins stay CUDA/SYCL/HIP) + whole device-memory import API (ADR-1829: fences both directions on `VmafPicture2` for CUDA/SYCL/HIP/Metal, NV12/P010 on GPU, CUDA no device-to-device copy, SYCL chroma + D3D11, Metal IOSurface/MTLTexture true binding, HIP import, FFmpeg filters take hardware frames; exit = imported frame bit-identical to host upload, no host pixel copy, fence tests; #1723) + new VMAFx C API, all surfaces generated from `core/api/vmafx.toml`, `libvmaf.h` = thin compat lib, VMAFx-named FFmpeg filters (ADR-1852) + provenance every score (#2142); RC5 = deduplication, one implementation per behaviour, `libgpudispatch` extracted, folds RC4 per-backend import code (#1724, #1455) + tool consolidation (#1249, #1250, #1270, #1272) + new metrics, exact twins written once on `libgpudispatch` (#1247, #1248, #2161, #2158) + Metal SpEED twins (#2160) + device-targeted scoring (ADR-1880); RC6 = GPU capability table generated from `nvcc`/`ocloc`/ROCm `llc`, checked in, CI drift check, all-target kernel audit, RC5 twins included, format envelope per backend/device (max resolution incl. 16K, measured memory limits, tiling where needed, 8-16 bit, chroma layouts, odd + portrait sizes; every row test-backed, drift-checked) (#1725); RC7 = CPU capability source of truth, twin of RC6 (generated table of CPU features each SIMD kernel needs from `core/src/meson.build` flags + `cpu.c` gates, CI drift check; per-function disassembly audit x86 + aarch64; every dispatch level bit-exact vs scalar under Intel SDE models + qemu aarch64 NEON/SVE2 multi-VL; real Xeon/Apple reports = extra evidence; no timing; CPU format envelope, same rules as RC6) (#1885); RC8 = benchmarks, profiling, tuning, throughput per resolution incl. 16K (#1245) + training readiness: data hygiene (#2163, #2157), eval tooling (#2162, #2143), HDR conversion workflow (#2145), mini retrain + measured resource plan (#1246); RC9 = one-shot real retrain + remaining tiny-AI training (#1246, #1242); starts only when every #1246 precondition holds (all above). Cloud-native in 1.0.0 (ADR-2001, no new RC numbers). RC4: versioned scoring API contract (#2155) + server mode + observability (#1251), generated from same definition (WP8). RC4: native `vmafx` GStreamer element (#2236) + CI conformance of upstream gst-plugins-bad `vmaf` element on compat `libvmaf.so.3` (#2237). RC4: OBS-ready API, texture import incl. OpenGL interop, async window scores, bounded queues (#2238); OBS plugin = 1.1. RC4: real-time FFmpeg GPU scoring with `n_stats` (#2138, WP9). ADR-2342 (2026-10-07, no new numbers). RC4 adds: WP7 bindings (Rust/Go/Python generated). WP10 FFmpeg series redesigned from 0001 (#2381 folded). WP11 docs. WP12 packaging (`libvmafx`, Linux arm64, older glibc, package managers #2314/#2319). WP13 input formats (semi-planar/packed, RGB with stated matrix, 8-16 bit). WP14 principles per language. WP15 FFmpeg audit. WP16 observability (#2430). WP17 cloud-native platform (#2431; split with #1252/#1253 drawn by its ADR). Incremental motion. Vulkan import. RC5 adds: tool consolidation in RC5, not after 1.0.0 (Go sunset #1249). Live alignment + timecode (#2354). Interlaced (#2361). Masks (#2362). Container input (#2363). bpp + BD-rate (#2284). HandBrake (#2407). Minimal run-result timeline. Reusable provenance workflow. Vulkan compute experiment. Go saliency via core MobileSal extractor + RC4 Go binding (ADR-2377). RC7 adds: reference conformance column. Default reference-exact. Netflix behaviour = named compat mode, golden gate runs in it. v1 models read compat features until RC9 (ADR-2343). RC5: containers/Helm/kind+kuttl (#1252) + operator, controller/node, GPU pool arbiter in `libgpudispatch` (#1253). RC8: distributed throughput. RC7 = CPU table, drift check, disassembly audit, emulated matrix for kernels that exist; no new-ISA kernel in C (Q-223). New-ISA kernels (x86-64 SSE2/SSSE3/SSE4.1/AVX/AVX2/AVX-512/AVX-512 ICL/AVX10; AArch64 NEON/dotprod+i8mm/SVE/SVE2; RISC-V RVV 1.0; POWER VSX; LoongArch LSX/LASX) written once in Rust, Rust core P1b (#2574); ISA without stable Rust intrinsics = scalar Rust + re-evaluation list (Q-235). qemu-user CI where no hardware; golden gate on each. RC6 = legacy GPU build variants: CUDA 12.x for sm_50-sm_72 (CUDA 13.4 minimum compute_75), Intel legacy compute runtime Gen9-Gen11, every AMD target pinned ROCm compiler emits; bit-exact, in GPU table. RC5 device targets: profiles phone/tablet/laptop/TV/VR per eye incl. portrait; target resolution, scaling, viewing distance/display height mapped on `nvd`/`rdh`. One decode, many targets; short research first; profile table from RC6/RC7 table machinery. Benchmarks/tuning never in RC3-RC7; training never before RC8 evidence accepted; speed lost to exactness in RC3 never traded for tolerance: GPU tuning rows recover in RC8; CPU tuning rows recover in Rust SIMD phases P1a (#2573) / P1b (#2574), measured targets = acceptance (Q-224). Short correctness/device smoke valid in RC1/RC2; performance claims + real training not. Stage-to-release mapping above wins over any release number in the stage ADRs.
-- Rust core epic #2567 (ADR-2478; Q-210, Q-230, Q-231): phases P1a 0.3.0, P1b 0.5.0, P2 0.6.0, P3 1.0.0, P4+P5 1.1.0; 1.2.0 host C/C++ removed.
-- “Done fixing” for RC1/RC2 = zero confirmed release blockers, zero untriaged `docs/state.md` rows, required checks green on exact candidate head, reproducible tester report path. Not: future bugs impossible; not: RC3-RC9 work moved earlier.
-- Ordinary Renovate/version PRs remain mergeable in every release phase under normal required checks, review, pinning, and specialised component validation. Any merge invalidates affected exact-head evidence and requires revalidation; it does not justify a blanket version freeze.
-
-## 12. Hard rules, worktree discipline and rebase invariants
-
-Three bodies of binding rules live on own pages -> harness stays inside 300-line budget per compiled vendor context file. Not optional. Hard rules: import line below pulls them in for agents expanding imports; every other agent follows link. Worktree discipline + rebase invariants: links only, never imported. Invariants page = 97 kB, an import loads it every turn of every session ([ADR-1249](docs/adr/1249-praetor-governance-adoption.md) status update 2026-10-12) -> read its section before rebase, upstream sync, conflict resolution, or edit of a file it cites.
-
-@docs/development/agent-hard-rules.md
-
-- [Agent hard rules](docs/development/agent-hard-rules.md) — golden-data gate, branch + commit rules, same-PR documentation requirement, licence headers, container preference, `docs/state.md` bug tracking.
-- [Worktree discipline](docs/development/agent-worktree-discipline.md) — isolated agent worktrees, [ADR-0332](docs/adr/0332-agent-worktree-drift-hard-guard.md) host-side hard guard.
-- [Rebase-sensitive invariants](docs/development/rebase-sensitive-invariants.md) — project-wide index every upstream-sync or rebase agent must preserve.
-
-## 14. Interaction style — prefer structured popup questions
-
-- Host agent exposes structured-question UI (Claude Code's `AskUserQuestion`, Cursor's choice prompt, Aider's multi-choice, etc.) -> **use it; no wall of numbered questions in prose**. User clicks options in seconds; prose questionnaires force scroll, parse, typed structured reply.
-- 2–4 focused questions per round, 2–4 concrete options each.
-- Recommended option marked `(Recommended)` when one clearly wins.
-- Prose sets up question; question itself goes in UI.
-- Answers + reports in prose: fine. Rule covers *asking*, not reporting.
+- Prefer structured UI questions (AskUserQuestion etc.) with 2-4 options, `(Recommended)` marked when obvious; answers and reporting in prose fine.
