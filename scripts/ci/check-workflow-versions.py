@@ -472,6 +472,58 @@ def check_rust_pins(root: Path, rust_want: str | None) -> list[str]:
     ]
 
 
+NODE_VERSION_RE = re.compile(r"node-version:[ \t]*['\"]?([0-9][0-9.]*)['\"]?")
+NODE_PRECOMMIT_RE = re.compile(
+    r"^default_language_version:[ \t]*\n(?:[ \t]+.*\n)*?[ \t]+node:[ \t]*['\"]?([^'\"\s]+)['\"]?",
+    re.MULTILINE,
+)
+
+
+def _node_workflow_problems(root: Path, node_want: str) -> list[str]:
+    workflows = root / ".github" / "workflows"
+    if not workflows.is_dir():
+        return []
+    major = node_want.split(".", maxsplit=1)[0]
+    problems: list[str] = []
+    for path in sorted(workflows.glob("*.y*ml")):
+        for value in NODE_VERSION_RE.findall(path.read_text(encoding="utf-8")):
+            # A major-only pin ("24") follows the release line; an exact pin must be the release.
+            if value not in (node_want, major):
+                problems.append(
+                    f"{path.relative_to(root)}: node-version '{value}'; "
+                    f"build-config.env says NODE_VERSION '{node_want}'"
+                )
+    return problems
+
+
+def check_node_pins(root: Path, node_want: str | None) -> list[str]:
+    """pre-commit's node hooks and every setup-node pin use NODE_VERSION.
+
+    Without `default_language_version.node`, pre-commit on Windows builds its
+    nodeenv at "latest", the head of the Node index; on 2026-10-29 that head
+    was v27.0.0-alpha.0.0.0 and nodeenv 1.11.0 died parsing it, which turned
+    the Windows Lefthook Pre-Commit job on master red.
+    """
+    if not node_want:
+        return ["build-config.env defines no NODE_VERSION"]
+    hooks = root / ".pre-commit-config.yaml"
+    problems: list[str] = []
+    if hooks.is_file():
+        match = NODE_PRECOMMIT_RE.search(hooks.read_text(encoding="utf-8"))
+        if match is None:
+            problems.append(
+                ".pre-commit-config.yaml has no default_language_version node pin; "
+                f"set it to NODE_VERSION '{node_want}'"
+            )
+        elif match.group(1) != node_want:
+            problems.append(
+                f".pre-commit-config.yaml pins node '{match.group(1)}'; "
+                f"build-config.env says NODE_VERSION '{node_want}'"
+            )
+    problems.extend(_node_workflow_problems(root, node_want))
+    return problems
+
+
 def main() -> int:
     root = Path(
         run_command(
@@ -488,6 +540,7 @@ def main() -> int:
     py_want = cfg.get("PYTHON_CI_VERSION")
     ver_want = cfg.get("VMAFX_VERSION")
     rust_want = cfg.get("RUST_VERSION")
+    node_want = cfg.get("NODE_VERSION")
 
     problems: list[str] = []
     problems.extend(check_level_zero_container(root))
@@ -497,6 +550,7 @@ def main() -> int:
     problems.extend(check_makefile_venv_paths(root))
     problems.extend(check_mypy_python_version(root, py_want))
     problems.extend(check_rust_pins(root, rust_want))
+    problems.extend(check_node_pins(root, node_want))
 
     for problem in problems:
         print(f"::error title=version drift::{problem}", file=sys.stderr)
@@ -508,7 +562,7 @@ def main() -> int:
         return 1
     print(
         f"check-workflow-versions: OK (Level Zero {lz_want}, Python CI {py_want}, "
-        f"Rust {rust_want}, VMAFx {ver_want})"
+        f"Rust {rust_want}, Node {node_want}, VMAFx {ver_want})"
     )
     return 0
 
