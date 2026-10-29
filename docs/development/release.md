@@ -384,6 +384,38 @@ Download the CLI and the whole `libvmaf.so*` and `libvmafx.so*` chains into
 one directory; the CLI finds both libraries next to itself. The native files
 attached by `supply-chain.yml` are currently Linux ELF artefacts.
 
+#### Install layout check
+
+Before packaging, check an already-built Linux shared-library Meson tree:
+
+```bash
+make install-layout-check INSTALL_LAYOUT_BUILD_DIR=build-cpu
+# Equivalent standalone check:
+python3 scripts/ci/check_install_layout.py --build build-cpu
+```
+
+The check installs into a disposable DESTDIR without rebuilding, verifies both
+library chains and SONAMEs against Meson's ABI versions, checks the
+`include/vmafx/` and `include/libvmaf/` headers and both pkg-config files,
+and requires `libvmaf.pc` to depend on `libvmafx`. It checks the engine's ELF
+version definitions and every generated `vmafx_*` symbol's version node;
+compatibility `vmaf_*` symbols remain unversioned by design. Finally, it
+compiles and runs one C version-query consumer per package with pkg-config
+and library paths directed into DESTDIR. A dependency the build found outside
+the default loader path (for example ONNX Runtime in a private prefix) is
+taken from the build library's own RUNPATH, because Meson strips that RUNPATH
+at install; the check fails if such a directory holds a `libvmaf*` library, so
+a stale SDK never stands in for the staged one. Requirements: Python 3.11+, Meson,
+GNU-compatible `readelf`, `pkg-config`, and a C compiler (`CC`, default `cc`).
+Missing tools, files, dependencies, or version nodes fail with exit 1.
+
+`--plant-unversioned` supplies a negative control: it inspects the installed
+engine's version-query symbol as having no version node and must exit 1.
+It leaves the build untouched. Parser fixtures run in the tooling suite;
+enable the real install test with
+`VMAF_BUILD_DIR=build-cpu python3 -m pytest scripts/ci/tests/test_check_install_layout.py`.
+Without `VMAF_BUILD_DIR`, that integration test skips with an explicit reason.
+
 #### Download
 
 Meson builds a three-name dynamic-library chain for each of the two

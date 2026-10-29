@@ -1,0 +1,1 @@
+- Add `make install-layout-check` to verify the staged Linux SDK's libraries, SONAMEs, headers, pkg-config dependency, engine symbol versions, and two compiled C consumers, with an unversioned-symbol negative control.
