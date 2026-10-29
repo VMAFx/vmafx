@@ -1059,3 +1059,57 @@ jobs:
             dist/vmafx-build-provenance/vmafx-build-provenance.intoto.jsonl
             dist/vmaf-mcp-provenance/vmaf-mcp-provenance.sigstore.json
             dist/vmaf-mcp-provenance/vmaf-mcp-provenance.intoto.jsonl
+
+  # #2319 (ledger vmafx-2319-package-channels): after the release assets are
+  # attached, open the formula pull request on the Vidiko Homebrew tap. Final
+  # versions only; the tap's own checks decide the merge. The release bot app
+  # needs an installation on the Vidiko organisation with contents and pull
+  # request write on homebrew-tap; until then the token step fails by name.
+  homebrew-tap:
+    name: Publish Homebrew tap formula
+    needs: [validate-release, attach-to-release]
+    if: ${{ !contains(needs.validate-release.outputs.version, '-') }}
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    environment: release-publish
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: "3.14.9"
+      - name: Write the tap formula from the release source archive
+        timeout-minutes: 5
+        env:
+          VMAFX_VERSION: ${{ needs.validate-release.outputs.version }}
+        run: |
+          set -euo pipefail
+          url="$(python3 scripts/release/distribution.py source-url --version "$VMAFX_VERSION")"
+          curl --fail --location --silent --show-error --retry 3 --max-time 120 \
+            --output "$RUNNER_TEMP/source.tar.gz" "$url"
+          digest="$(sha256sum "$RUNNER_TEMP/source.tar.gz" | cut -d' ' -f1)"
+          python3 scripts/release/distribution.py homebrew --version "$VMAFX_VERSION" \
+            --source-sha256 "$digest" --out "$RUNNER_TEMP/tap"
+      - name: Mint the release-bot installation token for the tap
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510  # v3.3.0
+        with:
+          app-id: ${{ secrets.RELEASE_BOT_APP_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+          owner: Vidiko
+          repositories: homebrew-tap
+          permission-contents: write
+          permission-pull-requests: write
+      - name: Open the tap pull request
+        timeout-minutes: 3
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          VMAFX_VERSION: ${{ needs.validate-release.outputs.version }}
+        run: |
+          python3 scripts/release/publish_homebrew_tap.py --tap Vidiko/homebrew-tap \
+            --version "$VMAFX_VERSION" --formula "$RUNNER_TEMP/tap/Formula/vmafx.rb" \
+            --signoff "vmafx-release-bot[bot] <340976456+vmafx-release-bot[bot]@users.noreply.github.com>" \
+            --apply

@@ -119,6 +119,49 @@ It exits 2 when the manifest cannot be read.
   microsoft/winget-cli and held to their hashes by
   `scripts/docs/check_vendored_assets.py`.
 
+## Homebrew tap
+
+Users install VMAFx with Homebrew from the Vidiko tap:
+
+```bash
+brew install Vidiko/tap/vmafx
+```
+
+The formula reaches the tap through the release
+([ADR-3387](../adr/3387-homebrew-tap-publish.md)). For every final version (no
+`-rc` suffix) the `homebrew-tap` job in
+[`supply-chain.yml`](../../.github/workflows/supply-chain.yml), after the
+release assets are attached:
+
+1. downloads the source archive that
+   `python3 scripts/release/distribution.py source-url --version X.Y.Z` names
+   and hashes it;
+2. writes `Formula/vmafx.rb` (the generated formula below the tap's licence
+   header) with `distribution.py homebrew --version X.Y.Z --source-sha256
+   <digest> --out <dir>`;
+3. runs [`publish_homebrew_tap.py`](../../scripts/release/publish_homebrew_tap.py),
+   which opens a pull request on `Vidiko/homebrew-tap` from branch
+   `vmafx-X.Y.Z` with a signed-off commit. The tap's own checks decide the
+   merge; nothing is pushed to its default branch.
+
+Preview what the job would do, without changing the tap (needs a forge token
+that can read the tap):
+
+```bash
+python3 scripts/release/publish_homebrew_tap.py --tap Vidiko/homebrew-tap \
+  --version X.Y.Z --formula <dir>/Formula/vmafx.rb \
+  --signoff "Name <address>"
+```
+
+It prints `dry run: would branch ...`, `unchanged: ...` when the tap already
+holds that formula, or the refusal (exit 2) for a bad version, sign-off,
+formula or forge answer. `--apply` opens or updates the pull request.
+
+The job mints its token from the `vmafx-release-bot` app, which needs an
+installation on the Vidiko organisation with contents and pull-request write
+on `homebrew-tap`; without it the token step fails and names the missing
+installation. apt and rpm repositories are planned for 0.2.0.
+
 ## Adding a channel or an artifact
 
 1. Add the artifact with its `producer` (or `tracking`) and licence.
