@@ -8,6 +8,90 @@ search:
 # Rebase notes
 
 <!-- rebase-notes:fragments:begin (rendered from docs/rebase-notes.d/; do not edit) -->
+## QSV upload format follows the output depth (2026-10-28)
+
+- `hwdevice.QSVUploadFilter()` (Go) and `qsv_upload_filter()` (Python, `codec_adapters/_qsv_common.py`) are the one place each language picks the QSV upload format: the last `-pix_fmt` wins, `p010le` / `yuv420p10le` / Main 10 give `format=p010le,hwupload=extra_hw_frames=64`, anything else the `nv12` chain. `ffencode`, `encoder.injectQSVInitChain`, `vmaftune.encode` and `scripts/dev/hw_encoder_corpus.py` call them; a rebase must not bring back a fixed `format=nv12` upload in those callers.
+- The QSV adapter version is 3 in both registries (`pkg/codecadapter`, `BaseQsvAdapter.adapter_version`); move both together.
+
+## Odd-depth device twins: allow-list (2026-10-28)
+
+[ADR-3383](adr/3383-odd-depth-twin-allow-list.md), #2476.
+`refuse_unscaled_bpc()` in `core/src/feature/feature_extractor.cpp` is an
+allow-list of exact twin names with a maximum depth each (`kMeasured`: the CUDA,
+SYCL and HIP `float_psnr` and `ciede` twins up to 15 bits, the `psnr_hvs` twins
+of CUDA, SYCL, HIP and Metal up to 11 bits): every other device twin is refused
+at 9, 11, 13, 14 and 15 bits. A sync must not bring back the deny-list or a
+prefix match; a twin joins the table by exact name only with those depths in
+its parity test. `test_read_pictures_bpc` guards both sides.
+
+## Installed Linux SDK layout check (2026-10-28)
+
+Keep `scripts/ci/check_install_layout.py`, its tooling-suite pytest coverage,
+the `install-layout-check` Make target, and the release-guide install section
+together. SONAME majors come from `core/meson.build`; engine symbol versions
+reuse `core/test/check_exported_symbols.py` and the generated
+`core/src/vmafx_symbols.txt`. Preserve DESTDIR-only pkg-config and loader paths,
+`--no-rebuild`, the build-RUNPATH lookup for dependencies outside the
+loader path (refusing a directory with a `libvmaf*` library), and the `--plant-unversioned` failure control. The real pytest
+smoke requires `VMAF_BUILD_DIR`; parser fixtures always run.
+
+## GStreamer usage page (2026-10-28)
+<!-- Copyright 2026 Lusoris -->
+<!-- SPDX-License-Identifier: EUPL-1.2 -->
+
+no rebase impact: docs only; the page quotes messages of
+`gstreamer/src/gstvmafx_*.c`, so a change to those strings updates
+`docs/usage/gstreamer.md` in the same PR.
+
+## Principles per language (2026-10-28)
+
+- Documentation only: `docs/principles.md` preserves sections 1–7 and replaces the language policy, adds the applicability matrix and renumbers revision guidance. `docs/development/languages.md` links to the canonical policy and keeps setup guidance.
+- No rebase impact on code, generated API outputs, numerical assertions or build/gate configuration. Preserve the matrix and explicit enforcement gaps when merging documentation changes; no code conflict resolution is required by this slice.
+
+## Renovate schedule and pull-request concurrency (2026-10-28)
+
+- `renovate.json`: `updateNotScheduled: false`, `prConcurrentLimit: 2`,
+  `branchConcurrentLimit: 3` (ADR-3384). Upstream has no Renovate
+  configuration; nothing to merge.
+- `.github/workflows/reuse.yml` carries the ADR-1673 concurrency block.
+  `scripts/ci/tests/test_master_concurrency_contract.py` refuses a
+  pull-request workflow without a superseding workflow-level group unless
+  `UNSUPERSEDED` names it with a reason. **On sync**: a workflow brought in
+  from upstream with a pull-request trigger gets the block or an entry.
+
+## SVT Encore leg of the upstream FFmpeg check (2026-10-28)
+
+- `uc_encore_graph` in `scripts/ci/upstream-consumer-lib.sh` reproduces the
+  graph of SVT Encore's `CommandBuilder.kt` at commit
+  `8dd7c596c51a8c31bae805e31ff0969564f68229`; moving the pin means re-reading
+  `vmafParams` and the graph assembly there.
+- The FFmpeg build of `upstream-ffmpeg-compat.sh` enables the `split` filter
+  for this leg; keep it in `--enable-filter`.
+- No C, Python harness or golden-data impact.
+
+## Dev MCP server in the project client files (2026-10-28)
+
+- `.mcp.json`, `opencode.json` and `.gemini/settings.json` carry a
+  `vmafx-dev` entry next to Praetor's `asdecided`. `praetorctl adopt` merges
+  its own server into these files and keeps other entries; a sync or adopt
+  run that rewrites them keeps `vmafx-dev`.
+
+## The `vmafx` filter check runs in CI (2026-10-28)
+
+`.github/workflows/ffmpeg-patch-stack.yml` gains the job `filter` (name
+`FFmpeg vmafx Filter`, listed in `.github/workflows/required-aggregator.yml`).
+It builds libvmafx, then FFmpeg with the patch series and `--enable-libvmafx`,
+and runs `ffmpeg-patches/test/vmafx_filter_check.py` `parity`, `windows`,
+`contract` and `provenance` against the CLI of the same build.
+
+Invariants a rebase keeps:
+
+- The job stays required and keeps all four checks; a renamed subcommand of
+  `vmafx_filter_check.py` changes the loop in the same PR.
+- Exit 77 (missing fixture) fails the job; the fetch step brings the pair.
+- `scripts/ci/test_ffmpeg_patch_workflow_contract.py`
+  (`test_vmafx_filter_job_*`) guards the job, with planted gaps.
+
 ## Device runtime and driver version in provenance records (2026-10-27)
 
 `feat/provenance-device-runtime`, issue #2142.
