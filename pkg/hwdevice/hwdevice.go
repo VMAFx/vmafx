@@ -26,9 +26,28 @@ const VAAPIDeviceEnv = "VMAFTUNE_VAAPI_DEVICE"
 // FallbackVAAPIDevice is used when no Intel render node is discoverable.
 const FallbackVAAPIDevice = "/dev/dri/renderD128"
 
-// UploadFilter moves system-memory frames into QSV surfaces; it must end the
-// -vf chain of every QSV encode.
+// UploadFilter is the 8-bit QSV upload filter. QSVUploadFilter selects the
+// depth-aware form, which must end the -vf chain of every QSV encode.
 const UploadFilter = "format=nv12,hwupload=extra_hw_frames=64"
+
+// QSVUploadFilter selects NV12 or P010 from the target format and output argv.
+// The last output -pix_fmt overrides pixFmt; -profile:v main10 also needs P010.
+// Keep this selection identical to Python's _qsv_common.qsv_upload_filter.
+func QSVUploadFilter(pixFmt string, extraParams []string) string {
+	profile := ""
+	for i := 0; i+1 < len(extraParams); i++ {
+		switch extraParams[i] {
+		case "-pix_fmt", "-pix_fmt:v":
+			pixFmt = extraParams[i+1]
+		case "-profile:v", "-profile":
+			profile = extraParams[i+1]
+		}
+	}
+	if pixFmt == "p010le" || pixFmt == "yuv420p10le" || profile == "main10" {
+		return "format=p010le,hwupload=extra_hw_frames=64"
+	}
+	return UploadFilter
+}
 
 const intelVendorID = "0x8086"
 

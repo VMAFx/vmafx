@@ -969,6 +969,9 @@ extractor that cannot run, and the filter then prints:
 > QSV zero-copy path does not provide. Use hwdownload,format=nv12 and the
 > libvmaf filter's sycl_device option.`
 
+For 10-bit input, use `hwdownload,format=p010le` in that bridge to match the
+driver's download surface format.
+
 The complete list is in
 [SYCL zero-copy imports](../backends/sycl/zero-copy.md#zero-copy-import-scores-luma-only-features)
 ([ADR-1688](../adr/1688-sycl-zero-copy-luma-only-admission.md)).
@@ -1161,7 +1164,7 @@ ffmpeg -i distorted.mp4 -i reference.mp4 \
 For long clips or 4K and larger inputs, FFmpeg's hardware decoders are usually
 faster than software decode. Bridge them to the libvmaf compute backend:
 
-| Decode | Filter | Needs the `hwdownload,format=yuv420p` bridge? |
+| Decode | Filter | Needs the `hwdownload,format=nv12` (8-bit) / `hwdownload,format=p010le` (10-bit) bridge? |
 | --- | --- | --- |
 | CUDA | `libvmaf_cuda` | No |
 | QSV / oneVPL | `libvmaf_sycl` | No |
@@ -1201,11 +1204,15 @@ VAAPI decode still needs the bridge below.
 ```bash
 ffmpeg -hwaccel vaapi -hwaccel_output_format vaapi -i distorted.mp4 \
        -hwaccel vaapi -hwaccel_output_format vaapi -i reference.mp4 \
-       -filter_complex "[0:v]hwdownload,format=yuv420p[d]; \
-                        [1:v]hwdownload,format=yuv420p[r]; \
+       -filter_complex "[0:v]hwdownload,format=nv12[d]; \
+                        [1:v]hwdownload,format=nv12[r]; \
                         [d][r]libvmaf=sycl_device=0:log_fmt=json:log_path=/dev/stdout" \
        -f null -
 ```
+
+Use `format=p010le` on both download branches for 10-bit input. Drivers expose
+NV12 / P010 download surfaces; planar `yuv420p` / `yuv420p10le` downloads are
+not portable across VAAPI drivers.
 
 **VideoToolbox decode, Metal compute** with `libvmaf_metal`:
 

@@ -12,8 +12,12 @@ invariant: QSV shares _qsv_common; VideoToolbox shares _videotoolbox_common; AMF
   `BaseQsvAdapter.hw_pre_input_args()` / `qsv_hw_init_args()`) returns
   `-init_hw_device vaapi=va:<node> -init_hw_device qsv=qsv_dev@va
   -filter_hw_device qsv_dev`, and `BaseQsvAdapter.hw_upload_filter` is
-  `QSV_UPLOAD_FILTER`. `encode.build_ffmpeg_command` puts first
-  before `-i` and appends second to request's own `-vf` chain
+  `QSV_UPLOAD_FILTER` (8-bit compatibility value). `qsv_upload_filter`
+  selects NV12 / P010 from output depth; `hw_upload_filter_for` hook
+  passes request format + output args. Output `-pix_fmt` overrides
+  source format; `p010le`, `yuv420p10le`, `-profile:v main10` select P010.
+  `encode.build_ffmpeg_command` puts device args
+  before `-i` and appends upload to request's own `-vf` chain
   (`encode.with_upload_filter`; second `-vf` would drop rung's
   scale); `compare._hw_probe_argv` uses same two. filter device
   is QSV device: with `va` upload produced `vaapi` frames and
