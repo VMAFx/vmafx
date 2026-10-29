@@ -26,8 +26,10 @@ inherits from it and overrides only the ``name`` / ``encoder`` fields.
 from __future__ import annotations
 
 import dataclasses
+import itertools
 import shutil
 import subprocess
+from collections.abc import Sequence
 from pathlib import Path
 
 from ..hw_devices import AUTO_VAAPI_DEVICE, resolve_vaapi_device
@@ -50,9 +52,27 @@ QSV_PRESETS: tuple[str, ...] = (
 QSV_QUALITY_RANGE: tuple[int, int] = (1, 51)
 QSV_QUALITY_DEFAULT: int = 23
 
-# The filter that moves system-memory frames into QSV surfaces; it must be
-# the last filter before the encoder (ADR-0601).
+# The 8-bit filter that moves system-memory frames into QSV surfaces;
+# qsv_upload_filter selects the depth-aware form (ADR-0601).
 QSV_UPLOAD_FILTER: str = "format=nv12,hwupload=extra_hw_frames=64"
+
+
+def qsv_upload_filter(pix_fmt: str = "", extra_params: Sequence[str] = ()) -> str:
+    """Select NV12 or P010 upload from the target format and output argv.
+
+    The last output ``-pix_fmt`` overrides the request's format. A
+    ``-profile:v main10`` request also requires P010, including HDR args.
+    Keep this selection identical to Go's ``hwdevice.QSVUploadFilter``.
+    """
+    profile = ""
+    for flag, value in itertools.pairwise(extra_params):
+        if flag in ("-pix_fmt", "-pix_fmt:v"):
+            pix_fmt = value
+        elif flag in ("-profile:v", "-profile"):
+            profile = value
+    if pix_fmt in ("p010le", "yuv420p10le") or profile == "main10":
+        return "format=p010le,hwupload=extra_hw_frames=64"
+    return QSV_UPLOAD_FILTER
 
 
 def qsv_device_init_args(vaapi_device: str = AUTO_VAAPI_DEVICE) -> list[str]:
@@ -168,8 +188,8 @@ class BaseQsvAdapter:
     name: str = "h264_qsv"
     encoder: str = "h264_qsv"
     # Cache-key component (ADR-0298): bump when the argv, presets or range
-    # change. "2": encodes carry the VA-API device chain and the upload filter.
-    adapter_version: str = "2"
+    # change. "3": the upload surface format follows the requested output depth.
+    adapter_version: str = "3"
     quality_knob: str = "global_quality"
     quality_range: tuple[int, int] = QSV_QUALITY_RANGE
     quality_default: int = QSV_QUALITY_DEFAULT
@@ -196,6 +216,10 @@ class BaseQsvAdapter:
     hw_upload_filter: str = QSV_UPLOAD_FILTER
 
     presets: tuple[str, ...] = QSV_PRESETS
+
+    def hw_upload_filter_for(self, pix_fmt: str, extra_params: Sequence[str] = ()) -> str:
+        """Return the upload filter matching this encode's output depth."""
+        return qsv_upload_filter(pix_fmt, extra_params)
 
     def validate(self, preset: str, quality: int) -> None:
         """Raise ``ValueError`` if ``(preset, quality)`` is unsupported."""

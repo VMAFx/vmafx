@@ -221,7 +221,7 @@ def build_ffmpeg_command(req: EncodeRequest, ffmpeg_bin: str = "ffmpeg") -> list
     cmd.extend(_build_input_args(req))
     cmd.extend(_with_abr_rate_control(_resolve_codec_args(req), req))
     cmd.extend(_build_two_pass_args(req))
-    cmd.extend(with_upload_filter(req.extra_params, getattr(adapter, "hw_upload_filter", "")))
+    cmd.extend(with_upload_filter(req.extra_params, _hw_upload_filter(adapter, req)))
     cmd.extend(_build_sink_args(req))
     return merge_codec_params(cmd)
 
@@ -294,6 +294,14 @@ def _hw_pre_input_args(adapter: object | None, req: EncodeRequest) -> list[str]:
     """Device-initialisation argv the adapter needs before ``-i`` (QSV), else ``[]``."""
     fn = getattr(adapter, "hw_pre_input_args", None)
     return list(fn(req.vaapi_device)) if fn is not None else []
+
+
+def _hw_upload_filter(adapter: object | None, req: EncodeRequest) -> str:
+    """Use the adapter's depth-aware upload hook, or its legacy constant."""
+    fn = getattr(adapter, "hw_upload_filter_for", None)
+    if fn is not None:
+        return fn(req.pix_fmt, req.extra_params)
+    return getattr(adapter, "hw_upload_filter", "")
 
 
 def with_upload_filter(extra_params: Sequence[str], upload_filter: str) -> list[str]:

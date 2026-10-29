@@ -114,11 +114,17 @@ filter graph fails before the encoder opens. A ladder rung's
 (`scale=W:H,format=nv12,hwupload=extra_hw_frames=64`), because FFmpeg
 keeps only the last `-vf`.
 
-!!! warning "Not proven on QSV hardware"
-    The argv and the probe wiring are covered by tests with fakes. On the
-    one Intel GPU the project has measured (Arc A380, Linux xe driver,
-    iHD 26.3.5, oneVPL 2.17), the chain gets past device and filter
-    initialisation, but every QSV encoder then fails inside the runtime
+The upload format follows the requested output depth: `nv12` for 8-bit,
+`p010le` for `p010le` / `yuv420p10le` output or `-profile:v main10`.
+Output `-pix_fmt` in extra parameters overrides the source pixel format;
+HDR arguments select P010 automatically. For example, HEVC Main 10 uses
+`-vf format=p010le,hwupload=extra_hw_frames=64 -c:v hevc_qsv -profile:v main10`.
+
+!!! warning "QSV availability depends on the driver"
+    The argv and the probe wiring are covered by tests with fakes. In an
+    earlier Arc A380 measurement (Linux xe driver, iHD 26.3.5, oneVPL 2.17),
+    the chain got past device and filter initialisation, but every QSV
+    encoder then failed inside the runtime
     with `Invalid FrameType:0`, with or without `vmaf-tune`'s chain. A
     `LIBVA_DRIVER_NAME` that names another vendor's driver also breaks the
     device chain ("Failed to get device id from the driver").
