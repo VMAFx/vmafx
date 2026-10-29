@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1427), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1429), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5719,3 +5719,11 @@ Every ADR, one heading each (1427), so the site search finds an ADR by its title
 ## ADR-3385: Map engineering principles to every shipped language
 
 [3385-principles-per-language-matrix](3385-principles-per-language-matrix.md)
+
+## ADR-3387: The release job publishes the Homebrew formula as a pull request on Vidiko/homebrew-tap
+
+[3387-homebrew-tap-publish](3387-homebrew-tap-publish.md)
+
+## ADR-3388: One encoder registry read by the Go and the Python tuners
+
+[3388-central-encoder-registry](3388-central-encoder-registry.md)
