@@ -42,4 +42,5 @@ if [ -d "$cuda" ] && pkg-config --exists gstreamer-cuda-1.0; then
   export VMAFX_CUDA_LIB_DIR="$cuda/src"
   export VMAF_CUDA_CLI="$cuda/tools/vmaf"
 fi
+python3 "$here/test_gst_vmafx_properties.py" -v
 exec python3 "$here/test_gst_vmafx_parity.py" -v

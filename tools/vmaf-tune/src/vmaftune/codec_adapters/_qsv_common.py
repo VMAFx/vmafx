@@ -286,7 +286,8 @@ class BaseQsvAdapter:
     name: str = "h264_qsv"
     encoder: str = "h264_qsv"
     # Cache-key component (ADR-0298): bump when the argv, presets or range
-    # change. "4": runtime ICQ probe with named CQP fallback.
+    # change. "3": the upload surface format follows the requested output depth.
+    # "4": runtime ICQ probe with named CQP fallback.
     adapter_version: str = "4"
     quality_knob: str = "global_quality"
     quality_range: tuple[int, int] = QSV_QUALITY_RANGE
