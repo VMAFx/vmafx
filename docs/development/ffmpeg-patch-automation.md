@@ -49,14 +49,25 @@ The script stops, without applying anything, when:
 - `FFMPEG_FIX_SERIES_VERIFY=cosign` is set and cosign is missing, or cosign
   refuses the release's signed `SHA256SUMS`.
 
+Whatever the verify mode, the script also downloads the release's `SHA256SUMS`,
+prints the tarball's sha256 next to the line it lists and refuses a difference
+(`FFMPEG_FIX_SERIES_SUMS_URL` names another location; a `FFMPEG_FIX_SERIES_URL`
+override skips this unless it is set).
+
 With the default `FFMPEG_FIX_SERIES_VERIFY=auto` the signature is checked when
 cosign is installed; the script's one-line summary says whether it was. The
 `FFmpeg Patch Stack` gate installs cosign and requires it. The verified tarball
 is cached under `<cache root>/vmafx/ffmpeg-fix-series/` and unpacked afresh on
 every run; the container builds cache nothing (`FFMPEG_FIX_SERIES_CACHE=none`).
 
-Series `v0.2.0` holds eight patches. All but 0002 change FFmpeg's behaviour
-in every VMAFx build:
+Series `v0.5.0` holds 39 patches. 0001-0008 are listed below; 0009-0035 are
+feature and behaviour patches (`qsvdec` MP4 edit lists, the Dolby Vision
+`dovi_reshape` filter, the `bt2408_hable` tone map and dynamic peak detection
+for the software, OpenCL, VAAPI and Vulkan tone-map filters, `hqdn3d` for
+Vulkan, CUDA, OpenCL and VideoToolbox, a same-colour YUV repack in swscale and
+the Vulkan export query); their list is the release's `series.txt`. 0036-0039
+are the GCC 15.2 fixes below. All of 0001-0008 but 0002 change FFmpeg's
+behaviour in every VMAFx build:
 
 | Patch | File | Behaviour |
 | --- | --- | --- |
@@ -68,6 +79,10 @@ in every VMAFx build:
 | 0006 | `libavutil/hwcontext_vulkan.c` | The external-memory query of a frames context with DRM format modifier tiling carries the image format list the images are created with. |
 | 0007 | `libavutil/hwcontext_vulkan.c` | On RADV, mapping a Vulkan frame to DRM waits on the CPU for the frame's work, because the importer does not honour the attached sync file. |
 | 0008 | `libavutil/vulkan.c`, `libavcodec/ffv1enc_vulkan.c` | Command pools start their queue rotation at different queues of a family, and video pools stay on one queue, so decode and encode can run on separate engines. |
+| 0036 | `tests/checkasm/snowdsp.c` | Includes `intmath.h` before the public headers, so `x86/intmath.h` no longer redefines `av_popcount`, `av_popcount64` and `av_zero_extend` (test-only). |
+| 0037 | `libavcodec/aom_film_grain.c` | Checks the predicted luma point count (GCC 15.2 `-Wstringop-overflow`). |
+| 0038 | `libavcodec/vvc/intra_template.c` | Bounds the reference corner extension (GCC 15.2 `-Wstringop-overflow`). |
+| 0039 | `libavcodec/wmalosslessdec.c` | Clears the subframe flags as an array. |
 
 A fix to FFmpeg belongs in that repository, not in `ffmpeg-patches/`. To take
 a new series release, change the three keys together and run the refresh and
@@ -187,7 +202,7 @@ it. Development, RC and snapshot refs are excluded.
 
 The pinned shared fix series targets one FFmpeg release. When a newer release
 exists, the refresh therefore stops with `FFmpeg n9.1 is released, but the
-pinned shared fix series v0.2.0 targets n9.0.2` (with the tags of the day),
+pinned shared fix series v0.5.0 targets n9.0.2` (with the tags of the day),
 writes nothing to the tree, and
 keeps the rebased candidate patches under `<output-dir>/patches`. Move
 `FFMPEG_FIX_SERIES_TAG` and `FFMPEG_FIX_SERIES_SHA256` to a series release for
