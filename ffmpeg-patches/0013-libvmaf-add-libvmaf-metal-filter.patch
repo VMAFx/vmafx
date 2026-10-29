@@ -67,10 +67,10 @@ Patch is on top of 0001-0012 (post-metal-backend-selector baseline).
  4 files changed, 351 insertions(+)
 
 diff --git a/configure b/configure
-index fc8cab818ef59faeb3c4ffbcfbaac504a4ff5ee4..bacc4e9bf08f336fdb4f05b7aa8e2752c4f5a2c1 100755
+index f7701494f3ed5e0b6c908a773f745c4e5908f0f7..b94be9d7477c067cd6fb5de11d413786d384f6ca 100755
 --- a/configure
 +++ b/configure
-@@ -4306,6 +4306,7 @@ vidstabdetect_filter_deps="libvidstab"
+@@ -4312,6 +4312,7 @@ vidstabdetect_filter_deps="libvidstab"
  vidstabtransform_filter_deps="libvidstab"
  libvmaf_filter_deps="libvmaf"
  libvmaf_cuda_filter_deps="libvmaf libvmaf_cuda ffnvcodec"
@@ -78,7 +78,7 @@ index fc8cab818ef59faeb3c4ffbcfbaac504a4ff5ee4..bacc4e9bf08f336fdb4f05b7aa8e2752
  libvmaf_sycl_filter_deps="libvmaf libvmaf_sycl libvpl"
  libvmaf_vulkan_filter_deps="libvmaf libvmaf_vulkan vulkan"
  vmaf_pre_filter_deps="libvmaf"
-@@ -7476,6 +7477,8 @@ enabled libvmaf           && check_pkg_config libvmaf_hip "libvmaf >= 3.0.0" lib
+@@ -7482,6 +7483,8 @@ enabled libvmaf           && check_pkg_config libvmaf_hip "libvmaf >= 3.0.0" lib
  enabled libvmaf_metal     && require_pkg_config libvmaf "libvmaf >= 3.0.0" libvmaf.h vmaf_init &&
                               check_pkg_config libvmaf_metal "libvmaf >= 3.0.0" libvmaf/libvmaf_metal.h vmaf_metal_state_init
  enabled libvmaf           && check_pkg_config libvmaf_metal "libvmaf >= 3.0.0" libvmaf/libvmaf_metal.h vmaf_metal_state_init
@@ -88,10 +88,10 @@ index fc8cab818ef59faeb3c4ffbcfbaac504a4ff5ee4..bacc4e9bf08f336fdb4f05b7aa8e2752
                               check_pkg_config libvmaf_cuda "libvmaf >= 2.0.0" libvmaf/libvmaf_cuda.h vmaf_cuda_state_init
  enabled libvmaf_sycl      && require_pkg_config libvmaf "libvmaf >= 3.0.0" libvmaf.h vmaf_init &&
 diff --git a/libavfilter/Makefile b/libavfilter/Makefile
-index 3b20788df758b060847768e731718024b4a75a49..9e19069dc9a1fa01fa5d456602dba6cfdba9d7de 100644
+index bce78de2a1768ecf0d39b1e7f7def55530600724..6e6f6ad5a50d2f9b14b2caf96082f39fa6093264 100644
 --- a/libavfilter/Makefile
 +++ b/libavfilter/Makefile
-@@ -376,6 +376,7 @@ OBJS-$(CONFIG_LENSFUN_FILTER)                += vf_lensfun.o
+@@ -384,6 +384,7 @@ OBJS-$(CONFIG_LENSFUN_FILTER)                += vf_lensfun.o
  OBJS-$(CONFIG_LIBPLACEBO_FILTER)             += vf_libplacebo.o vulkan.o vulkan_filter.o
  OBJS-$(CONFIG_LIBVMAF_FILTER)                += vf_libvmaf.o framesync.o
  OBJS-$(CONFIG_LIBVMAF_CUDA_FILTER)           += vf_libvmaf.o framesync.o
@@ -100,10 +100,10 @@ index 3b20788df758b060847768e731718024b4a75a49..9e19069dc9a1fa01fa5d456602dba6cf
  OBJS-$(CONFIG_LIBVMAF_VULKAN_FILTER)          += vf_libvmaf.o framesync.o
  OBJS-$(CONFIG_LIMITDIFF_FILTER)              += vf_limitdiff.o framesync.o
 diff --git a/libavfilter/allfilters.c b/libavfilter/allfilters.c
-index 9bd3aa0163aa8ef1a95897dfab1b75246b132595..75e598b530bb0a60f3e94098e6c8d25ed9fd9513 100644
+index 1d322ad5a9abc07739407442880a5b6c835cef7b..8f22f0d02c520616adb56942f205ab9432335f4b 100644
 --- a/libavfilter/allfilters.c
 +++ b/libavfilter/allfilters.c
-@@ -350,6 +350,7 @@ extern const FFFilter ff_vf_lensfun;
+@@ -355,6 +355,7 @@ extern const FFFilter ff_vf_lensfun;
  extern const FFFilter ff_vf_libplacebo;
  extern const FFFilter ff_vf_libvmaf;
  extern const FFFilter ff_vf_libvmaf_cuda;

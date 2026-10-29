@@ -444,8 +444,8 @@ The end date is at most 90 days out and still holds on the day itself. An entry
 fails the check when it has expired, when its job no longer names the label,
 when it names a floating label, or when a key is missing. The list takes one
 entry per job, so two jobs of one workflow file can each carry a fallback; the
-same file and job twice is refused as a duplicate. The jobs that carry one today
-are listed under [Hosted Linux image](ci-runners.md#hosted-linux-image).
+same file and job twice is refused as a duplicate. No job carries one today, so the file does not exist; see
+[Hosted Linux image](ci-runners.md#hosted-linux-image).
 
 `test-check-hosted-runner-labels` keeps positive, negative and boundary cases
 for the script: a floating label as a literal, a matrix value, an expression

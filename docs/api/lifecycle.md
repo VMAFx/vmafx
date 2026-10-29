@@ -154,13 +154,14 @@ int vmaf_read_pictures(VmafContext *ctx, VmafPicture *ref,
 - **Index:** strictly increasing, starting at 0, no gaps. A repeated or
   smaller index returns `-EINVAL`
   ([ADR-0152](../adr/0152-vmaf-read-pictures-monotonic-index.md)).
-- **Bit depth:** the float extractors `float_ssim`, `float_ms_ssim`,
-  `float_adm`, `float_vif` and `float_motion` (and their GPU twins) take 8, 10,
-  12 or 16-bit pictures. At any other depth the call returns `-EINVAL` and logs
-  `<extractor>: picture bit depth N is not supported`; before, they read 9, 11,
-  13, 14 and 15-bit samples as 8-bit bytes and returned a wrong score without
-  an error. Extractors that score odd depths, such as `psnr_hvs` at 9 and 11
-  bits, are unaffected.
+- **Bit depth:** on a device backend (CUDA, SYCL, HIP, Metal) a twin takes 9,
+  11, 13, 14 and 15-bit pictures only where its parity test was measured: the
+  CUDA, SYCL and HIP `float_psnr` and `ciede` twins up to 15 bits, the
+  `psnr_hvs` twins of every device backend up to 11 bits. Every other twin
+  returns `-EINVAL` at those depths and logs
+  `<extractor>: picture bit depth N is not supported on this backend`. The CPU
+  extractors are unaffected; score those depths with them
+  ([ADR-3383](../adr/3383-odd-depth-twin-allow-list.md)).
 - **Flush:** call `vmaf_read_pictures(ctx, NULL, NULL, 0)` after the last
   frame so every extractor completes.
 

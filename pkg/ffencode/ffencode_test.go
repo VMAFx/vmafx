@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/VMAFx/vmafx/pkg/ffencode"
+	"github.com/VMAFx/vmafx/pkg/hdr"
 )
 
 // TestBuildFFmpegCommand pins the argv against a dump of the Python
@@ -561,6 +562,41 @@ func TestBuildFFmpegCommandQSVChain(t *testing.T) {
 	}
 	if j := strings.Join(argv, " "); strings.Contains(j, "init_hw_device") || strings.Contains(j, "hwupload") {
 		t.Errorf("non-QSV encode got the QSV chain: %v", argv)
+	}
+}
+
+// TestBuildFFmpegCommandQSVOutputDepth pins the depth-aware upload selection.
+func TestBuildFFmpegCommandQSVOutputDepth(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name, pixFmt, surface string
+		extra                 []string
+	}{
+		{"8-bit", "yuv420p", "nv12", nil},
+		{"p010", "p010le", "p010le", nil},
+		{"planar 10-bit", "yuv420p10le", "p010le", nil},
+		{"explicit 10-bit", "yuv420p", "p010le", []string{"-pix_fmt", "yuv420p10le"}},
+		{"main10", "yuv420p", "p010le", []string{"-profile:v", "main10"}},
+		{"HDR", "yuv420p", "p010le", hdr.CodecArgs("hevc_qsv", &hdr.Info{Transfer: "pq"}, nil)},
+		{"AV1 HDR", "yuv420p", "p010le", hdr.CodecArgs("av1_qsv", &hdr.Info{Transfer: "pq"}, nil)},
+		{"8-bit output override", "yuv420p10le", "nv12", []string{"-pix_fmt", "yuv420p"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := ffencode.Request{
+				Source: "ref.yuv", Width: 1920, Height: 1080, PixFmt: tc.pixFmt, Framerate: 24,
+				Encoder: "hevc_qsv", Preset: "medium", CRF: 23, Output: "out.mp4",
+				ExtraParams: append([]string{"-vf", "scale=640:360"}, tc.extra...),
+			}
+			argv, err := ffencode.BuildFFmpegCommand(req, "ffmpeg")
+			if err != nil {
+				t.Fatal(err)
+			}
+			at := slices.Index(argv, "-vf")
+			want := "scale=640:360,format=" + tc.surface + ",hwupload=extra_hw_frames=64"
+			if at < 0 || at+1 >= len(argv) || argv[at+1] != want {
+				t.Errorf("upload filter wants %q: %v", want, argv)
+			}
+		})
 	}
 }
 

@@ -114,7 +114,8 @@ func (e HEVCQSVEncoder) Encode(src string, params EncodeParams) (EncodeResult, e
 func injectQSVInitChain(params EncodeParams) EncodeParams {
 	deviceChain := hwdevice.QSVInitArgs(hwdevice.ResolveVAAPIDevice(""))
 	params.InputArgs = append(deviceChain, params.InputArgs...)
-	params.ExtraArgs = hwdevice.AppendVideoFilter(params.ExtraArgs, hwdevice.UploadFilter)
+	upload := hwdevice.QSVUploadFilter("", params.ExtraArgs)
+	params.ExtraArgs = hwdevice.AppendVideoFilter(params.ExtraArgs, upload)
 	return params
 }
 

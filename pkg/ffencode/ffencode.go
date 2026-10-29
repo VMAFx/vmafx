@@ -131,7 +131,7 @@ func BuildFFmpegCommand(req Request, ffmpegBin string) ([]string, error) {
 	extra := req.ExtraParams
 	if hwdevice.NeedsQSVChain(req.Encoder) {
 		cmd = append(cmd, hwdevice.QSVInitArgs(hwdevice.ResolveVAAPIDevice(req.VAAPIDevice))...)
-		extra = hwdevice.AppendVideoFilter(extra, hwdevice.UploadFilter)
+		extra = hwdevice.AppendVideoFilter(extra, hwdevice.QSVUploadFilter(req.PixFmt, extra))
 	}
 	cmd = append(cmd, InputArgs(req)...)
 	cmd = append(cmd, "-i", req.Source)

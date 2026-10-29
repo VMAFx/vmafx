@@ -10,10 +10,10 @@ Subject: [PATCH] libvmaf: wire sycl backend selector (sycl_device /
  2 files changed, 49 insertions(+)
 
 diff --git a/configure b/configure
-index 3375a2a255ffb69670616c149df7aac04d8f32bd..1f2c0529a66c186e904e1b53488d5c6ea9a6fd4e 100755
+index f926ba5848d9324eb74d5268521e4dfbaf9ec316..3e89561f550837e29772edd1c52e64a4760660bf 100755
 --- a/configure
 +++ b/configure
-@@ -7458,6 +7458,7 @@ enabled libv4l2           && require_pkg_config libv4l2 libv4l2 libv4l2.h v4l2_i
+@@ -7464,6 +7464,7 @@ enabled libv4l2           && require_pkg_config libv4l2 libv4l2 libv4l2.h v4l2_i
  enabled libvidstab        && require_pkg_config libvidstab "vidstab >= 0.98" vid.stab/libvidstab.h vsMotionDetectInit
  enabled libvmaf           && require_pkg_config libvmaf "libvmaf >= 2.0.0" libvmaf.h vmaf_init
  enabled libvmaf           && check_pkg_config libvmaf_cuda "libvmaf >= 2.0.0" libvmaf_cuda.h vmaf_cuda_state_init
