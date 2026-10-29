@@ -33,9 +33,13 @@ Parent: [../../../AGENTS.md](../../../AGENTS.md). Established by
   `bindings/rust/vmafx/src` goes on that list in the same PR;
   `tests/header_check.rs` fails otherwise. Do not replace it with a
   `VMAF_API_VERSION_*` check: stale and current installs both report 3.0.0.
-- **No `pkg-config` dependency**: `build.rs` locates libvmaf via
-  `LIBVMAF_PREFIX` only. `pkg-config` not universally available (cross-compile
-  targets, minimal CI containers). Do not add `pkg-config` dep without ADR.
+- **Crate discovery (#2320)**: `pkg-config` absent from `Cargo.lock` -> no new
+  dependency. Prefix order: `LIBVMAF_PREFIX`, `/usr/local`, `/usr`; header +
+  library required together; absence -> `vmafx-sys: libvmaf not found` with
+  searched prefixes. `DOCS_RS` set -> tree headers via `CARGO_MANIFEST_DIR`,
+  refuse missing header, emit no link directives. Keep stale-header check,
+  allowlist; default Cargo packaging (no `include`/`exclude`/`license-file`:
+  licence check refuses them); pure policy tests in `tests/library_search.rs`.
 - **Test data paths**: integration tests and examples resolve YUV/model paths
   relative to `VMAFX_REPO` (or auto-detected from `CARGO_MANIFEST_DIR`). Never
   hardcode absolute paths into test source.

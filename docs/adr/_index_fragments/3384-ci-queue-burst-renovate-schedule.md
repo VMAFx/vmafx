@@ -1,0 +1,1 @@
+| [ADR-3384](3384-ci-queue-burst-renovate-schedule.md) | Renovate rebases its pull requests only inside its schedule (`updateNotScheduled: false`, lower concurrency limits), and every pull-request workflow carries a concurrency group that a newer push cancels, enforced by the concurrency contract test | Accepted | ci, renovate, governance |

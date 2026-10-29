@@ -215,6 +215,7 @@ def probe_argv(
     from .encode import (
         EncodeRequest,
         _hw_pre_input_args,
+        _hw_upload_filter,
         _registered_adapter,
         _resolve_codec_args,
         with_upload_filter,
@@ -248,7 +249,7 @@ def probe_argv(
         "-frames:v",
         "2",
         *_resolve_codec_args(req),
-        *with_upload_filter((), getattr(adapter, "hw_upload_filter", "")),
+        *with_upload_filter((), _hw_upload_filter(adapter, req)),
         "-movflags",
         "+faststart",
         "-f",

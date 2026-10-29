@@ -26,6 +26,7 @@ import (
 
 	"github.com/VMAFx/vmafx/pkg/codecadapter"
 	"github.com/VMAFx/vmafx/pkg/ffencode"
+	"github.com/VMAFx/vmafx/pkg/hwdevice"
 )
 
 // EncodeRequest is a single (preset, crf) request against one source. It is
@@ -47,6 +48,9 @@ type EncodeResult struct {
 	// request was driven through RunEncodeWithStats and the adapter
 	// declares SupportsEncoderStats. Empty otherwise.
 	EncoderStats []PerFrameStats
+
+	QSVRateControl       string `json:"qsv_rate_control,omitempty"`
+	QSVRateControlReason string `json:"qsv_rate_control_reason,omitempty"`
 }
 
 // BuildFFmpegCommand composes the ffmpeg argv for a single encode.
@@ -140,6 +144,16 @@ func tail(text string, n int) string {
 func RunEncode(ctx context.Context, req EncodeRequest, ffmpegBin string, run Runner) EncodeResult {
 	run = runnerOrExec(run)
 	cmd, err := BuildFFmpegCommand(req, ffmpegBin)
+	var mode hwdevice.QSVRateControl
+	if err == nil && hwdevice.NeedsQSVChain(req.Encoder) {
+		mode, err = hwdevice.ProbeQSVRateControl(ctx, req.VAAPIDevice, req.Encoder, ffmpegBin, func(ctx context.Context, argv []string) (string, int) {
+			res := run(ctx, argv)
+			return res.Stderr + res.Stdout, res.ReturnCode
+		})
+		if err == nil {
+			cmd, err = hwdevice.ApplyQSVRateControl(cmd, req.CRF, mode)
+		}
+	}
 	if err != nil {
 		return EncodeResult{
 			Request:        req,
@@ -176,6 +190,7 @@ func RunEncode(ctx context.Context, req EncodeRequest, ffmpegBin string, run Run
 		}
 	}
 	return EncodeResult{
+		QSVRateControl: mode.Mode, QSVRateControlReason: mode.Reason,
 		Request:         req,
 		EncodeSizeBytes: size,
 		EncodeTimeMS:    elapsedMS,

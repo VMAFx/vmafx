@@ -957,6 +957,13 @@ def _cell_params(sweep: _Sweep, preset: str, crf: int) -> dict[str, Any]:
         "vmaf_model": sweep.score_model,
         "score_backend": opts.score_backend or "",
     }
+    if opts.encoder.endswith("_qsv"):
+        from .codec_adapters._qsv_common import qsv_rate_control
+        from .hw_devices import resolve_vaapi_device
+
+        mode = qsv_rate_control(opts.encoder, ffmpeg_bin=opts.ffmpeg_bin)
+        settings["qsv_rate_control"] = mode.mode
+        settings["qsv_device"] = resolve_vaapi_device()
     return {
         "encoder": opts.encoder,
         "preset": preset,
@@ -1396,6 +1403,14 @@ def _row_for(
     # across codecs; aggregator returns zeros for empty input.
     encoder_stats_frames = getattr(enc_res, "encoder_stats", ())
     row.update(aggregate_stats(encoder_stats_frames))
+    mode = getattr(enc_res, "qsv_rate_control", "")
+    if mode:
+        row["qsv_rate_control"] = mode
+        row["qsv_rate_control_reason"] = getattr(enc_res, "qsv_rate_control_reason", "")
+        row["provenance"] = {
+            "qsv_rate_control": mode,
+            "qsv_rate_control_reason": row["qsv_rate_control_reason"],
+        }
     # Schema-shape assertion — catches drift in development; cheap.
     missing = set(CORPUS_ROW_KEYS) - row.keys()
     if missing:

@@ -10,7 +10,7 @@ name = "vmafx-sys"
 version = "0.1.0"
 description = "Raw FFI bindings to libvmaf (VMAFX fork)"
 # Workspace inheritance keeps repository / homepage / documentation /
-# license / authors / edition / readme aligned with the [workspace.package]
+# license / authors / edition aligned with the [workspace.package]
 # block in the root Cargo.toml. See ADR-0702 (vmafx-sys FFI crate).
 edition.workspace = true
 rust-version.workspace = true
@@ -19,9 +19,14 @@ authors.workspace = true
 repository.workspace = true
 homepage.workspace = true
 documentation.workspace = true
-readme.workspace = true
+readme = "README.md"
 links = "vmaf"
 build = "build.rs"
+
+[package.metadata.docs.rs]
+# Header-only documentation needs no GPU SDK or native libvmaf build.
+default-target = "x86_64-unknown-linux-gnu"
+targets = []
 
 [lib]
 # Doc-tests are disabled for this *-sys crate because the generated

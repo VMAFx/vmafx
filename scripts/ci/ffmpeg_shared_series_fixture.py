@@ -47,7 +47,9 @@ def tarball(
             info = tarfile.TarInfo(name)
             info.size = len(data)
             archive.addfile(info, io.BytesIO(data))
-    return path, hashlib.sha256(path.read_bytes()).hexdigest()
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    (directory / "SHA256SUMS").write_text(f"{digest}  {path.name}\n")
+    return path, digest
 
 
 def pins(path: Path, sha256: str) -> str:
@@ -57,4 +59,5 @@ def pins(path: Path, sha256: str) -> str:
         f'FFMPEG_FIX_SERIES_TAG="{TAG}"\n'
         f'FFMPEG_FIX_SERIES_SHA256="{sha256}"\n'
         f'FFMPEG_FIX_SERIES_URL="file://{path}"\n'
+        f'FFMPEG_FIX_SERIES_SUMS_URL="file://{path.parent / "SHA256SUMS"}"\n'
     )

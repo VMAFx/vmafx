@@ -141,6 +141,10 @@ its C output.
 | `deploy/helm/vmafx/values.yaml`, `deploy/helm/vmafx/values.schema.json` | From `api/vmafx-platform.toml`: the chart's default values with their comments, and their JSON schema ([Helm chart values](#helm-chart-values)) |
 | `cmd/<binary>/config_keys.gen.go`, `deploy/helm/vmafx/templates/_config.gen.tpl`, the environment tables of the binaries' pages and `docs/usage/env-vars.md` | From `api/vmafx-platform.toml`: the Go binaries' CompoundKeys, their environment tables and the chart's `VMAFX_*` entries ([Environment of the Go binaries](#environment-of-the-go-binaries)) |
 | `api/openapi/components.gen.yaml` | The same messages as OpenAPI 3.0 schemas; also spliced into `api/openapi/vmafx-server-v1.yaml` |
+| `core/src/vmafx/import_layouts_gen.h` | From the `[[pixel_formats]]` table ([ADR-2145](../adr/2145-vmafx-input-format-table.md)): the plane layout of every input format, read by the frame import |
+| `core/api/generated/vmafx_ffmpeg_formats.h`, `core/api/generated/vmafx_gstreamer_formats.h` | The same table as the FFmpeg filter's `AV_PIX_FMT_*` lists and the GStreamer element's format lists and caps strings |
+| `docs/usage/pixel-formats.md` | The same table for readers ([Pixel formats](../usage/pixel-formats.md)) |
+| `core/src/vmafx/rgb_coefficients_gen.h` | The Q30 coefficient table of the RGB conversion ([ADR-2146](../adr/2146-vmafx-rgb-input-explicit-matrix.md)) |
 | `ffmpeg-patches/src/vf_vmafx_options.h` | The `vmafx` filter's context fields, AVOption table and value-name lists |
 | Regions of `docs/usage/cli.md`, `docs/usage/ffmpeg.md`, `docs/mcp/tools.md`, `docs/server/api-contract.md` | Option tables between `BEGIN GENERATED` / `END GENERATED` markers |
 

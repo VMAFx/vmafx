@@ -1,0 +1,1 @@
+- CAMBI heatmaps: extractors that share one `heatmaps_path` in a run no longer truncate each other's `.gray` files; only the first open of the folder truncates, later opens append (port of Netflix/vmaf PR 1707, author RaphaelFakhri; Netflix/vmaf issue 1676).

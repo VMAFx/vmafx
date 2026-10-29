@@ -115,10 +115,11 @@ int score(const unsigned char *const *ref, const unsigned char *const *dist, uns
 }
 ```
 
-Build against an installed tree with `pkg-config --cflags --libs libvmaf`;
-in this preview the API lives in the same library as `libvmaf.h`. RC4 splits
-it as ADR-1852 decides: `libvmafx.so.1` (pkg-config `libvmafx`) with
-`libvmaf.so.3` as a thin compatibility library on top.
+Build against an installed tree with `pkg-config --cflags --libs libvmafx`;
+the API lives in `libvmafx.so.1`, and `libvmaf.so.3` is the thin
+compatibility library on top of it (ADR-1852). For a complete program that
+reads two YUV files, scores them and prints the provenance record, see
+[Getting started with the C API](getting-started.md).
 
 ## Contexts and logging
 
@@ -981,7 +982,7 @@ it when they are, with the same values bit for bit.
   `vmafx_version_string()` and extractor names for the whole process.
 
 On Linux every `vmafx_*` function carries the symbol version of the ABI minor
-that introduced it (`nm -D libvmaf.so` shows `vmafx_context_create@@VMAFX_0.1`),
+that introduced it (`nm -D libvmafx.so.1` shows `vmafx_context_create@@VMAFX_0.1`),
 so a program built against a newer minor fails to load against an older
 library instead of failing at its first call. The `vmaf_*` functions keep their
 unversioned symbols.
@@ -997,18 +998,21 @@ library you name; there is no search fallback:
 ```python
 from vmafx import Library, Pool
 
-lib = Library("/usr/local/lib/libvmaf.so.3")   # or set VMAFX_LIBRARY
+lib = Library("/usr/local/lib/libvmafx.so.1")   # or set VMAFX_LIBRARY
 with lib.context() as context:
     context.import_score("external", 0, 1.5)
     print(lib.version_string(), context.feature_score_pooled("external", Pool.MEAN, 0, 0))
 ```
 
-A failed call raises `vmafx.VmafxError` with `status`, `message`, `subject`
-and `errno`; `VMAFX_PENDING` raises its subclass `VmafxPending`. The module
-checks its struct layouts against the definition when it is imported. The
-binding wraps the calls with plain arguments; the rest are reachable through
-`Library.raw` until the generated language bindings land. The package sits
-in `bindings/python/vmafx/` in the source tree.
+Load `libvmafx.so.1`, not the compatibility library `libvmaf.so.3`, which
+does not export the `vmafx_*` functions. A failed call raises
+`vmafx.VmafxError` with `function`, `status`, `message`, `subject` and
+`errno`; `VMAFX_PENDING` raises its subclass `VmafxPending`. The module checks
+its struct layouts against the definition when it is imported. The binding
+wraps the calls with plain arguments; the rest are reachable through
+`Library.raw`. The package sits in `bindings/python/vmafx/` in the source
+tree. [Language bindings](bindings.md) covers the Python binding in full and
+says what exists for Rust and Go.
 
 ## Migrating from libvmaf.h
 
@@ -1074,3 +1078,23 @@ symbol version, until the matching RC4 device-frame work lands (the
 through `pkg-config --libs libvmaf` as before. In a build without HIP or
 Metal, their functions are compat functions that report the backend as
 absent, as libvmaf's stubs did.
+
+A program can move off these functions now; each task has one VMAFx
+successor on every backend ([migration table](compat.md), per function):
+
+| Task | libvmaf (CUDA / SYCL / HIP / Metal) | VMAFx |
+| --- | --- | --- |
+| Find a device | `vmaf_sycl_list_devices()`, `vmaf_hip_list_devices()`, `vmaf_metal_list_devices()`, `vmaf_*_available()` | `vmafx_device_count()` and `vmafx_device_info()` ([Devices](#devices)) |
+| Open a device | `vmaf_cuda_state_init()`, `vmaf_sycl_state_init()`, `vmaf_hip_state_init()`, `vmaf_metal_state_init()` | `vmafx_device_create()` with `desc.backend` and `desc.index`, or your runtime objects in `desc.external` |
+| Score on it | `vmaf_*_import_state()` | `vmafx_context_use_device()`, before the features are registered |
+| Close it | `vmaf_*_state_free()` | `vmafx_device_unref()`; contexts and frames hold their own references |
+| Preallocate frames | `vmaf_cuda_preallocate_pictures()`, `vmaf_sycl_preallocate_pictures()`, `vmaf_sycl_init_frame_buffers()` | `vmafx_frame_pool_create()` on the device ([Frame pools](#frame-pools)) |
+| Take a frame to fill | `vmaf_cuda_fetch_preallocated_picture()`, `vmaf_sycl_picture_fetch()`, `vmaf_sycl_get_frame_buffers()` | `vmafx_frame_pool_acquire()`, then `vmafx_frame_planes()` for the plane addresses; `vmafx_frame_to_picture()` while the rest of the program still takes a `VmafPicture` |
+| Hand over decoder output | `vmaf_sycl_dmabuf_import()`, `vmaf_sycl_import_va_surface()`, `vmaf_sycl_import_d3d11_surface()`, `vmaf_sycl_upload_plane()` | `vmafx_context_import_frame()` / `vmafx_frame_import()` with the plane memory and an acquire fence ([Importing a frame](#importing-a-frame)); `vmafx_frame_unref()` in place of `vmaf_sycl_dmabuf_free()` |
+| Score and finish | `vmaf_read_pictures_sycl()`, `vmaf_flush_sycl()` | `vmafx_submit()` and `vmafx_flush()`, as for host frames |
+| Know when a frame is free | `vmaf_sycl_wait_compute()` | The frame's release fence: `vmafx_frame_release_fence()` and `vmafx_fence_wait()`, or the import's `release` callback ([Fences](#fences)) |
+| Profile kernels | `vmaf_sycl_profiling_enable()` / `_disable()`, `vmaf_sycl_profiling_print()` / `_get_string()` | `VMAFX_DEVICE_PROFILING` in `desc.flags`, then `vmafx_device_profile()` (refused on a SYCL device: see [SYCL devices](#sycl-devices)) |
+
+The descriptor fields of each backend, what it imports without a copy and
+which fences it takes are in [CUDA devices](#cuda-devices),
+[HIP devices](#hip-devices) and [SYCL devices](#sycl-devices).
