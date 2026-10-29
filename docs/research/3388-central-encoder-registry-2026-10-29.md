@@ -1,5 +1,5 @@
 <!-- markdownlint-disable MD013 MD060 -->
-# Research-3388: where VMAFx listed its encoders, and how far the lists drifted
+# Research-3388: where VMAFx listed its encoders, how far the lists drifted, and what is still missing
 
 - **Status**: Active
 - **Workstream**: [ADR-3388](../adr/3388-central-encoder-registry.md)
@@ -45,11 +45,73 @@ how the replacement was checked. The user page is
 | Mutation, Python copy | `absolute_range` of `libx264` set to `[0, 50]`, version `"99"` | `test_adapter_matches_registry_row[libx264]`, `test_python_copy_matches_go_copy`, `test_absolute_crf_range_table_lookup` fail |
 | Mutation, Go copy | `quality_range` of `libx264` set to `[1, 51]`, version `"99"` | `TestAdapter_QualityWindows`, `TestAdapterVersionMatchesPython`, `TestValidate`, `TestAdapterMetadata_matchesPythonGolden`, `TestRegistryMatchesPythonMetadata` fail |
 
-## 4. Not in this slice
+The second slice adds every encoder VMAFx does not run yet as a gap row, adds the tuning-profile variants, and adds a checker that compares each row with its live upstream (sections 4 to 9).
 
-The coverage matrix (gap rows for every family with licence class, upstream
-state, paradigm, use-case tags and distortion-source artifact domains), the
-tuning-profile and fork variant rows, and the per-use-case ranking land as
-later slices on the same format. Their research is recorded with those
-slices, with the upstream state of each row checked live on its `checked`
-date.
+## 4. What the registry holds now
+
+| Field | Counts |
+|---|---|
+| Rows | 106 encoders, 8 variants |
+| Status | 19 implemented, 69 planned, 10 listed, 8 decision |
+| Class | 46 delivery, 7 mezzanine, 3 lossless, 1 low-latency, 3 texture, 8 research, 1 decode-only, 3 commercial-listed, 34 distortion-source |
+| Paradigm | 98 classic, 3 ml-assisted, 1 hybrid-neural, 4 neural-e2e |
+| Licence class | 20 permissive, 56 copyleft-weak, 5 copyleft-strong, 1 patent-licensed-binary, 7 proprietary-sdk, 17 unknown |
+| Interface | 78 ffmpeg, 12 cli, 7 sdk, 9 decode-only |
+
+The eight `decision` rows (`evc-main`, `notchlc`, `bink`, `lcevc-encoder-sdk`, `maxine-sdk`, `commercial-hevc-sdk`, `commercial-avc-sdk`, `commercial-vvc-sdk`) are listed only. Each needs an operator decision before any implementation work, because each is licence-gated or proprietary. Commercial SDK rows carry generic ids on purpose.
+
+Variants added: `libsvtav1@svt-av1-psyex`, `libx265@grain`, `libx265@texture`, `libx264@psy-rd`, `libx264@psy-trellis`, `libx264@mbtree`, `libx264@grain` (tuning profiles), next to the existing `libsvtav1@svt-av1-hdr` runtime fork.
+
+## 5. New fields and their rules
+
+Both fields are enforced in `scripts/codegen/vmafx_api/encoders.py` and tested in `scripts/codegen/tests/test_vmafx_api_encoders.py`.
+
+- `artifact_domains` (`dct-blocking`, `wavelet-blur`, `vq-mosaic`, `lossless-reference`) is set exactly when `class = "distortion-source"`. These rows exist to feed one degradation corpus per artifact domain, not to be tuned.
+- `awaits_ffmpeg = true` marks an [ADR-0339](../adr/0339-av1-videotoolbox-placeholder-adapter.md)-style placeholder: the row names an FFmpeg encoder that FFmpeg master does not ship yet. It needs an `ffmpeg_encoder`. Today only `av1_videotoolbox` carries it.
+
+## 6. How each distortion-source domain was verified
+
+Each domain comes from the codec's technical description, mostly the MultimediaWiki (`wiki.multimedia.cx`) codec pages:
+
+| Domain | Rows (examples) | Basis |
+|---|---|---|
+| `vq-mosaic` | Indeo 3, Cinepak, Apple RPZA, MS Video 1, SVQ1 (5 rows) | vector quantisation of pixel blocks |
+| `wavelet-blur` | Indeo 5, Dirac, VC-2, Snow | block or full-frame wavelet transform |
+| `lossless-reference` | HuffYUV, FFVHuff, Lagarith, Ut Video | lossless coding; they serve as the reference arm |
+| `dct-blocking` | MPEG-1, MPEG-4 Part 2, H.263, MJPEG, DV, Theora, RealVideo, WMV, VC-1, VP6 (21 rows) | block DCT or integer block transform |
+
+Two codecs are left out because their domain could not be verified: Indeo 2 (Huffman-coded deltas, no transform artifact class fits) and Smacker (the coding technique is not documented on the page checked).
+
+## 7. The live upstream check
+
+`scripts/codegen/check-encoder-upstreams.py` runs `vmafx_api/upstreams.py` against the network:
+
+- Every `ffmpeg_encoder` must appear in FFmpeg master `libavcodec/allcodecs.c`. That file lists C symbols, where an encoder name such as `libaom-av1` is written `libaom_av1`; `SYMBOLS` holds the one name that differs further (`libvpx` is `ff_libvpx_vp8_encoder`, see `libavcodec/libvpxenc.c`).
+- A row whose `upstream` is on GitHub, GitLab (`gitlab.com`, `code.videolan.org`), Gitiles (`*.googlesource.com`) or Bitbucket must state the maintenance class its last commit gives: active below 183 days, slow below 730 days, dead after, archived when the forge flags it.
+- Where the forge reports an SPDX licence the checker's allow-list classifies, it must match `licence_class`. Judged classes (`patent-licensed-binary`, `proprietary-sdk`, `research-noncommercial`) are not overruled.
+- Every other host, and every row without an upstream, is reported `unchecked`, never `ok`.
+
+Result on 2026-10-29 (FFmpeg master and forge state of that day): **26 ok, 0 mismatch, 80 unchecked**, exit 0. The first run found three real defects, all fixed in this slice: the hyphen/underscore symbol mismatch (`libaom-av1`, `libvpx-vp9` reported missing), the `libvpx` alias, and `svt-vp9` wrongly classed as archived (it is slow). 76 of the 80 unchecked rows have no upstream repository (legacy and FFmpeg-native encoders). The other four are `av1_videotoolbox` (placeholder), `vtm` and `jvet-nnvc` (`vcgit.hhi.fraunhofer.de`, no API) and `libtheora` (`gitlab.xiph.org`, not in the GitLab host list).
+
+Licence classes are mostly not forge-verified: most forges report no SPDX id for these projects. The six implemented software rows (`libx264`, `libx265`, `libsvtav1`, `libvvenc`, `libaom-av1`, `libvpx-vp9`) were checked by hand against each project's `LICENSE` or `COPYING` file.
+
+## 8. The checker was seen failing
+
+`scripts/codegen/tests/test_vmafx_api_upstreams.py` runs the checker against stub forges (positive, negative and boundary cases). Each of these mutations of `upstreams.py` made the suite fail:
+
+| Mutation | Caught by |
+|---|---|
+| `ACTIVE_DAYS = 184` | maintenance edges |
+| `<=` in the slow comparison | maintenance edges |
+| licence check removed | licence contradicted |
+| FFmpeg name check removed | encoder missing from FFmpeg |
+| empty `allcodecs.c` accepted | allcodecs without encoders refused |
+| `unchecked` reported as `ok` | host without forge API, row without upstream |
+| `JUDGED` emptied | judged licence not overruled |
+| archived flag ignored | archived wins over age |
+
+The first mutation run proved nothing: the test module did not import the shared `support` helper, so it failed to import when run alone and every mutation showed one error. The rerun after the fix showed real assertion failures for all eight.
+
+## 9. Not in this slice
+
+Implementation of any gap row, the per-use-case ranking with its metric guard, and the epics and sub-issues per gap are tracked outside this digest.

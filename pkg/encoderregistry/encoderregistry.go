@@ -42,22 +42,24 @@ type Adapter struct {
 
 // Encoder is one row of the registry.
 type Encoder struct {
-	ID            string   `json:"id"`
-	Family        string   `json:"family"`
-	Paradigm      string   `json:"paradigm"`
-	Class         string   `json:"class"`
-	Status        string   `json:"status"`
-	Interface     string   `json:"interface"`
-	FFmpegEncoder string   `json:"ffmpeg_encoder"`
-	Hardware      string   `json:"hardware"`
-	LicenceClass  string   `json:"licence_class"`
-	Maintenance   string   `json:"maintenance"`
-	Upstream      string   `json:"upstream"`
-	Checked       string   `json:"checked"`
-	UseCases      []string `json:"use_cases"`
-	Surfaces      []string `json:"surfaces"`
-	Adapter       *Adapter `json:"adapter"`
-	Notes         string   `json:"notes"`
+	ID              string   `json:"id"`
+	Family          string   `json:"family"`
+	Paradigm        string   `json:"paradigm"`
+	Class           string   `json:"class"`
+	Status          string   `json:"status"`
+	Interface       string   `json:"interface"`
+	FFmpegEncoder   string   `json:"ffmpeg_encoder"`
+	Hardware        string   `json:"hardware"`
+	LicenceClass    string   `json:"licence_class"`
+	Maintenance     string   `json:"maintenance"`
+	Upstream        string   `json:"upstream"`
+	AwaitsFFmpeg    bool     `json:"awaits_ffmpeg"`
+	Checked         string   `json:"checked"`
+	UseCases        []string `json:"use_cases"`
+	ArtifactDomains []string `json:"artifact_domains"`
+	Surfaces        []string `json:"surfaces"`
+	Adapter         *Adapter `json:"adapter"`
+	Notes           string   `json:"notes"`
 }
 
 // Variant is one ADAPTER@VARIANT row (ADR-0644).
