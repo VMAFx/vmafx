@@ -3145,6 +3145,19 @@ if host_machine.system() != 'windows'
         kwargs : test_link_kwargs,
     )
 
+    # Netflix/vmaf PR 1682: a y4m stream shallower than the picture reads
+    # into it left-shifted to the picture's depth through the direct reader;
+    # a deeper stream or an 8-bit picture is refused. fmemopen, so POSIX only.
+    test_y4m_mixed_depth = executable('test_y4m_mixed_depth',
+        ['test.c', 'test_y4m_mixed_depth.c', '../tools/vidinput.c', '../tools/y4m_input.c',
+         '../tools/yuv_input.c'],
+        include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), include_directories('../tools/')],
+        link_with : vmaf_test_link,
+        c_args : [compat_cflags],
+        dependencies: [pthread_dependency, sycl_dependency],
+        kwargs : test_link_kwargs,
+    )
+
     # test_cli_parse_long_only_args forks a child to drive
     # cli_parse() with intentionally-bad argv and asserts the
     # child exits with status 1 + a "usage error" stderr line
@@ -9925,6 +9938,7 @@ test('test_spinner', test_spinner, suite : ['fast'])
 if host_machine.system() != 'windows'
     test('test_y4m_411_oob', test_y4m_411_oob, suite : ['fast'])
     test('test_video_input_odd_dims', test_video_input_odd_dims, suite : ['fast'])
+    test('test_y4m_mixed_depth', test_y4m_mixed_depth, suite : ['fast'])
     test('test_cli_parse_long_only_args', test_cli_parse_long_only_args, suite : ['fast'])
     test('test_y4m_alloc_failure', test_y4m_alloc_failure, suite : ['fast'])
 endif

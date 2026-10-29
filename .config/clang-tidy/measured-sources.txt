@@ -902,6 +902,7 @@ core/test/test_win32_pthread_timeout.c
 core/test/test_x86_cpu_gate.c
 core/test/test_y4m_411_oob.c
 core/test/test_y4m_alloc_failure.c
+core/test/test_y4m_mixed_depth.c
 core/test/test_y_funque_plus.c
 core/test/vmafx_score_contract.c
 core/test/vmafx_sycl_producer.cpp
