@@ -1,0 +1,1 @@
+| [ADR-3383](3383-odd-depth-twin-allow-list.md) | Device twins take 9, 11, 13, 14 and 15-bit pictures only from an allow-list of exact twin names with the maximum depth their parity tests carry; every other twin returns `-EINVAL` by name; replaces the ADR-2164 deny-list (#2476) |
