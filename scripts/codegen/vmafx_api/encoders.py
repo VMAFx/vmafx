@@ -59,6 +59,7 @@ PRESET_STYLES = frozenset(
      "vpx-cpu-used", "realtime"}
 )  # fmt: skip
 VARIANT_KINDS = frozenset({"runtime-fork", "tuning-profile"})
+ARTIFACT_DOMAINS = frozenset({"dct-blocking", "wavelet-blur", "vq-mosaic", "lossless-reference"})
 
 
 @dataclass(frozen=True)
@@ -92,8 +93,10 @@ class Encoder:
     licence_class: str
     maintenance: str
     upstream: str
+    awaits_ffmpeg: bool
     checked: str
     use_cases: tuple[str, ...]
+    artifact_domains: tuple[str, ...]
     surfaces: tuple[str, ...]
     adapter: Adapter | None
     notes: str
@@ -212,10 +215,17 @@ def _encoder(entry: Entry) -> Encoder:
     status = _choice(entry, "status", STATUSES, where)
     if bool(surfaces) != (status == "implemented"):
         raise DefinitionError(f"{where}: `surfaces` is set exactly when status is implemented")
+    domains = _choices(entry, "artifact_domains", ARTIFACT_DOMAINS, where)
+    if bool(domains) != (entry.get("class") == "distortion-source"):
+        raise DefinitionError(
+            f"{where}: `artifact_domains` is set exactly when class is distortion-source"
+        )
     if bool(surfaces) != ("adapter" in entry):
         raise DefinitionError(f"{where}: an `adapter` table is set exactly when `surfaces` is")
     interface = _choice(entry, "interface", INTERFACES, where)
     ffmpeg = str(entry.get("ffmpeg_encoder", ""))
+    if entry.get("awaits_ffmpeg") and not ffmpeg:
+        raise DefinitionError(f"{where}: `awaits_ffmpeg` needs an `ffmpeg_encoder`")
     if (interface == "ffmpeg") != bool(ffmpeg):
         raise DefinitionError(f"{where}: `ffmpeg_encoder` is set exactly when interface is ffmpeg")
     return Encoder(
@@ -230,8 +240,10 @@ def _encoder(entry: Entry) -> Encoder:
         licence_class=_choice(entry, "licence_class", LICENCES, where),
         maintenance=_choice(entry, "maintenance", MAINTENANCE, where),
         upstream=str(need(entry, "upstream", where)),
+        awaits_ffmpeg=_flag(entry, "awaits_ffmpeg", where),
         checked=_checked(entry, where),
         use_cases=_choices(entry, "use_cases", USE_CASES, where),
+        artifact_domains=domains,
         surfaces=surfaces,
         adapter=_adapter(entry, where) if surfaces else None,
         notes=str(entry.get("notes", "")),
