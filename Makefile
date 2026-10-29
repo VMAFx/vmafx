@@ -95,6 +95,12 @@ debug: $(DEBUG_DIR) $(NINJA)
 install: $(BUILD_DIR) $(NINJA)
 	PATH="$(VIRTUAL_ENV_ABS):$$PATH" $(NINJA) -vC $(BUILD_DIR) install
 
+# Linux ELF SDK smoke; select an already-built tree with INSTALL_LAYOUT_BUILD_DIR.
+INSTALL_LAYOUT_BUILD_DIR ?= $(BUILD_DIR)
+.PHONY: install-layout-check
+install-layout-check:
+	$(PYTHON_INTERPRETER) scripts/ci/check_install_layout.py --build "$(INSTALL_LAYOUT_BUILD_DIR)"
+
 clean:
 	rm -rf $(BUILD_DIR) $(DEBUG_DIR) $(GOLDEN_BUILD_DIR) $(LIBVMAF_DIR)/build-golden-arm64-gcc $(LIBVMAF_DIR)/build-golden-arm64-clang
 	rm -f compat/python-vmaf/core/adm_dwt2_cy.c*
