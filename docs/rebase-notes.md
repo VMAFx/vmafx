@@ -8,6 +8,104 @@ search:
 # Rebase notes
 
 <!-- rebase-notes:fragments:begin (rendered from docs/rebase-notes.d/; do not edit) -->
+## Encoder facts come from api/vmafx-encoders.toml (2026-10-29)
+
+- [ADR-3388](../adr/3388-central-encoder-registry.md): the quality windows,
+  presets, versions and flags of `pkg/encoder`, `pkg/codecadapter` and the
+  Python `codec_adapters` come from one registry; `_ABSOLUTE_CRF_RANGE_BY_NAME`
+  in `tools/vmaf-tune/src/vmaftune/bisect.py` is gone (the bisect reads
+  `absolute_range` from the registry).
+- **On sync**: an upstream or branch change to an adapter's window, presets or
+  version lands in `api/vmafx-encoders.toml`, then
+  `python3 scripts/codegen/vmafx-api.py --write`; never in the generated
+  `registry.gen.json` copies. A conflict in a generated copy takes either side
+  and is regenerated at the tip. `tests/test_encoder_registry.py` and
+  `pkg/codecadapter/registry_test.go` fail when an adapter and its row disagree.
+
+## Renovate rule for the praetor engine (2026-10-29)
+
+`chore/renovate-engine-rule`. A rebase or sync keeps the last `packageRules`
+entry in `renovate.json`, described as "praetor-managed engine", with
+`enabled: false` and its five package names. The praetor engine's
+`renovate-engine-bumps` audit fails when the entry is missing or its names
+differ. The praetor pin in `.github/workflows/standards-gate.yml` does not
+change. No score, C API or build change.
+
+## GStreamer vmaf element against Netflix's libvmaf (2026-10-28)
+
+- `scripts/ci/upstream-gstreamer-compat.sh`: compiles the element against the
+  `--reference-prefix` headers and runs it on both libraries; adds
+  `--planted-defect`. Fork-only, nothing upstream to merge.
+- `scripts/ci/upstream_consumer_scores.py`: XML and CSV readers.
+- `.github/workflows/ffmpeg-integration.yml`: builds Netflix's libvmaf at
+  the pin `scripts/ci/upstream_parity_pin.py` prints. **On sync**: moving the
+  pin in `docs/development/known-upstream-bugs.md` moves this build too; a pin
+  whose `VmafPicture` differs from the fork's needs no change here, because
+  the element is built against Netflix's headers.
+
+## CAMBI heatmaps shared by contexts (2026-10-27)
+
+- `core/src/feature/cambi.c` keeps a locked, reference-counted list of open `heatmaps_path` folders (`HeatmapsPathRef`); `vmaf_cambi_open_heatmaps()` truncates only on a folder's first reference and `vmaf_cambi_close_heatmaps(path, files)` drops one.
+- Ported from Netflix/vmaf PR 1707 (issue 1676), which is not merged upstream at the time of the port.
+- **On sync:** if upstream merges PR 1707 in another form, take upstream's arithmetic but keep the two-argument close used by the Metal twin (`core/src/feature/metal/integer_cambi_metal.mm`); `test_heatmap_writers_shared_path` in `core/test/test_cambi_heatmap_writers.c` must keep passing.
+
+## Direct y4m reader: shallower stream left-shifted to the picture's depth (2026-10-27)
+
+- Port of Netflix/vmaf PR 1682 (open upstream at the time of the port).
+  `y4m_fetch_into_vmaf_picture()` in `core/tools/y4m_input.c` hands a stream
+  whose depth differs from the picture's to `y4m_fetch_upshifted()`.
+- Fork difference from the upstream diff: `y4m_visible_planes()` moves each
+  plane from the padded frame origin that `y4m_input_fetch_frame()` returns to
+  the visible picture before the shift; without it the shift reads padding.
+- **On sync**: when upstream merges PR 1682, keep `y4m_visible_planes()` and
+  the refusal of a deeper stream or an 8-bit picture; `test_y4m_mixed_depth`
+  guards both.
+
+## Homebrew tap publish job (2026-10-29)
+
+- `.github/workflows/supply-chain.yml`: new `homebrew-tap` job after
+  `attach-to-release`. Fork-only, nothing upstream to merge.
+- `scripts/release/distribution.py`: `homebrew` and `source-url` subcommands;
+  `scripts/release/publish_homebrew_tap.py` (new). **On sync**: none of these
+  files exist upstream.
+
+## Rust crate discovery and Go tag policy (2026-10-28)
+<!-- Copyright 2026 Lusoris -->
+<!-- SPDX-License-Identifier: EUPL-1.2 -->
+
+- Preserve `vmafx-sys/build_support/library_search.rs` and its integration
+  tests: ordered unique prefixes, complete header/library pairs, named
+  missing-install error, and `DOCS_RS` tree-header selection without linking.
+- Keep the stale-header check and bindgen allowlist unchanged. No
+  `pkg-config` dependency was added; it is absent from the workspace lockfile.
+- Keep `rustdoc::invalid_rust_codeblocks` scoped to the generated bindings
+  module: preserved C Doxygen examples are not Rust snippets.
+- Preserve the docs.rs package metadata and navigation
+  to `docs/api/rust.md` and `docs/usage/go.md`. Registry publication and
+  standalone package headers remain separate work.
+- Keep the root Go module path and retract block, and the inherited-tag
+  guards established by ADR-1805; no tags change in this work.
+
+## QSV ICQ probe and named CQP fallback (2026-10-28)
+
+Keep Intel Quick Sync Video (QSV) quality control as `-global_quality` in pure command builders. Runtime Python encode and Go encoder/corpus paths use one process-cached ICQ probe per resolved render node, encoder and FFmpeg binary. Failed probes replace only the quality flag with `-q:v`, retaining the validated 1–51 value. Preserve the injectable runner, concurrency guard, `VMAFTUNE_QSV_RATE_CONTROL` override, optional JSON/provenance fields and QSV adapter version 4 in both registries. Never erase the fallback reason or infer ICQ from the adapter's default quality-knob metadata. Hardware validation remains open until the Arc A380 tuner sweep succeeds.
+
+## Generated Go and Rust status tables (2026-10-28)
+
+`scripts/codegen/vmafx_api/emit_go.py` and `emit_rust.py` generate
+`pkg/vmafx/status_gen.go` and `bindings/rust/vmafx/src/status_gen.rs` from
+`core/api/vmafx.toml`, beside the existing Python `Status` enum.
+For generated-file conflicts, take either side, resolve definition and emitter
+changes, then run `python3 scripts/codegen/vmafx-api.py --write` and `--check`.
+Keep both new renderers in `cli.py`'s `FIXED_OUTPUTS`, the Rust module and
+re-export in `lib.rs`, and the status binding parity test in the tooling suite.
+
+## FFmpeg shared fix series v0.5.0 (2026-10-27)
+
+- `build-config.env`: `FFMPEG_FIX_SERIES_TAG` and `FFMPEG_FIX_SERIES_SHA256` move to `VMAFx/ffmpeg-patches` `v0.5.0` (commit `7641804bdd`). The release's `base.env` still names FFmpeg `n9.0.2` / `946fcce0`, so `FFMPEG_TAG` and `FFMPEG_COMMIT` stay. On a conflict take the newer series pin of the two and run `python3 scripts/ci/ffmpeg_patch_stack.py --refresh`, then `--check`.
+- `scripts/ci/ffmpeg-shared-series.sh`: `check_listed_sum` compares the tarball's sha256 with the release's `SHA256SUMS` in every verify mode and prints both; keep it with `test_tarball_not_listed_in_sha256sums_is_refused`.
+- `.github/workflows/ffmpeg-integration.yml`: `ffmpeg-work` and `ffmpeg-sycl-work` name `ubuntu-26.04` again; `.config/lint-exceptions.d/hosted-runner-label.toml` is gone. A rebase must not bring either fallback back.
+
 ## QSV upload format follows the output depth (2026-10-28)
 
 - `hwdevice.QSVUploadFilter()` (Go) and `qsv_upload_filter()` (Python, `codec_adapters/_qsv_common.py`) are the one place each language picks the QSV upload format: the last `-pix_fmt` wins, `p010le` / `yuv420p10le` / Main 10 give `format=p010le,hwupload=extra_hw_frames=64`, anything else the `nv12` chain. `ffencode`, `encoder.injectQSVInitChain`, `vmaftune.encode` and `scripts/dev/hw_encoder_corpus.py` call them; a rebase must not bring back a fixed `format=nv12` upload in those callers.

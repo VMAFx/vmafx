@@ -6,6 +6,13 @@
 ## [Unreleased]
 ### Added
 
+- **The release publishes a Homebrew formula to `Vidiko/homebrew-tap` (ADR-3387).**
+  After a final release, the supply-chain workflow opens a pull request with
+  `Formula/vmafx.rb` on the tap; once it merges, `brew install Vidiko/tap/vmafx`
+  builds VMAFx from the release source archive
+  ([Homebrew tap](docs/development/distribution.md#homebrew-tap)).
+
+
 - **`adm_cuda` evaluates two viewing distances in one instance (ADR-2795).**
   With `adm_norm_view_dist_extra`, or when two models such as
   `vmaf_v1.0.16_3d0h` and `_5d0h` run on `--backend cuda`, the CUDA twin runs
@@ -122,6 +129,13 @@
   same functions. An imported frame scores bit for bit as the same frame
   created on the host. ABI 0.1.3. See
   [device frames and fences](docs/api/vmafx/index.md#device-frames-and-fences).
+
+
+- **Link check for the C API pages (issue 2436)**: `scripts/docs/check_doc_links.py`
+  verifies that every relative link and heading anchor under `docs/api/`
+  resolves, including links into the source tree that `mkdocs build --strict`
+  only reports at INFO; `make docs-fragments-check` runs it. See
+  [Documentation site design](docs/development/docs-site-design.md#link-check).
 
 
 - **Documentation C samples compile, and every exported `vmafx_*` symbol is
@@ -446,6 +460,9 @@
   ([Distribution manifest](docs/development/distribution.md)).
 
 
+- **The encoder registry lists every encoder VMAFx does not run yet, and checks them against their upstreams ([ADR-3388](docs/adr/3388-central-encoder-registry.md)).** `api/vmafx-encoders.toml` now holds 87 planned, listed and decision-gated gap rows, grain, texture and psy tuning profiles for `libx264` and `libx265`, artifact domains for the legacy codecs used as distortion sources, and an `awaits_ffmpeg` flag for placeholder rows. `scripts/codegen/check-encoder-upstreams.py` compares every row with FFmpeg master and the row's forge (maintenance and licence class) and exits 1 on any disagreement; see [docs/usage/encoder-registry.md](docs/usage/encoder-registry.md).
+
+
 - **SVT Encore filter strings in the upstream consumer check (#2364).** `scripts/ci/upstream-ffmpeg-compat.sh --against-cli` runs the `libvmaf` filter graphs SVT Encore builds for its VMAF profile options (model, feature, threads, subsample, reference filters; Encore pinned at `8dd7c596`) on upstream FFmpeg with `libvmaf.so.3` and requires the vmaf CLI's JSON exactly; an unknown feature or model must be refused.
 
 
@@ -483,6 +500,16 @@
 - Document the native `vmafx` GStreamer element: build, properties, input
   caps, pipelines, messages, provenance, upstream migration and limitations
   (#2236).
+
+
+- **The upstream GStreamer `vmaf` element is checked against Netflix's libvmaf
+  (#2237).** CI builds Netflix's libvmaf at the recorded parity pin and runs
+  the upstream `vmaf` element of gst-plugins-bad on both libraries for every
+  output format (JSON, XML, CSV) and every property case (features, pooling,
+  subsampling, clipping, transform, phone model, confidence interval, threads,
+  frame messages); the scores must be identical, and a planted-defect run must
+  fail
+  ([Upstream consumers](docs/development/upstream-consumers.md)).
 
 
 - **A native `vmafx` GStreamer element on the VMAFx API (RC4, #2236).** The
@@ -769,6 +796,17 @@
 - A weekly research radar over public video-quality sources: a public source registry (`docs/research/radar/sources.yaml`), a scheduled digest workflow (`research-radar.yml`, `scripts/research/radar_collect.py`) and a documented triage procedure with a licence and patent gate ([ADR-2171](docs/adr/2171-research-radar.md), [docs/research/radar/](docs/research/radar/README.md)).
 
 
+<!-- Copyright 2026 Lusoris -->
+<!-- SPDX-License-Identifier: EUPL-1.2 -->
+<!-- markdownlint-disable MD041 -->
+
+- Rust bindings discover complete libvmaf installations through
+  `LIBVMAF_PREFIX`, `/usr/local` and `/usr`, with a named missing-library
+  error and a header-only `DOCS_RS` mode for source checkouts. New Rust
+  installation and Go module guides explain build requirements, fork tags
+  and commit pins.
+
+
 - **Rust twins of C feature extractors, selectable at run time (RC4
   framework, [ADR-1713](docs/adr/1713-rc4-rust-extractor-framework.md)).**
   A build with `-Denable_rust_features=true` links one Rust archive into
@@ -801,6 +839,14 @@
   `--feature motion_rust`) computes `motion_sad_score`, `motion2` and `motion3`,
   including the five-frame window and the moving average, in Rust; the default
   stays the C extractor. See [Motion](docs/metrics/motion.md#rust-implementation).
+
+
+- **The scoring contract test covers gRPC `ScoreStream` (#2155).**
+  `test_vmafx_score_contract` now also streams the Netflix 576x324 pair
+  through `ScoreStream` and requires its final `AggregateScore` to match the
+  CLI, the C API, gRPC `Score` and `POST /v1/score` bit for bit; the contract
+  page names the messages that carry no provenance and why
+  ([Scoring API contract](docs/server/api-contract.md)).
 
 
 - Every score now carries a full provenance record (#2142, ADR-2073): library,
@@ -915,6 +961,21 @@
   ([Built-in models](docs/models/overview.md#built-in-models)).
 
 
+- **Backend migration table for the VMAFx C API (issue 2436).** The API
+  reference now maps each task a program does with the libvmaf CUDA, SYCL,
+  HIP or Metal backend functions (find, open and close a device, preallocate
+  and fill frames, hand over decoder output, know when a frame is free,
+  profile kernels) to its one VMAFx successor
+  ([Backends that still use the engine's functions](docs/api/vmafx/index.md)).
+
+
+- **Language bindings guide for the VMAFx API (issue 2436).** A new page says
+  which bindings exist and what each wraps: the generated Python binding over
+  `libvmafx.so.1` (loading, scoring, errors, what is not wrapped yet), the Rust
+  crates over the `libvmaf.h` compatibility API, and the Go server stubs
+  ([Language bindings](docs/api/vmafx/bindings.md)).
+
+
 - **Device-frames guide for the VMAFx C API (issue 2436).** A new page
   explains how GPU decoder frames reach the library without a host copy:
   `vmafx_frame_import()`, the memory kinds and fence kinds each backend
@@ -962,6 +1023,14 @@
   [API generation](docs/development/api-generation.md).
 
 
+- **Getting-started guide for the VMAFx C API (issue 2436).** A new page walks
+  through one complete C program: it reads two YUV files into host frames,
+  scores them with the default model, prints the pooled score and the
+  provenance record, and explains each step and how to build it against an
+  installed tree or a build directory
+  ([Getting started with the C API](docs/api/vmafx/getting-started.md)).
+
+
 - **FFmpeg `vmafx` filter (RC4 WP9, ADR-2125).** Patch `0023` adds the `vmafx`
   filter, the FFmpeg filter of the VMAFx API (`./configure --enable-libvmafx`,
   `libvmafx >= 1.0.0`; it can be built next to `--enable-libvmaf`). It scores
@@ -1007,6 +1076,9 @@
   `vmafx` element spell their `model` and `feature` options with them, so one
   string means the same thing on every surface. See
   [the model API](docs/api/vmafx/model.md).
+
+
+- Generate Go and Rust status tables from the same API definition as Python, with Go error sentinels and Rust checked conversion from raw codes.
 
 
 - **`Containerfile.vmafx`: a SYCL + FFmpeg test image with a build-time
@@ -1091,6 +1163,24 @@
   and `_run_main`, and identical fake curl download branches in
   `test_konvid_150k.py` and `test_lsvq.py` share `fake_curl` from
   `_corpus_download_fakes.py`.
+
+
+- **The API generation guide lists the input-format and RGB outputs
+  (part of #2436).** The Outputs table of
+  `docs/development/api-generation.md` now names the import layout table,
+  the FFmpeg and GStreamer format headers, `docs/usage/pixel-formats.md` and
+  the Q30 RGB coefficient table that `scripts/codegen/vmafx-api.py` writes.
+
+
+- **One encoder registry feeds the Go and the Python tuners
+  ([ADR-3388](docs/adr/3388-central-encoder-registry.md)).** Every encoder's
+  quality knob, quality window, absolute range, presets, adapter version and
+  capability flags now come from `api/vmafx-encoders.toml`, generated into
+  `pkg/encoderregistry` (Go `vmafx-tune`) and the Python `vmaf-tune` package;
+  the readable table is [docs/usage/encoder-registry.md](docs/usage/encoder-registry.md).
+  The Go `h264_nvenc`/`hevc_nvenc`/`av1_nvenc`, AMF, `libaom-av1` and
+  `libsvtav1` adapters now report the same adapter version as their Python
+  twins, so cache keys agree between the two tools.
 
 
 <!-- markdownlint-disable MD041 -->
@@ -1357,6 +1447,9 @@
   10- and 12-bit Vulkan frames, the Vulkan export query's format list, a CPU
   wait before mapping RADV frames to DRM, and Vulkan queue de-phasing. See
   [FFmpeg patch automation](docs/development/ffmpeg-patch-automation.md).
+
+
+- **FFmpeg builds take shared fix series v0.5.0, and the FFmpeg CI jobs run on `ubuntu-26.04` again.** The series adds patches 0036-0039, which remove the GCC 15.2 warnings in FFmpeg's own sources (`libavcodec/vvc/intra_template.c`, `libavutil/x86/intmath.h` through checkasm, `aom_film_grain.c`, `wmalosslessdec.c`), so `ffmpeg-work` and `ffmpeg-sycl-work` leave their dated `ubuntu-24.04` fallback. `scripts/ci/ffmpeg-shared-series.sh` now also checks the fetched tarball's sha256 against the release's `SHA256SUMS` and prints both values.
 
 
 - **Consolidated repeated Docker pad-order checks into `_assert_docker_pad_order`.** `test_registry_port_qualified_image` and `test_explicit_ffmpeg_on_arbitrary_image` in `ffmpeg-patches/test/test_input_contract.py` call the shared helper for fixture creation, baseline verification, and reversed pad mutation assertions (HISS-19).
@@ -1978,6 +2071,13 @@
   24 hours.
 
 
+- **Renovate leaves the praetor engine alone.** `renovate.json` gains the
+  praetor-managed engine rule, so Renovate opens no pull requests of its own
+  for the praetor module or the `standardsctl` command. Engine updates arrive
+  in one coordinated adoption pull request. The engine's
+  `renovate-engine-bumps` audit checks that the rule is present.
+
+
 - Renovate now extends the fleet's shared `github>plurano/horistes` preset; `renovate.json` drops the sign-off preset and the release-age setting the preset already sets and keeps only this repository's own rules ([dependency bot](docs/development/dependency-bot.md)).
 
 
@@ -2130,6 +2230,13 @@
   [VMAFx API](docs/api/vmafx/index.md) first, and every `libvmaf.h` topic page
   carries a deprecation notice that points to the
   [migration table](docs/api/vmafx/compat.md).
+
+
+- **Every VMAFx C API header page is in the documentation sidebar
+  (issue 2436).** The generated per-header reference pages were reachable only
+  through the reference index; they are now listed under `C API`, and a test
+  fails on a generated page the navigation leaves out
+  ([Navigation](docs/development/docs-site-design.md#navigation)).
 
 
 - **FFmpeg `vf_vmafx` shares device open and import finishing helpers.**
@@ -2292,6 +2399,9 @@
   without running `test_decorator_extended.py` (whose only Windows run is there)
   or the macOS `tox -c python`. The new impact selector `build_work` in
   `.github/ci-impact.json` covers these inputs.
+
+
+- CAMBI heatmaps: extractors that share one `heatmaps_path` in a run no longer truncate each other's `.gray` files; only the first open of the folder truncates, later opens append (port of Netflix/vmaf PR 1707, author RaphaelFakhri; Netflix/vmaf issue 1676).
 
 
 - CI: the `Docker Image Build work` job may run for 90 minutes instead of 45. The uncached
@@ -2841,6 +2951,9 @@
   16 only and `psnr_hvs` up to 12 (`docs/state.md`).
 
 
+Intel Quick Sync Video (QSV) tuning now probes ICQ once per device, encoder and FFmpeg runtime, retaining `-global_quality` when it works and falling back to `-q:v` with the same quality value when it fails. Python compare/corpus JSON and Go encode/corpus results name the selected mode and fallback reason in provenance. `VMAFTUNE_QSV_RATE_CONTROL=auto|icq|cqp` controls the selection; QSV adapter version 4 separates older cached encodes.
+
+
 - **QSV and VAAPI pixel formats follow the output depth.** The Go and Python QSV encode chains upload `p010le` frames when the output is 10-bit (`-pix_fmt p010le` / `yuv420p10le` or `-profile:v main10`) and `nv12` otherwise; before, a 10-bit HDR encode uploaded 8-bit `nv12` frames. The VAAPI examples download `nv12` or `p010le` instead of the unsupported `yuv420p`. The QSV adapter cache version moves to 3 (#2477 P4-7, P4-12).
 
 
@@ -3159,6 +3272,12 @@
   failed on the previous head).
 
 
+- **`from vmafx import Pool` works.** The Python package now re-exports `Pool`
+  and `PooledScore`, which the published example imported from it, and the
+  example loads `libvmafx.so.1` instead of the compatibility library
+  ([VMAFx API, Python](docs/api/vmafx/index.md#python)).
+
+
 - Rust bindings: `vmafx-sys`'s build script now refuses a libvmaf header that
   lacks a libvmaf name the `vmafx-sys` and `vmafx` crates use (for example an
   older install left under `/usr/local`). It names the header path and the
@@ -3206,6 +3325,13 @@
   `_open` to `_wsopen_s` / `_sopen_s` (the CRT's non-deprecated spellings) made the
   CRT reject permission bits other than `_S_IREAD` and `_S_IWRITE` as an invalid
   parameter; the mode is masked to those two bits, as the old calls effectively did.
+
+
+- **The direct y4m reader reads a stream shallower than the picture left-shifted to the picture's depth.**
+  `video_input_fetch_into_vmaf_picture()` copied an 8-bit y4m frame into a 10-bit picture as raw
+  bytes, so half the picture held the frame and the next frame started at the wrong offset (port of
+  Netflix/vmaf PR 1682). A stream deeper than the picture, or an 8-bit picture, is now refused. The
+  `vmaf` CLI does not use this reader, so its scores do not change.
 
 
 ### Security
