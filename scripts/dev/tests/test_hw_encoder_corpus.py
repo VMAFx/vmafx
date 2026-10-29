@@ -98,6 +98,35 @@ class HardwareEncoderCorpusTests(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["cq"], 23)
 
+    def test_qsv_upload_follows_output_depth(self) -> None:
+        for pix_fmt, extra, surface in (
+            ("yuv420p", [], "nv12"),
+            ("yuv420p10le", [], "p010le"),
+            ("yuv420p", ["-pix_fmt", "yuv420p10le"], "p010le"),
+            ("yuv420p", ["-profile:v", "main10"], "p010le"),
+        ):
+            with self.subTest(pix_fmt=pix_fmt, extra=extra):
+                completed = mock.Mock(returncode=0, stdout="", stderr="")
+                with mock.patch.object(HW, "run_command", return_value=completed) as run:
+                    rc, _, _ = HW.encode_hw(
+                        self.source,
+                        320,
+                        240,
+                        pix_fmt,
+                        24.0,
+                        "hevc_qsv",
+                        23,
+                        self.root / "out.mp4",
+                        extra=["-vf", "scale=320:240", *extra],
+                    )
+                self.assertEqual(rc, 0)
+                argv = run.call_args.args[0]
+                self.assertEqual(argv.count("-vf"), 1)
+                self.assertEqual(
+                    argv[argv.index("-vf") + 1],
+                    f"scale=320:240,format={surface},hwupload=extra_hw_frames=64",
+                )
+
     def test_encode_failure_returns_nonzero(self) -> None:
         with mock.patch.object(HW, "encode_hw", return_value=(7, 1.5, 0)):
             self.assertEqual(HW.main(self.argv), 1)

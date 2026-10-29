@@ -24,7 +24,7 @@ the same scoring path, recommends a CRF for the next pass. Built with
  create mode 100644 libavfilter/vf_vmafx_options.h
 
 diff --git a/configure b/configure
-index bacc4e9bf08f336fdb4f05b7aa8e2752c4f5a2c1..21c55dc213fbb4b449ebd5ed288a6407fac78735 100755
+index b94be9d7477c067cd6fb5de11d413786d384f6ca..7720d816105a8d3dd8edce31e55dfbbccf3df134 100755
 --- a/configure
 +++ b/configure
 @@ -299,6 +299,7 @@ External library support:
@@ -43,7 +43,7 @@ index bacc4e9bf08f336fdb4f05b7aa8e2752c4f5a2c1..21c55dc213fbb4b449ebd5ed288a6407
      libvorbis
      libvpx
      libvvenc
-@@ -4311,6 +4313,8 @@ libvmaf_sycl_filter_deps="libvmaf libvmaf_sycl libvpl"
+@@ -4317,6 +4319,8 @@ libvmaf_sycl_filter_deps="libvmaf libvmaf_sycl libvpl"
  libvmaf_vulkan_filter_deps="libvmaf libvmaf_vulkan vulkan"
  vmaf_pre_filter_deps="libvmaf"
  libvmaf_tune_filter_deps="libvmaf"
@@ -52,7 +52,7 @@ index bacc4e9bf08f336fdb4f05b7aa8e2752c4f5a2c1..21c55dc213fbb4b449ebd5ed288a6407
  zmq_filter_deps="libzmq"
  zoompan_filter_deps="swscale"
  zscale_filter_deps="libzimg const_nan"
-@@ -7489,6 +7493,7 @@ enabled libvmaf           && check_pkg_config libvmaf_cuda "libvmaf >= 2.0.0" li
+@@ -7495,6 +7499,7 @@ enabled libvmaf           && check_pkg_config libvmaf_cuda "libvmaf >= 2.0.0" li
  enabled libvmaf           && check_pkg_config libvmaf_sycl "libvmaf >= 3.0.0" libvmaf/libvmaf_sycl.h vmaf_sycl_state_init
  enabled libvmaf           && check_pkg_config libvmaf_vulkan "libvmaf >= 3.0.0" libvmaf/libvmaf_vulkan.h vmaf_vulkan_state_init
  enabled vmaf_pre_filter   && require_pkg_config libvmaf_dnn "libvmaf >= 3.0.0" libvmaf/dnn.h vmaf_dnn_session_open
@@ -61,10 +61,10 @@ index bacc4e9bf08f336fdb4f05b7aa8e2752c4f5a2c1..21c55dc213fbb4b449ebd5ed288a6407
                                 require libvo_amrwbenc vo-amrwbenc/enc_if.h E_IF_init -lvo-amrwbenc; }
  enabled libvorbis         && require_pkg_config libvorbis vorbis vorbis/codec.h vorbis_info_init &&
 diff --git a/doc/filters.texi b/doc/filters.texi
-index f3131824804ac8a1b21c864e9d0eca3aecbfb7a4..82d6d9955482aa89dc8f9e2649b60f0cfa2aed79 100644
+index de6ded8994a401c515c652f52e64553853658d4b..13198385c79fc2876c2a1858e15b8f2ac9a7fcbd 100644
 --- a/doc/filters.texi
 +++ b/doc/filters.texi
-@@ -25743,6 +25743,157 @@ ffmpeg -i ref.mpg -vf vmafmotion -f null -
+@@ -25971,6 +25971,157 @@ ffmpeg -i ref.mpg -vf vmafmotion -f null -
  @end example
  
  @anchor{vpp_amf}
@@ -223,10 +223,10 @@ index f3131824804ac8a1b21c864e9d0eca3aecbfb7a4..82d6d9955482aa89dc8f9e2649b60f0c
  
  Scale (resize) and convert colorspace, transfer characteristics or color primaries for the input video, using AMD Advanced Media Framework library for hardware acceleration.
 diff --git a/libavfilter/Makefile b/libavfilter/Makefile
-index 9e19069dc9a1fa01fa5d456602dba6cfdba9d7de..497cf229ea466c1a283d7d00114f537c40387bd6 100644
+index 6e6f6ad5a50d2f9b14b2caf96082f39fa6093264..f1a063d278d7b87d5da2c70c5453083d2a33a6f2 100644
 --- a/libavfilter/Makefile
 +++ b/libavfilter/Makefile
-@@ -574,6 +574,8 @@ OBJS-$(CONFIG_VIF_FILTER)                    += vf_vif.o framesync.o
+@@ -587,6 +587,8 @@ OBJS-$(CONFIG_VIF_FILTER)                    += vf_vif.o framesync.o
  OBJS-$(CONFIG_VIGNETTE_FILTER)               += vf_vignette.o
  OBJS-$(CONFIG_VMAFMOTION_FILTER)             += vf_vmafmotion.o framesync.o
  OBJS-$(CONFIG_VMAF_PRE_FILTER)               += vf_vmaf_pre.o
@@ -236,10 +236,10 @@ index 9e19069dc9a1fa01fa5d456602dba6cfdba9d7de..497cf229ea466c1a283d7d00114f537c
  OBJS-$(CONFIG_VPP_AMF_FILTER)                += vf_vpp_amf.o scale_eval.o vf_amf_common.o
  OBJS-$(CONFIG_FRC_AMF_FILTER)                += vf_frc_amf.o vf_amf_common.o
 diff --git a/libavfilter/allfilters.c b/libavfilter/allfilters.c
-index 75e598b530bb0a60f3e94098e6c8d25ed9fd9513..83727b0c8fd2ac6f3499128b9edf0a20315899f5 100644
+index 8f22f0d02c520616adb56942f205ab9432335f4b..301a08b8532056ce30c57932bd42c5173b3c219d 100644
 --- a/libavfilter/allfilters.c
 +++ b/libavfilter/allfilters.c
-@@ -541,6 +541,8 @@ extern const FFFilter ff_vf_vif;
+@@ -547,6 +547,8 @@ extern const FFFilter ff_vf_vif;
  extern const FFFilter ff_vf_vignette;
  extern const FFFilter ff_vf_vmafmotion;
  extern const FFFilter ff_vf_vmaf_pre;

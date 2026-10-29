@@ -1063,6 +1063,9 @@ JSON payload is still written first, so a wrapper script can read
   exactly as the Python `vmaf-tune` builds every QSV encode. The render node is
   `VMAFTUNE_VAAPI_DEVICE`, else the first Intel render node, else
   `/dev/dri/renderD128`.
+  The upload format follows output depth: `nv12` for 8-bit, `p010le` for
+  `p010le` / `yuv420p10le` output or `-profile:v main10`, including HDR args.
+  An output `-pix_fmt` in extra parameters overrides the source format.
 - Hardware encoders (NVENC / QSV / AMF) reject sources below roughly 320x240.
   A profile built from a smaller clip fails at the encoder.
 - `av1_videotoolbox` is a placeholder: upstream FFmpeg ships no such encoder,
