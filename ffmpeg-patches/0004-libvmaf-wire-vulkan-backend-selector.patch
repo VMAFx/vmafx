@@ -38,10 +38,10 @@ on cross-backend chroma parity.
  2 files changed, 79 insertions(+), 4 deletions(-)
 
 diff --git a/configure b/configure
-index 1f2c0529a66c186e904e1b53488d5c6ea9a6fd4e..f804911e5b4f4df75754af3e7672236a21dd3033 100755
+index 3e89561f550837e29772edd1c52e64a4760660bf..cac71e915ad0b0d4b1028f28d485152f9ec84913 100755
 --- a/configure
 +++ b/configure
-@@ -7459,6 +7459,7 @@ enabled libvidstab        && require_pkg_config libvidstab "vidstab >= 0.98" vid
+@@ -7465,6 +7465,7 @@ enabled libvidstab        && require_pkg_config libvidstab "vidstab >= 0.98" vid
  enabled libvmaf           && require_pkg_config libvmaf "libvmaf >= 2.0.0" libvmaf.h vmaf_init
  enabled libvmaf           && check_pkg_config libvmaf_cuda "libvmaf >= 2.0.0" libvmaf_cuda.h vmaf_cuda_state_init
  enabled libvmaf           && check_pkg_config libvmaf_sycl "libvmaf >= 3.0.0" libvmaf/libvmaf_sycl.h vmaf_sycl_state_init
