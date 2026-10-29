@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"io"
 	"math"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -33,6 +34,8 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/proto"
 
 	vmafxv1 "github.com/VMAFx/vmafx/gen/go"
@@ -101,6 +104,7 @@ type surfaceResult struct {
 func TestScoreContract(t *testing.T) {
 	env := loadContractEnv(t)
 	server, rest := contractServers(t, env)
+	stream := contractStreamClient(t, server)
 	for _, tc := range contractCases {
 		t.Run(tc.name, func(t *testing.T) {
 			results := map[string]surfaceResult{
@@ -108,6 +112,9 @@ func TestScoreContract(t *testing.T) {
 				"capi": runContractCAPI(t, env, tc),
 				"grpc": runContractGRPC(t, server, env, tc),
 				"rest": runContractREST(t, rest, env, tc),
+			}
+			if tc.subsample == 0 {
+				results["stream"] = runContractStream(t, stream, env, tc)
 			}
 			want := results["cli"]
 			for surface, got := range results {
@@ -258,6 +265,118 @@ func runContractREST(t *testing.T, rest *httptest.Server, env contractEnv, tc co
 		t.Fatalf("decode %s: %v", raw, err)
 	}
 	return responseResult(t, decoded)
+}
+
+// contractStreamClient serves the contract's gRPC implementation on a loopback
+// listener, since ScoreStream is reached only through a client stream.
+func contractStreamClient(t *testing.T, server *grpcServer) vmafxv1.VmafxScoringClient {
+	t.Helper()
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	srv := grpc.NewServer()
+	vmafxv1.RegisterVmafxScoringServer(srv, server)
+	go func() { _ = srv.Serve(lis) }()
+	conn, err := grpc.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		srv.Stop()
+		t.Fatalf("dial: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = conn.Close()
+		srv.GracefulStop()
+	})
+	return vmafxv1.NewVmafxScoringClient(conn)
+}
+
+// runContractStream sends the case's frames over ScoreStream and reads the
+// terminal AggregateScore.
+func runContractStream(t *testing.T, client vmafxv1.VmafxScoringClient, env contractEnv, tc contractCase) surfaceResult {
+	t.Helper()
+	ref, err := os.ReadFile(filepath.Join(env.yuv, contractRef))
+	if err != nil {
+		t.Fatalf("read reference: %v", err)
+	}
+	dis, err := os.ReadFile(filepath.Join(env.yuv, contractDis))
+	if err != nil {
+		t.Fatalf("read distorted: %v", err)
+	}
+	const frameSize = contractWidth*contractHeight + 2*(contractWidth/2)*(contractHeight/2)
+	if len(ref) != len(dis) || len(ref)%frameSize != 0 {
+		t.Fatalf("fixture sizes %d / %d are not whole %d-byte frames", len(ref), len(dis), frameSize)
+	}
+	nFrames := len(ref) / frameSize
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+	stream, err := client.ScoreStream(ctx)
+	if err != nil {
+		t.Fatalf("ScoreStream open: %v", err)
+	}
+	sendErr := make(chan error, 1)
+	go func() { sendErr <- sendContractFrames(stream, tc, ref, dis, nFrames, frameSize) }()
+	aggregate := readContractAggregate(t, stream, nFrames)
+	if err := <-sendErr; err != nil {
+		t.Fatalf("ScoreStream send: %v", err)
+	}
+	p := aggregate.GetProvenance()
+	if p.GetPrecision() != "max" {
+		t.Errorf("stream precision %q, want max", p.GetPrecision())
+	}
+	lib := p.GetLibrary()
+	return surfaceResult{
+		aggregate.GetScore(), lib.GetVersion(), [3]uint32{lib.GetAbiMajor(), lib.GetAbiMinor(), lib.GetAbiPatch()},
+	}
+}
+
+// sendContractFrames sends the opening config, every frame pair and the
+// half-close.
+func sendContractFrames(stream vmafxv1.VmafxScoring_ScoreStreamClient, tc contractCase,
+	ref, dis []byte, nFrames, frameSize int) error {
+	config := &vmafxv1.StreamConfig{
+		Width: contractWidth, Height: contractHeight,
+		PixelFormat: vmafxv1.PixelFormat_PIXEL_FORMAT_YUV420P,
+		Model:       tc.model, FrameCountHint: uint32(nFrames),
+	}
+	if err := stream.Send(&vmafxv1.ScoreStreamRequest{
+		Payload: &vmafxv1.ScoreStreamRequest_Config{Config: config},
+	}); err != nil {
+		return err
+	}
+	for i := range nFrames {
+		lo, hi := i*frameSize, (i+1)*frameSize
+		if err := stream.Send(&vmafxv1.ScoreStreamRequest{
+			Payload: &vmafxv1.ScoreStreamRequest_FramePair{FramePair: &vmafxv1.FramePair{
+				FrameIndex: uint32(i), RawReference: ref[lo:hi], RawDistorted: dis[lo:hi],
+			}},
+		}); err != nil {
+			return err
+		}
+	}
+	return stream.CloseSend()
+}
+
+// readContractAggregate reads at most one response past the nFrames frame
+// scores and the aggregate, so a server that never ends fails by name.
+func readContractAggregate(t *testing.T, stream vmafxv1.VmafxScoring_ScoreStreamClient, nFrames int) *vmafxv1.AggregateScore {
+	t.Helper()
+	var aggregate *vmafxv1.AggregateScore
+	for range nFrames + 2 {
+		resp, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatalf("ScoreStream recv: %v", err)
+		}
+		if resp.GetAggregate() != nil {
+			aggregate = resp.GetAggregate()
+		}
+	}
+	if aggregate == nil || int(aggregate.GetFramesProcessed()) != nFrames {
+		t.Fatalf("ScoreStream aggregate %v, want %d frames", aggregate, nFrames)
+	}
+	return aggregate
 }
 
 func responseResult(t *testing.T, resp *vmafxv1.ScoreResponse) surfaceResult {
