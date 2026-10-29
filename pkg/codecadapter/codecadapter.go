@@ -244,7 +244,8 @@ func amf(name string) *Adapter {
 func qsvAdapter(name string) *Adapter {
 	return &Adapter{
 		Name: name, Encoder: name, QualityKnob: "global_quality",
-		QualityRange: [2]int{1, 51}, QualityDefault: 23, InvertQuality: true,
+		AdapterVersion: "3", // Upload surface format follows the requested output depth.
+		QualityRange:   [2]int{1, 51}, QualityDefault: 23, InvertQuality: true,
 		Presets: qsvPresets, ProbePreset: "veryfast", ProbeQuality: 23,
 		qualityStyle: StyleSingleFlag, qualityFlag: "-global_quality",
 		presetStyle: PresetFlagValue, presetFlag: "-preset",

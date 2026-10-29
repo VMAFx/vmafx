@@ -32,7 +32,8 @@
 # Verification, always fail closed:
 #   1. the tarball's sha256 equals FFMPEG_FIX_SERIES_SHA256;
 #   2. its base.env names FFMPEG_TAG and FFMPEG_COMMIT of build-config.env;
-#   3. the signature of the release's SHA256SUMS, per FFMPEG_FIX_SERIES_VERIFY:
+#   3. the release's SHA256SUMS lists the same sha256 (both printed);
+#   4. the signature of the release's SHA256SUMS, per FFMPEG_FIX_SERIES_VERIFY:
 #        auto    (default) with cosign when cosign is installed, else not
 #                checked, and the output says which;
 #        cosign  required: a missing cosign is an error;
@@ -43,6 +44,9 @@
 #                             script, then the repository root)
 #   FFMPEG_FIX_SERIES_URL     tarball location instead of the GitHub release
 #                             (a file:// URL in the tests)
+#   FFMPEG_FIX_SERIES_SUMS_URL  SHA256SUMS location instead of the release's (a
+#                             file:// URL in the tests); without it, a
+#                             FFMPEG_FIX_SERIES_URL override skips that check
 #   FFMPEG_FIX_SERIES_CACHE   where the verified tarball is kept (default:
 #                             the user cache); `none` keeps nothing, for an
 #                             image build. The series is unpacked afresh from
@@ -147,6 +151,29 @@ download() { # download URL DESTINATION
   esac
 }
 
+# The release lists the tarball in SHA256SUMS; its own sha256 must equal that line, not only
+# the pin. Always checked (every FFMPEG_FIX_SERIES_VERIFY mode); both values are printed.
+# FFMPEG_FIX_SERIES_SUMS_URL names another SHA256SUMS (a file:// URL in the tests); a
+# FFMPEG_FIX_SERIES_URL override without it has no release to compare with.
+check_listed_sum() { # check_listed_sum TARBALL WORK
+  local tarball=$1 work=$2 sums_url actual listed
+  sums_url="${FFMPEG_FIX_SERIES_SUMS_URL:-}"
+  if [ -z "$sums_url" ]; then
+    if [ -n "${FFMPEG_FIX_SERIES_URL:-}" ]; then
+      listed_status="not checked against SHA256SUMS (FFMPEG_FIX_SERIES_URL overrides the release)"
+      return 0
+    fi
+    sums_url="${release_url}/SHA256SUMS"
+  fi
+  download "$sums_url" "$work/SHA256SUMS"
+  actual="$(sha256_of "$tarball")"
+  listed="$(awk -v name="$tarball_name" '$2 == name || $2 == "*" name {print $1}' "$work/SHA256SUMS")"
+  note "tarball sha256 ${actual}; SHA256SUMS lists ${listed:-nothing} for ${tarball_name}"
+  [ "$listed" = "$actual" ] ||
+    die 1 "SHA256SUMS of ${FFMPEG_FIX_SERIES_TAG} lists ${listed:-nothing} for ${tarball_name}, the tarball is ${actual}"
+  listed_status="equals the sha256 SHA256SUMS lists"
+}
+
 # The release signs SHA256SUMS; the tarball must be the one it lists.
 verify_signature() { # verify_signature TARBALL WORK
   local tarball=$1 work=$2 mode="${FFMPEG_FIX_SERIES_VERIFY:-auto}" identity listed
@@ -168,7 +195,7 @@ verify_signature() { # verify_signature TARBALL WORK
     signature_status="not checked (FFMPEG_FIX_SERIES_URL overrides the release)"
     return 0
   fi
-  download "${release_url}/SHA256SUMS" "$work/SHA256SUMS"
+  [ -f "$work/SHA256SUMS" ] || download "${release_url}/SHA256SUMS" "$work/SHA256SUMS"
   download "${release_url}/SHA256SUMS.sigstore.json" "$work/SHA256SUMS.sigstore.json"
   identity="${FFMPEG_FIX_SERIES_REPO}/.github/workflows/release-build.yml@refs/tags/${FFMPEG_FIX_SERIES_TAG}"
   cosign verify-blob --bundle "$work/SHA256SUMS.sigstore.json" \
@@ -218,6 +245,7 @@ fetch_series() {
     mv -f -- "$work/$tarball_name" "$tarball"
     source_note="downloaded"
   fi
+  check_listed_sum "$tarball" "$work"
   verify_signature "$tarball" "$work"
   check_members "$tarball"
   mkdir "$work/tree"
@@ -231,7 +259,7 @@ fetch_series() {
     die 1 "shared series ${FFMPEG_FIX_SERIES_TAG} targets ${base_tag} (${base_commit}), build-config.env pins ${FFMPEG_TAG} (${FFMPEG_COMMIT}); pin a series release for that FFmpeg"
   fi
   series_dir="$work/tree"
-  note "${FFMPEG_FIX_SERIES_REPO} ${FFMPEG_FIX_SERIES_TAG} (${source_note}): sha256 matches the pin; base ${base_tag}; signature ${signature_status}"
+  note "${FFMPEG_FIX_SERIES_REPO} ${FFMPEG_FIX_SERIES_TAG} (${source_note}): sha256 matches the pin; ${listed_status}; base ${base_tag}; signature ${signature_status}"
 }
 
 series_patches() { # prints the patch names of series.txt, in order

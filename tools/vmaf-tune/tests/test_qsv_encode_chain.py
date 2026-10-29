@@ -20,7 +20,7 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune import cli, compare, hw_devices
+from vmaftune import cli, compare, hdr, hw_devices
 from vmaftune.codec_adapters._qsv_common import QSV_UPLOAD_FILTER
 from vmaftune.encode import EncodeRequest, build_ffmpeg_command
 
@@ -70,6 +70,45 @@ def test_qsv_upload_joins_the_rung_scale_chain(tmp_path):
     )
     assert argv.count("-vf") == 1
     assert argv[argv.index("-vf") + 1] == f"scale=640:360,{QSV_UPLOAD_FILTER}"
+
+
+@pytest.mark.parametrize("encoder", QSV)
+@pytest.mark.parametrize(
+    ("pix_fmt", "extra", "surface"),
+    [
+        ("yuv420p", (), "nv12"),
+        ("nv12", ("-profile:v", "main"), "nv12"),
+        ("p010le", (), "p010le"),
+        ("yuv420p10le", (), "p010le"),
+        ("yuv420p", ("-pix_fmt", "yuv420p10le"), "p010le"),
+        ("yuv420p", ("-pix_fmt", "p010le"), "p010le"),
+        ("yuv420p", ("-profile:v", "main10"), "p010le"),
+        ("yuv420p10le", ("-pix_fmt", "yuv420p"), "nv12"),
+        ("yuv420p", ("-metadata", "main10"), "nv12"),
+        ("yuv420p", ("-pix_fmt",), "nv12"),
+    ],
+)
+def test_qsv_upload_follows_output_depth(tmp_path, encoder, pix_fmt, extra, surface):
+    argv = build_ffmpeg_command(
+        _request(
+            tmp_path,
+            encoder,
+            pix_fmt=pix_fmt,
+            extra_params=("-vf", "scale=640:360", *extra),
+        )
+    )
+    assert argv.count("-vf") == 1
+    assert argv[argv.index("-vf") + 1] == (
+        f"scale=640:360,format={surface},hwupload=extra_hw_frames=64"
+    )
+
+
+@pytest.mark.parametrize("encoder", ["hevc_qsv", "av1_qsv"])
+def test_qsv_hdr_upload_uses_p010le(tmp_path, encoder):
+    info = hdr.HdrInfo("pq", "bt2020", "bt2020nc", "tv", "yuv420p10le")
+    extra = hdr.hdr_codec_args(encoder, info)
+    argv = build_ffmpeg_command(_request(tmp_path, encoder, extra_params=extra))
+    assert argv[argv.index("-vf") + 1] == "format=p010le,hwupload=extra_hw_frames=64"
 
 
 @pytest.mark.parametrize("encoder", ["libx264", "h264_nvenc", "h264_amf", "libsvtav1"])
