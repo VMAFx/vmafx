@@ -588,6 +588,22 @@ jobs:
           ninja -C "$RUNNER_TEMP/base-build" -j"$(nproc)"
           ninja -C "$RUNNER_TEMP/base-build" install
 
+      # Netflix's libvmaf at the upstream commit the fork records itself at
+      # parity with (docs/development/known-upstream-bugs.md): the GStreamer
+      # element built against Netflix's headers must score the same on both
+      # libraries (#2237, docs/development/upstream-consumers.md).
+      - name: Build and install Netflix libvmaf (parity pin)
+        run: |
+          set -euo pipefail
+          pin="$(python3 scripts/ci/upstream_parity_pin.py)"
+          git clone --filter=blob:none --no-checkout --quiet \
+            https://github.com/Netflix/vmaf.git "$RUNNER_TEMP/netflix-src"
+          git -C "$RUNNER_TEMP/netflix-src" checkout --quiet --detach "$pin"
+          meson setup "$RUNNER_TEMP/netflix-build" "$RUNNER_TEMP/netflix-src/libvmaf" \
+            --buildtype release --prefix "$RUNNER_TEMP/prefix-netflix" -Denable_float=true
+          ninja -C "$RUNNER_TEMP/netflix-build" -j"$(nproc)"
+          ninja -C "$RUNNER_TEMP/netflix-build" install
+
       - name: Upstream FFmpeg
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -610,6 +626,24 @@ jobs:
           fi
           scripts/ci/upstream-gstreamer-compat.sh "${args[@]}"
 
+      # The element built against Netflix's headers, run on this commit's
+      # library and on Netflix's, every option case compared value by value.
+      - name: Upstream GStreamer (Netflix libvmaf)
+        run: >-
+          scripts/ci/upstream-gstreamer-compat.sh
+          --prefix "$RUNNER_TEMP/prefix"
+          --reference-prefix "$RUNNER_TEMP/prefix-netflix"
+          --against-cli --work "$RUNNER_TEMP/consumers-netflix"
+
+      # A changed score must fail the comparison: the script alters one value
+      # and passes only when the comparator reports the difference.
+      - name: Upstream GStreamer (planted defect)
+        run: >-
+          scripts/ci/upstream-gstreamer-compat.sh
+          --prefix "$RUNNER_TEMP/prefix"
+          --reference-prefix "$RUNNER_TEMP/prefix-netflix"
+          --work "$RUNNER_TEMP/consumers-netflix" --planted-defect
+
       - name: Upload score files
         if: ${{ (failure()) && env.GITEA_ACTIONS != 'true' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
@@ -618,6 +652,10 @@ jobs:
           path: |
             ${{ runner.temp }}/consumers/*.json
             ${{ runner.temp }}/consumers/*.log
+            ${{ runner.temp }}/consumers-netflix/*.json
+            ${{ runner.temp }}/consumers-netflix/*.xml
+            ${{ runner.temp }}/consumers-netflix/*.csv
+            ${{ runner.temp }}/consumers-netflix/*.log
           if-no-files-found: ignore
       - name: Upload score files (Gitea)
         if: ${{ (failure()) && env.GITEA_ACTIONS == 'true' }}
@@ -627,4 +665,8 @@ jobs:
           path: |
             ${{ runner.temp }}/consumers/*.json
             ${{ runner.temp }}/consumers/*.log
+            ${{ runner.temp }}/consumers-netflix/*.json
+            ${{ runner.temp }}/consumers-netflix/*.xml
+            ${{ runner.temp }}/consumers-netflix/*.csv
+            ${{ runner.temp }}/consumers-netflix/*.log
           if-no-files-found: ignore
