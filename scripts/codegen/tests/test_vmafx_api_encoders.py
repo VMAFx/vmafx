@@ -8,7 +8,9 @@ every rule refuses its planted defect (an unknown family, an implemented row
 without an adapter table, an adapter on a gap row, a window outside the
 absolute range, a default outside the window, a probe preset outside the
 presets, a non-boolean flag, a duplicate id, a variant of an unknown encoder,
-a bad check date). Boundary: a window equal to the absolute range and a
+a bad check date, artifact domains on a row that is no distortion source, a
+distortion source without them, an unknown domain, `awaits_ffmpeg` on a row
+without an FFmpeg encoder). Boundary: a window equal to the absolute range and a
 default on either edge load; an empty registry loads and emits empty tables.
 """
 
@@ -129,6 +131,27 @@ class Negative(unittest.TestCase):
         }
         self.mutate(
             "has no [[encoders]] row", lambda d: d.setdefault("variants", []).append(variant)
+        )
+
+    def test_artifact_domains_on_other_class(self) -> None:
+        self.mutate(
+            "`artifact_domains`",
+            lambda d: d["encoders"].append(gap_row() | {"artifact_domains": ["vq-mosaic"]}),
+        )
+
+    def test_distortion_source_without_domains(self) -> None:
+        self.mutate(
+            "`artifact_domains`",
+            lambda d: d["encoders"].append(gap_row() | {"class": "distortion-source"}),
+        )
+
+    def test_unknown_artifact_domain(self) -> None:
+        row = gap_row() | {"class": "distortion-source", "artifact_domains": ["ringing"]}
+        self.mutate("`artifact_domains`", lambda d: d["encoders"].append(row))
+
+    def test_awaits_ffmpeg_without_encoder(self) -> None:
+        self.mutate(
+            "`awaits_ffmpeg`", lambda d: d["encoders"].append(gap_row() | {"awaits_ffmpeg": True})
         )
 
     def test_bad_checked_date(self) -> None:
