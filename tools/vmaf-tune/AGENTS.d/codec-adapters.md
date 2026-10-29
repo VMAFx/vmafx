@@ -2,10 +2,23 @@
 paths:
   - tools/vmaf-tune/src/vmaftune/codec_adapters/__init__.py
   - tools/vmaf-tune/tests/test_codec_adapters*.py
+  - tools/vmaf-tune/src/vmaftune/codec_adapters/registry.py
+  - api/vmafx-encoders.toml
+  - pkg/encoderregistry/**
 invariant: CodecAdapter Protocol declares all fields; ten-name preset vocabulary; two_pass_args implemented on all adapters.
 ---
 <!-- markdownlint-disable MD024 -->
 # Codec adapter protocol and registry
+
+- **Adapter facts live in `api/vmafx-encoders.toml`
+  ([ADR-3388](../../../docs/adr/3388-central-encoder-registry.md)).**
+  Knob, windows, absolute range, default, presets, version, probe settings,
+  capability flags: edit TOML, run `python3 scripts/codegen/vmafx-api.py --write`.
+  Never hand-edit either `registry.gen.json` (Go copy in
+  `pkg/encoderregistry/`, Python copy in `codec_adapters/`). Dataclass field
+  values = row values; `tests/test_encoder_registry.py` fails otherwise;
+  Go side `pkg/codecadapter/registry_test.go`. Bisect window = row
+  `absolute_range`. New encoder or gap = new `[[encoders]]` row first.
 
 - **Codec-adapter contract is multi-codec from day one.** Phase A
   wires `libx264` end-to-end; `libaom-av1`
@@ -137,11 +150,11 @@ it is no longer production path.
   `LibaomAdapter`, NVENC / AMF / QSV / VideoToolbox / VVenC /
   SvtAv1 / libvpx) implements contract. When adding new field to
   *every* concrete adapter — most recently `presets: tuple[str, ...]`
-  field consumed by `ladder._default_sampler_preset` — promote it
+  field consumed by `ladder._default_sampler_preset` — promote field
   to Protocol in same change. Concrete-only field that callers
   reach via `getattr(adapter, "presets")` silently drops type
   safety and pyright flags every cross-adapter call site. Protocol
-  is also spec for `_REGISTRY: dict[str, CodecAdapter]` table;
-  pyright variance rules require Protocol fields to be `Final` /
+  also = spec for `_REGISTRY: dict[str, CodecAdapter]` table;
+  pyright variance rules require Protocol fields `Final` /
   read-only iff every adapter uses frozen dataclass — track that
   audit separately if new mutable-field adapter ever lands.

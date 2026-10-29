@@ -21,11 +21,12 @@
 //     codec's *informative* quality window, which differs from the absolute
 //     window the bisect searches (ADR-0538).
 //
-// Scope: the ten codecs pkg/encoder can actually construct via NewExtended.
-// The Python registry carries seven more (av1_nvenc, av1_qsv, av1_amf, the
-// four VideoToolbox adapters, libvvenc, libvpx-vp9); those have no Go
-// Encoder implementation yet, so Adapter() rejects them rather than
-// emitting an argv slice no Go code path can execute.
+// Scope: the implemented rows of the encoder registry (ADR-3388) that
+// pkg/encoder can construct via NewExtended. The registry carries more
+// implemented rows (av1_nvenc, av1_qsv, av1_amf, the four VideoToolbox
+// adapters, libvvenc, libvpx-vp9); those have no Go Encoder implementation
+// yet, so Adapter() rejects them rather than emitting an argv slice no Go
+// code path can execute.
 package encoder
 
 import (
@@ -33,6 +34,9 @@ import (
 	"slices"
 	"sort"
 	"strconv"
+	"sync"
+
+	"github.com/VMAFx/vmafx/pkg/encoderregistry"
 )
 
 // QualityKnob names the FFmpeg flag a codec uses for constant-quality mode.
@@ -157,113 +161,67 @@ var amfQualityMap = map[string]string{
 	"ultrafast": "speed",
 }
 
-// Canonical preset vocabularies, shared by the adapters that declare them.
-var (
-	x264Presets = []string{
-		"ultrafast", "superfast", "veryfast", "faster", "fast",
-		"medium", "slow", "slower", "veryslow",
-	}
-	x265Presets = []string{
-		"ultrafast", "superfast", "veryfast", "faster", "fast",
-		"medium", "slow", "slower", "veryslow", "placebo",
-	}
-	nvencPresets = []string{
-		"ultrafast", "superfast", "veryfast", "faster", "fast",
-		"medium", "slow", "slower", "slowest", "placebo",
-	}
-	qsvPresets = []string{
-		"veryslow", "slower", "slow", "medium", "fast", "faster", "veryfast",
-	}
-	amfPresets = []string{
-		"ultrafast", "superfast", "veryfast", "faster", "fast",
-		"medium", "slow", "slower", "slowest", "placebo",
-	}
-	svtav1Presets = []string{
-		"placebo", "slowest", "slower", "slow", "medium", "fast",
-		"faster", "veryfast",
-	}
-	libaomPresets = []string{
-		"placebo", "slowest", "slower", "slow", "medium", "fast",
-		"faster", "veryfast", "superfast", "ultrafast",
-	}
-)
+// presetStyles maps the registry's preset_style token onto the rendering
+// pkg/encoder implements. A registry row whose style is missing here cannot
+// be planned by pkg/encoder and is rejected when the table is built.
+var presetStyles = map[string]presetStyle{
+	"verbatim":        presetVerbatim,
+	"nvenc":           presetNVENC,
+	"svtav1":          presetSVTAV1,
+	"libaom-cpu-used": presetLibaomCPUUsed,
+	"amf-quality":     presetAMFQuality,
+}
 
-// adapterRegistry is the codec-adapter table. Keys match NewExtended's
-// accepted codec names exactly.
-//
-// Quality windows are transcribed from the Python adapters:
-//
-//	libx264      quality_range (0, 51)   default 23   absolute (0, 51)
-//	libx265      quality_range (15, 40)  default 28   absolute (0, 51)
-//	h264/hevc_nvenc  (15, 40)            default 23   absolute (15, 40)
-//	h264/hevc_qsv    (1, 51)             default 23   absolute (1, 51)
-//	h264/hevc_amf    (15, 40)            default 23   absolute (15, 40)
-//	libsvtav1    quality_range (20, 50)  default 35   absolute (0, 63)
-//	libaom-av1   quality_range (0, 63)   default 35   absolute (0, 63)
-//
-// The absolute windows follow bisect._absolute_crf_range: the curated
-// _ABSOLUTE_CRF_RANGE_BY_NAME table for the software codecs, the adapter's
-// own crf_min/crf_max for libsvtav1, and quality_range as the fallback for
-// every hardware codec (which declares neither).
-var adapterRegistry = map[string]Adapter{
-	"libx264": {
-		Name: "libx264", Knob: KnobCRF, Presets: x264Presets,
-		QualityLo: 0, QualityHi: 51, AbsoluteLo: 0, AbsoluteHi: 51,
-		QualityDefault: 23, style: presetVerbatim,
-	},
-	"libx265": {
-		Name: "libx265", Knob: KnobCRF, Presets: x265Presets,
-		QualityLo: 15, QualityHi: 40, AbsoluteLo: 0, AbsoluteHi: 51,
-		QualityDefault: 28, style: presetVerbatim,
-	},
-	"h264_nvenc": {
-		Name: "h264_nvenc", Knob: KnobCQ, Presets: nvencPresets,
-		QualityLo: 15, QualityHi: 40, AbsoluteLo: 15, AbsoluteHi: 40,
-		QualityDefault: 23, style: presetNVENC,
-	},
-	"hevc_nvenc": {
-		Name: "hevc_nvenc", Knob: KnobCQ, Presets: nvencPresets,
-		QualityLo: 15, QualityHi: 40, AbsoluteLo: 15, AbsoluteHi: 40,
-		QualityDefault: 23, style: presetNVENC,
-	},
-	"h264_qsv": {
-		Name: "h264_qsv", Knob: KnobGlobalQuality, Presets: qsvPresets,
-		QualityLo: 1, QualityHi: 51, AbsoluteLo: 1, AbsoluteHi: 51,
-		QualityDefault: 23, style: presetVerbatim,
-	},
-	"hevc_qsv": {
-		Name: "hevc_qsv", Knob: KnobGlobalQuality, Presets: qsvPresets,
-		QualityLo: 1, QualityHi: 51, AbsoluteLo: 1, AbsoluteHi: 51,
-		QualityDefault: 23, style: presetVerbatim,
-	},
-	"h264_amf": {
-		Name: "h264_amf", Knob: KnobQP, Presets: amfPresets,
-		QualityLo: 15, QualityHi: 40, AbsoluteLo: 15, AbsoluteHi: 40,
-		QualityDefault: 23, style: presetAMFQuality,
-	},
-	"hevc_amf": {
-		Name: "hevc_amf", Knob: KnobQP, Presets: amfPresets,
-		QualityLo: 15, QualityHi: 40, AbsoluteLo: 15, AbsoluteHi: 40,
-		QualityDefault: 23, style: presetAMFQuality,
-	},
-	"libsvtav1": {
-		Name: "libsvtav1", Knob: KnobCRF, Presets: svtav1Presets,
-		QualityLo: 20, QualityHi: 50, AbsoluteLo: 0, AbsoluteHi: 63,
-		QualityDefault: 35, style: presetSVTAV1,
-	},
-	"libaom-av1": {
-		Name: "libaom-av1", Knob: KnobCRF, Presets: libaomPresets,
-		QualityLo: 0, QualityHi: 63, AbsoluteLo: 0, AbsoluteHi: 63,
-		QualityDefault: 35, style: presetLibaomCPUUsed,
-	},
+// adapterTable is the codec-adapter table, built once from the encoder
+// registry (api/vmafx-encoders.toml, ADR-3388). It carries every implemented
+// row that NewExtended can construct, keyed by the FFmpeg encoder name, so
+// the quality windows, presets and knobs are the ones the Python vmaf-tune
+// reads from the same document. The absolute window is the one the CRF
+// bisect searches (ADR-0538); the informative window clamps recommendations.
+var adapterTable = sync.OnceValues(func() (map[string]Adapter, error) {
+	rows, err := encoderregistry.Implemented()
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]Adapter, len(rows))
+	for _, row := range rows {
+		if _, err := NewExtended(row.ID); err != nil {
+			continue // no Go Encoder yet; pkg/codecadapter still plans it
+		}
+		a, err := adapterFromRow(row)
+		if err != nil {
+			return nil, err
+		}
+		out[row.ID] = a
+	}
+	return out, nil
+})
+
+func adapterFromRow(row encoderregistry.Encoder) (Adapter, error) {
+	spec := row.Adapter
+	style, ok := presetStyles[spec.PresetStyle]
+	if !ok {
+		return Adapter{}, fmt.Errorf("encoder registry row %q: preset_style %q has no "+
+			"pkg/encoder rendering", row.ID, spec.PresetStyle)
+	}
+	return Adapter{
+		Name: row.ID, Knob: QualityKnob(spec.Knob), Presets: spec.Presets,
+		QualityLo: spec.QualityRange[0], QualityHi: spec.QualityRange[1],
+		AbsoluteLo: spec.AbsoluteRange[0], AbsoluteHi: spec.AbsoluteRange[1],
+		QualityDefault: spec.QualityDefault, style: style,
+	}, nil
 }
 
 // KnownAdapters returns the codec names carried by the adapter table, sorted.
 // Mirrors the Python codec_adapters.known_codecs() ordering (sorted), but
 // covers only the codecs pkg/encoder can construct.
 func KnownAdapters() []string {
-	out := make([]string, 0, len(adapterRegistry))
-	for name := range adapterRegistry {
+	table, err := adapterTable()
+	if err != nil {
+		return nil
+	}
+	out := make([]string, 0, len(table))
+	for name := range table {
 		out = append(out, name)
 	}
 	sort.Strings(out)
@@ -276,7 +234,11 @@ func KnownAdapters() []string {
 // for the seven registry entries with no Go Encoder implementation, so an
 // operator hitting the gap is told where to go rather than left guessing.
 func GetAdapter(name string) (Adapter, error) {
-	a, ok := adapterRegistry[name]
+	table, err := adapterTable()
+	if err != nil {
+		return Adapter{}, err
+	}
+	a, ok := table[name]
 	if !ok {
 		return Adapter{}, fmt.Errorf(
 			"unknown codec %q (supported: %v); codecs in the Python adapter "+
