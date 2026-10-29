@@ -232,6 +232,28 @@ A new ADR therefore needs no `mkdocs.yml` edit.
 `scripts/docs/tests/test_generators.py` holds the three entries
 (`test_adr_navigation_is_collapsed`).
 
+## Link check
+
+`mkdocs build --strict` fails on a broken heading anchor, but it reports a
+link to a missing file only at INFO (`links.not_found` in `mkdocs.yml`), and
+it cannot resolve a link that leaves `docs/`, such as a pointer to a header in
+`core/include/`. `scripts/docs/check_doc_links.py` closes that gap for the C API
+pages: for every Markdown file under the paths it is given (default
+`docs/api`), it checks that each relative link names a file or directory inside
+the repository and that each anchor into a page under `docs/` matches a heading
+slug, an `{#id}` attribute or an HTML `id`. Links inside code blocks and code
+spans are skipped, and `http`, `https` and `mailto` links are not fetched.
+
+```bash
+python3 scripts/docs/check_doc_links.py docs/api
+```
+
+It prints one line per broken link (`file:line: missing target ...` or
+`missing anchor ...`) and exits 1, exits 2 on an unreadable path, and exits 0
+with the count of links checked otherwise. `make docs-fragments-check` runs it
+on `docs/api`; `scripts/docs/tests/test_check_doc_links.py` holds a passing,
+a failing, a boundary and an unreadable case.
+
 ## Search
 
 The site search indexes user pages only
