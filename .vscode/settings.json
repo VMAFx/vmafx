@@ -15,5 +15,6 @@
   "standards.lsp.enabled": true,
   "standards.lsp.path": "${workspaceFolder}/bin/standards-lsp",
   "standards.lsp.trace.server": "messages",
-  "standards.sentinel.headroomMB": 1024
+  "standards.sentinel.headroomMB": 1024,
+  "mesonbuild.selectRootDir": false
 }
