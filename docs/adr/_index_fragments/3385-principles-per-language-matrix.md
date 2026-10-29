@@ -1,0 +1,1 @@
+| [ADR-3385](3385-principles-per-language-matrix.md) | Engineering principles cover every shipped language with an applicability matrix and explicit enforcement gaps; docs-only first slice of #2438, RC4 API boundary and single-maintainer revision policy | Accepted | docs, governance, safety, api |
