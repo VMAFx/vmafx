@@ -1,24 +1,16 @@
-# Top-level CI — orchestrates Netflix golden gate (ADR-0024 — must always pass)
-# and the cross-backend numerical-correctness check. The pre-existing
-# `libvmaf-build-matrix.yml` handles the cross-platform build matrix; this file
-# owns the *correctness* gate.
+# ADR-0024 (design notes)
+# Design notes for this workflow: docs/development/ci-workflow-notes/tests-and-quality-gates.md
 
 name: Tests
-# Tests — Netflix Golden / Sanitizers / Tiny AI / Coverage.
-# The display name is deliberately short: GitHub's badge.svg paints it
-# into the README status badge. See ADR-1227.
+# ADR-1227 (design notes)
 on:
   push:
     branches: [master]
   pull_request:
     branches: [master]
-    # ADR-0331 — `ready_for_review` lets the per-job draft gate fire
-    # CI when a draft PR is promoted to ready-for-review.
+    # ADR-0331 (design notes)
     types: [opened, synchronize, reopened, ready_for_review]
-    # No trigger-level paths-ignore: every required job of this workflow
-    # must report on every pull request (ADR-3293), and each job selects
-    # its own work through the CI tier and the impact planner (ADR-2169,
-    # ADR-1140). ADR-0341's docs-only paths-ignore no longer exists.
+    # ADR-0341, ADR-1140, ADR-2169, ADR-3293 (design notes)
   workflow_dispatch:
 
 permissions:
@@ -40,9 +32,7 @@ jobs:
       pull-requests: read
     uses: ./.github/workflows/ci-tier.yml
 
-  # ===== Netflix golden-data gate (ADR-0024) =====
-  # The 3 Netflix CPU test pairs (1 normal + 2 checkerboard) are the source of
-  # truth for VMAF correctness. They MUST pass on every PR. No skips, no excuses.
+  # ADR-0024 (design notes)
   netflix-golden:
     needs: tier
     if: needs.tier.outputs.light == 'true'
@@ -50,7 +40,6 @@ jobs:
     # required-aggregator
     name: Netflix CPU Golden
     runs-on: ubuntu-26.04
-    # Measured max 42.4m (2026-10-23); step caps sum 80 (5+28+5+22+20), limit 85 covers sum plus 1.25x rest.
     timeout-minutes: 85
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -75,10 +64,6 @@ jobs:
         run: echo "::notice::golden_harness not impacted (mode=$MODE reason=$REASON) — Netflix CPU Golden Tests satisfied without running (ADR-1140)"
       - name: Restore apt archives
         id: apt-cache
-        # Restore-only; the save below runs only after a successful install.
-        # Caches downloaded .deb archives so a slow package mirror does not eat
-        # into the apt step's timeout. Keyed on runner OS, arch, job, and the
-        # hash of the job's apt package list under .github/apt/netflix-golden.txt.
         if: steps.impact.outputs.golden_harness == 'true'
         timeout-minutes: 5
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
@@ -89,31 +74,12 @@ jobs:
       - name: Install build deps
         id: apt-install
         if: steps.impact.outputs.golden_harness == 'true'
-        # Measured max 21.8m (2026-10-23); 28 min is at least 1.25x the slowest healthy run.
         timeout-minutes: 28
         env:
-          # pip unpacks every wheel it downloads into $TMPDIR before it
-          # installs it, so the staging area — not just the install target —
-          # has to be on disk. On the ubuntu-26.04 image /tmp is a RAM-backed
-          # tmpfs and systemd v258 puts a per-user quota on it (80% of the
-          # mount), which is what produced "[Errno 122] Disk quota exceeded".
-          # RUNNER_TEMP is on the runner's disk and is emptied per job.
           TMPDIR: ${{ runner.temp }}
         run: |
-          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nAPT::Keep-Downloaded-Packages "true";\n' \
-            | sudo tee /etc/apt/apt.conf.d/80ci-retries >/dev/null
-          sudo apt-get update
-          mkdir -p "${RUNNER_TEMP}/apt-archives"
-          if compgen -G "${RUNNER_TEMP}/apt-archives/*.deb" >/dev/null; then
-            sudo cp -f "${RUNNER_TEMP}/apt-archives"/*.deb /var/cache/apt/archives/
-          fi
-          grep -v '^#' .github/apt/netflix-golden.txt | xargs sudo apt-get install -y
-          if compgen -G "/var/cache/apt/archives/*.deb" >/dev/null; then
-            sudo cp -f /var/cache/apt/archives/*.deb "${RUNNER_TEMP}/apt-archives/"
-            sudo chown -R "$(id -u):$(id -g)" "${RUNNER_TEMP}/apt-archives"
-          fi
-          # meson from PyPI: Ubuntu 24.04 ships meson 1.3.2, which predates `c23`
-          # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
+          bash scripts/ci/apt-install-cached.sh install .github/apt/netflix-golden.txt
+          # ADR-0692 (design notes)
           sudo pip3 install --break-system-packages --ignore-installed --quiet --require-hashes \
             -r requirements/locks/build.txt
           python3 -m pip install --user --require-hashes \
@@ -122,11 +88,6 @@ jobs:
             -r python/requirements-test-lock.txt
 
       - name: Save apt archives
-        # Saves only after the install step succeeded: an install cut off by its
-        # timeout leaves the archive directory empty, and an empty entry under
-        # this immutable key would be restored as a hit on every later run
-        # (an empty 200-byte entry was saved this way on 2026-10-22). Runs even
-        # when a later step fails, so the next run skips the download.
         if: ${{ !cancelled() && steps.apt-install.outcome == 'success' && steps.apt-cache.outputs.cache-hit != 'true' }}
         timeout-minutes: 5
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
@@ -136,9 +97,6 @@ jobs:
 
       - name: Build (CPU, release)
         if: steps.impact.outputs.golden_harness == 'true'
-        # Build inside core/ so the CLI lands at core/build/tools/vmaf
-        # — python/vmaf/__init__.py hardcodes that relative path when no
-        # external vmaf binary is configured via vmaf_path() / vmafexec_path().
         working-directory: core
         run: |
           # shellcheck disable=SC2046  # the helper prints one option per line, split on purpose
@@ -149,41 +107,16 @@ jobs:
 
       - name: Restore Netflix vmaf_resource fixtures
         id: fixtures
-        # Restore-only; the save is split out below and gated on success().
-        # The combined actions/cache action saves from a post-job step that runs even
-        # when the job was CANCELLED or FAILED, and the key is content-hashed over
-        # python/test/*_test.py, so any PR touching a Python test gets its own key. A
-        # run cancelled part-way through then published a partially-populated
-        # python/test/resource tree under that fresh key, and every later run on the
-        # branch hit it EXACTLY. download_reactively (compat/python-vmaf/config.py)
-        # re-fetches a fixture only when the file is ABSENT, so a short-but-present
-        # file is never repaired. See the same split in build.yml.
         if: steps.impact.outputs.golden_harness == 'true'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
-          # Cache the entire python/test/resource tree — pytest's
-          # download_reactively (python/vmaf/config.py) populates it
-          # lazily and re-uses any pre-existing files. Sized at ~50 MB.
           path: python/test/resource
-          # Bump the version suffix when test files reference new
-          # fixture URLs. `restore-keys` lets stale caches partially
-          # populate the dir; missing files re-download lazily.
           key: vmaf-fixtures-resource-v1-${{ hashFiles('python/test/*_test.py', 'python/test/resource/test_*.py') }}
           restore-keys: |
             vmaf-fixtures-resource-v1-
             vmaf-fixtures-resource-
 
       - name: Drop unusable restored fixtures
-        # A restored fixture that is empty, or that holds an HTML error page or
-        # a Git-LFS pointer instead of the payload, is worse than a missing one:
-        # download_reactively re-fetches only ABSENT files, so the bad copy is
-        # never repaired and the test fails with "no frames decoded". The
-        # success()-gated save below stops new poisoning; this heals caches
-        # already poisoned, which otherwise need a manual cache deletion.
-        # --restore-tracked: the cache also carries the files git tracks under
-        # python/test/resource in the revision of the run that saved it; a
-        # restore-keys hit writes them over this checkout, so they are put
-        # back to the commit's (T-CI-FIXTURE-CACHE-STALE-TRACKED-2026-10-06).
         if: steps.impact.outputs.golden_harness == 'true'
         run: bash scripts/ci/prune-corrupt-fixtures.sh --restore-tracked python/test/resource
 
@@ -193,12 +126,6 @@ jobs:
           PYTHONPATH: ${{ github.workspace }}/python
         timeout-minutes: 22
         run: |
-          # The 3 pairs live in python/test/resource/yuv/ — see D24.
-          # Hardcoded CPU score assertions live in the python/test/*_test.py files.
-          #
-          # Run only the D24 normal golden pair. The broader quality/feature
-          # suites are covered elsewhere; this gate exists to protect the
-          # Netflix CPU golden assertions, not to run every Python assertion.
           timeout --kill-after=30s 21m python3 -m pytest \
             python/test/quality_runner_test.py::QualityRunnerTest::test_run_vmaf_runner \
             -v --tb=short --timeout=1260 --timeout-method=signal
@@ -209,27 +136,20 @@ jobs:
           PYTHONPATH: ${{ github.workspace }}/python
         timeout-minutes: 20
         run: |
-          # The checkerboard test covers the 10-px and 1-px distorted
-          # Netflix golden pairs. Keep it isolated so a slow 1080p golden
-          # run reports the actual failing surface instead of masking the
-          # normal-pair result.
           timeout --kill-after=30s 19m python3 -m pytest \
             python/test/quality_runner_test.py::QualityRunnerTest::test_run_vmaf_runner_checkerboard \
             -v --tb=short --timeout=1020 --timeout-method=signal
 
       - name: Save Netflix vmaf_resource fixtures
-        # success() only: a cancelled or failing run must never publish a
-        # partial fixture tree under this key. Placed after both golden pairs.
         if: ${{ success() && (steps.impact.outputs.golden_harness == 'true') && steps.fixtures.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
           path: python/test/resource
           key: vmaf-fixtures-resource-v1-${{ hashFiles('python/test/*_test.py', 'python/test/resource/test_*.py') }}
 
-  # ADR-0726: vulkan-vif-cross-backend, vulkan-parity-matrix-gate, and
-  # vulkan-vif-arc-nightly jobs deleted (Vulkan backend removed).
+  # ADR-0726 (design notes)
 
-  # ===== Upstream Consumer ABI Parity Gate (Issue #2473, ADR-3339) =====
+  # ADR-3339 (design notes)
   compat-abi-parity:
     needs: tier
     if: needs.tier.outputs.light == 'true'
@@ -261,10 +181,6 @@ jobs:
 
       - name: Restore apt archives
         id: apt-cache
-        # Restore-only; the save below runs only after a successful install.
-        # Caches downloaded .deb archives so a slow package mirror does not eat
-        # into the apt step's timeout. Keyed on runner OS, arch, job, and the
-        # hash of the job's apt package list under .github/apt/compat-abi-parity.txt.
         if: steps.impact.outputs.golden_harness == 'true'
         timeout-minutes: 5
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
@@ -275,32 +191,15 @@ jobs:
       - name: Install build deps
         id: apt-install
         if: steps.impact.outputs.golden_harness == 'true'
-        # Measured max 1.0m (2026-10-23); 10 min is at least 1.25x the slowest healthy run.
         timeout-minutes: 10
         env:
           TMPDIR: ${{ runner.temp }}
         run: |
-          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nAPT::Keep-Downloaded-Packages "true";\n' \
-            | sudo tee /etc/apt/apt.conf.d/80ci-retries >/dev/null
-          sudo apt-get update
-          mkdir -p "${RUNNER_TEMP}/apt-archives"
-          if compgen -G "${RUNNER_TEMP}/apt-archives/*.deb" >/dev/null; then
-            sudo cp -f "${RUNNER_TEMP}/apt-archives"/*.deb /var/cache/apt/archives/
-          fi
-          grep -v '^#' .github/apt/compat-abi-parity.txt | xargs sudo apt-get install -y
-          if compgen -G "/var/cache/apt/archives/*.deb" >/dev/null; then
-            sudo cp -f /var/cache/apt/archives/*.deb "${RUNNER_TEMP}/apt-archives/"
-            sudo chown -R "$(id -u):$(id -g)" "${RUNNER_TEMP}/apt-archives"
-          fi
+          bash scripts/ci/apt-install-cached.sh install .github/apt/compat-abi-parity.txt
           sudo pip3 install --break-system-packages --ignore-installed --quiet --require-hashes \
             -r requirements/locks/build.txt
 
       - name: Save apt archives
-        # Saves only after the install step succeeded: an install cut off by its
-        # timeout leaves the archive directory empty, and an empty entry under
-        # this immutable key would be restored as a hit on every later run
-        # (an empty 200-byte entry was saved this way on 2026-10-22). Runs even
-        # when a later step fails, so the next run skips the download.
         if: ${{ !cancelled() && steps.apt-install.outcome == 'success' && steps.apt-cache.outputs.cache-hit != 'true' }}
         timeout-minutes: 5
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
@@ -352,7 +251,6 @@ jobs:
 
       - name: Run Compat ABI Planted Defect (Assert Failure)
         if: steps.impact.outputs.golden_harness == 'true'
-        # Exit 1 (a difference) is the proof; exit 2 (cannot run) fails the step.
         run: |
           status=0
           python3 scripts/dev/upstream_parity.py --unpinned --abi --plant --mode probe --jobs 2 || status=$?
@@ -366,14 +264,8 @@ jobs:
     needs: tier
     if: needs.tier.outputs.full == 'true'
     name: "Sanitizers (${{ matrix.sanitizer }})"
-    # ADR-0359 — ARC self-hosted runner pilot (same pattern as cppcheck in
-    # lint-and-format.yml). Variable `ARC_RUNNERS_ENABLED=true` routes this
-    # job to the in-cluster `arc-runners` scale set; default `false` keeps
-    # GitHub-hosted ubuntu-26.04. If the ARC pool is degraded, set the
-    # variable to false and re-trigger CI to fall back instantly. A pull
-    # request from a fork never reaches the pool (ADR-3286).
+    # ADR-0359, ADR-3286 (design notes)
     runs-on: ${{ vars.ARC_RUNNERS_ENABLED == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'arc-runners' || 'ubuntu-26.04' }}
-    # Measured max 19.0m (2026-10-23); 30 min is at least 1.25x the slowest healthy run.
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -400,10 +292,6 @@ jobs:
         run: echo "::notice::c_core not impacted (mode=$MODE reason=$REASON) — Sanitizers satisfied without running (ADR-1140)"
       - name: Restore apt archives
         id: apt-cache
-        # Restore-only; the save below runs only after a successful install.
-        # Caches downloaded .deb archives so a slow package mirror does not eat
-        # into the apt step's timeout. Keyed on runner OS, arch, job, and the
-        # hash of the job's apt package list under .github/apt/sanitizers.txt.
         if: steps.impact.outputs.c_core == 'true'
         timeout-minutes: 5
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
@@ -414,41 +302,19 @@ jobs:
       - name: Install deps
         id: apt-install
         if: steps.impact.outputs.c_core == 'true'
-        # Measured max 4.6m (2026-10-23); 10 min is at least 1.25x the slowest healthy run.
         timeout-minutes: 10
         run: |
-          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nAPT::Keep-Downloaded-Packages "true";\n' \
-            | sudo tee /etc/apt/apt.conf.d/80ci-retries >/dev/null
-          # LLVM 22 from apt.llvm.org: the ubuntu-24.04 image tops out at
-          # clang 18.1.3, which accepts -std=c++26 but ships a libstdc++
-          # without std::expected, so core/src/dict.cpp fails to build
-          # (ADR-0692 moved the tree to C23 + C++26). Take the toolchain
-          # forward rather than degrading the standard. llvm.sh adds the
-          # repo and runs its own apt-get update.
+          bash scripts/ci/apt-install-cached.sh configure
+          # ADR-0692 (design notes)
           wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
           chmod +x /tmp/llvm.sh
           sudo /tmp/llvm.sh 22
-          sudo apt-get update
-          mkdir -p "${RUNNER_TEMP}/apt-archives"
-          if compgen -G "${RUNNER_TEMP}/apt-archives/*.deb" >/dev/null; then
-            sudo cp -f "${RUNNER_TEMP}/apt-archives"/*.deb /var/cache/apt/archives/
-          fi
-          grep -v '^#' .github/apt/sanitizers.txt | xargs sudo apt-get install -y
-          if compgen -G "/var/cache/apt/archives/*.deb" >/dev/null; then
-            sudo cp -f /var/cache/apt/archives/*.deb "${RUNNER_TEMP}/apt-archives/"
-            sudo chown -R "$(id -u):$(id -g)" "${RUNNER_TEMP}/apt-archives"
-          fi
-          # meson from PyPI: Ubuntu 24.04 ships meson 1.3.2, which predates `c23`
-          # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
+          bash scripts/ci/apt-install-cached.sh install .github/apt/sanitizers.txt
+          # ADR-0692 (design notes)
           sudo pip3 install --break-system-packages --ignore-installed --quiet --require-hashes \
             -r requirements/locks/build.txt
 
       - name: Save apt archives
-        # Saves only after the install step succeeded: an install cut off by its
-        # timeout leaves the archive directory empty, and an empty entry under
-        # this immutable key would be restored as a hit on every later run
-        # (an empty 200-byte entry was saved this way on 2026-10-22). Runs even
-        # when a later step fails, so the next run skips the download.
         if: ${{ !cancelled() && steps.apt-install.outcome == 'success' && steps.apt-cache.outputs.cache-hit != 'true' }}
         timeout-minutes: 5
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
@@ -457,14 +323,7 @@ jobs:
           key: apt-${{ runner.os }}-${{ runner.arch }}-sanitizers-${{ hashFiles('.github/apt/sanitizers.txt') }}
       - name: Build with ${{ matrix.sanitizer }} sanitizer
         if: steps.impact.outputs.c_core == 'true'
-        # ADR-0347: under UBSan, suppress the `function` check via
-        # `-fno-sanitize=function`. The pre-existing K&R-prototype
-        # `static char *test_X()` pattern across ~50 minunit-style
-        # harness files (`core/test/test.h` + every `test_*.c`)
-        # trips UBSan's function-pointer-type check unconditionally;
-        # rewriting all 50 files to `(void)` is a separate T7-5-style
-        # sweep PR. The suppression preserves UBSan signal on
-        # library code while skipping the harness-only UB.
+        # ADR-0347 (design notes)
         working-directory: core
         shell: bash
         env:
@@ -485,28 +344,11 @@ jobs:
           meson compile -C build
       - name: Prefetch Go modules for the suite
         if: steps.impact.outputs.c_core == 'true'
-        # The suite's Go-running tests find their modules in the cache: the
-        # download happens here, retried, and fails here when it cannot succeed
-        # (scripts/ci/prefetch_go_modules.py, as the user the suite runs as).
         shell: bash
         run: python3 scripts/ci/prefetch_go_modules.py
       - name: Run unit tests under sanitizer
         if: steps.impact.outputs.c_core == 'true'
-        # ADR-0347: replace the previous `--suite=unit` invocation
-        # (which matched zero tests because no `test()` call in
-        # `core/test/meson.build` carries a `suite: 'unit'` tag).
-        # We now run the full C unit-test set with a per-sanitizer
-        # deselect list — each excluded test corresponds to a real
-        # defect tracked in `docs/state.md` and removed from the list
-        # when the underlying bug-fix PR lands. Companion research
-        # digest: `docs/research/0090-sanitizer-matrix-test-scope.md`.
-        # ASAN_OPTIONS / TSAN_OPTIONS allocator_may_return_null=1:
-        # ASan's and TSan's malloc interceptors abort by default on
-        # allocations they cannot fulfil (e.g. the intentionally-oversized
-        # alloc in test_gpu_picture_pool_uaf which exercises the NULL-return
-        # failure path of vmaf_gpu_picture_pool_init). With this flag the
-        # sanitizer runtime returns NULL instead of aborting, matching the
-        # POSIX malloc contract the test relies on.
+        # ADR-0347 (design notes)
         env:
           ASAN_OPTIONS: allocator_may_return_null=1
           TSAN_OPTIONS: allocator_may_return_null=1
@@ -515,38 +357,12 @@ jobs:
         run: |
           case "${{ matrix.sanitizer }}" in
             address)
-              # ASan deselects: test_model (svm.cpp parser
-              # alloc-too-big on malformed JSON) — pre-existing
-              # ASan/LSan defects revealed by PR #758's introspect-based
-              # test enumeration (the prior `meson test --list` parser
-              # returned empty in CI's meson 1.3.2 so these tests were
-              # never dispatched and the leaks went unnoticed). Tracked
-              # in `docs/state.md` as T-SANITIZER-DEFECTS-REVEALED-758.
-              # test_float_ms_ssim_min_dim was removed from this list
-              # after confirming it passes cleanly under ASAN_OPTIONS=
-              # detect_leaks=1 (the invoke_init helper already calls
-              # fex->close() + free(priv) on every code path).
               EXCLUDE='test_model$'
               ;;
             undefined)
-              # UBSan deselects: test_model (NULL-to-nonnull memcpy
-              # in svm.cpp parser — same defect as ASan exclusion
-              # surfaced via a different sanitizer angle). Tracked as
-              # T-SANITIZER-DEFECTS-REVEALED-758.
-              # test_cambi was removed from this list after PR #761
-              # (merged 2026-05-11) added a runtime __builtin_cpu_supports
-              # AVX2 gate to test_calculate_c_values_scalar_avx2_parity,
-              # eliminating the SIGILL on non-AVX2 CI runners; confirmed
-              # clean under UBSan on current master.
               EXCLUDE='test_model$'
               ;;
             thread)
-              # TSan deselects: test_model (same defect as ASan/UBSan
-              # exclusion above).
-              # test_framesync was removed from this list after PR #548
-              # (merged 2026-05-09) fixed the SAN-FRAMESYNC-MUTEX-DOMAIN
-              # mutex-domain mismatch; nightly TSan job was green on
-              # 2026-05-09 and 2026-05-10 (state.md entry).
               EXCLUDE='test_model$'
               ;;
             *)
@@ -554,14 +370,6 @@ jobs:
               exit 1
               ;;
           esac
-          # `meson test --list` output format varies across meson
-          # versions (1.3.x produces empty output for some build
-          # configurations; 1.11.x emits one test per line). Use
-          # `meson introspect --tests` instead — its JSON output is
-          # stable and machine-parseable across all supported meson
-          # versions. Each test object has `name` and `suite[]` fields
-          # which we join into the canonical `libvmaf:<name>` form
-          # that meson test dispatch expects.
           TESTS=$(meson introspect build --tests \
                   | python3 -c 'import json,re,sys; excluded=re.compile(sys.argv[1]); [print("libvmaf:"+t["name"]) for t in json.load(sys.stdin) if excluded.search(t["name"]) is None]' "$EXCLUDE")
           echo "test count: $(echo "$TESTS" | wc -l)"
@@ -576,22 +384,13 @@ jobs:
           python3 ../scripts/ci/run_meson_test.py -- -C build --print-errorlogs \
             --timeout-multiplier 3 $TESTS
 
-  # ===== DNN / tiny-AI gate =====
-  # Builds libvmaf with --enable_dnn (ONNX Runtime C API), runs the dnn
-  # meson suite, and exercises the ai/ Python package's unit tests. Does
-  # NOT require ORT at configure time — stub branch is exercised when the
-  # ubuntu runner doesn't have onnxruntime available via pkg-config.
   dnn:
     needs: tier
     if: needs.tier.outputs.light == 'true'
     # required-aggregator
     name: Tiny AI
     runs-on: ubuntu-26.04
-    # The limit is the apt step's 20-minute cap plus 1.25 times the longest
-    # healthy run of the other steps: 27.4 min over 38 successful jobs
-    # (2026-10-22), 20 + 34.3 = 54.3. A 45-minute limit left the build too
-    # little after a slow mirror. scripts/ci/check_job_timeout_budget.py holds
-    # every job limit at or above its step caps' sum (ADR-3367).
+    # ADR-3367 (design notes)
     timeout-minutes: 55
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -614,10 +413,6 @@ jobs:
         run: echo "::notice::tiny_ai not impacted (mode=$MODE reason=$REASON) — Tiny AI satisfied without running (ADR-1140)"
       - name: Restore apt archives
         id: apt-cache
-        # Restore-only; the save below runs only after a successful install.
-        # Caches downloaded .deb archives so a slow package mirror does not eat
-        # into the apt step's timeout. Keyed on runner OS, arch, job, and the
-        # hash of the job's apt package list under .github/apt/tiny-ai.txt.
         if: steps.impact.outputs.tiny_ai == 'true'
         timeout-minutes: 5
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
@@ -628,37 +423,14 @@ jobs:
       - name: Install build deps
         id: apt-install
         if: steps.impact.outputs.tiny_ai == 'true'
-        # Measured max 191 s on fast mirrors, 11m51s on a slow one (2026-10-22);
-        # 20 min is at least 1.25x the slowest healthy run.
         timeout-minutes: 20
         run: |
-          # Slow mirror downloads took up to 11m51s on healthy runs (#2217,
-          # 2026-10-22); an 8-minute limit cancelled jobs 119820120253,
-          # 119824997083, 119828883252 and 119836022519 mid-download.
-          # apt's retries and 30 s timeouts below end a real stall.
-          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nAPT::Keep-Downloaded-Packages "true";\n' \
-            | sudo tee /etc/apt/apt.conf.d/80ci-retries >/dev/null
-          sudo apt-get update
-          mkdir -p "${RUNNER_TEMP}/apt-archives"
-          if compgen -G "${RUNNER_TEMP}/apt-archives/*.deb" >/dev/null; then
-            sudo cp -f "${RUNNER_TEMP}/apt-archives"/*.deb /var/cache/apt/archives/
-          fi
-          grep -v '^#' .github/apt/tiny-ai.txt | xargs sudo apt-get install -y
-          if compgen -G "/var/cache/apt/archives/*.deb" >/dev/null; then
-            sudo cp -f /var/cache/apt/archives/*.deb "${RUNNER_TEMP}/apt-archives/"
-            sudo chown -R "$(id -u):$(id -g)" "${RUNNER_TEMP}/apt-archives"
-          fi
-          # meson from PyPI: Ubuntu 24.04 ships meson 1.3.2, which predates `c23`
-          # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
+          bash scripts/ci/apt-install-cached.sh install .github/apt/tiny-ai.txt
+          # ADR-0692 (design notes)
           sudo pip3 install --break-system-packages --ignore-installed --quiet --require-hashes \
             -r requirements/locks/build.txt
 
       - name: Save apt archives
-        # Saves only after the install step succeeded: an install cut off by its
-        # timeout leaves the archive directory empty, and an empty entry under
-        # this immutable key would be restored as a hit on every later run
-        # (an empty 200-byte entry was saved this way on 2026-10-22). Runs even
-        # when a later step fails, so the next run skips the download.
         if: ${{ !cancelled() && steps.apt-install.outcome == 'success' && steps.apt-cache.outputs.cache-hit != 'true' }}
         timeout-minutes: 5
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
@@ -668,12 +440,6 @@ jobs:
       - name: Install ONNX Runtime (CPU)
         if: steps.impact.outputs.tiny_ai == 'true'
         env:
-          # Pinned to 1.22.0. MS stopped publishing Linux tgz artifacts
-          # for patch releases (1.22.1, 1.22.2 are NuGet-only on the
-          # releases page), so v1.22.0 is the last 1.22 line with a
-          # functioning onnxruntime-linux-x64-${VERSION}.tgz. Bumping to
-          # 1.23.x or 1.24.x is a separate decision since the dnn loader
-          # is version-sensitive.
           ORT_VERSION: "1.22.0"
           ORT_SHA256: "8344d55f93d5bc5021ce342db50f62079daf39aaafb5d311a451846228be49b3"
         run: |
@@ -688,7 +454,6 @@ jobs:
             | sha256sum --check --strict
           sudo tar -xzf "${ort_archive}" -C /opt/
           sudo ln -sfn "/opt/onnxruntime-linux-x64-${ORT_VERSION}" /opt/onnxruntime
-          # Install a pkg-config file since the tarball ships none.
           sudo install -d /usr/local/lib/pkgconfig
           cat <<EOF | sudo tee /usr/local/lib/pkgconfig/libonnxruntime.pc >/dev/null
           prefix=/opt/onnxruntime
@@ -721,16 +486,6 @@ jobs:
         run: python3 ../scripts/ci/run_meson_test.py -- -C build --suite=dnn --print-errorlogs
       - name: Set up Python + install vmaf-train
         if: steps.impact.outputs.tiny_ai == 'true'
-        # Both the venv and pip's staging area live under RUNNER_TEMP, not
-        # /tmp. On the ubuntu-26.04 image /tmp is a RAM-backed tmpfs with a
-        # per-user quota (systemd v258 enables one on a tmpfs /tmp), and
-        # `pip install -e ai` pulls torch, torchvision and the nvidia-*-cu13
-        # wheel set — several gigabytes. Moving the venv alone is not enough:
-        # pip downloads and unpacks each wheel into $TMPDIR first and only
-        # then extracts it into the venv, so with TMPDIR unset the whole
-        # wheel set still lands on the tmpfs and pip dies with
-        # "[Errno 122] Disk quota exceeded". RUNNER_TEMP is on the runner's
-        # disk and is emptied per job.
         env:
           TMPDIR: ${{ runner.temp }}
         run: |
@@ -741,21 +496,17 @@ jobs:
           "${venv}/bin/pip" install --require-hashes -r ai/requirements-dev-lock.txt
           "${venv}/bin/pip" install --no-deps --no-build-isolation -e ai
       - name: Fetch the Netflix golden YUV fixtures
-        # test_e2e_frame_to_score.py scores the src01 pair; md5-checked.
         if: steps.impact.outputs.tiny_ai == 'true'
         run: bash scripts/test/fetch-test-yuvs.sh
       - name: Run ai/ pytests
         if: steps.impact.outputs.tiny_ai == 'true'
         env:
-          # The binary this job built: the e2e and CHUG smoke tests run it
-          # instead of skipping (ADR-1528). -rs prints every remaining skip
-          # with its reason.
+          # ADR-1528 (design notes)
           VMAF_BIN: ${{ github.workspace }}/core/build/tools/vmaf
           VMAF_BIN_FOR_TESTS: ${{ github.workspace }}/core/build/tools/vmaf
         run: |
           "${RUNNER_TEMP}/vmaf-train-venv/bin/pytest" ai/tests/ ai/sidecar/tests/ -v -rs --timeout=60 --timeout-method=signal
-      # Suite mini-retrain (ADR-1898): the retrain tooling end to end on a generated
-      # corpus, with the vmaf CLI this job built. Any skip fails the step.
+      # ADR-1898 (design notes)
       - name: Run the mini retrain end to end
         if: steps.impact.outputs.tiny_ai == 'true'
         env:
@@ -765,18 +516,14 @@ jobs:
           "${RUNNER_TEMP}/vmaf-train-venv/bin/pytest" ai/e2e/ -v -rs \
             --timeout=900 --timeout-method=signal \
             --basetemp="${RUNNER_TEMP}/mini-retrain-runs"
-      # ADR-0174 / T5-3b: enforce that every quantised model in the
-      # registry stays inside its per-model PLCC drop budget. Skips
-      # entries whose `quant_mode == "fp32"` (nothing to gate).
+      # ADR-0174 (design notes)
       - name: Run ai-quant-accuracy gate
         if: steps.impact.outputs.tiny_ai == 'true'
         env:
-          # Same reason as the venv step above: pip stages wheels in $TMPDIR.
           TMPDIR: ${{ runner.temp }}
         run: |
           "${RUNNER_TEMP}/vmaf-train-venv/bin/python" ai/scripts/measure_quant_drop.py --all
 
-  # ===== RC1 external tester report package =====
   rc1-tester-report:
     needs: tier
     if: needs.tier.outputs.light == 'true'
@@ -807,15 +554,7 @@ jobs:
           python -c "from pathlib import Path; from vmaf_rc1_tester.probe import REPO_ROOT; assert REPO_ROOT == Path.cwd().resolve()"
           vmaf-rc1-report list-tools >/dev/null
 
-  # ===== Test-suite registry + tooling suite (ADR-1528) =====
-  # `.github/test-suites.json` maps every tracked test file to one suite and
-  # every suite to the required checks that run it. This job fails when a test
-  # file lies outside every suite (tools/vmaf-tune/tests and 60 script tests
-  # once ran nowhere) and runs the tooling suite: every Python and shell test
-  # under scripts/, dev/scripts/, ffmpeg-patches/test/, testdata/ and two tool
-  # test directories. The tests read workflows, Dockerfiles and Meson files as
-  # well as the scripts under test, so no path routing could prove a change
-  # irrelevant: the job always runs.
+  # ADR-1528 (design notes)
   tooling-tests:
     needs: tier
     if: needs.tier.outputs.light == 'true'
@@ -824,16 +563,10 @@ jobs:
     # required-aggregator
     name: Tooling Tests
     runs-on: ubuntu-26.04
-    # Measured max 23.2m (2026-10-23); 35 min is at least 1.25x the slowest healthy run.
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
-          # Full history: check-source-adr-citations.py verifies the commits
-          # that its retired-ADR records name (`git cat-file -e`), and
-          # test_repository_registry_is_current runs it on this tree. A
-          # shallow clone fails that test and skips the silent-revert history
-          # test.
           fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
@@ -843,10 +576,6 @@ jobs:
         run: python scripts/ci/suite_registry.py check
       - name: Restore apt archives
         id: apt-cache
-        # Restore-only; the save below runs only after a successful install.
-        # Caches downloaded .deb archives so a slow package mirror does not eat
-        # into the apt step's timeout. Keyed on runner OS, arch, job, and the
-        # hash of the job's apt package list under .github/apt/tooling-tests.txt.
         timeout-minutes: 5
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
@@ -855,37 +584,16 @@ jobs:
 
       - name: Install the tooling test lock and cppcheck
         id: apt-install
-        # Measured max 4.8m (2026-10-23); 10 min is at least 1.25x the slowest healthy run.
         timeout-minutes: 10
-        # package-build first: the docs half of the lock has sdists that build
-        # without isolation (the Docs job installs the docs lock the same way).
-        # test_cppcheck_posix_model.py drives the distribution's cppcheck, the
-        # one the Cppcheck job installs.
         env:
           TMPDIR: ${{ runner.temp }}
         run: |
-          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nAPT::Keep-Downloaded-Packages "true";\n' \
-            | sudo tee /etc/apt/apt.conf.d/80ci-retries >/dev/null
-          sudo apt-get update
-          mkdir -p "${RUNNER_TEMP}/apt-archives"
-          if compgen -G "${RUNNER_TEMP}/apt-archives/*.deb" >/dev/null; then
-            sudo cp -f "${RUNNER_TEMP}/apt-archives"/*.deb /var/cache/apt/archives/
-          fi
-          grep -v '^#' .github/apt/tooling-tests.txt | xargs sudo apt-get install -y --no-install-recommends
-          if compgen -G "/var/cache/apt/archives/*.deb" >/dev/null; then
-            sudo cp -f /var/cache/apt/archives/*.deb "${RUNNER_TEMP}/apt-archives/"
-            sudo chown -R "$(id -u):$(id -g)" "${RUNNER_TEMP}/apt-archives"
-          fi
+          bash scripts/ci/apt-install-cached.sh install .github/apt/tooling-tests.txt --no-install-recommends
           python -m pip install --require-hashes -r requirements/locks/package-build.txt
           python -m pip install --no-build-isolation --require-hashes \
             -r requirements/locks/tooling-tests.txt
 
       - name: Save apt archives
-        # Saves only after the install step succeeded: an install cut off by its
-        # timeout leaves the archive directory empty, and an empty entry under
-        # this immutable key would be restored as a hit on every later run
-        # (an empty 200-byte entry was saved this way on 2026-10-22). Runs even
-        # when a later step fails, so the next run skips the download.
         if: ${{ !cancelled() && steps.apt-install.outcome == 'success' && steps.apt-cache.outputs.cache-hit != 'true' }}
         timeout-minutes: 5
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
@@ -893,9 +601,6 @@ jobs:
           path: ${{ runner.temp }}/apt-archives
           key: apt-${{ runner.os }}-${{ runner.arch }}-tooling-tests-${{ hashFiles('.github/apt/tooling-tests.txt') }}
       - name: Run the tooling suite
-        # The lock installs clang-format at the pre-commit hook's pin; naming it
-        # makes the API generator's format test fail instead of skip when the
-        # installed binary is another major (hosted images ship older ones).
         env:
           VMAFX_CLANG_FORMAT: clang-format
         run: python scripts/ci/suite_registry.py run tooling
@@ -912,8 +617,7 @@ jobs:
   python-package-tests:
     needs: tier
     if: needs.tier.outputs.light == 'true'
-    # ADR-1528 — required and in strictMustReport: the impact plan may skip
-    # the work, but every leg runs and reports.
+    # ADR-1528 (design notes)
     name: Python Package Tests (${{ matrix.name }})
     runs-on: ubuntu-26.04
     timeout-minutes: 20
@@ -952,9 +656,6 @@ jobs:
         if: steps.impact.outputs.python == 'true'
         with:
           python-version: "3.14.9"
-      # One install step per leg: the lock checker
-      # (scripts/ci/check_python_dependency_locks.py) accepts only literal lock
-      # paths that the manifest owns, never a matrix variable.
       - name: Install the build backends
         if: steps.impact.outputs.python == 'true'
         env:
@@ -989,11 +690,7 @@ jobs:
           TESTS: ${{ matrix.tests }}
         run: python -m pytest "$TESTS" -rs
 
-  # ===== vmaf-tune suite (ADR-1528) =====
-  # Ten vmaf-tune tests drive a real `vmaf` (ADR-0543 backend enforcement and
-  # V5-1) on the golden pair. Rather than build libvmaf a second time, this job
-  # takes the CLI MCP Smoke builds (artifact `vmaf-cli-mcp`, uploaded right
-  # after its build, so a failing MCP test does not withhold it).
+  # ADR-0543, ADR-1528 (design notes)
   vmaf-tune-tests:
     needs: [tier, mcp-smoke]
     if: ${{ !cancelled() && needs.tier.outputs.light == 'true' }}
@@ -1001,7 +698,6 @@ jobs:
     # required-aggregator
     name: Python Package Tests (vmaf-tune)
     runs-on: ubuntu-26.04
-    # Sized as step caps (5+20+5 = 30) plus 1.25x measured 2.2m uncapped run (2026-10-23); 35 min covers sum.
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -1055,10 +751,6 @@ jobs:
           "${RUNNER_TEMP}/vmaf-cli/tools/vmaf" --version
       - name: Restore apt archives
         id: apt-cache
-        # Restore-only; the save below runs only after a successful install.
-        # Caches downloaded .deb archives so a slow package mirror does not eat
-        # into the apt step's timeout. Keyed on runner OS, arch, job, and the
-        # hash of the job's apt package list under .github/apt/vmaf-tune-tests.txt.
         if: steps.impact.outputs.python == 'true'
         timeout-minutes: 5
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
@@ -1069,32 +761,13 @@ jobs:
       - name: Install ffmpeg with libx265
         id: apt-install
         if: steps.impact.outputs.python == 'true'
-        # Measured max 15.1m (2026-10-23); 20 min is at least 1.25x the slowest healthy run.
         timeout-minutes: 20
-        # The two real-x265 integration tests (test_codec_adapter_x265.py,
-        # test_codec_adapter_x265_two_pass.py; ADR-1565) encode with the
-        # distribution ffmpeg, which links libx265 (ffmpeg 8.0.1 on 26.04).
+        # ADR-1565 (design notes)
         run: |
-          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nAPT::Keep-Downloaded-Packages "true";\n' \
-            | sudo tee /etc/apt/apt.conf.d/80ci-retries >/dev/null
-          sudo apt-get update
-          mkdir -p "${RUNNER_TEMP}/apt-archives"
-          if compgen -G "${RUNNER_TEMP}/apt-archives/*.deb" >/dev/null; then
-            sudo cp -f "${RUNNER_TEMP}/apt-archives"/*.deb /var/cache/apt/archives/
-          fi
-          grep -v '^#' .github/apt/vmaf-tune-tests.txt | xargs sudo apt-get install -y
-          if compgen -G "/var/cache/apt/archives/*.deb" >/dev/null; then
-            sudo cp -f /var/cache/apt/archives/*.deb "${RUNNER_TEMP}/apt-archives/"
-            sudo chown -R "$(id -u):$(id -g)" "${RUNNER_TEMP}/apt-archives"
-          fi
+          bash scripts/ci/apt-install-cached.sh install .github/apt/vmaf-tune-tests.txt
           ffmpeg -hide_banner -encoders | grep -E '^ V.* libx265 '
 
       - name: Save apt archives
-        # Saves only after the install step succeeded: an install cut off by its
-        # timeout leaves the archive directory empty, and an empty entry under
-        # this immutable key would be restored as a hit on every later run
-        # (an empty 200-byte entry was saved this way on 2026-10-22). Runs even
-        # when a later step fails, so the next run skips the download.
         if: ${{ !cancelled() && steps.apt-install.outcome == 'success' && steps.apt-cache.outputs.cache-hit != 'true' }}
         timeout-minutes: 5
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
@@ -1108,12 +781,9 @@ jobs:
         if: steps.impact.outputs.python == 'true'
         env:
           VMAF_BIN_FOR_TESTS: ${{ runner.temp }}/vmaf-cli/tools/vmaf
-          # Opt in to the real ffmpeg/libx265 tests (ADR-1565).
+          # ADR-1565 (design notes)
           VMAF_TUNE_INTEGRATION: "1"
-        # The registry names the files (ADR-1568): a file another suite owns
-        # runs in that suite's job, not here. A test that skips because it
-        # cannot reach the binary or the golden YUVs fails the job: those are
-        # this job's inputs, not optional; so are ffmpeg and its libx265.
+        # ADR-1568 (design notes)
         run: |
           set -o pipefail
           python scripts/ci/suite_registry.py list vmaf-tune > "${RUNNER_TEMP}/vmaf-tune-files.txt"
@@ -1161,12 +831,7 @@ jobs:
     # required-aggregator
     name: MCP Smoke
     runs-on: ubuntu-26.04
-    # The limit is the apt step's 20-minute cap plus 1.25 times the longest
-    # healthy run of the other steps, most of it the libvmaf build: 22.1 min
-    # over 44 successful jobs (2026-10-22), 20 + 27.6 = 47.6, rounded up to
-    # Tiny AI's 55. A 35-minute limit cancelled job 119986586497 in the build
-    # after a 19m59s apt step. scripts/ci/check_job_timeout_budget.py holds
-    # every job limit at or above its step caps' sum (ADR-3367).
+    # ADR-3367 (design notes)
     timeout-minutes: 55
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -1175,10 +840,6 @@ jobs:
 
       - name: Restore apt archives
         id: apt-cache
-        # Restore-only; the save below runs only after a successful install.
-        # Caches downloaded .deb archives so a slow package mirror does not eat
-        # into the apt step's timeout. Keyed on runner OS, arch, job, and the
-        # hash of the job's apt package list under .github/apt/mcp-smoke.txt.
         timeout-minutes: 5
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
@@ -1187,37 +848,14 @@ jobs:
 
       - name: Install build deps
         id: apt-install
-        # Measured max 57 s on fast mirrors, 11m51s on a slow one (2026-10-22);
-        # 20 min is at least 1.25x the slowest healthy run.
         timeout-minutes: 20
         run: |
-          # Slow mirror downloads took up to 11m51s on healthy runs (#2217,
-          # 2026-10-22); an 8-minute limit cancelled jobs 119820120253,
-          # 119824997083, 119828883252 and 119836022519 mid-download.
-          # apt's retries and 30 s timeouts below end a real stall.
-          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nAPT::Keep-Downloaded-Packages "true";\n' \
-            | sudo tee /etc/apt/apt.conf.d/80ci-retries >/dev/null
-          sudo apt-get update
-          mkdir -p "${RUNNER_TEMP}/apt-archives"
-          if compgen -G "${RUNNER_TEMP}/apt-archives/*.deb" >/dev/null; then
-            sudo cp -f "${RUNNER_TEMP}/apt-archives"/*.deb /var/cache/apt/archives/
-          fi
-          grep -v '^#' .github/apt/mcp-smoke.txt | xargs sudo apt-get install -y
-          if compgen -G "/var/cache/apt/archives/*.deb" >/dev/null; then
-            sudo cp -f /var/cache/apt/archives/*.deb "${RUNNER_TEMP}/apt-archives/"
-            sudo chown -R "$(id -u):$(id -g)" "${RUNNER_TEMP}/apt-archives"
-          fi
-          # meson from PyPI: Ubuntu 24.04 ships meson 1.3.2, which predates `c23`
-          # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
+          bash scripts/ci/apt-install-cached.sh install .github/apt/mcp-smoke.txt
+          # ADR-0692 (design notes)
           sudo pip3 install --break-system-packages --ignore-installed --quiet --require-hashes \
             -r requirements/locks/build.txt
 
       - name: Save apt archives
-        # Saves only after the install step succeeded: an install cut off by its
-        # timeout leaves the archive directory empty, and an empty entry under
-        # this immutable key would be restored as a hit on every later run
-        # (an empty 200-byte entry was saved this way on 2026-10-22). Runs even
-        # when a later step fails, so the next run skips the download.
         if: ${{ !cancelled() && steps.apt-install.outcome == 'success' && steps.apt-cache.outputs.cache-hit != 'true' }}
         timeout-minutes: 5
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
@@ -1226,11 +864,6 @@ jobs:
           key: apt-${{ runner.os }}-${{ runner.arch }}-mcp-smoke-${{ hashFiles('.github/apt/mcp-smoke.txt') }}
 
       - name: Build libvmaf (full MCP transport matrix)
-        # Mirrors the local-lint configuration documented in
-        # lint-and-format.yml (core/build-mcp/ with all four
-        # enable_mcp* flags) so this lane sees identical symbol
-        # availability. Disabling CUDA / SYCL keeps the build
-        # ubuntu-hosted-runner-only — no GPU toolchain required.
         working-directory: core
         run: |
           # shellcheck disable=SC2046  # the helper prints one option per line, split on purpose
@@ -1243,10 +876,7 @@ jobs:
           meson compile -C build-mcp
 
       - name: Pack the vmaf CLI for the vmaf-tune suite
-        # tar keeps the executable bit and the RUNPATH layout
-        # ($ORIGIN/../src) that an artifact zip would lose (ADR-1528).
-        # The SONAME chain only (files and symlinks): a glob would also take
-        # Meson's object directory libvmaf.so.<version>.p/.
+        # ADR-1528 (design notes)
         working-directory: core/build-mcp
         run: |
           find src -maxdepth 1 \( -name 'libvmaf.so*' -o -name 'libvmafx.so*' \) \( -type f -o -type l \) \
@@ -1271,14 +901,7 @@ jobs:
           if-no-files-found: error
 
       - name: Run embedded MCP C smoke test
-        # ADR-0209 / T5-2: pins the -ENOSYS contract on every public
-        # vmaf_mcp_* entry point so a future runtime PR (T5-2b) cannot
-        # silently wire a transport without flipping the expectations.
-        # The test is registered as `test_mcp_smoke` in core/test/
-        # meson.build (no suite tag — it lands in the default suite).
-        # The libvmaf compat checks run here too, because only this build
-        # has the vmaf_mcp_* compat functions (ADR-2094): their conformance
-        # against the engine's bodies and the export list with them.
+        # ADR-0209, ADR-2094 (design notes)
         working-directory: core
         run: >-
           python3 ../scripts/ci/run_meson_test.py --
@@ -1287,15 +910,9 @@ jobs:
           --print-errorlogs
 
       - name: Set up Python venv + install vmaf-mcp[dev]
-        # The pyproject ships a `dev` extras group (pytest +
-        # pytest-asyncio + ruff + mypy). There is no `[test]` extras —
-        # `dev` is the right name. Editable install so test_smoke_e2e.py
-        # resolves the repo root via __file__.parents[3].
         env:
           TMPDIR: ${{ runner.temp }}
         run: |
-          # RUNNER_TEMP, not /tmp: see the Tiny AI job's venv step. TMPDIR
-          # is redirected there too, because pip stages wheels in $TMPDIR.
           venv="${RUNNER_TEMP}/mcp-venv"
           python3 -m venv "${venv}"
           "${venv}/bin/pip" install --require-hashes \
@@ -1306,18 +923,10 @@ jobs:
             -e mcp-server/vmaf-mcp
 
       - name: Fetch the Netflix golden YUV fixtures
-        # test_server.py, test_smoke_e2e.py and test_score_extras_adr1117.py
-        # score the src01 pair; without it they skipped (ADR-1528).
+        # ADR-1528 (design notes)
         run: bash scripts/test/fetch-test-yuvs.sh
 
       - name: Run Python MCP server pytests
-        # The MCP server's `_vmaf_binary()` defaults to
-        # `<repo-root>/build/tools/vmaf` (`Path(__file__).parents[4]`
-        # is the top-level repo root, not `core/`). The CI build
-        # lives at `core/build-mcp/tools/vmaf`, so point
-        # `VMAF_BIN` there explicitly so
-        # test_call_tool_list_backends_includes_cpu's `_list_backends`
-        # probe returns `cpu: True`.
         env:
           VMAF_BIN: ${{ github.workspace }}/core/build-mcp/tools/vmaf
         run: |
@@ -1330,9 +939,6 @@ jobs:
           "${RUNNER_TEMP}/mcp-venv/bin/pytest" mcp-server/vmaf-mcp/tests/ -v -rs --tb=short \
             --timeout=60 --timeout-method=signal
 
-  # ===== Coverage gate (principles.md §3) =====
-  # ≥70% overall line coverage, ≥85% on security-critical files
-  # (core/src/dnn/, opt.c, read_json_model.c).
   coverage:
     needs: tier
     if: needs.tier.outputs.full == 'true'
@@ -1347,11 +953,6 @@ jobs:
     # required-aggregator
     name: Coverage Gate
     runs-on: ubuntu-26.04
-    # 75, not 30: the Python suite (four shard steps below, about 33 minutes
-    # together on master 777647fc0) and the rest of the job (apt + pip, the
-    # gcov build, the meson unit suite, gcovr; ~5.5 minutes) leave room for a
-    # runner 1.5x slower than that measurement.
-    # Sized as step caps (5+35+5+10 = 55) plus 1.25x measured 57m uncapped run (2026-10-23); 120 min covers sum.
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -1374,10 +975,6 @@ jobs:
         run: echo "::notice::golden_harness not impacted (mode=$MODE reason=$REASON) — Coverage Gate satisfied without running (ADR-1140)"
       - name: Restore apt archives
         id: apt-cache
-        # Restore-only; the save below runs only after a successful install.
-        # Caches downloaded .deb archives so a slow package mirror does not eat
-        # into the apt step's timeout. Keyed on runner OS, arch, job, and the
-        # hash of the job's apt package list under .github/apt/coverage.txt.
         if: steps.impact.outputs.golden_harness == 'true'
         timeout-minutes: 5
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
@@ -1388,61 +985,23 @@ jobs:
       - name: Install deps
         id: apt-install
         if: steps.impact.outputs.golden_harness == 'true'
-        # Measured max 30m21s slow fetch (2026-10-23); 35 min is at least 1.25x.
         timeout-minutes: 35
         run: |
-          # The hosted runner ships pre-provisioned Microsoft/Azure apt
-          # sources (packages.microsoft.com) that intermittently 403 /
-          # "no longer signed", failing `apt-get update` with exit 100
-          # (observed on the Coverage Gate 2026-06-13). vmaf needs none of
-          # them — drop them before updating. See T-CI-APT-MS-REPO-FLAKE.
-          # rm -f succeeds when a pattern matches nothing.
           sudo rm -f /etc/apt/sources.list.d/*microsoft* \
                      /etc/apt/sources.list.d/*azure*
-          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nAPT::Keep-Downloaded-Packages "true";\n' \
-            | sudo tee /etc/apt/apt.conf.d/80ci-retries >/dev/null
-          sudo apt-get update
-          mkdir -p "${RUNNER_TEMP}/apt-archives"
-          if compgen -G "${RUNNER_TEMP}/apt-archives/*.deb" >/dev/null; then
-            sudo cp -f "${RUNNER_TEMP}/apt-archives"/*.deb /var/cache/apt/archives/
-          fi
-          grep -v '^#' .github/apt/coverage.txt | xargs sudo apt-get install -y
-          if compgen -G "/var/cache/apt/archives/*.deb" >/dev/null; then
-            sudo cp -f /var/cache/apt/archives/*.deb "${RUNNER_TEMP}/apt-archives/"
-            sudo chown -R "$(id -u):$(id -g)" "${RUNNER_TEMP}/apt-archives"
-          fi
-          # meson from PyPI: Ubuntu 24.04 ships meson 1.3.2, which predates `c23`
-          # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
+          bash scripts/ci/apt-install-cached.sh install .github/apt/coverage.txt
+          # ADR-0692 (design notes)
           sudo pip3 install --break-system-packages --ignore-installed --quiet --require-hashes \
             -r requirements/locks/build.txt
-          # gcovr replaces lcov: it deduplicates .gcno files belonging to
-          # the same source compiled into multiple targets (libvmaf.so +
-          # each test_X.p/.._src_X.c.gcda), which lcov sums and yields
-          # impossible >100% hit counts (e.g. dnn_api.c — 1176%). gcovr
-          # also produces both Cobertura XML for CI tooling and a JSON
-          # summary the gate script parses directly. See ADR-0110.
-          # setuptools>=77.0.1: the runner image ships 68.1.2 in
-          # /usr/lib/python3/dist-packages and `pip install --user` leaves it
-          # there, but python/pyproject.toml declares its license as a PEP 639
-          # SPDX expression, which only setuptools 77+ parses. Without this the
-          # ambient interpreter cannot run `python/setup.py` at all — which is
-          # how setup_metadata_test.py failed the first time this lane ran the
-          # whole Python suite to completion.
+          # ADR-0110 (design notes)
           python3 -m pip install --user --require-hashes \
             -r requirements/locks/package-build.txt
           python3 -m pip install --user --no-build-isolation --require-hashes \
             -r python/requirements-coverage-lock.txt
-          # The editable install compiles vmaf.core.adm_dwt2_cy, as tox does
-          # (python/tox.ini commands_pre); cy_test.py imports it. Without it
-          # the suite ignored cy_test.py since #18 (ADR-1528).
+          # ADR-1528 (design notes)
           python3 -m pip install --user --no-deps --no-build-isolation -e python
 
       - name: Save apt archives
-        # Saves only after the install step succeeded: an install cut off by its
-        # timeout leaves the archive directory empty, and an empty entry under
-        # this immutable key would be restored as a hit on every later run
-        # (an empty 200-byte entry was saved this way on 2026-10-22). Runs even
-        # when a later step fails, so the next run skips the download.
         if: ${{ !cancelled() && steps.apt-install.outcome == 'success' && steps.apt-cache.outputs.cache-hit != 'true' }}
         timeout-minutes: 5
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
@@ -1450,13 +1009,6 @@ jobs:
           path: ${{ runner.temp }}/apt-archives
           key: apt-${{ runner.os }}-${{ runner.arch }}-coverage-${{ hashFiles('.github/apt/coverage.txt') }}
 
-      # Cache the ORT GPU .tgz so we don't re-download ~150 MB from
-      # github.com/microsoft/onnxruntime/releases on every Coverage Gate
-      # run. Key is purely the ORT version pinned in the env block of the
-      # next step — the artifact bytes are immutable per release. See
-      # Research-0089 (PR #525) §2 for the wall-clock evidence (Coverage
-      # Gate p50 = 13.32 min, the ORT download contributes ~30–60 s of
-      # that on a cold runner).
       - name: Cache ONNX Runtime tarball
         if: steps.impact.outputs.golden_harness == 'true'
         id: cache-ort
@@ -1467,31 +1019,14 @@ jobs:
       - name: Install ONNX Runtime (GPU build, CPU + CUDA EPs)
         id: coverage_install_ort
         if: steps.impact.outputs.golden_harness == 'true'
-        # Measured max 1.3m (2026-10-23); 10 min cap covers tarball download and setup at 1.25x.
         timeout-minutes: 10
-        # The GPU .tgz bundles CPU + CUDA + TensorRT execution providers in
-        # one package. We install it (instead of the smaller CPU-only build)
-        # so the coverage gate can also exercise the CUDA EP-attach success
-        # arms in ort_backend.c — which on a CPU-only ORT remained
-        # unreachable per ADR-0112. CUDA EP attach only requires the CUDA
-        # *runtime* library to load (no actual GPU driver), which is why
-        # libcudart12 is installed above. CreateSession then fails because
-        # there's no real GPU on a hosted runner; vmaf_ort_open's two-stage
-        # fallback (ADR-0113) catches that and retries with CPU-only
-        # session_options, so existing tests stay green while the EP-attach
-        # success arm and the new fallback path both execute.
+        # ADR-0112, ADR-0113 (design notes)
         env:
           ORT_VERSION: "1.22.0"
           ORT_SHA256: "2a19dbfa403672ec27378c3d40a68f793ac7a6327712cd0e8240a86be2b10c55"
         run: |
           set -euo pipefail
-          # CUDA 12.x runtime — user-space libs only, no driver. Lets ORT
-          # dlopen libonnxruntime_providers_cuda.so → libcudart.so.12.
-          # libcudart12 is cached in the apt step; fall back to nvidia-cuda-toolkit
-          # only if libcudart12 was not installed.
           dpkg -s libcudart12 >/dev/null 2>&1 || sudo apt-get install -y nvidia-cuda-toolkit
-          # Reuse cached tarball if present (cache hit), otherwise fetch
-          # and populate the cache for the next run.
           mkdir -p "${RUNNER_TEMP}/ort-cache"
           tarball="${RUNNER_TEMP}/ort-cache/onnxruntime-linux-x64-gpu-${ORT_VERSION}.tgz"
           if [ ! -f "$tarball" ]; then
@@ -1523,8 +1058,6 @@ jobs:
       - name: Build with gcov instrumentation
         id: coverage_build
         if: steps.impact.outputs.golden_harness == 'true'
-        # Build inside core/ so python/vmaf/__init__.py finds the CLI at
-        # core/build-coverage/tools/vmaf (it hardcodes that relative path).
         working-directory: core
         run: |
           # AVX-512 on so SIMD paths are exercised. enable_dnn=enabled +
@@ -1553,12 +1086,7 @@ jobs:
       - name: Prefetch Go modules for the suite
         id: coverage_prefetch_go
         if: steps.impact.outputs.golden_harness == 'true'
-        # The suite's Go-running tests find their modules in the cache: the
-        # download happens here, retried, and fails here when it cannot succeed
-        # (scripts/ci/prefetch_go_modules.py, as the user the suite runs as).
         run: python3 scripts/ci/prefetch_go_modules.py
-      # --timeout-multiplier 3: the suite's timeouts are sized for an
-      # uninstrumented build (docs/development/ci.md, "Sanitizer legs").
       - name: Run meson unit suite (with gcov counters)
         id: coverage_meson_suite
         if: steps.impact.outputs.golden_harness == 'true'
@@ -1570,30 +1098,10 @@ jobs:
         id: coverage_prepare_python
         if: steps.impact.outputs.golden_harness == 'true'
         run: |
-          # python/vmaf/__init__.py hardcodes core/build/tools/vmaf as the
-          # CLI path. Symlink build-coverage → build so coverage runs find it.
           ln -sf build-coverage core/build
           echo "${{ github.workspace }}/core/build-coverage/tools" >> "$GITHUB_PATH"
           python3 -m pip install --user --require-hashes \
             -r requirements/locks/pytest-timeout.txt
-          # The suite runs as four round-robin shards of one step each
-          # (scripts/ci/run_pytest_shard.py): about 890 items took 33 minutes
-          # in one step (master 777647fc0, job 117249828983), above praetor's
-          # 30-minute bound on a test step. gcov counters in the .gcda files
-          # add up across the four processes, so gcovr below sees the whole
-          # suite. Every shard keeps the unsharded command line:
-          # - --deselect matches nothing and -m "not slow" selects everything:
-          #   python/tox.ini makes python/ the rootdir, so node ids read
-          #   test/command_line_test.py::…, and no test is marked slow
-          #   (measured 2026-09-22, jobs 106740470243 and 106785621316). Both
-          #   stay so the suite that runs is the suite that is measured.
-          # - --timeout=600 with the thread method aborts the whole session
-          #   when one test crosses it. It covers the slowest test measured
-          #   (vifks360o97, 142.7 s) times the worst runner inflation seen
-          #   (2.30x) with a 1.8x margin.
-          # - The outer `timeout` only keeps a wedged vmaf subprocess from
-          #   eating the job budget before gcovr runs; a shard took about
-          #   9 minutes in the measured job.
       - name: Run Python test suite, shard 1/4
         id: python_coverage_shard_1
         if: steps.impact.outputs.golden_harness == 'true'
@@ -1650,18 +1158,7 @@ jobs:
         if: ${{ always() && steps.impact.outputs.golden_harness == 'true' }}
         working-directory: core
         run: |
-          # gcovr deduplicates .gcno files belonging to the same source
-          # compiled into multiple targets — fixes the lcov over-counting
-          # that produced dnn_api.c — 1176%. Output:
-          #   - coverage.xml (Cobertura, for downstream tooling)
-          #   - coverage.json (machine-readable summary the gate parses)
-          #   - coverage.txt (human-readable, surfaced in CI logs)
-          # Suspicious/negative hit warnings on hot inner loops (e.g.
-          # 4.9 G hits on a 5x5 filter inner loop across
-          # an HD frame batch — real, not a gcov bug) are filtered out so
-          # the Coverage Gate stays warning-free. Underlying data is still
-          # ingested via the .warn settings; only the chatty stderr line is
-          # dropped. See ADR-0117.
+          # ADR-0117 (design notes)
           ~/.local/bin/gcovr --root .. \
               --filter 'src/.*' \
               --exclude '.*/test/.*' \
@@ -1680,20 +1177,7 @@ jobs:
       - name: Enforce coverage thresholds
         if: steps.impact.outputs.golden_harness == 'true'
         run: |
-          # docs/principles.md §3 targets: 70% overall, 85% critical (dnn/,
-          # opt.c, read_json_model.c). Applies to upstream + fork-added code:
-          # we've already linted upstream heavily (clang-tidy cleanup rounds
-          # 2-4) and will keep modifying it (SIMD fixes, refactors), so the
-          # safety net has to cover everything we might touch.
-          #
-          # Floor history (ADR-0637):
-          #   40% — original floor (meson unit suite + Python feature/CLI tests)
-          #   37% — 2026-05-19 merge burst (PRs #1417, #1418, #1424, #1425)
-          #          added ~2 200 LOC of new MCP/HIP/DNN/scaffold C that the
-          #          existing test suite does not yet reach, diluting overall
-          #          coverage from ~39% to 37.7%. The floor tracks the measured
-          #          floor, not the aspirational target; ratchet upward as
-          #          targeted tests land for those paths.
+          # ADR-0637 (design notes)
           scripts/ci/coverage-check.sh core/build-coverage/coverage.json 37 85
       - name: Upload coverage artifact
         if: ${{ ((always()) && steps.impact.outputs.golden_harness == 'true') && env.GITEA_ACTIONS != 'true' }}
@@ -1723,9 +1207,6 @@ jobs:
             ${{ steps.python_coverage_shard_2.outcome }}
             ${{ steps.python_coverage_shard_3.outcome }}
             ${{ steps.python_coverage_shard_4.outcome }}
-          # A shard is skipped when a step before it failed; the error names
-          # that step (run 39006126494: the meson suite timed out and the
-          # shards only reported "skipped").
           EARLIER_OUTCOMES: >-
             Install-deps=${{ steps.apt-install.outcome }}
             Install-ONNX-Runtime=${{ steps.coverage_install_ort.outcome }}
@@ -1759,10 +1240,7 @@ jobs:
           done
           exit "$failed"
 
-  # ===== GPU coverage admission (hosted) =====
-  # ADR-1319: the operator switch is not dispatch authority. Check the live
-  # runner inventory on hosted compute first so a stale true variable cannot
-  # leave a job queued forever on an impossible label set.
+  # ADR-1319 (design notes)
   gpu-full-runner-available:
     needs: tier
     if: needs.tier.outputs.full == 'true' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository)
@@ -1778,8 +1256,6 @@ jobs:
       - name: Check gpu-full runner availability
         id: probe
         env:
-          # Existing read-only repository runner token; no new secret or
-          # external runner mutation is required by this repository fix.
           GH_TOKEN: ${{ secrets.SYCL_RUNNER_PROBE_TOKEN || github.token }}
           RUNNER_ENABLED: ${{ vars.GPU_COVERAGE_ENABLED }}
           RUNNER_LABELS: "self-hosted linux gpu-full"
@@ -1789,15 +1265,6 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: bash scripts/ci/check-runner-available.sh
 
-  # ===== GPU coverage (self-hosted) =====
-  # Exercises fork-added CUDA / SYCL kernels, GPU runtime glue, and
-  # AVX-512 SIMD paths that hosted runners can't touch. Runs on a self-hosted
-  # runner labeled `gpu-full` (NVIDIA CUDA + Intel Arc SYCL +
-  # AVX-512 CPU). See docs/development/self-hosted-runner.md for setup.
-  #
-  # The two-week stability window closed on 2026-06-02. Keep this required;
-  # the promotion was recorded in the changelog, but a later stale merge
-  # restored the advisory workflow body.
   coverage-gpu:
     # required-aggregator
     name: Coverage GPU
@@ -1809,26 +1276,16 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           submodules: recursive
-          # Full history for the merge-base tests of the suite
-          # (scripts/ci/tests/test_meson_suite_checkout_history.py).
           fetch-depth: 0
       - name: Build with gcov + CUDA + SYCL + AVX-512
         working-directory: core
         env:
-          # icpx required for SYCL link — see core/src/meson.build.
           CC: icx
           CXX: icpx
         run: |
-          # See CPU coverage job for -fprofile-update=atomic rationale.
-          # GPU build also runs SIMD CPU paths, so the same .gcda race applies.
-          # b_lto=false: see libvmaf-build-matrix.yml note. Coverage build
-          # uses --buildtype=debug which already disables LTO, but make it
-          # explicit to avoid a future buildtype change re-introducing the
-          # icx + -flto=auto incompatibility.
           bash -e -o pipefail -c '
             source /opt/intel/oneapi/setvars.sh
-            # ADR-1360: coverage needs no AOT device images; the self-hosted
-            # host has no ocloc, so build the SPIR-V JIT path only.
+            # ADR-1360 (design notes)
             meson setup build-coverage-gpu --buildtype=debug \
               -Db_coverage=true -Db_lto=false \
               -Denable_cuda=true -Denable_sycl=true \
@@ -1840,16 +1297,9 @@ jobs:
             ninja -C build-coverage-gpu
           '
       - name: Prefetch Go modules for the suite
-        # The suite's Go-running tests find their modules in the cache: the
-        # download happens here, retried, and fails here when it cannot succeed
-        # (scripts/ci/prefetch_go_modules.py, as the user the suite runs as).
         run: python3 scripts/ci/prefetch_go_modules.py
       - name: Run meson unit suite
         working-directory: core
-        # See CPU coverage job for --num-processes 1 rationale: serialise
-        # to keep multi-process .gcda merges race-free. --timeout-multiplier 3:
-        # the suite's timeouts are sized for an uninstrumented build
-        # (docs/development/ci.md, "Sanitizer legs").
         run: >-
           python3 ../scripts/ci/run_meson_test.py -- -C build-coverage-gpu
           --print-errorlogs --num-processes 1 --timeout-multiplier 3
@@ -1859,19 +1309,11 @@ jobs:
           LD_LIBRARY_PATH: ${{ github.workspace }}/core/build-coverage-gpu/src
         run: |
           export PATH="${{ github.workspace }}/core/build-coverage-gpu/tools:$PATH"
-          # setuptools>=77.0.1: the runner image ships 68.1.2 in
-          # /usr/lib/python3/dist-packages and `pip install --user` leaves it
-          # there, but python/pyproject.toml declares its license as a PEP 639
-          # SPDX expression, which only setuptools 77+ parses. Without this the
-          # ambient interpreter cannot run `python/setup.py` at all — which is
-          # how setup_metadata_test.py failed the first time this lane ran the
-          # whole Python suite to completion.
           python3 -m pip install --user --require-hashes \
             -r requirements/locks/package-build.txt
           python3 -m pip install --user --no-build-isolation --require-hashes \
             -r python/requirements-coverage-lock.txt
-          # Scope GPU test runs with VMAF_FORCE_BACKEND away from the Netflix golden assertions
-          # (ADR-0024 / AGENTS.md §8) to avoid failing on ULP-relaxed GPU float differences.
+          # ADR-0024 (design notes)
           VMAF_FORCE_BACKEND=cuda python3 -m pytest python/test/ -v \
             -c python/tox.ini \
             -m "not slow" --tb=short --ignore=python/test/resource \
@@ -1893,8 +1335,7 @@ jobs:
       - name: Gather coverage report (gcovr)
         working-directory: core
         run: |
-          # Same gcovr migration as CPU coverage job (see ADR-0110); same
-          # suspicious-hits stderr filter as the CPU job (see ADR-0117).
+          # ADR-0110, ADR-0117 (design notes)
           python3 -m pip install --user --require-hashes \
             -r ../requirements/locks/gcovr.txt
           ~/.local/bin/gcovr --root .. \
@@ -1935,8 +1376,6 @@ jobs:
             core/build-coverage-gpu/coverage.txt
           retention-days: 14
 
-  # ===== Power of 10 rule 5 — assertion density =====
-  # Every fork-added (non-trivial) function must contain ≥1 assert().
   assertion-density:
     needs: tier
     if: needs.tier.outputs.light == 'true'

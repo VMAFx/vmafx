@@ -42,6 +42,10 @@ PRODUCTION = ".github/workflows/docker-publish-production.yml"
 OPERATOR_NODE = ".github/workflows/docker-publish-operator-node.yml"
 SYCL_RUNTIME = "tools/rc1-tester/image/sycl-runtime.json"
 ONEAPI_BUILD = "scripts/ci/build-oneapi-libvmaf.sh"
+# OPERATOR_NODE runs its smoke checks through these two scripts (ADR-0108
+# workflow size bound); the assertions on those checks read the scripts.
+PUBLISHED_SMOKE = "scripts/release/smoke-published-image.sh"
+IMAGE_SMOKE = "scripts/ci/release-image-smoke.sh"
 SCORE_CHECK = "jq -e '.pooled_metrics.vmaf.mean'"
 
 
@@ -133,8 +137,8 @@ def validate(texts: dict[str, str]) -> None:
         raise AssertionError("Dockerfile.node's RCLONE_VERSION does not mirror build-config.env")
     if "COPY --from=rclone-bin /usr/local/bin/rclone /usr/local/bin/rclone" not in node_stages["runtime-base"][1]:
         raise AssertionError("the node runtime does not bundle rclone")
-    if '--entrypoint /usr/local/bin/rclone "${image}" version' not in texts[OPERATOR_NODE]:
-        raise AssertionError(f"{OPERATOR_NODE}: the node smoke test does not run rclone")
+    if '--entrypoint /usr/local/bin/rclone "$image" version' not in texts[IMAGE_SMOKE]:
+        raise AssertionError(f"{IMAGE_SMOKE}: the node smoke test does not run rclone")
     # ADR-1593: rclone's mount mode needs the setuid fusermount3 and the
     # util-linux mount and umount it runs; the published image lacked them.
     fuse = node_stages.get("fuse-tools", ("", ""))
@@ -154,10 +158,12 @@ def validate(texts: dict[str, str]) -> None:
     ):
         if snippet not in node_stages["runtime-base"][1]:
             raise AssertionError(f"the node runtime lacks {snippet!r}")
-    if "rclone mount :local:/frames /tmp/m --daemon" not in texts[OPERATOR_NODE] or (
-        '/usr/bin/fusermount3 -u /tmp/m' not in texts[OPERATOR_NODE]
+    if "rclone mount :local:/frames /tmp/m --daemon" not in texts[PUBLISHED_SMOKE] or (
+        '/usr/bin/fusermount3 -u /tmp/m' not in texts[PUBLISHED_SMOKE]
     ):
-        raise AssertionError(f"{OPERATOR_NODE}: the node smoke test does not mount through FUSE")
+        raise AssertionError(f"{PUBLISHED_SMOKE}: the node smoke test does not mount through FUSE")
+    if "node) check_mount ;;" not in texts[PUBLISHED_SMOKE]:
+        raise AssertionError(f"{PUBLISHED_SMOKE}: the node smoke test skips the FUSE mount")
 
     production = texts[PRODUCTION]
     if production.count(SCORE_CHECK) != 3:
@@ -171,14 +177,37 @@ def validate(texts: dict[str, str]) -> None:
     for suffix in ("-oneapi2026", "-oneapi2025"):
         if f"type=raw,value=${{{{ env.PUBLISH_TAG }}}}{suffix}" not in production:
             raise AssertionError(f"{PRODUCTION}: the oneAPI image is not tagged {suffix}")
-    if texts[OPERATOR_NODE].count(SCORE_CHECK) != 2:
-        raise AssertionError(
-            f"{OPERATOR_NODE}: expected default-model scoring for vmafx-server and vmafx-node"
-        )
+    validate_operator_node_scoring(texts)
     for path in (PRODUCTION, OPERATOR_NODE):
         for block in re.findall(r"(?s)docker run[^\n]*\n(?:[^\n]*\\\n)*[^\n]*" + re.escape(SCORE_CHECK), texts[path]):
             if "--model" in block:
                 raise AssertionError(f"{path}: a default-model smoke check passes --model")
+
+
+def validate_operator_node_scoring(texts: dict[str, str]) -> None:
+    """vmafx-server and vmafx-node score with the built-in model, never --model."""
+    for kind in ("server", "node"):
+        call = (
+            r"bash scripts/release/smoke-published-image\.sh\n[^\n]*"
+            + kind.upper()
+            + r"_IMAGE[^\n]*\n\s+"
+            + kind
+            + r" "
+        )
+        if not re.search(call, texts[OPERATOR_NODE]):
+            raise AssertionError(f"{OPERATOR_NODE}: vmafx-{kind} is not smoke-tested as {kind}")
+    published = texts[PUBLISHED_SMOKE]
+    for mapping in ("server) smoke_kind=wrapped ;;", "node) smoke_kind=node ;;"):
+        if mapping not in published:
+            raise AssertionError(f"{PUBLISHED_SMOKE}: lacks the kind mapping {mapping!r}")
+    if 'bash "$REPO_ROOT/scripts/ci/release-image-smoke.sh"' not in published:
+        raise AssertionError(f"{PUBLISHED_SMOKE}: does not run {IMAGE_SMOKE}")
+    image_smoke = texts[IMAGE_SMOKE]
+    if image_smoke.count(SCORE_CHECK) != 1 or "run_score --entrypoint /usr/local/bin/vmaf\n" not in image_smoke:
+        raise AssertionError(f"{IMAGE_SMOKE}: wrapped and node images do not score")
+    score_args = re.search(r"(?s)score_args=\((.*?)\)", image_smoke)
+    if score_args is None or "--model" in score_args.group(1):
+        raise AssertionError(f"{IMAGE_SMOKE}: a default-model smoke check passes --model")
 
 
 def expect_rejected(name: str, texts: dict[str, str]) -> None:
@@ -192,7 +221,16 @@ def expect_rejected(name: str, texts: dict[str, str]) -> None:
 
 texts = {
     path: (root / path).read_text(encoding="utf-8")
-    for path in (*DOCKERFILES, PRODUCTION, OPERATOR_NODE, "build-config.env", SYCL_RUNTIME, ONEAPI_BUILD)
+    for path in (
+        *DOCKERFILES,
+        PRODUCTION,
+        OPERATOR_NODE,
+        PUBLISHED_SMOKE,
+        IMAGE_SMOKE,
+        "build-config.env",
+        SYCL_RUNTIME,
+        ONEAPI_BUILD,
+    )
 }
 validate(texts)
 
@@ -268,8 +306,8 @@ version_only[PRODUCTION] = version_only[PRODUCTION].replace(SCORE_CHECK, "true",
 expect_rejected("a smoke test that only runs --version", version_only)
 
 with_model = deepcopy(texts)
-with_model[OPERATOR_NODE] = with_model[OPERATOR_NODE].replace(
-    "--json --output /dev/stdout", "--model path=/m.json --json --output /dev/stdout", 1
+with_model[IMAGE_SMOKE] = with_model[IMAGE_SMOKE].replace(
+    "--json --output /dev/stdout)", "--model path=/m.json --json --output /dev/stdout)", 1
 )
 expect_rejected("a default-model check that names a model", with_model)
 
@@ -298,10 +336,28 @@ plain_fusermount["docker/Dockerfile.node"] = plain_fusermount["docker/Dockerfile
 expect_rejected("a fusermount3 without its setuid bit", plain_fusermount)
 
 no_mount_smoke = deepcopy(texts)
-no_mount_smoke[OPERATOR_NODE] = no_mount_smoke[OPERATOR_NODE].replace(
+no_mount_smoke[PUBLISHED_SMOKE] = no_mount_smoke[PUBLISHED_SMOKE].replace(
     "/usr/bin/fusermount3 -u /tmp/m", "true"
 )
 expect_rejected("a node smoke test without a FUSE mount", no_mount_smoke)
+
+mount_skipped = deepcopy(texts)
+mount_skipped[PUBLISHED_SMOKE] = mount_skipped[PUBLISHED_SMOKE].replace(
+    "node) check_mount ;;", "node) ;;"
+)
+expect_rejected("a node smoke test that never calls the FUSE mount", mount_skipped)
+
+node_as_operator = deepcopy(texts)
+node_as_operator[OPERATOR_NODE] = re.sub(
+    r"(NODE_IMAGE[^\n]*\n\s+)node ", r"\1operator ", node_as_operator[OPERATOR_NODE], count=1
+)
+expect_rejected("a vmafx-node smoke test run as the score-less operator kind", node_as_operator)
+
+server_unscored = deepcopy(texts)
+server_unscored[PUBLISHED_SMOKE] = server_unscored[PUBLISHED_SMOKE].replace(
+    "server) smoke_kind=wrapped ;;", "server) smoke_kind=binary ;;"
+)
+expect_rejected("a vmafx-server smoke test that maps to the score-less binary kind", server_unscored)
 
 drifted_rclone = deepcopy(texts)
 drifted_rclone["build-config.env"] = drifted_rclone["build-config.env"].replace(

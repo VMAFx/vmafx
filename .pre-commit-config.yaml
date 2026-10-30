@@ -760,6 +760,20 @@ repos:
         files: '^(scripts/ci/(check_gitea_artifact_steps\.py|tests/test_check_gitea_artifact_steps\.py)|\.pre-commit-config\.yaml)$'
         pass_filenames: false
 
+      - id: check-workflow-size
+        name: Workflow files stay within byte size bound
+        entry: python3 scripts/ci/check-workflow-size.py
+        language: system
+        files: '^\.github/workflows/.*\.ya?ml$|^scripts/ci/check-workflow-size\.py$'
+        pass_filenames: false
+
+      - id: test-check-workflow-size
+        name: Workflow size check keeps positive, negative and boundary cases
+        entry: python3 scripts/ci/tests/test_check_workflow_size.py
+        language: system
+        files: '^(scripts/ci/(check-workflow-size\.py|tests/test_check_workflow_size\.py)|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+
       - id: check-hosted-runner-labels
         name: Workflow jobs name an explicit hosted Ubuntu image, an older one only with a dated fallback
         entry: python3 scripts/ci/check_hosted_runner_labels.py
