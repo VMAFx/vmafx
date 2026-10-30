@@ -496,8 +496,18 @@ def _node_workflow_problems(root: Path, node_want: str) -> list[str]:
     return problems
 
 
+def _node_file_problems(root: Path, node_want: str) -> list[str]:
+    path = root / ".node-version"
+    if not path.is_file():
+        return []
+    value = path.read_text(encoding="utf-8").strip()
+    if value == node_want:
+        return []
+    return [f".node-version says '{value}'; build-config.env says NODE_VERSION '{node_want}'"]
+
+
 def check_node_pins(root: Path, node_want: str | None) -> list[str]:
-    """pre-commit's node hooks and every setup-node pin use NODE_VERSION.
+    """pre-commit's node hooks, .node-version and every setup-node pin use NODE_VERSION.
 
     Without `default_language_version.node`, pre-commit on Windows builds its
     nodeenv at "latest", the head of the Node index; on 2026-10-29 that head
@@ -520,6 +530,7 @@ def check_node_pins(root: Path, node_want: str | None) -> list[str]:
                 f".pre-commit-config.yaml pins node '{match.group(1)}'; "
                 f"build-config.env says NODE_VERSION '{node_want}'"
             )
+    problems.extend(_node_file_problems(root, node_want))
     problems.extend(_node_workflow_problems(root, node_want))
     return problems
 

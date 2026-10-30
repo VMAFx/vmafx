@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
-"""Verify pre-commit's node pin and every setup-node pin name build-config.env's NODE_VERSION.
+"""Verify the pre-commit, .node-version and setup-node pins name build-config.env's NODE_VERSION.
 
 Unpinned, pre-commit on Windows builds its node hooks' environment at nodeenv's
 "latest", the head of the Node index. On 2026-10-29 that head was the
 prerelease v27.0.0-alpha.0.0.0, nodeenv 1.11.0 could not parse it, and the
 Windows Lefthook Pre-Commit job on master failed. `check_node_pins()` refuses a
-missing or differing pre-commit pin and a differing setup-node pin.
+missing or differing pre-commit pin, a differing setup-node pin and a differing
+.node-version, the file the engine-managed documentation workflow reads Node from.
 """
 
 from __future__ import annotations
@@ -84,6 +85,20 @@ class NodePinSingleSource(unittest.TestCase):
         problems = GATE.check_node_pins(self.repo, WANT)
         self.assertEqual(len(problems), 1)
         self.assertIn("node-version '27.0.0'", problems[0])
+
+    def test_matching_node_version_file_passes(self) -> None:
+        self.write(".node-version", f"{WANT}\n")
+        self.assertEqual(GATE.check_node_pins(self.repo, WANT), [])
+
+    def test_differing_node_version_file_fails(self) -> None:
+        self.write(".node-version", "26.0.0\n")
+        problems = GATE.check_node_pins(self.repo, WANT)
+        self.assertEqual(len(problems), 1)
+        self.assertIn(".node-version says '26.0.0'", problems[0])
+
+    def test_empty_node_version_file_fails(self) -> None:
+        self.write(".node-version", "\n")
+        self.assertEqual(len(GATE.check_node_pins(self.repo, WANT)), 1)
 
     def test_major_only_workflow_pin_on_the_same_line_passes(self) -> None:
         self.write(".github/workflows/lint.yml", WORKFLOW.format(version="24"))

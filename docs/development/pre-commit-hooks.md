@@ -195,8 +195,8 @@ The first hook run on a host now downloads that Node.js release into the
 pre-commit cache, whatever `node` is installed. To move the release, change
 `NODE_VERSION` and the pre-commit pin together: Renovate moves them in one
 pull request alongside the workflow pins (the ADR-3312 pattern);
-`python3 scripts/ci/check-workflow-versions.py` refuses a pre-commit pin or a
-`node-version:` workflow input that differs (a major-only input such as `"24"`
+`python3 scripts/ci/check-workflow-versions.py` refuses a pre-commit pin, a
+`.node-version` or a `node-version:` workflow input that differs (a major-only input such as `"24"`
 must name the same major), and
 `python3 -m unittest scripts/ci/tests/test_node_pin_single_source.py` covers the
 check.

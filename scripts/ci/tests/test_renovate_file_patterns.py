@@ -524,9 +524,10 @@ class RustToolchainGroup(unittest.TestCase):
 
 
 # CI Node.js (ADR-3312 pattern): one custom manager owns build-config.env's
-# NODE_VERSION, .pre-commit-config.yaml's default_language_version.node and every
-# workflow `node-version:` pin with an exact three-part version (x.y.z).
+# NODE_VERSION, .pre-commit-config.yaml's default_language_version.node, .node-version
+# and every workflow `node-version:` pin with an exact three-part version (x.y.z).
 PRECOMMIT_CONFIG = ".pre-commit-config.yaml"
+NODE_FILE = ".node-version"
 WORKFLOW_NODE = re.compile(r"node-version:[ \t]*['\"]?([0-9]+\.[0-9]+\.[0-9]+)['\"]?")
 PRECOMMIT_NODE = re.compile(
     r"^default_language_version:[ \t]*\n(?:[ \t]+.*\n)*?[ \t]+node:[ \t]*['\"]?([0-9]+\.[0-9]+\.[0-9]+)['\"]?",
@@ -557,13 +558,15 @@ def node_ci_findings(
     selectors = [re.compile(p[1:-1]) for p in manager.get("managerFilePatterns", [])]
     patterns = [re.compile(to_python(m)) for m in manager.get("matchStrings", [])]
     errors: list[str] = []
-    scope = [CONFIG, PRECOMMIT_CONFIG, *(f for f in files if WORKFLOW.match(f))]
+    scope = [CONFIG, PRECOMMIT_CONFIG, NODE_FILE, *(f for f in files if WORKFLOW.match(f))]
     for path in scope:
         text = read(path)
         if path == CONFIG:
             want = re.findall(r'^NODE_VERSION="([^"]*)"', text, re.MULTILINE)
         elif path == PRECOMMIT_CONFIG:
             want = PRECOMMIT_NODE.findall(text)
+        elif path == NODE_FILE:
+            want = text.split()
         else:
             want = WORKFLOW_NODE.findall(text)
         if not want:
@@ -583,6 +586,8 @@ def node_ci_findings(
         for r in rules
     ):
         errors.append("the github-actions manager still updates node-version")
+    if not any(r.get("matchManagers") == ["nodenv"] and r.get("enabled") is False for r in rules):
+        errors.append("the nodenv manager still updates .node-version")
     if not any(
         r.get("matchManagers") == ["custom.regex"]
         and r.get("matchDepNames") == ["node"]
@@ -652,6 +657,30 @@ class NodeCiVersionGroup(unittest.TestCase):
             ]
 
         self.assertTrue(any("not selected" in e for e in self.findings(drop)))
+
+    def test_manager_without_node_file_fails(self) -> None:
+        def drop(config: dict[str, Any]) -> None:
+            manager = self.manager(config)
+            manager["managerFilePatterns"] = [
+                p for p in manager["managerFilePatterns"] if "node-version" not in p
+            ]
+
+        self.assertIn(f"{NODE_FILE} is not selected by the manager", self.findings(drop))
+
+    def test_nodenv_manager_left_on_fails(self) -> None:
+        def enable(config: dict[str, Any]) -> None:
+            config["packageRules"] = [
+                r for r in config["packageRules"] if r.get("matchManagers") != ["nodenv"]
+            ]
+
+        self.assertIn("the nodenv manager still updates .node-version", self.findings(enable))
+
+    def test_node_file_string_reads_nothing_else(self) -> None:
+        pattern = re.compile(to_python(self.manager(self.config)["matchStrings"][0]))
+        self.assertEqual(pattern.findall("24.22.1\n"), ["24.22.1"])
+        for text in ("name: lint\n24.22.1\n", "24\n", "24.22.1\nmore\n"):
+            with self.subTest(text=text):
+                self.assertIsNone(pattern.search(text))
 
     def test_manager_without_precommit_fails(self) -> None:
         def drop(config: dict[str, Any]) -> None:
