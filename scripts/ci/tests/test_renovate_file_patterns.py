@@ -34,7 +34,7 @@ DOCKERFILE = re.compile(r"^(?:Dockerfile[^/]*|docker/Dockerfile[^/]*|dev/Contain
 CUDA_COMPAT = "docker/dev/ubuntu-26.04-cuda.Dockerfile"
 # The controller store tests' PostgreSQL images (#2656): Go string constants
 # of the form postgres:<tag>@sha256:<digest>, read by a custom manager.
-STORETEST = "cmd/vmafx-controller/store/storetest/storetest.go"
+STORETEST = "cmd/vmafx-controller/internal/storetest/storetest.go"
 IMAGE_CONSTANT = re.compile(
     r'^const (\w+) = "postgres:([^"@]+)@(sha256:[a-f0-9]{64})"$', re.MULTILINE
 )

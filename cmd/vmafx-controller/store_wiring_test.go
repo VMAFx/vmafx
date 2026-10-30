@@ -19,7 +19,7 @@ import (
 
 	"github.com/golusoris/golusoris/jobs"
 
-	"github.com/VMAFx/vmafx/cmd/vmafx-controller/store/storetest"
+	"github.com/VMAFx/vmafx/cmd/vmafx-controller/internal/storetest"
 )
 
 // readyz returns the status of GET /readyz at addr.
