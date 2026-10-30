@@ -108,6 +108,9 @@ testdata/run_sycl_scores.py -text
 testdata/score_backend_selection.json -text
 testdata/scores_cpu_576.json -text
 
+# Reference harness pkg/libvmaf/collapse_test.go compiles; bytes stay the same on every platform.
+pkg/libvmaf/testdata/c_api_pooled_mean.c -text
+
 # BEGIN praetor managed attributes (praetorctl adopt)
 # praetorctl audit hashes these files; keep their checkout bytes the same on every platform.
 .devcontainer/Dockerfile.praetor text eol=lf
