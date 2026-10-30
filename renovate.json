@@ -7,6 +7,9 @@
     ":semanticCommits",
     "helpers:disableTypesNodeMajor"
   ],
+  "postUpdateOptions": [
+    "helmUpdateSubChartArchives"
+  ],
   "schedule": [
     "before 6am on Monday"
   ],
