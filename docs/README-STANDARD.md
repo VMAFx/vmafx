@@ -15,8 +15,9 @@ browser, and narrower on a phone. Every rule below is written for that column.
 Use this list when you write or review a README:
 
 1. Title area: a banner at most 120 pixels tall, never `width="100%"`.
-2. Directly under the banner: one badge block, `style=for-the-badge`, in the
-   fixed group order below. No badges anywhere else at that size.
+2. Directly under the banner: one badge block in the fixed group order below,
+   with every badge served fast enough for GitHub's image proxy (see "Badge
+   sources"). No badges anywhere else at that size.
 3. Under the badges: a one-line tagline in bold, then at most one short
    paragraph that says what the project is.
 4. Diagrams: Mermaid, themed with the palette below; a sized SVG only where
@@ -38,9 +39,9 @@ the VMAFx banner and documentation site.
 | `text` | `#e2e8f0` | light text on dark fills |
 | `muted` | `#94a3b8` | secondary text in the banner |
 
-The badge messages use the three accent colours; every badge sets
-`labelColor=111a35` so the block reads as one band. Workflow-status badges keep
-their own green, red or grey message colour, because that colour is the
+The static badge messages use the three accent colours and set
+`labelColor=111a35` so the block reads as one band. Workflow-status badges are
+GitHub's own and keep its green, red or grey colour, because that colour is the
 status.
 
 ## Hero banner
@@ -57,12 +58,12 @@ status.
 ## Badge block
 
 All badges at the top sit in one block directly under the banner, inside the
-centred header, with `style=for-the-badge`. The groups always come in this
-order; a repository leaves out a group it has nothing for, but never reorders
-them:
+centred header; static badges use `style=for-the-badge`. The groups always
+come in this order; a repository leaves out a group it has nothing for, but
+never reorders them:
 
-1. **Release / version**: the latest release (`github/v/release`, sorted by
-   SemVer).
+1. **Release / version**: the current release as a static badge that
+   release-please keeps up to date (see "Badge sources").
 2. **CI / build**: one workflow-status badge per main workflow, with
    `branch=<default>&event=push`. The badge label is the workflow name, so a
    red badge points at the workflow of the same name.
@@ -87,6 +88,25 @@ A static badge is built from shields.io's path form,
 label is written `--`, `_` becomes a space and `__` an underscore. The
 parameters this standard uses are `style`, `labelColor`, `logo` (a Simple
 Icons name) and `logoColor`.
+
+### Badge sources
+
+GitHub loads every README image through its image proxy (camo), which gives up
+after about four seconds and then shows a broken image. Badges that shields.io
+computes on request (release, workflow status, Scorecard) often take one to
+five seconds when shields.io has no cached copy, so on github.com they broke on
+most page loads. Every badge in the top block therefore comes from a source
+that answers well inside that limit:
+
+| Badge | Source |
+| --- | --- |
+| Workflow status | GitHub's own `https://github.com/<owner>/<repo>/actions/workflows/<file>/badge.svg?branch=<default>&event=push`; GitHub serves it directly, not through the proxy. |
+| Release | A static shields.io badge in query form, `https://img.shields.io/static/v1?label=release&message=v<version>&...`, on a line that ends with `<!-- x-release-please-version -->`. `README.md` is a generic extra file in `release-please-config.json`, so each release PR rewrites the version, and `scripts/release/verify-release-version.sh` checks the marker against the tag. |
+| OpenSSF Best Practices | `https://www.bestpractices.dev/projects/<id>/badge`, served by the project itself. |
+| OpenSSF Scorecard | A static link badge to the Scorecard viewer. The score badge (`api.scorecard.dev/.../badge`) redirects to a computed shields.io badge and is too slow for the proxy. |
+
+Measure a new badge source before adding it: `curl -o /dev/null -w '%{time_total}'`
+on an uncached URL must stay well under four seconds.
 
 ## Tagline and introduction
 
