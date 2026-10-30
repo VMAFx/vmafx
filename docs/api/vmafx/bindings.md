@@ -10,9 +10,9 @@ same stage.
 | :--- | :--- | :--- | :--- |
 | Python | `bindings/python/vmafx/` | VMAFx API (`libvmafx.so.1`) | yes |
 | Rust | `bindings/rust/vmafx-sys/`, `bindings/rust/vmafx/` | `libvmaf.h` compatibility API (`libvmaf.so.3`) | no |
-| Go | none for the C library | (gRPC and REST stubs in `gen/go/`, for the server) | no |
+| Go | `pkg/vmafx/` | VMAFx API (`libvmafx.so.1`) | yes |
 
-Generated Rust and Go bindings of the VMAFx API are tracked in
+Generated Rust bindings of the VMAFx API are tracked in
 [issue 2434](https://github.com/VMAFx/vmafx/issues/2434).
 
 ## Python
@@ -131,13 +131,115 @@ following the [migration table](compat.md).
 
 ## Go
 
-There is no Go binding of the C library. A Go program reaches VMAFx through
-the scoring server instead: `gen/go/` (module `github.com/VMAFx/vmafx/gen/go`,
-package `vmafxv1`) holds the gRPC and REST client stubs generated from
-`proto/` by `scripts/codegen/proto_generate.py`. Their `ScoreOptions` and
-`Provenance` messages come from the same `vmafx.toml`, so they carry the same
-fields as the C structs. A cgo binding of the C API is part of
-[issue 2434](https://github.com/VMAFx/vmafx/issues/2434).
+The Go package `github.com/VMAFx/vmafx/pkg/vmafx` is generated from
+`core/api/vmafx.toml` by `scripts/codegen/vmafx_api/emit_go.py` into two files:
+
+- `pkg/vmafx/status_gen.go`: pure-Go `Status` constants and error sentinels
+  (`ErrInvalid`, `ErrNotFound`, `ErrNotSup`, and the rest of the status table),
+  usable with `CGO_ENABLED=0`.
+- `pkg/vmafx/api_gen.go` (`//go:build cgo`): cgo binding of `libvmafx.so.1`
+  with compile-time `unsafe.Sizeof` and `unsafe.Alignof` checks for every struct
+  in `core/api/vmafx.toml`, Go record types, `Context` and package-level library
+  functions.
+
+### Linking the library
+
+`pkg/vmafx` sets `#cgo CFLAGS: -I${SRCDIR}/../../core/include` and intentionally
+defines no `#cgo pkg-config` or implicit `-L` search fallback ([ADR-1125](../../adr/1125-vmafx-tune-go-port-integration.md)):
+static analysis (`go vet`) runs against the in-tree headers without a pre-built
+shared library, while `go build` and `go test` require `CGO_LDFLAGS` and the
+runtime library path pointing at your VMAFx build or install directory:
+
+```bash
+export CGO_ENABLED=1
+export CGO_LDFLAGS="-L/path/to/build/src -lvmafx"
+export LD_LIBRARY_PATH="/path/to/build/src"
+```
+
+### Scoring
+
+Create a `Context` with `vmafx.New(config)` (or `vmafx.New(nil)` for defaults)
+and release it with `Close()`:
+
+```go
+package main
+
+import (
+    "fmt"
+    "log"
+
+    "github.com/VMAFx/vmafx/pkg/vmafx"
+)
+
+func main() {
+    ctx, err := vmafx.New(nil)
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer func() {
+        if err := ctx.Close(); err != nil {
+            log.Fatal(err)
+        }
+    }()
+
+    if err := ctx.ImportScore("external", 0, 1.5); err != nil {
+        log.Fatal(err)
+    }
+    pooled, err := ctx.FeatureScorePooled("external", vmafx.PoolMean, 0, 0)
+    if err != nil {
+        log.Fatal(err)
+    }
+    fmt.Println(pooled.Feature, pooled.Value) // external 1.5
+}
+```
+
+`Close()` honours the retry-safe teardown contract ([ADR-1336](../../adr/1336-cuda-context-owned-resource-teardown.md)):
+if `vmafx_context_destroy` returns a non-OK status, the `Context` handle stays
+open so `Close()` may be retried; once `Close()` succeeds, subsequent `Close()`
+calls are no-ops returning `nil`.
+
+### Errors
+
+Every non-OK C call reads and frees the `VmafxError` diagnostic and returns a
+`*vmafx.Error` carrying `Function`, `Status`, `Message`, `Subject` and `Errno`.
+`Error.Unwrap()` maps negative statuses to the sentinels in `status_gen.go`
+(`ErrInvalid`, `ErrNotFound`, `ErrNotSup`, which in turn wrap `os.ErrInvalid`,
+`os.ErrNotExist` and `errors.ErrUnsupported`) and maps `StatusPending`
+(`VMAFX_PENDING`) to `vmafx.ErrPending`:
+
+```go
+pooled, err := ctx.FeatureScorePooled("external", vmafx.PoolMean, 0, 10)
+if errors.Is(err, vmafx.ErrPending) {
+    // not every frame is scored yet; ask again later
+} else if err != nil {
+    var vErr *vmafx.Error
+    if errors.As(err, &vErr) {
+        fmt.Println(vErr.Status, vErr.Subject, vErr.Message)
+    }
+}
+```
+
+### What is not wrapped yet
+
+Like the Python binding, `pkg/vmafx` wraps the context methods and library
+functions whose parameters are plain scalar values and output structs. Calls
+that take device handles, callbacks or other handle types remain on the C
+layer; `(c *Context) LibvmafHandle()` returns the underlying `VmafContext *` as
+an `unsafe.Pointer` for calls not yet migrated. For remote scoring over gRPC or
+REST, `gen/go/` (module `github.com/VMAFx/vmafx/gen/go`, package `vmafxv1`)
+provides the generated client and server stubs.
+
+### Tests
+
+Pure-Go status tests run without a built C library; full cgo tests run against
+`libvmafx.so.1`:
+
+```bash
+CGO_ENABLED=0 go test -v ./pkg/vmafx/...
+CGO_ENABLED=1 CGO_LDFLAGS="-L$(pwd)/core/build-cpu/src -lvmaf -lvmafx -lm" \
+  LD_LIBRARY_PATH="$(pwd)/core/build-cpu/src" \
+  go test -v -race -count=1 ./pkg/vmafx/...
+```
 
 ## See also
 
