@@ -143,14 +143,15 @@ func newScoringConfig() *vmafx.ContextConfig {
 // The caller owns the returned model and closes it. A path that does not exist
 // is ErrModelNotFound (os.ErrNotExist) as before the collapse: vmafx reports a
 // missing file as a file error, so the path is checked again after a failed
-// load to keep the errno contract of errors.go.
+// load to keep the errno contract of errors.go. Any other file that is no
+// loadable model maps through mapModelLoadError.
 func loadScoringModel(path, name string) (*vmafx.Model, error) {
 	model, err := vmafx.LoadModelFile(&vmafx.ModelConfig{Name: name}, path)
 	if err != nil {
 		if _, statErr := os.Stat(path); os.IsNotExist(statErr) {
 			return nil, fmt.Errorf("libvmaf: vmafx_model_load_file: %w [%w]", ErrModelNotFound, err)
 		}
-		return nil, mapVmafxError("vmafx_model_load_file", err)
+		return nil, mapModelLoadError(err)
 	}
 	return model, nil
 }

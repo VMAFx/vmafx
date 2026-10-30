@@ -78,6 +78,22 @@ func mapVmafxError(call string, err error) error {
 	return fmt.Errorf("%w [%w]", mapErrno(call, rc), err)
 }
 
+// mapModelLoadError converts a failed model load. The contract of errors.go
+// comes from vmaf_model_load_from_path, which reports a path that exists but
+// cannot be read or parsed as a model (a directory, a .pkl file) as EINVAL, so
+// the file statuses of vmafx map to ErrInvalidArgument here, not to their own
+// errno. Every other status maps as usual.
+func mapModelLoadError(err error) error {
+	var vErr *vmafx.Error
+	if errors.As(err, &vErr) {
+		switch vErr.Status {
+		case vmafx.StatusENotFound, vmafx.StatusEIO, vmafx.StatusENotSup:
+			return fmt.Errorf("%w [%w]", mapErrno("vmafx_model_load_file", -int(syscall.EINVAL)), err)
+		}
+	}
+	return mapVmafxError("vmafx_model_load_file", err)
+}
+
 // mapCloseError converts the error of a context close the way mapCloseRC maps
 // the status of vmaf_close: only an exact success is success, and a failure
 // keeps the *vmafx.Error in its chain.
@@ -89,5 +105,22 @@ func mapCloseError(err error) error {
 	if !ok {
 		return fmt.Errorf("libvmaf: vmafx_context_destroy: %w", err)
 	}
-	return fmt.Errorf("%w [%w]", mapCloseRC(rc), err)
+	return fmt.Errorf("%w [%w]", mapCloseRC(closeStatus(err, rc)), err)
+}
+
+// closeStatus returns the status mapCloseRC judges. errnoOf normalises the
+// sign for mapErrno, which would hide a positive status of the engine: outside
+// the four statuses that fix their errno, a positive errno field stays positive
+// so that mapCloseRC reports it as unexpected instead of reading it as an errno.
+func closeStatus(err error, rc int) int {
+	var vErr *vmafx.Error
+	if !errors.As(err, &vErr) || vErr.Errno <= 0 {
+		return rc
+	}
+	switch vErr.Status {
+	case vmafx.StatusEInvalid, vmafx.StatusENoMem, vmafx.StatusENotFound, vmafx.StatusEIO:
+		return rc
+	default:
+		return int(vErr.Errno)
+	}
 }

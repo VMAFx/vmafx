@@ -212,6 +212,36 @@ func readFrameRaw(t *testing.T, frame *vmafx.Frame, r io.Reader) bool {
 	return true
 }
 
+// submitFixtureFrames submits every frame pair of the two files and returns the
+// frame count; a fixture over the bound fails the test.
+func submitFixtureFrames(t *testing.T, ctx *vmafx.Context, rf, df *os.File, desc vmafx.FrameDesc) int {
+	t.Helper()
+	for n := 0; n < maxFixtureFrames; n++ {
+		rframe, err := vmafx.NewHostFrame(desc)
+		if err != nil {
+			t.Fatalf("NewHostFrame(ref): %v", err)
+		}
+		dframe, err := vmafx.NewHostFrame(desc)
+		if err != nil {
+			t.Fatalf("NewHostFrame(dis): %v", err)
+		}
+		gotRef, gotDis := readFrameRaw(t, rframe, rf), readFrameRaw(t, dframe, df)
+		if gotRef != gotDis {
+			t.Fatalf("ref and dis differ in length at frame %d", n)
+		}
+		if !gotRef {
+			rframe.Close()
+			dframe.Close()
+			return n
+		}
+		if err := ctx.Submit(rframe, dframe, uint64(n)); err != nil {
+			t.Fatalf("Submit(%d): %v", n, err)
+		}
+	}
+	t.Fatalf("fixture holds more than %d frames", maxFixtureFrames)
+	return 0
+}
+
 // vmafxPooled scores the pair by driving pkg/vmafx directly.
 func vmafxPooled(t *testing.T, ref, dis, model string, w, h, bpc int, pool PoolMethod) float64 {
 	t.Helper()
@@ -243,32 +273,7 @@ func vmafxPooled(t *testing.T, ref, dis, model string, w, h, bpc int, pool PoolM
 	}
 	defer func() { _ = df.Close() }()
 	desc := vmafx.FrameDesc{PixFmt: uint32(PixFmtYUV420P), Bpc: uint32(bpc), W: uint32(w), H: uint32(h)}
-	n := 0
-	for ; n < maxFixtureFrames; n++ {
-		rframe, err := vmafx.NewHostFrame(desc)
-		if err != nil {
-			t.Fatalf("NewHostFrame(ref): %v", err)
-		}
-		dframe, err := vmafx.NewHostFrame(desc)
-		if err != nil {
-			t.Fatalf("NewHostFrame(dis): %v", err)
-		}
-		gotRef, gotDis := readFrameRaw(t, rframe, rf), readFrameRaw(t, dframe, df)
-		if gotRef != gotDis {
-			t.Fatalf("ref and dis differ in length at frame %d", n)
-		}
-		if !gotRef {
-			rframe.Close()
-			dframe.Close()
-			break
-		}
-		if err := ctx.Submit(rframe, dframe, uint64(n)); err != nil {
-			t.Fatalf("Submit(%d): %v", n, err)
-		}
-	}
-	if n == maxFixtureFrames {
-		t.Fatalf("fixture holds more than %d frames", maxFixtureFrames)
-	}
+	n := submitFixtureFrames(t, ctx, rf, df, desc)
 	if err := ctx.Flush(); err != nil {
 		t.Fatalf("Flush: %v", err)
 	}
@@ -591,6 +596,13 @@ func TestMapVmafxErrorKeepsTheErrnoContract(t *testing.T) {
 	if got := mapCloseError(&vmafx.Error{Status: vmafx.StatusENoMem, Errno: -12}); !errors.Is(got, ErrOutOfMemory) {
 		t.Fatalf("mapCloseError(ENOMEM) = %v, want ErrOutOfMemory", got)
 	}
+	positive := mapCloseError(&vmafx.Error{Status: vmafx.StatusEInternal, Errno: 12})
+	if positive == nil || errors.Is(positive, ErrOutOfMemory) || !strings.Contains(positive.Error(), "unexpected positive status 12") {
+		t.Fatalf("mapCloseError(positive status) = %v, want the positive status reported", positive)
+	}
+	if got := mapCloseError(&vmafx.Error{Status: vmafx.StatusENoMem, Errno: 12}); !errors.Is(got, ErrOutOfMemory) {
+		t.Fatalf("mapCloseError(ENOMEM with a positive errno field) = %v, want ErrOutOfMemory", got)
+	}
 }
 
 // TestMapVmafxErrorBoundaries covers the statuses with no historic errno: a
@@ -626,8 +638,25 @@ func TestLoadScoringModelErrors(t *testing.T) {
 	if !errors.Is(err, ErrModelNotFound) || !errors.Is(err, os.ErrNotExist) || !errors.Is(err, vmafx.ErrIO) {
 		t.Errorf("missing model: %v, want ErrModelNotFound, os.ErrNotExist and the vmafx error", err)
 	}
-	if _, err := loadScoringModel(t.TempDir(), "m"); err == nil || errors.Is(err, ErrModelNotFound) {
-		t.Errorf("directory as model: %v, want an error that is not ErrModelNotFound", err)
+	var vErr *vmafx.Error
+	_, err = loadScoringModel(t.TempDir(), "m")
+	if errors.Is(err, ErrModelNotFound) || !errors.Is(err, ErrInvalidArgument) ||
+		!errors.Is(err, os.ErrInvalid) || !errors.As(err, &vErr) {
+		t.Errorf("directory as model: %v, want ErrInvalidArgument, os.ErrInvalid and the vmafx error", err)
+	}
+	if err := ValidateModel(t.TempDir()); !errors.Is(err, ErrInvalidArgument) {
+		t.Errorf("ValidateModel(directory) = %v, want ErrInvalidArgument", err)
+	}
+	pkl := filepath.Join(t.TempDir(), "legacy.pkl")
+	if err := os.WriteFile(pkl, []byte("not read"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err = loadScoringModel(pkl, "m")
+	if !errors.Is(err, ErrInvalidArgument) || !errors.Is(err, os.ErrInvalid) || !errors.As(err, &vErr) {
+		t.Errorf("pkl model: %v, want ErrInvalidArgument, os.ErrInvalid and the vmafx error", err)
+	}
+	if err := ValidateModel(pkl); !errors.Is(err, ErrInvalidArgument) {
+		t.Errorf("ValidateModel(pkl) = %v, want ErrInvalidArgument", err)
 	}
 	notModel := filepath.Join(t.TempDir(), "not_a_model.json")
 	if err := os.WriteFile(notModel, []byte(`[]`), 0o600); err != nil {
@@ -705,10 +734,9 @@ func TestRequireGeometryAndModel(t *testing.T) {
 	}
 }
 
-// TestSubprocessSharedHelpers covers what the file-pair and the pipe entry
-// points of the subprocess path share: the failure text, the command and the
-// run set-up.
-func TestSubprocessSharedHelpers(t *testing.T) {
+// TestCLIFailure covers the failure text the file-pair and the pipe entry points
+// of the subprocess path share.
+func TestCLIFailure(t *testing.T) {
 	t.Run("cliFailure_genuine_failure", func(t *testing.T) {
 		stderr := bytes.NewBufferString("boom")
 		err := cliFailure(context.Background(), errors.New("exit status 1"), stderr)
@@ -727,6 +755,12 @@ func TestSubprocessSharedHelpers(t *testing.T) {
 			t.Fatalf("cliFailure = %v", err)
 		}
 	})
+}
+
+// TestSubprocessSharedHelpers covers what the file-pair and the pipe entry
+// points of the subprocess path share besides the failure text: the command and
+// the run set-up.
+func TestSubprocessSharedHelpers(t *testing.T) {
 	t.Run("prepareRun_resolves_and_releases", func(t *testing.T) {
 		dir := t.TempDir()
 		writeModel(t, dir, "m")
