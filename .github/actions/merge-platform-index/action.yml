@@ -1,0 +1,59 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+#
+# Merge the per-platform images a release build pushed by digest into one
+# multi-architecture index, tag it with the metadata-action tags and return
+# the index digest. One implementation for the four publish jobs of
+# docker-publish-operator-node.yml (HISS-19). The calling job has downloaded
+# one empty file per platform digest into `digests-dir`, set up Buildx and
+# logged in to the registry.
+name: Merge platform index
+description: Merge per-platform image digests into one tagged multi-architecture index
+inputs:
+  image:
+    description: Image repository, e.g. ghcr.io/vmafx/vmafx-server
+    required: true
+  meta-json:
+    description: The `json` output of docker/metadata-action (its tags are applied)
+    required: true
+  tag:
+    description: The release tag the index is read back under
+    required: true
+  digests-dir:
+    description: Folder with one file per platform digest, named by the hex digest
+    required: true
+  platforms:
+    description: How many platform digests must be present
+    required: false
+    default: "2"
+outputs:
+  digest:
+    description: Digest of the merged index
+    value: ${{ steps.index.outputs.digest }}
+runs:
+  using: composite
+  steps:
+    - id: index
+      shell: bash
+      working-directory: ${{ inputs.digests-dir }}
+      env:
+        IMAGE: ${{ inputs.image }}
+        META_JSON: ${{ inputs.meta-json }}
+        TAG: ${{ inputs.tag }}
+        PLATFORMS: ${{ inputs.platforms }}
+      run: |
+        mapfile -t digests < <(find . -maxdepth 1 -type f -printf '%f\n' | sort)
+        if [[ "${#digests[@]}" -ne "${PLATFORMS}" ]]; then
+          echo "expected ${PLATFORMS} platform digests, got ${#digests[@]}" >&2
+          exit 1
+        fi
+        mapfile -t tag_args < <(jq -r '.tags[] | "--tag", .' <<< "${META_JSON}")
+        sources=()
+        for digest in "${digests[@]}"; do
+          sources+=("${IMAGE}@sha256:${digest}")
+        done
+        docker buildx imagetools create "${tag_args[@]}" "${sources[@]}"
+        index="$(docker buildx imagetools inspect "${IMAGE}:${TAG}" \
+          --format '{{json .Manifest}}' | jq -r .digest)"
+        docker buildx imagetools inspect "${IMAGE}@${index}"
+        echo "digest=${index}" >> "$GITHUB_OUTPUT"
