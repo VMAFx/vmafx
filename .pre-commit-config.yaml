@@ -5,6 +5,14 @@
 minimum_pre_commit_version: "3.5.0"
 default_install_hook_types: [pre-commit, commit-msg, pre-push]
 fail_fast: false
+# Pin node hooks (markdownlint-cli2) to build-config.env's NODE_VERSION. Without
+# a pin, pre-commit on Windows always builds a nodeenv at "latest", the head of
+# the Node index, and nodeenv fails on a prerelease head such as
+# v27.0.0-alpha.0.0.0 ("invalid literal for int() ... '0-alpha'"). On Linux it
+# used whatever node the host had. check-workflow-versions.py keeps this equal
+# to NODE_VERSION.
+default_language_version:
+  node: "24.22.1"
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -472,7 +480,7 @@ repos:
         name: Base image and toolchain single-source tests
         entry: python3 -m unittest discover -s scripts/ci/tests -p 'test_*single_source.py'
         language: system
-        files: '^(Makefile|\.pre-commit-config\.yaml|build-config\.env|pyproject\.toml|rust-toolchain\.toml|Cargo\.toml|core/src/rust/Cargo\.toml|dev/Containerfile|renovate\.json|Dockerfile|docker/Dockerfile\.[a-z-]+|\.github/workflows/(build|go-ci|libvmaf-build-matrix|rust-ci|tests-and-quality-gates)\.yml|scripts/ci/(check-base-image-single-source\.sh|check-container-image-references\.py|check-cuda-pin-lockstep\.py|check-workflow-versions\.py|check_ort_tarball_pins\.py|tests/test_(base_image|cuda_pin|level_zero|formatter_pins|mypy_python_version|ort_tarball|rust_toolchain)_single_source\.py))$'
+        files: '^(Makefile|\.pre-commit-config\.yaml|build-config\.env|pyproject\.toml|rust-toolchain\.toml|Cargo\.toml|core/src/rust/Cargo\.toml|dev/Containerfile|renovate\.json|Dockerfile|docker/Dockerfile\.[a-z-]+|\.github/workflows/(build|docs|go-ci|libvmaf-build-matrix|lint-and-format|praetor-docs|rust-ci|tests-and-quality-gates)\.yml|scripts/ci/(check-base-image-single-source\.sh|check-container-image-references\.py|check-cuda-pin-lockstep\.py|check-workflow-versions\.py|check_ort_tarball_pins\.py|tests/test_(base_image|cuda_pin|level_zero|formatter_pins|mypy_python_version|node_pin|ort_tarball|rust_toolchain)_single_source\.py))$'
         pass_filenames: false
 
       - id: test-install-cuda-toolkit
