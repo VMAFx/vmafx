@@ -596,7 +596,7 @@ if the Go tool reports cascading fixes, and finish with `make go-fix-check`
 locally.
 
 The store tests start PostgreSQL in a container through testcontainers
-(`cmd/vmafx-controller/store/storetest`, images pinned by digest). Before
+(`cmd/vmafx-controller/internal/storetest`, images pinned by digest). Before
 `go test`, the job runs `scripts/ci/docker-hub-mirror.sh`. The script adds
 `https://mirror.gcr.io` to the runner Docker daemon's `registry-mirrors` and
 restarts the daemon. It fails if `docker info` does not show the mirror. The

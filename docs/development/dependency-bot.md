@@ -59,6 +59,7 @@ the preset's default. Top-level knobs:
 | `prConcurrentLimit` | `3` |
 | `prCreation` | `immediate` |
 | `minimumReleaseAge` | `3 days` (from the preset) |
+| `postUpdateOptions` | `["helmUpdateSubChartArchives"]` |
 
 Check a change with the validator in strict mode, for example:
 
@@ -152,7 +153,7 @@ python3 -m pytest scripts/ci/tests/test_renovate_file_patterns.py -k PythonCiVer
 ### Images pinned in Go source
 
 The controller store tests start PostgreSQL from two Go constants in
-`cmd/vmafx-controller/store/storetest/storetest.go`: `Image`, the release the
+`cmd/vmafx-controller/internal/storetest/storetest.go`: `Image`, the release the
 chart deploys, and `OldestImage`, the oldest release external servers may run.
 Each is a `postgres:<tag>@sha256:<digest>` string, because golusoris
 `testutil/pg` refuses a test image without a digest. No built-in Renovate
@@ -161,12 +162,33 @@ matches both constants and proposes new digests and tags for them. A package
 rule keeps `OldestImage` on its major line (`allowedVersions` `/^16\./`);
 `Image` receives major updates as ordinary manual pull requests.
 
+The package is internal on purpose. A digest update changes the value of both
+constants, which the Go API compatibility gate would report as an incompatible
+change of an exported constant; the gate compares no package with an `internal`
+path element, so these updates pass without a breaking marker.
+
 `test_storetest_postgres_images_are_tracked` and
 `test_oldest_postgres_image_stays_on_its_major` in
 `scripts/ci/tests/test_renovate_file_patterns.py` evaluate the configured
 patterns against the file. They fail when a constant is added that the
 manager does not match, when the manager loses the digest, or when the rule
 stops matching the oldest image.
+
+`cmd/vmafx-controller/internal/storetest/storetest.go` is allowlisted in
+`scripts/ci/classify-dependency-pr.sh` (ADR-1152), so automated Renovate pull
+requests bumping these image digests qualify for the dependency-only
+deliverables checklist exemption without admitting other Go files under `cmd/`.
+
+### Helm subchart archives
+
+When Helm charts retain packaged subcharts in git (`deploy/helm/.../charts/*.tgz`),
+dependency updates to `Chart.lock` must also update the matching subchart
+archives. Top-level `postUpdateOptions: ["helmUpdateSubChartArchives"]` instructs
+Renovate to package or download the updated archive tarball whenever subchart
+dependencies change (#3045, #3047), preventing `helm lint` from rejecting a
+`Chart.lock` whose pinned tarball is missing. `RenovateFilePatterns` in
+`scripts/ci/tests/test_renovate_file_patterns.py` enforces this option whenever
+packaged chart archives are tracked in git.
 
 ## Migration from self-hosted (2026-05-10)
 
