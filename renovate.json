@@ -22,6 +22,7 @@
     "dependencies"
   ],
   "platformAutomerge": true,
+  "commitBody": "Signed-off-by: {{{gitAuthor}}}",
   "osvVulnerabilityAlerts": true,
   "dependencyDashboardOSVVulnerabilitySummary": "all",
   "prCreation": "immediate",
