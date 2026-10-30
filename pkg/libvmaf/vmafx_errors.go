@@ -84,8 +84,7 @@ func mapVmafxError(call string, err error) error {
 // the file statuses of vmafx map to ErrInvalidArgument here, not to their own
 // errno. Every other status maps as usual.
 func mapModelLoadError(err error) error {
-	var vErr *vmafx.Error
-	if errors.As(err, &vErr) {
+	if vErr, ok := errors.AsType[*vmafx.Error](err); ok {
 		switch vErr.Status {
 		case vmafx.StatusENotFound, vmafx.StatusEIO, vmafx.StatusENotSup:
 			return fmt.Errorf("%w [%w]", mapErrno("vmafx_model_load_file", -int(syscall.EINVAL)), err)

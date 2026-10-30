@@ -114,7 +114,7 @@ func scoredContext(t *testing.T, n int) (*Context, *Model) {
 	if err := ctx.UseModel(model); err != nil {
 		t.Fatalf("UseModel: %v", err)
 	}
-	for i := 0; i < n; i++ {
+	for i := range n {
 		if err := ctx.Submit(readFrame(t, ref), readFrame(t, dis), uint64(i)); err != nil {
 			t.Fatalf("Submit(%d): %v", i, err)
 		}
@@ -153,7 +153,7 @@ func TestModelLoadersAndGetters(t *testing.T) {
 	if count == 0 {
 		t.Fatal("FeatureCount() = 0")
 	}
-	for i := uint32(0); i < count; i++ {
+	for i := range count {
 		if model.FeatureName(i) == "" {
 			t.Errorf("FeatureName(%d) is empty inside the count %d", i, count)
 		}

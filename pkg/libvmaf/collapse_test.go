@@ -216,7 +216,7 @@ func readFrameRaw(t *testing.T, frame *vmafx.Frame, r io.Reader) bool {
 // frame count; a fixture over the bound fails the test.
 func submitFixtureFrames(t *testing.T, ctx *vmafx.Context, rf, df *os.File, desc vmafx.FrameDesc) int {
 	t.Helper()
-	for n := 0; n < maxFixtureFrames; n++ {
+	for n := range maxFixtureFrames {
 		rframe, err := vmafx.NewHostFrame(desc)
 		if err != nil {
 			t.Fatalf("NewHostFrame(ref): %v", err)

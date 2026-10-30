@@ -283,7 +283,7 @@ func fillPlane(frame *vmafx.Frame, r io.Reader, planes vmafx.FramePlanes, plane,
 			plane, rows, rowBytes, stride, len(dst), ErrPictureRead)
 	}
 	total := 0
-	for row := 0; row < rows; row++ {
+	for row := range rows {
 		n, err := io.ReadFull(r, dst[row*stride:row*stride+rowBytes])
 		total += n
 		if err != nil {
