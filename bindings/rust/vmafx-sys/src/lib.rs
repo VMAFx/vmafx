@@ -25,3 +25,7 @@ mod bindings {
 pub use bindings::*;
 
 pub mod safe;
+
+#[allow(non_camel_case_types)]
+#[path = "vmafx_api_gen.rs"]
+pub mod vmafx_api;

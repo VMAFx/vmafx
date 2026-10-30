@@ -19,7 +19,7 @@ import (
 	"google.golang.org/grpc/codes"
 
 	"github.com/VMAFx/vmafx/cmd/vmafx-controller/backend"
-	"github.com/VMAFx/vmafx/cmd/vmafx-controller/store/storetest"
+	"github.com/VMAFx/vmafx/cmd/vmafx-controller/internal/storetest"
 	controllerv1 "github.com/VMAFx/vmafx/gen/go/controller"
 )
 

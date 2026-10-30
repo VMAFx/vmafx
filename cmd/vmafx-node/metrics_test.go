@@ -134,7 +134,7 @@ func TestNilNodeMetricsAreNoOps(t *testing.T) {
 // node's HTTP surface: /metrics with the node families, /readyz ready (the
 // scorer is configured).
 func TestNodeHTTPServesMetricsAndProbes(t *testing.T) {
-	writeNodeEnv(t)
+	writeDialableNodeEnv(t)
 	app := fxtest.New(t, productionGraph())
 	app.RequireStart()
 	defer app.RequireStop()
