@@ -173,6 +173,11 @@ patterns against the file. They fail when a constant is added that the
 manager does not match, when the manager loses the digest, or when the rule
 stops matching the oldest image.
 
+`cmd/vmafx-controller/internal/storetest/storetest.go` is allowlisted in
+`scripts/ci/classify-dependency-pr.sh` (ADR-1152), so automated Renovate pull
+requests bumping these image digests qualify for the dependency-only
+deliverables checklist exemption without admitting other Go files under `cmd/`.
+
 ## Migration from self-hosted (2026-05-10)
 
 Removed `.github/workflows/renovate.yml`. The App's webhook-driven model
