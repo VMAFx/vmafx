@@ -34,6 +34,11 @@ Root `Makefile` allowance = exact root-path match too: Renovate
 `custom.regex` bumps `RUFF_VERSION` / `BLACK_VERSION` there with
 pre-commit revs (#1588). Nested Makefiles, `*.mk` stay gated.
 
+`cmd/vmafx-controller/internal/storetest/storetest.go` allowance = exact
+path match (#3039): Renovate's custom regex manager updates PostgreSQL
+`Image` and `OldestImage` digest constants there (#2656). Sibling Go files
+and other code under `cmd/` stay gated.
+
 CI Python interpreter = one group PR across `build-config.env` +
 `.github/workflows/*` (ADR-3312); both paths already allowlisted, group PR
 stays exempt. Never re-enable `github-actions` manager for dep `python`:
@@ -55,4 +60,4 @@ see [`docs/research/1152-dependency-classifier-surface-audit.md`](../../../docs/
 | Script | Workflow lane(s) that invoke it | What couples them |
 | --- | --- | --- |
 | `classify-dependency-pr.sh` | `rule-enforcement.yml` — `deep-dive-checklist` and `doc-substance-check` jobs ([ADR-1152](../../../docs/adr/1152-dependency-pr-gate-exemption.md)) | Reads `$PR_AUTHOR`, `$HEAD_REF`, `$BASE_SHA`, `$HEAD_SHA` from workflow env. exemption is author-AND-path-gated and must never be widened to path glob alone. Bot identity requires `renovate[bot]` / `dependabot[bot]` (or `app/renovate` / `app/dependabot`), or `renovate/*` / `dependabot/*` branch, AND all changed paths must be in explicit manifest/lockfile allowlist. Only `requirements/*` has subtree authority for generic `.in` and `manifest.json` files; never restore basename-wide `*.in` or `manifest.json` exemptions (`core/include/libvmaf/version.h.in` is negative fixture). Bot PRs touching source code must still satisfy both documentation gates. Test suite: `scripts/ci/test-classify-dependency-pr.sh`. |
-| `test-classify-dependency-pr.sh` | (local-only fixture driver, not invoked by CI) | Run before pushing changes to `classify-dependency-pr.sh`; exercises dependency-only and mixed source diffs, named `requirements*.in` inputs versus unrelated `.in` templates, non-bot authors, and real PR fixtures (#1206, #1207, #1212, #1214). |
+| `test-classify-dependency-pr.sh` | (local-only fixture driver, not invoked by CI) | Run before pushing changes to `classify-dependency-pr.sh`; exercises dependency-only and mixed source diffs, named `requirements*.in` inputs versus unrelated `.in` templates, non-bot authors, and real PR fixtures (#1206, #1207, #1212, #1214, #3039). |

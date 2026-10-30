@@ -34,7 +34,7 @@ DOCKERFILE = re.compile(r"^(?:Dockerfile[^/]*|docker/Dockerfile[^/]*|dev/Contain
 CUDA_COMPAT = "docker/dev/ubuntu-26.04-cuda.Dockerfile"
 # The controller store tests' PostgreSQL images (#2656): Go string constants
 # of the form postgres:<tag>@sha256:<digest>, read by a custom manager.
-STORETEST = "cmd/vmafx-controller/store/storetest/storetest.go"
+STORETEST = "cmd/vmafx-controller/internal/storetest/storetest.go"
 IMAGE_CONSTANT = re.compile(
     r'^const (\w+) = "postgres:([^"@]+)@(sha256:[a-f0-9]{64})"$', re.MULTILINE
 )
@@ -235,6 +235,43 @@ class RenovateFilePatterns(unittest.TestCase):
         major = int(tags["OldestImage"].split(".", 1)[0])
         self.assertTrue(allowed.search(f"{major}.99-alpine"))
         self.assertFalse(allowed.search(f"{major + 1}.0-alpine"))
+
+    def test_helm_subchart_archives_option_set_when_charts_tracked(self) -> None:
+        # Renovate #3045 / #3047: git tracks deploy/helm/.../charts/*.tgz, so
+        # renovate.json must include helmUpdateSubChartArchives in postUpdateOptions.
+        tracked_archives = [
+            path for path in self.files if re.search(r"(?:^|/)charts/[^/]+\.tgz$", path)
+        ]
+        self.assertTrue(tracked_archives, "Expected tracked Helm chart archives in repository")
+        self.assertEqual(helm_subchart_findings(self.config, self.files), [])
+
+    def test_helm_subchart_archives_option_missing_fails(self) -> None:
+        fake_config = json.loads(json.dumps(self.config))
+        if "postUpdateOptions" in fake_config:
+            fake_config["postUpdateOptions"] = [
+                opt
+                for opt in fake_config["postUpdateOptions"]
+                if opt != "helmUpdateSubChartArchives"
+            ]
+        errors = helm_subchart_findings(fake_config, self.files)
+        self.assertTrue(any("missing from postUpdateOptions" in e for e in errors))
+
+
+def helm_subchart_findings(config: dict[str, Any], files: list[str]) -> list[str]:
+    """Require postUpdateOptions: ['helmUpdateSubChartArchives'] in renovate.json
+    when packaged Helm subchart archives (*.tgz under charts/) are git-tracked.
+    Without this option, Renovate updates Chart.lock but leaves the old archive
+    in place, causing helm lint to fail on absent archives (#3045, #3047)."""
+    tracked_archives = [path for path in files if re.search(r"(?:^|/)charts/[^/]+\.tgz$", path)]
+    if not tracked_archives:
+        return []
+    options = config.get("postUpdateOptions", [])
+    if "helmUpdateSubChartArchives" not in options:
+        return [
+            f"tracked Helm chart archives present ({tracked_archives}) but "
+            "'helmUpdateSubChartArchives' missing from postUpdateOptions"
+        ]
+    return []
 
 
 # The CI Python interpreter (ADR-3312): one custom manager owns
