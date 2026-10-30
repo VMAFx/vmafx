@@ -511,6 +511,13 @@ absent or skipped, never failed: the names the run's CI tier does not owe, the
 operator switch is off. `scripts/ci/tests/test_aggregator_absent_fails.py`
 runs the embedded script against both rules.
 
+The aggregator's GitHub API calls (`getWorkflowRun`, `listAllCheckRuns`,
+`pullRequestSuites`) retry HTTP 5xx answers for 15 minutes. If the API still
+answers 5xx, the job fails with `Transient GitHub API failure:`, the call and
+the status, and judges no check: rerun the job, because the code did not fail.
+Any other API error ends the job at once.
+`scripts/ci/tests/test_ci_aggregator_tier.py` runs both paths against a stub.
+
 ### Release legs
 
 Three contexts gate what the release and tester workflows build on a pull
