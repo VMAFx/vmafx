@@ -34,7 +34,7 @@ from support import (
     run,
     tool,
 )
-from vmafx_api import cli, emit_go, emit_layout_test
+from vmafx_api import cli, emit_go, emit_layout_test, emit_rust
 from vmafx_api.layout import DATA_MODELS, layouts, models_agree
 from vmafx_api.loader import parse
 
@@ -253,6 +253,38 @@ class GoBindingLayoutTest(unittest.TestCase):
             root = Path(tmp)
             render_into(root, api)
             self.assertEqual(quiet(cli.check, root, {"pkg/vmafx/api_gen.go": planted_go}), 1)
+
+
+class RustBindingLayoutTest(unittest.TestCase):
+    def test_planted_struct_size_in_model_reaches_rust_layout_assertions(self) -> None:
+        api = parse(fixture())
+        base_rust = emit_rust.sys_text(api)
+        self.assertIn("core::mem::size_of::<VmafxFrameImport>() == 216", base_rust)
+        self.assertIn("core::mem::align_of::<VmafxFrameImport>() == 8", base_rust)
+        frame = api.struct("VmafxFrameImport")
+        planted_fields = tuple(
+            replace(f, count=4) if f.name == "plane" else f for f in frame.fields
+        )
+        planted_structs = tuple(
+            replace(s, fields=planted_fields) if s.name == "VmafxFrameImport" else s
+            for s in api.structs
+        )
+        planted_api = replace(api, structs=planted_structs)
+        planted_rust = emit_rust.sys_text(planted_api)
+        self.assertIn("core::mem::size_of::<VmafxFrameImport>() == 248", planted_rust)
+        self.assertIn("core::mem::align_of::<VmafxFrameImport>() == 8", planted_rust)
+        self.assertNotIn("core::mem::size_of::<VmafxFrameImport>() == 216", planted_rust)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            render_into(root, api)
+            self.assertEqual(
+                quiet(
+                    cli.check,
+                    root,
+                    {"bindings/rust/vmafx-sys/src/vmafx_api_gen.rs": planted_rust},
+                ),
+                1,
+            )
 
 
 if __name__ == "__main__":

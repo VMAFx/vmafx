@@ -75,6 +75,7 @@
 //! integration tests in `bindings/rust/vmafx/tests/` and the C-level example in
 //! `docs/api/rust-bindings.md`.
 
+pub mod api_gen;
 mod context;
 mod error;
 mod model;
