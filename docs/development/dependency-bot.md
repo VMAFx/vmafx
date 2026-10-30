@@ -59,6 +59,7 @@ the preset's default. Top-level knobs:
 | `prConcurrentLimit` | `3` |
 | `prCreation` | `immediate` |
 | `minimumReleaseAge` | `3 days` (from the preset) |
+| `postUpdateOptions` | `["helmUpdateSubChartArchives"]` |
 
 Check a change with the validator in strict mode, for example:
 
@@ -177,6 +178,17 @@ stops matching the oldest image.
 `scripts/ci/classify-dependency-pr.sh` (ADR-1152), so automated Renovate pull
 requests bumping these image digests qualify for the dependency-only
 deliverables checklist exemption without admitting other Go files under `cmd/`.
+
+### Helm subchart archives
+
+When Helm charts retain packaged subcharts in git (`deploy/helm/.../charts/*.tgz`),
+dependency updates to `Chart.lock` must also update the matching subchart
+archives. Top-level `postUpdateOptions: ["helmUpdateSubChartArchives"]` instructs
+Renovate to package or download the updated archive tarball whenever subchart
+dependencies change (#3045, #3047), preventing `helm lint` from rejecting a
+`Chart.lock` whose pinned tarball is missing. `RenovateFilePatterns` in
+`scripts/ci/tests/test_renovate_file_patterns.py` enforces this option whenever
+packaged chart archives are tracked in git.
 
 ## Migration from self-hosted (2026-05-10)
 
