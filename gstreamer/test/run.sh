@@ -8,7 +8,9 @@
 #
 # CPU_BUILD_DIR defaults to build-cpu, CUDA_BUILD_DIR to build-cuda (the CUDA tests run when it
 # exists and the plug-in was built with GStreamer CUDA). Exit 77 when the GStreamer development
-# files are missing.
+# files are missing. GST_VMAFX_PYTHON names the interpreter that has PyGObject (default python3);
+# GST_VMAFX_STRICT=1 makes a missing CPU fixture, gi module, glupload or test input a failure
+# (the CI job sets it).
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 root=$(cd "$here/../.." && pwd)
@@ -42,5 +44,6 @@ if [ -d "$cuda" ] && pkg-config --exists gstreamer-cuda-1.0; then
   export VMAFX_CUDA_LIB_DIR="$cuda/src"
   export VMAF_CUDA_CLI="$cuda/tools/vmaf"
 fi
-python3 "$here/test_gst_vmafx_properties.py" -v
-exec python3 "$here/test_gst_vmafx_parity.py" -v
+python=${GST_VMAFX_PYTHON:-python3}
+"$python" "$here/test_gst_vmafx_properties.py" -v
+exec "$python" "$here/test_gst_vmafx_parity.py" -v

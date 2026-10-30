@@ -145,6 +145,8 @@ MSVC_LEG_SELECTORS = {"windows_msvc_sycl"}
 # The upstream consumer job folded into ffmpeg-integration.yml keeps the path
 # filter its own workflow had (SAST check-suite budget).
 CONSUMER_SELECTORS = {"upstream_consumers"}
+# ADR-3390: the GStreamer element job builds and tests only when its inputs change.
+GSTREAMER_SELECTORS = {"gstreamer_element"}
 # ADR-3338: the dev-container build a light-tier pull request owes when it
 # touches the image's own inputs.
 DEV_CONTAINER_LANE_SELECTORS = {"dev_container_inputs"}
@@ -153,6 +155,7 @@ OWN_PATHS_ONLY = (
     | MSVC_LEG_SELECTORS
     | TIDY_SELECTORS
     | CONSUMER_SELECTORS
+    | GSTREAMER_SELECTORS
     | DEV_CONTAINER_LANE_SELECTORS
 )
 
