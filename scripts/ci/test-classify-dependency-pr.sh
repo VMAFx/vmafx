@@ -477,6 +477,29 @@ DIFF
 expect_exit "storetest.go plus core/src/x.c source is NOT exempt" 1 "renovate[bot]" \
   "renovate/postgres-digests" "${work}/case40_storetest_plus_source.diff"
 
+# Renovate's CI Node.js group moves all four Node pins in one pull request (#3217).
+cat >"${work}/case41_pr3217_node_group.diff" <<'DIFF'
+.github/workflows/docs.yml
+.github/workflows/lint-and-format.yml
+.node-version
+.pre-commit-config.yaml
+build-config.env
+DIFF
+expect_exit "PR #3217 fixture (CI Node.js group) is exempt" 0 "app/renovate" \
+  "renovate/major-ci-node.js" "${work}/case41_pr3217_node_group.diff"
+
+cat >"${work}/case42_nested_node_version.diff" <<'DIFF'
+tools/markdownlint/.node-version
+DIFF
+expect_exit "nested .node-version is NOT exempt" 1 "renovate[bot]" \
+  "renovate/major-ci-node.js" "${work}/case42_nested_node_version.diff"
+
+cat >"${work}/case43_human_node_version.diff" <<'DIFF'
+.node-version
+DIFF
+expect_exit "human author editing .node-version is NOT exempt" 1 "developer" \
+  "feat/node-pin" "${work}/case43_human_node_version.diff"
+
 echo ""
 echo "test-classify-dependency-pr: ${pass_count} passed, ${fail_count} failed"
 

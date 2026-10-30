@@ -161,10 +161,17 @@ when it is absent, so it stays on our release. The check also refuses a missing
 `.node-version`.
 `scripts/ci/check-workflow-versions.py` refuses a pull
 request in which any copy differs from `build-config.env` (a major-only workflow
-input such as `"24"` must name the same major). Renovate's built-in
+input such as `"24"` must name the same major). The one dated exception is
+`praetor-docs.yml`, declared in `.config/lint-exceptions.d/node-version-pin.toml`:
+the engine locks that file byte for byte, and the current engine pin still writes
+major 24 into it. The entry is removed with the pin move that brings the engine's
+`.node-version` read, and an expired entry fails the check. Renovate's built-in
 `github-actions` manager reads only the workflow pins, so its pull requests
 raised the workflow pins without `build-config.env` and
 `.pre-commit-config.yaml` and failed the single-source gate.
+
+`.node-version` is allowlisted in `scripts/ci/classify-dependency-pr.sh`
+(ADR-1152), so this group qualifies for the dependency-only deliverables exemption.
 
 Following the ADR-3312 pattern, one custom manager (`depNameTemplate: node`,
 `datasourceTemplate: github-releases`,
