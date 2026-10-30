@@ -123,6 +123,10 @@
         {
           "type": "generic",
           "path": "build-config.env"
+        },
+        {
+          "type": "generic",
+          "path": "README.md"
         }
       ],
       "_comment_changelog_notes": "GitHub generates the release body from the merged pull requests rather than from commit subjects (ADR-1233). Sections come from .github/release.yml, which groups BY LABEL -- so .github/workflows/pr-type-label.yml derives a type:* label from each PR's Conventional-Commit prefix. Without that labeler every PR falls into the catch-all: 32 of the last 40 merged PRs carried no label at all. changelog-sections below still drives CHANGELOG.md, which is rendered from changelog.d fragments, so both surfaces stay meaningful.",
