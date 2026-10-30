@@ -6,7 +6,7 @@
 # pull-through mirror (default mirror.gcr.io), so hosted runners stop hitting Docker Hub's
 # anonymous pull limit. The pattern is golusoris #741's: the mirror is set on the Docker
 # daemon, so it also covers the testcontainers pulls inside `go test` (the PostgreSQL images
-# of cmd/vmafx-controller/store/storetest). Pinned digests stay valid: the mirror serves the
+# of cmd/vmafx-controller/internal/storetest). Pinned digests stay valid: the mirror serves the
 # same content addresses.
 #
 # Usage:

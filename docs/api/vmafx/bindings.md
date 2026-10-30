@@ -1,19 +1,15 @@
 # Language bindings
 
 The VMAFx C API is defined once, in `core/api/vmafx.toml`; the C headers, this
-reference and the Python binding are generated from that definition. This page
-says which language bindings exist today, which API each one wraps and how to
-load it. Read it before choosing a binding: the three languages are not at the
-same stage.
+reference and the language bindings are generated from that definition. This
+page says which language bindings exist today, which API each one wraps and how
+to load it.
 
 | Language | Package in the source tree | Wraps | Generated from `vmafx.toml` |
 | :--- | :--- | :--- | :--- |
 | Python | `bindings/python/vmafx/` | VMAFx API (`libvmafx.so.1`) | yes |
-| Rust | `bindings/rust/vmafx-sys/`, `bindings/rust/vmafx/` | `libvmaf.h` compatibility API (`libvmaf.so.3`) | no |
+| Rust | `bindings/rust/vmafx-sys/`, `bindings/rust/vmafx/` | VMAFx API (`libvmafx.so.1`) and `libvmaf.h` compatibility API (`libvmaf.so.3`) | yes |
 | Go | `pkg/vmafx/` | VMAFx API (`libvmafx.so.1`) | yes |
-
-Generated Rust bindings of the VMAFx API are tracked in
-[issue 2434](https://github.com/VMAFx/vmafx/issues/2434).
 
 ## Python
 
@@ -109,25 +105,105 @@ python3 scripts/ci/run_meson_test.py -- -C build test_vmafx_python_binding
 
 ## Rust
 
-Two crates sit in `bindings/rust/`. Both wrap the `libvmaf.h` compatibility
-API, not the VMAFx API, and neither is generated from `vmafx.toml` yet.
+Two crates sit in `bindings/rust/`. The VMAFx C API binding is generated from
+`core/api/vmafx.toml` by `scripts/codegen/vmafx_api/emit_rust.py` into three
+files alongside the existing `libvmaf.h` compatibility surface:
 
-- `vmafx-sys` holds the raw FFI, produced by bindgen from
-  `${LIBVMAF_PREFIX}/include/libvmaf/libvmaf.h` and linked against
-  `${LIBVMAF_PREFIX}/lib/libvmaf.so` (`LIBVMAF_PREFIX` defaults to
-  `/usr/local`).
-- `vmafx` is the safe layer (phase 1 of
-  [ADR-0929](../../adr/0929-rust-safe-binding-scaffold.md)): `Context`, `Model`,
-  `Picture`, `Score`, `PoolingMethod` and a `Result<T, vmafx::Error>`.
-  `Context::read_pictures()` takes ownership of the pictures, `Context` is not
-  `Send`, and `Model` and `Picture` are `Send` but not `Sync`.
+- `bindings/rust/vmafx-sys/src/vmafx_api_gen.rs` (`vmafx_sys::vmafx_api`):
+  `#[repr(C)]` struct definitions, opaque handles, status and enum constants,
+  `unsafe extern "C"` declarations for `libvmafx.so.1`, and compile-time
+  `core::mem::size_of` / `core::mem::align_of` assertions for every struct in
+  `core/api/vmafx.toml`.
+- `bindings/rust/vmafx/src/status_gen.rs` (`vmafx::Status`): status enum and
+  `POSIX` errno mapping, usable without linking the C library.
+- `bindings/rust/vmafx/src/api_gen.rs` (`vmafx::api_gen`): safe RAII `Context`,
+  owned Rust record structs, structured `Error` (`std::error::Error` and
+  `Display`), and package-level library functions.
 
-Usage, ownership rules and the example program are in the crate's
-[README](https://github.com/VMAFx/vmafx/blob/master/bindings/rust/vmafx/README.md).
-Code written against these crates keeps working while the compatibility
-library ships; it moves to the generated binding of
-[issue 2434](https://github.com/VMAFx/vmafx/issues/2434) when that lands,
-following the [migration table](compat.md).
+The legacy `libvmaf.h` bindgen surface in `vmafx-sys` and the phase-1 `libvmaf`
+wrappers at the crate root of `vmafx`
+([ADR-0929](../../adr/0929-rust-safe-binding-scaffold.md),
+[README](https://github.com/VMAFx/vmafx/blob/master/bindings/rust/vmafx/README.md))
+remain available while callers migrate (see the [migration table](compat.md)).
+
+### Linking the library
+
+`vmafx-sys/build.rs` searches `${LIBVMAF_PREFIX}` first, then `/usr/local` and
+`/usr`, and links both `libvmaf` and `libvmafx` (`-lvmaf -lvmafx`). Point
+`LIBVMAF_PREFIX` at your VMAFx installation prefix and `LD_LIBRARY_PATH` at its
+library directory (setting `DOCS_RS=1` compiles against the in-tree
+`core/include` headers without native linking):
+
+```bash
+export LIBVMAF_PREFIX="/usr/local"
+export LD_LIBRARY_PATH="${LIBVMAF_PREFIX}/lib"
+```
+
+### Scoring
+
+Create a `vmafx::api_gen::Context` with `Context::new(config)` (or
+`Context::new(None)` for defaults) and release it with `close()` or `Drop`:
+
+```rust
+use vmafx::api_gen::{Context, Error, Pool};
+
+fn main() -> Result<(), Error> {
+    let ctx = Context::new(None)?;
+    ctx.import_score("external", 0, 1.5)?;
+    let pooled = ctx.feature_score_pooled("external", Pool::MEAN, 0, 0)?;
+    println!("{} {}", pooled.feature, pooled.value); // external 1.5
+    ctx.close()?;
+    Ok(())
+}
+```
+
+`Context::close(self)` and `Drop` honour the retry-safe teardown contract
+([ADR-1336](../../adr/1336-cuda-context-owned-resource-teardown.md)): if
+`vmafx_context_destroy` returns a non-OK status, `close()` returns
+`Err((ctx, err))` handing the live `Context` back so teardown may be retried,
+while `Drop` retries once and never panics.
+
+### Errors
+
+Every non-OK C call reads and frees the `VmafxError` diagnostic and returns a
+`vmafx::api_gen::Error` carrying `function`, `status` (`vmafx::Status`),
+`message`, `subject` and `errno`. Calls that return `VMAFX_PENDING` map to
+`Status::Pending` (`err.is_pending()`):
+
+```rust
+use vmafx::Status;
+use vmafx::api_gen::Pool;
+
+match ctx.feature_score_pooled("external", Pool::MEAN, 0, 10) {
+    Ok(pooled) => println!("{}", pooled.value),
+    Err(err) if err.status == Status::Pending => {
+        // not every frame is scored yet; ask again later
+    }
+    Err(err) => eprintln!("{} {}: {}", err.status.as_str(), err.subject, err.message),
+}
+```
+
+### What is not wrapped yet
+
+Like the Python and Go bindings, `vmafx::api_gen` wraps the context methods and
+library functions whose parameters are plain scalar values and output structs.
+Calls that take device handles, callbacks or other handle types remain on the
+raw `vmafx_sys::vmafx_api` and `vmafx_sys` FFI layer; `ctx.libvmaf_handle()`
+returns the underlying `*mut vmafx_sys::VmafContext` (and `ctx.as_raw()` returns
+`*mut vmafx_sys::vmafx_api::VmafxContext`) for calls not yet migrated.
+
+### Tests
+
+Header, library-search and status tests run under `DOCS_RS=1` without a built C
+library; full integration tests in `bindings/rust/vmafx/tests/api_gen.rs` run
+against `libvmafx.so.1`:
+
+```bash
+DOCS_RS=1 cargo test -p vmafx-sys --test header_check --test library_search
+DOCS_RS=1 cargo test -p vmafx --test status
+LIBVMAF_PREFIX="/usr/local" LD_LIBRARY_PATH="/usr/local/lib" \
+  cargo test -p vmafx --test api_gen
+```
 
 ## Go
 

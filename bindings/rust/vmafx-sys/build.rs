@@ -40,6 +40,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(lib_dir) = &paths.lib_dir {
         println!("cargo:rustc-link-search=native={}", lib_dir.display());
         println!("cargo:rustc-link-lib=dylib=vmaf");
+        println!("cargo:rustc-link-lib=dylib=vmafx");
     }
     generate_bindings(&paths.include_dir)
 }

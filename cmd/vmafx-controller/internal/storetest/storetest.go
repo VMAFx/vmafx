@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: EUPL-1.2
 // Copyright 2026 Lusoris
 //
-// cmd/vmafx-controller/store/storetest/storetest.go — a migrated PostgreSQL
+// cmd/vmafx-controller/internal/storetest/storetest.go — a migrated PostgreSQL
 // database for tests of the store and of the packages built on it.
 
 // Package storetest starts PostgreSQL in a container (golusoris testutil/pg),
