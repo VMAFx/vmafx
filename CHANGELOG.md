@@ -1062,6 +1062,9 @@
   partial score. See [frame pools](docs/usage/ffmpeg.md#frame-pools).
 
 
+- Generate the Go cgo binding of the VMAFx C API (`pkg/vmafx/api_gen.go`) from `core/api/vmafx.toml` with compile-time struct layout assertions, record types, `Context` methods, library functions, and structured `*Error` / `ErrPending` diagnostics (issue 2434).
+
+
 - **Model and feature specification strings in the VMAFx API (RC4 WP9, ABI 0.1.11).**
   `vmafx_model_load_spec()` loads the model a string such as
   `version=vmaf_v0.6.1:name=vmaf:disable_clip` or
@@ -2303,6 +2306,20 @@
   to make first. See ADR-2198.
 
 
+- **Four large CI workflows fit the praetor engine's 64 KiB input bound
+  again.** `docker-publish-operator-node.yml`, `libvmaf-build-matrix.yml`,
+  `lint-and-format.yml` and `tests-and-quality-gates.yml` had grown past
+  64 KiB, so the engine's `rust-msrv` audit stopped reading the tree. Their
+  long comments now live in
+  [`docs/development/ci-workflow-notes/`](docs/development/ci-workflow-notes/tests-and-quality-gates.md).
+  Repeated run blocks moved into tested scripts: the published-image smoke
+  tests into `scripts/release/smoke-published-image.sh`, the four index
+  merges into the `merge-platform-index` composite action, and the cached
+  apt installs of the test workflow into `scripts/ci/apt-install-cached.sh`.
+  The new `check-workflow-size` pre-commit hook fails any workflow above
+  64 KiB.
+
+
 - **icx and the clang-cl style drivers stop warning about our own compile flags.** `icx` and `icpx`
   reported `-ffp-contract=off` after `-fp-model=precise` as `-Woverriding-option` on every compile
   (7,300 times in one CI leg). The strict policy now spells `-fp-model=precise -fno-fast-math
@@ -2936,6 +2953,16 @@
   `d141862c430b`, whose API gate builds go-apidiff in a pinned build module with x/tools v0.51.0.
 
 
+- Local Git hooks: pre-commit's node hooks (`markdownlint-cli2`) now run on
+  Node.js 24.22.1, the `NODE_VERSION` in `build-config.env`. Unpinned,
+  pre-commit on Windows built them at the newest entry of the Node.js index,
+  and a prerelease there (`v27.0.0-alpha.0.0.0`) made nodeenv fail and the
+  `Windows Lefthook Pre-Commit` job red on master.
+  `scripts/ci/check-workflow-versions.py` now refuses a pre-commit or
+  `setup-node` pin that differs from `NODE_VERSION`
+  ([pre-commit hooks](docs/development/pre-commit-hooks.md#node-hooks-run-on-a-pinned-nodejs-release)).
+
+
 - Process control: every place that signals a child's process group now goes
   through `signal_process_group()` in `scripts/lib/safe_subprocess.py`, which
   refuses a target that is not an `int` above 1 or that is the caller's own
@@ -2962,6 +2989,16 @@ Intel Quick Sync Video (QSV) tuning now probes ICQ once per device, encoder and 
   failing nvidia-smi (exit 18 after a driver update that leaves the kernel module and the library at
   different versions) ended every run, `--dry-run` included. The kit now writes
   `nvidia-smi failed: exit N, no GPU inventory` into `host.txt` and goes on.
+
+
+- **The README badges render on github.com again.** GitHub's image proxy
+  gives up after about four seconds, and the shields.io badges computed on
+  request often took longer, so most badges showed as broken images. The
+  workflow badges now use GitHub's own `badge.svg`, the Best Practices badge
+  comes from bestpractices.dev, the release badge is static and kept current
+  by release-please (`README.md` is now a release-please extra file), and the
+  Scorecard badge is a static link to the Scorecard viewer. The rules are in
+  [`docs/README-STANDARD.md`](docs/README-STANDARD.md#badge-sources).
 
 
 - Docs tooling: `scripts/docs/concat-rebase-notes.sh --lint` now requires a
@@ -3103,6 +3140,17 @@ Intel Quick Sync Video (QSV) tuning now probes ICQ once per device, encoder and 
   `scripts/test/zerocopy-e2e.sh` checks the zero-copy path against host upload
   and the CPU on an Intel GPU
   ([SYCL zero-copy testing](docs/development/sycl-zerocopy-testing.md)).
+
+
+- **SYCL imports V210 and RGB frames like CUDA and HIP.** The V210 read
+  and the RGB layouts added for CUDA and HIP never reached the SYCL
+  backend: an imported V210 frame scored differently from the same frame
+  uploaded from the host, and RGB imports had no conversion kernel. The
+  SYCL gather now reads the grouped V210 form and a new kernel converts
+  RGB with the host's integer plan (`rgb_math.h`), so every format cell
+  scores bit for bit as the host frame on an Arc A380. The Vulkan fence
+  test opens each frame's gate only after that frame was submitted, so a
+  skipped acquire wait is caught on slower devices as well.
 
 
 - **SYCL: `speed_chroma` and `speed_temporal` no longer differ from the CPU by
