@@ -64,6 +64,7 @@ def _encoder_line(row: Encoder) -> str:
         row.hardware,
         row.licence_class,
         row.maintenance,
+        ", ".join(row.use_cases + row.artifact_domains),
         ", ".join(row.surfaces),
         row.checked,
     )
@@ -89,7 +90,12 @@ windows and presets from it, so the two tools cannot disagree about a codec.
 A row whose status is `implemented` runs today on the surfaces it names. Every
 other row is a gap that is planned, only listed (proprietary or reference
 software), or waiting for a licence decision. `checked` is the date the row's
-upstream state and licence were last verified.
+upstream state and licence were last verified;
+`python3 scripts/codegen/check-encoder-upstreams.py` repeats that check against
+FFmpeg master and each row's forge. Rows of class `distortion-source` are not
+delivery candidates: they produce one degradation corpus per artifact domain
+(DCT blocking, wavelet blur, vector-quantisation mosaic, lossless reference) to
+calibrate the metrics.
 
 To use an encoder, pass its id to the subcommand's `--encoder` or `--codec`
 option (for example `vmaf-tune corpus --encoder libx265` or
@@ -99,8 +105,8 @@ subcommand, not on the tool); pass `ID@VARIANT` to select a fork build
 
 ## Encoders
 
-| Id | Family | Class | Paradigm | Status | FFmpeg encoder | Hardware | Licence class | Upstream | Surfaces | Checked |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Id | Family | Class | Paradigm | Status | FFmpeg encoder | Hardware | Licence class | Upstream | Use cases | Surfaces | Checked |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 """
 
 VARIANTS_HEAD = """

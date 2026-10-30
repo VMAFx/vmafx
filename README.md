@@ -9,18 +9,18 @@
 
   <!-- README-STANDARD badge block: one group, fixed order (docs/README-STANDARD.md) -->
   <!-- 1 release/version -->
-  [![Release](https://img.shields.io/github/v/release/VMAFx/vmafx?sort=semver&style=for-the-badge&label=release&color=3b82f6&labelColor=111a35)](https://github.com/VMAFx/vmafx/releases)
+  [![Release](https://img.shields.io/static/v1?label=release&message=v1.0.0-rc.3&style=for-the-badge&color=3b82f6&labelColor=111a35)](https://github.com/VMAFx/vmafx/releases) <!-- x-release-please-version -->
   <!-- 2 CI/build -->
-  [![Tests](https://img.shields.io/github/actions/workflow/status/VMAFx/vmafx/tests-and-quality-gates.yml?branch=master&event=push&style=for-the-badge&label=Tests&logo=githubactions&logoColor=white&labelColor=111a35)](https://github.com/VMAFx/vmafx/actions/workflows/tests-and-quality-gates.yml)
-  [![Builds](https://img.shields.io/github/actions/workflow/status/VMAFx/vmafx/libvmaf-build-matrix.yml?branch=master&event=push&style=for-the-badge&label=Builds&logo=githubactions&logoColor=white&labelColor=111a35)](https://github.com/VMAFx/vmafx/actions/workflows/libvmaf-build-matrix.yml)
-  [![Lint](https://img.shields.io/github/actions/workflow/status/VMAFx/vmafx/lint-and-format.yml?branch=master&event=push&style=for-the-badge&label=Lint&logo=githubactions&logoColor=white&labelColor=111a35)](https://github.com/VMAFx/vmafx/actions/workflows/lint-and-format.yml)
-  [![FFmpeg](https://img.shields.io/github/actions/workflow/status/VMAFx/vmafx/ffmpeg-integration.yml?branch=master&event=push&style=for-the-badge&label=FFmpeg&logo=githubactions&logoColor=white&labelColor=111a35)](https://github.com/VMAFx/vmafx/actions/workflows/ffmpeg-integration.yml)
-  [![Go](https://img.shields.io/github/actions/workflow/status/VMAFx/vmafx/go-ci.yml?branch=master&event=push&style=for-the-badge&label=Go&logo=githubactions&logoColor=white&labelColor=111a35)](https://github.com/VMAFx/vmafx/actions/workflows/go-ci.yml)
-  [![Rust](https://img.shields.io/github/actions/workflow/status/VMAFx/vmafx/rust-ci.yml?branch=master&event=push&style=for-the-badge&label=Rust&logo=githubactions&logoColor=white&labelColor=111a35)](https://github.com/VMAFx/vmafx/actions/workflows/rust-ci.yml)
+  [![Tests](https://github.com/VMAFx/vmafx/actions/workflows/tests-and-quality-gates.yml/badge.svg?branch=master&event=push)](https://github.com/VMAFx/vmafx/actions/workflows/tests-and-quality-gates.yml)
+  [![Builds](https://github.com/VMAFx/vmafx/actions/workflows/libvmaf-build-matrix.yml/badge.svg?branch=master&event=push)](https://github.com/VMAFx/vmafx/actions/workflows/libvmaf-build-matrix.yml)
+  [![Lint](https://github.com/VMAFx/vmafx/actions/workflows/lint-and-format.yml/badge.svg?branch=master&event=push)](https://github.com/VMAFx/vmafx/actions/workflows/lint-and-format.yml)
+  [![FFmpeg](https://github.com/VMAFx/vmafx/actions/workflows/ffmpeg-integration.yml/badge.svg?branch=master&event=push)](https://github.com/VMAFx/vmafx/actions/workflows/ffmpeg-integration.yml)
+  [![Go](https://github.com/VMAFx/vmafx/actions/workflows/go-ci.yml/badge.svg?branch=master&event=push)](https://github.com/VMAFx/vmafx/actions/workflows/go-ci.yml)
+  [![Rust](https://github.com/VMAFx/vmafx/actions/workflows/rust-ci.yml/badge.svg?branch=master&event=push)](https://github.com/VMAFx/vmafx/actions/workflows/rust-ci.yml)
   <!-- 3 security/scorecard -->
-  [![Security](https://img.shields.io/github/actions/workflow/status/VMAFx/vmafx/security-scans.yml?branch=master&event=push&style=for-the-badge&label=Security&logo=githubactions&logoColor=white&labelColor=111a35)](https://github.com/VMAFx/vmafx/actions/workflows/security-scans.yml)
-  [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/VMAFx/vmafx/badge?style=for-the-badge)](https://scorecard.dev/viewer/?uri=github.com/VMAFx/vmafx)
-  [![OpenSSF Best Practices](https://img.shields.io/cii/level/14549?style=for-the-badge&label=OpenSSF%20Best%20Practices&labelColor=111a35)](https://www.bestpractices.dev/projects/14549)
+  [![Security](https://github.com/VMAFx/vmafx/actions/workflows/security-scans.yml/badge.svg?branch=master&event=push)](https://github.com/VMAFx/vmafx/actions/workflows/security-scans.yml)
+  [![OpenSSF Scorecard](https://img.shields.io/badge/OpenSSF-Scorecard-06b6d4?style=for-the-badge&labelColor=111a35)](https://scorecard.dev/viewer/?uri=github.com/VMAFx/vmafx)
+  [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/14549/badge)](https://www.bestpractices.dev/projects/14549)
   <!-- 4 standards -->
   [![HISS-21](https://img.shields.io/badge/Standards-HISS--21-06b6d4?style=for-the-badge&logo=nasa&labelColor=111a35)](AGENTS.md)
   [![Power of 10](https://img.shields.io/badge/NASA_JPL-Power_of_10-3b82f6?style=for-the-badge&logo=nasa&labelColor=111a35)](docs/principles.md)

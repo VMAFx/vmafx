@@ -179,6 +179,27 @@ reproduces the defect in a throwaway linked worktree with a node hook, and
 `make` runs it with the other hook tests; it skips, naming the missing tool,
 when `npm` or `pre-commit` is absent.
 
+### Node hooks run on a pinned Node.js release
+
+`default_language_version.node` in `.pre-commit-config.yaml` pins every
+`language: node` hook (today `markdownlint-cli2`) to `NODE_VERSION` from
+`build-config.env`, the release CI's `setup-node` steps install. Without the
+pin, pre-commit on Windows always builds the hook environment at nodeenv's
+`latest`, which is the head of the Node.js release index even when that head is
+a prerelease; on 2026-10-29 it was `v27.0.0-alpha.0.0.0`, nodeenv 1.11.0 failed
+with `ValueError: invalid literal for int() with base 10: '0-alpha'`, and the
+`Windows Lefthook Pre-Commit` job on master went red. On Linux and macOS the
+framework used whatever `node` the host had instead.
+
+The first hook run on a host now downloads that Node.js release into the
+pre-commit cache, whatever `node` is installed. To move the release, change
+`NODE_VERSION` and the pre-commit pin together:
+`python3 scripts/ci/check-workflow-versions.py` refuses a pre-commit pin or a
+`node-version:` workflow input that differs (a major-only input such as `"24"`
+must name the same major), and
+`python3 -m unittest scripts/ci/tests/test_node_pin_single_source.py` covers the
+check.
+
 ## Post-commit private-state synchronization
 
 The post-commit state hook resolves both the active worktree and Git's common

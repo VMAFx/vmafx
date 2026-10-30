@@ -150,6 +150,7 @@ if [ "${#extra_files[@]}" -eq 0 ]; then
     "mcp-server/vmaf-mcp/src/vmaf_mcp/__init__.py"
     "deploy/helm/vmafx/Chart.yaml"
     "build-config.env"
+    "README.md"
   )
 fi
 

@@ -559,6 +559,11 @@ nav:
       - Perf gate: development/perf-gate.md
       - Pre-commit hooks: development/pre-commit-hooks.md
       - CI job names: development/ci-job-names.md
+      - CI workflow notes:
+          - Docker publish (operator, node): development/ci-workflow-notes/docker-publish-operator-node.md
+          - libvmaf build matrix: development/ci-workflow-notes/libvmaf-build-matrix.md
+          - Lint and format: development/ci-workflow-notes/lint-and-format.md
+          - Tests and quality gates: development/ci-workflow-notes/tests-and-quality-gates.md
       - Self-hosted SYCL runner (Arc): development/ci-self-hosted-sycl.md
       - Publishing artifacts: development/publishing.md
       - Distribution manifest: development/distribution.md

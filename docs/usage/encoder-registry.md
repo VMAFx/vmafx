@@ -12,7 +12,12 @@ windows and presets from it, so the two tools cannot disagree about a codec.
 A row whose status is `implemented` runs today on the surfaces it names. Every
 other row is a gap that is planned, only listed (proprietary or reference
 software), or waiting for a licence decision. `checked` is the date the row's
-upstream state and licence were last verified.
+upstream state and licence were last verified;
+`python3 scripts/codegen/check-encoder-upstreams.py` repeats that check against
+FFmpeg master and each row's forge. Rows of class `distortion-source` are not
+delivery candidates: they produce one degradation corpus per artifact domain
+(DCT blocking, wavelet blur, vector-quantisation mosaic, lossless reference) to
+calibrate the metrics.
 
 To use an encoder, pass its id to the subcommand's `--encoder` or `--codec`
 option (for example `vmaf-tune corpus --encoder libx265` or
@@ -22,29 +27,124 @@ subcommand, not on the tool); pass `ID@VARIANT` to select a fork build
 
 ## Encoders
 
-| Id | Family | Class | Paradigm | Status | FFmpeg encoder | Hardware | Licence class | Upstream | Surfaces | Checked |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `av1_amf` | av1 | delivery | classic | implemented | `av1_amf` | amf | unknown | unknown | go, python | 2026-10-29 |
-| `av1_nvenc` | av1 | delivery | classic | implemented | `av1_nvenc` | nvenc | unknown | unknown | go, python | 2026-10-29 |
-| `av1_qsv` | av1 | delivery | classic | implemented | `av1_qsv` | qsv | unknown | unknown | go, python | 2026-10-29 |
-| `av1_videotoolbox` | av1 | delivery | classic | implemented | `av1_videotoolbox` | videotoolbox | unknown | unknown | go, python | 2026-10-29 |
-| `h264_amf` | h264 | delivery | classic | implemented | `h264_amf` | amf | unknown | unknown | go, python | 2026-10-29 |
-| `h264_nvenc` | h264 | delivery | classic | implemented | `h264_nvenc` | nvenc | unknown | unknown | go, python | 2026-10-29 |
-| `h264_qsv` | h264 | delivery | classic | implemented | `h264_qsv` | qsv | unknown | unknown | go, python | 2026-10-29 |
-| `h264_videotoolbox` | h264 | delivery | classic | implemented | `h264_videotoolbox` | videotoolbox | unknown | unknown | go, python | 2026-10-29 |
-| `hevc_amf` | hevc | delivery | classic | implemented | `hevc_amf` | amf | unknown | unknown | go, python | 2026-10-29 |
-| `hevc_nvenc` | hevc | delivery | classic | implemented | `hevc_nvenc` | nvenc | unknown | unknown | go, python | 2026-10-29 |
-| `hevc_qsv` | hevc | delivery | classic | implemented | `hevc_qsv` | qsv | unknown | unknown | go, python | 2026-10-29 |
-| `hevc_videotoolbox` | hevc | delivery | classic | implemented | `hevc_videotoolbox` | videotoolbox | unknown | unknown | go, python | 2026-10-29 |
-| `libaom-av1` | av1 | delivery | classic | implemented | `libaom-av1` | — | unknown | unknown | go, python | 2026-10-29 |
-| `libsvtav1` | av1 | delivery | classic | implemented | `libsvtav1` | — | unknown | unknown | go, python | 2026-10-29 |
-| `libvpx-vp9` | vp9 | delivery | classic | implemented | `libvpx-vp9` | — | unknown | unknown | go, python | 2026-10-29 |
-| `libvvenc` | vvc | delivery | classic | implemented | `libvvenc` | — | unknown | unknown | go, python | 2026-10-29 |
-| `libx264` | h264 | delivery | classic | implemented | `libx264` | — | unknown | unknown | go, python | 2026-10-29 |
-| `libx265` | hevc | delivery | classic | implemented | `libx265` | — | unknown | unknown | go, python | 2026-10-29 |
-| `prores_videotoolbox` | prores | mezzanine | classic | implemented | `prores_videotoolbox` | videotoolbox | unknown | unknown | go, python | 2026-10-29 |
+| Id | Family | Class | Paradigm | Status | FFmpeg encoder | Hardware | Licence class | Upstream | Use cases | Surfaces | Checked |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `av1_amf` | av1 | delivery | classic | implemented | `av1_amf` | amf | unknown | unknown | vod-ladder | go, python | 2026-10-29 |
+| `av1_nvenc` | av1 | delivery | classic | implemented | `av1_nvenc` | nvenc | unknown | unknown | vod-ladder | go, python | 2026-10-29 |
+| `av1_qsv` | av1 | delivery | classic | implemented | `av1_qsv` | qsv | unknown | unknown | vod-ladder | go, python | 2026-10-29 |
+| `av1_videotoolbox` | av1 | delivery | classic | implemented | `av1_videotoolbox` | videotoolbox | unknown | unknown | vod-ladder | go, python | 2026-10-29 |
+| `h264_amf` | h264 | delivery | classic | implemented | `h264_amf` | amf | unknown | unknown | vod-ladder | go, python | 2026-10-29 |
+| `h264_nvenc` | h264 | delivery | classic | implemented | `h264_nvenc` | nvenc | unknown | unknown | vod-ladder | go, python | 2026-10-29 |
+| `h264_qsv` | h264 | delivery | classic | implemented | `h264_qsv` | qsv | unknown | unknown | vod-ladder | go, python | 2026-10-29 |
+| `h264_videotoolbox` | h264 | delivery | classic | implemented | `h264_videotoolbox` | videotoolbox | unknown | unknown | vod-ladder | go, python | 2026-10-29 |
+| `hevc_amf` | hevc | delivery | classic | implemented | `hevc_amf` | amf | unknown | unknown | vod-ladder | go, python | 2026-10-29 |
+| `hevc_nvenc` | hevc | delivery | classic | implemented | `hevc_nvenc` | nvenc | unknown | unknown | vod-ladder | go, python | 2026-10-29 |
+| `hevc_qsv` | hevc | delivery | classic | implemented | `hevc_qsv` | qsv | unknown | unknown | vod-ladder | go, python | 2026-10-29 |
+| `hevc_videotoolbox` | hevc | delivery | classic | implemented | `hevc_videotoolbox` | videotoolbox | unknown | unknown | vod-ladder | go, python | 2026-10-29 |
+| `libaom-av1` | av1 | delivery | classic | implemented | `libaom-av1` | — | permissive | active | vod-ladder | go, python | 2026-10-29 |
+| `libsvtav1` | av1 | delivery | classic | implemented | `libsvtav1` | — | permissive | active | vod-ladder | go, python | 2026-10-29 |
+| `libvpx-vp9` | vp9 | delivery | classic | implemented | `libvpx-vp9` | — | permissive | active | vod-ladder | go, python | 2026-10-29 |
+| `libvvenc` | vvc | delivery | classic | implemented | `libvvenc` | — | permissive | active | vod-ladder | go, python | 2026-10-29 |
+| `libx264` | h264 | delivery | classic | implemented | `libx264` | — | copyleft-strong | active | vod-ladder | go, python | 2026-10-29 |
+| `libx265` | hevc | delivery | classic | implemented | `libx265` | — | copyleft-strong | active | vod-ladder | go, python | 2026-10-29 |
+| `prores_videotoolbox` | prores | mezzanine | classic | implemented | `prores_videotoolbox` | videotoolbox | unknown | unknown | vod-ladder | go, python | 2026-10-29 |
+| `librav1e` | av1 | delivery | classic | planned | `librav1e` | — | permissive | active | vod-ladder | — | 2026-10-29 |
+| `libkvazaar` | hevc | delivery | classic | planned | `libkvazaar` | — | permissive | active | vod-ladder, low-latency | — | 2026-10-29 |
+| `libopenh264` | h264 | delivery | classic | planned | `libopenh264` | — | patent-licensed-binary | active | low-latency | — | 2026-10-29 |
+| `libvpx` | vp8 | delivery | classic | planned | `libvpx` | — | permissive | active | vod-ladder | — | 2026-10-29 |
+| `libxeve` | evc | delivery | classic | planned | `libxeve` | — | permissive | active | vod-ladder | — | 2026-10-29 |
+| `evc-main` | evc | delivery | classic | decision | cli | — | unknown | active | — | — | 2026-10-29 |
+| `libxavs2` | avs2 | delivery | classic | planned | `libxavs2` | — | copyleft-strong | dead | broadcast-hrd | — | 2026-10-29 |
+| `uavs3e` | avs3 | delivery | classic | planned | cli | — | permissive | dead | broadcast-hrd | — | 2026-10-29 |
+| `uvg266` | vvc | delivery | classic | planned | cli | — | permissive | slow | vod-ladder, low-latency | — | 2026-10-29 |
+| `vtm` | vvc | research | classic | planned | cli | — | permissive | active | calibration | — | 2026-10-29 |
+| `svt-hevc` | hevc | delivery | classic | listed | cli | — | permissive | archived | — | — | 2026-10-29 |
+| `svt-vp9` | vp9 | delivery | classic | listed | cli | — | permissive | slow | — | — | 2026-10-29 |
+| `avm` | av2 | research | classic | planned | cli | — | permissive | active | calibration | — | 2026-10-29 |
+| `mpeg2video` | mpeg2 | delivery | classic | planned | `mpeg2video` | — | copyleft-weak | unknown | broadcast-hrd, interlaced | — | 2026-10-29 |
+| `av1_vaapi` | av1 | delivery | classic | planned | `av1_vaapi` | vaapi | copyleft-weak | unknown | vod-ladder | — | 2026-10-29 |
+| `av1_vulkan` | av1 | delivery | classic | planned | `av1_vulkan` | vulkan | copyleft-weak | unknown | vod-ladder | — | 2026-10-29 |
+| `av1_mediacodec` | av1 | delivery | classic | planned | `av1_mediacodec` | mediacodec | copyleft-weak | unknown | vod-ladder | — | 2026-10-29 |
+| `hevc_vaapi` | hevc | delivery | classic | planned | `hevc_vaapi` | vaapi | copyleft-weak | unknown | vod-ladder | — | 2026-10-29 |
+| `hevc_vulkan` | hevc | delivery | classic | planned | `hevc_vulkan` | vulkan | copyleft-weak | unknown | vod-ladder | — | 2026-10-29 |
+| `hevc_mediacodec` | hevc | delivery | classic | planned | `hevc_mediacodec` | mediacodec | copyleft-weak | unknown | vod-ladder | — | 2026-10-29 |
+| `h264_vaapi` | h264 | delivery | classic | planned | `h264_vaapi` | vaapi | copyleft-weak | unknown | vod-ladder | — | 2026-10-29 |
+| `h264_vulkan` | h264 | delivery | classic | planned | `h264_vulkan` | vulkan | copyleft-weak | unknown | vod-ladder | — | 2026-10-29 |
+| `h264_mediacodec` | h264 | delivery | classic | planned | `h264_mediacodec` | mediacodec | copyleft-weak | unknown | vod-ladder | — | 2026-10-29 |
+| `vp9_qsv` | vp9 | delivery | classic | planned | `vp9_qsv` | qsv | copyleft-weak | unknown | vod-ladder | — | 2026-10-29 |
+| `vp9_vaapi` | vp9 | delivery | classic | planned | `vp9_vaapi` | vaapi | copyleft-weak | unknown | vod-ladder | — | 2026-10-29 |
+| `vp9_mediacodec` | vp9 | delivery | classic | planned | `vp9_mediacodec` | mediacodec | copyleft-weak | unknown | vod-ladder | — | 2026-10-29 |
+| `vp8_vaapi` | vp8 | delivery | classic | planned | `vp8_vaapi` | vaapi | copyleft-weak | unknown | vod-ladder | — | 2026-10-29 |
+| `mpeg2_qsv` | mpeg2 | delivery | classic | planned | `mpeg2_qsv` | qsv | copyleft-weak | unknown | broadcast-hrd, interlaced | — | 2026-10-29 |
+| `mpeg2_vaapi` | mpeg2 | delivery | classic | planned | `mpeg2_vaapi` | vaapi | copyleft-weak | unknown | broadcast-hrd, interlaced | — | 2026-10-29 |
+| `prores_ks` | prores | mezzanine | classic | planned | `prores_ks` | — | copyleft-weak | unknown | intra-camera | — | 2026-10-29 |
+| `prores_aw` | prores | mezzanine | classic | planned | `prores_aw` | — | copyleft-weak | unknown | intra-camera | — | 2026-10-29 |
+| `prores_ks_vulkan` | prores | mezzanine | classic | planned | `prores_ks_vulkan` | vulkan | copyleft-weak | unknown | intra-camera | — | 2026-10-29 |
+| `dnxhd` | dnxhd | mezzanine | classic | planned | `dnxhd` | — | copyleft-weak | unknown | intra-camera | — | 2026-10-29 |
+| `jpeg2000` | jpeg2000 | mezzanine | classic | planned | `jpeg2000` | — | copyleft-weak | unknown | intra-camera | — | 2026-10-29 |
+| `libopenjpeg` | jpeg2000 | mezzanine | classic | planned | `libopenjpeg` | — | permissive | active | intra-camera | — | 2026-10-29 |
+| `ffv1` | ffv1 | lossless | classic | planned | `ffv1` | — | copyleft-weak | unknown | lossless-archive | — | 2026-10-29 |
+| `ffv1_vulkan` | ffv1 | lossless | classic | planned | `ffv1_vulkan` | vulkan | copyleft-weak | unknown | lossless-archive | — | 2026-10-29 |
+| `libx264rgb` | h264 | lossless | classic | planned | `libx264rgb` | — | copyleft-strong | active | lossless-archive | — | 2026-10-29 |
+| `libsvtjpegxs` | jpeg-xs | low-latency | classic | planned | `libsvtjpegxs` | — | permissive | active | low-latency, intra-camera | — | 2026-10-29 |
+| `hap` | texture | texture | classic | planned | `hap` | — | copyleft-weak | unknown | texture-playback | — | 2026-10-29 |
+| `notchlc` | texture | texture | classic | decision | sdk | — | proprietary-sdk | unknown | — | — | 2026-10-29 |
+| `bink` | texture | texture | classic | decision | sdk | — | proprietary-sdk | unknown | — | — | 2026-10-29 |
+| `lcevc-dec` | lcevc | decode-only | ml-assisted | planned | decode-only | — | permissive | active | vod-ladder | — | 2026-10-29 |
+| `lcevc-encoder-sdk` | lcevc | delivery | ml-assisted | decision | sdk | — | proprietary-sdk | unknown | — | — | 2026-10-29 |
+| `jvet-nnvc` | vvc | research | hybrid-neural | planned | cli | — | unknown | active | calibration | — | 2026-10-29 |
+| `dcvc` | neural | research | neural-e2e | planned | cli | — | permissive | active | calibration | — | 2026-10-29 |
+| `nerv` | neural | research | neural-e2e | planned | cli | — | unknown | dead | calibration | — | 2026-10-29 |
+| `hnerv` | neural | research | neural-e2e | planned | cli | — | unknown | dead | calibration | — | 2026-10-29 |
+| `cool-chic` | neural | research | neural-e2e | planned | cli | — | permissive | active | calibration | — | 2026-10-29 |
+| `maxine-sdk` | neural | research | ml-assisted | decision | sdk | — | proprietary-sdk | unknown | — | — | 2026-10-29 |
+| `commercial-hevc-sdk` | hevc | commercial-listed | classic | decision | sdk | — | proprietary-sdk | unknown | — | — | 2026-10-29 |
+| `commercial-avc-sdk` | h264 | commercial-listed | classic | decision | sdk | — | proprietary-sdk | unknown | — | — | 2026-10-29 |
+| `commercial-vvc-sdk` | vvc | commercial-listed | classic | decision | sdk | — | proprietary-sdk | unknown | — | — | 2026-10-29 |
+| `mpeg1video` | legacy | distortion-source | classic | planned | `mpeg1video` | — | copyleft-weak | unknown | calibration, dct-blocking | — | 2026-10-29 |
+| `mpeg4` | legacy | distortion-source | classic | planned | `mpeg4` | — | copyleft-weak | unknown | calibration, dct-blocking | — | 2026-10-29 |
+| `msmpeg4v2` | legacy | distortion-source | classic | planned | `msmpeg4v2` | — | copyleft-weak | unknown | calibration, dct-blocking | — | 2026-10-29 |
+| `msmpeg4v3` | legacy | distortion-source | classic | planned | `msmpeg4v3` | — | copyleft-weak | unknown | calibration, dct-blocking | — | 2026-10-29 |
+| `h263` | legacy | distortion-source | classic | planned | `h263` | — | copyleft-weak | unknown | calibration, dct-blocking | — | 2026-10-29 |
+| `h263p` | legacy | distortion-source | classic | planned | `h263p` | — | copyleft-weak | unknown | calibration, dct-blocking | — | 2026-10-29 |
+| `flv` | legacy | distortion-source | classic | planned | `flv` | — | copyleft-weak | unknown | calibration, dct-blocking | — | 2026-10-29 |
+| `wmv1` | legacy | distortion-source | classic | planned | `wmv1` | — | copyleft-weak | unknown | calibration, dct-blocking | — | 2026-10-29 |
+| `wmv2` | legacy | distortion-source | classic | planned | `wmv2` | — | copyleft-weak | unknown | calibration, dct-blocking | — | 2026-10-29 |
+| `rv10` | legacy | distortion-source | classic | planned | `rv10` | — | copyleft-weak | unknown | calibration, dct-blocking | — | 2026-10-29 |
+| `rv20` | legacy | distortion-source | classic | planned | `rv20` | — | copyleft-weak | unknown | calibration, dct-blocking | — | 2026-10-29 |
+| `mjpeg` | legacy | distortion-source | classic | planned | `mjpeg` | — | copyleft-weak | unknown | calibration, dct-blocking | — | 2026-10-29 |
+| `dvvideo` | legacy | distortion-source | classic | planned | `dvvideo` | — | copyleft-weak | unknown | calibration, dct-blocking | — | 2026-10-29 |
+| `libxvid` | legacy | distortion-source | classic | planned | `libxvid` | — | copyleft-strong | unknown | calibration, dct-blocking | — | 2026-10-29 |
+| `libtheora` | legacy | distortion-source | classic | planned | `libtheora` | — | permissive | unknown | calibration, dct-blocking | — | 2026-10-29 |
+| `mjpeg_qsv` | legacy | distortion-source | classic | planned | `mjpeg_qsv` | qsv | copyleft-weak | unknown | calibration, dct-blocking | — | 2026-10-29 |
+| `mjpeg_vaapi` | legacy | distortion-source | classic | planned | `mjpeg_vaapi` | vaapi | copyleft-weak | unknown | calibration, dct-blocking | — | 2026-10-29 |
+| `snow` | legacy | distortion-source | classic | planned | `snow` | — | copyleft-weak | unknown | calibration, wavelet-blur | — | 2026-10-29 |
+| `vc2` | legacy | distortion-source | classic | planned | `vc2` | — | copyleft-weak | unknown | calibration, wavelet-blur | — | 2026-10-29 |
+| `cinepak` | legacy | distortion-source | classic | planned | `cinepak` | — | copyleft-weak | unknown | calibration, vq-mosaic | — | 2026-10-29 |
+| `svq1` | legacy | distortion-source | classic | planned | `svq1` | — | copyleft-weak | unknown | calibration, vq-mosaic | — | 2026-10-29 |
+| `rpza` | legacy | distortion-source | classic | planned | `rpza` | — | copyleft-weak | unknown | calibration, vq-mosaic | — | 2026-10-29 |
+| `msvideo1` | legacy | distortion-source | classic | planned | `msvideo1` | — | copyleft-weak | unknown | calibration, vq-mosaic | — | 2026-10-29 |
+| `huffyuv` | legacy | distortion-source | classic | planned | `huffyuv` | — | copyleft-weak | unknown | calibration, lossless-reference | — | 2026-10-29 |
+| `ffvhuff` | legacy | distortion-source | classic | planned | `ffvhuff` | — | copyleft-weak | unknown | calibration, lossless-reference | — | 2026-10-29 |
+| `utvideo` | legacy | distortion-source | classic | planned | `utvideo` | — | copyleft-weak | unknown | calibration, lossless-reference | — | 2026-10-29 |
+| `vp6` | legacy | distortion-source | classic | listed | decode-only | — | copyleft-weak | unknown | calibration, dct-blocking | — | 2026-10-29 |
+| `vc1` | legacy | distortion-source | classic | listed | decode-only | — | copyleft-weak | unknown | calibration, dct-blocking | — | 2026-10-29 |
+| `rv40` | legacy | distortion-source | classic | listed | decode-only | — | copyleft-weak | unknown | calibration, dct-blocking | — | 2026-10-29 |
+| `svq3` | legacy | distortion-source | classic | listed | decode-only | — | copyleft-weak | unknown | calibration, dct-blocking | — | 2026-10-29 |
+| `indeo3` | legacy | distortion-source | classic | listed | decode-only | — | copyleft-weak | unknown | calibration, vq-mosaic | — | 2026-10-29 |
+| `indeo5` | legacy | distortion-source | classic | listed | decode-only | — | copyleft-weak | unknown | calibration, wavelet-blur | — | 2026-10-29 |
+| `dirac` | legacy | distortion-source | classic | listed | decode-only | — | copyleft-weak | unknown | calibration, wavelet-blur | — | 2026-10-29 |
+| `lagarith` | legacy | distortion-source | classic | listed | decode-only | — | copyleft-weak | unknown | calibration, lossless-reference | — | 2026-10-29 |
 
 ## Variants
 
 | Token | Kind | Status | Licence class | Checked |
 | --- | --- | --- | --- | --- |
+| `libsvtav1@svt-av1-hdr` | runtime-fork | implemented | permissive | 2026-10-29 |
+| `libsvtav1@svt-av1-psyex` | runtime-fork | planned | permissive | 2026-10-29 |
+| `libx265@grain` | tuning-profile | planned | copyleft-strong | 2026-10-29 |
+| `libx265@texture` | tuning-profile | planned | copyleft-strong | 2026-10-29 |
+| `libx264@psy-rd` | tuning-profile | planned | copyleft-strong | 2026-10-29 |
+| `libx264@psy-trellis` | tuning-profile | planned | copyleft-strong | 2026-10-29 |
+| `libx264@mbtree` | tuning-profile | planned | copyleft-strong | 2026-10-29 |
+| `libx264@grain` | tuning-profile | planned | copyleft-strong | 2026-10-29 |

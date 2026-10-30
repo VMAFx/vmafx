@@ -12,10 +12,12 @@
       "licence_class": "unknown",
       "maintenance": "unknown",
       "upstream": "",
+      "awaits_ffmpeg": false,
       "checked": "2026-10-29",
       "use_cases": [
         "vod-ladder"
       ],
+      "artifact_domains": [],
       "surfaces": [
         "go",
         "python"
@@ -67,10 +69,12 @@
       "licence_class": "unknown",
       "maintenance": "unknown",
       "upstream": "",
+      "awaits_ffmpeg": false,
       "checked": "2026-10-29",
       "use_cases": [
         "vod-ladder"
       ],
+      "artifact_domains": [],
       "surfaces": [
         "go",
         "python"
@@ -122,10 +126,12 @@
       "licence_class": "unknown",
       "maintenance": "unknown",
       "upstream": "",
+      "awaits_ffmpeg": false,
       "checked": "2026-10-29",
       "use_cases": [
         "vod-ladder"
       ],
+      "artifact_domains": [],
       "surfaces": [
         "go",
         "python"
@@ -174,10 +180,12 @@
       "licence_class": "unknown",
       "maintenance": "unknown",
       "upstream": "",
+      "awaits_ffmpeg": true,
       "checked": "2026-10-29",
       "use_cases": [
         "vod-ladder"
       ],
+      "artifact_domains": [],
       "surfaces": [
         "go",
         "python"
@@ -228,10 +236,12 @@
       "licence_class": "unknown",
       "maintenance": "unknown",
       "upstream": "",
+      "awaits_ffmpeg": false,
       "checked": "2026-10-29",
       "use_cases": [
         "vod-ladder"
       ],
+      "artifact_domains": [],
       "surfaces": [
         "go",
         "python"
@@ -283,10 +293,12 @@
       "licence_class": "unknown",
       "maintenance": "unknown",
       "upstream": "",
+      "awaits_ffmpeg": false,
       "checked": "2026-10-29",
       "use_cases": [
         "vod-ladder"
       ],
+      "artifact_domains": [],
       "surfaces": [
         "go",
         "python"
@@ -338,10 +350,12 @@
       "licence_class": "unknown",
       "maintenance": "unknown",
       "upstream": "",
+      "awaits_ffmpeg": false,
       "checked": "2026-10-29",
       "use_cases": [
         "vod-ladder"
       ],
+      "artifact_domains": [],
       "surfaces": [
         "go",
         "python"
@@ -390,10 +404,12 @@
       "licence_class": "unknown",
       "maintenance": "unknown",
       "upstream": "",
+      "awaits_ffmpeg": false,
       "checked": "2026-10-29",
       "use_cases": [
         "vod-ladder"
       ],
+      "artifact_domains": [],
       "surfaces": [
         "go",
         "python"
@@ -444,10 +460,12 @@
       "licence_class": "unknown",
       "maintenance": "unknown",
       "upstream": "",
+      "awaits_ffmpeg": false,
       "checked": "2026-10-29",
       "use_cases": [
         "vod-ladder"
       ],
+      "artifact_domains": [],
       "surfaces": [
         "go",
         "python"
@@ -499,10 +517,12 @@
       "licence_class": "unknown",
       "maintenance": "unknown",
       "upstream": "",
+      "awaits_ffmpeg": false,
       "checked": "2026-10-29",
       "use_cases": [
         "vod-ladder"
       ],
+      "artifact_domains": [],
       "surfaces": [
         "go",
         "python"
@@ -554,10 +574,12 @@
       "licence_class": "unknown",
       "maintenance": "unknown",
       "upstream": "",
+      "awaits_ffmpeg": false,
       "checked": "2026-10-29",
       "use_cases": [
         "vod-ladder"
       ],
+      "artifact_domains": [],
       "surfaces": [
         "go",
         "python"
@@ -606,10 +628,12 @@
       "licence_class": "unknown",
       "maintenance": "unknown",
       "upstream": "",
+      "awaits_ffmpeg": false,
       "checked": "2026-10-29",
       "use_cases": [
         "vod-ladder"
       ],
+      "artifact_domains": [],
       "surfaces": [
         "go",
         "python"
@@ -657,13 +681,15 @@
       "interface": "ffmpeg",
       "ffmpeg_encoder": "libaom-av1",
       "hardware": "",
-      "licence_class": "unknown",
-      "maintenance": "unknown",
-      "upstream": "",
+      "licence_class": "permissive",
+      "maintenance": "active",
+      "upstream": "https://aomedia.googlesource.com/aom",
+      "awaits_ffmpeg": false,
       "checked": "2026-10-29",
       "use_cases": [
         "vod-ladder"
       ],
+      "artifact_domains": [],
       "surfaces": [
         "go",
         "python"
@@ -712,13 +738,15 @@
       "interface": "ffmpeg",
       "ffmpeg_encoder": "libsvtav1",
       "hardware": "",
-      "licence_class": "unknown",
-      "maintenance": "unknown",
-      "upstream": "",
+      "licence_class": "permissive",
+      "maintenance": "active",
+      "upstream": "https://gitlab.com/AOMediaCodec/SVT-AV1",
+      "awaits_ffmpeg": false,
       "checked": "2026-10-29",
       "use_cases": [
         "vod-ladder"
       ],
+      "artifact_domains": [],
       "surfaces": [
         "go",
         "python"
@@ -765,13 +793,15 @@
       "interface": "ffmpeg",
       "ffmpeg_encoder": "libvpx-vp9",
       "hardware": "",
-      "licence_class": "unknown",
-      "maintenance": "unknown",
-      "upstream": "",
+      "licence_class": "permissive",
+      "maintenance": "active",
+      "upstream": "https://chromium.googlesource.com/webm/libvpx",
+      "awaits_ffmpeg": false,
       "checked": "2026-10-29",
       "use_cases": [
         "vod-ladder"
       ],
+      "artifact_domains": [],
       "surfaces": [
         "go",
         "python"
@@ -820,13 +850,15 @@
       "interface": "ffmpeg",
       "ffmpeg_encoder": "libvvenc",
       "hardware": "",
-      "licence_class": "unknown",
-      "maintenance": "unknown",
-      "upstream": "",
+      "licence_class": "permissive",
+      "maintenance": "active",
+      "upstream": "https://github.com/fraunhoferhhi/vvenc",
+      "awaits_ffmpeg": false,
       "checked": "2026-10-29",
       "use_cases": [
         "vod-ladder"
       ],
+      "artifact_domains": [],
       "surfaces": [
         "go",
         "python"
@@ -875,13 +907,15 @@
       "interface": "ffmpeg",
       "ffmpeg_encoder": "libx264",
       "hardware": "",
-      "licence_class": "unknown",
-      "maintenance": "unknown",
-      "upstream": "",
+      "licence_class": "copyleft-strong",
+      "maintenance": "active",
+      "upstream": "https://code.videolan.org/videolan/x264",
+      "awaits_ffmpeg": false,
       "checked": "2026-10-29",
       "use_cases": [
         "vod-ladder"
       ],
+      "artifact_domains": [],
       "surfaces": [
         "go",
         "python"
@@ -929,13 +963,15 @@
       "interface": "ffmpeg",
       "ffmpeg_encoder": "libx265",
       "hardware": "",
-      "licence_class": "unknown",
-      "maintenance": "unknown",
-      "upstream": "",
+      "licence_class": "copyleft-strong",
+      "maintenance": "active",
+      "upstream": "https://bitbucket.org/multicoreware/x265_git",
+      "awaits_ffmpeg": false,
       "checked": "2026-10-29",
       "use_cases": [
         "vod-ladder"
       ],
+      "artifact_domains": [],
       "surfaces": [
         "go",
         "python"
@@ -987,10 +1023,12 @@
       "licence_class": "unknown",
       "maintenance": "unknown",
       "upstream": "",
+      "awaits_ffmpeg": false,
       "checked": "2026-10-29",
       "use_cases": [
         "vod-ladder"
       ],
+      "artifact_domains": [],
       "surfaces": [
         "go",
         "python"
@@ -1029,7 +1067,2056 @@
       },
       "notes": "",
       "class": "mezzanine"
+    },
+    {
+      "id": "librav1e",
+      "family": "av1",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "ffmpeg",
+      "ffmpeg_encoder": "librav1e",
+      "hardware": "",
+      "licence_class": "permissive",
+      "maintenance": "active",
+      "upstream": "https://github.com/xiph/rav1e",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "vod-ladder"
+      ],
+      "artifact_domains": [],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "",
+      "class": "delivery"
+    },
+    {
+      "id": "libkvazaar",
+      "family": "hevc",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "ffmpeg",
+      "ffmpeg_encoder": "libkvazaar",
+      "hardware": "",
+      "licence_class": "permissive",
+      "maintenance": "active",
+      "upstream": "https://github.com/ultravideo/kvazaar",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "vod-ladder",
+        "low-latency"
+      ],
+      "artifact_domains": [],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "",
+      "class": "delivery"
+    },
+    {
+      "id": "libopenh264",
+      "family": "h264",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "ffmpeg",
+      "ffmpeg_encoder": "libopenh264",
+      "hardware": "",
+      "licence_class": "patent-licensed-binary",
+      "maintenance": "active",
+      "upstream": "https://github.com/cisco/openh264",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "low-latency"
+      ],
+      "artifact_domains": [],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "the patent licence covers only the binaries its upstream distributes; a source build carries no patent licence",
+      "class": "delivery"
+    },
+    {
+      "id": "libvpx",
+      "family": "vp8",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "ffmpeg",
+      "ffmpeg_encoder": "libvpx",
+      "hardware": "",
+      "licence_class": "permissive",
+      "maintenance": "active",
+      "upstream": "https://chromium.googlesource.com/webm/libvpx",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "vod-ladder"
+      ],
+      "artifact_domains": [],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "",
+      "class": "delivery"
+    },
+    {
+      "id": "libxeve",
+      "family": "evc",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "ffmpeg",
+      "ffmpeg_encoder": "libxeve",
+      "hardware": "",
+      "licence_class": "permissive",
+      "maintenance": "active",
+      "upstream": "https://github.com/mpeg5/xeve",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "vod-ladder"
+      ],
+      "artifact_domains": [],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "Baseline profile only; the Main profile is the decision-gated row evc-main",
+      "class": "delivery"
+    },
+    {
+      "id": "evc-main",
+      "family": "evc",
+      "paradigm": "classic",
+      "status": "decision",
+      "interface": "cli",
+      "ffmpeg_encoder": "",
+      "hardware": "",
+      "licence_class": "unknown",
+      "maintenance": "active",
+      "upstream": "https://github.com/mpeg5/xeve",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [],
+      "artifact_domains": [],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "EVC Main-profile tools carry patent licensing whose terms are not checked; needs an operator decision before any work",
+      "class": "delivery"
+    },
+    {
+      "id": "libxavs2",
+      "family": "avs2",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "ffmpeg",
+      "ffmpeg_encoder": "libxavs2",
+      "hardware": "",
+      "licence_class": "copyleft-strong",
+      "maintenance": "dead",
+      "upstream": "https://github.com/pkuvcl/xavs2",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "broadcast-hrd"
+      ],
+      "artifact_domains": [],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "",
+      "class": "delivery"
+    },
+    {
+      "id": "uavs3e",
+      "family": "avs3",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "cli",
+      "ffmpeg_encoder": "",
+      "hardware": "",
+      "licence_class": "permissive",
+      "maintenance": "dead",
+      "upstream": "https://github.com/uavs3/uavs3e",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "broadcast-hrd"
+      ],
+      "artifact_domains": [],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "no FFmpeg encoder; runs through the non-FFmpeg adapter interface (#2147)",
+      "class": "delivery"
+    },
+    {
+      "id": "uvg266",
+      "family": "vvc",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "cli",
+      "ffmpeg_encoder": "",
+      "hardware": "",
+      "licence_class": "permissive",
+      "maintenance": "slow",
+      "upstream": "https://github.com/ultravideo/uvg266",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "vod-ladder",
+        "low-latency"
+      ],
+      "artifact_domains": [],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "no FFmpeg encoder; runs through the non-FFmpeg adapter interface (#2147)",
+      "class": "delivery"
+    },
+    {
+      "id": "vtm",
+      "family": "vvc",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "cli",
+      "ffmpeg_encoder": "",
+      "hardware": "",
+      "licence_class": "permissive",
+      "maintenance": "active",
+      "upstream": "https://vcgit.hhi.fraunhofer.de/jvet/VVCSoftware_VTM",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "calibration"
+      ],
+      "artifact_domains": [],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "the VVC reference encoder; no FFmpeg encoder; runs through the non-FFmpeg adapter interface (#2147)",
+      "class": "research"
+    },
+    {
+      "id": "svt-hevc",
+      "family": "hevc",
+      "paradigm": "classic",
+      "status": "listed",
+      "interface": "cli",
+      "ffmpeg_encoder": "",
+      "hardware": "",
+      "licence_class": "permissive",
+      "maintenance": "archived",
+      "upstream": "https://github.com/OpenVisualCloud/SVT-HEVC",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [],
+      "artifact_domains": [],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "archived upstream; listed for completeness, no work planned",
+      "class": "delivery"
+    },
+    {
+      "id": "svt-vp9",
+      "family": "vp9",
+      "paradigm": "classic",
+      "status": "listed",
+      "interface": "cli",
+      "ffmpeg_encoder": "",
+      "hardware": "",
+      "licence_class": "permissive",
+      "maintenance": "slow",
+      "upstream": "https://github.com/OpenVisualCloud/SVT-VP9",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [],
+      "artifact_domains": [],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "slow upstream; listed for completeness, no work planned",
+      "class": "delivery"
+    },
+    {
+      "id": "avm",
+      "family": "av2",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "cli",
+      "ffmpeg_encoder": "",
+      "hardware": "",
+      "licence_class": "permissive",
+      "maintenance": "active",
+      "upstream": "https://gitlab.com/AOMediaCodec/avm",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "calibration"
+      ],
+      "artifact_domains": [],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "the AV2 research model; no FFmpeg encoder; runs through the non-FFmpeg adapter interface (#2147)",
+      "class": "research"
+    },
+    {
+      "id": "mpeg2video",
+      "family": "mpeg2",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "ffmpeg",
+      "ffmpeg_encoder": "mpeg2video",
+      "hardware": "",
+      "licence_class": "copyleft-weak",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "broadcast-hrd",
+        "interlaced"
+      ],
+      "artifact_domains": [],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "native FFmpeg encoder; FFmpeg's own activity says nothing about this encoder, so no upstream is checked",
+      "class": "delivery"
+    },
+    {
+      "id": "av1_vaapi",
+      "family": "av1",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "ffmpeg",
+      "ffmpeg_encoder": "av1_vaapi",
+      "hardware": "vaapi",
+      "licence_class": "copyleft-weak",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "vod-ladder"
+      ],
+      "artifact_domains": [],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "FFmpeg wrapper code (LGPL); the encode itself runs in the platform driver",
+      "class": "delivery"
+    },
+    {
+      "id": "av1_vulkan",
+      "family": "av1",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "ffmpeg",
+      "ffmpeg_encoder": "av1_vulkan",
+      "hardware": "vulkan",
+      "licence_class": "copyleft-weak",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "vod-ladder"
+      ],
+      "artifact_domains": [],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "FFmpeg wrapper code (LGPL); the encode itself runs in the platform driver",
+      "class": "delivery"
+    },
+    {
+      "id": "av1_mediacodec",
+      "family": "av1",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "ffmpeg",
+      "ffmpeg_encoder": "av1_mediacodec",
+      "hardware": "mediacodec",
+      "licence_class": "copyleft-weak",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "vod-ladder"
+      ],
+      "artifact_domains": [],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "FFmpeg wrapper code (LGPL); the encode itself runs in the platform driver",
+      "class": "delivery"
+    },
+    {
+      "id": "hevc_vaapi",
+      "family": "hevc",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "ffmpeg",
+      "ffmpeg_encoder": "hevc_vaapi",
+      "hardware": "vaapi",
+      "licence_class": "copyleft-weak",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "vod-ladder"
+      ],
+      "artifact_domains": [],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "FFmpeg wrapper code (LGPL); the encode itself runs in the platform driver",
+      "class": "delivery"
+    },
+    {
+      "id": "hevc_vulkan",
+      "family": "hevc",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "ffmpeg",
+      "ffmpeg_encoder": "hevc_vulkan",
+      "hardware": "vulkan",
+      "licence_class": "copyleft-weak",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "vod-ladder"
+      ],
+      "artifact_domains": [],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "FFmpeg wrapper code (LGPL); the encode itself runs in the platform driver",
+      "class": "delivery"
+    },
+    {
+      "id": "hevc_mediacodec",
+      "family": "hevc",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "ffmpeg",
+      "ffmpeg_encoder": "hevc_mediacodec",
+      "hardware": "mediacodec",
+      "licence_class": "copyleft-weak",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "vod-ladder"
+      ],
+      "artifact_domains": [],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "FFmpeg wrapper code (LGPL); the encode itself runs in the platform driver",
+      "class": "delivery"
+    },
+    {
+      "id": "h264_vaapi",
+      "family": "h264",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "ffmpeg",
+      "ffmpeg_encoder": "h264_vaapi",
+      "hardware": "vaapi",
+      "licence_class": "copyleft-weak",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "vod-ladder"
+      ],
+      "artifact_domains": [],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "FFmpeg wrapper code (LGPL); the encode itself runs in the platform driver",
+      "class": "delivery"
+    },
+    {
+      "id": "h264_vulkan",
+      "family": "h264",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "ffmpeg",
+      "ffmpeg_encoder": "h264_vulkan",
+      "hardware": "vulkan",
+      "licence_class": "copyleft-weak",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "vod-ladder"
+      ],
+      "artifact_domains": [],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "FFmpeg wrapper code (LGPL); the encode itself runs in the platform driver",
+      "class": "delivery"
+    },
+    {
+      "id": "h264_mediacodec",
+      "family": "h264",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "ffmpeg",
+      "ffmpeg_encoder": "h264_mediacodec",
+      "hardware": "mediacodec",
+      "licence_class": "copyleft-weak",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "vod-ladder"
+      ],
+      "artifact_domains": [],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "FFmpeg wrapper code (LGPL); the encode itself runs in the platform driver",
+      "class": "delivery"
+    },
+    {
+      "id": "vp9_qsv",
+      "family": "vp9",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "ffmpeg",
+      "ffmpeg_encoder": "vp9_qsv",
+      "hardware": "qsv",
+      "licence_class": "copyleft-weak",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "vod-ladder"
+      ],
+      "artifact_domains": [],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "FFmpeg wrapper code (LGPL); the encode itself runs in the platform driver",
+      "class": "delivery"
+    },
+    {
+      "id": "vp9_vaapi",
+      "family": "vp9",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "ffmpeg",
+      "ffmpeg_encoder": "vp9_vaapi",
+      "hardware": "vaapi",
+      "licence_class": "copyleft-weak",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "vod-ladder"
+      ],
+      "artifact_domains": [],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "FFmpeg wrapper code (LGPL); the encode itself runs in the platform driver",
+      "class": "delivery"
+    },
+    {
+      "id": "vp9_mediacodec",
+      "family": "vp9",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "ffmpeg",
+      "ffmpeg_encoder": "vp9_mediacodec",
+      "hardware": "mediacodec",
+      "licence_class": "copyleft-weak",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "vod-ladder"
+      ],
+      "artifact_domains": [],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "FFmpeg wrapper code (LGPL); the encode itself runs in the platform driver",
+      "class": "delivery"
+    },
+    {
+      "id": "vp8_vaapi",
+      "family": "vp8",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "ffmpeg",
+      "ffmpeg_encoder": "vp8_vaapi",
+      "hardware": "vaapi",
+      "licence_class": "copyleft-weak",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "vod-ladder"
+      ],
+      "artifact_domains": [],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "FFmpeg wrapper code (LGPL); the encode itself runs in the platform driver",
+      "class": "delivery"
+    },
+    {
+      "id": "mpeg2_qsv",
+      "family": "mpeg2",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "ffmpeg",
+      "ffmpeg_encoder": "mpeg2_qsv",
+      "hardware": "qsv",
+      "licence_class": "copyleft-weak",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "broadcast-hrd",
+        "interlaced"
+      ],
+      "artifact_domains": [],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "FFmpeg wrapper code (LGPL); the encode itself runs in the platform driver",
+      "class": "delivery"
+    },
+    {
+      "id": "mpeg2_vaapi",
+      "family": "mpeg2",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "ffmpeg",
+      "ffmpeg_encoder": "mpeg2_vaapi",
+      "hardware": "vaapi",
+      "licence_class": "copyleft-weak",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "broadcast-hrd",
+        "interlaced"
+      ],
+      "artifact_domains": [],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "FFmpeg wrapper code (LGPL); the encode itself runs in the platform driver",
+      "class": "delivery"
+    },
+    {
+      "id": "prores_ks",
+      "family": "prores",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "ffmpeg",
+      "ffmpeg_encoder": "prores_ks",
+      "hardware": "",
+      "licence_class": "copyleft-weak",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "intra-camera"
+      ],
+      "artifact_domains": [],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "native FFmpeg encoder; FFmpeg's own activity says nothing about this encoder, so no upstream is checked",
+      "class": "mezzanine"
+    },
+    {
+      "id": "prores_aw",
+      "family": "prores",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "ffmpeg",
+      "ffmpeg_encoder": "prores_aw",
+      "hardware": "",
+      "licence_class": "copyleft-weak",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "intra-camera"
+      ],
+      "artifact_domains": [],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "native FFmpeg encoder; FFmpeg's own activity says nothing about this encoder, so no upstream is checked",
+      "class": "mezzanine"
+    },
+    {
+      "id": "prores_ks_vulkan",
+      "family": "prores",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "ffmpeg",
+      "ffmpeg_encoder": "prores_ks_vulkan",
+      "hardware": "vulkan",
+      "licence_class": "copyleft-weak",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "intra-camera"
+      ],
+      "artifact_domains": [],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "native FFmpeg encoder; FFmpeg's own activity says nothing about this encoder, so no upstream is checked",
+      "class": "mezzanine"
+    },
+    {
+      "id": "dnxhd",
+      "family": "dnxhd",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "ffmpeg",
+      "ffmpeg_encoder": "dnxhd",
+      "hardware": "",
+      "licence_class": "copyleft-weak",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "intra-camera"
+      ],
+      "artifact_domains": [],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "native FFmpeg encoder; FFmpeg's own activity says nothing about this encoder, so no upstream is checked",
+      "class": "mezzanine"
+    },
+    {
+      "id": "jpeg2000",
+      "family": "jpeg2000",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "ffmpeg",
+      "ffmpeg_encoder": "jpeg2000",
+      "hardware": "",
+      "licence_class": "copyleft-weak",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "intra-camera"
+      ],
+      "artifact_domains": [],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "native FFmpeg encoder; FFmpeg's own activity says nothing about this encoder, so no upstream is checked",
+      "class": "mezzanine"
+    },
+    {
+      "id": "libopenjpeg",
+      "family": "jpeg2000",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "ffmpeg",
+      "ffmpeg_encoder": "libopenjpeg",
+      "hardware": "",
+      "licence_class": "permissive",
+      "maintenance": "active",
+      "upstream": "https://github.com/uclouvain/openjpeg",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "intra-camera"
+      ],
+      "artifact_domains": [],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "",
+      "class": "mezzanine"
+    },
+    {
+      "id": "ffv1",
+      "family": "ffv1",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "ffmpeg",
+      "ffmpeg_encoder": "ffv1",
+      "hardware": "",
+      "licence_class": "copyleft-weak",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "lossless-archive"
+      ],
+      "artifact_domains": [],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "native FFmpeg encoder; FFmpeg's own activity says nothing about this encoder, so no upstream is checked",
+      "class": "lossless"
+    },
+    {
+      "id": "ffv1_vulkan",
+      "family": "ffv1",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "ffmpeg",
+      "ffmpeg_encoder": "ffv1_vulkan",
+      "hardware": "vulkan",
+      "licence_class": "copyleft-weak",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "lossless-archive"
+      ],
+      "artifact_domains": [],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "native FFmpeg encoder; FFmpeg's own activity says nothing about this encoder, so no upstream is checked",
+      "class": "lossless"
+    },
+    {
+      "id": "libx264rgb",
+      "family": "h264",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "ffmpeg",
+      "ffmpeg_encoder": "libx264rgb",
+      "hardware": "",
+      "licence_class": "copyleft-strong",
+      "maintenance": "active",
+      "upstream": "https://code.videolan.org/videolan/x264",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "lossless-archive"
+      ],
+      "artifact_domains": [],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "x264 on RGB input, for the lossless bit-exact class",
+      "class": "lossless"
+    },
+    {
+      "id": "libsvtjpegxs",
+      "family": "jpeg-xs",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "ffmpeg",
+      "ffmpeg_encoder": "libsvtjpegxs",
+      "hardware": "",
+      "licence_class": "permissive",
+      "maintenance": "active",
+      "upstream": "https://github.com/OpenVisualCloud/SVT-JPEG-XS",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "low-latency",
+        "intra-camera"
+      ],
+      "artifact_domains": [],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "",
+      "class": "low-latency"
+    },
+    {
+      "id": "hap",
+      "family": "texture",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "ffmpeg",
+      "ffmpeg_encoder": "hap",
+      "hardware": "",
+      "licence_class": "copyleft-weak",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "texture-playback"
+      ],
+      "artifact_domains": [],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "native FFmpeg encoder; FFmpeg's own activity says nothing about this encoder, so no upstream is checked",
+      "class": "texture"
+    },
+    {
+      "id": "notchlc",
+      "family": "texture",
+      "paradigm": "classic",
+      "status": "decision",
+      "interface": "sdk",
+      "ffmpeg_encoder": "",
+      "hardware": "",
+      "licence_class": "proprietary-sdk",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [],
+      "artifact_domains": [],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "FFmpeg only decodes it; the encoder is a closed SDK; needs an operator decision before any work",
+      "class": "texture"
+    },
+    {
+      "id": "bink",
+      "family": "texture",
+      "paradigm": "classic",
+      "status": "decision",
+      "interface": "sdk",
+      "ffmpeg_encoder": "",
+      "hardware": "",
+      "licence_class": "proprietary-sdk",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [],
+      "artifact_domains": [],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "FFmpeg only decodes it; the encoder is a closed SDK; needs an operator decision before any work",
+      "class": "texture"
+    },
+    {
+      "id": "lcevc-dec",
+      "family": "lcevc",
+      "paradigm": "ml-assisted",
+      "status": "planned",
+      "interface": "decode-only",
+      "ffmpeg_encoder": "",
+      "hardware": "",
+      "licence_class": "permissive",
+      "maintenance": "active",
+      "upstream": "https://github.com/v-novaltd/LCEVCdec",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "vod-ladder"
+      ],
+      "artifact_domains": [],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "decode side only, to score LCEVC streams; the encoder is the row lcevc-encoder-sdk",
+      "class": "decode-only"
+    },
+    {
+      "id": "lcevc-encoder-sdk",
+      "family": "lcevc",
+      "paradigm": "ml-assisted",
+      "status": "decision",
+      "interface": "sdk",
+      "ffmpeg_encoder": "",
+      "hardware": "",
+      "licence_class": "proprietary-sdk",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [],
+      "artifact_domains": [],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "closed encoder SDK; needs an operator decision before any work",
+      "class": "delivery"
+    },
+    {
+      "id": "jvet-nnvc",
+      "family": "vvc",
+      "paradigm": "hybrid-neural",
+      "status": "planned",
+      "interface": "cli",
+      "ffmpeg_encoder": "",
+      "hardware": "",
+      "licence_class": "unknown",
+      "maintenance": "active",
+      "upstream": "https://vcgit.hhi.fraunhofer.de/jvet-ahg-nnvc/VVCSoftware_VTM",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "calibration"
+      ],
+      "artifact_domains": [],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "VTM with neural in-loop tools; licence not verified. Research class: never an early lander; needs the cross-device determinism and temporal-consistency checks",
+      "class": "research"
+    },
+    {
+      "id": "dcvc",
+      "family": "neural",
+      "paradigm": "neural-e2e",
+      "status": "planned",
+      "interface": "cli",
+      "ffmpeg_encoder": "",
+      "hardware": "",
+      "licence_class": "permissive",
+      "maintenance": "active",
+      "upstream": "https://github.com/microsoft/DCVC",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "calibration"
+      ],
+      "artifact_domains": [],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "DCVC family incl. DCVC-RT. Research class: never an early lander; needs the cross-device determinism and temporal-consistency checks",
+      "class": "research"
+    },
+    {
+      "id": "nerv",
+      "family": "neural",
+      "paradigm": "neural-e2e",
+      "status": "planned",
+      "interface": "cli",
+      "ffmpeg_encoder": "",
+      "hardware": "",
+      "licence_class": "unknown",
+      "maintenance": "dead",
+      "upstream": "https://github.com/haochen-rye/NeRV",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "calibration"
+      ],
+      "artifact_domains": [],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "implicit neural representation. Research class: never an early lander; needs the cross-device determinism and temporal-consistency checks",
+      "class": "research"
+    },
+    {
+      "id": "hnerv",
+      "family": "neural",
+      "paradigm": "neural-e2e",
+      "status": "planned",
+      "interface": "cli",
+      "ffmpeg_encoder": "",
+      "hardware": "",
+      "licence_class": "unknown",
+      "maintenance": "dead",
+      "upstream": "https://github.com/haochen-rye/HNeRV",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "calibration"
+      ],
+      "artifact_domains": [],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "Research class: never an early lander; needs the cross-device determinism and temporal-consistency checks",
+      "class": "research"
+    },
+    {
+      "id": "cool-chic",
+      "family": "neural",
+      "paradigm": "neural-e2e",
+      "status": "planned",
+      "interface": "cli",
+      "ffmpeg_encoder": "",
+      "hardware": "",
+      "licence_class": "permissive",
+      "maintenance": "active",
+      "upstream": "https://github.com/Orange-OpenSource/Cool-Chic",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "calibration"
+      ],
+      "artifact_domains": [],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "overfitted per-video decoder. Research class: never an early lander; needs the cross-device determinism and temporal-consistency checks",
+      "class": "research"
+    },
+    {
+      "id": "maxine-sdk",
+      "family": "neural",
+      "paradigm": "ml-assisted",
+      "status": "decision",
+      "interface": "sdk",
+      "ffmpeg_encoder": "",
+      "hardware": "",
+      "licence_class": "proprietary-sdk",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [],
+      "artifact_domains": [],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "closed AI video-effects SDK; needs an operator decision before any work",
+      "class": "research"
+    },
+    {
+      "id": "commercial-hevc-sdk",
+      "family": "hevc",
+      "paradigm": "classic",
+      "status": "decision",
+      "interface": "sdk",
+      "ffmpeg_encoder": "",
+      "hardware": "",
+      "licence_class": "proprietary-sdk",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [],
+      "artifact_domains": [],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "closed-source HEVC encoders sold as SDKs; listed by class only; needs an operator decision before any work",
+      "class": "commercial-listed"
+    },
+    {
+      "id": "commercial-avc-sdk",
+      "family": "h264",
+      "paradigm": "classic",
+      "status": "decision",
+      "interface": "sdk",
+      "ffmpeg_encoder": "",
+      "hardware": "",
+      "licence_class": "proprietary-sdk",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [],
+      "artifact_domains": [],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "closed-source AVC encoders sold as SDKs; listed by class only; needs an operator decision before any work",
+      "class": "commercial-listed"
+    },
+    {
+      "id": "commercial-vvc-sdk",
+      "family": "vvc",
+      "paradigm": "classic",
+      "status": "decision",
+      "interface": "sdk",
+      "ffmpeg_encoder": "",
+      "hardware": "",
+      "licence_class": "proprietary-sdk",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [],
+      "artifact_domains": [],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "closed-source VVC encoders sold as SDKs; listed by class only; needs an operator decision before any work",
+      "class": "commercial-listed"
+    },
+    {
+      "id": "mpeg1video",
+      "family": "legacy",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "ffmpeg",
+      "ffmpeg_encoder": "mpeg1video",
+      "hardware": "",
+      "licence_class": "copyleft-weak",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "calibration"
+      ],
+      "artifact_domains": [
+        "dct-blocking"
+      ],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "native FFmpeg encoder; FFmpeg's own activity says nothing about this encoder, so no upstream is checked; a degradation source for the corpus of its artifact domain",
+      "class": "distortion-source"
+    },
+    {
+      "id": "mpeg4",
+      "family": "legacy",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "ffmpeg",
+      "ffmpeg_encoder": "mpeg4",
+      "hardware": "",
+      "licence_class": "copyleft-weak",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "calibration"
+      ],
+      "artifact_domains": [
+        "dct-blocking"
+      ],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "native FFmpeg encoder; FFmpeg's own activity says nothing about this encoder, so no upstream is checked; a degradation source for the corpus of its artifact domain",
+      "class": "distortion-source"
+    },
+    {
+      "id": "msmpeg4v2",
+      "family": "legacy",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "ffmpeg",
+      "ffmpeg_encoder": "msmpeg4v2",
+      "hardware": "",
+      "licence_class": "copyleft-weak",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "calibration"
+      ],
+      "artifact_domains": [
+        "dct-blocking"
+      ],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "native FFmpeg encoder; FFmpeg's own activity says nothing about this encoder, so no upstream is checked; a degradation source for the corpus of its artifact domain",
+      "class": "distortion-source"
+    },
+    {
+      "id": "msmpeg4v3",
+      "family": "legacy",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "ffmpeg",
+      "ffmpeg_encoder": "msmpeg4v3",
+      "hardware": "",
+      "licence_class": "copyleft-weak",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "calibration"
+      ],
+      "artifact_domains": [
+        "dct-blocking"
+      ],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "native FFmpeg encoder; FFmpeg's own activity says nothing about this encoder, so no upstream is checked; a degradation source for the corpus of its artifact domain",
+      "class": "distortion-source"
+    },
+    {
+      "id": "h263",
+      "family": "legacy",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "ffmpeg",
+      "ffmpeg_encoder": "h263",
+      "hardware": "",
+      "licence_class": "copyleft-weak",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "calibration"
+      ],
+      "artifact_domains": [
+        "dct-blocking"
+      ],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "native FFmpeg encoder; FFmpeg's own activity says nothing about this encoder, so no upstream is checked; a degradation source for the corpus of its artifact domain",
+      "class": "distortion-source"
+    },
+    {
+      "id": "h263p",
+      "family": "legacy",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "ffmpeg",
+      "ffmpeg_encoder": "h263p",
+      "hardware": "",
+      "licence_class": "copyleft-weak",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "calibration"
+      ],
+      "artifact_domains": [
+        "dct-blocking"
+      ],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "native FFmpeg encoder; FFmpeg's own activity says nothing about this encoder, so no upstream is checked; a degradation source for the corpus of its artifact domain",
+      "class": "distortion-source"
+    },
+    {
+      "id": "flv",
+      "family": "legacy",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "ffmpeg",
+      "ffmpeg_encoder": "flv",
+      "hardware": "",
+      "licence_class": "copyleft-weak",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "calibration"
+      ],
+      "artifact_domains": [
+        "dct-blocking"
+      ],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "native FFmpeg encoder; FFmpeg's own activity says nothing about this encoder, so no upstream is checked; a degradation source for the corpus of its artifact domain",
+      "class": "distortion-source"
+    },
+    {
+      "id": "wmv1",
+      "family": "legacy",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "ffmpeg",
+      "ffmpeg_encoder": "wmv1",
+      "hardware": "",
+      "licence_class": "copyleft-weak",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "calibration"
+      ],
+      "artifact_domains": [
+        "dct-blocking"
+      ],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "native FFmpeg encoder; FFmpeg's own activity says nothing about this encoder, so no upstream is checked; a degradation source for the corpus of its artifact domain",
+      "class": "distortion-source"
+    },
+    {
+      "id": "wmv2",
+      "family": "legacy",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "ffmpeg",
+      "ffmpeg_encoder": "wmv2",
+      "hardware": "",
+      "licence_class": "copyleft-weak",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "calibration"
+      ],
+      "artifact_domains": [
+        "dct-blocking"
+      ],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "native FFmpeg encoder; FFmpeg's own activity says nothing about this encoder, so no upstream is checked; a degradation source for the corpus of its artifact domain",
+      "class": "distortion-source"
+    },
+    {
+      "id": "rv10",
+      "family": "legacy",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "ffmpeg",
+      "ffmpeg_encoder": "rv10",
+      "hardware": "",
+      "licence_class": "copyleft-weak",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "calibration"
+      ],
+      "artifact_domains": [
+        "dct-blocking"
+      ],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "native FFmpeg encoder; FFmpeg's own activity says nothing about this encoder, so no upstream is checked; a degradation source for the corpus of its artifact domain",
+      "class": "distortion-source"
+    },
+    {
+      "id": "rv20",
+      "family": "legacy",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "ffmpeg",
+      "ffmpeg_encoder": "rv20",
+      "hardware": "",
+      "licence_class": "copyleft-weak",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "calibration"
+      ],
+      "artifact_domains": [
+        "dct-blocking"
+      ],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "native FFmpeg encoder; FFmpeg's own activity says nothing about this encoder, so no upstream is checked; a degradation source for the corpus of its artifact domain",
+      "class": "distortion-source"
+    },
+    {
+      "id": "mjpeg",
+      "family": "legacy",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "ffmpeg",
+      "ffmpeg_encoder": "mjpeg",
+      "hardware": "",
+      "licence_class": "copyleft-weak",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "calibration"
+      ],
+      "artifact_domains": [
+        "dct-blocking"
+      ],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "native FFmpeg encoder; FFmpeg's own activity says nothing about this encoder, so no upstream is checked; a degradation source for the corpus of its artifact domain",
+      "class": "distortion-source"
+    },
+    {
+      "id": "dvvideo",
+      "family": "legacy",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "ffmpeg",
+      "ffmpeg_encoder": "dvvideo",
+      "hardware": "",
+      "licence_class": "copyleft-weak",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "calibration"
+      ],
+      "artifact_domains": [
+        "dct-blocking"
+      ],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "native FFmpeg encoder; FFmpeg's own activity says nothing about this encoder, so no upstream is checked; a degradation source for the corpus of its artifact domain",
+      "class": "distortion-source"
+    },
+    {
+      "id": "libxvid",
+      "family": "legacy",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "ffmpeg",
+      "ffmpeg_encoder": "libxvid",
+      "hardware": "",
+      "licence_class": "copyleft-strong",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "calibration"
+      ],
+      "artifact_domains": [
+        "dct-blocking"
+      ],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "a degradation source for the DCT-blocking corpus",
+      "class": "distortion-source"
+    },
+    {
+      "id": "libtheora",
+      "family": "legacy",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "ffmpeg",
+      "ffmpeg_encoder": "libtheora",
+      "hardware": "",
+      "licence_class": "permissive",
+      "maintenance": "unknown",
+      "upstream": "https://gitlab.xiph.org/xiph/theora",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "calibration"
+      ],
+      "artifact_domains": [
+        "dct-blocking"
+      ],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "a degradation source for the DCT-blocking corpus",
+      "class": "distortion-source"
+    },
+    {
+      "id": "mjpeg_qsv",
+      "family": "legacy",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "ffmpeg",
+      "ffmpeg_encoder": "mjpeg_qsv",
+      "hardware": "qsv",
+      "licence_class": "copyleft-weak",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "calibration"
+      ],
+      "artifact_domains": [
+        "dct-blocking"
+      ],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "FFmpeg wrapper code (LGPL); the encode itself runs in the platform driver; a degradation source for the DCT-blocking corpus",
+      "class": "distortion-source"
+    },
+    {
+      "id": "mjpeg_vaapi",
+      "family": "legacy",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "ffmpeg",
+      "ffmpeg_encoder": "mjpeg_vaapi",
+      "hardware": "vaapi",
+      "licence_class": "copyleft-weak",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "calibration"
+      ],
+      "artifact_domains": [
+        "dct-blocking"
+      ],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "FFmpeg wrapper code (LGPL); the encode itself runs in the platform driver; a degradation source for the DCT-blocking corpus",
+      "class": "distortion-source"
+    },
+    {
+      "id": "snow",
+      "family": "legacy",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "ffmpeg",
+      "ffmpeg_encoder": "snow",
+      "hardware": "",
+      "licence_class": "copyleft-weak",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "calibration"
+      ],
+      "artifact_domains": [
+        "wavelet-blur"
+      ],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "native FFmpeg encoder; FFmpeg's own activity says nothing about this encoder, so no upstream is checked; a degradation source for the corpus of its artifact domain",
+      "class": "distortion-source"
+    },
+    {
+      "id": "vc2",
+      "family": "legacy",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "ffmpeg",
+      "ffmpeg_encoder": "vc2",
+      "hardware": "",
+      "licence_class": "copyleft-weak",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "calibration"
+      ],
+      "artifact_domains": [
+        "wavelet-blur"
+      ],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "native FFmpeg encoder; FFmpeg's own activity says nothing about this encoder, so no upstream is checked; a degradation source for the corpus of its artifact domain",
+      "class": "distortion-source"
+    },
+    {
+      "id": "cinepak",
+      "family": "legacy",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "ffmpeg",
+      "ffmpeg_encoder": "cinepak",
+      "hardware": "",
+      "licence_class": "copyleft-weak",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "calibration"
+      ],
+      "artifact_domains": [
+        "vq-mosaic"
+      ],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "native FFmpeg encoder; FFmpeg's own activity says nothing about this encoder, so no upstream is checked; a degradation source for the corpus of its artifact domain",
+      "class": "distortion-source"
+    },
+    {
+      "id": "svq1",
+      "family": "legacy",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "ffmpeg",
+      "ffmpeg_encoder": "svq1",
+      "hardware": "",
+      "licence_class": "copyleft-weak",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "calibration"
+      ],
+      "artifact_domains": [
+        "vq-mosaic"
+      ],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "native FFmpeg encoder; FFmpeg's own activity says nothing about this encoder, so no upstream is checked; a degradation source for the corpus of its artifact domain",
+      "class": "distortion-source"
+    },
+    {
+      "id": "rpza",
+      "family": "legacy",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "ffmpeg",
+      "ffmpeg_encoder": "rpza",
+      "hardware": "",
+      "licence_class": "copyleft-weak",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "calibration"
+      ],
+      "artifact_domains": [
+        "vq-mosaic"
+      ],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "native FFmpeg encoder; FFmpeg's own activity says nothing about this encoder, so no upstream is checked; a degradation source for the corpus of its artifact domain",
+      "class": "distortion-source"
+    },
+    {
+      "id": "msvideo1",
+      "family": "legacy",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "ffmpeg",
+      "ffmpeg_encoder": "msvideo1",
+      "hardware": "",
+      "licence_class": "copyleft-weak",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "calibration"
+      ],
+      "artifact_domains": [
+        "vq-mosaic"
+      ],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "native FFmpeg encoder; FFmpeg's own activity says nothing about this encoder, so no upstream is checked; a degradation source for the corpus of its artifact domain",
+      "class": "distortion-source"
+    },
+    {
+      "id": "huffyuv",
+      "family": "legacy",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "ffmpeg",
+      "ffmpeg_encoder": "huffyuv",
+      "hardware": "",
+      "licence_class": "copyleft-weak",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "calibration"
+      ],
+      "artifact_domains": [
+        "lossless-reference"
+      ],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "native FFmpeg encoder; FFmpeg's own activity says nothing about this encoder, so no upstream is checked; a degradation source for the corpus of its artifact domain",
+      "class": "distortion-source"
+    },
+    {
+      "id": "ffvhuff",
+      "family": "legacy",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "ffmpeg",
+      "ffmpeg_encoder": "ffvhuff",
+      "hardware": "",
+      "licence_class": "copyleft-weak",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "calibration"
+      ],
+      "artifact_domains": [
+        "lossless-reference"
+      ],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "native FFmpeg encoder; FFmpeg's own activity says nothing about this encoder, so no upstream is checked; a degradation source for the corpus of its artifact domain",
+      "class": "distortion-source"
+    },
+    {
+      "id": "utvideo",
+      "family": "legacy",
+      "paradigm": "classic",
+      "status": "planned",
+      "interface": "ffmpeg",
+      "ffmpeg_encoder": "utvideo",
+      "hardware": "",
+      "licence_class": "copyleft-weak",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "calibration"
+      ],
+      "artifact_domains": [
+        "lossless-reference"
+      ],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "native FFmpeg encoder; FFmpeg's own activity says nothing about this encoder, so no upstream is checked; a degradation source for the corpus of its artifact domain",
+      "class": "distortion-source"
+    },
+    {
+      "id": "vp6",
+      "family": "legacy",
+      "paradigm": "classic",
+      "status": "listed",
+      "interface": "decode-only",
+      "ffmpeg_encoder": "",
+      "hardware": "",
+      "licence_class": "copyleft-weak",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "calibration"
+      ],
+      "artifact_domains": [
+        "dct-blocking"
+      ],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "FFmpeg decodes On2 VP6 but has no encoder; samples come from archived files",
+      "class": "distortion-source"
+    },
+    {
+      "id": "vc1",
+      "family": "legacy",
+      "paradigm": "classic",
+      "status": "listed",
+      "interface": "decode-only",
+      "ffmpeg_encoder": "",
+      "hardware": "",
+      "licence_class": "copyleft-weak",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "calibration"
+      ],
+      "artifact_domains": [
+        "dct-blocking"
+      ],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "FFmpeg decodes VC-1 and WMV3 but has no encoder; samples come from archived files",
+      "class": "distortion-source"
+    },
+    {
+      "id": "rv40",
+      "family": "legacy",
+      "paradigm": "classic",
+      "status": "listed",
+      "interface": "decode-only",
+      "ffmpeg_encoder": "",
+      "hardware": "",
+      "licence_class": "copyleft-weak",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "calibration"
+      ],
+      "artifact_domains": [
+        "dct-blocking"
+      ],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "FFmpeg decodes RealVideo 3 and 4 but has no encoder; samples come from archived files",
+      "class": "distortion-source"
+    },
+    {
+      "id": "svq3",
+      "family": "legacy",
+      "paradigm": "classic",
+      "status": "listed",
+      "interface": "decode-only",
+      "ffmpeg_encoder": "",
+      "hardware": "",
+      "licence_class": "copyleft-weak",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "calibration"
+      ],
+      "artifact_domains": [
+        "dct-blocking"
+      ],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "FFmpeg decodes Sorenson Video 3 but has no encoder; samples come from archived files",
+      "class": "distortion-source"
+    },
+    {
+      "id": "indeo3",
+      "family": "legacy",
+      "paradigm": "classic",
+      "status": "listed",
+      "interface": "decode-only",
+      "ffmpeg_encoder": "",
+      "hardware": "",
+      "licence_class": "copyleft-weak",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "calibration"
+      ],
+      "artifact_domains": [
+        "vq-mosaic"
+      ],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "FFmpeg decodes Indeo 3 but has no encoder; samples come from archived files",
+      "class": "distortion-source"
+    },
+    {
+      "id": "indeo5",
+      "family": "legacy",
+      "paradigm": "classic",
+      "status": "listed",
+      "interface": "decode-only",
+      "ffmpeg_encoder": "",
+      "hardware": "",
+      "licence_class": "copyleft-weak",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "calibration"
+      ],
+      "artifact_domains": [
+        "wavelet-blur"
+      ],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "FFmpeg decodes Indeo 4 and 5 but has no encoder; samples come from archived files",
+      "class": "distortion-source"
+    },
+    {
+      "id": "dirac",
+      "family": "legacy",
+      "paradigm": "classic",
+      "status": "listed",
+      "interface": "decode-only",
+      "ffmpeg_encoder": "",
+      "hardware": "",
+      "licence_class": "copyleft-weak",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "calibration"
+      ],
+      "artifact_domains": [
+        "wavelet-blur"
+      ],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "FFmpeg decodes Dirac (beyond the VC-2 subset its vc2 encoder writes) but has no encoder; samples come from archived files",
+      "class": "distortion-source"
+    },
+    {
+      "id": "lagarith",
+      "family": "legacy",
+      "paradigm": "classic",
+      "status": "listed",
+      "interface": "decode-only",
+      "ffmpeg_encoder": "",
+      "hardware": "",
+      "licence_class": "copyleft-weak",
+      "maintenance": "unknown",
+      "upstream": "",
+      "awaits_ffmpeg": false,
+      "checked": "2026-10-29",
+      "use_cases": [
+        "calibration"
+      ],
+      "artifact_domains": [
+        "lossless-reference"
+      ],
+      "surfaces": [],
+      "adapter": null,
+      "notes": "FFmpeg decodes Lagarith but has no encoder; samples come from archived files",
+      "class": "distortion-source"
     }
   ],
-  "variants": []
+  "variants": [
+    {
+      "adapter": "libsvtav1",
+      "variant": "svt-av1-hdr",
+      "kind": "runtime-fork",
+      "status": "implemented",
+      "licence_class": "permissive",
+      "upstream": "https://github.com/juliobbv-p/svt-av1-hdr",
+      "checked": "2026-10-29",
+      "notes": "bound with --encoder-ffmpeg-bin (ADR-0644)"
+    },
+    {
+      "adapter": "libsvtav1",
+      "variant": "svt-av1-psyex",
+      "kind": "runtime-fork",
+      "status": "planned",
+      "licence_class": "permissive",
+      "upstream": "https://github.com/BlueSwordM/svt-av1-psyex",
+      "checked": "2026-10-29",
+      "notes": "perceptual fork; same ADR-0644 binding"
+    },
+    {
+      "adapter": "libx265",
+      "variant": "grain",
+      "kind": "tuning-profile",
+      "status": "planned",
+      "licence_class": "copyleft-strong",
+      "upstream": "https://bitbucket.org/multicoreware/x265_git",
+      "checked": "2026-10-29",
+      "notes": "--tune grain: film-grain retention"
+    },
+    {
+      "adapter": "libx265",
+      "variant": "texture",
+      "kind": "tuning-profile",
+      "status": "planned",
+      "licence_class": "copyleft-strong",
+      "upstream": "https://bitbucket.org/multicoreware/x265_git",
+      "checked": "2026-10-29",
+      "notes": "anti-smoothing: raised psy-rd and psy-rdoq, aq-mode 3"
+    },
+    {
+      "adapter": "libx264",
+      "variant": "psy-rd",
+      "kind": "tuning-profile",
+      "status": "planned",
+      "licence_class": "copyleft-strong",
+      "upstream": "https://code.videolan.org/videolan/x264",
+      "checked": "2026-10-29",
+      "notes": "psychovisual rate-distortion strength sweep"
+    },
+    {
+      "adapter": "libx264",
+      "variant": "psy-trellis",
+      "kind": "tuning-profile",
+      "status": "planned",
+      "licence_class": "copyleft-strong",
+      "upstream": "https://code.videolan.org/videolan/x264",
+      "checked": "2026-10-29",
+      "notes": "psy-rd trellis term sweep"
+    },
+    {
+      "adapter": "libx264",
+      "variant": "mbtree",
+      "kind": "tuning-profile",
+      "status": "planned",
+      "licence_class": "copyleft-strong",
+      "upstream": "https://code.videolan.org/videolan/x264",
+      "checked": "2026-10-29",
+      "notes": "macroblock-tree on against off"
+    },
+    {
+      "adapter": "libx264",
+      "variant": "grain",
+      "kind": "tuning-profile",
+      "status": "planned",
+      "licence_class": "copyleft-strong",
+      "upstream": "https://code.videolan.org/videolan/x264",
+      "checked": "2026-10-29",
+      "notes": "--tune grain"
+    }
+  ]
 }

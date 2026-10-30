@@ -163,12 +163,29 @@ for relative_path, build_jobs in workflows.items():
             publish = job_block(jobs_text, f"publish-{image}")
             for snippet in (
                 f"      - build-{image}\n",
-                'if [[ "${#digests[@]}" -ne 2 ]]; then',
-                "docker buildx imagetools create",
+                "        id: index\n        uses: ./.github/actions/merge-platform-index\n",
+                "          image: ${{ env.REGISTRY }}/${{ env." + env_name + " }}\n",
                 "${{ env." + env_name + " }}@${{ steps.index.outputs.digest }}",
             ):
                 if snippet not in publish:
                     raise AssertionError(f"{relative_path}: publish-{image} lacks {snippet!r}")
+            merge_step = re.search(
+                r"uses: \./\.github/actions/merge-platform-index\n        with:\n((?:          [^\n]*\n)+)",
+                publish,
+            )
+            if merge_step is None or "platforms:" in merge_step.group(1):
+                raise AssertionError(f"{relative_path}: publish-{image} overrides the two-platform count")
+        # The merge itself lives in one composite action (HISS-19): it must
+        # refuse anything but the two native platform digests and build the
+        # index from them.
+        merge = (root / ".github/actions/merge-platform-index/action.yml").read_text(encoding="utf-8")
+        for snippet in (
+            'if [[ "${#digests[@]}" -ne "${PLATFORMS}" ]]; then',
+            "    default: \"2\"\n",
+            "docker buildx imagetools create",
+        ):
+            if snippet not in merge:
+                raise AssertionError(f"merge-platform-index action lacks {snippet!r}")
 
     if "ref: ${{ github.event.release.tag_name || github.ref }}" in jobs_text:
         raise AssertionError(f"{relative_path}: independent event-ref checkout remains")
