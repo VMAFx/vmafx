@@ -136,11 +136,16 @@ is_allowed_dependency_path() {
   # Exact root path only: nested Makefiles and *.mk stay gated.
   # rust-toolchain.toml is the one Rust toolchain pin (ADR-3318); Renovate
   # moves it together with the workflows and crate manifests (PR #2795).
+  # cmd/vmafx-controller/internal/storetest/storetest.go carries PostgreSQL
+  # Image and OldestImage container digest constants managed by Renovate's
+  # custom regex manager (#2656, #3039). Keep it an exact path: other Go files
+  # under cmd/ or elsewhere are source code and must remain gated.
   case "$path" in
     renovate.json | \
       build-config.env | \
       Makefile | \
       rust-toolchain.toml | \
+      cmd/vmafx-controller/internal/storetest/storetest.go | \
       .github/renovate.json* | \
       .pre-commit-config.yaml | \
       dev/Containerfile | \

@@ -455,6 +455,28 @@ DIFF
 expect_exit "Containerfile look-alike source is NOT exempt" 1 "renovate[bot]" \
   "renovate/lookalike-containerfile" "${work}/case37_containerfile_lookalike.diff"
 
+# Renovate PR #3039: controller storetest PostgreSQL Image and OldestImage
+# digest constants in cmd/vmafx-controller/internal/storetest/storetest.go.
+# Exact path only; sibling files or source edits alongside it stay gated.
+cat >"${work}/case38_pr3039_storetest.diff" <<'DIFF'
+cmd/vmafx-controller/internal/storetest/storetest.go
+DIFF
+expect_exit "PR #3039 fixture (storetest.go postgres digest pins) is exempt" 0 "renovate[bot]" \
+  "renovate/postgres-digests" "${work}/case38_pr3039_storetest.diff"
+
+cat >"${work}/case39_storetest_sibling.diff" <<'DIFF'
+cmd/vmafx-controller/internal/storetest/other.go
+DIFF
+expect_exit "sibling storetest Go file is NOT exempt" 1 "renovate[bot]" \
+  "renovate/cmd-sibling" "${work}/case39_storetest_sibling.diff"
+
+cat >"${work}/case40_storetest_plus_source.diff" <<'DIFF'
+cmd/vmafx-controller/internal/storetest/storetest.go
+core/src/x.c
+DIFF
+expect_exit "storetest.go plus core/src/x.c source is NOT exempt" 1 "renovate[bot]" \
+  "renovate/postgres-digests" "${work}/case40_storetest_plus_source.diff"
+
 echo ""
 echo "test-classify-dependency-pr: ${pass_count} passed, ${fail_count} failed"
 
