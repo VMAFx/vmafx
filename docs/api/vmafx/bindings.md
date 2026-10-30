@@ -215,8 +215,8 @@ The Go package `github.com/VMAFx/vmafx/pkg/vmafx` is generated from
   usable with `CGO_ENABLED=0`.
 - `pkg/vmafx/api_gen.go` (`//go:build cgo`): cgo binding of `libvmafx.so.1`
   with compile-time `unsafe.Sizeof` and `unsafe.Alignof` checks for every struct
-  in `core/api/vmafx.toml`, Go record types, `Context` and package-level library
-  functions.
+  in `core/api/vmafx.toml`, Go record types, `Context`, `Model`, `Frame` and
+  package-level library functions.
 
 ### Linking the library
 
@@ -274,6 +274,68 @@ if `vmafx_context_destroy` returns a non-OK status, the `Context` handle stays
 open so `Close()` may be retried; once `Close()` succeeds, subsequent `Close()`
 calls are no-ops returning `nil`.
 
+#### Scoring frames
+
+`Model` and `Frame` are refcounted handles released with `Close()` (safe on nil
+and to call twice). A host frame is filled through `PlaneBytes`, which aliases
+the frame's C memory, and handed to the context with `Submit`, which consumes
+both frames on every path, so a `Close()` after `Submit` is a no-op:
+
+```go
+model, err := vmafx.LoadModelFile(&vmafx.ModelConfig{Name: "vmaf"}, "model/vmaf_v1.0.16/vmaf_v1.0.16_3d0h.json")
+if err != nil {
+    log.Fatal(err)
+}
+defer model.Close()
+if err := ctx.UseModel(model); err != nil {
+    log.Fatal(err)
+}
+
+desc := vmafx.FrameDesc{PixFmt: 1, Bpc: 8, W: 576, H: 324} // 4:2:0, 8 bit
+for index := uint64(0); index < frames; index++ {
+    ref, err := vmafx.NewHostFrame(desc)
+    if err != nil {
+        log.Fatal(err)
+    }
+    dis, err := vmafx.NewHostFrame(desc)
+    if err != nil {
+        ref.Close()
+        log.Fatal(err)
+    }
+    // ... copy each plane row into ref.PlaneBytes(p) and dis.PlaneBytes(p), honouring Planes().Stride ...
+    if err := ctx.Submit(ref, dis, index); err != nil {
+        log.Fatal(err)
+    }
+}
+if err := ctx.Flush(); err != nil {
+    log.Fatal(err)
+}
+mean, err := ctx.ScorePooled(model, vmafx.PoolMean, 0, frames-1)
+```
+
+`ProvenanceJson(0)` returns the record the CLI report embeds, as JSON text.
+
+#### pkg/libvmaf runs on this binding
+
+The in-process paths of `pkg/libvmaf` (`ScoreDirect`, used by `vmafx-mcp` with
+`VMAFX_MCP_DIRECT=1`, and `StreamScorer`, used by the `vmafx-server` gRPC
+`ScoreStream`) hold no cgo of their own since [#2434](https://github.com/VMAFx/vmafx/issues/2434):
+they call `LoadModelFile`, `UseModel`, `NewHostFrame`, `Submit`, `Flush` and
+`ScorePooled` of this package. The pooled mean of `vmaf_v1.0.16_3d0h` through
+`ScoreDirect`, through `pkg/vmafx` and through the libvmaf C API is bit-for-bit
+the same value (`TestPooledMeanBitExactAcrossBindings`, compared as `%x`).
+`Scorer` still runs the `vmaf` CLI as a subprocess; the CLI is a process
+boundary this in-process binding does not replace. `DNNSession` keeps its own
+cgo file because the binding has no DNN session handle yet.
+
+The errno contract of `pkg/libvmaf` is kept. `pkg/vmafx` reports a stable
+`Status` in a `*vmafx.Error`; `pkg/libvmaf` maps `StatusEInvalid`,
+`StatusENoMem`, `StatusENotFound` and `StatusEIO` to `ErrInvalidArgument`
+(wraps `os.ErrInvalid`), `ErrOutOfMemory`, `ErrModelNotFound` (wraps
+`os.ErrNotExist`) and `ErrPictureRead`, and keeps the `*vmafx.Error` in the chain
+for `errors.As`. A missing model file is a file error (`StatusEIO`) in `vmafx`;
+`pkg/libvmaf` checks the path again and still returns `ErrModelNotFound`.
+
 ### Errors
 
 Every non-OK C call reads and frees the `VmafxError` diagnostic and returns a
@@ -298,10 +360,11 @@ if errors.Is(err, vmafx.ErrPending) {
 ### What is not wrapped yet
 
 Like the Python binding, `pkg/vmafx` wraps the context methods and library
-functions whose parameters are plain scalar values and output structs. Calls
-that take device handles, callbacks or other handle types remain on the C
-layer; `(c *Context) LibvmafHandle()` returns the underlying `VmafContext *` as
-an `unsafe.Pointer` for calls not yet migrated. For remote scoring over gRPC or
+functions whose parameters are plain scalar values, strings, output structs and
+the `Model` and `Frame` handles. Calls that take device handles, model sets,
+option lists, callbacks (windows) or imported frames remain on the C layer;
+`(c *Context) LibvmafHandle()` returns the underlying `VmafContext *` as an
+`unsafe.Pointer` for calls not yet migrated. For remote scoring over gRPC or
 REST, `gen/go/` (module `github.com/VMAFx/vmafx/gen/go`, package `vmafxv1`)
 provides the generated client and server stubs.
 
@@ -316,6 +379,16 @@ CGO_ENABLED=1 CGO_LDFLAGS="-L$(pwd)/core/build-cpu/src -lvmaf -lvmafx -lm" \
   LD_LIBRARY_PATH="$(pwd)/core/build-cpu/src" \
   go test -v -race -count=1 ./pkg/vmafx/...
 ```
+
+Every function `api_gen.go` wraps has a test against the built library:
+`TestEveryWrappedFunctionHasATest` reads the generated file and fails for a
+wrapped function no test file calls. The model and frame tests read
+`model/vmaf_v1.0.16/vmaf_v1.0.16_3d0h.json` and the tracked `testdata/` pair; a
+missing file skips the test with its path named. The bit-exactness test of
+`pkg/libvmaf` also compiles `pkg/libvmaf/testdata/c_api_pooled_mean.c` with `cc`
+against the library `CGO_LDFLAGS` selects, and reads the Netflix 576x324 pair
+from `python/test/resource/yuv/` (override with `VMAFX_YUV_REF` and
+`VMAFX_YUV_DIS`).
 
 ## See also
 

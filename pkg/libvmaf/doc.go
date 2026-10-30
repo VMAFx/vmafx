@@ -28,17 +28,33 @@
 //
 // # Scope
 //
-// The package reaches libvmaf four ways; three of them are cgo calls into
-// libvmaf.so, so every binary importing the package links the library and
-// needs it at run time:
+// The package reaches libvmaf four ways. Since #2434 the in-process scoring
+// paths hold no cgo of their own: they run on the generated pkg/vmafx binding
+// (one implementation of context, model, frame, submit and score), so every
+// binary importing the package links libvmaf and libvmafx and needs them at
+// run time.
 //
 //   - [Scorer] runs the vmaf CLI binary as a subprocess and parses its JSON
-//     (the vmafx-mcp default and the vmafx-server unary Score path).
-//   - [ScoreDirect] scores a file pair in process through cgo (ADR-0931;
+//     (the vmafx-mcp default and the vmafx-server unary Score path). It stays a
+//     subprocess: pkg/vmafx wraps the library in process only, and the CLI is
+//     the process boundary adopters rely on.
+//   - [ScoreDirect] scores a file pair in process through pkg/vmafx (ADR-0931;
 //     vmafx-mcp with VMAFX_MCP_DIRECT=1).
-//   - [StreamScorer] keeps a cgo VmafContext and scores raw frames pushed one
+//   - [StreamScorer] keeps a pkg/vmafx context and scores raw frames pushed one
 //     at a time (ADR-0933; the gRPC ScoreStream path of vmafx-server).
-//   - [DNNSession] opens a tiny-AI ONNX session through cgo (`dnn.h`).
+//   - [DNNSession] opens a tiny-AI ONNX session through cgo (`dnn.h`); it is the
+//     one remaining cgo file of the package.
+//
+// # Errors
+//
+// Every in-process failure is translated to the errno contract of ADR-0931:
+// [ErrInvalidArgument] (wraps os.ErrInvalid), [ErrModelNotFound] (wraps
+// os.ErrNotExist), [ErrOutOfMemory] and [ErrPictureRead]. pkg/vmafx reports a
+// stable Status instead of a bare errno, so the status (EINVAL, ENOMEM, ENOENT,
+// EIO) selects the sentinel and the *vmafx.Error stays in the chain: both
+// errors.Is(err, libvmaf.ErrInvalidArgument) and errors.As(err, &vmafxErr)
+// hold. One difference is deliberate: vmafx reports a missing model file as a
+// file error, so the loader checks the path again and keeps ErrModelNotFound.
 //
 // It also holds the path-validation helpers the tool handlers use. Only what
 // these callers need is wrapped; the full C API is not.

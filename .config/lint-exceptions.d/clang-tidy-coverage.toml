@@ -197,3 +197,8 @@ expires = 2027-03-31
 path = "core/test/test_colorspace.c"
 reason = "Built only with -Denable_zimg=true (core/test/meson.build); zimg is not in dev/Containerfile (grep -i zimg dev/Containerfile is empty) nor installed by the hosted Tidy Ratchet job (.github/workflows/lint-and-format.yml \"Install deps\" step); fix = libzimg-dev in both, -Denable_zimg=true in TIDY_RATCHET_SETUP_cpu, re-measure. Re-reviewed 2026-10-15. Category D (120 days)."
 expires = 2027-02-12
+
+[[exception]]
+path = "pkg/libvmaf/testdata/c_api_pooled_mean.c"
+reason = "Category D. Reference harness the Go tests of pkg/libvmaf compile with cc against the Meson-built library, so it is in no Meson compile database and no lane reads it. Clean under the repository .clang-tidy when run by hand. Rectify by building it from a compile database a lane reads."
+expires = 2027-02-27
