@@ -81,7 +81,9 @@ FIXED_OUTPUTS: tuple[tuple[str, Renderer], ...] = (
     ("bindings/python/vmafx/_api.py", emit_python.module_text),
     ("pkg/vmafx/status_gen.go", emit_go.status_text),
     ("pkg/vmafx/api_gen.go", emit_go.api_text),
+    ("bindings/rust/vmafx-sys/src/vmafx_api_gen.rs", emit_rust.sys_text),
     ("bindings/rust/vmafx/src/status_gen.rs", emit_rust.status_text),
+    ("bindings/rust/vmafx/src/api_gen.rs", emit_rust.safe_text),
 )
 
 

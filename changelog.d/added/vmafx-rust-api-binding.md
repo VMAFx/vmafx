@@ -1,0 +1,1 @@
+- **rust**: generate the FFI and safe Rust bindings of the VMAFx C API (`vmafx-sys`, `vmafx`) from `core/api/vmafx.toml` (#2434)
