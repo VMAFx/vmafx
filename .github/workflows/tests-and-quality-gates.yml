@@ -1087,10 +1087,16 @@ jobs:
         id: coverage_prefetch_go
         if: steps.impact.outputs.golden_harness == 'true'
         run: python3 scripts/ci/prefetch_go_modules.py
+      - name: Fetch the Netflix golden YUV fixtures for the unit suite
+        if: steps.impact.outputs.golden_harness == 'true'
+        run: bash scripts/test/fetch-test-yuvs.sh
       - name: Run meson unit suite (with gcov counters)
         id: coverage_meson_suite
         if: steps.impact.outputs.golden_harness == 'true'
         working-directory: core
+        env:
+          # Fails the Python binding's bit-exact test if the pair is missing.
+          VMAFX_REQUIRE_NETFLIX_PAIR: "1"
         run: >-
           python3 ../scripts/ci/run_meson_test.py -- -C build-coverage
           --print-errorlogs --num-processes 1 --timeout-multiplier 3
