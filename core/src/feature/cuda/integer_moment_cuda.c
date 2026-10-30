@@ -29,6 +29,7 @@
 #include "cuda/integer_moment_cuda.h"
 #include "cuda/kernel_template.h"
 #include "feature/float_moment_sum.h"
+#include "feature/float_moment_scaler.h"
 #include "mem.h"
 #include "picture.h"
 #include "picture_cuda.h"
@@ -286,7 +287,7 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
 }
 
 /* The scaler picture_copy() divides a sample by before moment.c accumulates
- * it: 4 at 10 bpc, 16 at 12 bpc, 256 at 16 bpc (core/src/feature/
+ * it: 2^(bpc - 8) at every depth above 8 (core/src/feature/
  * picture_copy.cpp). The kernel accumulates the raw codeword, so collect()
  * divides by it; without that a 10-bit input reported ref1st / dis1st 4x and
  * ref2nd / dis2nd 16x too large (ADR-1212).
@@ -296,19 +297,15 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
  * 1 / scaler^2. Every term is a multiple of the unit, so the CPU's running
  * double sum is exact, and equal to the integer sum, while it is at most
  * 2^53 units; dividing by a power of two and then by the pixel count are the
- * CPU's two operations. A second-moment sum can pass 2^53 units only on a
- * 16-bit frame of more than 2^21 pixels (each term is below 2^32). There the
+ * CPU's two operations. vmaf_moment_sum_may_round() bounds every depth's
+ * second-moment sum by pixels * 2^(2 * bpc). Past 2^53 units the
  * CPU rounds as it adds, and moment_cuda_dispatch_sum() has replaced the two
  * second-moment sums with the CPU's rounded ones (ADR-1497), each a double
  * the conversion below holds exactly. test_cuda_float_moment_parity checks
  * both ranges with ==. */
 static double moment_cuda_scaler(unsigned bpc)
 {
-    if (bpc == 10u)
-        return 4.0;
-    if (bpc == 12u)
-        return 16.0;
-    return (bpc == 16u) ? 256.0 : 1.0;
+    return vmaf_float_moment_scaler(bpc);
 }
 
 static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,

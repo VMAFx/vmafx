@@ -121,15 +121,12 @@ static char *test_device_twins_refuse_odd_depths(void)
 
 /* The refusal is an allow-list of exact twin names: a twin nobody measured at odd depths
  * is refused, including one the list never named and the Metal float_psnr and ciede twins
- * whose CUDA, SYCL and HIP siblings are measured. float_moment's twins scale 10, 12 and
- * 16 bits only and divided 9-bit samples by 1 (#2476). */
+ * and float_moment twins whose CUDA, SYCL and HIP siblings are measured. */
 static char *test_unmeasured_twins_refuse_odd_depths(void)
 {
-    static const char *const kTwins[] = {"float_moment_cuda",   "float_moment_hip",
-                                         "float_moment_sycl",   "float_psnr_metal",
-                                         "integer_ciede_metal", "planted_new_cuda"};
-    static const uint64_t kFlags[] = {VMAF_FEATURE_EXTRACTOR_CUDA,  VMAF_FEATURE_EXTRACTOR_HIP,
-                                      VMAF_FEATURE_EXTRACTOR_SYCL,  VMAF_FEATURE_EXTRACTOR_METAL,
+    static const char *const kTwins[] = {"float_psnr_metal", "integer_ciede_metal",
+                                         "float_moment_metal", "planted_new_cuda"};
+    static const uint64_t kFlags[] = {VMAF_FEATURE_EXTRACTOR_METAL, VMAF_FEATURE_EXTRACTOR_METAL,
                                       VMAF_FEATURE_EXTRACTOR_METAL, VMAF_FEATURE_EXTRACTOR_CUDA};
     for (size_t f = 0; f < sizeof(kTwins) / sizeof(kTwins[0]); f++) {
         for (size_t i = 0; i < sizeof(kOddDepths) / sizeof(kOddDepths[0]); i++) {
@@ -144,14 +141,17 @@ static char *test_unmeasured_twins_refuse_odd_depths(void)
     return NULL;
 }
 
-/* float_psnr and ciede twins carry every odd depth in their parity tests (ADR-2164); the
- * psnr_hvs twins 9 and 11 bits only. A family prefix does not pass. */
+/* float_psnr, ciede and float_moment twins carry every odd depth in their parity tests
+ * (ADR-2164); the psnr_hvs twins 9 and 11 bits only. A family prefix does not pass. */
 static char *test_measured_twins_keep_odd_depths(void)
 {
-    static const char *const kTwins[] = {"float_psnr_cuda", "float_psnr_sycl", "ciede_hip",
-                                         "ciede_cuda"};
+    static const char *const kTwins[] = {
+        "float_psnr_cuda",   "float_psnr_sycl",   "ciede_hip",       "ciede_cuda",
+        "float_moment_cuda", "float_moment_sycl", "float_moment_hip"};
     static const uint64_t kFlags[] = {VMAF_FEATURE_EXTRACTOR_CUDA, VMAF_FEATURE_EXTRACTOR_SYCL,
-                                      VMAF_FEATURE_EXTRACTOR_HIP, VMAF_FEATURE_EXTRACTOR_CUDA};
+                                      VMAF_FEATURE_EXTRACTOR_HIP,  VMAF_FEATURE_EXTRACTOR_CUDA,
+                                      VMAF_FEATURE_EXTRACTOR_CUDA, VMAF_FEATURE_EXTRACTOR_SYCL,
+                                      VMAF_FEATURE_EXTRACTOR_HIP};
     for (size_t f = 0; f < sizeof(kTwins) / sizeof(kTwins[0]); f++) {
         for (size_t i = 0; i < sizeof(kOddDepths) / sizeof(kOddDepths[0]); i++) {
             mu_assert("a measured device twin refused an odd depth",

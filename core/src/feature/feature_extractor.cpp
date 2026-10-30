@@ -979,11 +979,11 @@ int consult_cuda_dispatch(const VmafFeatureExtractor *fex, unsigned w, unsigned 
 /* Device twins at picture bit depths other than 8, 10, 12 and 16. picture_copy() scales
  * every depth from 8 to 16 bits (ADR-2164), so the CPU extractors score 9, 11, 13, 14 and
  * 15-bit pictures; a CUDA, SYCL, HIP or Metal twin reads the words itself, and several
- * scale only the depths they were written for: the float_moment twins divide by 4, 16 or
- * 256 and by 1 at every other depth, where the CPU divides by 2^(bpc - 8). A twin is
- * refused at those depths unless its parity test compares it with the CPU there (#2476,
- * ADR-3383): the float_psnr and ciede twins of CUDA, SYCL and HIP at every odd depth
- * (float_psnr_twin_odd_depths_exact(), ciede_twin_odd_depths()), and the psnr_hvs twins
+ * scale only the depths they were written for. A twin is refused at those depths unless
+ * its parity test compares it with the CPU there (#2476, ADR-3383): the float_psnr and
+ * ciede twins of CUDA, SYCL and HIP at every odd depth (float_psnr_twin_odd_depths_exact(),
+ * ciede_twin_odd_depths()), the float_moment twins of CUDA, SYCL and HIP
+ * (float_moment_twin_noise_exact()), and the psnr_hvs twins
  * up to 11 bits (hvs_twin_every_depth_identical(), 9 to 12 bits). A twin joins the table,
  * by its exact name, in the pull request that adds the depths to its parity test. */
 struct MeasuredTwin {
@@ -1000,6 +1000,9 @@ int refuse_unscaled_bpc(const VmafFeatureExtractor *fex, unsigned bpc)
         {.name = "ciede_cuda", .max_bpc = 15U},
         {.name = "ciede_sycl", .max_bpc = 15U},
         {.name = "ciede_hip", .max_bpc = 15U},
+        {.name = "float_moment_cuda", .max_bpc = 15U},
+        {.name = "float_moment_sycl", .max_bpc = 15U},
+        {.name = "float_moment_hip", .max_bpc = 15U},
         {.name = "psnr_hvs_cuda", .max_bpc = 11U},
         {.name = "psnr_hvs_sycl", .max_bpc = 11U},
         {.name = "psnr_hvs_hip", .max_bpc = 11U},
