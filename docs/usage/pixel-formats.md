@@ -22,25 +22,25 @@ device without a host copy.
 | `NV12` | `YUV420P` | semi-planar | 8 | left | cpu, cuda, sycl, hip, metal |
 | `P010` | `YUV420P` | semi-planar | 10 | left | cpu, cuda, sycl, hip, metal |
 | `P016` | `YUV420P` | semi-planar | 16 | left | cpu, cuda, sycl, hip, metal |
-| `NV16` | `YUV422P` | semi-planar | 8 | left | cpu, cuda, hip |
-| `P210` | `YUV422P` | semi-planar | 10 | left | cpu, cuda, hip |
-| `P216` | `YUV422P` | semi-planar | 16 | left | cpu, cuda, hip |
-| `NV24` | `YUV444P` | semi-planar | 8 | none | cpu, cuda, hip |
-| `P410` | `YUV444P` | semi-planar | 10 | none | cpu, cuda, hip |
-| `P416` | `YUV444P` | semi-planar | 16 | none | cpu, cuda, hip |
-| `Y210` | `YUV422P` | packed | 10 | left | cpu, cuda, hip |
-| `Y212` | `YUV422P` | packed | 12 | left | cpu, cuda, hip |
-| `YUYV422` | `YUV422P` | packed | 8 | left | cpu, cuda, hip |
-| `UYVY422` | `YUV422P` | packed | 8 | left | cpu, cuda, hip |
-| `V210` | `YUV422P` | packed | 10 | left | cpu, cuda, hip |
-| `Y410` | `YUV444P` | packed | 10 | none | cpu, cuda, hip |
-| `XV36` | `YUV444P` | packed | 12 | none | cpu, cuda, hip |
-| `VUYX` | `YUV444P` | packed | 8 | none | cpu, cuda, hip |
-| `AYUV` | `YUV444P` | packed | 8 | none | cpu, cuda, hip |
-| `YUV444P_MSB` | `YUV444P` | planar | 9 to 16 | none | cpu, cuda, hip |
-| `RGB` | `YUV444P` | rgb, statement required | 8 to 16 | none | cpu, cuda, hip |
-| `RGBA` | `YUV444P` | rgb, statement required | 8 to 16 | none | cpu, cuda, hip |
-| `BGRA` | `YUV444P` | rgb, statement required | 8 to 16 | none | cpu, cuda, hip |
+| `NV16` | `YUV422P` | semi-planar | 8 | left | cpu, cuda, sycl, hip |
+| `P210` | `YUV422P` | semi-planar | 10 | left | cpu, cuda, sycl, hip |
+| `P216` | `YUV422P` | semi-planar | 16 | left | cpu, cuda, sycl, hip |
+| `NV24` | `YUV444P` | semi-planar | 8 | none | cpu, cuda, sycl, hip |
+| `P410` | `YUV444P` | semi-planar | 10 | none | cpu, cuda, sycl, hip |
+| `P416` | `YUV444P` | semi-planar | 16 | none | cpu, cuda, sycl, hip |
+| `Y210` | `YUV422P` | packed | 10 | left | cpu, cuda, sycl, hip |
+| `Y212` | `YUV422P` | packed | 12 | left | cpu, cuda, sycl, hip |
+| `YUYV422` | `YUV422P` | packed | 8 | left | cpu, cuda, sycl, hip |
+| `UYVY422` | `YUV422P` | packed | 8 | left | cpu, cuda, sycl, hip |
+| `V210` | `YUV422P` | packed | 10 | left | cpu, cuda, sycl, hip |
+| `Y410` | `YUV444P` | packed | 10 | none | cpu, cuda, sycl, hip |
+| `XV36` | `YUV444P` | packed | 12 | none | cpu, cuda, sycl, hip |
+| `VUYX` | `YUV444P` | packed | 8 | none | cpu, cuda, sycl, hip |
+| `AYUV` | `YUV444P` | packed | 8 | none | cpu, cuda, sycl, hip |
+| `YUV444P_MSB` | `YUV444P` | planar | 9 to 16 | none | cpu, cuda, sycl, hip |
+| `RGB` | `YUV444P` | rgb, statement required | 8 to 16 | none | cpu, cuda, sycl, hip |
+| `RGBA` | `YUV444P` | rgb, statement required | 8 to 16 | none | cpu, cuda, sycl, hip |
+| `BGRA` | `YUV444P` | rgb, statement required | 8 to 16 | none | cpu, cuda, sycl, hip |
 
 ## Names on each surface
 

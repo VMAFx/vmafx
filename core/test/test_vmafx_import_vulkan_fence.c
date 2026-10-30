@@ -12,8 +12,8 @@
  * the real one none (0 bad of N).
  *
  * - Acquire: every frame first holds a canary, then the producer writes the
- *   real frame behind a gate a helper thread opens a few milliseconds after
- *   the frame was imported and submitted. CUDA waits for the write on the
+ *   real frame behind a gate a helper thread opens: gate of frame i opens
+ *   GATE_MS after frame i's submit returned. CUDA waits for the write on the
  *   device (a VULKAN_SEMAPHORE acquire fence); SYCL and HIP take the write's
  *   sync_file, which the import rule waits on before its retry. With the
  *   planted skipped wait (VMAFX_TEST_SKIP_ACQUIRE_WAIT) the readers see the
@@ -125,7 +125,7 @@ typedef struct Opener {
     unsigned n;
     VkpFrame *delay;       /* its timeline signalled to i + 1 with gate i, or NULL */
     atomic_uint submitted; /* frames the test thread submitted */
-    bool after_submit;     /* open gate i GATE_MS after frame i - 1 was submitted */
+    bool after_submit;     /* gate of frame i opens GATE_MS after frame i's submit returned */
     bool running;
 } Opener;
 
@@ -155,13 +155,13 @@ static void *opener_main(void *arg)
     return NULL;
 }
 
-static void opener_start(Opener *o, uint64_t from, unsigned n, VkpFrame *delay)
+static void opener_start(Opener *o, uint64_t from, unsigned n, VkpFrame *delay, bool after_submit)
 {
     o->from = from;
     o->n = n;
     o->delay = delay;
     atomic_init(&o->submitted, 0u);
-    o->after_submit = delay != NULL;
+    o->after_submit = after_submit;
     o->running = pthread_create(&o->thread, NULL, opener_main, o) == 0;
 }
 
@@ -298,9 +298,9 @@ static bool make_pairs(Pairs *p)
     return ok;
 }
 
-/* Queue the writes of frame i: CUDA behind gate value base + i + 1, which
- * the helper opens after the frame was imported; SYCL / HIP behind busy
- * work, the write's sync_file waited on by the import rule. */
+/* Queue the writes of frame i: timeline lanes behind gate value base + i + 1,
+ * where gate of frame i opens GATE_MS after frame i's submit returned; HIP
+ * behind busy work, the write's sync_file waited on by the import rule. */
 static bool write_frame(Pairs *p, uint64_t base, unsigned i)
 {
     const uint32_t busy = VK_DEVICE_SEMAPHORES ? 0u : BUSY_COPIES;
@@ -320,7 +320,7 @@ static VmafxContext *run_gated(Pairs *p, uint64_t base)
         ok = write_frame(p, base, i);
     }
     Opener opener;
-    opener_start(&opener, base, N_FRAMES, NULL);
+    opener_start(&opener, base, N_FRAMES, NULL, VK_DEVICE_SEMAPHORES != 0);
     for (unsigned i = 0; i < N_FRAMES && ok; i++) {
         ok = VK_DEVICE_SEMAPHORES || write_frame(p, base, i);
         /* The reference is imported first: its copy is queued before any
@@ -329,7 +329,9 @@ static VmafxContext *run_gated(Pairs *p, uint64_t base)
         VmafxFrame *const d = r ? import_at(context, &p->dist[i], 2u, false) : NULL;
         imports_ahead += r && vkp_frame_value(p->ref[i].f) < 2u;
         imports_ahead += d && vkp_frame_value(p->dist[i].f) < 2u;
-        ok = r && d && vmafx_submit(context, r, d, i, NULL) == VMAFX_OK;
+        const bool submitted = r && d && vmafx_submit(context, r, d, i, NULL) == VMAFX_OK;
+        (void)atomic_fetch_add(&opener.submitted, 1u);
+        ok = ok && submitted;
     }
     ok = ok && vmafx_flush(context, NULL) == VMAFX_OK;
     opener_join(&opener);
@@ -635,7 +637,8 @@ static unsigned release_arm(uint32_t switches)
     bool ok =
         contexts[0] && contexts[1] && make_pairs(&p) && write_pairs(&p) && delay_timeline(&delay);
     Opener opener;
-    opener_start(&opener, base, N_FRAMES, VK_DEVICE_SEMAPHORES ? delay.f : NULL);
+    opener_start(&opener, base, N_FRAMES, VK_DEVICE_SEMAPHORES ? delay.f : NULL,
+                 VK_DEVICE_SEMAPHORES != 0);
     atomic_init(&r.published, 0u);
     r.running =
         ok && !VK_DEVICE_SEMAPHORES && pthread_create(&r.thread, NULL, releaser_main, &r) == 0;

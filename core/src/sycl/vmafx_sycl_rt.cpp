@@ -279,10 +279,20 @@ sycl::event launch_gather(sycl::queue &q, const VmafxSyclPlaneOp &op)
     const unsigned in_bytes = op.in_bytes;
     const unsigned shift = op.shift;
     const unsigned mask = op.mask;
+    const unsigned period = op.period;
+    const unsigned group_elems = op.group_elems;
+    const unsigned pattern = op.pattern;
     return q.parallel_for(sycl::range<2>(op.rows, op.w), [=](sycl::id<2> id) {
         const size_t y = id[0];
         const size_t x = id[1];
-        const uint8_t *const at = src + y * sp + (x * step + offset) * in_bytes;
+        size_t element = (size_t)x * step + offset;
+        unsigned s = shift;
+        if (period != 0u) {
+            const unsigned nibble = (pattern >> (4u * (x % period))) & 15u;
+            element = (size_t)(x / period) * group_elems + (nibble & 3u);
+            s = 10u * (nibble >> 2u);
+        }
+        const uint8_t *const at = src + y * sp + element * in_bytes;
         unsigned v = at[0];
         if (in_bytes >= 2u) {
             v |= (unsigned)at[1] << 8;
@@ -290,7 +300,7 @@ sycl::event launch_gather(sycl::queue &q, const VmafxSyclPlaneOp &op)
         if (in_bytes == 4u) {
             v |= ((unsigned)at[2] << 16) | ((unsigned)at[3] << 24);
         }
-        v >>= shift;
+        v >>= s;
         if (mask != 0u) {
             v &= mask;
         }
@@ -298,6 +308,45 @@ sycl::event launch_gather(sycl::queue &q, const VmafxSyclPlaneOp &op)
         out[0] = (uint8_t)(v & 0xFFu);
         if (bytes == 2u) {
             out[1] = (uint8_t)((v >> 8) & 0xFFu);
+        }
+    });
+}
+
+/* Plane `op.plane` of the Y'CbCr frame an RGB layout makes, by the plan
+ * the host reference uses (vmafx_rgb_plan_init(), ADR-2146): one work-item
+ * per output sample, vmafx_rgb_value() from rgb_math.h, stored as 1 or 2
+ * bytes little-endian. Scratch-free: every value lives in registers
+ * (ADR-1395). */
+sycl::event launch_rgb(sycl::queue &q, const VmafxSyclPlaneOp &op)
+{
+    assert(op.bytes == 1u || op.bytes == 2u);
+    assert(op.plane < 3u);
+    const auto *src = static_cast<const uint8_t *>(op.src);
+    auto *dst = static_cast<uint8_t *>(op.dst0);
+    const size_t sp = op.src_pitch;
+    const size_t dp = op.dst_pitch;
+    const unsigned bytes = op.bytes;
+    const unsigned plane = op.plane;
+    const VmafxRgbPlan rgb = op.rgb;
+    return q.parallel_for(sycl::range<2>(op.rows, op.w), [=](sycl::id<2> id) {
+        const size_t y = id[0];
+        const size_t x = id[1];
+        const uint8_t *const row = src + y * sp;
+        const size_t base = (size_t)x * rgb.elems;
+        const unsigned in_bytes = rgb.in_bytes;
+        unsigned r = row[(base + rgb.pos[0]) * in_bytes];
+        unsigned g = row[(base + rgb.pos[1]) * in_bytes];
+        unsigned b = row[(base + rgb.pos[2]) * in_bytes];
+        if (in_bytes == 2u) {
+            r |= (unsigned)row[(base + rgb.pos[0]) * in_bytes + 1u] << 8u;
+            g |= (unsigned)row[(base + rgb.pos[1]) * in_bytes + 1u] << 8u;
+            b |= (unsigned)row[(base + rgb.pos[2]) * in_bytes + 1u] << 8u;
+        }
+        const unsigned v = vmafx_rgb_value(&rgb, plane, r, g, b);
+        uint8_t *const out = dst + y * dp + x * bytes;
+        out[0] = (uint8_t)(v & 0xFFu);
+        if (bytes == 2u) {
+            out[1] = (uint8_t)((v >> 8u) & 0xFFu);
         }
     });
 }
@@ -803,6 +852,16 @@ extern "C" int vmafx_sycl_rt_frame_gather(VmafxSyclFrameRt *f, const VmafxSyclPl
         return 0;
     } catch (const std::exception &e) {
         return runtime_failed("gather", e);
+    }
+}
+
+extern "C" int vmafx_sycl_rt_frame_rgb(VmafxSyclFrameRt *f, const VmafxSyclPlaneOp *op)
+{
+    try {
+        note_last(f, launch_rgb(f->rt->lib, *op));
+        return 0;
+    } catch (const std::exception &e) {
+        return runtime_failed("rgb", e);
     }
 }
 
