@@ -12,7 +12,8 @@ from vmafx_api.loader import parse
 
 
 def live_go() -> str:
-    return emit_go.api_text(parse(document(DEFINITION)))
+    text: str = emit_go.api_text(parse(document(DEFINITION)))
+    return text
 
 
 class GoScoringBindingTest(unittest.TestCase):
