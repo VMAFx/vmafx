@@ -70,6 +70,7 @@
     ".iwyu.imp",
     ".mailmap",
     ".markdownlint.json",
+    ".node-version",
     ".nvim.lua",
     ".pre-commit-config.yaml",
     ".release-please-manifest.json",

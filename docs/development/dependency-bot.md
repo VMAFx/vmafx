@@ -151,6 +151,43 @@ fixtures:
 python3 -m pytest scripts/ci/tests/test_renovate_file_patterns.py -k PythonCiVersionGroup
 ```
 
+### CI Node.js
+
+Node.js is named in four places: `NODE_VERSION` in `build-config.env`,
+`default_language_version.node` in `.pre-commit-config.yaml`, `.node-version`,
+and the `node-version:` input of every `actions/setup-node` step under
+`.github/workflows/`. `.node-version` is the file the engine-managed
+`praetor-docs.yml` reads once the engine is re-adopted; an engine seeds it only
+when it is absent, so it stays on our release. The check also refuses a missing
+`.node-version`.
+`scripts/ci/check-workflow-versions.py` refuses a pull
+request in which any copy differs from `build-config.env` (a major-only workflow
+input such as `"24"` must name the same major). Renovate's built-in
+`github-actions` manager reads only the workflow pins, so its pull requests
+raised the workflow pins without `build-config.env` and
+`.pre-commit-config.yaml` and failed the single-source gate.
+
+Following the ADR-3312 pattern, one custom manager (`depNameTemplate: node`,
+`datasourceTemplate: github-releases`,
+`packageNameTemplate: actions/node-versions`, the source `actions/setup-node`
+installs from) reads all four places, and package rules turn off the
+`github-actions` manager for the `node` input (`depType: uses-with`) and the
+`nodenv` manager, which reads another datasource for `.node-version`. A
+second rule groups the updates under `CI
+Node.js` (`draftPR: false`, `automerge: false`), so one reviewed pull request
+raises every pin together. Exact three-part pins (`x.y.z`) are matched, leaving
+major-only pins such as `praetor-docs.yml` untouched.
+
+`NodeCiVersionGroup` in `scripts/ci/tests/test_renovate_file_patterns.py` holds
+the manager to the pins the single-source gate reads. It fails in any of these
+cases:
+
+- a workflow pin the check reads is not read by the manager;
+- `build-config.env`, `.pre-commit-config.yaml` or `.node-version` is not selected;
+- the manager reads a value the check does not;
+- the `github-actions` or `nodenv` rule is turned back on;
+- the group rule is removed.
+
 ### Images pinned in Go source
 
 The controller store tests start PostgreSQL from two Go constants in

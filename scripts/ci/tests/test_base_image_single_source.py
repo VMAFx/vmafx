@@ -86,6 +86,7 @@ class BaseImageGate(unittest.TestCase):
         self.env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
         for name in (
             "build-config.env",
+            ".node-version",
             GATE,
             "scripts/ci/check-workflow-versions.py",
             "scripts/ci/check-container-image-references.py",

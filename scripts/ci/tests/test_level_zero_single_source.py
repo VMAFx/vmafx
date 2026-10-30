@@ -72,6 +72,7 @@ class LevelZeroSingleSource(unittest.TestCase):
         )
         for name in (
             "build-config.env",
+            ".node-version",
             "rust-toolchain.toml",
             "Cargo.toml",
             "core/src/rust/Cargo.toml",
