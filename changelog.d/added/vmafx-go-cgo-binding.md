@@ -1,0 +1,1 @@
+- Generate the Go cgo binding of the VMAFx C API (`pkg/vmafx/api_gen.go`) from `core/api/vmafx.toml` with compile-time struct layout assertions, record types, `Context` methods, library functions, and structured `*Error` / `ErrPending` diagnostics (issue 2434).
