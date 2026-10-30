@@ -16,7 +16,7 @@ import (
 	"github.com/golusoris/golusoris/jobs"
 
 	"github.com/VMAFx/vmafx/cmd/vmafx-controller/backend"
-	"github.com/VMAFx/vmafx/cmd/vmafx-controller/store/storetest"
+	"github.com/VMAFx/vmafx/cmd/vmafx-controller/internal/storetest"
 )
 
 func newBackend(t *testing.T) (*backend.Postgres, storetest.DB) {

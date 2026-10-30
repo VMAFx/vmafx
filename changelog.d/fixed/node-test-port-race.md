@@ -1,0 +1,1 @@
+- Go tests: `writeNodeEnv` configures `127.0.0.1:0` for gRPC and HTTP listeners so tests that do not dial avoid loopback port reservation races (`cmd/vmafx-node`).

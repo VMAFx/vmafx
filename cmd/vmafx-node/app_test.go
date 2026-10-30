@@ -66,9 +66,10 @@ func freeLoopbackAddr(t *testing.T) string {
 }
 
 // writeNodeEnv writes a no-op vmaf stub + model dir and points the VMAFX_ config
-// env vars at them, plus a fixed-but-free loopback gRPC address and a temp
-// sidecar socket. It returns the gRPC address so the test can dial it.
-func writeNodeEnv(t *testing.T) string {
+// env vars at them, plus ephemeral loopback addresses (127.0.0.1:0) for gRPC and
+// HTTP, letting the kernel assign free ports. Tests that need to dial must use
+// writeDialableNodeEnv instead.
+func writeNodeEnv(t *testing.T) {
 	t.Helper()
 	dir := t.TempDir()
 	stub := filepath.Join(dir, "vmaf")
@@ -77,17 +78,55 @@ func writeNodeEnv(t *testing.T) string {
 	if err := os.WriteFile(filepath.Join(modelDir, "vmaf_v0.6.1.json"), []byte("{}"), 0o600); err != nil {
 		t.Fatalf("write model: %v", err)
 	}
-	addr := freeLoopbackAddr(t)
 	t.Setenv("VMAFX_VMAF_BINARY", stub)
 	t.Setenv("VMAFX_MODEL_DIR", modelDir)
-	t.Setenv("VMAFX_GRPC_LISTEN", addr)
-	t.Setenv("VMAFX_HTTP_ADDR", freeLoopbackAddr(t))
+	t.Setenv("VMAFX_GRPC_LISTEN", "127.0.0.1:0")
+	t.Setenv("VMAFX_HTTP_ADDR", "127.0.0.1:0")
 	t.Setenv("VMAFX_LOG_LEVEL", "error")
 	// /bin/true stands in for ffmpeg so the encoder probe runs (and degrades to
 	// an empty inventory) without needing a real ffmpeg binary.
 	t.Setenv("VMAFX_FFMPEG_BIN", "/bin/true")
 	t.Setenv("VMAFX_SIDECAR_SOCKET", filepath.Join(t.TempDir(), "sidecar.sock"))
-	return addr
+}
+
+// writeDialableNodeEnv is only for a test that dials the listener, since the
+// graph does not report the port it bound; such a test keeps the small
+// reservation race.
+func writeDialableNodeEnv(t *testing.T) string {
+	t.Helper()
+	writeNodeEnv(t)
+	grpcAddr := freeLoopbackAddr(t)
+	t.Setenv("VMAFX_GRPC_LISTEN", grpcAddr)
+	t.Setenv("VMAFX_HTTP_ADDR", freeLoopbackAddr(t))
+	return grpcAddr
+}
+
+// TestWriteNodeEnvUsesKernelPorts asserts that writeNodeEnv configures
+// kernel-assigned ephemeral ports (127.0.0.1:0), whereas writeDialableNodeEnv
+// sets nonzero dialable loopback ports.
+func TestWriteNodeEnvUsesKernelPorts(t *testing.T) {
+	writeNodeEnv(t)
+	if got := os.Getenv("VMAFX_GRPC_LISTEN"); got != "127.0.0.1:0" {
+		t.Errorf("VMAFX_GRPC_LISTEN = %q, want 127.0.0.1:0", got)
+	}
+	if got := os.Getenv("VMAFX_HTTP_ADDR"); got != "127.0.0.1:0" {
+		t.Errorf("VMAFX_HTTP_ADDR = %q, want 127.0.0.1:0", got)
+	}
+
+	grpcAddr := writeDialableNodeEnv(t)
+	for _, envVar := range []string{"VMAFX_GRPC_LISTEN", "VMAFX_HTTP_ADDR"} {
+		val := os.Getenv(envVar)
+		_, portStr, err := net.SplitHostPort(val)
+		if err != nil {
+			t.Fatalf("split host port %s=%q: %v", envVar, val, err)
+		}
+		if portStr == "0" || portStr == "" {
+			t.Errorf("%s port = %q, want nonzero port", envVar, portStr)
+		}
+	}
+	if got := os.Getenv("VMAFX_GRPC_LISTEN"); got != grpcAddr {
+		t.Errorf("VMAFX_GRPC_LISTEN = %q, want returned addr %q", got, grpcAddr)
+	}
 }
 
 // productionGraph returns the exact provider/invoke set used by main(), minus
@@ -129,7 +168,7 @@ func TestAppGraphValidates(t *testing.T) {
 // productionGraph, fx's laziness leaves the server unconstructed and the dial
 // fails.
 func TestAppStartsAndBinds(t *testing.T) {
-	addr := writeNodeEnv(t)
+	addr := writeDialableNodeEnv(t)
 
 	app := fxtest.New(t, productionGraph())
 	app.RequireStart()
