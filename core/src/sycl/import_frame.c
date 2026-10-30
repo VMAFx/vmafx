@@ -48,6 +48,7 @@
 #include "vmafx/error_internal.h"
 #include "vmafx/frame_import_hooks.h"
 #include "vmafx/internal.h"
+#include "vmafx/rgb_convert.h"
 #include "vmafx/sync_object.h"
 #include "vmafx/vmafx.h"
 #include "vmafx_sycl.h"
@@ -539,14 +540,43 @@ static int gather_plane(VmafxSyclFrame *sf, const VmafxImportLayout *layout,
                                  .step = rd.step,
                                  .offset = rd.offset,
                                  .in_bytes = rd.in_bytes,
-                                 .mask = rd.mask};
+                                 .mask = rd.mask,
+                                 .period = rd.period,
+                                 .group_elems = rd.group_elems,
+                                 .pattern = rd.pattern};
     return vmafx_sycl_rt_frame_gather(sf->rt, &op);
+}
+
+/* Plane `i` of the Y'CbCr frame an RGB layout makes, by the plan the host
+ * reference uses (vmafx_rgb_plan_init(), ADR-2146): the same integer
+ * expression of each pixel's three samples on the device. */
+static int rgb_plane(VmafxSyclFrame *sf, const VmafxImportLayout *layout, const VmafxFrameImport *d,
+                     const VmafxSyclSource src[3], const SyclPlan *plan, uint8_t *base, uint32_t i)
+{
+    VmafxRgbPlan rgb;
+    /* The statement was checked: the matrix has a conversion. */
+    const bool planned =
+        vmafx_rgb_plan_init(&rgb, layout, d->bpc, d->rgb_matrix, d->rgb_range, d->rgb_out_range);
+    assert(planned);
+    (void)planned;
+    const VmafxSyclSource *const s = &src[0];
+    const VmafxSyclPlaneOp op = {.src = source_address(s),
+                                 .src_pitch = (size_t)s->pitch,
+                                 .dst0 = base + plan->offset[i],
+                                 .dst1 = NULL,
+                                 .dst_pitch = plan->pitch[i],
+                                 .w = plan->pw[i],
+                                 .rows = plan->ph[i],
+                                 .bytes = plan->bytes,
+                                 .plane = i,
+                                 .rgb = rgb};
+    return vmafx_sycl_rt_frame_rgb(sf->rt, &op);
 }
 
 /* Frame plane `i`: bound, converted, de-tiled or (planted) staged. */
 static int fill_plane(VmafxSyclFrame *sf, const VmafxImportLayout *layout,
-                      const VmafxSyclSource src[3], const SyclPlan *plan, uint32_t i, void *data[3],
-                      ptrdiff_t stride[3])
+                      const VmafxFrameImport *d, const VmafxSyclSource src[3], const SyclPlan *plan,
+                      uint32_t i, void *data[3], ptrdiff_t stride[3])
 {
     assert(i < 3u);
     uint8_t *const base = sf->owned;
@@ -559,6 +589,9 @@ static int fill_plane(VmafxSyclFrame *sf, const VmafxImportLayout *layout,
     }
     data[i] = base + plan->offset[i];
     stride[i] = (ptrdiff_t)plan->pitch[i];
+    if (layout->packed == VMAFX_IMPORT_PACKED_RGB) {
+        return rgb_plane(sf, layout, d, src, plan, base, i);
+    }
     if (gathered(layout)) {
         return gather_plane(sf, layout, src, plan, base, i);
     }
@@ -593,7 +626,7 @@ static VmafxStatus fill_planes(const VmafxReport *report, VmafxSyclFrame *sf,
     }
     int err = 0;
     for (uint32_t i = 0; i < plan.n_out && !err; i++) {
-        err = fill_plane(sf, layout, src, &plan, i, data, stride);
+        err = fill_plane(sf, layout, d, src, &plan, i, data, stride);
     }
     if (!err) {
         err = vmafx_sycl_rt_frame_ready(sf->rt);

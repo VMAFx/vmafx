@@ -5651,7 +5651,7 @@ siting = "left"
 planes = 2
 bpc = [8, 8]
 interleaved = true
-devices = ["cpu", "cuda", "hip"]
+devices = ["cpu", "cuda", "sycl", "hip"]
 ffmpeg = { 8 = "nv16" }
 gstreamer = { 8 = "NV16" }
 
@@ -5666,7 +5666,7 @@ planes = 2
 bpc = [10, 10]
 shift = 6
 interleaved = true
-devices = ["cpu", "cuda", "hip"]
+devices = ["cpu", "cuda", "sycl", "hip"]
 ffmpeg = { 10 = "p210le" }
 
 [[pixel_formats]]
@@ -5679,7 +5679,7 @@ siting = "left"
 planes = 2
 bpc = [16, 16]
 interleaved = true
-devices = ["cpu", "cuda", "hip"]
+devices = ["cpu", "cuda", "sycl", "hip"]
 ffmpeg = { 16 = "p216le" }
 
 [[pixel_formats]]
@@ -5692,7 +5692,7 @@ siting = "none"
 planes = 2
 bpc = [8, 8]
 interleaved = true
-devices = ["cpu", "cuda", "hip"]
+devices = ["cpu", "cuda", "sycl", "hip"]
 ffmpeg = { 8 = "nv24" }
 gstreamer = { 8 = "NV24" }
 
@@ -5707,7 +5707,7 @@ planes = 2
 bpc = [10, 10]
 shift = 6
 interleaved = true
-devices = ["cpu", "cuda", "hip"]
+devices = ["cpu", "cuda", "sycl", "hip"]
 ffmpeg = { 10 = "p410le" }
 
 [[pixel_formats]]
@@ -5720,7 +5720,7 @@ siting = "none"
 planes = 2
 bpc = [16, 16]
 interleaved = true
-devices = ["cpu", "cuda", "hip"]
+devices = ["cpu", "cuda", "sycl", "hip"]
 ffmpeg = { 16 = "p416le" }
 
 [[pixel_formats]]
@@ -5735,7 +5735,7 @@ bpc = [10, 10]
 shift = 6
 packing = "yuyv"
 elem = [0, 1, 3]
-devices = ["cpu", "cuda", "hip"]
+devices = ["cpu", "cuda", "sycl", "hip"]
 ffmpeg = { 10 = "y210le" }
 gstreamer = { 10 = "Y210" }
 
@@ -5751,7 +5751,7 @@ bpc = [12, 12]
 shift = 4
 packing = "yuyv"
 elem = [0, 1, 3]
-devices = ["cpu", "cuda", "hip"]
+devices = ["cpu", "cuda", "sycl", "hip"]
 ffmpeg = { 12 = "y212le" }
 gstreamer = { 12 = "Y212_LE" }
 
@@ -5766,7 +5766,7 @@ planes = 1
 bpc = [8, 8]
 packing = "yuyv"
 elem = [0, 1, 3]
-devices = ["cpu", "cuda", "hip"]
+devices = ["cpu", "cuda", "sycl", "hip"]
 ffmpeg = { 8 = "yuyv422" }
 gstreamer = { 8 = "YUY2" }
 
@@ -5781,7 +5781,7 @@ planes = 1
 bpc = [8, 8]
 packing = "yuyv"
 elem = [1, 0, 2]
-devices = ["cpu", "cuda", "hip"]
+devices = ["cpu", "cuda", "sycl", "hip"]
 ffmpeg = { 8 = "uyvy422" }
 gstreamer = { 8 = "UYVY" }
 
@@ -5795,7 +5795,7 @@ siting = "left"
 planes = 1
 bpc = [10, 10]
 packing = "v210"
-devices = ["cpu", "cuda", "hip"]
+devices = ["cpu", "cuda", "sycl", "hip"]
 gstreamer = { 10 = "v210" }
 
 [[pixel_formats]]
@@ -5808,7 +5808,7 @@ siting = "none"
 planes = 1
 bpc = [10, 10]
 packing = "xvyu2101010"
-devices = ["cpu", "cuda", "hip"]
+devices = ["cpu", "cuda", "sycl", "hip"]
 ffmpeg = { 10 = "xv30le" }
 gstreamer = { 10 = "Y410" }
 
@@ -5824,7 +5824,7 @@ bpc = [12, 12]
 shift = 4
 packing = "uyv4"
 elem = [1, 0, 2]
-devices = ["cpu", "cuda", "hip"]
+devices = ["cpu", "cuda", "sycl", "hip"]
 ffmpeg = { 12 = "xv36le" }
 gstreamer = { 12 = "Y412_LE" }
 
@@ -5839,7 +5839,7 @@ planes = 1
 bpc = [8, 8]
 packing = "uyv4"
 elem = [2, 1, 0]
-devices = ["cpu", "cuda", "hip"]
+devices = ["cpu", "cuda", "sycl", "hip"]
 ffmpeg = { 8 = "vuyx" }
 gstreamer = { 8 = "VUYA" }
 
@@ -5854,7 +5854,7 @@ planes = 1
 bpc = [8, 8]
 packing = "uyv4"
 elem = [1, 2, 3]
-devices = ["cpu", "cuda", "hip"]
+devices = ["cpu", "cuda", "sycl", "hip"]
 ffmpeg = { 8 = "ayuv" }
 gstreamer = { 8 = "AYUV" }
 
@@ -5868,7 +5868,7 @@ siting = "none"
 planes = 3
 bpc = [9, 16]
 msb = true
-devices = ["cpu", "cuda", "hip"]
+devices = ["cpu", "cuda", "sycl", "hip"]
 ffmpeg = { 10 = "yuv444p10msble", 12 = "yuv444p12msble" }
 
 [[pixel_formats]]
@@ -5884,7 +5884,7 @@ packing = "rgb"
 elem = [0, 1, 2]
 rgb_elems = 3
 needs_statement = true
-devices = ["cpu", "cuda", "hip"]
+devices = ["cpu", "cuda", "sycl", "hip"]
 ffmpeg = { 8 = "rgb24", 16 = "rgb48le" }
 gstreamer = { 8 = "RGB" }
 
@@ -5901,7 +5901,7 @@ packing = "rgb"
 elem = [0, 1, 2]
 rgb_elems = 4
 needs_statement = true
-devices = ["cpu", "cuda", "hip"]
+devices = ["cpu", "cuda", "sycl", "hip"]
 ffmpeg = { 8 = "rgba", 16 = "rgba64le" }
 gstreamer = { 8 = "RGBA", 16 = "RGBA64_LE" }
 
@@ -5918,7 +5918,7 @@ packing = "rgb"
 elem = [2, 1, 0]
 rgb_elems = 4
 needs_statement = true
-devices = ["cpu", "cuda", "hip"]
+devices = ["cpu", "cuda", "sycl", "hip"]
 ffmpeg = { 8 = "bgra", 16 = "bgra64le" }
 gstreamer = { 8 = "BGRA", 16 = "BGRA64_LE" }
 

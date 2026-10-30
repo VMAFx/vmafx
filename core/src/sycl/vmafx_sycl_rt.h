@@ -27,6 +27,7 @@
 #include <stdint.h>
 
 #include "libvmaf/libvmaf_sycl.h"
+#include "vmafx/rgb_math.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -76,6 +77,16 @@ typedef struct VmafxSyclPlaneOp {
     unsigned offset;
     unsigned in_bytes;
     unsigned mask;
+    /* Grouped form (V210, ADR-2145; zero = not used): nibble x % period of
+     * `pattern` picks element and shift (tens of bits) within group
+     * x / period of `group_elems` elements. */
+    unsigned period;
+    unsigned group_elems;
+    unsigned pattern;
+    /* An RGB conversion (vmafx_sycl_rt_frame_rgb(), ADR-2146): plane `plane`
+     * (0 Y', 1 Cb', 2 Cr') converted by `rgb`. */
+    unsigned plane;
+    VmafxRgbPlan rgb;
 } VmafxSyclPlaneOp;
 
 /* Where a frame's release is reported. `signal(arg)` runs on a runtime
@@ -177,6 +188,8 @@ int vmafx_sycl_rt_frame_deinterleave(VmafxSyclFrameRt *f, const VmafxSyclPlaneOp
 int vmafx_sycl_rt_frame_shift(VmafxSyclFrameRt *f, const VmafxSyclPlaneOp *op);
 /* One plane of a packed layout or of MSB planar words (ADR-2133). */
 int vmafx_sycl_rt_frame_gather(VmafxSyclFrameRt *f, const VmafxSyclPlaneOp *op);
+/* One plane of an RGB layout converted to Y'CbCr (ADR-2146). */
+int vmafx_sycl_rt_frame_rgb(VmafxSyclFrameRt *f, const VmafxSyclPlaneOp *op);
 /* De-tile a plane of `op->rows` rows of `op->w` samples of `op->bytes` bytes
  * (an interleaved chroma plane: 2 * width samples of one byte, or of two)
  * whose tiled pitch is `op->src_pitch` (a multiple of 128) into linear rows
