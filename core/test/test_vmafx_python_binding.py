@@ -488,8 +488,8 @@ class WindowAndClockTest(unittest.TestCase):
             ctx.flush()
             waited = win.wait(1_000_000_000)
             polled = win.poll()
-            win.release()
-            win.close()
+        win.release()
+        win.close()
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0].value[vmafx.Pool.MEAN], 15.0)
         self.assertEqual(polled.value[vmafx.Pool.MEAN], 15.0)
@@ -514,7 +514,6 @@ class WindowAndClockTest(unittest.TestCase):
             ctx.import_score("ext", 0, 5.0)
             ctx.flush()
             win.wait(1_000_000_000)
-            win.close()
 
     def test_window_clock(self) -> None:
         cfg = vmafx.WindowClockConfig(n_stats=0.0, n_stats_frames=2)
