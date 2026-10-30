@@ -156,7 +156,8 @@ Node.js is named in four places: `NODE_VERSION` in `build-config.env`,
 and the `node-version:` input of every `actions/setup-node` step under
 `.github/workflows/`. `.node-version` is the file the engine-managed
 `praetor-docs.yml` reads once the engine is re-adopted; an engine seeds it only
-when it is absent, so it stays on our release.
+when it is absent, so it stays on our release. The check also refuses a missing
+`.node-version`.
 `scripts/ci/check-workflow-versions.py` refuses a pull
 request in which any copy differs from `build-config.env` (a major-only workflow
 input such as `"24"` must name the same major). Renovate's built-in

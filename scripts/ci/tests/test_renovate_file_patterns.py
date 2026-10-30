@@ -667,6 +667,13 @@ class NodeCiVersionGroup(unittest.TestCase):
 
         self.assertIn(f"{NODE_FILE} is not selected by the manager", self.findings(drop))
 
+    def test_manager_without_node_file_string_fails(self) -> None:
+        def drop(config: dict[str, Any]) -> None:
+            manager = self.manager(config)
+            manager["matchStrings"] = manager["matchStrings"][1:]
+
+        self.assertTrue(any(e.startswith(f"{NODE_FILE}: ") for e in self.findings(drop)))
+
     def test_nodenv_manager_left_on_fails(self) -> None:
         def enable(config: dict[str, Any]) -> None:
             config["packageRules"] = [

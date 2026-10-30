@@ -499,8 +499,9 @@ def _node_workflow_problems(root: Path, node_want: str) -> list[str]:
 def _node_file_problems(root: Path, node_want: str) -> list[str]:
     path = root / ".node-version"
     if not path.is_file():
-        return []
-    value = path.read_text(encoding="utf-8").strip()
+        return [f".node-version is missing; set it to NODE_VERSION '{node_want}'"]
+    # Only trailing whitespace: Renovate's match string anchors the version at the file start.
+    value = path.read_text(encoding="utf-8").rstrip()
     if value == node_want:
         return []
     return [f".node-version says '{value}'; build-config.env says NODE_VERSION '{node_want}'"]

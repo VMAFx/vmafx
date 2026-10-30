@@ -50,6 +50,7 @@ class NodePinSingleSource(unittest.TestCase):
         self.repo = Path(temporary.name)
         self.write(".pre-commit-config.yaml", PRECOMMIT.format(version=WANT))
         self.write(".github/workflows/lint.yml", WORKFLOW.format(version=WANT))
+        self.write(".node-version", f"{WANT}\n")
 
     def write(self, rel: str, text: str) -> None:
         path = self.repo / rel
@@ -86,9 +87,19 @@ class NodePinSingleSource(unittest.TestCase):
         self.assertEqual(len(problems), 1)
         self.assertIn("node-version '27.0.0'", problems[0])
 
-    def test_matching_node_version_file_passes(self) -> None:
-        self.write(".node-version", f"{WANT}\n")
+    def test_node_version_file_without_newline_passes(self) -> None:
+        self.write(".node-version", WANT)
         self.assertEqual(GATE.check_node_pins(self.repo, WANT), [])
+
+    def test_missing_node_version_file_fails(self) -> None:
+        (self.repo / ".node-version").unlink()
+        problems = GATE.check_node_pins(self.repo, WANT)
+        self.assertEqual(len(problems), 1)
+        self.assertIn(".node-version is missing", problems[0])
+
+    def test_leading_blank_node_version_file_fails(self) -> None:
+        self.write(".node-version", f"\n{WANT}\n")
+        self.assertEqual(len(GATE.check_node_pins(self.repo, WANT)), 1)
 
     def test_differing_node_version_file_fails(self) -> None:
         self.write(".node-version", "26.0.0\n")
