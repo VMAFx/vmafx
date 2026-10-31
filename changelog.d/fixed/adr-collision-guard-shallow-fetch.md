@@ -1,0 +1,1 @@
+- CI: ADR Collision Guard fetches without `--depth` so tip grafts do not break `--is-ancestor` descendant checks.
