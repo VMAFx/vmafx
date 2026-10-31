@@ -127,6 +127,13 @@ jobs:
         with:
           phase: get
 
+      - name: Get the HDR ICtCp fixture
+        if: steps.impact.outputs.golden_harness == 'true'
+        uses: ./.github/actions/pq-fixture
+        with:
+          phase: get
+          bundle: hdr-ictcp-pixels-v1
+
       - name: Run Netflix golden normal pair
         if: steps.impact.outputs.golden_harness == 'true'
         env:
@@ -162,6 +169,13 @@ jobs:
             --junit "${{ runner.temp }}/hdr_golden_junit.xml" \
             --required-file "hdr_models_pin_test" \
             --required-file "vmaf_v1_quality_runner_test"
+
+      - name: Finish with the HDR ICtCp fixture
+        if: steps.impact.outputs.golden_harness == 'true'
+        uses: ./.github/actions/pq-fixture
+        with:
+          phase: finish
+          bundle: hdr-ictcp-pixels-v1
 
       - name: Finish with the PQ fixture
         if: steps.impact.outputs.golden_harness == 'true'
@@ -828,28 +842,8 @@ jobs:
             exit 1
           fi
 
-  # ===== MCP smoke gate (T7-MCP-SMOKE-CI / Research-0034 gap #3) =====
-  # Builds libvmaf with the full MCP transport matrix (sse + uds + stdio)
-  # and exercises both the embedded C-side scaffold smoke (core/test/
-  # test_mcp_smoke.c — pins the -ENOSYS contract per ADR-0209) and the
-  # Python MCP server pytest suite under mcp-server/vmaf-mcp/tests/.
-  #
-  # Before this lane existed, only `supply-chain.yml::mcp-build` exercised
-  # the MCP surface — and that just builds a wheel without running any
-  # tests. The Python `tests/test_*.py` files and the C `test_mcp_smoke`
-  # binary were never invoked in CI. This job closes that gap.
-  #
-  # Local repro:
-  #   cd libvmaf && meson setup build-mcp \
-  #     -Denable_cuda=false -Denable_sycl=false \
-  #     -Denable_mcp=true -Denable_mcp_sse=true \
-  #     -Denable_mcp_uds=true -Denable_mcp_stdio=true && \
-  #   meson compile -C build-mcp && \
-  #   python3 ../scripts/ci/run_meson_test.py -- -C build-mcp test_mcp_smoke --print-errorlogs
-  #   cd ../mcp-server/vmaf-mcp && \
-  #   python3 -m venv ~/.cache/mcp-venv && \
-  #   ~/.cache/mcp-venv/bin/pip install -e .[dev] && \
-  #   ~/.cache/mcp-venv/bin/pytest tests/ -v
+  # MCP smoke gate: the C scaffold smoke (core/test/test_mcp_smoke.c, ADR-0209)
+  # plus the mcp-server/vmaf-mcp pytest suite, with every MCP transport built.
   mcp-smoke:
     needs: tier
     if: needs.tier.outputs.light == 'true'

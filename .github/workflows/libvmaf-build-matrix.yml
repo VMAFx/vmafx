@@ -592,6 +592,14 @@ jobs:
         with:
           phase: get
 
+      # The identical converted ICtCp picture rows read this bundle; a failed download fails the leg.
+      - name: Fetch the HDR ICtCp fixture
+        if: ${{ ((startsWith(matrix.os, 'ubuntu') && !matrix.sycl && !matrix.cuda && !matrix.hip) || matrix.os == 'macos-latest') && steps.impact.outputs.c_core == 'true' }}
+        uses: ./.github/actions/pq-fixture
+        with:
+          phase: get
+          bundle: hdr-ictcp-pixels-v1
+
       - name: Run tox tests (ubuntu)
         if: ${{ (startsWith(matrix.os, 'ubuntu') && !matrix.sycl && !matrix.cuda && !matrix.hip) && steps.impact.outputs.c_core == 'true' }}
         run: |
@@ -608,6 +616,13 @@ jobs:
           CC=$(brew --prefix)/opt/llvm/bin/clang \
           CXX=$(brew --prefix)/opt/llvm/bin/clang++ \
           tox -c python
+
+      - name: Put away the HDR ICtCp fixture
+        if: ${{ ((startsWith(matrix.os, 'ubuntu') && !matrix.sycl && !matrix.cuda && !matrix.hip) || matrix.os == 'macos-latest') && steps.impact.outputs.c_core == 'true' }}
+        uses: ./.github/actions/pq-fixture
+        with:
+          phase: finish
+          bundle: hdr-ictcp-pixels-v1
 
       - name: Put away the PQ fixture
         if: ${{ ((startsWith(matrix.os, 'ubuntu') && !matrix.sycl && !matrix.cuda && !matrix.hip) || matrix.os == 'macos-latest') && steps.impact.outputs.c_core == 'true' }}

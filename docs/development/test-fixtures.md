@@ -106,6 +106,36 @@ from 00:00:10, scaled them to 1920x1080 and encoded the distorted file with
 libx265 at CRF 28. `CREDIT.txt` in the bundle has the details. No endorsement by
 the licensor is implied.
 
+```bash
+scripts/test/fetch-test-yuvs.sh --bundle hdr-ictcp-pixels-v1
+```
+
+The `hdr-ictcp-pixels-v1` bundle packages pre-converted 1080p and 2160p 16-bit
+4:2:0 ICtCp pictures, allowing all legs to score HDR models with the zimg
+conversion bypassed and assert bit-exact score equality against x86-64:
+
+- Destination: `python/test/resource/yuv/hdr-ictcp-pixels-v1/`
+- Contents: `CREDIT.txt`, `LICENCE-BSD-2-Clause-Patent.txt`,
+  `dis_1920x1080.yuv`, `dis_3840x2160.yuv`, `ref_1920x1080.yuv`, and
+  `ref_3840x2160.yuv`
+- Validation: downloads `hdr-ictcp-pixels-v1.tar.zst` (archive sha256
+  `b5cc0aff25a507fccd4808c8c7c4692db3bdf1a68bd3e77c6f081c5398d4ab1a`) through
+  the shared retrying download policy, validates archive sha256 before extraction,
+  rejects path traversal, and verifies member sha256 sums after extraction. Any
+  mismatch or failed download exits non-zero, leaves nothing in the target
+  directory, and fails the job.
+- Caching: re-running against an already-extracted bundle verifies member hashes
+  and skips re-downloading.
+
+The asset is the prerelease
+[`fixtures-hdr-ictcp-pixels-v1`](https://github.com/VMAFx/vmafx/releases/tag/fixtures-hdr-ictcp-pixels-v1),
+which holds test data only. Every leg running HDR pin tests fetches it, and a
+failed download fails the job. CI keeps the bundle in its own cache entry, keyed
+on the sha that `scripts/test/fetch-test-yuvs.sh --print-bundle-sha hdr-ictcp-pixels-v1` prints.
+
+Credit: source material from `Netflix/vmaf_resource` under the BSD-2-Clause-Patent
+licence. `CREDIT.txt` and `LICENCE-BSD-2-Clause-Patent.txt` in the bundle have the details.
+
 ## Download retries
 
 The fixture host sometimes fails for minutes: on 2026-10-10 it answered HTTP
