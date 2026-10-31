@@ -80,8 +80,12 @@ from vmaf_train.registry import write_registry_json
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT_PATH = Path(__file__).resolve()
-if str(REPO_ROOT / "ai" / "src") not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
+try:
+    from _script_bootstrap import bootstrap_ai_script
+except ModuleNotFoundError:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
+
+bootstrap_ai_script(__file__, include_repo_root=True)
 
 from ai.data.scores import resolve_teacher_model  # noqa: E402
 

@@ -52,7 +52,7 @@ try:
 except ModuleNotFoundError:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
 
-_SCRIPT_PATHS = bootstrap_ai_script(__file__, include_ai_scripts=True)
+_SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True, include_ai_scripts=True)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
 REPO_ROOT = _SCRIPT_PATHS.repo_root
 

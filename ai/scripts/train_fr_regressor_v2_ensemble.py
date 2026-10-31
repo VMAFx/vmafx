@@ -76,8 +76,12 @@ import numpy as np
 
 SCRIPT_PATH = Path(__file__).resolve()
 REPO_ROOT = SCRIPT_PATH.parents[2]
-if str(REPO_ROOT / "ai" / "src") not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
+try:
+    from _script_bootstrap import bootstrap_ai_script
+except ModuleNotFoundError:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
+
+bootstrap_ai_script(__file__, include_repo_root=True)
 
 from ai.data.scores import resolve_teacher_model  # noqa: E402
 
