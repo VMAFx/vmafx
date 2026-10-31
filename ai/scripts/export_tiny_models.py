@@ -237,7 +237,7 @@ def _export_c3(args: Namespace, raw_argv: list[str]) -> dict[str, Any] | None:
         "id": args.c3_id,
         "kind": "filter",
         "notes": (
-            "Tiny residual filter baseline for vmaf_pre — "
+            "Tiny residual filter baseline for vmafx_pre — "
             "self-supervised on KoNViD-1k frames with synthetic "
             "blur+JPEG degradation. ~19K params. See "
             "docs/adr/0168-tinyai-konvid-baselines.md."

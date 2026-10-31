@@ -25,7 +25,7 @@ The four capabilities already in-tree are described in
 | Inference (`core/src/dnn/`, ONNX Runtime, op allowlist, 50 MB cap) | Shipped | [ADR-0023](../adr/0023-tinyai-user-surfaces.md) | [inference.md](inference.md) |
 | Model signing verification (`--tiny-model-verify`) | Shipped | ADR-0211 | [security.md](security.md) |
 | Model registry | Shipped, 26 entries | ADR-0211 | [model-registry.md](model-registry.md) |
-| FFmpeg `vf_libvmaf` tiny options, `vmaf_pre` (8/10/12-bit, optional chroma) | Shipped | ADR-0482 | `ffmpeg-patches/0001`, `ffmpeg-patches/0002` |
+| FFmpeg `vmafx` tiny options, `vmafx_pre` (8/10/12-bit, optional chroma) | Shipped | ADR-0482 | `ffmpeg-patches/0004`, `ffmpeg-patches/0005` |
 | FR baselines (`fr_regressor_v1`, `vmaf_tiny_v2`) | Shipped | [ADR-0249](../adr/0249-fr-regressor-v1.md), [ADR-0244](../adr/0244-vmaf-tiny-v2.md) | [model cards](models/vmaf_tiny_v2.md) |
 | `nr_metric_v1`, `learned_filter_v1` | Shipped | [ADR-0168](../adr/0168-tinyai-konvid-baselines.md) | [nr_metric_v1](models/nr_metric_v1.md), [learned_filter_v1](models/learned_filter_v1.md) |
 | LPIPS-SqueezeNet FR extractor | Shipped | none | [lpips_sq](models/lpips_sq.md) |
@@ -33,7 +33,7 @@ The four capabilities already in-tree are described in
 | MobileSal scoring extractor, saliency students | Shipped; `saliency_student_v2` is the production default | [ADR-0218](../adr/0218-mobilesal-saliency-extractor.md), [ADR-0444](../adr/0444-saliency-student-v2-production-promotion.md) | [mobilesal](models/mobilesal.md) |
 | `tools/vmaf-roi` encoder ROI sidecar | Shipped | none | [vmaf-roi](../usage/vmaf-roi.md) |
 | TransNet V2 shot boundaries, `tools/vmaf-perShot` | Shipped | [ADR-0261](../adr/0261-transnet-v2-real-weights.md), [ADR-0222](../adr/0222-vmaf-per-shot-tool.md) | [transnet_v2](models/transnet_v2.md), [vmaf-perShot](../usage/vmaf-perShot.md) |
-| FastDVDnet extractor (real weights) | Shipped; FFmpeg `vmaf_pre_temporal` filter planned | [ADR-0255](../adr/0255-fastdvdnet-pre-real-weights.md) | [fastdvdnet_pre](models/fastdvdnet_pre.md) |
+| FastDVDnet extractor (real weights) | Shipped; FFmpeg `vmafx_pre_temporal` filter planned | [ADR-0255](../adr/0255-fastdvdnet-pre-real-weights.md) | [fastdvdnet_pre](models/fastdvdnet_pre.md) |
 | Allowlist `Loop` / `If` with bounded-iteration guard | Shipped | [ADR-0169](../adr/0169-onnx-allowlist-loop-if.md), [ADR-0171](../adr/0171-bounded-loop-trip-count.md) | [security.md](security.md) |
 | `vmaf-train tune` (Optuna) | Shipped | none | [training.md](training.md#hyperparameter-sweeps) |
 | FFmpeg `vmaf_post` filter | Planned, no patch number assigned | none | none |
@@ -52,8 +52,8 @@ The shipped surface:
 - **C API.** `vmaf_use_tiny_model()` and `VmafDnnSession` open, run and close.
 - **CLI.** `vmaf --tiny-model PATH --tiny-device STR`. The 12 device strings are
   listed in [inference.md](inference.md#execution-provider-matrix).
-- **FFmpeg.** `ffmpeg-patches/0001` adds the tiny-model options to `vf_libvmaf`,
-  and `ffmpeg-patches/0002` adds the `vmaf_pre` learned-filter filter.
+- **FFmpeg.** `ffmpeg-patches/0004` adds the tiny-model options to `vmafx`,
+  and `ffmpeg-patches/0005` adds the `vmafx_pre` learned-filter filter.
 - **Checkpoints.** `model/tiny/` holds 26 registry entries, see
   [model-registry.md](model-registry.md).
 - **Signing.** `--tiny-model-verify` is wired to `cosign verify-blob`
@@ -193,24 +193,22 @@ Status:
 
 The slots below are not filled by the current `ffmpeg-patches/` series.
 
-### 3.1 `vmaf_pre`: 10-bit and chroma (shipped)
+### 3.1 `vmafx_pre`: 10-bit and chroma (shipped)
 
-`ffmpeg-patches/0002` ("add vmaf_pre filter (8-bit + 10-bit + optional chroma)")
+`ffmpeg-patches/0005` ("add vmafx_pre filter")
 accepts 8, 10 and 12-bit planar 4:2:0, 4:2:2 and 4:4:4 input, and filters the
 U/V
 planes when `chroma=1` (default 0, luma only). Chroma and HDR sources are where
 classical pre-filters leave the most budget on the table. Filter options are in
 [inference.md](inference.md#surface-3-ffmpeg-filters).
 
-### 3.2 New `vmaf_post` filter (planned)
+### 3.2 New `vmafx_post` filter (planned)
 
 - **Why.** Today the pair (reference, distorted) is scored. A post filter would
   score the actually decoded stream inside an ffmpeg pipeline with the C2 NR
   model, sharing the backbone with the in-tree NR metric.
 - **Integration.** A new patch in the series, with a filter mirroring
-  `vmaf_pre`'s shape: frame in, score out, no frame out (measurement only). No
-  patch number is assigned: `0004` is the Vulkan backend selector shim, see
-  [`ffmpeg-patches/series.txt`](../../ffmpeg-patches/series.txt).
+  `vmafx_pre`'s shape: frame in, score out, no frame out (measurement only).
 
 ### 3.3 FastDVDnet temporal pre-filter
 
@@ -219,8 +217,8 @@ classical pre-filters leave the most budget on the table. Filter options are in
   grainy sources.
 - **Cost.** The filter needs a 5-frame buffer, a bigger lift than per-frame
   filters. Deferred if Wave 1 is too wide.
-- **Integration.** A new `vmaf_pre_temporal` filter, or a mode flag on
-  `vmaf_pre`.
+- **Integration.** A new `vmafx_pre_temporal` filter, or a mode flag on
+  `vmafx_pre`.
 - **Status.** The extractor is shipped (T6-7, 2026-04-29, real upstream weights
   in
   T6-7b, [ADR-0255](../adr/0255-fastdvdnet-pre-real-weights.md)). The
@@ -228,7 +226,7 @@ classical pre-filters leave the most budget on the table. Filter options are in
   `[1, 5, H, W] -> [1, 1, H, W]` ONNX contract and the real
   m-tassano/FastDVDnet checkpoint under `model/tiny/fastdvdnet_pre.onnx`
   (`smoke: false`), wrapped by the fork's luma adapter. The FFmpeg
-  `vmaf_pre_temporal` filter that consumes the denoised frame buffer remains to
+  `vmafx_pre_temporal` filter that consumes the denoised frame buffer remains to
   be written. See [`models/fastdvdnet_pre.md`](models/fastdvdnet_pre.md).
 
 ## 4. Op-allowlist expansion: bounded `Loop` and `If` (shipped)

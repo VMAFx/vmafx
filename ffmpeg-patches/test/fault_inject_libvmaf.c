@@ -7,21 +7,22 @@
 
 /*
  * LD_PRELOAD fault injector for the FFmpeg filter tests under
- * ffmpeg-patches/test/, run against an FFmpeg that links libvmaf.so
+ * ffmpeg-patches/test/, run against an FFmpeg that links libvmafx.so
  * dynamically. Unset variables inject nothing; every call that is not
- * injected goes to libvmaf. Build with -D_GNU_SOURCE (RTLD_NEXT) against the
- * installed libvmaf headers, as the scripts do.
+ * injected goes to libvmafx. Build with -D_GNU_SOURCE (RTLD_NEXT) against the
+ * installed vmafx headers, as the scripts do.
  *
- * vmaf_sycl_import_va_surface() (check-sycl-import-retry.sh): calls number
+ * vmafx_context_import_frame() (check-vmafx-import-failure.sh): calls number
  *   VMAF_TEST_IMPORT_FAIL_AT .. VMAF_TEST_IMPORT_FAIL_AT + VMAF_TEST_IMPORT_FAIL_COUNT - 1
- *   (1-based, over every call, reference and distorted) return -EIO, which is
- *   what the real call returns when a VA surface cannot be read.
+ *   (1-based, over every call, reference and distorted) return VMAFX_E_BUSY.
  *
- * vmaf_read_pictures() (check-libvmaf-no-score-after-error.sh): picture calls
+ * vmafx_submit() (check-vmafx-no-score-after-error.sh): submit calls
  *   number VMAF_TEST_READ_FAIL_AT .. VMAF_TEST_READ_FAIL_AT +
- *   VMAF_TEST_READ_FAIL_COUNT - 1 (1-based, one call per frame, the flush not
- *   counted) return -EIO; VMAF_TEST_FLUSH_FAIL=1 makes the flush call
- *   (ref == NULL) return -EIO.
+ *   VMAF_TEST_READ_FAIL_COUNT - 1 (1-based, one call per frame) return
+ *   VMAFX_E_IO.
+ *
+ * vmafx_flush() (check-vmafx-no-score-after-error.sh): VMAF_TEST_FLUSH_FAIL=1
+ *   makes the flush call return VMAFX_E_IO.
  */
 
 #include <dlfcn.h>
@@ -30,15 +31,18 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <libvmaf/libvmaf.h>
-#include <libvmaf/libvmaf_sycl.h>
+#include <vmafx/context.h>
+#include <vmafx/frame.h>
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit; MSVC's C mode has
  * no `nullptr`. ADR-1138. */
 
-typedef int (*import_fn)(VmafSyclState *state, void *va_display, unsigned int va_surface,
-                         int is_ref, unsigned w, unsigned h, unsigned bpc);
-typedef int (*read_fn)(VmafContext *vmaf, VmafPicture *ref, VmafPicture *dist, unsigned index);
+typedef VmafxStatus (*import_frame_fn)(VmafxContext *context, VmafxDevice *device,
+                                       const VmafxFrameImport *desc, const char *input,
+                                       VmafxFrame **out, VmafxError **error);
+typedef VmafxStatus (*submit_fn)(VmafxContext *context, VmafxFrame *reference,
+                                 VmafxFrame *distorted, uint64_t index, VmafxError **error);
+typedef VmafxStatus (*flush_fn)(VmafxContext *context, VmafxError **error);
 
 static long env_long(const char *name)
 {
@@ -62,7 +66,7 @@ static int injected(atomic_long *counter, const char *at_name, const char *count
     return fail_at > 0 && call >= fail_at && call < fail_at + fail_count;
 }
 
-/* libvmaf's definition of `name`, copied into `*fn` (`size` bytes); -ENOSYS
+/* libvmafx's definition of `name`, copied into `*fn` (`size` bytes); -ENOSYS
  * when the symbol is missing. POSIX: a dlsym() result converts to a function
  * pointer; memcpy keeps ISO C quiet. */
 static int real_symbol(const char *name, void *fn, size_t size)
@@ -76,31 +80,48 @@ static int real_symbol(const char *name, void *fn, size_t size)
 }
 
 static atomic_long import_calls;
-static atomic_long read_calls;
+static atomic_long submit_calls;
 
-int vmaf_sycl_import_va_surface(VmafSyclState *state, void *va_display, unsigned int va_surface,
-                                int is_ref, unsigned w, unsigned h, unsigned bpc)
+VmafxStatus vmafx_context_import_frame(VmafxContext *context, VmafxDevice *device,
+                                       const VmafxFrameImport *desc, const char *input,
+                                       VmafxFrame **out, VmafxError **error)
 {
     if (injected(&import_calls, "VMAF_TEST_IMPORT_FAIL_AT", "VMAF_TEST_IMPORT_FAIL_COUNT")) {
-        return -EIO;
+        if (out != NULL) {
+            *out = NULL;
+        }
+        return VMAFX_E_BUSY;
     }
-    import_fn real = NULL;
-    const int err = real_symbol("vmaf_sycl_import_va_surface", (void *)&real, sizeof(real));
-    return err ? err : real(state, va_display, va_surface, is_ref, w, h, bpc);
+    import_frame_fn real = NULL;
+    const int err = real_symbol("vmafx_context_import_frame", (void *)&real, sizeof(real));
+    return err ? VMAFX_E_DEVICE : real(context, device, desc, input, out, error);
 }
 
-int vmaf_read_pictures(VmafContext *vmaf, VmafPicture *ref, VmafPicture *dist, unsigned index)
+VmafxStatus vmafx_submit(VmafxContext *context, VmafxFrame *reference, VmafxFrame *distorted,
+                         uint64_t index, VmafxError **error)
 {
-    if (ref == NULL) {
-        if (env_long("VMAF_TEST_FLUSH_FAIL") > 0) {
-            return -EIO;
+    if (injected(&submit_calls, "VMAF_TEST_READ_FAIL_AT", "VMAF_TEST_READ_FAIL_COUNT")) {
+        if (reference != NULL) {
+            (void)vmafx_frame_unref(reference);
         }
-    } else if (injected(&read_calls, "VMAF_TEST_READ_FAIL_AT", "VMAF_TEST_READ_FAIL_COUNT")) {
-        return -EIO;
+        if (distorted != NULL) {
+            (void)vmafx_frame_unref(distorted);
+        }
+        return VMAFX_E_IO;
     }
-    read_fn real = NULL;
-    const int err = real_symbol("vmaf_read_pictures", (void *)&real, sizeof(real));
-    return err ? err : real(vmaf, ref, dist, index);
+    submit_fn real = NULL;
+    const int err = real_symbol("vmafx_submit", (void *)&real, sizeof(real));
+    return err ? VMAFX_E_DEVICE : real(context, reference, distorted, index, error);
+}
+
+VmafxStatus vmafx_flush(VmafxContext *context, VmafxError **error)
+{
+    if (env_long("VMAF_TEST_FLUSH_FAIL") > 0) {
+        return VMAFX_E_IO;
+    }
+    flush_fn real = NULL;
+    const int err = real_symbol("vmafx_flush", (void *)&real, sizeof(real));
+    return err ? VMAFX_E_DEVICE : real(context, error);
 }
 
 /* NOLINTEND(modernize-use-nullptr) */

@@ -3,7 +3,7 @@
 `scripts/test/sycl-dev-container.sh` builds libvmaf and FFmpeg from the current
 worktree inside the SYCL toolchain image and runs meson tests or any command on
 the Intel GPU (`/dev/dri`). Use it for the QSV zero-copy path of the
-`libvmaf_sycl` filter, which needs the oneVPL GPU runtime and a QSV-enabled
+`vmafx` filter (`backend=sycl`), which needs the oneVPL GPU runtime and a QSV-enabled
 FFmpeg build.
 
 It runs the `vmaf-dev-mcp:local` image that `dev/docker-compose.yml` builds
@@ -17,7 +17,7 @@ publishes no artifacts.
 | Mode | What it does |
 | ---- | ------------ |
 | `libvmaf` | Configures (first run) and builds libvmaf with SYCL (SPIR-V JIT, no AOT targets), installs it into the cache prefix and copies the public headers FFmpeg's `check_pkg_config libvmaf` probes. |
-| `ffmpeg` | Checks out `FFMPEG_TAG` from `FFMPEG_REMOTE` (`build-config.env`) into the cache once, resets it to `FFMPEG_COMMIT` on every run, applies the shared FFmpeg fix series with `scripts/ci/ffmpeg-shared-series.sh` ([ADR-3143](../adr/3143-ffmpeg-shared-fix-series.md)) and then `ffmpeg-patches/series.txt` with `git am --3way` (stops with `PATCH FAILED: <name>` on a conflict; the next run aborts the half-applied patch), configures with QSV, VAAPI and `--enable-libvmaf-sycl`, builds and installs. Run `libvmaf` first. |
+| `ffmpeg` | Checks out `FFMPEG_TAG` from `FFMPEG_REMOTE` (`build-config.env`) into the cache once, resets it to `FFMPEG_COMMIT` on every run, applies the shared FFmpeg fix series with `scripts/ci/ffmpeg-shared-series.sh` ([ADR-3143](../adr/3143-ffmpeg-shared-fix-series.md)) and then `ffmpeg-patches/series.txt` with `git am --3way` (stops with `PATCH FAILED: <name>` on a conflict; the next run aborts the half-applied patch), configures with QSV, VAAPI and `--enable-libvmafx`, builds and installs. Run `libvmaf` first. |
 | `test [args...]` | `meson test -C <cache>/build --print-errorlogs` with your arguments, for example `test --suite sycl`. |
 | `exec <cmd...>` | Runs a command with the built `ffmpeg` and libvmaf on `PATH` / `LD_LIBRARY_PATH`. |
 
@@ -60,10 +60,10 @@ scripts/test/sycl-dev-container.sh exec bash -c '
   Q="-init_hw_device vaapi=va0:${RENDER_NODE:-/dev/dri/renderD128} -init_hw_device qsv=qr@va0 -init_hw_device qsv=qd@va0"
   ffmpeg -hide_banner $Q -hwaccel qsv -hwaccel_output_format qsv -hwaccel_device qd -i dis.mp4 \
     -hwaccel qsv -hwaccel_output_format qsv -hwaccel_device qr -i ref.mp4 \
-    -lavfi "[0:v][1:v]libvmaf_sycl=feature=name=psnr" -f null -'
+    -lavfi "[0:v][1:v]vmafx=backend=sycl:import=auto:feature=name=psnr" -f null -'
 ```
 
-The filter routes `psnr` to its twin (`libvmaf_sycl: feature 'psnr' ->
+The filter routes `psnr` to its twin (`vmafx: feature 'psnr' ->
 psnr_sycl`, [ADR-3360](../adr/3360-sycl-filter-twin-routing.md)); `psnr_sycl`
 needs chroma, so the first frame is refused
 ([ADR-1688](../adr/1688-sycl-zero-copy-luma-only-admission.md)) with
@@ -74,7 +74,7 @@ for 10-bit: these match driver download surfaces, whereas planar YUV download
 formats are not portable across VAAPI drivers.
 The same command without `feature=name=psnr` prints a VMAF score, and
 `feature=name=niqe` (no SYCL twin) fails at configuration with
-`libvmaf_sycl: feature 'niqe' cannot run on zero-copy input: no SYCL twin`.
+`vmafx: feature 'niqe' cannot run on zero-copy input: no SYCL twin`.
 Each decoder input has its own QSV device (`qr`, `qd`), as
 [the SYCL overview](../backends/sycl/overview.md) requires.
 
@@ -88,9 +88,9 @@ case through three legs:
 
 | Leg | Pipeline | Role |
 | --- | --- | --- |
-| `cpu` | software decode, `libvmaf` | reference |
-| `host` | software decode, `libvmaf_sycl` (host upload, SYCL twins) | must equal `cpu` exactly (`ciede` within its declared bound, below) |
-| `zc` | QSV decode with one QSV device per input, `libvmaf_sycl` | must equal `host` once its stage is reached |
+| `cpu` | software decode, `vmafx` | reference |
+| `host` | software decode, `vmafx` (host upload, backend=sycl) | must equal `cpu` exactly (`ciede` within its declared bound, below) |
+| `zc` | QSV decode with one QSV device per input, `vmafx` (backend=sycl, import=auto) | must equal `host` once its stage is reached |
 
 Every leg writes its scores with the filter option `score_fmt=%.17g` (patch
 0016; override with `SCORE_FMT`), so the comparator sees full doubles. At the

@@ -1,8 +1,15 @@
 <!-- markdownlint-disable MD060 -->
 # ADR-0860 — Re-include Vulkan FFmpeg patches as no-op shims for chain coherence
 
-- **Status**: Accepted
+- **Status**: Superseded by [ADR-2166](2166-ffmpeg-series-drops-vulkan-shims.md)
 - **Date**: 2026-05-30
+
+> [!NOTE]
+> **Superseded by [ADR-2166](2166-ffmpeg-series-drops-vulkan-shims.md)**:
+> The Vulkan no-op shims (patches `0004` and `0006` in the legacy 26-patch
+> stack) were permanently removed in Issue #2435. The patch series was
+> redesigned from `0001` grouped by purpose, retiring all `vf_libvmaf.c`
+> modifications in favor of `--enable-libvmafx`.
 
 ## Context
 

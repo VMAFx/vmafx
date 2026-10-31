@@ -272,9 +272,8 @@ runs in two passes:
      `vmaf_picture_alloc`, …)
    - `Vmaf<TitleCase>` — public C types (`VmafModelConfig`,
      `VmafLogLevel`, `VmafPicture`, …)
-   - `libvmaf_<ident>` — pkg-config feature names (`libvmaf_sycl`,
-     `libvmaf_cuda`, …)
-   - `--enable-libvmaf-*` — FFmpeg configure flags
+   - `libvmaf_<ident>` — pkg-config feature names or headers
+   - `--enable-libvmafx` — FFmpeg configure flag
 2. **Build the diff set.** From the PR's diff against
    `core/include/libvmaf/*.h` and `core/meson_options.txt`,
    extract the same identifier shapes from `+`/`-` lines (single-line

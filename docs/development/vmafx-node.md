@@ -74,19 +74,15 @@ behind pinning to a tag rather than a rolling release branch.
 
 ## ffmpeg-patches
 
-The node image applies the fork's full 20-patch series from `ffmpeg-patches/`
-during the `ffmpeg-builder-cpu` stage. The patches:
+The node image applies the fork's 6-patch series from `ffmpeg-patches/`
+during the `ffmpeg-builder-cpu` stage (ADR-2166). The patches:
 
-- Carry the fork's libvmaf selector/filter integrations (SYCL, CUDA, HIP and
-  Metal selectors, the SYCL and Metal filters) plus `vmaf_pre` and
-  `libvmaf_tune`; the node's shared FFmpeg build enables only CPU libvmaf.
-- Add the vmaf-tune `qpfile` AVOption to libx264 / libsvtav1.
-- Wire the `-pass-autotune` and `-vmaf-profile` CLI glue.
-- Read the pelorus sidedata (0017) and honour the retryable libvmaf close
-  ownership (0020).
-- Patches 0004 and 0006 are no-op compatibility shims for the removed
-  Vulkan backend (ADR-0726, ADR-0860); they stay in the series so later
-  patches apply cleanly.
+- Add the `qpfile` option across encoders (`0001-codec-qpfile-unified.patch`).
+- Add the `-pass-autotune` CLI glue (`0002-pass-autotune-cli-glue.patch`).
+- Add the `-vmafx-profile` CLI glue (`0003-add-vmafx-profile-cli-glue.patch`).
+- Add the `vmafx` and `vmafx_tune` filters (`0004-add-vmafx-filter.patch`).
+- Add the `vmafx_pre` learned filter (`0005-add-vmafx-pre-filter.patch`).
+- Add loopback decoder hwaccel (`0006-fftools-loopback-decoder-hwaccel.patch`).
 - Keep the pinned FFmpeg sources warning-clean under GCC 14 and GCC 16 without
   removing VVC or another codec and without compiler-warning suppressions.
 - Resolve annotated release tags through the shared peeled-commit checkout

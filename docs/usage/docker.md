@@ -107,7 +107,7 @@ hygiene, supply-chain provenance, and vulnerability posture:
 | File | Produces | Entry point |
 | --- | --- | --- |
 | [`Dockerfile`](../../Dockerfile) | `libvmaf` plus FFmpeg with the fork's patch series; CUDA on by default | `ffmpeg` |
-| [`Dockerfile.ffmpeg`](../../Dockerfile.ffmpeg) | FFmpeg with NVIDIA nv-codec headers, so hardware decoders feed `libvmaf_cuda` on the GPU; built on the local `vmaf` image, selected by digest | `ffmpeg` |
+| [`Dockerfile.ffmpeg`](../../Dockerfile.ffmpeg) | FFmpeg with NVIDIA nv-codec headers, so hardware decoders feed `vmafx` on the GPU; built on the local `vmaf` image, selected by digest | `ffmpeg` |
 | [`docker/Dockerfile.production`](../../docker/Dockerfile.production) | The published CPU image (`--target cli`) and the MCP server image (`--target server`) | `vmaf` / `vmaf-mcp` |
 | [`docker/Dockerfile.production-gpu`](../../docker/Dockerfile.production-gpu) | The published CUDA, ROCm and oneAPI images | `vmaf` |
 | [`Dockerfile.go-server`](../../Dockerfile.go-server), `docker/Dockerfile.controller`, `.node`, `.operator` | The Go services `vmafx-server`, `vmafx-controller`, `vmafx-node` and `vmafx-operator` | the service binary |
@@ -132,7 +132,7 @@ directly:
 docker run --rm -v $(pwd):/files vmaf \
     -i /files/distorted.y4m \
     -i /files/reference.y4m \
-    -lavfi libvmaf \
+    -lavfi vmafx \
     -f null -
 ```
 
@@ -146,7 +146,7 @@ docker run --rm -v $(pwd):/files --entrypoint vmaf vmaf \
 To verify the build, list the filter options (`ffmpeg` is the entry point):
 
 ```bash
-docker run --rm vmaf -h filter=libvmaf
+docker run --rm vmaf -h filter=vmafx
 ```
 
 ### Build arguments
@@ -165,14 +165,14 @@ docker run --rm vmaf -h filter=libvmaf
 1. Install the
    [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
    to give containers GPU access.
-2. Run the `libvmaf_cuda` filter. The default image is built with CUDA, so the
-   filter is available out of the box:
+2. Run the `vmafx` filter with `backend=cuda`. The default image is built
+   with CUDA, so the filter is available out of the box:
 
     ```bash
     docker run --gpus all --rm -v $(pwd):/files vmaf \
         -i /files/distorted.y4m \
         -i /files/reference.y4m \
-        -lavfi "[0:v][1:v]libvmaf_cuda" \
+        -lavfi "[0:v][1:v]vmafx=backend=cuda" \
         -f null -
     ```
 
@@ -207,14 +207,14 @@ docker run --gpus all -e NVIDIA_DRIVER_CAPABILITIES=compute,video \
     -hwaccel cuda -hwaccel_output_format cuda \
     -i /files/Beauty_3840x2160_120fps_420_8bit_HEVC_RAW.hevc \
     -hwaccel cuda -hwaccel_output_format cuda -i /files/dist.mp4 \
-    -filter_complex "[0:v]scale_cuda=format=yuv420p[ref];[1:v]scale_cuda=format=yuv420p[dist];[dist][ref]libvmaf_cuda" \
+    -filter_complex "[0:v]scale_cuda=format=yuv420p[ref];[1:v]scale_cuda=format=yuv420p[dist];[dist][ref]vmafx=backend=cuda" \
     -f null -
 ```
 
 !!! note "Pixel formats on the GPU path"
     For 4:2:0 video, convert NV12 to YUV420P with `scale_cuda`, as shown. For
     4:4:4 and 4:2:2 inputs the decoder output can be fed directly, for example
-    `-filter_complex "[0:v][1:v]libvmaf_cuda"`.
+    `-filter_complex "[0:v][1:v]vmafx=backend=cuda"`.
 
 ## Run with SYCL
 

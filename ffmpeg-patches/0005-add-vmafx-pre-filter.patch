@@ -3,7 +3,7 @@ From: Lusoris <lusoris@pm.me>
 Date: Tue, 6 Oct 2026 20:18:40 +0200
 Subject: [PATCH] avfilter: add the vmafx_pre filter on the VMAFx API
 
-The vmaf_pre filter under its VMAFx name, with the same options, on the
+The vmafx_pre filter, with its learned pre-filter options, on the
 library's vmafx_dnn_session_* functions. A failed inference fails the
 frame naming the plane instead of copying the plane through. Built with
 --enable-libvmafx.
@@ -12,16 +12,16 @@ frame naming the plane instead of copying the plane through. Built with
  doc/filters.texi           |  26 ++++
  libavfilter/Makefile       |   1 +
  libavfilter/allfilters.c   |   1 +
- libavfilter/vf_vmafx_pre.c | 265 +++++++++++++++++++++++++++++++++++++
- 5 files changed, 294 insertions(+)
+ libavfilter/vf_vmafx_pre.c | 264 +++++++++++++++++++++++++++++++++++++
+ 5 files changed, 293 insertions(+)
  create mode 100644 libavfilter/vf_vmafx_pre.c
 
 diff --git a/configure b/configure
-index 7720d816105a8d3dd8edce31e55dfbbccf3df134..9f7345b1a81c246f6e6cec697afa7caf1863dabf 100755
+index 3a481a826ac33f9f68ecd5f1ef3b82244a290e51..f72af2da0a2e91749d1986bf6e507e91d2cd34bb 100755
 --- a/configure
 +++ b/configure
-@@ -4321,6 +4321,7 @@ vmaf_pre_filter_deps="libvmaf"
- libvmaf_tune_filter_deps="libvmaf"
+@@ -4306,6 +4306,7 @@ libvmaf_filter_deps="libvmaf"
+ libvmaf_cuda_filter_deps="libvmaf libvmaf_cuda ffnvcodec"
  vmafx_filter_deps="libvmafx"
  vmafx_tune_filter_deps="libvmafx"
 +vmafx_pre_filter_deps="libvmafx"
@@ -29,10 +29,10 @@ index 7720d816105a8d3dd8edce31e55dfbbccf3df134..9f7345b1a81c246f6e6cec697afa7caf
  zoompan_filter_deps="swscale"
  zscale_filter_deps="libzimg const_nan"
 diff --git a/doc/filters.texi b/doc/filters.texi
-index 13198385c79fc2876c2a1858e15b8f2ac9a7fcbd..50eb8dfd037ba2251786187017518ba6d72badb0 100644
+index 18a2bac9dc8268b709d75ad28a0e1e28f85f5403..a0d49bdebf8fe53bc83973930fceb7d4e000d850 100644
 --- a/doc/filters.texi
 +++ b/doc/filters.texi
-@@ -26086,6 +26086,32 @@ ffmpeg -hwaccel cuda -hwaccel_output_format cuda -i distorted.mp4 -hwaccel cuda
+@@ -26082,6 +26082,32 @@ ffmpeg -hwaccel cuda -hwaccel_output_format cuda -i distorted.mp4 -hwaccel cuda
  @end example
  @end itemize
  
@@ -66,23 +66,23 @@ index 13198385c79fc2876c2a1858e15b8f2ac9a7fcbd..50eb8dfd037ba2251786187017518ba6
  
  Score a pass with the VMAFx library and recommend a CRF for the next one.
 diff --git a/libavfilter/Makefile b/libavfilter/Makefile
-index f1a063d278d7b87d5da2c70c5453083d2a33a6f2..136b1da4857dad90a1843599af67793d3b7ded94 100644
+index 2a2cabc493c654213b6113a32de5914e8179853a..3ce59c5b90af2fe498b6739c82a63f53407d2169 100644
 --- a/libavfilter/Makefile
 +++ b/libavfilter/Makefile
-@@ -589,6 +589,7 @@ OBJS-$(CONFIG_VMAFMOTION_FILTER)             += vf_vmafmotion.o framesync.o
- OBJS-$(CONFIG_VMAF_PRE_FILTER)               += vf_vmaf_pre.o
+@@ -585,6 +585,7 @@ OBJS-$(CONFIG_VIGNETTE_FILTER)               += vf_vignette.o
+ OBJS-$(CONFIG_VMAFMOTION_FILTER)             += vf_vmafmotion.o framesync.o
  OBJS-$(CONFIG_VMAFX_FILTER)                  += vf_vmafx.o framesync.o
  OBJS-$(CONFIG_VMAFX_TUNE_FILTER)             += vf_vmafx.o framesync.o
 +OBJS-$(CONFIG_VMAFX_PRE_FILTER)              += vf_vmafx_pre.o
- OBJS-$(CONFIG_LIBVMAF_TUNE_FILTER)           += vf_libvmaf_tune.o framesync.o
  OBJS-$(CONFIG_VPP_AMF_FILTER)                += vf_vpp_amf.o scale_eval.o vf_amf_common.o
  OBJS-$(CONFIG_FRC_AMF_FILTER)                += vf_frc_amf.o vf_amf_common.o
+ OBJS-$(CONFIG_VPP_QSV_FILTER)                += vf_vpp_qsv.o
 diff --git a/libavfilter/allfilters.c b/libavfilter/allfilters.c
-index 301a08b8532056ce30c57932bd42c5173b3c219d..d12a3466bc55c5e52faec4b0e9fb27e67a3fdf6c 100644
+index b923bf9ec16ee0818b64509ca8af9f189ff3f447..b2e195db584eecbd536a74c9f37159c40fb6546d 100644
 --- a/libavfilter/allfilters.c
 +++ b/libavfilter/allfilters.c
-@@ -549,6 +549,7 @@ extern const FFFilter ff_vf_vmafmotion;
- extern const FFFilter ff_vf_vmaf_pre;
+@@ -544,6 +544,7 @@ extern const FFFilter ff_vf_vignette;
+ extern const FFFilter ff_vf_vmafmotion;
  extern const FFFilter ff_vf_vmafx;
  extern const FFFilter ff_vf_vmafx_tune;
 +extern const FFFilter ff_vf_vmafx_pre;
@@ -91,10 +91,10 @@ index 301a08b8532056ce30c57932bd42c5173b3c219d..d12a3466bc55c5e52faec4b0e9fb27e6
  extern const FFFilter ff_vf_w3fdif;
 diff --git a/libavfilter/vf_vmafx_pre.c b/libavfilter/vf_vmafx_pre.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..226bb1a640e2b5c3b1f2b6bf5d083ea4d1c37d59
+index 0000000000000000000000000000000000000000..8e9fccdf6cd67e2009f88522c04221cc211ede6a
 --- /dev/null
 +++ b/libavfilter/vf_vmafx_pre.c
-@@ -0,0 +1,265 @@
+@@ -0,0 +1,264 @@
 +/*
 + * Copyright 2026 Lusoris
 + *
@@ -116,8 +116,7 @@ index 0000000000000000000000000000000000000000..226bb1a640e2b5c3b1f2b6bf5d083ea4
 +/**
 + * @file
 + * The vmafx_pre filter: a learned ONNX pre-filter run by the VMAFx library
-+ * (vmafx_dnn_session_*), the vmaf_pre filter under its VMAFx name with the
-+ * same options. 8-bit planes go through vmafx_dnn_session_run_luma8(),
++ * (vmafx_dnn_session_*). 8-bit planes go through vmafx_dnn_session_run_luma8(),
 + * 10- and 12-bit planes through vmafx_dnn_session_run_plane16(); with
 + * chroma=1 the session also runs on U and V at their own size, otherwise
 + * they are copied. A failed inference fails the frame, naming the plane.
