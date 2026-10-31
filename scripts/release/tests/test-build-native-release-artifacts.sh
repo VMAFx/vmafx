@@ -62,7 +62,10 @@ if [ "${STUB_MESON_MODE:-ok}" = zimg ] || [ "${STUB_MESON_MODE:-ok}" = zimg-miss
   cc -fPIC -shared -Wl,-soname,libzimg.so.2 -o build/fakezimg/libzimg.so.2.0.0 build/fakezimg/zimg.c
   ln -s libzimg.so.2.0.0 build/fakezimg/libzimg.so.2
   fakezimg_dir="$(pwd)/build/fakezimg"
-  extra_engine_flags=(-Lbuild/fakezimg -l:libzimg.so.2.0.0 -Wl,--enable-new-dtags -Wl,-rpath,"$fakezimg_dir" -Wl,-z,nodefaultlib)
+  # --no-as-needed: the stub engine calls nothing in libzimg, and toolchains
+  # that link --as-needed by default (Ubuntu's gcc) would drop the DT_NEEDED
+  # entry these cases are about.
+  extra_engine_flags=(-Lbuild/fakezimg -Wl,--no-as-needed -l:libzimg.so.2.0.0 -Wl,--enable-new-dtags -Wl,-rpath,"$fakezimg_dir" -Wl,-z,nodefaultlib)
 fi
 # Both chains of the library split (ADR-2094): the compat libvmaf.so.3 and
 # the CLI need libvmafx.so.1.
