@@ -65,6 +65,11 @@ FIXTURES=(
   # md5 read 2026-10-31 from Netflix/vmaf_resource 5e7b853ba, BSD-2-Clause-Patent.
   "src01_hrc00_576x324.yuv422p10le.yuv 91fa924e0c63c7ecb5bf85fae006edf9"
   "src01_hrc01_576x324.yuv422p10le.yuv 4de6d217e67bd29e45a6f2f5358131fe"
+  # 480x270, yuv420p10le: the 10-bit input of the bit-exact tests' all-or-none
+  # fixture set (core/test/vmafx_fixture_util.h vt_inputs[3]);
+  # md5 read 2026-10-31 from Netflix/vmaf_resource 5e7b853ba, BSD-2-Clause-Patent.
+  "sparks_ref_480x270.yuv42010le.yuv 81e1a8f7725f15b42cb5ae022dbab7d1"
+  "sparks_dis_480x270.yuv42010le.yuv 5cd74c216330d5eb8d0e2155945a18d2"
 )
 
 # Print the FIXTURES entries of the named fixtures, all of them without a name.
