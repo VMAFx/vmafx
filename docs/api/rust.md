@@ -103,6 +103,10 @@ Transitive
 system dependencies (`pthread`, `m`, C++ runtime `stdc++`/`c++`, and optional
 dependencies
 such as `dl`) are parsed directly from Meson pkg-config metadata and linked.
+The vendored core builds with zimg by default, so `libzimg-dev` (Linux) or
+`brew install zimg` (macOS) and the `pkg-config` tool are required: the build
+reads the `Requires` lines of that metadata and asks `pkg-config` for each
+module's link flags, and stops by name when one does not resolve.
 
 There is no silent fallback to system libraries when `vendored` is enabled. If
 the
