@@ -35,6 +35,7 @@
 #include "libvmaf/libvmaf_cuda.h"
 
 #include "float_moment_twin_parity.h"
+#include "mu_table.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy proposes `nullptr`, but the required MSVC C build does
@@ -77,14 +78,39 @@ static char *test_float_moment_8bit_exact(void)
     return float_moment_twin_noise_exact(&twin, 8u);
 }
 
+static char *test_float_moment_9bit_exact(void)
+{
+    return float_moment_twin_noise_exact(&twin, 9u);
+}
+
 static char *test_float_moment_10bit_exact(void)
 {
     return float_moment_twin_noise_exact(&twin, 10u);
 }
 
+static char *test_float_moment_11bit_exact(void)
+{
+    return float_moment_twin_noise_exact(&twin, 11u);
+}
+
 static char *test_float_moment_12bit_exact(void)
 {
     return float_moment_twin_noise_exact(&twin, 12u);
+}
+
+static char *test_float_moment_13bit_exact(void)
+{
+    return float_moment_twin_noise_exact(&twin, 13u);
+}
+
+static char *test_float_moment_14bit_exact(void)
+{
+    return float_moment_twin_noise_exact(&twin, 14u);
+}
+
+static char *test_float_moment_15bit_exact(void)
+{
+    return float_moment_twin_noise_exact(&twin, 15u);
 }
 
 static char *test_float_moment_16bit_exact(void)
@@ -106,16 +132,23 @@ static char *test_float_moment_16bit_past_2_53_exact(void)
 
 char *run_tests(void)
 {
-    mu_run_test(test_float_moment_cuda_registered);
-    mu_run_test(test_float_moment_8bit_exact);
-    mu_run_test(test_float_moment_10bit_exact);
-    mu_run_test(test_float_moment_12bit_exact);
-    mu_run_test(test_float_moment_16bit_exact);
-    mu_run_test(test_float_moment_16bit_bright_exact);
+    static const MuTest tests[] = {
+        MU_TEST(test_float_moment_cuda_registered),
+        MU_TEST(test_float_moment_8bit_exact),
+        MU_TEST(test_float_moment_9bit_exact),
+        MU_TEST(test_float_moment_10bit_exact),
+        MU_TEST(test_float_moment_11bit_exact),
+        MU_TEST(test_float_moment_12bit_exact),
+        MU_TEST(test_float_moment_13bit_exact),
+        MU_TEST(test_float_moment_14bit_exact),
+        MU_TEST(test_float_moment_15bit_exact),
+        MU_TEST(test_float_moment_16bit_exact),
+        MU_TEST(test_float_moment_16bit_bright_exact),
 #ifndef FLOAT_MOMENT_TWIN_LARGE_VARIANT
-    mu_run_test(test_float_moment_16bit_past_2_53_exact);
+        MU_TEST(test_float_moment_16bit_past_2_53_exact),
 #endif
-    return NULL;
+    };
+    return mu_run_table(tests, MU_TABLE_LEN(tests));
 }
 
 /* NOLINTEND(modernize-use-nullptr) */

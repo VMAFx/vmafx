@@ -156,9 +156,9 @@ int vmaf_read_pictures(VmafContext *ctx, VmafPicture *ref,
   ([ADR-0152](../adr/0152-vmaf-read-pictures-monotonic-index.md)).
 - **Bit depth:** on a device backend (CUDA, SYCL, HIP, Metal) a twin takes 9,
   11, 13, 14 and 15-bit pictures only where its parity test was measured: the
-  CUDA, SYCL and HIP `float_psnr` and `ciede` twins up to 15 bits, the
-  `psnr_hvs` twins of every device backend up to 11 bits. Every other twin
-  returns `-EINVAL` at those depths and logs
+  CUDA, SYCL and HIP `float_psnr`, `ciede` and `float_moment` twins up to
+  15 bits, the `psnr_hvs` twins of every device backend up to 11 bits. Every
+  other twin returns `-EINVAL` at those depths and logs
   `<extractor>: picture bit depth N is not supported on this backend`. The CPU
   extractors are unaffected; score those depths with them
   ([ADR-3383](../adr/3383-odd-depth-twin-allow-list.md)).

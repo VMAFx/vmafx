@@ -22,8 +22,9 @@ Output metrics:
 **Output range** — for 8-bit luma, `[0, 255]` for the first moment and
 `[0, 65 025]` for the second; scales with $2^{\mathrm{bpc}} - 1$.
 
-**Input formats** — YUV 4:2:0 / 4:2:2 / 4:4:4, 8 / 10 / 12 / 16 bpc. Y plane
-only.
+**Input formats** — YUV 4:2:0 / 4:2:2 / 4:4:4, 8 to 16 bpc. Y plane only. The
+CUDA, SYCL and HIP twins take the same depths; the Metal twin refuses 9, 11,
+13, 14 and 15 bits with `-EINVAL` because no Metal device has measured them.
 
 **Options** — none.
 
