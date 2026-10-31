@@ -141,7 +141,10 @@ def test_only_the_no_zimg_leg_expects_the_refusal() -> None:
         if any(step.get("name") == "Run tox tests (ubuntu)" for step in job.get("steps", []))
     )
     step = next(step for step in job["steps"] if step.get("name") == "Run tox tests (ubuntu)")
-    assert step["env"]["VMAF_EXPECT_NO_ZIMG"] == "${{ matrix.zimg == false && '1' || '' }}"
+    assert (
+        step["env"]["VMAF_EXPECT_NO_ZIMG"]
+        == "${{ format('{0}', matrix.zimg) == 'false' && '1' || '' }}"
+    )
     legs = job["strategy"]["matrix"]["include"]
     assert [leg["name"] for leg in legs if leg.get("zimg") is False] == ["Ubuntu gcc no zimg"]
     assert all(
