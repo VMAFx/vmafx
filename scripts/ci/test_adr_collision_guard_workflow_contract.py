@@ -28,6 +28,26 @@ def strip_comments(text: str) -> str:
     return "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
 
 
+# Every git fetch option that makes the clone shallow and so cuts the ancestry.
+SHALLOW_FETCH_FLAG = re.compile(r"--(depth|deepen|shallow-since|shallow-exclude)\b")
+
+
+def join_continuations(text: str) -> list[str]:
+    """Return shell lines with backslash continuations joined into one command line."""
+    joined: list[str] = []
+    pending = ""
+    for line in text.splitlines():
+        stripped = line.rstrip()
+        if stripped.endswith("\\"):
+            pending += stripped[:-1] + " "
+            continue
+        joined.append(pending + line)
+        pending = ""
+    if pending:
+        joined.append(pending)
+    return joined
+
+
 def verify_adr_collision_guard(job_text: str) -> None:
     """Verify that ADR Collision Guard preserves ancestry and full history."""
     # 1. Checkout fetch-depth must be 0 (full clone)
@@ -45,11 +65,12 @@ def verify_adr_collision_guard(job_text: str) -> None:
             "ADR Collision Guard must use merge-base --is-ancestor for descendant checks"
         )
 
-    # 3. No git fetch line may carry --depth when ancestry is tested
+    # 3. No git fetch command may make the clone shallow when ancestry is tested,
+    #    including a flag on a continuation line of the command.
     depth_fetch_lines = [
-        line.strip()
-        for line in exec_body.splitlines()
-        if "git fetch" in line and re.search(r"--depth\b", line)
+        " ".join(line.split())
+        for line in join_continuations(exec_body)
+        if "git fetch" in line and SHALLOW_FETCH_FLAG.search(line)
     ]
     if depth_fetch_lines:
         raise AssertionError(
@@ -86,6 +107,43 @@ class AdrCollisionGuardWorkflowContract(unittest.TestCase):
             "git fetch in ADR Collision Guard must not use --depth",
             str(ctx.exception),
         )
+
+    def test_planted_continued_depth_fetch_rejected(self) -> None:
+        """Planted negative case: a depth flag on a continuation line must fail the contract."""
+        for flag in ("--depth=1", "--shallow-since=2026-01-01", "--deepen 5"):
+            synthetic_job = (
+                "  adr-collision-check:\n"
+                "    name: ADR Collision Guard\n"
+                "    steps:\n"
+                "      - uses: actions/checkout@v7\n"
+                "        with:\n"
+                "          fetch-depth: 0\n"
+                "      - name: Fetch PR tip\n"
+                "        run: |\n"
+                "          git fetch --no-tags \\\n"
+                f'            {flag} origin "${{pr_sha}}"\n'
+                '          git merge-base --is-ancestor "${HEAD_SHA}" "${pr_sha}"\n'
+            )
+            with self.subTest(flag=flag), self.assertRaises(AssertionError) as ctx:
+                verify_adr_collision_guard(synthetic_job)
+            self.assertIn(flag.split("=")[0].split()[0], str(ctx.exception))
+
+    def test_continued_full_fetch_passes(self) -> None:
+        """Boundary case: a continued fetch without a shallow flag keeps the contract."""
+        synthetic_job = (
+            "  adr-collision-check:\n"
+            "    name: ADR Collision Guard\n"
+            "    steps:\n"
+            "      - uses: actions/checkout@v7\n"
+            "        with:\n"
+            "          fetch-depth: 0\n"
+            "      - name: Fetch PR tip\n"
+            "        run: |\n"
+            "          git fetch --no-tags \\\n"
+            '            origin "${pr_sha}"\n'
+            '          git merge-base --is-ancestor "${HEAD_SHA}" "${pr_sha}"\n'
+        )
+        verify_adr_collision_guard(synthetic_job)
 
     def test_planted_nonzero_checkout_depth_rejected(self) -> None:
         """Planted negative case: non-zero checkout depth must fail."""
