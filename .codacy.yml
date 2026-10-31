@@ -1,0 +1,17 @@
+---
+# Codacy configuration (https://docs.codacy.com/repositories-configure/codacy-configuration-file/).
+# Codacy reads this file from the default branch, and it replaces the ignored-file
+# settings of the Codacy UI.
+#
+# markdownlint skips the trees whose Markdown files are fragments: they are spliced
+# under a heading by scripts/release/concat-changelog-fragments.sh and the ADR and
+# rebase-note index renderers (ADR-0221), so MD041 (first line a heading) and MD013
+# (80 columns) cannot hold for them. The markdownlint-cli2 hook in
+# .pre-commit-config.yaml excludes the same trees;
+# scripts/ci/tests/test_codacy_config.py keeps the two lists equal.
+engines:
+  markdownlint:
+    exclude_paths:
+      - "changelog.d/**"
+      - "docs/adr/_index_fragments/**"
+      - "docs/rebase-notes.d/**"
