@@ -8,10 +8,10 @@ operating mode.
 
 | Hook | Patch | What it does | vmaf-tune mode |
 |---|---|---|---|
-| `-qpfile <path>` | 0007 | Per-block QP offsets for `libx264`, `libsvtav1`, `libaom-av1`. | [Saliency-aware encoding](vmaf-tune-saliency-aware.md) |
-| `-vf libvmaf_tune` | 0008 | Scores a pair and logs a recommended CRF. | CRF recommendation |
-| `-pass-autotune` | 0009 | Advisory flag for external 2-pass orchestration. | 2-pass autotuning |
-| `-vmaf-profile <path>` | 0015 | Advisory hand-off to `vmaf-tune encode-profile`. | Report-profile encodes |
+| `-qpfile <path>` | 0001 | Per-block QP offsets for `libx264`, `libsvtav1`, `libaom-av1`. | [Saliency-aware encoding](vmaf-tune-saliency-aware.md) |
+| `-vf vmafx_tune` | 0004 | Scores a pair and logs a recommended CRF. | CRF recommendation |
+| `-pass-autotune` | 0002 | Advisory flag for external 2-pass orchestration. | 2-pass autotuning |
+| `-vmafx-profile <path>` | 0003 | Advisory hand-off to `vmaf-tune encode-profile`. | Report-profile encodes |
 
 ## Prerequisites
 
@@ -36,7 +36,7 @@ maintained stable release, verified on 2026-09-20).
 3. Configure and build:
 
     ```bash
-    ./configure --enable-libvmaf --enable-libx264 --enable-libsvtav1 --enable-libaom --enable-gpl
+    ./configure --enable-libvmafx --enable-libx264 --enable-libsvtav1 --enable-libaom --enable-gpl
     make -j$(nproc)
     ```
 
@@ -46,12 +46,12 @@ Confirm that the new options are recognised:
 ./ffmpeg -h encoder=libx264   2>&1 | grep -i qpfile
 ./ffmpeg -h encoder=libsvtav1 2>&1 | grep -i qpfile
 ./ffmpeg -h encoder=libaom-av1 2>&1 | grep -i qpfile
-./ffmpeg -h filter=libvmaf_tune
+./ffmpeg -h filter=vmafx_tune
 ./ffmpeg -h | grep -i pass-autotune
-./ffmpeg -h | grep -i vmaf-profile
+./ffmpeg -h | grep -i vmafx-profile
 ```
 
-## Hook 1: `-qpfile <path>` (patch 0007)
+## Hook 1: `-qpfile <path>` (patch 0001)
 
 The `-qpfile` option on `libx264`, `libsvtav1` and `libaom-av1` reads the
 qpfile format that vmaf-tune's saliency module
@@ -190,25 +190,25 @@ macroblock rounds to the nearest. libaom copies the segment map and the
 !!! note "8-segment limit"
     The limit is a quantisation step: nearby QP offsets round together.
 
-## Hook 2: `-vf libvmaf_tune` (patch 0008)
+## Hook 2: `-vf vmafx_tune` (patch 0004)
 
 The filter takes two video inputs, runs alongside a 1-pass encode and
 emits a recommended CRF for the next pass:
 
 ```bash
 ffmpeg -i input.mp4 -i reference.mp4 \
-    -lavfi "[0:v][1:v]libvmaf_tune=recommend_target_vmaf=92:recommend_crf_min=18:recommend_crf_max=40" \
+    -lavfi "[0:v][1:v]vmafx_tune=recommend_target_vmaf=92:recommend_crf_min=18:recommend_crf_max=40" \
     -f null -
 ```
 
 At the end of the run the filter logs:
 
 ```text
-[Parsed_libvmaf_tune_0 @ 0x...] recommended_crf=24.3 (target_vmaf=92.0, observed_vmaf=93.6, n_frames=240)
+[Parsed_vmafx_tune_0 @ 0x...] recommended_crf=24.3 (target_vmaf=92.0, observed_vmaf=93.6, n_frames=240)
 ```
 
 !!! note "FFmpeg version"
-    Patch 0008 uses the post-n7 libavfilter API (`ff_filter_link()` for
+    Patch 0004 uses the post-n7 libavfilter API (`ff_filter_link()` for
     per-link metadata such as `frame_rate`), so it needs FFmpeg `n7.0` or
     newer; it does not compile against `n6.x`. The series targets
     `n9.0.2`, so the prerequisites above satisfy this.
@@ -217,24 +217,22 @@ At the end of the run the filter logs:
 
 | Option | Default | Notes |
 |---|---|---|
-| `model` | `version=vmaf_v0.6.1` | libvmaf model spec; also accepts `path=...`. |
+| `model` | `version=vmaf_v1.0.16_3d0h` | vmafx model spec; also accepts `path=...`. |
 | `feature` | none | Optional `:`-separated feature spec. |
-| `n_threads` | `0` | Worker threads (0 = libvmaf default). |
+| `threads` | `0` | Worker threads (0 = default; `n_threads` alias kept). |
 | `recommend_target_vmaf` | `95.0` | Target score the recommendation aims for. |
 | `recommend_crf_min` | `18.0` | Lower CRF bound considered. |
 | `recommend_crf_max` | `51.0` | Upper CRF bound considered. |
 | `recommend_passes` | `1` | Probe-pass count (advisory; ignored in the single-pass implementation). |
 
-The filter's default model is `vmaf_v0.6.1`. The Python `vmaf-tune`
-tool defaults to `vmaf_v1.0.16_3d0h`, so the two recommendations can
-differ unless you set the same model on both sides.
+The filter defaults to the library model `vmaf_v1.0.16_3d0h`. The Python `vmaf-tune`
+tool also defaults to `vmaf_v1.0.16_3d0h`.
 
 ### Scoring and the recommendation
 
-The filter runs real libvmaf scoring in-process. Each (main, ref) frame
-pair is queued with `vmaf_read_pictures()`. At `uninit()` the filter
-flushes and calls `vmaf_score_pooled(VMAF_POOL_METHOD_MEAN)`, so the
-`observed_vmaf` in the final log line is the real pooled score.
+The filter runs real vmafx scoring in-process. At `uninit()` the filter
+flushes and computes the final score, so the `observed_vmaf` in the final log line
+is the real pooled score.
 
 The CRF recommendation is a piece-wise linear projection from the
 observed VMAF onto `[recommend_crf_min, recommend_crf_max]`. The slope is
@@ -244,7 +242,7 @@ Python tool: `tools/vmaf-tune/src/vmaftune/recommend.py` sweeps real
 CRF-to-VMAF rows from a corpus instead of projecting from one
 observation.
 
-## Hook 3: `-pass-autotune` (patch 0009)
+## Hook 3: `-pass-autotune` (patch 0002)
 
 An advisory CLI flag for vmaf-tune-driven 2-pass encodes:
 
@@ -264,7 +262,7 @@ and in [`--two-pass`](vmaf-tune-multipass.md). The flag exists so shell
 scripts that call `ffmpeg` directly can signal the intent without
 inventing their own log conventions.
 
-## Hook 4: `-vmaf-profile <path>` (patch 0015)
+## Hook 4: `-vmafx-profile <path>` (patch 0003)
 
 `vmaf-tune compare --format html|both` and `vmaf-tune report` embed a
 versioned `encoder_profile` payload in the generated report. The Python
@@ -274,11 +272,11 @@ be duplicated inside FFmpeg. The FFmpeg-side hook is therefore an
 advisory hand-off:
 
 ```bash
-ffmpeg -i input.mp4 -c:v libsvtav1 -vmaf-profile sweep_profile.html -f null -
+ffmpeg -i input.mp4 -c:v libsvtav1 -vmafx-profile sweep_profile.html -f null -
 ```
 
 ```text
-[ffmpeg] -vmaf-profile sweep_profile.html: encode with
+[ffmpeg] -vmafx-profile sweep_profile.html: encode with
 `vmaf-tune encode-profile --profile sweep_profile.html --src INPUT --output OUTPUT`
 (add --codec / --target-vmaf to select one recommendation). See
 docs/usage/vmaf-tune-ffmpeg.md.
@@ -338,7 +336,7 @@ codec or every ladder rung unless you script that loop yourself.
     ```bash
     ffmpeg -i out.mp4 \
         -f rawvideo -s 1920x1080 -pix_fmt yuv420p -i ref.yuv \
-        -lavfi "[0:v][1:v]libvmaf_tune=recommend_target_vmaf=95" \
+        -lavfi "[0:v][1:v]vmafx_tune=recommend_target_vmaf=95" \
         -f null - 2>&1 | grep recommended_crf
     ```
 

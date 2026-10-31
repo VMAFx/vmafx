@@ -121,7 +121,7 @@ backend within it.
   [`.zed/AGENTS.md`](../../.zed/AGENTS.md).
 
 - **`-qpfile` on libx264 goes through `quant_offsets` ([ADR-2167](../adr/2167-ffmpeg-x264-qpfile-quant-offsets.md))**:
-  patch `0007`'s libx264 hunks load the file with `ff_qpfile_load()` in
+  patch `0001`'s libx264 hunks load the file with `ff_qpfile_load()` in
   `X264_init()` (refusing `aq-mode=0` and a grid that is not the video's
   macroblock grid) and add the deltas of input frame `n` to the picture's
   `quant_offsets` in `setup_frame()`; libx264 has no `qpfile` parameter, so
@@ -231,7 +231,7 @@ backend within it.
   `core/test/vmafx_sycl_cells.h` together.
 - **The `vmafx` FFmpeg filters are generated from their sources ([ADR-2125](../adr/2125-vmafx-ffmpeg-gstreamer-filters.md))**:
   `ffmpeg-patches/src/vf_vmafx.c`, `vf_vmafx_pre.c`, `vf_vmafx_options.h` and
-  `ffmpeg_dec_hwaccel.c` are the truth for patches `0023` to `0026`;
+  `ffmpeg_dec_hwaccel.c` are the truth for patches `0004` to `0006` (ADR-2166);
   `scripts/ci/ffmpeg_patch_stack.py --refresh` amends the owning patch and
   refuses a source no patch owns. Host frames are wrapped on the CPU device
   (`NULL`) whatever device the context scores on, every hardware pixel format
@@ -244,8 +244,8 @@ backend within it.
   imported on the VMAFx device at the Vulkan device's PCI location, never
   imported straight from the producer's pool and never on another GPU
   (`vk_import()`). `ffmpeg-patches/test/vmafx_filter_check.py` (`parity`, `pool`,
-  `refusal`, `legacy`, `e2e`, `vulkan`) and `gstreamer/test/test_gst_vmafx_parity.py`
-  guard them; patch `0026` is fork-only (Q-048) and is refreshed, not dropped,
+  `refusal`, `e2e`, `vulkan`) and `gstreamer/test/test_gst_vmafx_parity.py`
+  guard them; patch `0006` is fork-only (Q-048) and is refreshed, not dropped,
   when FFmpeg changes `fftools/ffmpeg_dec.c` or `ffmpeg_demux.c`.
   The filter pairs or reports ([ADR-2165](../adr/2165-vmafx-filter-pairing-contract.md)):
   `vmafx_preinit()` sets the framesync defaults `eof_action=pass` and
@@ -573,23 +573,17 @@ backend within it.
   [core/src/sycl/AGENTS.md](../../core/src/sycl/AGENTS.md) and
   [core/src/feature/sycl/AGENTS.md](../../core/src/feature/sycl/AGENTS.md).
 
-- **`libvmaf_sycl` imports each input with its own VA display and never skips a frame ([ADR-1761](../adr/1761-sycl-filter-import-retry-then-fail.md))**:
-  FFmpeg patch `0005` reads the VA display of both inputs' QSV sessions and imports each
-  input's surfaces with its own; a failed import is retried in a bounded loop and then stops
-  the filter naming the frame, with no pooled score after it. Patch `0013`'s `libvmaf_metal`
+- **`vmafx` imports DRM PRIME frames on SYCL and never passes a frame through unscored on import failure ([ADR-1761](../adr/1761-sycl-filter-import-retry-then-fail.md))**:
+  Bounded retry lives in core under decision D8 (`vmafx_context_import_frame()`, `core/src/vmafx/frame_import_admit.c`, proven by `test_vmafx_import_fence`).
+  FFmpeg patch `0004` (`src/vf_vmafx.c`) imports DRM PRIME frames as dma-bufs into the VMAFx device; a failed import stops
+  the filter naming the frame on all import paths (drm, cuda, vulkan, host), with no pooled score after it. Patch `0004`'s Metal backend
   prints no pooled score after a stop either. A refresh or an upstream rebase must not
-  bring back the single display, the pass-through on a failed import, or a score after a
-  stop. `core/test/test_sycl_filter_import_contract.py` and
-  `core/test/test_metal_iosurface_filter_contract.py` guard it without a device,
-  `ffmpeg-patches/test/check-sycl-import-retry.sh` on one.
-- **`libvmaf` and `libvmaf_cuda` print no pooled score after an error ([ADR-1768](../adr/1768-ffmpeg-libvmaf-no-score-after-error.md))**:
-  FFmpeg patch `0021` is a deliberate divergence from upstream's `vf_libvmaf.c`.
-  `stop_on_frame()` logs the frame and the error once and sets `stopped`. `do_vmaf()` and
-  `do_vmaf_cuda()` call it on every failed copy and read, and `frame_cnt` advances only
-  after a successful read. The shared `uninit()` prints no score after a stop, a failed
-  flush or a failed model. A series refresh keeps the patch; when upstream rewrites these
-  functions, the rule moves into the new code. `core/test/test_ffmpeg_libvmaf_stop_contract.py`
-  guards it without a device, `ffmpeg-patches/test/check-libvmaf-no-score-after-error.sh` on one.
+  bring back a pass-through on a failed import or a score after a stop.
+  `ffmpeg-patches/test/check-vmafx-import-failure.sh` guards the filter contract.
+- **`vmafx` prints no pooled score after an error ([ADR-1768](../adr/1768-ffmpeg-libvmaf-no-score-after-error.md))**:
+  In FFmpeg patch `0004` (`src/vf_vmafx.c`), `uninit()` prints no score after a stop, a failed
+  flush or an error. A series refresh keeps this contract. `core/test/test_ffmpeg_vmafx_stop_contract.py`
+  guards it without a device, `ffmpeg-patches/test/check-vmafx-no-score-after-error.sh` on one.
 - **SYCL zero-copy admission ([ADR-1688](../adr/1688-sycl-zero-copy-luma-only-admission.md))**:
   `vmaf_read_pictures_sycl()` in `core/src/libvmaf.c` refuses, before counting a frame,
   every registered extractor whose `reads_shared_luma_only()` hook is absent or false for
@@ -977,8 +971,8 @@ backend within it.
 - **Metal IOSurface import reads NV12 / P010 itself ([ADR-1679](../adr/1679-metal-iosurface-biplanar-import.md))**:
   `core/src/metal/picture_import.mm` plans each plane from the surface's CoreVideo
   pixel format through `core/src/metal/iosurface_layout.h` (bi-planar chroma
-  de-interleaved, P010 shifted, other layouts `-ENOTSUP`), and FFmpeg patch `0013`
-  imports planes 0, 1 and 2 of both frames and fails on an import error.
+  de-interleaved, P010 shifted, other layouts `-ENOTSUP`), and FFmpeg patch `0004`
+  (`src/vf_vmafx.c`) imports planes 0, 1 and 2 of both frames and fails on an import error.
   `core/test/test_metal_iosurface_filter_contract.py`, `test_metal_iosurface_layout`
   and `test_metal_iosurface_import_parity` guard it. See
   [core/src/metal/AGENTS.md](../../core/src/metal/AGENTS.md).

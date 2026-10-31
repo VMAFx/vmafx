@@ -63,6 +63,251 @@ nomatch_ok() {
   exit 2
 }
 
+REPO_ROOT="${REPO_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+PATCHES_DIR="${REPO_ROOT}/ffmpeg-patches"
+
+# ---------- 0. Invariant surface checks (Issue #2435, ADR-2166) ----------
+
+check_surface_series() {
+  local fail=0
+  shopt -s nullglob
+  local patches=("${PATCHES_DIR}"/*.patch)
+  shopt -u nullglob
+  if [ "${#patches[@]}" -eq 0 ]; then
+    echo "ffmpeg-patches-surface-check: [FAIL] no patches found in ${PATCHES_DIR}" >&2
+    return 1
+  fi
+  local p
+  for p in "${patches[@]}"; do
+    if grep -qE '^(---|\+\+\+)[[:space:]]+[ab]/libavfilter/vf_libvmaf\.c' "$p"; then
+      echo "ffmpeg-patches-surface-check: [FAIL] patch touches retired vf_libvmaf.c: $p" >&2
+      fail=1
+    fi
+    local m
+    m="$(grep -nE '\b(libvmaf_(sycl|vulkan|metal|tune)|vmaf_pre)\b|-vmaf-profile\b|opt_vmaf_profile\b' "$p" 2>/dev/null || [ $? -eq 1 ])"
+    if [ -n "$m" ]; then
+      local filtered
+      filtered="$(grep -vE 'libvmaf_(sycl|metal)\.h' <<<"$m" || [ $? -eq 1 ])"
+      if [ -n "$filtered" ]; then
+        echo "ffmpeg-patches-surface-check: [FAIL] patch carries retired vmaf filter/option in $p:" >&2
+        printf '%s\n' "$filtered" >&2
+        fail=1
+      fi
+    fi
+    local m_cfg
+    m_cfg="$(grep -nE '^\+[[:space:]]*--enable-libvmaf-[a-z0-9_-]+' "$p" 2>/dev/null || [ $? -eq 1 ])"
+    if [ -n "$m_cfg" ]; then
+      echo "ffmpeg-patches-surface-check: [FAIL] patch adds retired configure flag in $p:" >&2
+      printf '%s\n' "$m_cfg" >&2
+      fail=1
+    fi
+  done
+  if [ "$fail" -ne 0 ]; then
+    return 1
+  fi
+  echo "ffmpeg-patches-surface-check: [PASS] series surface: zero vmaf-named filters/options in ${#patches[@]} patches."
+  return 0
+}
+
+check_surface_fork_build_configs() {
+  local fail=0
+  local configs=(
+    "Containerfile.vmafx"
+    "Dockerfile"
+    "Dockerfile.ffmpeg"
+    "dev/Containerfile"
+    "docker/Dockerfile.node"
+    "scripts/test/sycl-dev-container.sh"
+    ".github/workflows/ffmpeg-patch-stack.yml"
+    "scripts/ci/tidy-integrations-build.sh"
+    "ffmpeg-patches/test/build-and-run.sh"
+  )
+  local relpath fullpath
+  for relpath in "${configs[@]}"; do
+    fullpath="${REPO_ROOT}/${relpath}"
+    [ -f "$fullpath" ] || continue
+    local m_flag
+    m_flag="$(grep -nE -- '--enable-libvmaf([^x]|$)' "$fullpath" 2>/dev/null || [ $? -eq 1 ])"
+    if [ -n "$m_flag" ]; then
+      echo "ffmpeg-patches-surface-check: [FAIL] fork build config has --enable-libvmaf (expected --enable-libvmafx): ${relpath}:" >&2
+      printf '%s\n' "$m_flag" >&2
+      fail=1
+    fi
+    local m_filt
+    m_filt="$(grep -nE '\b(libvmaf_(sycl|vulkan|metal|tune)|vmaf_pre)\b|-vmaf-profile\b|--disable-filter=vmaf_pre' "$fullpath" 2>/dev/null || [ $? -eq 1 ])"
+    if [ -n "$m_filt" ]; then
+      local filtered
+      filtered="$(grep -vE 'libvmaf_(sycl|metal)\.h' <<<"$m_filt" || [ $? -eq 1 ])"
+      if [ -n "$filtered" ]; then
+        echo "ffmpeg-patches-surface-check: [FAIL] fork build config references retired filter/option: ${relpath}:" >&2
+        printf '%s\n' "$filtered" >&2
+        fail=1
+      fi
+    fi
+  done
+  if [ "$fail" -ne 0 ]; then
+    return 1
+  fi
+  echo "ffmpeg-patches-surface-check: [PASS] fork build configs: zero retired filters/options in ${#configs[@]} allow-listed configs."
+  return 0
+}
+
+is_excluded_doc() {
+  local p="$1"
+  case "$p" in
+    docs/adr/* | docs/adr.md | docs/research/* | docs/research.md) return 0 ;;
+    docs/rebase-notes*) return 0 ;;
+    docs/changelog-archive/* | docs/changelog-archive.md) return 0 ;;
+    CHANGELOG.md | changelog.d/*) return 0 ;;
+    docs/state.md | docs/backlog-audit-* | docs/backends/sycl/history.md) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+scan_single_doc() {
+  local relpath="$1"
+  local fullpath="${REPO_ROOT}/${relpath}"
+  [ -f "$fullpath" ] || return 0
+
+  local content
+  if [ "$relpath" = "docs/usage/ffmpeg.md" ]; then
+    content="$(awk '
+      /^## Migrating from the libvmaf filters/ { in_mig=1; next }
+      in_mig && /^## / { in_mig=0 }
+      !in_mig { print NR ":" $0 }
+    ' "$fullpath")"
+  else
+    content="$(awk '{ print NR ":" $0 }' "$fullpath")"
+  fi
+
+  # Strip harmless non-retired references:
+  # - libvmaf_*.h headers
+  # - markdown link targets pointing to excluded adr/research files or anchors
+  local cleaned
+  cleaned="$(printf '%s\n' "$content" | sed -E \
+    -e 's/libvmaf_[a-zA-Z0-9_]+\.h//g' \
+    -e 's/\([^)]*(\/adr\/|\/research\/)[^)]*\)//g' \
+    -e 's/#[a-zA-Z0-9_-]*libvmaf_[a-zA-Z0-9_-]*//g')"
+
+  local doc_fail=0
+  local pat_retired='\b(libvmaf_(sycl|vulkan|metal|cuda|hip|tune))\b|\bvmaf_pre\b|\bvmaf_pre_temporal\b|-vmaf-profile\b|--enable-libvmaf-[a-zA-Z0-9_-]+'
+  if printf '%s\n' "$cleaned" | grep -qE "$pat_retired"; then
+    echo "ffmpeg-patches-surface-check: [FAIL] retired filter/option in doc ${relpath}:" >&2
+    printf '%s\n' "$cleaned" | grep -E "$pat_retired" >&2
+    doc_fail=1
+  fi
+
+  # shellcheck disable=SC2016 # literal backticks in a grep pattern, nothing to expand
+  local pat_plain='--enable-libvmaf\b|(\bfilter\b[^\n`\(\)]*?\blibvmaf\b|\blibvmaf\b[^\n`\(\)]*?\bfilter\b)|-lavfi\s+[^\n]*\blibvmaf\b|-filter_complex\s+[^\n]*\blibvmaf\b'
+  if printf '%s\n' "$cleaned" | grep -qE -e "$pat_plain"; then
+    while IFS= read -r line; do
+      [ -n "$line" ] || continue
+      if ! echo "$line" | grep -qiE "upstream|stock|unpatched|backwards|backward|compat"; then
+        echo "ffmpeg-patches-surface-check: [FAIL] plain libvmaf filter/configure flag without stock upstream qualification in doc ${relpath}:" >&2
+        printf '%s\n' "$line" >&2
+        doc_fail=1
+      fi
+    done < <(printf '%s\n' "$cleaned" | grep -E -e "$pat_plain")
+  fi
+
+  return "$doc_fail"
+}
+
+check_surface_docs_examples() {
+  local fail=0
+  local all_docs=()
+  if git -C "${REPO_ROOT}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    mapfile -t all_docs < <(git -C "${REPO_ROOT}" ls-files "docs/**/*.md" "README.md" "ffmpeg-patches/README.md")
+  else
+    mapfile -t all_docs < <(cd "${REPO_ROOT}" && find docs README.md ffmpeg-patches/README.md -name "*.md" 2>/dev/null | sed "s|^\./||")
+  fi
+
+  local relpath
+  local doc_count=0
+  for relpath in "${all_docs[@]}"; do
+    is_excluded_doc "$relpath" && continue
+    [ -f "${REPO_ROOT}/${relpath}" ] || continue
+    doc_count=$((doc_count + 1))
+    if ! scan_single_doc "$relpath"; then
+      fail=1
+    fi
+  done
+
+  if [ "$fail" -ne 0 ]; then
+    return 1
+  fi
+  echo "ffmpeg-patches-surface-check: [PASS] docs examples: zero retired filters/options outside migration guide across ${doc_count} scanned doc files."
+  return 0
+}
+
+is_allowlisted_surface_file() {
+  local p="$1"
+  case "$p" in
+    # Exact allow-listed files with justification (ADR-2166):
+    ffmpeg-patches/test/fault_inject_libvmaf.c)
+      # Reason: LD_PRELOAD fault injection shim intercepting dynamic symbols
+      return 0
+      ;;
+    scripts/ci/upstream-ffmpeg-compat.sh)
+      # Reason: unpatched stock upstream FFmpeg compatibility test
+      return 0
+      ;;
+    scripts/ci/upstream-gstreamer-compat.sh)
+      # Reason: unpatched stock upstream GStreamer compatibility test
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+check_surface_patch_tests() {
+  local fail=0
+  shopt -s nullglob
+  local test_scripts=("${PATCHES_DIR}/test"/*.sh)
+  shopt -u nullglob
+  if [ "${#test_scripts[@]}" -eq 0 ]; then
+    echo "ffmpeg-patches-surface-check: [FAIL] no test scripts found in ${PATCHES_DIR}/test" >&2
+    return 1
+  fi
+  local s
+  local pat_retired='\b(libvmaf_(sycl|vulkan|metal|cuda|hip|tune))\b|\bvmaf_pre\b|\bvmaf_pre_temporal\b|-vmaf-profile\b|--enable-libvmaf-[a-zA-Z0-9_-]+'
+  local pat_plain='libvmaf=[^[:space:]]+|\bfilter_complex[^\n]*\blibvmaf\b'
+  for s in "${test_scripts[@]}"; do
+    local relpath
+    relpath="ffmpeg-patches/test/$(basename "$s")"
+    is_allowlisted_surface_file "$relpath" && continue
+    local content
+    content="$(grep -vE 'fault_inject_libvmaf\.c' "$s" 2>/dev/null || [ $? -eq 1 ])"
+    local m
+    m="$(grep -nE "$pat_retired" <<<"$content" 2>/dev/null || [ $? -eq 1 ])"
+    if [ -n "$m" ]; then
+      echo "ffmpeg-patches-surface-check: [FAIL] patch test carries retired filter/option in ${relpath}:" >&2
+      printf '%s\n' "$m" >&2
+      fail=1
+    fi
+    local m_plain
+    m_plain="$(grep -nE "$pat_plain" <<<"$content" 2>/dev/null || [ $? -eq 1 ])"
+    if [ -n "$m_plain" ]; then
+      echo "ffmpeg-patches-surface-check: [FAIL] patch test carries plain libvmaf filter in ${relpath}:" >&2
+      printf '%s\n' "$m_plain" >&2
+      fail=1
+    fi
+  done
+  if [ "$fail" -ne 0 ]; then
+    return 1
+  fi
+  echo "ffmpeg-patches-surface-check: [PASS] patch tests: zero retired filters/options in ${#test_scripts[@]} test scripts."
+  return 0
+}
+
+# Run #2435 invariant surface checks
+check_surface_series || exit 1
+check_surface_fork_build_configs || exit 1
+check_surface_docs_examples || exit 1
+check_surface_patch_tests || exit 1
+
 # ---------- 1. Locate PR body ----------
 
 # Shared with deliverables-check.sh / validate-pr-body.sh / state-md-touch-

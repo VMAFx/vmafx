@@ -47,7 +47,7 @@ RUN ./configure \
         --enable-cuvid \
         --enable-cuda \
         --enable-cuda-nvcc \
-        --enable-libvmaf \
+        --enable-libvmafx \
         --enable-ffnvcodec \
         --disable-stripping \
         --nvccflags="${NVCC_FLAGS}" && \

@@ -24,10 +24,10 @@ would fail to compile:
    distro package.
 
    **libaom intentionally NOT enabled.** Fork's
-   `ffmpeg-patches/0007` references libaom `aom_roi_map_t` fields
+   `ffmpeg-patches/0001` references libaom `aom_roi_map_t` fields
    that don't exist in any released libaom version. SVT-AV1 covers
    production AV1 lane. Re-enabling libaom requires first fixing
-   patch 0007's ROI helper to either target real libaom version or
+   patch 0001's ROI helper to either target real libaom version or
    gate ROI bridge behind version probe.
 2. **`libvvenc` (Fraunhofer VVC reference) must be built from
    source, installed under `/usr/local`.** Package not in Ubuntu
@@ -68,10 +68,10 @@ would fail to compile:
    `scripts/ci/checkout-annotated-tag.sh`. Direct `git clone --depth=1
    --branch <tag>` emits a warning for both annotated tags in the image's Git
    version and violates zero-diagnostic build contract.
-6. **FFmpeg SYCL patch must use current libvmaf state-free ownership
+6. **FFmpeg SYCL filter must use current libvmaf state-free ownership
    contract.** `libvmaf_sycl.h` declares
    `vmaf_sycl_state_free(VmafSyclState **sycl_state)`, matching
-   Vulkan / HIP / Metal rather than CUDA. Keep `ffmpeg-patches/0003-*`
-   calling `vmaf_sycl_state_free(&s->sycl_state)`. Passing single
+   Vulkan / HIP / Metal rather than CUDA. Keep `ffmpeg-patches/src/vf_vmafx.c`
+   (patch `0004`) calling `vmaf_sycl_state_free(&s->sycl_state)`. Passing single
    pointer builds against stale patch text, fails container FFmpeg
    compile with `-Wincompatible-pointer-types`.
