@@ -23,7 +23,8 @@ $SUDO pacman -Syu --noconfirm --needed \
   python python-pip python-virtualenv \
   git curl wget \
   doxygen \
-  ffmpeg # libav* headers via ffmpeg-headers alt; ffmpeg meta-package pulls all
+  ffmpeg \
+  zimg # libav* headers via ffmpeg-headers alt; ffmpeg meta-package pulls all
 
 if [[ "$INSTALL_LINTERS" == "true" ]]; then
   $SUDO pacman -S --noconfirm --needed shellcheck shfmt

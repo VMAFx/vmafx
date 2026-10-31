@@ -54,6 +54,19 @@ missing:
 
 The binary is `build\tools\vmaf.exe`.
 
+### zimg (HDR PQ support)
+
+`enable_zimg` is on by default ([ADR-3396](../../adr/3396-zimg-on-by-default.md)).
+Install `zimg` via vcpkg:
+
+```bat
+vcpkg install zimg:x64-windows-static
+set PKG_CONFIG_PATH=%VCPKG_INSTALLATION_ROOT%\installed\x64-windows-static\lib\pkgconfig;%PKG_CONFIG_PATH%
+```
+
+Alternatively, pass `-Denable_zimg=false` to `meson setup` to build without HDR
+colour conversion support.
+
 ### CUDA
 
 Install the CUDA Toolkit (`-EnableCuda`, or the installer from the

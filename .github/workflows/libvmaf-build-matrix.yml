@@ -81,9 +81,9 @@ jobs:
             CC: ccache gcc-14
             CXX: ccache g++-14
             werror: true
-            zimg: true
-            meson_extra: -Denable_zimg=true
-            name: Ubuntu gcc zimg
+            zimg: false
+            meson_extra: -Denable_zimg=false # opt-out leg to test no-zimg build and -ENOTSUP paths
+            name: Ubuntu gcc no zimg
             tier: full
           # required-aggregator
           - os: ubuntu-26.04
@@ -335,7 +335,7 @@ jobs:
           *gcc)      sudo -E apt-get -yq install gcc g++ ;;
           *clang)    sudo -E apt-get -yq install clang ;;
           esac
-          if [ "${{ matrix.zimg }}" = "true" ]; then
+          if [ "${{ matrix.zimg }}" != "false" ]; then
             sudo -E apt-get -yq install libzimg-dev
           fi
 
@@ -347,7 +347,7 @@ jobs:
         run: |
           for attempt in 1 2 3; do
             echo "Attempt ${attempt} of 3: installing dependencies via brew..."
-            if brew install -q ninja nasm ccache llvm pkg-config; then
+            if brew install -q ninja nasm ccache llvm pkg-config zimg; then
               break
             fi
             if [ "${attempt}" -eq 3 ]; then
@@ -356,7 +356,7 @@ jobs:
             fi
             echo "Attempt ${attempt} failed; retrying in $((attempt * 10))s..."
             sleep $((attempt * 10))
-            brew fetch --retry ninja nasm ccache llvm pkg-config || true
+            brew fetch --retry ninja nasm ccache llvm pkg-config zimg || true
           done
 
       - name: Install Metal compiler toolchain
@@ -478,6 +478,28 @@ jobs:
           mkdir -p ~/.ccache
           ccache --max-size=400M
           ccache -z
+
+      - name: Verify default meson setup refuses without zimg
+        if: matrix.name == 'Ubuntu gcc no zimg' && steps.impact.outputs.c_core == 'true'
+        run: |
+          set -uo pipefail
+          empty_dir="$(mktemp -d)"
+          setup_out="$(mktemp)"
+          if PKG_CONFIG_LIBDIR="$empty_dir" PKG_CONFIG_PATH="$empty_dir" \
+             meson setup --werror "$empty_dir/build" core >"$setup_out" 2>&1; then
+            echo "::error::default meson setup succeeded without zimg (zimg default must be true)" >&2
+            cat "$setup_out"
+            rm -rf "$empty_dir" "$setup_out"
+            exit 1
+          fi
+          cat "$setup_out"
+          if ! grep -q -- "-Denable_zimg=false" "$setup_out"; then
+            echo "::error::meson setup failure message did not mention -Denable_zimg=false" >&2
+            rm -rf "$empty_dir" "$setup_out"
+            exit 1
+          fi
+          echo "Verified: default meson setup failed as expected naming -Denable_zimg=false"
+          rm -rf "$empty_dir" "$setup_out"
 
       - name: Configure libvmaf
         if: steps.impact.outputs.c_core == 'true'
@@ -699,6 +721,7 @@ jobs:
             ${{ matrix.MINGW_PACKAGE_PREFIX }}-ninja
             ${{ matrix.MINGW_PACKAGE_PREFIX }}-python
             ${{ matrix.MINGW_PACKAGE_PREFIX }}-python-yaml
+            ${{ matrix.MINGW_PACKAGE_PREFIX }}-zimg
             vim make diffutils
           update: true
           path-type: inherit
@@ -869,6 +892,14 @@ jobs:
           if (Test-Path $p) { Rename-Item -Path $p -NewName 'ccache.exe.disabled' }
           Write-Host "ccache binary disabled"
 
+      - name: Install zimg via vcpkg (windows)
+        if: steps.leg.outputs.run == 'true' && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          vcpkg install zimg:x64-windows-static
+          $vcpkgPkgConfig = "$env:VCPKG_INSTALLATION_ROOT/installed/x64-windows-static/lib/pkgconfig"
+          echo "PKG_CONFIG_PATH=$vcpkgPkgConfig;$env:PKG_CONFIG_PATH" >> $env:GITHUB_ENV
+
       # ADR-2170 (design notes)
       - name: Warnings-as-errors arguments
         if: steps.leg.outputs.run == 'true'
@@ -1009,6 +1040,13 @@ jobs:
           $p = 'C:\Strawberry\c\bin\ccache.exe'
           if (Test-Path $p) { Rename-Item -Path $p -NewName 'ccache.exe.disabled' }
           Write-Host "ccache binary disabled"
+
+      - name: Install zimg via vcpkg (ARM64)
+        shell: pwsh
+        run: |
+          vcpkg install zimg:arm64-windows-static
+          $vcpkgPkgConfig = "$env:VCPKG_INSTALLATION_ROOT/installed/arm64-windows-static/lib/pkgconfig"
+          echo "PKG_CONFIG_PATH=$vcpkgPkgConfig;$env:PKG_CONFIG_PATH" >> $env:GITHUB_ENV
 
       - name: Show compiler
         shell: cmd

@@ -107,9 +107,30 @@ stage_library_chain() {
   done
 }
 
+stage_zimg() {
+  local -a zimg_libs
+  shopt -s nullglob
+  zimg_libs=(/usr/lib/*-linux-gnu*/libzimg.so*)
+  shopt -u nullglob
+  if [[ ${#zimg_libs[@]} -eq 0 ]]; then
+    shopt -s nullglob
+    zimg_libs=(/usr/lib/libzimg.so* /usr/local/lib/libzimg.so*)
+    shopt -u nullglob
+  fi
+  if [[ ${#zimg_libs[@]} -eq 0 ]]; then
+    echo "ERROR: libzimg.so* not found to stage for release" >&2
+    return 1
+  fi
+  local lib
+  for lib in "${zimg_libs[@]}"; do
+    cp -L -- "$lib" "artifacts/$(basename -- "$lib")"
+  done
+}
+
 stage_libvmaf_chain() {
   stage_library_chain libvmaf
   stage_library_chain libvmafx
+  stage_zimg
 }
 
 require_patchelf() {
@@ -130,6 +151,14 @@ stage_cli() {
   cp -- build/tools/vmaf artifacts/vmaf
   # shellcheck disable=SC2016 # $ORIGIN is for the dynamic loader, not the shell.
   patchelf --set-rpath '$ORIGIN' artifacts/vmaf
+  # shellcheck disable=SC2016 # Ensure libvmafx resolves libzimg in the bundle directory.
+  local lib
+  for lib in artifacts/libvmafx.so*; do
+    if [[ -f "$lib" && ! -L "$lib" ]]; then
+      # shellcheck disable=SC2016  # $ORIGIN is for the dynamic loader, never the shell
+      patchelf --set-rpath '$ORIGIN' "$lib"
+    fi
+  done
 }
 
 LICENSING=tools/rc1-tester/image/licensing.py

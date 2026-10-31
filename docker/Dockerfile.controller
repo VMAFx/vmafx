@@ -71,6 +71,7 @@ RUN apt-get update \
         pkg-config \
         xxd \
         ca-certificates \
+        libzimg-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src
@@ -94,6 +95,7 @@ RUN meson setup /build core \
 RUN mkdir -p /dist/lib/pkgconfig /dist/bin /dist/model \
     && find /build/src -maxdepth 1 \( -name 'libvmaf.so*' -o -name 'libvmafx.so*' \) \
         \( -type f -o -type l \) -exec cp -a {} /dist/lib/ \; \
+    && cp -d /usr/lib/*-linux-gnu*/libzimg.so* /dist/lib/ \
     && cp /build/meson-private/libvmaf.pc /dist/lib/pkgconfig/libvmaf.pc \
     && cp /build/meson-private/libvmafx.pc /dist/lib/pkgconfig/libvmafx.pc \
     && cp /build/tools/vmaf /dist/bin/ \
@@ -173,7 +175,7 @@ FROM ${RELEASE_RUNTIME_CC} AS controller-assembled
 LABEL org.opencontainers.image.title="vmafx-controller"
 LABEL org.opencontainers.image.description="VMAFX controller — job queue, node API and auth gateway, gRPC + HTTP, backed by libvmaf. Licences: /usr/local/share/vmafx/licenses/THIRD_PARTY_NOTICES.txt"
 LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
-LABEL org.opencontainers.image.licenses="EUPL-1.2 AND BSD-2-Clause-Patent AND BSD-3-Clause AND BSD-2-Clause AND ISC AND MIT AND Unlicense AND LicenseRef-LIVE-BRISQUE"
+LABEL org.opencontainers.image.licenses="EUPL-1.2 AND BSD-2-Clause-Patent AND BSD-3-Clause AND BSD-2-Clause AND ISC AND MIT AND Unlicense AND LicenseRef-LIVE-BRISQUE AND WTFPL"
 LABEL org.opencontainers.image.vendor="Lusoris"
 
 # Copy libvmaf.so* and the vmaf CLI from the vmaf-builder stage.

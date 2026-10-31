@@ -116,6 +116,7 @@ def test_a_file_without_build_info_is_refused(tmp_path: Path) -> None:
     ("Redistribution and use in source " + "and binary forms, with or without", "BSD-2-Clause"),
     ("Permission to use, copy, modify, and distribute this software for any purpose", "ISC"),
     ("EUROPEAN UNION PUBLIC LICENCE v. 1.2\n... Mozilla Public License ...", "EUPL-1.2"),
+    ("DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE\nVersion 2, December 2004", "WTFPL"),
     ("some private terms", "UNKNOWN"),
 ])  # fmt: skip
 def test_licence_texts_are_classified(text: str, expected: str) -> None:

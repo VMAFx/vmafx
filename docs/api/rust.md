@@ -17,7 +17,11 @@ vmafx = { path = "/path/to/your-fork/bindings/rust/vmafx" }
 
 Install libvmaf development headers and a linkable library from the same
 revision as the bindings. Follow the [source build guide](../getting-started/index.md#build-from-source-any-platform)
-and install to your chosen prefix. Rust and libclang are needed for bindgen;
+and install to your chosen prefix. Note that a default build of libvmaf links
+against `libzimg` ([ADR-3396](../adr/3396-zimg-on-by-default.md)), so
+`libzimg-dev` (Linux), `brew install zimg` (macOS), or
+`vcpkg install zimg:x64-windows-static` (Windows) is required unless configured
+with `-Denable_zimg=false`. Rust and libclang are needed for bindgen;
 the Rust build does not compile the C core or require GPU SDKs itself.
 
 `vmafx-sys` searches `LIBVMAF_PREFIX` first when set, then `/usr/local`, then

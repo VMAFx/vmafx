@@ -306,17 +306,18 @@ vmaf_picture2_unref(&p2);                               /* drop the caller's own
 `vmaf_picture_convert()` turns a picture into another pixel format, bit depth,
 size and colour description through [zimg](https://github.com/sekrit-twc/zimg).
 It is Netflix/vmaf `0497a0f29` with one difference, described below, and it is
-opt-in at build time.
+enabled by default at build time ([ADR-3396](../adr/3396-zimg-on-by-default.md)).
 
 Build with zimg 2.7 or newer installed (found through `pkg-config`):
 
 ```bash
-meson setup build core -Denable_zimg=true
+meson setup build core
 ```
 
-Without `-Denable_zimg=true` (the default) the three functions below return
-`-ENOTSUP` and log `libvmaf was built without zimg support`. A configure with
-`-Denable_zimg=true` and no usable zimg stops at `meson setup`.
+A configure with no usable zimg stops at `meson setup` naming `zimg >= 2.7`,
+`pkg-config`, and `-Denable_zimg=false`. With an explicit opt-out
+(`-Denable_zimg=false`) the three functions below return `-ENOTSUP` and log
+`libvmaf was built without zimg support (configure with -Denable_zimg=true)`.
 
 | Function | Does | Errors |
 | --- | --- | --- |

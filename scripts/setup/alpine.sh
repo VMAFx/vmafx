@@ -30,7 +30,8 @@ $SUDO apk add --no-cache \
   python3 py3-pip py3-virtualenv \
   git curl wget \
   doxygen \
-  ffmpeg-dev
+  ffmpeg-dev \
+  zimg-dev
 
 if [[ "$INSTALL_LINTERS" == "true" ]]; then
   $SUDO apk add --no-cache shellcheck shfmt

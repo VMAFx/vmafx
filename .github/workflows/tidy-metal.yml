@@ -102,7 +102,7 @@ jobs:
           HOMEBREW_NO_INSTALL_CLEANUP: "1"
         run: |
           python -m pip install --require-hashes -r requirements/locks/build.txt
-          brew install -q ninja nasm pkg-config llvm@22
+          brew install -q ninja nasm pkg-config llvm@22 zimg
           xcodebuild -downloadComponent MetalToolchain
           "$(brew --prefix llvm@22)/bin/clang-tidy" --version | grep -F 'LLVM version 22.'
       - name: Build (compile_commands.json + generated headers)

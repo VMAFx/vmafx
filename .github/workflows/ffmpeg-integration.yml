@@ -91,10 +91,10 @@ jobs:
         if: matrix.os == 'ubuntu-26.04'
         run: |
           sudo apt-get update
-          sudo -E apt-get -yq install ninja-build gcc nasm
+          sudo -E apt-get -yq install ninja-build gcc nasm libzimg-dev
       - name: Install dependencies (mac)
         if: matrix.os == 'macos-latest'
-        run: brew install -q ninja nasm
+        run: brew install -q ninja nasm zimg
 
       - name: Build vmaf
         run: |
@@ -178,7 +178,7 @@ jobs:
           # 1515, 2040 in n9.0.2) and trips the warning gate below. It is also a
           # QSV configuration nobody ships. Installing it compiles those paths
           # back in rather than patching FFmpeg to delete the variables.
-          sudo -E apt-get -yq install ninja-build gcc g++ nasm gpg-agent libvpl-dev libva-dev
+          sudo -E apt-get -yq install ninja-build gcc g++ nasm gpg-agent libvpl-dev libva-dev libzimg-dev
 
       - name: Install Intel oneAPI
         # oneAPI version comes from ONEAPI_APT_PACKAGE in build-config.env;
@@ -333,6 +333,13 @@ jobs:
           $p = 'C:\Strawberry\c\bin\ccache.exe'
           if (Test-Path $p) { Rename-Item -Path $p -NewName 'ccache.exe.disabled' }
           Write-Host "ccache binary disabled"
+
+      - name: Install zimg via vcpkg (windows)
+        shell: pwsh
+        run: |
+          vcpkg install zimg:x64-windows-static
+          $vcpkgPkgConfig = "$env:VCPKG_INSTALLATION_ROOT/installed/x64-windows-static/lib/pkgconfig"
+          echo "PKG_CONFIG_PATH=$vcpkgPkgConfig;$env:PKG_CONFIG_PATH" >> $env:GITHUB_ENV
 
       # ADR-2170: the libvmaf build prints no warnings, so they are errors.
       - name: Warnings-as-errors arguments
@@ -547,7 +554,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo -E apt-get -yq install --no-install-recommends \
-            nasm pkg-config git libglib2.0-dev \
+            nasm pkg-config git libglib2.0-dev libzimg-dev \
             libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
             gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-bad
 

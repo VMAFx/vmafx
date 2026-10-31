@@ -31,6 +31,7 @@ $SUDO dnf install -y \
   git curl wget \
   doxygen \
   ffmpeg-devel \
+  zimg-devel \
   shellcheck
 
 if [[ "$INSTALL_LINTERS" == "true" ]]; then

@@ -91,6 +91,7 @@ RUN apt-get update \
         pkg-config \
         python3 \
         xxd \
+        libzimg-dev \
     && rm -rf /var/lib/apt/lists/*
 COPY build-config.env scripts/ci/install-cuda-toolkit.sh /tmp/vmafx/
 RUN bash /tmp/vmafx/install-cuda-toolkit.sh --mode=builder /tmp/vmafx \
@@ -126,6 +127,7 @@ RUN meson setup build core --buildtype=release --strip -Db_lto=false \
 # libcuda.so.1 at run time.
 RUN mkdir -p /dist/lib /dist/bin /dist/model /stage/licenses/nvidia /licence-inputs \
     && find build/src -maxdepth 1 \( -name 'libvmaf.so*' -o -name 'libvmafx.so*' \) -not -type d -exec cp -a {} /dist/lib/ \; \
+    && cp -d /usr/lib/*-linux-gnu*/libzimg.so* /dist/lib/ \
     && cp build/tools/vmaf /dist/bin/ \
     && cp -r model/. /dist/model/ \
     && for binary in /dist/bin/vmaf /dist/lib/libvmaf.so.* /dist/lib/libvmafx.so.*; do \
@@ -158,6 +160,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates curl gcc g++ jq meson nasm ninja-build pkg-config python3 xxd zstd \
+        libzimg-dev \
     && rm -rf /var/lib/apt/lists/*
 COPY scripts/ci/install-rocm-from-image.sh /tmp/vmafx/install-rocm-from-image.sh
 RUN bash /tmp/vmafx/install-rocm-from-image.sh --image "${ROCM_BUILDER}" --dest /opt/rocm --keep-docs \
@@ -176,6 +179,7 @@ RUN gfx_targets="$(jq -r '.dist_amdgpu_targets' /opt/rocm/share/therock/dist_inf
 # RPATHs ($ORIGIN/llvm/lib, $ORIGIN/rocm_sysdeps/lib) resolve without patching.
 RUN mkdir -p /dist/lib /dist/bin /dist/model /licence-inputs \
     && find build/src -maxdepth 1 \( -name 'libvmaf.so*' -o -name 'libvmafx.so*' \) -not -type d -exec cp -a {} /dist/lib/ \; \
+    && cp -d /usr/lib/*-linux-gnu*/libzimg.so* /dist/lib/ \
     && cp build/tools/vmaf /dist/bin/ \
     && cp -r model/. /dist/model/ \
     && python3 tools/rc1-tester/image/prepare_build.py rocm-runtime \
@@ -213,7 +217,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         pkg-config \
         python3-pip \
         xxd \
-        zstd
+        zstd \
+        libzimg-dev
 
 RUN --mount=type=bind,from=meson-wheel,source=/meson-1.12.0-py3-none-any.whl,target=/tmp/meson-1.12.0-py3-none-any.whl \
     python3 -m pip install --break-system-packages --ignore-installed --no-cache-dir --no-deps \

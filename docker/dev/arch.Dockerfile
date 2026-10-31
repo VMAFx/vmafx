@@ -11,7 +11,7 @@ RUN pacman -Syu --noconfirm --needed \
       python python-pip \
       git curl wget \
       doxygen shellcheck shfmt \
-      ffmpeg \
+      ffmpeg zimg \
  && pacman -Scc --noconfirm
 
 RUN if [ "$ENABLE_CUDA" = "true" ]; then pacman -S --noconfirm --needed cuda cuda-tools; fi
