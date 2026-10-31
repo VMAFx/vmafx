@@ -12,7 +12,9 @@ from __future__ import annotations
 import glob
 import json
 import os
+import platform
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -22,6 +24,14 @@ from vmaf.config import VmafConfig
 # Set only on the CI leg built with -Denable_zimg=false: there a pin row asserts the refusal
 # that names zimg. A build with zimg fails this assertion, so the setting cannot hide a row.
 EXPECT_NO_ZIMG = os.environ.get("VMAF_EXPECT_NO_ZIMG") == "1"
+
+# Decimal places of the pooled-mean pin. libvmaf scores identical converted pictures
+# bit-exact on x86-64, aarch64 and macOS (run 41178767446, every feature of every frame);
+# the difference sits in the zimg conversion, whose float path rounds differently on
+# aarch64 and in the macOS build, up to 3.5e-4 on the pooled mean. x86-64 holds 5 places.
+# Unknown machines stay strict. The reason is documented in docs/models/v1.md.
+_NON_X86_CONVERSION = platform.machine().lower() in ("arm64", "aarch64") or sys.platform == "darwin"
+HDR_PIN_PLACES = 3 if _NON_X86_CONVERSION else 5
 
 
 def _input_args(kind: str) -> list[str]:
@@ -102,7 +112,7 @@ def _run_cli(model: str, kind: str, out_path: str) -> subprocess.CompletedProces
 
 
 class HdrModelsPinTest(unittest.TestCase):
-    """HDR model pin regressions asserting pooled vmaf mean to 5 decimal places."""
+    """HDR model pin regressions asserting the pooled vmaf mean to HDR_PIN_PLACES places."""
 
     def test_every_model_has_both_pin_rows(self) -> None:
         """A deleted row or a new model without pins turns this test red."""
@@ -132,7 +142,7 @@ class HdrModelsPinTest(unittest.TestCase):
             with open(out_path, encoding="utf-8") as f:
                 data = json.load(f)
             mean_score = data["pooled_metrics"]["vmaf"]["mean"]
-            self.assertAlmostEqual(mean_score, expected_pin, places=5)
+            self.assertAlmostEqual(mean_score, expected_pin, places=HDR_PIN_PLACES)
 
     def test_hdr_v118_1d5h_2160_tagged(self) -> None:
         self._assert_pin("hdr_vmaf_v1.1.8_1d5h_2160", "tagged", 43.06662)
