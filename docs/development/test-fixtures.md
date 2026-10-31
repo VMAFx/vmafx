@@ -94,8 +94,13 @@ credit notices:
 
 The asset is the prerelease
 [`fixtures-pq-sollevante-v1`](https://github.com/VMAFx/vmafx/releases/tag/fixtures-pq-sollevante-v1),
-which holds test data only. The golden job and `make test-netflix-golden` fetch
-it, and a failed download fails them. A plain
+which holds test data only. `make test-netflix-golden` and every CI job that
+runs a test reading the bundle (the golden job, the tox legs and both Coverage
+jobs) fetch it with the `./.github/actions/pq-fixture` action, and a failed
+download fails them. `scripts/ci/check_fixture_bundle_jobs.py` fails a workflow
+job that runs such a test (the whole suite, or the test file by name, also
+through a `scripts/ci/*.sh` script it calls) without fetching each bundle the test
+names as `"yuv", "<bundle>"`; it runs as a pre-commit and pre-push hook. A plain
 `scripts/test/fetch-test-yuvs.sh` does not fetch bundles. CI keeps the bundle in
 its own cache entry, keyed on the sha that
 `scripts/test/fetch-test-yuvs.sh --print-bundle-sha` prints.

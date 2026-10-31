@@ -628,6 +628,13 @@ jobs:
         if: (startsWith(matrix.os, 'ubuntu') && !matrix.sycl) || matrix.os == 'macos-latest'
         run: bash scripts/ci/prune-corrupt-fixtures.sh --restore-tracked python/test/resource
 
+      # The motion PQ pin rows read this bundle; a failed download fails the leg.
+      - name: Get the PQ fixture
+        if: (startsWith(matrix.os, 'ubuntu') && !matrix.sycl) || matrix.os == 'macos-latest'
+        uses: ./.github/actions/pq-fixture
+        with:
+          phase: get
+
       - name: Run tox tests (Linux)
         # Python snapshots and the immutable Netflix assertions are authored
         # against the CPU/GCC contract. Intel LLVM produces known, stable
@@ -649,6 +656,12 @@ jobs:
           CC="$(brew --prefix)/opt/llvm/bin/clang" \
           CXX="$(brew --prefix)/opt/llvm/bin/clang++" \
           tox -c python
+
+      - name: Finish with the PQ fixture
+        if: (startsWith(matrix.os, 'ubuntu') && !matrix.sycl) || matrix.os == 'macos-latest'
+        uses: ./.github/actions/pq-fixture
+        with:
+          phase: finish
 
       - name: Save Netflix vmaf_resource fixtures
         # Only on success(): a cancelled or failing tox run must never publish
