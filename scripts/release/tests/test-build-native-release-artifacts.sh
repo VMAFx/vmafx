@@ -33,8 +33,10 @@ done
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "$SCRIPT_DIR/../../.." && pwd)"
-# shellcheck source=scripts/release/tests/lib.sh
+# shellcheck source=scripts/release/tests/lib.sh disable=SC1091
 . "$SCRIPT_DIR/lib.sh"
+# lib.sh sets these; name them so a lint run without -x sees them assigned.
+: "${scratch:?lib.sh sets scratch}" "${pass:?lib.sh sets pass}" "${fail:?lib.sh sets fail}"
 
 # The marker dev/Containerfile bakes into every stage, release-build included.
 marker="$scratch/etc-vmafx-dev-container"
@@ -53,6 +55,15 @@ printf '%s|CCACHE_DISABLE=%s|SOURCE_DATE_EPOCH=%s\n' \
 [ "$1" = compile ] || exit 0
 [ "${STUB_MESON_MODE:-ok}" = fail ] && exit 42
 mkdir -p build/src build/tools
+extra_engine_flags=()
+if [ "${STUB_MESON_MODE:-ok}" = zimg ] || [ "${STUB_MESON_MODE:-ok}" = zimg-missing ]; then
+  mkdir -p build/fakezimg
+  printf 'int zimg_fixture(void) { return 42; }\n' >build/fakezimg/zimg.c
+  cc -fPIC -shared -Wl,-soname,libzimg.so.2 -o build/fakezimg/libzimg.so.2.0.0 build/fakezimg/zimg.c
+  ln -s libzimg.so.2.0.0 build/fakezimg/libzimg.so.2
+  fakezimg_dir="$(pwd)/build/fakezimg"
+  extra_engine_flags=(-Lbuild/fakezimg -l:libzimg.so.2.0.0 -Wl,--enable-new-dtags -Wl,-rpath,"$fakezimg_dir" -Wl,-z,nodefaultlib)
+fi
 # Both chains of the library split (ADR-2094): the compat libvmaf.so.3 and
 # the CLI need libvmafx.so.1.
 printf 'int vmafx_engine_fixture(void) { return 7; }\n' >build/libvmafx.c
@@ -69,9 +80,13 @@ printf '%s\n' '#include <stdio.h>' '#include <string.h>' \
   '    }' \
   '    return 1;' \
   '}' >build/vmaf.c
-cc -fPIC -shared -Wl,-soname,libvmafx.so.1 -o build/src/libvmafx.so.1.0.0 build/libvmafx.c
+cc -fPIC -shared -Wl,-soname,libvmafx.so.1 -o build/src/libvmafx.so.1.0.0 build/libvmafx.c \
+  "${extra_engine_flags[@]}"
 ln -s libvmafx.so.1.0.0 build/src/libvmafx.so.1
 [ "${STUB_MESON_MODE:-ok}" = short-engine-chain ] || ln -s libvmafx.so.1 build/src/libvmafx.so
+if [ "${STUB_MESON_MODE:-ok}" = zimg-missing ]; then
+  rm -rf build/fakezimg
+fi
 cc -fPIC -shared -Wl,-soname,libvmaf.so.3 -o build/src/libvmaf.so.3.0.0 build/libvmaf.c \
   -Lbuild/src -l:libvmafx.so.1.0.0 -Wl,--enable-new-dtags -Wl,-rpath,'$ORIGIN'
 ln -s libvmaf.so.3.0.0 build/src/libvmaf.so.3
@@ -249,6 +264,8 @@ check 'stamp keeps a wall-clock stamped_at (epoch scoped to the build)' lacks_li
   'stamped_at=2001-02-03T04:05:06Z' "$good/artifacts/container-build-provenance.txt"
 check 'no u2netp license without the mirror binary' absent \
   "$good/artifacts/LicenseRef-Apache-2.0-u2netp.txt"
+check 'no libzimg staged when libvmafx does not need it' absent \
+  "$good/artifacts/libzimg.so.2"
 check 'stamp records the checked-out commit' grep -qx \
   "git_commit=$(git -C "$good" rev-parse HEAD)" "$good/artifacts/container-build-provenance.txt"
 
@@ -321,6 +338,16 @@ check 'u2netp mirror is staged' regular_nonempty "$mirror/artifacts/u2netp_mirro
 check 'u2netp license is staged' regular_nonempty \
   "$mirror/artifacts/LicenseRef-Apache-2.0-u2netp.txt"
 
+# --- positive: engine built against zimg stages libzimg and sets RUNPATH ---
+zimg="$scratch/zimg"
+new_repo "$zimg"
+STUB_MESON_MODE="zimg"
+export STUB_MESON_MODE
+check 'container build with zimg exits 0' expect_status 0 "$zimg" "$marker" 3.2.1
+unset STUB_MESON_MODE
+check 'stages libzimg.so.2 as a regular non-empty file' regular_nonempty "$zimg/artifacts/libzimg.so.2"
+check "staged libvmafx has RUNPATH exactly $origin" runpath_is "$zimg/artifacts/libvmafx.so.1" "$origin"
+
 # --- negative: a host build is refused before anything is compiled ---
 host="$scratch/host"
 new_repo "$host"
@@ -372,6 +399,16 @@ check 'incomplete libvmafx SONAME chain exits 1' expect_status 1 "$short_engine"
 unset STUB_MESON_MODE
 check 'incomplete libvmafx SONAME chain is named' grep -q \
   'incomplete Meson libvmafx SONAME chain' "$short_engine/run.log"
+
+# --- negative: engine needing libzimg when loader cannot resolve it ---
+zimg_missing="$scratch/zimg-missing"
+new_repo "$zimg_missing"
+STUB_MESON_MODE="zimg-missing"
+export STUB_MESON_MODE
+check 'missing libzimg dependency exits 1' expect_status 1 "$zimg_missing" "$marker" 3.2.1
+unset STUB_MESON_MODE
+check 'unresolved libzimg dependency is reported' grep -q \
+  'libvmafx needs libzimg.so.2 but the loader cannot resolve it' "$zimg_missing/run.log"
 
 # --- negative: invocation errors ---
 usage="$scratch/usage"
