@@ -48,6 +48,13 @@ def test_each_windows_workflow_names_its_runtime_triplet() -> None:
     assert found == EXPECTED_CALLS
 
 
+def test_the_script_removes_libstdcxx_and_reads_it_back() -> None:
+    script = (REPO / "scripts" / "ci" / "setup-zimg-windows.ps1").read_text(encoding="utf-8")
+    assert "-replace '-lstdc\\+\\+', ''" in script
+    assert "--static --libs zimg" in script
+    assert "-match 'stdc\\+\\+'" in script
+
+
 def test_the_tester_zip_triplet_follows_the_zip_runtime() -> None:
     text = (WORKFLOWS / "windows-tester-bundle.yml").read_text(encoding="utf-8")
     assert (
