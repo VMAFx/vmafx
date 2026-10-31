@@ -362,19 +362,37 @@ it scores these fixtures with `--backend cpu` and with the device backend at
   and 10 bits 4:2:2;
 - the first 16 frames of the 3840x2160 pair in `testdata/bbb`.
 
+For every built-in `hdr_vmaf_v1.1.8*` model (8 models under
+`model/hdr_vmaf_v1.1.8*/`), it scores two HDR fixtures with color tags set to
+limited range, BT.2020 primaries, SMPTE 2084 transfer and BT.2020 non-constant
+matrix (`--color_range_*`, `--color_primaries_*`, `--color_trc_*`,
+`--color_matrix_*`):
+
+- the 1-frame 576x324 10-bit 4:2:0 PQ dock pair (`ref_dock-na-HDR...` /
+  `dis_dock-na-HDR...`);
+- the 16-frame 576x324 10-bit 4:2:2 tagged pair (`src01_hrc00...422p10le.yuv` /
+  `src01_hrc01...422p10le.yuv`).
+
 It fails when the device run's `feature_backends` lists an extractor on any
-other backend, or when any per-frame, pooled or aggregate value differs.
-Each run also scores `--feature float_adm=adm_csf_mode=1`, a known fallback,
-and fails if the check does not report it.
+other backend, when its `backend_used` is not the device, when any per-frame,
+pooled or aggregate value differs, or when HDR runs fail due to missing zimg
+support (`-95`) or missing HDR fixtures. On CUDA runs, device free memory is
+queried before each run and compared against the estimated lower bound (8 x
+display width x height x 2 bytes). Each run also scores `--feature
+float_adm=adm_csf_mode=1`, a known fallback, and fails if the check does not
+report it.
 
 Meson registers one test per backend the build enables:
-`test_cuda_v1_models_no_fallback`, `test_sycl_v1_models_no_fallback` and
-`test_hip_v1_models_no_fallback` (suites `slow`, `gpu` and the backend name).
-Each one skips with the reason when it finds no device or a missing fixture.
-`testdata/bbb` and `python/test/resource/yuv` are not in the repository.
-When `~/.cache/vmafx-locks` exists (or `VMAFX_LOCK_DIR`), each device run
-takes that backend's lock file. Run a SYCL build's test with the oneAPI
-environment loaded:
+`test_cuda_v1_models_no_fallback`, `test_sycl_v1_models_no_fallback`,
+`test_hip_v1_models_no_fallback`, and `test_metal_v1_models_no_fallback`
+(suites `slow`, `gpu` and the backend name). Each one skips (exit 77) with the
+reason when it finds no device, or after its other rows when an SDR pair is
+absent. A missing HDR fixture or a zimg refusal fails the test. `testdata/bbb`
+and `python/test/resource/yuv` are not in the repository;
+`scripts/test/fetch-test-yuvs.sh` fetches the latter. When
+`~/.cache/vmafx-locks` exists (or `VMAFX_LOCK_DIR`), each device run takes that
+backend's lock file.
+Run a SYCL build's test with the oneAPI environment loaded:
 
 ```bash
 python3 scripts/ci/run_meson_test.py -- -C build test_cuda_v1_models_no_fallback
