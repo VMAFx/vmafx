@@ -13,3 +13,4 @@ libavutil-dev
 libswscale-dev
 libzimg-dev
 python3-pip
+libzimg-dev

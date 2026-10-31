@@ -68,7 +68,7 @@ LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
 # FFmpeg is configured --enable-gpl --enable-version3, so the image as a
 # whole is GPL-3.0-or-later; the fork code is EUPL-1.2, Netflix code
 # BSD-2-Clause-Patent.
-LABEL org.opencontainers.image.licenses="EUPL-1.2 AND BSD-2-Clause-Patent AND GPL-3.0-or-later"
+LABEL org.opencontainers.image.licenses="EUPL-1.2 AND BSD-2-Clause-Patent AND GPL-3.0-or-later AND WTFPL"
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -92,7 +92,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         ca-certificates curl gnupg python3 \
         libgomp1 zlib1g \
         libva2 libva-drm2 intel-media-va-driver-non-free libvpl2 libmfx-gen1.2 \
-        libdav1d7
+        libdav1d7 libzimg2
 COPY build-config.env /tmp/vmafx/build-config.env
 COPY scripts/ci/install-intel-ocloc.sh /tmp/vmafx/scripts/ci/install-intel-ocloc.sh
 COPY dev/scripts/fetch-intel-neo.py /tmp/vmafx/dev/scripts/fetch-intel-neo.py
@@ -141,7 +141,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         intel-basekit \
         meson ninja-build cmake pkg-config nasm git \
         build-essential zlib1g-dev \
-        libdav1d-dev libva-dev libvpl-dev \
+        libdav1d-dev libva-dev libvpl-dev libzimg-dev \
         python3 python3-pip python3-venv \
     && if ! dpkg -l intel-basekit 2>/dev/null | grep -q "^ii"; then \
         echo "FATAL: intel-basekit was not installed"; exit 1; fi

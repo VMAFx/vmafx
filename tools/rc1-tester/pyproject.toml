@@ -9,7 +9,7 @@ readme = "README.md"
 requires-python = ">=3.10,<3.15"
 # The licences of the files the sdist and wheel ship (ADR-1560, ADR-1699): the
 # sdist carries image/licenses/, whose third-party notices are MIT.
-license = "EUPL-1.2 AND MIT"
+license = "EUPL-1.2 AND MIT AND WTFPL"
 license-files = ["LICENSES/*"]
 authors = [
   { name = "Lusoris", email = "lusoris@pm.me" },

@@ -1208,7 +1208,8 @@ test_picture = executable('test_picture',
 
 # ADR-1822: additive vmaf_picture_convert API. test_picture_convert_api runs in
 # every build (VmafPicture layout guard; the -ENOTSUP contract without zimg);
-# test_colorspace runs the conversions and needs -Denable_zimg=true.
+# test_colorspace runs the conversions with zimg (on by default, ADR-3396;
+# with -Denable_zimg=false it tests -ENOTSUP).
 picture_convert_test_args = zimg_defines
 test_picture_convert_api = executable('test_picture_convert_api',
     ['test.c', 'test_picture_convert_api.c'],
@@ -1279,8 +1280,9 @@ test_conversion_policy = executable('test_conversion_policy',
 test('test_conversion_policy', test_conversion_policy, suite : ['fast'])
 
 # Netflix/vmaf a6c0ba6d5 / 130569c45: vmaf_read_pictures() converts to the
-# model's conversion_target. The conversions need -Denable_zimg=true; without it
-# the test checks that a model with a target fails closed (-ENOTSUP).
+# model's conversion_target. The conversions run with zimg (on by default,
+# ADR-3396); with -Denable_zimg=false the test checks that a model with a
+# target fails closed (-ENOTSUP).
 test_read_pictures_convert_args = [vmaf_cflags_common, '-DJSON_MODEL_PATH="'+join_paths(meson.project_source_root(), '../model/')+'"'] + zimg_defines
 test_read_pictures_convert = executable('test_read_pictures_convert',
     ['test.c', 'test_read_pictures_convert.c'],
@@ -2013,8 +2015,8 @@ endforeach
 
 # ADR-2094: what a submitted pair carries (VmafxFrameDesc.color, the
 # context's default colour, VMAFX_E_BUSY after the first converted pair) and
-# the check_sample_range option. The conversions need -Denable_zimg=true;
-# without it a pair that needs one is VMAFX_E_NOTSUP.
+# the check_sample_range option. The conversions run with zimg (on by default,
+# ADR-3396); with -Denable_zimg=false a pair that needs one is VMAFX_E_NOTSUP.
 test_vmafx_frame_input = executable('test_vmafx_frame_input',
     ['test.c', 'test_vmafx_frame_input.c'],
     include_directories : [libvmaf_inc, test_inc],

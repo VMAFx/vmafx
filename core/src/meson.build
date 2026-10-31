@@ -221,15 +221,18 @@ else
 endif
 is_avx512_enabled = get_option('enable_avx512') == true
 is_nvtx_enabled = get_option('enable_nvtx') == true
-# zimg picture conversion (ADR-1822, Netflix/vmaf 0497a0f29). Opt-in: with
+# zimg picture conversion (ADR-1822, ADR-3396, Netflix/vmaf 0497a0f29). Default on: with
 # enable_zimg=true a missing zimg >= 2.7 fails the configure step (no silent
-# fallback); with it off picture_convert.c compiles to -ENOTSUP stubs.
+# fallback); with it off (-Denable_zimg=false) picture_convert.c compiles to -ENOTSUP stubs.
 # ZIMG_MATRIX_ICTCP first appeared in zimg 2.7.
 is_zimg_enabled = get_option('enable_zimg') == true
 zimg_dependency = []
 zimg_defines = []
 if is_zimg_enabled
-    zimg_dependency = dependency('zimg', version : '>=2.7', required : true)
+    zimg_dependency = dependency('zimg', version : '>=2.7', required : false)
+    if not zimg_dependency.found()
+        error('zimg >= 2.7 not found via pkg-config. Install libzimg-dev (Linux), brew install zimg (macOS), or pass -Denable_zimg=false to build without zimg.')
+    endif
     zimg_defines = ['-DHAVE_ZIMG=1']
 endif
 # AVX-512 is a pure assembly path and requires enable_asm=true to have any

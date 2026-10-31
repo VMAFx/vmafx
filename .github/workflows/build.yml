@@ -259,7 +259,7 @@ jobs:
         run: |
           for attempt in 1 2 3; do
             echo "Attempt ${attempt} of 3: installing base deps via brew..."
-            if brew install -q ninja nasm ccache llvm pkg-config; then
+            if brew install -q ninja nasm ccache llvm pkg-config zimg; then
               break
             fi
             if [ "${attempt}" -eq 3 ]; then
@@ -268,7 +268,7 @@ jobs:
             fi
             echo "Attempt ${attempt} failed; retrying in $((attempt * 10))s..."
             sleep $((attempt * 10))
-            brew fetch --retry ninja nasm ccache llvm pkg-config || true
+            brew fetch --retry ninja nasm ccache llvm pkg-config zimg || true
           done
 
       # Xcode 26 no longer bundles the Metal compiler with the base runner
@@ -441,6 +441,11 @@ jobs:
           $p = 'C:\Strawberry\c\bin\ccache.exe'
           if (Test-Path $p) { Rename-Item -Path $p -NewName 'ccache.exe.disabled' }
           Write-Host "ccache disabled"
+
+      - name: Install zimg via vcpkg (Windows)
+        if: matrix.windows
+        shell: pwsh
+        run: pwsh -File scripts/ci/setup-zimg-windows.ps1 -Triplet x64-windows-static-md
 
       # ── ccache configure ─────────────────────────────────────────────
       - name: Configure ccache

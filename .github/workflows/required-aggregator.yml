@@ -217,7 +217,7 @@ jobs:
               // conclusion, so the flag only made the workflow claim the legs
               // were advisory while nothing acted on that claim.
               'Ubuntu gcc',
-              'Ubuntu gcc zimg',
+              'Ubuntu gcc no zimg',
               'Ubuntu clang',
               'Ubuntu ARM clang',
               'Ubuntu gcc static',

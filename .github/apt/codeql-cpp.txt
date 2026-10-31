@@ -6,3 +6,4 @@
 
 ninja-build
 nasm
+libzimg-dev

@@ -21,19 +21,19 @@ On Debian-based systems such as Debian 13 or Ubuntu 26.04 (the project's CI base
 images):
 
 ```bash
-sudo apt install nasm doxygen python3-dev
+sudo apt install nasm doxygen python3-dev libzimg-dev
 ```
 
 On Fedora 22 or higher, or CentOS 8 or higher:
 
 ```bash
-sudo dnf install nasm doxygen python3-devel
+sudo dnf install nasm doxygen python3-devel zimg-devel
 ```
 
 On older CentOS and RHEL:
 
 ```bash
-sudo yum install nasm doxygen python3-devel
+sudo yum install nasm doxygen python3-devel zimg-devel
 ```
 
 Make sure `nasm` is 2.13.02 or higher (check by `nasm --version`).
@@ -52,7 +52,7 @@ brew install python3
 Install the remaining dependencies:
 
 ```bash
-brew install nasm doxygen llvm libomp
+brew install nasm doxygen llvm libomp zimg
 ```
 
 Note that `brew` requires no `sudo`.

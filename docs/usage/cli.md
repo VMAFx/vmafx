@@ -697,9 +697,11 @@ reads these flags: libvmaf then converts both inputs to the model's colorspace
 features, and refuses a run whose input colorimetry is missing
 (`libvmaf returned -22`, with a message naming the missing attributes). Models
 without a `conversion_target`, including every shipped VMAF model, ignore the
-flags and score the pictures as they are. The conversion needs a `vmaf` built
-with `-Denable_zimg=true` ([build flags](../development/build-flags.md)); without
-it a run that needs a conversion fails with `-ENOTSUP`.
+flags and score the pictures as they are. The conversion uses `zimg`, which is
+enabled by default ([ADR-3396](../adr/3396-zimg-on-by-default.md),
+[build flags](../development/build-flags.md)); in builds configured with
+`-Denable_zimg=false`, a run that needs a conversion fails with `-ENOTSUP`
+(`libvmaf was built without zimg support`).
 
 ```bash
 vmaf -r ref.yuv -d dist.yuv -w 576 -h 324 -p 420 -b 10 -m path=hdr_model.json \

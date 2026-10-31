@@ -180,17 +180,15 @@ fn vendored_vmaf_version_matches_core() -> Result<(), Box<dyn std::error::Error>
         if trimmed.starts_with("version :") || trimmed.starts_with("version:") {
             if let Some((_, rest)) = trimmed.split_once(':') {
                 let trimmed_rest = rest.trim();
-                if let Some(quote) = trimmed_rest.chars().next() {
-                    if quote == '\'' || quote == '"' {
-                        if let Some(after_quote) = trimmed_rest.strip_prefix(quote) {
-                            if let Some((inside, _)) = after_quote.split_once(quote) {
-                                assert!(
-                                    actual.contains(inside),
-                                    "vmaf_version '{actual}' does not contain meson project version '{inside}'"
-                                );
-                            }
-                        }
-                    }
+                if let Some(quote) = trimmed_rest.chars().next()
+                    && (quote == '\'' || quote == '"')
+                    && let Some(after_quote) = trimmed_rest.strip_prefix(quote)
+                    && let Some((inside, _)) = after_quote.split_once(quote)
+                {
+                    assert!(
+                        actual.contains(inside),
+                        "vmaf_version '{actual}' does not contain meson project version '{inside}'"
+                    );
                 }
             }
             break;

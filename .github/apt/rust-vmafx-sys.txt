@@ -10,3 +10,4 @@ libssl-dev
 clang
 libclang-dev
 pkg-config
+libzimg-dev

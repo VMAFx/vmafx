@@ -91,10 +91,10 @@ jobs:
         if: matrix.os == 'ubuntu-26.04'
         run: |
           sudo apt-get update
-          sudo -E apt-get -yq install ninja-build gcc nasm
+          sudo -E apt-get -yq install ninja-build gcc nasm libzimg-dev
       - name: Install dependencies (mac)
         if: matrix.os == 'macos-latest'
-        run: brew install -q ninja nasm
+        run: brew install -q ninja nasm zimg
 
       - name: Build vmaf
         run: |
@@ -178,7 +178,7 @@ jobs:
           # 1515, 2040 in n9.0.2) and trips the warning gate below. It is also a
           # QSV configuration nobody ships. Installing it compiles those paths
           # back in rather than patching FFmpeg to delete the variables.
-          sudo -E apt-get -yq install ninja-build gcc g++ nasm gpg-agent libvpl-dev libva-dev
+          sudo -E apt-get -yq install ninja-build gcc g++ nasm gpg-agent libvpl-dev libva-dev libzimg-dev
 
       - name: Install Intel oneAPI
         # oneAPI version comes from ONEAPI_APT_PACKAGE in build-config.env;
@@ -334,6 +334,10 @@ jobs:
           if (Test-Path $p) { Rename-Item -Path $p -NewName 'ccache.exe.disabled' }
           Write-Host "ccache binary disabled"
 
+      - name: Install zimg via vcpkg (windows)
+        shell: pwsh
+        run: pwsh -File scripts/ci/setup-zimg-windows.ps1 -Triplet x64-windows-static-md
+
       # ADR-2170: the libvmaf build prints no warnings, so they are errors.
       - name: Warnings-as-errors arguments
         id: werror
@@ -388,9 +392,15 @@ jobs:
         env:
           FFMPEG_TOOLCHAIN: msvc
           VMAF_SCORE_CHECK: '1'
+          # The login shell's profile resets PKG_CONFIG_PATH, and the inherited
+          # list is in Windows form; a static libvmaf needs zimg.pc from it.
+          WINDOWS_PC_PATH: ${{ env.PKG_CONFIG_PATH }}
         run: |
           set -euo pipefail
           workspace="$(cygpath -u "$GITHUB_WORKSPACE")"
+          PKG_CONFIG_PATH="$(cygpath -u -p "$WINDOWS_PC_PATH"):${PKG_CONFIG_PATH:-}"
+          export PKG_CONFIG_PATH
+          pkg-config --print-errors --modversion zimg
           export VMAF_PREFIX="$workspace/install"
           export FFMPEG_SRC="$(cygpath -u "$RUNNER_TEMP")/ffmpeg"
           export KEEP_BUILD=1
@@ -547,7 +557,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo -E apt-get -yq install --no-install-recommends \
-            nasm pkg-config git libglib2.0-dev \
+            nasm pkg-config git libglib2.0-dev libzimg-dev \
             libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
             gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-bad
 
