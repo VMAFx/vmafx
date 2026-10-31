@@ -136,8 +136,8 @@ at run time on any host that actually dispatches the backend:
    12.4 (R550) or later, which the R580 floor already covers. An older driver
    fails `cuModuleLoadData()` in the first extractor that loads a kernel.
 
-Statically-linked consumers (for example, ffmpeg binaries built with
-`--enable-libvmaf` in static mode) are **not** exempt: the driver
+Statically-linked consumers (for example, binaries built with stock
+upstream FFmpeg's `--enable-libvmaf` in static mode) are **not** exempt: the driver
 library is loaded through `dlopen`, which bypasses `DT_NEEDED` and
 therefore does not show up in `ldd <binary>`. An otherwise
 self-contained static ffmpeg will still fail on the first frame if
@@ -187,13 +187,11 @@ the Netflix `src01` pair with `vmaf_v0.6.1` at 76.6678303 on CUDA against
 
 ### FFmpeg
 
-The FFmpeg filter name is `libvmaf_cuda`; see
+The FFmpeg filter name is `vmafx` with `backend=cuda`; see
 [usage/ffmpeg.md](../../usage/ffmpeg.md)
-for a hwaccel pipeline that keeps decoded frames on the GPU. For
-software-decoded input the regular `libvmaf` filter accepts a fork-added
-`cuda=1` AVOption (per
-[ADR-0408](../../adr/0408-ffmpeg-libvmaf-cuda-backend-selector.md)); build
-FFmpeg with `--enable-libvmaf-cuda` to enable it.
+for a hwaccel pipeline that keeps decoded frames on the GPU. On
+software-decoded input the `vmafx` filter runs the CUDA backend with
+`backend=cuda`. Build FFmpeg with `--enable-libvmafx` to enable it.
 
 ### Importing frames through the VMAFx API
 
@@ -331,7 +329,7 @@ Open items only. Closed gaps are in the [twin notes](twin-notes.md#history).
 | Gap | Status | Detail |
 |-----|--------|--------|
 | CUDA graph capture dispatch | open | `VMAF_CUDA_DISPATCH=<extractor>:graph` logs `libvmaf: CUDA graph dispatch requested for '<extractor>' but graph capture is not implemented; falling back to direct` and runs `direct`. Graph capture needs static pitch allocation and graph instance lifecycle management across frames (deferred; `docs/state.md`). |
-| Zero-copy picture import | open | `core/src/cuda/picture_cuda.c` uploads and downloads pictures with `cuMemcpy2DAsync` (host pictures, usually pinned, to the device pool and back). A CUDA frame from NVDEC reaches the pool through one device-to-device copy in the FFmpeg `libvmaf_cuda` filter ([ADR-1685](../../adr/1685-post-1-0-embedding-zero-copy-milestone.md)); no host copy, but not zero-copy. Linux `dmabuf` / external-memory import (`cuImportExternalMemory`, `cuExternalMemoryGetMappedBuffer`) is not implemented, unlike the SYCL backend (`dmabuf_import.cpp`). The CUDA driver API import needs Vulkan or EGL external handle negotiation (deferred; `docs/state.md`). |
+| Zero-copy picture import | open | `core/src/cuda/picture_cuda.c` uploads and downloads pictures with `cuMemcpy2DAsync` (host pictures, usually pinned, to the device pool and back). A CUDA frame from NVDEC reaches the pool through one device-to-device copy in the FFmpeg `vmafx` filter (with `backend=cuda`) ([ADR-1685](../../adr/1685-post-1-0-embedding-zero-copy-milestone.md)); no host copy, but not zero-copy. Linux `dmabuf` / external-memory import (`cuImportExternalMemory`, `cuExternalMemoryGetMappedBuffer`) is not implemented, unlike the SYCL backend (`dmabuf_import.cpp`). The CUDA driver API import needs Vulkan or EGL external handle negotiation (deferred; `docs/state.md`). |
 | `float_motion` extra options | open | `motion_add_scale1`, `motion_add_uv` and `motion_filter_size` keep `float_motion` on the CPU. `motion_add_uv=true` is not wired through to the CUDA backend; the `picture_copy()` call in `integer_ms_ssim_cuda.c` passes `0` for the `channel` argument (Y plane only). UV-plane motion on GPU is tracked in [docs/state.md](../../state.md). |
 | `psnr_hvs_cuda` throughput | open (tuning) | Bit-exactness costs a 256-byte readback per block and a sequential host sum: 12.2 ms per 3840x2160 frame on an RTX 4090 instead of 2.4 ms. Details on [the psnr_hvs page](../../metrics/psnr-hvs.md#gpu-twins). |
 | `float_ssim` at `scale=1` on large pictures | open (cost) | The raster-order sum makes an explicit `scale=1` on 1080p or 4K slower (see the [twin notes](twin-notes.md#float_ssim-adds-its-frame-sums-in-the-cpus-order-adr-1464)). |

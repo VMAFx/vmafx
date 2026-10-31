@@ -1,323 +1,93 @@
 <!-- markdownlint-disable MD013 -->
 # ffmpeg-patches/
 
-Local patches against FFmpeg **n9.0.2** for integrating this VMAF fork into
-`libavfilter/vf_libvmaf*` plus a new `vf_vmaf_pre` filter.
+Local patch series against FFmpeg **n9.0.2** integrating VMAFx through
+`libavfilter/vf_vmafx*` and unified rate-control / profile CLI options.
 
 Every build applies the **shared FFmpeg fix series** first: fixes to FFmpeg
 itself, maintained for all consumers in
 [VMAFx/ffmpeg-patches](https://github.com/VMAFx/ffmpeg-patches) and pinned in
 `build-config.env` (`FFMPEG_FIX_SERIES_*`). `scripts/ci/ffmpeg-shared-series.sh`
-downloads the pinned release, verifies it and applies it; the patches in this
-directory then add the VMAFx integration on top. See
-[FFmpeg patch automation](../docs/development/ffmpeg-patch-automation.md) and
-[ADR-3143](../docs/adr/3143-ffmpeg-shared-fix-series.md).
+downloads the pinned release, verifies it, and applies it; the patches in this
+directory add VMAFx integration on top. See
+[FFmpeg patch automation](../docs/development/ffmpeg-patch-automation.md),
+[ADR-2166](../docs/adr/2166-ffmpeg-series-drops-vulkan-shims.md), and
+[ADR-3143](../docs/adr/3143-ffmpeg-shared-fix-series.md). For migration from
+retired legacy filters, see the
+[Migration Guide](../docs/usage/ffmpeg.md#migrating-from-the-libvmaf-filters).
 
-## Contents
+## Patch Stack (`series.txt`)
 
-- **`0001-libvmaf-add-tiny-model-option.patch`** — adds `tiny_model` /
-  `tiny_device` / `tiny_threads` / `tiny_fp16` options on the existing
-  `libvmaf` filter; calls `vmaf_use_tiny_model()` when set.
-- **`0002-add-vmaf_pre-filter.patch`** — new `vmaf_pre` filter: luma-in /
-  luma-out learned pre-processing via `vmaf_dnn_session_*`. Chroma
-  planes pass through.
-- **`0003-libvmaf-wire-sycl-backend-selector.patch`** — adds `sycl_device`
-  / `sycl_profile` options on the `libvmaf` filter; invokes
-  `vmaf_sycl_state_init()` + `vmaf_sycl_import_state()` when
-  `sycl_device >= 0`.
-- **`0004-libvmaf-wire-vulkan-backend-selector.patch`** — adds
-  `vulkan_device` option on the `libvmaf` filter; wires
-  `vmaf_vulkan_state_init` + the deferred-pool path from ADR-0238.
-- **`0005-libvmaf-add-libvmaf-sycl-filter.patch`** — registers a
-  dedicated `libvmaf_sycl` filter for zero-copy VAAPI/QSV import
-  (consumes `AVFrame->data[3] -> mfxFrameSurface1*`). Each input's
-  surfaces are imported with that input's VA display; a failed import is
-  tried three times and then stops the filter with an error naming the
-  frame ([ADR-1761](../docs/adr/1761-sycl-filter-import-retry-then-fail.md)).
-- **`0006-libvmaf-add-libvmaf-vulkan-filter.patch`** — registers a
-  dedicated `libvmaf_vulkan` filter for zero-copy VkImage import per
-  [ADR-0186](../docs/adr/0186-vulkan-image-import-impl.md).
-- **`0010-libvmaf-wire-cuda-backend-selector.patch`** — adds a
-  `cuda` boolean option on the `libvmaf` filter and the
-  `--enable-libvmaf-cuda` configure flag. When `cuda=1` the filter
-  inits a `VmafCudaState` on the primary CUDA context (device picked
-  by `CUDA_VISIBLE_DEVICES`), imports it via `vmaf_cuda_import_state`,
-  and dispenses `VmafPicture`s from a HOST_PINNED preallocation pool
-  so software AVFrame input flows into pinned-host memory the CUDA
-  feature kernels DMA from without a staging copy. Mirrors the
-  SYCL/Vulkan selector pattern and runs alongside the upstream
-  dedicated `libvmaf_cuda` filter (which keeps its own `cu_state`
-  for hwaccel CUDA frames in). See
-  [ADR-0350](../docs/adr/0350-ffmpeg-libvmaf-cuda-backend-selector.md).
-- **`0011-libvmaf-wire-hip-backend-selector.patch`** — adds a
-  `hip_device` integer option on the `libvmaf` filter and the
-  `--enable-libvmaf-hip` configure flag. When `hip_device >= 0` the
-  filter inits a `VmafHipState` on the selected AMD ROCm/HIP device,
-  imports it via `vmaf_hip_import_state`, and frees the state only after
-  `vmaf_close()` returns exactly zero (enforced cumulatively by patch 0020).
-  Completes the SYCL / Vulkan / CUDA / HIP selector
-  symmetry on the `libvmaf` filter. A dedicated `libvmaf_hip` filter
-  for ROCm hwdec zero-copy import is deferred until FFmpeg exposes a
-  ROCm/HIP hardware-frame context (no `ffhipcodec` equivalent of
-  `ffnvcodec` exists at this time). See
-  [ADR-0376](../docs/adr/0376-ffmpeg-patches-hip-backend-selector.md).
-- **`0013-libvmaf-add-libvmaf-metal-filter.patch`** — registers a
-  dedicated `libvmaf_metal` filter for VideoToolbox hwdec zero-copy
-  import. Consumes `AVFrame->format == AV_PIX_FMT_VIDEOTOOLBOX`,
-  pulls the IOSurface backing each `CVPixelBufferRef` via
-  `CVPixelBufferGetIOSurface`, and routes it through
-  `vmaf_metal_picture_import` / `vmaf_metal_read_imported_pictures`.
-  Working IOSurface → `VmafPicture` import on Apple-Family-7+ hosts
-  via `IOSurfaceLock` + memcpy (ADR-0423 / T8-IOS-b). The filter
-  passes `device=0, command_queue=0` so libvmaf falls back to
-  `MTLCreateSystemDefaultDevice` until FFmpeg exposes an
-  `AVMetalDeviceContext`; non-Apple-Silicon hosts get a clear
-  `-ENODEV` from `vmaf_metal_state_init_external`. Companion to 0012
-  (`metal_device` option
-  on the regular libvmaf filter) — together they give users
-  `libvmaf=metal_device=N` (software AVFrame input + Metal compute)
-  and `libvmaf_metal=...` (VideoToolbox hwdec + zero-copy import). See
-  [ADR-0423](../docs/adr/0423-metal-iosurface-import-scaffold.md). A frame
-  that cannot be imported or read stops the filter, which then prints no
-  pooled score ([ADR-1761](../docs/adr/1761-sycl-filter-import-retry-then-fail.md)).
-- **`0016-libvmaf-wire-score-fmt-on-all-vmaf-filters.patch`** — adds a
-  `score_fmt` AVOption (string, default `NULL` = `"%.6f"`) to all four
-  vmaf filters (`libvmaf`, `libvmaf_sycl`, `libvmaf_vulkan`,
-  `libvmaf_metal`). Replaces `vmaf_write_output()` with
-  `vmaf_write_output_with_format()` so callers can request full-precision
-  IEEE-754 lossless output (`score_fmt=%.17g`), equivalent to the
-  `--precision=max` CLI flag. Wires the fork-added
-  `vmaf_write_output_with_format()` C API (ADR-0119 / commit 695d29626).
-  Symmetric with the `cpumask`/`gpumask` options added in ADR-0576 (patch
-  0014).
+The series consists of six consecutive patches:
 
-- **`0018-libvmaf-map-percentile-pool-methods.patch`** — guards the
-  percentile mappings already introduced in patch 0005 with
-  `VMAF_HAVE_PERCENTILE_POOLING` and documents the pool options. Keep its
-  context relative to all 17 preceding patches; adding the same mapper
-  entries twice breaks the cumulative replay.
-- Number 0019 is retired. The compiler-diagnostics hardening it carried is
-  patch 0002 of the shared FFmpeg fix series (same changes, byte for byte),
-  applied before this series.
-- **`0020-libvmaf-honor-retryable-close-ownership.patch`** — makes every
-  FFmpeg `vmaf_close()` owner honor libvmaf's retryable teardown contract.
-  Each owner makes at most one immediate retry, treats only an exact zero as
-  ownership transfer, and retains all models and imported backend state when
-  both attempts fail. The ordinary filter, dedicated CUDA/SYCL/Vulkan/Metal
-  filters, and `libvmaf_tune` all share that fail-closed ordering. The dedicated
-  CUDA filter also holds an `AVHWFramesContext` reference until close succeeds,
-  keeping its borrowed `CUcontext` alive through retries. The Vulkan hunks
-  remain compatibility-only context for the removed backend, as described in
-  `series.txt`; they do not restore a Vulkan runtime.
-- **`0021-libvmaf-print-no-pooled-score-after-a-mid-run-error.patch`** —
-  after a failed picture copy or `vmaf_read_pictures()`, the `libvmaf` and
-  `libvmaf_cuda` filters log the frame and the error once, free the frame and
-  stop; the shared `uninit()` prints no pooled score and writes no report,
-  and also prints none after a failed flush or for a model whose pooled score
-  failed. Upstream FFmpeg pools the frames read before the error. The
-  divergence is deliberate: keep it on every refresh
-  ([ADR-1768](../docs/adr/1768-ffmpeg-libvmaf-no-score-after-error.md)).
-- **`0022-libvmaf-declare-the-input-colorimetry-from-the-AVFrame-properties.patch`** —
-  on the first frame pair, `do_vmaf()` and the software path of `do_vmaf_sycl()`
-  map the AVFrame range, primaries, transfer and matrix of each input to
-  libvmaf's enums and call `vmaf_set_input_colorimetry()`
-  ([ADR-2093](../docs/adr/2093-upstream-hdr-groundwork-input-colorimetry.md)).
-  An input with an attribute libvmaf does not name stays unspecified, so
-  models without a `conversion_target` score as before. The device-free
-  contract is `core/test/test_ffmpeg_libvmaf_input_colorimetry_contract.py`;
-  the run with an FFmpeg is `test/check-libvmaf-input-colorimetry.sh`.
-  `libvmaf_tune` and the device-frame paths do not set it.
+- **`0001-codec-qpfile-unified.patch`**: Adds unified `-qpfile <path>` AVOption
+  to `libx264`, `libsvtav1`, and `libaom-av1`. Uses the shared per-frame parser
+  in `libavcodec/qpfile_parser.{c,h}` to supply macroblock and per-picture
+  quantization deltas.
+- **`0002-pass-autotune-cli-glue.patch`**: Adds `-pass-autotune` CLI option in
+  `fftools/ffmpeg_opt.c` for multi-pass rate-control orchestration.
+- **`0003-add-vmafx-profile-cli-glue.patch`**: Adds `-vmafx-profile <path>`
+  CLI option in `fftools/ffmpeg_opt.c` for profile-guided encoder tuning.
+- **`0004-add-vmafx-filter.patch`**: Implements the primary `vmafx` scoring
+  filter and `vmafx_tune` filter. Built from canonical sources
+  `ffmpeg-patches/src/vf_vmafx.c` and `vf_vmafx_options.h`. Provides unified
+  runtime backend selection (`backend=auto|cpu|cuda|sycl|hip|metal`), zero-copy
+  hardware frame import (CUDA, VA-API/QSV, DRM PRIME, Metal IOSurface,
+  Vulkan), AVFrame colorimetry mapping to `libvmafx`, windowed statistics,
+  score formatting (`score_fmt`), and fail-closed error handling. Enabled via
+  `--enable-libvmafx`.
+- **`0005-add-vmafx-pre-filter.patch`**: Implements the `vmafx_pre` learned
+  filter for ONNX neural pre-processing. Built from canonical source
+  `ffmpeg-patches/src/vf_vmafx_pre.c`. Enabled via `--enable-libvmafx`.
+- **`0006-fftools-loopback-decoder-hwaccel.patch`**: Adds GPU loopback decoder
+  hardware acceleration in `fftools/ffmpeg_dec_hwaccel.c` before `-dec` for
+  efficient decode-score pipelines (ADR-2125 Q-048).
 
-Every libvmaf integration patch is guarded by `check_pkg_config` so it degrades
-gracefully when libvmaf was built without the relevant feature
-(`-Denable_dnn`, `-Denable_sycl`, `-Denable_vulkan`, `-Denable_cuda`,
-`-Denable_hip`). The shared fix series hardens the pinned FFmpeg baseline
-itself. Patch 0020 hardens the teardown ownership boundary shared by those
-filters.
+## Test Scripts
 
-## What works without a patch
+Test scripts under `ffmpeg-patches/test/` verify the patch series and filter
+behavior:
 
-Any feature extractor registered in the fork's libvmaf — including
-**SSIMULACRA 2**, PSNR-HVS, VIF, ADM, MS-SSIM, motion, CAMBI, etc. — is
-already reachable through upstream FFmpeg's stock `libvmaf` filter via
-its `feature` option. No patch needed:
+- **`build-and-run.sh`**: Fetches clean upstream FFmpeg at `FFMPEG_TAG`, applies
+  the shared fix series and `series.txt`, builds against `libvmafx`, verifies
+  option registration, and tests score equivalence against the `vmaf` CLI.
+- **`vmafx_filter_check.py`**: Integration test suite verifying `vmafx`:
+  - `parity`: Per-frame and pooled metric parity against the `vmaf` CLI.
+  - `windows`: Sliding-window statistics against CLI reference windows.
+  - `contract`: Frame ordering, un-scored frame counts, and timeline contracts.
+  - `provenance`: Provenance record logging and metadata embed contracts.
+  - `pool`: VA-API fixed frame pool ingestion and error bounds.
+  - `refusal`: Validation of invalid parameters and incompatible options.
+  - `layouts`: 4:2:2 and 4:4:4 semi-planar, packed, and MSB layouts.
+- **`check-vmafx-input-colorimetry.sh`**: Verifies HDR colorimetry mapping
+  from AVFrame properties into `libvmafx`, checking tagged BT.2020/PQ parity
+  against the CLI and fail-closed refusal on untagged inputs.
+- **`check-input-contract.sh`**: Inspects patch text to enforce input ordering,
+  pad declaration, and PTS contract invariants.
+- **`check-sycl-feature-routing.sh`**: Verifies SYCL backend option and feature
+  routing in `vf_vmafx.c`.
+- **`check-sycl-pixfmt.sh`**: Verifies software and hardware pixel format lists
+  in `vf_vmafx.c`.
+- **`check-vmafx-import-failure.sh`**: Injects frame import faults to verify
+  fail-closed termination naming the failed frame and printing no pooled score.
+
+## How to Replay
+
+To verify that the patch series applies cleanly on top of the shared fix
+series:
 
 ```bash
-ffmpeg -i dist.mp4 -i ref.mp4 \
-  -lavfi "[0:v][1:v]libvmaf=feature='name=ssimulacra2'" \
-  -f null -
+python3 scripts/ci/ffmpeg_patch_stack.py --check
 ```
 
-The same `feature=` syntax accepts per-extractor options:
+To refresh patch context or rebase against updated sources:
 
 ```bash
-# BT.709 full-range matrix
-feature='name=ssimulacra2:yuv_matrix=2'
+python3 scripts/ci/ffmpeg_patch_stack.py --refresh
 ```
-
-Works with both the stock `libvmaf` filter and, via CUDA, the
-`libvmaf_cuda` filter (SSIMULACRA 2 currently has no CUDA path; it falls
-back to CPU SIMD — AVX-512 / AVX2 / NEON per ADR-0161 / 0162 / 0163).
-
-Patches 0001–0018 cover fork-added surfaces that do not fit the generic
-`feature=` plumbing: the DNN session API (`tiny_model`), the learned
-pre-processing filter (`vmaf_pre`), backend selectors on the `libvmaf` filter,
-and dedicated filters for zero-copy hardware-frame import. The warning-clean
-compiler hardening of the pinned FFmpeg release comes from the shared fix
-series.
-
-## How to apply
-
-```bash
-cd /path/to/ffmpeg    # must be at tag n9.0.2
-# The shared FFmpeg fix series first (verified against build-config.env):
-/path/to/vmaf/scripts/ci/ffmpeg-shared-series.sh apply --method am .
-while IFS= read -r patch; do
-    case "$patch" in ""|\#*) continue ;; esac
-    git am --3way "/path/to/vmaf/ffmpeg-patches/$patch" || exit 1
-done < /path/to/vmaf/ffmpeg-patches/series.txt
-```
-
-Or via the helper skill: `/ffmpeg-apply-patches /path/to/ffmpeg`.
-
-> **Verification gate (CLAUDE.md §12 r14)**: patches `0002` through
-> `0006` build on each other (each assumes the cumulative state of
-> every earlier patch). Per
-> [ADR-0118](../docs/adr/0118-ffmpeg-patch-series-application.md) and
-> [ADR-0186](../docs/adr/0186-vulkan-image-import-impl.md), the
-> verification gate for any change touching a libvmaf C-API surface
-> the patches consume is a **series replay** against a pristine
-> `n9.0.2` checkout (cumulative `git am --3way`), NOT a per-patch
-> `git apply --check`. The latter rejects `0002+` because they
-> reference cumulative-state hunks that don't exist in pristine
-> `n9.0.2`. The 4 patches of the shared fix series `v0.1.0` and the 21
-> patches here replay cumulatively on upstream commit
-> `946fcce07b6dcd0331c8cc609192aeff5e1924f8`; the resulting tree is
-> `1b49fde499b00689be5eb13da0cb159052ddb3e3`
-> (`python3 scripts/ci/ffmpeg_patch_stack.py --check`). The refresh evidence and
-> earlier replay history live in
-> [`docs/rebase-notes.md`](../docs/rebase-notes.md).
-
-The maintained image builders, hosted FFmpeg integration workflow, and
-`test/build-and-run.sh` configure with `--fatal-warnings` and reject compiler
-warning output. Hosted integration and the full-series smoke harness compile
-all test programs and run every generated, sample-independent FATE target
-under the same log gate, so diagnostics from test translation units fail the
-build. The ordinary hosted GCC/Clang compatibility matrix applies
-the shared fix series alone, without the libvmaf integration series, so it still tests
-stock FFmpeg surfaces against the fork library on warning-clean pinned source.
-Patch replay is exact and fail-closed; no path falls back to fuzzy `patch -p1`.
-All release consumers resolve annotated tags to their peeled commit through
-`scripts/ci/checkout-annotated-tag.sh`, then recreate the local tag used by
-FFmpeg version discovery. This keeps Git checkout warnings fatal too. FATE
-collection captures `make -s fate-list` first and selects only `fate-*`
-targets, because a pristine tree may also print a generated-makefile status
-line during that command.
-
-## How to smoke-test
-
-```bash
-bash ffmpeg-patches/test/build-and-run.sh
-```
-
-Requires `libvmaf` to be installed (`pkg-config --cflags libvmaf` must
-resolve). Set `VMAF_PREFIX` to point at a non-standard install prefix.
-The default release and remote come from `build-config.env`. `FFMPEG_SHA`
-can select another stable released tag for compatibility testing. The helper
-creates a disposable checkout and rejects any existing `FFMPEG_SRC` path.
-Set `KEEP_BUILD=1` to retain a successful build; failed builds are retained
-for diagnosis. It never resets or cleans an existing checkout.
-
-### SYCL filter import failures (needs an Intel GPU)
-
-```bash
-docker exec -e VA_DEVICE=/dev/dri/renderD129 vmaf-dev-mcp \
-  bash /workspace/ffmpeg-patches/test/check-sycl-import-retry.sh
-```
-
-Runs `libvmaf_sycl` on QSV-decoded clips with failures injected into
-`vmaf_sycl_import_va_surface()` through `LD_PRELOAD`
-(`test/fault_inject_libvmaf.c`): a transient failure recovers with every
-frame scored, a persistent one stops the run naming the frame and prints no
-score. It also checks two VA devices and an odd-height software input against
-the CPU filter. It needs an FFmpeg with the series that links `libvmaf.so`
-dynamically (set `FFMPEG`), and exits 77 without one or without a QSV device.
-
-### No pooled score after a mid-run error (CPU; CUDA where available)
-
-```bash
-docker exec vmaf-dev-mcp \
-  bash /workspace/ffmpeg-patches/test/check-libvmaf-no-score-after-error.sh
-```
-
-Runs the `libvmaf` filter on software-decoded clips, and `libvmaf_cuda` on
-CUDA-decoded ones when the filter and a CUDA device are present, with the 5th
-`vmaf_read_pictures()` call failing (`test/fault_inject_libvmaf.c` through
-`LD_PRELOAD`). Each must exit non-zero, log one error naming frame 4 and the
-error, and print no `VMAF score` line and write no report. A failed flush must
-print no score either. Without `libvmaf_cuda` or a CUDA device those cases are
-reported as skipped. Both checks source `test/filter_check_lib.sh`.
-
-## How to regenerate
-
-Run `python3 scripts/ci/ffmpeg_patch_stack.py --refresh` and review the diff,
-then run the same command with `--check`. The local hooks use this helper too.
-See [FFmpeg patch automation](../docs/development/ffmpeg-patch-automation.md)
-for daily stable-release updates, diagnostics and conflict recovery.
 
 ## License
 
-EUPL-1.2 for patches authored in this repo; patches are
-applied against FFmpeg (LGPL / GPL) — the resulting linked binary's
-distribution terms are governed by FFmpeg's license, not this one.
-
-## vmaf-tune integration patches (ADR-0312)
-
-The 0007–0009 patches plus 0015 wire the in-tree `tools/vmaf-tune/`
-orchestrator into FFmpeg's encoder-side and CLI-side surfaces:
-
-- **`0007-libvmaf-tune-qpfile-unified.patch`** — adds an `-qpfile <path>`
-  AVOption to `libx264`, `libsvtav1`, and `libaom-av1`. The shared
-  parser at `libavcodec/qpfile_parser.{c,h}` reads vmaf-tune's
-  `saliency.py` qpfile format once; libx264 gets each input frame's
-  per-MB deltas as x264 `quant_offsets` (libx264 has no `qpfile`
-  parameter; needs `aq-mode` other than 0,
-  [ADR-2167](../docs/adr/2167-ffmpeg-x264-qpfile-quant-offsets.md));
-  SVT-AV1 wires it through to the
-  per-picture `ROI_MAP_EVENT` priv-data ABI (gated on SVT-AV1 ≥ 1.6.0;
-  older releases log-and-continue); libaom-av1 wires it through to
-  `aom_codec_control(AOME_SET_ROI_MAP, ...)` per frame, with up to 8
-  segment QPs and uniform binning when the qp_offset value span
-  exceeds the segment budget.
-- **`0008-add-libvmaf_tune-filter.patch`** — new `libvmaf_tune` 2-input
-  filter (`libavfilter/vf_libvmaf_tune.c`). Scaffold: pass-through on
-  the main pad, framesync ref pad, AVOptions
-  (`recommend_target_vmaf` / `recommend_crf_min` / `recommend_crf_max`),
-  and a final-line `recommended_crf=…` log at uninit. Linear
-  CRF↔VMAF interpolation; the full Optuna TPE recommend loop stays
-  in `tools/vmaf-tune/src/vmaftune/recommend.py`.
-- **`0009-pass-autotune-cli-glue.patch`** — adds a `-pass-autotune`
-  flag to `fftools/ffmpeg_opt.c` that emits an advisory log line
-  pointing at `docs/usage/vmaf-tune-ffmpeg.md`. Glue only — real
-  orchestration stays in vmaf-tune.
-- **`0015-vmaf-tune-profile-cli-glue.patch`** — adds a
-  `-vmaf-profile <path>` flag to `fftools/ffmpeg_opt.c` that emits an
-  advisory hand-off to `vmaf-tune encode-profile --profile <path>`.
-  Glue only — the Python tool reads the report JSON/HTML/Markdown,
-  selects one recommendation via `--codec` / `--target-vmaf` /
-  `--recommendation-index`, and then invokes FFmpeg with the codec
-  adapter registry.
-
-### vmaf-tune patch invariant
-
-Patches **0007–0009** must keep the qpfile parser shared at
-`libavcodec/qpfile_parser.{c,h}`. New encoder adapters that grow a
-`-qpfile` AVOption inherit the same parser; do not fork it. When
-`tools/vmaf-tune/src/vmaftune/saliency.py`'s `write_x264_qpfile`
-output format changes, patch 0007's parser must change in the same
-PR (CLAUDE.md §12 r14).
-
-Patch **0015** must remain advisory. The profile reader and selection
-logic live in `vmaf-tune encode-profile`; duplicating that JSON schema
-inside FFmpeg would make the patch stack rebase-sensitive for no
-encoding benefit.
+EUPL-1.2 for patches authored in this repository. Patches are applied against
+FFmpeg (LGPL-2.1-or-later / GPL-2.0-or-later); distribution terms of compiled
+binaries are governed by FFmpeg's license.

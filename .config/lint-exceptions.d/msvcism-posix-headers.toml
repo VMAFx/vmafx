@@ -14,5 +14,5 @@ expires = 2027-06-30
 
 [[exception]]
 path = "ffmpeg-patches/test/fault_inject_libvmaf.c"
-reason = "LD_PRELOAD fault-injection shim of the FFmpeg patch tests (dlsym(RTLD_NEXT) over libvmaf): a Linux-only mechanism, compiled by ffmpeg-patches/test/check-sycl-import-retry.sh and check-libvmaf-no-score-after-error.sh, not by meson and not on Windows. Renew while the patch tests inject faults through the dynamic loader."
+reason = "LD_PRELOAD fault-injection shim of the FFmpeg patch tests (dlsym(RTLD_NEXT) over libvmaf): a Linux-only mechanism, compiled by ffmpeg-patches/test/check-vmafx-import-failure.sh and check-vmafx-no-score-after-error.sh, not by meson and not on Windows. Renew while the patch tests inject faults through the dynamic loader."
 expires = 2027-06-30

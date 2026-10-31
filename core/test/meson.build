@@ -3580,41 +3580,30 @@ test('test_metal_iosurface_filter_contract',
     timeout : 30,
 )
 
-# ADR-1761: the FFmpeg libvmaf_sycl filter retries a failed VA import in a
-# bounded loop and then stops naming the frame, imports each input with its own
-# VA display, and copies every chroma row of an odd height. Device-free: reads
-# patch 0005; the device run is ffmpeg-patches/test/check-sycl-import-retry.sh.
-test('test_sycl_filter_import_contract',
+# ADR-1768: after a mid-run error the FFmpeg vmafx filter
+# logs the frame and the error once and prints no pooled score (ADR-1768).
+# Device-free: reads the filter source;
+# the device run is ffmpeg-patches/test/check-vmafx-no-score-after-error.sh.
+test('test_ffmpeg_vmafx_stop_contract',
     import('python').find_installation(),
-    args : files('test_sycl_filter_import_contract.py'),
+    args : files('test_ffmpeg_vmafx_stop_contract.py'),
     suite : ['fast'],
     timeout : 30,
 )
 
-# ADR-1768: after a mid-run error the FFmpeg libvmaf and libvmaf_cuda filters
-# log the frame and the error once and print no pooled score (patch 0021, a
-# deliberate divergence from upstream FFmpeg). Device-free: reads the series;
-# the device run is ffmpeg-patches/test/check-libvmaf-no-score-after-error.sh.
-test('test_ffmpeg_libvmaf_stop_contract',
+# Issue #2708: the vmafx filter offers every
+# SEI-unregistered side-data entry to vmafx_context_attach_sidedata(), newest
+# first, and stops at the first one accepted. Device-free: reads the filter source.
+test('test_ffmpeg_vmafx_pelorus_scan_contract',
     import('python').find_installation(),
-    args : files('test_ffmpeg_libvmaf_stop_contract.py'),
+    args : files('test_ffmpeg_vmafx_pelorus_scan_contract.py'),
     suite : ['fast'],
     timeout : 30,
 )
 
-# Issue #2708 / FFmpeg patch 0017: the libvmaf filter offers every
-# SEI-unregistered side-data entry to vmaf_set_perceptual_sidedata(), newest
-# first, and stops at the first one accepted. Device-free: reads the series.
-test('test_ffmpeg_libvmaf_pelorus_scan_contract',
-    import('python').find_installation(),
-    args : files('test_ffmpeg_libvmaf_pelorus_scan_contract.py'),
-    suite : ['fast'],
-    timeout : 30,
-)
-
-# ADR-2093 / FFmpeg patch 0022: the libvmaf filters declare the AVFrame colour to
-# libvmaf. Device-free: reads the series; the FFmpeg run is
-# ffmpeg-patches/test/check-libvmaf-input-colorimetry.sh.
+# ADR-2093 / FFmpeg patch 0004: the vmafx filter declares the AVFrame colour to
+# VMAFx. Device-free: reads the series; the FFmpeg run is
+# ffmpeg-patches/test/check-vmafx-input-colorimetry.sh.
 test('test_ffmpeg_libvmaf_input_colorimetry_contract',
     import('python').find_installation(),
     args : files('test_ffmpeg_libvmaf_input_colorimetry_contract.py'),

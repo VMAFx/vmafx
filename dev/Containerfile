@@ -926,9 +926,8 @@ RUN for B in cpu cuda sycl hip; do \
 # ---------------------------------------------------------------------------
 # Builds the same FFmpeg version the fork's `ffmpeg-patches/series.txt` is
 # pinned against. Applies every patch in series order, then configures with
-# every libvmaf-* hook our patches add (sycl / cuda / hip / metal-
-# build-only on Linux). Result: `ffmpeg -filters` lists `libvmaf`,
-# `libvmaf_sycl`, `vmaf_pre`, `libvmaf_tune` so the dev
+# `--enable-libvmafx`. Result: `ffmpeg -filters` lists `vmafx`,
+# `vmafx_pre`, `vmafx_tune` so the dev
 # MCP probe can shell out to a real FFmpeg toolchain end-to-end.
 USER root
 
@@ -1193,8 +1192,8 @@ RUN git config user.email "vmaf-dev-mcp@localhost" && git config user.name "vmaf
 #                          from `OBJS-$(CONFIG_AMF_CAPTURE_FILTER)`
 #                          in `libavfilter/Makefile`.
 #
-# vmaf integration patches (unchanged):
-#     --enable-libvmaf{,-cuda,-sycl,-hip} — fork patches.
+# vmafx integration patches:
+#     --enable-libvmafx — fork patches.
 # PKG_CONFIG_PATH must explicitly include /usr/lib/x86_64-linux-gnu/pkgconfig
 # (the Ubuntu/Debian multiarch path) so FFmpeg's `check_pkg_config` probes
 # pick up the distro-installed `.pc` files — `SvtAv1Enc.pc` (from
@@ -1226,10 +1225,7 @@ RUN --mount=type=cache,target=/home/vmaf/.cache/ccache,sharing=locked,uid=2000,g
         --fatal-warnings \
         --prefix=/usr/local \
         --enable-gpl --enable-version3 --enable-nonfree \
-        --enable-libvmaf \
-        --enable-libvmaf-cuda \
-        --enable-libvmaf-sycl \
-        --enable-libvmaf-hip \
+        --enable-libvmafx \
         --enable-libx264 --enable-libx265 \
         --enable-libvpx --enable-libdav1d \
         --enable-libsvtav1 --enable-libvvenc \

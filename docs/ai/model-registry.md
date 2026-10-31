@@ -29,7 +29,7 @@ The registry holds 26 entries. Thirteen are CI smoke fixtures with
       "license": "BSD-2-Clause-Patent",
       "license_url": "https://github.com/VMAFx/vmafx/blob/master/NOTICE",
       "sigstore_bundle": "learned_filter_v1.onnx.sigstore.json",
-      "description": "Tiny residual filter for vmaf_pre — degraded → clean luma.",
+      "description": "Tiny residual filter for vmafx_pre — degraded → clean luma.",
       "notes": "Self-supervised on KoNViD-1k …"
     }
   ]

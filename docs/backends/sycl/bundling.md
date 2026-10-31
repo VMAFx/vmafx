@@ -1,8 +1,8 @@
 <!-- markdownlint-disable MD013 MD060 -->
-# Bundling libvmaf_sycl for Self-Contained Deployment
+# Bundling SYCL for Self-Contained Deployment
 
 Bundle the Intel oneAPI runtime libraries listed below next to the binary so
-FFmpeg with `libvmaf_sycl` runs on a machine without oneAPI installed.
+FFmpeg with `vmafx` (backend `sycl`) runs on a machine without oneAPI installed.
 
 ## Problem
 
@@ -139,7 +139,7 @@ export UR_L0_USE_IMMEDIATE_COMMANDLISTS=0
 Xe2 / Battlemage users should keep the default (immediate command lists on).
 
 One queue is exempt. libvmaf creates its primary SYCL queue, the one that
-imports QSV / VA-API surfaces for the `libvmaf_sycl` zero-copy path, with
+imports QSV / VA-API surfaces for the `vmafx` SYCL zero-copy path, with
 immediate command lists whatever this variable says
 ([ADR-3359](../../adr/3359-sycl-primary-queue-immediate-cmdlist.md)). With batched
 command lists an Arc A380 (compute-runtime 26.35) silently dropped the

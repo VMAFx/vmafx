@@ -148,13 +148,10 @@ RUN set -e; \
         fi; \
     done < /tmp/ffmpeg-patches/series.txt
 
-# libvmaf-sycl is auto-detected by FFmpeg's check_pkg_config (added by
-# patch 0003); there is no `--enable-libvmaf-sycl` flag to pass. SYCL
-# support follows libvmaf's pkg-config (set by `-Denable_sycl=true` at
-# libvmaf build time).
+# --enable-libvmafx builds the vmafx and vmafx_tune filters on libvmafx.
 # `--enable-libnpp` is omitted: FFmpeg n9.0.2 removed libnpp and retains the
 # option only as a warning-producing compatibility no-op. The npp_* filter set
-# is unrelated to VMAF; cuvid + nvdec + nvenc + libvmaf-cuda are the surfaces
+# is unrelated to VMAF; cuvid + nvdec + nvenc + vmafx are the surfaces
 # this image uses. Re-add the option only if a future FFmpeg release restores
 # a real libnpp probe and the matching CUDA contract is validated.
 RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked \
@@ -167,7 +164,7 @@ RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked \
         --enable-cuvid \
         --enable-cuda \
         --enable-cuda-nvcc \
-        --enable-libvmaf \
+        --enable-libvmafx \
         --enable-ffnvcodec \
         --disable-stripping \
         --cc='ccache gcc' \

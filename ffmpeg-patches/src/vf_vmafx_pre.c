@@ -19,8 +19,7 @@
 /**
  * @file
  * The vmafx_pre filter: a learned ONNX pre-filter run by the VMAFx library
- * (vmafx_dnn_session_*), the vmaf_pre filter under its VMAFx name with the
- * same options. 8-bit planes go through vmafx_dnn_session_run_luma8(),
+ * (vmafx_dnn_session_*). 8-bit planes go through vmafx_dnn_session_run_luma8(),
  * 10- and 12-bit planes through vmafx_dnn_session_run_plane16(); with
  * chroma=1 the session also runs on U and V at their own size, otherwise
  * they are copied. A failed inference fails the frame, naming the plane.

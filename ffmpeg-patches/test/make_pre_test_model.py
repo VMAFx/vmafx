@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
-"""Write pre_blur_4x4.onnx, the learned-filter fixture of ``vmafx_filter_check.py legacy``.
+"""Write pre_blur_4x4.onnx, the learned-filter fixture of ``vmafx_filter_check.py`` tests.
 
 One 3x3 binomial blur (a Conv, padding 1) on a [1,1,4,4] float plane: an NCHW
 [1,1,H,W] model the pre-filter's luma path runs, which changes every sample

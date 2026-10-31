@@ -3,7 +3,7 @@
   "title": "Tiny-AI pipeline: from training to the runtime",
   "alt": "Models are trained and exported to ONNX in ai/, committed under model/tiny/ and run by one runtime in core/src/dnn/.",
   "text": [
-    "Surfaces: vmaf CLI (--tiny-model), FFmpeg (vf_libvmaf, vf_vmaf_pre).",
+    "Surfaces: vmaf CLI (--tiny-model), FFmpeg (vf_vmafx, vf_vmafx_pre).",
     "Boxes: ai/ (train, export, register (PyTorch, Lightning)), model/tiny/ (.onnx + sidecar .json, registry.json), core/src/dnn/ (vmaf_use_tiny_model(), ONNX Runtime).",
     "ai/ → model/tiny/ (export_to_onnx) → core/src/dnn/ (load) → vmaf CLI.",
     "core/src/dnn/ → FFmpeg.",
@@ -18,16 +18,16 @@
     "core/src/dnn/dnn_attach_api.c:vmaf_use_tiny_model",
     "core/include/libvmaf/dnn.h:vmaf_use_tiny_model",
     "core/tools/cli_parse.cpp:ARG_TINY_MODEL",
-    "ffmpeg-patches/0001-libvmaf-add-tiny-model-option.patch:tiny_model_path",
-    "ffmpeg-patches/0002-add-vmaf_pre-filter.patch:vf_vmaf_pre"
+    "ffmpeg-patches/src/vf_vmafx.c:tiny_model",
+    "ffmpeg-patches/src/vf_vmafx_pre.c:vmafx_pre"
   ],
-  "spec_sha256": "9cf7b90deff5fd200218be1c55f3e0ea02941d17c781d52564af37d7020ddd6f",
+  "spec_sha256": "9fcaaab5781466370c2a13adf6cc1006d3bfccf3e796040fb48c229f7b0e331e",
   "engine": {
     "commit": "ccfe85b4851957ac2adf88b4a9ddf9668b2882f1",
     "sha256": "6a70b89b2d53c73fa79cb881a89e709622b2cfd2e8568b8e9797a328993dd0fc"
   },
-  "svg_sha256": "006987245f199d4b85edec8353c56e45125d1e4f7d67e8adc7af5118a8053f8c",
-  "static_sha256": "c5abaf2090b1104c6ca6abf1303b9681b8a53bbd30dca04ab4caa0d7df7e256a",
+  "svg_sha256": "44ff06127b04323072945cdaad1828c3b085371d5c47ff05e74ed0532b962628",
+  "static_sha256": "12b3157a8c092e5218289f164e63ffa710d3c636e650e47291fea6c4ab69f0f9",
   "width": 560,
   "height": 487,
   "static_width": 560,
@@ -52,5 +52,5 @@
       "to": "FFmpeg"
     }
   ],
-  "html": "<figure class=\"praetor-figure\" id=\"fig-tiny-ai-pipeline\" data-figure=\"tiny-ai-pipeline\" aria-describedby=\"fig-tiny-ai-pipeline-text\">\n<picture>\n<source media=\"(prefers-reduced-motion: reduce)\" srcset=\"{{base}}/tiny-ai-pipeline.static.svg\" width=\"560\" height=\"437\">\n<img src=\"{{base}}/tiny-ai-pipeline.svg\" alt=\"Models are trained and exported to ONNX in ai/, committed under model/tiny/ and run by one runtime in core/src/dnn/.\" width=\"560\" height=\"487\" loading=\"lazy\">\n</picture>\n<figcaption>Tiny-AI pipeline: from training to the runtime</figcaption>\n</figure>\n<p><a href=\"{{link}}\">Open the interactive figure</a></p>\n<details class=\"praetor-figure__text\" id=\"fig-tiny-ai-pipeline-text\"><summary>Text description</summary>\n<ul>\n<li>Surfaces: vmaf CLI (--tiny-model), FFmpeg (vf_libvmaf, vf_vmaf_pre).</li>\n<li>Boxes: ai/ (train, export, register (PyTorch, Lightning)), model/tiny/ (.onnx + sidecar .json, registry.json), core/src/dnn/ (vmaf_use_tiny_model(), ONNX Runtime).</li>\n<li>ai/ → model/tiny/ (export_to_onnx) → core/src/dnn/ (load) → vmaf CLI.</li>\n<li>core/src/dnn/ → FFmpeg.</li>\n<li>Scenario 1, Train and ship: A model leaves Python as an ONNX file and is scored by the C runtime. ai/ trains the model and exports it to ONNX with its sidecar. vmaf_use_tiny_model() opens the committed model through ONNX Runtime. The CLI and the FFmpeg filters share that one runtime.</li>\n<li>Training depends on PyTorch and Lightning; the runtime depends only on ONNX Runtime.</li>\n<li>The boundary between them is the .onnx file and its sidecar JSON on disk.</li>\n</ul>\n</details>"
+  "html": "<figure class=\"praetor-figure\" id=\"fig-tiny-ai-pipeline\" data-figure=\"tiny-ai-pipeline\" aria-describedby=\"fig-tiny-ai-pipeline-text\">\n<picture>\n<source media=\"(prefers-reduced-motion: reduce)\" srcset=\"{{base}}/tiny-ai-pipeline.static.svg\" width=\"560\" height=\"437\">\n<img src=\"{{base}}/tiny-ai-pipeline.svg\" alt=\"Models are trained and exported to ONNX in ai/, committed under model/tiny/ and run by one runtime in core/src/dnn/.\" width=\"560\" height=\"487\" loading=\"lazy\">\n</picture>\n<figcaption>Tiny-AI pipeline: from training to the runtime</figcaption>\n</figure>\n<p><a href=\"{{link}}\">Open the interactive figure</a></p>\n<details class=\"praetor-figure__text\" id=\"fig-tiny-ai-pipeline-text\"><summary>Text description</summary>\n<ul>\n<li>Surfaces: vmaf CLI (--tiny-model), FFmpeg (vf_vmafx, vf_vmafx_pre).</li>\n<li>Boxes: ai/ (train, export, register (PyTorch, Lightning)), model/tiny/ (.onnx + sidecar .json, registry.json), core/src/dnn/ (vmaf_use_tiny_model(), ONNX Runtime).</li>\n<li>ai/ → model/tiny/ (export_to_onnx) → core/src/dnn/ (load) → vmaf CLI.</li>\n<li>core/src/dnn/ → FFmpeg.</li>\n<li>Scenario 1, Train and ship: A model leaves Python as an ONNX file and is scored by the C runtime. ai/ trains the model and exports it to ONNX with its sidecar. vmaf_use_tiny_model() opens the committed model through ONNX Runtime. The CLI and the FFmpeg filters share that one runtime.</li>\n<li>Training depends on PyTorch and Lightning; the runtime depends only on ONNX Runtime.</li>\n<li>The boundary between them is the .onnx file and its sidecar JSON on disk.</li>\n</ul>\n</details>"
 }

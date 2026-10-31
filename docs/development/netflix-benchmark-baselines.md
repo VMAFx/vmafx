@@ -22,7 +22,7 @@ Netflix fixtures) and, at the end, what the last re-run measured.
     ADR-1192 gated regenerating the snapshot on two GPU defects found by the
     2026-09-06 re-run. Both are closed in [`docs/state.md`](../state.md): the
     `--threads` abort as `T-GPU-CLI-THREADS-CTX-SYNC-2026-09-06` and the
-    non-deterministic `libvmaf_cuda` filter as
+    historical non-deterministic CUDA FFmpeg filter as
     `T-CUDA-FFMPEG-FILTER-NONDETERMINISM-2026-09-06`
     ([ADR-1197](../adr/1197-gpu-threaded-flush-ownership.md),
     [ADR-1199](../adr/1199-cuda-picture-handover-barrier.md)). The snapshot
@@ -36,7 +36,7 @@ to confuse:
 
 | Script | Path exercised | Fixtures | Writes |
 | --- | --- | --- | --- |
-| `testdata/benchmark_netflix.py` | FFmpeg `libvmaf` / `libvmaf_cuda` / `libvmaf_sycl` filters | src01 576x324 (48f), checkerboard 1080p mild + heavy (3f each) | `testdata/netflix_benchmark_results.json` |
+| `testdata/benchmark_netflix.py` | FFmpeg `vmafx` (cpu, cuda, sycl) / `libvmaf` filters | src01 576x324 (48f), checkerboard 1080p mild + heavy (3f each) | `testdata/netflix_benchmark_results.json` |
 | `testdata/bench_all.sh` | the `vmaf` **CLI** binary | src01 576x324, src01 1080p 5f, BBB 4K 200f | nothing (prints a report) |
 | `testdata/bench_perf.py` | FFmpeg filters, portable/parameterised | BBB pairs | `testdata/perf_benchmark_results.json` (historical) |
 | `testdata/bench_backends.py` | the `vmaf` CLI, one exclusive `--backend` per run | per-backend cells; warmup then `--runs` repetitions, median with min/max and load average | JSON in the `perf_benchmark_results.json` key shape |
@@ -124,7 +124,7 @@ directly (see [Diffing a fresh run](#diffing-a-fresh-run)).
 `benchmark_netflix.py` drives an FFmpeg binary that links the fork's libvmaf and
 carries all three filters. The supported way to get one is the
 `vmaf-dev-mcp` container ([dev-mcp.md](dev-mcp.md)), which ships FFmpeg with
-`libvmaf`, `libvmaf_cuda` and `libvmaf_sycl` already wired up.
+`libvmaf` and `vmafx` (with CUDA and SYCL) already wired up.
 
 The YUV fixtures live in `python/test/resource/yuv/` and are gitignored, so
 they exist only in a full checkout. Point `VMAF_YUVDIR` at that checkout when
@@ -311,7 +311,7 @@ closed now (see the status note at the top of this page).
 | Blocker | `docs/state.md` id | Status |
 | --- | --- | --- |
 | `vmaf --threads N` aborts on every GPU backend | `T-GPU-CLI-THREADS-CTX-SYNC-2026-09-06` | Closed ([ADR-1197](../adr/1197-gpu-threaded-flush-ownership.md)) |
-| The `libvmaf_cuda` FFmpeg filter is non-deterministic | `T-CUDA-FFMPEG-FILTER-NONDETERMINISM-2026-09-06` | Closed (PR #1346, [ADR-1199](../adr/1199-cuda-picture-handover-barrier.md)) |
+| The historical CUDA FFmpeg filter is non-deterministic | `T-CUDA-FFMPEG-FILTER-NONDETERMINISM-2026-09-06` | Closed (PR #1346, [ADR-1199](../adr/1199-cuda-picture-handover-barrier.md)) |
 
 **`--threads N` abort.** `--gpumask=0` (CUDA) or `--sycl_device=0` (SYCL)
 combined with any `--threads` value emitted `feature
@@ -330,7 +330,7 @@ also dropped `--no_vulkan`, which current CLI builds reject as unrecognized
 (ADR-0726 removed the Vulkan backend); the flag was ignored rather than fatal,
 so it had gone unnoticed.
 
-**Non-deterministic `libvmaf_cuda` filter.** On the 576x324 48-frame pair, 10
+**Non-deterministic historical CUDA filter.** On the 576x324 48-frame pair, 10
 of 40 runs on `cd52f2670` and 8 of 40 runs on `5a080300e` returned a pooled
 score other than 76.667830. The bad runs differ in one or two individual frames
 (for example frame 1 = 0.0, or frame 3 = 50.834 where CPU says 81.925763), not
