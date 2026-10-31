@@ -360,3 +360,16 @@ class PythonBindingBitExactRuns(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_every_tox_leg_fetches_the_pq_fixture_first() -> None:
+    """A tox leg without the bundle asks Netflix for it and fails with HTTP 404."""
+    workflow = ROOT / ".github" / "workflows" / "libvmaf-build-matrix.yml"
+    text = workflow.read_text(encoding="utf-8")
+    fetch = text.index("name: Fetch the PQ fixture")
+    assert fetch < text.index("name: Run tox tests (ubuntu)")
+    assert fetch < text.index("name: Run tox tests (mac)")
+    assert text.index("name: Run tox tests (mac)") < text.index("name: Put away the PQ fixture")
+    assert text.index("name: Put away the PQ fixture") < text.index(
+        "name: Save Netflix vmaf_resource fixtures"
+    )
