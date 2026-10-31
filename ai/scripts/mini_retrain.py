@@ -438,6 +438,7 @@ def _fr_stage(
             *("--ship-threshold", str(prof["loso_min_plcc"])),
             *("--out-onnx", str(onnx), "--out-sidecar", str(side)),
             *("--registry", str(reg), "--metrics-out", str(metrics_json)),
+            *("--teacher", TEACHER),
         ),
         inputs=(comb, reg_seed),
         outputs=(onnx, side, metrics_json, reg),
