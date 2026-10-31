@@ -68,6 +68,44 @@ scripts/test/fetch-test-yuvs.sh src01_hrc00_576x324.yuv src01_hrc01_576x324.yuv
 
 A name that is not in the script's `FIXTURES` list is refused (exit 2).
 
+## Provisioning fixture bundles
+
+The script can also provision multi-file test bundles packaged as compressed
+archives:
+
+```bash
+scripts/test/fetch-test-yuvs.sh --bundle pq-sollevante-v1
+```
+
+The `pq-sollevante-v1` bundle packages an 8-frame 1080p real-motion PQ fixture
+derived from the open-content *Sol Levante* material, along with licensing and
+credit notices:
+
+- Destination: `python/test/resource/yuv/pq-sollevante-v1/`
+- Contents: `sollevante_ref_1920x1080_8f.yuv`, `sollevante_dis_1920x1080_8f.yuv`,
+  `CREDIT.txt`, and `LICENCE-CC-BY-4.0.txt`
+- Validation: downloads `pq-sollevante-v1.tar.zst` through the retrying download
+  policy, checks archive sha256 before extraction, inspects the table of
+  contents to reject any path traversal or absolute paths, and checks member
+  sha256 sums after extraction. Any mismatch or failed download exits non-zero
+  and leaves nothing in the target directory.
+- Caching: re-running against an already-extracted bundle verifies member hashes
+  and skips re-downloading.
+
+The asset is the prerelease
+[`fixtures-pq-sollevante-v1`](https://github.com/VMAFx/vmafx/releases/tag/fixtures-pq-sollevante-v1),
+which holds test data only. The golden job and `make test-netflix-golden` fetch
+it, and a failed download fails them. A plain
+`scripts/test/fetch-test-yuvs.sh` does not fetch bundles. CI keeps the bundle in
+its own cache entry, keyed on the sha that
+`scripts/test/fetch-test-yuvs.sh --print-bundle-sha` prints.
+
+Credit: *Sol Levante* (2020), Netflix Open Content, under
+Creative Commons Attribution 4.0 International. The VMAFx project cut 8 frames
+from 00:00:10, scaled them to 1920x1080 and encoded the distorted file with
+libx265 at CRF 28. `CREDIT.txt` in the bundle has the details. No endorsement by
+the licensor is implied.
+
 ## Download retries
 
 The fixture host sometimes fails for minutes: on 2026-10-10 it answered HTTP

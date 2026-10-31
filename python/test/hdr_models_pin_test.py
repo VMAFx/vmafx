@@ -5,6 +5,9 @@
 Pins captured from Netflix upstream vmaf CLI at 4611e47a7 (6 decimals).
 Tagged input: SDR content labelled PQ (src01_hrc00 / src01_hrc01, 16 frames).
 PQ input: material has no motion, so HFR equals non-HFR there (ref_dock / dis_dock, 1 frame).
+Sol Levante input: real PQ with motion, 8 frames at 1080p, from the fixtures-pq-sollevante-v1
+release. Those rows hold 17 digits and compare exactly, since CPU scores match upstream 4611e47a7
+bit for bit on this clip.
 """
 
 from __future__ import annotations
@@ -20,8 +23,34 @@ from vmaf import ExternalProgram
 from vmaf.config import VmafConfig
 
 
+def _pair_args(pair: tuple[str, str, int, int, str, int]) -> list[str]:
+    """Return the input flags for one (ref, dis, width, height, subsampling, frames) pair."""
+    ref, dis, width, height, subsampling, frames = pair
+    return [
+        "-r",
+        ref,
+        "-d",
+        dis,
+        "-w",
+        str(width),
+        "-h",
+        str(height),
+        "-p",
+        subsampling,
+        "-b",
+        "10",
+        "--frame_cnt",
+        str(frames),
+    ]
+
+
 def _input_args(kind: str) -> list[str]:
-    """Return command-line input flags for either pq or tagged material."""
+    """Return command-line input flags for the named material."""
+    if kind == "sollevante_pq":
+        bundle = ("yuv", "pq-sollevante-v1")
+        ref = VmafConfig.test_resource_path(*bundle, "sollevante_ref_1920x1080_8f.yuv")
+        dis = VmafConfig.test_resource_path(*bundle, "sollevante_dis_1920x1080_8f.yuv")
+        return [*_pair_args((ref, dis, 1920, 1080, "420", 8)), "--precision", "max"]
     if kind == "pq":
         ref = VmafConfig.test_resource_path(
             "yuv",
@@ -31,40 +60,10 @@ def _input_args(kind: str) -> list[str]:
             "yuv",
             "dis_dock-na-HDR_res1440_rate15p0_maxRate10000_bufSize20000_fps59p940_576x324_1frame.yuv",
         )
-        return [
-            "-r",
-            ref,
-            "-d",
-            dis,
-            "-w",
-            "576",
-            "-h",
-            "324",
-            "-p",
-            "420",
-            "-b",
-            "10",
-            "--frame_cnt",
-            "1",
-        ]
+        return _pair_args((ref, dis, 576, 324, "420", 1))
     ref = VmafConfig.test_resource_path("yuv", "src01_hrc00_576x324.yuv422p10le.yuv")
     dis = VmafConfig.test_resource_path("yuv", "src01_hrc01_576x324.yuv422p10le.yuv")
-    return [
-        "-r",
-        ref,
-        "-d",
-        dis,
-        "-w",
-        "576",
-        "-h",
-        "324",
-        "-p",
-        "422",
-        "-b",
-        "10",
-        "--frame_cnt",
-        "16",
-    ]
+    return _pair_args((ref, dis, 576, 324, "422", 16))
 
 
 def _run_cli(model: str, kind: str, out_path: str) -> subprocess.CompletedProcess[str]:
@@ -107,7 +106,7 @@ class HdrModelsPinTest(unittest.TestCase):
         self.assertEqual(len(versions), 8, versions)
         for version in versions:
             stem = version.replace("hdr_vmaf_v1.1.8", "test_hdr_v118")
-            for kind in ("tagged", "pq"):
+            for kind in ("tagged", "pq", "sollevante_pq"):
                 self.assertTrue(hasattr(self, f"{stem}_{kind}"), f"{version} has no {kind} pin")
 
     def _assert_pin(self, model: str, kind: str, expected_pin: float) -> None:
@@ -124,7 +123,10 @@ class HdrModelsPinTest(unittest.TestCase):
             with open(out_path, encoding="utf-8") as f:
                 data = json.load(f)
             mean_score = data["pooled_metrics"]["vmaf"]["mean"]
-            self.assertAlmostEqual(mean_score, expected_pin, places=5)
+            if kind == "sollevante_pq":
+                self.assertEqual(mean_score, expected_pin)
+            else:
+                self.assertAlmostEqual(mean_score, expected_pin, places=5)
 
     def test_hdr_v118_1d5h_2160_tagged(self) -> None:
         self._assert_pin("hdr_vmaf_v1.1.8_1d5h_2160", "tagged", 43.06662)
@@ -173,6 +175,30 @@ class HdrModelsPinTest(unittest.TestCase):
 
     def test_hdr_v118_hfr_5d0h_pq(self) -> None:
         self._assert_pin("hdr_vmaf_v1.1.8_hfr_5d0h", "pq", 96.720935)
+
+    def test_hdr_v118_1d5h_2160_sollevante_pq(self) -> None:
+        self._assert_pin("hdr_vmaf_v1.1.8_1d5h_2160", "sollevante_pq", 43.527062125194355)
+
+    def test_hdr_v118_3d0h_sollevante_pq(self) -> None:
+        self._assert_pin("hdr_vmaf_v1.1.8_3d0h", "sollevante_pq", 64.13634599393518)
+
+    def test_hdr_v118_3d0h_2160_sollevante_pq(self) -> None:
+        self._assert_pin("hdr_vmaf_v1.1.8_3d0h_2160", "sollevante_pq", 63.73667901118218)
+
+    def test_hdr_v118_5d0h_sollevante_pq(self) -> None:
+        self._assert_pin("hdr_vmaf_v1.1.8_5d0h", "sollevante_pq", 72.13416560402298)
+
+    def test_hdr_v118_hfr_1d5h_2160_sollevante_pq(self) -> None:
+        self._assert_pin("hdr_vmaf_v1.1.8_hfr_1d5h_2160", "sollevante_pq", 46.4093155397766)
+
+    def test_hdr_v118_hfr_3d0h_sollevante_pq(self) -> None:
+        self._assert_pin("hdr_vmaf_v1.1.8_hfr_3d0h", "sollevante_pq", 67.18719246562176)
+
+    def test_hdr_v118_hfr_3d0h_2160_sollevante_pq(self) -> None:
+        self._assert_pin("hdr_vmaf_v1.1.8_hfr_3d0h_2160", "sollevante_pq", 66.55809929004137)
+
+    def test_hdr_v118_hfr_5d0h_sollevante_pq(self) -> None:
+        self._assert_pin("hdr_vmaf_v1.1.8_hfr_5d0h", "sollevante_pq", 75.08676439039081)
 
 
 if __name__ == "__main__":
