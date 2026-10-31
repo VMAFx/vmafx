@@ -211,5 +211,6 @@ column mirrors that array.
 | `windows-tester-bundle.yml` | new in ADR-1687 | `Windows Tester Zip` | 18 | Yes |
 | `windows-tester-bundle.yml` | `Validate source` (renamed in ADR-1687) | `Validate Windows zip source` | 27 | No |
 | `windows-tester-bundle.yml` | new in ADR-1687 | `Plan Windows zip impact` | 23 | No |
+| `fixture-release-provenance.yml` | new | `Attest a fixture release` | 24 | No |
 | `release-dry-run.yml` | new in ADR-1687 | `Release Dry Run` | 15 | Yes |
 | `required-aggregator.yml` | `Required Checks Aggregator` | `Required Checks Aggregator` | 26 | Status |
