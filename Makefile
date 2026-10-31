@@ -690,6 +690,7 @@ GOLDEN_PYTEST_ARGS := \
 	-v -m "not slow" --tb=short
 test-netflix-golden: build-golden
 	@echo "=== Netflix CPU golden-data gate (D24) ==="
+	bash scripts/test/fetch-test-yuvs.sh --bundle pq-sollevante-v1
 	@python3 -m pytest --version >/dev/null 2>&1 || { \
 	    echo "error: pytest not found — this gate cannot run without it."; \
 	    echo "       install: .venv/bin/pip install pytest (see docs/development/languages.md)"; exit 1; }
@@ -725,6 +726,7 @@ test-affected:
 QEMU_LD_PREFIX ?= $(AARCH64_SYSROOT)
 test-netflix-golden-arm64: build-golden-arm64
 	@echo "=== Netflix CPU golden-data gate, aarch64 $(GOLDEN_ARM64_CC) under qemu-user ==="
+	bash scripts/test/fetch-test-yuvs.sh --bundle pq-sollevante-v1
 	@python3 -m pytest --version >/dev/null 2>&1 || { \
 	    echo "error: pytest not found — this gate cannot run without it."; \
 	    echo "       install: .venv/bin/pip install pytest (see docs/development/languages.md)"; exit 1; }

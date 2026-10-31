@@ -1,0 +1,51 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+name: PQ fixture
+description: >-
+  Puts the pq-sollevante-v1 bundle under python/test/resource/yuv and takes it
+  out again, so it stays in its own cache entry and out of the shared resource
+  cache. A failed download fails the job.
+
+inputs:
+  phase:
+    description: "'get' before the tests, 'finish' after them."
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Read the fixture sha
+      id: sha
+      shell: bash
+      run: echo "sha=$(bash scripts/test/fetch-test-yuvs.sh --print-bundle-sha)" >> "$GITHUB_OUTPUT"
+
+    - name: Restore the fixture
+      id: restore
+      if: inputs.phase == 'get'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+      with:
+        path: python/test/resource/yuv/pq-sollevante-v1
+        key: vmaf-pq-fixture-${{ steps.sha.outputs.sha }}
+
+    - name: Remember the cache result for the finish phase
+      if: inputs.phase == 'get'
+      shell: bash
+      run: echo "PQ_FIXTURE_CACHE_HIT=${{ steps.restore.outputs.cache-hit }}" >> "$GITHUB_ENV"
+
+    # The script checks the member hashes on a cache hit too.
+    - name: Fetch the fixture if missing
+      if: inputs.phase == 'get'
+      shell: bash
+      run: bash scripts/test/fetch-test-yuvs.sh --bundle pq-sollevante-v1
+
+    - name: Save the fixture
+      if: inputs.phase == 'finish' && env.PQ_FIXTURE_CACHE_HIT != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+      with:
+        path: python/test/resource/yuv/pq-sollevante-v1
+        key: vmaf-pq-fixture-${{ steps.sha.outputs.sha }}
+
+    - name: Keep the fixture out of the shared resource cache
+      if: inputs.phase == 'finish'
+      shell: bash
+      run: rm -rf python/test/resource/yuv/pq-sollevante-v1

@@ -121,6 +121,12 @@ jobs:
         if: steps.impact.outputs.golden_harness == 'true'
         run: bash scripts/ci/prune-corrupt-fixtures.sh --restore-tracked python/test/resource
 
+      - name: Get the PQ fixture
+        if: steps.impact.outputs.golden_harness == 'true'
+        uses: ./.github/actions/pq-fixture
+        with:
+          phase: get
+
       - name: Run Netflix golden normal pair
         if: steps.impact.outputs.golden_harness == 'true'
         env:
@@ -156,6 +162,12 @@ jobs:
             --junit "${{ runner.temp }}/hdr_golden_junit.xml" \
             --required-file "hdr_models_pin_test" \
             --required-file "vmaf_v1_quality_runner_test"
+
+      - name: Finish with the PQ fixture
+        if: steps.impact.outputs.golden_harness == 'true'
+        uses: ./.github/actions/pq-fixture
+        with:
+          phase: finish
 
       - name: Save Netflix vmaf_resource fixtures
         if: ${{ success() && (steps.impact.outputs.golden_harness == 'true') && steps.fixtures.outputs.cache-hit != 'true' }}
