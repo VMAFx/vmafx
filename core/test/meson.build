@@ -307,11 +307,13 @@ test('test_cuda_parity_gate_default_run',
 
 # Issue #2144: every built-in vmaf_v1.0.16* model and the default model score
 # the 576x324 src01 pair (8, 10 and 12 bits 4:2:0, 10 bits 4:2:2) and 16
-# frames of the 3840x2160 testdata/bbb pair with every extractor on the device
-# (`feature_backends` lists no CPU extractor) and with the CPU run's bits at
-# --precision max. One test per backend this build enables; each skips (77)
-# without its device or the fixtures. The self-test runs the comparison on
-# synthetic receipts. Device-free.
+# frames of the 3840x2160 testdata/bbb pair; every built-in hdr_vmaf_v1.1.8*
+# model scores the 1-frame dock PQ pair and 16-frame tagged pair with color tags,
+# with every extractor on the device (`feature_backends` lists no CPU extractor)
+# and with the CPU run's bits at --precision max. One test per backend this build
+# enables; each skips (77) without its device, or after its other rows when an
+# untracked SDR pair is absent; an absent HDR pair fails. The self-test runs
+# the comparison on synthetic receipts. Device-free.
 test('test_gpu_v1_models_no_fallback_selftest',
     import('python').find_installation(),
     args : [files('test_gpu_v1_models_no_fallback.py'), '--self-test'],
@@ -329,6 +331,10 @@ if get_option('enable_tools')
     if get_option('enable_hip') and get_option('enable_hipcc')
         v1_models_backends += ['hip']
     endif
+    metal_opt = get_option('enable_metal')
+    if metal_opt.enabled() or (metal_opt.auto() and host_machine.system() == 'darwin')
+        v1_models_backends += ['metal']
+    endif
     foreach v1_backend : v1_models_backends
         test('test_' + v1_backend + '_v1_models_no_fallback',
             import('python').find_installation(),
@@ -337,7 +343,7 @@ if get_option('enable_tools')
             depends : [vmaf],
             suite : ['slow', 'gpu', v1_backend],
             is_parallel : false,
-            timeout : 900,
+            timeout : 1200,
         )
     endforeach
 endif
