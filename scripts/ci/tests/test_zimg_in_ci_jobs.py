@@ -6,8 +6,9 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import Any
 
-import yaml
+import yaml  # type: ignore[import-untyped]
 
 REPO = Path(__file__).resolve().parents[3]
 WORKFLOWS = REPO / ".github" / "workflows"
@@ -27,7 +28,7 @@ RUNNER_IMAGE_JOBS = {
 }
 
 
-def step_text(step: dict) -> str:
+def step_text(step: dict[str, Any]) -> str:
     return "\n".join(str(step.get(key, "")) for key in ("run", "uses", "with"))
 
 
@@ -55,7 +56,7 @@ def jobs_without_zimg() -> list[tuple[str, str]]:
     return missing
 
 
-def apt_steps_without_zimg(steps: list[dict]) -> list[str]:
+def apt_steps_without_zimg(steps: list[dict[str, Any]]) -> list[str]:
     return [
         str(step.get("name"))
         for step in steps
