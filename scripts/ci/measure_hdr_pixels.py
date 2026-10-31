@@ -125,7 +125,7 @@ def dump_one(
 ) -> dict[str, list[dict[str, float]]]:
     """Score one model on x86-64 with the shim attached and keep its converted pictures."""
     work = args.dir
-    env = {"LD_PRELOAD": str(args.shim), "ZDUMP": str(work / "x")}
+    env = {"LD_PRELOAD": str(args.shim.resolve()), "ZDUMP": str(work / "x")}
     for name in ("x.0.yuv", "x.1.yuv"):
         (work / name).unlink(missing_ok=True)
     full = score(args.cli, input_shape(DOCK, work), model, work / "o.json", env)
