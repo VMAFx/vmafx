@@ -5014,6 +5014,16 @@ test_integer_adm_tiny_frames = executable('test_integer_adm_tiny_frames',
 test('test_integer_adm_tiny_frames', test_integer_adm_tiny_frames,
     suite : ['fast'])
 
+test_integer_adm_buffer_alloc = executable('test_integer_adm_buffer_alloc',
+    ['test.c', 'test_integer_adm_buffer_alloc.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
+    link_with : vmaf_test_link,
+    dependencies : [pthread_dependency, math_lib],
+    kwargs : test_link_kwargs,
+)
+test('test_integer_adm_buffer_alloc', test_integer_adm_buffer_alloc,
+    suite : ['fast'])
+
 # T-CUDA-HIP-ADM-DWT-VERT-TINY-HEIGHT-OOB-2026-09-29 / ADR-1374: replays the
 # rows the cuda ADM scale-0 vertical DWT loads for every plane height, from the
 # header the kernel and its launch share. Device-free, so it runs everywhere.
