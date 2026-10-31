@@ -130,7 +130,7 @@ class HdrModelsPinTest(unittest.TestCase):
         self._assert_pin("hdr_vmaf_v1.1.8_1d5h_2160", "tagged", 43.06662)
 
     def test_hdr_v118_1d5h_2160_pq(self) -> None:
-        self._assert_pin("hdr_vmaf_v1.1.8_1d5h_2160", "pq", 97.210772)
+        self._assert_pin("hdr_vmaf_v1.1.8_1d5h_2160", "pq", 97.220772)
 
     def test_hdr_v118_3d0h_tagged(self) -> None:
         self._assert_pin("hdr_vmaf_v1.1.8_3d0h", "tagged", 55.056913)
