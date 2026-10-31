@@ -23,7 +23,7 @@
     "Windows MSVC+CUDA (full)",
     "Windows ARM64 MSVC",
     "Ubuntu gcc",
-    "Ubuntu gcc zimg",
+    "Ubuntu gcc no zimg",
     "Ubuntu clang",
     "Ubuntu ARM clang",
     "Ubuntu gcc static",

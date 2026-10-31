@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: EUPL-1.2
 """End-to-end dispatch tests for saliency-aware ROI encoding.
 
-One test per target encoder (x265 / SVT-AV1 / libaom / libvvenc) verifying that
+Tests for supported encoders (x265 / SVT-AV1 / libaom) and refused libvvenc verify that
 ``saliency_aware_encode`` produces the correct per-codec argv when called
 with each encoder.  ONNX inference and the encode runner are mocked so no
 ffmpeg or onnxruntime install is required.
@@ -118,7 +118,7 @@ def _capture_runner(tmp_path: Path) -> tuple[dict, object]:
 
 def test_saliency_dispatch_table_contains_roi_targets():
     """_SALIENCY_DISPATCH must wire every saliency ROI target."""
-    for enc in ("libx264", "libaom-av1", "libx265", "libsvtav1", "libvvenc"):
+    for enc in ("libx264", "libaom-av1", "libx265", "libsvtav1"):
         assert enc in _SALIENCY_DISPATCH, f"{enc!r} missing from _SALIENCY_DISPATCH"
 
 
@@ -291,12 +291,12 @@ def test_saliency_aware_encode_libaom_cleans_ephemeral_qpfile(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# SVT-AV1 — qpmap file via -svtav1-params
+# SVT-AV1 — x264-style qpfile via patched -qpfile bridge
 # ---------------------------------------------------------------------------
 
 
 def test_saliency_aware_encode_svtav1_emits_qp_file(tmp_path):
-    """SVT-AV1 dispatch: ``-svtav1-params qp-file=…`` appears in the argv."""
+    """SVT-AV1 dispatch uses the patched top-level ``-qpfile`` option."""
     request, _ = _make_request(tmp_path, "libsvtav1")
     fake_model = tmp_path / "saliency_student_v1.onnx"
     fake_model.write_bytes(b"\x00")
@@ -314,16 +314,16 @@ def test_saliency_aware_encode_svtav1_emits_qp_file(tmp_path):
 
     assert result.exit_status == 0
     cmd = captured["cmd"]
-    assert "-svtav1-params" in cmd, "expected -svtav1-params flag in ffmpeg argv"
-    svt_val_idx = cmd.index("-svtav1-params") + 1
-    assert cmd[svt_val_idx].startswith(
-        "qp-file="
-    ), f"expected qp-file=… value, got {cmd[svt_val_idx]!r}"
+    assert "-qpfile" in cmd
+    assert "-svtav1-params" not in cmd
+    qpfile = Path(cmd[cmd.index("-qpfile") + 1])
+    assert qpfile == request.output.with_suffix(".svtav1-qpfile.txt")
+    assert qpfile.read_text(encoding="ascii").startswith("0 I 0\n")
 
 
-def test_saliency_aware_encode_svtav1_qpmap_file_has_64x64_granularity(tmp_path):
-    """The written qpmap file should use 64×64 super-block grid rows."""
-    # 128×128 frame → 2×2 super-block grid at 64×64.
+def test_saliency_aware_encode_svtav1_qpfile_has_16x16_granularity(tmp_path):
+    """The bridge consumes frame headers and a 16×16 macroblock grid."""
+    # 128×128 frame → 8×8 macroblock grid at 16×16.
     request, _ = _make_request(tmp_path, "libsvtav1", width=128, height=128)
     fake_model = tmp_path / "saliency_student_v1.onnx"
     fake_model.write_bytes(b"\x00")
@@ -338,16 +338,10 @@ def test_saliency_aware_encode_svtav1_qpmap_file_has_64x64_granularity(tmp_path)
         session_factory=_session_factory_for(128, 128),
     )
 
-    svt_val = captured["cmd"][captured["cmd"].index("-svtav1-params") + 1]
-    qpmap_path = Path(svt_val.split("qp-file=", 1)[1])
-    assert qpmap_path.exists()
-    text = qpmap_path.read_text(encoding="ascii")
-    # Non-blank lines are super-block rows; each should have 2 space-separated values.
-    data_lines = [ln for ln in text.splitlines() if ln.strip()]
-    assert len(data_lines) == 2, f"expected 2 SB rows (128/64), got {len(data_lines)}"
-    for line in data_lines:
-        cols = line.split()
-        assert len(cols) == 2, f"expected 2 SB columns (128/64), got {len(cols)}: {line!r}"
+    qpfile = Path(captured["cmd"][captured["cmd"].index("-qpfile") + 1])
+    lines = qpfile.read_text(encoding="ascii").splitlines()
+    assert lines[0] == "0 I 0"
+    assert lines[1:] == ["-2 -2 -2 -2 -2 -2 -2 -2"] * 8
 
 
 def test_saliency_aware_encode_svtav1_does_not_emit_x265_params(tmp_path):
@@ -371,81 +365,50 @@ def test_saliency_aware_encode_svtav1_does_not_emit_x265_params(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# libvvenc — ROI CSV via -vvenc-params ROIFile
+# libvvenc — no measured ROI channel (ADR-3386)
 # ---------------------------------------------------------------------------
 
 
-def test_saliency_aware_encode_vvenc_emits_roi_file(tmp_path):
-    """VVenC dispatch: ``-vvenc-params ROIFile=…`` appears in the argv."""
+def test_saliency_aware_encode_vvenc_refused(tmp_path, monkeypatch):
+    """Refuse libvvenc before invoking an encoder or writing an ROI sidecar."""
+    monkeypatch.delenv("VMAFTUNE_SALIENCY_FALLBACK_OK", raising=False)
     request, _ = _make_request(tmp_path, "libvvenc")
     fake_model = tmp_path / "saliency_student_v1.onnx"
     fake_model.write_bytes(b"\x00")
     captured, runner = _capture_runner(tmp_path)
 
-    cfg = SaliencyConfig(foreground_offset=-4, frame_samples=2, persist_qpfile=True)
-    result = saliency_aware_encode(
-        request,
-        duration_frames=4,
-        model_path=fake_model,
-        config=cfg,
-        encode_runner=runner,
-        session_factory=_session_factory_for(128, 128),
-    )
-
-    assert result.exit_status == 0
-    cmd = captured["cmd"]
-    assert "-vvenc-params" in cmd, "expected -vvenc-params flag in ffmpeg argv"
-    vvenc_val_idx = cmd.index("-vvenc-params") + 1
-    assert cmd[vvenc_val_idx].startswith(
-        "ROIFile="
-    ), f"expected ROIFile=… value, got {cmd[vvenc_val_idx]!r}"
+    assert "libvvenc" not in _SALIENCY_DISPATCH
+    with pytest.raises(SaliencyUnsupportedEncoderError, match="libvvenc"):
+        saliency_aware_encode(
+            request,
+            duration_frames=1,
+            model_path=fake_model,
+            config=SaliencyConfig(frame_samples=1, persist_qpfile=True),
+            encode_runner=runner,
+            session_factory=_session_factory_for(128, 128),
+        )
+    assert captured == {}
+    assert not request.output.with_suffix(".vvenc-roi.csv").exists()
 
 
-def test_saliency_aware_encode_vvenc_roi_csv_is_comma_separated(tmp_path):
-    """The written VVenC ROI CSV must use commas, not spaces."""
-    # 128×128 frame → 2×2 CTU grid at 64×64.
-    request, _ = _make_request(tmp_path, "libvvenc", width=128, height=128)
+@pytest.mark.parametrize("size", [16, 128])
+def test_saliency_aware_encode_svtav1_ephemeral_qpfile_removed(tmp_path, size):
+    """The patched bridge accepts MB-sized input; temporary files are cleaned."""
+    request, _ = _make_request(tmp_path, "libsvtav1", width=size, height=size)
     fake_model = tmp_path / "saliency_student_v1.onnx"
     fake_model.write_bytes(b"\x00")
     captured, runner = _capture_runner(tmp_path)
-
     saliency_aware_encode(
         request,
         duration_frames=1,
         model_path=fake_model,
-        config=SaliencyConfig(frame_samples=1, persist_qpfile=True),
+        config=SaliencyConfig(frame_samples=1),
         encode_runner=runner,
-        session_factory=_session_factory_for(128, 128),
+        session_factory=_session_factory_for(max(size, 32), max(size, 32)),
     )
-
-    vvenc_val = captured["cmd"][captured["cmd"].index("-vvenc-params") + 1]
-    roi_path = Path(vvenc_val.split("ROIFile=", 1)[1])
-    assert roi_path.exists()
-    text = roi_path.read_text(encoding="ascii")
-    data_lines = [ln for ln in text.splitlines() if ln.strip()]
-    assert len(data_lines) == 2, f"expected 2 CTU rows (128/64), got {len(data_lines)}"
-    for line in data_lines:
-        assert "," in line, f"VVenC ROI row must be comma-separated, got: {line!r}"
-
-
-def test_saliency_aware_encode_vvenc_does_not_emit_x265_or_svt_params(tmp_path):
-    """VVenC path must not accidentally inject x264/x265/svtav1 params."""
-    request, _ = _make_request(tmp_path, "libvvenc")
-    fake_model = tmp_path / "saliency_student_v1.onnx"
-    fake_model.write_bytes(b"\x00")
-    captured, runner = _capture_runner(tmp_path)
-
-    saliency_aware_encode(
-        request,
-        duration_frames=1,
-        model_path=fake_model,
-        config=SaliencyConfig(frame_samples=1, persist_qpfile=True),
-        encode_runner=runner,
-        session_factory=_session_factory_for(128, 128),
-    )
-
-    for forbidden in ("-x264-params", "-x265-params", "-svtav1-params"):
-        assert forbidden not in captured["cmd"], f"unexpected flag {forbidden!r} in vvenc argv"
+    qpfile = Path(captured["cmd"][captured["cmd"].index("-qpfile") + 1])
+    assert qpfile.name.endswith(".svtav1-qpfile.txt")
+    assert not qpfile.exists()
 
 
 # ---------------------------------------------------------------------------
@@ -476,7 +439,13 @@ def test_saliency_aware_encode_unknown_encoder_falls_back_to_plain(tmp_path):
     )
 
     # None of the saliency-specific argv flags should appear.
-    for flag in ("-qpfile", "-x264-params", "-x265-params", "-svtav1-params", "-vvenc-params"):
+    for flag in (
+        "-qpfile",
+        "-x264-params",
+        "-x265-params",
+        "-svtav1-params",
+        "-vvenc-params",
+    ):
         assert flag not in captured.get("cmd", [])
 
 
@@ -551,5 +520,11 @@ def test_saliency_aware_encode_unsupported_encoder_env_override_allows_fallback(
     )
 
     # Encoder argv must contain no ROI-specific flags.
-    for flag in ("-qpfile", "-x264-params", "-x265-params", "-svtav1-params", "-vvenc-params"):
+    for flag in (
+        "-qpfile",
+        "-x264-params",
+        "-x265-params",
+        "-svtav1-params",
+        "-vvenc-params",
+    ):
         assert flag not in captured.get("cmd", [])

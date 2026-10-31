@@ -10,11 +10,19 @@ groups: each is rendered, and each validation rule refuses its planted defect.
 
 from __future__ import annotations
 
+import contextlib
 import copy
+import io
+import os
+import shutil
+import tempfile
 import unittest
+import zipfile
+from pathlib import Path
 from typing import Any
 
-from support import document, entry, fixture
+import setuptools.build_meta as backend  # type: ignore[import-untyped]  # no stubs in the hook env
+from support import ROOT, document, entry, fixture
 from vmafx_api import emit_c, emit_python
 from vmafx_api.headers import plan
 from vmafx_api.loader import parse
@@ -203,10 +211,6 @@ class PythonRecordToCTest(unittest.TestCase):
         self.assertNotIn("def to_c", record)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class PythonMethodNameTest(unittest.TestCase):
     """Two functions on one Python class with one method name: the later
     definition hid the earlier one (vmafx_context_feature_provenance behind
@@ -231,3 +235,110 @@ class PythonMethodNameTest(unittest.TestCase):
             entry(doc["functions"], self.NAME)["python"] = bad
             with self.assertRaises(DefinitionError):
                 parse(doc)
+
+
+def _refuse_compiled_wheel_entries(entries: list[str]) -> None:
+    """Refuse a pure-Python wheel that contains any compiled native library."""
+    compiled = [e for e in entries if e.endswith((".so", ".pyd", ".dylib"))]
+    if compiled:
+        raise ValueError(f"wheel contains compiled code: {', '.join(compiled)}")
+
+
+class PythonWrapCoverageTest(unittest.TestCase):
+    """Every function in core/api/vmafx.toml is wrapped or in NOT_WRAPPED (#2434)."""
+
+    # Go and Rust currently wrap only the 23 prototype scalar/context functions
+    # (`context_methods(api)` + `library_functions(api)` + create/destroy/libvmaf_handle
+    # + 5 error functions). Python additionally wraps all 100 remaining host-data
+    # and handle functions across Options, Device, Frame, Fence, FramePool,
+    # FrameConverter, Model, ModelSet, ReportFile, Window, WindowClock, DnnSession,
+    # McpServer, and Context (`HANDWRITTEN_WRAPPED`).
+    PYTHON_EXTRA_WRAPPED = emit_python.HANDWRITTEN_WRAPPED - {
+        "vmafx_error_message",
+        "vmafx_error_subject",
+        "vmafx_error_errno",
+        "vmafx_error_free",
+        "vmafx_context_create",
+        "vmafx_context_destroy",
+        "vmafx_context_libvmaf_handle",
+    }
+
+    def test_every_definition_function_is_wrapped_or_in_not_wrapped(self) -> None:
+        api = parse(document())
+        emit_python.check_coverage(api)
+        wrapped = set(emit_python.wrapped_functions(api))
+        skipped = set(emit_python.not_wrapped(api))
+        all_names = [fn.name for fn in api.functions]
+        self.assertEqual(wrapped & skipped, set())
+        self.assertEqual(wrapped | skipped, set(all_names))
+        self.assertEqual(
+            list(emit_python.not_wrapped(api)),
+            [n for n in all_names if n in skipped],
+        )
+        text = emit_python.module_text(api)
+        for name in wrapped:
+            self.assertIn(f".{name}(", text, f"{name} declared wrapped but not called in _api.py")
+
+    def test_not_wrapped_matches_go_and_rust_plus_documented_python_extras(self) -> None:
+        api = parse(document())
+        go_rust_wrapped = (
+            {fn.name for fn in emit_python.context_methods(api)}
+            | {fn.name for fn in emit_python.library_functions(api)}
+            | {
+                "vmafx_error_message",
+                "vmafx_error_subject",
+                "vmafx_error_errno",
+                "vmafx_error_free",
+                "vmafx_context_create",
+                "vmafx_context_destroy",
+                "vmafx_context_libvmaf_handle",
+            }
+        )
+        go_rust_not_wrapped = {fn.name for fn in api.functions} - go_rust_wrapped
+        py_not_wrapped = set(emit_python.not_wrapped(api))
+        self.assertTrue(py_not_wrapped.issubset(go_rust_not_wrapped))
+        self.assertEqual(go_rust_not_wrapped - py_not_wrapped, self.PYTHON_EXTRA_WRAPPED)
+
+    def test_planted_unaccounted_function_is_refused(self) -> None:
+        doc = document()
+        planted = copy.deepcopy(entry(doc["functions"], "vmafx_frame_import"))
+        planted["name"] = "vmafx_frame_import_planted"
+        doc["functions"].append(planted)
+        with self.assertRaisesRegex(DefinitionError, "vmafx_frame_import_planted"):
+            emit_python.check_coverage(parse(doc))
+
+
+class PythonPackagingTest(unittest.TestCase):
+    """bindings/python builds a pure py3-none-any wheel with no compiled artifacts (#2434)."""
+
+    def test_wheel_is_py3_none_any_without_compiled_objects(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            src_dir = Path(tmp) / "pkg"
+            out_dir = Path(tmp) / "dist"
+            out_dir.mkdir()
+            shutil.copytree(ROOT / "bindings" / "python", src_dir)
+            old_cwd = Path.cwd()
+            os.chdir(src_dir)
+            try:
+                with (
+                    contextlib.redirect_stdout(io.StringIO()),
+                    contextlib.redirect_stderr(io.StringIO()),
+                ):
+                    wheel_name = backend.build_wheel(str(out_dir))
+            finally:
+                os.chdir(old_cwd)
+            self.assertTrue(wheel_name.endswith("-py3-none-any.whl"), wheel_name)
+            with zipfile.ZipFile(out_dir / wheel_name) as archive:
+                entries = archive.namelist()
+            self.assertIn("vmafx/_api.py", entries)
+            self.assertIn("vmafx/__init__.py", entries)
+            self.assertIn("vmafx/py.typed", entries)
+            _refuse_compiled_wheel_entries(entries)
+
+    def test_planted_shared_object_in_wheel_is_refused(self) -> None:
+        with self.assertRaisesRegex(ValueError, "vmafx/_planted.so"):
+            _refuse_compiled_wheel_entries(["vmafx/__init__.py", "vmafx/_planted.so"])
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -28,6 +28,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -101,6 +102,53 @@ func writeDialableNodeEnv(t *testing.T) string {
 	return grpcAddr
 }
 
+// startAppWithRetry boots an fx graph, retrying up to 5 times if Start fails
+// with "address already in use" by invoking setEnv before each attempt to pick
+// fresh ports.
+func startAppWithRetry(tb fxtest.TB, setEnv func(), opts ...fx.Option) (*fxtest.App, error) {
+	var lastErr error
+	for attempt := 1; attempt <= 5; attempt++ {
+		if setEnv != nil {
+			setEnv()
+		}
+		app := fxtest.New(tb, opts...)
+		ctx, cancel := context.WithTimeout(context.Background(), app.StartTimeout())
+		err := app.Start(ctx)
+		cancel()
+		if err == nil {
+			return app, nil
+		}
+		lastErr = err
+		if !strings.Contains(err.Error(), "address already in use") {
+			return nil, err
+		}
+	}
+	return nil, fmt.Errorf("start app after 5 attempts: %w", lastErr)
+}
+
+// startDialableNodeApp boots productionGraph() with fresh dialable addresses,
+// retrying up to 5 times if binding fails with "address already in use".
+func startDialableNodeApp(t *testing.T, opts ...fx.Option) *fxtest.App {
+	t.Helper()
+	allOpts := append([]fx.Option{productionGraph()}, opts...)
+	app, err := startAppWithRetry(t, func() { writeDialableNodeEnv(t) }, allOpts...)
+	if err != nil {
+		t.Fatalf("start dialable node app: %v", err)
+	}
+	return app
+}
+
+// startNodeAppWithRetry boots opts with custom environment preparation, retrying
+// up to 5 times if binding fails with "address already in use".
+func startNodeAppWithRetry(t *testing.T, setEnv func(), opts ...fx.Option) *fxtest.App {
+	t.Helper()
+	app, err := startAppWithRetry(t, setEnv, opts...)
+	if err != nil {
+		t.Fatalf("start node app: %v", err)
+	}
+	return app
+}
+
 // TestWriteNodeEnvUsesKernelPorts asserts that writeNodeEnv configures
 // kernel-assigned ephemeral ports (127.0.0.1:0), whereas writeDialableNodeEnv
 // sets nonzero dialable loopback ports.
@@ -168,11 +216,9 @@ func TestAppGraphValidates(t *testing.T) {
 // productionGraph, fx's laziness leaves the server unconstructed and the dial
 // fails.
 func TestAppStartsAndBinds(t *testing.T) {
-	addr := writeDialableNodeEnv(t)
-
-	app := fxtest.New(t, productionGraph())
-	app.RequireStart()
+	app := startDialableNodeApp(t)
 	defer app.RequireStop()
+	addr := os.Getenv("VMAFX_GRPC_LISTEN")
 
 	conn, err := googlegrpc.NewClient(addr, googlegrpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
@@ -189,6 +235,93 @@ func TestAppStartsAndBinds(t *testing.T) {
 	}
 	if !resp.GetOk() {
 		t.Errorf("Health.ok = false, want true — listener bound but service mis-wired")
+	}
+}
+
+// TestDialableNodeAppRetriesAddressInUse verifies that a port collision on
+// start triggers a retry with fresh ports and succeeds.
+func TestDialableNodeAppRetriesAddressInUse(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	occupiedAddr := ln.Addr().String()
+
+	attempt := 0
+	app, err := startAppWithRetry(t, func() {
+		attempt++
+		writeDialableNodeEnv(t)
+		switch attempt {
+		case 1:
+			t.Setenv("VMAFX_HTTP_ADDR", occupiedAddr)
+		case 2:
+			_ = ln.Close()
+		}
+	}, productionGraph())
+	if err != nil {
+		_ = ln.Close()
+		t.Fatalf("expected retry to succeed, got error: %v", err)
+	}
+	defer app.RequireStop()
+
+	if attempt != 2 {
+		t.Errorf("expected 2 attempts, got %d", attempt)
+	}
+}
+
+// TestDialableNodeAppPlantedExhaustionFails is the planted negative case:
+// when the address collision persists across all attempts, startAppWithRetry
+// exhausts attempts and fails with the last error.
+func TestDialableNodeAppPlantedExhaustionFails(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer func() { _ = ln.Close() }()
+	occupiedAddr := ln.Addr().String()
+
+	attempts := 0
+	app, err := startAppWithRetry(t, func() {
+		attempts++
+		writeDialableNodeEnv(t)
+		t.Setenv("VMAFX_HTTP_ADDR", occupiedAddr)
+	}, productionGraph())
+	if app != nil {
+		defer app.RequireStop()
+		t.Fatal("expected failure on exhausted attempts, got running app")
+	}
+	if err == nil {
+		t.Fatal("expected error on exhausted attempts, got nil")
+	}
+	if !strings.Contains(err.Error(), "after 5 attempts") {
+		t.Errorf("error %q does not mention 5 attempts", err)
+	}
+	if !strings.Contains(err.Error(), "address already in use") {
+		t.Errorf("error %q does not contain 'address already in use'", err)
+	}
+}
+
+// TestDialableNodeAppNonRetryableErrorFailsImmediately asserts that a startup
+// error not caused by address collision fails immediately without retrying.
+func TestDialableNodeAppNonRetryableErrorFailsImmediately(t *testing.T) {
+	attempts := 0
+	app, err := startAppWithRetry(t, func() {
+		attempts++
+		writeNodeEnv(t)
+		t.Setenv("VMAFX_GRPC_LISTEN", "invalid-addr-not-bindable")
+	}, productionGraph())
+	if app != nil {
+		defer app.RequireStop()
+		t.Fatal("expected failure on invalid address, got running app")
+	}
+	if err == nil {
+		t.Fatal("expected error on invalid address, got nil")
+	}
+	if attempts != 1 {
+		t.Errorf("expected exactly 1 attempt on non-retryable error, got %d", attempts)
+	}
+	if strings.Contains(err.Error(), "after 5 attempts") {
+		t.Errorf("expected immediate failure without attempt exhaustion, got %v", err)
 	}
 }
 

@@ -1,0 +1,1 @@
+- Python binding tests: `test_dnn_surface` expects `E_NOTSUP` from `set_tiny_resize` on a build without tiny-AI instead of failing every such build; with tiny-AI the call must still succeed.

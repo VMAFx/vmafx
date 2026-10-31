@@ -154,6 +154,7 @@ RUN apt-get update \
         pkg-config \
         xxd \
         ca-certificates \
+        libzimg-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src
@@ -180,6 +181,7 @@ RUN meson setup /build core \
 RUN mkdir -p /dist/lib/pkgconfig /dist/bin /dist/model \
     && find /build/src -maxdepth 1 \( -name 'libvmaf.so*' -o -name 'libvmafx.so*' \) \
         \( -type f -o -type l \) -exec cp -a {} /dist/lib/ \; \
+    && cp -d /usr/lib/*-linux-gnu*/libzimg.so* /dist/lib/ \
     && cp /build/meson-private/libvmaf.pc /dist/lib/pkgconfig/libvmaf.pc \
     && cp /build/meson-private/libvmafx.pc /dist/lib/pkgconfig/libvmafx.pc \
     && cp /build/tools/vmaf /dist/bin/ \
@@ -236,6 +238,7 @@ RUN apt-get update \
         libfribidi-dev \
         libva-dev \
         libvdpau-dev \
+        libzimg-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # ---- libvmaf headers + library for --enable-libvmaf configure probe --------
@@ -453,7 +456,7 @@ FROM ${RELEASE_RUNTIME_CC} AS runtime-base
 LABEL org.opencontainers.image.title="vmafx-node"
 LABEL org.opencontainers.image.description="VMAFX worker node — FFmpeg + libvmaf + vmafx-node gRPC service. Licences: /usr/local/share/vmafx/licenses/THIRD_PARTY_NOTICES.txt"
 LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
-LABEL org.opencontainers.image.licenses="EUPL-1.2 AND BSD-2-Clause-Patent AND BSD-3-Clause AND BSD-2-Clause AND ISC AND MIT AND Unlicense AND LicenseRef-LIVE-BRISQUE AND GPL-3.0-or-later AND GPL-2.0-only AND GPL-2.0-or-later AND LGPL-2.1-or-later"
+LABEL org.opencontainers.image.licenses="EUPL-1.2 AND BSD-2-Clause-Patent AND BSD-3-Clause AND BSD-2-Clause AND ISC AND MIT AND Unlicense AND LicenseRef-LIVE-BRISQUE AND GPL-3.0-or-later AND GPL-2.0-only AND GPL-2.0-or-later AND LGPL-2.1-or-later AND WTFPL"
 LABEL org.opencontainers.image.vendor="Lusoris"
 
 ENV LD_LIBRARY_PATH="/usr/local/lib"
@@ -511,7 +514,8 @@ RUN --mount=type=bind,source=tools/rc1-tester/image,target=/repo/tools/rc1-teste
     --mount=type=bind,source=LICENSES,target=/repo/LICENSES \
     --mount=type=bind,source=model/other_models/NOTICE-brisque,target=/repo/model/other_models/NOTICE-brisque \
     --mount=type=bind,from=go-builder,source=/licence-inputs,target=/licence-inputs \
-    mkdir /texts \
+    python3 /repo/tools/rc1-tester/image/licensing.py fetch-texts --artifact production-node-image \
+        --python-version none --out /texts \
     && python3 /repo/tools/rc1-tester/image/licensing.py notices --artifact production-node-image \
         --root /rootfs --repo /repo --build-scan /licence-inputs/vmafx-sources.json --texts /texts \
         --go-licences /licence-inputs/go \
@@ -691,7 +695,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         pkg-config \
         python3-pip \
         xxd \
-        zstd
+        zstd \
+        libzimg-dev
 
 RUN --mount=type=bind,from=meson-wheel,source=/meson-1.12.0-py3-none-any.whl,target=/tmp/meson-1.12.0-py3-none-any.whl \
     python3 -m pip install --break-system-packages --ignore-installed --no-cache-dir --no-deps \

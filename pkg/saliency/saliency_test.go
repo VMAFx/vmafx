@@ -106,9 +106,8 @@ func TestReduceToBlocks_errors(t *testing.T) {
 }
 
 // TestFormatters_matchPythonGolden pins the four sidecar / argv renderers
-// byte for byte. These files are consumed by x264, libaom, SVT-AV1 and VVenC
-// directly, so a stray separator or a missing trailing newline is a real
-// encode failure, not cosmetic.
+// byte for byte. Legacy SVT-AV1 and VVenC formatters remain API-only since
+// ADR-3386; active x264, libaom and SVT-AV1 paths share the qpfile format.
 func TestFormatters_matchPythonGolden(t *testing.T) {
 	t.Parallel()
 
@@ -589,12 +588,12 @@ func TestBuildAugment(t *testing.T) {
 			wantExtraParam: "-x265-params",
 		},
 		{
-			name: "libsvtav1 writes a super-block map", encoder: "libsvtav1",
-			wantSuffix: ".svtav1-qpmap.txt", wantBodyPrefix: "-4 -4",
+			name: "libsvtav1 uses the patched qpfile bridge", encoder: "libsvtav1",
+			wantSuffix: ".svtav1-qpfile.txt", wantBodyPrefix: "0 I 0\n",
 		},
 		{
-			name: "libvvenc writes a CTU csv", encoder: "libvvenc",
-			wantSuffix: ".vvenc-roi.csv", wantBodyPrefix: "-4,-4",
+			name: "libvvenc has no ROI channel", encoder: "libvvenc",
+			wantErr: true,
 		},
 		{
 			name: "hardware encoders have no ROI dispatch", encoder: "h264_nvenc",
@@ -643,6 +642,32 @@ func TestBuildAugment(t *testing.T) {
 	}
 }
 
+// TestBuildAugmentSVTAV1 pins the 16x16 input grid consumed by patch 0007.
+func TestBuildAugmentSVTAV1(t *testing.T) {
+	t.Parallel()
+
+	const w, h = 32, 16
+	qpMap := make([]int, w*h)
+	for y := range h {
+		for x := range w {
+			qpMap[y*w+x] = -4
+			if x >= saliency.X264MBSide {
+				qpMap[y*w+x] = 4
+			}
+		}
+	}
+	got, err := saliency.BuildAugment("libsvtav1", qpMap, w, h, 2)
+	if err != nil {
+		t.Fatalf("BuildAugment: %v", err)
+	}
+	if want := "0 I 0\n-4 4\n1 P 0\n-4 4\n"; got.SidecarBody != want {
+		t.Errorf("SidecarBody = %q, want %q", got.SidecarBody, want)
+	}
+	if slices.Contains(saliency.SupportedEncoders(), "libvvenc") {
+		t.Error("libvvenc must not advertise saliency ROI support")
+	}
+}
+
 // firstLine returns s up to its first newline, for readable failures.
 func firstLine(s string) string {
 	if before, _, ok := strings.Cut(s, "\n"); ok {
@@ -661,8 +686,8 @@ func TestExtraParamsFor_matchesPythonGolden(t *testing.T) {
 	}{
 		{"libx264", []string{"-qpfile", "/tmp/q.txt"}},
 		{"libaom-av1", []string{"-qpfile", "/tmp/q.txt"}},
-		{"libsvtav1", []string{"-svtav1-params", "qp-file=/tmp/q.txt"}},
-		{"libvvenc", []string{"-vvenc-params", "ROIFile=/tmp/q.txt"}},
+		{"libsvtav1", []string{"-qpfile", "/tmp/q.txt"}},
+		{"libvvenc", nil},
 		{"libx265", nil},
 		{"h264_nvenc", nil},
 	}
@@ -715,7 +740,7 @@ func TestPersistedSidecarPath(t *testing.T) {
 		want   string
 	}{
 		{"/out/enc.mp4", ".qpfile.txt", "/out/enc.qpfile.txt"},
-		{"/out/enc.mkv", ".vvenc-roi.csv", "/out/enc.vvenc-roi.csv"},
+		{"/out/enc.mkv", ".svtav1-qpfile.txt", "/out/enc.svtav1-qpfile.txt"},
 		{"/out/enc", ".qpfile.txt", "/out/enc.qpfile.txt"},
 	}
 	for _, tc := range tests {

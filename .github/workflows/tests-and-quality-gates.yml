@@ -765,7 +765,6 @@ jobs:
         if: steps.impact.outputs.python == 'true'
         run: |
           tar -C "${RUNNER_TEMP}/vmaf-cli" -xf "${RUNNER_TEMP}/vmaf-cli/vmaf-cli.tar"
-          "${RUNNER_TEMP}/vmaf-cli/tools/vmaf" --version
       - name: Restore apt archives
         id: apt-cache
         if: steps.impact.outputs.python == 'true'
@@ -783,6 +782,7 @@ jobs:
         run: |
           bash scripts/ci/apt-install-cached.sh install .github/apt/vmaf-tune-tests.txt
           ffmpeg -hide_banner -encoders | grep -E '^ V.* libx265 '
+          "${RUNNER_TEMP}/vmaf-cli/tools/vmaf" --version
 
       - name: Save apt archives
         if: ${{ !cancelled() && steps.apt-install.outcome == 'success' && steps.apt-cache.outputs.cache-hit != 'true' }}
@@ -1105,10 +1105,16 @@ jobs:
         id: coverage_prefetch_go
         if: steps.impact.outputs.golden_harness == 'true'
         run: python3 scripts/ci/prefetch_go_modules.py
+      - name: Fetch the Netflix golden YUV fixtures for the unit suite
+        if: steps.impact.outputs.golden_harness == 'true'
+        run: bash scripts/test/fetch-test-yuvs.sh
       - name: Run meson unit suite (with gcov counters)
         id: coverage_meson_suite
         if: steps.impact.outputs.golden_harness == 'true'
         working-directory: core
+        env:
+          # Fails the Python binding's bit-exact test if the pair is missing.
+          VMAFX_REQUIRE_NETFLIX_PAIR: "1"
         run: >-
           python3 ../scripts/ci/run_meson_test.py -- -C build-coverage
           --print-errorlogs --num-processes 1 --timeout-multiplier 3

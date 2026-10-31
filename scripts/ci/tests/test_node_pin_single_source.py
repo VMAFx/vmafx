@@ -14,10 +14,12 @@ missing or differing pre-commit pin, a differing setup-node pin and a differing
 from __future__ import annotations
 
 import importlib.util
+import os
 import tempfile
 import unittest
 from pathlib import Path
 from typing import Protocol, cast
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[3]
 SPEC = importlib.util.spec_from_file_location(
@@ -118,6 +120,34 @@ class NodePinSingleSource(unittest.TestCase):
     def test_major_only_workflow_pin_on_another_line_fails(self) -> None:
         self.write(".github/workflows/lint.yml", WORKFLOW.format(version="27"))
         self.assertEqual(len(GATE.check_node_pins(self.repo, WANT)), 1)
+
+    def declare_engine_lock(self) -> None:
+        self.write(".github/workflows/locked.yml", WORKFLOW.format(version="22"))
+        self.write(
+            ".config/lint-exceptions.d/node-version-pin.toml",
+            '[[exception]]\npath = ".github/workflows/locked.yml"\n'
+            'reason = "engine-locked"\nexpires = 2027-02-28\n',
+        )
+
+    def test_undeclared_engine_lock_fails(self) -> None:
+        self.write(".github/workflows/locked.yml", WORKFLOW.format(version="22"))
+        self.assertEqual(len(GATE.check_node_pins(self.repo, WANT)), 1)
+
+    def test_declared_engine_lock_passes_until_its_expiry(self) -> None:
+        self.declare_engine_lock()
+        with mock.patch.dict(os.environ, {"LINT_EXCEPTIONS_TODAY": "2027-02-28"}):
+            self.assertEqual(GATE.check_node_pins(self.repo, WANT), [])
+
+    def test_expired_engine_lock_fails(self) -> None:
+        self.declare_engine_lock()
+        with mock.patch.dict(os.environ, {"LINT_EXCEPTIONS_TODAY": "2027-03-01"}):
+            self.assertEqual(len(GATE.check_node_pins(self.repo, WANT)), 1)
+
+    def test_declared_engine_lock_binds_one_file(self) -> None:
+        self.declare_engine_lock()
+        self.write(".github/workflows/lint.yml", WORKFLOW.format(version="22"))
+        with mock.patch.dict(os.environ, {"LINT_EXCEPTIONS_TODAY": "2027-02-28"}):
+            self.assertEqual(len(GATE.check_node_pins(self.repo, WANT)), 1)
 
 
 if __name__ == "__main__":

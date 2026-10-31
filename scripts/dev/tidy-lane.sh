@@ -63,6 +63,8 @@ CROSS_PACKAGES="gcc-aarch64-linux-gnu g++-aarch64-linux-gnu libc6-dev-arm64-cros
 # and Vulkan inputs), the xkbcommon files gstreamer-vulkan-1.0.pc requires, the
 # Vulkan headers and libdrm, from the image's own distribution.
 GSTREAMER_PACKAGES="libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgstreamer-plugins-bad1.0-dev libxkbcommon-dev libxkbcommon-x11-dev libvulkan-dev libdrm-dev"
+# zimg's development files: a default core build stops without them (ADR-3396).
+ZIMG_PACKAGES="libzimg-dev"
 # The rust lane's toolchain: rustup from the image's own distribution, and the
 # toolchain build-config.env pins (RUST_VERSION) under this prefix.
 RUST_PREFIX=/opt/vmafx-rust
@@ -271,6 +273,18 @@ ensure_gstreamer_dev() {
   have_gstreamer_dev || die "the GStreamer development files did not install"
 }
 
+# A native lane builds the core with its default zimg dependency. An image that
+# carries zimg skips the download; the arm64 lane opts out in the Makefile, since
+# its cross sysroot has no arm64 zimg.
+ensure_zimg_dev() {
+  pkg-config --exists 'zimg >= 2.7' && return 0
+  DEBIAN_FRONTEND=noninteractive apt-get update -qq
+  # shellcheck disable=SC2086  # a fixed list of package names
+  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+    $ZIMG_PACKAGES >/dev/null
+  pkg-config --exists 'zimg >= 2.7' || die "zimg's development files did not install"
+}
+
 # The Rust toolchain build-config.env pins, read from the copied checkout.
 pinned_rust_version() {
   sed -n 's/^RUST_VERSION="\([0-9.]*\)"$/\1/p' "$WORK/src/build-config.env"
@@ -306,6 +320,7 @@ ensure_rust_toolchain() {
 # the arm64 lane needs its cross toolchain, the clang lane its compiler, the
 # integrations lane GStreamer's development files and the rust lane cargo.
 lane_environment() {
+  [ "$1" = arm64 ] || ensure_zimg_dev
   [ "$1" != arm64 ] || ensure_cross_toolchain
   [ "$1" != clang ] || ensure_clang_compiler
   [ "$1" != integrations ] || ensure_gstreamer_dev

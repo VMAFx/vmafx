@@ -25,7 +25,7 @@ sudo pacman -S --needed \
     base-devel clang cppcheck \
     meson ninja nasm pkgconf \
     python python-pip python-virtualenv \
-    doxygen
+    doxygen zimg
 ```
 
 ### CUDA (optional)

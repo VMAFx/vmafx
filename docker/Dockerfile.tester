@@ -54,7 +54,7 @@ RUN awk '{print $2}' /fixtures.sha256 | xargs -P4 -I{} curl -fsSL --retry 3 --cr
 FROM ${RELEASE_PYTHON_BASE} AS python-venv
 # hadolint ignore=DL3008
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends gcc g++ libc6-dev \
+    && apt-get install -y --no-install-recommends gcc g++ libc6-dev libzimg2 \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /
 COPY python/requirements-test-lock.txt python/requirements-test-lock.txt
@@ -66,6 +66,7 @@ RUN python -m venv /venv \
     && find /venv -name '*.so*' -type f -not -path '*.libs/*' -exec strip --strip-unneeded {} + \
     && mkdir -p /extra-libs/lib /extra-libs/doc/libgomp1 \
     && cp -a /usr/lib/*-linux-gnu/libgomp.so.1* /extra-libs/lib/ \
+    && cp -a /usr/lib/*-linux-gnu/libzimg.so* /extra-libs/lib/ \
     && cp /usr/share/doc/libgomp1/copyright /extra-libs/doc/libgomp1/copyright \
     && dpkg-query -W -f='${source:Package}=${source:Version}\n' libgomp1 \
         > /extra-libs/doc/libgomp1/SOURCE
@@ -82,7 +83,7 @@ ARG VMAF_BUILD_JOBS=4
 # hadolint ignore=DL3008
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        gcc g++ meson ninja-build nasm pkg-config xxd python3 \
+        gcc g++ meson ninja-build nasm pkg-config xxd python3 libzimg-dev \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 # Only what the configure step reads: the source, the models and one script a test registers.
@@ -104,10 +105,11 @@ RUN meson setup /build core --buildtype=release --strip -Db_lto=false \
     && mkdir /licence-inputs \
     && python3 tools/rc1-tester/image/licensing.py scan-build --build /build --repo /src \
         --out /licence-inputs/vmafx-sources.json
-RUN mkdir -p /opt/vmafx/build/tools /opt/vmafx/build/src \
+RUN mkdir -p /opt/vmafx/build/tools /opt/vmafx/build/src /opt/vmafx/lib \
     && cp /build/tools/vmaf /opt/vmafx/build/tools/ \
     && find /build/src -maxdepth 1 \( -name 'libvmaf.so*' -o -name 'libvmafx.so*' \) -not -type d \
         -exec cp -a {} /opt/vmafx/build/src/ \; \
+    && cp -a /usr/lib/*-linux-gnu*/libzimg.so* /opt/vmafx/lib/ \
     && python3 tools/rc1-tester/image/prepare_build.py stage /build \
         tools/rc1-tester/image/unit-tests.txt /opt/vmafx \
     && mkdir -p /opt/vmafx/model \
@@ -204,6 +206,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates curl gcc g++ gpg meson nasm ninja-build pkg-config python3 xxd zstd \
+        libzimg-dev \
     && rm -rf /var/lib/apt/lists/*
 COPY build-config.env /tmp/vmafx/build-config.env
 COPY scripts/ci/install-intel-oneapi.sh scripts/ci/install-intel-ocloc.sh /tmp/vmafx/scripts/ci/
@@ -242,10 +245,11 @@ RUN CC=icx CXX=icpx meson setup build core --buildtype=release --strip -Db_lto=f
     && mkdir /licence-inputs \
     && python3 tools/rc1-tester/image/licensing.py scan-build --build build \
         --repo /opt/vmafx/src --out /licence-inputs/vmafx-sources.json
-RUN mkdir -p /opt/vmafx/build/tools /opt/vmafx/build/src /opt/vmafx/model \
+RUN mkdir -p /opt/vmafx/build/tools /opt/vmafx/build/src /opt/vmafx/model /opt/vmafx/lib \
     && cp build/tools/vmaf /opt/vmafx/build/tools/ \
     && find build/src -maxdepth 1 \( -name 'libvmaf.so*' -o -name 'libvmafx.so*' \) -not -type d \
         -exec cp -a {} /opt/vmafx/build/src/ \; \
+    && cp -a /usr/lib/*-linux-gnu*/libzimg.so* /opt/vmafx/lib/ \
     && python3 tools/rc1-tester/image/prepare_build.py stage build \
         tools/rc1-tester/image/unit-tests.txt /opt/vmafx \
     && python3 tools/rc1-tester/image/prepare_build.py stage build \
@@ -446,6 +450,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates curl gcc g++ git make meson nasm ninja-build pkg-config python3 xxd \
+        libzimg-dev \
     && rm -rf /var/lib/apt/lists/*
 COPY build-config.env scripts/ci/install-cuda-toolkit.sh /tmp/vmafx/
 RUN bash /tmp/vmafx/install-cuda-toolkit.sh --mode=builder /tmp/vmafx \
@@ -496,11 +501,12 @@ RUN meson setup build core --buildtype=release --strip -Db_lto=false \
 # The NVIDIA parts of the kernels are CUDA headers and the libdevice library
 # nvcc links into the fatbins (CUDA EULA 1.1.1(c), Attachment A); the EULA
 # text is the copyright file of the package that installs libdevice.10.bc.
-RUN mkdir -p /opt/vmafx/build/tools /opt/vmafx/build/src /opt/vmafx/model \
+RUN mkdir -p /opt/vmafx/build/tools /opt/vmafx/build/src /opt/vmafx/model /opt/vmafx/lib \
         /opt/vmafx/licenses/nvidia \
     && cp build/tools/vmaf /opt/vmafx/build/tools/ \
     && find build/src -maxdepth 1 \( -name 'libvmaf.so*' -o -name 'libvmafx.so*' \) -not -type d \
         -exec cp -a {} /opt/vmafx/build/src/ \; \
+    && cp -a /usr/lib/*-linux-gnu*/libzimg.so* /opt/vmafx/lib/ \
     && python3 tools/rc1-tester/image/prepare_build.py stage build \
         tools/rc1-tester/image/unit-tests.txt /opt/vmafx \
     && python3 tools/rc1-tester/image/prepare_build.py stage build \
@@ -686,6 +692,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates curl gcc g++ jq meson nasm ninja-build pkg-config python3 xxd zstd \
+        libzimg-dev \
     && rm -rf /var/lib/apt/lists/*
 COPY scripts/ci/install-rocm-from-image.sh /tmp/vmafx/install-rocm-from-image.sh
 RUN bash /tmp/vmafx/install-rocm-from-image.sh --image "${ROCM_BUILDER}" --dest /opt/rocm --keep-docs \
@@ -727,10 +734,11 @@ RUN python3 -c 'import json, sys; dist = json.load(open(sys.argv[1]))["dist_amdg
         --repo /opt/vmafx/src --out /licence-inputs/vmafx-sources.json
 # The ROCm runtime files go next to each other as in /opt/rocm/lib, so their
 # RPATHs ($ORIGIN/llvm/lib, $ORIGIN/rocm_sysdeps/lib) resolve without patching.
-RUN mkdir -p /opt/vmafx/build/tools /opt/vmafx/build/src /opt/vmafx/model \
+RUN mkdir -p /opt/vmafx/build/tools /opt/vmafx/build/src /opt/vmafx/model /opt/vmafx/lib \
     && cp build/tools/vmaf /opt/vmafx/build/tools/ \
     && find build/src -maxdepth 1 \( -name 'libvmaf.so*' -o -name 'libvmafx.so*' \) -not -type d \
         -exec cp -a {} /opt/vmafx/build/src/ \; \
+    && cp -a /usr/lib/*-linux-gnu*/libzimg.so* /opt/vmafx/lib/ \
     && python3 tools/rc1-tester/image/prepare_build.py stage build \
         tools/rc1-tester/image/unit-tests.txt /opt/vmafx \
     && python3 tools/rc1-tester/image/prepare_build.py stage build \
@@ -936,7 +944,7 @@ ARG VMAFX_SOURCE_COMMIT=unknown
 LABEL org.opencontainers.image.title="vmafx-tester" \
       org.opencontainers.image.description="VMAFx tester image: CPU build, SIMD unit tests, Netflix golden gate, one JSON report. Licences: /opt/vmafx/licenses/THIRD_PARTY_NOTICES.txt" \
       org.opencontainers.image.source="https://github.com/VMAFx/vmafx" \
-      org.opencontainers.image.licenses="EUPL-1.2 AND BSD-2-Clause-Patent AND BSD-3-Clause AND BSD-3-Clause-Clear AND BSD-2-Clause AND ISC AND MIT AND Unlicense AND LicenseRef-LIVE-BRISQUE" \
+      org.opencontainers.image.licenses="EUPL-1.2 AND BSD-2-Clause-Patent AND BSD-3-Clause AND BSD-3-Clause-Clear AND BSD-2-Clause AND ISC AND MIT AND Unlicense AND LicenseRef-LIVE-BRISQUE AND WTFPL" \
       org.opencontainers.image.vendor="Lusoris" \
       org.opencontainers.image.revision="${VMAFX_SOURCE_COMMIT}"
 COPY --from=licence-check /out/licence-check.json /opt/vmafx/licence-check.json

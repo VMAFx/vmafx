@@ -7,8 +7,8 @@ mod library_search;
 use library_search::{
     BuildPaths, LinkKind, build_vendored, discover_static_libraries, extract_core_version,
     find_paths, library_name_from_filename, not_found_message, order_static_libraries,
-    parse_meson_project_version, parse_pc_dependencies, parse_vcs_version_header,
-    read_pc_dependencies, resolve_vendor_dir, search_prefixes,
+    parse_meson_project_version, parse_pc_dependencies, parse_pc_requires,
+    parse_vcs_version_header, read_pc_dependencies, resolve_vendor_dir, search_prefixes,
 };
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
@@ -471,9 +471,62 @@ fn read_pc_dependencies_aggregates_files() -> Result<(), String> {
     let content = "Libs: -pthread -lm\nLibs.private: -lstdc++\n";
     std::fs::write(meson_priv.join("libvmafx.pc"), content).map_err(|e| e.to_string())?;
 
-    let (_, deps) = read_pc_dependencies(&temp);
+    let result = read_pc_dependencies(&temp, |module| Err(format!("unexpected query: {module}")));
     let _ = std::fs::remove_dir_all(&temp);
-    assert_eq!(deps, vec!["pthread", "m", "stdc++"]);
+    assert_eq!(result?.1, vec!["pthread", "m", "stdc++"]);
+    Ok(())
+}
+
+#[test]
+fn pc_requires_drop_version_constraints() {
+    let sample = "Requires: zimg >= 2.7, libfoo\nRequires.private: libbar = 1.0 libfoo\nName: x\n";
+    assert_eq!(parse_pc_requires(sample), vec!["zimg", "libfoo", "libbar"]);
+    assert!(parse_pc_requires("Name: x\nLibs: -lm\n").is_empty());
+}
+
+fn pc_tree(name: &str, content: &str) -> Result<PathBuf, String> {
+    let temp = std::env::temp_dir().join(name);
+    let _ = std::fs::remove_dir_all(&temp);
+    let meson_priv = temp.join("meson-private");
+    std::fs::create_dir_all(&meson_priv).map_err(|e| e.to_string())?;
+    std::fs::write(meson_priv.join("libvmafx.pc"), content).map_err(|e| e.to_string())?;
+    Ok(temp)
+}
+
+#[test]
+fn read_pc_dependencies_resolves_required_modules() -> Result<(), String> {
+    let temp = pc_tree(
+        "vmafx_test_pc_requires",
+        "Requires: zimg >= 2.7\nLibs: -lm\n",
+    )?;
+    let result = read_pc_dependencies(&temp, |module| {
+        assert_eq!(module, "zimg");
+        Ok("-L/opt/zimg/lib -lzimg -lm\n".to_string())
+    });
+    let _ = std::fs::remove_dir_all(&temp);
+    let (dirs, deps) = result?;
+    assert_eq!(dirs, vec![PathBuf::from("/opt/zimg/lib")]);
+    assert_eq!(deps, vec!["m", "zimg"]);
+    Ok(())
+}
+
+#[test]
+fn read_pc_dependencies_fails_on_unresolved_module() -> Result<(), String> {
+    let temp = pc_tree("vmafx_test_pc_unresolved", "Requires: zimg\n")?;
+    let result = read_pc_dependencies(&temp, |_| Err("no zimg".to_string()));
+    let _ = std::fs::remove_dir_all(&temp);
+    assert_eq!(result, Err("no zimg".to_string()));
+    Ok(())
+}
+
+#[test]
+fn read_pc_dependencies_skips_sibling_pc_files() -> Result<(), String> {
+    let temp = pc_tree("vmafx_test_pc_sibling", "Libs: -lm\n")?;
+    let sibling = temp.join("meson-private/libvmaf.pc");
+    std::fs::write(sibling, "Requires: libvmafx\n").map_err(|e| e.to_string())?;
+    let result = read_pc_dependencies(&temp, |module| Err(format!("queried {module}")));
+    let _ = std::fs::remove_dir_all(&temp);
+    assert_eq!(result?.1, vec!["m"]);
     Ok(())
 }
 

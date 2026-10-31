@@ -1,0 +1,1 @@
+- Go tests: the `cmd/vmafx-node` tests that dial the node's listeners start the graph through `startAppWithRetry`, which picks fresh loopback ports and retries up to five times when a reserved port was taken before the graph bound it (`bind: address already in use`); other start errors fail at once.

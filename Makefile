@@ -446,7 +446,8 @@ TIDY_RATCHET_SETUP_sycl := -Denable_sycl=true -Dsycl_icpx_aot_targets= \
 	-Denable_cuda=false -Denable_hip=false -Denable_dnn=enabled -Db_lto=false
 TIDY_RATCHET_SETUP_arm64 := --cross-file build-aux/aarch64-linux-gnu.ini \
 	--cross-file build-aux/aarch64-linux-gnu-qemu-user.ini \
-	-Denable_cuda=false -Denable_sycl=false -Denable_dnn=disabled -Db_lto=false
+	-Denable_cuda=false -Denable_sycl=false -Denable_dnn=disabled -Denable_zimg=false \
+	-Db_lto=false
 TIDY_RATCHET_SETUP_integrations := -Denable_cuda=false -Denable_sycl=false \
 	-Denable_dnn=disabled -Db_lto=false
 TIDY_RATCHET_SETUP_rust := -Denable_cuda=false -Denable_sycl=false \

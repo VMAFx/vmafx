@@ -272,6 +272,6 @@ var goldenMeta = map[string]struct {
 	"prores_videotoolbox": {"profile:v", 0, 5, 3, []string{"ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow"}, "ultrafast", 0, false, false, false},
 	"av1_videotoolbox":    {"q:v", 0, 100, 50, []string{"ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow"}, "ultrafast", 60, false, false, false},
 	"libvvenc":            {"qp", 17, 50, 32, []string{"placebo", "slowest", "slower", "slow", "medium", "fast", "faster", "veryfast", "superfast", "ultrafast"}, "faster", 32, false, false, true},
-	"libsvtav1":           {"crf", 20, 50, 35, []string{"placebo", "slowest", "slower", "slow", "medium", "fast", "faster", "veryfast"}, "veryfast", 35, false, false, false},
+	"libsvtav1":           {"crf", 20, 50, 35, []string{"placebo", "slowest", "slower", "slow", "medium", "fast", "faster", "veryfast"}, "veryfast", 35, true, false, false},
 	"libvpx-vp9":          {"crf", 0, 63, 32, []string{"placebo", "slowest", "slower", "slow", "medium", "fast", "faster", "veryfast", "superfast", "ultrafast"}, "ultrafast", 32, false, false, true},
 }

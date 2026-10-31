@@ -1529,6 +1529,7 @@ LICENCE_CLASSES = (  # first match wins; the text of a module's licence file
     ("CC0-1.0", re.compile(r"CC0 1\.0 Universal|Creative Commons Legal Code\s+CC0")),
     ("BSL-1.0", re.compile(r"Boost Software License - Version 1\.0")),
     ("Zlib", re.compile(r"This software is provided 'as-is', without any express or implied")),
+    ("WTFPL", re.compile(r"DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE")),
 )
 COPYLEFT_CLASSES = {
     "AGPL-3.0",

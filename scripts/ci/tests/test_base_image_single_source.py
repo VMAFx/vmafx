@@ -90,6 +90,7 @@ class BaseImageGate(unittest.TestCase):
             GATE,
             "scripts/ci/check-workflow-versions.py",
             "scripts/ci/check-container-image-references.py",
+            "scripts/ci/lint_exceptions.py",
             "scripts/lib/safe_subprocess.py",
             "rust-toolchain.toml",
             "Cargo.toml",

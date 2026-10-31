@@ -1,0 +1,1 @@
+| [ADR-3386](3386-encoder-roi-channels-measured.md) | Saliency uses the measured patched `-qpfile` bridge for libsvtav1 and refuses libvvenc without an ROI channel; supersedes the SVT-AV1 and libvvenc parts of ADR-0414 | Accepted | vmaf-tune, saliency, codec-adapter, roi, fork-local |

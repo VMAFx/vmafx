@@ -806,9 +806,11 @@ input. An input whose four properties are not all ones libvmaf knows (range
 `smpte2084`; matrix `bt709`, `bt2020nc` or `ictcp`) is left unspecified: a model
 without a `conversion_target`, which is every shipped model, scores exactly as
 before, and a model with one fails with an error naming the missing
-attributes. The conversion needs a libvmaf built with `-Denable_zimg=true`, and
-it runs on host frames: the `libvmaf_cuda` and `libvmaf_metal` filters and the
-SYCL zero-copy path score device frames and refuse such a model.
+attributes. The conversion uses `zimg` (enabled by default,
+[ADR-3396](../adr/3396-zimg-on-by-default.md); opt-out builds with
+`-Denable_zimg=false` return `-ENOTSUP`), and it runs on host frames: the
+`libvmaf_cuda` and `libvmaf_metal` filters and the SYCL zero-copy path score
+device frames and refuse such a model.
 
 ### Pooling
 

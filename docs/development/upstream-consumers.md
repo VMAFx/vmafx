@@ -15,9 +15,9 @@ to the same consumer binary run against the library of the base commit.
 
 ## Run it locally
 
-You need `git`, `meson`, `ninja`, `nasm`, `pkg-config`, `python3`, the
-GStreamer 1.28 development packages with `gst-launch-1.0` and the
-`rawvideoparse` plugin, and the glib development package (it provides
+You need `git`, `meson`, `ninja`, `nasm`, `pkg-config`, `python3`, `zimg`
+(`libzimg-dev`), the GStreamer 1.28 development packages with `gst-launch-1.0`
+and the `rawvideoparse` plugin, and the glib development package (it provides
 `glib-mkenums`). Network access is needed on the first run to fetch the two
 source trees; they are cached in `--work`.
 
