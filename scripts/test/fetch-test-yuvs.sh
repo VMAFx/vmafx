@@ -138,6 +138,15 @@ provision() {
   fetched=$((fetched + 1))
 }
 
+# Print the sha256 of a file; macOS ships shasum and not always sha256sum.
+file_sha256() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1"
+  else
+    shasum -a 256 "$1"
+  fi
+}
+
 # Verify that all member files exist in the target directory with matching sha256.
 verify_bundle_members() {
   local target_dir="$1"
@@ -150,7 +159,7 @@ verify_bundle_members() {
     if [ ! -f "${path}" ]; then
       return 1
     fi
-    actual="$(sha256sum "${path}" | awk '{print $1}')"
+    actual="$(file_sha256 "${path}" | awk '{print $1}')"
     if [ "${actual}" != "${expected}" ]; then
       return 1
     fi
@@ -233,7 +242,7 @@ provision_bundle() {
     return 1
   fi
 
-  actual_sha="$(sha256sum "${tmp_archive}" | awk '{print $1}')"
+  actual_sha="$(file_sha256 "${tmp_archive}" | awk '{print $1}')"
   if [ "${actual_sha}" != "${BUNDLE_ARCHIVE_SHA256}" ]; then
     echo "ERROR: ${bundle_name} archive sha256 mismatch (got ${actual_sha}, want ${BUNDLE_ARCHIVE_SHA256})" >&2
     rm -f "${tmp_archive}"
