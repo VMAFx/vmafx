@@ -182,7 +182,7 @@ jobs:
         run: |
           set -euo pipefail
           # A skip (77) is a failure here: every fixture of the golden pair is fetched above.
-          for check in parity windows contract provenance; do
+          for check in filters parity windows contract provenance; do
             echo "::group::vmafx_filter_check.py $check"
             python3 ffmpeg-patches/test/vmafx_filter_check.py "$check" \
               --ffmpeg "$RUNNER_TEMP/ffmpeg/ffmpeg" --vmaf core/build/tools/vmaf \

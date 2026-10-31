@@ -6,5 +6,6 @@
   and `vmafx_pre` filters on the modern VMAFx C API, while unpatched upstream FFmpeg retains its built-in
   `libvmaf` filter against the `libvmaf.so.3` compatibility layer. Colorimetry forwarding from legacy patch
   `0022` (ADR-2093) is ported to `vf_vmafx.c`, automatically forwarding `AVFrame` color properties to the engine.
+  CI's `vmafx_filter_check.py filters` fails a fork build that registers a `libvmaf`-family filter.
 
   Migration: see [Migrating from the libvmaf filters](docs/usage/ffmpeg.md#migrating-from-the-libvmaf-filters).

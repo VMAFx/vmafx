@@ -644,14 +644,15 @@ missing.
 
 CI builds FFmpeg with the patch series and `--enable-libvmafx` on every pull
 request that touches the C core, the patches or the workflows, and runs
-`parity`, `windows`, `contract` and `provenance` on the Netflix 576x324 pair
-against the CLI of the same build: the required check `FFmpeg vmafx Filter` in
+`filters`, then `parity`, `windows`, `contract` and `provenance` on the Netflix
+576x324 pair against the CLI of the same build: the required check `FFmpeg vmafx Filter` in
 `.github/workflows/ffmpeg-patch-stack.yml`. A missing fixture (exit 77) fails
 that job. The GPU, VAAPI and Vulkan subcommands need a device and run on a
 workstation only.
 
 | Subcommand | Checks | Needs |
 | --- | --- | --- |
+| `filters` | The build registers `vmafx` and no filter of the stock upstream libvmaf family: no name that starts with `vmaf` or `libvmaf` other than `vmafx`, `vmafx_tune` and `vmafx_pre`. FFmpeg's own `vmafmotion` filter, which uses no library, is allowed. `ffmpeg-patches/test/test_vmafx_filter_names.py` holds its positive and negative cases. | CPU |
 | `parity` | Every per-frame, pooled and aggregate value of the filter's JSON report equals the CLI's, as the same double. `--backend cuda` and `cuda-host` compare against `vmaf --backend cuda`. | CPU; CUDA for the two GPU forms |
 | `windows` | `stats_path` windows equal the CLI's per-frame scores pooled offline. | CPU |
 | `provenance` | The report carries the provenance record and the log its init line. | CPU |
