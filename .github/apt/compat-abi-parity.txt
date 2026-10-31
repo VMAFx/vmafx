@@ -8,3 +8,4 @@ ninja-build
 nasm
 pkg-config
 python3-pip
+libzimg-dev
