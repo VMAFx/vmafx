@@ -61,7 +61,7 @@ jobs:
         run: scripts/sync-pelorus-interop.sh "${GITHUB_WORKSPACE}/.ci/pelorus"
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
-          python-version: "3.14.9"
+          python-version: "3.14.10"
       - name: MSVC-hostile constructs in the changed files
         # ADR-2169, ADR-3279 (design notes)
         shell: bash
@@ -864,7 +864,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
-          python-version: "3.14.9"
+          python-version: "3.14.10"
       - name: Install mypy checker
         run: pip install --require-hashes -r requirements/locks/mypy.txt
       - name: Run merge-base mypy gate
@@ -892,7 +892,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
-          python-version: "3.14.9"
+          python-version: "3.14.10"
       - name: Install jsonschema
         run: pip install --require-hashes -r requirements/locks/jsonschema.txt
       - name: Validate model/tiny/registry.json
@@ -915,7 +915,7 @@ jobs:
           fetch-depth: ${{ github.event_name != 'push' && 1 || 0 }}
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
-          python-version: "3.14.9"
+          python-version: "3.14.10"
       - name: Install the documentation checks' imports
         # ADR-2485 (design notes)
         run: pip install --require-hashes -r requirements/locks/docs-check.txt
@@ -1035,7 +1035,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
-          python-version: "3.14.9"
+          python-version: "3.14.10"
       # ADR-1568, ADR-1699 (design notes)
       - name: Check the root licence files and package licence fields
         shell: bash
