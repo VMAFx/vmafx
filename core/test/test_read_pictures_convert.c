@@ -400,6 +400,7 @@ static const char *hdr_v118_models[] = {
 /* convert `src` to the HDR-VMAF v1.1.8 target and check what comes out; the fork
  * passes the source colour as an argument (ADR-1822), so the output picture
  * carries none and only its format is checked */
+// NOLINTNEXTLINE(readability-function-size): test scaffolding (ADR-0141 / ADR-0278) - one assertion per output property.
 static char *check_converts_to_v118_target(const VmafPicture *src, const VmafColor *src_color)
 {
     const VmafPictureConvertTarget target = {
@@ -425,9 +426,10 @@ static char *check_converts_to_v118_target(const VmafPicture *src, const VmafCol
     unsigned max_luma = 0;
     for (unsigned y = 0; y < out.h[0]; y++) {
         const uint16_t *row = (const uint16_t *)((const uint8_t *)out.data[0] + y * out.stride[0]);
-        for (unsigned x = 0; x < out.w[0]; x++)
+        for (unsigned x = 0; x < out.w[0]; x++) {
             if (row[x] > max_luma)
                 max_luma = row[x];
+        }
     }
     mu_assert("output luma should use the 16-bit range", max_luma > 4095);
 
@@ -614,6 +616,7 @@ static char *test_set_input_colorimetry_contract(void)
 }
 
 #ifdef HAVE_ZIMG
+// NOLINTNEXTLINE(readability-function-size): test scaffolding (ADR-0141 / ADR-0278) - one assertion per busy transition.
 static char *test_set_input_colorimetry_is_busy_after_conversion(void)
 {
     VmafContext *vmaf;

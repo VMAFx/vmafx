@@ -176,7 +176,9 @@ static char *test_colorspace_init_rejects_unsupported_values(void)
     };
     VmafPictureConvertContext *ctx = NULL;
 
-    /* values that are specified but not part of the supported set */
+    /* values that are specified but not part of the supported set; the case
+     * plants out-of-range enum values on purpose */
+    // NOLINTBEGIN(clang-analyzer-optin.core.EnumCastOutOfRange) — ADR-0141 / ADR-0278
     target.color.matrix = (enum VmafColorMatrixCoefficients)99;
     err = vmaf_picture_convert_context_init_with_color(&ctx, &src, &src_color, &target);
     mu_assert("unsupported target matrix should be rejected", err == -EINVAL);
@@ -202,6 +204,7 @@ static char *test_colorspace_init_rejects_unsupported_values(void)
 
     target.color = src_color;
     src_color.matrix = (enum VmafColorMatrixCoefficients)99;
+    // NOLINTEND(clang-analyzer-optin.core.EnumCastOutOfRange) — ADR-0141 / ADR-0278
     err = vmaf_picture_convert_context_init_with_color(&ctx, &src, &src_color, &target);
     mu_assert("unsupported source matrix should be rejected", err == -EINVAL);
     mu_assert("no context should be created on failure", !ctx);

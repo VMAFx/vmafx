@@ -39,6 +39,7 @@ nice -n 10 ninja -C "${build_dir}" -j"${jobs}"
 
 mkdir -p "${dist_dir}/lib" "${dist_dir}/bin" "${dist_dir}/model" "${licence_inputs_dir}"
 find "${build_dir}/src" -maxdepth 1 \( -name 'libvmaf.so*' -o -name 'libvmafx.so*' \) -not -type d -exec cp -a {} "${dist_dir}/lib/" \;
+cp -d /usr/lib/*-linux-gnu*/libzimg.so* "${dist_dir}/lib/"
 cp "${build_dir}/tools/vmaf" "${dist_dir}/bin/"
 cp -r model/. "${dist_dir}/model/"
 

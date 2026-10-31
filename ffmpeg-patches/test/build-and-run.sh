@@ -60,8 +60,11 @@ case "$FFMPEG_TOOLCHAIN" in
     # Every object of one MSVC link must use the same C runtime. A Meson
     # release build of VMAFx compiles with /MD (b_vscrt=from_buildtype), so
     # FFmpeg does too; the linker reports a mixed runtime as warning LNK4098,
-    # which the warning gate below fails on.
-    toolchain_args=(--toolchain=msvc --extra-cflags=-MD --extra-cxxflags=-MD)
+    # which the warning gate below fails on. The MSVC lane links the static
+    # vmaf.lib, whose dependencies (zimg) sit in Requires.private of
+    # libvmaf.pc, so configure asks pkg-config for the static link line.
+    toolchain_args=(--toolchain=msvc --extra-cflags=-MD --extra-cxxflags=-MD
+      --pkg-config-flags=--static)
     ;;
   *)
     echo "FFMPEG_TOOLCHAIN must be empty or msvc: $FFMPEG_TOOLCHAIN" >&2
@@ -103,7 +106,7 @@ if ! command -v git >/dev/null; then
   echo "git not found on PATH" >&2
   exit 77
 fi
-if ! pkg-config --exists libvmaf; then
+if ! pkg-config --print-errors --exists libvmaf; then
   echo "libvmaf not found via pkg-config — install libvmaf first or set VMAF_PREFIX" >&2
   exit 77
 fi

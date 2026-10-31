@@ -59,6 +59,7 @@ RUN apt-get update \
         pkg-config \
         ca-certificates \
         xxd \
+        libzimg-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src
@@ -82,6 +83,7 @@ RUN meson setup /build core \
 RUN mkdir -p /dist/lib /dist/bin /dist/model \
     && find /build/src -maxdepth 1 \( -name 'libvmaf.so*' -o -name 'libvmafx.so*' \) -not -type d \
         -exec cp {} /dist/lib/ \; \
+    && cp -d /usr/lib/*-linux-gnu*/libzimg.so* /dist/lib/ \
     && cp /build/tools/vmaf /dist/bin/ \
     && cp -r model/. /dist/model/
 

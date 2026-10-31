@@ -107,9 +107,43 @@ stage_library_chain() {
   done
 }
 
+# The bundle ships libvmafx with RUNPATH $ORIGIN, which resolves dependencies
+# in the bundle directory. If libvmafx was built with a dependency on libzimg,
+# resolve that exact soname via the dynamic loader and stage exactly what
+# DT_NEEDED names. When libvmafx does not need libzimg, stage nothing.
+stage_zimg() {
+  local zimg_soname='' entry
+  while IFS= read -r entry; do
+    if [[ "$entry" =~ ^libzimg\.so(\.[0-9]+)*$ ]]; then
+      zimg_soname="$entry"
+      break
+    fi
+  done < <(
+    LC_ALL=C readelf --dynamic build/src/libvmafx.so |
+      sed -n 's/.*(NEEDED)[^[]*\[\(.*\)\]$/\1/p'
+  )
+  [[ -n "$zimg_soname" ]] || return 0
+
+  local ldd_output resolved_path
+  if ! ldd_output="$(LC_ALL=C ldd build/src/libvmafx.so 2>&1)"; then
+    echo "ERROR: ldd cannot read build/src/libvmafx.so: $ldd_output" >&2
+    return 1
+  fi
+  resolved_path="$(
+    printf '%s\n' "$ldd_output" |
+      awk -v soname="$zimg_soname" '$1 == soname && $2 == "=>" && $3 ~ /^\// { print $3; exit }'
+  )"
+  if [[ -z "$resolved_path" || ! -f "$resolved_path" ]]; then
+    echo "ERROR: libvmafx needs $zimg_soname but the loader cannot resolve it" >&2
+    return 1
+  fi
+  cp -L -- "$resolved_path" "artifacts/$zimg_soname"
+}
+
 stage_libvmaf_chain() {
   stage_library_chain libvmaf
   stage_library_chain libvmafx
+  stage_zimg
 }
 
 require_patchelf() {
@@ -130,6 +164,14 @@ stage_cli() {
   cp -- build/tools/vmaf artifacts/vmaf
   # shellcheck disable=SC2016 # $ORIGIN is for the dynamic loader, not the shell.
   patchelf --set-rpath '$ORIGIN' artifacts/vmaf
+  # Ensure libvmafx resolves libzimg in the bundle directory.
+  local lib
+  for lib in artifacts/libvmafx.so*; do
+    if [[ -f "$lib" && ! -L "$lib" ]]; then
+      # shellcheck disable=SC2016  # $ORIGIN is for the dynamic loader, never the shell
+      patchelf --set-rpath '$ORIGIN' "$lib"
+    fi
+  done
 }
 
 LICENSING=tools/rc1-tester/image/licensing.py

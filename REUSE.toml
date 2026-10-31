@@ -390,6 +390,15 @@ precedence = "override"
 SPDX-FileCopyrightText = "2016 (as the nv-codec-headers notice states it)"
 SPDX-License-Identifier = "MIT"
 
+# The WTFPL v2 text of zimg 3.0.6 (its COPYING at tag release-3.0.6, SHA-256
+# 7637386b...ad40), kept in the tree for the offline release-native notices
+# (ADR-3396).
+[[annotations]]
+path = ["tools/rc1-tester/image/licenses/zimg-3.0.6-COPYING.txt"]
+precedence = "override"
+SPDX-FileCopyrightText = "2004 Sam Hocevar <sam@hocevar.net>"
+SPDX-License-Identifier = "WTFPL"
+
 [[annotations]]
 path = [
     "docs/ai/models/u2netp_mirror_card.md",

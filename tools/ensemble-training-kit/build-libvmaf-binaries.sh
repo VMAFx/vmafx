@@ -97,11 +97,12 @@ echo "[build-libvmaf] platform=$PLATFORM build_dir=$build_dir"
 echo "[build-libvmaf] meson args: ${meson_args[*]}"
 
 # meson setup is idempotent for the same args; reconfigure on flag drift.
+# Note: zimg is enabled by default (ADR-3396) via core/meson_options.txt.
 if [[ -d "$build_dir" ]]; then
-  meson setup --reconfigure "$build_dir" "${meson_args[@]}" -C "$REPO_ROOT" ||
-    meson setup "$build_dir" "${meson_args[@]}" -C "$REPO_ROOT"
+  meson setup --reconfigure "$build_dir" core "${meson_args[@]}" -C "$REPO_ROOT" ||
+    meson setup "$build_dir" core "${meson_args[@]}" -C "$REPO_ROOT"
 else
-  (cd "$REPO_ROOT" && meson setup "$build_dir" "${meson_args[@]}")
+  (cd "$REPO_ROOT" && meson setup "$build_dir" core "${meson_args[@]}")
 fi
 
 ninja -C "$build_dir"

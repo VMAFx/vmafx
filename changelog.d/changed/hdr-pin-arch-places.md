@@ -1,0 +1,1 @@
+- **HDR pins hold 5 decimal places on x86-64 and 3 on aarch64 and macOS.** libvmaf scores identical converted pictures bit-exact on every platform; the zimg conversion to ICtCp rounds differently on aarch64 and macOS, by up to 3.5e-4 on the pooled score. See [HDR models](docs/models/v1.md#hdr-models).

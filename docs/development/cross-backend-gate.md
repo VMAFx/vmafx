@@ -385,11 +385,14 @@ report it.
 Meson registers one test per backend the build enables:
 `test_cuda_v1_models_no_fallback`, `test_sycl_v1_models_no_fallback`,
 `test_hip_v1_models_no_fallback`, and `test_metal_v1_models_no_fallback`
-(suites `slow`, `gpu` and the backend name). Each one skips (exit 77) with the
-reason when it finds no device, or after its other rows when an SDR pair is
-absent. A missing HDR fixture or a zimg refusal fails the test. `testdata/bbb`
+(suites `slow`, `gpu` and the backend name). Each one first scores a blank
+picture on the device and skips (exit 77) with the reason when the CLI refuses
+the backend, so a leg with no device needs no fixture. With a device, it skips
+after its other rows when an SDR pair is absent; a missing HDR fixture or a zimg
+refusal fails the test. `testdata/bbb`
 and `python/test/resource/yuv` are not in the repository;
-`scripts/test/fetch-test-yuvs.sh` fetches the latter. When
+`scripts/test/fetch-test-yuvs.sh` fetches the latter. The CI Metal build leg
+fetches the gate's YUV pairs before the meson tests. When
 `~/.cache/vmafx-locks` exists (or `VMAFX_LOCK_DIR`), each device run takes that
 backend's lock file.
 Run a SYCL build's test with the oneAPI environment loaded:

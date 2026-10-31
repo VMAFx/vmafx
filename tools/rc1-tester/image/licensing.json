@@ -10,7 +10,8 @@
   "ISC": "LICENSES/ISC.txt",
   "LicenseRef-LIVE-BRISQUE": "LICENSES/LicenseRef-LIVE-BRISQUE.txt",
   "MIT": "LICENSES/MIT.txt",
-  "Unlicense": "LICENSES/Unlicense.txt"
+  "Unlicense": "LICENSES/Unlicense.txt",
+  "WTFPL": "LICENSES/WTFPL.txt"
  },
  "cpython_license_rst": {
   "3.13.16": {
@@ -229,6 +230,13 @@
    "git": "https://github.com/ROCm/TheRock.git",
    "commit": "b324869fb3116353ac7eec5e6926aa3d452ac987",
    "why": "the scripts and patches with which TheRock built ROCm 10.1.0's bundled libelf and libnuma (third-party/sysdeps, patches/third-party), fetched by its commit and packed with git archive"
+  },
+  "zimg-3.0.6": {
+   "file": "zimg-3.0.6.tar.gz",
+   "git": "https://github.com/sekrit-twc/zimg.git",
+   "commit": "f819b14e8f39d1282400b0d9543e8ef73c1b2bbd",
+   "tag": "release-3.0.6",
+   "why": "libzimg 3.0.6 source for picture conversion (ADR-3396)"
   }
  },
  "artifacts": {
@@ -515,6 +523,26 @@
      ]
     },
     {
+     "id": "zimg",
+     "kind": "fixed",
+     "name": "zimg image scaling and colours-pace conversion library (libzimg.so.2)",
+     "paths": [
+      "opt/vmafx/lib/libzimg.so*"
+     ],
+     "licence": "WTFPL",
+     "copyright": [
+      "Copyright (c) 2014-2024, sekrit-twc"
+     ],
+     "source": "https://github.com/sekrit-twc/zimg.git at commit f819b14e8f39d1282400b0d9543e8ef73c1b2bbd, tag release-3.0.6",
+     "texts": [
+      {
+       "name": "WTFPL.txt",
+       "fetched": "zimg-3.0.6-COPYING",
+       "label": "zimg 3.0.6 licence text (WTFPL v2)"
+      }
+     ]
+    },
+    {
      "id": "notices",
      "kind": "notices",
      "name": "This licence directory",
@@ -689,6 +717,23 @@
      "name": "Python package metadata left in the interpreter",
      "roots": [
       "runtime/lib/python3.13/site-packages"
+     ]
+    },
+    {
+     "id": "zimg",
+     "kind": "fixed",
+     "name": "zimg image scaling and colours-pace conversion library (statically linked)",
+     "licence": "WTFPL",
+     "copyright": [
+      "Copyright (c) 2014-2024, sekrit-twc"
+     ],
+     "source": "https://github.com/sekrit-twc/zimg.git at commit f819b14e8f39d1282400b0d9543e8ef73c1b2bbd, tag release-3.0.6",
+     "texts": [
+      {
+       "name": "WTFPL.txt",
+       "fetched": "zimg-3.0.6-COPYING",
+       "label": "zimg 3.0.6 licence text (WTFPL v2)"
+      }
      ]
     },
     {
@@ -910,6 +955,23 @@
      "name": "Python package metadata left in the interpreter",
      "roots": [
       "runtime/Lib/site-packages"
+     ]
+    },
+    {
+     "id": "zimg",
+     "kind": "fixed",
+     "name": "zimg image scaling and colours-pace conversion library (statically linked)",
+     "licence": "WTFPL",
+     "copyright": [
+      "Copyright (c) 2014-2024, sekrit-twc"
+     ],
+     "source": "https://github.com/sekrit-twc/zimg.git at commit f819b14e8f39d1282400b0d9543e8ef73c1b2bbd, tag release-3.0.6",
+     "texts": [
+      {
+       "name": "WTFPL.txt",
+       "fetched": "zimg-3.0.6-COPYING",
+       "label": "zimg 3.0.6 licence text (WTFPL v2)"
+      }
      ]
     },
     {
@@ -1144,6 +1206,10 @@
      "roots": [
       "runtime/Lib/site-packages"
      ]
+    },
+    {
+     "from": "windows-zip",
+     "id": "zimg"
     },
     {
      "id": "notices",
@@ -1452,6 +1518,10 @@
     {
      "from": "windows-zip",
      "id": "python-packages"
+    },
+    {
+     "from": "windows-zip",
+     "id": "zimg"
     },
     {
      "from": "windows-zip",
@@ -1795,6 +1865,10 @@
      ]
     },
     {
+     "from": "image",
+     "id": "zimg"
+    },
+    {
      "id": "notices",
      "kind": "notices",
      "name": "This licence directory",
@@ -2045,6 +2119,10 @@
       "etc/python3/debian_config",
       "var/lib/python/**"
      ]
+    },
+    {
+     "from": "image",
+     "id": "zimg"
     },
     {
      "id": "notices",
@@ -2531,6 +2609,10 @@
      ]
     },
     {
+     "from": "image",
+     "id": "zimg"
+    },
+    {
      "id": "notices",
      "kind": "notices",
      "name": "This licence directory",
@@ -2660,6 +2742,26 @@
       "etc/update-motd.d/*",
       "usr/share/zoneinfo/localtime",
       "var/lib/dpkg/status.d/**"
+     ]
+    },
+    {
+     "id": "zimg",
+     "kind": "fixed",
+     "name": "zimg image scaling and colours-pace conversion library (libzimg.so.2)",
+     "paths": [
+      "usr/local/lib/libzimg.so*"
+     ],
+     "licence": "WTFPL",
+     "copyright": [
+      "Copyright (c) 2014-2024, sekrit-twc"
+     ],
+     "source": "https://github.com/sekrit-twc/zimg.git at commit f819b14e8f39d1282400b0d9543e8ef73c1b2bbd, tag release-3.0.6",
+     "texts": [
+      {
+       "name": "WTFPL.txt",
+       "fetched": "zimg-3.0.6-COPYING",
+       "label": "zimg 3.0.6 licence text (WTFPL v2)"
+      }
      ]
     },
     {
@@ -2911,6 +3013,10 @@
      ]
     },
     {
+     "from": "production-cli-image",
+     "id": "zimg"
+    },
+    {
      "id": "notices",
      "kind": "notices",
      "name": "This licence directory",
@@ -3150,6 +3256,10 @@
      ]
     },
     {
+     "from": "production-cli-image",
+     "id": "zimg"
+    },
+    {
      "id": "notices",
      "kind": "notices",
      "name": "This licence directory",
@@ -3194,6 +3304,10 @@
     {
      "from": "production-go-server-image",
      "id": "system-state"
+    },
+    {
+     "from": "production-cli-image",
+     "id": "zimg"
     },
     {
      "from": "production-go-server-image",
@@ -3438,6 +3552,10 @@
      ]
     },
     {
+     "from": "production-cli-image",
+     "id": "zimg"
+    },
+    {
      "id": "notices",
      "kind": "notices",
      "name": "This licence directory",
@@ -3522,6 +3640,10 @@
      "id": "system-state"
     },
     {
+     "from": "production-cli-image",
+     "id": "zimg"
+    },
+    {
      "from": "production-node-image",
      "id": "notices"
     }
@@ -3570,6 +3692,10 @@
      "from": "cuda-image",
      "id": "system-state",
      "name": "Configuration and package records the Debian base image writes"
+    },
+    {
+     "from": "production-cli-image",
+     "id": "zimg"
     },
     {
      "from": "production-cli-image",
@@ -3643,6 +3769,10 @@
     },
     {
      "from": "production-cli-image",
+     "id": "zimg"
+    },
+    {
+     "from": "production-cli-image",
      "id": "notices"
     }
    ]
@@ -3698,6 +3828,10 @@
      "from": "sycl-image",
      "id": "system-state",
      "name": "Configuration and package records the Debian base image writes"
+    },
+    {
+     "from": "production-cli-image",
+     "id": "zimg"
     },
     {
      "from": "production-cli-image",
@@ -3837,6 +3971,26 @@
      "licence": "EUPL-1.2",
      "copyright": [
       "Copyright 2026 Lusoris"
+     ]
+    },
+    {
+     "id": "zimg",
+     "kind": "fixed",
+     "name": "zimg image scaling and colours-pace conversion library (libzimg.so.2)",
+     "paths": [
+      "libzimg.so*"
+     ],
+     "licence": "WTFPL",
+     "copyright": [
+      "Copyright (c) 2014-2024, sekrit-twc"
+     ],
+     "source": "https://github.com/sekrit-twc/zimg.git at commit f819b14e8f39d1282400b0d9543e8ef73c1b2bbd, tag release-3.0.6",
+     "texts": [
+      {
+       "name": "WTFPL.txt",
+       "repo": "tools/rc1-tester/image/licenses/zimg-3.0.6-COPYING.txt",
+       "label": "zimg 3.0.6 licence text (WTFPL v2)"
+      }
      ]
     },
     {
@@ -4497,6 +4651,11 @@
    "url": "https://raw.githubusercontent.com/cython/cython/3.2.4/LICENSE.txt",
    "sha256": "9568a2b155e66ac3e0ba1fd80b52b827b9460e6cf6f233125e7cbca8e206ddc3",
    "why": "Cython 3.2.4 (Apache-2.0) keeps no licence file in its dist-info; the v1.0.0-rc server images ship it in the runtime venv"
+  },
+  "zimg-3.0.6-COPYING": {
+   "url": "https://raw.githubusercontent.com/sekrit-twc/zimg/release-3.0.6/COPYING",
+   "sha256": "7637386b5f81e8a719ca336233149005e5fa28b5e6054ea7b67de49355b0ad40",
+   "why": "libzimg 3.0.6 licence text (WTFPL v2)"
   }
  },
  "go_own_modules": [

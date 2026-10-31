@@ -13,3 +13,4 @@ jq
 # writes the baseline has it.
 libvpl-dev
 clang-tidy-22
+libzimg-dev

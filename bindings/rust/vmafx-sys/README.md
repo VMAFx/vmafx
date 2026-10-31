@@ -48,11 +48,11 @@ stderr. Drop never aborts the process.
 
 ### Prerequisites
 
-1. Build or install `libvmaf`:
+1. Build or install `libvmaf` (requires `zimg >= 2.7`, e.g. `libzimg-dev` on Linux or `brew install zimg` on macOS, unless `-Denable_zimg=false` is passed):
 
    ```bash
    # From the repo root:
-   meson setup build -Denable_cuda=false -Denable_sycl=false
+   meson setup build core -Denable_cuda=false -Denable_sycl=false
    ninja -C build install     # installs to /usr/local by default
    ```
 

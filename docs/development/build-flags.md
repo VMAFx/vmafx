@@ -113,7 +113,7 @@ under [Option details](#option-details).
 | --- | --- | --- | --- |
 | `enable_cuda` | bool | `false` | Compile the CUDA backend and its `.cu` kernels; needs the CUDA toolkit (`nvcc`). |
 | `enable_nvtx` | bool | `false` | Instrument CUDA kernels with NVTX ranges for Nsight Systems; see [backends/nvtx/profiling.md](../backends/nvtx/profiling.md). |
-| `enable_zimg` | bool | `false` | Build `vmaf_picture_convert()` (colourspace, format and size conversion) against zimg >= 2.7 found by pkg-config; off, the function returns `-ENOTSUP`. See [Pictures](../api/pictures.md#converting-pictures-vmaf_picture_convert) and [ADR-1822](../adr/1822-additive-picture-convert.md). |
+| `enable_zimg` | bool | `true` | Build `vmaf_picture_convert()` (colourspace, format and size conversion) and HDR PQ scoring against zimg >= 2.7 found by pkg-config; off, the function returns `-ENOTSUP`. See [Pictures](../api/pictures.md#converting-pictures-vmaf_picture_convert), [ADR-1822](../adr/1822-additive-picture-convert.md), and [ADR-3396](../adr/3396-zimg-on-by-default.md). |
 | `enable_nvcc` | bool | `true` | Compile the CUDA kernel objects with `nvcc` instead of the clang CUDA driver; only read when `enable_cuda=true`. |
 | `nvcc_threads` | integer | `4` | `nvcc --threads` for the per-kernel fatbin compiles, range 1 to 32; see [`nvcc_threads`](#nvcc_threads). |
 
