@@ -11,7 +11,8 @@
       "opset": 17,
       "sha256": "ec8433e8c7c6a33ef3032a6e4538833e0bbb59de9f088054bbcb3be0e371ee55",
       "sigstore_bundle": "dists_sq.onnx.sigstore.json",
-      "smoke": true
+      "smoke": true,
+      "teacher": "none"
     },
     {
       "description": "FastDVDnet temporal pre-filter (5-frame luma window) \u2014 upstream m-tassano/fastdvdnet weights wrapped for the fork's luma-only NCHW contract.",
@@ -24,7 +25,8 @@
       "opset": 17,
       "sha256": "eb9444cf6f07eefdc7f4f68d09131074dbd1dcee6f88a331ba684dd2fb5937d4",
       "sigstore_bundle": "fastdvdnet_pre.onnx.sigstore.json",
-      "smoke": false
+      "smoke": false,
+      "teacher": "none"
     },
     {
       "id": "fr_regressor_v1",
@@ -35,7 +37,8 @@
       "onnx": "fr_regressor_v1.onnx",
       "opset": 17,
       "sha256": "b57dee2509290d77c7980f8f23aa1380f64937c485d1b1d1e5f78c13a3a54c63",
-      "sigstore_bundle": "fr_regressor_v1.onnx.sigstore.json"
+      "sigstore_bundle": "fr_regressor_v1.onnx.sigstore.json",
+      "teacher": "vmaf_v0.6.1"
     },
     {
       "id": "fr_regressor_v2",
@@ -47,7 +50,8 @@
       "opset": 17,
       "sha256": "67934b0b61c73eb852d84ffb34e3333756e8da2530179ecc830336133e63e69e",
       "sigstore_bundle": "fr_regressor_v2.onnx.sigstore.json",
-      "smoke": false
+      "smoke": false,
+      "teacher": "unknown"
     },
     {
       "id": "fr_regressor_v2_ensemble_v1_seed0",
@@ -59,7 +63,8 @@
       "opset": 17,
       "sha256": "98e4b08cc23e4941d4c839a5c734bd33efbb083f3cf7923a04c0d22351185444",
       "sigstore_bundle": "fr_regressor_v2_ensemble_v1_seed0.onnx.sigstore.json",
-      "smoke": true
+      "smoke": true,
+      "teacher": "none"
     },
     {
       "id": "fr_regressor_v2_ensemble_v1_seed1",
@@ -71,7 +76,8 @@
       "opset": 17,
       "sha256": "4d6824fafceb6e3f1fdb6b2306167e0951b5eac8f54318c7cb4eb82284c3025b",
       "sigstore_bundle": "fr_regressor_v2_ensemble_v1_seed1.onnx.sigstore.json",
-      "smoke": true
+      "smoke": true,
+      "teacher": "none"
     },
     {
       "id": "fr_regressor_v2_ensemble_v1_seed2",
@@ -83,7 +89,8 @@
       "opset": 17,
       "sha256": "1a0d0561fba4955b986d623446edd38d4eb0d1bd6e079fb6a2142a6033aa9f13",
       "sigstore_bundle": "fr_regressor_v2_ensemble_v1_seed2.onnx.sigstore.json",
-      "smoke": true
+      "smoke": true,
+      "teacher": "none"
     },
     {
       "id": "fr_regressor_v2_ensemble_v1_seed3",
@@ -95,7 +102,8 @@
       "opset": 17,
       "sha256": "ba623fa4cbaff325aa3f3bb50ecc1b7edffd288e2c463cd2bcceb87f33894ec5",
       "sigstore_bundle": "fr_regressor_v2_ensemble_v1_seed3.onnx.sigstore.json",
-      "smoke": true
+      "smoke": true,
+      "teacher": "none"
     },
     {
       "id": "fr_regressor_v2_ensemble_v1_seed4",
@@ -107,7 +115,8 @@
       "opset": 17,
       "sha256": "af727669a6dec5a36906ab7dd06f2a83e9a00c2706d6e0b2f3200c4af4409a43",
       "sigstore_bundle": "fr_regressor_v2_ensemble_v1_seed4.onnx.sigstore.json",
-      "smoke": true
+      "smoke": true,
+      "teacher": "none"
     },
     {
       "id": "fr_regressor_v3",
@@ -119,7 +128,8 @@
       "opset": 17,
       "sha256": "eaa16d23461eda74940b2ed590edfcaf13428aade294e47792a5a15f4d3b999c",
       "sigstore_bundle": "fr_regressor_v3.onnx.sigstore.json",
-      "smoke": false
+      "smoke": false,
+      "teacher": "unknown"
     },
     {
       "description": "Tiny residual filter for vmafx_pre \u2014 degraded \u2192 clean luma.",
@@ -134,7 +144,8 @@
       "quant_accuracy_budget_plcc": 0.01,
       "quant_mode": "dynamic",
       "sha256": "412d53700704a7aed26908c4fa0c4de9fabab08b6f2ae330ea5b9e4a4c462e27",
-      "sigstore_bundle": "learned_filter_v1.onnx.sigstore.json"
+      "sigstore_bundle": "learned_filter_v1.onnx.sigstore.json",
+      "teacher": "none"
     },
     {
       "description": "LPIPS-SqueezeNet perceptual distance (upstream richzhang/PerceptualSimilarity v0.1).",
@@ -146,7 +157,8 @@
       "onnx": "lpips_sq.onnx",
       "opset": 18,
       "sha256": "1402626680d5b69a793e647edda2c32f04e192f5cf1e7837bec8bde14187a261",
-      "sigstore_bundle": "lpips_sq.onnx.sigstore.json"
+      "sigstore_bundle": "lpips_sq.onnx.sigstore.json",
+      "teacher": "none"
     },
     {
       "id": "mobilesal_placeholder_v0",
@@ -158,7 +170,8 @@
       "opset": 17,
       "sha256": "f122631089977c4be7d60b9bf3d4daf186d275bd0587db2c9878578e006b91d4",
       "sigstore_bundle": "mobilesal.onnx.sigstore.json",
-      "smoke": true
+      "smoke": true,
+      "teacher": "none"
     },
     {
       "description": "Tiny no-reference quality metric \u2014 single-frame 224\u00d7224 grayscale.",
@@ -173,7 +186,8 @@
       "quant_accuracy_budget_plcc": 0.01,
       "quant_mode": "dynamic",
       "sha256": "75eff676bff0f0f911fd59ac72c90240e95caff67302b37f6e35bfbeac2b680b",
-      "sigstore_bundle": "nr_metric_v1.onnx.sigstore.json"
+      "sigstore_bundle": "nr_metric_v1.onnx.sigstore.json",
+      "teacher": "none"
     },
     {
       "description": "Fork-trained tiny U-Net saliency student trained on DUTS-TR \u2014 superseded by saliency_student_v2 as the production default (2026-05-15, ADR-0444).",
@@ -186,7 +200,8 @@
       "opset": 17,
       "sha256": "1edc64772498ab73ebdb17e21f49679ce5ded82534d47f557cd15fd36e1b46e7",
       "sigstore_bundle": "saliency_student_v1.onnx.sigstore.json",
-      "smoke": false
+      "smoke": false,
+      "teacher": "none"
     },
     {
       "description": "Fork-trained tiny U-Net saliency student trained on DUTS-TR \u2014 production default since 2026-05-15 (ADR-0444). Supersedes saliency_student_v1 (IoU +8.3%).",
@@ -199,7 +214,8 @@
       "opset": 17,
       "sha256": "8cdaa6c10ab44d9b03a6a207603bd0b61f5c75a6beafdc82da57215f0a2ab2ed",
       "sigstore_bundle": "saliency_student_v2.onnx.sigstore.json",
-      "smoke": false
+      "smoke": false,
+      "teacher": "none"
     },
     {
       "description": "fp16 I/O round-trip CI probe (Identity op).",
@@ -212,7 +228,8 @@
       "opset": 17,
       "sha256": "6cbf16be5d2cfb858f1eb60bfdcc9e674c15f17b3ff365afa475bbe9be76258b",
       "sigstore_bundle": "smoke_fp16_v0.onnx.sigstore.json",
-      "smoke": true
+      "smoke": true,
+      "teacher": "none"
     },
     {
       "description": "CI attached multi-output probe \u2014 two scalar outputs (mean_score, peak_score).",
@@ -225,7 +242,8 @@
       "opset": 17,
       "sha256": "e5f353d65d6766b9beac0e59ea586c419308c0e24a6316a7714b7a5e4aef30e9",
       "sigstore_bundle": "smoke_multi_output_v0.onnx.sigstore.json",
-      "smoke": true
+      "smoke": true,
+      "teacher": "none"
     },
     {
       "description": "CI load-path probe (Conv + Identity).",
@@ -238,7 +256,8 @@
       "opset": 17,
       "sha256": "c83a5f217fa3736bf575c52f7f4c187a6201951e8ddccb51bdcdcc136108fbe0",
       "sigstore_bundle": "smoke_v0.onnx.sigstore.json",
-      "smoke": true
+      "smoke": true,
+      "teacher": "none"
     },
     {
       "description": "CI symbolic-batch probe \u2014 dynamic first dimension to exercise batch-agnostic load path.",
@@ -251,7 +270,8 @@
       "opset": 17,
       "sha256": "cc1a75a7518b27cdfc9df481bb1282950cc51fe7ef6f62c5dbccb106b73cc509",
       "sigstore_bundle": "smoke_v0_symbolic_batch.onnx.sigstore.json",
-      "smoke": true
+      "smoke": true,
+      "teacher": "none"
     },
     {
       "description": "TransNet V2 shot-boundary detector (Soucek & Lokoc 2020) \u2014 100-frame window of 27x48 RGB thumbnails -> per-frame logits.",
@@ -263,7 +283,8 @@
       "onnx": "transnet_v2.onnx",
       "opset": 17,
       "sha256": "89280a199327871a0eb2c52914449ce339b7d8e8846a6245e4eb72d23d21cfc9",
-      "sigstore_bundle": "transnet_v2.onnx.sigstore.json"
+      "sigstore_bundle": "transnet_v2.onnx.sigstore.json",
+      "teacher": "none"
     },
     {
       "description": "Legacy tiny VMAF fusion regressor (mlp_small) \u2014 superseded by vmaf_tiny_v2 (ADR-0244); retained for LOSO-eval baselines + quantization regression tests.",
@@ -276,7 +297,8 @@
       "opset": 17,
       "sha256": "d30201dfa8a0cb1d6d5bbe342b0f9049e40bf86e57b2e3b14cbfcade9231e7a6",
       "sigstore_bundle": "vmaf_tiny_v1.onnx.sigstore.json",
-      "smoke": true
+      "smoke": true,
+      "teacher": "vmaf_v0.6.1"
     },
     {
       "description": "Legacy tiny VMAF fusion regressor (mlp_medium sibling of vmaf_tiny_v1) \u2014 superseded by vmaf_tiny_v3; retained for LOSO-eval baselines.",
@@ -289,7 +311,8 @@
       "opset": 17,
       "sha256": "97f6116b44913f4076170a2f0cb78042db85aac7c56d432e14d9fe138ab952b7",
       "sigstore_bundle": "vmaf_tiny_v1_medium.onnx.sigstore.json",
-      "smoke": true
+      "smoke": true,
+      "teacher": "vmaf_v0.6.1"
     },
     {
       "description": "Tiny VMAF fusion regressor \u2014 canonical-6 features + bundled StandardScaler + mlp_small (~257 params).",
@@ -302,7 +325,8 @@
       "opset": 17,
       "sha256": "d7000bf5c5fd1ed39528546dd8464db44a13cb73cfed33fd8f134e5848b009a7",
       "sigstore_bundle": "vmaf_tiny_v2.onnx.sigstore.json",
-      "smoke": false
+      "smoke": false,
+      "teacher": "vmaf_v0.6.1"
     },
     {
       "description": "Tiny VMAF fusion regressor \u2014 canonical-6 features + bundled StandardScaler + mlp_medium (~769 params).",
@@ -317,7 +341,8 @@
       "quant_accuracy_budget_plcc": 0.01,
       "quant_mode": "dynamic",
       "sha256": "57b2b7e0c62e84e3238b266e423e2008da76ec12ce957c173b2bbed11c65eb78",
-      "sigstore_bundle": "vmaf_tiny_v3.onnx.sigstore.json"
+      "sigstore_bundle": "vmaf_tiny_v3.onnx.sigstore.json",
+      "teacher": "vmaf_v0.6.1"
     },
     {
       "description": "Tiny VMAF fusion regressor \u2014 canonical-6 features + bundled StandardScaler + mlp_large (~3073 params).",
@@ -332,7 +357,8 @@
       "quant_accuracy_budget_plcc": 0.01,
       "quant_mode": "dynamic",
       "sha256": "2bccd339caa08f25433120546e45f2cb435288edeeefeafc56f3668986904e8f",
-      "sigstore_bundle": "vmaf_tiny_v4.onnx.sigstore.json"
+      "sigstore_bundle": "vmaf_tiny_v4.onnx.sigstore.json",
+      "teacher": "vmaf_v0.6.1"
     }
   ],
   "schema_version": 1

@@ -76,8 +76,14 @@ import numpy as np
 
 SCRIPT_PATH = Path(__file__).resolve()
 REPO_ROOT = SCRIPT_PATH.parents[2]
-if str(REPO_ROOT / "ai" / "src") not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
+try:
+    from _script_bootstrap import bootstrap_ai_script
+except ModuleNotFoundError:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
+
+bootstrap_ai_script(__file__, include_repo_root=True)
+
+from ai.data.scores import resolve_teacher_model  # noqa: E402
 
 from aiutils.file_utils import sha256  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
@@ -323,6 +329,7 @@ def _update_registry(
     ensemble_id: str,
     members: list[dict[str, Any]],
     smoke: bool,
+    teacher: str = "none",
 ) -> None:
     """Add / replace the ensemble registry row.
 
@@ -346,6 +353,7 @@ def _update_registry(
                 "onnx": member["onnx"],
                 "opset": 17,
                 "sha256": member["sha256"],
+                "teacher": member.get("teacher", teacher),
                 "smoke": smoke,
                 "notes": (
                     f"Ensemble member of {ensemble_id} "
@@ -405,6 +413,12 @@ def _build_parser() -> argparse.ArgumentParser:
         "--registry",
         type=Path,
         default=REPO_ROOT / "model" / "tiny" / "registry.json",
+    )
+    ap.add_argument(
+        "--teacher",
+        type=str,
+        default=None,
+        help="Teacher model name or path (defaults to 'none').",
     )
     ap.add_argument(
         "--no-export",
@@ -622,11 +636,13 @@ def _write_ensemble_manifest(
     print(f"[fr-v2-ens] wrote manifest to {manifest_path}")
 
     if not args.smoke:
+        teacher = resolve_teacher_model(args.teacher).name if args.teacher else "none"
         _update_registry(
             args.registry,
             ensemble_id=args.ensemble_id,
             members=member_records,
             smoke=args.smoke,
+            teacher=teacher,
         )
         print(f"[fr-v2-ens] updated registry {args.registry.name} ({len(member_records)} members)")
     else:

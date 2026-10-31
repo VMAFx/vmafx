@@ -686,6 +686,27 @@
         ".github/workflows/tidy-metal.yml"
       ]
     },
+    "gstreamer_element": {
+      "own_paths_only": true,
+      "patterns": [
+        "gstreamer/*",
+        "gstreamer/**",
+        "core/*",
+        "core/**",
+        "ffmpeg-patches/src/vf_vmafx_options.h",
+        "model/*",
+        "model/**",
+        "docs/usage/gstreamer.md",
+        "scripts/codegen/**",
+        "scripts/ci/vmafx_window_pooling.py",
+        "scripts/ci/werror-args.sh",
+        "scripts/test/fetch-test-yuvs.sh",
+        "compat/python-vmaf/tools/retrying_download.py",
+        "requirements/locks/build.txt",
+        "build-config.env",
+        ".github/workflows/lint-and-format.yml"
+      ]
+    },
     "upstream_consumers": {
       "own_paths_only": true,
       "patterns": [
