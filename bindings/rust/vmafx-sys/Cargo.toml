@@ -23,6 +23,9 @@ readme = "README.md"
 links = "vmaf"
 build = "build.rs"
 
+[features]
+vendored = []
+
 [package.metadata.docs.rs]
 # Header-only documentation needs no GPU SDK or native libvmaf build.
 default-target = "x86_64-unknown-linux-gnu"
