@@ -151,7 +151,7 @@ stage_cli() {
   cp -- build/tools/vmaf artifacts/vmaf
   # shellcheck disable=SC2016 # $ORIGIN is for the dynamic loader, not the shell.
   patchelf --set-rpath '$ORIGIN' artifacts/vmaf
-  # shellcheck disable=SC2016 # Ensure libvmafx resolves libzimg in the bundle directory.
+  # Ensure libvmafx resolves libzimg in the bundle directory.
   local lib
   for lib in artifacts/libvmafx.so*; do
     if [[ -f "$lib" && ! -L "$lib" ]]; then

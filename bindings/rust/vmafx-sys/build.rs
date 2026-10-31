@@ -68,7 +68,7 @@ fn emit_static_links(lib_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
         println!("cargo:rustc-link-lib=static={lib}");
     }
     if let Some(build_dir) = lib_dir.parent() {
-        let (extra_dirs, deps) = library_search::read_pc_dependencies(build_dir);
+        let (extra_dirs, deps) = library_search::read_pc_dependencies(build_dir, pkg_config_libs)?;
         for dir in &extra_dirs {
             println!("cargo:rustc-link-search=native={}", dir.display());
             println!("cargo:rustc-link-arg=-Wl,-rpath,{}", dir.display());
@@ -78,6 +78,22 @@ fn emit_static_links(lib_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     Ok(())
+}
+
+fn pkg_config_libs(module: &str) -> Result<String, String> {
+    println!("cargo:rerun-if-env-changed=PKG_CONFIG_PATH");
+    let output = std::process::Command::new("pkg-config")
+        .args(["--static", "--libs", module])
+        .output()
+        .map_err(|err| format!("vmafx-sys: failed to execute pkg-config for {module} ({err})"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "vmafx-sys: pkg-config cannot resolve {module}, which the vendored core links:\n{}",
+            String::from_utf8_lossy(&output.stderr),
+        ));
+    }
+    String::from_utf8(output.stdout)
+        .map_err(|err| format!("vmafx-sys: pkg-config output for {module} is not UTF-8 ({err})"))
 }
 
 fn build_vendored_core(manifest: &Path) -> Result<library_search::BuildPaths, String> {
