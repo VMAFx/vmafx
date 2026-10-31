@@ -50,6 +50,7 @@ jobs:
           curl --max-time 600 -fsSL --retry 3 -o "$BUNDLE" "$BUNDLE_URL/$BUNDLE"
           echo "$BUNDLE_SHA256  $BUNDLE" | sha256sum -c -
           tar --zstd -xf "$BUNDLE" -C measure
+          mv measure/pq-sollevante-v1/sollevante_*.yuv measure/
       - name: Dump and score
         run: python scripts/ci/measure_hdr_pixels.py dump --cli core/build/tools/vmaf --dir measure --shim ./zdump.so
       - name: Upload the pictures
