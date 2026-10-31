@@ -70,6 +70,10 @@ set PKG_CONFIG_PATH=%VCPKG_PREFIX%\lib\pkgconfig;%PKG_CONFIG_PATH%
 The triplet carries the C runtime into the link: `-static-md` matches the `/MD`
 of a release build, and `x64-windows-static` matches `-Db_vscrt=mt`.
 
+A static build (`--default-library=static`) also reads the private libraries in
+`zimg.pc`, which name `-lstdc++`, a library MSVC does not have. Remove that flag
+from `%VCPKG_PREFIX%\lib\pkgconfig\zimg.pc`, or the link stops at `LNK1181`.
+
 Alternatively, pass `-Denable_zimg=false` to `meson setup` to build without HDR
 colour conversion support.
 
