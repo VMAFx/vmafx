@@ -18,9 +18,11 @@
 # cloning makes `pytest python/test/` pass on the canonical pair (subject to
 # the usual scipy/skimage env).
 #
-# Usage: fetch-test-yuvs.sh [NAME...]
+# Usage: fetch-test-yuvs.sh [--bundle NAME] [NAME...]
 #   No argument: every fixture of FIXTURES. With arguments: only the named
 #   ones (a name that is not in FIXTURES is refused).
+#   --bundle <name>: provision fixture bundle into python/test/resource/yuv/<name>/
+#   (supported: pq-sollevante-v1).
 #
 # A download that fails for a transient reason (HTTP 5xx, a dropped
 # connection) is retried for minutes: compat/python-vmaf/tools/retrying_download.py,
@@ -38,9 +40,23 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-YUV_DIR="${REPO_ROOT}/python/test/resource/yuv"
-BASE_URL="https://github.com/Netflix/vmaf_resource/raw/master/python/test/resource/yuv"
+YUV_DIR="${YUV_DIR:-${REPO_ROOT}/python/test/resource/yuv}"
+BASE_URL="${BASE_URL:-https://github.com/Netflix/vmaf_resource/raw/master/python/test/resource/yuv}"
 DOWNLOAD="${REPO_ROOT}/compat/python-vmaf/tools/retrying_download.py"
+
+BUNDLE_NAME="pq-sollevante-v1"
+BUNDLE_ARCHIVE="${BUNDLE_NAME}.tar.zst"
+BUNDLE_BASE_URL="${BUNDLE_BASE_URL:-https://github.com/VMAFx/vmafx/releases/download/fixtures-${BUNDLE_NAME}}"
+BUNDLE_ARCHIVE_SHA256="${BUNDLE_ARCHIVE_SHA256:-f7546a16c3190c841e09a5de83d98db86156a06869fb9fbc58ff86307db2f416}"
+
+if [ -z "${BUNDLE_MEMBERS+x}" ]; then
+  BUNDLE_MEMBERS=(
+    "CREDIT.txt 877cfc3bca59e377ecf6cddb059d82e33de3d8074bdae523fdb3398b0f10fc74"
+    "LICENCE-CC-BY-4.0.txt 7d3512159f970cdcf296e8404be05947228d0bfaf72801cb5b3077f4330f71f9"
+    "sollevante_dis_1920x1080_8f.yuv fddfa3e86f9db381f9d14b189405416f7b854dcb4289b71daddba756cbe67050"
+    "sollevante_ref_1920x1080_8f.yuv 1be6007ebe12a52d5c4ccd891ec3dbc9935d0481a094eb63f3b214cd944089ee"
+  )
+fi
 
 # Canonical files + expected md5 (verified 2026-06-08 against vmaf_resource HEAD).
 # Format: "filename md5"
@@ -67,6 +83,7 @@ FIXTURES=(
 select_fixtures() {
   local wanted entry found
   if [ "$#" -eq 0 ]; then
+    [ "${#FIXTURES[@]}" -eq 0 ] && return 0
     printf '%s\n' "${FIXTURES[@]}"
     return 0
   fi
@@ -121,15 +138,179 @@ provision() {
   fetched=$((fetched + 1))
 }
 
+# Verify that all member files exist in the target directory with matching sha256.
+verify_bundle_members() {
+  local target_dir="$1"
+  local entry file expected actual path
+
+  for entry in "${BUNDLE_MEMBERS[@]}"; do
+    file="${entry% *}"
+    expected="${entry##* }"
+    path="${target_dir}/${file}"
+    if [ ! -f "${path}" ]; then
+      return 1
+    fi
+    actual="$(sha256sum "${path}" | awk '{print $1}')"
+    if [ "${actual}" != "${expected}" ]; then
+      return 1
+    fi
+  done
+  return 0
+}
+
+# Check tar archive for path traversal or absolute paths before extraction.
+check_path_traversal() {
+  local archive="$1"
+  local listing member
+
+  if ! listing="$(tar -tf "${archive}" 2>/dev/null)"; then
+    echo "ERROR: failed to inspect archive contents: ${archive}" >&2
+    return 1
+  fi
+
+  while IFS= read -r member; do
+    [ -z "${member}" ] && continue
+    if [[ "${member}" =~ ^/ ]] || [[ "${member}" =~ (^|/)\.\.(/|$) ]] || [[ "${member}" =~ \\ ]]; then
+      echo "ERROR: archive member contains illegal path or traversal: ${member}" >&2
+      return 1
+    fi
+  done <<<"${listing}"
+  return 0
+}
+
+# Extract bundle into staging area, verify member sha256 sums, and install to target.
+extract_and_verify_bundle() {
+  local bundle_name="$1" tmp_archive="$2" stage_dir="$3" target_dir="$4"
+  local src_dir
+
+  if ! tar -xf "${tmp_archive}" -C "${stage_dir}"; then
+    echo "ERROR: failed to extract ${bundle_name}" >&2
+    return 1
+  fi
+
+  src_dir="${stage_dir}"
+  if [ -d "${stage_dir}/${bundle_name}" ]; then
+    src_dir="${stage_dir}/${bundle_name}"
+  fi
+
+  if ! verify_bundle_members "${src_dir}"; then
+    echo "ERROR: ${bundle_name} member sha256 mismatch after extraction" >&2
+    return 1
+  fi
+
+  rm -rf "${target_dir}"
+  mkdir -p "${target_dir}"
+  cp -a "${src_dir}/." "${target_dir}/"
+  return 0
+}
+
+# Provision a fixture bundle into YUV_DIR/<bundle_name>.
+provision_bundle() {
+  local bundle_name="$1"
+  local target_dir="${YUV_DIR}/${bundle_name}"
+  local bundle_url="${BUNDLE_URL:-${BUNDLE_BASE_URL}/${BUNDLE_ARCHIVE}}"
+  local tmp_archive stage_dir actual_sha
+
+  if [ -d "${target_dir}" ] && verify_bundle_members "${target_dir}"; then
+    echo "ok      bundle ${bundle_name} (sha256 verified)"
+    return 0
+  fi
+
+  if [ -d "${target_dir}" ]; then
+    echo "stale   bundle ${bundle_name} — refetching"
+    rm -rf "${target_dir}"
+  fi
+
+  mkdir -p "${YUV_DIR}"
+  tmp_archive="$(mktemp "${YUV_DIR}/.${bundle_name}.tar.zst.XXXXXX")"
+  stage_dir="$(mktemp -d "${YUV_DIR}/.${bundle_name}.stage.XXXXXX")"
+
+  echo "fetch   bundle ${bundle_name}"
+  if ! python3 -I "${DOWNLOAD}" "${bundle_url}" "${tmp_archive}"; then
+    echo "ERROR: download failed for bundle ${bundle_name}" >&2
+    rm -f "${tmp_archive}"
+    rm -rf "${stage_dir}" "${target_dir}"
+    return 1
+  fi
+
+  actual_sha="$(sha256sum "${tmp_archive}" | awk '{print $1}')"
+  if [ "${actual_sha}" != "${BUNDLE_ARCHIVE_SHA256}" ]; then
+    echo "ERROR: ${bundle_name} archive sha256 mismatch (got ${actual_sha}, want ${BUNDLE_ARCHIVE_SHA256})" >&2
+    rm -f "${tmp_archive}"
+    rm -rf "${stage_dir}" "${target_dir}"
+    return 1
+  fi
+
+  if ! check_path_traversal "${tmp_archive}"; then
+    echo "ERROR: ${bundle_name} archive failed security validation" >&2
+    rm -f "${tmp_archive}"
+    rm -rf "${stage_dir}" "${target_dir}"
+    return 1
+  fi
+
+  if ! extract_and_verify_bundle "${bundle_name}" "${tmp_archive}" "${stage_dir}" "${target_dir}"; then
+    rm -f "${tmp_archive}"
+    rm -rf "${stage_dir}" "${target_dir}"
+    return 1
+  fi
+
+  rm -f "${tmp_archive}"
+  rm -rf "${stage_dir}"
+  echo "ok      bundle ${bundle_name} (extracted and verified)"
+  return 0
+}
+
+# Parse command line options into global variables PARSED_BUNDLE and PARSED_FIXTURES.
+parse_cli_args() {
+  PARSED_BUNDLE=""
+  PARSED_FIXTURES=()
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --bundle=*)
+        PARSED_BUNDLE="${1#*=}"
+        shift
+        ;;
+      --bundle)
+        [ "$#" -ge 2 ] || {
+          echo "ERROR: --bundle requires an argument" >&2
+          return 2
+        }
+        PARSED_BUNDLE="$2"
+        shift 2
+        ;;
+      *)
+        PARSED_FIXTURES+=("$1")
+        shift
+        ;;
+    esac
+  done
+}
+
 # Provision the named fixtures (all of FIXTURES without a name) into YUV_DIR.
 main() {
   local listing entry
   local ok=0 fixed=0 fetched=0 failed=0
 
-  listing="$(select_fixtures "$@")" || return 2
+  parse_cli_args "$@" || return 2
+
+  if [ -n "${PARSED_BUNDLE}" ]; then
+    if [ "${PARSED_BUNDLE}" != "${BUNDLE_NAME}" ]; then
+      echo "ERROR: ${PARSED_BUNDLE} is not a recognized bundle (supported: ${BUNDLE_NAME})" >&2
+      return 2
+    fi
+    if ! provision_bundle "${PARSED_BUNDLE}"; then
+      return 1
+    fi
+    if [ "${#PARSED_FIXTURES[@]}" -eq 0 ]; then
+      return 0
+    fi
+  fi
+
+  listing="$(select_fixtures "${PARSED_FIXTURES[@]}")" || return 2
   mkdir -p "${YUV_DIR}"
 
   while IFS= read -r entry; do
+    [ -z "${entry}" ] && continue
     provision "${entry}" || break
   done <<<"${listing}"
 
@@ -142,5 +323,9 @@ main() {
 # Run when executed. scripts/ci/tests/test_fetch_test_yuvs.py sources this file
 # instead, to call main() with a stand-in server and a fixture list of its own.
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  if [ "${1:-}" = "--print-bundle-sha" ]; then
+    echo "${BUNDLE_ARCHIVE_SHA256}"
+    exit 0
+  fi
   main "$@"
 fi
