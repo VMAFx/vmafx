@@ -11,4 +11,5 @@ libavcodec-dev
 libavformat-dev
 libavutil-dev
 libswscale-dev
+libzimg-dev
 python3-pip
