@@ -39,7 +39,7 @@ presets and quality values from the table below.
 | Native speed knob | `-preset` | `-preset` | `-deadline good -cpu-used 0..5` | `-preset` (5 levels) |
 | Two-pass | yes | yes | yes | yes |
 | Stats capture | yes | yes | no | no |
-| Saliency ROI | `-qpfile` (patched FFmpeg) | `-x265-params zones=` | no | `-vvenc-params ROIFile=` |
+| Saliency ROI | `-qpfile` (patched FFmpeg) | `-x265-params zones=` | no | no channel; refused ([ADR-3386](../adr/3386-encoder-roi-channels-measured.md)) |
 
 The range is what the adapter accepts; a value outside it raises
 `ValueError` before FFmpeg starts. The x265 and VVenC windows are the

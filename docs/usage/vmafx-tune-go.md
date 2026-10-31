@@ -428,10 +428,14 @@ required.
 | `libx264` | `-qpfile …` (patched FFmpeg bridge, x264 `quant_offsets`) | 16×16 macroblocks |
 | `libaom-av1` | `-qpfile …` (patched FFmpeg bridge) | 16×16 macroblocks |
 | `libx265` | `-x265-params zones=…` | per-clip spatial mean |
-| `libsvtav1` | `-svtav1-params qp-file=…` | 64×64 super-blocks |
-| `libvvenc` | `-vvenc-params ROIFile=…` | 64×64 CTUs |
+| `libsvtav1` | `-qpfile …` (patched FFmpeg bridge, x264-style file) | 16×16 macroblocks bridged to 64×64 superblocks, at most eight segments |
+| `libvvenc` | no saliency ROI channel; refused (ADR-3386) | unavailable |
 
-Any other encoder exits 2 unless `--saliency-fallback-plain` is set or
+[ADR-3386](../adr/3386-encoder-roi-channels-measured.md) records the measured
+SVT-AV1 bridge and VVenC refusal. SVT-AV1 saliency needs patched FFmpeg;
+stock FFmpeg refuses `-qpfile`.
+
+Unsupported encoders, including `libvvenc`, exit 2 unless `--saliency-fallback-plain` is set or
 `VMAFTUNE_SALIENCY_FALLBACK_OK=1` is exported. See also
 [vmaf-tune-saliency-aware.md](vmaf-tune-saliency-aware.md).
 
