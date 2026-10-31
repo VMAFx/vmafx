@@ -26,7 +26,7 @@
  * upstream's, split into small helpers and without the `goto` of upstream's
  * init (HISS-01, HISS-04).
  *
- * Without HAVE_ZIMG (-Denable_zimg=false, the default) every entry point
+ * Without HAVE_ZIMG (when built with -Denable_zimg=false) every entry point
  * fails with -ENOTSUP and logs why.
  */
 

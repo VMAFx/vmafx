@@ -29,7 +29,7 @@ than the 1.4.0 that `core/meson.build` requires.
     sudo apt-get update
     sudo apt-get install -y \
         build-essential clang clang-format clang-tidy cppcheck \
-        ninja-build nasm pkg-config xxd doxygen \
+        ninja-build nasm pkg-config xxd doxygen libzimg-dev \
         python3 python3-pip python3-venv
     ```
 

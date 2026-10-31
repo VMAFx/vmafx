@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1429), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1431), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5727,3 +5727,11 @@ Every ADR, one heading each (1429), so the site search finds an ADR by its title
 ## ADR-3388: One encoder registry read by the Go and the Python tuners
 
 [3388-central-encoder-registry](3388-central-encoder-registry.md)
+
+## ADR-3389: Landed commit message gate and bot squash sign-off
+
+[3389-landed-commit-message-gate](3389-landed-commit-message-gate.md)
+
+## ADR-3396: zimg is on by default
+
+[3396-zimg-on-by-default](3396-zimg-on-by-default.md)

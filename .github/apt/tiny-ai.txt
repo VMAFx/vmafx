@@ -13,3 +13,4 @@ python3-venv
 # ffmpeg: test_chug_extract_features_smoke.py encodes its clips with
 # it (ADR-1528: it skipped in CI on every run without it).
 ffmpeg
+libzimg-dev

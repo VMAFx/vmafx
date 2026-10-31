@@ -86,8 +86,10 @@ elif [[ -n "${GOLDEN_CROSS_FILE:-}" ]]; then
     exit 1
   fi
   mkdir -p "${BUILD_DIR}"
+  # Cross-compilation sysroot lacks cross-compiled libzimg; opt out explicitly (ADR-3396)
   meson setup "${BUILD_DIR}" "${SOURCE_DIR}" --cross-file "${GOLDEN_CROSS_FILE}" \
-    "${GOLDEN_MESON_OPTIONS[@]}"
+    "${GOLDEN_MESON_OPTIONS[@]}" \
+    -Denable_zimg=false
 
   validate_compiler_id "${BUILD_DIR}"
 else

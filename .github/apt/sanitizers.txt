@@ -18,3 +18,4 @@ nasm
 clang-tools-22
 libclang-rt-22-dev
 lld-22
+libzimg-dev

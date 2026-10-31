@@ -10,7 +10,7 @@ RUN dnf groupinstall -y "Development Tools" \
       python3 python3-pip \
       git curl wget \
       doxygen shellcheck \
-      ffmpeg-devel --allowerasing \
+      ffmpeg-devel zimg-devel --allowerasing \
  && dnf clean all
 
 RUN if [ "$ENABLE_CUDA" = "true" ]; then \

@@ -12,3 +12,4 @@ nasm
 # rclone serve http and a real rclone FUSE mount (ADR-1526).
 rclone
 fuse3
+libzimg-dev

@@ -29,7 +29,8 @@ $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recomme
   python3 python3-pip python3-venv \
   git curl wget ca-certificates gnupg2 \
   doxygen \
-  libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libavfilter-dev
+  libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libavfilter-dev \
+  libzimg-dev
 # meson from PyPI, not apt: Ubuntu 24.04 ships meson 1.3.2, which predates
 # `c23` in c_std (added in 1.4.0); core/meson.build declares >= 1.4.0 since
 # ADR-0692. User-site keeps this sudo-free; ~/.local/bin is on PATH on CI.

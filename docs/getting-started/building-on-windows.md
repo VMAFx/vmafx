@@ -24,7 +24,8 @@ and run `pip install python/` from the repository root.
       mingw-w64-ucrt-x86_64-meson \
       mingw-w64-ucrt-x86_64-ninja \
       mingw-w64-ucrt-x86_64-nasm \
-      mingw-w64-ucrt-x86_64-pkg-config
+      mingw-w64-ucrt-x86_64-pkg-config \
+      mingw-w64-ucrt-x86_64-zimg
     ```
 
 3. From the repository root in the same shell, configure a static build. This
