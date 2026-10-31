@@ -22,7 +22,7 @@
 #   No argument: every fixture of FIXTURES. With arguments: only the named
 #   ones (a name that is not in FIXTURES is refused).
 #   --bundle <name>: provision fixture bundle into python/test/resource/yuv/<name>/
-#   (supported: pq-sollevante-v1).
+#   (supported: pq-sollevante-v1, hdr-ictcp-pixels-v1).
 #
 # A download that fails for a transient reason (HTTP 5xx, a dropped
 # connection) is retried for minutes: compat/python-vmaf/tools/retrying_download.py,
@@ -43,20 +43,6 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 YUV_DIR="${YUV_DIR:-${REPO_ROOT}/python/test/resource/yuv}"
 BASE_URL="${BASE_URL:-https://github.com/Netflix/vmaf_resource/raw/master/python/test/resource/yuv}"
 DOWNLOAD="${REPO_ROOT}/compat/python-vmaf/tools/retrying_download.py"
-
-BUNDLE_NAME="pq-sollevante-v1"
-BUNDLE_ARCHIVE="${BUNDLE_NAME}.tar.zst"
-BUNDLE_BASE_URL="${BUNDLE_BASE_URL:-https://github.com/VMAFx/vmafx/releases/download/fixtures-${BUNDLE_NAME}}"
-BUNDLE_ARCHIVE_SHA256="${BUNDLE_ARCHIVE_SHA256:-f7546a16c3190c841e09a5de83d98db86156a06869fb9fbc58ff86307db2f416}"
-
-if [ -z "${BUNDLE_MEMBERS+x}" ]; then
-  BUNDLE_MEMBERS=(
-    "CREDIT.txt 877cfc3bca59e377ecf6cddb059d82e33de3d8074bdae523fdb3398b0f10fc74"
-    "LICENCE-CC-BY-4.0.txt 7d3512159f970cdcf296e8404be05947228d0bfaf72801cb5b3077f4330f71f9"
-    "sollevante_dis_1920x1080_8f.yuv fddfa3e86f9db381f9d14b189405416f7b854dcb4289b71daddba756cbe67050"
-    "sollevante_ref_1920x1080_8f.yuv 1be6007ebe12a52d5c4ccd891ec3dbc9935d0481a094eb63f3b214cd944089ee"
-  )
-fi
 
 # Canonical files + expected md5 (verified 2026-06-08 against vmaf_resource HEAD).
 # Format: "filename md5"
@@ -157,12 +143,68 @@ file_sha256() {
   fi
 }
 
+# Return the expected archive sha256 for a recognized bundle name.
+get_bundle_sha() {
+  local bundle_name="$1"
+  if [ -n "${BUNDLE_ARCHIVE_SHA256:-}" ]; then
+    echo "${BUNDLE_ARCHIVE_SHA256}"
+    return 0
+  fi
+  case "${bundle_name}" in
+    pq-sollevante-v1)
+      echo "f7546a16c3190c841e09a5de83d98db86156a06869fb9fbc58ff86307db2f416"
+      ;;
+    hdr-ictcp-pixels-v1)
+      echo "b5cc0aff25a507fccd4808c8c7c4692db3bdf1a68bd3e77c6f081c5398d4ab1a"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+# Return the member list ("filename sha256") for a recognized bundle name.
+get_bundle_members() {
+  local bundle_name="$1"
+  if [ -n "${BUNDLE_MEMBERS+x}" ]; then
+    printf '%s\n' "${BUNDLE_MEMBERS[@]}"
+    return 0
+  fi
+  case "${bundle_name}" in
+    pq-sollevante-v1)
+      printf '%s\n' \
+        "CREDIT.txt 877cfc3bca59e377ecf6cddb059d82e33de3d8074bdae523fdb3398b0f10fc74" \
+        "LICENCE-CC-BY-4.0.txt 7d3512159f970cdcf296e8404be05947228d0bfaf72801cb5b3077f4330f71f9" \
+        "sollevante_dis_1920x1080_8f.yuv fddfa3e86f9db381f9d14b189405416f7b854dcb4289b71daddba756cbe67050" \
+        "sollevante_ref_1920x1080_8f.yuv 1be6007ebe12a52d5c4ccd891ec3dbc9935d0481a094eb63f3b214cd944089ee"
+      ;;
+    hdr-ictcp-pixels-v1)
+      printf '%s\n' \
+        "CREDIT.txt deccd3de290fceb68bbdd57755ca96b7d7eb8b99be53e2fe16656647749ac9bd" \
+        "LICENCE-BSD-2-Clause-Patent.txt a6fdb51d02b9dfe198e55534bb8047fe6d756eda117f4ff83de98f92c1952710" \
+        "dis_1920x1080.yuv f8f8ae69c03d965e226f16415b49bc70b253a14bc715c7dd2a1226d41a676c88" \
+        "dis_3840x2160.yuv 486dae17b9efc484183a10db65986f255e4bdc78ea4f7a8ea6a6afa14e219768" \
+        "ref_1920x1080.yuv 3c6b8da1edb7b3f8e9b5350a53bb7e46366b2fde8e4c26fd06243261b0bd1caa" \
+        "ref_3840x2160.yuv cc33c659808c46794bfe5f7b9dacbe4bc034c7d3ee76acf50b8805bf88bfc6ca"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 # Verify that all member files exist in the target directory with matching sha256.
 verify_bundle_members() {
-  local target_dir="$1"
-  local entry file expected actual path
+  local bundle_name="$1"
+  local target_dir="$2"
+  local members_list entry file expected actual path
 
-  for entry in "${BUNDLE_MEMBERS[@]}"; do
+  if ! members_list="$(get_bundle_members "${bundle_name}")"; then
+    return 1
+  fi
+
+  while IFS= read -r entry; do
+    [ -z "${entry}" ] && continue
     file="${entry% *}"
     expected="${entry##* }"
     path="${target_dir}/${file}"
@@ -173,7 +215,7 @@ verify_bundle_members() {
     if [ "${actual}" != "${expected}" ]; then
       return 1
     fi
-  done
+  done <<<"${members_list}"
   return 0
 }
 
@@ -212,7 +254,7 @@ extract_and_verify_bundle() {
     src_dir="${stage_dir}/${bundle_name}"
   fi
 
-  if ! verify_bundle_members "${src_dir}"; then
+  if ! verify_bundle_members "${bundle_name}" "${src_dir}"; then
     echo "ERROR: ${bundle_name} member sha256 mismatch after extraction" >&2
     return 1
   fi
@@ -223,14 +265,58 @@ extract_and_verify_bundle() {
   return 0
 }
 
+# Return the download URL for a bundle name.
+bundle_url_for() {
+  local bundle_name="$1"
+  if [ -n "${BUNDLE_URL:-}" ]; then
+    echo "${BUNDLE_URL}"
+  elif [ -n "${BUNDLE_BASE_URL:-}" ]; then
+    echo "${BUNDLE_BASE_URL}/${bundle_name}.tar.zst"
+  else
+    echo "https://github.com/VMAFx/vmafx/releases/download/fixtures-${bundle_name}/${bundle_name}.tar.zst"
+  fi
+}
+
+# Fetch bundle archive and verify sha256 + safe archive structure.
+fetch_and_check_archive() {
+  local bundle_name="$1"
+  local expected_sha="$2"
+  local bundle_url="$3"
+  local archive="$4"
+  local actual_sha
+
+  echo "fetch   bundle ${bundle_name}"
+  if ! python3 -I "${DOWNLOAD}" "${bundle_url}" "${archive}"; then
+    echo "ERROR: download failed for bundle ${bundle_name}" >&2
+    return 1
+  fi
+
+  actual_sha="$(file_sha256 "${archive}" | awk '{print $1}')"
+  if [ "${actual_sha}" != "${expected_sha}" ]; then
+    echo "ERROR: ${bundle_name} archive sha256 mismatch (got ${actual_sha}, want ${expected_sha})" >&2
+    return 1
+  fi
+
+  if ! check_path_traversal "${archive}"; then
+    echo "ERROR: ${bundle_name} archive failed security validation" >&2
+    return 1
+  fi
+  return 0
+}
+
 # Provision a fixture bundle into YUV_DIR/<bundle_name>.
 provision_bundle() {
   local bundle_name="$1"
   local target_dir="${YUV_DIR}/${bundle_name}"
-  local bundle_url="${BUNDLE_URL:-${BUNDLE_BASE_URL}/${BUNDLE_ARCHIVE}}"
-  local tmp_archive stage_dir actual_sha
+  local expected_sha bundle_url
+  local tmp_archive stage_dir
 
-  if [ -d "${target_dir}" ] && verify_bundle_members "${target_dir}"; then
+  if ! expected_sha="$(get_bundle_sha "${bundle_name}")"; then
+    echo "ERROR: ${bundle_name} is not a recognized bundle (supported: pq-sollevante-v1, hdr-ictcp-pixels-v1)" >&2
+    return 2
+  fi
+
+  if [ -d "${target_dir}" ] && verify_bundle_members "${bundle_name}" "${target_dir}"; then
     echo "ok      bundle ${bundle_name} (sha256 verified)"
     return 0
   fi
@@ -243,31 +329,10 @@ provision_bundle() {
   mkdir -p "${YUV_DIR}"
   tmp_archive="$(mktemp "${YUV_DIR}/.${bundle_name}.tar.zst.XXXXXX")"
   stage_dir="$(mktemp -d "${YUV_DIR}/.${bundle_name}.stage.XXXXXX")"
+  bundle_url="$(bundle_url_for "${bundle_name}")"
 
-  echo "fetch   bundle ${bundle_name}"
-  if ! python3 -I "${DOWNLOAD}" "${bundle_url}" "${tmp_archive}"; then
-    echo "ERROR: download failed for bundle ${bundle_name}" >&2
-    rm -f "${tmp_archive}"
-    rm -rf "${stage_dir}" "${target_dir}"
-    return 1
-  fi
-
-  actual_sha="$(file_sha256 "${tmp_archive}" | awk '{print $1}')"
-  if [ "${actual_sha}" != "${BUNDLE_ARCHIVE_SHA256}" ]; then
-    echo "ERROR: ${bundle_name} archive sha256 mismatch (got ${actual_sha}, want ${BUNDLE_ARCHIVE_SHA256})" >&2
-    rm -f "${tmp_archive}"
-    rm -rf "${stage_dir}" "${target_dir}"
-    return 1
-  fi
-
-  if ! check_path_traversal "${tmp_archive}"; then
-    echo "ERROR: ${bundle_name} archive failed security validation" >&2
-    rm -f "${tmp_archive}"
-    rm -rf "${stage_dir}" "${target_dir}"
-    return 1
-  fi
-
-  if ! extract_and_verify_bundle "${bundle_name}" "${tmp_archive}" "${stage_dir}" "${target_dir}"; then
+  if ! fetch_and_check_archive "${bundle_name}" "${expected_sha}" "${bundle_url}" "${tmp_archive}" ||
+    ! extract_and_verify_bundle "${bundle_name}" "${tmp_archive}" "${stage_dir}" "${target_dir}"; then
     rm -f "${tmp_archive}"
     rm -rf "${stage_dir}" "${target_dir}"
     return 1
@@ -313,10 +378,13 @@ main() {
   parse_cli_args "$@" || return 2
 
   if [ -n "${PARSED_BUNDLE}" ]; then
-    if [ "${PARSED_BUNDLE}" != "${BUNDLE_NAME}" ]; then
-      echo "ERROR: ${PARSED_BUNDLE} is not a recognized bundle (supported: ${BUNDLE_NAME})" >&2
-      return 2
-    fi
+    case "${PARSED_BUNDLE}" in
+      pq-sollevante-v1 | hdr-ictcp-pixels-v1) ;;
+      *)
+        echo "ERROR: ${PARSED_BUNDLE} is not a recognized bundle (supported: pq-sollevante-v1, hdr-ictcp-pixels-v1)" >&2
+        return 2
+        ;;
+    esac
     if ! provision_bundle "${PARSED_BUNDLE}"; then
       return 1
     fi
@@ -342,9 +410,25 @@ main() {
 # Run when executed. scripts/ci/tests/test_fetch_test_yuvs.py sources this file
 # instead, to call main() with a stand-in server and a fixture list of its own.
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then
-  if [ "${1:-}" = "--print-bundle-sha" ]; then
-    echo "${BUNDLE_ARCHIVE_SHA256}"
-    exit 0
-  fi
+  case "${1:-}" in
+    --print-bundle-sha)
+      bundle="${2:-pq-sollevante-v1}"
+      if ! sha="$(get_bundle_sha "${bundle}")"; then
+        echo "ERROR: ${bundle} is not a recognized bundle (supported: pq-sollevante-v1, hdr-ictcp-pixels-v1)" >&2
+        exit 2
+      fi
+      echo "${sha}"
+      exit 0
+      ;;
+    --print-bundle-sha=*)
+      bundle="${1#*=}"
+      if ! sha="$(get_bundle_sha "${bundle}")"; then
+        echo "ERROR: ${bundle} is not a recognized bundle (supported: pq-sollevante-v1, hdr-ictcp-pixels-v1)" >&2
+        exit 2
+      fi
+      echo "${sha}"
+      exit 0
+      ;;
+  esac
   main "$@"
 fi

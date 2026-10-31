@@ -8,6 +8,10 @@ PQ input: material has no motion, so HFR equals non-HFR there (ref_dock / dis_do
 Sol Levante input: real PQ with motion, 8 frames at 1080p, from the fixtures-pq-sollevante-v1
 release. Those rows hold 17 digits and compare exactly, since CPU scores match upstream 4611e47a7
 bit for bit on this clip.
+Bypass ICtCp input: pre-converted 1080p and 2160p ICtCp pictures from the fixtures-hdr-ictcp-pixels-v1
+release, scored with conversion bypassed. Those rows hold 17 digits and compare exactly, since
+libvmaf feature extraction and SVM inference are bit-exact on identical converted pixels across
+all architectures (run 41178767446).
 """
 
 from __future__ import annotations
@@ -80,8 +84,65 @@ def _input_args(kind: str) -> list[str]:
     return _pair_args((ref, dis, 576, 324, "422", 16))
 
 
+def _bypass_ictcp_pair(model: str) -> tuple[str, str, int, int]:
+    """Return the bundle's ref and dis paths and the size the model scores at."""
+    width, height = (3840, 2160) if "2160" in model else (1920, 1080)
+    bundle_dir = VmafConfig.test_resource_path("yuv", "hdr-ictcp-pixels-v1", bypass_download=True)
+    ref = os.path.join(bundle_dir, f"ref_{width}x{height}.yuv")
+    dis = os.path.join(bundle_dir, f"dis_{width}x{height}.yuv")
+    return ref, dis, width, height
+
+
+def _bypass_ictcp_args(model: str) -> list[str]:
+    """Return command-line input flags for pre-converted ICtCp pictures bypassing conversion."""
+    ref, dis, width, height = _bypass_ictcp_pair(model)
+    return [
+        "-r",
+        ref,
+        "-d",
+        dis,
+        "-w",
+        str(width),
+        "-h",
+        str(height),
+        "-p",
+        "420",
+        "-b",
+        "16",
+        "--color_range_ref",
+        "limited",
+        "--color_primaries_ref",
+        "bt2020",
+        "--color_trc_ref",
+        "smpte2084",
+        "--color_matrix_ref",
+        "ictcp",
+        "--color_range_dist",
+        "limited",
+        "--color_primaries_dist",
+        "bt2020",
+        "--color_trc_dist",
+        "smpte2084",
+        "--color_matrix_dist",
+        "ictcp",
+        "--precision",
+        "max",
+    ]
+
+
 def _run_cli(model: str, kind: str, out_path: str) -> subprocess.CompletedProcess[str]:
     """Execute vmaf CLI with HDR color metadata and requested model."""
+    if kind == "bypass_ictcp":
+        cmd = [
+            ExternalProgram.vmafexec,
+            *_bypass_ictcp_args(model),
+            "--model",
+            f"version={model}",
+            "--json",
+            "-o",
+            out_path,
+        ]
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=60, check=False)
     cmd = [
         ExternalProgram.vmafexec,
         *_input_args(kind),
@@ -123,10 +184,14 @@ class HdrModelsPinTest(unittest.TestCase):
         self.assertEqual(len(versions), 8, versions)
         for version in versions:
             stem = version.replace("hdr_vmaf_v1.1.8", "test_hdr_v118")
-            for kind in ("tagged", "pq", "sollevante_pq"):
+            for kind in ("tagged", "pq", "sollevante_pq", "bypass_ictcp"):
                 self.assertTrue(hasattr(self, f"{stem}_{kind}"), f"{version} has no {kind} pin")
 
     def _assert_pin(self, model: str, kind: str, expected_pin: float) -> None:
+        if kind == "bypass_ictcp":
+            ref, dis, _, _ = _bypass_ictcp_pair(model)
+            if not os.path.isfile(ref) or not os.path.isfile(dis):
+                self.fail(f"fixture bundle hdr-ictcp-pixels-v1 is missing or incomplete: {ref}")
         with tempfile.TemporaryDirectory() as tmp:
             out_path = os.path.join(tmp, "out.json")
             proc = _run_cli(model, kind, out_path)
@@ -144,8 +209,11 @@ class HdrModelsPinTest(unittest.TestCase):
             with open(out_path, encoding="utf-8") as f:
                 data = json.load(f)
             mean_score = data["pooled_metrics"]["vmaf"]["mean"]
-            if kind == "sollevante_pq" and not _NON_X86_CONVERSION:
-                # x86-64 CPU scores match upstream bit for bit on this clip.
+            # bypass_ictcp: exact on every leg (x86-64, aarch64, macOS); feature extraction
+            # and SVM inference are bit-exact on identical pre-converted input pictures
+            # (run 41178767446). sollevante_pq: exact on x86-64 only, where CPU scores match
+            # upstream bit for bit; zimg intermediate rounding differs elsewhere.
+            if kind == "bypass_ictcp" or (kind == "sollevante_pq" and not _NON_X86_CONVERSION):
                 self.assertEqual(mean_score, expected_pin)
             else:
                 self.assertAlmostEqual(mean_score, expected_pin, places=HDR_PIN_PLACES)
@@ -221,6 +289,30 @@ class HdrModelsPinTest(unittest.TestCase):
 
     def test_hdr_v118_hfr_5d0h_sollevante_pq(self) -> None:
         self._assert_pin("hdr_vmaf_v1.1.8_hfr_5d0h", "sollevante_pq", 75.08676439039081)
+
+    def test_hdr_v118_1d5h_2160_bypass_ictcp(self) -> None:
+        self._assert_pin("hdr_vmaf_v1.1.8_1d5h_2160", "bypass_ictcp", 97.21077181134615)
+
+    def test_hdr_v118_3d0h_bypass_ictcp(self) -> None:
+        self._assert_pin("hdr_vmaf_v1.1.8_3d0h", "bypass_ictcp", 96.48198986623778)
+
+    def test_hdr_v118_3d0h_2160_bypass_ictcp(self) -> None:
+        self._assert_pin("hdr_vmaf_v1.1.8_3d0h_2160", "bypass_ictcp", 103.04806526477226)
+
+    def test_hdr_v118_5d0h_bypass_ictcp(self) -> None:
+        self._assert_pin("hdr_vmaf_v1.1.8_5d0h", "bypass_ictcp", 96.72093517624604)
+
+    def test_hdr_v118_hfr_1d5h_2160_bypass_ictcp(self) -> None:
+        self._assert_pin("hdr_vmaf_v1.1.8_hfr_1d5h_2160", "bypass_ictcp", 97.21077181134615)
+
+    def test_hdr_v118_hfr_3d0h_bypass_ictcp(self) -> None:
+        self._assert_pin("hdr_vmaf_v1.1.8_hfr_3d0h", "bypass_ictcp", 96.48198986623778)
+
+    def test_hdr_v118_hfr_3d0h_2160_bypass_ictcp(self) -> None:
+        self._assert_pin("hdr_vmaf_v1.1.8_hfr_3d0h_2160", "bypass_ictcp", 103.04806526477226)
+
+    def test_hdr_v118_hfr_5d0h_bypass_ictcp(self) -> None:
+        self._assert_pin("hdr_vmaf_v1.1.8_hfr_5d0h", "bypass_ictcp", 96.72093517624604)
 
 
 if __name__ == "__main__":

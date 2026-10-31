@@ -161,6 +161,21 @@ SYNTHETIC_BUNDLE_SHA256 = sha256_hex(SYNTHETIC_BUNDLE_TAR_ZST)
 SYNTHETIC_MEMBERS = [f"{k} {sha256_hex(v)}" for k, v in sorted(SYNTHETIC_FILES.items())]
 BUNDLE_REQ_PATH = "/releases/pq-sollevante-v1.tar.zst"
 
+SYNTHETIC_HDR_FILES = {
+    "CREDIT.txt": b"Source: Netflix/vmaf_resource\n",
+    "LICENCE-BSD-2-Clause-Patent.txt": b"Licence: BSD-2-Clause-Patent\n",
+    "dis_1920x1080.yuv": b"synthetic dis 1080p yuv data\n" * 16,
+    "dis_3840x2160.yuv": b"synthetic dis 2160p yuv data\n" * 16,
+    "ref_1920x1080.yuv": b"synthetic ref 1080p yuv data\n" * 16,
+    "ref_3840x2160.yuv": b"synthetic ref 2160p yuv data\n" * 16,
+}
+SYNTHETIC_HDR_BUNDLE_TAR_ZST = make_tar_zst(
+    {f"hdr-ictcp-pixels-v1/{k}": v for k, v in SYNTHETIC_HDR_FILES.items()}
+)
+SYNTHETIC_HDR_BUNDLE_SHA256 = sha256_hex(SYNTHETIC_HDR_BUNDLE_TAR_ZST)
+SYNTHETIC_HDR_MEMBERS = [f"{k} {sha256_hex(v)}" for k, v in sorted(SYNTHETIC_HDR_FILES.items())]
+HDR_BUNDLE_REQ_PATH = "/releases/hdr-ictcp-pixels-v1.tar.zst"
+
 
 def fetch_bundle(
     server: StandIn,
@@ -294,7 +309,73 @@ class FetchBundleTest(unittest.TestCase):
         )
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertRegex(done.stdout.strip(), r"^[0-9a-f]{64}$")
-        self.assertIn(f"BUNDLE_ARCHIVE_SHA256:-{done.stdout.strip()}", SCRIPT.read_text())
+        # The default bundle is pq-sollevante-v1: the sha of its published release asset.
+        self.assertEqual(
+            done.stdout.strip(),
+            "f7546a16c3190c841e09a5de83d98db86156a06869fb9fbc58ff86307db2f416",
+        )
+
+    def test_hdr_bundle_fetch_positive(self) -> None:
+        bodies = {HDR_BUNDLE_REQ_PATH: SYNTHETIC_HDR_BUNDLE_TAR_ZST}
+        with tempfile.TemporaryDirectory() as tmp, StandIn(bodies=bodies) as server:
+            done = fetch_bundle(
+                server,
+                Path(tmp),
+                "--bundle",
+                "hdr-ictcp-pixels-v1",
+                bundle_sha256=SYNTHETIC_HDR_BUNDLE_SHA256,
+                members=SYNTHETIC_HDR_MEMBERS,
+            )
+            self.assertEqual(done.returncode, 0, done.stderr)
+            self.assertEqual(server.requests, [HDR_BUNDLE_REQ_PATH])
+            target_dir = Path(tmp) / "hdr-ictcp-pixels-v1"
+            self.assertTrue(target_dir.is_dir())
+            for name, content in SYNTHETIC_HDR_FILES.items():
+                self.assertEqual((target_dir / name).read_bytes(), content)
+            self.assertIn(
+                "ok      bundle hdr-ictcp-pixels-v1 (extracted and verified)", done.stdout
+            )
+
+    def test_hdr_bundle_archive_sha_mismatch_fails_and_leaves_nothing(self) -> None:
+        bodies = {HDR_BUNDLE_REQ_PATH: SYNTHETIC_HDR_BUNDLE_TAR_ZST}
+        with tempfile.TemporaryDirectory() as tmp, StandIn(bodies=bodies) as server:
+            done = fetch_bundle(
+                server,
+                Path(tmp),
+                "--bundle",
+                "hdr-ictcp-pixels-v1",
+                bundle_sha256="0" * 64,
+                members=SYNTHETIC_HDR_MEMBERS,
+            )
+            self.assertEqual(done.returncode, 1)
+            self.assertEqual(server.requests, [HDR_BUNDLE_REQ_PATH])
+            target_dir = Path(tmp) / "hdr-ictcp-pixels-v1"
+            self.assertFalse(target_dir.exists())
+            self.assertIn("archive sha256 mismatch", done.stderr)
+            self.assertIn("hdr-ictcp-pixels-v1", done.stderr)
+
+    def test_print_bundle_sha_for_hdr_bundle(self) -> None:
+        done = subprocess.run(  # noqa: S603
+            ["bash", str(SCRIPT), "--print-bundle-sha", "hdr-ictcp-pixels-v1"],  # noqa: S607
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(
+            done.stdout.strip(),
+            "b5cc0aff25a507fccd4808c8c7c4692db3bdf1a68bd3e77c6f081c5398d4ab1a",
+        )
+
+    def test_print_bundle_sha_unknown_bundle_refused(self) -> None:
+        done = subprocess.run(  # noqa: S603
+            ["bash", str(SCRIPT), "--print-bundle-sha", "unknown-bundle"],  # noqa: S607
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(done.returncode, 2)
+        self.assertIn("unknown-bundle is not a recognized bundle", done.stderr)
 
 
 class OneRetryPolicy(unittest.TestCase):
@@ -372,4 +453,16 @@ def test_every_tox_leg_fetches_the_pq_fixture_first() -> None:
     assert text.index("name: Run tox tests (mac)") < text.index("name: Put away the PQ fixture")
     assert text.index("name: Put away the PQ fixture") < text.index(
         "name: Save Netflix vmaf_resource fixtures"
+    )
+
+
+def test_every_tox_leg_fetches_the_hdr_fixture_too() -> None:
+    """A tox leg without the HDR bundle fails on missing converted pixels."""
+    workflow = ROOT / ".github" / "workflows" / "libvmaf-build-matrix.yml"
+    text = workflow.read_text(encoding="utf-8")
+    fetch = text.index("name: Fetch the HDR ICtCp fixture")
+    assert fetch < text.index("name: Run tox tests (ubuntu)")
+    assert fetch < text.index("name: Run tox tests (mac)")
+    assert text.index("name: Run tox tests (mac)") < text.index(
+        "name: Put away the HDR ICtCp fixture"
     )

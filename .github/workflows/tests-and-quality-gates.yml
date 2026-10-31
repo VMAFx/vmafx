@@ -127,6 +127,13 @@ jobs:
         with:
           phase: get
 
+      - name: Get the HDR ICtCp fixture
+        if: steps.impact.outputs.golden_harness == 'true'
+        uses: ./.github/actions/pq-fixture
+        with:
+          phase: get
+          bundle: hdr-ictcp-pixels-v1
+
       - name: Run Netflix golden normal pair
         if: steps.impact.outputs.golden_harness == 'true'
         env:
@@ -153,6 +160,13 @@ jobs:
           PYTHONPATH: ${{ github.workspace }}/python
         timeout-minutes: 15
         run: bash scripts/ci/run-hdr-golden-pins.sh "${{ runner.temp }}/hdr_golden_junit.xml"
+
+      - name: Finish with the HDR ICtCp fixture
+        if: steps.impact.outputs.golden_harness == 'true'
+        uses: ./.github/actions/pq-fixture
+        with:
+          phase: finish
+          bundle: hdr-ictcp-pixels-v1
 
       - name: Finish with the PQ fixture
         if: steps.impact.outputs.golden_harness == 'true'
