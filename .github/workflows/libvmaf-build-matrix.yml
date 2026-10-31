@@ -413,7 +413,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           sudo apt-get update
-          sudo -E apt-get -yq install ccache ninja-build nasm gcc g++ gpg-agent
+          sudo -E apt-get -yq install ccache ninja-build nasm gcc g++ gpg-agent pkg-config libzimg-dev
           # ADR-1360 (design notes)
           bash scripts/ci/install-intel-ocloc.sh
           wget -qO- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \
@@ -451,7 +451,7 @@ jobs:
         if: ${{ (matrix.cuda && !matrix.sycl) && steps.impact.outputs.c_core == 'true' }}
         run: |
           sudo apt-get update
-          sudo -E apt-get -yq install ccache ninja-build nasm gcc g++
+          sudo -E apt-get -yq install ccache ninja-build nasm gcc g++ pkg-config libzimg-dev
 
       # ADR-1225 (design notes)
       - name: Install ROCm / HIP toolchain
@@ -459,7 +459,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo -E apt-get -yq install --no-install-recommends \
-            ccache ninja-build nasm libomp-dev pkg-config gcc g++ jq
+            ccache ninja-build nasm libomp-dev pkg-config gcc g++ jq libzimg-dev
           # ADR-1231 (design notes)
           set -a; . ./build-config.env; set +a
           ./scripts/ci/install-rocm-from-image.sh \
