@@ -58,6 +58,7 @@ REPO_ROOT = _SCRIPT_PATHS.repo_root
 
 # Reuse the LOSO trainer's corpus loader + canonical constants so the
 # codec block layout is identical to what was gate-validated.
+from ai.data.scores import resolve_teacher_model  # noqa: E402
 from train_fr_regressor_v2_ensemble_loso import (  # noqa: E402  # type: ignore[import-not-found]
     CANONICAL_6,
     CODEC_BLOCK_DIM,
@@ -311,6 +312,12 @@ def _build_parser() -> argparse.ArgumentParser:
         default=REPO_ROOT / "model" / "tiny",
     )
     ap.add_argument(
+        "--teacher",
+        type=str,
+        default=None,
+        help="Teacher model name or path to record in registry.json (default: keep existing or resolve via resolve_teacher_model).",
+    )
+    ap.add_argument(
         "--update-registry",
         action="store_true",
         help="Patch sha256 + smoke=false on the 5 seed rows in registry.json.",
@@ -397,7 +404,9 @@ def _export_single_seed(
     return sha
 
 
-def _update_registry_json(out_dir: Path, new_shas: dict[int, str]) -> None:
+def _update_registry_json(
+    out_dir: Path, new_shas: dict[int, str], teacher: str | None = None
+) -> None:
     reg_path = out_dir / "registry.json"
     reg = json.loads(reg_path.read_text())
     for entry in reg.get("models", []):
@@ -407,6 +416,10 @@ def _update_registry_json(out_dir: Path, new_shas: dict[int, str]) -> None:
             if seed in new_shas:
                 entry["sha256"] = new_shas[seed]
                 entry["smoke"] = False
+                if teacher is not None:
+                    entry["teacher"] = teacher
+                elif "teacher" not in entry:
+                    entry["teacher"] = "none"
     write_manifest_json(reg_path, reg)
     print("[export-ens] patched registry.json: 5 seeds smoke=false + new sha256s")
 
@@ -454,7 +467,8 @@ def main(argv: list[str] | None = None) -> int:
     }
 
     if args.update_registry:
-        _update_registry_json(args.out_dir, new_shas)
+        teacher = resolve_teacher_model(args.teacher).name if args.teacher else None
+        _update_registry_json(args.out_dir, new_shas, teacher=teacher)
 
     print("[export-ens] done. New sha256 per seed:")
     for seed, sha in sorted(new_shas.items()):

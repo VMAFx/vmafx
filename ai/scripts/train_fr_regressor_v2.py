@@ -83,6 +83,7 @@ SCRIPT_PATH = Path(__file__).resolve()
 if str(REPO_ROOT / "ai" / "src") not in sys.path:
     sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
 
+from ai.data.scores import resolve_teacher_model  # noqa: E402
 
 # Canonical-6 feature subset, identical to v1 so the libvmaf input
 # contract stays stable between the two regressor checkpoints.
@@ -608,7 +609,12 @@ def _build_fr_v2_notes(smoke: bool, in_sample_plcc: float, notes_extra: str = ""
 
 
 def _update_fr_v2_registry(
-    registry_path: Path, onnx_name: str, digest: str, notes: str, smoke: bool
+    registry_path: Path,
+    onnx_name: str,
+    digest: str,
+    notes: str,
+    smoke: bool,
+    teacher: str = "unknown",
 ) -> None:
     registry = json.loads(registry_path.read_text())
     models = registry.get("models", [])
@@ -618,6 +624,7 @@ def _update_fr_v2_registry(
         "onnx": onnx_name,
         "opset": 17,
         "sha256": digest,
+        "teacher": teacher,
         "notes": notes,
         "smoke": smoke,
     }
@@ -640,6 +647,7 @@ def _write_sidecar_and_registry(
     run_provenance: dict[str, Any],
     notes_extra: str = "",
     architecture: dict[str, int] | None = None,
+    teacher: str = "unknown",
 ) -> dict[str, Any]:
     digest = sha256(onnx_path)
     notes = _build_fr_v2_notes(smoke, in_sample["plcc"], notes_extra)
@@ -677,8 +685,51 @@ def _write_sidecar_and_registry(
         "run_provenance": run_provenance,
     }
     write_manifest_json(sidecar_path, sidecar)
-    _update_fr_v2_registry(registry_path, onnx_path.name, digest, notes, smoke)
+    _update_fr_v2_registry(
+        registry_path,
+        onnx_path.name,
+        digest,
+        notes,
+        smoke,
+        teacher=teacher,
+    )
     return sidecar
+
+
+def _add_parser_io_args(ap: argparse.ArgumentParser) -> None:
+    ap.add_argument(
+        "--out-onnx",
+        type=Path,
+        default=REPO_ROOT / "model" / "tiny" / "fr_regressor_v2.onnx",
+    )
+    ap.add_argument(
+        "--out-sidecar",
+        type=Path,
+        default=REPO_ROOT / "model" / "tiny" / "fr_regressor_v2.json",
+    )
+    ap.add_argument(
+        "--registry",
+        type=Path,
+        default=REPO_ROOT / "model" / "tiny" / "registry.json",
+    )
+    ap.add_argument(
+        "--metrics-out",
+        type=Path,
+        default=None,
+        help="Path for the metrics JSON output. "
+        "Defaults to $VMAFX_RUNS_DIR/fr_regressor_v2_metrics.json "
+        "(or <repo>/runs/fr_regressor_v2_metrics.json if $VMAFX_RUNS_DIR is unset). "
+        "In --smoke mode defaults to a temp file unless explicitly overridden.",
+    )
+    ap.add_argument(
+        "--teacher",
+        type=str,
+        default=None,
+        help="Teacher model name or path (defaults to 'none' in smoke mode, otherwise 'unknown').",
+    )
+    ap.add_argument(
+        "--no-export", action="store_true", help="Skip ONNX export + registry update (dev mode)."
+    )
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -711,33 +762,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Number of hidden layers. Default 3, the shipped checkpoint's (ADR-0291).",
     )
     ap.add_argument("--seed", type=int, default=0)
-    ap.add_argument(
-        "--out-onnx",
-        type=Path,
-        default=REPO_ROOT / "model" / "tiny" / "fr_regressor_v2.onnx",
-    )
-    ap.add_argument(
-        "--out-sidecar",
-        type=Path,
-        default=REPO_ROOT / "model" / "tiny" / "fr_regressor_v2.json",
-    )
-    ap.add_argument(
-        "--registry",
-        type=Path,
-        default=REPO_ROOT / "model" / "tiny" / "registry.json",
-    )
-    ap.add_argument(
-        "--metrics-out",
-        type=Path,
-        default=None,
-        help="Path for the metrics JSON output. "
-        "Defaults to $VMAFX_RUNS_DIR/fr_regressor_v2_metrics.json "
-        "(or <repo>/runs/fr_regressor_v2_metrics.json if $VMAFX_RUNS_DIR is unset). "
-        "In --smoke mode defaults to a temp file unless explicitly overridden.",
-    )
-    ap.add_argument(
-        "--no-export", action="store_true", help="Skip ONNX export + registry update (dev mode)."
-    )
+    _add_parser_io_args(ap)
     return ap
 
 
@@ -841,6 +866,42 @@ def _write_metrics_output(
     print(f"[fr-v2] wrote metrics to {args.metrics_out}")
 
 
+def _export_and_ship_checkpoint(
+    args: argparse.Namespace,
+    model: Any,
+    scaler: dict[str, Any],
+    in_sample: dict[str, float],
+    num_codec_dims: int,
+    rows: list[dict[str, Any]],
+    run_provenance: dict[str, Any],
+) -> int:
+    if args.no_export:
+        print("[fr-v2] --no-export set; skipping ONNX export.")
+        return 0
+
+    if args.teacher:
+        teacher = resolve_teacher_model(args.teacher).name
+    else:
+        teacher = "none" if args.smoke else "unknown"
+
+    print(f"[fr-v2] exporting ONNX -> {args.out_onnx}", flush=True)
+    _export_onnx_combined(model, num_codec_dims=num_codec_dims, onnx_path=args.out_onnx)
+    _write_sidecar_and_registry(
+        onnx_path=args.out_onnx,
+        sidecar_path=args.out_sidecar,
+        registry_path=args.registry,
+        scaler=scaler,
+        in_sample=in_sample,
+        n_rows=len(rows),
+        smoke=args.smoke,
+        run_provenance=run_provenance,
+        architecture={"hidden": args.hidden, "depth": args.depth},
+        teacher=teacher,
+    )
+    print(f"[fr-v2] shipped: {args.out_onnx} (sha256={sha256(args.out_onnx)})")
+    return 0
+
+
 def main() -> int:
     args = _build_parser().parse_args()
     if args.smoke and args.corpus is not None:
@@ -882,25 +943,15 @@ def main() -> int:
     in_sample = _eval_in_sample(model, scaler, x_canon, x_codec, y)
     _write_metrics_output(args, rows, in_sample, epochs, run_provenance)
 
-    if args.no_export:
-        print("[fr-v2] --no-export set; skipping ONNX export.")
-        return 0
-
-    print(f"[fr-v2] exporting ONNX -> {args.out_onnx}", flush=True)
-    _export_onnx_combined(model, num_codec_dims=x_codec.shape[1], onnx_path=args.out_onnx)
-    _write_sidecar_and_registry(
-        onnx_path=args.out_onnx,
-        sidecar_path=args.out_sidecar,
-        registry_path=args.registry,
-        scaler=scaler,
-        in_sample=in_sample,
-        n_rows=len(rows),
-        smoke=args.smoke,
-        run_provenance=run_provenance,
-        architecture={"hidden": args.hidden, "depth": args.depth},
+    return _export_and_ship_checkpoint(
+        args,
+        model,
+        scaler,
+        in_sample,
+        x_codec.shape[1],
+        rows,
+        run_provenance,
     )
-    print(f"[fr-v2] shipped: {args.out_onnx} (sha256={sha256(args.out_onnx)})")
-    return 0
 
 
 if __name__ == "__main__":  # pragma: no cover

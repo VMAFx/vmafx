@@ -63,6 +63,9 @@ SCRIPT_PATH = Path(__file__).resolve()
 if str(REPO_ROOT / "ai" / "src") not in sys.path:
     sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
 
+from ai.data.scores import resolve_teacher_model  # noqa: E402
+
+HISTORICAL_TEACHER = "vmaf_v0.6.1"  # vmaf-model-pin: fr_regressor_v1 provenance
 
 # Subsets shared with ai/scripts/phase3_subset_sweep.py. We re-declare
 # instead of importing so the canonical pool is one file (this script).
@@ -278,13 +281,13 @@ def _train_final(
     return model, {"feature_mean": mean.tolist(), "feature_std": std.tolist()}, in_sample
 
 
-def _model_notes(loso_summary: dict) -> str:
+def _model_notes(loso_summary: dict, teacher: str) -> str:
     """Human-readable notes string stored in the sidecar and the registry."""
     return (
         "Tiny FR regressor (C1) — 6-feature canonical-6 vector "
         "(adm2, vif_scale0..3, motion2) → VMAF teacher score scalar. "
         "Trained on the Netflix Public Dataset (9 ref + 70 dis YUVs) "
-        f"with vmaf_v0.6.1 as DMOS-aligned teacher. "
+        f"with {teacher} as DMOS-aligned teacher. "
         f"9-fold LOSO mean PLCC = {loso_summary['mean_plcc']:.4f} ± "
         f"{loso_summary['std_plcc']:.4f}. "
         "Shipped checkpoint trained on all 9 sources. "
@@ -293,7 +296,13 @@ def _model_notes(loso_summary: dict) -> str:
     )
 
 
-def _upsert_registry_entry(registry_path: Path, onnx_path: Path, digest: str, notes: str) -> None:
+def _upsert_registry_entry(
+    registry_path: Path,
+    onnx_path: Path,
+    digest: str,
+    notes: str,
+    teacher: str = HISTORICAL_TEACHER,
+) -> None:
     """Replace any 'fr_regressor_v1' row of registry.json (idempotent)."""
     registry = json.loads(registry_path.read_text())
     models = registry.get("models", [])
@@ -303,6 +312,7 @@ def _upsert_registry_entry(registry_path: Path, onnx_path: Path, digest: str, no
         "onnx": onnx_path.name,
         "opset": 17,
         "sha256": digest,
+        "teacher": teacher,
         "notes": notes,
     }
     models = [m for m in models if m.get("id") != "fr_regressor_v1"]
@@ -323,6 +333,7 @@ def _export_and_register(
     sidecar_path: Path,
     registry_path: Path,
     run_provenance: dict[str, Any],
+    teacher: str = HISTORICAL_TEACHER,
 ) -> None:
     from vmaf_train.models import export_to_onnx
 
@@ -336,7 +347,7 @@ def _export_and_register(
     )
     digest = sha256(onnx_path)
 
-    notes = _model_notes(loso_summary)
+    notes = _model_notes(loso_summary, teacher)
     sidecar = {
         "id": "fr_regressor_v1",
         "kind": "fr",
@@ -362,12 +373,18 @@ def _export_and_register(
         "run_provenance": run_provenance,
     }
     write_manifest_json(sidecar_path, sidecar)
-    _upsert_registry_entry(registry_path, onnx_path, digest, notes)
+    _upsert_registry_entry(registry_path, onnx_path, digest, notes, teacher=teacher)
 
 
 def _build_fr_regressor_parser() -> argparse.ArgumentParser:
     """Build and return the argument parser for train_fr_regressor."""
     ap = argparse.ArgumentParser(prog="train_fr_regressor.py")
+    ap.add_argument(
+        "--teacher",
+        type=str,
+        default=HISTORICAL_TEACHER,
+        help=f"Teacher model name or path (default: {HISTORICAL_TEACHER}).",
+    )
     ap.add_argument(
         "--parquet",
         type=Path,
@@ -555,6 +572,7 @@ def _export_fr_checkpoint(
         f"{args.registry.name} ...",
         flush=True,
     )
+    teacher = resolve_teacher_model(args.teacher).name
     _export_and_register(
         model,
         feature_cols=feature_cols,
@@ -565,6 +583,7 @@ def _export_fr_checkpoint(
         sidecar_path=args.out_sidecar,
         registry_path=args.registry,
         run_provenance=run_provenance,
+        teacher=teacher,
     )
     print(f"[fr-v1] shipped: {args.out_onnx} (sha256={sha256(args.out_onnx)})")
 
