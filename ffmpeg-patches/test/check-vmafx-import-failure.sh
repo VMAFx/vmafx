@@ -17,18 +17,19 @@
 #
 # Needs an FFmpeg built with the series and --enable-libvmafx that links
 # libvmafx.so dynamically, a hardware device with a path to DRM PRIME frames
-# (or QSV zero-copy decode), and a C compiler. The failures are injected into
-# vmafx_context_import_frame() with fault_inject_libvmaf.c through LD_PRELOAD.
-# Shared helpers: filter_check_lib.sh.
+# (VAAPI decode mapped to drm_prime via hwmap), and a C compiler. The failures
+# are injected into vmafx_context_import_frame() with fault_inject_libvmaf.c
+# through LD_PRELOAD. Shared helpers: filter_check_lib.sh.
 #
-#   baseline     no injection: every frame scored
+#   baseline     no injection: every frame scored on the device
 #   persistent   every call from 5 on fails: the run exits non-zero, the
 #                error names frame 2, and no "VMAF score" line is printed
 #   odd height   the software path on 576x323 frames: psnr_cb and psnr_cr equal
 #                the CPU vmafx filter's on every frame (tests (h + 1) / 2 chroma rows)
 #
 # Environment: FFMPEG (default: ffmpeg), VA_DEVICE (default: the first render
-# node where DRM PRIME / QSV runs; set VA_DEVICE=host for host import testing),
+# node where VAAPI decode with hwmap to DRM PRIME runs; set VA_DEVICE=host for host
+# import testing), VMAFX_DRM_BACKEND (default: sycl; hip valid for AMD nodes),
 # CC (default: cc), VMAF_INCLUDE (libvmafx's include directory when it is not
 # on the compiler's default path).
 #
@@ -39,6 +40,7 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FFMPEG="${FFMPEG:-ffmpeg}"
 CC="${CC:-cc}"
+VMAFX_DRM_BACKEND="${VMAFX_DRM_BACKEND:-sycl}"
 WORK="$(mktemp -d)"
 trap 'rm -rf "${WORK}"' EXIT
 # shellcheck source=ffmpeg-patches/test/filter_check_lib.sh disable=SC1091
@@ -74,12 +76,11 @@ run_filter() { # $1 = device, $2 = tag
   fi
   "${FFMPEG}" -hide_banner -nostdin -y -loglevel info \
     -init_hw_device "vaapi=va0:${dev}" \
-    -init_hw_device qsv=qsv_dis@va0 -init_hw_device qsv=qsv_ref@va0 \
-    -hwaccel qsv -hwaccel_device qsv_dis -hwaccel_output_format qsv -c:v h264_qsv \
+    -hwaccel vaapi -hwaccel_device va0 -hwaccel_output_format vaapi \
     -i "${WORK}/dis.mp4" \
-    -hwaccel qsv -hwaccel_device qsv_ref -hwaccel_output_format qsv -c:v h264_qsv \
+    -hwaccel vaapi -hwaccel_device va0 -hwaccel_output_format vaapi \
     -i "${WORK}/ref.mp4" \
-    -filter_complex "[0:v][1:v]vmafx=backend=sycl:log_fmt=json:log_path=${WORK}/${tag}.json" \
+    -filter_complex "[0:v]hwmap=mode=read+direct,format=drm_prime[d];[1:v]hwmap=mode=read+direct,format=drm_prime[r];[d][r]vmafx=backend=${VMAFX_DRM_BACKEND}:log_fmt=json:log_path=${WORK}/${tag}.json" \
     -f null - >"${WORK}/${tag}.log" 2>&1
 }
 
@@ -91,7 +92,8 @@ pick_device() {
   fi
   for dev in /dev/dri/renderD*; do
     [ -e "${dev}" ] || continue
-    if run_filter "${dev}" probe 2>/dev/null && grep -qE "DRM PRIME|QSV zero-copy path" "${WORK}/probe.log" 2>/dev/null; then
+    if run_filter "${dev}" probe 2>/dev/null &&
+      grep -qE "vmafx frames: [1-9][0-9]* imported on the device" "${WORK}/probe.log" 2>/dev/null; then
       echo "${dev}"
       return 0
     fi
@@ -112,12 +114,24 @@ sys.exit(0 if same else 1)
 PY
 }
 
+# shellcheck disable=SC2329  # called through expect()
+odd_host_frames() { # $1 = JSON log, $2 = filter log: 0 when 6 frames and host path matched
+  [ "$(frames_in "$1")" -eq 6 ] && grep -q "0 imported on the device, 12 host" "$2"
+}
+
 base_rc=0
 run_filter "${DEV}" baseline || base_rc=$?
 base_frames="$(frames_in "${WORK}/baseline.json")"
 base_score="$(score_in "${WORK}/baseline.log")"
 expect "baseline exits 0" test "${base_rc}" -eq 0
 expect "baseline scores ${base_frames} frames (VMAF ${base_score})" test "${base_frames}" -gt 0 -a -n "${base_score}"
+if [ "${DEV}" = host ]; then
+  expect "baseline imports every frame on the host" \
+    grep -qE "vmafx frames: 0 imported on the device, [1-9][0-9]* host, 0 downloaded" "${WORK}/baseline.log"
+else
+  expect "baseline imports every frame on the device" \
+    grep -qE "vmafx frames: [1-9][0-9]* imported on the device, 0 host, 0 downloaded" "${WORK}/baseline.log"
+fi
 
 pers_rc=0
 LD_PRELOAD="${WORK}/libfault.so" VMAF_TEST_IMPORT_FAIL_AT=5 VMAF_TEST_IMPORT_FAIL_COUNT=100000 \
@@ -153,8 +167,8 @@ odd_rc=0
 run_raw "backend=sycl" oddsycl || odd_rc=$?
 if [ "${odd_rc}" -eq 0 ]; then
   expect "odd height, software path: exit 0" test "${odd_rc}" -eq 0
-  expect "odd height, software path: 576x323 frames reach the filter" \
-    grep -q "software path, format=yuv420p bpc=8 576x323" "${WORK}/oddsycl.log"
+  expect "odd height, software path: 576x323 frames reach the filter on the host path" \
+    odd_host_frames "${WORK}/oddsycl.json" "${WORK}/oddsycl.log"
   cpu_rc=0
   run_raw "backend=cpu" oddcpu || cpu_rc=$?
   expect "odd height, CPU vmafx: exit 0" test "${cpu_rc}" -eq 0
