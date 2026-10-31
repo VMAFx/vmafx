@@ -17,8 +17,10 @@ from __future__ import annotations
 
 import os
 import sys
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
@@ -47,7 +49,7 @@ class ResolvedTeacherModel:
     resolved: str = ""
     path: Path | None = None
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[str]:
         return iter((self.arg, self.name))
 
 
@@ -99,7 +101,7 @@ class TeacherScores:
     pooled: float
     teacher_model: str = DEFAULT_MODEL
 
-    def to_jsonable(self) -> dict:
+    def to_jsonable(self) -> dict[str, Any]:
         return {
             "per_frame": self.per_frame.tolist(),
             "pooled": float(self.pooled),
@@ -107,7 +109,7 @@ class TeacherScores:
         }
 
     @classmethod
-    def from_jsonable(cls, payload: dict) -> TeacherScores:
+    def from_jsonable(cls, payload: dict[str, Any]) -> TeacherScores:
         per_frame = np.asarray(payload["per_frame"], dtype=np.float32)
         pooled = float(payload["pooled"])
         # A payload without the key was written before ADR-1173 stamped
@@ -127,7 +129,7 @@ def _run_vmaf_score(
     pix_fmt: str,
     bitdepth: int,
     model: str | Path | None = None,
-) -> dict:
+) -> dict[str, Any]:
     if model is None:
         resolved = resolve_teacher_model()
         model_arg = resolved.arg

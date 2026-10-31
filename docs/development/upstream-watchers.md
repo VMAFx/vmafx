@@ -35,6 +35,11 @@ The `netflix-unported` job in `.github/workflows/upstream-watcher.yml` polls
 commit that has landed upstream after the fork's recorded parity pin without a
 recorded disposition.
 
+Every job in the workflow sets `GH_REPO`, and every `gh` write passes `--repo`,
+to target the fork. When a workflow adds a git remote named `upstream`, the `gh`
+CLI resolves its base repository to that remote by default. Explicitly
+naming the repository prevents tracking issues from targeting upstream.
+
 ### What it reads
 
 - **Parity pin**: the `## Upstream head the fork is at parity with` heading

@@ -389,6 +389,7 @@ def _update_registry(onnx_path: Path) -> None:
         "onnx": onnx_path.name,
         "opset": 17,
         "sha256": digest,
+        "teacher": "none",
         "license": "MIT",
         "license_url": f"{UPSTREAM_REPO}/blob/{UPSTREAM_COMMIT}/LICENSE",
         "description": (
