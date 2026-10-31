@@ -29,6 +29,21 @@ GIT = shutil.which("git") or "/usr/bin/git"
 HUMAN = ("Ada Example", "ada@example.org")
 BOT_LOGIN = "renovate[bot]"
 BOT_IDENT = (BOT_LOGIN, "29139614+renovate[bot]@users.noreply.github.com")
+LANDING_ID = "Lusoris <lusoris@proton.me>"
+
+LANDED_3042 = """chore(deps): Update Python (patch) (#3042)
+
+* chore(deps): Update Python (patch)
+
+Signed-off-by: renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>
+
+---------
+
+Signed-off-by: renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>
+Signed-off-by: Lusoris <lusoris@proton.me>
+Co-authored-by: renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>
+Co-authored-by: Lusoris <lusoris@proton.me>
+"""
 
 
 def git_env(ident: tuple[str, str]) -> dict[str, str]:
@@ -53,6 +68,7 @@ def clean_env() -> dict[str, str]:
         "PR_AUTHOR_TYPE",
         "PR_CREATED_AT",
         "DCO_RELEASE_PR",
+        "LANDING_IDENTITY",
     )
     return {k: v for k, v in os.environ.items() if k not in drop}
 
@@ -287,6 +303,155 @@ class DcoCutoffTest(unittest.TestCase):
         self.assertEqual(self.gate("2026-10-08T00:00:00Z").returncode, 2)
 
 
+class DcoLandedGateTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.repo = Repo(Path(self._tmp.name))
+
+    def test_landed_3042_by_bot_author_refused_for_coauthor(self) -> None:
+        self.repo.commit(LANDED_3042, BOT_IDENT)
+        res = self.repo.gate("--landed", "--landing-identity", LANDING_ID)
+        self.assertEqual(res.returncode, 1)
+        self.assertIn("Co-authored-by", res.stdout)
+
+    def test_message_from_renovate_json_passes(self) -> None:
+        cfg = json.loads((ROOT / "renovate.json").read_text(encoding="utf-8"))
+        bot_str = f"{BOT_IDENT[0]} <{BOT_IDENT[1]}>"
+        body = cfg["commitBody"].replace("{{{gitAuthor}}}", bot_str)
+        msg = f"chore(deps): Update X (#1)\n\n{body}"
+        self.repo.commit(msg, BOT_IDENT)
+        res = self.repo.gate("--landed", "--landing-identity", LANDING_ID)
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        self.assertIn("PASS", res.stdout)
+
+    def test_renovate_commit_body_missing_signoff_fails(self) -> None:
+        msg = "chore(deps): Update X (#1)"
+        self.repo.commit(msg, BOT_IDENT)
+        res = self.repo.gate("--landed", "--landing-identity", LANDING_ID)
+        self.assertEqual(res.returncode, 1)
+        self.assertIn("Signed-off-by", res.stdout)
+
+    def test_generated_footer_fails(self) -> None:
+        msg = f"chore: add tool\n\nSigned-off-by: {HUMAN[0]} <{HUMAN[1]}>\n\nGenerated with Claude"
+        self.repo.commit(msg, HUMAN)
+        res = self.repo.gate("--landed", "--landing-identity", LANDING_ID)
+        self.assertEqual(res.returncode, 1)
+        self.assertIn("machine-generated attribution", res.stdout)
+
+    def test_robot_emoji_fails(self) -> None:
+        msg = f"chore: add tool 🤖\n\nSigned-off-by: {HUMAN[0]} <{HUMAN[1]}>"
+        self.repo.commit(msg, HUMAN)
+        res = self.repo.gate("--landed", "--landing-identity", LANDING_ID)
+        self.assertEqual(res.returncode, 1)
+        self.assertIn("machine-generated attribution", res.stdout)
+
+    def test_human_coauthor_with_signoff_passes(self) -> None:
+        msg = f"feat: pair work\n\nSigned-off-by: Bob <bob@example.com>\nCo-authored-by: {HUMAN[0]} <{HUMAN[1]}>"
+        self.repo.commit(msg, ("Bob", "bob@example.com"))
+        res = self.repo.gate("--landed", "--landing-identity", LANDING_ID)
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        self.assertIn("PASS", res.stdout)
+
+    def test_signoff_only_by_third_party_fails(self) -> None:
+        msg = "chore(deps): update\n\nSigned-off-by: Third Party <charlie@example.org>"
+        self.repo.commit(msg, BOT_IDENT)
+        res = self.repo.gate("--landed", "--landing-identity", LANDING_ID)
+        self.assertEqual(res.returncode, 1)
+        self.assertIn("matches neither", res.stdout)
+
+    def test_landing_identity_signoff_on_bot_author_passes(self) -> None:
+        msg = f"chore(deps): update\n\nSigned-off-by: {LANDING_ID}"
+        self.repo.commit(msg, BOT_IDENT)
+        res = self.repo.gate("--landed", "--landing-identity", LANDING_ID)
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        self.assertIn("PASS", res.stdout)
+
+    def test_committer_only_match_fails(self) -> None:
+        n = len(list(self.repo.path.glob("f*.txt")))
+        (self.repo.path / f"f{n}.txt").write_text(f"{n}\n")
+        self.repo.git(["add", "-A"], BOT_IDENT)
+        env = git_env(BOT_IDENT)
+        env.update(
+            GIT_COMMITTER_NAME="GitHub",
+            GIT_COMMITTER_EMAIL="noreply@github.com",
+        )
+        msg = "chore(deps): update\n\nSigned-off-by: GitHub <noreply@github.com>"
+        subprocess.run(  # noqa: S603 -- fixed argv, no shell, fixture repo
+            [GIT, "commit", "-q", "-m", msg],
+            cwd=self.repo.path,
+            env=env,
+            check=True,
+        )
+        res = self.repo.gate("--landed", "--landing-identity", LANDING_ID)
+        self.assertEqual(res.returncode, 1)
+        self.assertIn("matches neither", res.stdout)
+
+    def test_release_pr_with_landed_still_judges(self) -> None:
+        self.repo.commit("chore: release unsigned", HUMAN)
+        res = self.repo.gate("--landed", "--landing-identity", LANDING_ID, "--release-pr")
+        self.assertEqual(res.returncode, 1)
+        self.assertIn("Signed-off-by", res.stdout)
+
+    def test_base_40_zeros_judges_head_only(self) -> None:
+        # Bad head: unsigned commit -> rc 1
+        self.repo.commit("feat: bad head unsigned", HUMAN)
+        head_bad = self.repo.git(["rev-parse", "HEAD"]).strip()
+        res_bad = subprocess.run(  # noqa: S603 -- fixed argv, no shell, fixture repo
+            [
+                sys.executable,
+                "-I",
+                str(GATE),
+                "--landed",
+                "--landing-identity",
+                LANDING_ID,
+                "--base",
+                "0" * 40,
+                "--head",
+                head_bad,
+            ],
+            cwd=self.repo.path,
+            env=clean_env(),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(res_bad.returncode, 1)
+        self.assertIn("Signed-off-by", res_bad.stdout)
+        self.assertIn("judging head commit only", res_bad.stdout)
+
+        # Good head: signed commit -> rc 0
+        self.repo.commit("feat: good head signed", HUMAN, signoff=True)
+        head_good = self.repo.git(["rev-parse", "HEAD"]).strip()
+        res_good = subprocess.run(  # noqa: S603 -- fixed argv, no shell, fixture repo
+            [
+                sys.executable,
+                "-I",
+                str(GATE),
+                "--landed",
+                "--landing-identity",
+                LANDING_ID,
+                "--base",
+                "0" * 40,
+                "--head",
+                head_good,
+            ],
+            cwd=self.repo.path,
+            env=clean_env(),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(res_good.returncode, 0, res_good.stdout + res_good.stderr)
+        self.assertIn("PASS", res_good.stdout)
+        self.assertIn("judging head commit only", res_good.stdout)
+
+    def test_landed_without_identity_is_usage_error(self) -> None:
+        res = self.repo.gate("--landed")
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("--landing-identity", res.stderr)
+
+
 class DcoWiringTest(unittest.TestCase):
     """The repository wiring that makes the gate bind."""
 
@@ -343,6 +508,19 @@ class DcoWiringTest(unittest.TestCase):
         text = self.read("CONTRIBUTING.md")
         self.assertIn("## Developer Certificate of Origin", text)
         self.assertIn("git commit -s", text)
+
+    def test_landed_commit_messages_workflow_and_renovate_wiring(self) -> None:
+        wf_path = ROOT / ".github" / "workflows" / "landed-commit-messages.yml"
+        self.assertTrue(wf_path.exists(), "landed-commit-messages.yml missing")
+        text = self.read(".github/workflows/landed-commit-messages.yml")
+        self.assertIn("branches: [master]", text)
+        self.assertIn("python3 scripts/ci/check-dco.py --landed", text)
+        self.assertIn("BASE_SHA: ${{ github.event.before }}", text)
+        self.assertIn("HEAD_SHA: ${{ github.sha }}", text)
+        self.assertIn("LANDING_IDENTITY:", text)
+
+        cfg = json.loads(self.read("renovate.json"))
+        self.assertEqual(cfg.get("commitBody"), "Signed-off-by: {{{gitAuthor}}}")
 
 
 if __name__ == "__main__":

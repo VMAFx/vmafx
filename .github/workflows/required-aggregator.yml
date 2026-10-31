@@ -578,11 +578,40 @@ jobs:
               ? context.payload.pull_request.head.sha
               : context.sha;
             core.info(`Aggregating required checks for SHA ${sha}`);
-            const currentRun = await github.rest.actions.getWorkflowRun({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              run_id: Number(process.env.GITHUB_RUN_ID || context.runId),
-            });
+            // A GitHub API 5xx survives the client's own short retries: master
+            // f33e953de (run 41070430677) and #3193 failed as "Unhandled error:
+            // HttpError" on 2026-10-30. Wait out an outage for 15 minutes, then
+            // fail by name, so the failure reads as a rerun and not as a code fault.
+            const apiBackoffSeconds = [30, 60, 120, 240, 240, 210];
+            async function withApiBackoff(label, call) {
+              for (let attempt = 0; attempt <= apiBackoffSeconds.length; attempt += 1) {
+                try {
+                  return await call();
+                } catch (error) {
+                  if (!(error.status >= 500)) throw error;
+                  if (attempt === apiBackoffSeconds.length) {
+                    core.setFailed(
+                      `Transient GitHub API failure: ${label} still answers HTTP ${error.status} ` +
+                      'after 15 minutes. No check result was judged; rerun this job. ' +
+                      'This is not a code failure.'
+                    );
+                    return null;
+                  }
+                  const seconds = apiBackoffSeconds[attempt];
+                  core.warning(`${label}: GitHub API HTTP ${error.status}, retrying in ${seconds} s`);
+                  await new Promise(r => setTimeout(r, seconds * 1000));
+                }
+              }
+              return null;
+            }
+            const currentRun = await withApiBackoff('getWorkflowRun', () =>
+              github.rest.actions.getWorkflowRun({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                run_id: Number(process.env.GITHUB_RUN_ID || context.runId),
+              })
+            );
+            if (!currentRun) return;
             const runCreatedMs = Date.parse(currentRun.data.created_at);
             const minCreatedMs = runCreatedMs - 2 * 60 * 1000;
             const registrationGraceDeadline = Date.now() + 2 * 60 * 1000;
@@ -742,8 +771,11 @@ jobs:
             const deadline = Date.now() + 240 * 60 * 1000;
             let byName = {};
             while (Date.now() < deadline) {
-              const check_runs = await listAllCheckRuns();
-              byName = newestByName(check_runs, await pullRequestSuites());
+              const check_runs = await withApiBackoff('listAllCheckRuns', () => listAllCheckRuns());
+              if (!check_runs) return;
+              const suites = await withApiBackoff('pullRequestSuites', () => pullRequestSuites());
+              if (!suites) return;
+              byName = newestByName(check_runs, suites);
               const missing = required.filter(n => !byName[n] && !notOwed.has(n) && !eventExempt.has(n));
               const stillRunning = required.filter(n => {
                 const run = byName[n];
