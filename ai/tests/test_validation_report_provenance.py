@@ -43,6 +43,7 @@ def test_validate_model_registry_writes_report(tmp_path: Path) -> None:
                         "onnx": "smoke.onnx",
                         "sha256": hashlib.sha256(onnx.read_bytes()).hexdigest(),
                         "smoke": True,
+                        "teacher": "none",
                     }
                 ],
             }
