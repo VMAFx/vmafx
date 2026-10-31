@@ -16,6 +16,7 @@ attestation bundle and uploads it:
 - `supply-chain.yml`: `vmafx-build-provenance.intoto.jsonl` (native assets) + `vmaf-mcp-provenance.intoto.jsonl` (PyPI package).
 - `macos-tester-bundle.yml`: `vmafx-tester-macos-provenance.intoto.jsonl`.
 - `windows-tester-bundle.yml`: `vmafx-tester-windows-provenance.intoto.jsonl`.
+- `fixture-release-provenance.yml`: `fixture-provenance.intoto.jsonl`, dispatched by hand after a data-only `fixtures-*` prerelease is published. A prerelease without it lowers Signed-Releases and turns the Scorecard Master Gate red.
 
 `scripts/ci/check_release_provenance_assets.py` parses `.github/workflows/` with
 `yaml.safe_load`. Detects releaser steps (`softprops/action-gh-release` or `gh release create/upload`),

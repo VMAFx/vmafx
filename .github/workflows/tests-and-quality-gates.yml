@@ -40,7 +40,7 @@ jobs:
     # required-aggregator
     name: Netflix CPU Golden
     runs-on: ubuntu-26.04
-    timeout-minutes: 85
+    timeout-minutes: 95
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -101,6 +101,7 @@ jobs:
         run: |
           # shellcheck disable=SC2046  # the helper prints one option per line, split on purpose
           meson setup build -Denable_cuda=false -Denable_sycl=false \
+            -Denable_zimg=true \
             -Denable_float=true -Denable_avx512=true --buildtype=release \
             -Dwerror=true $(../scripts/ci/werror-args.sh true)
           meson compile -C build
@@ -139,6 +140,22 @@ jobs:
           timeout --kill-after=30s 19m python3 -m pytest \
             python/test/quality_runner_test.py::QualityRunnerTest::test_run_vmaf_runner_checkerboard \
             -v --tb=short --timeout=1020 --timeout-method=signal
+
+      - name: Run Netflix golden HDR pins
+        if: steps.impact.outputs.golden_harness == 'true'
+        env:
+          PYTHONPATH: ${{ github.workspace }}/python
+        timeout-minutes: 15
+        run: |
+          timeout --kill-after=30s 14m python3 -m pytest \
+            python/test/hdr_models_pin_test.py \
+            python/test/vmaf_v1_quality_runner_test.py \
+            -v --tb=short --timeout=780 --timeout-method=signal \
+            --junitxml="${{ runner.temp }}/hdr_golden_junit.xml"
+          python3 scripts/ci/check_required_tests_ran.py \
+            --junit "${{ runner.temp }}/hdr_golden_junit.xml" \
+            --required-file "hdr_models_pin_test" \
+            --required-file "vmaf_v1_quality_runner_test"
 
       - name: Save Netflix vmaf_resource fixtures
         if: ${{ success() && (steps.impact.outputs.golden_harness == 'true') && steps.fixtures.outputs.cache-hit != 'true' }}
@@ -1077,6 +1094,7 @@ jobs:
           # shellcheck disable=SC2046  # the helper prints one option per line, split on purpose
           meson setup build-coverage --buildtype=debug \
             -Db_coverage=true -Denable_cuda=false -Denable_sycl=false \
+            -Denable_zimg=true \
             -Denable_float=true -Denable_avx512=true \
             -Denable_dnn=enabled \
             -Dc_args=-fprofile-update=atomic \
