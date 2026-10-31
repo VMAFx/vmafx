@@ -116,7 +116,7 @@ static char *verify_valid_alloc(VmafFeatureExtractor *fex, unsigned w, unsigned 
     mu_assert("band_v - band_h must equal buf_sz_s1", check_rc != -1 && check_rc != -3);
     mu_assert("band_d - band_v must equal buf_sz_s1", check_rc != -2 && check_rc != -4);
     mu_assert("total slab span must equal data_sz", check_rc != -5);
-    return NULL;
+    return nullptr;
 }
 
 static char *test_positive_cases(void)
@@ -129,7 +129,7 @@ static char *test_positive_cases(void)
         if (msg)
             return msg;
     }
-    return NULL;
+    return nullptr;
 }
 
 static char *test_boundary_cases(void)
@@ -142,7 +142,7 @@ static char *test_boundary_cases(void)
         if (msg)
             return msg;
     }
-    return NULL;
+    return nullptr;
 }
 
 static char *test_negative_cases(void)
@@ -160,7 +160,7 @@ static char *test_negative_cases(void)
         fex->priv = NULL;
         mu_assert("fex init must reject below-minimum geometry", rc < 0);
     }
-    return NULL;
+    return nullptr;
 }
 
 char *run_tests(void)
@@ -168,5 +168,5 @@ char *run_tests(void)
     mu_run_test(test_positive_cases);
     mu_run_test(test_boundary_cases);
     mu_run_test(test_negative_cases);
-    return NULL;
+    return nullptr;
 }
