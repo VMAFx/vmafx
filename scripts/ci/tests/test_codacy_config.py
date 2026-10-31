@@ -14,13 +14,17 @@ from __future__ import annotations
 
 import re
 import shutil
-import subprocess
+import sys
 import unittest
 from pathlib import Path
 
 import yaml  # type: ignore[import-untyped]  # no PyYAML stubs in the hook environment
 
 ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(ROOT))
+
+from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
+
 CODACY = ROOT / ".codacy.yml"
 PRECOMMIT = ROOT / ".pre-commit-config.yaml"
 GIT = shutil.which("git") or "/usr/bin/git"
@@ -83,12 +87,13 @@ def drift(codacy_text: str, precommit_text: str, paths: list[str]) -> list[str]:
 
 def tracked_markdown() -> list[str]:
     """Every tracked Markdown file, plus the probe paths."""
-    listed = subprocess.run(  # noqa: S603 -- fixed git executable and argv
+    listed = run_command(
         [GIT, "-C", str(ROOT), "ls-files", "*.md"],
+        allowed_executables=(GIT,),
         capture_output=True,
         text=True,
         check=True,
-        timeout=60,
+        timeout_seconds=60,
     ).stdout.split()
     return listed + list(PROBES)
 
