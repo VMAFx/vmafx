@@ -19,6 +19,11 @@
 #include "feature/integer_adm.h"
 #include "mem.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` and the
+ * required Windows builds compile this TU with cl.exe (C2065). ADR-1138. */
+
 /* Mirror of AdmState initial fields to inspect AdmBuffer layout in tests. */
 typedef struct AdmTestState {
     size_t integer_stride;
@@ -116,7 +121,7 @@ static char *verify_valid_alloc(VmafFeatureExtractor *fex, unsigned w, unsigned 
     mu_assert("band_v - band_h must equal buf_sz_s1", check_rc != -1 && check_rc != -3);
     mu_assert("band_d - band_v must equal buf_sz_s1", check_rc != -2 && check_rc != -4);
     mu_assert("total slab span must equal data_sz", check_rc != -5);
-    return nullptr;
+    return NULL;
 }
 
 static char *test_positive_cases(void)
@@ -129,7 +134,7 @@ static char *test_positive_cases(void)
         if (msg)
             return msg;
     }
-    return nullptr;
+    return NULL;
 }
 
 static char *test_boundary_cases(void)
@@ -142,7 +147,7 @@ static char *test_boundary_cases(void)
         if (msg)
             return msg;
     }
-    return nullptr;
+    return NULL;
 }
 
 static char *test_negative_cases(void)
@@ -160,7 +165,7 @@ static char *test_negative_cases(void)
         fex->priv = NULL;
         mu_assert("fex init must reject below-minimum geometry", rc < 0);
     }
-    return nullptr;
+    return NULL;
 }
 
 char *run_tests(void)
@@ -168,5 +173,7 @@ char *run_tests(void)
     mu_run_test(test_positive_cases);
     mu_run_test(test_boundary_cases);
     mu_run_test(test_negative_cases);
-    return nullptr;
+    return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */
