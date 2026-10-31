@@ -103,7 +103,7 @@ if ! command -v git >/dev/null; then
   echo "git not found on PATH" >&2
   exit 77
 fi
-if ! pkg-config --exists libvmaf; then
+if ! pkg-config --print-errors --exists libvmaf; then
   echo "libvmaf not found via pkg-config — install libvmaf first or set VMAF_PREFIX" >&2
   exit 77
 fi

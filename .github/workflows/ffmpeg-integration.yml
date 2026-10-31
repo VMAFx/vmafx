@@ -392,9 +392,15 @@ jobs:
         env:
           FFMPEG_TOOLCHAIN: msvc
           VMAF_SCORE_CHECK: '1'
+          # The login shell's profile resets PKG_CONFIG_PATH, and the inherited
+          # list is in Windows form; a static libvmaf needs zimg.pc from it.
+          WINDOWS_PC_PATH: ${{ env.PKG_CONFIG_PATH }}
         run: |
           set -euo pipefail
           workspace="$(cygpath -u "$GITHUB_WORKSPACE")"
+          PKG_CONFIG_PATH="$(cygpath -u -p "$WINDOWS_PC_PATH"):${PKG_CONFIG_PATH:-}"
+          export PKG_CONFIG_PATH
+          pkg-config --print-errors --modversion zimg
           export VMAF_PREFIX="$workspace/install"
           export FFMPEG_SRC="$(cygpath -u "$RUNNER_TEMP")/ffmpeg"
           export KEEP_BUILD=1
