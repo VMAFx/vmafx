@@ -48,10 +48,8 @@ python3 "$REPO/scripts/ci/ffmpeg_patch_stack.py" --check --keep-tree "$BUILD/ffm
 cd "$BUILD/ffmpeg"
 # Only libvmafx: the measured filters need nothing else from VMAFx. CUDA comes
 # from ffnvcodec; each --enable-* below fails configure when its package is
-# missing, so no filter body is measured as a stub. The legacy vmaf_pre filter
-# is disabled by name: patch 0002's configure check for it requires libvmaf
-# whenever the filter is not disabled, before filter dependencies resolve.
-./configure --enable-version3 --enable-libvmafx --disable-filter=vmaf_pre \
+# missing, so no filter body is measured as a stub.
+./configure --enable-version3 --enable-libvmafx \
   --enable-vulkan --enable-libdrm --enable-ffnvcodec --enable-cuda \
   --disable-doc --disable-indevs --disable-outdevs --cc="$CC_BIN"
 for flag in CONFIG_CUDA CONFIG_VULKAN CONFIG_LIBDRM CONFIG_VMAFX_FILTER \

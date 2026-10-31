@@ -1,0 +1,1 @@
+| [ADR-2166](2166-ffmpeg-series-drops-vulkan-shims.md) | Redesign FFmpeg patch series from 0001, drop Vulkan shims, and retire legacy libvmaf filter modifications | Accepted | 2026-10-31 | ffmpeg, patches, vmafx, vulkan, breaking-change |

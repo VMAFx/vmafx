@@ -1,10 +1,10 @@
 # SYCL zero-copy imports and picture pre-allocation
 
 This page is for callers that hand decoded frames to the SYCL backend: the
-FFmpeg `libvmaf_sycl` filter, or a program of your own that owns a decoder. It
-says which ingestion path to use, the two rules that keep 10-bit QSV input
-correct, and how the pre-allocated picture pool works. Back to the
-[SYCL overview](overview.md).
+FFmpeg `vmafx` filter (with `backend=sycl`), or a program of your own that
+owns a decoder. It says which ingestion path to use, the two rules that keep
+10-bit QSV input correct, and how the pre-allocated picture pool works. Back
+to the [SYCL overview](overview.md).
 
 ## Ingestion paths
 
@@ -51,8 +51,8 @@ So `vmaf_v0.6.1` runs zero-copy and gives the CPU's per-frame scores. The
 default model `vmaf_v1.0.16_3d0h` does not run zero-copy: the first frame
 fails with a libvmaf error that names `speed_chroma_sycl`. With FFmpeg, score it
 through the bridge below (`hwdownload,format=nv12` for 8-bit or
-`hwdownload,format=p010le` for 10-bit, and the `libvmaf` filter's
-`sycl_device` option).
+`hwdownload,format=p010le` for 10-bit, and the `vmafx` filter's
+`backend=sycl,device=<idx>` options).
 Drivers expose NV12 / P010 download surfaces; planar YUV download formats
 are not portable across VAAPI drivers.
 
@@ -125,10 +125,10 @@ oneAPI does not document as of 2025.1. See
 
 ## QSV / VA-API zero-copy: 10-bit correctness (ADR-1121)
 
-The `libvmaf_sycl` FFmpeg filter runs VMAF directly on QSV-decoded VA-API
-surfaces with no host round-trip. Two requirements must hold for it to produce
-correct scores on a 10 or 12-bit pair. Get either wrong and you get
-`VMAF score: nan` with a wildly inflated `integer_motion`.
+The `vmafx` FFmpeg filter (with `backend=sycl`) runs VMAF directly on
+QSV-decoded VA-API surfaces with no host round-trip. Two requirements must hold
+for it to produce correct scores on a 10 or 12-bit pair. Get either wrong and
+you get `VMAF score: nan` with a wildly inflated `integer_motion`.
 
 ### Give each decoder its own QSV session (required)
 
@@ -151,29 +151,26 @@ ffmpeg \
   -init_hw_device qsv=qsv_dis@va0 \
   -hwaccel qsv -hwaccel_output_format qsv -hwaccel_device qsv_dis -c:v av1_qsv -i dis.mkv \
   -hwaccel qsv -hwaccel_output_format qsv -hwaccel_device qsv_ref -c:v hevc_qsv -i ref.mkv \
-  -lavfi '[0:v]trim=end_frame=500[d];[1:v]trim=end_frame=500[r];[d][r]libvmaf_sycl=log_fmt=csv:log_path=out.csv' \
+  -lavfi '[0:v]trim=end_frame=500[d];[1:v]trim=end_frame=500[r];[d][r]vmafx=backend=sycl:log_fmt=csv:log_path=out.csv' \
   -f null -
 ```
 
 A single shared `qsv` device silently reintroduces the contamination.
 
-### Each input is imported with its own VA display; a failed import stops the filter
+### DRM PRIME import; bounded retry in core (D8); a failed import stops the filter
 
-`libvmaf_sycl` reads the VA display of each input's QSV session and imports
-that input's surfaces with it
-([ADR-1761](../../adr/1761-sycl-filter-import-retry-then-fail.md)). Before
-this, the reference surfaces were imported with the distorted input's display.
-On an Arc A380 with the two decoders on two VA devices
-(`-init_hw_device vaapi=va0:... -init_hw_device vaapi=va1:...`), that gave 0 of
-24 frames equal to the CPU and a plausible-looking pooled score (54.914218
-against 53.419552), without an error. When a surface ID did not exist in the
-other display, it gave the `invalid VASurfaceID` import failures that the
-filter used to skip.
+`vmafx` imports DRM PRIME frames as dma-bufs directly into the VMAFx device
+on SYCL ([ADR-1761](../../adr/1761-sycl-filter-import-retry-then-fail.md)).
+Bounded retry on transient acquisition or fence delay lives in core under
+decision D8 (`vmafx_context_import_frame()`,
+`core/src/vmafx/frame_import_admit.c`, proven by `test_vmafx_import_fence`).
 
-A failed import is tried again, three tries in all with 1 ms between them, and
-then stops the filter with an error naming the frame. A filter that stopped
-prints no pooled score. `ffmpeg-patches/test/check-sycl-import-retry.sh`
-injects transient and persistent failures to check both outcomes.
+On persistent import failure, the filter stops immediately with an error
+naming the failed frame and input on all import paths (drm, cuda, vulkan,
+host). A filter that stopped prints no pooled score and never passes a frame
+through unscored.
+`ffmpeg-patches/test/check-vmafx-import-failure.sh` injects failures to verify this
+fail-closed contract.
 
 Open the VA-API device on the render node directly, as above. Do not derive it
 from a `drm` device (`-init_hw_device drm=drm0:/dev/dri/renderD128
@@ -191,21 +188,21 @@ filter can score a 501st pair
 
 ### Feature routing and supported surfaces (ADR-3360)
 
-The `libvmaf_sycl` filter resolves each `feature=` name to its SYCL twin, as
-the `vmaf` CLI does. On QSV zero-copy input it refuses to configure when no
-twin can run (a CPU extractor cannot read device-only frames); on software input
-it uses the twin when there is one and otherwise warns and computes the feature
-on the CPU. A twin that needs chroma is still refused at the first frame by the
-admission check above. Zero-copy accepts NV12 and P010 surfaces only. The
-messages and examples are in
-[Using VMAF with FFmpeg](../../usage/ffmpeg.md#how-feature-names-are-resolved-in-libvmaf_sycl);
+The `vmafx` filter (with `backend=sycl`) resolves each `feature=` name
+to its SYCL twin, as the `vmafx` CLI does. On QSV zero-copy input it
+refuses to configure when no twin can run (a CPU extractor cannot read
+device-only frames); on software input it uses the twin when there is one
+and otherwise warns and computes the feature on the CPU. A twin that needs
+chroma is still refused at the first frame by the admission check above.
+Zero-copy accepts NV12 and P010 surfaces only. The messages and examples are
+in [Using VMAF with FFmpeg](../../usage/ffmpeg.md#how-feature-names-are-resolved-in-libvmaf_sycl);
 the rationale is [ADR-3360](../../adr/3360-sycl-filter-twin-routing.md).
 
 ### P010/P012 pixels are normalized in the import
 
 VA-API stores 10-bit (P010) / 12-bit (P012) samples **MSB-aligned**
 (`V_MSB = V_LSB << (16 − bpc)`), while the VMAF feature kernels expect
-LSB-aligned `bpc`-bit integers. The CPU `libvmaf` path never sees this because
+LSB-aligned `bpc`-bit integers. The CPU `vmafx` path never sees this because
 FFmpeg auto-converts `P010LE → YUV420P10LE` (a `>> 6` shift) to satisfy the
 filter's pixel-format list.
 

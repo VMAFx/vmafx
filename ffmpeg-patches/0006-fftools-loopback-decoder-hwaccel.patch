@@ -232,10 +232,10 @@ index 0000000000000000000000000000000000000000..d58fe0359e6dcff9cf2bff3aa08da94e
 +    av_freep(&hw->hwaccel_device);
 +}
 diff --git a/fftools/ffmpeg_opt.c b/fftools/ffmpeg_opt.c
-index fa3bbd999f47d35f03e68a89ef9fb662b06e82b3..44b84e90927774903c267f3e52948acc21d25a4f 100644
+index fb92acf2e5f28d6c66c158e77402a20aff27eb31..81a82bec4c252076031f8b90d30e7f2f810e73b1 100644
 --- a/fftools/ffmpeg_opt.c
 +++ b/fftools/ffmpeg_opt.c
-@@ -1987,13 +1987,13 @@ const OptionDef options[] = {
+@@ -1966,13 +1966,13 @@ const OptionDef options[] = {
      { "b",                          OPT_TYPE_FUNC,   OPT_VIDEO | OPT_FUNC_ARG | OPT_PERFILE | OPT_OUTPUT,
          { .func_arg = opt_bitrate },
          "video bitrate (please use -b:v)", "bitrate" },

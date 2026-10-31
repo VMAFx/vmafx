@@ -382,7 +382,7 @@ class FFmpegWorkflowContract(unittest.TestCase):
                 ["aggregator does not require FFmpeg vmafx Filter"],
             ),
             "no libvmafx": (
-                self.workflow.replace("--enable-libvmafx --disable-filter", "--disable-filter"),
+                self.workflow.replace("--enable-libvmafx", ""),
                 aggregator,
                 ["filter build lacks --enable-libvmafx"],
             ),

@@ -83,14 +83,14 @@ def backend_definitions(*, sycl_device: str) -> list[dict[str, Any]]:
         {
             "name": "cpu",
             "init_args": [],
-            "lavfi": "[0:v][1:v]libvmaf=log_path={log}:log_fmt=json:model=version=vmaf_v0.6.1",
+            "lavfi": "[0:v][1:v]vmafx=log_path={log}:log_fmt=json:model=version=vmaf_v0.6.1",
         },
         {
             "name": "cuda",
             "init_args": ["-init_hw_device", "cuda=cu", "-filter_hw_device", "cu"],
             "lavfi": (
                 "[0:v]hwupload[dis];[1:v]hwupload[ref];"
-                "[dis][ref]libvmaf_cuda=log_path={log}:log_fmt=json:model=version=vmaf_v0.6.1"
+                "[dis][ref]vmafx=backend=cuda:log_path={log}:log_fmt=json:model=version=vmaf_v0.6.1"
             ),
         },
         {
@@ -106,7 +106,7 @@ def backend_definitions(*, sycl_device: str) -> list[dict[str, Any]]:
             "lavfi": (
                 "[0:v]hwupload=extra_hw_frames=128[dis];"
                 "[1:v]hwupload=extra_hw_frames=128[ref];"
-                "[dis][ref]libvmaf_sycl=log_path={log}:log_fmt=json:model=version=vmaf_v0.6.1"
+                "[dis][ref]vmafx=backend=sycl:log_path={log}:log_fmt=json:model=version=vmaf_v0.6.1"
             ),
             "env_extra": {"LIBVA_DRIVER_NAME": "iHD"},
         },

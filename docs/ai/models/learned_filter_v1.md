@@ -103,17 +103,17 @@ The synthetic training pairs are produced inside `export_tiny_models.py`:
 3. JPEG-compress at quality 35 using `PIL.Image.save(..., quality=35)`.
 4. Luma pair: (degraded, original) both normalised to `[0, 1]`.
 
-## Usage — `vmaf_pre` FFmpeg filter
+## Usage — `vmafx_pre` FFmpeg filter
 
-The `vmaf_pre` filter of `ffmpeg-patches/0002` loads this model through its
+The `vmafx_pre` filter of `ffmpeg-patches/0005` loads this model through its
 `model` option (`device`, `threads` and `chroma` are the other options):
 
 ```bash
 ffmpeg \
   -f rawvideo -pix_fmt yuv420p -video_size 1920x1080 -i dist.yuv \
   -f rawvideo -pix_fmt yuv420p -video_size 1920x1080 -i ref.yuv \
-  -filter_complex '[0:v]vmaf_pre=model=model/tiny/learned_filter_v1.onnx[d];
-                   [d][1:v]libvmaf' \
+  -filter_complex '[0:v]vmafx_pre=model=model/tiny/learned_filter_v1.onnx[d];
+                   [d][1:v]vmafx' \
   -f null -
 ```
 

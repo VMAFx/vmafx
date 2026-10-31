@@ -82,8 +82,8 @@ class SmokeSafety(unittest.TestCase):
             "#!/bin/sh\nprintf '%s\\n' \"$@\" > configure.args\n"
             "cat > ffmpeg <<'BINARY'\n#!/bin/sh\n"
             'case "$*" in\n*log_fmt=json*) cat "$SMOKE_FAKE_FFMPEG_JSON" > ffmpeg.json;;\n'
-            "*filter=libvmaf*) echo tiny_model;;\n"
-            "*filter=vmaf_pre*) exit 0;;\n*) exit 1;;\nesac\nBINARY\n"
+            "*filter=vmafx*) echo tiny_model;;\n"
+            "*filter=vmafx_pre*) exit 0;;\n*) exit 1;;\nesac\nBINARY\n"
             "chmod +x ffmpeg\n"
         )
         configure.chmod(0o755)
@@ -328,7 +328,7 @@ class SmokeSafety(unittest.TestCase):
         args = self.configured_args()
         for expected in ("--toolchain=msvc", "--extra-cflags=-MD", "--extra-cxxflags=-MD"):
             self.assertIn(expected, args)
-        self.assertIn("--enable-libvmaf", args)
+        self.assertIn("--enable-libvmafx", args)
 
     def test_msvc_gate_leaves_ffmpeg_own_warnings_out(self) -> None:
         # positive: cl's warnings in files the series does not touch, including

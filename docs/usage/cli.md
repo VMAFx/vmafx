@@ -14,7 +14,7 @@ every flag in `vmaf --help`, with its default, interactions and an example.
     [`core/tools/README.md`](../../core/tools/README.md).
 
 Related pages: [bench.md](bench.md) for the `vmaf_bench` micro-benchmark,
-[ffmpeg.md](ffmpeg.md) for the FFmpeg `libvmaf` filter,
+[ffmpeg.md](ffmpeg.md) for the FFmpeg `vmafx` filter (and stock `libvmaf`),
 [python.md](python.md) for the Python bindings and
 [vmafx-cli.md](vmafx-cli.md) for the `vmafx` alias.
 

@@ -125,25 +125,25 @@ FFmpeg filter.
 
 ### Q: Can I pass encoded H.264 / VP9 / HEVC bitstreams to VMAF as input? (upstream `Netflix/vmaf#55`)
 
-A: Yes — use FFmpeg's `libvmaf` filter. Details in the
+A: Yes — use FFmpeg's `vmafx` filter (or stock `libvmaf`). Details in the
 [FFmpeg documentation](../usage/ffmpeg.md).
 
 ### Q: How do I use VMAF with downscaled videos?
 
 A: If a distorted video was scaled down (e.g. for adaptive streaming) and you
 want to evaluate its quality at the reference resolution, use FFmpeg with the
-`libvmaf` filter to rescale on-the-fly.
+`vmafx` filter (or stock `libvmaf`) to rescale on-the-fly.
 
 For example, to upscale the distorted video to 1080p:
 
 ```bash
 ffmpeg -i main.mpg -i ref.mpg \
-  -filter_complex "[0:v]scale=1920x1080:flags=bicubic[main];[main][1:v]libvmaf" \
+  -filter_complex "[0:v]scale=1920x1080:flags=bicubic[main];[main][1:v]vmafx" \
   -f null -
 ```
 
 This scales the first input video (`0:v`, distorted) to 1080p and forwards it
-to VMAF (`libvmaf`) as `main` (pad 0), to be compared against the second input
+to VMAF (`vmafx`) as `main` (pad 0), to be compared against the second input
 `1:v` (reference, pad 1). See the
 [FFmpeg documentation](../usage/ffmpeg.md) for more.
 
