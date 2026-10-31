@@ -12,8 +12,8 @@ frame naming the plane instead of copying the plane through. Built with
  doc/filters.texi           |  26 ++++
  libavfilter/Makefile       |   1 +
  libavfilter/allfilters.c   |   1 +
- libavfilter/vf_vmafx_pre.c | 264 +++++++++++++++++++++++++++++++++++++
- 5 files changed, 293 insertions(+)
+ libavfilter/vf_vmafx_pre.c | 258 +++++++++++++++++++++++++++++++++++++
+ 5 files changed, 287 insertions(+)
  create mode 100644 libavfilter/vf_vmafx_pre.c
 
 diff --git a/configure b/configure
@@ -91,10 +91,10 @@ index b923bf9ec16ee0818b64509ca8af9f189ff3f447..b2e195db584eecbd536a74c9f37159c4
  extern const FFFilter ff_vf_w3fdif;
 diff --git a/libavfilter/vf_vmafx_pre.c b/libavfilter/vf_vmafx_pre.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..8e9fccdf6cd67e2009f88522c04221cc211ede6a
+index 0000000000000000000000000000000000000000..7b8affc9a3e9f26576ab0f9038e4314b01857958
 --- /dev/null
 +++ b/libavfilter/vf_vmafx_pre.c
-@@ -0,0 +1,264 @@
+@@ -0,0 +1,258 @@
 +/*
 + * Copyright 2026 Lusoris
 + *
@@ -133,7 +133,6 @@ index 0000000000000000000000000000000000000000..8e9fccdf6cd67e2009f88522c04221cc
 +
 +#include "avfilter.h"
 +#include "filters.h"
-+#include "formats.h"
 +#include "video.h"
 +
 +typedef struct VmafxPreContext {
@@ -327,17 +326,12 @@ index 0000000000000000000000000000000000000000..8e9fccdf6cd67e2009f88522c04221cc
 +    return ff_filter_frame(outlink, out);
 +}
 +
-+static int query_formats(const AVFilterContext *ctx, AVFilterFormatsConfig **cfg_in,
-+                         AVFilterFormatsConfig **cfg_out)
-+{
-+    static const enum AVPixelFormat pix_fmts[] = {
-+        AV_PIX_FMT_GRAY8,    AV_PIX_FMT_YUV420P,     AV_PIX_FMT_YUV422P,     AV_PIX_FMT_YUV444P,
-+        AV_PIX_FMT_GRAY10LE, AV_PIX_FMT_YUV420P10LE, AV_PIX_FMT_YUV422P10LE, AV_PIX_FMT_YUV444P10LE,
-+        AV_PIX_FMT_GRAY12LE, AV_PIX_FMT_YUV420P12LE, AV_PIX_FMT_YUV422P12LE, AV_PIX_FMT_YUV444P12LE,
-+        AV_PIX_FMT_NONE,
-+    };
-+    return ff_set_common_formats_from_list2(ctx, cfg_in, cfg_out, pix_fmts);
-+}
++static const enum AVPixelFormat pix_fmts[] = {
++    AV_PIX_FMT_GRAY8,    AV_PIX_FMT_YUV420P,     AV_PIX_FMT_YUV422P,     AV_PIX_FMT_YUV444P,
++    AV_PIX_FMT_GRAY10LE, AV_PIX_FMT_YUV420P10LE, AV_PIX_FMT_YUV422P10LE, AV_PIX_FMT_YUV444P10LE,
++    AV_PIX_FMT_GRAY12LE, AV_PIX_FMT_YUV420P12LE, AV_PIX_FMT_YUV422P12LE, AV_PIX_FMT_YUV444P12LE,
++    AV_PIX_FMT_NONE,
++};
 +
 +static const AVFilterPad vmafx_pre_inputs[] = {
 +    {
@@ -357,5 +351,5 @@ index 0000000000000000000000000000000000000000..8e9fccdf6cd67e2009f88522c04221cc
 +    .uninit = uninit,
 +    FILTER_INPUTS(vmafx_pre_inputs),
 +    FILTER_OUTPUTS(ff_video_default_filterpad),
-+    FILTER_QUERY_FUNC2(query_formats),
++    FILTER_PIXFMTS_ARRAY(pix_fmts),
 +};
