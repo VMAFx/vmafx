@@ -165,6 +165,7 @@
     ".github/workflows/rust-ci.yml",
     ".github/workflows/docker-publish-tester.yml",
     ".github/workflows/windows-tester-bundle.yml",
+    ".github/workflows/fixture-release-provenance.yml",
     ".gosec.json",
     ".helix/*",
     ".helix/**",
