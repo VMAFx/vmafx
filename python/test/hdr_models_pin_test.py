@@ -111,7 +111,10 @@ def _run_cli(model: str, kind: str, out_path: str) -> subprocess.CompletedProces
 
 
 class HdrModelsPinTest(unittest.TestCase):
-    """HDR model pin regressions asserting the pooled vmaf mean to HDR_PIN_PLACES places."""
+    """HDR model pin regressions asserting the pooled vmaf mean to HDR_PIN_PLACES places.
+
+    The Sol Levante PQ rows compare exactly on x86-64.
+    """
 
     def test_every_model_has_both_pin_rows(self) -> None:
         """A deleted row or a new model without pins turns this test red."""
@@ -141,7 +144,8 @@ class HdrModelsPinTest(unittest.TestCase):
             with open(out_path, encoding="utf-8") as f:
                 data = json.load(f)
             mean_score = data["pooled_metrics"]["vmaf"]["mean"]
-            if kind == "sollevante_pq":
+            if kind == "sollevante_pq" and not _NON_X86_CONVERSION:
+                # x86-64 CPU scores match upstream bit for bit on this clip.
                 self.assertEqual(mean_score, expected_pin)
             else:
                 self.assertAlmostEqual(mean_score, expected_pin, places=HDR_PIN_PLACES)

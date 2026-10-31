@@ -152,16 +152,7 @@ jobs:
         env:
           PYTHONPATH: ${{ github.workspace }}/python
         timeout-minutes: 15
-        run: |
-          timeout --kill-after=30s 14m python3 -m pytest \
-            python/test/hdr_models_pin_test.py \
-            python/test/vmaf_v1_quality_runner_test.py \
-            -v --tb=short --timeout=780 --timeout-method=signal \
-            --junitxml="${{ runner.temp }}/hdr_golden_junit.xml"
-          python3 scripts/ci/check_required_tests_ran.py \
-            --junit "${{ runner.temp }}/hdr_golden_junit.xml" \
-            --required-file "hdr_models_pin_test" \
-            --required-file "vmaf_v1_quality_runner_test"
+        run: bash scripts/ci/run-hdr-golden-pins.sh "${{ runner.temp }}/hdr_golden_junit.xml"
 
       - name: Finish with the PQ fixture
         if: steps.impact.outputs.golden_harness == 'true'
