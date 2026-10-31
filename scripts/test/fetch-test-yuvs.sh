@@ -60,6 +60,11 @@ FIXTURES=(
   # added to Netflix/vmaf_resource 2026-10-03 (commit 5e7b853ba), BSD-2-Clause-Patent.
   "ref_dock-na-HDR_res2160_rate5p0_maxRate100000_bufSize200000_fps59p940_576x324_1frame.yuv 14391e847683cc27c7f39768afa3ffda"
   "dis_dock-na-HDR_res1440_rate15p0_maxRate10000_bufSize20000_fps59p940_576x324_1frame.yuv 6665d2b17cb15ede58d5f31eddd7a753"
+  # 576x324, 48 frames, yuv422p10le: the src01 pair of the device gate's
+  # src01-tagged-576x324-422-10 row (core/test/test_gpu_v1_models_no_fallback.py);
+  # md5 read 2026-10-31 from Netflix/vmaf_resource 5e7b853ba, BSD-2-Clause-Patent.
+  "src01_hrc00_576x324.yuv422p10le.yuv 91fa924e0c63c7ecb5bf85fae006edf9"
+  "src01_hrc01_576x324.yuv422p10le.yuv 4de6d217e67bd29e45a6f2f5358131fe"
 )
 
 # Print the FIXTURES entries of the named fixtures, all of them without a name.
