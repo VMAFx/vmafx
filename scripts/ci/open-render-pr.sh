@@ -34,6 +34,11 @@ find_open_pr() {
     --jq "[.[] | select((.author.login == \"app/${APP_SLUG}\" or .author.login == \"${APP_SLUG}[bot]\") and .isCrossRepository == false)][0].number // empty"
 }
 
+arm_auto_merge() {
+  local pr="$1"
+  gh pr merge --repo "$GITHUB_REPOSITORY" --auto --squash "$pr" --body-file "$merge_body"
+}
+
 base="$(git rev-parse HEAD)"
 open_pr="$(find_open_pr)"
 if [[ "$RENDER_DUE" != true ]]; then
@@ -44,13 +49,22 @@ if [[ "$RENDER_DUE" != true ]]; then
   fi
   exit 0
 fi
+
+bot="${APP_SLUG}[bot]"
+bot_id="$(gh api "users/$bot" --jq .id)"
+email="${bot_id}+${bot}@users.noreply.github.com"
+merge_body="$RUNNER_TEMP/render-merge-body.txt"
+printf '%s\n\nSigned-off-by: %s <%s>\n' \
+  "Render-only commit (ADR-3295, ADR-3373): make docs-render at ${base:0:12}." \
+  "$bot" "$email" >"$merge_body"
+
 parent=""
 if [[ -n "$open_pr" ]]; then
   parent="$(gh api "repos/$GITHUB_REPOSITORY/branches/$RENDER_BRANCH" \
     --jq '.commit.parents[0].sha')"
 fi
 if [[ "$parent" == "$base" && -n "$open_pr" ]]; then
-  gh pr merge --repo "$GITHUB_REPOSITORY" --auto --squash "$open_pr"
+  arm_auto_merge "$open_pr"
   echo "render pull request #$open_pr is already rendered at ${base:0:12}"
   exit 0
 fi
@@ -67,9 +81,6 @@ if [[ -n "$stray" ]]; then
   exit 1
 fi
 
-bot="${APP_SLUG}[bot]"
-bot_id="$(gh api "users/$bot" --jq .id)"
-email="${bot_id}+${bot}@users.noreply.github.com"
 msg="$RUNNER_TEMP/render-commit.txt"
 printf 'chore(docs): render generated changelog and ADR index\n\n%s\n\nSigned-off-by: %s <%s>\n' \
   "Render-only commit (ADR-3295, ADR-3373): make docs-render at ${base:0:12}." \
@@ -96,5 +107,5 @@ if [[ -z "$open_pr" ]]; then
     --title "chore(docs): render generated changelog and ADR index" --body-file "$body"
   open_pr="$(find_open_pr)"
 fi
-gh pr merge --repo "$GITHUB_REPOSITORY" --auto --squash "$open_pr"
+arm_auto_merge "$open_pr"
 echo "render pull request #$open_pr rendered at ${base:0:12}, auto-merge armed"

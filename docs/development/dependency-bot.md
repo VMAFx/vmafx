@@ -58,6 +58,7 @@ the preset's default. Top-level knobs:
 | `prHourlyLimit` | `0` (unlimited) |
 | `prConcurrentLimit` | `3` |
 | `prCreation` | `immediate` |
+| `commitBody` | `Signed-off-by: {{{gitAuthor}}}` |
 | `minimumReleaseAge` | `3 days` (from the preset) |
 | `postUpdateOptions` | `["helmUpdateSubChartArchives"]` |
 
@@ -226,6 +227,30 @@ dependencies change (#3045, #3047), preventing `helm lint` from rejecting a
 `Chart.lock` whose pinned tarball is missing. `RenovateFilePatterns` in
 `scripts/ci/tests/test_renovate_file_patterns.py` enforces this option whenever
 packaged chart archives are tracked in git.
+
+### Squash message of automerged updates
+
+Renovate platform automerge (`platformAutomerge: true`) delegates merge
+execution to GitHub. Without an explicit commit body, GitHub generates a default
+squash body composed of the pull request commit messages. When a pull request
+branch receives commits from more than one author (for example, bot commits and
+human co-authors or rebase updates), GitHub appends `Co-authored-by:` lines to
+the squash commit body.
+
+Setting `commitBody: "Signed-off-by: {{{gitAuthor}}}"` in `renovate.json`
+configures the commit body appended to `commitMessage` per Renovate's
+`commitBody` configuration option. When Renovate arms platform automerge, it
+passes this message to GitHub as headline and body, so the squash commit carries
+the bot's sign-off without tool or bot `Co-authored-by:` lines.
+
+Renovate compiles `commitBody` only while it writes a commit, and arms
+auto-merge from that message when it creates the pull request or after it writes
+a commit. A pull request whose auto-merge was armed before this setting keeps
+the old message until its next rebase, so tick its rebase box. The branch commit
+shows the sign-off twice, once from `commitBody` and once from the `:gitSignOff`
+trailer; the squash body has it once. Source, Renovate 44.161.2 `dist/`:
+`workers/repository/update/branch/index.js:448-449` and `:474-479`,
+`modules/platform/github/index.js:1183-1190`, `config/options/index.js:2562`.
 
 ## Migration from self-hosted (2026-05-10)
 
