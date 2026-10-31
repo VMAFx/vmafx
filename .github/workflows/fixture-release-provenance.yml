@@ -1,0 +1,74 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+#
+# Test-fixture prereleases hold data only, so no build workflow publishes them.
+# Scorecard's Signed-Releases check still reads them among the last five
+# releases, so each one needs a verified provenance bundle (ADR-3316). This
+# workflow attests an asset that is already published, after checking it against
+# the sha256 the dispatcher states.
+name: Fixture Release Provenance
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Fixture release tag, for example fixtures-pq-sollevante-v1"
+        required: true
+        type: string
+      asset:
+        description: "Asset file name on that release"
+        required: true
+        type: string
+      sha256:
+        description: "Full sha256 of the asset"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  attest:
+    name: Attest a fixture release
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    permissions:
+      contents: write      # upload the provenance asset
+      id-token: write      # keyless signing and attestation
+      attestations: write
+    env:
+      TAG: ${{ inputs.tag }}
+      ASSET: ${{ inputs.asset }}
+      SHA256: ${{ inputs.sha256 }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Download the asset and check its sha256
+        run: |
+          set -euo pipefail
+          [[ "$TAG" =~ ^fixtures-[a-z0-9-]+$ ]] || { echo "not a fixture tag: $TAG" >&2; exit 1; }
+          [[ "$ASSET" =~ ^[a-zA-Z0-9._-]+$ ]] || { echo "bad asset name: $ASSET" >&2; exit 1; }
+          [[ "$SHA256" =~ ^[0-9a-f]{64}$ ]] || { echo "not a full sha256: $SHA256" >&2; exit 1; }
+          mkdir assets
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "$ASSET" --dir assets
+          echo "$SHA256  assets/$ASSET" | sha256sum --check --strict
+      - name: Attest build provenance (GitHub native)
+        id: provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
+        with:
+          subject-path: assets/${{ inputs.asset }}
+      - name: Stage the provenance bundle and verify with the consumer recipe
+        env:
+          BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
+        run: |
+          set -euo pipefail
+          jq --compact-output . "$BUNDLE" > assets/fixture-provenance.intoto.jsonl
+          test "$(wc -l < assets/fixture-provenance.intoto.jsonl)" -eq 1
+          gh attestation verify "assets/$ASSET" \
+            --bundle assets/fixture-provenance.intoto.jsonl \
+            --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/fixture-release-provenance.yml" \
+            --deny-self-hosted-runners >/dev/null
+      - name: Upload the provenance bundle
+        run: |
+          gh release upload "$TAG" assets/fixture-provenance.intoto.jsonl \
+            --clobber --repo "$GITHUB_REPOSITORY"

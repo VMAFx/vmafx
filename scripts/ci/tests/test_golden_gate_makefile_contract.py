@@ -173,7 +173,7 @@ class GoldenGateArm64MakefileContractTest(unittest.TestCase):
             self.assertNotIn("python/test/", text)
         args = re.search(r"(?m)^GOLDEN_PYTEST_ARGS\s*:=((?:.*\\\n)*.*)$", self.makefile_text)
         assert args is not None
-        self.assertEqual(len(re.findall(r"python/test/\w+\.py", args.group(1))), 5)
+        self.assertEqual(len(re.findall(r"python/test/\w+\.py", args.group(1))), 7)
         self.assertNotIn("GOLDEN_BUILD_DIR)", recipe.replace("GOLDEN_ARM64_BUILD_DIR)", ""))
 
     def test_clean_removes_both_arm64_build_dirs(self) -> None:

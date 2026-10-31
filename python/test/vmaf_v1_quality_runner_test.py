@@ -140,7 +140,7 @@ class VmafV1QualityRunnerTest(MyTestCase):
 
     def _run_hdr_exec(self, matrix):
         if not hdr_conversion_available():
-            self.skipTest("vmaf was built without zimg support")
+            self.fail("vmaf was built without zimg support")
         _, _, asset, _ = set_default_576_324_hdr_videos_for_testing()
         color = {"range": "limited", "primaries": "bt2020", "trc": "smpte2084", "matrix": matrix}
         self.runner = VmafexecQualityRunner(
