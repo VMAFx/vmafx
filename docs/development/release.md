@@ -229,6 +229,17 @@ graphically):
 merge-release-flow
 ```
 
+Test-fixture prereleases (`fixtures-*` tags) hold data only and no build
+workflow publishes them, but Scorecard counts them among the last five releases.
+After publishing one, attest its asset:
+
+```shell
+gh workflow run fixture-release-provenance.yml -R VMAFx/vmafx \
+  -f tag=<tag> -f asset=<file> -f sha256=<full sha256>
+```
+
+The workflow refuses a tag outside `fixtures-*` and an asset whose sha256 differs.
+
 ### What actually gates a release PR
 
 A release PR's diff is `.release-please-manifest.json` plus the coordinated
