@@ -44,8 +44,7 @@ def test_gpu_runtime_finds_the_staged_libraries(kit: str) -> None:
     text = DOCKERFILE.read_text()
     build = _stage(text, f"{kit}-build")
     runtime = _stage(text, f"{kit}-runtime")
-    if "/opt/vmafx/lib/" not in build:
-        pytest.skip(f"{kit}-build stages no library in /opt/vmafx/lib")
+    assert "/opt/vmafx/lib/" in build, f"{kit}-build stages no library in /opt/vmafx/lib"
     assert f"COPY --from={kit}-build /opt/vmafx/lib /opt/vmafx/lib" in runtime
     assert "/opt/vmafx/lib" in _library_path(runtime)
 
