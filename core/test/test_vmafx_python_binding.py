@@ -558,7 +558,13 @@ class DnnAndMcpTest(unittest.TestCase):
                 ctx.use_tiny_model("/nonexistent.onnx")
             with self.assertRaises(vmafx.VmafxError):
                 ctx.set_codec_context("h264", "medium", 23)
-            ctx.set_tiny_resize(vmafx.DnnResize.BILINEAR)
+            if self.library.dnn_available():
+                ctx.set_tiny_resize(vmafx.DnnResize.BILINEAR)
+            else:
+                # A build without tiny-AI answers every tiny-model call with E_NOTSUP.
+                with self.assertRaises(vmafx.VmafxError) as raised:
+                    ctx.set_tiny_resize(vmafx.DnnResize.BILINEAR)
+                self.assertEqual(raised.exception.status, vmafx.Status.E_NOTSUP)
 
     def test_mcp_surface(self) -> None:
         avail = self.library.mcp_available()
