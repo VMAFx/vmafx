@@ -22,9 +22,10 @@ The emitted JSON reuses the key shape of ``testdata/perf_benchmark_results.json`
 ``best_time``) and adds ``median_fps`` / ``median_time`` / ``metrics_keys`` /
 ``load_avg_1min``.
 
-Backend engagement is verified per cell by the ``frames[0].metrics`` key count
-(see ``core/AGENTS.md`` §"Backend-engagement foot-guns"): a GPU row whose key
-count equals the CPU row's is a silent CPU fallback, not a GPU result.
+Backend engagement is verified per cell by inspecting ``backend_used`` and
+``feature_backends``: a device row where ``backend_used`` differs from requested
+or any extractor failed to run on device is flagged as ``fallback`` and publishes
+no FPS.
 """
 
 from __future__ import annotations
@@ -37,56 +38,127 @@ import subprocess
 import sys
 import tempfile
 import time
+from typing import NamedTuple
+
+
+class Fixture(NamedTuple):
+    tag: str
+    ref: str
+    dis: str
+    width: int
+    height: int
+    pixel_format: str
+    bitdepth: int
+    color_args: list[str]
+    label: str
+
+
+COLOR_ARGS_PQ = [
+    "--color_range_ref",
+    "limited",
+    "--color_primaries_ref",
+    "bt2020",
+    "--color_trc_ref",
+    "smpte2084",
+    "--color_matrix_ref",
+    "bt2020nc",
+    "--color_range_dist",
+    "limited",
+    "--color_primaries_dist",
+    "bt2020",
+    "--color_trc_dist",
+    "smpte2084",
+    "--color_matrix_dist",
+    "bt2020nc",
+]
 
 # --- Fixture table -------------------------------------------------------
-# (tag, ref, dis, width, height, bitdepth, human label)
-# Paths are relative to the repo root; the 4K pair is gitignored and must be
-# generated first (see docs/development/backend-perf-baselines.md).
 FIXTURES = [
-    (
+    Fixture(
         "src01_576x324",
         "python/test/resource/yuv/src01_hrc00_576x324.yuv",
         "python/test/resource/yuv/src01_hrc01_576x324.yuv",
         576,
         324,
+        "420",
         8,
+        [],
         "Netflix src01 pair, 576x324, 48f",
     ),
-    (
+    Fixture(
         "checkerboard_1px",
         "python/test/resource/yuv/checkerboard_1920_1080_10_3_0_0.yuv",
         "python/test/resource/yuv/checkerboard_1920_1080_10_3_1_0.yuv",
         1920,
         1080,
+        "420",
         8,
+        [],
         "Checkerboard 1-px shift, 1920x1080, 3f",
     ),
-    (
+    Fixture(
         "checkerboard_10px",
         "python/test/resource/yuv/checkerboard_1920_1080_10_3_0_0.yuv",
         "python/test/resource/yuv/checkerboard_1920_1080_10_3_10_0.yuv",
         1920,
         1080,
+        "420",
         8,
+        [],
         "Checkerboard 10-px shift, 1920x1080, 3f",
     ),
-    (
+    Fixture(
         "bbb_4k_200f",
         "testdata/bbb/ref_3840x2160_200f.yuv",
         "testdata/bbb/dis_3840x2160_200f.yuv",
         3840,
         2160,
+        "420",
         8,
+        [],
         "BBB 4K, 3840x2160, 200f",
+    ),
+    Fixture(
+        "sollevante_pq_1080p",
+        "python/test/resource/yuv/pq-sollevante-v1/sollevante_ref_1920x1080_8f.yuv",
+        "python/test/resource/yuv/pq-sollevante-v1/sollevante_dis_1920x1080_8f.yuv",
+        1920,
+        1080,
+        "420",
+        10,
+        COLOR_ARGS_PQ,
+        "Sol Levante PQ, 1920x1080, 8f",
     ),
 ]
 
-# "default" means: pass no --model at all, so libvmaf resolves
-# VMAF_DEFAULT_MODEL_VERSION (vmaf_v1.0.16_3d0h). See
-# docs/development/default-model.md.
+NEWEST_SDR_MODELS = [
+    "vmaf_v1.0.16_1d5h_2160",
+    "vmaf_v1.0.16_3d0h",
+    "vmaf_v1.0.16_3d0h_2160",
+    "vmaf_v1.0.16_5d0h",
+    "vmaf_v1.0.16_hfr_1d5h_2160",
+    "vmaf_v1.0.16_hfr_3d0h",
+    "vmaf_v1.0.16_hfr_3d0h_2160",
+    "vmaf_v1.0.16_hfr_5d0h",
+]
+
+NEWEST_HDR_MODELS = [
+    "hdr_vmaf_v1.1.8_1d5h_2160",
+    "hdr_vmaf_v1.1.8_3d0h",
+    "hdr_vmaf_v1.1.8_3d0h_2160",
+    "hdr_vmaf_v1.1.8_5d0h",
+    "hdr_vmaf_v1.1.8_hfr_1d5h_2160",
+    "hdr_vmaf_v1.1.8_hfr_3d0h",
+    "hdr_vmaf_v1.1.8_hfr_3d0h_2160",
+    "hdr_vmaf_v1.1.8_hfr_5d0h",
+]
+
+NEWEST_MODELS = NEWEST_SDR_MODELS + NEWEST_HDR_MODELS
+
 MODELS = {
-    "v0.6.1": "model/vmaf_v0.6.1.json",
+    "v0.6.1": "path=model/vmaf_v0.6.1.json",
     "default": None,
+    **{m: f"version={m}" for m in NEWEST_MODELS},
 }
 
 
@@ -95,22 +167,67 @@ def load1() -> float:
         return float(fh.read().split()[0])
 
 
-def build_cmd(vmaf_bin, fixture, backend, model_path, out_path, threads):
-    _tag, ref, dis, w, h, bd, _label = fixture
+def cuda_free_mib() -> int:
+    try:
+        proc = subprocess.run(
+            ["nvidia-smi", "--query-gpu=memory.free", "--format=csv,noheader,nounits"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+        if proc.returncode == 0 and proc.stdout.strip():
+            return int(proc.stdout.strip().splitlines()[0])
+    except Exception:
+        pass
+    return 0
+
+
+def is_hdr_model(model_name: str) -> bool:
+    return model_name.startswith("hdr_")
+
+
+def is_pq_fixture(fixture: Fixture) -> bool:
+    return bool(fixture.color_args) or "pq" in fixture.tag
+
+
+def can_pair(fixture: Fixture, model_name: str) -> bool:
+    # Rule: The libvmaf CLI strictly refuses running HDR models on SDR fixtures
+    # without source colorimetry, returning -ERANGE / -EINVAL. The harness must
+    # never pair them: HDR models run only on PQ fixtures, SDR models only on
+    # SDR fixtures.
+    if is_hdr_model(model_name):
+        return is_pq_fixture(fixture)
+    return not is_pq_fixture(fixture)
+
+
+def build_cmd(
+    vmaf_bin: str,
+    fixture: Fixture,
+    backend: str,
+    model_name: str,
+    out_path: str,
+    threads: int,
+) -> list[str]:
+    if not can_pair(fixture, model_name):
+        raise ValueError(
+            f"Cannot pair HDR model '{model_name}' with SDR fixture '{fixture.tag}' "
+            f"or SDR model with PQ fixture."
+        )
     cmd = [
         vmaf_bin,
         "--reference",
-        ref,
+        fixture.ref,
         "--distorted",
-        dis,
+        fixture.dis,
         "--width",
-        str(w),
+        str(fixture.width),
         "--height",
-        str(h),
+        str(fixture.height),
         "--pixel_format",
-        "420",
+        fixture.pixel_format,
         "--bitdepth",
-        str(bd),
+        str(fixture.bitdepth),
         "--threads",
         str(threads),
         "--backend",
@@ -120,55 +237,108 @@ def build_cmd(vmaf_bin, fixture, backend, model_path, out_path, threads):
         "--json",
         "-q",
     ]
-    if model_path is not None:
-        cmd += ["--model", f"path={model_path}"]
+    if fixture.color_args:
+        cmd.extend(fixture.color_args)
+    spec = MODELS.get(model_name)
+    if spec is not None:
+        cmd.extend(["--model", spec])
     return cmd
 
 
-def run_cell(vmaf_bin, fixture, backend, model_name, runs, threads, verbose):
-    """Time one (fixture, backend, model) cell. Returns a result dict or None."""
-    model_path = MODELS[model_name]
-    times = []
-    pooled = None
-    nframes = None
-    metrics_keys = None
-    load_before = load1()
+def check_engagement(doc: dict, requested_backend: str) -> tuple[bool, str | None]:
+    if requested_backend == "cpu":
+        return True, None
+    backend_used = doc.get("backend_used")
+    if backend_used != requested_backend:
+        return False, f"backend_used ({backend_used}) != requested ({requested_backend})"
+    feature_backends = doc.get("feature_backends") or []
+    not_on_device = [
+        f"{fb.get('extractor')}={fb.get('backend')}"
+        for fb in feature_backends
+        if fb.get("backend") != requested_backend
+    ]
+    if not_on_device:
+        return False, f"extractors not on device: {', '.join(not_on_device)}"
+    return True, None
 
+
+def execute_run(cmd: list[str], out_path: str) -> tuple[int, float, str, dict | None]:
+    start = time.monotonic()
+    proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    elapsed = time.monotonic() - start
+    if proc.returncode != 0 or not os.path.exists(out_path):
+        msg = (proc.stderr or proc.stdout or "").strip().splitlines()
+        err = msg[-1] if msg else "no output file produced"
+        return proc.returncode, elapsed, err, None
+    with open(out_path, encoding="utf-8") as fh:
+        doc = json.load(fh)
+    return 0, elapsed, "", doc
+
+
+def run_cell_iterations(
+    cmd: list[str],
+    out_path: str,
+    runs: int,
+    verbose: bool,
+) -> tuple[list[float], dict | None, dict | None]:
+    times = []
+    first_doc = None
+    for i in range(runs + 1):
+        rc, elapsed, err, doc = execute_run(cmd, out_path)
+        if rc != 0 or doc is None:
+            return [], None, {"status": "unavailable", "returncode": rc, "error": err}
+        if i == 0:
+            first_doc = doc
+            continue
+        times.append(elapsed)
+        if verbose:
+            print(f"      run {i}: {elapsed:.3f}s", file=sys.stderr)
+    return times, first_doc, None
+
+
+def run_cell(
+    vmaf_bin: str,
+    fixture: Fixture,
+    backend: str,
+    model_name: str,
+    runs: int,
+    threads: int,
+    verbose: bool,
+) -> dict:
+    if backend == "cuda":
+        free_mib = cuda_free_mib()
+        if free_mib < 8000:
+            return {
+                "status": "not-run",
+                "free_mib": free_mib,
+                "error": f"below 8000 MiB free ({free_mib} MiB)",
+            }
+    load_before = load1()
     with tempfile.TemporaryDirectory(prefix="vmaf-bench-") as td:
         out_path = os.path.join(td, "out.json")
-        cmd = build_cmd(vmaf_bin, fixture, backend, model_path, out_path, threads)
-        # runs + 1: the first iteration is a discarded warmup (page cache,
-        # GPU context creation, JIT of SYCL kernels).
-        for i in range(runs + 1):
-            start = time.monotonic()
-            proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
-            elapsed = time.monotonic() - start
-            if proc.returncode != 0 or not os.path.exists(out_path):
-                msg = (proc.stderr or proc.stdout or "").strip().splitlines()
-                return {
-                    "status": "unavailable",
-                    "returncode": proc.returncode,
-                    "error": msg[-1] if msg else "no output file produced",
-                }
-            if i == 0:
-                continue  # warmup
-            times.append(elapsed)
-            if pooled is None:
-                with open(out_path, encoding="utf-8") as fh:
-                    doc = json.load(fh)
-                pooled = doc["pooled_metrics"]["vmaf"]["mean"]
-                nframes = len(doc["frames"])
-                metrics_keys = len(doc["frames"][0]["metrics"])
-            if verbose:
-                print(f"      run {i}: {elapsed:.3f}s", file=sys.stderr)
+        cmd = build_cmd(vmaf_bin, fixture, backend, model_name, out_path, threads)
+        times, doc, err_res = run_cell_iterations(cmd, out_path, runs, verbose)
+        if err_res is not None or doc is None:
+            return err_res or {"status": "unavailable", "error": "unknown error"}
+
+    is_engaged, fallback_reason = check_engagement(doc, backend)
+    if not is_engaged:
+        return {
+            "status": "fallback",
+            "backend_requested": backend,
+            "backend_used": doc.get("backend_used"),
+            "feature_backends": doc.get("feature_backends"),
+            "error": fallback_reason or "extractor fallback",
+        }
 
     load_after = load1()
     med = statistics.median(times)
+    nframes = len(doc["frames"])
     return {
         "status": "ok",
-        "pooled": pooled,
+        "pooled": doc["pooled_metrics"]["vmaf"]["mean"],
         "nframes": nframes,
-        "metrics_keys": metrics_keys,
+        "metrics_keys": len(doc["frames"][0]["metrics"]),
         "times": times,
         "median_time": med,
         "best_time": min(times),
@@ -180,7 +350,7 @@ def run_cell(vmaf_bin, fixture, backend, model_name, runs, threads, verbose):
     }
 
 
-def main() -> int:
+def parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
@@ -200,7 +370,7 @@ def main() -> int:
         action="append",
         dest="models",
         choices=sorted(MODELS),
-        help="repeatable; default both",
+        help="repeatable; default all 16 newest models",
     )
     ap.add_argument(
         "--fixture",
@@ -211,43 +381,76 @@ def main() -> int:
     ap.add_argument("--json-out", default=None)
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--verbose", action="store_true")
-    args = ap.parse_args()
+    return ap.parse_args()
 
-    backends = args.backends or ["cpu", "cuda", "sycl", "hip"]
-    models = args.models or ["v0.6.1", "default"]
 
-    root = subprocess.run(
-        ["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True, check=False
-    ).stdout.strip()
-    if root:
-        os.chdir(root)
+def load_results(path: str | None) -> dict:
+    if path and os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                return json.load(fh)
+        except Exception:
+            return {}
+    return {}
 
-    fixtures = [f for f in FIXTURES if args.fixtures is None or f[0] in args.fixtures]
-    missing = [f[0] for f in fixtures if not (os.path.exists(f[1]) and os.path.exists(f[2]))]
-    if missing:
-        print(f"note: skipping fixtures with absent files: {', '.join(missing)}", file=sys.stderr)
-    fixtures = [f for f in fixtures if os.path.exists(f[1]) and os.path.exists(f[2])]
-    if not fixtures:
-        print("error: no fixture files present", file=sys.stderr)
-        return 2
 
-    if args.dry_run:
-        for fx in fixtures:
-            for mn in models:
-                for be in backends:
-                    with tempfile.TemporaryDirectory() as td:
-                        cmd = build_cmd(
-                            args.vmaf_bin,
-                            fx,
-                            be,
-                            MODELS[mn],
-                            os.path.join(td, "out.json"),
-                            args.threads,
-                        )
-                    print(" ".join(cmd))
-        return 0
+def save_results(path: str | None, results: dict) -> None:
+    if path:
+        os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(results, fh, indent=2, sort_keys=True)
+            fh.write("\n")
+        print(f"\nwrote {path}", flush=True)
 
-    results: dict = {}
+
+def run_dry_run(
+    fixtures: list[Fixture],
+    models: list[str],
+    backends: list[str],
+    vmaf_bin: str,
+    threads: int,
+) -> int:
+    for fx in fixtures:
+        for mn in models:
+            if not can_pair(fx, mn):
+                continue
+            for be in backends:
+                with tempfile.TemporaryDirectory() as td:
+                    cmd = build_cmd(
+                        vmaf_bin,
+                        fx,
+                        be,
+                        mn,
+                        os.path.join(td, "out.json"),
+                        threads,
+                    )
+                print(" ".join(cmd))
+    return 0
+
+
+def report_cell(res: dict) -> None:
+    if res["status"] == "ok":
+        print(
+            f"{res['median_fps']:8.2f} fps  median {res['median_time']:.3f}s  "
+            f"spread {res['spread_pct']:.1f}%  pool {res['pooled']:.6f}  "
+            f"keys={res['metrics_keys']}  load={res['load_avg_1min'][1]:.1f}",
+            flush=True,
+        )
+    elif res["status"] == "not-run":
+        print(f"SKIP (not run, {res['free_mib']} MiB free)", flush=True)
+    elif res["status"] == "fallback":
+        print(f"FALLBACK ({res['error']})", flush=True)
+    else:
+        print(f"SKIP ({res['error']})", flush=True)
+
+
+def execute_benchmarks(
+    fixtures: list[Fixture],
+    models: list[str],
+    backends: list[str],
+    args: argparse.Namespace,
+    results: dict,
+) -> None:
     print(
         f"# vmaf backend baselines — {args.runs} timed runs/cell + 1 warmup, "
         f"threads={args.threads}",
@@ -255,31 +458,58 @@ def main() -> int:
     )
     print(f"# load average at start: {load1():.2f}", flush=True)
     for fx in fixtures:
-        tag, _ref, _dis, _w, _h, _bd, label = fx
-        results[tag] = {"label": label}
-        print(f"\n## {label}", flush=True)
-        for mn in models:
-            results[tag][mn] = {}
+        fx_models = [mn for mn in models if can_pair(fx, mn)]
+        if not fx_models:
+            continue
+        if fx.tag not in results:
+            results[fx.tag] = {"label": fx.label}
+        print(f"\n## {fx.label}", flush=True)
+        for mn in fx_models:
+            if mn not in results[fx.tag]:
+                results[fx.tag][mn] = {}
             print(f"  model={mn}", flush=True)
             for be in backends:
                 print(f"    {be:6s} ... ", end="", flush=True)
                 res = run_cell(args.vmaf_bin, fx, be, mn, args.runs, args.threads, args.verbose)
-                results[tag][mn][be] = res
-                if res["status"] != "ok":
-                    print(f"SKIP ({res['error']})", flush=True)
-                    continue
-                print(
-                    f"{res['median_fps']:8.2f} fps  median {res['median_time']:.3f}s  "
-                    f"spread {res['spread_pct']:.1f}%  pool {res['pooled']:.6f}  "
-                    f"keys={res['metrics_keys']}  load={res['load_avg_1min'][1]:.1f}",
-                    flush=True,
-                )
+                results[fx.tag][mn][be] = res
+                report_cell(res)
 
-    if args.json_out:
-        with open(args.json_out, "w", encoding="utf-8") as fh:
-            json.dump(results, fh, indent=2, sort_keys=True)
-            fh.write("\n")
-        print(f"\nwrote {args.json_out}", flush=True)
+
+def resolve_fixtures(args: argparse.Namespace) -> list[Fixture]:
+    fixtures = [f for f in FIXTURES if args.fixtures is None or f.tag in args.fixtures]
+    missing = [f.tag for f in fixtures if not (os.path.exists(f.ref) and os.path.exists(f.dis))]
+    if missing:
+        print(f"note: skipping fixtures with absent files: {', '.join(missing)}", file=sys.stderr)
+    return [f for f in fixtures if os.path.exists(f.ref) and os.path.exists(f.dis)]
+
+
+def main() -> int:
+    args = parse_args()
+    backends = args.backends or ["cpu", "cuda", "sycl", "hip"]
+    models = args.models or NEWEST_MODELS
+
+    root = subprocess.run(
+        ["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True, check=False
+    ).stdout.strip()
+    if root:
+        os.chdir(root)
+
+    fixtures = resolve_fixtures(args)
+    if not fixtures:
+        print("error: no fixture files present", file=sys.stderr)
+        return 2
+
+    compatible_pairs = [(f, m) for f in fixtures for m in models if can_pair(f, m)]
+    if not compatible_pairs:
+        print("error: no compatible fixture and model pairs selected", file=sys.stderr)
+        return 2
+
+    if args.dry_run:
+        return run_dry_run(fixtures, models, backends, args.vmaf_bin, args.threads)
+
+    results = load_results(args.json_out)
+    execute_benchmarks(fixtures, models, backends, args, results)
+    save_results(args.json_out, results)
     return 0
 
 
