@@ -391,7 +391,8 @@ the backend, so a leg with no device needs no fixture. With a device, it skips
 after its other rows when an SDR pair is absent; a missing HDR fixture or a zimg
 refusal fails the test. `testdata/bbb`
 and `python/test/resource/yuv` are not in the repository;
-`scripts/test/fetch-test-yuvs.sh` fetches the latter. When
+`scripts/test/fetch-test-yuvs.sh` fetches the latter. The CI Metal build leg
+fetches the gate's YUV pairs before the meson tests. When
 `~/.cache/vmafx-locks` exists (or `VMAFX_LOCK_DIR`), each device run takes that
 backend's lock file.
 Run a SYCL build's test with the oneAPI environment loaded:
