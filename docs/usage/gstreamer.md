@@ -145,8 +145,8 @@ These are all element-defined properties, including aliases. Names, defaults and
 
 `gstreamer/test/test_gst_vmafx_properties.py` holds the element's own property
 list and the table below to the definition: an extra or a missing property, in
-the element or in this table, fails the test (`gstreamer/test/run.sh` runs the
-element half; the table half runs in the `Tooling Tests` suite).
+the element or in this table, fails the test (`gstreamer/test/run.sh` runs both
+halves; the required `GStreamer Element` check runs that script).
 
 `I64` below means `0..9223372036854775807` (`INT64_MAX`); string properties with no default show `NULL`. Named values also accept integers in their table range; flag sets combine tokens with `+` (or use `0` for an empty set). Runtime checks can reject a value within its declared property range ([parser](../../gstreamer/src/gstvmafx_opts.c), [session validation](../../gstreamer/src/gstvmafx_run.c)).
 
@@ -272,4 +272,4 @@ The feature-spec examples are also used in the [FFmpeg property migration guide]
 gstreamer/test/run.sh "$PWD/build-cpu" "$PWD/build-cuda"
 ```
 
-The defaults are `build-cpu` and `build-cuda`; missing GStreamer development packages produce exit 77. CPU tests need fixtures and the matching library/CLI; CUDA tests need the CUDA build and GStreamer CUDA package. Vulkan tests additionally require the `GST_VMAFX_VK_*`, `VMAFX_VK_LIB_DIR` and `VMAF_VK_CLI` variables documented by `VulkanFrames`. The suite skips unavailable fixtures/lanes, so inspect skips before treating a run as backend verification. It covers CLI parity, windows, messages, provenance and selected refusals; its Vulkan uploader branch includes a GStreamer 1.28 staging-race workaround. This page's pipelines are derived from those tests; no fresh CPU/GPU execution result is implied.
+The defaults are `build-cpu` and `build-cuda`; missing GStreamer development packages produce exit 77. CPU tests need fixtures and the matching library/CLI; CUDA tests need the CUDA build and GStreamer CUDA package. Vulkan tests additionally require the `GST_VMAFX_VK_*`, `VMAFX_VK_LIB_DIR` and `VMAF_VK_CLI` variables documented by `VulkanFrames`. The suite skips unavailable fixtures/lanes, so inspect skips before treating a run as backend verification. `GST_VMAFX_STRICT=1` turns a missing CPU fixture or `gi` module into a failure, and `GST_VMAFX_PYTHON` names the interpreter that has PyGObject; the required `GStreamer Element` check sets both ([ADR-3390](../adr/3390-gstreamer-element-check.md)). It covers CLI parity, windows, messages, provenance and selected refusals; its Vulkan uploader branch includes a GStreamer 1.28 staging-race workaround. This page's pipelines are derived from those tests; no fresh CPU/GPU execution result is implied.

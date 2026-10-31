@@ -175,6 +175,8 @@ ADR_2796_STRICT_CONTEXTS = {
     "Tidy Lane (rust)",
     "Tidy Metal",
 }
+# ADR-3390: the GStreamer element job; it always starts and the planner skips only its work.
+ADR_3390_STRICT_CONTEXTS = {"GStreamer Element"}
 
 # GitHub's activity types for a bare `pull_request:` trigger.
 PULL_REQUEST_DEFAULT_TYPES = frozenset({"opened", "synchronize", "reopened"})
@@ -335,7 +337,8 @@ class HissReplayContractTests(unittest.TestCase):
             | ADR_1687_STRICT_CONTEXTS
             | ADR_2440_STRICT_CONTEXTS
             | ADR_2784_STRICT_CONTEXTS
-            | ADR_2796_STRICT_CONTEXTS,
+            | ADR_2796_STRICT_CONTEXTS
+            | ADR_3390_STRICT_CONTEXTS,
         )
         self.assertTrue(strict >= STRICT_CONTEXTS)
         self.assertTrue(strict <= required)
