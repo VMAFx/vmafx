@@ -10,7 +10,8 @@
   "ISC": "LICENSES/ISC.txt",
   "LicenseRef-LIVE-BRISQUE": "LICENSES/LicenseRef-LIVE-BRISQUE.txt",
   "MIT": "LICENSES/MIT.txt",
-  "Unlicense": "LICENSES/Unlicense.txt"
+  "Unlicense": "LICENSES/Unlicense.txt",
+  "WTFPL": "LICENSES/WTFPL.txt"
  },
  "cpython_license_rst": {
   "3.13.16": {
@@ -3987,7 +3988,7 @@
      "texts": [
       {
        "name": "WTFPL.txt",
-       "fetched": "zimg-3.0.6-COPYING",
+       "repo": "tools/rc1-tester/image/licenses/zimg-3.0.6-COPYING.txt",
        "label": "zimg 3.0.6 licence text (WTFPL v2)"
       }
      ]
