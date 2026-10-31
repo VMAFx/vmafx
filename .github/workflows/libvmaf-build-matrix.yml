@@ -312,7 +312,7 @@ jobs:
         if: steps.impact.outputs.c_core == 'true'
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
-          python-version: 3.14.9
+          python-version: 3.14.10
 
       - name: Install meson and ninja
         if: steps.impact.outputs.c_core == 'true'
@@ -815,7 +815,7 @@ jobs:
         if: steps.leg.outputs.run == 'true'
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
-          python-version: '3.14.9'
+          python-version: '3.14.10'
 
       - name: Install meson and ninja
         if: steps.leg.outputs.run == 'true'
@@ -991,7 +991,7 @@ jobs:
       - name: Setup python
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
-          python-version: '3.14.9'
+          python-version: '3.14.10'
 
       - name: Install meson and ninja
         run: python -m pip install --require-hashes -r requirements/locks/build.txt
