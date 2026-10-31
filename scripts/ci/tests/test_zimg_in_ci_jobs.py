@@ -130,3 +130,21 @@ def test_an_ffmpeg_stage_without_zimg_is_found() -> None:
     assert ffmpeg_stages_without_zimg(text) == ["ff"]
     fixed = text.replace("gcc", "libzimg-dev")
     assert ffmpeg_stages_without_zimg(fixed) == []
+
+
+def test_only_the_no_zimg_leg_expects_the_refusal() -> None:
+    workflow = yaml.safe_load(MATRIX.read_text(encoding="utf-8"))
+    job = next(
+        job
+        for job in workflow["jobs"].values()
+        if any(step.get("name") == "Run tox tests (ubuntu)" for step in job.get("steps", []))
+    )
+    step = next(step for step in job["steps"] if step.get("name") == "Run tox tests (ubuntu)")
+    assert step["env"]["VMAF_EXPECT_NO_ZIMG"] == "${{ matrix.zimg == false && '1' || '' }}"
+    legs = job["strategy"]["matrix"]["include"]
+    assert [leg["name"] for leg in legs if leg.get("zimg") is False] == ["Ubuntu gcc no zimg"]
+    assert all(
+        "enable_zimg=false" not in str(leg.get("meson_extra", ""))
+        for leg in legs
+        if leg.get("zimg") is not False
+    )

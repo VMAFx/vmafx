@@ -19,6 +19,10 @@ import unittest
 from vmaf import ExternalProgram
 from vmaf.config import VmafConfig
 
+# Set only on the CI leg built with -Denable_zimg=false: there a pin row asserts the refusal
+# that names zimg. A build with zimg fails this assertion, so the setting cannot hide a row.
+EXPECT_NO_ZIMG = os.environ.get("VMAF_EXPECT_NO_ZIMG") == "1"
+
 
 def _input_args(kind: str) -> list[str]:
     """Return command-line input flags for either pq or tagged material."""
@@ -114,6 +118,10 @@ class HdrModelsPinTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             out_path = os.path.join(tmp, "out.json")
             proc = _run_cli(model, kind, out_path)
+            if EXPECT_NO_ZIMG:
+                self.assertNotEqual(proc.returncode, 0, "scored without zimg")
+                self.assertIn("built without zimg", (proc.stderr or "") + (proc.stdout or ""))
+                return
             if proc.returncode != 0:
                 err = (proc.stderr or "") + " " + (proc.stdout or "")
                 if "zimg" in err.lower() or "without zimg" in err.lower():
