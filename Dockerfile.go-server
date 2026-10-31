@@ -202,7 +202,8 @@ RUN --mount=type=bind,source=tools/rc1-tester/image,target=/repo/tools/rc1-teste
     --mount=type=bind,source=LICENSES,target=/repo/LICENSES \
     --mount=type=bind,source=model/other_models/NOTICE-brisque,target=/repo/model/other_models/NOTICE-brisque \
     --mount=type=bind,from=go-builder,source=/licence-inputs,target=/licence-inputs \
-    mkdir /texts \
+    python3 /repo/tools/rc1-tester/image/licensing.py fetch-texts --artifact production-go-server-image \
+        --python-version none --out /texts \
     && python3 /repo/tools/rc1-tester/image/licensing.py notices --artifact production-go-server-image \
         --root /rootfs --repo /repo --build-scan /licence-inputs/vmafx-sources.json --texts /texts \
         --go-licences /licence-inputs/go \

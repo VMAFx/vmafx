@@ -238,6 +238,7 @@ RUN apt-get update \
         libfribidi-dev \
         libva-dev \
         libvdpau-dev \
+        libzimg-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # ---- libvmaf headers + library for --enable-libvmaf configure probe --------
@@ -513,7 +514,8 @@ RUN --mount=type=bind,source=tools/rc1-tester/image,target=/repo/tools/rc1-teste
     --mount=type=bind,source=LICENSES,target=/repo/LICENSES \
     --mount=type=bind,source=model/other_models/NOTICE-brisque,target=/repo/model/other_models/NOTICE-brisque \
     --mount=type=bind,from=go-builder,source=/licence-inputs,target=/licence-inputs \
-    mkdir /texts \
+    python3 /repo/tools/rc1-tester/image/licensing.py fetch-texts --artifact production-node-image \
+        --python-version none --out /texts \
     && python3 /repo/tools/rc1-tester/image/licensing.py notices --artifact production-node-image \
         --root /rootfs --repo /repo --build-scan /licence-inputs/vmafx-sources.json --texts /texts \
         --go-licences /licence-inputs/go \

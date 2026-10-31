@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import yaml
@@ -88,3 +89,44 @@ def test_every_matrix_install_step_carries_zimg() -> None:
 def test_a_matrix_install_step_without_zimg_is_found() -> None:
     step = {"name": "base", "run": "sudo -E apt-get -yq install ccache ninja-build nasm gcc g++"}
     assert apt_steps_without_zimg([step]) == ["base"]
+
+
+def stages(text: str) -> dict[str, str]:
+    """Stage name to its own text and its base stage, in file order."""
+    found: dict[str, str] = {}
+    parts = re.split(r"(?m)^(?=FROM\s)", text)
+    for part in parts[1:]:
+        header = part.splitlines()[0].split()
+        name = header[-1] if "AS" in header else f"unnamed-{len(found)}"
+        inherited = found.get(header[1], "")
+        code = (line for line in part.splitlines() if not line.lstrip().startswith("#"))
+        found[name] = "\n".join((inherited, *code))
+    return found
+
+
+def ffmpeg_stages_without_zimg(text: str) -> list[str]:
+    return [
+        name
+        for name, body in stages(text).items()
+        if "--enable-libvmaf" in body and "libzimg-dev" not in body
+    ]
+
+
+def test_every_ffmpeg_stage_can_resolve_libvmaf() -> None:
+    """FFmpeg's configure asks pkg-config for libvmaf, whose Requires names zimg."""
+    for name in (
+        "Dockerfile",
+        "Containerfile.vmafx",
+        "dev/Containerfile",
+        "docker/Dockerfile.node",
+    ):
+        text = (REPO / name).read_text(encoding="utf-8")
+        assert "--enable-libvmaf" in text, name
+        assert ffmpeg_stages_without_zimg(text) == [], name
+
+
+def test_an_ffmpeg_stage_without_zimg_is_found() -> None:
+    text = "FROM a AS deps\nRUN apt-get install gcc\nFROM deps AS ff\nRUN ./configure --enable-libvmaf\n"
+    assert ffmpeg_stages_without_zimg(text) == ["ff"]
+    fixed = text.replace("gcc", "libzimg-dev")
+    assert ffmpeg_stages_without_zimg(fixed) == []

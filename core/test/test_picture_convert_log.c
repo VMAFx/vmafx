@@ -33,12 +33,16 @@
 #define CONVERSION_DETAIL "16x16 8bpc limited/bt709/bt709/bt709 -> 16x16 8bpc"
 
 #define MISMATCH_TEXT "has a different conversion target"
+#define GRAPH_FAILED_TEXT "zimg_filter_graph_build failed"
+#define ZIMG_REASON_TEXT "subsampling"
 
 typedef struct LogCapture {
     int none_needed;
     int conversion;
     int detail;
     int mismatch;
+    int graph_failed;
+    int zimg_reason;
     bool restored;
 } LogCapture;
 
@@ -47,6 +51,10 @@ static void capture_line(enum VmafLogLevel level, const char *message, void *use
     LogCapture *capture = user;
     if (level == VMAF_LOG_LEVEL_ERROR && strstr(message, MISMATCH_TEXT) != NULL)
         capture->mismatch++;
+    if (level == VMAF_LOG_LEVEL_ERROR && strstr(message, GRAPH_FAILED_TEXT) != NULL) {
+        capture->graph_failed++;
+        capture->zimg_reason += strstr(message, ZIMG_REASON_TEXT) != NULL;
+    }
     if (level != VMAF_LOG_LEVEL_DEBUG)
         return;
     if (strncmp(message, NONE_NEEDED_PREFIX, strlen(NONE_NEEDED_PREFIX)) == 0) {
@@ -223,8 +231,10 @@ typedef struct ContextRun {
     LogCapture capture;
 } ContextRun;
 
-/* One 16x16 8-bit 4:2:0 BT.709 picture to 4:4:4, logged at `level`. */
-static ContextRun run_context_init(enum VmafLogLevel level)
+/* One 16x16 8-bit 4:2:0 BT.709 picture to `target_fmt`, `target_w` x `target_h`
+ * (0 = source size), logged at `level`. */
+static ContextRun run_context_target(enum VmafLogLevel level, enum VmafPixelFormat target_fmt,
+                                     unsigned target_w, unsigned target_h)
 {
     ContextRun r;
     memset(&r, 0, sizeof(r));
@@ -235,8 +245,10 @@ static ContextRun run_context_init(enum VmafLogLevel level)
         .matrix = VMAF_COLOR_MATRIX_BT709,
     };
     const VmafPictureConvertTarget target = {
-        .pix_fmt = VMAF_PIX_FMT_YUV444P,
+        .pix_fmt = target_fmt,
         .bpc = 8,
+        .w = target_w,
+        .h = target_h,
         .color = color,
     };
     VmafPicture src;
@@ -250,6 +262,11 @@ static ContextRun run_context_init(enum VmafLogLevel level)
     r.close_rc = ctx ? vmaf_picture_convert_context_close(ctx) : 0;
     r.unref_rc = vmaf_picture_unref(&src);
     return r;
+}
+
+static ContextRun run_context_init(enum VmafLogLevel level)
+{
+    return run_context_target(level, VMAF_PIX_FMT_YUV444P, 0, 0);
 }
 
 static char *test_context_logs_source_and_target(void)
@@ -272,8 +289,21 @@ static char *test_context_silent_at_info(void)
     mu_assert("the previous log sink must be current again", r.capture.restored);
     return NULL;
 }
+
+/* An odd 4:2:0 target cannot be built, and the ERROR line carries zimg's reason. */
+static char *test_graph_failure_logs_zimg_reason(void)
+{
+    const ContextRun r = run_context_target(VMAF_LOG_LEVEL_ERROR, VMAF_PIX_FMT_YUV420P, 15, 15);
+    mu_assert("vmaf_picture_alloc failed", r.alloc_rc == 0);
+    mu_assert("an odd 4:2:0 target must be refused", r.init_rc != 0);
+    mu_assert("the refusal must log one graph failure", r.capture.graph_failed == 1);
+    mu_assert("the graph failure must carry zimg's own reason", r.capture.zimg_reason == 1);
+    mu_assert("the previous log sink must be current again", r.capture.restored);
+    return NULL;
+}
 #endif
 
+// NOLINTNEXTLINE(readability-function-size): test scaffolding (ADR-0141 / ADR-0278) - the test list, one line per case.
 char *run_tests(void)
 {
     mu_run_test(test_no_conversion_logs_once);
@@ -285,6 +315,7 @@ char *run_tests(void)
 #ifdef HAVE_ZIMG
     mu_run_test(test_context_logs_source_and_target);
     mu_run_test(test_context_silent_at_info);
+    mu_run_test(test_graph_failure_logs_zimg_reason);
 #endif
     return NULL;
 }

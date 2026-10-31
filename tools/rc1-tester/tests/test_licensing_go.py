@@ -272,6 +272,18 @@ def test_the_go_images_collect_module_licences_and_publish_source(
     assert f"target: {source}\n" in workflow
 
 
+def test_a_notices_stage_with_an_empty_texts_folder_has_no_fetched_text() -> None:
+    manifest = lic.load_manifest()
+    empty = re.compile(r"mkdir /texts \\\n\s*&& python3 \S+ notices --artifact (\S+)")
+    found = [
+        kind
+        for path in [REPO / "Dockerfile.go-server", *(REPO / "docker").glob("Dockerfile.*")]
+        for kind in empty.findall(path.read_text())
+    ]
+    assert found == ["production-operator-image"]
+    assert not lic.recorded_fetches(lic.artifact_record(manifest, found[0]), manifest)
+
+
 def test_the_node_ffmpeg_is_redistributable_and_its_source_exact() -> None:
     text = (REPO / "docker/Dockerfile.node").read_text()
     assert "--enable-nonfree" not in re.sub(r"(?m)^#.*$", "", text)
