@@ -8,6 +8,7 @@ ninja-build
 nasm
 pkg-config
 gcc
+libzimg-dev
 python3-pip
 
 # CUDA 12.x runtime — user-space libs only, no driver. Lets ORT

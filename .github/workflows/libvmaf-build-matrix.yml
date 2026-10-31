@@ -125,7 +125,8 @@ jobs:
             CC: ccache gcc-14
             CXX: ccache g++-14
             dnn: true
-            meson_extra: -Denable_dnn=enabled
+            zimg: true
+            meson_extra: -Denable_dnn=enabled -Denable_zimg=true
             werror: true
             name: Ubuntu gcc+DNN
             tier: light
@@ -134,7 +135,8 @@ jobs:
             CC: ccache clang-22
             CXX: ccache clang++-22
             dnn: true
-            meson_extra: -Denable_dnn=enabled
+            zimg: true
+            meson_extra: -Denable_dnn=enabled -Denable_zimg=true
             werror: true
             name: Ubuntu clang+DNN
             tier: light
