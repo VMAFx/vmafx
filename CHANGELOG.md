@@ -1065,9 +1065,6 @@
 - Generate the Go cgo binding of the VMAFx C API (`pkg/vmafx/api_gen.go`) from `core/api/vmafx.toml` with compile-time struct layout assertions, record types, `Context` methods, library functions, and structured `*Error` / `ErrPending` diagnostics (issue 2434).
 
 
-- **rust**: generate the FFI and safe Rust bindings of the VMAFx C API (`vmafx-sys`, `vmafx`) from `core/api/vmafx.toml` (#2434)
-
-
 - **Model and feature specification strings in the VMAFx API (RC4 WP9, ABI 0.1.11).**
   `vmafx_model_load_spec()` loads the model a string such as
   `version=vmaf_v0.6.1:name=vmaf:disable_clip` or
@@ -2009,9 +2006,6 @@
   [`docs/README-STANDARD.md`](docs/README-STANDARD.md).
 
 
-- **The README support section says what sponsorship pays for.** It now names the costs (CI time, cloud GPU test time, an AI workstation), states that no support or priority is sold, and keeps one list of sponsor links.
-
-
 - **The plan for reference-exact extractors is written down.**
   [ADR-2343](docs/adr/2343-reference-exact-default-compat-mode.md) records that RC7 proves every
   extractor against its original implementation, that the default becomes reference-exact with
@@ -2196,12 +2190,6 @@
   keeps integer AIM unclipped. Documentation only.
 
 
-- **The controller store's test helper moved to
-  `cmd/vmafx-controller/internal/storetest`.** Only tests ever imported the
-  package. Digest updates of its PostgreSQL images no longer read as an
-  incompatible API change.
-
-
 - **SYCL: the exact SpEED covariance runs as a split chain
   ([ADR-2690](docs/adr/2690-sycl-speed-covariance-fast-exact.md)).** The
   differences and products are formed in parallel and stored as fp64 bit
@@ -2366,9 +2354,6 @@
   option changes.
 
 
-- **`enable_zimg` is on by default ([ADR-3396](docs/adr/3396-zimg-on-by-default.md)).** Default builds now include `vmaf_picture_convert` colourspace, bit depth and size conversion via [zimg](https://github.com/sekrit-twc/zimg) >= 2.7, enabling CLI HDR PQ auto-selection (`hdr_vmaf_v1.1.8_3d0h`) out-of-the-box. If `zimg` is missing, `meson setup` halts with an explicit error naming `zimg >= 2.7`, `pkg-config`, and `-Denable_zimg=false`. Opting out via `-Denable_zimg=false` continues to build cleanly without zimg, where HDR conversion returns `-ENOTSUP`. Published images and distribution bundles carry libzimg under WTFPL.
-
-
 ### Fixed
 
 - ADR tooling: `scripts/adr/next-free.sh --claim` no longer hands two parallel
@@ -2393,12 +2378,6 @@
   frozen `docs/adr/_index_fragments/_order.txt`, and step 6 no longer stages the
   rendered index, tag and title pages or `CHANGELOG.md`, which a pull request
   must not carry ([adr-workflow](docs/development/adr-workflow.md)).
-
-
-- CI: the Required Checks Aggregator waits out GitHub API 5xx answers for 15
-  minutes. A longer outage fails the job with `Transient GitHub API failure:`
-  instead of an unhandled `HttpError`, so it reads as a rerun and not as a code
-  failure.
 
 
 - CI: the required-checks aggregator of a master push no longer reads the check runs of a scheduled
@@ -2428,12 +2407,6 @@
   target writes `except A, B:` clauses that the packages supporting Python 3.10 to 3.13 cannot
   parse. The change also resubmits the root dependency graph, which still listed setuptools
   84.0.0 and 84.2.0 after every manifest moved to 84.2.1.
-
-
-- CI: squash commits merged automatically by Renovate or scheduled render jobs
-  now carry an explicit commit body with sign-off and no tool or bot
-  `Co-authored-by:` lines, and pushes to `master` verify landed squash bodies
-  against disallowed trailers ([ADR-3389](docs/adr/3389-landed-commit-message-gate.md)).
 
 
 - CI: the `build.yml` legs (`Linux Intel LLVM`, `macOS Clang+Metal`,
@@ -2505,13 +2478,6 @@
   (ADR-3318) as a dependency pin, so a bot pull request that only moves the
   toolchain no longer needs the deep-dive checklist. A nested
   `rust-toolchain.toml` and a human author stay gated.
-
-
-- The dependency pull request classifier now allows the exact path
-  `cmd/vmafx-controller/internal/storetest/storetest.go`, so Renovate pull
-  requests that update only the PostgreSQL container image digests
-  (#3039) are recognized as dependency-only and pass the deliverables
-  checklist. Sibling files and other Go source under `cmd/` stay gated.
 
 
 - **Fifteen code-scanning findings are fixed in code; the provided-feature lookup no longer reads past a full list.**
@@ -2866,9 +2832,6 @@
   [preflight](docs/development/preflight.md)).
 
 
-- Go tests: `writeNodeEnv` configures `127.0.0.1:0` for gRPC and HTTP listeners so tests that do not dial avoid loopback port reservation races (`cmd/vmafx-node`).
-
-
 - CI: the hosted CUDA legs of `build.yml` and `libvmaf-build-matrix.yml` install
   nv-codec-headers at the commit `build-config.env` pins, through
   `scripts/ci/fetch-nv-codec-headers.sh`, instead of cloning the default branch
@@ -3061,21 +3024,6 @@ Intel Quick Sync Video (QSV) tuning now probes ICQ once per device, encoder and 
   same-repository pull request the release-bot App opened, re-arms auto-merge when the branch is
   already rendered at the master tip, commits a render that adds only new files, and refuses to
   start without `RUNNER_TEMP` (ADR-3373).
-
-
-- **Renovate: update packaged Helm subchart archives on Chart.lock changes.**
-  Configures top-level `postUpdateOptions: ["helmUpdateSubChartArchives"]` in
-  `renovate.json` so subchart archive tarballs (`deploy/helm/.../charts/*.tgz`)
-  are refreshed when Renovate updates `Chart.lock` (#3045, #3047), preventing
-  `helm lint` failures caused by absent subchart packages.
-
-
-- Dependency maintenance: Renovate now updates Node.js across `build-config.env`
-  (`NODE_VERSION`), `.pre-commit-config.yaml` (`default_language_version.node`),
-  `.node-version`, and `.github/workflows/` (`node-version:`) in one pull request. Previously,
-  the built-in GitHub Actions manager updated only workflow files, leaving the
-  other pins behind and failing the single-source version gate. A custom regex
-  manager now groups them as `CI Node.js` (ADR-3312 pattern).
 
 
 - **The roadmap rows of 1.1 and 1.3 list the issues that are in those milestones.**
@@ -3320,13 +3268,6 @@ Intel Quick Sync Video (QSV) tuning now probes ICQ once per device, encoder and 
   (`T-UPSTREAM-WATCH-RETRY-DELAY-2026-10-18`).
 
 
-- **The upstream watcher can no longer file issues on Netflix/vmaf.**
-  When `upstream-watcher.yml` added a remote named `upstream`, `gh` resolved its
-  base repository to upstream instead of the fork. Every job now sets
-  `GH_REPO: ${{ github.repository }}` at job level and passes `--repo`
-  to every `gh issue` command so tracking issues never target upstream.
-
-
 - **The upstream-watcher workflow waits until a new label is usable.**
   A label created moments before could still be unknown to `gh issue create`, which
   failed the 2026-10-27 scheduled run. `scripts/upstream-watcher/ensure_label.sh` now
@@ -3544,13 +3485,6 @@ Intel Quick Sync Video (QSV) tuning now probes ICQ once per device, encoder and 
   in `requirements/locks/manifest.json` move together with the Renovate patch update (ruff 0.17.2,
   semgrep 1.182.1, uv 0.13.5); every lock is rewritten from its manifest entry
   (`make python-locks-write`), which also moves the transitive `starlette` pin to 1.10.0.
-
-
-- **The Python hash locks are regenerated with uv 0.13.6.** The tooling-test pin and `uv_version`
-  in `requirements/locks/manifest.json` move together with the Renovate patch update (ruff 0.17.3,
-  tox 4.67.2, uv 0.13.6); every lock is rewritten from its manifest entry
-  (`make python-locks-write`), which also moves the transitive pins released since the last
-  refresh, among them click 8.5.0, mypy 2.4.1 and the CUDA 13.2 wheels.
 
 ## [1.0.0-rc.3] - 2026-10-07
 
