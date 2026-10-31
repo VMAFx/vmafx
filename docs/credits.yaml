@@ -445,6 +445,16 @@ entries:
   paths:
   - tools/rc1-tester/image/licenses/nv-codec-headers.txt
   note: Notice reproduced for the CUDA images published before ADR-1513 (ADR-1578).
+- id: zimg
+  name: zimg
+  url: https://github.com/sekrit-twc/zimg
+  kind: library
+  relation: shipped
+  license: WTFPL
+  paths:
+  - tools/rc1-tester/image/licenses/zimg-3.0.6-COPYING.txt
+  note: libzimg 3.0.6 ships in the native release for the FFmpeg zscale filter; its licence text is
+    reproduced for the offline release notices (ADR-3396).
 - id: interfig
   name: interfig (from hindsight)
   url: https://github.com/vectorize-io/hindsight
