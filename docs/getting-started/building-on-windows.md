@@ -183,7 +183,16 @@ builds it whenever a change reaches the C library or the patches
 ([ADR-2783](../adr/2783-ffmpeg-msvc-consumer-leg.md)).
 
 1. From an **x64 Native Tools Command Prompt** in the repository root, build
-   and install VMAFx as a static library:
+   and install VMAFx as a static library. The default build needs zimg
+   ([ADR-3396](../adr/3396-zimg-on-by-default.md)), found through pkg-config.
+   Install it with vcpkg in the triplet that matches the C runtime
+   (`x64-windows-static-md` for `/MD`), together with vcpkg's `pkgconf`,
+   and point `PKG_CONFIG` at that `pkgconf.exe` and `PKG_CONFIG_PATH` at the
+   triplet's `lib\pkgconfig`. Remove `-lstdc++` from the installed
+   `zimg.pc`, or the static link stops at `LNK1181` on `stdc++.lib`.
+   [`scripts/ci/setup-zimg-windows.ps1`](https://github.com/VMAFx/vmafx/blob/master/scripts/ci/setup-zimg-windows.ps1)
+   performs exactly these steps for CI. `-Denable_zimg=false` builds
+   without zimg, and PQ inputs then fail to score.
 
     ```bat
     set CFLAGS=/experimental:c11atomics
@@ -223,7 +232,11 @@ MSVC link must use the same C runtime, and a release build of VMAFx compiles
 with `/MD` (Meson's `b_vscrt=from_buildtype`). A VMAFx build with another
 runtime (`-Db_vscrt=mt`, a debug build's `/MDd`) needs FFmpeg built with the
 same one; the linker reports a mismatch as warning `LNK4098`, which the
-script's warning check fails on.
+script's warning check fails on. It also configures FFmpeg with
+`--pkg-config-flags=--static`: `vmafx.lib` needs zimg, which `libvmaf.pc`
+lists under `Requires.private`, and only a static query puts `zimg.lib` on
+the link line. Keep the `PKG_CONFIG_PATH` of step 1 in the MSYS2 shell, in
+MSYS2 path form, so pkg-config still finds `zimg.pc`.
 
 With `FFMPEG_TOOLCHAIN=msvc` that check covers the lines the patch series adds
 or changes and every linker warning. `cl.exe` reports some 400 warnings in
