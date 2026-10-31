@@ -40,6 +40,7 @@ def _library_path(stage: str) -> list[str]:
 
 @pytest.mark.parametrize("kit", KITS)
 def test_gpu_runtime_finds_the_staged_libraries(kit: str) -> None:
+    """The runtime stage copies /opt/vmafx/lib from its build stage and puts it on the path."""
     text = DOCKERFILE.read_text()
     build = _stage(text, f"{kit}-build")
     runtime = _stage(text, f"{kit}-runtime")
@@ -57,5 +58,39 @@ def test_the_library_path_reader_refuses_a_missing_entry() -> None:
 
 
 def test_the_stage_reader_refuses_an_unknown_stage() -> None:
+    """Negative case: asking for a stage the Dockerfile does not define fails."""
     with pytest.raises(AssertionError):
         _stage("FROM x AS a\nRUN true\n", "b")
+
+
+DEBIAN_COPIES = {"libzimg": "libzimg2", "libgomp": "libgomp1"}
+
+
+def _uncredited_debian_copies(stage: str) -> list[str]:
+    """Debian packages whose library the stage copies without recording its SOURCE and copyright."""
+    missing = []
+    for lib in sorted(set(re.findall(r"cp -a /usr/lib/\*-linux-gnu\*?/(lib\w+)\.so", stage))):
+        package = DEBIAN_COPIES.get(lib, lib)
+        source = rf"dpkg-query -W -f='\$\{{source:Package\}}=\$\{{source:Version\}}\\n' {package}\b"
+        if not (re.search(source, stage) and f"/usr/share/doc/{package}/copyright" in stage):
+            missing.append(package)
+    return missing
+
+
+@pytest.mark.parametrize("stage", ("python-venv", *(f"{kit}-build" for kit in KITS)))
+def test_copied_debian_libraries_carry_their_source(stage: str) -> None:
+    """A library copied out of a Debian package ships that package's copyright and SOURCE."""
+    assert _uncredited_debian_copies(_stage(DOCKERFILE.read_text(), stage)) == []
+
+
+@pytest.mark.parametrize("kit", KITS)
+def test_gpu_runtime_ships_the_libzimg2_record(kit: str) -> None:
+    """The runtime stage installs the libzimg2 copyright and SOURCE its licence entry reads."""
+    runtime = _stage(DOCKERFILE.read_text(), f"{kit}-runtime")
+    assert f"COPY --from={kit}-build /zimg-doc /usr/share/doc/libzimg2" in runtime
+
+
+def test_an_uncredited_debian_copy_fails() -> None:
+    """Negative case: a stage that copies libzimg without its Debian record is reported."""
+    stage = "RUN cp -a /usr/lib/*-linux-gnu*/libzimg.so* /opt/vmafx/lib/ \\\n"
+    assert _uncredited_debian_copies(stage) == ["libzimg2"]
