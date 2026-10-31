@@ -576,6 +576,17 @@ jobs:
         if: ${{ (!matrix.sycl && !matrix.cuda && !matrix.hip) && steps.impact.outputs.c_core == 'true' }}
         run: sudo "$(command -v python3)" scripts/ci/prefetch_go_modules.py
 
+      - name: Fetch gate test YUV fixtures (Metal leg)
+        if: ${{ (contains(matrix.meson_extra, 'enable_metal=enabled')) && steps.impact.outputs.c_core == 'true' }}
+        run: >-
+          bash scripts/test/fetch-test-yuvs.sh
+          src01_hrc00_576x324.yuv
+          src01_hrc01_576x324.yuv
+          ref_dock-na-HDR_res2160_rate5p0_maxRate100000_bufSize200000_fps59p940_576x324_1frame.yuv
+          dis_dock-na-HDR_res1440_rate15p0_maxRate10000_bufSize20000_fps59p940_576x324_1frame.yuv
+          src01_hrc00_576x324.yuv422p10le.yuv
+          src01_hrc01_576x324.yuv422p10le.yuv
+
       - name: Run tests
         if: ${{ (!matrix.sycl && !matrix.cuda && !matrix.hip) && steps.impact.outputs.c_core == 'true' }}
         run: >-

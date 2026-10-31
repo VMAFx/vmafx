@@ -3,4 +3,6 @@
   "fixture files not found" on legs that have neither a device nor the
   fixtures, because the check that the CLI refuses the backend only ran inside
   a row. A probe on a blank picture now settles that first; with a device
-  present, an absent fixture still fails the gate.
+  present, an absent fixture still fails the gate. The macOS Metal CI leg now
+  fetches the gate's YUV pairs before running the meson tests so device-resident
+  HDR runs find their fixtures.
