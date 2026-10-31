@@ -684,6 +684,8 @@ GOLDEN_PYTEST_ARGS := \
 	python/test/vmafexec_test.py \
 	python/test/vmafexec_feature_extractor_test.py \
 	python/test/result_test.py \
+	python/test/vmaf_v1_quality_runner_test.py \
+	python/test/hdr_models_pin_test.py \
 	-v -m "not slow" --tb=short
 test-netflix-golden: build-golden
 	@echo "=== Netflix CPU golden-data gate (D24) ==="
