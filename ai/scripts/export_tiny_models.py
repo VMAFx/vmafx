@@ -194,6 +194,7 @@ def _export_c2(args: Namespace, raw_argv: list[str]) -> dict[str, Any] | None:
         "onnx": c2_onnx.name,
         "opset": read_signature(c2_onnx).default_opset,
         "sha256": sha256(c2_onnx),
+        "teacher": "none",
     }
 
 
@@ -244,6 +245,7 @@ def _export_c3(args: Namespace, raw_argv: list[str]) -> dict[str, Any] | None:
         "onnx": c3_onnx.name,
         "opset": read_signature(c3_onnx).default_opset,
         "sha256": sha256(c3_onnx),
+        "teacher": "none",
     }
 
 

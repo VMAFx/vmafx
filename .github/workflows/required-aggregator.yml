@@ -134,6 +134,8 @@ jobs:
               'Tidy Lane (integrations)',
               'Tidy Lane (rust)',
               'Tidy Metal',
+              // ADR-3390: the tests of the element; the job always starts.
+              'GStreamer Element',
               'Cppcheck',
               'Dependency Review',
               'Gitleaks',
@@ -390,6 +392,8 @@ jobs:
               'Tidy Lane (integrations)',
               'Tidy Lane (rust)',
               'Tidy Metal',
+              // ADR-3390 — same shape: the planner skips only the work of the job.
+              'GStreamer Element',
               'Windows ARM64 MSVC',
               // ADR-2440 — the locked praetor workflow reports on every pull request
               // and master push; absence means broken registration.

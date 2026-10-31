@@ -1,0 +1,29 @@
+name: Landed commit messages
+
+# ADR-3389: verify that squash commits landed on master carry a valid sign-off
+# and no machine-generated or bot Co-authored-by trailers.
+
+on:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  landed:
+    name: Landed commit messages
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify landed commit messages
+        env:
+          BASE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+          LANDING_IDENTITY: "Lusoris <lusoris@proton.me>"
+        run: python3 scripts/ci/check-dco.py --landed

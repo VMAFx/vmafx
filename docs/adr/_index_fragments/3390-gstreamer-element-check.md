@@ -1,0 +1,1 @@
+| [ADR-3390](3390-gstreamer-element-check.md) | The required check `GStreamer Element` runs `gstreamer/test/run.sh` in strict mode, so the element's property list and scores are enforced in CI | Accepted | ci, gstreamer |

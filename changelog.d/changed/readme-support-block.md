@@ -1,0 +1,1 @@
+- **The README support section says what sponsorship pays for.** It now names the costs (CI time, cloud GPU test time, an AI workstation), states that no support or priority is sold, and keeps one list of sponsor links.

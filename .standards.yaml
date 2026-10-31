@@ -169,6 +169,10 @@ exceptions:
     reason: "Built only with -Denable_zimg=true (core/test/meson.build); zimg is not in dev/Containerfile (grep -i zimg dev/Containerfile is empty) nor installed by the hosted Tidy Ratchet job (.github/workflows/lint-and-format.yml \"Install deps\" step); fix = libzimg-dev in both, -Denable_zimg=true in TIDY_RATCHET_SETUP_cpu, re-measure. Re-reviewed 2026-10-15. Category D (120 days)."
     expires: "2027-01-04"
   - rule: clang-tidy-coverage
+    path: "core/test/test_integer_adm_buffer_alloc.c"
+    reason: "Category D. New unit test for the integer ADM slab offsets; the lanes' measured_sources change only when a tidy baseline is re-measured, and that re-measure adds this file."
+    expires: "2027-01-04"
+  - rule: clang-tidy-coverage
     path: "core/test/test_pelorus_interop.c"
     reason: "Byte-identical mirror of VMAFx/pelorus (ADR-1113; listed in scripts/ci/pelorus-mirror-paths.txt, which tidy-ratchet.py refuses as a translation unit): tidied in pelorus CI (libpelorus build, test, format, tidy) at the pinned SHA; a fix lands upstream and is re-vendored by scripts/sync-pelorus-interop.sh."
     expires: "2027-01-04"

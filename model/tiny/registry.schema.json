@@ -21,7 +21,7 @@
   "$defs": {
     "model_entry": {
       "type": "object",
-      "required": ["id", "kind", "onnx", "sha256"],
+      "required": ["id", "kind", "onnx", "sha256", "teacher"],
       "additionalProperties": false,
       "properties": {
         "id": {
@@ -55,6 +55,12 @@
           "description": "Free text; training recipe hash, provenance, etc.",
           "type": "string",
           "maxLength": 512
+        },
+        "teacher": {
+          "description": "Identifier of the teacher model that supervised this tiny model (e.g. 'vmaf_v0.6.1', 'vmaf_v1.0.16_3d0h'). For models trained without a VMAF teacher (filters, saliency models, MOS heads, smoke probes) the literal is 'none'. Models whose teacher cannot be proven from in-tree artifacts record 'unknown'. When naming a real model, the corresponding JSON must exist under model/.",
+          "type": "string",
+          "pattern": "^(none|unknown|[a-z0-9][a-z0-9_.-]+)$",
+          "maxLength": 64
         },
         "smoke": {
           "description": "True for the CI smoke fixture. Smoke models are load-path probes, not quality models — they're excluded from the quality-metric harness.",
