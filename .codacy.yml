@@ -3,15 +3,32 @@
 # Codacy reads this file from the default branch, and it replaces the ignored-file
 # settings of the Codacy UI.
 #
-# markdownlint skips the trees whose Markdown files are fragments: they are spliced
-# under a heading by scripts/release/concat-changelog-fragments.sh and the ADR and
-# rebase-note index renderers (ADR-0221), so MD041 (first line a heading) and MD013
-# (80 columns) cannot hold for them. The markdownlint-cli2 hook in
-# .pre-commit-config.yaml excludes the same trees;
-# scripts/ci/tests/test_codacy_config.py keeps the two lists equal.
+# markdownlint skips exactly the paths the markdownlint-cli2 hook in
+# .pre-commit-config.yaml skips; that hook's comment gives the reason for each.
+# The fragment trees matter most: changelog, ADR-index and rebase-note fragments
+# are spliced under a heading by the release renderers (ADR-0221), so MD041 (first
+# line a heading) and MD013 (80 columns) cannot hold for them.
+# scripts/ci/tests/test_codacy_config.py fails when the two lists drift apart.
 engines:
   markdownlint:
     exclude_paths:
-      - "changelog.d/**"
+      - ".agents/skills/social-text/**"
+      - ".agents/skills/caveman/**"
+      - ".agents/skills/adhd-format/**"
+      - ".claude/skills/social-text/**"
+      - ".claude/skills/caveman/**"
+      - ".claude/skills/adhd-format/**"
+      - "subprojects/**"
+      - "core/test/data/**"
+      - "python/test/resource/**"
+      - "compat/python-vmaf/resource/**"
+      - "compat/python-vmaf/matlab/**"
+      - "model/**"
+      - "testdata/**"
+      - "**/testdata/**"
+      - "docs/adr/README.md"
+      - "CHANGELOG.md"
       - "docs/adr/_index_fragments/**"
       - "docs/rebase-notes.d/**"
+      - "changelog.d/**"
+      - "tools/figures/**"
