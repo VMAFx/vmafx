@@ -976,16 +976,17 @@ static inline void *init_index(int32_t **index, char *data_top, size_t stride)
     return data_top;
 }
 
-static inline void *i4_init_dwt_band(i4_adm_dwt_band_t *band, char *data_top, size_t stride)
+static inline void *i4_init_dwt_band(i4_adm_dwt_band_t *band, char *data_top, size_t stride_a,
+                                     size_t stride_hvd)
 {
     band->band_a = (int32_t *)data_top;
-    data_top += stride;
+    data_top += stride_a;
     band->band_h = (int32_t *)data_top;
-    data_top += stride;
+    data_top += stride_hvd;
     band->band_v = (int32_t *)data_top;
-    data_top += stride;
+    data_top += stride_hvd;
     band->band_d = (int32_t *)data_top;
-    data_top += stride;
+    data_top += stride_hvd;
     return data_top;
 }
 
@@ -1124,8 +1125,11 @@ static int init_buffers(AdmState *s, unsigned w, unsigned h)
     s->buf.ind_size_x = ALIGN_CEIL(((w + 1) / 2) * sizeof(int32_t));
     s->buf.ind_size_y = ALIGN_CEIL(((h + 1) / 2) * sizeof(int32_t));
     const size_t buf_sz_one = s->buf.ind_size_x * ((h + 1) / 2);
+    const size_t rows_s1 = (size_t)(((h + 1) / 2 + 1) / 2) + 2;
+    const size_t buf_sz_s1 = s->buf.ind_size_x * rows_s1;
+    const size_t data_sz = 10 * buf_sz_one + 2 * buf_sz_one + 18 * buf_sz_s1;
 
-    s->buf.data_buf = aligned_malloc(buf_sz_one * NUM_BUFS_ADM, MAX_ALIGN);
+    s->buf.data_buf = aligned_malloc(data_sz, MAX_ALIGN);
     if (!s->buf.data_buf) {
         return -ENOMEM;
     }
@@ -1133,7 +1137,7 @@ static int init_buffers(AdmState *s, unsigned w, unsigned h)
      * in adm_buffer_alloc()). No stage reads a sample it has not written once
      * the DWT index tables are correct, so this is defence in depth: a future
      * out-of-region read yields a reproducible value, not heap residue. */
-    (void)memset(s->buf.data_buf, 0, buf_sz_one * NUM_BUFS_ADM);
+    (void)memset(s->buf.data_buf, 0, data_sz);
     s->buf.tmp_ref = aligned_malloc(s->integer_stride * 4, MAX_ALIGN);
     if (!s->buf.tmp_ref) {
         return -ENOMEM;
@@ -1155,12 +1159,12 @@ static int init_buffers(AdmState *s, unsigned w, unsigned h)
     data_top = init_dwt_band_hvd(&s->buf.csf_a, data_top, buf_sz_one / 2);
     data_top = init_dwt_band_hvd(&s->buf.csf_f, data_top, buf_sz_one / 2);
 
-    data_top = i4_init_dwt_band(&s->buf.i4_ref_dwt2, data_top, buf_sz_one);
-    data_top = i4_init_dwt_band(&s->buf.i4_dis_dwt2, data_top, buf_sz_one);
-    data_top = i4_init_dwt_band_hvd(&s->buf.i4_decouple_r, data_top, buf_sz_one);
-    data_top = i4_init_dwt_band_hvd(&s->buf.i4_decouple_a, data_top, buf_sz_one);
-    data_top = i4_init_dwt_band_hvd(&s->buf.i4_csf_a, data_top, buf_sz_one);
-    (void)i4_init_dwt_band_hvd(&s->buf.i4_csf_f, data_top, buf_sz_one);
+    data_top = i4_init_dwt_band(&s->buf.i4_ref_dwt2, data_top, buf_sz_one, buf_sz_s1);
+    data_top = i4_init_dwt_band(&s->buf.i4_dis_dwt2, data_top, buf_sz_one, buf_sz_s1);
+    data_top = i4_init_dwt_band_hvd(&s->buf.i4_decouple_r, data_top, buf_sz_s1);
+    data_top = i4_init_dwt_band_hvd(&s->buf.i4_decouple_a, data_top, buf_sz_s1);
+    data_top = i4_init_dwt_band_hvd(&s->buf.i4_csf_a, data_top, buf_sz_s1);
+    (void)i4_init_dwt_band_hvd(&s->buf.i4_csf_f, data_top, buf_sz_s1);
 
     (void)init_index(s->buf.ind_y, s->buf.buf_y_orig, s->buf.ind_size_y);
     (void)init_index(s->buf.ind_x, s->buf.buf_x_orig, s->buf.ind_size_x);
