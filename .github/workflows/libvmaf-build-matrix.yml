@@ -690,6 +690,8 @@ jobs:
       - uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e  # v2.33.0
         with:
           msystem: ${{ matrix.msystem }}
+          # python-setuptools: the codegen suite (test_vmafx_api_generator) imports
+          # setuptools.build_meta, which the MSYS2 python package does not carry.
           install: >-
             ${{ matrix.MINGW_PACKAGE_PREFIX }}-ccache
             ${{ matrix.MINGW_PACKAGE_PREFIX }}-nasm
@@ -699,6 +701,7 @@ jobs:
             ${{ matrix.MINGW_PACKAGE_PREFIX }}-ninja
             ${{ matrix.MINGW_PACKAGE_PREFIX }}-python
             ${{ matrix.MINGW_PACKAGE_PREFIX }}-python-yaml
+            ${{ matrix.MINGW_PACKAGE_PREFIX }}-python-setuptools
             vim make diffutils
           update: true
           path-type: inherit
