@@ -895,10 +895,7 @@ jobs:
       - name: Install zimg via vcpkg (windows)
         if: steps.leg.outputs.run == 'true' && runner.os == 'Windows'
         shell: pwsh
-        run: |
-          vcpkg install zimg:x64-windows-static
-          $vcpkgPkgConfig = "$env:VCPKG_INSTALLATION_ROOT/installed/x64-windows-static/lib/pkgconfig"
-          echo "PKG_CONFIG_PATH=$vcpkgPkgConfig;$env:PKG_CONFIG_PATH" >> $env:GITHUB_ENV
+        run: pwsh -File scripts/ci/setup-zimg-windows.ps1 -Triplet x64-windows-static-md
 
       # ADR-2170 (design notes)
       - name: Warnings-as-errors arguments
@@ -1043,10 +1040,7 @@ jobs:
 
       - name: Install zimg via vcpkg (ARM64)
         shell: pwsh
-        run: |
-          vcpkg install zimg:arm64-windows-static
-          $vcpkgPkgConfig = "$env:VCPKG_INSTALLATION_ROOT/installed/arm64-windows-static/lib/pkgconfig"
-          echo "PKG_CONFIG_PATH=$vcpkgPkgConfig;$env:PKG_CONFIG_PATH" >> $env:GITHUB_ENV
+        run: pwsh -File scripts/ci/setup-zimg-windows.ps1 -Triplet arm64-windows-static-md
 
       - name: Show compiler
         shell: cmd

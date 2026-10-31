@@ -57,12 +57,18 @@ The binary is `build\tools\vmaf.exe`.
 ### zimg (HDR PQ support)
 
 `enable_zimg` is on by default ([ADR-3396](../../adr/3396-zimg-on-by-default.md)).
-Install `zimg` via vcpkg:
+Install `zimg` and a working pkg-config via vcpkg. Meson refuses the pkg-config
+of Strawberry Perl, so name the vcpkg one in `PKG_CONFIG`:
 
 ```bat
-vcpkg install zimg:x64-windows-static
-set PKG_CONFIG_PATH=%VCPKG_INSTALLATION_ROOT%\installed\x64-windows-static\lib\pkgconfig;%PKG_CONFIG_PATH%
+vcpkg install zimg:x64-windows-static-md pkgconf:x64-windows-static-md
+set VCPKG_PREFIX=%VCPKG_INSTALLATION_ROOT%\installed\x64-windows-static-md
+set PKG_CONFIG=%VCPKG_PREFIX%\tools\pkgconf\pkgconf.exe
+set PKG_CONFIG_PATH=%VCPKG_PREFIX%\lib\pkgconfig;%PKG_CONFIG_PATH%
 ```
+
+The triplet carries the C runtime into the link: `-static-md` matches the `/MD`
+of a release build, and `x64-windows-static` matches `-Db_vscrt=mt`.
 
 Alternatively, pass `-Denable_zimg=false` to `meson setup` to build without HDR
 colour conversion support.

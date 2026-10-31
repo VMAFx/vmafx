@@ -387,6 +387,13 @@ jobs:
           }
           if (-not $env:VCToolsRedistDir) { throw 'VCToolsRedistDir is not set (vcvarsall)' }
           "VCToolsRedistDir $env:VCToolsRedistDir"
+      # The triplet follows the zip's C runtime: /MT, or /MD for the SYCL zip
+      # (scripts/ci/build-windows-tester-bundle.py).
+      - name: Install zimg and pkg-config
+        shell: pwsh
+        env:
+          ZIMG_TRIPLET: ${{ matrix.gpu == 'sycl' && 'x64-windows-static-md' || format('{0}-windows-static', matrix.arch) }}
+        run: pwsh -File scripts/ci/setup-zimg-windows.ps1 -Triplet $env:ZIMG_TRIPLET
       - name: Build the zip
         if: matrix.gpu != 'sycl'
         shell: pwsh
@@ -405,10 +412,6 @@ jobs:
             $env:PBS_URL = $env:PBS_ARM64_URL; $env:PBS_SHA256 = $env:PBS_ARM64_SHA256
             $env:PBS_FULL_URL = $env:PBS_ARM64_FULL_URL; $env:PBS_FULL_SHA256 = $env:PBS_ARM64_FULL_SHA256
           }
-          $triplet = if ($env:VMAFX_ARCH -eq 'arm64') { 'arm64-windows-static' } else { 'x64-windows-static' }
-          vcpkg install "zimg:$triplet"
-          $vcpkgPkgConfig = "$env:VCPKG_INSTALLATION_ROOT/installed/$triplet/lib/pkgconfig"
-          $env:PKG_CONFIG_PATH = if ($env:PKG_CONFIG_PATH) { "$vcpkgPkgConfig;$env:PKG_CONFIG_PATH" } else { $vcpkgPkgConfig }
           python scripts/ci/build-windows-tester-bundle.py "$env:RUNNER_TEMP\out"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       # The SYCL zip builds inside oneAPI's environment (icx-cl, ocloc for the AOT
@@ -430,8 +433,6 @@ jobs:
           set "PBS_SHA256=%PBS_X64_SHA256%"
           set "PBS_FULL_URL=%PBS_X64_FULL_URL%"
           set "PBS_FULL_SHA256=%PBS_X64_FULL_SHA256%"
-          vcpkg install zimg:x64-windows-static || exit /b 1
-          set "PKG_CONFIG_PATH=%VCPKG_INSTALLATION_ROOT%\installed\x64-windows-static\lib\pkgconfig;%PKG_CONFIG_PATH%"
           python scripts\ci\build-windows-tester-bundle.py "%RUNNER_TEMP%\out" || exit /b 1
       - if: ${{ env.GITEA_ACTIONS != 'true' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2

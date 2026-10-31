@@ -36,6 +36,8 @@ The Meson option `enable_zimg` is now `true` by default:
 - **Positive**: Standard out-of-the-box builds can score HDR PQ video without manual options.
 - **Negative**: Building from source now requires `zimg >= 2.7` headers and pkg-config unless `-Denable_zimg=false` is explicitly provided.
 - **Neutral / follow-ups**: CI matrix legs and container builder stages install `libzimg-dev` / `zimg`; licence gate includes WTFPL in approved lists.
+- Windows jobs install zimg through `scripts/ci/setup-zimg-windows.ps1`, which also installs `pkgconf` and names it in `PKG_CONFIG`, because Meson refuses the Strawberry Perl pkg-config on hosted runners. The vcpkg triplet follows the C runtime of the build: `-static-md` for `/MD`, `-static` for `-Db_vscrt=mt`.
+- Tidy lanes install `libzimg-dev` when their pinned image lacks it (`scripts/dev/tidy-lane.sh`), and the arm64 lane opts out because its cross sysroot has no arm64 zimg.
 
 ## References
 

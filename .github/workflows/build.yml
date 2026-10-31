@@ -445,10 +445,7 @@ jobs:
       - name: Install zimg via vcpkg (Windows)
         if: matrix.windows
         shell: pwsh
-        run: |
-          vcpkg install zimg:x64-windows-static
-          $vcpkgPkgConfig = "$env:VCPKG_INSTALLATION_ROOT/installed/x64-windows-static/lib/pkgconfig"
-          echo "PKG_CONFIG_PATH=$vcpkgPkgConfig;$env:PKG_CONFIG_PATH" >> $env:GITHUB_ENV
+        run: pwsh -File scripts/ci/setup-zimg-windows.ps1 -Triplet x64-windows-static-md
 
       # ── ccache configure ─────────────────────────────────────────────
       - name: Configure ccache
