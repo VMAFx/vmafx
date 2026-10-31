@@ -99,10 +99,10 @@ class SvtAv1Adapter:
     # (the fastest preset) via PRESET_NAME_TO_INT.
     probe_preset: str = "veryfast"
     probe_quality: int = 35
-    supports_qpfile: bool = False
+    supports_qpfile: bool = True
     # ADR-0400: this encoder has no parseable first-pass stats file.
     supports_encoder_stats: bool = False
-    # SVT-AV1 QP-offset map (ADR-0414): delivered via --qp-file / -svtav1-params.
+    # ADR-3386: patch 0007 carries x264-style 16x16 maps through -qpfile.
     supports_saliency_roi: bool = True
     # ADR-0595 (Phase F real 2-pass): SVT-AV1 supports multi-pass
     # **only in VBR mode**. Quoting the encoder's runtime error
@@ -252,6 +252,7 @@ class SvtAv1Adapter:
     ) -> object:
         """Write an SVT-AV1 QP-offset map file from a per-SB-block offset array.
 
+        Legacy API helper, not used by any encode path since ADR-3386.
         Delegates to :func:`vmaftune.saliency.write_svtav1_qpoffset_map`.
         Returns the output ``Path`` the caller passes to
         :func:`vmaftune.saliency.augment_extra_params_with_svtav1_qpmap`.

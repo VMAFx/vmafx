@@ -111,10 +111,14 @@ class ElementPropertyTest(unittest.TestCase):
     def test_element_properties_equal_definition(self) -> None:
         plugin_dir = os.environ.get("GST_VMAFX_PLUGIN_DIR")
         if not plugin_dir:
+            if os.environ.get("GST_VMAFX_STRICT") == "1":
+                self.fail("GST_VMAFX_PLUGIN_DIR not set, GST_VMAFX_STRICT=1")
             self.skipTest("GST_VMAFX_PLUGIN_DIR not set: run gstreamer/test/run.sh")
         try:
             import gi  # noqa: F401, PLC0415
         except ImportError:
+            if os.environ.get("GST_VMAFX_STRICT") == "1":
+                self.fail("python gi (PyGObject) not installed, GST_VMAFX_STRICT=1")
             self.skipTest("python gi (PyGObject) not installed")
         actual = element_properties(plugin_dir)
         self.assertEqual(property_diff(expected_properties(), actual), [])

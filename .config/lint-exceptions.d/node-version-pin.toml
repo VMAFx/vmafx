@@ -1,0 +1,10 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
+# Declared exceptions to the Node pin check of scripts/ci/check-workflow-versions.py.
+# Format and rules: scripts/ci/lint_exceptions.py.
+
+[[exception]]
+path = ".github/workflows/praetor-docs.yml"
+reason = "Category D, entered 2026-10-31. The engine writes this file and praetorctl audit locks it byte for byte, so it keeps major 24 at the current engine pin. The engine now reads .node-version here; remove this entry with the pin move that brings that version."
+expires = 2027-02-28

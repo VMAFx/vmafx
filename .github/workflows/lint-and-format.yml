@@ -470,6 +470,90 @@ jobs:
           path: ${{ runner.temp }}/tidy-lane
           if-no-files-found: ignore
 
+  gstreamer-element:
+    needs: tier
+    if: needs.tier.outputs.light == 'true'
+    # ADR-3390 (#2474): the vmafx element built on this commit's library, its
+    # installed properties held to core/api/vmafx.toml and its scores to the CLI.
+    # The job always starts, so the context always reports; the planner decides
+    # whether it builds. GST_VMAFX_STRICT turns a missing fixture or gi module
+    # into a failure: a test that skipped here would report a gate that did not run.
+    # required-aggregator
+    name: GStreamer Element
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Plan CI impact (ADR-1140)
+        id: impact
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python3 scripts/ci/plan-ci-impact.py --event "$EVENT_NAME" \
+            --base "$BASE_SHA" --head "$HEAD_SHA" --github-output "$GITHUB_OUTPUT"
+      - name: Not impacted — element not built
+        if: steps.impact.outputs.gstreamer_element != 'true'
+        env:
+          MODE: ${{ steps.impact.outputs.mode }}
+          REASON: ${{ steps.impact.outputs.reason }}
+        run: |
+          echo "::notice::gstreamer_element not impacted (mode=$MODE reason=$REASON) — the element was NOT built or tested on this commit"
+      - name: Setup python
+        if: steps.impact.outputs.gstreamer_element == 'true'
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: 3.14.9
+      - name: Install meson and ninja
+        if: steps.impact.outputs.gstreamer_element == 'true'
+        run: python -m pip install --require-hashes -r requirements/locks/build.txt
+      - name: Install system dependencies
+        if: steps.impact.outputs.gstreamer_element == 'true'
+        run: |
+          sudo apt-get update
+          sudo -E apt-get -yq install --no-install-recommends \
+            nasm xxd pkg-config libglib2.0-dev locales \
+            libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+            gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-bad \
+            gstreamer1.0-gl libegl-mesa0 libgl1-mesa-dri \
+            python3-gi gir1.2-gstreamer-1.0
+          # The decimal-comma tests pass trivially when the locale is absent.
+          sudo locale-gen de_DE.UTF-8
+          locale -a | grep -qix 'de_DE.utf8'
+      - name: Fetch the test pairs
+        if: steps.impact.outputs.gstreamer_element == 'true'
+        run: >-
+          bash scripts/test/fetch-test-yuvs.sh
+          src01_hrc00_576x324.yuv src01_hrc01_576x324.yuv
+          checkerboard_1920_1080_10_3_0_0.yuv checkerboard_1920_1080_10_3_1_0.yuv
+          checkerboard_1920_1080_10_3_10_0.yuv
+      - name: Build libvmafx
+        if: steps.impact.outputs.gstreamer_element == 'true'
+        run: |
+          set -euo pipefail
+          # shellcheck disable=SC2046  # the helper prints one option per line, split on purpose
+          meson setup build-cpu core --buildtype release \
+            -Denable_dnn=disabled -Db_lto=false -Denable_cuda=false \
+            -Denable_sycl=false -Denable_hip=false -Denable_metal=disabled \
+            -Dwerror=true $(scripts/ci/werror-args.sh true)
+          ninja -C build-cpu -j"$(nproc)"
+      # The system interpreter: python3-gi is built for it, not for setup-python's.
+      - name: Build the element and run its tests
+        if: steps.impact.outputs.gstreamer_element == 'true'
+        env:
+          GST_VMAFX_STRICT: "1"
+          GST_VMAFX_PYTHON: /usr/bin/python3
+          GST_VMAFX_JOBS: "4"
+          # glupload needs a GL context; the runner has no display, Mesa renders in software.
+          EGL_PLATFORM: surfaceless
+          GST_GL_PLATFORM: egl
+          GST_GL_WINDOW: surfaceless
+        run: gstreamer/test/run.sh "$PWD/build-cpu"
+
   clang-tidy-sycl:
     needs: tier
     if: needs.tier.outputs.light == 'true'

@@ -75,6 +75,7 @@ GOLDEN_MESON_OPTIONS=(
   -Denable_dnn=disabled
   -Denable_tests=false
   -Denable_docs=false
+  -Denable_zimg=true
 )
 
 if [[ -f "${BUILD_DIR}/build.ninja" ]]; then

@@ -62,6 +62,8 @@ PAIRS = [
     ("bbb-4k-20f", "ref_3840x2160_200f.yuv", "dis_3840x2160_200f.yuv", 3840, 2160, BBB_FRAMES),
 ]
 TABLE: list[str] = []
+# The CI job: a missing CPU fixture fails instead of skipping (the 4K pair stays optional).
+STRICT = os.environ.get("GST_VMAFX_STRICT") == "1"
 
 
 def env_path(name: str) -> Path | None:
@@ -143,6 +145,7 @@ def compare(element: dict, cli: dict, pooled_keys=("min", "max", "mean", "harmon
 
 
 class Fixture(unittest.TestCase):
+    device_lane = False
     plugin_dir = env_path("GST_VMAFX_PLUGIN_DIR")
     lib_dir = env_path("VMAFX_LIB_DIR")
     cli = env_path("VMAF_CLI")
@@ -152,6 +155,10 @@ class Fixture(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         if not (cls.plugin_dir and cls.lib_dir and cls.cli):
+            if STRICT and not cls.device_lane:
+                raise RuntimeError(
+                    "GST_VMAFX_PLUGIN_DIR, VMAFX_LIB_DIR, VMAF_CLI not set, GST_VMAFX_STRICT=1"
+                )
             raise unittest.SkipTest("GST_VMAFX_PLUGIN_DIR, VMAFX_LIB_DIR, VMAF_CLI not set")
         cls.env = gst_env(cls.plugin_dir, cls.lib_dir)
         cls.tmp = tempfile.TemporaryDirectory()
@@ -164,6 +171,8 @@ class Fixture(unittest.TestCase):
     def pair(self, ref: str, dist: str, w: int, h: int, frames):
         base = self.bbb if ref.startswith("ref_") else self.yuv
         if base is None or not (base / ref).is_file() or not (base / dist).is_file():
+            if base is self.yuv and STRICT:
+                self.fail(f"fixture {ref} / {dist} missing, GST_VMAFX_STRICT=1")
             self.skipTest(f"fixture {ref} / {dist} missing")
         if frames:
             return (
@@ -347,6 +356,8 @@ class Refusals(Fixture):
     def launch(self, props, fmt="i420"):
         r = self.yuv / "src01_hrc00_576x324.yuv" if self.yuv else None
         if r is None or not r.is_file():
+            if STRICT:
+                self.fail("golden fixture missing, GST_VMAFX_STRICT=1")
             self.skipTest("golden fixture missing")
         d = self.yuv / "src01_hrc01_576x324.yuv"
         return gst_launch(self.env, r, d, 576, 324, props, extra=("", ""))
@@ -373,6 +384,8 @@ class Refusals(Fixture):
         done = run(["gst-launch-1.0", "-q", *pipeline.split()], self.env)
         text = done.stdout + done.stderr
         if "no element" in text or "Kein solches" in text:
+            if STRICT:
+                self.fail("glupload not available, GST_VMAFX_STRICT=1")
             self.skipTest("glupload not available")
         self.assertNotEqual(done.returncode, 0)
         self.assertIn("format NV12 in GLMemory", text)
@@ -495,6 +508,7 @@ class VulkanFrames(Fixture):
 
 
 class Cuda(Fixture):
+    device_lane = True
     plugin_dir = env_path("GST_VMAFX_CUDA_PLUGIN_DIR")
     lib_dir = env_path("VMAFX_CUDA_LIB_DIR")
     cli = env_path("VMAF_CUDA_CLI")

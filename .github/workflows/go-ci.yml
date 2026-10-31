@@ -280,7 +280,7 @@ jobs:
           echo "KUBEBUILDER_ASSETS=${ASSETS}" >> "${GITHUB_ENV}"
 
       # The store tests start PostgreSQL through testcontainers
-      # (cmd/vmafx-controller/store/storetest), and anonymous pulls from Docker
+      # (cmd/vmafx-controller/internal/storetest), and anonymous pulls from Docker
       # Hub hit its rate limit on the hosted runners (run 37989639814: "You have
       # reached your unauthenticated pull rate limit"). The daemon now pulls
       # docker.io images through the mirror.gcr.io pull-through mirror, as in

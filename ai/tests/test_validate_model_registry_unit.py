@@ -40,7 +40,13 @@ _SCHEMA = json.loads((_REPO_ROOT / "model" / "tiny" / "registry.schema.json").re
 
 
 def _entry(**over: Any) -> dict[str, Any]:
-    row: dict[str, Any] = {"id": "x", "kind": "fr", "onnx": "x.onnx", "sha256": "0" * 64}
+    row: dict[str, Any] = {
+        "id": "x",
+        "kind": "fr",
+        "onnx": "x.onnx",
+        "sha256": "0" * 64,
+        "teacher": "none",
+    }
     row.update(over)
     return row
 
@@ -80,6 +86,113 @@ def test_schema_flags_invalid_kind() -> None:
 def test_schema_flags_bad_sha_length() -> None:
     errs = VMR._jsonschema_errors({"schema_version": 1, "models": [_entry(sha256="abc")]}, _SCHEMA)
     assert any("sha256" in e for e in errs)
+
+
+def test_schema_flags_missing_teacher() -> None:
+    entry = {"id": "x", "kind": "fr", "onnx": "x.onnx", "sha256": "0" * 64}
+    errs = VMR._jsonschema_errors({"schema_version": 1, "models": [entry]}, _SCHEMA)
+    assert any("teacher" in e for e in errs)
+
+
+def test_schema_flags_bad_teacher_pattern() -> None:
+    bad_teachers = ["VMAF_V0.6.1", "vmaf 0.6.1", "", "vmaf@0.6.1"]
+    for bad in bad_teachers:
+        row = {"id": "x", "kind": "fr", "onnx": "x.onnx", "sha256": "0" * 64, "teacher": bad}
+        errs = VMR._jsonschema_errors({"schema_version": 1, "models": [row]}, _SCHEMA)
+        assert any("teacher" in e for e in errs), f"expected pattern error for {bad!r}"
+
+
+def test_schema_accepts_teacher_boundary_and_valid() -> None:
+    for valid in ["none", "unknown", "vmaf_v0.6.1", "vmaf_v1.0.16_3d0h"]:
+        row = {"id": "x", "kind": "fr", "onnx": "x.onnx", "sha256": "0" * 64, "teacher": valid}
+        assert VMR._jsonschema_errors({"schema_version": 1, "models": [row]}, _SCHEMA) == []
+
+
+def test_consistency_check_flags_missing_teacher(tmp_path: Path) -> None:
+    blob = b"payload"
+    (tmp_path / "x.onnx").write_bytes(blob)
+    sha = hashlib.sha256(blob).hexdigest()
+    reg = {"models": [{"id": "x", "kind": "fr", "onnx": "x.onnx", "sha256": sha, "smoke": True}]}
+    errs = VMR._consistency_check(reg, tmp_path)
+    assert any("missing required field 'teacher'" in e for e in errs)
+
+
+def test_consistency_check_accepts_boundary_teachers(tmp_path: Path) -> None:
+    blob = b"payload"
+    (tmp_path / "x.onnx").write_bytes(blob)
+    sha = hashlib.sha256(blob).hexdigest()
+    for t in ["none", "unknown"]:
+        reg = {
+            "models": [
+                {
+                    "id": "x",
+                    "kind": "fr",
+                    "onnx": "x.onnx",
+                    "sha256": sha,
+                    "smoke": True,
+                    "teacher": t,
+                }
+            ]
+        }
+        errs = VMR._consistency_check(reg, tmp_path)
+        assert not any("teacher" in e for e in errs)
+
+
+def test_consistency_check_flags_nonexistent_teacher(tmp_path: Path) -> None:
+    blob = b"payload"
+    (tmp_path / "x.onnx").write_bytes(blob)
+    sha = hashlib.sha256(blob).hexdigest()
+    reg = {
+        "models": [
+            {
+                "id": "x",
+                "kind": "fr",
+                "onnx": "x.onnx",
+                "sha256": sha,
+                "smoke": True,
+                "teacher": "nonexistent_teacher_model_v99",
+            }
+        ]
+    }
+    errs = VMR._consistency_check(reg, tmp_path)
+    assert any(
+        "teacher model 'nonexistent_teacher_model_v99' not found under model/" in e for e in errs
+    )
+
+
+def test_consistency_check_accepts_real_teacher(tmp_path: Path) -> None:
+    blob = b"payload"
+    (tmp_path / "x.onnx").write_bytes(blob)
+    sha = hashlib.sha256(blob).hexdigest()
+    reg = {
+        "models": [
+            {
+                "id": "x",
+                "kind": "fr",
+                "onnx": "x.onnx",
+                "sha256": sha,
+                "smoke": True,
+                "teacher": "vmaf_v0.6.1",
+            }
+        ]
+    }
+    errs = VMR._consistency_check(reg, tmp_path)
+    assert not any("teacher" in e for e in errs)
+
+
+def test_shipped_registry_every_entry_has_valid_teacher() -> None:
+    reg_path = _REPO_ROOT / "model" / "tiny" / "registry.json"
+    registry = json.loads(reg_path.read_text(encoding="utf-8"))
+    models = registry.get("models", [])
+    assert len(models) == 26
+    for m in models:
+        assert "teacher" in m, f"model {m.get('id')} missing teacher"
+        teacher = m["teacher"]
+        assert isinstance(teacher, str) and teacher != ""
+        if teacher not in ("none", "unknown"):
+            # Check model exists under model/
+            matches = list((_REPO_ROOT / "model").glob(f"**/{teacher}.json"))
+            assert len(matches) > 0, f"model {m['id']} teacher {teacher} not found under model/"
 
 
 def test_schema_accepts_a_valid_entry() -> None:
@@ -257,6 +370,7 @@ def test_consistency_check_accepts_well_formed_entry(tmp_path: Path) -> None:
                 "onnx": "x.onnx",
                 "sha256": _hash_bytes(blob),
                 "sigstore_bundle": "x.sigstore.json",
+                "teacher": "none",
             }
         ]
     }
@@ -302,6 +416,7 @@ def test_validate_returns_0_on_clean_minimal_registry(tmp_path: Path) -> None:
                         "kind": "fr",
                         "onnx": "x.onnx",
                         "sha256": _hash_bytes(blob),
+                        "teacher": "none",
                     }
                 ],
             }
@@ -345,6 +460,7 @@ def test_main_returns_0_with_clean_registry(tmp_path: Path) -> None:
                         "kind": "fr",
                         "onnx": "x.onnx",
                         "sha256": _hash_bytes(blob),
+                        "teacher": "none",
                     }
                 ],
             }
@@ -373,6 +489,7 @@ def test_main_writes_out_json_on_pass(tmp_path: Path) -> None:
                         "kind": "fr",
                         "onnx": "x.onnx",
                         "sha256": _hash_bytes(blob),
+                        "teacher": "none",
                     }
                 ],
             }
@@ -402,6 +519,7 @@ def test_main_writes_out_json_on_fail(tmp_path: Path) -> None:
                         "kind": "fr",
                         "onnx": "ghost.onnx",
                         "sha256": "0" * 64,
+                        "teacher": "none",
                     }
                 ],
             }
@@ -433,7 +551,13 @@ def _stage_graph(
     (tmp_path / f"{name}.onnx").write_bytes(data)
     if sidecar is not None:
         (tmp_path / f"{name}.json").write_text(json.dumps(sidecar), encoding="utf-8")
-    row: dict[str, Any] = {"id": name, "kind": "fr", "onnx": f"{name}.onnx", "smoke": True}
+    row: dict[str, Any] = {
+        "id": name,
+        "kind": "fr",
+        "onnx": f"{name}.onnx",
+        "smoke": True,
+        "teacher": "none",
+    }
     row["sha256"] = hashlib.sha256(data).hexdigest()
     row.update(entry)
     return row
