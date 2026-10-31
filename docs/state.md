@@ -5,7 +5,7 @@ search:
 ---
 
 <!-- markdownlint-disable MD013 MD037 MD038 MD041 MD060 -->
-_Updated: 2026-10-31 (`docs/bench-newest-models`, docs): no row opened or closed — per-backend baseline throughput measured across CPU, SYCL, HIP for 16 newest built-in models (8 SDR `vmaf_v1.0.16*` + 8 HDR `hdr_vmaf_v1.1.8*`) on commit `bdd7f9c70`._
+_Updated: 2026-10-31 (`docs/bench-newest-models`, docs): no row opened or closed — per-backend baseline throughput measured across CPU, SYCL, HIP, CUDA for 16 newest built-in models (8 SDR `vmaf_v1.0.16*` + 8 HDR `hdr_vmaf_v1.1.8*`) on commit `bdd7f9c70`._
 _Updated: 2026-10-30 (`fix/sycl-v210-rgb-import`, RC4 WP3 SYCL lane, #2470): `T-SYCL-IMPORT-V210-RGB-MISSING-2026-10-30` and `T-VULKAN-FENCE-OPENER-TIME-RACE-2026-10-30` opened and closed — the SYCL import reads V210 and RGB like CUDA and HIP, and the Vulkan fence test opens each gate after its frame was submitted._
 _Updated: 2026-10-29 (`fix/3018-conversion-context-compile-once`, build): `T-CODEQL-CONVERSION-CONTEXT-UNREACHABLE-2026-10-28` opened and closed — `test_picture_convert_log` reuses libvmafx's conversion objects instead of a second compile that CodeQL reported as unreachable static helpers._
 _Updated: 2026-10-27 (`ci/ffmpeg-fix-series-v050`, CI): `T-CI-FFMPEG-WARNINGS-UBUNTU-2604-2026-10-11` closed — fix series `v0.5.0` carries the gcc 15.2 fixes (patches 0036-0039); `ffmpeg-work` and `ffmpeg-sycl-work` run on `ubuntu-26.04` again and the last hosted-runner fallbacks are removed._
