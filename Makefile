@@ -569,6 +569,7 @@ lint-py:
 ffmpeg-input-contract:
 	bash ffmpeg-patches/test/check-input-contract.sh
 	python3 -m unittest discover -s ffmpeg-patches/test -p 'test_input_contract.py' -v
+	python3 -m unittest discover -s ffmpeg-patches/test -p 'test_vmafx_filter_names.py' -v
 
 # Device-free contracts of the vmafx SYCL zero-copy work: the patch-text
 # routing check and the comparator of scripts/test/zerocopy-e2e.sh. The e2e harness

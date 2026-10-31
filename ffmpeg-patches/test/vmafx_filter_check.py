@@ -48,6 +48,12 @@ fixture is missing:
   ``libplacebo`` filter between the decoder and vmafx (its output frames are
   scored the same way).
 
+- ``filters``: the build registers no filter of the libvmaf family
+  (``libvmaf``, ``libvmaf_cuda``, ``vmaf_pre`` and every other name that
+  starts with ``vmaf`` or ``libvmaf`` and is not ``vmafx``); the fork's filters
+  are ``vmafx``, ``vmafx_tune`` and ``vmafx_pre``. FFmpeg's own native
+  ``vmafmotion`` filter, which uses no library, is allowed.
+
 Pairs: the Netflix 576x324 pair, both 1080p checkerboard pairs, the 4K BBB
 pair (first ``--frames-4k`` frames).
 """
@@ -827,6 +833,28 @@ def cmd_e2e(args: argparse.Namespace) -> int:
     return 0 if expect == path and not bad and not wbad and total else 1
 
 
+FILTER_LINE = re.compile(r"^\s*[T.][S.][C.]?\s+(\S+)\s+\S*->\S*\s")
+VMAF_NAMED = re.compile(r"^(lib)?vmaf(?!x)")
+NATIVE_VMAF_FILTERS = frozenset({"vmafmotion"})  # FFmpeg's own, no libvmaf
+
+
+def vmaf_named_filters(listing: str) -> list[str]:
+    """The libvmaf-family filter names in `ffmpeg -filters` output."""
+    names = (m.group(1) for m in map(FILTER_LINE.match, listing.splitlines()) if m)
+    return sorted(n for n in names if VMAF_NAMED.match(n) and n not in NATIVE_VMAF_FILTERS)
+
+
+def cmd_filters(args: argparse.Namespace) -> int:
+    listing = run([args.ffmpeg, "-hide_banner", "-filters"], environment(args)).stdout
+    if not any(FILTER_LINE.match(line) for line in listing.splitlines()):
+        print("FAIL no filter line in the -filters output; the listing format changed")
+        return 1
+    found = vmaf_named_filters(listing)
+    vmafx = "vmafx" in (m.group(1) for m in map(FILTER_LINE.match, listing.splitlines()) if m)
+    print(f"libvmaf-family filters: {found or 'none'}; vmafx registered: {vmafx}")
+    return 0 if vmafx and not found else 1
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
@@ -841,6 +869,7 @@ def main() -> int:
             "e2e",
             "vulkan",
             "contract",
+            "filters",
         ),
     )
     parser.add_argument("--ffmpeg", required=True)
@@ -877,6 +906,7 @@ def main() -> int:
         "e2e": cmd_e2e,
         "vulkan": cmd_vulkan,
         "contract": cmd_contract,
+        "filters": cmd_filters,
     }[args.command](args)
 
 
