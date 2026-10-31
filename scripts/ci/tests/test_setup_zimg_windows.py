@@ -7,8 +7,6 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-import pytest
-
 REPO = Path(__file__).resolve().parents[3]
 WORKFLOWS = REPO / ".github" / "workflows"
 CALL = re.compile(r"setup-zimg-windows\.ps1 -Triplet (\S+)")
@@ -42,12 +40,12 @@ def test_a_script_call_is_not_a_direct_install() -> None:
     assert direct_installs("  run: pwsh -File scripts/ci/setup-zimg-windows.ps1 -Triplet x\n") == []
 
 
-@pytest.mark.parametrize(("workflow", "triplets"), sorted(EXPECTED_CALLS.items()))
-def test_each_windows_workflow_names_its_runtime_triplet(
-    workflow: str, triplets: list[str]
-) -> None:
-    text = (WORKFLOWS / workflow).read_text(encoding="utf-8")
-    assert CALL.findall(text) == triplets
+def test_each_windows_workflow_names_its_runtime_triplet() -> None:
+    found = {
+        workflow: CALL.findall((WORKFLOWS / workflow).read_text(encoding="utf-8"))
+        for workflow in EXPECTED_CALLS
+    }
+    assert found == EXPECTED_CALLS
 
 
 def test_the_tester_zip_triplet_follows_the_zip_runtime() -> None:
