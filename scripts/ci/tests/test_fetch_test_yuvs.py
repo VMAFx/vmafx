@@ -152,5 +152,33 @@ class OneRetryPolicy(unittest.TestCase):
         self.assertGreaterEqual(sum(delays), 180)
 
 
+def _unit_suite_gets_the_pair(workflow: str) -> bool:
+    """The coverage job fetches the pair before the step that requires it."""
+    fetch = workflow.find("Fetch the Netflix golden YUV fixtures for the unit suite")
+    suite = workflow.find("id: coverage_meson_suite")
+    required = workflow.find("VMAFX_REQUIRE_NETFLIX_PAIR", suite)
+    next_step = workflow.find("- name:", suite)
+    return -1 < fetch < suite < required < next_step
+
+
+class PythonBindingBitExactRuns(unittest.TestCase):
+    """The bit-exact test of the Python binding cannot skip in CI (#2434)."""
+
+    WORKFLOW = ROOT / ".github" / "workflows" / "tests-and-quality-gates.yml"
+
+    def test_the_unit_suite_requires_the_pair_it_fetched(self) -> None:
+        self.assertTrue(_unit_suite_gets_the_pair(self.WORKFLOW.read_text(encoding="utf-8")))
+
+    def test_a_workflow_without_the_requirement_is_refused(self) -> None:
+        text = self.WORKFLOW.read_text(encoding="utf-8")
+        self.assertFalse(_unit_suite_gets_the_pair(text.replace("VMAFX_REQUIRE_NETFLIX_PAIR", "X")))
+
+    def test_a_workflow_without_the_fetch_is_refused(self) -> None:
+        text = self.WORKFLOW.read_text(encoding="utf-8")
+        self.assertFalse(
+            _unit_suite_gets_the_pair(text.replace("YUV fixtures for the unit suite", "X"))
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

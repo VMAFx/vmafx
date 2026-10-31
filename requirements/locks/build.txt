@@ -1,6 +1,6 @@
 # VMAFx hash lock; regenerate with: make python-locks-write
-# vmafx-uv-version: 0.13.5
-# vmafx-input-sha256: 89c7e7804e784fe4f720cfbfb81b2f238625a699a518c64c17f4125c460c12b1
+# vmafx-uv-version: 0.13.6
+# vmafx-input-sha256: ff6d3baa868fc3ff2b24987c809231c612247c7df98b07992be21c761a4ce7f7
 # vmafx-inputs: requirements/locks/build.in
 meson==1.12.1 \
     --hash=sha256:930bc7542cbd9f57009e182fd014eba48cf1a0180a7b9006d2d32d8f168d8b02 \
@@ -101,4 +101,8 @@ pyyaml==6.0.3 \
     --hash=sha256:f7057c9a337546edc7973c0d3ba84ddcdf0daa14533c2065749c9075001090e6 \
     --hash=sha256:fa160448684b4e94d80416c0fa4aac48967a969efe22931448d853ada8baf926 \
     --hash=sha256:fc09d0aa354569bc501d4e787133afc08552722d3ab34836a80547331bb5d4a0
+    # via -r requirements/locks/build.in
+setuptools==84.2.1 \
+    --hash=sha256:3ff8b3b5492a0aa66960f4419365a86b84e013070d4313e4d4a6894f5d64d6bc \
+    --hash=sha256:ca140b45d5325a9478f880e351484f62fef15f336462e449ca0c03c873d589c2
     # via -r requirements/locks/build.in

@@ -96,12 +96,15 @@ vmaftune.saliency` command.
 | `libx264` | patched FFmpeg `-qpfile` ROI bridge (per-macroblock offsets through x264 `quant_offsets`; needs `aq-mode` other than 0) | 16x16 luma macroblock | `-qpfile ...` |
 | `libaom-av1` | patched FFmpeg `-qpfile` ROI bridge | 16x16 macroblock mapped onto libaom mode-info cells | `-qpfile ...` |
 | `libx265` | `--zones` QP delta | whole-clip spatial mean | `-x265-params zones=0,N,q=<delta>` |
-| `libsvtav1` | `--qp-file` offset map (SVT-AV1 v1.7 or newer) | 64x64 super-block | `-svtav1-params qp-file=...` |
-| `libvvenc` | `ROIFile` CSV (VVenC v1.14.0 or newer) | 64x64 CTU | `-vvenc-params ROIFile=...` |
+| `libsvtav1` | patched FFmpeg `-qpfile` bridge | x264-style 16x16 macroblocks bridged to 64x64 superblocks, at most eight segments | `-qpfile ...` |
+| `libvvenc` | no saliency ROI channel; refused (ADR-3386) | unavailable | none |
 
 See [ADR-0293](../adr/0293-vmaf-tune-saliency-aware.md) for the x264
 baseline and [ADR-0414](../adr/0414-saliency-roi-x265-svtav1-vvenc.md)
-for x265, SVT-AV1 and VVenC. The `libaom-av1` row uses the shared
+for x265. [ADR-3386](../adr/3386-encoder-roi-channels-measured.md)
+supersedes its SVT-AV1 and VVenC channels after container measurements.
+Stock FFmpeg refuses `-qpfile`, so SVT-AV1 saliency requires the patched
+build. The `libaom-av1` row uses the shared
 `-qpfile` bridge documented in
 [`vmaf-tune-ffmpeg.md`](vmaf-tune-ffmpeg.md#libaom-av1-full-roi-bridge).
 
@@ -110,11 +113,11 @@ Per-adapter helpers in `vmaftune.saliency`:
 - `write_x265_zones_arg(block_offsets, duration_frames)` returns the zones
   string.
 - `write_x264_qpfile(block_offsets, out_path, duration_frames)` writes the
-  x264 and libaom qpfile.
+  x264-style qpfile for x264, libaom and SVT-AV1.
 - `write_svtav1_qpoffset_map(block_offsets, out_path, duration_frames)`
-  returns the path.
+  returns the path; retained for API stability, unused by encode paths since ADR-3386.
 - `write_vvenc_roi_csv(block_offsets, out_path, duration_frames)` returns
-  the path.
+  the path; retained for API stability, unused by encode paths since ADR-3386.
 
 ## Temporal aggregation
 

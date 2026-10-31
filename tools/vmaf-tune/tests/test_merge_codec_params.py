@@ -104,3 +104,10 @@ def test_saliency_was_applied_keys_on_the_roi_keys_not_the_flag():
     assert not _saliency_was_applied(hdr_only.request, hdr_only)
     assert _saliency_was_applied(zones.request, zones)
     assert _saliency_was_applied(qpfile.request, qpfile)
+    # ADR-3386: legacy keys are rejected by the encoder, not applied ROI.
+    for flag, value in (
+        ("-svtav1-params", "qp-file=/tmp/q.txt"),
+        ("-vvenc-params", "ROIFile=/tmp/roi.csv"),
+    ):
+        rejected = result((flag, value))
+        assert not _saliency_was_applied(rejected.request, rejected)

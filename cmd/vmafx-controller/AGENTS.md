@@ -211,7 +211,7 @@ lands. Wire protocol unchanged.
    policy replaces it with the golusoris bump (same formula).
 5. **Tests** (`go test ./cmd/vmafx-controller/backend/`, Docker): end to
    end, tenants apart, refusals, River sweep, import, commands.
-   `store/storetest` = shared DB helper (tests only).
+   `internal/storetest` = shared DB helper (tests only). Internal: digest bump changes its consts, apidiff skips internal paths.
 6. **River lifetime** (`store_wiring.go`, `riverRunner`): River started
    with own context, ended after `Stop`. Never pass fx `OnStart` ctx to
    `river.Start`: fx ends that ctx at start timeout (fxtest at start return) ->

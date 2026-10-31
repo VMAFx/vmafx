@@ -22,6 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from scripts.ci import required_aggregator_harness as harness
 from scripts.ci.required_aggregator_harness import run_required_aggregator
+from scripts.lib.safe_subprocess import CommandFailed
 
 CONFIG = json.loads(
     (Path(__file__).resolve().parents[3] / ".github" / "ci-tier.json").read_text(encoding="utf-8")
@@ -163,6 +164,61 @@ class TierDecisionPending(unittest.TestCase):
         copy.write_text(mutated, encoding="utf-8")
         with mock.patch.object(harness, "AGGREGATOR_PATH", copy):
             self.assertEqual(len(self.pending_then_complete()), 1)
+
+
+class ApiOutage(unittest.TestCase):
+    def test_500_twice_on_list_for_ref_then_success(self) -> None:
+        self.assertEqual(
+            run(LIGHT_PLAIN, "success", "light", api_errors={"listForRef": [500, 500]}),
+            [],
+        )
+
+    def test_a_5xx_on_each_other_call_is_retried(self) -> None:
+        self.assertEqual(
+            run(
+                LIGHT_PLAIN,
+                "success",
+                "light",
+                event="push",
+                api_errors={"getWorkflowRun": [500], "listWorkflowRunsForRepo": [503]},
+            ),
+            [],
+        )
+
+    def test_always_500_on_list_for_ref(self) -> None:
+        failures = run(LIGHT_PLAIN, "success", "light", api_always={"listForRef": 500})
+        self.assertEqual(len(failures), 1)
+        self.assertTrue(failures[0].startswith("Transient GitHub API failure:"))
+        self.assertIn("listAllCheckRuns", failures[0])
+
+    def test_always_500_on_get_workflow_run(self) -> None:
+        failures = run(LIGHT_PLAIN, "success", "light", api_always={"getWorkflowRun": 500})
+        self.assertEqual(len(failures), 1)
+        self.assertTrue(failures[0].startswith("Transient GitHub API failure:"))
+        self.assertIn("getWorkflowRun", failures[0])
+
+    def test_404_on_list_for_ref(self) -> None:
+        with self.assertRaises(CommandFailed):
+            run(LIGHT_PLAIN, "success", "light", api_errors={"listForRef": [404]})
+
+    def test_retried_green_does_not_hide_real_failure(self) -> None:
+        failures = run(LIGHT_PLAIN, "failure", "light", api_errors={"listForRef": [500]})
+        self.assertEqual(len(failures), 1)
+        self.assertFalse(failures[0].startswith("Transient GitHub API failure:"))
+        self.assertIn(LIGHT_PLAIN, failures[0])
+
+    def test_planted_mutation_without_500_retry_raises(self) -> None:
+        """Planted defect: with no 5xx retry, an outage is an unhandled error again."""
+        text = harness.AGGREGATOR_PATH.read_text(encoding="utf-8")
+        mutated = text.replace("error.status >= 500", "false")
+        self.assertNotEqual(text, mutated)
+        directory = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, directory, True)
+        copy = directory / "required-aggregator.yml"
+        copy.write_text(mutated, encoding="utf-8")
+        with mock.patch.object(harness, "AGGREGATOR_PATH", copy):
+            with self.assertRaises(CommandFailed):
+                run(LIGHT_PLAIN, "success", "light", api_always={"listForRef": 500})
 
 
 if __name__ == "__main__":

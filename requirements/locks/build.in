@@ -3,3 +3,7 @@ meson==1.12.1
 ninja==1.13.2
 # The generated-API tests (crd_generate.py, the platform chart) read YAML.
 pyyaml==6.0.3
+# The generated Python binding's wheel test (test_vmafx_api_features.py) calls
+# its build backend. Same pin as package-build.in; 84.1.0 or later:
+# GHSA-xmj3-9gf7-h52w.
+setuptools==84.2.1

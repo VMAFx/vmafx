@@ -404,6 +404,7 @@ preset_style = "svtav1"
 version = "1"
 probe_preset = "veryfast"
 probe_quality = 35
+supports_qpfile = true
 
 [[encoders]]
 id = "libvpx-vp9"

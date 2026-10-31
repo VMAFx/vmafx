@@ -37,7 +37,7 @@ carries SVT-AV1's integer (`-preset 7`).
 | Speed knob | `-cpu-used` 0..9 | `-preset` 0..13 |
 | Preset names accepted | 10 (`placebo` ... `ultrafast`) | 8 (`placebo` ... `veryfast`) |
 | Two-pass | yes | no (CRF mode) |
-| Saliency ROI | patched `-qpfile` bridge | `-svtav1-params qp-file=` |
+| Saliency ROI | patched `-qpfile` bridge | patched `-qpfile` bridge ([ADR-3386](../adr/3386-encoder-roi-channels-measured.md)) |
 | ADR | [0279](../adr/0279-vmaf-tune-codec-adapter-libaom.md) | [0294](../adr/0294-vmaf-tune-codec-adapter-svtav1.md) |
 
 SVT-AV1 itself accepts CRF 0..63. The adapter validates the absolute
@@ -207,8 +207,10 @@ pages before relying on a default.
   `-passlogfile` and does support it. See
   [multi-pass encoding](vmaf-tune-multipass.md).
 - **Saliency ROI.** `libaom-av1` uses the patched FFmpeg `-qpfile`
-  bridge; `libsvtav1` uses a 64x64 super-block offset map through
-  `-svtav1-params qp-file=`. See
+  bridge; `libsvtav1` also uses patched `-qpfile` with an x264-style
+  16x16 macroblock file, bridged to 64x64 superblocks with at most eight
+  segments ([ADR-3386](../adr/3386-encoder-roi-channels-measured.md)).
+  Stock FFmpeg refuses `-qpfile`; it cannot silently drop this map. See
   [saliency-aware encoding](vmaf-tune-saliency-aware.md).
 - **HDR.** Both adapters get HDR colour tags from `--auto-hdr`. See
   [HDR knobs and clip sampling](vmaf-tune-hdr-and-sampling.md).

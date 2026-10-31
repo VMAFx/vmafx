@@ -273,6 +273,44 @@ def _check_graph_metadata(m: dict[str, Any], mid: str, onnx_path: Path, errors: 
         errors.extend(_sidecar_graph_errors(mid, graph_path, sig))
 
 
+def _find_model_file(teacher: str, registry_dir: Path) -> Path | None:
+    """Find ``model/**/<teacher>.json``."""
+    candidates = []
+    if registry_dir.name == "tiny" and registry_dir.parent.name == "model":
+        candidates.append(registry_dir.parent)
+    candidates.extend(
+        [
+            registry_dir / "model",
+            registry_dir.parent / "model",
+            registry_dir,
+            REPO_ROOT / "model",
+        ]
+    )
+    for root in candidates:
+        if root.is_dir():
+            matches = [p for p in root.glob(f"**/{teacher}.json") if p.is_file()]
+            if matches:
+                return matches[0]
+    return None
+
+
+def _check_teacher_model(
+    m: dict[str, Any], mid: str, registry_dir: Path, errors: list[str]
+) -> None:
+    """Check required teacher field and verify real model existence under model/."""
+    if "teacher" not in m:
+        errors.append(f"{mid}: missing required field 'teacher'")
+        return
+    teacher = m["teacher"]
+    if not isinstance(teacher, str):
+        errors.append(f"{mid}: teacher must be a string")
+        return
+    if teacher in ("none", "unknown"):
+        return
+    if not _find_model_file(teacher, registry_dir):
+        errors.append(f"{mid}: teacher model {teacher!r} not found under model/")
+
+
 def _consistency_check(reg: dict[str, Any], registry_dir: Path) -> list[str]:
     """Cross-file invariants the schema cannot express (file existence, sha match)."""
     errors: list[str] = []
@@ -282,6 +320,8 @@ def _consistency_check(reg: dict[str, Any], registry_dir: Path) -> list[str]:
         if mid in seen_ids:
             errors.append(f"{mid}: duplicate model id")
         seen_ids.add(mid)
+
+        _check_teacher_model(m, mid, registry_dir, errors)
 
         onnx_rel = m.get("onnx", "")
         if not onnx_rel:

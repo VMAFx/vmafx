@@ -7,6 +7,9 @@
     ":semanticCommits",
     "helpers:disableTypesNodeMajor"
   ],
+  "postUpdateOptions": [
+    "helmUpdateSubChartArchives"
+  ],
   "schedule": [
     "before 6am on Monday"
   ],
@@ -22,6 +25,7 @@
     "dependencies"
   ],
   "platformAutomerge": true,
+  "commitBody": "Signed-off-by: {{{gitAuthor}}}",
   "osvVulnerabilityAlerts": true,
   "dependencyDashboardOSVVulnerabilitySummary": "all",
   "prCreation": "immediate",
@@ -386,9 +390,9 @@
       "enabled": false
     },
     {
-      "description": "OldestImage in the controller store tests (cmd/vmafx-controller/store/storetest/storetest.go) is the oldest PostgreSQL release external servers may run, 16.x: it takes digest, minor and patch updates on that line and never a new major. Image follows the release the chart deploys (ADR-2350 D1), so its major updates stay manual, one pull request each.",
+      "description": "OldestImage in the controller store tests (cmd/vmafx-controller/internal/storetest/storetest.go) is the oldest PostgreSQL release external servers may run, 16.x: it takes digest, minor and patch updates on that line and never a new major. Image follows the release the chart deploys (ADR-2350 D1), so its major updates stay manual, one pull request each.",
       "matchFileNames": [
-        "cmd/vmafx-controller/store/storetest/storetest.go"
+        "cmd/vmafx-controller/internal/storetest/storetest.go"
       ],
       "matchDepNames": [
         "postgres"
@@ -454,6 +458,38 @@
       ],
       "groupName": "Rust toolchain",
       "automerge": false
+    },
+    {
+      "description": "ADR-3312 pattern: the nodenv manager does not update .node-version; the CI Node.js custom manager owns it, because nodenv reads another datasource and would open a second pull request that moves only this file.",
+      "matchManagers": [
+        "nodenv"
+      ],
+      "enabled": false
+    },
+    {
+      "description": "ADR-3312 pattern: the github-actions manager does not update setup-node's node-version input; the CI Node.js custom manager owns those pins together with NODE_VERSION and .pre-commit-config.yaml, so the workflows, pre-commit and build-config.env never land in separate pull requests.",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchDepNames": [
+        "node"
+      ],
+      "matchDepTypes": [
+        "uses-with"
+      ],
+      "enabled": false
+    },
+    {
+      "description": "ADR-3312 pattern: one pull request for CI Node.js (build-config.env, .pre-commit-config.yaml, .node-version plus every workflow pin). Reviewed, not auto-merged.",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchDepNames": [
+        "node"
+      ],
+      "groupName": "CI Node.js",
+      "automerge": false,
+      "draftPR": false
     },
     {
       "description": "praetor-managed engine: updates arrive in one coordinated adoption pull request",
@@ -627,9 +663,9 @@
     },
     {
       "customType": "regex",
-      "description": "PostgreSQL images of the controller store tests (cmd/vmafx-controller/store/storetest/storetest.go, #2656). golusoris testutil/pg refuses an image without a digest, so Image and OldestImage are Go string constants of the form postgres:<tag>@sha256:<index digest>, which no built-in manager reads. This manager keeps both digests current and proposes newer tags; the package rule for OldestImage holds it on its 16.x line.",
+      "description": "PostgreSQL images of the controller store tests (cmd/vmafx-controller/internal/storetest/storetest.go, #2656). golusoris testutil/pg refuses an image without a digest, so Image and OldestImage are Go string constants of the form postgres:<tag>@sha256:<index digest>, which no built-in manager reads. This manager keeps both digests current and proposes newer tags; the package rule for OldestImage holds it on its 16.x line.",
       "managerFilePatterns": [
-        "/^cmd/vmafx-controller/store/storetest/storetest\\.go$/"
+        "/^cmd/vmafx-controller/internal/storetest/storetest\\.go$/"
       ],
       "matchStrings": [
         "const (?:Image|OldestImage) = \"postgres:(?<currentValue>[^\"@\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})\""
@@ -701,6 +737,27 @@
       "datasourceTemplate": "rust-version",
       "depNameTemplate": "rust",
       "versioningTemplate": "rust-release-channel"
+    },
+    {
+      "customType": "regex",
+      "description": "CI Node.js (ADR-3312 pattern): build-config.env's NODE_VERSION, .pre-commit-config.yaml's default_language_version.node, .node-version and every setup-node `node-version:` pin under .github/workflows/ are one dependency. This manager owns all of them, so Renovate moves them in one pull request; the github-actions manager's copy of the workflow pins is disabled below, and scripts/ci/check-workflow-versions.py refuses a copy that differs from build-config.env.",
+      "managerFilePatterns": [
+        "/^build-config\\.env$/",
+        "/^\\.pre-commit-config\\.yaml$/",
+        "/^\\.node-version$/",
+        "/^\\.github/workflows/[^/]+\\.ya?ml$/"
+      ],
+      "matchStrings": [
+        "^(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)\\s*$",
+        "(?:^|\\n)NODE_VERSION=\"(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)\"",
+        "(?:^|\\n)default_language_version:[ \\t]*\\n(?:[ \\t]+.*\\n)*?[ \\t]+node:[ \\t]*['\"]?(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)['\"]?",
+        "node-version:[ \\t]*['\"]?(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)['\"]?"
+      ],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "node",
+      "packageNameTemplate": "actions/node-versions",
+      "versioningTemplate": "node",
+      "extractVersionTemplate": "^(?<version>\\d+\\.\\d+\\.\\d+)(-\\d+)?$"
     }
   ],
   "vulnerabilityAlerts": {

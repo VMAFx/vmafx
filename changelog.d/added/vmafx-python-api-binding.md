@@ -1,0 +1,1 @@
+- Generate the full Python `ctypes` binding of the VMAFx C API (`bindings/python/vmafx/_api.py` and `bindings/python/pyproject.toml`) from `core/api/vmafx.toml` with buffer-protocol host frames, window and log callbacks, retry-safe `Context.close()`, and `NOT_WRAPPED` coverage checks (issue 2434).
