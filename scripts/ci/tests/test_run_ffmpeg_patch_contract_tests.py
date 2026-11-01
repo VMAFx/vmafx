@@ -114,6 +114,18 @@ class PatchContractRunner(unittest.TestCase):
         """Positive: --enable-indev=lavfi after --disable-indevs keeps the device."""
         self.assertEqual(self._lavfi(" --enable-indev=lavfi"), [])
 
+    def test_lavfi_flag_only_in_a_comment_fails(self) -> None:
+        """Negative: --enable-indev=lavfi in a shell comment does not keep the device."""
+        job = (
+            "jobs:\n  f:\n    steps:\n      - run: |\n"
+            "          # add --enable-indev=lavfi here later\n"
+            "          ./configure --disable-indevs  # not --enable-indev=lavfi\n"
+            "      - run: bash ffmpeg-patches/test/check-x.sh\n"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._tree(tmp, {".github/workflows/w.yml": job, **LAVFI_FILES})
+            self.assertEqual(len(MOD.lavfi_without_indev(root)), 1)
+
     def test_script_without_lavfi_passes(self) -> None:
         """Boundary: a script that reads files, not lavfi, needs no input device."""
         files = {"ffmpeg-patches/test/check-x.sh": "ffmpeg -i in.nut\n"}

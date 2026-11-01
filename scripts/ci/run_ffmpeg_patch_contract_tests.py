@@ -19,6 +19,8 @@ Last, it refuses a workflow job that builds FFmpeg with `--disable-indevs` and t
 runs an `ffmpeg-patches/test/*.sh` script that reads `-f lavfi` (itself or through
 a helper it sources) unless the configure line adds `--enable-indev=lavfi`: that
 build has no lavfi input device and the script fails to open its first input.
+Shell comments in the step are dropped first, so a flag named only in a comment
+does not count.
 
 It also refuses a command that maps QSV frames straight to DRM PRIME
 (`hwmap=derive_device=drm` with no `derive_device=vaapi` step before it on the
@@ -64,6 +66,7 @@ TEST_SCRIPT_RUN = re.compile(r"\bffmpeg-patches/test/[\w.-]+\.sh\b")
 SOURCED_HELPER = re.compile(r"^\s*\.\s+\"\$\{HERE\}/([\w.-]+\.sh)\"", re.MULTILINE)
 LAVFI_INPUT = "-f lavfi"
 LAVFI_INDEV = "--enable-indev=lavfi"
+SHELL_COMMENT = re.compile(r"(^|\s)#.*$", re.MULTILINE)
 QSV_ROOTS = ("docs", "scripts", "testdata", "ffmpeg-patches")
 QSV_SUFFIXES = (".md", ".sh", ".py")
 QSV_WINDOW = 12
@@ -133,7 +136,8 @@ def lavfi_without_indev(root: Path) -> list[str]:
     for workflow in sorted((root / ".github" / "workflows").glob("*.yml")):
         jobs = (yaml.safe_load(workflow.read_text(encoding="utf-8")) or {}).get("jobs") or {}
         for job_id, job in jobs.items():
-            runs = "\n".join(str(s.get("run", "")) for s in (job or {}).get("steps") or [])
+            steps = (job or {}).get("steps") or []
+            runs = SHELL_COMMENT.sub("", "\n".join(str(s.get("run", "")) for s in steps))
             if "--disable-indevs" not in runs or LAVFI_INDEV in runs:
                 continue
             for script in sorted(set(TEST_SCRIPT_RUN.findall(runs))):
