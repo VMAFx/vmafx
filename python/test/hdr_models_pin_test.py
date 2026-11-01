@@ -20,14 +20,22 @@ import glob
 import json
 import os
 import platform
-import subprocess
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 
 import vmaf
 from vmaf import ExternalProgram
 from vmaf.config import VmafConfig
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+from scripts.lib.safe_subprocess import (
+    TextCommandResult,
+)  # noqa: E402 - needs the repository root on sys.path
+from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
 
 # Set only on the CI leg built with -Denable_zimg=false: there a pin row asserts the refusal
 # that names zimg. A build with zimg fails this assertion, so the setting cannot hide a row.
@@ -143,15 +151,22 @@ def _vmafexec() -> str:
     return path
 
 
-def _run_cli(model: str, kind: str, out_path: str) -> subprocess.CompletedProcess[str]:
+def _run_vmaf(args: list[str]) -> TextCommandResult:
+    """Run the vmaf binary under test with args; it is the only executable allowed."""
+    exe = _vmafexec()
+    result = run_command(
+        [exe, *args], allowed_executables=[exe], capture_output=True, text=True, timeout_seconds=60
+    )
+    assert isinstance(result, TextCommandResult)
+    return result
+
+
+def _run_cli(model: str, kind: str, out_path: str) -> TextCommandResult:
     """Execute vmaf CLI with HDR color metadata and requested model."""
     if kind == "bypass_ictcp":
         args = [*_bypass_ictcp_args(model), "--model", f"version={model}", "--json", "-o", out_path]
-        return subprocess.run(
-            [_vmafexec(), *args], capture_output=True, text=True, timeout=60, check=False
-        )
-    cmd = [
-        _vmafexec(),
+        return _run_vmaf(args)
+    args = [
         *_input_args(kind),
         "--color_range_ref",
         "limited",
@@ -175,7 +190,7 @@ def _run_cli(model: str, kind: str, out_path: str) -> subprocess.CompletedProces
         "-o",
         out_path,
     ]
-    return subprocess.run(cmd, capture_output=True, text=True, timeout=60, check=False)
+    return _run_vmaf(args)
 
 
 class HdrModelsPinTest(unittest.TestCase):
@@ -357,7 +372,7 @@ class VmafexecPathTest(unittest.TestCase):
             exe = os.path.join(tmp, "vmaf")
             with open(exe, "w", encoding="utf-8") as handle:
                 handle.write("#!/bin/sh\n")
-            os.chmod(exe, 0o755)
+            os.chmod(exe, 0o700)
             cwd = os.getcwd()
             os.chdir(tmp)
             try:
