@@ -162,14 +162,14 @@ jobs:
         run: bash scripts/ci/run-hdr-golden-pins.sh "${{ runner.temp }}/hdr_golden_junit.xml"
 
       - name: Finish with the HDR ICtCp fixture
-        if: steps.impact.outputs.golden_harness == 'true'
+        if: ${{ !cancelled() && (steps.impact.outputs.golden_harness == 'true') }}
         uses: ./.github/actions/pq-fixture
         with:
           phase: finish
           bundle: hdr-ictcp-pixels-v1
 
       - name: Finish with the PQ fixture
-        if: steps.impact.outputs.golden_harness == 'true'
+        if: ${{ !cancelled() && steps.impact.outputs.golden_harness == 'true' }}
         uses: ./.github/actions/pq-fixture
         with:
           phase: finish
@@ -582,7 +582,12 @@ jobs:
             --wheel-dir dist/rc1-wheel ./tools/rc1-tester
           python -m pip install --no-deps dist/rc1-wheel/*.whl
       - name: Run RC1 tester regressions
-        run: python -m pytest tools/rc1-tester/tests/ -q
+        env:
+          B: bash:3.2@sha256:b6252c62fc86114f93f02104a486c71e6569371d95950ea7479a2ffd6b47f16a
+          VMAFX_REQUIRE_BASH32: "1"
+        run: |
+          docker pull "$B" && docker tag "$B" bash:3.2
+          python -m pytest tools/rc1-tester/tests/ -q
       - name: Smoke installed tester launcher
         run: |
           python -c "from pathlib import Path; from vmaf_rc1_tester.probe import REPO_ROOT; assert REPO_ROOT == Path.cwd().resolve()"

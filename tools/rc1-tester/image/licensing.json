@@ -525,22 +525,23 @@
     {
      "id": "zimg",
      "kind": "fixed",
-     "name": "zimg image scaling and colours-pace conversion library (libzimg.so.2)",
+     "name": "zimg image scaling and colours-pace conversion library libzimg.so.2 (Debian libzimg2)",
      "paths": [
-      "opt/vmafx/lib/libzimg.so*"
+      "opt/vmafx/lib/libzimg.so*",
+      "usr/share/doc/libzimg2/**"
      ],
      "licence": "WTFPL",
      "copyright": [
-      "Copyright (c) 2014-2024, sekrit-twc"
+      "Copyright (c) 2014-2020, sekrit-twc"
      ],
-     "source": "https://github.com/sekrit-twc/zimg.git at commit f819b14e8f39d1282400b0d9543e8ef73c1b2bbd, tag release-3.0.6",
+     "debian_source_file": "usr/share/doc/libzimg2/SOURCE",
      "texts": [
       {
-       "name": "WTFPL.txt",
-       "fetched": "zimg-3.0.6-COPYING",
-       "label": "zimg 3.0.6 licence text (WTFPL v2)"
+       "artifact": "usr/share/doc/libzimg2/copyright",
+       "label": "Debian copyright file of libzimg2"
       }
-     ]
+     ],
+     "source": "the Debian source package named in usr/share/doc/libzimg2/SOURCE, in the source image"
     },
     {
      "id": "notices",

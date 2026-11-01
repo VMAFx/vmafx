@@ -64,12 +64,15 @@ RUN python -m venv /venv \
     && find /venv -type d -name tests -prune -exec rm -r {} + \
     && find /venv -type d -name sample_data -prune -exec rm -r {} + \
     && find /venv -name '*.so*' -type f -not -path '*.libs/*' -exec strip --strip-unneeded {} + \
-    && mkdir -p /extra-libs/lib /extra-libs/doc/libgomp1 \
+    && mkdir -p /extra-libs/lib /extra-libs/doc/libgomp1 /extra-libs/doc/libzimg2 \
     && cp -a /usr/lib/*-linux-gnu/libgomp.so.1* /extra-libs/lib/ \
     && cp -a /usr/lib/*-linux-gnu/libzimg.so* /extra-libs/lib/ \
     && cp /usr/share/doc/libgomp1/copyright /extra-libs/doc/libgomp1/copyright \
     && dpkg-query -W -f='${source:Package}=${source:Version}\n' libgomp1 \
-        > /extra-libs/doc/libgomp1/SOURCE
+        > /extra-libs/doc/libgomp1/SOURCE \
+    && cp /usr/share/doc/libzimg2/copyright /extra-libs/doc/libzimg2/copyright \
+    && dpkg-query -W -f='${source:Package}=${source:Version}\n' libzimg2 \
+        > /extra-libs/doc/libzimg2/SOURCE
 # The libraries auditwheel grafted into the wheels (`*.libs/`) are vendor
 # binaries and stay unmodified (ADR-1503): the licence check compares them with
 # their wheel RECORD, and an LGPL library keeps its corresponding source.
@@ -150,6 +153,7 @@ COPY --from=vmaf-build /opt/vmafx /opt/vmafx
 COPY --from=python-venv /venv /opt/venv
 COPY --from=python-venv /extra-libs/lib /opt/vmafx/lib
 COPY --from=python-venv /extra-libs/doc/libgomp1 /usr/share/doc/libgomp1
+COPY --from=python-venv /extra-libs/doc/libzimg2 /usr/share/doc/libzimg2
 COPY --from=fixtures /out /opt/vmafx/python/test/resource
 COPY python /opt/vmafx/python
 COPY compat /opt/vmafx/compat
@@ -250,6 +254,9 @@ RUN mkdir -p /opt/vmafx/build/tools /opt/vmafx/build/src /opt/vmafx/model /opt/v
     && find build/src -maxdepth 1 \( -name 'libvmaf.so*' -o -name 'libvmafx.so*' \) -not -type d \
         -exec cp -a {} /opt/vmafx/build/src/ \; \
     && cp -a /usr/lib/*-linux-gnu*/libzimg.so* /opt/vmafx/lib/ \
+    && mkdir -p /zimg-doc \
+    && cp /usr/share/doc/libzimg2/copyright /zimg-doc/copyright \
+    && dpkg-query -W -f='${source:Package}=${source:Version}\n' libzimg2 > /zimg-doc/SOURCE \
     && python3 tools/rc1-tester/image/prepare_build.py stage build \
         tools/rc1-tester/image/unit-tests.txt /opt/vmafx \
     && python3 tools/rc1-tester/image/prepare_build.py stage build \
@@ -318,11 +325,12 @@ RUN --mount=type=secret,id=github_token,env=GITHUB_TOKEN,required=false \
     && rm -rf /tmp/vmafx /var/lib/apt/lists/*
 # Under WSL2 the GPU arrives as /dev/dxg with the host driver's libraries in
 # /usr/lib/wsl/lib (a bind mount); the path is empty on a Linux host.
-ENV LD_LIBRARY_PATH=/opt/vmafx/build/src:/opt/vmafx/lib/intel:/usr/lib/wsl/lib \
+ENV LD_LIBRARY_PATH=/opt/vmafx/build/src:/opt/vmafx/lib:/opt/vmafx/lib/intel:/usr/lib/wsl/lib \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     HOME=/tmp
 COPY --from=sycl-build /opt/vmafx/lib /opt/vmafx/lib
+COPY --from=sycl-build /zimg-doc /usr/share/doc/libzimg2
 COPY --from=sycl-build /opt/vmafx/licenses /opt/vmafx/licenses
 COPY --from=sycl-build /opt/vmafx/build /opt/vmafx/build
 COPY --from=sycl-build /opt/vmafx/tests /opt/vmafx/tests
@@ -507,6 +515,9 @@ RUN mkdir -p /opt/vmafx/build/tools /opt/vmafx/build/src /opt/vmafx/model /opt/v
     && find build/src -maxdepth 1 \( -name 'libvmaf.so*' -o -name 'libvmafx.so*' \) -not -type d \
         -exec cp -a {} /opt/vmafx/build/src/ \; \
     && cp -a /usr/lib/*-linux-gnu*/libzimg.so* /opt/vmafx/lib/ \
+    && mkdir -p /zimg-doc \
+    && cp /usr/share/doc/libzimg2/copyright /zimg-doc/copyright \
+    && dpkg-query -W -f='${source:Package}=${source:Version}\n' libzimg2 > /zimg-doc/SOURCE \
     && python3 tools/rc1-tester/image/prepare_build.py stage build \
         tools/rc1-tester/image/unit-tests.txt /opt/vmafx \
     && python3 tools/rc1-tester/image/prepare_build.py stage build \
@@ -567,11 +578,13 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 # NVIDIA_DRIVER_CAPABILITIES asks the NVIDIA Container Toolkit for the compute
 # libraries (libcuda, the PTX JIT compiler) of the host driver.
-ENV LD_LIBRARY_PATH=/opt/vmafx/build/src:/usr/lib/wsl/lib \
+ENV LD_LIBRARY_PATH=/opt/vmafx/build/src:/opt/vmafx/lib:/usr/lib/wsl/lib \
     NVIDIA_DRIVER_CAPABILITIES=compute,utility \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     HOME=/tmp
+COPY --from=cuda-build /opt/vmafx/lib /opt/vmafx/lib
+COPY --from=cuda-build /zimg-doc /usr/share/doc/libzimg2
 COPY --from=cuda-build /opt/vmafx/licenses /opt/vmafx/licenses
 COPY --from=cuda-build /opt/vmafx/build /opt/vmafx/build
 COPY --from=cuda-build /opt/vmafx/tests /opt/vmafx/tests
@@ -739,6 +752,9 @@ RUN mkdir -p /opt/vmafx/build/tools /opt/vmafx/build/src /opt/vmafx/model /opt/v
     && find build/src -maxdepth 1 \( -name 'libvmaf.so*' -o -name 'libvmafx.so*' \) -not -type d \
         -exec cp -a {} /opt/vmafx/build/src/ \; \
     && cp -a /usr/lib/*-linux-gnu*/libzimg.so* /opt/vmafx/lib/ \
+    && mkdir -p /zimg-doc \
+    && cp /usr/share/doc/libzimg2/copyright /zimg-doc/copyright \
+    && dpkg-query -W -f='${source:Package}=${source:Version}\n' libzimg2 > /zimg-doc/SOURCE \
     && python3 tools/rc1-tester/image/prepare_build.py stage build \
         tools/rc1-tester/image/unit-tests.txt /opt/vmafx \
     && python3 tools/rc1-tester/image/prepare_build.py stage build \
@@ -788,11 +804,12 @@ RUN apt-get update \
     && apt-get clean \
     && find /usr/lib/python3* /usr/share/python3 -name __pycache__ -prune -exec rm -r {} + \
     && rm -rf /var/lib/apt/lists/*
-ENV LD_LIBRARY_PATH=/opt/vmafx/build/src:/opt/vmafx/lib/rocm \
+ENV LD_LIBRARY_PATH=/opt/vmafx/build/src:/opt/vmafx/lib:/opt/vmafx/lib/rocm \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     HOME=/tmp
 COPY --from=hip-build /opt/vmafx/lib /opt/vmafx/lib
+COPY --from=hip-build /zimg-doc /usr/share/doc/libzimg2
 COPY --from=hip-build /opt/vmafx/licenses /opt/vmafx/licenses
 COPY --from=hip-build /opt/vmafx/build /opt/vmafx/build
 COPY --from=hip-build /opt/vmafx/tests /opt/vmafx/tests

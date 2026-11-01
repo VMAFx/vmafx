@@ -44,6 +44,10 @@ YUV_DIR="${YUV_DIR:-${REPO_ROOT}/python/test/resource/yuv}"
 BASE_URL="${BASE_URL:-https://github.com/Netflix/vmaf_resource/raw/master/python/test/resource/yuv}"
 DOWNLOAD="${REPO_ROOT}/compat/python-vmaf/tools/retrying_download.py"
 
+# The bundles this script provisions; scripts/ci/check_fixture_bundle_jobs.py reads
+# this line, so a workflow cannot fetch a bundle the script does not know.
+SUPPORTED_BUNDLES=("pq-sollevante-v1" "hdr-ictcp-pixels-v1")
+
 # Canonical files + expected md5 (verified 2026-06-08 against vmaf_resource HEAD).
 # Format: "filename md5"
 #
@@ -80,12 +84,12 @@ select_fixtures() {
   local wanted entry found
   if [ "$#" -eq 0 ]; then
     [ "${#FIXTURES[@]}" -eq 0 ] && return 0
-    printf '%s\n' "${FIXTURES[@]}"
+    printf '%s\n' ${FIXTURES[@]+"${FIXTURES[@]}"}
     return 0
   fi
   for wanted in "$@"; do
     found=""
-    for entry in "${FIXTURES[@]}"; do
+    for entry in ${FIXTURES[@]+"${FIXTURES[@]}"}; do
       if [ "${entry% *}" = "${wanted}" ]; then
         found="${entry}"
       fi
@@ -167,7 +171,7 @@ get_bundle_sha() {
 get_bundle_members() {
   local bundle_name="$1"
   if [ -n "${BUNDLE_MEMBERS+x}" ]; then
-    printf '%s\n' "${BUNDLE_MEMBERS[@]}"
+    printf '%s\n' ${BUNDLE_MEMBERS[@]+"${BUNDLE_MEMBERS[@]}"}
     return 0
   fi
   case "${bundle_name}" in
@@ -220,12 +224,40 @@ verify_bundle_members() {
 }
 
 # Check tar archive for path traversal or absolute paths before extraction.
+# Refuse every archive member that is not a regular file or a directory:
+# a symlink or hard link could point the copy below outside the bundle.
+# The verbose listing starts each line with the member's type ('-' file,
+# 'd' directory) in GNU tar and bsdtar; a hard link to a file also starts
+# with '-' in bsdtar, so its "link to" marker is refused as well.
+check_member_types() {
+  local archive="$1"
+  local listing line
+
+  if ! listing="$(tar -tvf "${archive}" 2>/dev/null)"; then
+    echo "ERROR: failed to inspect archive contents: ${archive}" >&2
+    echo "       GNU tar reads .tar.zst through the zstd program; is zstd on PATH?" >&2
+    return 1
+  fi
+
+  while IFS= read -r line; do
+    [ -z "${line}" ] && continue
+    case "${line}" in
+      [-d]*" link to "* | [-d]*" -> "* | [!-d]*)
+        echo "ERROR: archive member is not a regular file or directory: ${line}" >&2
+        return 1
+        ;;
+    esac
+  done <<<"${listing}"
+  return 0
+}
+
 check_path_traversal() {
   local archive="$1"
   local listing member
 
   if ! listing="$(tar -tf "${archive}" 2>/dev/null)"; then
     echo "ERROR: failed to inspect archive contents: ${archive}" >&2
+    echo "       GNU tar reads .tar.zst through the zstd program; is zstd on PATH?" >&2
     return 1
   fi
 
@@ -297,7 +329,7 @@ fetch_and_check_archive() {
     return 1
   fi
 
-  if ! check_path_traversal "${archive}"; then
+  if ! check_path_traversal "${archive}" || ! check_member_types "${archive}"; then
     echo "ERROR: ${bundle_name} archive failed security validation" >&2
     return 1
   fi
@@ -312,7 +344,7 @@ provision_bundle() {
   local tmp_archive stage_dir
 
   if ! expected_sha="$(get_bundle_sha "${bundle_name}")"; then
-    echo "ERROR: ${bundle_name} is not a recognized bundle (supported: pq-sollevante-v1, hdr-ictcp-pixels-v1)" >&2
+    echo "ERROR: ${bundle_name} is not a recognized bundle (supported: ${SUPPORTED_BUNDLES[*]})" >&2
     return 2
   fi
 
@@ -324,6 +356,12 @@ provision_bundle() {
   if [ -d "${target_dir}" ]; then
     echo "stale   bundle ${bundle_name} — refetching"
     rm -rf "${target_dir}"
+  fi
+
+  # tar reads the .tar.zst through the zstd program; say so before any download.
+  if ! command -v zstd >/dev/null 2>&1; then
+    echo "ERROR: ${bundle_name} is a .tar.zst archive and zstd is not on PATH" >&2
+    return 1
   fi
 
   mkdir -p "${YUV_DIR}"
@@ -381,7 +419,7 @@ main() {
     case "${PARSED_BUNDLE}" in
       pq-sollevante-v1 | hdr-ictcp-pixels-v1) ;;
       *)
-        echo "ERROR: ${PARSED_BUNDLE} is not a recognized bundle (supported: pq-sollevante-v1, hdr-ictcp-pixels-v1)" >&2
+        echo "ERROR: ${PARSED_BUNDLE} is not a recognized bundle (supported: ${SUPPORTED_BUNDLES[*]})" >&2
         return 2
         ;;
     esac
@@ -393,7 +431,7 @@ main() {
     fi
   fi
 
-  listing="$(select_fixtures "${PARSED_FIXTURES[@]}")" || return 2
+  listing="$(select_fixtures ${PARSED_FIXTURES[@]+"${PARSED_FIXTURES[@]}"})" || return 2
   mkdir -p "${YUV_DIR}"
 
   while IFS= read -r entry; do
@@ -414,7 +452,7 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
     --print-bundle-sha)
       bundle="${2:-pq-sollevante-v1}"
       if ! sha="$(get_bundle_sha "${bundle}")"; then
-        echo "ERROR: ${bundle} is not a recognized bundle (supported: pq-sollevante-v1, hdr-ictcp-pixels-v1)" >&2
+        echo "ERROR: ${bundle} is not a recognized bundle (supported: ${SUPPORTED_BUNDLES[*]})" >&2
         exit 2
       fi
       echo "${sha}"
@@ -423,7 +461,7 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
     --print-bundle-sha=*)
       bundle="${1#*=}"
       if ! sha="$(get_bundle_sha "${bundle}")"; then
-        echo "ERROR: ${bundle} is not a recognized bundle (supported: pq-sollevante-v1, hdr-ictcp-pixels-v1)" >&2
+        echo "ERROR: ${bundle} is not a recognized bundle (supported: ${SUPPORTED_BUNDLES[*]})" >&2
         exit 2
       fi
       echo "${sha}"
