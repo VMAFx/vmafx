@@ -57,7 +57,7 @@ scripts/test/sycl-dev-container.sh exec bash -c '
       -i /yuv/src01_${s%%:*}_576x324.yuv -pix_fmt nv12 -c:v hevc_qsv \
       -profile:v main -global_quality 22 ${s##*:}.mp4
   done
-  Q="-init_hw_device vaapi=va0:${RENDER_NODE:-/dev/dri/renderD128} -init_hw_device qsv=qr@va0 -init_hw_device qsv=qd@va0"
+  Q="-init_hw_device drm=dr0:${RENDER_NODE:-/dev/dri/renderD128} -init_hw_device vaapi=va0@dr0 -init_hw_device qsv=qr@va0 -init_hw_device qsv=qd@va0"
   ffmpeg -hide_banner $Q -hwaccel qsv -hwaccel_output_format qsv -hwaccel_device qd -i dis.mp4 \
     -hwaccel qsv -hwaccel_output_format qsv -hwaccel_device qr -i ref.mp4 \
     -lavfi "[0:v]hwmap=derive_device=vaapi,format=vaapi,hwmap=derive_device=drm,format=drm_prime[d];[1:v]hwmap=derive_device=vaapi,format=vaapi,hwmap=derive_device=drm,format=drm_prime[r];[d][r]vmafx=backend=sycl:import=auto:feature=name=psnr" -f null -'

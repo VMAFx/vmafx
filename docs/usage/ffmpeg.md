@@ -757,7 +757,7 @@ its own `libvmaf` filter against the backwards-compatibility library (`libvmaf.s
 | `libvmaf_sycl` | (whole filter) | `vmafx` | `backend=sycl` `import=auto\|device` | Ported. Zero-copy QSV/VAAPI unified in `vmafx`. |
 | `libvmaf_sycl` | `gpu_profile` | `vmafx` | `profile=1` | Ported. |
 | `libvmaf_vulkan` | (whole filter) | — | — | **DROPPED** (no new spelling; ADR-0726 / ADR-0860 / ADR-2166). |
-| `libvmaf_metal` | (whole filter) | `vmafx` | `backend=metal` `import=host` | Ported. VideoToolbox frames downloaded via `import=host` (zero-copy IOSurface import not implemented). |
+| `libvmaf_metal` | (whole filter) | `vmafx` | `hwdownload,format=nv12` before `backend=metal` | Ported. Download VideoToolbox frames with `hwdownload,format=nv12` before `vmafx=backend=metal` (zero-copy IOSurface import not implemented). `import=host` on VideoToolbox frames opens no device and scores on the CPU, whatever `backend` says. |
 | `libvmaf_tune` | (whole filter) | `vmafx_tune` | (filter name mapping) | Ported. Recommends CRF for next encode pass. |
 | `libvmaf_tune` | `model`, `feature`, `n_threads` | `vmafx_tune` | `model`, `feature`, `threads`/`n_threads` | Ported. |
 | `libvmaf_tune` | `recommend_target_vmaf` | `vmafx_tune` | `recommend_target_vmaf` | Ported (default 95.0). |
