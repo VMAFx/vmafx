@@ -29,8 +29,14 @@ NINJA_EXEC := $(abspath $(NINJA))
 # `make docs-fragments-check` failed for a reason unrelated to the change. Such
 # a stray stays off PATH, and `scripts/ci/check-no-tracked-venv.sh` refuses it
 # by name.
-VENV_STRAY := $(if $(wildcard $(VENV)),$(if $(wildcard $(VENV_PIP)),,stray))
-export PATH := $(if $(VENV_STRAY),,$(VIRTUAL_ENV_ABS):)$(PATH)
+#
+# The test runs in the shell of each recipe line, not when make reads this
+# file: `lint-tools` repairs a stray (`$(VENV_PIP)` runs `python3 -m venv` over
+# it), and the recipes after it in the same run must then find the venv tools.
+# `$(wildcard)` is not used here because make caches directory contents.
+PATH_BASE := $(PATH)
+venv_on_path = $(shell [ -e $(VENV_PIP) ] || [ ! -e $(VENV) ] && printf '%s:' '$(VIRTUAL_ENV_ABS)')
+export PATH = $(venv_on_path)$(PATH_BASE)
 
 # require-tool,<binary>,<install hint>
 # A gate that cannot run is a gate that cannot fail. Every lint / format tool is

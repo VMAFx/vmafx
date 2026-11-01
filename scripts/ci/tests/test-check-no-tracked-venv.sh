@@ -11,7 +11,9 @@ set -euo pipefail
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/../../lib/clean-git-env.sh"
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 script="$here/../check-no-tracked-venv.sh"
-tmp="$(mktemp -d)"
+# Physical path: `make -C` resolves a symbolic link in TMPDIR (macOS /var), and
+# the probes compare against what make reports.
+tmp="$(cd "$(mktemp -d)" && pwd -P)"
 trap 'rm -rf "$tmp"' EXIT
 git -C "$tmp" init -q
 mk() {
@@ -96,6 +98,21 @@ case "$got" in
     exit 1
     ;;
   *) echo "ok   stray venv stays off PATH under make" ;;
+esac
+# A recipe that repairs the stray (as `lint-tools` does) puts the venv on PATH
+# for the recipes after it in the same make run.
+# shellcheck disable=SC2016 # recipe text: the recipe shell expands it, not this one
+got=$(make -s -C "$tmp" -f "$root/Makefile" --eval 'probe-fix: ; @touch .venv/bin/pip' \
+  --eval 'probe-after: probe-fix ; @command -v python3' probe-after) || {
+  echo "FAIL make probe probe-after exited nonzero" >&2
+  exit 1
+}
+case "$got" in
+  "$tmp/.venv/bin/python3") echo "ok   venv repaired in the same run goes first on PATH" ;;
+  *)
+    echo "FAIL venv repaired in the same run stays off PATH (got $got)" >&2
+    exit 1
+    ;;
 esac
 rm -r "$tmp/.venv"
 got=$(probe probe-path) || exit 1
