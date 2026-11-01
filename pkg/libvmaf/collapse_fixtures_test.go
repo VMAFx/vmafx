@@ -165,9 +165,21 @@ func buildCAPIHarness(t *testing.T) string {
 // value of the method as printed in hexadecimal float form.
 func cAPIPooled(t *testing.T, exe string, sc scoringCase) float64 {
 	t.Helper()
-	cmd := exec.Command(exe, sc.ref, sc.dis, sc.model, // #nosec G204 -- the harness this test built
+	// The harness reads the pair from descriptors 3 and 4 and never opens a
+	// path itself (ADR-1526 passes inputs the same way).
+	inputs := make([]*os.File, 0, 2)
+	for _, path := range []string{sc.ref, sc.dis} {
+		f, err := os.Open(path)
+		if err != nil {
+			t.Fatalf("open %s: %v", path, err)
+		}
+		t.Cleanup(func() { _ = f.Close() })
+		inputs = append(inputs, f)
+	}
+	cmd := exec.Command(exe, sc.model, // #nosec G204 -- the harness this test built
 		strconv.Itoa(sc.w), strconv.Itoa(sc.h), strconv.Itoa(int(PixFmtYUV420P)),
 		strconv.Itoa(sc.bpc), strconv.Itoa(int(sc.pool)))
+	cmd.ExtraFiles = inputs
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()

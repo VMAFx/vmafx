@@ -1141,6 +1141,24 @@ repos:
         files: '^(\.semgrep\.yml|\.semgrepignore|\.pre-commit-config\.yaml|scripts/ci/tests/test_semgrep_vendored_scope\.py|core/src/pdjson\.(c|h)|core/src/mcp/3rdparty/.*)$'
         pass_filenames: false
 
+      # Codacy runs flawfinder on every pull request and fails it on a new
+      # finding; nothing ran flawfinder before the push (#3216: two fopen()
+      # calls in a Go test harness). This runs the same engine on the changed
+      # C and C++ files and refuses findings their merge-base copy lacks.
+      - id: flawfinder-new
+        name: No new flawfinder findings in changed C/C++ files
+        entry: python3 scripts/ci/check_flawfinder_new.py
+        language: python
+        additional_dependencies: ["flawfinder==2.0.20"]
+        types_or: [c, c++, cuda, objective-c++]
+      - id: test-flawfinder-new
+        name: flawfinder-new gate (planted-defect recall)
+        entry: python3 -m unittest discover -s scripts/ci/tests -p test_check_flawfinder_new.py
+        language: python
+        additional_dependencies: ["flawfinder==2.0.20"]
+        files: '^(\.pre-commit-config\.yaml|scripts/ci/(check_flawfinder_new|tests/test_check_flawfinder_new)\.py)$'
+        pass_filenames: false
+
       # Shell-injection regression tests. Both fixes below were reverted once
       # by a pull request that carried stale copies of the scripts (PR #414
       # undid PR #350). The sycl-bench-env test already existed and would have

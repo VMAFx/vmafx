@@ -11,11 +11,16 @@
  * requested method as a C99 hexadecimal float ("%a"), which a Go test reads back
  * with strconv.ParseFloat and compares by IEEE-754 bits.
  *
- * usage: c_api_pooled_mean REF DIS MODEL WIDTH HEIGHT PIXFMT BPC POOL
+ * usage: c_api_pooled_mean MODEL WIDTH HEIGHT PIXFMT BPC POOL 3<REF 4<DIS
+ *   The caller opens the reference and distorted YUV files and passes them as
+ *   descriptors 3 and 4 (exec.Cmd.ExtraFiles, as pkg/libvmaf does, ADR-1526),
+ *   so this program never resolves a path to an input.
  *   PIXFMT is the VmafPixelFormat value (1 = 420, 2 = 422, 3 = 444) and POOL
  *   the VmafPoolingMethod value (3 = mean).
  * exit status: 0 on success, 1 on any error (reported on stderr).
  */
+
+#define _POSIX_C_SOURCE 200809L /* fdopen() */
 
 #include <errno.h>
 #include <stdio.h>
@@ -173,26 +178,27 @@ static int score(const char *model_path, FILE *fr, FILE *fd, const Geometry *g, 
 
 int main(int argc, char **argv)
 {
-    if (argc != 9) {
-        (void)fprintf(stderr, "usage: %s REF DIS MODEL WIDTH HEIGHT PIXFMT BPC POOL\n", argv[0]);
+    if (argc != 7) {
+        (void)fprintf(stderr, "usage: %s MODEL WIDTH HEIGHT PIXFMT BPC POOL 3<REF 4<DIS\n",
+                      argv[0]);
         return 1;
     }
-    FILE *fr = fopen(argv[1], "rb");
+    FILE *fr = fdopen(3, "rb");
     if (fr == NULL) {
-        return fail("fopen(ref)", errno);
+        return fail("fdopen(3: ref)", errno);
     }
-    FILE *fd = fopen(argv[2], "rb");
+    FILE *fd = fdopen(4, "rb");
     if (fd == NULL) {
         (void)fclose(fr);
-        return fail("fopen(dis)", errno);
+        return fail("fdopen(4: dis)", errno);
     }
     const Geometry g = {
-        .width = (unsigned)strtoul(argv[4], NULL, 10),
-        .height = (unsigned)strtoul(argv[5], NULL, 10),
-        .bpc = (unsigned)strtoul(argv[7], NULL, 10),
-        .pix_fmt = (enum VmafPixelFormat)strtol(argv[6], NULL, 10),
+        .width = (unsigned)strtoul(argv[2], NULL, 10),
+        .height = (unsigned)strtoul(argv[3], NULL, 10),
+        .bpc = (unsigned)strtoul(argv[5], NULL, 10),
+        .pix_fmt = (enum VmafPixelFormat)strtol(argv[4], NULL, 10),
     };
-    const int status = score(argv[3], fr, fd, &g, (int)strtol(argv[8], NULL, 10));
+    const int status = score(argv[1], fr, fd, &g, (int)strtol(argv[6], NULL, 10));
     (void)fclose(fr);
     (void)fclose(fd);
     return status;
