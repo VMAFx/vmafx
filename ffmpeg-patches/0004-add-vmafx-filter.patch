@@ -17,9 +17,9 @@ the same scoring path, recommends a CRF for the next pass. Built with
  doc/filters.texi               |  151 ++
  libavfilter/Makefile           |    2 +
  libavfilter/allfilters.c       |    2 +
- libavfilter/vf_vmafx.c         | 2895 ++++++++++++++++++++++++++++++++
+ libavfilter/vf_vmafx.c         | 2905 ++++++++++++++++++++++++++++++++
  libavfilter/vf_vmafx_options.h |  152 ++
- 6 files changed, 3207 insertions(+)
+ 6 files changed, 3217 insertions(+)
  create mode 100644 libavfilter/vf_vmafx.c
  create mode 100644 libavfilter/vf_vmafx_options.h
 
@@ -250,10 +250,10 @@ index 5ecf9a8698318dd84d5d3723df2053a2c9f20304..b923bf9ec16ee0818b64509ca8af9f18
  extern const FFFilter ff_vf_w3fdif;
 diff --git a/libavfilter/vf_vmafx.c b/libavfilter/vf_vmafx.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..b1ec7b208754bdd6af00cf8e3b72284c0a64e176
+index 0000000000000000000000000000000000000000..4f493fb1a477f5edb857b85ee163a79d72ba93a7
 --- /dev/null
 +++ b/libavfilter/vf_vmafx.c
-@@ -0,0 +1,2895 @@
+@@ -0,0 +1,2905 @@
 +/*
 + * Copyright 2026 Lusoris
 + *
@@ -422,6 +422,7 @@ index 0000000000000000000000000000000000000000..b1ec7b208754bdd6af00cf8e3b72284c
 +static void vk_close(VMAFXContext *s);
 +#endif
 +
++#if CONFIG_VULKAN || CONFIG_LIBDRM
 +/* The slot of the backend that reads the GPUs of a PCI vendor with
 + * backend=auto: CUDA on NVIDIA, SYCL on Intel, HIP on AMD; 0 for another. */
 +static int vendor_slot(unsigned vendor)
@@ -437,6 +438,7 @@ index 0000000000000000000000000000000000000000..b1ec7b208754bdd6af00cf8e3b72284c
 +        return 0;
 +    }
 +}
++#endif
 +
 +/* Indexed by the `backend` option (auto, cpu, cuda, sycl, hip, metal). */
 +static const VMAFXBackendSlot backend_slots[] = {
@@ -453,7 +455,7 @@ index 0000000000000000000000000000000000000000..b1ec7b208754bdd6af00cf8e3b72284c
 +};
 +
 +#define OFFSET(x) offsetof(VMAFXContext, x)
-+#define FLAGS AV_OPT_FLAG_FILTERING_PARAM | AV_OPT_FLAG_VIDEO_PARAM
++#define FLAGS (AV_OPT_FLAG_FILTERING_PARAM | AV_OPT_FLAG_VIDEO_PARAM)
 +
 +static const AVOption vmafx_options[] = {
 +    VMAFX_FILTER_OPTIONS(VMAFXContext, FLAGS){NULL},
@@ -1509,7 +1511,8 @@ index 0000000000000000000000000000000000000000..b1ec7b208754bdd6af00cf8e3b72284c
 + * at its value and signalled one higher, as FFmpeg's submissions do. */
 +static int vk_submit(VMAFXVulkan *v, VkCommandBuffer cmd, VkFence fence, AVVkFrame *const f[2])
 +{
-+    VkSemaphoreSubmitInfo wait[2 * AV_NUM_DATA_POINTERS], sig[2 * AV_NUM_DATA_POINTERS];
++    VkSemaphoreSubmitInfo wait[2 * AV_NUM_DATA_POINTERS];
++    VkSemaphoreSubmitInfo sig[2 * AV_NUM_DATA_POINTERS];
 +    int k = 0;
 +    for (int j = 0; j < 2; j++)
 +        for (int i = 0; i < vk_images(f[j]); i++, k++) {
@@ -1585,7 +1588,8 @@ index 0000000000000000000000000000000000000000..b1ec7b208754bdd6af00cf8e3b72284c
 +    }
 +    AVHWFramesContext *sfc = (AVHWFramesContext *)frame->hw_frames_ctx->data;
 +    AVHWFramesContext *dfc = (AVHWFramesContext *)copy->hw_frames_ctx->data;
-+    AVVulkanFramesContext *svk = sfc->hwctx, *dvk = dfc->hwctx;
++    AVVulkanFramesContext *svk = sfc->hwctx;
++    AVVulkanFramesContext *dvk = dfc->hwctx;
 +    AVVkFrame *const f[2] = {(AVVkFrame *)frame->data[0], (AVVkFrame *)copy->data[0]};
 +    const int n_planes = av_pix_fmt_count_planes(frame_sw_format(frame));
 +    int ok = vk_images(f[1]) == n_planes && (vk_images(f[0]) == 1 || vk_images(f[0]) == n_planes);
@@ -1693,8 +1697,10 @@ index 0000000000000000000000000000000000000000..b1ec7b208754bdd6af00cf8e3b72284c
 +        imp->plane[i].fd = -1;
 +        vk_acquire_fence(imp, (int)i)->fd = -1;
 +    }
-+    int ok = imp->n_planes <= 3;
-+    for (unsigned i = 0; i < imp->n_planes && ok; i++)
++    if (imp->n_planes > FF_ARRAY_ELEMS(imp->plane))
++        return AVERROR_EXTERNAL;
++    int ok = 1;
++    for (unsigned i = 0; i < imp->n_planes && i < FF_ARRAY_ELEMS(imp->plane) && ok; i++)
 +        ok = vk_describe_plane(v, f, (int)i, imp, vk_acquire_fence(imp, (int)i));
 +    return ok ? 0 : AVERROR_EXTERNAL;
 +}
@@ -1800,13 +1806,17 @@ index 0000000000000000000000000000000000000000..b1ec7b208754bdd6af00cf8e3b72284c
 +}
 +
 +static const char *const pool_names[] = VMAFX_OPT_POOL_VALUES;
++/* value[p] holds pool name p - 1 (bit 0 is unused), so p <= the name count bounds both. */
++_Static_assert(sizeof(((VmafxWindowResult *)0)->value) / sizeof(double) ==
++                   FF_ARRAY_ELEMS(pool_names) + 1,
++               "one window value per pool name");
 +
 +/* One `"name":{"mean":v,...}` member of a window line. */
 +static void window_model(AVBPrint *bp, const VMAFXContext *s, const VmafxWindowResult *r)
 +{
 +    av_bprintf(bp, ",\"%s\":{", r->name);
 +    unsigned n = 0;
-+    for (unsigned p = 1; p < FF_ARRAY_ELEMS(r->value) && p <= FF_ARRAY_ELEMS(pool_names); p++) {
++    for (unsigned p = 1; p <= FF_ARRAY_ELEMS(pool_names); p++) {
 +        if (!(r->pool_mask & (1u << p)))
 +            continue;
 +        av_bprintf(bp, "%s\"%s\":", n++ ? "," : "", pool_names[p - 1]);
@@ -1820,7 +1830,7 @@ index 0000000000000000000000000000000000000000..b1ec7b208754bdd6af00cf8e3b72284c
 +{
 +    char key[128];
 +    char value[64];
-+    for (unsigned p = 1; p < FF_ARRAY_ELEMS(r->value) && p <= FF_ARRAY_ELEMS(pool_names); p++) {
++    for (unsigned p = 1; p <= FF_ARRAY_ELEMS(pool_names); p++) {
 +        if (!(r->pool_mask & (1u << p)))
 +            continue;
 +        snprintf(key, sizeof(key), "lavfi.vmafx.window.%s.%s", r->name, pool_names[p - 1]);
@@ -2443,10 +2453,10 @@ index 0000000000000000000000000000000000000000..b1ec7b208754bdd6af00cf8e3b72284c
 +        return 0;
 +    }
 +#endif
-+    const int vendor_slot =
++    const int auto_slot =
 +        s->backend == 0 && format == AV_PIX_FMT_DRM_PRIME ? drm_auto_slot(frames) : 0;
 +    for (unsigned i = 2; i < FF_ARRAY_ELEMS(backend_slots); i++) {
-+        const int wanted = s->backend != 0 ? s->backend : vendor_slot;
++        const int wanted = s->backend != 0 ? s->backend : auto_slot;
 +        if (backend_slots[i].hw_format == format && (wanted == 0 || wanted == (int)i)) {
 +            s->slot = &backend_slots[i];
 +            break;

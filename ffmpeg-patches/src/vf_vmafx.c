@@ -166,6 +166,7 @@ static int vk_import(AVFilterContext *ctx, AVFrame *frame, const char *input, ui
 static void vk_close(VMAFXContext *s);
 #endif
 
+#if CONFIG_VULKAN || CONFIG_LIBDRM
 /* The slot of the backend that reads the GPUs of a PCI vendor with
  * backend=auto: CUDA on NVIDIA, SYCL on Intel, HIP on AMD; 0 for another. */
 static int vendor_slot(unsigned vendor)
@@ -181,6 +182,7 @@ static int vendor_slot(unsigned vendor)
         return 0;
     }
 }
+#endif
 
 /* Indexed by the `backend` option (auto, cpu, cuda, sycl, hip, metal). */
 static const VMAFXBackendSlot backend_slots[] = {
@@ -197,7 +199,7 @@ static const VMAFXBackendSlot backend_slots[] = {
 };
 
 #define OFFSET(x) offsetof(VMAFXContext, x)
-#define FLAGS AV_OPT_FLAG_FILTERING_PARAM | AV_OPT_FLAG_VIDEO_PARAM
+#define FLAGS (AV_OPT_FLAG_FILTERING_PARAM | AV_OPT_FLAG_VIDEO_PARAM)
 
 static const AVOption vmafx_options[] = {
     VMAFX_FILTER_OPTIONS(VMAFXContext, FLAGS){NULL},
@@ -1253,7 +1255,8 @@ static void vk_record(const VMAFXVulkan *v, VkCommandBuffer cmd, const AVFrame *
  * at its value and signalled one higher, as FFmpeg's submissions do. */
 static int vk_submit(VMAFXVulkan *v, VkCommandBuffer cmd, VkFence fence, AVVkFrame *const f[2])
 {
-    VkSemaphoreSubmitInfo wait[2 * AV_NUM_DATA_POINTERS], sig[2 * AV_NUM_DATA_POINTERS];
+    VkSemaphoreSubmitInfo wait[2 * AV_NUM_DATA_POINTERS];
+    VkSemaphoreSubmitInfo sig[2 * AV_NUM_DATA_POINTERS];
     int k = 0;
     for (int j = 0; j < 2; j++)
         for (int i = 0; i < vk_images(f[j]); i++, k++) {
@@ -1329,7 +1332,8 @@ static AVFrame *vk_device_copy(VMAFXContext *s, int k, const AVFrame *frame)
     }
     AVHWFramesContext *sfc = (AVHWFramesContext *)frame->hw_frames_ctx->data;
     AVHWFramesContext *dfc = (AVHWFramesContext *)copy->hw_frames_ctx->data;
-    AVVulkanFramesContext *svk = sfc->hwctx, *dvk = dfc->hwctx;
+    AVVulkanFramesContext *svk = sfc->hwctx;
+    AVVulkanFramesContext *dvk = dfc->hwctx;
     AVVkFrame *const f[2] = {(AVVkFrame *)frame->data[0], (AVVkFrame *)copy->data[0]};
     const int n_planes = av_pix_fmt_count_planes(frame_sw_format(frame));
     int ok = vk_images(f[1]) == n_planes && (vk_images(f[0]) == 1 || vk_images(f[0]) == n_planes);
@@ -1437,8 +1441,10 @@ static int vk_describe(const VMAFXVulkan *v, const AVFrame *copy, VmafxFrameImpo
         imp->plane[i].fd = -1;
         vk_acquire_fence(imp, (int)i)->fd = -1;
     }
-    int ok = imp->n_planes <= 3;
-    for (unsigned i = 0; i < imp->n_planes && ok; i++)
+    if (imp->n_planes > FF_ARRAY_ELEMS(imp->plane))
+        return AVERROR_EXTERNAL;
+    int ok = 1;
+    for (unsigned i = 0; i < imp->n_planes && i < FF_ARRAY_ELEMS(imp->plane) && ok; i++)
         ok = vk_describe_plane(v, f, (int)i, imp, vk_acquire_fence(imp, (int)i));
     return ok ? 0 : AVERROR_EXTERNAL;
 }
@@ -1544,13 +1550,17 @@ static uint32_t pool_mask(const VMAFXContext *s)
 }
 
 static const char *const pool_names[] = VMAFX_OPT_POOL_VALUES;
+/* value[p] holds pool name p - 1 (bit 0 is unused), so p <= the name count bounds both. */
+_Static_assert(sizeof(((VmafxWindowResult *)0)->value) / sizeof(double) ==
+                   FF_ARRAY_ELEMS(pool_names) + 1,
+               "one window value per pool name");
 
 /* One `"name":{"mean":v,...}` member of a window line. */
 static void window_model(AVBPrint *bp, const VMAFXContext *s, const VmafxWindowResult *r)
 {
     av_bprintf(bp, ",\"%s\":{", r->name);
     unsigned n = 0;
-    for (unsigned p = 1; p < FF_ARRAY_ELEMS(r->value) && p <= FF_ARRAY_ELEMS(pool_names); p++) {
+    for (unsigned p = 1; p <= FF_ARRAY_ELEMS(pool_names); p++) {
         if (!(r->pool_mask & (1u << p)))
             continue;
         av_bprintf(bp, "%s\"%s\":", n++ ? "," : "", pool_names[p - 1]);
@@ -1564,7 +1574,7 @@ static void window_metadata(VMAFXContext *s, const VmafxWindowResult *r, AVDicti
 {
     char key[128];
     char value[64];
-    for (unsigned p = 1; p < FF_ARRAY_ELEMS(r->value) && p <= FF_ARRAY_ELEMS(pool_names); p++) {
+    for (unsigned p = 1; p <= FF_ARRAY_ELEMS(pool_names); p++) {
         if (!(r->pool_mask & (1u << p)))
             continue;
         snprintf(key, sizeof(key), "lavfi.vmafx.window.%s.%s", r->name, pool_names[p - 1]);
@@ -2187,10 +2197,10 @@ static int pick_slot(AVFilterContext *ctx, enum AVPixelFormat format, AVBufferRe
         return 0;
     }
 #endif
-    const int vendor_slot =
+    const int auto_slot =
         s->backend == 0 && format == AV_PIX_FMT_DRM_PRIME ? drm_auto_slot(frames) : 0;
     for (unsigned i = 2; i < FF_ARRAY_ELEMS(backend_slots); i++) {
-        const int wanted = s->backend != 0 ? s->backend : vendor_slot;
+        const int wanted = s->backend != 0 ? s->backend : auto_slot;
         if (backend_slots[i].hw_format == format && (wanted == 0 || wanted == (int)i)) {
             s->slot = &backend_slots[i];
             break;
