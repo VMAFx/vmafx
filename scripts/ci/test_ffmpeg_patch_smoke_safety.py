@@ -82,8 +82,8 @@ class SmokeSafety(unittest.TestCase):
             "#!/bin/sh\nprintf '%s\\n' \"$@\" > configure.args\n"
             "cat > ffmpeg <<'BINARY'\n#!/bin/sh\n"
             'case "$*" in\n*log_fmt=json*) cat "$SMOKE_FAKE_FFMPEG_JSON" > ffmpeg.json;;\n'
-            "*filter=vmafx*) echo tiny_model;;\n"
-            "*filter=vmafx_pre*) exit 0;;\n*) exit 1;;\nesac\nBINARY\n"
+            "*filter=vmafx_pre*) exit 0;;\n"
+            "*filter=vmafx*) echo tiny_model;;\n*) exit 1;;\nesac\nBINARY\n"
             "chmod +x ffmpeg\n"
         )
         configure.chmod(0o755)
