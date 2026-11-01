@@ -593,7 +593,9 @@ class PlantedDefects(unittest.TestCase):
             shutil.copy(path, directory / path.name)
         target = directory / workflow
         text = target.read_text(encoding="utf-8")
-        self.assertIn(old, text, "the planted defect must apply")
+        # Exactly one match: a second copy of the anchor elsewhere in the file (a step condition
+        # that starts the same way) would take the mutation and leave the job under test intact.
+        self.assertEqual(text.count(old), 1, "the planted defect must apply to one place")
         target.write_text(text.replace(old, new, 1), encoding="utf-8")
         return Contract(directory)
 
@@ -609,8 +611,8 @@ class PlantedDefects(unittest.TestCase):
     def test_a_light_job_gated_on_the_full_tier_is_caught(self) -> None:
         contract = self.mutated(
             "tests-and-quality-gates.yml",
-            "needs.tier.outputs.light == 'true'",
-            "needs.tier.outputs.full == 'true'",
+            "  netflix-golden:\n    needs: tier\n    if: needs.tier.outputs.light == 'true'\n",
+            "  netflix-golden:\n    needs: tier\n    if: needs.tier.outputs.full == 'true'\n",
         )
         with self.assertRaises(AssertionError):
             expect_light_tier(contract, OWN)
@@ -775,7 +777,11 @@ class PlantedDefects(unittest.TestCase):
             expect_own_input_lanes(contract, OWN)
 
     def test_an_msvc_job_that_starts_in_a_cancelled_run_is_caught(self) -> None:
-        contract = self.mutated(GPU_WORKFLOW, "    if: ${{ !cancelled() && (", "    if: ${{ (")
+        contract = self.mutated(
+            GPU_WORKFLOW,
+            "    if: ${{ !cancelled() && (needs.tier.outputs.full",
+            "    if: ${{ (needs.tier.outputs.full",
+        )
         with self.assertRaises(AssertionError):
             expect_gpu_job_condition(contract)
 

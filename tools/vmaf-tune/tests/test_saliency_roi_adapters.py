@@ -30,6 +30,7 @@ from vmaftune.saliency import (
     VVENC_CTU_SIDE,
     X264_MB_SIDE,
     augment_extra_params_with_libaom_qpfile,
+    augment_extra_params_with_svtav1_qpfile,
     augment_extra_params_with_svtav1_qpmap,
     augment_extra_params_with_vvenc_roi,
     augment_extra_params_with_x265_zones,
@@ -234,6 +235,7 @@ def test_augment_extra_params_with_svtav1_qpmap_appends_svtav1_params(tmp_path):
 def test_svtav1_adapter_has_supports_saliency_roi():
     a = SvtAv1Adapter()
     assert a.supports_saliency_roi is True
+    assert a.supports_qpfile is True
 
 
 def test_svtav1_adapter_qpmap_from_saliency_writes_file(tmp_path):
@@ -320,9 +322,9 @@ def test_augment_extra_params_with_vvenc_roi_preserves_base(tmp_path):
 # ===========================================================================
 
 
-def test_vvenc_adapter_has_supports_saliency_roi():
+def test_vvenc_adapter_has_no_saliency_roi_channel():
     a = VVenCAdapter()
-    assert a.supports_saliency_roi is True
+    assert a.supports_saliency_roi is False
 
 
 def test_vvenc_adapter_roi_from_saliency_writes_csv(tmp_path):
@@ -361,3 +363,13 @@ def test_vvenc_ctu_side_is_64():
 
 def test_x264_mb_side_is_16():
     assert X264_MB_SIDE == 16
+
+
+def test_augment_extra_params_with_svtav1_qpfile_preserves_base(tmp_path):
+    qpfile = tmp_path / "roi with spaces.svtav1-qpfile.txt"
+    base = ("-svtav1-params", "tune=0")
+    assert augment_extra_params_with_svtav1_qpfile(base, qpfile) == (
+        *base,
+        "-qpfile",
+        str(qpfile),
+    )

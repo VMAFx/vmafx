@@ -16,11 +16,13 @@ other entry points are tested in compat/python-vmaf/tests/test_retrying_download
 
 from __future__ import annotations
 
+import functools
 import hashlib
+import io
 import re
 import shutil
-import subprocess
 import sys
+import tarfile
 import tempfile
 import unittest
 from pathlib import Path
@@ -29,15 +31,30 @@ ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
 from scripts.lib.http_stand_in import StandIn  # noqa: E402
+from scripts.lib.safe_subprocess import TextCommandResult  # noqa: E402
+from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
 
 SCRIPT = ROOT / "scripts" / "test" / "fetch-test-yuvs.sh"
 POLICY = "compat/python-vmaf/tools/retrying_download.py"
 BASH = shutil.which("bash")
+ZSTD = shutil.which("zstd")
 FIRST = b"first fixture\n" * 32
 SECOND = b"second fixture\n" * 32
 BODIES = {"/yuv/first.yuv": FIRST, "/yuv/second.yuv": SECOND}
 # The script's summary line: already-ok, replaced, fetched, failed.
 SUMMARY = "fetch-test-yuvs.sh: {} already-ok, {} replaced, {} fetched, {} failed"
+
+
+def run_bash(*args: str) -> TextCommandResult:
+    """Run bash with args; bash is the only executable allowed."""
+    assert BASH is not None
+    return run_command(
+        [BASH, *args],
+        allowed_executables=[BASH],
+        capture_output=True,
+        text=True,
+        timeout_seconds=120,
+    )
 
 
 def md5(data: bytes) -> str:
@@ -46,7 +63,7 @@ def md5(data: bytes) -> str:
 
 def fetch(
     server: StandIn, directory: Path, *names: str, second_md5: str = md5(SECOND)
-) -> subprocess.CompletedProcess[str]:
+) -> TextCommandResult:
     """Source the script, point it at the stand-in server and run main()."""
     assert BASH is not None
     program = (
@@ -55,13 +72,7 @@ def fetch(
         'YUV_DIR="$1"; BASE_URL="$2"; shift 2\n'
         'main "$@"\n'
     )
-    return subprocess.run(  # noqa: S603 (bash and this repository's script)
-        [BASH, "-c", program, "fetch", str(SCRIPT), str(directory), server.url("yuv"), *names],
-        capture_output=True,
-        text=True,
-        timeout=120,
-        check=False,
-    )
+    return run_bash("-c", program, "fetch", str(SCRIPT), str(directory), server.url("yuv"), *names)
 
 
 @unittest.skipIf(BASH is None or shutil.which("md5sum") is None, "needs bash and md5sum")
@@ -119,6 +130,241 @@ class FetchTestYuvs(unittest.TestCase):
         self.assertIn("third.yuv is not a fixture of this script", done.stderr)
 
 
+SYNTHETIC_CREDIT = b"Source: synthetic credit\n"
+SYNTHETIC_LICENCE = b"Licence: CC-BY-4.0\n"
+SYNTHETIC_DIS = b"synthetic distorted 1080p yuv data\n" * 16
+SYNTHETIC_REF = b"synthetic reference 1080p yuv data\n" * 16
+SYNTHETIC_FILES = {
+    "CREDIT.txt": SYNTHETIC_CREDIT,
+    "LICENCE-CC-BY-4.0.txt": SYNTHETIC_LICENCE,
+    "sollevante_dis_1920x1080_8f.yuv": SYNTHETIC_DIS,
+    "sollevante_ref_1920x1080_8f.yuv": SYNTHETIC_REF,
+}
+
+
+def sha256_hex(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def make_tar_zst(
+    members: dict[str, bytes], links: dict[str, tuple[bytes, str]] | None = None
+) -> bytes:
+    """A zstd tar of ``members``, plus ``links``: name -> (tar type, link target)."""
+    bio = io.BytesIO()
+    with tarfile.open(fileobj=bio, mode="w") as tf:
+        for name, content in sorted(members.items()):
+            ti = tarfile.TarInfo(name=name)
+            ti.size = len(content)
+            ti.mtime = 1761868800
+            tf.addfile(ti, io.BytesIO(content))
+        for name, (kind, target) in sorted((links or {}).items()):
+            ti = tarfile.TarInfo(name=name)
+            ti.type = kind
+            ti.linkname = target
+            ti.mtime = 1761868800
+            tf.addfile(ti)
+    assert ZSTD is not None
+    proc = run_command(
+        [ZSTD, "-q"],
+        allowed_executables=[ZSTD],
+        input_data=bio.getvalue(),
+        capture_output=True,
+        check=True,
+    )
+    assert isinstance(proc.stdout, bytes)
+    return proc.stdout
+
+
+@functools.cache
+def synthetic_bundle() -> bytes:
+    """The synthetic bundle archive, built on first use so a host without zstd only skips."""
+    return make_tar_zst({f"pq-sollevante-v1/{k}": v for k, v in SYNTHETIC_FILES.items()})
+
+
+SYNTHETIC_MEMBERS = [f"{k} {sha256_hex(v)}" for k, v in sorted(SYNTHETIC_FILES.items())]
+BUNDLE_REQ_PATH = "/releases/pq-sollevante-v1.tar.zst"
+
+
+def fetch_bundle(
+    server: StandIn,
+    directory: Path,
+    *args: str,
+    bundle_sha256: str | None = None,
+    members: list[str] | None = None,
+    path: str | None = None,
+) -> TextCommandResult:
+    """Source the script and run main() for bundle fetching."""
+    assert BASH is not None
+    if members is None:
+        members = SYNTHETIC_MEMBERS
+    if bundle_sha256 is None:
+        bundle_sha256 = sha256_hex(synthetic_bundle())
+    members_repr = " ".join(f'"{m}"' for m in members)
+    program = (
+        'source "$1"; shift\n'
+        f'BUNDLE_ARCHIVE_SHA256="{bundle_sha256}"\n'
+        f"BUNDLE_MEMBERS=({members_repr})\n"
+        'YUV_DIR="$1"; BUNDLE_BASE_URL="$2"; shift 2\n'
+        + (f'PATH="{path}"\n' if path else "")
+        + 'main "$@"\n'
+    )
+    cli_args = args if args else ("--bundle", "pq-sollevante-v1")
+    return run_bash(
+        "-c",
+        program,
+        "fetch_bundle",
+        str(SCRIPT),
+        str(directory),
+        server.url("releases"),
+        *cli_args,
+    )
+
+
+@unittest.skipIf(
+    BASH is None
+    or shutil.which("sha256sum") is None
+    or shutil.which("tar") is None
+    or ZSTD is None,
+    "needs bash, sha256sum, tar, and zstd",
+)
+class FetchBundleTest(unittest.TestCase):
+    def test_bundle_fetch_positive(self) -> None:
+        bodies = {BUNDLE_REQ_PATH: synthetic_bundle()}
+        with tempfile.TemporaryDirectory() as tmp, StandIn(bodies=bodies) as server:
+            done = fetch_bundle(server, Path(tmp))
+            self.assertEqual(done.returncode, 0, done.stderr)
+            self.assertEqual(server.requests, [BUNDLE_REQ_PATH])
+            target_dir = Path(tmp) / "pq-sollevante-v1"
+            self.assertTrue(target_dir.is_dir())
+            for name, content in SYNTHETIC_FILES.items():
+                self.assertEqual((target_dir / name).read_bytes(), content)
+            self.assertIn("ok      bundle pq-sollevante-v1 (extracted and verified)", done.stdout)
+
+    def test_bundle_archive_sha_mismatch_fails_and_leaves_nothing(self) -> None:
+        bodies = {BUNDLE_REQ_PATH: synthetic_bundle()}
+        with tempfile.TemporaryDirectory() as tmp, StandIn(bodies=bodies) as server:
+            done = fetch_bundle(server, Path(tmp), bundle_sha256="0" * 64)
+            self.assertEqual(done.returncode, 1)
+            self.assertEqual(server.requests, [BUNDLE_REQ_PATH])
+            target_dir = Path(tmp) / "pq-sollevante-v1"
+            self.assertFalse(target_dir.exists())
+            self.assertIn("archive sha256 mismatch", done.stderr)
+
+    def test_bundle_traversal_refused_and_leaves_nothing(self) -> None:
+        traversal_members = dict(SYNTHETIC_FILES)
+        traversal_members["../evil.txt"] = b"traversal-data\n"
+        evil_archive = make_tar_zst(traversal_members)
+        evil_sha = sha256_hex(evil_archive)
+        bodies = {BUNDLE_REQ_PATH: evil_archive}
+        with tempfile.TemporaryDirectory() as tmp, StandIn(bodies=bodies) as server:
+            done = fetch_bundle(server, Path(tmp), bundle_sha256=evil_sha)
+            self.assertEqual(done.returncode, 1)
+            self.assertEqual(server.requests, [BUNDLE_REQ_PATH])
+            target_dir = Path(tmp) / "pq-sollevante-v1"
+            self.assertFalse(target_dir.exists())
+            self.assertFalse((Path(tmp) / "evil.txt").exists())
+            self.assertIn("archive member contains illegal path or traversal", done.stderr)
+
+    def _refuses_link(self, kind: bytes, target: str) -> None:
+        """A bundle holding a link member of ``kind`` is refused and leaves nothing."""
+        members = {f"pq-sollevante-v1/{k}": v for k, v in SYNTHETIC_FILES.items()}
+        archive = make_tar_zst(members, {"pq-sollevante-v1/escape": (kind, target)})
+        bodies = {BUNDLE_REQ_PATH: archive}
+        with tempfile.TemporaryDirectory() as tmp, StandIn(bodies=bodies) as server:
+            done = fetch_bundle(server, Path(tmp), bundle_sha256=sha256_hex(archive))
+            self.assertEqual(done.returncode, 1, done.stdout + done.stderr)
+            self.assertFalse((Path(tmp) / "pq-sollevante-v1").exists())
+            self.assertIn("archive member is not a regular file or directory", done.stderr)
+
+    def test_bundle_symlink_member_refused(self) -> None:
+        self._refuses_link(tarfile.SYMTYPE, "/etc/passwd")
+
+    def test_bundle_hardlink_member_refused(self) -> None:
+        self._refuses_link(tarfile.LNKTYPE, "pq-sollevante-v1/CREDIT.txt")
+
+    def test_bundle_5xx_retried(self) -> None:
+        bodies = {BUNDLE_REQ_PATH: synthetic_bundle()}
+        with tempfile.TemporaryDirectory() as tmp, StandIn([503], bodies=bodies) as server:
+            done = fetch_bundle(server, Path(tmp))
+            self.assertEqual(done.returncode, 0, done.stderr)
+            self.assertEqual(server.requests, [BUNDLE_REQ_PATH, BUNDLE_REQ_PATH])
+            target_dir = Path(tmp) / "pq-sollevante-v1"
+            self.assertTrue(target_dir.is_dir())
+            self.assertIn("attempt 1 of 7 failed (HTTP Error 503", done.stderr)
+
+    def test_bundle_404_fails_immediately_and_leaves_nothing(self) -> None:
+        bodies = {BUNDLE_REQ_PATH: synthetic_bundle()}
+        with tempfile.TemporaryDirectory() as tmp, StandIn([404], bodies=bodies) as server:
+            done = fetch_bundle(server, Path(tmp))
+            self.assertEqual(done.returncode, 1)
+            self.assertEqual(server.requests, [BUNDLE_REQ_PATH])
+            target_dir = Path(tmp) / "pq-sollevante-v1"
+            self.assertFalse(target_dir.exists())
+            self.assertIn("HTTP Error 404", done.stderr)
+
+    def test_bundle_already_extracted_skips_download(self) -> None:
+        bodies = {BUNDLE_REQ_PATH: synthetic_bundle()}
+        with tempfile.TemporaryDirectory() as tmp, StandIn(bodies=bodies) as server:
+            target_dir = Path(tmp) / "pq-sollevante-v1"
+            target_dir.mkdir(parents=True)
+            for name, content in SYNTHETIC_FILES.items():
+                (target_dir / name).write_bytes(content)
+            done = fetch_bundle(server, Path(tmp))
+            self.assertEqual(done.returncode, 0, done.stderr)
+            self.assertEqual(server.requests, [])
+            self.assertIn("ok      bundle pq-sollevante-v1 (sha256 verified)", done.stdout)
+
+    def test_unknown_bundle_name_refused_before_any_request(self) -> None:
+        bodies = {BUNDLE_REQ_PATH: synthetic_bundle()}
+        with tempfile.TemporaryDirectory() as tmp, StandIn(bodies=bodies) as server:
+            done = fetch_bundle(server, Path(tmp), "--bundle", "unknown-bundle")
+            self.assertEqual(server.requests, [])
+            self.assertEqual(done.returncode, 2)
+            self.assertIn("unknown-bundle is not a recognized bundle", done.stderr)
+
+    def test_bundle_without_zstd_fails_before_any_request(self) -> None:
+        """Negative: without zstd on PATH the script names it and downloads nothing."""
+        bodies = {BUNDLE_REQ_PATH: synthetic_bundle()}
+        with tempfile.TemporaryDirectory() as tmp, StandIn(bodies=bodies) as server:
+            shim = Path(tmp) / "bin"
+            shim.mkdir()
+            for tool in ("mktemp", "mkdir", "rm", "dirname", "python3", "tar", "cat"):
+                found = shutil.which(tool)
+                if found:
+                    (shim / tool).symlink_to(found)
+            done = fetch_bundle(server, Path(tmp) / "yuv", path=str(shim))
+            self.assertEqual(server.requests, [])
+            self.assertEqual(done.returncode, 1, done.stdout + done.stderr)
+            self.assertIn("zstd is not on PATH", done.stderr)
+
+    def test_print_bundle_sha_names_the_archive_sha(self) -> None:
+        done = run_bash(str(SCRIPT), "--print-bundle-sha")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertRegex(done.stdout.strip(), r"^[0-9a-f]{64}$")
+        self.assertIn(f"BUNDLE_ARCHIVE_SHA256:-{done.stdout.strip()}", SCRIPT.read_text())
+
+
+# "${a[@]}" of an empty array is an unbound variable under set -u in Bash before 4.4,
+# which macOS runners ship (3.2); ${a[@]+"${a[@]}"} expands to nothing there instead.
+UNGUARDED_ARRAY = re.compile(r'(?<!\[@\]\+)"\$\{[A-Za-z_][A-Za-z0-9_]*\[@\]\}"')
+
+
+def unguarded_array_expansions(text: str) -> list[int]:
+    """Line numbers holding a "${a[@]}" expansion without the ${a[@]+...} guard."""
+    return [n for n, line in enumerate(text.splitlines(), 1) if UNGUARDED_ARRAY.search(line)]
+
+
+class OldBashArrays(unittest.TestCase):
+    """The fetch script runs on macOS's Bash 3.2, so every array expansion is guarded."""
+
+    def test_the_script_guards_every_array_expansion(self) -> None:
+        self.assertEqual(unguarded_array_expansions(SCRIPT.read_text()), [])
+
+    def test_an_unguarded_expansion_is_found(self) -> None:
+        text = 'ok ${A[@]+"${A[@]}"}\nf "${PARSED_FIXTURES[@]}"\n'
+        self.assertEqual(unguarded_array_expansions(text), [2])
+
+
 class OneRetryPolicy(unittest.TestCase):
     """Both fixture downloads go through vmaf/tools/retrying_download.py."""
 
@@ -152,5 +398,46 @@ class OneRetryPolicy(unittest.TestCase):
         self.assertGreaterEqual(sum(delays), 180)
 
 
+def _unit_suite_gets_the_pair(workflow: str) -> bool:
+    """The coverage job fetches the pair before the step that requires it."""
+    fetch = workflow.find("Fetch the Netflix golden YUV fixtures for the unit suite")
+    suite = workflow.find("id: coverage_meson_suite")
+    required = workflow.find("VMAFX_REQUIRE_NETFLIX_PAIR", suite)
+    next_step = workflow.find("- name:", suite)
+    return -1 < fetch < suite < required < next_step
+
+
+class PythonBindingBitExactRuns(unittest.TestCase):
+    """The bit-exact test of the Python binding cannot skip in CI (#2434)."""
+
+    WORKFLOW = ROOT / ".github" / "workflows" / "tests-and-quality-gates.yml"
+
+    def test_the_unit_suite_requires_the_pair_it_fetched(self) -> None:
+        self.assertTrue(_unit_suite_gets_the_pair(self.WORKFLOW.read_text(encoding="utf-8")))
+
+    def test_a_workflow_without_the_requirement_is_refused(self) -> None:
+        text = self.WORKFLOW.read_text(encoding="utf-8")
+        self.assertFalse(_unit_suite_gets_the_pair(text.replace("VMAFX_REQUIRE_NETFLIX_PAIR", "X")))
+
+    def test_a_workflow_without_the_fetch_is_refused(self) -> None:
+        text = self.WORKFLOW.read_text(encoding="utf-8")
+        self.assertFalse(
+            _unit_suite_gets_the_pair(text.replace("YUV fixtures for the unit suite", "X"))
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_every_tox_leg_fetches_the_pq_fixture_first() -> None:
+    """A tox leg without the bundle asks Netflix for it and fails with HTTP 404."""
+    workflow = ROOT / ".github" / "workflows" / "libvmaf-build-matrix.yml"
+    text = workflow.read_text(encoding="utf-8")
+    fetch = text.index("name: Fetch the PQ fixture")
+    assert fetch < text.index("name: Run tox tests (ubuntu)")
+    assert fetch < text.index("name: Run tox tests (mac)")
+    assert text.index("name: Run tox tests (mac)") < text.index("name: Put away the PQ fixture")
+    assert text.index("name: Put away the PQ fixture") < text.index(
+        "name: Save Netflix vmaf_resource fixtures"
+    )

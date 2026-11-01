@@ -145,7 +145,7 @@ jobs:
         run: |
           python -m pip install --require-hashes -r requirements/locks/build.txt
           sudo apt-get update
-          sudo -E apt-get -yq install ninja-build gcc nasm pkg-config
+          sudo -E apt-get -yq install ninja-build gcc nasm pkg-config libzimg-dev
       - name: Fetch the Netflix 576x324 pair
         if: steps.impact.outputs.mode == 'full' || steps.impact.outputs.c_core == 'true' || steps.impact.outputs.actions == 'true'
         run: bash scripts/test/fetch-test-yuvs.sh src01_hrc00_576x324.yuv src01_hrc01_576x324.yuv

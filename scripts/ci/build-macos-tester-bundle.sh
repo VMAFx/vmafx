@@ -51,6 +51,23 @@ export VMAFX_NOT_APPLICABLE='{"golden": "the Python golden stack is not in the m
 step() { printf '\n== %s\n' "$*"; }
 
 step "configure and build (Apple clang, static libvmaf, Metal on, no DNN)"
+# zimg: stage static library so Apple clang links it statically with no external dylib references
+if ! command -v brew >/dev/null 2>&1; then
+  echo "ERROR: brew is required on macOS to locate zimg" >&2
+  exit 1
+fi
+brew_prefix="$(brew --prefix zimg)" || {
+  echo "ERROR: brew --prefix zimg failed (zimg not installed via brew)" >&2
+  exit 1
+}
+if [ -z "$brew_prefix" ] || [ ! -f "$brew_prefix/lib/libzimg.a" ]; then
+  echo "ERROR: static library libzimg.a not found at $brew_prefix/lib/libzimg.a" >&2
+  exit 1
+fi
+zimg_static_dir="$out/zimg-static"
+mkdir -p "$zimg_static_dir/pkgconfig"
+sed "s|-L\${libdir} -lzimg|$brew_prefix/lib/libzimg.a|g" "$brew_prefix/lib/pkgconfig/zimg.pc" >"$zimg_static_dir/pkgconfig/zimg.pc"
+export PKG_CONFIG_PATH="$zimg_static_dir/pkgconfig:${PKG_CONFIG_PATH:-}"
 meson setup "$build" core --buildtype=release --strip --default-library=static -Db_lto=false \
   -Denable_metal=enabled -Denable_dnn=disabled -Denable_cuda=false -Denable_sycl=false \
   -Denable_hip=false -Denable_float=true -Denable_docs=false -Denable_tests=true
@@ -63,6 +80,12 @@ done <<EOF
 $selected
 EOF
 ninja -C "$build" -j4 tools/vmaf "${test_targets[@]}"
+if command -v otool >/dev/null 2>&1; then
+  if otool -L "$build/tools/vmaf" | grep -qi "zimg"; then
+    echo "ERROR: vmaf binary dynamically links zimg dylib instead of static library" >&2
+    exit 1
+  fi
+fi
 
 step "stage the bundle"
 mkdir -p "$bundle/build/tools" "$bundle/image" "$bundle/tester" "$resource"

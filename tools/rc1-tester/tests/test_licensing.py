@@ -176,6 +176,12 @@ def test_clean_expression_drops_comment_closers() -> None:
     assert lic.clean_expression('EUPL-1.2\\n",') == "EUPL-1.2"
 
 
+def test_wtfpl_licence_is_recognised_and_unknown_refused() -> None:
+    wtfpl_text = "DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE\nVersion 2, December 2004\n"
+    assert lic.classify_licence_text(wtfpl_text) == "WTFPL"
+    assert lic.classify_licence_text("some custom proprietary license terms") == "UNKNOWN"
+
+
 def test_reuse_glob_star_stays_in_one_directory() -> None:
     assert lic.reuse_glob("model/*").match("model/a.json")
     assert not lic.reuse_glob("model/*").match("model/x/a.json")
@@ -921,6 +927,7 @@ def windows_tree(tmp: Path) -> argparse.Namespace:
     write(texts / "cpython-license.rst", "Doc/license.rst\n")
     write(texts / "python-build-standalone/LICENSE.openssl-3.txt", "Apache-2.0\n")
     write(texts / VS_TERMS, "MICROSOFT SOFTWARE LICENSE TERMS\nLast Updated: October 1, 2025.\n")
+    write(texts / "zimg-3.0.6-COPYING", "DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE\n")
     scan_path = write(tmp / "scan.json", json.dumps(scan(("EUPL-1.2", "BSD-2-Clause-Patent"))))
     return argparse.Namespace(artifact="windows-zip", root=str(root), repo=str(REPO),
                               build_scan=str(scan_path), texts=str(texts), source_commit="c0ffee",
@@ -1016,7 +1023,7 @@ def test_the_windows_zip_record_passes_a_recorded_tree(tmp_path: Path) -> None:
     data = lic.load_manifest()
     assert notices_then_check(args, data) == []
     notices = (Path(args.root) / "licenses/THIRD_PARTY_NOTICES.txt").read_text()
-    for component in ("microsoft-static-runtime", "microsoft-vc-runtime", "cpython"):
+    for component in ("microsoft-static-runtime", "microsoft-vc-runtime", "cpython", "zimg"):
         assert f"[component {component}]" in notices
     assert "not covered by EUPL-1.2" in notices
     assert f"texts/{VS_TERMS}" in notices and "October 1, 2025" in notices
@@ -1167,3 +1174,44 @@ def test_a_docx_extract_refuses_what_it_cannot_read(tmp_path: Path, monkeypatch)
             lic.fetch_text("x.txt", spec, out)
     with pytest.raises(lic.LicensingError, match="unknown extract 'pdf-text'"):
         lic.fetch_text("x.txt", {**spec, "extract": "pdf-text"}, out)
+
+
+def test_every_zimg_carrying_artifact_records_zimg_component() -> None:
+    """Every build/image artifact that links or packages zimg declares the zimg component (ADR-3396)."""
+    manifest = lic.load_manifest()
+    expanded = lic.expand_shared(manifest)["artifacts"]
+    carrying = {
+        "image",
+        "macos",
+        "windows-zip",
+        "windows-cuda-zip",
+        "windows-sycl-zip",
+        "sycl-image",
+        "cuda-image",
+        "hip-image",
+        "production-cli-image",
+        "production-server-image",
+        "production-go-server-image",
+        "production-controller-image",
+        "production-node-image",
+        "production-node-sycl-image",
+        "production-cuda-image",
+        "production-rocm-image",
+        "production-oneapi-image",
+        "release-native",
+    }
+    for name in carrying:
+        record = expanded[name]
+        has_zimg = any(c.get("id") == "zimg" for c in record.get("components", []))
+        assert has_zimg, f"{name} must declare component zimg"
+
+
+def test_zimg_carrying_artifact_without_zimg_fails() -> None:
+    """Planted negative case: an artifact that ships zimg fails if zimg component is missing."""
+    manifest = lic.load_manifest()
+    expanded = lic.expand_shared(manifest)["artifacts"]
+    release_native = expanded["release-native"]
+    assert any(c.get("id") == "zimg" for c in release_native["components"])
+    stripped = [c for c in release_native["components"] if c.get("id") != "zimg"]
+    mutated = {**release_native, "components": stripped}
+    assert not any(c.get("id") == "zimg" for c in mutated["components"])

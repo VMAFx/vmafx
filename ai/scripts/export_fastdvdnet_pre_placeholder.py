@@ -154,6 +154,7 @@ def _update_registry(onnx_path: Path) -> None:
         "onnx": onnx_path.name,
         "opset": 17,
         "sha256": digest,
+        "teacher": "none",
         "smoke": True,
         "notes": (
             "Placeholder FastDVDnet temporal pre-filter (T6-7). 5-frame "

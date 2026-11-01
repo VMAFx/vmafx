@@ -560,5 +560,249 @@ class RustToolchainGroup(unittest.TestCase):
         )
 
 
+# CI Node.js (ADR-3312 pattern): one custom manager owns build-config.env's
+# NODE_VERSION, .pre-commit-config.yaml's default_language_version.node, .node-version
+# and every workflow `node-version:` pin with an exact three-part version (x.y.z).
+PRECOMMIT_CONFIG = ".pre-commit-config.yaml"
+NODE_FILE = ".node-version"
+WORKFLOW_NODE = re.compile(r"node-version:[ \t]*['\"]?([0-9]+\.[0-9]+\.[0-9]+)['\"]?")
+PRECOMMIT_NODE = re.compile(
+    r"^default_language_version:[ \t]*\n(?:[ \t]+.*\n)*?[ \t]+node:[ \t]*['\"]?([0-9]+\.[0-9]+\.[0-9]+)['\"]?",
+    re.MULTILINE,
+)
+
+
+def node_ci_manager(config: dict[str, Any]) -> dict[str, Any] | None:
+    """The custom manager that owns CI Node.js, or None."""
+    managers = [
+        m
+        for m in config.get("customManagers", [])
+        if m.get("depNameTemplate") == "node"
+        and m.get("datasourceTemplate") == "github-releases"
+        and m.get("packageNameTemplate") == "actions/node-versions"
+        and m.get("versioningTemplate") == "node"
+    ]
+    return managers[0] if len(managers) == 1 else None
+
+
+def node_ci_findings(
+    config: dict[str, Any], files: list[str], read: Callable[[str], str]
+) -> list[str]:
+    """Every way the config fails to own the CI Node.js pins as one group."""
+    manager = node_ci_manager(config)
+    if manager is None:
+        return ["no single custom manager for node / actions/node-versions"]
+    selectors = [re.compile(p[1:-1]) for p in manager.get("managerFilePatterns", [])]
+    patterns = [re.compile(to_python(m)) for m in manager.get("matchStrings", [])]
+    errors: list[str] = []
+    scope = [CONFIG, PRECOMMIT_CONFIG, NODE_FILE, *(f for f in files if WORKFLOW.match(f))]
+    for path in scope:
+        text = read(path)
+        if path == CONFIG:
+            want = re.findall(r'^NODE_VERSION="([^"]*)"', text, re.MULTILINE)
+        elif path == PRECOMMIT_CONFIG:
+            want = PRECOMMIT_NODE.findall(text)
+        elif path == NODE_FILE:
+            want = text.split()
+        else:
+            want = WORKFLOW_NODE.findall(text)
+        if not want:
+            continue
+        if not any(s.search(path) for s in selectors):
+            errors.append(f"{path} is not selected by the manager")
+            continue
+        got = [m["currentValue"] for p in patterns for m in p.finditer(text)]
+        if sorted(got) != sorted(want):
+            errors.append(f"{path}: manager reads {sorted(got)}, the check reads {sorted(want)}")
+    rules = config.get("packageRules", [])
+    if not any(
+        r.get("matchManagers") == ["github-actions"]
+        and r.get("matchDepNames") == ["node"]
+        and r.get("matchDepTypes") == ["uses-with"]
+        and r.get("enabled") is False
+        for r in rules
+    ):
+        errors.append("the github-actions manager still updates node-version")
+    if not any(r.get("matchManagers") == ["nodenv"] and r.get("enabled") is False for r in rules):
+        errors.append("the nodenv manager still updates .node-version")
+    if not any(
+        r.get("matchManagers") == ["custom.regex"]
+        and r.get("matchDepNames") == ["node"]
+        and r.get("groupName") == "CI Node.js"
+        and r.get("automerge") is False
+        and r.get("draftPR") is False
+        for r in rules
+    ):
+        errors.append("no CI Node.js group rule")
+    return errors
+
+
+class NodeCiVersionGroup(unittest.TestCase):
+    """Positive: the checked-in config owns every Node.js pin. Negative: a manager that
+    misses a file, a dropped match string, the github-actions manager left on and a
+    missing group each fail. Boundary: major-only workflow pins and other keys are
+    not read."""
+
+    config: ClassVar[dict[str, Any]]
+    files: ClassVar[list[str]]
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        RenovateFilePatterns.setUpClass()
+        cls.config = RenovateFilePatterns.config
+        cls.files = RenovateFilePatterns.files
+
+    def findings(self, change: Callable[[dict[str, Any]], None] | None = None) -> list[str]:
+        config = json.loads(json.dumps(self.config))
+        if change is not None:
+            change(config)
+        return node_ci_findings(
+            config, self.files, lambda path: (ROOT / path).read_text(encoding="utf-8")
+        )
+
+    def manager(self, config: dict[str, Any]) -> dict[str, Any]:
+        manager = node_ci_manager(config)
+        assert manager is not None
+        return manager
+
+    def test_checked_in_config_owns_every_pin(self) -> None:
+        self.assertEqual(self.findings(), [])
+        pins = [f for f in self.files if WORKFLOW.match(f)]
+        read = (ROOT / CONFIG).read_text(encoding="utf-8")
+        self.assertIn("NODE_VERSION=", read)
+        self.assertTrue(
+            any(WORKFLOW_NODE.search((ROOT / f).read_text(encoding="utf-8")) for f in pins)
+        )
+
+    def test_major_only_and_other_lines_are_not_read(self) -> None:
+        patterns = [re.compile(to_python(m)) for m in self.manager(self.config)["matchStrings"]]
+        for line in (
+            'node-version: "24"\n',
+            "node-version: '24'\n",
+            "node-version: 24\n",
+            'NODE_JS_VERSION="24.22.1"\n',
+            'node: "24"\n',
+        ):
+            with self.subTest(line=line):
+                self.assertFalse(any(p.search(line) for p in patterns))
+
+    def test_manager_without_workflows_fails(self) -> None:
+        def drop(config: dict[str, Any]) -> None:
+            manager = self.manager(config)
+            manager["managerFilePatterns"] = [
+                p for p in manager["managerFilePatterns"] if "workflows" not in p
+            ]
+
+        self.assertTrue(any("not selected" in e for e in self.findings(drop)))
+
+    def test_manager_without_node_file_fails(self) -> None:
+        def drop(config: dict[str, Any]) -> None:
+            manager = self.manager(config)
+            manager["managerFilePatterns"] = [
+                p for p in manager["managerFilePatterns"] if "node-version" not in p
+            ]
+
+        self.assertIn(f"{NODE_FILE} is not selected by the manager", self.findings(drop))
+
+    def test_manager_without_node_file_string_fails(self) -> None:
+        def drop(config: dict[str, Any]) -> None:
+            manager = self.manager(config)
+            manager["matchStrings"] = manager["matchStrings"][1:]
+
+        self.assertTrue(any(e.startswith(f"{NODE_FILE}: ") for e in self.findings(drop)))
+
+    def test_nodenv_manager_left_on_fails(self) -> None:
+        def enable(config: dict[str, Any]) -> None:
+            config["packageRules"] = [
+                r for r in config["packageRules"] if r.get("matchManagers") != ["nodenv"]
+            ]
+
+        self.assertIn("the nodenv manager still updates .node-version", self.findings(enable))
+
+    def test_node_file_string_reads_nothing_else(self) -> None:
+        pattern = re.compile(to_python(self.manager(self.config)["matchStrings"][0]))
+        self.assertEqual(pattern.findall("24.22.1\n"), ["24.22.1"])
+        for text in ("name: lint\n24.22.1\n", "24\n", "24.22.1\nmore\n"):
+            with self.subTest(text=text):
+                self.assertIsNone(pattern.search(text))
+
+    def test_manager_without_precommit_fails(self) -> None:
+        def drop(config: dict[str, Any]) -> None:
+            manager = self.manager(config)
+            manager["managerFilePatterns"] = [
+                p for p in manager["managerFilePatterns"] if "pre-commit" not in p
+            ]
+
+        self.assertIn(f"{PRECOMMIT_CONFIG} is not selected by the manager", self.findings(drop))
+
+    def test_manager_without_config_fails(self) -> None:
+        def drop(config: dict[str, Any]) -> None:
+            manager = self.manager(config)
+            manager["managerFilePatterns"] = [
+                p for p in manager["managerFilePatterns"] if "build-config" not in p
+            ]
+
+        self.assertIn(f"{CONFIG} is not selected by the manager", self.findings(drop))
+
+    def test_manager_without_node_version_string_fails(self) -> None:
+        def drop(config: dict[str, Any]) -> None:
+            manager = self.manager(config)
+            manager["matchStrings"] = [
+                s for s in manager["matchStrings"] if "NODE_VERSION" not in s
+            ]
+
+        self.assertTrue(any(e.startswith(f"{CONFIG}:") for e in self.findings(drop)))
+
+    def test_manager_without_precommit_string_fails(self) -> None:
+        def drop(config: dict[str, Any]) -> None:
+            manager = self.manager(config)
+            manager["matchStrings"] = [
+                s for s in manager["matchStrings"] if "default_language_version" not in s
+            ]
+
+        self.assertTrue(any(e.startswith(f"{PRECOMMIT_CONFIG}:") for e in self.findings(drop)))
+
+    def test_manager_without_workflow_string_fails(self) -> None:
+        def drop(config: dict[str, Any]) -> None:
+            manager = self.manager(config)
+            manager["matchStrings"] = [
+                s for s in manager["matchStrings"] if "node-version" not in s
+            ]
+
+        self.assertTrue(any(".github/workflows/" in e for e in self.findings(drop)))
+
+    def test_github_actions_copy_left_enabled_fails(self) -> None:
+        def enable(config: dict[str, Any]) -> None:
+            for rule in config["packageRules"]:
+                if (
+                    rule.get("matchManagers") == ["github-actions"]
+                    and rule.get("matchDepNames") == ["node"]
+                    and rule.get("matchDepTypes") == ["uses-with"]
+                ):
+                    rule["enabled"] = True
+
+        self.assertIn(
+            "the github-actions manager still updates node-version", self.findings(enable)
+        )
+
+    def test_missing_group_fails(self) -> None:
+        def ungroup(config: dict[str, Any]) -> None:
+            for rule in config["packageRules"]:
+                if rule.get("groupName") == "CI Node.js":
+                    rule.pop("groupName")
+
+        self.assertIn("no CI Node.js group rule", self.findings(ungroup))
+
+    def test_missing_manager_fails(self) -> None:
+        def remove(config: dict[str, Any]) -> None:
+            config["customManagers"] = [
+                m for m in config["customManagers"] if m.get("depNameTemplate") != "node"
+            ]
+
+        self.assertEqual(
+            self.findings(remove), ["no single custom manager for node / actions/node-versions"]
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

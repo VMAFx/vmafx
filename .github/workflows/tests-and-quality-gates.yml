@@ -40,7 +40,7 @@ jobs:
     # required-aggregator
     name: Netflix CPU Golden
     runs-on: ubuntu-26.04
-    timeout-minutes: 85
+    timeout-minutes: 95
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -101,6 +101,7 @@ jobs:
         run: |
           # shellcheck disable=SC2046  # the helper prints one option per line, split on purpose
           meson setup build -Denable_cuda=false -Denable_sycl=false \
+            -Denable_zimg=true \
             -Denable_float=true -Denable_avx512=true --buildtype=release \
             -Dwerror=true $(../scripts/ci/werror-args.sh true)
           meson compile -C build
@@ -119,6 +120,12 @@ jobs:
       - name: Drop unusable restored fixtures
         if: steps.impact.outputs.golden_harness == 'true'
         run: bash scripts/ci/prune-corrupt-fixtures.sh --restore-tracked python/test/resource
+
+      - name: Get the PQ fixture
+        if: steps.impact.outputs.golden_harness == 'true'
+        uses: ./.github/actions/pq-fixture
+        with:
+          phase: get
 
       - name: Run Netflix golden normal pair
         if: steps.impact.outputs.golden_harness == 'true'
@@ -139,6 +146,19 @@ jobs:
           timeout --kill-after=30s 19m python3 -m pytest \
             python/test/quality_runner_test.py::QualityRunnerTest::test_run_vmaf_runner_checkerboard \
             -v --tb=short --timeout=1020 --timeout-method=signal
+
+      - name: Run Netflix golden HDR pins
+        if: steps.impact.outputs.golden_harness == 'true'
+        env:
+          PYTHONPATH: ${{ github.workspace }}/python
+        timeout-minutes: 15
+        run: bash scripts/ci/run-hdr-golden-pins.sh "${{ runner.temp }}/hdr_golden_junit.xml"
+
+      - name: Finish with the PQ fixture
+        if: ${{ !cancelled() && steps.impact.outputs.golden_harness == 'true' }}
+        uses: ./.github/actions/pq-fixture
+        with:
+          phase: finish
 
       - name: Save Netflix vmaf_resource fixtures
         if: ${{ success() && (steps.impact.outputs.golden_harness == 'true') && steps.fixtures.outputs.cache-hit != 'true' }}
@@ -548,7 +568,12 @@ jobs:
             --wheel-dir dist/rc1-wheel ./tools/rc1-tester
           python -m pip install --no-deps dist/rc1-wheel/*.whl
       - name: Run RC1 tester regressions
-        run: python -m pytest tools/rc1-tester/tests/ -q
+        env:
+          B: bash:3.2@sha256:b6252c62fc86114f93f02104a486c71e6569371d95950ea7479a2ffd6b47f16a
+          VMAFX_REQUIRE_BASH32: "1"
+        run: |
+          docker pull "$B" && docker tag "$B" bash:3.2
+          python -m pytest tools/rc1-tester/tests/ -q
       - name: Smoke installed tester launcher
         run: |
           python -c "from pathlib import Path; from vmaf_rc1_tester.probe import REPO_ROOT; assert REPO_ROOT == Path.cwd().resolve()"
@@ -748,7 +773,6 @@ jobs:
         if: steps.impact.outputs.python == 'true'
         run: |
           tar -C "${RUNNER_TEMP}/vmaf-cli" -xf "${RUNNER_TEMP}/vmaf-cli/vmaf-cli.tar"
-          "${RUNNER_TEMP}/vmaf-cli/tools/vmaf" --version
       - name: Restore apt archives
         id: apt-cache
         if: steps.impact.outputs.python == 'true'
@@ -766,6 +790,7 @@ jobs:
         run: |
           bash scripts/ci/apt-install-cached.sh install .github/apt/vmaf-tune-tests.txt
           ffmpeg -hide_banner -encoders | grep -E '^ V.* libx265 '
+          "${RUNNER_TEMP}/vmaf-cli/tools/vmaf" --version
 
       - name: Save apt archives
         if: ${{ !cancelled() && steps.apt-install.outcome == 'success' && steps.apt-cache.outputs.cache-hit != 'true' }}
@@ -799,28 +824,8 @@ jobs:
             exit 1
           fi
 
-  # ===== MCP smoke gate (T7-MCP-SMOKE-CI / Research-0034 gap #3) =====
-  # Builds libvmaf with the full MCP transport matrix (sse + uds + stdio)
-  # and exercises both the embedded C-side scaffold smoke (core/test/
-  # test_mcp_smoke.c — pins the -ENOSYS contract per ADR-0209) and the
-  # Python MCP server pytest suite under mcp-server/vmaf-mcp/tests/.
-  #
-  # Before this lane existed, only `supply-chain.yml::mcp-build` exercised
-  # the MCP surface — and that just builds a wheel without running any
-  # tests. The Python `tests/test_*.py` files and the C `test_mcp_smoke`
-  # binary were never invoked in CI. This job closes that gap.
-  #
-  # Local repro:
-  #   cd libvmaf && meson setup build-mcp \
-  #     -Denable_cuda=false -Denable_sycl=false \
-  #     -Denable_mcp=true -Denable_mcp_sse=true \
-  #     -Denable_mcp_uds=true -Denable_mcp_stdio=true && \
-  #   meson compile -C build-mcp && \
-  #   python3 ../scripts/ci/run_meson_test.py -- -C build-mcp test_mcp_smoke --print-errorlogs
-  #   cd ../mcp-server/vmaf-mcp && \
-  #   python3 -m venv ~/.cache/mcp-venv && \
-  #   ~/.cache/mcp-venv/bin/pip install -e .[dev] && \
-  #   ~/.cache/mcp-venv/bin/pytest tests/ -v
+  # MCP smoke gate: the C scaffold smoke (core/test/test_mcp_smoke.c, ADR-0209)
+  # plus the mcp-server/vmaf-mcp pytest suite, with every MCP transport built.
   mcp-smoke:
     needs: tier
     if: needs.tier.outputs.light == 'true'
@@ -1077,6 +1082,7 @@ jobs:
           # shellcheck disable=SC2046  # the helper prints one option per line, split on purpose
           meson setup build-coverage --buildtype=debug \
             -Db_coverage=true -Denable_cuda=false -Denable_sycl=false \
+            -Denable_zimg=true \
             -Denable_float=true -Denable_avx512=true \
             -Denable_dnn=enabled \
             -Dc_args=-fprofile-update=atomic \
@@ -1087,10 +1093,16 @@ jobs:
         id: coverage_prefetch_go
         if: steps.impact.outputs.golden_harness == 'true'
         run: python3 scripts/ci/prefetch_go_modules.py
+      - name: Fetch the Netflix golden YUV fixtures for the unit suite
+        if: steps.impact.outputs.golden_harness == 'true'
+        run: bash scripts/test/fetch-test-yuvs.sh
       - name: Run meson unit suite (with gcov counters)
         id: coverage_meson_suite
         if: steps.impact.outputs.golden_harness == 'true'
         working-directory: core
+        env:
+          # Fails the Python binding's bit-exact test if the pair is missing.
+          VMAFX_REQUIRE_NETFLIX_PAIR: "1"
         run: >-
           python3 ../scripts/ci/run_meson_test.py -- -C build-coverage
           --print-errorlogs --num-processes 1 --timeout-multiplier 3
@@ -1102,6 +1114,11 @@ jobs:
           echo "${{ github.workspace }}/core/build-coverage/tools" >> "$GITHUB_PATH"
           python3 -m pip install --user --require-hashes \
             -r requirements/locks/pytest-timeout.txt
+      - name: Get the PQ fixture
+        if: steps.impact.outputs.golden_harness == 'true'
+        uses: ./.github/actions/pq-fixture
+        with:
+          phase: get
       - name: Run Python test suite, shard 1/4
         id: python_coverage_shard_1
         if: steps.impact.outputs.golden_harness == 'true'
@@ -1303,6 +1320,10 @@ jobs:
         run: >-
           python3 ../scripts/ci/run_meson_test.py -- -C build-coverage-gpu
           --print-errorlogs --num-processes 1 --timeout-multiplier 3
+      - name: Get the PQ fixture
+        uses: ./.github/actions/pq-fixture
+        with:
+          phase: get
       - name: Run Python suite on CUDA + SYCL backends
         env:
           PYTHONPATH: ${{ github.workspace }}/python

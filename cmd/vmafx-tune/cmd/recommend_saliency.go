@@ -63,10 +63,10 @@ native ROI channel:
   libx264      ASCII --qpfile at 16x16 macroblock granularity
   libaom-av1   the patched FFmpeg -qpfile bridge, same granularity
   libx265      --zones QP delta (per-clip spatial mean)
-  libsvtav1    space-separated QP-offset map at 64x64 super-blocks
-  libvvenc     comma-separated ROI CSV at 64x64 CTUs
+  libsvtav1    patched -qpfile: 16x16 macroblocks -> 64x64 SBs, at most 8 segments
+  libvvenc     no saliency ROI channel; refused (ADR-3386)
 
-Any other encoder exits 2 unless --saliency-fallback-plain is set (or
+Unsupported encoders, including libvvenc, exit 2 unless --saliency-fallback-plain is set (or
 VMAFTUNE_SALIENCY_FALLBACK_OK=1), in which case a plain encode runs and an
 error is logged (ADR-0546).
 

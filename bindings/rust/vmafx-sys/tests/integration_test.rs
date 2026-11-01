@@ -160,3 +160,39 @@ fn context_explicit_close_consumes_on_success() {
     let ctx = VmafContext::new().expect("vmaf_init failed");
     ctx.close().expect("vmaf_close failed");
 }
+
+#[cfg(feature = "vendored")]
+#[test]
+fn vendored_vmaf_version_matches_core() -> Result<(), Box<dyn std::error::Error>> {
+    let expected = env!("VMAFX_CORE_VERSION");
+    // SAFETY: vmaf_version returns a static, null-terminated ASCII string.
+    let c_str = unsafe { std::ffi::CStr::from_ptr(vmafx_sys::vmaf_version()) };
+    let actual = c_str.to_str()?;
+    assert_eq!(
+        actual, expected,
+        "vendored vmaf_version does not match compiled core version"
+    );
+
+    let root = repo_root();
+    let meson_content = std::fs::read_to_string(root.join("core/meson.build"))?;
+    for line in meson_content.lines().take(64) {
+        let trimmed = line.trim();
+        if trimmed.starts_with("version :") || trimmed.starts_with("version:") {
+            if let Some((_, rest)) = trimmed.split_once(':') {
+                let trimmed_rest = rest.trim();
+                if let Some(quote) = trimmed_rest.chars().next()
+                    && (quote == '\'' || quote == '"')
+                    && let Some(after_quote) = trimmed_rest.strip_prefix(quote)
+                    && let Some((inside, _)) = after_quote.split_once(quote)
+                {
+                    assert!(
+                        actual.contains(inside),
+                        "vmaf_version '{actual}' does not contain meson project version '{inside}'"
+                    );
+                }
+            }
+            break;
+        }
+    }
+    Ok(())
+}

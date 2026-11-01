@@ -25,7 +25,7 @@ sudo dnf install -y \
     clang clang-tools-extra cppcheck \
     meson ninja-build nasm pkgconf-pkg-config \
     python3 python3-pip python3-virtualenv \
-    doxygen shellcheck
+    doxygen shellcheck zimg-devel
 ```
 
 `core/meson.build` needs Meson 1.4.0 or later. If your release ships an older

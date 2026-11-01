@@ -26,13 +26,14 @@
  * upstream's, split into small helpers and without the `goto` of upstream's
  * init (HISS-01, HISS-04).
  *
- * Without HAVE_ZIMG (-Denable_zimg=false, the default) every entry point
+ * Without HAVE_ZIMG (when built with -Denable_zimg=false) every entry point
  * fails with -ENOTSUP and logs why.
  */
 
 #include <errno.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -259,13 +260,16 @@ struct VmafPictureConvertContext {
     } src;
 };
 
-/* Last zimg error as text; never fails, falls back to a fixed string. */
+/* Last zimg error as text; never fails. zimg returns the error's code and writes
+ * its message, so only an empty message takes the fixed text. */
 static void zimg_error_text(char *buf, size_t len)
 {
-    if (zimg_get_last_error(buf, len) == ZIMG_ERROR_SUCCESS)
+    buf[0] = '\0';
+    const zimg_error_code_e code = zimg_get_last_error(buf, len);
+    if (buf[0] != '\0')
         return;
-    strncpy(buf, "no error text available", len - 1u);
-    buf[len - 1u] = '\0';
+    if (snprintf(buf, len, "zimg gave no text for error %d", (int)code) < 0)
+        buf[0] = '\0';
 }
 
 static void context_free(VmafPictureConvertContext *c)

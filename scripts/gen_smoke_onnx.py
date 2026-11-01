@@ -100,6 +100,7 @@ def update_registry(path: Path, sha256_hex: str) -> None:
         "onnx": "smoke_v0.onnx",
         "sha256": sha256_hex,
         "opset": OPSET,
+        "teacher": "none",
         "smoke": True,
         "notes": "CI load-path probe (Conv + Identity). Not a quality model.",
     }
