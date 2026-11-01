@@ -17,9 +17,9 @@ the same scoring path, recommends a CRF for the next pass. Built with
  doc/filters.texi               |  151 ++
  libavfilter/Makefile           |    2 +
  libavfilter/allfilters.c       |    2 +
- libavfilter/vf_vmafx.c         | 2905 ++++++++++++++++++++++++++++++++
+ libavfilter/vf_vmafx.c         | 2911 ++++++++++++++++++++++++++++++++
  libavfilter/vf_vmafx_options.h |  152 ++
- 6 files changed, 3217 insertions(+)
+ 6 files changed, 3223 insertions(+)
  create mode 100644 libavfilter/vf_vmafx.c
  create mode 100644 libavfilter/vf_vmafx_options.h
 
@@ -250,10 +250,10 @@ index 5ecf9a8698318dd84d5d3723df2053a2c9f20304..b923bf9ec16ee0818b64509ca8af9f18
  extern const FFFilter ff_vf_w3fdif;
 diff --git a/libavfilter/vf_vmafx.c b/libavfilter/vf_vmafx.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..4f493fb1a477f5edb857b85ee163a79d72ba93a7
+index 0000000000000000000000000000000000000000..23654d0cca67e34a9bb14de27183eae9fca88938
 --- /dev/null
 +++ b/libavfilter/vf_vmafx.c
-@@ -0,0 +1,2905 @@
+@@ -0,0 +1,2911 @@
 +/*
 + * Copyright 2026 Lusoris
 + *
@@ -1906,10 +1906,12 @@ index 0000000000000000000000000000000000000000..4f493fb1a477f5edb857b85ee163a79d
 +    return 0;
 +}
 +
-+/* Submit the span the clock cut: one window per model. */
++/* Submit the span the clock cut: one window per model; none without a model. */
 +static int windows_submit(AVFilterContext *ctx, const VmafxWindowSpan *span)
 +{
 +    VMAFXContext *s = ctx->priv;
++    if (!s->n_models)
++        return 0;
 +    if (s->span_count == VMAFX_MAX_SPANS) {
 +        int ret = windows_collect(ctx, 1); /* bounded: wait for the oldest */
 +        if (ret < 0)
@@ -2337,10 +2339,14 @@ index 0000000000000000000000000000000000000000..4f493fb1a477f5edb857b85ee163a79d
 +    return n >= 0 && (size_t)n < size ? 0 : AVERROR(EINVAL);
 +}
 +
-+/* Each `|`-separated model spec loaded and mounted; none: the default. */
++/* Each `|`-separated model spec loaded and mounted; none: the default. An
++ * explicitly empty `model=` beside `feature=` mounts no model, so only the
++ * features score (the CLI's --no_prediction). */
 +static int use_models(AVFilterContext *ctx)
 +{
 +    VMAFXContext *s = ctx->priv;
++    if (s->model && !*s->model && s->feature && *s->feature)
++        return 0;
 +    char *copy = av_strdup(s->model ? s->model : "");
 +    if (!copy)
 +        return AVERROR(ENOMEM);

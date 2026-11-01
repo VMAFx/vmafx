@@ -396,12 +396,47 @@ def check_errors(args: argparse.Namespace, tmp: Path) -> list[Check]:
     ]
 
 
+def report_metrics(path: Path) -> set[str]:
+    """The metric names of every frame of a JSON report; none when it is missing."""
+    if not path.is_file():
+        return set()
+    frames = json.loads(path.read_text(encoding="utf-8")).get("frames") or []
+    return {name for frame in frames for name in frame.get("metrics") or {}}
+
+
+def check_feature_only(args: argparse.Namespace, tmp: Path) -> list[Check]:
+    """An empty model= beside feature= scores the feature alone; an empty model=
+    without feature= still scores the default model (the boundary)."""
+    only, both = tmp / "feature-only.json", tmp / "empty-model.json"
+    run_only = contract_run(
+        args, RATE24, RATE24, f"[0:v][1:v]vmafx=model=:feature=psnr:log_path={escape(only)}"
+    )
+    run_both = contract_run(args, RATE24, RATE24, f"[0:v][1:v]vmafx=model=:log_path={escape(both)}")
+    names, default = report_metrics(only), report_metrics(both)
+    feature_ok = run_only.returncode == 0 and "psnr_y" in names
+    feature_ok = feature_ok and "vmaf" not in names and "VMAF score" not in run_only.stderr
+    default_ok = run_both.returncode == 0 and "vmaf" in default
+    return [
+        (
+            "model= with feature=psnr reports psnr and no vmaf",
+            feature_ok,
+            f"exit {run_only.returncode}; metrics {sorted(names)}: {run_only.stderr[-200:]}",
+        ),
+        (
+            "model= without feature scores the default model",
+            default_ok,
+            f"exit {run_both.returncode}; metrics {sorted(default)}",
+        ),
+    ]
+
+
 def contract_results(args: argparse.Namespace, tmp: Path) -> list[Check]:
     return [
         *check_matched(args),
         *check_short_reference(args, tmp),
         *check_rates_and_offset(args),
         *check_errors(args, tmp),
+        *check_feature_only(args, tmp),
     ]
 
 

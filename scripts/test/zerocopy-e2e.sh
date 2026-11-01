@@ -189,8 +189,9 @@ run_leg() {
   echo "$rc" >"$base.rc"
 }
 
-# filter_option KIND ARG: the libvmaf options selecting the case. A feature case
-# switches the default model off (empty model=) so only that feature is measured.
+# filter_option KIND ARG: the vmafx options selecting the case. A feature case
+# passes an empty model= beside feature=, which mounts no model, so the report
+# holds only that feature's metrics (docs/usage/ffmpeg.md, Models and features).
 filter_option() {
   if [ "$1" = model ]; then printf 'model=%s' "$2"; else printf "model=:feature='%s'" "$2"; fi
 }
