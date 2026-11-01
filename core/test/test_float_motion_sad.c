@@ -20,6 +20,7 @@
 
 #include <math.h>
 
+#include "float_bits.h"
 #include "test.h"
 
 #include "feature/float_motion_sad.h"
@@ -45,7 +46,8 @@ static char *test_sum_is_one_running_float(void)
     /* 2^24, then seven additions of 1 that each round back to 2^24; the
      * exact sum is 2^24 + 7. Pixel count 2 * 8. */
     const double score = vmaf_float_motion_score_from_row_sads(rows, 2u, ROWS);
-    mu_assert("the rows are not added into one running float", score == (double)(BIG / 16.0f));
+    mu_assert("the rows are not added into one running float",
+              vmaf_test_identical_f64(score, (double)(BIG / 16.0f)));
     return NULL;
 }
 
@@ -57,7 +59,8 @@ static char *test_sum_runs_top_to_bottom(void)
     /* Seven ones first, exactly 7, then 2^24: one rounding, to 2^24 + 8.
      * The other order stays at 2^24. */
     const double score = vmaf_float_motion_score_from_row_sads(rows, 2u, ROWS);
-    mu_assert("the rows are not added top to bottom", score == (double)((BIG + 7.0f) / 16.0f));
+    mu_assert("the rows are not added top to bottom",
+              vmaf_test_identical_f64(score, (double)((BIG + 7.0f) / 16.0f)));
     mu_assert("the fixture does not tell the two orders apart", BIG + 7.0f != BIG);
     return NULL;
 }
@@ -67,8 +70,10 @@ static char *test_division_is_float(void)
     const float rows[1] = {1.0f};
     /* 1 / 3 rounded to float, then widened: not the double quotient. */
     const double score = vmaf_float_motion_score_from_row_sads(rows, 3u, 1u);
-    mu_assert("the mean is not taken in float", score == (double)(1.0f / 3.0f));
-    mu_assert("the fixture does not tell float from double", score != 1.0 / 3.0);
+    mu_assert("the mean is not taken in float",
+              vmaf_test_identical_f64(score, (double)(1.0f / 3.0f)));
+    mu_assert("the fixture does not tell float from double",
+              !vmaf_test_identical_f64(score, 1.0 / 3.0));
     return NULL;
 }
 

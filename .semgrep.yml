@@ -130,24 +130,96 @@ rules:
     # compiles, so the CUDA / HIP / SYCL twin tests never reached it. This rule
     # reads every test source before the push. Comparisons against a literal,
     # a macro or k-constant, and the `x != x` NaN idiom stay `==`, as CodeQL
-    # allows them. scripts/ci/tests/test_semgrep_float_identity.py plants both.
+    # allows them. The exemption covers a whole operand only (an optional sign
+    # and one literal, macro or k-constant): `1.0 + y` or `(double)(y * 2.0)`
+    # stays in scope. Semgrep looks through casts, so any operand cast to an
+    # integer type, such as `(uint64_t)expected`, makes an integer comparison
+    # and is exempt. scripts/ci/tests/test_semgrep_float_identity.py
+    # plants each case.
     patterns:
       - pattern-either:
-          - pattern: (double $A) == (double $B)
-          - pattern: (double $A) != (double $B)
-          - pattern: (float $A) == (float $B)
-          - pattern: (float $A) != (float $B)
+          # One typed side is enough: Semgrep infers no type for an
+          # arithmetic operand such as `1.0 + y`, so requiring both sides
+          # typed missed every comparison with a computed expression.
+          - pattern: (double $A) == $B
+          - pattern: $A == (double $B)
+          - pattern: (double $A) != $B
+          - pattern: $A != (double $B)
+          - pattern: (float $A) == $B
+          - pattern: $A == (float $B)
+          - pattern: (float $A) != $B
+          - pattern: $A != (float $B)
       - pattern-not: $X == $X
       - pattern-not: $X != $X
+      # Semgrep types an operand through its cast, so `(uint64_t)expected`
+      # reads as the double `expected`. An integer cast makes the comparison
+      # an integer one; these pairs drop it.
+      - pattern-not: $X == (uint8_t) $Y
+      - pattern-not: (uint8_t) $Y == $X
+      - pattern-not: $X != (uint8_t) $Y
+      - pattern-not: (uint8_t) $Y != $X
+      - pattern-not: $X == (uint16_t) $Y
+      - pattern-not: (uint16_t) $Y == $X
+      - pattern-not: $X != (uint16_t) $Y
+      - pattern-not: (uint16_t) $Y != $X
+      - pattern-not: $X == (uint32_t) $Y
+      - pattern-not: (uint32_t) $Y == $X
+      - pattern-not: $X != (uint32_t) $Y
+      - pattern-not: (uint32_t) $Y != $X
+      - pattern-not: $X == (uint64_t) $Y
+      - pattern-not: (uint64_t) $Y == $X
+      - pattern-not: $X != (uint64_t) $Y
+      - pattern-not: (uint64_t) $Y != $X
+      - pattern-not: $X == (int8_t) $Y
+      - pattern-not: (int8_t) $Y == $X
+      - pattern-not: $X != (int8_t) $Y
+      - pattern-not: (int8_t) $Y != $X
+      - pattern-not: $X == (int16_t) $Y
+      - pattern-not: (int16_t) $Y == $X
+      - pattern-not: $X != (int16_t) $Y
+      - pattern-not: (int16_t) $Y != $X
+      - pattern-not: $X == (int32_t) $Y
+      - pattern-not: (int32_t) $Y == $X
+      - pattern-not: $X != (int32_t) $Y
+      - pattern-not: (int32_t) $Y != $X
+      - pattern-not: $X == (int64_t) $Y
+      - pattern-not: (int64_t) $Y == $X
+      - pattern-not: $X != (int64_t) $Y
+      - pattern-not: (int64_t) $Y != $X
+      - pattern-not: $X == (size_t) $Y
+      - pattern-not: (size_t) $Y == $X
+      - pattern-not: $X != (size_t) $Y
+      - pattern-not: (size_t) $Y != $X
+      - pattern-not: $X == (int) $Y
+      - pattern-not: (int) $Y == $X
+      - pattern-not: $X != (int) $Y
+      - pattern-not: (int) $Y != $X
+      - pattern-not: $X == (unsigned) $Y
+      - pattern-not: (unsigned) $Y == $X
+      - pattern-not: $X != (unsigned) $Y
+      - pattern-not: (unsigned) $Y != $X
+      - pattern-not: $X == (long) $Y
+      - pattern-not: (long) $Y == $X
+      - pattern-not: $X != (long) $Y
+      - pattern-not: (long) $Y != $X
+      - pattern-not: $X == (bool) $Y
+      - pattern-not: (bool) $Y == $X
+      - pattern-not: $X != (bool) $Y
+      - pattern-not: (bool) $Y != $X
       - metavariable-regex:
           metavariable: $A
-          regex: '^(?![-+(\s]*([0-9.]|\(double\)\s*\(|k[A-Z]|[A-Z][A-Z0-9_]*\b))'
+          regex: '^(?!\s*[-+]?\s*([0-9][0-9.]*([eE][-+]?[0-9]+)?[fFlL]?|\.[0-9]+([eE][-+]?[0-9]+)?[fFlL]?|k[A-Z][A-Za-z0-9_]*|[A-Z][A-Z0-9_]*)\s*$)'
       - metavariable-regex:
           metavariable: $B
-          regex: '^(?![-+(\s]*([0-9.]|\(double\)\s*\(|k[A-Z]|[A-Z][A-Z0-9_]*\b))'
+          regex: '^(?!\s*[-+]?\s*([0-9][0-9.]*([eE][-+]?[0-9]+)?[fFlL]?|\.[0-9]+([eE][-+]?[0-9]+)?[fFlL]?|k[A-Z][A-Za-z0-9_]*|[A-Z][A-Z0-9_]*)\s*$)'
     paths:
       include:
         - /core/test/**
+      # Declared exceptions only, one file each:
+      # .config/lint-exceptions.d/vmaf-test-float-identity-via-float-bits.toml.
+      # The test requires this list to equal the live entries there.
+      exclude:
+        - /core/test/test_pelorus_interop.c
     message: >
       Two computed floating-point values are compared with == or !=. Use
       vmaf_test_identical_f64() / _f32() from core/test/float_bits.h (negate it

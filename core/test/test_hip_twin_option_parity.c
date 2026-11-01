@@ -254,11 +254,6 @@ static mu_message_t pair_run(Pair *pair, const Fixture *fx, const char *cpu_name
 /* Comparisons                                                        */
 /* ------------------------------------------------------------------ */
 
-static bool within(double cpu, double gpu, double tol)
-{
-    return vmaf_test_identical_f64(cpu, gpu) || fabs(cpu - gpu) <= tol;
-}
-
 /* `tol` is a linear-domain tolerance; `db` maps it through the slope of
  * -10*log10(1 - x), which is 10 / ln(10) * 10^(dB / 10). */
 static mu_message_t expect_close(const Pair *pair, const char *name, unsigned frames, double tol,
@@ -273,7 +268,7 @@ static mu_message_t expect_close(const Pair *pair, const char *name, unsigned fr
                   !vmaf_feature_score_at_index(pair->gpu, name, &gpu, i));
         const double limit =
             db && isfinite(cpu) ? tol * (10.0 / log(10.0)) * pow(10.0, cpu / 10.0) : tol;
-        if (!within(cpu, gpu, limit)) {
+        if (!vmaf_test_within_f64(cpu, gpu, limit)) {
             (void)fprintf(stderr, "\n%s[%u]: cpu=%.17g hip=%.17g limit=%.3g\n", name, i, cpu, gpu,
                           limit);
             return "HIP twin differs from the CPU beyond the twin's parity tolerance";

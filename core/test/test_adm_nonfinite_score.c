@@ -8,6 +8,7 @@
 #include "feature/adm_score.h"
 #include "feature/nonfinite_score.h"
 #include "mu_table.h"
+#include "float_bits.h"
 #include "test.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit; MSVC's documented
@@ -318,7 +319,7 @@ static char *test_vif_complete_emitter_preserves_collector_ratio_precision(void)
         feature_collector, "VMAF_integer_feature_vif_scale0_score", &published, 24u);
     mu_assert("integer VIF score is available", err == 0);
     mu_assert("CPU/CUDA/HIP integer VIF keeps float division",
-              published == (double)((float)1.0 / (float)3.0));
+              vmaf_test_identical_f64(published, (double)((float)1.0 / (float)3.0)));
 
     scores.single_precision_ratio = false;
     err = vmaf_vif_emit_scores(feature_collector, NULL, "integer_vif_sycl_test", &scores,
@@ -327,7 +328,8 @@ static char *test_vif_complete_emitter_preserves_collector_ratio_precision(void)
     err = vmaf_feature_collector_get_score(
         feature_collector, "VMAF_integer_feature_vif_scale0_score", &published, 25u);
     mu_assert("SYCL/Metal integer VIF score is available", err == 0);
-    mu_assert("SYCL/Metal integer VIF keeps double division", published == 1.0 / 3.0);
+    mu_assert("SYCL/Metal integer VIF keeps double division",
+              vmaf_test_identical_f64(published, 1.0 / 3.0));
 
     vmaf_feature_collector_destroy(feature_collector);
     return NULL;

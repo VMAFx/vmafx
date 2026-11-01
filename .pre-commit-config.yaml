@@ -1149,9 +1149,9 @@ repos:
         # then scans the real tests (ADR-1502).
         entry: python3 -m unittest discover -s scripts/ci/tests -p test_semgrep_float_identity.py
         language: python
-        additional_dependencies: ["semgrep>=1.182.1,<2.0"]
+        additional_dependencies: ["semgrep>=1.182.1,<2.0", "pyyaml==6.0.3"]
         require_serial: true
-        files: '^(\.semgrep\.yml|\.pre-commit-config\.yaml|scripts/ci/tests/test_semgrep_(float_identity|vendored_scope)\.py|core/test/float_bits\.h)$'
+        files: '^(\.semgrep\.yml|\.pre-commit-config\.yaml|scripts/ci/(lint_exceptions|tests/test_semgrep_(float_identity|vendored_scope))\.py|\.config/lint-exceptions\.d/vmaf-test-float-identity-[a-z-]+\.toml|core/test/.+\.(c|cpp|h))$'
         pass_filenames: false
 
       # Shell-injection regression tests. Both fixes below were reverted once

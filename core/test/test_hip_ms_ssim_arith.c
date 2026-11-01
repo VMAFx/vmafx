@@ -528,7 +528,7 @@ static char *test_pair_window_sum_rounds_like_fp64(void)
             reference += (double)prod;
             plain += prod;
         }
-        differing += vmaf_hip_ms_pair_round(&pair) != (float)reference;
+        differing += !vmaf_test_identical_f32(vmaf_hip_ms_pair_round(&pair), (float)reference);
         fp32_differing += !vmaf_test_identical_f32(plain, (float)reference);
     }
     mu_assert("the pair sum does not round like the reference's fp64 sum",

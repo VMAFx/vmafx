@@ -152,7 +152,7 @@ static char *test_adm_accum_precision(void)
         /* Intentional bit-exact comparison: the fixed SIMD expression must
          * produce the identical IEEE-754 float as the scalar reference.
          * An epsilon here would defeat the regression guard. */
-        if (!vmaf_test_identical_f64(f_fixed, f_scalar)) { /* bit-exact parity assertion */
+        if (!vmaf_test_identical_f32(f_fixed, f_scalar)) { /* bit-exact parity assertion */
             (void)fprintf(stderr, "  adm f_accum precision: accum=%" PRId64 " scalar=%a fixed=%a\n",
                           accum, (double)f_scalar, (double)f_fixed);
             return "adm_cm_avx2 f_accum_h fixed expr differs from scalar";
@@ -163,7 +163,7 @@ static char *test_adm_accum_precision(void)
          * vacuous — if it never fires, the test provides no regression
          * coverage). We tolerate the case where they happen to be equal
          * on a given value, but log it so we know. */
-        if (vmaf_test_identical_f64(f_buggy,
+        if (vmaf_test_identical_f32(f_buggy,
                                     f_scalar)) { /* vacuity guard: intentional exact compare */
             (void)fprintf(stderr,
                           "  info: adm accum %" PRId64 " buggy==scalar (no ULP diff "
@@ -276,7 +276,7 @@ static char *check_adm_cm_avx2_smoke_result(float r1, float r2, float r_p2)
         return "adm_cm_avx2 returned non-finite or negative value";
     }
     /* Determinism: both calls must agree bit-exactly (intentional exact compare). */
-    if (!vmaf_test_identical_f64(r1, r2)) { /* bit-exact determinism assertion */
+    if (!vmaf_test_identical_f32(r1, r2)) { /* bit-exact determinism assertion */
         (void)fprintf(stderr, "  adm_cm_avx2 non-deterministic: r1=%a r2=%a\n", (double)r1,
                       (double)r2);
         return "adm_cm_avx2 is non-deterministic";
@@ -285,7 +285,7 @@ static char *check_adm_cm_avx2_smoke_result(float r1, float r2, float r_p2)
         (void)fprintf(stderr, "  adm_cm_avx2 p=2 returned invalid value: %g\n", (double)r_p2);
         return "adm_cm_avx2 p=2 returned invalid value";
     }
-    if (vmaf_test_identical_f64(
+    if (vmaf_test_identical_f32(
             r_p2, r1)) { /* intentional exact compare: p_norm must visibly change result */
         return "adm_cm_avx2 ignored adm_p_norm";
     }
@@ -401,7 +401,7 @@ static char *check_i4_adm_cm_avx2_p_norm_result(float r_p3, float r_p2)
     if (!(r_p3 >= 0.0f && r_p3 < 1e10f && r_p2 >= 0.0f && r_p2 < 1e10f)) {
         return "i4_adm_cm_avx2 p-norm result invalid";
     }
-    if (vmaf_test_identical_f64(
+    if (vmaf_test_identical_f32(
             r_p2,
             r_p3)) { /* intentional exact compare: different p_norm must produce different result */
         return "i4_adm_cm_avx2 ignored adm_p_norm";
