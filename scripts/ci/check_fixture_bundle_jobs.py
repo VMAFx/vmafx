@@ -11,7 +11,9 @@ HTTP 404 (or, with `bypass_download=True`, with a missing file).
 
 A job runs a test file when one of its `run:` steps, or a `scripts/ci/*.sh` script a
 step calls, names the whole suite (`python/test/` or `tox -c python`) or the file's
-own name. Usage: check_fixture_bundle_jobs.py [--root DIR]; exit 1 lists each gap.
+own name. A `phase: finish` step must run after a failed test too, so its `if:` starts
+with `!cancelled()` or `always()`; otherwise a red test leaves the fixture in the shared
+resource cache. Usage: check_fixture_bundle_jobs.py [--root DIR]; exit 1 lists each gap.
 """
 
 from __future__ import annotations
@@ -29,6 +31,7 @@ WHOLE_SUITE = re.compile(r"(python/test/?(?=[\s\"'\\]|$)|tox\s+-c\s+python\b)", 
 CALLED_SCRIPT = re.compile(r"\b(scripts/ci/[\w./-]+\.sh)\b")
 FIXTURE_ACTION = "./.github/actions/pq-fixture"
 DEFAULT_BUNDLE = "pq-sollevante-v1"
+RUNS_AFTER_FAILURE = re.compile(r"^\s*(\$\{\{\s*)?(!\s*cancelled\(\)|always\(\))")
 MAX_STEPS = 500
 
 
@@ -63,6 +66,18 @@ def fetched_bundles(steps: list[dict[str, Any]]) -> set[str]:
     return fetched
 
 
+def finish_steps_skipped_on_failure(steps: list[dict[str, Any]]) -> list[str]:
+    """Names of finish steps that a failed earlier step would skip."""
+    skipped: list[str] = []
+    for index, step in enumerate(steps[:MAX_STEPS]):
+        params = step.get("with") or {}
+        if step.get("uses") != FIXTURE_ACTION or params.get("phase") != "finish":
+            continue
+        if not RUNS_AFTER_FAILURE.match(str(step.get("if", ""))):
+            skipped.append(str(step.get("name", f"step {index + 1}")))
+    return skipped
+
+
 def job_gaps(root: Path, steps: list[dict[str, Any]], tests: dict[str, set[str]]) -> list[str]:
     """Bundles a job's tests read but the job never fetches, as 'bundle (test)' strings."""
     commands = job_commands(root, steps)
@@ -86,6 +101,11 @@ def check(root: Path) -> list[str]:
             steps = (job or {}).get("steps") or []
             for gap in job_gaps(root, steps, tests):
                 problems.append(f"{workflow.name}:{job_id}: does not fetch {gap}")
+            for name in finish_steps_skipped_on_failure(steps):
+                problems.append(
+                    f"{workflow.name}:{job_id}: '{name}' is skipped after a failed step; "
+                    "start its if: with !cancelled()"
+                )
     return problems
 
 
@@ -100,8 +120,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"check_fixture_bundle_jobs: {line}", file=sys.stderr)
     if problems:
         print(
-            f"check_fixture_bundle_jobs: add a '{FIXTURE_ACTION}' step with phase: get "
-            "for each bundle before the tests run",
+            f"check_fixture_bundle_jobs: a fetch gap needs a '{FIXTURE_ACTION}' step with "
+            "phase: get before the tests; a finish step needs if: !cancelled()",
             file=sys.stderr,
         )
         return 1

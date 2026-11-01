@@ -155,7 +155,7 @@ jobs:
         run: bash scripts/ci/run-hdr-golden-pins.sh "${{ runner.temp }}/hdr_golden_junit.xml"
 
       - name: Finish with the PQ fixture
-        if: steps.impact.outputs.golden_harness == 'true'
+        if: ${{ !cancelled() && steps.impact.outputs.golden_harness == 'true' }}
         uses: ./.github/actions/pq-fixture
         with:
           phase: finish

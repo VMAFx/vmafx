@@ -78,10 +78,43 @@ class FixtureBundleJobs(unittest.TestCase):
     def test_finish_phase_alone_does_not_fetch(self) -> None:
         """Boundary: a finish step is no fetch."""
         finish = (
-            "      - uses: ./.github/actions/pq-fixture\n        with:\n          phase: finish\n"
+            "      - if: always()\n        uses: ./.github/actions/pq-fixture\n"
+            "        with:\n          phase: finish\n"
         )
         problems = self._check(finish + "      - run: tox -c python\n")
         self.assertEqual(len(problems), 2)
+
+    def test_finish_without_a_failure_condition_fails(self) -> None:
+        """Negative: a finish step with a plain condition is skipped after a red test."""
+        steps = (
+            FETCH
+            + "      - run: tox -c python\n"
+            + "      - name: Put away\n        if: matrix.os == 'macos-latest'\n"
+            + FETCH.replace("phase: get", "phase: finish").replace("      - uses", "        uses")
+        )
+        problems = self._check(steps.replace(FETCH, FETCH + FETCH_ICTCP, 1))
+        self.assertEqual(len(problems), 1)
+        self.assertIn("'Put away' is skipped after a failed step", problems[0])
+
+    def test_finish_with_no_condition_fails(self) -> None:
+        """Negative: a finish step without any if: is skipped after a red test too."""
+        finish = FETCH.replace("phase: get", "phase: finish")
+        problems = self._check(FETCH + FETCH_ICTCP + "      - run: tox -c python\n" + finish)
+        self.assertEqual(
+            problems,
+            ["w.yml:t: 'step 4' is skipped after a failed step; start its if: with !cancelled()"],
+        )
+
+    def test_finish_after_failure_passes(self) -> None:
+        """Boundary: !cancelled() in an expression block and bare always() both run after a failure."""
+        for cond in ("${{ !cancelled() && matrix.os == 'x' }}", "always()"):
+            finish = (
+                f"      - if: {cond}\n        uses: ./.github/actions/pq-fixture\n"
+                "        with:\n          phase: finish\n"
+            )
+            self.assertEqual(
+                self._check(FETCH + FETCH_ICTCP + "      - run: tox -c python\n" + finish), []
+            )
 
     def test_repository_workflows_fetch_their_bundles(self) -> None:
         """The repository's own workflows have no gap."""

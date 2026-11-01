@@ -35,6 +35,7 @@ from scripts.lib.http_stand_in import StandIn  # noqa: E402
 SCRIPT = ROOT / "scripts" / "test" / "fetch-test-yuvs.sh"
 POLICY = "compat/python-vmaf/tools/retrying_download.py"
 BASH = shutil.which("bash")
+ZSTD = shutil.which("zstd")
 FIRST = b"first fixture\n" * 32
 SECOND = b"second fixture\n" * 32
 BODIES = {"/yuv/first.yuv": FIRST, "/yuv/second.yuv": SECOND}
@@ -137,7 +138,10 @@ def sha256_hex(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def make_tar_zst(members: dict[str, bytes]) -> bytes:
+def make_tar_zst(
+    members: dict[str, bytes], links: dict[str, tuple[bytes, str]] | None = None
+) -> bytes:
+    """A zstd tar of ``members``, plus ``links``: name -> (tar type, link target)."""
     bio = io.BytesIO()
     with tarfile.open(fileobj=bio, mode="w") as tf:
         for name, content in sorted(members.items()):
@@ -145,8 +149,14 @@ def make_tar_zst(members: dict[str, bytes]) -> bytes:
             ti.size = len(content)
             ti.mtime = 1761868800
             tf.addfile(ti, io.BytesIO(content))
-    proc = subprocess.run(
-        ["zstd", "-q"],  # noqa: S607
+        for name, (kind, target) in sorted((links or {}).items()):
+            ti = tarfile.TarInfo(name=name)
+            ti.type = kind
+            ti.linkname = target
+            ti.mtime = 1761868800
+            tf.addfile(ti)
+    proc = subprocess.run(  # noqa: S603 -- fixed argv, zstd resolved by shutil.which
+        [str(ZSTD), "-q"],
         input=bio.getvalue(),
         capture_output=True,
         check=True,
@@ -204,7 +214,7 @@ def fetch_bundle(
     BASH is None
     or shutil.which("sha256sum") is None
     or shutil.which("tar") is None
-    or shutil.which("zstd") is None,
+    or ZSTD is None,
     "needs bash, sha256sum, tar, and zstd",
 )
 class FetchBundleTest(unittest.TestCase):
@@ -244,6 +254,23 @@ class FetchBundleTest(unittest.TestCase):
             self.assertFalse(target_dir.exists())
             self.assertFalse((Path(tmp) / "evil.txt").exists())
             self.assertIn("archive member contains illegal path or traversal", done.stderr)
+
+    def _refuses_link(self, kind: bytes, target: str) -> None:
+        """A bundle holding a link member of ``kind`` is refused and leaves nothing."""
+        members = {f"pq-sollevante-v1/{k}": v for k, v in SYNTHETIC_FILES.items()}
+        archive = make_tar_zst(members, {"pq-sollevante-v1/escape": (kind, target)})
+        bodies = {BUNDLE_REQ_PATH: archive}
+        with tempfile.TemporaryDirectory() as tmp, StandIn(bodies=bodies) as server:
+            done = fetch_bundle(server, Path(tmp), bundle_sha256=sha256_hex(archive))
+            self.assertEqual(done.returncode, 1, done.stdout + done.stderr)
+            self.assertFalse((Path(tmp) / "pq-sollevante-v1").exists())
+            self.assertIn("archive member is not a regular file or directory", done.stderr)
+
+    def test_bundle_symlink_member_refused(self) -> None:
+        self._refuses_link(tarfile.SYMTYPE, "/etc/passwd")
+
+    def test_bundle_hardlink_member_refused(self) -> None:
+        self._refuses_link(tarfile.LNKTYPE, "pq-sollevante-v1/CREDIT.txt")
 
     def test_bundle_5xx_retried(self) -> None:
         bodies = {BUNDLE_REQ_PATH: SYNTHETIC_BUNDLE_TAR_ZST}
@@ -287,7 +314,7 @@ class FetchBundleTest(unittest.TestCase):
 
     def test_print_bundle_sha_names_the_archive_sha(self) -> None:
         done = subprocess.run(  # noqa: S603
-            ["bash", str(SCRIPT), "--print-bundle-sha"],  # noqa: S607
+            [str(BASH), str(SCRIPT), "--print-bundle-sha"],
             capture_output=True,
             text=True,
             check=False,

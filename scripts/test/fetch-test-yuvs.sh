@@ -178,6 +178,32 @@ verify_bundle_members() {
 }
 
 # Check tar archive for path traversal or absolute paths before extraction.
+# Refuse every archive member that is not a regular file or a directory:
+# a symlink or hard link could point the copy below outside the bundle.
+# The verbose listing starts each line with the member's type ('-' file,
+# 'd' directory) in GNU tar and bsdtar; a hard link to a file also starts
+# with '-' in bsdtar, so its "link to" marker is refused as well.
+check_member_types() {
+  local archive="$1"
+  local listing line
+
+  if ! listing="$(tar -tvf "${archive}" 2>/dev/null)"; then
+    echo "ERROR: failed to inspect archive contents: ${archive}" >&2
+    return 1
+  fi
+
+  while IFS= read -r line; do
+    [ -z "${line}" ] && continue
+    case "${line}" in
+      [-d]*" link to "* | [-d]*" -> "* | [!-d]*)
+        echo "ERROR: archive member is not a regular file or directory: ${line}" >&2
+        return 1
+        ;;
+    esac
+  done <<<"${listing}"
+  return 0
+}
+
 check_path_traversal() {
   local archive="$1"
   local listing member
@@ -260,7 +286,7 @@ provision_bundle() {
     return 1
   fi
 
-  if ! check_path_traversal "${tmp_archive}"; then
+  if ! check_path_traversal "${tmp_archive}" || ! check_member_types "${tmp_archive}"; then
     echo "ERROR: ${bundle_name} archive failed security validation" >&2
     rm -f "${tmp_archive}"
     rm -rf "${stage_dir}" "${target_dir}"

@@ -653,7 +653,7 @@ jobs:
           tox -c python
 
       - name: Put away the PQ fixture
-        if: ${{ ((startsWith(matrix.os, 'ubuntu') && !matrix.sycl && !matrix.cuda && !matrix.hip) || matrix.os == 'macos-latest') && steps.impact.outputs.c_core == 'true' }}
+        if: ${{ !cancelled() && ((startsWith(matrix.os, 'ubuntu') && !matrix.sycl && !matrix.cuda && !matrix.hip) || matrix.os == 'macos-latest') && steps.impact.outputs.c_core == 'true' }}
         uses: ./.github/actions/pq-fixture
         with:
           phase: finish
