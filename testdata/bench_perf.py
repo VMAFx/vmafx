@@ -225,6 +225,17 @@ def build_env(backend: dict[str, Any], *, ld_library_path: str | None) -> dict[s
     return env
 
 
+def ffmpeg_executable(ffmpeg: Path) -> Path:
+    """Return `ffmpeg` as run_command accepts it: a bare name stays, a path is absolute.
+
+    run_command refuses a relative path with a directory part (`build/ffmpeg`); such a
+    path is resolved against the current directory, as subprocess resolved it before.
+    """
+    if len(ffmpeg.parts) == 1 or ffmpeg.is_absolute():
+        return ffmpeg
+    return ffmpeg.resolve()
+
+
 def run_vmaf(
     test: dict[str, Any],
     backend: dict[str, Any],
@@ -235,7 +246,7 @@ def run_vmaf(
     ld_library_path: str | None,
 ) -> tuple[float | None, int, float, str | None]:
     """Run one FFmpeg VMAF invocation. Returns (pooled, nframes, elapsed, error)."""
-    cmd = build_ffmpeg_command(test, backend, log_path=log_path, ffmpeg=ffmpeg)
+    cmd = build_ffmpeg_command(test, backend, log_path=log_path, ffmpeg=ffmpeg_executable(ffmpeg))
     env = build_env(backend, ld_library_path=ld_library_path)
     start = time.time()
     try:
