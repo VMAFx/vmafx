@@ -89,6 +89,16 @@ def drift(codacy_text: str, precommit_text: str, paths: list[str]) -> list[str]:
     return out
 
 
+def without_glob(codacy_text: str, glob: str) -> str:
+    """The Codacy configuration with one markdownlint glob removed from the parsed YAML."""
+    config = yaml.safe_load(codacy_text)
+    excludes = config["engines"]["markdownlint"]["exclude_paths"]
+    if glob not in excludes:
+        raise ValueError(f"{glob} is not a markdownlint exclusion")
+    excludes.remove(glob)
+    return "---\n" + str(yaml.safe_dump(config, sort_keys=False))
+
+
 def tracked_markdown() -> list[str]:
     """Every tracked Markdown file (.md and .markdown, as the hook takes), plus the probes."""
     listed = run_command(
@@ -109,7 +119,7 @@ class CodacyConfig(unittest.TestCase):
 
     def test_config_without_changelog_tree_fails(self) -> None:
         """Negative: a planted config that drops changelog.d is reported."""
-        planted = CODACY.read_text().replace('      - "changelog.d/**"\n', "")
+        planted = without_glob(CODACY.read_text(), "changelog.d/**")
         self.assertIn(
             "hook-only: changelog.d/fixed/x.md",
             drift(planted, PRECOMMIT.read_text(), list(PROBES)),
@@ -124,10 +134,15 @@ class CodacyConfig(unittest.TestCase):
 
     def test_config_without_root_testdata_glob_fails(self) -> None:
         """Negative: **/testdata/** alone leaves the root testdata tree linted by Codacy."""
-        planted = CODACY.read_text().replace('      - "testdata/**"\n', "")
+        planted = without_glob(CODACY.read_text(), "testdata/**")
         self.assertIn(
             "hook-only: testdata/x.md", drift(planted, PRECOMMIT.read_text(), list(PROBES))
         )
+
+    def test_planting_an_unknown_glob_fails(self) -> None:
+        """Boundary: removing a glob the configuration does not hold is an error, not a no-op."""
+        with self.assertRaises(ValueError):
+            without_glob(CODACY.read_text(), "no-such-tree/**")
 
     def test_config_without_leading_dashes_fails(self) -> None:
         """Negative: Codacy ignores a file that does not start with '---'."""
