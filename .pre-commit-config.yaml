@@ -672,6 +672,12 @@ repos:
         language: script
         pass_filenames: false
         always_run: true
+      - id: test-check-no-tracked-venv
+        name: Virtualenv gate refuses its planted strays
+        entry: bash scripts/ci/tests/test-check-no-tracked-venv.sh
+        language: system
+        files: '^(Makefile|scripts/ci/(tests/test-)?check-no-tracked-venv\.sh)$'
+        pass_filenames: false
       - id: check-local-data-contract
         name: Local state, corpus, and public evidence stay separated
         entry: scripts/ci/check-local-data-contract.sh
