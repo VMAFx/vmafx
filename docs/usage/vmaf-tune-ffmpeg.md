@@ -9,7 +9,7 @@ operating mode.
 | Hook | Patch | What it does | vmaf-tune mode |
 |---|---|---|---|
 | `-qpfile <path>` | 0001 | Per-block QP offsets for `libx264`, `libsvtav1`, `libaom-av1`. | [Saliency-aware encoding](vmaf-tune-saliency-aware.md) |
-| `-vf vmafx_tune` | 0004 | Scores a pair and logs a recommended CRF. | CRF recommendation |
+| `-lavfi vmafx_tune` | 0004 | Scores a pair and logs a recommended CRF. | CRF recommendation |
 | `-pass-autotune` | 0002 | Advisory flag for external 2-pass orchestration. | 2-pass autotuning |
 | `-vmafx-profile <path>` | 0003 | Advisory hand-off to `vmaf-tune encode-profile`. | Report-profile encodes |
 
@@ -190,7 +190,7 @@ macroblock rounds to the nearest. libaom copies the segment map and the
 !!! note "8-segment limit"
     The limit is a quantisation step: nearby QP offsets round together.
 
-## Hook 2: `-vf vmafx_tune` (patch 0004)
+## Hook 2: `-lavfi vmafx_tune` (patch 0004)
 
 The filter takes two video inputs, runs alongside a 1-pass encode and
 emits a recommended CRF for the next pass:
@@ -204,7 +204,7 @@ ffmpeg -i input.mp4 -i reference.mp4 \
 At the end of the run the filter logs:
 
 ```text
-[Parsed_vmafx_tune_0 @ 0x...] recommended_crf=24.3 (target_vmaf=92.0, observed_vmaf=93.6, n_frames=240)
+[Parsed_vmafx_tune_0 @ 0x...] recommended_crf=29.6 (target_vmaf=92.0, observed_vmaf=93.6, n_frames=240)
 ```
 
 !!! note "FFmpeg version"

@@ -36,6 +36,12 @@ LAVFI_FILES: Final = MappingProxyType(
 )
 
 
+QSV_CMD = (
+    "ffmpeg -hwaccel qsv -hwaccel_output_format qsv -i d.mp4 \\\n"
+    "  -lavfi '[0:v]{}hwmap=derive_device=drm,format=drm_prime[d]' -f null -\n"
+)
+
+
 class PatchContractRunner(unittest.TestCase):
     def _tree(self, tmp: str, files: dict[str, str]) -> Path:
         root = Path(tmp)
@@ -116,6 +122,36 @@ class PatchContractRunner(unittest.TestCase):
     def test_repository_workflows_keep_lavfi(self) -> None:
         """The repository's own workflows build the device their tests read."""
         self.assertEqual(MOD.lavfi_without_indev(SCRIPT.parents[2]), [])
+
+    def test_qsv_direct_drm_map_fails(self) -> None:
+        """Negative: QSV frames mapped straight to DRM PRIME in a doc example are reported."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._tree(tmp, {"docs/usage/x.md": "```bash\n" + QSV_CMD.format("") + "```\n"})
+            self.assertEqual(len(MOD.qsv_direct_drm_maps(root)), 1)
+            self.assertIn("docs/usage/x.md:3:", MOD.qsv_direct_drm_maps(root)[0])
+
+    def test_qsv_map_through_vaapi_passes(self) -> None:
+        """Positive: the VAAPI step before the DRM PRIME map is no finding."""
+        with tempfile.TemporaryDirectory() as tmp:
+            via = "hwmap=derive_device=vaapi,format=vaapi,"
+            root = self._tree(tmp, {"scripts/test/x.sh": QSV_CMD.format(via)})
+            self.assertEqual(MOD.qsv_direct_drm_maps(root), [])
+
+    def test_qsv_prose_and_vaapi_decode_pass(self) -> None:
+        """Boundary: prose outside a fence, and VAAPI frames mapped directly, are no finding."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._tree(
+                tmp,
+                {
+                    "docs/usage/x.md": QSV_CMD.format(""),
+                    "testdata/x.py": "'-hwaccel vaapi'\n'[0:v]hwmap=derive_device=drm[d]'\n",
+                },
+            )
+            self.assertEqual(MOD.qsv_direct_drm_maps(root), [])
+
+    def test_repository_has_no_qsv_direct_drm_map(self) -> None:
+        """Positive: the repository's own examples map QSV frames through VAAPI."""
+        self.assertEqual(MOD.qsv_direct_drm_maps(SCRIPT.parents[2]), [])
 
     def test_no_contract_script_fails(self) -> None:
         """Boundary: a tree with no contract script refuses instead of passing empty."""

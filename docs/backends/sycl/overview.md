@@ -223,7 +223,7 @@ When nothing is set, an area threshold decides: `graph` from 1280 x 720 pixels
 upward, `direct` below. The zero-copy VA-import path of the `vmafx`
 FFmpeg filter (with `backend=sycl`) is the exception and defaults to
 `direct` at every resolution: there the graph's output is byte-identical,
-but the per-frame de-tile import plus the graph's compute barrier serialise
+but the per-frame de-tile import plus the graph's compute barrier serializes
 decode and compute, which costs 15 to 25 % at 4K
 ([ADR-1121](../../adr/1121-sycl-qsv-zerocopy-p010-normalization.md)).
 Set `VMAF_SYCL_USE_GRAPH=1` or `VMAF_SYCL_DISPATCH=<feature>:graph` to force

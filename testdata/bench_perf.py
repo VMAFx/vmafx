@@ -97,15 +97,15 @@ def backend_definitions(*, sycl_device: str) -> list[dict[str, Any]]:
             "name": "sycl",
             "init_args": [
                 "-init_hw_device",
-                f"vaapi=va:{sycl_device}",
+                f"drm=dr:{sycl_device}",
                 "-init_hw_device",
-                "qsv=qsv@va",
+                "vaapi=va@dr",
                 "-filter_hw_device",
-                "qsv",
+                "va",
             ],
             "lavfi": (
-                "[0:v]hwupload=extra_hw_frames=128[dis];"
-                "[1:v]hwupload=extra_hw_frames=128[ref];"
+                "[0:v]format=nv12,hwupload=extra_hw_frames=128,hwmap=derive_device=drm,format=drm_prime[dis];"
+                "[1:v]format=nv12,hwupload=extra_hw_frames=128,hwmap=derive_device=drm,format=drm_prime[ref];"
                 "[dis][ref]vmafx=backend=sycl:log_path={log}:log_fmt=json:model=version=vmaf_v0.6.1"
             ),
             "env_extra": {"LIBVA_DRIVER_NAME": "iHD"},

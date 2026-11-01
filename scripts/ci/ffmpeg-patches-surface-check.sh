@@ -95,7 +95,7 @@ check_surface_series() {
       fi
     fi
     local m_cfg
-    m_cfg="$(grep -nE '^\+[[:space:]]*--enable-libvmaf-[a-z0-9_-]+' "$p" 2>/dev/null || [ $? -eq 1 ])"
+    m_cfg="$(grep -nE '^\+[[:space:]]*--enable-libvmaf(-[a-z0-9_-]+)?\b' "$p" 2>/dev/null || [ $? -eq 1 ])"
     if [ -n "$m_cfg" ]; then
       echo "ffmpeg-patches-surface-check: [FAIL] patch adds retired configure flag in $p:" >&2
       printf '%s\n' "$m_cfg" >&2
@@ -191,7 +191,7 @@ scan_single_doc() {
 
   local doc_fail=0
   local pat_retired='\b(libvmaf_(sycl|vulkan|metal|cuda|hip|tune))\b|\bvmaf_pre\b|\bvmaf_pre_temporal\b|-vmaf-profile\b|--enable-libvmaf-[a-zA-Z0-9_-]+'
-  if printf '%s\n' "$cleaned" | grep -qE "$pat_retired"; then
+  if printf '%s\n' "$cleaned" | grep -E "$pat_retired" >/dev/null; then
     echo "ffmpeg-patches-surface-check: [FAIL] retired filter/option in doc ${relpath}:" >&2
     printf '%s\n' "$cleaned" | grep -E "$pat_retired" >&2
     doc_fail=1
@@ -199,7 +199,7 @@ scan_single_doc() {
 
   # shellcheck disable=SC2016 # literal backticks in a grep pattern, nothing to expand
   local pat_plain='--enable-libvmaf\b|(\bfilter\b[^\n`\(\)]*?\blibvmaf\b|\blibvmaf\b[^\n`\(\)]*?\bfilter\b)|-lavfi\s+[^\n]*\blibvmaf\b|-filter_complex\s+[^\n]*\blibvmaf\b'
-  if printf '%s\n' "$cleaned" | grep -qE -e "$pat_plain"; then
+  if printf '%s\n' "$cleaned" | grep -E -e "$pat_plain" >/dev/null; then
     while IFS= read -r line; do
       [ -n "$line" ] || continue
       if ! echo "$line" | grep -qiE "upstream|stock|unpatched|backwards|backward|compat"; then
@@ -217,7 +217,7 @@ check_surface_docs_examples() {
   local fail=0
   local all_docs=()
   if git -C "${REPO_ROOT}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    mapfile -t all_docs < <(git -C "${REPO_ROOT}" ls-files "docs/**/*.md" "README.md" "ffmpeg-patches/README.md")
+    mapfile -t all_docs < <(git -C "${REPO_ROOT}" ls-files "docs/*.md" "docs/**/*.md" "README.md" "ffmpeg-patches/README.md")
   else
     mapfile -t all_docs < <(cd "${REPO_ROOT}" && find docs README.md ffmpeg-patches/README.md -name "*.md" 2>/dev/null | sed "s|^\./||")
   fi
@@ -273,7 +273,7 @@ check_surface_patch_tests() {
   fi
   local s
   local pat_retired='\b(libvmaf_(sycl|vulkan|metal|cuda|hip|tune))\b|\bvmaf_pre\b|\bvmaf_pre_temporal\b|-vmaf-profile\b|--enable-libvmaf-[a-zA-Z0-9_-]+'
-  local pat_plain='libvmaf=[^[:space:]]+|\bfilter_complex[^\n]*\blibvmaf\b'
+  local pat_plain='libvmaf=[^[:space:]]+|\b(filter_complex|lavfi)\b.*\blibvmaf\b'
   for s in "${test_scripts[@]}"; do
     local relpath
     relpath="ffmpeg-patches/test/$(basename "$s")"

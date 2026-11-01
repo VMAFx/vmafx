@@ -20,6 +20,14 @@ runs an `ffmpeg-patches/test/*.sh` script that reads `-f lavfi` (itself or throu
 a helper it sources) unless the configure line adds `--enable-indev=lavfi`: that
 build has no lavfi input device and the script fails to open its first input.
 
+It also refuses a command that maps QSV frames straight to DRM PRIME
+(`hwmap=derive_device=drm` with no `derive_device=vaapi` step before it on the
+same line) within QSV_WINDOW lines after `-hwaccel qsv` or
+`-hwaccel_output_format qsv`: FFmpeg maps a QSV frame only to its VAAPI parent
+or to system memory, and the direct map fails with `Function not implemented`.
+Markdown is read inside code fences only, so prose that explains the rule is
+not a command.
+
 Usage: run_ffmpeg_patch_contract_tests.py [--root DIR]; exit 1 names each
 failing script with the tail of its output.
 """
@@ -43,12 +51,26 @@ TAIL_LINES = 12
 TIMEOUT_SECONDS = 120.0
 PATCH_REF = re.compile(r"ffmpeg-patches/[0-9]{4}-[A-Za-z0-9._-]+\.patch")
 LIVE_TREES = ("core", "dev", "docker", "tools", "mcp-server", "python", ".github", "scripts")
-LIVE_FILES = ("AGENTS.md", "Makefile", "build-config.env", "ffmpeg-patches/README.md")
+LIVE_FILES = (
+    "AGENTS.md",
+    "Containerfile.vmafx",
+    "Dockerfile",
+    "Makefile",
+    "build-config.env",
+    "ffmpeg-patches/README.md",
+)
 MAX_FILE_BYTES = 4_000_000
 TEST_SCRIPT_RUN = re.compile(r"\bffmpeg-patches/test/[\w.-]+\.sh\b")
 SOURCED_HELPER = re.compile(r"^\s*\.\s+\"\$\{HERE\}/([\w.-]+\.sh)\"", re.MULTILINE)
 LAVFI_INPUT = "-f lavfi"
 LAVFI_INDEV = "--enable-indev=lavfi"
+QSV_ROOTS = ("docs", "scripts", "testdata", "ffmpeg-patches")
+QSV_SUFFIXES = (".md", ".sh", ".py")
+QSV_WINDOW = 12
+QSV_DECODE = re.compile(r"-hwaccel(?:_output_format)?\s+qsv\b")
+DRM_MAP = "hwmap=derive_device=drm"
+VAAPI_MAP = "hwmap=derive_device=vaapi"
+FENCE = re.compile(r"^\s*(```|~~~)")
 
 
 def contract_scripts(root: Path) -> list[Path]:
@@ -123,6 +145,49 @@ def lavfi_without_indev(root: Path) -> list[str]:
     return found
 
 
+def _command_lines(path: Path) -> list[tuple[int, str]]:
+    """(line number, text) of the lines that may be commands: in Markdown, inside fences."""
+    lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    if path.suffix != ".md":
+        return list(enumerate(lines, 1))
+    found, inside = [], False
+    for number, line in enumerate(lines, 1):
+        if FENCE.match(line):
+            inside = not inside
+        elif inside:
+            found.append((number, line))
+    return found
+
+
+def _direct_drm_map(line: str) -> bool:
+    """True when a DRM PRIME map on the line has no VAAPI map before it."""
+    pos = line.find(DRM_MAP)
+    return pos >= 0 and VAAPI_MAP not in line[:pos]
+
+
+def qsv_direct_drm_maps(root: Path) -> list[str]:
+    """'file:line: ...' for each DRM PRIME map of QSV frames that skips the VAAPI step."""
+    found = []
+    for tree in QSV_ROOTS:
+        for path in sorted((root / tree).rglob("*")):
+            if (
+                path.suffix not in QSV_SUFFIXES
+                or not path.is_file()
+                or _is_fixture(path.relative_to(root))
+            ):
+                continue
+            last_qsv = -QSV_WINDOW - 1
+            for number, line in _command_lines(path):
+                if QSV_DECODE.search(line):
+                    last_qsv = number
+                if number - last_qsv <= QSV_WINDOW and _direct_drm_map(line):
+                    found.append(
+                        f"{path.relative_to(root)}:{number}: maps QSV frames to DRM PRIME "
+                        f"directly; map them with {VAAPI_MAP},format=vaapi first"
+                    )
+    return found
+
+
 def failures(root: Path, scripts: list[Path]) -> list[str]:
     """One report per script that exits non-zero: its name and its output's tail."""
     found = []
@@ -155,6 +220,7 @@ def main(argv: list[str] | None = None) -> int:
     problems = (
         stale_patch_refs(args.root, live_files(args.root))
         + lavfi_without_indev(args.root)
+        + qsv_direct_drm_maps(args.root)
         + failures(args.root, scripts)
     )
     for line in problems:

@@ -68,10 +68,7 @@ would fail to compile:
    `scripts/ci/checkout-annotated-tag.sh`. Direct `git clone --depth=1
    --branch <tag>` emits a warning for both annotated tags in the image's Git
    version and violates zero-diagnostic build contract.
-6. **FFmpeg SYCL filter must use current libvmaf state-free ownership
-   contract.** `libvmaf_sycl.h` declares
-   `vmaf_sycl_state_free(VmafSyclState **sycl_state)`, matching
-   Vulkan / HIP / Metal rather than CUDA. Keep `ffmpeg-patches/src/vf_vmafx.c`
-   (patch `0004`) calling `vmaf_sycl_state_free(&s->sycl_state)`. Passing single
-   pointer builds against stale patch text, fails container FFmpeg
-   compile with `-Wincompatible-pointer-types`.
+6. **FFmpeg vmafx filter cleanup destroys context and releases device.**
+   `ffmpeg-patches/src/vf_vmafx.c` (patch `0004`) cleans up in `release_all()`:
+   it destroys the VMAFx context via `vmafx_context_destroy(s->context, NULL)`
+   and releases `s->vdev` via `vmafx_device_unref(s->vdev)`.

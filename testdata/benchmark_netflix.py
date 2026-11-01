@@ -120,13 +120,17 @@ BACKENDS = [
         "filter": "vmafx",
         "extra_args": [
             "-init_hw_device",
-            f"vaapi=va:{SYCL_RENDER_NODE}",
+            f"drm=dr:{SYCL_RENDER_NODE}",
             "-init_hw_device",
-            "qsv=qsv@va",
+            "vaapi=va@dr",
             "-filter_hw_device",
-            "qsv",
+            "va",
         ],
-        "lavfi": "[0:v]hwupload=extra_hw_frames=128[dis];[1:v]hwupload=extra_hw_frames=128[ref];[dis][ref]vmafx=backend=sycl:log_path={log}:log_fmt=json:model=version=vmaf_v0.6.1",
+        "lavfi": (
+            "[0:v]format=nv12,hwupload=extra_hw_frames=128,hwmap=derive_device=drm,format=drm_prime[dis];"
+            "[1:v]format=nv12,hwupload=extra_hw_frames=128,hwmap=derive_device=drm,format=drm_prime[ref];"
+            "[dis][ref]vmafx=backend=sycl:log_path={log}:log_fmt=json:model=version=vmaf_v0.6.1"
+        ),
         "env_extra": {"LIBVA_DRIVER_NAME": "iHD"},
     },
 ]

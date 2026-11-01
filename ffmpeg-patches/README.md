@@ -31,11 +31,13 @@ The series consists of six consecutive patches:
 - **`0004-add-vmafx-filter.patch`**: Implements the primary `vmafx` scoring
   filter and `vmafx_tune` filter. Built from canonical sources
   `ffmpeg-patches/src/vf_vmafx.c` and `vf_vmafx_options.h`. Provides unified
-  runtime backend selection (`backend=auto|cpu|cuda|sycl|hip|metal`), zero-copy
-  hardware frame import (CUDA, VA-API/QSV, DRM PRIME, Metal IOSurface,
-  Vulkan), AVFrame colorimetry mapping to `libvmafx`, windowed statistics,
-  score formatting (`score_fmt`), and fail-closed error handling. Enabled via
-  `--enable-libvmafx`.
+  runtime backend selection (`backend=auto|cpu|cuda|sycl|hip|metal`), hardware
+  frame import (zero-copy CUDA and DRM PRIME; VA-API requires mapping to DRM
+  PRIME; direct VA-API and QSV frames are refused unless downloaded via
+  `import=host`; Vulkan frames are copied on the GPU; Metal IOSurface import is
+  not implemented), AVFrame colorimetry mapping to `libvmafx`, windowed
+  statistics, score formatting (`score_fmt`), and fail-closed error handling.
+  Enabled via `--enable-libvmafx`.
 - **`0005-add-vmafx-pre-filter.patch`**: Implements the `vmafx_pre` learned
   filter for ONNX neural pre-processing. Built from canonical source
   `ffmpeg-patches/src/vf_vmafx_pre.c`. Enabled via `--enable-libvmafx`.
@@ -49,8 +51,10 @@ Test scripts under `ffmpeg-patches/test/` verify the patch series and filter
 behavior:
 
 - **`build-and-run.sh`**: Fetches clean upstream FFmpeg at `FFMPEG_TAG`, applies
-  the shared fix series and `series.txt`, builds against `libvmafx`, verifies
-  option registration, and tests score equivalence against the `vmaf` CLI.
+  the shared fix series and `series.txt`, builds against `libvmafx`, and verifies
+  option registration. Score equivalence against the `vmaf` CLI is optional and
+  disabled by default (`VMAF_SCORE_CHECK=1` enables it, requiring `VMAF_PREFIX`
+  pointing to an installed `vmaf` CLI and testdata fixtures).
 - **`vmafx_filter_check.py`**: Integration test suite verifying `vmafx`:
   - `parity`: Per-frame and pooled metric parity against the `vmaf` CLI.
   - `windows`: Sliding-window statistics against CLI reference windows.
@@ -88,6 +92,6 @@ python3 scripts/ci/ffmpeg_patch_stack.py --refresh
 
 ## License
 
-EUPL-1.2 for patches authored in this repository. Patches are applied against
-FFmpeg (LGPL-2.1-or-later / GPL-2.0-or-later); distribution terms of compiled
-binaries are governed by FFmpeg's license.
+LGPL-2.1-or-later for the patch files in this directory (assigned in
+`REUSE.toml`). Distribution terms of compiled binaries are governed by
+FFmpeg's license.

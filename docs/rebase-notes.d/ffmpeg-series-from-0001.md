@@ -1,6 +1,6 @@
 ## FFmpeg patch series rebuilt from 0001 on the vmafx filters (2026-11-01)
 
-`feat/2435-patch-series`, [ADR-2166](adr/2166-ffmpeg-series-drops-vulkan-shims.md).
+`feat/2435-patch-series`, [ADR-2166](../adr/2166-ffmpeg-series-drops-vulkan-shims.md).
 The series is six patches: `0001` qpfile, `0002` autotune CLI glue, `0003`
 profile CLI glue, `0004` the `vmafx` filter (`ffmpeg-patches/src/vf_vmafx.c`),
 `0005` the `vmafx_pre` filter and `0006` the fork-only loopback-decoder
