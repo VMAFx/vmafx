@@ -167,13 +167,23 @@ get_bundle_sha() {
   esac
 }
 
-# Return the member list ("filename sha256") for a recognized bundle name.
+# Return the member list ("filename sha256") for a recognized bundle name;
+# a caller-set BUNDLE_MEMBERS array overrides the built-in list.
 get_bundle_members() {
   local bundle_name="$1"
-  if [ -n "${BUNDLE_MEMBERS+x}" ]; then
-    printf '%s\n' ${BUNDLE_MEMBERS[@]+"${BUNDLE_MEMBERS[@]}"}
-    return 0
+  local entry
+  if [ -z "${BUNDLE_MEMBERS+x}" ]; then
+    builtin_bundle_members "${bundle_name}"
+    return
   fi
+  for entry in ${BUNDLE_MEMBERS[@]+"${BUNDLE_MEMBERS[@]}"}; do
+    printf '%s\n' "${entry}"
+  done
+}
+
+# Built-in member list of each supported bundle.
+builtin_bundle_members() {
+  local bundle_name="$1"
   case "${bundle_name}" in
     pq-sollevante-v1)
       printf '%s\n' \
@@ -314,22 +324,22 @@ fetch_and_check_archive() {
   local bundle_name="$1"
   local expected_sha="$2"
   local bundle_url="$3"
-  local archive="$4"
+  local tmp_archive="$4"
   local actual_sha
 
   echo "fetch   bundle ${bundle_name}"
-  if ! python3 -I "${DOWNLOAD}" "${bundle_url}" "${archive}"; then
+  if ! python3 -I "${DOWNLOAD}" "${bundle_url}" "${tmp_archive}"; then
     echo "ERROR: download failed for bundle ${bundle_name}" >&2
     return 1
   fi
 
-  actual_sha="$(file_sha256 "${archive}" | awk '{print $1}')"
+  actual_sha="$(file_sha256 "${tmp_archive}" | awk '{print $1}')"
   if [ "${actual_sha}" != "${expected_sha}" ]; then
     echo "ERROR: ${bundle_name} archive sha256 mismatch (got ${actual_sha}, want ${expected_sha})" >&2
     return 1
   fi
 
-  if ! check_path_traversal "${archive}" || ! check_member_types "${archive}"; then
+  if ! check_path_traversal "${tmp_archive}" || ! check_member_types "${tmp_archive}"; then
     echo "ERROR: ${bundle_name} archive failed security validation" >&2
     return 1
   fi
