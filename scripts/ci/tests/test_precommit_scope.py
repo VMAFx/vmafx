@@ -7,7 +7,10 @@ Cases: the decision function (positive, negative, boundary), the real
 ``lint-and-format.yml`` (the job calls the script and keeps no literal
 ``--all-files``), the routing of a docs-only pull request (no build matrix leg)
 against a master push (full), and a planted regression that restores the
-unconditional full-tree run and must be refused.
+unconditional full-tree run and must be refused. A pull request that changes a
+hook input (the config, a local hook's entry script) gets the whole tree: the
+file list of #3237, which added ``check-fork-python-subprocess`` and passed on
+its diff before the master push failed, is the planted case.
 """
 
 from __future__ import annotations
@@ -36,6 +39,13 @@ OWN_PR = wr.SyntheticEvent(
 )
 MASTER_PUSH = wr.SyntheticEvent("push", ref="refs/heads/master")
 FULL_ONLY_LEG = "Ubuntu gcc"
+INPUTS = precommit_scope.hook_inputs((ROOT / ".pre-commit-config.yaml").read_text("utf-8"))
+# The files #3237 changed that the hooks read (subset of its 30-file list).
+PR_3237 = (
+    ".pre-commit-config.yaml",
+    "scripts/ci/check_fork_python_subprocess.py",
+    "python/test/hdr_models_pin_test.py",
+)
 
 
 def precommit_run_lines(workflow_text: str) -> list[str]:
@@ -54,12 +64,12 @@ def scoped(workflow_text: str) -> bool:
 
 class ScopeDecision(unittest.TestCase):
     def test_pull_request_uses_the_diff(self) -> None:
-        args, reason = precommit_scope.scope("pull_request", BASE)
+        args, reason = precommit_scope.scope("pull_request", BASE, [])
         self.assertEqual(args, ["--from-ref", BASE, "--to-ref", "HEAD"])
         self.assertIn("pull request", reason)
 
     def test_pull_request_target_uses_the_diff(self) -> None:
-        args, _ = precommit_scope.scope("pull_request_target", BASE)
+        args, _ = precommit_scope.scope("pull_request_target", BASE, [])
         self.assertNotIn("--all-files", args)
 
     def test_non_pull_request_events_use_the_tree(self) -> None:
@@ -73,6 +83,42 @@ class ScopeDecision(unittest.TestCase):
             with self.subTest(base=base):
                 args, _ = precommit_scope.scope("pull_request", base)
                 self.assertEqual(args, ["--all-files"])
+
+    def test_hook_input_change_uses_the_tree(self) -> None:
+        args, reason = precommit_scope.scope("pull_request", BASE, PR_3237, INPUTS)
+        self.assertEqual(args, ["--all-files"])
+        self.assertIn("check_fork_python_subprocess.py", reason)
+
+    def test_entry_script_alone_uses_the_tree(self) -> None:
+        changed = ["scripts/ci/check_fork_python_subprocess.py"]
+        args, _ = precommit_scope.scope("pull_request", BASE, changed, INPUTS)
+        self.assertEqual(args, ["--all-files"])
+
+    def test_other_change_keeps_the_diff(self) -> None:
+        changed = ["docs/index.md", "python/test/hdr_models_pin_test.py"]
+        args, _ = precommit_scope.scope("pull_request", BASE, changed, INPUTS)
+        self.assertEqual(args, ["--from-ref", BASE, "--to-ref", "HEAD"])
+
+    def test_unknown_file_list_fails_closed(self) -> None:
+        args, _ = precommit_scope.scope("pull_request", BASE, None, INPUTS)
+        self.assertEqual(args, ["--all-files"])
+
+    def test_planted_diff_only_scope_is_refused(self) -> None:
+        # The pre-fix decision knew no hook inputs: #3237's list then got the diff only.
+        self.assertEqual(
+            precommit_scope.scope("pull_request", BASE, PR_3237, ())[0],
+            ["--from-ref", BASE, "--to-ref", "HEAD"],
+        )
+
+    def test_inputs_name_local_entry_scripts_only(self) -> None:
+        self.assertIn(".pre-commit-config.yaml", INPUTS)
+        self.assertIn("scripts/ci/check_fork_python_subprocess.py", INPUTS)
+        self.assertFalse(any(path.startswith(("python3", "semgrep")) for path in INPUTS))
+        planted = (
+            "repos:\n- repo: https://example.invalid/x\n  hooks:\n"
+            "  - id: x\n    entry: scripts/ci/check_fork_python_subprocess.py\n"
+        )
+        self.assertEqual(precommit_scope.hook_inputs(planted, ROOT), {".pre-commit-config.yaml"})
 
     def test_print_mode_runs_nothing(self) -> None:
         self.assertEqual(
