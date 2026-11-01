@@ -693,6 +693,7 @@ GOLDEN_PYTEST_ARGS := \
 test-netflix-golden: build-golden
 	@echo "=== Netflix CPU golden-data gate (D24) ==="
 	bash scripts/test/fetch-test-yuvs.sh --bundle pq-sollevante-v1
+	bash scripts/test/fetch-test-yuvs.sh --bundle hdr-ictcp-pixels-v1
 	@python3 -m pytest --version >/dev/null 2>&1 || { \
 	    echo "error: pytest not found — this gate cannot run without it."; \
 	    echo "       install: .venv/bin/pip install pytest (see docs/development/languages.md)"; exit 1; }
