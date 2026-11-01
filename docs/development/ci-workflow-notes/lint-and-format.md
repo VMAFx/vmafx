@@ -34,7 +34,8 @@ Tooling Tests runs those tests on every pull request and push; a test
 runs once in CI (ADR-1568). The hooks stay active at commit time.
 HISS-18: a pull request is checked on the files it changes
 (`--from-ref <base sha> --to-ref HEAD`); master pushes, release tags,
-schedule and dispatch keep `--all-files`. scripts/ci/precommit_scope.py
+schedule and dispatch keep `--all-files`, as does a pull request that changes
+.pre-commit-config.yaml or a local hook's entry script. scripts/ci/precommit_scope.py
 decides and prints the reason; test_precommit_scope.py proves it.
 The independent FFmpeg Patch Stack job owns network replay and
 ADR-1140 routing; a full run here would replay on docs-only PRs.
