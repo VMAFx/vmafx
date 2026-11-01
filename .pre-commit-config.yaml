@@ -12,7 +12,7 @@ fail_fast: false
 # used whatever node the host had. check-workflow-versions.py keeps this equal
 # to NODE_VERSION.
 default_language_version:
-  node: "24.22.1"
+  node: "26.13.0"
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
