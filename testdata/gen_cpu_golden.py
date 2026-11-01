@@ -6,7 +6,10 @@
 Usage: python3 gen_cpu_golden.py
 """
 
-import subprocess, json, os, time
+import json, os, sys, time
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from scripts.lib.safe_subprocess import run as run_command  # noqa: E402 - needs the repository root
 
 if __package__:
     from .run_sycl_scores import prepare_vmaf_env
@@ -63,7 +66,15 @@ for dims, tag in resolutions:
 
     t0 = time.time()
     env = prepare_vmaf_env(vmaf_bin)
-    result = subprocess.run(cmd, capture_output=True, text=True, env=env)
+    result = run_command(
+        cmd,
+        allowed_executables=[cmd[0]],
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout_seconds=3600,
+        max_output_bytes=64 * 1_048_576,
+    )
     elapsed = time.time() - t0
 
     if result.returncode != 0:

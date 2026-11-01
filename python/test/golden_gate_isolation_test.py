@@ -6,13 +6,19 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 
 import vmaf
 from vmaf import project_path
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
 
 _PROBE = (
     "import json, vmaf; "
@@ -38,8 +44,9 @@ def _import_time_paths(env):
     __spec__, so every later test that patches `vmaf.<name>` misses the module
     its imported names are bound to. A child interpreter has no shared state.
     """
-    res = subprocess.run(
+    res = run_command(
         [sys.executable, "-c", _PROBE],
+        allowed_executables=[sys.executable],
         capture_output=True,
         text=True,
         env=_child_env(env),
@@ -111,8 +118,9 @@ class GoldenGateBuildDirIsolationTest(unittest.TestCase):
 
     def test_import_vmaf_does_not_pollute_stdout_when_externals_absent(self):
         """Importing vmaf must not emit spurious ImportError prints to stdout."""
-        res = subprocess.run(
+        res = run_command(
             [sys.executable, "-c", "import vmaf"],
+            allowed_executables=[sys.executable],
             capture_output=True,
             text=True,
             env=_child_env(os.environ),
@@ -143,8 +151,9 @@ class GoldenCompilerValidationTest(unittest.TestCase):
             with open(compilers_json, "w") as f:
                 json.dump({"host": {"c": {"id": "gcc"}, "cpp": {"id": "gcc"}}}, f)
 
-            res = subprocess.run(
+            res = run_command(
                 [self.script_path, "--check-compiler", tmpdir],
+                allowed_executables=[self.script_path],
                 capture_output=True,
                 text=True,
             )
@@ -161,8 +170,9 @@ class GoldenCompilerValidationTest(unittest.TestCase):
             with open(compilers_json, "w") as f:
                 json.dump({"host": {"c": {"id": "clang"}, "cpp": {"id": "clang"}}}, f)
 
-            res = subprocess.run(
+            res = run_command(
                 [self.script_path, "--check-compiler", tmpdir],
+                allowed_executables=[self.script_path],
                 capture_output=True,
                 text=True,
             )
@@ -179,8 +189,9 @@ class GoldenCompilerValidationTest(unittest.TestCase):
             with open(compilers_json, "w") as f:
                 json.dump({"host": {"c": {"id": "intel-llvm"}, "cpp": {"id": "intel-llvm"}}}, f)
 
-            res = subprocess.run(
+            res = run_command(
                 [self.script_path, "--check-compiler", tmpdir],
+                allowed_executables=[self.script_path],
                 capture_output=True,
                 text=True,
             )
@@ -191,8 +202,9 @@ class GoldenCompilerValidationTest(unittest.TestCase):
     def test_validate_compiler_negative_missing_info(self):
         """Missing intro-compilers.json in check mode must fail loudly."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            res = subprocess.run(
+            res = run_command(
                 [self.script_path, "--check-compiler", tmpdir],
+                allowed_executables=[self.script_path],
                 capture_output=True,
                 text=True,
             )

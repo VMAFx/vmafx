@@ -12,7 +12,6 @@ from __future__ import absolute_import
 
 import json
 import os
-import subprocess
 import sys
 import tempfile
 import unittest
@@ -25,6 +24,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from scripts.lib import vmaftest  # noqa: E402 - needs the repository root on sys.path
+from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
 
 
 def _probe_sycl(vmaf):
@@ -57,7 +57,13 @@ def _probe_sycl(vmaf):
             "--json",
         ]
         try:
-            res = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            res = run_command(
+                cmd,
+                allowed_executables=[cmd[0]],
+                capture_output=True,
+                text=True,
+                timeout_seconds=30,
+            )
             return res.returncode == 0 and os.path.exists(out)
         except Exception:
             return False
@@ -90,7 +96,6 @@ def _motion_command(vmaf, ref_path, dis_path, width, height, backend, feature, o
 
 
 class SyclMotionParityTest(unittest.TestCase):
-
     @classmethod
     def setUpClass(cls):
         vmaf = vmaftest.find()
@@ -125,8 +130,22 @@ class SyclMotionParityTest(unittest.TestCase):
                 out_sycl,
             )
 
-            subprocess.run(cmd_cpu, check=True, capture_output=True, text=True)
-            subprocess.run(cmd_sycl, check=True, capture_output=True, text=True)
+            run_command(
+                cmd_cpu,
+                check=True,
+                capture_output=True,
+                text=True,
+                allowed_executables=[cmd_cpu[0]],
+                timeout_seconds=600,
+            )
+            run_command(
+                cmd_sycl,
+                check=True,
+                capture_output=True,
+                text=True,
+                allowed_executables=[cmd_sycl[0]],
+                timeout_seconds=600,
+            )
 
             with open(out_cpu, encoding="utf-8") as f:
                 data_cpu = json.load(f)

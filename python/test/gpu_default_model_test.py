@@ -35,12 +35,19 @@ from __future__ import absolute_import
 
 import json
 import os
-import subprocess
+import sys
 import tempfile
 import unittest
+from pathlib import Path
 from test.testutil import set_default_576_324_videos_for_testing
 
 from vmaf import ExternalProgram
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
 
 #: The default model's ADM option dict, plus ``adm_p_norm`` so the pooling
 #: exponent is covered too. Order here is irrelevant -- the key is built from
@@ -117,7 +124,9 @@ def _run(feature_spec, backend_flags):
             "-o",
             out,
         ] + list(backend_flags)
-        proc = subprocess.run(cmd, check=False, capture_output=True)
+        proc = run_command(
+            cmd, check=False, capture_output=True, allowed_executables=[cmd[0]], timeout_seconds=600
+        )
         if proc.returncode != 0 or not os.path.exists(out):
             return None
         with open(out, encoding="utf-8") as fh:

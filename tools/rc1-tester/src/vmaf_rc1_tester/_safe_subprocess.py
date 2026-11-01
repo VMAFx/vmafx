@@ -663,7 +663,14 @@ async def run_async(
         settings=settings,
         encoding=encoding,
     )
-    process = await asyncio.create_subprocess_exec(*command, **configuration.process_kwargs)
+    # Run the validated file, but keep the caller's argv[0]: a multi-call
+    # program (the `vmafx` link to `vmaf`) selects its mode from that name.
+    process = await asyncio.create_subprocess_exec(
+        _stringify(argv[0], label="argv[0]"),
+        *command[1:],
+        executable=command[0],
+        **configuration.process_kwargs,
+    )
     captured = await _supervise(process, configuration, settings)
     return _finalize_result(command, process, configuration, captured, settings)
 

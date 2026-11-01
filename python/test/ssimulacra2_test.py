@@ -46,12 +46,19 @@ described above.
 
 import json
 import os
-import subprocess
+import sys
 import tempfile
 import unittest
+from pathlib import Path
 
 from vmaf import ExternalProgram
 from vmaf.config import VmafConfig
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
 
 
 class Ssimulacra2SnapshotTest(unittest.TestCase):
@@ -112,7 +119,7 @@ class Ssimulacra2SnapshotTest(unittest.TestCase):
         ]
         if model:
             cmd.extend(["--model", model])
-        ret = subprocess.call(cmd)
+        ret = run_command(cmd, allowed_executables=[cmd[0]], timeout_seconds=600).returncode
         self.assertEqual(ret, self.RC_SUCCESS, f"vmaf exited {ret}: {cmd}")
         with open(self.output_file_path) as fo:
             return json.load(fo)
@@ -139,12 +146,10 @@ class Ssimulacra2SnapshotTest(unittest.TestCase):
     def test_ssimulacra2_small_160x90(self):
         """Tiny 160x90 derived fixture — exercises the scale tail path."""
         ref_name = (
-            "ref_test_0_1_src01_hrc00_576x324_576x324_vs_"
-            "src01_hrc01_576x324_576x324_q_160x90.yuv"
+            "ref_test_0_1_src01_hrc00_576x324_576x324_vs_src01_hrc01_576x324_576x324_q_160x90.yuv"
         )
         dis_name = (
-            "dis_test_0_1_src01_hrc00_576x324_576x324_vs_"
-            "src01_hrc01_576x324_576x324_q_160x90.yuv"
+            "dis_test_0_1_src01_hrc00_576x324_576x324_vs_src01_hrc01_576x324_576x324_q_160x90.yuv"
         )
         result = self._run_ssimulacra2(
             VmafConfig.test_resource_path("yuv", ref_name),

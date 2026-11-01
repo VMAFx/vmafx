@@ -11,10 +11,15 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
 import sys
 import time
 from pathlib import Path
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
 
 RESOLUTIONS = [
     ("576x324", "576"),
@@ -138,7 +143,15 @@ def run_single_resolution(
 
     t0 = time.time()
     env = prepare_sycl_env(vmaf_bin)
-    result = subprocess.run(cmd, capture_output=True, text=True, env=env)
+    result = run_command(
+        cmd,
+        capture_output=True,
+        text=True,
+        env=env,
+        allowed_executables=[cmd[0]],
+        timeout_seconds=3600,
+        max_output_bytes=64 * 1_048_576,
+    )
     elapsed = time.time() - t0
 
     if result.returncode != 0:

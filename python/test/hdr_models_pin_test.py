@@ -217,7 +217,9 @@ class HdrModelsPinTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             out_path = os.path.join(tmp, "out.json")
             proc = _run_cli(model, kind, out_path)
-            if EXPECT_NO_ZIMG:
+            # A bypass_ictcp row scores pictures already converted to ICtCp, so it needs no
+            # zimg and pins the score on the no-zimg leg too.
+            if EXPECT_NO_ZIMG and kind != "bypass_ictcp":
                 self.assertNotEqual(proc.returncode, 0, "scored without zimg")
                 self.assertIn("built without zimg", (proc.stderr or "") + (proc.stdout or ""))
                 return

@@ -86,6 +86,19 @@ class SafeSubprocessTests(unittest.TestCase):
         )
         self.assertEqual(result.stdout, "payload")
 
+    @unittest.skipIf(os.name == "nt", "symbolic links need privileges on Windows")
+    def test_symlink_keeps_the_invoked_name_as_argv0(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            link = Path(temporary) / "renamed-python"
+            link.symlink_to(PYTHON)
+            result = run(
+                [str(link), "-c", "import sys; print(sys.orig_argv[0])"],
+                allowed_executables=(str(link),),
+                capture_output=True,
+                text=True,
+            )
+        self.assertEqual(result.stdout.strip(), str(link))
+
     def test_unallowlisted_relative_and_nul_arguments_are_rejected(self) -> None:
         with self.assertRaises(CommandValidationError):
             run([PYTHON, "-V"], allowed_executables=("definitely-not-python",))
