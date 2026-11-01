@@ -12,10 +12,13 @@ HTTP 404 (or, with `bypass_download=True`, with a missing file).
 A step runs a test file when its `run:` text, or a `scripts/ci/*.sh` script it calls,
 names the whole suite (`python/test/` or `tox -c python`) or the file's own name. The
 get step for each bundle that file reads must come earlier in the job, under an `if:`
-the test step's `if:` implies (checked by truth table over the atomic predicates), and must name a bundle in the `SUPPORTED_BUNDLES` line
-of `scripts/test/fetch-test-yuvs.sh`; the action cannot fetch any other. A `phase:
-finish` step must run after a failed test too, so its `if:` starts with `!cancelled()`
-or `always()`; otherwise a red test leaves the fixture in the shared resource cache.
+the test step's `if:` implies (checked by truth table over the atomic predicates), and
+must name a bundle in the `SUPPORTED_BUNDLES` line of `scripts/test/fetch-test-yuvs.sh`;
+the action cannot fetch any other. A `phase: finish` step must run after a green and
+after a red test in every case its bundle's get step ran in: its `if:` is evaluated with
+`success()`, `failure()`, `always()` and `cancelled()` as atoms for both job states
+(GitHub adds an implicit `success() &&` when none is named). Otherwise a red test, or a
+condition such as `always() && failure()`, leaves the fixture in the shared resource cache.
 Usage: check_fixture_bundle_jobs.py [--root DIR]; exit 1 lists each gap.
 """
 
@@ -37,7 +40,8 @@ FIXTURE_ACTION = "./.github/actions/pq-fixture"
 DEFAULT_BUNDLE = "pq-sollevante-v1"
 FETCH_SCRIPT = "scripts/test/fetch-test-yuvs.sh"
 SUPPORTED_LINE = re.compile(r"^SUPPORTED_BUNDLES=\(([^)]*)\)", re.MULTILINE)
-RUNS_AFTER_FAILURE = re.compile(r"^\s*(\$\{\{\s*)?(!\s*cancelled\(\)|always\(\))")
+STATUS_ATOMS = ("success()", "failure()", "always()", "cancelled()")
+FINISH_HINT = "if: ${{ !cancelled() && <the get step's condition> }}"
 MAX_STEPS = 500
 MAX_ATOMS = 12
 # One token of a GitHub expression: an operator, a parenthesis, or an atomic predicate
@@ -123,6 +127,29 @@ def implies(test_if: str, fetch_if: str) -> bool:
     return True
 
 
+def _status_values(failed: bool) -> dict[str, bool]:
+    """The status function values in a job that is not cancelled, after a green or red step."""
+    return {"success()": not failed, "failure()": failed, "always()": True, "cancelled()": False}
+
+
+def finish_covers(finish_if: str, fetch_if: str) -> bool:
+    """True when the finish step runs after a green and a red step wherever the get step ran."""
+    finish = to_rpn(finish_if) if finish_if.strip() else None
+    fetch = to_rpn(fetch_if) if fetch_if.strip() else []
+    if not finish or fetch is None or not set(STATUS_ATOMS) & set(finish):
+        return False
+    atoms = sorted({t for t in finish + fetch if t not in PRECEDENCE and t not in STATUS_ATOMS})
+    if len(atoms) > MAX_ATOMS:
+        return False
+    for failed, row in itertools.product(
+        (False, True), itertools.product((False, True), repeat=len(atoms))
+    ):
+        values = dict(zip(atoms, row, strict=True)) | _status_values(failed)
+        if (not fetch or evaluate(fetch, values)) and not evaluate(finish, values):
+            return False
+    return True
+
+
 def bundle_tests(root: Path) -> dict[str, set[str]]:
     """Map each test file stem under python/test to the fixture bundles it reads."""
     found: dict[str, set[str]] = {}
@@ -194,13 +221,20 @@ def job_gaps(
 
 
 def finish_steps_skipped_on_failure(steps: list[dict[str, Any]]) -> list[str]:
-    """Names of finish steps that a failed earlier step would skip."""
+    """Names of finish steps that skip a case their bundle's earlier get step ran in."""
+    fetched: dict[str, list[str]] = {}
     skipped: list[str] = []
     for index, step in enumerate(steps[:MAX_STEPS]):
         params = step.get("with") or {}
-        if step.get("uses") != FIXTURE_ACTION or params.get("phase") != "finish":
+        if step.get("uses") != FIXTURE_ACTION:
             continue
-        if not RUNS_AFTER_FAILURE.match(str(step.get("if", ""))):
+        bundle = str(params.get("bundle", DEFAULT_BUNDLE))
+        condition = str(step.get("if", ""))
+        if params.get("phase") == "get":
+            fetched.setdefault(bundle, []).append(condition)
+        elif params.get("phase") == "finish" and not all(
+            finish_covers(condition, got) for got in fetched.get(bundle, [""])
+        ):
             skipped.append(str(step.get("name", f"step {index + 1}")))
     return skipped
 
@@ -220,8 +254,8 @@ def check(root: Path) -> list[str]:
                 problems.append(f"{workflow.name}:{job_id}: {gap}")
             for name in finish_steps_skipped_on_failure(steps):
                 problems.append(
-                    f"{workflow.name}:{job_id}: '{name}' is skipped after a failed step; "
-                    "start its if: with !cancelled()"
+                    f"{workflow.name}:{job_id}: '{name}' is skipped after a green or red "
+                    f"step where its get step ran; use {FINISH_HINT}"
                 )
     return problems
 
@@ -238,7 +272,7 @@ def main(argv: list[str] | None = None) -> int:
     if problems:
         print(
             f"check_fixture_bundle_jobs: a fetch gap needs a '{FIXTURE_ACTION}' step with "
-            "phase: get before the tests; a finish step needs if: !cancelled()",
+            f"phase: get before the tests; a finish step needs {FINISH_HINT}",
             file=sys.stderr,
         )
         return 1

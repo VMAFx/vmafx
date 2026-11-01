@@ -10,6 +10,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import yaml  # type: ignore[import-untyped]  # no PyYAML stubs in the hook environment
+
 SCRIPT = Path(__file__).resolve().parents[1] / "check_fixture_bundle_jobs.py"
 SPEC = importlib.util.spec_from_file_location("check_fixture_bundle_jobs", SCRIPT)
 assert SPEC and SPEC.loader
@@ -102,7 +104,7 @@ class FixtureBundleJobs(unittest.TestCase):
         )
         problems = self._check(steps.replace(FETCH, FETCH + FETCH_ICTCP, 1))
         self.assertEqual(len(problems), 1)
-        self.assertIn("'Put away' is skipped after a failed step", problems[0])
+        self.assertIn("'Put away' is skipped after a green or red step", problems[0])
 
     def test_finish_with_no_condition_fails(self) -> None:
         """Negative: a finish step without any if: is skipped after a red test too."""
@@ -110,19 +112,53 @@ class FixtureBundleJobs(unittest.TestCase):
         problems = self._check(FETCH + FETCH_ICTCP + "      - run: tox -c python\n" + finish)
         self.assertEqual(
             problems,
-            ["w.yml:t: 'step 4' is skipped after a failed step; start its if: with !cancelled()"],
+            [
+                "w.yml:t: 'step 4' is skipped after a green or red step where its get step "
+                "ran; use if: ${{ !cancelled() && <the get step's condition> }}"
+            ],
         )
+
+    def _finish_problems(self, finish_if: str, get_if: str = "") -> list[str]:
+        """Problems for a job whose get steps run under get_if and finish under finish_if."""
+        guard = f"      - if: {get_if}\n        uses" if get_if else "      - uses"
+        run = (
+            f"      - if: {get_if}\n        run: tox -c python\n"
+            if get_if
+            else ("      - run: tox -c python\n")
+        )
+        finish = (
+            f"      - if: {finish_if}\n        uses: ./.github/actions/pq-fixture\n"
+            "        with:\n          phase: finish\n"
+        )
+        steps = FETCH.replace("      - uses", guard) + FETCH_ICTCP.replace("      - uses", guard)
+        return self._check(steps + run + finish)
 
     def test_finish_after_failure_passes(self) -> None:
         """Boundary: !cancelled() in an expression block and bare always() both run after a failure."""
-        for cond in ("${{ !cancelled() && matrix.os == 'x' }}", "always()"):
-            finish = (
-                f"      - if: {cond}\n        uses: ./.github/actions/pq-fixture\n"
-                "        with:\n          phase: finish\n"
-            )
-            self.assertEqual(
-                self._check(FETCH + FETCH_ICTCP + "      - run: tox -c python\n" + finish), []
-            )
+        self.assertEqual(self._finish_problems("always()"), [])
+        self.assertEqual(self._finish_problems("${{ !cancelled() }}"), [])
+        self.assertEqual(
+            self._finish_problems("${{ !cancelled() && matrix.os == 'x' }}", "matrix.os == 'x'"),
+            [],
+        )
+
+    def test_finish_skipping_a_green_run_fails(self) -> None:
+        """Negative: always() && failure() starts like a failure guard but skips a green run."""
+        problems = self._finish_problems("${{ always() && failure() }}")
+        self.assertEqual(len(problems), 1)
+        self.assertIn("skipped after a green or red step", problems[0])
+
+    def test_finish_narrower_than_its_fetch_fails(self) -> None:
+        """Negative: a finish step that skips an OS its get step ran on leaves the fixture."""
+        problems = self._finish_problems("${{ !cancelled() && matrix.os == 'x' }}")
+        self.assertEqual(len(problems), 1)
+
+    def test_finish_hint_is_valid_yaml(self) -> None:
+        """Boundary: the condition the message suggests parses as YAML and covers its fetch."""
+        hint = MOD.FINISH_HINT.replace("<the get step's condition>", "matrix.os == 'x'")
+        parsed = yaml.safe_load(hint)
+        self.assertIsInstance(parsed["if"], str)
+        self.assertTrue(MOD.finish_covers(parsed["if"], "matrix.os == 'x'"))
 
     def test_fetch_after_the_test_fails(self) -> None:
         """Negative: a get step after the test step does not count for it."""
