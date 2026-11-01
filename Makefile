@@ -21,14 +21,16 @@ NINJA_EXEC := $(abspath $(NINJA))
 # ruff / black and reported success, so the local gate could pass while
 # CI's identical checks failed.
 #
-# Only the venv this Makefile builds goes first: it always carries `pip`
-# (`python3 -m venv`). A package-less `.venv` another tool drops in the
-# worktree root (a bundled `uv` does) has no `pip`, and putting it first made
-# `python3` resolve to an interpreter without `jsonschema`, so
-# `make docs-fragments-check` failed for a reason unrelated to the change.
-# `scripts/ci/check-no-tracked-venv.sh` refuses such a stray venv by name.
-VENV_READY := $(wildcard $(VENV_PIP))
-export PATH := $(if $(VENV_READY),$(VIRTUAL_ENV_ABS):)$(PATH)
+# The venv this Makefile builds always carries `pip` (`python3 -m venv`), and it
+# goes first on PATH even before it exists, so tools a recipe installs into it
+# (`lint-tools`) resolve later in the same run. A package-less `.venv` another
+# tool drops in the worktree root (a bundled `uv` does) has no `pip`; putting
+# it first made `python3` resolve to an interpreter without `jsonschema`, so
+# `make docs-fragments-check` failed for a reason unrelated to the change. Such
+# a stray stays off PATH, and `scripts/ci/check-no-tracked-venv.sh` refuses it
+# by name.
+VENV_STRAY := $(if $(wildcard $(VENV)),$(if $(wildcard $(VENV_PIP)),,stray))
+export PATH := $(if $(VENV_STRAY),,$(VIRTUAL_ENV_ABS):)$(PATH)
 
 # require-tool,<binary>,<install hint>
 # A gate that cannot run is a gate that cannot fail. Every lint / format tool is

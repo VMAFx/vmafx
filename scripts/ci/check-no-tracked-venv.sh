@@ -50,7 +50,8 @@ if [ -n "$bad" ]; then
 fi
 if [ -z "$ref" ]; then
   stray=""
-  if [ -d .venv ] && [ ! -e .venv/bin/pip ]; then
+  # -L too: a dangling .venv symlink fails -d but still blocks `python3 -m venv`.
+  if { [ -d .venv ] || [ -L .venv ]; } && [ ! -e .venv/bin/pip ]; then
     stray=".venv (no bin/pip: not the venv \`make\` builds)"
   fi
   if [ -f uv.lock ] && ! git ls-files --error-unmatch uv.lock >/dev/null 2>&1; then
