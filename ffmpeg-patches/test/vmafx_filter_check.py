@@ -32,11 +32,6 @@ fixture is missing:
   (NV16, P210, Y210, Y212, YUYV422, NV24, P410, XV30, XV36, VUYX, YUV444P10MSB,
   YUV444P12MSB) score as the CLI scores the planar file they were converted
   from; ``--backend cuda`` uploads them and imports them on the device.
-- ``legacy``: ``vmafx_pre`` writes the same bytes as ``vmaf_pre`` (8-bit and
-  10-bit planes through the blur fixture ``pre_blur_4x4.onnx``, which changes
-  every sample) and ``vmafx_tune`` logs the same recommendation as
-  ``libvmaf_tune`` (model pinned to ``vmaf_v0.6.1``, two targets). Needs an
-  FFmpeg configured with both ``--enable-libvmafx`` and ``--enable-libvmaf``.
 - ``pool``: both inputs uploaded to a VAAPI device into fixed frame pools;
   vmafx downloads them (``import=host``) and with ``metadata=1`` holds the
   main frames until their scores are final. A pool one frame smaller than
@@ -52,6 +47,12 @@ fixture is missing:
   must be imported on the device. ``--libplacebo`` puts FFmpeg's
   ``libplacebo`` filter between the decoder and vmafx (its output frames are
   scored the same way).
+
+- ``filters``: the build registers no filter of the libvmaf family
+  (``libvmaf``, ``libvmaf_cuda``, ``vmaf_pre`` and every other name that
+  starts with ``vmaf`` or ``libvmaf`` and is not ``vmafx``); the fork's filters
+  are ``vmafx``, ``vmafx_tune`` and ``vmafx_pre``. FFmpeg's own native
+  ``vmafmotion`` filter, which uses no library, is allowed.
 
 Pairs: the Netflix 576x324 pair, both 1080p checkerboard pairs, the 4K BBB
 pair (first ``--frames-4k`` frames).
@@ -395,12 +396,47 @@ def check_errors(args: argparse.Namespace, tmp: Path) -> list[Check]:
     ]
 
 
+def report_metrics(path: Path) -> set[str]:
+    """The metric names of every frame of a JSON report; none when it is missing."""
+    if not path.is_file():
+        return set()
+    frames = json.loads(path.read_text(encoding="utf-8")).get("frames") or []
+    return {name for frame in frames for name in frame.get("metrics") or {}}
+
+
+def check_feature_only(args: argparse.Namespace, tmp: Path) -> list[Check]:
+    """An empty model= beside feature= scores the feature alone; an empty model=
+    without feature= still scores the default model (the boundary)."""
+    only, both = tmp / "feature-only.json", tmp / "empty-model.json"
+    run_only = contract_run(
+        args, RATE24, RATE24, f"[0:v][1:v]vmafx=model=:feature=psnr:log_path={escape(only)}"
+    )
+    run_both = contract_run(args, RATE24, RATE24, f"[0:v][1:v]vmafx=model=:log_path={escape(both)}")
+    names, default = report_metrics(only), report_metrics(both)
+    feature_ok = run_only.returncode == 0 and "psnr_y" in names
+    feature_ok = feature_ok and "vmaf" not in names and "VMAF score" not in run_only.stderr
+    default_ok = run_both.returncode == 0 and "vmaf" in default
+    return [
+        (
+            "model= with feature=psnr reports psnr and no vmaf",
+            feature_ok,
+            f"exit {run_only.returncode}; metrics {sorted(names)}: {run_only.stderr[-200:]}",
+        ),
+        (
+            "model= without feature scores the default model",
+            default_ok,
+            f"exit {run_both.returncode}; metrics {sorted(default)}",
+        ),
+    ]
+
+
 def contract_results(args: argparse.Namespace, tmp: Path) -> list[Check]:
     return [
         *check_matched(args),
         *check_short_reference(args, tmp),
         *check_rates_and_offset(args),
         *check_errors(args, tmp),
+        *check_feature_only(args, tmp),
     ]
 
 
@@ -533,61 +569,6 @@ def cmd_layouts(args: argparse.Namespace) -> int:
             failed |= bool(bad) or total == 0
             print(f"| {fmt} | {planar} | {args.backend} | {total} | {same} | {worst:g} |")
     return 1 if failed else 0
-
-
-def has_filter(args: argparse.Namespace, name: str) -> bool:
-    out = run([args.ffmpeg, "-hide_banner", "-h", f"filter={name}"], environment(args), False)
-    return f"Filter {name}" in out.stdout
-
-
-def legacy_pre(args: argparse.Namespace, tmp: Path, name: str, fmt: str) -> bytes:
-    """`name` over the golden distorted video cut to 4x4 planes of `fmt`; "" filters nothing."""
-    model = Path(__file__).resolve().parent / "pre_blur_4x4.onnx"
-    chain = f"scale=4:4:flags=neighbor,format={fmt}" + (f",{name}=model={model}" if name else "")
-    out = tmp / f"{name or 'none'}-{fmt}.yuv"
-    raw = ["-f", "rawvideo", "-pix_fmt", "yuv420p", "-s", "576x324", "-r", "24"]
-    cmd = [args.ffmpeg, "-hide_banner", "-nostdin", "-y", "-loglevel", "error", *raw]
-    cmd += ["-i", str(fixture(args, PAIRS["golden"].dist)), "-vf", chain, "-f", "rawvideo"]
-    run([*cmd, str(out)], environment(args))
-    return out.read_bytes()
-
-
-def legacy_tune(args: argparse.Namespace, name: str, target: float) -> str:
-    options = f"model=version=vmaf_v0.6.1:recommend_target_vmaf={target}"
-    cmd = [args.ffmpeg, "-hide_banner", "-nostdin", *ffmpeg_inputs(args, PAIRS["golden"])]
-    cmd += ["-lavfi", f"[0:v][1:v]{name}={options}", "-f", "null", "-"]
-    found = re.search(r"recommended_crf=.*", run(cmd, environment(args)).stderr)
-    return found.group(0) if found else "(no recommendation)"
-
-
-def cmd_legacy(args: argparse.Namespace) -> int:
-    if not fixture(args, PAIRS["golden"].dist).is_file():
-        return SKIP
-    if not all(has_filter(args, f) for f in ("vmaf_pre", "libvmaf_tune")):
-        print("skip: this FFmpeg has no vmaf_pre / libvmaf_tune (configure --enable-libvmaf)")
-        return SKIP
-    ok = True
-    with tempfile.TemporaryDirectory() as tmp_name:
-        tmp = Path(tmp_name)
-        for fmt in ("yuv420p", "yuv420p10le"):
-            old, new = (
-                legacy_pre(args, tmp, "vmaf_pre", fmt),
-                legacy_pre(args, tmp, "vmafx_pre", fmt),
-            )
-            filtered = new != legacy_pre(args, tmp, "", fmt)
-            ok &= old == new and filtered
-            print(
-                f"vmafx_pre {fmt}: {len(new)} bytes, equal to vmaf_pre: {old == new}, "
-                f"differs from the input: {filtered}"
-            )
-    for target in (95.0, 80.0):
-        old, new = (
-            legacy_tune(args, "libvmaf_tune", target),
-            legacy_tune(args, "vmafx_tune", target),
-        )
-        ok &= old == new and old.startswith("recommended_crf=")
-        print(f"target {target}: libvmaf_tune {old} | vmafx_tune {new}")
-    return 0 if ok else 1
 
 
 def pool_run(
@@ -887,6 +868,28 @@ def cmd_e2e(args: argparse.Namespace) -> int:
     return 0 if expect == path and not bad and not wbad and total else 1
 
 
+FILTER_LINE = re.compile(r"^\s*[T.][S.][C.]?\s+(\S+)\s+\S*->\S*\s")
+VMAF_NAMED = re.compile(r"^(lib)?vmaf(?!x)")
+NATIVE_VMAF_FILTERS = frozenset({"vmafmotion"})  # FFmpeg's own, no libvmaf
+
+
+def vmaf_named_filters(listing: str) -> list[str]:
+    """The libvmaf-family filter names in `ffmpeg -filters` output."""
+    names = (m.group(1) for m in map(FILTER_LINE.match, listing.splitlines()) if m)
+    return sorted(n for n in names if VMAF_NAMED.match(n) and n not in NATIVE_VMAF_FILTERS)
+
+
+def cmd_filters(args: argparse.Namespace) -> int:
+    listing = run([args.ffmpeg, "-hide_banner", "-filters"], environment(args)).stdout
+    if not any(FILTER_LINE.match(line) for line in listing.splitlines()):
+        print("FAIL no filter line in the -filters output; the listing format changed")
+        return 1
+    found = vmaf_named_filters(listing)
+    vmafx = "vmafx" in (m.group(1) for m in map(FILTER_LINE.match, listing.splitlines()) if m)
+    print(f"libvmaf-family filters: {found or 'none'}; vmafx registered: {vmafx}")
+    return 0 if vmafx and not found else 1
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
@@ -897,11 +900,11 @@ def main() -> int:
             "provenance",
             "refusal",
             "pool",
-            "legacy",
             "layouts",
             "e2e",
             "vulkan",
             "contract",
+            "filters",
         ),
     )
     parser.add_argument("--ffmpeg", required=True)
@@ -934,11 +937,11 @@ def main() -> int:
         "provenance": cmd_provenance,
         "refusal": cmd_refusal,
         "pool": cmd_pool,
-        "legacy": cmd_legacy,
         "layouts": cmd_layouts,
         "e2e": cmd_e2e,
         "vulkan": cmd_vulkan,
         "contract": cmd_contract,
+        "filters": cmd_filters,
     }[args.command](args)
 
 

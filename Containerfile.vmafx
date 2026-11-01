@@ -4,7 +4,7 @@
 #
 # Containerfile.vmafx — self-contained 3-stage build of THIS branch's VMAFx
 # fork: libvmaf (SYCL-only) + ffmpeg (FFMPEG_TAG, n9.0.2) with the fork's
-# ffmpeg-patches/series.txt applied (`--enable-libvmaf-sycl`), targeting
+# ffmpeg-patches/series.txt applied (`--enable-libvmafx`), targeting
 # Intel Arc/Xe via Level Zero.
 #
 # Test image, not a published release image (ADR-3358,
@@ -44,7 +44,7 @@
 #
 #   podman run --rm --device /dev/dri/renderD128 --group-add keep-groups \
 #     --entrypoint ffmpeg vmafx-sycl-test:latest -hide_banner -filters \
-#     | grep -i libvmaf   # shows both `libvmaf` and `libvmaf_sycl`
+#     | grep -i vmafx   # shows vmafx and vmafx_tune
 #
 # ── Run-time SYCL/GPU parity tests (CANNOT run at `docker build` time — no
 #    /dev/dri in the BuildKit sandbox; run them post-build with the device
@@ -84,7 +84,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 # VA-API (iHD driver) and oneVPL: libvpl2 is only the dispatcher; libmfx-gen1.2
 # is the Intel GPU runtime it loads. Without it every QSV decoder/encoder
 # fails with "Error creating a MFX session: -9", which breaks the
-# libvmaf_sycl zero-copy path this image exists to test.
+# vmafx SYCL zero-copy path this image exists to test.
 # hadolint ignore=DL3008,DL3009
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
@@ -245,21 +245,18 @@ RUN while IFS= read -r l; do \
         || { echo "PATCH FAILED: $l"; git am --abort; exit 1; }; \
     done < /src/vmafx/ffmpeg-patches/series.txt
 
-# --enable-libvmaf-sycl is the fork's ffmpeg-patches/0003+0005 selector +
-# filter; --disable-filter=vmaf_pre drops the fork's tiny-model patch surface
-# (0002) — no tiny-AI model in this SYCL-only image. PKG_CONFIG_PATH covers
-# both /usr/local (libvmaf.pc, installed above) and the Debian multiarch
+# --enable-libvmafx builds the vmafx and vmafx_tune filters on libvmafx.
+# PKG_CONFIG_PATH covers both /usr/local (libvmaf.pc, installed above) and the Debian multiarch
 # pkgconfig dir (dav1d.pc, vpl.pc from the apt -dev packages).
 RUN PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/usr/local/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/pkgconfig \
     ./configure \
         --enable-gpl --enable-version3 \
-        --enable-libvmaf --enable-libdav1d --enable-vaapi --enable-libvpl \
-        --enable-libvmaf-sycl \
-        --disable-filter=vmaf_pre --disable-doc --disable-debug \
+        --enable-libvmafx --enable-libdav1d --enable-vaapi --enable-libvpl \
+        --disable-doc --disable-debug \
  && make -j"$(nproc)" \
  && make install && ldconfig \
  && /usr/local/bin/ffmpeg -version | head -3 \
- && /usr/local/bin/ffmpeg -hide_banner -filters 2>&1 | grep -i libvmaf
+ && /usr/local/bin/ffmpeg -hide_banner -filters 2>&1 | grep -i vmafx
 
 # ---- CPU golden gate (build-time GATE — no /dev/dri here; NEVER run
 # test_sycl_* in this stage). Mirrors scripts/test/run-all-tests.sh
@@ -334,11 +331,15 @@ FROM runtime AS prod
 # extra multiarch search dir is needed. The .pc is dev-only (nothing in prod
 # compiles against libvmaf) but shipped for completeness.
 COPY --from=build /usr/local/lib/x86_64-linux-gnu/libvmaf.so* /usr/local/lib/
+# libvmafx is its own shared library: ffmpeg's vmafx filters (--enable-libvmafx)
+# link it, and `libvmaf.so*` does not match it.
+COPY --from=build /usr/local/lib/x86_64-linux-gnu/libvmafx.so* /usr/local/lib/
 COPY --from=build /usr/local/lib/x86_64-linux-gnu/pkgconfig/libvmaf.pc /usr/local/lib/pkgconfig/
+COPY --from=build /usr/local/lib/x86_64-linux-gnu/pkgconfig/libvmafx.pc /usr/local/lib/pkgconfig/
 COPY --from=build /usr/local/include/libvmaf/ /usr/local/include/libvmaf/
 COPY --from=build /usr/local/bin/vmaf* /usr/local/bin/
 
-# ffmpeg + ffprobe (built with --enable-libvmaf-sycl above).
+# ffmpeg + ffprobe (built with --enable-libvmafx above).
 COPY --from=build /usr/local/bin/ffmpeg /usr/local/bin/ffmpeg
 COPY --from=build /usr/local/bin/ffprobe /usr/local/bin/ffprobe
 
@@ -352,7 +353,13 @@ ENV LD_LIBRARY_PATH=${ONEAPI_ROOT}/compiler/latest/lib:${ONEAPI_ROOT}/umf/latest
 # from `runtime`, restated here for clarity — this is the image users run).
 ENV UR_L0_USE_IMMEDIATE_COMMANDLISTS=0
 
-RUN ldconfig
+# Fail the build when a shipped binary or library misses a runtime library.
+RUN ldconfig \
+ && for bin in /usr/local/bin/vmaf /usr/local/bin/ffmpeg /usr/local/bin/ffprobe \
+               /usr/local/lib/libvmaf.so.* /usr/local/lib/libvmafx.so.*; do \
+      deps="$(ldd "$bin")" || exit 1; \
+      case "$deps" in *'not found'*) echo "FATAL: $bin misses a library: $deps"; exit 1;; esac; \
+    done
 
 # ---- Golden self-check (ADR-3358) ------------------------------------------
 # A LEAN reference-pair verifier so operators can confirm the DEPLOYED binary

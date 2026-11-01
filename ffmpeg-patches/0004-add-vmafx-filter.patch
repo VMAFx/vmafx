@@ -9,7 +9,7 @@ One filter for every VMAFx backend: the backend follows the input frames
 options come from the library's option groups (vf_vmafx_options.h,
 generated) with the libvmaf filter's names as aliases, n_stats windows
 run on the library's window clock, and the provenance record goes to the
-log and the report. vmafx_tune, the libvmaf_tune filter's capability on
+log and the report. vmafx_tune, the CRF recommendation tuning filter on
 the same scoring path, recommends a CRF for the next pass. Built with
 --enable-libvmafx.
 ---
@@ -17,54 +17,54 @@ the same scoring path, recommends a CRF for the next pass. Built with
  doc/filters.texi               |  151 ++
  libavfilter/Makefile           |    2 +
  libavfilter/allfilters.c       |    2 +
- libavfilter/vf_vmafx.c         | 2694 ++++++++++++++++++++++++++++++++
+ libavfilter/vf_vmafx.c         | 2911 ++++++++++++++++++++++++++++++++
  libavfilter/vf_vmafx_options.h |  152 ++
- 6 files changed, 3006 insertions(+)
+ 6 files changed, 3223 insertions(+)
  create mode 100644 libavfilter/vf_vmafx.c
  create mode 100644 libavfilter/vf_vmafx_options.h
 
 diff --git a/configure b/configure
-index b94be9d7477c067cd6fb5de11d413786d384f6ca..7720d816105a8d3dd8edce31e55dfbbccf3df134 100755
+index 0ebe83a5ae70d894b284b8715cc9862870e2c909..3a481a826ac33f9f68ecd5f1ef3b82244a290e51 100755
 --- a/configure
 +++ b/configure
-@@ -299,6 +299,7 @@ External library support:
-   --enable-libvmaf-cuda    enable CUDA-accelerated vmaf filter via libvmaf [no]
-   --enable-libvmaf-sycl    enable SYCL-accelerated vmaf filter via libvmaf [no]
-   --enable-libvmaf-vulkan  enable Vulkan-accelerated vmaf filter via libvmaf [no]
+@@ -294,6 +294,7 @@ External library support:
+   --enable-libv4l2         enable libv4l2/v4l-utils [no]
+   --enable-libvidstab      enable video stabilization using vid.stab [no]
+   --enable-libvmaf         enable vmaf filter via libvmaf [no]
 +  --enable-libvmafx        enable the vmafx filters via libvmafx [no]
    --enable-libvo-amrwbenc  enable AMR-WB encoding via libvo-amrwbenc [no]
    --enable-libvorbis       enable Vorbis en/decoding via libvorbis,
                             native implementation exists [no]
-@@ -2148,6 +2149,7 @@ EXTERNAL_LIBRARY_LIST="
-     libvmaf_cuda
-     libvmaf_sycl
-     libvmaf_vulkan
+@@ -2138,6 +2139,7 @@ EXTERNAL_LIBRARY_LIST="
+     libuavs3d
+     libv4l2
+     libvmaf
 +    libvmafx
      libvorbis
      libvpx
      libvvenc
-@@ -4317,6 +4319,8 @@ libvmaf_sycl_filter_deps="libvmaf libvmaf_sycl libvpl"
- libvmaf_vulkan_filter_deps="libvmaf libvmaf_vulkan vulkan"
- vmaf_pre_filter_deps="libvmaf"
- libvmaf_tune_filter_deps="libvmaf"
+@@ -4302,6 +4304,8 @@ vidstabdetect_filter_deps="libvidstab"
+ vidstabtransform_filter_deps="libvidstab"
+ libvmaf_filter_deps="libvmaf"
+ libvmaf_cuda_filter_deps="libvmaf libvmaf_cuda ffnvcodec"
 +vmafx_filter_deps="libvmafx"
 +vmafx_tune_filter_deps="libvmafx"
  zmq_filter_deps="libzmq"
  zoompan_filter_deps="swscale"
  zscale_filter_deps="libzimg const_nan"
-@@ -7495,6 +7499,7 @@ enabled libvmaf           && check_pkg_config libvmaf_cuda "libvmaf >= 2.0.0" li
- enabled libvmaf           && check_pkg_config libvmaf_sycl "libvmaf >= 3.0.0" libvmaf/libvmaf_sycl.h vmaf_sycl_state_init
- enabled libvmaf           && check_pkg_config libvmaf_vulkan "libvmaf >= 3.0.0" libvmaf/libvmaf_vulkan.h vmaf_vulkan_state_init
- enabled vmaf_pre_filter   && require_pkg_config libvmaf_dnn "libvmaf >= 3.0.0" libvmaf/dnn.h vmaf_dnn_session_open
+@@ -7463,6 +7467,7 @@ enabled libv4l2           && require_pkg_config libv4l2 libv4l2 libv4l2.h v4l2_i
+ enabled libvidstab        && require_pkg_config libvidstab "vidstab >= 0.98" vid.stab/libvidstab.h vsMotionDetectInit
+ enabled libvmaf           && require_pkg_config libvmaf "libvmaf >= 2.0.0" libvmaf.h vmaf_init
+ enabled libvmaf           && check_pkg_config libvmaf_cuda "libvmaf >= 2.0.0" libvmaf_cuda.h vmaf_cuda_state_init
 +enabled libvmafx          && require_pkg_config libvmafx "libvmafx >= 1.0.0" vmafx/vmafx.h vmafx_context_create
  enabled libvo_amrwbenc    && { check_pkg_config libvo_amrwbenc vo-amrwbenc vo-amrwbenc/enc_if.h E_IF_init ||
                                 require libvo_amrwbenc vo-amrwbenc/enc_if.h E_IF_init -lvo-amrwbenc; }
  enabled libvorbis         && require_pkg_config libvorbis vorbis vorbis/codec.h vorbis_info_init &&
 diff --git a/doc/filters.texi b/doc/filters.texi
-index de6ded8994a401c515c652f52e64553853658d4b..13198385c79fc2876c2a1858e15b8f2ac9a7fcbd 100644
+index 9ebe763b81e117e042d557ce723a8a2e837eb9b6..18a2bac9dc8268b709d75ad28a0e1e28f85f5403 100644
 --- a/doc/filters.texi
 +++ b/doc/filters.texi
-@@ -25971,6 +25971,157 @@ ffmpeg -i ref.mpg -vf vmafmotion -f null -
+@@ -25967,6 +25967,157 @@ ffmpeg -i ref.mpg -vf vmafmotion -f null -
  @end example
  
  @anchor{vpp_amf}
@@ -223,26 +223,26 @@ index de6ded8994a401c515c652f52e64553853658d4b..13198385c79fc2876c2a1858e15b8f2a
  
  Scale (resize) and convert colorspace, transfer characteristics or color primaries for the input video, using AMD Advanced Media Framework library for hardware acceleration.
 diff --git a/libavfilter/Makefile b/libavfilter/Makefile
-index 6e6f6ad5a50d2f9b14b2caf96082f39fa6093264..f1a063d278d7b87d5da2c70c5453083d2a33a6f2 100644
+index 1903562118e9dbd966aa03e81c0e11609ec89aa0..2a2cabc493c654213b6113a32de5914e8179853a 100644
 --- a/libavfilter/Makefile
 +++ b/libavfilter/Makefile
-@@ -587,6 +587,8 @@ OBJS-$(CONFIG_VIF_FILTER)                    += vf_vif.o framesync.o
+@@ -583,6 +583,8 @@ OBJS-$(CONFIG_VIDSTABTRANSFORM_FILTER)       += vidstabutils.o vf_vidstabtransfo
+ OBJS-$(CONFIG_VIF_FILTER)                    += vf_vif.o framesync.o
  OBJS-$(CONFIG_VIGNETTE_FILTER)               += vf_vignette.o
  OBJS-$(CONFIG_VMAFMOTION_FILTER)             += vf_vmafmotion.o framesync.o
- OBJS-$(CONFIG_VMAF_PRE_FILTER)               += vf_vmaf_pre.o
 +OBJS-$(CONFIG_VMAFX_FILTER)                  += vf_vmafx.o framesync.o
 +OBJS-$(CONFIG_VMAFX_TUNE_FILTER)             += vf_vmafx.o framesync.o
- OBJS-$(CONFIG_LIBVMAF_TUNE_FILTER)           += vf_libvmaf_tune.o framesync.o
  OBJS-$(CONFIG_VPP_AMF_FILTER)                += vf_vpp_amf.o scale_eval.o vf_amf_common.o
  OBJS-$(CONFIG_FRC_AMF_FILTER)                += vf_frc_amf.o vf_amf_common.o
+ OBJS-$(CONFIG_VPP_QSV_FILTER)                += vf_vpp_qsv.o
 diff --git a/libavfilter/allfilters.c b/libavfilter/allfilters.c
-index 8f22f0d02c520616adb56942f205ab9432335f4b..301a08b8532056ce30c57932bd42c5173b3c219d 100644
+index 5ecf9a8698318dd84d5d3723df2053a2c9f20304..b923bf9ec16ee0818b64509ca8af9f189ff3f447 100644
 --- a/libavfilter/allfilters.c
 +++ b/libavfilter/allfilters.c
-@@ -547,6 +547,8 @@ extern const FFFilter ff_vf_vif;
+@@ -542,6 +542,8 @@ extern const FFFilter ff_vf_vidstabtransform;
+ extern const FFFilter ff_vf_vif;
  extern const FFFilter ff_vf_vignette;
  extern const FFFilter ff_vf_vmafmotion;
- extern const FFFilter ff_vf_vmaf_pre;
 +extern const FFFilter ff_vf_vmafx;
 +extern const FFFilter ff_vf_vmafx_tune;
  extern const FFFilter ff_vf_vpp_qsv;
@@ -250,10 +250,10 @@ index 8f22f0d02c520616adb56942f205ab9432335f4b..301a08b8532056ce30c57932bd42c517
  extern const FFFilter ff_vf_w3fdif;
 diff --git a/libavfilter/vf_vmafx.c b/libavfilter/vf_vmafx.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..dc09c9be44e592a050f8194cf2a9799285732fa7
+index 0000000000000000000000000000000000000000..23654d0cca67e34a9bb14de27183eae9fca88938
 --- /dev/null
 +++ b/libavfilter/vf_vmafx.c
-@@ -0,0 +1,2694 @@
+@@ -0,0 +1,2911 @@
 +/*
 + * Copyright 2026 Lusoris
 + *
@@ -358,7 +358,9 @@ index 0000000000000000000000000000000000000000..dc09c9be44e592a050f8194cf2a97992
 +    uint64_t frame_cnt;
 +    int failed;   /* a frame could not be scored: no score line after it */
 +    int finished; /* the stream was flushed and every window written */
++    int output_created_by_probe;
 +    int logged_download;
++    int color_set; /* input colorimetry handed to libvmafx (ADR-2093 / ADR-2094) */
 +    /* The pairing contract of the two inputs (do_vmafx()): main frames that had
 +     * no reference frame, and pairs whose timestamps differ by more than half
 +     * a frame, are counted and reported, never scored silently. */
@@ -393,16 +395,19 @@ index 0000000000000000000000000000000000000000..dc09c9be44e592a050f8194cf2a97992
 +    const char *name;             /* the `backend` option's value */
 +    enum AVPixelFormat hw_format; /* the hardware frames it imports */
 +    int (*open)(AVFilterContext *ctx, AVBufferRef *frames);
-+    int (*import)(AVFilterContext *ctx, AVFrame *frame, const char *input, VmafxFrame **out);
++    int (*import)(AVFilterContext *ctx, AVFrame *frame, const char *input, uint64_t index,
++                  VmafxFrame **out);
 +} VMAFXBackendSlot;
 +
 +#if CONFIG_CUDA
 +static int cuda_open(AVFilterContext *ctx, AVBufferRef *frames);
-+static int cuda_import(AVFilterContext *ctx, AVFrame *frame, const char *input, VmafxFrame **out);
++static int cuda_import(AVFilterContext *ctx, AVFrame *frame, const char *input, uint64_t index,
++                       VmafxFrame **out);
 +#endif
 +#if CONFIG_LIBDRM
 +static int drm_open(AVFilterContext *ctx, AVBufferRef *frames);
-+static int drm_import(AVFilterContext *ctx, AVFrame *frame, const char *input, VmafxFrame **out);
++static int drm_import(AVFilterContext *ctx, AVFrame *frame, const char *input, uint64_t index,
++                      VmafxFrame **out);
 +#define VMAFX_DRM_OPEN drm_open
 +#define VMAFX_DRM_IMPORT drm_import
 +#else
@@ -412,10 +417,12 @@ index 0000000000000000000000000000000000000000..dc09c9be44e592a050f8194cf2a97992
 +
 +#if CONFIG_VULKAN
 +static int vk_open(AVFilterContext *ctx, AVBufferRef *frames);
-+static int vk_import(AVFilterContext *ctx, AVFrame *frame, const char *input, VmafxFrame **out);
++static int vk_import(AVFilterContext *ctx, AVFrame *frame, const char *input, uint64_t index,
++                     VmafxFrame **out);
 +static void vk_close(VMAFXContext *s);
 +#endif
 +
++#if CONFIG_VULKAN || CONFIG_LIBDRM
 +/* The slot of the backend that reads the GPUs of a PCI vendor with
 + * backend=auto: CUDA on NVIDIA, SYCL on Intel, HIP on AMD; 0 for another. */
 +static int vendor_slot(unsigned vendor)
@@ -431,6 +438,7 @@ index 0000000000000000000000000000000000000000..dc09c9be44e592a050f8194cf2a97992
 +        return 0;
 +    }
 +}
++#endif
 +
 +/* Indexed by the `backend` option (auto, cpu, cuda, sycl, hip, metal). */
 +static const VMAFXBackendSlot backend_slots[] = {
@@ -447,7 +455,7 @@ index 0000000000000000000000000000000000000000..dc09c9be44e592a050f8194cf2a97992
 +};
 +
 +#define OFFSET(x) offsetof(VMAFXContext, x)
-+#define FLAGS AV_OPT_FLAG_FILTERING_PARAM | AV_OPT_FLAG_VIDEO_PARAM
++#define FLAGS (AV_OPT_FLAG_FILTERING_PARAM | AV_OPT_FLAG_VIDEO_PARAM)
 +
 +static const AVOption vmafx_options[] = {
 +    VMAFX_FILTER_OPTIONS(VMAFXContext, FLAGS){NULL},
@@ -457,13 +465,53 @@ index 0000000000000000000000000000000000000000..dc09c9be44e592a050f8194cf2a97992
 +
 +/* ---- Errors and the library's log ------------------------------------------- */
 +
++static int vmafx_status_to_averror(VmafxStatus status, const VmafxError *error)
++{
++    if (error) {
++        const int32_t err = vmafx_error_errno(error);
++        if (err < 0)
++            return err;
++        if (err > 0)
++            return -err;
++    }
++    switch (status) {
++    case VMAFX_OK:
++        return 0;
++    case VMAFX_E_NOMEM:
++        return AVERROR(ENOMEM);
++    case VMAFX_E_IO:
++        return AVERROR(EIO);
++    case VMAFX_E_INVALID:
++        return AVERROR(EINVAL);
++    case VMAFX_E_NOTSUP:
++        return AVERROR(ENOSYS);
++    case VMAFX_E_NOTFOUND:
++        return AVERROR(ENOENT);
++    case VMAFX_E_BUSY:
++        return AVERROR(EBUSY);
++    case VMAFX_E_RANGE:
++        return AVERROR(ERANGE);
++    default:
++        return AVERROR_EXTERNAL;
++    }
++}
++
 +/* Log a library failure naming the call, then release the error. */
 +static int vmafx_fail(AVFilterContext *ctx, VmafxStatus status, VmafxError *error, const char *what)
 +{
++    const int ret = vmafx_status_to_averror(status, error);
 +    av_log(ctx, AV_LOG_ERROR, "%s: %s: %s [%s]\n", what, vmafx_status_name(status),
 +           error ? vmafx_error_message(error) : "", error ? vmafx_error_subject(error) : "");
 +    vmafx_error_free(error);
-+    return status == VMAFX_E_NOMEM ? AVERROR(ENOMEM) : AVERROR_EXTERNAL;
++    return ret;
++}
++
++static int vmafx_fail_import(AVFilterContext *ctx, VmafxStatus status, VmafxError *error,
++                             const char *input, uint64_t index, const char *what)
++{
++    char desc[128];
++    snprintf(desc, sizeof(desc), "%s of frame %" PRIu64 " (%s)", what, index, input);
++    return vmafx_fail(ctx, status, error, desc);
 +}
 +
 +static void log_from_library(uint32_t level, const char *message, void *user)
@@ -786,7 +834,8 @@ index 0000000000000000000000000000000000000000..dc09c9be44e592a050f8194cf2a97992
 + * memory and converted. A host frame
 + * lives on the CPU device whatever device the context scores on; a context on
 + * a GPU uploads it. */
-+static int host_frame(AVFilterContext *ctx, AVFrame *frame, const char *input, VmafxFrame **out)
++static int host_frame(AVFilterContext *ctx, AVFrame *frame, const char *input, uint64_t index,
++                      VmafxFrame **out)
 +{
 +    VMAFXContext *s = ctx->priv;
 +    uint32_t bpc = 0;
@@ -800,15 +849,17 @@ index 0000000000000000000000000000000000000000..dc09c9be44e592a050f8194cf2a97992
 +                                   host_wrap(frame, layout, bpc, b, out, &error);
 +    box_after_import(b, status);
 +    if (status != VMAFX_OK) {
-+        av_log(ctx, AV_LOG_ERROR, "vmafx: the %s input (%s) cannot be scored\n", input,
-+               av_get_pix_fmt_name(frame->format));
-+        return vmafx_fail(ctx, status, error, "vmafx_frame");
++        av_log(ctx, AV_LOG_ERROR,
++               "vmafx: the %s input (%s) of frame %" PRIu64 " cannot be scored\n", input,
++               av_get_pix_fmt_name(frame->format), index);
++        return vmafx_fail_import(ctx, status, error, input, index, "vmafx_frame");
 +    }
 +    return 0;
 +}
 +
 +/* import=host on hardware frames: an explicit download, logged once. */
-+static int download_frame(AVFilterContext *ctx, AVFrame *frame, const char *input, VmafxFrame **out)
++static int download_frame(AVFilterContext *ctx, AVFrame *frame, const char *input, uint64_t index,
++                          VmafxFrame **out)
 +{
 +    VMAFXContext *s = ctx->priv;
 +    AVFrame *sw = av_frame_alloc();
@@ -822,32 +873,36 @@ index 0000000000000000000000000000000000000000..dc09c9be44e592a050f8194cf2a97992
 +                   "vmafx: import=host: hardware frames are downloaded before scoring\n");
 +            s->logged_download = 1;
 +        }
-+        ret = host_frame(ctx, sw, input, out);
++        ret = host_frame(ctx, sw, input, index, out);
++    } else {
++        av_log(ctx, AV_LOG_ERROR, "vmafx: download of %s frame %" PRIu64 " failed (%s)\n", input,
++               index, av_err2str(ret));
 +    }
 +    av_frame_free(&sw);
 +    return ret;
 +}
 +
 +/* One input frame as a VMAFx frame of the context's device. */
-+static int to_vmafx_frame(AVFilterContext *ctx, AVFrame *frame, const char *input, VmafxFrame **out)
++static int to_vmafx_frame(AVFilterContext *ctx, AVFrame *frame, const char *input, uint64_t index,
++                          VmafxFrame **out)
 +{
 +    VMAFXContext *s = ctx->priv;
 +    *out = NULL;
 +    if (!s->hw) {
 +        s->n_host++;
-+        return host_frame(ctx, frame, input, out);
++        return host_frame(ctx, frame, input, index, out);
 +    }
 +    if (s->import_mode == 2) {
 +        s->n_downloaded++;
-+        return download_frame(ctx, frame, input, out);
++        return download_frame(ctx, frame, input, index, out);
 +    }
 +    s->n_imported++;
 +#if CONFIG_VULKAN
 +    if (s->vulkan)
-+        return vk_import(ctx, frame, input, out);
++        return vk_import(ctx, frame, input, index, out);
 +#endif
 +    av_assert0(s->slot && s->slot->import);
-+    return s->slot->import(ctx, frame, input, out);
++    return s->slot->import(ctx, frame, input, index, out);
 +}
 +
 +/* ---- CUDA frames ---------------------------------------------------------------- */
@@ -929,7 +984,8 @@ index 0000000000000000000000000000000000000000..dc09c9be44e592a050f8194cf2a97992
 +}
 +
 +/* A CUDA frame imported without a copy, under the import rule (D8). */
-+static int cuda_import(AVFilterContext *ctx, AVFrame *frame, const char *input, VmafxFrame **out)
++static int cuda_import(AVFilterContext *ctx, AVFrame *frame, const char *input, uint64_t index,
++                       VmafxFrame **out)
 +{
 +    VMAFXContext *s = ctx->priv;
 +    AVHWFramesContext *fc = (AVHWFramesContext *)frame->hw_frames_ctx->data;
@@ -952,7 +1008,12 @@ index 0000000000000000000000000000000000000000..dc09c9be44e592a050f8194cf2a97992
 +    status = import_finish(status, out, VMAFX_FENCE_CUDA_EVENT, b, &error);
 +    if (status == VMAFX_OK)
 +        return 0;
-+    return ret < 0 ? ret : vmafx_fail(ctx, status, error, "vmafx_context_import_frame");
++    if (ret < 0) {
++        av_log(ctx, AV_LOG_ERROR, "vmafx: cannot acquire CUDA %s frame %" PRIu64 "\n", input,
++               index);
++        return ret;
++    }
++    return vmafx_fail_import(ctx, status, error, input, index, "vmafx_context_import_frame");
 +}
 +#endif /* CONFIG_CUDA */
 +
@@ -1013,7 +1074,8 @@ index 0000000000000000000000000000000000000000..dc09c9be44e592a050f8194cf2a97992
 + * writes are ordered by the dma-buf's implicit fences, which the device
 + * import waits for (decision D8 retries a busy one); the frame goes back to
 + * its producer after its HOST release fence. */
-+static int drm_import(AVFilterContext *ctx, AVFrame *frame, const char *input, VmafxFrame **out)
++static int drm_import(AVFilterContext *ctx, AVFrame *frame, const char *input, uint64_t index,
++                      VmafxFrame **out)
 +{
 +    VMAFXContext *s = ctx->priv;
 +    const AVDRMFrameDescriptor *drm = (const AVDRMFrameDescriptor *)frame->data[0];
@@ -1037,8 +1099,9 @@ index 0000000000000000000000000000000000000000..dc09c9be44e592a050f8194cf2a97992
 +        }
 +    }
 +    if ((int)imp.n_planes != av_pix_fmt_count_planes(frame_sw_format(frame))) {
-+        av_log(ctx, AV_LOG_ERROR, "vmafx: the %s input's DRM frame has %u planes, %s has %d\n",
-+               input, imp.n_planes, av_get_pix_fmt_name(frame_sw_format(frame)),
++        av_log(ctx, AV_LOG_ERROR,
++               "vmafx: the %s input's DRM frame %" PRIu64 " has %u planes, %s has %d\n", input,
++               index, imp.n_planes, av_get_pix_fmt_name(frame_sw_format(frame)),
 +               av_pix_fmt_count_planes(frame_sw_format(frame)));
 +        return AVERROR(EINVAL);
 +    }
@@ -1052,7 +1115,9 @@ index 0000000000000000000000000000000000000000..dc09c9be44e592a050f8194cf2a97992
 +    /* The surface goes back to its pool (a decoder writes it again) only
 +     * after the device read it: box_release() waits on this fence. */
 +    status = import_finish(status, out, VMAFX_FENCE_HOST, b, &error);
-+    return status == VMAFX_OK ? 0 : vmafx_fail(ctx, status, error, "vmafx_context_import_frame");
++    return status == VMAFX_OK ?
++               0 :
++               vmafx_fail_import(ctx, status, error, input, index, "vmafx_context_import_frame");
 +}
 +#endif /* CONFIG_LIBDRM */
 +
@@ -1446,7 +1511,8 @@ index 0000000000000000000000000000000000000000..dc09c9be44e592a050f8194cf2a97992
 + * at its value and signalled one higher, as FFmpeg's submissions do. */
 +static int vk_submit(VMAFXVulkan *v, VkCommandBuffer cmd, VkFence fence, AVVkFrame *const f[2])
 +{
-+    VkSemaphoreSubmitInfo wait[2 * AV_NUM_DATA_POINTERS], sig[2 * AV_NUM_DATA_POINTERS];
++    VkSemaphoreSubmitInfo wait[2 * AV_NUM_DATA_POINTERS];
++    VkSemaphoreSubmitInfo sig[2 * AV_NUM_DATA_POINTERS];
 +    int k = 0;
 +    for (int j = 0; j < 2; j++)
 +        for (int i = 0; i < vk_images(f[j]); i++, k++) {
@@ -1522,7 +1588,8 @@ index 0000000000000000000000000000000000000000..dc09c9be44e592a050f8194cf2a97992
 +    }
 +    AVHWFramesContext *sfc = (AVHWFramesContext *)frame->hw_frames_ctx->data;
 +    AVHWFramesContext *dfc = (AVHWFramesContext *)copy->hw_frames_ctx->data;
-+    AVVulkanFramesContext *svk = sfc->hwctx, *dvk = dfc->hwctx;
++    AVVulkanFramesContext *svk = sfc->hwctx;
++    AVVulkanFramesContext *dvk = dfc->hwctx;
 +    AVVkFrame *const f[2] = {(AVVkFrame *)frame->data[0], (AVVkFrame *)copy->data[0]};
 +    const int n_planes = av_pix_fmt_count_planes(frame_sw_format(frame));
 +    int ok = vk_images(f[1]) == n_planes && (vk_images(f[0]) == 1 || vk_images(f[0]) == n_planes);
@@ -1630,8 +1697,10 @@ index 0000000000000000000000000000000000000000..dc09c9be44e592a050f8194cf2a97992
 +        imp->plane[i].fd = -1;
 +        vk_acquire_fence(imp, (int)i)->fd = -1;
 +    }
-+    int ok = imp->n_planes <= 3;
-+    for (unsigned i = 0; i < imp->n_planes && ok; i++)
++    if (imp->n_planes > FF_ARRAY_ELEMS(imp->plane))
++        return AVERROR_EXTERNAL;
++    int ok = 1;
++    for (unsigned i = 0; i < imp->n_planes && i < FF_ARRAY_ELEMS(imp->plane) && ok; i++)
 +        ok = vk_describe_plane(v, f, (int)i, imp, vk_acquire_fence(imp, (int)i));
 +    return ok ? 0 : AVERROR_EXTERNAL;
 +}
@@ -1699,15 +1768,16 @@ index 0000000000000000000000000000000000000000..dc09c9be44e592a050f8194cf2a97992
 +
 +/* A Vulkan frame: copied on the GPU into an exportable per-plane frame, which
 + * the device imports without a host copy. */
-+static int vk_import(AVFilterContext *ctx, AVFrame *frame, const char *input, VmafxFrame **out)
++static int vk_import(AVFilterContext *ctx, AVFrame *frame, const char *input, uint64_t index,
++                     VmafxFrame **out)
 +{
 +    VMAFXContext *s = ctx->priv;
 +    AVFrame *copy = vk_device_copy(s, strcmp(input, "main") != 0, frame);
 +    if (!copy) {
 +        av_log(ctx, AV_LOG_ERROR,
-+               "vmafx: the %s input's Vulkan frame cannot be copied for the "
++               "vmafx: the %s input's Vulkan frame %" PRIu64 " cannot be copied for the "
 +               "handover\n",
-+               input);
++               input, index);
 +        return AVERROR_EXTERNAL;
 +    }
 +    ReleaseBox *b = box_new(copy);
@@ -1721,7 +1791,9 @@ index 0000000000000000000000000000000000000000..dc09c9be44e592a050f8194cf2a97992
 +        *out = NULL;
 +    }
 +    box_after_import(b, st);
-+    return st == VMAFX_OK ? 0 : vmafx_fail(ctx, st, error, "vmafx_context_import_frame(vulkan)");
++    return st == VMAFX_OK ? 0 :
++                            vmafx_fail_import(ctx, st, error, input, index,
++                                              "vmafx_context_import_frame(vulkan)");
 +}
 +#endif /* CONFIG_VULKAN */
 +
@@ -1734,13 +1806,17 @@ index 0000000000000000000000000000000000000000..dc09c9be44e592a050f8194cf2a97992
 +}
 +
 +static const char *const pool_names[] = VMAFX_OPT_POOL_VALUES;
++/* value[p] holds pool name p - 1 (bit 0 is unused), so p <= the name count bounds both. */
++_Static_assert(sizeof(((VmafxWindowResult *)0)->value) / sizeof(double) ==
++                   FF_ARRAY_ELEMS(pool_names) + 1,
++               "one window value per pool name");
 +
 +/* One `"name":{"mean":v,...}` member of a window line. */
 +static void window_model(AVBPrint *bp, const VMAFXContext *s, const VmafxWindowResult *r)
 +{
 +    av_bprintf(bp, ",\"%s\":{", r->name);
 +    unsigned n = 0;
-+    for (unsigned p = 1; p < FF_ARRAY_ELEMS(r->value) && p <= FF_ARRAY_ELEMS(pool_names); p++) {
++    for (unsigned p = 1; p <= FF_ARRAY_ELEMS(pool_names); p++) {
 +        if (!(r->pool_mask & (1u << p)))
 +            continue;
 +        av_bprintf(bp, "%s\"%s\":", n++ ? "," : "", pool_names[p - 1]);
@@ -1754,7 +1830,7 @@ index 0000000000000000000000000000000000000000..dc09c9be44e592a050f8194cf2a97992
 +{
 +    char key[128];
 +    char value[64];
-+    for (unsigned p = 1; p < FF_ARRAY_ELEMS(r->value) && p <= FF_ARRAY_ELEMS(pool_names); p++) {
++    for (unsigned p = 1; p <= FF_ARRAY_ELEMS(pool_names); p++) {
 +        if (!(r->pool_mask & (1u << p)))
 +            continue;
 +        snprintf(key, sizeof(key), "lavfi.vmafx.window.%s.%s", r->name, pool_names[p - 1]);
@@ -1830,10 +1906,12 @@ index 0000000000000000000000000000000000000000..dc09c9be44e592a050f8194cf2a97992
 +    return 0;
 +}
 +
-+/* Submit the span the clock cut: one window per model. */
++/* Submit the span the clock cut: one window per model; none without a model. */
 +static int windows_submit(AVFilterContext *ctx, const VmafxWindowSpan *span)
 +{
 +    VMAFXContext *s = ctx->priv;
++    if (!s->n_models)
++        return 0;
 +    if (s->span_count == VMAFX_MAX_SPANS) {
 +        int ret = windows_collect(ctx, 1); /* bounded: wait for the oldest */
 +        if (ret < 0)
@@ -1972,26 +2050,124 @@ index 0000000000000000000000000000000000000000..dc09c9be44e592a050f8194cf2a97992
 +static void perceptual_sidedata(AVFilterContext *ctx, const AVFrame *dist, uint64_t index)
 +{
 +    VMAFXContext *s = ctx->priv;
-+    const AVFrameSideData *sd = av_frame_get_side_data(dist, AV_FRAME_DATA_SEI_UNREGISTERED);
-+    if (!s->perceptual_weight || !sd || !sd->data || !sd->size)
++    if (!s->perceptual_weight || !dist->nb_side_data)
 +        return;
-+    VmafxError *error = NULL;
-+    if (vmafx_context_attach_sidedata(s->context, index, sd->data, sd->size, &error) != VMAFX_OK) {
++    for (int i = dist->nb_side_data - 1; i >= 0; i--) {
++        const AVFrameSideData *sd = dist->side_data[i];
++        if (sd->type != AV_FRAME_DATA_SEI_UNREGISTERED || !sd->data || !sd->size)
++            continue;
++        VmafxError *error = NULL;
++        if (vmafx_context_attach_sidedata(s->context, index, sd->data, sd->size, &error) ==
++            VMAFX_OK)
++            break;
 +        av_log(ctx, AV_LOG_DEBUG, "perceptual_weight: frame %" PRIu64 " scored unweighted: %s\n",
 +               index, vmafx_error_message(error));
 +        vmafx_error_free(error);
 +    }
 +}
 +
++/* Colorimetry of one input from the AVFrame properties (ADR-2093, ADR-2094).
++ * Returns 1 and fills *out when range, primaries, transfer and matrix are all
++ * ones VMAFx names, 0 otherwise (the input is then left unspecified and a model
++ * without a conversion_target scores exactly as before). */
++static uint32_t map_color_range(enum AVColorRange range)
++{
++    switch (range) {
++    case AVCOL_RANGE_MPEG:
++        return VMAFX_COLOR_RANGE_LIMITED;
++    case AVCOL_RANGE_JPEG:
++        return VMAFX_COLOR_RANGE_FULL;
++    default:
++        return VMAFX_COLOR_RANGE_UNKNOWN;
++    }
++}
++
++static uint32_t map_color_primaries(enum AVColorPrimaries pri)
++{
++    switch (pri) {
++    case AVCOL_PRI_BT709:
++        return VMAFX_COLOR_PRIMARIES_BT709;
++    case AVCOL_PRI_BT2020:
++        return VMAFX_COLOR_PRIMARIES_BT2020;
++    case AVCOL_PRI_SMPTE432:
++        return VMAFX_COLOR_PRIMARIES_SMPTE432;
++    default:
++        return VMAFX_COLOR_PRIMARIES_UNKNOWN;
++    }
++}
++
++static uint32_t map_color_trc(enum AVColorTransferCharacteristic trc)
++{
++    switch (trc) {
++    case AVCOL_TRC_BT709:
++        return VMAFX_COLOR_TRC_BT709;
++    case AVCOL_TRC_SMPTE2084:
++        return VMAFX_COLOR_TRC_SMPTE2084;
++    default:
++        return VMAFX_COLOR_TRC_UNKNOWN;
++    }
++}
++
++static uint32_t map_color_matrix(enum AVColorSpace spc)
++{
++    switch (spc) {
++    case AVCOL_SPC_BT709:
++        return VMAFX_COLOR_MATRIX_BT709;
++    case AVCOL_SPC_BT2020_NCL:
++        return VMAFX_COLOR_MATRIX_BT2020_NCL;
++    case AVCOL_SPC_ICTCP:
++        return VMAFX_COLOR_MATRIX_ICTCP;
++    default:
++        return VMAFX_COLOR_MATRIX_UNKNOWN;
++    }
++}
++
++static int vmafx_color_from_frame(const AVFrame *f, VmafxColor *out)
++{
++    const VmafxColor c = {
++        .range = map_color_range(f->color_range),
++        .primaries = map_color_primaries(f->color_primaries),
++        .trc = map_color_trc(f->color_trc),
++        .matrix = map_color_matrix(f->colorspace),
++    };
++    if (!c.range || !c.primaries || !c.trc || !c.matrix)
++        return 0;
++    *out = c;
++    return 1;
++}
++
++/* Once, on the first frame pair, before anything is read: declare the colour of
++ * the reference and distorted input to VMAFx for a model's conversion_target. */
++static int vmafx_declare_input_color(AVFilterContext *ctx, VMAFXContext *s, const AVFrame *ref,
++                                     const AVFrame *dist)
++{
++    VmafxColor ref_color;
++    VmafxColor dist_color;
++    VmafxError *error = NULL;
++
++    if (s->color_set)
++        return 0;
++    const VmafxColor *const r = vmafx_color_from_frame(ref, &ref_color) ? &ref_color : NULL;
++    const VmafxColor *const d = vmafx_color_from_frame(dist, &dist_color) ? &dist_color : NULL;
++    const VmafxStatus st = vmafx_context_set_default_color(s->context, r, d, &error);
++    if (st != VMAFX_OK)
++        return vmafx_fail(ctx, st, error, "vmafx_context_set_default_color");
++    s->color_set = 1;
++    return 0;
++}
++
 +/* Both inputs as VMAFx frames, submitted as frame `index`. */
 +static int submit_pair(AVFilterContext *ctx, AVFrame *ref, AVFrame *dist, uint64_t index)
 +{
 +    VMAFXContext *s = ctx->priv;
++    int ret = vmafx_declare_input_color(ctx, s, ref, dist);
++    if (ret < 0)
++        return ret;
 +    VmafxFrame *r = NULL;
 +    VmafxFrame *d = NULL;
-+    int ret = to_vmafx_frame(ctx, ref, "reference", &r);
++    ret = to_vmafx_frame(ctx, ref, "reference", index, &r);
 +    if (ret >= 0)
-+        ret = to_vmafx_frame(ctx, dist, "main", &d);
++        ret = to_vmafx_frame(ctx, dist, "main", index, &d);
 +    if (ret < 0) {
 +        vmafx_frame_unref(r);
 +        return ret;
@@ -1999,7 +2175,14 @@ index 0000000000000000000000000000000000000000..dc09c9be44e592a050f8194cf2a97992
 +    perceptual_sidedata(ctx, dist, index);
 +    VmafxError *error = NULL;
 +    const VmafxStatus st = vmafx_submit(s->context, r, d, index, &error); /* consumes both */
-+    return st == VMAFX_OK ? 0 : vmafx_fail(ctx, st, error, "vmafx_submit");
++    if (st != VMAFX_OK) {
++        const int err = vmafx_status_to_averror(st, error);
++        av_log(ctx, AV_LOG_ERROR, "vmafx: vmafx_submit of frame %" PRIu64 " failed (%s)\n", index,
++               av_err2str(err));
++        vmafx_error_free(error);
++        return err;
++    }
++    return 0;
 +}
 +
 +/* A main frame with no reference frame (the reference starts later or ended
@@ -2078,7 +2261,7 @@ index 0000000000000000000000000000000000000000..dc09c9be44e592a050f8194cf2a97992
 +        av_frame_free(&dist);
 +        return AVERROR_EXTERNAL;
 +    }
-+    const uint64_t index = s->frame_cnt++;
++    const uint64_t index = s->frame_cnt;
 +    check_pair_timestamps(ctx, dist, ref, index);
 +    ret = windows_frame(ctx, index, dist);
 +    if (ret >= 0)
@@ -2090,6 +2273,7 @@ index 0000000000000000000000000000000000000000..dc09c9be44e592a050f8194cf2a97992
 +        av_frame_free(&dist);
 +        return ret;
 +    }
++    s->frame_cnt++;
 +    return send_or_hold(ctx, dist, index);
 +}
 +
@@ -2106,8 +2290,13 @@ index 0000000000000000000000000000000000000000..dc09c9be44e592a050f8194cf2a97992
 +        return 0;
 +    VmafxError *error = NULL;
 +    VmafxStatus st = vmafx_flush(s->context, &error);
-+    if (st != VMAFX_OK)
-+        return vmafx_fail(ctx, st, error, "vmafx_flush");
++    if (st != VMAFX_OK) {
++        const int err = vmafx_status_to_averror(st, error);
++        av_log(ctx, AV_LOG_ERROR, "vmafx: flushing vmafx after frame %" PRIu64 " failed (%s)\n",
++               s->frame_cnt ? s->frame_cnt - 1 : 0, av_err2str(err));
++        vmafx_error_free(error);
++        return err;
++    }
 +    if (s->clock) {
 +        VmafxWindowSpan span = VMAFX_WINDOW_SPAN_INIT;
 +        st = vmafx_window_clock_finish(s->clock, &span, &error);
@@ -2150,10 +2339,14 @@ index 0000000000000000000000000000000000000000..dc09c9be44e592a050f8194cf2a97992
 +    return n >= 0 && (size_t)n < size ? 0 : AVERROR(EINVAL);
 +}
 +
-+/* Each `|`-separated model spec loaded and mounted; none: the default. */
++/* Each `|`-separated model spec loaded and mounted; none: the default. An
++ * explicitly empty `model=` beside `feature=` mounts no model, so only the
++ * features score (the CLI's --no_prediction). */
 +static int use_models(AVFilterContext *ctx)
 +{
 +    VMAFXContext *s = ctx->priv;
++    if (s->model && !*s->model && s->feature && *s->feature)
++        return 0;
 +    char *copy = av_strdup(s->model ? s->model : "");
 +    if (!copy)
 +        return AVERROR(ENOMEM);
@@ -2266,10 +2459,10 @@ index 0000000000000000000000000000000000000000..dc09c9be44e592a050f8194cf2a97992
 +        return 0;
 +    }
 +#endif
-+    const int vendor_slot =
++    const int auto_slot =
 +        s->backend == 0 && format == AV_PIX_FMT_DRM_PRIME ? drm_auto_slot(frames) : 0;
 +    for (unsigned i = 2; i < FF_ARRAY_ELEMS(backend_slots); i++) {
-+        const int wanted = s->backend != 0 ? s->backend : vendor_slot;
++        const int wanted = s->backend != 0 ? s->backend : auto_slot;
 +        if (backend_slots[i].hw_format == format && (wanted == 0 || wanted == (int)i)) {
 +            s->slot = &backend_slots[i];
 +            break;
@@ -2404,9 +2597,13 @@ index 0000000000000000000000000000000000000000..dc09c9be44e592a050f8194cf2a97992
 + * fail the command: a path that cannot be written fails at init instead. */
 +static int report_path_check(AVFilterContext *ctx)
 +{
-+    const VMAFXContext *s = ctx->priv;
++    VMAFXContext *s = ctx->priv;
 +    if (!s->output || !*s->output)
 +        return 0;
++    FILE *probe = avpriv_fopen_utf8(s->output, "rb");
++    const int existed = (probe != NULL);
++    if (probe)
++        fclose(probe);
 +    FILE *f = avpriv_fopen_utf8(s->output, "ab"); /* keeps what is there; the report replaces it */
 +    if (!f) {
 +        const int err = AVERROR(errno);
@@ -2415,6 +2612,8 @@ index 0000000000000000000000000000000000000000..dc09c9be44e592a050f8194cf2a97992
 +        return err;
 +    }
 +    fclose(f);
++    if (!existed)
++        s->output_created_by_probe = 1;
 +    return 0;
 +}
 +
@@ -2628,6 +2827,8 @@ index 0000000000000000000000000000000000000000..dc09c9be44e592a050f8194cf2a97992
 +        vmafx_report_write(s->context, s->output, format, flags, s->score_fmt, &error);
 +    if (st != VMAFX_OK)
 +        vmafx_fail(ctx, st, error, "vmafx_report_write");
++    else
++        s->output_created_by_probe = 0;
 +}
 +
 +/* The pooled scores: one line per model and method, and upstream's
@@ -2701,6 +2902,10 @@ index 0000000000000000000000000000000000000000..dc09c9be44e592a050f8194cf2a97992
 +static void release_all(AVFilterContext *ctx)
 +{
 +    VMAFXContext *s = ctx->priv;
++    if (s->output && s->output_created_by_probe) {
++        remove(s->output);
++        s->output_created_by_probe = 0;
++    }
 +    HeldFrame h;
 +    while (s->held && av_fifo_read(s->held, &h, 1) >= 0)
 +        av_frame_free(&h.frame);
@@ -2729,13 +2934,25 @@ index 0000000000000000000000000000000000000000..dc09c9be44e592a050f8194cf2a97992
 +    VMAFXContext *s = ctx->priv;
 +    ff_framesync_uninit(&s->fs);
 +    if (s->context && !s->failed) {
-+        if (!s->finished && s->frame_cnt)
-+            (void)vmafx_flush(s->context, NULL);
-+        log_pooled(ctx); /* predicts every frame: the report then lists the model scores */
-+        write_report(ctx);
-+        log_profile(ctx);
-+        log_frame_paths(ctx);
-+        log_pairing(ctx);
++        if (!s->finished && s->frame_cnt) {
++            VmafxError *error = NULL;
++            VmafxStatus st = vmafx_flush(s->context, &error);
++            if (st != VMAFX_OK) {
++                const int err = vmafx_status_to_averror(st, error);
++                av_log(ctx, AV_LOG_ERROR,
++                       "vmafx: flushing vmafx after frame %" PRIu64 " failed (%s)\n",
++                       s->frame_cnt ? s->frame_cnt - 1 : 0, av_err2str(err));
++                vmafx_error_free(error);
++                s->failed = 1;
++            }
++        }
++        if (!s->failed) {
++            log_pooled(ctx); /* predicts every frame: the report then lists the model scores */
++            write_report(ctx);
++            log_profile(ctx);
++            log_frame_paths(ctx);
++            log_pairing(ctx);
++        }
 +    }
 +    release_all(ctx);
 +}
@@ -2778,7 +2995,7 @@ index 0000000000000000000000000000000000000000..dc09c9be44e592a050f8194cf2a97992
 +};
 +
 +/* ---- vmafx_tune -------------------------------------------------------------
-+ * The libvmaf_tune filter's capability on the VMAFx API: score the pass the
++ * The vmafx_tune filter on the VMAFx API: score the pass the
 + * graph carries and recommend a CRF for the next one from its mean VMAF. The
 + * same scoring path as vmafx; the default model is the library's. */
 +
@@ -2900,7 +3117,7 @@ index 0000000000000000000000000000000000000000..dc09c9be44e592a050f8194cf2a97992
 +}
 +
 +/* The observed mean VMAF mapped to a CRF in [crf_min, crf_max]: the
-+ * libvmaf_tune filter's piece-wise linear curve, 0.40 CRF per VMAF point
++ * vmafx_tune piece-wise linear curve, 0.40 CRF per VMAF point
 + * around the middle of the range (tools/vmaf-tune sweeps real encodes for
 + * per-clip precision). */
 +static double observed_to_crf(double observed, double target, double crf_min, double crf_max)

@@ -181,7 +181,7 @@ auto-detected from the file extension and a sidecar JSON
 | `VMAF_MODEL_KIND_DNN_FILTER` | Pre- and post-processing residual filter ([ADR-0168](../adr/0168-tinyai-konvid-baselines.md)). |
 
 `VMAF_MODEL_KIND_DNN_FILTER` is registry-only. It identifies filters such as
-`learned_filter_v1.onnx` (consumed by ffmpeg `vmaf_pre`) for the trust-root
+`learned_filter_v1.onnx` (consumed by ffmpeg `vmafx_pre`) for the trust-root
 sha256 audit and is never loaded by the scoring path.
 `vmaf_score_at_index()` and `vmaf_score_pooled()` operate on `SVM`,
 `DNN_FR` and `DNN_NR` only.

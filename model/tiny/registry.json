@@ -132,13 +132,13 @@
       "teacher": "unknown"
     },
     {
-      "description": "Tiny residual filter for vmaf_pre \u2014 degraded \u2192 clean luma.",
+      "description": "Tiny residual filter for vmafx_pre \u2014 degraded \u2192 clean luma.",
       "id": "learned_filter_v1",
       "int8_sha256": "1cff6fe07f89f6c6a2eb498e60ad2699a3538846369c3724c9f30ba9600662d3",
       "kind": "filter",
       "license": "BSD-2-Clause-Patent",
       "license_url": "https://github.com/VMAFx/vmafx/blob/master/NOTICE",
-      "notes": "Tiny residual filter baseline for vmaf_pre \u2014 self-supervised on KoNViD-1k frames with synthetic blur+JPEG degradation. ~19K params; opset 17. See docs/adr/0168-tinyai-konvid-baselines.md.",
+      "notes": "Tiny residual filter baseline for vmafx_pre \u2014 self-supervised on KoNViD-1k frames with synthetic blur+JPEG degradation. ~19K params; opset 17. See docs/adr/0168-tinyai-konvid-baselines.md.",
       "onnx": "learned_filter_v1.onnx",
       "opset": 17,
       "quant_accuracy_budget_plcc": 0.01,

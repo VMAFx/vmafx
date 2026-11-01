@@ -929,9 +929,8 @@ RUN for B in cpu cuda sycl hip; do \
 # ---------------------------------------------------------------------------
 # Builds the same FFmpeg version the fork's `ffmpeg-patches/series.txt` is
 # pinned against. Applies every patch in series order, then configures with
-# every libvmaf-* hook our patches add (sycl / cuda / hip / metal-
-# build-only on Linux). Result: `ffmpeg -filters` lists `libvmaf`,
-# `libvmaf_sycl`, `vmaf_pre`, `libvmaf_tune` so the dev
+# `--enable-libvmafx`. Result: `ffmpeg -filters` lists `vmafx`,
+# `vmafx_pre`, `vmafx_tune` so the dev
 # MCP probe can shell out to a real FFmpeg toolchain end-to-end.
 USER root
 
@@ -989,7 +988,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # NOTE: libaom (Alliance for Open Media reference AV1 encoder) is
 # intentionally NOT built or enabled.
 #
-# The fork's `ffmpeg-patches/0007-libvmaf-tune-qpfile-unified.patch`
+# The fork's `ffmpeg-patches/0001-codec-qpfile-unified.patch`
 # adds a `qpfile_aom_apply_roi` helper to `libavcodec/libaomenc.c`
 # that references `aom_roi_map_t` fields (`enabled`, `skip`,
 # `ref_frame`, `delta_qp_enabled`) that DO NOT EXIST in any released
@@ -1007,7 +1006,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # pipelines. Dropping it from the in-image FFmpeg costs `libaom-av1`
 # in the compare-sweep matrix but keeps the fork's patch stack
 # rebase-stable. Re-enabling libaom requires first fixing
-# `ffmpeg-patches/0007-libvmaf-tune-qpfile-unified.patch` to either
+# `ffmpeg-patches/0001-codec-qpfile-unified.patch` to either
 # (a) target a libaom version that actually ships the assumed ROI
 # fields, or (b) make the ROI bridge libaom-version-gated (mirror
 # the SVT-AV1 `>= 1.6.0` log-and-continue pattern already in the
@@ -1196,8 +1195,8 @@ RUN git config user.email "vmaf-dev-mcp@localhost" && git config user.name "vmaf
 #                          from `OBJS-$(CONFIG_AMF_CAPTURE_FILTER)`
 #                          in `libavfilter/Makefile`.
 #
-# vmaf integration patches (unchanged):
-#     --enable-libvmaf{,-cuda,-sycl,-hip} — fork patches.
+# vmafx integration patches:
+#     --enable-libvmafx — fork patches.
 # PKG_CONFIG_PATH must explicitly include /usr/lib/x86_64-linux-gnu/pkgconfig
 # (the Ubuntu/Debian multiarch path) so FFmpeg's `check_pkg_config` probes
 # pick up the distro-installed `.pc` files — `SvtAv1Enc.pc` (from
@@ -1229,16 +1228,13 @@ RUN --mount=type=cache,target=/home/vmaf/.cache/ccache,sharing=locked,uid=2000,g
         --fatal-warnings \
         --prefix=/usr/local \
         --enable-gpl --enable-version3 --enable-nonfree \
-        --enable-libvmaf \
-        --enable-libvmaf-cuda \
-        --enable-libvmaf-sycl \
-        --enable-libvmaf-hip \
+        --enable-libvmafx \
         --enable-libx264 --enable-libx265 \
         --enable-libvpx --enable-libdav1d \
         --enable-libsvtav1 --enable-libvvenc \
         --enable-libfdk-aac --enable-libmp3lame --enable-libopus --enable-libvorbis \
         --enable-libass --enable-libfreetype --enable-libfontconfig --enable-libfribidi \
-        --enable-vaapi --enable-vdpau \
+        --enable-vaapi --enable-vdpau --enable-libdrm \
         --enable-nvenc --enable-cuda-nvcc \
         --enable-libvpl \
         --enable-amf \

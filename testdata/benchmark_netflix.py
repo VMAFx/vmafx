@@ -6,9 +6,9 @@
 Netflix Official Score Validation & Benchmark
 
 Uses our FFmpeg 8 build (not the CLI tool) to run VMAF via all backends:
-  CPU          (libvmaf)        — software
-  CUDA         (libvmaf_cuda)   — NVIDIA RTX 4090
-  SYCL         (libvmaf_sycl)   — Intel Arc A380 DG2 via QSV import
+  CPU          (vmafx)                   — software
+  CUDA         (vmafx backend=cuda)      — NVIDIA RTX 4090
+  SYCL         (vmafx backend=sycl)      — Intel Arc A380 DG2 via QSV import
 
 Test sets (Netflix standard):
   1. src01 576x324 — hrc01 vs hrc00 (48 frames, yuv420p 8bit)
@@ -34,8 +34,7 @@ import time
 # freshly-built libvmaf instead of the system install. Defaults match the
 # author's local layout. See PR #305 (2026-05-02) for why the snapshot must be
 # regenerated against the fork build, not against /usr/local/bin/vmaf v3.0.0.
-# FFmpeg binary carrying the fork's libvmaf / libvmaf_cuda / libvmaf_sycl
-# filters. The default is the vmaf-dev-mcp container's install path (CLAUDE.md
+# FFmpeg binary carrying the fork's vmafx filter. The default is the vmaf-dev-mcp container's install path (CLAUDE.md
 # §12 rule 15); set VMAF_FFMPEG to point at any other build. The previous
 # default was a hard-coded path in the author's home directory that no longer
 # exists on the bench host — see ADR-0792 for the same fix applied to the YUV
@@ -112,22 +111,26 @@ BACKENDS = [
     },
     {
         "name": "cuda",
-        "filter": "libvmaf_cuda",
+        "filter": "vmafx",
         "extra_args": ["-init_hw_device", "cuda=cu", "-filter_hw_device", "cu"],
-        "lavfi": "[0:v]hwupload[dis];[1:v]hwupload[ref];[dis][ref]libvmaf_cuda=log_path={log}:log_fmt=json:model=version=vmaf_v0.6.1",
+        "lavfi": "[0:v]hwupload[dis];[1:v]hwupload[ref];[dis][ref]vmafx=backend=cuda:log_path={log}:log_fmt=json:model=version=vmaf_v0.6.1",
     },
     {
         "name": "sycl",
-        "filter": "libvmaf_sycl",
+        "filter": "vmafx",
         "extra_args": [
             "-init_hw_device",
-            f"vaapi=va:{SYCL_RENDER_NODE}",
+            f"drm=dr:{SYCL_RENDER_NODE}",
             "-init_hw_device",
-            "qsv=qsv@va",
+            "vaapi=va@dr",
             "-filter_hw_device",
-            "qsv",
+            "va",
         ],
-        "lavfi": "[0:v]hwupload=extra_hw_frames=128[dis];[1:v]hwupload=extra_hw_frames=128[ref];[dis][ref]libvmaf_sycl=log_path={log}:log_fmt=json:model=version=vmaf_v0.6.1",
+        "lavfi": (
+            "[0:v]format=nv12,hwupload=extra_hw_frames=128,hwmap=derive_device=drm,format=drm_prime[dis];"
+            "[1:v]format=nv12,hwupload=extra_hw_frames=128,hwmap=derive_device=drm,format=drm_prime[ref];"
+            "[dis][ref]vmafx=backend=sycl:log_path={log}:log_fmt=json:model=version=vmaf_v0.6.1"
+        ),
         "env_extra": {"LIBVA_DRIVER_NAME": "iHD"},
     },
 ]

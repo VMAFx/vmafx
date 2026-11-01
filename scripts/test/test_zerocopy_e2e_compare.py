@@ -4,7 +4,7 @@
 """Contract tests for scripts/test/zerocopy_e2e_compare.py.
 
 Pure Python: synthetic per-frame JSON plus ``.rc`` / ``.err`` files stand in for the
-three legs (CPU libvmaf, libvmaf_sycl host upload, libvmaf_sycl zero-copy).
+three legs (CPU vmafx, vmafx host upload, vmafx zero-copy).
 """
 
 from __future__ import annotations

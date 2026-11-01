@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
-"""Stage-aware verdicts for the libvmaf_sycl zero-copy end-to-end harness.
+"""Stage-aware verdicts for the vmafx SYCL zero-copy end-to-end harness.
 
 ``scripts/test/zerocopy-e2e.sh`` runs every case through three legs on the same
 QSV-encoded pair and writes ``<clip>_<depth>bit__<case>.<leg>.{json,rc,err}``:
 
-* ``cpu``  - software decode into ``libvmaf`` (the reference);
-* ``host`` - software decode into ``libvmaf_sycl`` (host upload, SYCL twins);
-* ``zc``   - QSV decode into ``libvmaf_sycl`` (zero-copy).
+* ``cpu``  - software decode into ``vmafx`` (the reference);
+* ``host`` - software decode into ``vmafx`` (host upload, backend=sycl);
+* ``zc``   - QSV decode into ``vmafx`` (zero-copy, backend=sycl, import=auto).
 
 This module reads those files and decides, per case:
 

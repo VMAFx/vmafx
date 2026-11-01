@@ -243,8 +243,8 @@ docker run --rm \
 ## SYCL + FFmpeg test image (`Containerfile.vmafx`)
 
 `Containerfile.vmafx` at the repository root builds a separate image for
-testing the SYCL backend and the fork's FFmpeg filters (`libvmaf_sycl`,
-QSV / VA-API zero-copy) on an Intel GPU host. It is not one of the published
+testing the SYCL backend and the fork's FFmpeg filter (`vmafx` with
+`backend=sycl`, QSV / VA-API zero-copy) on an Intel GPU host. It is not one of the published
 release images above.
 
 ```bash

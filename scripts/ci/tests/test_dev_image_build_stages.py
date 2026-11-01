@@ -23,7 +23,7 @@ COMPILE_STEPS = {
     "the libvmaf build": re.compile(
         r"\bninja -C core/build(?! install)|\bmeson setup core/build\b"
     ),
-    "the FFmpeg build": re.compile(r"\./configure\b[^\n]*(?:\\\n[^\n]*)*--enable-libvmaf"),
+    "the FFmpeg build": re.compile(r"\./configure\b[^\n]*(?:\\\n[^\n]*)*--enable-libvmafx?"),
 }
 FROM = re.compile(r"(?im)^FROM\s+(?P<parent>\S+)(?:\s+AS\s+(?P<name>\S+))?\s*$")
 # build-deps installs ninja-build but no make program, so a CMake configure

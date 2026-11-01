@@ -589,8 +589,8 @@ original 207-symbol audit and fix rationale.
 ## Static linking and `pkg-config`
 
 `core/meson.build` sets `default_library=both`, so a build produces
-`libvmaf.so` and `libvmaf.a`, and downstream projects (FFmpeg's
-`--enable-libvmaf`, the fork's own `ffmpeg-patches/` stack) discover it through
+`libvmaf.so` and `libvmaf.a`, and downstream projects (stock upstream `--enable-libvmaf`,
+or the fork's `ffmpeg-patches/` stack with `--enable-libvmafx`) discover it through
 `pkg-config`.
 
 libvmaf contains C++ translation units: the fork's own converted sources

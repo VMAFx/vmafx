@@ -96,11 +96,10 @@ jobs:
              lists the commit. Note the commit SHA + author + date.
           2. Bump the fork's `ffmpeg-patches/series.txt` baseline if
              needed (reviewed release: build-config.env FFMPEG_TAG).
-          3. Write `ffmpeg-patches/0014-libvmaf-add-libvmaf-hip-filter.patch`
-             mirroring `0006-libvmaf-add-libvmaf-vulkan-filter.patch`
-             with HIP-native AVFrame consumption via the new hwcontext.
-          4. Wire the configure flag (`--enable-libvmaf-hip-filter`)
-             and update `docs/usage/ffmpeg.md`.
+          3. Extend `ffmpeg-patches/src/vf_vmafx.c` (patch
+             `0004-add-vmafx-filter.patch`) with HIP-native AVFrame consumption
+             via the new hwcontext.
+          4. Update `docs/usage/ffmpeg.md`.
           5. Update `docs/state.md` T-FFMPEG-HIP-FILTER-DEFERRED row
              from Deferred to Recently-closed.
           6. Disable this watcher (rename with .disabled suffix or

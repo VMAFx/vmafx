@@ -488,7 +488,7 @@ types (`id<MTLDevice>`, `id<MTLCommandQueue>`) cross the ABI as
 later); Intel Macs and other hosts return `-ENODEV` instead of falling back
 to the CPU ([ADR-0361](../adr/0361-metal-compute-backend.md)). The header is
 installed whenever Metal is enabled so FFmpeg's
-`--enable-libvmaf-metal` configure probe finds it
+`--enable-libvmafx` configure probe finds it
 ([ADR-0437](../adr/0437-metal-public-header-install-and-import-state-declaration.md)).
 The registry holds 17
 Metal extractors.

@@ -19,8 +19,7 @@
 /**
  * @file
  * The vmafx_pre filter: a learned ONNX pre-filter run by the VMAFx library
- * (vmafx_dnn_session_*), the vmaf_pre filter under its VMAFx name with the
- * same options. 8-bit planes go through vmafx_dnn_session_run_luma8(),
+ * (vmafx_dnn_session_*). 8-bit planes go through vmafx_dnn_session_run_luma8(),
  * 10- and 12-bit planes through vmafx_dnn_session_run_plane16(); with
  * chroma=1 the session also runs on U and V at their own size, otherwise
  * they are copied. A failed inference fails the frame, naming the plane.
@@ -37,7 +36,6 @@
 
 #include "avfilter.h"
 #include "filters.h"
-#include "formats.h"
 #include "video.h"
 
 typedef struct VmafxPreContext {
@@ -231,17 +229,12 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
     return ff_filter_frame(outlink, out);
 }
 
-static int query_formats(const AVFilterContext *ctx, AVFilterFormatsConfig **cfg_in,
-                         AVFilterFormatsConfig **cfg_out)
-{
-    static const enum AVPixelFormat pix_fmts[] = {
-        AV_PIX_FMT_GRAY8,    AV_PIX_FMT_YUV420P,     AV_PIX_FMT_YUV422P,     AV_PIX_FMT_YUV444P,
-        AV_PIX_FMT_GRAY10LE, AV_PIX_FMT_YUV420P10LE, AV_PIX_FMT_YUV422P10LE, AV_PIX_FMT_YUV444P10LE,
-        AV_PIX_FMT_GRAY12LE, AV_PIX_FMT_YUV420P12LE, AV_PIX_FMT_YUV422P12LE, AV_PIX_FMT_YUV444P12LE,
-        AV_PIX_FMT_NONE,
-    };
-    return ff_set_common_formats_from_list2(ctx, cfg_in, cfg_out, pix_fmts);
-}
+static const enum AVPixelFormat pix_fmts[] = {
+    AV_PIX_FMT_GRAY8,    AV_PIX_FMT_YUV420P,     AV_PIX_FMT_YUV422P,     AV_PIX_FMT_YUV444P,
+    AV_PIX_FMT_GRAY10LE, AV_PIX_FMT_YUV420P10LE, AV_PIX_FMT_YUV422P10LE, AV_PIX_FMT_YUV444P10LE,
+    AV_PIX_FMT_GRAY12LE, AV_PIX_FMT_YUV420P12LE, AV_PIX_FMT_YUV422P12LE, AV_PIX_FMT_YUV444P12LE,
+    AV_PIX_FMT_NONE,
+};
 
 static const AVFilterPad vmafx_pre_inputs[] = {
     {
@@ -261,5 +254,5 @@ const FFFilter ff_vf_vmafx_pre = {
     .uninit = uninit,
     FILTER_INPUTS(vmafx_pre_inputs),
     FILTER_OUTPUTS(ff_video_default_filterpad),
-    FILTER_QUERY_FUNC2(query_formats),
+    FILTER_PIXFMTS_ARRAY(pix_fmts),
 };

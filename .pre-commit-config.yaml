@@ -1186,6 +1186,14 @@ repos:
         pass_filenames: false
         stages: [pre-commit, pre-push]
 
+      - id: ffmpeg-patch-contract-tests
+        name: core/test contract scripts that read the FFmpeg patch series, and no retired patch named in live files
+        entry: bash -c 'python3 -B scripts/ci/run_ffmpeg_patch_contract_tests.py && python3 -B scripts/ci/tests/test_run_ffmpeg_patch_contract_tests.py'
+        language: system
+        files: '^(ffmpeg-patches/|core/|dev/|docker/|docs/|testdata/|tools/|mcp-server/|python/|\.github/|scripts/|AGENTS\.md$|Makefile$|build-config\.env$|\.pre-commit-config\.yaml$)'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
+
       - id: ffmpeg-input-contract
         name: FFmpeg VMAF input-order contract and red-cap tests
         entry: make ffmpeg-input-contract
@@ -1195,14 +1203,14 @@ repos:
         stages: [pre-commit, pre-push]
 
       - id: sycl-zerocopy-contract
-        name: libvmaf_sycl zero-copy routing and e2e comparator contracts
+        name: vmafx SYCL zero-copy routing and e2e comparator contracts
         # pytest comes from pre-commit's own environment (as rc1-tester-report-tests),
         # so the hook runs without a developer-installed pytest; CI runs the same
         # checks through `make sycl-zerocopy-contract` with the hash-locked pytest.
         entry: bash -c 'bash ffmpeg-patches/test/check-sycl-feature-routing.sh && python -m pytest -p no:cacheprovider -q scripts/test/test_zerocopy_e2e_compare.py'
         language: python
         additional_dependencies: [pytest==9.1.1]
-        files: '^(ffmpeg-patches/(0005-[^/]*\.patch|test/check-sycl-feature-routing\.sh)|scripts/test/(zerocopy[-_]e2e[^/]*|test_zerocopy_e2e_compare\.py)|scripts/ci/cross_backend_parity_gate\.py|Makefile$|\.github/workflows/ffmpeg-patch-stack\.yml$|\.pre-commit-config\.yaml$)'
+        files: '^(ffmpeg-patches/(0004-[^/]*\.patch|src/vf_vmafx\.c|test/check-sycl-feature-routing\.sh)|scripts/test/(zerocopy[-_]e2e[^/]*|test_zerocopy_e2e_compare\.py)|scripts/ci/cross_backend_parity_gate\.py|Makefile$|\.github/workflows/ffmpeg-patch-stack\.yml$|\.pre-commit-config\.yaml$)'
         pass_filenames: false
         stages: [pre-commit, pre-push]
 
