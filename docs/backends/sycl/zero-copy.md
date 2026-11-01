@@ -146,7 +146,8 @@ QSV device:
 
 ```bash
 ffmpeg \
-  -init_hw_device vaapi=va0:/dev/dri/renderD128 \
+  -init_hw_device drm=dr0:/dev/dri/renderD128 \
+  -init_hw_device vaapi=va0@dr0 \
   -init_hw_device qsv=qsv_ref@va0 \
   -init_hw_device qsv=qsv_dis@va0 \
   -hwaccel qsv -hwaccel_output_format qsv -hwaccel_device qsv_dis -c:v av1_qsv -i dis.mkv \
@@ -172,12 +173,14 @@ through unscored.
 `ffmpeg-patches/test/check-vmafx-import-failure.sh` injects failures to verify this
 fail-closed contract.
 
-Open the VA-API device on the render node directly, as above. Do not derive it
-from a `drm` device (`-init_hw_device drm=drm0:/dev/dri/renderD128
--init_hw_device vaapi=va0@drm0`): in a rootless container only the render node
-is usable, and that form fails before decoding with `Failed to set value
-'drm=drm0:/dev/dri/renderD128' for option 'init_hw_device': Cannot allocate
-memory`. If the host has more than one GPU, pick the render node of the Intel
+Derive the VA-API device from a `drm` device, as above. FFmpeg's `drm` device
+type cannot be derived from a plain VA-API device, so on a VA-API device opened
+directly on the render node `hwmap=derive_device=drm` stops before the first
+frame with `Failed to created derived device context: -38` (`Function not
+implemented`; FFmpeg n9.0.2). In a rootless container where the `drm` device
+cannot be opened (`Failed to set value 'drm=drm0:/dev/dri/renderD128' for option
+'init_hw_device': Cannot allocate memory`), this DRM PRIME zero-copy workflow is
+not available. If the host has more than one GPU, pick the render node of the Intel
 one (`/sys/class/drm/renderD*/device/vendor` is `0x8086`). In a container, pass
 the device with `--device /dev/dri`.
 
