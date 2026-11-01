@@ -146,8 +146,7 @@ QSV device:
 
 ```bash
 ffmpeg \
-  -init_hw_device drm=dr0:/dev/dri/renderD128 \
-  -init_hw_device vaapi=va0@dr0 \
+  -init_hw_device vaapi=va0:/dev/dri/renderD128 \
   -init_hw_device qsv=qsv_ref@va0 \
   -init_hw_device qsv=qsv_dis@va0 \
   -hwaccel qsv -hwaccel_output_format qsv -hwaccel_device qsv_dis -c:v av1_qsv -i dis.mkv \

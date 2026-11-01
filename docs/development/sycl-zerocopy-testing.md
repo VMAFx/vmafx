@@ -60,18 +60,21 @@ scripts/test/sycl-dev-container.sh exec bash -c '
   Q="-init_hw_device vaapi=va0:${RENDER_NODE:-/dev/dri/renderD128} -init_hw_device qsv=qr@va0 -init_hw_device qsv=qd@va0"
   ffmpeg -hide_banner $Q -hwaccel qsv -hwaccel_output_format qsv -hwaccel_device qd -i dis.mp4 \
     -hwaccel qsv -hwaccel_output_format qsv -hwaccel_device qr -i ref.mp4 \
-    -lavfi "[0:v][1:v]vmafx=backend=sycl:import=auto:feature=name=psnr" -f null -'
+    -lavfi "[0:v]hwmap=derive_device=vaapi,format=vaapi,hwmap=derive_device=drm,format=drm_prime[d];[1:v]hwmap=derive_device=vaapi,format=vaapi,hwmap=derive_device=drm,format=drm_prime[r];[d][r]vmafx=backend=sycl:import=auto:feature=name=psnr" -f null -'
 ```
 
+The two `hwmap` chains hand the decoded frames over as DRM PRIME, the format
+`backend=sycl` imports (`backend_slots` in `ffmpeg-patches/src/vf_vmafx.c`);
+QSV frames passed straight in are refused at configuration with
+`vmafx: backend sycl cannot score qsv frames; use import=host or hwdownload`.
 The filter routes `psnr` to its twin (`vmafx: feature 'psnr' ->
-psnr_sycl`, [ADR-3360](../adr/3360-sycl-filter-twin-routing.md)); `psnr_sycl`
-needs chroma, so the first frame is refused
-([ADR-1688](../adr/1688-sycl-zero-copy-luma-only-admission.md)) with
-`vmaf_read_pictures_sycl: feature extractor "psnr_sycl" needs host pictures
-...` and the filter's hint to use `hwdownload`, and `ffmpeg` exits non-zero.
-Use `hwdownload,format=nv12` for 8-bit input or `hwdownload,format=p010le`
-for 10-bit: these match driver download surfaces, whereas planar YUV download
-formats are not portable across VAAPI drivers.
+psnr_sycl`, [ADR-3360](../adr/3360-sycl-filter-twin-routing.md)) and imports
+each frame with its chroma through the VMAFx API
+([ADR-2091](../adr/2091-vmafx-sycl-device-frames.md),
+`core/test/test_vmafx_import_sycl_bitexact.c`), so `psnr_sycl` scores Y, U
+and V. The luma-only admission of
+[ADR-1688](../adr/1688-sycl-zero-copy-luma-only-admission.md) belongs to
+`vmaf_sycl_import_va_surface()`, which this filter does not call.
 The same command without `feature=name=psnr` prints a VMAF score, and
 `feature=name=niqe` (no SYCL twin) fails at configuration with
 `vmafx: feature 'niqe' cannot run on zero-copy input: no SYCL twin`.
@@ -118,7 +121,7 @@ prefix, use `trim=end_frame=N` on both inputs.
 ```bash
 scripts/test/sycl-dev-container.sh libvmaf
 scripts/test/sycl-dev-container.sh ffmpeg
-scripts/test/sycl-dev-container.sh exec bash scripts/test/zerocopy-e2e.sh --stage 1 --out /work/.cache/sycl-dev/e2e-s1 --depths 8 --bench
+scripts/test/sycl-dev-container.sh exec bash scripts/test/zerocopy-e2e.sh --stage 3 --out /work/.cache/sycl-dev/e2e-s3 --depths 8 --bench
 ```
 
 Run 8-bit and 10-bit as separate invocations with separate `--out` directories
@@ -148,12 +151,14 @@ scripts/test/sycl-dev-container.sh exec bash scripts/test/zerocopy-e2e.sh --stag
 
 `--stage N` states how far the zero-copy work has come; a case is held to
 numeric parity once `N` reaches its stage and must fail loudly before that.
-On this tree the zero-copy import carries luma only
-([ADR-1688](../adr/1688-sycl-zero-copy-luma-only-admission.md)), so run
-`--stage 1`: the stage-2 and stage-3 cases need chroma or the host-staging twins
-on the shared planes, the post-1.0 zero-copy import of
-[ADR-1685](../adr/1685-post-1-0-embedding-zero-copy-milestone.md), and must be
-refused with an error that names the extractor.
+The `zc` leg imports DRM PRIME frames with their chroma through the VMAFx API
+([ADR-2091](../adr/2091-vmafx-sycl-device-frames.md)), so the stage-2 and
+stage-3 cases are no longer refused for missing chroma; the luma-only
+admission of [ADR-1688](../adr/1688-sycl-zero-copy-luma-only-admission.md)
+is not on this path. Run `--stage 3` to hold every case to numeric parity. A
+lower stage reports a later-stage case that succeeds as `FAIL
+unexpected-success` (`_loud_fail_verdict()` in
+`scripts/test/zerocopy_e2e_compare.py`).
 
 | Stage | Cases that must match numerically |
 | --- | --- |

@@ -331,7 +331,11 @@ FROM runtime AS prod
 # extra multiarch search dir is needed. The .pc is dev-only (nothing in prod
 # compiles against libvmaf) but shipped for completeness.
 COPY --from=build /usr/local/lib/x86_64-linux-gnu/libvmaf.so* /usr/local/lib/
+# libvmafx is its own shared library: ffmpeg's vmafx filters (--enable-libvmafx)
+# link it, and `libvmaf.so*` does not match it.
+COPY --from=build /usr/local/lib/x86_64-linux-gnu/libvmafx.so* /usr/local/lib/
 COPY --from=build /usr/local/lib/x86_64-linux-gnu/pkgconfig/libvmaf.pc /usr/local/lib/pkgconfig/
+COPY --from=build /usr/local/lib/x86_64-linux-gnu/pkgconfig/libvmafx.pc /usr/local/lib/pkgconfig/
 COPY --from=build /usr/local/include/libvmaf/ /usr/local/include/libvmaf/
 COPY --from=build /usr/local/bin/vmaf* /usr/local/bin/
 
@@ -349,7 +353,13 @@ ENV LD_LIBRARY_PATH=${ONEAPI_ROOT}/compiler/latest/lib:${ONEAPI_ROOT}/umf/latest
 # from `runtime`, restated here for clarity — this is the image users run).
 ENV UR_L0_USE_IMMEDIATE_COMMANDLISTS=0
 
-RUN ldconfig
+# Fail the build when a shipped binary or library misses a runtime library.
+RUN ldconfig \
+ && for bin in /usr/local/bin/vmaf /usr/local/bin/ffmpeg /usr/local/bin/ffprobe \
+               /usr/local/lib/libvmaf.so.* /usr/local/lib/libvmafx.so.*; do \
+      deps="$(ldd "$bin")" || exit 1; \
+      case "$deps" in *'not found'*) echo "FATAL: $bin misses a library: $deps"; exit 1;; esac; \
+    done
 
 # ---- Golden self-check (ADR-3358) ------------------------------------------
 # A LEAN reference-pair verifier so operators can confirm the DEPLOYED binary

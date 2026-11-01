@@ -539,7 +539,7 @@ class SharedFixSeriesContract(unittest.TestCase):
                     self.assertIn(needle, str(result.stderr))
 
 
-MSYS2_STEP = re.compile(r"(?m)^(\s*)- uses: msys2/setup-msys2@")
+MSYS2_STEP = re.compile(r"(?m)^([ \t]*)- uses: msys2/setup-msys2@")
 
 
 def _msys2_inherit_cache_findings(name: str, workflow: str) -> list[str]:
@@ -585,6 +585,17 @@ class Msys2InheritContract(unittest.TestCase):
         self.assertEqual(_msys2_inherit_cache_findings("w.yml", fixed), [])
         minimal = planted.replace("path-type: inherit", "path-type: minimal")
         self.assertEqual(_msys2_inherit_cache_findings("w.yml", minimal), [])
+
+    def test_a_blank_line_before_the_step_does_not_widen_it(self) -> None:
+        # A blank line in the captured indent made the step run to the end of the file,
+        # so a later step's cache: false hid the missing one.
+        step = "      - uses: msys2/setup-msys2@abc  # v2\n        with:\n          path-type: inherit\n"
+        later = "      - uses: other/action@abc  # v1\n        with:\n          cache: false\n"
+        planted = "jobs:\n  a:\n    steps:\n\n" + step + later
+        self.assertEqual(
+            _msys2_inherit_cache_findings("w.yml", planted),
+            ["w.yml:5: setup-msys2 with path-type: inherit needs cache: false"],
+        )
 
 
 if __name__ == "__main__":

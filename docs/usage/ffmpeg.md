@@ -981,14 +981,21 @@ ffmpeg -init_hw_device drm=dr:/dev/dri/renderD128 -init_hw_device vaapi=va@dr \
 
 **Metal** (Apple Silicon; libvmafx built with `-Denable_metal=enabled` or `auto`):
 
-VideoToolbox hardware frames downloaded to host for Metal scoring:
+VideoToolbox hardware frames downloaded to host and scored on Metal:
 
 ```bash
 ffmpeg -hwaccel videotoolbox -hwaccel_output_format videotoolbox_vld -i distorted.mp4 \
        -hwaccel videotoolbox -hwaccel_output_format videotoolbox_vld -i reference.mp4 \
-       -filter_complex "[0:v][1:v]vmafx=backend=metal:import=host:log_fmt=json:log_path=/dev/stdout" \
+       -filter_complex "[0:v]hwdownload,format=nv12[d];[1:v]hwdownload,format=nv12[r]; \
+                        [d][r]vmafx=backend=metal:log_fmt=json:log_path=/dev/stdout" \
        -f null -
 ```
+
+The `hwdownload` filters hand `vmafx` software frames, which it uploads to the
+Metal device. Do not use `import=host` on the VideoToolbox frames instead: with
+`import=host` the filter downloads hardware frames itself and opens no device
+(`open_device()` in `ffmpeg-patches/src/vf_vmafx.c`), so it scores on the CPU
+whatever `backend` says. Use `format=p010le` for 10-bit input.
 
 ## Model path on Windows
 

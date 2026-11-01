@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import tempfile
 import time
@@ -86,8 +87,19 @@ def build_tests(base_dir: Path, *, bbb_mp4_ref: Path | None = None) -> list[dict
     return tests
 
 
-def backend_definitions(*, sycl_device: str) -> list[dict[str, Any]]:
-    """Return backend definitions with the requested SYCL render node."""
+def backend_definitions(*, sycl_device: str, sycl_index: str = "auto") -> list[dict[str, Any]]:
+    """Return backend definitions with the requested SYCL render node and device.
+
+    The vmafx filter opens the SYCL device its ``device`` option names and does not
+    look at the render node behind the DRM PRIME frames (``drm_open()`` in
+    ffmpeg-patches/src/vf_vmafx.c); ``auto`` is the first SYCL GPU. On a host with
+    more than one GPU, ``sycl_index`` must name the SYCL device of the GPU that
+    ``sycl_device`` belongs to.
+    """
+    if sycl_index != "auto" and not re.fullmatch(r"[0-9]+", sycl_index):
+        raise ValueError(
+            f"SYCL device index must be auto or a non-negative integer: {sycl_index!r}"
+        )
     return [
         {
             "name": "cpu",
@@ -115,7 +127,8 @@ def backend_definitions(*, sycl_device: str) -> list[dict[str, Any]]:
             "lavfi": (
                 "[0:v]format=nv12,hwupload=extra_hw_frames=128,hwmap=derive_device=drm,format=drm_prime[dis];"
                 "[1:v]format=nv12,hwupload=extra_hw_frames=128,hwmap=derive_device=drm,format=drm_prime[ref];"
-                "[dis][ref]vmafx=backend=sycl:log_path={log}:log_fmt=json:model=version=vmaf_v0.6.1"
+                f"[dis][ref]vmafx=backend=sycl:device={sycl_index}:"
+                "log_path={log}:log_fmt=json:model=version=vmaf_v0.6.1"
             ),
             "env_extra": {"LIBVA_DRIVER_NAME": "iHD"},
         },
@@ -442,6 +455,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="VAAPI render node for the SYCL/QSV import path",
     )
     parser.add_argument(
+        "--sycl-index",
+        default=os.environ.get("VMAF_SYCL_INDEX", "auto"),
+        help="SYCL device index of the GPU behind --sycl-device (default: auto, the first SYCL GPU)",
+    )
+    parser.add_argument(
         "--ld-library-path",
         default=os.environ.get("VMAF_LD_LIBRARY_PATH"),
         help="LD_LIBRARY_PATH for FFmpeg/libvmaf; default preserves caller env or /usr/local/lib",
@@ -483,7 +501,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     """CLI entry point."""
     args = parse_args(argv)
     tests = build_tests(args.base_dir, bbb_mp4_ref=args.bbb_mp4_ref)
-    backends = select_backends(backend_definitions(sycl_device=args.sycl_device), args.backend)
+    backends = select_backends(
+        backend_definitions(sycl_device=args.sycl_device, sycl_index=args.sycl_index), args.backend
+    )
 
     if args.list_tests:
         _print_test_list(tests)
