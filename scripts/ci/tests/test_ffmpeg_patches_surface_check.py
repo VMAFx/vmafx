@@ -6,12 +6,17 @@ from __future__ import annotations
 
 import os
 import shutil
-import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(ROOT))
+
+from scripts.lib.safe_subprocess import TextCommandResult  # noqa: E402
+from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
+
 SCRIPT = ROOT / "scripts" / "ci" / "ffmpeg-patches-surface-check.sh"
 GIT_TIMEOUT_S = 60
 SCRIPT_TIMEOUT_S = 300
@@ -42,25 +47,28 @@ def _tool(name: str) -> str:
 
 def _git(repo: Path, *args: str) -> None:
     """Run git in a fixture repository with the clean environment."""
-    subprocess.run(  # noqa: S603 - fixed git argv built from the test's own arguments
-        [_tool("git"), "-C", str(repo), *args],
+    git = _tool("git")
+    run_command(
+        [git, "-C", str(repo), *args],
+        allowed_executables=[git],
         check=True,
         env=_clean_env(),
         capture_output=True,
-        timeout=GIT_TIMEOUT_S,
+        timeout_seconds=GIT_TIMEOUT_S,
     )
 
 
-def _run_script(script: Path, cwd: Path, **extra: str) -> subprocess.CompletedProcess[str]:
-    """Run the surface check script and return its result."""
-    return subprocess.run(  # noqa: S603 - fixed bash argv on the script under test
-        [_tool("bash"), str(script)],
+def _run_script(script: Path, cwd: Path, **extra: str) -> TextCommandResult:
+    """Run the surface check script with bash, the only executable allowed."""
+    bash = _tool("bash")
+    return run_command(
+        [bash, str(script)],
+        allowed_executables=[bash],
         cwd=str(cwd),
         capture_output=True,
         text=True,
         env=_clean_env(**extra),
-        check=False,
-        timeout=SCRIPT_TIMEOUT_S,
+        timeout_seconds=SCRIPT_TIMEOUT_S,
     )
 
 
