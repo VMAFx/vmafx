@@ -44,7 +44,10 @@ YUV_DIR="${YUV_DIR:-${REPO_ROOT}/python/test/resource/yuv}"
 BASE_URL="${BASE_URL:-https://github.com/Netflix/vmaf_resource/raw/master/python/test/resource/yuv}"
 DOWNLOAD="${REPO_ROOT}/compat/python-vmaf/tools/retrying_download.py"
 
-BUNDLE_NAME="pq-sollevante-v1"
+# The bundles this script provisions; scripts/ci/check_fixture_bundle_jobs.py reads
+# this line, so a workflow cannot fetch a bundle the script does not know.
+SUPPORTED_BUNDLES=("pq-sollevante-v1")
+BUNDLE_NAME="${SUPPORTED_BUNDLES[0]}"
 BUNDLE_ARCHIVE="${BUNDLE_NAME}.tar.zst"
 BUNDLE_BASE_URL="${BUNDLE_BASE_URL:-https://github.com/VMAFx/vmafx/releases/download/fixtures-${BUNDLE_NAME}}"
 BUNDLE_ARCHIVE_SHA256="${BUNDLE_ARCHIVE_SHA256:-f7546a16c3190c841e09a5de83d98db86156a06869fb9fbc58ff86307db2f416}"
@@ -94,12 +97,12 @@ select_fixtures() {
   local wanted entry found
   if [ "$#" -eq 0 ]; then
     [ "${#FIXTURES[@]}" -eq 0 ] && return 0
-    printf '%s\n' "${FIXTURES[@]}"
+    printf '%s\n' ${FIXTURES[@]+"${FIXTURES[@]}"}
     return 0
   fi
   for wanted in "$@"; do
     found=""
-    for entry in "${FIXTURES[@]}"; do
+    for entry in ${FIXTURES[@]+"${FIXTURES[@]}"}; do
       if [ "${entry% *}" = "${wanted}" ]; then
         found="${entry}"
       fi
@@ -162,7 +165,7 @@ verify_bundle_members() {
   local target_dir="$1"
   local entry file expected actual path
 
-  for entry in "${BUNDLE_MEMBERS[@]}"; do
+  for entry in ${BUNDLE_MEMBERS[@]+"${BUNDLE_MEMBERS[@]}"}; do
     file="${entry% *}"
     expected="${entry##* }"
     path="${target_dir}/${file}"
@@ -189,6 +192,7 @@ check_member_types() {
 
   if ! listing="$(tar -tvf "${archive}" 2>/dev/null)"; then
     echo "ERROR: failed to inspect archive contents: ${archive}" >&2
+    echo "       GNU tar reads .tar.zst through the zstd program; is zstd on PATH?" >&2
     return 1
   fi
 
@@ -210,6 +214,7 @@ check_path_traversal() {
 
   if ! listing="$(tar -tf "${archive}" 2>/dev/null)"; then
     echo "ERROR: failed to inspect archive contents: ${archive}" >&2
+    echo "       GNU tar reads .tar.zst through the zstd program; is zstd on PATH?" >&2
     return 1
   fi
 
@@ -264,6 +269,12 @@ provision_bundle() {
   if [ -d "${target_dir}" ]; then
     echo "stale   bundle ${bundle_name} — refetching"
     rm -rf "${target_dir}"
+  fi
+
+  # tar reads the .tar.zst through the zstd program; say so before any download.
+  if ! command -v zstd >/dev/null 2>&1; then
+    echo "ERROR: ${bundle_name} is a .tar.zst archive and zstd is not on PATH" >&2
+    return 1
   fi
 
   mkdir -p "${YUV_DIR}"
@@ -351,7 +362,7 @@ main() {
     fi
   fi
 
-  listing="$(select_fixtures "${PARSED_FIXTURES[@]}")" || return 2
+  listing="$(select_fixtures ${PARSED_FIXTURES[@]+"${PARSED_FIXTURES[@]}"})" || return 2
   mkdir -p "${YUV_DIR}"
 
   while IFS= read -r entry; do

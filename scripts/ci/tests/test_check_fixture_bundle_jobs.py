@@ -19,6 +19,8 @@ SPEC.loader.exec_module(MOD)
 TEST_FILE = 'BUNDLE = ("yuv", "pq-sollevante-v1")\nOTHER = ("yuv", "hdr-ictcp-pixels-v1")\n'
 FETCH = "      - uses: ./.github/actions/pq-fixture\n        with:\n          phase: get\n"
 FETCH_ICTCP = FETCH + "          bundle: hdr-ictcp-pixels-v1\n"
+BOTH = 'SUPPORTED_BUNDLES=("pq-sollevante-v1" "hdr-ictcp-pixels-v1")\n'
+GAP = "before the step, under its condition"
 
 
 def workflow(steps: str) -> str:
@@ -27,8 +29,10 @@ def workflow(steps: str) -> str:
 
 
 class FixtureBundleJobs(unittest.TestCase):
-    def _check(self, steps: str, scripts: dict[str, str] | None = None) -> list[str]:
-        """Run the check on a temporary tree with one test file and one workflow."""
+    def _check(
+        self, steps: str, scripts: dict[str, str] | None = None, supported: str = BOTH
+    ) -> list[str]:
+        """Run the check on a temporary tree with one test file, one workflow, a fetch script."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "python" / "test").mkdir(parents=True)
@@ -36,6 +40,8 @@ class FixtureBundleJobs(unittest.TestCase):
             (root / "python" / "test" / "plain_test.py").write_text("X = ('yuv', 'a.yuv')\n")
             (root / ".github" / "workflows").mkdir(parents=True)
             (root / ".github" / "workflows" / "w.yml").write_text(workflow(steps))
+            (root / "scripts" / "test").mkdir(parents=True)
+            (root / MOD.FETCH_SCRIPT).write_text(supported)
             for rel, text in (scripts or {}).items():
                 (root / rel).parent.mkdir(parents=True, exist_ok=True)
                 (root / rel).write_text(text)
@@ -51,13 +57,15 @@ class FixtureBundleJobs(unittest.TestCase):
         """Negative: pytest over python/test without the fetch reports both bundles."""
         problems = self._check("      - run: python3 -m pytest python/test/ -v\n")
         self.assertEqual(len(problems), 2)
-        self.assertIn("hdr-ictcp-pixels-v1 (hdr_pin_test)", problems[0])
-        self.assertIn("pq-sollevante-v1 (hdr_pin_test)", problems[1])
+        self.assertIn(f"hdr-ictcp-pixels-v1 (hdr_pin_test) {GAP}", problems[0])
+        self.assertIn(f"pq-sollevante-v1 (hdr_pin_test) {GAP}", problems[1])
 
     def test_tox_without_one_bundle_fails(self) -> None:
         """Negative: tox runs the whole suite; fetching only the default bundle misses one."""
         problems = self._check(FETCH + "      - run: tox -c python\n")
-        self.assertEqual(problems, ["w.yml:t: does not fetch hdr-ictcp-pixels-v1 (hdr_pin_test)"])
+        self.assertEqual(
+            problems, [f"w.yml:t: does not fetch hdr-ictcp-pixels-v1 (hdr_pin_test) {GAP}"]
+        )
 
     def test_called_script_running_the_file_counts(self) -> None:
         """Negative: a run step that calls a scripts/ci script naming the file is a test run."""
@@ -115,6 +123,56 @@ class FixtureBundleJobs(unittest.TestCase):
             self.assertEqual(
                 self._check(FETCH + FETCH_ICTCP + "      - run: tox -c python\n" + finish), []
             )
+
+    def test_fetch_after_the_test_fails(self) -> None:
+        """Negative: a get step after the test step does not count for it."""
+        problems = self._check("      - run: tox -c python\n" + FETCH + FETCH_ICTCP)
+        self.assertEqual(len(problems), 2)
+
+    def test_fetch_under_a_narrower_condition_fails(self) -> None:
+        """Negative: a fetch that skips cases the test step runs in is a gap."""
+        guarded = FETCH.replace("      - uses", "      - if: matrix.os == 'x'\n        uses")
+        run = "      - if: matrix.os == 'x' || matrix.os == 'y'\n        run: tox -c python\n"
+        problems = self._check(guarded + guarded.replace(FETCH, FETCH_ICTCP) + run)
+        self.assertEqual(len(problems), 2)
+
+    def test_fetch_under_a_wider_condition_passes(self) -> None:
+        """Boundary: a fetch whose if: covers the test step's if: is enough."""
+        cond = "      - if: (matrix.a && !matrix.b) || matrix.os == 'm'\n        uses"
+        guarded = FETCH.replace("      - uses", cond) + FETCH_ICTCP.replace("      - uses", cond)
+        run = "      - if: ${{ matrix.a && !matrix.b }}\n        run: tox -c python\n"
+        self.assertEqual(self._check(guarded + run), [])
+
+    def test_unsupported_bundle_fails(self) -> None:
+        """Negative: a get step naming a bundle the fetch script does not list is refused."""
+        run = "      - run: tox -c python\n"
+        problems = self._check(
+            FETCH + FETCH_ICTCP + run, supported='SUPPORTED_BUNDLES=("pq-sollevante-v1")\n'
+        )
+        self.assertIn(
+            "fetches hdr-ictcp-pixels-v1, which scripts/test/fetch-test-yuvs.sh does not support",
+            problems[0],
+        )
+
+    def test_missing_supported_line_fails(self) -> None:
+        """Negative: without a SUPPORTED_BUNDLES line the check refuses to guess."""
+        problems = self._check(FETCH, supported="BUNDLE_NAME=x\n")
+        self.assertEqual(len(problems), 1)
+        self.assertIn("no SUPPORTED_BUNDLES line", problems[0])
+
+    def test_implies(self) -> None:
+        """Boundary: implication over atoms, with function calls and comparisons as atoms."""
+        self.assertTrue(MOD.implies("a && b", "(a && b) || c"))
+        self.assertTrue(MOD.implies("x", ""))
+        self.assertTrue(MOD.implies("${{ !cancelled() && x }}", "x"))
+        self.assertFalse(MOD.implies("", "a"))
+        self.assertFalse(MOD.implies("a || c", "a"))
+        self.assertFalse(MOD.implies("a", "a && (b"))
+        self.assertTrue(
+            MOD.implies(
+                "startsWith(matrix.os, 'u') && !s", "(startsWith(matrix.os, 'u') && !s) || m == 'k'"
+            )
+        )
 
     def test_repository_workflows_fetch_their_bundles(self) -> None:
         """The repository's own workflows have no gap."""

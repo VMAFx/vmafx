@@ -16,11 +16,11 @@ other entry points are tested in compat/python-vmaf/tests/test_retrying_download
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import io
 import re
 import shutil
-import subprocess
 import sys
 import tarfile
 import tempfile
@@ -31,6 +31,8 @@ ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
 from scripts.lib.http_stand_in import StandIn  # noqa: E402
+from scripts.lib.safe_subprocess import TextCommandResult  # noqa: E402
+from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
 
 SCRIPT = ROOT / "scripts" / "test" / "fetch-test-yuvs.sh"
 POLICY = "compat/python-vmaf/tools/retrying_download.py"
@@ -43,13 +45,25 @@ BODIES = {"/yuv/first.yuv": FIRST, "/yuv/second.yuv": SECOND}
 SUMMARY = "fetch-test-yuvs.sh: {} already-ok, {} replaced, {} fetched, {} failed"
 
 
+def run_bash(*args: str) -> TextCommandResult:
+    """Run bash with args; bash is the only executable allowed."""
+    assert BASH is not None
+    return run_command(
+        [BASH, *args],
+        allowed_executables=[BASH],
+        capture_output=True,
+        text=True,
+        timeout_seconds=120,
+    )
+
+
 def md5(data: bytes) -> str:
     return hashlib.md5(data, usedforsecurity=False).hexdigest()
 
 
 def fetch(
     server: StandIn, directory: Path, *names: str, second_md5: str = md5(SECOND)
-) -> subprocess.CompletedProcess[str]:
+) -> TextCommandResult:
     """Source the script, point it at the stand-in server and run main()."""
     assert BASH is not None
     program = (
@@ -58,13 +72,7 @@ def fetch(
         'YUV_DIR="$1"; BASE_URL="$2"; shift 2\n'
         'main "$@"\n'
     )
-    return subprocess.run(  # noqa: S603 (bash and this repository's script)
-        [BASH, "-c", program, "fetch", str(SCRIPT), str(directory), server.url("yuv"), *names],
-        capture_output=True,
-        text=True,
-        timeout=120,
-        check=False,
-    )
+    return run_bash("-c", program, "fetch", str(SCRIPT), str(directory), server.url("yuv"), *names)
 
 
 @unittest.skipIf(BASH is None or shutil.which("md5sum") is None, "needs bash and md5sum")
@@ -155,19 +163,24 @@ def make_tar_zst(
             ti.linkname = target
             ti.mtime = 1761868800
             tf.addfile(ti)
-    proc = subprocess.run(  # noqa: S603 -- fixed argv, zstd resolved by shutil.which
-        [str(ZSTD), "-q"],
-        input=bio.getvalue(),
+    assert ZSTD is not None
+    proc = run_command(
+        [ZSTD, "-q"],
+        allowed_executables=[ZSTD],
+        input_data=bio.getvalue(),
         capture_output=True,
         check=True,
     )
+    assert isinstance(proc.stdout, bytes)
     return proc.stdout
 
 
-SYNTHETIC_BUNDLE_TAR_ZST = make_tar_zst(
-    {f"pq-sollevante-v1/{k}": v for k, v in SYNTHETIC_FILES.items()}
-)
-SYNTHETIC_BUNDLE_SHA256 = sha256_hex(SYNTHETIC_BUNDLE_TAR_ZST)
+@functools.cache
+def synthetic_bundle() -> bytes:
+    """The synthetic bundle archive, built on first use so a host without zstd only skips."""
+    return make_tar_zst({f"pq-sollevante-v1/{k}": v for k, v in SYNTHETIC_FILES.items()})
+
+
 SYNTHETIC_MEMBERS = [f"{k} {sha256_hex(v)}" for k, v in sorted(SYNTHETIC_FILES.items())]
 BUNDLE_REQ_PATH = "/releases/pq-sollevante-v1.tar.zst"
 
@@ -176,37 +189,34 @@ def fetch_bundle(
     server: StandIn,
     directory: Path,
     *args: str,
-    bundle_sha256: str = SYNTHETIC_BUNDLE_SHA256,
+    bundle_sha256: str | None = None,
     members: list[str] | None = None,
-) -> subprocess.CompletedProcess[str]:
+    path: str | None = None,
+) -> TextCommandResult:
     """Source the script and run main() for bundle fetching."""
     assert BASH is not None
     if members is None:
         members = SYNTHETIC_MEMBERS
+    if bundle_sha256 is None:
+        bundle_sha256 = sha256_hex(synthetic_bundle())
     members_repr = " ".join(f'"{m}"' for m in members)
     program = (
         'source "$1"; shift\n'
         f'BUNDLE_ARCHIVE_SHA256="{bundle_sha256}"\n'
         f"BUNDLE_MEMBERS=({members_repr})\n"
         'YUV_DIR="$1"; BUNDLE_BASE_URL="$2"; shift 2\n'
-        'main "$@"\n'
+        + (f'PATH="{path}"\n' if path else "")
+        + 'main "$@"\n'
     )
     cli_args = args if args else ("--bundle", "pq-sollevante-v1")
-    return subprocess.run(  # noqa: S603
-        [
-            BASH,
-            "-c",
-            program,
-            "fetch_bundle",
-            str(SCRIPT),
-            str(directory),
-            server.url("releases"),
-            *cli_args,
-        ],
-        capture_output=True,
-        text=True,
-        timeout=120,
-        check=False,
+    return run_bash(
+        "-c",
+        program,
+        "fetch_bundle",
+        str(SCRIPT),
+        str(directory),
+        server.url("releases"),
+        *cli_args,
     )
 
 
@@ -219,7 +229,7 @@ def fetch_bundle(
 )
 class FetchBundleTest(unittest.TestCase):
     def test_bundle_fetch_positive(self) -> None:
-        bodies = {BUNDLE_REQ_PATH: SYNTHETIC_BUNDLE_TAR_ZST}
+        bodies = {BUNDLE_REQ_PATH: synthetic_bundle()}
         with tempfile.TemporaryDirectory() as tmp, StandIn(bodies=bodies) as server:
             done = fetch_bundle(server, Path(tmp))
             self.assertEqual(done.returncode, 0, done.stderr)
@@ -231,7 +241,7 @@ class FetchBundleTest(unittest.TestCase):
             self.assertIn("ok      bundle pq-sollevante-v1 (extracted and verified)", done.stdout)
 
     def test_bundle_archive_sha_mismatch_fails_and_leaves_nothing(self) -> None:
-        bodies = {BUNDLE_REQ_PATH: SYNTHETIC_BUNDLE_TAR_ZST}
+        bodies = {BUNDLE_REQ_PATH: synthetic_bundle()}
         with tempfile.TemporaryDirectory() as tmp, StandIn(bodies=bodies) as server:
             done = fetch_bundle(server, Path(tmp), bundle_sha256="0" * 64)
             self.assertEqual(done.returncode, 1)
@@ -273,7 +283,7 @@ class FetchBundleTest(unittest.TestCase):
         self._refuses_link(tarfile.LNKTYPE, "pq-sollevante-v1/CREDIT.txt")
 
     def test_bundle_5xx_retried(self) -> None:
-        bodies = {BUNDLE_REQ_PATH: SYNTHETIC_BUNDLE_TAR_ZST}
+        bodies = {BUNDLE_REQ_PATH: synthetic_bundle()}
         with tempfile.TemporaryDirectory() as tmp, StandIn([503], bodies=bodies) as server:
             done = fetch_bundle(server, Path(tmp))
             self.assertEqual(done.returncode, 0, done.stderr)
@@ -283,7 +293,7 @@ class FetchBundleTest(unittest.TestCase):
             self.assertIn("attempt 1 of 7 failed (HTTP Error 503", done.stderr)
 
     def test_bundle_404_fails_immediately_and_leaves_nothing(self) -> None:
-        bodies = {BUNDLE_REQ_PATH: SYNTHETIC_BUNDLE_TAR_ZST}
+        bodies = {BUNDLE_REQ_PATH: synthetic_bundle()}
         with tempfile.TemporaryDirectory() as tmp, StandIn([404], bodies=bodies) as server:
             done = fetch_bundle(server, Path(tmp))
             self.assertEqual(done.returncode, 1)
@@ -293,7 +303,7 @@ class FetchBundleTest(unittest.TestCase):
             self.assertIn("HTTP Error 404", done.stderr)
 
     def test_bundle_already_extracted_skips_download(self) -> None:
-        bodies = {BUNDLE_REQ_PATH: SYNTHETIC_BUNDLE_TAR_ZST}
+        bodies = {BUNDLE_REQ_PATH: synthetic_bundle()}
         with tempfile.TemporaryDirectory() as tmp, StandIn(bodies=bodies) as server:
             target_dir = Path(tmp) / "pq-sollevante-v1"
             target_dir.mkdir(parents=True)
@@ -305,23 +315,54 @@ class FetchBundleTest(unittest.TestCase):
             self.assertIn("ok      bundle pq-sollevante-v1 (sha256 verified)", done.stdout)
 
     def test_unknown_bundle_name_refused_before_any_request(self) -> None:
-        bodies = {BUNDLE_REQ_PATH: SYNTHETIC_BUNDLE_TAR_ZST}
+        bodies = {BUNDLE_REQ_PATH: synthetic_bundle()}
         with tempfile.TemporaryDirectory() as tmp, StandIn(bodies=bodies) as server:
             done = fetch_bundle(server, Path(tmp), "--bundle", "unknown-bundle")
             self.assertEqual(server.requests, [])
             self.assertEqual(done.returncode, 2)
             self.assertIn("unknown-bundle is not a recognized bundle", done.stderr)
 
+    def test_bundle_without_zstd_fails_before_any_request(self) -> None:
+        """Negative: without zstd on PATH the script names it and downloads nothing."""
+        bodies = {BUNDLE_REQ_PATH: synthetic_bundle()}
+        with tempfile.TemporaryDirectory() as tmp, StandIn(bodies=bodies) as server:
+            shim = Path(tmp) / "bin"
+            shim.mkdir()
+            for tool in ("mktemp", "mkdir", "rm", "dirname", "python3", "tar", "cat"):
+                found = shutil.which(tool)
+                if found:
+                    (shim / tool).symlink_to(found)
+            done = fetch_bundle(server, Path(tmp) / "yuv", path=str(shim))
+            self.assertEqual(server.requests, [])
+            self.assertEqual(done.returncode, 1, done.stdout + done.stderr)
+            self.assertIn("zstd is not on PATH", done.stderr)
+
     def test_print_bundle_sha_names_the_archive_sha(self) -> None:
-        done = subprocess.run(  # noqa: S603
-            [str(BASH), str(SCRIPT), "--print-bundle-sha"],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        done = run_bash(str(SCRIPT), "--print-bundle-sha")
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertRegex(done.stdout.strip(), r"^[0-9a-f]{64}$")
         self.assertIn(f"BUNDLE_ARCHIVE_SHA256:-{done.stdout.strip()}", SCRIPT.read_text())
+
+
+# "${a[@]}" of an empty array is an unbound variable under set -u in Bash before 4.4,
+# which macOS runners ship (3.2); ${a[@]+"${a[@]}"} expands to nothing there instead.
+UNGUARDED_ARRAY = re.compile(r'(?<!\[@\]\+)"\$\{[A-Za-z_][A-Za-z0-9_]*\[@\]\}"')
+
+
+def unguarded_array_expansions(text: str) -> list[int]:
+    """Line numbers holding a "${a[@]}" expansion without the ${a[@]+...} guard."""
+    return [n for n, line in enumerate(text.splitlines(), 1) if UNGUARDED_ARRAY.search(line)]
+
+
+class OldBashArrays(unittest.TestCase):
+    """The fetch script runs on macOS's Bash 3.2, so every array expansion is guarded."""
+
+    def test_the_script_guards_every_array_expansion(self) -> None:
+        self.assertEqual(unguarded_array_expansions(SCRIPT.read_text()), [])
+
+    def test_an_unguarded_expansion_is_found(self) -> None:
+        text = 'ok ${A[@]+"${A[@]}"}\nf "${PARSED_FIXTURES[@]}"\n'
+        self.assertEqual(unguarded_array_expansions(text), [2])
 
 
 class OneRetryPolicy(unittest.TestCase):

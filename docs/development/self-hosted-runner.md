@@ -70,6 +70,10 @@ compute capability 8.0).
   release pinned as `INTEL_NEO_VERSION` in `build-config.env`.
 - **AVX-512-capable CPU** (Ice Lake or newer / Zen 4 or newer) — the
   AVX-512 SIMD code paths. `lscpu | grep avx512f` should return a hit.
+- **`zstd` on `PATH`** — the PQ fixture bundles are `.tar.zst` archives that
+  `scripts/test/fetch-test-yuvs.sh --bundle` unpacks with `tar`, which calls
+  `zstd`; the script stops with `zstd is not on PATH` before any download
+  without it. Install it with the distribution's `zstd` package.
 - **≥ 16 GB RAM** — coverage + multi-backend builds peak around 8 GB
   resident; doubling that gives headroom for parallel CPU test processes.
   Tests tagged `gpu` run exclusively because they share one accelerator.
