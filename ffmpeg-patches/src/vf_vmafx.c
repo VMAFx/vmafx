@@ -1650,10 +1650,12 @@ static int windows_collect(AVFilterContext *ctx, int wait)
     return 0;
 }
 
-/* Submit the span the clock cut: one window per model. */
+/* Submit the span the clock cut: one window per model; none without a model. */
 static int windows_submit(AVFilterContext *ctx, const VmafxWindowSpan *span)
 {
     VMAFXContext *s = ctx->priv;
+    if (!s->n_models)
+        return 0;
     if (s->span_count == VMAFX_MAX_SPANS) {
         int ret = windows_collect(ctx, 1); /* bounded: wait for the oldest */
         if (ret < 0)
@@ -2081,10 +2083,14 @@ static int model_spec(const VMAFXContext *s, const char *spec, char *out, size_t
     return n >= 0 && (size_t)n < size ? 0 : AVERROR(EINVAL);
 }
 
-/* Each `|`-separated model spec loaded and mounted; none: the default. */
+/* Each `|`-separated model spec loaded and mounted; none: the default. An
+ * explicitly empty `model=` beside `feature=` mounts no model, so only the
+ * features score (the CLI's --no_prediction). */
 static int use_models(AVFilterContext *ctx)
 {
     VMAFXContext *s = ctx->priv;
+    if (s->model && !*s->model && s->feature && *s->feature)
+        return 0;
     char *copy = av_strdup(s->model ? s->model : "");
     if (!copy)
         return AVERROR(ENOMEM);

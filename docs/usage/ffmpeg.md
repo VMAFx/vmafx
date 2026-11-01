@@ -330,6 +330,12 @@ version=vmaf_v0.6.1neg: VMAFX_E_INVALID: the context already scores a model of t
 `psnr_cb`, `psnr_cr`, `cambi`, `cambi_full_reference` and `cambi_source` to the
 report. The `integer_*` names map to their extractors as the CLI maps them.
 
+An explicitly empty `model=` beside `feature` mounts no model, so the run
+scores only the listed features, as the CLI's `--no_prediction` does:
+`vmafx=model=:feature=psnr:log_path=out.json` writes the `psnr_*` metrics and
+no `vmaf` score, and the filter prints no pooled-score or window lines. Without
+`feature`, an empty or absent `model` scores the library's default model.
+
 ### Input colour tags and HDR models
 
 A model file may declare a `conversion_target` (see
