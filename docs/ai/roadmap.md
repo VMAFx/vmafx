@@ -36,7 +36,7 @@ The four capabilities already in-tree are described in
 | FastDVDnet extractor (real weights) | Shipped; FFmpeg `vmafx_pre_temporal` filter planned | [ADR-0255](../adr/0255-fastdvdnet-pre-real-weights.md) | [fastdvdnet_pre](models/fastdvdnet_pre.md) |
 | Allowlist `Loop` / `If` with bounded-iteration guard | Shipped | [ADR-0169](../adr/0169-onnx-allowlist-loop-if.md), [ADR-0171](../adr/0171-bounded-loop-trip-count.md) | [security.md](security.md) |
 | `vmaf-train tune` (Optuna) | Shipped | none | [training.md](training.md#hyperparameter-sweeps) |
-| FFmpeg `vmaf_post` filter | Planned, no patch number assigned | none | none |
+| FFmpeg `vmafx_post` filter | Planned, no patch number assigned | none | none |
 | `describe_worst_frames` MCP tool | Planned | none | none |
 | CLIP-IQA pseudo-labeler, KADID-10k pipeline, Ray tuning backend | Deferred | none | none |
 | GPU-parity CI for tiny-AI EPs | Not implemented; cross-EP variance is checked manually | none | [inference.md](inference.md#expected-cross-device-variance) |
@@ -191,7 +191,8 @@ Status:
 
 ## 3. FFmpeg and encoder expansion
 
-The slots below are not filled by the current `ffmpeg-patches/` series.
+The planned slots in sections 3.2 and 3.3 below are not filled by the current
+`ffmpeg-patches/` series.
 
 ### 3.1 `vmafx_pre`: 10-bit and chroma (shipped)
 

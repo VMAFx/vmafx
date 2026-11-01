@@ -146,12 +146,13 @@ QSV device:
 
 ```bash
 ffmpeg \
-  -init_hw_device vaapi=va0:/dev/dri/renderD128 \
+  -init_hw_device drm=dr0:/dev/dri/renderD128 \
+  -init_hw_device vaapi=va0@dr0 \
   -init_hw_device qsv=qsv_ref@va0 \
   -init_hw_device qsv=qsv_dis@va0 \
   -hwaccel qsv -hwaccel_output_format qsv -hwaccel_device qsv_dis -c:v av1_qsv -i dis.mkv \
   -hwaccel qsv -hwaccel_output_format qsv -hwaccel_device qsv_ref -c:v hevc_qsv -i ref.mkv \
-  -lavfi '[0:v]trim=end_frame=500[d];[1:v]trim=end_frame=500[r];[d][r]vmafx=backend=sycl:log_fmt=csv:log_path=out.csv' \
+  -lavfi '[0:v]trim=end_frame=500,hwmap=derive_device=vaapi,format=vaapi,hwmap=derive_device=drm,format=drm_prime[d];[1:v]trim=end_frame=500,hwmap=derive_device=vaapi,format=vaapi,hwmap=derive_device=drm,format=drm_prime[r];[d][r]vmafx=backend=sycl:log_fmt=csv:log_path=out.csv' \
   -f null -
 ```
 
@@ -192,8 +193,9 @@ The `vmafx` filter (with `backend=sycl`) resolves each `feature=` name
 to its SYCL twin, as the `vmafx` CLI does. On QSV zero-copy input it
 refuses to configure when no twin can run (a CPU extractor cannot read
 device-only frames); on software input it uses the twin when there is one
-and otherwise warns and computes the feature on the CPU. A twin that needs
-chroma is still refused at the first frame by the admission check above.
+and otherwise warns and computes the feature on the CPU. For VMAFx SYCL
+imports, supported chroma scoring is admitted, while unsupported layouts or
+features continue to follow their respective backend admission rules.
 Zero-copy accepts NV12 and P010 surfaces only. The messages and examples are
 in [Using VMAF with FFmpeg](../../usage/ffmpeg.md#how-feature-names-are-resolved-in-libvmaf_sycl);
 the rationale is [ADR-3360](../../adr/3360-sycl-filter-twin-routing.md).

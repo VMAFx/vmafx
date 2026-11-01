@@ -132,7 +132,7 @@ if [ ! -c "$RENDER_NODE" ]; then
   echo "render node is not a character device: $RENDER_NODE" >&2
   exit 2
 fi
-QSV_INIT=(-init_hw_device "vaapi=va0:$RENDER_NODE"
+QSV_INIT=(-init_hw_device "drm=dr0:$RENDER_NODE" -init_hw_device "vaapi=va0@dr0"
   -init_hw_device qsv=qr@va0 -init_hw_device qsv=qd@va0)
 OUT="$(realpath -m "$OUT")"
 mkdir -p "$OUT/media"
@@ -203,7 +203,7 @@ run_zc() {
     -hwaccel qsv -hwaccel_output_format qsv -hwaccel_device qd -i "$dis" \
     -hwaccel qsv -hwaccel_output_format qsv -hwaccel_device qr -i "$ref" \
     ${benchflag:+"$benchflag"} \
-    -lavfi "[0:v][1:v]vmafx=backend=sycl:import=auto:${opt}:score_fmt=${SCORE_FMT}:log_fmt=json:log_path=${base}.json" -f null -
+    -lavfi "[0:v]hwmap=derive_device=vaapi,format=vaapi,hwmap=derive_device=drm,format=drm_prime[d];[1:v]hwmap=derive_device=vaapi,format=vaapi,hwmap=derive_device=drm,format=drm_prime[r];[d][r]vmafx=backend=sycl:import=auto:${opt}:score_fmt=${SCORE_FMT}:log_fmt=json:log_path=${base}.json" -f null -
 }
 
 # run_case TAG DIS REF ID KIND ARG BENCHFLAG REFERENCE

@@ -43,30 +43,31 @@ def flat(text: str) -> str:
 class InputColorimetryTests(unittest.TestCase):
     def setUp(self) -> None:
         self.text = SOURCE.read_text(encoding="utf-8")
+        self.flat_text = flat(self.text)
 
     def test_every_attribute_is_mapped(self) -> None:
         for line in MAPPINGS:
             with self.subTest(line=line):
-                self.assertIn(flat(line), flat(self.text))
+                self.assertIn(flat(line), self.flat_text)
 
     def test_a_missing_mapping_is_refused(self) -> None:
         """Negative: the source without one mapping no longer holds it."""
-        dropped = flat(self.text).replace(flat(MAPPINGS[0]), "")
+        dropped = self.flat_text.replace(flat(MAPPINGS[0]), "")
         self.assertNotIn(flat(MAPPINGS[0]), dropped)
         self.assertIn(flat(MAPPINGS[1]), dropped)
 
     def test_an_input_with_an_unnamed_attribute_stays_unspecified(self) -> None:
-        self.assertIn(UNSPECIFIED, self.text)
-        self.assertIn("? &ref_color : NULL", self.text)
-        self.assertIn("? &dist_color : NULL", self.text)
+        self.assertIn(flat(UNSPECIFIED), self.flat_text)
+        self.assertIn(flat("? &ref_color : NULL"), self.flat_text)
+        self.assertIn(flat("? &dist_color : NULL"), self.flat_text)
 
     def test_declared_once_before_the_first_read(self) -> None:
-        self.assertEqual(self.text.count(CALL), 1)
-        self.assertIn("if (s->color_set)\n        return 0;", self.text)
-        self.assertEqual(self.text.count(SITE), 1)
+        self.assertEqual(self.flat_text.count(flat(CALL)), 1)
+        self.assertIn(flat("if (s->color_set) return 0;"), self.flat_text)
+        self.assertEqual(self.flat_text.count(flat(SITE)), 1)
 
     def test_the_check_refuses_a_missing_call(self) -> None:
-        self.assertNotIn(CALL, self.text.replace(CALL, ""))
+        self.assertNotIn(flat(CALL), self.flat_text.replace(flat(CALL), ""))
 
 
 if __name__ == "__main__":

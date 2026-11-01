@@ -175,7 +175,12 @@ if [ "${odd_rc}" -eq 0 ]; then
   expect "odd height, software path: psnr_y / psnr_cb / psnr_cr equal the CPU's on every frame" \
     same_psnr "${WORK}/oddsycl.json" "${WORK}/oddcpu.json"
 else
-  echo "SKIP: odd height SYCL path not supported by this build"
+  if grep -q "vmafx_device_create" "${WORK}/oddsycl.log" 2>/dev/null; then
+    echo "SKIP: odd height SYCL device could not be created"
+  else
+    echo "FAIL: odd height SYCL run failed unexpectedly (exit ${odd_rc})" >&2
+    fail=1
+  fi
 fi
 
 if [ "${fail}" -ne 0 ]; then

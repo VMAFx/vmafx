@@ -971,8 +971,9 @@ backend within it.
 - **Metal IOSurface import reads NV12 / P010 itself ([ADR-1679](../adr/1679-metal-iosurface-biplanar-import.md))**:
   `core/src/metal/picture_import.mm` plans each plane from the surface's CoreVideo
   pixel format through `core/src/metal/iosurface_layout.h` (bi-planar chroma
-  de-interleaved, P010 shifted, other layouts `-ENOTSUP`), and FFmpeg patch `0004`
-  (`src/vf_vmafx.c`) imports planes 0, 1 and 2 of both frames and fails on an import error.
+  de-interleaved, P010 shifted, other layouts `-ENOTSUP`); in FFmpeg patch `0004`
+  (`src/vf_vmafx.c`), Metal zero-copy IOSurface import is not implemented and
+  VideoToolbox frames are downloaded via `import=host`.
   `core/test/test_metal_iosurface_filter_contract.py`, `test_metal_iosurface_layout`
   and `test_metal_iosurface_import_parity` guard it. See
   [core/src/metal/AGENTS.md](../../core/src/metal/AGENTS.md).

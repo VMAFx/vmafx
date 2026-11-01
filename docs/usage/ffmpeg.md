@@ -420,6 +420,13 @@ ffmpeg -init_hw_device drm=dr:/dev/dri/renderD129 -init_hw_device vaapi=va@dr -f
 The `format=drm_prime` after each `hwmap` matters: without it `hwmap` passes
 the VAAPI frames on, which `vmafx` refuses by name.
 
+QSV frames take one more step: FFmpeg maps a QSV frame only to its parent VAAPI
+frame or to system memory, so a direct `hwmap=derive_device=drm` on QSV frames fails
+with `Function not implemented`. Create the QSV device from a VAAPI device that is
+itself derived from a DRM device (`-init_hw_device drm=dr:...`,
+`-init_hw_device vaapi=va@dr`, `-init_hw_device qsv=qd@va`) and map each input with
+`hwmap=derive_device=vaapi,format=vaapi,hwmap=derive_device=drm,format=drm_prime`.
+
 #### Vulkan frames
 
 Vulkan frames (FFmpeg's Vulkan decoder, `hwupload` to a Vulkan device, the
@@ -744,7 +751,7 @@ its own `libvmaf` filter against the backwards-compatibility library (`libvmaf.s
 | `libvmaf_sycl` | (whole filter) | `vmafx` | `backend=sycl` `import=auto\|device` | Ported. Zero-copy QSV/VAAPI unified in `vmafx`. |
 | `libvmaf_sycl` | `gpu_profile` | `vmafx` | `profile=1` | Ported. |
 | `libvmaf_vulkan` | (whole filter) | — | — | **DROPPED** (no new spelling; ADR-0726 / ADR-0860 / ADR-2166). |
-| `libvmaf_metal` | (whole filter) | `vmafx` | `backend=metal` `import=auto\|device` | Ported. Zero-copy VideoToolbox unified in `vmafx`. |
+| `libvmaf_metal` | (whole filter) | `vmafx` | `backend=metal` `import=host` | Ported. VideoToolbox frames downloaded via `import=host` (zero-copy IOSurface import not implemented). |
 | `libvmaf_tune` | (whole filter) | `vmafx_tune` | (filter name mapping) | Ported. Recommends CRF for next encode pass. |
 | `libvmaf_tune` | `model`, `feature`, `n_threads` | `vmafx_tune` | `model`, `feature`, `threads`/`n_threads` | Ported. |
 | `libvmaf_tune` | `recommend_target_vmaf` | `vmafx_tune` | `recommend_target_vmaf` | Ported (default 95.0). |
@@ -831,9 +838,13 @@ ffmpeg -hwaccel qsv -hwaccel_output_format qsv -i degraded.mp4 \
 New command (`vmafx` with `backend=sycl`):
 
 ```bash
-ffmpeg -hwaccel qsv -hwaccel_output_format qsv -i degraded.mp4 \
-  -hwaccel qsv -hwaccel_output_format qsv -i reference.mp4 \
-  -filter_complex "[0:v][1:v]vmafx=backend=sycl:log_fmt=json:log_path=scores.json" \
+ffmpeg -init_hw_device drm=dr:/dev/dri/renderD128 -init_hw_device vaapi=va@dr \
+  -init_hw_device qsv=qd@va -init_hw_device qsv=qr@va \
+  -hwaccel qsv -hwaccel_output_format qsv -hwaccel_device qd -i degraded.mp4 \
+  -hwaccel qsv -hwaccel_output_format qsv -hwaccel_device qr -i reference.mp4 \
+  -filter_complex "[0:v]hwmap=derive_device=vaapi,format=vaapi,hwmap=derive_device=drm,format=drm_prime[d]; \
+                   [1:v]hwmap=derive_device=vaapi,format=vaapi,hwmap=derive_device=drm,format=drm_prime[r]; \
+                   [d][r]vmafx=backend=sycl:log_fmt=json:log_path=scores.json" \
   -f null -
 ```
 
@@ -952,20 +963,24 @@ ffmpeg -i distorted.mp4 -i reference.mp4 \
 QSV / oneVPL zero-copy hardware frames:
 
 ```bash
-ffmpeg -hwaccel qsv -hwaccel_output_format qsv -i distorted.mp4 \
-       -hwaccel qsv -hwaccel_output_format qsv -i reference.mp4 \
-       -filter_complex "[0:v][1:v]vmafx=backend=sycl:import=auto:log_fmt=json:log_path=/dev/stdout" \
+ffmpeg -init_hw_device drm=dr:/dev/dri/renderD128 -init_hw_device vaapi=va@dr \
+       -init_hw_device qsv=qd@va -init_hw_device qsv=qr@va \
+       -hwaccel qsv -hwaccel_output_format qsv -hwaccel_device qd -i distorted.mp4 \
+       -hwaccel qsv -hwaccel_output_format qsv -hwaccel_device qr -i reference.mp4 \
+       -filter_complex "[0:v]hwmap=derive_device=vaapi,format=vaapi,hwmap=derive_device=drm,format=drm_prime[d]; \
+                        [1:v]hwmap=derive_device=vaapi,format=vaapi,hwmap=derive_device=drm,format=drm_prime[r]; \
+                        [d][r]vmafx=backend=sycl:import=auto:log_fmt=json:log_path=/dev/stdout" \
        -f null -
 ```
 
 **Metal** (Apple Silicon; libvmafx built with `-Denable_metal=enabled` or `auto`):
 
-VideoToolbox zero-copy hardware frames:
+VideoToolbox hardware frames downloaded to host for Metal scoring:
 
 ```bash
 ffmpeg -hwaccel videotoolbox -hwaccel_output_format videotoolbox_vld -i distorted.mp4 \
        -hwaccel videotoolbox -hwaccel_output_format videotoolbox_vld -i reference.mp4 \
-       -filter_complex "[0:v][1:v]vmafx=backend=metal:import=auto:log_fmt=json:log_path=/dev/stdout" \
+       -filter_complex "[0:v][1:v]vmafx=backend=metal:import=host:log_fmt=json:log_path=/dev/stdout" \
        -f null -
 ```
 
