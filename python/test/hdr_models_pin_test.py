@@ -8,6 +8,10 @@ PQ input: material has no motion, so HFR equals non-HFR there (ref_dock / dis_do
 Sol Levante input: real PQ with motion, 8 frames at 1080p, from the fixtures-pq-sollevante-v1
 release. Those rows hold 17 digits and compare exactly, since CPU scores match upstream 4611e47a7
 bit for bit on this clip.
+Bypass ICtCp input: pre-converted 1080p and 2160p ICtCp pictures from the fixtures-hdr-ictcp-pixels-v1
+release, scored with conversion bypassed. Those rows hold 17 digits and compare exactly, since
+libvmaf feature extraction and SVM inference are bit-exact on identical converted pixels across
+all architectures (run 41178767446).
 """
 
 from __future__ import annotations
@@ -16,13 +20,22 @@ import glob
 import json
 import os
 import platform
-import subprocess
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 
+import vmaf
 from vmaf import ExternalProgram
 from vmaf.config import VmafConfig
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+from scripts.lib.safe_subprocess import (
+    TextCommandResult,
+)  # noqa: E402 - needs the repository root on sys.path
+from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
 
 # Set only on the CI leg built with -Denable_zimg=false: there a pin row asserts the refusal
 # that names zimg. A build with zimg fails this assertion, so the setting cannot hide a row.
@@ -80,10 +93,80 @@ def _input_args(kind: str) -> list[str]:
     return _pair_args((ref, dis, 576, 324, "422", 16))
 
 
-def _run_cli(model: str, kind: str, out_path: str) -> subprocess.CompletedProcess[str]:
+def _bypass_ictcp_pair(model: str) -> tuple[str, str, int, int]:
+    """Return the bundle's ref and dis paths and the size the model scores at."""
+    width, height = (3840, 2160) if "2160" in model else (1920, 1080)
+    bundle_dir = VmafConfig.test_resource_path("yuv", "hdr-ictcp-pixels-v1", bypass_download=True)
+    ref = os.path.join(bundle_dir, f"ref_{width}x{height}.yuv")
+    dis = os.path.join(bundle_dir, f"dis_{width}x{height}.yuv")
+    return ref, dis, width, height
+
+
+def _bypass_ictcp_args(model: str) -> list[str]:
+    """Return command-line input flags for pre-converted ICtCp pictures bypassing conversion."""
+    ref, dis, width, height = _bypass_ictcp_pair(model)
+    return [
+        "-r",
+        ref,
+        "-d",
+        dis,
+        "-w",
+        str(width),
+        "-h",
+        str(height),
+        "-p",
+        "420",
+        "-b",
+        "16",
+        "--color_range_ref",
+        "limited",
+        "--color_primaries_ref",
+        "bt2020",
+        "--color_trc_ref",
+        "smpte2084",
+        "--color_matrix_ref",
+        "ictcp",
+        "--color_range_dist",
+        "limited",
+        "--color_primaries_dist",
+        "bt2020",
+        "--color_trc_dist",
+        "smpte2084",
+        "--color_matrix_dist",
+        "ictcp",
+        "--precision",
+        "max",
+    ]
+
+
+def _vmafexec() -> str:
+    """The vmaf binary as an absolute path to an executable file.
+
+    The path comes from VMAFEXEC_PATH or the build directory (vmaf.ExternalProgram); a
+    relative or non-executable value fails here by name instead of running something else.
+    """
+    path = os.path.abspath(vmaf.required(ExternalProgram.vmafexec))
+    if not (os.path.isfile(path) and os.access(path, os.X_OK)):
+        raise AssertionError(f"{path} is not an executable file")
+    return path
+
+
+def _run_vmaf(args: list[str]) -> TextCommandResult:
+    """Run the vmaf binary under test with args; it is the only executable allowed."""
+    exe = _vmafexec()
+    result = run_command(
+        [exe, *args], allowed_executables=[exe], capture_output=True, text=True, timeout_seconds=60
+    )
+    assert isinstance(result, TextCommandResult)
+    return result
+
+
+def _run_cli(model: str, kind: str, out_path: str) -> TextCommandResult:
     """Execute vmaf CLI with HDR color metadata and requested model."""
-    cmd = [
-        ExternalProgram.vmafexec,
+    if kind == "bypass_ictcp":
+        args = [*_bypass_ictcp_args(model), "--model", f"version={model}", "--json", "-o", out_path]
+        return _run_vmaf(args)
+    args = [
         *_input_args(kind),
         "--color_range_ref",
         "limited",
@@ -107,7 +190,7 @@ def _run_cli(model: str, kind: str, out_path: str) -> subprocess.CompletedProces
         "-o",
         out_path,
     ]
-    return subprocess.run(cmd, capture_output=True, text=True, timeout=60, check=False)
+    return _run_vmaf(args)
 
 
 class HdrModelsPinTest(unittest.TestCase):
@@ -123,10 +206,14 @@ class HdrModelsPinTest(unittest.TestCase):
         self.assertEqual(len(versions), 8, versions)
         for version in versions:
             stem = version.replace("hdr_vmaf_v1.1.8", "test_hdr_v118")
-            for kind in ("tagged", "pq", "sollevante_pq"):
+            for kind in ("tagged", "pq", "sollevante_pq", "bypass_ictcp"):
                 self.assertTrue(hasattr(self, f"{stem}_{kind}"), f"{version} has no {kind} pin")
 
     def _assert_pin(self, model: str, kind: str, expected_pin: float) -> None:
+        if kind == "bypass_ictcp":
+            ref, dis, _, _ = _bypass_ictcp_pair(model)
+            if not os.path.isfile(ref) or not os.path.isfile(dis):
+                self.fail(f"fixture bundle hdr-ictcp-pixels-v1 is missing or incomplete: {ref}")
         with tempfile.TemporaryDirectory() as tmp:
             out_path = os.path.join(tmp, "out.json")
             proc = _run_cli(model, kind, out_path)
@@ -144,8 +231,11 @@ class HdrModelsPinTest(unittest.TestCase):
             with open(out_path, encoding="utf-8") as f:
                 data = json.load(f)
             mean_score = data["pooled_metrics"]["vmaf"]["mean"]
-            if kind == "sollevante_pq" and not _NON_X86_CONVERSION:
-                # x86-64 CPU scores match upstream bit for bit on this clip.
+            # bypass_ictcp: exact on every leg (x86-64, aarch64, macOS); feature extraction
+            # and SVM inference are bit-exact on identical pre-converted input pictures
+            # (run 41178767446). sollevante_pq: exact on x86-64 only, where CPU scores match
+            # upstream bit for bit; zimg intermediate rounding differs elsewhere.
+            if kind == "bypass_ictcp" or (kind == "sollevante_pq" and not _NON_X86_CONVERSION):
                 self.assertEqual(mean_score, expected_pin)
             else:
                 self.assertAlmostEqual(mean_score, expected_pin, places=HDR_PIN_PLACES)
@@ -221,6 +311,74 @@ class HdrModelsPinTest(unittest.TestCase):
 
     def test_hdr_v118_hfr_5d0h_sollevante_pq(self) -> None:
         self._assert_pin("hdr_vmaf_v1.1.8_hfr_5d0h", "sollevante_pq", 75.08676439039081)
+
+    def test_hdr_v118_1d5h_2160_bypass_ictcp(self) -> None:
+        self._assert_pin("hdr_vmaf_v1.1.8_1d5h_2160", "bypass_ictcp", 97.21077181134615)
+
+    def test_hdr_v118_3d0h_bypass_ictcp(self) -> None:
+        self._assert_pin("hdr_vmaf_v1.1.8_3d0h", "bypass_ictcp", 96.48198986623778)
+
+    def test_hdr_v118_3d0h_2160_bypass_ictcp(self) -> None:
+        self._assert_pin("hdr_vmaf_v1.1.8_3d0h_2160", "bypass_ictcp", 103.04806526477226)
+
+    def test_hdr_v118_5d0h_bypass_ictcp(self) -> None:
+        self._assert_pin("hdr_vmaf_v1.1.8_5d0h", "bypass_ictcp", 96.72093517624604)
+
+    def test_hdr_v118_hfr_1d5h_2160_bypass_ictcp(self) -> None:
+        self._assert_pin("hdr_vmaf_v1.1.8_hfr_1d5h_2160", "bypass_ictcp", 97.21077181134615)
+
+    def test_hdr_v118_hfr_3d0h_bypass_ictcp(self) -> None:
+        self._assert_pin("hdr_vmaf_v1.1.8_hfr_3d0h", "bypass_ictcp", 96.48198986623778)
+
+    def test_hdr_v118_hfr_3d0h_2160_bypass_ictcp(self) -> None:
+        self._assert_pin("hdr_vmaf_v1.1.8_hfr_3d0h_2160", "bypass_ictcp", 103.04806526477226)
+
+    def test_hdr_v118_hfr_5d0h_bypass_ictcp(self) -> None:
+        self._assert_pin("hdr_vmaf_v1.1.8_hfr_5d0h", "bypass_ictcp", 96.72093517624604)
+
+
+class VmafexecPathTest(unittest.TestCase):
+    """The binary check refuses what it must and accepts the built binary."""
+
+    def _with_path(self, path: str) -> str:
+        saved = ExternalProgram.vmafexec
+        ExternalProgram.vmafexec = path
+        try:
+            return _vmafexec()
+        finally:
+            ExternalProgram.vmafexec = saved
+
+    def test_missing_binary_fails(self) -> None:
+        """Negative: a path that does not exist fails by name."""
+        with self.assertRaisesRegex(AssertionError, "does not exist"):
+            self._with_path("/nonexistent/tools/vmaf")
+
+    def test_non_executable_file_fails(self) -> None:
+        """Negative: an existing file without the execute bit is refused."""
+        with tempfile.NamedTemporaryFile() as plain:
+            os.chmod(plain.name, 0o644)
+            with self.assertRaisesRegex(AssertionError, "not an executable file"):
+                self._with_path(plain.name)
+
+    def test_directory_fails(self) -> None:
+        """Boundary: a directory is executable but is no binary."""
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(AssertionError, "not an executable file"):
+                self._with_path(tmp)
+
+    def test_relative_path_comes_back_absolute(self) -> None:
+        """Positive: an executable given relative to the working directory resolves."""
+        with tempfile.TemporaryDirectory() as tmp:
+            exe = os.path.join(tmp, "vmaf")
+            with open(exe, "w", encoding="utf-8") as handle:
+                handle.write("#!/bin/sh\n")
+            os.chmod(exe, 0o500)  # owner read+execute: all a shell fixture needs
+            cwd = os.getcwd()
+            os.chdir(tmp)
+            try:
+                self.assertEqual(os.path.realpath(self._with_path("vmaf")), os.path.realpath(exe))
+            finally:
+                os.chdir(cwd)
 
 
 if __name__ == "__main__":

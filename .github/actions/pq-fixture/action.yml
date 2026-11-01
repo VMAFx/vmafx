@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: EUPL-1.2
 name: PQ fixture
 description: >-
-  Puts the pq-sollevante-v1 bundle under python/test/resource/yuv and takes it
+  Puts a fixture bundle under python/test/resource/yuv and takes it
   out again, so it stays in its own cache entry and out of the shared resource
   cache. A failed download fails the job.
 
@@ -10,42 +10,76 @@ inputs:
   phase:
     description: "'get' before the tests, 'finish' after them."
     required: true
+  bundle:
+    description: "Fixture bundle name (default: pq-sollevante-v1)."
+    required: false
+    default: pq-sollevante-v1
 
 runs:
   using: composite
   steps:
+    # Every run block reads the bundle name from BUNDLE, never from an expression in
+    # the script text. This first step runs in both phases and stops the job on a name
+    # outside the fetch script's allow-list, before any later step uses it.
     - name: Read the fixture sha
       id: sha
       shell: bash
-      run: echo "sha=$(bash scripts/test/fetch-test-yuvs.sh --print-bundle-sha)" >> "$GITHUB_OUTPUT"
+      env:
+        BUNDLE: ${{ inputs.bundle }}
+      run: |
+        sha=$(bash scripts/test/fetch-test-yuvs.sh --print-bundle-sha "${BUNDLE}")
+        echo "sha=${sha}" >> "$GITHUB_OUTPUT"
 
     - name: Restore the fixture
       id: restore
       if: inputs.phase == 'get'
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
       with:
-        path: python/test/resource/yuv/pq-sollevante-v1
-        key: vmaf-pq-fixture-${{ steps.sha.outputs.sha }}
+        path: python/test/resource/yuv/${{ inputs.bundle }}
+        key: vmaf-${{ inputs.bundle }}-${{ steps.sha.outputs.sha }}
 
     - name: Remember the cache result for the finish phase
       if: inputs.phase == 'get'
       shell: bash
-      run: echo "PQ_FIXTURE_CACHE_HIT=${{ steps.restore.outputs.cache-hit }}" >> "$GITHUB_ENV"
+      env:
+        BUNDLE: ${{ inputs.bundle }}
+        CACHE_HIT: ${{ steps.restore.outputs.cache-hit }}
+      # A marker file in the job's temporary directory, not $GITHUB_ENV: both phases run
+      # in the same job, and nothing else reads the result.
+      run: printf '%s\n' "${CACHE_HIT}" > "${RUNNER_TEMP}/pq-fixture-${BUNDLE}.cache-hit"
 
     # The script checks the member hashes on a cache hit too.
     - name: Fetch the fixture if missing
       if: inputs.phase == 'get'
       shell: bash
-      run: bash scripts/test/fetch-test-yuvs.sh --bundle pq-sollevante-v1
+      env:
+        BUNDLE: ${{ inputs.bundle }}
+      run: bash scripts/test/fetch-test-yuvs.sh --bundle "${BUNDLE}"
+
+    - name: Check if cache save needed
+      id: check_save
+      if: inputs.phase == 'finish'
+      shell: bash
+      env:
+        BUNDLE: ${{ inputs.bundle }}
+      run: |
+        hit=$(cat "${RUNNER_TEMP}/pq-fixture-${BUNDLE}.cache-hit" 2>/dev/null || true)
+        if [ "${hit}" = "true" ]; then
+          echo "save=false" >> "$GITHUB_OUTPUT"
+        else
+          echo "save=true" >> "$GITHUB_OUTPUT"
+        fi
 
     - name: Save the fixture
-      if: inputs.phase == 'finish' && env.PQ_FIXTURE_CACHE_HIT != 'true'
+      if: inputs.phase == 'finish' && steps.check_save.outputs.save == 'true'
       uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
       with:
-        path: python/test/resource/yuv/pq-sollevante-v1
-        key: vmaf-pq-fixture-${{ steps.sha.outputs.sha }}
+        path: python/test/resource/yuv/${{ inputs.bundle }}
+        key: vmaf-${{ inputs.bundle }}-${{ steps.sha.outputs.sha }}
 
     - name: Keep the fixture out of the shared resource cache
       if: inputs.phase == 'finish'
       shell: bash
-      run: rm -rf python/test/resource/yuv/pq-sollevante-v1
+      env:
+        BUNDLE: ${{ inputs.bundle }}
+      run: rm -rf "python/test/resource/yuv/${BUNDLE:?the bundle name is empty}"
