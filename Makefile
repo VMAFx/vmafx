@@ -20,7 +20,15 @@ NINJA_EXEC := $(abspath $(NINJA))
 # PATH. Without this, `make lint-py` / `make format-check` silently found no
 # ruff / black and reported success, so the local gate could pass while
 # CI's identical checks failed.
-export PATH := $(VIRTUAL_ENV_ABS):$(PATH)
+#
+# Only the venv this Makefile builds goes first: it always carries `pip`
+# (`python3 -m venv`). A package-less `.venv` another tool drops in the
+# worktree root (a bundled `uv` does) has no `pip`, and putting it first made
+# `python3` resolve to an interpreter without `jsonschema`, so
+# `make docs-fragments-check` failed for a reason unrelated to the change.
+# `scripts/ci/check-no-tracked-venv.sh` refuses such a stray venv by name.
+VENV_READY := $(wildcard $(VENV_PIP))
+export PATH := $(if $(VENV_READY),$(VIRTUAL_ENV_ABS):)$(PATH)
 
 # require-tool,<binary>,<install hint>
 # A gate that cannot run is a gate that cannot fail. Every lint / format tool is
@@ -589,6 +597,7 @@ lint-sh: ffmpeg-input-contract
 	@scripts/ci/test-prune-corrupt-fixtures.sh
 	@bash scripts/dev/test-cleanup-agent-state.sh
 	@scripts/ci/check-no-tracked-venv.sh
+	@bash scripts/ci/tests/test-check-no-tracked-venv.sh
 	@scripts/ci/check-aggregator-names.sh
 	@scripts/ci/check-state-md-rows.sh
 	@scripts/ci/check-base-image-single-source.sh

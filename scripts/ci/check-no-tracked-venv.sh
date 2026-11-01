@@ -14,7 +14,14 @@
 # picking a path up — it does nothing about a path that is already tracked,
 # and nothing at all against `git add -f`. This gate is the backstop.
 #
-# Usage: check-no-tracked-venv.sh [REF]   (default: the index)
+# Without REF the gate also refuses two untracked strays in the worktree root
+# that a bundled `uv` drops there: a `.venv` that is not the Makefile's (no
+# `bin/pip`; `make` puts the root `.venv` first on PATH, so its bare `python3`
+# lacked `jsonschema` and `make docs-fragments-check` failed), and a `uv.lock`
+# that locks no package beyond the root project (the tree's locks live in
+# `requirements/locks/`).
+#
+# Usage: check-no-tracked-venv.sh [REF]   (default: the index and worktree root)
 set -euo pipefail
 export LC_ALL=C
 
@@ -41,4 +48,24 @@ if [ -n "$bad" ]; then
   printf '\nRemove with: git rm --cached <path>   (.gitignore already excludes them)\n' >&2
   exit 1
 fi
-printf 'check-no-tracked-venv: OK (no virtualenv paths tracked)\n'
+if [ -z "$ref" ]; then
+  stray=""
+  if [ -d .venv ] && [ ! -e .venv/bin/pip ]; then
+    stray=".venv (no bin/pip: not the venv \`make\` builds)"
+  fi
+  if [ -f uv.lock ] && ! git ls-files --error-unmatch uv.lock >/dev/null 2>&1; then
+    packages=$(grep -c '^\[\[package\]\]' uv.lock || [ "$?" -eq 1 ])
+    if [ "${packages:-0}" -le 1 ]; then
+      stray="${stray:+$stray
+}uv.lock (locks no package beyond the root project)"
+    fi
+  fi
+  if [ -n "$stray" ]; then
+    printf 'error: stray virtualenv state in the worktree root:\n' >&2
+    printf '%s\n' "$stray" | sed 's/^/  /' >&2
+    printf '\nA tool outside the build created it; it shadows python3 under make.\n' >&2
+    printf 'Remove the path(s) above; make then builds its own venv.\n' >&2
+    exit 1
+  fi
+fi
+printf 'check-no-tracked-venv: OK (no virtualenv paths tracked, no stray root venv)\n'
