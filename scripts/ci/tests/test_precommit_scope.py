@@ -16,6 +16,7 @@ its diff before the master push failed, is the planted case.
 from __future__ import annotations
 
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -156,6 +157,33 @@ class ScopeDecision(unittest.TestCase):
             "scripts/lib/safe_subprocess.py",
             precommit_scope.import_closure({"scripts/ci/check_fork_python_subprocess.py"}, ROOT),
         )
+
+    def test_package_source_of_a_test_directory_is_an_input(self) -> None:
+        # rc1-tester-report-tests runs `pytest tools/rc1-tester/tests`; the tests
+        # import vmaf_rc1_tester from ../src, whose modules import each other
+        # relatively (`from .hw_dispatch import ...`).
+        package = "tools/rc1-tester/src/vmaf_rc1_tester/"
+        self.assertIn(f"{package}hw_gate.py", INPUTS)
+        self.assertIn(f"{package}hw_dispatch.py", INPUTS)
+        args, _ = precommit_scope.scope("pull_request", BASE, [f"{package}hw_dispatch.py"], INPUTS)
+        self.assertEqual(args, ["--all-files"])
+
+    def test_deleted_imported_module_stays_an_input(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="vmafx-scope-") as temp:
+            root = Path(temp)
+            (root / "pkg" / "tests").mkdir(parents=True)
+            (root / "pkg" / "tests" / "test_x.py").write_text(
+                "import json\nfrom pkg import gone\n", encoding="utf-8"
+            )
+            planted = "repos:\n- repo: local\n  hooks:\n  - id: x\n    entry: python3 pkg/tests/test_x.py\n"
+            found = precommit_scope.hook_inputs(planted, root)
+            # Positive: the deleted module is still an input.
+            self.assertIn("pkg/gone.py", found)
+            args, _ = precommit_scope.scope("pull_request", BASE, ["pkg/gone.py"], found)
+            self.assertEqual(args, ["--all-files"])
+            # Negative: a standard-library import names no repository file.
+            self.assertNotIn("json.py", found)
+            self.assertNotIn("pkg/tests/json.py", found)
 
     def test_unparsable_entry_makes_every_path_an_input(self) -> None:
         planted = 'repos:\n- repo: local\n  hooks:\n  - id: x\n    entry: "bash -c \'oops"\n'

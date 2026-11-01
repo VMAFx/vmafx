@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import itertools
 import re
 import shlex
 import shutil
@@ -89,39 +90,87 @@ def token_paths(token: str, root: Path) -> set[str]:
     return {value} if (root / value).is_file() else set()
 
 
+def search_bases(source: Path, root: Path) -> tuple[Path, ...]:
+    """Where an absolute import may resolve: the root, then every directory from the
+    file up to the root with its ``src/`` child (``tests/`` beside ``src/vmaf_rc1_tester``)."""
+    bases = [root]
+    for directory in source.parents:
+        if directory == root or root not in directory.parents:
+            break
+        bases += [directory, directory / "src"]
+    return tuple(bases)
+
+
+def from_targets(node: ast.ImportFrom, source: Path, root: Path) -> set[tuple[Path, str]]:
+    """(base, dotted name) pairs one ``from ... import`` statement may load."""
+    if node.level:
+        if node.level > len(source.parents):
+            return set()
+        anchor = source.parents[node.level - 1]
+        if anchor != root and root not in anchor.parents:
+            return set()
+        bases: tuple[Path, ...] = (anchor,)
+    else:
+        bases = search_bases(source, root)
+    module = node.module or ""
+    names = {f"{module}.{alias.name}".strip(".") for alias in node.names}
+    if module:
+        names.add(module)
+    return {(base, name) for base in bases for name in names}
+
+
+def module_paths(base: Path, name: str, root: Path) -> set[str]:
+    """The repository file a dotted name loads from `base`; a missing module whose
+    directory exists still counts (a pull request may delete it), stdlib names do not."""
+    stem = base / name.replace(".", "/")
+    found = {c for c in (stem.with_suffix(".py"), stem / "__init__.py") if c.is_file()}
+    top = name.split(".", 1)[0]
+    if not found and stem.parent.is_dir() and not stem.is_dir():
+        if top not in sys.stdlib_module_names:
+            found = {stem.with_suffix(".py")}
+    return {c.relative_to(root).as_posix() for c in found}
+
+
 def python_imports(source: Path, root: Path) -> set[str]:
-    """Repository modules (as paths) a Python file imports, resolved from the root."""
+    """Repository modules (as paths) a Python file imports, relative imports included."""
     try:
         tree = ast.parse(source.read_text(encoding="utf-8"))
     except (OSError, SyntaxError, UnicodeDecodeError):
         return set()
-    names: set[str] = set()
+    targets: set[tuple[Path, str]] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
-            names.update(alias.name for alias in node.names)
-        elif isinstance(node, ast.ImportFrom) and node.module and not node.level:
-            names.update(f"{node.module}.{alias.name}" for alias in node.names)
-            names.add(node.module)
-    found = set()
-    for name in names:
-        for base in (root, source.parent):
-            stem = base / name.replace(".", "/")
-            for candidate in (stem.with_suffix(".py"), stem / "__init__.py"):
-                if candidate.is_file():
-                    found.add(candidate.relative_to(root).as_posix())
+            bases = search_bases(source, root)
+            targets.update((base, alias.name) for base in bases for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            targets.update(from_targets(node, source, root))
+    return {path for base, name in targets for path in module_paths(base, name, root)}
+
+
+def python_files(paths: Collection[str], root: Path) -> list[str]:
+    """The Python files the input paths name: files as they are, directories expanded."""
+    found: list[str] = []
+    for path in sorted(paths):
+        target = root / path
+        if path.endswith(".py") and target.is_file():
+            found.append(path)
+        elif path not in (".", "") and target.is_dir():
+            files = itertools.islice(sorted(target.rglob("*.py")), MAX_IMPORT_FILES)
+            found.extend(f.relative_to(root).as_posix() for f in files)
     return found
 
 
 def import_closure(paths: set[str], root: Path) -> set[str]:
     """The Python files reachable through imports from the given input paths."""
-    queue = [p for p in paths if p.endswith(".py") and (root / p).is_file()]
+    queue = python_files(paths, root)
     seen: set[str] = set()
     while queue and len(seen) < MAX_IMPORT_FILES:
         current = queue.pop()
         if current in seen:
             continue
         seen.add(current)
-        queue.extend(python_imports(root / current, root) - seen)
+        if (root / current).is_file():
+            queue.extend(python_imports(root / current, root) - seen)
     return seen
 
 
