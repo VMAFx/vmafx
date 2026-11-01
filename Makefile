@@ -33,9 +33,12 @@ NINJA_EXEC := $(abspath $(NINJA))
 # The test runs in the shell of each recipe line, not when make reads this
 # file: `lint-tools` repairs a stray (`$(VENV_PIP)` runs `python3 -m venv` over
 # it), and the recipes after it in the same run must then find the venv tools.
-# `$(wildcard)` is not used here because make caches directory contents.
+# `$(wildcard)` is not used here because make caches directory contents. The
+# shell returns only a flag and make appends the path, so no checkout path ever
+# becomes shell text. A dangling `.venv` symlink counts as present: on PATH it
+# makes `execvp` fail with ELOOP before the gate can name it.
 PATH_BASE := $(PATH)
-venv_on_path = $(shell [ -e $(VENV_PIP) ] || [ ! -e $(VENV) ] && printf '%s:' '$(VIRTUAL_ENV_ABS)')
+venv_on_path = $(if $(shell { [ -e $(VENV_PIP) ] || { [ ! -e $(VENV) ] && [ ! -L $(VENV) ]; }; } && echo y),$(VIRTUAL_ENV_ABS):)
 export PATH = $(venv_on_path)$(PATH_BASE)
 
 # require-tool,<binary>,<install hint>

@@ -123,4 +123,31 @@ case "$got" in
     exit 1
     ;;
 esac
+# A dangling .venv symlink stays off PATH: on PATH it makes execvp fail (ELOOP).
+ln -s .venv "$tmp/.venv"
+got=$(probe probe-path) || exit 1
+case "$got" in
+  "$tmp/.venv/bin")
+    echo "FAIL dangling .venv symlink goes first on PATH" >&2
+    exit 1
+    ;;
+  *) echo "ok   dangling .venv symlink stays off PATH" ;;
+esac
+rm "$tmp/.venv"
+# A checkout path with an apostrophe never becomes shell text.
+quoted="$tmp/it's"
+mkdir "$quoted"
+# shellcheck disable=SC2016 # recipe text: the recipe shell expands it, not this one
+got=$(make -s -C "$quoted" -f "$root/Makefile" \
+  --eval 'probe-path: ; @printf "%s\n" "$${PATH%%:*}"' probe-path 2>&1) || {
+  echo "FAIL make probe in a path with an apostrophe exited nonzero: $got" >&2
+  exit 1
+}
+case "$got" in
+  "$quoted/.venv/bin") echo "ok   checkout path with an apostrophe goes first on PATH" ;;
+  *)
+    echo "FAIL checkout path with an apostrophe (got $got)" >&2
+    exit 1
+    ;;
+esac
 echo "all check-no-tracked-venv cases passed"
