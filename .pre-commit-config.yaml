@@ -123,7 +123,7 @@ repos:
         exclude: '^\.config/hiss/testdata/HISS-02/python/positive/spaced-while-true\.py$'
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.17.2
+    rev: v0.17.3
     hooks:
       - id: ruff-check
         # Same scope rule as black above; list: .config/lint-exceptions.d/ruff.toml.
@@ -219,7 +219,7 @@ repos:
   # structure and the shellcheck of every `run:` block by check_composite_actions.py
   # below (hook `check-composite-actions`).
   - repo: https://github.com/python-jsonschema/check-jsonschema
-    rev: 0.38.2
+    rev: 0.39.0
     hooks:
       - id: check-github-actions
 
@@ -229,7 +229,7 @@ repos:
       - id: gitleaks
 
   - repo: https://github.com/compilerla/conventional-pre-commit
-    rev: v4.4.0
+    rev: v4.5.0
     hooks:
       - id: conventional-pre-commit
         stages: [commit-msg]
@@ -243,7 +243,7 @@ repos:
         language: python
         # zopfli: the Windows zip builder's encoder its tests exercise (ADR-1594);
         # keep equal to requirements/locks/windows-tester-zip.in.
-        additional_dependencies: [pytest==9.1.1, zopfli==0.4.3]
+        additional_dependencies: [pytest==9.2.0, zopfli==0.4.3]
         files: '^(tools/rc1-tester/(src/|tests/|vmaf-rc1-report|pyproject\.toml|README\.md|AGENTS\.md)|scripts/lib/safe_subprocess\.py$)'
         pass_filenames: false
 
@@ -1104,7 +1104,7 @@ repos:
         # hook would fail with `Executable 'semgrep' not found` on
         # every CI run.
         language: python
-        additional_dependencies: ["semgrep>=1.182.1,<2.0"]
+        additional_dependencies: ["semgrep>=1.183.0,<2.0"]
         require_serial: true
         types_or: [c, c++, cuda, python]
         # Paths this hook skips: (a) upstream vendored subprojects,
@@ -1142,7 +1142,7 @@ repos:
         # Same isolated semgrep environment and serial execution as above.
         entry: python3 -m unittest discover -s scripts/ci/tests -p test_semgrep_vendored_scope.py
         language: python
-        additional_dependencies: ["semgrep>=1.182.1,<2.0"]
+        additional_dependencies: ["semgrep>=1.183.0,<2.0"]
         require_serial: true
         files: '^(\.semgrep\.yml|\.semgrepignore|\.pre-commit-config\.yaml|scripts/ci/tests/test_semgrep_vendored_scope\.py|core/src/pdjson\.(c|h)|core/src/mcp/3rdparty/.*)$'
         pass_filenames: false
@@ -1155,7 +1155,7 @@ repos:
         # then scans the real tests (ADR-1502).
         entry: python3 -m unittest discover -s scripts/ci/tests -p test_semgrep_float_identity.py
         language: python
-        additional_dependencies: ["semgrep>=1.182.1,<2.0", "pyyaml==6.0.3"]
+        additional_dependencies: ["semgrep>=1.183.0,<2.0", "pyyaml==6.0.3"]
         require_serial: true
         files: '^(\.semgrep\.yml|\.pre-commit-config\.yaml|scripts/ci/(lint_exceptions|tests/test_semgrep_(float_identity|vendored_scope))\.py|\.config/lint-exceptions\.d/vmaf-test-float-identity-[a-z-]+\.toml|core/test/.+\.(c|h|cc|cpp|cxx|hh|hpp|hxx))$'
         pass_filenames: false
@@ -1238,7 +1238,7 @@ repos:
         # checks through `make sycl-zerocopy-contract` with the hash-locked pytest.
         entry: bash -c 'bash ffmpeg-patches/test/check-sycl-feature-routing.sh && python -m pytest -p no:cacheprovider -q scripts/test/test_zerocopy_e2e_compare.py'
         language: python
-        additional_dependencies: [pytest==9.1.1]
+        additional_dependencies: [pytest==9.2.0]
         files: '^(ffmpeg-patches/(0005-[^/]*\.patch|test/check-sycl-feature-routing\.sh)|scripts/test/(zerocopy[-_]e2e[^/]*|test_zerocopy_e2e_compare\.py)|scripts/ci/cross_backend_parity_gate\.py|Makefile$|\.github/workflows/ffmpeg-patch-stack\.yml$|\.pre-commit-config\.yaml$)'
         pass_filenames: false
         stages: [pre-commit, pre-push]
