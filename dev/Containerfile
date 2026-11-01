@@ -1234,7 +1234,7 @@ RUN --mount=type=cache,target=/home/vmaf/.cache/ccache,sharing=locked,uid=2000,g
         --enable-libsvtav1 --enable-libvvenc \
         --enable-libfdk-aac --enable-libmp3lame --enable-libopus --enable-libvorbis \
         --enable-libass --enable-libfreetype --enable-libfontconfig --enable-libfribidi \
-        --enable-vaapi --enable-vdpau \
+        --enable-vaapi --enable-vdpau --enable-libdrm \
         --enable-nvenc --enable-cuda-nvcc \
         --enable-libvpl \
         --enable-amf \

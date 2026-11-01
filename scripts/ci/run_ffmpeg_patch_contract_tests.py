@@ -30,6 +30,12 @@ or to system memory, and the direct map fails with `Function not implemented`.
 Markdown is read inside code fences only, so prose that explains the rule is
 not a command.
 
+It also refuses an FFmpeg `./configure` in a build file (DRM_ROOTS) that
+enables libvmafx and VA-API (`--enable-vaapi`, or `libva-dev` installed in the
+same file) without `--enable-libdrm`. libdrm is only autodetected, and without
+it the vmafx filter's DRM import (SYCL and HIP inputs) compiles out and returns
+ENOSYS at run time.
+
 Usage: run_ffmpeg_patch_contract_tests.py [--root DIR]; exit 1 names each
 failing script with the tail of its output.
 """
@@ -70,6 +76,9 @@ SHELL_COMMENT = re.compile(r"(^|\s)#.*$", re.MULTILINE)
 QSV_ROOTS = ("docs", "scripts", "testdata", "ffmpeg-patches")
 QSV_SUFFIXES = (".md", ".sh", ".py")
 QSV_WINDOW = 12
+DRM_ROOTS = ("docker", "dev", "scripts")
+CONFIGURE = re.compile(r"\./configure\b")
+LINE_COMMENT = re.compile(r"(^|[ \t])#.*$", re.MULTILINE)  # keeps line numbers
 QSV_DECODE = re.compile(r"-hwaccel(?:_output_format)?\s+qsv\b")
 DRM_MAP = "hwmap=derive_device=drm"
 VAAPI_MAP = "hwmap=derive_device=vaapi"
@@ -192,6 +201,44 @@ def qsv_direct_drm_maps(root: Path) -> list[str]:
     return found
 
 
+def _configure_blocks(text: str) -> list[tuple[int, str]]:
+    """(line number, joined text) of each `./configure` call with its continuations."""
+    lines = LINE_COMMENT.sub("", text).splitlines()
+    blocks = []
+    for number, line in enumerate(lines, 1):
+        if not CONFIGURE.search(line):
+            continue
+        parts, index = [line], number - 1
+        while parts[-1].rstrip().endswith("\\") and index + 1 < len(lines):
+            index += 1
+            parts.append(lines[index])
+        blocks.append((number, " ".join(parts)))
+    return blocks
+
+
+def _is_build_file(path: Path) -> bool:
+    return path.suffix == ".sh" or path.name.startswith(("Dockerfile", "Containerfile"))
+
+
+def libdrm_off(root: Path) -> list[str]:
+    """'file:line: ...' for each libvmafx + VA-API configure that leaves libdrm to autodetection."""
+    found = []
+    for tree in DRM_ROOTS:
+        for path in sorted((root / tree).rglob("*")):
+            rel = path.relative_to(root)
+            if not path.is_file() or not _is_build_file(path) or _is_fixture(rel):
+                continue
+            text = path.read_text(encoding="utf-8", errors="replace")
+            for number, block in _configure_blocks(text):
+                vaapi = "--enable-vaapi" in block or "libva-dev" in LINE_COMMENT.sub("", text)
+                if "--enable-libvmafx" in block and vaapi and "--enable-libdrm" not in block:
+                    found.append(
+                        f"{rel}:{number}: configures libvmafx with VA-API but no --enable-libdrm; "
+                        "the vmafx DRM import compiles out"
+                    )
+    return found
+
+
 def failures(root: Path, scripts: list[Path]) -> list[str]:
     """One report per script that exits non-zero: its name and its output's tail."""
     found = []
@@ -225,6 +272,7 @@ def main(argv: list[str] | None = None) -> int:
         stale_patch_refs(args.root, live_files(args.root))
         + lavfi_without_indev(args.root)
         + qsv_direct_drm_maps(args.root)
+        + libdrm_off(args.root)
         + failures(args.root, scripts)
     )
     for line in problems:

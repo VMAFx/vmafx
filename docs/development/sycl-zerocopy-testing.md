@@ -96,7 +96,7 @@ case through three legs:
 | `zc` | QSV decode with one QSV device per input, `vmafx` (backend=sycl, import=auto) | must equal `host` once its stage is reached |
 
 Every leg writes its scores with the filter option `score_fmt=%.17g` (patch
-0016; override with `SCORE_FMT`), so the comparator sees full doubles. At the
+0004; override with `SCORE_FMT`), so the comparator sees full doubles. At the
 default `%.6f` a difference below 5e-7 is invisible and "exact" would only mean
 "equal to six decimals".
 

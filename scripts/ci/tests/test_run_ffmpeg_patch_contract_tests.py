@@ -165,6 +165,40 @@ class PatchContractRunner(unittest.TestCase):
         """Positive: the repository's own examples map QSV frames through VAAPI."""
         self.assertEqual(MOD.qsv_direct_drm_maps(SCRIPT.parents[2]), [])
 
+    def _drm(self, files: dict[str, str]) -> list[str]:
+        with tempfile.TemporaryDirectory() as tmp:
+            found: list[str] = MOD.libdrm_off(self._tree(tmp, files))
+            return found
+
+    def test_vaapi_configure_without_libdrm_fails(self) -> None:
+        """Negative: libvmafx + VA-API with libdrm left to autodetection is refused."""
+        found = self._drm(
+            {
+                "docker/Dockerfile.x": "RUN apt-get install libva-dev\n# x\nRUN ./configure \\\n"
+                "    --enable-libvmafx \\\n    --enable-libx264\n"
+            }
+        )
+        self.assertEqual(len(found), 1, found)
+        self.assertIn("docker/Dockerfile.x:3:", found[0])
+
+    def test_vaapi_configure_with_libdrm_passes(self) -> None:
+        """Positive: --enable-libdrm on a continuation line counts."""
+        script = "./configure --enable-libvmafx \\\n  --enable-vaapi --enable-libdrm\n"
+        self.assertEqual(self._drm({"scripts/test/b.sh": script}), [])
+
+    def test_libdrm_only_in_a_comment_fails(self) -> None:
+        """Negative: --enable-libdrm in a comment does not enable it."""
+        script = "./configure --enable-libvmafx --enable-vaapi  # add --enable-libdrm\n"
+        self.assertEqual(len(self._drm({"scripts/test/b.sh": script})), 1)
+
+    def test_cpu_only_configure_passes(self) -> None:
+        """Boundary: a build without VA-API needs no libdrm."""
+        self.assertEqual(self._drm({"scripts/test/b.sh": "./configure --enable-libvmafx\n"}), [])
+
+    def test_repository_builds_enable_libdrm(self) -> None:
+        """The repository's own VA-API builds pass --enable-libdrm."""
+        self.assertEqual(MOD.libdrm_off(SCRIPT.parents[2]), [])
+
     def test_no_contract_script_fails(self) -> None:
         """Boundary: a tree with no contract script refuses instead of passing empty."""
         with tempfile.TemporaryDirectory() as tmp:
