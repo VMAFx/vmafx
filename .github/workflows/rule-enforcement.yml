@@ -620,7 +620,7 @@ jobs:
       - name: Fetch origin/master (cross-branch collision baseline)
         run: |
           set -euo pipefail
-          git fetch origin master --depth=50 --quiet
+          git fetch origin master --quiet
 
       - name: Check for ADR number collisions with origin/master
         env:
@@ -770,8 +770,9 @@ jobs:
               continue
             fi
 
-            # Fetch the PR tip (shallow; soft failure if SHA unavailable).
-            git fetch --no-tags --depth=1 --quiet origin "${pr_sha}" 2>/dev/null || continue
+            # Fetch the PR tip without --depth: a depth fetch grafts the tip, so
+            # the --is-ancestor descendant check below could never match.
+            git fetch --no-tags --quiet origin "${pr_sha}" 2>/dev/null || continue
 
             # If the descendant branch was already rebased onto this exact
             # head, the branch-name chain and the commit ancestry both agree it
