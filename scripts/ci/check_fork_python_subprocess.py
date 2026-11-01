@@ -68,12 +68,11 @@ def mode_findings(path: str) -> list[str]:
         if not isinstance(node, ast.Call) or len(node.args) <= MODE_ARG:
             continue
         func = node.func
-        is_os = isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name)
-        if is_os and func.value.id == "os" and func.attr in CHMOD_CALLS:
-            if _wide_mode(node.args[MODE_ARG]):
-                found.append(
-                    f"{path}:{node.lineno}: os.{func.attr} mode {ast.unparse(node.args[MODE_ARG])}"
-                )
+        if not (isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name)):
+            continue
+        if func.value.id == "os" and func.attr in CHMOD_CALLS and _wide_mode(node.args[MODE_ARG]):
+            mode = ast.unparse(node.args[MODE_ARG])
+            found.append(f"{path}:{node.lineno}: os.{func.attr} mode {mode}")
     return found
 
 
