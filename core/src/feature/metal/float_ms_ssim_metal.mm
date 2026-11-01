@@ -390,9 +390,12 @@ void init_state_geometry(FloatMsSsimStateMetal *s, enum VmafPixelFormat pix_fmt,
 static int unwind_init_metal_device_context(FloatMsSsimStateMetal *s, int err)
 {
     release_metal_buffers(s);
-    (void)vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
-    vmaf_metal_context_destroy(s->ctx);
-    s->ctx = nullptr;
+    if (s->ctx != nullptr) {
+        /* Best effort: the init error is what the caller reports. */
+        (void)vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
+        vmaf_metal_context_destroy(s->ctx);
+        s->ctx = nullptr;
+    }
     return err;
 }
 

@@ -124,9 +124,12 @@ static int unwind_init_fex_metal(FloatPsnrStateMetal *s, int err)
     if (s->pso_8bpc)  { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_8bpc;  s->pso_8bpc  = nullptr; }
     if (s->pso_16bpc) { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_16bpc; s->pso_16bpc = nullptr; }
     (void)vmaf_metal_kernel_buffer_free(&s->rb, s->ctx);
-    (void)vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
-    vmaf_metal_context_destroy(s->ctx);
-    s->ctx = nullptr;
+    if (s->ctx != nullptr) {
+        /* Best effort: the init error is what the caller reports. */
+        (void)vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
+        vmaf_metal_context_destroy(s->ctx);
+        s->ctx = nullptr;
+    }
     return err;
 }
 

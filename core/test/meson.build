@@ -909,6 +909,15 @@ test('test_cuda_module_lifecycle_contract',
     timeout : 30,
 )
 
+# The Metal init unwind helpers release the lifecycle and the context only
+# when the context exists, and return the init error (#3185). Device-free.
+test('test_metal_unwind_contract',
+    import('python').find_installation(),
+    args : files('test_metal_unwind_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # ADR-1226 / T-CUDA-ADM-CM-REGISTER-PRESSURE-2026-09-07: verify zero stack spill
 # and bounded register usage across all architectures in adm_cm.fatbin.
 test('test_cuda_adm_cm_register_pressure',

@@ -770,18 +770,24 @@ int init_device_resources(Ssimu2StateMetal *s)
     return build_pipelines(s, device);
 }
 
-/* Release what init_fex_metal created, in reverse order, and return err. Every
+/* Release what init_fex_metal created, in reverse order, and return err, the
+ * error of the step that failed: a release failure never replaces it. Every
  * release is a no-op on a slot that was never filled, since priv starts
- * zeroed, so each failure point unwinds through this one path. */
+ * zeroed, so each failure point unwinds through this one path. The lifecycle
+ * and the context are released only when the context exists, which covers a
+ * failed vmaf_metal_context_new() explicitly. */
 static int unwind_init_fex_metal(Ssimu2StateMetal *s, int err)
 {
     if (s->pso_blur_v) { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_blur_v; s->pso_blur_v = nullptr; }
     if (s->pso_blur_h) { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_blur_h; s->pso_blur_h = nullptr; }
     if (s->pso_mul3)   { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_mul3;   s->pso_mul3   = nullptr; }
     ss2m_release_device_buffers(s);
-    (void)vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
-    vmaf_metal_context_destroy(s->ctx);
-    s->ctx = nullptr;
+    if (s->ctx != nullptr) {
+        /* Best effort: the init error is what the caller reports. */
+        (void)vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
+        vmaf_metal_context_destroy(s->ctx);
+        s->ctx = nullptr;
+    }
     free_host_buffers(s);
     return err;
 }

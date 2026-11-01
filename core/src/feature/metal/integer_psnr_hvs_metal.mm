@@ -275,9 +275,12 @@ static int unwind_init_fex_metal(PsnrHvsStateMetal *s, int err)
     for (unsigned p = 0; p < s->n_planes; ++p) {
         (void)vmaf_metal_kernel_buffer_free(&s->rb[p], s->ctx);
     }
-    (void)vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
-    vmaf_metal_context_destroy(s->ctx);
-    s->ctx = nullptr;
+    if (s->ctx != nullptr) {
+        /* Best effort: the init error is what the caller reports. */
+        (void)vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
+        vmaf_metal_context_destroy(s->ctx);
+        s->ctx = nullptr;
+    }
     return err;
 }
 
