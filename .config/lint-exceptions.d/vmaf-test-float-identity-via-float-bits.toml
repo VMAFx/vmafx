@@ -1,0 +1,16 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
+# Declared exceptions to the Semgrep rule vmaf-test-float-identity-via-float-bits (.semgrep.yml).
+# Each entry is also listed under that rule's paths.exclude; scripts/ci/tests/
+# test_semgrep_float_identity.py requires the two to match, so an expired entry fails there and in
+# `lint_exceptions.py check`. Format and rules: scripts/ci/lint_exceptions.py.
+
+[[exception]]
+path = "core/test/test_pelorus_interop.c"
+reason = "Byte-identical mirror of VMAFx/pelorus (ADR-1113, scripts/ci/pelorus-mirror-paths.txt), never edited here; line 1772 compares a returned variance with its input by value on purpose. Owner: pelorus, which adopts float_bits-style identity upstream (ORDER pelorus-interop-float-identity-20261101); vmafx re-vendors the file and drops this entry in that PR. Category B: 3 days from entry."
+owner = "pelorus"
+trigger = "pelorus lands ORDER pelorus-interop-float-identity-20261101"
+category = "B"
+entered = 2026-11-01
+expires = 2026-11-04

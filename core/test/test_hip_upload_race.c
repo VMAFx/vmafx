@@ -62,6 +62,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "float_bits.h"
 #include "test.h"
 
 #include "feature/feature_collector.h"
@@ -312,7 +313,7 @@ static unsigned count_differing(VmafFeatureCollector *clean, VmafFeatureCollecto
             double other = 0.0;
             (*compared)++;
             if (vmaf_feature_collector_get_score(recycled, fv->name, &other, j) != 0 ||
-                other != fv->score[j].value) {
+                !vmaf_test_identical_f64(other, fv->score[j].value)) {
                 differing++;
             }
         }

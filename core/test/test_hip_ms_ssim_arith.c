@@ -37,6 +37,7 @@
 #include <string.h>
 
 #include "test.h"
+#include "float_bits.h"
 
 #include "feature/hip/integer_ms_ssim/ms_ssim_arith.h"
 #include "feature/picture_copy.h"
@@ -500,7 +501,8 @@ static char *test_pair_step_is_exact(void)
         const float b = ((float)ms_lcg(&state) * (1.0f / 16777216.0f)) - 0.4f;
         VmafHipMsPair sum = {a, 0.0f};
         vmaf_hip_ms_pair_add(&sum, b);
-        inexact += ((double)sum.hi + (double)sum.lo) != ((double)a + (double)b);
+        const double got = (double)sum.hi + (double)sum.lo;
+        inexact += vmaf_test_identical_f64(got, (double)a + (double)b) ? 0u : 1u;
     }
     mu_assert("a two-sum step lost part of the sum", inexact == 0u);
     return NULL;
@@ -527,8 +529,8 @@ static char *test_pair_window_sum_rounds_like_fp64(void)
             reference += (double)prod;
             plain += prod;
         }
-        differing += vmaf_hip_ms_pair_round(&pair) != (float)reference;
-        fp32_differing += plain != (float)reference;
+        differing += !vmaf_test_identical_f32(vmaf_hip_ms_pair_round(&pair), (float)reference);
+        fp32_differing += !vmaf_test_identical_f32(plain, (float)reference);
     }
     mu_assert("the pair sum does not round like the reference's fp64 sum",
               differing * 10000u <= MS_PAIR_WINDOWS);
