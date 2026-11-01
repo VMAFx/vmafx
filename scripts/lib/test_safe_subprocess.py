@@ -110,7 +110,7 @@ class SafeSubprocessTests(unittest.TestCase):
             def __len__(self) -> int:
                 return len(self.items)
 
-            def __getitem__(self, index):  # type: ignore[override]
+            def __getitem__(self, index: int) -> str:  # type: ignore[override]
                 if index == 0:
                     self.reads += 1
                     if self.reads > 1:
