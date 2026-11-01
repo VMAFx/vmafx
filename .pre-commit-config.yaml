@@ -1157,7 +1157,7 @@ repos:
         language: python
         additional_dependencies: ["semgrep>=1.182.1,<2.0", "pyyaml==6.0.3"]
         require_serial: true
-        files: '^(\.semgrep\.yml|\.pre-commit-config\.yaml|scripts/ci/(lint_exceptions|tests/test_semgrep_(float_identity|vendored_scope))\.py|\.config/lint-exceptions\.d/vmaf-test-float-identity-[a-z-]+\.toml|core/test/.+\.(c|cpp|h))$'
+        files: '^(\.semgrep\.yml|\.pre-commit-config\.yaml|scripts/ci/(lint_exceptions|tests/test_semgrep_(float_identity|vendored_scope))\.py|\.config/lint-exceptions\.d/vmaf-test-float-identity-[a-z-]+\.toml|core/test/.+\.(c|h|cc|cpp|cxx|hh|hpp|hxx))$'
         pass_filenames: false
 
       # Shell-injection regression tests. Both fixes below were reverted once

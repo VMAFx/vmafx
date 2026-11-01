@@ -11,10 +11,11 @@
 
 The test copies the real rule file into a throwaway project and plants:
 
-- computed `double` and `float` comparisons in `core/test/`, which the rule
-  must report;
-- the comparisons CodeQL allows (a literal, a macro or k-constant, the
-  `x != x` NaN idiom, integers), which it must not report;
+- computed `double` and `float` comparisons in `core/test/`, arithmetic on
+  one side or both, which the rule must report;
+- the comparisons CodeQL allows (a decimal or hexadecimal literal, a macro or
+  k-constant, the `x != x` NaN idiom, integers, calls that return integers),
+  which it must not report;
 - the same computed comparisons outside `core/test/`, which are out of the
   rule's scope.
 
@@ -30,6 +31,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import re
 import shutil
 import sys
 import tempfile
@@ -54,8 +56,9 @@ PLANTED = """\
 #define LIMIT 2.0
 static const double kLimit = 3.0;
 static double computed(void);
+static unsigned bits(double value);
 
-bool planted(double x, float p, float q, int i, int k)
+bool planted(double x, float p, float q, int i, int k, double u, double v)
 {
     double y = computed();
     bool hits = x != y;          /* reported: computed double != */
@@ -66,6 +69,8 @@ bool planted(double x, float p, float q, int i, int k)
     hits = hits || kLimit + y != x; /* reported: k-constant prefix, computed */
     hits = hits || (double)(y * 2.0) == x; /* reported: cast of a computed value */
     hits = hits || -LIMIT * y == x; /* reported: macro prefix, computed */
+    hits = hits || (x + y) == (u + v); /* reported: arithmetic both sides */
+    hits = hits || (p * q) != (q - p); /* reported: float arithmetic both sides */
     bool quiet = x == 0.0;       /* literal */
     quiet = quiet || 1.5 != y;   /* literal on the left */
     quiet = quiet || x == LIMIT; /* macro */
@@ -76,14 +81,21 @@ bool planted(double x, float p, float q, int i, int k)
     quiet = quiet || p == .5f;   /* float literal */
     quiet = quiet || y != -kLimit; /* signed k-constant */
     quiet = quiet || i == (int)y; /* integer cast of a double */
+    quiet = quiet || x == 0x1p0; /* hexadecimal floating literal */
+    quiet = quiet || p != -0x1.8p-3f; /* signed hexadecimal float literal */
+    quiet = quiet || (i + (int)x) == k; /* integer arithmetic */
+    quiet = quiet || bits(x + y) == bits(u + v); /* calls return integers */
     return hits || quiet;
 }
 """
-PLANTED_HITS = (10, 11, 12, 13, 14, 15, 16, 17)
+PLANTED_HITS = (11, 12, 13, 14, 15, 16, 17, 18, 19, 20)
 EXCEPTED = "core/test/test_pelorus_interop.c"  # pelorus mirror, declared exception
 PARSE_RULE = "vmaf-test-float-identity-parse"  # files with a known parse diagnostic
 UNPARSABLE = "core/test/planted_unparsable.c"
 UNPARSABLE_TEXT = "int broken(void) { return ((1 + ; }\n"
+# The C and C++ suffixes Semgrep reads as c / cpp; the pre-commit selector of
+# the hook names the same set (test_hook_selects_every_source_suffix).
+SOURCE_SUFFIXES = frozenset({".c", ".h", ".cc", ".cpp", ".cxx", ".hh", ".hpp", ".hxx"})
 
 
 def rule_excludes() -> set[str]:
@@ -177,8 +189,8 @@ class SemgrepFloatIdentity(unittest.TestCase):
         self.assertEqual(
             lines.get(IN_SCOPE),
             list(PLANTED_HITS),
-            "the rule must report the eight computed comparisons and none of the "
-            "literal, macro, k-constant, NaN-idiom or integer comparisons",
+            "the rule must report the ten computed comparisons and none of the "
+            "literal, macro, k-constant, NaN-idiom, integer or call comparisons",
         )
 
     def test_scope_is_core_test(self) -> None:
@@ -229,11 +241,25 @@ class SemgrepFloatIdentity(unittest.TestCase):
             set(),
         )
 
+    def test_hook_selects_every_source_suffix(self) -> None:
+        hooks = [
+            hook
+            for repo in yaml.safe_load((ROOT / ".pre-commit-config.yaml").read_text("utf-8"))[
+                "repos"
+            ]
+            for hook in repo["hooks"]
+            if "test_semgrep_float_identity.py" in str(hook.get("entry", ""))
+        ]
+        self.assertEqual(len(hooks), 1, "expected one float-identity pre-commit hook")
+        selector: re.Pattern[str] = re.compile(str(hooks[0]["files"]))
+        for suffix in sorted(SOURCE_SUFFIXES):
+            self.assertRegex(f"core/test/x{suffix}", selector, f"hook skips {suffix} tests")
+
     def test_real_tests_compare_floats_through_float_bits(self) -> None:
         targets = sorted(
             path.relative_to(ROOT).as_posix()
             for path in (ROOT / "core/test").rglob("*")
-            if path.suffix in {".c", ".cpp", ".h"} and "data" not in path.parts
+            if path.suffix in SOURCE_SUFFIXES and "data" not in path.parts
         )
         self.assertTrue(targets, "core/test has no C or C++ sources")
         lines, diagnosed = self.scan_with_diagnostics(ROOT, targets)

@@ -501,7 +501,8 @@ static char *test_pair_step_is_exact(void)
         const float b = ((float)ms_lcg(&state) * (1.0f / 16777216.0f)) - 0.4f;
         VmafHipMsPair sum = {a, 0.0f};
         vmaf_hip_ms_pair_add(&sum, b);
-        inexact += ((double)sum.hi + (double)sum.lo) != ((double)a + (double)b);
+        const double got = (double)sum.hi + (double)sum.lo;
+        inexact += vmaf_test_identical_f64(got, (double)a + (double)b) ? 0u : 1u;
     }
     mu_assert("a two-sum step lost part of the sum", inexact == 0u);
     return NULL;

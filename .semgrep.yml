@@ -149,6 +149,32 @@ rules:
           - pattern: $A == (float $B)
           - pattern: (float $A) != $B
           - pattern: $A != (float $B)
+          # Both sides arithmetic, such as `(x + y) == (u + v)`: neither
+          # side carries an inferred type, so a floating-point operand inside
+          # each side selects the comparison. One side is not enough:
+          # `(i + (int)x) == j` compares integers.
+          - patterns:
+              - pattern-either:
+                  - pattern: $A == $B
+                  - pattern: $A != $B
+              - metavariable-pattern:
+                  metavariable: $A
+                  patterns:
+                    - pattern-either:
+                        - pattern: (double $V)
+                        - pattern: (float $V)
+                    # A call argument is not an operand: `bits_of(a)`
+                    # returns an integer.
+                    - pattern-not-inside: $F(...)
+              - metavariable-pattern:
+                  metavariable: $B
+                  patterns:
+                    - pattern-either:
+                        - pattern: (double $W)
+                        - pattern: (float $W)
+                    # A call argument is not an operand: `bits_of(a)`
+                    # returns an integer.
+                    - pattern-not-inside: $F(...)
       - pattern-not: $X == $X
       - pattern-not: $X != $X
       # Semgrep types an operand through its cast, so `(uint64_t)expected`
@@ -208,10 +234,10 @@ rules:
       - pattern-not: (bool) $Y != $X
       - metavariable-regex:
           metavariable: $A
-          regex: '^(?!\s*[-+]?\s*([0-9][0-9.]*([eE][-+]?[0-9]+)?[fFlL]?|\.[0-9]+([eE][-+]?[0-9]+)?[fFlL]?|k[A-Z][A-Za-z0-9_]*|[A-Z][A-Z0-9_]*)\s*$)'
+          regex: '^(?!\s*[-+]?\s*([0-9][0-9.]*([eE][-+]?[0-9]+)?[fFlL]?|\.[0-9]+([eE][-+]?[0-9]+)?[fFlL]?|0[xX]([0-9A-Fa-f]+(\.[0-9A-Fa-f]*)?|\.[0-9A-Fa-f]+)[pP][-+]?[0-9]+[fFlL]?|k[A-Z][A-Za-z0-9_]*|[A-Z][A-Z0-9_]*)\s*$)'
       - metavariable-regex:
           metavariable: $B
-          regex: '^(?!\s*[-+]?\s*([0-9][0-9.]*([eE][-+]?[0-9]+)?[fFlL]?|\.[0-9]+([eE][-+]?[0-9]+)?[fFlL]?|k[A-Z][A-Za-z0-9_]*|[A-Z][A-Z0-9_]*)\s*$)'
+          regex: '^(?!\s*[-+]?\s*([0-9][0-9.]*([eE][-+]?[0-9]+)?[fFlL]?|\.[0-9]+([eE][-+]?[0-9]+)?[fFlL]?|0[xX]([0-9A-Fa-f]+(\.[0-9A-Fa-f]*)?|\.[0-9A-Fa-f]+)[pP][-+]?[0-9]+[fFlL]?|k[A-Z][A-Za-z0-9_]*|[A-Z][A-Z0-9_]*)\s*$)'
     paths:
       include:
         - /core/test/**
