@@ -12,8 +12,9 @@ context ``Pre-Commit`` is reported by the job either way; the scope is printed
 with its reason so a narrowed run is never mistaken for a full one.
 
 A pull request that changes what a hook checks also gets the whole tree: a
-change to ``.pre-commit-config.yaml`` or to a file a local hook's ``entry``
-names (its check script) can add findings in files the pull request never
+change to ``.pre-commit-config.yaml``, to any file under ``scripts/ci/`` or
+``scripts/lib/``, to a path a hook's command names, or to a module a hook script
+imports can add findings in files the pull request never
 touched. On the diff alone such a hook passed on its pull request and failed
 the next master push (``check-fork-python-subprocess``, #3237 / a3ea48309).
 
@@ -24,6 +25,7 @@ Usage (workflow): ``precommit_scope.py --event "$EVENT" --base-sha "$BASE_SHA"``
 from __future__ import annotations
 
 import argparse
+import ast
 import re
 import shlex
 import shutil
@@ -35,6 +37,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import yaml  # type: ignore[import-untyped]
 
+from scripts.lib.safe_subprocess import CommandOutputLimitExceeded, CommandTimedOut
 from scripts.lib.safe_subprocess import run as run_command
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -47,17 +50,113 @@ PRE_COMMIT_TIMEOUT_S = 1800.0
 GIT_TIMEOUT_S = 120.0
 
 
-def hook_inputs(config_text: str, root: Path = ROOT) -> frozenset[str]:
-    """The config file and every repository file a local hook's ``entry`` names."""
-    inputs = {CONFIG}
-    for repo in (yaml.safe_load(config_text) or {}).get("repos", []):
-        if repo.get("repo") != "local":
+# Directories whose every file is a hook input: scripts/ci/ is CI authority
+# (scripts/ci/AGENTS.md), scripts/lib/ holds the modules the hook scripts import.
+AUTHORITY_PREFIXES = ("scripts/ci/", "scripts/lib/")
+MODULE = re.compile(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)+")
+UNPARSABLE = "\0unparsable"  # an entry shlex cannot split: every path is an input
+MAX_TOKENS = 100_000  # bound on entry tokens, nested shell commands included
+MAX_IMPORT_FILES = 5_000  # bound on the import walk
+
+
+def entry_tokens(command: str) -> list[str]:
+    """The words of a hook command, with the commands inside ``bash -c`` / ``sh -c``."""
+    pending: list[str] = [command]
+    words: list[str] = []
+    while pending and len(words) < MAX_TOKENS:
+        try:
+            split = shlex.split(pending.pop(), comments=True)
+        except ValueError:
+            return [UNPARSABLE]
+        words.extend(split)
+        pending.extend(split[i + 1] for i, w in enumerate(split[:-1]) if w == "-c")
+    return words
+
+
+def token_paths(token: str, root: Path) -> set[str]:
+    """Repository files one command word names (a missing file still counts)."""
+    value = token.split("=", 1)[1] if token.startswith("-") and "=" in token else token
+    value = value.split("*", 1)[0].rstrip("/") if "*" in value else value
+    if not value or any(c.isspace() for c in value) or value.startswith(("-", "/", "$", ".")):
+        return set()
+    if "://" in value or value.endswith("/"):
+        return set()
+    if "/" in value:
+        return {Path(value).as_posix()}
+    if MODULE.fullmatch(value) and (root / value.split(".", 1)[0]).is_dir():
+        stem = value.replace(".", "/")
+        return {f"{stem}.py", f"{stem}/"}
+    return {value} if (root / value).is_file() else set()
+
+
+def python_imports(source: Path, root: Path) -> set[str]:
+    """Repository modules (as paths) a Python file imports, resolved from the root."""
+    try:
+        tree = ast.parse(source.read_text(encoding="utf-8"))
+    except (OSError, SyntaxError, UnicodeDecodeError):
+        return set()
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            names.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module and not node.level:
+            names.update(f"{node.module}.{alias.name}" for alias in node.names)
+            names.add(node.module)
+    found = set()
+    for name in names:
+        for base in (root, source.parent):
+            stem = base / name.replace(".", "/")
+            for candidate in (stem.with_suffix(".py"), stem / "__init__.py"):
+                if candidate.is_file():
+                    found.add(candidate.relative_to(root).as_posix())
+    return found
+
+
+def import_closure(paths: set[str], root: Path) -> set[str]:
+    """The Python files reachable through imports from the given input paths."""
+    queue = [p for p in paths if p.endswith(".py") and (root / p).is_file()]
+    seen: set[str] = set()
+    while queue and len(seen) < MAX_IMPORT_FILES:
+        current = queue.pop()
+        if current in seen:
             continue
+        seen.add(current)
+        queue.extend(python_imports(root / current, root) - seen)
+    return seen
+
+
+def hook_inputs(config_text: str, root: Path = ROOT) -> frozenset[str]:
+    """The config, the CI-authority prefixes and every path any hook's command names.
+
+    Each entry is read with its ``args``, from local and remote repositories alike;
+    the commands inside ``bash -c`` are split again. A word counts when it names a
+    repository path, whether or not the file still exists (a pull request may delete
+    it), a dotted module under a top-level directory (``python -m scripts.lib.x``), or
+    an existing top-level file (``Makefile`` for ``make``). Python files are followed
+    through their imports. Entries are prefixes: ``scripts/ci/tests`` covers its files.
+    """
+    inputs = {CONFIG, *AUTHORITY_PREFIXES}
+    for repo in (yaml.safe_load(config_text) or {}).get("repos", []):
         for hook in repo.get("hooks", []):
-            for token in shlex.split(str(hook.get("entry", "")), comments=True):
-                if (root / token).is_file():
-                    inputs.add(Path(token).as_posix())
-    return frozenset(inputs)
+            command = " ".join(
+                shlex.quote(str(part)) for part in [hook.get("entry", ""), *hook.get("args", [])]
+            )
+            words = entry_tokens(str(hook.get("entry", ""))) + entry_tokens(command)[1:]
+            if words[:1] == ["make"]:
+                inputs.add("Makefile")
+            if UNPARSABLE in words:
+                inputs.add(".")
+            for word in words:
+                inputs.update(token_paths(word, root))
+    return frozenset(inputs | import_closure(inputs, root))
+
+
+def touched_inputs(changed: Collection[str], inputs: Collection[str]) -> list[str]:
+    """The changed paths that are, or lie under, a hook input."""
+    if "." in inputs:
+        return sorted(changed)
+    prefixes = tuple(p if p.endswith("/") else f"{p}/" for p in inputs)
+    return sorted(c for c in changed if c in inputs or c.startswith(prefixes))
 
 
 def scope(
@@ -76,7 +175,7 @@ def scope(
         return ["--all-files"], "pull request without a usable base sha: whole tree (fail closed)"
     if changed is None:
         return ["--all-files"], "pull request file list unreadable: whole tree (fail closed)"
-    touched = sorted(set(changed) & set(inputs))
+    touched = touched_inputs(changed, inputs)
     if touched:
         return [
             "--all-files"
@@ -93,14 +192,17 @@ def changed_files(base_sha: str) -> list[str] | None:
     git = shutil.which("git")
     if git is None or not SHA.fullmatch(base_sha):
         return None
-    result = run_command(
-        [git, "diff", "--name-only", "--no-renames", base_sha, "HEAD"],
-        allowed_executables=(git,),
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        timeout_seconds=GIT_TIMEOUT_S,
-    )
+    try:
+        result = run_command(
+            [git, "diff", "--name-only", "--no-renames", base_sha, "HEAD"],
+            allowed_executables=(git,),
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout_seconds=GIT_TIMEOUT_S,
+        )
+    except (CommandTimedOut, CommandOutputLimitExceeded, OSError):
+        return None  # unreadable file list: scope() falls back to the whole tree
     if result.returncode != 0:
         return None
     return [line for line in result.stdout.splitlines() if line]

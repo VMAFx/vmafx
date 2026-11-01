@@ -18,6 +18,7 @@ from __future__ import annotations
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import yaml  # type: ignore[import-untyped]
 
@@ -25,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from scripts.ci import ci_router as wr
 from scripts.ci import precommit_scope
+from scripts.lib.safe_subprocess import CommandOutputLimitExceeded, CommandTimedOut
 
 ROOT = Path(__file__).resolve().parents[3]
 WORKFLOW = ROOT / ".github" / "workflows" / "lint-and-format.yml"
@@ -70,7 +72,7 @@ class ScopeDecision(unittest.TestCase):
 
     def test_pull_request_target_uses_the_diff(self) -> None:
         args, _ = precommit_scope.scope("pull_request_target", BASE, [])
-        self.assertNotIn("--all-files", args)
+        self.assertEqual(args, ["--from-ref", BASE, "--to-ref", "HEAD"])
 
     def test_non_pull_request_events_use_the_tree(self) -> None:
         for event in ("push", "schedule", "workflow_dispatch", ""):
@@ -110,15 +112,65 @@ class ScopeDecision(unittest.TestCase):
             ["--from-ref", BASE, "--to-ref", "HEAD"],
         )
 
-    def test_inputs_name_local_entry_scripts_only(self) -> None:
+    def test_inputs_name_hook_paths_only(self) -> None:
         self.assertIn(".pre-commit-config.yaml", INPUTS)
         self.assertIn("scripts/ci/check_fork_python_subprocess.py", INPUTS)
-        self.assertFalse(any(path.startswith(("python3", "semgrep")) for path in INPUTS))
+        self.assertFalse(any(path.startswith(("python3", "semgrep", "bash ")) for path in INPUTS))
+        self.assertNotIn("python", INPUTS, "an executable name matched a directory")
+
+    def test_ci_authority_and_library_changes_use_the_tree(self) -> None:
+        # scripts/ci/AGENTS.md: any file under scripts/ci/ forces full mode; hook
+        # scripts import scripts/lib/ (check_fork_python_subprocess -> safe_subprocess).
+        for changed in ("scripts/ci/new_check.py", "scripts/lib/safe_subprocess.py"):
+            with self.subTest(changed=changed):
+                args, _ = precommit_scope.scope("pull_request", BASE, [changed], INPUTS)
+                self.assertEqual(args, ["--all-files"])
+
+    def test_shell_and_module_entries_name_their_files(self) -> None:
+        # The sycl-zerocopy-contract hook runs ffmpeg-patches/... inside bash -c.
+        self.assertIn("ffmpeg-patches/test/check-sycl-feature-routing.sh", INPUTS)
+        self.assertIn("scripts/lib/test_safe_subprocess.py", INPUTS)  # python -m dotted
+        planted = (
+            "repos:\n- repo: local\n  hooks:\n"
+            "  - id: a\n    entry: bash -c 'sh tools/x/check.sh && python3 -m tools.y'\n"
+            "  - id: b\n    entry: python3\n    args: [tools/z/gone.py]\n"
+        )
+        found = precommit_scope.hook_inputs(planted, ROOT)
+        self.assertIn("tools/x/check.sh", found)
+        self.assertIn("tools/z/gone.py", found, "a deleted entry script must stay an input")
+
+    def test_remote_hook_entry_override_is_an_input(self) -> None:
         planted = (
             "repos:\n- repo: https://example.invalid/x\n  hooks:\n"
-            "  - id: x\n    entry: scripts/ci/check_fork_python_subprocess.py\n"
+            "  - id: x\n    entry: python3 scripts/dev/override_check.py\n"
         )
-        self.assertEqual(precommit_scope.hook_inputs(planted, ROOT), {".pre-commit-config.yaml"})
+        found = precommit_scope.hook_inputs(planted, ROOT)
+        self.assertIn("scripts/dev/override_check.py", found)
+        args, _ = precommit_scope.scope(
+            "pull_request", BASE, ["scripts/dev/override_check.py"], found
+        )
+        self.assertEqual(args, ["--all-files"])
+
+    def test_imported_module_is_an_input(self) -> None:
+        self.assertIn(
+            "scripts/lib/safe_subprocess.py",
+            precommit_scope.import_closure({"scripts/ci/check_fork_python_subprocess.py"}, ROOT),
+        )
+
+    def test_unparsable_entry_makes_every_path_an_input(self) -> None:
+        planted = 'repos:\n- repo: local\n  hooks:\n  - id: x\n    entry: "bash -c \'oops"\n'
+        found = precommit_scope.hook_inputs(planted, ROOT)
+        args, _ = precommit_scope.scope("pull_request", BASE, ["docs/index.md"], found)
+        self.assertEqual(args, ["--all-files"])
+
+    def test_git_timeout_or_flood_fails_closed(self) -> None:
+        for error in (
+            CommandTimedOut(("git",), 1.0, None, None),
+            CommandOutputLimitExceeded(("git",), 1, None, None),
+        ):
+            with self.subTest(error=type(error).__name__):
+                with mock.patch.object(precommit_scope, "run_command", side_effect=error):
+                    self.assertIsNone(precommit_scope.changed_files(BASE))
 
     def test_print_mode_runs_nothing(self) -> None:
         self.assertEqual(
