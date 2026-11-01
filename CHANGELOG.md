@@ -1605,6 +1605,9 @@
   runs today changes: none of the golusoris packages VMAFx imports changed.
 
 
+- **HDR pins hold 5 decimal places on x86-64 and 3 on aarch64 and macOS.** libvmaf scores identical converted pictures bit-exact on every platform; the zimg conversion to ICtCp rounds differently on aarch64 and macOS, by up to 3.5e-4 on the pooled score. See [HDR models](docs/models/v1.md#hdr-models).
+
+
 - **The chart no longer sets `VMAFX_BACKEND` on the scoring server.** The
   server's Deployment, StatefulSet and Job carried it, but `vmafx-server`
   never read it: it takes its backend from each request's `backend` score
@@ -2410,6 +2413,9 @@
   option changes.
 
 
+- **`enable_zimg` is on by default ([ADR-3396](docs/adr/3396-zimg-on-by-default.md)).** Default builds now include `vmaf_picture_convert` colourspace, bit depth and size conversion via [zimg](https://github.com/sekrit-twc/zimg) >= 2.7, enabling CLI HDR PQ auto-selection (`hdr_vmaf_v1.1.8_3d0h`) out-of-the-box. If `zimg` is missing, `meson setup` halts with an explicit error naming `zimg >= 2.7`, `pkg-config`, and `-Denable_zimg=false`. Opting out via `-Denable_zimg=false` continues to build cleanly without zimg, where HDR conversion returns `-ENOTSUP`. Published images and distribution bundles carry libzimg under WTFPL.
+
+
 ### Fixed
 
 - ADR tooling: `scripts/adr/next-free.sh --claim` no longer hands two parallel
@@ -2428,6 +2434,9 @@
   wait for the lock is 60 s instead of 10 s (`VMAF_ADR_LOCK_WAIT_S`), and the
   timeout message names the holder
   ([adr-workflow](docs/development/adr-workflow.md#why-use-claim)).
+
+
+- CI: ADR Collision Guard fetches without `--depth` so tip grafts do not break `--is-ancestor` descendant checks.
 
 
 - ADR workflow guide: step 4 no longer tells contributors to append to the
@@ -2529,6 +2538,9 @@
   `docker/Dockerfile.production-gpu` and `mcp-server/vmaf-mcp/Dockerfile` passes
   `--ignore-installed`, and `scripts/ci/check_python_dependency_locks.py` refuses an install that
   breaks system packages without it (`--user` installs are exempt).
+
+
+- Windows UCRT64 CI: the MSYS2 leg installs `python-setuptools`, which the codegen suite (`test_vmafx_api_generator`) imports, instead of failing on a missing module.
 
 
 - CI: `Check Win64 stack alignment` in the `Windows UCRT64` job stops after 15 minutes
@@ -2639,6 +2651,16 @@
   a command now runs it and exits with its status; a start without one still stays up for
   `docker exec`. The `smoke-probe-cron` compose service now runs its probe loop.
   `docs/development/dev-mcp.md` shows the one-shot forms.
+
+
+- **The no-fallback device gate skips a leg with no device before it reads any
+  fixture.** The HDR rows made `test_gpu_v1_models_no_fallback.py` fail with
+  "fixture files not found" on legs that have neither a device nor the
+  fixtures, because the check that the CLI refuses the backend only ran inside
+  a row. A probe on a blank picture now settles that first; with a device
+  present, an absent fixture still fails the gate. The macOS Metal CI leg now
+  fetches the gate's YUV pairs before running the meson tests so device-resident
+  HDR runs find their fixtures.
 
 
 - Documentation: the FFmpeg commands that make the distorted test clips in `docs/benchmarks.md` and `docs/usage/bench.md` encode with libx264 again (one piped raw video into a decoder that expected raw frames and failed, the other wrote a copy of the reference), and the `vmaf_pre` example of `docs/ai/models/learned_filter_v1.md` gives raw inputs their pixel format and size (#2477).
@@ -2862,6 +2884,14 @@
   `jq -c`, `bash -c` or another tool's own `-c` / `-r` / `-e` flag; it reads those flags as a
   requirements file or an editable target only in a pip-like command
   (`T-LOCK-CHECKER-DASH-C-FALSE-POSITIVE-2026-10-18`).
+
+
+- **The macOS bundle script test runs in CI again.** `test_build_script_runs_to_the_end_under_bash32`
+  broke when the macOS build script started linking zimg statically from `brew --prefix zimg`,
+  because its `brew` stub printed no prefix. CI had not caught it because the RC1 Tester Report job
+  never pulled the `bash:3.2` image, so both bash 3.2 tests were skipped. The stub now serves a zimg
+  prefix, and the job pulls the image by digest and sets `VMAFX_REQUIRE_BASH32=1`, which turns a
+  missing image into a failure instead of a skip.
 
 
 - Build: libvmaf compiles on macOS again. `feature_collector.h` included C++ standard headers
@@ -3341,6 +3371,19 @@ Intel Quick Sync Video (QSV) tuning now probes ICQ once per device, encoder and 
   variables in the same file. Five more scripts were isolated on the way, among them
   the two upstream-compatibility scripts, which clone through the new
   `scripts/lib/drop-git-env.sh`.
+
+
+- **The GPU tester images find libzimg again.** Since zimg became a default dependency, the GPU
+  build stages of `docker/Dockerfile.tester` stage `libzimg.so.2` in `/opt/vmafx/lib`, but the
+  NVIDIA runtime stage did not copy that directory and none of the three GPU runtime stages had it
+  on `LD_LIBRARY_PATH`, so all three GPU image builds stopped at their `ldd` checks. The runtime stages now
+  copy and search it; `tools/rc1-tester/tests/test_dockerfile_runtime_libs.py` checks the contract
+  on every pull request.
+- **The tester images credit the libzimg they ship.** The CPU and GPU tester images copy
+  `libzimg.so.2` out of Debian's `libzimg2` package (3.0.5+ds1-1 on the pinned trixie bases), but
+  their licence manifest named upstream zimg 3.0.6. Each image now carries the package's Debian
+  copyright file and `SOURCE` record under `/usr/share/doc/libzimg2`, and the `zimg` entry of
+  `tools/rc1-tester/image/licensing.json` reads them, as the `libgomp1` entry already does.
 
 
 - CI: the `Tidy Changed` job now lints a changed C-only header (one that
