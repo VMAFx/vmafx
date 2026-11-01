@@ -94,3 +94,13 @@ def test_planted_backend_used_mismatch_fallback() -> None:
     engaged, reason = bench_backends.check_engagement(doc_device_ok, "cuda")
     assert engaged
     assert reason is None
+
+
+def test_resolve_executable_makes_the_default_bin_absolute() -> None:
+    # run_command refuses relative paths with a directory part; the default
+    # --vmaf-bin is one, relative to the repository root.
+    resolved = bench_backends.resolve_executable("core/build/tools/vmaf")
+    assert Path(resolved).is_absolute()
+    assert resolved == str((_HERE.parent / "core/build/tools/vmaf").resolve())
+    assert bench_backends.resolve_executable("vmaf") == "vmaf"
+    assert bench_backends.resolve_executable("/opt/vmaf") == "/opt/vmaf"

@@ -50,6 +50,7 @@ def _import_time_paths(env):
         capture_output=True,
         text=True,
         env=_child_env(env),
+        timeout_seconds=60,
         check=False,
     )
     if res.returncode != 0:
@@ -124,6 +125,7 @@ class GoldenGateBuildDirIsolationTest(unittest.TestCase):
             capture_output=True,
             text=True,
             env=_child_env(os.environ),
+            timeout_seconds=60,
         )
         self.assertEqual(res.returncode, 0, res.stderr)
         self.assertEqual(res.stdout, "", f"Expected empty stdout on import, got: {res.stdout!r}")
@@ -154,6 +156,7 @@ class GoldenCompilerValidationTest(unittest.TestCase):
             res = run_command(
                 [self.script_path, "--check-compiler", tmpdir],
                 allowed_executables=[self.script_path],
+                timeout_seconds=60,
                 capture_output=True,
                 text=True,
             )
@@ -173,6 +176,7 @@ class GoldenCompilerValidationTest(unittest.TestCase):
             res = run_command(
                 [self.script_path, "--check-compiler", tmpdir],
                 allowed_executables=[self.script_path],
+                timeout_seconds=60,
                 capture_output=True,
                 text=True,
             )
@@ -192,6 +196,7 @@ class GoldenCompilerValidationTest(unittest.TestCase):
             res = run_command(
                 [self.script_path, "--check-compiler", tmpdir],
                 allowed_executables=[self.script_path],
+                timeout_seconds=60,
                 capture_output=True,
                 text=True,
             )
@@ -205,6 +210,7 @@ class GoldenCompilerValidationTest(unittest.TestCase):
             res = run_command(
                 [self.script_path, "--check-compiler", tmpdir],
                 allowed_executables=[self.script_path],
+                timeout_seconds=60,
                 capture_output=True,
                 text=True,
             )

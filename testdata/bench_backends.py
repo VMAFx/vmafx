@@ -273,7 +273,20 @@ def check_engagement(doc: dict, requested_backend: str) -> tuple[bool, str | Non
     return True, None
 
 
+def resolve_executable(name: str) -> str:
+    """Return `name` as run_command accepts it: bare names stay, paths become absolute.
+
+    The default `--vmaf-bin` is `core/build/tools/vmaf`, relative to the repository root;
+    run_command refuses relative paths with a directory part.
+    """
+    if os.sep not in name and (os.altsep is None or os.altsep not in name):
+        return name
+    path = Path(name)
+    return str(path if path.is_absolute() else (_REPO_ROOT / path).resolve())
+
+
 def execute_run(cmd: list[str], out_path: str) -> tuple[int, float, str, dict | None]:
+    cmd = [resolve_executable(cmd[0]), *cmd[1:]]
     start = time.monotonic()
     proc = run_command(
         cmd,

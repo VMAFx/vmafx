@@ -7,3 +7,8 @@
   longer leave master red. The no-zimg build now expects the
   pre-converted ICtCp rows of `python/test/hdr_models_pin_test.py` to score,
   since they need no zimg conversion.
+- `scripts/lib/safe_subprocess.run` reads the caller's argument list once, so a
+  list changed during validation cannot swap the program name it launches.
+  `testdata/bench_backends.py` resolves its default `core/build/tools/vmaf`
+  against the repository root, and `testdata/bench_perf.py` records an FFmpeg
+  output flood as a failed backend row instead of aborting the run.

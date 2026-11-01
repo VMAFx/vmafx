@@ -27,7 +27,10 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from scripts.lib.safe_subprocess import CommandTimedOut  # noqa: E402 - needs the repository root
+from scripts.lib.safe_subprocess import (  # noqa: E402 - needs the repository root
+    CommandOutputLimitExceeded,
+    CommandTimedOut,
+)
 from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
 
 BASEDIR = Path(__file__).resolve().parent
@@ -247,6 +250,8 @@ def run_vmaf(
         )
     except CommandTimedOut:
         return None, 0, time.time() - start, f"TIMEOUT ({timeout_s:.0f}s)"
+    except CommandOutputLimitExceeded as exc:
+        return None, 0, time.time() - start, f"OUTPUT LIMIT ({exc})"
     elapsed = time.time() - start
 
     if result.returncode != 0:

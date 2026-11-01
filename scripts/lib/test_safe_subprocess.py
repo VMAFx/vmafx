@@ -13,6 +13,7 @@ import sys
 import tempfile
 import time
 import unittest
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, cast
 from unittest import mock
@@ -98,6 +99,31 @@ class SafeSubprocessTests(unittest.TestCase):
                 text=True,
             )
         self.assertEqual(result.stdout.strip(), str(link))
+
+    def test_argv_is_read_once(self) -> None:
+        class Flipping(Sequence[str]):
+            """argv whose first entry changes after it has been read once."""
+
+            def __init__(self, items: list[str]) -> None:
+                self.items, self.reads = items, 0
+
+            def __len__(self) -> int:
+                return len(self.items)
+
+            def __getitem__(self, index):  # type: ignore[override]
+                if index == 0:
+                    self.reads += 1
+                    if self.reads > 1:
+                        return "swapped-name"
+                return self.items[index]
+
+        result = run(
+            Flipping([PYTHON, "-c", "import sys; print(sys.orig_argv[0])"]),
+            allowed_executables=ALLOW_PYTHON,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.stdout.strip(), PYTHON)
 
     def test_unallowlisted_relative_and_nul_arguments_are_rejected(self) -> None:
         with self.assertRaises(CommandValidationError):

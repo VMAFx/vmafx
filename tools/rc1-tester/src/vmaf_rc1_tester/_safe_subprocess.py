@@ -649,6 +649,9 @@ async def run_async(
     Captured stdout and stderr share ``max_output_bytes`` so a child cannot
     double the allocation by flooding both streams.
     """
+    # Read the caller's sequence once: validation and launch both use this copy,
+    # so a caller that changes its list meanwhile cannot swap the name launched.
+    argv = tuple(argv)
     environment = _validated_environment(env)
     command = _validated_argv(argv, allowed_executables, environment.get("PATH", os.defpath))
     settings = _RunSettings(text, errors, check, timeout_seconds, max_output_bytes)
