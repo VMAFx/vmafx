@@ -82,3 +82,27 @@ def test_parse_args_backend_override_does_not_keep_default_all() -> None:
     args = bench_perf.parse_args(["--backend", "cpu"])
 
     assert args.backend == ["cpu"]
+
+
+def _sycl_lavfi(index: str) -> str:
+    backends = bench_perf.backend_definitions(sycl_device="/dev/dri/renderD129", sycl_index=index)
+    return next(b for b in backends if b["name"] == "sycl")["lavfi"]
+
+
+def test_sycl_backend_names_the_requested_device_index() -> None:
+    assert "vmafx=backend=sycl:device=1:" in _sycl_lavfi("1")
+
+
+def test_sycl_backend_index_zero_and_auto_are_accepted() -> None:
+    assert "vmafx=backend=sycl:device=0:" in _sycl_lavfi("0")
+    assert "vmafx=backend=sycl:device=auto:" in _sycl_lavfi("auto")
+
+
+def test_sycl_backend_rejects_a_bad_device_index() -> None:
+    for bad in ("-1", "gpu0", "", "\u00b2"):
+        with pytest.raises(ValueError, match="SYCL device index"):
+            _sycl_lavfi(bad)
+
+
+def test_parse_args_sycl_index_flag() -> None:
+    assert bench_perf.parse_args(["--sycl-index", "2"]).sycl_index == "2"

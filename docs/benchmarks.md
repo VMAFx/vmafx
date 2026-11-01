@@ -463,6 +463,7 @@ Environment overrides are also supported:
 | `VMAF_BENCH_TIMEOUT_S` | `--timeout-s` | Per-run timeout. |
 | `VMAF_BBB_MP4_REF` | `--bbb-mp4-ref` | Optional external BBB 4K MP4 for the decode+VMAF test. |
 | `VMAF_SYCL_DEVICE` | `--sycl-device` | VAAPI render node used by the SYCL/QSV import path. |
+| `VMAF_SYCL_INDEX` | `--sycl-index` | SYCL device index of the GPU behind `--sycl-device` (default `auto`, the first SYCL GPU); set it on a host with more than one GPU, since the filter does not pick the device from the render node. |
 | `VMAF_LD_LIBRARY_PATH` | `--ld-library-path` | Runtime library path for FFmpeg/libvmaf. |
 
 The committed raw 4K BBB pair remains the required fixture. The 1080p raw pair
