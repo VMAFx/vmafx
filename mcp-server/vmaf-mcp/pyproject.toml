@@ -14,18 +14,18 @@ authors = [
 ]
 dependencies = [
   "mcp>=2.3.0",
-  "pydantic>=2.14.1",
+  "pydantic>=2.14.2",
   "anyio>=4.15.1",
 ]
 
 [project.optional-dependencies]
 dev = [
-  "pytest>=9.1.1",
-  "pytest-asyncio>=1.4.0",
+  "pytest>=9.2.0",
+  "pytest-asyncio>=1.4.1",
   "pytest-aiohttp>=1.1.1",
   "prometheus-client>=0.26.0",
-  "ruff>=0.17.1",
-  "mypy>=2.4.0",
+  "ruff>=0.17.3",
+  "mypy>=2.4.1",
   # The `eval` extra below: without it 16 tests skip (eval_model_on_split,
   # compare_models), so the dev environment carries it.
   "numpy>=2.5.3",
@@ -48,9 +48,9 @@ http = [
 # install light for callers that only want `vmaf_score`.
 eval = [
   "numpy>=2.5.3",
-  "pandas>=3.0.6",
+  "pandas>=3.1.0",
   "pyarrow>=25.0.1",
-  "onnxruntime>=1.31.0",
+  "onnxruntime>=1.31.1",
   "scipy>=1.18.1",
 ]
 # Optional: `describe_worst_frames` descriptions from a local vision-language
