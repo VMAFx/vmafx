@@ -1024,6 +1024,24 @@ repos:
         pass_filenames: false
         stages: [pre-commit, pre-push]
 
+      - id: check-fork-python-subprocess
+        # pyproject.toml exempts python/** and testdata/** from ruff's S rules for the
+        # upstream harness; fork-licensed files there still run processes through
+        # scripts/lib/safe_subprocess.run and use owner-only file modes (Bandit B603,
+        # B607, B103 on Codacy otherwise).
+        name: Fork Python under python/ and testdata/ uses safe_subprocess
+        entry: python3 -B scripts/ci/check_fork_python_subprocess.py
+        language: system
+        files: '^(python|testdata)/.*\.py$'
+        stages: [pre-commit, pre-push]
+
+      - id: test-check-fork-python-subprocess
+        name: Cases for the fork Python subprocess check
+        entry: python3 -B -m unittest scripts/ci/tests/test_check_fork_python_subprocess.py
+        language: system
+        files: '^scripts/ci/(tests/test_)?check_fork_python_subprocess\.py$'
+        pass_filenames: false
+
       - id: test-adr-collision-guard-workflow-contract
         name: ADR Collision Guard keeps full ancestry (no shallow fetch)
         entry: python3 -B scripts/ci/test_adr_collision_guard_workflow_contract.py
