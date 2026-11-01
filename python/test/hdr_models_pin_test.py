@@ -25,6 +25,7 @@ import sys
 import tempfile
 import unittest
 
+import vmaf
 from vmaf import ExternalProgram
 from vmaf.config import VmafConfig
 
@@ -130,21 +131,27 @@ def _bypass_ictcp_args(model: str) -> list[str]:
     ]
 
 
+def _vmafexec() -> str:
+    """The vmaf binary as an absolute path to an executable file.
+
+    The path comes from VMAFEXEC_PATH or the build directory (vmaf.ExternalProgram); a
+    relative or non-executable value fails here by name instead of running something else.
+    """
+    path = os.path.abspath(vmaf.required(ExternalProgram.vmafexec))
+    if not (os.path.isfile(path) and os.access(path, os.X_OK)):
+        raise AssertionError(f"{path} is not an executable file")
+    return path
+
+
 def _run_cli(model: str, kind: str, out_path: str) -> subprocess.CompletedProcess[str]:
     """Execute vmaf CLI with HDR color metadata and requested model."""
     if kind == "bypass_ictcp":
-        cmd = [
-            ExternalProgram.vmafexec,
-            *_bypass_ictcp_args(model),
-            "--model",
-            f"version={model}",
-            "--json",
-            "-o",
-            out_path,
-        ]
-        return subprocess.run(cmd, capture_output=True, text=True, timeout=60, check=False)
+        args = [*_bypass_ictcp_args(model), "--model", f"version={model}", "--json", "-o", out_path]
+        return subprocess.run(
+            [_vmafexec(), *args], capture_output=True, text=True, timeout=60, check=False
+        )
     cmd = [
-        ExternalProgram.vmafexec,
+        _vmafexec(),
         *_input_args(kind),
         "--color_range_ref",
         "limited",
@@ -313,6 +320,50 @@ class HdrModelsPinTest(unittest.TestCase):
 
     def test_hdr_v118_hfr_5d0h_bypass_ictcp(self) -> None:
         self._assert_pin("hdr_vmaf_v1.1.8_hfr_5d0h", "bypass_ictcp", 96.72093517624604)
+
+
+class VmafexecPathTest(unittest.TestCase):
+    """The binary check refuses what it must and accepts the built binary."""
+
+    def _with_path(self, path: str) -> str:
+        saved = ExternalProgram.vmafexec
+        ExternalProgram.vmafexec = path
+        try:
+            return _vmafexec()
+        finally:
+            ExternalProgram.vmafexec = saved
+
+    def test_missing_binary_fails(self) -> None:
+        """Negative: a path that does not exist fails by name."""
+        with self.assertRaisesRegex(AssertionError, "does not exist"):
+            self._with_path("/nonexistent/tools/vmaf")
+
+    def test_non_executable_file_fails(self) -> None:
+        """Negative: an existing file without the execute bit is refused."""
+        with tempfile.NamedTemporaryFile() as plain:
+            os.chmod(plain.name, 0o644)
+            with self.assertRaisesRegex(AssertionError, "not an executable file"):
+                self._with_path(plain.name)
+
+    def test_directory_fails(self) -> None:
+        """Boundary: a directory is executable but is no binary."""
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(AssertionError, "not an executable file"):
+                self._with_path(tmp)
+
+    def test_relative_path_comes_back_absolute(self) -> None:
+        """Positive: an executable given relative to the working directory resolves."""
+        with tempfile.TemporaryDirectory() as tmp:
+            exe = os.path.join(tmp, "vmaf")
+            with open(exe, "w", encoding="utf-8") as handle:
+                handle.write("#!/bin/sh\n")
+            os.chmod(exe, 0o755)
+            cwd = os.getcwd()
+            os.chdir(tmp)
+            try:
+                self.assertEqual(os.path.realpath(self._with_path("vmaf")), os.path.realpath(exe))
+            finally:
+                os.chdir(cwd)
 
 
 if __name__ == "__main__":

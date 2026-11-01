@@ -120,6 +120,34 @@ class CompositeActionCheckTests(unittest.TestCase):
         res = self.run_check()
         self.assertEqual(res.returncode, 0, res.stderr)
 
+    def test_input_expression_in_run_block_fails(self) -> None:
+        """Negative: an input expanded into the script text is template injection."""
+        self.write(GOOD.replace('echo "hello ${WHO}"', 'echo "hello ${{ inputs.who }}"'))
+        res = self.run_check()
+        self.assertEqual(res.returncode, 1)
+        self.assertIn("${{ inputs.who }} in `run`", res.stderr)
+
+    def test_step_output_expression_in_run_block_fails(self) -> None:
+        """Negative: a step output is caller-influenced text too."""
+        self.write(GOOD.replace('echo "hello ${WHO}"', 'echo "${{ steps.a.outputs.b }}"'))
+        res = self.run_check()
+        self.assertEqual(res.returncode, 1)
+        self.assertIn("steps.a.outputs.b", res.stderr)
+
+    def test_expression_in_a_skipped_shell_still_fails(self) -> None:
+        """Negative: the expression check reads every shell, not only the shellchecked ones."""
+        self.write(GOOD + "    - shell: pwsh\n      run: Write-Output '${{ inputs.who }}'\n")
+        res = self.run_check()
+        self.assertEqual(res.returncode, 1)
+        self.assertIn("step 3", res.stderr)
+
+    def test_allow_list_matches_whole_names_only(self) -> None:
+        """Boundary: a name that only starts like an allowed value is not allowed."""
+        self.write(GOOD.replace("${{ github.sha }}", "${{ github.sha_suffix }}"))
+        res = self.run_check()
+        self.assertEqual(res.returncode, 1)
+        self.assertIn("github.sha_suffix", res.stderr)
+
     def test_every_action_is_read(self) -> None:
         self.write(GOOD, "first")
         self.write(
