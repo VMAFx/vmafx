@@ -22,8 +22,11 @@ Output metrics:
 **Output range** — for 8-bit luma, `[0, 255]` for the first moment and
 `[0, 65 025]` for the second; scales with $2^{\mathrm{bpc}} - 1$.
 
-**Input formats** — YUV 4:2:0 / 4:2:2 / 4:4:4, 8 / 10 / 12 / 16 bpc. Y plane
-only.
+**Input formats** — YUV 4:2:0 / 4:2:2 / 4:4:4, 8 to 16 bpc. Y plane only. The
+CUDA, SYCL and HIP twins take the same depths and equal the CPU at each of
+them: `test_{cuda,sycl,hip}_float_moment_parity` compare a noise frame at every
+depth from 8 to 16 bits. The Metal twin refuses 9, 11, 13, 14 and 15 bits with
+`-EINVAL` because no Metal device has measured them, and is not declared exact.
 
 **Options** — none.
 
@@ -62,8 +65,10 @@ fp32 square as an integer.
 On a 16-bit frame of more than 2 097 152 pixels the sum of squares can pass
 $2^{53}$ units, and from there the CPU's own `double` rounds as it adds. Since
 [ADR-1497](../adr/1497-float-moment-twins-cpu-sum-past-2-53.md) the twins form
-that rounded sum on the device and equal the CPU extractor at 8, 10, 12 and
-16 bits on every frame.
+that rounded sum on the device. The CUDA, SYCL and HIP parity tests compare
+them with the CPU extractor on 16-bit frames past and at the $2^{53}$
+boundary, on a bright 16-bit 1080p frame and on a noise frame at every depth
+from 8 to 16 bits; the twins equal the CPU on each.
 
 ## How the CPU SIMD paths match the scalar path
 

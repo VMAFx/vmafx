@@ -552,6 +552,30 @@ static char *test_supports_options_empty_dict(void)
     return NULL;
 }
 
+/* The option walk is bounded (docs/principles.md rule 2): a key past
+ * VMAF_OPTIONS_MAX entries is refused, even when it is named there and the
+ * table has a sentinel after it. */
+static char *test_supports_options_walk_is_bounded(void)
+{
+    static VmafOption options[VMAF_OPTIONS_MAX + 2u];
+    static VmafFeatureExtractor fex;
+    for (unsigned j = 0; j < VMAF_OPTIONS_MAX; j++)
+        options[j].name = "filler";
+    options[VMAF_OPTIONS_MAX].name = "past_bound";
+    fex.name = "bounded_walk_mock";
+    fex.options = options;
+
+    VmafDictionary *opts = NULL;
+    mu_assert("dictionary_set past_bound", vmaf_dictionary_set(&opts, "past_bound", "1", 0) == 0);
+    const char *missing = NULL;
+    bool ok = vmaf_feature_extractor_supports_options(&fex, opts, &missing);
+    mu_assert("a key past VMAF_OPTIONS_MAX entries must be refused",
+              !ok && missing && !strcmp(missing, "past_bound"));
+
+    (void)vmaf_dictionary_free(&opts);
+    return NULL;
+}
+
 /* A key the extractor declares in its option table is accepted. */
 static char *test_supports_options_known_key(void)
 {
@@ -1118,6 +1142,7 @@ static char *run_option_capability_tests(void)
     mu_run_test(test_honours_invalid_values_remain_parser_owned);
     mu_run_test(test_honours_unknown_option_reports_key);
     mu_run_test(test_honours_unrestricted_nondefault);
+    mu_run_test(test_supports_options_walk_is_bounded);
     return NULL;
 }
 

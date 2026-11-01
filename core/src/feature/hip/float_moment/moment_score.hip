@@ -80,8 +80,8 @@ __device__ __forceinline__ uint64_t moment_warp_reduce_u64(uint64_t v)
     return ((uint64_t)hi << 32u) | lo;
 }
 
-/* The term of moment.c::compute_2nd_moment() for the raw sample `v` of a 10-,
- * 12- or 16-bit plane, in units of 1 / scaler^2: picture_copy() divides the
+/* The term of moment.c::compute_2nd_moment() for the raw sample `v` of a
+ * 9..16-bit plane, in units of 1 / scaler^2: picture_copy() divides the
  * sample by the scaler (a power of two, exact) and the square is one fp32
  * product, rounded to nearest even. Scaling by a power of two does not change
  * which bits are rounded away, so the float square of the raw sample has the
@@ -148,10 +148,10 @@ __global__ void calculate_moment_hip_kernel_8bpc(const uint8_t *__restrict__ ref
 }
 
 /**
- * 10/12/16-bpc kernel: ref/dis are byte-addressed; each pixel is
+ * 9..16-bpc kernel: ref/dis are byte-addressed; each pixel is
  * a native uint16_t. The samples are accumulated raw and the squares as the
  * CPU's float squares (moment_float_square()); the HOST divides the exact
- * integer sums by the bit-depth scaler (4/16/256, squared for the second
+ * integer sums by the bit-depth scaler (2^(bpc - 8), squared for the second
  * moments) and by w*h to recover the moment the CPU reference computes
  * (ADR-1212, ADR-1447). Same layout as 8bpc.
  */

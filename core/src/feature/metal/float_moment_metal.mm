@@ -48,6 +48,7 @@ extern "C" {
 #include "../../metal/objc_handle.h"
 
 #include "metal_float_moment_sum.h"
+#include "../float_moment_scaler.h"
 
 
 #define FM_PARTIAL_BUFFER_COUNT 8u
@@ -496,7 +497,7 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
      * exact (a power of two times the pixel count), so each quotient is that
      * one correctly rounded division of the same exact value. */
     const double n_pix = (double)s->frame_w * (double)s->frame_h;
-    const double scaler = s->bpc > 8u ? (double)(1u << (s->bpc - 8u)) : 1.0;
+    const double scaler = vmaf_float_moment_scaler(s->bpc);
     const double denom1 = n_pix * scaler;
     const double denom2 = denom1 * scaler;
     const double ref1 = denom1 > 0.0 ? (double)sum[0] / denom1 : 0.0;

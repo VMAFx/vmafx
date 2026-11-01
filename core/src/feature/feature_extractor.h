@@ -354,8 +354,10 @@ int vmaf_feature_impl_rust_requested(void);
 
 /* ADR-0544: Audit feature_extractor_list[] for accidental duplicate
  * registrations (same `name` string registered more than once).
- * Returns 0 if every entry is unique, -EINVAL otherwise.  Each
- * duplicate is logged at VMAF_LOG_LEVEL_ERROR.  Called once from
+ * It also refuses an option table without a sentinel within
+ * VMAF_OPTIONS_MAX entries.
+ * Returns 0 if every entry is unique and bounded, -EINVAL otherwise.  Each
+ * defect is logged at VMAF_LOG_LEVEL_ERROR.  Called once from
  * `vmaf_init()` so a regression caught locally fails fast instead of
  * silently doubling pool-entry init / extract / flush counts. */
 int vmaf_feature_extractor_list_audit(void);
