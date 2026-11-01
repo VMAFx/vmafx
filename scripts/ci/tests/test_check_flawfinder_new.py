@@ -10,6 +10,7 @@ changes a C file on a branch and runs the check against `master`:
 - a finding the base already carries passes when its line moves;
 - reading an input through `fdopen()` on a descriptor passes;
 - a new file with a finding is reported;
+- a renamed file keeps its base findings (compared with its old path);
 - a missing flawfinder is a tool error, exit 2, never a pass.
 """
 
@@ -119,6 +120,17 @@ class CheckFlawfinderNew(unittest.TestCase):
         status, out = self.run_check("fresh.ccm", BASE)
         self.assertEqual(status, 1)
         self.assertIn("fresh.ccm:5: flawfinder fopen", out)
+
+    def test_renamed_file_keeps_its_base_findings(self) -> None:
+        self.git("mv", "harness.c", "renamed.c")
+        self.assertEqual(self.run_check("renamed.c", BASE), (0, ""))
+
+    def test_renamed_file_with_an_added_finding_is_reported(self) -> None:
+        self.git("mv", "harness.c", "renamed.c")
+        status, out = self.run_check("renamed.c", ADDED)
+        self.assertEqual(status, 1)
+        self.assertIn("renamed.c:6: flawfinder fopen", out)
+        self.assertNotIn("renamed.c:5:", out, "the base finding was reported as new")
 
     def test_new_file_finding_is_reported(self) -> None:
         status, out = self.run_check("fresh.c", BASE)

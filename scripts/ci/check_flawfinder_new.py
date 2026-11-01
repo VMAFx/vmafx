@@ -10,7 +10,8 @@ round. This check runs the same engine on the given files and compares each
 file with its copy at the merge base with the default branch:
 
 - a finding whose rule name and source line also occur at the base is old and
-  passes, wherever the line moved;
+  passes, wherever the line moved; a renamed file is compared with its
+  pre-rename copy;
 - any other finding is new and fails the check.
 
 flawfinder matches function names, not data flow: `open()` and `fopen()` are
@@ -112,6 +113,18 @@ def git_output(git: str, args: list[str], cwd: Path) -> tuple[int, str]:
     return proc.returncode, proc.stdout
 
 
+def renames(git: str, root: Path, base: str) -> dict[str, str]:
+    """Map each path renamed since `base` (working tree and index) to its old path."""
+    status, text = git_output(
+        git, ["diff", "-M", "--name-status", "-z", "--diff-filter=R", base], root
+    )
+    if status != 0:
+        raise ToolError(f"git diff against {base} failed")
+    fields = text.split("\0")
+    # -z rename records: "R<score>", old path, new path.
+    return {fields[i + 2]: fields[i + 1] for i in range(0, len(fields) - 2, 3)}
+
+
 def base_text(git: str, root: Path, base: str, relative: str) -> str:
     """Return the file at `base`, or "" when it did not exist there."""
     status, text = git_output(git, ["show", f"{base}:{relative}"], root)
@@ -150,13 +163,14 @@ def main(argv: list[str] | None = None) -> int:
     try:
         flawfinder, git = tool("flawfinder"), tool("git")
         base = merge_base(git, root, args.base_branch)
+        moved = renames(git, root, base)
         failed = 0
         for path in args.files:
             if path.suffix not in SUFFIXES or not path.is_file():
                 continue
             relative = path.resolve().relative_to(root.resolve()).as_posix()
             for line, name, context in new_findings(
-                flawfinder, path, base_text(git, root, base, relative)
+                flawfinder, path, base_text(git, root, base, moved.get(relative, relative))
             ):
                 print(f"{relative}:{line}: flawfinder {name}: {context}")
                 failed += 1
