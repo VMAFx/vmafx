@@ -54,11 +54,15 @@ def codacy_markdownlint_excludes(text: str) -> list[str]:
 
 
 def glob_regex(glob: str) -> re.Pattern[str]:
-    """A Java-style glob as Codacy reads it: ** crosses directories, * does not."""
+    """A Java PathMatcher glob as Codacy reads it.
+
+    ** crosses directories and * does not. **/ needs at least one directory, so
+    **/testdata/** does not match the root testdata/x.md (java.nio.file.FileSystem).
+    """
     out = []
     for token in re.split(r"(\*\*/|\*\*|\*|\?)", glob):
         out.append(
-            {"**/": "(?:.*/)?", "**": ".*", "*": "[^/]*", "?": "[^/]"}.get(token, re.escape(token))
+            {"**/": ".*/", "**": ".*", "*": "[^/]*", "?": "[^/]"}.get(token, re.escape(token))
         )
     return re.compile("".join(out) + r"\Z")
 
@@ -86,16 +90,16 @@ def drift(codacy_text: str, precommit_text: str, paths: list[str]) -> list[str]:
 
 
 def tracked_markdown() -> list[str]:
-    """Every tracked Markdown file, plus the probe paths."""
+    """Every tracked Markdown file (.md and .markdown, as the hook takes), plus the probes."""
     listed = run_command(
-        [GIT, "-C", str(ROOT), "ls-files", "*.md"],
+        [GIT, "-C", str(ROOT), "ls-files", "-z", "--", "*.md", "*.markdown"],
         allowed_executables=(GIT,),
         capture_output=True,
         text=True,
         check=True,
         timeout_seconds=60,
-    ).stdout.split()
-    return listed + list(PROBES)
+    ).stdout.split("\0")
+    return [path for path in listed if path] + list(PROBES)
 
 
 class CodacyConfig(unittest.TestCase):
@@ -118,15 +122,23 @@ class CodacyConfig(unittest.TestCase):
             drift(CODACY.read_text(), hook, ["docs/index.md"]), ["hook-only: docs/index.md"]
         )
 
+    def test_config_without_root_testdata_glob_fails(self) -> None:
+        """Negative: **/testdata/** alone leaves the root testdata tree linted by Codacy."""
+        planted = CODACY.read_text().replace('      - "testdata/**"\n', "")
+        self.assertIn(
+            "hook-only: testdata/x.md", drift(planted, PRECOMMIT.read_text(), list(PROBES))
+        )
+
     def test_config_without_leading_dashes_fails(self) -> None:
         """Negative: Codacy ignores a file that does not start with '---'."""
         with self.assertRaises(ValueError):
             codacy_markdownlint_excludes("engines: {}\n")
 
     def test_glob_boundaries(self) -> None:
-        """Boundary: * stays in one directory, ** crosses them, **/ also matches the root."""
+        """Boundary: * stays in one directory, ** crosses them, **/ needs one directory."""
         self.assertTrue(glob_regex("**/testdata/**").match("a/b/testdata/x.md"))
-        self.assertTrue(glob_regex("**/testdata/**").match("testdata/x.md"))
+        self.assertFalse(glob_regex("**/testdata/**").match("testdata/x.md"))
+        self.assertTrue(glob_regex("testdata/**").match("testdata/x.md"))
         self.assertFalse(glob_regex("docs/*.md").match("docs/adr/x.md"))
         self.assertFalse(glob_regex("docs/adr/README.md").match("docs/adr/README.mdx"))
 
