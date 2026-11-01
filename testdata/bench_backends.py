@@ -45,7 +45,11 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from scripts.lib.safe_subprocess import executable_argument  # noqa: E402
+from scripts.lib.safe_subprocess import (  # noqa: E402
+    CommandOutputLimitExceeded,
+    CommandTimedOut,
+    executable_argument,
+)
 from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
 
 
@@ -314,7 +318,18 @@ def run_cell_iterations(
     times = []
     first_doc = None
     for i in range(runs + 1):
-        rc, elapsed, err, doc = execute_run(cmd, out_path)
+        try:
+            rc, elapsed, err, doc = execute_run(cmd, out_path)
+        except (CommandTimedOut, CommandOutputLimitExceeded) as exc:
+            return (
+                [],
+                None,
+                {
+                    "status": "unavailable",
+                    "returncode": None,
+                    "error": f"{type(exc).__name__}: {exc}",
+                },
+            )
         if rc != 0 or doc is None:
             return [], None, {"status": "unavailable", "returncode": rc, "error": err}
         if i == 0:

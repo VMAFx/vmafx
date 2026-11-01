@@ -253,12 +253,15 @@ def executable_argument(executable: Arg, root: Arg) -> str:
     a relative path with a directory part. A caller that reads a path such as
     `core/build/tools/vmaf` from an option or the environment passes it through
     here: a bare name stays as it is, an absolute path stays as it is, and any
-    other path is made absolute against `root`.
+    other non-absolute value is made absolute against `root`.
     """
     text = _stringify(executable, label="executable")
     path = Path(text).expanduser()
-    if path.is_absolute() or len(path.parts) <= 1:
-        return str(path) if path.is_absolute() else text
+    if path.is_absolute():
+        return str(path)
+    separators = {"/", os.sep, os.altsep or os.sep}
+    if text not in (".", "..") and not any(sep in text for sep in separators):
+        return text
     return str((Path(root) / path).resolve())
 
 

@@ -152,6 +152,10 @@ class SafeSubprocessTests(unittest.TestCase):
         # Boundary: a bare name stays for the PATH lookup; an absolute path stays.
         self.assertEqual(executable_argument("vmaf", root), "vmaf")
         self.assertEqual(executable_argument(PYTHON, "/elsewhere"), PYTHON)
+        self.assertEqual(executable_argument("./vmaf", root), str((root / "vmaf").resolve()))
+        self.assertEqual(
+            executable_argument("../vmaf", root), str((root / ".." / "vmaf").resolve())
+        )
         # Negative: a NUL byte is refused, as run() refuses it.
         with self.assertRaises(CommandValidationError):
             executable_argument("bin/x\0y", root)

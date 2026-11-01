@@ -12,6 +12,8 @@ from unittest.mock import patch
 
 import pytest
 
+from scripts.lib.safe_subprocess import CommandOutputLimitExceeded, CommandTimedOut
+
 _HERE = Path(__file__).resolve().parent
 _SPEC = importlib.util.spec_from_file_location("bench_backends", _HERE / "bench_backends.py")
 assert _SPEC is not None and _SPEC.loader is not None
@@ -104,3 +106,21 @@ def test_resolve_executable_makes_the_default_bin_absolute() -> None:
     assert resolved == str((_HERE.parent / "core/build/tools/vmaf").resolve())
     assert bench_backends.resolve_executable("vmaf") == "vmaf"
     assert bench_backends.resolve_executable("/opt/vmaf") == "/opt/vmaf"
+
+
+def test_run_cell_iterations_handles_safe_subprocess_exceptions() -> None:
+    for exc in (
+        CommandTimedOut(("fake-vmaf",), 5.0, "out", "err"),
+        CommandOutputLimitExceeded(("fake-vmaf",), 1024, "out", "err"),
+    ):
+        with patch.object(bench_backends, "execute_run", side_effect=exc):
+            times, first_doc, status = bench_backends.run_cell_iterations(
+                ["fake-vmaf"], "unused.json", 1, False
+            )
+        assert times == []
+        assert first_doc is None
+        assert status == {
+            "status": "unavailable",
+            "returncode": None,
+            "error": f"{type(exc).__name__}: {exc}",
+        }
