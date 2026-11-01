@@ -399,6 +399,10 @@ parse_cli_args() {
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --bundle=*)
+        [ -n "${1#*=}" ] || {
+          echo "ERROR: --bundle requires a bundle name" >&2
+          return 2
+        }
         PARSED_BUNDLE="${1#*=}"
         shift
         ;;
