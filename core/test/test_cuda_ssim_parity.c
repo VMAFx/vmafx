@@ -33,6 +33,7 @@
 #include <string.h>
 
 #include "test.h"
+#include "float_bits.h"
 
 #include "feature/feature_extractor.h"
 #include "libvmaf/libvmaf.h"
@@ -173,11 +174,12 @@ static char *check_exact(const Case *c)
         return msg;
 
     mu_assert("CPU ssim is NaN", !isnan(cpu));
-    if (cpu != gpu) {
+    if (!vmaf_test_identical_f64(cpu, gpu)) {
         (void)fprintf(stderr, "\n%s %ux%u %u-bit: cpu=%.17g cuda=%.17g delta=%.3e\n", c->what, c->w,
                       c->h, c->bpc, cpu, gpu, fabs(cpu - gpu));
     }
-    mu_assert("integer_ssim_cuda differs from the CPU extractor", cpu == gpu);
+    mu_assert("integer_ssim_cuda differs from the CPU extractor",
+              vmaf_test_identical_f64(cpu, gpu));
     return NULL;
 }
 

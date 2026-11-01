@@ -38,6 +38,7 @@
 
 #include "cpu.h"
 #include "test.h"
+#include "float_bits.h"
 #include "libvmaf/picture.h"
 #include "feature/feature_extractor.h"
 #include "feature/feature_collector.h"
@@ -164,7 +165,7 @@ static char *compare_one(unsigned w, unsigned h, unsigned bpc, unsigned seed)
 
     mu_assert("NEON motion SAD must bit-exactly match the scalar reference at "
               "every geometry and bit depth",
-              scalar_score == neon_score);
+              vmaf_test_identical_f64(scalar_score, neon_score));
     return NULL;
 }
 

@@ -123,3 +123,34 @@ rules:
     message: Hooks may not be skipped from scripts. Surface failures, fix root cause.
     languages: [generic]
     severity: ERROR
+
+  - id: vmaf-test-float-identity-via-float-bits
+    # CodeQL cpp/equality-on-floats reports `==` / `!=` between two computed
+    # floating-point values (alerts 1593-1598). It reads only what its build
+    # compiles, so the CUDA / HIP / SYCL twin tests never reached it. This rule
+    # reads every test source before the push. Comparisons against a literal,
+    # a macro or k-constant, and the `x != x` NaN idiom stay `==`, as CodeQL
+    # allows them. scripts/ci/tests/test_semgrep_float_identity.py plants both.
+    patterns:
+      - pattern-either:
+          - pattern: (double $A) == (double $B)
+          - pattern: (double $A) != (double $B)
+          - pattern: (float $A) == (float $B)
+          - pattern: (float $A) != (float $B)
+      - pattern-not: $X == $X
+      - pattern-not: $X != $X
+      - metavariable-regex:
+          metavariable: $A
+          regex: '^(?![-+(\s]*([0-9.]|\(double\)\s*\(|k[A-Z]|[A-Z][A-Z0-9_]*\b))'
+      - metavariable-regex:
+          metavariable: $B
+          regex: '^(?![-+(\s]*([0-9.]|\(double\)\s*\(|k[A-Z]|[A-Z][A-Z0-9_]*\b))'
+    paths:
+      include:
+        - /core/test/**
+    message: >
+      Two computed floating-point values are compared with == or !=. Use
+      vmaf_test_identical_f64() / _f32() from core/test/float_bits.h (negate it
+      for "the two differ"); it also tells +0 from -0 (ADR-1502).
+    languages: [c, cpp]
+    severity: ERROR

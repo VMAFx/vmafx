@@ -1141,6 +1141,19 @@ repos:
         files: '^(\.semgrep\.yml|\.semgrepignore|\.pre-commit-config\.yaml|scripts/ci/tests/test_semgrep_vendored_scope\.py|core/src/pdjson\.(c|h)|core/src/mcp/3rdparty/.*)$'
         pass_filenames: false
 
+      - id: test-semgrep-float-identity
+        name: Float-identity rule reports computed float compares in core/test (planted-defect recall)
+        # vmaf-test-float-identity-via-float-bits refuses `==` / `!=` between
+        # two computed floats in core/test/ (CodeQL cpp/equality-on-floats,
+        # alerts 1593-1598). This plants the reported and the allowed shapes,
+        # then scans the real tests (ADR-1502).
+        entry: python3 -m unittest discover -s scripts/ci/tests -p test_semgrep_float_identity.py
+        language: python
+        additional_dependencies: ["semgrep>=1.182.1,<2.0"]
+        require_serial: true
+        files: '^(\.semgrep\.yml|\.pre-commit-config\.yaml|scripts/ci/tests/test_semgrep_(float_identity|vendored_scope)\.py|core/test/float_bits\.h)$'
+        pass_filenames: false
+
       # Shell-injection regression tests. Both fixes below were reverted once
       # by a pull request that carried stale copies of the scripts (PR #414
       # undid PR #350). The sycl-bench-env test already existed and would have

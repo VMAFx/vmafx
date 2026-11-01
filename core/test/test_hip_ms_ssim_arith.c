@@ -37,6 +37,7 @@
 #include <string.h>
 
 #include "test.h"
+#include "float_bits.h"
 
 #include "feature/hip/integer_ms_ssim/ms_ssim_arith.h"
 #include "feature/picture_copy.h"
@@ -528,7 +529,7 @@ static char *test_pair_window_sum_rounds_like_fp64(void)
             plain += prod;
         }
         differing += vmaf_hip_ms_pair_round(&pair) != (float)reference;
-        fp32_differing += plain != (float)reference;
+        fp32_differing += !vmaf_test_identical_f32(plain, (float)reference);
     }
     mu_assert("the pair sum does not round like the reference's fp64 sum",
               differing * 10000u <= MS_PAIR_WINDOWS);

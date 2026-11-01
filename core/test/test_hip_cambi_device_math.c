@@ -45,6 +45,7 @@
 #include <string.h>
 
 #include "test.h"
+#include "float_bits.h"
 
 #include "feature/cambi_internal.h"
 #include "feature/feature_extractor.h"
@@ -743,7 +744,7 @@ static char *test_row_chunks_do_not_change_the_score(void)
     double many = NAN;
     mu_assert("replay (1 chunk)", !emu_run_case(&emu_cases[0], &one));
     mu_assert("replay (7 chunks)", !emu_run_case(&emu_cases[1], &many));
-    mu_assert("row-chunk layout changed the CAMBI score", one == many);
+    mu_assert("row-chunk layout changed the CAMBI score", vmaf_test_identical_f64(one, many));
     return NULL;
 }
 
@@ -843,11 +844,11 @@ static char *test_reference_matches_registered_extractor(void)
     mu_assert("fixtures", !fixtures);
     mu_assert("reference", !ref_err);
     mu_assert("cambi score", !err);
-    if (extractor != reference) {
+    if (!vmaf_test_identical_f64(extractor, reference)) {
         (void)fprintf(stderr, "\nextractor %.17g, reference %.17g\n", extractor, reference);
     }
     mu_assert("helper pipeline differs from the registered cambi extractor",
-              extractor == reference);
+              vmaf_test_identical_f64(extractor, reference));
     return NULL;
 }
 
