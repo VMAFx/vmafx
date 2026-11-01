@@ -552,15 +552,29 @@ int alloc_device_buffers(FloatAdmStateMetal *s, id<MTLDevice> device)
 }
 
 /* The device, its buffers and its pipelines; the caller unwinds on failure. */
-int init_device_resources(FloatAdmStateMetal *s, int *stage)
+int init_device_resources(FloatAdmStateMetal *s)
 {
     const void *const dh = vmaf_metal_context_device_handle(s->ctx);
-    if (dh == nullptr) { *stage = 1; return -ENODEV; }
+    if (dh == nullptr) { return -ENODEV; }
     id<MTLDevice> const device = (__bridge id<MTLDevice>)dh;
-    int err = alloc_device_buffers(s, device);
-    if (err != 0) { *stage = 2; return err; }
-    err = build_pipelines(s, device);
-    *stage = (err != 0) ? 3 : 0;
+    const int err = alloc_device_buffers(s, device);
+    if (err != 0) { return err; }
+    return build_pipelines(s, device);
+}
+
+/* Release what init_fex_metal created, in reverse order, and return err. Every
+ * release is a no-op on a slot that was never filled, since priv starts
+ * zeroed, so each failure point unwinds through this one path. */
+static int unwind_init_fex_metal(FloatAdmStateMetal *s, int err)
+{
+    release_psos(s);
+    release_buffers(s);
+    if (s->ctx != nullptr) {
+        /* Best effort: the init error is what the caller reports. */
+        (void)vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
+        vmaf_metal_context_destroy(s->ctx);
+        s->ctx = nullptr;
+    }
     return err;
 }
 
@@ -592,31 +606,15 @@ int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsi
     if (err != 0) { return err; }
 
     err = vmaf_metal_kernel_lifecycle_init(&s->lc, s->ctx);
-    if (err != 0) { goto fail_ctx; }
+    if (err != 0) { return unwind_init_fex_metal(s, err); }
 
-    {
-        int stage = 0;
-        err = init_device_resources(s, &stage);
-        if (stage == 1) { goto fail_lc; }
-        if (stage == 2) { goto fail_bufs; }
-        if (stage == 3) { goto fail_pso; }
-    }
+    err = init_device_resources(s);
+    if (err != 0) { return unwind_init_fex_metal(s, err); }
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (s->feature_name_dict == nullptr) { err = -ENOMEM; goto fail_pso; }
+    if (s->feature_name_dict == nullptr) { err = -ENOMEM; return unwind_init_fex_metal(s, err); }
     return 0;
-
-fail_pso:
-    release_psos(s);
-fail_bufs:
-    release_buffers(s);
-fail_lc:
-    (void)vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
-fail_ctx:
-    vmaf_metal_context_destroy(s->ctx);
-    s->ctx = nullptr;
-    return err;
 }
 
 /* Copy a Y plane (respecting source stride) into the packed src buffer. */
