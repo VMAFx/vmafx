@@ -241,10 +241,12 @@ RUN apt-get update \
         libzimg-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# ---- libvmaf headers + library for --enable-libvmafx configure probe -------
+# ---- libvmafx headers + library for --enable-libvmafx configure probe ------
 COPY --from=vmaf-builder /dist/lib/ /usr/local/lib/
-# Copy public headers from source tree (pkg-config consumers need them).
+# Copy public headers from source tree (pkg-config consumers need them; the
+# --enable-libvmafx probe compiles vmafx/vmafx.h).
 COPY core/include/libvmaf/ /usr/local/include/libvmaf/
+COPY core/include/vmafx/ /usr/local/include/vmafx/
 # Meson generated this file from vmaf_soname_version, the authoritative
 # interface version consumed by FFmpeg's pkg-config range probe.
 RUN ldconfig
@@ -400,6 +402,7 @@ RUN apt-get update \
 # Copy libvmaf headers + library for cgo build
 COPY --from=vmaf-builder /dist/lib/ /usr/local/lib/
 COPY core/include/libvmaf/ /usr/local/include/libvmaf/
+COPY core/include/vmafx/ /usr/local/include/vmafx/
 ARG VMAFX_VERSION
 RUN ldconfig
 

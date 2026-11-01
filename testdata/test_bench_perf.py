@@ -68,7 +68,7 @@ def test_build_ffmpeg_command_uses_configured_binary_and_raw_inputs(tmp_path: Pa
     assert "-f" in cmd
     assert "rawvideo" in cmd
     assert str(tmp_path / "bbb" / "dis_3840x2160_200f.yuv") in cmd
-    assert "libvmaf=log_path=" in " ".join(cmd)
+    assert "vmafx=log_path=" in " ".join(cmd)
 
 
 def test_select_backends_rejects_unknown_backend() -> None:

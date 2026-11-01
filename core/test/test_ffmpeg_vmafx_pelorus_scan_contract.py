@@ -68,8 +68,9 @@ class VmafxPelorusScanContract(unittest.TestCase):
         self.assertIn("the side data is not scanned newest first", problems(mutated))
 
     def test_scan_past_an_accepted_entry_is_refused(self) -> None:
-        mutated = re.sub(
-            r"vmafx_context_attach_sidedata\(s->context, index, sd->data, sd->size, &error\) == VMAFX_OK\)\s*break;",
+        # The contract's own pattern, so the mutation finds the call however clang-format
+        # wraps it.
+        mutated = STOP_ON_ACCEPT.sub(
             "vmafx_context_attach_sidedata(s->context, index, sd->data, sd->size, &error) == VMAFX_OK)\n            continue;",
             self.code,
         )
