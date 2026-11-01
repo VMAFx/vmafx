@@ -1010,6 +1010,14 @@ repos:
         pass_filenames: false
         stages: [pre-commit, pre-push]
 
+      - id: check-fixture-bundle-jobs
+        name: CI jobs fetch the fixture bundles their tests read
+        entry: bash -c 'python3 -B scripts/ci/check_fixture_bundle_jobs.py && python3 -B scripts/ci/tests/test_check_fixture_bundle_jobs.py'
+        language: system
+        files: '^(\.github/workflows/.*\.yml|python/test/.*\.py|scripts/ci/.*\.sh|scripts/ci/(tests/test_)?check_fixture_bundle_jobs\.py)$'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
+
       - id: test-adr-collision-guard-workflow-contract
         name: ADR Collision Guard keeps full ancestry (no shallow fetch)
         entry: python3 -B scripts/ci/test_adr_collision_guard_workflow_contract.py
