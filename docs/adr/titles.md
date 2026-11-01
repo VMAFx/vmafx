@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1432), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1433), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5739,3 +5739,7 @@ Every ADR, one heading each (1432), so the site search finds an ADR by its title
 ## ADR-3390: The required check `GStreamer Element` runs the element's tests
 
 [3390-gstreamer-element-check](3390-gstreamer-element-check.md)
+
+## ADR-3396: zimg is on by default
+
+[3396-zimg-on-by-default](3396-zimg-on-by-default.md)
