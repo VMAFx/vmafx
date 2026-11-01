@@ -15,6 +15,11 @@ exists (`ffmpeg-patches/NNNN-*.patch`): code, build files, workflows and the
 AGENTS.md files under the trees in LIVE_TREES. History (docs/, changelogs) and
 test fixtures (scripts/**/test_*, scripts/**/tests/) may name retired patches.
 
+Last, it refuses a workflow job that builds FFmpeg with `--disable-indevs` and then
+runs an `ffmpeg-patches/test/*.sh` script that reads `-f lavfi` (itself or through
+a helper it sources) unless the configure line adds `--enable-indev=lavfi`: that
+build has no lavfi input device and the script fails to open its first input.
+
 Usage: run_ffmpeg_patch_contract_tests.py [--root DIR]; exit 1 names each
 failing script with the tail of its output.
 """
@@ -28,6 +33,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+import yaml  # type: ignore[import-untyped]  # no PyYAML stubs in the hook environment
+
 from scripts.lib.safe_subprocess import run as run_command
 
 SERIES_DIR = "ffmpeg-patches"
@@ -38,6 +45,10 @@ PATCH_REF = re.compile(r"ffmpeg-patches/[0-9]{4}-[A-Za-z0-9._-]+\.patch")
 LIVE_TREES = ("core", "dev", "docker", "tools", "mcp-server", "python", ".github", "scripts")
 LIVE_FILES = ("AGENTS.md", "Makefile", "build-config.env", "ffmpeg-patches/README.md")
 MAX_FILE_BYTES = 4_000_000
+TEST_SCRIPT_RUN = re.compile(r"\bffmpeg-patches/test/[\w.-]+\.sh\b")
+SOURCED_HELPER = re.compile(r"^\s*\.\s+\"\$\{HERE\}/([\w.-]+\.sh)\"", re.MULTILINE)
+LAVFI_INPUT = "-f lavfi"
+LAVFI_INDEV = "--enable-indev=lavfi"
 
 
 def contract_scripts(root: Path) -> list[Path]:
@@ -83,6 +94,35 @@ def stale_patch_refs(root: Path, files: list[Path]) -> list[str]:
     return stale
 
 
+def reads_lavfi(root: Path, script: str) -> bool:
+    """True when the test script, or a helper it sources from its own folder, reads -f lavfi."""
+    path = root / script
+    if not path.is_file():
+        return False
+    text = path.read_text(encoding="utf-8")
+    helpers = [path.parent / name for name in SOURCED_HELPER.findall(text)]
+    texts = [text] + [h.read_text(encoding="utf-8") for h in helpers if h.is_file()]
+    return any(LAVFI_INPUT in body for body in texts)
+
+
+def lavfi_without_indev(root: Path) -> list[str]:
+    """'workflow:job: ...' for each job whose FFmpeg build lacks the lavfi device its tests read."""
+    found = []
+    for workflow in sorted((root / ".github" / "workflows").glob("*.yml")):
+        jobs = (yaml.safe_load(workflow.read_text(encoding="utf-8")) or {}).get("jobs") or {}
+        for job_id, job in jobs.items():
+            runs = "\n".join(str(s.get("run", "")) for s in (job or {}).get("steps") or [])
+            if "--disable-indevs" not in runs or LAVFI_INDEV in runs:
+                continue
+            for script in sorted(set(TEST_SCRIPT_RUN.findall(runs))):
+                if reads_lavfi(root, script):
+                    found.append(
+                        f"{workflow.name}:{job_id}: runs {script}, which reads {LAVFI_INPUT}, "
+                        f"on a --disable-indevs build without {LAVFI_INDEV}"
+                    )
+    return found
+
+
 def failures(root: Path, scripts: list[Path]) -> list[str]:
     """One report per script that exits non-zero: its name and its output's tail."""
     found = []
@@ -112,7 +152,11 @@ def main(argv: list[str] | None = None) -> int:
     if not scripts:
         print(f"run_ffmpeg_patch_contract_tests: no core/test script names {SERIES_DIR}/")
         return 1
-    problems = stale_patch_refs(args.root, live_files(args.root)) + failures(args.root, scripts)
+    problems = (
+        stale_patch_refs(args.root, live_files(args.root))
+        + lavfi_without_indev(args.root)
+        + failures(args.root, scripts)
+    )
     for line in problems:
         print(f"run_ffmpeg_patch_contract_tests: {line}", file=sys.stderr)
     if problems:

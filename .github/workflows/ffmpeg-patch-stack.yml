@@ -173,7 +173,7 @@ jobs:
           export PKG_CONFIG_PATH="$GITHUB_WORKSPACE/core/build/meson-uninstalled"
           cd "$tree"
           ./configure --enable-version3 --enable-libvmafx \
-            --disable-doc --disable-indevs --disable-outdevs
+            --disable-doc --disable-indevs --enable-indev=lavfi --disable-outdevs
           grep -qE '^#define CONFIG_VMAFX_FILTER 1$' config_components.h
           make -j "$(getconf _NPROCESSORS_ONLN)" ffmpeg
       - name: Check the vmafx filter against the CLI
