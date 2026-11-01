@@ -407,6 +407,10 @@ parse_cli_args() {
           echo "ERROR: --bundle requires an argument" >&2
           return 2
         }
+        [ -n "$2" ] || {
+          echo "ERROR: --bundle requires a bundle name" >&2
+          return 2
+        }
         PARSED_BUNDLE="$2"
         shift 2
         ;;
@@ -460,7 +464,7 @@ main() {
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then
   case "${1:-}" in
     --print-bundle-sha)
-      bundle="${2:-pq-sollevante-v1}"
+      bundle="${2-pq-sollevante-v1}"
       if ! sha="$(get_bundle_sha "${bundle}")"; then
         echo "ERROR: ${bundle} is not a recognized bundle (supported: ${SUPPORTED_BUNDLES[*]})" >&2
         exit 2

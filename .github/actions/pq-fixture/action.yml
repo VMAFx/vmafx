@@ -82,4 +82,4 @@ runs:
       shell: bash
       env:
         BUNDLE: ${{ inputs.bundle }}
-      run: rm -rf "python/test/resource/yuv/${BUNDLE}"
+      run: rm -rf "python/test/resource/yuv/${BUNDLE:?the bundle name is empty}"

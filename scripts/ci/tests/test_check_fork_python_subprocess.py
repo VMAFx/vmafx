@@ -66,6 +66,18 @@ class ForkPythonSubprocess(unittest.TestCase):
         body = "import os\nos.chmod('x', 0o700)\n"
         self.assertEqual(self._run({"python/test/f_test.py": FORK + body}), 1)
 
+    def test_shell_call_with_absolute_path_fails(self) -> None:
+        """Negative: shell=True with an absolute path (S602; S603 and S607 miss it)."""
+        body = "import subprocess\nsubprocess.run('/usr/bin/vmaf', shell=True, check=False)\n"
+        self.assertEqual(self._run({"python/test/g_test.py": FORK + body}), 1)
+
+    def test_keyword_mode_is_read(self) -> None:
+        """Negative and positive: a mode= keyword is judged like a positional mode."""
+        wide = "import os\nos.chmod('x', mode=0o700)\n"
+        self.assertEqual(self._run({"python/test/h_test.py": FORK + wide}), 1)
+        narrow = "import os\nos.chmod('x', mode=0o500)\n"
+        self.assertEqual(self._run({"python/test/i_test.py": FORK + narrow}), 0)
+
     def test_mode_thresholds(self) -> None:
         """Boundary: the Semgrep rule's edges, flags and the | 0o111 form."""
         cases = {

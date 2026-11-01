@@ -32,7 +32,7 @@ if str(REPO) not in sys.path:
 
 from scripts.lib.safe_subprocess import run  # noqa: E402 - needs the repository root
 
-RULES = "S103,S603,S607"
+RULES = "S103,S602,S603,S607"
 SCOPES = ("python/", "testdata/")
 HEADER_LINES = 5
 FORK_SPDX = "SPDX-License-" + "Identifier: EUPL-1.2"  # split: REUSE reads the literal
@@ -60,19 +60,26 @@ def _wide_mode(mode: ast.expr) -> bool:
     return bool(names & WIDE_STAT_FLAGS)
 
 
+def _mode_arg(call: ast.Call) -> ast.expr | None:
+    """The mode a chmod-family call passes, positionally or as ``mode=``."""
+    if len(call.args) > MODE_ARG:
+        return call.args[MODE_ARG]
+    return next((kw.value for kw in call.keywords if kw.arg == "mode"), None)
+
+
 def mode_findings(path: str) -> list[str]:
     """'path:line: mode' for each os.chmod-family call with a mode Semgrep reports."""
     tree = ast.parse(Path(path).read_text(encoding="utf-8"), filename=path)
     found: list[str] = []
     for node in ast.walk(tree):
-        if not isinstance(node, ast.Call) or len(node.args) <= MODE_ARG:
+        if not isinstance(node, ast.Call):
             continue
         func = node.func
         if not (isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name)):
             continue
-        if func.value.id == "os" and func.attr in CHMOD_CALLS and _wide_mode(node.args[MODE_ARG]):
-            mode = ast.unparse(node.args[MODE_ARG])
-            found.append(f"{path}:{node.lineno}: os.{func.attr} mode {mode}")
+        mode = _mode_arg(node)
+        if func.value.id == "os" and func.attr in CHMOD_CALLS and mode and _wide_mode(mode):
+            found.append(f"{path}:{node.lineno}: os.{func.attr} mode {ast.unparse(mode)}")
     return found
 
 

@@ -414,6 +414,18 @@ class FetchBundleTest(unittest.TestCase):
         self.assertEqual(done.returncode, 2)
         self.assertIn("unknown-bundle is not a recognized bundle", done.stderr)
 
+    def test_print_bundle_sha_empty_name_refused(self) -> None:
+        """Negative: an empty name is refused, not read as the default bundle."""
+        done = run_bash(str(SCRIPT), "--print-bundle-sha", "")
+        self.assertEqual(done.returncode, 2)
+        self.assertIn("is not a recognized bundle", done.stderr)
+
+    def test_empty_bundle_option_refused(self) -> None:
+        """Negative: --bundle with an empty name stops instead of fetching every fixture."""
+        done = run_bash(str(SCRIPT), "--bundle", "")
+        self.assertEqual(done.returncode, 2)
+        self.assertIn("--bundle requires a bundle name", done.stderr)
+
 
 # "${a[@]}" of an empty array is an unbound variable under set -u in Bash before 4.4,
 # which macOS runners ship (3.2); ${a[@]+"${a[@]}"} expands to nothing there instead.
