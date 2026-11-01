@@ -701,6 +701,30 @@ int vmaf_feature_extractor_impl_select(VmafFeatureExtractor *fex, VmafFeatureExt
     return 0;
 }
 
+namespace
+{
+
+/* True when key names one of the extractor's options, by name or by alias. */
+[[nodiscard]] bool option_key_known(const VmafOption *options, const char *key) noexcept
+{
+    for (unsigned j = 0; options[j].name; j++) {
+        const VmafOption *opt = &options[j];
+        if (strcmp(key, opt->name) == 0 || (opt->alias && strcmp(key, opt->alias) == 0))
+            return true;
+    }
+    return false;
+}
+
+/* Reports key as the first option the extractor does not know; always false. */
+[[nodiscard]] bool refuse_option_key(const char **missing_key, const char *key) noexcept
+{
+    if (missing_key)
+        *missing_key = key;
+    return false;
+}
+
+} // namespace
+
 bool vmaf_feature_extractor_supports_options(const VmafFeatureExtractor *fex,
                                              const VmafDictionary *opts_dict,
                                              const char **missing_key)
@@ -711,32 +735,14 @@ bool vmaf_feature_extractor_supports_options(const VmafFeatureExtractor *fex,
     if (!opts_dict || opts_dict->cnt == 0 || !opts_dict->entry)
         return true;
 
-    if (!fex || !fex->options) {
-        if (missing_key)
-            *missing_key = opts_dict->entry[0].key;
-        return false;
-    }
+    if (!fex || !fex->options)
+        return refuse_option_key(missing_key, opts_dict->entry[0].key);
 
     for (unsigned i = 0; i < opts_dict->cnt; i++) {
         const char *key = opts_dict->entry[i].key;
-        if (!key)
-            continue;
-
-        bool found = false;
-        for (unsigned j = 0; fex->options[j].name; j++) {
-            const VmafOption *opt = &fex->options[j];
-            if (strcmp(key, opt->name) == 0 || (opt->alias && strcmp(key, opt->alias) == 0)) {
-                found = true;
-                break;
-            }
-        }
-        if (!found) {
-            if (missing_key)
-                *missing_key = key;
-            return false;
-        }
+        if (key && !option_key_known(fex->options, key))
+            return refuse_option_key(missing_key, key);
     }
-
     return true;
 }
 
