@@ -57,6 +57,7 @@
   "known_files": [
     ".clang-format",
     ".clang-tidy",
+    ".codacy.yml",
     ".codespellrc",
     ".cppcheck-suppressions.txt",
     ".dockerignore",
@@ -307,6 +308,7 @@
         "LICENSES/*",
         "LICENSES/**",
         ".markdownlint.json",
+        ".codacy.yml",
         ".codespellrc"
       ]
     },
