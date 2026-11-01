@@ -1160,6 +1160,14 @@ repos:
         pass_filenames: false
         stages: [pre-commit, pre-push]
 
+      - id: ffmpeg-patch-contract-tests
+        name: core/test contract scripts that read the FFmpeg patch series, and no retired patch named in live files
+        entry: bash -c 'python3 -B scripts/ci/run_ffmpeg_patch_contract_tests.py && python3 -B scripts/ci/tests/test_run_ffmpeg_patch_contract_tests.py'
+        language: system
+        files: '^(ffmpeg-patches/|core/|dev/|docker/|tools/|mcp-server/|python/|\.github/|scripts/|AGENTS\.md$|Makefile$|build-config\.env$|\.pre-commit-config\.yaml$)'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
+
       - id: ffmpeg-input-contract
         name: FFmpeg VMAF input-order contract and red-cap tests
         entry: make ffmpeg-input-contract

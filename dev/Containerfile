@@ -988,7 +988,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # NOTE: libaom (Alliance for Open Media reference AV1 encoder) is
 # intentionally NOT built or enabled.
 #
-# The fork's `ffmpeg-patches/0007-libvmaf-tune-qpfile-unified.patch`
+# The fork's `ffmpeg-patches/0001-codec-qpfile-unified.patch`
 # adds a `qpfile_aom_apply_roi` helper to `libavcodec/libaomenc.c`
 # that references `aom_roi_map_t` fields (`enabled`, `skip`,
 # `ref_frame`, `delta_qp_enabled`) that DO NOT EXIST in any released
@@ -1006,7 +1006,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # pipelines. Dropping it from the in-image FFmpeg costs `libaom-av1`
 # in the compare-sweep matrix but keeps the fork's patch stack
 # rebase-stable. Re-enabling libaom requires first fixing
-# `ffmpeg-patches/0007-libvmaf-tune-qpfile-unified.patch` to either
+# `ffmpeg-patches/0001-codec-qpfile-unified.patch` to either
 # (a) target a libaom version that actually ships the assumed ROI
 # fields, or (b) make the ROI bridge libaom-version-gated (mirror
 # the SVT-AV1 `>= 1.6.0` log-and-continue pattern already in the

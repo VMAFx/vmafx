@@ -35,6 +35,11 @@ CALL = "vmafx_context_set_default_color(s->context,"
 SITE = "int ret = vmafx_declare_input_color(ctx, s, ref, dist);"
 
 
+def flat(text: str) -> str:
+    """The text with every whitespace run as one space: line breaks are layout, not mapping."""
+    return " ".join(text.split())
+
+
 class InputColorimetryTests(unittest.TestCase):
     def setUp(self) -> None:
         self.text = SOURCE.read_text(encoding="utf-8")
@@ -42,7 +47,13 @@ class InputColorimetryTests(unittest.TestCase):
     def test_every_attribute_is_mapped(self) -> None:
         for line in MAPPINGS:
             with self.subTest(line=line):
-                self.assertIn(line, self.text)
+                self.assertIn(flat(line), flat(self.text))
+
+    def test_a_missing_mapping_is_refused(self) -> None:
+        """Negative: the source without one mapping no longer holds it."""
+        dropped = flat(self.text).replace(flat(MAPPINGS[0]), "")
+        self.assertNotIn(flat(MAPPINGS[0]), dropped)
+        self.assertIn(flat(MAPPINGS[1]), dropped)
 
     def test_an_input_with_an_unnamed_attribute_stays_unspecified(self) -> None:
         self.assertIn(UNSPECIFIED, self.text)
