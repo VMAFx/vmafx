@@ -17,7 +17,14 @@ vmafx = { path = "/path/to/your-fork/bindings/rust/vmafx" }
 
 Install libvmaf development headers and a linkable library from the same
 revision as the bindings. Follow the [source build guide](../getting-started/index.md#build-from-source-any-platform)
-and install to your chosen prefix. Rust and libclang are needed for bindgen;
+and install to your chosen prefix. Note that a default build of libvmaf links
+against `libzimg` ([ADR-3396](../adr/3396-zimg-on-by-default.md)), so
+`libzimg-dev` (Linux), `brew install zimg` (macOS), or
+`vcpkg install zimg:x64-windows-static-md pkgconf:x64-windows-static-md`
+(Windows, see the
+[Windows install guide](../getting-started/install/windows.md)) is required
+unless configured
+with `-Denable_zimg=false`. Rust and libclang are needed for bindgen;
 the Rust build does not compile the C core or require GPU SDKs itself.
 
 `vmafx-sys` searches `LIBVMAF_PREFIX` first when set, then `/usr/local`, then
@@ -99,6 +106,10 @@ Transitive
 system dependencies (`pthread`, `m`, C++ runtime `stdc++`/`c++`, and optional
 dependencies
 such as `dl`) are parsed directly from Meson pkg-config metadata and linked.
+The vendored core builds with zimg by default, so `libzimg-dev` (Linux) or
+`brew install zimg` (macOS) and the `pkg-config` tool are required: the build
+reads the `Requires` lines of that metadata and asks `pkg-config` for each
+module's link flags, and stops by name when one does not resolve.
 
 There is no silent fallback to system libraries when `vendored` is enabled. If
 the

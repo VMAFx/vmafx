@@ -446,7 +446,8 @@ TIDY_RATCHET_SETUP_sycl := -Denable_sycl=true -Dsycl_icpx_aot_targets= \
 	-Denable_cuda=false -Denable_hip=false -Denable_dnn=enabled -Db_lto=false
 TIDY_RATCHET_SETUP_arm64 := --cross-file build-aux/aarch64-linux-gnu.ini \
 	--cross-file build-aux/aarch64-linux-gnu-qemu-user.ini \
-	-Denable_cuda=false -Denable_sycl=false -Denable_dnn=disabled -Db_lto=false
+	-Denable_cuda=false -Denable_sycl=false -Denable_dnn=disabled -Denable_zimg=false \
+	-Db_lto=false
 TIDY_RATCHET_SETUP_integrations := -Denable_cuda=false -Denable_sycl=false \
 	-Denable_dnn=disabled -Db_lto=false
 TIDY_RATCHET_SETUP_rust := -Denable_cuda=false -Denable_sycl=false \
@@ -689,6 +690,7 @@ GOLDEN_PYTEST_ARGS := \
 	-v -m "not slow" --tb=short
 test-netflix-golden: build-golden
 	@echo "=== Netflix CPU golden-data gate (D24) ==="
+	bash scripts/test/fetch-test-yuvs.sh --bundle pq-sollevante-v1
 	@python3 -m pytest --version >/dev/null 2>&1 || { \
 	    echo "error: pytest not found — this gate cannot run without it."; \
 	    echo "       install: .venv/bin/pip install pytest (see docs/development/languages.md)"; exit 1; }
@@ -724,6 +726,7 @@ test-affected:
 QEMU_LD_PREFIX ?= $(AARCH64_SYSROOT)
 test-netflix-golden-arm64: build-golden-arm64
 	@echo "=== Netflix CPU golden-data gate, aarch64 $(GOLDEN_ARM64_CC) under qemu-user ==="
+	bash scripts/test/fetch-test-yuvs.sh --bundle pq-sollevante-v1
 	@python3 -m pytest --version >/dev/null 2>&1 || { \
 	    echo "error: pytest not found — this gate cannot run without it."; \
 	    echo "       install: .venv/bin/pip install pytest (see docs/development/languages.md)"; exit 1; }

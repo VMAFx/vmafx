@@ -5,7 +5,6 @@
 # Format: <full 40-hex sha>\t<state>\t<reference>
 # States: ported, in-fork, not-applicable
 # Reference: fork PR (#NNNN), fork commit sha, or one-line reason.
-
 3e1385bed675f350feb6b4122cc5d180e35937ae	in-fork	#2642
 a8f536b9ada29172a0e0a2a9fe3733825ce916e8	in-fork	#2638
 03981a80ef5039173646dcd5783988c5c0eaf0a2	in-fork	#2121
@@ -47,6 +46,6 @@ cf9a6ec51bd0aa9e6a6e062ff6302d5d7669b603	ported	#2871 (524ea630e)
 94f3ff0dd8d0062e39b27d0eadfc57457022b663	ported	#2874 (3697b7727)
 272c5967701017b90a0ebcff24205e59dbba6421	ported	port/272c596770 (colour resolved on the context, ADR-1822)
 5a50df8afbdf8c8852dc39d942fb7e3b4dcb0488	not-applicable	fork CI has no gcc-9 leg (libvmaf-build-matrix.yml builds gcc-14/clang-22 on ubuntu-26.04)
-f712fa7564fe49b12991d83920b83573af2ae063	ported	libvmaf-build-matrix.yml row "Ubuntu gcc zimg"
+f712fa7564fe49b12991d83920b83573af2ae063	ported	every Linux leg builds with zimg, default on, ADR-3396
 74f930d17de8c58e7c2ce55e2b897b0030ebd8ef	ported	#2999 (287ead8eb)
 4611e47a7330cd342498dcc130e1008efbeab6e4	ported	port/netflix-4611e47a7

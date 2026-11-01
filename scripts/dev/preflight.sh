@@ -173,7 +173,7 @@ if want gcc; then
   # A configured build has build.ninja; a bare build/ may only hold other
   # build trees (build/cuda, ...), and reusing it would fail at ninja.
   if [ -f build/build.ninja ] || CC=gcc CXX=g++ meson setup build core \
-    -Denable_cuda=false -Denable_sycl=false -Db_lto=false >/dev/null 2>&1; then
+    -Denable_cuda=false -Denable_sycl=false -Db_lto=false >/tmp/preflight-gcc-setup.log 2>&1; then
     if ninja -C build >/tmp/preflight-gcc.log 2>&1 &&
       python3 scripts/ci/run_meson_test.py -- -C build --suite=fast \
         >>/tmp/preflight-gcc.log 2>&1; then
@@ -184,7 +184,7 @@ if want gcc; then
         echo "     (no matching lines in /tmp/preflight-gcc.log)"
     fi
   else
-    skipped gcc "meson setup failed"
+    skipped gcc "meson setup failed, see /tmp/preflight-gcc-setup.log"
   fi
 fi
 
@@ -196,7 +196,7 @@ if want clang; then
   if ! command -v clang >/dev/null; then
     skipped clang "clang not installed"
   elif [ -d build-clang ] || CC=clang CXX=clang++ meson setup build-clang core \
-    -Denable_cuda=false -Denable_sycl=false -Db_lto=false >/dev/null 2>&1; then
+    -Denable_cuda=false -Denable_sycl=false -Db_lto=false >/tmp/preflight-clang-setup.log 2>&1; then
     if ninja -C build-clang >/tmp/preflight-clang.log 2>&1 &&
       python3 scripts/ci/run_meson_test.py -- -C build-clang --suite=fast \
         >>/tmp/preflight-clang.log 2>&1; then
@@ -207,7 +207,7 @@ if want clang; then
         echo "     (no matching lines in /tmp/preflight-clang.log)"
     fi
   else
-    skipped clang "meson setup failed"
+    skipped clang "meson setup failed, see /tmp/preflight-clang-setup.log"
   fi
 fi
 

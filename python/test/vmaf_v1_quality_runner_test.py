@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: BSD-2-Clause-Patent
 from __future__ import absolute_import
 
+import os
 import subprocess
 import unittest
 from test.testutil import (
@@ -16,6 +17,11 @@ from vmaf.tools.misc import MyTestCase
 
 __copyright__ = "Copyright 2016-2020, Netflix, Inc."
 __license__ = "BSD+Patent"
+
+
+# Set only on the CI leg built with -Denable_zimg=false: there the HDR cases assert the
+# refusal that names zimg. A build with zimg fails that assertion.
+EXPECT_NO_ZIMG = os.environ.get("VMAF_EXPECT_NO_ZIMG") == "1"
 
 
 def hdr_conversion_available():
@@ -138,6 +144,11 @@ class VmafV1QualityRunnerTest(MyTestCase):
         )
         self.assertAlmostEqual(results[0]["VMAFEXEC_score"], 82.81605935416667, places=4)
 
+    def _refused_without_zimg(self):
+        if EXPECT_NO_ZIMG:
+            self.assertFalse(hdr_conversion_available(), "scored without zimg")
+        return EXPECT_NO_ZIMG
+
     def _run_hdr_exec(self, matrix):
         if not hdr_conversion_available():
             self.fail("vmaf was built without zimg support")
@@ -161,6 +172,8 @@ class VmafV1QualityRunnerTest(MyTestCase):
         return self.runner.results[0]
 
     def test_hdr_v118_3d0h_converts_bt2020nc_to_ictcp_exec(self):
+        if self._refused_without_zimg():
+            return
         result = self._run_hdr_exec("bt2020nc")
         # Regression values for the current conversion (zimg with approximate gamma, as
         # zscale does by default), with the 576x324 fixture upscaled to the model's 1080
@@ -177,6 +190,8 @@ class VmafV1QualityRunnerTest(MyTestCase):
         )
 
     def test_hdr_v118_3d0h_ictcp_tag_skips_colorspace_conversion_exec(self):
+        if self._refused_without_zimg():
+            return
         # Same BT.2020nc samples mislabeled as ICtCp: only the bit depth is converted,
         # (and the size scaled), so the values differ from the converted ones above.
         result = self._run_hdr_exec("ictcp")

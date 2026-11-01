@@ -25,7 +25,7 @@ brew install \
   meson ninja nasm pkg-config \
   llvm cppcheck \
   python@3.12 \
-  git doxygen ffmpeg
+  git doxygen ffmpeg zimg
 
 # llvm provides clang-tidy/clang-format not shipped with Apple's clang.
 CLANG_BIN="$(brew --prefix llvm)/bin"

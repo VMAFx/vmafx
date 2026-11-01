@@ -22,7 +22,7 @@ apk add --no-cache \
     build-base clang clang-extra-tools cppcheck \
     meson ninja nasm pkgconf \
     python3 py3-pip py3-virtualenv \
-    doxygen
+    doxygen zimg-dev
 ```
 
 ## Build

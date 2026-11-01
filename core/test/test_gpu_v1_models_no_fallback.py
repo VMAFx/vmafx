@@ -39,8 +39,9 @@ check stops seeing fallbacks.
 ``--self-test`` runs the comparison on synthetic receipts without a device.
 
 Exit 77 (skip) when this build was configured without the backend, the CLI
-refuses the backend (exit 100: no device), or an SDR fixture is absent; the
-reason is printed. Device runs take the device's lock under ``VMAFX_LOCK_DIR``
+refuses the backend (exit 100: no device; probed on a blank picture before any
+row, so a leg without a device needs no fixture), or an SDR fixture is absent;
+the reason is printed. Device runs take the device's lock under ``VMAFX_LOCK_DIR``
 (default ``~/.cache/vmafx-locks``) when that directory exists, with a 300 s
 limit inside the lock.
 """
@@ -73,6 +74,7 @@ MODEL_GLOB = V1_MODEL_GLOB
 DEFAULT_LABEL = "default"
 SKIP = 77
 EXIT_BACKEND_REFUSED = 100
+PROBE_SIZE = 256
 EXIT_OOM = 244
 ERRNO_ENOMEM = -12
 NEGATIVE_12 = re.compile(r"(?<![\w-])-12\b")
@@ -327,6 +329,19 @@ class Refused(Exception):
     """The CLI refused the device backend: nothing on this host to compare."""
 
 
+def probe_device(runner: Runner) -> None:
+    """Raise Refused when this host has no device; any other outcome is for the rows to judge."""
+    blank = runner.workdir / "probe.yuv"
+    blank.write_bytes(bytes(PROBE_SIZE * PROBE_SIZE * 3))  # two 8-bit 4:2:0 frames
+    size = str(PROBE_SIZE)
+    argv = [str(runner.vmaf), "-r", str(blank), "-d", str(blank), "-w", size, "-h", size]
+    argv += ["-p", "420", "-b", "8", "--no_prediction", "--feature", "adm"]
+    argv += ["--json", "-o", str(runner.workdir / "probe.json"), "--backend", runner.backend]
+    code, err = runner.run(argv, on_device=True)
+    if code == EXIT_BACKEND_REFUSED:
+        raise Refused(err.strip())
+
+
 def vram_precheck(backend: str, model: str, fixture: Fixture) -> None:
     """Print CUDA free memory vs estimated requirement before a device run."""
     if backend != "cuda":
@@ -483,6 +498,7 @@ def device_main(backend: str) -> int:
     with tempfile.TemporaryDirectory(prefix=f"models-{backend}-") as tmp:
         runner = Runner(cli, backend, Path(tmp), lock_prefix(backend))
         try:
+            probe_device(runner)
             return report(runner, v1_models, hdr_versions)
         except Refused as refused:
             sys.stderr.write(f"--backend {backend} refused: {refused}; skipping ({SKIP})\n")
@@ -556,6 +572,26 @@ def check_zimg_refusal_fails() -> bool:
         return False
 
 
+@dataclasses.dataclass(frozen=True)
+class StubRunner(Runner):
+    """A Runner whose CLI answers with one fixed exit code."""
+
+    code: int = 0
+
+    def run(self, argv: list[str], *, on_device: bool) -> tuple[int, str]:
+        return self.code, "stub CLI"
+
+
+def probe_refuses(code: int) -> bool:
+    """True when the device probe reads this CLI exit code as no device."""
+    with tempfile.TemporaryDirectory(prefix="models-probe-") as tmp:
+        try:
+            probe_device(StubRunner(Path("vmaf"), "cuda", Path(tmp), (), code))
+        except Refused:
+            return True
+    return False
+
+
 def hdr_self_test_cases() -> list[tuple[str, bool]]:
     """Synthetic cases for HDR models, zimg refusal and device OOM."""
     hdr_cpu = receipt("cpu", [("adm", "cpu"), ("vif", "cpu")], 78.5)
@@ -576,6 +612,9 @@ def hdr_self_test_cases() -> list[tuple[str, bool]]:
             == [("hdr", fixture) for fixture in HDR_FIXTURES],
         ),
         ("rows not run skip, never pass", final_status(0, None, FIXTURES) == SKIP),
+        ("probe: no device skips", probe_refuses(EXIT_BACKEND_REFUSED)),
+        ("probe: device present runs the rows", not probe_refuses(0)),
+        ("probe: another failure stays with the rows", not probe_refuses(1)),
         ("failure outranks rows not run", final_status(1, None, FIXTURES) == 1),
         ("all rows run and equal pass", final_status(0, None, ()) == 0),
         (

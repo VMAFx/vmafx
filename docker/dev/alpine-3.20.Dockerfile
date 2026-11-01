@@ -8,7 +8,7 @@ RUN apk add --no-cache \
       python3 py3-pip \
       git curl wget \
       doxygen shellcheck shfmt \
-      ffmpeg-dev
+      ffmpeg-dev zimg-dev
 
 COPY . /vmaf
 WORKDIR /vmaf

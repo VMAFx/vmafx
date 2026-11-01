@@ -326,6 +326,16 @@
   [window scores](docs/api/vmafx/windows.md).
 
 
+- **Per-backend performance baseline harness measures the 16 newest models.**
+  `testdata/bench_backends.py` supports all 16 newest built-in models
+  (8 SDR `vmaf_v1.0.16*` and 8 HDR `hdr_vmaf_v1.1.8*`), adds colorimetry and
+  pixel format definitions for PQ fixtures (`sollevante_pq_1080p`), enforces
+  model-to-fixture compatibility (HDR models on SDR fixtures strictly
+  refused), and validates backend engagement from `backend_used` and
+  `feature_backends` to prevent silent fallback. Per-backend baseline throughput
+  is published in [`docs/benchmarks.md`](docs/benchmarks.md#newest-models-2026-10-31-commit-bdd7f9c70).
+
+
 - **CI lints the protobuf contract and refuses wire breaks
   ([ADR-3329](docs/adr/3329-ci-buf-lint-breaking.md)).** The new `Buf Lint + Breaking` job of
   `lint-and-format.yml` runs `buf lint` and `buf breaking` (`WIRE_JSON`) on `proto/` against the
@@ -485,6 +495,15 @@
   `contract`, `provenance`) on every pull request that touches the core, the
   patches or the workflows
   ([Checking a vmafx build](docs/usage/ffmpeg.md#checking-a-vmafx-build)).
+
+
+- **Device gate coverage for all eight HDR VMAF models on every GPU backend.** `core/test/test_gpu_v1_models_no_fallback.py` extends whole-model device testing to the eight built-in `hdr_vmaf_v1.1.8*` models scored on 1-frame PQ dock and 16-frame tagged fixtures with BT.2020/SMPTE-2084 colorimetry, asserting bit-identical parity against CPU runs and zero CPU extractor fallback. Builds without zimg conversion support fail explicitly naming zimg rather than skipping. CUDA runs pre-check free VRAM against display-size lower bounds, and Metal is registered under `enable_metal`.
+
+
+- **The GStreamer element is built and tested in CI (ADR-3390).** The required
+  check `GStreamer Element` builds the element on the commit's library, holds
+  its installed properties to `core/api/vmafx.toml` and its scores to the CLI;
+  it runs when the element, the library or the definition changes (#2474).
 
 
 - **The `vmafx` GStreamer element's properties are tested against the API definition (#2474).**
@@ -793,6 +812,14 @@
   [ADR-1713](docs/adr/1713-rc4-rust-extractor-framework.md).
 
 
+<!-- markdownlint-disable MD041 -->
+- **The tiny-model registry records each model's teacher.** `teacher` is a
+  required field in `model/tiny/registry.schema.json`: a model id under
+  `model/`, `none` (no VMAF teacher) or `unknown` (the tree holds no record of
+  one). All 26 rows in `model/tiny/registry.json` carry it, and the training and
+  export scripts write it.
+
+
 - A weekly research radar over public video-quality sources: a public source registry (`docs/research/radar/sources.yaml`), a scheduled digest workflow (`research-radar.yml`, `scripts/research/radar_collect.py`) and a documented triage procedure with a licence and patent gate ([ADR-2171](docs/adr/2171-research-radar.md), [docs/research/radar/](docs/research/radar/README.md)).
 
 
@@ -839,6 +866,20 @@
   `--feature motion_rust`) computes `motion_sad_score`, `motion2` and `motion3`,
   including the five-frame window and the moving average, in Rust; the default
   stays the C extractor. See [Motion](docs/metrics/motion.md#rust-implementation).
+
+
+<!-- Copyright 2026 Lusoris -->
+<!-- SPDX-License-Identifier: EUPL-1.2 -->
+<!-- markdownlint-disable MD041 -->
+
+- Add `vendored` feature to `vmafx-sys` to compile and statically link the
+  CPU-only C core from `OUT_DIR` using Meson and Ninja. System mode requires
+  both `libvmaf` and `libvmafx` development files installed; vendored mode links
+  statically so built binaries require no runtime library installation.
+  When neither library is found and `vendored` is off, a named build error
+  directs callers to set `LIBVMAF_PREFIX`, install development files, or enable
+  `vendored`. The vendored source directory defaults to `core/` and can be
+  overridden via `VMAFX_VENDOR_DIR`.
 
 
 - **The scoring contract test covers gRPC `ScoreStream` (#2155).**
@@ -1063,6 +1104,12 @@
 
 
 - Generate the Go cgo binding of the VMAFx C API (`pkg/vmafx/api_gen.go`) from `core/api/vmafx.toml` with compile-time struct layout assertions, record types, `Context` methods, library functions, and structured `*Error` / `ErrPending` diagnostics (issue 2434).
+
+
+- Generate the full Python `ctypes` binding of the VMAFx C API (`bindings/python/vmafx/_api.py` and `bindings/python/pyproject.toml`) from `core/api/vmafx.toml` with buffer-protocol host frames, window and log callbacks, retry-safe `Context.close()`, and `NOT_WRAPPED` coverage checks (issue 2434).
+
+
+- **rust**: generate the FFI and safe Rust bindings of the VMAFx C API (`vmafx-sys`, `vmafx`) from `core/api/vmafx.toml` (#2434)
 
 
 - **Model and feature specification strings in the VMAFx API (RC4 WP9, ABI 0.1.11).**
@@ -1558,6 +1605,9 @@
   runs today changes: none of the golusoris packages VMAFx imports changed.
 
 
+- **HDR pins hold 5 decimal places on x86-64 and 3 on aarch64 and macOS.** libvmaf scores identical converted pictures bit-exact on every platform; the zimg conversion to ICtCp rounds differently on aarch64 and macOS, by up to 3.5e-4 on the pooled score. See [HDR models](docs/models/v1.md#hdr-models).
+
+
 - **The chart no longer sets `VMAFX_BACKEND` on the scoring server.** The
   server's Deployment, StatefulSet and Job carried it, but `vmafx-server`
   never read it: it takes its backend from each request's `backend` score
@@ -2006,6 +2056,9 @@
   [`docs/README-STANDARD.md`](docs/README-STANDARD.md).
 
 
+- **The README support section says what sponsorship pays for.** It now names the costs (CI time, cloud GPU test time, an AI workstation), states that no support or priority is sold, and keeps one list of sponsor links.
+
+
 - **The plan for reference-exact extractors is written down.**
   [ADR-2343](docs/adr/2343-reference-exact-default-compat-mode.md) records that RC7 proves every
   extractor against its original implementation, that the default becomes reference-exact with
@@ -2190,6 +2243,12 @@
   keeps integer AIM unclipped. Documentation only.
 
 
+- **The controller store's test helper moved to
+  `cmd/vmafx-controller/internal/storetest`.** Only tests ever imported the
+  package. Digest updates of its PostgreSQL images no longer read as an
+  incompatible API change.
+
+
 - **SYCL: the exact SpEED covariance runs as a split chain
   ([ADR-2690](docs/adr/2690-sycl-speed-covariance-fast-exact.md)).** The
   differences and products are formed in parallel and stored as fp64 bit
@@ -2354,6 +2413,9 @@
   option changes.
 
 
+- **`enable_zimg` is on by default ([ADR-3396](docs/adr/3396-zimg-on-by-default.md)).** Default builds now include `vmaf_picture_convert` colourspace, bit depth and size conversion via [zimg](https://github.com/sekrit-twc/zimg) >= 2.7, enabling CLI HDR PQ auto-selection (`hdr_vmaf_v1.1.8_3d0h`) out-of-the-box. If `zimg` is missing, `meson setup` halts with an explicit error naming `zimg >= 2.7`, `pkg-config`, and `-Denable_zimg=false`. Opting out via `-Denable_zimg=false` continues to build cleanly without zimg, where HDR conversion returns `-ENOTSUP`. Published images and distribution bundles carry libzimg under WTFPL.
+
+
 ### Fixed
 
 - ADR tooling: `scripts/adr/next-free.sh --claim` no longer hands two parallel
@@ -2374,10 +2436,19 @@
   ([adr-workflow](docs/development/adr-workflow.md#why-use-claim)).
 
 
+- CI: ADR Collision Guard fetches without `--depth` so tip grafts do not break `--is-ancestor` descendant checks.
+
+
 - ADR workflow guide: step 4 no longer tells contributors to append to the
   frozen `docs/adr/_index_fragments/_order.txt`, and step 6 no longer stages the
   rendered index, tag and title pages or `CHANGELOG.md`, which a pull request
   must not carry ([adr-workflow](docs/development/adr-workflow.md)).
+
+
+- CI: the Required Checks Aggregator waits out GitHub API 5xx answers for 15
+  minutes. A longer outage fails the job with `Transient GitHub API failure:`
+  instead of an unhandled `HttpError`, so it reads as a rerun and not as a code
+  failure.
 
 
 - CI: the required-checks aggregator of a master push no longer reads the check runs of a scheduled
@@ -2407,6 +2478,12 @@
   target writes `except A, B:` clauses that the packages supporting Python 3.10 to 3.13 cannot
   parse. The change also resubmits the root dependency graph, which still listed setuptools
   84.0.0 and 84.2.0 after every manifest moved to 84.2.1.
+
+
+- CI: squash commits merged automatically by Renovate or scheduled render jobs
+  now carry an explicit commit body with sign-off and no tool or bot
+  `Co-authored-by:` lines, and pushes to `master` verify landed squash bodies
+  against disallowed trailers ([ADR-3389](docs/adr/3389-landed-commit-message-gate.md)).
 
 
 - CI: the `build.yml` legs (`Linux Intel LLVM`, `macOS Clang+Metal`,
@@ -2451,6 +2528,9 @@
   legs' required checks red (`scripts/ci/gate_leg_result.py`).
 
 
+- CI: HDR model score pins (`python/test/hdr_models_pin_test.py` and `python/test/vmaf_v1_quality_runner_test.py`) run in every Netflix CPU golden gate and coverage gate CI job with zimg enabled (`-Denable_zimg=true`, `libzimg-dev`). Builds without zimg fail naming the dependency instead of skipping silently, and `scripts/ci/check_required_tests_ran.py` verifies no required HDR test is skipped or absent.
+
+
 - **System-wide Python installs no longer fail on a distribution-installed package.** Since the
   build lock pins PyYAML 6.0.3, `sudo pip3 install --break-system-packages` stopped on Ubuntu's
   `python3-yaml` 6.0.1 (`Cannot uninstall PyYAML 6.0.1, RECORD file not found`), which turned the
@@ -2458,6 +2538,9 @@
   `docker/Dockerfile.production-gpu` and `mcp-server/vmaf-mcp/Dockerfile` passes
   `--ignore-installed`, and `scripts/ci/check_python_dependency_locks.py` refuses an install that
   breaks system packages without it (`--user` installs are exempt).
+
+
+- Windows UCRT64 CI: the MSYS2 leg installs `python-setuptools`, which the codegen suite (`test_vmafx_api_generator`) imports, instead of failing on a missing module.
 
 
 - CI: `Check Win64 stack alignment` in the `Windows UCRT64` job stops after 15 minutes
@@ -2478,6 +2561,13 @@
   (ADR-3318) as a dependency pin, so a bot pull request that only moves the
   toolchain no longer needs the deep-dive checklist. A nested
   `rust-toolchain.toml` and a human author stay gated.
+
+
+- The dependency pull request classifier now allows the exact path
+  `cmd/vmafx-controller/internal/storetest/storetest.go`, so Renovate pull
+  requests that update only the PostgreSQL container image digests
+  (#3039) are recognized as dependency-only and pass the deliverables
+  checklist. Sibling files and other Go source under `cmd/` stay gated.
 
 
 - **Fifteen code-scanning findings are fixed in code; the provided-feature lookup no longer reads past a full list.**
@@ -2563,6 +2653,16 @@
   `docs/development/dev-mcp.md` shows the one-shot forms.
 
 
+- **The no-fallback device gate skips a leg with no device before it reads any
+  fixture.** The HDR rows made `test_gpu_v1_models_no_fallback.py` fail with
+  "fixture files not found" on legs that have neither a device nor the
+  fixtures, because the check that the CLI refuses the backend only ran inside
+  a row. A probe on a blank picture now settles that first; with a device
+  present, an absent fixture still fails the gate. The macOS Metal CI leg now
+  fetches the gate's YUV pairs before running the meson tests so device-resident
+  HDR runs find their fixtures.
+
+
 - Documentation: the FFmpeg commands that make the distorted test clips in `docs/benchmarks.md` and `docs/usage/bench.md` encode with libx264 again (one piped raw video into a decoder that expected raw frames and failed, the other wrote a copy of the reference), and the `vmaf_pre` example of `docs/ai/models/learned_filter_v1.md` gives raw inputs their pixel format and size (#2477).
 
 
@@ -2585,6 +2685,9 @@
   lines missed by the ADR-0861 sweep. Those lines are removed while preserving Lusoris
   copyright and SPDX licence identifiers, and `scripts/dev/relicense_fork_files.py --check`
   now fails if a header copyright notice names a prohibited vendor or tool.
+
+
+- **SVT-AV1 saliency now uses the measured patched FFmpeg `-qpfile` bridge.** Go and Python write an x264-style 16x16 macroblock file that patch 0007 maps to 64x64 superblocks with at most eight segments. The previous `-svtav1-params qp-file=` key could be rejected while FFmpeg exited zero, silently losing the map. VVenC saliency is refused because no ROI-map channel exists; callers can explicitly accept a plain encode. Legacy public helpers remain available for API stability ([ADR-3386](docs/adr/3386-encoder-roi-channels-measured.md), #2477 P4-13).
 
 
 - **A score read of a frame still on a worker thread answered "invalid"
@@ -2629,6 +2732,13 @@
   `Tooling Tests` failed intermittently with `cp: cannot stat .git/objects/..`. The
   helper now sets `maintenance.auto=false` and `gc.auto=0`, and
   `scripts/ci/test_git_fixture_isolation.py` fails when it stops doing so.
+
+
+- **Data-only fixture prereleases now carry build provenance.** A
+  `fixtures-*` prerelease without a signed asset lowered the Scorecard
+  Signed-Releases score; `fixture-release-provenance.yml` attests the published
+  asset after checking its sha256 and uploads the bundle
+  ([release guide](docs/development/release.md)).
 
 
 - **`float_psnr` and `ciede` score 9, 11, 13, 14 and 15 bits; the CPU `float_*` extractors read them correctly (ADR-2164).**
@@ -2731,6 +2841,14 @@
   the index pollution and the test failed on the framework update.
 
 
+- **Integer ADM sizes detail sub-band working buffers for the low-resolution scale.**
+  `init_buffers()` in `integer_adm.c` previously allocated full scale-0 buffers (`buf_sz_one`)
+  for all 18 scale 1..3 integer detail bands. Sizing them with `buf_sz_s1` based on
+  `rows_s1 = ((h + 1) / 2 + 1) / 2 + 2` reduces working memory allocation by approximately
+  half for these bands while maintaining sufficient rows for multi-scale DWT decomposition (port of
+  Netflix/vmaf 4611e47a7).
+
+
 - **`vif` reads only the samples of each row (Netflix/vmaf `9f4bd165f`).**
   The integer VIF extractor copied a whole picture stride per luma row into
   its buffer. A picture whose stride is wider than its rows and whose last row
@@ -2766,6 +2884,14 @@
   `jq -c`, `bash -c` or another tool's own `-c` / `-r` / `-e` flag; it reads those flags as a
   requirements file or an editable target only in a pip-like command
   (`T-LOCK-CHECKER-DASH-C-FALSE-POSITIVE-2026-10-18`).
+
+
+- **The macOS bundle script test runs in CI again.** `test_build_script_runs_to_the_end_under_bash32`
+  broke when the macOS build script started linking zimg statically from `brew --prefix zimg`,
+  because its `brew` stub printed no prefix. CI had not caught it because the RC1 Tester Report job
+  never pulled the `bash:3.2` image, so both bash 3.2 tests were skipped. The stub now serves a zimg
+  prefix, and the job pulls the image by digest and sets `VMAFX_REQUIRE_BASH32=1`, which turns a
+  missing image into a failure instead of a skip.
 
 
 - Build: libvmaf compiles on macOS again. `feature_collector.h` included C++ standard headers
@@ -2830,6 +2956,15 @@
   required `Pre-Commit` job on every pull request
   ([ADR-3351](docs/adr/3351-msvcism-scan-on-light-tier.md),
   [preflight](docs/development/preflight.md)).
+
+
+- CI: Renovate's CI Node.js pull request can pass the dependency-only deliverables exemption and move Node to a new major while the engine-locked documentation workflow keeps its own major until the next engine pin move.
+
+
+- Go tests: the `cmd/vmafx-node` tests that dial the node's listeners start the graph through `startAppWithRetry`, which picks fresh loopback ports and retries up to five times when a reserved port was taken before the graph bound it (`bind: address already in use`); other start errors fail at once.
+
+
+- Go tests: `writeNodeEnv` configures `127.0.0.1:0` for gRPC and HTTP listeners so tests that do not dial avoid loopback port reservation races (`cmd/vmafx-node`).
 
 
 - CI: the hosted CUDA legs of `build.yml` and `libvmaf-build-matrix.yml` install
@@ -2978,6 +3113,9 @@
   16 only and `psnr_hvs` up to 12 (`docs/state.md`).
 
 
+- Python binding tests: `test_dnn_surface` expects `E_NOTSUP` from `set_tiny_resize` on a build without tiny-AI instead of failing every such build; with tiny-AI the call must still succeed.
+
+
 Intel Quick Sync Video (QSV) tuning now probes ICQ once per device, encoder and FFmpeg runtime, retaining `-global_quality` when it works and falling back to `-q:v` with the same quality value when it fails. Python compare/corpus JSON and Go encode/corpus results name the selected mode and fallback reason in provenance. `VMAFTUNE_QSV_RATE_CONTROL=auto|icq|cqp` controls the selection; QSV adapter version 4 separates older cached encodes.
 
 
@@ -3024,6 +3162,21 @@ Intel Quick Sync Video (QSV) tuning now probes ICQ once per device, encoder and 
   same-repository pull request the release-bot App opened, re-arms auto-merge when the branch is
   already rendered at the master tip, commits a render that adds only new files, and refuses to
   start without `RUNNER_TEMP` (ADR-3373).
+
+
+- **Renovate: update packaged Helm subchart archives on Chart.lock changes.**
+  Configures top-level `postUpdateOptions: ["helmUpdateSubChartArchives"]` in
+  `renovate.json` so subchart archive tarballs (`deploy/helm/.../charts/*.tgz`)
+  are refreshed when Renovate updates `Chart.lock` (#3045, #3047), preventing
+  `helm lint` failures caused by absent subchart packages.
+
+
+- Dependency maintenance: Renovate now updates Node.js across `build-config.env`
+  (`NODE_VERSION`), `.pre-commit-config.yaml` (`default_language_version.node`),
+  `.node-version`, and `.github/workflows/` (`node-version:`) in one pull request. Previously,
+  the built-in GitHub Actions manager updated only workflow files, leaving the
+  other pins behind and failing the single-source version gate. A custom regex
+  manager now groups them as `CI Node.js` (ADR-3312 pattern).
 
 
 - **The roadmap rows of 1.1 and 1.3 list the issues that are in those milestones.**
@@ -3220,6 +3373,19 @@ Intel Quick Sync Video (QSV) tuning now probes ICQ once per device, encoder and 
   `scripts/lib/drop-git-env.sh`.
 
 
+- **The GPU tester images find libzimg again.** Since zimg became a default dependency, the GPU
+  build stages of `docker/Dockerfile.tester` stage `libzimg.so.2` in `/opt/vmafx/lib`, but the
+  NVIDIA runtime stage did not copy that directory and none of the three GPU runtime stages had it
+  on `LD_LIBRARY_PATH`, so all three GPU image builds stopped at their `ldd` checks. The runtime stages now
+  copy and search it; `tools/rc1-tester/tests/test_dockerfile_runtime_libs.py` checks the contract
+  on every pull request.
+- **The tester images credit the libzimg they ship.** The CPU and GPU tester images copy
+  `libzimg.so.2` out of Debian's `libzimg2` package (3.0.5+ds1-1 on the pinned trixie bases), but
+  their licence manifest named upstream zimg 3.0.6. Each image now carries the package's Debian
+  copyright file and `SOURCE` record under `/usr/share/doc/libzimg2`, and the `zimg` entry of
+  `tools/rc1-tester/image/licensing.json` reads them, as the `libgomp1` entry already does.
+
+
 - CI: the `Tidy Changed` job now lints a changed C-only header (one that
   only C translation units include) through the including units that have a
   compile command in the CPU build, as the `Tidy SYCL` job already does.
@@ -3266,6 +3432,13 @@ Intel Quick Sync Video (QSV) tuning now probes ICQ once per device, encoder and 
   stated delay above `UPSTREAM_WATCH_MAX_WAIT_S` (default 120 s) or a total wait above
   `UPSTREAM_WATCH_TOTAL_WAIT_S` (default 300 s), and still fails closed when the attempts run out
   (`T-UPSTREAM-WATCH-RETRY-DELAY-2026-10-18`).
+
+
+- **The upstream watcher can no longer file issues on Netflix/vmaf.**
+  When `upstream-watcher.yml` added a remote named `upstream`, `gh` resolved its
+  base repository to upstream instead of the fork. Every job now sets
+  `GH_REPO: ${{ github.repository }}` at job level and passes `--repo`
+  to every `gh issue` command so tracking issues never target upstream.
 
 
 - **The upstream-watcher workflow waits until a new label is usable.**
@@ -3485,6 +3658,13 @@ Intel Quick Sync Video (QSV) tuning now probes ICQ once per device, encoder and 
   in `requirements/locks/manifest.json` move together with the Renovate patch update (ruff 0.17.2,
   semgrep 1.182.1, uv 0.13.5); every lock is rewritten from its manifest entry
   (`make python-locks-write`), which also moves the transitive `starlette` pin to 1.10.0.
+
+
+- **The Python hash locks are regenerated with uv 0.13.6.** The tooling-test pin and `uv_version`
+  in `requirements/locks/manifest.json` move together with the Renovate patch update (ruff 0.17.3,
+  tox 4.67.2, uv 0.13.6); every lock is rewritten from its manifest entry
+  (`make python-locks-write`), which also moves the transitive pins released since the last
+  refresh, among them click 8.5.0, mypy 2.4.1 and the CUDA 13.2 wheels.
 
 ## [1.0.0-rc.3] - 2026-10-07
 

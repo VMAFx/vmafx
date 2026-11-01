@@ -81,9 +81,9 @@ jobs:
             CC: ccache gcc-14
             CXX: ccache g++-14
             werror: true
-            zimg: true
-            meson_extra: -Denable_zimg=true
-            name: Ubuntu gcc zimg
+            zimg: false
+            meson_extra: -Denable_zimg=false # opt-out leg to test no-zimg build and -ENOTSUP paths
+            name: Ubuntu gcc no zimg
             tier: full
           # required-aggregator
           - os: ubuntu-26.04
@@ -335,7 +335,7 @@ jobs:
           *gcc)      sudo -E apt-get -yq install gcc g++ ;;
           *clang)    sudo -E apt-get -yq install clang ;;
           esac
-          if [ "${{ matrix.zimg }}" = "true" ]; then
+          if [ "${{ matrix.zimg }}" != "false" ]; then
             sudo -E apt-get -yq install libzimg-dev
           fi
 
@@ -347,7 +347,7 @@ jobs:
         run: |
           for attempt in 1 2 3; do
             echo "Attempt ${attempt} of 3: installing dependencies via brew..."
-            if brew install -q ninja nasm ccache llvm pkg-config; then
+            if brew install -q ninja nasm ccache llvm pkg-config zimg; then
               break
             fi
             if [ "${attempt}" -eq 3 ]; then
@@ -356,7 +356,7 @@ jobs:
             fi
             echo "Attempt ${attempt} failed; retrying in $((attempt * 10))s..."
             sleep $((attempt * 10))
-            brew fetch --retry ninja nasm ccache llvm pkg-config || true
+            brew fetch --retry ninja nasm ccache llvm pkg-config zimg || true
           done
 
       - name: Install Metal compiler toolchain
@@ -413,7 +413,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           sudo apt-get update
-          sudo -E apt-get -yq install ccache ninja-build nasm gcc g++ gpg-agent
+          sudo -E apt-get -yq install ccache ninja-build nasm gcc g++ gpg-agent pkg-config libzimg-dev
           # ADR-1360 (design notes)
           bash scripts/ci/install-intel-ocloc.sh
           wget -qO- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \
@@ -451,7 +451,7 @@ jobs:
         if: ${{ (matrix.cuda && !matrix.sycl) && steps.impact.outputs.c_core == 'true' }}
         run: |
           sudo apt-get update
-          sudo -E apt-get -yq install ccache ninja-build nasm gcc g++
+          sudo -E apt-get -yq install ccache ninja-build nasm gcc g++ pkg-config libzimg-dev
 
       # ADR-1225 (design notes)
       - name: Install ROCm / HIP toolchain
@@ -459,7 +459,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo -E apt-get -yq install --no-install-recommends \
-            ccache ninja-build nasm libomp-dev pkg-config gcc g++ jq
+            ccache ninja-build nasm libomp-dev pkg-config gcc g++ jq libzimg-dev
           # ADR-1231 (design notes)
           set -a; . ./build-config.env; set +a
           ./scripts/ci/install-rocm-from-image.sh \
@@ -478,6 +478,28 @@ jobs:
           mkdir -p ~/.ccache
           ccache --max-size=400M
           ccache -z
+
+      - name: Verify default meson setup refuses without zimg
+        if: matrix.name == 'Ubuntu gcc no zimg' && steps.impact.outputs.c_core == 'true'
+        run: |
+          set -uo pipefail
+          empty_dir="$(mktemp -d)"
+          setup_out="$(mktemp)"
+          if PKG_CONFIG_LIBDIR="$empty_dir" PKG_CONFIG_PATH="$empty_dir" \
+             meson setup --werror "$empty_dir/build" core >"$setup_out" 2>&1; then
+            echo "::error::default meson setup succeeded without zimg (zimg default must be true)" >&2
+            cat "$setup_out"
+            rm -rf "$empty_dir" "$setup_out"
+            exit 1
+          fi
+          cat "$setup_out"
+          if ! grep -q -- "-Denable_zimg=false" "$setup_out"; then
+            echo "::error::meson setup failure message did not mention -Denable_zimg=false" >&2
+            rm -rf "$empty_dir" "$setup_out"
+            exit 1
+          fi
+          echo "Verified: default meson setup failed as expected naming -Denable_zimg=false"
+          rm -rf "$empty_dir" "$setup_out"
 
       - name: Configure libvmaf
         if: steps.impact.outputs.c_core == 'true'
@@ -554,6 +576,24 @@ jobs:
         if: ${{ (!matrix.sycl && !matrix.cuda && !matrix.hip) && steps.impact.outputs.c_core == 'true' }}
         run: sudo "$(command -v python3)" scripts/ci/prefetch_go_modules.py
 
+      # The src01 8-bit pair is one input of the bit-exact tests' all-or-none
+      # set (core/test/vmafx_fixture_util.h), so the whole set comes with it.
+      - name: Fetch gate test YUV fixtures (Metal leg)
+        if: ${{ (contains(matrix.meson_extra, 'enable_metal=enabled')) && steps.impact.outputs.c_core == 'true' }}
+        run: >-
+          bash scripts/test/fetch-test-yuvs.sh
+          src01_hrc00_576x324.yuv
+          src01_hrc01_576x324.yuv
+          checkerboard_1920_1080_10_3_0_0.yuv
+          checkerboard_1920_1080_10_3_1_0.yuv
+          checkerboard_1920_1080_10_3_10_0.yuv
+          sparks_ref_480x270.yuv42010le.yuv
+          sparks_dis_480x270.yuv42010le.yuv
+          ref_dock-na-HDR_res2160_rate5p0_maxRate100000_bufSize200000_fps59p940_576x324_1frame.yuv
+          dis_dock-na-HDR_res1440_rate15p0_maxRate10000_bufSize20000_fps59p940_576x324_1frame.yuv
+          src01_hrc00_576x324.yuv422p10le.yuv
+          src01_hrc01_576x324.yuv422p10le.yuv
+
       - name: Run tests
         if: ${{ (!matrix.sycl && !matrix.cuda && !matrix.hip) && steps.impact.outputs.c_core == 'true' }}
         run: >-
@@ -585,8 +625,18 @@ jobs:
         if: ${{ ((startsWith(matrix.os, 'ubuntu') && !matrix.sycl && !matrix.cuda && !matrix.hip) || matrix.os == 'macos-latest') && steps.impact.outputs.c_core == 'true' }}
         run: bash scripts/ci/prune-corrupt-fixtures.sh --restore-tracked python/test/resource
 
+      # The motion PQ pin rows read this bundle; a failed download fails the leg.
+      - name: Fetch the PQ fixture
+        if: ${{ ((startsWith(matrix.os, 'ubuntu') && !matrix.sycl && !matrix.cuda && !matrix.hip) || matrix.os == 'macos-latest') && steps.impact.outputs.c_core == 'true' }}
+        uses: ./.github/actions/pq-fixture
+        with:
+          phase: get
+
       - name: Run tox tests (ubuntu)
         if: ${{ (startsWith(matrix.os, 'ubuntu') && !matrix.sycl && !matrix.cuda && !matrix.hip) && steps.impact.outputs.c_core == 'true' }}
+        env:
+          # format(): a leg with no zimg key is null, and null == false holds in an expression.
+          VMAF_EXPECT_NO_ZIMG: ${{ format('{0}', matrix.zimg) == 'false' && '1' || '' }}
         run: |
           mkdir -p ~/.ccache && sudo chown -R "$(whoami)" ~/.ccache
           pip install --require-hashes -r requirements/locks/tox.txt
@@ -601,6 +651,12 @@ jobs:
           CC=$(brew --prefix)/opt/llvm/bin/clang \
           CXX=$(brew --prefix)/opt/llvm/bin/clang++ \
           tox -c python
+
+      - name: Put away the PQ fixture
+        if: ${{ !cancelled() && ((startsWith(matrix.os, 'ubuntu') && !matrix.sycl && !matrix.cuda && !matrix.hip) || matrix.os == 'macos-latest') && steps.impact.outputs.c_core == 'true' }}
+        uses: ./.github/actions/pq-fixture
+        with:
+          phase: finish
 
       - name: Save Netflix vmaf_resource fixtures
         if: ${{ success() && (((startsWith(matrix.os, 'ubuntu') && !matrix.sycl && !matrix.cuda && !matrix.hip) || matrix.os == 'macos-latest') && steps.impact.outputs.c_core == 'true') && steps.fixtures.outputs.cache-hit != 'true' }}
@@ -690,6 +746,8 @@ jobs:
       - uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e  # v2.33.0
         with:
           msystem: ${{ matrix.msystem }}
+          # python-setuptools: the codegen suite (test_vmafx_api_generator) imports
+          # setuptools.build_meta, which the MSYS2 python package does not carry.
           install: >-
             ${{ matrix.MINGW_PACKAGE_PREFIX }}-ccache
             ${{ matrix.MINGW_PACKAGE_PREFIX }}-nasm
@@ -699,6 +757,8 @@ jobs:
             ${{ matrix.MINGW_PACKAGE_PREFIX }}-ninja
             ${{ matrix.MINGW_PACKAGE_PREFIX }}-python
             ${{ matrix.MINGW_PACKAGE_PREFIX }}-python-yaml
+            ${{ matrix.MINGW_PACKAGE_PREFIX }}-zimg
+            ${{ matrix.MINGW_PACKAGE_PREFIX }}-python-setuptools
             vim make diffutils
           update: true
           path-type: inherit
@@ -869,6 +929,11 @@ jobs:
           if (Test-Path $p) { Rename-Item -Path $p -NewName 'ccache.exe.disabled' }
           Write-Host "ccache binary disabled"
 
+      - name: Install zimg via vcpkg (windows)
+        if: steps.leg.outputs.run == 'true' && runner.os == 'Windows'
+        shell: pwsh
+        run: pwsh -File scripts/ci/setup-zimg-windows.ps1 -Triplet x64-windows-static-md
+
       # ADR-2170 (design notes)
       - name: Warnings-as-errors arguments
         if: steps.leg.outputs.run == 'true'
@@ -1009,6 +1074,10 @@ jobs:
           $p = 'C:\Strawberry\c\bin\ccache.exe'
           if (Test-Path $p) { Rename-Item -Path $p -NewName 'ccache.exe.disabled' }
           Write-Host "ccache binary disabled"
+
+      - name: Install zimg via vcpkg (ARM64)
+        shell: pwsh
+        run: pwsh -File scripts/ci/setup-zimg-windows.ps1 -Triplet arm64-windows-static-md
 
       - name: Show compiler
         shell: cmd

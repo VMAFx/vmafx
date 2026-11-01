@@ -298,44 +298,81 @@ pub fn parse_pc_dependencies(content: &str) -> (Vec<PathBuf>, Vec<String>) {
     let mut deps = Vec::new();
     for line in content.lines().take(512) {
         let trimmed = line.trim();
-        let rest = if let Some(r) = trimmed.strip_prefix("Libs:") {
-            r
-        } else if let Some(r) = trimmed.strip_prefix("Libs.private:") {
-            r
-        } else {
-            continue;
-        };
-        parse_pc_line_tokens(rest, &mut dirs, &mut deps);
+        if let Some(rest) = trimmed
+            .strip_prefix("Libs:")
+            .or_else(|| trimmed.strip_prefix("Libs.private:"))
+        {
+            parse_pc_line_tokens(rest, &mut dirs, &mut deps);
+        }
     }
     (dirs, deps)
 }
 
-/// Read all .pc files under build_dir/meson-private and aggregate static dependencies.
-pub fn read_pc_dependencies(build_dir: &Path) -> (Vec<PathBuf>, Vec<String>) {
-    let mut all_dirs = Vec::new();
-    let mut all_deps = Vec::new();
-    let private_dir = build_dir.join("meson-private");
-    if let Ok(entries) = std::fs::read_dir(&private_dir) {
-        for entry in entries.filter_map(Result::ok).take(64) {
-            let path = entry.path();
-            if path.extension().and_then(|ext| ext.to_str()) == Some("pc")
-                && let Ok(content) = std::fs::read_to_string(&path)
-            {
-                let (dirs, deps) = parse_pc_dependencies(&content);
-                for d in dirs {
-                    if !all_dirs.contains(&d) {
-                        all_dirs.push(d);
-                    }
-                }
-                for dep in deps {
-                    if !all_deps.contains(&dep) {
-                        all_deps.push(dep);
-                    }
-                }
+fn merge_unique<T: PartialEq>(into: &mut Vec<T>, from: Vec<T>) {
+    for item in from {
+        if !into.contains(&item) {
+            into.push(item);
+        }
+    }
+}
+
+/// Module names on the `Requires` lines of pkg-config file content, without version constraints.
+pub fn parse_pc_requires(content: &str) -> Vec<String> {
+    let mut modules = Vec::new();
+    for line in content.lines().take(512) {
+        let trimmed = line.trim();
+        let Some(rest) = trimmed
+            .strip_prefix("Requires:")
+            .or_else(|| trimmed.strip_prefix("Requires.private:"))
+        else {
+            continue;
+        };
+        let mut version_follows = false;
+        for token in rest.replace(',', " ").split_whitespace().take(128) {
+            if version_follows {
+                version_follows = false;
+            } else if matches!(token, "=" | "!=" | "<" | "<=" | ">" | ">=") {
+                version_follows = true;
+            } else if !modules.iter().any(|module| module == token) {
+                modules.push(token.to_string());
             }
         }
     }
-    (all_dirs, all_deps)
+    modules
+}
+
+/// Read all .pc files under build_dir/meson-private and aggregate static dependencies.
+///
+/// A required module without a file there (zimg) is resolved through `query`, which
+/// returns its link flags; a failed query fails the build instead of a later link.
+pub fn read_pc_dependencies(
+    build_dir: &Path,
+    mut query: impl FnMut(&str) -> Result<String, String>,
+) -> Result<(Vec<PathBuf>, Vec<String>), String> {
+    let mut all_dirs = Vec::new();
+    let mut all_deps = Vec::new();
+    let private_dir = build_dir.join("meson-private");
+    let Ok(entries) = std::fs::read_dir(&private_dir) else {
+        return Ok((all_dirs, all_deps));
+    };
+    for entry in entries.filter_map(Result::ok).take(64) {
+        let path = entry.path();
+        if path.extension().and_then(|ext| ext.to_str()) != Some("pc") {
+            continue;
+        }
+        let Ok(content) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let (dirs, deps) = parse_pc_dependencies(&content);
+        merge_unique(&mut all_dirs, dirs);
+        merge_unique(&mut all_deps, deps);
+        for module in parse_pc_requires(&content) {
+            if !private_dir.join(format!("{module}.pc")).is_file() {
+                parse_pc_line_tokens(&query(&module)?, &mut all_dirs, &mut all_deps);
+            }
+        }
+    }
+    Ok((all_dirs, all_deps))
 }
 
 /// Extract VMAF_VERSION from generated vcs_version.h header.

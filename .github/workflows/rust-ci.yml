@@ -173,10 +173,11 @@ jobs:
         # without a workflow edit (RC3 hygiene; was `-p vmafx-sys` only). The
         # libvmaf-linked workspace (core/src/rust) sets [workspace.lints] (no
         # unwrap, no expect, SAFETY proofs, length and complexity caps).
+        # --all-features: code behind the vendored feature is linted as well.
         env:
           LIBVMAF_PREFIX: /usr/local
         run: |
-          cargo clippy --workspace --all-targets -- -D warnings
+          cargo clippy --workspace --all-features --all-targets -- -D warnings
           cargo clippy --manifest-path core/src/rust/Cargo.toml --workspace --all-targets -- -D warnings
 
       - name: Cargo build
