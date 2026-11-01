@@ -21,11 +21,11 @@
     "gstreamer/src/gstvmafx_windows.c"
   ],
   "compile_failures": [],
-  "total_warnings": 101,
+  "total_warnings": 100,
   "total_nolint_uncited": 0,
   "warnings": {
     "ffmpeg-patches/src/ffmpeg_dec_hwaccel.c": 2,
-    "ffmpeg-patches/src/vf_vmafx.c": 50,
+    "ffmpeg-patches/src/vf_vmafx.c": 49,
     "ffmpeg-patches/src/vf_vmafx_pre.c": 5,
     "gstreamer/src/gstvmafx.c": 22,
     "gstreamer/src/gstvmafx_cuda.c": 4,

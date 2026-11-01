@@ -9,7 +9,10 @@ import importlib.util
 import sys
 import tempfile
 import unittest
+from collections.abc import Mapping
 from pathlib import Path
+from types import MappingProxyType
+from typing import Final
 
 SCRIPT = Path(__file__).resolve().parents[1] / "run_ffmpeg_patch_contract_tests.py"
 SPEC = importlib.util.spec_from_file_location("run_ffmpeg_patch_contract_tests", SCRIPT)
@@ -20,6 +23,17 @@ SPEC.loader.exec_module(MOD)
 
 GREEN_SCRIPT = "import sys\nPATH = 'ffmpeg-patches/src/x.c'\nsys.exit(0)\n"
 RED_SCRIPT = "import sys\nPATH = 'ffmpeg-patches/src/x.c'\nprint('broken')\nsys.exit(1)\n"
+
+LAVFI_JOB = (
+    "jobs:\n  f:\n    steps:\n      - run: ./configure --disable-indevs{extra}\n"
+    "      - run: bash ffmpeg-patches/test/check-x.sh\n"
+)
+LAVFI_FILES: Final = MappingProxyType(
+    {
+        "ffmpeg-patches/test/check-x.sh": '. "${HERE}/lib.sh"\n',
+        "ffmpeg-patches/test/lib.sh": "ffmpeg -f lavfi -i testsrc2\n",
+    }
+)
 
 
 class PatchContractRunner(unittest.TestCase):
@@ -76,6 +90,32 @@ class PatchContractRunner(unittest.TestCase):
             self.assertEqual(len(found), 1)
             self.assertIn("core/test/test_bad.py (exit 1)", found[0])
             self.assertIn("broken", found[0])
+
+    def _lavfi(self, extra: str, files: Mapping[str, str] | None = None) -> list[str]:
+        with tempfile.TemporaryDirectory() as tmp:
+            workflow = {".github/workflows/w.yml": LAVFI_JOB.format(extra=extra)}
+            root = self._tree(tmp, {**workflow, **(files if files is not None else LAVFI_FILES)})
+            found: list[str] = MOD.lavfi_without_indev(root)
+            return found
+
+    def test_lavfi_script_on_build_without_the_device_fails(self) -> None:
+        """Negative: a sourced helper reading -f lavfi on a --disable-indevs build is refused."""
+        found = self._lavfi("")
+        self.assertEqual(len(found), 1)
+        self.assertIn("w.yml:f: runs ffmpeg-patches/test/check-x.sh", found[0])
+
+    def test_lavfi_script_with_the_device_passes(self) -> None:
+        """Positive: --enable-indev=lavfi after --disable-indevs keeps the device."""
+        self.assertEqual(self._lavfi(" --enable-indev=lavfi"), [])
+
+    def test_script_without_lavfi_passes(self) -> None:
+        """Boundary: a script that reads files, not lavfi, needs no input device."""
+        files = {"ffmpeg-patches/test/check-x.sh": "ffmpeg -i in.nut\n"}
+        self.assertEqual(self._lavfi("", files), [])
+
+    def test_repository_workflows_keep_lavfi(self) -> None:
+        """The repository's own workflows build the device their tests read."""
+        self.assertEqual(MOD.lavfi_without_indev(SCRIPT.parents[2]), [])
 
     def test_no_contract_script_fails(self) -> None:
         """Boundary: a tree with no contract script refuses instead of passing empty."""
