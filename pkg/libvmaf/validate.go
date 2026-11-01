@@ -23,8 +23,12 @@ func requireGeometry(operation string, width, height int, pixFmt PixelFormat, bi
 	if width <= 0 || height <= 0 {
 		return fmt.Errorf("%s: width/height must be positive: %w", operation, ErrInvalidArgument)
 	}
-	if pixFmt == 0 {
+	switch pixFmt {
+	case PixFmtYUV420P, PixFmtYUV422P, PixFmtYUV444P:
+	case 0:
 		return fmt.Errorf("%s: pix_fmt is required: %w", operation, ErrInvalidArgument)
+	default:
+		return fmt.Errorf("%s: unsupported pix_fmt %v: %w", operation, pixFmt, ErrInvalidArgument)
 	}
 	if bitDepth != 8 && bitDepth != 10 && bitDepth != 12 {
 		return fmt.Errorf("%s: bit_depth must be 8/10/12, got %d: %w",
