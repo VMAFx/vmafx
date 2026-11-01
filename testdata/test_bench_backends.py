@@ -7,12 +7,20 @@
 from __future__ import annotations
 
 import importlib.util
+import sys
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
-from scripts.lib.safe_subprocess import CommandOutputLimitExceeded, CommandTimedOut
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from scripts.lib.safe_subprocess import (  # noqa: E402
+    CommandOutputLimitExceeded,
+    CommandTimedOut,
+)
 
 _HERE = Path(__file__).resolve().parent
 _SPEC = importlib.util.spec_from_file_location("bench_backends", _HERE / "bench_backends.py")
@@ -103,7 +111,7 @@ def test_resolve_executable_makes_the_default_bin_absolute() -> None:
     # --vmaf-bin is one, relative to the repository root.
     resolved = bench_backends.resolve_executable("core/build/tools/vmaf")
     assert Path(resolved).is_absolute()
-    assert resolved == str((_HERE.parent / "core/build/tools/vmaf").resolve())
+    assert resolved == str(_HERE.parent / "core/build/tools/vmaf")
     assert bench_backends.resolve_executable("vmaf") == "vmaf"
     assert bench_backends.resolve_executable("/opt/vmaf") == "/opt/vmaf"
 

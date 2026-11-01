@@ -160,6 +160,15 @@ class SafeSubprocessTests(unittest.TestCase):
         with self.assertRaises(CommandValidationError):
             executable_argument("bin/x\0y", root)
 
+    @unittest.skipUnless(hasattr(os, "symlink"), "symbolic links unavailable")
+    @unittest.skipIf(os.name == "nt", "symbolic links need privileges on Windows")
+    def test_executable_argument_preserves_symlink_name(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "vmaf").touch()
+            (Path(tmp) / "vmafx").symlink_to("vmaf")
+            # The CLI picks vmafx mode from argv0, so the alias must survive.
+            self.assertEqual(executable_argument("./vmafx", root=tmp), str(Path(tmp) / "vmafx"))
+
     def test_capture_limit_terminates_a_flooding_child(self) -> None:
         with self.assertRaises(CommandOutputLimitExceeded) as raised:
             self.python(

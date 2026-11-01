@@ -254,6 +254,8 @@ def executable_argument(executable: Arg, root: Arg) -> str:
     `core/build/tools/vmaf` from an option or the environment passes it through
     here: a bare name stays as it is, an absolute path stays as it is, and any
     other non-absolute value is made absolute against `root`.
+    The final name is kept, not resolved: `vmafx` is a symlink to `vmaf`, and
+    the CLI picks its mode from the name it was started as.
     """
     text = _stringify(executable, label="executable")
     path = Path(text).expanduser()
@@ -262,7 +264,8 @@ def executable_argument(executable: Arg, root: Arg) -> str:
     separators = {"/", os.sep, os.altsep or os.sep}
     if text not in (".", "..") and not any(sep in text for sep in separators):
         return text
-    return str((Path(root) / path).resolve())
+    # absolute() + normpath(), not resolve(): the final symlink keeps its name.
+    return os.path.normpath((Path(root) / path).absolute())
 
 
 def _validated_argv(
