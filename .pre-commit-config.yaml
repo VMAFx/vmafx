@@ -1155,7 +1155,7 @@ repos:
         name: flawfinder-new gate (planted-defect recall)
         entry: python3 -m unittest discover -s scripts/ci/tests -p test_check_flawfinder_new.py
         language: python
-        additional_dependencies: ["flawfinder==2.0.20"]
+        additional_dependencies: ["flawfinder==2.0.20", "identify==2.6.20"]
         files: '^(\.pre-commit-config\.yaml|scripts/ci/(check_flawfinder_new|tests/test_check_flawfinder_new)\.py)$'
         pass_filenames: false
 

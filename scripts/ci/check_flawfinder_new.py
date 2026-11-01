@@ -37,7 +37,34 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from scripts.lib.safe_subprocess import run as run_command
 
-SUFFIXES = frozenset({".c", ".h", ".cc", ".cpp", ".cxx", ".hpp", ".cu", ".mm"})
+# Every suffix pre-commit's `identify` maps to the hook's types_or (c, c++,
+# cuda, objective-c++); a selected file outside this set would pass unchecked.
+# test_suffixes_match_the_hook_selection compares the two.
+SUFFIXES = frozenset(
+    {
+        ".c",
+        ".c++",
+        ".c++m",
+        ".cc",
+        ".ccm",
+        ".cpp",
+        ".cppm",
+        ".cu",
+        ".cuh",
+        ".cxx",
+        ".cxxm",
+        ".h",
+        ".hh",
+        ".hpp",
+        ".hxx",
+        ".inl",
+        ".ino",
+        ".ipp",
+        ".ixx",
+        ".mm",
+        ".tpp",
+    }
+)
 Key = tuple[str, str]
 
 

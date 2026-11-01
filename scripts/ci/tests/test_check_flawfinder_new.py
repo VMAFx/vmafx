@@ -25,6 +25,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from identify import extensions  # pre-commit's file classifier
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from scripts.ci import check_flawfinder_new as check
@@ -113,10 +115,23 @@ class CheckFlawfinderNew(unittest.TestCase):
     def test_fdopen_on_descriptor_passes(self) -> None:
         self.assertEqual(self.run_check("harness.c", FDOPEN), (0, ""))
 
+    def test_module_interface_suffix_is_scanned(self) -> None:
+        status, out = self.run_check("fresh.ccm", BASE)
+        self.assertEqual(status, 1)
+        self.assertIn("fresh.ccm:5: flawfinder fopen", out)
+
     def test_new_file_finding_is_reported(self) -> None:
         status, out = self.run_check("fresh.c", BASE)
         self.assertEqual(status, 1)
         self.assertIn("fresh.c:5: flawfinder fopen", out)
+
+
+class CheckFlawfinderSuffixes(unittest.TestCase):
+    TYPES = frozenset({"c", "c++", "cuda", "objective-c++"})  # the hook's types_or
+
+    def test_suffixes_match_the_hook_selection(self) -> None:
+        selected = {f".{ext}" for ext, tags in extensions.EXTENSIONS.items() if tags & self.TYPES}
+        self.assertEqual(set(check.SUFFIXES), selected)
 
 
 class CheckFlawfinderMissing(unittest.TestCase):

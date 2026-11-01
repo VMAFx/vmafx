@@ -5,3 +5,7 @@
   a CI round. The C API harness of the `pkg/libvmaf` bit-exactness tests now
   reads its YUV pair from descriptors 3 and 4 that the Go test opens, instead of
   opening paths itself.
+- The `flawfinder-new` gate scans every C, C++, CUDA and Objective-C++
+  suffix pre-commit selects for it (module interfaces such as `.ccm` and
+  `.cppm`, headers such as `.hh` and `.cuh`), and the Tooling Tests lock
+  installs flawfinder 2.0.20 so the gate's own tests run in that job.
