@@ -762,6 +762,10 @@ jobs:
             vim make diffutils
           update: true
           path-type: inherit
+          # path-type inherit can leave xargs less than LINE_MAX of MSYS2's
+          # ARG_MAX, and the cache pruning (paccache) then aborts on the findutils
+          # assertion; Msys2InheritContract keeps this off.
+          cache: false
 
       - name: Set ccache dir
         run: echo "CCACHE_DIR=$PWD/.ccache" >> $GITHUB_ENV
