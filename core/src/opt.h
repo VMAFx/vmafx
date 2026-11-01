@@ -72,6 +72,17 @@ enum VmafOptionFlag {
  * @var VmafOption::max          Maximum accepted value (numeric types only).
  * @var VmafOption::flags        Combination of VmafOptionFlag.
  */
+/**
+ * @brief Upper bound on the entries of one VmafOption table, its sentinel included.
+ *
+ * A walk over a table stops at the sentinel or after this many entries,
+ * whichever comes first (docs/principles.md, rule 2: every loop has a fixed
+ * bound). The largest table in the tree has 24 entries (float_adm_sycl,
+ * float_adm_metal); vmaf_feature_extractor_list_audit() refuses a registered
+ * table whose sentinel is not within the bound.
+ */
+#define VMAF_OPTIONS_MAX 64u
+
 /* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no `using`. ADR-1138. */
 typedef struct VmafOption {
     const char *name;

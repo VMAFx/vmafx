@@ -482,6 +482,23 @@ VmafFeatureExtractor *vmaf_get_feature_extractor_by_name(const char *name)
     return nullptr;
 }
 
+namespace
+{
+
+/* True when the table is absent or reaches its sentinel within VMAF_OPTIONS_MAX. */
+[[nodiscard]] bool options_within_bound(const VmafOption *options) noexcept
+{
+    if (!options)
+        return true;
+    for (unsigned j = 0; j < VMAF_OPTIONS_MAX; j++) {
+        if (!options[j].name)
+            return true;
+    }
+    return false;
+}
+
+} // namespace
+
 int vmaf_feature_extractor_list_audit(void)
 {
     /* ADR-0545: O(N^2) over the static registry — N ≤ ~60 even with every
@@ -490,11 +507,18 @@ int vmaf_feature_extractor_list_audit(void)
    * registered twice) and the `name` string (catches two distinct
    * extractor objects that happen to publish the same name).  Either
    * is a registry bug. */
-    int dup_count = 0;
+    int defects = 0;
     for (unsigned i = 0; registry_at(i); i++) {
         const VmafFeatureExtractor *const a = registry_at(i);
         if (!a->name)
             continue;
+        if (!options_within_bound(a->options)) {
+            vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                     "feature extractor \"%s\": option table has no sentinel within "
+                     "VMAF_OPTIONS_MAX (%u) entries\n",
+                     a->name, VMAF_OPTIONS_MAX);
+            defects++;
+        }
         for (unsigned j = i + 1; registry_at(j); j++) {
             const VmafFeatureExtractor *const b = registry_at(j);
             if (!b->name)
@@ -503,16 +527,17 @@ int vmaf_feature_extractor_list_audit(void)
                 vmaf_log(VMAF_LOG_LEVEL_ERROR,
                          "feature_extractor_list duplicate: \"%s\" at index %u and %u\n", a->name,
                          i, j);
-                dup_count++;
+                defects++;
             }
         }
     }
-    if (dup_count > 0) {
+    if (defects > 0) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR,
-                 "feature_extractor_list has %d duplicate registration(s); "
-                 "see ADR-0544. Each duplicate burns one ctx-pool entry and "
-                 "one init/extract/flush call per picture.\n",
-                 dup_count);
+                 "feature_extractor_list has %d registry defect(s): a duplicate "
+                 "registration (ADR-0544) burns one ctx-pool entry and one "
+                 "init/extract/flush call per picture; an unbounded option "
+                 "table breaks the bounded option walk.\n",
+                 defects);
         return -EINVAL;
     }
     return 0;
@@ -705,9 +730,11 @@ namespace
 {
 
 /* True when key names one of the extractor's options, by name or by alias. */
+/* True when key names an option of the table. A key past VMAF_OPTIONS_MAX
+ * entries is not known: the walk stops there even without a sentinel. */
 [[nodiscard]] bool option_key_known(const VmafOption *options, const char *key) noexcept
 {
-    for (unsigned j = 0; options[j].name; j++) {
+    for (unsigned j = 0; j < VMAF_OPTIONS_MAX && options[j].name; j++) {
         const VmafOption *opt = &options[j];
         if (strcmp(key, opt->name) == 0 || (opt->alias && strcmp(key, opt->alias) == 0))
             return true;
