@@ -15,12 +15,18 @@ from .emit_python import (
     _nested_numbers,
     _plain,
     _refuse_collisions,
-    context_methods,
     library_functions,
     short,
 )
 from .layout import layouts
-from .model import Api, Field, Function, Struct
+from .model import Api, Field, Function, Param, Struct
+
+MODEL = "VmafxModel"
+FRAME = "VmafxFrame"
+HANDLE_GOTYPES = {
+    MODEL: "*Model",
+    FRAME: "*Frame",
+}
 
 GOTYPES = {
     "u32": "uint32",
@@ -178,8 +184,19 @@ def _api_header(api: Api) -> str:
         "// `go vet` and static analysis run against in-tree headers without a pre-built\n"
         "// shared library and `go test` / `go build` fail closed unless a library path is\n"
         "// explicitly configured.\n"
-        "#include <stdlib.h>\n" + "".join(includes) + '*/\nimport "C"\n\n'
-        'import (\n\t"errors"\n\t"fmt"\n\t"unsafe"\n)\n'
+        "#include <locale.h>\n"
+        "#include <stdlib.h>\n"
+        + "".join(includes)
+        + "\nstatic void vmafx_go_pin_c_locale(void) {\n"
+        '\t(void)setlocale(LC_NUMERIC, "C");\n'
+        "}\n"
+        '*/\nimport "C"\n\n'
+        'import (\n\t"errors"\n\t"fmt"\n\t"unsafe"\n)\n\n'
+        '// init pins LC_NUMERIC to "C" so feature option formatting and JSON parsing\n'
+        '// use "." regardless of the host process locale (ADR-0137).\n'
+        "func init() {\n"
+        "\tC.vmafx_go_pin_c_locale()\n"
+        "}\n"
     )
 
 
@@ -359,49 +376,99 @@ def _record_struct(api: Api, item: Struct) -> str:
     return "".join(out)
 
 
-def _call_parts(api: Api, fn: Function) -> tuple[list[str], list[str], Struct | None]:
+def _go_bindable(api: Api, param: Param) -> bool:
+    """Parameter shapes the Go Context layer wraps."""
+    kind = typesys.kind(api, param.type)
+    if param.mode == "error":
+        return True
+    if param.mode == "out" and (kind == "struct" or param.type == "cstr"):
+        return True
+    if param.mode in ("in", "in_const") and param.type in HANDLE_GOTYPES:
+        return True
+    return param.mode == "in" and kind == "scalar" and param.type not in POINTERS
+
+
+def _go_context_methods(api: Api) -> list[Function]:
+    """Functions that take a context first and are wrapped on Go Context."""
+    release = {h.release for h in api.handles}
+    return [
+        fn
+        for fn in api.functions
+        if fn.params
+        and fn.params[0].type == CONTEXT
+        and fn.returns == "status"
+        and fn.name not in release
+        and all(_go_bindable(api, p) for p in fn.params[1:])
+    ]
+
+
+def _param_call_part(
+    api: Api, fn: Function, param: Param
+) -> tuple[list[str], str, Struct | str | None]:
+    if param.mode == "error":
+        return ["var cErr *C.VmafxError"], "&cErr", None
+    if param.mode == "out" and api.is_struct(param.type):
+        out_struct = api.struct(param.type)
+        setup = [
+            f"var out C.{param.type}",
+            "// SAFETY: unsafe.Sizeof is evaluated at compile time and dereferences nothing.",
+            "out.struct_size = C.uint32_t(unsafe.Sizeof(out))",
+        ]
+        return setup, "&out", out_struct
+    if param.mode == "out" and param.type == "cstr":
+        return [f"var {param.name} *C.char"], f"&{param.name}", param.name
+    if param.type in HANDLE_GOTYPES:
+        accessor = "takeHandle" if fn.name == "vmafx_submit" else "rawHandle"
+        return [], f"{param.name}.{accessor}()", None
+    if param.type == "cstr":
+        c_var = f"c{_camel(param.name)}"
+        return [f"{c_var} := C.CString({param.name})", f"defer freeCString({c_var})"], c_var, None
+    return [], f"{CTYPES_GO[param.type]}({param.name})", None
+
+
+def _call_parts(api: Api, fn: Function) -> tuple[list[str], list[str], Struct | str | None]:
     setup: list[str] = []
     args: list[str] = ["c.rawHandle()"]
-    out_struct: Struct | None = None
+    out_target: Struct | str | None = None
     for param in fn.params[1:]:
-        if param.mode == "error":
-            setup.append("var cErr *C.VmafxError")
-            args.append("&cErr")
-        elif param.mode == "out" and api.is_struct(param.type):
-            out_struct = api.struct(param.type)
-            setup.append(f"var out C.{param.type}")
-            setup.append(
-                "// SAFETY: unsafe.Sizeof is evaluated at compile time and dereferences nothing."
-            )
-            setup.append("out.struct_size = C.uint32_t(unsafe.Sizeof(out))")
-            args.append("&out")
-        elif param.type == "cstr":
-            c_var = f"c{_camel(param.name)}"
-            setup.append(f"{c_var} := C.CString({param.name})")
-            setup.append(f"defer freeCString({c_var})")
-            args.append(c_var)
-        else:
-            args.append(f"{CTYPES_GO[param.type]}({param.name})")
-    return setup, args, out_struct
+        part_setup, arg, part_out = _param_call_part(api, fn, param)
+        setup.extend(part_setup)
+        args.append(arg)
+        if part_out is not None:
+            out_target = part_out
+    return setup, args, out_target
+
+
+def _go_param_type(param: Param) -> str:
+    return HANDLE_GOTYPES.get(param.type) or GOTYPES[param.type]
 
 
 def _context_method(api: Api, fn: Function) -> str:
-    setup, args, out_struct = _call_parts(api, fn)
+    setup, args, out_target = _call_parts(api, fn)
     params = ", ".join(
-        f"{p.name} {GOTYPES[p.type]}"
+        f"{p.name} {_go_param_type(p)}"
         for p in fn.params[1:]
         if p.mode not in ("error", "out", "out_handle")
     )
     name = _camel(_method_name(fn))
-    ret = f"({short(out_struct.name)}, error)" if out_struct else "error"
+    if isinstance(out_target, Struct):
+        ret = f"({short(out_target.name)}, error)"
+    elif isinstance(out_target, str):
+        ret = "(string, error)"
+    else:
+        ret = "error"
     lines = [f"\n// {name}: {fn.doc}\nfunc (c *Context) {name}({params}) {ret} {{\n"]
     lines += [f"\t{line}\n" for line in setup]
     lines.append(f"\tstatus := Status(C.{fn.name}({', '.join(args)}))\n")
-    if out_struct is not None:
-        rec = short(out_struct.name)
+    if isinstance(out_target, Struct):
+        rec = short(out_target.name)
         lines.append(f'\tif err := checkStatus(status, cErr, "{fn.name}"); err != nil {{\n')
         lines.append(f"\t\treturn {rec}{{}}, err\n\t}}\n")
         lines.append(f"\treturn {_lower_first(rec)}FromC(out), nil\n}}\n")
+    elif isinstance(out_target, str):
+        lines.append(f'\tif err := checkStatus(status, cErr, "{fn.name}"); err != nil {{\n')
+        lines.append('\t\treturn "", err\n\t}\n')
+        lines.append(f"\treturn C.GoString({out_target}), nil\n}}\n")
     else:
         lines.append(f'\treturn checkStatus(status, cErr, "{fn.name}")\n}}\n')
     return "".join(lines)
@@ -410,7 +477,7 @@ def _context_method(api: Api, fn: Function) -> str:
 def _context_section(api: Api) -> str:
     if not api.is_handle(CONTEXT):
         return ""
-    methods = context_methods(api)
+    methods = _go_context_methods(api)
     _refuse_collisions("Context", methods, lambda fn: _camel(_method_name(fn)))
     out = [
         "\n// Context wraps a VmafxContext handle; close it with Close.\n"
@@ -467,6 +534,207 @@ def _context_section(api: Api) -> str:
     return "".join(out)
 
 
+def _model_loader(fn: Function, go_name: str) -> str:
+    arg = fn.params[1]
+    c_var = f"c{_camel(arg.name)}"
+    return (
+        f"\n// {go_name}: {fn.doc}\n"
+        f"func {go_name}(config *ModelConfig, {arg.name} string) (*Model, error) {{\n"
+        "\tvar raw C.VmafxModelConfig\n"
+        "\tvar cfgPtr *C.VmafxModelConfig\n"
+        "\tif config != nil {\n"
+        "\t\tvar cName *C.char\n"
+        "\t\traw, cName = modelConfigToC(config)\n"
+        "\t\tif cName != nil {\n"
+        "\t\t\tdefer freeCString(cName)\n"
+        "\t\t}\n"
+        "\t\tcfgPtr = &raw\n"
+        "\t}\n"
+        f"\t{c_var} := C.CString({arg.name})\n"
+        f"\tdefer freeCString({c_var})\n"
+        "\tvar handle *C.VmafxModel\n"
+        "\tvar cErr *C.VmafxError\n"
+        f"\tstatus := Status(C.{fn.name}(cfgPtr, {c_var}, &handle, &cErr))\n"
+        f'\tif err := checkStatus(status, cErr, "{fn.name}"); err != nil {{\n'
+        "\t\treturn nil, err\n"
+        "\t}\n"
+        "\treturn &Model{handle: handle}, nil\n"
+        "}\n"
+    )
+
+
+def _model_getter(fn: Function) -> str:
+    name = _camel(fn.name.removeprefix("vmafx_model_"))
+    params = ", ".join(f"{p.name} {GOTYPES[p.type]}" for p in fn.params[1:])
+    args = ["m.rawHandle()"] + [f"{CTYPES_GO[p.type]}({p.name})" for p in fn.params[1:]]
+    call = f"C.{fn.name}({', '.join(args)})"
+    if fn.returns == "cstr":
+        return f"\n// {name}: {fn.doc}\nfunc (m *Model) {name}({params}) string {{\n\treturn C.GoString({call})\n}}\n"
+    ret = GOTYPES[fn.returns]
+    return f"\n// {name}: {fn.doc}\nfunc (m *Model) {name}({params}) {ret} {{\n\treturn {ret}({call})\n}}\n"
+
+
+def _model_handle() -> str:
+    """The Model type, its config conversion and its reference handling."""
+    return (
+        "\n// Model wraps a refcounted VmafxModel handle; release it with Close.\n"
+        "type Model struct {\n"
+        "\thandle *C.VmafxModel\n"
+        "}\n\n"
+        "func modelConfigToC(config *ModelConfig) (C.VmafxModelConfig, *C.char) {\n"
+        "\tvar raw C.VmafxModelConfig\n"
+        "\t// SAFETY: unsafe.Sizeof is evaluated at compile time and dereferences nothing.\n"
+        "\traw.struct_size = C.uint32_t(unsafe.Sizeof(raw))\n"
+        "\tif config == nil {\n"
+        "\t\treturn raw, nil\n"
+        "\t}\n"
+        "\tvar cName *C.char\n"
+        '\tif config.Name != "" {\n'
+        "\t\tcName = C.CString(config.Name)\n"
+        "\t\traw.name = cName\n"
+        "\t}\n"
+        "\traw.flags = C.uint64_t(config.Flags)\n"
+        "\traw.log_level = C.uint32_t(config.LogLevel)\n"
+        "\treturn raw, cName\n"
+        "}\n\n"
+        "func (m *Model) rawHandle() *C.VmafxModel {\n"
+        "\tif m == nil {\n"
+        "\t\treturn nil\n"
+        "\t}\n"
+        "\treturn m.handle\n"
+        "}\n\n"
+        "// Close drops the Model reference; safe to call multiple times or on nil.\n"
+        "func (m *Model) Close() {\n"
+        "\tif m == nil || m.handle == nil {\n"
+        "\t\treturn\n"
+        "\t}\n"
+        "\tC.vmafx_model_unref(m.handle)\n"
+        "\tm.handle = nil\n"
+        "}\n"
+    )
+
+
+def _model_section(api: Api) -> str:
+    if not api.is_handle(MODEL):
+        return ""
+    loaders = [
+        ("vmafx_model_load", "LoadModel"),
+        ("vmafx_model_load_file", "LoadModelFile"),
+        ("vmafx_model_load_spec", "LoadModelSpec"),
+    ]
+    getters = [
+        fn
+        for fn in api.functions
+        if fn.params
+        and fn.params[0].type == MODEL
+        and fn.returns in GOTYPES
+        and fn.returns != "status"
+        and all(p.type in GOTYPES for p in fn.params[1:])
+    ]
+    fn_by_name = {fn.name: fn for fn in api.functions}
+    out = [_model_handle()]
+    out += [
+        _model_loader(fn_by_name[c_name], go_name)
+        for c_name, go_name in loaders
+        if c_name in fn_by_name
+    ]
+    out += [_model_getter(fn) for fn in getters]
+    return "".join(out)
+
+
+def _frame_handle() -> str:
+    """The Frame type, its host constructor and its reference handling."""
+    return (
+        "\n// Frame wraps a refcounted VmafxFrame handle; release it with Close.\n"
+        "type Frame struct {\n"
+        "\thandle *C.VmafxFrame\n"
+        "}\n\n"
+        "// NewHostFrame allocates a zeroed host frame of geometry desc on the CPU device.\n"
+        "func NewHostFrame(desc FrameDesc) (*Frame, error) {\n"
+        "\traw := desc.toC()\n"
+        "\tvar handle *C.VmafxFrame\n"
+        "\tvar cErr *C.VmafxError\n"
+        "\tstatus := Status(C.vmafx_frame_create_host(nil, &raw, &handle, &cErr))\n"
+        '\tif err := checkStatus(status, cErr, "vmafx_frame_create_host"); err != nil {\n'
+        "\t\treturn nil, err\n"
+        "\t}\n"
+        "\treturn &Frame{handle: handle}, nil\n"
+        "}\n\n"
+        "func (f *Frame) rawHandle() *C.VmafxFrame {\n"
+        "\tif f == nil {\n"
+        "\t\treturn nil\n"
+        "\t}\n"
+        "\treturn f.handle\n"
+        "}\n\n"
+        "// takeHandle hands the C reference to a call that consumes it (vmafx_submit).\n"
+        "func (f *Frame) takeHandle() *C.VmafxFrame {\n"
+        "\tif f == nil {\n"
+        "\t\treturn nil\n"
+        "\t}\n"
+        "\th := f.handle\n"
+        "\tf.handle = nil\n"
+        "\treturn h\n"
+        "}\n\n"
+        "// Close drops the Frame reference; safe to call multiple times, on nil, or after Submit.\n"
+        "func (f *Frame) Close() {\n"
+        "\tif f == nil || f.handle == nil {\n"
+        "\t\treturn\n"
+        "\t}\n"
+        "\tC.vmafx_frame_unref(f.handle)\n"
+        "\tf.handle = nil\n"
+        "}\n"
+    )
+
+
+def _frame_planes() -> str:
+    """Planes and PlaneBytes, both on one C call (cPlanes)."""
+    return (
+        "\nfunc (f *Frame) cPlanes() (C.VmafxFramePlanes, error) {\n"
+        "\tvar out C.VmafxFramePlanes\n"
+        "\t// SAFETY: unsafe.Sizeof is evaluated at compile time and dereferences nothing.\n"
+        "\tout.struct_size = C.uint32_t(unsafe.Sizeof(out))\n"
+        "\tvar cErr *C.VmafxError\n"
+        "\tstatus := Status(C.vmafx_frame_planes(f.rawHandle(), &out, &cErr))\n"
+        '\tif err := checkStatus(status, cErr, "vmafx_frame_planes"); err != nil {\n'
+        "\t\treturn C.VmafxFramePlanes{}, err\n"
+        "\t}\n"
+        "\treturn out, nil\n"
+        "}\n\n"
+        "// Planes describes the sample planes of the frame.\n"
+        "func (f *Frame) Planes() (FramePlanes, error) {\n"
+        "\tout, err := f.cPlanes()\n"
+        "\tif err != nil {\n"
+        "\t\treturn FramePlanes{}, err\n"
+        "\t}\n"
+        "\treturn framePlanesFromC(out), nil\n"
+        "}\n\n"
+        "// PlaneBytes returns the mutable byte slice covering plane (h[plane]*stride[plane] bytes).\n"
+        "// The slice aliases C memory owned by Frame and is valid only until Frame is submitted or closed.\n"
+        "func (f *Frame) PlaneBytes(plane uint32) ([]byte, error) {\n"
+        "\tout, err := f.cPlanes()\n"
+        "\tif err != nil {\n"
+        "\t\treturn nil, err\n"
+        "\t}\n"
+        "\tif plane >= uint32(out.n_planes) || out.data[plane] == nil {\n"
+        "\t\treturn nil, &Error{\n"
+        '\t\t\tFunction: "vmafx_frame_planes",\n'
+        "\t\t\tStatus:   StatusEInvalid,\n"
+        '\t\t\tMessage:  fmt.Sprintf("plane %d out of range (n_planes=%d)", plane, uint32(out.n_planes)),\n'
+        '\t\t\tSubject:  "plane",\n'
+        "\t\t}\n"
+        "\t}\n"
+        "\t// SAFETY: out.data[plane] points to host plane storage of stride[plane]*h[plane] bytes owned by f.\n"
+        "\treturn unsafe.Slice((*byte)(out.data[plane]), int(out.stride[plane])*int(out.h[plane])), nil\n"
+        "}\n"
+    )
+
+
+def _frame_section(api: Api) -> str:
+    if not api.is_handle(FRAME):
+        return ""
+    return _frame_handle() + _frame_planes()
+
+
 def _library_function(fn: Function) -> str:
     outs = [p for p in fn.params if p.mode == "out"]
     ins = [p for p in fn.params if p.mode != "out"]
@@ -508,5 +776,7 @@ def api_text(api: Api) -> str:
     parts.append(_error_section(api))
     parts += [_record_struct(api, item) for item in api.structs]
     parts.append(_context_section(api))
+    parts.append(_model_section(api))
+    parts.append(_frame_section(api))
     parts += [_library_function(fn) for fn in lib_fns]
     return "".join(parts)

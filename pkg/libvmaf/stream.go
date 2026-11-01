@@ -4,7 +4,7 @@
 // pkg/libvmaf/stream.go — in-memory per-frame streaming scoring path
 // (ADR-0933 Phase 2).
 //
-// StreamScorer drives a single, stateful libvmaf context across a sequence of
+// StreamScorer drives a single, stateful scoring context across a sequence of
 // raw planar (ref, dis) frame pairs supplied as in-memory byte buffers rather
 // than file paths.  It backs the gRPC ScoreStream bidirectional RPC defined in
 // proto/vmafx/v1/vmafx.proto: the server feeds each FramePair's raw_reference /
@@ -12,49 +12,39 @@
 // pooled scores.
 //
 // Relationship to direct.go: ScoreDirect (ADR-0931) reads frames from on-disk
-// YUV files through an io.Reader.  StreamScorer shares the same libvmaf C-call
-// sequence (vmaf_init → vmaf_model_load_from_path → vmaf_use_features_from_model
-// → per-frame vmaf_picture_alloc ×2 + vmaf_read_pictures → flush →
-// vmaf_score_pooled) but sources planes from caller-owned []byte and keeps the
-// context alive across calls so a long-lived stream does not re-load the model
-// per frame.
+// YUV files through an io.Reader.  StreamScorer shares the same session
+// (engine.go: context, model, frame fill, submit, flush, pooled score) on the
+// generated pkg/vmafx binding (#2434) but sources planes from caller-owned
+// []byte and keeps the context alive across calls so a long-lived stream does
+// not re-load the model per frame.  This file holds no cgo.
 //
 // Per-frame VMAF semantics: several VMAF features (notably motion) are temporal
 // and are only finalised once the whole sequence has been read and flushed.
 // StreamScorer therefore computes per-frame scores in Finish, AFTER the flush,
-// via vmaf_score_at_index — not incrementally inside PushFrame.  Callers that
+// via vmafx_score_frame — not incrementally inside PushFrame.  Callers that
 // need to emit a FrameScore per frame stream the Finish output back to the
 // client after the client half-closes.  This matches the ScoreStreamResponse
 // oneof contract (N FrameScore messages followed by one terminal
 // AggregateScore) without inventing a lookahead the engine cannot honour.
 //
-// Goroutine safety: a StreamScorer owns one VmafContext and is NOT safe for
+// Goroutine safety: a StreamScorer owns one VmafxContext and is NOT safe for
 // concurrent use.  Each gRPC ScoreStream invocation constructs its own
 // StreamScorer; the gRPC runtime guarantees a single goroutine per stream
 // handler, so no locking is required.  Different streams use different
 // StreamScorers and therefore different contexts, which libvmaf supports.
 //
-// Locale: LC_NUMERIC=C is pinned process-wide by direct.go's init() (ADR-0137);
-// no additional locale handling is needed here.
+// Locale: LC_NUMERIC=C is pinned process-wide by pkg/vmafx (ADR-0137); no
+// additional locale handling is needed here.
 
 //go:build cgo
 
 package libvmaf
 
-/*
-#include <libvmaf/libvmaf.h>
-#include <libvmaf/model.h>
-#include <libvmaf/picture.h>
-#include <stdlib.h>
-#include <string.h>
-*/
-import "C"
-
 import (
 	"context"
 	"fmt"
-	"os"
-	"unsafe"
+
+	"github.com/VMAFx/vmafx/pkg/vmafx"
 )
 
 // StreamConfig carries the per-stream geometry and model selection for a
@@ -116,69 +106,56 @@ var streamFeatures = []string{
 	"VMAF_integer_feature_vif_scale3_score",
 }
 
-// StreamScorer holds a live libvmaf context for in-memory per-frame scoring.
+// StreamScorer holds a live scoring context for in-memory per-frame scoring.
 // Construct with NewStreamScorer, feed frames with PushFrame, finalise with
 // Finish, and always Close (idempotent) to release the context and model.
 type StreamScorer struct {
 	cfg             StreamConfig
-	vmafCtx         *C.VmafContext
-	model           *C.VmafModel
+	vmafCtx         *vmafx.Context
+	model           *vmafx.Model
+	geom            frameGeometry
 	frameSize       int
 	nFrames         int
 	teardownStarted bool
 	owner           cgoScoringOwner
 }
 
-// NewStreamScorer initialises a libvmaf context and loads the model named by
+// NewStreamScorer initialises a context and loads the model named by
 // cfg.ModelPath.  It validates cfg up-front and returns typed errors
 // (ErrInvalidArgument / ErrModelNotFound / ...) so the gRPC layer can map them
 // to the right status code.  Constructor unwind closes the context before
 // destroying its dependent model and makes one bounded close retry.  A
-// persistent teardown failure is joined into the returned error; the C owners
-// remain allocated instead of freeing a still-referenced model.
+// persistent teardown failure is joined into the returned error; the
+// owners remain allocated instead of freeing a still-referenced model.
 func NewStreamScorer(cfg StreamConfig) (*StreamScorer, error) {
-	if cfg.Width <= 0 || cfg.Height <= 0 {
-		return nil, fmt.Errorf("StreamScorer: width/height must be positive: %w", ErrInvalidArgument)
-	}
-	if cfg.PixFmt == 0 {
-		return nil, fmt.Errorf("StreamScorer: pix_fmt is required: %w", ErrInvalidArgument)
-	}
-	if cfg.BitDepth != 8 && cfg.BitDepth != 10 && cfg.BitDepth != 12 {
-		return nil, fmt.Errorf("StreamScorer: bit_depth must be 8/10/12, got %d: %w",
-			cfg.BitDepth, ErrInvalidArgument)
-	}
-	if cfg.ModelPath == "" {
-		return nil, fmt.Errorf("StreamScorer: model_path is required: %w", ErrInvalidArgument)
-	}
-	if _, err := os.Stat(cfg.ModelPath); os.IsNotExist(err) {
-		return nil, fmt.Errorf("StreamScorer: model %q: %w", cfg.ModelPath, ErrModelNotFound)
-	}
-
-	var vmafCtx *C.VmafContext
-	if err := mapErrno("vmaf_init",
-		int(C.vmaf_init(&vmafCtx, newScoringConfiguration()))); err != nil {
+	const op = "StreamScorer"
+	if err := requireGeometry(op, cfg.Width, cfg.Height, cfg.PixFmt, cfg.BitDepth); err != nil {
 		return nil, err
 	}
-	owner := newCGOScoringOwner(vmafCtx)
-
-	model, err := loadModelFromPath(cfg.ModelPath, "vmaf_stream")
+	if err := requireModelPath(op, cfg.ModelPath); err != nil {
+		return nil, err
+	}
+	if err := requireModelExists(op, cfg.ModelPath); err != nil {
+		return nil, err
+	}
+	session, err := openScoringSession("NewStreamScorer", cfg.ModelPath, "vmaf_stream")
 	if err != nil {
-		return nil, closeAfterError("NewStreamScorer", err, &owner)
+		return nil, err
 	}
-	owner.ownModel(model)
-
-	if err := mapErrno("vmaf_use_features_from_model",
-		int(C.vmaf_use_features_from_model(vmafCtx, model))); err != nil {
-		return nil, closeAfterError("NewStreamScorer", err, &owner)
-	}
-
+	geom := newFrameGeometry(cfg.Width, cfg.Height, cfg.PixFmt, cfg.BitDepth)
 	return &StreamScorer{
 		cfg:       cfg,
-		vmafCtx:   vmafCtx,
-		model:     model,
-		frameSize: frameBytes(cfg.Width, cfg.Height, cfg.PixFmt, cfg.BitDepth),
-		owner:     owner,
+		vmafCtx:   session.ctx,
+		model:     session.model,
+		geom:      geom,
+		frameSize: geom.frameSize,
+		owner:     session.owner,
 	}, nil
+}
+
+// session is the scoring session over the scorer's live context and model.
+func (s *StreamScorer) session() *scoringSession {
+	return &scoringSession{ctx: s.vmafCtx, model: s.model}
 }
 
 // FrameSize returns the expected length in bytes of each raw_reference /
@@ -192,9 +169,9 @@ func (s *StreamScorer) FrameSize() int { return s.frameSize }
 // must equal the number of frames already pushed (strictly monotonic from 0);
 // a gap or repeat is rejected with ErrInvalidArgument.  refBytes / disBytes
 // MUST each be exactly FrameSize() bytes of planar Y-U-V data in the configured
-// pixel format.  Ownership of the freshly-allocated pictures transfers to
-// libvmaf inside vmaf_read_pictures; on any pre-transfer error both pictures
-// are unref'd so no C heap leaks.
+// pixel format.  Ownership of the freshly-allocated frames transfers to the
+// engine inside vmafx_submit; on any pre-transfer error both frames are
+// released so nothing leaks.
 func (s *StreamScorer) PushFrame(idx int, refBytes, disBytes []byte) error {
 	if s.teardownStarted {
 		return fmt.Errorf("StreamScorer: PushFrame after teardown started: %w", ErrInvalidArgument)
@@ -209,41 +186,28 @@ func (s *StreamScorer) PushFrame(idx int, refBytes, disBytes []byte) error {
 			idx, len(refBytes), len(disBytes), s.frameSize, ErrInvalidArgument)
 	}
 
-	pixFmtC := C.enum_VmafPixelFormat(s.cfg.PixFmt)
-	bpc := C.uint(s.cfg.BitDepth)
-	w := C.uint(s.cfg.Width)
-	h := C.uint(s.cfg.Height)
-
-	var refPic, disPic C.VmafPicture
-	if rc := C.vmaf_picture_alloc(&refPic, pixFmtC, bpc, w, h); rc != 0 {
-		return mapErrno("vmaf_picture_alloc(ref)", int(rc))
+	refFrame, disFrame, err := newFramePair(s.geom.desc)
+	if err != nil {
+		return err
 	}
-	if rc := C.vmaf_picture_alloc(&disPic, pixFmtC, bpc, w, h); rc != 0 {
-		C.vmaf_picture_unref(&refPic)
-		return mapErrno("vmaf_picture_alloc(dis)", int(rc))
-	}
-
-	if err := copyPlanesInto(&refPic, refBytes); err != nil {
-		C.vmaf_picture_unref(&refPic)
-		C.vmaf_picture_unref(&disPic)
+	// vmafx_submit consumes both frames on every path; these Close calls
+	// release them only when the submit was never reached.
+	defer refFrame.Close()
+	defer disFrame.Close()
+	if err := fillFrameFromBytes(refFrame, refBytes); err != nil {
 		return fmt.Errorf("StreamScorer: copy ref frame %d: %w", idx, err)
 	}
-	if err := copyPlanesInto(&disPic, disBytes); err != nil {
-		C.vmaf_picture_unref(&refPic)
-		C.vmaf_picture_unref(&disPic)
+	if err := fillFrameFromBytes(disFrame, disBytes); err != nil {
 		return fmt.Errorf("StreamScorer: copy dis frame %d: %w", idx, err)
 	}
-
-	// Ownership transfers to libvmaf; do NOT unref after this returns 0.
-	if err := mapErrno("vmaf_read_pictures",
-		int(C.vmaf_read_pictures(s.vmafCtx, &refPic, &disPic, C.uint(idx)))); err != nil {
+	if err := s.session().submitPair(refFrame, disFrame, idx); err != nil {
 		return err
 	}
 	s.nFrames++
 	return nil
 }
 
-// Finish flushes the libvmaf context, fetches the per-frame and pooled scores,
+// Finish flushes the context, fetches the per-frame and pooled scores,
 // and returns them.  After Finish the scorer cannot accept more frames; call
 // Close to release resources.  Returns ErrPictureRead when zero frames were
 // pushed (libvmaf cannot pool an empty interval).
@@ -263,11 +227,29 @@ func (s *StreamScorer) Finish(ctx context.Context) (*StreamResult, error) {
 	}
 
 	// Flush: signal end-of-stream so temporal features finalise.
-	if err := mapErrno("vmaf_read_pictures(flush)",
-		int(C.vmaf_read_pictures(s.vmafCtx, nil, nil, 0))); err != nil {
+	session := s.session()
+	if err := session.flush(); err != nil {
 		return nil, err
 	}
+	frames, err := s.harvestFrames(ctx, session)
+	if err != nil {
+		return nil, err
+	}
+	pooled, err := session.pooled(s.cfg.PoolMethod, s.nFrames)
+	if err != nil {
+		return nil, fmt.Errorf("StreamScorer.Finish: %w", err)
+	}
+	return &StreamResult{
+		Frames:          frames,
+		Score:           pooled,
+		Features:        s.pooledFeatures(),
+		FramesProcessed: s.nFrames,
+	}, nil
+}
 
+// harvestFrames reads the per-frame score and features of every pushed frame
+// after the flush, checking ctx at every frame boundary.
+func (s *StreamScorer) harvestFrames(ctx context.Context, session *scoringSession) ([]FrameResult, error) {
 	hint := s.cfg.FrameCountHint
 	if hint <= 0 {
 		hint = s.nFrames
@@ -277,54 +259,28 @@ func (s *StreamScorer) Finish(ctx context.Context) (*StreamResult, error) {
 		if err := ctx.Err(); err != nil {
 			return nil, fmt.Errorf("StreamScorer: cancelled harvesting frame %d: %w", i, err)
 		}
-		var score C.double
-		if err := mapErrno("vmaf_score_at_index",
-			int(C.vmaf_score_at_index(s.vmafCtx, s.model, &score, C.uint(i)))); err != nil {
+		score, err := session.frameScore(i)
+		if err != nil {
 			return nil, err
 		}
 		frames = append(frames, FrameResult{
 			Index:    i,
-			Score:    float64(score),
+			Score:    score,
 			Features: s.featuresAtIndex(i),
 		})
 	}
-
-	cPoolMethod, err := s.cfg.PoolMethod.toC()
-	if err != nil {
-		return nil, fmt.Errorf("StreamScorer.Finish: %w: %v", ErrInvalidArgument, err)
-	}
-
-	var pooled C.double
-	if err := mapErrno("vmaf_score_pooled",
-		int(C.vmaf_score_pooled(s.vmafCtx, s.model, cPoolMethod,
-			&pooled, 0, C.uint(s.nFrames-1)))); err != nil {
-		return nil, err
-	}
-
-	return &StreamResult{
-		Frames:          frames,
-		Score:           float64(pooled),
-		Features:        s.pooledFeatures(),
-		FramesProcessed: s.nFrames,
-	}, nil
+	return frames, nil
 }
 
 // featuresAtIndex collects the per-frame feature scores for frame i.  A feature
-// the model did not register returns a libvmaf error, which is skipped so the
+// the model did not register returns an error, which is skipped so the
 // resulting map contains only features actually available for this model.
 func (s *StreamScorer) featuresAtIndex(i int) map[string]float64 {
 	out := make(map[string]float64, len(streamFeatures))
 	for _, name := range streamFeatures {
-		cName := C.CString(name)
-		var fScore C.double
-		rc := C.vmaf_feature_score_at_index(s.vmafCtx, cName, &fScore, C.uint(i))
-		// SAFETY: cName is the C.CString malloc'd at the top of this iteration
-		// and is not stored anywhere by vmaf_feature_score_at_index, which has
-		// already returned; freeing it here releases a live block exactly once
-		// per iteration.
-		C.free(unsafe.Pointer(cName))
-		if rc == 0 {
-			out[name] = float64(fScore)
+		score, err := s.vmafCtx.FeatureScore(name, SafeUint64(int64(i)))
+		if err == nil {
+			out[name] = score.Value
 		}
 	}
 	return out
@@ -332,8 +288,8 @@ func (s *StreamScorer) featuresAtIndex(i int) map[string]float64 {
 
 // pooledFeatures collects the pooled (mean) feature scores over the whole
 // stream by averaging each registered feature's per-frame values.  libvmaf has
-// no single "pool all features" call, so we reuse vmaf_feature_score_at_index
-// per frame and average in Go — exact for the arithmetic mean the aggregate
+// no single "pool all features" call, so we reuse the per-frame feature score
+// and average in Go — exact for the arithmetic mean the aggregate
 // contract specifies.
 func (s *StreamScorer) pooledFeatures() map[string]float64 {
 	sums := make(map[string]float64, len(streamFeatures))
@@ -353,7 +309,7 @@ func (s *StreamScorer) pooledFeatures() map[string]float64 {
 	return out
 }
 
-// Close releases the libvmaf context and then its dependent model.  A failed
+// Close releases the context and then its dependent model.  A failed
 // context close retains both owners and may be retried by calling Close again.
 // Once teardown starts, PushFrame and Finish reject all further work even when
 // the first Close fails.  Successful Close calls are idempotent.
@@ -364,46 +320,5 @@ func (s *StreamScorer) Close() error {
 	}
 	s.vmafCtx = nil
 	s.model = nil
-	return nil
-}
-
-// copyPlanesInto copies tightly-packed planar Y-U-V bytes from src into the
-// stride-aligned planes of a freshly-allocated VmafPicture.  The on-wire layout
-// is packed (stride == row width); libvmaf's vmaf_picture_alloc may use a wider
-// stride, so each row is copied into its stride-aligned slot.
-func copyPlanesInto(pic *C.VmafPicture, src []byte) error {
-	bytesPerSample := 1
-	if pic.bpc > 8 {
-		bytesPerSample = 2
-	}
-	off := 0
-	for plane := 0; plane < 3; plane++ {
-		w := int(pic.w[plane])
-		h := int(pic.h[plane])
-		stride := int(pic.stride[plane])
-		dataPtr := pic.data[plane]
-		if dataPtr == nil || w == 0 || h == 0 {
-			continue
-		}
-		rowBytes := w * bytesPerSample
-		// SAFETY: dataPtr is the plane base returned by vmaf_picture_alloc,
-		// which guarantees stride[plane]*h[plane] readable-and-writable bytes
-		// for that plane; the nil/zero-extent case was rejected above, and the
-		// slice never outlives pic, whose planes stay alive until the
-		// ownership transfer in vmaf_read_pictures.
-		dst := unsafe.Slice((*byte)(dataPtr), stride*h)
-		for row := 0; row < h; row++ {
-			if off+rowBytes > len(src) {
-				return fmt.Errorf("plane %d row %d: source exhausted (off=%d need=%d have=%d): %w",
-					plane, row, off, rowBytes, len(src), ErrPictureRead)
-			}
-			copy(dst[row*stride:row*stride+rowBytes], src[off:off+rowBytes])
-			off += rowBytes
-		}
-	}
-	if off != len(src) {
-		return fmt.Errorf("plane copy consumed %d of %d source bytes: %w",
-			off, len(src), ErrPictureRead)
-	}
 	return nil
 }

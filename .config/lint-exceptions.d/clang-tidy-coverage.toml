@@ -202,3 +202,8 @@ expires = 2027-02-12
 path = "core/test/test_integer_adm_buffer_alloc.c"
 reason = "Category D. New unit test for the integer ADM slab offsets; the lanes' measured_sources change only when a tidy baseline is re-measured, and that re-measure adds this file."
 expires = 2027-01-04
+
+[[exception]]
+path = "pkg/libvmaf/testdata/c_api_pooled_mean.c"
+reason = "Category D. Reference harness the Go tests of pkg/libvmaf compile with cc against the Meson-built library, so it is in no Meson compile database and no lane reads it. Clean under the repository .clang-tidy when run by hand. Rectify by building it from a compile database a lane reads."
+expires = 2027-02-27
