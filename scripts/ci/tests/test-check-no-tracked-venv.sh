@@ -46,4 +46,40 @@ git -C "$tmp" rm -q --cached venv/lib/site.py
 ln -s /nonexistent "$tmp/.venv"
 git -C "$tmp" add .venv
 expect ".venv symlink flagged" 1
+git -C "$tmp" rm -q --cached .venv
+rm "$tmp/.venv"
+
+# Untracked strays in the worktree root (a bundled uv drops both).
+mkdir -p "$tmp/.venv/bin"
+expect "stray root .venv without bin/pip flagged" 1
+touch "$tmp/.venv/bin/pip"
+expect "make-built root .venv (bin/pip) passes" 0
+printf '[[package]]\nname = "vmafx-tooling"\nsource = { virtual = "." }\n' >"$tmp/uv.lock"
+expect "package-less root uv.lock flagged" 1
+printf '[[package]]\nname = "pyyaml"\n' >>"$tmp/uv.lock"
+expect "uv.lock that locks packages passes" 0
+rm "$tmp/uv.lock"
+
+# The Makefile puts the root .venv first on PATH only when it is its own venv.
+root="$here/../../.."
+probe() { # prints the python3 that make recipes resolve, run from $tmp
+  make -s -C "$tmp" -f "$root/Makefile" --eval 'probe-py: ; @command -v python3' probe-py
+}
+printf '#!/bin/sh\nexit 0\n' >"$tmp/.venv/bin/python3"
+chmod +x "$tmp/.venv/bin/python3"
+case "$(probe)" in
+  "$tmp/.venv/bin/python3") echo "ok   make-built venv goes first on PATH" ;;
+  *)
+    echo "FAIL make-built venv not first on PATH" >&2
+    exit 1
+    ;;
+esac
+rm "$tmp/.venv/bin/pip"
+case "$(probe)" in
+  "$tmp/.venv/bin/python3")
+    echo "FAIL stray venv shadows python3 under make" >&2
+    exit 1
+    ;;
+  *) echo "ok   stray venv stays off PATH under make" ;;
+esac
 echo "all check-no-tracked-venv cases passed"
