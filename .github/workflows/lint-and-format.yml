@@ -90,6 +90,10 @@ jobs:
         run: python -m pip install --require-hashes -r requirements/locks/pre-commit.txt
       - name: Install jsonschema
         run: python -m pip install --require-hashes -r requirements/locks/jsonschema.txt
+      - name: Install ruff for the system hooks
+        # check-fork-python-subprocess runs ruff from PATH; PrecommitJobTools in
+        # scripts/ci/tests/test_precommit_job_tools.py keeps this in step.
+        run: python -m pip install --require-hashes -r requirements/locks/dev-linters.txt
       - name: Name the hooks that only run tooling tests
         # ADR-1568 (design notes)
         id: test-hooks

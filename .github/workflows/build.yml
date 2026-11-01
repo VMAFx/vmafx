@@ -635,6 +635,13 @@ jobs:
         with:
           phase: get
 
+      - name: Get the HDR ICtCp fixture
+        if: (startsWith(matrix.os, 'ubuntu') && !matrix.sycl) || matrix.os == 'macos-latest'
+        uses: ./.github/actions/pq-fixture
+        with:
+          phase: get
+          bundle: hdr-ictcp-pixels-v1
+
       - name: Run tox tests (Linux)
         # Python snapshots and the immutable Netflix assertions are authored
         # against the CPU/GCC contract. Intel LLVM produces known, stable
@@ -656,6 +663,13 @@ jobs:
           CC="$(brew --prefix)/opt/llvm/bin/clang" \
           CXX="$(brew --prefix)/opt/llvm/bin/clang++" \
           tox -c python
+
+      - name: Finish with the HDR ICtCp fixture
+        if: ${{ !cancelled() && ((startsWith(matrix.os, 'ubuntu') && !matrix.sycl) || matrix.os == 'macos-latest') }}
+        uses: ./.github/actions/pq-fixture
+        with:
+          phase: finish
+          bundle: hdr-ictcp-pixels-v1
 
       - name: Finish with the PQ fixture
         if: ${{ !cancelled() && ((startsWith(matrix.os, 'ubuntu') && !matrix.sycl) || matrix.os == 'macos-latest') }}
