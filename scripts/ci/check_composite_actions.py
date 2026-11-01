@@ -16,6 +16,11 @@ workflow gets:
    with each ``${{ ... }}`` expression replaced by a placeholder word. A step in another
    shell (``pwsh``, ``cmd``, ``python``) is reported as skipped with the reason: no
    checker for it is part of the toolchain.
+3. Expressions. A ``run:`` block holds no ``${{ ... }}`` expression except the runner
+   values in ``RUN_EXPRESSION_ALLOW``. GitHub expands an expression into the script text
+   before the shell parses it, so an input or a step output there is code injection
+   (zizmor ``template-injection``); the step passes it through ``env:`` and quotes the
+   variable instead. This holds for every shell, not only the ones shellcheck reads.
 
 Exit 0 when every action passes, 1 on a finding, 2 when shellcheck is missing.
 """
@@ -42,6 +47,22 @@ SHELLCHECK_TIMEOUT_S = 60
 # environment and the runner's files, which shellcheck cannot, and a `${{ }}` placeholder
 # makes some words constant.
 SHELLCHECK_EXCLUDE = "SC1091,SC2194,SC2050,SC2153,SC2154,SC2157,SC2043"
+# Expressions a run block may hold: values the runner sets, which carry no caller text.
+# An allow-list (fleet rule for readers that mirror another parser), never a list of
+# unsafe contexts.
+RUN_EXPRESSION_ALLOW = frozenset(
+    {
+        "github.action_path",
+        "github.run_attempt",
+        "github.run_id",
+        "github.run_number",
+        "github.sha",
+        "github.workspace",
+        "runner.arch",
+        "runner.os",
+        "runner.temp",
+    }
+)
 MAX_ACTIONS = 256
 MAX_STEPS = 1024
 
@@ -141,6 +162,23 @@ def check_shell(manifest: dict[str, Any], label: str, notes: list[str]) -> list[
     return findings
 
 
+def check_run_expressions(manifest: dict[str, Any], label: str) -> list[str]:
+    """Findings for every expression outside the allow-list inside a ``run`` block."""
+    findings: list[str] = []
+    steps = (manifest.get("runs") or {}).get("steps") or []
+    for index, step in enumerate(steps[:MAX_STEPS], start=1):
+        if not isinstance(step, dict) or "run" not in step:
+            continue
+        for match in EXPRESSION.finditer(str(step["run"])):
+            inner = match.group(0)[3:-2].strip()
+            if inner not in RUN_EXPRESSION_ALLOW:
+                findings.append(
+                    f"{label}: step {index} ({step.get('name', 'unnamed')}): "
+                    f"{match.group(0)} in `run`; pass it through `env:` and quote the variable"
+                )
+    return findings
+
+
 def check_action(path: Path, root: Path, notes: list[str]) -> list[str]:
     """All findings for one action manifest."""
     label = str(path.relative_to(root))
@@ -150,7 +188,7 @@ def check_action(path: Path, root: Path, notes: list[str]) -> list[str]:
         return [f"{label}: invalid YAML: {exc}"]
     findings = [f"{label}: {item}" for item in check_structure(manifest)]
     if not findings:
-        findings = check_shell(manifest, label, notes)
+        findings = check_run_expressions(manifest, label) + check_shell(manifest, label, notes)
     return findings
 
 
