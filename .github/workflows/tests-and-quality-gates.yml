@@ -121,6 +121,12 @@ jobs:
         if: steps.impact.outputs.golden_harness == 'true'
         run: bash scripts/ci/prune-corrupt-fixtures.sh --restore-tracked python/test/resource
 
+      - name: Get the PQ fixture
+        if: steps.impact.outputs.golden_harness == 'true'
+        uses: ./.github/actions/pq-fixture
+        with:
+          phase: get
+
       - name: Run Netflix golden normal pair
         if: steps.impact.outputs.golden_harness == 'true'
         env:
@@ -146,16 +152,13 @@ jobs:
         env:
           PYTHONPATH: ${{ github.workspace }}/python
         timeout-minutes: 15
-        run: |
-          timeout --kill-after=30s 14m python3 -m pytest \
-            python/test/hdr_models_pin_test.py \
-            python/test/vmaf_v1_quality_runner_test.py \
-            -v --tb=short --timeout=780 --timeout-method=signal \
-            --junitxml="${{ runner.temp }}/hdr_golden_junit.xml"
-          python3 scripts/ci/check_required_tests_ran.py \
-            --junit "${{ runner.temp }}/hdr_golden_junit.xml" \
-            --required-file "hdr_models_pin_test" \
-            --required-file "vmaf_v1_quality_runner_test"
+        run: bash scripts/ci/run-hdr-golden-pins.sh "${{ runner.temp }}/hdr_golden_junit.xml"
+
+      - name: Finish with the PQ fixture
+        if: ${{ !cancelled() && steps.impact.outputs.golden_harness == 'true' }}
+        uses: ./.github/actions/pq-fixture
+        with:
+          phase: finish
 
       - name: Save Netflix vmaf_resource fixtures
         if: ${{ success() && (steps.impact.outputs.golden_harness == 'true') && steps.fixtures.outputs.cache-hit != 'true' }}
@@ -821,28 +824,8 @@ jobs:
             exit 1
           fi
 
-  # ===== MCP smoke gate (T7-MCP-SMOKE-CI / Research-0034 gap #3) =====
-  # Builds libvmaf with the full MCP transport matrix (sse + uds + stdio)
-  # and exercises both the embedded C-side scaffold smoke (core/test/
-  # test_mcp_smoke.c — pins the -ENOSYS contract per ADR-0209) and the
-  # Python MCP server pytest suite under mcp-server/vmaf-mcp/tests/.
-  #
-  # Before this lane existed, only `supply-chain.yml::mcp-build` exercised
-  # the MCP surface — and that just builds a wheel without running any
-  # tests. The Python `tests/test_*.py` files and the C `test_mcp_smoke`
-  # binary were never invoked in CI. This job closes that gap.
-  #
-  # Local repro:
-  #   cd libvmaf && meson setup build-mcp \
-  #     -Denable_cuda=false -Denable_sycl=false \
-  #     -Denable_mcp=true -Denable_mcp_sse=true \
-  #     -Denable_mcp_uds=true -Denable_mcp_stdio=true && \
-  #   meson compile -C build-mcp && \
-  #   python3 ../scripts/ci/run_meson_test.py -- -C build-mcp test_mcp_smoke --print-errorlogs
-  #   cd ../mcp-server/vmaf-mcp && \
-  #   python3 -m venv ~/.cache/mcp-venv && \
-  #   ~/.cache/mcp-venv/bin/pip install -e .[dev] && \
-  #   ~/.cache/mcp-venv/bin/pytest tests/ -v
+  # MCP smoke gate: the C scaffold smoke (core/test/test_mcp_smoke.c, ADR-0209)
+  # plus the mcp-server/vmaf-mcp pytest suite, with every MCP transport built.
   mcp-smoke:
     needs: tier
     if: needs.tier.outputs.light == 'true'
@@ -1131,6 +1114,11 @@ jobs:
           echo "${{ github.workspace }}/core/build-coverage/tools" >> "$GITHUB_PATH"
           python3 -m pip install --user --require-hashes \
             -r requirements/locks/pytest-timeout.txt
+      - name: Get the PQ fixture
+        if: steps.impact.outputs.golden_harness == 'true'
+        uses: ./.github/actions/pq-fixture
+        with:
+          phase: get
       - name: Run Python test suite, shard 1/4
         id: python_coverage_shard_1
         if: steps.impact.outputs.golden_harness == 'true'
@@ -1332,6 +1320,10 @@ jobs:
         run: >-
           python3 ../scripts/ci/run_meson_test.py -- -C build-coverage-gpu
           --print-errorlogs --num-processes 1 --timeout-multiplier 3
+      - name: Get the PQ fixture
+        uses: ./.github/actions/pq-fixture
+        with:
+          phase: get
       - name: Run Python suite on CUDA + SYCL backends
         env:
           PYTHONPATH: ${{ github.workspace }}/python
