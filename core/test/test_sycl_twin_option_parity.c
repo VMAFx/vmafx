@@ -57,6 +57,7 @@
 #include <string.h>
 
 #include "test.h"
+#include "float_bits.h"
 
 #include "dict.h"
 #include "feature/feature_extractor.h"
@@ -267,11 +268,6 @@ static mu_message_t pair_run(Pair *pair, const Fixture *fx, const char *cpu_name
 /* Comparisons                                                        */
 /* ------------------------------------------------------------------ */
 
-static bool within(double cpu, double gpu, double tol)
-{
-    return cpu == gpu || fabs(cpu - gpu) <= tol;
-}
-
 /* `tol` is a linear-domain tolerance; `db` maps it through the slope of
  * -10*log10(1 - x), which is 10 / ln(10) * 10^(dB / 10). */
 static mu_message_t expect_close(const Pair *pair, const char *name, unsigned frames, double tol,
@@ -286,7 +282,7 @@ static mu_message_t expect_close(const Pair *pair, const char *name, unsigned fr
                   !vmaf_feature_score_at_index(pair->gpu, name, &gpu, i));
         const double limit =
             db && isfinite(cpu) ? tol * (10.0 / log(10.0)) * pow(10.0, cpu / 10.0) : tol;
-        if (!within(cpu, gpu, limit)) {
+        if (!vmaf_test_within_f64(cpu, gpu, limit)) {
             (void)fprintf(stderr, "\n%s[%u]: cpu=%.17g sycl=%.17g limit=%.3g\n", name, i, cpu, gpu,
                           limit);
             return "SYCL twin differs from the CPU beyond the twin's parity tolerance";
@@ -318,8 +314,10 @@ static mu_message_t expect_all(const Pair *pair, const char *name, unsigned fram
                   !vmaf_feature_score_at_index(pair->cpu, name, &cpu, i));
         mu_assert("feature missing on the SYCL twin",
                   !vmaf_feature_score_at_index(pair->gpu, name, &gpu, i));
-        mu_assert("CPU value differs from the expected boundary value", cpu == value);
-        mu_assert("SYCL value differs from the expected boundary value", gpu == value);
+        mu_assert("CPU value differs from the expected boundary value",
+                  vmaf_test_identical_f64(cpu, value));
+        mu_assert("SYCL value differs from the expected boundary value",
+                  vmaf_test_identical_f64(gpu, value));
     }
     return NULL;
 }
@@ -357,7 +355,7 @@ static mu_message_t expect_aggregate(const Pair *pair, const char *name)
               !read_aggregate(pair->cpu, "twin_option_parity_cpu.json", name, &cpu));
     mu_assert("SYCL aggregate missing",
               !read_aggregate(pair->gpu, "twin_option_parity_sycl.json", name, &gpu));
-    if (cpu != gpu) {
+    if (!vmaf_test_identical_f64(cpu, gpu)) {
         (void)fprintf(stderr, "\n%s: cpu=%.17g sycl=%.17g\n", name, cpu, gpu);
         return "SYCL aggregate differs from the CPU";
     }

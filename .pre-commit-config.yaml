@@ -1147,6 +1147,19 @@ repos:
         files: '^(\.semgrep\.yml|\.semgrepignore|\.pre-commit-config\.yaml|scripts/ci/tests/test_semgrep_vendored_scope\.py|core/src/pdjson\.(c|h)|core/src/mcp/3rdparty/.*)$'
         pass_filenames: false
 
+      - id: test-semgrep-float-identity
+        name: Float-identity rule reports computed float compares in core/test (planted-defect recall)
+        # vmaf-test-float-identity-via-float-bits refuses `==` / `!=` between
+        # two computed floats in core/test/ (CodeQL cpp/equality-on-floats,
+        # alerts 1593-1598). This plants the reported and the allowed shapes,
+        # then scans the real tests (ADR-1502).
+        entry: python3 -m unittest discover -s scripts/ci/tests -p test_semgrep_float_identity.py
+        language: python
+        additional_dependencies: ["semgrep>=1.182.1,<2.0", "pyyaml==6.0.3"]
+        require_serial: true
+        files: '^(\.semgrep\.yml|\.pre-commit-config\.yaml|scripts/ci/(lint_exceptions|tests/test_semgrep_(float_identity|vendored_scope))\.py|\.config/lint-exceptions\.d/vmaf-test-float-identity-[a-z-]+\.toml|core/test/.+\.(c|h|cc|cpp|cxx|hh|hpp|hxx))$'
+        pass_filenames: false
+
       # Codacy runs flawfinder on every pull request and fails it on a new
       # finding; nothing ran flawfinder before the push (#3216: two fopen()
       # calls in a Go test harness). This runs the same engine on the changed
