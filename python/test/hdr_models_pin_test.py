@@ -372,7 +372,7 @@ class VmafexecPathTest(unittest.TestCase):
             exe = os.path.join(tmp, "vmaf")
             with open(exe, "w", encoding="utf-8") as handle:
                 handle.write("#!/bin/sh\n")
-            os.chmod(exe, 0o700)
+            os.chmod(exe, 0o500)  # owner read+execute: all a shell fixture needs
             cwd = os.getcwd()
             os.chdir(tmp)
             try:

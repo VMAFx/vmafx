@@ -57,10 +57,32 @@ class ForkPythonSubprocess(unittest.TestCase):
         self.assertEqual(self._run({"scripts/d.py": FORK + CALL}), 0)
 
     def test_clean_fork_file_passes(self) -> None:
-        """Positive: a fork file with an owner-only mode and no direct call passes."""
-        self.assertEqual(
-            self._run({"python/test/e_test.py": FORK + "import os\nos.chmod('x', 0o700)\n"}), 0
-        )
+        """Positive: owner read-execute and a 0o644 data file stay under Semgrep's threshold."""
+        body = "import os\nos.chmod('x', 0o500)\nos.chmod('y', 0o644)\n"
+        self.assertEqual(self._run({"python/test/e_test.py": FORK + body}), 0)
+
+    def test_owner_only_0o700_fails(self) -> None:
+        """Negative: Semgrep reports 0o700 (>= 0o650) although ruff S103 accepts it."""
+        body = "import os\nos.chmod('x', 0o700)\n"
+        self.assertEqual(self._run({"python/test/f_test.py": FORK + body}), 1)
+
+    def test_mode_thresholds(self) -> None:
+        """Boundary: the Semgrep rule's edges, flags and the | 0o111 form."""
+        cases = {
+            "0o647": False,
+            "0o650": True,
+            "0o77777": True,
+            "0o100644": False,
+            "0o100650": True,
+            "stat.S_IRUSR | stat.S_IXGRP": True,
+            "m | 0o111": True,
+            "stat.S_IRUSR | stat.S_IWUSR": False,
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            for mode, wide in cases.items():
+                path = Path(tmp) / "m.py"
+                path.write_text(f"import os, stat\nos.chmod('x', {mode})\n", encoding="utf-8")
+                self.assertEqual(bool(MOD.mode_findings(str(path))), wide, mode)
 
 
 if __name__ == "__main__":
