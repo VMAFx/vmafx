@@ -1128,7 +1128,6 @@ static char *run_option_tests(void)
     mu_run_test(test_fex_vector_dedup_by_provided_feature_name);
     mu_run_test(test_supports_options_empty_dict);
     mu_run_test(test_supports_options_known_key);
-    mu_run_test(test_supports_options_walk_is_bounded);
     mu_run_test(test_supports_options_unknown_key_reports_missing);
     mu_run_test(test_supports_options_alias_key);
     mu_run_test(test_supports_options_null_extractor);
@@ -1143,6 +1142,7 @@ static char *run_option_capability_tests(void)
     mu_run_test(test_honours_invalid_values_remain_parser_owned);
     mu_run_test(test_honours_unknown_option_reports_key);
     mu_run_test(test_honours_unrestricted_nondefault);
+    mu_run_test(test_supports_options_walk_is_bounded);
     return NULL;
 }
 
