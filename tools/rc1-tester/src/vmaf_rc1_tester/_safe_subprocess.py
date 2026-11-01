@@ -246,6 +246,22 @@ def _resolve_allowed_executable(
     return str(resolved)
 
 
+def executable_argument(executable: Arg, root: Arg) -> str:
+    """Return `executable` as `run()` accepts it, resolving a relative path against `root`.
+
+    `run()` takes a bare name (looked up on PATH) or an absolute path and refuses
+    a relative path with a directory part. A caller that reads a path such as
+    `core/build/tools/vmaf` from an option or the environment passes it through
+    here: a bare name stays as it is, an absolute path stays as it is, and any
+    other path is made absolute against `root`.
+    """
+    text = _stringify(executable, label="executable")
+    path = Path(text).expanduser()
+    if path.is_absolute() or len(path.parts) <= 1:
+        return str(path) if path.is_absolute() else text
+    return str((Path(root) / path).resolve())
+
+
 def _validated_argv(
     argv: Sequence[Arg], allowed_executables: Collection[Arg], search_path: str
 ) -> tuple[str, ...]:

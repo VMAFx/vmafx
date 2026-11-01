@@ -25,6 +25,7 @@ from scripts.lib.safe_subprocess import (
     CommandResult,
     CommandTimedOut,
     CommandValidationError,
+    executable_argument,
     run,
     run_async,
     signal_process_group,
@@ -136,6 +137,24 @@ class SafeSubprocessTests(unittest.TestCase):
             run([PYTHON, "x\0y"], allowed_executables=ALLOW_PYTHON)
         with self.assertRaises(CommandValidationError):
             run([PYTHON, "x" * (MAX_ARG_BYTES + 1)], allowed_executables=ALLOW_PYTHON)
+
+    def test_executable_argument_resolves_relative_paths_only(self) -> None:
+        root = Path(PYTHON).parent
+        # Positive: a path with a directory part becomes absolute under `root`,
+        # and run() then accepts it where the relative form is refused.
+        relative = Path(PYTHON).relative_to(root.parent).as_posix()
+        self.assertIn("/", relative)
+        resolved = executable_argument(relative, root.parent)
+        self.assertEqual(resolved, str((root.parent / relative).resolve()))
+        with self.assertRaises(CommandValidationError):
+            run([relative, "-V"], allowed_executables=(relative,))
+        self.assertEqual(run([resolved, "-V"], allowed_executables=(resolved,)).returncode, 0)
+        # Boundary: a bare name stays for the PATH lookup; an absolute path stays.
+        self.assertEqual(executable_argument("vmaf", root), "vmaf")
+        self.assertEqual(executable_argument(PYTHON, "/elsewhere"), PYTHON)
+        # Negative: a NUL byte is refused, as run() refuses it.
+        with self.assertRaises(CommandValidationError):
+            executable_argument("bin/x\0y", root)
 
     def test_capture_limit_terminates_a_flooding_child(self) -> None:
         with self.assertRaises(CommandOutputLimitExceeded) as raised:

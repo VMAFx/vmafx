@@ -9,6 +9,9 @@ Usage: python3 gen_cpu_golden.py
 import json, os, sys, time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from scripts.lib.safe_subprocess import (
+    executable_argument,
+)  # noqa: E402 - needs the repository root
 from scripts.lib.safe_subprocess import run as run_command  # noqa: E402 - needs the repository root
 
 if __package__:
@@ -19,7 +22,9 @@ else:
 basedir = os.path.dirname(os.path.abspath(__file__))
 os.chdir(basedir)
 
-vmaf_bin = os.environ.get("VMAF_BIN", "/usr/local/bin/vmaf")
+# A relative VMAF_BIN names a path under testdata/ (the directory above), as
+# before run_command; run_command itself takes only bare names and absolute paths.
+vmaf_bin = executable_argument(os.environ.get("VMAF_BIN", "/usr/local/bin/vmaf"), basedir)
 model = "version=vmaf_v0.6.1"
 
 resolutions = [

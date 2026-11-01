@@ -45,6 +45,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
+from scripts.lib.safe_subprocess import executable_argument  # noqa: E402
 from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
 
 
@@ -279,10 +280,7 @@ def resolve_executable(name: str) -> str:
     The default `--vmaf-bin` is `core/build/tools/vmaf`, relative to the repository root;
     run_command refuses relative paths with a directory part.
     """
-    if os.sep not in name and (os.altsep is None or os.altsep not in name):
-        return name
-    path = Path(name)
-    return str(path if path.is_absolute() else (_REPO_ROOT / path).resolve())
+    return executable_argument(name, _REPO_ROOT)
 
 
 def execute_run(cmd: list[str], out_path: str) -> tuple[int, float, str, dict | None]:
