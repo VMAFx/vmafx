@@ -22,8 +22,8 @@ Design notes:
   the model file is unavailable. This matches the `vmaf-roi` C
   sidecar's posture (ADR-0247).
 - Per-codec helpers reduce the pixel-level map to the encoder's ROI
-  unit: 16x16 luma for x264/libaom qpfiles, a spatial mean for x265
-  zones, and 64x64 units for SVT-AV1 / VVenC ROI files.
+  unit: 16x16 luma for x264/libaom/SVT-AV1 qpfiles and a spatial mean
+  for x265 zones. libvvenc has no measured ROI channel (ADR-3386).
 - All numeric kernels (RGB conversion, ImageNet normalisation,
   per-MB reduce, QP-offset clamp) are pure NumPy so the test suite
   can exercise them without onnxruntime installed.
@@ -575,25 +575,9 @@ def write_svtav1_qpoffset_map(
 ) -> Path:
     """Write an SVT-AV1 QP-offset map file for an N-frame clip.
 
-    SVT-AV1's ``--qp-file`` format (added in SVT-AV1 1.7) expects a
-    plain-text file where each line is a space-separated row of integer
-    QP offsets — one row per super-block row, one file per frame.
-    Multiple frames are separated by a blank line between each frame's
-    block grid.  The same spatial mask is replicated for every frame
-    (the saliency mask is a per-clip aggregate).
-
-    Format reference: SVT-AV1 ``Source/App/EncApp/EbAppConfig.c``
-    (``read_qp_map_file``, tag ``v2.1.0``, accessed 2026-05-09):
-
-        frame 0 block row 0:  "off0 off1 off2 ...\\n"
-        frame 0 block row 1:  "off0 off1 off2 ...\\n"
-        ...
-        (blank line)
-        frame 1 block row 0:  ...
-
-    The ``block_offsets`` array is expected to be at the super-block
-    granularity (64x64); callers should call
-    :func:`reduce_qp_map_to_blocks` with ``block=SVTAV1_SB_SIDE`` first.
+    Legacy space-separated super-block rows, with blank lines between frames.
+    This formatter is not used by any encode path since ADR-3386; it is
+    retained for API stability. The patched bridge uses write_x264_qpfile.
     """
     bh, _bw = block_offsets.shape
     frame_lines: list[str] = []
@@ -610,11 +594,9 @@ def write_svtav1_qpoffset_map(
 def augment_extra_params_with_svtav1_qpmap(base: Sequence[str], qpmap: Path) -> tuple[str, ...]:
     """Return ``base + ('-svtav1-params', f'qp-file={qpmap}')``.
 
-    FFmpeg's ``libsvtav1`` wrapper forwards opaque ``-svtav1-params
-    key=value:key=value`` strings to ``EbConfig`` via the public
-    ``svt_av1_enc_set_parameter`` API, mirroring the pattern the
-    vvenc wrapper uses for ``-vvenc-params``.  The ``qp-file`` key
-    is the documented SVT-AV1 config name (``EbAppConfig.c`` v2.1.0).
+    Legacy helper, not used by any encode path since ADR-3386. The library
+    rejects qp-file while FFmpeg can still exit zero, silently losing ROI.
+    Retained for API stability; use augment_extra_params_with_svtav1_qpfile.
     """
     return tuple(base) + ("-svtav1-params", f"qp-file={qpmap}")
 
@@ -635,19 +617,9 @@ def write_vvenc_roi_csv(
 ) -> Path:
     """Write a VVenC ROI-map CSV for an N-frame clip.
 
-    VVenC's ``--roi`` option accepts a CSV file where each row is a
-    comma-separated sequence of QP delta values, one row per CTU row,
-    frames separated by a blank line.  The format is documented in
-    ``vvencapp --help`` (``--roi <file>``) at VVenC tag ``v1.14.0``
-    and confirmed against ``source/Lib/apputils/VVEncAppCfg.cpp``
-    ``parseROIFile`` at the same tag (accessed 2026-05-09).
-
-    Positive delta = lower quality (save bits). Negative delta = higher
-    quality (spend more bits). Convention matches :func:`saliency_to_qp_map`.
-
-    ``block_offsets`` should be at CTU granularity (64x64); callers
-    should call :func:`reduce_qp_map_to_blocks` with
-    ``block=VVENC_CTU_SIDE`` first.
+    Legacy comma-separated CTU rows, with blank lines between frames.
+    This formatter is not used by any encode path since ADR-3386; it is
+    retained for API stability. FFmpeg has no libvvenc ROI-map channel.
     """
     bh, _bw = block_offsets.shape
     frame_lines: list[str] = []
@@ -664,10 +636,8 @@ def write_vvenc_roi_csv(
 def augment_extra_params_with_vvenc_roi(base: Sequence[str], roi_csv: Path) -> tuple[str, ...]:
     """Return ``base + ('-vvenc-params', f'ROIFile={roi_csv}')``.
 
-    VVenC's ROI map file is passed via ``-vvenc-params ROIFile=<path>``
-    through FFmpeg's ``libvvenc`` wrapper (``vvenc_set_param`` KV API).
-    The ``ROIFile`` key is defined in ``VVEncAppCfg.h`` at tag
-    ``v1.14.0`` line 895 (``ROI_FILE``).
+    Legacy helper, not used by any encode path since ADR-3386. The measured
+    libvvenc wrapper refuses ROIFile. Retained for API stability only.
     """
     return tuple(base) + ("-vvenc-params", f"ROIFile={roi_csv}")
 
@@ -757,6 +727,16 @@ def _saliency_augment_x265(
     )
 
 
+def augment_extra_params_with_svtav1_qpfile(base: Sequence[str], qpfile: Path) -> tuple[str, ...]:
+    """Append patch 0007's top-level SVT-AV1 ``-qpfile`` ROI option.
+
+    The bridge consumes x264-style 16x16 macroblocks and maps them to 64x64
+    super-blocks with at most eight segments (ADR-3386). Stock FFmpeg
+    refuses this option, so an encode fails instead of silently losing ROI.
+    """
+    return tuple(base) + ("-qpfile", str(qpfile))
+
+
 def _saliency_augment_svtav1(
     request: EncodeRequest,
     qp_map: np.ndarray,
@@ -764,60 +744,21 @@ def _saliency_augment_svtav1(
     duration_frames: int,
     persist: bool,
 ) -> EncodeRequest:
-    """Return a copy of ``request`` augmented with the SVT-AV1 qpmap argv.
-
-    Internal helper for :func:`saliency_aware_encode`. Receives the raw
-    per-pixel ``int32 [H, W]`` QP-offset map, reduces it to 64×64
-    super-block granularity (SVT-AV1's native ROI-map unit), writes the
-    space-separated qpmap file, and patches ``request.extra_params``
-    with ``-svtav1-params qp-file=…``.
-    """
-    sb_offsets = reduce_qp_map_to_blocks(qp_map, block=SVTAV1_SB_SIDE)
+    """Write a 16x16 x264-style qpfile for patch 0007's SVT-AV1 ROI bridge."""
+    block_offsets = reduce_qp_map_to_blocks(qp_map, block=X264_MB_SIDE)
     if persist:
-        qpmap = request.output.with_suffix(".svtav1-qpmap.txt")
-        write_svtav1_qpoffset_map(sb_offsets, qpmap, duration_frames=duration_frames)
+        qpfile = request.output.with_suffix(".svtav1-qpfile.txt")
+        write_x264_qpfile(block_offsets, qpfile, duration_frames=duration_frames)
         return dataclasses.replace(
             request,
-            extra_params=augment_extra_params_with_svtav1_qpmap(request.extra_params, qpmap),
+            extra_params=augment_extra_params_with_svtav1_qpfile(request.extra_params, qpfile),
         )
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".svtav1-qpmap.txt", delete=False) as fh:
-        qpmap = Path(fh.name)
-    write_svtav1_qpoffset_map(sb_offsets, qpmap, duration_frames=duration_frames)
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".svtav1-qpfile.txt", delete=False) as fh:
+        qpfile = Path(fh.name)
+    write_x264_qpfile(block_offsets, qpfile, duration_frames=duration_frames)
     return dataclasses.replace(
         request,
-        extra_params=augment_extra_params_with_svtav1_qpmap(request.extra_params, qpmap),
-    )
-
-
-def _saliency_augment_vvenc(
-    request: EncodeRequest,
-    qp_map: np.ndarray,
-    *,
-    duration_frames: int,
-    persist: bool,
-) -> EncodeRequest:
-    """Return a copy of ``request`` augmented with the VVenC ROI CSV argv.
-
-    Internal helper for :func:`saliency_aware_encode`. Receives the raw
-    per-pixel ``int32 [H, W]`` QP-offset map, reduces it to 64×64 CTU
-    granularity (VVenC's native ROI-map unit), writes the
-    comma-separated ROI-delta CSV, and patches ``request.extra_params``
-    with ``-vvenc-params ROIFile=…``.
-    """
-    ctu_offsets = reduce_qp_map_to_blocks(qp_map, block=VVENC_CTU_SIDE)
-    if persist:
-        roi_csv = request.output.with_suffix(".vvenc-roi.csv")
-        write_vvenc_roi_csv(ctu_offsets, roi_csv, duration_frames=duration_frames)
-        return dataclasses.replace(
-            request,
-            extra_params=augment_extra_params_with_vvenc_roi(request.extra_params, roi_csv),
-        )
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".vvenc-roi.csv", delete=False) as fh:
-        roi_csv = Path(fh.name)
-    write_vvenc_roi_csv(ctu_offsets, roi_csv, duration_frames=duration_frames)
-    return dataclasses.replace(
-        request,
-        extra_params=augment_extra_params_with_vvenc_roi(request.extra_params, roi_csv),
+        extra_params=augment_extra_params_with_svtav1_qpfile(request.extra_params, qpfile),
     )
 
 
@@ -833,7 +774,6 @@ _SALIENCY_DISPATCH: dict[str, Any] = {
     "libaom-av1": _saliency_augment_libaom,
     "libx265": _saliency_augment_x265,
     "libsvtav1": _saliency_augment_svtav1,
-    "libvvenc": _saliency_augment_vvenc,
 }
 
 
@@ -880,7 +820,7 @@ def _encode_removing_sidecar(
 
     if cfg.persist_qpfile:
         return run_encode(augmented, ffmpeg_bin=ffmpeg_bin, runner=runner)
-    # The augment helper injected the sidecar path in the last ``key=<path>`` slot.
+    # The augment helper appended the sidecar path after ``-qpfile``.
     cleanup_path = _cleanup_path_from_extra_params(augmented.extra_params)
     try:
         return run_encode(augmented, ffmpeg_bin=ffmpeg_bin, runner=runner)
@@ -905,8 +845,8 @@ def saliency_aware_encode(
     """Drive a single saliency-aware encode end-to-end.
 
     Dispatches on ``request.encoder`` through ``_SALIENCY_DISPATCH``:
-    ``libx264`` / ``libaom-av1`` (qpfile, 16x16), ``libx265`` (zones),
-    ``libsvtav1`` (qp-file, 64x64), ``libvvenc`` (ROI CSV, 64x64). Other
+    ``libx264`` / ``libaom-av1`` / ``libsvtav1`` (qpfile, 16x16) and
+    ``libx265`` (zones). ``libvvenc`` has no ROI channel (ADR-3386). Unsupported
     encoders raise :class:`SaliencyUnsupportedEncoderError` (exit code 2)
     unless ``SaliencyConfig.allow_unsupported_encoder_fallback`` or
     ``VMAFTUNE_SALIENCY_FALLBACK_OK=1`` demotes them to a plain encode
@@ -968,6 +908,7 @@ __all__ = [
     "_pad_to_multiple",
     "augment_extra_params_with_libaom_qpfile",
     "augment_extra_params_with_qpfile",
+    "augment_extra_params_with_svtav1_qpfile",
     "augment_extra_params_with_svtav1_qpmap",
     "augment_extra_params_with_vvenc_roi",
     "augment_extra_params_with_x265_zones",

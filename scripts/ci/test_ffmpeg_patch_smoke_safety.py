@@ -318,7 +318,9 @@ class SmokeSafety(unittest.TestCase):
     def test_default_build_passes_no_toolchain(self) -> None:
         result = self.run_smoke()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertFalse(any(a.startswith("--toolchain") for a in self.configured_args()))
+        args = self.configured_args()
+        self.assertFalse(any(a.startswith("--toolchain") for a in args))
+        self.assertNotIn("--pkg-config-flags=--static", args)
         self.assertIn("Running generated FATE subset", result.stdout)
 
     def test_msvc_toolchain_reaches_configure_with_the_dll_runtime(self) -> None:
@@ -326,7 +328,12 @@ class SmokeSafety(unittest.TestCase):
         result = self.run_smoke()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         args = self.configured_args()
-        for expected in ("--toolchain=msvc", "--extra-cflags=-MD", "--extra-cxxflags=-MD"):
+        for expected in (
+            "--toolchain=msvc",
+            "--extra-cflags=-MD",
+            "--extra-cxxflags=-MD",
+            "--pkg-config-flags=--static",
+        ):
             self.assertIn(expected, args)
         self.assertIn("--enable-libvmaf", args)
 

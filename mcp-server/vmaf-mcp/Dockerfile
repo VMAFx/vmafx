@@ -20,7 +20,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential meson ninja-build pkg-config nasm \
         python3 python3-pip python3-venv \
-        ca-certificates git \
+        ca-certificates git libzimg-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src
@@ -42,10 +42,12 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # hadolint ignore=DL3008
 RUN apt-get update && apt-get install -y --no-install-recommends \
         python3 python3-pip python3-venv \
-        ca-certificates \
+        ca-certificates libzimg2 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /src/build/tools/vmaf /opt/vmaf/vmaf
+COPY --from=build /src/build/src/libvmaf*.so* /usr/local/lib/
+RUN ldconfig
 COPY --from=build /wheels/vmaf_mcp-*.whl /tmp/
 COPY --from=build /src/mcp-server/vmaf-mcp/requirements-runtime-lock.txt /tmp/
 COPY --from=build /src/model /opt/vmaf/model

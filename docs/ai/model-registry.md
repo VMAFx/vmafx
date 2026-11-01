@@ -23,6 +23,7 @@ The registry holds 26 entries. Thirteen are CI smoke fixtures with
       "onnx": "learned_filter_v1.onnx",
       "opset": 17,
       "sha256": "412d537…e27",
+      "teacher": "none",                   // vmaf model id | none | unknown
       "quant_mode": "dynamic",             // fp32 | dynamic | static | qat
       "int8_sha256": "1cff6fe…2d3",
       "quant_accuracy_budget_plcc": 0.01,
@@ -52,6 +53,7 @@ schema rejects unknown properties (`additionalProperties: false`).
 | `kind` | yes | `fr`, `nr` or `filter`. |
 | `onnx` | yes | ONNX path relative to `model/tiny/`. |
 | `sha256` | yes | Lowercase hex, 64 characters, of the exact ONNX bytes. A mismatch against the on-disk file is a hard error. |
+| `teacher` | yes | VMAF model id under `model/`; `none` = trained without a VMAF teacher; `unknown` = the tree holds no record of one. |
 | `opset` | non-smoke | ONNX opset of the default domain, 7 to 21, as the graph's `opset_import` declares it; the sidecar `opset` carries the same value. The validator checks both against the file and its int8 sibling. |
 | `smoke` | no | `true` for CI load-path probes, which are not quality models. |
 | `quant_mode` | no | `fp32` (default), `dynamic`, `static` or `qat`. Any other value than `fp32` makes the runtime load `<onnx>.int8.onnx`; see [quantization.md](quantization.md). |

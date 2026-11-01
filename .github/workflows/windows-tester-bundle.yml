@@ -387,6 +387,13 @@ jobs:
           }
           if (-not $env:VCToolsRedistDir) { throw 'VCToolsRedistDir is not set (vcvarsall)' }
           "VCToolsRedistDir $env:VCToolsRedistDir"
+      # The triplet follows the zip's C runtime: /MT, or /MD for the SYCL zip
+      # (scripts/ci/build-windows-tester-bundle.py).
+      - name: Install zimg and pkg-config
+        shell: pwsh
+        env:
+          ZIMG_TRIPLET: ${{ matrix.gpu == 'sycl' && 'x64-windows-static-md' || format('{0}-windows-static', matrix.arch) }}
+        run: pwsh -File scripts/ci/setup-zimg-windows.ps1 -Triplet $env:ZIMG_TRIPLET
       - name: Build the zip
         if: matrix.gpu != 'sycl'
         shell: pwsh

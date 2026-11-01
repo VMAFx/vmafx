@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-1822: `vmaf_picture_convert` ships additively, with the source colour as an argument
 
-- **Status**: Accepted (status update 2026-10-06 below)
+- **Status**: Accepted (status updates 2026-10-06 and 2026-10-31 below)
 - **Date**: 2026-10-05
 - **Deciders**: lusoris (maintainer popup answer, 2026-10-05)
 - **Tags**: api, abi, build, upstream-port, zimg, fork-local
@@ -151,3 +151,12 @@ What a caller-set colour does on the fork:
 No path is chosen now. When Netflix releases `vmaf_picture_convert`, the
 choice between the ADR-0928 major version and `_with_color` plus a wrapper
 goes to the maintainer as a decision.
+
+### Status update 2026-10-31: zimg enabled by default (ADR-3396)
+
+[ADR-3396](3396-zimg-on-by-default.md) supersedes the fourth bullet of ## Decision
+above ("zimg is an opt-in Meson option, `enable_zimg` (boolean, default `false`, as
+upstream)"). The option `enable_zimg` is now `default: true`. A missing zimg stops
+`meson setup` unless `-Denable_zimg=false` is explicitly passed. The API contract
+(additive `vmaf_picture_convert_context_init_with_color()`, unmodified `VmafPicture`)
+and the `-ENOTSUP` fallback behavior on opt-out builds remain intact.

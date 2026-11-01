@@ -198,6 +198,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     gnupg \
     # Runtime libs needed by libvmaf and ONNX Runtime
     libgomp1 \
+    libzimg2 \
+    libzimg-dev \
     libc6-dev \
     libglvnd-dev \
     libva-dev \
@@ -359,6 +361,7 @@ RUN apt-get update \
         pkg-config \
         git \
         xxd \
+        libzimg-dev \
         "patchelf=${PATCHELF_VERSION}" \
     && rm -rf /var/lib/apt/lists/*
 

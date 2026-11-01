@@ -67,6 +67,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from scripts.ci import lint_exceptions
 from scripts.lib.safe_subprocess import run as run_command
 
 # A `git clone` invocation, following backslash continuations, that mentions
@@ -485,7 +486,13 @@ def _node_workflow_problems(root: Path, node_want: str) -> list[str]:
         return []
     major = node_want.split(".", maxsplit=1)[0]
     problems: list[str] = []
-    for path in sorted(workflows.glob("*.y*ml")):
+    paths = sorted(workflows.glob("*.y*ml"))
+    names = [p.relative_to(root).as_posix() for p in paths]
+    # An engine-locked workflow this repository cannot edit is a dated declared exception.
+    read = set(lint_exceptions.still_read("node-version-pin", names, root))
+    for path, name in zip(paths, names, strict=True):
+        if name not in read:
+            continue
         for value in NODE_VERSION_RE.findall(path.read_text(encoding="utf-8")):
             # A major-only pin ("24") follows the release line; an exact pin must be the release.
             if value not in (node_want, major):
@@ -496,8 +503,19 @@ def _node_workflow_problems(root: Path, node_want: str) -> list[str]:
     return problems
 
 
+def _node_file_problems(root: Path, node_want: str) -> list[str]:
+    path = root / ".node-version"
+    if not path.is_file():
+        return [f".node-version is missing; set it to NODE_VERSION '{node_want}'"]
+    # Only trailing whitespace: Renovate's match string anchors the version at the file start.
+    value = path.read_text(encoding="utf-8").rstrip()
+    if value == node_want:
+        return []
+    return [f".node-version says '{value}'; build-config.env says NODE_VERSION '{node_want}'"]
+
+
 def check_node_pins(root: Path, node_want: str | None) -> list[str]:
-    """pre-commit's node hooks and every setup-node pin use NODE_VERSION.
+    """pre-commit's node hooks, .node-version and every setup-node pin use NODE_VERSION.
 
     Without `default_language_version.node`, pre-commit on Windows builds its
     nodeenv at "latest", the head of the Node index; on 2026-10-29 that head
@@ -520,6 +538,7 @@ def check_node_pins(root: Path, node_want: str | None) -> list[str]:
                 f".pre-commit-config.yaml pins node '{match.group(1)}'; "
                 f"build-config.env says NODE_VERSION '{node_want}'"
             )
+    problems.extend(_node_file_problems(root, node_want))
     problems.extend(_node_workflow_problems(root, node_want))
     return problems
 

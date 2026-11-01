@@ -33,12 +33,28 @@ const checks = input.checks.map(withDefaults);
 const laterChecks = (input.laterChecks || []).map(withDefaults);
 let listings = 0;
 const failures = [];
+const apiErrors = input.apiErrors || {};
+const apiAlways = input.apiAlways || {};
+function checkApiError(name) {
+  const status = apiAlways[name] ?? (apiErrors[name] || []).shift();
+  if (status === undefined) return;
+  const error = new Error(`HTTP ${status}`);
+  error.status = status;
+  throw error;
+}
 const github = {rest: {
   actions: {
-    getWorkflowRun: async () => ({data: {created_at: new Date(now).toISOString()}}),
-    listWorkflowRunsForRepo: async () => ({data: {workflow_runs: input.workflowRuns || []}}),
+    getWorkflowRun: async () => {
+      checkApiError('getWorkflowRun');
+      return {data: {created_at: new Date(now).toISOString()}};
+    },
+    listWorkflowRunsForRepo: async () => {
+      checkApiError('listWorkflowRunsForRepo');
+      return {data: {workflow_runs: input.workflowRuns || []}};
+    },
   },
   checks: {listForRef: async ({page = 1, per_page: perPage = 30} = {}) => {
+    checkApiError('listForRef');
     if (page === 1) listings += 1;
     const all = listings > 1 && laterChecks.length ? laterChecks : checks;
     return {data: {check_runs: all.slice((page - 1) * perPage, page * perPage)}};
@@ -54,7 +70,7 @@ const context = {
     ? {pull_request: {head: {ref: input.headRef || 'fix/example', sha: 'abc'}}}
     : {},
 };
-const core = {info: () => {}, setFailed: message => failures.push(message)};
+const core = {info: () => {}, warning: () => {}, setFailed: message => failures.push(message)};
 const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
 new AsyncFunction('github', 'context', 'core', 'process', 'Date', 'setTimeout', input.script)(
   github,
@@ -116,6 +132,23 @@ def _failure_messages(stdout: str) -> list[str]:
     return failures
 
 
+def _run_driver(driver_input: Mapping[str, object]) -> list[str]:
+    node = shutil.which("node")
+    if node is None:
+        raise AssertionError("Node.js is needed to exercise the Actions JavaScript")
+
+    result = run_command(
+        [node, "-e", _NODE_DRIVER],
+        allowed_executables=(node,),
+        input_data=json.dumps(driver_input),
+        text=True,
+        capture_output=True,
+        check=True,
+        timeout_seconds=SUBPROCESS_TIMEOUT_S,
+    )
+    return _failure_messages(result.stdout)
+
+
 def run_required_aggregator(
     check_name: str,
     conclusion: str | None,
@@ -127,6 +160,8 @@ def run_required_aggregator(
     head_ref: str = "fix/example",
     extra_checks: Sequence[Mapping[str, object]] = (),
     later_checks: Sequence[Mapping[str, object]] = (),
+    api_errors: Mapping[str, Sequence[int]] | None = None,
+    api_always: Mapping[str, int] | None = None,
 ) -> list[str]:
     """Run the real Actions JavaScript with one selected check result or absence.
 
@@ -138,7 +173,11 @@ def run_required_aggregator(
     (a ``release-please--`` ref arms the release must-report list). ``extra_checks`` are
     further check runs on the commit (``name``, ``conclusion``, ``check_suite``, and
     optionally ``status``). ``later_checks``, when given, replace every check run from the
-    second listing on, as the Actions API shows a commit later.
+    second listing on, as the Actions API shows a commit later. ``api_errors`` maps API
+    stub names ("getWorkflowRun", "listForRef", "listWorkflowRunsForRepo") to sequences
+    of HTTP status codes raised in order by successive calls to that stub.
+    ``api_always`` maps stub names to an HTTP status code raised on every call to
+    that stub.
     """
     workflow_text = AGGREGATOR_PATH.read_text(encoding="utf-8")
     script = _embedded_script(workflow_text)
@@ -148,27 +187,16 @@ def run_required_aggregator(
 
     checks = _synthetic_checks(names, check_name, conclusion, selected_suite)
     checks.extend(dict(check) for check in extra_checks)
-    node = shutil.which("node")
-    if node is None:
-        raise AssertionError("Node.js is needed to exercise the Actions JavaScript")
-
-    result = run_command(
-        [node, "-e", _NODE_DRIVER],
-        allowed_executables=(node,),
-        input_data=json.dumps(
-            {
-                "script": script,
-                "checks": checks,
-                "env": dict(env or {}),
-                "event": event,
-                "workflowRuns": [dict(run) for run in workflow_runs],
-                "headRef": head_ref,
-                "laterChecks": [dict(check) for check in later_checks],
-            }
-        ),
-        text=True,
-        capture_output=True,
-        check=True,
-        timeout_seconds=SUBPROCESS_TIMEOUT_S,
+    return _run_driver(
+        {
+            "script": script,
+            "checks": checks,
+            "env": dict(env or {}),
+            "event": event,
+            "workflowRuns": [dict(run) for run in workflow_runs],
+            "headRef": head_ref,
+            "laterChecks": [dict(check) for check in later_checks],
+            "apiErrors": {name: list(codes) for name, codes in (api_errors or {}).items()},
+            "apiAlways": dict(api_always or {}),
+        }
     )
-    return _failure_messages(result.stdout)

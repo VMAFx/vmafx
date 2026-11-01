@@ -197,3 +197,8 @@ expires = 2027-03-31
 path = "core/test/test_colorspace.c"
 reason = "Built only with -Denable_zimg=true (core/test/meson.build); zimg is not in dev/Containerfile (grep -i zimg dev/Containerfile is empty) nor installed by the hosted Tidy Ratchet job (.github/workflows/lint-and-format.yml \"Install deps\" step); fix = libzimg-dev in both, -Denable_zimg=true in TIDY_RATCHET_SETUP_cpu, re-measure. Re-reviewed 2026-10-15. Category D (120 days)."
 expires = 2027-02-12
+
+[[exception]]
+path = "core/test/test_integer_adm_buffer_alloc.c"
+reason = "Category D. New unit test for the integer ADM slab offsets; the lanes' measured_sources change only when a tidy baseline is re-measured, and that re-measure adds this file."
+expires = 2027-01-04

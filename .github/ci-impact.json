@@ -57,6 +57,7 @@
   "known_files": [
     ".clang-format",
     ".clang-tidy",
+    ".codacy.yml",
     ".codespellrc",
     ".cppcheck-suppressions.txt",
     ".dockerignore",
@@ -70,6 +71,7 @@
     ".iwyu.imp",
     ".mailmap",
     ".markdownlint.json",
+    ".node-version",
     ".nvim.lua",
     ".pre-commit-config.yaml",
     ".release-please-manifest.json",
@@ -164,6 +166,7 @@
     ".github/workflows/rust-ci.yml",
     ".github/workflows/docker-publish-tester.yml",
     ".github/workflows/windows-tester-bundle.yml",
+    ".github/workflows/fixture-release-provenance.yml",
     ".gosec.json",
     ".helix/*",
     ".helix/**",
@@ -305,6 +308,7 @@
         "LICENSES/*",
         "LICENSES/**",
         ".markdownlint.json",
+        ".codacy.yml",
         ".codespellrc"
       ]
     },
@@ -682,6 +686,27 @@
         "Makefile",
         "scripts/ci/tidy-baseline-metal.json",
         ".github/workflows/tidy-metal.yml"
+      ]
+    },
+    "gstreamer_element": {
+      "own_paths_only": true,
+      "patterns": [
+        "gstreamer/*",
+        "gstreamer/**",
+        "core/*",
+        "core/**",
+        "ffmpeg-patches/src/vf_vmafx_options.h",
+        "model/*",
+        "model/**",
+        "docs/usage/gstreamer.md",
+        "scripts/codegen/**",
+        "scripts/ci/vmafx_window_pooling.py",
+        "scripts/ci/werror-args.sh",
+        "scripts/test/fetch-test-yuvs.sh",
+        "compat/python-vmaf/tools/retrying_download.py",
+        "requirements/locks/build.txt",
+        "build-config.env",
+        ".github/workflows/lint-and-format.yml"
       ]
     },
     "upstream_consumers": {

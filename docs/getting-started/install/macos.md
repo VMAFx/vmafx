@@ -32,7 +32,7 @@ prints the `PATH` line to add.
 ## Manual install
 
 ```bash
-brew install meson ninja nasm pkg-config llvm cppcheck doxygen
+brew install meson ninja nasm pkg-config llvm cppcheck doxygen zimg
 export PATH="$(brew --prefix llvm)/bin:$PATH"   # add this line to your shell profile
 ```
 

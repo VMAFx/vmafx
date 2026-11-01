@@ -266,9 +266,9 @@ def test_the_gpu_records_share_the_tester_vendor_components() -> None:
                          ("production-rocm-image", "hip-image"),
                          ("production-oneapi-image", "sycl-image")):  # fmt: skip
         shared = {c["id"] for c in raw[kind]["components"] if c.get("from") == tester}
-        tester_only = {"netflix-test-videos", "brisque-live-model", "build-records"}
+        tester_only = {"netflix-test-videos", "brisque-live-model", "build-records", "zimg"}
         vendor = {c["id"] for c in raw[tester]["components"]
-                  if c["kind"] in {"fixed", "dpkg-foreign"} and c["id"] not in tester_only}  # fmt: skip
+                  if c.get("kind") in {"fixed", "dpkg-foreign"} and c["id"] not in tester_only}  # fmt: skip
         assert vendor and vendor <= shared, (kind, vendor - shared)
         text = json.dumps(expanded[kind]["components"])
         assert "opt/vmafx/" not in text, kind

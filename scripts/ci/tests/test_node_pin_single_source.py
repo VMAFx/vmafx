@@ -1,22 +1,25 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
-"""Verify pre-commit's node pin and every setup-node pin name build-config.env's NODE_VERSION.
+"""Verify the pre-commit, .node-version and setup-node pins name build-config.env's NODE_VERSION.
 
 Unpinned, pre-commit on Windows builds its node hooks' environment at nodeenv's
 "latest", the head of the Node index. On 2026-10-29 that head was the
 prerelease v27.0.0-alpha.0.0.0, nodeenv 1.11.0 could not parse it, and the
 Windows Lefthook Pre-Commit job on master failed. `check_node_pins()` refuses a
-missing or differing pre-commit pin and a differing setup-node pin.
+missing or differing pre-commit pin, a differing setup-node pin and a differing
+.node-version, the file the engine-managed documentation workflow reads Node from.
 """
 
 from __future__ import annotations
 
 import importlib.util
+import os
 import tempfile
 import unittest
 from pathlib import Path
 from typing import Protocol, cast
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[3]
 SPEC = importlib.util.spec_from_file_location(
@@ -49,6 +52,7 @@ class NodePinSingleSource(unittest.TestCase):
         self.repo = Path(temporary.name)
         self.write(".pre-commit-config.yaml", PRECOMMIT.format(version=WANT))
         self.write(".github/workflows/lint.yml", WORKFLOW.format(version=WANT))
+        self.write(".node-version", f"{WANT}\n")
 
     def write(self, rel: str, text: str) -> None:
         path = self.repo / rel
@@ -85,6 +89,30 @@ class NodePinSingleSource(unittest.TestCase):
         self.assertEqual(len(problems), 1)
         self.assertIn("node-version '27.0.0'", problems[0])
 
+    def test_node_version_file_without_newline_passes(self) -> None:
+        self.write(".node-version", WANT)
+        self.assertEqual(GATE.check_node_pins(self.repo, WANT), [])
+
+    def test_missing_node_version_file_fails(self) -> None:
+        (self.repo / ".node-version").unlink()
+        problems = GATE.check_node_pins(self.repo, WANT)
+        self.assertEqual(len(problems), 1)
+        self.assertIn(".node-version is missing", problems[0])
+
+    def test_leading_blank_node_version_file_fails(self) -> None:
+        self.write(".node-version", f"\n{WANT}\n")
+        self.assertEqual(len(GATE.check_node_pins(self.repo, WANT)), 1)
+
+    def test_differing_node_version_file_fails(self) -> None:
+        self.write(".node-version", "26.0.0\n")
+        problems = GATE.check_node_pins(self.repo, WANT)
+        self.assertEqual(len(problems), 1)
+        self.assertIn(".node-version says '26.0.0'", problems[0])
+
+    def test_empty_node_version_file_fails(self) -> None:
+        self.write(".node-version", "\n")
+        self.assertEqual(len(GATE.check_node_pins(self.repo, WANT)), 1)
+
     def test_major_only_workflow_pin_on_the_same_line_passes(self) -> None:
         self.write(".github/workflows/lint.yml", WORKFLOW.format(version="24"))
         self.assertEqual(GATE.check_node_pins(self.repo, WANT), [])
@@ -92,6 +120,34 @@ class NodePinSingleSource(unittest.TestCase):
     def test_major_only_workflow_pin_on_another_line_fails(self) -> None:
         self.write(".github/workflows/lint.yml", WORKFLOW.format(version="27"))
         self.assertEqual(len(GATE.check_node_pins(self.repo, WANT)), 1)
+
+    def declare_engine_lock(self) -> None:
+        self.write(".github/workflows/locked.yml", WORKFLOW.format(version="22"))
+        self.write(
+            ".config/lint-exceptions.d/node-version-pin.toml",
+            '[[exception]]\npath = ".github/workflows/locked.yml"\n'
+            'reason = "engine-locked"\nexpires = 2027-02-28\n',
+        )
+
+    def test_undeclared_engine_lock_fails(self) -> None:
+        self.write(".github/workflows/locked.yml", WORKFLOW.format(version="22"))
+        self.assertEqual(len(GATE.check_node_pins(self.repo, WANT)), 1)
+
+    def test_declared_engine_lock_passes_until_its_expiry(self) -> None:
+        self.declare_engine_lock()
+        with mock.patch.dict(os.environ, {"LINT_EXCEPTIONS_TODAY": "2027-02-28"}):
+            self.assertEqual(GATE.check_node_pins(self.repo, WANT), [])
+
+    def test_expired_engine_lock_fails(self) -> None:
+        self.declare_engine_lock()
+        with mock.patch.dict(os.environ, {"LINT_EXCEPTIONS_TODAY": "2027-03-01"}):
+            self.assertEqual(len(GATE.check_node_pins(self.repo, WANT)), 1)
+
+    def test_declared_engine_lock_binds_one_file(self) -> None:
+        self.declare_engine_lock()
+        self.write(".github/workflows/lint.yml", WORKFLOW.format(version="22"))
+        with mock.patch.dict(os.environ, {"LINT_EXCEPTIONS_TODAY": "2027-02-28"}):
+            self.assertEqual(len(GATE.check_node_pins(self.repo, WANT)), 1)
 
 
 if __name__ == "__main__":

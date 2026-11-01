@@ -17,8 +17,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/VMAFx/vmafx/cmd/vmafx-controller/internal/storetest"
 	"github.com/VMAFx/vmafx/cmd/vmafx-controller/store"
-	"github.com/VMAFx/vmafx/cmd/vmafx-controller/store/storetest"
 )
 
 // testImage and oldestImage are the releases the tests run on.

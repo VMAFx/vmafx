@@ -1,14 +1,21 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
-"""Require a Developer Certificate of Origin sign-off on every pull request commit (ADR-2462).
+"""Require a Developer Certificate of Origin sign-off on every pull request commit (ADR-2462)
+and on every squash commit landed on master (ADR-3389).
 
 Every non-merge commit in ``BASE..HEAD`` must end with a ``Signed-off-by: Name
 <email>`` trailer (what ``git commit -s`` writes), and the e-mail address of
 the trailer must be the commit's author or committer address.  A sign-off in
 the middle of the message, or one for somebody else, does not count.
 
-Exemptions are narrow and explicit:
+On master (``--landed``), all exemptions are disabled.  Every commit must have
+a sign-off matching the commit author or the designated landing identity
+(``--landing-identity``).  Committer address is not accepted because GitHub is
+committer on every squash.  Messages must not contain bot/tool Co-authored-by
+trailers or machine-generated attribution.
+
+Exemptions for pull requests:
 
 * a commit written by an allow-listed bot (``BOT_LOGINS``), in a pull request
   that GitHub itself reports as opened by that bot (``--author`` and
@@ -27,9 +34,12 @@ Usage::
         [--author <login> --author-type <User|Bot>] [--release-pr] \\
         [--created-at <ISO 8601>] [--cutoff-file <path>]
 
-``BASE_SHA``, ``HEAD_SHA``, ``PR_AUTHOR``, ``PR_AUTHOR_TYPE`` and
-``DCO_RELEASE_PR`` and ``PR_CREATED_AT`` are read when the flags are absent.  Exit status: 0 every
-commit is signed off or exempt, 1 at least one is not, 2 usage or git error.
+    python3 scripts/ci/check-dco.py --landed --landing-identity "Name <email>" \\
+        --base <sha> --head <sha>
+
+``BASE_SHA``, ``HEAD_SHA``, ``PR_AUTHOR``, ``PR_AUTHOR_TYPE``,
+``DCO_RELEASE_PR``, ``PR_CREATED_AT`` and ``LANDING_IDENTITY`` are read when the flags
+are absent.  Exit status: 0 every commit passes, 1 at least one does not, 2 usage or git error.
 """
 
 from __future__ import annotations
@@ -53,10 +63,38 @@ MAX_COMMITS = 5000
 # list in docs/development/dco.md in step with this one.
 BOT_LOGINS = ("renovate[bot]", "dependabot[bot]", "github-actions[bot]")
 
+# Praetor (from Latin praetor, magistrate: the fleet's standards engine) enforces
+# the fleet-wide commit message invariants.  This list matches the fleet-level check
+# in praetor tools/planning/commit_msg_check.py for disallowed tool and bot identities
+# in Co-authored-by trailers.
+# On GitHub squash merges, GitHub (noreply@github.com) is the committer on every
+# landed commit, so committer identity cannot authorize a commit sign-off; only
+# the commit author or the designated landing identity is accepted.
+BANNED_COAUTHOR_TOKENS = (
+    "claude",
+    "anthropic",
+    "openai",
+    "chatgpt",
+    "gpt",
+    "codex",
+    "gemini",
+    "copilot",
+    "cursor",
+    "opencode",
+    "antigravity",
+    "noreply@anthropic.com",
+    "[bot]",
+)
+
+GENERATED_LINE_RE = re.compile(
+    r"^(?:<!--\s*|[-*]\s*|[#>\s]*)*(?:generated|created)\s+(?:with|by)\b",
+    re.IGNORECASE,
+)
 SIGNOFF_RE = re.compile(r"^signed-off-by:\s+(.+?)\s+<([^<>\s]+@[^<>\s]+)>\s*$", re.IGNORECASE)
 FIELD_SEP = "\x1f"
 RECORD_SEP = "\x1e"
 LOG_FIELDS = 5  # sha, author e-mail, committer e-mail, subject, body
+LOG_FORMAT = FIELD_SEP.join(["%H", "%ae", "%ce", "%s", "%B"]) + RECORD_SEP
 
 
 class UsageError(Exception):
@@ -90,10 +128,8 @@ def run_git(args: list[str], stdin: str | None = None) -> str:
     return done.stdout
 
 
-def list_commits(base: str, head: str) -> list[Commit]:
-    """Return the non-merge commits of base..head, oldest first."""
-    fmt = FIELD_SEP.join(["%H", "%ae", "%ce", "%s", "%B"]) + RECORD_SEP
-    out = run_git(["log", "--no-merges", "--reverse", f"--format={fmt}", f"{base}..{head}"])
+def parse_commits(out: str) -> list[Commit]:
+    """Parse git log records separated by RECORD_SEP."""
     commits: list[Commit] = []
     for record in out.split(RECORD_SEP):
         if not record.strip():
@@ -105,6 +141,37 @@ def list_commits(base: str, head: str) -> list[Commit]:
     if len(commits) > MAX_COMMITS:
         raise UsageError(f"{len(commits)} commits exceed the bound of {MAX_COMMITS}")
     return commits
+
+
+def list_commits(base: str, head: str) -> list[Commit]:
+    """Return the non-merge commits of base..head, oldest first."""
+    out = run_git(["log", "--no-merges", "--reverse", f"--format={LOG_FORMAT}", f"{base}..{head}"])
+    return parse_commits(out)
+
+
+def list_head_commit(head: str) -> list[Commit]:
+    """Return the newest non-merge commit reachable from head."""
+    out = run_git(["log", "--no-merges", "-1", f"--format={LOG_FORMAT}", head])
+    return parse_commits(out)
+
+
+def is_ancestor(base: str, head: str) -> bool:
+    """Return True if base is an ancestor of head, False if not or not a valid object."""
+    try:
+        done = subprocess.run(  # noqa: S603 - fixed argv, no shell
+            [GIT, "merge-base", "--is-ancestor", base, head],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=GIT_TIMEOUT_S,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise UsageError(f"git merge-base --is-ancestor: {exc}") from exc
+    if done.returncode == 0:
+        return True
+    if done.returncode in (1, 128):
+        return False
+    raise UsageError(f"git merge-base exited {done.returncode}: {done.stderr.strip()}")
 
 
 def trailer_lines(message: str) -> list[str]:
@@ -149,14 +216,63 @@ def judge(commit: Commit, author: str, author_type: str) -> str | None:
     return None
 
 
-def report(failures: list[tuple[Commit, str]]) -> None:
+def check_banned_coauthor(line: str) -> str | None:
+    """Return the banned token if the line is a Co-authored-by with a forbidden token."""
+    stripped = line.strip()
+    if stripped.lower().startswith("co-authored-by:"):
+        lower = stripped.lower()
+        for token in BANNED_COAUTHOR_TOKENS:
+            if token in lower:
+                return token
+    return None
+
+
+def check_machine_attribution(line: str) -> bool:
+    """Return True if line matches machine attribution patterns or contains robot emoji."""
+    return bool(GENERATED_LINE_RE.match(line.strip()) or "\U0001f916" in line)
+
+
+def judge_landed(commit: Commit, landing_email: str) -> str | None:
+    """Judge a commit on master: refuse bot co-authors, generated trailers, and bad sign-offs."""
+    for line in commit.message.splitlines():
+        token = check_banned_coauthor(line)
+        if token:
+            return f"disallowed Co-authored-by trailer ({token})"
+        if check_machine_attribution(line):
+            return "message contains machine-generated attribution"
+    emails = signoff_emails(commit.message)
+    if not emails:
+        return "no 'Signed-off-by: Name <email>' trailer"
+    allowed = {commit.author_email.lower(), landing_email.lower()}
+    if allowed.isdisjoint(emails):
+        return f"sign-off ({', '.join(emails)}) matches neither author nor landing identity"
+    return None
+
+
+def extract_email(identity: str) -> str:
+    """Extract email address from an identity string like 'Name <email>' or 'email'."""
+    match = re.search(r"<([^<>\s]+@[^<>\s]+)>", identity)
+    if match:
+        return match.group(1).lower()
+    return identity.strip().lower()
+
+
+def report(failures: list[tuple[Commit, str]], landed: bool = False) -> None:
     for commit, reason in failures:
         print(f"::error title=DCO sign-off::{commit.sha[:10]} {commit.subject}: {reason}")
     print("")
-    print(f"dco: {len(failures)} commit(s) without a valid sign-off.")
-    print("  Add the sign-off to each commit of the branch, then push again:")
-    print("    git rebase --signoff $(git merge-base origin/master HEAD)")
-    print("  New commits: git commit -s   (keep the trailers when squashing)")
+    if landed:
+        print(f"dco: {len(failures)} landed commit(s) refused.")
+        print("  Landed commit check (ADR-3389): squash merge requires an explicit body file")
+        print(
+            "  (--body-file / -F) containing commit body and sign-off, without bot Co-authored-by."
+        )
+        print("  Alarm: commit already on master; published history is not rewritten.")
+    else:
+        print(f"dco: {len(failures)} commit(s) without a valid sign-off.")
+        print("  Add the sign-off to each commit of the branch, then push again:")
+        print("    git rebase --signoff $(git merge-base origin/master HEAD)")
+        print("  New commits: git commit -s   (keep the trailers when squashing)")
     print("  What the sign-off certifies: CONTRIBUTING.md#developer-certificate-of-origin")
 
 
@@ -188,25 +304,54 @@ def grandfathered(created_at: str, cutoff_file: Path) -> bool:
     return parse_time(created_at, "created-at") < read_cutoff(cutoff_file)
 
 
-def check(args: argparse.Namespace) -> int:
-    base, head = args.base, args.head
+def check_landed(args: argparse.Namespace) -> int:
+    head, base = args.head, args.base
+    run_git(["rev-parse", "--verify", f"{head}^{{commit}}"])
+    is_zero_base = bool(re.fullmatch(r"0{40}", base))
+    if is_zero_base or not is_ancestor(base, head):
+        print(
+            f"dco: base ({base[:10]}) is all-zero or not ancestor-reachable; judging head commit only."
+        )
+        commits = list_head_commit(head)
+    else:
+        commits = list_commits(base, head)
+    landing_email = extract_email(args.landing_identity)
+    failures = []
+    for commit in commits:
+        reason = judge_landed(commit, landing_email)
+        if reason is not None:
+            failures.append((commit, reason))
+    if failures:
+        report(failures, landed=True)
+        return 1
+    print(f"dco: PASS - {len(commits)} commit(s) verified on master.")
+    return 0
+
+
+def check_pr(args: argparse.Namespace) -> int:
     if args.release_pr:
         print("dco: machine-generated release pull request, exempt.")
         return 0
     if grandfathered(args.created_at, Path(args.cutoff_file)):
         print(f"dco: pull request created {args.created_at}, before the cutoff; grandfathered.")
         return 0
-    commits = list_commits(base, head)
+    commits = list_commits(args.base, args.head)
     failures = []
     for commit in commits:
         reason = judge(commit, args.author, args.author_type)
         if reason is not None:
             failures.append((commit, reason))
     if failures:
-        report(failures)
+        report(failures, landed=False)
         return 1
     print(f"dco: PASS - {len(commits)} commit(s), every one signed off or exempt.")
     return 0
+
+
+def check(args: argparse.Namespace) -> int:
+    if args.landed:
+        return check_landed(args)
+    return check_pr(args)
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -221,6 +366,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument(
         "--release-pr", action="store_true", default=env("DCO_RELEASE_PR", "") == "true"
     )
+    parser.add_argument("--landed", action="store_true")
+    parser.add_argument("--landing-identity", default=env("LANDING_IDENTITY", ""))
     return parser.parse_args(argv)
 
 
@@ -229,6 +376,12 @@ def main(argv: list[str]) -> int:
     if not args.base or not args.head:
         print(
             "check-dco: --base and --head (or BASE_SHA and HEAD_SHA) are required", file=sys.stderr
+        )
+        return 2
+    if args.landed and not args.landing_identity:
+        print(
+            "check-dco: --landing-identity (or LANDING_IDENTITY) is required with --landed",
+            file=sys.stderr,
         )
         return 2
     try:

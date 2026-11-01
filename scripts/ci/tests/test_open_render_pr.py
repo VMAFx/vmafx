@@ -66,6 +66,13 @@ if cmd == "pr":
         after_path = state / "prs_after_create.json"
         if after_path.exists():
             (state / "prs.json").write_text(after_path.read_text(encoding="utf-8"), encoding="utf-8")
+    elif sub == "merge":
+        if "--body-file" in argv:
+            bf = Path(argv[argv.index("--body-file") + 1])
+            if bf.exists():
+                (state / "merge_body.txt").write_text(
+                    bf.read_text(encoding="utf-8"), encoding="utf-8"
+                )
     sys.exit(0)
 
 if cmd == "api":
@@ -330,6 +337,24 @@ class OpenRenderPrTest(unittest.TestCase):
             and "42" in c
         ]
         self.assertTrue(merge_auto_calls, f"gh pr merge --auto was not called: {calls}")
+        self.assertIn("--body-file", merge_auto_calls[0])
+
+        body_log = self.state_dir / "merge_body.txt"
+        if body_log.exists():
+            body_content = body_log.read_text(encoding="utf-8")
+        else:
+            bf_idx = merge_auto_calls[0].index("--body-file")
+            body_content = Path(merge_auto_calls[0][bf_idx + 1]).read_text(encoding="utf-8")
+
+        self.assertIn(
+            f"Signed-off-by: {self.app_slug}[bot] <12345678+{self.app_slug}[bot]@users.noreply.github.com>",
+            body_content,
+        )
+        self.assertIn(
+            f"Render-only commit (ADR-3295, ADR-3373): make docs-render at {head_sha[:12]}.",
+            body_content,
+        )
+        self.assertNotIn("Co-authored-by", body_content)
 
         bare_branches = git("-C", str(self.bare_repo), "branch")
         self.assertNotIn(self.render_branch, bare_branches)

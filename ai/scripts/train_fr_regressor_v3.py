@@ -77,10 +77,14 @@ from vmaf_train.registry import write_registry_json
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT_PATH = Path(__file__).resolve()
-if str(REPO_ROOT / "ai" / "src") not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
-if str(REPO_ROOT / "ai" / "scripts") not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT / "ai" / "scripts"))
+try:
+    from _script_bootstrap import bootstrap_ai_script
+except ModuleNotFoundError:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
+
+bootstrap_ai_script(__file__, include_repo_root=True, include_ai_scripts=True)
+
+from ai.data.scores import resolve_teacher_model  # noqa: E402
 
 # Import the v3 vocab from the v2 trainer where it's documented as a
 # parallel constant (per ADR-0302's scaffold landed in PR #401).
@@ -667,6 +671,8 @@ def _v3_codec_encoding(crf_range: tuple[float, float]) -> dict[str, Any]:
 def _upsert_v3_registry_row(registry_path: Path, row: dict[str, Any]) -> None:
     registry = json.loads(registry_path.read_text())
     models = [m for m in registry.get("models", []) if m.get("id") != "fr_regressor_v3"]
+    if "teacher" not in row:
+        row["teacher"] = "unknown"
     models.append(row)
     models.sort(key=lambda e: e.get("id", ""))
     registry["models"] = models
@@ -686,6 +692,7 @@ def write_sidecar_and_registry(
     gate_passed: bool,
     run_provenance: dict[str, Any],
     crf_range: tuple[float, float],
+    teacher: str = "unknown",
 ) -> None:
     digest = sha256(onnx_path)
     notes = _v3_notes(loso_summary, gate_passed)
@@ -727,6 +734,7 @@ def write_sidecar_and_registry(
             "onnx": onnx_path.name,
             "opset": 17,
             "sha256": digest,
+            "teacher": teacher,
             "notes": notes,
             "smoke": (not gate_passed),
         },
@@ -826,6 +834,12 @@ def build_argparser() -> argparse.ArgumentParser:
         default=REPO_ROOT / "model" / "tiny" / "registry.json",
     )
     p.add_argument(
+        "--teacher",
+        type=str,
+        default=None,
+        help="Teacher model name or path (defaults to 'unknown').",
+    )
+    p.add_argument(
         "--no-export",
         action="store_true",
         help="Skip ONNX export + registry update (dev mode).",
@@ -873,6 +887,7 @@ def _ship_gate_fail_scaffold(
     scaffold_args.epochs = 1
     scaffold_model, scaffold_scaler = fit_full_corpus(corpus, scaffold_args)
     export_onnx(scaffold_model, args.out_onnx)
+    teacher = resolve_teacher_model(args.teacher).name if args.teacher else "unknown"
     write_sidecar_and_registry(
         onnx_path=args.out_onnx,
         sidecar_path=args.out_sidecar,
@@ -885,6 +900,7 @@ def _ship_gate_fail_scaffold(
         gate_passed=False,
         run_provenance=run_provenance,
         crf_range=(corpus["cq_min"], corpus["cq_max"]),
+        teacher=teacher,
     )
     return 1
 
@@ -902,6 +918,7 @@ def _ship_gated_model(
     print("[fr-v3] gate PASS — fitting full-corpus checkpoint", flush=True)
     model, scaler = fit_full_corpus(corpus, args)
     export_onnx(model, args.out_onnx)
+    teacher = resolve_teacher_model(args.teacher).name if args.teacher else "unknown"
     write_sidecar_and_registry(
         onnx_path=args.out_onnx,
         sidecar_path=args.out_sidecar,
@@ -914,6 +931,7 @@ def _ship_gated_model(
         gate_passed=gate_passed,
         run_provenance=run_provenance,
         crf_range=(corpus["cq_min"], corpus["cq_max"]),
+        teacher=teacher,
     )
     print(
         f"[fr-v3] shipped: {args.out_onnx} (sha256={sha256(args.out_onnx)})",

@@ -140,7 +140,7 @@ per-frame `ROI_MAP_EVENT` priv-data node to each picture sent to SVT-AV1:
 
 It reduces the per-16x16 macroblock offsets from `saliency.py` to
 SVT-AV1's per-64x64 superblock `b64_seg_map`. For each superblock it
-averages the four overlapping macroblocks and snaps the result to at most
+averages the overlapping macroblocks (up to 4x4) and snaps the result to at most
 8 segment QPs, binning uniformly when the value span exceeds the segment
 budget.
 
@@ -364,10 +364,14 @@ command.
 ### `libsvtav1: qpfile=... parsed but SVT-AV1 < 1.6.0 lacks the ROI ABI`
 
 The ROI bridge needs SVT-AV1 1.6.0 or newer, which added the
-`enable_roi_map` flag and the `ROI_MAP_EVENT` type. Upgrade SVT-AV1. In
-the meantime `vmaf-tune recommend-saliency --encoder libsvtav1
---saliency-aware` drives SVT-AV1 through its own
-`-svtav1-params qp-file=...` option instead.
+`enable_roi_map` flag and the `ROI_MAP_EVENT` type. Upgrade SVT-AV1.
+`vmaf-tune recommend-saliency --encoder libsvtav1 --saliency-aware` uses
+this same patched `-qpfile` bridge: an x264-style 16x16 macroblock file,
+bridged to 64x64 superblocks with at most eight segments. There is no
+`-svtav1-params qp-file=...` alternative: the measured library rejects that
+key even when FFmpeg exits zero. Stock FFmpeg refuses `-qpfile`.
+`libvvenc` has no saliency ROI channel and is refused
+([ADR-3386](../adr/3386-encoder-roi-channels-measured.md)).
 
 ## Other changes in the build: the shared FFmpeg fix series
 
