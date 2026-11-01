@@ -122,6 +122,17 @@ def diagnostic_problems(diagnosed: set[str], listed: set[str]) -> list[str]:
     ]
 
 
+def core_test_sources(root: Path) -> list[str]:
+    """Sorted repo-relative POSIX paths of C and C++ sources under `core/test/`."""
+    sources: list[str] = []
+    for path in (root / "core/test").rglob("*"):
+        if path.suffix in SOURCE_SUFFIXES:
+            relative = path.relative_to(root)
+            if relative.parts[:3] != ("core", "test", "data"):
+                sources.append(relative.as_posix())
+    return sorted(sources)
+
+
 class SemgrepFloatIdentity(unittest.TestCase):
     def setUp(self) -> None:
         # One Semgrep launcher: the vendored-scope case finds semgrep on PATH
@@ -255,12 +266,16 @@ class SemgrepFloatIdentity(unittest.TestCase):
         for suffix in sorted(SOURCE_SUFFIXES):
             self.assertRegex(f"core/test/x{suffix}", selector, f"hook skips {suffix} tests")
 
+    def test_sources_ignore_checkout_path_named_data(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "data" / "repo"
+            (root / "core/test/data").mkdir(parents=True)
+            (root / "core/test/a.c").write_text("", encoding="utf-8")
+            (root / "core/test/data/b.c").write_text("", encoding="utf-8")
+            self.assertEqual(core_test_sources(root), ["core/test/a.c"])
+
     def test_real_tests_compare_floats_through_float_bits(self) -> None:
-        targets = sorted(
-            path.relative_to(ROOT).as_posix()
-            for path in (ROOT / "core/test").rglob("*")
-            if path.suffix in SOURCE_SUFFIXES and "data" not in path.parts
-        )
+        targets = core_test_sources(ROOT)
         self.assertTrue(targets, "core/test has no C or C++ sources")
         lines, diagnosed = self.scan_with_diagnostics(ROOT, targets)
         listed = live_exceptions(lint_exceptions.today(), PARSE_RULE)
