@@ -454,7 +454,6 @@ from = ["netflix-speed"]  # transcribes update_entropy() and get_speed_score() o
 "noxfile.py" = "'duplicate' describes test setup"
 "pkg/cliopt/escape_test.go" = "mirrors the fork's own cli_split escape cases (ADR-1190), absent upstream"
 "pkg/corpus/hdr.go" = "matches Netflix's artefact file name"
-"pkg/libvmaf/libvmaf.go" = "explains why vmaf.c is not reimplemented"
 "pkg/model/default.go" = "'NOT derived from' a constant"
 "python/test/ssimulacra2_test.py" = "describes what the snapshot guards"
 "scripts/ci/check-state-md-rows.sh" = "'duplicate' describes state.md rows"
