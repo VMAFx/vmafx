@@ -76,7 +76,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     wget \
     unzip \
     git \
-    pkg-config
+    pkg-config \
+    libzimg-dev \
+    libzimg2
 
 # ---------- Intel oneAPI (SYCL, optional) ----------
 # Modern keyring pattern (apt-key was deprecated in Ubuntu 22.04+).

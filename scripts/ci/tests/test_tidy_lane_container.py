@@ -446,6 +446,19 @@ class ContainerSide(unittest.TestCase):
         make.write_text(FAKE_MAKE, encoding="utf-8")
         make.chmod(0o755)
         self.calls = self.tmp / "make-calls"
+        self._stub("pkg-config", 0)
+
+    def _stub(self, name: str, code: int) -> None:
+        stub = self.tmp / "bin" / name
+        stub.write_text(f"#!/bin/sh\nexit {code}\n", encoding="utf-8")
+        stub.chmod(0o755)
+
+    def test_a_zimg_install_that_leaves_no_package_stops_the_lane(self) -> None:
+        self._stub("pkg-config", 1)
+        self._stub("apt-get", 0)
+        result = self._run("cpu")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("zimg's development files did not install", result.stdout + result.stderr)
 
     def _run(
         self, *args: str, tidy: str = "22.1.8", **env: str

@@ -16,8 +16,6 @@ import (
 	"testing"
 	"time"
 
-	"go.uber.org/fx/fxtest"
-
 	"github.com/golusoris/golusoris/core/config"
 	"github.com/golusoris/golusoris/httpx/server"
 
@@ -134,9 +132,7 @@ func TestNilNodeMetricsAreNoOps(t *testing.T) {
 // node's HTTP surface: /metrics with the node families, /readyz ready (the
 // scorer is configured).
 func TestNodeHTTPServesMetricsAndProbes(t *testing.T) {
-	writeDialableNodeEnv(t)
-	app := fxtest.New(t, productionGraph())
-	app.RequireStart()
+	app := startDialableNodeApp(t)
 	defer app.RequireStop()
 	base := "http://" + os.Getenv("VMAFX_HTTP_ADDR")
 

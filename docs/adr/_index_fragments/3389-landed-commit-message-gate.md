@@ -1,0 +1,1 @@
+| [ADR-3389](3389-landed-commit-message-gate.md) | Verify landed squash commit messages on master with sign-off and without bot Co-authored-by trailers via check-dco.py --landed and Renovate commitBody | Accepted | ci, git, dco, renovate, fork-local |

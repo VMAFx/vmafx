@@ -307,11 +307,13 @@ test('test_cuda_parity_gate_default_run',
 
 # Issue #2144: every built-in vmaf_v1.0.16* model and the default model score
 # the 576x324 src01 pair (8, 10 and 12 bits 4:2:0, 10 bits 4:2:2) and 16
-# frames of the 3840x2160 testdata/bbb pair with every extractor on the device
-# (`feature_backends` lists no CPU extractor) and with the CPU run's bits at
-# --precision max. One test per backend this build enables; each skips (77)
-# without its device or the fixtures. The self-test runs the comparison on
-# synthetic receipts. Device-free.
+# frames of the 3840x2160 testdata/bbb pair; every built-in hdr_vmaf_v1.1.8*
+# model scores the 1-frame dock PQ pair and 16-frame tagged pair with color tags,
+# with every extractor on the device (`feature_backends` lists no CPU extractor)
+# and with the CPU run's bits at --precision max. One test per backend this build
+# enables; each skips (77) without its device, or after its other rows when an
+# untracked SDR pair is absent; an absent HDR pair fails. The self-test runs
+# the comparison on synthetic receipts. Device-free.
 test('test_gpu_v1_models_no_fallback_selftest',
     import('python').find_installation(),
     args : [files('test_gpu_v1_models_no_fallback.py'), '--self-test'],
@@ -329,6 +331,10 @@ if get_option('enable_tools')
     if get_option('enable_hip') and get_option('enable_hipcc')
         v1_models_backends += ['hip']
     endif
+    metal_opt = get_option('enable_metal')
+    if metal_opt.enabled() or (metal_opt.auto() and host_machine.system() == 'darwin')
+        v1_models_backends += ['metal']
+    endif
     foreach v1_backend : v1_models_backends
         test('test_' + v1_backend + '_v1_models_no_fallback',
             import('python').find_installation(),
@@ -337,7 +343,7 @@ if get_option('enable_tools')
             depends : [vmaf],
             suite : ['slow', 'gpu', v1_backend],
             is_parallel : false,
-            timeout : 900,
+            timeout : 1200,
         )
     endforeach
 endif
@@ -1202,7 +1208,8 @@ test_picture = executable('test_picture',
 
 # ADR-1822: additive vmaf_picture_convert API. test_picture_convert_api runs in
 # every build (VmafPicture layout guard; the -ENOTSUP contract without zimg);
-# test_colorspace runs the conversions and needs -Denable_zimg=true.
+# test_colorspace runs the conversions with zimg (on by default, ADR-3396;
+# with -Denable_zimg=false it tests -ENOTSUP).
 picture_convert_test_args = zimg_defines
 test_picture_convert_api = executable('test_picture_convert_api',
     ['test.c', 'test_picture_convert_api.c'],
@@ -1273,8 +1280,9 @@ test_conversion_policy = executable('test_conversion_policy',
 test('test_conversion_policy', test_conversion_policy, suite : ['fast'])
 
 # Netflix/vmaf a6c0ba6d5 / 130569c45: vmaf_read_pictures() converts to the
-# model's conversion_target. The conversions need -Denable_zimg=true; without it
-# the test checks that a model with a target fails closed (-ENOTSUP).
+# model's conversion_target. The conversions run with zimg (on by default,
+# ADR-3396); with -Denable_zimg=false the test checks that a model with a
+# target fails closed (-ENOTSUP).
 test_read_pictures_convert_args = [vmaf_cflags_common, '-DJSON_MODEL_PATH="'+join_paths(meson.project_source_root(), '../model/')+'"'] + zimg_defines
 test_read_pictures_convert = executable('test_read_pictures_convert',
     ['test.c', 'test_read_pictures_convert.c'],
@@ -2007,8 +2015,8 @@ endforeach
 
 # ADR-2094: what a submitted pair carries (VmafxFrameDesc.color, the
 # context's default colour, VMAFX_E_BUSY after the first converted pair) and
-# the check_sample_range option. The conversions need -Denable_zimg=true;
-# without it a pair that needs one is VMAFX_E_NOTSUP.
+# the check_sample_range option. The conversions run with zimg (on by default,
+# ADR-3396); with -Denable_zimg=false a pair that needs one is VMAFX_E_NOTSUP.
 test_vmafx_frame_input = executable('test_vmafx_frame_input',
     ['test.c', 'test_vmafx_frame_input.c'],
     include_directories : [libvmaf_inc, test_inc],
@@ -5006,6 +5014,16 @@ test_integer_adm_tiny_frames = executable('test_integer_adm_tiny_frames',
     kwargs : test_link_kwargs,
 )
 test('test_integer_adm_tiny_frames', test_integer_adm_tiny_frames,
+    suite : ['fast'])
+
+test_integer_adm_buffer_alloc = executable('test_integer_adm_buffer_alloc',
+    ['test.c', 'test_integer_adm_buffer_alloc.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
+    link_with : vmaf_test_link,
+    dependencies : [pthread_dependency, math_lib],
+    kwargs : test_link_kwargs,
+)
+test('test_integer_adm_buffer_alloc', test_integer_adm_buffer_alloc,
     suite : ['fast'])
 
 # T-CUDA-HIP-ADM-DWT-VERT-TINY-HEIGHT-OOB-2026-09-29 / ADR-1374: replays the

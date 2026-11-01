@@ -4,7 +4,9 @@
 
 Two layers from one definition: the C layer (ctypes structs, enums, function
 signatures, the layout the definition implies) and an idiomatic layer
-(`Library`, `Context`, frozen dataclasses for records, `VmafxError` raised
+(`Library`, `Context`, `Device`, `Frame`, `FramePool`, `FrameConverter`,
+`Model`, `ModelSet`, `Options`, `ReportFile`, `Window`, `WindowClock`,
+`DnnSession`, `McpServer`, frozen dataclasses for records, `VmafxError` raised
 on every non-OK status). The module checks its struct layouts against the
 definition when it is imported, so a binding that disagrees with the header
 fails before it touches the library.
@@ -17,7 +19,7 @@ from collections.abc import Callable
 from . import typesys
 from .layout import by_value_order, layouts
 from .model import Api, Callback, DefinitionError, Field, Function, Param, Struct, upper_snake
-from .python_runtime import CONTEXT_CLASS, LIBRARY_CLASS, RUNTIME
+from .python_runtime import CONTEXT_CLASS, HANDLE_CLASSES, LIBRARY_CLASS, RUNTIME
 
 CTYPES = {
     "u32": "ctypes.c_uint32",
@@ -48,6 +50,155 @@ PYTYPES = {
 CONTEXT = "VmafxContext"
 POINTERS = ("ptr", "cptr")  # untyped memory: no Python value
 LINE_LIMIT = 100  # black line length (pyproject.toml)
+
+NOT_WRAPPED_REASONS: dict[str, str] = {
+    "vmafx_frame_import": (
+        "imports external device memory handles (DMA-BUF, Vulkan, Win32, Metal, GL, "
+        "device pointers); use Library.raw.vmafx_frame_import"
+    ),
+    "vmafx_context_import_frame": (
+        "imports and admits external device memory handles onto a context; "
+        "use Library.raw.vmafx_context_import_frame"
+    ),
+    "vmafx_context_from_libvmaf": (
+        "borrows a raw libvmaf VmafContext pointer from the C compatibility layer; "
+        "use Library.raw.vmafx_context_from_libvmaf"
+    ),
+    "vmafx_frame_from_picture": (
+        "adopts a raw libvmaf VmafPicture struct pointer from the C compatibility layer; "
+        "use Library.raw.vmafx_frame_from_picture"
+    ),
+    "vmafx_frame_to_picture": (
+        "moves a frame into a raw libvmaf VmafPicture struct pointer for the C "
+        "compatibility layer; use Library.raw.vmafx_frame_to_picture"
+    ),
+    "vmafx_model_from_libvmaf": (
+        "borrows a raw libvmaf VmafModel pointer from the C compatibility layer; "
+        "use Library.raw.vmafx_model_from_libvmaf"
+    ),
+    "vmafx_model_libvmaf_handle": (
+        "returns a raw libvmaf VmafModel pointer for the C compatibility layer; "
+        "use Library.raw.vmafx_model_libvmaf_handle"
+    ),
+    "vmafx_model_set_from_libvmaf": (
+        "borrows a raw libvmaf VmafModelCollection pointer from the C compatibility layer; "
+        "use Library.raw.vmafx_model_set_from_libvmaf"
+    ),
+    "vmafx_model_set_libvmaf_handle": (
+        "returns a raw libvmaf VmafModelCollection pointer for the C compatibility layer; "
+        "use Library.raw.vmafx_model_set_libvmaf_handle"
+    ),
+}
+
+HANDWRITTEN_WRAPPED: frozenset[str] = frozenset(
+    {
+        "vmafx_error_status",
+        "vmafx_error_message",
+        "vmafx_error_subject",
+        "vmafx_error_errno",
+        "vmafx_error_free",
+        "vmafx_error_subject_kind",
+        "vmafx_error_function",
+        "vmafx_context_create",
+        "vmafx_context_destroy",
+        "vmafx_context_libvmaf_handle",
+        "vmafx_options_set",
+        "vmafx_options_free",
+        "vmafx_context_use_feature",
+        "vmafx_context_use_model",
+        "vmafx_context_use_model_set",
+        "vmafx_context_extractor_count",
+        "vmafx_feature_resolve",
+        "vmafx_context_frame_retention",
+        "vmafx_submit",
+        "vmafx_device_create",
+        "vmafx_device_ref",
+        "vmafx_device_unref",
+        "vmafx_device_backend",
+        "vmafx_device_count",
+        "vmafx_device_info",
+        "vmafx_device_describe",
+        "vmafx_device_profile",
+        "vmafx_context_use_device",
+        "vmafx_frame_create_host",
+        "vmafx_frame_wrap_host",
+        "vmafx_frame_planes",
+        "vmafx_frame_ref",
+        "vmafx_frame_unref",
+        "vmafx_frame_release_fence",
+        "vmafx_frame_signal_on_release",
+        "vmafx_fence_create",
+        "vmafx_fence_signal",
+        "vmafx_fence_wait",
+        "vmafx_fence_destroy",
+        "vmafx_frame_pool_create",
+        "vmafx_frame_pool_acquire",
+        "vmafx_frame_pool_destroy",
+        "vmafx_context_admit",
+        "vmafx_model_load",
+        "vmafx_model_load_file",
+        "vmafx_model_load_spec",
+        "vmafx_model_override_feature",
+        "vmafx_model_ref",
+        "vmafx_model_unref",
+        "vmafx_model_name",
+        "vmafx_model_feature_count",
+        "vmafx_model_feature_name",
+        "vmafx_model_hash",
+        "vmafx_model_set_load",
+        "vmafx_model_set_load_file",
+        "vmafx_model_set_override_feature",
+        "vmafx_model_set_ref",
+        "vmafx_model_set_unref",
+        "vmafx_model_set_lead",
+        "vmafx_model_set_size",
+        "vmafx_model_set_hash",
+        "vmafx_score_frame",
+        "vmafx_score_frame_model_set",
+        "vmafx_score_pooled",
+        "vmafx_score_pooled_model_set",
+        "vmafx_context_provenance_json",
+        "vmafx_report_open",
+        "vmafx_report_close",
+        "vmafx_report_field",
+        "vmafx_report_verify",
+        "vmafx_window_submit",
+        "vmafx_window_poll",
+        "vmafx_window_wait",
+        "vmafx_window_release",
+        "vmafx_context_max_in_flight",
+        "vmafx_window_clock_create",
+        "vmafx_window_clock_frame",
+        "vmafx_window_clock_finish",
+        "vmafx_window_clock_destroy",
+        "vmafx_context_backend",
+        "vmafx_context_preallocate",
+        "vmafx_context_acquire_frame",
+        "vmafx_context_attach_sidedata",
+        "vmafx_context_set_default_color",
+        "vmafx_frame_converter_create",
+        "vmafx_frame_convert",
+        "vmafx_frame_converter_destroy",
+        "vmafx_dnn_available",
+        "vmafx_context_use_tiny_model",
+        "vmafx_context_is_codec_aware",
+        "vmafx_dnn_session_open",
+        "vmafx_dnn_session_run_luma8",
+        "vmafx_dnn_session_run_plane16",
+        "vmafx_dnn_session_run",
+        "vmafx_dnn_session_close",
+        "vmafx_dnn_session_runtime_device",
+        "vmafx_dnn_verify_signature",
+        "vmafx_mcp_available",
+        "vmafx_mcp_transport_available",
+        "vmafx_mcp_server_create",
+        "vmafx_mcp_start_sse",
+        "vmafx_mcp_start_uds",
+        "vmafx_mcp_start_stdio",
+        "vmafx_mcp_stop",
+        "vmafx_mcp_server_destroy",
+    }
+)
 
 
 def py_seq(items: list[str], indent: str) -> str:
@@ -115,7 +266,7 @@ def _enum_classes(api: Api) -> str:
         out.append(f'    """{item.name}."""\n\n')
         out += [f"    {v.name.removeprefix(prefix)} = {v.value}\n" for v in item.values]
     for flags in api.flags:
-        prefix = upper_snake(flags.name).removesuffix("FLAGS")
+        prefix = upper_snake(flags.name).removesuffix("FLAGS").rstrip("_") + "_"
         out.append(f"\n\nclass {short(flags.name)}(enum.IntFlag):\n")
         out.append(f'    """{flags.name} bits."""\n\n')
         out += [f"    {b.name.removeprefix(prefix)} = {1 << b.bit}\n" for b in flags.bits]
@@ -156,6 +307,48 @@ def _signature_table(api: Api) -> str:
         args = py_seq([_ctype_of_param(api, p) for p in fn.params], "        ")
         out.append(f'    "{fn.name}": {py_seq([_ctype_of_return(fn.returns), args], "    ")},\n')
     out.append("}\n")
+    return "".join(out)
+
+
+def wrapped_functions(api: Api) -> tuple[str, ...]:
+    """Names of C functions in `api` wrapped by the Python idiomatic layer, in definition order."""
+    auto = {fn.name for fn in context_methods(api)} | {fn.name for fn in library_functions(api)}
+    covered = auto | HANDWRITTEN_WRAPPED
+    return tuple(fn.name for fn in api.functions if fn.name in covered)
+
+
+def not_wrapped(api: Api) -> dict[str, str]:
+    """C functions in `api` intentionally left on `Library.raw`, in definition order."""
+    return {
+        fn.name: NOT_WRAPPED_REASONS[fn.name]
+        for fn in api.functions
+        if fn.name in NOT_WRAPPED_REASONS
+    }
+
+
+def check_coverage(api: Api) -> None:
+    """Refuse a definition function that is neither wrapped nor listed in `NOT_WRAPPED`."""
+    wrapped = set(wrapped_functions(api))
+    skipped = set(not_wrapped(api))
+    overlap = sorted(wrapped & skipped)
+    if overlap:
+        raise DefinitionError(
+            f"Python binding: functions in both wrapped and NOT_WRAPPED: {overlap}"
+        )
+    missing = [fn.name for fn in api.functions if fn.name not in (wrapped | skipped)]
+    if missing:
+        raise DefinitionError(
+            f"Python binding: functions neither wrapped nor in NOT_WRAPPED: {', '.join(missing)}"
+        )
+
+
+def _coverage_tables(api: Api) -> str:
+    out = ["NOT_WRAPPED: dict[str, str] = {\n"]
+    for name, reason in not_wrapped(api).items():
+        out.append(f'    "{name}": "{reason}",\n')
+    out.append("}\n\n")
+    items = [f'"{name}"' for name in wrapped_functions(api)]
+    out.append(f"WRAPPED_FUNCTIONS: tuple[str, ...] = {py_seq(items, '')}\n")
     return "".join(out)
 
 
@@ -275,7 +468,12 @@ def _call_args(api: Api, fn: Function, first: str) -> tuple[list[str], list[str]
             args.append("ctypes.byref(out)")
             result = f"{short(param.type)}.from_c(out)"
         elif param.type == "cstr":
-            args.append(f"{param.name}.encode()")
+            expr = (
+                f"{param.name}.encode() if {param.name} is not None else None"
+                if param.nullable
+                else f"{param.name}.encode()"
+            )
+            args.append(expr)
         else:
             args.append(param.name)
     return setup, args, result
@@ -286,7 +484,10 @@ def _python_params(api: Api, fn: Function, skip_first: bool) -> str:
     for position, param in enumerate(fn.params):
         if (position == 0 and skip_first) or param.mode in ("error", "out", "out_handle"):
             continue
-        hint = "str" if param.type == "cstr" else PYTYPES.get(param.type, "int")
+        if param.type == "cstr":
+            hint = "str | None" if param.nullable else "str"
+        else:
+            hint = PYTYPES.get(param.type, "int")
         names.append(f"{param.name}: {hint}")
     return "".join(", " + n for n in names)
 
@@ -297,14 +498,15 @@ def _method(api: Api, fn: Function) -> str:
     ret = result.split(".", 1)[0] if result != "None" else "None"
     body = "".join(f"        {line}\n" for line in setup)
     body += py_call(f"status = self._lib.{fn.name}", args, "        ") + "\n"
-    body += f'        _raise(self._lib, status, error, "{fn.name}")\n'
+    body += "        self._check_callbacks()\n"
+    body += f'        _raise(self._lib, status, error, "{fn.name}", self._log_state)\n'
     if result != "None":  # ruff (RET501) refuses a bare `return None`
         body += f"        return {result}\n"
     return f'    def {_method_name(fn)}(self{params}) -> {ret}:\n        """{fn.doc}"""\n' + body
 
 
 def _bindable(api: Api, param: Param) -> bool:
-    """Parameter shapes the idiomatic layer wraps; others stay on the C layer (WP7)."""
+    """Parameter shapes the auto-emitted Context methods wrap."""
     kind = typesys.kind(api, param.type)
     if param.mode == "error" or (param.mode == "out" and kind == "struct"):
         return True
@@ -336,8 +538,11 @@ def _module_header(api: Api) -> str:
         "# `python3 scripts/codegen/vmafx-api.py --write`.\n"
         '"""ctypes binding of the VMAFx C API (generated)."""\n\n'
         "from __future__ import annotations\n\n"
-        "import ctypes\nimport enum\nimport os\nfrom dataclasses import dataclass\n\n"
+        "import contextlib\nimport ctypes\nimport enum\nimport os\n"
+        "from collections.abc import Callable, Mapping, Sequence\n"
+        "from dataclasses import dataclass\n\n"
         f"ABI_VERSION = ({major}, {minor}, {patch})\n"
+        f'__version__ = "{major}.{minor}.{patch}"\n'
     )
 
 
@@ -354,21 +559,78 @@ def library_functions(api: Api) -> list[Function]:
     return out
 
 
+def _library_arg(param: Param) -> str:
+    if param.mode == "out":
+        return f"ctypes.byref({param.name})"
+    if param.type == "cstr":
+        return (
+            f"{param.name}.encode() if {param.name} is not None else None"
+            if param.nullable
+            else f"{param.name}.encode()"
+        )
+    return param.name
+
+
+def _library_param(param: Param) -> str:
+    hint = PYTYPES.get(param.type, "int")
+    default = " = None" if param.nullable and param.type == "cstr" else ""
+    return f", {param.name}: {hint}{default}"
+
+
 def _library_method(api: Api, fn: Function) -> str:
     outs = [p for p in fn.params if p.mode == "out"]
     ins = [p for p in fn.params if p.mode != "out"]
-    params = "".join(f", {p.name}: {PYTYPES.get(p.type, 'int')}" for p in ins)
+    params = "".join(_library_param(p) for p in ins)
     body = "".join(f"        {p.name} = {CTYPES[p.type]}()\n" for p in outs)
-    args = ", ".join(f"ctypes.byref({p.name})" if p.mode == "out" else p.name for p in fn.params)
+    args = ", ".join(_library_arg(p) for p in fn.params)
     call = f"self._lib.{fn.name}({args})"
     if fn.returns == "cstr":
-        ret, body = "str | None", body + f"        return _text({call})\n"
+        ret, body = "str | None", body + py_call("return _text", [call], "        ") + "\n"
     else:
-        values = ", ".join(f"{p.name}.value" for p in outs) + ("," if len(outs) == 1 else "")
+        values = ", ".join(f"int({p.name}.value)" for p in outs) + ("," if len(outs) == 1 else "")
         ret, body = "tuple[int, ...]", body + f"        {call}\n        return ({values})\n"
     return (
         f'    def {_library_method_name(fn)}(self{params}) -> {ret}:\n        """{fn.doc}"""\n'
         + body
+    )
+
+
+def pyproject_text(api: Api) -> str:
+    """Generated `bindings/python/pyproject.toml`, single-sourced from `core/api/vmafx.toml`."""
+    return (
+        "# Copyright 2026 Lusoris\n"
+        "# " + "SPDX-" + "License-Identifier: EUPL-1.2\n"
+        "#\n"
+        "# GENERATED by scripts/codegen/vmafx-api.py from core/api/vmafx.toml (ADR-1852).\n"
+        "# Do not edit: change the definition and run\n"
+        "# `python3 scripts/codegen/vmafx-api.py --write`.\n\n"
+        "[build-system]\n"
+        'requires = ["hatchling>=1.32.0"]\n'
+        'build-backend = "hatchling.build"\n\n'
+        "[project]\n"
+        f'name = "{api.name}"\n'
+        'dynamic = ["version"]\n'
+        'description = "ctypes binding for the VMAFx C API (standard library only)."\n'
+        'requires-python = ">=3.12"\n'
+        'license = "EUPL-1.2"\n'
+        'license-files = ["LICENSES/*"]\n'
+        'authors = [{ name = "Lusoris", email = "lusoris@pm.me" }]\n'
+        "dependencies = []\n\n"
+        "[project.urls]\n"
+        'Homepage = "https://github.com/VMAFx/vmafx"\n'
+        'Repository = "https://github.com/VMAFx/vmafx"\n'
+        'Documentation = "https://vmafx.dev/api/vmafx/bindings/"\n'
+        'Issues = "https://github.com/VMAFx/vmafx/issues"\n\n'
+        "[tool.hatch.version]\n"
+        'path = "vmafx/_api.py"\n\n'
+        "[tool.hatch.build.targets.wheel]\n"
+        'packages = ["vmafx"]\n\n'
+        "[tool.setuptools.packages.find]\n"
+        'include = ["vmafx*"]\n\n'
+        "[tool.setuptools.package-data]\n"
+        'vmafx = ["py.typed"]\n\n'
+        "[tool.setuptools.dynamic]\n"
+        'version = { attr = "vmafx._api.__version__" }\n'
     )
 
 
@@ -378,13 +640,14 @@ def module_text(api: Api) -> str:
     parts += [_callback_type(api, item) for item in api.callbacks]
     if api.structs:
         parts.append(_struct_fields(api))
-    parts += [_layout_table(api), _signature_table(api), RUNTIME]
+    parts += [_layout_table(api), _signature_table(api), _coverage_tables(api), RUNTIME]
     parts += [_record_class(api, item) for item in api.structs]
+    parts.append(HANDLE_CLASSES)
     _refuse_collisions("Context", context_methods(api), _method_name)
     _refuse_collisions("Library", library_functions(api), _library_method_name)
     methods = "\n".join(_method(api, fn) for fn in context_methods(api))
-    parts.append(CONTEXT_CLASS + "\n" + methods)
+    parts.append(CONTEXT_CLASS + ("\n" + methods if methods else ""))
     lib_methods = "\n".join(_library_method(api, fn) for fn in library_functions(api))
-    parts.append(LIBRARY_CLASS + "\n" + lib_methods)
+    parts.append(LIBRARY_CLASS + ("\n" + lib_methods if lib_methods else ""))
     parts.append("_check_layout()\n")
     return "\n\n".join(p.rstrip("\n") + "\n" for p in parts)

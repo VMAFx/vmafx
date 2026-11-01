@@ -78,6 +78,7 @@ FIXED_OUTPUTS: tuple[tuple[str, Renderer], ...] = (
     ("core/src/vmafx_symbols.txt", emit_symbols.symbol_list),
     ("core/src/libvmaf_symbols.txt", emit_symbols.compat_symbol_list),
     ("core/test/test_vmafx_abi_layout.c", emit_layout_test.layout_test_source),
+    ("bindings/python/pyproject.toml", emit_python.pyproject_text),
     ("bindings/python/vmafx/_api.py", emit_python.module_text),
     ("pkg/vmafx/status_gen.go", emit_go.status_text),
     ("pkg/vmafx/api_gen.go", emit_go.api_text),

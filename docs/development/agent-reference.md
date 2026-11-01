@@ -73,6 +73,7 @@ Key requirements and operational details:
 - **Never modified by any PR**: These assertions are never modified by any pull request except for verbatim ports of upstream Netflix updates ([ADR-1828](../adr/1828-port-netflix-golden-updates.md)). Developers must measure against the fork CPU build first and port the exact upstream value and decimal places without inventing fork-specific numbers. This gate runs in CI as a required status check.
 - **Isolated build profile ([ADR-1317](../adr/1317-golden-gate-build-isolation.md))**: `make test-netflix-golden` uses dedicated `GOLDEN_BUILD_DIR ?= core/build-golden` compiled via `scripts/ci/setup-golden-build.sh` enforcing `gcc` or `clang` and passes `VMAF_BUILD_DIR` to Python tests. This isolates the gate from developer builds configured with oneAPI ICX, which exhibit floating-point contraction drift on float-motion and float-VIF convolutions.
 - **Fork-added tests**: All fork-specific tests reside in separate files and directories.
+- **HDR model score pins**: HDR model score pins run in `python/test/hdr_models_pin_test.py` and `python/test/vmaf_v1_quality_runner_test.py` as part of the golden gate and CI coverage gate. The build requires zimg support (`-Denable_zimg=true`, `libzimg-dev`); any build without zimg fails explicitly naming zimg rather than skipping tests, and CI strictly verifies that no required HDR test is skipped or absent.
 
 ## Build and IDE notes
 

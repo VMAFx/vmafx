@@ -145,10 +145,16 @@
       "runs": "make ffmpeg-input-contract in the FFmpeg Patch Stack job, which ffmpeg-patches/test/check_input_contract.py requires of that job (ADR-1240)"
     },
     {
+      "name": "gstreamer-element",
+      "paths": ["gstreamer/test/"],
+      "checks": ["GStreamer Element"],
+      "not_local": "needs the built element, a libvmafx build and the PyGObject of the system interpreter (gstreamer/test/run.sh)",
+      "runs": "gstreamer/test/run.sh with GST_VMAFX_STRICT=1 in the GStreamer Element job, which builds what these tests load (ADR-3390)"
+    },
+    {
       "name": "tooling",
       "paths": [
         "dev/scripts/",
-        "gstreamer/test/",
         "scripts/",
         "scripts/codegen/tests/test_vmafx_api_status_bindings.py",
         "scripts/upstream-watcher/tests/test_ensure_label.py",

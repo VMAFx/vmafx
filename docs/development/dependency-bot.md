@@ -58,7 +58,9 @@ the preset's default. Top-level knobs:
 | `prHourlyLimit` | `0` (unlimited) |
 | `prConcurrentLimit` | `3` |
 | `prCreation` | `immediate` |
+| `commitBody` | `Signed-off-by: {{{gitAuthor}}}` |
 | `minimumReleaseAge` | `3 days` (from the preset) |
+| `postUpdateOptions` | `["helmUpdateSubChartArchives"]` |
 
 Check a change with the validator in strict mode, for example:
 
@@ -149,6 +151,50 @@ fixtures:
 python3 -m pytest scripts/ci/tests/test_renovate_file_patterns.py -k PythonCiVersionGroup
 ```
 
+### CI Node.js
+
+Node.js is named in four places: `NODE_VERSION` in `build-config.env`,
+`default_language_version.node` in `.pre-commit-config.yaml`, `.node-version`,
+and the `node-version:` input of every `actions/setup-node` step under
+`.github/workflows/`. `.node-version` is the file the engine-managed
+`praetor-docs.yml` reads once the engine is re-adopted; an engine seeds it only
+when it is absent, so it stays on our release. The check also refuses a missing
+`.node-version`.
+`scripts/ci/check-workflow-versions.py` refuses a pull
+request in which any copy differs from `build-config.env` (a major-only workflow
+input such as `"24"` must name the same major). The one dated exception is
+`praetor-docs.yml`, declared in `.config/lint-exceptions.d/node-version-pin.toml`:
+the engine locks that file byte for byte, and the current engine pin still writes
+major 24 into it. The entry is removed with the pin move that brings the engine's
+`.node-version` read, and an expired entry fails the check. Renovate's built-in
+`github-actions` manager reads only the workflow pins, so its pull requests
+raised the workflow pins without `build-config.env` and
+`.pre-commit-config.yaml` and failed the single-source gate.
+
+`.node-version` is allowlisted in `scripts/ci/classify-dependency-pr.sh`
+(ADR-1152), so this group qualifies for the dependency-only deliverables exemption.
+
+Following the ADR-3312 pattern, one custom manager (`depNameTemplate: node`,
+`datasourceTemplate: github-releases`,
+`packageNameTemplate: actions/node-versions`, the source `actions/setup-node`
+installs from) reads all four places, and package rules turn off the
+`github-actions` manager for the `node` input (`depType: uses-with`) and the
+`nodenv` manager, which reads another datasource for `.node-version`. A
+second rule groups the updates under `CI
+Node.js` (`draftPR: false`, `automerge: false`), so one reviewed pull request
+raises every pin together. Exact three-part pins (`x.y.z`) are matched, leaving
+major-only pins such as `praetor-docs.yml` untouched.
+
+`NodeCiVersionGroup` in `scripts/ci/tests/test_renovate_file_patterns.py` holds
+the manager to the pins the single-source gate reads. It fails in any of these
+cases:
+
+- a workflow pin the check reads is not read by the manager;
+- `build-config.env`, `.pre-commit-config.yaml` or `.node-version` is not selected;
+- the manager reads a value the check does not;
+- the `github-actions` or `nodenv` rule is turned back on;
+- the group rule is removed.
+
 ### Images pinned in Go source
 
 The controller store tests start PostgreSQL from two Go constants in
@@ -177,6 +223,41 @@ stops matching the oldest image.
 `scripts/ci/classify-dependency-pr.sh` (ADR-1152), so automated Renovate pull
 requests bumping these image digests qualify for the dependency-only
 deliverables checklist exemption without admitting other Go files under `cmd/`.
+
+### Helm subchart archives
+
+When Helm charts retain packaged subcharts in git (`deploy/helm/.../charts/*.tgz`),
+dependency updates to `Chart.lock` must also update the matching subchart
+archives. Top-level `postUpdateOptions: ["helmUpdateSubChartArchives"]` instructs
+Renovate to package or download the updated archive tarball whenever subchart
+dependencies change (#3045, #3047), preventing `helm lint` from rejecting a
+`Chart.lock` whose pinned tarball is missing. `RenovateFilePatterns` in
+`scripts/ci/tests/test_renovate_file_patterns.py` enforces this option whenever
+packaged chart archives are tracked in git.
+
+### Squash message of automerged updates
+
+Renovate platform automerge (`platformAutomerge: true`) delegates merge
+execution to GitHub. Without an explicit commit body, GitHub generates a default
+squash body composed of the pull request commit messages. When a pull request
+branch receives commits from more than one author (for example, bot commits and
+human co-authors or rebase updates), GitHub appends `Co-authored-by:` lines to
+the squash commit body.
+
+Setting `commitBody: "Signed-off-by: {{{gitAuthor}}}"` in `renovate.json`
+configures the commit body appended to `commitMessage` per Renovate's
+`commitBody` configuration option. When Renovate arms platform automerge, it
+passes this message to GitHub as headline and body, so the squash commit carries
+the bot's sign-off without tool or bot `Co-authored-by:` lines.
+
+Renovate compiles `commitBody` only while it writes a commit, and arms
+auto-merge from that message when it creates the pull request or after it writes
+a commit. A pull request whose auto-merge was armed before this setting keeps
+the old message until its next rebase, so tick its rebase box. The branch commit
+shows the sign-off twice, once from `commitBody` and once from the `:gitSignOff`
+trailer; the squash body has it once. Source, Renovate 44.161.2 `dist/`:
+`workers/repository/update/branch/index.js:448-449` and `:474-479`,
+`modules/platform/github/index.js:1183-1190`, `config/options/index.js:2562`.
 
 ## Migration from self-hosted (2026-05-10)
 

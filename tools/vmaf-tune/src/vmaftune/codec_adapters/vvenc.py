@@ -117,8 +117,8 @@ class VVenCAdapter:
     supports_qpfile: bool = False
     # ADR-0400: this encoder has no parseable first-pass stats file.
     supports_encoder_stats: bool = False
-    # VVenC ROI-map file (ADR-0414): delivered via -vvenc-params ROIFile=.
-    supports_saliency_roi: bool = True
+    # ADR-3386: measured ROIFile refusal; FFmpeg has no libvvenc ROI channel.
+    supports_saliency_roi: bool = False
     # ADR-0595 (Phase F real 2-pass): the FFmpeg ``libvvenc`` wrapper
     # accepts ``-pass N -passlogfile <prefix>`` since FFmpeg 6.1 — the
     # wrapper translates internally to VVenC's RcStatsFile config key
@@ -358,6 +358,7 @@ class VVenCAdapter:
     ) -> object:
         """Write a VVenC ROI-map CSV file from a per-CTU-block offset array.
 
+        Legacy API helper, not used by any encode path since ADR-3386.
         Delegates to :func:`vmaftune.saliency.write_vvenc_roi_csv`.
         Returns the output ``Path`` the caller passes to
         :func:`vmaftune.saliency.augment_extra_params_with_vvenc_roi`.

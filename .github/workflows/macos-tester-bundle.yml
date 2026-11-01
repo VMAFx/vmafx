@@ -153,7 +153,7 @@ jobs:
         env:
           HOMEBREW_NO_AUTO_UPDATE: "1"
           HOMEBREW_NO_INSTALL_CLEANUP: "1"
-        run: brew install -q meson ninja nasm pkg-config zstd
+        run: brew install -q meson ninja nasm pkg-config zstd zimg
       # Xcode 26 no longer bundles the Metal compiler with the base runner
       # image. Metal.framework can be present while `xcrun metal` still fails,
       # so install the separately shipped component before the bundle build

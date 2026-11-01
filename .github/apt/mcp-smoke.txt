@@ -18,3 +18,4 @@ libavcodec-dev
 libavformat-dev
 libavutil-dev
 libswscale-dev
+libzimg-dev

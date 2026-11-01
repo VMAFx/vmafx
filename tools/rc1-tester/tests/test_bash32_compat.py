@@ -100,9 +100,30 @@ def bash32_available() -> bool:
     return probe.returncode == 0
 
 
-needs_bash32 = pytest.mark.skipif(
-    not bash32_available(), reason="docker image bash:3.2 not available (docker pull bash:3.2)"
-)
+# CI pulls the image and sets VMAFX_REQUIRE_BASH32=1: a skip there would hide a regression of the
+# build script (zimg became a dependency and the stubbed run broke while CI skipped it).
+REQUIRE_BASH32 = os.environ.get("VMAFX_REQUIRE_BASH32") == "1"
+
+
+def bash32_skip_reason(available: bool, required: bool) -> str | None:
+    """Why the docker tests skip, None when they run; a required image that is missing fails."""
+    if available:
+        return None
+    if required:
+        pytest.fail("VMAFX_REQUIRE_BASH32=1 but docker image bash:3.2 is not available")
+    return "docker image bash:3.2 not available (docker pull bash:3.2)"
+
+
+def test_required_bash32_never_skips() -> None:
+    """Negative: with the image required, a missing image fails instead of skipping."""
+    assert bash32_skip_reason(True, True) is None
+    assert bash32_skip_reason(False, False) is not None
+    with pytest.raises(pytest.fail.Exception):
+        bash32_skip_reason(False, True)
+
+
+_BASH32_SKIP = bash32_skip_reason(bash32_available(), REQUIRE_BASH32)
+needs_bash32 = pytest.mark.skipif(_BASH32_SKIP is not None, reason=_BASH32_SKIP or "")
 
 
 def stub(path: Path, body: str) -> None:
@@ -159,8 +180,15 @@ def test_build_script_runs_to_the_end_under_bash32(tmp_path: Path) -> None:
     """The whole build script under bash 3.2 with stub tools: it must reach `pack`."""
     stubs = tmp_path / "stubs"
     stubs.mkdir()
-    for name in ("meson", "codesign", "brew", "zstd"):
+    for name in ("meson", "codesign", "zstd"):
         stub(stubs / name, "exit 0\n")
+    # The script links zimg statically from `brew --prefix zimg`: a prefix with libzimg.a and
+    # the zimg.pc whose `-L${libdir} -lzimg` it rewrites to that archive.
+    zimg = tmp_path / "zimg"
+    (zimg / "lib" / "pkgconfig").mkdir(parents=True)
+    (zimg / "lib" / "libzimg.a").write_text("")
+    (zimg / "lib" / "pkgconfig" / "zimg.pc").write_text("Libs: -L${libdir} -lzimg\n")
+    stub(stubs / "brew", 'case "$1 $2" in "--prefix zimg") echo /w/zimg;; esac\n')
     stub(stubs / "shasum", SHASUM_STUB)
     stub(
         stubs / "ninja",

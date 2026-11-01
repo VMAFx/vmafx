@@ -163,6 +163,7 @@ def _update_registry(onnx_path: Path) -> None:
         "onnx": onnx_path.name,
         "opset": 17,
         "sha256": digest,
+        "teacher": "none",
         "smoke": True,
         "license": "BSD-2-Clause-Patent",
         "notes": (

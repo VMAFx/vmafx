@@ -369,6 +369,7 @@ the selectors declared in `.github/ci-impact.json`. There are 27 selectors:
 | `tidy_integrations` | `gstreamer/`, `ffmpeg-patches/src/`, `ffmpeg-patches/series.txt` and its patches, `build-config.env`, the same lane infrastructure; own paths only ([ADR-3379](../adr/3379-tidy-integrations-lane.md)) | `Tidy Lane (integrations)` |
 | `tidy_rust` | `core/src/rust/`, `core/src/feature/tad_rust.c`, the `core/test/test_*rust*` tests, `build-config.env`, `rust-toolchain.toml`, the same lane infrastructure; own paths only ([ADR-3380](../adr/3380-tidy-rust-lane.md)) | `Tidy Lane (rust)` |
 | `tidy_metal` | `core/src/metal/`, `core/src/feature/metal/`, the Metal tests, `tidy-metal.yml`, the ratchet and the Metal baseline; own paths only | `Tidy Metal` |
+| `gstreamer_element` | `gstreamer/`, `core/`, `model/`, `ffmpeg-patches/src/vf_vmafx_options.h`, `docs/usage/gstreamer.md`, `scripts/codegen/`, `scripts/ci/vmafx_window_pooling.py`, `scripts/ci/werror-args.sh`, the fixture script and its download helper, `requirements/locks/build.txt`, `build-config.env`, `lint-and-format.yml`; own paths only ([ADR-3390](../adr/3390-gstreamer-element-check.md)) | `GStreamer Element` |
 | `rust` | `bindings/`, `Cargo.*`, `core/src/feature/rust/` | Rust CI (path-filtered, not required) |
 | `shell` | `*.sh` | Not required, still path-filtered |
 | `container` | `Dockerfile*`, `dev/`, `docker/`, `deploy/`, `.devcontainer/` | Not required, still path-filtered |
@@ -510,6 +511,13 @@ absent or skipped, never failed: the names the run's CI tier does not owe, the
 `pullRequestOnly` names on a push or dispatch event, and a hardware lane whose
 operator switch is off. `scripts/ci/tests/test_aggregator_absent_fails.py`
 runs the embedded script against both rules.
+
+The aggregator's GitHub API calls (`getWorkflowRun`, `listAllCheckRuns`,
+`pullRequestSuites`) retry HTTP 5xx answers for 15 minutes. If the API still
+answers 5xx, the job fails with `Transient GitHub API failure:`, the call and
+the status, and judges no check: rerun the job, because the code did not fail.
+Any other API error ends the job at once.
+`scripts/ci/tests/test_ci_aggregator_tier.py` runs both paths against a stub.
 
 ### Release legs
 

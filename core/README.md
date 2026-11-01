@@ -9,6 +9,7 @@ For building, you need the following:
 - [Meson](https://mesonbuild.com/) (0.56.1 or higher)
 - [Ninja](https://ninja-build.org/) (1.7.1 or higher)
 - [NASM](https://www.nasm.us/) (for x86 builds only, 2.13.02 or higher)
+- [zimg](https://github.com/sekrit-twc/zimg) (2.7 or higher; `libzimg-dev` on Debian/Ubuntu, `zimg-devel` on Fedora, `zimg` on Alpine/Arch/macOS)
 - `xxd`
 
 Follow the steps below to set up a clean virtual environment and install the tools:
@@ -18,7 +19,7 @@ python3 -m pip install virtualenv
 python3 -m virtualenv .venv
 source .venv/bin/activate
 pip install meson
-sudo [package-manager] install nasm ninja-build doxygen xxd
+sudo [package-manager] install nasm ninja-build doxygen xxd libzimg-dev
 ```
 
 You need to invoke `[package-manager]` depending on which system you are on: `apt-get` for Ubuntu and Debian, `yum` for CentOS and RHEL, `dnf` for Fedora, `zypper` for openSUSE, `brew` for MacOS (no `sudo`).
@@ -39,7 +40,7 @@ Special cases:
 - add `-Denable_avx512=true` to support wider SIMD instructions to achieve the fastest processing on supported CPUs
 - add `-Denable_cuda=true` to build with CUDA support, which requires `nvcc` for compilation (tested with CUDA >= 11)
 - add `-Denable_nvtx=true` to build with [NVTX](https://github.com/NVIDIA/NVTX) marker support, which enables easy profiling using Nsight Systems
-- add `-Denable_zimg=true` to build picture conversion (`vmaf_picture_convert`) via [zimg](https://github.com/sekrit-twc/zimg) >= 2.7, which must be installed and discoverable via `pkg-config`
+- `zimg` is enabled by default ([ADR-3396](../docs/adr/3396-zimg-on-by-default.md)) for picture conversion (`vmaf_picture_convert`) and HDR PQ scoring, requiring [zimg](https://github.com/sekrit-twc/zimg) >= 2.7 discoverable via `pkg-config`. Pass `-Denable_zimg=false` to opt out and build without zimg.
 - add `-Denable_sycl=true` to build with Intel oneAPI/SYCL support, which requires `icpx` (DPC++ compiler from Intel oneAPI toolkit)
 
 ### SYCL Build

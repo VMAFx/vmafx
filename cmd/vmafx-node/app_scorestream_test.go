@@ -24,7 +24,6 @@ import (
 	"testing"
 	"time"
 
-	"go.uber.org/fx/fxtest"
 	googlegrpc "google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
@@ -73,20 +72,20 @@ func TestAppScoreStreamEndToEnd(t *testing.T) {
 		}
 	}
 
-	addr := freeLoopbackAddr(t)
 	// /bin/true stands in for the vmaf CLI binary: ScoreStream uses libvmaf
 	// directly (cgo), not the subprocess, so the binary is never executed.
-	t.Setenv("VMAFX_VMAF_BINARY", "/bin/true")
-	t.Setenv("VMAFX_MODEL_DIR", modelDir)
-	t.Setenv("VMAFX_GRPC_LISTEN", addr)
-	t.Setenv("VMAFX_HTTP_ADDR", freeLoopbackAddr(t))
-	t.Setenv("VMAFX_LOG_LEVEL", "error")
-	t.Setenv("VMAFX_FFMPEG_BIN", "/bin/true")
-	t.Setenv("VMAFX_SIDECAR_SOCKET", filepath.Join(t.TempDir(), "sidecar.sock"))
-
-	app := fxtest.New(t, productionGraph())
-	app.RequireStart()
+	app := startNodeAppWithRetry(t, func() {
+		addr := freeLoopbackAddr(t)
+		t.Setenv("VMAFX_VMAF_BINARY", "/bin/true")
+		t.Setenv("VMAFX_MODEL_DIR", modelDir)
+		t.Setenv("VMAFX_GRPC_LISTEN", addr)
+		t.Setenv("VMAFX_HTTP_ADDR", freeLoopbackAddr(t))
+		t.Setenv("VMAFX_LOG_LEVEL", "error")
+		t.Setenv("VMAFX_FFMPEG_BIN", "/bin/true")
+		t.Setenv("VMAFX_SIDECAR_SOCKET", filepath.Join(t.TempDir(), "sidecar.sock"))
+	}, productionGraph())
 	defer app.RequireStop()
+	addr := os.Getenv("VMAFX_GRPC_LISTEN")
 
 	conn, err := googlegrpc.NewClient(addr, googlegrpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
