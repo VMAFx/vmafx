@@ -531,6 +531,11 @@ int vmaf_cuda_import_state(VmafContext *vmaf, VmafCudaState *cu_state)
     return 0;
 }
 
+const VmafCudaState *vmaf_engine_cuda_state(const VmafContext *vmaf)
+{
+    return vmaf && vmaf->cuda.state.ctx ? &vmaf->cuda.state : NULL;
+}
+
 int vmaf_cuda_preallocate_pictures(VmafContext *vmaf, VmafCudaPictureConfiguration cfg)
 {
     if (!vmaf)
