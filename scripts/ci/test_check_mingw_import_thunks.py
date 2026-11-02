@@ -52,6 +52,18 @@ libvmaf_3_dll_d000042.o:
 0000000000000000 t .text
 """
 
+BROKEN_LTO_VMAFX_IMP = 1183
+BROKEN_LTO_VMAFX_THUNKS = 48
+BOUNDARY_IMP = 10
+BOUNDARY_PASS_THUNKS = 5
+BOUNDARY_FAIL_THUNKS = 4
+
+
+def _generate_nm_output(imp_count: int, thunk_count: int) -> str:
+    lines = [f"0000000000000000 I __imp_sym_{i}" for i in range(imp_count)]
+    lines.extend([f"0000000000000000 T sym_{j}" for j in range(thunk_count)])
+    return "\n".join(lines) + "\n"
+
 
 def _make_build_dir(root: Path, names: tuple[str, ...]) -> Path:
     src = root / "src"
@@ -148,3 +160,70 @@ def test_fake_nm_script_end_to_end() -> None:
             rc = gate.main(["--nm", str(fake_nm), str(build)])
         assert rc == 1
         assert "libvmaf.dll.a: __imp_=2, T=0" in err.getvalue()
+
+
+def test_negative_planted_broken_lto_ratio_fails() -> None:
+    """Planted negative: libvmafx broken LTO build (imp=1183, T=48) fails closed."""
+    with tempfile.TemporaryDirectory() as tmp:
+        build = _make_build_dir(Path(tmp), ("libvmafx.dll.a",))
+        nm_out = _generate_nm_output(BROKEN_LTO_VMAFX_IMP, BROKEN_LTO_VMAFX_THUNKS)
+        err = io.StringIO()
+        with redirect_stderr(err):
+            rc = gate.check_build_dir(
+                build,
+                nm_tool="nm",
+                runner=lambda _tool, _path: (0, nm_out, ""),
+            )
+        assert rc == 1
+        assert "libvmafx.dll.a" in err.getvalue()
+        assert f"__imp_={BROKEN_LTO_VMAFX_IMP}, T={BROKEN_LTO_VMAFX_THUNKS}" in err.getvalue()
+
+
+def test_boundary_thunk_ratio_at_threshold_passes() -> None:
+    """Boundary: imp=10 and T=5 exactly meets MIN_THUNK_RATIO=0.5 and passes."""
+    with tempfile.TemporaryDirectory() as tmp:
+        build = _make_build_dir(Path(tmp), ("libvmaf.dll.a",))
+        nm_out = _generate_nm_output(BOUNDARY_IMP, BOUNDARY_PASS_THUNKS)
+        out = io.StringIO()
+        err = io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            rc = gate.check_build_dir(
+                build,
+                nm_tool="nm",
+                runner=lambda _tool, _path: (0, nm_out, ""),
+            )
+        assert rc == 0, err.getvalue()
+        assert f"libvmaf.dll.a: __imp_={BOUNDARY_IMP}, T={BOUNDARY_PASS_THUNKS}" in out.getvalue()
+
+
+def test_boundary_thunk_ratio_below_threshold_fails() -> None:
+    """Boundary: imp=10 and T=4 falls below MIN_THUNK_RATIO=0.5 and fails."""
+    with tempfile.TemporaryDirectory() as tmp:
+        build = _make_build_dir(Path(tmp), ("libvmaf.dll.a",))
+        nm_out = _generate_nm_output(BOUNDARY_IMP, BOUNDARY_FAIL_THUNKS)
+        err = io.StringIO()
+        with redirect_stderr(err):
+            rc = gate.check_build_dir(
+                build,
+                nm_tool="nm",
+                runner=lambda _tool, _path: (0, nm_out, ""),
+            )
+        assert rc == 1
+        assert "libvmaf.dll.a" in err.getvalue()
+        assert f"__imp_={BOUNDARY_IMP}, T={BOUNDARY_FAIL_THUNKS}" in err.getvalue()
+
+
+def test_imp_zero_passes() -> None:
+    """Boundary: an archive with imp=0 and T=0 exits 0 (no imports)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        build = _make_build_dir(Path(tmp), ("libvmaf.dll.a",))
+        out = io.StringIO()
+        err = io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            rc = gate.check_build_dir(
+                build,
+                nm_tool="nm",
+                runner=lambda _tool, _path: (0, "", ""),
+            )
+        assert rc == 0, err.getvalue()
+        assert "libvmaf.dll.a: __imp_=0, T=0" in out.getvalue()

@@ -11,8 +11,8 @@ aborts before ``main`` under 64-bit high-entropy ASLR (VMAFx/vmafx#3257).
 
 For every ``*.dll.a`` under ``<build>/src``, this script runs ``nm`` and counts
 ``__imp_`` entries and `` T `` thunk symbols.  It fails (exit 1) when no ``*.dll.a``
-files are found, when ``nm`` fails, or when any archive has ``__imp_ > 0`` and
-``T == 0``.
+files are found, when ``nm`` fails, or when any archive has
+``thunk_count < imp_count * MIN_THUNK_RATIO`` (missing function thunks).
 """
 
 from __future__ import annotations
@@ -38,6 +38,13 @@ from scripts.lib.safe_subprocess import (
 
 NM_TIMEOUT_SECONDS = 60.0
 NM_MAX_OUTPUT_BYTES = 64 * 1_048_576
+MIN_THUNK_RATIO = 0.5
+"""Minimum ratio of function thunks (``T``) to import slots (``__imp_``).
+
+Data exports have no thunk by design. Broken LTO DLL builds emit few or no thunks
+(measured 0/78 for libvmaf and 48/1183 for libvmafx), whereas good builds emit thunks
+for all or almost all functions (measured 78/78 for libvmaf and 1015/1136 for libvmafx).
+"""
 Runner = Callable[[str, Path], tuple[int, str, str]]
 
 
@@ -115,10 +122,12 @@ def check_build_dir(
             failed = True
             continue
         imp_count, thunk_count = count_symbols(stdout)
-        if imp_count > 0 and thunk_count == 0:
+        if imp_count > 0 and thunk_count < imp_count * MIN_THUNK_RATIO:
+            ratio = thunk_count / imp_count
             print(
                 f"check_mingw_import_thunks: FAIL {archive}: __imp_={imp_count}, T={thunk_count} "
-                "(missing function thunks; LTO-linked DLL import library, VMAFx/vmafx#3257, ADR-3397)",
+                f"(ratio {ratio:.3f} < {MIN_THUNK_RATIO}; missing function thunks; "
+                "LTO-linked DLL import library, VMAFx/vmafx#3257, ADR-3397)",
                 file=sys.stderr,
             )
             failed = True
