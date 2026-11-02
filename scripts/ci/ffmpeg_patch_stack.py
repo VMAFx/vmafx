@@ -469,6 +469,10 @@ def readme_claim(repo: Path, receipt: Receipt) -> dict[Path, bytes]:
     return {path: updated.encode("utf-8")}
 
 
+class NotAGitCheckout(RuntimeError):
+    """The directory is not a Git checkout."""
+
+
 def repo_git_dir(repo: Path) -> Path:
     """Return the Git directory of the checkout (a linked worktree has its own)."""
     git = shutil.which("git")
@@ -483,7 +487,7 @@ def repo_git_dir(repo: Path) -> Path:
         timeout_seconds=30,
     )
     if result.returncode != 0:
-        raise RuntimeError(f"{repo} is not a Git checkout: {result.stderr.strip()}")
+        raise NotAGitCheckout(f"{repo} is not a Git checkout: {result.stderr.strip()}")
     return Path(result.stdout.strip())
 
 
@@ -502,7 +506,8 @@ def maintain_lock(repo: Path, enabled: bool) -> Iterator[None]:
         with suppress(OSError):
             pid = lockpath.read_text(encoding="utf-8").strip()
         raise RuntimeError(
-            f"refresh lock {lockpath} is held by process {pid or 'unknown'}"
+            f"refresh lock {lockpath} is held by process {pid or 'unknown'}; "
+            "if that process is no longer running, delete the lock file and retry the refresh"
         ) from None
     with os.fdopen(fd, "w") as stream:
         stream.write(f"{os.getpid()}\n")
@@ -516,7 +521,13 @@ def maintain_lock(repo: Path, enabled: bool) -> Iterator[None]:
 
 def recover_journal(repo: Path, refresh: bool) -> None:
     """Finish the renames of a refresh that stopped part-way, before anything else runs."""
-    journal = repo_git_dir(repo) / JOURNAL_NAME
+    try:
+        git_dir = repo_git_dir(repo)
+    except NotAGitCheckout:
+        if not refresh:
+            return
+        raise
+    journal = git_dir / JOURNAL_NAME
     if not journal.exists():
         return
     if not refresh:

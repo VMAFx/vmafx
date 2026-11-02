@@ -490,8 +490,13 @@ class RealReplay(unittest.TestCase):
         STACK.maintain(self.repo, self.output, True, False)
         lock = STACK.repo_git_dir(self.repo) / "ffmpeg-patch-stack.lock"
         lock.write_text("54321\n")
+        guidance = (
+            "if that process is no longer running, delete the lock file and retry the refresh"
+        )
         try:
-            with self.assertRaisesRegex(RuntimeError, rf"{re.escape(str(lock))}.*54321"):
+            with self.assertRaisesRegex(
+                RuntimeError, rf"{re.escape(str(lock))}.*54321.*{re.escape(guidance)}"
+            ):
                 STACK.maintain(self.repo, self.output, True, False)
             checked = STACK.maintain(self.repo, self.output, False, False)
             self.assertEqual(checked["changed"], [])
@@ -505,8 +510,26 @@ class RealReplay(unittest.TestCase):
                 output = " ".join(call.args[0] for call in printed.call_args_list if call.args)
                 self.assertIn(str(lock), output)
                 self.assertIn("54321", output)
+                self.assertIn(guidance, output)
         finally:
             lock.unlink(missing_ok=True)
+
+    def test_check_mode_outside_a_git_checkout_succeeds(self) -> None:
+        STACK.maintain(self.repo, self.output, True, False)
+        plain = self.root / "plain"
+        shutil.copytree(self.repo, plain, ignore=shutil.ignore_patterns(".git"))
+        STACK.recover_journal(plain, False)
+        with STACK.maintain_lock(plain, enabled=False):
+            pass
+        checked = STACK.maintain(plain, self.root / "plain-report", False, False)
+        self.assertEqual(checked["changed"], [])
+        with self.assertRaisesRegex(RuntimeError, "not a Git checkout"):
+            STACK.recover_journal(plain, True)
+        with self.assertRaisesRegex(RuntimeError, "not a Git checkout"):
+            with STACK.maintain_lock(plain, enabled=True):
+                pass
+        with self.assertRaisesRegex(RuntimeError, "not a Git checkout"):
+            STACK.maintain(plain, self.root / "plain-report", True, False)
 
     def test_refresh_outside_a_git_checkout_fails(self) -> None:
         shutil.rmtree(self.repo / ".git")
