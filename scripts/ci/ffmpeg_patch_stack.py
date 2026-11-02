@@ -416,6 +416,39 @@ def mirrors(repo: Path, remote: str, tag: str) -> dict[Path, bytes]:
     return changed
 
 
+README_CLAIM_PATTERN = re.compile(
+    r"(?m)^> The (?:(?:\d+) patches of the shared fix series `[^`]+` and the (?:\d+)(?:[ ]+|\n> )patches|\d+ patches) here replay cumulatively on upstream commit\n"
+    r"> `[0-9a-f]{40}`; the resulting tree is\n"
+    r"> `[0-9a-f]{40}`"
+)
+
+
+def readme_claim(repo: Path, receipt: Receipt) -> dict[Path, bytes]:
+    """Mirror the replayed patch counts and tree hash into ffmpeg-patches/README.md."""
+    path = repo / "ffmpeg-patches" / "README.md"
+    if not path.is_file():
+        raise ValueError("expected one replay claim in ffmpeg-patches/README.md, file missing")
+    original = path.read_text(encoding="utf-8")
+    shared_series = receipt.get("shared_series", "none")
+    if shared_series and shared_series != "none":
+        claim = (
+            f"> The {receipt['shared_patch_count']} patches of the shared fix series `{shared_series}` and the {receipt['patch_count']}\n"
+            f"> patches here replay cumulatively on upstream commit\n"
+            f"> `{receipt['upstream_commit']}`; the resulting tree is\n"
+            f"> `{receipt['patched_tree']}`"
+        )
+    else:
+        claim = (
+            f"> The {receipt['patch_count']} patches here replay cumulatively on upstream commit\n"
+            f"> `{receipt['upstream_commit']}`; the resulting tree is\n"
+            f"> `{receipt['patched_tree']}`"
+        )
+    updated, count = README_CLAIM_PATTERN.subn(claim, original)
+    if count != 1:
+        raise ValueError(f"expected one replay claim in ffmpeg-patches/README.md, found {count}")
+    return {path: updated.encode("utf-8")}
+
+
 def replace_files(updates: dict[Path, bytes]) -> None:
     """Prepare every file first; restore original bytes if a write fails."""
     before = {path: path.read_bytes() for path in updates}
@@ -636,6 +669,7 @@ def maintain(
             updates.update(mirrors(repo, remote, target_tag))
             config = repo / "build-config.env"
             updates[config] = pinned_config(config.read_text(), target_tag, target).encode()
+            updates.update(readme_claim(repo, receipt))
             settle_updates(repo, updates, refresh, receipt)
     except (KeyError, ValueError, RuntimeError, OSError, CommandTimedOut) as error:
         receipt.update({"status": "failed", "error": str(error)})

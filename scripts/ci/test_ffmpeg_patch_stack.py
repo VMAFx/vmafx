@@ -111,6 +111,13 @@ class RealReplay(unittest.TestCase):
             path = self.repo / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(f"ARG FFMPEG_TAG=n9.0.1\nARG FFMPEG_REMOTE={self.upstream}\n")
+        self.readme = self.repo / "ffmpeg-patches/README.md"
+        self.readme.write_text(
+            "> `n9.0.2`.\n"
+            "> The 1 patches here replay cumulatively on upstream commit\n"
+            f"> `{self.pin}`; the resulting tree is\n"
+            "> `0000000000000000000000000000000000000000`\n"
+        )
         self.output = self.root / "report"
 
     def cache_repos(self) -> list[Path]:
@@ -164,7 +171,10 @@ class RealReplay(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "drift"):
                 STACK.maintain(self.repo, self.output, False, False)
             refreshed = STACK.maintain(self.repo, self.output, True, False)
-            self.assertEqual(refreshed["changed"], ["ffmpeg-patches/0001-integration.patch"])
+            self.assertEqual(
+                sorted(refreshed["changed"]),
+                ["ffmpeg-patches/0001-integration.patch", "ffmpeg-patches/README.md"],
+            )
             self.assertIn("+edited in the source file", self.patch.read_text())
             self.assertEqual(STACK.maintain(self.repo, self.output, False, False)["changed"], [])
 
@@ -453,6 +463,42 @@ class RealReplay(unittest.TestCase):
             STACK.maintain(self.repo, self.output, True, False)
         self.assertEqual(self.contents(), before)
 
+    def test_readme_claim_refreshes_and_passes_check(self) -> None:
+        result = STACK.maintain(self.repo, self.output, True, False)
+        readme = (self.repo / "ffmpeg-patches/README.md").read_text()
+        self.assertIn(result["upstream_commit"], readme)
+        self.assertIn(result["patched_tree"], readme)
+        if result.get("shared_series", "none") != "none":
+            self.assertIn(f"shared fix series `{result['shared_series']}`", readme)
+            self.assertIn(f"and the {result['patch_count']}\n> patches here", readme)
+        else:
+            self.assertIn(f"The {result['patch_count']} patches here", readme)
+        checked = STACK.maintain(self.repo, self.output, False, False)
+        self.assertEqual(checked["changed"], [])
+
+    def test_stale_readme_claim_fails_check_with_drift(self) -> None:
+        STACK.maintain(self.repo, self.output, True, False)
+        readme = self.repo / "ffmpeg-patches/README.md"
+        stale = re.sub(r"The \d+ patches", "The 999 patches", readme.read_text())
+        readme.write_text(stale)
+        with self.assertRaisesRegex(ValueError, "drift"):
+            STACK.maintain(self.repo, self.output, False, False)
+        receipt = json.loads((self.output / "receipt.json").read_text())
+        self.assertEqual(receipt["changed"], ["ffmpeg-patches/README.md"])
+
+    def test_readme_claim_missing_or_duplicate_raises_value_error(self) -> None:
+        STACK.maintain(self.repo, self.output, True, False)
+        readme = self.repo / "ffmpeg-patches/README.md"
+        valid = readme.read_text()
+
+        readme.write_text("No claim here.\n")
+        with self.assertRaisesRegex(ValueError, r"ffmpeg-patches/README\.md"):
+            STACK.maintain(self.repo, self.output, False, False)
+
+        readme.write_text(valid + "\n" + valid)
+        with self.assertRaisesRegex(ValueError, r"ffmpeg-patches/README\.md"):
+            STACK.maintain(self.repo, self.output, False, False)
+
 
 class SharedSeriesReplay(RealReplay):
     """The shared FFmpeg fix series is verified and applied before ours (ADR-3143)."""
@@ -557,6 +603,19 @@ class SharedSeriesReplay(RealReplay):
         self.assertIn(
             "add integration", (self.output / "patches/0001-integration.patch").read_text()
         )
+
+    def test_readme_claim_renders_shared_series_and_passes_check(self) -> None:
+        result = STACK.maintain(self.repo, self.output, True, False)
+        readme = (self.repo / "ffmpeg-patches/README.md").read_text()
+        self.assertIn(
+            f"The {result['shared_patch_count']} patches of the shared fix series `{result['shared_series']}`",
+            readme,
+        )
+        self.assertIn(f"and the {result['patch_count']}\n> patches here", readme)
+        self.assertIn(result["upstream_commit"], readme)
+        self.assertIn(result["patched_tree"], readme)
+        checked = STACK.maintain(self.repo, self.output, False, False)
+        self.assertEqual(checked["changed"], [])
 
 
 def ffmpeg_guard(path: str) -> str:

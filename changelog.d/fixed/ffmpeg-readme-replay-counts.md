@@ -1,0 +1,1 @@
+- **Keep the FFmpeg patch README counts and tree in step with the replay checker (#3260).** The cumulative patch counts, upstream commit, and resulting tree in `ffmpeg-patches/README.md` are now mirrored and verified by `scripts/ci/ffmpeg_patch_stack.py`, failing `--check` on drift and updated by `--refresh`.

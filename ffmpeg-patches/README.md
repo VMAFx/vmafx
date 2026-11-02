@@ -189,11 +189,11 @@ Or via the helper skill: `/ffmpeg-apply-patches /path/to/ffmpeg`.
 > the patches consume is a **series replay** against a pristine
 > `n9.0.2` checkout (cumulative `git am --3way`), NOT a per-patch
 > `git apply --check`. The latter rejects `0002+` because they
-> reference cumulative-state hunks that don't exist in pristine
-> `n9.0.2`. The 4 patches of the shared fix series `v0.1.0` and the 21
+> reference cumulative-state hunks that don't exist in pristine `n9.0.2`.
+> The 39 patches of the shared fix series `v0.5.0` and the 25
 > patches here replay cumulatively on upstream commit
 > `946fcce07b6dcd0331c8cc609192aeff5e1924f8`; the resulting tree is
-> `1b49fde499b00689be5eb13da0cb159052ddb3e3`
+> `ddf89378f09b849b0b6407e2ff3b0854624ebfeb`
 > (`python3 scripts/ci/ffmpeg_patch_stack.py --check`). The refresh evidence and
 > earlier replay history live in
 > [`docs/rebase-notes.md`](../docs/rebase-notes.md).
