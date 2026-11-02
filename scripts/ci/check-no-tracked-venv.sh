@@ -16,7 +16,7 @@
 #
 # Without REF the gate also refuses two untracked strays in the worktree root
 # that a bundled `uv` drops there: a `.venv` that is not the Makefile's (no
-# `bin/pip`; `make` puts the root `.venv` first on PATH, so its bare `python3`
+# `bin/pip`, nor the Windows `Scripts/pip.exe`; `make` puts the root `.venv` first on PATH, so its bare `python3`
 # lacked `jsonschema` and `make docs-fragments-check` failed), and a `uv.lock`
 # that locks no package beyond the root project (the tree's locks live in
 # `requirements/locks/`).
@@ -51,8 +51,12 @@ fi
 if [ -z "$ref" ]; then
   stray=""
   # -L too: a dangling .venv symlink fails -d but still blocks `python3 -m venv`.
-  if { [ -d .venv ] || [ -L .venv ]; } && [ ! -e .venv/bin/pip ]; then
-    stray=".venv (no bin/pip: not the venv \`make\` builds)"
+  # A pip-bearing venv is a build venv in either layout: POSIX bin/pip, or the
+  # Windows Scripts/pip.exe that `python -m venv` writes (the Windows Lefthook
+  # job builds that one itself). A uv stray carries no pip in either layout.
+  if { [ -d .venv ] || [ -L .venv ]; } &&
+    [ ! -e .venv/bin/pip ] && [ ! -e .venv/Scripts/pip.exe ]; then
+    stray=".venv (no bin/pip or Scripts/pip.exe: not a pip-built venv)"
   fi
   if [ -f uv.lock ] && ! git ls-files --error-unmatch uv.lock >/dev/null 2>&1; then
     packages=$(grep -c '^\[\[package\]\]' uv.lock || [ "$?" -eq 1 ])

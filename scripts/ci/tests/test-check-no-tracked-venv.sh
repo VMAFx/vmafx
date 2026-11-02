@@ -57,6 +57,13 @@ expect "stray root .venv without bin/pip flagged" 1
 touch "$tmp/.venv/bin/pip"
 expect "make-built root .venv (bin/pip) passes" 0
 rm -r "$tmp/.venv"
+# Windows layout: python -m venv writes Scripts/, not bin/ (Windows Lefthook job).
+mkdir -p "$tmp/.venv/Scripts"
+touch "$tmp/.venv/Scripts/python.exe"
+expect "stray Windows-shaped root .venv without Scripts/pip.exe flagged" 1
+touch "$tmp/.venv/Scripts/pip.exe"
+expect "Windows root .venv (Scripts/pip.exe) passes" 0
+rm -r "$tmp/.venv"
 ln -s /nonexistent "$tmp/.venv"
 expect "untracked dangling root .venv symlink flagged" 1
 rm "$tmp/.venv"
