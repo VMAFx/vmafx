@@ -470,6 +470,7 @@ void vmafx_cuda_device_describe(const VmafxDevice *device, VmafxDeviceInfo *info
 
 void vmafx_cuda_state_describe(const VmafCudaState *state, VmafxDeviceInfo *info)
 {
+    assert(info != NULL);
     *info = (VmafxDeviceInfo)VMAFX_DEVICE_INFO_INIT;
     const VmafxCudaDriver *const drv = state && state->ctx && state->f ? vmafx_cuda_driver() : NULL;
     if (!drv) {
