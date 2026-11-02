@@ -1,0 +1,1 @@
+- `check-no-tracked-venv` accepts a Windows-layout root `.venv` (`Scripts/pip.exe`), so the Windows Lefthook pre-commit job no longer fails on the venv it builds itself; a root `.venv` without pip in either layout is still refused.
