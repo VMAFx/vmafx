@@ -187,7 +187,7 @@ workstation ([measuring lanes](../../../docs/development/tidy-lanes.md)).
 
 - Every rendered exception carries category + entered.
 - B=3, C=10, D=120 days render entered+interval.
-- B/C/D need entered.
+- every categorized row needs entered.
 - Rows rendering past 2026-11-28 without category refused.
 - Source expiry earlier than entered+interval refused.
 - A keeps stated expiry capped at 2027-01-04.

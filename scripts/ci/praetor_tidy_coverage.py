@@ -20,9 +20,9 @@ with the same expiry cap, because praetor reads one ``exceptions`` key.
 
 Praetor refuses an exception that expires more than 90 days out, so each rendered entry expires
 on the earlier of its own date and ``PRAETOR_EXPIRY_CAP``; renew the cap with the entries.
-For category B/C/D with an entered date, the rendered expiry is entered + interval (B=3, C=10,
-D=120 days), never later than the source expiry. Exceptions expiring after 2026-11-28 require a
-declared category.
+Every categorized row requires an ``entered`` date. For category B/C/D, the rendered expiry is
+entered + interval (B=3, C=10, D=120 days), never later than the source expiry. Exceptions
+expiring after 2026-11-28 require a declared category.
 
 Usage: praetor_tidy_coverage.py [--write | --check]    (default --check)
 """
@@ -84,13 +84,14 @@ def rendered_expiry(
 
     B/C/D rows render entered + interval (D can pass PRAETOR_EXPIRY_CAP, e.g.
     2027-03-02 for entered 2026-11-02), bounded below by the source expiry; only
-    A and uncategorized rows take min(source, PRAETOR_EXPIRY_CAP). Rows with
-    category B, C or D and entered None raise ValueError. An entry whose rendered
-    expiry is after 2026-11-28 without a category is refused (ValueError).
+    A and uncategorized rows take min(source, PRAETOR_EXPIRY_CAP). Any row with
+    a non-empty category (A, B, C or D) and entered None raises ValueError. An
+    entry whose rendered expiry is after 2026-11-28 without a category is
+    refused (ValueError).
     """
-    if category in CATEGORY_INTERVALS:
-        if entered is None:
-            raise ValueError(f"{path}: category {category} requires an entered date")
+    if category and entered is None:
+        raise ValueError(f"{path}: category {category} requires an entered date")
+    if category in CATEGORY_INTERVALS and entered is not None:
         target = entered + CATEGORY_INTERVALS[category]
         if source_expires < target:
             raise ValueError(
