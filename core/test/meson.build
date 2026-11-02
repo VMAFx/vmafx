@@ -5627,6 +5627,21 @@ foreach vmafx_cuda_test : vmafx_cuda_tests
         timeout : vmafx_cuda_test[1])
 endforeach
 
+# #3259: provenance device fields on a libvmaf context that imports a
+# VmafCudaState via vmaf_cuda_import_state() and wraps it with
+# vmafx_context_from_libvmaf() (the CLI --backend cuda --json path).
+test_vmafx_provenance_cuda = executable('test_vmafx_provenance_cuda',
+    ['test.c', 'test_vmafx_provenance_cuda.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : libvmaf_public_link,
+    c_args : vmafx_test_dirs + vmaf_public_name_args + ['-DHAVE_CUDA=1'],
+    dependencies : [pthread_dependency, thread_lib, gpu_all_deps],
+    kwargs : test_link_kwargs,
+)
+test('test_vmafx_provenance_cuda', test_vmafx_provenance_cuda,
+    suite : ['fast', 'gpu', 'cuda'],
+    is_parallel : false)
+
 test_gpu_picture_pool = executable('test_gpu_picture_pool',
     ['test.c', 'test_gpu_picture_pool.c', '../src/gpu_picture_pool.cpp', '../src/cuda/picture_cuda.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
@@ -5682,6 +5697,16 @@ test_cuda_runtime_unwind = executable('test_cuda_runtime_unwind',
     kwargs : test_link_kwargs,
 )
 test('test_cuda_runtime_unwind', test_cuda_runtime_unwind, suite : ['fast'])
+
+test_vmafx_cuda_state_describe = executable('test_vmafx_cuda_state_describe',
+    ['test.c', 'test_vmafx_cuda_state_describe.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : vmaf_test_link,
+    dependencies: [pthread_dependency, cuda_dependency],
+    c_args: ['-DHAVE_CUDA=1'],
+    kwargs : test_link_kwargs,
+)
+test('test_vmafx_cuda_state_describe', test_vmafx_cuda_state_describe, suite : ['fast'])
 
 # The flush drain loop must terminate (T-CUDA-SINGLE-FRAME-HANG-2026-09-05).
 # Stub-driven, so it needs no CUDA device and no nvcc.
