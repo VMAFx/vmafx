@@ -92,6 +92,8 @@ class RealReplay(unittest.TestCase):
         series_patch = self.git(self.upstream, "format-patch", "-1", "--stdout")
         self.repo = self.root / "repo"
         (self.repo / "ffmpeg-patches").mkdir(parents=True)
+        # The refresh lock and journal live in the checkout's Git directory.
+        self.git(self.repo, "init", "-q")
         self.patch = self.repo / "ffmpeg-patches/0001-integration.patch"
         self.patch.write_text(series_patch)
         (self.repo / "ffmpeg-patches/series.txt").write_text(
@@ -113,7 +115,9 @@ class RealReplay(unittest.TestCase):
             path.write_text(f"ARG FFMPEG_TAG=n9.0.1\nARG FFMPEG_REMOTE={self.upstream}\n")
         self.readme = self.repo / "ffmpeg-patches/README.md"
         self.readme.write_text(
-            "> `n9.0.2`.\n"
+            "> `n9.0.2` checkout (cumulative `git am --3way`), NOT a per-patch\n"
+            "> `git apply --check`. The latter rejects `0002+` because they\n"
+            "> reference cumulative-state hunks that don't exist in pristine `n9.0.2`.\n"
             "> The 1 patches here replay cumulatively on upstream commit\n"
             f"> `{self.pin}`; the resulting tree is\n"
             "> `0000000000000000000000000000000000000000`\n"
@@ -365,7 +369,7 @@ class RealReplay(unittest.TestCase):
 
         with patch.object(STACK.os, "replace", side_effect=fail_second):
             with self.assertRaises(OSError):
-                STACK.replace_files({self.patch: b"replacement", config: b"new config"})
+                STACK.replace_files({self.patch: b"replacement", config: b"new config"}, self.repo)
         self.assertEqual(self.contents(), before)
         self.assertEqual(list(self.repo.rglob(".ffmpeg-refresh-*")), [])
 
@@ -387,7 +391,7 @@ class RealReplay(unittest.TestCase):
             patch.object(STACK.os, "replace", side_effect=interrupt_second),
             self.assertRaises(KeyboardInterrupt),
         ):
-            STACK.replace_files({self.patch: b"replacement", config: b"new config"})
+            STACK.replace_files({self.patch: b"replacement", config: b"new config"}, self.repo)
         self.assertEqual(self.contents(), before)
 
     def test_second_interrupt_keeps_recovery_backups(self) -> None:
@@ -408,7 +412,7 @@ class RealReplay(unittest.TestCase):
             patch.object(STACK.os, "replace", side_effect=interrupt_recovery),
             self.assertRaises(KeyboardInterrupt),
         ):
-            STACK.replace_files({self.patch: b"replacement", config: b"new config"})
+            STACK.replace_files({self.patch: b"replacement", config: b"new config"}, self.repo)
         backups = list(self.patch.parent.glob(f".ffmpeg-refresh-{self.patch.name}-original-*"))
         self.assertEqual(len(backups), 1)
         self.assertEqual(backups[0].read_bytes(), original_patch)
@@ -431,7 +435,7 @@ class RealReplay(unittest.TestCase):
             patch.object(STACK.os, "replace", side_effect=fail_persistently),
             self.assertRaisesRegex(RuntimeError, "original backups retained"),
         ):
-            STACK.replace_files({self.patch: b"replacement", config: b"new config"})
+            STACK.replace_files({self.patch: b"replacement", config: b"new config"}, self.repo)
         backups = list(self.patch.parent.glob(f".ffmpeg-refresh-{self.patch.name}-original-*"))
         self.assertEqual(len(backups), 1)
         self.assertEqual(backups[0].read_bytes(), original_patch)
@@ -466,15 +470,123 @@ class RealReplay(unittest.TestCase):
     def test_readme_claim_refreshes_and_passes_check(self) -> None:
         result = STACK.maintain(self.repo, self.output, True, False)
         readme = (self.repo / "ffmpeg-patches/README.md").read_text()
-        self.assertIn(result["upstream_commit"], readme)
-        self.assertIn(result["patched_tree"], readme)
+        claim_match = STACK.README_CLAIM_PATTERN.search(readme)
+        self.assertIsNotNone(claim_match)
+        assert claim_match is not None
+        claim_text = claim_match.group(0)
+        self.assertIn(result["upstream_commit"], claim_text)
+        self.assertIn(result["patched_tree"], claim_text)
+        self.assertIn(f"`{result['tag']}` checkout", claim_text)
+        self.assertIn(f"pristine `{result['tag']}`", claim_text)
         if result.get("shared_series", "none") != "none":
-            self.assertIn(f"shared fix series `{result['shared_series']}`", readme)
-            self.assertIn(f"and the {result['patch_count']}\n> patches here", readme)
+            self.assertIn(f"shared fix series `{result['shared_series']}`", claim_text)
+            self.assertIn(f"and the {result['patch_count']}\n> patches here", claim_text)
         else:
-            self.assertIn(f"The {result['patch_count']} patches here", readme)
+            self.assertIn(f"The {result['patch_count']} patches here", claim_text)
         checked = STACK.maintain(self.repo, self.output, False, False)
         self.assertEqual(checked["changed"], [])
+
+    def test_refresh_fails_when_lock_held(self) -> None:
+        STACK.maintain(self.repo, self.output, True, False)
+        lock = STACK.repo_git_dir(self.repo) / "ffmpeg-patch-stack.lock"
+        lock.write_text("54321\n")
+        try:
+            with self.assertRaisesRegex(RuntimeError, rf"{re.escape(str(lock))}.*54321"):
+                STACK.maintain(self.repo, self.output, True, False)
+            checked = STACK.maintain(self.repo, self.output, False, False)
+            self.assertEqual(checked["changed"], [])
+            argv = ["ffmpeg_patch_stack.py", "--refresh"]
+            with (
+                patch.object(STACK, "__file__", str(self.repo / "scripts/ci/x.py")),
+                patch.object(STACK.sys, "argv", argv),
+                patch("builtins.print") as printed,
+            ):
+                self.assertEqual(STACK.main(), 1)
+                output = " ".join(call.args[0] for call in printed.call_args_list if call.args)
+                self.assertIn(str(lock), output)
+                self.assertIn("54321", output)
+        finally:
+            lock.unlink(missing_ok=True)
+
+    def test_refresh_outside_a_git_checkout_fails(self) -> None:
+        shutil.rmtree(self.repo / ".git")
+        with self.assertRaisesRegex(RuntimeError, "not a Git checkout"):
+            STACK.maintain(self.repo, self.output, True, False)
+
+    def test_interrupted_replace_recovers_from_journal(self) -> None:
+        STACK.maintain(self.repo, self.output, True, False)
+        config = self.repo / "build-config.env"
+        original_config = config.read_text()
+        new_config = original_config + "# journal recovery test\n"
+        temp_config = self.repo / ".ffmpeg-refresh-build-config.env-candidate-recovery"
+        temp_config.write_text(new_config)
+
+        git_dir = STACK.repo_git_dir(self.repo)
+        journal = git_dir / STACK.JOURNAL_NAME
+        journal_entries = [
+            {"temp": str(self.repo / "nonexistent-first"), "target": str(self.patch)},
+            {"temp": str(temp_config), "target": str(config)},
+        ]
+        journal.write_text(json.dumps(journal_entries))
+
+        # --check never mutates the tree; it names the journal and the recovery command.
+        with self.assertRaisesRegex(ValueError, "interrupted refresh journal"):
+            STACK.maintain(self.repo, self.output, False, False)
+        self.assertTrue(journal.exists())
+        STACK.recover_journal(self.repo, True)
+        self.assertFalse(journal.exists())
+        self.assertFalse(temp_config.exists())
+        self.assertEqual(config.read_text(), new_config)
+
+    def test_tree_hash_extra_hex_digit_reports_drift(self) -> None:
+        STACK.maintain(self.repo, self.output, True, False)
+        readme = self.repo / "ffmpeg-patches/README.md"
+        stale = re.sub(
+            r"(the resulting tree is\r?\n> `[0-9a-f]{40})`",
+            r"\g<1>a`",
+            readme.read_text(),
+        )
+        readme.write_text(stale)
+        with self.assertRaisesRegex(ValueError, "drift"):
+            STACK.maintain(self.repo, self.output, False, False)
+        receipt = json.loads((self.output / "receipt.json").read_text())
+        self.assertEqual(receipt["changed"], ["ffmpeg-patches/README.md"])
+
+    def test_stale_claim_with_correct_hash_elsewhere_fails_check(self) -> None:
+        result = STACK.maintain(self.repo, self.output, True, False)
+        readme = self.repo / "ffmpeg-patches/README.md"
+        text = readme.read_text()
+        tree = result["patched_tree"]
+        stale = text.replace(f"`{tree}`", f"`{'0' * 40}`")
+        stale += f"\n<!-- correct tree was {tree} -->\n"
+        readme.write_text(stale)
+        with self.assertRaisesRegex(ValueError, "drift"):
+            STACK.maintain(self.repo, self.output, False, False)
+        receipt = json.loads((self.output / "receipt.json").read_text())
+        self.assertEqual(receipt["changed"], ["ffmpeg-patches/README.md"])
+
+    def test_crlf_readme_with_current_claim_passes_check_and_refresh_writes_nothing(self) -> None:
+        STACK.maintain(self.repo, self.output, True, False)
+        readme = self.repo / "ffmpeg-patches/README.md"
+        crlf_text = readme.read_bytes().replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")
+        readme.write_bytes(crlf_text)
+        checked = STACK.maintain(self.repo, self.output, False, False)
+        self.assertEqual(checked["changed"], [])
+        refreshed = STACK.maintain(self.repo, self.output, True, False)
+        self.assertEqual(refreshed["changed"], [])
+        self.assertIn(b"\r\n", readme.read_bytes())
+
+    def test_tag_change_reports_drift(self) -> None:
+        result = STACK.maintain(self.repo, self.output, True, False)
+        readme = self.repo / "ffmpeg-patches/README.md"
+        text = readme.read_text()
+        current_tag = result["tag"]
+        stale = text.replace(f"`{current_tag}`", "`n9.9.9`")
+        readme.write_text(stale)
+        with self.assertRaisesRegex(ValueError, "drift"):
+            STACK.maintain(self.repo, self.output, False, False)
+        receipt = json.loads((self.output / "receipt.json").read_text())
+        self.assertEqual(receipt["changed"], ["ffmpeg-patches/README.md"])
 
     def test_stale_readme_claim_fails_check_with_drift(self) -> None:
         STACK.maintain(self.repo, self.output, True, False)
@@ -607,13 +719,19 @@ class SharedSeriesReplay(RealReplay):
     def test_readme_claim_renders_shared_series_and_passes_check(self) -> None:
         result = STACK.maintain(self.repo, self.output, True, False)
         readme = (self.repo / "ffmpeg-patches/README.md").read_text()
+        claim_match = STACK.README_CLAIM_PATTERN.search(readme)
+        self.assertIsNotNone(claim_match)
+        assert claim_match is not None
+        claim_text = claim_match.group(0)
         self.assertIn(
             f"The {result['shared_patch_count']} patches of the shared fix series `{result['shared_series']}`",
-            readme,
+            claim_text,
         )
-        self.assertIn(f"and the {result['patch_count']}\n> patches here", readme)
-        self.assertIn(result["upstream_commit"], readme)
-        self.assertIn(result["patched_tree"], readme)
+        self.assertIn(f"and the {result['patch_count']}\n> patches here", claim_text)
+        self.assertIn(result["upstream_commit"], claim_text)
+        self.assertIn(result["patched_tree"], claim_text)
+        self.assertIn(f"`{result['tag']}` checkout", claim_text)
+        self.assertIn(f"pristine `{result['tag']}`", claim_text)
         checked = STACK.maintain(self.repo, self.output, False, False)
         self.assertEqual(checked["changed"], [])
 
