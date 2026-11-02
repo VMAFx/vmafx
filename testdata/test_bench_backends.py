@@ -7,10 +7,20 @@
 from __future__ import annotations
 
 import importlib.util
+import sys
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from scripts.lib.safe_subprocess import (  # noqa: E402
+    CommandOutputLimitExceeded,
+    CommandTimedOut,
+)
 
 _HERE = Path(__file__).resolve().parent
 _SPEC = importlib.util.spec_from_file_location("bench_backends", _HERE / "bench_backends.py")
@@ -94,3 +104,31 @@ def test_planted_backend_used_mismatch_fallback() -> None:
     engaged, reason = bench_backends.check_engagement(doc_device_ok, "cuda")
     assert engaged
     assert reason is None
+
+
+def test_resolve_executable_makes_the_default_bin_absolute() -> None:
+    # run_command refuses relative paths with a directory part; the default
+    # --vmaf-bin is one, relative to the repository root.
+    resolved = bench_backends.resolve_executable("core/build/tools/vmaf")
+    assert Path(resolved).is_absolute()
+    assert resolved == str(_HERE.parent / "core/build/tools/vmaf")
+    assert bench_backends.resolve_executable("vmaf") == "vmaf"
+    assert bench_backends.resolve_executable("/opt/vmaf") == "/opt/vmaf"
+
+
+def test_run_cell_iterations_handles_safe_subprocess_exceptions() -> None:
+    for exc in (
+        CommandTimedOut(("fake-vmaf",), 5.0, "out", "err"),
+        CommandOutputLimitExceeded(("fake-vmaf",), 1024, "out", "err"),
+    ):
+        with patch.object(bench_backends, "execute_run", side_effect=exc):
+            times, first_doc, status = bench_backends.run_cell_iterations(
+                ["fake-vmaf"], "unused.json", 1, False
+            )
+        assert times == []
+        assert first_doc is None
+        assert status == {
+            "status": "unavailable",
+            "returncode": None,
+            "error": f"{type(exc).__name__}: {exc}",
+        }

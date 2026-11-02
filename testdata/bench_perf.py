@@ -16,13 +16,22 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import subprocess
 import sys
 import tempfile
 import time
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from scripts.lib.safe_subprocess import (  # noqa: E402 - needs the repository root
+    CommandOutputLimitExceeded,
+    CommandTimedOut,
+)
+from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
 
 BASEDIR = Path(__file__).resolve().parent
 DEFAULT_FFMPEG = os.environ.get("VMAF_FFMPEG", "ffmpeg")
@@ -216,6 +225,17 @@ def build_env(backend: dict[str, Any], *, ld_library_path: str | None) -> dict[s
     return env
 
 
+def ffmpeg_executable(ffmpeg: Path) -> Path:
+    """Return `ffmpeg` as run_command accepts it: a bare name stays, a path is absolute.
+
+    run_command refuses a relative path with a directory part (`build/ffmpeg`); such a
+    path is resolved against the current directory, as subprocess resolved it before.
+    """
+    if len(ffmpeg.parts) == 1 or ffmpeg.is_absolute():
+        return ffmpeg
+    return ffmpeg.resolve()
+
+
 def run_vmaf(
     test: dict[str, Any],
     backend: dict[str, Any],
@@ -226,20 +246,23 @@ def run_vmaf(
     ld_library_path: str | None,
 ) -> tuple[float | None, int, float, str | None]:
     """Run one FFmpeg VMAF invocation. Returns (pooled, nframes, elapsed, error)."""
-    cmd = build_ffmpeg_command(test, backend, log_path=log_path, ffmpeg=ffmpeg)
+    cmd = build_ffmpeg_command(test, backend, log_path=log_path, ffmpeg=ffmpeg_executable(ffmpeg))
     env = build_env(backend, ld_library_path=ld_library_path)
     start = time.time()
     try:
-        result = subprocess.run(
+        result = run_command(
             cmd,
+            allowed_executables=[cmd[0]],
             capture_output=True,
             text=True,
             env=env,
-            timeout=timeout_s,
-            check=False,
+            timeout_seconds=timeout_s,
+            max_output_bytes=64 * 1_048_576,
         )
-    except subprocess.TimeoutExpired:
+    except CommandTimedOut:
         return None, 0, time.time() - start, f"TIMEOUT ({timeout_s:.0f}s)"
+    except CommandOutputLimitExceeded as exc:
+        return None, 0, time.time() - start, f"OUTPUT LIMIT ({exc})"
     elapsed = time.time() - start
 
     if result.returncode != 0:

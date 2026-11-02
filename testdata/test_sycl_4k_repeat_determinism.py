@@ -13,12 +13,14 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
+import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from scripts.lib import vmaftest
+from scripts.lib.safe_subprocess import run as run_command
 from testdata.run_sycl_scores import build_vmaf_cmd, prepare_sycl_env
 
 TESTDATA_DIR = Path(__file__).resolve().parent
@@ -58,7 +60,15 @@ def run_sycl_4k_once(iteration: int, tmp_path: Path, threads: int | None, vmaf_b
     for name in REGRESSION_OVERRIDE_ENV_VARS:
         env.pop(name, None)
 
-    result = subprocess.run(cmd, capture_output=True, text=True, env=env)
+    result = run_command(
+        cmd,
+        capture_output=True,
+        text=True,
+        env=env,
+        allowed_executables=[cmd[0]],
+        timeout_seconds=3600,
+        max_output_bytes=64 * 1_048_576,
+    )
     assert result.returncode == 0, f"vmaf failed (exit {result.returncode}): {result.stderr[:500]}"
     assert out_json.exists(), f"Output JSON {out_json} not generated"
 
@@ -81,16 +91,13 @@ def test_run_sycl_4k_once_removes_diagnostic_and_dispatch_overrides(
 
     captured_env: dict[str, str] = {}
 
-    def fake_run(
-        cmd: list[str], *, capture_output: bool, text: bool, env: dict[str, str]
-    ) -> subprocess.CompletedProcess[str]:
-        del capture_output, text
+    def fake_run(cmd: list[str], *, env: dict[str, str], **_options: object) -> SimpleNamespace:
         captured_env.update(env)
         output_path = Path(cmd[cmd.index("-o") + 1])
         output_path.write_text('{"version": "test"}', encoding="utf-8")
-        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
 
-    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(sys.modules[__name__], "run_command", fake_run)
 
     report = run_sycl_4k_once(0, tmp_path, threads=None, vmaf_bin="vmaf-under-test")
 

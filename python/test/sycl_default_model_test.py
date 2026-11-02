@@ -11,12 +11,26 @@ from __future__ import absolute_import
 
 import json
 import os
-import subprocess
+import sys
 import tempfile
 import unittest
+from pathlib import Path
 
 from vmaf import ExternalProgram
 from vmaf.config import VmafConfig
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from scripts.lib.safe_subprocess import run as run_command  # noqa: E402 - needs the repository root
+
+
+def _run(cmd):
+    """Run cmd with its own executable as the only one allowed, capturing text output."""
+    return run_command(
+        cmd, allowed_executables=[cmd[0]], capture_output=True, text=True, timeout_seconds=600
+    )
 
 
 def _sycl_two_frame_probe():
@@ -42,7 +56,7 @@ def _sycl_two_frame_probe():
         "--json",
     ]
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        proc = _run(cmd)
         return proc.returncode == 0
     except Exception:
         return False
@@ -76,7 +90,7 @@ class SyclDefaultModelTest(unittest.TestCase):
                 "-o",
                 out_json,
             ]
-            res = subprocess.run(cmd, capture_output=True, text=True, check=False)
+            res = _run(cmd)
             self.assertEqual(
                 res.returncode,
                 0,
