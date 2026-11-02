@@ -54,7 +54,8 @@ if [ -z "$ref" ]; then
   # A pip-bearing venv is a build venv in either layout: POSIX bin/pip, or the
   # Windows Scripts/pip.exe that `python -m venv` writes (the Windows Lefthook
   # job builds that one itself). A uv stray carries no pip in either layout.
-  if { [ -d .venv ] || [ -L .venv ]; } && [ ! -e .venv/bin/pip ] && [ ! -e .venv/Scripts/pip.exe ]; then
+  if { [ -d .venv ] || [ -L .venv ]; } &&
+    [ ! -e .venv/bin/pip ] && [ ! -e .venv/Scripts/pip.exe ]; then
     stray=".venv (no bin/pip or Scripts/pip.exe: not a pip-built venv)"
   fi
   if [ -f uv.lock ] && ! git ls-files --error-unmatch uv.lock >/dev/null 2>&1; then
