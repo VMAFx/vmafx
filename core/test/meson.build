@@ -5698,6 +5698,16 @@ test_cuda_runtime_unwind = executable('test_cuda_runtime_unwind',
 )
 test('test_cuda_runtime_unwind', test_cuda_runtime_unwind, suite : ['fast'])
 
+test_vmafx_cuda_state_describe = executable('test_vmafx_cuda_state_describe',
+    ['test.c', 'test_vmafx_cuda_state_describe.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : vmaf_test_link,
+    dependencies: [pthread_dependency, cuda_dependency],
+    c_args: ['-DHAVE_CUDA=1'],
+    kwargs : test_link_kwargs,
+)
+test('test_vmafx_cuda_state_describe', test_vmafx_cuda_state_describe, suite : ['fast'])
+
 # The flush drain loop must terminate (T-CUDA-SINGLE-FRAME-HANG-2026-09-05).
 # Stub-driven, so it needs no CUDA device and no nvcc.
 test_cuda_single_frame_flush = executable('test_cuda_single_frame_flush',

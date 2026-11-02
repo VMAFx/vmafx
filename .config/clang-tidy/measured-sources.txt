@@ -851,6 +851,7 @@ core/test/test_vmafx_abi_layout.c
 core/test/test_vmafx_api_slice.c
 core/test/test_vmafx_bitexact.c
 core/test/test_vmafx_context.c
+core/test/test_vmafx_cuda_state_describe.c
 core/test/test_vmafx_exactness.c
 core/test/test_vmafx_fence_kinds.c
 core/test/test_vmafx_frame.c

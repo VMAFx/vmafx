@@ -43,6 +43,8 @@ typedef struct VmafxCudaDriver {
 
 /* The driver, or NULL when it cannot be loaded or initialised. */
 const VmafxCudaDriver *vmafx_cuda_driver(void);
+/* Point vmafx_cuda_driver() at a fake driver for unit tests (NULL: restore). */
+void vmafx_cuda_set_test_driver(const VmafxCudaDriver *drv);
 
 /* The conversion kernels of import_convert.cu. */
 typedef struct VmafxCudaKernels {

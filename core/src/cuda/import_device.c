@@ -51,6 +51,7 @@ extern const unsigned char import_convert_ptx[];
 
 static VmafxCudaDriver driver;
 static pthread_once_t driver_once = PTHREAD_ONCE_INIT;
+static const VmafxCudaDriver *test_driver;
 
 /* The driver's entry point `name` (dlsym / GetProcAddress hand a function
  * back as an object pointer), or NULL. */
@@ -79,8 +80,16 @@ static void driver_load(void)
 
 static const VmafxCudaDriver *driver_loaded(void)
 {
+    if (test_driver) {
+        return test_driver->f ? test_driver : NULL;
+    }
     (void)pthread_once(&driver_once, driver_load);
     return driver.f ? &driver : NULL;
+}
+
+void vmafx_cuda_set_test_driver(const VmafxCudaDriver *drv)
+{
+    test_driver = drv;
 }
 
 const VmafxCudaDriver *vmafx_cuda_driver(void)
@@ -468,26 +477,45 @@ void vmafx_cuda_device_describe(const VmafxDevice *device, VmafxDeviceInfo *info
     *info = cuda_info(&driver, dev->state.dev, dev->index, device->flags);
 }
 
+/* Resolve the CUDA device ordinal of `state` (`*dev`), querying its context
+ * when `state->dev` is outside the visible range. */
+static bool cuda_state_device(const VmafxCudaDriver *drv, const VmafCudaState *state, CUdevice *dev)
+{
+    assert(drv != NULL);
+    assert(state != NULL);
+    assert(dev != NULL);
+    const uint32_t n = visible_devices(drv);
+    CUdevice ord = state->dev;
+    if (ord < 0 || (uint32_t)ord >= n) {
+        if (drv->f->cuCtxPushCurrent(state->ctx) != CUDA_SUCCESS) {
+            return false;
+        }
+        const CUresult res = drv->f->cuCtxGetDevice(&ord);
+        CUcontext popped = NULL;
+        const CUresult pop_res = drv->f->cuCtxPopCurrent(&popped);
+        if (pop_res != CUDA_SUCCESS || popped != state->ctx) {
+            vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                     "vmafx: backend cuda: cuCtxPopCurrent after cuCtxGetDevice failed "
+                     "(res=%d, context_matched=%d)\n",
+                     (int)pop_res, (int)(popped == state->ctx));
+            return false;
+        }
+        if (res != CUDA_SUCCESS || ord < 0 || (uint32_t)ord >= n) {
+            return false;
+        }
+    }
+    *dev = ord;
+    return true;
+}
+
 void vmafx_cuda_state_describe(const VmafCudaState *state, VmafxDeviceInfo *info)
 {
     assert(info != NULL);
     *info = (VmafxDeviceInfo)VMAFX_DEVICE_INFO_INIT;
     const VmafxCudaDriver *const drv = state && state->ctx && state->f ? vmafx_cuda_driver() : NULL;
-    if (!drv) {
+    CUdevice dev = -1;
+    if (!drv || !cuda_state_device(drv, state, &dev)) {
         return;
-    }
-    CUdevice dev = state->dev;
-    if (dev < 0 || (uint32_t)dev >= visible_devices(drv)) {
-        if (drv->f->cuCtxPushCurrent(state->ctx) != CUDA_SUCCESS) {
-            return;
-        }
-        const CUresult res = drv->f->cuCtxGetDevice(&dev);
-        CUcontext popped = NULL;
-        const CUresult pop_res = drv->f->cuCtxPopCurrent(&popped);
-        if (res != CUDA_SUCCESS || pop_res != CUDA_SUCCESS || dev < 0 ||
-            (uint32_t)dev >= visible_devices(drv)) {
-            return;
-        }
     }
     *info = cuda_info(drv, dev, (int32_t)dev, 0u);
 }
