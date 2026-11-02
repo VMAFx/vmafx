@@ -251,6 +251,13 @@ def _resolve_single_executable(candidate: str) -> str:
     return str(Path(found).resolve(strict=True))
 
 
+def strip_surrounding_quotes(token: str) -> str:
+    """Strip one matching pair of surrounding quotes from a token of length 2 or more."""
+    if len(token) > 1 and token[0] in ('"', "'") and token[0] == token[-1]:
+        return token[1:-1]
+    return token
+
+
 def resolve_nm_command(explicit: ToolSpec | None) -> tuple[str, ...]:
     """Resolve ``--nm``, ``$NM``, or ``nm`` into an executable command prefix."""
     if explicit is not None and not isinstance(explicit, str):
@@ -258,9 +265,12 @@ def resolve_nm_command(explicit: ToolSpec | None) -> tuple[str, ...]:
     else:
         raw = explicit or os.environ.get("NM") or "nm"
         raw_path = Path(raw).expanduser()
-        tokens = (
-            [str(raw_path)] if raw_path.is_file() else shlex.split(raw, posix=(os.name != "nt"))
-        )
+        if raw_path.is_file():
+            tokens = [str(raw_path)]
+        elif os.name == "nt":
+            tokens = [strip_surrounding_quotes(tok) for tok in shlex.split(raw, posix=False)]
+        else:
+            tokens = shlex.split(raw, posix=True)
     if not tokens:
         raise ValueError("nm command must not be empty")
     first_path = Path(tokens[0]).expanduser()

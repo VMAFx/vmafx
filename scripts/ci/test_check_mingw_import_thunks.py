@@ -408,3 +408,31 @@ def test_measured_mingw_nolto_and_lto_counts() -> None:
         assert "func_exports=52, thunks=48, missing=4" in err_lto.getvalue()
         for sym in LTO_VMAFX_MISSING:
             assert sym in err_lto.getvalue()
+
+
+def test_positive_strip_surrounding_quotes_matching() -> None:
+    """Positive: matching double or single quotes are stripped from tokens."""
+    assert gate.strip_surrounding_quotes('"C:\\py.exe"') == "C:\\py.exe"
+    assert gate.strip_surrounding_quotes("'C:\\fake.py'") == "C:\\fake.py"
+    assert gate.strip_surrounding_quotes('"hello world"') == "hello world"
+    assert gate.strip_surrounding_quotes("'hello world'") == "hello world"
+
+
+def test_negative_strip_surrounding_quotes_unmatched() -> None:
+    """Negative: unmatched surrounding quotes are kept unchanged."""
+    assert gate.strip_surrounding_quotes('"unmatched') == '"unmatched'
+    assert gate.strip_surrounding_quotes('unmatched"') == 'unmatched"'
+    assert gate.strip_surrounding_quotes("'unmatched") == "'unmatched"
+    assert gate.strip_surrounding_quotes("unmatched'") == "unmatched'"
+    assert gate.strip_surrounding_quotes("\"mismatch'") == "\"mismatch'"
+    assert gate.strip_surrounding_quotes("'mismatch\"") == "'mismatch\""
+    assert gate.strip_surrounding_quotes("plain") == "plain"
+
+
+def test_boundary_strip_surrounding_quotes() -> None:
+    """Boundary: empty quotes yield empty string; single quote char is kept."""
+    assert gate.strip_surrounding_quotes('""') == ""
+    assert gate.strip_surrounding_quotes("''") == ""
+    assert gate.strip_surrounding_quotes('"') == '"'
+    assert gate.strip_surrounding_quotes("'") == "'"
+    assert gate.strip_surrounding_quotes("") == ""
