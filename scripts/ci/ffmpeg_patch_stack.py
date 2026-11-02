@@ -519,6 +519,20 @@ def maintain_lock(repo: Path, enabled: bool) -> Iterator[None]:
             lockpath.unlink(missing_ok=True)
 
 
+def write_journal_atomically(journal: Path, data: list[dict[str, str]]) -> None:
+    """Write journal entries atomically using a temporary file and sync."""
+    handle, name = tempfile.mkstemp(prefix=f".{JOURNAL_NAME}-", dir=journal.parent)
+    temporary = Path(name)
+    try:
+        with os.fdopen(handle, "w", encoding="utf-8") as stream:
+            json.dump(data, stream)
+            stream.flush()
+            os.fsync(stream.fileno())
+        temporary.replace(journal)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
 def recover_journal(repo: Path, refresh: bool) -> None:
     """Finish the renames of a refresh that stopped part-way, before anything else runs."""
     try:
@@ -577,7 +591,7 @@ def replace_files(updates: dict[Path, bytes], repo: Path) -> None:
             backups[path] = stage(path, before[path], "original")
         if staged:
             journal_data = [{"temp": str(staged[p]), "target": str(p)} for p in staged]
-            journal.write_text(json.dumps(journal_data), encoding="utf-8")
+            write_journal_atomically(journal, journal_data)
         for path, temporary in staged.items():
             temporary.replace(path)
             written.append(path)

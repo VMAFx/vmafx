@@ -361,6 +361,8 @@ class RealReplay(unittest.TestCase):
         fail_on_call = 2
 
         def fail_second(source: Path, target: Path) -> None:
+            if Path(target).name == STACK.JOURNAL_NAME:
+                return actual_replace(source, target)
             nonlocal calls
             calls += 1
             if calls == fail_on_call:
@@ -381,6 +383,8 @@ class RealReplay(unittest.TestCase):
         fail_on_call = 2
 
         def interrupt_second(source: Path, target: Path) -> None:
+            if Path(target).name == STACK.JOURNAL_NAME:
+                return actual_replace(source, target)
             nonlocal calls
             calls += 1
             if calls == fail_on_call:
@@ -402,6 +406,8 @@ class RealReplay(unittest.TestCase):
         fail_from_call = 2
 
         def interrupt_recovery(source: Path, target: Path) -> None:
+            if Path(target).name == STACK.JOURNAL_NAME:
+                return actual_replace(source, target)
             nonlocal calls
             calls += 1
             if calls >= fail_from_call:
@@ -425,6 +431,8 @@ class RealReplay(unittest.TestCase):
         fail_from_call = 2
 
         def fail_persistently(source: Path, target: Path) -> None:
+            if Path(target).name == STACK.JOURNAL_NAME:
+                return actual_replace(source, target)
             nonlocal calls
             calls += 1
             if calls >= fail_from_call:
@@ -808,6 +816,43 @@ class HeaderGuards(unittest.TestCase):
                 headers[path] = (self.PATCHES / "src" / source).read_text().splitlines()
         self.assertIn("libavfilter/vf_vmafx_options.h", headers)
         self.assertEqual(missing_guards(headers), [])
+
+
+class AtomicJournalWrite(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.temp_dir = Path(self.temporary.name)
+        self.journal = self.temp_dir / STACK.JOURNAL_NAME
+
+    def test_write_journal_atomically_positive(self) -> None:
+        data = [{"temp": "/path/to/temp1", "target": "/path/to/target1"}]
+        STACK.write_journal_atomically(self.journal, data)
+        self.assertTrue(self.journal.exists())
+        loaded = json.loads(self.journal.read_text(encoding="utf-8"))
+        self.assertEqual(loaded, data)
+        leftovers = list(self.temp_dir.glob(f".{STACK.JOURNAL_NAME}-*"))
+        self.assertEqual(leftovers, [])
+
+    def test_write_journal_atomically_negative(self) -> None:
+        initial_content = '[{"temp": "preserved", "target": "preserved"}]'
+        self.journal.write_text(initial_content, encoding="utf-8")
+        data = [{"temp": "/path/to/new_temp", "target": "/path/to/new_target"}]
+        with (
+            patch.object(STACK.json, "dump", side_effect=ValueError("simulated dump error")),
+            self.assertRaises(ValueError),
+        ):
+            STACK.write_journal_atomically(self.journal, data)
+        self.assertEqual(self.journal.read_text(encoding="utf-8"), initial_content)
+        leftovers = list(self.temp_dir.glob(f".{STACK.JOURNAL_NAME}-*"))
+        self.assertEqual(leftovers, [])
+
+    def test_write_journal_atomically_boundary(self) -> None:
+        STACK.write_journal_atomically(self.journal, [])
+        self.assertTrue(self.journal.exists())
+        self.assertEqual(self.journal.read_text(encoding="utf-8"), "[]")
+        leftovers = list(self.temp_dir.glob(f".{STACK.JOURNAL_NAME}-*"))
+        self.assertEqual(leftovers, [])
 
 
 if __name__ == "__main__":
