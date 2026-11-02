@@ -821,7 +821,7 @@ jobs:
         run: ninja -C core/build-shared tools/vmaf.exe
 
       - name: Check MinGW DLL import library thunks
-        run: python3 scripts/ci/check_mingw_import_thunks.py core/build-shared
+        run: python3 scripts/ci/check_mingw_import_thunks.py --dll-dir core/build-shared/src core/build-shared
 
       - name: Run shared vmaf.exe
         run: PATH="$PWD/core/build-shared/src:$PATH" core/build-shared/tools/vmaf.exe --help

@@ -53,17 +53,18 @@ MinGW target can emit AVX-512 spills that the Windows x64 stack alignment does
 not allow ([ADR-1254](../adr/1254-win64-cannot-realign-the-stack.md)).
 
 Shared or `both` builds with MinGW GCC (`--default-library=shared` or the
-repository default `both`) configure with link-time optimisation turned off
-(`-fno-lto`) and print a configure warning: under LTO, binutils `ld
+repository default `both`, when either the C or C++ compiler is GCC) configure
+with link-time optimisation turned off (`-fno-lto`), record `b_lto=false` in
+build provenance, and print a configure warning: under LTO, binutils `ld
 --out-implib` writes DLL import libraries (`libvmaf.dll.a`, `libvmafx.dll.a`)
-with `__imp_<fn>` pointers and no `T <fn>` function thunks, so executables
-auto-import every call as data and abort before `main` with a 32-bit
+with `__imp_<fn>` pointers and missing `T <fn>` function thunks, so executables
+auto-import calls as data and abort before `main` with a 32-bit
 pseudo-relocation out-of-range error under 64-bit ASLR
 ([VMAFx/vmafx#3257](https://github.com/VMAFx/vmafx/issues/3257),
 [ADR-3397](../adr/3397-mingw-gcc-dll-lto-off.md)). Static builds
 (`--default-library=static`, as above) keep LTO enabled;
-`scripts/ci/check_mingw_import_thunks.py` verifies the `.dll.a` import
-libraries in CI.
+`scripts/ci/check_mingw_import_thunks.py` verifies that every DLL function
+export has a `T` thunk in its `.dll.a` import library in CI.
 
 ## Native MSVC and CUDA
 
