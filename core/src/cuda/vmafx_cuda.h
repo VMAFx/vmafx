@@ -25,6 +25,7 @@
 
 #include <stdint.h>
 
+#include "libvmaf/libvmaf_cuda.h"
 #include "vmafx/internal.h"
 #include "vmafx/vmafx.h"
 
@@ -43,6 +44,8 @@ VmafxStatus vmafx_cuda_device_open(const VmafxReport *report, const VmafxDeviceD
 void vmafx_cuda_device_close(VmafxDevice *device);
 /* What an open device is. */
 void vmafx_cuda_device_describe(const VmafxDevice *device, VmafxDeviceInfo *info);
+/* What an imported engine CUDA state's device is. */
+void vmafx_cuda_state_describe(const VmafCudaState *state, VmafxDeviceInfo *info);
 
 /* Import the device into the context's engine (the successor of
  * vmaf_cuda_import_state()); the context keeps the engine state in

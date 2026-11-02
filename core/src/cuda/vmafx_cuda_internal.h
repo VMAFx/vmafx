@@ -22,6 +22,7 @@
 #include "common.h"
 #include "vmafx/internal.h"
 #include "vmafx/vmafx.h"
+#include "vmafx_cuda.h"
 
 /* CUresult values of cuda.h that nv-codec-headers does not declare, as int
  * (compared with `(int)res`: the header's enum has no such enumerator). */
@@ -42,6 +43,8 @@ typedef struct VmafxCudaDriver {
 
 /* The driver, or NULL when it cannot be loaded or initialised. */
 const VmafxCudaDriver *vmafx_cuda_driver(void);
+/* Point vmafx_cuda_driver() at a fake driver for unit tests (NULL: restore). */
+void vmafx_cuda_set_test_driver(const VmafxCudaDriver *drv);
 
 /* The conversion kernels of import_convert.cu. */
 typedef struct VmafxCudaKernels {

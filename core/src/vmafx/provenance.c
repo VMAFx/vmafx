@@ -30,6 +30,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "config.h"
+
+#ifdef HAVE_CUDA
+#include "cuda/vmafx_cuda.h"
+#endif
 #include "engine.h"
 #include "error_internal.h"
 #include "exactness.h"
@@ -118,6 +123,22 @@ const char *vmafx_feature_source_name(uint32_t source)
 
 /* ---- The device a context scores on --------------------------------------------- */
 
+static bool describe_context_device(const VmafxContext *context, enum VmafBackend backend,
+                                    VmafxDeviceInfo *info)
+{
+    if (context->device) {
+        return vmafx_device_describe(context->device, info, NULL) == VMAFX_OK && info->name != NULL;
+    }
+#ifdef HAVE_CUDA
+    if (backend == VMAF_BACKEND_CUDA) {
+        vmafx_cuda_state_describe(vmaf_engine_cuda_state(context->engine), info);
+        return info->name != NULL;
+    }
+#endif
+    (void)backend;
+    return false;
+}
+
 void vmafx_provenance_device(const VmafxContext *context, VmafxProvenanceDevice *out)
 {
     assert(context && context->engine && out);
@@ -130,13 +151,12 @@ void vmafx_provenance_device(const VmafxContext *context, VmafxProvenanceDevice 
     if (backend == VMAF_BACKEND_UNKNOWN) {
         return;
     }
-    /* A device backend: the attached VMAFx device names itself; a state the
-     * caller imported through the libvmaf API is the caller's own device. */
+    /* A device backend: the attached VMAFx device names itself; a CUDA state
+     * the caller imported through the libvmaf API describes its CUdevice. */
     out->runtime = "unknown";
     VmafxDeviceInfo info = VMAFX_DEVICE_INFO_INIT;
-    if (context->device && vmafx_device_describe(context->device, &info, NULL) == VMAFX_OK &&
-        info.name) {
-        out->index = context->device->index;
+    if (describe_context_device(context, backend, &info)) {
+        out->index = context->device ? context->device->index : info.index;
         out->name = info.name;
         if (info.runtime) {
             out->runtime = info.runtime;
