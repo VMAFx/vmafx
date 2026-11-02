@@ -545,6 +545,10 @@
   (`gstreamer/test/run.sh`). See `docs/usage/gstreamer.md`.
 
 
+<!-- markdownlint-disable MD041 -->
+- **Exact HDR model scores on identical converted ICtCp pictures.** The prerelease `fixtures-hdr-ictcp-pixels-v1` provisions pre-converted 1080p and 2160p ICtCp pictures for `python/test/hdr_models_pin_test.py` to assert bit-exact scoring across architectures with conversion bypassed.
+
+
 - **Netflix HDR-VMAF v1.1.8 models ship and are built in (upstream
   `74f930d17d`).** `hdr_vmaf_v1.1.8_3d0h`, `_3d0h_2160`, `_5d0h`,
   `_1d5h_2160` and their high frame rate variants load from
@@ -765,6 +769,18 @@
   odd chroma planes up, as `vmaf_picture_alloc()` does, and refuses a size of
   0, a NULL plane or a stride shorter than a row with `-EINVAL`
   ([Wrap your own planes](docs/api/pictures.md#wrap-your-own-planes-vmaf_picture_wrap)).
+
+
+<!-- markdownlint-disable MD041 -->
+- **The golden job pins all eight HDR models on real PQ with motion.** The new
+  prerelease `fixtures-pq-sollevante-v1` holds an 8-frame 1080p clip derived from
+  *Sol Levante* (Netflix Open Content, CC BY 4.0).
+  `scripts/test/fetch-test-yuvs.sh --bundle pq-sollevante-v1` fetches it and checks
+  the sha256 of the archive and of each member. A failed download fails the job,
+  and `python/test/hdr_models_pin_test.py` pins its scores exactly on x86-64 and
+  to 3 decimal places on aarch64 and macOS. Every CI job that runs the test fetches
+  the bundle first; `scripts/ci/check_fixture_bundle_jobs.py` fails a job that does
+  not.
 
 
 - **Device runtime and driver version in provenance records (#2142).**
@@ -1525,6 +1541,19 @@
   truncated. To apply the series by hand: `scripts/ci/ffmpeg-shared-series.sh apply TREE`.
 
 
+- **A pre-commit hook refuses new flawfinder findings in changed C and C++
+  files.** `scripts/ci/check_flawfinder_new.py` runs flawfinder 2.0.20, the
+  engine Codacy runs on every pull request, and compares each changed file with
+  its merge-base copy, so a finding is caught before the push instead of after
+  a CI round. The C API harness of the `pkg/libvmaf` bit-exactness tests now
+  reads its YUV pair from descriptors 3 and 4 that the Go test opens, instead of
+  opening paths itself.
+- The `flawfinder-new` gate scans every C, C++, CUDA and Objective-C++
+  suffix pre-commit selects for it (module interfaces such as `.ccm` and
+  `.cppm`, headers such as `.hh` and `.cuh`), and the Tooling Tests lock
+  installs flawfinder 2.0.20 so the gate's own tests run in that job.
+
+
 - The CUDA, SYCL and HIP `float_motion` twins take their bit-depth scaler from
   one helper, `vmaf_float_motion_scaler()` in `core/src/feature/float_motion_sad.h`,
   instead of three copies; scores are unchanged.
@@ -2056,6 +2085,11 @@
   [`docs/README-STANDARD.md`](docs/README-STANDARD.md).
 
 
+- **The README badge block shows the review bots.** A Codacy grade badge and a
+  CodeRabbit link badge sit in the security group, and
+  [`docs/README-STANDARD.md`](docs/README-STANDARD.md) names their sources.
+
+
 - **The README support section says what sponsorship pays for.** It now names the costs (CI time, cloud GPU test time, an AI workstation), states that no support or priority is sold, and keeps one list of sponsor links.
 
 
@@ -2272,6 +2306,10 @@
 - **The hosted tidy lanes retry the dev container pull.** `scripts/ci/pull-dev-image.sh` gives the login and the pull of the digest-pinned image four bounded attempts before the lane fails with an error naming the image, so a single DNS timeout on `ghcr.io` no longer fails a nightly lane (#2792).
 
 
+- **The Python lock documentation no longer repeats the uv version.** It points at `uv_version` in
+  `requirements/locks/manifest.json`, so a uv update no longer needs a documentation edit.
+
+
 - **`vmaf-train fit` and `vmaf-train tune` apply their config overrides in one
   place.** `ai/src/vmaf_train/cli.py` loads the YAML config with the
   `--cache`, `--output`, `--epochs` and `--seed` overrides through one helper,
@@ -2305,6 +2343,9 @@
   `ffmpeg-patches/src/vf_vmafx.c` extracts `device_create_from_option()` for DRM and
   software-GPU device setup and `import_finish()` for CUDA and DRM release fences
   (HISS-19 dedupe item `ffmpeg-patches-src-1`). Behavior and error logging are unchanged.
+
+
+- **`pkg/libvmaf` direct and stream scoring now run on the generated `pkg/vmafx` binding (#2434).** `ScoreDirect` and `StreamScorer` share one session over `vmafx.LoadModelFile`, `Context.UseModel`, `NewHostFrame`, `Submit` and `ScorePooled` instead of two cgo copies, the pooled mean of `vmaf_v1.0.16_3d0h` equals the C API value bit for bit, the errno contract (`ErrInvalidArgument`, `ErrModelNotFound`, `ErrOutOfMemory`, `ErrPictureRead`, `os.ErrInvalid`, `os.ErrNotExist`) is kept with the `*vmafx.Error` in the chain, `Scorer` stays a subprocess, and `pkg/vmafx` gains `Model`, `Frame` and the scoring calls.
 
 
 - **Window scores are checked on imported device frames.** The CUDA, SYCL and
@@ -2748,6 +2789,22 @@
   refused. The Metal `float_psnr` refuses the new depths by name until it has run on an Apple device, and the device
   twins of `float_ssim`, `float_ms_ssim`, `float_adm`, `float_vif` and `float_motion` refuse them until
   they are compared with the CPU there.
+
+
+- Tests and testdata tools: the fork-licensed Python files under `python/` and
+  `testdata/` now run every process through `scripts/lib/safe_subprocess.run`,
+  so the master run of the `check-fork-python-subprocess` hook passes again
+  (42 findings in 17 files). A new case in
+  `scripts/ci/tests/test_check_fork_python_subprocess.py` runs the check over
+  the whole tree, so a pull request that only touches other files can no
+  longer leave master red. The no-zimg build now expects the
+  pre-converted ICtCp rows of `python/test/hdr_models_pin_test.py` to score,
+  since they need no zimg conversion.
+- `scripts/lib/safe_subprocess.run` reads the caller's argument list once, so a
+  list changed during validation cannot swap the program name it launches.
+  `testdata/bench_backends.py` resolves its default `core/build/tools/vmaf`
+  against the repository root, and `testdata/bench_perf.py` records an FFmpeg
+  output flood as a failed backend row instead of aborting the run.
 
 
 - **`motion` was NaN in every row of every extracted feature table.** libvmaf emits no
@@ -3262,6 +3319,9 @@ Intel Quick Sync Video (QSV) tuning now probes ICQ once per device, encoder and 
   a lock left by an interrupted sync failed every post-commit state sync until it was removed by hand.
 
 
+- A package-less `.venv` that another tool leaves in the worktree root no longer shadows `python3` under `make`; `check-no-tracked-venv` now refuses it and a package-less root `uv.lock`.
+
+
 - CI: `test_strict_fp_compiler_args` no longer times out on `Windows ARM64 MSVC`.
   Its throwaway Meson fixtures declared a language, so each of its Meson setups
   detected a C compiler; on master the test took 41 to 90.7 s against its 90 s
@@ -3355,6 +3415,13 @@ Intel Quick Sync Video (QSV) tuning now probes ICQ once per device, encoder and 
   `T-SYCL-ZEROCOPY-IMPORT-DROPPED-2026-10-02`;
   [SYCL bundling](docs/backends/sycl/bundling.md),
   [SYCL zero-copy testing](docs/development/sycl-zerocopy-testing.md)).
+
+
+- **Tests compare two computed floating-point results by their bits, never with `==` or `!=`.**
+  The six CodeQL `cpp/equality-on-floats` findings in `test_read_pictures_convert.c` and 39
+  comparisons of the same shape in the CUDA, HIP, SYCL, SIMD and NEON twin tests now use
+  `core/test/float_bits.h`, so a `+0` / `-0` mismatch no longer passes a bit-exact check. A new
+  Semgrep rule refuses the shape in `core/test/` before a commit lands.
 
 
 - Tests: a test script that builds a scratch git repository no longer writes into
