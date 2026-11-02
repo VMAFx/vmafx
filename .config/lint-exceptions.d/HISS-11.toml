@@ -9,5 +9,7 @@
 
 [[exception]]
 path = ".github/workflows/docker-publish-operator-node.yml"
-reason = "SLSA Build Level 2 measured against the Level 3 the native-gpu-systems profile and security:high facet declare: the publish job signs provenance over image digests that build jobs uploaded, not inside a reusable workflow that builds and attests. Level 3 needs that restructuring (T-SLSA-RELEASE-PROVENANCE-LEVEL-2-2026-10-07)."
+category = "A"
+entered = 2026-11-02
+reason = "Category A, interval to the stated expiry. SLSA Build Level 2 measured against the Level 3 the native-gpu-systems profile and security:high facet declare: the publish job signs provenance over image digests that build jobs uploaded, not inside a reusable workflow that builds and attests. Level 3 needs that restructuring (T-SLSA-RELEASE-PROVENANCE-LEVEL-2-2026-10-07)."
 expires = 2027-01-04
