@@ -22,6 +22,7 @@
 #include "common.h"
 #include "vmafx/internal.h"
 #include "vmafx/vmafx.h"
+#include "vmafx_cuda.h"
 
 /* CUresult values of cuda.h that nv-codec-headers does not declare, as int
  * (compared with `(int)res`: the header's enum has no such enumerator). */

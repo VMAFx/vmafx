@@ -468,6 +468,29 @@ void vmafx_cuda_device_describe(const VmafxDevice *device, VmafxDeviceInfo *info
     *info = cuda_info(&driver, dev->state.dev, dev->index, device->flags);
 }
 
+void vmafx_cuda_state_describe(const VmafCudaState *state, VmafxDeviceInfo *info)
+{
+    *info = (VmafxDeviceInfo)VMAFX_DEVICE_INFO_INIT;
+    const VmafxCudaDriver *const drv = state && state->ctx && state->f ? vmafx_cuda_driver() : NULL;
+    if (!drv) {
+        return;
+    }
+    CUdevice dev = state->dev;
+    if (dev < 0 || (uint32_t)dev >= visible_devices(drv)) {
+        if (drv->f->cuCtxPushCurrent(state->ctx) != CUDA_SUCCESS) {
+            return;
+        }
+        const CUresult res = drv->f->cuCtxGetDevice(&dev);
+        CUcontext popped = NULL;
+        const CUresult pop_res = drv->f->cuCtxPopCurrent(&popped);
+        if (res != CUDA_SUCCESS || pop_res != CUDA_SUCCESS || dev < 0 ||
+            (uint32_t)dev >= visible_devices(drv)) {
+            return;
+        }
+    }
+    *info = cuda_info(drv, dev, (int32_t)dev, 0u);
+}
+
 /* ---- Contexts ------------------------------------------------------------------- */
 
 VmafxStatus vmafx_cuda_context_attach(const VmafxReport *report, VmafxContext *context,

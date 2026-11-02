@@ -888,6 +888,7 @@ core/test/test_vmafx_log_routing.c
 core/test/test_vmafx_mcp_absent.c
 core/test/test_vmafx_model.c
 core/test/test_vmafx_provenance.c
+core/test/test_vmafx_provenance_cuda.c
 core/test/test_vmafx_provenance_json.c
 core/test/test_vmafx_provenance_threads.c
 core/test/test_vmafx_report.c
