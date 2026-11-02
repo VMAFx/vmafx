@@ -52,6 +52,19 @@ CI job also runs `scripts/ci/check-win64-stack-alignment.py`, because GCC's
 MinGW target can emit AVX-512 spills that the Windows x64 stack alignment does
 not allow ([ADR-1254](../adr/1254-win64-cannot-realign-the-stack.md)).
 
+Shared or `both` builds with MinGW GCC (`--default-library=shared` or the
+repository default `both`) configure with link-time optimisation turned off
+(`-fno-lto`) and print a configure warning: under LTO, binutils `ld
+--out-implib` writes DLL import libraries (`libvmaf.dll.a`, `libvmafx.dll.a`)
+with `__imp_<fn>` pointers and no `T <fn>` function thunks, so executables
+auto-import every call as data and abort before `main` with a 32-bit
+pseudo-relocation out-of-range error under 64-bit ASLR
+([VMAFx/vmafx#3257](https://github.com/VMAFx/vmafx/issues/3257),
+[ADR-3397](../adr/3397-mingw-gcc-dll-lto-off.md)). Static builds
+(`--default-library=static`, as above) keep LTO enabled;
+`scripts/ci/check_mingw_import_thunks.py` verifies the `.dll.a` import
+libraries in CI.
+
 ## Native MSVC and CUDA
 
 The native MSVC CUDA build compiles, links and installs in CI; the hosted

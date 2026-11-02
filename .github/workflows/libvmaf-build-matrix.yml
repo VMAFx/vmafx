@@ -807,6 +807,25 @@ jobs:
           python3 scripts/ci/run_meson_test.py -- -C core/build
           --num-processes $(nproc) --print-errorlogs
 
+      # ADR-3397: verify the default shared/both build configures with LTO off,
+      # emits DLL import-library function thunks, and starts tools/vmaf.exe (#3257).
+      - name: Configure vmaf (default shared/both)
+        run: |
+          # shellcheck disable=SC2046  # the helper prints one option per line, split on purpose
+          meson setup core core/build-shared \
+            -Denable_cuda=false -Denable_sycl=false \
+            -Dwerror=true \
+            $(bash scripts/ci/werror-args.sh true)
+
+      - name: Build vmaf.exe (shared)
+        run: ninja -C core/build-shared tools/vmaf.exe
+
+      - name: Check MinGW DLL import library thunks
+        run: python3 scripts/ci/check_mingw_import_thunks.py core/build-shared
+
+      - name: Run shared vmaf.exe
+        run: PATH="$PWD/core/build-shared/src:$PATH" core/build-shared/tools/vmaf.exe --help
+
       - name: Show binary info and stage artifact
         id: stage
         run: |

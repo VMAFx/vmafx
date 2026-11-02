@@ -49,6 +49,18 @@ vmafx_soversion           = '1'
 libvmaf_src_root = meson.current_source_dir()
 cc = meson.get_compiler('c')
 cxx = meson.get_compiler('cpp')
+
+# MinGW GCC (cc.get_id() == 'gcc') + ld --out-implib under LTO writes DLL import
+# libraries with __imp_<fn> pointers and zero T <fn> thunks, so callers auto-import
+# every function and abort before main under 64-bit ASLR (#3257, ADR-3397). Meson
+# orders -flto=4 before project arguments, so -fno-lto wins; static builds keep
+# LTO, and clang/lld MinGW is left unchanged (not measured).
+if host_machine.system() == 'windows' and cc.get_id() == 'gcc' and get_option('b_lto') and get_option('default_library') != 'static'
+    add_project_arguments('-fno-lto', language: ['c', 'cpp'])
+    add_project_link_arguments('-fno-lto', language: ['c', 'cpp'])
+    warning('MinGW GCC with default_library=' + get_option('default_library') + ' and b_lto=true: substituting -fno-lto because an LTO-linked DLL import library has no function thunks and executables abort before main (32-bit pseudo relocation out of range; static builds keep LTO; VMAFx/vmafx#3257, ADR-3397).')
+endif
+
 libvmaf_inc = include_directories(['include'])
 
 # Meson's built-in standard option reaches compiler feature probes as well as
