@@ -48,7 +48,9 @@ RULE = "clang-tidy-coverage"
 PRAETOR_RULES = ("HISS-10", "HISS-11", "release-token", "test-timeout")
 # Praetor counts these suffixes as translation units (internal/tidycoverage); `.metal` is not one.
 PRAETOR_UNITS = (".c", ".cc", ".cpp", ".cxx", ".c++", ".cppm", ".cu", ".hip", ".mm")
-# The latest date praetor accepts for an exception written on 2026-10-06 (90 days).
+# Praetor expiry cap for Category A and uncategorized rows: min(source, PRAETOR_EXPIRY_CAP).
+# B/C/D rows render entered + interval (D can pass PRAETOR_EXPIRY_CAP, e.g. 2027-03-02 for
+# entered 2026-11-02), bounded below by the source expiry.
 PRAETOR_EXPIRY_CAP = datetime.date(2027, 1, 4)
 # Rectification intervals for praetor exception categories (B=3, C=10, D=120 days).
 CATEGORY_INTERVALS: dict[str, datetime.timedelta] = {
@@ -80,12 +82,15 @@ def rendered_expiry(
 ) -> datetime.date:
     """Compute the rendered expiry date for an exception entry.
 
-    For category B/C/D with an entered date: entered + interval (B=3, C=10, D=120 days),
-    never later than the source expiry (raises ValueError).
-    Otherwise: min(source_expires, PRAETOR_EXPIRY_CAP).
-    An entry whose rendered expiry is after 2026-11-28 without a category is refused (ValueError).
+    B/C/D rows render entered + interval (D can pass PRAETOR_EXPIRY_CAP, e.g.
+    2027-03-02 for entered 2026-11-02), bounded below by the source expiry; only
+    A and uncategorized rows take min(source, PRAETOR_EXPIRY_CAP). Rows with
+    category B, C or D and entered None raise ValueError. An entry whose rendered
+    expiry is after 2026-11-28 without a category is refused (ValueError).
     """
-    if category in CATEGORY_INTERVALS and entered is not None:
+    if category in CATEGORY_INTERVALS:
+        if entered is None:
+            raise ValueError(f"{path}: category {category} requires an entered date")
         target = entered + CATEGORY_INTERVALS[category]
         if source_expires < target:
             raise ValueError(
@@ -104,11 +109,13 @@ def rendered_expiry(
 
 
 def tracked_units(root: Path) -> list[str]:
+    """Sorted list of tracked translation units recognized by praetor under root."""
     tracked = lint_exceptions.tracked_files(root)
     return sorted(p for p in tracked if p.lower().endswith(PRAETOR_UNITS))
 
 
 def measured(root: Path) -> list[str]:
+    """Sorted union of measured_sources across all lane tidy baselines."""
     seen: set[str] = set()
     for path in sorted((root / "scripts/ci").glob("tidy-baseline-*.json")):
         seen.update(json.loads(path.read_text(encoding="utf-8")).get("measured_sources", []))
@@ -166,6 +173,7 @@ def declared(root: Path) -> list[Row]:
 
 
 def render_block(root: Path) -> str:
+    """Render the generated exceptions block for .standards.yaml between BEGIN/END markers."""
     lines = [BEGIN, "exceptions:"]
     rows = declared(root) + exceptions(root)
     for rule, path, reason, expires, category, entered in rows:
@@ -190,6 +198,7 @@ def rewrite(manifest: str, block: str) -> str:
 
 
 def render(root: Path) -> dict[Path, str]:
+    """Render the expected contents of the measured-sources lane file and the manifest."""
     manifest = (root / MANIFEST).read_text(encoding="utf-8")
     return {
         LANE_FILE: "\n".join(measured(root)) + "\n",
@@ -198,6 +207,7 @@ def render(root: Path) -> dict[Path, str]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Command-line entry point to check or write generated praetor inputs."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--root", type=Path, default=ROOT)
     mode = parser.add_mutually_exclusive_group()

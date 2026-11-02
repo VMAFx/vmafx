@@ -176,7 +176,7 @@ expires = 2027-03-31
 path = "core/test/test_sycl_cuda_serial_upload_lifetime.c"
 category = "A"
 entered = 2026-11-02
-reason = "Category A, interval to the stated expiry. Built only when -Denable_cuda=true and -Denable_sycl=true together (the regression is the SYCL upload wait on CUDA's serial host-picture path); builds compile it with both backends (.github/workflows/libvmaf-build-matrix.yml:259, tests-and-quality-gates.yml:1400) but no tidy lane (Makefile TIDY_RATCHET_SETUP_cuda / _sycl) enables both; fix = a cuda+sycl tidy lane. Re-reviewed 2026-10-15. Category D (120 days)."
+reason = "Category A, interval to the stated expiry. Built only when -Denable_cuda=true and -Denable_sycl=true together (the regression is the SYCL upload wait on CUDA's serial host-picture path); builds compile it with both backends (.github/workflows/libvmaf-build-matrix.yml:259, tests-and-quality-gates.yml:1400) but no tidy lane (Makefile TIDY_RATCHET_SETUP_cuda / _sycl) enables both; fix = a cuda+sycl tidy lane. Re-reviewed 2026-10-15."
 expires = 2027-02-12
 
 [[exception]]
@@ -239,19 +239,19 @@ expires = 2027-03-31
 path = "core/test/test_colorspace.c"
 category = "A"
 entered = 2026-11-02
-reason = "Category A, interval to the stated expiry. Built only with -Denable_zimg=true (core/test/meson.build); zimg is not in dev/Containerfile (grep -i zimg dev/Containerfile is empty) nor installed by the hosted Tidy Ratchet job (.github/workflows/lint-and-format.yml \"Install deps\" step); fix = libzimg-dev in both, -Denable_zimg=true in TIDY_RATCHET_SETUP_cpu, re-measure. Re-reviewed 2026-10-15. Category D (120 days)."
+reason = "Category A, interval to the stated expiry. Built only with -Denable_zimg=true (core/test/meson.build); zimg is not in dev/Containerfile (grep -i zimg dev/Containerfile is empty) nor installed by the hosted Tidy Ratchet job (.github/workflows/lint-and-format.yml \"Install deps\" step); fix = libzimg-dev in both, -Denable_zimg=true in TIDY_RATCHET_SETUP_cpu, re-measure. Re-reviewed 2026-10-15."
 expires = 2027-02-12
 
 [[exception]]
 path = "core/test/test_integer_adm_buffer_alloc.c"
 category = "A"
 entered = 2026-11-02
-reason = "Category A, interval to the stated expiry. Category D. New unit test for the integer ADM slab offsets; the lanes' measured_sources change only when a tidy baseline is re-measured, and that re-measure adds this file."
+reason = "Category A, interval to the stated expiry. New unit test for the integer ADM slab offsets; the lanes' measured_sources change only when a tidy baseline is re-measured, and that re-measure adds this file."
 expires = 2027-01-04
 
 [[exception]]
 path = "pkg/libvmaf/testdata/c_api_pooled_mean.c"
 category = "A"
 entered = 2026-11-02
-reason = "Category A, interval to the stated expiry. Category D. Reference harness the Go tests of pkg/libvmaf compile with cc against the Meson-built library, so it is in no Meson compile database and no lane reads it. Clean under the repository .clang-tidy when run by hand. Rectify by building it from a compile database a lane reads."
+reason = "Category A, interval to the stated expiry. Reference harness the Go tests of pkg/libvmaf compile with cc against the Meson-built library, so it is in no Meson compile database and no lane reads it. Clean under the repository .clang-tidy when run by hand. Rectify by building it from a compile database a lane reads."
 expires = 2027-02-27

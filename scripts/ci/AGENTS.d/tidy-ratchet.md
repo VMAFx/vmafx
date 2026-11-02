@@ -182,3 +182,13 @@ workstation ([measuring lanes](../../../docs/development/tidy-lanes.md)).
 - HISS-11 entry path = workflow `praetorctl audit` failure line names. Entry
   for other workflow, or with no gap left, fails audit as stale: remove it
   when release workflows reach declared level.
+
+## Exception categories
+
+- Every rendered exception carries category + entered.
+- B=3, C=10, D=120 days render entered+interval.
+- B/C/D need entered.
+- Rows rendering past 2026-11-28 without category refused.
+- Source expiry earlier than entered+interval refused.
+- A keeps stated expiry capped at 2027-01-04.
+- Edit the TOML sources and the renderer, never the rendered .standards.yaml block.

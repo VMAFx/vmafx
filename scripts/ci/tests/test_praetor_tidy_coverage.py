@@ -191,6 +191,16 @@ class PraetorTidyCoverageTests(unittest.TestCase):
         self.assertIn("src/win32.c", result.stderr)
         self.assertIn("earlier", result.stderr)
 
+    def test_category_d_without_entered_date_is_refused(self) -> None:
+        (self.repo.root / ".config/lint-exceptions.d/clang-tidy-coverage.toml").write_text(
+            '[[exception]]\npath = "src/win32.c"\ncategory = "D"\n'
+            'reason = "Windows only"\nexpires = 2027-06-30\n'
+        )
+        result = self.repo.run("--check")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("src/win32.c", result.stderr)
+        self.assertIn("category D requires an entered date", result.stderr)
+
     def test_boundary_category_a_capped_and_uncategorized_before_cutoff_unchanged(self) -> None:
         (self.repo.root / ".config/lint-exceptions.d/clang-tidy-coverage.toml").write_text(
             '[[exception]]\npath = "src/win32.c"\ncategory = "A"\nentered = 2026-11-02\n'
