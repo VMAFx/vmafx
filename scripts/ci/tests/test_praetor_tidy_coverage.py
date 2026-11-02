@@ -24,7 +24,10 @@ ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = ROOT / "scripts/ci/praetor_tidy_coverage.py"
 GIT = shutil.which("git") or "git"
 CLEAN_ENV = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
-TOML = '[[exception]]\npath = "src/win32.c"\nreason = "Windows only"\nexpires = 2027-06-30\n'
+TOML = (
+    '[[exception]]\npath = "src/win32.c"\ncategory = "A"\nentered = 2026-11-02\n'
+    'reason = "Windows only"\nexpires = 2027-06-30\n'
+)
 
 
 class Repo:
@@ -85,6 +88,7 @@ class PraetorTidyCoverageTests(unittest.TestCase):
         # the declared date is past praetor's 90-day window, so it is cut to the cap
         self.assertNotIn("2027-06-30", manifest)
         self.assertIn('expires: "2027-01-04"', manifest)
+        self.assertIn('category: "A"', manifest)
 
     def test_a_hand_edited_block_is_refused(self) -> None:
         self.repo.run("--write")
@@ -117,12 +121,14 @@ class PraetorTidyCoverageTests(unittest.TestCase):
             with self.subTest(rule=rule):
                 (self.repo.root / f".config/lint-exceptions.d/{rule}.toml").write_text(
                     '[[exception]]\npath = ".github/workflows/publish.yml"\n'
+                    'category = "A"\nentered = 2026-11-02\n'
                     f'reason = "{reason}"\nexpires = 2027-03-31\n'
                 )
                 self.repo.run("--write")
                 manifest = (self.repo.root / ".standards.yaml").read_text()
                 self.assertIn(
                     f'  - rule: {rule}\n    path: ".github/workflows/publish.yml"\n'
+                    f'    category: "A"\n    entered: "2026-11-02"\n'
                     f'    reason: "{reason}"\n    expires: "2027-01-04"\n',
                     manifest,
                 )
@@ -163,6 +169,73 @@ class PraetorTidyCoverageTests(unittest.TestCase):
         text = manifest.read_text()
         self.assertTrue(text.startswith("version: 1\nprofiles:\n  - p\n"))
         self.assertEqual(text.count("# BEGIN generated"), 1)
+
+    def test_category_d_renders_entered_plus_120_days(self) -> None:
+        (self.repo.root / ".config/lint-exceptions.d/clang-tidy-coverage.toml").write_text(
+            '[[exception]]\npath = "src/win32.c"\ncategory = "D"\nentered = 2026-11-02\n'
+            'reason = "Windows only"\nexpires = 2027-06-30\n'
+        )
+        self.assertEqual(self.repo.run("--write").returncode, 0)
+        manifest = (self.repo.root / ".standards.yaml").read_text()
+        self.assertIn('category: "D"', manifest)
+        self.assertIn('entered: "2026-11-02"', manifest)
+        self.assertIn('expires: "2027-03-02"', manifest)
+
+    def test_category_d_refuses_source_expiry_earlier_than_interval(self) -> None:
+        (self.repo.root / ".config/lint-exceptions.d/clang-tidy-coverage.toml").write_text(
+            '[[exception]]\npath = "src/win32.c"\ncategory = "D"\nentered = 2026-11-02\n'
+            'reason = "Windows only"\nexpires = 2027-01-04\n'
+        )
+        result = self.repo.run("--check")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("src/win32.c", result.stderr)
+        self.assertIn("earlier", result.stderr)
+
+    def test_boundary_category_a_capped_and_uncategorized_before_cutoff_unchanged(self) -> None:
+        (self.repo.root / ".config/lint-exceptions.d/clang-tidy-coverage.toml").write_text(
+            '[[exception]]\npath = "src/win32.c"\ncategory = "A"\nentered = 2026-11-02\n'
+            'reason = "Windows only"\nexpires = 2027-06-30\n'
+        )
+        self.assertEqual(self.repo.run("--write").returncode, 0)
+        manifest = (self.repo.root / ".standards.yaml").read_text()
+        self.assertIn('expires: "2027-01-04"', manifest)
+        self.assertIn('category: "A"', manifest)
+
+        (self.repo.root / ".config/lint-exceptions.d/clang-tidy-coverage.toml").write_text(
+            '[[exception]]\npath = "src/win32.c"\nreason = "Windows only"\nexpires = 2026-11-20\n'
+        )
+        self.assertEqual(self.repo.run("--write").returncode, 0)
+        manifest = (self.repo.root / ".standards.yaml").read_text()
+        self.assertIn('expires: "2026-11-20"', manifest)
+        self.assertNotIn("category:", manifest)
+        self.assertNotIn("entered:", manifest)
+
+    def test_uncategorized_entry_expiring_after_cutoff_is_refused(self) -> None:
+        # clang-tidy-coverage row without category expiring after 2026-11-28
+        (self.repo.root / ".config/lint-exceptions.d/clang-tidy-coverage.toml").write_text(
+            '[[exception]]\npath = "src/win32.c"\nreason = "Windows only"\nexpires = 2026-12-01\n'
+        )
+        result = self.repo.run("--check")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("src/win32.c", result.stderr)
+        self.assertIn("without a category", result.stderr)
+
+        # PRAETOR_RULES row without category expiring after 2026-11-28
+        (self.repo.root / ".config/lint-exceptions.d/clang-tidy-coverage.toml").write_text(
+            '[[exception]]\npath = "src/win32.c"\ncategory = "A"\nentered = 2026-11-02\n'
+            'reason = "Windows only"\nexpires = 2026-11-20\n'
+        )
+        workflow = self.repo.root / ".github/workflows/publish.yml"
+        workflow.parent.mkdir(parents=True, exist_ok=True)
+        workflow.write_text("on: push\n")
+        (self.repo.root / ".config/lint-exceptions.d/HISS-11.toml").write_text(
+            '[[exception]]\npath = ".github/workflows/publish.yml"\n'
+            'reason = "provenance"\nexpires = 2027-01-04\n'
+        )
+        result = self.repo.run("--check")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn(".github/workflows/publish.yml", result.stderr)
+        self.assertIn("without a category", result.stderr)
 
 
 if __name__ == "__main__":
