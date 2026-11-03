@@ -952,9 +952,15 @@ void ss2m_downsample_in_place(float *lin, float *scratch, unsigned cw, unsigned 
                               unsigned nh, size_t plane_full)
 {
     ss2m_downsample_2x2(lin, cw, ch, scratch, nw, nh, plane_full);
+    // SAFETY: nw <= cw, nh <= ch, so plane_n <= plane_full;
+    // both buffers hold 3 * plane_full floats.
+    const size_t plane_n = (size_t)nw * (size_t)nh;
     for (int c = 0; c < 3; c++) {
-        memcpy(lin + (size_t)c * plane_full, scratch + (size_t)c * plane_full,
-               (size_t)nw * (size_t)nh * sizeof(float));
+        float *dst = lin + (size_t)c * plane_full;
+        const float *src = scratch + (size_t)c * plane_full;
+        for (size_t i = 0; i < plane_n; i++) {
+            dst[i] = src[i];
+        }
     }
 }
 
