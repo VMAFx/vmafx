@@ -68,7 +68,7 @@ typedef struct HvsVariant {
     int block_partials;
 } HvsVariant;
 
-static const HvsVariant VARIANT[VARIANTS] = {
+static const HvsVariant VARIANT_TABLE[VARIANTS] = {
     {"ported twin", 0, 0},
     {"fp32 masking table", 1, 0},
     {"per-block partials", 0, 1},
@@ -352,7 +352,7 @@ static mu_message_t compare_fixture(size_t f)
     for (int fp32_mask = 0; fp32_mask < 2; fp32_mask++)
         twin_scores(&ref, &dis, fx, fp32_mask, twin[fp32_mask]);
     for (unsigned v = 0u; v < VARIANTS; v++) {
-        const double *out = twin[VARIANT[v].fp32_mask][VARIANT[v].block_partials];
+        const double *out = twin[VARIANT_TABLE[v].fp32_mask][VARIANT_TABLE[v].block_partials];
         differing[f][v] = count_differing(cpu, out);
         if (v == 0u)
             report_fixture(fx, cpu, out);
@@ -395,8 +395,8 @@ static char *test_planted_defects_are_refused(void)
             changed += differing[f][v];
             fixtures += differing[f][v] != 0u ? 1u : 0u;
         }
-        (void)fprintf(stderr, "\n  %s: %u outputs on %u of %u fixtures differ", VARIANT[v].what,
-                      changed, fixtures, (unsigned)N_FIXTURES);
+        (void)fprintf(stderr, "\n  %s: %u outputs on %u of %u fixtures differ",
+                      VARIANT_TABLE[v].what, changed, fixtures, (unsigned)N_FIXTURES);
         mu_assert("a planted defect leaves every output equal to the CPU's", changed != 0u);
     }
     (void)fprintf(stderr, "\n");
