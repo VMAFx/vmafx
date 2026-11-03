@@ -63,7 +63,10 @@ def run_command(
 
 def resolve_executable(name: str) -> Path:
     """Resolve an executable or environment override to an absolute path."""
-    candidate = os.environ.get(name.upper()) or shutil.which(name)
+    override = os.environ.get(name.upper()) or name
+    candidate: str | None = override
+    if "/" not in override and "\\" not in override:
+        candidate = shutil.which(override)
     if candidate is None:
         raise PackageError(f"required executable not found on PATH: {name}")
     return Path(candidate).absolute()
@@ -76,8 +79,13 @@ def resolve_cargo(rust_bin: Path) -> Path:
     if toolchain_cargo.is_file():
         return toolchain_cargo.absolute()
     from_env = os.environ.get("CARGO")
-    if from_env and Path(from_env).is_file():
-        return Path(from_env).absolute()
+    if from_env:
+        if "/" not in from_env and "\\" not in from_env:
+            on_path = shutil.which(from_env)
+            if on_path:
+                return Path(on_path).absolute()
+        elif Path(from_env).is_file():
+            return Path(from_env).absolute()
     on_path = shutil.which("cargo")
     if on_path:
         return Path(on_path).absolute()

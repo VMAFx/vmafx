@@ -57,6 +57,24 @@ class PackageChecks(unittest.TestCase):
         self.calls: list[tuple[list[str], Path, dict[str, str]]] = []
         self.fail_docs: str | None = None
         self.omit_header = False
+        rust_bin = self.root / "rust/bin"
+        rust_bin.mkdir(parents=True)
+        suffix = ".exe" if os.name == "nt" else ""
+        self.rustc = rust_bin / f"rustc{suffix}"
+        self.cargo = rust_bin / f"cargo{suffix}"
+        self.rustc.write_text("#!/bin/sh\n")
+        self.cargo.write_text("#!/bin/sh\n")
+        self.rustc.chmod(0o755)
+        self.cargo.chmod(0o755)
+        env_patcher = patch.dict(
+            os.environ,
+            {
+                "RUSTC": str(self.rustc),
+                "PATH": f"{rust_bin}{os.pathsep}{os.environ.get('PATH', '')}",
+            },
+        )
+        env_patcher.start()
+        self.addCleanup(env_patcher.stop)
 
     def runner(self, command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
         cwd, env = kwargs["cwd"], kwargs["env"]
@@ -228,6 +246,32 @@ class PackageChecks(unittest.TestCase):
         with patch.dict(os.environ, {}, clear=True), patch("shutil.which", return_value=None):
             with self.assertRaisesRegex(check.PackageError, "required executable not found.*cargo"):
                 check.resolve_cargo(Path("relative/bin"))
+
+    def test_resolve_bare_compiler_override_through_path(self) -> None:
+        with patch.dict(os.environ, {"RUSTC": "rustc"}):
+            resolved = check.resolve_executable("rustc")
+            self.assertEqual(resolved, self.rustc.absolute())
+            self.assertNotEqual(resolved, (Path.cwd() / "rustc").absolute())
+
+    def test_bare_compiler_override_not_on_path_is_refused(self) -> None:
+        with patch.dict(os.environ, {"RUSTC": "nonexistent_compiler"}):
+            with self.assertRaisesRegex(check.PackageError, "required executable not found.*rustc"):
+                check.resolve_executable("rustc")
+
+    def test_explicit_path_compiler_override_is_preserved(self) -> None:
+        explicit = self.root / "custom/bin/rustc"
+        with patch.dict(os.environ, {"RUSTC": str(explicit)}):
+            resolved = check.resolve_executable("rustc")
+            self.assertEqual(resolved, explicit.absolute())
+
+    def test_packaged_docs_pass_without_system_rust(self) -> None:
+        with patch(
+            "shutil.which",
+            side_effect=lambda x, **kw: (
+                None if x in ("rustc", "cargo", "nvcc", "hipcc", "dpcpp", "icpx") else "/bin/cc"
+            ),
+        ):
+            check.check_packages(self.root, self.runner)
 
 
 if __name__ == "__main__":
