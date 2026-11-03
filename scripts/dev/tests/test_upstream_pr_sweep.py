@@ -1356,13 +1356,13 @@ class UpstreamPrSweepTest(unittest.TestCase):
                 self.assertFalse(acquired2)
                 self.assertIn("worktree lock busy", detail2)
 
-        if sweep_mod.fcntl is not None:
+        if getattr(sweep_mod, "fcntl", None) is not None:
             self.assertTrue(lock_path.is_file())
 
         with sweep_mod.worktree_lock(wt) as (acquired3, detail3):
             self.assertTrue(acquired3, detail3)
             self.assertTrue(lock_path.is_file())
-        if sweep_mod.fcntl is not None:
+        if getattr(sweep_mod, "fcntl", None) is not None:
             self.assertTrue(lock_path.is_file())
 
         fallback_wt = sweep_mod.pr_worktree_path(self.worktree_root, 100)
