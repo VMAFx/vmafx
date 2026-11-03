@@ -106,7 +106,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # ADR-1151. Twelve write-bearing jobs across supply-chain.yml,
+          # ADR-1151 / ADR-3399. Publication jobs across supply-chain.yml,
           # docker-publish-production.yml and docker-publish-operator-node.yml
           # declare `environment: release-publish` / `pypi-publish`. GitHub
           # AUTO-CREATES a referenced environment that does not exist, with an
@@ -803,6 +803,104 @@ jobs:
             provenance/vmaf-mcp-provenance.sigstore.json
             provenance/vmaf-mcp-provenance.intoto.jsonl
           if-no-files-found: error
+
+  crates-publish:
+    name: Publish Rust crates
+    needs: [validate-release, verify-native-artifacts, sign, provenance]
+    # Final releases only (the PyPI rule): an rc tag must not publish the 0.1.0 crates early.
+    # The tag comes from validate-release, so the workflow_dispatch recovery path works too.
+    if: ${{ github.repository == 'VMAFx/vmafx' && github.server_url == 'https://github.com' && !contains(needs.validate-release.outputs.version, '-') }}
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    environment: release-publish
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      # Verify the packaged headers without an installed native library or GPU SDK.
+      DOCS_RS: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ needs.validate-release.outputs.tag }}
+          persist-credentials: false
+      - name: Set up the pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec  # stable
+        with:
+          toolchain: 1.99.1
+      - name: Install libclang for packaged-header verification
+        timeout-minutes: 5
+        run: |
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 install -y --no-install-recommends libclang-dev
+      - name: Check immutable crate versions
+        id: crates-state
+        timeout-minutes: 3
+        run: |
+          set -euo pipefail
+          publish=false
+          for crate in vmafx-sys vmafx; do
+            version="$(python3 -c 'import sys, tomllib; print(tomllib.load(open(sys.argv[1], "rb"))["package"]["version"])' \
+              "bindings/rust/$crate/Cargo.toml")"
+            http_code="$(curl --silent --show-error --max-time 60 \
+              --user-agent 'VMAFx/vmafx release publisher (https://github.com/VMAFx/vmafx)' \
+              --output "$RUNNER_TEMP/$crate-version.json" --write-out '%{http_code}' \
+              "https://crates.io/api/v1/crates/$crate/$version")"
+            case "$http_code" in
+              200)
+                missing=false
+                echo "$crate $version already published; skipping"
+                ;;
+              404) missing=true; publish=true ;;
+              *)
+                echo "ERROR: crates.io query for $crate $version returned HTTP $http_code" >&2
+                exit 1
+                ;;
+            esac
+            echo "$crate=$missing" >> "$GITHUB_OUTPUT"
+          done
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+      - name: Select initial-publication authentication
+        id: crates-bootstrap
+        if: steps.crates-state.outputs.publish == 'true'
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ -n "$CARGO_REGISTRY_TOKEN" ]]; then
+            echo 'present=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'present=false' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Authenticate with crates.io trusted publishing
+        id: crates-auth
+        if: steps.crates-state.outputs.publish == 'true' && steps.crates-bootstrap.outputs.present == 'false' && env.GITEA_ACTIONS != 'true'
+        uses: rust-lang/crates-io-auth-action@3268eb413133e2960fa4ae0e963ca76380c54cd9  # v1.0.6
+      - name: Publish missing Rust crates in dependency order
+        if: steps.crates-state.outputs.publish == 'true'
+        timeout-minutes: 10
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN || steps.crates-auth.outputs.token }}
+          PUBLISH_SYS: ${{ steps.crates-state.outputs.vmafx-sys }}
+          PUBLISH_WRAPPER: ${{ steps.crates-state.outputs.vmafx }}
+        # Cargo publishes dependencies first and waits for the registry index.
+        # One invocation also verifies unpublished intra-workspace dependencies.
+        run: |
+          set -euo pipefail
+          if [[ -z "$CARGO_REGISTRY_TOKEN" ]]; then
+            echo 'ERROR: crates.io publication requires authentication' >&2
+            exit 1
+          fi
+          python3 - <<'PY'
+          import os
+          import subprocess
+
+          command = ["cargo", "publish", "--locked", "--registry", "crates-io", "-j4"]
+          for crate, selected in (("vmafx-sys", "PUBLISH_SYS"), ("vmafx", "PUBLISH_WRAPPER")):
+              if os.environ[selected] == "true":
+                  command.extend(["-p", crate])
+          subprocess.run(command, check=True, timeout=570)
+          PY
 
   mcp-publish-pypi:
     name: Publish vmaf-mcp PyPI

@@ -5,8 +5,8 @@
 
 VMAFx extends Netflix's Video Multi-Method Assessment Fusion (VMAF) video
 quality library. `vmafx` provides Rust wrappers; `vmafx-sys` generates the raw
-libvmaf FFI with bindgen. This build work does not publish either crate.
-Use the bindings from a source checkout of your fork:
+libvmaf FFI with bindgen. Release tags publish both crates to crates.io.
+To use the bindings from a source checkout of your fork:
 
 ```toml
 [dependencies]
@@ -222,7 +222,29 @@ python3 -B -m unittest scripts/ci/tests/test_check_rust_crate_package.py
 
 The Rust crates are independently versioned, as specified by
 [ADR-1127](../adr/1127-single-semver-release-stream.md). Their manifests
-currently declare `0.1.0`; the product's release stream does not reset or
-automatically publish them. Match the native library and bindings revision
+currently declare `0.1.0`; the product's release stream does not reset them.
+Match the native library and bindings revision
 when using a checkout. For wrapper ownership rules, see
 [context close and retry](rust-context-close.md).
+
+## Publishing
+
+The canonical repository's release workflow publishes `vmafx-sys` before
+`vmafx` at validated final `v*` release tags (never at a prerelease tag),
+behind the protected `release-publish` environment. Existing crate versions
+are skipped; a recovery run at the same published tag completes any missing
+publication. Crate versions remain
+independent of the product version. There is no separate hand-publish path.
+
+Rust CI rehearses both packages after the package check with
+`DOCS_RS=1 cargo publish --dry-run --locked -p vmafx-sys -p vmafx -j4`.
+This verifies packaged headers with libclang and needs no publication secret,
+installed native library, or GPU SDK.
+
+The first publication uses the environment secret `CARGO_REGISTRY_TOKEN`,
+because crates.io requires an existing crate for trusted publishing. Once
+both crates exist, configure their crates.io trusted publishers with owner
+`VMAFx`, repository `vmafx`, workflow `supply-chain.yml`, and environment
+`release-publish`, then remove the bootstrap secret. Later publications use
+GitHub OIDC through the pinned crates.io authentication action.
+See [ADR-3399](../adr/3399-rust-crates-published-from-release-pipeline.md).
