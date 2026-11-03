@@ -528,7 +528,7 @@ replaces ADR-1354's Debian 13 native builder with the older manylinux floor.
 
 | Concern | What happens |
 | --- | --- |
-| Where | `build-artifacts` in `.github/workflows/supply-chain.yml`: `ubuntu-26.04` for x86-64, `ubuntu-24.04-arm` for native arm64. |
+| Where | `build-artifacts` in `.github/workflows/supply-chain.yml`: `ubuntu-26.04` for x86-64, `ubuntu-26.04-arm` for native arm64. |
 | Builder | `scripts/ci/build-dev-container-stage.sh release-build` selects the architecture's digest pin from `build-config.env`; callers cannot supply an arbitrary base. |
 | Compile | `scripts/release/build-native-release-artifacts.sh` runs inside that image with `--pull never --network none`, as the runner user, with the checkout bound to `GITHUB_SHA`. |
 | Dependencies | GCC 14 and patchelf are pinned by the base image; Meson and Ninja use `requirements/locks/build.txt` with hash verification; NASM is built from a SHA256-pinned upstream source release. AlmaLinux/EPEL packages resolve at image-build time. |

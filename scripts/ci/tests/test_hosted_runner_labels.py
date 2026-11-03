@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import subprocess
 import sys
@@ -14,6 +15,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = ROOT / "scripts/ci/check_hosted_runner_labels.py"
 TODAY = "2026-10-11"
+
+# The check imports lint_exceptions from its own directory.
+sys.path.insert(0, str(SCRIPT.parent))
+_SPEC = importlib.util.spec_from_file_location("check_hosted_runner_labels", SCRIPT)
+assert _SPEC is not None and _SPEC.loader is not None
+labels = importlib.util.module_from_spec(_SPEC)
+sys.modules[_SPEC.name] = labels
+_SPEC.loader.exec_module(labels)
 
 # The job ADR-1354 keeps on the older image; every fixture tree carries it, because the
 # check also fails when that job stops naming the image.
@@ -182,6 +191,11 @@ class HostedRunnerLabelTest(unittest.TestCase):
     def test_stale_compatibility_target_refused(self) -> None:
         self.write(SUPPLY_CHAIN.replace("ubuntu-24.04", "ubuntu-26.04"), "supply-chain")
         self.assert_refused("job 'verify-native-artifacts' no longer names 'ubuntu-24.04'")
+
+    def test_compatibility_targets_cite_an_adr(self) -> None:
+        self.assertEqual(labels.uncited_targets(), [])
+        planted = {("supply-chain.yml", "old"): ("ubuntu-24.04", "issue 2437 only")}
+        self.assertIn("without an ADR", " ".join(labels.uncited_targets(planted)))
 
     def test_expired_fallback_refused(self) -> None:
         self.write(OLDER)
