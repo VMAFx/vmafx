@@ -1,0 +1,1 @@
+- **Packaged Rust crate checks.** Bundle the documentation headers in `vmafx-sys` and check both Rust crate archives for size, standalone docs.rs builds without GPU tools, and header drift, in Rust CI and as a pre-commit hook (#2320).

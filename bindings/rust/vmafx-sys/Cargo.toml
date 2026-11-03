@@ -14,7 +14,8 @@ description = "Raw FFI bindings to libvmaf (VMAFX fork)"
 # block in the root Cargo.toml. See ADR-0702 (vmafx-sys FFI crate).
 edition.workspace = true
 rust-version.workspace = true
-license.workspace = true
+# Packaged documentation headers retain Netflix's BSD-2-Clause-Patent notices.
+license = "BSD-2-Clause-Patent AND EUPL-1.2"
 authors.workspace = true
 repository.workspace = true
 homepage.workspace = true

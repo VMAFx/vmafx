@@ -185,6 +185,9 @@ jobs:
           LIBVMAF_PREFIX: /usr/local
         run: cargo build -p vmafx-sys
 
+      - name: Check packaged Rust crates
+        run: python3 scripts/ci/check_rust_crate_package.py
+
       - name: Cargo test (unit + integration, every workspace crate)
         # --workspace: vmafx (the safe binding) and vmafx-tad carry tests too;
         # `-p vmafx-sys` ran none of them (ADR-1528).
