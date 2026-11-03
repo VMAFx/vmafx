@@ -41,6 +41,25 @@ class ReleaseSelection(unittest.TestCase):
                 STACK.stable_version(tag)
 
 
+class BashInputsLineEndings(unittest.TestCase):
+    def test_shared_series_inputs_check_out_with_lf(self) -> None:
+        repo = Path(__file__).resolve().parents[2]
+        paths = [STACK.SHARED_SERIES_SCRIPT.relative_to(repo).as_posix(), "build-config.env"]
+        git = shutil.which("git")
+        assert git is not None
+        result = run_command(
+            [git, "-C", str(repo), "check-attr", "eol", "--", *paths],
+            allowed_executables={git},
+            # The caller's GIT_DIR or GIT_WORK_TREE would point git at another repository.
+            env={key: value for key, value in os.environ.items() if not key.startswith("GIT_")},
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout_seconds=30,
+        )
+        self.assertEqual(result.stdout.splitlines(), [f"{path}: eol: lf" for path in paths])
+
+
 class RealReplay(unittest.TestCase):
     def git(self, path: Path, *args: str) -> str:
         # Fixed Git executable and fixture-owned arguments; no shell.

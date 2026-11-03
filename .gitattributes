@@ -33,6 +33,10 @@ model/tiny/*.onnx.cert binary
 
 # Ffmpeg patch series — diff-friendly text.
 ffmpeg-patches/*.patch text eol=lf
+# Bash reads these on every platform: a CRLF checkout on Windows breaks
+# `set -euo pipefail` and leaves a carriage return in sourced values.
+*.sh text eol=lf
+build-config.env text eol=lf
 
 # CSV golden fixtures are byte-for-byte expectations, and Python's csv module
 # writes CRLF (its default lineterminator). `* text=auto` above would normalise
