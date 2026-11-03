@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
 # Concatenate per-PR changelog fragments under changelog.d/<section>/*.md
 # into the rendered "Unreleased" body that lives in CHANGELOG.md.
@@ -101,7 +102,15 @@ fragment_starts_with_list_item() {
     BEGIN { in_comment = 0; found = 0 }
     {
       line = $0
+      if (line !~ /[^[:space:]]/) {
+        next
+      }
+      if (!in_comment && (line ~ /^    / || line ~ /^\t/)) {
+        found = 1
+        exit 1
+      }
       out = ""
+      lead_comment = in_comment
       while (length(line) > 0) {
         if (in_comment) {
           idx = index(line, "-->")
@@ -114,7 +123,11 @@ fragment_starts_with_list_item() {
         } else {
           idx = index(line, "<!--")
           if (idx > 0) {
-            out = out substr(line, 1, idx - 1)
+            prefix = substr(line, 1, idx - 1)
+            if (!lead_comment && (out prefix) ~ /^ ? ? ?$/) {
+              lead_comment = 1
+            }
+            out = out prefix
             line = substr(line, idx + 4)
             in_comment = 1
           } else {
@@ -125,8 +138,10 @@ fragment_starts_with_list_item() {
       }
       if (out ~ /[^[:space:]]/) {
         found = 1
-        sub(/^[[:space:]]+/, "", out)
-        if (substr(out, 1, 2) == "- ") {
+        if (lead_comment) {
+          exit 1
+        }
+        if (out ~ /^ ? ? ?- /) {
           exit 0
         } else {
           exit 1

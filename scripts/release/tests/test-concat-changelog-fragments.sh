@@ -287,6 +287,55 @@ else
 fi
 rm -f "$TMPDIR_LINT/changelog.d/fixed/bullet.md"
 
+# (d) planted indented code block (4 spaces before - ) -> --lint exits non-zero
+printf '    - indented code block, not a list item\n' >"$TMPDIR_LINT/changelog.d/fixed/indented.md"
+lint_indented_rc=0
+(
+  cd "$TMPDIR_LINT"
+  bash "$patched_lint" --lint >/dev/null 2>"$TMPDIR_LINT/err_indented.txt"
+) || lint_indented_rc=$?
+
+if [[ "$lint_indented_rc" -eq 0 ]]; then
+  check "--lint fails on a planted indented code block fragment" fail
+elif ! grep -q "indented.md" "$TMPDIR_LINT/err_indented.txt"; then
+  check "the failure names the indented fragment" fail
+else
+  check "--lint fails on a planted indented code block fragment" pass
+fi
+rm -f "$TMPDIR_LINT/changelog.d/fixed/indented.md"
+
+# (e) planted bullet on HTML comment line -> --lint exits non-zero
+printf '<!-- comment --> - bullet on comment line\n' >"$TMPDIR_LINT/changelog.d/fixed/same_line.md"
+lint_sameline_rc=0
+(
+  cd "$TMPDIR_LINT"
+  bash "$patched_lint" --lint >/dev/null 2>"$TMPDIR_LINT/err_sameline.txt"
+) || lint_sameline_rc=$?
+
+if [[ "$lint_sameline_rc" -eq 0 ]]; then
+  check "--lint fails on a planted bullet on an HTML comment line" fail
+elif ! grep -q "same_line.md" "$TMPDIR_LINT/err_sameline.txt"; then
+  check "the failure names the same-line bullet fragment" fail
+else
+  check "--lint fails on a planted bullet on an HTML comment line" pass
+fi
+rm -f "$TMPDIR_LINT/changelog.d/fixed/same_line.md"
+
+# (f) a list item with at most 3 leading spaces -> exit 0
+printf '   - three leading spaces is a valid CommonMark list item\n' >"$TMPDIR_LINT/changelog.d/fixed/three_spaces.md"
+lint_threespaces_rc=0
+(
+  cd "$TMPDIR_LINT"
+  bash "$patched_lint" --lint >/dev/null 2>"$TMPDIR_LINT/err_threespaces.txt"
+) || lint_threespaces_rc=$?
+
+if [[ "$lint_threespaces_rc" -eq 0 ]]; then
+  check "--lint accepts a fragment with up to three leading spaces before - " pass
+else
+  check "--lint accepts a fragment with up to three leading spaces before - " fail
+fi
+rm -f "$TMPDIR_LINT/changelog.d/fixed/three_spaces.md"
+
 # ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
