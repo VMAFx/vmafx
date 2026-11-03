@@ -699,6 +699,105 @@ def test_cmake_consumer_absolute_dirs(tmp_path: Path) -> None:
     assert out.strip() == "1.0.0"
 
 
+def test_cmake_consumer_mingw_import_library(tmp_path: Path) -> None:
+    if not shutil.which("cmake"):
+        pytest.skip("cmake not available")
+    prefix = tmp_path / "install"
+    inc = prefix / "include" / "vmafx"
+    inc.mkdir(parents=True)
+    (inc / "vmafx.h").write_text("const char *vmafx_version_string(void);\n")
+    lib = prefix / "lib"
+    lib.mkdir(parents=True)
+    (lib / "libvmafx.dll.a").touch()
+    bin_dir = prefix / "bin"
+    bin_dir.mkdir(parents=True)
+    (bin_dir / "vmafx.dll").touch()
+    cmake_dir = lib / "cmake" / "vmafx"
+    cmake_dir.mkdir(parents=True)
+    template = Path(__file__).resolve().parents[3] / "core" / "cmake" / "vmafxConfig.cmake.in"
+    _render_cmake_config(template, cmake_dir / "vmafxConfig.cmake", "include", "lib")
+    _write_cmake_version_file(cmake_dir / "vmafxConfigVersion.cmake")
+
+    consumer = tmp_path / "consumer"
+    consumer.mkdir()
+    (consumer / "CMakeLists.txt").write_text(
+        "cmake_minimum_required(VERSION 3.20)\n"
+        "project(consumer_mingw NONE)\n"
+        "set(WIN32 TRUE)\n"
+        "find_package(vmafx 1 REQUIRED)\n"
+        "get_target_property(loc vmafx::vmafx IMPORTED_LOCATION)\n"
+        "get_target_property(implib vmafx::vmafx IMPORTED_IMPLIB)\n"
+        'file(WRITE "${CMAKE_BINARY_DIR}/target_props.txt" "${loc}\\n${implib}\\n")\n'
+    )
+    build_dir = consumer / "build"
+    subprocess.check_call(  # noqa: S603 -- resolved tool path or built test binary, argv list, no shell
+        [
+            _tool("cmake"),
+            "-S",
+            str(consumer),
+            "-B",
+            str(build_dir),
+            f"-DCMAKE_PREFIX_PATH={prefix}",
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    props = (build_dir / "target_props.txt").read_text(encoding="utf-8").splitlines()
+    assert props[0] == str(bin_dir / "vmafx.dll")
+    assert props[1] == str(lib / "libvmafx.dll.a")
+
+
+def test_cmake_consumer_stale_dll_cache_overridden(tmp_path: Path) -> None:
+    if not shutil.which("cmake"):
+        pytest.skip("cmake not available")
+    prefix = tmp_path / "install"
+    inc = prefix / "include" / "vmafx"
+    inc.mkdir(parents=True)
+    (inc / "vmafx.h").write_text("const char *vmafx_version_string(void);\n")
+    lib = prefix / "lib"
+    lib.mkdir(parents=True)
+    (lib / "libvmafx.dll.a").touch()
+    bin_dir = prefix / "bin"
+    bin_dir.mkdir(parents=True)
+    (bin_dir / "vmafx.dll").touch()
+    cmake_dir = lib / "cmake" / "vmafx"
+    cmake_dir.mkdir(parents=True)
+    template = Path(__file__).resolve().parents[3] / "core" / "cmake" / "vmafxConfig.cmake.in"
+    _render_cmake_config(template, cmake_dir / "vmafxConfig.cmake", "include", "lib")
+    _write_cmake_version_file(cmake_dir / "vmafxConfigVersion.cmake")
+
+    stale_dll = tmp_path / "stale_prefix" / "bin" / "vmafx.dll"
+    stale_dll.parent.mkdir(parents=True)
+    stale_dll.touch()
+
+    consumer = tmp_path / "consumer"
+    consumer.mkdir()
+    (consumer / "CMakeLists.txt").write_text(
+        "cmake_minimum_required(VERSION 3.20)\n"
+        "project(consumer_stale_dll NONE)\n"
+        "set(WIN32 TRUE)\n"
+        "find_package(vmafx 1 REQUIRED)\n"
+        "get_target_property(loc vmafx::vmafx IMPORTED_LOCATION)\n"
+        'file(WRITE "${CMAKE_BINARY_DIR}/target_loc.txt" "${loc}\\n")\n'
+    )
+    build_dir = consumer / "build"
+    subprocess.check_call(  # noqa: S603 -- resolved tool path or built test binary, argv list, no shell
+        [
+            _tool("cmake"),
+            "-S",
+            str(consumer),
+            "-B",
+            str(build_dir),
+            f"-DCMAKE_PREFIX_PATH={prefix}",
+            f"-DVMAFX_DLL:FILEPATH={stale_dll}",
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    loc = (build_dir / "target_loc.txt").read_text(encoding="utf-8").strip()
+    assert loc == str(bin_dir / "vmafx.dll")
+
+
 def test_meson_build_cmake_package_guards() -> None:
     meson_build = Path(__file__).resolve().parents[3] / "core" / "src" / "meson.build"
     content = meson_build.read_text(encoding="utf-8")
