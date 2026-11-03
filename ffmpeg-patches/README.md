@@ -84,6 +84,20 @@ series:
 python3 scripts/ci/ffmpeg_patch_stack.py --check
 ```
 
+The check is a **series replay** against a pristine FFmpeg checkout, not a
+per-patch apply. Its receipt is mirrored here:
+
+> `n9.0.2` checkout (cumulative `git am --3way`), NOT a per-patch
+> `git apply --check`. The latter rejects `0002+` because they
+> reference cumulative-state hunks that don't exist in pristine `n9.0.2`.
+> The 39 patches of the shared fix series `v0.5.0` and the 6
+> patches here replay cumulatively on upstream commit
+> `946fcce07b6dcd0331c8cc609192aeff5e1924f8`; the resulting tree is
+> `977ee5e0d24de78c601170e6f1a85d424b59dd08`
+> (`python3 scripts/ci/ffmpeg_patch_stack.py --check`). The refresh evidence and
+> earlier replay history live in
+> [`docs/rebase-notes.md`](../docs/rebase-notes.md).
+
 To refresh patch context or rebase against updated sources:
 
 ```bash
