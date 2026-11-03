@@ -8629,7 +8629,7 @@ it does not perform the promotion.
 
 1. **`requirements/locks/manifest.json` is the sole compiler authority for Python locks.**
    All lock files under `requirements/locks/`, `docs/`, `python/`, `ai/`, `mcp-server/`,
-   `dev/`, `dev-llm/`, and `tools/` carry input digests and generator version metadata (the `uv_version` named in the manifest).
+   `dev/`, `dev-llm/`, and `tools/` carry input digests and generator version metadata (`uv 0.12.18`).
    Do not edit lock files by hand or resolve rebase conflicts by taking one side's hashes;
    run `make python-locks-write` to regenerate them from the merged inputs.
 2. **`--require-hashes` is enforced repository-wide.**

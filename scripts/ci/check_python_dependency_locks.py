@@ -1631,14 +1631,16 @@ UV_VERSION_HISTORY_PREFIXES = (
     "changelog.d/",
     "docs/adr/",
     "docs/changelog-archive/",
+    "docs/rebase-notes.d/",
     "docs/research/",
 )
-# docs/state.md rows are dated records of what happened then.
-UV_VERSION_HISTORY_EXACT = ("CHANGELOG.md", "docs/state.md")
+# docs/state.md rows and rebase notes are dated records of what happened then;
+# docs/rebase-notes.md is also rendered, so a pull request may not edit it (ADR-2197).
+UV_VERSION_HISTORY_EXACT = ("CHANGELOG.md", "docs/rebase-notes.md", "docs/state.md")
 
 
 def is_uv_version_history_path(relative: Path) -> bool:
-    """True when the path is a dated record (changelog, decision, research, state row)."""
+    """True when the path is a dated record (changelog, decision, research, rebase note, state row)."""
     posix = relative.as_posix()
     return posix in UV_VERSION_HISTORY_EXACT or posix.startswith(UV_VERSION_HISTORY_PREFIXES)
 

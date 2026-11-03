@@ -1942,6 +1942,8 @@ class UvVersionEchoTests(unittest.TestCase):
             "CHANGELOG.md",
             "changelog.d/security/x.md",
             "docs/changelog-archive/1.0.0-rc.1.md",
+            "docs/rebase-notes.md",
+            "docs/rebase-notes.d/x.md",
             "docs/research/1305-x.md",
             "docs/state.md",
             "a.py",
