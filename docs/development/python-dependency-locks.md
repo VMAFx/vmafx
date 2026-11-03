@@ -21,8 +21,9 @@ version of `uv` (`uv_version` in `requirements/locks/manifest.json`).
 
 Guides point at that field and never restate the number:
 `check_python_dependency_locks.py check` refuses any Markdown line that echoes
-a uv version within 40 characters of `uv_version`, `vmafx-uv-version` (in either
-order), or `uv` followed by a version in prose or code (`uv X.Y.Z`, `uv==X.Y.Z`,
+a uv version (with optional leading `v`, e.g. `vX.Y.Z` or `X.Y.Z`) within 40 characters
+of `uv_version`, `vmafx-uv-version` (in either order), or `uv` directly followed by a
+version pin in prose or code (`uv X.Y.Z`, `uv vX.Y.Z`, `uv==X.Y.Z`, `uv@X.Y.Z`,
 `pinned uv X.Y.Z`, or a quoted `uv` before a quoted version), outside
 `CHANGELOG.md`, `changelog.d/`, `docs/changelog-archive/`, the dated records
 in `docs/research/`, `docs/state.md`, `docs/rebase-notes.md` and `docs/rebase-notes.d/`,
@@ -162,9 +163,9 @@ To support pure sdists (e.g. `mkdocs-minify-plugin` dependencies) securely:
   scans Markdown guides outside the dated records (`CHANGELOG.md`, `changelog.d/`,
   `docs/changelog-archive/`, `docs/research/`, `docs/state.md`, `docs/rebase-notes.md`,
   `docs/rebase-notes.d/`, `docs/adr/`) and refuses lines echoing the uv version: `uv_version` or
-  `vmafx-uv-version` within 40 characters of a version in either order, and `uv`
-  followed by a version in prose or code (`uv X.Y.Z`, `uv==X.Y.Z`,
-  `pinned uv X.Y.Z`, or a quoted `uv` before a quoted version).
+  `vmafx-uv-version` within 40 characters of a version (with optional leading `v`, e.g. `vX.Y.Z` or
+  `X.Y.Z`) in either order, and `uv` directly followed by a version pin in prose or code
+  (`uv X.Y.Z`, `uv vX.Y.Z`, `uv==X.Y.Z`, `uv@X.Y.Z`, `pinned uv X.Y.Z`, or a quoted `uv` before a quoted version).
   Soft-wrapped two-line echoes across a newline are a known gap.
 - **Install-surface scanner**: executable pip calls and literal
   `session.install(...)` calls in `noxfile.py` must reference a manifest-owned

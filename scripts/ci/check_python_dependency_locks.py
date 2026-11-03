@@ -1619,13 +1619,20 @@ def tracked_paths(root: Path) -> list[Path]:
     return raw_paths
 
 
+MAX_GUIDE_SIZE_BYTES = 4 * 1024 * 1024  # 4 MiB
+MAX_AGGREGATE_GUIDE_BYTES = 32 * 1024 * 1024  # 32 MiB
+MAX_GUIDE_LINE_LENGTH = 100_000
+
 # Text that restates the uv version goes stale on the next uv update (the requirements
 # guide still said 0.13.1 after the manifest moved to 0.13.6). Decision records and the
 # changelog describe their own moment and keep their numbers.
+_UV_VERSION_NUMBER = r"\b(?:v\d+|\d+)\.\d+\.\d+\b"
 UV_VERSION_ECHO = re.compile(
-    r"\b(?:uv_version|vmafx-uv-version|uv)\b.{0,40}?\b\d+\.\d+\.\d+\b"
+    rf"\b(?:uv_version|vmafx-uv-version)\b.{{0,40}}?{_UV_VERSION_NUMBER}"
     r"|"
-    r"\b\d+\.\d+\.\d+\b.{0,40}?\b(?:uv_version|vmafx-uv-version)\b"
+    rf"{_UV_VERSION_NUMBER}.{{0,40}}?\b(?:uv_version|vmafx-uv-version)\b"
+    r"|"
+    rf"\buv\b[\s`'\"*()\[\]/:,=@~><-]{{0,25}}(?:\bversion\b[\s:]*)?[\s`'\"*()\[\]/:,=@~><-]{{0,25}}{_UV_VERSION_NUMBER}"
 )
 UV_VERSION_HISTORY_PREFIXES = (
     "changelog.d/",
@@ -1645,15 +1652,54 @@ def is_uv_version_history_path(relative: Path) -> bool:
     return posix in UV_VERSION_HISTORY_EXACT or posix.startswith(UV_VERSION_HISTORY_PREFIXES)
 
 
-def scan_uv_version_echo(relative: Path, text: str) -> list[str]:
+def scan_uv_version_echo(relative: Path, content: Iterable[str] | str) -> list[str]:
     """Report each line of a guide that restates the reviewed uv version."""
     if relative.suffix.lower() != ".md" or is_uv_version_history_path(relative):
         return []
-    return [
-        f"{relative}:{number}: names a uv version; point at uv_version in {MANIFEST_PATH}"
-        for number, line in enumerate(text.splitlines(), start=1)
-        if UV_VERSION_ECHO.search(line)
-    ]
+    line_iter: Iterable[str] = content.splitlines() if isinstance(content, str) else content
+    problems: list[str] = []
+    for number, raw_line in enumerate(line_iter, start=1):
+        line = raw_line.rstrip("\r\n")
+        if len(line) > MAX_GUIDE_LINE_LENGTH:
+            problems.append(
+                f"{relative}:{number}: line of {len(line)} characters exceeds the scan limit "
+                f"of {MAX_GUIDE_LINE_LENGTH}; split it so the uv version scan can read it"
+            )
+        elif UV_VERSION_ECHO.search(line):
+            problems.append(
+                f"{relative}:{number}: names a uv version; point at uv_version in {MANIFEST_PATH}"
+            )
+    return problems
+
+
+def _scan_guides(root: Path, all_tracked: list[Path]) -> list[str]:
+    """Scan tracked non-history Markdown guides for restated uv versions."""
+    problems: list[str] = []
+    total_bytes = 0
+    for relative in all_tracked:
+        if relative.suffix.lower() != ".md" or is_uv_version_history_path(relative):
+            continue
+        guide = root / relative
+        if not guide.is_file():
+            continue
+        try:
+            size = guide.stat().st_size
+            total_bytes += size
+            if size > MAX_GUIDE_SIZE_BYTES:
+                problems.append(
+                    f"{relative}: file size {size} exceeds maximum guide limit of {MAX_GUIDE_SIZE_BYTES} bytes"
+                )
+                continue
+            if total_bytes > MAX_AGGREGATE_GUIDE_BYTES:
+                problems.append(
+                    f"aggregate guide size {total_bytes} exceeds limit of {MAX_AGGREGATE_GUIDE_BYTES} bytes"
+                )
+                break
+            with guide.open("r", encoding="utf-8", errors="replace") as stream:
+                problems.extend(scan_uv_version_echo(relative, stream))
+        except OSError as error:
+            problems.append(f"{relative}: {error}")
+    return problems
 
 
 def tracked_consumer_paths(root: Path, all_paths: list[Path] | None = None) -> list[Path]:
@@ -1814,13 +1860,7 @@ def check(root: Path) -> int:
                 problems.append(f"unregistered lock file {lock_file} not present in manifest")
 
         all_tracked = tracked_paths(root)
-
-        for relative in all_tracked:
-            if relative.suffix.lower() == ".md" and not is_uv_version_history_path(relative):
-                guide = root / relative
-                if guide.is_file():
-                    text = guide.read_text(encoding="utf-8", errors="replace")
-                    problems.extend(scan_uv_version_echo(relative, text))
+        problems.extend(_scan_guides(root, all_tracked))
 
         for relative in tracked_consumer_paths(root, all_paths=all_tracked):
             try:

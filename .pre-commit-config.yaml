@@ -467,7 +467,7 @@ repos:
         entry: python3 scripts/ci/check_python_dependency_locks.py check
         language: system
         files: '^(Makefile|noxfile\.py|requirements/.*|docs/requirements.*|python/requirements.*|ai/requirements.*|mcp-server/.*requirements.*|dev/requirements.*|dev-llm/.*requirements.*|tools/.*requirements.*|\.github/workflows/.*|scripts/setup/.*|Dockerfile.*|dev/Containerfile|docker/.*|scripts/ci/check_python_dependency_locks\.py|.*\.md)$'
-        exclude: '^(CHANGELOG\.md|changelog\.d/|docs/(adr|changelog-archive|rebase-notes\.d|research)/|docs/(rebase-notes|state)\.md)'
+        exclude: '^(CHANGELOG\.md$|changelog\.d/|docs/(adr|changelog-archive|rebase-notes\.d|research)/|docs/(rebase-notes|state)\.md$)'
         pass_filenames: false
 
       - id: test-python-dependency-locks
