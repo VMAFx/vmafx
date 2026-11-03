@@ -132,10 +132,14 @@ rules:
     # a macro or k-constant, and the `x != x` NaN idiom stay `==`, as CodeQL
     # allows them. The exemption covers a whole operand only (an optional sign
     # and one literal, macro or k-constant): `1.0 + y` or `(double)(y * 2.0)`
-    # stays in scope. Semgrep looks through casts, so any operand cast to an
-    # integer type, such as `(uint64_t)expected`, makes an integer comparison
-    # and is exempt. scripts/ci/tests/test_semgrep_float_identity.py
-    # plants each case.
+    # stays in scope. Literals cover decimal, hexadecimal and suffixed integer
+    # forms (`0x10`, `1U`). A test source declares no non-const float with a
+    # macro or k-constant name; scripts/ci/tests/test_semgrep_float_identity.py
+    # checks that. The NaN idiom covers call-free operands only. Semgrep looks
+    # through casts, so any operand cast to an integer type, such as
+    # `(uint64_t)expected`, makes an integer comparison and is exempt. Narrowings
+    # ported from VMAFx/pelorus commit e5e7c2e.
+    # scripts/ci/tests/test_semgrep_float_identity.py plants each case.
     patterns:
       - pattern-either:
           # One typed side is enough: Semgrep infers no type for an
@@ -175,8 +179,16 @@ rules:
                     # A call argument is not an operand: `bits_of(a)`
                     # returns an integer.
                     - pattern-not-inside: $F(...)
-      - pattern-not: $X == $X
-      - pattern-not: $X != $X
+      - pattern-not:
+          patterns:
+            - pattern-either:
+                - pattern: $X == $X
+                - pattern: $X != $X
+            # only a call-free operand: `next() == next()` compares two
+            # results and stays in scope
+            - metavariable-regex:
+                metavariable: $X
+                regex: '^[^()]*$'
       # Semgrep types an operand through its cast, so `(uint64_t)expected`
       # reads as the double `expected`. An integer cast makes the comparison
       # an integer one; these pairs drop it.
@@ -232,12 +244,64 @@ rules:
       - pattern-not: (bool) $Y == $X
       - pattern-not: $X != (bool) $Y
       - pattern-not: (bool) $Y != $X
+      - pattern-not: $X == (char) $Y
+      - pattern-not: (char) $Y == $X
+      - pattern-not: $X != (char) $Y
+      - pattern-not: (char) $Y != $X
+      - pattern-not: $X == (signed char) $Y
+      - pattern-not: (signed char) $Y == $X
+      - pattern-not: $X != (signed char) $Y
+      - pattern-not: (signed char) $Y != $X
+      - pattern-not: $X == (unsigned char) $Y
+      - pattern-not: (unsigned char) $Y == $X
+      - pattern-not: $X != (unsigned char) $Y
+      - pattern-not: (unsigned char) $Y != $X
+      - pattern-not: $X == (short) $Y
+      - pattern-not: (short) $Y == $X
+      - pattern-not: $X != (short) $Y
+      - pattern-not: (short) $Y != $X
+      - pattern-not: $X == (unsigned short) $Y
+      - pattern-not: (unsigned short) $Y == $X
+      - pattern-not: $X != (unsigned short) $Y
+      - pattern-not: (unsigned short) $Y != $X
+      - pattern-not: $X == (unsigned int) $Y
+      - pattern-not: (unsigned int) $Y == $X
+      - pattern-not: $X != (unsigned int) $Y
+      - pattern-not: (unsigned int) $Y != $X
+      - pattern-not: $X == (unsigned long) $Y
+      - pattern-not: (unsigned long) $Y == $X
+      - pattern-not: $X != (unsigned long) $Y
+      - pattern-not: (unsigned long) $Y != $X
+      - pattern-not: $X == (long long) $Y
+      - pattern-not: (long long) $Y == $X
+      - pattern-not: $X != (long long) $Y
+      - pattern-not: (long long) $Y != $X
+      - pattern-not: $X == (unsigned long long) $Y
+      - pattern-not: (unsigned long long) $Y == $X
+      - pattern-not: $X != (unsigned long long) $Y
+      - pattern-not: (unsigned long long) $Y != $X
+      - pattern-not: $X == (ssize_t) $Y
+      - pattern-not: (ssize_t) $Y == $X
+      - pattern-not: $X != (ssize_t) $Y
+      - pattern-not: (ssize_t) $Y != $X
+      - pattern-not: $X == (ptrdiff_t) $Y
+      - pattern-not: (ptrdiff_t) $Y == $X
+      - pattern-not: $X != (ptrdiff_t) $Y
+      - pattern-not: (ptrdiff_t) $Y != $X
+      - pattern-not: $X == (intptr_t) $Y
+      - pattern-not: (intptr_t) $Y == $X
+      - pattern-not: $X != (intptr_t) $Y
+      - pattern-not: (intptr_t) $Y != $X
+      - pattern-not: $X == (uintptr_t) $Y
+      - pattern-not: (uintptr_t) $Y == $X
+      - pattern-not: $X != (uintptr_t) $Y
+      - pattern-not: (uintptr_t) $Y != $X
       - metavariable-regex:
           metavariable: $A
-          regex: '^(?!\s*[-+]?\s*([0-9][0-9.]*([eE][-+]?[0-9]+)?[fFlL]?|\.[0-9]+([eE][-+]?[0-9]+)?[fFlL]?|0[xX]([0-9A-Fa-f]+(\.[0-9A-Fa-f]*)?|\.[0-9A-Fa-f]+)[pP][-+]?[0-9]+[fFlL]?|k[A-Z][A-Za-z0-9_]*|[A-Z][A-Z0-9_]*)\s*$)'
+          regex: '^(?!\s*[-+]?\s*([0-9][0-9.]*([eE][-+]?[0-9]+)?[fFlLuU]*|0[xX][0-9A-Fa-f]+[uUlL]*|\.[0-9]+([eE][-+]?[0-9]+)?[fFlL]?|0[xX]([0-9A-Fa-f]+(\.[0-9A-Fa-f]*)?|\.[0-9A-Fa-f]+)[pP][-+]?[0-9]+[fFlL]?|k[A-Z][A-Za-z0-9_]*|[A-Z][A-Z0-9_]*)\s*$)'
       - metavariable-regex:
           metavariable: $B
-          regex: '^(?!\s*[-+]?\s*([0-9][0-9.]*([eE][-+]?[0-9]+)?[fFlL]?|\.[0-9]+([eE][-+]?[0-9]+)?[fFlL]?|0[xX]([0-9A-Fa-f]+(\.[0-9A-Fa-f]*)?|\.[0-9A-Fa-f]+)[pP][-+]?[0-9]+[fFlL]?|k[A-Z][A-Za-z0-9_]*|[A-Z][A-Z0-9_]*)\s*$)'
+          regex: '^(?!\s*[-+]?\s*([0-9][0-9.]*([eE][-+]?[0-9]+)?[fFlLuU]*|0[xX][0-9A-Fa-f]+[uUlL]*|\.[0-9]+([eE][-+]?[0-9]+)?[fFlL]?|0[xX]([0-9A-Fa-f]+(\.[0-9A-Fa-f]*)?|\.[0-9A-Fa-f]+)[pP][-+]?[0-9]+[fFlL]?|k[A-Z][A-Za-z0-9_]*|[A-Z][A-Z0-9_]*)\s*$)'
     paths:
       include:
         - /core/test/**

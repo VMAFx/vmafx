@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import os
 import re
 import shutil
 import sys
@@ -58,7 +59,8 @@ static const double kLimit = 3.0;
 static double computed(void);
 static unsigned bits(double value);
 
-bool planted(double x, float p, float q, int i, int k, double u, double v)
+bool planted(double x, float p, float q, int i, int k, double u, double v,
+             long long ll, short s, unsigned char c)
 {
     double y = computed();
     bool hits = x != y;          /* reported: computed double != */
@@ -71,6 +73,9 @@ bool planted(double x, float p, float q, int i, int k, double u, double v)
     hits = hits || -LIMIT * y == x; /* reported: macro prefix, computed */
     hits = hits || (x + y) == (u + v); /* reported: arithmetic both sides */
     hits = hits || (p * q) != (q - p); /* reported: float arithmetic both sides */
+    hits = hits || computed() != computed(); /* reported: two call results != */
+    hits = hits || 0x10 + y == x; /* reported: hex literal prefix, computed */
+    hits = hits || (double)x == y; /* reported: (double)x == y */
     bool quiet = x == 0.0;       /* literal */
     quiet = quiet || 1.5 != y;   /* literal on the left */
     quiet = quiet || x == LIMIT; /* macro */
@@ -85,10 +90,52 @@ bool planted(double x, float p, float q, int i, int k, double u, double v)
     quiet = quiet || p != -0x1.8p-3f; /* signed hexadecimal float literal */
     quiet = quiet || (i + (int)x) == k; /* integer arithmetic */
     quiet = quiet || bits(x + y) == bits(u + v); /* calls return integers */
+    quiet = quiet || x == 0x10;  /* hexadecimal integer literal */
+    quiet = quiet || y != 1U;    /* suffixed integer literal */
+    quiet = quiet || x == 0x10u; /* hex suffixed integer literal */
+    quiet = quiet || y == 3ULL;  /* suffixed integer literal */
+    quiet = quiet || ll == (long long)y; /* long long cast */
+    quiet = quiet || s == (short)x; /* short cast */
+    quiet = quiet || c == (unsigned char)x; /* unsigned char cast */
+    quiet = quiet || i == (unsigned long long)y; /* unsigned long long cast */
     return hits || quiet;
 }
 """
-PLANTED_HITS = (11, 12, 13, 14, 15, 16, 17, 18, 19, 20)
+PLANTED_HITS = tuple(n for n, line in enumerate(PLANTED.splitlines(), 1) if "/* reported" in line)
+PLANTED_CONST_NAMES = """\
+double kScale = computed();
+float GAIN;
+double kNoted = computed(); // const
+float LIMIT; /* const */
+static const double kOk = 1.0;
+double const kEast = 1.0;
+double kTail = 1.0; const int n = 2;
+/* const */ double kLead = computed();
+printf("https://example"); double kResult = computed();
+puts("double kInString = 1.0;");
+double
+kMulti = computed();
+/* const
+*/ double kBlock = computed();
+static const double
+kSplitOk = 1.0;
+void f(const char *label,
+       double kParam, double actual);
+void g(double x, const double kParamOk, int n);
+void h(int n, double kLast);
+double ordinary, kComputed = computed();
+const double a, kB = 1.0;
+double scaled(UINT32 n);
+double X = computed();
+"""
+FLOAT_TYPE = re.compile(r"\b(?:double|float)\b")
+CONSTANT_NAME = re.compile(r"k[A-Z]\w*|[A-Z][A-Z0-9_]*")
+DECLARED_NAME = re.compile(r"[\s*]*(\w+)\b(?!\s*\()")
+C_LEXEME = re.compile(
+    r'"(?:\\.|[^"\\\n])*"|\'(?:\\.|[^\'\\\n])*\'|//[^\n]*|/\*.*?(?:\*/|\Z)',
+    re.DOTALL,
+)
+CONST_QUALIFIER = re.compile(r"\b(?:const|constexpr)\b")
 EXCEPTED = "core/test/test_pelorus_interop.c"  # pelorus mirror, declared exception
 PARSE_RULE = "vmaf-test-float-identity-parse"  # files with a known parse diagnostic
 UNPARSABLE = "core/test/planted_unparsable.c"
@@ -133,6 +180,71 @@ def core_test_sources(root: Path) -> list[str]:
     return sorted(sources)
 
 
+def _blank_lexeme(match: re.Match[str]) -> str:
+    """A comment becomes spaces; a literal keeps its quotes, its body spaces."""
+    lexeme = match.group(0)
+    if lexeme[0] in "\"'":
+        return lexeme[0] + re.sub(r"[^\n]", " ", lexeme[1:-1]) + lexeme[-1]
+    return re.sub(r"[^\n]", " ", lexeme)
+
+
+def declaration_start(code: str, pos: int) -> int:
+    """Offset where the declaration holding `pos` starts."""
+    stmt = max(code.rfind(sep, 0, pos) for sep in ";{}") + 1
+    opens: list[int] = []
+    for offset, char in enumerate(code[stmt:pos], start=stmt):
+        if char == "(":
+            opens.append(offset + 1)
+        elif char == ")" and opens:
+            opens.pop()
+        elif char == "," and opens:
+            opens[-1] = offset + 1
+    return opens[-1] if opens else stmt
+
+
+def declarators(code: str, start: int, in_params: bool) -> list[tuple[int, int]]:
+    """Spans of the declarators that follow a type keyword at `start`."""
+    spans: list[tuple[int, int]] = []
+    depth = 0
+    begin = start
+    for offset in range(start, len(code)):
+        char = code[offset]
+        if char in "([":
+            depth += 1
+        elif char in ")]" and depth > 0:
+            depth -= 1
+        elif depth == 0:
+            if char in ");{}" or (char == "," and in_params):
+                break
+            if char == ",":
+                spans.append((begin, offset))
+                begin = offset + 1
+    else:
+        offset = len(code)
+    spans.append((begin, offset))
+    return spans
+
+
+def constant_name_findings(text: str, name: str) -> list[str]:
+    """Declarations of a non-const float or double with a constant-style name."""
+    code = C_LEXEME.sub(_blank_lexeme, text)
+    lines = text.splitlines()
+    found: list[str] = []
+    for kind in FLOAT_TYPE.finditer(code):
+        start = declaration_start(code, kind.start())
+        in_params = start > 0 and code[start - 1] in "(,"
+        spans = declarators(code, kind.end(), in_params)
+        if CONST_QUALIFIER.search(code[start : spans[-1][1]]):
+            continue
+        for begin, end in spans:
+            decl = DECLARED_NAME.match(code, begin, end)
+            if decl and CONSTANT_NAME.fullmatch(decl.group(1)):
+                n = code.count("\n", 0, kind.start()) + 1
+                found.append(f"{name}:{n}: {lines[n - 1].strip()}")
+                break
+    return found
+
+
 class SemgrepFloatIdentity(unittest.TestCase):
     def setUp(self) -> None:
         # One Semgrep launcher: the vendored-scope case finds semgrep on PATH
@@ -162,10 +274,17 @@ class SemgrepFloatIdentity(unittest.TestCase):
             "--no-git-ignore",
             *targets,
         ]
+        env = dict(os.environ)
+        env_dir = Path(tempfile.gettempdir()) / "vmafx-semgrep-env"
+        env_dir.mkdir(parents=True, exist_ok=True)
+        env.setdefault("XDG_CONFIG_HOME", str(env_dir))
+        env.setdefault("SEMGREP_SETTINGS_FILE", str(env_dir / "semgrep-settings.yaml"))
+        env.setdefault("SEMGREP_LOG_FILE", str(env_dir / "semgrep.log"))
         proc = run_command(
             argv,
             allowed_executables=(executable,),
             cwd=project,
+            env=env,
             capture_output=True,
             text=True,
             timeout_seconds=300,
@@ -291,6 +410,21 @@ class SemgrepFloatIdentity(unittest.TestCase):
             {},
             "a test compares two computed floating-point values with == or !=; use "
             "vmaf_test_identical_f64() / _f32() from core/test/float_bits.h",
+        )
+
+    def test_constant_name_declarations_are_const(self) -> None:
+        got = constant_name_findings(PLANTED_CONST_NAMES, "planted.c")
+        want = [f"planted.c:{n}:" for n in (1, 2, 3, 4, 7, 8, 9, 11, 14, 18, 20, 21, 24)]
+        self.assertEqual([g.split(" ", 1)[0] for g in got], want)
+        found: list[str] = []
+        for target in core_test_sources(ROOT):
+            text = (ROOT / target).read_text(encoding="utf-8", errors="replace")
+            found.extend(constant_name_findings(text, target))
+        self.assertEqual(
+            found,
+            [],
+            "non-const float with a constant-style name found in core/test; make it "
+            "const or rename it so the macro/k-constant exemption remains sound",
         )
 
 
