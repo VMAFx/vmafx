@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import io
+import os
 import shutil
 import subprocess
 import tarfile
@@ -60,7 +61,10 @@ class PackageChecks(unittest.TestCase):
     def runner(self, command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
         cwd, env = kwargs["cwd"], kwargs["env"]
         self.calls.append((command, cwd, env))
-        if command[:3] == ["rustc", "--print", "sysroot"]:
+        if Path(command[0]).name.split(".")[0] == "rustc" and command[1:3] == [
+            "--print",
+            "sysroot",
+        ]:
             return subprocess.CompletedProcess(command, 0, stdout=str(self.root / "rust"))
         if command[1] == "package":
             self.package_fixtures(Path(env["CARGO_TARGET_DIR"]) / "package")
@@ -88,13 +92,21 @@ class PackageChecks(unittest.TestCase):
 
     def test_packaged_docs_pass_with_stub_runner(self) -> None:
         check.check_packages(self.root, self.runner)
+        rustc_call = self.calls[0][0]
+        self.assertTrue(Path(rustc_call[0]).is_absolute())
+        self.assertEqual(Path(rustc_call[0]).name.split(".")[0], "rustc")
         package = [command for command, _, _ in self.calls if command[1] == "package"]
         self.assertEqual(len(package), 1)
+        self.assertTrue(Path(package[0][0]).is_absolute())
+        self.assertEqual(Path(package[0][0]).name.split(".")[0], "cargo")
         self.assertIn("--allow-dirty", package[0])
         for name in check.CRATES:
             self.assertIn(name, package[0])
         docs = [(command, cwd) for command, cwd, _ in self.calls if command[1] == "doc"]
         self.assertEqual(len(docs), len(check.CRATES))
+        for doc_cmd, _ in docs:
+            self.assertTrue(Path(doc_cmd[0]).is_absolute())
+            self.assertEqual(Path(doc_cmd[0]).name.split(".")[0], "cargo")
         self.assertIn(str(docs[0][1]), docs[1][0][-1])
 
     def test_doc_failure_is_named_and_refused(self) -> None:
@@ -206,6 +218,16 @@ class PackageChecks(unittest.TestCase):
         target = self.root / "extracted/file.txt"
         with self.assertRaisesRegex(check.PackageError, "member expanded beyond declared size"):
             check.extract_member(io.BytesIO(b"1234567890"), target, 5, "file.txt")
+
+    def test_missing_rustc_is_refused(self) -> None:
+        with patch.dict(os.environ, {}, clear=True), patch("shutil.which", return_value=None):
+            with self.assertRaisesRegex(check.PackageError, "required executable not found.*rustc"):
+                check.check_packages(self.root, self.runner)
+
+    def test_missing_cargo_is_refused(self) -> None:
+        with patch.dict(os.environ, {}, clear=True), patch("shutil.which", return_value=None):
+            with self.assertRaisesRegex(check.PackageError, "required executable not found.*cargo"):
+                check.resolve_cargo(Path("relative/bin"))
 
 
 if __name__ == "__main__":

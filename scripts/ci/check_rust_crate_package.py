@@ -61,10 +61,34 @@ def run_command(
     return result.stdout
 
 
+def resolve_executable(name: str) -> Path:
+    """Resolve an executable or environment override to an absolute path."""
+    candidate = os.environ.get(name.upper()) or shutil.which(name)
+    if candidate is None:
+        raise PackageError(f"required executable not found on PATH: {name}")
+    return Path(candidate).absolute()
+
+
+def resolve_cargo(rust_bin: Path) -> Path:
+    """Resolve cargo to an absolute path, preferring the active toolchain."""
+    suffix = ".exe" if os.name == "nt" else ""
+    toolchain_cargo = rust_bin / f"cargo{suffix}"
+    if toolchain_cargo.is_file():
+        return toolchain_cargo.absolute()
+    from_env = os.environ.get("CARGO")
+    if from_env and Path(from_env).is_file():
+        return Path(from_env).absolute()
+    on_path = shutil.which("cargo")
+    if on_path:
+        return Path(on_path).absolute()
+    raise PackageError("required executable not found on PATH: cargo")
+
+
 def docs_environment(root: Path, temporary: Path, runner: Runner) -> dict[str, str]:
     """Keep the checkout's compiler and expose only Rust and CPU build tools on PATH."""
     env = os.environ.copy()
-    sysroot = run_command(["rustc", "--print", "sysroot"], root, env, runner, "Rust toolchain")
+    rustc = resolve_executable("rustc")
+    sysroot = run_command([str(rustc), "--print", "sysroot"], root, env, runner, "Rust toolchain")
     rust_bin = Path(sysroot.strip()) / "bin"
     tools = temporary / "tools"
     tools.mkdir()
@@ -76,10 +100,12 @@ def docs_environment(root: Path, temporary: Path, runner: Runner) -> dict[str, s
         executable_path = shutil.which(name)
         if executable_path:
             (tools / f"{name}{suffix}").symlink_to(executable_path)
+    cargo = resolve_cargo(rust_bin)
     env.update(
         PATH=str(tools),
         RUSTC=str(rust_bin / f"rustc{suffix}"),
         RUSTDOC=str(rust_bin / f"rustdoc{suffix}"),
+        CARGO=str(cargo),
         DOCS_RS="1",
         CARGO_BUILD_JOBS="4",
         CARGO_TARGET_DIR=str(temporary / "target"),
@@ -173,14 +199,15 @@ def check_packages(root: Path = ROOT, runner: Runner = subprocess.run) -> None:
                 "temporary directory must be outside the checkout; choose another TMPDIR"
             )
         env = docs_environment(root, temporary, runner)
-        command = ["cargo", "package", "--allow-dirty", "-p", CRATES[0], "-p", CRATES[1], "-j4"]
+        cargo = env["CARGO"]
+        command = [cargo, "package", "--allow-dirty", "-p", CRATES[0], "-p", CRATES[1], "-j4"]
         run_command(command, root, env, runner, "cargo package failed")
         extracted = {}
         for name in CRATES:
             archive = packaged_crate(temporary / "target/package", name)
             extracted[name] = unpack_crate(archive, temporary / "extracted")
         for name, crate in extracted.items():
-            command = ["cargo", "doc", "--no-deps", "-j4"]
+            command = [cargo, "doc", "--no-deps", "-j4"]
             if name == "vmafx":
                 # The dependency is unpublished: patch only to the extracted sys crate.
                 patch = json.dumps(str(extracted["vmafx-sys"]))
